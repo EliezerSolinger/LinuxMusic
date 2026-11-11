@@ -27,11 +27,12 @@
 #define _VESTIGE_H
 
 
+#include <string>
+
 #include <QMutex>
 
-#include "AudioPlugin.h"
+#include "Instrument.h"
 #include "InstrumentView.h"
-#include "RemotePluginAudioPorts.h"
 #include "SubWindow.h"
 
 
@@ -48,51 +49,56 @@ class VstPlugin;
 
 namespace gui
 {
-class CustomTextKnob;
 class ManageVestigeInstrumentView;
 class PixmapButton;
 class VestigeInstrumentView;
+class VstPluginKnob;
 } // namespace gui
 
 
-inline constexpr auto VestigeSettings = AudioPortsSettings {
-	.kind = AudioDataKind::F32,
-	.interleaved = false
-};
-
-class VestigeAudioPorts final
-	: public RemotePluginAudioPorts<VestigeSettings>
-{
-public:
-	using RemotePluginAudioPorts<VestigeSettings>::RemotePluginAudioPorts;
-
-	auto channelName(ch_cnt_t channel, bool isOutput) const -> QString override
-	{
-		// TODO: Support custom channel names here
-		return isOutput
-			? tr("VST Out %1").arg(channel + 1)
-			: tr("VST In %1").arg(channel + 1);
-	}
-};
-
-class VestigeInstrument
-	: public AudioPlugin<Instrument, VestigeSettings, VestigeAudioPorts>
+/**
+ * Hosts a VST instrument, which runs in a RemoteVstPlugin process.
+ *
+ * The plugin's audio inputs and outputs, as the remote process reports them, are exposed to the pin
+ * connector. The remote process reads and writes the host's buffers in shared memory.
+ * Without a plugin, the instrument has a silent stereo output.
+ */
+class VestigeInstrument : public Instrument
 {
 	Q_OBJECT
 public:
 	VestigeInstrument( InstrumentTrack * _instrument_track );
 	~VestigeInstrument() override;
 
-	void saveSettings(QDomDocument& _doc, QDomElement& _parent) override;
-	void loadSettings(const QDomElement& _this) override;
+	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
+	void loadSettings( const QDomElement & _this ) override;
 
 	QString nodeName() const override;
 
-	void loadFile(const QString& _file) override;
+	void loadFile( const QString & _file ) override;
 
-	bool handleMidiEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset = 0) override;
+	bool handleMidiEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset = 0 ) override;
 
-	gui::PluginView* instantiateView(QWidget* _parent) override;
+	gui::PluginView* instantiateView( QWidget * _parent ) override;
+
+	// AudioProcessor implementation
+	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto channelCount(bool isInput) const -> ch_cnt_t override;
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return channelCount(isInput) > 0 ? 1 : 0; }
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+		-> ch_cnt_t override
+	{
+		(void)index;
+		(void)group;
+		return channelCount(isInput);
+	}
+	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override
+	{
+		(void)inputIndex;
+		return std::nullopt;
+	}
+	auto usesSharedMemoryBuffers() const -> bool override { return m_plugin != nullptr; }
+	void onSharedMemoryChange(const SharedBufferInfo& info) override;
 
 protected slots:
 	void setParameter( lmms::Model * action );
@@ -100,12 +106,14 @@ protected slots:
 	void reloadPlugin();
 
 private:
-	auto processImpl(PlanarBufferView<const float> in, PlanarBufferView<float> out) -> ProcessStatus override;
-
-	auto processLock() -> bool override;
-	void processUnlock() override;
-
 	void closePlugin();
+
+	//! Lets the host set up buffers for the plugin's channel counts [main thread]
+	void rescanAudioPorts();
+
+	//! Where the host put the audio buffers for the remote process
+	std::string m_sharedBufferKey;
+	SharedBufferInfo m_sharedBufferInfo{};
 
 	VstPlugin * m_plugin;
 	QMutex m_pluginMutex;
@@ -131,9 +139,8 @@ class ManageVestigeInstrumentView : public InstrumentViewFixedSize
 {
 	Q_OBJECT
 public:
-	ManageVestigeInstrumentView( VestigeInstrument * _instrument, QWidget * _parent, VestigeInstrument * _vi2 );
-	virtual ~ManageVestigeInstrumentView();
-
+	ManageVestigeInstrumentView( Instrument * _instrument, QWidget * _parent, VestigeInstrument * m_vi2 );
+	~ManageVestigeInstrumentView() override;
 
 protected slots:
 	void syncPlugin();
@@ -162,7 +169,7 @@ class VestigeInstrumentView : public InstrumentViewFixedSize
 {
 	Q_OBJECT
 public:
-	VestigeInstrumentView( VestigeInstrument * _instrument, QWidget * _parent );
+	VestigeInstrumentView( Instrument * _instrument, QWidget * _parent );
 	virtual ~VestigeInstrumentView() = default;
 
 
@@ -202,7 +209,7 @@ private:
 	PixmapButton * m_managePluginButton;
 	PixmapButton * m_savePresetButton;
 
-	VestigeInstrument* m_instrument2;
+	Instrument * _instrument2;
 	QWidget * _parent2;
 
 } ;

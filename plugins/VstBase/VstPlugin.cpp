@@ -52,7 +52,7 @@
 #include "LocaleHelper.h"
 #include "MainWindow.h"
 #include "PathUtil.h"
-#include "RemotePluginAudioPorts.h"
+#include "SimpleTextFloat.h"
 #include "Song.h"
 
 #ifdef LMMS_BUILD_LINUX
@@ -120,9 +120,8 @@ enum class ExecutableType
 	Unknown, Win32, Win64, Linux64,
 };
 
-VstPlugin::VstPlugin(const QString& plugin, RemotePluginAudioPortsController& audioPorts)
-	: RemotePlugin{audioPorts}
-	, m_plugin{PathUtil::toAbsolute(plugin)}
+VstPlugin::VstPlugin(const QString& plugin)
+	: m_plugin{PathUtil::toAbsolute(plugin)}
 	, m_pluginWindowID{0}
 	, m_embedMethod{(gui::getGUI() != nullptr)
 		? ConfigManager::inst()->vstEmbedMethod()
@@ -262,8 +261,6 @@ void VstPlugin::loadSettings( const QDomElement & _this )
 		}
 		setParameterDump( dump );
 	}
-
-	audioPorts().audioPortsModel().loadSettings(_this);
 }
 
 
@@ -307,7 +304,6 @@ void VstPlugin::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	}
 
 	_this.setAttribute( "program", currentProgram() );
-	audioPorts().audioPortsModel().saveSettings(_doc, _this);
 }
 
 void VstPlugin::toggleUI()

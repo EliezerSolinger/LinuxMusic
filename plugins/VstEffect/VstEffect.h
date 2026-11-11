@@ -25,11 +25,12 @@
 #ifndef _VST_EFFECT_H
 #define _VST_EFFECT_H
 
+#include <string>
+
 #include <QMutex>
 #include <QSharedPointer>
 
-#include "AudioPlugin.h"
-#include "RemotePluginAudioPorts.h"
+#include "Effect.h"
 #include "VstEffectControls.h"
 
 namespace lmms
@@ -37,28 +38,13 @@ namespace lmms
 
 class VstPlugin;
 
-inline constexpr auto VstEffectSettings = AudioPortsSettings {
-	.kind = AudioDataKind::F32,
-	.interleaved = false
-};
-
-class VstEffectAudioPorts final
-	: public RemotePluginAudioPorts<VstEffectSettings>
-{
-public:
-	using RemotePluginAudioPorts<VstEffectSettings>::RemotePluginAudioPorts;
-
-	auto channelName(ch_cnt_t channel, bool isOutput) const -> QString override
-	{
-		// TODO: Support custom channel names here
-		return isOutput
-			? tr("VST Out %1").arg(channel + 1)
-			: tr("VST In %1").arg(channel + 1);
-	}
-};
-
-class VstEffect
-	: public AudioPlugin<Effect, VstEffectSettings, VstEffectAudioPorts>
+/**
+ * Hosts a VST effect, which runs in a RemoteVstPlugin process.
+ *
+ * The plugin's audio inputs and outputs, as the remote process reports them, are exposed to the pin
+ * connector. The remote process reads and writes the host's buffers in shared memory.
+ */
+class VstEffect : public Effect
 {
 public:
 	VstEffect( Model * _parent,
@@ -70,20 +56,40 @@ public:
 		return &m_vstControls;
 	}
 
+	// AudioProcessor implementation
+	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto channelCount(bool isInput) const -> ch_cnt_t override;
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return channelCount(isInput) > 0 ? 1 : 0; }
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+		-> ch_cnt_t override
+	{
+		(void)index;
+		(void)group;
+		return channelCount(isInput);
+	}
+	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override
+	{
+		(void)inputIndex;
+		return std::nullopt;
+	}
+	auto usesSharedMemoryBuffers() const -> bool override { return m_plugin != nullptr; }
+	void onSharedMemoryChange(const SharedBufferInfo& info) override;
 
 private:
-	auto processImpl(PlanarBufferView<const float> in, PlanarBufferView<float> out) -> ProcessStatus override;
-
-	auto processLock() -> bool override;
-	void processUnlock() override;
-
 	//! Returns true if plugin was loaded (m_plugin != nullptr)
 	bool openPlugin(const QString& plugin);
 	void closePlugin();
 
+	//! Whether the buffers the host set up match the channel counts the remote process reported
+	auto buffersMatchRemote() const -> bool;
+
 	QSharedPointer<VstPlugin> m_plugin;
 	QMutex m_pluginMutex;
 	EffectKey m_key;
+
+	//! Where the host put the audio buffers for the remote process
+	std::string m_sharedBufferKey;
+	SharedBufferInfo m_sharedBufferInfo{};
 
 	VstEffectControls m_vstControls;
 

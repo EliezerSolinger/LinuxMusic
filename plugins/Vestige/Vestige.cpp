@@ -25,6 +25,7 @@
 #include "Vestige.h"
 
 #include <QDomElement>
+#include <QMutexLocker>
 #include <QDropEvent>
 #include <QGridLayout>
 #include <QMdiArea>
@@ -36,13 +37,14 @@
 #include <memory>
 
 #include "AudioEngine.h"
-#include "ComboBox.h"
+#include "Clipboard.h"
 #include "ConfigManager.h"
 #include "embed.h"
 #include "Engine.h"
 #include "FileDialog.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
+#include "Host.h"
 #include "InstrumentPlayHandle.h"
 #include "InstrumentTrack.h"
 #include "LocaleHelper.h"
@@ -150,7 +152,7 @@ private:
 
 
 VestigeInstrument::VestigeInstrument( InstrumentTrack * _instrument_track ) :
-	AudioPlugin(&vestige_plugin_descriptor, _instrument_track, nullptr, Flag::IsSingleStreamed | Flag::IsMidiBased),
+	Instrument(&vestige_plugin_descriptor, _instrument_track, nullptr, Flag::IsSingleStreamed | Flag::IsMidiBased),
 	m_plugin( nullptr ),
 	m_pluginMutex(),
 	m_subWindow( nullptr ),
@@ -361,16 +363,22 @@ void VestigeInstrument::loadFile( const QString & _file )
 	}
 
 	m_pluginMutex.lock();
-	m_plugin = new VstInstrumentPlugin{m_pluginDLL, audioPorts().controller()};
+	m_plugin = new VstInstrumentPlugin( m_pluginDLL );
 	if( m_plugin->failed() )
 	{
 		m_pluginMutex.unlock();
 		closePlugin();
+		rescanAudioPorts();
 		delete tf;
 		collectErrorForUI( VstPlugin::tr( "The VST plugin %1 could not be loaded." ).arg( m_pluginDLL ) );
 		m_pluginDLL = "";
 		return;
 	}
+
+	// The remote process reports its channel counts, also later on (e.g. when the plugin changes them);
+	// the host then sets up new buffers (in the main thread, since this may come from the audio thread)
+	connect(m_plugin, &RemotePlugin::channelCountsChanged, this, [this] { rescanAudioPorts(); },
+		Qt::QueuedConnection);
 
 	if ( !(instrumentTrack() != nullptr && instrumentTrack()->isPreviewMode()))
 	{
@@ -385,6 +393,9 @@ void VestigeInstrument::loadFile( const QString & _file )
 
 	m_pluginMutex.unlock();
 
+	// New channel counts and a new remote process which needs to know where the buffers are
+	rescanAudioPorts();
+
 	emit dataChanged();
 
 	delete tf;
@@ -393,35 +404,59 @@ void VestigeInstrument::loadFile( const QString & _file )
 
 
 
-auto VestigeInstrument::processImpl(PlanarBufferView<const float> in, PlanarBufferView<float> out)
-	-> ProcessStatus
+void VestigeInstrument::rescanAudioPorts()
 {
-	if (!m_plugin)
+	if (host()) { host()->rescanAudioPorts(Host::AudioPortsRescanFlag::ChannelCount); }
+}
+
+
+
+
+auto VestigeInstrument::channelCount(bool isInput) const -> ch_cnt_t
+{
+	// Without a plugin: silent stereo output
+	if (!m_plugin) { return isInput ? 0 : DEFAULT_CHANNELS; }
+	return isInput ? m_plugin->remoteChannelsIn() : m_plugin->remoteChannelsOut();
+}
+
+
+
+
+void VestigeInstrument::onSharedMemoryChange(const SharedBufferInfo& info)
+{
+	m_sharedBufferKey = std::string{info.key};
+	m_sharedBufferInfo = info;
+	m_sharedBufferInfo.key = m_sharedBufferKey;
+
+	const auto lock = QMutexLocker{&m_pluginMutex};
+	if (m_plugin) { m_plugin->setSharedAudioBuffer(m_sharedBufferInfo); }
+}
+
+
+
+
+auto VestigeInstrument::process(ProcessContext& context) -> ProcessStatus
+{
+	auto& out = context.out();
+
+	// The plugin may be being replaced; while exporting, wait for it
+	if (!m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0))
 	{
+		out.silenceAllChannels();
 		return ProcessStatus::Continue;
 	}
 
-	m_plugin->process();
+	// Until the host has set up buffers for the channel counts the remote process reported
+	// (see channelCountsChanged), the remote process cannot process
+	const bool processed = m_plugin
+		&& m_sharedBufferInfo.channels == m_plugin->remoteChannelsIn() + m_plugin->remoteChannelsOut()
+		&& m_plugin->process();
 
-	(void)in;
-	(void)out;
-	return ProcessStatus::Continue;
-}
-
-
-
-
-auto VestigeInstrument::processLock() -> bool
-{
-	return m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0);
-}
-
-
-
-
-void VestigeInstrument::processUnlock()
-{
 	m_pluginMutex.unlock();
+
+	// The remote process wrote into the output buffers in shared memory
+	if (!processed) { out.silenceAllChannels(); }
+	return ProcessStatus::Continue;
 }
 
 
@@ -490,18 +525,16 @@ void VestigeInstrument::closePlugin( void )
 
 
 
-
 gui::PluginView * VestigeInstrument::instantiateView( QWidget * _parent )
 {
 	return new gui::VestigeInstrumentView( this, _parent );
 }
 
 
-
 namespace gui
 {
 
-VestigeInstrumentView::VestigeInstrumentView( VestigeInstrument * _instrument,
+VestigeInstrumentView::VestigeInstrumentView( Instrument * _instrument,
 							QWidget * _parent ) :
 	InstrumentViewFixedSize( _instrument, _parent ),
 	lastPosInMenu (0)
@@ -607,7 +640,7 @@ VestigeInstrumentView::VestigeInstrumentView( VestigeInstrument * _instrument,
 							SLOT( noteOffAll() ) );
 
 	setAcceptDrops( true );
-	m_instrument2 = _instrument;
+	_instrument2 = _instrument;
 	_parent2 = _parent;
 }
 
@@ -615,7 +648,7 @@ VestigeInstrumentView::VestigeInstrumentView( VestigeInstrument * _instrument,
 void VestigeInstrumentView::managePlugin( void )
 {
 	if ( m_vi->m_plugin != nullptr && m_vi->m_subWindow == nullptr ) {
-		m_vi->p_subWindow = new ManageVestigeInstrumentView( m_instrument2, _parent2, m_vi);
+		m_vi->p_subWindow = new ManageVestigeInstrumentView( _instrument2, _parent2, m_vi);
 	} else if (m_vi->m_subWindow != nullptr) {
 		if (m_vi->m_subWindow->widget()->isVisible() == false ) {
 			m_vi->m_scrollArea->show();
@@ -921,11 +954,11 @@ void VestigeInstrumentView::paintEvent( QPaintEvent * )
 
 
 
-ManageVestigeInstrumentView::ManageVestigeInstrumentView( VestigeInstrument * _instrument,
-							QWidget * _parent, VestigeInstrument * _vi2 ) :
+ManageVestigeInstrumentView::ManageVestigeInstrumentView( Instrument * _instrument,
+							QWidget * _parent, VestigeInstrument * m_vi2 ) :
 	InstrumentViewFixedSize( _instrument, _parent )
 {
-	m_vi = _vi2;
+	m_vi = m_vi2;
 	m_vi->m_scrollArea = new QScrollArea( this );
 	widget = new QWidget(this);
 	l = new QGridLayout( this );

@@ -185,7 +185,7 @@ public:
 	void hideEditor();
 	void destroyEditor();
 
-	void process(const float* _in, float* _out) override;
+	void process(const float* const* in, float* const* out) override;
 
 
 	void processMidiEvent(const MidiEvent& event, const f_cnt_t offset) override;
@@ -1042,7 +1042,7 @@ bool RemoteVstPlugin::load( const std::string & _plugin_file )
 
 
 
-void RemoteVstPlugin::process(const float* _in, float* _out)
+void RemoteVstPlugin::process(const float* const* in, float* const* out)
 {
 	// first we gonna post all MIDI-events we enqueued so far
 	if( m_midiEvents.size() )
@@ -1092,15 +1092,15 @@ void RemoteVstPlugin::process(const float* _in, float* _out)
 		return;
 	}
 
-	// NOTE: VST in/out channels are always provided split: in[0..frames] (left), in[frames..2*frames] (right)
+	// The host's channel buffers in shared memory; VST plugins do not write to their inputs
 	for( int i = 0; i < inputCount(); ++i )
 	{
-		m_inputs[i] = const_cast<float*>(&_in[i * bufferSize()]);
+		m_inputs[i] = const_cast<float*>(in[i]);
 	}
 
 	for( int i = 0; i < outputCount(); ++i )
 	{
-		m_outputs[i] = &_out[i * bufferSize()];
+		m_outputs[i] = out[i];
 		memset( m_outputs[i], 0, bufferSize() * sizeof( float ) );
 	}
 
