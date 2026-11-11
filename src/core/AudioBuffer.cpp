@@ -30,6 +30,7 @@
 #include "ConfigManager.h"
 #include "MixHelpers.h"
 #include "SharedMemory.h"
+#include "SharedMemoryPointer.h"
 
 namespace lmms {
 
@@ -74,26 +75,6 @@ static_assert(paddingBytesNeeded(1) == SimdAlignment - 1);
 static_assert(paddingBytesNeeded(7) == SimdAlignment - 7);
 static_assert(paddingBytesNeeded(SimdAlignment) == 0);
 static_assert(paddingBytesNeeded(SimdAlignment + 5) == SimdAlignment - 5);
-
-//! A simplified, free-function version of boost::interprocess::offset_ptr for use in shared memory
-//! For an explanation, see: https://www.boost.org/doc/libs/latest/doc/html/interprocess/offset_ptr.html
-using PointerOffset = std::uint64_t;
-
-template<typename T>
-void assignPointer(PointerOffset& self, T* p) noexcept
-{
-	self = p != nullptr
-		? reinterpret_cast<char*>(p) - reinterpret_cast<char*>(&self) + 1
-		: 1;
-}
-
-template<typename T>
-auto toPointer(PointerOffset& self) noexcept -> T*
-{
-	return self != 1
-		? reinterpret_cast<T*>(reinterpret_cast<char*>(&self) + self - 1)
-		: nullptr;
-}
 
 } // namespace
 
@@ -349,6 +330,20 @@ void AudioBufferData::create(f_cnt_t frames, ch_cnt_t accessChannels, ch_cnt_t s
 
 void AudioBufferData::destroy()
 {
+	// Nothing was ever allocated (e.g. an empty AudioBufferData)
+	if (!m_sourceBufferResource || !m_accessBufferResource)
+	{
+		m_accessBuffer = nullptr;
+		m_sourceBuffer = nullptr;
+		m_interleavedBuffer = nullptr;
+		m_frames = 0;
+		m_accessChannels = 0;
+		m_sourceChannels = 0;
+		m_allocation = nullptr;
+		m_allocationSize = 0;
+		return;
+	}
+
 	if (!isView())
 	{
 		// m_accessBuffer is owning only if the access buffer was allocated separately from the rest

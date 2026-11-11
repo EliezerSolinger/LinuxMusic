@@ -34,6 +34,7 @@
 #include "DeprecationHelper.h"
 #include "EffectSelectDialog.h"
 #include "EffectView.h"
+#include "PluginInstance.h"
 #include "GroupBox.h"
 
 
@@ -145,8 +146,9 @@ void EffectRackView::deletePlugin( EffectView* view )
 	Effect * e = view->effect();
 	m_effectViews.erase( std::find( m_effectViews.begin(), m_effectViews.end(), view ) );
 	delete view;
+
+	// The chain owns the effect and deletes it
 	fxChain()->removeEffect( e );
-	e->deleteLater(); // TODO: Better memory management
 	update();
 }
 
@@ -156,11 +158,12 @@ void EffectRackView::deletePlugin( EffectView* view )
 void EffectRackView::update()
 {
 	QWidget * w = m_scrollArea->widget();
-	QVector<bool> view_map( qMax<int>( fxChain()->m_effects.size(),
+	QVector<bool> view_map( qMax<int>( fxChain()->effects().size(),
 						m_effectViews.size() ), false );
 
-	for (const auto& effect : fxChain()->m_effects)
+	for (const auto& instance : fxChain()->effects())
 	{
+		Effect* effect = instance->effect();
 		int i = 0;
 		for (const auto& effectView : m_effectViews)
 		{
@@ -173,7 +176,7 @@ void EffectRackView::update()
 		}
 		if( i >= m_effectViews.size() )
 		{
-			auto view = new EffectView(effect, w);
+			auto view = new EffectView(effect, w, instance->audioPortsModel());
 			connect(view, &EffectView::movedUp, this, &EffectRackView::moveUp);
 			connect(view, &EffectView::movedDown, this, &EffectRackView::moveDown);
 			connect(view, &EffectView::deletedPlugin, this, &EffectRackView::deletePlugin, Qt::QueuedConnection);
@@ -244,9 +247,10 @@ void EffectRackView::addEffect()
 		return;
 	}
 
-	Effect * fx = esd.instantiateSelectedPlugin( fxChain() );
+	auto instance = esd.instantiateSelectedPlugin( fxChain() );
+	Effect* fx = instance->effect();
 
-	fxChain()->appendEffect( fx );
+	fxChain()->appendEffect(std::move(instance));
 	update();
 
 	// Find the effectView, and show the controls

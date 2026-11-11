@@ -24,176 +24,97 @@
 
 #include "PluginInstance.h"
 
+#include <QDomElement>
+
 #include "AudioEngine.h"
+#include "AudioPortsRouter.h"
 #include "DummyEffect.h"
-#include "DummyInstrument.h"
 #include "Effect.h"
+#include "Engine.h"
 #include "Instrument.h"
+#include "InstrumentTrack.h"
 
 namespace lmms {
 
-PluginInstance::PluginInstance(bool isInstrument, const QString& pluginName, InstrumentTrack* track,
+namespace
+{
+
+auto instantiate(Plugin::Type type, const QString& pluginName, Model* parent,
+	const Plugin::Descriptor::SubPluginFeatures::Key* key, bool keyFromDnd) -> std::unique_ptr<Plugin>
+{
+	if (type == Plugin::Type::Instrument)
+	{
+		return std::unique_ptr<Plugin>{
+			Instrument::instantiate(pluginName, dynamic_cast<InstrumentTrack*>(parent), key, keyFromDnd)};
+	}
+	return std::unique_ptr<Plugin>{Effect::instantiate(pluginName, parent, key)};
+}
+
+} // namespace
+
+
+
+
+PluginInstance::PluginInstance(Plugin::Type type, const QString& pluginName, Model* parent,
 	const Plugin::Descriptor::SubPluginFeatures::Key* key, bool keyFromDnd)
-	: m_remoteBufferResource{m_remoteBufferData}
+	: m_type{type}
+	, m_remoteBufferResource{m_remoteBufferData}
 {
-	load(isInstrument, pluginName, track, key, keyFromDnd);
+	attach(instantiate(type, pluginName, parent, key, keyFromDnd));
 }
 
-void PluginInstance::load(bool isInstrument, const QString& pluginName, InstrumentTrack* track,
-	const Plugin::Descriptor::SubPluginFeatures::Key* key, bool keyFromDnd)
+
+
+
+PluginInstance::PluginInstance(std::unique_ptr<Plugin> plugin, Plugin::Type type)
+	: m_type{type}
+	, m_remoteBufferResource{m_remoteBufferData}
 {
-	if (isInstrument)
-	{
-		m_plugin = Instrument::instantiate(pluginName, track, key, keyFromDnd);
-	}
-	else
-	{
-		m_plugin = Effect::instantiate(pluginName, track, key);
-	}
-
-	if (!m_plugin) { return; }
-
-	auto& proc = audioProcessor();
-
-	const f_cnt_t = frames = Engine::audioEngine()->framesPerPeriod();
-
-	const ch_cnt_t channelsIn   = proc.channelCount(true);
-	const group_cnt_t groupsIn  = proc.channelGroupCount(true);
-	const ch_cnt_t channelsOut  = proc.channelCount(false);
-	const group_cnt_t groupsOut = proc.channelGroupCount(false);
-
-	const ch_cnt_t totalChannels = channelsIn + channelsOut;
-	if (totalChannels == 0) { /* TODO: ERROR */ }
-
-	const bool isShared = proc.usesSharedMemoryBuffers();
-	const auto resource = isShared
-		? &m_remoteBufferResource
-		: std::pmr::get_default_resource();
-	auto& bufferData = isShared ? m_remoteBuffer : m_localBuffer;
-
-	if (proc.usesInterleavedBuffers())
-	{
-		// Legacy plugin which uses interleaved 2-channel buffer
-		assert(channelsIn == 0 || channelsIn == 2);
-		assert(channelsOut == 0 || channelsOut == 2);
-		bufferData.create(frames, 0, true, resource);
-
-		// The input and output AudioBuffers share the same interleaved buffer
-		// for in-place processing
-		m_inputs  = AudioBuffer{bufferData, 0, 0};
-		m_outputs = AudioBuffer{bufferData, 0, 0};
-	}
-	else
-	{
-		// First, check if there are any in-place pairs which would let us
-		// reduce the number of channel buffers needed, since an in-place pair
-		// only needs one channel buffer, not two
-		auto channelBuffersToAllocate = totalChannels;
-		m_inplacePairsInToOut.clear();
-		m_inplacePairsInToOut.resize(channelsIn, std::nullopt);
-		m_inplacePairsOutToIn.clear();
-		m_inplacePairsOutToIn.resize(channelsOut, std::nullopt);
-		if (channelsOut > 0)
-		{
-			auto inplacePairCount = ch_cnt_t{0};
-
-			for (ch_cnt_t input = 0; input < channelsIn; ++input)
-			{
-				auto pair = proc.getInplacePair(input);
-				if (!pair) { continue; }
-
-				if (*pair >= channelsOut)
-				{
-					// Invalid output channel index
-					assert(false);
-					continue;
-				}
-
-				if (m_inplacePairsOutToIn.at(*pair).has_value())
-				{
-					// Two input-side buffers are paired with the same output-side buffer
-					assert(false);
-					continue;
-				}
-
-				m_inplacePairsInToOut[input] = pair;
-				m_inplacePairsOutToIn[*pair] = input;
-				++inplacePairCount;
-			}
-
-			// Check for an incorrect getInplacePair() implementation
-			if (inplacePairCount > std::min(channelsIn, channelsOut))
-			{
-				assert(false);
-				std::ranges::fill(m_inplacePairsInToOut, std::nullopt);
-				std::ranges::fill(m_inplacePairsOutToIn, std::nullopt);
-				inplacePairCount = 0;
-			}
-
-			// Only one buffer needs to be allocated for each in-place pair, not two
-			channelBuffersToAllocate -= inplacePairCount;
-		}
-
-		// TODO: For this use case, `channels` is greater than `channelsToAllocate` rather than the other way around with m_inputs and m_outputs.
-		bufferData.create(frames, totalChannels, channelBuffersToAllocate, false, resource);
-
-		m_inputs  = AudioBuffer{bufferData, 0, channelsIn};
-		m_outputs = AudioBuffer{bufferData, channelsIn, channelsOut};
-
-		// TODO: Channel mapping
-
-
-
-
-
-
-
-		// The input and output AudioBuffers are sourced from a single AudioBufferData
-		m_inputs  = AudioBuffer{bufferData, 0, channelsIn};
-		m_outputs = AudioBuffer{bufferData, channelsIn, channelsOut};
-	}
-
-	m_inputs.setGroups(proc.channelGroupCount(), [&](group_cnt_t idx, ChannelGroup& group) -> ch_cnt_t {
-		return proc.getChannelGroup(idx, true, group);
-	});
-
-	m_outputs.setGroups(proc.channelGroupCount(), [&](group_cnt_t idx, ChannelGroup& group) -> ch_cnt_t {
-		return proc.getChannelGroup(idx, false, group);
-	});
-
+	attach(std::move(plugin));
 }
 
-void PluginInstance::unload(bool deletePlugin)
-{
 
+
+
+PluginInstance::~PluginInstance()
+{
+	detach();
 }
 
-auto PluginInstance::process(AudioBuffer& trackChannels, NotePlayHandle* nph) -> bool
-{
-	// TODO: Route trackChannels into plugin here
 
-	auto context = ProcessContext{&m_inputs, &m_outputs, nph};
-	const auto status = audioProcessor().process(context);
 
-	// TODO: Route out of plugin here
-
-	return status;
-}
-
-auto PluginInstance::isRemotePlugin() const -> bool
-{
-	return m_isRemotePlugin;
-}
 
 auto PluginInstance::effect() noexcept -> Effect*
 {
-	return dynamic_cast<Effect*>(m_plugin);
+	return dynamic_cast<Effect*>(m_plugin.get());
 }
+
+
+
+
+auto PluginInstance::effect() const noexcept -> const Effect*
+{
+	return dynamic_cast<const Effect*>(m_plugin.get());
+}
+
+
+
 
 auto PluginInstance::instrument() noexcept -> Instrument*
 {
-	return dynamic_cast<Instrument*>(m_plugin);
+	return dynamic_cast<Instrument*>(m_plugin.get());
 }
+
+
+
+
+auto PluginInstance::instrument() const noexcept -> const Instrument*
+{
+	return dynamic_cast<const Instrument*>(m_plugin.get());
+}
+
+
+
 
 auto PluginInstance::effectRef() -> Effect&
 {
@@ -201,44 +122,385 @@ auto PluginInstance::effectRef() -> Effect&
 	return dynamic_cast<Effect&>(*m_plugin);
 }
 
+
+
+
 auto PluginInstance::instrumentRef() -> Instrument&
 {
 	assert(m_plugin != nullptr);
 	return dynamic_cast<Instrument&>(*m_plugin);
 }
 
+
+
+
+void PluginInstance::attach(std::unique_ptr<Plugin> plugin)
+{
+	m_plugin = std::move(plugin);
+	if (!m_plugin) { return; }
+
+	m_plugin->m_host = this;
+
+	setState(State::Loaded, true);
+
+	m_processor = dynamic_cast<AudioProcessor*>(m_plugin.get());
+	if (!m_processor) { return; }
+
+	m_audioPorts = std::make_unique<AudioPortsModel>(isInstrument());
+	setUpAudioPorts();
+	activate();
+}
+
+
+
+
+void PluginInstance::detach()
+{
+	if (!m_plugin) { return; }
+
+	deactivate();
+
+	// The views refer to the buffer data, so drop them first
+	m_inputs = AudioBuffer{};
+	m_outputs = AudioBuffer{};
+	m_localBuffer.destroy();
+	m_remoteBuffer.destroy();
+
+	m_audioPorts.reset();
+	m_processor = nullptr;
+	m_plugin.reset();
+	m_state.store(0, std::memory_order_relaxed);
+}
+
+
+
+
+void PluginInstance::setUpAudioPorts()
+{
+	assert(m_processor != nullptr);
+	auto& proc = *m_processor;
+
+	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+	const ch_cnt_t channelsIn = proc.channelCount(true);
+	const ch_cnt_t channelsOut = proc.channelCount(false);
+	const auto totalChannels = static_cast<ch_cnt_t>(channelsIn + channelsOut);
+
+	m_inputs = AudioBuffer{};
+	m_outputs = AudioBuffer{};
+
+	if (totalChannels == 0)
+	{
+		// A processor without audio ports cannot do anything
+		setState(State::Error, true);
+		return;
+	}
+
+	m_interleaved = proc.usesInterleavedBuffers();
+	if (m_interleaved && ((channelsIn != 0 && channelsIn != 2) || channelsOut != 2))
+	{
+		// Interleaved buffers are only supported for legacy stereo plugins
+		setState(State::Error, true);
+		return;
+	}
+
+	// Find the in-place pairs: each pair needs one channel buffer, not two
+	m_inplacePairsInToOut.assign(channelsIn, std::nullopt);
+	m_inplacePairsOutToIn.assign(channelsOut, std::nullopt);
+	auto inplacePairCount = ch_cnt_t{0};
+	for (ch_cnt_t input = 0; input < channelsIn && channelsOut > 0; ++input)
+	{
+		const auto pair = proc.getInplacePair(input);
+		if (!pair) { continue; }
+
+		// Each side may only be part of one pair
+		if (*pair >= channelsOut || m_inplacePairsOutToIn[*pair].has_value())
+		{
+			assert(false && "invalid AudioProcessor::getInplacePair() implementation");
+			continue;
+		}
+
+		m_inplacePairsInToOut[input] = pair;
+		m_inplacePairsOutToIn[*pair] = input;
+		++inplacePairCount;
+	}
+
+	m_fullyInPlace = channelsIn == 0 || (inplacePairCount == channelsIn && channelsIn == channelsOut);
+	if (m_interleaved && !m_fullyInPlace)
+	{
+		setState(State::Error, true);
+		return;
+	}
+
+	// Remote plugins get their buffers in shared memory
+	m_isRemotePlugin = proc.usesSharedMemoryBuffers();
+	auto& data = m_isRemotePlugin ? m_remoteBuffer : m_localBuffer;
+	const auto resource = m_isRemotePlugin
+		? static_cast<std::pmr::memory_resource*>(&m_remoteBufferResource)
+		: std::pmr::get_default_resource();
+
+	// Access buffer: inputs followed by outputs. Source buffer: one buffer per input and per unpaired output.
+	const auto sourceChannels = static_cast<ch_cnt_t>(totalChannels - inplacePairCount);
+	data.create(frames, totalChannels, sourceChannels, m_interleaved, resource, std::pmr::get_default_resource());
+
+	auto inputSource = std::vector<ch_cnt_t>(channelsIn);
+	auto nextSource = ch_cnt_t{0};
+	for (ch_cnt_t input = 0; input < channelsIn; ++input)
+	{
+		inputSource[input] = nextSource++;
+		data.mapAccessBuffer(input, inputSource[input]);
+	}
+	for (ch_cnt_t output = 0; output < channelsOut; ++output)
+	{
+		const auto pairedInput = m_inplacePairsOutToIn[output];
+		data.mapAccessBuffer(channelsIn + output, pairedInput ? inputSource[*pairedInput] : nextSource++);
+	}
+	assert(nextSource == sourceChannels);
+
+	m_inputs = AudioBuffer{data, ch_cnt_t{0}, channelsIn};
+	m_outputs = AudioBuffer{data, channelsIn, channelsOut};
+
+	if (channelsIn > 0)
+	{
+		m_inputs.setGroups(proc.channelGroupCount(true), [&](group_cnt_t index, AudioBuffer::ChannelGroup& group) {
+			return proc.getChannelGroup(index, true, group);
+		});
+	}
+	m_outputs.setGroups(proc.channelGroupCount(false), [&](group_cnt_t index, AudioBuffer::ChannelGroup& group) {
+		return proc.getChannelGroup(index, false, group);
+	});
+
+	// TODO: Get the track channel count from the instrument track or mixer channel once they have more than 2
+	m_audioPorts->setAllChannelCounts(DEFAULT_CHANNELS, channelsIn, channelsOut);
+
+	if (m_isRemotePlugin)
+	{
+		proc.onSharedMemoryChange({m_remoteBufferData.key(), totalChannels, sourceChannels, frames});
+	}
+
+	setState(State::Error, false);
+}
+
+
+
+
+void PluginInstance::activate()
+{
+	if (!m_processor || (state() & static_cast<std::uint8_t>(State::Error))) { return; }
+
+	const auto engine = Engine::audioEngine();
+	if (!m_processor->activate(engine->outputSampleRate(), engine->framesPerPeriod()))
+	{
+		setState(State::Error, true);
+		return;
+	}
+	setState(State::Active, true);
+
+	if (m_processor->startProcessing()) { setState(State::Processing, true); }
+}
+
+
+
+
+void PluginInstance::deactivate()
+{
+	if (!m_processor) { return; }
+
+	if (state() & static_cast<std::uint8_t>(State::Processing))
+	{
+		m_processor->stopProcessing();
+		setState(State::Processing, false);
+	}
+	if (state() & static_cast<std::uint8_t>(State::Active))
+	{
+		m_processor->deactivate();
+		setState(State::Active, false);
+	}
+}
+
+
+
+
+void PluginInstance::setState(State flag, bool on)
+{
+	const auto bit = static_cast<std::uint8_t>(flag);
+	if (on) { m_state.fetch_or(bit, std::memory_order_relaxed); }
+	else { m_state.fetch_and(static_cast<std::uint8_t>(~bit), std::memory_order_relaxed); }
+}
+
+
+
+
+void PluginInstance::reactivate()
+{
+	if (!m_processor) { return; }
+
+	Engine::audioEngine()->requestChangeInModel();
+	deactivate();
+	setUpAudioPorts();
+	activate();
+	Engine::audioEngine()->doneChangeInModel();
+}
+
+
+
+
+auto PluginInstance::process(AudioBuffer& trackChannels, NotePlayHandle* nph) -> bool
+{
+	const auto runnable = static_cast<std::uint8_t>(State::Active) | static_cast<std::uint8_t>(State::Processing);
+	if (!m_processor || (state() & runnable) != runnable) { return false; }
+
+	auto effect = isInstrument() ? nullptr : static_cast<Effect*>(m_plugin.get());
+	const auto& usedOutputs = m_audioPorts->out().usedTrackChannels();
+
+	if (effect)
+	{
+		if (!effect->isAwake())
+		{
+			if (!trackChannels.hasSignal(m_audioPorts->in().usedTrackChannels()))
+			{
+				// Sleeping plugins zero the track channels their outputs are routed to, so that waking up
+				// does not suddenly switch from passthrough to processed audio. Otherwise auto-quit could
+				// become audibly noticeable.
+				trackChannels.silenceChannels(usedOutputs);
+				return false;
+			}
+			effect->wakeUp();
+			setState(State::Sleeping, false);
+		}
+
+		if (!effect->isProcessingAudio())
+		{
+			// Disabled or bypassed: the audio passes through unchanged
+			effect->processBypassedImpl();
+			return false;
+		}
+	}
+
+	const auto status = processAudio(trackChannels, nph);
+
+	const bool corrupted = Engine::audioEngine()->sanitizationEnabled() && trackChannels.sanitize(usedOutputs);
+	const bool silentOutput = trackChannels.updateSilenceFlags(usedOutputs);
+
+	if (!effect) { return true; }
+
+	effect->m_corrupted.store(corrupted, std::memory_order_relaxed);
+
+	switch (status)
+	{
+		case ProcessStatus::Continue:
+			break;
+		case ProcessStatus::ContinueIfNotQuiet:
+			effect->handleAutoQuit(silentOutput);
+			break;
+		case ProcessStatus::Sleep:
+			effect->goToSleep();
+			break;
+	}
+
+	if (!effect->isAwake()) { setState(State::Sleeping, true); }
+	return effect->isAwake();
+}
+
+
+
+
+auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* nph) -> ProcessStatus
+{
+	auto& proc = *m_processor;
+
+	// Direct routing: a stereo in-place plugin connected L --> L, R --> R to the main track channels
+	// works on the track channels themselves, without any copying
+	const auto direct = m_audioPorts->directRouting();
+	const bool stereoInPlace = m_fullyInPlace && m_inputs.channels() == 2 && m_outputs.channels() == 2;
+	if (direct && *direct == 0 && stereoInPlace
+		&& (m_interleaved ? trackChannels.hasInterleavedBuffer() : trackChannels.channels() == 2))
+	{
+		auto context = ProcessContext{nullptr, &trackChannels, nph};
+		const auto status = proc.process(context);
+
+		// Keep the track's planar and interleaved buffers in sync
+		if (m_interleaved) { toPlanar(trackChannels.interleavedBuffer(), trackChannels.groupBuffers(0)); }
+		else if (trackChannels.hasInterleavedBuffer())
+		{
+			toInterleaved(trackChannels.groupBuffers(0), trackChannels.interleavedBuffer());
+		}
+		for (ch_cnt_t ch = 0; ch < 2; ++ch) { trackChannels.assumeNonSilent(ch); }
+		return status;
+	}
+
+	AudioPortsRouter::send(*m_audioPorts, trackChannels, m_inputs);
+
+	if (m_interleaved) { toInterleaved(m_outputs.groupBuffers(0), m_outputs.interleavedBuffer()); }
+
+	auto context = m_fullyInPlace
+		? ProcessContext{nullptr, &m_outputs, nph}
+		: ProcessContext{&m_inputs, &m_outputs, nph};
+	const auto status = proc.process(context);
+
+	if (m_interleaved) { toPlanar(m_outputs.interleavedBuffer(), m_outputs.groupBuffers(0)); }
+
+	AudioPortsRouter::receive(*m_audioPorts, m_outputs, trackChannels);
+
+	// Keep the track's interleaved buffer in sync with the main track channels
+	const auto& usedOutputs = m_audioPorts->out().usedTrackChannels();
+	if (trackChannels.hasInterleavedBuffer() && (usedOutputs[0] || usedOutputs[1]))
+	{
+		toInterleaved(trackChannels.groupBuffers(0), trackChannels.interleavedBuffer());
+	}
+
+	return status;
+}
+
+
+
+
 void PluginInstance::convertToDummyEffect(Model* parent, const QDomElement& originalPluginData)
 {
-	delete m_plugin;
-	m_plugin = new DummyEffect(parent, originalPluginData);
+	Engine::audioEngine()->requestChangeInModel();
+	detach();
+	m_type = Plugin::Type::Effect;
+	attach(std::make_unique<DummyEffect>(parent, originalPluginData));
+	Engine::audioEngine()->doneChangeInModel();
 }
+
+
+
+
+void PluginInstance::savePins(QDomDocument& doc, QDomElement& pluginElement)
+{
+	if (m_audioPorts) { m_audioPorts->saveState(doc, pluginElement); }
+}
+
+
+
+
+void PluginInstance::loadPins(const QDomElement& pluginElement)
+{
+	if (!m_audioPorts) { return; }
+
+	const auto pins = pluginElement.firstChildElement(m_audioPorts->nodeName());
+	if (!pins.isNull()) { m_audioPorts->restoreState(pins); }
+}
+
+
+
 
 void PluginInstance::rescanAudioPorts(AudioPortsRescanFlag flags)
 {
-	auto& ap = audioProcessor();
-
-	AudioEngine::requestChangeInModel();
-	m_state = State::
-	AudioEngine::doneChangeInModel();
-
-	auto _ = AudioEngine::requestChangesGuard();
-
-	ap.
+	// Any change to the audio ports means new buffers and pin connector dimensions
+	(void)flags;
+	reactivate();
 }
+
+
+
 
 void PluginInstance::useRemotePluginBuffers(bool remote)
 {
-	if (remote == m_isRemotePlugin) { return; }
+	if (!m_processor || remote == m_isRemotePlugin) { return; }
 
-	AudioEngine::requestChangeInModel();
-
-	AudioBufferData& data = remote ? m_remoteBuffer : m_localBuffer;
-	m_inputs = AudioBuffer{data, 0, m_inputs.channels()};
-	m_outputs = AudioBuffer{data, m_inputs.channels(), m_outputs.channels()};
-
-	m_isRemotePlugin = remote;
-
-	AudioEngine::doneChangeInModel();
+	// setUpAudioPorts() asks the processor whether it uses shared memory buffers
+	reactivate();
 }
 
 } // namespace lmms

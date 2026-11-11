@@ -456,9 +456,9 @@ void InstrumentTrackWindow::updateName()
 void InstrumentTrackWindow::updateInstrumentView()
 {
 	delete m_instrumentView;
-	if( m_track->m_instrument != nullptr )
+	if (auto instrument = m_track->instrument())
 	{
-		m_instrumentView = m_track->m_instrument->createView( m_tabWidget );
+		m_instrumentView = instrument->createView( m_tabWidget );
 		m_tabWidget->addTab( m_instrumentView, tr( "Plugin" ), "plugin_tab", 0 );
 		m_tabWidget->setActiveTab( 0 );
 
@@ -481,13 +481,13 @@ void InstrumentTrackWindow::updateInstrumentView()
 		m_midiView->setMaximumSize(maxSize);
 		m_tuningView->setMaximumSize(maxSize);
 
-		m_ssView->setFunctionsHidden(m_track->m_instrument->isSingleStreamed());
+		m_ssView->setFunctionsHidden(instrument->isSingleStreamed());
 
 		modelChanged(); 		// Get the instrument window to refresh
 		m_track->dataChanged(); // Get the text on the trackButton to change
 
 		adjustTabSize(m_instrumentView);
-		m_pianoView->setVisible(m_track->m_instrument->hasNoteInput());
+		m_pianoView->setVisible(instrument->hasNoteInput());
 		// adjust window size
 		layout()->invalidate();
 		resize(sizeHint());

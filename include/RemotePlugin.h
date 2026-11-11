@@ -31,6 +31,7 @@
 #include <QRecursiveMutex>
 
 #include "RemotePluginBase.h"
+#include "AudioProcessor.h"
 #include "SharedMemory.h"
 #include "LmmsTypes.h"
 
@@ -39,7 +40,6 @@ namespace lmms
 
 class MidiEvent;
 class RemotePlugin;
-class RemotePluginAudioPortsController;
 class SampleFrame;
 
 class ProcessWatcher : public QThread
@@ -73,7 +73,7 @@ class LMMS_EXPORT RemotePlugin : public QObject, public RemotePluginBase
 {
 	Q_OBJECT
 public:
-	explicit RemotePlugin(RemotePluginAudioPortsController& audioPorts);
+	RemotePlugin();
 	~RemotePlugin() override;
 
 	inline bool isRunning()
@@ -97,13 +97,22 @@ public:
 
 	bool processMessage( const message & _m ) override;
 
+	/**
+	 * Lets the remote process run one period on the shared audio buffer (see setSharedAudioBuffer()).
+	 *
+	 * @returns false if the remote process could not process, in which case the outputs were not written
+	 */
 	bool process();
 
 	/**
-	 * Updates the shared memory input/output audio buffer, then
-	 * returns a pointer to the buffer or nullptr if an error occurred.
+	 * Tells the remote process where its audio buffers are: a shared memory block created by the host
+	 * (PluginInstance) holding a channel buffer table followed by the channel buffers.
 	 */
-	auto updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*;
+	void setSharedAudioBuffer(const AudioProcessor::SharedBufferInfo& info);
+
+	//! The channel counts the remote process reported, see channelCountsChanged()
+	auto remoteChannelsIn() const -> ch_cnt_t { return m_remoteChannelsIn; }
+	auto remoteChannelsOut() const -> ch_cnt_t { return m_remoteChannelsOut; }
 
 	void processMidiEvent( const MidiEvent&, const f_cnt_t _offset );
 
@@ -147,14 +156,14 @@ public:
 		m_commMutex.unlock();
 	}
 
-	auto audioPorts() -> RemotePluginAudioPortsController&
-	{
-		return *m_audioPorts;
-	}
 
 public slots:
 	virtual void showUI();
 	virtual void hideUI();
+
+signals:
+	//! The remote process reported new input/output channel counts; the plugin should rescan its audio ports
+	void channelCountsChanged(lmms::ch_cnt_t channelsIn, lmms::ch_cnt_t channelsOut);
 
 protected:
 	bool m_failed;
@@ -168,16 +177,11 @@ private:
 
 	QRecursiveMutex m_commMutex;
 
-	RemotePluginAudioPortsController* const m_audioPorts = nullptr;
+	//! Whether the remote process was given a shared audio buffer
+	bool m_hasSharedAudioBuffer = false;
 
-	SharedMemory<float[]> m_audioBuffer; // NOLINT
-
-	ch_cnt_t m_channelsIn = 0;
-	ch_cnt_t m_channelsOut = 0;
-	f_cnt_t m_frames = 0;
-
-	// View into `m_audioBuffer` output buffer
-	std::span<float> m_audioOutputs;
+	ch_cnt_t m_remoteChannelsIn = 0;
+	ch_cnt_t m_remoteChannelsOut = 0;
 
 #ifndef SYNC_WITH_SHM_FIFO
 	int m_server;

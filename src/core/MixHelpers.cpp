@@ -62,7 +62,7 @@ inline void run(SampleFrame* dst, const sample_t* srcLeft, const sample_t* srcRi
 
 bool isSilent(const SampleFrame* src, int frames)
 {
-	return isSilent({&src[0][0], static_cast<std::size_t>(frames * 2)});
+	return isSilent({src->data(), static_cast<std::size_t>(frames * 2)});
 }
 
 bool isSilent(std::span<const sample_t> buffer)

@@ -26,6 +26,9 @@
 #ifndef LMMS_INSTRUMENT_TRACK_H
 #define LMMS_INSTRUMENT_TRACK_H
 
+#include <memory>
+#include <utility>
+
 #include "AudioBusHandle.h"
 #include "InstrumentFunctions.h"
 #include "InstrumentSoundShaping.h"
@@ -92,12 +95,12 @@ public:
 	QString instrumentName() const;
 	const Instrument *instrument() const
 	{
-		return dynamic_cast<const Instrument*>(m_instrument.plugin());
+		return m_instrument ? std::as_const(*m_instrument).instrument() : nullptr;
 	}
 
 	Instrument *instrument()
 	{
-		return dynamic_cast<Instrument*>(m_instrument.plugin());
+		return m_instrument ? m_instrument->instrument() : nullptr;
 	}
 
 	void deleteNotePluginData( NotePlayHandle * _n );
@@ -139,7 +142,10 @@ public:
 
 
 	// load instrument whose name matches given one
-	PluginInstance& loadInstrument(const QString& _instrument_name,
+	//! The host side of the instrument plugin (buffers, pin connector, state)
+	PluginInstance* instrumentInstance() { return m_instrument.get(); }
+
+	Instrument * loadInstrument(const QString & _instrument_name,
 				const Plugin::Descriptor::SubPluginFeatures::Key* key = nullptr,
 				bool keyFromDnd = false);
 
@@ -317,8 +323,7 @@ private:
 	MixerChannelLcdModel m_mixerChannelModel;
 	BoolModel m_useMasterPitchModel;
 
-//	Instrument * m_instrument;
-	PluginInstance m_instrument;
+	std::unique_ptr<PluginInstance> m_instrument;
 	InstrumentSoundShaping m_soundShaping;
 	InstrumentFunctionArpeggio m_arpeggio;
 	InstrumentFunctionNoteStacking m_noteStacking;

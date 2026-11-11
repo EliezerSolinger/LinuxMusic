@@ -40,7 +40,6 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "MidiEvent.h"
-#include "RemotePluginAudioPorts.h"
 #include "Song.h"
 
 #include <QCoreApplication>
@@ -130,7 +129,7 @@ void ProcessWatcher::run()
 
 
 
-RemotePlugin::RemotePlugin(RemotePluginAudioPortsController& audioPorts)
+RemotePlugin::RemotePlugin()
 	: QObject{}
 #ifdef SYNC_WITH_SHM_FIFO
 	, RemotePluginBase{new shmFifo(), new shmFifo()}
@@ -139,7 +138,6 @@ RemotePlugin::RemotePlugin(RemotePluginAudioPortsController& audioPorts)
 #endif
 	, m_failed{true}
 	, m_watcher{this}
-	, m_audioPorts{&audioPorts}
 {
 #ifndef SYNC_WITH_SHM_FIFO
 	struct sockaddr_un sa;
@@ -170,8 +168,6 @@ RemotePlugin::RemotePlugin(RemotePluginAudioPortsController& audioPorts)
 	}
 #endif
 
-	m_audioPorts->connectBuffers(this);
-
 	connect( &m_process, SIGNAL(finished(int,QProcess::ExitStatus)),
 		this, SLOT(processFinished(int,QProcess::ExitStatus)),
 		Qt::DirectConnection );
@@ -187,8 +183,6 @@ RemotePlugin::RemotePlugin(RemotePluginAudioPortsController& audioPorts)
 
 RemotePlugin::~RemotePlugin()
 {
-	m_audioPorts->disconnectBuffers();
-
 	m_watcher.stop();
 	m_watcher.wait();
 
@@ -333,12 +327,6 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 void RemotePlugin::waitForInitDone(bool busyWaiting)
 {
 	m_failed = waitForMessage(IdInitDone, busyWaiting).id != IdInitDone;
-
-	if (!m_failed)
-	{
-		// Activate audio ports after remote plugin is initialized
-		m_audioPorts->activate(Engine::audioEngine()->framesPerPeriod());
-	}
 }
 
 
@@ -346,34 +334,22 @@ void RemotePlugin::waitForInitDone(bool busyWaiting)
 
 bool RemotePlugin::process()
 {
-	if (m_failed || !isRunning())
-	{
-		std::ranges::fill(m_audioOutputs, 0.f);
-		return false;
-	}
+	if (m_failed || !isRunning()) { return false; }
 
-	if (!m_audioBuffer)
+	if (!m_hasSharedAudioBuffer)
 	{
-		// TODO: Is the following logic still correct?
-		// m_audioBuffer being null means we didn't initialize everything so
-		// far so process one message each time (and hope we get
-		// information like SHM-key etc.) until we process messages
-		// in a later stage of this procedure
-		if (m_audioBuffer.size() == 0)
-		{
-			lock();
-			fetchAndProcessAllMessages();
-			unlock();
-		}
-
-		std::ranges::fill(m_audioOutputs, 0.f);
+		// The remote process has not been given its buffers yet, so it cannot process. Handle its pending
+		// messages (e.g. its channel counts) so that the host can set up the buffers.
+		lock();
+		fetchAndProcessAllMessages();
+		unlock();
 		return false;
 	}
 
 	lock();
 	sendMessage(IdStartProcessing);
 
-	if (m_failed || m_audioOutputs.empty())
+	if (m_failed)
 	{
 		unlock();
 		return false;
@@ -388,40 +364,15 @@ bool RemotePlugin::process()
 
 
 
-auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*
+void RemotePlugin::setSharedAudioBuffer(const AudioProcessor::SharedBufferInfo& info)
 {
-	if (channelsIn == 0 && channelsOut == 0)
-	{
-		std::cerr << "Invalid channel count for shared audio buffer\n";
-		return nullptr;
-	}
+	lock();
+	sendMessage(message(IdChangeSharedMemoryKey)
+		.addString(std::string{info.key})
+		.addInt(info.channels));
+	unlock();
 
-	if (channelsIn == m_channelsIn && channelsOut == m_channelsOut && frames == m_frames)
-	{
-		return m_audioBuffer.get();
-	}
-
-	try
-	{
-		m_audioOutputs = {};
-		m_audioBuffer.create((channelsIn + channelsOut) * frames);
-	}
-	catch (const std::runtime_error& error)
-	{
-		std::cerr << "Failed to allocate shared audio buffer: " << error.what() << '\n';
-		m_audioBuffer.detach();
-		return nullptr;
-	}
-
-	m_channelsIn = channelsIn;
-	m_channelsOut = channelsOut;
-	m_frames = frames;
-
-	m_audioOutputs = std::span{m_audioBuffer.get() + channelsIn * frames, channelsOut * frames};
-
-	sendMessage(message(IdChangeSharedMemoryKey).addString(m_audioBuffer.key()));
-
-	return m_audioBuffer.get();
+	m_hasSharedAudioBuffer = !info.key.empty() && info.channels > 0;
 }
 
 
@@ -508,8 +459,9 @@ bool RemotePlugin::processMessage( const message & _m )
 			break;
 
 		case IdChangeInputOutputCount:
-			m_audioPorts->audioPortsModel().setChannelCounts(
-				static_cast<ch_cnt_t>(_m.getInt(0)), static_cast<ch_cnt_t>(_m.getInt(1)));
+			m_remoteChannelsIn = static_cast<ch_cnt_t>(_m.getInt(0));
+			m_remoteChannelsOut = static_cast<ch_cnt_t>(_m.getInt(1));
+			emit channelCountsChanged(m_remoteChannelsIn, m_remoteChannelsOut);
 			break;
 
 		case IdDebugMessage:

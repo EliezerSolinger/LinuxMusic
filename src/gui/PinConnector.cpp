@@ -246,7 +246,7 @@ void PinConnector::paintEvent(QPaintEvent*)
 	const auto inactiveTextColor = normalTextColor.darker(150);
 	for (ch_cnt_t channel = 0; channel < model->in().channelCount(); ++channel)
 	{
-		const bool channelUsed = model->in().usedChannels().at(channel);
+		const bool channelUsed = model->in().usedChannels()[channel];
 		p.setPen(channelUsed ?  normalTextColor : inactiveTextColor);
 
 		const auto transform = QTransform{}.translate(xPos, yPos).rotate(-90);
@@ -264,7 +264,7 @@ void PinConnector::paintEvent(QPaintEvent*)
 	xPos = outMatrixRect.x() + MatrixView::BorderWidth - 2;
 	for (ch_cnt_t channel = 0; channel < model->out().channelCount(); ++channel)
 	{
-		const bool channelUsed = model->out().usedChannels().at(channel);
+		const bool channelUsed = model->out().usedChannels()[channel];
 		p.setPen(channelUsed ?  normalTextColor : inactiveTextColor);
 
 		const auto transform = QTransform{}.translate(xPos, yPos).rotate(-90);

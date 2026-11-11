@@ -481,9 +481,11 @@ void AudioPortsModel::Matrix::updateAllUsedChannels()
 		m_usedTrackChannels[tc] = false;
 		for (ch_cnt_t pc = 0; pc < channelCount(); ++pc)
 		{
-			const bool enabled = this->enabled(tc, pc);
-			m_usedTrackChannels[tc] |= enabled;
-			m_usedChannels[pc] |= enabled;
+			if (this->enabled(tc, pc))
+			{
+				m_usedTrackChannels[tc] = true;
+				m_usedChannels[pc] = true;
+			}
 		}
 	}
 }
@@ -526,8 +528,8 @@ void AudioPortsModel::Matrix::loadSettings(const QDomElement& elem)
 		if (pos <= 0) { throw std::runtime_error{"parse failure"}; }
 #endif
 
-		auto trackChannel = name.midRef(1, pos - 1).toInt();
-		auto processorChannel = name.midRef(pos + 1).toInt();
+		auto trackChannel = QStringView{name}.mid(1, pos - 1).toInt();
+		auto processorChannel = QStringView{name}.mid(pos + 1).toInt();
 #ifndef NDEBUG
 		if (trackChannel == 0 || processorChannel == 0) { throw std::runtime_error{"failed to parse integer"}; }
 #endif

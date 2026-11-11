@@ -201,9 +201,23 @@ public:
 	//!       this would be handled transparently on the host side without the knowledge of the plugin.
 	virtual auto usesSharedMemoryBuffers() const -> bool { return false; }
 
-	//! Allows the processor to respond to changes in the shared memory allocation.
-	//! TODO: Remove once remote plugins are an implementation detail invisible to plugin implementations.
-	virtual void onSharedMemoryChange(std::string_view newKey) const {}
+	//! Where the host put the processor's buffers when usesSharedMemoryBuffers() is true
+	struct SharedBufferInfo
+	{
+		std::string_view key;		//!< shared memory key
+		ch_cnt_t channels;			//!< inputs followed by outputs, see channelCount()
+		ch_cnt_t sourceChannels;	//!< actual channel buffers (in-place pairs share one)
+		f_cnt_t frames;				//!< frames per channel buffer
+	};
+
+	/**
+	 * Allows the processor to respond to changes in the shared memory allocation, e.g. by telling its
+	 * remote process to attach to it. The allocation starts with a PointerOffset per channel (inputs
+	 * followed by outputs) pointing to that channel's buffer; see SharedMemoryPointer.h.
+	 *
+	 * TODO: Remove once remote plugins are an implementation detail invisible to plugin implementations.
+	 */
+	virtual void onSharedMemoryChange(const SharedBufferInfo& info) { (void)info; }
 };
 
 ////////////////////

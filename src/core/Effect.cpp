@@ -94,7 +94,7 @@ void Effect::loadSettings( const QDomElement & _this )
 
 Effect * Effect::instantiate( const QString& pluginName,
 				Model * _parent,
-				Descriptor::SubPluginFeatures::Key * _key )
+				const Descriptor::SubPluginFeatures::Key * _key )
 {
 	Plugin * p = Plugin::instantiateWithKey( pluginName, _parent, _key );
 	// check whether instantiated plugin is an effect

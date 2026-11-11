@@ -28,6 +28,8 @@
 
 #include "Effect.h"
 
+#include <memory>
+
 #include <QDialog>
 #include <QRegularExpression>
 #include <QSortFilterProxyModel>
@@ -84,7 +86,8 @@ class EffectSelectDialog : public QDialog
 public:
 	EffectSelectDialog(QWidget* parent);
 
-	Effect* instantiateSelectedPlugin(EffectChain* parent);
+	//! @returns the selected effect, or a DummyEffect if it could not be loaded
+	std::unique_ptr<PluginInstance> instantiateSelectedPlugin(EffectChain* parent);
 
 protected slots:
 	void acceptSelection();

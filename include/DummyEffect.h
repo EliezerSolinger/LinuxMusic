@@ -88,12 +88,12 @@ public:
 
 
 
-class DummyEffect : public Effect
+class DummyEffect : public LegacyEffect
 {
 	Q_OBJECT
 public:
 	DummyEffect( Model * _parent, const QDomElement& originalPluginData ) :
-		Effect( nullptr, _parent, nullptr ),
+		LegacyEffect( nullptr, _parent, nullptr ),
 		m_controls( this ),
 		m_originalPluginData( originalPluginData )
 	{
@@ -108,9 +108,10 @@ public:
 		return &m_controls;
 	}
 
-	bool processCoreImpl(AudioBuffer&) override
+	//! Never called: a DummyEffect does not run (see setDontRun() above), so its audio passes through
+	auto process(ProcessContext&) -> ProcessStatus override
 	{
-		return false;
+		return ProcessStatus::Sleep;
 	}
 
 	const QDomElement& originalPluginData() const

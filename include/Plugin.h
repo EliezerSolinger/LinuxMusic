@@ -54,6 +54,8 @@ class PluginView;
  */
 class HostContext {};
 
+class Host;
+
 /**
 	Abstract representation of a plugin
 
@@ -306,6 +308,10 @@ public:
 	//! Create a view for the model
 	gui::PluginView * createView( QWidget * parent );
 
+	//! The host side of this plugin instance (set by the host right after the plugin is created, so it is
+	//! not available in the plugin's constructor). nullptr for plugins not managed by a PluginInstance.
+	auto host() const -> Host* { return m_host; }
+
 protected:
 	//! Create a view for the model
 	virtual gui::PluginView* instantiateView( QWidget * ) = 0;
@@ -319,6 +325,10 @@ private:
 
 	// pointer to instantiation-function in plugin
 	using InstantiationHook = Plugin* (*)(Model*, void*);
+
+	Host* m_host = nullptr;
+
+	friend class PluginInstance;
 } ;
 
 

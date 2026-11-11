@@ -243,7 +243,13 @@ protected:
 	 * The parameters will contain the new values, but `in().channelCount()` and `out().channelCount()`
 	 * will still return the old values until after this method is called.
 	 */
-	virtual void bufferPropertiesChanging(ch_cnt_t inChannels, ch_cnt_t outChannels, f_cnt_t frames) = 0;
+	virtual void bufferPropertiesChanging(ch_cnt_t inChannels, ch_cnt_t outChannels, f_cnt_t frames)
+	{
+		// The PluginInstance creates the buffers after the plugin's audio ports are scanned
+		(void)inChannels;
+		(void)outChannels;
+		(void)frames;
+	}
 
 	/**
 	 * Audio port implementations can override this to provide custom channel names,

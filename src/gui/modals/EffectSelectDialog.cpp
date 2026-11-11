@@ -29,6 +29,7 @@
 #include "embed.h"
 #include "PluginCategories.h"
 #include "PluginFactory.h"
+#include "PluginInstance.h"
 
 #include <QApplication>
 #include <QDialogButtonBox>
@@ -195,18 +196,16 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 }
 
 
-Effect* EffectSelectDialog::instantiateSelectedPlugin(EffectChain* parent)
+std::unique_ptr<PluginInstance> EffectSelectDialog::instantiateSelectedPlugin(EffectChain* parent)
 {
-	Effect* result = nullptr;
 	if (!m_currentSelection.name.isEmpty() && m_currentSelection.desc)
 	{
-		result = Effect::instantiate(m_currentSelection.desc->name, parent, &m_currentSelection);
+		auto instance = std::make_unique<PluginInstance>(
+			Plugin::Type::Effect, m_currentSelection.desc->name, parent, &m_currentSelection);
+		if (instance->effect()) { return instance; }
 	}
-	if (!result)
-	{
-		result = new DummyEffect(parent, QDomElement());
-	}
-	return result;
+	return std::make_unique<PluginInstance>(
+		std::make_unique<DummyEffect>(parent, QDomElement()), Plugin::Type::Effect);
 }
 
 void EffectSelectDialog::acceptSelection()

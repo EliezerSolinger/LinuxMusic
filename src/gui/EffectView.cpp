@@ -33,6 +33,7 @@
 
 #include "AudioPortsModel.h"
 #include "CaptionMenu.h"
+#include "DockPanel.h"
 #include "DummyEffect.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
@@ -48,8 +49,9 @@
 namespace lmms::gui
 {
 
-EffectView::EffectView( Effect * _model, QWidget * _parent ) :
+EffectView::EffectView(Effect* _model, QWidget* _parent, AudioPortsModel* audioPorts) :
 	PluginView( _model, _parent ),
+	m_audioPorts(audioPorts),
 	m_bg( embed::getIconPixmap( "effect_plugin" ) ),
 	m_subWindow( nullptr ),
 	m_controlView(nullptr),
@@ -96,7 +98,7 @@ EffectView::EffectView( Effect * _model, QWidget * _parent ) :
 		}
 	}
 
-	if (auto ap = effect()->audioPortsModel())
+	if (auto ap = m_audioPorts)
 	{
 		const auto formatString = tr("Pin connector\n%1");
 
@@ -104,7 +106,7 @@ EffectView::EffectView( Effect * _model, QWidget * _parent ) :
 		m_pinConnectorButton->setToolTip(formatString.arg(ap->getChannelCountText()));
 
 		connect(ap, &AudioPortsModel::propertiesChanged, [=, this]() {
-			m_pinConnectorButton->setToolTip(formatString.arg(effect()->audioPortsModel()->getChannelCountText()));
+			m_pinConnectorButton->setToolTip(formatString.arg(m_audioPorts->getChannelCountText()));
 		});
 
 		m_pinConnectorButton->setGeometry(144 + 32, 12, 28, 28);
@@ -154,7 +156,7 @@ void EffectView::editControls()
 
 void EffectView::togglePinConnector()
 {
-	auto ap = effect()->audioPortsModel();
+	auto ap = m_audioPorts;
 	if (!ap) { return; }
 
 	if (!m_pinConnectorView)

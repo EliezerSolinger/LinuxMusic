@@ -26,6 +26,9 @@
 #define LMMS_PLUGIN_INSTANCE_H
 
 #include <atomic>
+#include <memory>
+#include <optional>
+#include <vector>
 
 #include "AudioBuffer.h"
 #include "AudioPortsModel.h"
@@ -34,94 +37,150 @@
 #include "Plugin.h"
 #include "SharedMemory.h"
 
+class QDomDocument;
+class QDomElement;
 class QString;
 
 namespace lmms {
 
 class Effect;
 class Instrument;
-class InstrumentTrack;
 
 /**
  * Manages a plugin instance and implements the host side of the LMMS plugin API.
  *
+ * Owns the plugin, the buffers for its inputs and outputs, and the pin connector (AudioPortsModel) that
+ * connects them to the track channels of the instrument track or mixer channel the plugin belongs to.
+ *
+ * For a plugin implementing AudioProcessor, process() routes the track channels to the plugin's inputs,
+ * runs the plugin and routes its outputs back to the track channels. Input and output channels the plugin
+ * declares as in-place pairs share a buffer, and when the pins connect a stereo in-place plugin straight to
+ * the main track channels, the plugin works on the track channels directly without any copying.
+ *
+ * Instruments that do not implement AudioProcessor yet are still owned here, but play through their own
+ * methods (see InstrumentTrack).
+ *
  * This class is not accessible to plugins - it is host-side only.
  */
-class PluginInstance : public Host
+class LMMS_EXPORT PluginInstance : public Host
 {
 public:
 	using State = AudioProcessor::State;
 
-	PluginInstance(bool isInstrument, const QString& pluginName, InstrumentTrack* track,
+	/**
+	 * Loads a plugin.
+	 *
+	 * @param type Plugin::Type::Instrument or Plugin::Type::Effect
+	 * @param parent the InstrumentTrack for instruments, the EffectChain for effects
+	 * @param key sub-plugin key, if any
+	 */
+	PluginInstance(Plugin::Type type, const QString& pluginName, Model* parent,
 		const Plugin::Descriptor::SubPluginFeatures::Key* key, bool keyFromDnd = false);
 
-	void load(bool isInstrument, const QString& pluginName, InstrumentTrack* track,
-		const Plugin::Descriptor::SubPluginFeatures::Key* key, bool keyFromDnd = false);
+	//! Takes ownership of an already created plugin
+	PluginInstance(std::unique_ptr<Plugin> plugin, Plugin::Type type);
 
-	void unload(bool deletePlugin = true);
+	~PluginInstance() override;
+
+	PluginInstance(const PluginInstance&) = delete;
+	PluginInstance(PluginInstance&&) = delete;
+	auto operator=(const PluginInstance&) -> PluginInstance& = delete;
+	auto operator=(PluginInstance&&) -> PluginInstance& = delete;
 
 	auto isLoaded() const -> bool { return m_plugin != nullptr; }
+	auto isInstrument() const -> bool { return m_type == Plugin::Type::Instrument; }
 
-	auto process(AudioBuffer& trackChannels, NotePlayHandle* nph = nullptr) -> bool;
-
-	auto isRemotePlugin() const -> bool;
-
-	auto plugin() const -> const Plugin* { return m_plugin; }
-	auto plugin() -> Plugin* { return m_plugin; }
+	auto plugin() const -> const Plugin* { return m_plugin.get(); }
+	auto plugin() -> Plugin* { return m_plugin.get(); }
 	auto effect() noexcept -> Effect*;
+	auto effect() const noexcept -> const Effect*;
 	auto instrument() noexcept -> Instrument*;
-
+	auto instrument() const noexcept -> const Instrument*;
 	auto effectRef() -> Effect&;
 	auto instrumentRef() -> Instrument&;
-	auto audioProcessor() -> AudioProcessor& { return dynamic_cast<AudioProcessor&>(*m_plugin); }
 
+	//! @returns the plugin's audio processor, or nullptr if the plugin does not implement AudioProcessor yet
+	auto audioProcessor() -> AudioProcessor* { return m_processor; }
+
+	//! @returns the pin connector, or nullptr if the plugin does not implement AudioProcessor yet
+	auto audioPortsModel() -> AudioPortsModel* { return m_audioPorts.get(); }
+	auto audioPortsModel() const -> const AudioPortsModel* { return m_audioPorts.get(); }
+
+	auto state() const -> std::uint8_t { return m_state.load(std::memory_order_relaxed); }
+	auto isRemotePlugin() const -> bool { return m_isRemotePlugin; }
+
+	/**
+	 * Processes one period. [audio thread]
+	 *
+	 * Effects: wakes up, sleeps (auto-quit) or bypasses the effect as needed, and sanitizes its output.
+	 *
+	 * @param trackChannels the track channels of the instrument track or mixer channel
+	 * @returns for effects, whether the effect should keep being processed; for instruments, true
+	 */
+	auto process(AudioBuffer& trackChannels, NotePlayHandle* nph = nullptr) -> bool;
+
+	//! Replaces the plugin with a DummyEffect keeping @p originalPluginData (e.g. a plugin that failed to load)
 	void convertToDummyEffect(Model* parent, const QDomElement& originalPluginData);
 
-	auto operator->() -> Plugin& { assert(m_plugin != nullptr); return *m_plugin; }
-	explicit operator bool() const { return m_plugin != nullptr; }
+	//! Prepares the plugin again, e.g. after the sample rate or period size changed. [main thread]
+	void reactivate();
+
+	//! Saves the pin connector into the plugin's element @p pluginElement
+	void savePins(QDomDocument& doc, QDomElement& pluginElement);
+
+	//! Loads the pin connector from the plugin's element @p pluginElement, if saved there
+	void loadPins(const QDomElement& pluginElement);
 
 protected:
+	// Host implementation
 	void rescanAudioPorts(AudioPortsRescanFlag flags) override;
 	void useRemotePluginBuffers(bool remote) override;
 
 private:
-	auto audioBufferData() -> AudioBufferData&
-	{
-		return m_isRemotePlugin ? m_remoteBuffer : m_localBuffer;
-	}
+	void attach(std::unique_ptr<Plugin> plugin);
+	void detach();
 
-	// The plugin interface
-	Plugin* m_plugin = nullptr; // TODO: Better memory management
+	//! Queries the processor's audio ports, then creates the buffers and sets up the pin connector
+	void setUpAudioPorts();
 
-	//! Non-owning AudioBuffer of the plugin's inputs (if any).
-	//! This AudioBuffer's data is owned by m_bufferData.
+	void activate();
+	void deactivate();
+	void setState(State flag, bool on);
+
+	auto processAudio(AudioBuffer& trackChannels, NotePlayHandle* nph) -> ProcessStatus;
+
+	Plugin::Type m_type;
+	std::unique_ptr<Plugin> m_plugin;
+	AudioProcessor* m_processor = nullptr;
+
+	//! How the track channels are connected to the plugin
+	std::unique_ptr<AudioPortsModel> m_audioPorts;
+
+	//! Non-owning views of the plugin's inputs and outputs within the active AudioBufferData
 	AudioBuffer m_inputs;
-
-	//! Non-owning AudioBuffer of the plugin's outputs (if any).
-	//! This AudioBuffer's data is owned by m_bufferData.
 	AudioBuffer m_outputs;
 
 	//! input --> output in-place pair mapping; @see AudioProcessor::getInplacePair()
 	std::vector<std::optional<ch_cnt_t>> m_inplacePairsInToOut;
 
-	//! output --> input in-place pair mapping; @see AudioProcessor::getInplacePair()
+	//! output --> input in-place pair mapping
 	std::vector<std::optional<ch_cnt_t>> m_inplacePairsOutToIn;
 
-	//! How the track channels are connected to the plugin
-	AudioPortsModel m_audioPorts;
+	//! Every input shares its buffer with an output, so the plugin gets a single in/out buffer
+	bool m_fullyInPlace = false;
 
-	//! Contains local input and output buffers
-	//! For non-RemotePlugin only
+	//! The plugin uses a 2-channel interleaved buffer (legacy plugins)
+	bool m_interleaved = false;
+
+	//! Buffers for local plugins
 	AudioBufferData m_localBuffer;
 
-	//! Contains remote input and output buffers
-	//! For RemotePlugin only
+	//! Buffers for remote plugins, in shared memory
 	AudioBufferData m_remoteBuffer;
+	SharedMemory<std::byte[]> m_remoteBufferData;
+	SharedMemoryResource m_remoteBufferResource;
 
-	SharedMemory<std::byte[]> m_remoteBufferData; //!< for RemotePlugin only
-	SharedMemoryResource m_remoteBufferResource;  //!< for RemotePlugin only
-
-	std::atomic<State> m_state = State{0};
+	std::atomic<std::uint8_t> m_state = 0;
 	bool m_isRemotePlugin = false;
 };
 

@@ -124,7 +124,8 @@ public:
 
 	friend LMMS_DECLARE_OPERATORS_FOR_FLAGS(Ownership);
 
-	AudioBufferData() = delete;
+	//! Creates an empty AudioBufferData with no channels or frames (e.g. before a plugin's buffers are known)
+	AudioBufferData() = default;
 
 	/**
 	 * @brief Creates an AudioBufferData with Internal, SharedMemoryServer, or SharedMemoryClient
@@ -480,7 +481,12 @@ public:
 		ch_cnt_t m_channels = 0;
 	};
 
-	AudioBuffer() = delete;
+	//! Creates an empty AudioBuffer with no channels or frames
+	AudioBuffer()
+		: AudioBufferData{}
+	{
+		initAudioBuffer();
+	}
 
 	AudioBuffer(const AudioBuffer&) = delete;
 	AudioBuffer(AudioBuffer&&) noexcept = default;

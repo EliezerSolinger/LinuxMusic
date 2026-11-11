@@ -26,7 +26,7 @@
 #ifndef PEAK_CONTROLLER_EFFECT_H
 #define PEAK_CONTROLLER_EFFECT_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "PeakControllerEffectControls.h"
 
 namespace lmms
@@ -35,7 +35,7 @@ namespace lmms
 
 class PeakController;
 
-class PeakControllerEffect : public DefaultEffect
+class PeakControllerEffect : public LegacyEffect
 {
 public:
 	PeakControllerEffect( Model * parent, 
@@ -70,7 +70,7 @@ public:
 	int m_effectId;
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	PeakControllerEffectControls m_peakControls;
 

@@ -1,5 +1,5 @@
 /*
- * AudioPortsRouter.h
+ * AudioPortsRouter.h - routes audio between track channels and a processor's channels
  *
  * Copyright (c) 2026 Dalton Messmer <messmer.dalton/at/gmail.com>
  *
@@ -25,137 +25,37 @@
 #ifndef LMMS_AUDIO_PORTS_ROUTER_H
 #define LMMS_AUDIO_PORTS_ROUTER_H
 
-#include "AudioBuffer.h"
-#include "AudioPortsSettings.h"
+#include "lmms_export.h"
 
-namespace lmms {
-
-//! Performs pin connector routing. See `AudioPorts::Router`.
-class AudioPortsRouter
+namespace lmms
 {
-public:
-	explicit AudioPortsRouter(AudioPorts<settings>& parent, const AudioPortsSettings& settings)
-		: m_ap{&parent}
-		, m_settings{settings}
-	{}
 
-	// Whenever pin connections change, need to update
-	void assignBuffers(const AudioPortsModel& model, AudioPortsBuffer& buffer);
+class AudioBuffer;
+class AudioPortsModel;
 
-	/**
-	 * Routes core audio to the processor's input buffers, calls `processFunc` (the processor's process
-	 * method), then routes audio from the processor's output buffers back to the track channels.
-	 *
-	 * `coreInOut`        : track channels from LMMS core (currently just the main track channel pair)
-	 * `processFunc`      : the processor's process method - a callable object with the signature
-	 *                      `ProcessStatus(buffers...)` where `buffers` is the expected audio buffer(s)
-	 *                      (if any) for the given `settings`.
-	 */
-	template<class F>
-	auto process(AudioBuffer& coreInOut, F&& processFunc) -> ProcessStatus
-	{
-		m_silentOutput = false;
+//! Pin connector routing between the track channels (of an instrument track or mixer channel) and the
+//! input and output channels of an audio processor, following an AudioPortsModel's pin matrices.
+namespace AudioPortsRouter
+{
 
-		assert(m_ap->active() == true);
-		auto processorBuffers = m_ap->buffers();
-		assert(processorBuffers != nullptr);
+/**
+ * Track channels --> processor inputs.
+ *
+ * Each processor input receives the sum of the track channels connected to it, or silence if none are.
+ * The silence flags of @p processorIn are updated accordingly.
+ */
+LMMS_EXPORT void send(const AudioPortsModel& model, const AudioBuffer& track, AudioBuffer& processorIn);
 
-		ProcessStatus status;
-		if constexpr (settings.sampleFrameCompatible())
-		{
-			if (const auto dr = m_ap->directRouting())
-			{
-				// The "direct routing" optimization can be applied
-				status = processWithDirectRouting(coreInOut.trackChannelPair(*dr),
-					*processorBuffers, std::forward<F>(processFunc));
-			}
-			else
-			{
-				status = processNormally(coreInOut, *processorBuffers, std::forward<F>(processFunc));
-			}
-		}
-		else
-		{
-			status = processNormally(coreInOut, *processorBuffers, std::forward<F>(processFunc));
-		}
+/**
+ * Processor outputs --> track channels.
+ *
+ * Each track channel connected to at least one processor output is replaced by the sum of those outputs.
+ * Track channels without any connected output pass through unchanged. The silence flags of the replaced
+ * track channels are left marked as non-silent; the caller updates them after sanitizing.
+ */
+LMMS_EXPORT void receive(const AudioPortsModel& model, const AudioBuffer& processorOut, AudioBuffer& track);
 
-		coreInOut.sanitize(*m_ap);
-
-		// Update silence status for track channels the processor wrote to
-		if (!m_ap->isInstrument()) // TODO: Remove condition once NotePlayHandle-based instruments are supported?
-		{
-			m_silentOutput = coreInOut.update(*m_ap);
-		}
-
-		return status;
-	}
-
-	/**
-	 * Whether the processor output channels currently in use (processor channels that are routed to
-	 * at least one track channel) are silent.
-	 *
-	 * Only calculated for effects. Otherwise the outputs are assumed to not be silent.
-	 */
-	auto silentOutput() const -> bool { return m_silentOutput; }
-
-#ifdef LMMS_TESTING
-	friend class ::AudioPortsTest;
-#endif
-
-private:
-	/**
-	 * `send`
-	 *     Routes audio from track channels to processor inputs according to the pin connections.
-	 *
-	 *     For each processor input channel, mixes together audio from all track channels
-	 *     that are routed to that processor input channel, then writes the result to that channel.
-	 *     If no audio is routed to a processor input channel, that channel's buffer is zeroed.
-	 *
-	 *     `in`     : track channels from LMMS core (currently just the main track channel pair)
-	 *                `in.frames()` provides the number of frames in each `in`/`out` audio buffer
-	 *     `out`    : processor input buffers
-	 *
-	 * `receive`
-	 *     Routes audio from processor outputs to track channels according to the pin connections.
-	 *
-	 *     For each track channel, mixes together audio from all processor output channels
-	 *     that are routed to that track channel, then writes the result to that channel.
-	 *     If no audio is routed to a track channel, that channel remains unchanged for "passthrough" behavior.
-	 *
-	 *     `in`      : processor output buffers
-	 *     `inOut`   : track channels from/to LMMS core (currently just the main track channel pair)
-	 *                 `inOut.frames()` provides the number of frames in each `in`/`inOut` audio buffer
-	 */
-
-	void send(const AudioBuffer& in, AudioBuffer& out) const;
-	void receive(const AudioBuffer& in, AudioBuffer& inOut) const;
-
-	void send(const AudioBuffer& in, PlanarBufferView<float> out) const;
-	void receive(PlanarBufferView<const float> in, AudioBuffer& inOut) const;
-
-	void send(const AudioBuffer& in, InterleavedBufferView<float> out) const;
-	void receive(InterleavedBufferView<const float> in, AudioBuffer& inOut) const;
-
-	/**
-	 * Processes audio normally (no "direct routing").
-	 * Uses `send` and `receive` to route audio to and from the processor.
-	 */
-	template<class F>
-	auto processNormally(AudioBuffer& coreInOut, AudioPortsBuffer<settings>& processorBuffers, F&& processFunc)
-		-> ProcessStatus;
-
-	/**
-	 * Processes audio using the "direct routing" optimization for more efficient processing.
-	 * Does not use `send` or `receive` at all.
-	 */
-	template<class F>
-	auto processWithDirectRouting(InterleavedBufferView<float, 2> coreBuffer,
-		AudioPortsBuffer<settings>& processorBuffers, F&& processFunc) -> ProcessStatus;
-
-	AudioPorts<settings>* const m_ap;
-	AudioPortsSettings m_settings;
-	bool m_silentOutput = false;
-};
+} // namespace AudioPortsRouter
 
 } // namespace lmms
 

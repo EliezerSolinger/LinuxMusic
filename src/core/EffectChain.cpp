@@ -26,6 +26,7 @@
 #include "EffectChain.h"
 
 #include <QDomElement>
+#include <algorithm>
 #include <cassert>
 
 #include "AudioBuffer.h"
@@ -63,7 +64,7 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 	for (auto& instance : m_effects)
 	{
-		Effect& effect = instance->effect();
+		Effect& effect = instance->effectRef();
 		if (auto dummy = dynamic_cast<DummyEffect*>(&effect))
 		{
 			_this.appendChild(dummy->originalPluginData());
@@ -73,6 +74,7 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			QDomElement ef = effect.saveState(_doc, _this);
 			ef.setAttribute("name", QString::fromUtf8(effect.descriptor()->name));
 			ef.appendChild(effect.key().saveXML(_doc));
+			instance->savePins(_doc, ef);
 		}
 	}
 }
@@ -101,12 +103,12 @@ void EffectChain::loadSettings( const QDomElement & _this )
 			const QString name = effectData.attribute( "name" );
 			EffectKey key( effectData.elementsByTagName( "key" ).item( 0 ).toElement() );
 
-			auto e = std::make_unique<PluginInstance>(false, name.toUtf8(), this, &key);
-//			Effect* e = Effect::instantiate( name.toUtf8(), this, &key );
+			auto e = std::make_unique<PluginInstance>(Plugin::Type::Effect, name, this, &key);
 
-			if (e->plugin() != nullptr && e->effect().isOkay() && e->effect().nodeName() == node.nodeName())
+			if (e->effect() && e->effectRef().isOkay() && e->effectRef().nodeName() == node.nodeName())
 			{
-				e->effect().restoreState(effectData);
+				e->effectRef().restoreState(effectData);
+				e->loadPins(effectData);
 			}
 			else
 			{
@@ -139,18 +141,37 @@ void EffectChain::appendEffect(std::unique_ptr<PluginInstance> effect)
 
 
 
+auto EffectChain::find(const Effect* effect) -> EffectList::iterator
+{
+	return std::find_if(m_effects.begin(), m_effects.end(), [effect](const std::unique_ptr<PluginInstance>& instance) {
+		return instance->plugin() == effect;
+	});
+}
+
+
+
+
+auto EffectChain::instanceOf(const Effect* effect) -> PluginInstance*
+{
+	const auto it = find(effect);
+	return it != m_effects.end() ? it->get() : nullptr;
+}
+
+
+
+
 void EffectChain::removeEffect( Effect * _effect )
 {
 	Engine::audioEngine()->requestChangeInModel();
 
-	auto found = std::find(m_effects.begin(), m_effects.end(), [](std::unique_ptr<PluginInstance>& effect) {
-		return effect->plugin() == _effect;
-	});
+	const auto found = find(_effect);
 	if( found == m_effects.end() )
 	{
 		Engine::audioEngine()->doneChangeInModel();
 		return;
 	}
+
+	// Deletes the effect
 	m_effects.erase( found );
 
 	Engine::audioEngine()->doneChangeInModel();
@@ -168,13 +189,12 @@ void EffectChain::removeEffect( Effect * _effect )
 
 void EffectChain::moveDown( Effect * _effect )
 {
-	if (_effect != m_effects.back()->plugin())
+	const auto it = find(_effect);
+	if (it != m_effects.end() && std::next(it) != m_effects.end())
 	{
-		auto it = std::find(m_effects.begin(), m_effects.end(), [](std::unique_ptr<PluginInstance>& effect) {
-			return effect->plugin() == _effect;
-		});
-		assert(it != m_effects.end());
-		std::swap(*std::next(it), *it);
+		Engine::audioEngine()->requestChangeInModel();
+		std::iter_swap(it, std::next(it));
+		Engine::audioEngine()->doneChangeInModel();
 	}
 }
 
@@ -183,13 +203,12 @@ void EffectChain::moveDown( Effect * _effect )
 
 void EffectChain::moveUp( Effect * _effect )
 {
-	if (_effect != m_effects.front())
+	const auto it = find(_effect);
+	if (it != m_effects.end() && it != m_effects.begin())
 	{
-		auto it = std::find(m_effects.begin(), m_effects.end(), [](std::unique_ptr<PluginInstance>& effect) {
-			return effect->plugin() == _effect;
-		});
-		assert(it != m_effects.end());
-		std::swap(*std::prev(it), *it);
+		Engine::audioEngine()->requestChangeInModel();
+		std::iter_swap(it, std::prev(it));
+		Engine::audioEngine()->doneChangeInModel();
 	}
 }
 
@@ -220,14 +239,7 @@ void EffectChain::clear()
 	emit aboutToClear();
 
 	Engine::audioEngine()->requestChangeInModel();
-
-	while (m_effects.size())
-	{
-		auto e = m_effects[m_effects.size() - 1];
-		m_effects.pop_back();
-		delete e;
-	}
-
+	m_effects.clear();
 	Engine::audioEngine()->doneChangeInModel();
 
 	m_enabledModel.setValue( false );

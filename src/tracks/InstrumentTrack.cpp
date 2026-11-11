@@ -23,7 +23,6 @@
  */
 #include "InstrumentTrack.h"
 
-#include "AudioPlugin.h"
 #include "AudioEngine.h"
 #include "AutomationClip.h"
 #include "ConfigManager.h"
@@ -201,7 +200,7 @@ InstrumentTrack::~InstrumentTrack()
 	silenceAllNotes( true );
 
 	// now we're save deleting the instrument
-	if( m_instrument ) delete m_instrument.plugin(); // TODO
+	m_instrument.reset();
 }
 
 
@@ -216,7 +215,7 @@ void InstrumentTrack::processAudioBuffer( SampleFrame* buf, const f_cnt_t frames
 		return;
 	}
 
-	Instrument& instrument = m_instrument.instrument();
+	Instrument& instrument = m_instrument->instrumentRef();
 
 	// Test for silent input data if instrument provides a single stream only (i.e. driven by InstrumentPlayHandle)
 	// We could do that in all other cases as well but the overhead for silence test is bigger than
@@ -456,7 +455,7 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 {
 	// do nothing if we do not have an instrument instance (e.g. when loading settings)
 	if (!m_instrument) { return; }
-	Instrument& instrument = m_instrument.instrument();
+	Instrument& instrument = m_instrument->instrumentRef();
 
 	const MidiEvent transposedEvent = applyMasterKey( event );
 	const int key = transposedEvent.key();
@@ -541,7 +540,7 @@ f_cnt_t InstrumentTrack::beatLen( NotePlayHandle * _n ) const
 {
 	if (m_instrument)
 	{
-		const f_cnt_t len = m_instrument.instrument().beatLen(_n);
+		const f_cnt_t len = m_instrument->instrumentRef().beatLen(_n);
 		if( len > 0 )
 		{
 			return len;
@@ -567,7 +566,7 @@ void InstrumentTrack::playNote(NotePlayHandle* n, std::span<SampleFrame> working
 	if (n->isMasterNote() == false && m_instrument)
 	{
 		// all is done, so now lets play the note!
-		m_instrument.instrument().playNote(n, workingBuffer);
+		m_instrument->instrumentRef().playNote(n, workingBuffer);
 
 		// This is effectively the same as checking if workingBuffer is not a nullptr.
 		// Calling processAudioBuffer with a nullptr leads to crashes. Hence the check.
@@ -587,7 +586,7 @@ QString InstrumentTrack::instrumentName() const
 {
 	if (m_instrument)
 	{
-		return m_instrument->displayName();
+		return m_instrument->plugin()->displayName();
 	}
 	return QString();
 }
@@ -599,7 +598,7 @@ void InstrumentTrack::deleteNotePluginData( NotePlayHandle* n )
 {
 	if (m_instrument)
 	{
-		m_instrument.instrument().deleteNotePluginData(n);
+		m_instrument->instrumentRef().deleteNotePluginData(n);
 	}
 }
 
@@ -838,10 +837,11 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	if (m_instrument)
 	{
 		QDomElement i = doc.createElement( "instrument" );
-		i.setAttribute( "name", m_instrument->descriptor()->name );
-		QDomElement ins = m_instrument->saveState( doc, i );
-		if(m_instrument->key().isValid()) {
-			ins.appendChild( m_instrument->key().saveXML( doc ) );
+		i.setAttribute( "name", m_instrument->plugin()->descriptor()->name );
+		QDomElement ins = m_instrument->plugin()->saveState( doc, i );
+		m_instrument->savePins(doc, ins);
+		if(m_instrument->plugin()->key().isValid()) {
+			ins.appendChild( m_instrument->plugin()->key().saveXML( doc ) );
 		}
 		thisElement.appendChild( i );
 	}
@@ -878,7 +878,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 {
 	// don't delete instrument in preview mode if it's the same
 	// we can't do this for other situations due to some issues with linked models
-	bool reuseInstrument = m_previewMode && m_instrument && m_instrument->nodeName() == getSavedInstrumentName(thisElement);
+	bool reuseInstrument = m_previewMode && m_instrument && m_instrument->plugin()->nodeName() == getSavedInstrumentName(thisElement);
 	// remove the InstrumentPlayHandle if and only if we need to delete the instrument
 	silenceAllNotes(!reuseInstrument);
 
@@ -938,17 +938,18 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 
 				if (reuseInstrument)
 				{
-					m_instrument->restoreState(node.firstChildElement());
+					m_instrument->plugin()->restoreState(node.firstChildElement());
+					m_instrument->loadPins(node.firstChildElement());
 				}
 				else
 				{
-					delete m_instrument.plugin(); // TODO
-//					m_instrument = nullptr;
-//					m_instrument = Instrument::instantiate(
-//						node.toElement().attribute("name"), this, &key);
-					m_instrument = PluginInstance{true, node.toElement().attribute("name"), this, &key};
+					// The old instrument goes away before the new one is created
+					m_instrument.reset();
+					m_instrument = std::make_unique<PluginInstance>(
+						Plugin::Type::Instrument, node.toElement().attribute("name"), this, &key);
 
-					m_instrument->restoreState(node.firstChildElement());
+					m_instrument->plugin()->restoreState(node.firstChildElement());
+					m_instrument->loadPins(node.firstChildElement());
 					emit instrumentChanged();
 				}
 			}
@@ -966,14 +967,12 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 					ControllerConnection::classNodeName() != node.nodeName() &&
 					!node.toElement().hasAttribute( "id" ))
 			{
-				delete m_instrument.plugin(); // TODO
-//				m_instrument = nullptr;
-//				m_instrument = Instrument::instantiate(
-//					node.nodeName(), this, nullptr, true);
-				m_instrument = PluginInstance{true, node.nodeName(), this, nullptr, true};
-				if (m_instrument->nodeName() == node.nodeName())
+				m_instrument.reset();
+				m_instrument = std::make_unique<PluginInstance>(
+					Plugin::Type::Instrument, node.nodeName(), this, nullptr, true);
+				if (m_instrument->plugin()->nodeName() == node.nodeName())
 				{
-					m_instrument->restoreState(node.toElement());
+					m_instrument->plugin()->restoreState(node.toElement());
 				}
 				emit instrumentChanged();
 			}
@@ -1037,7 +1036,7 @@ QString InstrumentTrack::getSavedInstrumentName(const QDomElement &thisElement) 
 
 
 
-PluginInstance& InstrumentTrack::loadInstrument(const QString& _plugin_name,
+Instrument* InstrumentTrack::loadInstrument(const QString& _plugin_name,
 	const Plugin::Descriptor::SubPluginFeatures::Key *key, bool keyFromDnd)
 {
 	if(keyFromDnd)
@@ -1046,16 +1045,14 @@ PluginInstance& InstrumentTrack::loadInstrument(const QString& _plugin_name,
 	silenceAllNotes( true );
 
 	lock();
-	delete m_instrument.plugin(); // TODO
-//	m_instrument = Instrument::instantiate(_plugin_name, this,
-//					key, keyFromDnd);
-	m_instrument = PluginInstance{true, _plugin_name, this, key, keyFromDnd};
+	m_instrument.reset();
+	m_instrument = std::make_unique<PluginInstance>(Plugin::Type::Instrument, _plugin_name, this, key, keyFromDnd);
 	unlock();
-	setName(m_instrument->displayName());
+	setName(m_instrument->plugin()->displayName());
 
 	emit instrumentChanged();
 
-	return m_instrument;
+	return instrument();
 }
 
 

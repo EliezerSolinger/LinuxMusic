@@ -41,6 +41,7 @@ class AudioBuffer;
 class AudioPortsModel;
 class EffectChain;
 class EffectControls;
+class PluginInstance;
 
 namespace gui
 {
@@ -142,7 +143,20 @@ public:
 
 	static Effect * instantiate( const QString & _plugin_name,
 				Model * _parent,
-				Descriptor::SubPluginFeatures::Key * _key );
+				const Descriptor::SubPluginFeatures::Key * _key );
+
+	// AudioProcessor lifecycle: most effects need nothing beyond their constructor, so these default to
+	// doing nothing. Effects that allocate per sample rate or period size can override them.
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override
+	{
+		(void)sampleRate;
+		(void)maxFrameCount;
+		return true;
+	}
+	void deactivate() override {}
+	auto startProcessing() -> bool override { return true; }
+	void stopProcessing() override {}
+	void reset() override {}
 
 
 protected:
@@ -161,6 +175,9 @@ protected:
 	}
 
 	virtual void onEnabledChanged() {}
+
+	//! Runs instead of process() while the effect is awake but disabled or not running
+	virtual void processBypassedImpl() {}
 
 	/**
 	 * If auto-quit is enabled ("Keep effects running even without input" setting is disabled),
@@ -191,6 +208,7 @@ private:
 
 	friend class gui::EffectView;
 	friend class EffectChain;
+	friend class PluginInstance;
 };
 
 /**
@@ -199,8 +217,11 @@ private:
  * Inherit from this to reduce boilerplate.
  * In the future, once all plugins use planar buffers, this can be removed.
  */
-class LegacyEffect : public Effect
+class LMMS_EXPORT LegacyEffect : public Effect
 {
+public:
+	using Effect::Effect;
+
 protected:
 	auto channelCount(bool isInput) const -> ch_cnt_t final
 	{

@@ -7,6 +7,7 @@ set(LMMS_SRCS
 	core/AudioEngineProfiler.cpp
 	core/AudioEngineWorkerThread.cpp
 	core/AudioPortsModel.cpp
+	core/AudioPortsRouter.cpp
 	core/AudioResampler.cpp
 	core/AutomatableModel.cpp
 	core/AutomationClip.cpp
@@ -64,6 +65,7 @@ set(LMMS_SRCS
 	core/PluginIssue.cpp
 	core/PluginCategories.cpp
 	core/PluginFactory.cpp
+	core/PluginInstance.cpp
 	core/PresetPreviewPlayHandle.cpp
 	core/ProjectJournal.cpp
 	core/ProjectRenderer.cpp

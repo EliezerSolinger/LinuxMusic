@@ -65,7 +65,7 @@ Plugin::Descriptor PLUGIN_EXPORT peakcontrollereffect_plugin_descriptor =
 PeakControllerEffect::PeakControllerEffect(
 			Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key ) :
-	AudioPlugin(&peakcontrollereffect_plugin_descriptor, _parent, _key),
+	LegacyEffect(&peakcontrollereffect_plugin_descriptor, _parent, _key),
 	m_effectId(fastRand()),
 	m_peakControls( this ),
 	m_lastSample( 0 ),
@@ -93,8 +93,9 @@ PeakControllerEffect::~PeakControllerEffect()
 }
 
 
-ProcessStatus PeakControllerEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto PeakControllerEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	PeakControllerEffectControls & c = m_peakControls;
 
 	// RMS:

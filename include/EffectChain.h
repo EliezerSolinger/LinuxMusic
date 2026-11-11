@@ -27,6 +27,9 @@
 #define LMMS_EFFECT_CHAIN_H
 
 #include "Model.h"
+#include <memory>
+#include <vector>
+
 #include "SerializingObject.h"
 #include "AutomatableModel.h"
 
@@ -69,8 +72,17 @@ public:
 	void clear();
 
 
-private:
 	using EffectList = std::vector<std::unique_ptr<PluginInstance>>;
+
+	//! The effects in processing order
+	auto effects() const -> const EffectList& { return m_effects; }
+
+	//! @returns the PluginInstance holding @p effect, or nullptr if it is not in this chain
+	auto instanceOf(const Effect* effect) -> PluginInstance*;
+
+private:
+	auto find(const Effect* effect) -> EffectList::iterator;
+
 	EffectList m_effects;
 
 	BoolModel m_enabledModel;

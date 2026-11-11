@@ -50,7 +50,8 @@ class EffectView : public PluginView
 {
 	Q_OBJECT
 public:
-	EffectView( Effect * _model, QWidget * _parent );
+	//! @param audioPorts the effect's pin connector (owned by its PluginInstance), if any
+	EffectView(Effect* _model, QWidget* _parent, AudioPortsModel* audioPorts = nullptr);
 	~EffectView() override;
 
 	inline Effect * effect()
@@ -96,6 +97,7 @@ private:
 	QWidget* m_subWindow; //!< The tab (DockPanel) holding the effect controls
 	EffectControlDialog * m_controlView;
 	QPushButton* m_pinConnectorButton = nullptr;
+	AudioPortsModel* m_audioPorts = nullptr; //!< owned by the effect's PluginInstance
 	PinConnector* m_pinConnectorView = nullptr;
 
 	bool m_dragging;

@@ -40,7 +40,10 @@
 
 #include "LmmsTypes.h"
 #include "MidiEvent.h"
+#include <vector>
+
 #include "SharedMemory.h"
+#include "SharedMemoryPointer.h"
 #include "VstSyncData.h"
 
 namespace lmms
@@ -62,7 +65,14 @@ public:
 
 	bool processMessage( const message & _m ) override;
 
-	virtual void process(const float* in, float* out) = 0;
+	/**
+	 * Processes one period.
+	 *
+	 * @param in one buffer per input channel (nullptr if there are no inputs)
+	 * @param out one buffer per output channel. An output may share its buffer with an input
+	 *            (in-place processing) if the plugin declares so on the host side.
+	 */
+	virtual void process(const float* const* in, float* const* out) = 0;
 
 	virtual void processMidiEvent( const MidiEvent&, const f_cnt_t /* _offset */ )
 	{
@@ -112,10 +122,14 @@ public:
 
 
 private:
-	void setShmKey(const std::string& key);
+	void setSharedAudioBuffer(const std::string& key, ch_cnt_t channels);
 	void doProcessing();
 
-	SharedMemory<float[]> m_audioBuffer;
+	//! Shared memory created by the host, starting with a PointerOffset per channel (inputs, then outputs)
+	SharedMemory<std::byte[]> m_sharedAudioBuffer;
+
+	//! The channel buffers within m_sharedAudioBuffer: inputs, then outputs
+	std::vector<float*> m_channelBuffers;
 	SharedMemory<const VstSyncData> m_vstSyncData;
 
 	ch_cnt_t m_inputCount;
@@ -289,7 +303,7 @@ bool RemotePluginClient::processMessage( const message & _m )
 			break;
 
 		case IdChangeSharedMemoryKey:
-			setShmKey(_m.getString(0));
+			setSharedAudioBuffer(_m.getString(0), static_cast<ch_cnt_t>(_m.getInt(1)));
 			break;
 
 		case IdInitDone:
@@ -314,15 +328,33 @@ bool RemotePluginClient::processMessage( const message & _m )
 
 
 
-void RemotePluginClient::setShmKey(const std::string& key)
+void RemotePluginClient::setSharedAudioBuffer(const std::string& key, ch_cnt_t channels)
 {
+	m_channelBuffers.clear();
+
 	try
 	{
-		m_audioBuffer.attach(key);
+		m_sharedAudioBuffer.attach(key);
 	}
 	catch (const std::runtime_error& error)
 	{
 		debugMessage(std::string{"failed getting shared memory: "} + error.what() + '\n');
+		return;
+	}
+
+	if (m_sharedAudioBuffer.size_bytes() < channels * sizeof(PointerOffset))
+	{
+		debugMessage("shared audio buffer is too small\n");
+		m_sharedAudioBuffer.detach();
+		return;
+	}
+
+	// The host wrote where each channel buffer is, relative to the table, so it is valid in this process too
+	auto offsets = reinterpret_cast<PointerOffset*>(m_sharedAudioBuffer.get());
+	m_channelBuffers.resize(channels);
+	for (ch_cnt_t ch = 0; ch < channels; ++ch)
+	{
+		m_channelBuffers[ch] = toPointer<float>(offsets[ch]);
 	}
 }
 
@@ -331,10 +363,9 @@ void RemotePluginClient::setShmKey(const std::string& key)
 
 void RemotePluginClient::doProcessing()
 {
-	if (m_audioBuffer)
+	if (m_sharedAudioBuffer && m_channelBuffers.size() >= static_cast<std::size_t>(m_inputCount + m_outputCount))
 	{
-		process(m_inputCount > 0 ? m_audioBuffer.get() : nullptr,
-			m_audioBuffer.get() + m_inputCount * m_bufferSize);
+		process(m_inputCount > 0 ? m_channelBuffers.data() : nullptr, m_channelBuffers.data() + m_inputCount);
 	}
 	else
 	{
