@@ -46,9 +46,11 @@ efeitos do FL Studio (veja [README.md](README.md)).
   - recolhida, a linha do grupo mostra um resumo dos clipes das filhas, só para ver.
 - Os **canais extras em pares** (1/2, 3/4…) do núcleo multicanal ficam **internos**: são o encanamento do sidechain e
   das saídas múltiplas, e só aparecem no pin connector, como recurso avançado. A tela não fala em "canais 3/4".
-- **Sidechain** como no FL Studio: "enviar como sidechain para o canal X"; o compressor de lá já recebe.
-- **Instrumento multi-saída** (ex.: bateria AVL): "uma trilha por peça" cria uma pasta com um canal filho por
-  peça, ligados por baixo pelos pares de canais, pinos e envios.
+- **Sidechain pelos dois lados:** no canal de origem, "enviar como sidechain para o canal X" (estilo FL Studio), e no
+  plugin, um seletor "fonte do sidechain" (estilo Ableton/Bitwig). Os dois criam o mesmo envio para os pares internos.
+- **Instrumento multi-saída** (ex.: bateria AVL): "um canal por peça" cria **só no mixer** um grupo com um canal
+  filho por peça, ligados por baixo pelos pares de canais, pinos e envios. O arranjo continua com uma única pista
+  do instrumento, com as notas.
 - O menu provisório "Track channels" / "Sidechain send" do canal some quando a interface nova entrar.
 
 ### Interface nova do mixer
@@ -58,7 +60,8 @@ efeitos do FL Studio (veja [README.md](README.md)).
 
 ### Qualidade
 - **Testes automatizados** de mixagem e roteamento são escritos **antes** de mexer no núcleo.
-- O branch **ainda não** é enviado ao GitHub, então não há CI de Linux por enquanto. Tudo continua sendo compilado só
+- O branch **ainda não** é enviado ao GitHub, então não há CI de Linux por enquanto (decisão reconfirmada em
+  11/11/2026: os testes no Linux, como VST pelo Wine, LV2 em execução e ALSA/JACK/PulseAudio, ficam para mais tarde). Tudo continua sendo compilado só
   no macOS; o risco de algo quebrar no Linux sem percebermos fica registrado.
 
 ## Ordem de implementação

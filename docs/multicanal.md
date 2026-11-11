@@ -23,6 +23,8 @@ Proposta de Dalton Messmer, baseada no CLAP:
 
 ## Fases (caminho 1)
 
+Ordem decidida em 11/11/2026: a fase 4 vem antes dos passos 7 a 10 do mixer ([preparacao-mixer.md](preparacao-mixer.md)).
+
 | Fase | Conteúdo |
 |---|---|
 | 1 ✅ | Fazer o branch do autor compilar sobre o nosso código e terminar a migração dele para o `AudioBuffer`. Trazer de volta as melhorias que o `master` recebeu depois (detecção de áudio corrompido, auto-quit). Todos os testes passando. |
