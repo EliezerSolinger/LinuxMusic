@@ -42,3 +42,5 @@ Antes da etapa 2, veja [pesquisa-ui-existente.md](pesquisa-ui-existente.md): é 
 mixer que já existe no LMMS.
 
 Ideias registradas para depois das etapas atuais ficam em [ideias-futuras.md](ideias-futuras.md).
+
+Antes do mixer novo, veja [preparacao-mixer.md](preparacao-mixer.md): as decisões e a ordem de implementação.
