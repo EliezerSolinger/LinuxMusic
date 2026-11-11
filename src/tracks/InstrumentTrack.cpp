@@ -444,7 +444,7 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 	// event to it. If it returns false means the instrument didn't handle the event, so we trigger a warning.
 	if (eventHandled == false)
 	{
-		if (!instrument() || instrument()->handleMidiEvent(event, time, offset))
+		if (!instrument() || !deliverToInstrument(event, time, offset))
 		{
 			qWarning("InstrumentTrack: unhandled MIDI event %d", event.type());
 		}
@@ -455,11 +455,24 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 
 
 
+bool InstrumentTrack::deliverToInstrument(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
+{
+	// Instruments taking events get them with their next period, at their frame
+	if (m_instrument->wantsEvents())
+	{
+		if (const auto pluginEvent = PluginEvent::fromMidi(event, offset)) { m_instrument->sendEvent(*pluginEvent); }
+		return true;
+	}
+	return m_instrument->instrumentRef().handleMidiEvent(event, time, offset);
+}
+
+
+
+
 void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset )
 {
 	// do nothing if we do not have an instrument instance (e.g. when loading settings)
 	if (!m_instrument) { return; }
-	Instrument& instrument = m_instrument->instrumentRef();
 
 	const MidiEvent transposedEvent = applyMasterKey( event );
 	const int key = transposedEvent.key();
@@ -480,10 +493,10 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 			{
 				if( m_runningMidiNotes[key] > 0 )
 				{
-					instrument.handleMidiEvent(MidiEvent(MidiNoteOff, handleEventOutputChannel, key, 0), time, offset);
+					deliverToInstrument(MidiEvent(MidiNoteOff, handleEventOutputChannel, key, 0), time, offset);
 				}
 				++m_runningMidiNotes[key];
-				instrument.handleMidiEvent(MidiEvent(MidiNoteOn, handleEventOutputChannel, key, event.velocity()), time, offset);
+				deliverToInstrument(MidiEvent(MidiNoteOn, handleEventOutputChannel, key, event.velocity()), time, offset);
 
 			}
 			m_midiNotesMutex.unlock();
@@ -496,14 +509,14 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 
 			if( key >= 0 && key < NumKeys && --m_runningMidiNotes[key] <= 0 )
 			{
-				instrument.handleMidiEvent(MidiEvent(MidiNoteOff, handleEventOutputChannel, key, 0), time, offset);
+				deliverToInstrument(MidiEvent(MidiNoteOff, handleEventOutputChannel, key, 0), time, offset);
 			}
 			m_midiNotesMutex.unlock();
 			emit endNote();
 			break;
 
 		default:
-			instrument.handleMidiEvent(transposedEvent, time, offset);
+			deliverToInstrument(transposedEvent, time, offset);
 			break;
 	}
 

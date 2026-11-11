@@ -43,7 +43,7 @@
 #include "InstrumentPlayHandle.h"
 #include "InstrumentTrack.h"
 #include "LedCheckBox.h"
-#include "MidiEvent.h"
+#include "Midi.h"
 #include "Song.h"
 
 #include "plugin_export.h"
@@ -318,65 +318,41 @@ auto AvlDrumsInstrument::getInplacePair(ch_cnt_t inputIndex) const -> std::optio
 
 
 
-bool AvlDrumsInstrument::handleMidiEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
-{
-	(void)time;
-
-	auto e = Event{offset, static_cast<std::uint8_t>(event.type()), 0, 0};
-	switch (event.type())
-	{
-		case MidiNoteOn:
-		case MidiNoteOff:
-			e.data1 = static_cast<std::uint8_t>(std::clamp<int>(event.key(), 0, 127));
-			e.data2 = event.velocity();
-			break;
-		case MidiControlChange:
-			switch (event.controllerNumber())
-			{
-				// The kit's own panning and no held notes, as in avldrums.lv2
-				case 10: case 42: case 64: case 66: case 68:
-					return true;
-				default:
-					break;
-			}
-			e.data1 = event.controllerNumber();
-			e.data2 = event.controllerValue();
-			break;
-		default:
-			// No programs, pitch bend or pressure for a drum kit
-			return true;
-	}
-
-	const auto lock = QMutexLocker{&m_eventMutex};
-	if (m_eventCount < MaxEvents) { m_events[m_eventCount++] = e; }
-	return true;
-}
-
-
-
-
-void AvlDrumsInstrument::applyEvent(const Event& event)
+void AvlDrumsInstrument::applyEvent(const PluginEvent& event)
 {
 	switch (event.type)
 	{
-		case MidiNoteOn:
-			if (event.data2 > 0)
-			{
-				fluid_synth_noteon(m_synth, groupOf(event.data1), event.data1, event.data2);
-				const auto piece = event.data1 - FirstNote;
-				if (piece >= 0 && piece < PieceCount) { m_hits[piece].store(event.data2, std::memory_order_relaxed); }
-				break;
-			}
-			[[fallthrough]];
-		case MidiNoteOff:
-			fluid_synth_noteoff(m_synth, groupOf(event.data1), event.data1);
+		case PluginEvent::Type::NoteOn:
+		{
+			const auto key = event.key;
+			const auto velocity = std::clamp(static_cast<int>(event.value * 127.0 + 0.5), 1, 127);
+			fluid_synth_noteon(m_synth, groupOf(key), key, velocity);
+			const auto piece = key - FirstNote;
+			if (piece >= 0 && piece < PieceCount) { m_hits[piece].store(velocity, std::memory_order_relaxed); }
 			break;
-		case MidiControlChange:
-			for (int channel = 0; channel < MultiGroupCount; ++channel)
+		}
+		case PluginEvent::Type::NoteOff:
+			if (event.key >= 0) { fluid_synth_noteoff(m_synth, groupOf(event.key), event.key); }
+			break;
+		case PluginEvent::Type::NoteChoke:
+			for (int channel = 0; channel < MultiGroupCount; ++channel) { fluid_synth_all_sounds_off(m_synth, channel); }
+			break;
+		case PluginEvent::Type::Midi:
+		{
+			// Only control changes, and not the ones that would change the kit's panning or hold notes, as in
+			// avldrums.lv2; no programs, pitch bend or pressure for a drum kit
+			if ((event.midi[0] & 0xf0) != MidiControlChange) { break; }
+			switch (event.midi[1])
 			{
-				fluid_synth_cc(m_synth, channel, event.data1, event.data2);
+				case 10: case 42: case 64: case 66: case 68: break;
+				default:
+					for (int channel = 0; channel < MultiGroupCount; ++channel)
+					{
+						fluid_synth_cc(m_synth, channel, event.midi[1], event.midi[2]);
+					}
 			}
 			break;
+		}
 		default:
 			break;
 	}
@@ -416,16 +392,6 @@ auto AvlDrumsInstrument::process(ProcessContext& context) -> ProcessStatus
 	auto& out = context.out();
 	const auto frames = out.frames();
 
-	std::size_t count = 0;
-	{
-		const auto lock = QMutexLocker{&m_eventMutex};
-		count = m_eventCount;
-		std::copy_n(m_events.begin(), count, m_processEvents.begin());
-		m_eventCount = 0;
-	}
-	std::stable_sort(m_processEvents.begin(), m_processEvents.begin() + count,
-		[](const Event& a, const Event& b) { return a.offset < b.offset; });
-
 	// The kit may be being replaced; while exporting, wait for it
 	if (!m_synthMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0))
 	{
@@ -443,10 +409,9 @@ auto AvlDrumsInstrument::process(ProcessContext& context) -> ProcessStatus
 
 	// Render up to each event, so that it starts at its frame
 	auto position = f_cnt_t{0};
-	for (std::size_t i = 0; i < count; ++i)
+	for (const auto& event : context.inEvents())
 	{
-		const auto& event = m_processEvents[i];
-		const auto at = std::clamp<f_cnt_t>(event.offset, 0, frames);
+		const auto at = std::clamp<f_cnt_t>(event.time, position, frames);
 		render(out, position, at - position);
 		position = at;
 		applyEvent(event);

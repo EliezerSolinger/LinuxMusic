@@ -183,6 +183,31 @@ private:
 	std::vector<ch_cnt_t> m_groups;
 };
 
+//! An instrument that takes events and records them; it sends a NoteEnd back for each NoteOff
+class FakeEventInstrument : public FakePlanarInstrument
+{
+public:
+	FakeEventInstrument() : FakePlanarInstrument{2} {}
+
+	auto wantsEvents() const -> bool override { return true; }
+	auto process(ProcessContext& context) -> ProcessStatus override
+	{
+		for (const auto& event : context.inEvents())
+		{
+			received.push_back(event);
+			if (event.type == PluginEvent::Type::NoteOff && context.outEvents())
+			{
+				auto end = event;
+				end.type = PluginEvent::Type::NoteEnd;
+				context.outEvents()->tryPush(end);
+			}
+		}
+		return FakePlanarInstrument::process(context);
+	}
+
+	std::vector<PluginEvent> received;
+};
+
 auto frames() -> f_cnt_t { return Engine::audioEngine()->framesPerPeriod(); }
 
 //! A stereo track buffer (with the interleaved buffer mixer channels have) filled with a constant signal
@@ -786,6 +811,50 @@ private slots:
 		processOnAudioThread(instance, track);
 		compareChannel(track, 0, 0.1f + 0.2f + 0.3f);
 		compareChannel(track, 1, 0.1f + 0.2f + 0.4f);
+	}
+
+	void Instrument_EventsArriveSortedWithTheirPeriod()
+	{
+		auto plugin = std::make_unique<FakeEventInstrument>();
+		auto& fake = *plugin;
+		auto instance = PluginInstance{std::move(plugin), Plugin::Type::Instrument};
+		QVERIFY(instance.wantsEvents());
+
+		auto ended = std::vector<PluginEvent>{};
+		instance.setOutputEventHandler([&](std::span<const PluginEvent> events) {
+			ended.insert(ended.end(), events.begin(), events.end());
+		});
+
+		// Out of order, a chord's notes from different threads, and one event for a later period
+		QVERIFY(instance.sendEvent(PluginEvent::noteOn(30, 0, 64, 1.0)));
+		QVERIFY(instance.sendEvent(PluginEvent::noteOn(10, 0, 67, 1.0)));
+		QVERIFY(instance.sendEvent(PluginEvent::noteOn(10, 0, 60, 1.0)));
+		QVERIFY(instance.sendEvent(PluginEvent::noteOff(10, 0, 55)));
+		QVERIFY(instance.sendEvent(PluginEvent::noteOff(frames() + 5, 0, 60)));
+
+		auto track = trackBuffer(0.f, 0.f);
+		processOnAudioThread(instance, track);
+		QCOMPARE(fake.received.size(), std::size_t{4});
+		// Same frame: the ending note first, then the new ones by key
+		QCOMPARE(fake.received[0].type, PluginEvent::Type::NoteOff);
+		QCOMPARE(fake.received[1].key, 60);
+		QCOMPARE(fake.received[2].key, 67);
+		QCOMPARE(fake.received[3].time, 30);
+		QCOMPARE(ended.size(), std::size_t{1});
+
+		// The late event arrives in the next period, at its frame there
+		fake.received.clear();
+		track = trackBuffer(0.f, 0.f);
+		processOnAudioThread(instance, track);
+		QCOMPARE(fake.received.size(), std::size_t{1});
+		QCOMPARE(fake.received[0].time, 5);
+		QCOMPARE(ended.size(), std::size_t{2});
+	}
+
+	void Instrument_WithoutEventsGetsNone()
+	{
+		auto instance = PluginInstance{std::make_unique<FakePlanarInstrument>(2), Plugin::Type::Instrument};
+		QVERIFY(!instance.wantsEvents());
 	}
 
 	void Instrument_NoteOutputFollowsPins()

@@ -25,13 +25,17 @@
 #ifndef LMMS_PLUGIN_INSTANCE_H
 #define LMMS_PLUGIN_INSTANCE_H
 
+#include <array>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
 #include <vector>
 
 #include "AudioBuffer.h"
+#include "LockFreeQueue.h"
+#include "PluginEvent.h"
 #include "AudioPortsModel.h"
 #include "AudioProcessor.h"
 #include "Host.h"
@@ -129,6 +133,21 @@ public:
 	 */
 	void playNote(NotePlayHandle* nph, std::span<SampleFrame> out);
 
+	/**
+	 * Queues an event for the plugin, delivered with the next period it is processed in (see
+	 * AudioProcessor::wantsEvents()). The event's time is its frame within that period. [any thread]
+	 *
+	 * @returns false if the queue is full
+	 */
+	auto sendEvent(const PluginEvent& event) -> bool;
+
+	//! Whether the plugin takes events from sendEvent()
+	auto wantsEvents() const -> bool { return m_processor && m_processor->wantsEvents(); }
+
+	//! Receives the events the plugin sends to the host, after each period [audio thread]
+	using OutputEventHandler = std::function<void(std::span<const PluginEvent>)>;
+	void setOutputEventHandler(OutputEventHandler handler) { m_outputEventHandler = std::move(handler); }
+
 	//! Replaces the plugin with a DummyEffect keeping @p originalPluginData (e.g. a plugin that failed to load)
 	void convertToDummyEffect(Model* parent, const QDomElement& originalPluginData);
 
@@ -211,6 +230,20 @@ private:
 
 	//! The sample rate the processor was last activated with
 	sample_rate_t m_activeSampleRate = 0;
+
+	//! Events for the plugin from any thread, and the ones of the current period
+	static constexpr std::size_t MaxEventsPerPeriod = 1024;
+	LockFreeQueue<PluginEvent, MaxEventsPerPeriod> m_eventQueue;
+	std::vector<PluginEvent> m_periodEvents;
+
+	//! Events for later periods (at or after the end of the period they arrived in)
+	std::vector<PluginEvent> m_laterEvents;
+	std::vector<PluginEvent> m_heldEvents;
+
+	//! Events from the plugin
+	std::array<PluginEvent, 256> m_outputEventStorage;
+	OutputEvents m_outputEvents{m_outputEventStorage.data(), m_outputEventStorage.size()};
+	OutputEventHandler m_outputEventHandler;
 
 	//! Channels of the track the plugin belongs to
 	ch_cnt_t m_trackChannels = DEFAULT_CHANNELS;

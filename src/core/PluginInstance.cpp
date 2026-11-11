@@ -24,6 +24,9 @@
 
 #include "PluginInstance.h"
 
+#include <algorithm>
+#include <tuple>
+
 #include <QDomElement>
 
 #include "PluginChecks.h"
@@ -140,6 +143,11 @@ void PluginInstance::attach(std::unique_ptr<Plugin> plugin)
 {
 	m_plugin = std::move(plugin);
 	if (!m_plugin) { return; }
+
+	// No allocations on the audio thread
+	m_periodEvents.reserve(2 * MaxEventsPerPeriod);
+	m_heldEvents.reserve(MaxEventsPerPeriod);
+	m_laterEvents.reserve(MaxEventsPerPeriod);
 
 	m_plugin->m_host = this;
 
@@ -409,7 +417,46 @@ auto PluginInstance::process(AudioBuffer& trackChannels, NotePlayHandle* nph) ->
 		}
 	}
 
+	// The events of this period, sorted by time. Events at or after the period's end belong to a later period.
+	const auto frames = trackChannels.frames();
+	m_periodEvents.clear();
+	auto takeEvent = [&](PluginEvent event) {
+		if (event.time >= frames && m_laterEvents.size() < m_laterEvents.capacity())
+		{
+			event.time -= frames;
+			m_laterEvents.push_back(event);
+			return;
+		}
+		event.time = std::clamp<f_cnt_t>(event.time, 0, std::max<f_cnt_t>(frames, 1) - 1);
+		m_periodEvents.push_back(event);
+	};
+	m_heldEvents.swap(m_laterEvents);
+	m_laterEvents.clear();
+	for (const auto& event : m_heldEvents) { takeEvent(event); }
+	while (const auto event = m_eventQueue.tryPop()) { takeEvent(*event); }
+	// Events of the same frame come from different threads in no particular order (e.g. the notes of a chord),
+	// so they are put in a fixed order: notes ending, then MIDI, expressions and notes starting, by key
+	auto rank = [](PluginEvent::Type type) {
+		switch (type)
+		{
+			case PluginEvent::Type::NoteOff:
+			case PluginEvent::Type::NoteChoke: return 0;
+			case PluginEvent::Type::Midi: return 1;
+			case PluginEvent::Type::NoteExpression: return 2;
+			default: return 3;
+		}
+	};
+	std::stable_sort(m_periodEvents.begin(), m_periodEvents.end(), [&](const PluginEvent& a, const PluginEvent& b) {
+		if (a.time != b.time) { return a.time < b.time; }
+		if (rank(a.type) != rank(b.type)) { return rank(a.type) < rank(b.type); }
+		if (a.type == PluginEvent::Type::Midi) { return false; } // MIDI keeps its order
+		return std::tie(a.channel, a.key) < std::tie(b.channel, b.key);
+	});
+	m_outputEvents.clear();
+
 	const auto status = processAudio(trackChannels, nph);
+
+	if (m_outputEventHandler && !m_outputEvents.events().empty()) { m_outputEventHandler(m_outputEvents.events()); }
 
 	const bool corrupted = Engine::audioEngine()->sanitizationEnabled() && trackChannels.sanitize(usedOutputs);
 	const bool silentOutput = trackChannels.updateSilenceFlags(usedOutputs);
@@ -440,6 +487,7 @@ auto PluginInstance::process(AudioBuffer& trackChannels, NotePlayHandle* nph) ->
 auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* nph) -> ProcessStatus
 {
 	auto& proc = *m_processor;
+	const auto events = InputEvents{m_periodEvents};
 
 	// Direct routing: a stereo in-place plugin connected L --> L, R --> R to the main track channels
 	// works on the track channels themselves, without any copying
@@ -449,6 +497,7 @@ auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* np
 		&& (m_interleaved ? trackChannels.hasInterleavedBuffer() : trackChannels.channels() == 2))
 	{
 		auto context = ProcessContext{nullptr, &trackChannels, nph};
+		context.setEvents(events, &m_outputEvents);
 		const auto status = proc.process(context);
 
 		// Keep the track's planar and interleaved buffers in sync
@@ -477,6 +526,7 @@ auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* np
 	auto context = m_fullyInPlace
 		? ProcessContext{nullptr, &m_outputs, nph}
 		: ProcessContext{&m_inputs, &m_outputs, nph};
+	context.setEvents(events, &m_outputEvents);
 	const auto status = proc.process(context);
 
 	if (m_interleaved) { toPlanar(m_outputs.interleavedBuffer(), m_outputs.groupBuffers(0)); }
@@ -491,6 +541,14 @@ auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* np
 	}
 
 	return status;
+}
+
+
+
+
+auto PluginInstance::sendEvent(const PluginEvent& event) -> bool
+{
+	return m_eventQueue.tryPush(event);
 }
 
 

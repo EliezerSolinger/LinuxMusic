@@ -300,6 +300,9 @@ protected slots:
 	//! Takes over the channel count of the mixer channel the track sends to
 	void updateTrackChannelCount();
 
+	//! Gives a MIDI event to the instrument: through its event queue if it takes events, otherwise directly
+	bool deliverToInstrument(const MidiEvent& event, const TimePos& time, f_cnt_t offset);
+
 private:
 	void processCCEvent(int controller);
 

@@ -78,9 +78,8 @@ public:
 	QString nodeName() const override;
 	gui::PluginView* instantiateView(QWidget* parent) override;
 
-	bool handleMidiEvent(const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0) override;
-
 	// AudioProcessor implementation
+	auto wantsEvents() const -> bool override { return true; }
 	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
 	auto process(ProcessContext& context) -> ProcessStatus override;
 	auto channelCount(bool isInput) const -> ch_cnt_t override;
@@ -107,17 +106,8 @@ private slots:
 	void loadKit();
 
 private:
-	struct Event
-	{
-		f_cnt_t offset;
-		std::uint8_t type;
-		std::uint8_t data1;
-		std::uint8_t data2;
-	};
-	static constexpr std::size_t MaxEvents = 512;
-
 	void destroySynth();
-	void applyEvent(const Event& event);
+	void applyEvent(const PluginEvent& event);
 	void render(AudioBuffer& out, f_cnt_t offset, f_cnt_t frames);
 	auto multiOutputActive() const -> bool;
 
@@ -133,12 +123,6 @@ private:
 	sample_rate_t m_loadedSampleRate = 0;
 	QMutex m_synthMutex;
 	std::atomic<bool> m_loaded = false;
-
-	//! MIDI events for the next period, from the audio thread, MIDI input or the GUI
-	QMutex m_eventMutex;
-	std::array<Event, MaxEvents> m_events{};
-	std::size_t m_eventCount = 0;
-	std::array<Event, MaxEvents> m_processEvents{};
 
 	std::array<std::atomic<int>, PieceCount> m_hits{};
 };

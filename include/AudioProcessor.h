@@ -26,6 +26,7 @@
 #define LMMS_AUDIO_PROCESSOR_H
 
 #include "AudioBuffer.h"
+#include "PluginEvent.h"
 
 #include <optional>
 #include <stdexcept>
@@ -77,12 +78,24 @@ public:
 	//! @returns the current NotePlayHandle if it exists
 	auto nph() -> NotePlayHandle&;
 
-	// TODO: In the future, a note event queue will go here
+	//! The events for this period (notes, MIDI...), sorted by time; empty unless the processor wants events
+	auto inEvents() const -> InputEvents { return m_inEvents; }
+
+	//! Where the processor puts events for the host, or nullptr if the host takes none
+	auto outEvents() -> OutputEvents* { return m_outEvents; }
+
+	void setEvents(InputEvents in, OutputEvents* out)
+	{
+		m_inEvents = in;
+		m_outEvents = out;
+	}
 
 private:
 	AudioBuffer* m_out = nullptr;
 	const AudioBuffer* m_in = nullptr;
 	NotePlayHandle* m_nph;
+	InputEvents m_inEvents;
+	OutputEvents* m_outEvents = nullptr;
 };
 
 /**
@@ -191,6 +204,13 @@ public:
 	 *          (i.e. an in-place pair), or nullopt if no such in-place pair exists
 	 */
 	virtual auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> = 0;
+
+	/**
+	 * @returns whether the processor takes its notes and MIDI from ProcessContext::inEvents(). The host then
+	 *          delivers them there, each at its frame of the period, instead of calling methods like
+	 *          Instrument::handleMidiEvent() from other threads.
+	 */
+	virtual auto wantsEvents() const -> bool { return false; }
 
 	//! @returns whether the processor uses interleaved buffers or planar buffers
 	//! TODO: Remove interleaved buffer support in the future
