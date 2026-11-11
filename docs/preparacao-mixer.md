@@ -77,6 +77,9 @@ efeitos do FL Studio (veja [README.md](README.md)).
 9. Hierarquia: trilhas-pasta e canais de grupo no modelo de dados (com testes de soma, mute/solo em cascata,
    salvar/carregar e desfazer), e envio de sidechain e "uma trilha por peça" sobre os pares internos.
 10. Interface nova do mixer: slots por canal, arrastar e soltar, menu de slot, pastas e grupos recolhíveis.
+11. "Um canal por peça" para instrumentos multi-saída (bateria AVL): cria o grupo com um canal por peça no mixer
+    e faz o roteamento interno. Depende dos passos 9 e 10; até lá, as saídas da bateria são roteadas à mão pelo pin
+    connector e pelos envios.
 
 ## Andamento
 
