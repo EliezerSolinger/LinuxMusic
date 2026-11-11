@@ -33,6 +33,7 @@
 #include "Effect.h"
 #include "EffectControls.h"
 #include "FolderTrack.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "PluginChecks.h"
@@ -142,6 +143,35 @@ private:
 	DuckerControls m_controls;
 	std::vector<std::vector<float>> m_lines;
 	std::size_t m_position = 0;
+};
+
+Plugin::Descriptor s_multiOutputDescriptor = {
+	"fakemultioutput", "Fake multi-output instrument", "Instrument for tests", "LinuxMusic", 0x0100,
+	Plugin::Type::Instrument, nullptr, nullptr, nullptr
+};
+
+//! An instrument with named output groups, like a drum kit
+class FakeMultiOutput : public Instrument
+{
+public:
+	FakeMultiOutput() : Instrument{&s_multiOutputDescriptor, nullptr, nullptr, Flag::IsSingleStreamed} {}
+
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	auto nodeName() const -> QString override { return "fakemultioutput"; }
+	auto instantiateView(QWidget*) -> gui::PluginView* override { return nullptr; }
+	auto process(ProcessContext&) -> ProcessStatus override { return ProcessStatus::Continue; }
+	auto channelCount(bool isInput) const -> ch_cnt_t override { return isInput ? 0 : 4; }
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return isInput ? 0 : 3; }
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup&) const -> ch_cnt_t override
+	{
+		return isInput ? 0 : (index < 2 ? 1 : 2);
+	}
+	auto getInplacePair(ch_cnt_t) const -> std::optional<ch_cnt_t> override { return std::nullopt; }
+	auto channelGroupName(group_cnt_t index, bool isInput) const -> std::string override
+	{
+		return isInput ? std::string{} : std::array{"Kick", "Snare", "Cymbals"}[index];
+	}
 };
 
 } // namespace
@@ -1249,6 +1279,49 @@ private slots:
 		QVERIFY(!mixer()->toggleSidechainSend(kick, bass));
 		QVERIFY(mixer()->findChannelSend(kick, bass, 0, 1) == nullptr);
 		QCOMPARE(mixer()->channelOf(&mixer()->mixerChannel(bass)->m_fxChain), int{bass});
+	}
+
+	void multiOutputInstrumentGetsAChannelPerOutput()
+	{
+		auto track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		track->setInstrumentInstance(
+			std::make_unique<PluginInstance>(std::make_unique<FakeMultiOutput>(), Plugin::Type::Instrument));
+		const auto trackIndex = track->mixerChannelModel()->value();
+
+		const auto group = mixer()->setUpChannelPerOutput(track);
+		QVERIFY(group > 0);
+		QVERIFY(mixer()->mixerChannel(group)->m_groupChannel);
+		QCOMPARE(mixer()->mixerChannel(trackIndex)->channelCount(), 8);
+
+		// The pins route group g to the pair g + 1, mono groups to both of its channels
+		const auto& pins = track->instrumentInstance()->audioPortsModel()->out();
+		QVERIFY(!pins.enabled(0, 0));
+		QVERIFY(pins.enabled(2, 0) && pins.enabled(3, 0));
+		QVERIFY(pins.enabled(4, 1) && pins.enabled(5, 1));
+		QVERIFY(pins.enabled(6, 2) && pins.enabled(7, 3));
+
+		// A channel per output, named after it, takes its pair and sends to the group channel
+		const auto& receivers = mixer()->mixerChannel(trackIndex)->m_sends;
+		auto names = QStringList{};
+		for (const MixerRoute* route : receivers)
+		{
+			if (route->sourcePair() == 0) { continue; }
+			names << route->receiver()->m_name;
+			QCOMPARE(route->receiver()->m_sends.front()->receiverIndex(), group);
+		}
+		QCOMPARE(names, (QStringList{"Kick", "Snare", "Cymbals"}));
+		QCOMPARE(mixer()->mixerChannel(group)->m_sends.front()->receiverIndex(), 0);
+
+		// Sound in a pair reaches the master through its channel and the group channel
+		auto buffer = AudioBuffer{frames(), 8};
+		std::ranges::fill(buffer.buffer(4), 0.5f);
+		std::ranges::fill(buffer.buffer(5), 0.25f);
+		buffer.assumeNonSilent(4);
+		buffer.assumeNonSilent(5);
+		mixer()->mixAuxiliaryToChannel(buffer, trackIndex);
+		compareOutput(mix(), 0.5f, 0.25f);
+
+		deleteTrack(track);
 	}
 };
 

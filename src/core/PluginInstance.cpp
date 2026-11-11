@@ -651,6 +651,47 @@ void PluginInstance::setTrackChannelCount(ch_cnt_t channels)
 
 
 
+auto PluginInstance::outputGroups() const -> std::vector<OutputGroup>
+{
+	auto groups = std::vector<OutputGroup>{};
+	for (group_cnt_t g = 0; g < m_outputs.groupCount(); ++g)
+	{
+		groups.push_back({m_processor ? m_processor->channelGroupName(g, false) : std::string{},
+			m_outputs.group(g).channels()});
+	}
+	return groups;
+}
+
+
+
+
+auto PluginInstance::routeOutputGroupsToPairs() -> bool
+{
+	if (!m_audioPorts) { return false; }
+	auto& pins = m_audioPorts->out();
+	const auto groups = m_outputs.groupCount();
+	if (pins.trackChannelCount() < 2 * (groups + 1)) { return false; }
+
+	for (ch_cnt_t tc = 0; tc < pins.trackChannelCount(); ++tc)
+	{
+		for (ch_cnt_t ch = 0; ch < pins.channelCount(); ++ch) { pins.setPin(tc, ch, false); }
+	}
+
+	auto first = ch_cnt_t{0};
+	for (group_cnt_t g = 0; g < groups; ++g)
+	{
+		const auto channels = m_outputs.group(g).channels();
+		const auto left = static_cast<ch_cnt_t>(2 * (g + 1));
+		pins.setPin(left, first, true);
+		pins.setPin(left + 1, channels > 1 ? first + 1 : first, true);
+		first += channels;
+	}
+	return true;
+}
+
+
+
+
 void PluginInstance::connectOutputGroupsByDefault()
 {
 	if (!m_audioPorts || m_outputs.groupCount() < 2) { return; }

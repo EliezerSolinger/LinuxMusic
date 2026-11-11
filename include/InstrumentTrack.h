@@ -155,6 +155,9 @@ public:
 	//! The host side of the instrument plugin (buffers, pin connector, state)
 	PluginInstance* instrumentInstance() { return m_instrument.get(); }
 
+	//! Makes @p instance the track's instrument (e.g. one made outside of the plugin factory, as in tests)
+	void setInstrumentInstance(std::unique_ptr<PluginInstance> instance);
+
 	Instrument * loadInstrument(const QString & _instrument_name,
 				const Plugin::Descriptor::SubPluginFeatures::Key* key = nullptr,
 				bool keyFromDnd = false);

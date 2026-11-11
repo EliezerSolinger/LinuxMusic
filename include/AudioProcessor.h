@@ -29,6 +29,7 @@
 #include "PluginEvent.h"
 
 #include <optional>
+#include <string>
 #include <stdexcept>
 #include <string_view>
 
@@ -211,6 +212,17 @@ public:
 	 *          Instrument::handleMidiEvent() from other threads.
 	 */
 	virtual auto wantsEvents() const -> bool { return false; }
+
+	/**
+	 * A name for channel group @p index, e.g. "Kick" for an output of a drum kit; empty if it has none.
+	 * Used to name the mixer channels made for the groups. [main thread]
+	 */
+	virtual auto channelGroupName(group_cnt_t index, bool isInput) const -> std::string
+	{
+		(void)index;
+		(void)isInput;
+		return {};
+	}
 
 	/**
 	 * The plugin's latency: how many frames its output lags behind its input, e.g. for lookahead. The mixer

@@ -314,3 +314,30 @@ abertos janelas de controle duplicadas. O que entrou:
   posição por vez);
 - reordenar canais do mixer para ficarem junto do seu grupo;
 - mostrar os slots com nome dentro de cada faixa do mixer (hoje são quadrados).
+
+### Passo 11: um canal por peça (feito)
+
+- `AudioProcessor::channelGroupName()` dá nome aos grupos de canais (a bateria AVL: Kick, Snare, Hi-Hat, Tom,
+  Floor Tom, Cymbals, Percussion).
+- `Mixer::setUpChannelPerOutput()` serve para qualquer instrumento com mais de um grupo de saída:
+  - o canal da faixa ganha um par por grupo (3/4, 5/6...);
+  - os pinos do instrumento mandam o grupo g para o par g + 1 (`PluginInstance::routeOutputGroupsToPairs()`; grupo
+    mono vai para os dois lados do par) e nada para o par principal;
+  - cada grupo ganha um canal com o nome dele, que recebe o seu par;
+  - um canal de grupo, "<faixa> (pieces)", soma as peças e manda para onde o canal da faixa mandava.
+  - É um passo de desfazer. Se o canal da faixa volta a ter 2 canais, as saídas voltam todas para o par principal,
+    para o instrumento não ficar mudo.
+- Interface:
+  - botão "Mixer channel per piece" na janela da bateria AVL (com a saída por peça ligada);
+  - "Mixer channel per output" no menu da faixa, para qualquer instrumento multi-saída.
+- `InstrumentTrack::setInstrumentInstance()` põe um instrumento já criado na faixa (usado nos testes).
+- `MixerTest` tem 58 testes.
+- **Limites:**
+  - apagar a faixa deixa os canais das peças (o "Remover canais sem uso" do mixer limpa);
+  - o canal de grupo das peças não acompanha a faixa quando ela muda de pasta depois.
+
+### Correção encontrada pela bateria A/B
+
+O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
+passou a ser lido como vazio. O efeito ficava sem entrada, dormia e zerava o canal. `AudioPortsModel::loadSettings`
+volta a ler esse formato (teste em `AudioPortsTest`).

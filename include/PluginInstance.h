@@ -30,6 +30,8 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 #include <span>
 #include <vector>
 
@@ -127,6 +129,27 @@ public:
 	 */
 	auto process(AudioBuffer& trackChannels, NotePlayHandle* nph = nullptr) -> bool;
 
+	//! One of the plugin's output channel groups (see AudioProcessor::getChannelGroup())
+	struct OutputGroup
+	{
+		std::string name;
+		ch_cnt_t channels;
+	};
+
+	//! The plugin's output channel groups, e.g. the pieces of a drum kit [main thread]
+	auto outputGroups() const -> std::vector<OutputGroup>;
+
+	/**
+	 * Connects output group g to the track channel pair g + 1 (a mono group to both of its channels) and nothing
+	 * to the main pair, so that each group can have a mixer channel of its own (Mixer::setUpChannelPerOutput()).
+	 * [main thread]
+	 * @returns false if the track has too few channels for that
+	 */
+	auto routeOutputGroupsToPairs() -> bool;
+
+	//! When the outputs have several channel groups, connects each one to the main track channels
+	void connectOutputGroupsByDefault();
+
 	/**
 	 * The plugin's latency (see AudioProcessor::latency()); 0 while inactive and for disabled or bypassed
 	 * effects, whose audio passes through undelayed. [audio thread]
@@ -190,9 +213,6 @@ private:
 	 * has them, unless the pins were loaded or the inputs are connected already.
 	 */
 	void connectSidechainByDefault();
-
-	//! When the outputs have several channel groups, connects each one to the main track channels
-	void connectOutputGroupsByDefault();
 
 	void activate();
 	void deactivate();

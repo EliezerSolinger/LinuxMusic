@@ -43,6 +43,9 @@
 #include "Engine.h"
 #include "InstrumentTrackView.h"
 #include "lmms_math.h"
+#include "InstrumentTrack.h"
+#include "Mixer.h"
+#include "PluginInstance.h"
 #include "KeyboardShortcuts.h"
 #include "Song.h"
 #include "StringPairDrag.h"
@@ -286,6 +289,16 @@ void TrackOperationsWidget::updateMenu()
 		toMenu->addSeparator();
 		toMenu->addMenu(trackView->midiMenu());
 		trackView->addPinConnectorAction(toMenu);
+
+		// Multi-output instruments (e.g. a drum kit): a mixer channel for each output
+		const auto instrumentTrack = trackView->model();
+		const auto instance = instrumentTrack->instrumentInstance();
+		if (instance && instance->outputGroups().size() > 1)
+		{
+			toMenu->addAction(tr("Mixer channel per output"), this, [instrumentTrack] {
+				Engine::mixer()->setUpChannelPerOutput(instrumentTrack);
+			});
+		}
 	}
 	if( dynamic_cast<AutomationTrackView *>( m_trackView ) )
 	{

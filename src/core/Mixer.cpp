@@ -39,6 +39,7 @@
 #include "lmms_math.h"
 #include "panning.h"
 #include "PatternStore.h"
+#include "PluginInstance.h"
 #include "ProjectJournal.h"
 #include "SampleTrack.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
@@ -1489,6 +1490,57 @@ auto Mixer::toggleSidechainSend(mix_ch_t from, mix_ch_t to) -> bool
 	const auto change = StructureChange{*this};
 	if (m_mixerChannels[to]->channelCount() < 4) { setChannelCount(to, 4); }
 	return createChannelSend(from, to, 1.f, 0, 1) != nullptr;
+}
+
+
+
+
+auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
+{
+	const auto instance = track->instrumentInstance();
+	const auto groups = instance ? instance->outputGroups() : std::vector<PluginInstance::OutputGroup>{};
+	if (groups.size() < 2) { return -1; }
+
+	const auto change = StructureChange{*this};
+
+	if (!trackChannel(track)) { setUpTrackChannel(track); }
+	const auto trackIndex = static_cast<mix_ch_t>(track->mixerChannelModel()->value());
+	auto source = m_mixerChannels[trackIndex];
+
+	// Where the track's channel sends its main output
+	mix_ch_t destination = 0;
+	for (const MixerRoute* route : source->m_sends)
+	{
+		if (route->sourcePair() == 0 && route->destinationPair() == 0) { destination = route->receiverIndex(); break; }
+	}
+
+	// A pair per group on the track's channel, which the pins route the groups to
+	setChannelCount(trackIndex, static_cast<ch_cnt_t>(2 * (groups.size() + 1)));
+	if (!instance->routeOutputGroupsToPairs()) { return -1; }
+
+	const auto group = createChannel();
+	auto groupChannel = m_mixerChannels[group];
+	groupChannel->m_name = tr("%1 (pieces)").arg(track->name());
+	groupChannel->setColor(track->color());
+	groupChannel->m_groupChannel = true;
+	deleteChannelSend(group, 0);
+	createChannelSend(group, destination);
+
+	for (auto g = std::size_t{0}; g < groups.size(); ++g)
+	{
+		const auto piece = createChannel();
+		auto pieceChannel = m_mixerChannels[piece];
+		pieceChannel->m_name = groups[g].name.empty()
+			? tr("%1 %2").arg(track->name()).arg(g + 1)
+			: QString::fromStdString(groups[g].name);
+		pieceChannel->setColor(track->color());
+		createChannelSend(trackIndex, piece, 1.f, static_cast<ch_cnt_t>(g + 1), 0);
+		deleteChannelSend(piece, 0);
+		createChannelSend(piece, group);
+	}
+
+	emit dataChanged();
+	return group;
 }
 
 

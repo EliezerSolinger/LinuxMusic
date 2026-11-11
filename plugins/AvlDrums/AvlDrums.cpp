@@ -32,6 +32,7 @@
 #include <QMutexLocker>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPushButton>
 
 #include <fluidsynth.h>
 
@@ -40,12 +41,15 @@
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "FontHelper.h"
+#include "GuiApplication.h"
 #include "Host.h"
 #include "InstrumentPlayHandle.h"
 #include "InstrumentTrack.h"
 #include "LedCheckBox.h"
 #include "MidiEvent.h"
 #include "MidiPort.h"
+#include "Mixer.h"
+#include "MixerView.h"
 #include "Midi.h"
 #include "Song.h"
 
@@ -305,8 +309,18 @@ auto AvlDrumsInstrument::getChannelGroup(group_cnt_t index, bool isInput, AudioB
 	if (isInput) { return 0; }
 	if (!multiOutputActive()) { return DEFAULT_CHANNELS; }
 
-	// TODO: Name the groups (kick, snare...) once channel groups have names
 	return index < MonoGroups ? 1 : 2;
+}
+
+
+
+
+auto AvlDrumsInstrument::channelGroupName(group_cnt_t index, bool isInput) const -> std::string
+{
+	static constexpr auto Names = std::array<const char*, MultiGroupCount>{
+		"Kick", "Snare", "Hi-Hat", "Tom", "Floor Tom", "Cymbals", "Percussion"};
+	if (isInput || !multiOutputActive() || index >= Names.size()) { return {}; }
+	return Names[index];
 }
 
 
@@ -525,6 +539,18 @@ AvlDrumsView::AvlDrumsView(AvlDrumsInstrument* instrument, QWidget* parent) :
 	m_multiOutputBox->setToolTip(tr("Kick, snare, hi-hat, tom and floor tom (mono), cymbals and percussion "
 		"(stereo) get their own outputs, which the pin connector can route to the track's auxiliary channels"));
 
+	// Each piece on a mixer channel of its own, summed by a group channel
+	m_channelPerPieceButton = new QPushButton(tr("Mixer channel per piece"), this);
+	m_channelPerPieceButton->setToolTip(tr("Creates a mixer channel for each drum piece and a group channel summing "
+		"them, and routes the outputs there"));
+	m_channelPerPieceButton->setFocusPolicy(Qt::NoFocus);
+	m_channelPerPieceButton->adjustSize();
+	connect(m_channelPerPieceButton, &QPushButton::clicked, this, [this] {
+		auto drums = castModel<AvlDrumsInstrument>();
+		const int group = Engine::mixer()->setUpChannelPerOutput(drums->instrumentTrack());
+		if (group > 0 && getGUI()->mixerView()) { getGUI()->mixerView()->setCurrentMixerChannel(group); }
+	});
+
 	setToolTip(tr("Click a drum to play it"));
 
 	startTimer(33);
@@ -548,6 +574,7 @@ void AvlDrumsView::modelChanged()
 		update();
 	};
 	connect(&drums->kitModel(), &ComboBoxModel::dataChanged, this, kitSelected);
+	connect(&drums->multiOutputModel(), &BoolModel::dataChanged, this, &AvlDrumsView::updateMultiOutputAvailability);
 	connect(drums, &AvlDrumsInstrument::kitChanged, this, kitSelected);
 
 	kitSelected();
@@ -561,6 +588,8 @@ void AvlDrumsView::updateMultiOutputAvailability()
 	auto drums = castModel<AvlDrumsInstrument>();
 	const auto kit = std::clamp(drums->kitModel().value(), 0, static_cast<int>(AvlDrumsInstrument::Kits.size()) - 1);
 	m_multiOutputBox->setEnabled(AvlDrumsInstrument::Kits[kit].hasMultiOutput);
+	m_channelPerPieceButton->setEnabled(AvlDrumsInstrument::Kits[kit].hasMultiOutput
+		&& drums->multiOutputModel().value());
 }
 
 
@@ -613,6 +642,15 @@ void AvlDrumsView::loadKitImages()
 			}
 		}
 	}
+}
+
+
+
+
+void AvlDrumsView::resizeEvent(QResizeEvent* event)
+{
+	InstrumentView::resizeEvent(event);
+	m_channelPerPieceButton->move(width() - m_channelPerPieceButton->width() - 8, 6);
 }
 
 

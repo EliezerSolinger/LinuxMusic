@@ -37,6 +37,8 @@
 #include "Instrument.h"
 #include "InstrumentView.h"
 
+class QPushButton;
+
 struct _fluid_hashtable_t;
 struct _fluid_synth_t;
 
@@ -89,6 +91,7 @@ public:
 	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
 		-> ch_cnt_t override;
 	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override;
+	auto channelGroupName(group_cnt_t index, bool isInput) const -> std::string override;
 
 	auto kitModel() -> ComboBoxModel& { return m_kitModel; }
 	auto multiOutputModel() -> BoolModel& { return m_multiOutputModel; }
@@ -172,11 +175,14 @@ private:
 	//! Where the photo is drawn: as large as fits below the controls, keeping its proportions
 	auto photoRect() const -> QRect;
 
+	void resizeEvent(QResizeEvent* event) override;
+
 	//! The note of the piece at @p pos, or -1
 	auto noteAt(const QPoint& pos) const -> int;
 
 	ComboBox* m_kitBox;
 	LedCheckBox* m_multiOutputBox;
+	QPushButton* m_channelPerPieceButton;
 
 	int m_imagesKit = -1;
 	QImage m_photo;

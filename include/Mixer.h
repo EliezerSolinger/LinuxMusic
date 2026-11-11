@@ -44,6 +44,7 @@ namespace lmms
 {
 
 
+class InstrumentTrack;
 class MixerRoute;
 class Track;
 using MixerRouteVector = std::vector<MixerRoute*>;
@@ -351,6 +352,17 @@ public:
 	 * @returns whether the send exists afterwards (false also if it would make a loop)
 	 */
 	auto toggleSidechainSend(mix_ch_t from, mix_ch_t to) -> bool;
+
+	/**
+	 * Gives each output group of @p track's instrument (e.g. each piece of a drum kit) a mixer channel of its own:
+	 * - the track's channel gets a pair per group (channels 3/4, 5/6...), and the instrument's pins route group g
+	 *   to pair g + 1;
+	 * - a channel per group, named after it, takes its pair;
+	 * - a group channel sums them and sends where the track's channel sent.
+	 * One undo step.
+	 * @returns the group channel, or -1 if the instrument has fewer than two output groups
+	 */
+	auto setUpChannelPerOutput(InstrumentTrack* track) -> int;
 
 	//! The index of the channel whose effects are @p chain, or -1
 	auto channelOf(const EffectChain* chain) const -> int;

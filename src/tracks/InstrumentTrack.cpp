@@ -728,7 +728,12 @@ void InstrumentTrack::updateTrackChannelCount()
 	m_instrumentChannels = AudioBuffer{Engine::audioEngine()->framesPerPeriod(), channels};
 	m_instrumentChannels.setGroups(static_cast<group_cnt_t>(channels / 2),
 		[](group_cnt_t, AudioBuffer::ChannelGroup&) { return ch_cnt_t{2}; });
-	if (m_instrument) { m_instrument->setTrackChannelCount(channels); }
+	if (m_instrument)
+	{
+		m_instrument->setTrackChannelCount(channels);
+		// Back to the main pair only (e.g. undoing Mixer::setUpChannelPerOutput()): all outputs go there again
+		if (channels == DEFAULT_CHANNELS) { m_instrument->connectOutputGroupsByDefault(); }
+	}
 	Engine::audioEngine()->doneChangeInModel();
 }
 
@@ -1105,6 +1110,21 @@ QString InstrumentTrack::getSavedInstrumentName(const QDomElement &thisElement) 
 		return elem.attribute("name");
 	}
 	return "";
+}
+
+
+
+
+void InstrumentTrack::setInstrumentInstance(std::unique_ptr<PluginInstance> instance)
+{
+	silenceAllNotes(true);
+
+	lock();
+	m_instrument = std::move(instance);
+	m_instrument->setTrackChannelCount(trackChannelCount());
+	unlock();
+
+	emit instrumentChanged();
 }
 
 
