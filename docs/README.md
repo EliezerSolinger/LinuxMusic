@@ -1,0 +1,35 @@
+# Documentação do LinuxMusic
+
+O LinuxMusic é um fork do [LMMS](https://github.com/LMMS/lmms) com um objetivo claro: virar uma DAW para Linux
+capaz de gravar áudio ao vivo de verdade, no estilo do REAPER.
+
+Para chegar lá, o trabalho foi dividido em três etapas longas, feitas nesta ordem:
+
+| Etapa | Tema | Documento |
+|---|---|---|
+| 1 | Remover plugins e funcionalidades que não serão usados | [etapa-1-limpeza.md](etapa-1-limpeza.md) |
+| 2 | Remodelar interface e usabilidade, e preparar a base da mesa de som e dos canais | [etapa-2-interface-e-mixer.md](etapa-2-interface-e-mixer.md) |
+| 3 | Implementar um sistema de gravação no estilo REAPER | [etapa-3-gravacao.md](etapa-3-gravacao.md) |
+
+A ordem é intencional. Primeiro se reduz o código para o que importa. Depois a interface e o mixer são
+remodelados já pensando em canais com entrada de áudio. Só então a gravação é construída sobre essa base,
+em vez de ser encaixada à força na estrutura antiga.
+
+## Regras gerais do projeto
+
+- **Linux é o destino final.** Tudo precisa compilar e funcionar no Linux. O macOS é usado só como máquina de
+  desenvolvimento; nada pode depender dele.
+- **Sem compromisso com o formato de projeto do LMMS.** Os arquivos `.mmp`/`.mmpz` podem mudar livremente quando
+  isso simplificar o código ou permitir algo novo.
+- **Licença GPL-2.0 ou posterior**, herdada do LMMS. Os créditos aos autores originais (`doc/AUTHORS`,
+  `doc/CONTRIBUTORS` e os cabeçalhos dos arquivos) devem ser mantidos.
+- **Relação com o LMMS original:** o remote `upstream` aponta para `LMMS/lmms`. À medida que o código divergir
+  (principalmente depois da etapa 1), puxar mudanças do LMMS vai ficar mais difícil. A partir daí, correções do
+  upstream devem ser trazidas caso a caso (`git cherry-pick`), não com merge completo.
+
+## Estado atual
+
+Veja [estado-atual.md](estado-atual.md) para saber de onde o código partiu e o que já foi feito.
+
+Antes da etapa 2, veja [pesquisa-ui-existente.md](pesquisa-ui-existente.md): é o levantamento do trabalho de UI e
+mixer que já existe no LMMS.
