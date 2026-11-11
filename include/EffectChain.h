@@ -66,6 +66,22 @@ public:
 
 	void appendEffect(std::unique_ptr<PluginInstance> effect);
 
+	//! Inserts @p effect before the effect at @p index (or at the end if @p index is past it)
+	void insertEffect(std::size_t index, std::unique_ptr<PluginInstance> effect);
+
+	//! Replaces the effect at @p index with @p effect
+	void replaceEffect(std::size_t index, std::unique_ptr<PluginInstance> effect);
+
+	//! Moves the effect at @p from so that it ends up at @p to
+	void moveEffect(std::size_t from, std::size_t to);
+
+	//! Saves @p effect (its settings, plugin key and pins) as a child of @p parent, as a chain saves its effects
+	static auto saveEffect(PluginInstance& effect, QDomDocument& doc, QDomElement& parent) -> QDomElement;
+
+	//! Creates the effect saved in @p effectData (see saveEffect()) for this chain, without adding it; a
+	//! DummyEffect if it cannot be loaded
+	auto loadEffect(const QDomElement& effectData) -> std::unique_ptr<PluginInstance>;
+
 	//! Loads the effects of a saved chain (an element saved by saveState()) in front of this chain's effects
 	void prependEffects(const QDomElement& savedChain);
 	void removeEffect( Effect * _effect );
@@ -96,9 +112,6 @@ public:
 
 private:
 	auto find(const Effect* effect) -> EffectList::iterator;
-
-	//! Creates the effect saved in @p effectData in this chain (a DummyEffect if it cannot be loaded)
-	auto loadEffect(const QDomElement& effectData) -> std::unique_ptr<PluginInstance>;
 
 	EffectList m_effects;
 

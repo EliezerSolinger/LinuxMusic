@@ -69,6 +69,7 @@
 #include "RemotePluginBase.h"
 #include "SetupDialog.h"
 #include "BrowserPanel.h"
+#include "EffectBrowser.h"
 #include "SongEditor.h"
 #include "SubWindow.h"
 #include "TemplatesMenu.h"
@@ -121,6 +122,7 @@ MainWindow::MainWindow() :
 
 	emit initProgress(tr("Preparing plugin browser"));
 	m_browserPanel->addBrowser(new PluginBrowser(m_browserPanel));
+	m_browserPanel->addBrowser(new EffectBrowser(m_browserPanel));
 	emit initProgress(tr("Preparing file browsers"));
 
 	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Favorites, ConfigManager::inst()->favoriteItems().join("*"),

@@ -30,6 +30,7 @@
 #include "LmmsPalette.h"
 
 #include "AutomationEditor.h"
+#include "BrowserPanel.h"
 #include "ConfigManager.h"
 #include "ControllerRackView.h"
 #include "InstrumentTrackView.h"
@@ -235,10 +236,12 @@ GuiApplication::GuiApplication()
 				}
 			});
 		}
-		// =mixer shows the mixer
-		if (screenshotAction == "mixer")
+		// =effects-browser shows the browser's effects page
+		if (screenshotAction == "effects-browser")
 		{
-			QTimer::singleShot(2500, m_mainWindow, [this] { m_mainWindow->toggleMixerWin(); });
+			QTimer::singleShot(2500, m_mainWindow, [this] {
+				if (auto panel = m_mainWindow->findChild<BrowserPanel*>()) { panel->select(1, false); }
+			});
 		}
 		QTimer::singleShot(4000, m_mainWindow, [this, screenshotPath, screenshotAction] {
 			// =plugins captures the plugin browser of the side bar instead of the main window

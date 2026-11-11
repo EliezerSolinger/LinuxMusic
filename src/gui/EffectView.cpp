@@ -35,11 +35,14 @@
 #include "CaptionMenu.h"
 #include "DockPanel.h"
 #include "DummyEffect.h"
+#include "EffectChain.h"
+#include "Engine.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
 #include "Knob.h"
 #include "LedCheckBox.h"
 #include "MainWindow.h"
+#include "Mixer.h"
 #include "PinConnector.h"
 #include "SubWindow.h"
 #include "TempoSyncKnob.h"
@@ -204,6 +207,33 @@ void EffectView::contextMenuEvent( QContextMenuEvent * )
 	contextMenu->addAction( embed::getIconPixmap( "arp_down" ),
 						tr( "Move &down" ),
 						this, SLOT(moveDown()));
+	contextMenu->addSeparator();
+	contextMenu->addAction(tr("Re&place with..."), this, [this] { emit replaceRequested(this); });
+	contextMenu->addAction(tr("&Load preset..."), this, [this] { emit loadPresetRequested(this); });
+	if (!dynamic_cast<DummyEffect*>(effect()))
+	{
+		contextMenu->addAction(tr("&Save preset..."), this, [this] { emit savePresetRequested(this); });
+	}
+
+	// Effects with a sidechain input (more inputs than the main pair) on a mixer channel: where it comes from
+	const auto mixer = Engine::mixer();
+	const int channel = effect()->effectChain() ? mixer->channelOf(effect()->effectChain()) : -1;
+	auto sidechainMenu = QMenu{tr("Sidechain source"), this};
+	if (channel > 0 && m_audioPorts && m_audioPorts->in().channelCount() > 2)
+	{
+		for (int source = 1; source < mixer->numChannels(); ++source)
+		{
+			if (source == channel) { continue; }
+			const bool sending = mixer->findChannelSend(source, channel, 0, 1) != nullptr;
+			if (!sending && mixer->isInfiniteLoop(source, channel)) { continue; }
+			auto action = sidechainMenu.addAction(tr("%1: %2").arg(source).arg(mixer->mixerChannel(source)->m_name),
+				this, [mixer, source, channel] { mixer->toggleSidechainSend(source, channel); });
+			action->setCheckable(true);
+			action->setChecked(sending);
+		}
+		contextMenu->addMenu(&sidechainMenu);
+	}
+
 	contextMenu->addSeparator();
 	contextMenu->addAction( embed::getIconPixmap( "cancel" ),
 						tr( "&Remove this plugin" ),

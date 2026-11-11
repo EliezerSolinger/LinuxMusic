@@ -1215,6 +1215,41 @@ private slots:
 		deleteTrack(track);
 		deleteTrack(folder);
 	}
+
+	void effectsCanBeInsertedMovedAndReplaced()
+	{
+		auto& chain = mixer()->mixerChannel(0)->m_fxChain;
+		auto a = addLatentEffect(0, 1);
+		auto b = addLatentEffect(0, 2);
+		chain.insertEffect(1, std::make_unique<PluginInstance>(std::make_unique<FakeDelay>(3), Plugin::Type::Effect));
+		QCOMPARE(chain.effects().size(), std::size_t{3});
+		QCOMPARE(chain.effects()[0].get(), a);
+		QCOMPARE(chain.effects()[1]->latency(), f_cnt_t{3});
+		QCOMPARE(chain.effects()[2].get(), b);
+
+		chain.moveEffect(0, 2);
+		QCOMPARE(chain.effects()[2].get(), a);
+		QCOMPARE(chain.effects()[1].get(), b);
+
+		chain.replaceEffect(1, std::make_unique<PluginInstance>(std::make_unique<FakeDelay>(7), Plugin::Type::Effect));
+		QCOMPARE(chain.effects()[1]->latency(), f_cnt_t{7});
+		mix();
+		QCOMPARE(mixer()->latency(), f_cnt_t{3 + 7 + 1});
+
+		chain.clear();
+	}
+
+	void sidechainSendCanBeToggledFromEitherSide()
+	{
+		const auto kick = mixer()->createChannel();
+		const auto bass = mixer()->createChannel();
+		QVERIFY(mixer()->toggleSidechainSend(kick, bass));
+		QCOMPARE(mixer()->mixerChannel(bass)->channelCount(), 4);
+		QVERIFY(mixer()->findChannelSend(kick, bass, 0, 1) != nullptr);
+		QVERIFY(!mixer()->toggleSidechainSend(kick, bass));
+		QVERIFY(mixer()->findChannelSend(kick, bass, 0, 1) == nullptr);
+		QCOMPARE(mixer()->channelOf(&mixer()->mixerChannel(bass)->m_fxChain), int{bass});
+	}
 };
 
 QTEST_GUILESS_MAIN(MixerTest)

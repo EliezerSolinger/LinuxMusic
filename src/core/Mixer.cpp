@@ -1475,6 +1475,37 @@ void Mixer::releaseTrackChannel(Track* track)
 
 
 
+auto Mixer::toggleSidechainSend(mix_ch_t from, mix_ch_t to) -> bool
+{
+	if (from == to || from >= numChannels() || to >= numChannels()) { return false; }
+
+	if (const auto existing = findChannelSend(from, to, 0, 1))
+	{
+		deleteChannelSend(existing);
+		return false;
+	}
+	if (isInfiniteLoop(from, to)) { return false; }
+
+	const auto change = StructureChange{*this};
+	if (m_mixerChannels[to]->channelCount() < 4) { setChannelCount(to, 4); }
+	return createChannelSend(from, to, 1.f, 0, 1) != nullptr;
+}
+
+
+
+
+auto Mixer::channelOf(const EffectChain* chain) const -> int
+{
+	for (const auto channel : m_mixerChannels)
+	{
+		if (&channel->m_fxChain == chain) { return channel->index(); }
+	}
+	return -1;
+}
+
+
+
+
 void Mixer::updateFolderRouting()
 {
 	const auto song = Engine::getSong();

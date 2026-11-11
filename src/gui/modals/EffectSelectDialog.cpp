@@ -32,6 +32,7 @@
 #include "PluginInstance.h"
 
 #include <QApplication>
+#include <QDomDocument>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -65,20 +66,7 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 	
 	setWindowIcon(embed::getIconPixmap("setup_audio"));
 
-	// Query effects
-	EffectKeyList subPluginEffectKeys;
-	for (const auto desc : getPluginFactory()->descriptors(Plugin::Type::Effect))
-	{
-		if (desc->subPluginFeatures)
-		{
-			desc->subPluginFeatures->listSubPluginKeys(desc, subPluginEffectKeys);
-		}
-		else
-		{
-			m_effectKeys << EffectKey(desc, desc->name);
-		}
-	}
-	m_effectKeys += subPluginEffectKeys;
+	m_effectKeys = availableEffects();
 
 	// Fill the source model
 	m_sourceModel.setHorizontalHeaderItem(0, new QStandardItem(tr("Name")));
@@ -194,6 +182,50 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 	updateSelection();
 	show();
 }
+
+
+auto EffectSelectDialog::availableEffects() -> EffectKeyList
+{
+	auto keys = EffectKeyList{};
+	auto subPluginKeys = EffectKeyList{};
+	for (const auto desc : getPluginFactory()->descriptors(Plugin::Type::Effect))
+	{
+		if (desc->subPluginFeatures) { desc->subPluginFeatures->listSubPluginKeys(desc, subPluginKeys); }
+		else { keys << EffectKey(desc, desc->name); }
+	}
+	return keys + subPluginKeys;
+}
+
+
+
+
+auto EffectSelectDialog::dragData(const EffectKey& key) -> QString
+{
+	auto doc = QDomDocument{};
+	auto element = key.saveXML(doc);
+	element.setAttribute("plugin", QString::fromUtf8(key.desc->name));
+	doc.appendChild(element);
+	return doc.toString(-1);
+}
+
+
+
+
+auto EffectSelectDialog::instantiateDragged(const QString& data, EffectChain* chain) -> std::unique_ptr<PluginInstance>
+{
+	auto doc = QDomDocument{};
+	if (!doc.setContent(data)) { return nullptr; }
+	const auto element = doc.documentElement();
+	const auto plugin = element.attribute("plugin").toUtf8();
+	auto key = EffectKey{element};
+	key.desc = getPluginFactory()->pluginInfo(plugin.constData()).descriptor;
+	if (!key.isValid()) { return nullptr; }
+
+	auto instance = std::make_unique<PluginInstance>(Plugin::Type::Effect, key.desc->name, chain, &key);
+	return instance->effect() && !dynamic_cast<DummyEffect*>(instance->effect()) ? std::move(instance) : nullptr;
+}
+
+
 
 
 std::unique_ptr<PluginInstance> EffectSelectDialog::instantiateSelectedPlugin(EffectChain* parent)

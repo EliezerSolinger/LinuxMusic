@@ -40,20 +40,84 @@
 #include "CaptionMenu.h"
 #include "ColorChooser.h"
 #include "ConfigManager.h"
+#include "Effect.h"
 #include "EffectRackView.h"
+#include "EffectSelectDialog.h"
 #include "Fader.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
 #include "Knob.h"
 #include "LcdWidget.h"
 #include "lmms_math.h"
+#include "MainWindow.h"
 #include "Mixer.h"
 #include "MixerView.h"
 #include "PeakIndicator.h"
+#include "PluginInstance.h"
 #include "SendButtonIndicator.h"
+#include "StringPairDrag.h"
 #include "Song.h"
 
-namespace lmms::gui {
+namespace lmms::gui
+{
+
+namespace
+{
+
+//! The channel's effect slots in miniature: one square per effect, lit while it is on
+class EffectSlotsIndicator : public QWidget
+{
+public:
+	EffectSlotsIndicator(EffectChain* chain, QWidget* parent) : QWidget{parent}, m_chain{chain}
+	{
+		setFixedSize(SlotsPerRow * SlotSize, 2 * SlotSize);
+		setAttribute(Qt::WA_TransparentForMouseEvents);
+		connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, [this] { refresh(); });
+		refresh();
+	}
+
+private:
+	static constexpr int SlotsPerRow = 6;
+	static constexpr int SlotSize = 8;
+
+	void refresh()
+	{
+		auto states = std::vector<int>{};
+		auto names = QStringList{};
+		for (const auto& instance : m_chain->effects())
+		{
+			const auto effect = instance->effect();
+			if (!effect) { continue; }
+			states.push_back(effect->isCorrupted() ? 2 : effect->isEnabled() ? 1 : 0);
+			names << effect->displayName();
+		}
+		if (states != m_states)
+		{
+			m_states = std::move(states);
+			setToolTip(names.join('\n'));
+			update();
+		}
+	}
+
+	void paintEvent(QPaintEvent*) override
+	{
+		auto painter = QPainter{this};
+		const auto count = static_cast<int>(m_states.size());
+		for (int slot = 0; slot < std::min(count, 2 * SlotsPerRow); ++slot)
+		{
+			const auto color = m_states[slot] == 2 ? QColor{220, 60, 60}
+				: m_states[slot] == 1 ? palette().highlight().color() : palette().mid().color();
+			painter.fillRect(slot % SlotsPerRow * SlotSize + 1, slot / SlotsPerRow * SlotSize + 1, SlotSize - 2,
+				SlotSize - 2, color);
+		}
+	}
+
+	EffectChain* m_chain;
+	std::vector<int> m_states;
+};
+
+} // namespace
+
 MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int channelIndex)
 	: QWidget(parent)
 	, m_mixerView(mixerView)
@@ -143,6 +207,8 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_effectRackView = new EffectRackView{&mixerChannel->m_fxChain, mixerView->m_racksWidget};
 	m_effectRackView->setFixedWidth(EffectRackView::DEFAULT_WIDTH);
 
+	auto slotsIndicator = new EffectSlotsIndicator{&mixerChannel->m_fxChain, this};
+
 	auto mainLayout = new QVBoxLayout{this};
 	mainLayout->setContentsMargins(4, 4, 4, 4);
 	mainLayout->setSpacing(2);
@@ -152,6 +218,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_sendArrow, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_renameLineEditView, 0, Qt::AlignHCenter);
+	mainLayout->addWidget(slotsIndicator, 0, Qt::AlignHCenter);
 	mainLayout->addLayout(soloMuteLayout);
 	mainLayout->addWidget(m_peakIndicator);
 	mainLayout->addWidget(m_fader, 1, Qt::AlignHCenter);
@@ -171,6 +238,26 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	});
 
 	setFocusPolicy(Qt::StrongFocus);
+
+	// Effects dropped from the browser go to the end of the channel's effects
+	setAcceptDrops(true);
+}
+
+void MixerChannelView::dragEnterEvent(QDragEnterEvent* event)
+{
+	StringPairDrag::processDragEnterEvent(event, "effect");
+}
+
+void MixerChannelView::dropEvent(QDropEvent* event)
+{
+	if (StringPairDrag::decodeKey(event) != "effect") { return; }
+	auto& chain = mixerChannel()->m_fxChain;
+	if (auto effect = EffectSelectDialog::instantiateDragged(StringPairDrag::decodeValue(event), &chain))
+	{
+		chain.appendEffect(std::move(effect));
+		m_mixerView->setCurrentMixerChannel(this);
+		event->acceptProposedAction();
+	}
 }
 
 void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
@@ -218,24 +305,43 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 	}
 	contextMenu->addMenu(&channelsMenu);
 
-	// Sidechain send from the selected channel into this channel's channels 3/4
-	const auto source = m_mixerView->currentMixerChannel()->channelIndex();
-	if (source != index && !mixer->isInfiniteLoop(source, index))
+	// Sidechain, from either side: other channels into this channel's sidechain input (channels 3/4), or this
+	// channel into theirs
+	auto sidechainFromMenu = QMenu{tr("Sidechain input from"), this};
+	auto sidechainToMenu = QMenu{tr("Send as sidechain to"), this};
+	for (int other = 0; other < mixer->numChannels(); ++other)
 	{
-		const auto existing = mixer->findChannelSend(source, index, 0, 1);
-		auto action = contextMenu->addAction(
-			tr("Sidechain send from \"%1\" (channels 3/4)").arg(mixer->mixerChannel(source)->m_name),
-			this, [mixer, source, index, existing] {
-				if (existing)
-				{
-					mixer->deleteChannelSend(existing);
-					return;
-				}
-				if (mixer->mixerChannel(index)->channelCount() < 4) { mixer->setChannelCount(index, 4); }
-				mixer->createChannelSend(source, index, 1.f, 0, 1);
+		if (other == index) { continue; }
+		const auto label = tr("%1: %2").arg(other).arg(mixer->mixerChannel(other)->m_name);
+		if (other != 0 && (mixer->findChannelSend(other, index, 0, 1) || !mixer->isInfiniteLoop(other, index)))
+		{
+			auto from = sidechainFromMenu.addAction(label, this, [mixer, other, index] {
+				mixer->toggleSidechainSend(other, index);
 			});
-		action->setCheckable(true);
-		action->setChecked(existing != nullptr);
+			from->setCheckable(true);
+			from->setChecked(mixer->findChannelSend(other, index, 0, 1) != nullptr);
+		}
+		if (index != 0 && (mixer->findChannelSend(index, other, 0, 1) || !mixer->isInfiniteLoop(index, other)))
+		{
+			auto to = sidechainToMenu.addAction(label, this, [mixer, other, index] {
+				mixer->toggleSidechainSend(index, other);
+			});
+			to->setCheckable(true);
+			to->setChecked(mixer->findChannelSend(index, other, 0, 1) != nullptr);
+		}
+	}
+	if (!isMasterChannel())
+	{
+		contextMenu->addMenu(&sidechainFromMenu);
+		contextMenu->addMenu(&sidechainToMenu);
+	}
+
+	// A folder's group channel can hide the channels of the tracks it holds
+	if (mixerChannel()->m_groupChannel)
+	{
+		contextMenu->addSeparator();
+		contextMenu->addAction(m_mixerView->isGroupCollapsed(index) ? tr("Show the folder's channels")
+			: tr("Hide the folder's channels"), this, [this, index] { m_mixerView->toggleGroup(index); });
 	}
 
 	contextMenu->exec(QCursor::pos());
@@ -266,11 +372,46 @@ void MixerChannelView::paintEvent(QPaintEvent*)
 	// outer border
 	painter.setPen(isActive ? strokeOuterActive() : strokeOuterInactive());
 	painter.drawRect(0, 0, width - outerBorderSize, height - outerBorderSize);
+
+	// A group channel's marker: a triangle pointing down while its channels are shown, right while hidden
+	painter.setRenderHint(QPainter::Antialiasing);
+	painter.setPen(Qt::NoPen);
+	if (channel->m_groupChannel)
+	{
+		const auto r = QRectF{groupMarkerRect()}.adjusted(2, 2, -2, -2);
+		const auto triangle = m_mixerView->isGroupCollapsed(channelIndex())
+			? QPolygonF{{r.topLeft(), r.bottomLeft(), QPointF{r.right(), r.center().y()}}}
+			: QPolygonF{{r.topLeft(), r.topRight(), QPointF{r.center().x(), r.bottom()}}};
+		painter.setBrush(palette().text());
+		painter.drawPolygon(triangle);
+	}
+
+	// Channels in a folder: a line in the group channel's color (or the text color) along the left edge
+	for (const MixerRoute* route : channel->m_sends)
+	{
+		const auto receiver = route->receiver();
+		if (route->sourcePair() != 0 || route->destinationPair() != 0 || !receiver->m_groupChannel) { continue; }
+		auto color = receiver->color().value_or(palette().text().color());
+		color.setAlpha(140);
+		painter.fillRect(QRect{1, 1, 3, height - 2}, color);
+		break;
+	}
 }
 
-void MixerChannelView::mousePressEvent(QMouseEvent*)
+void MixerChannelView::mousePressEvent(QMouseEvent* event)
 {
+	// The marker of a group channel shows or hides the folder's channels
+	if (mixerChannel()->m_groupChannel && groupMarkerRect().contains(event->pos()))
+	{
+		m_mixerView->toggleGroup(channelIndex());
+		update();
+	}
 	if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
+}
+
+auto MixerChannelView::groupMarkerRect() const -> QRect
+{
+	return QRect{3, 3, 12, 12};
 }
 
 void MixerChannelView::mouseDoubleClickEvent(QMouseEvent*)

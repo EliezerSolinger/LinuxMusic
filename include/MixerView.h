@@ -25,6 +25,8 @@
 #ifndef LMMS_GUI_MIXER_VIEW_H
 #define LMMS_GUI_MIXER_VIEW_H
 
+#include <set>
+
 #include <QWidget>
 
 #include "MixerChannelView.h"
@@ -94,6 +96,13 @@ public:
 	// useful for loading projects
 	void refreshDisplay();
 
+	//! Whether the channels sending to group channel @p index (a folder's, see FolderTrack) are hidden
+	auto isGroupCollapsed(int index) const -> bool;
+	void toggleGroup(int index);
+
+	//! Hides the channels in collapsed groups and shows the others
+	void updateGroupVisibility();
+
 public slots:
 	int addNewChannel();
 
@@ -119,6 +128,9 @@ private:
 
 private:
 	QVector<MixerChannelView*> m_mixerChannelViews;
+
+	//! The group channels whose channels are hidden (only in this view, not saved)
+	std::set<const MixerChannel*> m_collapsedGroups;
 
 	MixerChannelView* m_currentMixerChannel;
 

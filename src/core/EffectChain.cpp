@@ -64,19 +64,29 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 	for (auto& instance : m_effects)
 	{
-		Effect& effect = instance->effectRef();
-		if (auto dummy = dynamic_cast<DummyEffect*>(&effect))
-		{
-			_this.appendChild(dummy->originalPluginData());
-		}
-		else
-		{
-			QDomElement ef = effect.saveState(_doc, _this);
-			ef.setAttribute("name", QString::fromUtf8(effect.descriptor()->name));
-			ef.appendChild(effect.key().saveXML(_doc));
-			instance->savePins(_doc, ef);
-		}
+		saveEffect(*instance, _doc, _this);
 	}
+}
+
+
+
+
+auto EffectChain::saveEffect(PluginInstance& instance, QDomDocument& doc, QDomElement& parent) -> QDomElement
+{
+	Effect& effect = instance.effectRef();
+	if (auto dummy = dynamic_cast<DummyEffect*>(&effect))
+	{
+		// What could not be loaded is kept as it was
+		auto original = dummy->originalPluginData();
+		parent.appendChild(original);
+		return original;
+	}
+
+	QDomElement ef = effect.saveState(doc, parent);
+	ef.setAttribute("name", QString::fromUtf8(effect.descriptor()->name));
+	ef.appendChild(effect.key().saveXML(doc));
+	instance.savePins(doc, ef);
+	return ef;
 }
 
 
@@ -175,6 +185,54 @@ void EffectChain::appendEffect(std::unique_ptr<PluginInstance> effect)
 	Engine::audioEngine()->doneChangeInModel();
 
 	m_enabledModel.setValue( true );
+
+	emit dataChanged();
+}
+
+
+
+
+void EffectChain::insertEffect(std::size_t index, std::unique_ptr<PluginInstance> effect)
+{
+	Engine::audioEngine()->requestChangeInModel();
+	effect->setTrackChannelCount(m_trackChannels);
+	m_effects.insert(m_effects.begin() + static_cast<std::ptrdiff_t>(std::min(index, m_effects.size())),
+		std::move(effect));
+	Engine::audioEngine()->doneChangeInModel();
+
+	m_enabledModel.setValue(true);
+
+	emit dataChanged();
+}
+
+
+
+
+void EffectChain::replaceEffect(std::size_t index, std::unique_ptr<PluginInstance> effect)
+{
+	if (index >= m_effects.size()) { return; }
+
+	Engine::audioEngine()->requestChangeInModel();
+	effect->setTrackChannelCount(m_trackChannels);
+	m_effects[index] = std::move(effect);
+	Engine::audioEngine()->doneChangeInModel();
+
+	emit dataChanged();
+}
+
+
+
+
+void EffectChain::moveEffect(std::size_t from, std::size_t to)
+{
+	if (from >= m_effects.size() || from == to) { return; }
+	to = std::min(to, m_effects.size() - 1);
+
+	Engine::audioEngine()->requestChangeInModel();
+	auto effect = std::move(m_effects[from]);
+	m_effects.erase(m_effects.begin() + static_cast<std::ptrdiff_t>(from));
+	m_effects.insert(m_effects.begin() + static_cast<std::ptrdiff_t>(to), std::move(effect));
+	Engine::audioEngine()->doneChangeInModel();
 
 	emit dataChanged();
 }

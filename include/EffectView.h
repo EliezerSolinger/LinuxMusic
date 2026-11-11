@@ -82,6 +82,10 @@ signals:
 	void movedUp(EffectView* view);
 	void movedDown(EffectView* view);
 	void deletedPlugin(EffectView* view);
+	//! The slot menu asked to replace the effect with another one, or with a saved preset
+	void replaceRequested(EffectView* view);
+	void loadPresetRequested(EffectView* view);
+	void savePresetRequested(EffectView* view);
 
 protected:
 	void contextMenuEvent( QContextMenuEvent * _me ) override;

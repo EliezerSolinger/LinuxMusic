@@ -26,16 +26,23 @@
 #include "EffectRackView.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QDropEvent>
+#include <QFileDialog>
+#include <QMessageBox>
 #include <QAction>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QVBoxLayout>
 
+#include "ConfigManager.h"
+#include "DataFile.h"
 #include "DeprecationHelper.h"
 #include "EffectSelectDialog.h"
 #include "EffectView.h"
 #include "PluginInstance.h"
 #include "GroupBox.h"
+#include "StringPairDrag.h"
 
 
 namespace lmms::gui
@@ -71,6 +78,9 @@ EffectRackView::EffectRackView( EffectChain* model, QWidget* parent ) :
 	effectsLayout->addWidget( addButton );
 
 	connect( addButton, SIGNAL(clicked()), this, SLOT(addEffect()));
+
+	// Effects dragged from the browser go where they are dropped
+	setAcceptDrops(true);
 
 
 	m_lastY = 0;
@@ -141,6 +151,124 @@ void EffectRackView::moveDown( EffectView* view )
 
 
 
+auto EffectRackView::indexOf(EffectView* view) const -> int
+{
+	const auto& effects = fxChain()->effects();
+	for (auto i = std::size_t{0}; i < effects.size(); ++i)
+	{
+		if (effects[i]->effect() == view->effect()) { return static_cast<int>(i); }
+	}
+	return -1;
+}
+
+
+
+
+void EffectRackView::replace(EffectView* view, std::unique_ptr<PluginInstance> effect)
+{
+	const int index = indexOf(view);
+	if (index < 0 || !effect) { return; }
+
+	// The view goes before its effect does
+	m_effectViews.erase(std::find(m_effectViews.begin(), m_effectViews.end(), view));
+	delete view;
+
+	fxChain()->replaceEffect(static_cast<std::size_t>(index), std::move(effect));
+	update();
+}
+
+
+
+
+void EffectRackView::replacePlugin(EffectView* view)
+{
+	EffectSelectDialog esd(this);
+	esd.exec();
+	if (esd.result() == QDialog::Rejected) { return; }
+	replace(view, esd.instantiateSelectedPlugin(fxChain()));
+}
+
+
+
+
+auto EffectRackView::presetDir() -> QString
+{
+	const auto dir = ConfigManager::inst()->userPresetsDir() + "effects/";
+	QDir{}.mkpath(dir);
+	return dir;
+}
+
+
+
+
+void EffectRackView::loadPreset(EffectView* view)
+{
+	const auto fileName = QFileDialog::getOpenFileName(this, tr("Load effect preset"), presetDir(),
+		tr("Effect presets (*.xfx)"));
+	if (fileName.isEmpty()) { return; }
+
+	auto file = DataFile{fileName};
+	const auto element = file.content().firstChildElement();
+	if (file.type() != DataFile::Type::EffectSettings || element.isNull())
+	{
+		QMessageBox::warning(this, tr("Load effect preset"), tr("%1 is not an effect preset.").arg(fileName));
+		return;
+	}
+	replace(view, fxChain()->loadEffect(element));
+}
+
+
+
+
+void EffectRackView::savePreset(EffectView* view)
+{
+	const int index = indexOf(view);
+	if (index < 0) { return; }
+
+	auto fileName = QFileDialog::getSaveFileName(this, tr("Save effect preset"),
+		presetDir() + view->effect()->displayName() + ".xfx", tr("Effect presets (*.xfx)"));
+	if (fileName.isEmpty()) { return; }
+	if (!fileName.endsWith(".xfx")) { fileName += ".xfx"; }
+
+	auto file = DataFile{DataFile::Type::EffectSettings};
+	auto content = file.content();
+	EffectChain::saveEffect(*fxChain()->effects()[index], file, content);
+	file.writeFile(fileName);
+}
+
+
+
+
+void EffectRackView::dragEnterEvent(QDragEnterEvent* event)
+{
+	StringPairDrag::processDragEnterEvent(event, "effect");
+}
+
+
+
+
+void EffectRackView::dropEvent(QDropEvent* event)
+{
+	if (StringPairDrag::decodeKey(event) != "effect") { return; }
+	auto effect = EffectSelectDialog::instantiateDragged(StringPairDrag::decodeValue(event), fxChain());
+	if (!effect) { return; }
+
+	// Before the first effect whose middle is below the drop
+	const auto y = m_scrollArea->widget()->mapFrom(this, position(event)).y();
+	auto index = std::size_t{0};
+	for (const auto view : m_effectViews)
+	{
+		if (view->y() + view->height() / 2 > y) { break; }
+		++index;
+	}
+	fxChain()->insertEffect(index, std::move(effect));
+	update();
+	event->acceptProposedAction();
+}
+
+
+
+
 void EffectRackView::deletePlugin( EffectView* view )
 {
 	Effect * e = view->effect();
@@ -158,75 +286,55 @@ void EffectRackView::deletePlugin( EffectView* view )
 void EffectRackView::update()
 {
 	QWidget * w = m_scrollArea->widget();
-	QVector<bool> view_map( qMax<int>( fxChain()->effects().size(),
-						m_effectViews.size() ), false );
 
+	// One view per effect, in the chain's order
+	auto ordered = QVector<EffectView*>{};
 	for (const auto& instance : fxChain()->effects())
 	{
 		Effect* effect = instance->effect();
-		int i = 0;
-		for (const auto& effectView : m_effectViews)
+		const auto found = std::find_if(m_effectViews.begin(), m_effectViews.end(),
+			[effect](EffectView* view) { return view->model() == effect; });
+		if (found != m_effectViews.end())
 		{
-			if (effectView->model() == effect)
-			{
-				view_map[i] = true;
-				break;
-			}
-			++i;
+			ordered.append(*found);
+			m_effectViews.erase(found);
+			continue;
 		}
-		if( i >= m_effectViews.size() )
-		{
-			auto view = new EffectView(effect, w, instance->audioPortsModel());
-			connect(view, &EffectView::movedUp, this, &EffectRackView::moveUp);
-			connect(view, &EffectView::movedDown, this, &EffectRackView::moveDown);
-			connect(view, &EffectView::deletedPlugin, this, &EffectRackView::deletePlugin, Qt::QueuedConnection);
 
-			QAction* moveUpAction = new QAction(view);
-			moveUpAction->setShortcut(keySequence(Qt::Key_Up, Qt::AltModifier));
-			moveUpAction->setShortcutContext(Qt::WidgetShortcut);
-			connect(moveUpAction, &QAction::triggered, view, &EffectView::moveUp);
-			view->addAction(moveUpAction);
+		auto view = new EffectView(effect, w, instance->audioPortsModel());
+		connect(view, &EffectView::movedUp, this, &EffectRackView::moveUp);
+		connect(view, &EffectView::movedDown, this, &EffectRackView::moveDown);
+		connect(view, &EffectView::deletedPlugin, this, &EffectRackView::deletePlugin, Qt::QueuedConnection);
+		connect(view, &EffectView::replaceRequested, this, &EffectRackView::replacePlugin, Qt::QueuedConnection);
+		connect(view, &EffectView::loadPresetRequested, this, &EffectRackView::loadPreset, Qt::QueuedConnection);
+		connect(view, &EffectView::savePresetRequested, this, &EffectRackView::savePreset, Qt::QueuedConnection);
 
-			QAction* moveDownAction = new QAction(view);
-			moveDownAction->setShortcut(keySequence(Qt::Key_Down, Qt::AltModifier));
-			moveDownAction->setShortcutContext(Qt::WidgetShortcut);
-			connect(moveDownAction, &QAction::triggered, view, &EffectView::moveDown);
-			view->addAction(moveDownAction);
+		QAction* moveUpAction = new QAction(view);
+		moveUpAction->setShortcut(keySequence(Qt::Key_Up, Qt::AltModifier));
+		moveUpAction->setShortcutContext(Qt::WidgetShortcut);
+		connect(moveUpAction, &QAction::triggered, view, &EffectView::moveUp);
+		view->addAction(moveUpAction);
 
-			view->show();
-			m_effectViews.append( view );
-			if( i < view_map.size() )
-			{
-				view_map[i] = true;
-			}
-			else
-			{
-				view_map.append( true );
-			}
+		QAction* moveDownAction = new QAction(view);
+		moveDownAction->setShortcut(keySequence(Qt::Key_Down, Qt::AltModifier));
+		moveDownAction->setShortcutContext(Qt::WidgetShortcut);
+		connect(moveDownAction, &QAction::triggered, view, &EffectView::moveDown);
+		view->addAction(moveDownAction);
 
-		}
+		view->show();
+		ordered.append(view);
 	}
 
-	int i = 0, nView = 0;
+	// The views of effects that are gone
+	qDeleteAll(m_effectViews);
+	m_effectViews = ordered;
 
 	const int EffectViewMargin = 3;
 	m_lastY = EffectViewMargin;
-
-	for( QVector<EffectView *>::Iterator it = m_effectViews.begin(); 
-					it != m_effectViews.end(); i++ )
+	for (const auto view : m_effectViews)
 	{
-		if( i < view_map.size() && view_map[i] == false )
-		{
-			delete m_effectViews[nView];
-			it = m_effectViews.erase( it );
-		}
-		else
-		{
-			( *it )->move( EffectViewMargin, m_lastY );
-			m_lastY += ( *it )->height();
-			++nView;
-			++it;
-		}
+		view->move(EffectViewMargin, m_lastY);
+		m_lastY += view->height();
 	}
 
 	w->setFixedSize(EffectView::DEFAULT_WIDTH + 2 * EffectViewMargin, m_lastY);

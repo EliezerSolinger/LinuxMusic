@@ -276,3 +276,41 @@ Diferenças de som medidas na bateria A/B (43 projetos):
 - Os canais do mixer agora mostram o nome da faixa logo ao serem criados (antes ficava "Canal N" até reabrir).
 - `MixerTest` tem 55 testes: roteamento para o grupo e de volta, pastas aninhadas, apagar pasta, solo em pasta,
   desfazer, salvar.
+
+### Passo 10: interface nova do mixer (feito, primeira versão)
+
+Decisão: aproveitar o rack de efeitos que já existe (`EffectRackView`/`EffectView`: LED, W/D, decay, controles, pin
+connector) como a coluna de slots do canal selecionado, como o painel direito do FL Studio. Um widget novo teria
+abertos janelas de controle duplicadas. O que entrou:
+
+- **Menu do slot** (clique direito num efeito):
+  - mover para cima e para baixo (arrastar com o mouse já reordenava);
+  - **substituir** por outro efeito;
+  - **carregar** e **salvar preset**: arquivo `.xfx` do tipo `effectsettings`, guardado em
+    `<presets do usuário>/effects/`;
+  - **fonte de sidechain**, nos efeitos com mais entradas que o par principal: lista os canais e liga ou desliga o
+    envio para as entradas 3/4 deste canal;
+  - remover.
+- **Sidechain pelos dois lados**, no menu da faixa do mixer: "Entrada de sidechain de ▸" (outros canais para este) e
+  "Enviar como sidechain para ▸" (este canal para outros). Os dois usam `Mixer::toggleSidechainSend()`, que dá 4
+  canais ao destino quando precisa. O item provisório do passo 6 saiu.
+- **Página "Efeitos" no navegador** (`EffectBrowser`):
+  - lista os efeitos por categoria, e os LADSPA/LV2 pelo host, com busca;
+  - arrastar um efeito para uma faixa do mixer o põe no fim dos efeitos dela;
+  - arrastar para o rack põe no ponto onde soltou, e vale também para a aba de efeitos da janela do instrumento;
+  - clique duplo adiciona ao canal selecionado.
+- **Slots em miniatura** em cada faixa do mixer: um quadrado por efeito (aceso ligado, apagado desligado, vermelho
+  com áudio corrompido). A dica mostra os nomes.
+- **Grupos recolhíveis:** a faixa do canal de grupo de uma pasta tem um triângulo (também no menu) que esconde ou
+  mostra os canais da pasta. Esconder vale só na tela e não é salvo. Os canais dentro de uma pasta têm uma linha na
+  borda esquerda, na cor do canal de grupo.
+- `EffectChain` ganhou `insertEffect`, `replaceEffect`, `moveEffect` e `saveEffect`/`loadEffect` públicos. O rack passou
+  a desenhar os efeitos sempre na ordem da cadeia.
+- Cores: as do tema LMMS, sem mudança no CSS.
+- `MixerTest` tem 57 testes (inserir, mover e substituir efeitos; sidechain pelos dois lados).
+
+**Fica para depois:**
+- arrastar faixas para dentro de pastas pela alça da faixa (hoje é pelo menu; arrastar uma pasta move só a pasta, uma
+  posição por vez);
+- reordenar canais do mixer para ficarem junto do seu grupo;
+- mostrar os slots com nome dentro de cada faixa do mixer (hoje são quadrados).

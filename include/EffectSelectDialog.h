@@ -89,6 +89,15 @@ public:
 	//! @returns the selected effect, or a DummyEffect if it could not be loaded
 	std::unique_ptr<PluginInstance> instantiateSelectedPlugin(EffectChain* parent);
 
+	//! All effects that can be added: effect plugins, and the subplugins of hosts (LADSPA, LV2...)
+	static auto availableEffects() -> EffectKeyList;
+
+	//! The drag data ("effect" key of StringPairDrag) for the effect @p key
+	static auto dragData(const EffectKey& key) -> QString;
+
+	//! Creates the effect dragged with @p data (see dragData()) for @p chain, or nullptr if it cannot be loaded
+	static auto instantiateDragged(const QString& data, EffectChain* chain) -> std::unique_ptr<PluginInstance>;
+
 protected slots:
 	void acceptSelection();
 	void rowChanged(const QModelIndex&, const QModelIndex&);

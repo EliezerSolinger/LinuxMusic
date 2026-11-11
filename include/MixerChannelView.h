@@ -60,6 +60,8 @@ public:
 	void paintEvent(QPaintEvent* event) override;
 	void contextMenuEvent(QContextMenuEvent*) override;
 	void mousePressEvent(QMouseEvent*) override;
+	void dragEnterEvent(QDragEnterEvent* event) override;
+	void dropEvent(QDropEvent* event) override;
 	void mouseDoubleClickEvent(QMouseEvent*) override;
 	void keyPressEvent(QKeyEvent* ke) override;
 
@@ -103,6 +105,9 @@ private:
 	QString elideName(const QString& name);
 	MixerChannel* mixerChannel() const;
 	auto isMasterChannel() const -> bool { return m_channelIndex == 0; }
+
+	//! Where a group channel's marker is (see MixerView::toggleGroup())
+	auto groupMarkerRect() const -> QRect;
 
 private:
 	SendButtonIndicator* m_sendButton;

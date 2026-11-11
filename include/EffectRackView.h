@@ -54,14 +54,30 @@ public slots:
 	void moveUp(EffectView* view);
 	void moveDown(EffectView* view);
 	void deletePlugin(EffectView* view);
+	void replacePlugin(EffectView* view);
+	void loadPreset(EffectView* view);
+	void savePreset(EffectView* view);
 
 private slots:
 	virtual void update();
 	void addEffect();
 
 
+protected:
+	void dragEnterEvent(QDragEnterEvent* event) override;
+	void dropEvent(QDropEvent* event) override;
+
 private:
 	void modelChanged() override;
+
+	//! Where the view of @p view's effect is in the chain, or -1
+	auto indexOf(EffectView* view) const -> int;
+
+	//! Replaces the effect of @p view with @p effect, closing the view first
+	void replace(EffectView* view, std::unique_ptr<PluginInstance> effect);
+
+	//! The folder for effect presets
+	static auto presetDir() -> QString;
 	QSize sizeHint() const override;
 	QSize minimumSizeHint() const override { return sizeHint(); }
 

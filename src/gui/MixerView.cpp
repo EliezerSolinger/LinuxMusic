@@ -66,6 +66,7 @@ MixerView::MixerView(Mixer* mixer) :
 	// Channels made or removed elsewhere, e.g. with tracks (see Mixer::setUpTrackChannel())
 	connect(mixer, &Mixer::channelCreated, this, [this](int) { addMissingChannelViews(); });
 	connect(mixer, &Mixer::channelDeleted, this, [this](int index) { removeChannelView(index); });
+	connect(mixer, &Mixer::dataChanged, this, &MixerView::updateGroupVisibility);
 
 	//QPalette pal = palette();
 	//pal.setColor(QPalette::Window, QColor(72, 76, 88));
@@ -269,6 +270,70 @@ void MixerView::refreshDisplay()
 	{
 		updateMixerChannel(i);
 	}
+	updateGroupVisibility();
+}
+
+
+
+
+auto MixerView::isGroupCollapsed(int index) const -> bool
+{
+	return index > 0 && index < getMixer()->numChannels()
+		&& m_collapsedGroups.contains(getMixer()->mixerChannel(index));
+}
+
+
+
+
+void MixerView::toggleGroup(int index)
+{
+	if (index <= 0 || index >= getMixer()->numChannels()) { return; }
+	const auto channel = getMixer()->mixerChannel(index);
+	if (!m_collapsedGroups.erase(channel)) { m_collapsedGroups.insert(channel); }
+	updateGroupVisibility();
+}
+
+
+
+
+void MixerView::updateGroupVisibility()
+{
+	const auto mixer = getMixer();
+
+	// Forget groups that are gone
+	std::erase_if(m_collapsedGroups, [mixer](const MixerChannel* group) {
+		for (int i = 1; i < mixer->numChannels(); ++i)
+		{
+			if (mixer->mixerChannel(i) == group) { return !group->m_groupChannel; }
+		}
+		return true;
+	});
+
+	// A channel is hidden if its main output goes to a group that is collapsed or hidden itself
+	auto hidden = std::vector<int>(mixer->numChannels(), -1); // -1 unknown, 0 shown, 1 hidden
+	auto isHidden = [&](auto& self, int index, int depth) -> bool {
+		if (hidden[index] != -1) { return hidden[index] == 1; }
+		bool result = false;
+		for (const MixerRoute* route : mixer->mixerChannel(index)->m_sends)
+		{
+			if (route->sourcePair() != 0 || route->destinationPair() != 0) { continue; }
+			const auto receiver = route->receiver();
+			if (!receiver->m_groupChannel || depth > mixer->numChannels()) { continue; }
+			if (m_collapsedGroups.contains(receiver) || self(self, receiver->index(), depth + 1))
+			{
+				result = true;
+				break;
+			}
+		}
+		hidden[index] = result ? 1 : 0;
+		return result;
+	};
+
+	for (int i = 1; i < m_mixerChannelViews.size() && i < mixer->numChannels(); ++i)
+	{
+		m_mixerChannelViews[i]->setVisible(!isHidden(isHidden, i, 0));
+		m_mixerChannelViews[i]->update();
+	}
 }
 
 void MixerView::saveSettings(QDomDocument& doc, QDomElement& domElement)
@@ -381,6 +446,8 @@ void MixerView::updateMixerChannel(int index)
 	thisLine->m_sendButton->updateLightStatus();
 	thisLine->m_renameLineEdit->setText(thisLine->elideName(thisLine->mixerChannel()->m_name));
 	thisLine->update();
+
+	updateGroupVisibility();
 }
 
 

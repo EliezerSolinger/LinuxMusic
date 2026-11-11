@@ -57,10 +57,10 @@ public:
 	//! Shows or hides the panel and remembers it
 	void setShown(bool shown);
 
-private:
 	//! Shows browser @p index, and remembers it for the next session if @p remember
 	void select(int index, bool remember = true);
 
+private:
 	QTabBar* m_header;
 	QButtonGroup* m_buttons;
 	QHBoxLayout* m_buttonRow;

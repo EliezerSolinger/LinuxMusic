@@ -345,6 +345,16 @@ public:
 	//! Deletes the channel made for @p track (see setUpTrackChannel()) unless something else uses it
 	void releaseTrackChannel(Track* track);
 
+	/**
+	 * Sends channel @p from into the sidechain input of channel @p to (its channels 3/4), giving @p to four
+	 * channels if it has fewer, or removes that send if it exists.
+	 * @returns whether the send exists afterwards (false also if it would make a loop)
+	 */
+	auto toggleSidechainSend(mix_ch_t from, mix_ch_t to) -> bool;
+
+	//! The index of the channel whose effects are @p chain, or -1
+	auto channelOf(const EffectChain* chain) const -> int;
+
 	//! The channel made for @p track (see setUpTrackChannel()), or nullptr if it sends to another channel
 	auto trackChannel(const Track* track) const -> MixerChannel*;
 
