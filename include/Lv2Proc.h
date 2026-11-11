@@ -29,9 +29,11 @@
 
 #ifdef LMMS_HAVE_LV2
 
+#include <algorithm>
 #include <lilv/lilv.h>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <ringbuffer/ringbuffer.h>
 
@@ -48,6 +50,7 @@
 namespace lmms
 {
 
+class AudioBuffer;
 class PluginIssue;
 class SampleFrame;
 
@@ -69,6 +72,12 @@ public:
 	static Plugin::Type check(const LilvPlugin* plugin,
 		std::vector<PluginIssue> &issues);
 
+	//! Mono plugins run twice, once per stereo channel (see Lv2ControlBase)
+	static auto isMono(unsigned mainInputs, unsigned outputs) -> bool
+	{
+		return std::max(mainInputs, outputs) == 1;
+	}
+
 	/*
 		ctor/dtor/reload
 	*/
@@ -80,18 +89,11 @@ public:
 	/*
 		port access
 	 */
-	struct StereoPortRef
-	{
-		//! mono port or left port in case of stereo
-		Lv2Ports::Audio* m_left = nullptr;
-		//! unused, or right port in case of stereo
-		Lv2Ports::Audio* m_right = nullptr;
-	};
-
-	StereoPortRef& inPorts() { return m_inPorts; }
-	const StereoPortRef& inPorts() const { return m_inPorts; }
-	StereoPortRef& outPorts() { return m_outPorts; }
-	const StereoPortRef& outPorts() const { return m_outPorts; }
+	//! Audio inputs that are not sidechain inputs
+	auto mainInputCount() const -> ch_cnt_t { return static_cast<ch_cnt_t>(m_mainIns.size()); }
+	//! Sidechain audio inputs
+	auto sidechainInputCount() const -> ch_cnt_t { return static_cast<ch_cnt_t>(m_sidechainIns.size()); }
+	auto outputCount() const -> ch_cnt_t { return static_cast<ch_cnt_t>(m_outs.size()); }
 	template<class Functor>
 	void foreach_port(const Functor& ftor)
 	{
@@ -123,24 +125,18 @@ public:
 	//! @brief Bring values from all ports to the LMMS core
 	void copyModelsToCore();
 
-	//! @brief Copy buffer passed by the core into our ports
-	//! @param buf buffer of sample frames, each sample frame is something like a
-	//! `float[<number-of-procs> * <channels per proc>]` array.
-	//! @param firstChan The offset for @p buf where we have to read our first channel.
-	//! This marks the first sample in each sample frame where we read from.
-	//! If we are the 2nd of 2 mono procs, this can be greater than 0.
-	//! @param num Number of channels we must read from @p buf (starting at @p offset)
-	//! @param frames The length of @p buf
-	void copyBuffersFromCore(const SampleFrame* buf, unsigned firstChan, unsigned num, f_cnt_t frames);
+	//! @brief Copy the input channels passed by the core into our audio input ports
+	//! @param in the processor's input channels
+	//! @param firstMain the channel in @p in where our main inputs start
+	//! @param firstSidechain the channel in @p in where our sidechain inputs start
+	//! @param frames the number of frames to copy
+	void copyBuffersFromCore(const AudioBuffer& in, ch_cnt_t firstMain, ch_cnt_t firstSidechain, f_cnt_t frames);
 
-	//! @brief Copy our ports into buffers passed by the core
-	//! @param buf buffer of sample frames, each sample frame is something like a
-	//! `float[<number-of-procs> * <channels per proc>]` array.
-	//! @param firstChan The offset for @p buf where we have to write our first channel.
-	//! This marks the first sample in each sample frame where we write to.
-	//! If we are the 2nd of 2 mono procs, this can be greater than 0.
-	//! @param num Number of channels we must write to @p buf (starting at @p offset)
-	void copyBuffersToCore(SampleFrame* buf, unsigned firstChan, unsigned num, f_cnt_t frames) const;
+	//! @brief Copy our audio output ports into the output channels passed by the core
+	//! @param out the processor's output channels
+	//! @param first the channel in @p out where our outputs start
+	//! @param frames the number of frames to copy
+	void copyBuffersToCore(AudioBuffer& out, ch_cnt_t first, f_cnt_t frames) const;
 
 	//! @brief Run the Lv2 plugin instance for @p frames frames
 	//! @param frames The number of frames to run
@@ -180,7 +176,8 @@ private:
 	// full list of ports
 	std::vector<std::unique_ptr<Lv2Ports::PortBase>> m_ports;
 	// quick reference to specific, unique ports
-	StereoPortRef m_inPorts, m_outPorts;
+	//! audio ports in port order
+	std::vector<Lv2Ports::Audio*> m_mainIns, m_sidechainIns, m_outs;
 	Lv2Ports::AtomSeq *m_midiIn = nullptr, *m_midiOut = nullptr;
 
 	// MIDI

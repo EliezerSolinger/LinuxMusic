@@ -25,14 +25,20 @@
 #ifndef LV2_EFFECT_H
 #define LV2_EFFECT_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "Lv2FxControls.h"
 
 namespace lmms
 {
 
-// TODO: Add support for a variable number of audio input/output ports
-class Lv2Effect : public DefaultEffect
+/**
+ * Hosts an LV2 effect plugin.
+ *
+ * The plugin's audio ports are exposed to the pin connector as they are, including sidechain inputs,
+ * which follow the main inputs in a separate channel group. Mono plugins run twice, once per stereo
+ * channel (see Lv2ControlBase).
+ */
+class Lv2Effect : public Effect
 {
 	Q_OBJECT
 
@@ -47,11 +53,17 @@ public:
 	Lv2FxControls* lv2Controls() { return &m_controls; }
 	const Lv2FxControls* lv2Controls() const { return &m_controls; }
 
-private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	// AudioProcessor implementation
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto channelCount(bool isInput) const -> ch_cnt_t override;
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override;
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+		-> ch_cnt_t override;
+	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override;
 
+private:
 	Lv2FxControls m_controls;
-	std::vector<SampleFrame> m_tmpOutputSmps;
 };
 
 

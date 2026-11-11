@@ -183,27 +183,18 @@ struct Audio : public VisitablePort<Audio, PortBase>
 {
 	Audio(std::size_t bufferSize, bool isSidechain);
 
-	//! @brief Copy buffer passed by LMMS into our ports
-	//! @param lmmsBuf The buffer to copy from
-	//! @param channel channel index into each sample frame
-	//! @param frames The length of the buffer @p lmmsBuf
-	void copyBuffersFromCore(const SampleFrame* lmmsBuf, unsigned channel, f_cnt_t frames);
+	//! @brief Copy a channel buffer passed by LMMS into our port
+	//! @param source the channel buffer to copy from
+	//! @param frames the number of frames to copy
+	void copyBuffersFromCore(const float* source, f_cnt_t frames);
 
-	//! @brief Add buffer passed by LMMS into our ports, and halve the result
-	//! @param lmmsBuf The buffer to average from
-	//! @param channel channel index into each sample frame
-	//! @param frames The length of the buffer @p lmmsBuf
-	void averageWithBuffersFromCore(const SampleFrame* lmmsBuf, unsigned channel, f_cnt_t frames);
-
-	//! @brief Copy our ports into buffers passed by LMMS
-	//! @param lmmsBuf The buffer to copy into
-	//! @param channel channel index into each sample frame
-	//! @param frames The length of the buffer @p lmmsBuf
-	void copyBuffersToCore(SampleFrame* lmmsBuf, unsigned channel, f_cnt_t frames) const;
+	//! @brief Copy our port into a channel buffer passed by LMMS
+	//! @param destination the channel buffer to copy into
+	//! @param frames the number of frames to copy
+	void copyBuffersToCore(float* destination, f_cnt_t frames) const;
 
 	bool isSideChain() const { return m_sidechain; }
 	bool isOptional() const { return m_optional; }
-	bool mustBeUsed() const { return !isSideChain() && !isOptional(); }
 	std::size_t bufferSize() const { return m_buffer.size(); }
 
 private:

@@ -37,8 +37,7 @@ Lv2FxControls::Lv2FxControls(class Lv2Effect *effect, const QString& uri) :
 	EffectControls(effect),
 	Lv2ControlBase(this, uri)
 {
-	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged,
-		this, &Lv2FxControls::onSampleRateChanged);
+	// Sample rate changes reach the plugin through Lv2Effect::activate()
 }
 
 
@@ -48,17 +47,6 @@ void Lv2FxControls::reload()
 {
 	Lv2ControlBase::reload();
 	emit modelChanged();
-}
-
-
-
-
-void Lv2FxControls::onSampleRateChanged()
-{
-	// TODO: once lv2 options are implemented,
-	//       plugins that support it might allow changing their samplerate
-	//       through it instead of reloading
-	reload();
 }
 
 

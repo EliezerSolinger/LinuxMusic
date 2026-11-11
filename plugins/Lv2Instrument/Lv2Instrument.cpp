@@ -86,8 +86,7 @@ Lv2Instrument::Lv2Instrument(InstrumentTrack *instrumentTrackArg,
 
 	connect(instrumentTrack()->pitchRangeModel(), SIGNAL(dataChanged()),
 		this, SLOT(updatePitchRange()), Qt::DirectConnection);
-	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged,
-		this, &Lv2Instrument::onSampleRateChanged);
+	// Sample rate changes reach the plugin through activate()
 
 	// now we need a play-handle which cares for calling play()
 	auto iph = new InstrumentPlayHandle(this, instrumentTrackArg);
@@ -126,12 +125,15 @@ void Lv2Instrument::clearRunningNotes()
 
 
 
-void Lv2Instrument::onSampleRateChanged()
+auto Lv2Instrument::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 {
+	(void)maxFrameCount;
+
 	// TODO: once lv2 options are implemented,
 	//       plugins that support it might allow changing their samplerate
 	//       through it instead of reloading
-	reload();
+	if (static_cast<sample_rate_t>(sampleRate) != Lv2ControlBase::sampleRate()) { reload(); }
+	return true;
 }
 
 
@@ -185,14 +187,20 @@ void Lv2Instrument::playNoteImpl(NotePlayHandle *nph, std::span<SampleFrame>)
 
 
 
-void Lv2Instrument::playImpl(std::span<SampleFrame> out)
+auto Lv2Instrument::process(ProcessContext& context) -> ProcessStatus
 {
+	AudioBuffer& out = context.out();
+	const auto frames = out.frames();
+
+	if (audioChannelCount(true) > 0) { copyBuffersFromCore(context.in(), frames); }
 	copyModelsFromLmms();
 
-	run(out.size());
+	run(frames);
 
 	copyModelsToLmms();
-	copyBuffersToLmms(out.data(), out.size());
+	copyBuffersToCore(out, frames);
+
+	return ProcessStatus::Continue;
 }
 
 

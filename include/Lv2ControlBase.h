@@ -40,6 +40,7 @@ namespace lmms
 {
 
 
+class AudioBuffer;
 class Lv2Proc;
 class PluginIssue;
 class SampleFrame;
@@ -88,6 +89,22 @@ public:
 	bool hasGui() const { return m_hasGUI; }
 	void setHasGui(bool val) { m_hasGUI = val; }
 
+	/*
+		audio channels, for the AudioProcessor implementation of the plugin
+
+		The inputs are all main inputs of all Lv2Proc, followed by all sidechain inputs of all Lv2Proc.
+		The outputs are all outputs of all Lv2Proc.
+	*/
+	auto audioChannelCount(bool isInput) const -> ch_cnt_t;
+	//! The inputs have a main group and a sidechain group (each only if it has channels)
+	auto audioChannelGroupCount(bool isInput) const -> group_cnt_t;
+	auto audioChannelGroup(group_cnt_t index, bool isInput) const -> ch_cnt_t;
+	//! Inputs that are not sidechain inputs (the first inputs)
+	auto mainInputCount() const -> ch_cnt_t;
+
+	//! The sample rate the plugin instances were created with
+	auto sampleRate() const -> sample_rate_t { return m_sampleRate; }
+
 protected:
 	/*
 		ctor/dtor
@@ -117,10 +134,10 @@ protected:
 	//! Bring values from all ports to the LMMS core
 	void copyModelsToLmms() const;
 
-	//! Copy buffer passed by LMMS into our ports
-	void copyBuffersFromLmms(const SampleFrame* buf, f_cnt_t frames);
-	//! Copy our ports into buffers passed by LMMS
-	void copyBuffersToLmms(SampleFrame* buf, f_cnt_t frames) const;
+	//! Copy the processor's input channels passed by LMMS into our ports
+	void copyBuffersFromCore(const AudioBuffer& in, f_cnt_t frames);
+	//! Copy our ports into the processor's output channels passed by LMMS
+	void copyBuffersToCore(AudioBuffer& out, f_cnt_t frames) const;
 	//! Run the Lv2 plugin instance for @param frames frames
 	void run(f_cnt_t frames);
 
@@ -147,7 +164,7 @@ private:
 	std::vector<std::unique_ptr<Lv2Proc>> m_procs;
 
 	bool m_hasGUI = false;
-	unsigned m_channelsPerProc;
+	sample_rate_t m_sampleRate = 0;
 
 	const LilvPlugin* m_plugin;
 };

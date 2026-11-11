@@ -63,8 +63,6 @@ private slots:
 	void changeControl();
 
 private:
-	void onSampleRateChanged();
-
 	friend class gui::Lv2FxControlDialog;
 	friend class Lv2Effect;
 };

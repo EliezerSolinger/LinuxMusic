@@ -34,6 +34,7 @@
 #include <QDebug>
 #include <QtGlobal>
 
+#include "AudioBuffer.h"
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
@@ -69,6 +70,7 @@ Plugin::Type Lv2Proc::check(const LilvPlugin *plugin,
 	unsigned maxPorts = lilv_plugin_get_num_ports(plugin);
 	enum { inCount, outCount, maxCount };
 	auto audioChannels = std::array<unsigned, maxCount>{}; // audio input and output count
+	auto mainAudioInputs = unsigned{0}; // audio inputs that are not sidechain inputs
 	auto midiChannels = std::array<unsigned, maxCount>{}; // MIDI input and output count
 
 	const char* pluginUri = lilv_node_as_uri(lilv_plugin_get_uri(plugin));
@@ -99,14 +101,15 @@ Plugin::Type Lv2Proc::check(const LilvPlugin *plugin,
 		std::vector<PluginIssue> tmp = meta.get(plugin, portNum);
 		std::move(tmp.begin(), tmp.end(), std::back_inserter(issues));
 
-		bool portMustBeUsed =
-			!portIsSideChain(plugin,
-							lilv_plugin_get_port_by_index(plugin, portNum)) &&
-			!meta.m_optional;
-		if (meta.m_type == Lv2Ports::Type::Audio && portMustBeUsed)
+		const bool isSideChain = portIsSideChain(plugin, lilv_plugin_get_port_by_index(plugin, portNum));
+		bool portMustBeUsed = !isSideChain && !meta.m_optional;
+		if (meta.m_type == Lv2Ports::Type::Audio)
 		{
-			++audioChannels[meta.m_flow == Lv2Ports::Flow::Output
-				? outCount : inCount];
+			// All audio ports are used, including sidechain and optional ones: the pin connector
+			// routes any number of channels
+			const bool isOutput = meta.m_flow == Lv2Ports::Flow::Output;
+			++audioChannels[isOutput ? outCount : inCount];
+			if (!isOutput && !isSideChain) { ++mainAudioInputs; }
 		}
 		else if(meta.m_type == Lv2Ports::Type::AtomSeq && portMustBeUsed)
 		{
@@ -115,14 +118,18 @@ Plugin::Type Lv2Proc::check(const LilvPlugin *plugin,
 		}
 	}
 
-	if (audioChannels[inCount] > 2)
-		issues.emplace_back(PluginIssueType::TooManyInputChannels,
-			std::to_string(audioChannels[inCount]));
-	if (audioChannels[outCount] == 0)
+	// Mono plugins run twice, once per stereo channel (see Lv2ControlBase::init()), and all channels
+	// of all instances must fit in one buffer
+	const unsigned procs = isMono(mainAudioInputs, audioChannels[outCount]) ? DEFAULT_CHANNELS : 1;
+	if (audioChannels[inCount] == 0 && audioChannels[outCount] == 0)
 		issues.emplace_back(PluginIssueType::NoOutputChannel);
-	else if (audioChannels[outCount] > 2)
-		issues.emplace_back(PluginIssueType::TooManyOutputChannels,
-			std::to_string(audioChannels[outCount]));
+	else if (procs * (audioChannels[inCount] + audioChannels[outCount]) > MaxChannelsPerAudioBuffer)
+	{
+		issues.emplace_back(audioChannels[inCount] > audioChannels[outCount]
+				? PluginIssueType::TooManyInputChannels
+				: PluginIssueType::TooManyOutputChannels,
+			std::to_string(std::max(audioChannels[inCount], audioChannels[outCount])));
+	}
 
 	if (midiChannels[inCount] > 1)
 		issues.emplace_back(PluginIssueType::TooManyMidiInputChannels,
@@ -159,11 +166,10 @@ Plugin::Type Lv2Proc::check(const LilvPlugin *plugin,
 		}
 	}
 
-	return (audioChannels[inCount] > 2 || audioChannels[outCount] > 2)
-		? Plugin::Type::Undefined
-		: (audioChannels[inCount] > 0)
-			? Plugin::Type::Effect
-			: Plugin::Type::Instrument;
+	// Plugins without main audio inputs are instruments, even with sidechain inputs
+	return mainAudioInputs > 0
+		? Plugin::Type::Effect
+		: Plugin::Type::Instrument;
 }
 
 
@@ -324,44 +330,27 @@ void Lv2Proc::copyModelsToCore()
 
 
 
-void Lv2Proc::copyBuffersFromCore(const SampleFrame* buf,
-									unsigned firstChan, unsigned num,
-									f_cnt_t frames)
+void Lv2Proc::copyBuffersFromCore(const AudioBuffer& in, ch_cnt_t firstMain, ch_cnt_t firstSidechain,
+	f_cnt_t frames)
 {
-	inPorts().m_left->copyBuffersFromCore(buf, firstChan, frames);
-	if (num > 1)
+	for (std::size_t port = 0; port < m_mainIns.size(); ++port)
 	{
-		// if the caller requests to take input from two channels, but we only
-		// have one input channel... take medium of left and right for
-		// mono input
-		// (this happens if we have two outputs and only one input)
-		if (inPorts().m_right)
-		{
-			inPorts().m_right->copyBuffersFromCore(buf, firstChan + 1, frames);
-		}
-		else
-		{
-			inPorts().m_left->averageWithBuffersFromCore(buf, firstChan + 1, frames);
-		}
+		m_mainIns[port]->copyBuffersFromCore(in.buffer(firstMain + port).data(), frames);
+	}
+	for (std::size_t port = 0; port < m_sidechainIns.size(); ++port)
+	{
+		m_sidechainIns[port]->copyBuffersFromCore(in.buffer(firstSidechain + port).data(), frames);
 	}
 }
 
 
 
 
-void Lv2Proc::copyBuffersToCore(SampleFrame* buf,
-								unsigned firstChan, unsigned num,
-								f_cnt_t frames) const
+void Lv2Proc::copyBuffersToCore(AudioBuffer& out, ch_cnt_t first, f_cnt_t frames) const
 {
-	outPorts().m_left->copyBuffersToCore(buf, firstChan + 0, frames);
-	if (num > 1)
+	for (std::size_t port = 0; port < m_outs.size(); ++port)
 	{
-		// if the caller requests to copy into two channels, but we only have
-		// one output channel, duplicate our output
-		// (this happens if we have two inputs and only one output)
-		Lv2Ports::Audio* ap = outPorts().m_right
-			? outPorts().m_right : outPorts().m_left;
-		ap->copyBuffersToCore(buf, firstChan + 1, frames);
+		m_outs[port]->copyBuffersToCore(out.buffer(first + port).data(), frames);
 	}
 }
 
@@ -752,24 +741,17 @@ void Lv2Proc::createPorts()
 
 		void visit(Lv2Ports::Audio& audio) override
 		{
-			if (audio.mustBeUsed())
+			// In port order; in Lv2, the left port is defined to be the first port
+			switch (audio.m_flow)
 			{
-				StereoPortRef dummy;
-				StereoPortRef* portRef = &dummy;
-				switch (audio.m_flow)
-				{
-					case Lv2Ports::Flow::Input:
-						portRef = &m_proc->m_inPorts;
-						break;
-					case Lv2Ports::Flow::Output:
-						portRef = &m_proc->m_outPorts;
-						break;
-					case Lv2Ports::Flow::Unknown:
-						break;
-				}
-				// in Lv2, leftPort is defined to be the first port
-				if (!portRef->m_left) { portRef->m_left = &audio; }
-				else if (!portRef->m_right) { portRef->m_right = &audio; }
+				case Lv2Ports::Flow::Input:
+					(audio.isSideChain() ? m_proc->m_sidechainIns : m_proc->m_mainIns).push_back(&audio);
+					break;
+				case Lv2Ports::Flow::Output:
+					m_proc->m_outs.push_back(&audio);
+					break;
+				case Lv2Ports::Flow::Unknown:
+					break;
 			}
 		}
 
@@ -838,7 +820,8 @@ struct ConnectPortVisitor : public Lv2Ports::Visitor
 	void visit(Lv2Ports::Control& ctrl) override { connectPort(&ctrl.m_val); }
 	void visit(Lv2Ports::Audio& audio) override
 	{
-		connectPort((audio.mustBeUsed()) ? audio.m_buffer.data() : nullptr);
+		// Every audio port gets a buffer, including optional and sidechain ports
+		connectPort(audio.m_buffer.data());
 	}
 	void visit(Lv2Ports::Unknown&) override { connectPort(nullptr); }
 	~ConnectPortVisitor() override = default;

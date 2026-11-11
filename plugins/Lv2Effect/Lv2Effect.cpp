@@ -59,36 +59,99 @@ Plugin::Descriptor PLUGIN_EXPORT lv2effect_plugin_descriptor =
 
 
 Lv2Effect::Lv2Effect(Model* parent, const Descriptor::SubPluginFeatures::Key *key) :
-	AudioPlugin(&lv2effect_plugin_descriptor, parent, key),
-	m_controls(this, key->attributes["uri"]),
-	m_tmpOutputSmps(Engine::audioEngine()->framesPerPeriod())
+	Effect(&lv2effect_plugin_descriptor, parent, key),
+	m_controls(this, key->attributes["uri"])
 {
 }
 
 
 
 
-ProcessStatus Lv2Effect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto Lv2Effect::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 {
-	Q_ASSERT(inOut.frames() <= static_cast<f_cnt_t>(m_tmpOutputSmps.size()));
+	(void)maxFrameCount;
 
-	m_controls.copyBuffersFromLmms(reinterpret_cast<SampleFrame*>(inOut.data()), inOut.frames());
+	// TODO: once lv2 options are implemented,
+	//       plugins that support it might allow changing their samplerate
+	//       through it instead of reloading
+	if (static_cast<sample_rate_t>(sampleRate) != m_controls.sampleRate()) { m_controls.reload(); }
+	return true;
+}
+
+
+
+
+auto Lv2Effect::channelCount(bool isInput) const -> ch_cnt_t
+{
+	return m_controls.audioChannelCount(isInput);
+}
+
+
+
+
+auto Lv2Effect::channelGroupCount(bool isInput) const -> group_cnt_t
+{
+	return m_controls.audioChannelGroupCount(isInput);
+}
+
+
+
+
+auto Lv2Effect::getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+	-> ch_cnt_t
+{
+	(void)group;
+	return m_controls.audioChannelGroup(index, isInput);
+}
+
+
+
+
+auto Lv2Effect::getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t>
+{
+	// The plugin has its own port buffers, and the input is needed for the dry signal afterwards
+	(void)inputIndex;
+	return std::nullopt;
+}
+
+
+
+
+auto Lv2Effect::process(ProcessContext& context) -> ProcessStatus
+{
+	const AudioBuffer& in = context.in();
+	AudioBuffer& out = context.out();
+	const auto frames = out.frames();
+
+	m_controls.copyBuffersFromCore(in, frames);
 	m_controls.copyModelsFromLmms();
 
-//	m_pluginMutex.lock();
-	m_controls.run(inOut.frames());
-//	m_pluginMutex.unlock();
+	m_controls.run(frames);
 
 	m_controls.copyModelsToLmms();
-	m_controls.copyBuffersToLmms(m_tmpOutputSmps.data(), inOut.frames());
+	m_controls.copyBuffersToCore(out, frames);
 
+	// Mix the dry signal of the main inputs into the outputs; sidechain inputs are not part of the dry
+	// signal, and outputs without a matching main input have none
 	bool corrupt = wetLevel() < 0; // #3261 - if w < 0, bash w := 0, d := 1
 	const float d = corrupt ? 1 : dryLevel();
 	const float w = corrupt ? 0 : wetLevel();
-	for (f_cnt_t f = 0; f < inOut.frames(); ++f)
+	if (d != 0.f || w != 1.f)
 	{
-		inOut[f][0] = d * inOut[f][0] + w * m_tmpOutputSmps[f][0];
-		inOut[f][1] = d * inOut[f][1] + w * m_tmpOutputSmps[f][1];
+		const auto mainInputs = m_controls.mainInputCount();
+		for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
+		{
+			auto wet = out.buffer(channel);
+			if (channel < mainInputs)
+			{
+				const auto dry = in.buffer(channel);
+				for (f_cnt_t f = 0; f < frames; ++f) { wet[f] = d * dry[f] + w * wet[f]; }
+			}
+			else
+			{
+				for (f_cnt_t f = 0; f < frames; ++f) { wet[f] *= w; }
+			}
+		}
 	}
 
 	return ProcessStatus::ContinueIfNotQuiet;

@@ -48,7 +48,12 @@ class Lv2InsView;
 
 }
 
-// TODO: Add support for pin connector and a variable number of audio input/output ports
+/**
+ * Hosts an LV2 instrument plugin.
+ *
+ * All of the plugin's audio outputs are exposed to the pin connector, as are its sidechain inputs, if any.
+ * Mono plugins run twice, once per stereo channel (see Lv2ControlBase).
+ */
 class Lv2Instrument : public Instrument, public Lv2ControlBase
 {
 	Q_OBJECT
@@ -62,7 +67,6 @@ public:
 		 Descriptor::SubPluginFeatures::Key* key);
 	~Lv2Instrument() override;
 	void reload();
-	void onSampleRateChanged();
 
 	/*
 		load/save
@@ -81,7 +85,29 @@ public:
 #else
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>) override;
 #endif
-	void playImpl(std::span<SampleFrame> out) override;
+
+	/*
+		AudioProcessor implementation
+	*/
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto channelCount(bool isInput) const -> ch_cnt_t override { return audioChannelCount(isInput); }
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override
+	{
+		return audioChannelGroupCount(isInput);
+	}
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+		-> ch_cnt_t override
+	{
+		(void)group;
+		return audioChannelGroup(index, isInput);
+	}
+	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override
+	{
+		// The plugin has its own port buffers
+		(void)inputIndex;
+		return std::nullopt;
+	}
 
 	/*
 		misc

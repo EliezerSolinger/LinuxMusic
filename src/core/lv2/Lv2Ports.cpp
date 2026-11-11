@@ -27,6 +27,8 @@
 
 #ifdef LMMS_HAVE_LV2
 
+#include <algorithm>
+
 #include <lv2/atom/atom.h>
 #include <lv2/port-props/port-props.h>
 
@@ -312,37 +314,17 @@ Audio::Audio(std::size_t bufferSize, bool isSidechain)
 
 
 
-void Audio::copyBuffersFromCore(const SampleFrame* lmmsBuf,
-	unsigned channel, f_cnt_t frames)
+void Audio::copyBuffersFromCore(const float* source, f_cnt_t frames)
 {
-	for (std::size_t f = 0; f < static_cast<unsigned>(frames); ++f)
-	{
-		m_buffer[f] = lmmsBuf[f][channel];
-	}
+	std::copy_n(source, std::min<std::size_t>(frames, m_buffer.size()), m_buffer.begin());
 }
 
 
 
 
-void Audio::averageWithBuffersFromCore(const SampleFrame* lmmsBuf,
-	unsigned channel, f_cnt_t frames)
+void Audio::copyBuffersToCore(float* destination, f_cnt_t frames) const
 {
-	for (std::size_t f = 0; f < static_cast<unsigned>(frames); ++f)
-	{
-		m_buffer[f] = (m_buffer[f] + lmmsBuf[f][channel]) / 2.0f;
-	}
-}
-
-
-
-
-void Audio::copyBuffersToCore(SampleFrame* lmmsBuf,
-	unsigned channel, f_cnt_t frames) const
-{
-	for (std::size_t f = 0; f < static_cast<unsigned>(frames); ++f)
-	{
-		lmmsBuf[f][channel] = m_buffer[f];
-	}
+	std::copy_n(m_buffer.begin(), std::min<std::size_t>(frames, m_buffer.size()), destination);
 }
 
 
