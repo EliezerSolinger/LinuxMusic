@@ -36,6 +36,8 @@
 class QAction;
 class QDomElement;
 class QGridLayout;
+class QSplitter;
+class QTabWidget;
 
 namespace lmms
 {
@@ -43,6 +45,7 @@ namespace lmms
 namespace gui
 {
 
+class DockPanel;
 class PluginView;
 class SubWindow;
 class ToolButton;
@@ -67,6 +70,17 @@ public:
 
 	// wrap the widget with a window decoration and add it to the workspace
 	LMMS_EXPORT SubWindow* addWindowedWidget(QWidget *w, Qt::WindowFlags windowFlags = QFlag(0));
+
+	//! Where a docked editor lives in the single-window layout
+	enum class DockArea
+	{
+		Top,	//!< Main editors (Song Editor, Pattern Editor)
+		Bottom,	//!< Mixer and detail editors (Piano Roll, Automation Editor)
+		Right	//!< Side panels (controllers, project notes)
+	};
+
+	//! Docks @p w as a tab in one of the main window's dock areas
+	DockPanel* dockWidget(QWidget* w, DockArea area, const QString& title, const QPixmap& icon);
 
 
 	void refocus();
@@ -193,6 +207,10 @@ private:
 
 	void toggleWindow( QWidget *window, bool forceShow = false );
 
+	QTabWidget* dockTabs(DockArea area) const;
+	void revealDock(DockPanel* panel);
+	void collapseDock(QTabWidget* tabs);
+
 	void exportProject(bool multiExport = false);
 	void handleSaveResult(QString const & filename, bool songSavedSuccessfully);
 	bool guiSaveProject();
@@ -214,6 +232,16 @@ private:
 	};
 
 	MovableQMdiArea * m_workspace;
+
+	// Single-window layout: the top and bottom docks sit in a splitter that fills the
+	// workspace viewport behind the floating plugin windows; the right dock sits beside it
+	QSplitter* m_mainSplitter;
+	QSplitter* m_dockSplitter;
+	QTabWidget* m_topDock;
+	QTabWidget* m_bottomDock;
+	QTabWidget* m_rightDock;
+	int m_bottomDockHeight = 300;
+	int m_rightDockWidth = 360;
 
 	QWidget * m_toolBar;
 	QGridLayout * m_toolBarLayout;

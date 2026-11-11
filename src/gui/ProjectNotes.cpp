@@ -75,11 +75,7 @@ ProjectNotes::ProjectNotes()
 	setWindowTitle( tr( "Project Notes" ) );
 	setWindowIcon( embed::getIconPixmap( "project_notes" ) );
 
-	getGUI()->mainWindow()->addWindowedWidget( this );
-	parentWidget()->setAttribute( Qt::WA_DeleteOnClose, false );
-	parentWidget()->move( 700, 10 );
-	parentWidget()->resize( 400, 300 );
-	parentWidget()->hide();
+	// Docked in the main window's right dock by MainWindow::finalize()
 }
 
 

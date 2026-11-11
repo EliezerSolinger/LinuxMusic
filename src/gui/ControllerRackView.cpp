@@ -79,18 +79,8 @@ ControllerRackView::ControllerRackView()
 	layout->addWidget( m_addButton );
 	this->setLayout( layout );
 
-	SubWindow* subWin = getGUI()->mainWindow()->addWindowedWidget(this);
-
-	setFixedWidth(350);
-	setMinimumHeight(200);
-
-	// No maximize button
-	Qt::WindowFlags flags = subWin->windowFlags();
-	flags &= ~Qt::WindowMaximizeButtonHint;
-	subWin->setWindowFlags( flags );
-	
-	subWin->setAttribute( Qt::WA_DeleteOnClose, false );
-	subWin->move( 680, 310 );
+	// Docked in the main window's right dock by MainWindow::finalize()
+	setMinimumWidth(300);
 }
 
 

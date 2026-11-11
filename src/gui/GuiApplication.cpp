@@ -49,6 +49,7 @@
 #include <QMessageBox>
 #include <QSplashScreen>
 #include <QSocketNotifier>
+#include <QTimer>
 
 #ifdef LMMS_BUILD_WIN32
 #include <io.h>
@@ -196,6 +197,16 @@ GuiApplication::GuiApplication()
 	m_mainWindow->finalize();
 
 	m_loadingProgressLabel = nullptr;
+
+	// Development aid: LINUXMUSIC_SCREENSHOT=<file.png> saves an image of the main window shortly
+	// after startup and quits, which allows checking the UI without screen capture permissions
+	if (const auto screenshotPath = qEnvironmentVariable("LINUXMUSIC_SCREENSHOT"); !screenshotPath.isEmpty())
+	{
+		QTimer::singleShot(4000, m_mainWindow, [this, screenshotPath] {
+			m_mainWindow->grab().save(screenshotPath);
+			QApplication::exit(0);
+		});
+	}
 }
 
 GuiApplication::~GuiApplication()

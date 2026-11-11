@@ -34,11 +34,13 @@
 #include <QMessageBox>
 #include <QShortcut>
 #include <QSplitter>
+#include <QTabWidget>
 
 #include "AboutDialog.h"
 #include "AutomationEditor.h"
 #include "ControllerRackView.h"
 #include "DeprecationHelper.h"
+#include "DockPanel.h"
 #include "embed.h"
 #include "Engine.h"
 #include "ExportProjectDialog.h"
@@ -82,6 +84,11 @@ namespace lmms::gui
 
 MainWindow::MainWindow() :
 	m_workspace( nullptr ),
+	m_mainSplitter( nullptr ),
+	m_dockSplitter( nullptr ),
+	m_topDock( nullptr ),
+	m_bottomDock( nullptr ),
+	m_rightDock( nullptr ),
 	m_toolsMenu( nullptr ),
 	m_autoSaveTimer( this ),
 	m_viewMenu( nullptr ),
@@ -178,6 +185,29 @@ MainWindow::MainWindow() :
 	m_workspace->setOption( QMdiArea::DontMaximizeSubWindowOnActivation );
 	m_workspace->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	m_workspace->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+	// Docked editors fill the workspace viewport as its bottom-most layer, so plugin
+	// windows (still MDI subwindows) float above them
+	m_dockSplitter = new QSplitter(Qt::Vertical, m_workspace->viewport());
+	m_dockSplitter->setObjectName("dockSplitter");
+	m_topDock = new QTabWidget(m_dockSplitter);
+	m_topDock->setObjectName("topDock");
+	m_bottomDock = new QTabWidget(m_dockSplitter);
+	m_bottomDock->setObjectName("bottomDock");
+	for (auto tabs : {m_topDock, m_bottomDock})
+	{
+		tabs->setDocumentMode(true);
+		m_dockSplitter->addWidget(tabs);
+	}
+	m_dockSplitter->setCollapsible(0, false);
+	m_dockSplitter->setStretchFactor(0, 1);
+	m_dockSplitter->lower();
+	m_workspace->viewport()->installEventFilter(this);
+
+	m_rightDock = new QTabWidget(splitter);
+	m_rightDock->setObjectName("rightDock");
+	m_rightDock->setDocumentMode(true);
+	m_mainSplitter = splitter;
 
 	hbox->addWidget(sideBar);
 	hbox->addWidget(splitter);
@@ -489,26 +519,103 @@ void MainWindow::finalize()
 		sd.exec();
 	}
 
-	// Add editor subwindows
-	addWindowedWidget(getGUI()->automationEditor());
-	addWindowedWidget(getGUI()->patternEditor());
-	addWindowedWidget(getGUI()->pianoRoll());
-	addWindowedWidget(getGUI()->songEditor());
+	// Dock the editors (single-window layout)
+	const auto gui = getGUI();
+	dockWidget(gui->songEditor(), DockArea::Top, tr("Song Editor"), embed::getIconPixmap("songeditor"));
+	dockWidget(gui->patternEditor(), DockArea::Top, tr("Pattern Editor"), embed::getIconPixmap("pattern_track"));
+	dockWidget(gui->mixerView(), DockArea::Bottom, tr("Mixer"), embed::getIconPixmap("mixer"));
+	dockWidget(gui->pianoRoll(), DockArea::Bottom, tr("Piano Roll"), embed::getIconPixmap("piano"));
+	dockWidget(gui->automationEditor(), DockArea::Bottom, tr("Automation Editor"), embed::getIconPixmap("automation"));
+	dockWidget(gui->getControllerRackView(), DockArea::Right, tr("Controllers"), embed::getIconPixmap("controller"));
+	dockWidget(gui->getProjectNotes(), DockArea::Right, tr("Notes"), embed::getIconPixmap("project_notes"));
 
-	getGUI()->automationEditor()->parentWidget()->hide();
-	getGUI()->patternEditor()->parentWidget()->move(610, 5);
-	getGUI()->patternEditor()->parentWidget()->hide();
-	getGUI()->pianoRoll()->parentWidget()->move(5, 5);
-	getGUI()->pianoRoll()->parentWidget()->hide();
-	getGUI()->songEditor()->parentWidget()->move(5, 5);
-	getGUI()->songEditor()->parentWidget()->show();
+	m_topDock->setCurrentIndex(0);
+	m_bottomDock->setCurrentIndex(0);
+	m_rightDock->setCurrentIndex(0);
+	m_dockSplitter->setSizes({500, m_bottomDockHeight});
+	m_mainSplitter->setCollapsible(m_mainSplitter->indexOf(m_rightDock), true);
+	m_mainSplitter->setStretchFactor(m_mainSplitter->indexOf(m_workspace), 1);
+	collapseDock(m_rightDock);
+}
 
-	// reset window title every time we change the state of a subwindow to show the correct title
-	for( const QMdiSubWindow * subWindow : workspace()->subWindowList() )
+
+
+
+DockPanel* MainWindow::dockWidget(QWidget* w, DockArea area, const QString& title, const QPixmap& icon)
+{
+	auto tabs = dockTabs(area);
+	auto panel = new DockPanel(w, tabs);
+	tabs->addTab(panel, icon, title);
+	connect(panel, &DockPanel::revealRequested, this, &MainWindow::revealDock);
+	return panel;
+}
+
+
+
+
+QTabWidget* MainWindow::dockTabs(DockArea area) const
+{
+	switch (area)
 	{
-		connect( subWindow, SIGNAL(windowStateChanged(Qt::WindowStates,Qt::WindowStates)), this, SLOT(resetWindowTitle()));
+		case DockArea::Top: return m_topDock;
+		case DockArea::Bottom: return m_bottomDock;
+		case DockArea::Right: return m_rightDock;
+	}
+	return m_topDock;
+}
+
+
+
+
+void MainWindow::revealDock(DockPanel* panel)
+{
+	if (panel->tabs() == m_bottomDock)
+	{
+		auto sizes = m_dockSplitter->sizes();
+		if (sizes.size() == 2 && sizes[1] == 0)
+		{
+			const int total = sizes[0] + sizes[1];
+			m_dockSplitter->setSizes({std::max(total - m_bottomDockHeight, 0), m_bottomDockHeight});
+		}
+	}
+	else if (panel->tabs() == m_rightDock)
+	{
+		const int index = m_mainSplitter->indexOf(m_rightDock);
+		auto sizes = m_mainSplitter->sizes();
+		if (sizes[index] == 0)
+		{
+			const int workspaceIndex = m_mainSplitter->indexOf(m_workspace);
+			sizes[workspaceIndex] = std::max(sizes[workspaceIndex] - m_rightDockWidth, 0);
+			sizes[index] = m_rightDockWidth;
+			m_mainSplitter->setSizes(sizes);
+		}
+	}
+	if (panel->content()->isEnabled()) { panel->content()->setFocus(); }
+}
+
+
+
+
+void MainWindow::collapseDock(QTabWidget* tabs)
+{
+	if (tabs == m_bottomDock)
+	{
+		auto sizes = m_dockSplitter->sizes();
+		if (sizes[1] > 0) { m_bottomDockHeight = sizes[1]; }
+		m_dockSplitter->setSizes({sizes[0] + sizes[1], 0});
+	}
+	else if (tabs == m_rightDock)
+	{
+		const int index = m_mainSplitter->indexOf(m_rightDock);
+		auto sizes = m_mainSplitter->sizes();
+		if (sizes[index] > 0) { m_rightDockWidth = sizes[index]; }
+		sizes[m_mainSplitter->indexOf(m_workspace)] += sizes[index];
+		sizes[index] = 0;
+		m_mainSplitter->setSizes(sizes);
 	}
 }
+
+
 
 
 int MainWindow::addWidgetToToolBar( QWidget * _w, int _row, int _col )
@@ -918,6 +1025,21 @@ void MainWindow::help()
 
 void MainWindow::toggleWindow( QWidget *window, bool forceShow )
 {
+	if (auto panel = qobject_cast<DockPanel*>(window->parentWidget()))
+	{
+		// Toggling a docked editor that is already showing collapses its dock (the top dock never collapses)
+		if (!forceShow && panel->isShownInDock() && panel->tabs() != m_topDock)
+		{
+			collapseDock(panel->tabs());
+			refocus();
+		}
+		else
+		{
+			panel->show();
+		}
+		return;
+	}
+
 	// All "windows" should be inside a SubWindow, because the use of activeSubWindow() depends on it
 	auto parent = dynamic_cast<QMdiSubWindow*>(window->parentWidget());
 	if (parent == nullptr) { return; }
@@ -1288,6 +1410,12 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 
 		return false;
 	};
+
+	// Keep the docked editors filling the workspace viewport
+	if (m_workspace && watched == m_workspace->viewport() && event->type() == QEvent::Resize)
+	{
+		m_dockSplitter->setGeometry(m_workspace->viewport()->rect());
+	}
 
 	// Clear modifiers when the window has been unfocused (install event filter on the window itself)
 	if (dynamic_cast<MainWindow*>(watched) != nullptr && isWinDeactivate(event))
