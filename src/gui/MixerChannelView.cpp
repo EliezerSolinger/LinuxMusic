@@ -192,6 +192,40 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 	colorMenu.addAction(tr("Pick random"), this, &MixerChannelView::randomizeColor);
 	contextMenu->addMenu(&colorMenu);
 
+	// Track channels: the main pair and auxiliary pairs, e.g. for sidechain inputs and multi-output instruments
+	auto channelsMenu = QMenu{tr("Track channels"), this};
+	const auto mixer = Engine::mixer();
+	const auto index = channelIndex();
+	for (const ch_cnt_t channels : {2, 4, 6, 8, 12, 16})
+	{
+		auto action = channelsMenu.addAction(QString::number(channels), this, [mixer, index, channels] {
+			mixer->setChannelCount(index, channels);
+		});
+		action->setCheckable(true);
+		action->setChecked(mixerChannel()->channelCount() == channels);
+	}
+	contextMenu->addMenu(&channelsMenu);
+
+	// Sidechain send from the selected channel into this channel's channels 3/4
+	const auto source = m_mixerView->currentMixerChannel()->channelIndex();
+	if (source != index && !mixer->isInfiniteLoop(source, index))
+	{
+		const auto existing = mixer->findChannelSend(source, index, 0, 1);
+		auto action = contextMenu->addAction(
+			tr("Sidechain send from \"%1\" (channels 3/4)").arg(mixer->mixerChannel(source)->m_name),
+			this, [mixer, source, index, existing] {
+				if (existing)
+				{
+					mixer->deleteChannelSend(existing);
+					return;
+				}
+				if (mixer->mixerChannel(index)->channelCount() < 4) { mixer->setChannelCount(index, 4); }
+				mixer->createChannelSend(source, index, 1.f, 0, 1);
+			});
+		action->setCheckable(true);
+		action->setChecked(existing != nullptr);
+	}
+
 	contextMenu->exec(QCursor::pos());
 	delete contextMenu;
 }
