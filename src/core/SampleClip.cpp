@@ -28,6 +28,7 @@
 #include <QFileInfo>
 
 #include "PatternStore.h"
+#include "ThreadedExportManager.h"
 #include "PathUtil.h"
 #include "SampleClipView.h"
 #include "SampleTrack.h"
@@ -361,6 +362,11 @@ void SampleClip::loadSettings( const QDomElement & _this )
 gui::ClipView * SampleClip::createView( gui::TrackView * _tv )
 {
 	return new gui::SampleClipView( this, _tv );
+}
+
+void SampleClip::exportSampleBuffer(const QString& fileName)
+{
+	Engine::exportManager()->startExporting(fileName, m_sample.buffer());
 }
 
 
