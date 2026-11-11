@@ -27,7 +27,7 @@
 #ifndef CROSSOVEREQ_H
 #define CROSSOVEREQ_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "CrossoverEQControls.h"
 #include "BasicFilters.h"
 
@@ -35,7 +35,7 @@ namespace lmms
 {
 
 
-class CrossoverEQEffect : public DefaultEffect
+class CrossoverEQEffect : public LegacyEffect
 {
 public:
 	CrossoverEQEffect( Model* parent, const Descriptor::SubPluginFeatures::Key* key );
@@ -49,7 +49,7 @@ public:
 	void clearFilterHistories();
 	
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	CrossoverEQControls m_controls;
 

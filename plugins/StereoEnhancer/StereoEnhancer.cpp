@@ -56,7 +56,7 @@ Plugin::Descriptor PLUGIN_EXPORT stereoenhancer_plugin_descriptor =
 StereoEnhancerEffect::StereoEnhancerEffect(
 			Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key ) :
-	AudioPlugin(&stereoenhancer_plugin_descriptor, _parent, _key),
+	LegacyEffect(&stereoenhancer_plugin_descriptor, _parent, _key),
 	m_seFX( DspEffectLibrary::StereoEnhancer( 0.0f ) ),
 	m_delayBuffer( new SampleFrame[DEFAULT_BUFFER_SIZE] ),
 	m_currFrame( 0 ),
@@ -82,8 +82,9 @@ StereoEnhancerEffect::~StereoEnhancerEffect()
 
 
 
-ProcessStatus StereoEnhancerEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto StereoEnhancerEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	m_delayBufferCleared = false;
 	const float d = dryLevel();
 	const float w = wetLevel();

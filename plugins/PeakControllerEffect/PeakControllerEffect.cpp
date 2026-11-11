@@ -103,7 +103,7 @@ auto PeakControllerEffect::process(ProcessContext& context) -> ProcessStatus
 
 	if( c.m_absModel.value() )
 	{
-		for (SampleFrame& frame : inOut.toSampleFrames())
+		for (SampleFrame& frame : inOut.asSampleFrames())
 		{
 			// absolute value is achieved because the squares are > 0
 			sum += frame.sumOfSquaredAmplitudes();

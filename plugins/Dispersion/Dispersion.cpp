@@ -52,7 +52,7 @@ Plugin::Descriptor PLUGIN_EXPORT dispersion_plugin_descriptor =
 
 
 DispersionEffect::DispersionEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	AudioPlugin(&dispersion_plugin_descriptor, parent, key),
+	LegacyEffect(&dispersion_plugin_descriptor, parent, key),
 	m_dispersionControls(this),
 	m_sampleRate(Engine::audioEngine()->outputSampleRate()),
 	m_amountVal(0)
@@ -60,8 +60,9 @@ DispersionEffect::DispersionEffect(Model* parent, const Descriptor::SubPluginFea
 }
 
 
-ProcessStatus DispersionEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto DispersionEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	const float d = dryLevel();
 	const float w = wetLevel();
 	

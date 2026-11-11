@@ -24,7 +24,10 @@
 #ifndef VECTORSCOPE_H
 #define VECTORSCOPE_H
 
-#include "AudioPlugin.h"
+#include <optional>
+#include <vector>
+
+#include "Effect.h"
 #include "LocklessRingBuffer.h"
 #include "VecControls.h"
 
@@ -33,15 +36,7 @@ namespace lmms
 
 
 //! Top level class; handles LMMS interface and accumulates data for processing.
-class Vectorscope
-	: public AudioPluginExt<Effect, AudioPortsSettings {
-		.kind = AudioDataKind::F32,
-		.interleaved = true,
-		.inputs = 2,
-		.outputs = 0,
-		.inplace = true,
-		.buffered = false
-	}>
+class Vectorscope : public Effect
 {
 public:
 	Vectorscope(Model *parent, const Descriptor::SubPluginFeatures::Key *key);
@@ -51,7 +46,19 @@ public:
 	LocklessRingBuffer<SampleFrame> *getBuffer() {return &m_inputBuffer;}
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> in) override;
+	// Analysis only: two inputs and no outputs, so the audio passes through unchanged
+	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+	auto channelCount(bool isInput) const -> ch_cnt_t override { return isInput ? 2 : 0; }
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return isInput ? 1 : 0; }
+	auto getChannelGroup(group_cnt_t, bool isInput, AudioBuffer::ChannelGroup&) const -> ch_cnt_t override
+	{
+		return isInput ? 2 : 0;
+	}
+	auto getInplacePair(ch_cnt_t) const -> std::optional<ch_cnt_t> override { return std::nullopt; }
+
+	//! The planar input interleaved for the ring buffer; sized in activate()
+	std::vector<SampleFrame> m_interleaved;
 
 	VecControls m_controls;
 

@@ -62,7 +62,7 @@ const double DNF_LOG = -1.0;
 
 DynProcEffect::DynProcEffect( Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key ) :
-	AudioPlugin(&dynamicsprocessor_plugin_descriptor, _parent, _key),
+	LegacyEffect(&dynamicsprocessor_plugin_descriptor, _parent, _key),
 	m_dpControls( this )
 {
 	m_currentPeak[0] = m_currentPeak[1] = DYN_NOISE_FLOOR;
@@ -93,8 +93,9 @@ inline void DynProcEffect::calcRelease()
 }
 
 
-ProcessStatus DynProcEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto DynProcEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	//qDebug( "%f %f", m_currentPeak[0], m_currentPeak[1] );
 
 // variables for effect

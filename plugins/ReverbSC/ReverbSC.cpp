@@ -49,7 +49,7 @@ Plugin::Descriptor PLUGIN_EXPORT reverbsc_plugin_descriptor =
 }
 
 ReverbSCEffect::ReverbSCEffect( Model* parent, const Descriptor::SubPluginFeatures::Key* key ) :
-	AudioPlugin(&reverbsc_plugin_descriptor, parent, key),
+	LegacyEffect(&reverbsc_plugin_descriptor, parent, key),
 	m_reverbSCControls( this )
 {
 	sp_create(&sp);
@@ -73,8 +73,9 @@ ReverbSCEffect::~ReverbSCEffect()
 	sp_destroy(&sp);
 }
 
-ProcessStatus ReverbSCEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto ReverbSCEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	const float d = dryLevel();
 	const float w = wetLevel();
 

@@ -27,14 +27,14 @@
 #ifndef _WAVESHAPER_H
 #define _WAVESHAPER_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "WaveShaperControls.h"
 
 namespace lmms
 {
 
 
-class WaveShaperEffect : public DefaultEffect
+class WaveShaperEffect : public LegacyEffect
 {
 public:
 	WaveShaperEffect( Model * _parent,
@@ -48,7 +48,7 @@ public:
 
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	WaveShaperControls m_wsControls;
 

@@ -54,7 +54,7 @@ Plugin::Descriptor PLUGIN_EXPORT delay_plugin_descriptor =
 
 
 DelayEffect::DelayEffect( Model* parent, const Plugin::Descriptor::SubPluginFeatures::Key* key ) :
-	AudioPlugin(&delay_plugin_descriptor, parent, key),
+	LegacyEffect(&delay_plugin_descriptor, parent, key),
 	m_delayControls( this )
 {
 	m_delay = 0;
@@ -81,8 +81,9 @@ DelayEffect::~DelayEffect()
 
 
 
-ProcessStatus DelayEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto DelayEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	const float sr = Engine::audioEngine()->outputSampleRate();
 	const float d = dryLevel();
 	const float w = wetLevel();

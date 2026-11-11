@@ -27,7 +27,7 @@
 
 #include <numbers>
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "GranularPitchShifterControls.h"
 #include "interpolation.h"
 
@@ -43,7 +43,7 @@ constexpr float SatuSafeVol = 16.f;
 constexpr float SatuStrength = 0.001f;
 
 
-class GranularPitchShifterEffect : public DefaultEffect
+class GranularPitchShifterEffect : public LegacyEffect
 {
 public:
 	GranularPitchShifterEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
@@ -109,7 +109,7 @@ public:
 	void changeSampleRate();
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	struct PrefilterLowpass
 	{

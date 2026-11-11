@@ -54,7 +54,7 @@ Plugin::Descriptor PLUGIN_EXPORT dualfilter_plugin_descriptor =
 
 
 DualFilterEffect::DualFilterEffect( Model* parent, const Descriptor::SubPluginFeatures::Key* key ) :
-	AudioPlugin(&dualfilter_plugin_descriptor, parent, key),
+	LegacyEffect(&dualfilter_plugin_descriptor, parent, key),
 	m_dfControls( this )
 {
 	m_filter1 = new BasicFilters<2>( Engine::audioEngine()->outputSampleRate() );
@@ -77,8 +77,9 @@ DualFilterEffect::~DualFilterEffect()
 
 
 
-ProcessStatus DualFilterEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto DualFilterEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	const float d = dryLevel();
 	const float w = wetLevel();
 

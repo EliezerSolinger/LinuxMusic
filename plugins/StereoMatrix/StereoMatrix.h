@@ -26,14 +26,14 @@
 #ifndef _STEREO_MATRIX_H
 #define _STEREO_MATRIX_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "StereoMatrixControls.h"
 
 namespace lmms
 {
 
 
-class StereoMatrixEffect : public DefaultEffect
+class StereoMatrixEffect : public LegacyEffect
 {
 public:
 	StereoMatrixEffect( Model * parent, 
@@ -46,7 +46,7 @@ public:
 	}
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	StereoMatrixControls m_smControls;
 

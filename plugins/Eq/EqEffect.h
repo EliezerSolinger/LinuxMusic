@@ -24,7 +24,7 @@
 #ifndef EQEFFECT_H
 #define EQEFFECT_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "EqControls.h"
 #include "EqFilter.h"
 
@@ -35,7 +35,7 @@ namespace lmms
 {
 
 
-class EqEffect : public DefaultEffect
+class EqEffect : public LegacyEffect
 {
 public:
 	EqEffect( Model * parent , const Descriptor::SubPluginFeatures::Key * key );
@@ -62,7 +62,7 @@ public:
 	}
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	EqControls m_eqControls;
 

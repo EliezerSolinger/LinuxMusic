@@ -56,7 +56,7 @@ Plugin::Descriptor PLUGIN_EXPORT stereomatrix_plugin_descriptor =
 StereoMatrixEffect::StereoMatrixEffect(
 			Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key ) :
-	AudioPlugin(&stereomatrix_plugin_descriptor, _parent, _key),
+	LegacyEffect(&stereomatrix_plugin_descriptor, _parent, _key),
 	m_smControls( this )
 {
 }
@@ -64,8 +64,9 @@ StereoMatrixEffect::StereoMatrixEffect(
 
 
 
-ProcessStatus StereoMatrixEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto StereoMatrixEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	const float d = dryLevel();
 	const float w = wetLevel();
 

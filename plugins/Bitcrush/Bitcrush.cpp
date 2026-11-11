@@ -58,7 +58,7 @@ Plugin::Descriptor PLUGIN_EXPORT bitcrush_plugin_descriptor =
 }
 
 BitcrushEffect::BitcrushEffect( Model * parent, const Descriptor::SubPluginFeatures::Key * key ) :
-	AudioPlugin(&bitcrush_plugin_descriptor, parent, key),
+	LegacyEffect(&bitcrush_plugin_descriptor, parent, key),
 	m_controls( this ),
 	m_sampleRate( Engine::audioEngine()->outputSampleRate() ),
 	m_filter( m_sampleRate )
@@ -101,8 +101,9 @@ inline float BitcrushEffect::noise( float amt )
 	return fastRandInc(-amt, +amt);
 }
 
-ProcessStatus BitcrushEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto BitcrushEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	// update values
 	if( m_needsUpdate || m_controls.m_rateEnabled.isValueChanged() )
 	{

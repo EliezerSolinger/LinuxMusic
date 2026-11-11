@@ -54,7 +54,7 @@ Plugin::Descriptor PLUGIN_EXPORT eq_plugin_descriptor =
 
 
 EqEffect::EqEffect( Model *parent, const Plugin::Descriptor::SubPluginFeatures::Key *key) :
-	AudioPlugin(&eq_plugin_descriptor, parent, key),
+	LegacyEffect(&eq_plugin_descriptor, parent, key),
 	m_eqControls( this ),
 	m_inGain( 1.0 ),
 	m_outGain( 1.0 )
@@ -64,8 +64,9 @@ EqEffect::EqEffect( Model *parent, const Plugin::Descriptor::SubPluginFeatures::
 
 
 
-ProcessStatus EqEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto EqEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	const int sampleRate = Engine::audioEngine()->outputSampleRate();
 
 	//wet/dry controls
@@ -144,7 +145,7 @@ ProcessStatus EqEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 	m_eqControls.m_inProgress = true;
 	double outSum = 0.0;
 
-	for (const SampleFrame& frame : inOut.toSampleFrames())
+	for (const SampleFrame& frame : inOut.asSampleFrames())
 	{
 		outSum += frame.sumOfSquaredAmplitudes();
 	}

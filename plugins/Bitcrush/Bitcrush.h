@@ -27,7 +27,7 @@
 #ifndef BITCRUSH_H
 #define BITCRUSH_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "BitcrushControls.h"
 #include "BasicFilters.h"
 
@@ -36,7 +36,7 @@ namespace lmms
 {
 
 
-class BitcrushEffect : public DefaultEffect
+class BitcrushEffect : public LegacyEffect
 {
 public:
 	BitcrushEffect( Model* parent, const Descriptor::SubPluginFeatures::Key* key );
@@ -48,7 +48,7 @@ public:
 	}
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	void sampleRateChanged();
 	float depthCrush( float in );

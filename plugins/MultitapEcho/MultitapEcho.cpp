@@ -53,7 +53,7 @@ Plugin::Descriptor PLUGIN_EXPORT multitapecho_plugin_descriptor =
 
 
 MultitapEchoEffect::MultitapEchoEffect( Model* parent, const Descriptor::SubPluginFeatures::Key* key ) :
-	AudioPlugin(&multitapecho_plugin_descriptor, parent, key),
+	LegacyEffect(&multitapecho_plugin_descriptor, parent, key),
 	m_stages( 1 ),
 	m_controls( this ),
 	m_buffer( 16100.0f ),
@@ -95,8 +95,9 @@ void MultitapEchoEffect::runFilter( SampleFrame* dst, SampleFrame* src, StereoOn
 }
 
 
-ProcessStatus MultitapEchoEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto MultitapEchoEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	const float d = dryLevel();
 	const float w = wetLevel();
 

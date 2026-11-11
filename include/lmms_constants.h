@@ -26,6 +26,8 @@
 #define LMMS_CONSTANTS_H
 
 #include "lmmsconfig.h"
+#include <cstddef>
+
 #include "LmmsTypes.h"
 
 namespace lmms

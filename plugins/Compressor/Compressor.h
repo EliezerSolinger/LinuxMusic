@@ -26,7 +26,7 @@
 #ifndef COMPRESSOR_H
 #define COMPRESSOR_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "CompressorControls.h"
 
 namespace lmms
@@ -35,7 +35,7 @@ namespace lmms
 
 constexpr float COMP_LOG = -2.2f;
 
-class CompressorEffect : public DefaultEffect
+class CompressorEffect : public LegacyEffect
 {
 	Q_OBJECT
 public:
@@ -68,7 +68,7 @@ private slots:
 	void redrawKnee();
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 	void processBypassedImpl() override;
 
 	float msToCoeff(float ms);

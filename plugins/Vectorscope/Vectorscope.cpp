@@ -48,7 +48,7 @@ extern "C" {
 
 
 Vectorscope::Vectorscope(Model *parent, const Plugin::Descriptor::SubPluginFeatures::Key *key) :
-	AudioPlugin(&vectorscope_plugin_descriptor, parent, key),
+	Effect(&vectorscope_plugin_descriptor, parent, key),
 	m_controls(this),
 	// Buffer is sized to cover 4* the current maximum LMMS audio buffer size,
 	// so that it has some reserve space in case GUI thresd is busy.
@@ -58,14 +58,25 @@ Vectorscope::Vectorscope(Model *parent, const Plugin::Descriptor::SubPluginFeatu
 
 
 // Take audio data and store them for processing and display in the GUI thread.
-ProcessStatus Vectorscope::processImpl(InterleavedBufferView<float, 2> in)
+auto Vectorscope::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 {
+	(void)sampleRate;
+	m_interleaved.resize(maxFrameCount);
+	return true;
+}
+
+
+auto Vectorscope::process(ProcessContext& context) -> ProcessStatus
+{
+	const auto& in = context.in();
+	const auto frames = std::min<f_cnt_t>(in.frames(), m_interleaved.size());
 	// Skip processing if the controls dialog isn't visible, it would only waste CPU cycles.
 	if (m_controls.isViewVisible())
 	{
 		// To avoid processing spikes on audio thread, data are stored in
 		// a lockless ringbuffer and processed in a separate thread.
-		m_inputBuffer.write(reinterpret_cast<SampleFrame*>(in.data()), in.frames());
+		for (f_cnt_t f = 0; f < frames; ++f) { m_interleaved[f] = {in.buffer(0)[f], in.buffer(1)[f]}; }
+		m_inputBuffer.write(m_interleaved.data(), frames);
 	}
 
 	return ProcessStatus::Continue;

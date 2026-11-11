@@ -51,7 +51,7 @@ Plugin::Descriptor PLUGIN_EXPORT granularpitchshifter_plugin_descriptor =
 
 
 GranularPitchShifterEffect::GranularPitchShifterEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	AudioPlugin(&granularpitchshifter_plugin_descriptor, parent, key),
+	LegacyEffect(&granularpitchshifter_plugin_descriptor, parent, key),
 	m_granularpitchshifterControls(this),
 	m_prefilter({PrefilterLowpass(), PrefilterLowpass()})
 {
@@ -61,8 +61,9 @@ GranularPitchShifterEffect::GranularPitchShifterEffect(Model* parent, const Desc
 }
 
 
-ProcessStatus GranularPitchShifterEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto GranularPitchShifterEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	const float d = dryLevel();
 	const float w = wetLevel();
 	

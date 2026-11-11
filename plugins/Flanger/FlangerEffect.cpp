@@ -58,7 +58,7 @@ Plugin::Descriptor PLUGIN_EXPORT flanger_plugin_descriptor =
 
 
 FlangerEffect::FlangerEffect( Model *parent, const Plugin::Descriptor::SubPluginFeatures::Key *key ) :
-	AudioPlugin(&flanger_plugin_descriptor, parent, key),
+	LegacyEffect(&flanger_plugin_descriptor, parent, key),
 	m_flangerControls( this )
 {
 	m_lfo = new QuadratureLfo( Engine::audioEngine()->outputSampleRate() );
@@ -88,8 +88,9 @@ FlangerEffect::~FlangerEffect()
 
 
 
-ProcessStatus FlangerEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto FlangerEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	const float d = dryLevel();
 	const float w = wetLevel();
 	const float length = m_flangerControls.m_delayTimeModel.value() * Engine::audioEngine()->outputSampleRate();

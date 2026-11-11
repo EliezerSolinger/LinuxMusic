@@ -49,7 +49,7 @@ extern "C"
 
 
 LOMMEffect::LOMMEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	AudioPlugin(&lomm_plugin_descriptor, parent, key),
+	LegacyEffect(&lomm_plugin_descriptor, parent, key),
 	m_lommControls(this),
 	m_sampleRate(Engine::audioEngine()->outputSampleRate()),
 	m_lp1(m_sampleRate),
@@ -102,8 +102,9 @@ void LOMMEffect::changeSampleRate()
 }
 
 
-ProcessStatus LOMMEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto LOMMEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	if (m_needsUpdate || m_lommControls.m_split1Model.isValueChanged())
 	{
 		m_lp1.setLowpass(m_lommControls.m_split1Model.value());

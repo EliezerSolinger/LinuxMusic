@@ -55,7 +55,7 @@ Plugin::Descriptor PLUGIN_EXPORT compressor_plugin_descriptor =
 
 
 CompressorEffect::CompressorEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	AudioPlugin(&compressor_plugin_descriptor, parent, key),
+	LegacyEffect(&compressor_plugin_descriptor, parent, key),
 	m_compressorControls(this)
 {
 	m_sampleRate = Engine::audioEngine()->outputSampleRate();
@@ -236,8 +236,9 @@ void CompressorEffect::calcMix()
 
 
 
-ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto CompressorEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
 	m_cleanedBuffers = false;
 
 	const float d = dryLevel();

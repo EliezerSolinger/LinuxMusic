@@ -26,14 +26,14 @@
 #ifndef BASS_BOOSTER_H
 #define BASS_BOOSTER_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "DspEffectLibrary.h"
 #include "BassBoosterControls.h"
 
 namespace lmms
 {
 
-class BassBoosterEffect : public DefaultEffect
+class BassBoosterEffect : public LegacyEffect
 {
 public:
 	BassBoosterEffect( Model* parent, const Descriptor::SubPluginFeatures::Key* key );
@@ -53,7 +53,7 @@ protected:
 	bool m_frequencyChangeNeeded;
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	DspEffectLibrary::MonoToStereoAdaptor<DspEffectLibrary::FastBassBoost> m_bbFX;
 

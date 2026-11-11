@@ -26,7 +26,7 @@
 #ifndef MULTITAP_ECHO_H
 #define MULTITAP_ECHO_H
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "MultitapEchoControls.h"
 #include "RingBuffer.h"
 #include "BasicFilters.h"
@@ -35,7 +35,7 @@ namespace lmms
 {
 
 
-class MultitapEchoEffect : public DefaultEffect
+class MultitapEchoEffect : public LegacyEffect
 {
 public:
 	MultitapEchoEffect( Model* parent, const Descriptor::SubPluginFeatures::Key* key );
@@ -47,7 +47,7 @@ public:
 	}
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	void updateFilters( int begin, int end );
 	void runFilter( SampleFrame* dst, SampleFrame* src, StereoOnePole & filter, const f_cnt_t frames );

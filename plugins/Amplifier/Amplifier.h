@@ -44,8 +44,7 @@ public:
 	}
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
-	ProcessStatus process(ProcessContext& context) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	AmplifierControls m_ampControls;
 

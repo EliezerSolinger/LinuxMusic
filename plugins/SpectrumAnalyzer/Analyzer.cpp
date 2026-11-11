@@ -57,7 +57,7 @@ extern "C" {
 
 
 Analyzer::Analyzer(Model *parent, const Plugin::Descriptor::SubPluginFeatures::Key *key) :
-	AudioPlugin(&analyzer_plugin_descriptor, parent, key),
+	Effect(&analyzer_plugin_descriptor, parent, key),
 	m_processor(&m_controls),
 	m_controls(this),
 	m_processorThread(m_processor, m_inputBuffer),
@@ -77,8 +77,18 @@ Analyzer::~Analyzer()
 }
 
 // Take audio data and pass them to the spectrum processor.
-ProcessStatus Analyzer::processImpl(InterleavedBufferView<float, 2> in)
+auto Analyzer::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 {
+	(void)sampleRate;
+	m_interleaved.resize(maxFrameCount);
+	return true;
+}
+
+
+auto Analyzer::process(ProcessContext& context) -> ProcessStatus
+{
+	const auto& in = context.in();
+	const auto frames = std::min<f_cnt_t>(in.frames(), m_interleaved.size());
 	// Measure time spent in audio thread; both average and peak should be well under 1 ms.
 	#ifdef SA_DEBUG
 		unsigned int audio_time = std::chrono::high_resolution_clock::now().time_since_epoch().count();
@@ -96,7 +106,8 @@ ProcessStatus Analyzer::processImpl(InterleavedBufferView<float, 2> in)
 	{
 		// To avoid processing spikes on audio thread, data are stored in
 		// a lockless ringbuffer and processed in a separate thread.
-		m_inputBuffer.write(reinterpret_cast<SampleFrame*>(in.data()), in.frames(), true);
+		for (f_cnt_t f = 0; f < frames; ++f) { m_interleaved[f] = {in.buffer(0)[f], in.buffer(1)[f]}; }
+		m_inputBuffer.write(m_interleaved.data(), frames, true);
 	}
 	#ifdef SA_DEBUG
 		audio_time = std::chrono::high_resolution_clock::now().time_since_epoch().count() - audio_time;
