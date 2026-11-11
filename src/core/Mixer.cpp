@@ -29,6 +29,7 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "Mixer.h"
+#include "DataFile.h"
 #include "Song.h"
 
 #include "InstrumentTrack.h"
@@ -36,6 +37,7 @@
 #include "lmms_math.h"
 #include "panning.h"
 #include "PatternStore.h"
+#include "ProjectJournal.h"
 #include "SampleTrack.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
 
@@ -313,10 +315,110 @@ Mixer::~Mixer()
 
 
 
+namespace
+{
+
+//! Tracks that send to a mixer channel, with the model holding the channel number
+auto tracksWithMixerChannel() -> std::vector<std::pair<Track*, IntModel*>>
+{
+	auto result = std::vector<std::pair<Track*, IntModel*>>{};
+	for (const auto container : std::initializer_list<TrackContainer*>{Engine::getSong(), Engine::patternStore()})
+	{
+		if (!container) { continue; }
+		for (const auto track : container->tracks())
+		{
+			if (auto instrumentTrack = dynamic_cast<InstrumentTrack*>(track))
+			{
+				result.emplace_back(track, instrumentTrack->mixerChannelModel());
+			}
+			else if (auto sampleTrack = dynamic_cast<SampleTrack*>(track))
+			{
+				result.emplace_back(track, sampleTrack->mixerChannelModel());
+			}
+		}
+	}
+	return result;
+}
+
+} // namespace
+
+
+
+
+QDomElement Mixer::saveState(QDomDocument& doc, QDomElement& parent)
+{
+	auto element = JournallingObject::saveState(doc, parent);
+
+	// Only the undo history needs the tracks' channels; projects store them with the tracks
+	// (DataFile records its type on the root element)
+	const bool forUndo = doc.documentElement().attribute("type") == "journaldata";
+	if (!element.isNull() && forUndo)
+	{
+		auto routing = doc.createElement("trackchannels");
+		for (const auto& [track, channel] : tracksWithMixerChannel())
+		{
+			auto entry = doc.createElement("track");
+			entry.setAttribute("id", track->id());
+			entry.setAttribute("channel", channel->value());
+			routing.appendChild(entry);
+		}
+		element.appendChild(routing);
+	}
+	return element;
+}
+
+
+
+
+void Mixer::restoreState(const QDomElement& element)
+{
+	JournallingObject::restoreState(element);
+
+	const auto routing = element.firstChildElement("trackchannels");
+	if (routing.isNull()) { return; }
+
+	const auto tracks = tracksWithMixerChannel();
+	for (auto entry = routing.firstChildElement("track"); !entry.isNull(); entry = entry.nextSiblingElement("track"))
+	{
+		const auto id = static_cast<jo_id_t>(entry.attribute("id").toInt());
+		const auto it = std::find_if(tracks.begin(), tracks.end(), [id](const auto& t) { return t.first->id() == id; });
+		if (it != tracks.end()) { it->second->setValue(entry.attribute("channel").toInt()); }
+	}
+}
+
+
+
+
+Mixer::StructureChange::StructureChange(Mixer& mixer)
+	: m_mixer(mixer)
+{
+	if (m_mixer.m_structureChangeDepth++ > 0) { return; }
+
+	// The mixer's checkpoint covers the whole change, including the tracks' channels, so other objects
+	// changed along the way (e.g. renumbered tracks) must not add checkpoints of their own
+	m_mixer.addJournalCheckPoint();
+	const auto journal = Engine::projectJournal();
+	m_wasJournalling = journal->isJournalling();
+	journal->setJournalling(false);
+}
+
+
+
+
+Mixer::StructureChange::~StructureChange()
+{
+	if (--m_mixer.m_structureChangeDepth > 0) { return; }
+	Engine::projectJournal()->setJournalling(m_wasJournalling);
+}
+
+
+
+
 void Mixer::setChannelInput(mix_ch_t index, const ChannelInput& input)
 {
 	auto channel = m_mixerChannels[index];
 	if (channel->m_input == input) { return; }
+	const auto change = StructureChange{*this};
 	channel->m_input = input;
 	emit channelInputChanged(index);
 }
@@ -326,6 +428,7 @@ void Mixer::setChannelInput(mix_ch_t index, const ChannelInput& input)
 
 int Mixer::createChannel()
 {
+	const auto change = StructureChange{*this};
 	const int index = m_mixerChannels.size();
 	// create new channel
 	m_mixerChannels.push_back( new MixerChannel( index, this ) );
@@ -398,6 +501,7 @@ void Mixer::toggledSolo()
 
 void Mixer::deleteChannel( int index )
 {
+	const auto change = StructureChange{*this};
 	// channel deletion is performed between mixer rounds
 	Engine::audioEngine()->requestChangeInModel();
 
@@ -449,6 +553,7 @@ void Mixer::deleteChannel( int index )
 
 void Mixer::moveChannelLeft( int index )
 {
+	const auto change = StructureChange{*this};
 	// can't move master or first channel
 	if (index <= 1 || static_cast<std::size_t>(index) >= m_mixerChannels.size()) { return; }
 
@@ -481,6 +586,7 @@ void Mixer::moveChannelRight( int index )
 MixerRoute * Mixer::createChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel,
 								float amount )
 {
+	const auto change = StructureChange{*this};
 //	qDebug( "requested: %d to %d", fromChannel, toChannel );
 	// find the existing connection
 	MixerChannel * from = m_mixerChannels[fromChannel];
@@ -527,6 +633,7 @@ MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float a
 // delete the connection made by createChannelSend
 void Mixer::deleteChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel )
 {
+	const auto change = StructureChange{*this};
 	// delete the send
 	MixerChannel * from = m_mixerChannels[fromChannel];
 	MixerChannel * to	 = m_mixerChannels[toChannel];
@@ -545,6 +652,7 @@ void Mixer::deleteChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel )
 
 void Mixer::deleteChannelSend( MixerRoute * route )
 {
+	const auto change = StructureChange{*this};
 	Engine::audioEngine()->requestChangeInModel();
 
 	auto removeFromMixerRoute = [route](MixerRouteVector& routeVec)
@@ -847,6 +955,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 	while( ! node.isNull() )
 	{
 		QDomElement mixch = node.toElement();
+		if (mixch.nodeName() != "mixerchannel")
+		{
+			node = node.nextSibling();
+			continue;
+		}
 
 		// index of the channel we are about to load
 		int num = mixch.attribute( "num" ).toInt();

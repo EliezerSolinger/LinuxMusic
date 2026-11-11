@@ -29,6 +29,9 @@
 #include "Engine.h"
 #include "DataFile.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
+#include "SampleTrack.h"
+#include "Song.h"
 #include "SampleFrame.h"
 #include "lmms_math.h"
 
@@ -333,6 +336,22 @@ private slots:
 		QCOMPARE((*it)->isPreFader(), true);
 	}
 
+	void masterSettingsSurviveSaveStateAndRestoreState()
+	{
+		// The path projects use: saveState() adds a journalling node next to the channels
+		mixer()->mixerChannel(0)->m_volumeModel.setValue(0.5f);
+		mixer()->mixerChannel(0)->m_panModel.setValue(30.f);
+
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto parent = doc.content();
+		const auto element = mixer()->saveState(doc, parent);
+		mixer()->clear();
+		mixer()->restoreState(element);
+
+		QCOMPARE(mixer()->mixerChannel(0)->m_volumeModel.value(), 0.5f);
+		QCOMPARE(mixer()->mixerChannel(0)->m_panModel.value(), 30.f);
+	}
+
 	void channelInputDefaultsToNone()
 	{
 		const auto channel = mixer()->createChannel();
@@ -363,6 +382,51 @@ private slots:
 		QVERIFY(ch->m_input == input);
 		QCOMPARE(ch->m_recordArmModel.value(), true);
 		QCOMPARE(ch->m_monitorModel.value(), static_cast<int>(MixerChannel::MonitorMode::On));
+	}
+
+	void undoCreateChannel()
+	{
+		const auto journal = Engine::projectJournal();
+		journal->setJournalling(true);
+		journal->clearJournal();
+
+		mixer()->createChannel();
+		QCOMPARE(mixer()->numChannels(), 2);
+		journal->undo();
+		QCOMPARE(mixer()->numChannels(), 1);
+		journal->redo();
+		QCOMPARE(mixer()->numChannels(), 2);
+
+		journal->setJournalling(false);
+	}
+
+	void undoDeleteChannelRestoresTracksAndSends()
+	{
+		const auto journal = Engine::projectJournal();
+		const auto a = mixer()->createChannel();
+		const auto b = mixer()->createChannel();
+		mixer()->createChannelSend(a, b);
+		auto track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track);
+		track->mixerChannelModel()->setValue(b);
+
+		journal->setJournalling(true);
+		journal->clearJournal();
+
+		// Deleting channel a removes its sends and renumbers channel b, so the track moves to channel a
+		mixer()->deleteChannel(a);
+		QCOMPARE(mixer()->numChannels(), 2);
+		QCOMPARE(track->mixerChannelModel()->value(), a);
+
+		// One action is one undo step, and it brings back the channel, its send and the track's channel
+		journal->undo();
+		QCOMPARE(journal->canUndo(), false);
+		QCOMPARE(mixer()->numChannels(), 3);
+		QVERIFY(mixer()->channelSendModel(a, b) != nullptr);
+		QCOMPARE(track->mixerChannelModel()->value(), b);
+
+		journal->setJournalling(false);
+		delete track;
 	}
 
 	void peakMeterShowsPostFaderLevel()

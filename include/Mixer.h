@@ -209,6 +209,11 @@ public:
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
 
+	//! For undo/redo, the saved state also records which channel each track sends to: changing the
+	//! channel layout (e.g. deleting a channel) renumbers the tracks' channels, and undoing must restore them
+	QDomElement saveState(QDomDocument& doc, QDomElement& parent) override;
+	void restoreState(const QDomElement& element) override;
+
 	QString nodeName() const override
 	{
 		return "mixer";
@@ -290,6 +295,18 @@ private:
 	void allocateChannelsTo(int num);
 
 	int m_lastSoloed;
+
+	//! Makes a structural change one undo step: only the outermost change adds a journal checkpoint
+	class StructureChange
+	{
+	public:
+		explicit StructureChange(Mixer& mixer);
+		~StructureChange();
+	private:
+		Mixer& m_mixer;
+		bool m_wasJournalling = false;
+	};
+	int m_structureChangeDepth = 0;
 } ;
 
 

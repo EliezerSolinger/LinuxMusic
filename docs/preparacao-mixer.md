@@ -125,3 +125,17 @@ Cada canal tem agora, no modelo de dados:
   REAPER.
 
 Tudo é salvo e carregado com o projeto. O áudio de entrada ainda **não** é lido nem tocado; isso é da etapa 3.
+
+### Passo 5: desfazer/refazer no mixer (feito)
+
+- Estas operações agora entram no histórico: criar, apagar e mover canal, criar e apagar envio, mudar a entrada do
+  canal. Volume, pan e outros parâmetros já entravam, pelos próprios modelos.
+- **Uma ação é um passo** de desfazer. Essas operações chamam umas às outras (apagar canal apaga envios), então só a
+  mais externa registra o ponto (`Mixer::StructureChange`). Durante a mudança, o histórico fica desligado para os
+  outros objetos.
+- O estado guardado no histórico **inclui o canal de cada faixa**. Apagar um canal renumera os canais das faixas, e
+  desfazer devolve cada faixa ao canal certo. Isso só vale para o histórico; o arquivo do projeto não muda.
+- `loadSettings` passou a ignorar filhos que não são `mixerchannel`.
+- Ainda **não** entram no histórico: renomear canal e mudar a cor. A interface altera esses campos direto; isso será
+  ajustado na interface nova (passo 9).
+- `MixerTest` tem 30 testes.
