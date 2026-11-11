@@ -1,4 +1,25 @@
-# Etapa 1: remover plugins e funcionalidades não usados
+# Etapa 1: limpeza e reorganização
+
+## Decisões (11/11/2026)
+
+Depois de revisar o inventário, a decisão foi **manter quase tudo** e **reorganizar**, em vez de remover:
+
+- **Ficam:** todas as plataformas (Linux, Windows, macOS, BSD), todos os hosts de plugins externos (LV2, LADSPA,
+  VST via Wine, Carla), todos os instrumentos, todos os efeitos e todos os backends de áudio e MIDI.
+- **Reorganizar:** instrumentos e efeitos em categorias claras (hoje estão misturados numa lista só).
+- **Removido:**
+  - suporte ao Qt5 (só Qt6);
+  - conversão de projetos de versões antigas do LMMS (os presets, demos e templates de fábrica foram convertidos
+    antes para o formato atual);
+  - importador de projetos do Hydrogen;
+  - gravação herdada do LMMS (stage-one), que será substituída na etapa 3.
+- **Em análise:** step recorder (entrada de notas passo a passo pelo teclado MIDI) e microtuner (afinação microtonal).
+  O gravador MIDI normal, em tempo real, fica.
+- **Formato de projeto:** continua XML, que o Qt já oferece pronto. Trocar para JSON exigiria reescrever o salvamento
+  e o carregamento de cerca de 220 classes.
+- **Tema:** o tema "classic" será substituído por um tema no visual do redesign (#1911).
+
+O inventário abaixo fica como referência para a reorganização.
 
 ## Objetivo
 

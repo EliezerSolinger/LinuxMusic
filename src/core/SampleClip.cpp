@@ -192,11 +192,6 @@ void SampleClip::setSampleFile(const QString& sf)
 
 
 
-void SampleClip::toggleRecord()
-{
-	m_recordModel.setValue( !m_recordModel.value() );
-	emit dataChanged();
-}
 
 
 

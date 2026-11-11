@@ -34,7 +34,6 @@
 #include "PatternTrack.h"
 #include "SampleClip.h"
 #include "SamplePlayHandle.h"
-#include "SampleRecordHandle.h"
 #include "SampleTrackView.h"
 #include "Song.h"
 #include "volume.h"
@@ -109,8 +108,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 
 			if( _start >= sClip->startPosition() && _start < sClip->endPosition() )
 			{
-				if (!sClip->isPlaying() && (_start >= (sClip->startPosition() + sClip->startTimeOffset())
-											|| sClip->isRecord()))
+				if (!sClip->isPlaying() && _start >= (sClip->startPosition() + sClip->startTimeOffset()))
 				{
 					auto bufferFramesPerTick = Engine::framesPerTick(sClip->sample().sampleRate());
 					f_cnt_t sampleStart = bufferFramesPerTick * ( _start - sClip->startPosition() - sClip->startTimeOffset() );
@@ -120,15 +118,8 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					//else we play the sample to the end but nothing more
 					f_cnt_t samplePlayLength = clipFrameLength > sampleBufferLength ? sampleBufferLength : clipFrameLength;
 
-					// In case we are recoding, "play" the whole TCO.
-					if (sClip->isRecord())
-					{
-						samplePlayLength = clipFrameLength;
-					}
-
 					//we only play within the sampleBuffer limits
-					//Ignore that in case of recoding.
-					if (sampleStart < sampleBufferLength || sClip->isRecord())
+					if (sampleStart < sampleBufferLength)
 					{
 						sClip->setSampleStartFrame( sampleStart );
 						sClip->setSamplePlayLength( samplePlayLength );
@@ -152,22 +143,8 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		auto st = dynamic_cast<SampleClip*>(clip);
 		if( !st->isMuted() )
 		{
-			PlayHandle* handle;
-			if( st->isRecord() )
-			{
-				if( !Engine::getSong()->isRecording() )
-				{
-					return played_a_note;
-				}
-				auto smpHandle = new SampleRecordHandle(st, _start - st->startPosition());
-				handle = smpHandle;
-			}
-			else
-			{
-				auto smpHandle = new SamplePlayHandle(st);
-				smpHandle->setPatternTrack(pattern_track);
-				handle = smpHandle;
-			}
+			auto handle = new SamplePlayHandle(st);
+			handle->setPatternTrack(pattern_track);
 			handle->setOffset( _offset );
 			// send it to the audio engine
 			Engine::audioEngine()->addPlayHandle( handle );

@@ -7,7 +7,7 @@ Para chegar lá, o trabalho foi dividido em três etapas longas, feitas nesta or
 
 | Etapa | Tema | Documento |
 |---|---|---|
-| 1 | Remover plugins e funcionalidades que não serão usados | [etapa-1-limpeza.md](etapa-1-limpeza.md) |
+| 1 | Limpar e reorganizar plugins e funcionalidades | [etapa-1-limpeza.md](etapa-1-limpeza.md) |
 | 2 | Remodelar interface e usabilidade, e preparar a base da mesa de som e dos canais | [etapa-2-interface-e-mixer.md](etapa-2-interface-e-mixer.md) |
 | 3 | Implementar um sistema de gravação no estilo REAPER | [etapa-3-gravacao.md](etapa-3-gravacao.md) |
 

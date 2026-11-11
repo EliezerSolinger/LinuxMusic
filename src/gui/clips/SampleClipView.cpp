@@ -85,13 +85,6 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 {
 	cm->addSeparator();
 
-
-	QAction* recordToggleAction = cm->addAction(embed::getIconPixmap("record"),
-                          tr("Set/clear record"),
-                          m_clip, &SampleClip::toggleRecord);
-	
-	recordToggleAction->setEnabled(recordingCapabilitiesAvailable());
-
 	cm->addAction(
 		embed::getIconPixmap("project_export"),
 		tr("Export sample buffer"),
@@ -157,24 +150,15 @@ void SampleClipView::dropEvent( QDropEvent * _de )
 
 void SampleClipView::mousePressEvent( QMouseEvent * _me )
 {
-	if( _me->button() == Qt::LeftButton &&
-		_me->modifiers() & Qt::ControlModifier &&
-		_me->modifiers() & Qt::ShiftModifier )
+	if( _me->button() == Qt::MiddleButton && _me->modifiers() == Qt::ControlModifier )
 	{
-		m_clip->toggleRecord();
-	}
-	else
-	{
-		if( _me->button() == Qt::MiddleButton && _me->modifiers() == Qt::ControlModifier )
+		auto sClip = dynamic_cast<SampleClip*>(getClip());
+		if( sClip )
 		{
-			auto sClip = dynamic_cast<SampleClip*>(getClip());
-			if( sClip )
-			{
-				sClip->updateTrackClips();
-			}
+			sClip->updateTrackClips();
 		}
-		ClipView::mousePressEvent( _me );
 	}
+	ClipView::mousePressEvent( _me );
 }
 
 
@@ -347,36 +331,6 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 		p.setPen(markerColor());
 		p.drawLine(m_markerPos, rect().bottom(), m_markerPos, rect().top());
 	}
-	// recording sample tracks is not possible at the moment
-
-	if (m_clip->isRecord())
-	{
-		p.setFont(adjustedToPixelSize(p.font(), 10));
-
-		const auto fontHeight = p.fontMetrics().height();
-
-		const auto baseLine = height() - 3;
-
-		constexpr int recordSymbolRadius = 3;
-		constexpr int recordSymbolCenterX = recordSymbolRadius + 4;
-		const int recordSymbolCenterY = baseLine - fontHeight / 2 + 1;
-
-		constexpr int textStartX = recordSymbolCenterX + recordSymbolRadius + 4;
-
-		auto textPos = QPoint(textStartX, baseLine);
-
-		const auto rec = tr("Rec");
-
-		p.setPen(textShadowColor());
-		p.drawText(textPos + QPoint(1, 1), rec);
-
-		p.setPen(textColor());
-		p.drawText(textPos, rec);
-
-		p.setBrush(QBrush(textColor()));
-
-		p.drawEllipse(QPoint(recordSymbolCenterX, recordSymbolCenterY), recordSymbolRadius, recordSymbolRadius);
-	}
 
 	p.end();
 
@@ -403,10 +357,6 @@ void SampleClipView::setAutomationGhost()
 	aEditor->parentWidget()->show();
 	aEditor->show();
 	aEditor->setFocus();
-}
-bool SampleClipView::recordingCapabilitiesAvailable() const
-{
-	return Engine::audioEngine()->captureDeviceAvailable();
 }
 
 void SampleClipView::exportSampleBuffer()

@@ -47,7 +47,6 @@ class SampleClipView;
 class SampleClip : public Clip
 {
 	Q_OBJECT
-	mapPropertyFromModel(bool,isRecord,setRecord,m_recordModel);
 public:
 	SampleClip(Track* track, Sample sample, bool isPlaying);
 	SampleClip(Track* track);
@@ -95,7 +94,6 @@ public:
 
 public slots:
 	void setSampleFile(const QString& sf);
-	void toggleRecord();
 	void playbackPositionChanged();
 	void updateTrackClips();
 	void tempoChanged();
@@ -108,7 +106,6 @@ private:
 
 	Sample m_sample;
 	std::shared_ptr<const SampleThumbnailCache> m_sampleThumbnailCache;
-	BoolModel m_recordModel;
 	bool m_isPlaying;
 	int m_startFrameOffset;
 

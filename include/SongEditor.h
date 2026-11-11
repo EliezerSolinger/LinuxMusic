@@ -196,7 +196,6 @@ protected:
 
 protected slots:
 	void play() override;
-	void recordAccompany() override;
 	void stop() override;
 
 	void lostFocus();

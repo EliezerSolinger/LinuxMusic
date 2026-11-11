@@ -73,7 +73,6 @@ set(LMMS_SRCS
 	core/SampleClip.cpp
 	core/SampleDecoder.cpp
 	core/SamplePlayHandle.cpp
-	core/SampleRecordHandle.cpp
 	core/SampleThumbnailCache.cpp
 	core/Scale.cpp
 	core/LmmsSemaphore.cpp
@@ -103,7 +102,6 @@ set(LMMS_SRCS
 	core/audio/AudioSndio.cpp
 	core/audio/AudioPortAudio.cpp
 	core/audio/AudioPulseAudio.cpp
-	core/audio/AudioSampleRecorder.cpp
 	core/audio/AudioSdl.cpp
 	core/audio/FlacExporter.cpp
 
