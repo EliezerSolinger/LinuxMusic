@@ -39,6 +39,11 @@ efeitos do FL Studio (veja [README.md](README.md)).
   para o master; recolher a pasta esconde as trilhas filhas, e o fader do grupo controla todas.
 - Pastas podem conter pastas. No mixer, o canal de grupo aparece com os canais filhos ao lado ou recolhidos dentro
   dele.
+- A **pista grupo é só agrupamento**, como no Ableton/Bitwig (e diferente do REAPER, onde a pasta pode ter itens):
+  - sem clipes, sem gravação, sem instrumento e sem entrada de áudio própria;
+  - tem um canal de grupo no mixer (fader, pan, mute/solo, efeitos e envios) que recebe a soma das filhas;
+  - mute do grupo silencia tudo dentro; solo numa filha mantém o grupo (e os grupos acima) tocando;
+  - recolhida, a linha do grupo mostra um resumo dos clipes das filhas, só para ver.
 - Os **canais extras em pares** (1/2, 3/4…) do núcleo multicanal ficam **internos**: são o encanamento do sidechain e
   das saídas múltiplas, e só aparecem no pin connector, como recurso avançado. A tela não fala em "canais 3/4".
 - **Sidechain** como no FL Studio: "enviar como sidechain para o canal X"; o compressor de lá já recebe.
