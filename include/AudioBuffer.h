@@ -133,9 +133,11 @@ public:
 	 *
 	 * @param frames the number of frames per channel
 	 * @param accessChannels the number of planar channels for the access buffer (0 for no planar buffers)
-	 * @param sourceChannels the number of planar channels for the source buffer. Must be >= @p channels.
-	 *                           If greater than @p channels, the AudioBufferData should use @ref mapAccessBuffer()
-	 *                           to map the access buffer indexes to the actual buffers within the source buffer.
+	 * @param sourceChannels the number of planar channels for the source buffer, or DynamicChannelCount (the
+	 *                           default) for the same number as @p accessChannels.
+	 *                           If it differs from @p accessChannels (e.g. fewer source buffers because some
+	 *                           channels share one), use @ref mapAccessBuffer() to map the access buffer indexes
+	 *                           to the actual buffers within the source buffer.
 	 * @param interleaved whether to allocate a 2-channel interleaved buffer
 	 * @param sourceBufferResource memory resource to allocate the source buffer (and interleaved buffer) with
 	 * @param accessBufferResource memory resource to allocate the access buffers with - if equal to
@@ -143,7 +145,7 @@ public:
 	 * @throws exception upon failure
 	 */
 	explicit AudioBufferData(f_cnt_t frames, ch_cnt_t accessChannels = DEFAULT_CHANNELS,
-		ch_cnt_t sourceChannels = DEFAULT_CHANNELS, bool interleaved = false,
+		ch_cnt_t sourceChannels = DynamicChannelCount, bool interleaved = false,
 		std::pmr::memory_resource* sourceBufferResource = std::pmr::get_default_resource(),
 		std::pmr::memory_resource* accessBufferResource = std::pmr::get_default_resource());
 
@@ -501,7 +503,7 @@ public:
 	 */
 	template<typename... Args>
 	explicit AudioBuffer(Args&&... args)
-		: AudioBufferData{std::forward<Args>(args)...}
+		: AudioBufferData(std::forward<Args>(args)...)
 	{
 		initAudioBuffer();
 	}

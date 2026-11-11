@@ -84,6 +84,7 @@ AudioBufferData::AudioBufferData(f_cnt_t frames, ch_cnt_t accessChannels, ch_cnt
 	: m_sourceBufferResource{sourceBufferResource}
 	, m_accessBufferResource{accessBufferResource}
 {
+	if (sourceChannels == DynamicChannelCount) { sourceChannels = accessChannels; }
 	create(frames, accessChannels, sourceChannels, interleaved, sourceBufferResource, accessBufferResource);
 
 	// The shared memory client side gets its channel mapping from the server side
@@ -752,8 +753,17 @@ void AudioBuffer::initAudioBuffer()
 		throw std::invalid_argument{"AudioBuffer: Too many channels"};
 	}
 
-	// Ensure all the higher, unused channels are set to "silent"
-	m_silenceFlags = createMask<true>(channels());
+	if (isView() || m_ownership.testFlag(Ownership::External) || m_ownership.testFlag(Ownership::SharedMemoryClient))
+	{
+		// The contents are someone else's and unknown, so the channels may have a signal.
+		// All the higher, unused channels are "silent".
+		m_silenceFlags = createMask<true>(channels());
+	}
+	else
+	{
+		// Freshly allocated buffers are zeroed
+		m_silenceFlags.set();
+	}
 
 	// Add single group
 	if (hasPlanarBuffers())
