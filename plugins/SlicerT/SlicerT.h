@@ -36,7 +36,7 @@ namespace lmms {
 
 class SampleThumbnailCache;
 
-class SlicerT : public Instrument
+class SlicerT : public LegacyInstrument
 {
 	Q_OBJECT
 

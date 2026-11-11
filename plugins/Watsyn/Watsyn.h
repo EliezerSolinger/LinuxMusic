@@ -118,7 +118,7 @@ private:
 	float m_B2wave [WAVELEN];
 };
 
-class WatsynInstrument : public Instrument
+class WatsynInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

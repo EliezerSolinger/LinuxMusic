@@ -172,7 +172,7 @@ public:
 	}
 };
 
-class SfxrInstrument : public Instrument
+class SfxrInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

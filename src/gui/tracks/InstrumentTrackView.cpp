@@ -223,7 +223,7 @@ void InstrumentTrackView::togglePinConnector()
 	const auto it = this->model();
 	if (!it) { return; }
 
-	const auto inst = it->instrument();
+	const auto inst = it->instrumentInstance();
 	if (!inst) { return; }
 
 	auto ap = inst->audioPortsModel();
@@ -462,7 +462,7 @@ void InstrumentTrackView::addPinConnectorAction(QMenu* menu)
 	const auto it = this->model();
 	if (!it) { addAction(); return; }
 
-	const auto inst = it->instrument();
+	const auto inst = it->instrumentInstance();
 	if (!inst) { addAction(); return; }
 
 	const auto ap = inst->audioPortsModel();

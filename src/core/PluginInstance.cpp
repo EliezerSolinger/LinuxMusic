@@ -149,6 +149,12 @@ void PluginInstance::attach(std::unique_ptr<Plugin> plugin)
 	m_audioPorts = std::make_unique<AudioPortsModel>(isInstrument());
 	setUpAudioPorts();
 	activate();
+
+	// The processor was activated for the current sample rate; prepare it again when that changes.
+	// The connection goes away together with the pin connector when the plugin is detached.
+	QObject::connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, m_audioPorts.get(), [this] {
+		if (Engine::audioEngine()->outputSampleRate() != m_activeSampleRate) { reactivate(); }
+	});
 }
 
 
@@ -288,7 +294,8 @@ void PluginInstance::activate()
 	if (!m_processor || (state() & static_cast<std::uint8_t>(State::Error))) { return; }
 
 	const auto engine = Engine::audioEngine();
-	if (!m_processor->activate(engine->outputSampleRate(), engine->framesPerPeriod()))
+	m_activeSampleRate = engine->outputSampleRate();
+	if (!m_processor->activate(m_activeSampleRate, engine->framesPerPeriod()))
 	{
 		setState(State::Error, true);
 		return;
@@ -430,7 +437,16 @@ auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* np
 
 	AudioPortsRouter::send(*m_audioPorts, trackChannels, m_inputs);
 
-	if (m_interleaved) { toInterleaved(m_outputs.groupBuffers(0), m_outputs.interleavedBuffer()); }
+	if (m_interleaved)
+	{
+		if (m_inputs.channels() == 0)
+		{
+			// Legacy instruments render into a silent buffer
+			auto interleaved = m_outputs.interleavedBuffer();
+			std::fill_n(interleaved.data(), interleaved.frames() * 2, 0.f);
+		}
+		else { toInterleaved(m_outputs.groupBuffers(0), m_outputs.interleavedBuffer()); }
+	}
 
 	auto context = m_fullyInPlace
 		? ProcessContext{nullptr, &m_outputs, nph}
@@ -449,6 +465,43 @@ auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* np
 	}
 
 	return status;
+}
+
+
+
+
+void PluginInstance::playNote(NotePlayHandle* nph, std::span<SampleFrame> out)
+{
+	auto instrument = this->instrument();
+	if (!instrument) { return; }
+
+	instrument->playNote(nph, out);
+
+	if (!m_audioPorts || out.empty()) { return; }
+	const auto direct = m_audioPorts->directRouting();
+	if (direct && *direct == 0) { return; }
+
+	// Route the note's stereo output to the main track channels as the pins say.
+	// TODO: Route to the other track channels once tracks have more than two
+	const auto& pins = m_audioPorts->out();
+	if (pins.channelCount() != 2 || pins.trackChannelCount() < 2) { return; }
+
+	float gain[2][2];
+	for (ch_cnt_t trackChannel = 0; trackChannel < 2; ++trackChannel)
+	{
+		for (ch_cnt_t channel = 0; channel < 2; ++channel)
+		{
+			gain[trackChannel][channel] = pins.enabled(trackChannel, channel) ? 1.f : 0.f;
+		}
+	}
+
+	for (auto& frame : out)
+	{
+		const float left = frame.left();
+		const float right = frame.right();
+		frame.setLeft(gain[0][0] * left + gain[0][1] * right);
+		frame.setRight(gain[1][0] * left + gain[1][1] * right);
+	}
 }
 
 

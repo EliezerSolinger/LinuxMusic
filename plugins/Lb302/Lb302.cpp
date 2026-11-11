@@ -28,11 +28,6 @@
  *
  */
 
-// Need to include this first to ensure we get M_PI in MinGW with C++11
-#include "SampleFrame.h"
-#define _USE_MATH_DEFINES
-#include <cmath>
-
 #include "Lb302.h"
 
 #include <cmath>
@@ -219,7 +214,7 @@ sample_t Lb302Filter3Pole::process(sample_t samp)
 //
 
 Lb302Synth::Lb302Synth(InstrumentTrack* instrumentTrack)
-	: Instrument(instrumentTrack, &lb302_plugin_descriptor, nullptr, Flag::IsSingleStreamed)
+	: LegacyInstrument(&lb302_plugin_descriptor, instrumentTrack, nullptr, Flag::IsSingleStreamed)
 	, m_vcfCutKnob(0.75f, 0.0f, 1.5f, 0.005f, this, tr("VCF Cutoff Frequency"))
 	, m_vcfResKnob(0.75f, 0.0f, 1.25f, 0.005f, this, tr("VCF Resonance"))
 	, m_vcfModKnob(0.1f, 0.0f, 1.0f, 0.005f, this, tr("VCF Envelope Mod"))
@@ -233,86 +228,13 @@ Lb302Synth::Lb302Synth(InstrumentTrack* instrumentTrack)
 	, m_db24Toggle(false, this, tr("24dB/oct Filter"))
 	, m_vcfs{std::make_unique<Lb302FilterIIR2>(&m_fs), std::make_unique<Lb302Filter3Pole>(&m_fs)}
 {
-	// This is the number of samples that correspond to the decay time in seconds
-	auto samplesNeededForDecay = decayTimeInSeconds * Engine::audioEngine()->outputSampleRate();
-
-	// This computes the factor that's needed to make a signal with a value of 1 decay to the
-	// targeted attenuation over the time in number of samples.
-	return std::pow(targetedAttenuation, 1. / samplesNeededForDecay);
-}
-
-Lb302Synth::Lb302Synth( InstrumentTrack * _instrumentTrack ) :
-	Instrument(&lb302_plugin_descriptor, _instrumentTrack, nullptr, Flag::IsSingleStreamed),
-	vcf_cut_knob( 0.75f, 0.0f, 1.5f, 0.005f, this, tr( "VCF Cutoff Frequency" ) ),
-	vcf_res_knob( 0.75f, 0.0f, 1.25f, 0.005f, this, tr( "VCF Resonance" ) ),
-	vcf_mod_knob( 0.1f, 0.0f, 1.0f, 0.005f, this, tr( "VCF Envelope Mod" ) ),
-	vcf_dec_knob( 0.1f, 0.0f, 1.0f, 0.005f, this, tr( "VCF Envelope Decay" ) ),
-	dist_knob( 0.0f, 0.0f, 1.0f, 0.01f, this, tr( "Distortion" ) ),
-	wave_shape( 8.0f, 0.0f, 11.0f, this, tr( "Waveform" ) ),
-	slide_dec_knob( 0.6f, 0.0f, 1.0f, 0.005f, this, tr( "Slide Decay" ) ),
-	slideToggle( false, this, tr( "Slide" ) ),
-	accentToggle( false, this, tr( "Accent" ) ),
-	deadToggle( false, this, tr( "Dead" ) ),
-	db24Toggle( false, this, tr( "24dB/oct Filter" ) ),
-	vca_attack(1.f - 0.96406088f),
-	vca_a0(0.5),
-	vca_a(0.),
-	vca_mode(VcaMode::NeverPlayed)
-{
-
-	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ),
-	         this, SLOT ( filterChanged() ) );
-
-	connect( &vcf_cut_knob, SIGNAL( dataChanged() ),
-	         this, SLOT ( filterChanged() ) );
-
-	connect( &vcf_res_knob, SIGNAL( dataChanged() ),
-	         this, SLOT ( filterChanged() ) );
-
-	connect( &vcf_mod_knob, SIGNAL( dataChanged() ),
-	         this, SLOT ( filterChanged() ) );
-
-	connect( &vcf_dec_knob, SIGNAL( dataChanged() ),
-	         this, SLOT ( filterChanged() ) );
-
-	connect( &db24Toggle, SIGNAL( dataChanged() ),
-	         this, SLOT ( db24Toggled() ) );
-
-	connect( &dist_knob, SIGNAL( dataChanged() ),
-	         this, SLOT ( filterChanged()));
-
-
-	// SYNTH
-
-	vco_inc = 0.0;
-	vco_c = 0;
-	vco_k = 0;
-
-	vco_slide = 0; vco_slideinc = 0;
-	vco_slidebase = 0;
-
-	fs.cutoff = 0;
-	fs.envmod = 0;
-	fs.reso = 0;
-	fs.envdecay = 0;
-	fs.dist = 0;
-
-	vcf_envpos = ENVINC;
-
-	vco_shape = VcoShape::BLSawtooth;
-
-	vcfs[0] = new Lb302FilterIIR2(&fs);
-	vcfs[1] = new Lb302Filter3Pole(&fs);
-	db24Toggled();
-
-	sample_cnt = 0;
-	release_frame = 0;
-	catch_frame = 0;
-	catch_decay = 0;
-
-	last_offset = 0;
-
-	new_freq = false;
+	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, &Lb302Synth::filterChanged);
+	connect(&m_vcfCutKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
+	connect(&m_vcfResKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
+	connect(&m_vcfModKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
+	connect(&m_vcfDecKnob, &FloatModel::dataChanged, this, &Lb302Synth::decayChanged);
+	connect(&m_db24Toggle, &BoolModel::dataChanged, this, &Lb302Synth::db24Toggled);
+	connect(&m_distKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
 
 	// db24Toggled() would be called here, but all it does is call
 	// recalcFilter(), which is already done in filterChanged(), so there's no
@@ -393,7 +315,7 @@ void Lb302Synth::recalcFilter()
 }
 
 
-void Lb302Synth::process(SampleFrame* outbuf, const f_cnt_t size)
+void Lb302Synth::render(SampleFrame* outbuf, const f_cnt_t size)
 {
 	if (m_releaseFrame == 0 || !m_playingNote) { m_vcaMode = VcaMode::Decay; }
 
@@ -563,166 +485,17 @@ void Lb302Synth::process(SampleFrame* outbuf, const f_cnt_t size)
 			m_vca *= decay;
 
 			// the following line actually speeds up processing
-			if(vca_a < (1/65536.0)) {
-				vca_a = 0;
-				vca_mode = VcaMode::NeverPlayed;
-			}
-		}
-
-	}
-	return 1;
-}
-
-
-/*  Prepares the active LB302 note.  I separated this into a function because it
- *  needs to be called onplayNote() when a new note is started.  It also needs
- *  to be called from process() when a prior edge-to-edge note is done releasing.
- */
-
-void Lb302Synth::initNote( Lb302Note *n)
-{
-	catch_decay = 0;
-
-	vco_inc = n->vco_inc;
-
-	// Always reset vca on non-dead notes, and
-	// Only reset vca on decaying(decayed) and never-played
-	if(n->dead == 0 || (vca_mode == VcaMode::Decay || vca_mode == VcaMode::NeverPlayed)) {
-		//printf("    good\n");
-		sample_cnt = 0;
-		vca_mode = VcaMode::Attack;
-		// LB303:
-		//vca_a = 0;
-	}
-	else {
-		vca_mode = VcaMode::Idle;
-	}
-
-	initSlide();
-
-	// Slide-from note, save inc for next note
-	if (slideToggle.value()) {
-		vco_slideinc = vco_inc; // May need to equal vco_slidebase+vco_slide if last note slid
-	}
-
-
-	recalcFilter();
-
-	if(n->dead ==0){
-		// Swap next two blocks??
-		vcf.loadRelaxed()->playNote();
-
-		// Ensure envelope is recalculated
-		vcf_envpos = ENVINC;
-
-		// Double Check
-		//vca_mode = 0;
-		//vca_a = 0.0;
-	}
-}
-
-
-void Lb302Synth::initSlide()
-{
-	// Initiate Slide
-	if (vco_slideinc) {
-		//printf("    sliding\n");
-		vco_slide = vco_inc-vco_slideinc;	// Slide amount
-		vco_slidebase = vco_inc;			// The REAL frequency
-		vco_slideinc = 0;					// reset from-note
-	}
-	else {
-		vco_slide = 0;
-	}
-}
-
-
-void Lb302Synth::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
-{
-	if( _n->isMasterNote() || ( _n->hasParent() && _n->isReleased() ) )
-	{
-		return;
-	}
-
-	// sort notes: new notes to the end
-	m_notesMutex.lock();
-	if( _n->totalFramesPlayed() == 0 )
-	{
-		m_notes.append( _n );
-	}
-	else
-	{
-		m_notes.prepend( _n );
-	}
-	m_notesMutex.unlock();
-
-	release_frame = std::max(release_frame, _n->framesLeft() + _n->offset());
-}
-
-
-
-void Lb302Synth::processNote( NotePlayHandle * _n )
-{
-		/// Start a new note.
-		if (_n->m_pluginData != this)
-		{
-			m_playingNote = _n;
-			new_freq = true;
-			_n->m_pluginData = this;
-		}
-		
-		if( ! m_playingNote && ! _n->isReleased() && release_frame > 0 )
-		{
-			m_playingNote = _n;
-			if ( slideToggle.value() ) 
+			if (m_vca < gateThreshold)
 			{
 				m_vca = 0;
 				m_vcaMode = VcaMode::NeverPlayed;
 			}
 		}
-
-		// Check for slide
-		if( m_playingNote == _n ) 
-		{
-			true_freq = _n->frequency();
-
-			if( slideToggle.value() ) {
-				vco_slidebase = GET_INC( true_freq );			// The REAL frequency
-			}
-			else {
-				vco_inc = GET_INC( true_freq );
-			}
-		}
-}
-
-
-
-void Lb302Synth::playImpl(std::span<SampleFrame> out)
-{
-	m_notesMutex.lock();
-	while( ! m_notes.isEmpty() )
-	{
-		processNote( m_notes.takeFirst() );
-	};
-	m_notesMutex.unlock();
-
-	process(out.data(), out.size());
-//	release_frame = 0; //removed for issue # 1432
-}
-
-
-
-void Lb302Synth::deleteNotePluginData( NotePlayHandle * _n )
-{
-	//printf("GONE\n");
-	if( m_playingNote == _n )
-	{
-		m_playingNote = nullptr;
 	}
 }
 
 
-void Lb302Synth::playNote(NotePlayHandle* nph, SampleFrame*)
+void Lb302Synth::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>)
 {
 	if (nph->isMasterNote() || (nph->hasParent() && nph->isReleased())) { return; }
 
@@ -798,7 +571,7 @@ void Lb302Synth::processNote(NotePlayHandle* nph)
 }
 
 
-void Lb302Synth::play(SampleFrame* working_buffer)
+void Lb302Synth::playImpl(std::span<SampleFrame> out)
 {
 	const auto readIdx = m_notesReadSeq.load(std::memory_order_relaxed);
 	const auto writeCommitted = m_notesWriteCommitted.load(std::memory_order_acquire);
@@ -818,7 +591,7 @@ void Lb302Synth::play(SampleFrame* working_buffer)
 	// Mark the processed notes as having been read so that playNote() calls can overwrite them
 	m_notesReadSeq.fetch_add(writeCommitted - readIdx, std::memory_order_release);
 
-	process(working_buffer, Engine::audioEngine()->framesPerPeriod());
+	render(out.data(), static_cast<f_cnt_t>(out.size()));
 }
 
 

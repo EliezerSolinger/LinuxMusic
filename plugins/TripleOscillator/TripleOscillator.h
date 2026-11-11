@@ -103,7 +103,7 @@ private slots:
 
 
 
-class TripleOscillator : public Instrument
+class TripleOscillator : public LegacyInstrument
 {
 	Q_OBJECT
 public:

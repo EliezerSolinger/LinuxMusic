@@ -116,7 +116,7 @@ private slots:
 } ;
 
 
-class OrganicInstrument : public Instrument
+class OrganicInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

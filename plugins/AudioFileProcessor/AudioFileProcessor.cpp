@@ -69,7 +69,7 @@ Plugin::Descriptor PLUGIN_EXPORT audiofileprocessor_plugin_descriptor =
 
 
 AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
-	Instrument(&audiofileprocessor_plugin_descriptor, _instrument_track),
+	LegacyInstrument(&audiofileprocessor_plugin_descriptor, _instrument_track),
 	m_ampModel( 100, 0, 500, 1, this, tr( "Amplify" ) ),
 	m_startPointModel( 0, 0, 1, 0.0000001f, this, tr( "Start of sample" ) ),
 	m_endPointModel( 1, 0, 1, 0.0000001f, this, tr( "End of sample" ) ),
@@ -160,7 +160,7 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 		if (m_sample.play(out.data() + offset,
 						static_cast<Sample::PlaybackState*>(nph->m_pluginData),
 						frames, static_cast<Sample::Loop>(m_loopModel.value()),
-						DefaultBaseFreq / _n->frequency()))
+						DefaultBaseFreq / nph->frequency()))
 		{
 			applyRelease(out.data(), nph);
 			emit isPlaying(static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex());

@@ -131,7 +131,7 @@ struct Sf2PluginData
 
 
 Sf2Instrument::Sf2Instrument( InstrumentTrack * _instrument_track ) :
-	Instrument(&sf2player_plugin_descriptor, _instrument_track, nullptr, Flag::IsSingleStreamed),
+	LegacyInstrument(&sf2player_plugin_descriptor, _instrument_track, nullptr, Flag::IsSingleStreamed),
 	m_resampler(AudioResampler::Mode::Linear),
 	m_synth(nullptr),
 	m_font( nullptr ),

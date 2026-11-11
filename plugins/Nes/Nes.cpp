@@ -480,7 +480,7 @@ void NesObject::updatePitch()
 
 
 NesInstrument::NesInstrument( InstrumentTrack * instrumentTrack ) :
-	Instrument(&nes_plugin_descriptor, instrumentTrack),
+	LegacyInstrument(&nes_plugin_descriptor, instrumentTrack),
 	m_ch1Enabled(true, this, tr("Channel 1 enable")),
 	m_ch1Crs( 0.f, -24.f, 24.f, 1.f, this, tr( "Channel 1 coarse detune" ) ),
 	m_ch1Volume( 15.f, 0.f, 15.f, 1.f, this, tr( "Channel 1 volume" ) ),

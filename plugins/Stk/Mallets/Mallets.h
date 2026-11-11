@@ -181,7 +181,7 @@ protected:
 
 
 
-class MalletsInstrument : public Instrument
+class MalletsInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

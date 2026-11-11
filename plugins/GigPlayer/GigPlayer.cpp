@@ -80,7 +80,7 @@ Plugin::Descriptor PLUGIN_EXPORT gigplayer_plugin_descriptor =
 }
 
 GigInstrument::GigInstrument(InstrumentTrack* _instrument_track)
-	: Instrument(&gigplayer_plugin_descriptor, _instrument_track, nullptr, Flag::IsSingleStreamed | Flag::IsNotBendable)
+	: LegacyInstrument(&gigplayer_plugin_descriptor, _instrument_track, nullptr, Flag::IsSingleStreamed | Flag::IsNotBendable)
 	, m_instance(nullptr)
 	, m_instrument(nullptr)
 	, m_filename("")
@@ -472,14 +472,14 @@ void GigInstrument::playImpl(std::span<SampleFrame> out)
 
 				if (inputFramesUsed == 0 && outputFramesGenerated == 0)
 				{
-					std::fill_n(&_working_buffer[framesMixed], frames - framesMixed, SampleFrame{});
+					std::fill_n(&out[framesMixed], frames - framesMixed, SampleFrame{});
 					break;
 				}
 
 				const auto framesToMix = std::min(outputFramesGenerated, frames - framesMixed);
 				for (auto i = f_cnt_t{0}; i < framesToMix; ++i)
 				{
-					_working_buffer[framesMixed + i] += sample.m_mixBufferView[i];
+					out[framesMixed + i] += sample.m_mixBufferView[i];
 				}
 
 				sample.m_sourceBufferView = sample.m_sourceBufferView.subspan(inputFramesUsed);

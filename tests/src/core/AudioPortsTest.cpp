@@ -39,6 +39,7 @@
 #include "Effect.h"
 #include "EffectControls.h"
 #include "Engine.h"
+#include "Instrument.h"
 #include "PluginInstance.h"
 
 using namespace lmms;
@@ -99,6 +100,80 @@ private:
 	FakeControls m_controls;
 	Ports m_ports;
 	std::function<ProcessStatus(ProcessContext&)> m_process;
+};
+
+Plugin::Descriptor s_fakeInstrumentDescriptor = {
+	"fakeinstrument", "Fake instrument", "Instrument for tests", "LinuxMusic", 0x0100, Plugin::Type::Instrument,
+	nullptr, nullptr, nullptr
+};
+
+//! A legacy instrument rendering a constant stereo signal, per period or per note
+class FakeLegacyInstrument : public LegacyInstrument
+{
+public:
+	FakeLegacyInstrument(float left, float right)
+		: LegacyInstrument{&s_fakeInstrumentDescriptor, nullptr, nullptr, Flag::IsSingleStreamed}
+		, m_left{left}
+		, m_right{right}
+	{
+	}
+
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	auto nodeName() const -> QString override { return "fakeinstrument"; }
+	auto instantiateView(QWidget*) -> gui::PluginView* override { return nullptr; }
+
+protected:
+	void playImpl(std::span<SampleFrame> out) override
+	{
+		// Adds to the buffer, so the result is only right if the host passed a silent buffer
+		for (auto& frame : out) { frame += SampleFrame{m_left, m_right}; }
+	}
+
+	void playNoteImpl(NotePlayHandle*, std::span<SampleFrame> out) override
+	{
+		for (auto& frame : out) { frame = SampleFrame{m_left, m_right}; }
+	}
+
+private:
+	float m_left;
+	float m_right;
+};
+
+//! A planar instrument with any number of outputs; output channel `ch` is filled with 0.1 * (ch + 1)
+class FakePlanarInstrument : public Instrument
+{
+public:
+	explicit FakePlanarInstrument(ch_cnt_t outputs)
+		: Instrument{&s_fakeInstrumentDescriptor, nullptr, nullptr, Flag::IsSingleStreamed}
+		, m_outputs{outputs}
+	{
+	}
+
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	auto nodeName() const -> QString override { return "fakeinstrument"; }
+	auto instantiateView(QWidget*) -> gui::PluginView* override { return nullptr; }
+
+	auto process(ProcessContext& context) -> ProcessStatus override
+	{
+		auto& out = context.out();
+		for (ch_cnt_t ch = 0; ch < out.channels(); ++ch)
+		{
+			std::ranges::fill(out.buffer(ch), 0.1f * (ch + 1));
+		}
+		return ProcessStatus::Continue;
+	}
+	auto channelCount(bool isInput) const -> ch_cnt_t override { return isInput ? 0 : m_outputs; }
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return isInput ? 0 : 1; }
+	auto getChannelGroup(group_cnt_t, bool isInput, AudioBuffer::ChannelGroup&) const -> ch_cnt_t override
+	{
+		return channelCount(isInput);
+	}
+	auto getInplacePair(ch_cnt_t) const -> std::optional<ch_cnt_t> override { return std::nullopt; }
+
+private:
+	ch_cnt_t m_outputs;
 };
 
 auto frames() -> f_cnt_t { return Engine::audioEngine()->framesPerPeriod(); }
@@ -520,6 +595,85 @@ private slots:
 		QVERIFY(!other->audioPortsModel()->in().enabled(1, 3));
 		other->loadPins(element);
 		QVERIFY(other->audioPortsModel()->in().enabled(1, 3));
+	}
+
+	/////////////////
+	// Instruments //
+	/////////////////
+
+	void Instrument_LegacyRendersIntoSilentBuffer()
+	{
+		auto instance = PluginInstance{std::make_unique<FakeLegacyInstrument>(0.5f, 0.25f), Plugin::Type::Instrument};
+		QVERIFY(instance.isInstrument());
+		QCOMPARE(instance.audioPortsModel()->in().channelCount(), 0);
+		QCOMPARE(instance.audioPortsModel()->out().channelCount(), 2);
+
+		// Twice: the instrument adds to its buffer, so it must be silent each period
+		for (int period = 0; period < 2; ++period)
+		{
+			auto track = trackBuffer(0.f, 0.f);
+			QVERIFY(instance.process(track));
+			compareChannel(track, 0, 0.5f);
+			compareChannel(track, 1, 0.25f);
+		}
+	}
+
+	void Instrument_PlanarWithMoreOutputsThanTrackChannels()
+	{
+		auto instance = PluginInstance{std::make_unique<FakePlanarInstrument>(4), Plugin::Type::Instrument};
+		QCOMPARE(instance.audioPortsModel()->out().channelCount(), 4);
+
+		// By default, the first two outputs go to the track's main channels
+		auto track = trackBuffer(0.f, 0.f);
+		instance.process(track);
+		compareChannel(track, 0, 0.1f);
+		compareChannel(track, 1, 0.2f);
+
+		// Outputs connected to the same track channel are summed
+		instance.audioPortsModel()->out().setPin(0, 2, true);
+		instance.audioPortsModel()->out().setPin(1, 1, false);
+		instance.audioPortsModel()->out().setPin(1, 3, true);
+		track = trackBuffer(0.f, 0.f);
+		instance.process(track);
+		compareChannel(track, 0, 0.1f + 0.3f);
+		compareChannel(track, 1, 0.4f);
+	}
+
+	void Instrument_NoteOutputFollowsPins()
+	{
+		auto instance = PluginInstance{std::make_unique<FakeLegacyInstrument>(0.5f, 0.25f), Plugin::Type::Instrument};
+		auto note = std::vector<SampleFrame>(frames());
+
+		// Default routing: unchanged
+		instance.playNote(nullptr, note);
+		for (const auto& frame : note)
+		{
+			QCOMPARE(frame.left(), 0.5f);
+			QCOMPARE(frame.right(), 0.25f);
+		}
+
+		// Swapped channels
+		auto& pins = instance.audioPortsModel()->out();
+		pins.setPin(0, 0, false);
+		pins.setPin(0, 1, true);
+		pins.setPin(1, 1, false);
+		pins.setPin(1, 0, true);
+		instance.playNote(nullptr, note);
+		for (const auto& frame : note)
+		{
+			QCOMPARE(frame.left(), 0.25f);
+			QCOMPARE(frame.right(), 0.5f);
+		}
+
+		// Both outputs into the left channel, nothing into the right one
+		pins.setPin(0, 0, true);
+		pins.setPin(1, 0, false);
+		instance.playNote(nullptr, note);
+		for (const auto& frame : note)
+		{
+			QCOMPARE(frame.left(), 0.75f);
+			QCOMPARE(frame.right(), 0.f);
+		}
 	}
 };
 

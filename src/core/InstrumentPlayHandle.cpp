@@ -62,7 +62,7 @@ void InstrumentPlayHandle::play(std::span<SampleFrame> buffer)
 	}
 	while (nphsLeft);
 
-	m_instrument->play(buffer);
+	instrumentTrack->playInstrument(m_instrument, buffer);
 
 	// Process the audio buffer that the instrument has just worked on...
 	instrumentTrack->processAudioBuffer(buffer.data(), buffer.size(), nullptr);

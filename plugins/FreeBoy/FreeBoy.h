@@ -46,7 +46,7 @@ class Knob;
 }
 
 
-class FreeBoyInstrument : public Instrument
+class FreeBoyInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

@@ -67,7 +67,7 @@ private:
 	
 } ;
 
-class BitInvader : public Instrument
+class BitInvader : public LegacyInstrument
 {
 	Q_OBJECT
 public:

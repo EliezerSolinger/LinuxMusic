@@ -291,7 +291,7 @@ private:
 	std::vector<float> m_env[2];
 };
 
-class MonstroInstrument : public Instrument
+class MonstroInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 

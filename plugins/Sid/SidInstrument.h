@@ -27,7 +27,7 @@
 #ifndef _SID_H
 #define _SID_H
 
-#include "AudioPlugin.h"
+#include "Instrument.h"
 #include "AutomatableModel.h"
 #include "InstrumentView.h"
 
@@ -79,7 +79,7 @@ private:
 	friend class gui::SidInstrumentView;
 } ;
 
-class SidInstrument : public Instrument
+class SidInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

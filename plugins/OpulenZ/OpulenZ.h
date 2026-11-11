@@ -53,7 +53,7 @@ class AutomatableButtonGroup;
 // The "normal" range for LMMS pitchbends
 #define DEFAULT_BEND_CENTS 100
 
-class OpulenzInstrument : public Instrument
+class OpulenzInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

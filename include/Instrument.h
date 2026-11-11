@@ -30,6 +30,7 @@
 #include <cmath>
 #include <span>
 
+#include "AudioProcessor.h"
 #include "Flags.h"
 #include "SampleFrame.h"
 #include "lmms_export.h"
@@ -52,9 +53,25 @@ class MidiEvent;
 class NotePlayHandle;
 class Track;
 
-// TODO: Use AudioProcessor
-
-class LMMS_EXPORT Instrument : public Plugin
+/**
+ * Base class of instrument plugins.
+ *
+ * There are two kinds of instruments:
+ *
+ * - Single-streamed instruments (Flag::IsSingleStreamed) render all of their notes into one stream.
+ *   They are processed once per period through their PluginInstance like effects are, so their audio
+ *   ports can have any number of channels, which the pin connector routes to the track channels.
+ *   They implement AudioProcessor::process().
+ *
+ * - NotePlayHandle-based instruments render each note into the note's own stereo buffer in playNote(),
+ *   possibly in parallel for different notes. The track then applies the note's envelopes, volume and
+ *   panning, and the pin connector's output routing.
+ *
+ * Instruments that still render into interleaved stereo buffers inherit from LegacyInstrument.
+ */
+class LMMS_EXPORT Instrument
+	: public Plugin
+	, public AudioProcessor
 {
 public:
 	enum class Flag
@@ -73,18 +90,24 @@ public:
 			Flags flags = Flag::NoFlags);
 	~Instrument() override = default;
 
-	// if the plugin doesn't play each note, it can create an instrument-
-	// play-handle and re-implement this method, so that it mixes its
-	// output buffer only once per audio engine period
-	void play(std::span<SampleFrame> out)
-	{
-		playImpl(out);
-	}
-
+	//! Renders a note into its own buffer (NotePlayHandle-based instruments). [audio thread]
 	void playNote(NotePlayHandle* notesToPlay, std::span<SampleFrame> out)
 	{
 		playNoteImpl(notesToPlay, out);
 	}
+
+	// AudioProcessor lifecycle: most instruments need nothing beyond their constructor, so these default to
+	// doing nothing. Instruments that allocate per sample rate or period size can override them.
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override
+	{
+		(void)sampleRate;
+		(void)maxFrameCount;
+		return true;
+	}
+	void deactivate() override {}
+	auto startProcessing() -> bool override { return true; }
+	void stopProcessing() override {}
+	void reset() override {}
 
 	// --------------------------------------------------------------------
 	// functions that can/should be re-implemented:
@@ -162,12 +185,6 @@ public:
 		return !m_flags.testFlag(Instrument::Flag::IsNotBendable);
 	}
 
-	//! Returns nullptr if the instrument does not have audio ports
-	virtual auto audioPortsModel() const -> const AudioPortsModel*
-	{
-		return nullptr;
-	}
-
 	QString fullDisplayName() const override;
 
 	// --------------------------------------------------------------------
@@ -190,11 +207,12 @@ public:
 
 
 protected:
-	//! To be implemented by AudioPlugin or plugin implementation
-	virtual void playImpl(std::span<SampleFrame> out) {}
-
-	//! To be implemented by AudioPlugin or plugin implementation
-	virtual void playNoteImpl(NotePlayHandle* notesToPlay, std::span<SampleFrame> out) {}
+	//! Renders a note; to be implemented by NotePlayHandle-based instruments
+	virtual void playNoteImpl(NotePlayHandle* notesToPlay, std::span<SampleFrame> out)
+	{
+		(void)notesToPlay;
+		(void)out;
+	}
 
 	// fade in to prevent clicks
 	void applyFadeIn(SampleFrame* buf, NotePlayHandle * n);
@@ -208,8 +226,66 @@ protected:
 
 
 private:
+	//! Not used yet; NotePlayHandle-based instruments use playNote(NotePlayHandle*, std::span<SampleFrame>)
+	void playNote(ProcessContext&) final {}
+
 	InstrumentTrack * m_instrumentTrack;
 	Flags m_flags;
+};
+
+
+/**
+ * An Instrument with a stereo output and interleaved buffers and without inputs.
+ *
+ * Single-streamed legacy instruments render into an interleaved stereo buffer in playImpl().
+ * NotePlayHandle-based ones only implement playNoteImpl().
+ *
+ * Inherit from this to reduce boilerplate.
+ * In the future, once all plugins use planar buffers, this can be removed.
+ */
+class LMMS_EXPORT LegacyInstrument : public Instrument
+{
+public:
+	using Instrument::Instrument;
+
+	auto process(ProcessContext& context) -> ProcessStatus final
+	{
+		playImpl(context.out().interleavedBuffer().asSampleFrames());
+		return ProcessStatus::Continue;
+	}
+
+protected:
+	//! Renders all notes into @p out, which is silent; to be implemented by single-streamed instruments
+	virtual void playImpl(std::span<SampleFrame> out) { (void)out; }
+
+	auto channelCount(bool isInput) const -> ch_cnt_t final
+	{
+		// No inputs, two outputs
+		return isInput ? 0 : 2;
+	}
+
+	auto channelGroupCount(bool isInput) const -> group_cnt_t final
+	{
+		// One group on the output side (the main stereo channels)
+		return isInput ? 0 : 1;
+	}
+
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+		-> ch_cnt_t final
+	{
+		// TODO: Set channel names and other metadata
+		(void)index;
+		(void)group;
+		return isInput ? 0 : 2;
+	}
+
+	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> final
+	{
+		(void)inputIndex;
+		return std::nullopt;
+	}
+
+	auto usesInterleavedBuffers() const -> bool final { return true; }
 };
 
 

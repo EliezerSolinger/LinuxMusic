@@ -51,7 +51,7 @@ class PatmanView;
 #define MODES_CLAMPED	( 1 << 7 )
 
 
-class PatmanInstrument : public Instrument
+class PatmanInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

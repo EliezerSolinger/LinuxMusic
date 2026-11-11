@@ -231,7 +231,7 @@ public:
 
 
 
-class GigInstrument : public Instrument
+class GigInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 

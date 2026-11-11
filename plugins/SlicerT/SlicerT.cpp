@@ -57,7 +57,7 @@ Plugin::Descriptor PLUGIN_EXPORT slicert_plugin_descriptor = {
 // ################################# SlicerT ####################################
 
 SlicerT::SlicerT(InstrumentTrack* instrumentTrack)
-	: Instrument(&slicert_plugin_descriptor, instrumentTrack)
+	: LegacyInstrument(&slicert_plugin_descriptor, instrumentTrack)
 	, m_noteThreshold(0.6f, 0.0f, 2.0f, 0.01f, this, tr("Note threshold"))
 	, m_fadeOutFrames(10.0f, 0.0f, 100.0f, 0.1f, this, tr("FadeOut"))
 	, m_originalBPM(1, 1, 999, this, tr("Original bpm"))

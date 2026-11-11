@@ -92,6 +92,13 @@ public:
 	// filter and so on
 	void playNote(NotePlayHandle* _n, std::span<SampleFrame> _working_buffer);
 
+	/**
+	 * Processes a single-streamed instrument for one period through its PluginInstance and writes the
+	 * main track channels into @p out. Does nothing if @p instrument is not this track's current
+	 * instrument, e.g. while instruments are being replaced. [audio thread]
+	 */
+	void playInstrument(const Instrument* instrument, std::span<SampleFrame> out);
+
 	QString instrumentName() const;
 	const Instrument *instrument() const
 	{
@@ -324,6 +331,11 @@ private:
 	BoolModel m_useMasterPitchModel;
 
 	std::unique_ptr<PluginInstance> m_instrument;
+
+	//! The track channels single-streamed instruments are processed into
+	//! TODO: Becomes the track's channels once tracks have more than two
+	AudioBuffer m_instrumentChannels;
+
 	InstrumentSoundShaping m_soundShaping;
 	InstrumentFunctionArpeggio m_arpeggio;
 	InstrumentFunctionNoteStacking m_noteStacking;

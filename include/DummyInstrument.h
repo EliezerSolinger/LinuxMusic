@@ -36,11 +36,11 @@ namespace lmms
 {
 
 
-class DummyInstrument : public Instrument
+class DummyInstrument : public LegacyInstrument
 {
 public:
 	DummyInstrument( InstrumentTrack * _instrument_track ) :
-		Instrument(nullptr, _instrument_track)
+		LegacyInstrument(nullptr, _instrument_track)
 	{
 	}
 

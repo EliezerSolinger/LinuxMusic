@@ -196,7 +196,7 @@ private:
 };
 
 
-class NesInstrument : public Instrument
+class NesInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

@@ -64,6 +64,7 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	m_pitchModel(0, MinPitchDefault, MaxPitchDefault, 1, this, tr("Pitch")),
 	m_pitchRangeModel(1, 1, 60, this, tr("Pitch range")),
 	m_useMasterPitchModel(true, this, tr("Master pitch")),
+	m_instrumentChannels(Engine::audioEngine()->framesPerPeriod(), DEFAULT_CHANNELS),
 	m_soundShaping(this),
 	m_arpeggio(this),
 	m_noteStacking(this),
@@ -566,7 +567,7 @@ void InstrumentTrack::playNote(NotePlayHandle* n, std::span<SampleFrame> working
 	if (n->isMasterNote() == false && m_instrument)
 	{
 		// all is done, so now lets play the note!
-		m_instrument->instrumentRef().playNote(n, workingBuffer);
+		m_instrument->playNote(n, workingBuffer);
 
 		// This is effectively the same as checking if workingBuffer is not a nullptr.
 		// Calling processAudioBuffer with a nullptr leads to crashes. Hence the check.
@@ -577,6 +578,33 @@ void InstrumentTrack::playNote(NotePlayHandle* n, std::span<SampleFrame> working
 			processAudioBuffer(workingBuffer.data(), frames + offset, n);
 		}
 	}
+}
+
+
+
+
+void InstrumentTrack::playInstrument(const Instrument* instrument, std::span<SampleFrame> out)
+{
+	// The instrument is replaced while the track is locked
+	if (!tryLock()) { return; }
+
+	if (!m_instrument || m_instrument->instrument() != instrument)
+	{
+		unlock();
+		return;
+	}
+
+	const auto frames = static_cast<f_cnt_t>(out.size());
+	if (m_instrumentChannels.frames() != frames)
+	{
+		m_instrumentChannels = AudioBuffer{frames, DEFAULT_CHANNELS};
+	}
+
+	m_instrumentChannels.silenceAllChannels();
+	m_instrument->process(m_instrumentChannels);
+	toInterleaved(m_instrumentChannels.groupBuffers(0), InterleavedBufferView<float, 2>{out.data(), frames});
+
+	unlock();
 }
 
 

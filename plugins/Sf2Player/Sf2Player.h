@@ -57,7 +57,7 @@ class PatchesDialog;
 } // namespace gui
 
 
-class Sf2Instrument : public Instrument
+class Sf2Instrument : public LegacyInstrument
 {
 	Q_OBJECT
 	mapPropertyFromModel(int,getBank,setBank,m_bankNum);

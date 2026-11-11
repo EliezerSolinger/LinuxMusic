@@ -48,7 +48,7 @@ class KickerInstrumentView;
 }
 
 
-class KickerInstrument : public Instrument
+class KickerInstrument : public LegacyInstrument
 {
 	Q_OBJECT
 public:

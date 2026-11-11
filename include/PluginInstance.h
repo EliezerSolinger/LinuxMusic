@@ -28,6 +28,7 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "AudioBuffer.h"
@@ -45,6 +46,8 @@ namespace lmms {
 
 class Effect;
 class Instrument;
+class NotePlayHandle;
+class SampleFrame;
 
 /**
  * Manages a plugin instance and implements the host side of the LMMS plugin API.
@@ -119,6 +122,12 @@ public:
 	 */
 	auto process(AudioBuffer& trackChannels, NotePlayHandle* nph = nullptr) -> bool;
 
+	/**
+	 * Renders a note of a NotePlayHandle-based instrument into the note's own buffer and applies the
+	 * output pins to it. [audio thread, possibly in parallel for different notes]
+	 */
+	void playNote(NotePlayHandle* nph, std::span<SampleFrame> out);
+
 	//! Replaces the plugin with a DummyEffect keeping @p originalPluginData (e.g. a plugin that failed to load)
 	void convertToDummyEffect(Model* parent, const QDomElement& originalPluginData);
 
@@ -182,6 +191,9 @@ private:
 
 	std::atomic<std::uint8_t> m_state = 0;
 	bool m_isRemotePlugin = false;
+
+	//! The sample rate the processor was last activated with
+	sample_rate_t m_activeSampleRate = 0;
 };
 
 } // namespace lmms

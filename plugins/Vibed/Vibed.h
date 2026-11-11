@@ -47,7 +47,7 @@ namespace gui
 class VibedView;
 }
 
-class Vibed : public Instrument
+class Vibed : public LegacyInstrument
 {
 	Q_OBJECT
 public:

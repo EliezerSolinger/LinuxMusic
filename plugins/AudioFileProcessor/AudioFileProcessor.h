@@ -38,7 +38,7 @@ namespace lmms
 
 class SampleThumbnailCache;
 
-class AudioFileProcessor : public Instrument
+class AudioFileProcessor : public LegacyInstrument
 {
 	Q_OBJECT
 public:

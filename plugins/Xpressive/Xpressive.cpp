@@ -78,7 +78,7 @@ O2 -> trianglew(2t*f)*(0.5+0.5sinew(12*A1*t))+sinew(t*f)*(0.5+0.5sinew(12*A1*t+0
 #define GRAPH_LENGTH 4096
 
 Xpressive::Xpressive(InstrumentTrack* instrument_track) :
-	Instrument(&xpressive_plugin_descriptor, instrument_track),
+	LegacyInstrument(&xpressive_plugin_descriptor, instrument_track),
 	m_graphO1(-1.0f, 1.0f, 360, this),
 	m_graphO2(-1.0f, 1.0f, 360, this),
 	m_graphW1(-1.0f, 1.0f, GRAPH_LENGTH, this),

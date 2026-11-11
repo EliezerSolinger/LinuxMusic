@@ -213,7 +213,7 @@ void OscillatorObject::updateUseWaveTable()
 
 
 TripleOscillator::TripleOscillator( InstrumentTrack * _instrument_track ) :
-	Instrument(&tripleoscillator_plugin_descriptor, _instrument_track)
+	LegacyInstrument(&tripleoscillator_plugin_descriptor, _instrument_track)
 {
 	for( int i = 0; i < NUM_OF_OSCILLATORS; ++i )
 	{

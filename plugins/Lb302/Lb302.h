@@ -135,50 +135,24 @@ protected:
 };
 
 
-class Lb302Synth : public Instrument
+class Lb302Synth : public LegacyInstrument
 {
 	Q_OBJECT
 	friend class gui::Lb302SynthView;
 
 public:
-	Lb302Synth( InstrumentTrack * _instrument_track );
-	~Lb302Synth() override;
+	Lb302Synth(InstrumentTrack*);
 
-	void deleteNotePluginData( NotePlayHandle * _n ) override;
-
-	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
-	void loadSettings( const QDomElement & _this ) override;
-
-	QString nodeName() const override;
-
-	gui::PluginView* instantiateView( QWidget * _parent ) override;
-
-private:
+protected:
 	void playImpl(std::span<SampleFrame> out) override;
-	void playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out) override;
+	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
-	void processNote( NotePlayHandle * n );
-
-	void initNote(Lb302Note *Note);
-	void initSlide();
-
-private:
-	FloatModel vcf_cut_knob;
-	FloatModel vcf_res_knob;
-	FloatModel vcf_mod_knob;
-	FloatModel vcf_dec_knob;
-
-	FloatModel vco_fine_detune_knob;
-
-	FloatModel dist_knob;
-	IntModel wave_shape;
-	FloatModel slide_dec_knob;
-
-	BoolModel slideToggle;
-	BoolModel accentToggle;
-	BoolModel deadToggle;
-	BoolModel db24Toggle;
-
+public:
+	void deleteNotePluginData(NotePlayHandle* nph) override;
+	void saveSettings(QDomDocument& doc, QDomElement& el) override;
+	void loadSettings(const QDomElement& el) override;
+	QString nodeName() const override;
+	gui::PluginView* instantiateView(QWidget* parent) override;
 
 public slots:
 	void filterChanged();
@@ -190,7 +164,7 @@ public slots:
 
 private:
 	void processNote(NotePlayHandle* nph);
-	void process(SampleFrame* outbuf, const f_cnt_t size);
+	void render(SampleFrame* outbuf, const f_cnt_t size);
 	void recalcFilter();
 
 	enum class VcoShape { Sawtooth, Triangle, Square, RoundSquare, Moog, Sine, Exponential, WhiteNoise,
@@ -306,7 +280,7 @@ private:
 	//! is the number of currently vacant indicies in @ref m_notes that are
 	//! available to be written to, and can never exceed @ref s_maxPendingNotes.
 	//!
-	//! @see play
+	//! @see playImpl
 	alignas(hardware_destructive_interference_size) std::atomic_size_t m_notesReadSeq {0};
 
 	//! @brief Sequence number indicating complete enqueue operations.

@@ -59,7 +59,7 @@ class PixmapButton;
 }
 
 
-class Xpressive : public Instrument
+class Xpressive : public LegacyInstrument
 {
 	Q_OBJECT
 public:

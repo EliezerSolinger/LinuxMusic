@@ -80,7 +80,7 @@ PLUGIN_EXPORT Plugin * lmms_plugin_main( Model *m, void * )
 
 
 PatmanInstrument::PatmanInstrument( InstrumentTrack * _instrument_track ) :
-	Instrument(&patman_plugin_descriptor, _instrument_track),
+	LegacyInstrument(&patman_plugin_descriptor, _instrument_track),
 	m_loopedModel( true, this ),
 	m_tunedModel( true, this )
 {
