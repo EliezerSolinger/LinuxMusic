@@ -406,6 +406,26 @@ private slots:
 		}
 	}
 
+	void Model_LoadsPinsOfOlderBuilds()
+	{
+		// Before multichannel phase 3, the pins were saved in a "pins" element inside another one
+		auto doc = QDomDocument{};
+		doc.setContent(QString{"<effect><pins><pins inputs=\"2\" outputs=\"2\">"
+			"<in_matrix c1_1=\"1\" c2_2=\"1\"/><out_matrix c1_1=\"1\" c2_2=\"1\"/></pins></pins></effect>"});
+
+		auto model = AudioPortsModel{false};
+		model.setAllChannelCounts(2, 2, 2);
+		for (ch_cnt_t tc = 0; tc < 2; ++tc)
+		{
+			for (ch_cnt_t pc = 0; pc < 2; ++pc) { model.in().setPin(tc, pc, false); }
+		}
+		model.loadSettings(doc.documentElement());
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+		QVERIFY(!model.in().enabled(0, 1));
+		QVERIFY(model.out().enabled(1, 1));
+	}
+
 	void Model_TrackChannelsUpperBoundFollowsPins()
 	{
 		auto model = AudioPortsModel{false};

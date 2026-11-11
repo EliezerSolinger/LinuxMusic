@@ -227,8 +227,14 @@ void AudioPortsModel::saveSettings(QDomDocument& doc, QDomElement& elem)
 
 void AudioPortsModel::loadSettings(const QDomElement& elem)
 {
-	const auto pins = elem.firstChildElement(nodeName());
+	auto pins = elem.firstChildElement(nodeName());
 	if (pins.isNull()) { return; }
+
+	// Saved by builds before LinuxMusic's multichannel phase 3: the pins in a "pins" element inside another one
+	if (!pins.hasAttribute("inputs") && !pins.firstChildElement(nodeName()).isNull())
+	{
+		pins = pins.firstChildElement(nodeName());
+	}
 
 	// TODO: Assert port counts are what was expected?
 	const auto inputs = pins.attribute("inputs", "0").toInt();
