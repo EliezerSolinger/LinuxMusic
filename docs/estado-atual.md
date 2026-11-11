@@ -18,6 +18,19 @@ Já feita no nível do produto: executável `linuxmusic`, textos da interface e 
 Mantido de propósito: o namespace C++ `lmms` e as macros `LMMS_*` (internos e invisíveis para o usuário),
 as extensões `.mmp`/`.mmpz` e o logo/splash do LMMS (ainda falta arte própria).
 
+## Trazendo atualizações do LMMS
+
+A base é o `master` do LMMS (linha 1.3.0-alpha), não a 1.2 estável. Para trazer novidades:
+
+```sh
+git fetch upstream
+git merge upstream/master
+python3 tools/rebrand.py . $(git diff --name-only HEAD~1 HEAD -- src include plugins data/locale)
+```
+
+O `tools/rebrand.py` troca "LMMS" por "LinuxMusic" nos textos visíveis (strings do código, arquivos `.ui` e traduções)
+que chegaram no merge.
+
 ## Sobre a gravação herdada do LMMS
 
 A gravação que veio do branch `feature/recording-stage-one` **não é a base da gravação do LinuxMusic**. Ela é
