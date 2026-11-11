@@ -76,3 +76,28 @@ Detalhes que os testes revelaram:
 - **Comportamento a corrigir no passo 2:** a rampa que suaviza mudanças de parâmetro só avança quando o canal processa
   sinal. Se o fader de um canal em silêncio muda e depois chega som, o som começa com uma rampa a partir do valor
   **antigo**. O processamento novo do canal deve consumir as mudanças de parâmetro em todo período, com ou sem sinal.
+
+### Passo 2: canal completo (feito)
+
+Caminho do sinal de cada canal, na ordem:
+1. entradas: faixas e envios de outros canais, pré ou pós-fader;
+2. **trim** (−24 a +24 dB);
+3. efeitos;
+4. ponto **pré-fader**, de onde saem os envios pré-fader;
+5. **trocar L/R** e **inverter fase**;
+6. **largura estéreo** (mid/side: 0% = mono, 100% = original, 200% = dobro);
+7. **pan**;
+8. **fader**;
+9. envios pós-fader e saída.
+
+Detalhes:
+- Mudança estrutural: **cada canal aplica o próprio fader**. Antes, quem aplicava o volume de um canal era o canal que
+  recebia o sinal, o que impedia envios pré-fader.
+- O master também aplica o próprio fader no processamento dele.
+- Corrigido o problema da rampa: o canal lê os parâmetros em todo período, com ou sem sinal.
+- Os parâmetros novos e a opção pré-fader dos envios são salvos no projeto. Projetos sem esses atributos carregam com
+  os valores padrão.
+- `MixerTest` tem 22 testes, incluindo cada etapa do caminho do sinal, a rampa e salvar/carregar.
+- Um demo renderizado antes e depois tem o mesmo nível (RMS 3.101 contra 3.103). O render dos demos não é
+  determinístico (ruído e fase aleatória), então não dá para comparar amostra por amostra.
+- Os controles novos ainda **não aparecem na interface**; isso fica para o passo 9.

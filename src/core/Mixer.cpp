@@ -33,6 +33,8 @@
 
 #include "InstrumentTrack.h"
 #include "MixHelpers.h"
+#include "lmms_math.h"
+#include "panning.h"
 #include "PatternStore.h"
 #include "SampleTrack.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
@@ -45,7 +47,9 @@ MixerRoute::MixerRoute( MixerChannel * from, MixerChannel * to, float amount ) :
 	m_from( from ),
 	m_to( to ),
 	m_amount(amount, 0, 1, 0.001f, nullptr,
-			tr("Amount to send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()))
+			tr("Amount to send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index())),
+	m_preFader(false, nullptr,
+			tr("Pre-fader send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()))
 {
 	//qDebug( "created: %d to %d", m_from->m_channelIndex, m_to->m_channelIndex );
 	// create send amount model
@@ -68,6 +72,12 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_muteModel( false, _parent ),
 	m_soloModel( false, _parent ),
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
+	m_trimModel(0.f, -24.f, 24.f, 0.1f, _parent),
+	m_swapChannelsModel(false, _parent),
+	m_phaseInvertModel(false, _parent),
+	m_widthModel(100.f, 0.f, 200.f, 1.f, _parent),
+	m_panModel(PanningCenter, PanningLeft, PanningRight, 1.f, _parent),
+	m_preFaderBuffer(Engine::audioEngine()->framesPerPeriod()),
 	m_name(),
 	m_lock(),
 	m_queued( false ),
@@ -166,63 +176,98 @@ void MixerChannel::doProcessing()
 {
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
 
-	if( m_muted == false )
-	{
-		for( MixerRoute * senderRoute : m_receives )
-		{
-			MixerChannel * sender = senderRoute->sender();
-			FloatModel * sendModel = senderRoute->amount();
-			if( ! sendModel ) qFatal( "Error: no send model found from %d to %d", senderRoute->senderIndex(), m_channelIndex );
+	// Read every parameter in every period, even without signal: a parameter change ramps to its new value
+	// over the next period that reads it, so skipping silent periods would delay the ramp until sound arrives
+	ValueBuffer* volBuf = m_volumeModel.valueBuffer();
+	m_trimModel.valueBuffer();
+	m_widthModel.valueBuffer();
+	m_panModel.valueBuffer();
+	auto sendBufs = std::vector<ValueBuffer*>{};
+	sendBufs.reserve(m_receives.size());
+	for (MixerRoute* route : m_receives) { sendBufs.push_back(route->amount()->valueBuffer()); }
 
-			if (sender->m_buffer.hasAnySignal() || sender->m_stillRunning)
-			{
-				auto buffer = m_buffer.interleavedBuffer().asSampleFrames();
+	m_preFaderHasSignal = false;
 
-				// figure out if we're getting sample-exact input
-				ValueBuffer * sendBuf = sendModel->valueBuffer();
-				ValueBuffer * volBuf = sender->m_volumeModel.valueBuffer();
-
-				// mix it's output with this one's output
-				auto ch_buf = sender->m_buffer.interleavedBuffer().asSampleFrames();
-
-				// use sample-exact mixing if sample-exact values are available
-				if( ! volBuf && ! sendBuf ) // neither volume nor send has sample-exact data...
-				{
-					const float v = sender->m_volumeModel.value() * sendModel->value();
-					MixHelpers::addMultiplied(buffer.data(), ch_buf.data(), v, fpp);
-				}
-				else if( volBuf && sendBuf ) // both volume and send have sample-exact data
-				{
-					MixHelpers::addMultipliedByBuffers(buffer.data(), ch_buf.data(), volBuf, sendBuf, fpp);
-				}
-				else if( volBuf ) // volume has sample-exact data but send does not
-				{
-					const float v = sendModel->value();
-					MixHelpers::addMultipliedByBuffer(buffer.data(), ch_buf.data(), v, volBuf, fpp);
-				}
-				else // vice versa
-				{
-					const float v = sender->m_volumeModel.value();
-					MixHelpers::addMultipliedByBuffer(buffer.data(), ch_buf.data(), v, sendBuf, fpp);
-				}
-				toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
-				m_buffer.mixSilenceFlags(sender->m_buffer);
-			}
-		}
-
-
-		const float v = m_volumeModel.value();
-
-		m_stillRunning = m_fxChain.processAudioBuffer(m_buffer);
-
-		const auto peakSamples = SampleFrame{m_buffer.absPeakValue(0), m_buffer.absPeakValue(1)};
-		m_peakLeft = std::max(m_peakLeft, peakSamples[0] * v);
-		m_peakRight = std::max(m_peakRight, peakSamples[1] * v);
-	}
-	else
+	if (m_muted)
 	{
 		m_peakLeft = m_peakRight = 0.0f;
+		processed();
+		return;
 	}
+
+	auto buffer = m_buffer.interleavedBuffer().asSampleFrames();
+
+	// Inputs from other channels, taken before or after their fader
+	for (auto i = std::size_t{0}; i < m_receives.size(); ++i)
+	{
+		MixerRoute* route = m_receives[i];
+		MixerChannel* sender = route->sender();
+		const bool preFader = route->isPreFader();
+		const bool hasSignal = preFader
+			? sender->m_preFaderHasSignal
+			: sender->m_buffer.hasAnySignal() || sender->m_stillRunning;
+		if (!hasSignal) { continue; }
+
+		const SampleFrame* src = preFader
+			? sender->m_preFaderBuffer.data()
+			: sender->m_buffer.interleavedBuffer().asSampleFrames().data();
+		if (sendBufs[i]) { MixHelpers::addMultipliedByBuffer(buffer.data(), src, 1.f, sendBufs[i], fpp); }
+		else { MixHelpers::addMultiplied(buffer.data(), src, route->amount()->value(), fpp); }
+
+		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+		m_buffer.mixSilenceFlags(sender->m_buffer);
+	}
+
+	// Input trim
+	if (m_buffer.hasAnySignal() && m_trimModel.value() != 0.f)
+	{
+		const float trim = dbfsToAmp(m_trimModel.value());
+		for (auto& frame : buffer) { frame *= trim; }
+		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+	}
+
+	m_stillRunning = m_fxChain.processAudioBuffer(m_buffer);
+	const bool hasSignal = m_buffer.hasAnySignal() || m_stillRunning;
+
+	// Tap for pre-fader sends
+	const bool feedsPreFader = std::any_of(m_sends.begin(), m_sends.end(),
+		[](const MixerRoute* route) { return route->isPreFader(); });
+	if (feedsPreFader && hasSignal)
+	{
+		std::copy(buffer.begin(), buffer.end(), m_preFaderBuffer.begin());
+		m_preFaderHasSignal = true;
+	}
+
+	// Stereo section, pan and fader
+	if (hasSignal)
+	{
+		const bool swap = m_swapChannelsModel.value();
+		const float phase = m_phaseInvertModel.value() ? -1.f : 1.f;
+		const float width = m_widthModel.value() / 100.f;
+		const auto pan = panningToVolumeVector(static_cast<panning_t>(m_panModel.value()));
+		const float volume = m_volumeModel.value();
+
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			float left = buffer[f].left() * phase;
+			float right = buffer[f].right() * phase;
+			if (swap) { std::swap(left, right); }
+			if (width != 1.f)
+			{
+				const float mid = (left + right) * 0.5f;
+				const float side = (left - right) * 0.5f * width;
+				left = mid + side;
+				right = mid - side;
+			}
+			const float gain = volBuf ? volBuf->values()[f] : volume;
+			buffer[f].setLeft(left * pan.vol[0] * gain);
+			buffer[f].setRight(right * pan.vol[1] * gain);
+		}
+		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+	}
+
+	m_peakLeft = std::max(m_peakLeft, m_buffer.absPeakValue(0));
+	m_peakRight = std::max(m_peakRight, m_buffer.absPeakValue(1));
 
 	// increment dependency counter of all receivers
 	processed();
@@ -634,24 +679,9 @@ void Mixer::masterMix( SampleFrame* _buf )
 		AudioEngineWorkerThread::startAndWaitForJobs();
 	}
 
-	auto buffer = m_mixerChannels[0]->m_buffer.interleavedBuffer().asSampleFrames();
-
-	// handle sample-exact data in master volume fader
-	ValueBuffer * volBuf = m_mixerChannels[0]->m_volumeModel.valueBuffer();
-
-	if( volBuf )
-	{
-		for( int f = 0; f < fpp; f++ )
-		{
-			buffer[f][0] *= volBuf->values()[f];
-			buffer[f][1] *= volBuf->values()[f];
-		}
-	}
-
-	const float v = volBuf
-		? 1.0f
-		: m_mixerChannels[0]->m_volumeModel.value();
-	MixHelpers::addMultiplied(_buf, buffer.data(), v, fpp);
+	// The master channel already applied its fader when it was processed
+	const auto buffer = m_mixerChannels[0]->m_buffer.interleavedBuffer().asSampleFrames();
+	MixHelpers::add(_buf, buffer.data(), fpp);
 
 	// clear all channel buffers and
 	// reset channel process state
@@ -686,10 +716,20 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_volumeModel.setValue( 1.0f );
 	ch->m_muteModel.setValue( false );
 	ch->m_soloModel.setValue( false );
+	ch->m_trimModel.setValue(0.f);
+	ch->m_swapChannelsModel.setValue(false);
+	ch->m_phaseInvertModel.setValue(false);
+	ch->m_widthModel.setValue(100.f);
+	ch->m_panModel.setValue(PanningCenter);
 	ch->m_name = ( index == 0 ) ? tr( "Master" ) : tr( "Channel %1" ).arg( index );
 	ch->m_volumeModel.setDisplayName( ch->m_name + ">" + tr( "Volume" ) );
 	ch->m_muteModel.setDisplayName( ch->m_name + ">" + tr( "Mute" ) );
 	ch->m_soloModel.setDisplayName( ch->m_name + ">" + tr( "Solo" ) );
+	ch->m_trimModel.setDisplayName(ch->m_name + ">" + tr("Trim"));
+	ch->m_swapChannelsModel.setDisplayName(ch->m_name + ">" + tr("Swap left/right"));
+	ch->m_phaseInvertModel.setDisplayName(ch->m_name + ">" + tr("Invert phase"));
+	ch->m_widthModel.setDisplayName(ch->m_name + ">" + tr("Stereo width"));
+	ch->m_panModel.setDisplayName(ch->m_name + ">" + tr("Panning"));
 	ch->setColor(std::nullopt);
 
 	// send only to master
@@ -726,6 +766,11 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		ch->m_volumeModel.saveSettings( _doc, mixch, "volume" );
 		ch->m_muteModel.saveSettings( _doc, mixch, "muted" );
 		ch->m_soloModel.saveSettings( _doc, mixch, "soloed" );
+		ch->m_trimModel.saveSettings(_doc, mixch, "trim");
+		ch->m_swapChannelsModel.saveSettings(_doc, mixch, "swapchannels");
+		ch->m_phaseInvertModel.saveSettings(_doc, mixch, "phaseinvert");
+		ch->m_widthModel.saveSettings(_doc, mixch, "width");
+		ch->m_panModel.saveSettings(_doc, mixch, "pan");
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
@@ -738,6 +783,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 			sendsDom.setAttribute("channel", send->receiverIndex());
 			send->amount()->saveSettings(_doc, sendsDom, "amount");
+			send->preFader()->saveSettings(_doc, sendsDom, "prefader");
 		}
 	}
 }
@@ -774,6 +820,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 		m_mixerChannels[num]->m_volumeModel.loadSettings( mixch, "volume" );
 		m_mixerChannels[num]->m_muteModel.loadSettings( mixch, "muted" );
 		m_mixerChannels[num]->m_soloModel.loadSettings( mixch, "soloed" );
+		m_mixerChannels[num]->m_trimModel.loadSettings(mixch, "trim");
+		m_mixerChannels[num]->m_swapChannelsModel.loadSettings(mixch, "swapchannels");
+		m_mixerChannels[num]->m_phaseInvertModel.loadSettings(mixch, "phaseinvert");
+		m_mixerChannels[num]->m_widthModel.loadSettings(mixch, "width");
+		m_mixerChannels[num]->m_panModel.loadSettings(mixch, "pan");
 		m_mixerChannels[num]->m_name = mixch.attribute( "name" );
 		if (mixch.hasAttribute("color"))
 		{
@@ -793,7 +844,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 				int sendTo = chDataItem.attribute( "channel" ).toInt();
 				allocateChannelsTo( sendTo ) ;
 				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f );
-				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
+				if (mxr)
+				{
+					mxr->amount()->loadSettings(chDataItem, "amount");
+					mxr->preFader()->loadSettings(chDataItem, "prefader");
+				}
 			}
 		}
 

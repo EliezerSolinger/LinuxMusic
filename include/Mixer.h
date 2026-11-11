@@ -33,7 +33,10 @@
 
 #include <atomic>
 #include <optional>
+#include <vector>
 #include <QColor>
+
+#include "SampleFrame.h"
 
 namespace lmms
 {
@@ -60,6 +63,19 @@ public:
 	BoolModel m_muteModel;
 	BoolModel m_soloModel;
 	FloatModel m_volumeModel;
+
+	// Channel strip, in signal order: input trim, effects, (pre-fader sends), swap L/R, phase invert,
+	// stereo width, pan, volume fader, (post-fader sends)
+	FloatModel m_trimModel; //!< input gain in dB, applied before the effects
+	BoolModel m_swapChannelsModel;
+	BoolModel m_phaseInvertModel;
+	FloatModel m_widthModel; //!< stereo width in percent: 0 = mono, 100 = unchanged, 200 = twice as wide
+	FloatModel m_panModel; //!< -100 (left) to 100 (right)
+
+	//! The signal after the effects and before the stereo section, pan and fader, for pre-fader sends
+	std::vector<SampleFrame> m_preFaderBuffer;
+	bool m_preFaderHasSignal = false;
+
 	QString m_name;
 	QMutex m_lock;
 	bool m_queued; // are we queued up for rendering yet?
@@ -122,6 +138,10 @@ public:
 		return &m_amount;
 	}
 
+	//! Pre-fader sends take the sender's signal after its effects, before its stereo section, pan and fader
+	BoolModel* preFader() { return &m_preFader; }
+	bool isPreFader() const { return m_preFader.value(); }
+
 	MixerChannel * sender() const
 	{
 		return m_from;
@@ -138,6 +158,7 @@ public:
 		MixerChannel * m_from;
 		MixerChannel * m_to;
 		FloatModel m_amount;
+		BoolModel m_preFader;
 };
 
 

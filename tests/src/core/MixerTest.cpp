@@ -27,8 +27,10 @@
 #include "AudioBuffer.h"
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "DataFile.h"
 #include "Mixer.h"
 #include "SampleFrame.h"
+#include "lmms_math.h"
 
 using namespace lmms;
 
@@ -62,12 +64,10 @@ class MixerTest : public QObject
 		return out;
 	}
 
-	//! Changed parameters ramp to their new value over the next period that processes them (to avoid
-	//! clicks). Channels without signal skip their parameters, so feed every channel a zero signal and
-	//! run one period; the following period then uses the final values.
+	//! Changed parameters ramp to their new value over the next period (to avoid clicks).
+	//! Run one period without signal; the following period then uses the final values.
 	static void settle()
 	{
-		for (auto channel = 0; channel < mixer()->numChannels(); ++channel) { feed(channel, 0.f, 0.f); }
 		mix();
 	}
 
@@ -215,6 +215,111 @@ private slots:
 		QVERIFY(mixer()->channelSendModel(a, 0) != nullptr);
 		feed(a, 0.5f, 0.5f);
 		compareOutput(mix(), 0.5f, 0.5f);
+	}
+
+	void parameterChangesWhileSilentDoNotRampLater()
+	{
+		// Changing the fader of a silent channel must not make the next sound start with a ramp
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(channel)->m_volumeModel.setValue(0.25f);
+		mix();
+		feed(channel, 0.8f, 0.8f);
+		compareOutput(mix(), 0.2f, 0.2f);
+	}
+
+	void panMovesTheSignalToOneSide()
+	{
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(channel)->m_panModel.setValue(-100.f);
+		settle();
+		feed(channel, 0.5f, 0.5f);
+		compareOutput(mix(), 0.5f, 0.f);
+	}
+
+	void zeroWidthMakesMono()
+	{
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(channel)->m_widthModel.setValue(0.f);
+		settle();
+		feed(channel, 0.6f, 0.2f);
+		compareOutput(mix(), 0.4f, 0.4f);
+	}
+
+	void phaseInvertAndSwap()
+	{
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(channel)->m_phaseInvertModel.setValue(true);
+		mixer()->mixerChannel(channel)->m_swapChannelsModel.setValue(true);
+		settle();
+		feed(channel, 0.6f, 0.2f);
+		compareOutput(mix(), -0.2f, -0.6f);
+	}
+
+	void trimIsAppliedBeforeTheFader()
+	{
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(channel)->m_trimModel.setValue(ampToDbfs(2.f));
+		mixer()->mixerChannel(channel)->m_volumeModel.setValue(0.5f);
+		settle();
+		feed(channel, 0.3f, 0.1f);
+		compareOutput(mix(), 0.3f, 0.1f);
+	}
+
+	void preFaderSendIgnoresTheSendersFader()
+	{
+		const auto source = mixer()->createChannel();
+		const auto bus = mixer()->createChannel();
+		auto send = mixer()->createChannelSend(source, bus);
+		send->preFader()->setValue(true);
+		// The source's own output is muted by its fader; only the pre-fader send reaches the master
+		mixer()->mixerChannel(source)->m_volumeModel.setValue(0.f);
+		mixer()->mixerChannel(source)->m_panModel.setValue(100.f);
+		settle();
+		feed(source, 0.4f, 0.2f);
+		compareOutput(mix(), 0.4f, 0.2f);
+	}
+
+	void postFaderSendFollowsTheSendersFader()
+	{
+		const auto source = mixer()->createChannel();
+		const auto bus = mixer()->createChannel();
+		mixer()->deleteChannelSend(source, 0);
+		mixer()->createChannelSend(source, bus);
+		mixer()->mixerChannel(source)->m_volumeModel.setValue(0.5f);
+		settle();
+		feed(source, 0.4f, 0.2f);
+		compareOutput(mix(), 0.2f, 0.1f);
+	}
+
+	void channelStripIsSavedAndLoaded()
+	{
+		const auto a = mixer()->createChannel();
+		const auto b = mixer()->createChannel();
+		auto ch = mixer()->mixerChannel(a);
+		ch->m_trimModel.setValue(3.f);
+		ch->m_widthModel.setValue(150.f);
+		ch->m_panModel.setValue(-40.f);
+		ch->m_phaseInvertModel.setValue(true);
+		ch->m_swapChannelsModel.setValue(true);
+		mixer()->createChannelSend(a, b)->preFader()->setValue(true);
+
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixer");
+		mixer()->saveSettings(doc, element);
+		mixer()->clear();
+		mixer()->loadSettings(element);
+
+		ch = mixer()->mixerChannel(a);
+		QCOMPARE(ch->m_trimModel.value(), 3.f);
+		QCOMPARE(ch->m_widthModel.value(), 150.f);
+		QCOMPARE(ch->m_panModel.value(), -40.f);
+		QCOMPARE(ch->m_phaseInvertModel.value(), true);
+		QCOMPARE(ch->m_swapChannelsModel.value(), true);
+		QCOMPARE(mixer()->channelSendModel(a, b) != nullptr, true);
+		const auto& sends = ch->m_sends;
+		const auto it = std::find_if(sends.begin(), sends.end(), [b](auto r) { return r->receiverIndex() == b; });
+		QVERIFY(it != sends.end());
+		QCOMPARE((*it)->isPreFader(), true);
 	}
 
 	void peakMeterShowsPostFaderLevel()
