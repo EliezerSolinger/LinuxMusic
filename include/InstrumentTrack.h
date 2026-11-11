@@ -37,6 +37,7 @@
 #include "NotePlayHandle.h"
 #include "Piano.h"
 #include "Plugin.h"
+#include "PluginInstance.h"
 #include "Track.h"
 
 namespace lmms
@@ -86,17 +87,17 @@ public:
 
 	// for capturing note-play-events -> need that for arpeggio,
 	// filter and so on
-	void playNote( NotePlayHandle * _n, SampleFrame* _working_buffer );
+	void playNote(NotePlayHandle* _n, std::span<SampleFrame> _working_buffer);
 
 	QString instrumentName() const;
 	const Instrument *instrument() const
 	{
-		return m_instrument;
+		return dynamic_cast<const Instrument*>(m_instrument.plugin());
 	}
 
 	Instrument *instrument()
 	{
-		return m_instrument;
+		return dynamic_cast<Instrument*>(m_instrument.plugin());
 	}
 
 	void deleteNotePluginData( NotePlayHandle * _n );
@@ -138,7 +139,7 @@ public:
 
 
 	// load instrument whose name matches given one
-	Instrument * loadInstrument(const QString & _instrument_name,
+	PluginInstance& loadInstrument(const QString& _instrument_name,
 				const Plugin::Descriptor::SubPluginFeatures::Key* key = nullptr,
 				bool keyFromDnd = false);
 
@@ -316,7 +317,8 @@ private:
 	MixerChannelLcdModel m_mixerChannelModel;
 	BoolModel m_useMasterPitchModel;
 
-	Instrument * m_instrument;
+//	Instrument * m_instrument;
+	PluginInstance m_instrument;
 	InstrumentSoundShaping m_soundShaping;
 	InstrumentFunctionArpeggio m_arpeggio;
 	InstrumentFunctionNoteStacking m_noteStacking;

@@ -35,6 +35,7 @@ namespace lmms
 
 class AudioBuffer;
 class Effect;
+class PluginInstance;
 
 namespace gui
 {
@@ -59,7 +60,7 @@ public:
 		return "fxchain";
 	}
 
-	void appendEffect( Effect * _effect );
+	void appendEffect(std::unique_ptr<PluginInstance> effect);
 	void removeEffect( Effect * _effect );
 	void moveDown( Effect * _effect );
 	void moveUp( Effect * _effect );
@@ -69,7 +70,7 @@ public:
 
 
 private:
-	using EffectList = std::vector<Effect*>;
+	using EffectList = std::vector<std::unique_ptr<PluginInstance>>;
 	EffectList m_effects;
 
 	BoolModel m_enabledModel;

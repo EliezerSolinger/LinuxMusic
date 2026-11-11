@@ -26,9 +26,9 @@
 #ifndef LMMS_EFFECT_H
 #define LMMS_EFFECT_H
 
-#include <span>
-
+#include "AudioBufferView.h"
 #include "AudioEngine.h"
+#include "AudioProcessor.h"
 #include "AutomatableModel.h"
 #include "Engine.h"
 #include "Plugin.h"
@@ -38,6 +38,7 @@ namespace lmms
 {
 
 class AudioBuffer;
+class AudioPortsModel;
 class EffectChain;
 class EffectControls;
 
@@ -49,7 +50,9 @@ class EffectView;
 } // namespace gui
 
 
-class LMMS_EXPORT Effect : public Plugin
+class LMMS_EXPORT Effect
+	: public Plugin
+	, public AudioProcessor
 {
 	Q_OBJECT
 public:
@@ -64,9 +67,6 @@ public:
 	{
 		return "effect";
 	}
-
-	//! Returns true if audio was processed and should continue being processed
-	bool processAudioBuffer(AudioBuffer& inOut);
 
 	inline bool isOkay() const
 	{
@@ -146,30 +146,6 @@ public:
 
 
 protected:
-	enum class ProcessStatus
-	{
-		//! Unconditionally continue processing
-		Continue,
-
-		//! Calculate the RMS out sum and call `checkGate` to determine whether to stop processing
-		ContinueIfNotQuiet,
-
-		//! Do not continue processing
-		Sleep
-	};
-
-	/**
-	 * The main audio processing method that runs when plugin is awake and running
-	 */
-	virtual ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) = 0;
-
-	/**
-	 * Optional method that runs instead of `processImpl` when an effect
-	 * is awake but not running.
-	 */
-	virtual void processBypassedImpl() {}
-
-
 	gui::PluginView* instantiateView( QWidget * ) override;
 
 	void goToSleep()
@@ -186,14 +162,16 @@ protected:
 
 	virtual void onEnabledChanged() {}
 
-private:
 	/**
 	 * If auto-quit is enabled ("Keep effects running even without input" setting is disabled),
 	 * after "decay" ms of the output buffer remaining below the silence threshold, the effect is
-	 * turned off and won't be processed again until it receives new audio input.
+	 * put to sleep and won't be processed again until it receives new audio input.
 	 */
 	void handleAutoQuit(bool silentOutput);
 
+private:
+	//! Not used by effects and will be removed in the future
+	void playNote(ProcessContext&) final {}
 
 	EffectChain * m_parent;
 
@@ -213,8 +191,51 @@ private:
 
 	friend class gui::EffectView;
 	friend class EffectChain;
+};
 
-} ;
+/**
+ * An Effect with interleaved buffers, in-place processing, stereo, etc.
+ *
+ * Inherit from this to reduce boilerplate.
+ * In the future, once all plugins use planar buffers, this can be removed.
+ */
+class LegacyEffect : public Effect
+{
+protected:
+	auto channelCount(bool isInput) const -> ch_cnt_t final
+	{
+		// Two inputs and outputs
+		(void)isInput;
+		return 2;
+	}
+
+	auto channelGroupCount(bool isInput) const -> group_cnt_t final
+	{
+		// One group on the input and output sides (the main stereo channels)
+		(void)isInput;
+		return 1;
+	}
+
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+		-> ch_cnt_t final
+	{
+		// Only one group and it has two channels (stereo)
+		// TODO: Set channel names and other metadata
+		(void)index;
+		(void)isInput;
+		(void)group;
+		return 2;
+	}
+
+	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> final
+	{
+		// L input <--> L output
+		// R input <--> R output
+		return inputIndex;
+	}
+
+	auto usesInterleavedBuffers() const -> bool final { return true; }
+};
 
 using EffectKey = Effect::Descriptor::SubPluginFeatures::Key;
 using EffectKeyList = Effect::Descriptor::SubPluginFeatures::KeyList;

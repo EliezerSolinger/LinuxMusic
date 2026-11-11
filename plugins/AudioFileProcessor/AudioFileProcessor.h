@@ -26,10 +26,8 @@
 #ifndef LMMS_AUDIO_FILE_PROCESSOR_H
 #define LMMS_AUDIO_FILE_PROCESSOR_H
 
-
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
-
 #include "Instrument.h"
 #include "Sample.h"
 #include "LmmsTypes.h"
@@ -46,8 +44,6 @@ class AudioFileProcessor : public Instrument
 public:
 	AudioFileProcessor( InstrumentTrack * _instrument_track );
 
-	void playNote( NotePlayHandle * _n,
-						SampleFrame* _working_buffer ) override;
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
 	void saveSettings(QDomDocument& doc, QDomElement& elem) override;
@@ -97,6 +93,8 @@ signals:
 	void sampleUpdated();
 
 private:
+	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+
 	Sample m_sample;
 	std::shared_ptr<const SampleThumbnailCache> m_sampleThumbnailCache;
 

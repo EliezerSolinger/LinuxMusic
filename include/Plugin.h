@@ -48,6 +48,13 @@ class PluginView;
 }
 
 /**
+ * Opaque object provided to each new plugin instance by the host.
+ * Allows the host to uniquely identify a plugin instance.
+ * Used in the host's public interface which it exposes to plugins.
+ */
+class HostContext {};
+
+/**
 	Abstract representation of a plugin
 
 	Such a plugin can be an Instrument, Effect, Tool plugin etc.

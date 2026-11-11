@@ -25,6 +25,7 @@
 #ifndef LMMS_REMOTE_PLUGIN_H
 #define LMMS_REMOTE_PLUGIN_H
 
+#include <span>
 #include <QThread>
 #include <QProcess>
 #include <QRecursiveMutex>
@@ -38,13 +39,14 @@ namespace lmms
 
 class MidiEvent;
 class RemotePlugin;
+class RemotePluginAudioPortsController;
 class SampleFrame;
 
 class ProcessWatcher : public QThread
 {
 	Q_OBJECT
 public:
-	ProcessWatcher( RemotePlugin * );
+	explicit ProcessWatcher(RemotePlugin* plugin);
 	~ProcessWatcher() override = default;
 
 	void stop()
@@ -71,7 +73,7 @@ class LMMS_EXPORT RemotePlugin : public QObject, public RemotePluginBase
 {
 	Q_OBJECT
 public:
-	RemotePlugin();
+	explicit RemotePlugin(RemotePluginAudioPortsController& audioPorts);
 	~RemotePlugin() override;
 
 	inline bool isRunning()
@@ -91,14 +93,17 @@ public:
 							!= IdHostInfoGotten;
 	}
 
-	inline void waitForInitDone( bool _busyWaiting = true )
-	{
-		m_failed = waitForMessage( IdInitDone, _busyWaiting ).id != IdInitDone;
-	}
+	void waitForInitDone(bool busyWaiting = true);
 
 	bool processMessage( const message & _m ) override;
 
-	bool process( const SampleFrame* _in_buf, SampleFrame* _out_buf );
+	bool process();
+
+	/**
+	 * Updates the shared memory input/output audio buffer, then
+	 * returns a pointer to the buffer or nullptr if an error occurred.
+	 */
+	auto updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*;
 
 	void processMidiEvent( const MidiEvent&, const f_cnt_t _offset );
 
@@ -142,22 +147,19 @@ public:
 		m_commMutex.unlock();
 	}
 
+	auto audioPorts() -> RemotePluginAudioPortsController&
+	{
+		return *m_audioPorts;
+	}
+
 public slots:
 	virtual void showUI();
 	virtual void hideUI();
 
 protected:
-	inline void setSplittedChannels( bool _on )
-	{
-		m_splitChannels = _on;
-	}
-
-
 	bool m_failed;
+
 private:
-	void resizeSharedProcessingMemory();
-
-
 	QProcess m_process;
 	ProcessWatcher m_watcher;
 
@@ -165,13 +167,17 @@ private:
 	QStringList m_args;
 
 	QRecursiveMutex m_commMutex;
-	bool m_splitChannels;
 
-	SharedMemory<float[]> m_audioBuffer;
-	std::size_t m_audioBufferSize;
+	RemotePluginAudioPortsController* const m_audioPorts = nullptr;
 
-	int m_inputCount;
-	int m_outputCount;
+	SharedMemory<float[]> m_audioBuffer; // NOLINT
+
+	ch_cnt_t m_channelsIn = 0;
+	ch_cnt_t m_channelsOut = 0;
+	f_cnt_t m_frames = 0;
+
+	// View into `m_audioBuffer` output buffer
+	std::span<float> m_audioOutputs;
 
 #ifndef SYNC_WITH_SHM_FIFO
 	int m_server;

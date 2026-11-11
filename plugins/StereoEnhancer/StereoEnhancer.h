@@ -26,7 +26,7 @@
 #ifndef _STEREO_ENHANCER_H
 #define _STEREO_ENHANCER_H
 
-#include "Effect.h"
+#include "AudioPlugin.h"
 #include "DspEffectLibrary.h"
 #include "StereoEnhancerControls.h"
 
@@ -34,15 +34,12 @@ namespace lmms
 {
 
 
-class StereoEnhancerEffect : public Effect
+class StereoEnhancerEffect : public DefaultEffect
 {
 public:
 	StereoEnhancerEffect( Model * parent,
 	                      const Descriptor::SubPluginFeatures::Key * _key );
 	~StereoEnhancerEffect() override;
-
-	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
-	void processBypassedImpl() override;
 
 	EffectControls * controls() override
 	{
@@ -51,8 +48,10 @@ public:
 
 	void clearMyBuffer();
 
-
 private:
+	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	void processBypassedImpl() override;
+
 	DspEffectLibrary::StereoEnhancer m_seFX;
 	
 	SampleFrame* m_delayBuffer;

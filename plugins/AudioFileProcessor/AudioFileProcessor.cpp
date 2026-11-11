@@ -69,7 +69,7 @@ Plugin::Descriptor PLUGIN_EXPORT audiofileprocessor_plugin_descriptor =
 
 
 AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
-	Instrument( _instrument_track, &audiofileprocessor_plugin_descriptor ),
+	Instrument(&audiofileprocessor_plugin_descriptor, _instrument_track),
 	m_ampModel( 100, 0, 500, 1, this, tr( "Amplify" ) ),
 	m_startPointModel( 0, 0, 1, 0.0000001f, this, tr( "Start of sample" ) ),
 	m_endPointModel( 1, 0, 1, 0.0000001f, this, tr( "End of sample" ) ),
@@ -106,23 +106,22 @@ AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 
 
 
-void AudioFileProcessor::playNote( NotePlayHandle * _n,
-						SampleFrame* _working_buffer )
+void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 {
-	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
-	const f_cnt_t offset = _n->noteOffset();
+	const f_cnt_t frames = nph->framesLeftForCurrentPeriod();
+	const f_cnt_t offset = nph->noteOffset();
 
 	// Magic key - a frequency < 20 (say, the bottom piano note if using
 	// a A4 base tuning) restarts the start point. The note is not actually
 	// played.
-	if( m_stutterModel.value() == true && _n->frequency() < 20.0 )
+	if( m_stutterModel.value() == true && nph->frequency() < 20.0 )
 	{
 		m_nextPlayStartPoint = m_sample.startFrame();
 		m_nextPlayBackwards = false;
 		return;
 	}
 
-	if( !_n->m_pluginData )
+	if (!nph->m_pluginData)
 	{
 		if (m_stutterModel.value() == true && m_nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame()))
 		{
@@ -146,9 +145,9 @@ void AudioFileProcessor::playNote( NotePlayHandle * _n,
 				break;
 		}
 
-		_n->m_pluginData = new Sample::PlaybackState(interpolationMode);
-		static_cast<Sample::PlaybackState*>(_n->m_pluginData)->setFrameIndex(m_nextPlayStartPoint);
-		static_cast<Sample::PlaybackState*>(_n->m_pluginData)->setBackwards(m_nextPlayBackwards);
+		nph->m_pluginData = new Sample::PlaybackState(interpolationMode);
+		static_cast<Sample::PlaybackState*>(nph->m_pluginData)->setFrameIndex(m_nextPlayStartPoint);
+		static_cast<Sample::PlaybackState*>(nph->m_pluginData)->setBackwards(m_nextPlayBackwards);
 
 // debug code
 /*		qDebug( "frames %d", m_sample->frames() );
@@ -156,19 +155,19 @@ void AudioFileProcessor::playNote( NotePlayHandle * _n,
 		qDebug( "nextPlayStartPoint %d", m_nextPlayStartPoint );*/
 	}
 
-	if( ! _n->isFinished() )
+	if (!nph->isFinished())
 	{
-		if (m_sample.play(_working_buffer + offset,
-						static_cast<Sample::PlaybackState*>(_n->m_pluginData),
+		if (m_sample.play(out.data() + offset,
+						static_cast<Sample::PlaybackState*>(nph->m_pluginData),
 						frames, static_cast<Sample::Loop>(m_loopModel.value()),
 						DefaultBaseFreq / _n->frequency()))
 		{
-			applyRelease( _working_buffer, _n );
-			emit isPlaying(static_cast<Sample::PlaybackState*>(_n->m_pluginData)->frameIndex());
+			applyRelease(out.data(), nph);
+			emit isPlaying(static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex());
 		}
 		else
 		{
-			zeroSampleFrames(_working_buffer, frames + offset);
+			zeroSampleFrames(out.data(), frames + offset);
 			emit isPlaying( 0 );
 		}
 	}
@@ -178,8 +177,8 @@ void AudioFileProcessor::playNote( NotePlayHandle * _n,
 	}
 	if( m_stutterModel.value() == true )
 	{
-		m_nextPlayStartPoint = static_cast<Sample::PlaybackState*>(_n->m_pluginData)->frameIndex();
-		m_nextPlayBackwards = static_cast<Sample::PlaybackState*>(_n->m_pluginData)->backwards();
+		m_nextPlayStartPoint = static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex();
+		m_nextPlayBackwards = static_cast<Sample::PlaybackState*>(nph->m_pluginData)->backwards();
 	}
 }
 

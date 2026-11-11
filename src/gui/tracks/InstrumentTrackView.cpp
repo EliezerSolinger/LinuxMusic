@@ -37,6 +37,7 @@
 #include <QVBoxLayout>
 
 #include "AudioEngine.h"
+#include "AudioPortsModel.h"
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "FadeButton.h"
@@ -45,6 +46,7 @@
 #include "InstrumentTrackWindow.h"
 #include "Knob.h"
 #include "MainWindow.h"
+#include "MidiCCRackView.h"
 #include "MidiClient.h"
 #include "MidiCCRackView.h"
 #include "MidiPortMenu.h"
@@ -52,6 +54,7 @@
 #include "Mixer.h"
 #include "MixerChannelLcdSpinBox.h"
 #include "MixerView.h"
+#include "PinConnector.h"
 #include "TrackLabelButton.h"
 
 
@@ -180,6 +183,8 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 
 InstrumentTrackView::~InstrumentTrackView()
 {
+	if (m_pinConnectorView) { m_pinConnectorView->closeWindow(); }
+
 	delete m_window;
 	m_window = nullptr;
 
@@ -207,6 +212,30 @@ void InstrumentTrackView::toggleMidiCCRack()
 	{
 		m_midiCCRackView->parentWidget()->show();
 		m_midiCCRackView->show();
+	}
+}
+
+
+
+
+void InstrumentTrackView::togglePinConnector()
+{
+	const auto it = this->model();
+	if (!it) { return; }
+
+	const auto inst = it->instrument();
+	if (!inst) { return; }
+
+	auto ap = inst->audioPortsModel();
+	if (!ap) { return; }
+
+	if (!m_pinConnectorView)
+	{
+		m_pinConnectorView = ap->instantiateView();
+	}
+	else
+	{
+		m_pinConnectorView->toggleVisibility();
 	}
 }
 
@@ -410,6 +439,34 @@ QMenu * InstrumentTrackView::createMixerMenu(QString title, QString newMixerLabe
 	}
 
 	return mixerMenu;
+}
+
+void InstrumentTrackView::addPinConnectorAction(QMenu* menu)
+{
+	assert(menu != nullptr);
+	const auto addAction = [=, this](const AudioPortsModel* pc = nullptr) {
+		if (pc)
+		{
+			auto pcAction = menu->addAction(embed::getIconPixmap("tool"), tr("Pin connector"),
+				this, &InstrumentTrackView::togglePinConnector);
+
+			pcAction->setToolTip(pc->getChannelCountText());
+		}
+		else
+		{
+			auto pcAction = menu->addAction(embed::getIconPixmap("tool"), tr("Pin connector"));
+			pcAction->setDisabled(true);
+		}
+	};
+
+	const auto it = this->model();
+	if (!it) { addAction(); return; }
+
+	const auto inst = it->instrument();
+	if (!inst) { addAction(); return; }
+
+	const auto ap = inst->audioPortsModel();
+	addAction(ap);
 }
 
 QPixmap InstrumentTrackView::determinePixmap(InstrumentTrack* instrumentTrack)

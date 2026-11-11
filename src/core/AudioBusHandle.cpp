@@ -114,7 +114,7 @@ void AudioBusHandle::doProcessing()
 		return;
 	}
 
-	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+	const f_cnt_t fpp = m_buffer.frames();
 
 	// clear the buffer
 	m_buffer.silenceAllChannels();
@@ -122,16 +122,17 @@ void AudioBusHandle::doProcessing()
 	//qDebug( "Playhandles: %d", m_playHandles.size() );
 	for (PlayHandle* ph : m_playHandles) // now we mix all playhandle buffers into our internal buffer
 	{
-		if (ph->buffer())
+		if (auto phBuffer = ph->buffer(); phBuffer.data() != nullptr)
 		{
+			assert(phBuffer.size() == fpp);
 			if (ph->usesBuffer()
 				&& (ph->type() == PlayHandle::Type::NotePlayHandle
-					|| !MixHelpers::isSilent(ph->buffer(), fpp)))
+					|| !MixHelpers::isSilent(phBuffer.data(), phBuffer.size())))
 			{
 				m_bufferUsage = true;
 
 				// Writing to temporary interleaved buffer until PlayHandle and MixHelpers switch to planar
-				MixHelpers::add(m_buffer.interleavedBuffer().asSampleFrames().data(), ph->buffer(), fpp);
+				MixHelpers::add(m_buffer.interleavedBuffer().asSampleFrames().data(), phBuffer.data(), fpp);
 			}
 			ph->releaseBuffer(); 	// gets rid of playhandle's buffer and sets
 									// pointer to null, so if it doesn't get re-acquired we know to skip it next time

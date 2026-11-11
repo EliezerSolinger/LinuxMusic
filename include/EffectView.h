@@ -42,6 +42,7 @@ namespace lmms::gui
 class EffectControlDialog;
 class Knob;
 class LedCheckBox;
+class PinConnector;
 class TempoSyncKnob;
 
 
@@ -70,6 +71,7 @@ public:
 
 public slots:
 	void editControls();
+	void togglePinConnector();
 	void moveUp();
 	void moveDown();
 	void deletePlugin();
@@ -93,7 +95,9 @@ private:
 	TempoSyncKnob * m_autoQuit;
 	QWidget* m_subWindow; //!< The tab (DockPanel) holding the effect controls
 	EffectControlDialog * m_controlView;
-	
+	QPushButton* m_pinConnectorButton = nullptr;
+	PinConnector* m_pinConnectorView = nullptr;
+
 	bool m_dragging;
 	QGraphicsOpacityEffect* m_opacityEffect;
 

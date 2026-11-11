@@ -146,7 +146,7 @@ void EffectRackView::deletePlugin( EffectView* view )
 	m_effectViews.erase( std::find( m_effectViews.begin(), m_effectViews.end(), view ) );
 	delete view;
 	fxChain()->removeEffect( e );
-	e->deleteLater();
+	e->deleteLater(); // TODO: Better memory management
 	update();
 }
 

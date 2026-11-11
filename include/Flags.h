@@ -53,11 +53,11 @@ public:
 	constexpr auto testFlag(EnumType flag) const -> bool { return static_cast<bool>(*this & flag); }
 
 	constexpr auto operator~() const -> Flags { return Flags{~m_value}; }
-	friend constexpr auto operator&(Flags l, Flags r) -> Flags { return Flags{l.m_value & r.m_value}; }
-	friend constexpr auto operator|(Flags l, Flags r) -> Flags { return Flags{l.m_value | r.m_value}; }
-	friend constexpr auto operator^(Flags l, Flags r) -> Flags { return Flags{l.m_value ^ r.m_value}; }
-	friend constexpr auto operator+(Flags l, Flags r) -> Flags { return Flags{l.m_value | r.m_value}; }
-	friend constexpr auto operator-(Flags l, Flags r) -> Flags { return Flags{l.m_value & ~r.m_value}; }
+	friend constexpr auto operator&(Flags l, Flags r) -> Flags { return Flags(l.m_value & r.m_value); }
+	friend constexpr auto operator|(Flags l, Flags r) -> Flags { return Flags(l.m_value | r.m_value); }
+	friend constexpr auto operator^(Flags l, Flags r) -> Flags { return Flags(l.m_value ^ r.m_value); }
+	friend constexpr auto operator+(Flags l, Flags r) -> Flags { return Flags(l.m_value | r.m_value); }
+	friend constexpr auto operator-(Flags l, Flags r) -> Flags { return Flags(l.m_value & ~r.m_value); }
 
 	constexpr auto operator&=(Flags f) -> Flags& { m_value &= f.m_value; return *this; }
 	constexpr auto operator|=(Flags f) -> Flags& { m_value |= f.m_value; return *this; }
@@ -65,6 +65,7 @@ public:
 	constexpr auto operator+=(Flags f) -> Flags& { m_value |= f.m_value; return *this; }
 	constexpr auto operator-=(Flags f) -> Flags& { m_value &= ~f.m_value; return *this; }
 
+	constexpr explicit operator EnumType() const { return EnumType{m_value}; }
 	constexpr explicit operator UnderlyingType() const { return m_value; } // TODO C++23: explicit(std::is_scoped_enum<T>)
 	constexpr explicit operator bool() const { return m_value != 0; }
 

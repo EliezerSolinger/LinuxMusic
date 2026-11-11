@@ -31,6 +31,8 @@
 #include "AudioBuffer.h"
 #include "Effect.h"
 #include "DummyEffect.h"
+#include "MixHelpers.h"
+#include "PluginInstance.h"
 
 namespace lmms
 {
@@ -59,14 +61,18 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	m_enabledModel.saveSettings( _doc, _this, "enabled" );
 	_this.setAttribute("numofeffects", static_cast<int>(m_effects.size()));
 
-	for( Effect* effect : m_effects)
+	for (auto& instance : m_effects)
 	{
-		if (auto dummy = dynamic_cast<DummyEffect*>(effect)) { _this.appendChild(dummy->originalPluginData()); }
+		Effect& effect = instance->effect();
+		if (auto dummy = dynamic_cast<DummyEffect*>(&effect))
+		{
+			_this.appendChild(dummy->originalPluginData());
+		}
 		else
 		{
-			QDomElement ef = effect->saveState( _doc, _this );
-			ef.setAttribute( "name", QString::fromUtf8( effect->descriptor()->name ) );
-			ef.appendChild( effect->key().saveXML( _doc ) );
+			QDomElement ef = effect.saveState(_doc, _this);
+			ef.setAttribute("name", QString::fromUtf8(effect.descriptor()->name));
+			ef.appendChild(effect.key().saveXML(_doc));
 		}
 	}
 }
@@ -95,19 +101,19 @@ void EffectChain::loadSettings( const QDomElement & _this )
 			const QString name = effectData.attribute( "name" );
 			EffectKey key( effectData.elementsByTagName( "key" ).item( 0 ).toElement() );
 
-			Effect* e = Effect::instantiate( name.toUtf8(), this, &key );
+			auto e = std::make_unique<PluginInstance>(false, name.toUtf8(), this, &key);
+//			Effect* e = Effect::instantiate( name.toUtf8(), this, &key );
 
-			if( e != nullptr && e->isOkay() && e->nodeName() == node.nodeName() )
+			if (e->plugin() != nullptr && e->effect().isOkay() && e->effect().nodeName() == node.nodeName())
 			{
-				e->restoreState( effectData );
+				e->effect().restoreState(effectData);
 			}
 			else
 			{
-				delete e;
-				e = new DummyEffect( parentModel(), effectData );
+				e->convertToDummyEffect(parentModel(), effectData);
 			}
 
-			m_effects.push_back( e );
+			m_effects.push_back(std::move(e));
 			++fx_loaded;
 		}
 		node = node.nextSibling();
@@ -119,10 +125,10 @@ void EffectChain::loadSettings( const QDomElement & _this )
 
 
 
-void EffectChain::appendEffect( Effect * _effect )
+void EffectChain::appendEffect(std::unique_ptr<PluginInstance> effect)
 {
 	Engine::audioEngine()->requestChangeInModel();
-	m_effects.push_back(_effect);
+	m_effects.push_back(std::move(effect));
 	Engine::audioEngine()->doneChangeInModel();
 
 	m_enabledModel.setValue( true );
@@ -137,7 +143,9 @@ void EffectChain::removeEffect( Effect * _effect )
 {
 	Engine::audioEngine()->requestChangeInModel();
 
-	auto found = std::find(m_effects.begin(), m_effects.end(), _effect);
+	auto found = std::find(m_effects.begin(), m_effects.end(), [](std::unique_ptr<PluginInstance>& effect) {
+		return effect->plugin() == _effect;
+	});
 	if( found == m_effects.end() )
 	{
 		Engine::audioEngine()->doneChangeInModel();
@@ -160,9 +168,11 @@ void EffectChain::removeEffect( Effect * _effect )
 
 void EffectChain::moveDown( Effect * _effect )
 {
-	if (_effect != m_effects.back())
+	if (_effect != m_effects.back()->plugin())
 	{
-		auto it = std::find(m_effects.begin(), m_effects.end(), _effect);
+		auto it = std::find(m_effects.begin(), m_effects.end(), [](std::unique_ptr<PluginInstance>& effect) {
+			return effect->plugin() == _effect;
+		});
 		assert(it != m_effects.end());
 		std::swap(*std::next(it), *it);
 	}
@@ -175,7 +185,9 @@ void EffectChain::moveUp( Effect * _effect )
 {
 	if (_effect != m_effects.front())
 	{
-		auto it = std::find(m_effects.begin(), m_effects.end(), _effect);
+		auto it = std::find(m_effects.begin(), m_effects.end(), [](std::unique_ptr<PluginInstance>& effect) {
+			return effect->plugin() == _effect;
+		});
 		assert(it != m_effects.end());
 		std::swap(*std::prev(it), *it);
 	}
@@ -192,9 +204,9 @@ bool EffectChain::processAudioBuffer(AudioBuffer& buffer)
 	}
 
 	bool moreEffects = false;
-	for (Effect* effect : m_effects)
+	for (auto& effect : m_effects)
 	{
-		moreEffects |= effect->processAudioBuffer(buffer);
+		moreEffects |= effect->process(buffer);
 	}
 
 	return moreEffects;

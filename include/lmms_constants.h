@@ -39,6 +39,9 @@ inline constexpr auto DEFAULT_CHANNELS = ch_cnt_t{2};
 inline constexpr auto MaxChannelsPerAudioBuffer = ch_cnt_t{128};
 inline constexpr auto MaxGroupsPerAudioBuffer = group_cnt_t{MaxChannelsPerAudioBuffer / 2};
 
+//! Minimum alignment for SIMD (supports up to 512-bit vector sizes)
+inline constexpr auto SimdAlignment = std::size_t{512 / 8};
+
 // Microtuner
 inline constexpr unsigned MaxScaleCount = 10;  //!< number of scales per project
 inline constexpr unsigned MaxKeymapCount = 10; //!< number of keyboard mappings per project

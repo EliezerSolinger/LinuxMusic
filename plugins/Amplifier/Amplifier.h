@@ -26,19 +26,17 @@
 #ifndef LMMS_AMPLIFIER_H
 #define LMMS_AMPLIFIER_H
 
-#include "Effect.h"
 #include "AmplifierControls.h"
+#include "Effect.h"
 
 namespace lmms
 {
 
-class AmplifierEffect : public Effect
+class AmplifierEffect : public LegacyEffect
 {
 public:
 	AmplifierEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~AmplifierEffect() override = default;
-
-	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
 
 	EffectControls* controls() override
 	{
@@ -46,6 +44,9 @@ public:
 	}
 
 private:
+	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	ProcessStatus process(ProcessContext& context) override;
+
 	AmplifierControls m_ampControls;
 
 	friend class AmplifierControls;

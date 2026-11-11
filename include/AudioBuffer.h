@@ -31,6 +31,7 @@
 
 #include "AudioBufferView.h"
 #include "ArrayVector.h"
+#include "Flags.h"
 #include "LmmsTypes.h"
 #include "lmms_constants.h"
 #include "lmms_export.h"
@@ -39,7 +40,363 @@ namespace lmms
 {
 
 /**
- * An owning collection of audio channels for an instrument track, mixer channel, or audio processor.
+ * Allocation and storage for audio buffers.
+ *
+ * Features:
+ * - Can contain planar buffers, an interleaved buffer, or both
+ * - Can own its own all its buffers, some of its buffers, or act as
+ *       a view for a subset of another AudioBufferData
+ * - All buffers have sufficient alignment for SIMD (@see lmms::SimdAlignment)
+ * - Can use any memory resource including `SharedMemoryResource`
+ * - Supports custom mapping for the planar access buffer, which allows certain routing optimizations
+ *       and buffer re-use for in-place processing (see in-depth explanation below).
+ *
+ * About access buffer mapping:
+ * - The access buffer provides fast channel-wise access to channel buffers within the source buffer.
+ *   Normally the access buffer maps each index to a buffer using 1-to-1 mapping, so if the source
+ *   buffer contains the buffers for 4 channels, accessBuffer()[0] points to the 1st channel buffer,
+ *   accessBuffer()[1] points to the 2nd channel buffer, etc.
+ * - What this class does is allow alternative mappings that are not necessarily 1-to-1 or in sequential
+ *   order.
+ *   - For example, accessBuffer()[0] could point to the 2nd buffer while accessBuffer()[1] points
+ *     to the 1st buffer. Anyone reading the access buffer would think they're getting left and right
+ *     stereo buffers, but they're actually getting right and left buffers - we've swapped the left and
+ *     right channels by just swapping two pointers rather than performing expensive buffer copies.
+ *   - As another example, accessBuffer()[0] in the input AudioBuffer could point to the same buffer as
+ *     accessBuffer()[2] in the output AudioBuffer. Those input and output buffers are the same, which
+ *     makes them in-place. This gives it a lot of flexibility for in-place processing.
+ *   - As a 3rd example, we could have an immutable silent buffer which is available program-wide, and
+ *     we could make a channel silent by simply setting the access buffer pointer of that channel to
+ *     the address of the silent buffer. This avoids needing to clear the buffer.
+ * - The access buffer mapping can be set with mapAccessBuffer() or reset with resetAccessBuffer().
+ * - When using a shared memory resource, access buffers cannot be mapped to any arbitrary buffer - they
+ *   can only be mapped to a buffer within the source buffer.
+ *
+ * Q) Why is there special handling for shared memory resources?
+ * - A) Because pointers cannot be stored in shared memory and still be guaranteed to work correctly on
+ *      the other end. So instead of storing the access buffer (which is an array of float pointers) in
+ *      shared memory, we instead store pointer offsets. However, plugins and other users still expect
+ *      a float** access buffer, so it must be allocated separately in non-shared memory. When changing
+ *      the access buffer mapping on the server side, both the access buffer and their pointer offsets
+ *      in shared memory are updated. But on the client side, refreshSharedMemoryAccessBuffer() must be
+ *      called to update the client's access buffer pointers by reading their pointer offsets in shared
+ *      memory. This is only required following a change in the access buffer mapping on the server side.
+ *
+ * Q) Why can AudioBufferData act as a view for a subset of another AudioBufferData?
+ * - A) Because the buffers for both the input channels and output channels need to be created in
+ *      one contiguous shared memory allocation for use by RemotePlugin, but two AudioBuffers are
+ *      needed - one for the inputs and one for the outputs. So if there's one "source" AudioBufferData
+ *      which contains the data for all inputs and outputs, it can be split into two non-owning
+ *      sections (inputs and outputs) which are stored by an input AudioBuffer and an output AudioBuffer.
+ */
+class LMMS_EXPORT AudioBufferData
+{
+public:
+	//! The ownership and semantics of the audio buffer
+	enum class Ownership : std::uint8_t
+	{
+		//! A normal, non-shared audio buffer which owns all its buffers.
+		//!     Use case: General use
+		Internal           = 1 << 0,
+
+		//! A non-shared audio buffer which owns only the access buffer, and the rest (the
+		//! planar and/or interleaved buffers) are non-owning views into external buffers.
+		//!     Use case: Plugin buffers sourced from a large buffer pool
+		External           = 1 << 1,
+
+		//! Owns only the access buffer, and the rest are sourced from server-side SharedMemory
+		//! using a SharedMemoryResource.
+		//!     Use case: RemotePlugin's buffers
+		SharedMemoryServer = 1 << 2,
+
+		//! Owns only the access buffer, and the rest are sourced from client-side SharedMemory
+		//! using a SharedMemoryResource.
+		//!     Use case: RemotePluginClient's buffers
+		SharedMemoryClient = 1 << 3,
+
+		//! A non-owning view into a subset of channels of another AudioBufferData.
+		//! This can be combined with any of the other Ownership options. For example,
+		//! Ownership::Internal | Ownership::View is a view into an Internal AudioBufferData.
+		//!     Use case: Splitting a single shared memory AudioBufferData which contains both the
+		//!               input and output buffers for a plugin into 2 separate AudioBufferData objects.
+		View               = 1 << 7
+	};
+
+	friend LMMS_DECLARE_OPERATORS_FOR_FLAGS(Ownership);
+
+	AudioBufferData() = delete;
+
+	/**
+	 * @brief Creates an AudioBufferData with Internal, SharedMemoryServer, or SharedMemoryClient
+	 *        ownership, depending on the sourceBufferResource used
+	 *
+	 * @param frames the number of frames per channel
+	 * @param accessChannels the number of planar channels for the access buffer (0 for no planar buffers)
+	 * @param sourceChannels the number of planar channels for the source buffer. Must be >= @p channels.
+	 *                           If greater than @p channels, the AudioBufferData should use @ref mapAccessBuffer()
+	 *                           to map the access buffer indexes to the actual buffers within the source buffer.
+	 * @param interleaved whether to allocate a 2-channel interleaved buffer
+	 * @param sourceBufferResource memory resource to allocate the source buffer (and interleaved buffer) with
+	 * @param accessBufferResource memory resource to allocate the access buffers with - if equal to
+	 *                             sourceBufferResource, all buffers will be allocated together
+	 * @throws exception upon failure
+	 */
+	explicit AudioBufferData(f_cnt_t frames, ch_cnt_t accessChannels = DEFAULT_CHANNELS,
+		ch_cnt_t sourceChannels = DEFAULT_CHANNELS, bool interleaved = false,
+		std::pmr::memory_resource* sourceBufferResource = std::pmr::get_default_resource(),
+		std::pmr::memory_resource* accessBufferResource = std::pmr::get_default_resource());
+
+	/**
+	 * @brief Creates an AudioBufferData with External ownership using external source/interleaved buffers
+	 *
+	 * The source/interleaved buffers are not owned by this class but the access buffer is.
+	 * This is not meant for use with shared memory since the access buffer's offset pointers are not used.
+	 *
+	 * @param source planar source buffer to use. Not shared memory.
+	 * @param frames the number of frames per channel in @p source and/or @p interleaved
+	 * @param accessChannels the number of planar channels for the access buffer (can be zero)
+	 * @param sourceChannels the number of planar channels in @p source
+	 * @param interleaved 2-channel interleaved buffer, or nullptr if not provided. Not shared memory.
+	 * @param accessBufferResource memory resource to allocate the access buffers with. Not a SharedMemoryResource.
+	 * @throws exception upon failure
+	 */
+	explicit AudioBufferData(float* source, f_cnt_t frames, ch_cnt_t accessChannels,
+		ch_cnt_t sourceChannels, float* interleaved = nullptr,
+		std::pmr::memory_resource* accessBufferResource = std::pmr::get_default_resource());
+
+	/**
+	 * @brief Creates an AudioBufferData with View ownership using a subset of
+	 *        another AudioBufferData.
+	 *
+	 * This view uses the full source buffer of @p source and a subset of its access buffer.
+	 *
+	 * @param source the buffer to create a view for
+	 * @param accessStart the access buffer index from @p source which marks the start of this view
+	 * @param accessChannels how many access buffer channels this view should have
+	 */
+	AudioBufferData(AudioBufferData& source, ch_cnt_t accessStart, ch_cnt_t accessChannels,
+		ch_cnt_t sourceStart, ch_cnt_t sourceChannels);
+
+	//! Deallocates the buffers if needed
+	~AudioBufferData();
+
+	AudioBufferData(const AudioBufferData&) = delete;
+	AudioBufferData(AudioBufferData&& other) noexcept;
+	auto operator=(const AudioBufferData&) -> AudioBufferData& = delete;
+	auto operator=(AudioBufferData&& other) noexcept -> AudioBufferData&;
+
+	/**
+	 * @brief Allocates buffers using the provided memory resources.
+	 *
+	 * If buffers were already allocated, they will be deallocated first.
+	 * This method does not set the access buffer's channel mapping, so remember
+	 * to set it as needed after this.
+	 *
+	 * @param frames the number of frames per channel
+	 * @param accessChannels the number of planar channels for the access buffer
+	 * @param sourceChannels the number of planar channels for the source buffer
+	 * @param interleaved whether to allocate a 2-channel interleaved buffer
+	 * @param newSourceBufferResource new memory resource to allocate the source buffer (and interleaved buffer)
+	 *                                with, or nullptr to keep current resource
+	 * @param newAccessBufferResource new memory resource to allocate the access buffers with, or nullptr to
+	 *                                keep current resource. If equal to newSourceBufferResource, all buffers
+	 *                                will be allocated together.
+	 * @throws exception upon failure or if the AudioBufferData is non-owning
+	 */
+	void create(f_cnt_t frames, ch_cnt_t accessChannels, ch_cnt_t sourceChannels, bool interleaved,
+		std::pmr::memory_resource* newSourceBufferResource = nullptr,
+		std::pmr::memory_resource* newAccessBufferResource = nullptr);
+
+	//! Deallocates the memory previously allocated with create()
+	void destroy();
+
+	auto hasPlanarBuffers() const -> bool { return m_accessBuffer != nullptr; }
+	auto hasInterleavedBuffer() const -> bool { return m_interleavedBuffer != nullptr; }
+
+	//! @returns the buffers for all planar channels, assuming they exist
+	auto allBuffers() const -> PlanarBufferView<const float>
+	{
+		assert(m_accessBuffer != nullptr);
+		return {m_accessBuffer, m_accessChannels, m_frames};
+	}
+
+	//! @returns the buffers for all planar channels, assuming they exist
+	auto allBuffers() -> PlanarBufferView<float>
+	{
+		assert(m_accessBuffer != nullptr);
+		return {m_accessBuffer, m_accessChannels, m_frames};
+	}
+
+	//! @returns the buffer for the given planar channel, assuming it exists
+	auto buffer(ch_cnt_t channel) const -> std::span<const float>
+	{
+		assert(m_accessBuffer != nullptr);
+		assert(channel < m_accessChannels);
+		return {m_accessBuffer[channel], m_frames};
+	}
+
+	//! @returns the buffer for the given planar channel, assuming it exists
+	auto buffer(ch_cnt_t channel) -> std::span<float>
+	{
+		assert(m_accessBuffer != nullptr);
+		assert(channel < m_accessChannels);
+		return {m_accessBuffer[channel], m_frames};
+	}
+
+	//! @returns the number of channels in the access buffer, or the accessible channel count
+	auto channels() const -> ch_cnt_t { return m_accessChannels; }
+
+	//! @returns the frame count for each channel buffer
+	auto frames() const -> f_cnt_t { return m_frames; }
+
+	//! @returns scratch buffer for conversions between interleaved and planar TODO: Remove once using planar only
+	auto interleavedBuffer() const -> InterleavedBufferView<const float, 2>
+	{
+		assert(m_interleavedBuffer != nullptr);
+		return {m_interleavedBuffer, m_frames};
+	}
+
+	//! @returns scratch buffer for conversions between interleaved and planar TODO: Remove once using planar only
+	auto interleavedBuffer() -> InterleavedBufferView<float, 2>
+	{
+		assert(m_interleavedBuffer != nullptr);
+		return {m_interleavedBuffer, m_frames};
+	}
+
+	/**
+	 * @returns the access buffer, assuming there are planar buffers
+	 *
+	 * If using a shared memory resource, the access buffer is stored in shared memory as
+	 * pointer offsets, not as pointers, so this will become invalid on the client side
+	 * if the server side changes the access buffer mapping.
+	 *
+	 * @see refreshSharedMemoryAccessBuffer() for more info.
+	 */
+	auto accessBuffer() -> std::span<float*>
+	{
+		assert(m_accessBuffer != nullptr);
+		return {m_accessBuffer, m_accessChannels};
+	}
+
+	//! @returns the source buffer, assuming there are planar buffers
+	auto sourceBuffer() -> std::span<float>
+	{
+		assert(m_sourceBuffer != nullptr);
+		return {m_sourceBuffer, m_sourceChannels * m_frames};
+	}
+
+	/**
+	 * Updates the access buffer pointers from the pointer offsets in shared memory.
+	 *
+	 * This must be called in RemotePluginClient whenever the access buffer mapping
+	 * changes on the server side.
+	 *
+	 * @throws exception if not using client-side shared memory
+	 */
+	void refreshSharedMemoryAccessBuffer();
+
+	/**
+	 * Sets the access buffer to the straightforward 1-to-1 mapping of each
+	 * access buffer channel to a corresponding channel buffer in the source buffer.
+	 *
+	 * Also updates the pointer offset in shared memory if applicable.
+	 *
+	 * @param sourceStart starting channel in the source buffer
+	 *
+	 * @throws exception if not using server-side shared memory
+	 * @throws exception if there are not enough channel buffers in the source buffer to map each access buffer with
+	 */
+	void resetAccessBuffer(ch_cnt_t sourceStart = 0);
+
+	/**
+	 * Makes the access buffer pointer for a given channel point to a different buffer in the source buffer.
+	 * Also updates the pointer offset in shared memory if applicable.
+	 *
+	 * @param channel access buffer index whose mapping will be changed
+	 * @param mappedTo the buffer within the source buffer that @p channel will point to
+	 *
+	 * @throws exception if not using server-side shared memory
+	 */
+	void mapAccessBuffer(ch_cnt_t channel, ch_cnt_t mappedTo);
+
+	/**
+	 * Makes the access buffer pointer for a given channel point to a different buffer.
+	 *
+	 * @param channel access buffer index whose mapping will be changed
+	 * @param mappedTo the buffer that @p channel will point to. Does not need to exist within the source buffer.
+	 *
+	 * @throws exception if using shared memory, since the access buffer's offset pointers
+	 *         can only refer to channel buffers within the shared memory's source buffer.
+	 */
+	void mapAccessBuffer(ch_cnt_t channel, float* mappedTo);
+
+	auto usesSharedMemory() const -> bool
+	{
+		return m_ownership.testFlag(
+			static_cast<Ownership>(Ownership::SharedMemoryServer | Ownership::SharedMemoryClient));
+	}
+
+	auto isView() const -> bool { return m_ownership.testFlag(Ownership::View); }
+
+protected:
+	//! Provides access to individual channel buffers within the source buffer.
+	//! If m_accessBufferResource is nullptr, this is an non-owning pointer, otherwise it's owning.
+	//! [channel index][frame index]
+	float** m_accessBuffer = nullptr;
+
+	//! Large buffer that all channel buffers are sourced from.
+	//! Non-owning pointer.
+	//! [channel index]
+	float* m_sourceBuffer = nullptr;
+
+	//! Interleaved buffer for legacy reasons.
+	//! Non-owning pointer. TODO: Remove once using planar only
+	float* m_interleavedBuffer = nullptr;
+
+	f_cnt_t m_frames = 0;
+	ch_cnt_t m_accessChannels = 0;
+	ch_cnt_t m_sourceChannels = 0; //!< this is always >= m_accessChannels
+
+	//! If the source and access buffer resources are the same memory resource, this
+	//! is a pointer to the single allocated block of memory which contains everything.
+	//!
+	//! Otherwise, if the two memory resources differ, this is a pointer to the non-access-buffer
+	//! block of allocated memory (source buffer, interleaved buffer, and for shared memory,
+	//! the offset pointers for the access buffer).
+	void* m_allocation = nullptr;
+	std::size_t m_allocationSize = 0;
+
+	//! For allocating the source buffer and interleaved buffer.
+	//! If this is a SharedMemoryResource, it is also used to allocate space for
+	//! offset pointers so that access buffer channel mappings can be passed via shared memory.
+	std::pmr::memory_resource* m_sourceBufferResource = nullptr;
+
+	//! For allocating the access buffer. Cannot be a SharedMemoryResource.
+	std::pmr::memory_resource* m_accessBufferResource = nullptr;
+
+	Flags<Ownership> m_ownership;
+};
+
+
+/**
+ * AudioBuffer is an AudioBufferData with some additional features (and restrictions).
+ *
+ * Restrictions:
+ * - Unlike AudioBufferData which supports up to (2^16)-2 channels (the full ch_cnt_t range minus the
+ *       DynamicChannelCount magic number), AudioBuffer is restricted to just MaxChannelsPerAudioBuffer channels.
+ *
+ * Features:
+ * - Silence tracking for each channel (NOTE: requires careful use so that non-silent data is not written to a
+ *       channel marked silent without updating that channel's silence flag afterward)
+ * - Methods for sanitizing, silencing, and calculating the absolute peak value of channels, and doing so more
+ *       efficiently using the data from silence tracking
+ * - Can organize channels into arbitrary groups. For example, you could have 6 total channels divided into 2 groups
+ *       where the 1st group contains 2 channels (stereo) and the 2nd contains 4 channels (quadraphonic).
+ * - Extensive unit testing - @ref AudioBufferTest.cpp
+ *
+ *
+ *
+ * An owning or non-owning collection of audio channels for an instrument track, mixer channel, or audio processor.
  *
  * Features:
  * - Up to `MaxChannelsPerAudioBuffer` total channels
@@ -76,7 +433,7 @@ namespace lmms
  * - When this class is used in an audio processor or audio plugin, its channels could be referred to
  *       as "processor channels" or "plugin channels".
  */
-class LMMS_EXPORT AudioBuffer
+class LMMS_EXPORT AudioBuffer : public AudioBufferData
 {
 public:
 	using ChannelFlags = std::bitset<MaxChannelsPerAudioBuffer>;
@@ -120,7 +477,7 @@ public:
 		 */
 		float** m_buffers = nullptr;
 
-		//! Number of channels in `m_buffers` - currently only 2 is used
+		//! Number of channels in `m_buffers`
 		ch_cnt_t m_channels = 0;
 	};
 
@@ -132,65 +489,23 @@ public:
 	auto operator=(AudioBuffer&&) noexcept -> AudioBuffer& = default;
 
 	/**
-	 * Creates AudioBuffer with a 1st (main) channel group.
-	 *
+	 * Creates an AudioBuffer with one channel group.
 	 * Silence tracking is enabled or disabled depending on the auto-quit setting.
 	 *
-	 * @param frames frame count for each channel
-	 * @param channels channel count for the 1st group, or zero to skip adding the 1st group
-	 * @param resource memory resource for all buffers
+	 * @see AudioBufferData constructors for the parameters
 	 */
-	explicit AudioBuffer(f_cnt_t frames, ch_cnt_t channels = DEFAULT_CHANNELS,
-		std::pmr::memory_resource* resource = std::pmr::get_default_resource());
-
-	/**
-	 * Creates AudioBuffer with groups defined.
-	 *
-	 * Silence tracking is enabled or disabled depending on the auto-quit setting.
-	 *
-	 * @param frames frame count for each channel
-	 * @param channels total channel count
-	 * @param groups group count
-	 * @param resource memory resource for all buffers
-	 * @param groupVisitor see @ref setGroups
-	 */
-	template<class F>
-	AudioBuffer(f_cnt_t frames, ch_cnt_t channels, group_cnt_t groups,
-		std::pmr::memory_resource* resource, F&& groupVisitor)
-		: AudioBuffer{frames, channels, resource}
+	template<typename... Args>
+	explicit AudioBuffer(Args&&... args)
+		: AudioBufferData{std::forward<Args>(args)...}
 	{
-		setGroups(groups, std::forward<F>(groupVisitor));
+		initAudioBuffer();
 	}
-
-	//! The presence of the temporary interleaved buffer is opt-in. Call this to create it.
-	void allocateInterleavedBuffer();
-
-	auto hasInterleavedBuffer() const -> bool { return !m_interleavedBuffer.empty(); }
-
-	/**
-	 * @returns the number of bytes needed to allocate buffers with given frame and channel counts.
-	 *          Useful for preallocating a buffer for a shared memory resource.
-	 */
-	static auto allocationSize(f_cnt_t frames, ch_cnt_t channels,
-		bool withInterleavedBuffer = false) -> std::size_t;
 
 	//! @returns current number of channel groups
 	auto groupCount() const -> group_cnt_t { return static_cast<group_cnt_t>(m_groups.size()); }
 
 	auto group(group_cnt_t index) const -> const ChannelGroup& { return m_groups[index]; }
 	auto group(group_cnt_t index) -> ChannelGroup& { return m_groups[index]; }
-
-	//! @returns the buffers for all channel groups
-	auto allBuffers() const -> PlanarBufferView<const float>
-	{
-		return {m_accessBuffer.data(), totalChannels(), m_frames};
-	}
-
-	//! @returns the buffers for all channel groups
-	auto allBuffers() -> PlanarBufferView<float>
-	{
-		return {m_accessBuffer.data(), totalChannels(), m_frames};
-	}
 
 	//! @returns the buffers of the given channel group
 	auto groupBuffers(group_cnt_t index) const -> PlanarBufferView<const float>
@@ -206,38 +521,6 @@ public:
 		assert(index < groupCount());
 		ChannelGroup& g = m_groups[index];
 		return {g.buffers(), g.channels(), m_frames};
-	}
-
-	//! @returns the buffer for the given channel
-	auto buffer(ch_cnt_t channel) const -> std::span<const float>
-	{
-		return {m_accessBuffer[channel], m_frames};
-	}
-
-	//! @returns the buffer for the given channel
-	auto buffer(ch_cnt_t channel) -> std::span<float>
-	{
-		return {m_accessBuffer[channel], m_frames};
-	}
-
-	//! @returns the total channel count (never exceeds MaxChannelsPerAudioBuffer)
-	auto totalChannels() const -> ch_cnt_t { return static_cast<ch_cnt_t>(m_accessBuffer.size()); }
-
-	//! @returns the frame count for each channel buffer
-	auto frames() const -> f_cnt_t { return m_frames; }
-
-	//! @returns scratch buffer for conversions between interleaved and planar TODO: Remove once using planar only
-	auto interleavedBuffer() const -> InterleavedBufferView<const float, 2>
-	{
-		assert(hasInterleavedBuffer());
-		return {m_interleavedBuffer.data(), m_frames};
-	}
-
-	//! @returns scratch buffer for conversions between interleaved and planar TODO: Remove once using planar only
-	auto interleavedBuffer() -> InterleavedBufferView<float, 2>
-	{
-		assert(hasInterleavedBuffer());
-		return {m_interleavedBuffer.data(), m_frames};
 	}
 
 	/**
@@ -280,7 +563,7 @@ public:
 			group.setChannels(channels);
 
 			ch += channels;
-			if (ch > this->totalChannels())
+			if (ch > this->channels())
 			{
 				throw std::runtime_error{"sum of group channel counts exceeds total channels"};
 			}
@@ -380,32 +663,7 @@ public:
 	auto absPeakValue(ch_cnt_t channel) const -> float;
 
 private:
-	/**
-	 * Large buffer that all channel buffers are sourced from.
-	 *
-	 * [channel index]
-	 */
-	std::pmr::vector<float> m_sourceBuffer;
-
-	/**
-	 * Provides access to individual channel buffers within the source buffer.
-	 *
-	 * [channel index][frame index]
-	 */
-	std::pmr::vector<float*> m_accessBuffer;
-
-	/**
-	 * Interleaved scratch buffer for conversions between interleaved and planar.
-	 *
-	 * TODO: Remove once using planar only
-	 */
-	std::pmr::vector<float> m_interleavedBuffer;
-
-	//! Divides channels into arbitrary groups
-	ArrayVector<ChannelGroup, MaxGroupsPerAudioBuffer> m_groups;
-
-	//! Frame count for every channel buffer
-	f_cnt_t m_frames = 0;
+	void initAudioBuffer();
 
 	/**
 	 * Stores which channels are known to be quiet, AKA the silence status.
@@ -421,6 +679,9 @@ private:
 	ChannelFlags m_silenceFlags;
 
 	bool m_silenceTrackingEnabled = false;
+
+	//! Divides channels into arbitrary groups
+	ArrayVector<ChannelGroup, MaxGroupsPerAudioBuffer> m_groups;
 };
 
 } // namespace lmms

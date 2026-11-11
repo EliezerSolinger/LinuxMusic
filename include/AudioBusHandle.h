@@ -27,11 +27,13 @@
 #define LMMS_AUDIO_BUS_HANDLE_H
 
 #include <memory>
+#include <vector>
 #include <QString>
 #include <QMutex>
 
 #include "AudioBuffer.h"
 #include "PlayHandle.h"
+#include "SampleFrame.h"
 
 namespace lmms
 {

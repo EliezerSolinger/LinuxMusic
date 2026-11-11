@@ -92,62 +92,6 @@ void Effect::loadSettings( const QDomElement & _this )
 
 
 
-bool Effect::processAudioBuffer(AudioBuffer& inOut)
-{
-	if (!isAwake())
-	{
-		if (!inOut.hasSignal(0b11))
-		{
-			// Sleeping plugins need to zero any track channels their output is routed to in order to
-			// prevent sudden track channel passthrough behavior when the plugin is put to sleep.
-			// Otherwise auto-quit could become audibly noticeable, which is not intended.
-
-			inOut.silenceChannels(0b11);
-
-			return false;
-		}
-
-		wakeUp();
-	}
-
-	if (!isProcessingAudio())
-	{
-		// Plugin is awake but not processing audio
-		processBypassedImpl();
-		return false;
-	}
-
-	const auto status = processImpl(inOut.interleavedBuffer().asSampleFrames().data(), inOut.frames());
-
-	// Copy interleaved plugin output to planar
-	toPlanar(inOut.interleavedBuffer(), inOut.groupBuffers(0));
-
-	const auto sanitized = Engine::audioEngine()->sanitizationEnabled() ? inOut.sanitize(0b11) : false;
-	m_corrupted.store(sanitized, std::memory_order_relaxed);
-
-	// Update silence status for track channels the processor wrote to
-	const bool silentOutput = inOut.updateSilenceFlags(0b11);
-
-	switch (status)
-	{
-		case ProcessStatus::Continue:
-			break;
-		case ProcessStatus::ContinueIfNotQuiet:
-			handleAutoQuit(silentOutput);
-			break;
-		case ProcessStatus::Sleep:
-			goToSleep();
-			return false;
-		default:
-			break;
-	}
-
-	return isAwake();
-}
-
-
-
-
 Effect * Effect::instantiate( const QString& pluginName,
 				Model * _parent,
 				Descriptor::SubPluginFeatures::Key * _key )

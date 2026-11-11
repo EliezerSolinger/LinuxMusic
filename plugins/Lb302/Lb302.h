@@ -141,14 +141,44 @@ class Lb302Synth : public Instrument
 	friend class gui::Lb302SynthView;
 
 public:
-	Lb302Synth(InstrumentTrack*);
-	void play(SampleFrame* working_buffer) override;
-	void playNote(NotePlayHandle* nph, SampleFrame* working_buffer) override;
-	void deleteNotePluginData(NotePlayHandle* nph) override;
-	void saveSettings(QDomDocument& doc, QDomElement& el) override;
-	void loadSettings(const QDomElement& el) override;
+	Lb302Synth( InstrumentTrack * _instrument_track );
+	~Lb302Synth() override;
+
+	void deleteNotePluginData( NotePlayHandle * _n ) override;
+
+	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
+	void loadSettings( const QDomElement & _this ) override;
+
 	QString nodeName() const override;
-	gui::PluginView* instantiateView(QWidget* parent) override;
+
+	gui::PluginView* instantiateView( QWidget * _parent ) override;
+
+private:
+	void playImpl(std::span<SampleFrame> out) override;
+	void playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out) override;
+
+	void processNote( NotePlayHandle * n );
+
+	void initNote(Lb302Note *Note);
+	void initSlide();
+
+private:
+	FloatModel vcf_cut_knob;
+	FloatModel vcf_res_knob;
+	FloatModel vcf_mod_knob;
+	FloatModel vcf_dec_knob;
+
+	FloatModel vco_fine_detune_knob;
+
+	FloatModel dist_knob;
+	IntModel wave_shape;
+	FloatModel slide_dec_knob;
+
+	BoolModel slideToggle;
+	BoolModel accentToggle;
+	BoolModel deadToggle;
+	BoolModel db24Toggle;
+
 
 public slots:
 	void filterChanged();

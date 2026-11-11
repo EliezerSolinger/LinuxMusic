@@ -24,10 +24,13 @@
 
 #include "SharedMemory.h"
 
+#include <cassert>
+#include <cstddef>
 #include <random>
 #include <system_error>
 #include <utility>
 
+#include "lmms_constants.h"
 #include "lmmsconfig.h"
 #include "RaiiHelpers.h"
 
@@ -45,12 +48,13 @@
 #	error "No shared memory implementation available"
 #endif
 
-namespace lmms::detail {
+namespace lmms {
+namespace detail {
 
 namespace {
 
 //! Header for communicating the shared memory's data size in-band
-struct Header
+struct alignas(SimdAlignment) Header
 {
 	//! The requested shared memory data size in bytes.
 	//! `sizeof(Header) + size` is the total allocation size.
@@ -311,4 +315,58 @@ auto SharedMemoryData::arraySize() const noexcept -> std::size_t
 	return m_impl ? m_impl->arraySize() : 0;
 }
 
-} // namespace lmms::detail
+} // namespace detail
+
+SharedMemoryResource::SharedMemoryResource(SharedMemory<std::byte[]>& sm) noexcept
+	: m_sm{&sm}
+{}
+
+SharedMemoryResource::SharedMemoryResource(SharedMemory<std::byte[]>& sm, std::string key)
+	: m_sm{&sm}
+	, m_key{std::move(key)}
+{
+	if (m_key.empty()) { throw std::invalid_argument{"key cannot be empty"}; }
+}
+
+void* SharedMemoryResource::do_allocate(std::size_t bytes, std::size_t alignment) override
+{
+	// Not necessary, though anywhere this is called twice in a row is probably a bug
+	assert(m_sm->get() == nullptr);
+
+	if (isServerSide())
+	{
+		m_sm->create(bytes);
+	}
+	else
+	{
+		m_sm->attach(m_key);
+
+		if (m_sm->size_bytes() != bytes)
+		{
+			throw std::runtime_error{"unexpected shared memory size"};
+		}
+	}
+
+	auto ptr = m_sm->get();
+
+	if (reinterpret_cast<std::uintptr_t>(ptr) % alignment != 0)
+	{
+		throw std::runtime_error{"shared memory is insufficiently aligned"};
+	}
+
+	return ptr;
+}
+
+void SharedMemoryResource::do_deallocate(void* p, std::size_t bytes, std::size_t) override
+{
+	assert(p == m_sm->get());
+	assert(bytes == m_sm->size_bytes());
+	m_sm->detach();
+}
+
+bool SharedMemoryResource::do_is_equal(const std::pmr::memory_resource& other) const noexcept override
+{
+	return this == &other;
+}
+
+} // namespace lmms
