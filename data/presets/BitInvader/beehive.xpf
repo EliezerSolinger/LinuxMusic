@@ -1,18 +1,18 @@
 <?xml version='1.0'?>
 <!DOCTYPE multimedia-project>
-<multimediaproject version="1.0" creator="LMMS" creatorversion="1.0.93" type="instrumenttracksettings">
+<multimediaproject creator="LinuxMusic" creatorplatform="darwin" creatorplatformtype="macos" creatorversion="1.3.0-alpha.2.234+5ba574a" type="instrumenttracksettings" version="31">
   <head/>
   <instrumenttracksettings>
-    <instrumenttrack mixch="0" vol="59" name="beehive" tab="1">
-      <bitinvader sampleLength="30" version="0.1" normalize="1" sampleShape="AAAAAPMEtT56glo/eoJaP/IEtT72BLW+eoJav3iCWr/vBLW+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAI/CdT3NzEw+rkfhPlK4Hj97FC4/pHA9P1yPQj89Clc/rkdhP65HYT/Xo3A/j8J1P0jhej8AAIA/" interpolation="1"/>
-      <eldata fres="0.43" ftype="1" fcut="1120" fwet="1">
-        <elvol userwavefile="" lpdel="0" ctlenvamt="0" amt="1" rel="0.65" latt="0" sus="0" lspd="0.1" att="0.496" pdel="0" lfosyncmode="0" lamt="0" dec="0.499" x100="0" lshp="0" hold="0"/>
-        <elcut userwavefile="" lpdel="0" ctlenvamt="1" amt="1" rel="0.274" latt="0" sus="0" lspd="0.01" att="0.494" pdel="0" lfosyncmode="0" lamt="1" dec="0.499" x100="0" lshp="0" hold="0"/>
-        <elres userwavefile="" lpdel="0" ctlenvamt="0" amt="0" rel="0.1" latt="0" sus="0.499" lspd="0.1" att="0" pdel="0" lfosyncmode="0" lamt="0" dec="0.499" x100="0" lshp="0" hold="0.499"/>
+    <instrumenttrack basenote="69" mixch="0" name="beehive" tab="1" vol="59">
+      <bitinvader interpolation="1" normalize="1" sampleLength="30" sampleShape="AAAAAPMEtT56glo/eoJaP/IEtT72BLW+eoJav3iCWr/vBLW+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAI/CdT3NzEw+rkfhPlK4Hj97FC4/pHA9P1yPQj89Clc/rkdhP65HYT/Xo3A/j8J1P0jhej8AAIA/" version="0.1"/>
+      <eldata fcut="1120" fres="0.43" ftype="1" fwet="1">
+        <elvol amt="1" att="0.496" ctlenvamt="0" dec="0.499" hold="0" lamt="0" latt="0" lfosyncmode="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.65" sus="0" userwavefile="" x100="0"/>
+        <elcut amt="1" att="0.494" ctlenvamt="1" dec="0.499" hold="0" lamt="1" latt="0" lfosyncmode="0" lpdel="0" lshp="0" lspd="0.01" pdel="0" rel="0.274" sus="0" userwavefile="" x100="0"/>
+        <elres amt="0" att="0" ctlenvamt="0" dec="0.499" hold="0.499" lamt="0" latt="0" lfosyncmode="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0.499" userwavefile="" x100="0"/>
       </eldata>
-      <arpeggiator chorddisabled="1" arptime="100" arprange="1" arpsyncmode="0" arpmode="0" chord="0" chordrange="4" arp="0" arp-enabled="0" chord-enabled="0" arpdisabled="1" arpdir="0" arpgate="100"/>
-      <midiport inputchannel="0" outputchannel="1" send="0" receive="0"/>
-      <chordcreator chorddisabled="1" arptime="100" arprange="1" arpsyncmode="0" arpmode="0" chord="0" chordrange="4" arp="0" arp-enabled="0" chord-enabled="0" arpdisabled="1" arpdir="0" arpgate="100"/>
+      <arpeggiator arp="0" arp-enabled="0" arpdir="0" arpdisabled="1" arpgate="100" arpmode="0" arprange="1" arpsyncmode="0" arptime="100" chord="0" chord-enabled="0" chorddisabled="1" chordrange="4"/>
+      <midiport inputchannel="0" outputchannel="1" receive="0" send="0"/>
+      <chordcreator arp="0" arp-enabled="0" arpdir="0" arpdisabled="1" arpgate="100" arpmode="0" arprange="1" arpsyncmode="0" arptime="100" chord="0" chord-enabled="0" chorddisabled="1" chordrange="4"/>
     </instrumenttrack>
   </instrumenttracksettings>
 </multimediaproject>

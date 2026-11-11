@@ -1,22 +1,22 @@
-<?xml version="1.0"?>
+<?xml version='1.0'?>
 <!DOCTYPE lmms-project>
-<lmms-project version="1.0" creator="LMMS" creatorversion="1.0.99" type="instrumenttracksettings">
+<lmms-project creator="LinuxMusic" creatorplatform="darwin" creatorplatformtype="macos" creatorversion="1.3.0-alpha.2.234+5ba574a" type="instrumenttracksettings" version="31">
   <head/>
-  <instrumenttracksettings muted="0" type="0" name="Snare March" solo="0">
-    <instrumenttrack pan="0" mixch="0" pitchrange="1" pitch="0" basenote="57" vol="100">
+  <instrumenttracksettings muted="0" name="Snare March" solo="0" type="0">
+    <instrumenttrack basenote="69" mixch="0" pan="0" pitch="0" pitchrange="1" vol="100">
       <instrument name="kicker">
-        <kicker decay_numerator="4" decay_denominator="4" distend="0" click="1" endnote="0" version="1" decay="240" syncmode="0" noise="0.85" slope="1" dist="0" env="0.644" startnote="0" startfreq="229" endfreq="195" gain="1"/>
+        <kicker click="1" decay="240" decay_denominator="4" decay_numerator="4" decay_syncmode="0" dist="0" distend="0" endfreq="195" endnote="0" env="0.644" gain="1" noise="0.85" slope="1" startfreq="229" startnote="0" syncmode="0" version="1"/>
       </instrument>
-      <eldata fres="0.56" ftype="3" fcut="929" fwet="1">
-        <elvol lspd_denominator="4" sustain="0.294" pdel="0" userwavefile="" dec="0.453" lamt="0" syncmode="0" latt="0" rel="0.1" amt="1" x100="0" att="0" lpdel="0" hold="0" lshp="2" lspd="0.0997" ctlenvamt="0" lspd_numerator="4"/>
-        <elcut lspd_denominator="4" sustain="0.5" pdel="0" userwavefile="" dec="0.5" lamt="0" syncmode="0" latt="0" rel="0.1" amt="0" x100="0" att="0" lpdel="0" hold="0.5" lshp="2" lspd="0.001" ctlenvamt="0" lspd_numerator="4"/>
-        <elres lspd_denominator="4" sustain="0.5" pdel="0" userwavefile="" dec="0.5" lamt="0" syncmode="0" latt="0" rel="0.1" amt="0" x100="0" att="0" lpdel="0" hold="0.5" lshp="0" lspd="0.1" ctlenvamt="0" lspd_numerator="4"/>
+      <eldata fcut="929" fres="0.56" ftype="3" fwet="1">
+        <elvol amt="1" att="0" ctlenvamt="0" dec="0.453" hold="0" lamt="0" latt="0" lpdel="0" lshp="2" lspd="0.0997" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.1" sustain="0.294" syncmode="0" userwavefile="" x100="0"/>
+        <elcut amt="0" att="0" ctlenvamt="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="2" lspd="0.001" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.1" sustain="0.5" syncmode="0" userwavefile="" x100="0"/>
+        <elres amt="0" att="0" ctlenvamt="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.1" sustain="0.5" syncmode="0" userwavefile="" x100="0"/>
       </eldata>
-      <chordcreator chord="0" chordrange="1" chord-enabled="0"/>
-      <arpeggiator arptime="100" arprange="1" arptime_denominator="4" syncmode="0" arpmode="0" arp-enabled="0" arp="0" arptime_numerator="4" arpdir="0" arpgate="100"/>
-      <midiport inputcontroller="0" fixedoutputvelocity="-1" inputchannel="0" outputcontroller="0" writable="0" outputchannel="1" fixedinputvelocity="-1" fixedoutputnote="-1" outputprogram="1" basevelocity="63" readable="0"/>
-      <fxchain numofeffects="6" enabled="1">
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+      <chordcreator chord="0" chord-enabled="0" chordrange="1"/>
+      <arpeggiator arp="0" arp-enabled="0" arpdir="0" arpgate="100" arpmode="0" arprange="1" arptime="100" arptime_denominator="4" arptime_numerator="4" arptime_syncmode="0" syncmode="0"/>
+      <midiport basevelocity="63" fixedinputvelocity="-1" fixedoutputnote="-1" fixedoutputvelocity="-1" inputchannel="0" inputcontroller="0" outputchannel="1" outputcontroller="0" outputprogram="1" readable="0" writable="0"/>
+      <fxchain enabled="1" numofeffects="6">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols ports="10">
             <port02 data="0"/>
             <port03 data="0"/>
@@ -30,11 +30,11 @@
             <port011 data="9.99"/>
           </ladspacontrols>
           <key>
-            <attribute value="caps" name="file"/>
-            <attribute value="Eq2x2" name="plugin"/>
+            <attribute name="file" value="caps"/>
+            <attribute name="plugin" value="Eq2x2"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="0.5" on="0">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="0" syncmode="0" wet="0.5">
           <ladspacontrols ports="4">
             <port02 data="0.370265"/>
             <port03 data="0"/>
@@ -42,17 +42,17 @@
             <port05 data="0.10875"/>
           </ladspacontrols>
           <key>
-            <attribute value="caps" name="file"/>
-            <attribute value="Plate2x2" name="plugin"/>
+            <attribute name="file" value="caps"/>
+            <attribute name="plugin" value="Plate2x2"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols ports="9">
             <port07>
-              <data scale_type="log" value="0.4" id="6315252"/>
+              <data id="6315252" scale_type="log" value="0.4"/>
             </port07>
             <port08>
-              <data scale_type="log" value="2000.25" id="2498139"/>
+              <data id="2498139" scale_type="log" value="2000.25"/>
             </port08>
             <port09 data="0"/>
             <port010 data="1"/>
@@ -60,84 +60,84 @@
             <port012 data="1"/>
             <port013 data="0"/>
             <port014>
-              <data scale_type="log" value="659.34" id="5231681"/>
+              <data id="5231681" scale_type="log" value="659.34"/>
             </port014>
             <port015>
-              <data scale_type="log" value="4862.63" id="1579810"/>
+              <data id="1579810" scale_type="log" value="4862.63"/>
             </port015>
           </ladspacontrols>
           <key>
-            <attribute value="calf" name="file"/>
-            <attribute value="Reverb" name="plugin"/>
+            <attribute name="file" value="veal"/>
+            <attribute name="plugin" value="Reverb"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="0.18" on="1">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="0.18">
           <ladspacontrols ports="13">
             <port04 data="0"/>
             <port05 data="1.02375"/>
             <port06 data="0.96"/>
-            <port07 data="0.50125"/>
-            <port012 data="5.049"/>
-            <port013 data="10"/>
-            <port015>
-              <data scale_type="log" value="20000" id="8103466"/>
-            </port015>
-            <port016>
-              <data scale_type="log" value="10" id="4889780"/>
-            </port016>
-            <port017>
-              <data scale_type="log" value="20000" id="6261168"/>
-            </port017>
+            <port015 data="0.50125"/>
+            <port016 data="5.049"/>
+            <port017 data="10"/>
             <port018>
-              <data scale_type="log" value="10" id="4037431"/>
+              <data id="8103466" scale_type="log" value="20000"/>
             </port018>
             <port019>
-              <data scale_type="log" value="215.82" id="6293968"/>
+              <data id="4889780" scale_type="log" value="10"/>
             </port019>
-            <port020 data="15.9973"/>
+            <port020>
+              <data id="6261168" scale_type="log" value="20000"/>
+            </port020>
             <port021>
-              <data scale_type="log" value="0.9999" id="2846145"/>
+              <data id="4037431" scale_type="log" value="10"/>
             </port021>
+            <port022>
+              <data id="6293968" scale_type="log" value="215.82"/>
+            </port022>
+            <port023 data="15.9973"/>
+            <port024>
+              <data id="2846145" scale_type="log" value="0.9999"/>
+            </port024>
           </ladspacontrols>
           <key>
-            <attribute value="calf" name="file"/>
-            <attribute value="Saturator" name="plugin"/>
+            <attribute name="file" value="veal"/>
+            <attribute name="plugin" value="Saturator"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols ports="13">
             <port04 data="0"/>
             <port05 data="1.02375"/>
             <port06 data="0.96"/>
-            <port07 data="1"/>
-            <port012 data="5.049"/>
-            <port013 data="10"/>
-            <port015>
-              <data scale_type="log" value="20000" id="7709628"/>
-            </port015>
-            <port016>
-              <data scale_type="log" value="10" id="7480205"/>
-            </port016>
-            <port017>
-              <data scale_type="log" value="20000" id="4036038"/>
-            </port017>
+            <port015 data="1"/>
+            <port016 data="5.049"/>
+            <port017 data="10"/>
             <port018>
-              <data scale_type="log" value="10" id="1042561"/>
+              <data id="7709628" scale_type="log" value="20000"/>
             </port018>
             <port019>
-              <data scale_type="log" value="721.71" id="92193"/>
+              <data id="7480205" scale_type="log" value="10"/>
             </port019>
-            <port020 data="1.31484"/>
+            <port020>
+              <data id="4036038" scale_type="log" value="20000"/>
+            </port020>
             <port021>
-              <data scale_type="log" value="0.100237" id="7520542"/>
+              <data id="1042561" scale_type="log" value="10"/>
             </port021>
+            <port022>
+              <data id="92193" scale_type="log" value="721.71"/>
+            </port022>
+            <port023 data="1.31484"/>
+            <port024>
+              <data id="7520542" scale_type="log" value="0.100237"/>
+            </port024>
           </ladspacontrols>
           <key>
-            <attribute value="calf" name="file"/>
-            <attribute value="Saturator" name="plugin"/>
+            <attribute name="file" value="veal"/>
+            <attribute name="plugin" value="Saturator"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols ports="10">
             <port02 data="-47.97"/>
             <port03 data="-10.8"/>
@@ -151,8 +151,8 @@
             <port011 data="2.52"/>
           </ladspacontrols>
           <key>
-            <attribute value="caps" name="file"/>
-            <attribute value="Eq2x2" name="plugin"/>
+            <attribute name="file" value="caps"/>
+            <attribute name="plugin" value="Eq2x2"/>
           </key>
         </effect>
       </fxchain>

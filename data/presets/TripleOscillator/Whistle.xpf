@@ -1,19 +1,19 @@
 <?xml version='1.0'?>
 <!DOCTYPE multimedia-project>
-<multimediaproject version="1.0" creator="LMMS" creatorversion="1.0.93" type="instrumenttracksettings">
+<multimediaproject creator="LinuxMusic" creatorplatform="darwin" creatorplatformtype="macos" creatorversion="1.3.0-alpha.2.234+5ba574a" type="instrumenttracksettings" version="31">
   <head/>
   <instrumenttracksettings>
-    <instrumenttrack muted="0" mixch="0" vol="100" name="Whistle">
-      <tripleoscillator phoffset2="0" finer0="0" finer1="0" finer2="11" coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="0" modalgo1="2" finel2="-24" modalgo2="2" pan0="0" pan1="-36" stphdetun0="195" pan2="27" stphdetun1="90" stphdetun2="0" wavetype0="1" wavetype1="1" wavetype2="1" vol0="35" vol1="35" phoffset0="260" vol2="32" phoffset1="89"/>
-      <eldata fres="0.5" ftype="0" fcut="16000" fwet="0">
-        <elvol lpdel="0" amt="1" rel="0.1" latt="0" sus="0.234" lspd="0.1" att="0.062" pdel="0" lamt="0" dec="0.27" x100="0" lshp="0" hold="0"/>
-        <elpan lpdel="0" amt="0" rel="0.1" latt="0" sus="0.5" lspd="0.1" att="0" pdel="0" lamt="0" dec="0.5" x100="0" lshp="0" hold="0.5"/>
-        <elpitch lpdel="0" amt="0" rel="0.1" latt="0" sus="0.5" lspd="0.1" att="0" pdel="0" lamt="0" dec="0.5" x100="0" lshp="0" hold="0.5"/>
-        <elcut lpdel="0" amt="0" rel="0.1" latt="0" sus="0.5" lspd="0.1" att="0" pdel="0" lamt="0" dec="0.5" x100="0" lshp="0" hold="0.5"/>
-        <elres lpdel="0" amt="0" rel="0.1" latt="0" sus="0.5" lspd="0.1" att="0" pdel="0" lamt="0" dec="0.5" x100="0" lshp="0" hold="0.5"/>
+    <instrumenttrack basenote="69" mixch="0" muted="0" name="Whistle" vol="100">
+      <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="0" finel2="-24" finer0="0" finer1="0" finer2="11" modalgo1="2" modalgo2="2" pan0="0" pan1="-36" pan2="27" phoffset0="260" phoffset1="89" phoffset2="0" stphdetun0="195" stphdetun1="90" stphdetun2="0" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" vol0="35" vol1="35" vol2="32" wavetype0="1" wavetype1="1" wavetype2="1"/>
+      <eldata fcut="16000" fres="0.5" ftype="0" fwet="0">
+        <elvol amt="1" att="0.062" dec="0.27" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0.234" x100="0"/>
+        <elpan amt="0" att="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0.5" x100="0"/>
+        <elpitch amt="0" att="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0.5" x100="0"/>
+        <elcut amt="0" att="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0.5" x100="0"/>
+        <elres amt="0" att="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0.5" x100="0"/>
       </eldata>
-      <arpeggiator arptime="100" arprange="1" chord="0" chordrange="1" arp="0" arp-enabled="0" chord-enabled="1" arpdir="0" arpdisabled="1" arpgate="100"/>
-      <chordcreator arptime="100" arprange="1" chord="0" chordrange="1" arp="0" arp-enabled="0" chord-enabled="1" arpdir="0" arpdisabled="1" arpgate="100"/>
+      <arpeggiator arp="0" arp-enabled="0" arpdir="0" arpdisabled="1" arpgate="100" arprange="1" arptime="100" chord="0" chord-enabled="1" chordrange="1"/>
+      <chordcreator arp="0" arp-enabled="0" arpdir="0" arpdisabled="1" arpgate="100" arprange="1" arptime="100" chord="0" chord-enabled="1" chordrange="1"/>
     </instrumenttrack>
   </instrumenttracksettings>
 </multimediaproject>

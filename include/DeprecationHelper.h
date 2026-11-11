@@ -47,11 +47,7 @@ namespace lmms
 //! @see Qt 5.15 [`QDropEvent::pos()`](https://doc.qt.io/archives/qt-5.15/qdropevent.html#pos)
 inline QPoint position(const QDropEvent* de)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 	return de->position().toPoint();
-#else
-	return de->pos();
-#endif
 }
 
 //! @brief Backwards-compatible adapter for `QMouseEvent`'s new
@@ -64,11 +60,7 @@ inline QPoint position(const QDropEvent* de)
 //! @see Qt 5.15 [`QMouseEvent::pos()`](https://doc.qt.io/archives/qt-5.15/qmouseevent.html#pos)
 inline QPoint position(const QMouseEvent* me)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 	return me->position().toPoint();
-#else
-	return me->pos();
-#endif
 }
 
 //! @brief Backwards-compatible adapter for `QMouseEvent`'s new
@@ -81,11 +73,7 @@ inline QPoint position(const QMouseEvent* me)
 //! @see Qt 5.15 [`QMouseEvent::localPos()`](https://doc.qt.io/archives/qt-5.15/qmouseevent.html#localPos)
 inline QPointF positionF(const QMouseEvent* me)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 	return me->position();
-#else
-	return me->localPos();
-#endif
 }
 
 //! @brief Backwards-compatible adapter for `QMouseEvent`'s new
@@ -98,11 +86,7 @@ inline QPointF positionF(const QMouseEvent* me)
 //! @see Qt 5.15 [`QMouseEvent::globalPos()`](https://doc.qt.io/archives/qt-5.15/qmouseevent.html#globalPos)
 inline QPoint globalPosition(const QMouseEvent* me)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 	return me->globalPosition().toPoint();
-#else
-	return me->globalPos();
-#endif
 }
 
 namespace detail
@@ -137,11 +121,7 @@ inline QKeySequence keySequence(Args... args)
 //! @see Qt 5.15 [`QVariant::type()`](https://doc.qt.io/archives/qt-5.15/qvariant.html#type)
 inline QMetaType::Type typeId(const QVariant& variant)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 	return static_cast<QMetaType::Type>(variant.typeId());
-#else
-	return static_cast<QMetaType::Type>(variant.type());
-#endif
 }
 
 //! @brief Backwards-compatible adapter for `QDomDocument::setContent()`

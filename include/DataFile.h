@@ -43,7 +43,9 @@ class ProjectVersion;
 class LMMS_EXPORT DataFile : public QDomDocument
 {
 
-	using UpgradeMethod = void(DataFile::*)();
+	//! Version of the file format written by this program. Files with an older version come from older
+	//! LMMS releases; they are not converted and may not load correctly.
+	static constexpr unsigned int FILE_VERSION = 31;
 
 public:
 	enum class Type
@@ -103,73 +105,15 @@ public:
 		return m_type;
 	}
 
-	unsigned int legacyFileVersion();
-
 private:
 	static Type type( const QString& typeName );
 	static QString typeName( Type type );
 
 	void cleanMetaNodes( QDomElement de );
 
-	void mapSrcAttributeInElementsWithResources(const QMap<QString, QString>& map);
-
-	// helper upgrade routines
-	void upgrade_0_2_1_20070501();
-	void upgrade_0_2_1_20070508();
-	void upgrade_0_3_0_rc2();
-	void upgrade_0_3_0();
-	void upgrade_0_4_0_20080104();
-	void upgrade_0_4_0_20080118();
-	void upgrade_0_4_0_20080129();
-	void upgrade_0_4_0_20080409();
-	void upgrade_0_4_0_20080607();
-	void upgrade_0_4_0_20080622();
-	void upgrade_0_4_0_beta1();
-	void upgrade_0_4_0_rc2();
-	void upgrade_1_0_99();
-	void upgrade_1_1_0();
-	void upgrade_1_1_91();
-	void upgrade_1_2_0_rc3();
-	void upgrade_1_3_0();
-	void upgrade_noHiddenClipNames();
-	void upgrade_automationNodes();
-
-	//! @brief Note range has been extended to match MIDI specification
-	//!
-	//! The non-standard note range previously affected all MIDI-based instruments
-	//! except OpulenZ, and made them sound an octave lower than they should (#1857).
-	void upgrade_extendedNoteRange();
-
-	//! @brief TripleOscillator switched to using high-quality, alias-free oscillators by default
-	//!
-	//! Older projects were made without this feature and would sound differently if loaded
-	//! with the new default setting. This upgrade routine preserves their old behavior.
-	void upgrade_defaultTripleOscillatorHQ();
-
-	void upgrade_mixerRename();
-	void upgrade_bbTcoRename();
-	void upgrade_sampleAndHold();
-
-	//! Update MIDI CC indexes, so that they are counted from 0. Older releases of LMMS count the CCs from 1.
-	void upgrade_midiCCIndexing();
-
-	void upgrade_loopsRename();
-	void upgrade_noteTypes();
-	void upgrade_fixCMTDelays();
-	void upgrade_fixBassLoopsTypo();
-	void findProblematicLadspaPlugins();
-	void upgrade_noHiddenAutomationTracks();
-
-	// List of all upgrade methods
-	static const std::vector<UpgradeMethod> UPGRADE_METHODS;
-	// List of ProjectVersions for the legacyFileVersion method
-	static const std::vector<ProjectVersion> UPGRADE_VERSIONS;
-
 	// Map with DOM elements that access resources (for making bundles)
 	using ResourcesMap = std::map<QString, std::vector<QString>>;
 	static const ResourcesMap ELEMENTS_WITH_RESOURCES;
-
-	void upgrade();
 
 	void loadData( const QByteArray & _data, const QString & _sourceFile );
 

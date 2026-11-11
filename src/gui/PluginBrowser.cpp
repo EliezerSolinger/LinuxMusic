@@ -258,11 +258,7 @@ void PluginDescWidget::paintEvent( QPaintEvent * )
 }
 
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 void PluginDescWidget::enterEvent(QEnterEvent* event)
-#else
-void PluginDescWidget::enterEvent(QEvent* event)
-#endif
 {
 	m_mouseOver = true;
 

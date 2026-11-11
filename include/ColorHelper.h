@@ -35,11 +35,7 @@ class ColorHelper
 public:
 	static QColor interpolateInRgb(const QColor& a, const QColor& b, float t)
 	{
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 		using ColorType = float;
-#else
-		using ColorType = qreal;
-#endif
 
 		ColorType ar, ag, ab, aa;
 		a.getRgbF(&ar, &ag, &ab, &aa);

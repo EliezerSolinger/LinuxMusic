@@ -1,30 +1,30 @@
-<?xml version="1.0"?>
+<?xml version='1.0'?>
 <!DOCTYPE lmms-project>
-<lmms-project version="1.0" creator="LMMS" creatorversion="1.0.93" type="instrumenttracksettings">
+<lmms-project creator="LinuxMusic" creatorplatform="darwin" creatorplatformtype="macos" creatorversion="1.3.0-alpha.2.234+5ba574a" type="instrumenttracksettings" version="31">
   <head/>
-  <instrumenttracksettings muted="0" type="0" name="Pwnage" solo="0">
-    <instrumenttrack pan="0" mixch="0" pitchrange="1" pitch="0" basenote="57" vol="100">
+  <instrumenttracksettings muted="0" name="Pwnage" solo="0" type="0">
+    <instrumenttrack basenote="69" mixch="0" pan="0" pitch="0" pitchrange="1" vol="100">
       <instrument name="organic">
-        <organic newdetune0="0" newdetune1="0" newdetune2="0" newdetune3="0" newdetune4="0" newdetune5="0" newdetune6="0" newdetune7="0" vol0="97" vol1="84" vol2="93" vol3="20" vol4="25" vol5="52" wavetype0="3" vol6="3" wavetype1="0" wavetype2="4" vol7="69" num_osc="8" wavetype3="4" wavetype4="0" wavetype5="2" wavetype6="2" pan0="0" wavetype7="1" pan1="0" foldback="0" pan2="0" pan3="0" pan4="0" pan5="0" pan6="0" pan7="0" newharmonic0="0" newharmonic1="1" newharmonic2="2" newharmonic3="3" newharmonic4="4" newharmonic5="5" newharmonic6="6" newharmonic7="7" vol="100"/>
+        <organic foldback="0" newdetune0="0" newdetune1="0" newdetune2="0" newdetune3="0" newdetune4="0" newdetune5="0" newdetune6="0" newdetune7="0" newharmonic0="0" newharmonic1="1" newharmonic2="2" newharmonic3="3" newharmonic4="4" newharmonic5="5" newharmonic6="6" newharmonic7="7" num_osc="8" pan0="0" pan1="0" pan2="0" pan3="0" pan4="0" pan5="0" pan6="0" pan7="0" vol="100" vol0="97" vol1="84" vol2="93" vol3="20" vol4="25" vol5="52" vol6="3" vol7="69" wavetype0="3" wavetype1="0" wavetype2="4" wavetype3="4" wavetype4="0" wavetype5="2" wavetype6="2" wavetype7="1"/>
       </instrument>
-      <eldata fres="0.66" ftype="6" fcut="11836" fwet="1">
-        <elvol lspd_denominator="4" sustain="0.762" pdel="0" userwavefile="" dec="2" lamt="0" syncmode="0" latt="0" rel="0.181" amt="1" x100="0" att="0" lpdel="0" hold="0" lshp="0" lspd="0.1" ctlenvamt="0" lspd_numerator="4"/>
-        <elcut lspd_denominator="4" sustain="0.215" pdel="0" userwavefile="" dec="0.58" lamt="0" syncmode="0" latt="0" rel="0.1" amt="1" x100="0" att="0.035" lpdel="0" hold="0" lshp="0" lspd="0.1" ctlenvamt="0" lspd_numerator="4"/>
-        <elres lspd_denominator="4" sustain="0.5" pdel="0" userwavefile="" dec="0.5" lamt="0" syncmode="0" latt="0" rel="0.1" amt="0" x100="0" att="0" lpdel="0" hold="0.5" lshp="0" lspd="0.1" ctlenvamt="0" lspd_numerator="4"/>
+      <eldata fcut="11836" fres="0.66" ftype="6" fwet="1">
+        <elvol amt="1" att="0" ctlenvamt="0" dec="2" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.181" sustain="0.762" syncmode="0" userwavefile="" x100="0"/>
+        <elcut amt="1" att="0.035" ctlenvamt="0" dec="0.58" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.1" sustain="0.215" syncmode="0" userwavefile="" x100="0"/>
+        <elres amt="0" att="0" ctlenvamt="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.1" sustain="0.5" syncmode="0" userwavefile="" x100="0"/>
       </eldata>
-      <chordcreator chord="0" chordrange="1" chord-enabled="0"/>
-      <arpeggiator arptime="100" arprange="1" arptime_denominator="4" syncmode="0" arpmode="0" arp-enabled="0" arp="0" arptime_numerator="4" arpdir="0" arpgate="100"/>
-      <midiport inputcontroller="0" fixedoutputvelocity="-1" inputchannel="0" outputcontroller="0" writable="0" outputchannel="1" fixedinputvelocity="-1" fixedoutputnote="-1" outputprogram="1" basevelocity="63" readable="0"/>
-      <fxchain numofeffects="6" enabled="1">
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+      <chordcreator chord="0" chord-enabled="0" chordrange="1"/>
+      <arpeggiator arp="0" arp-enabled="0" arpdir="0" arpgate="100" arpmode="0" arprange="1" arptime="100" arptime_denominator="4" arptime_numerator="4" arptime_syncmode="0" syncmode="0"/>
+      <midiport basevelocity="63" fixedinputvelocity="-1" fixedoutputnote="-1" fixedoutputvelocity="-1" inputchannel="0" inputcontroller="0" outputchannel="1" outputcontroller="0" outputprogram="1" readable="0" writable="0"/>
+      <fxchain enabled="1" numofeffects="6">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols link="1" ports="14">
-            <port01 link="1" data="2.8775"/>
-            <port02 link="1" data="0.999975"/>
-            <port03 link="1" data="-2.8"/>
-            <port04 link="1" data="7.7"/>
-            <port05 link="1" data="12.1"/>
-            <port06 link="1" data="8.4"/>
-            <port07 link="1" data="0.9999"/>
+            <port01 data="2.8775" link="1"/>
+            <port02 data="0.999975" link="1"/>
+            <port03 data="-2.8" link="1"/>
+            <port04 data="7.7" link="1"/>
+            <port05 data="12.1" link="1"/>
+            <port06 data="8.4" link="1"/>
+            <port07 data="0.9999" link="1"/>
             <port11 data="2.8775"/>
             <port12 data="0.999975"/>
             <port13 data="-2.8"/>
@@ -34,22 +34,22 @@
             <port17 data="0.9999"/>
           </ladspacontrols>
           <key>
-            <attribute value="caps" name="file"/>
-            <attribute value="AmpIV" name="plugin"/>
+            <attribute name="file" value="caps"/>
+            <attribute name="plugin" value="AmpIV"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols link="1" ports="20">
-            <port00 link="1" data="1"/>
-            <port01 link="1" data="0.025"/>
-            <port02 link="1" data="0"/>
-            <port03 link="1" data="0"/>
-            <port04 link="1" data="0.4"/>
-            <port05 link="1" data="0"/>
-            <port06 link="1" data="0"/>
-            <port07 link="1" data="-0.025"/>
-            <port08 link="1" data="0"/>
-            <port09 link="1" data="-1"/>
+            <port00 data="1" link="1"/>
+            <port01 data="0.025" link="1"/>
+            <port02 data="0" link="1"/>
+            <port03 data="0" link="1"/>
+            <port04 data="0.4" link="1"/>
+            <port05 data="0" link="1"/>
+            <port06 data="0" link="1"/>
+            <port07 data="-0.025" link="1"/>
+            <port08 data="0" link="1"/>
+            <port09 data="-1" link="1"/>
             <port10 data="1"/>
             <port11 data="0.025"/>
             <port12 data="0"/>
@@ -62,25 +62,25 @@
             <port19 data="-1"/>
           </ladspacontrols>
           <key>
-            <attribute value="harmonic_gen_1220" name="file"/>
-            <attribute value="harmonicGen" name="plugin"/>
+            <attribute name="file" value="harmonic_gen_1220"/>
+            <attribute name="plugin" value="harmonicGen"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols link="1" ports="6">
-            <port00 link="1" data="-9.375"/>
-            <port01 link="1" data="1"/>
-            <port02 link="1" data="0"/>
+            <port00 data="-9.375" link="1"/>
+            <port01 data="1" link="1"/>
+            <port02 data="0" link="1"/>
             <port10 data="-9.375"/>
             <port11 data="1"/>
             <port12 data="0"/>
           </ladspacontrols>
           <key>
-            <attribute value="hard_limiter_1413" name="file"/>
-            <attribute value="hardLimiter" name="plugin"/>
+            <attribute name="file" value="hard_limiter_1413"/>
+            <attribute name="plugin" value="hardLimiter"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols ports="10">
             <port02 data="-47.97"/>
             <port03 data="-47.97"/>
@@ -94,36 +94,36 @@
             <port011 data="-10.8"/>
           </ladspacontrols>
           <key>
-            <attribute value="caps" name="file"/>
-            <attribute value="Eq2x2" name="plugin"/>
+            <attribute name="file" value="caps"/>
+            <attribute name="plugin" value="Eq2x2"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols link="1" ports="6">
-            <port00 link="1" data="-6.625"/>
-            <port01 link="1" data="1"/>
-            <port02 link="1" data="0"/>
+            <port00 data="-6.625" link="1"/>
+            <port01 data="1" link="1"/>
+            <port02 data="0" link="1"/>
             <port10 data="-6.625"/>
             <port11 data="1"/>
             <port12 data="0"/>
           </ladspacontrols>
           <key>
-            <attribute value="hard_limiter_1413" name="file"/>
-            <attribute value="hardLimiter" name="plugin"/>
+            <attribute name="file" value="hard_limiter_1413"/>
+            <attribute name="plugin" value="hardLimiter"/>
           </key>
         </effect>
-        <effect autoquit_numerator="4" autoquit_denominator="4" syncmode="0" autoquit="1" name="ladspaeffect" wet="1" on="1">
+        <effect autoquit="1" autoquit_denominator="4" autoquit_numerator="4" autoquit_syncmode="0" name="ladspaeffect" on="1" syncmode="0" wet="1">
           <ladspacontrols link="0" ports="20">
-            <port01 link="1" data="-47.97"/>
-            <port02 link="1" data="-35.28"/>
-            <port03 link="1" data="0"/>
-            <port04 link="1" data="-9"/>
-            <port05 link="1" data="-8.46"/>
-            <port06 link="1" data="3.06"/>
-            <port07 link="0" data="-5.04"/>
-            <port08 link="0" data="5.04"/>
-            <port09 link="0" data="-5.04"/>
-            <port010 link="0" data="5.04"/>
+            <port01 data="-47.97" link="1"/>
+            <port02 data="-35.28" link="1"/>
+            <port03 data="0" link="1"/>
+            <port04 data="-9" link="1"/>
+            <port05 data="-8.46" link="1"/>
+            <port06 data="3.06" link="1"/>
+            <port07 data="-5.04" link="0"/>
+            <port08 data="5.04" link="0"/>
+            <port09 data="-5.04" link="0"/>
+            <port010 data="5.04" link="0"/>
             <port11 data="-47.97"/>
             <port12 data="-35.28"/>
             <port13 data="0"/>
@@ -136,8 +136,8 @@
             <port110 data="-5.04"/>
           </ladspacontrols>
           <key>
-            <attribute value="caps" name="file"/>
-            <attribute value="Eq" name="plugin"/>
+            <attribute name="file" value="caps"/>
+            <attribute name="plugin" value="Eq"/>
           </key>
         </effect>
       </fxchain>

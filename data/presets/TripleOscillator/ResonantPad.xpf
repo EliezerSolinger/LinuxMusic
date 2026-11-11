@@ -1,21 +1,21 @@
-<?xml version="1.0"?>
+<?xml version='1.0'?>
 <!DOCTYPE lmms-project>
-<lmms-project version="1.0" creator="LMMS" creatorversion="1.0.2" type="instrumenttracksettings">
+<lmms-project creator="LinuxMusic" creatorplatform="darwin" creatorplatformtype="macos" creatorversion="1.3.0-alpha.2.234+5ba574a" type="instrumenttracksettings" version="31">
   <head/>
-  <instrumenttracksettings muted="0" type="0" name="Resonant Pad" solo="0">
-    <instrumenttrack pan="0" mixch="0" pitchrange="1" pitch="0" basenote="57" vol="30">
+  <instrumenttracksettings muted="0" name="Resonant Pad" solo="0" type="0">
+    <instrumenttrack basenote="69" mixch="0" pan="0" pitch="0" pitchrange="1" vol="30">
       <instrument name="tripleoscillator">
-        <tripleoscillator phoffset2="0" userwavefile0="samples/empty.wav" finer0="0" userwavefile1="samples/empty.wav" finer1="13" userwavefile2="samples/empty.wav" finer2="-3" coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="-14" modalgo1="2" modalgo2="2" finel2="0" pan0="0" modalgo3="2" pan1="0" stphdetun0="0" pan2="0" stphdetun1="50" wavetype0="2" stphdetun2="0" wavetype1="2" wavetype2="2" vol0="100" vol1="100" phoffset0="0" phoffset1="0" vol2="100"/>
+        <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="-14" finel2="0" finer0="0" finer1="13" finer2="-3" modalgo1="2" modalgo2="2" modalgo3="2" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="0" phoffset2="0" stphdetun0="0" stphdetun1="50" stphdetun2="0" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" userwavefile0="samples/empty.wav" userwavefile1="samples/empty.wav" userwavefile2="samples/empty.wav" vol0="100" vol1="100" vol2="100" wavetype0="2" wavetype1="2" wavetype2="2"/>
       </instrument>
-      <eldata fres="0.66" ftype="6" fcut="622" fwet="1">
-        <elvol lspd_denominator="4" sustain="1" pdel="0" userwavefile="" dec="0.297" lamt="0" syncmode="0" latt="0" rel="0.242" amt="1" x100="0" att="0" lpdel="0" hold="0" lshp="0" lspd="0.0917" ctlenvamt="0" lspd_numerator="4"/>
-        <elcut lspd_denominator="4" sustain="0.001" pdel="0" userwavefile="" dec="0.223" lamt="0.52" syncmode="0" latt="0" rel="0" amt="0" x100="0" att="0" lpdel="0" hold="0" lshp="1" lspd="0.4784" ctlenvamt="0" lspd_numerator="4"/>
-        <elres lspd_denominator="4" sustain="0.5" pdel="0" userwavefile="" dec="0.5" lamt="0" syncmode="0" latt="0" rel="0" amt="0" x100="0" att="0" lpdel="0" hold="0" lshp="1" lspd="0.01" ctlenvamt="0" lspd_numerator="4"/>
+      <eldata fcut="622" fres="0.66" ftype="6" fwet="1">
+        <elvol amt="1" att="0" ctlenvamt="0" dec="0.297" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.0917" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.242" sustain="1" syncmode="0" userwavefile="" x100="0"/>
+        <elcut amt="0" att="0" ctlenvamt="0" dec="0.223" hold="0" lamt="0.52" latt="0" lpdel="0" lshp="1" lspd="0.4784" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0" sustain="0.001" syncmode="0" userwavefile="" x100="0"/>
+        <elres amt="0" att="0" ctlenvamt="0" dec="0.5" hold="0" lamt="0" latt="0" lpdel="0" lshp="1" lspd="0.01" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0" sustain="0.5" syncmode="0" userwavefile="" x100="0"/>
       </eldata>
-      <chordcreator chord="0" chordrange="1" chord-enabled="1"/>
-      <arpeggiator arptime="100" arprange="3" arptime_denominator="4" syncmode="0" arpmode="0" arp-enabled="0" arp="8" arptime_numerator="4" arpdir="0" arpgate="100"/>
-      <midiport inputcontroller="0" fixedoutputvelocity="-1" inputchannel="0" outputcontroller="0" writable="0" outputchannel="1" fixedinputvelocity="-1" fixedoutputnote="-1" outputprogram="1" basevelocity="63" readable="0"/>
-      <fxchain numofeffects="0" enabled="0"/>
+      <chordcreator chord="0" chord-enabled="1" chordrange="1"/>
+      <arpeggiator arp="8" arp-enabled="0" arpdir="0" arpgate="100" arpmode="0" arprange="3" arptime="100" arptime_denominator="4" arptime_numerator="4" arptime_syncmode="0" syncmode="0"/>
+      <midiport basevelocity="63" fixedinputvelocity="-1" fixedoutputnote="-1" fixedoutputvelocity="-1" inputchannel="0" inputcontroller="0" outputchannel="1" outputcontroller="0" outputprogram="1" readable="0" writable="0"/>
+      <fxchain enabled="0" numofeffects="0"/>
     </instrumenttrack>
   </instrumenttracksettings>
 </lmms-project>

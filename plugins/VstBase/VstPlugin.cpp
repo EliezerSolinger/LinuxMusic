@@ -35,10 +35,6 @@
 #include <QTemporaryFile>
 #include <QTimerEvent>
 
-#if defined(LMMS_BUILD_LINUX) && (QT_VERSION < QT_VERSION_CHECK(6,0,0))
-#	include <QX11Info>
-#	include <X11EmbedContainer.h>
-#endif
 
 #include <QWindow>
 
@@ -418,11 +414,6 @@ bool VstPlugin::processMessage( const message & _m )
 					(LONG_PTR) gui::getGUI()->mainWindow()->winId() );
 #endif
 
-#if defined(LMMS_BUILD_LINUX) && (QT_VERSION < QT_VERSION_CHECK(6,0,0))
-			XSetTransientForHint( QX11Info::display(),
-					m_pluginWindowID,
-					gui::getGUI()->mainWindow()->winId() );
-#endif
 		}
 		break;
 
@@ -823,19 +814,6 @@ void VstPlugin::createUI( QWidget * parent )
 	} else
 #endif
 
-#if defined(LMMS_BUILD_LINUX) && (QT_VERSION < QT_VERSION_CHECK(6,0,0))
-	if (m_embedMethod == "xembed" )
-	{
-		if (parent)
-		{
-			parent->setAttribute(Qt::WA_NativeWindow);
-		}
-		auto embedContainer = new QX11EmbedContainer(parent);
-		connect(embedContainer, SIGNAL(clientIsEmbedded()), this, SLOT(handleClientEmbed()));
-		embedContainer->embedClient( m_pluginWindowID );
-		container = embedContainer;
-	} else
-#endif
 	{
 		qCritical() << "Unknown embed method" << m_embedMethod;
 		return;

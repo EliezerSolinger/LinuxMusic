@@ -110,7 +110,6 @@ option(WANT_DEBUG_GPROF	"Enable gprof profiler" OFF)
 OPTION(BUNDLE_QT_TRANSLATIONS	"Install Qt translation files for LMMS" OFF)
 option(WANT_DEBUG_CPACK "Show detailed logs for packaging commands" OFF)
 option(WANT_CPACK_TARBALL "Request CPack to create a tarball instead of an installer" OFF)
-option(WANT_QT6 "Build with Qt6 (default) instead of Qt5" ON)
 
 
 # Set the target microarchitecture
@@ -261,18 +260,11 @@ check_library_exists(rt shm_open "" LMMS_HAVE_LIBRT)
 
 LIST(APPEND CMAKE_PREFIX_PATH "${CMAKE_INSTALL_PREFIX}")
 
-if(WANT_QT6)
-	set(QT_VERSION_MAJOR 6)
-	if(MSVC)
-		set(LMMS_QT_MIN_VERSION 6.8.0)
-	else()
-		set(LMMS_QT_MIN_VERSION 6.0.0)
-	endif()
-	set(STATUS_QT6 "Enabled")
+set(QT_VERSION_MAJOR 6)
+if(MSVC)
+	set(LMMS_QT_MIN_VERSION 6.8.0)
 else()
-	set(QT_VERSION_MAJOR 5)
-	set(LMMS_QT_MIN_VERSION 5.15.0)
-	set(STATUS_QT6 "Disabled")
+	set(LMMS_QT_MIN_VERSION 6.0.0)
 endif()
 
 find_package(Qt${QT_VERSION_MAJOR} ${LMMS_QT_MIN_VERSION} COMPONENTS Core Gui Widgets Xml Svg REQUIRED)
@@ -295,10 +287,6 @@ set(QT_LIBRARIES
 	Qt${QT_VERSION_MAJOR}::Svg
 )
 
-IF(LMMS_BUILD_LINUX AND WANT_VST AND NOT WANT_QT6)
-    FIND_PACKAGE(Qt5 COMPONENTS X11Extras REQUIRED)
-    LIST(APPEND QT_LIBRARIES Qt5::X11Extras)
-ENDIF()
 
 # Resolve qmake to full path for use in packaging scripts
 get_target_property(QT_QMAKE_EXECUTABLE Qt${QT_VERSION_MAJOR}::qmake IMPORTED_LOCATION)
@@ -942,7 +930,6 @@ MESSAGE(
 "* Debug packaging commands          : ${STATUS_DEBUG_CPACK}\n"
 "* Profile using GNU profiler        : ${STATUS_GPROF}\n"
 "* Debug assertions                  : ${STATUS_ASSERTIONS}\n"
-"* Experimental Qt6 support          : ${STATUS_QT6}\n"
 )
 
 MESSAGE(
