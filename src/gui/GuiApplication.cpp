@@ -212,11 +212,14 @@ GuiApplication::GuiApplication()
 	{
 		// LINUXMUSIC_SCREENSHOT_ACTION=instrument opens the first instrument window before the screenshot
 		const auto screenshotAction = qEnvironmentVariable("LINUXMUSIC_SCREENSHOT_ACTION");
-		if (screenshotAction == "instrument")
+		// =pins opens the pin connector of the first instrument instead
+		if (screenshotAction == "instrument" || screenshotAction == "pins")
 		{
-			QTimer::singleShot(2500, m_mainWindow, [this] {
+			QTimer::singleShot(2500, m_mainWindow, [this, screenshotAction] {
 				const auto views = m_mainWindow->findChildren<InstrumentTrackView*>();
-				if (!views.isEmpty()) { QMetaObject::invokeMethod(views.first(), "toggleInstrumentWindow", Q_ARG(bool, true)); }
+				if (views.isEmpty()) { return; }
+				if (screenshotAction == "pins") { QMetaObject::invokeMethod(views.first(), "togglePinConnector"); }
+				else { QMetaObject::invokeMethod(views.first(), "toggleInstrumentWindow", Q_ARG(bool, true)); }
 			});
 		}
 		QTimer::singleShot(4000, m_mainWindow, [this, screenshotPath, screenshotAction] {
