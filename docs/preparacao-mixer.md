@@ -114,3 +114,14 @@ Detalhes:
 - Corrigido outro furo: canais **mutados** não passavam pelo processamento. O medidor não zerava, e mudanças de
   parâmetro feitas com o canal mutado faziam rampa ao desmutar. Agora eles passam por `processMuted()`.
 - `MixerTest` tem 25 testes.
+
+### Passo 4: entrada do canal (feito)
+
+Cada canal tem agora, no modelo de dados:
+- `m_input` (`ChannelInput`): nenhuma entrada (só faixas) ou entradas da interface de áudio, dizendo o primeiro canal
+  e se é mono ou par estéreo. É alterada por `Mixer::setChannelInput()`, que emite `channelInputChanged`;
+- `m_recordArmModel`: armado para gravar;
+- `m_monitorModel`: monitoração desligada, ligada ou automática (só enquanto armado). O padrão é automática, como no
+  REAPER.
+
+Tudo é salvo e carregado com o projeto. O áudio de entrada ainda **não** é lido nem tocado; isso é da etapa 3.

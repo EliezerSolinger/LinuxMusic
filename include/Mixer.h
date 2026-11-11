@@ -46,6 +46,23 @@ namespace lmms
 class MixerRoute;
 using MixerRouteVector = std::vector<MixerRoute*>;
 
+//! Where a mixer channel takes audio from, besides the tracks and channels that send to it.
+//! Used by recording (stage 3 of the LinuxMusic roadmap).
+struct ChannelInput
+{
+	enum class Source
+	{
+		None,		//!< only tracks and other channels
+		Hardware	//!< inputs of the audio interface
+	};
+
+	Source source = Source::None;
+	int firstChannel = 0; //!< zero-based input channel of the audio interface
+	int channelCount = 2; //!< 1 = mono, 2 = stereo pair starting at firstChannel
+
+	bool operator==(const ChannelInput&) const = default;
+};
+
 class MixerChannel : public ThreadableJob
 {
 public:
@@ -72,6 +89,17 @@ public:
 	BoolModel m_phaseInvertModel;
 	FloatModel m_widthModel; //!< stereo width in percent: 0 = mono, 100 = unchanged, 200 = twice as wide
 	FloatModel m_panModel; //!< -100 (left) to 100 (right)
+
+	// Recording (stage 3): the channel's input, whether it records, and when it plays its input back
+	enum class MonitorMode
+	{
+		Off,	//!< never play the input
+		On,		//!< always play the input
+		Auto	//!< play the input while armed for recording
+	};
+	ChannelInput m_input;
+	BoolModel m_recordArmModel;
+	IntModel m_monitorModel; //!< a MonitorMode
 
 	//! The signal after the effects and before the stereo section, pan and fader, for pre-fader sends
 	std::vector<SampleFrame> m_preFaderBuffer;
@@ -214,6 +242,9 @@ public:
 	// returns the index of the channel that was just added
 	int createChannel();
 
+	//! Sets where channel @p index takes audio from (see ChannelInput)
+	void setChannelInput(mix_ch_t index, const ChannelInput& input);
+
 	// delete a channel from the mixer.
 	void deleteChannel(int index);
 
@@ -247,6 +278,7 @@ public:
 
 signals:
 	void channelCreated(int index);
+	void channelInputChanged(int index);
 	void channelDeleted(int index);
 	void channelsSwapped(int fromIndex, int toIndex);
 

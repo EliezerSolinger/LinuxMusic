@@ -333,6 +333,38 @@ private slots:
 		QCOMPARE((*it)->isPreFader(), true);
 	}
 
+	void channelInputDefaultsToNone()
+	{
+		const auto channel = mixer()->createChannel();
+		const auto ch = mixer()->mixerChannel(channel);
+		QVERIFY(ch->m_input == ChannelInput{});
+		QCOMPARE(ch->m_recordArmModel.value(), false);
+		QCOMPARE(ch->m_monitorModel.value(), static_cast<int>(MixerChannel::MonitorMode::Auto));
+	}
+
+	void channelInputIsSavedAndLoaded()
+	{
+		const auto channel = mixer()->createChannel();
+		auto changed = QSignalSpy{mixer(), &Mixer::channelInputChanged};
+		const auto input = ChannelInput{ChannelInput::Source::Hardware, 2, 1};
+		mixer()->setChannelInput(channel, input);
+		QCOMPARE(changed.count(), 1);
+		mixer()->mixerChannel(channel)->m_recordArmModel.setValue(true);
+		mixer()->mixerChannel(channel)->m_monitorModel.setValue(static_cast<int>(MixerChannel::MonitorMode::On));
+
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixer");
+		mixer()->saveSettings(doc, element);
+		mixer()->clear();
+		QVERIFY(mixer()->numChannels() == 1);
+		mixer()->loadSettings(element);
+
+		const auto ch = mixer()->mixerChannel(channel);
+		QVERIFY(ch->m_input == input);
+		QCOMPARE(ch->m_recordArmModel.value(), true);
+		QCOMPARE(ch->m_monitorModel.value(), static_cast<int>(MixerChannel::MonitorMode::On));
+	}
+
 	void peakMeterShowsPostFaderLevel()
 	{
 		const auto channel = mixer()->createChannel();

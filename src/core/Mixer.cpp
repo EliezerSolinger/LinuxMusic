@@ -75,6 +75,9 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_phaseInvertModel(false, _parent),
 	m_widthModel(100.f, 0.f, 200.f, 1.f, _parent),
 	m_panModel(PanningCenter, PanningLeft, PanningRight, 1.f, _parent),
+	m_recordArmModel(false, _parent),
+	m_monitorModel(static_cast<int>(MonitorMode::Auto), static_cast<int>(MonitorMode::Off),
+		static_cast<int>(MonitorMode::Auto), _parent),
 	m_preFaderBuffer(Engine::audioEngine()->framesPerPeriod()),
 	m_name(),
 	m_lock(),
@@ -307,6 +310,17 @@ Mixer::~Mixer()
 		delete f;
 	}
 }
+
+
+
+void Mixer::setChannelInput(mix_ch_t index, const ChannelInput& input)
+{
+	auto channel = m_mixerChannels[index];
+	if (channel->m_input == input) { return; }
+	channel->m_input = input;
+	emit channelInputChanged(index);
+}
+
 
 
 
@@ -729,6 +743,9 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_phaseInvertModel.setValue(false);
 	ch->m_widthModel.setValue(100.f);
 	ch->m_panModel.setValue(PanningCenter);
+	ch->m_input = ChannelInput{};
+	ch->m_recordArmModel.setValue(false);
+	ch->m_monitorModel.setValue(static_cast<int>(MixerChannel::MonitorMode::Auto));
 	ch->m_name = ( index == 0 ) ? tr( "Master" ) : tr( "Channel %1" ).arg( index );
 	ch->m_volumeModel.setDisplayName( ch->m_name + ">" + tr( "Volume" ) );
 	ch->m_muteModel.setDisplayName( ch->m_name + ">" + tr( "Mute" ) );
@@ -738,6 +755,8 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_phaseInvertModel.setDisplayName(ch->m_name + ">" + tr("Invert phase"));
 	ch->m_widthModel.setDisplayName(ch->m_name + ">" + tr("Stereo width"));
 	ch->m_panModel.setDisplayName(ch->m_name + ">" + tr("Panning"));
+	ch->m_recordArmModel.setDisplayName(ch->m_name + ">" + tr("Record arm"));
+	ch->m_monitorModel.setDisplayName(ch->m_name + ">" + tr("Input monitoring"));
 	ch->setColor(std::nullopt);
 
 	// send only to master
@@ -779,6 +798,16 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		ch->m_phaseInvertModel.saveSettings(_doc, mixch, "phaseinvert");
 		ch->m_widthModel.saveSettings(_doc, mixch, "width");
 		ch->m_panModel.saveSettings(_doc, mixch, "pan");
+		ch->m_recordArmModel.saveSettings(_doc, mixch, "recordarm");
+		ch->m_monitorModel.saveSettings(_doc, mixch, "monitor");
+		if (ch->m_input.source == ChannelInput::Source::Hardware)
+		{
+			auto input = _doc.createElement("input");
+			input.setAttribute("source", "hardware");
+			input.setAttribute("channel", ch->m_input.firstChannel);
+			input.setAttribute("channels", ch->m_input.channelCount);
+			mixch.appendChild(input);
+		}
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
@@ -833,6 +862,14 @@ void Mixer::loadSettings( const QDomElement & _this )
 		m_mixerChannels[num]->m_phaseInvertModel.loadSettings(mixch, "phaseinvert");
 		m_mixerChannels[num]->m_widthModel.loadSettings(mixch, "width");
 		m_mixerChannels[num]->m_panModel.loadSettings(mixch, "pan");
+		m_mixerChannels[num]->m_recordArmModel.loadSettings(mixch, "recordarm");
+		m_mixerChannels[num]->m_monitorModel.loadSettings(mixch, "monitor");
+		if (const auto input = mixch.firstChildElement("input");
+			!input.isNull() && input.attribute("source") == "hardware")
+		{
+			setChannelInput(num, ChannelInput{ChannelInput::Source::Hardware,
+				input.attribute("channel").toInt(), std::clamp(input.attribute("channels", "2").toInt(), 1, 2)});
+		}
 		m_mixerChannels[num]->m_name = mixch.attribute( "name" );
 		if (mixch.hasAttribute("color"))
 		{
