@@ -40,7 +40,6 @@ SET(LMMS_PLUGIN_LIST
 	Flanger
 	FrequencyShifter
 	GranularPitchShifter
-	HydrogenImport
 	LadspaBrowser
 	LadspaEffect
 	LOMM

@@ -181,7 +181,7 @@ void printHelp()
 		"      --geometry <geometry>      Specify the size and position of\n"
 		"          the main window\n"
 		"          geometry is <xsizexysize+xoffset+yoffsety>.\n"
-		"      --import <in> [-e]         Import MIDI or Hydrogen file <in>.\n"
+		"      --import <in> [-e]         Import MIDI file <in>.\n"
 		"          If -e is specified linuxmusic exits after importing the file.\n"
 		"\nOptions for \"render\" and \"rendertracks\":\n"
 		"  -a, --float                    Use 32bit float bit depth\n"

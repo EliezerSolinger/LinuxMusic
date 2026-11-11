@@ -1762,8 +1762,6 @@ void MainWindow::onImportProject()
 				ConfigManager::inst()->userProjectsDir(),
 				tr("MIDI sequences") +
 				" (*.mid *.midi *.rmi);;" +
-				tr("Hydrogen projects") +
-				" (*.h2song);;" +
 				tr("All file types") +
 				" (*.*)");
 
