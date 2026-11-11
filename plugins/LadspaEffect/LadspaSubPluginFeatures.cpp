@@ -132,10 +132,7 @@ void LadspaSubPluginFeatures::listSubPluginKeys(
 	for( l_sortable_plugin_t::const_iterator it = plugins.begin();
 						it != plugins.end(); ++it )
 	{
-		if (lm->getDescription((*it).second)->inputChannels <= DEFAULT_CHANNELS)
-		{
-			_kl.push_back( ladspaKeyToSubPluginKey( _desc, ( *it ).first, ( *it ).second ) );
-		}
+		_kl.push_back( ladspaKeyToSubPluginKey( _desc, ( *it ).first, ( *it ).second ) );
 	}
 }
 

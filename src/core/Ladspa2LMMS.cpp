@@ -26,6 +26,8 @@
 
 #include "Ladspa2LMMS.h"
 
+#include "lmms_constants.h"
+
 
 namespace lmms
 {
@@ -45,25 +47,20 @@ Ladspa2LMMS::Ladspa2LMMS()
 			m_instruments.append( qMakePair( getName( key ), 
 								key ) );
 		}
-		else if( desc->type == LadspaPluginType::Transfer &&
-			( desc->inputChannels == desc->outputChannels &&
-			( desc->inputChannels == 1 ||
-			desc->inputChannels == 2 ||
-			desc->inputChannels == 4 )/* &&
-			isRealTimeCapable( key )*/ ) )
+		else if (desc->type == LadspaPluginType::Transfer)
 		{
-			m_validEffects.append( qMakePair( getName( key ),
-								key ) );
-		}
-		else if( desc->type == LadspaPluginType::Transfer &&
-			( desc->inputChannels != desc->outputChannels ||
-			( desc->inputChannels != 1 &&
-			desc->inputChannels != 2 &&
-			desc->inputChannels != 4 ) ||
-			!isRealTimeCapable( key ) ) )
-		{
-			m_invalidEffects.append( qMakePair( getName( key ), 
-								key ) );
+			// Any number of inputs and outputs can be routed with the pin connector, as long as
+			// the plugin's channels fit in a buffer. Mono plugins run twice (once per stereo channel).
+			const int processors = desc->inputChannels == 1 && desc->outputChannels == 1 ? DEFAULT_CHANNELS : 1;
+			const int channels = processors * (desc->inputChannels + desc->outputChannels);
+			if (channels <= MaxChannelsPerAudioBuffer)
+			{
+				m_validEffects.append(qMakePair(getName(key), key));
+			}
+			else
+			{
+				m_invalidEffects.append(qMakePair(getName(key), key));
+			}
 		}
 		else if( desc->type == LadspaPluginType::Sink )
 		{

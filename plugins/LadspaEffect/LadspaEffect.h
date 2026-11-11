@@ -23,12 +23,12 @@
  *
  */
 
-#ifndef _LADSPA_EFFECT_H
-#define _LADSPA_EFFECT_H
+#ifndef LMMS_LADSPA_EFFECT_H
+#define LMMS_LADSPA_EFFECT_H
 
-#include <QMutex>
+#include <vector>
 
-#include "AudioPlugin.h"
+#include "Effect.h"
 #include "ladspa.h"
 #include "LadspaControls.h"
 #include "LadspaManager.h"
@@ -39,7 +39,18 @@ namespace lmms
 struct port_desc_t;
 using multi_proc_t = QVector<port_desc_t*>;
 
-class LadspaEffect : public DefaultEffect
+/**
+ * Hosts a LADSPA effect plugin.
+ *
+ * The plugin's audio ports are exposed to the pin connector as they are: a plugin with 1 input and
+ * 2 outputs gets 1 input and 2 outputs, a 4-channel plugin gets 4 inputs and 4 outputs, and so on.
+ * Mono plugins (1 input and 1 output) are the exception: as in LMMS, they run as two instances
+ * ("processors"), one per stereo channel, whose controls can be linked.
+ *
+ * The plugin's audio ports are connected straight to the host's planar buffers, so no audio is copied
+ * in or out of the plugin.
+ */
+class LadspaEffect : public Effect
 {
 	Q_OBJECT
 public:
@@ -64,38 +75,57 @@ public:
 		return m_processors;
 	}
 
-private slots:
-	void changeSampleRate();
+	// AudioProcessor implementation
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+	void deactivate() override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
+	auto channelCount(bool isInput) const -> ch_cnt_t override;
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override;
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+		-> ch_cnt_t override;
+	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override;
 
 private:
-	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	//! Instantiates the plugin again for a new sample rate, keeping the control values. [main thread]
+	void changeSampleRate(sample_rate_t sampleRate);
 
-	auto processLock() -> bool override;
-	void processUnlock() override;
-
-	void pluginInstantiation();
+	void pluginInstantiation(sample_rate_t sampleRate, f_cnt_t maxFrames);
 	void pluginDestruction();
 
-	static sample_rate_t maxSamplerate( const QString & _name );
+	void activateHandles();
+	void deactivateHandles();
 
-	QMutex m_pluginMutex;
 	LadspaControls * m_controls;
 
 	ladspa_key_t m_key;
-	int m_portCount;
-	bool m_inPlaceBroken;
+	int m_portCount = 0;
 
-	const LADSPA_Descriptor * m_descriptor;
+	const LADSPA_Descriptor * m_descriptor = nullptr;
 	QVector<LADSPA_Handle> m_handles;
 
 	QVector<multi_proc_t> m_ports;
 	multi_proc_t m_portControls;
 
-	ch_cnt_t m_processors = 1;
+	//! Number of plugin instances (2 for mono plugins, otherwise 1)
+	ch_cnt_t m_processors = 0;
+
+	//! Audio inputs and outputs of each plugin instance
+	ch_cnt_t m_inputsPerProcessor = 0;
+	ch_cnt_t m_outputsPerProcessor = 0;
+
+	//! The sample rate the plugin instances were created with
+	sample_rate_t m_sampleRate = 0;
+	f_cnt_t m_maxFrames = 0;
+
+	//! Whether the plugin instances were activated (LADSPA activate())
+	bool m_handlesActive = false;
+
+	//! The buffer each audio port is currently connected to, to only call connect_port() when it changes
+	std::vector<LADSPA_Data*> m_connectedAudioBuffers;
 };
 
 
 } // namespace lmms
 
-#endif
+#endif // LMMS_LADSPA_EFFECT_H

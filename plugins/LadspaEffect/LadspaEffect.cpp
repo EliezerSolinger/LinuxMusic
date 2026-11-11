@@ -24,7 +24,9 @@
  */
 
 
-#include <QVarLengthArray>
+#include <algorithm>
+#include <cstring>
+
 #include <QMessageBox>
 
 #include "LadspaEffect.h"
@@ -67,7 +69,7 @@ Plugin::Descriptor PLUGIN_EXPORT ladspaeffect_plugin_descriptor =
 }
 
 LadspaEffect::LadspaEffect(Model* _parent, const Descriptor::SubPluginFeatures::Key* _key)
-	: AudioPlugin(&ladspaeffect_plugin_descriptor, _parent, _key)
+	: Effect(&ladspaeffect_plugin_descriptor, _parent, _key)
 	, m_controls(nullptr)
 	, m_key(LadspaSubPluginFeatures::subPluginKeyToLadspaKey(_key))
 {
@@ -82,10 +84,7 @@ LadspaEffect::LadspaEffect(Model* _parent, const Descriptor::SubPluginFeatures::
 
 	setDisplayName( manager->getShortName( m_key ) );
 
-	pluginInstantiation();
-
-	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ),
-					this, SLOT( changeSampleRate() ) );
+	pluginInstantiation(Engine::audioEngine()->outputSampleRate(), Engine::audioEngine()->framesPerPeriod());
 }
 
 
@@ -99,7 +98,7 @@ LadspaEffect::~LadspaEffect()
 
 
 
-void LadspaEffect::changeSampleRate()
+void LadspaEffect::changeSampleRate(sample_rate_t sampleRate)
 {
 	DataFile dataFile( DataFile::Type::EffectSettings );
 	m_controls->saveState( dataFile, dataFile.content() );
@@ -107,10 +106,8 @@ void LadspaEffect::changeSampleRate()
 	LadspaControls * controls = m_controls;
 	m_controls = nullptr;
 
-	m_pluginMutex.lock();
 	pluginDestruction();
-	pluginInstantiation();
-	m_pluginMutex.unlock();
+	pluginInstantiation(sampleRate, m_maxFrames);
 
 	controls->effectModelChanged( m_controls );
 	delete controls;
@@ -125,33 +122,149 @@ void LadspaEffect::changeSampleRate()
 
 
 
-ProcessStatus LadspaEffect::processImpl(InterleavedBufferView<float, 2> inOut)
+auto LadspaEffect::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 {
-	const auto frames = inOut.frames();
+	if (!isOkay() || m_descriptor == nullptr) { return true; }
 
-	// Copy the LMMS audio buffer to the LADSPA input buffer and initialize
-	// the control ports.
-	ch_cnt_t channel = 0;
+	const auto rate = static_cast<sample_rate_t>(sampleRate);
+	if (maxFrameCount > m_maxFrames)
+	{
+		// The audio-rate control ports need bigger buffers
+		m_maxFrames = maxFrameCount;
+		changeSampleRate(rate);
+	}
+	else if (rate != m_sampleRate)
+	{
+		changeSampleRate(rate);
+	}
+
+	if (!isOkay()) { return true; }
+
+	activateHandles();
+	return true;
+}
+
+
+
+
+void LadspaEffect::deactivate()
+{
+	deactivateHandles();
+}
+
+
+
+
+void LadspaEffect::activateHandles()
+{
+	if (m_handlesActive) { return; }
+
+	Ladspa2LMMS * manager = Engine::getLADSPAManager();
+	for (const auto handle : m_handles)
+	{
+		manager->activate(m_key, handle);
+	}
+	m_handlesActive = true;
+}
+
+
+
+
+void LadspaEffect::deactivateHandles()
+{
+	if (!m_handlesActive) { return; }
+
+	Ladspa2LMMS * manager = Engine::getLADSPAManager();
+	for (const auto handle : m_handles)
+	{
+		manager->deactivate(m_key, handle);
+	}
+	m_handlesActive = false;
+}
+
+
+
+
+auto LadspaEffect::channelCount(bool isInput) const -> ch_cnt_t
+{
+	return static_cast<ch_cnt_t>(m_processors * (isInput ? m_inputsPerProcessor : m_outputsPerProcessor));
+}
+
+
+
+
+auto LadspaEffect::channelGroupCount(bool isInput) const -> group_cnt_t
+{
+	(void)isInput;
+	return 1;
+}
+
+
+
+
+auto LadspaEffect::getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+	-> ch_cnt_t
+{
+	// All of the plugin's channels form one group
+	(void)index;
+	(void)group;
+	return channelCount(isInput);
+}
+
+
+
+
+auto LadspaEffect::getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t>
+{
+	// The input is still needed after running the plugin for the dry signal, so the
+	// inputs and outputs never share buffers
+	(void)inputIndex;
+	return std::nullopt;
+}
+
+
+
+
+ProcessStatus LadspaEffect::process(ProcessContext& context)
+{
+	const AudioBuffer& in = context.in();
+	AudioBuffer& out = context.out();
+	const auto frames = std::min(out.frames(), m_maxFrames);
+
+	Ladspa2LMMS * manager = Engine::getLADSPAManager();
+
+	// Connect the audio ports to the host's buffers and set the control ports.
+	std::size_t audioPort = 0;
 	for( ch_cnt_t proc = 0; proc < processorCount(); ++proc )
 	{
+		ch_cnt_t input = proc * m_inputsPerProcessor;
+		ch_cnt_t output = proc * m_outputsPerProcessor;
 		for( int port = 0; port < m_portCount; ++port )
 		{
 			port_desc_t * pp = m_ports.at( proc ).at( port );
 			switch( pp->rate )
 			{
 				case BufferRate::ChannelIn:
-					for (f_cnt_t frame = 0; frame < frames; ++frame)
+				case BufferRate::ChannelOut:
+				{
+					// LADSPA does not have const input ports, but plugins must not write to their inputs
+					auto buffer = pp->rate == BufferRate::ChannelIn
+						? const_cast<LADSPA_Data*>(in.buffer(input++).data())
+						: out.buffer(output++).data();
+					if (m_connectedAudioBuffers[audioPort] != buffer)
 					{
-						pp->buffer[frame] = inOut[frame][channel];
+						manager->connectPort(m_key, m_handles[proc], port, buffer);
+						m_connectedAudioBuffers[audioPort] = buffer;
 					}
-					++channel;
+					++audioPort;
 					break;
+				}
 				case BufferRate::AudioRateInput:
 				{
 					ValueBuffer * vb = pp->control->valueBuffer();
 					if( vb )
 					{
-						memcpy(pp->buffer, vb->values(), frames * sizeof(float));
+						std::memcpy(pp->buffer, vb->values(), frames * sizeof(float));
 					}
 					else
 					{
@@ -160,10 +273,7 @@ ProcessStatus LadspaEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 						// This only supports control rate ports, so the audio rates are
 						// treated as though they were control rate by setting the
 						// port buffer to all the same value.
-						for (f_cnt_t frame = 0; frame < frames; ++frame)
-						{
-							pp->buffer[frame] = pp->value;
-						}
+						std::fill_n(pp->buffer, frames, pp->value);
 					}
 					break;
 				}
@@ -177,7 +287,6 @@ ProcessStatus LadspaEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 					pp->buffer[0] =
 						pp->value;
 					break;
-				case BufferRate::ChannelOut:
 				case BufferRate::AudioRateOutput:
 				case BufferRate::ControlRateOutput:
 					break;
@@ -186,7 +295,6 @@ ProcessStatus LadspaEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 			}
 		}
 	}
-
 
 	// Process the buffers.
 	for( ch_cnt_t proc = 0; proc < processorCount(); ++proc )
@@ -194,54 +302,34 @@ ProcessStatus LadspaEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 		(m_descriptor->run)(m_handles[proc], frames);
 	}
 
-	// Copy the LADSPA output buffers to the LMMS buffer.
-	channel = 0;
+	// Mix the dry signal into the outputs. Outputs without a matching input have no dry signal.
 	const float d = dryLevel();
 	const float w = wetLevel();
-	for( ch_cnt_t proc = 0; proc < processorCount(); ++proc )
+	if (d != 0.f || w != 1.f)
 	{
-		for( int port = 0; port < m_portCount; ++port )
+		const auto inputs = static_cast<ch_cnt_t>(in.channels());
+		for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
 		{
-			port_desc_t * pp = m_ports.at( proc ).at( port );
-			switch( pp->rate )
+			auto wet = out.buffer(channel);
+			if (channel < inputs)
 			{
-				case BufferRate::ChannelIn:
-				case BufferRate::AudioRateInput:
-				case BufferRate::ControlRateInput:
-					break;
-				case BufferRate::ChannelOut:
-					for (f_cnt_t frame = 0; frame < frames; ++frame)
-					{
-						inOut[frame][channel] = d * inOut[frame][channel] + w * pp->buffer[frame];
-					}
-					++channel;
-					break;
-				case BufferRate::AudioRateOutput:
-				case BufferRate::ControlRateOutput:
-					break;
-				default:
-					break;
+				const auto dry = in.buffer(channel);
+				for (f_cnt_t frame = 0; frame < frames; ++frame)
+				{
+					wet[frame] = d * dry[frame] + w * wet[frame];
+				}
+			}
+			else
+			{
+				for (f_cnt_t frame = 0; frame < frames; ++frame)
+				{
+					wet[frame] *= w;
+				}
 			}
 		}
 	}
 
 	return ProcessStatus::ContinueIfNotQuiet;
-}
-
-
-
-
-auto LadspaEffect::processLock() -> bool
-{
-	return m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0);
-}
-
-
-
-
-void LadspaEffect::processUnlock()
-{
-	m_pluginMutex.unlock();
 }
 
 
@@ -259,25 +347,21 @@ void LadspaEffect::setControl( int _control, LADSPA_Data _value )
 
 
 
-void LadspaEffect::pluginInstantiation()
+void LadspaEffect::pluginInstantiation(sample_rate_t sampleRate, f_cnt_t maxFrames)
 {
 	Ladspa2LMMS * manager = Engine::getLADSPAManager();
+	m_sampleRate = sampleRate;
+	m_maxFrames = maxFrames;
 
-	// Calculate how many processing units are needed.
-	int effect_channels = manager->getDescription( m_key )->inputChannels;
-	m_processors = DEFAULT_CHANNELS / effect_channels;
+	// Mono plugins run once per stereo channel; all others run once with all of their channels.
+	const auto description = manager->getDescription( m_key );
+	m_inputsPerProcessor = description->inputChannels;
+	m_outputsPerProcessor = description->outputChannels;
+	m_processors = m_inputsPerProcessor == 1 && m_outputsPerProcessor == 1 ? DEFAULT_CHANNELS : 1;
 
-	// get inPlaceBroken property
-	m_inPlaceBroken = manager->isInplaceBroken( m_key );
-
-	// Categorize the ports, and create the buffers.
+	// Categorize the ports, and create the buffers. The audio channels use the host's buffers.
 	m_portCount = manager->getPortCount( m_key );
 
-	int inputch = 0;
-	int outputch = 0;
-	std::array<LADSPA_Data*, 2> inbuf;
-	inbuf[0] = nullptr;
-	inbuf[1] = nullptr;
 	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
 	{
 		multi_proc_t ports;
@@ -294,38 +378,26 @@ void LadspaEffect::pluginInstantiation()
 			// Determine the port's category.
 			if( manager->isPortAudio( m_key, port ) )
 			{
+				// Same classification as LadspaManager::getPluginInputs() and getPluginOutputs()
 				if( p->name.toUpper().contains( "IN" ) &&
 					manager->isPortInput( m_key, port ) )
 				{
 					p->rate = BufferRate::ChannelIn;
-					p->buffer = new LADSPA_Data[Engine::audioEngine()->framesPerPeriod()];
-					inbuf[ inputch ] = p->buffer;
-					inputch++;
 				}
 				else if( p->name.toUpper().contains( "OUT" ) &&
 					manager->isPortOutput( m_key, port ) )
 				{
 					p->rate = BufferRate::ChannelOut;
-					if( ! m_inPlaceBroken && inbuf[ outputch ] )
-					{
-						p->buffer = inbuf[ outputch ];
-						outputch++;
-					}
-					else
-					{
-						p->buffer = new LADSPA_Data[Engine::audioEngine()->framesPerPeriod()];
-						m_inPlaceBroken = true;
-					}
 				}
 				else if( manager->isPortInput( m_key, port ) )
 				{
 					p->rate = BufferRate::AudioRateInput;
-					p->buffer = new LADSPA_Data[Engine::audioEngine()->framesPerPeriod()];
+					p->buffer = new LADSPA_Data[maxFrames];
 				}
 				else
 				{
 					p->rate = BufferRate::AudioRateOutput;
-					p->buffer = new LADSPA_Data[Engine::audioEngine()->framesPerPeriod()];
+					p->buffer = new LADSPA_Data[maxFrames];
 				}
 			}
 			else
@@ -392,7 +464,7 @@ void LadspaEffect::pluginInstantiation()
 			if( manager->areHintsSampleRateDependent(
 								m_key, port ) )
 			{
-				p->max *= Engine::audioEngine()->outputSampleRate();
+				p->max *= sampleRate;
 			}
 
 			p->min = manager->getLowerBound( m_key, port );
@@ -404,7 +476,7 @@ void LadspaEffect::pluginInstantiation()
 			if( manager->areHintsSampleRateDependent(
 								m_key, port ) )
 			{
-				p->min *= Engine::audioEngine()->outputSampleRate();
+				p->min *= sampleRate;
 			}
 
 			p->def = manager->getDefaultSetting( m_key, port );
@@ -421,7 +493,7 @@ void LadspaEffect::pluginInstantiation()
 			}
 			else if( manager->areHintsSampleRateDependent( m_key, port ) )
 			{
-				p->def *= Engine::audioEngine()->outputSampleRate();
+				p->def *= sampleRate;
 			}
 
 
@@ -447,6 +519,9 @@ void LadspaEffect::pluginInstantiation()
 		m_ports.append( ports );
 	}
 
+	// The controls only need the ports, so they exist even if the plugin fails to instantiate below
+	m_controls = new LadspaControls( this );
+
 	// Instantiate the processing units.
 	m_descriptor = manager->getDescriptor( m_key );
 	if( m_descriptor == nullptr )
@@ -466,7 +541,7 @@ void LadspaEffect::pluginInstantiation()
 	}
 	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
 	{
-		LADSPA_Handle effect = manager->instantiate(m_key, Engine::audioEngine()->outputSampleRate());
+		LADSPA_Handle effect = manager->instantiate(m_key, sampleRate);
 		if( effect == nullptr )
 		{
 			QMessageBox::warning( 0, "Effect",
@@ -478,12 +553,18 @@ void LadspaEffect::pluginInstantiation()
 		m_handles.append( effect );
 	}
 
-	// Connect the ports.
+	// Connect the control ports. The audio ports are connected to the host's buffers in process().
+	m_connectedAudioBuffers.clear();
 	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
 	{
 		for( int port = 0; port < m_portCount; port++ )
 		{
 			port_desc_t * pp = m_ports.at( proc ).at( port );
+			if (pp->rate == BufferRate::ChannelIn || pp->rate == BufferRate::ChannelOut)
+			{
+				m_connectedAudioBuffers.push_back(nullptr);
+				continue;
+			}
 			if( !manager->connectPort( m_key,
 						m_handles[proc],
 						port,
@@ -498,12 +579,7 @@ void LadspaEffect::pluginInstantiation()
 		}
 	}
 
-	// Activate the processing units.
-	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
-	{
-		manager->activate( m_key, m_handles[proc] );
-	}
-	m_controls = new LadspaControls( this );
+	// The processing units are activated in activate()
 }
 
 
@@ -511,29 +587,28 @@ void LadspaEffect::pluginInstantiation()
 
 void LadspaEffect::pluginDestruction()
 {
-	if( !isOkay() )
-	{
-		return;
-	}
-
 	delete m_controls;
+	m_controls = nullptr;
 
-	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
+	// LADSPA requires deactivate() before cleanup() for activated instances
+	deactivateHandles();
+
+	Ladspa2LMMS * manager = Engine::getLADSPAManager();
+	for( ch_cnt_t proc = 0; proc < m_ports.size(); proc++ )
 	{
-		Ladspa2LMMS * manager = Engine::getLADSPAManager();
-		manager->deactivate( m_key, m_handles[proc] );
-		manager->cleanup( m_key, m_handles[proc] );
-		for( int port = 0; port < m_portCount; port++ )
+		if (proc < m_handles.size())
 		{
-			port_desc_t * pp = m_ports.at( proc ).at( port );
-			if( m_inPlaceBroken || pp->rate != BufferRate::ChannelOut )
-			{
-				if( pp->buffer) delete[] pp->buffer;
-			}
+			manager->cleanup( m_key, m_handles[proc] );
+		}
+		for (const auto pp : m_ports[proc])
+		{
+			// The audio channel ports do not own a buffer
+			delete[] pp->buffer;
 			delete pp;
 		}
 		m_ports[proc].clear();
 	}
+	m_connectedAudioBuffers.clear();
 	m_ports.clear();
 	m_handles.clear();
 	m_portControls.clear();
