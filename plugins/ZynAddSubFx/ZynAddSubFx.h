@@ -29,14 +29,14 @@
 #include <QMutex>
 
 #include <optional>
+#include <string>
 
 #include <globals.h>
 
-#include "AudioPlugin.h"
 #include "AutomatableModel.h"
+#include "Instrument.h"
 #include "InstrumentView.h"
 #include "RemotePlugin.h"
-#include "RemotePluginAudioPorts.h"
 
 class QPushButton;
 
@@ -59,7 +59,7 @@ class ZynAddSubFxRemotePlugin
 {
 	Q_OBJECT
 public:
-	ZynAddSubFxRemotePlugin(RemotePluginAudioPortsController& audioPort);
+	ZynAddSubFxRemotePlugin();
 
 	bool processMessage( const message & _m ) override;
 
@@ -68,13 +68,13 @@ signals:
 };
 
 
-class ZynAddSubFxInstrument
-	: public AudioPluginExt<Instrument, AudioPortsSettings {
-			.kind = AudioDataKind::F32,
-			.interleaved = false,
-			.inputs = 0,
-			.outputs = 2
-		}, DefaultConfigurableAudioPorts>
+/**
+ * Hosts ZynAddSubFX, either in-process or, while its own GUI is shown, in a RemoteZynAddSubFx process.
+ *
+ * It has no inputs and a stereo output, which the remote process writes into the host's buffers in
+ * shared memory.
+ */
+class ZynAddSubFxInstrument : public Instrument
 {
 	Q_OBJECT
 public:
@@ -93,6 +93,30 @@ public:
 
 	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
+	// AudioProcessor implementation
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto channelCount(bool isInput) const -> ch_cnt_t override { return isInput ? 0 : 2; }
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return isInput ? 0 : 1; }
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+		-> ch_cnt_t override
+	{
+		(void)index;
+		(void)group;
+		return isInput ? 0 : 2;
+	}
+	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override
+	{
+		(void)inputIndex;
+		return std::nullopt;
+	}
+	auto usesSharedMemoryBuffers() const -> bool override { return m_hasGUI; }
+	void onSharedMemoryChange(const SharedBufferInfo& info) override;
+
+	//! Switches between the in-process synth and the remote one showing ZynAddSubFX's GUI [main thread]
+	void setShowGUI(bool show);
+	auto showsGUI() const -> bool { return m_hasGUI; }
+
 private slots:
 	void reloadPlugin();
 
@@ -108,11 +132,6 @@ private slots:
 
 
 private:
-	auto processImpl(PlanarBufferView<const float, 0> in, PlanarBufferView<float, 2> out) -> ProcessStatus override;
-
-	auto processLock() -> bool override;
-	void processUnlock() override;
-
 	void initPlugin();
 	void sendControlChange( MidiControllers midiCtl, float value );
 
@@ -120,6 +139,14 @@ private:
 	QMutex m_pluginMutex;
 	LocalZynAddSubFx * m_localPlugin;
 	ZynAddSubFxRemotePlugin * m_remotePlugin;
+
+	//! The sample rate and period size the synth was created with
+	sample_rate_t m_sampleRate = 0;
+	f_cnt_t m_bufferSize = 0;
+
+	//! Where the host put the audio buffers for the remote process
+	std::string m_sharedBufferKey;
+	ch_cnt_t m_sharedBufferChannels = 0;
 
 	FloatModel m_portamentoModel;
 	FloatModel m_filterFreqModel;

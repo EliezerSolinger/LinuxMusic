@@ -141,11 +141,10 @@ public:
 	}
 
 
-	void process(const float* in, float* out) override
+	void process(const float* const* in, float* const* out) override
 	{
 		(void)in;
-		const auto accessBuffer = std::array{out, out + bufferSize()};
-		LocalZynAddSubFx::process({accessBuffer.data(), bufferSize()});
+		LocalZynAddSubFx::process(out[0], out[1], bufferSize());
 	}
 
 	void guiLoop();

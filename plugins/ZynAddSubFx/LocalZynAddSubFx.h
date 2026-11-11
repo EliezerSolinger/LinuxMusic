@@ -63,7 +63,8 @@ public:
 
 	void processMidiEvent( const MidiEvent& event );
 
-	void process(PlanarBufferView<float, 2> out);
+	//! Renders one period of @p frames frames, which must be the buffer size
+	void process(float* left, float* right, f_cnt_t frames);
 
 	inline Master * master()
 	{

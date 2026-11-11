@@ -265,10 +265,11 @@ void LocalZynAddSubFx::processMidiEvent( const MidiEvent& event )
 
 
 
-void LocalZynAddSubFx::process(PlanarBufferView<float, 2> out)
+void LocalZynAddSubFx::process(float* left, float* right, f_cnt_t frames)
 {
-	assert(out.frames() == static_cast<f_cnt_t>(synth->buffersize));
-	m_master->GetAudioOutSamples(synth->buffersize, synth->samplerate, out.bufferPtr<0>(), out.bufferPtr<1>());
+	assert(frames == static_cast<f_cnt_t>(synth->buffersize));
+	(void)frames;
+	m_master->GetAudioOutSamples(synth->buffersize, synth->samplerate, left, right);
 }
 
 

@@ -44,7 +44,7 @@
 #include "InstrumentTrack.h"
 #include "LedCheckBox.h"
 #include "LocalZynAddSubFx.h"
-#include "RemotePluginAudioPorts.h"
+#include <QMutexLocker>
 #include "RemoteZynAddSubFx.h"
 #include "Song.h"
 #include "StringPairDrag.h"
@@ -77,8 +77,7 @@ Plugin::Descriptor PLUGIN_EXPORT zynaddsubfx_plugin_descriptor =
 
 
 
-ZynAddSubFxRemotePlugin::ZynAddSubFxRemotePlugin(RemotePluginAudioPortsController& audioPorts)
-	: RemotePlugin{audioPorts}
+ZynAddSubFxRemotePlugin::ZynAddSubFxRemotePlugin()
 {
 	init( "RemoteZynAddSubFx", false );
 }
@@ -102,11 +101,13 @@ bool ZynAddSubFxRemotePlugin::processMessage( const message & _m )
 
 ZynAddSubFxInstrument::ZynAddSubFxInstrument(
 									InstrumentTrack * _instrumentTrack ) :
-	AudioPlugin(&zynaddsubfx_plugin_descriptor, _instrumentTrack, nullptr,
-		Flag::IsSingleStreamed | Flag::IsMidiBased, /* beginAsRemote */ false),
+	Instrument(&zynaddsubfx_plugin_descriptor, _instrumentTrack, nullptr,
+		Flag::IsSingleStreamed | Flag::IsMidiBased),
 	m_hasGUI( false ),
 	m_localPlugin(nullptr),
 	m_remotePlugin( nullptr ),
+	m_sampleRate(Engine::audioEngine()->outputSampleRate()),
+	m_bufferSize(Engine::audioEngine()->framesPerPeriod()),
 	m_portamentoModel( 0, 0, 127, 1, this, tr( "Portamento" ) ),
 	m_filterFreqModel( 64, 0, 127, 1, this, tr( "Filter frequency" ) ),
 	m_filterQModel( 64, 0, 127, 1, this, tr( "Filter resonance" ) ),
@@ -136,9 +137,6 @@ ZynAddSubFxInstrument::ZynAddSubFxInstrument(
 	// now we need a play-handle which cares for calling play()
 	auto iph = new InstrumentPlayHandle(this, _instrumentTrack);
 	Engine::audioEngine()->addPlayHandle( iph );
-
-	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ),
-			this, SLOT( reloadPlugin() ) );
 
 	connect( instrumentTrack()->pitchRangeModel(), SIGNAL( dataChanged() ),
 			this, SLOT( updatePitchRange() ), Qt::DirectConnection );
@@ -328,36 +326,79 @@ QString ZynAddSubFxInstrument::nodeName() const
 
 
 
-auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, PlanarBufferView<float, 2> out)
-	-> ProcessStatus
+auto ZynAddSubFxInstrument::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 {
-	if (m_remotePlugin)
+	const auto rate = static_cast<sample_rate_t>(sampleRate);
+	if (rate != m_sampleRate || maxFrameCount != m_bufferSize)
 	{
-		m_remotePlugin->process();
+		// The synth is created for a sample rate and buffer size, so create it again
+		m_sampleRate = rate;
+		m_bufferSize = maxFrameCount;
+		reloadPlugin();
 	}
-	else
+	return true;
+}
+
+
+
+
+auto ZynAddSubFxInstrument::process(ProcessContext& context) -> ProcessStatus
+{
+	auto& out = context.out();
+
+	// The synth may be being replaced; while exporting, wait for it
+	if (!m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0))
 	{
-		m_localPlugin->process(out);
+		out.silenceAllChannels();
+		return ProcessStatus::Continue;
 	}
 
-	(void)in;
+	bool processed = false;
+	if (m_remotePlugin)
+	{
+		// The remote process writes into the output buffers in shared memory
+		processed = m_remotePlugin->process();
+	}
+	else if (m_localPlugin)
+	{
+		m_localPlugin->process(out.buffer(0).data(), out.buffer(1).data(), out.frames());
+		processed = true;
+	}
+
+	m_pluginMutex.unlock();
+
+	if (!processed) { out.silenceAllChannels(); }
 	return ProcessStatus::Continue;
 }
 
 
 
 
-auto ZynAddSubFxInstrument::processLock() -> bool
+void ZynAddSubFxInstrument::onSharedMemoryChange(const SharedBufferInfo& info)
 {
-	return m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0);
+	m_sharedBufferKey = std::string{info.key};
+	m_sharedBufferChannels = info.channels;
+
+	const auto lock = QMutexLocker{&m_pluginMutex};
+	if (m_remotePlugin) { m_remotePlugin->setSharedAudioBuffer(info); }
 }
 
 
 
 
-void ZynAddSubFxInstrument::processUnlock()
+void ZynAddSubFxInstrument::setShowGUI(bool show)
 {
-	m_pluginMutex.unlock();
+	if (show == m_hasGUI) { return; }
+
+	m_hasGUI = show;
+	if (!show) { m_sharedBufferKey.clear(); }
+
+	// Create the synth again, in-process or in a remote process
+	reloadPlugin();
+
+	// Then let the host move the buffers into or out of shared memory, which tells the remote process
+	// where they are (see onSharedMemoryChange())
+	if (host()) { host()->useRemotePluginBuffers(show); }
 }
 
 
@@ -453,9 +494,7 @@ void ZynAddSubFxInstrument::initPlugin()
 
 	if( m_hasGUI )
 	{
-		audioPorts().setBufferType(true);
-
-		m_remotePlugin = new ZynAddSubFxRemotePlugin(audioPorts().controller());
+		m_remotePlugin = new ZynAddSubFxRemotePlugin();
 		m_remotePlugin->lock();
 		m_remotePlugin->waitForInitDone( false );
 
@@ -471,24 +510,26 @@ void ZynAddSubFxInstrument::initPlugin()
 						QDir( ConfigManager::inst()->factoryPresetsDir() +
 								"/ZynAddSubFX" ).absolutePath() ) ) );
 
-		m_remotePlugin->updateSampleRate( Engine::audioEngine()->outputSampleRate() );
+		m_remotePlugin->updateSampleRate( m_sampleRate );
 
 		// temporary workaround until the VST synchronization feature gets stripped out of the RemotePluginClient class
 		// causing not to send buffer size information requests
-		m_remotePlugin->sendMessage( RemotePlugin::message( IdBufferSizeInformation ).addInt( Engine::audioEngine()->framesPerPeriod() ) );
+		m_remotePlugin->sendMessage( RemotePlugin::message( IdBufferSizeInformation ).addInt( m_bufferSize ) );
 
 		m_remotePlugin->showUI();
 		m_remotePlugin->unlock();
+
+		// A new remote process needs to be told where the host's buffers are
+		if (!m_sharedBufferKey.empty())
+		{
+			m_remotePlugin->setSharedAudioBuffer({m_sharedBufferKey, m_sharedBufferChannels, 0, m_bufferSize});
+		}
 	}
 	else
 	{
-		audioPorts().setBufferType(false);
-
 		m_localPlugin = new LocalZynAddSubFx{};
-		m_localPlugin->setSampleRate(Engine::audioEngine()->outputSampleRate());
-		m_localPlugin->setBufferSize(Engine::audioEngine()->framesPerPeriod());
-
-		audioPorts().activate(Engine::audioEngine()->framesPerPeriod());
+		m_localPlugin->setSampleRate(m_sampleRate);
+		m_localPlugin->setBufferSize(m_bufferSize);
 	}
 
 	m_pluginMutex.unlock();
@@ -650,10 +691,9 @@ void ZynAddSubFxView::modelChanged()
 void ZynAddSubFxView::toggleUI()
 {
 	auto model = castModel<ZynAddSubFxInstrument>();
-	if( model->m_hasGUI != m_toggleUIButton->isChecked() )
+	if (model->showsGUI() != m_toggleUIButton->isChecked())
 	{
-		model->m_hasGUI = m_toggleUIButton->isChecked();
-		model->reloadPlugin();
+		model->setShowGUI(m_toggleUIButton->isChecked());
 
 		if( model->m_remotePlugin )
 		{
