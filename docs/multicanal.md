@@ -1,4 +1,41 @@
-# Passo 6 da preparação do mixer: áudio multicanal, pin connector e sidechain
+# Passo 6 da preparação do mixer: nova API de plugins, áudio multicanal, pin connector e sidechain
+
+> **Decisão final (11/11/2026): caminho 1.** Continuar o branch de trabalho do autor do #7459,
+> `messmerd/pin-connector-with-audio-buffer`, que reconstrói o pin connector sobre o `AudioBuffer` **e** começa a
+> nova API de plugins do LMMS ([#8275](https://github.com/LMMS/lmms/issues/8275)), e terminar tudo. O trabalho fica no
+> branch `multicanal`; o `linuxmusic` só recebe quando estiver completo e testado. As seções abaixo da linha
+> "Plano original" descrevem a ideia anterior (portar o PR de 2025) e ficam como referência.
+
+## O que a nova API de plugins (#8275) entrega
+
+Proposta de Dalton Messmer, baseada no CLAP:
+- separação clara entre host e plugin, permitindo plugins de terceiros fora do código do app;
+- suporte correto a CLAP e VST3;
+- estados do plugin (ativo, processando…) e regras de quais métodos rodam em qual thread, verificadas em builds de
+  depuração. Isso acaba com os mutex no processamento;
+- fila de eventos lock-free (MIDI e outros) nos dois sentidos;
+- sistema de extensões entre host e plugin;
+- `PluginId`, `PluginDescriptor` e `PluginEntry` no lugar de `Plugin::Descriptor::SubPluginFeatures::Key`, com vários
+  tipos de plugin na mesma biblioteca;
+- menos dependência de Qt nos plugins;
+- novo processamento dos instrumentos (#8294);
+- base para um gerenciador de plugins, um banco de presets e um novo sistema de plugins remotos.
+
+## Fases (caminho 1)
+
+| Fase | Conteúdo |
+|---|---|
+| 1 | Fazer o branch do autor compilar sobre o nosso código e terminar a migração dele para o `AudioBuffer`. Trazer de volta as melhorias que o `master` recebeu depois (detecção de áudio corrompido, auto-quit). Todos os testes passando. |
+| 2 | Pin connector completo: todos os plugins nativos, LADSPA, LV2, VST, ZynAddSubFx e Carla; janela do pin connector. |
+| 3 | Canais de faixa e de mixer além do estéreo, envios com pares de canais e sidechain de ponta a ponta, com testes de mixer. |
+| 4 | Nova API de plugins (#8275): `Host`/`PluginInstance`, estados e regras de thread, fila de eventos lock-free, extensões, `PluginId`/`PluginDescriptor`/`PluginEntry`, cabeçalhos públicos `include/lmms/plugin`, separação host/plugin e novo processamento de instrumentos. |
+| 5 | Hosts de CLAP e VST3. |
+| 6 | Novo sistema de plugins remotos, gerenciador de plugins e banco de presets. |
+| 7 | Medição de desempenho (custo por período do mixer e da cadeia de efeitos) antes e depois, e verificação final com renders de demos. |
+
+---
+
+## Plano original
 
 Decisão (11/11/2026): reimplementar **inteiro** o LMMS PR
 [#7459](https://github.com/LMMS/lmms/pull/7459) (plugins multicanal e pin connector), de Dalton Messmer, sobre o

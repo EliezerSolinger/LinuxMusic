@@ -328,7 +328,7 @@ SharedMemoryResource::SharedMemoryResource(SharedMemory<std::byte[]>& sm, std::s
 	if (m_key.empty()) { throw std::invalid_argument{"key cannot be empty"}; }
 }
 
-void* SharedMemoryResource::do_allocate(std::size_t bytes, std::size_t alignment) override
+void* SharedMemoryResource::do_allocate(std::size_t bytes, std::size_t alignment)
 {
 	// Not necessary, though anywhere this is called twice in a row is probably a bug
 	assert(m_sm->get() == nullptr);
@@ -357,14 +357,14 @@ void* SharedMemoryResource::do_allocate(std::size_t bytes, std::size_t alignment
 	return ptr;
 }
 
-void SharedMemoryResource::do_deallocate(void* p, std::size_t bytes, std::size_t) override
+void SharedMemoryResource::do_deallocate(void* p, std::size_t bytes, std::size_t)
 {
 	assert(p == m_sm->get());
 	assert(bytes == m_sm->size_bytes());
 	m_sm->detach();
 }
 
-bool SharedMemoryResource::do_is_equal(const std::pmr::memory_resource& other) const noexcept override
+bool SharedMemoryResource::do_is_equal(const std::pmr::memory_resource& other) const noexcept
 {
 	return this == &other;
 }
