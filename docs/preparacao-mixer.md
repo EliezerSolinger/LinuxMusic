@@ -33,6 +33,19 @@ efeitos do FL Studio (veja [README.md](README.md)).
 - **Sidechain e multicanal (#7459):** entram nesta fase, reimplementados sobre o código atual (as primeiras partes, como
   `AudioBuffer`, já estão no `master` do LMMS).
 
+### Organização em hierarquia (decisão de 11/11/2026)
+- O usuário vê **hierarquia**: trilhas-pasta e canais de grupo (como as *folder tracks* do REAPER e os grupos do
+  Bitwig/Ableton). Uma pasta "Bateria" com bumbo, caixa e pratos dentro soma num canal de grupo "Bateria", que vai
+  para o master; recolher a pasta esconde as trilhas filhas, e o fader do grupo controla todas.
+- Pastas podem conter pastas. No mixer, o canal de grupo aparece com os canais filhos ao lado ou recolhidos dentro
+  dele.
+- Os **canais extras em pares** (1/2, 3/4…) do núcleo multicanal ficam **internos**: são o encanamento do sidechain e
+  das saídas múltiplas, e só aparecem no pin connector, como recurso avançado. A tela não fala em "canais 3/4".
+- **Sidechain** como no FL Studio: "enviar como sidechain para o canal X"; o compressor de lá já recebe.
+- **Instrumento multi-saída** (ex.: bateria AVL): "uma trilha por peça" cria uma pasta com um canal filho por
+  peça, ligados por baixo pelos pares de canais, pinos e envios.
+- O menu provisório "Track channels" / "Sidechain send" do canal some quando a interface nova entrar.
+
 ### Interface nova do mixer
 - Slots de efeito visíveis em cada canal.
 - **Arrastar e soltar** plugins do navegador direto num slot ou num canal.
@@ -53,7 +66,9 @@ efeitos do FL Studio (veja [README.md](README.md)).
 6. Sidechain e multicanal (#7459), reimplementados.
 7. Compensação de latência (PDC).
 8. Canal automático por faixa; volume e pan da faixa viram atalhos; remoção do rack de efeitos das faixas.
-9. Interface nova do mixer: slots por canal, arrastar e soltar, menu de slot.
+9. Hierarquia: trilhas-pasta e canais de grupo no modelo de dados (com testes de soma, mute/solo em cascata,
+   salvar/carregar e desfazer), e envio de sidechain e "uma trilha por peça" sobre os pares internos.
+10. Interface nova do mixer: slots por canal, arrastar e soltar, menu de slot, pastas e grupos recolhíveis.
 
 ## Andamento
 
