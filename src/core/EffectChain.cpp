@@ -275,6 +275,18 @@ bool EffectChain::processAudioBuffer(AudioBuffer& buffer)
 
 
 
+auto EffectChain::latency() const -> f_cnt_t
+{
+	if (!m_enabledModel.value()) { return 0; }
+
+	f_cnt_t total = 0;
+	for (const auto& effect : m_effects) { total += effect->latency(); }
+	return total;
+}
+
+
+
+
 void EffectChain::clear()
 {
 	emit aboutToClear();

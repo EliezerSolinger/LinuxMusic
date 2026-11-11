@@ -73,6 +73,9 @@ public:
 	void moveUp( Effect * _effect );
 	bool processAudioBuffer(AudioBuffer& buffer);
 
+	//! The latency of the effects that process audio, added up (see PluginInstance::latency()) [audio thread]
+	auto latency() const -> f_cnt_t;
+
 	void clear();
 
 

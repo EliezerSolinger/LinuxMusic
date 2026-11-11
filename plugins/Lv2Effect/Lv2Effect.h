@@ -56,6 +56,7 @@ public:
 	// AudioProcessor implementation
 	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
 	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto latency() const -> f_cnt_t override { return m_controls.latency(); }
 	auto channelCount(bool isInput) const -> ch_cnt_t override;
 	auto channelGroupCount(bool isInput) const -> group_cnt_t override;
 	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const

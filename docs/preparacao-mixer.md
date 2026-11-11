@@ -204,10 +204,44 @@ Diferenças de som medidas na bateria A/B (43 projetos):
   volume vale desde a primeira amostra. Efeitos com memória (eco, reverb, compressor) carregam essa diferença no
   rastro. É a correção de um defeito, não uma regressão.
 
-**Pendente, anterior a este passo:** sob carga pesada (8 renders em paralelo), cerca de 1 render em 10 de
-instrumentos por nota (TripleOscillator) diverge da referência a partir de um limite de nota, com diferença de fase
-de ~0,5%. As frequências das notas são iguais. Para reproduzir: renderizar `inst-tripleosc` 10 vezes em paralelo e
-comparar. A build de referência não mostra o problema. Investigar junto com a parte F da fase 4 (instrumentos por
-nota).
+**Pendente, anterior a este passo (corrida entre threads, também no LMMS):**
+- O LB302 sob carga (12 renders em paralelo) sai com a nota deslocada em ~40% das vezes. A build de referência (sem
+  as fases 1 a 3) faz o mesmo, então o defeito vem do LMMS.
+- Mesma família, só nesta build: sob carga pesada (8 renders em paralelo), cerca de 1 render em 10 de
+  instrumentos por nota (TripleOscillator) diverge da referência a partir de um limite de nota, com diferença de fase
+  de ~0,5%. As frequências das notas são iguais. Para reproduzir: renderizar `inst-tripleosc` 10 vezes em paralelo e
+  comparar. Nas 8 vezes em que rodou, a build de referência não mostrou o problema.
+- Investigar as duas junto com a parte F da fase 4 (instrumentos por nota), que muda a ordem em que notas e
+  instrumentos são processados.
 
 `MixerTest` tem 46 testes.
+
+### Passo 7: compensação de latência, PDC (feito)
+
+- **Extensão de latência (parte C da fase 4, só esta peça):** `AudioProcessor::latency()` diz quantos quadros a
+  saída do plugin atrasa em relação à entrada. `PluginInstance::latency()` devolve 0 com o plugin inativo e com o
+  efeito desligado ou com falha, porque nesse caso o áudio passa sem atraso. `EffectChain::latency()` soma as
+  latências da cadeia.
+- **Diferente do CLAP:** a latência é lida na **thread de áudio**, no início de cada período, e não na principal
+  depois de um pedido de reinício. LADSPA e LV2 informam a latência por uma porta de saída que o plugin escreve
+  enquanto processa, então esse é o momento em que o valor vale. Por isso `latency()` precisa ser barata e não pode
+  travar.
+- **Plugins:** LADSPA, pela porta de saída de controle chamada `latency` (a convenção usada pelos plugins). LV2, pela
+  porta com `lv2:reportsLatency` (`lilv_plugin_get_latency_port_index`). VST, Carla e ZynAddSubFX ainda informam 0.
+- **Mixer** (`Mixer::compensateLatency()`, no início de `masterMix()`):
+  - latência de um canal = a da sua entrada mais atrasada + a dos seus efeitos;
+  - o som das faixas conta como 0;
+  - cada entrada do canal é atrasada para chegar junto com a mais atrasada:
+    - o som das faixas, pelo atraso de entrada do canal (todos os pares, para o sidechain também);
+    - cada envio, pelo seu próprio atraso, inclusive envios pré-fader e de sidechain.
+  - As linhas de atraso (`LatencyDelay`) só são realocadas quando a latência muda. A mudança vale a partir do
+    período seguinte, sempre no mesmo período, então o render continua determinístico.
+  - Canal mudo esvazia as suas linhas, para não soltar som velho quando volta.
+  - `Mixer::latency()` é a latência da mixagem toda. A gravação (etapa 3) vai usá-la para alinhar o que for gravado.
+- **Ainda não compensado:**
+  - latência de instrumentos (precisa de atraso por faixa antes do canal);
+  - o primeiro período de um plugin LADSPA ou LV2, antes de ele informar a latência;
+  - o dry/wet dos efeitos com latência, porque o host mistura o sinal seco sem atraso;
+  - na reprodução, a mixagem toda sai atrasada pela latência do master, sem adiantar a música.
+- Testes: `MixerTest` tem 50 (efeito de teste que atrasa e informa a latência: caminhos alinhados, entrada das faixas
+  de um barramento, efeito desligado, soma ao longo do caminho).

@@ -224,6 +224,10 @@ void MixerChannel::processMuted()
 
 	m_preFaderHasSignal = false;
 	m_meter.measureSilence();
+
+	// What was delayed must not come out when unmuted
+	m_inputDelay.clear();
+	for (MixerRoute* route : m_receives) { route->latencyDelay().clear(); }
 }
 
 
@@ -248,6 +252,25 @@ void MixerChannel::doProcessing()
 	auto buffer = m_buffer.interleavedBuffer().asSampleFrames();
 	const auto mainPair = pairMask(0);
 
+	// Latency compensation: the tracks' audio waits for the latest input
+	if (m_inputDelay.delay() > 0)
+	{
+		auto allChannels = AudioBuffer::ChannelFlags{};
+		for (ch_cnt_t ch = 0; ch < channelCount(); ++ch) { allChannels.set(ch); }
+		const bool hadInput = m_buffer.hasSignal(allChannels);
+		if (hadInput || m_inputDelay.holdsSignal())
+		{
+			for (ch_cnt_t ch = 0; ch < channelCount(); ++ch)
+			{
+				auto channel = m_buffer.buffer(ch);
+				m_inputDelay.process(ch, channel.data(), channel.data(), fpp);
+				m_buffer.assumeNonSilent(ch);
+			}
+			toInterleaved(m_buffer.groupBuffers(0), m_buffer.interleavedBuffer());
+		}
+		m_inputDelay.advance(fpp, hadInput);
+	}
+
 	// Inputs from other channels: the sender's main pair before or after its fader, or one of its auxiliary
 	// pairs after its effects, into one of this channel's pairs
 	bool receivedMain = false;
@@ -263,13 +286,57 @@ void MixerChannel::doProcessing()
 		const bool hasSignal = preFader
 			? sender->m_preFaderHasSignal
 			: sender->m_buffer.hasSignal(pairMask(sourcePair)) || sender->m_stillRunning;
-		if (!hasSignal) { continue; }
+		auto& delay = route->latencyDelay();
+		const bool delayed = delay.delay() > 0;
+		if (!hasSignal && !(delayed && delay.holdsSignal()))
+		{
+			if (delayed) { delay.advance(fpp, false); }
+			continue;
+		}
 
 		auto left = m_buffer.buffer(2 * destinationPair);
 		auto right = m_buffer.buffer(2 * destinationPair + 1);
 		const float amount = route->amount()->value();
 		const ValueBuffer* amountBuf = sendBufs[i];
 		auto gain = [&](f_cnt_t f) { return amountBuf ? amountBuf->values()[f] : amount; };
+
+		if (delayed)
+		{
+			// Latency compensation: the sender's pair waits for this channel's latest input
+			m_delayScratch.resize(2 * fpp);
+			float* delayedLeft = m_delayScratch.data();
+			float* delayedRight = delayedLeft + fpp;
+			if (!hasSignal)
+			{
+				std::fill_n(delayedLeft, 2 * fpp, 0.f);
+			}
+			else if (preFader)
+			{
+				const auto& src = sender->m_preFaderBuffer;
+				for (f_cnt_t f = 0; f < fpp; ++f)
+				{
+					delayedLeft[f] = src[f].left();
+					delayedRight[f] = src[f].right();
+				}
+			}
+			else
+			{
+				std::copy_n(sender->m_buffer.buffer(2 * sourcePair).data(), fpp, delayedLeft);
+				std::copy_n(sender->m_buffer.buffer(2 * sourcePair + 1).data(), fpp, delayedRight);
+			}
+			delay.process(0, delayedLeft, delayedLeft, fpp);
+			delay.process(1, delayedRight, delayedRight, fpp);
+			delay.advance(fpp, hasSignal);
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				left[f] += delayedLeft[f] * gain(f);
+				right[f] += delayedRight[f] * gain(f);
+			}
+			m_buffer.assumeNonSilent(2 * destinationPair);
+			m_buffer.assumeNonSilent(2 * destinationPair + 1);
+			receivedMain = receivedMain || destinationPair == 0;
+			continue;
+		}
 
 		if (preFader)
 		{
@@ -888,9 +955,59 @@ void Mixer::prepareMasterMix()
 
 
 
+void Mixer::compensateLatency()
+{
+	m_latencyPass.assign(m_mixerChannels.size(), 0);
+	for (auto index = std::size_t{0}; index < m_mixerChannels.size(); ++index)
+	{
+		compensateLatency(static_cast<mix_ch_t>(index));
+	}
+}
+
+
+
+
+auto Mixer::compensateLatency(mix_ch_t index) -> f_cnt_t
+{
+	MixerChannel* channel = m_mixerChannels[index];
+	if (m_latencyPass[index] == 2) { return channel->m_latency; }
+	if (m_latencyPass[index] == 1) { return 0; } // a loop, which the mixer does not allow
+	m_latencyPass[index] = 1;
+
+	// The latest input; the tracks' audio has none
+	f_cnt_t latest = 0;
+	for (const MixerRoute* route : channel->m_receives)
+	{
+		latest = std::max(latest, compensateLatency(route->senderIndex()));
+	}
+
+	channel->m_inputDelay.setDelay(latest, channel->channelCount());
+	for (MixerRoute* route : channel->m_receives)
+	{
+		route->latencyDelay().setDelay(latest - compensateLatency(route->senderIndex()), 2);
+	}
+
+	channel->m_latency = latest + channel->m_fxChain.latency();
+	m_latencyPass[index] = 2;
+	return channel->m_latency;
+}
+
+
+
+
+auto Mixer::latency() const -> f_cnt_t
+{
+	return m_mixerChannels.empty() ? 0 : m_mixerChannels[0]->m_latency;
+}
+
+
+
+
 void Mixer::masterMix( SampleFrame* _buf )
 {
 	const int fpp = Engine::audioEngine()->framesPerPeriod();
+
+	compensateLatency();
 
 	// add the channels that have no dependencies (no incoming senders, ie.
 	// no receives) to the jobqueue. The channels that have receives get

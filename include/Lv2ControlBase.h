@@ -96,6 +96,8 @@ public:
 		The outputs are all outputs of all Lv2Proc.
 	*/
 	auto audioChannelCount(bool isInput) const -> ch_cnt_t;
+	//! The latency reported by the plugin (the first instance's, if it runs twice) [audio thread]
+	auto latency() const -> f_cnt_t;
 	//! The inputs have a main group and a sidechain group (each only if it has channels)
 	auto audioChannelGroupCount(bool isInput) const -> group_cnt_t;
 	auto audioChannelGroup(group_cnt_t index, bool isInput) const -> ch_cnt_t;

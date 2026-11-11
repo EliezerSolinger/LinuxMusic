@@ -79,6 +79,7 @@ public:
 	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
 	void deactivate() override;
 	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto latency() const -> f_cnt_t override;
 
 	auto channelCount(bool isInput) const -> ch_cnt_t override;
 	auto channelGroupCount(bool isInput) const -> group_cnt_t override;
@@ -106,6 +107,9 @@ private:
 
 	QVector<multi_proc_t> m_ports;
 	multi_proc_t m_portControls;
+
+	//! The output control port named "latency" of the first processor, if any
+	const port_desc_t* m_latencyPort = nullptr;
 
 	//! Number of plugin instances (2 for mono plugins, otherwise 1)
 	ch_cnt_t m_processors = 0;

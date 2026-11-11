@@ -98,6 +98,51 @@ private:
 	DuckerControls m_controls;
 };
 
+//! Delays its stereo input by a fixed number of frames and reports it as its latency, like a lookahead limiter
+class FakeDelay : public Effect
+{
+public:
+	explicit FakeDelay(f_cnt_t delay) :
+		Effect{&s_duckerDescriptor, nullptr, nullptr},
+		m_controls{this},
+		m_lines(2, std::vector<float>(delay, 0.f))
+	{}
+
+	auto controls() -> EffectControls* override { return &m_controls; }
+	auto process(ProcessContext& context) -> ProcessStatus override
+	{
+		const auto& in = context.in();
+		auto& out = context.out();
+		const auto delay = m_lines[0].size();
+		auto position = m_position;
+		for (ch_cnt_t ch = 0; ch < 2; ++ch)
+		{
+			position = m_position;
+			const auto src = in.buffer(ch);
+			auto dst = out.buffer(ch);
+			for (std::size_t f = 0; f < dst.size(); ++f)
+			{
+				const float delayed = m_lines[ch][position];
+				m_lines[ch][position] = src[f];
+				dst[f] = delayed;
+				position = (position + 1) % delay;
+			}
+		}
+		m_position = position;
+		return ProcessStatus::Continue;
+	}
+	auto latency() const -> f_cnt_t override { return m_lines[0].size(); }
+	auto channelCount(bool) const -> ch_cnt_t override { return 2; }
+	auto channelGroupCount(bool) const -> group_cnt_t override { return 1; }
+	auto getChannelGroup(group_cnt_t, bool, AudioBuffer::ChannelGroup&) const -> ch_cnt_t override { return 2; }
+	auto getInplacePair(ch_cnt_t) const -> std::optional<ch_cnt_t> override { return std::nullopt; }
+
+private:
+	DuckerControls m_controls;
+	std::vector<std::vector<float>> m_lines;
+	std::size_t m_position = 0;
+};
+
 } // namespace
 
 class MixerTest : public QObject
@@ -889,6 +934,99 @@ private slots:
 		mixer()->releaseTrackChannel(track);
 		QCOMPARE(mixer()->trackChannel(track), static_cast<MixerChannel*>(nullptr));
 		delete track;
+	}
+
+	//! Adds an effect delaying by @p delay frames, with that latency, to channel @p channel
+	static auto addLatentEffect(mix_ch_t channel, f_cnt_t delay) -> PluginInstance*
+	{
+		auto& chain = mixer()->mixerChannel(channel)->m_fxChain;
+		chain.appendEffect(std::make_unique<PluginInstance>(std::make_unique<FakeDelay>(delay), Plugin::Type::Effect));
+		return chain.effects().back().get();
+	}
+
+	//! Expects @p value in the left channel of frames [@p from, @p to) and 0 elsewhere
+	static void compareStep(const std::vector<SampleFrame>& out, f_cnt_t from, f_cnt_t to, float value)
+	{
+		for (f_cnt_t f = 0; f < out.size(); ++f)
+		{
+			const float expected = f >= from && f < to ? value : 0.f;
+			if (std::abs(out[f].left() - expected) > 1e-6f)
+			{
+				QFAIL(qPrintable(QString{"frame %1: %2 instead of %3"}.arg(f).arg(out[f].left()).arg(expected)));
+			}
+		}
+	}
+
+	void latentEffectDelaysTheOtherPaths()
+	{
+		const f_cnt_t delay = 100;
+		const auto latent = mixer()->createChannel();
+		const auto plain = mixer()->createChannel();
+		addLatentEffect(latent, delay);
+
+		// One period of signal into both channels: they come out together, after the latency
+		feed(latent, 0.5f, 0.5f);
+		feed(plain, 0.25f, 0.25f);
+		auto out = mix();
+		QCOMPARE(mixer()->latency(), delay);
+		compareStep(out, delay, frames(), 0.75f);
+		compareStep(mix(), 0, delay, 0.75f);
+		compareStep(mix(), 0, 0, 0.f);
+
+		mixer()->mixerChannel(latent)->m_fxChain.clear();
+	}
+
+	void latencyOfASenderDelaysTheReceiversTracks()
+	{
+		const f_cnt_t delay = 64;
+		const auto latent = mixer()->createChannel();
+		const auto bus = mixer()->createChannel();
+		mixer()->deleteChannelSend(latent, 0);
+		mixer()->createChannelSend(latent, bus);
+		addLatentEffect(latent, delay);
+
+		// The bus's own audio (from tracks) waits for what the latent channel sends
+		feed(latent, 0.5f, 0.5f);
+		feed(bus, 0.125f, 0.125f);
+		compareStep(mix(), delay, frames(), 0.625f);
+		compareStep(mix(), 0, delay, 0.625f);
+		QCOMPARE(mixer()->latency(), delay);
+
+		mixer()->mixerChannel(latent)->m_fxChain.clear();
+	}
+
+	void disabledEffectHasNoLatency()
+	{
+		const auto latent = mixer()->createChannel();
+		const auto effect = addLatentEffect(latent, 32);
+		mix();
+		QCOMPARE(mixer()->latency(), f_cnt_t{32});
+
+		effect->effect()->enabledModel()->setValue(false);
+		feed(latent, 0.5f, 0.5f);
+		compareStep(mix(), 0, frames(), 0.5f);
+		QCOMPARE(mixer()->latency(), f_cnt_t{0});
+
+		mixer()->mixerChannel(latent)->m_fxChain.clear();
+	}
+
+	void latencyAddsUpAlongTheWay()
+	{
+		const auto first = mixer()->createChannel();
+		const auto second = mixer()->createChannel();
+		mixer()->deleteChannelSend(first, 0);
+		mixer()->createChannelSend(first, second);
+		addLatentEffect(first, 10);
+		addLatentEffect(second, 20);
+		addLatentEffect(0, 5);
+		mix();
+		QCOMPARE(mixer()->mixerChannel(first)->m_latency, f_cnt_t{10});
+		QCOMPARE(mixer()->mixerChannel(second)->m_latency, f_cnt_t{30});
+		QCOMPARE(mixer()->latency(), f_cnt_t{35});
+
+		mixer()->mixerChannel(0)->m_fxChain.clear();
+		mixer()->mixerChannel(first)->m_fxChain.clear();
+		mixer()->mixerChannel(second)->m_fxChain.clear();
 	}
 };
 

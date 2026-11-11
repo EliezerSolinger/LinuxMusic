@@ -142,6 +142,9 @@ public:
 	//! @param frames The number of frames to run
 	void run(f_cnt_t frames);
 
+	//! The latency the plugin reports through its latency port, written while it runs [audio thread]
+	auto latency() const -> f_cnt_t;
+
 	void handleMidiInputEvent(const class MidiEvent &event,
 		const TimePos &time, f_cnt_t offset);
 
@@ -163,6 +166,8 @@ protected:
 
 private:
 	const LilvPlugin* m_plugin;
+	//! The output control port reporting the plugin's latency (lv2:reportsLatency), if any
+	const float* m_latencyValue = nullptr;
 	LilvInstance* m_instance = nullptr;
 	Lv2Features m_features;
 

@@ -46,3 +46,9 @@ LinuxMusic, que segue o CLAP. Cada parte termina compilando, com testes e com co
   referência ele soa. O resto é igual. Acontece também pelo caminho MIDI antigo (`handleMidiEvent`), então veio das
   fases 1 a 3, não da fila. A referência também recebe um pitch bend que a build nova não recebe. Investigar antes de
   fechar a fase 4.
+
+## Parte C: extensões (em andamento)
+
+- **Latência (feita, para o PDC do mixer):** `AudioProcessor::latency()`, lida pelo host na thread de áudio no
+  início de cada período. Veja o passo 7 em [preparacao-mixer.md](preparacao-mixer.md).
+- Pendente: o mecanismo de extensões por nome, transporte, registro de mensagens e estado.

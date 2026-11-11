@@ -94,6 +94,7 @@ public:
 	auto wantsEvents() const -> bool override { return true; }
 #endif
 	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto latency() const -> f_cnt_t override { return Lv2ControlBase::latency(); }
 	auto channelCount(bool isInput) const -> ch_cnt_t override { return audioChannelCount(isInput); }
 	auto channelGroupCount(bool isInput) const -> group_cnt_t override
 	{

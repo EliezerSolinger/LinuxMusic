@@ -554,6 +554,19 @@ auto PluginInstance::sendEvent(const PluginEvent& event) -> bool
 
 
 
+auto PluginInstance::latency() const -> f_cnt_t
+{
+	if (!m_processor || !hasState(State::Active)) { return 0; }
+	if (const auto effect = this->effect(); effect && (!effect->isEnabled() || !effect->isOkay() || effect->dontRun()))
+	{
+		return 0;
+	}
+	return m_processor->latency();
+}
+
+
+
+
 void PluginInstance::playNote(NotePlayHandle* nph, std::span<SampleFrame> out)
 {
 	auto instrument = this->instrument();

@@ -718,6 +718,16 @@ void Lv2Proc::createPort(std::size_t portNum)
 
 
 
+auto Lv2Proc::latency() const -> f_cnt_t
+{
+	if (!m_latencyValue) { return 0; }
+	const float frames = *m_latencyValue;
+	return frames >= 1.f && frames < 1e7f ? static_cast<f_cnt_t>(frames + 0.5f) : 0;
+}
+
+
+
+
 void Lv2Proc::createPorts()
 {
 	// register ports at the processor after creation,
@@ -799,6 +809,18 @@ void Lv2Proc::createPorts()
 
 	// debugging:
 	//dumpPorts();
+
+	if (lilv_plugin_has_latency(m_plugin))
+	{
+		const auto index = lilv_plugin_get_latency_port_index(m_plugin);
+		if (index < m_ports.size())
+		{
+			if (auto control = dynamic_cast<Lv2Ports::Control*>(m_ports[index].get()))
+			{
+				m_latencyValue = &control->m_val;
+			}
+		}
+	}
 }
 
 

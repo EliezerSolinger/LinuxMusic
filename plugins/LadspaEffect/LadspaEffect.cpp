@@ -185,6 +185,18 @@ void LadspaEffect::deactivateHandles()
 
 
 
+auto LadspaEffect::latency() const -> f_cnt_t
+{
+	if (!m_latencyPort) { return 0; }
+
+	// Written by the plugin while processing; ignore nonsense
+	const float frames = m_latencyPort->buffer[0];
+	return frames >= 1.f && frames < 10.f * m_sampleRate ? static_cast<f_cnt_t>(frames + 0.5f) : 0;
+}
+
+
+
+
 auto LadspaEffect::channelCount(bool isInput) const -> ch_cnt_t
 {
 	return static_cast<ch_cnt_t>(m_processors * (isInput ? m_inputsPerProcessor : m_outputsPerProcessor));
@@ -411,6 +423,9 @@ void LadspaEffect::pluginInstantiation(sample_rate_t sampleRate, f_cnt_t maxFram
 				else
 				{
 					p->rate = BufferRate::ControlRateOutput;
+					p->buffer[0] = 0.f;
+					// The usual way for LADSPA plugins to report their latency
+					if (proc == 0 && p->name.compare("latency", Qt::CaseInsensitive) == 0) { m_latencyPort = p; }
 				}
 			}
 
@@ -589,6 +604,7 @@ void LadspaEffect::pluginDestruction()
 {
 	delete m_controls;
 	m_controls = nullptr;
+	m_latencyPort = nullptr;
 
 	// LADSPA requires deactivate() before cleanup() for activated instances
 	deactivateHandles();

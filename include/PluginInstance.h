@@ -128,6 +128,12 @@ public:
 	auto process(AudioBuffer& trackChannels, NotePlayHandle* nph = nullptr) -> bool;
 
 	/**
+	 * The plugin's latency (see AudioProcessor::latency()); 0 while inactive and for disabled or bypassed
+	 * effects, whose audio passes through undelayed. [audio thread]
+	 */
+	auto latency() const -> f_cnt_t;
+
+	/**
 	 * Renders a note of a NotePlayHandle-based instrument into the note's own buffer and applies the
 	 * output pins to it. [audio thread, possibly in parallel for different notes]
 	 */

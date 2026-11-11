@@ -212,6 +212,16 @@ public:
 	 */
 	virtual auto wantsEvents() const -> bool { return false; }
 
+	/**
+	 * The plugin's latency: how many frames its output lags behind its input, e.g. for lookahead. The mixer
+	 * delays the other paths by as much, so that everything stays aligned (plugin delay compensation).
+	 *
+	 * [audio thread, while processing] Called by the host at the start of every period, so it must be cheap and
+	 * must not lock. Unlike CLAP, a change needs no restart: plugins that report latency through an output port
+	 * (LADSPA, LV2) write it while processing, and the host reads it before the next period.
+	 */
+	virtual auto latency() const -> f_cnt_t { return 0; }
+
 	//! @returns whether the processor uses interleaved buffers or planar buffers
 	//! TODO: Remove interleaved buffer support in the future
 	virtual auto usesInterleavedBuffers() const -> bool { return false; }

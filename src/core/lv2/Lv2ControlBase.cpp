@@ -112,6 +112,14 @@ void Lv2ControlBase::reload()
 
 
 
+auto Lv2ControlBase::latency() const -> f_cnt_t
+{
+	return m_procs.empty() ? 0 : m_procs.front()->latency();
+}
+
+
+
+
 auto Lv2ControlBase::audioChannelCount(bool isInput) const -> ch_cnt_t
 {
 	if (m_procs.empty()) { return 0; }
