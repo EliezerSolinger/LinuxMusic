@@ -157,6 +157,12 @@ GuiApplication::GuiApplication()
 
 	displayInitProgress(tr("Preparing UI"));
 
+	// Screenshot runs (see below) must not stop at the first-run setup dialog
+	if (!qEnvironmentVariable("LINUXMUSIC_SCREENSHOT").isEmpty())
+	{
+		ConfigManager::inst()->setValue("app", "configured", "1");
+	}
+
 	m_mainWindow = new MainWindow;
 	connect(m_mainWindow, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 	connect(m_mainWindow, SIGNAL(initProgress(const QString&)), 

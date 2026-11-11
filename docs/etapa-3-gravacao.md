@@ -9,6 +9,25 @@ projeto toca.
 Este sistema é construído do zero sobre os canais da etapa 2. Ele **não** reaproveita a gravação herdada do branch
 `feature/recording-stage-one` do LMMS (veja [estado-atual.md](estado-atual.md)).
 
+## Um novo tipo de faixa: a faixa de gravação
+
+A "Sample Track" herdada do LMMS não representa o que a gravação precisa. Ela foi feita para tocar loops e samples
+soltos, não para editar áudio gravado. Por isso a gravação terá um **tipo de faixa novo, a faixa de gravação**
+(faixa de áudio), pensada para isso desde o começo:
+
+- **Vários clipes de áudio por faixa, em qualquer posição**, inclusive sobrepostos.
+- **Crossfade automático** quando dois clipes se sobrepõem, com curva ajustável.
+- **Fade in e fade out** em cada clipe, com curva ajustável. O PR #7900 do LMMS, já mesclado, fez isso para a
+  Sample Track e pode servir de base.
+- **Edição não destrutiva:** cortar, aparar as bordas, mover o conteúdo dentro do clipe (slip edit) e ganho por clipe,
+  sem alterar o arquivo gravado no disco.
+- **Takes em lanes:** cada passada de gravação vira um take na mesma faixa, e dá para escolher ou montar o melhor
+  (comping).
+- **Entrada, armar e monitorar** ficam na própria faixa e no canal do mixer ligado a ela (etapa 2).
+
+A Sample Track atual continua existindo para loops e samples simples, pelo menos até a faixa de gravação cobrir o que
+ela faz.
+
 ## Funcionalidades esperadas
 
 ### Essenciais (primeira versão)
@@ -42,6 +61,10 @@ Este sistema é construído do zero sobre os canais da etapa 2. Ele **não** rea
   - A captura passa por ring buffers lock-free até a thread de disco.
 - **Formato de projeto:** pode mudar livremente para referenciar os arquivos gravados, guardar os takes e as
   configurações de entrada e monitoração de cada faixa.
+- **Entrada só quando necessária:** hoje os drivers SDL e PortAudio capturam a entrada (o microfone) o tempo todo,
+  mesmo sem nenhuma faixa armada. O ring buffer de entrada enche e o log é inundado de avisos de "input ring buffer
+  overflow", escritos da thread de áudio. A captura deve abrir só quando houver faixa armada ou monitorando, e os
+  avisos não podem ser impressos da thread de tempo real.
 
 ## Critério de conclusão
 
