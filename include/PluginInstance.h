@@ -110,6 +110,7 @@ public:
 	auto audioPortsModel() const -> const AudioPortsModel* { return m_audioPorts.get(); }
 
 	auto state() const -> std::uint8_t { return m_state.load(std::memory_order_relaxed); }
+	auto hasState(State flag) const -> bool { return state() & static_cast<std::uint8_t>(flag); }
 	auto isRemotePlugin() const -> bool { return m_isRemotePlugin; }
 
 	/**

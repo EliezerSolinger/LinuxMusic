@@ -26,6 +26,8 @@
 
 #include <QDomElement>
 
+#include "PluginChecks.h"
+
 #include "AudioEngine.h"
 #include "AudioPortsRouter.h"
 #include "DummyEffect.h"
@@ -187,6 +189,10 @@ void PluginInstance::setUpAudioPorts()
 	assert(m_processor != nullptr);
 	auto& proc = *m_processor;
 
+	// The audio ports may only change while the plugin is inactive
+	PluginChecks::require(ThreadCheck::isMainThread(), "the audio ports must be set up on the main thread");
+	PluginChecks::require(!hasState(State::Active), "the audio ports must be set up while the plugin is inactive");
+
 	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
 	const ch_cnt_t channelsIn = proc.channelCount(true);
 	const ch_cnt_t channelsOut = proc.channelCount(false);
@@ -294,7 +300,10 @@ void PluginInstance::setUpAudioPorts()
 
 void PluginInstance::activate()
 {
-	if (!m_processor || (state() & static_cast<std::uint8_t>(State::Error))) { return; }
+	if (!m_processor || hasState(State::Error)) { return; }
+
+	PluginChecks::require(ThreadCheck::isMainThread(), "activate() must be called on the main thread");
+	PluginChecks::require(!hasState(State::Active), "activate() called on an active plugin");
 
 	const auto engine = Engine::audioEngine();
 	m_activeSampleRate = engine->outputSampleRate();
@@ -305,7 +314,7 @@ void PluginInstance::activate()
 	}
 	setState(State::Active, true);
 
-	if (m_processor->startProcessing()) { setState(State::Processing, true); }
+	// The processing starts on the audio thread, in the next period (see process())
 }
 
 
@@ -315,12 +324,18 @@ void PluginInstance::deactivate()
 {
 	if (!m_processor) { return; }
 
-	if (state() & static_cast<std::uint8_t>(State::Processing))
+	PluginChecks::require(ThreadCheck::isMainThread(), "deactivate() must be called on the main thread");
+
+	if (hasState(State::Processing))
 	{
+		// stopProcessing() belongs on the audio thread. The plugin is not being processed now (the audio engine
+		// is paused or the plugin is not in use), so the host acts as its audio thread.
+		const auto audioThread = ThreadCheck::AudioThreadScope{};
 		m_processor->stopProcessing();
 		setState(State::Processing, false);
+		setState(State::Sleeping, false);
 	}
-	if (state() & static_cast<std::uint8_t>(State::Active))
+	if (hasState(State::Active))
 	{
 		m_processor->deactivate();
 		setState(State::Active, false);
@@ -356,8 +371,16 @@ void PluginInstance::reactivate()
 
 auto PluginInstance::process(AudioBuffer& trackChannels, NotePlayHandle* nph) -> bool
 {
-	const auto runnable = static_cast<std::uint8_t>(State::Active) | static_cast<std::uint8_t>(State::Processing);
-	if (!m_processor || (state() & runnable) != runnable) { return false; }
+	if (!m_processor || !hasState(State::Active)) { return false; }
+
+	PluginChecks::require(ThreadCheck::isAudioThread(), "process() must be called on the audio thread");
+
+	if (!hasState(State::Processing))
+	{
+		// The first period after activating, on the audio thread
+		if (!m_processor->startProcessing()) { return false; }
+		setState(State::Processing, true);
+	}
 
 	auto effect = isInstrument() ? nullptr : static_cast<Effect*>(m_plugin.get());
 	const auto& usedOutputs = m_audioPorts->out().usedTrackChannels();

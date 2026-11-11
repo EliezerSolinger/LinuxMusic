@@ -31,6 +31,7 @@
 #include "Effect.h"
 #include "EffectControls.h"
 #include "Mixer.h"
+#include "PluginChecks.h"
 #include "PluginInstance.h"
 #include "ProjectJournal.h"
 #include "SampleTrack.h"
@@ -122,6 +123,7 @@ class MixerTest : public QObject
 		// A new period, as the audio engine does before rendering
 		AutomatableModel::incrementPeriodCounter();
 		auto out = std::vector<SampleFrame>(frames());
+		const auto audioThread = ThreadCheck::AudioThreadScope{}; // like the audio engine's rendering thread
 		mixer()->masterMix(out.data());
 		return out;
 	}
@@ -148,6 +150,12 @@ private slots:
 		Engine::init(true);
 		// The tests render the periods themselves
 		Engine::audioEngine()->stopProcessing();
+
+		// The effects in the tests follow the plugin API's rules
+		PluginChecks::setEnabled(true);
+		PluginChecks::setViolationHandler([](std::string_view message) {
+			QFAIL(qPrintable(QString{"Plugin API violation: "} + QString::fromUtf8(message.data(), message.size())));
+		});
 	}
 
 	void cleanupTestCase()

@@ -30,6 +30,7 @@
 
 #include "AudioEngine.h"
 #include "Hardware.h"
+#include "PluginChecks.h"
 #include "ThreadableJob.h"
 
 
@@ -159,6 +160,7 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 void AudioEngineWorkerThread::run()
 {
 	disableDenormals();
+	ThreadCheck::markAsAudioThread();
 
 	QMutex m;
 	while( m_quit == false )

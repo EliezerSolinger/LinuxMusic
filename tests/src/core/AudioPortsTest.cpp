@@ -41,6 +41,7 @@
 #include "EffectControls.h"
 #include "Engine.h"
 #include "Instrument.h"
+#include "PluginChecks.h"
 #include "PluginInstance.h"
 
 using namespace lmms;
@@ -209,6 +210,13 @@ auto makeInstance(FakeEffect::Ports ports, std::function<ProcessStatus(ProcessCo
 		std::make_unique<FakeEffect>(std::move(ports), std::move(process)), Plugin::Type::Effect);
 }
 
+//! Processes like the audio engine does: on an audio thread
+auto processOnAudioThread(PluginInstance& instance, AudioBuffer& track, NotePlayHandle* nph = nullptr) -> bool
+{
+	const auto audioThread = ThreadCheck::AudioThreadScope{};
+	return instance.process(track, nph);
+}
+
 auto scale(AudioBuffer& buffer, float factor)
 {
 	for (ch_cnt_t ch = 0; ch < buffer.channels(); ++ch)
@@ -224,11 +232,32 @@ class AudioPortsTest : public QObject
 {
 	Q_OBJECT
 
+	std::vector<std::string> m_violations;
+	bool m_expectViolations = false;
+
 private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
 		Engine::audioEngine()->stopProcessing();
+
+		// Every test follows the plugin API's rules
+		PluginChecks::setEnabled(true);
+		PluginChecks::setViolationHandler([this](std::string_view message) {
+			m_violations.emplace_back(message);
+		});
+	}
+
+	void init()
+	{
+		m_violations.clear();
+	}
+
+	void cleanup()
+	{
+		for (const auto& message : m_violations) { qWarning("Plugin API violation: %s", message.c_str()); }
+		QVERIFY(m_violations.empty() || m_expectViolations);
+		m_expectViolations = false;
 	}
 
 	void cleanupTestCase()
@@ -471,7 +500,7 @@ private slots:
 		QVERIFY(instance->audioPortsModel()->directRouting().has_value());
 
 		auto track = trackBuffer(0.8f, 0.4f);
-		QVERIFY(instance->process(track));
+		QVERIFY(processOnAudioThread(*instance, track));
 		QCOMPARE(processed, &track);
 		compareChannel(track, 0, 0.4f);
 		compareChannel(track, 1, 0.2f);
@@ -493,7 +522,7 @@ private slots:
 		QVERIFY(!instance->audioPortsModel()->directRouting());
 
 		auto track = trackBuffer(0.8f, 0.4f);
-		QVERIFY(instance->process(track));
+		QVERIFY(processOnAudioThread(*instance, track));
 		compareChannel(track, 0, 0.2f);
 		compareChannel(track, 1, 0.4f);
 		QCOMPARE(track.interleavedBuffer().frame(0)[0], 0.2f); // kept in sync
@@ -513,7 +542,7 @@ private slots:
 			});
 
 		auto track = trackBuffer(0.1f, 0.2f);
-		QVERIFY(instance->process(track));
+		QVERIFY(processOnAudioThread(*instance, track));
 		compareChannel(track, 0, 0.2f);
 		compareChannel(track, 1, 0.4f);
 	}
@@ -532,7 +561,7 @@ private slots:
 			});
 
 		auto track = trackBuffer(0.1f, 0.2f);
-		QVERIFY(instance->process(track));
+		QVERIFY(processOnAudioThread(*instance, track));
 		QVERIFY(shared);
 		QVERIFY(separate);
 		compareChannel(track, 0, 0.1f);
@@ -548,7 +577,7 @@ private slots:
 
 		// Only L goes in, the output goes to both L and R
 		auto track = trackBuffer(0.8f, 0.4f);
-		QVERIFY(instance->process(track));
+		QVERIFY(processOnAudioThread(*instance, track));
 		compareChannel(track, 0, 0.4f);
 		compareChannel(track, 1, 0.4f);
 	}
@@ -572,7 +601,7 @@ private slots:
 
 		// Unconnected sidechain: silence, so the main signal passes unchanged
 		auto track = trackBuffer(0.8f, 0.4f);
-		QVERIFY(instance->process(track));
+		QVERIFY(processOnAudioThread(*instance, track));
 		compareChannel(track, 0, 0.8f);
 		compareChannel(track, 1, 0.4f);
 
@@ -580,7 +609,7 @@ private slots:
 		instance->audioPortsModel()->in().setPin(1, 2, true);
 		instance->audioPortsModel()->in().setPin(1, 3, true);
 		auto track2 = trackBuffer(0.8f, 0.5f);
-		QVERIFY(instance->process(track2));
+		QVERIFY(processOnAudioThread(*instance, track2));
 		compareChannel(track2, 0, 0.4f);
 		compareChannel(track2, 1, 0.25f);
 	}
@@ -595,7 +624,7 @@ private slots:
 		static_cast<FakeEffect*>(instance->effect())->setEnabled(false);
 
 		auto track = trackBuffer(0.8f, 0.4f);
-		QVERIFY(!instance->process(track));
+		QVERIFY(!processOnAudioThread(*instance, track));
 		QVERIFY(!called);
 		compareChannel(track, 0, 0.8f);
 		compareChannel(track, 1, 0.4f);
@@ -611,19 +640,19 @@ private slots:
 
 		// The effect asks to sleep after processing
 		auto track = trackBuffer(0.8f, 0.4f);
-		QVERIFY(!instance->process(track));
+		QVERIFY(!processOnAudioThread(*instance, track));
 		QCOMPARE(calls, 1);
 		QVERIFY(!instance->effect()->isAwake());
 
 		// Asleep without input: not processed, and its output track channels are silenced
 		auto silent = AudioBuffer{frames(), 2, 2, true};
-		QVERIFY(!instance->process(silent));
+		QVERIFY(!processOnAudioThread(*instance, silent));
 		QCOMPARE(calls, 1);
 		QVERIFY(!silent.hasAnySignal());
 
 		// Input wakes it up
 		auto track2 = trackBuffer(0.8f, 0.4f);
-		instance->process(track2);
+		processOnAudioThread(*instance, track2);
 		QCOMPARE(calls, 2);
 	}
 
@@ -635,7 +664,7 @@ private slots:
 		});
 
 		auto track = trackBuffer(0.8f, 0.4f);
-		instance->process(track);
+		processOnAudioThread(*instance, track);
 		if (Engine::audioEngine()->sanitizationEnabled())
 		{
 			compareChannel(track, 0, 0.f);
@@ -655,6 +684,33 @@ private slots:
 		instance->setTrackChannelCount(4);
 		QCOMPARE(instance->audioPortsModel()->trackChannelCount(), 4);
 		QVERIFY(!pins.enabled(2, 2));
+	}
+
+	void Instance_ProcessingStartsOnTheAudioThread()
+	{
+		auto instance = makeInstance({}, [](ProcessContext&) { return ProcessStatus::Continue; });
+		QVERIFY(instance->hasState(PluginInstance::State::Active));
+		QVERIFY(!instance->hasState(PluginInstance::State::Processing));
+
+		auto track = trackBuffer(0.5f, 0.5f);
+		processOnAudioThread(*instance, track);
+		QVERIFY(instance->hasState(PluginInstance::State::Processing));
+
+		// Preparing again stops and deactivates it first, then it starts again in the next period
+		instance->reactivate();
+		QVERIFY(instance->hasState(PluginInstance::State::Active));
+		QVERIFY(!instance->hasState(PluginInstance::State::Processing));
+		QVERIFY(m_violations.empty());
+	}
+
+	void Instance_ProcessOnTheMainThreadIsAViolation()
+	{
+		auto instance = makeInstance({}, [](ProcessContext&) { return ProcessStatus::Continue; });
+		auto track = trackBuffer(0.5f, 0.5f);
+		instance->process(track);
+		QCOMPARE(m_violations.size(), std::size_t{1});
+		QVERIFY(m_violations.front().find("audio thread") != std::string::npos);
+		m_expectViolations = true;
 	}
 
 	void Instance_PinsAreSavedAndLoaded()
@@ -688,7 +744,7 @@ private slots:
 		for (int period = 0; period < 2; ++period)
 		{
 			auto track = trackBuffer(0.f, 0.f);
-			QVERIFY(instance.process(track));
+			QVERIFY(processOnAudioThread(instance, track));
 			compareChannel(track, 0, 0.5f);
 			compareChannel(track, 1, 0.25f);
 		}
@@ -701,7 +757,7 @@ private slots:
 
 		// By default, the first two outputs go to the track's main channels
 		auto track = trackBuffer(0.f, 0.f);
-		instance.process(track);
+		processOnAudioThread(instance, track);
 		compareChannel(track, 0, 0.1f);
 		compareChannel(track, 1, 0.2f);
 
@@ -710,7 +766,7 @@ private slots:
 		instance.audioPortsModel()->out().setPin(1, 1, false);
 		instance.audioPortsModel()->out().setPin(1, 3, true);
 		track = trackBuffer(0.f, 0.f);
-		instance.process(track);
+		processOnAudioThread(instance, track);
 		compareChannel(track, 0, 0.1f + 0.3f);
 		compareChannel(track, 1, 0.4f);
 	}
@@ -727,7 +783,7 @@ private slots:
 		QVERIFY(!pins.enabled(0, 3) && pins.enabled(1, 3));
 
 		auto track = trackBuffer(0.f, 0.f);
-		instance.process(track);
+		processOnAudioThread(instance, track);
 		compareChannel(track, 0, 0.1f + 0.2f + 0.3f);
 		compareChannel(track, 1, 0.1f + 0.2f + 0.4f);
 	}

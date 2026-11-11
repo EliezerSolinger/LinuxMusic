@@ -36,6 +36,7 @@
 #include "AudioEngineWorkerThread.h"
 #include "AudioBusHandle.h"
 #include "Hardware.h"
+#include "PluginChecks.h"
 #include "Mixer.h"
 #include "Song.h"
 #include "EnvelopeAndLfoParameters.h"
@@ -410,6 +411,7 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	(void)s_denormalsDisabled;
 
 	const auto lock = std::lock_guard{m_changeMutex};
+	const auto audioThread = ThreadCheck::AudioThreadScope{};
 
 	m_profiler.startPeriod();
 	s_renderingThread = true;
