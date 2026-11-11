@@ -7,3 +7,8 @@ kept with them. A modified version of a kit must be distributed under a differen
 
 The AVL Drums instrument of LinuxMusic (plugins/AvlDrums) is a separate implementation; it follows the MIDI note
 map and output layout of avldrums.lv2 so that existing MIDI drum parts play the same.
+
+The photos of the kits (images/*.png) and the maps of where each drum piece is on them (images/*.map.png) come
+from the user interface of avldrums.lv2 (gui/*.png.h and gui/*.map.h at the same commit), part of that GPL-2.0
+repository, converted from C arrays back to PNG files without other changes. The Blonde Bop Hot Rod kit uses the
+Blonde Bop map, as in avldrums.lv2.

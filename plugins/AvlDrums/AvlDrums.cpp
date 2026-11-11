@@ -30,6 +30,7 @@
 #include <QDomElement>
 #include <QFileInfo>
 #include <QMutexLocker>
+#include <QMouseEvent>
 #include <QPainter>
 
 #include <fluidsynth.h>
@@ -43,6 +44,8 @@
 #include "InstrumentPlayHandle.h"
 #include "InstrumentTrack.h"
 #include "LedCheckBox.h"
+#include "MidiEvent.h"
+#include "MidiPort.h"
 #include "Midi.h"
 #include "Song.h"
 
@@ -104,11 +107,11 @@ constexpr auto PieceVoices = 26;
 
 
 const std::array<AvlDrumsInstrument::Kit, 5> AvlDrumsInstrument::Kits = {{
-	{"Black Pearl", "Black_Pearl_4_LV2.sf2", true},
-	{"Red Zeppelin", "Red_Zeppelin_4_LV2.sf2", true},
-	{"Blonde Bop", "Blonde_Bop_LV2.sf2", true},
-	{"Blonde Bop Hot Rod", "Blonde_Bop_HR_LV2.sf2", true},
-	{"Buskman's Holiday (percussion)", "Buskmans_Holiday_LV2.sf2", false},
+	{"Black Pearl", "Black_Pearl_4_LV2.sf2", "black_pearl.png", "black_pearl.map.png", true},
+	{"Red Zeppelin", "Red_Zeppelin_4_LV2.sf2", "red_zeppelin.png", "red_zeppelin.map.png", true},
+	{"Blonde Bop", "Blonde_Bop_LV2.sf2", "blonde_bop.png", "blonde_bop.map.png", true},
+	{"Blonde Bop Hot Rod", "Blonde_Bop_HR_LV2.sf2", "blonde_bop_hr.png", "blonde_bop.map.png", true},
+	{"Buskman's Holiday (percussion)", "Buskmans_Holiday_LV2.sf2", "buskman.png", "buskman.map.png", false},
 }};
 
 
@@ -481,55 +484,56 @@ namespace gui
 namespace
 {
 
-//! A drum piece drawn by the view: the notes that light it up
-struct Pad
-{
-	const char* label;
-	QRectF rect;
-	std::initializer_list<int> notes;
-	bool round;
+constexpr int ControlsHeight = 34;
+constexpr int DrumPieces = 26; // notes 36 to 61
+
+/**
+ * The maps of avldrums.lv2 color each piece's area: a red value R means color index (R - 10) / 9, and this table
+ * gives the piece (note - 36) of each color index. Neighboring color indexes of the same drum are its different
+ * hits (e.g. the center and the edge of the snare).
+ */
+constexpr auto MapPieces = std::array<int, DrumPieces>{
+	0, 2, 4, 1, 3, 12, 10, 6, 7, 5, 8, 11, 9, 13, 14, 16, 23, 15, 17, 18, 22, 21, 20, 24, 19, 25
 };
 
-const auto Pads = std::array<Pad, 11>{{
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Crash"), {14, 92, 58, 40}, {49, 50}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Splash"), {96, 86, 44, 30}, {55}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Crash 2"), {164, 92, 58, 40}, {57, 58}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Hi-hat"), {8, 140, 52, 36}, {42, 44, 46, 48}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Tom"), {76, 124, 44, 36}, {45, 47}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Crash 3"), {130, 122, 46, 30}, {60}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Ride"), {184, 140, 58, 40}, {51, 52, 53, 59}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Snare"), {44, 182, 52, 40}, {37, 38, 40}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Kick"), {100, 170, 58, 58}, {36}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Floor tom"), {164, 186, 52, 44}, {41, 43}, true},
-	{QT_TRANSLATE_NOOP("lmms::gui::AvlDrumsView", "Percussion"), {8, 226, 234, 18}, {35, 39, 54, 56, 61}, false},
-}};
+auto mapPiece(QRgb pixel) -> int
+{
+	const int red = qRed(pixel);
+	if (red < 10) { return -1; }
+	const int color = (red - 10) / 9;
+	return color < DrumPieces ? MapPieces[color] : -1;
+}
 
 } // namespace
 
 
 AvlDrumsView::AvlDrumsView(AvlDrumsInstrument* instrument, QWidget* parent) :
-	InstrumentViewFixedSize(instrument, parent)
+	InstrumentView(instrument, parent)
 {
 	setAutoFillBackground(true);
 	auto pal = palette();
-	pal.setColor(QPalette::Window, QColor{0x1e, 0x21, 0x24});
+	pal.setColor(QPalette::Window, QColor{0x16, 0x18, 0x1b});
 	setPalette(pal);
+	setMinimumSize(420, ControlsHeight + 200);
 
 	m_kitBox = new ComboBox(this, tr("Drum kit"));
-	m_kitBox->setGeometry(10, 34, 230, ComboBox::DEFAULT_HEIGHT);
+	m_kitBox->setGeometry(8, 6, 230, ComboBox::DEFAULT_HEIGHT);
 
 	m_multiOutputBox = new LedCheckBox(tr("Output per drum piece (9 channels)"), this, tr("Output per drum piece"),
 		LedCheckBox::LedColor::Green);
-	m_multiOutputBox->move(10, 62);
+	m_multiOutputBox->move(250, 10);
 	m_multiOutputBox->setToolTip(tr("Kick, snare, hi-hat, tom and floor tom (mono), cymbals and percussion "
 		"(stereo) get their own outputs, which the pin connector can route to the track's auxiliary channels"));
 
+	setToolTip(tr("Click a drum to play it"));
+
 	connect(instrument, &AvlDrumsInstrument::kitChanged, this, [this] {
 		updateMultiOutputAvailability();
+		loadKitImages();
 		update();
 	});
 
-	startTimer(40);
+	startTimer(33);
 	modelChanged();
 }
 
@@ -542,6 +546,7 @@ void AvlDrumsView::modelChanged()
 	m_kitBox->setModel(&drums->kitModel());
 	m_multiOutputBox->setModel(&drums->multiOutputModel());
 	updateMultiOutputAvailability();
+	loadKitImages();
 }
 
 
@@ -557,13 +562,125 @@ void AvlDrumsView::updateMultiOutputAvailability()
 
 
 
+void AvlDrumsView::loadKitImages()
+{
+	auto drums = castModel<AvlDrumsInstrument>();
+	const auto index = std::clamp(drums->kitModel().value(), 0, static_cast<int>(AvlDrumsInstrument::Kits.size()) - 1);
+	if (index == m_imagesKit) { return; }
+	m_imagesKit = index;
+
+	const auto& kit = AvlDrumsInstrument::Kits[index];
+	const auto dir = ConfigManager::inst()->dataDir() + "avldrums/images/";
+	m_photo = QImage{dir + kit.photo};
+	m_map = QImage{dir + kit.map}.convertToFormat(QImage::Format_RGB32);
+
+	// Each piece's area of the map, as a highlight over the photo
+	auto bounds = std::array<QRect, AvlDrumsInstrument::PieceCount>{};
+	for (int y = 0; y < m_map.height(); ++y)
+	{
+		const auto line = reinterpret_cast<const QRgb*>(m_map.constScanLine(y));
+		for (int x = 0; x < m_map.width(); ++x)
+		{
+			const int piece = mapPiece(line[x]);
+			if (piece < 0) { continue; }
+			auto& rect = bounds[piece + 36 - AvlDrumsInstrument::FirstNote];
+			rect = rect.united(QRect{x, y, 1, 1});
+		}
+	}
+
+	const auto glow = QColor{255, 214, 120};
+	for (int p = 0; p < AvlDrumsInstrument::PieceCount; ++p)
+	{
+		auto& highlight = m_highlights[p];
+		highlight.rect = bounds[p];
+		highlight.image = QImage{};
+		if (bounds[p].isEmpty()) { continue; }
+
+		highlight.image = QImage{bounds[p].size(), QImage::Format_ARGB32_Premultiplied};
+		highlight.image.fill(Qt::transparent);
+		for (int y = 0; y < bounds[p].height(); ++y)
+		{
+			const auto src = reinterpret_cast<const QRgb*>(m_map.constScanLine(bounds[p].y() + y)) + bounds[p].x();
+			const auto dst = reinterpret_cast<QRgb*>(highlight.image.scanLine(y));
+			for (int x = 0; x < bounds[p].width(); ++x)
+			{
+				if (mapPiece(src[x]) + 36 - AvlDrumsInstrument::FirstNote != p) { continue; }
+				dst[x] = qPremultiply(qRgba(glow.red(), glow.green(), glow.blue(), 170));
+			}
+		}
+	}
+}
+
+
+
+
+auto AvlDrumsView::photoRect() const -> QRect
+{
+	const auto area = QRect{0, ControlsHeight, width(), height() - ControlsHeight};
+	if (m_photo.isNull() || area.width() <= 0 || area.height() <= 0) { return area; }
+
+	auto size = m_photo.size().scaled(area.size(), Qt::KeepAspectRatio);
+	return QRect{QPoint{area.x() + (area.width() - size.width()) / 2, area.y() + (area.height() - size.height()) / 2},
+		size};
+}
+
+
+
+
+auto AvlDrumsView::noteAt(const QPoint& pos) const -> int
+{
+	const auto rect = photoRect();
+	if (m_map.isNull() || !rect.contains(pos)) { return -1; }
+
+	const int x = (pos.x() - rect.x()) * m_map.width() / rect.width();
+	const int y = (pos.y() - rect.y()) * m_map.height() / rect.height();
+	if (!m_map.rect().contains(x, y)) { return -1; }
+
+	const int piece = mapPiece(m_map.pixel(x, y));
+	return piece < 0 ? -1 : 36 + piece;
+}
+
+
+
+
+void AvlDrumsView::mousePressEvent(QMouseEvent* event)
+{
+	if (event->button() != Qt::LeftButton) { return InstrumentView::mousePressEvent(event); }
+
+	const int note = noteAt(event->position().toPoint());
+	if (note < 0) { return; }
+
+	auto track = castModel<AvlDrumsInstrument>()->instrumentTrack();
+	if (!track) { return; }
+
+	m_heldNote = note;
+	track->processInEvent(MidiEvent(MidiNoteOn, -1, note, track->midiPort()->baseVelocity()));
+}
+
+
+
+
+void AvlDrumsView::mouseReleaseEvent(QMouseEvent* event)
+{
+	if (m_heldNote < 0) { return InstrumentView::mouseReleaseEvent(event); }
+
+	if (auto track = castModel<AvlDrumsInstrument>()->instrumentTrack())
+	{
+		track->processInEvent(MidiEvent(MidiNoteOff, -1, m_heldNote, 0));
+	}
+	m_heldNote = -1;
+}
+
+
+
+
 void AvlDrumsView::timerEvent(QTimerEvent*)
 {
 	const auto hits = castModel<AvlDrumsInstrument>()->takeHits();
 	bool changed = false;
 	for (int piece = 0; piece < AvlDrumsInstrument::PieceCount; ++piece)
 	{
-		const float level = std::max(m_glow[piece] * 0.82f, hits[piece] / 127.f);
+		const float level = std::max(m_glow[piece] * 0.85f, hits[piece] / 127.f);
 		const float shown = level < 0.02f ? 0.f : level;
 		changed = changed || shown != m_glow[piece];
 		m_glow[piece] = shown;
@@ -577,45 +694,38 @@ void AvlDrumsView::timerEvent(QTimerEvent*)
 void AvlDrumsView::paintEvent(QPaintEvent*)
 {
 	auto p = QPainter{this};
-	p.setRenderHint(QPainter::Antialiasing);
-
-	p.setPen(QColor{0xe0, 0xe0, 0xe0});
-	p.setFont(adjustedToPixelSize(font(), 16));
-	p.drawText(QRect{10, 4, 230, 26}, Qt::AlignLeft | Qt::AlignVCenter, tr("AVL Drums"));
+	p.setRenderHint(QPainter::SmoothPixmapTransform);
 
 	auto drums = castModel<AvlDrumsInstrument>();
-	if (!drums->isLoaded())
+	const auto rect = photoRect();
+	if (!drums->isLoaded() || m_photo.isNull())
 	{
 		p.setPen(QColor{0xe0, 0x60, 0x50});
-		p.setFont(adjustedToPixelSize(font(), 10));
-		p.drawText(QRect{10, 120, 230, 40}, Qt::AlignCenter | Qt::TextWordWrap, tr("The drum kit could not be loaded"));
+		p.setFont(adjustedToPixelSize(font(), 11));
+		p.drawText(rect, Qt::AlignCenter | Qt::TextWordWrap, tr("The drum kit could not be loaded"));
 		return;
 	}
 
-	p.setFont(adjustedToPixelSize(font(), 9));
-	for (const auto& pad : Pads)
+	p.drawImage(rect, m_photo);
+
+	// The pieces that were hit light up
+	const auto scaleX = static_cast<double>(rect.width()) / m_photo.width();
+	const auto scaleY = static_cast<double>(rect.height()) / m_photo.height();
+	const auto mapScaleX = static_cast<double>(m_photo.width()) / std::max(m_map.width(), 1);
+	const auto mapScaleY = static_cast<double>(m_photo.height()) / std::max(m_map.height(), 1);
+	p.setCompositionMode(QPainter::CompositionMode_Screen);
+	for (int piece = 0; piece < AvlDrumsInstrument::PieceCount; ++piece)
 	{
-		float glow = 0.f;
-		for (const int note : pad.notes)
-		{
-			const auto piece = note - AvlDrumsInstrument::FirstNote;
-			if (piece >= 0 && piece < AvlDrumsInstrument::PieceCount) { glow = std::max(glow, m_glow[piece]); }
-		}
+		const auto& highlight = m_highlights[piece];
+		if (m_glow[piece] <= 0.f || highlight.image.isNull()) { continue; }
 
-		const auto idle = QColor{0x3a, 0x3f, 0x44};
-		const auto hit = QColor{0x5d, 0xd2, 0x8a};
-		const auto fill = QColor::fromRgbF(
-			idle.redF() + (hit.redF() - idle.redF()) * glow,
-			idle.greenF() + (hit.greenF() - idle.greenF()) * glow,
-			idle.blueF() + (hit.blueF() - idle.blueF()) * glow);
-
-		p.setPen(QPen{QColor{0x55, 0x5b, 0x61}, 1.5});
-		p.setBrush(fill);
-		if (pad.round) { p.drawEllipse(pad.rect); }
-		else { p.drawRoundedRect(pad.rect, 4, 4); }
-
-		p.setPen(glow > 0.5f ? QColor{0x10, 0x14, 0x18} : QColor{0xc8, 0xcc, 0xd0});
-		p.drawText(pad.rect, Qt::AlignCenter, tr(pad.label));
+		const auto target = QRectF{
+			rect.x() + highlight.rect.x() * mapScaleX * scaleX,
+			rect.y() + highlight.rect.y() * mapScaleY * scaleY,
+			highlight.rect.width() * mapScaleX * scaleX,
+			highlight.rect.height() * mapScaleY * scaleY};
+		p.setOpacity(m_glow[piece]);
+		p.drawImage(target, highlight.image);
 	}
 }
 

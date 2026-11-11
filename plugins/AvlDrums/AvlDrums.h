@@ -61,7 +61,9 @@ public:
 	struct Kit
 	{
 		const char* name;
-		const char* file;
+		const char* file;		//!< SF2 in data/avldrums
+		const char* photo;		//!< photo of the kit in data/avldrums/images
+		const char* map;		//!< where each drum piece is on the photo (see AvlDrumsView)
 		bool hasMultiOutput;
 	};
 	static const std::array<Kit, 5> Kits;
@@ -135,23 +137,54 @@ class ComboBox;
 class LedCheckBox;
 
 //! Kit and output selection, and the kit's pieces lighting up when they are hit
-class AvlDrumsView : public InstrumentViewFixedSize
+/**
+ * The kit selection and a photo of the kit, as in avldrums.lv2: the pieces light up when they are hit, and
+ * clicking a piece plays it.
+ */
+class AvlDrumsView : public InstrumentView
 {
 	Q_OBJECT
 public:
 	AvlDrumsView(AvlDrumsInstrument* instrument, QWidget* parent);
 
+	auto sizeHint() const -> QSize override { return {640, 360}; }
+
 protected:
 	void paintEvent(QPaintEvent* event) override;
 	void timerEvent(QTimerEvent* event) override;
+	void mousePressEvent(QMouseEvent* event) override;
+	void mouseReleaseEvent(QMouseEvent* event) override;
 
 private:
+	//! A piece's area on the photo, as a highlight image in the photo's coordinates
+	struct Highlight
+	{
+		QRect rect;
+		QImage image;
+	};
+
 	void modelChanged() override;
 	void updateMultiOutputAvailability();
 
+	//! Loads the photo and the map of the selected kit
+	void loadKitImages();
+
+	//! Where the photo is drawn: as large as fits below the controls, keeping its proportions
+	auto photoRect() const -> QRect;
+
+	//! The note of the piece at @p pos, or -1
+	auto noteAt(const QPoint& pos) const -> int;
+
 	ComboBox* m_kitBox;
 	LedCheckBox* m_multiOutputBox;
+
+	int m_imagesKit = -1;
+	QImage m_photo;
+	QImage m_map;
+	std::array<Highlight, AvlDrumsInstrument::PieceCount> m_highlights;
+
 	std::array<float, AvlDrumsInstrument::PieceCount> m_glow{};
+	int m_heldNote = -1;
 };
 
 } // namespace gui
