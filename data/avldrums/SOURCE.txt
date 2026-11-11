@@ -1,0 +1,9 @@
+These drum kits come unmodified from avldrums.lv2 by Robin Gareus (x42):
+https://github.com/x42/avldrums.lv2, directory sf2/, commit 9389f16f139410d9a55f9006976bd54cbd8b7806.
+
+The kits were created by Glen MacArthur (http://www.bandshed.net/avldrumkits/) and modified for avldrums.lv2
+as described in README. They are licensed CC-BY-SA 3.0 with the exception described in README, which must be
+kept with them. A modified version of a kit must be distributed under a different name.
+
+The AVL Drums instrument of LinuxMusic (plugins/AvlDrums) is a separate implementation; it follows the MIDI note
+map and output layout of avldrums.lv2 so that existing MIDI drum parts play the same.
