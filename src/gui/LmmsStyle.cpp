@@ -150,7 +150,7 @@ LmmsStyle::LmmsStyle() :
 				qApp->setStyleSheet(file.readAll());
 				TextFloat::displayMessage(
 					tr("Theme updated"),
-					tr("LMMS theme file %1 has been reloaded.").arg(file.fileName()),
+					tr("LinuxMusic theme file %1 has been reloaded.").arg(file.fileName()),
 					embed::getIconPixmap("colorize"),
 					3000
 				);

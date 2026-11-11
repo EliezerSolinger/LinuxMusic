@@ -34,6 +34,7 @@
 
 #include "ConfigManager.h"
 #include "Plugin.h"
+#include "lmmsversion.h"
 
 // QT qHash specialization, needs to be in global namespace
 qint64 qHash(const QFileInfo& fi)
@@ -79,7 +80,7 @@ void PluginFactory::setupSearchPaths()
 	//           plugins at "C:/Program Files/LMMS/plugins/"
 
 #ifndef LMMS_BUILD_WIN32
-	addRelativeIfExists("../lib/lmms"); // Installed
+	addRelativeIfExists("../lib/" LMMS_PROJECT_ID); // Installed
 #endif
 	addRelativeIfExists("plugins"); // Portable
 #ifdef PLUGIN_DIR // We may also have received a relative directory via a define
@@ -185,7 +186,7 @@ void PluginFactory::discoverPlugins()
 			pluginDescriptor = reinterpret_cast<Plugin::Descriptor*>(library->resolve(descriptorName.toUtf8().constData()));
 			if(pluginDescriptor == nullptr)
 			{
-				qWarning() << qApp->translate("PluginFactory", "LMMS plugin %1 does not have a plugin descriptor named %2!").
+				qWarning() << qApp->translate("PluginFactory", "LinuxMusic plugin %1 does not have a plugin descriptor named %2!").
 							  arg(file.absoluteFilePath()).arg(descriptorName);
 				continue;
 			}

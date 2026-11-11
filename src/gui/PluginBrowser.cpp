@@ -171,7 +171,7 @@ void PluginBrowser::addPlugins()
 	);
 
 	// Add a root node to the tree for native LMMS plugins
-	const auto lmmsRoot = addRoot("LMMS");
+	const auto lmmsRoot = addRoot("LinuxMusic");
 	lmmsRoot->setExpanded(true);
 
 	// Add all of the descriptors to the tree

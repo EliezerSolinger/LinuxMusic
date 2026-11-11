@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lmms(1) completion                                       -*- shell-script -*-
+# linuxmusic(1) completion                                       -*- shell-script -*-
 
 _lmms_array_contains ()
 {
@@ -342,4 +342,4 @@ _lmms()
     fi
 }
 
-complete -F _lmms lmms
+complete -F _lmms linuxmusic

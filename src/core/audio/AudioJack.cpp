@@ -39,6 +39,7 @@
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "MidiJack.h"
+#include "lmmsversion.h"
 
 #include <cstdio>
 
@@ -139,8 +140,8 @@ void AudioJack::restartAfterZombified()
 		m_active = false;
 		startProcessing();
 		QMessageBox::information(gui::getGUI()->mainWindow(), tr("JACK client restarted"),
-			tr(	"LMMS was kicked by JACK for some reason. "
-				"Therefore the JACK backend of LMMS has been "
+			tr(	"LinuxMusic was kicked by JACK for some reason. "
+				"Therefore the JACK backend of LinuxMusic has been "
 				"restarted. You will have to make manual "
 				"connections again."));
 	}
@@ -149,9 +150,9 @@ void AudioJack::restartAfterZombified()
 		QMessageBox::information(gui::getGUI()->mainWindow(), tr("JACK server down"),
 			tr(	"The JACK server seems to have been shutdown "
 				"and starting a new instance failed. "
-				"Therefore LMMS is unable to proceed. "
+				"Therefore LinuxMusic is unable to proceed. "
 				"You should save your project and restart "
-				"JACK and LMMS."));
+				"JACK and LinuxMusic."));
 	}
 }
 
@@ -171,7 +172,7 @@ AudioJack* AudioJack::addMidiClient(MidiJack* midiClient)
 bool AudioJack::initJackClient()
 {
 	QString clientName = ConfigManager::inst()->value(audioJackClass, clientNameKey);
-	if (clientName.isEmpty()) { clientName = "lmms"; }
+	if (clientName.isEmpty()) { clientName = LMMS_PROJECT_ID; }
 
 	// Will attempt to start the JACK server
 	jack_status_t status;
@@ -461,7 +462,7 @@ AudioJack::setupWidget::setupWidget(QWidget* parent)
 	//       the JACK server and an indicator for the JACK server status.
 
 	jack_status_t status;
-	m_client = jack_client_open("LMMS-Setup Dialog", JackNoStartServer, &status);
+	m_client = jack_client_open("LinuxMusic-Setup Dialog", JackNoStartServer, &status);
 	if (!m_client)
 	{
 		// Failure is expected when not using the JACK backend
@@ -474,7 +475,7 @@ AudioJack::setupWidget::setupWidget(QWidget* parent)
 
 	const auto cm = ConfigManager::inst();
 	QString cn = cm->value(audioJackClass, clientNameKey);
-	if (cn.isEmpty()) { cn = "lmms"; }
+	if (cn.isEmpty()) { cn = LMMS_PROJECT_ID; }
 	m_clientName = new QLineEdit(cn, this);
 
 	form->addRow(tr("Client name"), m_clientName);

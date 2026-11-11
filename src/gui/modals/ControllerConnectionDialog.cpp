@@ -329,7 +329,7 @@ void ControllerConnectionDialog::selectController()
 
 		if( m_controller && m_controller->hasModel( m_targetModel ) )
 		{
-			QMessageBox::warning(this, tr("LMMS"), tr("Cycle Detected."));
+			QMessageBox::warning(this, tr("LinuxMusic"), tr("Cycle Detected."));
 			return;
 		}
 	

@@ -3,13 +3,13 @@
     <name>AboutDialog</name>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="20"/>
-        <source>About LMMS</source>
-        <translation>Az LMMS-ről</translation>
+        <source>About LinuxMusic</source>
+        <translation>Az LinuxMusic-ről</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="43"/>
-        <source>LMMS</source>
-        <translation>LMMS</translation>
+        <source>LinuxMusic</source>
+        <translation>LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="50"/>
@@ -23,8 +23,8 @@
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="100"/>
-        <source>LMMS - easy music production for everyone.</source>
-        <translation>LMMS - könnyű zenekészítés mindenkinek.</translation>
+        <source>LinuxMusic - easy music production for everyone.</source>
+        <translation>LinuxMusic - könnyű zenekészítés mindenkinek.</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="126"/>
@@ -59,9 +59,9 @@
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="220"/>
         <source>Current language not translated (or native English).
-If you&apos;re interested in translating LMMS in another language or want to improve existing translations, you&apos;re welcome to help us! Simply contact the maintainer!</source>
+If you&apos;re interested in translating LinuxMusic in another language or want to improve existing translations, you&apos;re welcome to help us! Simply contact the maintainer!</source>
         <translation>A magyar fordítást készítették: gyeben, Haba Tamás (gelesztamas), Szabó István (stevepixus)
-Ha szeretnél részt venni az LMMS más nyelvekre történő fordításában vagy a meglévő fordítások javításában, vedd fel a kapcsolatot az üzemeltetővel.</translation>
+Ha szeretnél részt venni az LinuxMusic más nyelvekre történő fordításában vagy a meglévő fordítások javításában, vedd fel a kapcsolatot az üzemeltetővel.</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="229"/>
@@ -912,8 +912,8 @@ Ha szeretnél részt venni az LMMS más nyelvekre történő fordításában vag
     </message>
     <message>
         <location filename="../../plugins/HydrogenImport/HydrogenImport.cpp" line="30"/>
-        <source>Filter for importing Hydrogen files into LMMS</source>
-        <translation>Szűrő a Hydrogen fájlok LMMS-be történő importálásához</translation>
+        <source>Filter for importing Hydrogen files into LinuxMusic</source>
+        <translation>Szűrő a Hydrogen fájlok LinuxMusic-be történő importálásához</translation>
     </message>
     <message>
         <location filename="../../plugins/Kicker/Kicker.cpp" line="53"/>
@@ -927,8 +927,8 @@ Ha szeretnél részt venni az LMMS más nyelvekre történő fordításában vag
     </message>
     <message>
         <location filename="../../plugins/LadspaEffect/LadspaEffect.cpp" line="56"/>
-        <source>plugin for using arbitrary LADSPA-effects inside LMMS.</source>
-        <translation>Bővítmény tetszőleges LADSPA effektek LMMS-ben történő használatához</translation>
+        <source>plugin for using arbitrary LADSPA-effects inside LinuxMusic.</source>
+        <translation>Bővítmény tetszőleges LADSPA effektek LinuxMusic-ben történő használatához</translation>
     </message>
     <message>
         <location filename="../../plugins/Lb302/Lb302.cpp" line="86"/>
@@ -937,23 +937,23 @@ Ha szeretnél részt venni az LMMS más nyelvekre történő fordításában vag
     </message>
     <message>
         <location filename="../../plugins/Lv2Effect/Lv2Effect.cpp" line="46"/>
-        <source>plugin for using arbitrary LV2-effects inside LMMS.</source>
-        <translation>Bővítmény tetszőleges LV2 effektek LMMS-ben történő használatához</translation>
+        <source>plugin for using arbitrary LV2-effects inside LinuxMusic.</source>
+        <translation>Bővítmény tetszőleges LV2 effektek LinuxMusic-ben történő használatához</translation>
     </message>
     <message>
         <location filename="../../plugins/Lv2Instrument/Lv2Instrument.cpp" line="54"/>
-        <source>plugin for using arbitrary LV2 instruments inside LMMS.</source>
-        <translation>Bővítmény tetszőleges LV2 hangszerek LMMS-ben történő használatához</translation>
+        <source>plugin for using arbitrary LV2 instruments inside LinuxMusic.</source>
+        <translation>Bővítmény tetszőleges LV2 hangszerek LinuxMusic-ben történő használatához</translation>
     </message>
     <message>
         <location filename="../../plugins/MidiExport/MidiExport.cpp" line="49"/>
-        <source>Filter for exporting MIDI-files from LMMS</source>
-        <translation>Szűrő a MIDI fájlok LMMS-ből történő exportálásához</translation>
+        <source>Filter for exporting MIDI-files from LinuxMusic</source>
+        <translation>Szűrő a MIDI fájlok LinuxMusic-ből történő exportálásához</translation>
     </message>
     <message>
         <location filename="../../plugins/MidiImport/MidiImport.cpp" line="68"/>
-        <source>Filter for importing MIDI-files into LMMS</source>
-        <translation>Szűrő a MIDI fájlok LMMS-be történő importálásához</translation>
+        <source>Filter for importing MIDI-files into LinuxMusic</source>
+        <translation>Szűrő a MIDI fájlok LinuxMusic-be történő importálásához</translation>
     </message>
     <message>
         <location filename="../../plugins/Monstro/Monstro.cpp" line="48"/>
@@ -1002,8 +1002,8 @@ Ha szeretnél részt venni az LMMS más nyelvekre történő fordításában vag
     </message>
     <message>
         <location filename="../../plugins/Sfxr/Sfxr.cpp" line="66"/>
-        <source>LMMS port of sfxr</source>
-        <translation>Az SFXR portolása az LMMS-ben</translation>
+        <source>LinuxMusic port of sfxr</source>
+        <translation>Az SFXR portolása az LinuxMusic-ben</translation>
     </message>
     <message>
         <location filename="../../plugins/Sid/SidInstrument.cpp" line="79"/>
@@ -1043,7 +1043,7 @@ This chip was used in the Commodore 64 computer.</source>
     </message>
     <message>
         <location filename="../../plugins/Vestige/Vestige.cpp" line="76"/>
-        <source>VST-host for using VST(i)-plugins within LMMS</source>
+        <source>VST-host for using VST(i)-plugins within LinuxMusic</source>
         <translation>VST host a VSTi bővítmények használatához</translation>
     </message>
     <message>
@@ -1053,8 +1053,8 @@ This chip was used in the Commodore 64 computer.</source>
     </message>
     <message>
         <location filename="../../plugins/VstEffect/VstEffect.cpp" line="48"/>
-        <source>plugin for using arbitrary VST effects inside LMMS.</source>
-        <translation>Bővítmény tetszőleges VST effektek LMMS-ben történő használatához</translation>
+        <source>plugin for using arbitrary VST effects inside LinuxMusic.</source>
+        <translation>Bővítmény tetszőleges VST effektek LinuxMusic-ben történő használatához</translation>
     </message>
     <message>
         <location filename="../../plugins/Watsyn/Watsyn.cpp" line="50"/>
@@ -1116,8 +1116,8 @@ This chip was used in the Commodore 64 computer.</source>
     </message>
     <message>
         <location filename="../../src/core/PluginFactory.cpp" line="192"/>
-        <source>LMMS plugin %1 does not have a plugin descriptor named %2!</source>
-        <translation>A(z) %1 LMMS bővítmény nem rendelkezik %2 nevű plugin-leíróval.</translation>
+        <source>LinuxMusic plugin %1 does not have a plugin descriptor named %2!</source>
+        <translation>A(z) %1 LinuxMusic bővítmény nem rendelkezik %2 nevű plugin-leíróval.</translation>
     </message>
 </context>
 <context>
@@ -1412,8 +1412,8 @@ This chip was used in the Commodore 64 computer.</source>
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="153"/>
-        <source>LMMS was kicked by JACK for some reason. Therefore the JACK backend of LMMS has been restarted. You will have to make manual connections again.</source>
-        <translation>A JACK kirúgta az LMMS-t valamilyen oknál fogva, ezért az LMMS JACK backendje újra lett indítva. A kapcsolatokat manuálisan kell újra létrehozni.</translation>
+        <source>LinuxMusic was kicked by JACK for some reason. Therefore the JACK backend of LinuxMusic has been restarted. You will have to make manual connections again.</source>
+        <translation>A JACK kirúgta az LinuxMusic-t valamilyen oknál fogva, ezért az LinuxMusic JACK backendje újra lett indítva. A kapcsolatokat manuálisan kell újra létrehozni.</translation>
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="160"/>
@@ -1422,8 +1422,8 @@ This chip was used in the Commodore 64 computer.</source>
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="161"/>
-        <source>The JACK server seems to have been shutdown and starting a new instance failed. Therefore LMMS is unable to proceed. You should save your project and restart JACK and LMMS.</source>
-        <translation>Úgy tűnik, a JACK kiszolgáló leállt, és új példány indítása nem sikerült. Ennél fogva az LMMS nem képes tovább működni. Kérjük, mentsd a projektet és indítsd újra a JACK-et és LMMS-t.</translation>
+        <source>The JACK server seems to have been shutdown and starting a new instance failed. Therefore LinuxMusic is unable to proceed. You should save your project and restart JACK and LinuxMusic.</source>
+        <translation>Úgy tűnik, a JACK kiszolgáló leállt, és új példány indítása nem sikerült. Ennél fogva az LinuxMusic nem képes tovább működni. Kérjük, mentsd a projektet és indítsd újra a JACK-et és LinuxMusic-t.</translation>
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="520"/>
@@ -3737,8 +3737,8 @@ This chip was used in the Commodore 64 computer.</source>
     </message>
     <message>
         <location filename="../../plugins/MidiImport/MidiImport.cpp" line="111"/>
-        <source>You did not compile LMMS with support for SoundFont2 player, which is used to add default sound to imported MIDI files. Therefore no sound will be played back after importing this MIDI file.</source>
-        <translation>Az LMMS SondFont2 támogatás nélkül lett lefordítva, amely az importált MIDI fájlokhoz történő alapértelmezett hang betöltéséhez szükséges. Emiatt a MIDI fájl importálása után semmilyen hang nem lesz hallható.</translation>
+        <source>You did not compile LinuxMusic with support for SoundFont2 player, which is used to add default sound to imported MIDI files. Therefore no sound will be played back after importing this MIDI file.</source>
+        <translation>Az LinuxMusic SondFont2 támogatás nélkül lett lefordítva, amely az importált MIDI fájlokhoz történő alapértelmezett hang betöltéséhez szükséges. Emiatt a MIDI fájl importálása után semmilyen hang nem lesz hallható.</translation>
     </message>
     <message>
         <location filename="../../plugins/MidiImport/MidiImport.cpp" line="296"/>
@@ -4911,8 +4911,8 @@ This chip was used in the Commodore 64 computer.</source>
     </message>
     <message>
         <location filename="../../src/core/PeakController.cpp" line="214"/>
-        <source>Due to a bug in older version of LMMS, the peak controllers may not be connect properly. Please ensure that peak controllers are connected properly and re-save this file. Sorry for any inconvenience caused.</source>
-        <translation>Az LMMS egy régebbi verziójában található hiba miatt előfordulhat, hogy a jelszint alapú vezérlők nem megfelelően lettek csatlakoztatva. Ellenőrizd, hogy ezek a csatlakoztatások megfelelőek-e, majd mentsd a projektet. Elnézést kérünk az esetleges kellemetlenségért.</translation>
+        <source>Due to a bug in older version of LinuxMusic, the peak controllers may not be connect properly. Please ensure that peak controllers are connected properly and re-save this file. Sorry for any inconvenience caused.</source>
+        <translation>Az LinuxMusic egy régebbi verziójában található hiba miatt előfordulhat, hogy a jelszint alapú vezérlők nem megfelelően lettek csatlakoztatva. Ellenőrizd, hogy ezek a csatlakoztatások megfelelőek-e, majd mentsd a projektet. Elnézést kérünk az esetleges kellemetlenségért.</translation>
     </message>
 </context>
 <context>
@@ -5633,8 +5633,8 @@ Ok: &quot;%2&quot;</translation>
     </message>
     <message>
         <location filename="../../src/core/Song.cpp" line="1214"/>
-        <source>LMMS Error report</source>
-        <translation>LMMS hibajelentés</translation>
+        <source>LinuxMusic Error report</source>
+        <translation>LinuxMusic hibajelentés</translation>
     </message>
     <message>
         <location filename="../../src/core/Song.cpp" line="1511"/>
@@ -5718,7 +5718,7 @@ Ok: &quot;%2&quot;</translation>
     <message>
         <location filename="../../src/core/ImportFilter.cpp" line="81"/>
         <source>Couldn't find a filter for importing file %1.
-You should convert this file into a format supported by LMMS using another software.</source>
+You should convert this file into a format supported by LinuxMusic using another software.</source>
         <translation>Nem található szűrő a(z) %1 fájl importálásához.
 Külső program segítségével konvertáld a fájlt egy támogatott formátumba.</translation>
     </message>
@@ -7337,8 +7337,8 @@ Press &lt;Shift&gt; for destructive splitting.</source>
     </message>
     <message>
         <location filename="../../src/gui/modals/ControllerConnectionDialog.cpp" line="332"/>
-        <source>LMMS</source>
-        <translation>LMMS</translation>
+        <source>LinuxMusic</source>
+        <translation>LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/ControllerConnectionDialog.cpp" line="332"/>
@@ -8801,7 +8801,7 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../src/gui/GuiApplication.cpp" line="98"/>
-        <source>The LMMS working directory %1 does not exist. Create it now? You can change the directory later via Edit -&gt; Settings.</source>
+        <source>The LinuxMusic working directory %1 does not exist. Create it now? You can change the directory later via Edit -&gt; Settings.</source>
         <translation>A(z) %1 munkakönyvtár nem létezik. Létrehozod most? A munkakönyvtár bármikor megváltoztatható a Szerkesztés -&gt; Beállítások menüpontban.</translation>
     </message>
     <message>
@@ -10455,7 +10455,7 @@ Kattints duplán egy fájl kiválasztásához.</translation>
     </message>
     <message>
         <location filename="../../src/gui/LmmsStyle.cpp" line="153"/>
-        <source>LMMS theme file %1 has been reloaded.</source>
+        <source>LinuxMusic theme file %1 has been reloaded.</source>
         <translation>A(z) %1 témafájl újratöltése megtörtént.</translation>
     </message>
 </context>
@@ -10491,8 +10491,8 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../src/core/main.cpp" line="795"/>
-        <source>There is a recovery file present. It looks like the last session did not end properly or another instance of LMMS is already running. Do you want to recover the project of this session?</source>
-        <translation>Létezik egy visszaállítási fájl. Úgy tűnik, hogy a legutóbbi munkamenet nem megfelelően fejeződött be, vagy az LMMS egy másik példánya már fut. Szeretnéd helyreállítani a munkamenetet?</translation>
+        <source>There is a recovery file present. It looks like the last session did not end properly or another instance of LinuxMusic is already running. Do you want to recover the project of this session?</source>
+        <translation>Létezik egy visszaállítási fájl. Úgy tűnik, hogy a legutóbbi munkamenet nem megfelelően fejeződött be, vagy az LinuxMusic egy másik példánya már fut. Szeretnéd helyreállítani a munkamenetet?</translation>
     </message>
     <message>
         <location filename="../../src/core/main.cpp" line="800"/>
@@ -10502,7 +10502,7 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../src/core/main.cpp" line="801"/>
-        <source>Recover the file. Please don&apos;t run multiple instances of LMMS when you do this.</source>
+        <source>Recover the file. Please don&apos;t run multiple instances of LinuxMusic when you do this.</source>
         <translation type="unfinished"/>
     </message>
     <message>
@@ -10773,8 +10773,8 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="593"/>
-        <source>LMMS %1</source>
-        <translation>LMMS %1</translation>
+        <source>LinuxMusic %1</source>
+        <translation>LinuxMusic %1</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="612"/>
@@ -10803,8 +10803,8 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="755"/>
-        <source>LMMS (*.mmp *.mmpz)</source>
-        <translation>LMMS (*.mmp *.mmpz)</translation>
+        <source>LinuxMusic (*.mmp *.mmpz)</source>
+        <translation>LinuxMusic (*.mmp *.mmpz)</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="798"/>
@@ -10813,13 +10813,13 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="799"/>
-        <source>LMMS Project</source>
-        <translation>LMMS Projekt</translation>
+        <source>LinuxMusic Project</source>
+        <translation>LinuxMusic Projekt</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="800"/>
-        <source>LMMS Project Template</source>
-        <translation>LMMS Projekt Sablon</translation>
+        <source>LinuxMusic Project Template</source>
+        <translation>LinuxMusic Projekt Sablon</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="830"/>
@@ -10843,9 +10843,9 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="913"/>
-        <source>Currently there's no help available in LMMS.
-Please visit http://lmms.sf.net/wiki for documentation on LMMS.</source>
-        <translation>Az LMMS jelenleg nem tartalmaz beépített súgót.
+        <source>Currently there's no help available in LinuxMusic.
+Please visit http://lmms.sf.net/wiki for documentation on LinuxMusic.</source>
+        <translation>Az LinuxMusic jelenleg nem tartalmaz beépített súgót.
 Az online dokumentáció a https://docs.lmms.io/ oldalon érhető el.</translation>
     </message>
     <message>
@@ -13735,8 +13735,8 @@ Ki: A hangjegyek mindig az elérhető legnagyobb felbontással kerülnek felvét
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="817"/>
-        <source>LMMS working directory</source>
-        <translation>LMMS munkakönyvtár</translation>
+        <source>LinuxMusic working directory</source>
+        <translation>LinuxMusic munkakönyvtár</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="821"/>
@@ -13827,8 +13827,8 @@ Késés: %2 ms</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="1301"/>
-        <source>Choose the LMMS working directory</source>
-        <translation>Adja meg az LMMS mankakönyvtárat</translation>
+        <source>Choose the LinuxMusic working directory</source>
+        <translation>Adja meg az LinuxMusic mankakönyvtárat</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="1318"/>
@@ -14418,8 +14418,8 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../src/core/DataFile.cpp" line="2191"/>
-        <source>This %1 was created with LMMS %2</source>
-        <translation>Ez a %1 az LMMS %2 verziójával készült</translation>
+        <source>This %1 was created with LinuxMusic %2</source>
+        <translation>Ez a %1 az LinuxMusic %2 verziójával készült</translation>
     </message>
     <message>
         <location filename="../../src/gui/editors/SongEditor.cpp" line="80"/>
@@ -15411,8 +15411,8 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../plugins/Vestige/Vestige.cpp" line="519"/>
-        <source>Control VST plugin from LMMS host</source>
-        <translation>VST bővítmény vezérlése az LMMS-ből</translation>
+        <source>Control VST plugin from LinuxMusic host</source>
+        <translation>VST bővítmény vezérlése az LinuxMusic-ből</translation>
     </message>
     <message>
         <location filename="../../plugins/Vestige/Vestige.cpp" line="532"/>
@@ -15615,8 +15615,8 @@ Ellenőrizd, hogy rendelkezel-e a szükséges engedélyekkel és próbáld újra
     </message>
     <message>
         <location filename="../../plugins/VstEffect/VstEffectControlDialog.cpp" line="113"/>
-        <source>Control VST plugin from LMMS host</source>
-        <translation>VST bővítmény vezérlése az LMMS-ből</translation>
+        <source>Control VST plugin from LinuxMusic host</source>
+        <translation>VST bővítmény vezérlése az LinuxMusic-ből</translation>
     </message>
     <message>
         <location filename="../../plugins/VstEffect/VstEffectControlDialog.cpp" line="129"/>

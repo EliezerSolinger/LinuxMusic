@@ -20,7 +20,7 @@ enable_policy_if_exists(CMP0092) # MSVC warning flags are not in CMAKE_<LANG>_FL
 # Needed for ccache support with MSVC
 enable_policy_if_exists(CMP0141) # MSVC debug information format flags are selected by an abstraction.
 
-PROJECT(lmms)
+PROJECT(linuxmusic)
 
 SET(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules" ${CMAKE_MODULE_PATH})
 SET(LMMS_BINARY_DIR ${CMAKE_BINARY_DIR})
@@ -50,13 +50,13 @@ INCLUDE(FindPkgConfig)
 INCLUDE(GenerateExportHeader)
 include(StaticDependencies)
 
-STRING(TOUPPER          "${CMAKE_PROJECT_NAME}" PROJECT_NAME_UCASE)
+SET(PROJECT_NAME_UCASE "LinuxMusic")
 
 SET(PROJECT_YEAR 2026)
 
-SET(PROJECT_AUTHOR      "LMMS Developers")
-SET(PROJECT_URL         "https://lmms.io")
-SET(PROJECT_EMAIL       "lmms-devel@lists.sourceforge.net")
+SET(PROJECT_AUTHOR      "LinuxMusic and LMMS Developers")
+SET(PROJECT_URL         "https://github.com/EliezerSolinger/LinuxMusic")
+SET(PROJECT_EMAIL       "eliezersolinger@gmail.com")
 SET(PROJECT_DESCRIPTION "${PROJECT_NAME_UCASE} - Free music production software")
 SET(PROJECT_COPYRIGHT   "2008-${PROJECT_YEAR} ${PROJECT_AUTHOR}")
 SET(VERSION_MAJOR       "1")

@@ -34,6 +34,7 @@
 #include "GuiApplication.h"
 #include "Engine.h"
 #include "MainWindow.h"
+#include "lmmsversion.h"
 
 namespace lmms
 {
@@ -168,10 +169,10 @@ jack_client_t* MidiJack::jackClient()
 
 QString MidiJack::probeDevice()
 {
-	QString jid = ConfigManager::inst()->value( "midijack", "lmms" );
+	QString jid = ConfigManager::inst()->value( "midijack", LMMS_PROJECT_ID );
 	if( jid.isEmpty() )
 	{
-		return "lmms";
+		return LMMS_PROJECT_ID;
 	}
 	return jid;
 }

@@ -52,7 +52,7 @@ Plugin::Descriptor PLUGIN_EXPORT lv2instrument_plugin_descriptor =
 	LMMS_STRINGIFY(PLUGIN_NAME),
 	"LV2",
 	QT_TRANSLATE_NOOP("PluginBrowser",
-		"plugin for using arbitrary LV2 instruments inside LMMS."),
+		"plugin for using arbitrary LV2 instruments inside LinuxMusic."),
 	"Johannes Lorenz <jlsf2013$$$users.sourceforge.net, $$$=@>",
 	0x0100,
 	Plugin::Type::Instrument,

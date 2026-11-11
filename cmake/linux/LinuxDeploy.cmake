@@ -96,7 +96,7 @@ list(APPEND DEPLOY_DEPS
 
 # If usr/bin/lmms is hard-linked to libjack, copy it to a new location
 # See https://github.com/LMMS/lmms/issues/7689
-copy_dependency("${APP}/usr/bin/lmms" "libjack.so" "${APP}/usr/lib/jack" JACK_LIB_RELOC)
+copy_dependency("${APP}/usr/bin/${lmms}" "libjack.so" "${APP}/usr/lib/jack" JACK_LIB_RELOC)
 if(JACK_LIB_RELOC)
 	list(APPEND DEPLOY_DEPS --deploy-deps-only "${JACK_LIB_RELOC}")
 endif()

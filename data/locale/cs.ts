@@ -3,13 +3,13 @@
     <name>AboutDialog</name>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="20"/>
-        <source>About LMMS</source>
-        <translation>O LMMS</translation>
+        <source>About LinuxMusic</source>
+        <translation>O LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="43"/>
-        <source>LMMS</source>
-        <translation>LMMS</translation>
+        <source>LinuxMusic</source>
+        <translation>LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="50"/>
@@ -19,12 +19,12 @@
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="78"/>
         <source>About</source>
-        <translation>O LMMS</translation>
+        <translation>O LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="100"/>
-        <source>LMMS - easy music production for everyone.</source>
-        <translation>LMMS – snadné vytváření hudby pro každého.</translation>
+        <source>LinuxMusic - easy music production for everyone.</source>
+        <translation>LinuxMusic – snadné vytváření hudby pro každého.</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="126"/>
@@ -59,8 +59,8 @@
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="220"/>
         <source>Current language not translated (or native English).
-If you&apos;re interested in translating LMMS in another language or want to improve existing translations, you&apos;re welcome to help us! Simply contact the maintainer!</source>
-        <translation>Máte-li chuť překládat LMMS do jiného jazyka nebo chcete-li vylepšit stávající překlad, Vaše pomoc bude vítána. Stačí jen kontaktovat správce!</translation>
+If you&apos;re interested in translating LinuxMusic in another language or want to improve existing translations, you&apos;re welcome to help us! Simply contact the maintainer!</source>
+        <translation>Máte-li chuť překládat LinuxMusic do jiného jazyka nebo chcete-li vylepšit stávající překlad, Vaše pomoc bude vítána. Stačí jen kontaktovat správce!</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="229"/>
@@ -911,8 +911,8 @@ If you&apos;re interested in translating LMMS in another language or want to imp
     </message>
     <message>
         <location filename="../../plugins/HydrogenImport/HydrogenImport.cpp" line="30"/>
-        <source>Filter for importing Hydrogen files into LMMS</source>
-        <translation>Filtr pro import souborů Hydrogen do LMMS</translation>
+        <source>Filter for importing Hydrogen files into LinuxMusic</source>
+        <translation>Filtr pro import souborů Hydrogen do LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../plugins/Kicker/Kicker.cpp" line="53"/>
@@ -926,8 +926,8 @@ If you&apos;re interested in translating LMMS in another language or want to imp
     </message>
     <message>
         <location filename="../../plugins/LadspaEffect/LadspaEffect.cpp" line="56"/>
-        <source>plugin for using arbitrary LADSPA-effects inside LMMS.</source>
-        <translation>plugin pro užití libovolných LADSPA efektů uvnitř LMMS.</translation>
+        <source>plugin for using arbitrary LADSPA-effects inside LinuxMusic.</source>
+        <translation>plugin pro užití libovolných LADSPA efektů uvnitř LinuxMusic.</translation>
     </message>
     <message>
         <location filename="../../plugins/Lb302/Lb302.cpp" line="86"/>
@@ -936,23 +936,23 @@ If you&apos;re interested in translating LMMS in another language or want to imp
     </message>
     <message>
         <location filename="../../plugins/Lv2Effect/Lv2Effect.cpp" line="46"/>
-        <source>plugin for using arbitrary LV2-effects inside LMMS.</source>
+        <source>plugin for using arbitrary LV2-effects inside LinuxMusic.</source>
         <translation type="unfinished"/>
     </message>
     <message>
         <location filename="../../plugins/Lv2Instrument/Lv2Instrument.cpp" line="54"/>
-        <source>plugin for using arbitrary LV2 instruments inside LMMS.</source>
+        <source>plugin for using arbitrary LV2 instruments inside LinuxMusic.</source>
         <translation type="unfinished"/>
     </message>
     <message>
         <location filename="../../plugins/MidiExport/MidiExport.cpp" line="49"/>
-        <source>Filter for exporting MIDI-files from LMMS</source>
-        <translation>Filtr pro export souborů MIDI z LMMS</translation>
+        <source>Filter for exporting MIDI-files from LinuxMusic</source>
+        <translation>Filtr pro export souborů MIDI z LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../plugins/MidiImport/MidiImport.cpp" line="68"/>
-        <source>Filter for importing MIDI-files into LMMS</source>
-        <translation>Filtr pro import MIDI souborů do LMMS</translation>
+        <source>Filter for importing MIDI-files into LinuxMusic</source>
+        <translation>Filtr pro import MIDI souborů do LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../plugins/Monstro/Monstro.cpp" line="48"/>
@@ -1001,8 +1001,8 @@ If you&apos;re interested in translating LMMS in another language or want to imp
     </message>
     <message>
         <location filename="../../plugins/Sfxr/Sfxr.cpp" line="66"/>
-        <source>LMMS port of sfxr</source>
-        <translation>LMMS port sfxr</translation>
+        <source>LinuxMusic port of sfxr</source>
+        <translation>LinuxMusic port sfxr</translation>
     </message>
     <message>
         <location filename="../../plugins/Sid/SidInstrument.cpp" line="79"/>
@@ -1043,8 +1043,8 @@ Tento čip byl používán v počítačích Commodore 64.</translation>
     </message>
     <message>
         <location filename="../../plugins/Vestige/Vestige.cpp" line="76"/>
-        <source>VST-host for using VST(i)-plugins within LMMS</source>
-        <translation>VST host pro užití VST(i) pluginů v LMMS</translation>
+        <source>VST-host for using VST(i)-plugins within LinuxMusic</source>
+        <translation>VST host pro užití VST(i) pluginů v LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../plugins/Vibed/Vibed.cpp" line="55"/>
@@ -1053,8 +1053,8 @@ Tento čip byl používán v počítačích Commodore 64.</translation>
     </message>
     <message>
         <location filename="../../plugins/VstEffect/VstEffect.cpp" line="48"/>
-        <source>plugin for using arbitrary VST effects inside LMMS.</source>
-        <translation>Plugin pro použití libovolného VST efektu v LMMS.</translation>
+        <source>plugin for using arbitrary VST effects inside LinuxMusic.</source>
+        <translation>Plugin pro použití libovolného VST efektu v LinuxMusic.</translation>
     </message>
     <message>
         <location filename="../../plugins/Watsyn/Watsyn.cpp" line="50"/>
@@ -1116,8 +1116,8 @@ Tento čip byl používán v počítačích Commodore 64.</translation>
     </message>
     <message>
         <location filename="../../src/core/PluginFactory.cpp" line="192"/>
-        <source>LMMS plugin %1 does not have a plugin descriptor named %2!</source>
-        <translation>U LMMS pluginu %1 chybí popisovač pluginu s názvem %2!</translation>
+        <source>LinuxMusic plugin %1 does not have a plugin descriptor named %2!</source>
+        <translation>U LinuxMusic pluginu %1 chybí popisovač pluginu s názvem %2!</translation>
     </message>
 </context>
 <context>
@@ -1412,8 +1412,8 @@ Tento čip byl používán v počítačích Commodore 64.</translation>
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="153"/>
-        <source>LMMS was kicked by JACK for some reason. Therefore the JACK backend of LMMS has been restarted. You will have to make manual connections again.</source>
-        <translation>LMMS bylo z nějakého důvodu odpojeno od JACKu. Ovladač JACK rozhraní v LMMS byl proto restartován. Budete muset znovu provést ruční připojení.</translation>
+        <source>LinuxMusic was kicked by JACK for some reason. Therefore the JACK backend of LinuxMusic has been restarted. You will have to make manual connections again.</source>
+        <translation>LinuxMusic bylo z nějakého důvodu odpojeno od JACKu. Ovladač JACK rozhraní v LinuxMusic byl proto restartován. Budete muset znovu provést ruční připojení.</translation>
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="160"/>
@@ -1422,8 +1422,8 @@ Tento čip byl používán v počítačích Commodore 64.</translation>
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="161"/>
-        <source>The JACK server seems to have been shutdown and starting a new instance failed. Therefore LMMS is unable to proceed. You should save your project and restart JACK and LMMS.</source>
-        <translation>JACK server byl zřejmě zastaven, a jeho opětovné spuštění se nezdařilo. LMMS proto nemůže pokračovat. Uložte svůj projekt a restartujte JACK i LMMS.</translation>
+        <source>The JACK server seems to have been shutdown and starting a new instance failed. Therefore LinuxMusic is unable to proceed. You should save your project and restart JACK and LinuxMusic.</source>
+        <translation>JACK server byl zřejmě zastaven, a jeho opětovné spuštění se nezdařilo. LinuxMusic proto nemůže pokračovat. Uložte svůj projekt a restartujte JACK i LinuxMusic.</translation>
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="520"/>
@@ -3737,8 +3737,8 @@ Tento čip byl používán v počítačích Commodore 64.</translation>
     </message>
     <message>
         <location filename="../../plugins/MidiImport/MidiImport.cpp" line="111"/>
-        <source>You did not compile LMMS with support for SoundFont2 player, which is used to add default sound to imported MIDI files. Therefore no sound will be played back after importing this MIDI file.</source>
-        <translation>Nelze zkompilovat LMMS s podporou přehrávače SoundFont2, který je použitý k přidání výchozího zvuku do importovaných MIDI souborů. Proto nebude po importování tohoto MIDI souboru přehráván žádný zvuk.</translation>
+        <source>You did not compile LinuxMusic with support for SoundFont2 player, which is used to add default sound to imported MIDI files. Therefore no sound will be played back after importing this MIDI file.</source>
+        <translation>Nelze zkompilovat LinuxMusic s podporou přehrávače SoundFont2, který je použitý k přidání výchozího zvuku do importovaných MIDI souborů. Proto nebude po importování tohoto MIDI souboru přehráván žádný zvuk.</translation>
     </message>
     <message>
         <location filename="../../plugins/MidiImport/MidiImport.cpp" line="296"/>
@@ -4911,8 +4911,8 @@ Tento čip byl používán v počítačích Commodore 64.</translation>
     </message>
     <message>
         <location filename="../../src/core/PeakController.cpp" line="214"/>
-        <source>Due to a bug in older version of LMMS, the peak controllers may not be connect properly. Please ensure that peak controllers are connected properly and re-save this file. Sorry for any inconvenience caused.</source>
-        <translation>Z důvodu chyby ve starší verzi LMMS nemusí být ovladače špiček správně připojeny. Ujistěte se prosím, zda jsou ovladače špiček správně připojeny a znovu uložte tento soubor. Omlouváme se za způsobené nepříjemnosti.</translation>
+        <source>Due to a bug in older version of LinuxMusic, the peak controllers may not be connect properly. Please ensure that peak controllers are connected properly and re-save this file. Sorry for any inconvenience caused.</source>
+        <translation>Z důvodu chyby ve starší verzi LinuxMusic nemusí být ovladače špiček správně připojeny. Ujistěte se prosím, zda jsou ovladače špiček správně připojeny a znovu uložte tento soubor. Omlouváme se za způsobené nepříjemnosti.</translation>
     </message>
 </context>
 <context>
@@ -5633,8 +5633,8 @@ Důvod: &quot;%2&quot;</translation>
     </message>
     <message>
         <location filename="../../src/core/Song.cpp" line="1214"/>
-        <source>LMMS Error report</source>
-        <translation>Chybové hlášení LMMS</translation>
+        <source>LinuxMusic Error report</source>
+        <translation>Chybové hlášení LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/core/Song.cpp" line="1511"/>
@@ -5718,9 +5718,9 @@ Důvod: &quot;%2&quot;</translation>
     <message>
         <location filename="../../src/core/ImportFilter.cpp" line="81"/>
         <source>Couldn't find a filter for importing file %1.
-You should convert this file into a format supported by LMMS using another software.</source>
+You should convert this file into a format supported by LinuxMusic using another software.</source>
         <translation>Nemohu najít filtr pro import souboru %1.
-Měli byste tento soubor převést do formátu podporovaného LMMS pomocí jiného software.</translation>
+Měli byste tento soubor převést do formátu podporovaného LinuxMusic pomocí jiného software.</translation>
     </message>
     <message>
         <location filename="../../src/core/ImportFilter.cpp" line="100"/>
@@ -7338,8 +7338,8 @@ Press &lt;Shift&gt; for destructive splitting.</source>
     </message>
     <message>
         <location filename="../../src/gui/modals/ControllerConnectionDialog.cpp" line="332"/>
-        <source>LMMS</source>
-        <translation>LMMS</translation>
+        <source>LinuxMusic</source>
+        <translation>LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/ControllerConnectionDialog.cpp" line="332"/>
@@ -8802,8 +8802,8 @@ Ověřte si prosím, zda máte povolen zápis do souboru a do složky, ve které
     </message>
     <message>
         <location filename="../../src/gui/GuiApplication.cpp" line="98"/>
-        <source>The LMMS working directory %1 does not exist. Create it now? You can change the directory later via Edit -&gt; Settings.</source>
-        <translation>Pracovní adresář LMMS %1 neexistuje. Chcete jej nyní vytvořit? Změnu adresáře mžete provést později v nabídce Úpravy -&gt; Nastavení.</translation>
+        <source>The LinuxMusic working directory %1 does not exist. Create it now? You can change the directory later via Edit -&gt; Settings.</source>
+        <translation>Pracovní adresář LinuxMusic %1 neexistuje. Chcete jej nyní vytvořit? Změnu adresáře mžete provést později v nabídce Úpravy -&gt; Nastavení.</translation>
     </message>
     <message>
         <location filename="../../src/gui/GuiApplication.cpp" line="156"/>
@@ -10456,7 +10456,7 @@ Poklepejte pro výběr souboru.</translation>
     </message>
     <message>
         <location filename="../../src/gui/LmmsStyle.cpp" line="153"/>
-        <source>LMMS theme file %1 has been reloaded.</source>
+        <source>LinuxMusic theme file %1 has been reloaded.</source>
         <translation type="unfinished"/>
     </message>
 </context>
@@ -10491,8 +10491,8 @@ Ujistěte se prosím, zda máte povolen zápis do souboru a do složky obsahují
     </message>
     <message>
         <location filename="../../src/core/main.cpp" line="795"/>
-        <source>There is a recovery file present. It looks like the last session did not end properly or another instance of LMMS is already running. Do you want to recover the project of this session?</source>
-        <translation>Je k dispozici soubor pro obnovu. Zdá se, že poslední práce nebyla správně ukončena nebo že je již spuštěna jiná instance LMMS. Chcete obnovit tuto verzi projektu?</translation>
+        <source>There is a recovery file present. It looks like the last session did not end properly or another instance of LinuxMusic is already running. Do you want to recover the project of this session?</source>
+        <translation>Je k dispozici soubor pro obnovu. Zdá se, že poslední práce nebyla správně ukončena nebo že je již spuštěna jiná instance LinuxMusic. Chcete obnovit tuto verzi projektu?</translation>
     </message>
     <message>
         <location filename="../../src/core/main.cpp" line="800"/>
@@ -10502,8 +10502,8 @@ Ujistěte se prosím, zda máte povolen zápis do souboru a do složky obsahují
     </message>
     <message>
         <location filename="../../src/core/main.cpp" line="801"/>
-        <source>Recover the file. Please don&apos;t run multiple instances of LMMS when you do this.</source>
-        <translation>Obnovit soubor. Před dokončením prosím nespouštějte další instance LMMS.</translation>
+        <source>Recover the file. Please don&apos;t run multiple instances of LinuxMusic when you do this.</source>
+        <translation>Obnovit soubor. Před dokončením prosím nespouštějte další instance LinuxMusic.</translation>
     </message>
     <message>
         <location filename="../../src/core/main.cpp" line="803"/>
@@ -10514,7 +10514,7 @@ Ujistěte se prosím, zda máte povolen zápis do souboru a do složky obsahují
     <message>
         <location filename="../../src/core/main.cpp" line="804"/>
         <source>Launch a default session and delete the restored files. This is not reversible.</source>
-        <translation>Spustit LMMS do výchozího stavu a smazat obnovené soubory. Tento krok je nevratný.</translation>
+        <translation>Spustit LinuxMusic do výchozího stavu a smazat obnovené soubory. Tento krok je nevratný.</translation>
     </message>
     <message>
         <location filename="../../src/gui/GuiApplication.cpp" line="136"/>
@@ -10684,7 +10684,7 @@ Ujistěte se prosím, zda máte povolen zápis do souboru a do složky obsahují
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="399"/>
         <source>About</source>
-        <translation>O LMMS</translation>
+        <translation>O LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="404"/>
@@ -10773,8 +10773,8 @@ Ujistěte se prosím, zda máte povolen zápis do souboru a do složky obsahují
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="593"/>
-        <source>LMMS %1</source>
-        <translation>LMMS %1</translation>
+        <source>LinuxMusic %1</source>
+        <translation>LinuxMusic %1</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="612"/>
@@ -10784,7 +10784,7 @@ Ujistěte se prosím, zda máte povolen zápis do souboru a do složky obsahují
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="613"/>
         <source>This project was recovered from the previous session. It is currently unsaved and will be lost if you don&apos;t save it. Do you want to save it now?</source>
-        <translation>Tento projekt byl obnoven z minulého spuštění LMMS. Zatím není uložen a pokud tak neučiníte, práce bude ztracena. Chcete jej nyní uložit? </translation>
+        <translation>Tento projekt byl obnoven z minulého spuštění LinuxMusic. Zatím není uložen a pokud tak neučiníte, práce bude ztracena. Chcete jej nyní uložit? </translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="618"/>
@@ -10803,8 +10803,8 @@ Ujistěte se prosím, zda máte povolen zápis do souboru a do složky obsahují
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="755"/>
-        <source>LMMS (*.mmp *.mmpz)</source>
-        <translation>LMMS (*.mmp *.mmpz)</translation>
+        <source>LinuxMusic (*.mmp *.mmpz)</source>
+        <translation>LinuxMusic (*.mmp *.mmpz)</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="798"/>
@@ -10813,13 +10813,13 @@ Ujistěte se prosím, zda máte povolen zápis do souboru a do složky obsahují
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="799"/>
-        <source>LMMS Project</source>
-        <translation>Projekt LMMS</translation>
+        <source>LinuxMusic Project</source>
+        <translation>Projekt LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="800"/>
-        <source>LMMS Project Template</source>
-        <translation>Šablona projektu LMMS</translation>
+        <source>LinuxMusic Project Template</source>
+        <translation>Šablona projektu LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="830"/>
@@ -10843,10 +10843,10 @@ Ujistěte se prosím, zda máte povolen zápis do souboru a do složky obsahují
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="913"/>
-        <source>Currently there's no help available in LMMS.
-Please visit http://lmms.sf.net/wiki for documentation on LMMS.</source>
-        <translation>V současnosti není v LMMS nápověda dostupná.
-Navštivte prosím stránku s dokumentací k LMMS na adrese http://lmms.sf.net/wiki.</translation>
+        <source>Currently there's no help available in LinuxMusic.
+Please visit http://lmms.sf.net/wiki for documentation on LinuxMusic.</source>
+        <translation>V současnosti není v LinuxMusic nápověda dostupná.
+Navštivte prosím stránku s dokumentací k LinuxMusic na adrese http://lmms.sf.net/wiki.</translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="1070"/>
@@ -13729,8 +13729,8 @@ Warning: This operation can not be undone.</source>
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="817"/>
-        <source>LMMS working directory</source>
-        <translation>Pracovní adresář LMMS</translation>
+        <source>LinuxMusic working directory</source>
+        <translation>Pracovní adresář LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="821"/>
@@ -13821,8 +13821,8 @@ Zpoždění %2 ms</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="1301"/>
-        <source>Choose the LMMS working directory</source>
-        <translation>Vyberte pracovní adresář LMMS</translation>
+        <source>Choose the LinuxMusic working directory</source>
+        <translation>Vyberte pracovní adresář LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="1318"/>
@@ -14412,7 +14412,7 @@ Zpoždění %2 ms</translation>
     </message>
     <message>
         <location filename="../../src/core/DataFile.cpp" line="2191"/>
-        <source>This %1 was created with LMMS %2</source>
+        <source>This %1 was created with LinuxMusic %2</source>
         <translation type="unfinished"/>
     </message>
     <message>
@@ -15405,8 +15405,8 @@ Zpoždění %2 ms</translation>
     </message>
     <message>
         <location filename="../../plugins/Vestige/Vestige.cpp" line="519"/>
-        <source>Control VST plugin from LMMS host</source>
-        <translation>Ovládání VST pluginu hostitelským programem LMMS</translation>
+        <source>Control VST plugin from LinuxMusic host</source>
+        <translation>Ovládání VST pluginu hostitelským programem LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../plugins/Vestige/Vestige.cpp" line="532"/>
@@ -15609,8 +15609,8 @@ Zpoždění %2 ms</translation>
     </message>
     <message>
         <location filename="../../plugins/VstEffect/VstEffectControlDialog.cpp" line="113"/>
-        <source>Control VST plugin from LMMS host</source>
-        <translation>Ovládání VST pluginu hostitelským programem LMMS</translation>
+        <source>Control VST plugin from LinuxMusic host</source>
+        <translation>Ovládání VST pluginu hostitelským programem LinuxMusic</translation>
     </message>
     <message>
         <location filename="../../plugins/VstEffect/VstEffectControlDialog.cpp" line="129"/>

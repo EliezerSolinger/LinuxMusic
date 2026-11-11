@@ -1,5 +1,5 @@
 # Configuration variables
-%define name            lmms
+%define name            linuxmusic
 %define version         ${LMMS_VERSION}
 %define rel             1
 %define release         %{rel}%{?disttag}%{?repotag}
@@ -28,7 +28,7 @@ Summary(de):	Leistungsfaehiges Sequenzer-, Synthesizer- und Sample-Studio fuer L
 License:	GPL
 URL:		https://lmms.io/
 Group:		Applications/Multimedia
-Provides:	lmms = %{version}-%{release}
+Provides:	linuxmusic = %{version}-%{release}
 BuildRequires:	gcc gcc-c++ libstdc++-devel autoconf automake libtool make
 BuildRequires:	alsa-lib-devel
 BuildRequires:	qt-devel > 3.0
@@ -80,48 +80,48 @@ Prefix:		%{_prefix}
 
 
 %description
-LMMS aims to be a free alternative to popular (but commercial and closed-
+LinuxMusic aims to be a free alternative to popular (but commercial and closed-
 source) programs like FruityLoops, Cubase and Logic giving you the ability of
 producing music with your computer by creating/synthesizing sounds, arranging
 samples, playing live with keyboard and much more...
 
-LMMS combines the features of a tracker-/sequencer-program (pattern-/channel-/
+LinuxMusic combines the features of a tracker-/sequencer-program (pattern-/channel-/
 sample-/song-/effect-management) and those of powerful synthesizers and
 samplers in a modern, user-friendly and easy to use graphical user-interface.
 
-LMMS is still in heavy development, so with this version please don't expect a
+LinuxMusic is still in heavy development, so with this version please don't expect a
 complete, ready and bugfree program!!
 
 
 %description -l de
-LMMS ist eine freie Alternative zu bekannten (aber kommerziellen und
+LinuxMusic ist eine freie Alternative zu bekannten (aber kommerziellen und
 Closed-Source-) Programmen wie FruityLoops, Cubase und Logic, die Ihnen die
 Moeglichkeit geben, mit Ihrem Computer Musik zu produzieren, indem Sie
 Klaenge kreieren/synthetisieren, Samples anordnen, mit dem Keyboard live
 spielen usw....
 
-LMMS kombiniert die Funktionen eines Tracker-/Sequenzer-Programms (Pattern-/
+LinuxMusic kombiniert die Funktionen eines Tracker-/Sequenzer-Programms (Pattern-/
 Kanal-/Sample-/Song-/Effekt-Management) und die von leistungsfaehigen
 Synthesizern und Samplern in einer modernen, benutzerfreundlichen und einfach zu
 benutzenden grafischen Oberflaeche.
 
-Derzeit befindet sich LMMS komplett in Entwicklung. Also erwarten Sie bitte mit
+Derzeit befindet sich LinuxMusic komplett in Entwicklung. Also erwarten Sie bitte mit
 dieser Version nicht ein vollstaendiges, fertiges und fehlerfreies Programm!!
 
 
 %package data
-Summary:	samples, presets, demo-projects and localization-files for LMMS
-Summary(de):	Samples, Presets, Demo-Projekte und Lokalisierungsdateien fuer LMMS
+Summary:	samples, presets, demo-projects and localization-files for LinuxMusic
+Summary(de):	Samples, Presets, Demo-Projekte und Lokalisierungsdateien fuer LinuxMusic
 Group:		Applications/Multimedia
 Provides:	lmms-data = %{version}-%{release}
 
 %description data
-This package contains platform-independent data and resources for LMMS, e.g.
+This package contains platform-independent data and resources for LinuxMusic, e.g.
 samples, presets and demo-projects.
 
 
 %description data -l de
-Dieses Paket beinhaltet plattform-unabhaengige Daten und Resourcen fuer LMMS,
+Dieses Paket beinhaltet plattform-unabhaengige Daten und Resourcen fuer LinuxMusic,
 wie z.B. Samples, Presets und Demo-Projekte.
 
 
@@ -156,9 +156,9 @@ wie z.B. Samples, Presets und Demo-Projekte.
 # Create a desktop menu entry
 %{__cat} > %{name}.desktop << EOF
 [Desktop Entry]
-Name=LMMS
+Name=LinuxMusic
 Comment=Powerful sequencer-, synthesizer- and sample-studio for Linux
-Exec=lmms
+Exec=linuxmusic
 Icon=%{_datadir}/%{name}/themes/default/icon.png
 Terminal=false
 Type=Application
@@ -196,5 +196,5 @@ desktop-file-install \
 
 -%changelog
 -* Please see release notes (viewable online):
--- https://github.com/LMMS/lmms/releases/tag/v${LMMS_VERSION}
+-- https://github.com/LinuxMusic/lmms/releases/tag/v${LMMS_VERSION}
 -

@@ -1,0 +1,4 @@
+?package(linuxmusic):needs="X11" section="Apps/Sound" \
+  title="LinuxMusic" hints="Audio" command="/usr/bin/linuxmusic" \
+  longtitle="LinuxMusic" \
+  icon="/usr/share/icons/hicolor/scalable/apps/linuxmusic.svg"

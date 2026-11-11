@@ -136,7 +136,7 @@ DataFile::DataFile( Type type ) :
 	QDomElement root = createElement( "lmms-project" );
 	root.setAttribute( "version", m_fileVersion );
 	root.setAttribute( "type", typeName( type ) );
-	root.setAttribute( "creator", "LMMS" );
+	root.setAttribute( "creator", "LinuxMusic" );
 	root.setAttribute( "creatorversion", LMMS_VERSION );
 	root.setAttribute("creatorplatform", QSysInfo::kernelType());
 	root.setAttribute("creatorplatformtype", QSysInfo::productType());
@@ -2111,7 +2111,7 @@ void DataFile::upgrade()
 	// update document meta data
 	documentElement().setAttribute( "version", m_fileVersion );
 	documentElement().setAttribute( "type", typeName( type() ) );
-	documentElement().setAttribute( "creator", "LMMS" );
+	documentElement().setAttribute( "creator", "LinuxMusic" );
 	documentElement().setAttribute( "creatorversion", LMMS_VERSION );
 	documentElement().setAttribute("creatorplatform", QSysInfo::kernelType());
 	documentElement().setAttribute("creatorplatformtype", QSysInfo::productType());
@@ -2203,7 +2203,7 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
 
 			gui::TextFloat::displayMessage(
 				SongEditor::tr("Version difference"),
-				SongEditor::tr("This %1 was created with LMMS %2")
+				SongEditor::tr("This %1 was created with LinuxMusic %2")
 				.arg(projectType).arg(createdWith.getVersion()),
 				embed::getIconPixmap("whatsthis", 24, 24),
 				2500

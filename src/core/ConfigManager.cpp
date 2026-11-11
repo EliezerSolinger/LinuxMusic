@@ -87,7 +87,7 @@ ConfigManager::ConfigManager() :
 #ifdef LMMS_BUILD_WIN32
 	QDir::addSearchPath("data", qApp->applicationDirPath() + "/data/");
 #else
-	QDir::addSearchPath("data", qApp->applicationDirPath().section('/', 0, -2) + "/share/lmms/");
+	QDir::addSearchPath("data", qApp->applicationDirPath().section('/', 0, -2) + "/share/" LMMS_PROJECT_ID "/");
 #endif
 
 }
@@ -631,9 +631,9 @@ void ConfigManager::saveConfigFile()
 #endif
 	setValue("paths", "backgroundtheme", m_backgroundPicFile);
 
-	QDomDocument doc("lmms-config-file");
+	QDomDocument doc(LMMS_PROJECT_ID "-config-file");
 
-	QDomElement lmms_config = doc.createElement("lmms");
+	QDomElement lmms_config = doc.createElement(LMMS_PROJECT_ID);
 	lmms_config.setAttribute("version", m_version);
 	lmms_config.setAttribute("configversion", m_configVersion);
 	doc.appendChild(lmms_config);
@@ -701,17 +701,14 @@ void ConfigManager::saveConfigFile()
 void ConfigManager::initPortableWorkingDir()
 {
 	QString applicationPath = qApp->applicationDirPath();
-	m_workingDir = applicationPath + "/lmms-workspace/";
-	m_lmmsRcFile = applicationPath + "/.lmmsrc.xml";
+	m_workingDir = applicationPath + "/" LMMS_PROJECT_ID "-workspace/";
+	m_lmmsRcFile = applicationPath + "/." LMMS_PROJECT_ID "rc.xml";
 }
 
 void ConfigManager::initInstalledWorkingDir()
 {
-	m_workingDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/lmms/";
-	m_lmmsRcFile = QDir::home().absolutePath() +"/.lmmsrc.xml";
-	// Detect < 1.2.0 working directory as a courtesy
-	if ( QFileInfo( QDir::home().absolutePath() + "/lmms/projects/" ).exists() )
-		m_workingDir = QDir::home().absolutePath() + "/lmms/";
+	m_workingDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/" LMMS_PROJECT_NAME "/";
+	m_lmmsRcFile = QDir::home().absolutePath() +"/." LMMS_PROJECT_ID "rc.xml";
 }
 
 void ConfigManager::initDevelopmentWorkingDir()
@@ -735,14 +732,14 @@ void ConfigManager::initDevelopmentWorkingDir()
 		{
 			QString line = stream.readLine();
 
-			if (line.startsWith("lmms_SOURCE_DIR:")) {
+			if (line.startsWith(LMMS_PROJECT_ID "_SOURCE_DIR:")) {
 				QString srcDir = line.section('=', -1).trimmed();
 				QDir::addSearchPath("data", srcDir + "/data/");
 				done++;
 			}
-			if (line.startsWith("lmms_BINARY_DIR:")) {
+			if (line.startsWith(LMMS_PROJECT_ID "_BINARY_DIR:")) {
 				m_lmmsRcFile = line.section('=', -1).trimmed() +  QDir::separator() +
-							   ".lmmsrc.xml";
+							   "." LMMS_PROJECT_ID "rc.xml";
 				done++;
 			}
 			if (done == 2)

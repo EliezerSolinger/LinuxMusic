@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=LMMS
+Name=LinuxMusic
 GenericName=Music production suite
 GenericName[ca]=Programari de producció musical
 GenericName[de]=Software zur Musik-Produktion
@@ -9,9 +9,9 @@ Comment=Music sequencer and synthesizer
 Comment[ca]=Producció fàcil de música per a tothom!
 Comment[fr]=Séquenceur et synthétiseur de musique
 Comment[pl]=Prosta produkcja muzyki dla każdego!
-Icon=lmms
-Exec=lmms %f
+Icon=linuxmusic
+Exec=linuxmusic %f
 Terminal=false
 Type=Application
 Categories=Qt;AudioVideo;Audio;Midi;
-MimeType=application/x-lmms-project;
+MimeType=application/x-linuxmusic-project;

@@ -5,12 +5,12 @@
     <name>AboutDialog</name>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="20"/>
-        <source>About LMMS</source>
+        <source>About LinuxMusic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="43"/>
-        <source>LMMS</source>
+        <source>LinuxMusic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -25,7 +25,7 @@
     </message>
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="100"/>
-        <source>LMMS - easy music production for everyone.</source>
+        <source>LinuxMusic - easy music production for everyone.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -61,7 +61,7 @@
     <message>
         <location filename="../../src/gui/modals/about_dialog.ui" line="220"/>
         <source>Current language not translated (or native English).
-If you&apos;re interested in translating LMMS in another language or want to improve existing translations, you&apos;re welcome to help us! Simply contact the maintainer!</source>
+If you&apos;re interested in translating LinuxMusic in another language or want to improve existing translations, you&apos;re welcome to help us! Simply contact the maintainer!</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -219,7 +219,7 @@ If you&apos;re interested in translating LMMS in another language or want to imp
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="108"/>
-        <source>LMMS was kicked by JACK for some reason. Therefore the JACK backend of LMMS has been restarted. You will have to make manual connections again.</source>
+        <source>LinuxMusic was kicked by JACK for some reason. Therefore the JACK backend of LinuxMusic has been restarted. You will have to make manual connections again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -229,7 +229,7 @@ If you&apos;re interested in translating LMMS in another language or want to imp
     </message>
     <message>
         <location filename="../../src/core/audio/AudioJack.cpp" line="117"/>
-        <source>The JACK server seems to have been shutdown and starting a new instance failed. Therefore LMMS is unable to proceed. You should save your project and restart JACK and LMMS.</source>
+        <source>The JACK server seems to have been shutdown and starting a new instance failed. Therefore LinuxMusic is unable to proceed. You should save your project and restart JACK and LinuxMusic.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3141,7 +3141,7 @@ This mode is not available for VST plugins.</source>
     </message>
     <message>
         <location filename="../../src/gui/modals/ControllerConnectionDialog.cpp" line="334"/>
-        <source>LMMS</source>
+        <source>LinuxMusic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5518,7 +5518,7 @@ Please make sure you have write permission to the file and the directory contain
     </message>
     <message>
         <location filename="../../src/gui/GuiApplication.cpp" line="67"/>
-        <source>The LMMS working directory %1 does not exist. Create it now? You can change the directory later via Edit -&gt; Settings.</source>
+        <source>The LinuxMusic working directory %1 does not exist. Create it now? You can change the directory later via Edit -&gt; Settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7209,7 +7209,7 @@ Please make sure you have write permission to the file and the directory contain
     </message>
     <message>
         <location filename="../../src/core/main.cpp" line="889"/>
-        <source>There is a recovery file present. It looks like the last session did not end properly or another instance of LMMS is already running. Do you want to recover the project of this session?</source>
+        <source>There is a recovery file present. It looks like the last session did not end properly or another instance of LinuxMusic is already running. Do you want to recover the project of this session?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7220,7 +7220,7 @@ Please make sure you have write permission to the file and the directory contain
     </message>
     <message>
         <location filename="../../src/core/main.cpp" line="895"/>
-        <source>Recover the file. Please don&apos;t run multiple instances of LMMS when you do this.</source>
+        <source>Recover the file. Please don&apos;t run multiple instances of LinuxMusic when you do this.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7486,7 +7486,7 @@ Please make sure you have write permission to the file and the directory contain
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="664"/>
-        <source>LMMS %1</source>
+        <source>LinuxMusic %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7516,7 +7516,7 @@ Please make sure you have write permission to the file and the directory contain
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="826"/>
-        <source>LMMS (*.mmp *.mmpz)</source>
+        <source>LinuxMusic (*.mmp *.mmpz)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7526,12 +7526,12 @@ Please make sure you have write permission to the file and the directory contain
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="870"/>
-        <source>LMMS Project</source>
+        <source>LinuxMusic Project</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="871"/>
-        <source>LMMS Project Template</source>
+        <source>LinuxMusic Project Template</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7556,8 +7556,8 @@ Please make sure you have write permission to the file and the directory contain
     </message>
     <message>
         <location filename="../../src/gui/MainWindow.cpp" line="984"/>
-        <source>Currently there&apos;s no help available in LMMS.
-Please visit http://lmms.sf.net/wiki for documentation on LMMS.</source>
+        <source>Currently there&apos;s no help available in LinuxMusic.
+Please visit http://lmms.sf.net/wiki for documentation on LinuxMusic.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7748,7 +7748,7 @@ Please visit http://lmms.sf.net/wiki for documentation on LMMS.</source>
     </message>
     <message>
         <location filename="../../plugins/MidiImport/MidiImport.cpp" line="123"/>
-        <source>You did not compile LMMS with support for SoundFont2 player, which is used to add default sound to imported MIDI files. Therefore no sound will be played back after importing this MIDI file.</source>
+        <source>You did not compile LinuxMusic with support for SoundFont2 player, which is used to add default sound to imported MIDI files. Therefore no sound will be played back after importing this MIDI file.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -9624,7 +9624,7 @@ Please visit http://lmms.sf.net/wiki for documentation on LMMS.</source>
     </message>
     <message>
         <location filename="../../src/core/PeakController.cpp" line="214"/>
-        <source>Due to a bug in older version of LMMS, the peak controllers may not be connect properly. Please ensure that peak controllers are connected properly and re-save this file. Sorry for any inconvenience caused.</source>
+        <source>Due to a bug in older version of LinuxMusic, the peak controllers may not be connect properly. Please ensure that peak controllers are connected properly and re-save this file. Sorry for any inconvenience caused.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -10264,7 +10264,7 @@ Reason: &quot;%2&quot;</source>
     </message>
     <message>
         <location filename="../../plugins/HydrogenImport/HydrogenImport.cpp" line="32"/>
-        <source>Filter for importing Hydrogen files into LMMS</source>
+        <source>Filter for importing Hydrogen files into LinuxMusic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -10279,7 +10279,7 @@ Reason: &quot;%2&quot;</source>
     </message>
     <message>
         <location filename="../../plugins/LadspaEffect/LadspaEffect.cpp" line="56"/>
-        <source>plugin for using arbitrary LADSPA-effects inside LMMS.</source>
+        <source>plugin for using arbitrary LADSPA-effects inside LinuxMusic.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -10289,22 +10289,22 @@ Reason: &quot;%2&quot;</source>
     </message>
     <message>
         <location filename="../../plugins/Lv2Effect/Lv2Effect.cpp" line="45"/>
-        <source>plugin for using arbitrary LV2-effects inside LMMS.</source>
+        <source>plugin for using arbitrary LV2-effects inside LinuxMusic.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../plugins/Lv2Instrument/Lv2Instrument.cpp" line="51"/>
-        <source>plugin for using arbitrary LV2 instruments inside LMMS.</source>
+        <source>plugin for using arbitrary LV2 instruments inside LinuxMusic.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../plugins/MidiExport/MidiExport.cpp" line="51"/>
-        <source>Filter for exporting MIDI-files from LMMS</source>
+        <source>Filter for exporting MIDI-files from LinuxMusic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../plugins/MidiImport/MidiImport.cpp" line="68"/>
-        <source>Filter for importing MIDI-files into LMMS</source>
+        <source>Filter for importing MIDI-files into LinuxMusic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -10354,7 +10354,7 @@ Reason: &quot;%2&quot;</source>
     </message>
     <message>
         <location filename="../../plugins/Sfxr/Sfxr.cpp" line="64"/>
-        <source>LMMS port of sfxr</source>
+        <source>LinuxMusic port of sfxr</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -10395,7 +10395,7 @@ This chip was used in the Commodore 64 computer.</source>
     </message>
     <message>
         <location filename="../../plugins/Vestige/Vestige.cpp" line="75"/>
-        <source>VST-host for using VST(i)-plugins within LMMS</source>
+        <source>VST-host for using VST(i)-plugins within LinuxMusic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -10405,7 +10405,7 @@ This chip was used in the Commodore 64 computer.</source>
     </message>
     <message>
         <location filename="../../plugins/VstEffect/VstEffect.cpp" line="44"/>
-        <source>plugin for using arbitrary VST effects inside LMMS.</source>
+        <source>plugin for using arbitrary VST effects inside LinuxMusic.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -10917,7 +10917,7 @@ Plugin Name
     </message>
     <message>
         <location filename="../../src/core/PluginFactory.cpp" line="183"/>
-        <source>LMMS plugin %1 does not have a plugin descriptor named %2!</source>
+        <source>LinuxMusic plugin %1 does not have a plugin descriptor named %2!</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -12436,7 +12436,7 @@ You can disable these checks to get a faster scanning time (at your own risk).</
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="776"/>
-        <source>LMMS working directory</source>
+        <source>LinuxMusic working directory</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -12486,7 +12486,7 @@ You can disable these checks to get a faster scanning time (at your own risk).</
     </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="1231"/>
-        <source>Choose the LMMS working directory</source>
+        <source>Choose the LinuxMusic working directory</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -12764,7 +12764,7 @@ Latency: %2 ms</source>
     </message>
     <message>
         <location filename="../../src/core/Song.cpp" line="1198"/>
-        <source>LMMS Error report</source>
+        <source>LinuxMusic Error report</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -12835,7 +12835,7 @@ Latency: %2 ms</source>
     </message>
     <message>
         <location filename="../../src/core/DataFile.cpp" line="1841"/>
-        <source>This %1 was created with LMMS %2</source>
+        <source>This %1 was created with LinuxMusic %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -13268,7 +13268,7 @@ Latency: %2 ms</source>
     <message>
         <location filename="../../src/core/ImportFilter.cpp" line="84"/>
         <source>Couldn&apos;t find a filter for importing file %1.
-You should convert this file into a format supported by LMMS using another software.</source>
+You should convert this file into a format supported by LinuxMusic using another software.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -13759,7 +13759,7 @@ Please make sure you have read-permission to the file and the directory containi
     </message>
     <message>
         <location filename="../../plugins/Vestige/Vestige.cpp" line="519"/>
-        <source>Control VST plugin from LMMS host</source>
+        <source>Control VST plugin from LinuxMusic host</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -13832,7 +13832,7 @@ Please make sure you have read-permission to the file and the directory containi
     </message>
     <message>
         <location filename="../../plugins/VstEffect/VstEffectControlDialog.cpp" line="103"/>
-        <source>Control VST plugin from LMMS host</source>
+        <source>Control VST plugin from LinuxMusic host</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

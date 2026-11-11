@@ -1,34 +1,24 @@
 <div align="center">
-	<h1>
-	<img src="https://raw.githubusercontent.com/LMMS/artwork/master/Icon%20%26%20Mimetypes/lmms-64x64.svg" alt="LMMS Logo"><br>LMMS
-	</h1>
-	<p>Cross-platform music production software</p>
-	<p>
-		<a href="https://lmms.io/">Website</a>
-		⦁︎
-		<a href="https://github.com/LMMS/lmms/releases">Releases</a>
-		⦁︎
-		<a href="https://github.com/LMMS/lmms/wiki">Developer wiki</a>
-		⦁︎
-		<a href="https://lmms.io/documentation">User manual</a>
-		⦁︎
-		<a href="https://lmms.io/showcase/">Showcase</a>
-		⦁︎
-		<a href="https://lmms.io/lsp/">Sharing platform</a>
-	</p>
-	<p>
-		<a href="https://github.com/LMMS/lmms/actions/workflows/build.yml"><img src="https://github.com/LMMS/lmms/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
-		<a href="https://lmms.io/download"><img src="https://img.shields.io/github/release/LMMS/lmms.svg?maxAge=3600" 	alt="Latest stable release"></a>
-		<a href="https://github.com/LMMS/lmms/releases"><img src="https://img.shields.io/github/downloads/LMMS/lmms/total.svg?maxAge=3600" alt="Overall downloads on Github"></a>
-		<a href="https://discord.gg/3sc5su7"><img src="https://img.shields.io/badge/chat-on%20discord-7289DA.svg" alt="Join the chat at Discord"></a>
-		<a href="https://www.transifex.com/lmms/lmms/"><img src="https://img.shields.io/badge/localise-on_transifex-green.svg"></a>
-	</p>
+	<h1>LinuxMusic</h1>
+	<p>Free music production software for Linux</p>
 </div>
 
-What is LMMS?
---------------
+What is LinuxMusic?
+--------------------
 
-LMMS is an open-source cross-platform digital audio workstation designed for music production. It includes an advanced Piano Roll, Beat Sequencer, Song Editor, and Mixer for composing, arranging, and mixing music. It comes with 15+ synthesizer plugins by default, along with VST2 and SoundFont2 support.
+LinuxMusic is a fork of [LMMS](https://github.com/LMMS/lmms), the open-source digital audio workstation.
+Its goal is to become a lean Linux DAW with REAPER-style live audio recording.
+
+LinuxMusic targets Linux first. It also builds on macOS for development.
+
+Roadmap
+--------
+
+The work is split into three long stages (details in [`docs/`](docs/README.md), in Portuguese):
+
+1. Remove plugins and features that won't be used.
+2. Rework the interface and usability, and lay the groundwork for the mixer and channel strips.
+3. Implement a REAPER-style recording system (record arm, per-track inputs, monitoring, recording straight to disk).
 
 Features
 ---------
@@ -45,13 +35,20 @@ Features
 Building
 ---------
 
-See [Compiling LMMS](https://github.com/LMMS/lmms/wiki/Compiling)
+```sh
+git clone --recursive https://github.com/EliezerSolinger/LinuxMusic.git
+cd LinuxMusic
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build
+./build/linuxmusic
+```
 
-Join LMMS-development
-----------------------
+Build dependencies are the same as LMMS. See
+[Compiling LMMS](https://github.com/LMMS/lmms/wiki/Compiling) and, for Ubuntu,
+`.github/workflows/deps-ubuntu-24.04-gcc.txt`.
 
-If you are interested in LMMS, its programming, artwork, testing, writing demo songs, (and improving this README...) or something like that, you're welcome to participate in the development of LMMS!
+Credits and license
+--------------------
 
-Information about what you can do and how can be found in the [wiki](https://github.com/LMMS/lmms/wiki).
-
-Before coding a new big feature, please _always_ [file an issue](https://github.com/LMMS/lmms/issues/new) for your idea and suggestions about your feature and about the intended implementation on GitHub, or ask in one of the tech channels on Discord and wait for replies! Maybe there are different ideas, improvements, or hints, or maybe your feature is not welcome/needed at the moment.
+LinuxMusic is built on the work of the LMMS developers and contributors (see `doc/AUTHORS` and
+`doc/CONTRIBUTORS`). Like LMMS, it is licensed under the GNU General Public License v2 or later.
