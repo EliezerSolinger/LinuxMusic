@@ -231,6 +231,10 @@ public:
 
 	bool criticalXRuns() const;
 
+	//! Starts/stops the audio device's processing. Tests stop it to render periods themselves.
+	void startProcessing() { m_audioDev->startProcessing(); }
+	void stopProcessing() { m_audioDev->stopProcessing(); }
+
 	void pushInputFrames( SampleFrame* _ab, const f_cnt_t _frames );
 
 	void processBufferedInputFrames();
@@ -355,8 +359,6 @@ private:
 	AudioEngine( bool renderOnly );
 	~AudioEngine() override;
 
-	void startProcessing() { m_audioDev->startProcessing(); }
-	void stopProcessing() { m_audioDev->stopProcessing(); }
 
 
 	AudioDevice * tryAudioDevices();

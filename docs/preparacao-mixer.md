@@ -54,3 +54,25 @@ efeitos do FL Studio (veja [README.md](README.md)).
 7. Compensação de latência (PDC).
 8. Canal automático por faixa; volume e pan da faixa viram atalhos; remoção do rack de efeitos das faixas.
 9. Interface nova do mixer: slots por canal, arrastar e soltar, menu de slot.
+
+## Andamento
+
+### Passo 1: testes (feito)
+
+`tests/src/core/MixerTest.cpp` cobre o comportamento atual:
+- sinal no master e volume do master;
+- canal novo enviando ao master;
+- volume do canal vezes quantidade do envio;
+- soma de canais e canais encadeados;
+- mute e solo;
+- limpeza dos buffers entre períodos;
+- detecção de loop de roteamento;
+- apagar canal;
+- medidor de pico pós-fader.
+
+Detalhes que os testes revelaram:
+- `Engine::init()` liga a thread do driver Dummy, que processa o mixer sozinha. Os testes a param
+  (`AudioEngine::stopProcessing()`, agora público) e avançam os períodos manualmente.
+- **Comportamento a corrigir no passo 2:** a rampa que suaviza mudanças de parâmetro só avança quando o canal processa
+  sinal. Se o fader de um canal em silêncio muda e depois chega som, o som começa com uma rampa a partir do valor
+  **antigo**. O processamento novo do canal deve consumir as mudanças de parâmetro em todo período, com ou sem sinal.
