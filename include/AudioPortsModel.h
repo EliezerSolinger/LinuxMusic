@@ -209,8 +209,8 @@ public:
 	 * Caches the highest indexed track channel in use, so that the audio ports router can
 	 * loop over [0, trackChannelsUpperBound) rather than [0, totalTrackChannels).
 	 *
-	 * This value is always <= to the total number of track channels (currently always 2).
-	 * TODO: Need to recalculate when pins are set/unset
+	 * This value is always <= to the total number of track channels. It is recalculated whenever the pins or the
+	 * channel counts change.
 	 */
 	auto trackChannelsUpperBound() const -> ch_cnt_t { return m_trackChannelsUpperBound; }
 
@@ -262,6 +262,7 @@ private:
 	auto setProcessorChannelCountsImpl(ch_cnt_t inCount, ch_cnt_t outCount, bool silent) -> bool;
 
 	void updateDirectRouting();
+	void updateTrackChannelsUpperBound();
 
 	Matrix m_in{this, false}; //!< LMMS --> audio processor
 	Matrix m_out{this, true}; //!< audio processor --> LMMS

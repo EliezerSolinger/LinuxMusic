@@ -25,6 +25,8 @@
 
 #include "AudioPortsModel.h"
 
+#include <algorithm>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QDebug>
@@ -157,7 +159,6 @@ auto AudioPortsModel::setTrackChannelCountImpl(ch_cnt_t count) -> bool
 		return false;
 	}
 
-	m_trackChannelsUpperBound = std::min(m_trackChannelsUpperBound, count);
 	m_totalTrackChannels = count;
 
 	m_in.setTrackChannelCount(count);
@@ -244,8 +245,28 @@ void AudioPortsModel::loadSettings(const QDomElement& elem)
 	emit dataChanged();
 }
 
+void AudioPortsModel::updateTrackChannelsUpperBound()
+{
+	// One past the highest track channel connected to any input or output
+	auto bound = ch_cnt_t{0};
+	for (ch_cnt_t tc = 0; tc < m_totalTrackChannels; ++tc)
+	{
+		const auto& ins = m_in.m_pins[tc];
+		const auto& outs = m_out.m_pins[tc];
+		if (std::find(ins.begin(), ins.end(), true) != ins.end()
+			|| std::find(outs.begin(), outs.end(), true) != outs.end())
+		{
+			bound = static_cast<ch_cnt_t>(tc + 1);
+		}
+	}
+	m_trackChannelsUpperBound = bound;
+}
+
 void AudioPortsModel::updateDirectRouting()
 {
+	// Every change of the pins or channel counts comes through here
+	updateTrackChannelsUpperBound();
+
 	const auto ins = in().channelCount();
 	const auto outs = out().channelCount();
 
@@ -533,6 +554,13 @@ void AudioPortsModel::Matrix::loadSettings(const QDomElement& elem)
 #ifndef NDEBUG
 		if (trackChannel == 0 || processorChannel == 0) { throw std::runtime_error{"failed to parse integer"}; }
 #endif
+
+		// Connections to track or processor channels that do not exist (anymore) are dropped
+		if (trackChannel < 1 || trackChannel > static_cast<int>(m_pins.size())
+			|| processorChannel < 1 || processorChannel > static_cast<int>(m_channelCount))
+		{
+			return;
+		}
 
 		setPinBatch(trackChannel - 1, processorChannel - 1, true);
 	};

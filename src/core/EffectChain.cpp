@@ -105,6 +105,9 @@ void EffectChain::loadSettings( const QDomElement & _this )
 
 			auto e = std::make_unique<PluginInstance>(Plugin::Type::Effect, name, this, &key);
 
+			// Before loading the pins, so that pins to auxiliary track channels exist
+			e->setTrackChannelCount(m_trackChannels);
+
 			if (e->effect() && e->effectRef().isOkay() && e->effectRef().nodeName() == node.nodeName())
 			{
 				e->effectRef().restoreState(effectData);
@@ -127,9 +130,19 @@ void EffectChain::loadSettings( const QDomElement & _this )
 
 
 
+void EffectChain::setTrackChannelCount(ch_cnt_t channels)
+{
+	m_trackChannels = channels;
+	for (auto& effect : m_effects) { effect->setTrackChannelCount(channels); }
+}
+
+
+
+
 void EffectChain::appendEffect(std::unique_ptr<PluginInstance> effect)
 {
 	Engine::audioEngine()->requestChangeInModel();
+	effect->setTrackChannelCount(m_trackChannels);
 	m_effects.push_back(std::move(effect));
 	Engine::audioEngine()->doneChangeInModel();
 

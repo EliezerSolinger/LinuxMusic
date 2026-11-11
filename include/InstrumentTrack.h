@@ -99,6 +99,9 @@ public:
 	 */
 	void playInstrument(const Instrument* instrument, std::span<SampleFrame> out);
 
+	//! The track has as many channels as its mixer channel: the main pair and its auxiliary pairs
+	auto trackChannelCount() const -> ch_cnt_t { return m_instrumentChannels.channels(); }
+
 	QString instrumentName() const;
 	const Instrument *instrument() const
 	{
@@ -293,6 +296,9 @@ protected slots:
 	void updatePitch();
 	void updatePitchRange();
 	void updateMixerChannel();
+
+	//! Takes over the channel count of the mixer channel the track sends to
+	void updateTrackChannelCount();
 
 private:
 	void processCCEvent(int controller);

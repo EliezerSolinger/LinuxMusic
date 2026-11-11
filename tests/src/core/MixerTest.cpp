@@ -28,7 +28,10 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "DataFile.h"
+#include "Effect.h"
+#include "EffectControls.h"
 #include "Mixer.h"
+#include "PluginInstance.h"
 #include "ProjectJournal.h"
 #include "SampleTrack.h"
 #include "Song.h"
@@ -36,6 +39,62 @@
 #include "lmms_math.h"
 
 using namespace lmms;
+
+namespace
+{
+
+Plugin::Descriptor s_duckerDescriptor = {
+	"fakeducker", "Fake ducker", "Effect for tests", "LinuxMusic", 0x0100, Plugin::Type::Effect,
+	nullptr, nullptr, nullptr
+};
+
+class DuckerControls : public EffectControls
+{
+public:
+	using EffectControls::EffectControls;
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	auto nodeName() const -> QString override { return "duckercontrols"; }
+	auto controlCount() -> int override { return 0; }
+	auto createView() -> gui::EffectControlDialog* override { return nullptr; }
+};
+
+//! Like a sidechain compressor: stereo main inputs and a stereo sidechain input (a second channel group).
+//! The output is the main input at a quarter of its level while the sidechain has any signal.
+class FakeDucker : public Effect
+{
+public:
+	FakeDucker() : Effect{&s_duckerDescriptor, nullptr, nullptr}, m_controls{this} {}
+
+	auto controls() -> EffectControls* override { return &m_controls; }
+	auto process(ProcessContext& context) -> ProcessStatus override
+	{
+		const auto& in = context.in();
+		auto& out = context.out();
+		bool sidechain = false;
+		for (ch_cnt_t ch = 2; ch < 4; ++ch)
+		{
+			for (const auto sample : in.buffer(ch)) { sidechain = sidechain || sample != 0.f; }
+		}
+		const float gain = sidechain ? 0.25f : 1.f;
+		for (ch_cnt_t ch = 0; ch < 2; ++ch)
+		{
+			const auto src = in.buffer(ch);
+			auto dst = out.buffer(ch);
+			for (std::size_t f = 0; f < dst.size(); ++f) { dst[f] = src[f] * gain; }
+		}
+		return ProcessStatus::Continue;
+	}
+	auto channelCount(bool isInput) const -> ch_cnt_t override { return isInput ? 4 : 2; }
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return isInput ? 2 : 1; }
+	auto getChannelGroup(group_cnt_t, bool, AudioBuffer::ChannelGroup&) const -> ch_cnt_t override { return 2; }
+	auto getInplacePair(ch_cnt_t) const -> std::optional<ch_cnt_t> override { return std::nullopt; }
+
+private:
+	DuckerControls m_controls;
+};
+
+} // namespace
 
 class MixerTest : public QObject
 {
@@ -485,6 +544,204 @@ private slots:
 		mixer()->mixerChannel(channel)->m_muteModel.setValue(true);
 		mix();
 		QCOMPARE(meter.rms(0), 0.f);
+	}
+
+	///////////////////////////////////////////
+	// Track channels beyond the main pair   //
+	///////////////////////////////////////////
+
+	void channelCountIsEvenAndLimited()
+	{
+		const auto channel = mixer()->createChannel();
+		const auto ch = mixer()->mixerChannel(channel);
+		QCOMPARE(ch->channelCount(), 2);
+
+		mixer()->setChannelCount(channel, 4);
+		QCOMPARE(ch->channelCount(), 4);
+		QCOMPARE(ch->pairCount(), 2);
+		QCOMPARE(ch->m_buffer.groupCount(), 2);
+		QCOMPARE(ch->m_buffer.group(1).channels(), 2);
+
+		mixer()->setChannelCount(channel, 5);
+		QCOMPARE(ch->channelCount(), 6);
+		mixer()->setChannelCount(channel, 1000);
+		QCOMPARE(ch->channelCount(), MaxMixerChannelTrackChannels);
+		mixer()->setChannelCount(channel, 0);
+		QCOMPARE(ch->channelCount(), 2);
+	}
+
+	void sendNeedsTheDestinationPair()
+	{
+		const auto kick = mixer()->createChannel();
+		const auto bass = mixer()->createChannel();
+		QVERIFY(mixer()->createChannelSend(kick, bass, 1.f, 0, 1) == nullptr);
+		mixer()->setChannelCount(bass, 4);
+		const auto send = mixer()->createChannelSend(kick, bass, 1.f, 0, 1);
+		QVERIFY(send != nullptr);
+		QVERIFY(send->isSidechain());
+
+		// A sidechain send and a normal send between the same channels are different sends
+		QVERIFY(mixer()->createChannelSend(kick, bass) != send);
+		QCOMPARE(mixer()->findChannelSend(kick, bass, 0, 1), send);
+	}
+
+	void auxiliaryPairsDoNotReachTheOutput()
+	{
+		const auto kick = mixer()->createChannel();
+		const auto bass = mixer()->createChannel();
+		mixer()->setChannelCount(bass, 4);
+		mixer()->createChannelSend(kick, bass, 1.f, 0, 1);
+
+		feed(kick, 0.4f, 0.4f);
+		feed(bass, 0.8f, 0.8f);
+
+		// The kick reaches the master directly; at the bass channel, it only arrives at the channels 3/4
+		compareOutput(mix(), 1.2f, 1.2f);
+	}
+
+	void sidechainSendReachesTheSidechainInput()
+	{
+		const auto kick = mixer()->createChannel();
+		const auto bass = mixer()->createChannel();
+		mixer()->setChannelCount(bass, 4);
+		mixer()->createChannelSend(kick, bass, 1.f, 0, 1);
+
+		auto& chain = mixer()->mixerChannel(bass)->m_fxChain;
+		chain.appendEffect(std::make_unique<PluginInstance>(std::make_unique<FakeDucker>(), Plugin::Type::Effect));
+
+		// The sidechain inputs were connected to the channels 3/4 by default
+		const auto& pins = chain.effects().front()->audioPortsModel()->in();
+		QVERIFY(pins.enabled(2, 2));
+		QVERIFY(pins.enabled(3, 3));
+		QVERIFY(!pins.enabled(0, 2));
+
+		// Without the kick, the bass passes unchanged
+		feed(bass, 0.8f, 0.8f);
+		compareOutput(mix(), 0.8f, 0.8f);
+
+		// With it, the bass is ducked
+		feed(kick, 0.4f, 0.4f);
+		feed(bass, 0.8f, 0.8f);
+		compareOutput(mix(), 0.4f + 0.2f, 0.4f + 0.2f);
+
+		chain.clear();
+	}
+
+	void sidechainInputGetsConnectedWhenTheChannelGrows()
+	{
+		const auto bass = mixer()->createChannel();
+		auto& chain = mixer()->mixerChannel(bass)->m_fxChain;
+		chain.appendEffect(std::make_unique<PluginInstance>(std::make_unique<FakeDucker>(), Plugin::Type::Effect));
+		const auto model = chain.effects().front()->audioPortsModel();
+		QCOMPARE(model->trackChannelCount(), 2);
+
+		mixer()->setChannelCount(bass, 4);
+		QCOMPARE(model->trackChannelCount(), 4);
+		QVERIFY(model->in().enabled(2, 2));
+		QVERIFY(model->in().enabled(3, 3));
+
+		chain.clear();
+	}
+
+	void auxiliaryPairCanBeSentOn()
+	{
+		const auto kick = mixer()->createChannel();
+		const auto bus = mixer()->createChannel();
+		const auto out = mixer()->createChannel();
+		mixer()->setChannelCount(bus, 4);
+		mixer()->deleteChannelSend(kick, 0);
+		mixer()->deleteChannelSend(bus, 0);
+		mixer()->createChannelSend(kick, bus, 1.f, 0, 1);
+		mixer()->createChannelSend(bus, out, 0.5f, 1, 0);
+
+		feed(kick, 0.4f, 0.2f);
+		compareOutput(mix(), 0.2f, 0.1f);
+	}
+
+	void shrinkingAChannelDeletesSendsToMissingPairs()
+	{
+		const auto kick = mixer()->createChannel();
+		const auto bass = mixer()->createChannel();
+		mixer()->setChannelCount(bass, 4);
+		mixer()->createChannelSend(kick, bass, 1.f, 0, 1);
+		mixer()->createChannelSend(bass, kick, 1.f, 1, 0);
+
+		mixer()->setChannelCount(bass, 2);
+		QVERIFY(mixer()->findChannelSend(kick, bass, 0, 1) == nullptr);
+		QVERIFY(mixer()->findChannelSend(bass, kick, 1, 0) == nullptr);
+		QVERIFY(mixer()->findChannelSend(bass, 0) != nullptr);
+	}
+
+	void channelCountAndPairSendsAreSavedAndLoaded()
+	{
+		// The receiver has a higher index than the sender, so its channels 3/4 do not exist yet when the
+		// sender's sends are read
+		const auto kick = mixer()->createChannel();
+		const auto bass = mixer()->createChannel();
+		mixer()->setChannelCount(bass, 4);
+		mixer()->createChannelSend(kick, bass, 0.7f, 0, 1);
+
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixer");
+		mixer()->saveSettings(doc, element);
+		mixer()->clear();
+		QCOMPARE(mixer()->numChannels(), 1);
+		mixer()->loadSettings(element);
+
+		QCOMPARE(mixer()->mixerChannel(bass)->channelCount(), 4);
+		QCOMPARE(mixer()->mixerChannel(kick)->channelCount(), 2);
+		const auto send = mixer()->findChannelSend(kick, bass, 0, 1);
+		QVERIFY(send != nullptr);
+		QVERIFY(qFuzzyCompare(send->amount()->value(), 0.7f));
+	}
+
+	void instrumentAuxiliaryOutputsReachTheChannelsAuxiliaryPairs()
+	{
+		// A multi-output instrument's track buffer: main pair plus channels 3/4
+		const auto drums = mixer()->createChannel();
+		const auto toms = mixer()->createChannel();
+		mixer()->setChannelCount(drums, 4);
+		mixer()->createChannelSend(drums, toms, 1.f, 1, 0);
+
+		auto buffer = AudioBuffer{frames(), 4};
+		for (ch_cnt_t ch = 0; ch < 4; ++ch)
+		{
+			std::ranges::fill(buffer.buffer(ch), ch < 2 ? 0.f : 0.25f);
+			if (ch >= 2) { buffer.assumeNonSilent(ch); }
+		}
+		mixer()->mixAuxiliaryToChannel(buffer, drums);
+
+		// Only through the send from the channels 3/4 to the toms channel, which goes to the master
+		compareOutput(mix(), 0.25f, 0.25f);
+
+		// A channel without the auxiliary pair ignores it
+		mixer()->mixAuxiliaryToChannel(buffer, toms);
+		compareOutput(mix(), 0.f, 0.f);
+	}
+
+	void clearingAChannelResetsItsChannelCount()
+	{
+		const auto channel = mixer()->createChannel();
+		mixer()->setChannelCount(channel, 8);
+		mixer()->clearChannel(channel);
+		QCOMPARE(mixer()->mixerChannel(channel)->channelCount(), 2);
+	}
+
+	void channelCountChangeIsUndoable()
+	{
+		const auto channel = mixer()->createChannel();
+		const auto journal = Engine::projectJournal();
+		journal->setJournalling(true);
+		journal->clearJournal();
+
+		mixer()->setChannelCount(channel, 4);
+		QCOMPARE(mixer()->mixerChannel(channel)->channelCount(), 4);
+		journal->undo();
+		QCOMPARE(mixer()->mixerChannel(channel)->channelCount(), 2);
+		journal->redo();
+		QCOMPARE(mixer()->mixerChannel(channel)->channelCount(), 4);
+
+		journal->setJournalling(false);
 	}
 };
 

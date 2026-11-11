@@ -63,11 +63,27 @@ struct ChannelInput
 	bool operator==(const ChannelInput&) const = default;
 };
 
+/**
+ * A channel of the mixer.
+ *
+ * Its buffer holds its track channels in pairs: the main pair (1/2), which goes through the trim, the effects,
+ * the stereo section, pan and fader to the channel's output, followed by auxiliary pairs (3/4, 5/6...), like the
+ * track channels of REAPER. The auxiliary pairs only pass through the effects (as their pins say) and never reach
+ * the channel's output by themselves: an effect's output pins or a send must take them somewhere. A sidechain send
+ * is a send to an auxiliary pair of the channel with the compressor, whose sidechain input is connected to it.
+ */
 class MixerChannel : public ThreadableJob
 {
 public:
 	MixerChannel(int idx, Model* _parent);
 	virtual ~MixerChannel();
+
+	//! Number of track channels: 2 (the main pair) plus 2 per auxiliary pair
+	auto channelCount() const -> ch_cnt_t { return m_buffer.channels(); }
+	auto pairCount() const -> ch_cnt_t { return static_cast<ch_cnt_t>(channelCount() / 2); }
+
+	//! Changes the number of track channels (see Mixer::setChannelCount()) [audio engine paused]
+	void setChannelCount(ch_cnt_t channels);
 
 	EffectChain m_fxChain;
 
@@ -148,12 +164,28 @@ private:
 	std::optional<QColor> m_color;
 };
 
+/**
+ * A send: takes a channel pair of the sender to a channel pair of the receiver.
+ *
+ * The sender's main pair (0) is taken after its fader, or before it for pre-fader sends; an auxiliary pair is
+ * taken after the sender's effects. A send to an auxiliary pair of the receiver (e.g. its channels 3/4) is a
+ * sidechain send.
+ */
 class MixerRoute : public QObject
 {
 	Q_OBJECT
 public:
-	MixerRoute( MixerChannel * from, MixerChannel * to, float amount );
+	MixerRoute(MixerChannel* from, MixerChannel* to, float amount, ch_cnt_t sourcePair = 0, ch_cnt_t destinationPair = 0);
 	~MixerRoute() override = default;
+
+	//! The sender's channel pair that is sent: 0 is the main pair (channels 1/2), 1 the channels 3/4...
+	auto sourcePair() const -> ch_cnt_t { return m_sourcePair; }
+
+	//! The receiver's channel pair the send arrives at
+	auto destinationPair() const -> ch_cnt_t { return m_destinationPair; }
+
+	//! Whether the send goes to an auxiliary pair, e.g. to a sidechain input
+	auto isSidechain() const -> bool { return m_destinationPair > 0; }
 
 	mix_ch_t senderIndex() const
 	{
@@ -191,7 +223,12 @@ public:
 		MixerChannel * m_to;
 		FloatModel m_amount;
 		BoolModel m_preFader;
+		ch_cnt_t m_sourcePair;
+		ch_cnt_t m_destinationPair;
 };
+
+//! Most track channels a mixer channel can have
+inline constexpr ch_cnt_t MaxMixerChannelTrackChannels = 64;
 
 
 class LMMS_EXPORT Mixer : public Model, public JournallingObject
@@ -202,6 +239,10 @@ public:
 	~Mixer() override;
 
 	void mixToChannel(const AudioBuffer& buffer, mix_ch_t dest);
+
+	//! Adds the auxiliary pairs of @p buffer (its channels from 3 on) to the same channels of channel @p dest,
+	//! as far as it has them. Used for instruments with more than two outputs.
+	void mixAuxiliaryToChannel(const AudioBuffer& buffer, mix_ch_t dest);
 
 	void prepareMasterMix();
 	void masterMix( SampleFrame* _buf );
@@ -228,11 +269,32 @@ public:
 	// it is safe to call even if the send already exists
 	MixerRoute * createChannelSend(mix_ch_t fromChannel, mix_ch_t toChannel,
 						   float amount = 1.0f);
-	MixerRoute * createRoute( MixerChannel * from, MixerChannel * to, float amount );
 
-	// delete the connection made by createChannelSend
+	/**
+	 * Sends the channel pair @p sourcePair of @p fromChannel to the pair @p destinationPair of @p toChannel,
+	 * or adjusts the amount of that send if it exists. A destination pair above 0 makes a sidechain send.
+	 *
+	 * @returns the send, or nullptr if a channel does not have the pair or the send would make a loop
+	 */
+	MixerRoute* createChannelSend(mix_ch_t fromChannel, mix_ch_t toChannel, float amount,
+		ch_cnt_t sourcePair, ch_cnt_t destinationPair);
+
+	MixerRoute* createRoute(MixerChannel* from, MixerChannel* to, float amount,
+		ch_cnt_t sourcePair = 0, ch_cnt_t destinationPair = 0);
+
+	// delete the connection made by createChannelSend (the main pair to main pair send)
 	void deleteChannelSend(mix_ch_t fromChannel, mix_ch_t toChannel);
 	void deleteChannelSend( MixerRoute * route );
+
+	//! @returns the send from pair @p sourcePair of @p fromChannel to pair @p destinationPair of @p toChannel
+	auto findChannelSend(mix_ch_t fromChannel, mix_ch_t toChannel, ch_cnt_t sourcePair = 0,
+		ch_cnt_t destinationPair = 0) const -> MixerRoute*;
+
+	/**
+	 * Sets how many track channels channel @p index has (2 for just the main pair, 4 for the main pair and the
+	 * channels 3/4...); rounded up to an even count. Sends to or from pairs that no longer exist are deleted.
+	 */
+	void setChannelCount(mix_ch_t index, ch_cnt_t channels);
 
 	// determine if adding a send from sendFrom to
 	// sendTo would result in an infinite mixer loop.
@@ -284,6 +346,7 @@ public:
 signals:
 	void channelCreated(int index);
 	void channelInputChanged(int index);
+	void channelCountChanged(int index);
 	void channelDeleted(int index);
 	void channelsSwapped(int fromIndex, int toIndex);
 

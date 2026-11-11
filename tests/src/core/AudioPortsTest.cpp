@@ -346,9 +346,65 @@ private slots:
 		}
 	}
 
+	void Model_TrackChannelsUpperBoundFollowsPins()
+	{
+		auto model = AudioPortsModel{false};
+		model.setAllChannelCounts(4, 2, 2);
+		QCOMPARE(model.trackChannelsUpperBound(), 2);
+
+		model.in().setPin(3, 0, true);
+		QCOMPARE(model.trackChannelsUpperBound(), 4);
+		model.in().setPin(3, 0, false);
+		QCOMPARE(model.trackChannelsUpperBound(), 2);
+
+		model.out().setPin(2, 1, true);
+		QCOMPARE(model.trackChannelsUpperBound(), 3);
+	}
+
+	void Model_LoadDropsPinsToMissingChannels()
+	{
+		auto model = AudioPortsModel{false};
+		model.setAllChannelCounts(4, 2, 2);
+		model.in().setPin(3, 1, true);
+
+		auto doc = QDomDocument{};
+		auto parent = doc.createElement("effect");
+		doc.appendChild(parent);
+		model.saveSettings(doc, parent);
+
+		// Fewer track channels than when saved: the pin to channel 4 has nowhere to go
+		auto loaded = AudioPortsModel{false};
+		loaded.setAllChannelCounts(2, 2, 2);
+		loaded.loadSettings(parent);
+		QVERIFY(loaded.in().enabled(0, 0));
+		QVERIFY(loaded.in().enabled(1, 1));
+		QCOMPARE(loaded.trackChannelsUpperBound(), 2);
+	}
+
 	//////////////////////
 	// AudioPortsRouter //
 	//////////////////////
+
+	void Router_SendFromAuxiliaryTrackChannels()
+	{
+		auto model = AudioPortsModel{false};
+		model.setAllChannelCounts(4, 2, 2);
+		model.in().setPin(0, 0, false);
+		model.in().setPin(1, 1, false);
+		model.in().setPin(2, 0, true);
+		model.in().setPin(3, 1, true);
+
+		auto track = trackBuffer(0.25f, 0.5f, 4);
+		std::ranges::fill(track.buffer(2), 0.125f);
+		std::ranges::fill(track.buffer(3), 0.0625f);
+		track.assumeNonSilent(2);
+		track.assumeNonSilent(3);
+
+		auto in = AudioBuffer{frames(), 2};
+		AudioPortsRouter::send(model, track, in);
+		compareChannel(in, 0, 0.125f);
+		compareChannel(in, 1, 0.0625f);
+	}
 
 	void Router_SendSumsConnectedTrackChannels()
 	{
@@ -579,6 +635,20 @@ private slots:
 			compareChannel(track, 0, 0.f);
 			QVERIFY(instance->effect()->isCorrupted());
 		}
+	}
+
+	void Instance_SidechainGroupConnectsToChannels3And4()
+	{
+		// Two input groups: the main pair and a sidechain pair
+		auto instance = makeInstance({.in = 4, .out = 2, .inplacePair = [](ch_cnt_t) { return std::nullopt; }},
+			[](ProcessContext&) { return ProcessStatus::Continue; });
+		const auto& pins = instance->audioPortsModel()->in();
+		QVERIFY(!pins.enabled(0, 2) && !pins.enabled(1, 3));
+
+		// The fake effect has one input group, so nothing happens
+		instance->setTrackChannelCount(4);
+		QCOMPARE(instance->audioPortsModel()->trackChannelCount(), 4);
+		QVERIFY(!pins.enabled(2, 2));
 	}
 
 	void Instance_PinsAreSavedAndLoaded()

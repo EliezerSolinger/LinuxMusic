@@ -45,13 +45,16 @@ namespace lmms
 {
 
 
-MixerRoute::MixerRoute( MixerChannel * from, MixerChannel * to, float amount ) :
+MixerRoute::MixerRoute(MixerChannel* from, MixerChannel* to, float amount, ch_cnt_t sourcePair,
+	ch_cnt_t destinationPair) :
 	m_from( from ),
 	m_to( to ),
 	m_amount(amount, 0, 1, 0.001f, nullptr,
 			tr("Amount to send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index())),
 	m_preFader(false, nullptr,
-			tr("Pre-fader send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()))
+			tr("Pre-fader send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index())),
+	m_sourcePair(sourcePair),
+	m_destinationPair(destinationPair)
 {
 	//qDebug( "created: %d to %d", m_from->m_channelIndex, m_to->m_channelIndex );
 	// create send amount model
@@ -65,10 +68,35 @@ void MixerRoute::updateName()
 }
 
 
+namespace
+{
+
+//! A mixer channel's buffer: @p channels track channels in pairs, with an interleaved copy of the main pair
+auto channelBuffer(ch_cnt_t channels) -> AudioBuffer
+{
+	auto buffer = AudioBuffer{Engine::audioEngine()->framesPerPeriod(), channels, channels, true};
+	buffer.setGroups(static_cast<group_cnt_t>(channels / 2), [](group_cnt_t, AudioBuffer::ChannelGroup&) {
+		return ch_cnt_t{2};
+	});
+	return buffer;
+}
+
+//! The silence flags of channel pair @p pair
+auto pairMask(ch_cnt_t pair) -> AudioBuffer::ChannelFlags
+{
+	auto mask = AudioBuffer::ChannelFlags{};
+	mask.set(2 * pair);
+	mask.set(2 * pair + 1);
+	return mask;
+}
+
+} // namespace
+
+
 MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_fxChain( nullptr ),
 	m_stillRunning( false ),
-	m_buffer(Engine::audioEngine()->framesPerPeriod(), DEFAULT_CHANNELS, DEFAULT_CHANNELS, true),
+	m_buffer(channelBuffer(DEFAULT_CHANNELS)),
 	m_muteModel( false, _parent ),
 	m_soloModel( false, _parent ),
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
@@ -94,6 +122,15 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 
 MixerChannel::~MixerChannel()
 {
+}
+
+
+
+
+void MixerChannel::setChannelCount(ch_cnt_t channels)
+{
+	m_buffer = channelBuffer(channels);
+	m_fxChain.setTrackChannelCount(channels);
 }
 
 
@@ -206,30 +243,65 @@ void MixerChannel::doProcessing()
 	m_preFaderHasSignal = false;
 
 	auto buffer = m_buffer.interleavedBuffer().asSampleFrames();
+	const auto mainPair = pairMask(0);
 
-	// Inputs from other channels, taken before or after their fader
+	// Inputs from other channels: the sender's main pair before or after its fader, or one of its auxiliary
+	// pairs after its effects, into one of this channel's pairs
+	bool receivedMain = false;
 	for (auto i = std::size_t{0}; i < m_receives.size(); ++i)
 	{
 		MixerRoute* route = m_receives[i];
 		MixerChannel* sender = route->sender();
-		const bool preFader = route->isPreFader();
+		const auto sourcePair = route->sourcePair();
+		const auto destinationPair = route->destinationPair();
+		if (sourcePair >= sender->pairCount() || destinationPair >= pairCount()) { continue; }
+
+		const bool preFader = sourcePair == 0 && route->isPreFader();
 		const bool hasSignal = preFader
 			? sender->m_preFaderHasSignal
-			: sender->m_buffer.hasAnySignal() || sender->m_stillRunning;
+			: sender->m_buffer.hasSignal(pairMask(sourcePair)) || sender->m_stillRunning;
 		if (!hasSignal) { continue; }
 
-		const SampleFrame* src = preFader
-			? sender->m_preFaderBuffer.data()
-			: sender->m_buffer.interleavedBuffer().asSampleFrames().data();
-		if (sendBufs[i]) { MixHelpers::addMultipliedByBuffer(buffer.data(), src, 1.f, sendBufs[i], fpp); }
-		else { MixHelpers::addMultiplied(buffer.data(), src, route->amount()->value(), fpp); }
+		auto left = m_buffer.buffer(2 * destinationPair);
+		auto right = m_buffer.buffer(2 * destinationPair + 1);
+		const float amount = route->amount()->value();
+		const ValueBuffer* amountBuf = sendBufs[i];
+		auto gain = [&](f_cnt_t f) { return amountBuf ? amountBuf->values()[f] : amount; };
 
-		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
-		m_buffer.mixSilenceFlags(sender->m_buffer);
+		if (preFader)
+		{
+			const auto& src = sender->m_preFaderBuffer;
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				left[f] += src[f].left() * gain(f);
+				right[f] += src[f].right() * gain(f);
+			}
+		}
+		else
+		{
+			const auto srcLeft = sender->m_buffer.buffer(2 * sourcePair);
+			const auto srcRight = sender->m_buffer.buffer(2 * sourcePair + 1);
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				left[f] += srcLeft[f] * gain(f);
+				right[f] += srcRight[f] * gain(f);
+			}
+		}
+
+		// Like the sender's channels: a sender that is still running may be silent
+		if (preFader || !sender->m_buffer.silenceFlags()[2 * sourcePair]) { m_buffer.assumeNonSilent(2 * destinationPair); }
+		if (preFader || !sender->m_buffer.silenceFlags()[2 * sourcePair + 1])
+		{
+			m_buffer.assumeNonSilent(2 * destinationPair + 1);
+		}
+		receivedMain = receivedMain || destinationPair == 0;
 	}
 
+	// Keep the interleaved copy of the main pair in sync
+	if (receivedMain) { toInterleaved(m_buffer.groupBuffers(0), m_buffer.interleavedBuffer()); }
+
 	// Input trim
-	if (m_buffer.hasAnySignal() && m_trimModel.value() != 0.f)
+	if (m_buffer.hasSignal(mainPair) && m_trimModel.value() != 0.f)
 	{
 		const float trim = dbfsToAmp(m_trimModel.value());
 		for (auto& frame : buffer) { frame *= trim; }
@@ -237,7 +309,9 @@ void MixerChannel::doProcessing()
 	}
 
 	m_stillRunning = m_fxChain.processAudioBuffer(m_buffer);
-	const bool hasSignal = m_buffer.hasAnySignal() || m_stillRunning;
+
+	// The auxiliary pairs do not reach the channel's output
+	const bool hasSignal = m_buffer.hasSignal(mainPair) || m_stillRunning;
 
 	// Tap for pre-fader sends
 	const bool feedsPreFader = std::any_of(m_sends.begin(), m_sends.end(),
@@ -584,35 +658,53 @@ void Mixer::moveChannelRight( int index )
 MixerRoute * Mixer::createChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel,
 								float amount )
 {
-	const auto change = StructureChange{*this};
-//	qDebug( "requested: %d to %d", fromChannel, toChannel );
-	// find the existing connection
-	MixerChannel * from = m_mixerChannels[fromChannel];
-	MixerChannel * to = m_mixerChannels[toChannel];
-
-	for (const auto& send : from->m_sends)
-	{
-		if (send->receiver() == to)
-		{
-			// simply adjust the amount
-			send->amount()->setValue(amount);
-			return send;
-		}
-	}
-
-	// connection does not exist. create a new one
-	return createRoute( from, to, amount );
+	return createChannelSend(fromChannel, toChannel, amount, 0, 0);
 }
 
 
-MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float amount )
+MixerRoute* Mixer::createChannelSend(mix_ch_t fromChannel, mix_ch_t toChannel, float amount,
+	ch_cnt_t sourcePair, ch_cnt_t destinationPair)
+{
+	const auto change = StructureChange{*this};
+
+	// find the existing connection, and simply adjust its amount
+	if (auto send = findChannelSend(fromChannel, toChannel, sourcePair, destinationPair))
+	{
+		send->amount()->setValue(amount);
+		return send;
+	}
+
+	// connection does not exist. create a new one
+	return createRoute(m_mixerChannels[fromChannel], m_mixerChannels[toChannel], amount, sourcePair, destinationPair);
+}
+
+
+auto Mixer::findChannelSend(mix_ch_t fromChannel, mix_ch_t toChannel, ch_cnt_t sourcePair,
+	ch_cnt_t destinationPair) const -> MixerRoute*
+{
+	const MixerChannel* to = m_mixerChannels[toChannel];
+	for (MixerRoute* send : m_mixerChannels[fromChannel]->m_sends)
+	{
+		if (send->receiver() == to && send->sourcePair() == sourcePair && send->destinationPair() == destinationPair)
+		{
+			return send;
+		}
+	}
+	return nullptr;
+}
+
+
+MixerRoute* Mixer::createRoute(MixerChannel* from, MixerChannel* to, float amount, ch_cnt_t sourcePair,
+	ch_cnt_t destinationPair)
 {
 	if( from == to )
 	{
 		return nullptr;
 	}
+	if (sourcePair >= from->pairCount() || destinationPair >= to->pairCount()) { return nullptr; }
+
 	Engine::audioEngine()->requestChangeInModel();
-	auto route = new MixerRoute(from, to, amount);
+	auto route = new MixerRoute(from, to, amount, sourcePair, destinationPair);
 
 	// add us to from's sends
 	from->m_sends.push_back(route);
@@ -632,19 +724,9 @@ MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float a
 void Mixer::deleteChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel )
 {
 	const auto change = StructureChange{*this};
-	// delete the send
-	MixerChannel * from = m_mixerChannels[fromChannel];
-	MixerChannel * to	 = m_mixerChannels[toChannel];
 
-	// find and delete the send entry
-	for (const auto& send : from->m_sends)
-	{
-		if (send->receiver() == to)
-		{
-			deleteChannelSend(send);
-			break;
-		}
-	}
+	// the main pair to main pair send
+	if (auto send = findChannelSend(fromChannel, toChannel)) { deleteChannelSend(send); }
 }
 
 
@@ -718,18 +800,40 @@ FloatModel * Mixer::channelSendModel( mix_ch_t fromChannel, mix_ch_t toChannel )
 	{
 		return nullptr;
 	}
-	const MixerChannel * from = m_mixerChannels[fromChannel];
-	const MixerChannel * to = m_mixerChannels[toChannel];
+	const auto route = findChannelSend(fromChannel, toChannel);
+	return route ? route->amount() : nullptr;
+}
 
-	for( MixerRoute * route : from->m_sends )
+
+
+
+void Mixer::setChannelCount(mix_ch_t index, ch_cnt_t channels)
+{
+	channels = std::clamp<ch_cnt_t>(static_cast<ch_cnt_t>((channels + 1) / 2 * 2), DEFAULT_CHANNELS,
+		MaxMixerChannelTrackChannels);
+	MixerChannel* channel = m_mixerChannels[index];
+	if (channel->channelCount() == channels) { return; }
+
+	const auto change = StructureChange{*this};
+
+	// Sends from or to pairs the channel will not have anymore
+	const auto pairs = static_cast<ch_cnt_t>(channels / 2);
+	auto obsolete = std::vector<MixerRoute*>{};
+	for (MixerRoute* send : channel->m_sends)
 	{
-		if( route->receiver() == to )
-		{
-			return route->amount();
-		}
+		if (send->sourcePair() >= pairs) { obsolete.push_back(send); }
 	}
+	for (MixerRoute* receive : channel->m_receives)
+	{
+		if (receive->destinationPair() >= pairs) { obsolete.push_back(receive); }
+	}
+	for (MixerRoute* route : obsolete) { deleteChannelSend(route); }
 
-	return nullptr;
+	Engine::audioEngine()->requestChangeInModel();
+	channel->setChannelCount(channels);
+	Engine::audioEngine()->doneChangeInModel();
+
+	emit channelCountChanged(index);
 }
 
 
@@ -748,6 +852,27 @@ void Mixer::mixToChannel(const AudioBuffer& buffer, mix_ch_t dest)
 		channel->m_buffer.mixSilenceFlags(buffer);
 		channel->m_lock.unlock();
 	}
+}
+
+
+
+
+void Mixer::mixAuxiliaryToChannel(const AudioBuffer& buffer, mix_ch_t dest)
+{
+	const auto channel = m_mixerChannels[dest];
+	if (channel->m_muteModel.value()) { return; }
+
+	const auto channels = std::min(buffer.channels(), channel->channelCount());
+	channel->m_lock.lock();
+	for (ch_cnt_t ch = DEFAULT_CHANNELS; ch < channels; ++ch)
+	{
+		if (buffer.silenceFlags()[ch]) { continue; }
+		const auto src = buffer.buffer(ch);
+		auto dst = channel->m_buffer.buffer(ch);
+		std::transform(dst.begin(), dst.end(), src.begin(), dst.begin(), std::plus{});
+		channel->m_buffer.assumeNonSilent(ch);
+	}
+	channel->m_lock.unlock();
 }
 
 
@@ -850,6 +975,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_widthModel.setValue(100.f);
 	ch->m_panModel.setValue(PanningCenter);
 	ch->m_input = ChannelInput{};
+	setChannelCount(index, DEFAULT_CHANNELS);
 	ch->m_recordArmModel.setValue(false);
 	ch->m_monitorModel.setValue(static_cast<int>(MixerChannel::MonitorMode::Auto));
 	ch->m_name = ( index == 0 ) ? tr( "Master" ) : tr( "Channel %1" ).arg( index );
@@ -915,6 +1041,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			mixch.appendChild(input);
 		}
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
+		if (ch->channelCount() != DEFAULT_CHANNELS) { mixch.setAttribute("channels", ch->channelCount()); }
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
 
@@ -925,6 +1052,8 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			mixch.appendChild( sendsDom );
 
 			sendsDom.setAttribute("channel", send->receiverIndex());
+			if (send->sourcePair() != 0) { sendsDom.setAttribute("sourcepair", send->sourcePair()); }
+			if (send->destinationPair() != 0) { sendsDom.setAttribute("destinationpair", send->destinationPair()); }
 			send->amount()->saveSettings(_doc, sendsDom, "amount");
 			send->preFader()->saveSettings(_doc, sendsDom, "prefader");
 		}
@@ -949,6 +1078,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 {
 	clear();
 	QDomNode node = _this.firstChild();
+	auto sends = std::vector<std::pair<int, QDomElement>>{};
 
 	while( ! node.isNull() )
 	{
@@ -987,30 +1117,36 @@ void Mixer::loadSettings( const QDomElement & _this )
 			m_mixerChannels[num]->setColor(QColor{mixch.attribute("color")});
 		}
 
+		// Before the effects, so that their pins to auxiliary channels can be loaded
+		setChannelCount(num, static_cast<ch_cnt_t>(mixch.attribute("channels", "2").toInt()));
+
 		m_mixerChannels[num]->m_fxChain.restoreState( mixch.firstChildElement(
 			m_mixerChannels[num]->m_fxChain.nodeName() ) );
 
-		// mixer sends
+		// mixer sends, created once all channels have their channel counts (a sidechain send needs the
+		// receiver's auxiliary pair)
 		QDomNodeList chData = mixch.childNodes();
 		for (auto i = 0; i < chData.length(); ++i)
 		{
 			QDomElement chDataItem = chData.at(i).toElement();
-			if( chDataItem.nodeName() == QString( "send" ) )
-			{
-				int sendTo = chDataItem.attribute( "channel" ).toInt();
-				allocateChannelsTo( sendTo ) ;
-				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f );
-				if (mxr)
-				{
-					mxr->amount()->loadSettings(chDataItem, "amount");
-					mxr->preFader()->loadSettings(chDataItem, "prefader");
-				}
-			}
+			if (chDataItem.nodeName() == QString("send")) { sends.emplace_back(num, chDataItem); }
 		}
 
-
-
 		node = node.nextSibling();
+	}
+
+	for (const auto& [num, send] : sends)
+	{
+		const int sendTo = send.attribute("channel").toInt();
+		allocateChannelsTo(sendTo);
+		MixerRoute* mxr = createChannelSend(num, sendTo, 1.0f,
+			static_cast<ch_cnt_t>(send.attribute("sourcepair", "0").toInt()),
+			static_cast<ch_cnt_t>(send.attribute("destinationpair", "0").toInt()));
+		if (mxr)
+		{
+			mxr->amount()->loadSettings(send, "amount");
+			mxr->preFader()->loadSettings(send, "prefader");
+		}
 	}
 
 	emit dataChanged();

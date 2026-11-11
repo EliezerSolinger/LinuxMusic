@@ -140,6 +140,13 @@ public:
 	//! Loads the pin connector from the plugin's element @p pluginElement, if saved there
 	void loadPins(const QDomElement& pluginElement);
 
+	/**
+	 * Sets how many channels the track (instrument track or mixer channel) has: the main pair followed by
+	 * auxiliary pairs. The pins keep their connections. [main thread, audio engine paused]
+	 */
+	void setTrackChannelCount(ch_cnt_t channels);
+	auto trackChannelCount() const -> ch_cnt_t { return m_trackChannels; }
+
 protected:
 	// Host implementation
 	void rescanAudioPorts(AudioPortsRescanFlag flags) override;
@@ -151,6 +158,12 @@ private:
 
 	//! Queries the processor's audio ports, then creates the buffers and sets up the pin connector
 	void setUpAudioPorts();
+
+	/**
+	 * Connects the sidechain inputs (the second input channel group) to track channels 3/4, once the track
+	 * has them, unless the pins were loaded or the inputs are connected already.
+	 */
+	void connectSidechainByDefault();
 
 	void activate();
 	void deactivate();
@@ -194,6 +207,12 @@ private:
 
 	//! The sample rate the processor was last activated with
 	sample_rate_t m_activeSampleRate = 0;
+
+	//! Channels of the track the plugin belongs to
+	ch_cnt_t m_trackChannels = DEFAULT_CHANNELS;
+
+	//! Whether the sidechain inputs got their default connection (or pins were loaded)
+	bool m_sidechainConnected = false;
 };
 
 } // namespace lmms

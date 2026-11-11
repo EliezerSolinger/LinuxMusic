@@ -106,6 +106,9 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	connect(&m_pitchModel, SIGNAL(dataChanged()), this, SLOT(updatePitch()), Qt::DirectConnection);
 	connect(&m_pitchRangeModel, SIGNAL(dataChanged()), this, SLOT(updatePitchRange()), Qt::DirectConnection);
 	connect(&m_mixerChannelModel, SIGNAL(dataChanged()), this, SLOT(updateMixerChannel()), Qt::DirectConnection);
+	connect(Engine::mixer(), &Mixer::channelCountChanged, this, [this](int index) {
+		if (index == m_mixerChannelModel.value()) { updateTrackChannelCount(); }
+	});
 
 	autoAssignMidiDevice(true);
 }
@@ -604,6 +607,13 @@ void InstrumentTrack::playInstrument(const Instrument* instrument, std::span<Sam
 	m_instrument->process(m_instrumentChannels);
 	toInterleaved(m_instrumentChannels.groupBuffers(0), InterleavedBufferView<float, 2>{out.data(), frames});
 
+	// The main pair goes on through the track's play handle; the auxiliary pairs go straight to the mixer
+	// channel's auxiliary pairs
+	if (m_instrumentChannels.channels() > DEFAULT_CHANNELS && !isMuted())
+	{
+		Engine::mixer()->mixAuxiliaryToChannel(m_instrumentChannels, m_mixerChannelModel.value());
+	}
+
 	unlock();
 }
 
@@ -686,6 +696,27 @@ void InstrumentTrack::updatePitchRange()
 void InstrumentTrack::updateMixerChannel()
 {
 	m_audioBusHandle.setNextMixerChannel(m_mixerChannelModel.value());
+	updateTrackChannelCount();
+}
+
+
+
+
+void InstrumentTrack::updateTrackChannelCount()
+{
+	const auto index = m_mixerChannelModel.value();
+	const auto mixer = Engine::mixer();
+	const auto channels = index >= 0 && index < mixer->numChannels()
+		? mixer->mixerChannel(index)->channelCount()
+		: DEFAULT_CHANNELS;
+	if (channels == m_instrumentChannels.channels()) { return; }
+
+	Engine::audioEngine()->requestChangeInModel();
+	m_instrumentChannels = AudioBuffer{Engine::audioEngine()->framesPerPeriod(), channels};
+	m_instrumentChannels.setGroups(static_cast<group_cnt_t>(channels / 2),
+		[](group_cnt_t, AudioBuffer::ChannelGroup&) { return ch_cnt_t{2}; });
+	if (m_instrument) { m_instrument->setTrackChannelCount(channels); }
+	Engine::audioEngine()->doneChangeInModel();
 }
 
 int InstrumentTrack::masterKey( int _midi_key ) const
@@ -975,6 +1006,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 					m_instrument.reset();
 					m_instrument = std::make_unique<PluginInstance>(
 						Plugin::Type::Instrument, node.toElement().attribute("name"), this, &key);
+					m_instrument->setTrackChannelCount(trackChannelCount());
 
 					m_instrument->plugin()->restoreState(node.firstChildElement());
 					m_instrument->loadPins(node.firstChildElement());
@@ -998,6 +1030,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 				m_instrument.reset();
 				m_instrument = std::make_unique<PluginInstance>(
 					Plugin::Type::Instrument, node.nodeName(), this, nullptr, true);
+				m_instrument->setTrackChannelCount(trackChannelCount());
 				if (m_instrument->plugin()->nodeName() == node.nodeName())
 				{
 					m_instrument->plugin()->restoreState(node.toElement());
@@ -1075,6 +1108,7 @@ Instrument* InstrumentTrack::loadInstrument(const QString& _plugin_name,
 	lock();
 	m_instrument.reset();
 	m_instrument = std::make_unique<PluginInstance>(Plugin::Type::Instrument, _plugin_name, this, key, keyFromDnd);
+	m_instrument->setTrackChannelCount(trackChannelCount());
 	unlock();
 	setName(m_instrument->plugin()->displayName());
 

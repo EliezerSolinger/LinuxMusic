@@ -147,6 +147,7 @@ void PluginInstance::attach(std::unique_ptr<Plugin> plugin)
 	if (!m_processor) { return; }
 
 	m_audioPorts = std::make_unique<AudioPortsModel>(isInstrument());
+	m_sidechainConnected = false;
 	setUpAudioPorts();
 	activate();
 
@@ -275,8 +276,8 @@ void PluginInstance::setUpAudioPorts()
 		return proc.getChannelGroup(index, false, group);
 	});
 
-	// TODO: Get the track channel count from the instrument track or mixer channel once they have more than 2
-	m_audioPorts->setAllChannelCounts(DEFAULT_CHANNELS, channelsIn, channelsOut);
+	m_audioPorts->setAllChannelCounts(m_trackChannels, channelsIn, channelsOut);
+	connectSidechainByDefault();
 
 	if (m_isRemotePlugin)
 	{
@@ -521,7 +522,7 @@ void PluginInstance::convertToDummyEffect(Model* parent, const QDomElement& orig
 
 void PluginInstance::savePins(QDomDocument& doc, QDomElement& pluginElement)
 {
-	if (m_audioPorts) { m_audioPorts->saveState(doc, pluginElement); }
+	if (m_audioPorts) { m_audioPorts->saveSettings(doc, pluginElement); }
 }
 
 
@@ -531,8 +532,55 @@ void PluginInstance::loadPins(const QDomElement& pluginElement)
 {
 	if (!m_audioPorts) { return; }
 
-	const auto pins = pluginElement.firstChildElement(m_audioPorts->nodeName());
-	if (!pins.isNull()) { m_audioPorts->restoreState(pins); }
+	if (pluginElement.firstChildElement(m_audioPorts->nodeName()).isNull()) { return; }
+
+	m_audioPorts->loadSettings(pluginElement);
+
+	// The saved pins say where the sidechain inputs go, even if that is nowhere
+	m_sidechainConnected = true;
+}
+
+
+
+
+void PluginInstance::setTrackChannelCount(ch_cnt_t channels)
+{
+	m_trackChannels = channels;
+	if (!m_audioPorts) { return; }
+
+	m_audioPorts->setTrackChannelCount(channels);
+	connectSidechainByDefault();
+}
+
+
+
+
+void PluginInstance::connectSidechainByDefault()
+{
+	// Only once: afterwards, the pins are the user's
+	if (m_sidechainConnected || isInstrument() || !m_audioPorts) { return; }
+
+	// The first input group holds the main inputs, the second one the sidechain inputs
+	if (m_inputs.groupCount() < 2 || m_trackChannels < 2 * DEFAULT_CHANNELS) { return; }
+
+	const auto first = m_inputs.group(0).channels();
+	const auto count = std::min<ch_cnt_t>(m_inputs.group(1).channels(), DEFAULT_CHANNELS);
+	auto& pins = m_audioPorts->in();
+	for (ch_cnt_t input = first; input < first + count; ++input)
+	{
+		for (ch_cnt_t tc = 0; tc < pins.trackChannelCount(); ++tc)
+		{
+			// Leave inputs alone that are connected already
+			if (pins.enabled(tc, input)) { m_sidechainConnected = true; return; }
+		}
+	}
+
+	// Sidechain inputs <-- track channels 3/4, where sidechain sends arrive (see MixerRoute)
+	for (ch_cnt_t k = 0; k < count; ++k)
+	{
+		pins.setPin(DEFAULT_CHANNELS + k, first + k, true);
+	}
+	m_sidechainConnected = true;
 }
 
 

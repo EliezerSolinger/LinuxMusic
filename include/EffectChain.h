@@ -27,6 +27,7 @@
 #define LMMS_EFFECT_CHAIN_H
 
 #include "Model.h"
+#include "lmms_constants.h"
 #include <memory>
 #include <vector>
 
@@ -80,12 +81,21 @@ public:
 	//! @returns the PluginInstance holding @p effect, or nullptr if it is not in this chain
 	auto instanceOf(const Effect* effect) -> PluginInstance*;
 
+	/**
+	 * Sets how many channels the chain's track (e.g. mixer channel) has, for the pins of all effects,
+	 * including the ones added later. [main thread, audio engine paused]
+	 */
+	void setTrackChannelCount(ch_cnt_t channels);
+	auto trackChannelCount() const -> ch_cnt_t { return m_trackChannels; }
+
 private:
 	auto find(const Effect* effect) -> EffectList::iterator;
 
 	EffectList m_effects;
 
 	BoolModel m_enabledModel;
+
+	ch_cnt_t m_trackChannels = DEFAULT_CHANNELS;
 
 
 	friend class gui::EffectRackView;
