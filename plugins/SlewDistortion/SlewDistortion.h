@@ -37,13 +37,13 @@ namespace lmms
 constexpr inline float SLEW_DISTORTION_MIN_FLOOR = 0.0012589f;// -72 dBFS
 constexpr inline float SLEW_DISTORTION_DC_FREQ = 7.f;
 
-class SlewDistortion : public Effect
+class SlewDistortion : public LegacyEffect
 {
 	Q_OBJECT
 public:
 	SlewDistortion(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~SlewDistortion() override = default;
-	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	EffectControls* controls() override
 	{

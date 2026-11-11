@@ -54,7 +54,7 @@ PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* parent, void* data)
 }// extern "C"
 
 FrequencyShifterEffect::FrequencyShifterEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	Effect(&frequencyshifter_plugin_descriptor, parent, key),
+	LegacyEffect(&frequencyshifter_plugin_descriptor, parent, key),
 	m_controls(this)
 {
 	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged,
@@ -62,8 +62,12 @@ FrequencyShifterEffect::FrequencyShifterEffect(Model* parent, const Descriptor::
 	updateSampleRate();
 }
 
-Effect::ProcessStatus FrequencyShifterEffect::processImpl(SampleFrame* buf, const f_cnt_t frames)
+auto FrequencyShifterEffect::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
+	SampleFrame* buf = inOut.asSampleFrames().data();
+	const f_cnt_t frames = inOut.frames();
+
 	constexpr float twoPi = std::numbers::pi_v<float> * 2.0f;
 
 	const float mix = m_controls.m_mix.value() * wetLevel();

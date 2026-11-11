@@ -48,7 +48,7 @@ Plugin::Descriptor PLUGIN_EXPORT slewdistortion_plugin_descriptor =
 
 
 SlewDistortion::SlewDistortion(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
-	Effect(&slewdistortion_plugin_descriptor, parent, key),
+	LegacyEffect(&slewdistortion_plugin_descriptor, parent, key),
 	m_sampleRate(Engine::audioEngine()->outputSampleRate()),
 	m_lp(m_sampleRate),
 	m_hp(m_sampleRate),
@@ -60,8 +60,12 @@ SlewDistortion::SlewDistortion(Model* parent, const Descriptor::SubPluginFeature
 
 
 #ifdef __SSE2__
-Effect::ProcessStatus SlewDistortion::processImpl(SampleFrame* buf, const f_cnt_t frames)
+auto SlewDistortion::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
+	SampleFrame* buf = inOut.asSampleFrames().data();
+	const f_cnt_t frames = inOut.frames();
+
 	const float d = dryLevel();
 	const float w = wetLevel();
 
@@ -439,8 +443,12 @@ Effect::ProcessStatus SlewDistortion::processImpl(SampleFrame* buf, const f_cnt_
 
 
 #else
-Effect::ProcessStatus SlewDistortion::processImpl(SampleFrame* buf, const f_cnt_t frames)
+auto SlewDistortion::process(ProcessContext& context) -> ProcessStatus
 {
+	auto inOut = context.inOut().interleavedBuffer();
+	SampleFrame* buf = inOut.asSampleFrames().data();
+	const f_cnt_t frames = inOut.frames();
+
 	const float d = dryLevel();
 	const float w = wetLevel();
 	

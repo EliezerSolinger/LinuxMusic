@@ -39,14 +39,14 @@
 namespace lmms
 {
 
-class FrequencyShifterEffect : public Effect
+class FrequencyShifterEffect : public LegacyEffect
 {
 	Q_OBJECT
 public:
 	FrequencyShifterEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~FrequencyShifterEffect() override = default;
 
-	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
 	EffectControls* controls() override
 	{
 		return &m_controls;
