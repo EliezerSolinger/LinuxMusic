@@ -24,6 +24,8 @@
 
 #include "Oscilloscope.h"
 
+#include <algorithm>
+
 #include "embed.h"
 #include "plugin_export.h"
 
@@ -60,12 +62,26 @@ Oscilloscope::Oscilloscope(Model* parent, const Descriptor::SubPluginFeatures::K
 }
 
 
-Effect::ProcessStatus Oscilloscope::processImpl(SampleFrame* buffer, const f_cnt_t frames)
+auto Oscilloscope::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
+{
+	(void)sampleRate;
+	m_interleaved.resize(maxFrameCount);
+	return true;
+}
+
+
+auto Oscilloscope::process(ProcessContext& context) -> ProcessStatus
 {
 	if (!m_controls.m_pauseModel.value())
 	{
+		const auto& in = context.in();
+		const auto frames = std::min<f_cnt_t>(in.frames(), m_interleaved.size());
+		const auto left = in.buffer(0);
+		const auto right = in.buffer(1);
+		for (f_cnt_t f = 0; f < frames; ++f) { m_interleaved[f] = {left[f], right[f]}; }
+
 		// Send the samples from the audio thread over to the gui via a ring buffer; the gui will do all of the processing.
-		m_inputBuffer.write(buffer, frames);
+		m_inputBuffer.write(m_interleaved.data(), frames);
 	}
 	return ProcessStatus::Continue;
 }

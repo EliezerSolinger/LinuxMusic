@@ -27,6 +27,8 @@
 
 #include "Effect.h"
 #include "OscilloscopeControls.h"
+#include <vector>
+
 #include "LocklessRingBuffer.h"
 
 namespace lmms
@@ -37,7 +39,16 @@ class Oscilloscope : public Effect
 public:
 	Oscilloscope(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 
-	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
+	// AudioProcessor implementation: a stereo input and no outputs, since the audio is only looked at
+	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+	auto channelCount(bool isInput) const -> ch_cnt_t override { return isInput ? 2 : 0; }
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return isInput ? 1 : 0; }
+	auto getChannelGroup(group_cnt_t, bool isInput, AudioBuffer::ChannelGroup&) const -> ch_cnt_t override
+	{
+		return isInput ? 2 : 0;
+	}
+	auto getInplacePair(ch_cnt_t) const -> std::optional<ch_cnt_t> override { return std::nullopt; }
 
 	EffectControls* controls() override { return &m_controls; }
 
@@ -51,6 +62,9 @@ private:
 	OscilloscopeControls m_controls;
 
 	LocklessRingBuffer<SampleFrame> m_inputBuffer;
+
+	//! The planar input interleaved for the ring buffer; sized in activate()
+	std::vector<SampleFrame> m_interleaved;
 
 	friend class OscilloscopeControls;
 };
