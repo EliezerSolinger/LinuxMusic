@@ -24,6 +24,8 @@
 
 #include "PluginBrowser.h"
 
+#include <map>
+
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -39,6 +41,7 @@
 #include "Song.h"
 #include "StringPairDrag.h"
 #include "TrackContainerView.h"
+#include "PluginCategories.h"
 #include "PluginFactory.h"
 
 namespace lmms::gui
@@ -170,9 +173,23 @@ void PluginBrowser::addPlugins()
 		}
 	);
 
-	// Add a root node to the tree for native LMMS plugins
-	const auto lmmsRoot = addRoot("LinuxMusic");
-	lmmsRoot->setExpanded(true);
+	// Add a root node per category for the native plugins; plugins without a category go last
+	auto categoryRoots = std::map<QString, QTreeWidgetItem*>{};
+	for (const auto& category : PluginCategories::categories(Plugin::Type::Instrument))
+	{
+		const auto root = addRoot(category);
+		root->setExpanded(true);
+		categoryRoots[category] = root;
+	}
+	QTreeWidgetItem* otherRoot = nullptr;
+	const auto rootFor = [&](const Plugin::Descriptor* desc) {
+		if (const auto it = categoryRoots.find(PluginCategories::categoryOf(desc)); it != categoryRoots.end())
+		{
+			return it->second;
+		}
+		if (!otherRoot) { otherRoot = addRoot(tr("Other")); }
+		return otherRoot;
+	};
 
 	// Add all of the descriptors to the tree
 	for (const auto desc : descs)
@@ -195,7 +212,7 @@ void PluginBrowser::addPlugins()
 		}
 		else
 		{
-			addPlugin(Plugin::Descriptor::SubPluginFeatures::Key(desc, desc->name), lmmsRoot);
+			addPlugin(Plugin::Descriptor::SubPluginFeatures::Key(desc, desc->name), rootFor(desc));
 		}
 	}
 }

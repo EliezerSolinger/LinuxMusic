@@ -27,6 +27,7 @@
 #include "DummyEffect.h"
 #include "EffectChain.h"
 #include "embed.h"
+#include "PluginCategories.h"
 #include "PluginFactory.h"
 
 #include <QApplication>
@@ -37,6 +38,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
@@ -79,7 +81,7 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 
 	// Fill the source model
 	m_sourceModel.setHorizontalHeaderItem(0, new QStandardItem(tr("Name")));
-	m_sourceModel.setHorizontalHeaderItem(1, new QStandardItem(tr("Type")));
+	m_sourceModel.setHorizontalHeaderItem(1, new QStandardItem(tr("Category")));
 	int row = 0;
 	for (EffectKeyList::ConstIterator it = m_effectKeys.begin(); it != m_effectKeys.end(); ++it)
 	{
@@ -93,7 +95,8 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 		else
 		{
 			name = it->desc->displayName;
-			type = "LinuxMusic";
+			type = PluginCategories::categoryOf(it->desc);
+			if (type.isEmpty()) { type = tr("Other"); }
 		}
 		m_sourceModel.setItem(row, 0, new QStandardItem(name));
 		m_sourceModel.setItem(row, 1, new QStandardItem(type));
@@ -108,26 +111,25 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 
 	QVBoxLayout* leftSectionLayout = new QVBoxLayout();
 
-	QStringList buttonLabels = { tr("All"), "LinuxMusic", "LADSPA", "LV2", "VST" };
-	QStringList buttonSearchString = { "", "LinuxMusic", "LADSPA", "LV2", "VST" };
+	// Categories of the native effects, followed by the hosts of external plugins
+	auto categoryList = new QListWidget(this);
+	categoryList->setFixedWidth(160);
+	categoryList->setFocusPolicy(Qt::NoFocus);
+	const auto addFilter = [categoryList](const QString& label, const QString& filter) {
+		auto item = new QListWidgetItem(label, categoryList);
+		item->setData(Qt::UserRole, filter);
+	};
+	addFilter(tr("All"), "");
+	for (const auto& category : PluginCategories::categories(Plugin::Type::Effect)) { addFilter(category, category); }
+	for (const auto& host : {"LADSPA", "LV2", "VST"}) { addFilter(host, host); }
+	categoryList->setCurrentRow(0);
 
-	for (int i = 0; i < buttonLabels.size(); ++i)
-	{
-		const QString& label = buttonLabels[i];
-		const QString& searchString = buttonSearchString[i];
+	connect(categoryList, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
+		m_model.setEffectTypeFilter(item ? item->data(Qt::UserRole).toString() : QString{});
+		updateSelection();
+	});
 
-		QPushButton* button = new QPushButton(label, this);
-		button->setFixedSize(50, 50);
-		button->setFocusPolicy(Qt::NoFocus);
-		leftSectionLayout->addWidget(button);
-
-		connect(button, &QPushButton::clicked, this, [this, searchString] {
-			m_model.setEffectTypeFilter(searchString);
-			updateSelection();
-		});
-	}
-
-	leftSectionLayout->addStretch();// Add stretch to the button layout to push buttons to the top
+	leftSectionLayout->addWidget(categoryList);
 	mainLayout->addLayout(leftSectionLayout);
 
 	m_filterEdit = new QLineEdit(this);

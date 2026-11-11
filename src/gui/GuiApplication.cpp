@@ -39,6 +39,7 @@
 #include "PatternEditor.h"
 #include "PianoRoll.h"
 #include "ProjectNotes.h"
+#include "PluginBrowser.h"
 #include "SongEditor.h"
 
 #include <QApplication>
@@ -210,15 +211,23 @@ GuiApplication::GuiApplication()
 	if (const auto screenshotPath = qEnvironmentVariable("LINUXMUSIC_SCREENSHOT"); !screenshotPath.isEmpty())
 	{
 		// LINUXMUSIC_SCREENSHOT_ACTION=instrument opens the first instrument window before the screenshot
-		if (qEnvironmentVariable("LINUXMUSIC_SCREENSHOT_ACTION") == "instrument")
+		const auto screenshotAction = qEnvironmentVariable("LINUXMUSIC_SCREENSHOT_ACTION");
+		if (screenshotAction == "instrument")
 		{
 			QTimer::singleShot(2500, m_mainWindow, [this] {
 				const auto views = m_mainWindow->findChildren<InstrumentTrackView*>();
 				if (!views.isEmpty()) { QMetaObject::invokeMethod(views.first(), "toggleInstrumentWindow", Q_ARG(bool, true)); }
 			});
 		}
-		QTimer::singleShot(4000, m_mainWindow, [this, screenshotPath] {
-			m_mainWindow->grab().save(screenshotPath);
+		QTimer::singleShot(4000, m_mainWindow, [this, screenshotPath, screenshotAction] {
+			// =plugins captures the plugin browser of the side bar instead of the main window
+			auto browser = m_mainWindow->findChild<PluginBrowser*>();
+			if (screenshotAction == "plugins" && browser)
+			{
+				browser->resize(320, 1000);
+				browser->grab().save(screenshotPath);
+			}
+			else { m_mainWindow->grab().save(screenshotPath); }
 			QApplication::exit(0);
 		});
 	}
