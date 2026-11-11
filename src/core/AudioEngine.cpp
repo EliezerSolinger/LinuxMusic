@@ -401,6 +401,14 @@ void AudioEngine::renderStageMix()
 
 std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 {
+	// The thread rendering a period also processes jobs (see AudioEngineWorkerThread::startAndWaitForJobs()),
+	// and that thread is not always ours: e.g. the export thread or an audio driver's callback thread. Without
+	// disabling denormals there, jobs processed by it would compute denormal tails differently (and much more
+	// slowly on x86) than jobs processed by the worker threads, so renders would depend on which thread got
+	// which job.
+	static thread_local const bool s_denormalsDisabled = [] { disableDenormals(); return true; }();
+	(void)s_denormalsDisabled;
+
 	const auto lock = std::lock_guard{m_changeMutex};
 
 	m_profiler.startPeriod();
