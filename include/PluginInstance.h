@@ -165,6 +165,9 @@ private:
 	 */
 	void connectSidechainByDefault();
 
+	//! When the outputs have several channel groups, connects each one to the main track channels
+	void connectOutputGroupsByDefault();
+
 	void activate();
 	void deactivate();
 	void setState(State flag, bool on);

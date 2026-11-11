@@ -1,0 +1,5 @@
+if(LMMS_HAVE_FLUIDSYNTH)
+	include(BuildPlugin)
+	build_plugin(avldrums AvlDrums.cpp AvlDrums.h MOCFILES AvlDrums.h)
+	target_link_libraries(avldrums fluidsynth)
+endif()

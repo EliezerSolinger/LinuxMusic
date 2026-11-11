@@ -27,6 +27,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -144,9 +145,10 @@ private:
 class FakePlanarInstrument : public Instrument
 {
 public:
-	explicit FakePlanarInstrument(ch_cnt_t outputs)
+	explicit FakePlanarInstrument(ch_cnt_t outputs, std::vector<ch_cnt_t> groups = {})
 		: Instrument{&s_fakeInstrumentDescriptor, nullptr, nullptr, Flag::IsSingleStreamed}
 		, m_outputs{outputs}
+		, m_groups{groups.empty() ? std::vector<ch_cnt_t>{outputs} : std::move(groups)}
 	{
 	}
 
@@ -165,15 +167,19 @@ public:
 		return ProcessStatus::Continue;
 	}
 	auto channelCount(bool isInput) const -> ch_cnt_t override { return isInput ? 0 : m_outputs; }
-	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return isInput ? 0 : 1; }
-	auto getChannelGroup(group_cnt_t, bool isInput, AudioBuffer::ChannelGroup&) const -> ch_cnt_t override
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override
 	{
-		return channelCount(isInput);
+		return isInput ? 0 : static_cast<group_cnt_t>(m_groups.size());
+	}
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup&) const -> ch_cnt_t override
+	{
+		return isInput ? 0 : m_groups[index];
 	}
 	auto getInplacePair(ch_cnt_t) const -> std::optional<ch_cnt_t> override { return std::nullopt; }
 
 private:
 	ch_cnt_t m_outputs;
+	std::vector<ch_cnt_t> m_groups;
 };
 
 auto frames() -> f_cnt_t { return Engine::audioEngine()->framesPerPeriod(); }
@@ -707,6 +713,23 @@ private slots:
 		instance.process(track);
 		compareChannel(track, 0, 0.1f + 0.3f);
 		compareChannel(track, 1, 0.4f);
+	}
+
+	void Instrument_OutputGroupsGoToTheMainPair()
+	{
+		// e.g. a drum kit: a mono kick, a mono snare and stereo cymbals
+		auto instance = PluginInstance{std::make_unique<FakePlanarInstrument>(4, std::vector<ch_cnt_t>{1, 1, 2}),
+			Plugin::Type::Instrument};
+		const auto& pins = instance.audioPortsModel()->out();
+		QVERIFY(pins.enabled(0, 0) && pins.enabled(1, 0)); // mono groups to both sides
+		QVERIFY(pins.enabled(0, 1) && pins.enabled(1, 1));
+		QVERIFY(pins.enabled(0, 2) && !pins.enabled(1, 2)); // stereo group to L/R
+		QVERIFY(!pins.enabled(0, 3) && pins.enabled(1, 3));
+
+		auto track = trackBuffer(0.f, 0.f);
+		instance.process(track);
+		compareChannel(track, 0, 0.1f + 0.2f + 0.3f);
+		compareChannel(track, 1, 0.1f + 0.2f + 0.4f);
 	}
 
 	void Instrument_NoteOutputFollowsPins()

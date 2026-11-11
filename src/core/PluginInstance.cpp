@@ -276,7 +276,9 @@ void PluginInstance::setUpAudioPorts()
 		return proc.getChannelGroup(index, false, group);
 	});
 
+	const auto oldChannelsOut = m_audioPorts->out().channelCount();
 	m_audioPorts->setAllChannelCounts(m_trackChannels, channelsIn, channelsOut);
+	if (channelsOut != oldChannelsOut) { connectOutputGroupsByDefault(); }
 	connectSidechainByDefault();
 
 	if (m_isRemotePlugin)
@@ -550,6 +552,31 @@ void PluginInstance::setTrackChannelCount(ch_cnt_t channels)
 
 	m_audioPorts->setTrackChannelCount(channels);
 	connectSidechainByDefault();
+}
+
+
+
+
+void PluginInstance::connectOutputGroupsByDefault()
+{
+	if (!m_audioPorts || m_outputs.groupCount() < 2) { return; }
+
+	// Several output groups (e.g. the pieces of a drum kit): all of them go to the main pair, mono groups to
+	// both sides, so that the plugin sounds complete before any routing
+	auto& pins = m_audioPorts->out();
+	for (ch_cnt_t tc = 0; tc < pins.trackChannelCount(); ++tc)
+	{
+		for (ch_cnt_t ch = 0; ch < pins.channelCount(); ++ch) { pins.setPin(tc, ch, false); }
+	}
+
+	auto first = ch_cnt_t{0};
+	for (group_cnt_t g = 0; g < m_outputs.groupCount(); ++g)
+	{
+		const auto channels = m_outputs.group(g).channels();
+		pins.setPin(0, first, true);
+		pins.setPin(1, channels > 1 ? first + 1 : first, true);
+		first += channels;
+	}
 }
 
 

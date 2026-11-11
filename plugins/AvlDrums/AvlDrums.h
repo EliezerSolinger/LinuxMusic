@@ -1,0 +1,177 @@
+/*
+ * AvlDrums.h - the AVL drum kits as an instrument
+ *
+ * This file is part of LinuxMusic, a fork of LMMS - https://lmms.io
+ *
+ * The note map and the output layout follow avldrums.lv2 by Robin Gareus, so that MIDI drum parts written for
+ * it play the same. The drum kits are by Glen MacArthur, see data/avldrums/README.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#ifndef LMMS_AVL_DRUMS_H
+#define LMMS_AVL_DRUMS_H
+
+#include <array>
+#include <atomic>
+#include <cstdint>
+
+#include <QMutex>
+
+#include "AutomatableModel.h"
+#include "ComboBoxModel.h"
+#include "Instrument.h"
+#include "InstrumentView.h"
+
+struct _fluid_hashtable_t;
+struct _fluid_synth_t;
+
+namespace lmms
+{
+
+/**
+ * Plays one of the AVL drum kits (SF2 files in data/avldrums) with FluidSynth.
+ *
+ * - Stereo: one stereo output with the whole kit.
+ * - Multi-output (not for the percussion kit): 9 outputs in 7 channel groups, each its own output group in the
+ *   pin connector: kick, snare, hi-hat, tom and floor tom (mono), cymbals and percussion (stereo). By default all
+ *   of them go to the main track channels; routing them to auxiliary pairs lets each piece go to its own mixer
+ *   channel through sends.
+ *
+ * Notes 36 to 61 play the drums (35 is the stick click of the Blonde Bop kits), with five velocity layers.
+ */
+class AvlDrumsInstrument : public Instrument
+{
+	Q_OBJECT
+public:
+	struct Kit
+	{
+		const char* name;
+		const char* file;
+		bool hasMultiOutput;
+	};
+	static const std::array<Kit, 5> Kits;
+
+	//! Drum pieces shown by the view: one per note from FirstNote
+	static constexpr int FirstNote = 35;
+	static constexpr int PieceCount = 27;
+
+	explicit AvlDrumsInstrument(InstrumentTrack* track);
+	~AvlDrumsInstrument() override;
+
+	void saveSettings(QDomDocument& doc, QDomElement& elem) override;
+	void loadSettings(const QDomElement& elem) override;
+	QString nodeName() const override;
+	gui::PluginView* instantiateView(QWidget* parent) override;
+
+	bool handleMidiEvent(const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0) override;
+
+	// AudioProcessor implementation
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto channelCount(bool isInput) const -> ch_cnt_t override;
+	auto channelGroupCount(bool isInput) const -> group_cnt_t override;
+	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+		-> ch_cnt_t override;
+	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override;
+
+	auto kitModel() -> ComboBoxModel& { return m_kitModel; }
+	auto multiOutputModel() -> BoolModel& { return m_multiOutputModel; }
+
+	//! Whether the current kit is loaded and plays
+	auto isLoaded() const -> bool { return m_loaded.load(std::memory_order_relaxed); }
+
+	//! The velocity of the last hit of each piece since the previous call (0 for none), for the view
+	auto takeHits() -> std::array<int, PieceCount>;
+
+signals:
+	//! A kit was loaded or failed to load
+	void kitChanged();
+
+private slots:
+	//! Creates the synth for the selected kit and output mode [main thread]
+	void loadKit();
+
+private:
+	struct Event
+	{
+		f_cnt_t offset;
+		std::uint8_t type;
+		std::uint8_t data1;
+		std::uint8_t data2;
+	};
+	static constexpr std::size_t MaxEvents = 512;
+
+	void destroySynth();
+	void applyEvent(const Event& event);
+	void render(AudioBuffer& out, f_cnt_t offset, f_cnt_t frames);
+	auto multiOutputActive() const -> bool;
+
+	ComboBoxModel m_kitModel;
+	BoolModel m_multiOutputModel;
+
+	//! The synth and how it was created; replaced by loadKit() while m_synthMutex is locked
+	_fluid_hashtable_t* m_settings = nullptr;
+	_fluid_synth_t* m_synth = nullptr;
+	bool m_synthMultiOutput = false;
+	sample_rate_t m_sampleRate = 0;
+	int m_loadedKit = -1;
+	sample_rate_t m_loadedSampleRate = 0;
+	QMutex m_synthMutex;
+	std::atomic<bool> m_loaded = false;
+
+	//! MIDI events for the next period, from the audio thread, MIDI input or the GUI
+	QMutex m_eventMutex;
+	std::array<Event, MaxEvents> m_events{};
+	std::size_t m_eventCount = 0;
+	std::array<Event, MaxEvents> m_processEvents{};
+
+	std::array<std::atomic<int>, PieceCount> m_hits{};
+};
+
+
+namespace gui
+{
+
+class ComboBox;
+class LedCheckBox;
+
+//! Kit and output selection, and the kit's pieces lighting up when they are hit
+class AvlDrumsView : public InstrumentViewFixedSize
+{
+	Q_OBJECT
+public:
+	AvlDrumsView(AvlDrumsInstrument* instrument, QWidget* parent);
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+	void timerEvent(QTimerEvent* event) override;
+
+private:
+	void modelChanged() override;
+	void updateMultiOutputAvailability();
+
+	ComboBox* m_kitBox;
+	LedCheckBox* m_multiOutputBox;
+	std::array<float, AvlDrumsInstrument::PieceCount> m_glow{};
+};
+
+} // namespace gui
+
+} // namespace lmms
+
+#endif // LMMS_AVL_DRUMS_H

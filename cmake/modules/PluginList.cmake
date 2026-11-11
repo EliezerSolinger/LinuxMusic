@@ -27,6 +27,7 @@ SET(LMMS_PLUGIN_LIST
 	BassBooster
 	BitInvader
 	Bitcrush
+	AvlDrums
 	CarlaBase
 	CarlaPatchbay
 	CarlaRack
