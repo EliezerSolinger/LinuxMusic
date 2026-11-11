@@ -68,7 +68,7 @@ void MixerRoute::updateName()
 MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_fxChain( nullptr ),
 	m_stillRunning( false ),
-	m_buffer(Engine::audioEngine()->framesPerPeriod()),
+	m_buffer(Engine::audioEngine()->framesPerPeriod(), DEFAULT_CHANNELS, DEFAULT_CHANNELS, true),
 	m_muteModel( false, _parent ),
 	m_soloModel( false, _parent ),
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
@@ -87,9 +87,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_dependenciesMet(0),
 	m_channelIndex(idx),
 	m_useCount(0)
-{
-	m_buffer.allocateInterleavedBuffer();
-}
+{}
 
 
 

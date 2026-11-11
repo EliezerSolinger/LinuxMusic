@@ -174,8 +174,7 @@ public:
 	 * @param accessStart the access buffer index from @p source which marks the start of this view
 	 * @param accessChannels how many access buffer channels this view should have
 	 */
-	AudioBufferData(AudioBufferData& source, ch_cnt_t accessStart, ch_cnt_t accessChannels,
-		ch_cnt_t sourceStart, ch_cnt_t sourceChannels);
+	AudioBufferData(AudioBufferData& source, ch_cnt_t accessStart, ch_cnt_t accessChannels);
 
 	//! Deallocates the buffers if needed
 	~AudioBufferData();
@@ -409,7 +408,7 @@ protected:
  *       efficiently using the data from silence tracking
  * - Can organize channels into arbitrary groups. For example, you could have 6 total channels divided into 2 groups
  *       where the 1st group contains 2 channels (stereo) and the 2nd contains 4 channels (quadraphonic).
- * - Extensive unit testing - See AudioBufferTest.cpp
+ * - Extensive unit testing - @ref AudioBufferTest.cpp
  *
  * Audio data layout explanation:
  * - All planar audio data for all channels in an AudioBuffer is sourced from the same large contiguous
@@ -620,7 +619,7 @@ public:
 	auto hasAnySignal() const -> bool;
 
 	/**
-	 * @brief Sanitizes @a channels of any Inf/NaN by replacing them with zeros. 
+	 * @brief Sanitizes @a channels of any Inf/NaN by replacing them with zeros.
 	 *
 	 * If any invalid values are detected within a channel, the entire channel buffer is silenced, and its
 	 * internal silence flag is set.

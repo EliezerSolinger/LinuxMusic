@@ -24,6 +24,9 @@
 
 #include "AudioBuffer.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "ConfigManager.h"
 #include "MixHelpers.h"
 #include "SharedMemory.h"
@@ -32,7 +35,7 @@ namespace lmms {
 
 namespace {
 
-//! @returns Bitset with all bits at or above @p pos set to @p value and the rest set to `!` @p value
+//! @returns Bitset with all bits at or above `pos` set to `value` and the rest set to `!value`
 template<bool value>
 auto createMask(ch_cnt_t pos) noexcept -> AudioBuffer::ChannelFlags
 {
@@ -101,6 +104,9 @@ AudioBufferData::AudioBufferData(f_cnt_t frames, ch_cnt_t accessChannels, ch_cnt
 	, m_accessBufferResource{accessBufferResource}
 {
 	create(frames, accessChannels, sourceChannels, interleaved, sourceBufferResource, accessBufferResource);
+
+	// The shared memory client side gets its channel mapping from the server side
+	if (accessChannels > 0 && !m_ownership.testFlag(Ownership::SharedMemoryClient)) { resetAccessBuffer(); }
 }
 
 AudioBufferData::AudioBufferData(float* source, f_cnt_t frames, ch_cnt_t accessChannels,
@@ -124,7 +130,7 @@ AudioBufferData::AudioBufferData(float* source, f_cnt_t frames, ch_cnt_t accessC
 	if (accessChannels > 0)
 	{
 		assert(source != nullptr);
-		m_accessBuffer = static_cast<float*>(m_accessBufferResource->allocate(accessChannels * sizeof(float*)));
+		m_accessBuffer = static_cast<float**>(m_accessBufferResource->allocate(accessChannels * sizeof(float*)));
 		new (m_accessBuffer) float*[accessChannels]();
 	}
 
@@ -238,7 +244,7 @@ void AudioBufferData::create(f_cnt_t frames, ch_cnt_t accessChannels, ch_cnt_t s
 
 	// If the source and access buffer resources are the same,
 	// we can create everything in one allocation for better locality
-	const auto singleAllocation = m_sourceBufferResource->is_equal(m_accessBufferResource);
+	const auto singleAllocation = m_sourceBufferResource->is_equal(*m_accessBufferResource);
 
 	// Bytes needed for source buffer or the single allocation buffer
 	auto bytesNeeded = std::size_t{0};
@@ -307,12 +313,12 @@ void AudioBufferData::create(f_cnt_t frames, ch_cnt_t accessChannels, ch_cnt_t s
 		{
 			// Access buffer has already been allocated
 			assert(!usesSharedMemory());
-			m_accessBuffer = ptr;
+			m_accessBuffer = reinterpret_cast<float**>(ptr);
 		}
 		else
 		{
 			// Access buffer is allocated separately
-			m_accessBuffer = m_accessBufferResource->allocate(accessChannels * sizeof(float*));
+			m_accessBuffer = static_cast<float**>(m_accessBufferResource->allocate(accessChannels * sizeof(float*)));
 		}
 
 		// Explicitly start lifetime and direct-initialize
@@ -346,7 +352,7 @@ void AudioBufferData::destroy()
 	if (!isView())
 	{
 		// m_accessBuffer is owning only if the access buffer was allocated separately from the rest
-		const bool singleAllocation = m_sourceBufferResource->is_equal(m_accessBufferResource);
+		const bool singleAllocation = m_sourceBufferResource->is_equal(*m_accessBufferResource);
 		if (m_accessBuffer && !singleAllocation)
 		{
 			m_accessBufferResource->deallocate(m_accessBuffer, m_accessChannels * sizeof(float*));
@@ -475,23 +481,6 @@ void AudioBufferData::mapAccessBuffer(ch_cnt_t channel, float* mappedTo)
 }
 
 
-AudioBuffer::AudioBuffer(AudioBufferData&& data)
-	: AudioBufferData{std::move(data)}
-	, m_silenceTrackingEnabled{ConfigManager::inst()->value("ui", "disableautoquit", "1").toInt() == 0}
-{
-	if (channels() == 0)
-	{
-		m_silenceFlags.set();
-		return;
-	}
-
-	// Ensure all the higher, unused channels are set to "silent"
-	m_silenceFlags = createMask<true>(channels());
-
-	// Add single group
-	m_groups.emplace_back(&m_accessBuffer[0], channels());
-}
-
 auto AudioBuffer::addGroup(ch_cnt_t channels) -> ChannelGroup*
 {
 	if (m_groups.size() >= m_groups.capacity())
@@ -506,17 +495,48 @@ auto AudioBuffer::addGroup(ch_cnt_t channels) -> ChannelGroup*
 		return nullptr;
 	}
 
+	const auto oldTotalChannels = this->channels();
+	const auto newTotalChannels = static_cast<ch_cnt_t>(oldTotalChannels + channels);
+	if (newTotalChannels > MaxChannelsPerAudioBuffer)
+	{
+		// Not enough room for requested channels
+		return nullptr;
+	}
+
+	if (isView() || m_ownership.testFlag(Ownership::External))
+	{
+		// Non-owning buffers cannot grow
+		return nullptr;
+	}
+
+	// Keep the existing audio, since reallocating starts from silence
+	const bool interleaved = hasInterleavedBuffer();
+	auto oldPlanar = std::vector<float>(static_cast<std::size_t>(oldTotalChannels) * m_frames);
+	for (ch_cnt_t ch = 0; ch < oldTotalChannels; ++ch)
+	{
+		std::ranges::copy(buffer(ch), oldPlanar.begin() + ch * m_frames);
+	}
+	auto oldInterleaved = std::vector<float>{};
+	if (interleaved) { oldInterleaved.assign(m_interleavedBuffer, m_interleavedBuffer + 2 * m_frames); }
+
 	try
 	{
-		create(m_frames, this->channels() + channels, m_interleavedBuffer != nullptr);
+		create(m_frames, newTotalChannels, newTotalChannels, interleaved);
+		resetAccessBuffer();
 	}
 	catch (...)
 	{
 		return nullptr;
 	}
 
+	for (ch_cnt_t ch = 0; ch < oldTotalChannels; ++ch)
+	{
+		std::ranges::copy_n(oldPlanar.begin() + ch * m_frames, m_frames, buffer(ch).begin());
+	}
+	if (interleaved) { std::ranges::copy(oldInterleaved, m_interleavedBuffer); }
+
 	// Fix group buffers
-	channel = 0;
+	ch_cnt_t channel = 0;
 	for (ChannelGroup& group : m_groups)
 	{
 		group.setBuffers(&m_accessBuffer[channel]);
@@ -701,8 +721,12 @@ void AudioBuffer::silenceChannels(const ChannelFlags& channels, ch_cnt_t upperBo
 
 void AudioBuffer::silenceAllChannels()
 {
-	std::ranges::fill(m_sourceBuffer, 0);
-	std::ranges::fill(m_interleavedBuffer, 0);
+	// Only this buffer's channels: a view shares its source buffer with other views
+	for (ch_cnt_t ch = 0; ch < channels(); ++ch)
+	{
+		std::ranges::fill(buffer(ch), 0.f);
+	}
+	if (m_interleavedBuffer) { std::fill_n(m_interleavedBuffer, 2 * m_frames, 0.f); }
 
 	m_silenceFlags.set();
 }

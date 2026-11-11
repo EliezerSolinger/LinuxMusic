@@ -41,7 +41,7 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	FloatModel* volumeModel, FloatModel* panningModel,
 	BoolModel* mutedModel) :
 	m_bufferUsage(false),
-	m_buffer(Engine::audioEngine()->framesPerPeriod()),
+	m_buffer(Engine::audioEngine()->framesPerPeriod(), DEFAULT_CHANNELS, DEFAULT_CHANNELS, true),
 	m_extOutputEnabled(false),
 	m_nextMixerChannel(0),
 	m_name(name),
@@ -50,8 +50,6 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	m_panningModel(panningModel),
 	m_mutedModel(mutedModel)
 {
-	m_buffer.allocateInterleavedBuffer();
-
 	Engine::audioEngine()->addAudioBusHandle(this);
 	setExtOutputEnabled(true);
 }

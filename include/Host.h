@@ -40,6 +40,8 @@ namespace lmms {
 class Host
 {
 public:
+	virtual ~Host() = default;
+
 	//! Tells the host what kind of change took place
 	enum class AudioPortsRescanFlag : std::uint32_t
 	{
@@ -60,7 +62,7 @@ public:
 
 		//! The number of audio ports changed
 		List         = 1 << 5
-	}
+	};
 
 	friend constexpr auto operator|(AudioPortsRescanFlag l, AudioPortsRescanFlag r) noexcept -> AudioPortsRescanFlag
 	{
