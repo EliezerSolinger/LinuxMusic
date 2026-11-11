@@ -44,6 +44,7 @@ SET(LMMS_SRCS
 	gui/StringPairDrag.cpp
 	gui/SubWindow.cpp
 	gui/ToolPluginView.cpp
+	gui/TransportBar.cpp
 
 	gui/clips/AutomationClipView.cpp
 	gui/clips/ClipView.cpp

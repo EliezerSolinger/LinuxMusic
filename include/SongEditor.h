@@ -102,15 +102,7 @@ protected:
 	void mouseReleaseEvent(QMouseEvent * me) override;
 
 private slots:
-	void setMasterVolume( int new_val );
-	void showMasterVolumeFloat();
-	void updateMasterVolumeFloat( int new_val );
-	void hideMasterVolumeFloat();
 
-	void setMasterPitch( int new_val );
-	void showMasterPitchFloat();
-	void updateMasterPitchFloat( int new_val );
-	void hideMasterPitchFloat();
 
 	void updateScrollBar(int len);
 
@@ -138,17 +130,11 @@ private:
 
 	void adjustLeftRightScoll(int value);
 
-	LcdSpinBox * m_tempoSpinBox;
 
 	TimeLineWidget* m_timeLine;
 	PositionLine* m_positionLine;
 
-	MeterDialog * m_timeSigDisplay;
-	AutomatableSlider * m_masterVolumeSlider;
-	AutomatableSlider * m_masterPitchSlider;
 
-	TextFloat * m_mvsStatus;
-	TextFloat * m_mpsStatus;
 
 
 	IntModel* m_zoomingModel;

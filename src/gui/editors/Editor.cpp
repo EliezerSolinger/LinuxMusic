@@ -135,6 +135,14 @@ QAction *Editor::playAction() const
 	return m_playAction;
 }
 
+void Editor::hideTransportButtons()
+{
+	for (auto action : {m_playAction, m_recordAction, m_recordAccompanyAction, m_toggleStepRecordingAction, m_stopAction})
+	{
+		if (action) { action->setVisible(false); }
+	}
+}
+
 void Editor::keyPressEvent(QKeyEvent* ke)
 {
 	if (ke->key() == Qt::Key_Space)

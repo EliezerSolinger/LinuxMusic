@@ -51,6 +51,13 @@ class Editor : public QMainWindow
 public:
 	void setPauseIcon(bool displayPauseIcon=true);
 	QAction *playAction() const;
+	QAction* stopAction() const { return m_stopAction; }
+	QAction* recordAction() const { return m_recordAction; }
+	QAction* recordAccompanyAction() const { return m_recordAccompanyAction; }
+
+	//! Hides the play/stop buttons of the toolbar (the main window's transport bar provides them).
+	//! Their keyboard shortcuts keep working.
+	void hideTransportButtons();
 	static Editor* lastPlayedEditor() { return s_lastPlayedEditor; }
 protected:
 	DropToolBar * addDropToolBarToTop(QString const & windowTitle);

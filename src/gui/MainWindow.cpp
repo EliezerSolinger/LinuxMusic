@@ -32,6 +32,7 @@
 #include <QMdiArea>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QComboBox>
 #include <QShortcut>
 #include <QSplitter>
 #include <QTabBar>
@@ -74,6 +75,7 @@
 #include "TextFloat.h"
 #include "ToolButton.h"
 #include "ToolPlugin.h"
+#include "TransportBar.h"
 #include "VersionedSaveDialog.h"
 
 #include "lmmsversion.h"
@@ -94,7 +96,6 @@ MainWindow::MainWindow() :
 	m_toolsMenu( nullptr ),
 	m_autoSaveTimer( this ),
 	m_viewMenu( nullptr ),
-	m_metronomeToggle( 0 ),
 	m_session( SessionState::Normal )
 {
 	setAttribute( Qt::WA_DeleteOnClose );
@@ -433,84 +434,42 @@ void MainWindow::finalize()
 	help_menu->addAction( embed::getIconPixmap( "icon_small" ), tr( "About" ),
 				  this, SLOT(aboutLMMS()));
 
-	// create tool-buttons
-	auto project_new = new ToolButton(
-		embed::getIconPixmap("project_new"), tr("Create new project"), this, SLOT(createNewProject()), m_toolBar);
-
-	auto project_new_from_template = new ToolButton(embed::getIconPixmap("project_new_from_template"),
-		tr("Create new project from template"), this, SLOT(emptySlot()), m_toolBar);
-	project_new_from_template->setMenu( templates_menu );
-	project_new_from_template->setPopupMode( ToolButton::InstantPopup );
-
-	auto project_open = new ToolButton(
-		embed::getIconPixmap("project_open"), tr("Open existing project"), this, SLOT(openProject()), m_toolBar);
-
-	auto project_open_recent = new ToolButton(embed::getIconPixmap("project_open_recent"),
-		tr("Recently opened projects"), this, SLOT(emptySlot()), m_toolBar);
-	project_open_recent->setMenu( new RecentProjectsMenu(this) );
-	project_open_recent->setPopupMode( ToolButton::InstantPopup );
-
+	// Toolbar, after the LMMS redesign concept (LMMS#1911): save and help on the left, the transport in the
+	// middle and the layout presets on the right. The other file actions are in the File menu.
 	auto project_save = new ToolButton(
 		embed::getIconPixmap("project_save"), tr("Save current project"), this, SLOT(saveProject()), m_toolBar);
+	auto help_button = new ToolButton(embed::getIconPixmap("help"), tr("Help"), this, SLOT(help()), m_toolBar);
 
-	auto project_export = new ToolButton(
-		embed::getIconPixmap("project_export"), tr("Export current project"), this, SLOT(onExportProject()), m_toolBar);
+	auto layoutPresets = new QComboBox(m_toolBar);
+	layoutPresets->setObjectName("layoutPresets");
+	layoutPresets->setToolTip(tr("Arrangement of the editor panels"));
+	layoutPresets->addItems({tr("Arrange"), tr("Mix"), tr("Compose")});
+	connect(layoutPresets, &QComboBox::activated, this, &MainWindow::applyLayoutPreset);
 
-	m_metronomeToggle = new ToolButton(
-				embed::getIconPixmap( "metronome" ),
-				tr( "Metronome" ),
-				this, SLOT(onToggleMetronome()),
-							m_toolBar );
-	m_metronomeToggle->setCheckable(true);
-	m_metronomeToggle->setChecked(Engine::getSong()->metronome().active());
+	m_toolBarLayout->setColumnMinimumWidth(0, 5);
+	m_toolBarLayout->addWidget(project_save, 0, 1, Qt::AlignVCenter);
+	m_toolBarLayout->addWidget(help_button, 0, 2, Qt::AlignVCenter);
+	m_toolBarLayout->setColumnStretch(3, 1);
+	m_toolBarLayout->addWidget(new TransportBar(m_toolBar), 0, 4, Qt::AlignVCenter);
+	m_toolBarLayout->setColumnStretch(5, 1);
+	m_toolBarLayout->addWidget(layoutPresets, 0, 6, Qt::AlignVCenter);
+	m_toolBarLayout->setColumnMinimumWidth(7, 8);
 
-	m_toolBarLayout->setColumnMinimumWidth( 0, 5 );
-	m_toolBarLayout->addWidget( project_new, 0, 1 );
-	m_toolBarLayout->addWidget( project_new_from_template, 0, 2 );
-	m_toolBarLayout->addWidget( project_open, 0, 3 );
-	m_toolBarLayout->addWidget( project_open_recent, 0, 4 );
-	m_toolBarLayout->addWidget( project_save, 0, 5 );
-	m_toolBarLayout->addWidget( project_export, 0, 6 );
-	m_toolBarLayout->addWidget( m_metronomeToggle, 0, 7 );
+	// The editor buttons are gone (the editors are tabs now), but keep their shortcuts
+	const auto addShortcut = [this](int key, const char* slot) {
+		connect(new QShortcut(keySequence(Qt::CTRL, static_cast<Qt::Key>(key)), this), SIGNAL(activated()), this, slot);
+	};
+	addShortcut(Qt::Key_1, SLOT(toggleSongEditorWin()));
+	addShortcut(Qt::Key_2, SLOT(togglePatternEditorWin()));
+	addShortcut(Qt::Key_3, SLOT(togglePianoRollWin()));
+	addShortcut(Qt::Key_4, SLOT(toggleAutomationEditorWin()));
+	addShortcut(Qt::Key_5, SLOT(toggleMixerWin()));
+	addShortcut(Qt::Key_6, SLOT(toggleControllerRack()));
+	addShortcut(Qt::Key_7, SLOT(toggleProjectNotesWin()));
 
-
-	// window-toolbar
-	auto song_editor_window = new ToolButton(embed::getIconPixmap("songeditor"), tr("Song Editor") + " (Ctrl+1)", this,
-		SLOT(toggleSongEditorWin()), m_toolBar);
-	song_editor_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_1));
-
-	auto pattern_editor_window = new ToolButton(embed::getIconPixmap("pattern_track_btn"),
-		tr("Pattern Editor") + " (Ctrl+2)", this, SLOT(togglePatternEditorWin()), m_toolBar);
-	pattern_editor_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_2));
-
-	auto piano_roll_window = new ToolButton(
-		embed::getIconPixmap("piano"), tr("Piano Roll") + " (Ctrl+3)", this, SLOT(togglePianoRollWin()), m_toolBar);
-	piano_roll_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_3));
-
-	auto automation_editor_window = new ToolButton(embed::getIconPixmap("automation"),
-		tr("Automation Editor") + " (Ctrl+4)", this, SLOT(toggleAutomationEditorWin()), m_toolBar);
-	automation_editor_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_4));
-
-	auto mixer_window = new ToolButton(
-		embed::getIconPixmap("mixer"), tr("Mixer") + " (Ctrl+5)", this, SLOT(toggleMixerWin()), m_toolBar);
-	mixer_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_5));
-
-	auto controllers_window = new ToolButton(embed::getIconPixmap("controller"),
-		tr("Show/hide controller rack") + " (Ctrl+6)", this, SLOT(toggleControllerRack()), m_toolBar);
-	controllers_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_6));
-
-	auto project_notes_window = new ToolButton(embed::getIconPixmap("project_notes"),
-		tr("Show/hide project notes") + " (Ctrl+7)", this, SLOT(toggleProjectNotesWin()), m_toolBar);
-	project_notes_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_7));
-
-	m_toolBarLayout->addWidget( song_editor_window, 1, 1 );
-	m_toolBarLayout->addWidget( pattern_editor_window, 1, 2 );
-	m_toolBarLayout->addWidget( piano_roll_window, 1, 3 );
-	m_toolBarLayout->addWidget( automation_editor_window, 1, 4 );
-	m_toolBarLayout->addWidget( mixer_window, 1, 5 );
-	m_toolBarLayout->addWidget( controllers_window, 1, 6 );
-	m_toolBarLayout->addWidget( project_notes_window, 1, 7 );
-	m_toolBarLayout->setColumnStretch( 100, 1 );
+	// The transport bar plays and stops the song and patterns
+	getGUI()->songEditor()->hideTransportButtons();
+	getGUI()->patternEditor()->hideTransportButtons();
 
 	// setup-dialog opened before?
 	if( !ConfigManager::inst()->value( "app", "configured" ).toInt() )
@@ -575,6 +534,31 @@ DockPanel* MainWindow::addPluginTab(QWidget* w)
 	auto panel = new DockPanel(w, m_pluginTabs, true);
 	connect(panel, &DockPanel::revealRequested, this, &MainWindow::revealDock);
 	return panel;
+}
+
+
+
+
+void MainWindow::applyLayoutPreset(int preset)
+{
+	const auto gui = getGUI();
+	auto sizes = m_dockSplitter->sizes();
+	const int total = sizes[0] + sizes[1];
+	gui->songEditor()->parentWidget()->show();
+	switch (preset)
+	{
+		case 0: // Arrange: only the Song Editor
+			collapseDock(m_bottomDock);
+			break;
+		case 1: // Mix: a tall mixer
+			gui->mixerView()->parentWidget()->show();
+			m_dockSplitter->setSizes({total * 35 / 100, total * 65 / 100});
+			break;
+		case 2: // Compose: the Piano Roll
+			gui->pianoRoll()->parentWidget()->show();
+			m_dockSplitter->setSizes({total * 45 / 100, total * 55 / 100});
+			break;
+	}
 }
 
 
@@ -1319,10 +1303,6 @@ void MainWindow::updateConfig( QAction * _who )
 
 
 
-void MainWindow::onToggleMetronome()
-{
-	Engine::getSong()->metronome().setActive(m_metronomeToggle->isChecked());
-}
 
 
 

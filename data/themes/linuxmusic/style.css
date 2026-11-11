@@ -1248,3 +1248,29 @@ QSplitter#dockSplitter::handle {
 	background: #1c1e21;
 	height: 4px;
 }
+
+/* Plain digits instead of LCD images in every numeric display */
+lmms--gui--LcdWidget {
+	qproperty-flatDigits: true;
+	qproperty-flatBackground: #1c1e21;
+}
+
+/* Main toolbar transport (after the LMMS redesign concept) */
+QWidget#transportBar {
+	background: #26292d;
+	border: 1px solid #1c1e21;
+	border-radius: 4px;
+}
+
+QToolButton#transportModeButton {
+	color: #9aa0a6;
+	background: #1c1e21;
+	border: none;
+	padding: 1px 8px;
+	font-size: 10px;
+}
+
+QToolButton#transportModeButton:checked {
+	color: #1c1e21;
+	background: #2bd4a8;
+}

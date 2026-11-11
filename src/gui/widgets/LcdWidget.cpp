@@ -283,13 +283,84 @@ void LcdWidget::initUi(const QString& name , const QString& style)
 	//m_lcdPixmap = embed::getIconPixmap(QString("lcd_" + style).toUtf8().constData());
 	//m_lcdPixmap = embed::getIconPixmap("lcd_19green"); // TODO!!
 
-	m_lcdPixmap = embed::getIconPixmap(QString("lcd_" + style).toUtf8().constData());
+	m_style = style;
+	loadPixmap();
+}
+
+
+
+
+void LcdWidget::loadPixmap()
+{
+	m_lcdPixmap = embed::getIconPixmap(QString("lcd_" + m_style).toUtf8().constData());
 	m_cellWidth = m_lcdPixmap.size().width() / LcdWidget::charsPerPixmap;
 	m_cellHeight = m_lcdPixmap.size().height() / 2;
-
 	m_marginWidth =  m_cellWidth / 2;
 
+	if (m_flatDigits)
+	{
+		// Same layout as the images (digits 0-9, blank, minus, then the margin; enabled row above the
+		// disabled row), drawn with the widget's font so that every LCD keeps its size
+		const auto size = m_lcdPixmap.size();
+		QPixmap flat(size);
+		flat.fill(m_flatBackground);
+
+		QColor color(43, 212, 168);
+		if (m_style.contains("red")) { color = QColor(232, 84, 72); }
+		else if (m_style.contains("purple")) { color = QColor(155, 140, 255); }
+		else if (m_style.contains("pink")) { color = QColor(255, 111, 174); }
+
+		QFont digitFont = font();
+		digitFont.setBold(true);
+		digitFont.setPixelSize(std::max(6, m_cellHeight * 4 / 5));
+		while (digitFont.pixelSize() > 6 && QFontMetrics(digitFont).horizontalAdvance('0') > m_cellWidth)
+		{
+			digitFont.setPixelSize(digitFont.pixelSize() - 1);
+		}
+
+		QPainter p(&flat);
+		p.setRenderHint(QPainter::TextAntialiasing);
+		p.setFont(digitFont);
+		const QString chars = "0123456789 -";
+		for (int row = 0; row < 2; ++row)
+		{
+			auto rowColor = color;
+			if (row == 1) { rowColor.setAlpha(110); }
+			p.setPen(rowColor);
+			for (int i = 0; i < chars.size(); ++i)
+			{
+				p.drawText(QRect(i * m_cellWidth, row * m_cellHeight, m_cellWidth, m_cellHeight),
+					Qt::AlignCenter, chars.mid(i, 1));
+			}
+		}
+		m_lcdPixmap = flat;
+	}
+
 	updateSize();
+}
+
+
+
+
+void LcdWidget::setFlatDigits(bool flat)
+{
+	if (m_flatDigits == flat) { return; }
+	m_flatDigits = flat;
+	loadPixmap();
+	update();
+}
+
+
+
+
+void LcdWidget::setFlatBackground(const QColor& color)
+{
+	m_flatBackground = color;
+	if (m_flatDigits)
+	{
+		loadPixmap();
+		update();
+	}
 }
 
 } // namespace lmms::gui

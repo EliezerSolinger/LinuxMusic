@@ -1208,3 +1208,16 @@ lmms--gui--LmmsPalette {
 	qproperty-highlight: #262b30;
 	qproperty-highlightedText: #d1d8e4;
 }
+
+QToolButton#transportModeButton {
+	color: #d1d8e4;
+	background: #101213;
+	border: none;
+	padding: 1px 8px;
+	font-size: 10px;
+}
+
+QToolButton#transportModeButton:checked {
+	color: #101213;
+	background: #0bd556;
+}

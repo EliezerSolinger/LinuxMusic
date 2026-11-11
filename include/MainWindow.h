@@ -86,6 +86,9 @@ public:
 	//! The tab appears when the window is shown and goes away when it is closed.
 	DockPanel* addPluginTab(QWidget* w);
 
+	//! Arranges the dock areas for a task: 0 = arrange, 1 = mix, 2 = compose
+	void applyLayoutPreset(int preset);
+
 
 	void refocus();
 
@@ -278,7 +281,6 @@ private:
 
 	QMenu * m_viewMenu;
 
-	ToolButton * m_metronomeToggle;
 
 	SessionState m_session;
 	
@@ -289,7 +291,6 @@ private slots:
 	void showTool( QAction * _idx );
 	void updateViewMenu();
 	void updateConfig( QAction * _who );
-	void onToggleMetronome();
 	void onExportProject();
 	void onExportProjectTracks();
 	void onImportProject();

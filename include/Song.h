@@ -310,6 +310,9 @@ public:
 		return m_tempoModel;
 	}
 
+	IntModel& masterVolumeModel() { return m_masterVolumeModel; }
+	IntModel& masterPitchModel() { return m_masterPitchModel; }
+
 	void exportProjectMidi(const std::filesystem::path& filePath) const;
 
 	inline void setLoadOnLaunch(bool value) { m_loadOnLaunch = value; }

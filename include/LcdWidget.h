@@ -40,6 +40,10 @@ class LMMS_EXPORT LcdWidget : public QWidget
 	// theming qproperties
 	Q_PROPERTY( QColor textColor READ textColor WRITE setTextColor )
 	Q_PROPERTY( QColor textShadowColor READ textShadowColor WRITE setTextShadowColor )
+	//! Draw plain digits with the widget's font instead of the LCD-style images of the theme
+	Q_PROPERTY(bool flatDigits READ flatDigits WRITE setFlatDigits)
+	//! Background of the digits when flatDigits is set
+	Q_PROPERTY(QColor flatBackground READ flatBackground WRITE setFlatBackground)
 	
 public:
 	explicit LcdWidget(QWidget* parent, const QString& name = QString(), bool leadingZero = false);
@@ -70,6 +74,11 @@ public:
 
 	int cellHeight() const { return m_cellHeight; }
 
+	bool flatDigits() const { return m_flatDigits; }
+	void setFlatDigits(bool flat);
+	QColor flatBackground() const { return m_flatBackground; }
+	void setFlatBackground(const QColor& color);
+
 	void setSeamless(bool left, bool right)
 	{
 		m_seamlessLeft = left;
@@ -91,12 +100,18 @@ private:
 
 	static const int charsPerPixmap = 12;
 
+	//! Loads the digit images for m_style, or draws flat ones when m_flatDigits is set
+	void loadPixmap();
+
 	QMap<int, QString> m_textForValue;
 
 	QString m_display;
 
 	QString m_label;
 	QPixmap m_lcdPixmap;
+	QString m_style;
+	bool m_flatDigits = false;
+	QColor m_flatBackground = QColor(28, 30, 33);
 
 	QColor m_textColor;
 	QColor m_textShadowColor;
