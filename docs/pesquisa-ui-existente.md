@@ -5,6 +5,15 @@ histórico do `master`.
 
 ## 1. Conceito de redesign oficial: a referência visual
 
+> **Pivô de conceito (11/11/2026):** o mixer e o sistema do LinuxMusic vão ficar **diferentes** do esquema de design
+> sugerido pelo LMMS (o conceito de redesign #1911 e os mockups dele). O projeto já pivotou para um conceito próprio:
+> trilhas organizadas em **hierarquia** (pastas e canais de grupo), mixer e gerenciamento de plugins no estilo do
+> FL Studio, gravação no estilo do REAPER, e os canais extras do núcleo multicanal escondidos como encanamento
+> interno. O redesign do LMMS continua servindo só como referência de layout geral (janela única, painéis
+> encaixados); ele não define o mixer nem a organização das trilhas. Detalhes em
+> [preparacao-mixer.md](preparacao-mixer.md).
+
+
 - **[#1911 "LMMS redesign concept"](https://github.com/LMMS/lmms/issues/1911)**, de budislav. Aberto desde 2015,
   com 236 comentários. É uma interface de **janela única**, sem janelas flutuantes, com painéis encaixados.
   - Mockups: <https://www.behance.net/gallery/194917259/LMMS-Redesign-Concept>

@@ -17,6 +17,15 @@ em vez de ser encaixada à força na estrutura antiga.
 
 ## Referências de produto
 
+> **Pivô de conceito (11/11/2026):** o mixer e o sistema do LinuxMusic vão ficar **diferentes** do esquema de design
+> sugerido pelo LMMS (o conceito de redesign #1911 e os mockups dele). O projeto já pivotou para um conceito próprio:
+> trilhas organizadas em **hierarquia** (pastas e canais de grupo), mixer e gerenciamento de plugins no estilo do
+> FL Studio, gravação no estilo do REAPER, e os canais extras do núcleo multicanal escondidos como encanamento
+> interno. O redesign do LMMS continua servindo só como referência de layout geral (janela única, painéis
+> encaixados); ele não define o mixer nem a organização das trilhas. Detalhes em
+> [preparacao-mixer.md](preparacao-mixer.md).
+
+
 - **Mixer, efeitos e gerenciamento de plugins: FL Studio.** Mixer com canais e slots de efeito sempre à vista,
   roteamento simples entre canais e plugins fáceis de achar, adicionar e organizar. O REAPER é fraco nesse ponto;
   até o rack de efeitos atual do LMMS é melhor que o dele.
