@@ -31,6 +31,7 @@
 #include <samplerate.h>
 
 #include <memory>
+#include <array>
 #include <vector>
 
 #include "AudioBufferView.h"
@@ -40,6 +41,8 @@
 #include "LocklessList.h"
 #include "AudioEngineProfiler.h"
 #include "PlayHandle.h"
+
+#include "LocklessRingBuffer.h"
 
 
 namespace lmms
@@ -230,14 +233,16 @@ public:
 
 	void pushInputFrames( SampleFrame* _ab, const f_cnt_t _frames );
 
+	void processBufferedInputFrames();
+
 	inline const SampleFrame* inputBuffer()
 	{
-		return m_inputBuffer[ m_inputBufferRead ];
+		return m_inputBuffer[m_inputBufferRead].data();
 	}
 
 	inline f_cnt_t inputBufferFrames() const
 	{
-		return m_inputBufferFrames[ m_inputBufferRead ];
+		return m_inputBuffer[m_inputBufferRead].size();
 	}
 
 	/**
@@ -375,9 +380,7 @@ private:
 	f_cnt_t m_framesPerPeriod;
 	sample_rate_t m_baseSampleRate;
 
-	SampleFrame* m_inputBuffer[2];
-	f_cnt_t m_inputBufferFrames[2];
-	f_cnt_t m_inputBufferSize[2];
+	std::array<std::vector<SampleFrame>, 2> m_inputBuffer;
 	int m_inputBufferRead;
 	int m_inputBufferWrite;
 
@@ -418,6 +421,9 @@ private:
 	friend class Engine;
 	friend class AudioEngineWorkerThread;
 	friend class ProjectRenderer;
+
+	std::unique_ptr<LocklessRingBuffer<SampleFrame>> m_inputAudioRingBuffer;
+	std::unique_ptr<LocklessRingBufferReader<SampleFrame>> m_inputAudioRingBufferReader;
 } ;
 
 } // namespace lmms
