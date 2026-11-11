@@ -93,6 +93,9 @@ public:
 		return m_enabledModel.value();
 	}
 
+	//! Turns the effect on or off (bypass), e.g. from an effect slot of the mixer
+	auto enabledModel() -> BoolModel* { return &m_enabledModel; }
+
 	inline f_cnt_t timeout() const
 	{
 		const float samples = Engine::audioEngine()->outputSampleRate() * m_autoQuitModel.value() / 1000.0f;
