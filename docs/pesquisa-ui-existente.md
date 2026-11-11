@@ -67,3 +67,32 @@ Melhorias de UI que já temos e não precisamos refazer:
 5. **Usar o #5261 como base da toolbar nova**, revisando o código, porque ele tem conflitos antigos.
 
 Cada PR deve ser trazido como merge separado (`git fetch upstream pull/<n>/head`), compilado e testado antes do próximo.
+
+## Situação dos PRs no LinuxMusic (11/11/2026)
+
+| PR | Situação |
+|---|---|
+| #8118 Qt6 no Linux | Mesclado. O Qt6 é o padrão (`WANT_QT6=ON`). |
+| #8317 Desacoplar faixas e mixer | Mesclado. |
+| #7878 Redimensionar faixas | Mesclado. |
+| #7900 Fades em clipes de sample | Mesclado (conflitos resolvidos à mão em `ClipView` e `SamplePlayHandle`). |
+| #7459 Plugins multicanal / pin connector | Adiado. O autor está levando o PR ao LMMS em partes (`AudioBuffer` #7945, buffer views #8016), e o branch do PR ficou desatualizado em relação a essas partes. Será reimplementado sobre o código atual num passo próprio, com testes de áudio. |
+| #6407 Canal do mixer automático por faixa | Velho demais para mesclar (feito sobre o antigo `MixerLine`). Será reimplementado no redesign do mixer. |
+| #5261 Toolbar moderna | Velho demais para mesclar (de 2020, ainda usa o antigo `FxMixer`). Será reimplementado como referência visual. |
+| #2944 Rack de controladores | Velho demais para mesclar (de 2019). Será reimplementado no painel da direita. |
+
+## Redesign: o que já foi feito
+
+- **Janela única com abas** (base do #1911):
+  - em cima, Song Editor e Pattern Editor;
+  - embaixo, painel recolhível com Mixer, Piano Roll, Automation Editor e "Instruments & Effects";
+  - à direita, painel recolhível com Controladores e Notas.
+- **Instrumentos e efeitos abrem em abas** dentro de "Instruments & Effects" (uma aba por janela, com botão de fechar),
+  em vez de janelas flutuantes.
+- Classe nova `DockPanel` (`include/DockPanel.h`): faz `parentWidget()->show()` selecionar a aba certa, para que o
+  código antigo que mostrava subjanelas continue funcionando.
+- Ferramenta de desenvolvimento: `LINUXMUSIC_SCREENSHOT=<arquivo.png>` salva uma imagem da janela e fecha o app;
+  `LINUXMUSIC_SCREENSHOT_ACTION=instrument` abre o primeiro instrumento antes da captura.
+
+Ainda em janelas flutuantes: VST (Vestige/VstEffect), parâmetros do Carla, diálogos de controladores e janelas pequenas
+como o MeterDialog.

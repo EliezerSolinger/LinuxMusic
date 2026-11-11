@@ -156,17 +156,11 @@ SampleTrackWindow::SampleTrackWindow(SampleTrackView* stv)
 
 	setModel(stv->model());
 
-	QMdiSubWindow * subWin = getGUI()->mainWindow()->addWindowedWidget(this);
-	Qt::WindowFlags flags = subWin->windowFlags();
-	flags |= Qt::MSWindowsFixedSizeDialogHint;  // resizing is disabled regardless, this makes SubWindow hide related actions
-	flags &= ~Qt::WindowMaximizeButtonHint;
-	subWin->setWindowFlags(flags);
-
 	// better than `setFixedSize` because it still responds to layout changes
 	layout()->setSizeConstraint(QLayout::SetFixedSize);
 
 	setWindowIcon(embed::getIconPixmap("sample_track"));
-	subWin->hide();
+	getGUI()->mainWindow()->addPluginTab(this);
 }
 
 

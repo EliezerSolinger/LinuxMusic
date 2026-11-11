@@ -34,6 +34,7 @@
 #include <QMessageBox>
 #include <QShortcut>
 #include <QSplitter>
+#include <QTabBar>
 #include <QTabWidget>
 
 #include "AboutDialog.h"
@@ -89,6 +90,7 @@ MainWindow::MainWindow() :
 	m_topDock( nullptr ),
 	m_bottomDock( nullptr ),
 	m_rightDock( nullptr ),
+	m_pluginTabs( nullptr ),
 	m_toolsMenu( nullptr ),
 	m_autoSaveTimer( this ),
 	m_viewMenu( nullptr ),
@@ -203,6 +205,19 @@ MainWindow::MainWindow() :
 	m_dockSplitter->setStretchFactor(0, 1);
 	m_dockSplitter->lower();
 	m_workspace->viewport()->installEventFilter(this);
+
+	m_pluginTabs = new QTabWidget(m_bottomDock);
+	m_pluginTabs->setObjectName("pluginTabs");
+	m_pluginTabs->setDocumentMode(true);
+	m_pluginTabs->setTabsClosable(true);
+	m_pluginTabs->setMovable(true);
+	connect(m_pluginTabs, &QTabWidget::tabCloseRequested, this, [this](int index) {
+		auto panel = qobject_cast<DockPanel*>(m_pluginTabs->widget(index));
+		if (!panel) { return; }
+		// Let the window react as if it was closed (e.g. unchecking its track button), then drop the tab
+		panel->content()->close();
+		panel->removeFromTabs();
+	});
 
 	m_rightDock = new QTabWidget(splitter);
 	m_rightDock->setObjectName("rightDock");
@@ -526,6 +541,8 @@ void MainWindow::finalize()
 	dockWidget(gui->mixerView(), DockArea::Bottom, tr("Mixer"), embed::getIconPixmap("mixer"));
 	dockWidget(gui->pianoRoll(), DockArea::Bottom, tr("Piano Roll"), embed::getIconPixmap("piano"));
 	dockWidget(gui->automationEditor(), DockArea::Bottom, tr("Automation Editor"), embed::getIconPixmap("automation"));
+	m_pluginTabsPanel = dockWidget(m_pluginTabs, DockArea::Bottom, tr("Instruments && Effects"),
+		embed::getIconPixmap("instrument_track"));
 	dockWidget(gui->getControllerRackView(), DockArea::Right, tr("Controllers"), embed::getIconPixmap("controller"));
 	dockWidget(gui->getProjectNotes(), DockArea::Right, tr("Notes"), embed::getIconPixmap("project_notes"));
 
@@ -553,6 +570,16 @@ DockPanel* MainWindow::dockWidget(QWidget* w, DockArea area, const QString& titl
 
 
 
+DockPanel* MainWindow::addPluginTab(QWidget* w)
+{
+	auto panel = new DockPanel(w, m_pluginTabs, true);
+	connect(panel, &DockPanel::revealRequested, this, &MainWindow::revealDock);
+	return panel;
+}
+
+
+
+
 QTabWidget* MainWindow::dockTabs(DockArea area) const
 {
 	switch (area)
@@ -569,7 +596,18 @@ QTabWidget* MainWindow::dockTabs(DockArea area) const
 
 void MainWindow::revealDock(DockPanel* panel)
 {
-	if (panel->tabs() == m_bottomDock)
+	if (panel->tabs() == m_pluginTabs)
+	{
+		// Bring up the "Instruments & Effects" page, and make the bottom dock tall enough for the plugin window
+		if (m_pluginTabsPanel) { m_pluginTabsPanel->show(); }
+		auto sizes = m_dockSplitter->sizes();
+		const int total = sizes[0] + sizes[1];
+		const int wanted = panel->content()->sizeHint().height()
+			+ m_bottomDock->tabBar()->sizeHint().height() + m_pluginTabs->tabBar()->sizeHint().height();
+		const int height = std::clamp(wanted, sizes[1], total * 3 / 4);
+		m_dockSplitter->setSizes({total - height, height});
+	}
+	else if (panel->tabs() == m_bottomDock)
 	{
 		auto sizes = m_dockSplitter->sizes();
 		if (sizes.size() == 2 && sizes[1] == 0)

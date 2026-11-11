@@ -32,6 +32,7 @@
 #include "AutomationEditor.h"
 #include "ConfigManager.h"
 #include "ControllerRackView.h"
+#include "InstrumentTrackView.h"
 #include "MixerView.h"
 #include "MainWindow.h"
 #include "MicrotunerConfig.h"
@@ -202,6 +203,14 @@ GuiApplication::GuiApplication()
 	// after startup and quits, which allows checking the UI without screen capture permissions
 	if (const auto screenshotPath = qEnvironmentVariable("LINUXMUSIC_SCREENSHOT"); !screenshotPath.isEmpty())
 	{
+		// LINUXMUSIC_SCREENSHOT_ACTION=instrument opens the first instrument window before the screenshot
+		if (qEnvironmentVariable("LINUXMUSIC_SCREENSHOT_ACTION") == "instrument")
+		{
+			QTimer::singleShot(2500, m_mainWindow, [this] {
+				const auto views = m_mainWindow->findChildren<InstrumentTrackView*>();
+				if (!views.isEmpty()) { QMetaObject::invokeMethod(views.first(), "toggleInstrumentWindow", Q_ARG(bool, true)); }
+			});
+		}
 		QTimer::singleShot(4000, m_mainWindow, [this, screenshotPath] {
 			m_mainWindow->grab().save(screenshotPath);
 			QApplication::exit(0);

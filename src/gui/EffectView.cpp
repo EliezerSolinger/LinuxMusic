@@ -30,6 +30,7 @@
 #include <QPainter>
 
 #include "EffectView.h"
+#include "DockPanel.h"
 #include "DummyEffect.h"
 #include "CaptionMenu.h"
 #include "embed.h"
@@ -90,9 +91,7 @@ EffectView::EffectView( Effect * _model, QWidget * _parent ) :
 		m_controlView = effect()->controls()->createView();
 		if (m_controlView)
 		{
-			m_subWindow = getGUI()->mainWindow()->addWindowedWidget(m_controlView);
-			m_subWindow->setWindowFlag(Qt::WindowMaximizeButtonHint, false);
-			m_subWindow->hide();
+			m_subWindow = getGUI()->mainWindow()->addPluginTab(m_controlView);
 		}
 	}
 

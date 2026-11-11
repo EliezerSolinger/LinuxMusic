@@ -82,6 +82,10 @@ public:
 	//! Docks @p w as a tab in one of the main window's dock areas
 	DockPanel* dockWidget(QWidget* w, DockArea area, const QString& title, const QPixmap& icon);
 
+	//! Adds an instrument or effect window as a closable tab in the "Instruments & Effects" panel.
+	//! The tab appears when the window is shown and goes away when it is closed.
+	DockPanel* addPluginTab(QWidget* w);
+
 
 	void refocus();
 
@@ -240,6 +244,8 @@ private:
 	QTabWidget* m_topDock;
 	QTabWidget* m_bottomDock;
 	QTabWidget* m_rightDock;
+	QTabWidget* m_pluginTabs;
+	DockPanel* m_pluginTabsPanel = nullptr;
 	int m_bottomDockHeight = 300;
 	int m_rightDockWidth = 360;
 

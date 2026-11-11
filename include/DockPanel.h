@@ -30,32 +30,45 @@ class QTabWidget;
 namespace lmms::gui
 {
 
-//! A tab page in one of the main window's dock areas, wrapping a single editor.
+//! A tab page in one of the main window's dock areas, wrapping a single editor or plugin window.
 //!
-//! Lots of code shows an editor with `editor->parentWidget()->show()`, which used to show the editor's
-//! MDI subwindow. When the editor is docked, its parent is a DockPanel, and showing it selects its tab
+//! Lots of code shows a window with `window->parentWidget()->show()`, which used to show the window's
+//! MDI subwindow. When the window is docked, its parent is a DockPanel, and showing it selects its tab
 //! and asks the main window to reveal the dock area instead.
+//!
+//! A closable panel (used for instrument and effect windows) is only in its tab widget while it is open:
+//! showing it adds the tab, and hiding it or closing the tab removes it again.
 class DockPanel : public QWidget
 {
 	Q_OBJECT
 public:
-	DockPanel(QWidget* content, QTabWidget* tabs);
+	DockPanel(QWidget* content, QTabWidget* tabs, bool closable = false);
 
 	QWidget* content() const { return m_content; }
 	QTabWidget* tabs() const { return m_tabs; }
+	bool isClosable() const { return m_closable; }
 
 	//! @returns true if this panel is the selected tab of a dock area that is not collapsed
 	bool isShownInDock() const;
+
+	//! Removes the tab of a closable panel, keeping the panel and its content alive
+	void removeFromTabs();
 
 	void setVisible(bool visible) override;
 
 signals:
 	//! Emitted when something asks to show this panel, so the main window can reveal its dock area
-	void revealRequested(DockPanel* panel);
+	void revealRequested(lmms::gui::DockPanel* panel);
+
+protected:
+	bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+	void updateTab();
+
 	QWidget* m_content;
 	QTabWidget* m_tabs;
+	bool m_closable;
 	bool m_selecting = false;
 };
 
