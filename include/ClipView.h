@@ -235,6 +235,8 @@ protected:
 	//! @param me The QMouseEvent to handle.
 	void mouseReleaseEvent(QMouseEvent* me) override;
 
+	void leaveEvent(QEvent* e) override;
+
 	void resizeEvent( QResizeEvent * re ) override
 	{
 		m_needsUpdate = true;
@@ -258,6 +260,7 @@ protected:
 	DataFile createClipDataFiles(const QVector<ClipView *> & clips) const;
 
 	virtual void paintTextLabel(QString const & text, QPainter & painter);
+	virtual void drawCrossfade(QPainter& painter, QRect rect);
 
 	auto hasCustomColor() const -> bool;
 
@@ -282,6 +285,10 @@ private:
 		MoveSelection,
 		Resize,
 		ResizeLeft,
+		EditStartCrossfade,
+		EditEndCrossfade,
+		EditStartCrossfadeTension,
+		EditEndCrossfadeTension,
 		Split,
 		CopySelection,
 		ToggleSelected
@@ -314,6 +321,11 @@ private:
 	QColor m_patternClipBackground;
 	bool m_gradient;
 	QColor m_markerColor;
+
+	bool m_mouseOverStartCrossfadeHandle;
+	bool m_mouseOverStartCrossfadeTensionHandle;
+	bool m_mouseOverEndCrossfadeHandle;
+	bool m_mouseOverEndCrossfadeTensionHandle;
 
 	bool m_needsUpdate;
 	inline void setInitialPos( QPoint pos )

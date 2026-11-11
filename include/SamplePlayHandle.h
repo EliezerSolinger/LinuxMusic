@@ -77,6 +77,7 @@ private:
 	f_cnt_t m_frame = 0;
 	Sample* m_sample = nullptr;
 	Track* m_track = nullptr;
+	SampleClip* m_clip = nullptr;
 	PatternTrack* m_patternTrack = nullptr;
 	bool m_doneMayReturnTrue = true;
 	bool m_ownAudioBusHandle = false;
