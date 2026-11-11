@@ -110,7 +110,7 @@ option(WANT_DEBUG_GPROF	"Enable gprof profiler" OFF)
 OPTION(BUNDLE_QT_TRANSLATIONS	"Install Qt translation files for LMMS" OFF)
 option(WANT_DEBUG_CPACK "Show detailed logs for packaging commands" OFF)
 option(WANT_CPACK_TARBALL "Request CPack to create a tarball instead of an installer" OFF)
-option(WANT_QT6 "Build with experimental Qt6 support" OFF)
+option(WANT_QT6 "Build with Qt6 (default) instead of Qt5" ON)
 
 
 # Set the target microarchitecture
