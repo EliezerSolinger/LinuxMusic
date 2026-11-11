@@ -1,0 +1,153 @@
+/*
+ * TrackChannelControls.cpp - a track's volume, panning and effects controls, acting on its mixer channel
+ *
+ * This file is part of LinuxMusic, a fork of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#include "TrackChannelControls.h"
+
+#include <cassert>
+
+#include "AudioBusHandle.h"
+#include "EffectRackView.h"
+#include "Engine.h"
+#include "InstrumentTrack.h"
+#include "Knob.h"
+#include "Mixer.h"
+#include "SampleTrack.h"
+#include "Track.h"
+#include "volume.h"
+
+namespace lmms::gui
+{
+
+TrackChannelControls::TrackChannelControls(Track* track, QObject* parent) :
+	QObject(parent),
+	m_track(track)
+{
+	if (auto instrumentTrack = dynamic_cast<InstrumentTrack*>(track))
+	{
+		m_channel = instrumentTrack->mixerChannelModel();
+		m_volume = instrumentTrack->volumeModel();
+		m_panning = instrumentTrack->panningModel();
+		m_effects = instrumentTrack->audioBusHandle()->effects();
+	}
+	else if (auto sampleTrack = dynamic_cast<SampleTrack*>(track))
+	{
+		m_channel = sampleTrack->mixerChannelModel();
+		m_volume = sampleTrack->volumeModel();
+		m_panning = sampleTrack->panningModel();
+		m_effects = sampleTrack->audioBusHandle()->effects();
+	}
+	assert(m_channel && m_volume && m_panning && m_effects);
+
+	const auto mixer = Engine::mixer();
+	connect(mixer, &Mixer::trackChannelChanged, this, [this](Track* changed) {
+		if (changed == m_track) { update(); }
+	});
+	connect(mixer, &Mixer::channelDeleted, this, &TrackChannelControls::update);
+	connect(m_channel, &IntModel::dataChanged, this, &TrackChannelControls::update);
+	// Automating the track's volume or panning keeps them on the track
+	connect(m_volume, &FloatModel::dataChanged, this, &TrackChannelControls::update);
+	connect(m_panning, &FloatModel::dataChanged, this, &TrackChannelControls::update);
+}
+
+
+
+
+auto TrackChannelControls::replace(TrackChannelControls* controls, Track* track, QObject* parent,
+	VolumeKnob* volumeKnob, Knob* panningKnob, EffectRackView* effectRack) -> TrackChannelControls*
+{
+	delete controls;
+	controls = new TrackChannelControls(track, parent);
+	controls->m_volumeKnob = volumeKnob;
+	controls->m_panningKnob = panningKnob;
+	controls->m_effectRack = effectRack;
+	controls->update();
+	return controls;
+}
+
+
+
+
+void TrackChannelControls::setVolumeKnob(VolumeKnob* knob)
+{
+	m_volumeKnob = knob;
+	update();
+}
+
+
+
+
+void TrackChannelControls::setPanningKnob(Knob* knob)
+{
+	m_panningKnob = knob;
+	update();
+}
+
+
+
+
+void TrackChannelControls::setEffectRack(EffectRackView* rack)
+{
+	m_effectRack = rack;
+	update();
+}
+
+
+
+
+void TrackChannelControls::update()
+{
+	const auto mixer = Engine::mixer();
+	const auto channel = mixer->trackChannel(m_track);
+
+	// The controls may still point at a channel deleted meanwhile
+	bool boundExists = false;
+	for (int i = 0; i < mixer->numChannels(); ++i)
+	{
+		if (mixer->mixerChannel(i) == m_boundChannel) { boundExists = true; }
+	}
+	const bool oldModelsValid = !m_boundChannel || boundExists;
+	m_boundChannel = channel;
+
+	if (m_volumeKnob)
+	{
+		const bool onChannel = channel && !m_volume->isAutomatedOrControlled();
+		FloatModel* model = onChannel ? &channel->m_volumeModel : m_volume;
+		if (m_volumeKnob->model() != model || !oldModelsValid)
+		{
+			m_volumeKnob->setZeroDbfsPoint(onChannel ? 1.f : DefaultVolume);
+			m_volumeKnob->setModel(model, oldModelsValid);
+		}
+	}
+	if (m_panningKnob)
+	{
+		FloatModel* model = channel && !m_panning->isAutomatedOrControlled() ? &channel->m_panModel : m_panning;
+		if (m_panningKnob->model() != model || !oldModelsValid) { m_panningKnob->setModel(model, oldModelsValid); }
+	}
+	if (m_effectRack)
+	{
+		// The track's own effects stay visible while it has any (e.g. on a shared channel)
+		EffectChain* model = channel && m_effects->effects().empty() ? &channel->m_fxChain : m_effects;
+		if (m_effectRack->model() != model || !oldModelsValid) { m_effectRack->setModel(model, oldModelsValid); }
+	}
+}
+
+} // namespace lmms::gui

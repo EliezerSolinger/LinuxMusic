@@ -24,6 +24,8 @@
 
 #include "TrackContainerView.h"
 
+#include "Mixer.h"
+
 
 #include <QLayout>
 #include <QScrollBar>
@@ -294,6 +296,8 @@ void TrackContainerView::deleteTrackView( TrackView * _tv )
 	delete _tv;
 
 	Engine::audioEngine()->requestChangeInModel();
+	// The mixer channel made for the track goes with it, unless something else uses it
+	Engine::mixer()->releaseTrackChannel(t);
 	delete t;
 	Engine::audioEngine()->doneChangeInModel();
 }

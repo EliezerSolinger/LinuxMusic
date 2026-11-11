@@ -36,6 +36,9 @@ class QLineEdit;
 namespace lmms::gui
 {
 
+class TrackChannelControls;
+class VolumeKnob;
+
 class AutomatableButton;
 class EffectRackView;
 class Knob;
@@ -89,8 +92,9 @@ private:
 
 	// widgets on the top of an sample-track-window
 	QLineEdit * m_nameLineEdit;
-	Knob * m_volumeKnob;
+	VolumeKnob* m_volumeKnob;
 	Knob * m_panningKnob;
+	TrackChannelControls* m_channelControls = nullptr;
 	AutomatableButton* m_muteBtn;
 	AutomatableButton* m_soloBtn;
 	MixerChannelLcdSpinBox * m_mixerChannelNumber;

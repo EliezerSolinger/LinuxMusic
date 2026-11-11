@@ -98,32 +98,60 @@ void EffectChain::loadSettings( const QDomElement & _this )
 	{
 		if( node.isElement() && node.nodeName() == "effect" )
 		{
-			QDomElement effectData = node.toElement();
-
-			const QString name = effectData.attribute( "name" );
-			EffectKey key( effectData.elementsByTagName( "key" ).item( 0 ).toElement() );
-
-			auto e = std::make_unique<PluginInstance>(Plugin::Type::Effect, name, this, &key);
-
-			// Before loading the pins, so that pins to auxiliary track channels exist
-			e->setTrackChannelCount(m_trackChannels);
-
-			if (e->effect() && e->effectRef().isOkay() && e->effectRef().nodeName() == node.nodeName())
-			{
-				e->effectRef().restoreState(effectData);
-				e->loadPins(effectData);
-			}
-			else
-			{
-				e->convertToDummyEffect(parentModel(), effectData);
-			}
-
-			m_effects.push_back(std::move(e));
+			m_effects.push_back(loadEffect(node.toElement()));
 			++fx_loaded;
 		}
 		node = node.nextSibling();
 	}
 
+	emit dataChanged();
+}
+
+
+
+
+auto EffectChain::loadEffect(const QDomElement& effectData) -> std::unique_ptr<PluginInstance>
+{
+	const QString name = effectData.attribute("name");
+	EffectKey key(effectData.elementsByTagName("key").item(0).toElement());
+
+	auto e = std::make_unique<PluginInstance>(Plugin::Type::Effect, name, this, &key);
+
+	// Before loading the pins, so that pins to auxiliary track channels exist
+	e->setTrackChannelCount(m_trackChannels);
+
+	if (e->effect() && e->effectRef().isOkay() && e->effectRef().nodeName() == effectData.nodeName())
+	{
+		e->effectRef().restoreState(effectData);
+		e->loadPins(effectData);
+	}
+	else
+	{
+		e->convertToDummyEffect(parentModel(), effectData);
+	}
+	return e;
+}
+
+
+
+
+void EffectChain::prependEffects(const QDomElement& savedChain)
+{
+	// The saved chain's effects are created in this chain, so that they belong to it from the start
+	auto loaded = EffectList{};
+	const int count = savedChain.attribute("numofeffects").toInt();
+	for (auto node = savedChain.firstChildElement("effect"); !node.isNull() && static_cast<int>(loaded.size()) < count;
+		node = node.nextSiblingElement("effect"))
+	{
+		loaded.push_back(loadEffect(node));
+	}
+	if (loaded.empty()) { return; }
+
+	Engine::audioEngine()->requestChangeInModel();
+	m_effects.insert(m_effects.begin(), std::make_move_iterator(loaded.begin()), std::make_move_iterator(loaded.end()));
+	Engine::audioEngine()->doneChangeInModel();
+
+	m_enabledModel.setValue(true);
 	emit dataChanged();
 }
 

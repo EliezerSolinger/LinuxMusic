@@ -26,10 +26,13 @@
 
 #include "AudioBuffer.h"
 #include "AudioEngine.h"
+#include "AutomationClip.h"
+#include "AutomationTrack.h"
 #include "Engine.h"
 #include "DataFile.h"
 #include "Effect.h"
 #include "EffectControls.h"
+#include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "PluginChecks.h"
 #include "PluginInstance.h"
@@ -480,15 +483,18 @@ private slots:
 		journal->setJournalling(true);
 		journal->clearJournal();
 
+		// (the track got a channel of its own when created, which it does not use anymore)
+		const auto channels = mixer()->numChannels();
+
 		// Deleting channel a removes its sends and renumbers channel b, so the track moves to channel a
 		mixer()->deleteChannel(a);
-		QCOMPARE(mixer()->numChannels(), 2);
+		QCOMPARE(mixer()->numChannels(), channels - 1);
 		QCOMPARE(track->mixerChannelModel()->value(), a);
 
 		// One action is one undo step, and it brings back the channel, its send and the track's channel
 		journal->undo();
 		QCOMPARE(journal->canUndo(), false);
-		QCOMPARE(mixer()->numChannels(), 3);
+		QCOMPARE(mixer()->numChannels(), channels);
 		QVERIFY(mixer()->channelSendModel(a, b) != nullptr);
 		QCOMPARE(track->mixerChannelModel()->value(), b);
 
@@ -750,6 +756,139 @@ private slots:
 		QCOMPARE(mixer()->mixerChannel(channel)->channelCount(), 4);
 
 		journal->setJournalling(false);
+	}
+
+	/////////////////////////////////////
+	// A mixer channel for each track  //
+	/////////////////////////////////////
+
+	void newTrackGetsItsOwnChannel()
+	{
+		auto track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track);
+		const auto index = track->mixerChannelModel()->value();
+		QVERIFY(index > 0);
+		const auto channel = mixer()->mixerChannel(index);
+		QVERIFY(channel->m_trackChannel);
+		QVERIFY(mixer()->channelSendModel(index, 0) != nullptr);
+
+		// The channel follows the track's name and color
+		track->setName("Bass");
+		QCOMPARE(channel->m_name, QString{"Bass"});
+		track->setColor(QColor{Qt::red});
+		QCOMPARE(channel->color(), std::optional<QColor>{QColor{Qt::red}});
+
+		// And goes away with the track
+		mixer()->releaseTrackChannel(track);
+		QCOMPARE(mixer()->numChannels(), 1);
+		QCOMPARE(track->mixerChannelModel()->value(), 0);
+		delete track;
+	}
+
+	void trackStripMovesIntoItsChannel()
+	{
+		// Like a track of a project from before: on the master, with its own volume, panning and an effect
+		auto track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		mixer()->releaseTrackChannel(track);
+		QCOMPARE(track->mixerChannelModel()->value(), 0);
+		track->volumeModel()->setValue(50.f);
+		track->panningModel()->setValue(-40.f);
+		track->audioBusHandle()->effects()->appendEffect(
+			std::make_unique<PluginInstance>(std::make_unique<FakeDucker>(), Plugin::Type::Effect));
+
+		const auto index = mixer()->setUpTrackChannel(track);
+		QVERIFY(index > 0);
+		QCOMPARE(track->mixerChannelModel()->value(), index);
+
+		const auto channel = mixer()->mixerChannel(index);
+		// The volume came before the effects, so it becomes the input trim, which does too
+		QVERIFY(std::abs(channel->m_trimModel.value() - ampToDbfs(0.5f)) < 0.001f);
+		QCOMPARE(channel->m_volumeModel.value(), 1.f);
+		QVERIFY(qFuzzyCompare(channel->m_panModel.value(), -40.f));
+		QCOMPARE(track->volumeModel()->value(), static_cast<float>(DefaultVolume));
+		QCOMPARE(track->panningModel()->value(), static_cast<float>(DefaultPanning));
+
+		// The effect is the channel's now (a DummyEffect, since the fake effect cannot be loaded by name)
+		QVERIFY(track->audioBusHandle()->effects()->effects().empty());
+		QCOMPARE(channel->m_fxChain.effects().size(), std::size_t{1});
+
+		// Setting up again changes nothing
+		QCOMPARE(mixer()->setUpTrackChannel(track), index);
+		QCOMPARE(channel->m_fxChain.effects().size(), std::size_t{1});
+
+		channel->m_fxChain.clear();
+		delete track;
+	}
+
+	void trackOnASharedChannelGetsItsOwnSendingThere()
+	{
+		const auto bus = mixer()->createChannel();
+		auto a = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		auto b = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		mixer()->releaseTrackChannel(a);
+		mixer()->releaseTrackChannel(b);
+		a->mixerChannelModel()->setValue(bus);
+		b->mixerChannelModel()->setValue(bus);
+
+		mixer()->setUpTrackChannels();
+		const auto ownA = a->mixerChannelModel()->value();
+		const auto ownB = b->mixerChannelModel()->value();
+		QVERIFY(ownA != bus && ownB != bus && ownA != ownB);
+
+		// Both still reach the bus, and through it the master
+		QVERIFY(mixer()->channelSendModel(ownA, bus) != nullptr);
+		QVERIFY(mixer()->channelSendModel(ownB, bus) != nullptr);
+		QVERIFY(mixer()->channelSendModel(ownA, 0) == nullptr);
+
+		delete a;
+		delete b;
+	}
+
+	void releasingKeepsAChannelOthersUse()
+	{
+		auto track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		const auto index = track->mixerChannelModel()->value();
+		const auto other = mixer()->createChannel();
+		mixer()->createChannelSend(other, index);
+
+		mixer()->releaseTrackChannel(track);
+		QCOMPARE(track->mixerChannelModel()->value(), index);
+		QVERIFY(index < mixer()->numChannels());
+		delete track;
+	}
+
+	void automatedTrackVolumeStaysOnTheTrack()
+	{
+		auto track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		mixer()->releaseTrackChannel(track);
+		track->volumeModel()->setValue(50.f);
+		track->panningModel()->setValue(30.f);
+
+		auto automationTrack = AutomationTrack{Engine::getSong()};
+		auto clip = AutomationClip{&automationTrack};
+		clip.addObject(track->volumeModel());
+
+		const auto index = mixer()->setUpTrackChannel(track);
+		const auto channel = mixer()->mixerChannel(index);
+		QCOMPARE(mixer()->trackChannel(track), channel);
+
+		// The automation acts on the track's volume, so it stays there; the panning moves
+		QCOMPARE(track->volumeModel()->value(), 50.f);
+		QCOMPARE(channel->m_trimModel.value(), 0.f);
+		QVERIFY(qFuzzyCompare(channel->m_panModel.value(), 30.f));
+		QCOMPARE(track->panningModel()->value(), static_cast<float>(DefaultPanning));
+
+		// A track sending to a channel made for another track has no channel of its own
+		auto other = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		mixer()->releaseTrackChannel(other);
+		other->mixerChannelModel()->setValue(index);
+		QCOMPARE(mixer()->trackChannel(other), static_cast<MixerChannel*>(nullptr));
+
+		other->mixerChannelModel()->setValue(0);
+		delete other;
+		mixer()->releaseTrackChannel(track);
+		QCOMPARE(mixer()->trackChannel(track), static_cast<MixerChannel*>(nullptr));
+		delete track;
 	}
 };
 

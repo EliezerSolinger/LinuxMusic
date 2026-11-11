@@ -63,6 +63,9 @@ public:
 		return &m_mixerChannelModel;
 	}
 
+	FloatModel* volumeModel() { return &m_volumeModel; }
+	FloatModel* panningModel() { return &m_panningModel; }
+
 	inline AudioBusHandle* audioBusHandle()
 	{
 		return &m_audioBusHandle;

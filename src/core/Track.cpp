@@ -40,6 +40,7 @@
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "SampleTrack.h"
+#include "Mixer.h"
 #include "Song.h"
 
 
@@ -79,6 +80,15 @@ Track::~Track()
 
 
 
+namespace
+{
+
+//! Set while a track is created from saved settings, which say which mixer channel it uses
+thread_local bool s_creatingSavedTrack = false;
+
+} // namespace
+
+
 Track * Track::create( Type tt, TrackContainer * tc )
 {
 	Engine::audioEngine()->requestChangeInModel();
@@ -105,6 +115,14 @@ Track * Track::create( Type tt, TrackContainer * tc )
 
 	tc->updateAfterTrackAdd();
 
+	// A new instrument or sample track of the song or the pattern editor gets its own mixer channel
+	// (not while the engine itself is being set up)
+	if (t && !s_creatingSavedTrack && Engine::getSong() && Engine::mixer() && Engine::patternStore()
+		&& !Engine::getSong()->isLoadingProject() && (tc == Engine::getSong() || tc == Engine::patternStore()))
+	{
+		Engine::mixer()->setUpTrackChannel(t);
+	}
+
 	Engine::audioEngine()->doneChangeInModel();
 
 	return t;
@@ -117,9 +135,11 @@ Track * Track::create( const QDomElement & element, TrackContainer * tc )
 {
 	Engine::audioEngine()->requestChangeInModel();
 
+	s_creatingSavedTrack = true;
 	Track * t = create(
 		static_cast<Type>( element.attribute( "type" ).toInt() ),
 									tc );
+	s_creatingSavedTrack = false;
 	if( t != nullptr )
 	{
 		t->restoreState( element );

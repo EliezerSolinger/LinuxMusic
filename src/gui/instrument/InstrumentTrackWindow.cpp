@@ -65,6 +65,7 @@
 #include "StringPairDrag.h"
 #include "SubWindow.h"
 #include "TabWidget.h"
+#include "TrackChannelControls.h"
 #include "TrackContainerView.h"
 #include "TrackLabelButton.h"
 
@@ -384,6 +385,8 @@ void InstrumentTrackWindow::modelChanged()
 	m_arpeggioView->setModel(&m_track->m_arpeggio);
 	m_midiView->setModel(&m_track->m_midiPort);
 	m_effectView->setModel(m_track->m_audioBusHandle.effects());
+	m_channelControls = TrackChannelControls::replace(m_channelControls, m_track, this, m_volumeKnob,
+		m_panningKnob, m_effectView);
 	m_tuningView->pitchGroupBox()->setModel(&m_track->m_useMasterPitchModel);
 	m_tuningView->microtunerGroupBox()->setModel(m_track->m_microtuner.enabledModel());
 	m_tuningView->scaleCombo()->setModel(m_track->m_microtuner.scaleModel());

@@ -45,6 +45,7 @@
 #include "SampleTrackWindow.h"
 #include "SongEditor.h"
 #include "StringPairDrag.h"
+#include "TrackChannelControls.h"
 #include "TrackContainerView.h"
 #include "TrackLabelButton.h"
 
@@ -186,6 +187,8 @@ void SampleTrackView::modelChanged()
 	auto st = castModel<SampleTrack>();
 	m_volumeKnob->setModel(&st->m_volumeModel);
 	m_mixerChannelNumber->setModel(&st->m_mixerChannelModel);
+	m_channelControls = TrackChannelControls::replace(m_channelControls, st, this, m_volumeKnob, m_panningKnob,
+		nullptr);
 
 	TrackView::modelChanged();
 }

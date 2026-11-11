@@ -97,6 +97,12 @@ public:
 public slots:
 	int addNewChannel();
 
+	//! Adds views for channels the mixer has but the view does not have yet
+	void addMissingChannelViews();
+
+	//! Removes the view of a channel the mixer deleted
+	void removeChannelView(int index);
+
 private slots:
 	void updateFaders();
 	// TODO This should be improved. Currently the solo and mute models are connected via

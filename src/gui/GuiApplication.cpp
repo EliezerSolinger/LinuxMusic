@@ -33,6 +33,7 @@
 #include "ConfigManager.h"
 #include "ControllerRackView.h"
 #include "InstrumentTrackView.h"
+#include "InstrumentTrackWindow.h"
 #include "MixerView.h"
 #include "MainWindow.h"
 #include "MicrotunerConfig.h"
@@ -41,6 +42,7 @@
 #include "ProjectNotes.h"
 #include "PluginBrowser.h"
 #include "SongEditor.h"
+#include "TabWidget.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -219,15 +221,24 @@ GuiApplication::GuiApplication()
 				QMetaObject::invokeMethod(m_mainWindow, "togglePatternEditorWin", Q_ARG(bool, true));
 			});
 		}
-		// =pins opens the pin connector of the first instrument instead
-		if (screenshotAction == "instrument" || screenshotAction == "pins")
+		// =pins opens the pin connector of the first instrument instead, =effects its effects tab
+		if (screenshotAction == "instrument" || screenshotAction == "pins" || screenshotAction == "effects")
 		{
 			QTimer::singleShot(2500, m_mainWindow, [this, screenshotAction] {
 				const auto views = m_mainWindow->findChildren<InstrumentTrackView*>();
 				if (views.isEmpty()) { return; }
 				if (screenshotAction == "pins") { QMetaObject::invokeMethod(views.first(), "togglePinConnector"); }
 				else { QMetaObject::invokeMethod(views.first(), "toggleInstrumentWindow", Q_ARG(bool, true)); }
+				if (screenshotAction == "effects")
+				{
+					views.first()->getInstrumentTrackWindow()->tabWidgetParent()->setActiveTab(3);
+				}
 			});
+		}
+		// =mixer shows the mixer
+		if (screenshotAction == "mixer")
+		{
+			QTimer::singleShot(2500, m_mainWindow, [this] { m_mainWindow->toggleMixerWin(); });
 		}
 		QTimer::singleShot(4000, m_mainWindow, [this, screenshotPath, screenshotAction] {
 			// =plugins captures the plugin browser of the side bar instead of the main window

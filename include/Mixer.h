@@ -44,6 +44,7 @@ namespace lmms
 
 
 class MixerRoute;
+class Track;
 using MixerRouteVector = std::vector<MixerRoute*>;
 
 //! Where a mixer channel takes audio from, besides the tracks and channels that send to it.
@@ -144,6 +145,10 @@ public:
 	void unmuteForSolo();
 	void unmuteSenderForSolo();
 	void unmuteReceiverForSolo();
+
+	//! Whether the channel was made for a track (see Mixer::setUpTrackChannel()): it is named and colored
+	//! after the track, and goes away with it
+	bool m_trackChannel = false;
 
 	auto color() const -> const std::optional<QColor>& { return m_color; }
 	void setColor(const std::optional<QColor>& color) { m_color = color; }
@@ -296,6 +301,28 @@ public:
 	 */
 	void setChannelCount(mix_ch_t index, ch_cnt_t channels);
 
+	/**
+	 * Makes the mixer channel the only strip of @p track (an instrument or sample track), so that effects,
+	 * volume and panning live in the mixer:
+	 * - if the track sends to the master, to a channel that other tracks send to as well, or to a bus (a channel
+	 *   other channels send to), it gets a channel of its own, named and colored after it, which sends where the
+	 *   track sent; a channel only the track uses becomes the track's channel;
+	 * - the track's own effects move to the front of its channel's effects, and its volume and panning into the
+	 *   channel's input trim and pan (unless automated or controlled: then they stay on the track).
+	 *
+	 * @returns the track's channel, or -1 if @p track has no mixer channel
+	 */
+	int setUpTrackChannel(Track* track);
+
+	//! setUpTrackChannel() for every instrument and sample track of the song and the pattern editor
+	void setUpTrackChannels();
+
+	//! Deletes the channel made for @p track (see setUpTrackChannel()) unless something else uses it
+	void releaseTrackChannel(Track* track);
+
+	//! The channel made for @p track (see setUpTrackChannel()), or nullptr if it sends to another channel
+	auto trackChannel(const Track* track) const -> MixerChannel*;
+
 	// determine if adding a send from sendFrom to
 	// sendTo would result in an infinite mixer loop.
 	bool isInfiniteLoop(mix_ch_t fromChannel, mix_ch_t toChannel);
@@ -349,6 +376,8 @@ signals:
 	void channelCountChanged(int index);
 	void channelDeleted(int index);
 	void channelsSwapped(int fromIndex, int toIndex);
+	//! A track got or lost a channel of its own (see setUpTrackChannel())
+	void trackChannelChanged(lmms::Track* track);
 
 private:
 	// the mixer channels in the mixer. index 0 is always master.

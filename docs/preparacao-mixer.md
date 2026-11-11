@@ -165,3 +165,49 @@ Tudo é salvo e carregado com o projeto. O áudio de entrada ainda **não** é l
 - Ainda **não** entram no histórico: renomear canal e mudar a cor. A interface altera esses campos direto; isso será
   ajustado na interface nova (passo 9).
 - `MixerTest` tem 30 testes.
+
+### Passo 6: sidechain e multicanal (feito)
+
+Veja [multicanal.md](multicanal.md), fases 1 a 3b.
+
+### Passo 8: canal automático por faixa (feito)
+
+Feito antes do passo 7 (PDC), que depende da extensão de latência da fase 4 da API.
+
+- **Faixa nova:** toda faixa de instrumento ou de sample criada na música ou no editor de sequências ganha um canal do
+  mixer próprio, com o nome e a cor dela, enviando ao master (`Mixer::setUpTrackChannel()`). O canal acompanha o
+  nome e a cor da faixa enquanto for dela.
+- **Projetos antigos:** ao carregar, cada faixa passa pela mesma regra (`Mixer::setUpTrackChannels()`, no fim de
+  `Song::loadProject`):
+  - faixa sozinha num canal comum: esse canal passa a ser dela;
+  - faixa no master, num canal usado por outras faixas ou num barramento (um canal que recebe envios): ganha um canal
+    próprio, que envia para onde a faixa mandava antes. O som e o roteamento continuam os mesmos.
+- **Efeitos da faixa:** vão para a frente dos efeitos do canal. O rack de efeitos da faixa sai da interface: a aba
+  "Efeitos" da janela do instrumento e a janela da faixa de sample mostram os efeitos do canal.
+- **Volume e pan da faixa:**
+  - O volume da faixa vinha antes dos efeitos, por isso vira o **trim** do canal, que também vem antes, e um
+    compressor ou uma distorção recebem o mesmo nível de antes. O que passa da faixa do trim (±24 dB) vai para o
+    fader. O pan da faixa soma ao pan do canal.
+  - Os knobs VOL e PAN da faixa (na lista de faixas e na janela) passam a ser **atalhos** do fader e do pan do canal
+    (`gui::TrackChannelControls`).
+  - **Exceção:** volume ou pan da faixa com automação ou controlador ficam na faixa, porque a automação age sobre
+    eles. O knob correspondente continua mostrando o da faixa.
+- **Faixa que manda para um canal de outros** (escolhido à mão depois): não tem canal próprio. Os knobs e o rack
+  mostram o volume, o pan e os efeitos da própria faixa, que continuam funcionando. Nada se perde.
+- **Apagar a faixa** apaga o canal dela, se nada mais usa o canal.
+- O trim passou a ter passo de 0,001 dB (era 0,1), para o volume das faixas antigas virar trim sem arredondar.
+
+Diferenças de som medidas na bateria A/B (43 projetos):
+- Iguais, a menos de 1 LSB, nos projetos com volume da faixa em 100%.
+- Com volume da faixa diferente de 100%, o **primeiro período** com som muda: na build antiga, o volume da faixa
+  começava numa rampa de 100% até o valor salvo (o `valueBuffer` do modelo interpolava desde o padrão). Agora o
+  volume vale desde a primeira amostra. Efeitos com memória (eco, reverb, compressor) carregam essa diferença no
+  rastro. É a correção de um defeito, não uma regressão.
+
+**Pendente, anterior a este passo:** sob carga pesada (8 renders em paralelo), cerca de 1 render em 10 de
+instrumentos por nota (TripleOscillator) diverge da referência a partir de um limite de nota, com diferença de fase
+de ~0,5%. As frequências das notas são iguais. Para reproduzir: renderizar `inst-tripleosc` 10 vezes em paralelo e
+comparar. A build de referência não mostra o problema. Investigar junto com a parte F da fase 4 (instrumentos por
+nota).
+
+`MixerTest` tem 46 testes.

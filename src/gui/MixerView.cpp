@@ -63,6 +63,10 @@ MixerView::MixerView(Mixer* mixer) :
 {
 	mixer->setHook(this);
 
+	// Channels made or removed elsewhere, e.g. with tracks (see Mixer::setUpTrackChannel())
+	connect(mixer, &Mixer::channelCreated, this, [this](int) { addMissingChannelViews(); });
+	connect(mixer, &Mixer::channelDeleted, this, [this](int index) { removeChannelView(index); });
+
 	//QPalette pal = palette();
 	//pal.setColor(QPalette::Window, QColor(72, 76, 88));
 	//setPalette(pal);
@@ -176,15 +180,57 @@ int MixerView::addNewChannel()
 	// add new mixer channel and redraw the form.
 	Mixer * mix = getMixer();
 
+	// The view is added when the mixer announces the channel
 	int newChannelIndex = mix->createChannel();
-	m_mixerChannelViews.push_back(new MixerChannelView(m_channelAreaWidget, this, newChannelIndex));
-	connectToSoloAndMute(newChannelIndex);
-	chLayout->addWidget(m_mixerChannelViews[newChannelIndex]);
-	m_racksLayout->addWidget(m_mixerChannelViews[newChannelIndex]->m_effectRackView);
-
 	updateMixerChannel(newChannelIndex);
 
 	return newChannelIndex;
+}
+
+
+
+
+void MixerView::addMissingChannelViews()
+{
+	// Only once the views exist; refreshDisplay() makes them all
+	if (m_mixerChannelViews.isEmpty()) { return; }
+
+	for (int i = m_mixerChannelViews.size(); i < getMixer()->numChannels(); ++i)
+	{
+		m_mixerChannelViews.push_back(new MixerChannelView(m_channelAreaWidget, this, i));
+		connectToSoloAndMute(i);
+		chLayout->addWidget(m_mixerChannelViews[i]);
+		m_racksLayout->addWidget(m_mixerChannelViews[i]->m_effectRackView);
+		updateMixerChannel(i);
+	}
+}
+
+
+
+
+void MixerView::removeChannelView(int index)
+{
+	if (index <= 0 || index >= m_mixerChannelViews.size()) { return; }
+
+	// The channel's models are gone, which disconnected them from the view already
+	const int selected = m_currentMixerChannel ? m_currentMixerChannel->channelIndex() : 0;
+
+	chLayout->removeWidget(m_mixerChannelViews[index]);
+	m_racksLayout->removeWidget(m_mixerChannelViews[index]->m_effectRackView);
+	// delete the view later to prevent a crash when deleting from its context menu
+	m_mixerChannelViews[index]->m_effectRackView->hide();
+	m_mixerChannelViews[index]->hide();
+	m_mixerChannelViews[index]->deleteLater();
+	m_channelAreaWidget->adjustSize();
+
+	// make sure every channel knows what index it is
+	for (int i = index + 1; i < m_mixerChannelViews.size(); ++i)
+	{
+		m_mixerChannelViews[i]->setChannelIndex(i - 1);
+	}
+	m_mixerChannelViews.remove(index);
+
+	setCurrentMixerChannel(std::min<int>(selected > index ? selected - 1 : selected, m_mixerChannelViews.size() - 1));
 }
 
 
@@ -354,22 +400,8 @@ void MixerView::deleteChannel(int index)
 	// channels will be left in a muted state
 	mixer->clearChannel(index);
 
-	// delete the real channel
+	// delete the real channel; its view goes away when the mixer announces it (see removeChannelView())
 	mixer->deleteChannel(index);
-
-	chLayout->removeWidget(m_mixerChannelViews[index]);
-	m_racksLayout->removeWidget(m_mixerChannelViews[index]);
-	// delete MixerChannelView later to prevent a crash when deleting from context menu
-	m_mixerChannelViews[index]->hide();
-	m_mixerChannelViews[index]->deleteLater();
-	m_channelAreaWidget->adjustSize();
-
-	// make sure every channel knows what index it is
-	for (int i = index + 1; i < m_mixerChannelViews.size(); ++i)
-	{
-		m_mixerChannelViews[i]->setChannelIndex(i - 1);
-	}
-	m_mixerChannelViews.remove(index);
 
 	// select the next channel
 	if (selLine >= m_mixerChannelViews.size())

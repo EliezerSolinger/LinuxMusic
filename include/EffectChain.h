@@ -65,6 +65,9 @@ public:
 	}
 
 	void appendEffect(std::unique_ptr<PluginInstance> effect);
+
+	//! Loads the effects of a saved chain (an element saved by saveState()) in front of this chain's effects
+	void prependEffects(const QDomElement& savedChain);
 	void removeEffect( Effect * _effect );
 	void moveDown( Effect * _effect );
 	void moveUp( Effect * _effect );
@@ -90,6 +93,9 @@ public:
 
 private:
 	auto find(const Effect* effect) -> EffectList::iterator;
+
+	//! Creates the effect saved in @p effectData in this chain (a DummyEffect if it cannot be loaded)
+	auto loadEffect(const QDomElement& effectData) -> std::unique_ptr<PluginInstance>;
 
 	EffectList m_effects;
 

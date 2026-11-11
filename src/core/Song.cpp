@@ -1171,6 +1171,9 @@ void Song::loadProject( const QString & fileName )
 	// resolve all IDs so that autoModels are automated
 	AutomationClip::resolveAllIDs();
 
+	// Every instrument and sample track gets its own mixer channel, which takes over the track's effects,
+	// volume and panning (projects from before that, or from LMMS)
+	Engine::mixer()->setUpTrackChannels();
 
 	Engine::audioEngine()->doneChangeInModel();
 

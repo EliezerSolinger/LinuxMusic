@@ -41,6 +41,9 @@ namespace lmms
 namespace gui
 {
 
+class TrackChannelControls;
+class VolumeKnob;
+
 class AutomatableButton;
 class EffectRackView;
 class MixerChannelLcdSpinBox;
@@ -141,8 +144,9 @@ private:
 	// widgets on the top of an instrument-track-window
 	QLineEdit * m_nameLineEdit;
 	LeftRightNav * m_leftRightNav;
-	Knob * m_volumeKnob;
+	VolumeKnob* m_volumeKnob;
 	Knob * m_panningKnob;
+	TrackChannelControls* m_channelControls = nullptr;
 	Knob * m_pitchKnob;
 	AutomatableButton* m_muteBtn;
 	AutomatableButton* m_soloBtn;

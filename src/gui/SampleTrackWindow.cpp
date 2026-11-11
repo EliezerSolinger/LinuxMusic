@@ -41,6 +41,7 @@
 #include "SampleTrackView.h"
 #include "Song.h"
 #include "SubWindow.h"
+#include "TrackChannelControls.h"
 #include "TrackLabelButton.h"
 
 namespace lmms::gui
@@ -190,6 +191,8 @@ void SampleTrackWindow::modelChanged()
 	m_volumeKnob->setModel(&m_track->m_volumeModel);
 	m_panningKnob->setModel(&m_track->m_panningModel);
 	m_mixerChannelNumber->setModel(&m_track->m_mixerChannelModel);
+	m_channelControls = TrackChannelControls::replace(m_channelControls, m_track, this, m_volumeKnob,
+		m_panningKnob, m_effectRack);
 
 	updateName();
 }

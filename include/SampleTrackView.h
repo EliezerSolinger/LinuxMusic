@@ -35,6 +35,9 @@ namespace lmms
 namespace gui
 {
 
+class TrackChannelControls;
+class VolumeKnob;
+
 class Knob;
 class MixerChannelLcdSpinBox;
 class SampleTrackWindow;
@@ -94,8 +97,9 @@ private slots:
 private:
 	SampleTrackWindow * m_window;
 	MixerChannelLcdSpinBox* m_mixerChannelNumber;
-	Knob * m_volumeKnob;
+	VolumeKnob* m_volumeKnob;
 	Knob * m_panningKnob;
+	TrackChannelControls* m_channelControls = nullptr;
 	FadeButton * m_activityIndicator;
 
 	TrackLabelButton * m_tlb;

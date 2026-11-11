@@ -50,6 +50,7 @@
 #include "MidiClient.h"
 #include "MidiCCRackView.h"
 #include "MidiPortMenu.h"
+#include "TrackChannelControls.h"
 #include "TrackContainerView.h"
 #include "Mixer.h"
 #include "MixerChannelLcdSpinBox.h"
@@ -310,6 +311,8 @@ void InstrumentTrackView::modelChanged()
 	TrackView::modelChanged();
 	auto st = castModel<InstrumentTrack>();
 	m_mixerChannelNumber->setModel(&st->m_mixerChannelModel);
+	m_channelControls = TrackChannelControls::replace(m_channelControls, st, this, m_volumeKnob, m_panningKnob,
+		nullptr);
 }
 
 void InstrumentTrackView::dragEnterEvent( QDragEnterEvent * _dee )

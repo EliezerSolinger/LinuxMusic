@@ -25,6 +25,7 @@
 #include "Mixer.h"
 
 #include <QDomElement>
+#include <QVariant>
 
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
@@ -40,6 +41,8 @@
 #include "ProjectJournal.h"
 #include "SampleTrack.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
+#include "AudioBusHandle.h"
+#include "EffectChain.h"
 
 namespace lmms
 {
@@ -100,7 +103,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_muteModel( false, _parent ),
 	m_soloModel( false, _parent ),
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
-	m_trimModel(0.f, -24.f, 24.f, 0.1f, _parent),
+	m_trimModel(0.f, -24.f, 24.f, 0.001f, _parent),
 	m_swapChannelsModel(false, _parent),
 	m_phaseInvertModel(false, _parent),
 	m_widthModel(100.f, 0.f, 200.f, 1.f, _parent),
@@ -399,7 +402,7 @@ auto tracksWithMixerChannel() -> std::vector<std::pair<Track*, IntModel*>>
 		if (!container) { continue; }
 		for (const auto track : container->tracks())
 		{
-			if (auto instrumentTrack = dynamic_cast<InstrumentTrack*>(track))
+			if (auto instrumentTrack = dynamic_cast<InstrumentTrack*>(const_cast<Track*>(track)))
 			{
 				result.emplace_back(track, instrumentTrack->mixerChannelModel());
 			}
@@ -975,6 +978,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_widthModel.setValue(100.f);
 	ch->m_panModel.setValue(PanningCenter);
 	ch->m_input = ChannelInput{};
+	ch->m_trackChannel = false;
 	setChannelCount(index, DEFAULT_CHANNELS);
 	ch->m_recordArmModel.setValue(false);
 	ch->m_monitorModel.setValue(static_cast<int>(MixerChannel::MonitorMode::Auto));
@@ -1042,6 +1046,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		}
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
 		if (ch->channelCount() != DEFAULT_CHANNELS) { mixch.setAttribute("channels", ch->channelCount()); }
+		if (ch->m_trackChannel) { mixch.setAttribute("trackchannel", 1); }
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
 
@@ -1112,6 +1117,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 				input.attribute("channel").toInt(), std::clamp(input.attribute("channels", "2").toInt(), 1, 2)});
 		}
 		m_mixerChannels[num]->m_name = mixch.attribute( "name" );
+		m_mixerChannels[num]->m_trackChannel = mixch.attribute("trackchannel", "0").toInt() != 0;
 		if (mixch.hasAttribute("color"))
 		{
 			m_mixerChannels[num]->setColor(QColor{mixch.attribute("color")});
@@ -1169,6 +1175,183 @@ bool Mixer::isChannelInUse(int index)
 	if (!m_mixerChannels[index]->m_receives.empty()) { return true; }
 
 	return m_mixerChannels[index]->useCount() > 0;
+}
+
+
+namespace
+{
+
+//! What an instrument or sample track has of a mixer strip of its own
+struct TrackStrip
+{
+	IntModel* channel;
+	FloatModel* volume;
+	FloatModel* panning;
+	AudioBusHandle* bus;
+};
+
+auto stripOf(const Track* track) -> std::optional<TrackStrip>
+{
+	if (auto instrumentTrack = dynamic_cast<InstrumentTrack*>(const_cast<Track*>(track)))
+	{
+		return TrackStrip{instrumentTrack->mixerChannelModel(), instrumentTrack->volumeModel(),
+			instrumentTrack->panningModel(), instrumentTrack->audioBusHandle()};
+	}
+	if (auto sampleTrack = dynamic_cast<SampleTrack*>(const_cast<Track*>(track)))
+	{
+		return TrackStrip{sampleTrack->mixerChannelModel(), sampleTrack->volumeModel(), sampleTrack->panningModel(),
+			sampleTrack->audioBusHandle()};
+	}
+	return std::nullopt;
+}
+
+} // namespace
+
+
+int Mixer::setUpTrackChannel(Track* track)
+{
+	const auto strip = stripOf(track);
+	if (!strip) { return -1; }
+
+	const auto change = StructureChange{*this};
+
+	// A channel of its own
+	int index = strip->channel->value();
+	if (index < 0 || index >= numChannels()) { index = 0; }
+	const auto tracks = tracksWithMixerChannel();
+	const auto users = std::count_if(tracks.begin(), tracks.end(), [index](const auto& entry) {
+		return entry.second->value() == index;
+	});
+	// A bus (a channel other channels send to) is not a track's own channel either, unless made for it
+	const bool bus = !m_mixerChannels[index]->m_trackChannel && !m_mixerChannels[index]->m_receives.empty();
+	const bool shared = index == 0 || users > 1 || bus;
+	if (!shared)
+	{
+		// The track's alone on it: it is the track's channel (e.g. in projects from before)
+		m_mixerChannels[index]->m_trackChannel = true;
+	}
+	else
+	{
+		const int sendTo = index;
+		index = createChannel();
+		auto channel = m_mixerChannels[index];
+		channel->m_name = track->name();
+		channel->setColor(track->color());
+		channel->m_trackChannel = true;
+
+		// Where the track sent before
+		if (sendTo != 0)
+		{
+			deleteChannelSend(index, 0);
+			createChannelSend(index, sendTo);
+		}
+		strip->channel->setValue(index);
+	}
+	auto channel = m_mixerChannels[index];
+
+	// A channel made for the track follows its name and color
+	if (!track->property("followedByMixerChannel").toBool())
+	{
+		track->setProperty("followedByMixerChannel", true);
+		auto follow = [this, track] {
+			const auto followed = stripOf(track);
+			const int i = followed ? followed->channel->value() : 0;
+			if (i <= 0 || i >= numChannels() || !m_mixerChannels[i]->m_trackChannel) { return; }
+			m_mixerChannels[i]->m_name = track->name();
+			m_mixerChannels[i]->setColor(track->color());
+			emit dataChanged();
+		};
+		connect(track, &Track::nameChanged, this, follow);
+		connect(track, &Track::colorChanged, this, follow);
+	}
+
+	// The track's effects go in front of the channel's
+	if (auto effects = strip->bus->effects(); effects && !effects->effects().empty())
+	{
+		auto doc = DataFile{DataFile::Type::EffectSettings};
+		auto saved = effects->saveState(doc, doc.content());
+		channel->m_fxChain.prependEffects(saved);
+		effects->clear();
+	}
+
+	// The track's volume becomes the channel's input trim: like the track's volume, it comes before the effects,
+	// so effects like compressors get the same level. What the trim's range cannot take goes to the fader.
+	// Automated or controlled volume and panning stay on the track, where their automation acts.
+	const float trackVolume = strip->volume->value() / DefaultVolume;
+	if (trackVolume != 1.f && !strip->volume->isAutomatedOrControlled())
+	{
+		if (trackVolume <= 0.f) { channel->m_volumeModel.setValue(0.f); }
+		else
+		{
+			const float wanted = channel->m_trimModel.value() + ampToDbfs(trackVolume);
+			const float trim = std::clamp(wanted, channel->m_trimModel.minValue(), channel->m_trimModel.maxValue());
+			channel->m_trimModel.setValue(trim);
+			if (trim != wanted)
+			{
+				channel->m_volumeModel.setValue(channel->m_volumeModel.value() * dbfsToAmp(wanted - trim));
+			}
+		}
+		strip->volume->setValue(DefaultVolume);
+	}
+	if (strip->panning->value() != DefaultPanning && !strip->panning->isAutomatedOrControlled())
+	{
+		channel->m_panModel.setValue(std::clamp<float>(channel->m_panModel.value() + strip->panning->value(),
+			PanningLeft, PanningRight));
+		strip->panning->setValue(DefaultPanning);
+	}
+
+	emit trackChannelChanged(track);
+	return index;
+}
+
+
+
+
+void Mixer::setUpTrackChannels()
+{
+	for (const auto& [track, channel] : tracksWithMixerChannel()) { setUpTrackChannel(track); }
+}
+
+
+
+
+void Mixer::releaseTrackChannel(Track* track)
+{
+	const auto strip = stripOf(track);
+	if (!strip) { return; }
+
+	const int index = strip->channel->value();
+	if (index <= 0 || index >= numChannels() || !m_mixerChannels[index]->m_trackChannel) { return; }
+
+	// Only if no other track sends to it and no other channel either
+	const auto tracks = tracksWithMixerChannel();
+	const auto users = std::count_if(tracks.begin(), tracks.end(), [index](const auto& entry) {
+		return entry.second->value() == index;
+	});
+	if (users > 1 || !m_mixerChannels[index]->m_receives.empty()) { return; }
+
+	strip->channel->setValue(0);
+	deleteChannel(index);
+	emit trackChannelChanged(track);
+}
+
+
+
+
+auto Mixer::trackChannel(const Track* track) const -> MixerChannel*
+{
+	const auto strip = stripOf(track);
+	if (!strip) { return nullptr; }
+
+	const int index = strip->channel->value();
+	if (index <= 0 || index >= numChannels() || !m_mixerChannels[index]->m_trackChannel) { return nullptr; }
+
+	// Not if other tracks send to it too
+	const auto tracks = tracksWithMixerChannel();
+	const auto users = std::count_if(tracks.begin(), tracks.end(), [index](const auto& entry) {
+		return entry.second->value() == index;
+	});
+	return users == 1 ? m_mixerChannels[index] : nullptr;
 }
 
 
