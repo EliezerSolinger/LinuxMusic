@@ -15,6 +15,13 @@ A ordem é intencional. Primeiro se reduz o código para o que importa. Depois a
 remodelados já pensando em canais com entrada de áudio. Só então a gravação é construída sobre essa base,
 em vez de ser encaixada à força na estrutura antiga.
 
+## Referências de produto
+
+- **Mixer, efeitos e gerenciamento de plugins: FL Studio.** Mixer com canais e slots de efeito sempre à vista,
+  roteamento simples entre canais e plugins fáceis de achar, adicionar e organizar. O REAPER é fraco nesse ponto;
+  até o rack de efeitos atual do LMMS é melhor que o dele.
+- **Gravação de faixas: REAPER.** Armar faixas, escolher a entrada de cada uma, monitorar e gravar direto em disco.
+
 ## Regras gerais do projeto
 
 - **Linux é o destino final.** Tudo precisa compilar e funcionar no Linux. O macOS é usado só como máquina de

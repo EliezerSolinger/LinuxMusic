@@ -36,7 +36,7 @@ histórico do `master`.
 
 | PR / issue | O que faz | Interesse |
 |---|---|---|
-| [#7459 Add support for multi-channel plugins](https://github.com/LMMS/lmms/pull/7459) | Plugins com várias entradas e saídas e o **"Plugin Pin Connector", copiado do REAPER** (messmerd, ativo em 09/2026) | Muito alto: é exatamente a filosofia de roteamento que queremos |
+| [#7459 Add support for multi-channel plugins](https://github.com/LMMS/lmms/pull/7459) | Plugins com várias entradas e saídas e o **"Plugin Pin Connector", copiado do REAPER** (messmerd, ativo em 09/2026) | Alto: multicanal e roteamento de pinos (útil para entradas de gravação), mas a interface de plugins deve seguir o FL Studio, não o REAPER |
 | [#8317 Decouple tracks from the Mixer](https://github.com/LMMS/lmms/pull/8317) | Refatoração que desacopla faixas e mixer via signals/slots | Alto: facilita criar o channel strip por faixa |
 | [#6407 Automatic adding and linking of mixer strips](https://github.com/LMMS/lmms/pull/6407) / [#1215](https://github.com/LMMS/lmms/issues/1215) | Cria e liga automaticamente um canal do mixer para cada faixa nova | Alto: no estilo REAPER, cada faixa já é um canal (rascunho de 2022/2023) |
 | [#7714 Multiple Mixer Channel Selection](https://github.com/LMMS/lmms/pull/7714) | Selecionar vários canais e agir em todos | Médio |

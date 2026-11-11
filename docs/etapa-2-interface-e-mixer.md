@@ -21,6 +21,12 @@ Pontos a remodelar (lista a detalhar e priorizar):
 
 ## Parte B: base da mesa de som e dos canais
 
+**Referência: o mixer e o gerenciamento de efeitos/plugins do FL Studio** (não o do REAPER). Ideias do FL a seguir:
+- Cada canal do mixer tem uma lista de slots de efeito sempre visível ao lado, com liga/desliga e mix por slot.
+- Roteamento entre canais com um clique, com indicação visual de quem envia para quem.
+- Faixas e instrumentos ligados a um canal do mixer de forma direta.
+- Navegador de plugins organizado, com favoritos, busca e arrastar e soltar.
+
 Hoje, no LMMS, as faixas apenas apontam para um canal do mixer, e o mixer não tem noção de entrada de áudio
 externa. A base a preparar:
 
