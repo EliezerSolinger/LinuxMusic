@@ -25,8 +25,8 @@ Proposta de Dalton Messmer, baseada no CLAP:
 
 | Fase | Conteúdo |
 |---|---|
-| 1 | Fazer o branch do autor compilar sobre o nosso código e terminar a migração dele para o `AudioBuffer`. Trazer de volta as melhorias que o `master` recebeu depois (detecção de áudio corrompido, auto-quit). Todos os testes passando. |
-| 2 | Pin connector completo: todos os plugins nativos, LADSPA, LV2, VST, ZynAddSubFx e Carla; janela do pin connector. |
+| 1 ✅ | Fazer o branch do autor compilar sobre o nosso código e terminar a migração dele para o `AudioBuffer`. Trazer de volta as melhorias que o `master` recebeu depois (detecção de áudio corrompido, auto-quit). Todos os testes passando. |
+| 2 ✅ | Pin connector completo: todos os plugins nativos, LADSPA, LV2, VST, ZynAddSubFx e Carla; janela do pin connector. Detalhes e verificação em [api-plugins-mapa.md](api-plugins-mapa.md). |
 | 3 | Canais de faixa e de mixer além do estéreo, envios com pares de canais e sidechain de ponta a ponta, com testes de mixer. |
 | 4 | Nova API de plugins (#8275): `Host`/`PluginInstance`, estados e regras de thread, fila de eventos lock-free, extensões, `PluginId`/`PluginDescriptor`/`PluginEntry`, cabeçalhos públicos `include/lmms/plugin`, separação host/plugin e novo processamento de instrumentos. |
 | 5 | Hosts de CLAP e VST3. |

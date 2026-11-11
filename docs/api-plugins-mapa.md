@@ -1,5 +1,8 @@
 # Mapa do branch de trabalho da nova API de plugins
 
+> **Estado:** itens 1 a 13 da ordem de trabalho concluídos no branch `multicanal` (fases 1 e 2 de
+> [multicanal.md](multicanal.md), exceto a janela do pin connector integrada à nova interface).
+
 Levantamento de 11/11/2026 do branch `messmerd/pin-connector-with-audio-buffer` (último commit "Refactor and use
 AudioBuffer (very WIP)", de 17/06/2026). Serve de guia para terminar a fase 1 de [multicanal.md](multicanal.md).
 
@@ -22,19 +25,47 @@ AudioBuffer (very WIP)", de 17/06/2026). Serve de guia para terminar a fase 1 de
 - **`AudioPortsModel`**: matriz de pinos de entrada (faixa→plugin) e de saída (plugin→faixa). Também detecta o
   roteamento direto (o atalho sem cópia).
 
-## Situação dos plugins no branch
+## Situação dos plugins (branch `multicanal`, 11/11/2026)
 
-- **Desenho novo (`process(ProcessContext&)`): 1** (Amplifier, incompleto).
-- **Sistema antigo de templates do #7459: 25 efeitos.**
-  - BassBooster, Bitcrush, Compressor, CrossoverEQ, Delay, Dispersion, DualFilter, DynamicsProcessor, Eq, Flanger,
-    GranularPitchShifter, LOMM, LadspaEffect, Lv2Effect, MultitapEcho, PeakControllerEffect, ReverbSC,
-    StereoEnhancer, StereoMatrix, WaveShaper.
-  - SpectrumAnalyzer, Vectorscope, ZynAddSubFx.
-  - VstEffect, Vestige (e o VstBase).
-- **API intermediária (`playImpl`/`playNoteImpl`): 22 instrumentos.** AudioFileProcessor, BitInvader, CarlaBase,
-  FreeBoy, GigPlayer, Kicker, Lb302, Lv2Instrument, Monstro, Nes, OpulenZ, Organic, Patman, Sf2Player, Sfxr, Sid,
-  SlicerT, Mallets, TripleOscillator, Vibed, Watsyn, Xpressive.
-- **API antiga original: 2.** FrequencyShifter, SlewDistortion.
+Todos os plugins usam o desenho novo. Os headers do sistema antigo de templates foram removidos.
+
+- **Efeitos nativos:** todos em `process(ProcessContext&)`.
+  - Estéreo intercalado in-place pelo `LegacyEffect`: a maioria.
+  - Só entrada (2 entradas, 0 saídas): SpectrumAnalyzer, Vectorscope e Oscilloscope.
+- **LADSPA:** portas de áudio reais ligadas direto aos buffers planares do host, sem cópia.
+  - Plugins mono continuam rodando duas vezes, com controles vinculáveis.
+  - Agora aparecem plugins com contagens diferentes, como 1→2 ou com entrada de sidechain.
+- **LV2:** todas as portas de áudio, incluindo sidechain e opcionais. As entradas ficam em dois grupos:
+  principal e sidechain.
+- **Instrumentos:** `Instrument` herda `AudioProcessor`.
+  - Os de fluxo único (Zyn, Carla, LV2, Vestige, OpulenZ, Sf2Player, GigPlayer, Lb302) passam pelo
+    `PluginInstance` e pelo pin connector a cada período.
+  - Os baseados em `NotePlayHandle` desenham cada nota no buffer da nota, e o `PluginInstance` aplica os pinos de
+    saída.
+  - Todos os nativos usam o `LegacyInstrument`.
+- **Plugins remotos (Zyn, VST):** usam a memória compartilhada do `PluginInstance`.
+  - O cliente recebe uma tabela de `PointerOffset` por canal.
+  - Quando o processo remoto informa novas contagens de canais, o host refaz as portas na thread principal.
+- **Carla:** contagens de canais vindas do descritor nativo; processa direto nos buffers planares.
+- **Taxa de amostragem:** o `PluginInstance` reativa o plugin quando ela muda. LADSPA, LV2 e Zyn recriam suas
+  instâncias em `activate()`, com o motor de áudio pausado, sem mutex no processamento.
+
+### Verificação
+
+- Testes: `AudioPortsTest` com 26 casos, incluindo instrumentos legados, planares com 4 saídas e roteamento de
+  saída por nota.
+- Comparação de renders A/B entre a branch `linuxmusic` e a `multicanal`, com projetos gerados: um instrumento
+  por projeto, um efeito por projeto e 7 plugins LADSPA. Ferramentas no scratchpad: `gen_projects.py` e
+  `abtest.sh`. Resultado:
+  - Todos os casos determinísticos ficam idênticos até 1 bit (ordem de soma entre threads).
+  - Os casos não determinísticos também variam na própria referência: ruído, fases aleatórias, ou o dj_eq do
+    LADSPA, que amplifica a variação de 1 bit.
+- A comparação revelou um bug herdado do LMMS, já corrigido: a thread que renderiza o período também processa
+  trabalhos de áudio, e na exportação e nos callbacks dos drivers ela não desligava os denormais.
+  - Efeitos com cauda de decaimento davam resultados diferentes conforme a thread que pegava o trabalho.
+  - No x86 isso ainda causava picos de CPU.
+- O host VST (VstEffect, Vestige, VstPlugin) passa em compilação só de sintaxe no macOS. O `RemoteVstPlugin`
+  (Wine) e o LV2 em execução precisam ser testados no Linux.
 
 ## Ordem de trabalho
 
