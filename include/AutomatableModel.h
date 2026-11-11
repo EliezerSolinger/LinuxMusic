@@ -135,13 +135,18 @@ public:
 	template<class T>
 	static T castValue( const float v )
 	{
-		return (T)( v );
-	}
-
-	template<bool>
-	static bool castValue( const float v )
-	{
-		return (std::round(v) != 0);
+		if constexpr (std::is_same_v<T, int>)
+		{
+			return static_cast<int>(std::round(v));
+		}
+		else if constexpr (std::is_same_v<T, bool>)
+		{
+			return std::round(v) != 0;
+		}
+		else
+		{
+			return static_cast<T>(v);
+		}
 	}
 
 	float oldValue() const { return m_oldValue; }
@@ -211,6 +216,10 @@ public:
 	float scaledValue( float value ) const;
 	//! @brief Returns value applied with the inverse of this model's scale type
 	float inverseScaledValue( float value ) const;
+	//! @brief Returns value inverse-scaled and normalized into the range of 0..1
+	float normValue(float value) const;
+	//! @brief Returns value transformed from normalized to direct representation
+	float inverseNormValue(float value) const;
 
 	void setInitValue( const float value );
 

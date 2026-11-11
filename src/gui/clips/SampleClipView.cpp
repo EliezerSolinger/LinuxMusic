@@ -37,7 +37,7 @@
 #include "FontHelper.h"
 #include "PathUtil.h"
 #include "SampleClip.h"
-#include "SampleThumbnail.h"
+#include "SampleThumbnailRenderer.h"
 #include "Song.h"
 #include "StringPairDrag.h"
 #include "TrackContainerView.h"
@@ -68,8 +68,6 @@ SampleClipView::SampleClipView( SampleClip * _clip, TrackView * _tv ) :
 void SampleClipView::updateSample()
 {
 	update();
-
-	m_sampleThumbnail = SampleThumbnail{m_clip->m_sample};
 
 	// set tooltip to filename so that user can see what sample this
 	// sample-clip contains
@@ -302,14 +300,14 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 
 	if (sample.sampleSize() > 0)
 	{
-		const auto param = SampleThumbnail::VisualizeParameters{
-			.sampleRect = QRect(sampleRextX, spacing, sampleLength, height() - spacing),
-			.viewportRect = viewPortRect,
+		const auto param = SampleThumbnailRenderer::VisualizeParameters{
+			.cache = m_clip->sampleThumbnailCache(),
+			.rect = QRect(sampleRextX, spacing, sampleLength, height() - spacing),
 			.amplification = sample.amplification(),
 			.reversed = sample.reversed()
 		};
 
-		m_sampleThumbnail.visualize(param, p);
+		SampleThumbnailRenderer::visualize(param, p);
 	}
 
 	p.setBrush(clipColor);

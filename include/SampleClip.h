@@ -34,6 +34,7 @@ namespace lmms
 
 class ThreadedExportManager;
 class SampleBuffer;
+class SampleThumbnailCache;
 
 namespace gui
 {
@@ -72,6 +73,8 @@ public:
 		return m_sample;
 	}
 
+	const SampleThumbnailCache* sampleThumbnailCache() const { return m_sampleThumbnailCache.get(); }
+
 	TimePos sampleLength() const;
 	void setSampleStartFrame( f_cnt_t startFrame );
 	void setSamplePlayLength( f_cnt_t length );
@@ -104,6 +107,7 @@ private:
 	void exportSampleBuffer(const QString& fileName);
 
 	Sample m_sample;
+	std::shared_ptr<const SampleThumbnailCache> m_sampleThumbnailCache;
 	BoolModel m_recordModel;
 	bool m_isPlaying;
 	int m_startFrameOffset;
