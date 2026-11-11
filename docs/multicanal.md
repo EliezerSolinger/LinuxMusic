@@ -28,7 +28,7 @@ Proposta de Dalton Messmer, baseada no CLAP:
 | 1 ✅ | Fazer o branch do autor compilar sobre o nosso código e terminar a migração dele para o `AudioBuffer`. Trazer de volta as melhorias que o `master` recebeu depois (detecção de áudio corrompido, auto-quit). Todos os testes passando. |
 | 2 ✅ | Pin connector completo: todos os plugins nativos, LADSPA, LV2, VST, ZynAddSubFx e Carla; janela do pin connector. Detalhes e verificação em [api-plugins-mapa.md](api-plugins-mapa.md). |
 | 3 ✅ | Canais de faixa e de mixer além do estéreo, envios com pares de canais e sidechain de ponta a ponta, com testes de mixer. Ver "Fase 3 pronta" abaixo. |
-| 3b | Bateria AVL (kits do x42 avldrums: Black Pearl, Red Zeppelin, Blonde Bop, Blonde Bop Hot Rod e Buskman's Holiday) como instrumento nativo sobre o FluidSynth, em versões estéreo e multi-saída (9 canais). Os SF2 ficam no repositório; as amostras são CC-BY-SA 3.0, então vão com o README de atribuição e não podem ser modificadas sem renomear o kit. |
+| 3b ✅ | Bateria AVL (kits do x42 avldrums: Black Pearl, Red Zeppelin, Blonde Bop, Blonde Bop Hot Rod e Buskman's Holiday) como instrumento nativo sobre o FluidSynth, em versões estéreo e multi-saída (9 canais). Os SF2 ficam no repositório; as amostras são CC-BY-SA 3.0, então vão com o README de atribuição e não podem ser modificadas sem renomear o kit. |
 | 4 | Nova API de plugins (#8275): `Host`/`PluginInstance`, estados e regras de thread, fila de eventos lock-free, extensões, `PluginId`/`PluginDescriptor`/`PluginEntry`, cabeçalhos públicos `include/lmms/plugin`, separação host/plugin e novo processamento de instrumentos. |
 | 5 | Hosts de CLAP e VST3. |
 | 6 | Novo sistema de plugins remotos, gerenciador de plugins e banco de presets. |
@@ -58,6 +58,21 @@ Proposta de Dalton Messmer, baseada no CLAP:
   sidechain.
 - **Pendências para a nova interface do mixer** (etapa 2): mostrar os pares e os envios de sidechain no próprio
   canal, rotular os canais dos pinos e escolher o par de destino de cada envio.
+
+## Fase 3b pronta: AVL Drums (11/11/2026)
+
+- **Plugin:** instrumento nativo `avldrums` (categoria Drums) sobre o FluidSynth do sistema, com os 5 kits em
+  `data/avldrums`.
+  - Os SF2 vieram sem modificação do avldrums.lv2 (commit 9389f16), com o README de atribuição e o `SOURCE.txt`.
+- **Comportamento:** mesmo mapa de notas e mesma divisão de saídas do avldrums.lv2.
+  - Modo estéreo, ou uma saída por peça: 9 canais em 7 grupos (bumbo, caixa, chimbal, tom e surdo mono; pratos e
+    percussão estéreo).
+  - O Buskman's Holiday só tem estéreo, como no original.
+- **Pinos:** por padrão, todos os grupos vão para o par principal. Para separar as peças, os pinos levam cada
+  grupo a um par auxiliar e os envios do mixer levam cada par a um canal.
+- **Tela:** seletor de kit, chave de multi-saída e o kit desenhado, com as peças acendendo nas batidas.
+- **Verificação:** os 5 kits renderizados nos dois modos, com as batidas no tempo. Teste da regra de grupos no
+  `AudioPortsTest`.
 
 ### Variação ocasional herdada
 
