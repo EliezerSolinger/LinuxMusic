@@ -527,12 +527,6 @@ AvlDrumsView::AvlDrumsView(AvlDrumsInstrument* instrument, QWidget* parent) :
 
 	setToolTip(tr("Click a drum to play it"));
 
-	connect(instrument, &AvlDrumsInstrument::kitChanged, this, [this] {
-		updateMultiOutputAvailability();
-		loadKitImages();
-		update();
-	});
-
 	startTimer(33);
 	modelChanged();
 }
@@ -545,8 +539,18 @@ void AvlDrumsView::modelChanged()
 	auto drums = castModel<AvlDrumsInstrument>();
 	m_kitBox->setModel(&drums->kitModel());
 	m_multiOutputBox->setModel(&drums->multiOutputModel());
-	updateMultiOutputAvailability();
-	loadKitImages();
+
+	// Connected here: setting the view's model disconnects the model's signals from the view. The photo follows
+	// the kit selection right away; the kit's sound may take a moment to load.
+	auto kitSelected = [this] {
+		updateMultiOutputAvailability();
+		loadKitImages();
+		update();
+	};
+	connect(&drums->kitModel(), &ComboBoxModel::dataChanged, this, kitSelected);
+	connect(drums, &AvlDrumsInstrument::kitChanged, this, kitSelected);
+
+	kitSelected();
 }
 
 
