@@ -40,7 +40,7 @@ SET(LMMS_SRCS
 	gui/SampleTrackWindow.cpp
 	gui/SampleThumbnailRenderer.cpp
 	gui/SendButtonIndicator.cpp
-	gui/SideBar.cpp
+	gui/BrowserPanel.cpp
 	gui/SideBarWidget.cpp
 	gui/StringPairDrag.cpp
 	gui/SubWindow.cpp

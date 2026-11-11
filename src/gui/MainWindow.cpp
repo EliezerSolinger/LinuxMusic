@@ -68,7 +68,7 @@
 #include "RecentProjectsMenu.h"
 #include "RemotePluginBase.h"
 #include "SetupDialog.h"
-#include "SideBar.h"
+#include "BrowserPanel.h"
 #include "SongEditor.h"
 #include "SubWindow.h"
 #include "TemplatesMenu.h"
@@ -110,61 +110,51 @@ MainWindow::MainWindow() :
 	hbox->setSpacing( 0 );
 	hbox->setContentsMargins(0, 0, 0, 0);
 
-	auto sideBar = new SideBar(Qt::Vertical, w);
-
 	auto splitter = new QSplitter(Qt::Horizontal, w);
 	splitter->setChildrenCollapsible( false );
 
 	ConfigManager* confMgr = ConfigManager::inst();
 	bool sideBarOnRight = confMgr->value("ui", "sidebaronright").toInt();
 
+	// The browsers, with tabs on top
+	m_browserPanel = new BrowserPanel(splitter);
+
 	emit initProgress(tr("Preparing plugin browser"));
-	sideBar->appendTab( new PluginBrowser( splitter ) );
+	m_browserPanel->addBrowser(new PluginBrowser(m_browserPanel));
 	emit initProgress(tr("Preparing file browsers"));
 
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Favorites, ConfigManager::inst()->favoriteItems().join("*"), FileItem::defaultFilters(), "My Favorites",
-		embed::getIconPixmap("star").transformed(QTransform().rotate(90)), splitter, false, "", ""));
+	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Favorites, ConfigManager::inst()->favoriteItems().join("*"),
+		FileItem::defaultFilters(), tr("Favorites"), embed::getIconPixmap("star"), m_browserPanel, false, "", ""));
 
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal,
+	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Normal,
 		confMgr->userProjectsDir() + "*" + confMgr->factoryProjectsDir(), "*.mmp *.mmpz *.xml *.mid *.mpt",
-		tr("My Projects"), embed::getIconPixmap("project_file").transformed(QTransform().rotate(90)), splitter, false,
+		tr("Projects"), embed::getIconPixmap("project_file"), m_browserPanel, false,
 		confMgr->userProjectsDir(), confMgr->factoryProjectsDir()));
 
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal,
-		confMgr->userSamplesDir() + "*" + confMgr->factorySamplesDir(), FileItem::defaultFilters(), tr("My Samples"),
-		embed::getIconPixmap("sample_file").transformed(QTransform().rotate(90)), splitter, false,
+	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Normal,
+		confMgr->userSamplesDir() + "*" + confMgr->factorySamplesDir(), FileItem::defaultFilters(), tr("Samples"),
+		embed::getIconPixmap("sample_file"), m_browserPanel, false,
 		confMgr->userSamplesDir(), confMgr->factorySamplesDir()));
 
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal,
-		confMgr->userPresetsDir() + "*" + confMgr->factoryPresetsDir(), "*.xpf *.cs.xml *.xiz *.lv2", tr("My Presets"),
-		embed::getIconPixmap("preset_file").transformed(QTransform().rotate(90)), splitter, false,
+	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Normal,
+		confMgr->userPresetsDir() + "*" + confMgr->factoryPresetsDir(), "*.xpf *.cs.xml *.xiz *.lv2", tr("Presets"),
+		embed::getIconPixmap("preset_file"), m_browserPanel, false,
 		confMgr->userPresetsDir(), confMgr->factoryPresetsDir()));
 
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal, QDir::homePath(), FileItem::defaultFilters(),
-		tr("My Home"), embed::getIconPixmap("home").transformed(QTransform().rotate(90)), splitter, false));
-
-	QStringList root_paths;
-	QString title = tr("Root Directory");
-	bool dirs_as_items = false;
-
+	// The home folder and the drives (volumes on macOS) in one tab, each as a top-level folder
+	QStringList filesRoots{QDir::homePath()};
 #ifdef LMMS_BUILD_APPLE
-	title = tr( "Volumes" );
-	root_paths += "/Volumes";
-#elif defined(LMMS_BUILD_WIN32)
-	title = tr( "My Computer" );
-	dirs_as_items = true;
-#endif
-
-#if ! defined(LMMS_BUILD_APPLE)
-	QFileInfoList drives = QDir::drives();
-	for( const QFileInfo & drive : drives )
+	filesRoots += "/Volumes";
+#else
+	for (const QFileInfo& drive : QDir::drives())
 	{
-		root_paths += drive.absolutePath();
+		filesRoots += drive.absolutePath();
 	}
 #endif
+	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Normal, filesRoots.join("*"),
+		FileItem::defaultFilters(), tr("Files"), embed::getIconPixmap("computer"), m_browserPanel, true));
 
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal, root_paths.join("*"), FileItem::defaultFilters(), title,
-		embed::getIconPixmap("computer").transformed(QTransform().rotate(90)), splitter, dirs_as_items));
+	m_browserPanel->restoreState();
 
 	m_workspace = new MovableQMdiArea(splitter);
 
@@ -225,14 +215,11 @@ MainWindow::MainWindow() :
 	m_rightDock->setDocumentMode(true);
 	m_mainSplitter = splitter;
 
-	hbox->addWidget(sideBar);
 	hbox->addWidget(splitter);
-	// If the user wants the sidebar on the right, we move the workspace and
-	// the splitter to the "left" side, or the first widgets in their list
+	// If the user wants the browsers on the right, they go after the workspace
 	if (sideBarOnRight)
 	{
 		splitter->insertWidget(0, m_workspace);
-		hbox->insertWidget(0, splitter);
 	}
 
 	// create global-toolbar at the top of our window
@@ -466,6 +453,7 @@ void MainWindow::finalize()
 	addShortcut(Qt::Key_5, SLOT(toggleMixerWin()));
 	addShortcut(Qt::Key_6, SLOT(toggleControllerRack()));
 	addShortcut(Qt::Key_7, SLOT(toggleProjectNotesWin()));
+	addShortcut(Qt::Key_8, SLOT(toggleBrowser()));
 
 	// The transport bar plays and stops the song and patterns
 	getGUI()->songEditor()->hideTransportButtons();
@@ -1142,6 +1130,14 @@ void MainWindow::toggleSongEditorWin()
 
 
 
+void MainWindow::toggleBrowser()
+{
+	m_browserPanel->setShown(!m_browserPanel->isVisible());
+}
+
+
+
+
 void MainWindow::toggleProjectNotesWin()
 {
 	toggleWindow( getGUI()->getProjectNotes() );
@@ -1216,6 +1212,10 @@ void MainWindow::updateViewMenu()
 			      tr( "Project Notes" ) + "\tCtrl+7",
 			      this, SLOT(toggleProjectNotesWin())
 		);
+	auto browserAction = m_viewMenu->addAction(embed::getIconPixmap("folder"), tr("Browser") + "\tCtrl+8",
+		this, SLOT(toggleBrowser()));
+	browserAction->setCheckable(true);
+	browserAction->setChecked(m_browserPanel->isVisible());
 
 	m_viewMenu->addSeparator();
 	

@@ -189,18 +189,24 @@ void FileBrowser::addContentCheckBox()
 		boxLayout->addWidget(box);
 	};
 
+	// Short labels in one row, so that they fit in a narrow browser panel; the tooltips say more
 	if (user_checkbox) {
-		m_showUserContent = new QCheckBox(tr("User content"));
-		configCheckBox(filterWidgetLayout, m_showUserContent, Qt::Checked);
+		m_showUserContent = new QCheckBox(tr("User"));
+		m_showUserContent->setToolTip(tr("Show your own files"));
+		configCheckBox(hiddenWidgetLayout, m_showUserContent, Qt::Checked);
 	}
 
 	if (factory) {
-		m_showFactoryContent = new QCheckBox(tr("Factory content"));
-		configCheckBox(filterWidgetLayout, m_showFactoryContent, Qt::Checked);
+		m_showFactoryContent = new QCheckBox(tr("Factory"));
+		m_showFactoryContent->setToolTip(tr("Show the files that come with LinuxMusic"));
+		configCheckBox(hiddenWidgetLayout, m_showFactoryContent, Qt::Checked);
 	}
 
-	m_showHiddenContent = new QCheckBox(tr("Hidden content"));
+	m_showHiddenContent = new QCheckBox(tr("Hidden"));
+	m_showHiddenContent->setToolTip(tr("Show hidden files"));
 	configCheckBox(hiddenWidgetLayout, m_showHiddenContent, Qt::Unchecked);
+	hiddenWidgetLayout->setSpacing(8);
+	hiddenWidgetLayout->addStretch(1);
 
 	addContentWidget(filterWidget);
 }

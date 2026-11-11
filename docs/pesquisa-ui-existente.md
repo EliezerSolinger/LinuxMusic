@@ -103,5 +103,13 @@ Cada PR deve ser trazido como merge separado (`git fetch upstream pull/<n>/head`
 - Ferramenta de desenvolvimento: `LINUXMUSIC_SCREENSHOT=<arquivo.png>` salva uma imagem da janela e fecha o app;
   `LINUXMUSIC_SCREENSHOT_ACTION=instrument` abre o primeiro instrumento antes da captura.
 
+- **Painel do navegador como no redesign** (11/11/2026):
+  - a barra lateral de botões verticais virou um painel com a aba "Browser", uma fileira de botões pequenos com ícone e
+    o nome da seção abaixo;
+  - "Minha pasta" e "Raiz/Volumes" viraram uma aba só, "Arquivos";
+  - os filtros de conteúdo ficam numa linha;
+  - mostrar/ocultar fica no menu Exibir (Ctrl+8), e o painel lembra a última aba;
+  - as cores continuam as do tema do LMMS; só o layout segue o design.
+
 Ainda em janelas flutuantes: VST (Vestige/VstEffect), parâmetros do Carla, diálogos de controladores e janelas pequenas
 como o MeterDialog.

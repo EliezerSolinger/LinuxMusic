@@ -8250,6 +8250,31 @@ Asegúrate de tener permisos de escritura tanto del archivo como del directorio 
         <source>Hidden content</source>
         <translation>Contenido oculto</translation>
     </message>
+
+    <message>
+        <source>User</source>
+        <translation>Usuario</translation>
+    </message>
+    <message>
+        <source>Show your own files</source>
+        <translation>Mostrar tus archivos</translation>
+    </message>
+    <message>
+        <source>Factory</source>
+        <translation>Fábrica</translation>
+    </message>
+    <message>
+        <source>Show the files that come with LinuxMusic</source>
+        <translation>Mostrar los archivos que vienen con LinuxMusic</translation>
+    </message>
+    <message>
+        <source>Hidden</source>
+        <translation>Ocultos</translation>
+    </message>
+    <message>
+        <source>Show hidden files</source>
+        <translation>Mostrar archivos ocultos</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::FileBrowserTreeWidget</name>

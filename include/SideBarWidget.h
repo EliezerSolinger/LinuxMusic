@@ -52,6 +52,9 @@ public:
 		return m_title;
 	}
 
+	//! Hides the title bar and close button, e.g. when a tab already names the browser
+	void setHeaderVisible(bool visible);
+
 signals:
 	void closeButtonClicked();
 
@@ -84,6 +87,7 @@ private:
 	QPixmap m_icon;
 	QPushButton * m_closeBtn;
 	const QSize m_buttonSize;
+	bool m_headerVisible = true;
 
 } ;
 

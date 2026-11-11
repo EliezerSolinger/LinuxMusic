@@ -45,6 +45,7 @@ namespace lmms
 namespace gui
 {
 
+class BrowserPanel;
 class DockPanel;
 class PluginView;
 class SubWindow;
@@ -181,6 +182,7 @@ public slots:
 	void togglePatternEditorWin(bool forceShow = false);
 	void toggleSongEditorWin();
 	void toggleProjectNotesWin();
+	void toggleBrowser();
 	void toggleMicrotunerWin();
 	void toggleMixerWin();
 	void togglePianoRollWin();
@@ -247,6 +249,7 @@ private:
 	QTabWidget* m_topDock;
 	QTabWidget* m_bottomDock;
 	QTabWidget* m_rightDock;
+	BrowserPanel* m_browserPanel = nullptr;
 	QTabWidget* m_pluginTabs;
 	DockPanel* m_pluginTabsPanel = nullptr;
 	int m_bottomDockHeight = 300;

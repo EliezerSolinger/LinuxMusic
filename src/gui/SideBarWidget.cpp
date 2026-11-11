@@ -56,8 +56,21 @@ SideBarWidget::SideBarWidget( const QString & _title, const QPixmap & _icon,
 
 
 
+void SideBarWidget::setHeaderVisible(bool visible)
+{
+	m_headerVisible = visible;
+	m_closeBtn->setVisible(visible);
+	resizeEvent(nullptr);
+	update();
+}
+
+
+
+
 void SideBarWidget::paintEvent( QPaintEvent * )
 {
+	if (!m_headerVisible) { return; }
+
 	QPainter p( this );
 	p.fillRect( 0, 0, width(), 27, palette().highlight().color() );
 
@@ -82,8 +95,9 @@ void SideBarWidget::paintEvent( QPaintEvent * )
 void SideBarWidget::resizeEvent( QResizeEvent * )
 {
 	const int MARGIN = 6;
-	m_contents->setGeometry( MARGIN, 40 + MARGIN, width() - MARGIN * 2,
-						height() - MARGIN * 2 - 40 );
+	const int header = m_headerVisible ? 40 : 0;
+	m_contents->setGeometry( MARGIN, header + MARGIN, width() - MARGIN * 2,
+						height() - MARGIN * 2 - header );
 	m_closeBtn->move(m_contents->geometry().width() - MARGIN - 5, 5);
 }
 

@@ -8251,6 +8251,31 @@ Por favor certifique que você tem permissão para gravar o aquivo e o diretóri
         <source>Hidden content</source>
         <translation>Conteúdo oculto</translation>
     </message>
+
+    <message>
+        <source>User</source>
+        <translation>Usuário</translation>
+    </message>
+    <message>
+        <source>Show your own files</source>
+        <translation>Mostrar os seus arquivos</translation>
+    </message>
+    <message>
+        <source>Factory</source>
+        <translation>Fábrica</translation>
+    </message>
+    <message>
+        <source>Show the files that come with LinuxMusic</source>
+        <translation>Mostrar os arquivos que vêm com o LinuxMusic</translation>
+    </message>
+    <message>
+        <source>Hidden</source>
+        <translation>Ocultos</translation>
+    </message>
+    <message>
+        <source>Show hidden files</source>
+        <translation>Mostrar arquivos ocultos</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::FileBrowserTreeWidget</name>
