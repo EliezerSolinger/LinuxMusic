@@ -70,11 +70,6 @@ public:
 
 	bool isRunning() const { return m_running.test(std::memory_order_acquire); }
 
-	virtual bool isProcessing()
-	{
-		return m_inProcess;
-	}
-
 protected:
 	// convert a given audio-buffer to a buffer in signed 16-bit samples
 	// returns num of bytes in outbuf
