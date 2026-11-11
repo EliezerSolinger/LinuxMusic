@@ -70,10 +70,9 @@ void TransportMeters::updateLevels()
 {
 	m_cpu = std::clamp(Engine::audioEngine()->cpuLoad() / 100.f, 0.f, 1.f);
 
-	const auto master = Engine::mixer()->mixerChannel(0);
-	const float peak = std::max(master->m_peakLeft, master->m_peakRight);
-	// Decay smoothly instead of jumping down
-	m_out = std::max(std::clamp(peak, 0.f, 1.f), m_out * 0.8f);
+	// The mixer view consumes the master's peaks, so show its RMS level here
+	const auto& meter = Engine::mixer()->mixerChannel(0)->m_meter;
+	m_out = std::clamp(std::max(meter.rms(0), meter.rms(1)), 0.f, 1.f);
 
 	update();
 }

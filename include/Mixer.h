@@ -26,6 +26,7 @@
 #define LMMS_MIXER_H
 
 #include "AudioBuffer.h"
+#include "ChannelMeter.h"
 #include "EffectChain.h"
 #include "JournallingObject.h"
 #include "Model.h"
@@ -56,8 +57,8 @@ public:
 	// set to true if any effect in the channel is enabled and running
 	bool m_stillRunning;
 
-	float m_peakLeft;
-	float m_peakRight;
+	//! Output levels after the fader, for the GUI
+	ChannelMeter m_meter;
 	AudioBuffer m_buffer;
 	bool m_muteBeforeSolo;
 	BoolModel m_muteModel;
@@ -93,6 +94,9 @@ public:
 	bool isMaster() { return m_channelIndex == 0; }
 
 	bool requiresProcessing() const override { return true; }
+
+	//! Called instead of processing for a muted channel: keeps its parameters and meter up to date
+	void processMuted();
 	void unmuteForSolo();
 	void unmuteSenderForSolo();
 	void unmuteReceiverForSolo();

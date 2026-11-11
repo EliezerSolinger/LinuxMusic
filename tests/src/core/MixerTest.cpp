@@ -227,6 +227,17 @@ private slots:
 		compareOutput(mix(), 0.2f, 0.2f);
 	}
 
+	void parameterChangesWhileMutedDoNotRampLater()
+	{
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(channel)->m_muteModel.setValue(true);
+		mixer()->mixerChannel(channel)->m_volumeModel.setValue(0.25f);
+		mix();
+		mixer()->mixerChannel(channel)->m_muteModel.setValue(false);
+		feed(channel, 0.8f, 0.8f);
+		compareOutput(mix(), 0.2f, 0.2f);
+	}
+
 	void panMovesTheSignalToOneSide()
 	{
 		const auto channel = mixer()->createChannel();
@@ -325,14 +336,59 @@ private slots:
 	void peakMeterShowsPostFaderLevel()
 	{
 		const auto channel = mixer()->createChannel();
-		auto ch = mixer()->mixerChannel(channel);
-		ch->m_peakLeft = ch->m_peakRight = 0.f;
-		ch->m_volumeModel.setValue(0.5f);
+		auto& meter = mixer()->mixerChannel(channel)->m_meter;
+		mixer()->mixerChannel(channel)->m_volumeModel.setValue(0.5f);
 		settle();
+		meter.takePeaks();
+
 		feed(channel, 0.8f, -0.4f);
 		mix();
-		QVERIFY(qFuzzyCompare(ch->m_peakLeft, 0.4f));
-		QVERIFY(qFuzzyCompare(ch->m_peakRight, 0.2f));
+		const auto peaks = meter.takePeaks();
+		QVERIFY(peaks.has_value());
+		QVERIFY(qFuzzyCompare((*peaks)[0], 0.4f));
+		QVERIFY(qFuzzyCompare((*peaks)[1], 0.2f));
+
+		// Reading the peaks resets them until the next period
+		QVERIFY(!meter.takePeaks().has_value());
+	}
+
+	void peakMeterKeepsTheHighestPeakUntilRead()
+	{
+		const auto channel = mixer()->createChannel();
+		auto& meter = mixer()->mixerChannel(channel)->m_meter;
+		settle();
+		meter.takePeaks();
+
+		feed(channel, 0.6f, 0.6f);
+		mix();
+		feed(channel, 0.2f, 0.2f);
+		mix();
+		const auto peaks = meter.takePeaks();
+		QVERIFY(peaks.has_value());
+		QVERIFY(qFuzzyCompare((*peaks)[0], 0.6f));
+	}
+
+	void rmsMeterFollowsALevelOverTime()
+	{
+		const auto channel = mixer()->createChannel();
+		const auto& meter = mixer()->mixerChannel(channel)->m_meter;
+		settle();
+
+		// A constant signal's RMS is its level; feed long enough for the 300 ms average to settle
+		const auto periods = static_cast<int>(2 * ChannelMeter::RmsWindow
+			* Engine::audioEngine()->outputSampleRate() / frames()) + 1;
+		for (int i = 0; i < periods; ++i)
+		{
+			feed(channel, 0.5f, 0.25f);
+			mix();
+		}
+		QVERIFY(std::abs(meter.rms(0) - 0.5f) < 0.5f * 0.15f);
+		QVERIFY(std::abs(meter.rms(1) - 0.25f) < 0.25f * 0.15f);
+
+		// Muting drops the RMS level to zero
+		mixer()->mixerChannel(channel)->m_muteModel.setValue(true);
+		mix();
+		QCOMPARE(meter.rms(0), 0.f);
 	}
 };
 

@@ -66,8 +66,6 @@ void MixerRoute::updateName()
 MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_fxChain( nullptr ),
 	m_stillRunning( false ),
-	m_peakLeft( 0.0f ),
-	m_peakRight( 0.0f ),
 	m_buffer(Engine::audioEngine()->framesPerPeriod()),
 	m_muteModel( false, _parent ),
 	m_soloModel( false, _parent ),
@@ -172,6 +170,22 @@ void MixerChannel::unmuteReceiverForSolo()
 
 
 
+void MixerChannel::processMuted()
+{
+	// Same parameters as doProcessing() reads, see there
+	m_volumeModel.valueBuffer();
+	m_trimModel.valueBuffer();
+	m_widthModel.valueBuffer();
+	m_panModel.valueBuffer();
+	for (MixerRoute* route : m_receives) { route->amount()->valueBuffer(); }
+
+	m_preFaderHasSignal = false;
+	m_meter.measureSilence();
+}
+
+
+
+
 void MixerChannel::doProcessing()
 {
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
@@ -187,13 +201,6 @@ void MixerChannel::doProcessing()
 	for (MixerRoute* route : m_receives) { sendBufs.push_back(route->amount()->valueBuffer()); }
 
 	m_preFaderHasSignal = false;
-
-	if (m_muted)
-	{
-		m_peakLeft = m_peakRight = 0.0f;
-		processed();
-		return;
-	}
 
 	auto buffer = m_buffer.interleavedBuffer().asSampleFrames();
 
@@ -266,8 +273,8 @@ void MixerChannel::doProcessing()
 		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
 	}
 
-	m_peakLeft = std::max(m_peakLeft, m_buffer.absPeakValue(0));
-	m_peakRight = std::max(m_peakRight, m_buffer.absPeakValue(1));
+	if (hasSignal) { m_meter.measure(buffer.data(), fpp, Engine::audioEngine()->outputSampleRate()); }
+	else { m_meter.measureSilence(); }
 
 	// increment dependency counter of all receivers
 	processed();
@@ -650,6 +657,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 		ch->m_muted = ch->m_muteModel.value();
 		if( ch->m_muted ) // instantly "process" muted channels
 		{
+			ch->processMuted();
 			ch->processed();
 			ch->done();
 		}

@@ -13,6 +13,7 @@ set(LMMS_SRCS
 	core/BandLimitedWave.cpp
 	core/base64.cpp
 	core/BufferManager.cpp
+	core/ChannelMeter.cpp
 	core/Clipboard.cpp
 	core/ComboBoxModel.cpp
 	core/ConfigManager.cpp

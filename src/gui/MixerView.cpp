@@ -521,30 +521,15 @@ void MixerView::updateFaders()
 
 	for (int i = 0; i < m_mixerChannelViews.size(); ++i)
 	{
-		const float opl = m_mixerChannelViews[i]->m_fader->getPeak_L();
-		const float opr = m_mixerChannelViews[i]->m_fader->getPeak_R();
-		const float fallOff = 1.25;
-		if (m->mixerChannel(i)->m_peakLeft >= opl/fallOff)
-		{
-			m_mixerChannelViews[i]->m_fader->setPeak_L(m->mixerChannel(i)->m_peakLeft);
-			// Set to -1 so later we'll know if this value has been refreshed yet.
-			m->mixerChannel(i)->m_peakLeft = -1;
-		}
-		else if (m->mixerChannel(i)->m_peakLeft != -1)
-		{
-			m_mixerChannelViews[i]->m_fader->setPeak_L(opl/fallOff);
-		}
+		// No new period was measured since the last update: keep the meters as they are
+		const auto peaks = m->mixerChannel(i)->m_meter.takePeaks();
+		if (!peaks) { continue; }
 
-		if (m->mixerChannel(i)->m_peakRight >= opr/fallOff)
-		{
-			m_mixerChannelViews[i]->m_fader->setPeak_R(m->mixerChannel(i)->m_peakRight);
-			// Set to -1 so later we'll know if this value has been refreshed yet.
-			m->mixerChannel(i)->m_peakRight = -1;
-		}
-		else if (m->mixerChannel(i)->m_peakRight != -1)
-		{
-			m_mixerChannelViews[i]->m_fader->setPeak_R(opr/fallOff);
-		}
+		// Rise immediately, fall off gradually
+		auto fader = m_mixerChannelViews[i]->m_fader;
+		const float fallOff = 1.25;
+		fader->setPeak_L(std::max((*peaks)[0], fader->getPeak_L() / fallOff));
+		fader->setPeak_R(std::max((*peaks)[1], fader->getPeak_R() / fallOff));
 	}
 }
 

@@ -101,3 +101,16 @@ Detalhes:
 - Um demo renderizado antes e depois tem o mesmo nível (RMS 3.101 contra 3.103). O render dos demos não é
   determinístico (ruído e fase aleatória), então não dá para comparar amostra por amostra.
 - Os controles novos ainda **não aparecem na interface**; isso fica para o passo 9.
+
+### Passo 3: medidores seguros e RMS (feito)
+
+- Classe nova `ChannelMeter`: a thread de áudio grava os níveis em atômicos, sem lock.
+- A interface lê com `takePeaks()`, que devolve o maior pico desde a leitura anterior, ou nada se não houve período
+  novo.
+- Acabou a condição de corrida: antes, a interface lia e zerava variáveis comuns que a thread de áudio escrevia.
+- O RMS é a média dos últimos ~300 ms, por canal L/R.
+- O pico retido e a queda gradual continuam na interface (`Fader`).
+- O medidor OUT da toolbar usa o RMS do master, porque os picos são consumidos pelo mixer.
+- Corrigido outro furo: canais **mutados** não passavam pelo processamento. O medidor não zerava, e mudanças de
+  parâmetro feitas com o canal mutado faziam rampa ao desmutar. Agora eles passam por `processMuted()`.
+- `MixerTest` tem 25 testes.
