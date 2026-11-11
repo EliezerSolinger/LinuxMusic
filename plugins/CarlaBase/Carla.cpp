@@ -187,13 +187,14 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
     std::memset(&fTimeInfo, 0, sizeof(NativeTimeInfo));
     fTimeInfo.bbt.valid = true; // always valid
 
-    fHandle = fDescriptor->instantiate(&fHost);
+    fHandle = fDescriptor != nullptr ? fDescriptor->instantiate(&fHost) : nullptr;
     Q_ASSERT(fHandle != nullptr);
 
-    if (fHandle != nullptr && fDescriptor->activate != nullptr)
-        fDescriptor->activate(fHandle);
+    // Carla is activated in activate(), once the host knows the sample rate and buffer size
+    m_sampleRate = handleGetSampleRate();
+    m_bufferSize = handleGetBufferSize();
 
-    // we need a play-handle which cares for calling play(), TODO: Move responsibility for this to AudioPlugin
+    // we need a play-handle which cares for calling play()
 	auto iph = new InstrumentPlayHandle(this, instrumentTrack);
 	Engine::audioEngine()->addPlayHandle( iph );
 
@@ -215,7 +216,6 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
     }
 #endif
 
-    connect(Engine::audioEngine(), SIGNAL(sampleRateChanged()), this, SLOT(sampleRateChanged()));
 }
 
 CarlaInstrument::~CarlaInstrument()
@@ -237,8 +237,7 @@ CarlaInstrument::~CarlaInstrument()
     if (fHandle == nullptr)
         return;
 
-    if (fDescriptor->deactivate != nullptr)
-        fDescriptor->deactivate(fHandle);
+    deactivate();
 
     if (fDescriptor->cleanup != nullptr)
         fDescriptor->cleanup(fHandle);
@@ -495,15 +494,51 @@ void CarlaInstrument::loadSettings(const QDomElement& elem)
 #endif
 }
 
-void CarlaInstrument::playImpl(std::span<SampleFrame> out)
+auto CarlaInstrument::channelCount(bool isInput) const -> ch_cnt_t
 {
-    const auto bufsize = static_cast<std::uint32_t>(out.size());
+    if (fDescriptor == nullptr) { return isInput ? 0 : DEFAULT_CHANNELS; }
+    return static_cast<ch_cnt_t>(isInput ? fDescriptor->audioIns : fDescriptor->audioOuts);
+}
 
-	zeroSampleFrames(out.data(), bufsize);
+auto CarlaInstrument::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
+{
+    if (fHandle == nullptr) { return true; }
+
+    if (sampleRate != m_sampleRate)
+    {
+        m_sampleRate = sampleRate;
+        fDescriptor->dispatcher(fHandle, NATIVE_PLUGIN_OPCODE_SAMPLE_RATE_CHANGED, 0, 0, nullptr,
+            static_cast<float>(sampleRate));
+    }
+    if (maxFrameCount != m_bufferSize)
+    {
+        m_bufferSize = maxFrameCount;
+        fDescriptor->dispatcher(fHandle, NATIVE_PLUGIN_OPCODE_BUFFER_SIZE_CHANGED,
+            0, static_cast<intptr_t>(maxFrameCount), nullptr, 0.f);
+    }
+
+    if (!m_active && fDescriptor->activate != nullptr) { fDescriptor->activate(fHandle); }
+    m_active = true;
+    return true;
+}
+
+void CarlaInstrument::deactivate()
+{
+    if (fHandle == nullptr || !m_active) { return; }
+
+    if (fDescriptor->deactivate != nullptr) { fDescriptor->deactivate(fHandle); }
+    m_active = false;
+}
+
+auto CarlaInstrument::process(ProcessContext& context) -> ProcessStatus
+{
+    AudioBuffer& out = context.out();
+    const auto bufsize = static_cast<std::uint32_t>(out.frames());
 
     if (fHandle == nullptr)
     {
-        return;
+        out.silenceAllChannels();
+        return ProcessStatus::Continue;
     }
 
     // set time info
@@ -520,36 +555,28 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
     fTimeInfo.bbt.ticksPerBeat   = ticksPerBeat;
     fTimeInfo.bbt.beatsPerMinute = s->getTempo();
 
-#ifndef _MSC_VER
-    float buf1[bufsize];
-    float buf2[bufsize];
-#else
-    float *buf1 = static_cast<float *>(_alloca(bufsize * sizeof(float)));
-    float *buf2 = static_cast<float *>(_alloca(bufsize * sizeof(float)));
-#endif
-
-    float* rBuf[] = { buf1, buf2 };
-    std::memset(buf1, 0, sizeof(float)*bufsize);
-    std::memset(buf2, 0, sizeof(float)*bufsize);
+    // Carla reads its inputs from and writes its outputs into the host's planar buffers
+    float** inBuffers = nullptr;
+    if (channelCount(true) > 0)
+    {
+        // Carla does not write to its inputs
+        inBuffers = const_cast<float**>(context.in().group(0).buffers());
+    }
+    float** outBuffers = out.channels() > 0 ? out.group(0).buffers() : nullptr;
 
     {
         const QMutexLocker ml(&fMutex);
-// TODO FIXME this is just here so it compiles.
 // https://github.com/falkTX/Carla/blob/8bceb9ed173a10b29038f8abb4383710c0e497c1/source/includes/CarlaNative.h
-//     FIXME for v3.0, use const for the input buffer
 #if CARLA_VERSION_HEX >= CARLA_VERSION_HEX_3
-        fDescriptor->process(fHandle, (const float**)rBuf, rBuf, bufsize, fMidiEvents, fMidiEventCount);
+        fDescriptor->process(fHandle, const_cast<const float**>(inBuffers), outBuffers, bufsize,
+            fMidiEvents, fMidiEventCount);
 #else
-        fDescriptor->process(fHandle, rBuf, rBuf, bufsize, fMidiEvents, fMidiEventCount);
+        fDescriptor->process(fHandle, inBuffers, outBuffers, bufsize, fMidiEvents, fMidiEventCount);
 #endif
         fMidiEventCount = 0;
     }
 
-    for (uint i=0; i < bufsize; ++i)
-    {
-        out[i][0] = buf1[i];
-        out[i][1] = buf2[i];
-    }
+    return ProcessStatus::Continue;
 }
 
 bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_cnt_t offset)
@@ -589,11 +616,6 @@ gui::PluginView* CarlaInstrument::instantiateView(QWidget* parent)
     fHost.uiName = strdup(kIsPatchbay ? "CarlaPatchbay-LinuxMusic" : "CarlaRack-LinuxMusic");
 
     return new gui::CarlaInstrumentView(this, parent);
-}
-
-void CarlaInstrument::sampleRateChanged()
-{
-    fDescriptor->dispatcher(fHandle, NATIVE_PLUGIN_OPCODE_SAMPLE_RATE_CHANGED, 0, 0, nullptr, handleGetSampleRate());
 }
 
 // -------------------------------------------------------------------

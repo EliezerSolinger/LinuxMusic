@@ -165,7 +165,11 @@ private:
 
 // -------------------------------------------------------------------
 
-// TODO: Add support for pin connector and variable number of audio input/output ports
+/**
+ * Hosts Carla's rack or patchbay as an instrument.
+ *
+ * Carla's audio inputs and outputs are exposed to the pin connector as they are.
+ */
 class CARLABASE_EXPORT CarlaInstrument : public Instrument
 {
     Q_OBJECT
@@ -192,20 +196,36 @@ public:
     bool handleMidiEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset) override;
     gui::PluginView* instantiateView(QWidget* parent) override;
 
+    // AudioProcessor implementation
+    auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+    void deactivate() override;
+    auto process(ProcessContext& context) -> ProcessStatus override;
+    auto channelCount(bool isInput) const -> ch_cnt_t override;
+    auto channelGroupCount(bool isInput) const -> group_cnt_t override { return channelCount(isInput) > 0 ? 1 : 0; }
+    auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
+        -> ch_cnt_t override
+    {
+        (void)index;
+        (void)group;
+        return channelCount(isInput);
+    }
+    auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override
+    {
+        (void)inputIndex;
+        return std::nullopt;
+    }
+
 signals:
     void uiClosed();
     void paramsUpdated();
 
 private slots:
-    void sampleRateChanged();
     void refreshParams(bool init = false);
     void clearParamModels();
     void paramModelChanged(uint32_t index);
     void updateParamModel(uint32_t index);
 
 private:
-	void playImpl(std::span<SampleFrame> out) override;
-
     const bool kIsPatchbay;
 
     NativePluginHandle fHandle;
@@ -218,6 +238,11 @@ private:
 
     // this is only needed because note-offs are being sent during play
     QMutex fMutex;
+
+    //! Whether Carla was activated, and with which sample rate and buffer size
+    bool m_active = false;
+    double m_sampleRate = 0;
+    f_cnt_t m_bufferSize = 0;
 
     uint8_t m_paramGroupCount;
     std::vector<CarlaParamFloatModel*> m_paramModels;
