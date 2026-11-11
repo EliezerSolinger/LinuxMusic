@@ -167,8 +167,7 @@ void Lv2Instrument::loadFile(const QString &file)
 bool Lv2Instrument::handleMidiEvent(
 	const MidiEvent &event, const TimePos &time, f_cnt_t offset)
 {
-	// this function can be called from GUI threads while the plugin is running
-	// handleMidiInputEvent will use a thread-safe ringbuffer
+	// The track's notes and MIDI arrive with the audio (see process()); this is only for other callers
 	handleMidiInputEvent(event, time, offset);
 	return true;
 }
@@ -193,6 +192,14 @@ auto Lv2Instrument::process(ProcessContext& context) -> ProcessStatus
 	const auto frames = out.frames();
 
 	if (audioChannelCount(true) > 0) { copyBuffersFromCore(context.in(), frames); }
+
+#ifdef LV2_INSTRUMENT_USE_MIDI
+	// The period's notes and MIDI, at their frames within it
+	for (const auto& event : context.inEvents())
+	{
+		if (const auto midi = event.toMidi()) { handleMidiInputEvent(*midi, TimePos{}, event.time); }
+	}
+#endif
 	copyModelsFromLmms();
 
 	run(frames);

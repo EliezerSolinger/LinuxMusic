@@ -446,6 +446,15 @@ auto VestigeInstrument::process(ProcessContext& context) -> ProcessStatus
 		return ProcessStatus::Continue;
 	}
 
+	// The period's notes and MIDI, at their frames
+	if (m_plugin)
+	{
+		for (const auto& event : context.inEvents())
+		{
+			if (const auto midi = event.toMidi()) { m_plugin->processMidiEvent(*midi, event.time); }
+		}
+	}
+
 	// Until the host has set up buffers for the channel counts the remote process reported
 	// (see channelCountsChanged), the remote process cannot process
 	const bool processed = m_plugin

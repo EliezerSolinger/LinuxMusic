@@ -30,7 +30,6 @@
 #include "InstrumentPlayHandle.h"
 #include "InstrumentTrack.h"
 #include "Knob.h"
-#include "MidiEventToByteSeq.h"
 #include "MainWindow.h"
 #include "FontHelper.h"
 #include "Song.h"
@@ -564,8 +563,24 @@ auto CarlaInstrument::process(ProcessContext& context) -> ProcessStatus
     }
     float** outBuffers = out.channels() > 0 ? out.group(0).buffers() : nullptr;
 
+    // The period's notes and MIDI, at their frames
+    fMidiEventCount = 0;
+    for (const auto& event : context.inEvents())
     {
-        const QMutexLocker ml(&fMutex);
+        const auto bytes = event.toMidiBytes();
+        if (!bytes || fMidiEventCount >= kMaxMidiEvents) { continue; }
+
+        NativeMidiEvent& nEvent(fMidiEvents[fMidiEventCount++]);
+        std::memset(&nEvent, 0, sizeof(NativeMidiEvent));
+        nEvent.port = 0;
+        nEvent.time = static_cast<uint32_t>(event.time);
+        std::copy(bytes->begin(), bytes->end(), nEvent.data);
+        // Program changes and channel pressure have one data byte
+        const auto status = (*bytes)[0] & 0xf0;
+        nEvent.size = (status == 0xC0 || status == 0xD0) ? 2 : 3;
+    }
+
+    {
 // https://github.com/falkTX/Carla/blob/8bceb9ed173a10b29038f8abb4383710c0e497c1/source/includes/CarlaNative.h
 #if CARLA_VERSION_HEX >= CARLA_VERSION_HEX_3
         fDescriptor->process(fHandle, const_cast<const float**>(inBuffers), outBuffers, bufsize,
@@ -577,25 +592,6 @@ auto CarlaInstrument::process(ProcessContext& context) -> ProcessStatus
     }
 
     return ProcessStatus::Continue;
-}
-
-bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_cnt_t offset)
-{
-    const QMutexLocker ml(&fMutex);
-
-    if (fMidiEventCount >= kMaxMidiEvents)
-        return false;
-
-    NativeMidiEvent& nEvent(fMidiEvents[fMidiEventCount++]);
-    std::memset(&nEvent, 0, sizeof(NativeMidiEvent));
-
-    nEvent.port    = 0;
-    nEvent.time    = offset;
-    std::size_t written = writeToByteSeq(event, nEvent.data, sizeof(NativeMidiEvent::data));
-    if(written) { nEvent.size = written; }
-    else { --fMidiEventCount; }
-
-    return true;
 }
 
 gui::PluginView* CarlaInstrument::instantiateView(QWidget* parent)

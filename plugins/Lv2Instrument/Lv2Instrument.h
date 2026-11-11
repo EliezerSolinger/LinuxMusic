@@ -90,6 +90,9 @@ public:
 		AudioProcessor implementation
 	*/
 	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+#ifdef LV2_INSTRUMENT_USE_MIDI
+	auto wantsEvents() const -> bool override { return true; }
+#endif
 	auto process(ProcessContext& context) -> ProcessStatus override;
 	auto channelCount(bool isInput) const -> ch_cnt_t override { return audioChannelCount(isInput); }
 	auto channelGroupCount(bool isInput) const -> group_cnt_t override

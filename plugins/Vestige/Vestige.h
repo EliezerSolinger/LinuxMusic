@@ -83,6 +83,7 @@ public:
 
 	// AudioProcessor implementation
 	auto process(ProcessContext& context) -> ProcessStatus override;
+	auto wantsEvents() const -> bool override { return true; }
 	auto channelCount(bool isInput) const -> ch_cnt_t override;
 	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return channelCount(isInput) > 0 ? 1 : 0; }
 	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const

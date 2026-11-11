@@ -193,13 +193,13 @@ public:
     QString nodeName() const override;
     void saveSettings(QDomDocument& doc, QDomElement& parent) override;
     void loadSettings(const QDomElement& elem) override;
-    bool handleMidiEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset) override;
     gui::PluginView* instantiateView(QWidget* parent) override;
 
     // AudioProcessor implementation
     auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
     void deactivate() override;
     auto process(ProcessContext& context) -> ProcessStatus override;
+    auto wantsEvents() const -> bool override { return true; }
     auto channelCount(bool isInput) const -> ch_cnt_t override;
     auto channelGroupCount(bool isInput) const -> group_cnt_t override { return channelCount(isInput) > 0 ? 1 : 0; }
     auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
@@ -236,8 +236,6 @@ private:
     NativeMidiEvent fMidiEvents[kMaxMidiEvents];
     NativeTimeInfo  fTimeInfo;
 
-    // this is only needed because note-offs are being sent during play
-    QMutex fMutex;
 
     //! Whether Carla was activated, and with which sample rate and buffer size
     bool m_active = false;

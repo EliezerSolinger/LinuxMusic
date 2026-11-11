@@ -288,8 +288,8 @@ void Lv2Proc::copyModelsFromCore()
 		while(m_midiInputReader.read_space() > 0)
 		{
 			const MidiInputEvent ev = m_midiInputReader.read(1)[0];
-			uint32_t atomStamp =
-				ev.time.frames(Engine::framesPerTick()) + ev.offset;
+			// The frame within this run (the song position is not part of it)
+			const auto atomStamp = static_cast<uint32_t>(ev.offset);
 			uint32_t type = Engine::getLv2Manager()->
 				uridCache()[Lv2UridCache::Id::midi_MidiEvent];
 			auto buf = std::array<uint8_t, 4>{};

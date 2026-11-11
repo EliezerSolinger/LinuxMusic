@@ -30,3 +30,19 @@ LinuxMusic, que segue o CLAP. Cada parte termina compilando, com testes e com co
   - portas de áudio (`channelCount()`, grupos, pares in-place) [principal], lidas pelo host com o plugin inativo
 - **Verificação:** violações vão para um tratador (`PluginChecks`). Em builds de depuração ela aborta. Com
   `LMMS_PLUGIN_CHECKS=1` vale em qualquer build. Os testes instalam um tratador que registra as violações.
+
+## Parte B: eventos (feita)
+
+- `PluginEvent` (notas com IDs, expressões de nota, MIDI cru) e `LockFreeQueue` (MPMC limitada, sem trava).
+- `PluginInstance::sendEvent()` aceita eventos de qualquer thread. Cada período, eles chegam em
+  `ProcessContext::inEvents()`:
+  - ordenados por quadro;
+  - no mesmo quadro, em ordem fixa (notas que terminam, MIDI, expressões, notas novas por tecla), para o resultado
+    não depender da thread que enviou cada nota;
+  - eventos depois do fim do período ficam para o seguinte.
+- Instrumentos que usam a fila: AVL Drums, ZynAddSubFX, Carla, LV2 e Vestige. Carla e AVL Drums perderam os mutex de
+  eventos. O LV2 deixou de somar a posição da música ao carimbo de tempo dos eventos MIDI (bug herdado).
+- **Pendente:** num render do ZynAddSubFX, o período do ataque da primeira nota sai em silêncio, e na build de
+  referência ele soa. O resto é igual. Acontece também pelo caminho MIDI antigo (`handleMidiEvent`), então veio das
+  fases 1 a 3, não da fila. A referência também recebe um pitch bend que a build nova não recebe. Investigar antes de
+  fechar a fase 4.

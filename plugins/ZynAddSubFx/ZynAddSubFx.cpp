@@ -353,6 +353,21 @@ auto ZynAddSubFxInstrument::process(ProcessContext& context) -> ProcessStatus
 		return ProcessStatus::Continue;
 	}
 
+	// The period's notes and MIDI. ZynAddSubFX renders a whole period at once, so they all apply from its start
+	// (the remote process gets their frames).
+	for (const auto& event : context.inEvents())
+	{
+		auto midi = event.toMidi();
+		if (!midi) { continue; }
+
+		// External control changes only go through if the according LED is checked
+		if (midi->type() == MidiControlChange && !m_forwardMidiCcModel.value()) { continue; }
+
+		midi->setChannel(0);
+		if (m_remotePlugin) { m_remotePlugin->processMidiEvent(*midi, event.time); }
+		else if (m_localPlugin) { m_localPlugin->processMidiEvent(*midi); }
+	}
+
 	bool processed = false;
 	if (m_remotePlugin)
 	{
@@ -366,6 +381,7 @@ auto ZynAddSubFxInstrument::process(ProcessContext& context) -> ProcessStatus
 	}
 
 	m_pluginMutex.unlock();
+
 
 	if (!processed) { out.silenceAllChannels(); }
 	return ProcessStatus::Continue;
@@ -406,6 +422,9 @@ void ZynAddSubFxInstrument::setShowGUI(bool show)
 
 bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset )
 {
+	// Only the instrument's own control changes come here (see sendControlChange()); the track's notes and MIDI
+	// arrive with the audio, see process()
+
 	// do not forward external MIDI Control Change events if the according
 	// LED is not checked
 	if( event.type() == MidiControlChange &&
