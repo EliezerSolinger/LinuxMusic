@@ -23,6 +23,8 @@
 #ifndef LMMS_GUI_TRACK_CHANNEL_CONTROLS_H
 #define LMMS_GUI_TRACK_CHANNEL_CONTROLS_H
 
+#include <memory>
+
 #include <QObject>
 #include <QPointer>
 
@@ -52,8 +54,9 @@ class TrackChannelControls : public QObject
 {
 	Q_OBJECT
 public:
-	//! @p track is an instrument or a sample track
+	//! @p track is an instrument, sample or folder track
 	TrackChannelControls(Track* track, QObject* parent);
+	~TrackChannelControls() override;
 
 	//! Replaces @p controls (may be null) with controls for @p track and the given widgets (each may be null)
 	static auto replace(TrackChannelControls* controls, Track* track, QObject* parent, VolumeKnob* volumeKnob,
@@ -72,6 +75,10 @@ private:
 	FloatModel* m_volume = nullptr;
 	FloatModel* m_panning = nullptr;
 	EffectChain* m_effects = nullptr;
+
+	//! A folder has no volume and panning of its own: these stand in while it has no channel
+	std::unique_ptr<FloatModel> m_placeholderVolume;
+	std::unique_ptr<FloatModel> m_placeholderPanning;
 
 	QPointer<VolumeKnob> m_volumeKnob;
 	QPointer<Knob> m_panningKnob;

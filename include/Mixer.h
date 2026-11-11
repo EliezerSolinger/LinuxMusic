@@ -151,6 +151,9 @@ public:
 	//! after the track, and goes away with it
 	bool m_trackChannel = false;
 
+	//! Whether the channel is a folder's group channel (see FolderTrack), which the tracks it holds send to
+	bool m_groupChannel = false;
+
 	// Latency compensation, see Mixer::compensateLatency() [audio thread]
 	f_cnt_t m_latency = 0;			//!< of the channel's output: its latest input plus its effects
 	LatencyDelay m_inputDelay;		//!< aligns the tracks' audio with the latest input
@@ -344,6 +347,14 @@ public:
 
 	//! The channel made for @p track (see setUpTrackChannel()), or nullptr if it sends to another channel
 	auto trackChannel(const Track* track) const -> MixerChannel*;
+
+	/**
+	 * Routes the channel of every song track to its folder's group channel, or to the master at the top (see
+	 * FolderTrack). Only the main outputs to the master or to group channels are changed: a channel sent by hand
+	 * only to other channels is left alone, and so are other sends (e.g. to a reverb bus). Not journalled, as it
+	 * follows the folders, whose changes are.
+	 */
+	void updateFolderRouting();
 
 	// determine if adding a send from sendFrom to
 	// sendTo would result in an infinite mixer loop.

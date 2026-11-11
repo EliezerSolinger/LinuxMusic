@@ -245,3 +245,34 @@ Diferenças de som medidas na bateria A/B (43 projetos):
   - na reprodução, a mixagem toda sai atrasada pela latência do master, sem adiantar a música.
 - Testes: `MixerTest` tem 50 (efeito de teste que atrasa e informa a latência: caminhos alinhados, entrada das faixas
   de um barramento, efeito desligado, soma ao longo do caminho).
+
+### Passo 9: hierarquia, trilhas-pasta e canais de grupo (feito)
+
+- **Modelo, como no REAPER:** as faixas continuam numa lista; cada uma tem uma profundidade
+  (`Track::folderDepth()`, salva como `folderdepth`). Uma **trilha-pasta** (`FolderTrack`, tipo novo) contém as
+  faixas logo abaixo dela que são mais profundas. Uma faixa só pode ficar um nível mais funda que a de cima, e só se
+  a de cima for uma pasta (`TrackContainer::updateFolders()` corrige o que vier diferente).
+- **A pasta só agrupa:** sem clipes, sem gravação. Tem um **canal de grupo** no mixer
+  (`MixerChannel::m_groupChannel`, salvo como `groupchannel`), criado com ela.
+- **Roteamento segue a árvore** (`Mixer::updateFolderRouting()`): o canal de cada faixa manda para o canal de grupo da
+  sua pasta, ou para o master se estiver no topo. Só as saídas principais para o master ou para canais de grupo são
+  mudadas. Um canal mandado à mão só para outros canais fica como está, e envios extras (por exemplo, para um reverb)
+  também.
+- **Mudo e solo em cascata:**
+  - o mudo da pasta é o mudo do canal de grupo;
+  - solo numa faixa mantém tocando as pastas que a contêm;
+  - solo numa pasta mantém tocando o que ela contém, menos o que já estava mudo.
+- **Apagar uma pasta** sobe o que ela contém um nível e apaga o canal de grupo.
+- **Desfazer:** a profundidade de todas as faixas é guardada como um objeto só (`TrackContainer::FolderLayout`), então
+  mover uma pasta com o que ela contém é um passo. O roteamento não é guardado à parte: é refeito a partir das
+  pastas.
+- **Interface:**
+  - botão "Adicionar trilha-pasta" na barra do editor de arranjo;
+  - no menu da faixa, "Mover para a pasta acima" e "Tirar da pasta";
+  - faixas dentro de pastas aparecem recuadas;
+  - a pasta tem um botão para recolher ou mostrar as faixas, e knobs VOL e PAN do canal de grupo.
+- As faixas do editor de sequências não entram em pastas.
+- Arrastar faixas para dentro de pastas e recolher grupos no mixer ficam para o passo 10.
+- Os canais do mixer agora mostram o nome da faixa logo ao serem criados (antes ficava "Canal N" até reabrir).
+- `MixerTest` tem 55 testes: roteamento para o grupo e de volta, pastas aninhadas, apagar pasta, solo em pasta,
+  desfazer, salvar.

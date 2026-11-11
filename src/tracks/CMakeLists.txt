@@ -1,6 +1,7 @@
 set(LMMS_SRCS
 	${LMMS_SRCS}
 	tracks/AutomationTrack.cpp
+	tracks/FolderTrack.cpp
 	tracks/InstrumentTrack.cpp
 	tracks/MidiClip.cpp
 	tracks/PatternTrack.cpp

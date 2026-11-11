@@ -827,6 +827,14 @@ void Song::addAutomationTrack()
 
 
 
+void Song::addFolderTrack()
+{
+	(void)Track::create(Track::Type::Folder, this);
+}
+
+
+
+
 bpm_t Song::getTempo()
 {
 	return ( bpm_t )m_tempoModel.value();
@@ -972,6 +980,7 @@ void Song::createNewProject()
 	QCoreApplication::instance()->processEvents();
 
 	m_loadingProject = false;
+	Engine::mixer()->setUpTrackChannels();
 	updateLength();
 	Engine::patternStore()->updateAfterTrackAdd();
 
@@ -1174,6 +1183,9 @@ void Song::loadProject( const QString & fileName )
 	// Every instrument and sample track gets its own mixer channel, which takes over the track's effects,
 	// volume and panning (projects from before that, or from LMMS)
 	Engine::mixer()->setUpTrackChannels();
+	// Folders route their tracks to their group channels
+	updateFolders();
+	Engine::mixer()->updateFolderRouting();
 
 	Engine::audioEngine()->doneChangeInModel();
 

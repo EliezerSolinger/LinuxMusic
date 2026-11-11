@@ -35,6 +35,7 @@ namespace lmms
 {
 
 class AutomationClip;
+class FolderTrack;
 class InstrumentTrack;
 
 namespace gui
@@ -70,6 +71,30 @@ public:
 	void removeTrack( Track * _track );
 	void moveTrack(Track* track, int indexTo);
 
+	// Folders (see Track::folderDepth() and FolderTrack)
+
+	//! The folder holding @p track directly, or nullptr at the top
+	auto folderOf(const Track* track) const -> FolderTrack*;
+
+	//! The tracks @p folder holds, directly or in its subfolders, in order; empty if it is not a folder
+	auto folderContents(const Track* folder) const -> TrackList;
+
+	//! Whether @p track is held by @p folder, directly or in a subfolder
+	auto isInFolder(const Track* track, const Track* folder) const -> bool;
+
+	/**
+	 * Moves @p track into the folder above it (@p delta 1) or out of its folder (@p delta -1), together with what it
+	 * holds if it is a folder. One undo step.
+	 */
+	void changeFolderDepth(Track* track, int delta);
+
+	/**
+	 * Makes the folder depths valid (a track can only be one level deeper than the track above it, and only if that
+	 * one is a folder) and lets the mixer route the tracks' channels to their folders' channels
+	 * (Mixer::updateFolderRouting()). Called after tracks are added, removed or moved.
+	 */
+	void updateFolders();
+
 	virtual void updateAfterTrackAdd();
 
 	void clearAllTracks();
@@ -102,6 +127,8 @@ signals:
 	void trackAdded( lmms::Track * _track );
 	void trackRemoved();
 	void trackMoved();
+	//! The folder depths changed (see updateFolders())
+	void foldersChanged();
 
 protected:
 	static AutomatedValueMap automatedValuesFromTracks(const TrackList &tracks, TimePos timeStart, int clipNum = -1);
@@ -109,9 +136,24 @@ protected:
 	mutable QReadWriteLock m_tracksMutex;
 
 private:
+	//! The folder depths of all tracks, journalled as one object so that a folder change is one undo step
+	class FolderLayout : public JournallingObject
+	{
+	public:
+		explicit FolderLayout(TrackContainer* container) : m_container{container} {}
+		void saveSettings(QDomDocument& doc, QDomElement& element) override;
+		void loadSettings(const QDomElement& element) override;
+		auto nodeName() const -> QString override { return "folderlayout"; }
+
+	private:
+		TrackContainer* m_container;
+	};
+
 	TrackList m_tracks;
 
 	Type m_TrackContainerType;
+
+	FolderLayout m_folderLayout{this};
 
 
 	friend class gui::TrackContainerView;

@@ -761,9 +761,13 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	connect(m_addSampleTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addSampleTrack()));
 	connect(m_addAutomationTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addAutomationTrack()));
 
+	m_addFolderTrackAction = new QAction(embed::getIconPixmap("folder"), tr("Add folder track"), this);
+	connect(m_addFolderTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addFolderTrack()));
+
 	trackActionsToolBar->addAction( m_addPatternTrackAction );
 	trackActionsToolBar->addAction( m_addSampleTrackAction );
 	trackActionsToolBar->addAction( m_addAutomationTrackAction );
+	trackActionsToolBar->addAction(m_addFolderTrackAction);
 
 
 	// Edit actions

@@ -24,6 +24,8 @@
 
 #include "TrackOperationsWidget.h"
 
+#include <algorithm>
+
 #include <QCheckBox>
 #include <QHBoxLayout>
 #include <QMenu>
@@ -258,6 +260,25 @@ void TrackOperationsWidget::updateMenu()
 	if (QMenu *mixerMenu = m_trackView->createMixerMenu(tr("Channel %1: %2"), tr("Assign to new Mixer Channel")))
 	{
 		toMenu->addMenu(mixerMenu);
+	}
+
+	// Folders group the tracks of the song
+	Track* track = m_trackView->getTrack();
+	TrackContainer* container = track->trackContainer();
+	if (container == Engine::getSong())
+	{
+		toMenu->addSeparator();
+		const auto& tracks = container->tracks();
+		const auto it = std::find(tracks.begin(), tracks.end(), track);
+		const bool folderAbove = it != tracks.begin() && it != tracks.end()
+			&& (*std::prev(it))->folderDepth() + ((*std::prev(it))->type() == Track::Type::Folder ? 1 : 0)
+				> track->folderDepth();
+		auto into = toMenu->addAction(embed::getIconPixmap("folder_opened", 16, 16), tr("Move into folder above"),
+			this, [container, track] { container->changeFolderDepth(track, 1); });
+		into->setEnabled(folderAbove);
+		auto out = toMenu->addAction(tr("Move out of folder"), this,
+			[container, track] { container->changeFolderDepth(track, -1); });
+		out->setEnabled(track->folderDepth() > 0);
 	}
 
 	if (auto trackView = dynamic_cast<InstrumentTrackView*>(m_trackView))

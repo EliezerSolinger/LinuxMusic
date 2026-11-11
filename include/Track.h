@@ -80,6 +80,7 @@ public:
 		Video,
 		Automation,
 		HiddenAutomation,
+		Folder,		//!< groups the tracks below it (see FolderTrack)
 		Count
 	} ;
 
@@ -264,6 +265,15 @@ public:
 	
 	BoolModel* getMutedModel();
 
+	/**
+	 * How deep the track is in folders: 0 at the top, 1 inside a folder, 2 inside a folder in a folder...
+	 * A folder (FolderTrack) holds the tracks right below it that are deeper than it, as in REAPER.
+	 */
+	auto folderDepth() const -> int { return m_folderDepth; }
+
+	//! Sets the folder depth of this track only; see TrackContainer::changeFolderDepth() for user actions
+	void setFolderDepth(int depth);
+
 public slots:
 	virtual void setName(const QString& newName);
 
@@ -322,6 +332,8 @@ private:
 	
 	std::optional<QColor> m_color;
 
+	int m_folderDepth = 0;
+
 	friend class gui::TrackView;
 
 
@@ -330,6 +342,7 @@ signals:
 	void nameChanged();
 	void clipAdded( lmms::Clip * );
 	void colorChanged();
+	void folderDepthChanged();
 } ;
 
 

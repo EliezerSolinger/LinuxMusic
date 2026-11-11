@@ -158,6 +158,18 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 
 	connect(m_renameLineEdit, &QLineEdit::editingFinished, this, &MixerChannelView::renameFinished);
 
+	// Channels made for tracks follow their names and colors
+	connect(Engine::mixer(), &Mixer::dataChanged, this, [this] {
+		if (m_inRename) { return; }
+		const auto mc = this->mixerChannel();
+		if (m_renameLineEdit->text() != elideName(mc->m_name))
+		{
+			m_renameLineEdit->setText(elideName(mc->m_name));
+			setToolTip(mc->m_name);
+		}
+		update();
+	});
+
 	setFocusPolicy(Qt::StrongFocus);
 }
 

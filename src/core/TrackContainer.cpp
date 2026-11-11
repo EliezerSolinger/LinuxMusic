@@ -31,6 +31,8 @@
 
 #include "AutomationClip.h"
 #include "embed.h"
+#include "FolderTrack.h"
+#include "Mixer.h"
 #include "TrackContainer.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
@@ -203,6 +205,12 @@ void TrackContainer::removeTrack( Track * _track )
 		if (_track->isSolo()) {
 			_track->setSolo(false);
 		}
+		// What a folder holds moves up a level
+		for (auto inner = std::next(it); _track->type() == Track::Type::Folder && inner != m_tracks.end()
+			&& (*inner)->folderDepth() > _track->folderDepth(); ++inner)
+		{
+			(*inner)->setFolderDepth((*inner)->folderDepth() - 1);
+		}
 		m_tracks.erase(it);
 		lockTracksAccess.unlock();
 
@@ -210,6 +218,7 @@ void TrackContainer::removeTrack( Track * _track )
 		{
 			Engine::getSong()->setModified();
 		}
+		updateFolders();
 		emit trackRemoved();
 	}
 }
@@ -219,7 +228,121 @@ void TrackContainer::moveTrack(Track* track, int indexTo)
 	m_tracks.erase(std::find(m_tracks.begin(), m_tracks.end(), track));
 	m_tracks.insert(m_tracks.begin() + indexTo, track);
 
+	updateFolders();
 	emit trackMoved();
+}
+
+
+
+
+auto TrackContainer::folderOf(const Track* track) const -> FolderTrack*
+{
+	const auto it = std::find(m_tracks.begin(), m_tracks.end(), track);
+	if (it == m_tracks.end() || track->folderDepth() == 0) { return nullptr; }
+
+	// The nearest folder above that is one level up
+	for (auto above = std::make_reverse_iterator(it); above != m_tracks.rend(); ++above)
+	{
+		if ((*above)->folderDepth() < track->folderDepth())
+		{
+			return dynamic_cast<FolderTrack*>(*above);
+		}
+	}
+	return nullptr;
+}
+
+
+
+
+auto TrackContainer::folderContents(const Track* folder) const -> TrackList
+{
+	auto contents = TrackList{};
+	if (!folder || folder->type() != Track::Type::Folder) { return contents; }
+
+	auto it = std::find(m_tracks.begin(), m_tracks.end(), folder);
+	if (it == m_tracks.end()) { return contents; }
+	for (++it; it != m_tracks.end() && (*it)->folderDepth() > folder->folderDepth(); ++it)
+	{
+		contents.push_back(*it);
+	}
+	return contents;
+}
+
+
+
+
+auto TrackContainer::isInFolder(const Track* track, const Track* folder) const -> bool
+{
+	const auto contents = folderContents(folder);
+	return std::find(contents.begin(), contents.end(), track) != contents.end();
+}
+
+
+
+
+void TrackContainer::changeFolderDepth(Track* track, int delta)
+{
+	const auto it = std::find(m_tracks.begin(), m_tracks.end(), track);
+	if (it == m_tracks.end() || delta == 0) { return; }
+
+	// Into the folder above: only if there is one at the same level, or the track above is in one
+	const int depth = track->folderDepth() + delta;
+	const int maxDepth = it == m_tracks.begin() ? 0
+		: (*std::prev(it))->folderDepth() + ((*std::prev(it))->type() == Track::Type::Folder ? 1 : 0);
+	if (depth < 0 || depth > maxDepth) { return; }
+
+	m_folderLayout.addJournalCheckPoint();
+
+	const auto contents = folderContents(track);
+	track->setFolderDepth(depth);
+	for (const auto inner : contents) { inner->setFolderDepth(inner->folderDepth() + delta); }
+
+	updateFolders();
+}
+
+
+
+
+void TrackContainer::updateFolders()
+{
+	// A track is at most one level deeper than the track above, and only if that one is a folder
+	int maxDepth = 0;
+	for (const auto track : m_tracks)
+	{
+		if (track->folderDepth() > maxDepth) { track->setFolderDepth(maxDepth); }
+		maxDepth = track->folderDepth() + (track->type() == Track::Type::Folder ? 1 : 0);
+	}
+
+	if (this == Engine::getSong() && !Engine::getSong()->isLoadingProject() && Engine::mixer())
+	{
+		Engine::mixer()->updateFolderRouting();
+	}
+	emit foldersChanged();
+}
+
+
+
+
+void TrackContainer::FolderLayout::saveSettings(QDomDocument& doc, QDomElement& element)
+{
+	(void)doc;
+	auto depths = QStringList{};
+	for (const auto track : m_container->tracks()) { depths << QString::number(track->folderDepth()); }
+	element.setAttribute("depths", depths.join(','));
+}
+
+
+
+
+void TrackContainer::FolderLayout::loadSettings(const QDomElement& element)
+{
+	const auto depths = element.attribute("depths").split(',', Qt::SkipEmptyParts);
+	const auto& tracks = m_container->tracks();
+	for (auto i = std::size_t{0}; i < tracks.size() && i < static_cast<std::size_t>(depths.size()); ++i)
+	{
+		tracks[i]->setFolderDepth(depths[static_cast<int>(i)].toInt());
+	}
+	m_container->updateFolders();
 }
 
 

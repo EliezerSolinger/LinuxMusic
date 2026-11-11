@@ -99,6 +99,11 @@ TrackView::TrackView(Track* track, TrackContainerView* tcv)
 	
 	connect(m_trackContainerView, &TrackContainerView::trackHeadWidthChanged, this, &TrackView::updateWidth);
 
+	// Tracks in folders are indented
+	auto indent = [this] { m_trackSettingsWidget.setContentsMargins(FolderIndent * m_track->folderDepth(), 0, 0, 0); };
+	connect(m_track, &Track::folderDepthChanged, this, indent);
+	indent();
+
 	auto trackGrip = m_trackOperationsWidget.getTrackGrip();
 	connect(trackGrip, &TrackGrip::grabbed, this, &TrackView::onTrackGripGrabbed);
 	connect(trackGrip, &TrackGrip::released, this, &TrackView::onTrackGripReleased);

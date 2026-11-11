@@ -27,11 +27,13 @@
 #include "AudioBusHandle.h"
 #include "EffectRackView.h"
 #include "Engine.h"
+#include "FolderTrack.h"
 #include "InstrumentTrack.h"
 #include "Knob.h"
 #include "Mixer.h"
 #include "SampleTrack.h"
 #include "Track.h"
+#include "panning.h"
 #include "volume.h"
 
 namespace lmms::gui
@@ -55,7 +57,15 @@ TrackChannelControls::TrackChannelControls(Track* track, QObject* parent) :
 		m_panning = sampleTrack->panningModel();
 		m_effects = sampleTrack->audioBusHandle()->effects();
 	}
-	assert(m_channel && m_volume && m_panning && m_effects);
+	else if (auto folderTrack = dynamic_cast<FolderTrack*>(track))
+	{
+		m_channel = folderTrack->mixerChannelModel();
+		m_placeholderVolume = std::make_unique<FloatModel>(DefaultVolume, MinVolume, MaxVolume, 0.1f);
+		m_placeholderPanning = std::make_unique<FloatModel>(DefaultPanning, PanningLeft, PanningRight, 0.1f);
+		m_volume = m_placeholderVolume.get();
+		m_panning = m_placeholderPanning.get();
+	}
+	assert(m_channel && m_volume && m_panning);
 
 	const auto mixer = Engine::mixer();
 	connect(mixer, &Mixer::trackChannelChanged, this, [this](Track* changed) {
@@ -71,16 +81,23 @@ TrackChannelControls::TrackChannelControls(Track* track, QObject* parent) :
 
 
 
+TrackChannelControls::~TrackChannelControls() = default;
+
+
+
+
 auto TrackChannelControls::replace(TrackChannelControls* controls, Track* track, QObject* parent,
 	VolumeKnob* volumeKnob, Knob* panningKnob, EffectRackView* effectRack) -> TrackChannelControls*
 {
+	// The widgets may point at models of the old controls, so those go after the widgets point elsewhere
+	auto replacement = new TrackChannelControls(track, parent);
+	replacement->m_volumeKnob = volumeKnob;
+	replacement->m_panningKnob = panningKnob;
+	replacement->m_effectRack = effectRack;
+	if (controls) { replacement->m_boundChannel = controls->m_boundChannel; }
+	replacement->update();
 	delete controls;
-	controls = new TrackChannelControls(track, parent);
-	controls->m_volumeKnob = volumeKnob;
-	controls->m_panningKnob = panningKnob;
-	controls->m_effectRack = effectRack;
-	controls->update();
-	return controls;
+	return replacement;
 }
 
 
@@ -142,7 +159,7 @@ void TrackChannelControls::update()
 		FloatModel* model = channel && !m_panning->isAutomatedOrControlled() ? &channel->m_panModel : m_panning;
 		if (m_panningKnob->model() != model || !oldModelsValid) { m_panningKnob->setModel(model, oldModelsValid); }
 	}
-	if (m_effectRack)
+	if (m_effectRack && m_effects)
 	{
 		// The track's own effects stay visible while it has any (e.g. on a shared channel)
 		EffectChain* model = channel && m_effects->effects().empty() ? &channel->m_fxChain : m_effects;

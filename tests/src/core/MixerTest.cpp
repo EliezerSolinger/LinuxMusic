@@ -32,6 +32,7 @@
 #include "DataFile.h"
 #include "Effect.h"
 #include "EffectControls.h"
+#include "FolderTrack.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "PluginChecks.h"
@@ -1027,6 +1028,192 @@ private slots:
 		mixer()->mixerChannel(0)->m_fxChain.clear();
 		mixer()->mixerChannel(first)->m_fxChain.clear();
 		mixer()->mixerChannel(second)->m_fxChain.clear();
+	}
+
+	//! The channel @p track sends its main output to, or -1 if none or more than one
+	static auto outputOf(const Track* track) -> int
+	{
+		const auto channel = mixer()->trackChannel(track);
+		if (!channel) { return -1; }
+		int output = -1;
+		for (const MixerRoute* route : channel->m_sends)
+		{
+			if (route->sourcePair() != 0 || route->destinationPair() != 0) { continue; }
+			if (output != -1) { return -1; }
+			output = route->receiverIndex();
+		}
+		return output;
+	}
+
+	static void deleteTrack(Track* track)
+	{
+		mixer()->releaseTrackChannel(track);
+		delete track;
+	}
+
+	void folderRoutesItsTracksToItsGroupChannel()
+	{
+		const auto song = Engine::getSong();
+		auto folder = dynamic_cast<FolderTrack*>(Track::create(Track::Type::Folder, song));
+		QVERIFY(folder);
+		auto track = Track::create(Track::Type::Instrument, song);
+		const auto group = mixer()->trackChannel(folder);
+		QVERIFY(group);
+		QVERIFY(group->m_groupChannel);
+		QCOMPARE(outputOf(track), 0);
+
+		// Into the folder: the track's channel sends to the group channel, which sends to the master
+		song->changeFolderDepth(track, 1);
+		QCOMPARE(track->folderDepth(), 1);
+		QCOMPARE(song->folderOf(track), folder);
+		QCOMPARE(outputOf(track), group->index());
+		QCOMPARE(outputOf(folder), 0);
+
+		// The group channel's fader acts on the track's sound
+		const auto trackChannel = mixer()->trackChannel(track)->index();
+		group->m_volumeModel.setValue(0.5f);
+		settle();
+		feed(trackChannel, 0.8f, 0.4f);
+		compareOutput(mix(), 0.4f, 0.2f);
+
+		// Muting the folder mutes its group channel
+		folder->setMuted(true);
+		QVERIFY(group->m_muteModel.value());
+		folder->setMuted(false);
+
+		// Out of the folder again
+		song->changeFolderDepth(track, -1);
+		QCOMPARE(track->folderDepth(), 0);
+		QCOMPARE(outputOf(track), 0);
+
+		deleteTrack(track);
+		deleteTrack(folder);
+	}
+
+	void foldersNest()
+	{
+		const auto song = Engine::getSong();
+		auto outer = Track::create(Track::Type::Folder, song);
+		auto inner = Track::create(Track::Type::Folder, song);
+		auto track = Track::create(Track::Type::Sample, song);
+		song->changeFolderDepth(inner, 1);
+		song->changeFolderDepth(track, 1);
+		song->changeFolderDepth(track, 1);
+		QCOMPARE(track->folderDepth(), 2);
+		QCOMPARE(song->folderOf(track), inner);
+		QCOMPARE(song->folderOf(inner), outer);
+		QVERIFY(song->isInFolder(track, outer));
+		QCOMPARE(outputOf(track), mixer()->trackChannel(inner)->index());
+		QCOMPARE(outputOf(inner), mixer()->trackChannel(outer)->index());
+
+		// Moving a folder out moves what it holds along
+		song->changeFolderDepth(inner, -1);
+		QCOMPARE(inner->folderDepth(), 0);
+		QCOMPARE(track->folderDepth(), 1);
+		QCOMPARE(song->folderOf(track), inner);
+		QCOMPARE(outputOf(inner), 0);
+
+		// Deleting a folder moves its tracks up a level, to the master here
+		deleteTrack(inner);
+		QCOMPARE(track->folderDepth(), 0);
+		QCOMPARE(outputOf(track), 0);
+
+		deleteTrack(track);
+		deleteTrack(outer);
+	}
+
+	void soloInAFolder()
+	{
+		const auto song = Engine::getSong();
+		auto folder = Track::create(Track::Type::Folder, song);
+		auto soloed = Track::create(Track::Type::Instrument, song);
+		auto sibling = Track::create(Track::Type::Instrument, song);
+		auto outside = Track::create(Track::Type::Instrument, song);
+		song->changeFolderDepth(soloed, 1);
+		song->changeFolderDepth(sibling, 1);
+
+		// Soloing a track keeps its folder playing
+		soloed->setSolo(true);
+		soloed->toggleSolo();
+		QVERIFY(!folder->isMuted());
+		QVERIFY(!soloed->isMuted());
+		QVERIFY(sibling->isMuted());
+		QVERIFY(outside->isMuted());
+		soloed->setSolo(false);
+		soloed->toggleSolo();
+		QVERIFY(!sibling->isMuted());
+
+		// Soloing a folder keeps what it holds playing
+		folder->setSolo(true);
+		folder->toggleSolo();
+		QVERIFY(!soloed->isMuted());
+		QVERIFY(!sibling->isMuted());
+		QVERIFY(outside->isMuted());
+		folder->setSolo(false);
+		folder->toggleSolo();
+
+		deleteTrack(outside);
+		deleteTrack(sibling);
+		deleteTrack(soloed);
+		deleteTrack(folder);
+	}
+
+	void folderChangeIsOneUndoStep()
+	{
+		const auto song = Engine::getSong();
+		auto folder = Track::create(Track::Type::Folder, song);
+		auto inner = Track::create(Track::Type::Folder, song);
+		auto track = Track::create(Track::Type::Instrument, song);
+		song->changeFolderDepth(inner, 1);
+		song->changeFolderDepth(track, 1);
+		song->changeFolderDepth(track, 1);
+
+		const auto journal = Engine::projectJournal();
+		journal->setJournalling(true);
+		song->changeFolderDepth(inner, -1);
+		QCOMPARE(track->folderDepth(), 1);
+		journal->undo();
+		journal->setJournalling(false);
+
+		// The folder and what it holds are back, and so is the routing
+		QCOMPARE(inner->folderDepth(), 1);
+		QCOMPARE(track->folderDepth(), 2);
+		QCOMPARE(outputOf(inner), mixer()->trackChannel(folder)->index());
+
+		deleteTrack(track);
+		deleteTrack(inner);
+		deleteTrack(folder);
+	}
+
+	void folderDepthIsSaved()
+	{
+		const auto song = Engine::getSong();
+		auto folder = Track::create(Track::Type::Folder, song);
+		auto track = Track::create(Track::Type::Sample, song);
+		song->changeFolderDepth(track, 1);
+
+		auto doc = QDomDocument{};
+		auto parent = doc.createElement("tracks");
+		doc.appendChild(parent);
+		track->saveState(doc, parent);
+		folder->saveState(doc, parent);
+		QCOMPARE(parent.firstChildElement().attribute("folderdepth"), QString{"1"});
+
+		// The mixer remembers which channels are group channels
+		auto mixerDoc = QDomDocument{};
+		auto mixerElement = mixerDoc.createElement("mixer");
+		mixerDoc.appendChild(mixerElement);
+		mixer()->saveSettings(mixerDoc, mixerElement);
+		const auto group = mixer()->trackChannel(folder)->index();
+		bool found = false;
+		for (auto ch = mixerElement.firstChildElement("mixerchannel"); !ch.isNull(); ch = ch.nextSiblingElement("mixerchannel"))
+		{
+			if (ch.attribute("num").toInt() == group) { found = ch.attribute("groupchannel") == "1"; }
+		}
+		QVERIFY(found);
+
+		deleteTrack(track);
+		deleteTrack(folder);
 	}
 };
 

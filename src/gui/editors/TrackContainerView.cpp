@@ -36,6 +36,7 @@
 #include "DataFile.h"
 #include "MainWindow.h"
 #include "FileBrowser.h"
+#include "FolderTrack.h"
 #include "ImportFilter.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -121,6 +122,7 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 	connect( m_tc, SIGNAL(trackAdded(lmms::Track*)),
 			this, SLOT(createTrackView(lmms::Track*)),
 			Qt::QueuedConnection );
+	connect(m_tc, &TrackContainer::foldersChanged, this, &TrackContainerView::realignTracks);
 }
 
 
@@ -259,10 +261,18 @@ void TrackContainerView::scrollToTrackView( TrackView * _tv )
 
 void TrackContainerView::realignTracks()
 {
+	// The tracks in collapsed folders are hidden
+	int collapsedDepth = -1; // tracks deeper than this are in a collapsed folder
 	for (const auto& trackView : m_trackViews)
 	{
-		trackView->show();
+		const auto track = trackView->getTrack();
+		if (collapsedDepth >= 0 && track->folderDepth() <= collapsedDepth) { collapsedDepth = -1; }
+		const bool hidden = collapsedDepth >= 0;
+		trackView->setVisible(!hidden);
 		trackView->update();
+
+		const auto folder = dynamic_cast<const FolderTrack*>(track);
+		if (!hidden && folder && folder->isCollapsed()) { collapsedDepth = folder->folderDepth(); }
 	}
 
 	emit tracksRealigned();

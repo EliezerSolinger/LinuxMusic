@@ -31,6 +31,7 @@
 #include "AudioEngineWorkerThread.h"
 #include "Mixer.h"
 #include "DataFile.h"
+#include "FolderTrack.h"
 #include "Song.h"
 
 #include "InstrumentTrack.h"
@@ -476,6 +477,10 @@ auto tracksWithMixerChannel() -> std::vector<std::pair<Track*, IntModel*>>
 			else if (auto sampleTrack = dynamic_cast<SampleTrack*>(track))
 			{
 				result.emplace_back(track, sampleTrack->mixerChannelModel());
+			}
+			else if (auto folderTrack = dynamic_cast<FolderTrack*>(track))
+			{
+				result.emplace_back(track, folderTrack->mixerChannelModel());
 			}
 		}
 	}
@@ -1096,6 +1101,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_panModel.setValue(PanningCenter);
 	ch->m_input = ChannelInput{};
 	ch->m_trackChannel = false;
+	ch->m_groupChannel = false;
 	setChannelCount(index, DEFAULT_CHANNELS);
 	ch->m_recordArmModel.setValue(false);
 	ch->m_monitorModel.setValue(static_cast<int>(MixerChannel::MonitorMode::Auto));
@@ -1164,6 +1170,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
 		if (ch->channelCount() != DEFAULT_CHANNELS) { mixch.setAttribute("channels", ch->channelCount()); }
 		if (ch->m_trackChannel) { mixch.setAttribute("trackchannel", 1); }
+		if (ch->m_groupChannel) { mixch.setAttribute("groupchannel", 1); }
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
 
@@ -1235,6 +1242,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		}
 		m_mixerChannels[num]->m_name = mixch.attribute( "name" );
 		m_mixerChannels[num]->m_trackChannel = mixch.attribute("trackchannel", "0").toInt() != 0;
+		m_mixerChannels[num]->m_groupChannel = mixch.attribute("groupchannel", "0").toInt() != 0;
 		if (mixch.hasAttribute("color"))
 		{
 			m_mixerChannels[num]->setColor(QColor{mixch.attribute("color")});
@@ -1298,7 +1306,7 @@ bool Mixer::isChannelInUse(int index)
 namespace
 {
 
-//! What an instrument or sample track has of a mixer strip of its own
+//! What an instrument, sample or folder track has of a mixer strip of its own (a folder only the channel)
 struct TrackStrip
 {
 	IntModel* channel;
@@ -1318,6 +1326,11 @@ auto stripOf(const Track* track) -> std::optional<TrackStrip>
 	{
 		return TrackStrip{sampleTrack->mixerChannelModel(), sampleTrack->volumeModel(), sampleTrack->panningModel(),
 			sampleTrack->audioBusHandle()};
+	}
+	// A folder has only its group channel
+	if (auto folderTrack = dynamic_cast<FolderTrack*>(const_cast<Track*>(track)))
+	{
+		return TrackStrip{folderTrack->mixerChannelModel(), nullptr, nullptr, nullptr};
 	}
 	return std::nullopt;
 }
@@ -1346,6 +1359,7 @@ int Mixer::setUpTrackChannel(Track* track)
 	{
 		// The track's alone on it: it is the track's channel (e.g. in projects from before)
 		m_mixerChannels[index]->m_trackChannel = true;
+		m_mixerChannels[index]->m_groupChannel = track->type() == Track::Type::Folder;
 	}
 	else
 	{
@@ -1355,6 +1369,8 @@ int Mixer::setUpTrackChannel(Track* track)
 		channel->m_name = track->name();
 		channel->setColor(track->color());
 		channel->m_trackChannel = true;
+		channel->m_groupChannel = track->type() == Track::Type::Folder;
+		emit dataChanged();
 
 		// Where the track sent before
 		if (sendTo != 0)
@@ -1383,7 +1399,7 @@ int Mixer::setUpTrackChannel(Track* track)
 	}
 
 	// The track's effects go in front of the channel's
-	if (auto effects = strip->bus->effects(); effects && !effects->effects().empty())
+	if (auto effects = strip->bus ? strip->bus->effects() : nullptr; effects && !effects->effects().empty())
 	{
 		auto doc = DataFile{DataFile::Type::EffectSettings};
 		auto saved = effects->saveState(doc, doc.content());
@@ -1394,7 +1410,7 @@ int Mixer::setUpTrackChannel(Track* track)
 	// The track's volume becomes the channel's input trim: like the track's volume, it comes before the effects,
 	// so effects like compressors get the same level. What the trim's range cannot take goes to the fader.
 	// Automated or controlled volume and panning stay on the track, where their automation acts.
-	const float trackVolume = strip->volume->value() / DefaultVolume;
+	const float trackVolume = strip->volume ? strip->volume->value() / DefaultVolume : 1.f;
 	if (trackVolume != 1.f && !strip->volume->isAutomatedOrControlled())
 	{
 		if (trackVolume <= 0.f) { channel->m_volumeModel.setValue(0.f); }
@@ -1410,7 +1426,7 @@ int Mixer::setUpTrackChannel(Track* track)
 		}
 		strip->volume->setValue(DefaultVolume);
 	}
-	if (strip->panning->value() != DefaultPanning && !strip->panning->isAutomatedOrControlled())
+	if (strip->panning && strip->panning->value() != DefaultPanning && !strip->panning->isAutomatedOrControlled())
 	{
 		channel->m_panModel.setValue(std::clamp<float>(channel->m_panModel.value() + strip->panning->value(),
 			PanningLeft, PanningRight));
@@ -1440,16 +1456,62 @@ void Mixer::releaseTrackChannel(Track* track)
 	const int index = strip->channel->value();
 	if (index <= 0 || index >= numChannels() || !m_mixerChannels[index]->m_trackChannel) { return; }
 
-	// Only if no other track sends to it and no other channel either
+	// Only if no other track sends to it and no other channel either (a folder's tracks send to its group channel,
+	// but they go to the folder above once the folder is gone)
 	const auto tracks = tracksWithMixerChannel();
 	const auto users = std::count_if(tracks.begin(), tracks.end(), [index](const auto& entry) {
 		return entry.second->value() == index;
 	});
-	if (users > 1 || !m_mixerChannels[index]->m_receives.empty()) { return; }
+	if (users > 1 || (!m_mixerChannels[index]->m_groupChannel && !m_mixerChannels[index]->m_receives.empty()))
+	{
+		return;
+	}
 
 	strip->channel->setValue(0);
 	deleteChannel(index);
 	emit trackChannelChanged(track);
+}
+
+
+
+
+void Mixer::updateFolderRouting()
+{
+	const auto song = Engine::getSong();
+	if (!song) { return; }
+
+	const auto journal = Engine::projectJournal();
+	const bool wasJournalling = journal->isJournalling();
+	journal->setJournalling(false);
+
+	for (const auto track : song->tracks())
+	{
+		const auto channel = trackChannel(track);
+		if (!channel) { continue; }
+
+		const auto folder = song->folderOf(track);
+		const auto folderChannel = folder ? trackChannel(folder) : nullptr;
+		const mix_ch_t target = folderChannel ? folderChannel->index() : 0;
+
+		// The channel's main outputs: sends of the main pair after the fader
+		bool reachesTarget = false;
+		bool sentByHand = false;
+		auto wrong = std::vector<mix_ch_t>{};
+		for (const MixerRoute* route : channel->m_sends)
+		{
+			if (route->sourcePair() != 0 || route->destinationPair() != 0 || route->isPreFader()) { continue; }
+			const auto receiver = route->receiver();
+			if (receiver->index() == target) { reachesTarget = true; }
+			else if (receiver->isMaster() || receiver->m_groupChannel) { wrong.push_back(receiver->index()); }
+			else { sentByHand = true; }
+		}
+		if (sentByHand && !reachesTarget && wrong.empty()) { continue; }
+
+		for (const auto index : wrong) { deleteChannelSend(channel->index(), index); }
+		if (!reachesTarget) { createChannelSend(channel->index(), target); }
+	}
+
+	journal->setJournalling(wasJournalling);
 }
 
 

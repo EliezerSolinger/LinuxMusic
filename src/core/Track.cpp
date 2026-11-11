@@ -29,12 +29,15 @@
 
 #include "Track.h"
 
+#include <algorithm>
+
 #include <QDomElement>
 #include <QVariant>
 
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
 #include "ConfigManager.h"
+#include "FolderTrack.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "PatternStore.h"
@@ -105,6 +108,10 @@ Track * Track::create( Type tt, TrackContainer * tc )
 		case Type::Automation: t = new class AutomationTrack( tc ); break;
 		case Type::HiddenAutomation:
 						t = new class AutomationTrack( tc, true ); break;
+		case Type::Folder:
+			// Folders only group the tracks of the song
+			if (tc == Engine::getSong()) { t = new FolderTrack(tc); }
+			break;
 		default: break;
 	}
 
@@ -122,6 +129,7 @@ Track * Track::create( Type tt, TrackContainer * tc )
 	{
 		Engine::mixer()->setUpTrackChannel(t);
 	}
+	if (t) { tc->updateFolders(); }
 
 	Engine::audioEngine()->doneChangeInModel();
 
@@ -143,6 +151,14 @@ Track * Track::create( const QDomElement & element, TrackContainer * tc )
 	if( t != nullptr )
 	{
 		t->restoreState( element );
+
+		// E.g. a cloned track, which would share the channel of the original: it gets a channel of its own
+		if (Engine::getSong() && !Engine::getSong()->isLoadingProject() && Engine::mixer()
+			&& (tc == Engine::getSong() || tc == Engine::patternStore()))
+		{
+			Engine::mixer()->setUpTrackChannel(t);
+		}
+		tc->updateFolders();
 	}
 
 	Engine::audioEngine()->doneChangeInModel();
@@ -188,6 +204,8 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	{
 		element.setAttribute("color", m_color->name());
 	}
+
+	if (m_folderDepth > 0 && !presetMode) { element.setAttribute("folderdepth", m_folderDepth); }
 	
 	QDomElement tsDe = doc.createElement( nodeName() );
 	// let actual track (InstrumentTrack, PatternTrack, SampleTrack etc.) save its settings
@@ -229,6 +247,8 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		setColor(QColor{element.attribute("color")});
 	}
 
+	if (!presetMode) { setFolderDepth(element.attribute("folderdepth", "0").toInt()); }
+
 	if (presetMode)
 	{
 		QDomNode node = element.firstChild();
@@ -265,7 +285,7 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			{
 				Clip * clip = createClip(
 								TimePos( 0 ) );
-				clip->restoreState( node.toElement() );
+				if (clip) { clip->restoreState(node.toElement()); }
 			}
 		}
 		node = node.nextSibling();
@@ -478,6 +498,17 @@ bar_t Track::length() const
 
 
 
+void Track::setFolderDepth(int depth)
+{
+	depth = std::max(depth, 0);
+	if (depth == m_folderDepth) { return; }
+	m_folderDepth = depth;
+	emit folderDepthChanged();
+}
+
+
+
+
 void Track::toggleSolo()
 {
 	const TrackContainer::TrackList & tl = m_trackContainer->tracks();
@@ -509,9 +540,15 @@ void Track::toggleSolo()
 				track->m_mutedBeforeSolo = track->isMuted();
 			}
 			// Don't mute AutomationTracks (keep their original state) unless we are on the sololegacybehavior mode
-			if (track == this)
+			// The folders holding the solo track play along with it, and so does what it holds if it is a folder
+			// (unless muted before)
+			if (track == this || m_trackContainer->isInFolder(this, track))
 			{
 				track->setMuted(false);
+			}
+			else if (m_trackContainer->isInFolder(track, this))
+			{
+				track->setMuted(track->m_mutedBeforeSolo);
 			}
 			else if (soloLegacyBehavior || track->type() != Type::Automation)
 			{

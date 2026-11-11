@@ -52,6 +52,8 @@ const int TRACK_OP_WIDTH = 78;
 
 const int DEFAULT_TRACK_WIDTH = 338;
 const int COMPACT_TRACK_WIDTH = 214;
+//! How much tracks in folders are indented per level, in pixels
+const int FolderIndent = 10;
 const int MINIMUM_TRACK_WIDTH = 168;
 
 
