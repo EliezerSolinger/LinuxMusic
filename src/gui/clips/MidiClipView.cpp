@@ -48,6 +48,67 @@
 namespace lmms::gui
 {
 
+namespace
+{
+
+//! The layers of a step button, from the outside in, like the LMMS theme's step graphics
+struct StepColors
+{
+	QColor ringTop;		//!< bevel ring, top edge
+	QColor ring;		//!< bevel ring, other edges
+	QColor groove;		//!< dark line inside the ring
+	QColor edge;		//!< inner edge of the face
+	QColor faceTop;		//!< face, top rows
+	QColor face;		//!< face
+
+	static auto mix(const StepColors& a, const StepColors& b, float t) -> StepColors
+	{
+		auto lerp = [t](const QColor& x, const QColor& y) {
+			return QColor::fromRgbF(x.redF() + (y.redF() - x.redF()) * t, x.greenF() + (y.greenF() - x.greenF()) * t,
+				x.blueF() + (y.blueF() - x.blueF()) * t);
+		};
+		return {lerp(a.ringTop, b.ringTop), lerp(a.ring, b.ring), lerp(a.groove, b.groove), lerp(a.edge, b.edge),
+			lerp(a.faceTop, b.faceTop), lerp(a.face, b.face)};
+	}
+};
+
+const auto StepOff = StepColors{{0x7d, 0x80, 0x81}, {0x3c, 0x40, 0x43}, {0x00, 0x00, 0x00}, {0x09, 0x0a, 0x0b},
+	{0x17, 0x1a, 0x1d}, {0x0b, 0x0d, 0x0e}};
+//! Every other group of four steps
+const auto StepOffLight = StepColors{{0xb6, 0xb9, 0xbb}, {0x69, 0x70, 0x75}, {0x05, 0x05, 0x06},
+	{0x19, 0x1d, 0x21}, {0x2f, 0x32, 0x36}, {0x24, 0x27, 0x2b}};
+//! A step with a note at full volume (200%); quieter notes are closer to StepOffLight
+const auto StepOn = StepColors{{0xa7, 0xe3, 0xdf}, {0x6c, 0xac, 0xad}, {0x12, 0x5a, 0x57}, {0x44, 0xff, 0xf3},
+	{0xb0, 0xff, 0xf9}, {0xa0, 0xff, 0xf8}};
+
+/**
+ * Draws a step button filling @p r, drawn rather than scaled from an image so that it stays crisp at any width.
+ * @p playing marks the step at the play position with the bright ring of the active steps.
+ */
+void drawStepButton(QPainter& p, const QRect& r, const StepColors& colors, bool playing)
+{
+	if (r.width() < 6 || r.height() < 6) { p.fillRect(r, colors.face); return; }
+
+	const auto& ringTop = playing ? StepOn.ringTop : colors.ringTop;
+	const auto& ring = playing ? StepOn.ring : colors.ring;
+
+	p.fillRect(r, Qt::black);
+
+	const auto ringRect = r.adjusted(1, 1, -1, -1);
+	p.fillRect(ringRect, ring);
+	p.fillRect(QRect{ringRect.left(), ringRect.top(), ringRect.width(), 1}, ringTop);
+
+	p.fillRect(r.adjusted(2, 2, -2, -2), colors.groove);
+	p.fillRect(r.adjusted(3, 3, -3, -3), colors.edge);
+
+	const auto face = r.adjusted(4, 4, -4, -4);
+	p.fillRect(face, colors.face);
+	p.fillRect(QRect{face.left(), face.top(), face.width(), std::min(3, face.height())}, colors.faceTop);
+}
+
+} // namespace
+
+
 constexpr int BeatStepButtonOffset = 4;
 
 MidiClipView::MidiClipView( MidiClip* clip, TrackView* parent ) :
@@ -634,57 +695,31 @@ void MidiClipView::paintEvent( QPaintEvent * )
 	// Beat clip paint event (on BB Editor)
 	if (beatClip && displayPattern)
 	{
-		QPixmap stepon0;
-		QPixmap stepon200;
-		QPixmap stepoff;
-		QPixmap stepoffl;
-		QPixmap stephighlight;
 		const int steps = std::max(1, m_clip->m_steps);
 		const int w = width() - 2 * BORDER_WIDTH;
-
-		// scale step graphics to fit the beat clip length
-		stepon0
-			= m_stepBtnOn0.scaled(w / steps, m_stepBtnOn0.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-		stepon200 = m_stepBtnOn200.scaled(
-			w / steps, m_stepBtnOn200.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-		stepoff
-			= m_stepBtnOff.scaled(w / steps, m_stepBtnOff.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-		stepoffl = m_stepBtnOffLight.scaled(
-			w / steps, m_stepBtnOffLight.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-		stephighlight = m_stepBtnHighlight.scaled(
-			w / steps, m_stepBtnHighlight.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 
 		for (int it = 0; it < steps; it++)	// go through all the steps in the beat clip
 		{
 			Note* n = m_clip->noteAtStep(it);
 
-			// figure out x and y coordinates for step graphic
+			// each step spans from its start to the next one's
 			const int x = BORDER_WIDTH + static_cast<int>(it * w / steps);
-			const int y = BeatStepButtonOffset;
+			const int nextX = BORDER_WIDTH + static_cast<int>((it + 1) * w / steps);
+			const auto target = QRect{x, BeatStepButtonOffset, nextX - x, m_stepBtnOff.height()};
 
 			const bool isAtPlayPos = Engine::getSong()->getPlayPos(Song::PlayMode::Pattern) * TimePos::stepsPerBar() / TimePos::ticksPerBar() == it
 				&& Engine::getSong()->playMode() == Song::PlayMode::Pattern;
 
+			const auto& off = (it / 4) % 2 ? StepOffLight : StepOff;
 			if (n)
 			{
-				const int vol = n->getVolume();
-				p.drawPixmap(x, y, stepoffl);
-				p.drawPixmap(x, y, stepon0);
-				p.setOpacity(std::sqrt(vol / 200.0));
-				p.drawPixmap(x, y, stepon200);
-				p.setOpacity(1);
-			}
-			else if ((it / 4) % 2)
-			{
-				p.drawPixmap(x, y, stepoffl);
+				// Louder notes are brighter
+				const float level = std::sqrt(std::clamp<int>(n->getVolume(), 0, 200) / 200.f);
+				drawStepButton(p, target, StepColors::mix(StepOffLight, StepOn, level), isAtPlayPos);
 			}
 			else
 			{
-				p.drawPixmap(x, y, stepoff);
-			}
-			if (isAtPlayPos)
-			{
-				p.drawPixmap(x, y, stephighlight);
+				drawStepButton(p, target, off, isAtPlayPos);
 			}
 		} // end for loop
 

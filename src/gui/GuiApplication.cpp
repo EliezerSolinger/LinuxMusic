@@ -212,6 +212,13 @@ GuiApplication::GuiApplication()
 	{
 		// LINUXMUSIC_SCREENSHOT_ACTION=instrument opens the first instrument window before the screenshot
 		const auto screenshotAction = qEnvironmentVariable("LINUXMUSIC_SCREENSHOT_ACTION");
+		// =pattern shows the Pattern Editor
+		if (screenshotAction == "pattern")
+		{
+			QTimer::singleShot(2500, m_mainWindow, [this] {
+				QMetaObject::invokeMethod(m_mainWindow, "togglePatternEditorWin", Q_ARG(bool, true));
+			});
+		}
 		// =pins opens the pin connector of the first instrument instead
 		if (screenshotAction == "instrument" || screenshotAction == "pins")
 		{
