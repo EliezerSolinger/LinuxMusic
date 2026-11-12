@@ -733,6 +733,78 @@ válvulas (fundo âmbar), aproveitando o código de válvulas que já existia.
 - FLAT limpo mesmo muito acima dos trilhos;
 - compatibilidade do TUBE antigo.
 
+### Passo 19: mais modelos, LEDs SAT e CLIP, estágio de ganho no master e pot de GAIN (feito)
+
+Pedido do usuário: o 5534 e o TL072 também, outras válvulas, um LED que pisca conforme satura e um de clipping que
+acende um pouco antes, o mesmo sistema de saturação no master (sem pot de ganho, depois do fader PRE) e o GAIN
+começando mudo, com 0 dB no meio e saturação depois do meio, como numa mesa real.
+
+**Estágio de ganho em classe própria** (`GainStage`, `include/GainStage.h`):
+- O código saiu da `AnalogChannelStrip` para ser usado pelos canais e pelo master.
+- Os números dos modelos são os mesmos de antes; os novos foram para o fim, então os projetos abrem iguais.
+- O seletor oferece os modelos em `GainStage::DisplayOrder`: FLAT, amp-ops, válvulas.
+
+**Modelos novos:**
+- **TL072** (entrada JFET, muito equipamento de estúdio): joelho em +19 dBFS, trilhos um pouco mais baixos e levemente
+  assimétricos, slew de 13 V/µs.
+- **5534** (NE5534, o single): igual ao 5532, com slew de 13 V/µs.
+- **12AT7 e 12AU7:** modelo de triodo de Norman Koren com os parâmetros publicados por ele, num estágio de catodo comum
+  típico (+250 V, 47k de placa, catodo de 820 Ω e 1,5k com bypass). A curva de transferência do estágio é resolvida
+  numericamente (ponto de operação e tensão de placa por bisseção) numa tabela de 4097 pontos, calculada uma vez no
+  construtor (thread principal, não no áudio).
+  - **Decisão:** no passo 18 ficou "não inventar curvas sem dados"; aqui as curvas vêm de um modelo físico publicado,
+    não de ajuste de ouvido.
+  - **Correção:** normalizar pelo corte (como o 12AX7) fazia os dois clipar já em ~0 dBFS, porque o lado positivo
+    satura antes, quando a grade começa a conduzir. A normalização usa o primeiro ponto de clipagem, qualquer que seja
+    o lado. Resultado: parecidos com o 12AX7 em nível normal, e com mais headroom passado o ponto de clipagem
+    (entrada -8: 12AX7 -3,2; 12AT7 -5,3; 12AU7 -6,2), coerente com o ganho menor.
+
+**LEDs SAT e CLIP** (abaixo do seletor, na seção INPUT, e no master):
+- O estágio mede o pico de cada período antes de processar.
+- **SAT:** brilho de 0 a 1.
+  - Nos amp-ops, do joelho ao trilho.
+  - Nas válvulas, dos 12 dB abaixo do ponto de clipagem até ele.
+  - Acende na hora e apaga devagar, como um LED de mesa.
+- **CLIP:** vermelho, acende 3 dB antes do limite (o trilho do amp-op, o ponto de clipagem da válvula, ou +24 dBFS no
+  FLAT, onde uma mesa clipa) e segura por uns 10 quadros da interface.
+- A interface lê os valores com `takeSaturation`/`takeClip` (atômicos, sem trava). Apagado, o LED mostra a cor fraca,
+  como a lente de um LED de mesa.
+
+**Pot de GAIN** (`AnalogChannelStrip::m_gainModel`, posição de 0 a 1):
+- Todo à esquerda é mudo; no meio é 0 dB; todo à direita é +30 dB.
+  - Até o meio: (2p)³, que dá -18 dB a um quarto.
+  - Depois do meio: linear em dB.
+- Fica antes do LC e do estágio de ganho, com rampa por período (sem estalo).
+- O knob mostra o ganho em dB ("-inf" no mudo).
+- Antes, o GAIN da faixa era o trim do canal. O trim continua no painel do canal, como ajuste digital limpo, e projetos
+  antigos mantêm o trim que tinham.
+- Com a música em níveis normais, a saturação aparece da metade para a direita: nas válvulas, a partir de 0 dBFS no
+  estágio; nos amp-ops, perto do joelho.
+
+**Master:**
+- `MasterSection::m_driveModel`, padrão 4558, e um `GainStage` depois dos faders PRE (que o empurram) e antes dos
+  efeitos do master.
+- Só no modo analógico, sem pot de ganho.
+- Linha DRIVE na seção master (seletor + LEDs), visível só no modo analógico.
+- Salvo em `masterstrip` como `drive`.
+
+**Interface:** `DriveButton`, `SaturationLeds` e `GainKnob` foram para `GainStageControls`, usados pelo canal e pelo
+master.
+
+**A/B:**
+- Os projetos determinísticos batem com a referência s15, com uma ressalva: renders seguidos do mesmo projeto já
+  diferiam entre si em ±1 LSB em umas 20 amostras. A ordem de soma de ponto flutuante varia com as threads; isso já
+  aparecia entre s23 e s15, antes desta mudança.
+- Os plugins aleatórios por natureza variam como sempre.
+
+`MixerTest` tem 90 testes. Novos:
+- cada modelo aparece uma vez no seletor;
+- medição de SAT e CLIP;
+- mapeamento do pot (mudo, 0 dB, +15 dB, +30 dB, -18 dB a um quarto, monotônico) e saturação depois do meio;
+- estágio de ganho do master (empurrado pelo PRE, ausente no modo digital, salvo e lido).
+
+Os testes de amp-op e válvula agora cobrem todos os modelos.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
