@@ -1033,8 +1033,34 @@ void Mixer::prepareMasterMix()
 
 
 
+void Mixer::reportTrackLatency(mix_ch_t dest, f_cnt_t latency)
+{
+	if (dest >= numChannels()) { return; }
+	auto& reported = m_mixerChannels[dest]->m_reportedTrackLatency;
+	auto current = reported.load(std::memory_order_relaxed);
+	while ((current == MixerChannel::NoReport || current < latency)
+		&& !reported.compare_exchange_weak(current, latency, std::memory_order_relaxed)) {}
+}
+
+
+
+
 void Mixer::compensateLatency()
 {
+	// The tracks' latency of this period, kept for a while when no track reports (e.g. while one is replaced),
+	// since every change resets the delays
+	constexpr int PeriodsToKeepLatency = 32;
+	for (const auto channel : m_mixerChannels)
+	{
+		const auto reported = channel->m_reportedTrackLatency.exchange(MixerChannel::NoReport, std::memory_order_relaxed);
+		if (reported != MixerChannel::NoReport)
+		{
+			channel->m_trackLatency = reported;
+			channel->m_periodsWithoutReport = 0;
+		}
+		else if (++channel->m_periodsWithoutReport > PeriodsToKeepLatency) { channel->m_trackLatency = 0; }
+	}
+
 	m_latencyPass.assign(m_mixerChannels.size(), 0);
 	for (auto index = std::size_t{0}; index < m_mixerChannels.size(); ++index)
 	{
@@ -1052,14 +1078,14 @@ auto Mixer::compensateLatency(mix_ch_t index) -> f_cnt_t
 	if (m_latencyPass[index] == 1) { return 0; } // a loop, which the mixer does not allow
 	m_latencyPass[index] = 1;
 
-	// The latest input; the tracks' audio has none
-	f_cnt_t latest = 0;
+	// The latest input
+	f_cnt_t latest = channel->m_trackLatency;
 	for (const MixerRoute* route : channel->m_receives)
 	{
 		latest = std::max(latest, compensateLatency(route->senderIndex()));
 	}
 
-	channel->m_inputDelay.setDelay(latest, channel->channelCount());
+	channel->m_inputDelay.setDelay(latest - channel->m_trackLatency, channel->channelCount());
 	for (MixerRoute* route : channel->m_receives)
 	{
 		route->latencyDelay().setDelay(latest - compensateLatency(route->senderIndex()), 2);

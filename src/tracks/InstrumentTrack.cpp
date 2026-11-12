@@ -618,6 +618,7 @@ void InstrumentTrack::playInstrument(const Instrument* instrument, std::span<Sam
 
 	m_instrumentChannels.silenceAllChannels();
 	m_instrument->process(m_instrumentChannels);
+	Engine::mixer()->reportTrackLatency(m_mixerChannelModel.value(), m_instrument->latency());
 	toInterleaved(m_instrumentChannels.groupBuffers(0), InterleavedBufferView<float, 2>{out.data(), frames});
 
 	// The main pair goes on through the track's play handle; the auxiliary pairs go straight to the mixer

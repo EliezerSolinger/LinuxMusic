@@ -131,28 +131,8 @@ auto Lv2Effect::process(ProcessContext& context) -> ProcessStatus
 	m_controls.copyModelsToLmms();
 	m_controls.copyBuffersToCore(out, frames);
 
-	// Mix the dry signal of the main inputs into the outputs; sidechain inputs are not part of the dry
-	// signal, and outputs without a matching main input have none
-	bool corrupt = wetLevel() < 0; // #3261 - if w < 0, bash w := 0, d := 1
-	const float d = corrupt ? 1 : dryLevel();
-	const float w = corrupt ? 0 : wetLevel();
-	if (d != 0.f || w != 1.f)
-	{
-		const auto mainInputs = m_controls.mainInputCount();
-		for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
-		{
-			auto wet = out.buffer(channel);
-			if (channel < mainInputs)
-			{
-				const auto dry = in.buffer(channel);
-				for (f_cnt_t f = 0; f < frames; ++f) { wet[f] = d * dry[f] + w * wet[f]; }
-			}
-			else
-			{
-				for (f_cnt_t f = 0; f < frames; ++f) { wet[f] *= w; }
-			}
-		}
-	}
+	// The dry signal of the main inputs; sidechain inputs are not part of it
+	mixDrySignal(in, out, m_controls.mainInputCount());
 
 	return ProcessStatus::ContinueIfNotQuiet;
 }

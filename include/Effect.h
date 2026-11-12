@@ -31,6 +31,7 @@
 #include "AudioProcessor.h"
 #include "AutomatableModel.h"
 #include "Engine.h"
+#include "LatencyDelay.h"
 #include "Plugin.h"
 #include "TempoSyncKnobModel.h"
 
@@ -95,6 +96,9 @@ public:
 
 	//! Turns the effect on or off (bypass), e.g. from an effect slot of the mixer
 	auto enabledModel() -> BoolModel* { return &m_enabledModel; }
+
+	//! The W/D knob: 1 = only the wet signal, 0 = only the dry signal
+	auto wetDryModel() -> FloatModel* { return &m_wetDryModel; }
 
 	inline f_cnt_t timeout() const
 	{
@@ -189,6 +193,13 @@ protected:
 	 */
 	void handleAutoQuit(bool silentOutput);
 
+	/**
+	 * Mixes the outputs @p out, which hold the wet signal, with the dry signal of the inputs @p in after the W/D knob.
+	 * Only the first @p dryChannels outputs have a dry signal (e.g. not the outputs of sidechain inputs). The dry
+	 * signal is delayed by the effect's latency(), so that it stays aligned with the wet signal. [audio thread]
+	 */
+	void mixDrySignal(const AudioBuffer& in, AudioBuffer& out, ch_cnt_t dryChannels);
+
 private:
 	//! Not used by effects and will be removed in the future
 	void playNote(ProcessContext&) final {}
@@ -208,6 +219,10 @@ private:
 	TempoSyncKnobModel m_autoQuitModel;
 
 	bool m_autoQuitEnabled = false;
+
+	//! The dry signal of latent effects (see mixDrySignal())
+	LatencyDelay m_dryDelay;
+	std::vector<float> m_dryScratch;
 
 	friend class gui::EffectView;
 	friend class EffectChain;

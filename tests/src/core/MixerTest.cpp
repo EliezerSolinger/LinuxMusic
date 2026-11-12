@@ -131,6 +131,7 @@ public:
 			}
 		}
 		m_position = position;
+		mixDrySignal(in, out, 2);
 		return ProcessStatus::Continue;
 	}
 	auto latency() const -> f_cnt_t override { return m_lines[0].size(); }
@@ -1024,6 +1025,46 @@ private slots:
 		QCOMPARE(mixer()->latency(), delay);
 
 		mixer()->mixerChannel(latent)->m_fxChain.clear();
+	}
+
+	void drySignalOfALatentEffectIsDelayed()
+	{
+		const f_cnt_t delay = 40;
+		const auto latent = mixer()->createChannel();
+		const auto effect = addLatentEffect(latent, delay);
+		effect->effect()->wetDryModel()->setValue(0.5f);
+
+		// Half dry, half wet, both after the latency
+		feed(latent, 0.5f, 0.5f);
+		compareStep(mix(), delay, frames(), 0.5f);
+		compareStep(mix(), 0, delay, 0.5f);
+
+		mixer()->mixerChannel(latent)->m_fxChain.clear();
+	}
+
+	void latentTrackDelaysTheOtherPaths()
+	{
+		const f_cnt_t delay = 48;
+		const auto latent = mixer()->createChannel();
+		const auto plain = mixer()->createChannel();
+
+		// The latent track's audio comes late already: the plain channel's audio waits for it
+		mixer()->reportTrackLatency(latent, delay);
+		feed(plain, 0.25f, 0.25f);
+		compareStep(mix(), delay, frames(), 0.25f);
+		QCOMPARE(mixer()->mixerChannel(latent)->m_latency, delay);
+		QCOMPARE(mixer()->latency(), delay);
+		mixer()->reportTrackLatency(latent, delay);
+		compareStep(mix(), 0, delay, 0.25f);
+
+		// The latent channel's own tracks are not delayed again
+		mixer()->reportTrackLatency(latent, delay);
+		feed(latent, 0.5f, 0.5f);
+		compareStep(mix(), 0, frames(), 0.5f);
+
+		// Without reports for a while, the latency goes away
+		for (int i = 0; i < 40; ++i) { mix(); }
+		QCOMPARE(mixer()->latency(), f_cnt_t{0});
 	}
 
 	void disabledEffectHasNoLatency()

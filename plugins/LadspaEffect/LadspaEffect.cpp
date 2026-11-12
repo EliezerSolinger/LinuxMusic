@@ -315,31 +315,7 @@ ProcessStatus LadspaEffect::process(ProcessContext& context)
 	}
 
 	// Mix the dry signal into the outputs. Outputs without a matching input have no dry signal.
-	const float d = dryLevel();
-	const float w = wetLevel();
-	if (d != 0.f || w != 1.f)
-	{
-		const auto inputs = static_cast<ch_cnt_t>(in.channels());
-		for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
-		{
-			auto wet = out.buffer(channel);
-			if (channel < inputs)
-			{
-				const auto dry = in.buffer(channel);
-				for (f_cnt_t frame = 0; frame < frames; ++frame)
-				{
-					wet[frame] = d * dry[frame] + w * wet[frame];
-				}
-			}
-			else
-			{
-				for (f_cnt_t frame = 0; frame < frames; ++frame)
-				{
-					wet[frame] *= w;
-				}
-			}
-		}
-	}
+	mixDrySignal(in, out, static_cast<ch_cnt_t>(in.channels()));
 
 	return ProcessStatus::ContinueIfNotQuiet;
 }

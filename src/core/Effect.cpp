@@ -115,6 +115,46 @@ Effect * Effect::instantiate( const QString& pluginName,
 
 
 
+void Effect::mixDrySignal(const AudioBuffer& in, AudioBuffer& out, ch_cnt_t dryChannels)
+{
+	const bool corrupt = wetLevel() < 0; // #3261 - if w < 0, bash w := 0, d := 1
+	const float d = corrupt ? 1.f : dryLevel();
+	const float w = corrupt ? 0.f : wetLevel();
+	const auto frames = out.frames();
+	dryChannels = std::min({dryChannels, in.channels(), out.channels()});
+
+	// A latent effect's dry signal goes through the delay even while it is not mixed in, so that it is aligned
+	// as soon as it is
+	const auto delay = latency();
+	m_dryDelay.setDelay(delay, delay > 0 ? dryChannels : 0);
+	if (delay > 0 && m_dryScratch.size() < static_cast<std::size_t>(frames)) { m_dryScratch.resize(frames); }
+	if (d == 0.f && w == 1.f && delay == 0) { return; }
+
+	for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
+	{
+		auto wet = out.buffer(channel);
+		if (channel < dryChannels)
+		{
+			const float* dry = in.buffer(channel).data();
+			if (delay > 0)
+			{
+				m_dryDelay.process(channel, dry, m_dryScratch.data(), frames);
+				dry = m_dryScratch.data();
+			}
+			if (d == 0.f && w == 1.f) { continue; }
+			for (f_cnt_t frame = 0; frame < frames; ++frame) { wet[frame] = d * dry[frame] + w * wet[frame]; }
+		}
+		else if (w != 1.f)
+		{
+			for (f_cnt_t frame = 0; frame < frames; ++frame) { wet[frame] *= w; }
+		}
+	}
+	m_dryDelay.advance(frames, true);
+}
+
+
+
+
 void Effect::handleAutoQuit(bool silentOutput)
 {
 	if (!m_autoQuitEnabled)
