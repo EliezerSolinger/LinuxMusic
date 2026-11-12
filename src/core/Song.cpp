@@ -825,15 +825,17 @@ auto Song::recordAudio() -> bool
 		return false;
 	}
 
-	// The input must be open before the first period is recorded
+	// The input must be open before the first period is recorded (an armed track has opened it already)
 	Engine::audioEngine()->setCaptureEnabled(true);
 
-	playSong();
+	// Playing the song, recording starts here and now (punch in); otherwise the song starts from the cursor
+	const bool punchIn = m_playing && !m_paused && m_playMode == PlayMode::Song;
+	if (!punchIn) { playSong(); }
 	const auto error = m_audioRecorder.start(requests, recordingLatency(), Engine::audioEngine()->framesPerPeriod(),
 		Engine::audioEngine()->outputSampleRate());
 	if (!error.isEmpty())
 	{
-		stop();
+		if (!punchIn) { stop(); }
 		emit recordingProblem(error);
 		return false;
 	}
@@ -841,6 +843,22 @@ auto Song::recordAudio() -> bool
 	if (!problems.isEmpty()) { emit recordingProblem(problems.join('\n')); }
 	emit playbackStateChanged();
 	return true;
+}
+
+
+
+
+void Song::stopAudioRecording()
+{
+	if (!isRecordingAudio()) { return; }
+	auto takes = std::vector<AudioRecorder::Take>{};
+	{
+		// The recording ends with the period being rendered; the song plays on
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		takes = m_audioRecorder.stop();
+	}
+	finishAudioRecording(takes);
+	emit playbackStateChanged();
 }
 
 

@@ -345,6 +345,9 @@ public:
 	//! @returns whether audio is being recorded
 	auto isRecordingAudio() const -> bool { return m_audioRecorder.isRecording(); }
 
+	//! Ends the recording (punch out) while the song plays on; the takes become clips
+	void stopAudioRecording();
+
 	//! @returns the folder where recordings of this project go: "<project>_media" next to the project file, or a
 	//! folder of the working directory while the project has no file
 	auto mediaDirectory() const -> QString;

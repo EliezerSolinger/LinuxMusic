@@ -258,6 +258,62 @@ private slots:
 		QVERIFY2(std::abs(offset) <= 1.0, qPrintable(QString::number(offset)));
 	}
 
+	void punchInAndOutWhilePlaying()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256 + 50, 256 + 300};
+		engine->setAudioDevice(device, false);
+
+		constexpr tick_t ClipTick = 3 * 192;
+		const auto impulsePath = m_directory.filePath("impulse-punch.wav");
+		writeImpulse(impulsePath, engine->outputSampleRate(), 20000, 0);
+		auto* player = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* clip = new SampleClip{player};
+		clip->setSampleFile(impulsePath);
+		clip->movePosition(TimePos{ClipTick});
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		const auto cleanUp = qScopeGuard([&] {
+			song->stop();
+			const auto guard = engine->requestChangesGuard();
+			delete player;
+			delete recorder;
+		});
+
+		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
+		const auto callbacksUntil = [&](double frame) {
+			return static_cast<int>(std::ceil(frame / 256.0));
+		};
+
+		// Play from the start; punch in at bar 2, out after the impulse at bar 4
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		for (int callback = 0; callback < callbacksUntil(192 * framesPerTick); ++callback) { device->callback(256); }
+		QVERIFY(song->recordAudio());
+		for (int callback = 0; callback < callbacksUntil(2 * 192 * framesPerTick) + 20; ++callback) { device->callback(256); }
+		song->stopAudioRecording();
+		QVERIFY(!song->isRecordingAudio());
+		QVERIFY(song->isPlaying());
+		song->stop();
+
+		QCOMPARE(recorder->numOfClips(), 1);
+		const auto* take = dynamic_cast<SampleClip*>(recorder->getClip(0));
+
+		// The take starts where the punch in was heard: two periods and the latencies before bar 2
+		const auto expectedStart = (192 * framesPerTick - 2 * 256.0 - (50 + 300 + 512)) / framesPerTick;
+		QVERIFY(std::abs(take->startPosition().getTicks() - expectedStart) <= 1.0);
+		const auto peak = peakFrame(PathUtil::toAbsolute(take->sampleFile()));
+		const auto outputPeak = device->outputPeak();
+		const auto heardAt = static_cast<double>(outputPeak.first) - static_cast<double>(engine->framesPerPeriod());
+		const auto recordedAt = take->startPosition().getTicks() * framesPerTick + static_cast<double>(peak);
+		qInfo("punched take at tick %d, impulse %.2f frames from where it was heard", take->startPosition().getTicks(),
+			recordedAt - heardAt);
+		QVERIFY(peak >= 0);
+		QVERIFY(std::abs(recordedAt - heardAt) <= 1.0);
+	}
+
 	void monitoringPlaysTheInputThroughTheTrack_data()
 	{
 		QTest::addColumn<int>("mode");

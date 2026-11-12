@@ -257,10 +257,10 @@ void TransportBar::record()
 {
 	const auto song = Engine::getSong();
 
-	// While recording, the button stops
+	// While recording, the button ends the recording and the song plays on (punch out)
 	if (song->isRecordingAudio())
 	{
-		stop();
+		song->stopAudioRecording();
 		return;
 	}
 
