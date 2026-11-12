@@ -132,7 +132,7 @@ Song::Song() :
 	}
 
 	// Inform VST plugins if the user moved the play head
-	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(true); }, Qt::DirectConnection);
+	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(); }, Qt::DirectConnection);
 }
 
 
@@ -347,8 +347,6 @@ void Song::processNextBuffer()
 		timeline.setFrameOffset(frameOffsetInTick);
 	}
 
-	// Reset the jumped state after processing this buffer, since presumably it has now been handled.
-	m_vstSyncController.setPlaybackJumped(false);
 }
 
 void Song::removeOldAutomatedValue(AutomatableModel* am)

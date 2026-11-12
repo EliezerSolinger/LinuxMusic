@@ -195,9 +195,8 @@ QString Xpressive::nodeName() const {
 }
 
 void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
-	m_A1=m_parameterA1.value();
-	m_A2=m_parameterA2.value();
-	m_A3=m_parameterA3.value();
+	// The notes render in parallel: everything a note changes is its own (its ExprSynth), never the instrument's
+	const auto parameters = std::array{m_parameterA1.value(), m_parameterA2.value(), m_parameterA3.value()};
 
 	if (!nph->m_pluginData) {
 
@@ -212,21 +211,18 @@ void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 			e->add_constant("srate", Engine::audioEngine()->outputSampleRate());// sample rate of the audio engine
 			e->add_constant("v", nph->getVolume() / 255.0); //volume of the note.
 			e->add_constant("tempo", Engine::getSong()->getTempo());//tempo of the song.
-			e->add_variable("A1", m_A1);//A1,A2,A3: general purpose input controls.
-			e->add_variable("A2", m_A2);
-			e->add_variable("A3", m_A3);
 		};
 		init_expression_step1(exprO1);
 		init_expression_step1(exprO2);
 
-		m_W1.setInterpolate(m_interpolateW1.value());//set interpolation according to the user selection.
-		m_W2.setInterpolate(m_interpolateW2.value());
-		m_W3.setInterpolate(m_interpolateW3.value());
-		nph->m_pluginData = new ExprSynth(&m_W1, &m_W2, &m_W3, exprO1, exprO2, nph,
+		// The interpolation the user selected for each wave
+		const auto interpolate = std::array{m_interpolateW1.value(), m_interpolateW2.value(), m_interpolateW3.value()};
+		nph->m_pluginData = new ExprSynth(&m_W1, &m_W2, &m_W3, interpolate, exprO1, exprO2, nph,
 				Engine::audioEngine()->outputSampleRate(), &m_panning1, &m_panning2, m_relTransition.value());
 	}
 
 	auto ps = static_cast<ExprSynth*>(nph->m_pluginData);
+	ps->setParameters(parameters); // A1, A2, A3: the general purpose input controls
 	const f_cnt_t frames = nph->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = nph->noteOffset();
 

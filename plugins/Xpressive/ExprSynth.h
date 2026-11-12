@@ -25,6 +25,7 @@
 #ifndef EXPRSYNTH_H
 #define EXPRSYNTH_H
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -86,18 +87,21 @@ public:
 	{
 		delete [] m_samples;
 	}
-	inline void setInterpolate(bool _interpolate) { m_interpolate = _interpolate; }
 	float *m_samples;
 	int m_length;
-	bool m_interpolate;
 };
 
 class ExprSynth
 {
 public:
-	ExprSynth(const WaveSample* gW1, const WaveSample* gW2, const WaveSample* gW3, ExprFront* exprO1, ExprFront* exprO2, NotePlayHandle* nph,
+	//! @param interpolate whether each wave (W1, W2, W3) is read with interpolation
+	ExprSynth(const WaveSample* gW1, const WaveSample* gW2, const WaveSample* gW3, std::array<bool, 3> interpolate,
+			ExprFront* exprO1, ExprFront* exprO2, NotePlayHandle* nph,
 			const sample_rate_t sample_rate, const FloatModel* pan1, const FloatModel* pan2, float rel_trans);
 	virtual ~ExprSynth();
+
+	//! Sets the values of A1, A2 and A3 for the expressions of this note
+	void setParameters(const std::array<float, 3>& parameters) { m_parameters = parameters; }
 
 	void renderOutput(f_cnt_t frames, SampleFrame* buf );
 
@@ -116,6 +120,7 @@ private:
 	const FloatModel *m_pan1,*m_pan2;
 	float m_rel_transition;
 	float m_rel_inc;
+	std::array<float, 3> m_parameters = {}; //!< A1, A2, A3
 
 } ;
 

@@ -26,6 +26,7 @@
 #define LMMS_SONG_H
 
 #include <array>
+#include <atomic>
 #include <memory>
 
 #include <QString>
@@ -426,12 +427,14 @@ private:
 	bool m_modified;
 	bool m_loadOnLaunch;
 
-	volatile bool m_recording;
-	volatile bool m_exporting;
-	volatile bool m_exportLoop;
-	volatile bool m_renderBetweenMarkers;
-	volatile bool m_playing;
-	volatile bool m_paused;
+	// The transport's state: written by the main thread or the export thread, read by the audio thread and the
+	// interface
+	std::atomic<bool> m_recording;
+	std::atomic<bool> m_exporting;
+	std::atomic<bool> m_exportLoop;
+	std::atomic<bool> m_renderBetweenMarkers;
+	std::atomic<bool> m_playing;
+	std::atomic<bool> m_paused;
 
 	bool m_savingProject;
 	bool m_loadingProject;
@@ -443,7 +446,7 @@ private:
 
 	std::array<Timeline, PlayModeCount> m_timelines;
 
-	PlayMode m_playMode;
+	std::atomic<PlayMode> m_playMode;
 	bar_t m_length;
 
 	const MidiClip* m_midiClipToPlay;

@@ -135,7 +135,6 @@ private:
 	FloatModel m_panning1;
 	FloatModel m_panning2;
 	FloatModel m_relTransition;
-	float m_A1,m_A2,m_A3;
 	WaveSample m_W1, m_W2, m_W3;
 
 	BoolModel m_exprValid;

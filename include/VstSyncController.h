@@ -28,6 +28,8 @@
 
 #include <QObject>
 
+#include <atomic>
+
 #include "SharedMemory.h"
 #include "VstSyncData.h"  // IWYU pragma: keep
 
@@ -46,7 +48,10 @@ public:
 	void setTimeSignature(int num, int denom);
 	void startCycle(int startTick, int endTick);
 	void stopCycle();
-	void setPlaybackJumped(bool jumped);
+	//! The play head jumped (any thread): the next period tells the plugins
+	void setPlaybackJumped();
+
+	//! At the start of each period, on the audio thread
 	void update();
 
 	const std::string& sharedMemoryKey() const noexcept { return m_syncData.key(); }
@@ -56,6 +61,9 @@ private slots:
 
 private:
 	SharedMemory<VstSyncData> m_syncData;
+
+	//! A jump the plugins have not been told about yet: set by any thread, taken by the audio thread in update()
+	std::atomic<bool> m_jumpPending = false;
 };
 
 

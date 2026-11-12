@@ -126,11 +126,9 @@ void VstSyncController::stopCycle()
 
 
 
-void VstSyncController::setPlaybackJumped(bool jumped)
+void VstSyncController::setPlaybackJumped()
 {
-	if (!m_syncData) { return; }
-
-	m_syncData->playbackJumped = jumped;
+	m_jumpPending.store(true, std::memory_order_relaxed);
 }
 
 
@@ -138,6 +136,9 @@ void VstSyncController::setPlaybackJumped(bool jumped)
 void VstSyncController::update()
 {
 	if (!m_syncData) { return; }
+
+	// The plugins see a jump for the one period after it
+	m_syncData->playbackJumped = m_jumpPending.exchange(false, std::memory_order_relaxed);
 
 	m_syncData->bufferSize = Engine::audioEngine()->framesPerPeriod();
 

@@ -25,6 +25,8 @@
 #ifndef LMMS_PROJECT_RENDERER_H
 #define LMMS_PROJECT_RENDERER_H
 
+#include <atomic>
+
 #include "AudioFileDevice.h"
 #include "AudioEngine.h"
 #include "OutputSettings.h"
@@ -90,8 +92,8 @@ private:
 
 	AudioFileDevice * m_fileDev;
 
-	volatile int m_progress;
-	volatile bool m_abort;
+	std::atomic<int> m_progress; //!< written by the render thread, read by the interface
+	std::atomic<bool> m_abort;
 
 } ;
 

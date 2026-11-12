@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <atomic>
 #include <random>
 #include <numbers>
 
@@ -358,8 +359,11 @@ struct RandomVectorFunction : public exprtk::ifunction<float>
 };
 
 namespace SimpleRandom {
-	std::mt19937 generator (17);  // mt19937 is a standard mersenne_twister_engine
-	std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+	// The notes are rendered on several threads at once: each thread draws from its own engine (mt19937, a standard
+	// mersenne_twister_engine), seeded apart from the others'
+	std::atomic<unsigned> s_nextSeed{17};
+	thread_local std::mt19937 generator(s_nextSeed.fetch_add(1, std::memory_order_relaxed));
+	thread_local std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
 	struct float_random_with_engine
 	{
 		static inline float process()
@@ -694,7 +698,7 @@ void ExprFront::setIntegrate(const unsigned int* const frameCounter, const unsig
 	}
 }
 
-ExprSynth::ExprSynth(const WaveSample *gW1, const WaveSample *gW2, const WaveSample *gW3,
+ExprSynth::ExprSynth(const WaveSample *gW1, const WaveSample *gW2, const WaveSample *gW3, std::array<bool, 3> interpolate,
 	ExprFront *exprO1, ExprFront *exprO2,
 	NotePlayHandle *nph, const sample_rate_t sample_rate,
 	const FloatModel* pan1, const FloatModel* pan2, float rel_trans):
@@ -717,10 +721,13 @@ ExprSynth::ExprSynth(const WaveSample *gW1, const WaveSample *gW2, const WaveSam
 	m_frequency = m_nph->frequency();
 	m_rel_inc = 1000.0 / (m_sample_rate * m_rel_transition);//rel_transition in ms. compute how much increment in each frame
 
-	auto init_expression_step2 = [this](ExprFront * e) {
-		e->add_cyclic_vector("W1", m_W1->m_samples,m_W1->m_length, m_W1->m_interpolate);
-		e->add_cyclic_vector("W2", m_W2->m_samples,m_W2->m_length, m_W2->m_interpolate);
-		e->add_cyclic_vector("W3", m_W3->m_samples,m_W3->m_length, m_W3->m_interpolate);
+	auto init_expression_step2 = [this, interpolate](ExprFront * e) {
+		e->add_cyclic_vector("W1", m_W1->m_samples,m_W1->m_length, interpolate[0]);
+		e->add_cyclic_vector("W2", m_W2->m_samples,m_W2->m_length, interpolate[1]);
+		e->add_cyclic_vector("W3", m_W3->m_samples,m_W3->m_length, interpolate[2]);
+		e->add_variable("A1", m_parameters[0]); // A1, A2, A3: general purpose input controls
+		e->add_variable("A2", m_parameters[1]);
+		e->add_variable("A3", m_parameters[2]);
 		e->add_variable("t", m_note_sample_sec);
 		e->add_variable("f", m_frequency);
 		e->add_variable("rel",m_released);

@@ -1158,10 +1158,16 @@ void Mixer::masterMix( SampleFrame* _buf )
 	// also instantly add all muted channels as they don't need to care
 	// about their senders, and can just increment the deps of their
 	// recipients right away.
+	// Every channel's mute is settled before any job is queued: a worker may start on a queued channel at once, and
+	// a processed channel reads the mute of the channels it sends to (MixerChannel::processed())
+	for (MixerChannel* ch : m_mixerChannels)
+	{
+		ch->m_muted = ch->m_muteModel.value() || ch->m_silencedBySolo;
+	}
+
 	AudioEngineWorkerThread::resetJobQueue( AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic );
 	for( MixerChannel * ch : m_mixerChannels )
 	{
-		ch->m_muted = ch->m_muteModel.value() || ch->m_silencedBySolo;
 		if( ch->m_muted ) // instantly "process" muted channels
 		{
 			// Silenced by solo, the channel may hold its tracks' audio, which must not reach anything
