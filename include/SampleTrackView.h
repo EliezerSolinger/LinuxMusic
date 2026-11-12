@@ -29,6 +29,9 @@
 #include "SampleTrack.h"
 #include "TrackView.h"
 
+class QMenu;
+class QPushButton;
+
 namespace lmms
 {
 
@@ -39,6 +42,7 @@ class TrackChannelControls;
 class VolumeKnob;
 
 class Knob;
+class AutomatableButton;
 class MixerChannelLcdSpinBox;
 class SampleTrackWindow;
 class TrackLabelButton;
@@ -93,6 +97,8 @@ private slots:
 	void createMixerLine();
 	void corruptStateUpdate();
 
+	void updateInputButton();
+
 
 private:
 	SampleTrackWindow * m_window;
@@ -101,6 +107,11 @@ private:
 	Knob * m_panningKnob;
 	TrackChannelControls* m_channelControls = nullptr;
 	FadeButton * m_activityIndicator;
+	AutomatableButton* m_recordArmButton;
+	QPushButton* m_inputButton;
+
+	//! Lists the audio device's inputs, mono and in stereo pairs, and the monitoring modes
+	void fillInputMenu(QMenu* menu);
 
 	TrackLabelButton * m_tlb;
 

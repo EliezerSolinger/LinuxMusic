@@ -1271,6 +1271,48 @@ QPushButton#btn-swap:checked {
 	color: #14161a;
 }
 
+/* Recording on the track heads: R arms the track (red while armed), the input button shows the input channels */
+lmms--gui--SampleTrackView QPushButton#btn-arm,
+lmms--gui--SampleTrackView QPushButton#btn-input {
+	border: 1 solid #080b12;
+	border-top: 1 solid #0e1218;
+	border-bottom: 1 solid #03060b;
+	border-radius: 2;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255, 255, 255, 20%), stop:0.1 rgba(255, 255, 255, 2%), stop:0.9 rgba(0, 0, 0, 2%), stop:1 rgba(0, 0, 0, 40%));
+	color: #d1d8e4;
+	font-size: 9px;
+	font-weight: bold;
+	padding: 0;
+	min-height: 18;
+	max-height: 18;
+}
+
+lmms--gui--SampleTrackView QPushButton#btn-arm {
+	min-width: 16;
+	max-width: 16;
+}
+
+lmms--gui--SampleTrackView QPushButton#btn-input {
+	min-width: 26;
+	max-width: 26;
+}
+
+lmms--gui--SampleTrackView QPushButton#btn-input::menu-indicator {
+	image: none;
+	width: 0;
+}
+
+lmms--gui--SampleTrackView QPushButton#btn-arm:hover,
+lmms--gui--SampleTrackView QPushButton#btn-input:hover {
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255, 255, 255, 25%), stop:0.1 rgba(255, 255, 255, 7%), stop:0.9 transparent, stop:1 rgba(0, 0, 0, 35%));
+}
+
+lmms--gui--SampleTrackView QPushButton#btn-arm:checked {
+	border: 1 solid #890120;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #e2515b, stop:0.1 #d40237, stop:0.9 #d40237, stop:1 #900122);
+	color: #ffffff;
+}
+
 /* In the mixer strips and the track list, mute and solo are letters, like the phase invert sign */
 lmms--gui--MixerChannelView QPushButton#btn-mute,
 lmms--gui--MixerChannelView QPushButton#btn-mute:checked,

@@ -26,6 +26,7 @@
 #include <QAction>
 #include <QButtonGroup>
 #include <QHBoxLayout>
+#include <QMessageBox>
 #include <QPainter>
 #include <QToolButton>
 
@@ -40,6 +41,7 @@
 #include "Mixer.h"
 #include "PatternEditor.h"
 #include "PianoRoll.h"
+#include "SampleTrack.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "TimeDisplayWidget.h"
@@ -158,7 +160,9 @@ TransportBar::TransportBar(QWidget* parent)
 
 	// Play, record, record while playing, stop
 	m_playButton = addButton("play", tr("Play/pause (Space)"));
-	m_recordButton = addButton("record", tr("Record MIDI into the clip open in the Piano Roll"));
+	m_recordButton = addButton("record", tr("Record the armed tracks' audio input (with no track armed: "
+		"record MIDI into the clip open in the Piano Roll)"));
+	m_recordButton->setCheckable(true);
 	m_recordWhilePlayingButton = addButton("record_accompany",
 		tr("Record MIDI into the clip open in the Piano Roll while the song or pattern plays"));
 	m_stopButton = addButton("stop", tr("Stop (Space)"));
@@ -206,6 +210,9 @@ TransportBar::TransportBar(QWidget* parent)
 	layout->addWidget(new TransportMeters(this));
 
 	connect(song, &Song::playbackStateChanged, this, &TransportBar::updateState);
+	connect(song, &Song::recordingProblem, this, [this](const QString& message) {
+		QMessageBox::warning(this, tr("Recording"), message);
+	});
 	connect(song, &Song::stopped, this, &TransportBar::updateState);
 	updateState();
 }
@@ -248,7 +255,23 @@ void TransportBar::stop()
 
 void TransportBar::record()
 {
-	getGUI()->pianoRoll()->recordAction()->trigger();
+	const auto song = Engine::getSong();
+
+	// While recording, the button stops
+	if (song->isRecordingAudio())
+	{
+		stop();
+		return;
+	}
+
+	const auto& tracks = song->tracks();
+	const bool armed = std::any_of(tracks.begin(), tracks.end(), [](const Track* track) {
+		const auto sampleTrack = dynamic_cast<const SampleTrack*>(track);
+		return sampleTrack && sampleTrack->isRecordArmed();
+	});
+	if (armed) { song->recordAudio(); }
+	else { getGUI()->pianoRoll()->recordAction()->trigger(); }
+	updateState();
 }
 
 
@@ -267,6 +290,7 @@ void TransportBar::updateState()
 	const auto song = Engine::getSong();
 	const bool playing = song->isPlaying() && !song->isPaused();
 	m_playButton->setIcon(embed::getIconPixmap(playing ? "pause" : "play"));
+	m_recordButton->setChecked(song->isRecordingAudio());
 
 	// Follow what is playing, e.g. when playback was started from the Pattern Editor
 	if (song->isPlaying())

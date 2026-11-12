@@ -26,10 +26,15 @@
 
 #include <QApplication>
 #include <QHBoxLayout>
+#include <QActionGroup>
 #include <QMenu>
+#include <QPushButton>
 #include <QSpacerItem>
 #include <QVBoxLayout>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
+#include "AutomatableButton.h"
 #include "ConfigManager.h"
 #include "DeprecationHelper.h"
 #include "MainWindow.h"
@@ -89,6 +94,23 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	m_activityIndicator->setFixedSize(8, 28);
 	m_activityIndicator->show();
 
+	// Recording: arm the track, and choose its input and monitoring
+	m_recordArmButton = new AutomatableButton(getTrackSettingsWidget(), tr("Record arm"));
+	m_recordArmButton->setCheckable(true);
+	m_recordArmButton->setObjectName("btn-arm");
+	m_recordArmButton->setText(tr("R"));
+	m_recordArmButton->setToolTip(tr("Arm for recording: the Record button records this track's input"));
+	m_recordArmButton->setModel(_t->recordArmModel());
+
+	m_inputButton = new QPushButton(getTrackSettingsWidget());
+	m_inputButton->setObjectName("btn-input");
+	m_inputButton->setFocusPolicy(Qt::NoFocus);
+	m_inputButton->setCursor(Qt::PointingHandCursor);
+	auto inputMenu = new QMenu(m_inputButton);
+	connect(inputMenu, &QMenu::aboutToShow, this, [this, inputMenu] { fillInputMenu(inputMenu); });
+	m_inputButton->setMenu(inputMenu);
+	connect(_t, &SampleTrack::inputChanged, this, &SampleTrackView::updateInputButton);
+
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
 	auto layout = new QHBoxLayout();
@@ -98,6 +120,8 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	//layout->addStretch();
 	layout->addWidget(m_mixerChannelNumber);
 	layout->addWidget(m_activityIndicator);
+	layout->addWidget(m_recordArmButton);
+	layout->addWidget(m_inputButton);
 	layout->addWidget(m_volumeKnob);
 	layout->addWidget(m_panningKnob);
 	layout->addSpacing(4);
@@ -108,6 +132,7 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &SampleTrackView::corruptStateUpdate);
 
 	setModel( _t );
+	updateInputButton();
 
 	m_window = new SampleTrackWindow(this);
 	m_window->toggleVisibility(false);
@@ -170,6 +195,86 @@ QMenu * SampleTrackView::createMixerMenu(QString title, QString newMixerLabel)
 	}
 
 	return mixerMenu;
+}
+
+
+
+
+void SampleTrackView::updateInputButton()
+{
+	const auto& input = model()->input();
+	if (input.source != AudioInput::Source::Hardware)
+	{
+		m_inputButton->setText(tr("-"));
+		m_inputButton->setToolTip(tr("Input: none"));
+		return;
+	}
+	const auto first = input.firstChannel + 1;
+	m_inputButton->setText(input.channelCount == 2 ? QString{"%1/%2"}.arg(first).arg(first + 1)
+		: QString::number(first));
+	m_inputButton->setToolTip(input.channelCount == 2
+		? tr("Input: %1 and %2 (stereo)").arg(first).arg(first + 1)
+		: tr("Input: %1 (mono)").arg(first));
+}
+
+
+
+
+void SampleTrackView::fillInputMenu(QMenu* menu)
+{
+	menu->clear();
+	auto* track = model();
+	const auto* device = Engine::audioEngine()->audioDev();
+	const auto inputs = device ? static_cast<int>(device->inputChannels()) : 0;
+	const auto current = track->input();
+
+	auto* choices = new QActionGroup(menu);
+	const auto addChoice = [&](const QString& label, const AudioInput& input) {
+		auto* action = menu->addAction(label, [track, input] { track->setInput(input); });
+		action->setCheckable(true);
+		action->setChecked(current == input);
+		choices->addAction(action);
+	};
+
+	addChoice(tr("No input"), AudioInput{});
+	if (inputs == 0)
+	{
+		menu->addAction(tr("The audio device has no inputs"))->setEnabled(false);
+	}
+	else
+	{
+		menu->addSection(tr("Mono"));
+		for (int channel = 0; channel < inputs; ++channel)
+		{
+			addChoice(QString{"%1: %2"}.arg(channel + 1).arg(device->inputChannelName(static_cast<ch_cnt_t>(channel))),
+				AudioInput{AudioInput::Source::Hardware, channel, 1});
+		}
+		if (inputs >= 2)
+		{
+			menu->addSection(tr("Stereo"));
+			for (int channel = 0; channel + 1 < inputs; channel += 2)
+			{
+				addChoice(tr("%1/%2: %3 + %4").arg(channel + 1).arg(channel + 2)
+					.arg(device->inputChannelName(static_cast<ch_cnt_t>(channel)))
+					.arg(device->inputChannelName(static_cast<ch_cnt_t>(channel + 1))),
+					AudioInput{AudioInput::Source::Hardware, channel, 2});
+			}
+		}
+	}
+
+	// Software monitoring: the input through the track's effects and the mixer
+	menu->addSection(tr("Monitoring"));
+	auto* monitoring = new QActionGroup(menu);
+	const auto mode = track->monitorModel()->value();
+	const auto addMode = [&](const QString& label, SampleTrack::MonitorMode value) {
+		auto* action = menu->addAction(label, [track, value] { track->monitorModel()->setValue(static_cast<int>(value)); });
+		action->setCheckable(true);
+		action->setChecked(mode == static_cast<int>(value));
+		monitoring->addAction(action);
+	};
+	addMode(tr("Off"), SampleTrack::MonitorMode::Off);
+	addMode(tr("On"), SampleTrack::MonitorMode::On);
+	addMode(tr("Auto (while armed, unless playing without recording)"), SampleTrack::MonitorMode::Auto);
 }
 
 

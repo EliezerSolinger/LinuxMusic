@@ -81,6 +81,7 @@ public:
 	auto input() const -> const AudioInput& { return m_input; }
 	void setInput(const AudioInput& input);
 	BoolModel* recordArmModel() { return &m_recordArmModel; }
+	auto isRecordArmed() const -> bool { return m_recordArmModel.value(); }
 	IntModel* monitorModel() { return &m_monitorModel; }	//!< a MonitorMode
 
 	inline AudioBusHandle* audioBusHandle()
