@@ -203,7 +203,7 @@ Diferenças de som medidas na bateria A/B (43 projetos):
   volume vale desde a primeira amostra. Efeitos com memória (eco, reverb, compressor) carregam essa diferença no
   rastro. É a correção de um defeito, não uma regressão.
 
-**Pendente, anterior a este passo (corrida entre threads, também no LMMS):**
+**Corrida entre threads (resolvida no passo 13; registro de como estava):**
 - O LB302 sob carga (12 renders em paralelo) sai com a nota deslocada em ~40% das vezes. A build de referência (sem
   as fases 1 a 3) faz o mesmo, então o defeito vem do LMMS.
 - Mesma família, só nesta build: sob carga pesada (8 renders em paralelo), cerca de 1 render em 10 de
@@ -404,9 +404,63 @@ O que as etapas anteriores deixaram pela metade, e a revisão do que estava impr
 `MixerTest` tem 63 testes. Novos: canais por saída pertencem à faixa (lugar, pasta, ordenar, salvar, apagar), faixas
 movem com as pastas (inclusive desfazer a ordem), renomear e cor no histórico, latência de faixa, sinal seco atrasado.
 
-**Fora do mixer, continua pendente:**
-- a corrida entre threads do LB302 (também no LMMS) e a do TripleOscillator sob carga (veja o passo 8);
-- entrada de áudio, armar e monitorar: os ajustes já existem no canal, mas só funcionam com a gravação (etapa 3).
+**Fora do mixer, continua pendente:** entrada de áudio, armar e monitorar. Os ajustes já existem no canal, mas só
+funcionam com a gravação (etapa 3).
+
+### Passo 13: mute e solo só nos canais (feito)
+
+Pedido do usuário: faixa e canal tinham mute e solo cada um, o que era redundante. Fica só o dos canais.
+
+**Solo do mixer refeito** (`Mixer::applySolo()`, no início de cada período):
+- **Como no REAPER:** com canais em solo, só eles tocam, junto com o caminho até o master (os canais para onde
+  mandam) e as suas fontes (os canais que mandam para eles). Solo numa pasta toca o que ela contém; solo numa faixa
+  dentro da pasta passa pelo canal de grupo.
+- Vários canais em solo ao mesmo tempo.
+- **O solo não mexe mais nos botões de mute.** O solo herdado do LMMS mutava todos os outros canais e restaurava
+  depois. Um mute feito durante o solo se perdia, e o projeto era salvo com os mutes falsos.
+- **Sidechain:** a fonte de um sidechain de algo que toca continua alimentando o sidechain sem ser ouvida.
+- O solo do mixer só funcionava com a janela do mixer aberta (a conexão ficava em `MixerView`), então o render pela
+  linha de comando ignorava o solo. Agora está no núcleo.
+
+**Faixas:**
+- Os botões M e S das faixas de instrumento, de sample e das pastas (na lista de faixas e nas janelas) são os do
+  canal (`TrackChannelControls`), como VOL e PAN.
+- **Exceções do mute:**
+  - faixa num canal usado por outras faixas: o mute é o da faixa, porque mutar o canal mutaria as outras;
+  - mute da faixa com automação: fica na faixa, onde a automação age.
+- O solo de uma faixa num canal compartilhado põe em solo o canal por onde ela toca.
+- Faixas de sequência e de automação não têm canal: mantêm o mute (liga ou desliga os clipes) e perdem o solo.
+- Saíram `Track::toggleSolo()`, o modelo de solo da faixa e a opção "Mutar faixas de automação durante o solo".
+- Clipes e o indicador da faixa aparecem mutados quando o canal da faixa está mutado (`Track::isMutedInMix()`).
+- **Exportar faixas separadas:**
+  - pula as faixas mutadas no canal;
+  - tira o solo dos canais enquanto exporta, para nenhuma faixa sair muda, e devolve o solo no fim.
+
+**Projetos de antes:**
+- O mute de cada faixa passa para o canal dela.
+- Uma faixa em solo põe o seu canal em solo.
+- Enquanto uma faixa estava em solo, o LMMS mantinha as outras mutadas. Cada faixa volta ao mute de antes do solo,
+  que o projeto guardava (`mutedBeforeSolo`).
+- O solo de uma faixa de sequência não tem equivalente e é descartado.
+
+**Corrida entre threads do TripleOscillator e do LB302** (passo 8), achada e corrigida:
+- **Causa:** uma nota que terminava num período era solta no próprio `play()`, e soltava junto as suas sub-notas
+  (de arpejo, por exemplo) com o quadro da soltura naquele período.
+- As notas de um período são renderizadas em paralelo. Uma sub-nota renderizada antes da nota-mãe recebia a soltura
+  um período atrasada. A soltura, e tudo depois dela, dependia de qual thread chegava primeiro.
+- O defeito é do LMMS. Esta build o mostrava mais porque cada nota agora faz mais trabalho (os pinos em `playNote`),
+  o que muda o tempo das threads.
+- **Correção:** o motor de áudio solta as notas que terminam no período antes de renderizá-lo
+  (`NotePlayHandle::releaseIfEnding()`, em `renderStageInstruments()`).
+- **Resultado:** 10 renders em paralelo de `inst-tripleosc` e de `inst-lb302` agora batem com a referência (o LB302
+  errava em ~40%).
+- O arquivo de referência de `ladspa-halfwet` tinha sido gravado no estado errado da corrida; a build de referência,
+  renderizada de novo, bate com esta.
+- **Sobra ±1 LSB em algumas dezenas de amostras:** é a ordem em que as notas paralelas são somadas no buffer da faixa
+  (soma de ponto flutuante não é associativa), também no LMMS.
+
+`MixerTest` tem 66 testes. Novos: solo silencia os outros sem mexer nos mutes, caminho e fontes, dois solos, sidechain
+de canal em solo, solo em pasta, mute e solo de projeto antigo indo para o canal.
 
 ### Correção encontrada pela bateria A/B
 
