@@ -51,6 +51,7 @@
 #include "Fader.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
+#include "DeskKnob.h"
 #include "Knob.h"
 #include "LcdWidget.h"
 #include "lmms_math.h"
@@ -68,60 +69,6 @@ namespace lmms::gui
 
 namespace
 {
-
-//! A knob of an analog desk: a colored cap with a white pointer on a dark skirt, and its name below. It behaves like
-//! any knob (dragging, wheel, value hint, automation menu); only its look differs.
-class DeskKnob : public Knob
-{
-public:
-	DeskKnob(const QColor& cap, const QString& label, const QString& name, QWidget* parent)
-		: Knob{KnobType::Styled, parent, name}, m_cap{cap}, m_label{label}
-	{
-		setFixedSize(Width, Diameter + LabelHeight);
-	}
-
-private:
-	static constexpr int Width = 25;
-	static constexpr int Diameter = 17;
-	static constexpr int LabelHeight = 8;
-	static constexpr float TotalAngle = 270.f;
-
-	void paintEvent(QPaintEvent*) override
-	{
-		auto painter = QPainter{this};
-		painter.setRenderHint(QPainter::Antialiasing);
-		const auto center = QPointF{width() / 2.0, Diameter / 2.0};
-
-		// Skirt, then the cap with light from the top left
-		painter.setPen(Qt::NoPen);
-		painter.setBrush(QColor{18, 20, 23});
-		painter.drawEllipse(center, Diameter / 2.0, Diameter / 2.0);
-		auto gradient = QRadialGradient{center - QPointF{2.0, 2.5}, Diameter / 2.0};
-		gradient.setColorAt(0.0, m_cap.lighter(150));
-		gradient.setColorAt(1.0, m_cap.darker(130));
-		painter.setBrush(gradient);
-		const double cap = Diameter / 2.0 - 2.5;
-		painter.drawEllipse(center, cap, cap);
-
-		// The pointer: 0 at the top, the range from -135 to 135 degrees
-		const auto knobModel = model();
-		const float position = (knobModel->inverseScaledValue(knobModel->value()) - knobModel->minValue())
-			/ (knobModel->maxValue() - knobModel->minValue());
-		const double angle = (position - 0.5) * TotalAngle * std::numbers::pi / 180.0;
-		const auto direction = QPointF{std::sin(angle), -std::cos(angle)};
-		painter.setPen(QPen{QColor{245, 245, 245}, 1.6, Qt::SolidLine, Qt::RoundCap});
-		painter.drawLine(center + direction * 1.5, center + direction * (cap + 1.0));
-
-		painter.setPen(QColor{170, 178, 190});
-		painter.setFont(adjustedToPixelSize(font(), 7));
-		painter.drawText(QRect{0, Diameter, width(), LabelHeight}, Qt::AlignCenter, m_label);
-	}
-
-	QColor m_cap;
-	QString m_label;
-};
-
-
 
 //! The channel's effect slots in analog mode, as a column of small LEDs: lit while the slot holds an effect that is on, dim while it
 //! is off, red when its audio is corrupted. Hovering one names its effect; a double click opens its controls (or adds
@@ -575,6 +522,21 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	connect(m_fader, &Fader::peakChanged, m_peakIndicator, &PeakIndicator::updatePeak);
 
 
+	// The sends to the effect returns, after the fader (not on the master or the effect returns themselves)
+	m_fxSends = new QWidget{this};
+	m_fxSends->setFixedSize(NameWidth, DeskKnob::Diameter + DeskKnob::LabelHeight);
+	auto fxSendsLayout = new QHBoxLayout{m_fxSends};
+	fxSendsLayout->setContentsMargins(0, 0, 0, 0);
+	fxSendsLayout->setSpacing(0);
+	for (int i = 0; i < Mixer::FxReturnCount; ++i)
+	{
+		m_fxSendKnobs[i] = new DeskKnob{QColor{70, 112, 150}, tr("FX%1").arg(i + 1), tr("Send to FX %1").arg(i + 1),
+			m_fxSends};
+		m_fxSendKnobs[i]->setHintText(tr("Send to FX %1:").arg(i + 1), "");
+		fxSendsLayout->addWidget(m_fxSendKnobs[i], 0, Qt::AlignCenter);
+	}
+	connect(Engine::mixer(), &Mixer::dataChanged, this, &MixerChannelView::updateFxSends);
+
 	// The panning knob on a lighter background, as in REAPER
 	auto panBackground = new QWidget{this};
 	panBackground->setObjectName("mixerPanBackground");
@@ -600,6 +562,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_analogSection, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_effectSlotList, 0, Qt::AlignHCenter);
+	mainLayout->addWidget(m_fxSends, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(panBackground, 0, Qt::AlignHCenter);
 	auto faderColumn = new QVBoxLayout();
 	faderColumn->setContentsMargins(0, 0, 0, 0);
@@ -618,6 +581,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 
 	connect(Engine::mixer()->analogModel(), &BoolModel::dataChanged, this, &MixerChannelView::updateMode);
 	updateMode();
+	updateFxSends();
 
 	// Channels made for tracks follow their names and colors
 	connect(Engine::mixer(), &Mixer::dataChanged, this, [this] {
@@ -793,6 +757,24 @@ void MixerChannelView::paintEvent(QPaintEvent*)
 		painter.fillRect(QRect{1, 1, 3, height - 2}, color);
 		break;
 	}
+}
+
+void MixerChannelView::updateFxSends()
+{
+	const auto mixer = Engine::mixer();
+	const auto channel = mixerChannel();
+	bool any = false;
+	for (int i = 0; i < Mixer::FxReturnCount; ++i)
+	{
+		const auto send = channel->isMaster() || channel->m_fxReturn ? nullptr : mixer->fxSend(channelIndex(), i);
+		if (send && m_fxSendKnobs[i]->model() != send->amount()) { m_fxSendKnobs[i]->setModel(send->amount()); }
+		any = any || send;
+	}
+	// The effect returns and the master keep the space, so that the faders line up
+	auto policy = m_fxSends->sizePolicy();
+	policy.setRetainSizeWhenHidden(true);
+	m_fxSends->setSizePolicy(policy);
+	m_fxSends->setVisible(any);
 }
 
 void MixerChannelView::updateMode()

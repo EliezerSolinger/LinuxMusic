@@ -29,6 +29,7 @@
 #include <QHBoxLayout>
 #include <QLayout>
 #include <QLineEdit>
+#include <QPainter>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QStyle>
@@ -45,6 +46,7 @@
 #include "LedCheckBox.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
+#include "MasterSectionView.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "PatternStore.h"
@@ -59,6 +61,39 @@ namespace lmms::gui
 {
 
 
+GhostChannel::GhostChannel(QWidget* parent, std::function<void()> add)
+	: QWidget{parent}, m_add{std::move(add)}
+{
+	setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+	setToolTip(tr("Add a channel"));
+	setCursor(Qt::PointingHandCursor);
+}
+
+void GhostChannel::mousePressEvent(QMouseEvent* event)
+{
+	if (event->button() == Qt::LeftButton) { m_add(); }
+}
+
+void GhostChannel::paintEvent(QPaintEvent*)
+{
+	auto painter = QPainter{this};
+	painter.setRenderHint(QPainter::Antialiasing);
+	const auto color = underMouse() ? QColor{140, 150, 163} : QColor{70, 76, 84};
+	painter.setPen(QPen{color, 1.0, Qt::DashLine});
+	painter.setBrush(Qt::NoBrush);
+	painter.drawRoundedRect(QRectF{rect()}.adjusted(3.5, 3.5, -3.5, -3.5), 3, 3);
+	painter.setPen(QPen{color, 2.0});
+	const auto center = QRectF{rect()}.center();
+	painter.drawLine(center - QPointF{7, 0}, center + QPointF{7, 0});
+	painter.drawLine(center - QPointF{0, 7}, center + QPointF{0, 7});
+}
+
+void GhostChannel::enterEvent(QEnterEvent*) { update(); }
+void GhostChannel::leaveEvent(QEvent*) { update(); }
+
+
+
+
 MixerView::MixerView(Mixer* mixer) :
 	QWidget(),
 	ModelView(nullptr, this),
@@ -71,6 +106,8 @@ MixerView::MixerView(Mixer* mixer) :
 	connect(mixer, &Mixer::channelCreated, this, [this](int) { addMissingChannelViews(); });
 	connect(mixer, &Mixer::channelDeleted, this, [this](int index) { removeChannelView(index); });
 	connect(mixer, &Mixer::dataChanged, this, &MixerView::updateGroupVisibility);
+	// Effect returns may be marked after their channels were made (see Mixer::ensureFxReturns())
+	connect(mixer, &Mixer::dataChanged, this, &MixerView::placeChannelViews);
 	connect(mixer, &Mixer::channelsSwapped, this, &MixerView::swapChannelViews);
 
 	//QPalette pal = palette();
@@ -103,6 +140,12 @@ MixerView::MixerView(Mixer* mixer) :
 	m_racksLayout->setContentsMargins(0, 0, 0, 0);
 	m_racksWidget->setLayout(m_racksLayout);
 
+	// The effect returns, then the master section and the master, at the right as on a desk
+	m_fxReturnsWidget = new QWidget{this};
+	m_fxReturnsLayout = new QHBoxLayout{m_fxReturnsWidget};
+	m_fxReturnsLayout->setContentsMargins(0, 0, 0, 0);
+	m_fxReturnsLayout->setSpacing(0);
+
 	// add master channel
 	m_mixerChannelViews.resize(mixer->numChannels());
 	MixerChannelView * masterView = new MixerChannelView(this, this, 0);
@@ -111,17 +154,19 @@ MixerView::MixerView(Mixer* mixer) :
 
 	m_racksLayout->addWidget(m_mixerChannelViews[0]->m_effectRackView);
 
-	ml->addWidget(masterView, 0);
-
 	auto mixerChannelSize = masterView->sizeHint();
+
+	// The ghost channel at the end of the channels: a click makes a channel in its place
+	m_ghostChannel = new GhostChannel{m_channelAreaWidget, [this] { addNewChannel(); }};
+	m_ghostChannel->setFixedWidth(mixerChannelSize.width());
 
 	// add mixer channels
 	for (int i = 1; i < m_mixerChannelViews.size(); ++i)
 	{
 		m_mixerChannelViews[i] = new MixerChannelView(m_channelAreaWidget, this, i);
 		connectToSoloAndMute(i);
-		chLayout->addWidget(m_mixerChannelViews[i]);
 	}
+	placeChannelViews();
 
 	// add the scrolling section to the main layout
 	// class solely for scroll area to pass key presses down
@@ -157,15 +202,9 @@ MixerView::MixerView(Mixer* mixer) :
 	connect(mixer, &Mixer::channelCreated, this, updateMinimumHeight, Qt::QueuedConnection);
 
 	ml->addWidget(channelArea, 1);
-
-	// show the add new mixer channel button
-	auto newChannelBtn = new QPushButton(embed::getIconPixmap("new_channel"), QString(), this);
-	newChannelBtn->setObjectName("newChannelBtn");
-	newChannelBtn->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Expanding);
-	newChannelBtn->setFixedWidth(mixerChannelSize.width());
-	newChannelBtn->setFocusPolicy(Qt::NoFocus);
-	connect(newChannelBtn, SIGNAL(clicked()), this, SLOT(addNewChannel()));
-	ml->addWidget(newChannelBtn, 0);
+	ml->addWidget(m_fxReturnsWidget, 0);
+	ml->addWidget(new MasterSectionView{mixer, this}, 0);
+	ml->addWidget(masterView, 0);
 
 
 	// The selected channel's strip settings, above the stacked layout of the channels' effect racks
@@ -269,10 +308,10 @@ void MixerView::addMissingChannelViews()
 	{
 		m_mixerChannelViews.push_back(new MixerChannelView(m_channelAreaWidget, this, i));
 		connectToSoloAndMute(i);
-		chLayout->addWidget(m_mixerChannelViews[i]);
 		m_racksLayout->addWidget(m_mixerChannelViews[i]->m_effectRackView);
 		updateMixerChannel(i);
 	}
+	placeChannelViews();
 }
 
 
@@ -286,6 +325,7 @@ void MixerView::removeChannelView(int index)
 	const int selected = m_currentMixerChannel ? m_currentMixerChannel->channelIndex() : 0;
 
 	chLayout->removeWidget(m_mixerChannelViews[index]);
+	m_fxReturnsLayout->removeWidget(m_mixerChannelViews[index]);
 	m_racksLayout->removeWidget(m_mixerChannelViews[index]->m_effectRackView);
 	// delete the view later to prevent a crash when deleting from its context menu
 	m_mixerChannelViews[index]->m_effectRackView->hide();
@@ -299,6 +339,7 @@ void MixerView::removeChannelView(int index)
 		m_mixerChannelViews[i]->setChannelIndex(i - 1);
 	}
 	m_mixerChannelViews.remove(index);
+	placeChannelViews();
 
 	setCurrentMixerChannel(std::min<int>(selected > index ? selected - 1 : selected, m_mixerChannelViews.size() - 1));
 }
@@ -314,6 +355,7 @@ void MixerView::refreshDisplay()
 
 		auto * mixerChannelView = m_mixerChannelViews[i];
 		chLayout->removeWidget(mixerChannelView);
+		m_fxReturnsLayout->removeWidget(mixerChannelView);
 		m_racksLayout->removeWidget(mixerChannelView->m_effectRackView);
 
 		delete mixerChannelView;
@@ -326,10 +368,9 @@ void MixerView::refreshDisplay()
 	{
 		m_mixerChannelViews[i] = new MixerChannelView(m_channelAreaWidget, this, i);
 		connectToSoloAndMute(i);
-
-		chLayout->addWidget(m_mixerChannelViews[i]);
 		m_racksLayout->addWidget(m_mixerChannelViews[i]->m_effectRackView);
 	}
+	placeChannelViews();
 
 	// set selected mixer channel to 0
 	setCurrentMixerChannel(0);
@@ -583,15 +624,33 @@ void MixerView::swapChannelViews(int index, int otherIndex)
 	if (index > otherIndex) { std::swap(index, otherIndex); }
 	if (index <= 0 || otherIndex >= m_mixerChannelViews.size() || otherIndex != index + 1) { return; }
 
-	const auto layoutIndex = chLayout->indexOf(m_mixerChannelViews[otherIndex]);
-	assert(layoutIndex >= 1);
-
-	chLayout->removeWidget(m_mixerChannelViews[otherIndex]);
-	chLayout->insertWidget(layoutIndex - 1, m_mixerChannelViews[otherIndex]);
-
 	m_mixerChannelViews[otherIndex]->setChannelIndex(index);
 	m_mixerChannelViews[index]->setChannelIndex(otherIndex);
 	std::swap(m_mixerChannelViews[index], m_mixerChannelViews[otherIndex]);
+	placeChannelViews();
+}
+
+
+
+
+void MixerView::placeChannelViews()
+{
+	if (m_mixerChannelViews.isEmpty()) { return; }
+
+	// The effect returns at the right, next to the master; the other channels in order, then the ghost channel
+	for (int i = 1; i < m_mixerChannelViews.size(); ++i)
+	{
+		chLayout->removeWidget(m_mixerChannelViews[i]);
+		m_fxReturnsLayout->removeWidget(m_mixerChannelViews[i]);
+	}
+	chLayout->removeWidget(m_ghostChannel);
+	for (int i = 1; i < m_mixerChannelViews.size(); ++i)
+	{
+		const bool fxReturn = getMixer()->mixerChannel(i)->m_fxReturn;
+		(fxReturn ? m_fxReturnsLayout : chLayout)->addWidget(m_mixerChannelViews[i]);
+	}
+	chLayout->addWidget(m_ghostChannel);
+	m_channelAreaWidget->adjustSize();
 }
 
 

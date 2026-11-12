@@ -1,0 +1,56 @@
+/*
+ * DeskKnob.h - a knob drawn like the knobs of an analog mixing desk
+ *
+ * This file is part of LinuxMusic, a fork of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#ifndef LMMS_GUI_DESK_KNOB_H
+#define LMMS_GUI_DESK_KNOB_H
+
+#include <QColor>
+
+#include "Knob.h"
+
+namespace lmms::gui
+{
+
+//! A knob of an analog desk: a colored cap with a white pointer on a dark skirt, and its name below. It behaves like
+//! any knob (dragging, wheel, value hint, automation menu); only its look differs.
+class LMMS_EXPORT DeskKnob : public Knob
+{
+public:
+	DeskKnob(const QColor& cap, const QString& label, const QString& name, QWidget* parent);
+
+	static constexpr int Width = 25;
+	static constexpr int Diameter = 17;
+	static constexpr int LabelHeight = 8;
+
+protected:
+	void paintEvent(QPaintEvent*) override;
+
+private:
+	static constexpr float TotalAngle = 270.f;
+
+	QColor m_cap;
+	QString m_label;
+};
+
+} // namespace lmms::gui
+
+#endif // LMMS_GUI_DESK_KNOB_H

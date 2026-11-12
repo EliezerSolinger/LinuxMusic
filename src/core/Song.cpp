@@ -980,8 +980,8 @@ void Song::createNewProject()
 	QCoreApplication::instance()->processEvents();
 
 	m_loadingProject = false;
-	Engine::mixer()->ensureFxReturns();
 	Engine::mixer()->setUpTrackChannels();
+	Engine::mixer()->ensureFxReturns();
 	updateLength();
 	Engine::patternStore()->updateAfterTrackAdd();
 
@@ -1186,6 +1186,8 @@ void Song::loadProject( const QString & fileName )
 	resolveLegacySolo();
 	Engine::patternStore()->resolveLegacySolo();
 	Engine::mixer()->setUpTrackChannels();
+	// After the tracks' channels, which keep the first numbers; also for projects without a mixer
+	Engine::mixer()->ensureFxReturns();
 	// Folders route their tracks to their group channels
 	updateFolders();
 	Engine::mixer()->updateFolderRouting();

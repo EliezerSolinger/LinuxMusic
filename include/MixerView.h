@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_MIXER_VIEW_H
 #define LMMS_GUI_MIXER_VIEW_H
 
+#include <functional>
 #include <set>
 
 #include <QWidget>
@@ -49,6 +50,23 @@ namespace lmms::gui
 
 class Knob;
 class LedCheckBox;
+
+//! The ghost channel at the end of the mixer's channels: a click makes a channel in its place
+class GhostChannel : public QWidget
+{
+	Q_OBJECT
+public:
+	GhostChannel(QWidget* parent, std::function<void()> add);
+
+protected:
+	void mousePressEvent(QMouseEvent* event) override;
+	void paintEvent(QPaintEvent*) override;
+	void enterEvent(QEnterEvent*) override;
+	void leaveEvent(QEvent*) override;
+
+private:
+	std::function<void()> m_add;
+};
 
 class LMMS_EXPORT MixerView
 	: public QWidget
@@ -118,6 +136,9 @@ public slots:
 	//! Swaps the views of two neighboring channels the mixer swapped
 	void swapChannelViews(int index, int otherIndex);
 
+	//! Puts the channels' views in place: the effect returns next to the master, the others in order
+	void placeChannelViews();
+
 private slots:
 	void updateFaders();
 	// TODO This should be improved. Currently the solo and mute models are connected via
@@ -144,6 +165,9 @@ private:
 	QHBoxLayout* chLayout;
 	QWidget* m_channelAreaWidget;
 	QStackedLayout* m_racksLayout;
+	QWidget* m_fxReturnsWidget;
+	QHBoxLayout* m_fxReturnsLayout;
+	QWidget* m_ghostChannel;
 	QWidget* m_racksWidget;
 	Mixer* m_mixer;
 

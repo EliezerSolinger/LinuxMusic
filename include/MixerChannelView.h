@@ -25,7 +25,11 @@
 #ifndef LMMS_GUI_MIXER_CHANNEL_VIEW_H
 #define LMMS_GUI_MIXER_CHANNEL_VIEW_H
 
+#include <array>
+
 #include <QWidget>
+
+#include "Mixer.h"
 
 class QLabel;
 class QLineEdit;
@@ -97,6 +101,9 @@ private slots:
 
 	//! Shows what the strip has in the mixer's mode (see Mixer::isAnalog())
 	void updateMode();
+
+	//! Points the FX send knobs at the channel's sends to the effect returns
+	void updateFxSends();
 	void removeChannel();
 	void removeUnusedChannels();
 	void moveChannelLeft();
@@ -135,6 +142,10 @@ private:
 	QWidget* m_analogSection;
 	QWidget* m_effectLeds;
 	QWidget* m_effectSlotList;
+
+	//! The sends to the effect returns (see Mixer::fxReturns())
+	QWidget* m_fxSends;
+	std::array<Knob*, Mixer::FxReturnCount> m_fxSendKnobs{};
 	PeakIndicator* m_peakIndicator = nullptr;
 	Fader* m_fader;
 	EffectRackView* m_effectRackView;

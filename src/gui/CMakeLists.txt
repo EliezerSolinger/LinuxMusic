@@ -31,6 +31,7 @@ SET(LMMS_SRCS
 	gui/MidiCCRackView.cpp
 	gui/MidiSetupWidget.cpp
 	gui/MixerChannelView.cpp
+	gui/MasterSectionView.cpp
 	gui/MixerView.cpp
 	gui/ModelView.cpp
 	gui/PeakControllerDialog.cpp
@@ -111,6 +112,7 @@ SET(LMMS_SRCS
 	gui/widgets/CaptionMenu.cpp
 	gui/widgets/ComboBox.cpp
 	gui/widgets/Draggable.cpp
+	gui/widgets/DeskKnob.cpp
 	gui/widgets/Fader.cpp
 	gui/widgets/FloatModelEditorBase.cpp
 	gui/widgets/Graph.cpp

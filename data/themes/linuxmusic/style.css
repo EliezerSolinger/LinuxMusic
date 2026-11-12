@@ -1424,3 +1424,34 @@ lmms--gui--MixerChannelView QPushButton#btn-tube:checked {
 	background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #ffb347, stop:0.6 #ff7a1a, stop:1 #b33c00);
 	color: #2a0e00;
 }
+
+/* The master section next to the master strip: meters, bus compressor and monitoring */
+QWidget#masterSection {
+	background: #1f2328;
+	border-left: 1px solid #0c0d0f;
+	border-right: 1px solid #0c0d0f;
+}
+
+QLabel#masterSectionTitle {
+	color: #8c96a3;
+	border-top: 1px solid #0c0d0f;
+	padding-top: 2px;
+}
+
+QWidget#masterSection QPushButton#masterButton {
+	padding: 1px 3px;
+	min-height: 11;
+	max-height: 11;
+	border: 1 solid #080b12;
+	border-radius: 2;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255, 255, 255, 20%), stop:0.1 rgba(255, 255, 255, 2%), stop:0.9 rgba(0, 0, 0, 2%), stop:1 rgba(0, 0, 0, 40%));
+	color: #d1d8e4;
+	font-size: 7px;
+	font-weight: bold;
+}
+
+QWidget#masterSection QPushButton#masterButton:checked {
+	border: 1 solid #8a5a00;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f2c25a, stop:0.1 #e0a020, stop:0.9 #e0a020, stop:1 #9c6c08);
+	color: #14161a;
+}
