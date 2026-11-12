@@ -357,6 +357,13 @@ void MixerChannel::doProcessing()
 	// The auxiliary pairs do not reach the channel's output
 	const bool hasSignal = m_buffer.hasSignal(mainPair) || m_stillRunning;
 
+	// The master's bus compressor, after its effects and before its fader
+	if (isMaster() && hasSignal)
+	{
+		Engine::mixer()->masterSection().processCompressor(buffer, Engine::audioEngine()->outputSampleRate());
+		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+	}
+
 	// Tap for pre-fader sends
 	const bool feedsPreFader = std::any_of(m_sends.begin(), m_sends.end(),
 		[](const MixerRoute* route) { return route->isPreFader(); });
@@ -396,6 +403,7 @@ void MixerChannel::doProcessing()
 
 	if (hasSignal) { m_meter.measure(buffer.data(), fpp, Engine::audioEngine()->outputSampleRate()); }
 	else { m_meter.measureSilence(); }
+	if (isMaster()) { Engine::mixer()->masterSection().measure(buffer, Engine::audioEngine()->outputSampleRate()); }
 
 	// increment dependency counter of all receivers
 	processed();
@@ -407,7 +415,8 @@ Mixer::Mixer() :
 	Model( nullptr ),
 	JournallingObject(),
 	m_mixerChannels(),
-	m_analogModel(true, this, tr("Analog mixer"))
+	m_analogModel(true, this, tr("Analog mixer")),
+	m_masterSection(this)
 {
 	// create master channel
 	createChannel();
@@ -1140,8 +1149,10 @@ void Mixer::masterMix( SampleFrame* _buf )
 		AudioEngineWorkerThread::startAndWaitForJobs();
 	}
 
-	// The master channel already applied its fader when it was processed
-	const auto buffer = m_mixerChannels[0]->m_buffer.interleavedBuffer().asSampleFrames();
+	// The master channel already applied its fader when it was processed; the monitoring changes only what is
+	// heard, not what is exported
+	auto buffer = m_mixerChannels[0]->m_buffer.interleavedBuffer().asSampleFrames();
+	if (!Engine::getSong() || !Engine::getSong()->isExporting()) { m_masterSection.processMonitoring(buffer); }
 	MixHelpers::add(_buf, buffer.data(), fpp);
 
 	// clear all channel buffers and
@@ -1160,6 +1171,8 @@ void Mixer::masterMix( SampleFrame* _buf )
 
 void Mixer::clear()
 {
+	m_masterSection.setDefaults();
+
 	while( m_mixerChannels.size() > 1 )
 	{
 		deleteChannel(1);
@@ -1228,6 +1241,7 @@ void Mixer::clearChannel(mix_ch_t index)
 void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 {
 	m_analogModel.saveSettings(_doc, _this, "analog");
+	m_masterSection.saveSettings(_doc, _this);
 
 	// save channels
 	for (auto i = std::size_t{0}; i < m_mixerChannels.size(); ++i)
@@ -1304,6 +1318,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 	{
 		m_analogModel.loadSettings(_this, "analog");
 	}
+	m_masterSection.loadSettings(_this);
 	QDomNode node = _this.firstChild();
 	auto sends = std::vector<std::pair<int, QDomElement>>{};
 	auto owners = std::vector<std::pair<int, int>>{};

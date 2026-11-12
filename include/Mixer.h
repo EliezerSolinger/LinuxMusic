@@ -30,6 +30,7 @@
 #include "ChannelMeter.h"
 #include "EffectChain.h"
 #include "LatencyDelay.h"
+#include "MasterSection.h"
 #include "JournallingObject.h"
 #include "Model.h"
 #include "ThreadableJob.h"
@@ -316,6 +317,9 @@ public:
 	auto isAnalog() const -> bool { return m_analogModel.value(); }
 	auto analogModel() -> BoolModel* { return &m_analogModel; }
 
+	//! The master section: bus compressor, monitoring and what the master's meters show
+	auto masterSection() -> MasterSection& { return m_masterSection; }
+
 	//! For undo/redo, the saved state also records which channel each track sends to: changing the
 	//! channel layout (e.g. deleting a channel) renumbers the tracks' channels, and undoing must restore them
 	QDomElement saveState(QDomDocument& doc, QDomElement& parent) override;
@@ -533,6 +537,7 @@ private:
 	std::vector<MixerChannel*> m_mixerChannels;
 
 	BoolModel m_analogModel;
+	MasterSection m_masterSection;
 
 	// make sure we have at least num channels
 	void allocateChannelsTo(int num);

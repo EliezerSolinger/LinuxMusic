@@ -29,6 +29,7 @@ set(LMMS_SRCS
 	core/EnvelopeAndLfoParameters.cpp
 	core/fft_helpers.cpp
 	core/AnalogChannelStrip.cpp
+	core/MasterSection.cpp
 	core/Mixer.cpp
 	core/ImportFilter.cpp
 	core/InlineAutomation.cpp

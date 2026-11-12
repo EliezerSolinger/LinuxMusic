@@ -1516,6 +1516,79 @@ private slots:
 		QCOMPARE(static_cast<int>(mixer()->fxReturns().size()), Mixer::FxReturnCount);
 	}
 
+	void busCompressorSqueezesTheMix()
+	{
+		auto& master = mixer()->masterSection();
+		const auto channel = mixer()->createChannel();
+		settle();
+
+		// Out by default: untouched
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.5f) - 1.f) < 0.01f);
+		QCOMPARE(master.takeGainReduction(), 0.f);
+
+		master.m_compressorModel.setValue(true);
+		master.m_thresholdModel.setValue(-20.f);
+		master.m_ratioModel.setValue(static_cast<int>(MasterSection::Ratio::Ten));
+		const float loud = sineGain(channel, 1000.f, 0.5f);
+		QVERIFY(loud < 0.5f);
+		QVERIFY(master.takeGainReduction() < -6.f);
+		// Below the threshold, untouched (no make-up) once released
+		master.m_autoReleaseModel.setValue(false);
+		master.m_releaseModel.setValue(0.1f);
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.01f, 512) - 1.f) < 0.02f);
+		master.setDefaults();
+	}
+
+	void correlationMeterFollowsThePhase()
+	{
+		const auto channel = mixer()->createChannel();
+		settle();
+		auto play = [&](float left, float right) {
+			for (int i = 0; i < 512; ++i)
+			{
+				feed(channel, left * (i % 2 ? 1.f : -1.f), right * (i % 2 ? 1.f : -1.f));
+				mix();
+			}
+			return mixer()->masterSection().correlation();
+		};
+		QVERIFY(play(0.5f, 0.5f) > 0.99f);
+		QVERIFY(play(0.5f, -0.5f) < -0.99f);
+	}
+
+	void monitoringChangesOnlyWhatIsHeard()
+	{
+		auto& master = mixer()->masterSection();
+		const auto channel = mixer()->createChannel();
+		settle();
+
+		// DIM, once ramped
+		master.m_dimModel.setValue(true);
+		feed(channel, 0.5f, 0.25f);
+		mix();
+		feed(channel, 0.5f, 0.25f);
+		compareOutput(mix(), 0.05f, 0.025f);
+		master.m_dimModel.setValue(false);
+
+		// MONO
+		master.m_monoModel.setValue(true);
+		feed(channel, 0.5f, 0.25f);
+		mix();
+		feed(channel, 0.5f, 0.25f);
+		compareOutput(mix(), 0.375f, 0.375f);
+		master.m_monoModel.setValue(false);
+
+		// CUT
+		master.m_cutModel.setValue(true);
+		feed(channel, 0.5f, 0.25f);
+		mix();
+		feed(channel, 0.5f, 0.25f);
+		compareOutput(mix(), 0.f, 0.f);
+		// The meters show the mix, not what is heard
+		QVERIFY(mixer()->mixerChannel(0)->m_meter.rms(0) > 0.1f);
+		master.m_cutModel.setValue(false);
+		mix();
+	}
+
 	void opAmpSaturatesOnlyAboveItsKnee()
 	{
 		using Strip = AnalogChannelStrip;
