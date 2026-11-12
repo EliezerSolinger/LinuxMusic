@@ -163,6 +163,9 @@ public:
 
 public slots:
 	void realignTracks();
+
+	//! Puts the track views in the order of the tracks, e.g. after a folder moved or an undo
+	void followTrackOrder();
 	lmms::gui::TrackView * createTrackView( lmms::Track * _t );
 	void deleteTrackView( lmms::gui::TrackView * _tv );
 

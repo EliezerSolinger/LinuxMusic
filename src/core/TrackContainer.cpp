@@ -293,11 +293,145 @@ void TrackContainer::changeFolderDepth(Track* track, int delta)
 
 	m_folderLayout.addJournalCheckPoint();
 
+	// Out of a folder: below everything the folder holds, so that the tracks after it stay in the folder
+	if (delta < 0)
+	{
+		if (const auto folder = folderOf(track))
+		{
+			const auto first = static_cast<std::size_t>(it - m_tracks.begin());
+			const auto end = blockEnd(first);
+			const auto folderIndex = static_cast<std::size_t>(
+				std::find(m_tracks.begin(), m_tracks.end(), folder) - m_tracks.begin());
+			const auto folderEnd = blockEnd(folderIndex);
+			if (end < folderEnd)
+			{
+				moveTracks(first, end, folderEnd - (end - first));
+				emit trackMoved();
+			}
+		}
+	}
+
 	const auto contents = folderContents(track);
 	track->setFolderDepth(depth);
 	for (const auto inner : contents) { inner->setFolderDepth(inner->folderDepth() + delta); }
 
 	updateFolders();
+}
+
+
+
+
+auto TrackContainer::blockEnd(std::size_t index) const -> std::size_t
+{
+	auto end = index + 1;
+	if (m_tracks[index]->type() != Track::Type::Folder) { return end; }
+	while (end < m_tracks.size() && m_tracks[end]->folderDepth() > m_tracks[index]->folderDepth()) { ++end; }
+	return end;
+}
+
+
+
+
+void TrackContainer::moveTracks(std::size_t first, std::size_t end, std::size_t to)
+{
+	if (first >= end || to == first) { return; }
+
+	auto block = TrackList(m_tracks.begin() + first, m_tracks.begin() + end);
+	auto rest = m_tracks;
+	rest.erase(rest.begin() + first, rest.begin() + end);
+
+	// The patterns follow their tracks, swapped with each pattern track passed on the way
+	if (to > first)
+	{
+		for (auto passed = first; passed < to; ++passed)
+		{
+			for (auto moved = block.rbegin(); moved != block.rend(); ++moved)
+			{
+				PatternTrack::swapPatternTracks(*moved, rest[passed]);
+			}
+		}
+	}
+	else
+	{
+		for (auto passed = first; passed-- > to;)
+		{
+			for (const auto moved : block) { PatternTrack::swapPatternTracks(moved, rest[passed]); }
+		}
+	}
+
+	rest.insert(rest.begin() + to, block.begin(), block.end());
+	Engine::audioEngine()->requestChangeInModel();
+	m_tracksMutex.lockForWrite();
+	m_tracks = std::move(rest);
+	m_tracksMutex.unlock();
+	Engine::audioEngine()->doneChangeInModel();
+}
+
+
+
+
+auto TrackContainer::moveTrackStep(Track* track, bool down) -> bool
+{
+	const auto it = std::find(m_tracks.begin(), m_tracks.end(), track);
+	if (it == m_tracks.end()) { return false; }
+
+	auto isCollapsedFolder = [](const Track* t) {
+		const auto folder = dynamic_cast<const FolderTrack*>(t);
+		return folder && folder->isCollapsed();
+	};
+
+	// The outermost collapsed folder each track is hidden in, or the track itself if it is shown
+	auto shownAs = std::vector<std::size_t>(m_tracks.size());
+	auto collapsed = std::optional<std::size_t>{};
+	for (auto i = std::size_t{0}; i < m_tracks.size(); ++i)
+	{
+		if (collapsed && m_tracks[i]->folderDepth() <= m_tracks[*collapsed]->folderDepth()) { collapsed.reset(); }
+		shownAs[i] = collapsed.value_or(i);
+		if (!collapsed && isCollapsedFolder(m_tracks[i])) { collapsed = i; }
+	}
+
+	const auto first = static_cast<std::size_t>(it - m_tracks.begin());
+	const auto end = blockEnd(first);
+	const auto size = end - first;
+
+	// Where the block goes in the list without it
+	std::size_t to = 0;
+	if (down)
+	{
+		if (end >= m_tracks.size()) { return false; }
+		to = (isCollapsedFolder(m_tracks[end]) ? blockEnd(end) : end + 1) - size;
+	}
+	else
+	{
+		if (first == 0) { return false; }
+		to = shownAs[first - 1];
+	}
+
+	// The level of the track above the new place, or inside it if that is an open folder
+	int depth = 0;
+	const auto aboveIndex = to == 0 ? std::optional<std::size_t>{} : std::optional{to - 1 < first ? to - 1 : to - 1 + size};
+	if (aboveIndex)
+	{
+		const auto above = m_tracks[shownAs[*aboveIndex]];
+		depth = above->folderDepth() + (above->type() == Track::Type::Folder && !isCollapsedFolder(above) ? 1 : 0);
+	}
+	const int delta = depth - track->folderDepth();
+
+	const auto block = TrackList(m_tracks.begin() + first, m_tracks.begin() + end);
+	moveTracks(first, end, to);
+	for (const auto moved : block) { moved->setFolderDepth(moved->folderDepth() + delta); }
+
+	updateFolders();
+	emit trackMoved();
+	return true;
+}
+
+
+
+
+void TrackContainer::addLayoutCheckPoint()
+{
+	m_folderLayout.addJournalCheckPoint();
 }
 
 
@@ -327,8 +461,14 @@ void TrackContainer::FolderLayout::saveSettings(QDomDocument& doc, QDomElement& 
 {
 	(void)doc;
 	auto depths = QStringList{};
-	for (const auto track : m_container->tracks()) { depths << QString::number(track->folderDepth()); }
+	auto order = QStringList{};
+	for (const auto track : m_container->tracks())
+	{
+		depths << QString::number(track->folderDepth());
+		order << QString::number(track->id());
+	}
 	element.setAttribute("depths", depths.join(','));
+	element.setAttribute("order", order.join(','));
 }
 
 
@@ -337,6 +477,28 @@ void TrackContainer::FolderLayout::saveSettings(QDomDocument& doc, QDomElement& 
 void TrackContainer::FolderLayout::loadSettings(const QDomElement& element)
 {
 	const auto depths = element.attribute("depths").split(',', Qt::SkipEmptyParts);
+
+	// The order: one track at a time into its place, so that the patterns follow (see moveTracks())
+	const auto order = element.attribute("order").split(',', Qt::SkipEmptyParts);
+	bool moved = false;
+	auto place = std::size_t{0};
+	for (const auto& id : order)
+	{
+		auto& current = m_container->m_tracks;
+		const auto it = std::find_if(current.begin() + place, current.end(), [&id](const Track* track) {
+			return track->id() == static_cast<jo_id_t>(id.toInt());
+		});
+		if (it == current.end()) { continue; }
+		const auto index = static_cast<std::size_t>(it - current.begin());
+		if (index != place)
+		{
+			m_container->moveTracks(index, index + 1, place);
+			moved = true;
+		}
+		++place;
+	}
+	if (moved) { emit m_container->trackMoved(); }
+
 	const auto& tracks = m_container->tracks();
 	for (auto i = std::size_t{0}; i < tracks.size() && i < static_cast<std::size_t>(depths.size()); ++i)
 	{

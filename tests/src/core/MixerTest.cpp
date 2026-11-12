@@ -1215,6 +1215,89 @@ private slots:
 		deleteTrack(folder);
 	}
 
+	void renameAndColorAreUndoable()
+	{
+		const auto bus = mixer()->createChannel();
+		const auto journal = Engine::projectJournal();
+		journal->setJournalling(true);
+		mixer()->setChannelName(bus, "Reverb");
+		mixer()->setChannelColor(bus, QColor{Qt::red});
+		QCOMPARE(mixer()->mixerChannel(bus)->m_name, QString{"Reverb"});
+		journal->undo();
+		QVERIFY(!mixer()->mixerChannel(bus)->color());
+		journal->undo();
+		journal->setJournalling(false);
+		QCOMPARE(mixer()->mixerChannel(bus)->m_name, QString{"Channel %1"}.arg(bus));
+
+		// A track's channel renames its track, which the channel follows
+		const auto track = Track::create(Track::Type::Sample, Engine::getSong());
+		const auto own = mixer()->trackChannel(track);
+		mixer()->setChannelName(own->index(), "Vocals");
+		QCOMPARE(track->name(), QString{"Vocals"});
+		QCOMPARE(own->m_name, QString{"Vocals"});
+		deleteTrack(track);
+	}
+
+	void tracksMoveWithTheirFolders()
+	{
+		const auto song = Engine::getSong();
+		const auto folder = dynamic_cast<FolderTrack*>(Track::create(Track::Type::Folder, song));
+		const auto a = Track::create(Track::Type::Sample, song);
+		const auto b = Track::create(Track::Type::Sample, song);
+		const auto x = Track::create(Track::Type::Sample, song);
+		song->changeFolderDepth(a, 1);
+		song->changeFolderDepth(b, 1);
+		auto order = [song] { return TrackContainer::TrackList(song->tracks().end() - 4, song->tracks().end()); };
+		auto depths = [&] {
+			auto result = std::vector<int>{};
+			for (const auto track : song->tracks()) { result.push_back(track->folderDepth()); }
+			return std::vector<int>(result.end() - 4, result.end());
+		};
+
+		// Up from below the folder: into it, at the level of the track above
+		QVERIFY(song->moveTrackStep(x, false));
+		QCOMPARE(order(), (TrackContainer::TrackList{folder, a, x, b}));
+		QCOMPARE(depths(), (std::vector<int>{0, 1, 1, 1}));
+		QCOMPARE(outputOf(x), mixer()->trackChannel(folder)->index());
+
+		// Out of the folder: below what it holds, so that b stays in it
+		song->changeFolderDepth(x, -1);
+		QCOMPARE(order(), (TrackContainer::TrackList{folder, a, b, x}));
+		QCOMPARE(depths(), (std::vector<int>{0, 1, 1, 0}));
+
+		// A folder moves with what it holds, and a collapsed one is passed at once
+		QVERIFY(song->moveTrackStep(x, false));
+		QVERIFY(song->moveTrackStep(x, false));
+		QVERIFY(song->moveTrackStep(x, false));
+		QCOMPARE(order().front(), x);
+		QCOMPARE(x->folderDepth(), 0);
+		QVERIFY(song->moveTrackStep(folder, false));
+		QCOMPARE(song->tracks().back(), x);
+		QCOMPARE(song->tracks()[song->tracks().size() - 2], b);
+		folder->setCollapsed(true);
+		QVERIFY(song->moveTrackStep(x, false));
+		QCOMPARE(order(), (TrackContainer::TrackList{x, folder, a, b}));
+		QCOMPARE(depths(), (std::vector<int>{0, 0, 1, 1}));
+		folder->setCollapsed(false);
+
+		// The order is one undo step with the depths
+		const auto journal = Engine::projectJournal();
+		journal->setJournalling(true);
+		song->addLayoutCheckPoint();
+		QVERIFY(song->moveTrackStep(x, true));
+		QCOMPARE(order(), (TrackContainer::TrackList{folder, x, a, b}));
+		QCOMPARE(x->folderDepth(), 1);
+		journal->undo();
+		journal->setJournalling(false);
+		QCOMPARE(order(), (TrackContainer::TrackList{x, folder, a, b}));
+		QCOMPARE(x->folderDepth(), 0);
+
+		deleteTrack(x);
+		deleteTrack(b);
+		deleteTrack(a);
+		deleteTrack(folder);
+	}
+
 	void folderDepthIsSaved()
 	{
 		const auto song = Engine::getSong();
@@ -1322,6 +1405,66 @@ private slots:
 		compareOutput(mix(), 0.5f, 0.25f);
 
 		deleteTrack(track);
+	}
+
+	void channelsPerOutputBelongToTheTrack()
+	{
+		const auto song = Engine::getSong();
+		const auto before = mixer()->numChannels();
+		auto folder = Track::create(Track::Type::Folder, song);
+		auto track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		auto other = Track::create(Track::Type::Sample, song);
+		track->setInstrumentInstance(
+			std::make_unique<PluginInstance>(std::make_unique<FakeMultiOutput>(), Plugin::Type::Instrument));
+		const auto trackChannel = mixer()->trackChannel(track);
+		const auto otherChannel = mixer()->trackChannel(other);
+
+		// Made once, next to the track's channel (before the other track's): the group channel, then the pieces
+		const auto group = mixer()->setUpChannelPerOutput(track);
+		QCOMPARE(mixer()->setUpChannelPerOutput(track), group);
+		QCOMPARE(group, trackChannel->index() + 1);
+		QCOMPARE(otherChannel->index(), group + 4);
+		const auto owned = mixer()->ownedChannels(trackChannel->index());
+		QCOMPARE(owned.size(), std::size_t{4});
+		for (auto i = std::size_t{0}; i < owned.size(); ++i)
+		{
+			QCOMPARE(owned[i]->index(), trackChannel->index() + 1 + static_cast<int>(i));
+		}
+
+		// The group channel follows the track into a folder
+		song->changeFolderDepth(track, 1);
+		QCOMPARE(outputOf(track), mixer()->trackChannel(folder)->index());
+		QCOMPARE(mixer()->mixerChannel(group)->m_sends.front()->receiverIndex(), mixer()->trackChannel(folder)->index());
+
+		// Arranging puts the channels back like the tracks: folder, track and its channels, other track
+		mixer()->moveChannelRight(trackChannel->index());
+		mixer()->moveChannelLeft(otherChannel->index());
+		QCOMPARE(track->mixerChannelModel()->value(), before + 2);
+		mixer()->arrangeChannelsByTracks();
+		QCOMPARE(mixer()->trackChannel(folder)->index(), before);
+		QCOMPARE(trackChannel->index(), before + 1);
+		QCOMPARE(track->mixerChannelModel()->value(), before + 1);
+		QCOMPARE(mixer()->mixerChannel(before + 2)->m_owner, trackChannel);
+		QCOMPARE(otherChannel->index(), before + 6);
+
+		// The owners are saved
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixer");
+		doc.content().appendChild(element);
+		mixer()->saveSettings(doc, element);
+		mixer()->loadSettings(element);
+		QCOMPARE(mixer()->ownedChannels(before + 1).size(), std::size_t{4});
+
+		// (Projects load the tracks' channels with the tracks)
+		dynamic_cast<FolderTrack*>(folder)->mixerChannelModel()->setValue(before);
+		track->mixerChannelModel()->setValue(before + 1);
+		dynamic_cast<SampleTrack*>(other)->mixerChannelModel()->setValue(before + 6);
+
+		// And go away with the track
+		deleteTrack(track);
+		deleteTrack(other);
+		deleteTrack(folder);
+		QCOMPARE(mixer()->numChannels(), before);
 	}
 };
 

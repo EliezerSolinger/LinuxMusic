@@ -532,6 +532,9 @@ void Mixer::restoreState(const QDomElement& element)
 		const auto it = std::find_if(tracks.begin(), tracks.end(), [id](const auto& t) { return t.first->id() == id; });
 		if (it != tracks.end()) { it->second->setValue(entry.attribute("channel").toInt()); }
 	}
+
+	// The tracks' names and colors are not in the undo history, so their channels keep following them
+	followTracks();
 }
 
 
@@ -557,6 +560,67 @@ Mixer::StructureChange::~StructureChange()
 {
 	if (--m_mixer.m_structureChangeDepth > 0) { return; }
 	Engine::projectJournal()->setJournalling(m_wasJournalling);
+}
+
+
+
+
+void Mixer::setChannelName(mix_ch_t index, const QString& name)
+{
+	if (index >= numChannels() || m_mixerChannels[index]->m_name == name) { return; }
+	if (const auto track = trackOf(index))
+	{
+		track->setName(name);
+		return;
+	}
+	const auto change = StructureChange{*this};
+	m_mixerChannels[index]->m_name = name;
+	emit dataChanged();
+}
+
+
+
+
+void Mixer::setChannelColor(mix_ch_t index, const std::optional<QColor>& color)
+{
+	if (index >= numChannels() || m_mixerChannels[index]->color() == color) { return; }
+	if (const auto track = trackOf(index))
+	{
+		track->setColor(color);
+		return;
+	}
+	const auto change = StructureChange{*this};
+	m_mixerChannels[index]->setColor(color);
+	emit dataChanged();
+}
+
+
+
+
+auto Mixer::trackOf(mix_ch_t index) const -> Track*
+{
+	if (index <= 0 || index >= numChannels() || !m_mixerChannels[index]->m_trackChannel) { return nullptr; }
+	for (const auto& [track, channel] : tracksWithMixerChannel())
+	{
+		if (channel->value() == index && trackChannel(track) == m_mixerChannels[index]) { return track; }
+	}
+	return nullptr;
+}
+
+
+
+
+void Mixer::followTracks()
+{
+	for (const auto& [track, channel] : tracksWithMixerChannel())
+	{
+		if (const auto own = trackChannel(track))
+		{
+			own->m_name = track->name();
+			own->setColor(track->color());
+		}
+	}
+	emit dataChanged();
 }
 
 
@@ -670,6 +734,12 @@ void Mixer::deleteChannel( int index )
 	// if m_lastSoloed is > delete index, it will move left
 	else if (m_lastSoloed > index) { --m_lastSoloed; }
 
+	// Channels made for it stay as plain channels
+	for (const auto channel : m_mixerChannels)
+	{
+		if (channel->m_owner == ch) { channel->m_owner = nullptr; }
+	}
+
 	// actually delete the channel
 	m_mixerChannels.erase(m_mixerChannels.begin() + index);
 	delete ch;
@@ -713,11 +783,13 @@ void Mixer::moveChannelLeft( int index )
 	else if (m_lastSoloed == b) { m_lastSoloed = a; }
 
 	// Swap positions in array
+	Engine::audioEngine()->requestChangeInModel();
 	std::swap(m_mixerChannels[index], m_mixerChannels[index - 1]);
 
 	// Update m_channelIndex of both channels
 	m_mixerChannels[index]->setIndex(index);
 	m_mixerChannels[index - 1]->setIndex(index - 1);
+	Engine::audioEngine()->doneChangeInModel();
 
 	emit channelsSwapped(index, index - 1);
 }
@@ -1103,6 +1175,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_input = ChannelInput{};
 	ch->m_trackChannel = false;
 	ch->m_groupChannel = false;
+	ch->m_owner = nullptr;
 	setChannelCount(index, DEFAULT_CHANNELS);
 	ch->m_recordArmModel.setValue(false);
 	ch->m_monitorModel.setValue(static_cast<int>(MixerChannel::MonitorMode::Auto));
@@ -1172,6 +1245,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		if (ch->channelCount() != DEFAULT_CHANNELS) { mixch.setAttribute("channels", ch->channelCount()); }
 		if (ch->m_trackChannel) { mixch.setAttribute("trackchannel", 1); }
 		if (ch->m_groupChannel) { mixch.setAttribute("groupchannel", 1); }
+		if (ch->m_owner) { mixch.setAttribute("owner", ch->m_owner->index()); }
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
 
@@ -1209,6 +1283,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 	clear();
 	QDomNode node = _this.firstChild();
 	auto sends = std::vector<std::pair<int, QDomElement>>{};
+	auto owners = std::vector<std::pair<int, int>>{};
 
 	while( ! node.isNull() )
 	{
@@ -1244,6 +1319,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		m_mixerChannels[num]->m_name = mixch.attribute( "name" );
 		m_mixerChannels[num]->m_trackChannel = mixch.attribute("trackchannel", "0").toInt() != 0;
 		m_mixerChannels[num]->m_groupChannel = mixch.attribute("groupchannel", "0").toInt() != 0;
+		if (mixch.hasAttribute("owner")) { owners.emplace_back(num, mixch.attribute("owner").toInt()); }
 		if (mixch.hasAttribute("color"))
 		{
 			m_mixerChannels[num]->setColor(QColor{mixch.attribute("color")});
@@ -1265,6 +1341,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 		}
 
 		node = node.nextSibling();
+	}
+
+	for (const auto& [num, owner] : owners)
+	{
+		if (owner > 0 && owner < numChannels() && owner != num) { m_mixerChannels[num]->m_owner = m_mixerChannels[owner]; }
 	}
 
 	for (const auto& [num, send] : sends)
@@ -1468,8 +1549,13 @@ void Mixer::releaseTrackChannel(Track* track)
 		return;
 	}
 
+	const auto change = StructureChange{*this};
 	strip->channel->setValue(0);
-	deleteChannel(index);
+
+	// The channels made for it, e.g. its drum pieces, go with it
+	const auto channel = m_mixerChannels[index];
+	for (const auto owned : ownedChannels(index)) { deleteChannel(owned->index()); }
+	deleteChannel(channel->index());
 	emit trackChannelChanged(track);
 }
 
@@ -1501,6 +1587,15 @@ auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 	const auto groups = instance ? instance->outputGroups() : std::vector<PluginInstance::OutputGroup>{};
 	if (groups.size() < 2) { return -1; }
 
+	// Done already
+	if (const auto channel = trackChannel(track))
+	{
+		for (const auto owned : ownedChannels(channel->index()))
+		{
+			if (owned->m_groupChannel) { return owned->index(); }
+		}
+	}
+
 	const auto change = StructureChange{*this};
 
 	if (!trackChannel(track)) { setUpTrackChannel(track); }
@@ -1523,6 +1618,7 @@ auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 	groupChannel->m_name = tr("%1 (pieces)").arg(track->name());
 	groupChannel->setColor(track->color());
 	groupChannel->m_groupChannel = true;
+	groupChannel->m_owner = source;
 	deleteChannelSend(group, 0);
 	createChannelSend(group, destination);
 
@@ -1534,13 +1630,22 @@ auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 			? tr("%1 %2").arg(track->name()).arg(g + 1)
 			: QString::fromStdString(groups[g].name);
 		pieceChannel->setColor(track->color());
+		pieceChannel->m_owner = source;
 		createChannelSend(trackIndex, piece, 1.f, static_cast<ch_cnt_t>(g + 1), 0);
 		deleteChannelSend(piece, 0);
 		createChannelSend(piece, group);
 	}
 
+	// Next to the track's channel: the group channel, then the pieces
+	const int first = source->index() + 1;
+	const int made = static_cast<int>(groups.size()) + 1;
+	for (int i = 0; i < made; ++i)
+	{
+		for (int at = numChannels() - made + i; at > first + i; --at) { moveChannelLeft(at); }
+	}
+
 	emit dataChanged();
-	return group;
+	return groupChannel->index();
 }
 
 
@@ -1567,6 +1672,28 @@ void Mixer::updateFolderRouting()
 	const bool wasJournalling = journal->isJournalling();
 	journal->setJournalling(false);
 
+	// Sends the main outputs of @p channel (sends of the main pair after the fader) to @p target
+	auto routeTo = [this](MixerChannel* channel, mix_ch_t target) {
+		bool reachesTarget = false;
+		bool sentByHand = false;
+		auto wrong = std::vector<mix_ch_t>{};
+		for (const MixerRoute* route : channel->m_sends)
+		{
+			if (route->sourcePair() != 0 || route->destinationPair() != 0 || route->isPreFader()) { continue; }
+			const auto receiver = route->receiver();
+			if (receiver->index() == target) { reachesTarget = true; }
+			else if (receiver->isMaster() || (receiver->m_groupChannel && receiver->m_owner != channel))
+			{
+				wrong.push_back(receiver->index());
+			}
+			else { sentByHand = true; }
+		}
+		if (sentByHand && !reachesTarget && wrong.empty()) { return; }
+
+		for (const auto index : wrong) { deleteChannelSend(channel->index(), index); }
+		if (!reachesTarget) { createChannelSend(channel->index(), target); }
+	};
+
 	for (const auto track : song->tracks())
 	{
 		const auto channel = trackChannel(track);
@@ -1576,25 +1703,82 @@ void Mixer::updateFolderRouting()
 		const auto folderChannel = folder ? trackChannel(folder) : nullptr;
 		const mix_ch_t target = folderChannel ? folderChannel->index() : 0;
 
-		// The channel's main outputs: sends of the main pair after the fader
-		bool reachesTarget = false;
-		bool sentByHand = false;
-		auto wrong = std::vector<mix_ch_t>{};
-		for (const MixerRoute* route : channel->m_sends)
-		{
-			if (route->sourcePair() != 0 || route->destinationPair() != 0 || route->isPreFader()) { continue; }
-			const auto receiver = route->receiver();
-			if (receiver->index() == target) { reachesTarget = true; }
-			else if (receiver->isMaster() || receiver->m_groupChannel) { wrong.push_back(receiver->index()); }
-			else { sentByHand = true; }
-		}
-		if (sentByHand && !reachesTarget && wrong.empty()) { continue; }
+		routeTo(channel, target);
 
-		for (const auto index : wrong) { deleteChannelSend(channel->index(), index); }
-		if (!reachesTarget) { createChannelSend(channel->index(), target); }
+		// The group channels made for it (e.g. of its drum pieces) go where it goes
+		for (const auto owned : ownedChannels(channel->index()))
+		{
+			if (owned->m_groupChannel) { routeTo(owned, target); }
+		}
 	}
 
 	journal->setJournalling(wasJournalling);
+}
+
+
+
+
+auto Mixer::ownedChannels(mix_ch_t index) const -> std::vector<MixerChannel*>
+{
+	auto result = std::vector<MixerChannel*>{};
+	if (index <= 0 || index >= numChannels()) { return result; }
+	for (const auto channel : m_mixerChannels)
+	{
+		if (channel->m_owner == m_mixerChannels[index]) { result.push_back(channel); }
+	}
+	return result;
+}
+
+
+
+
+void Mixer::arrangeChannelsByTracks()
+{
+	auto order = std::vector<MixerChannel*>{m_mixerChannels[0]};
+	auto placed = std::vector<bool>(m_mixerChannels.size(), false);
+	placed[0] = true;
+
+	auto place = [&](MixerChannel* channel) {
+		if (placed[channel->index()]) { return; }
+		placed[channel->index()] = true;
+		order.push_back(channel);
+		// Its group channels first, then the channels sending to them, like the folders' tracks
+		for (const auto owned : ownedChannels(channel->index()))
+		{
+			if (owned->m_groupChannel && !placed[owned->index()]) { placed[owned->index()] = true; order.push_back(owned); }
+		}
+		for (const auto owned : ownedChannels(channel->index()))
+		{
+			if (!placed[owned->index()]) { placed[owned->index()] = true; order.push_back(owned); }
+		}
+	};
+
+	for (const auto container : std::initializer_list<TrackContainer*>{Engine::getSong(), Engine::patternStore()})
+	{
+		if (!container) { continue; }
+		for (const auto track : container->tracks())
+		{
+			const auto strip = stripOf(track);
+			if (!strip) { continue; }
+			const int index = strip->channel->value();
+			if (index > 0 && index < numChannels() && m_mixerChannels[index]->m_trackChannel)
+			{
+				place(m_mixerChannels[index]);
+			}
+		}
+	}
+	for (const auto channel : m_mixerChannels)
+	{
+		if (!placed[channel->index()]) { order.push_back(channel); placed[channel->index()] = true; }
+	}
+
+	// Moves each channel into place one step at a time, so that every model following a channel (the tracks'
+	// channel numbers, the views) keeps up through channelsSwapped
+	const auto change = StructureChange{*this};
+	for (auto target = std::size_t{1}; target < order.size(); ++target)
+	{
+		for (int at = order[target]->index(); at > static_cast<int>(target); --at) { moveChannelLeft(at); }
+	}
 }
 
 

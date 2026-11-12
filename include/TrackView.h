@@ -219,6 +219,11 @@ private:
 
 	Action m_action = Action::None;
 
+	//! While dragged by the grip: whether it moved yet (an undo step is added then), and where the mouse was when
+	//! it last changed level (dragging sideways moves it into or out of folders)
+	bool m_movedByGrip = false;
+	int m_gripLevelX = 0;
+
 	virtual FadeButton * getActivityIndicator()
 	{
 		return nullptr;

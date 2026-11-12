@@ -123,6 +123,7 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 			this, SLOT(createTrackView(lmms::Track*)),
 			Qt::QueuedConnection );
 	connect(m_tc, &TrackContainer::foldersChanged, this, &TrackContainerView::realignTracks);
+	connect(m_tc, &TrackContainer::trackMoved, this, &TrackContainerView::followTrackOrder);
 }
 
 
@@ -210,6 +211,35 @@ void TrackContainerView::moveTrackView( TrackView * trackView, int indexTo )
 
 	m_trackViews.move( indexFrom, indexTo );
 
+	realignTracks();
+}
+
+
+
+
+void TrackContainerView::followTrackOrder()
+{
+	auto views = QList<TrackView*>{};
+	for (const auto track : m_tc->tracks())
+	{
+		const auto it = std::find_if(m_trackViews.begin(), m_trackViews.end(), [track](const TrackView* view) {
+			return view->getTrack() == track;
+		});
+		if (it != m_trackViews.end()) { views.push_back(*it); }
+	}
+	// Views of tracks not in the list yet keep their place at the end
+	for (const auto view : m_trackViews)
+	{
+		if (!views.contains(view)) { views.push_back(view); }
+	}
+	if (views == m_trackViews) { return; }
+
+	for (auto i = 0; i < views.size(); ++i)
+	{
+		m_scrollLayout->removeWidget(views[i]);
+		m_scrollLayout->insertWidget(i, views[i]);
+	}
+	m_trackViews = views;
 	realignTracks();
 }
 

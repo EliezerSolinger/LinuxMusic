@@ -155,6 +155,10 @@ public:
 	//! Whether the channel is a folder's group channel (see FolderTrack), which the tracks it holds send to
 	bool m_groupChannel = false;
 
+	//! The track channel this channel was made for, e.g. a drum piece's channel (see
+	//! Mixer::setUpChannelPerOutput()): it goes away, follows the folders and is arranged with that channel
+	MixerChannel* m_owner = nullptr;
+
 	// Latency compensation, see Mixer::compensateLatency() [audio thread]
 	f_cnt_t m_latency = 0;			//!< of the channel's output: its latest input plus its effects
 	LatencyDelay m_inputDelay;		//!< aligns the tracks' audio with the latest input
@@ -364,6 +368,16 @@ public:
 	 */
 	auto setUpChannelPerOutput(InstrumentTrack* track) -> int;
 
+	//! The channels made for channel @p index (see MixerChannel::m_owner), in mixer order
+	auto ownedChannels(mix_ch_t index) const -> std::vector<MixerChannel*>;
+
+	/**
+	 * Puts the channels in the order of the song's tracks, like the mixer of REAPER: each track's channel, then
+	 * the channels made for it (e.g. its drum pieces), then the channels of the pattern editor's tracks, then the
+	 * rest (buses) as they were. One undo step.
+	 */
+	void arrangeChannelsByTracks();
+
 	//! The index of the channel whose effects are @p chain, or -1
 	auto channelOf(const EffectChain* chain) const -> int;
 
@@ -390,6 +404,13 @@ public:
 	// add a new channel to the mixer.
 	// returns the index of the channel that was just added
 	int createChannel();
+
+	/**
+	 * Renames channel @p index, or changes its color. One undo step. A track's channel is named and colored after
+	 * the track, so this renames or recolors the track instead (whose name and color are not in the undo history).
+	 */
+	void setChannelName(mix_ch_t index, const QString& name);
+	void setChannelColor(mix_ch_t index, const std::optional<QColor>& color);
 
 	//! Sets where channel @p index takes audio from (see ChannelInput)
 	void setChannelInput(mix_ch_t index, const ChannelInput& input);
@@ -435,6 +456,12 @@ signals:
 	void trackChannelChanged(lmms::Track* track);
 
 private:
+	//! The track whose channel (see setUpTrackChannel()) is channel @p index, or nullptr
+	auto trackOf(mix_ch_t index) const -> Track*;
+
+	//! Names and colors the channels made for tracks after their tracks
+	void followTracks();
+
 	//! The output latency of channel @p index, setting up the delays of its inputs (see compensateLatency())
 	auto compensateLatency(mix_ch_t index) -> f_cnt_t;
 

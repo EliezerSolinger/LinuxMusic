@@ -282,6 +282,9 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 
 	contextMenu->addAction(
 		embed::getIconPixmap("cancel"), tr("Remove &unused channels"), this, &MixerChannelView::removeUnusedChannels);
+	contextMenu->addAction(tr("&Arrange channels like the tracks"), this, [] {
+		Engine::mixer()->arrangeChannelsByTracks();
+	});
 	contextMenu->addSeparator();
 
 	auto colorMenu = QMenu{tr("Color"), this};
@@ -470,8 +473,8 @@ void MixerChannelView::renameFinished()
 	const auto mc = mixerChannel();
 	if (!newName.isEmpty() && mc->m_name != newName)
 	{
-		mc->m_name = newName;
-		m_renameLineEdit->setText(elideName(newName));
+		Engine::mixer()->setChannelName(channelIndex(), newName);
+		m_renameLineEdit->setText(elideName(mc->m_name));
 		Engine::getSong()->setModified();
 	}
 
@@ -480,7 +483,7 @@ void MixerChannelView::renameFinished()
 
 void MixerChannelView::resetColor()
 {
-	mixerChannel()->setColor(std::nullopt);
+	Engine::mixer()->setChannelColor(channelIndex(), std::nullopt);
 	Engine::getSong()->setModified();
 	update();
 }
@@ -495,7 +498,7 @@ void MixerChannelView::selectColor()
 
 	if (!newColor.isValid()) { return; }
 
-	channel->setColor(newColor);
+	Engine::mixer()->setChannelColor(channelIndex(), newColor);
 
 	Engine::getSong()->setModified();
 	update();
@@ -503,8 +506,7 @@ void MixerChannelView::selectColor()
 
 void MixerChannelView::randomizeColor()
 {
-	auto channel = mixerChannel();
-	channel->setColor(ColorChooser::getPalette(ColorChooser::Palette::Mixer)[fastRand(48)]);
+	Engine::mixer()->setChannelColor(channelIndex(), ColorChooser::getPalette(ColorChooser::Palette::Mixer)[fastRand(48)]);
 	Engine::getSong()->setModified();
 	update();
 }

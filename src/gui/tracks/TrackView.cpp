@@ -39,9 +39,11 @@
 #include "DeprecationHelper.h"
 #include "Engine.h"
 #include "FadeButton.h"
+#include "ProjectJournal.h"
 #include "StringPairDrag.h"
 #include "Track.h"
 #include "TrackGrip.h"
+#include "TrackContainer.h"
 #include "TrackContainerView.h"
 #include "ClipView.h"
 
@@ -269,18 +271,35 @@ void TrackView::mouseMoveEvent( QMouseEvent * me )
 		// debug code
 		//	qDebug( "y position %d", yPos );
 
-		// a track-widget not equal to ourself?
-		if( trackAtY != nullptr && trackAtY != this )
+		const auto container = m_trackContainerView->model();
+		auto addUndoStep = [this, container] {
+			if (!m_movedByGrip) { container->addLayoutCheckPoint(); }
+			m_movedByGrip = true;
+		};
+
+		// a track-widget not equal to ourself (or what we hold)? then move us up/down there, with what we hold
+		if (trackAtY != nullptr && trackAtY != this && !container->isInFolder(trackAtY->getTrack(), m_track))
 		{
-			// then move us up/down there!
-			if (pos.y() < 0)
+			addUndoStep();
+			container->moveTrackStep(m_track, pos.y() >= 0);
+		}
+
+		// Sideways: into the folder above or out of the folder
+		const int x = globalPosition(me).x();
+		if (std::abs(x - m_gripLevelX) >= 3 * FolderIndent)
+		{
+			const int delta = x > m_gripLevelX ? 1 : -1;
+			const int depth = m_track->folderDepth();
+			if (delta < 0 ? depth > 0 : true)
 			{
-				m_trackContainerView->moveTrackViewUp( this );
+				addUndoStep();
+				const auto journal = Engine::projectJournal();
+				const bool wasJournalling = journal->isJournalling();
+				journal->setJournalling(false); // in the drag's undo step
+				container->changeFolderDepth(m_track, delta);
+				journal->setJournalling(wasJournalling);
 			}
-			else
-			{
-				m_trackContainerView->moveTrackViewDown( this );
-			}
+			if (m_track->folderDepth() != depth) { m_gripLevelX = x; }
 		}
 	}
 	else if (m_action == Action::ResizeVertical)
@@ -383,6 +402,8 @@ void TrackView::muteChanged()
 void TrackView::onTrackGripGrabbed()
 {
 	m_action = Action::Move;
+	m_movedByGrip = false;
+	m_gripLevelX = QCursor::pos().x();
 }
 
 void TrackView::onTrackGripReleased()

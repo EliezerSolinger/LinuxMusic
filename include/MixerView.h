@@ -112,6 +112,9 @@ public slots:
 	//! Removes the view of a channel the mixer deleted
 	void removeChannelView(int index);
 
+	//! Swaps the views of two neighboring channels the mixer swapped
+	void swapChannelViews(int index, int otherIndex);
+
 private slots:
 	void updateFaders();
 	// TODO This should be improved. Currently the solo and mute models are connected via

@@ -67,6 +67,7 @@ MixerView::MixerView(Mixer* mixer) :
 	connect(mixer, &Mixer::channelCreated, this, [this](int) { addMissingChannelViews(); });
 	connect(mixer, &Mixer::channelDeleted, this, [this](int index) { removeChannelView(index); });
 	connect(mixer, &Mixer::dataChanged, this, &MixerView::updateGroupVisibility);
+	connect(mixer, &Mixer::channelsSwapped, this, &MixerView::swapChannelViews);
 
 	//QPalette pal = palette();
 	//pal.setColor(QPalette::Window, QColor(72, 76, 88));
@@ -497,17 +498,27 @@ void MixerView::moveChannelLeft(int index)
 	// can't move master or first channel left or last channel right
 	if (index <= 1 || index >= m_mixerChannelViews.size()) { return; }
 
+	// The views follow when the mixer announces the swap (see swapChannelViews())
 	m_mixer->moveChannelLeft(index);
+}
 
-	const auto layoutIndex = chLayout->indexOf(m_mixerChannelViews[index]);
+
+
+
+void MixerView::swapChannelViews(int index, int otherIndex)
+{
+	if (index > otherIndex) { std::swap(index, otherIndex); }
+	if (index <= 0 || otherIndex >= m_mixerChannelViews.size() || otherIndex != index + 1) { return; }
+
+	const auto layoutIndex = chLayout->indexOf(m_mixerChannelViews[otherIndex]);
 	assert(layoutIndex >= 1);
 
-	chLayout->removeWidget(m_mixerChannelViews[index]);
-	chLayout->insertWidget(layoutIndex - 1, m_mixerChannelViews[index]);
+	chLayout->removeWidget(m_mixerChannelViews[otherIndex]);
+	chLayout->insertWidget(layoutIndex - 1, m_mixerChannelViews[otherIndex]);
 
-	m_mixerChannelViews[index]->setChannelIndex(index - 1);
-	m_mixerChannelViews[index - 1]->setChannelIndex(index);
-	std::swap(m_mixerChannelViews[index - 1], m_mixerChannelViews[index]);
+	m_mixerChannelViews[otherIndex]->setChannelIndex(index);
+	m_mixerChannelViews[index]->setChannelIndex(otherIndex);
+	std::swap(m_mixerChannelViews[index], m_mixerChannelViews[otherIndex]);
 }
 
 

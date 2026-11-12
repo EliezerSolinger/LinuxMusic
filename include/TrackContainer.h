@@ -89,6 +89,17 @@ public:
 	void changeFolderDepth(Track* track, int delta);
 
 	/**
+	 * Moves @p track one place up or down among the visible tracks, with what it holds if it is a folder, as when
+	 * dragged by its grip: past a collapsed folder at once, and into and out of folders on the way (it takes the
+	 * level of the track above its new place, or goes into that track if it is an open folder).
+	 * @returns whether it moved
+	 */
+	auto moveTrackStep(Track* track, bool down) -> bool;
+
+	//! Adds an undo step for the order and folder depths of the tracks, e.g. before a track is dragged
+	void addLayoutCheckPoint();
+
+	/**
 	 * Makes the folder depths valid (a track can only be one level deeper than the track above it, and only if that
 	 * one is a folder) and lets the mixer route the tracks' channels to their folders' channels
 	 * (Mixer::updateFolderRouting()). Called after tracks are added, removed or moved.
@@ -136,7 +147,16 @@ protected:
 	mutable QReadWriteLock m_tracksMutex;
 
 private:
-	//! The folder depths of all tracks, journalled as one object so that a folder change is one undo step
+	/**
+	 * Moves the tracks from @p first to @p end (exclusive) to index @p to of the list without them, keeping the
+	 * patterns of the pattern editor in the order of their pattern tracks
+	 */
+	void moveTracks(std::size_t first, std::size_t end, std::size_t to);
+
+	//! The index one past @p index and what it holds if it is a folder
+	auto blockEnd(std::size_t index) const -> std::size_t;
+
+	//! The order and folder depths of all tracks, journalled as one object so that a folder change is one undo step
 	class FolderLayout : public JournallingObject
 	{
 	public:
