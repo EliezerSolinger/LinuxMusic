@@ -2573,6 +2573,30 @@ private slots:
 		QVERIFY(mixer()->loadedWithoutTolerance());
 	}
 
+	void channelTolerancesAreFrozen()
+	{
+		// A contract with the people who mix on the desk: each channel keeps its character in every version, so
+		// that they learn their desk. These values must never change (see ChannelTolerance::forChannel())
+		struct Frozen { int channel; float gain, lowCut, drive, highPass; double highFrequency, highMidGain; };
+		const auto frozen = std::array{
+			Frozen{1, -0.00362166832f, 0.994946778f, 0.975250304f, 1.00620019f, 1.0039064650250091, 1.0012884893891381},
+			Frozen{2, 0.0190470163f, 1.00957358f, 0.99104774f, 1.00720668f, 0.99157399934457169, 0.98573882847934868},
+			Frozen{3, -0.0585210323f, 0.998126507f, 0.973794281f, 0.991076529f, 0.99133357141275358, 0.99252185458568676},
+			Frozen{8, -0.0315597095f, 1.00288808f, 0.985630751f, 1.00447083f, 1.0093123677569744, 1.0061400838803543},
+			Frozen{32, -0.00284665497f, 0.995807171f, 1.01793587f, 0.997933328f, 1.0021337474165282, 0.9813826111870485},
+		};
+		for (const auto& f : frozen)
+		{
+			const auto t = ChannelTolerance::forChannel(f.channel);
+			QCOMPARE(t.gain, f.gain);
+			QCOMPARE(t.lowCut, f.lowCut);
+			QCOMPARE(t.drive, f.drive);
+			QCOMPARE(t.highPass, f.highPass);
+			QVERIFY(std::abs(t.eqFrequency[3] - f.highFrequency) < 1e-15);
+			QVERIFY(std::abs(t.eqGain[2] - f.highMidGain) < 1e-15);
+		}
+	}
+
 	void outputTransformer()
 	{
 		constexpr auto rate = sample_rate_t{44100};

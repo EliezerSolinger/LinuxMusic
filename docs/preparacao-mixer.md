@@ -1027,6 +1027,14 @@ Decidido pelo usuário, pergunta por pergunta, em 2026-11-12. Implementar na ord
   - frequências do LC, HPF, LPF e das bandas do EQ: ±1%;
   - ganhos do EQ: ±2%;
   - ponto de saturação do estágio de ganho: ±3% (a entrada é escalada e a saída desfeita).
+- **Contrato com quem mixa:** o canal 3 tem o mesmo caráter em todo projeto e em toda versão do programa, para
+  que a pessoa aprenda a sua mesa ("o canal 3 é um pouco mais brilhante"). Pedido do usuário.
+  - Cada tolerância sai do seu próprio fluxo: um hash SplitMix64 da semente fixa, do número do canal e do número
+    fixo da tolerância (`Part`), só com aritmética inteira, igual em toda plataforma.
+  - Uma tolerância nova ganha um número novo e não muda as outras.
+  - O teste `channelTolerancesAreFrozen` trava os valores exatos de alguns canais.
+  - O caráter segue o número (a posição) do canal, como numa mesa física: um canal movido de lugar assume o
+    caráter da nova posição.
 - **Botão TOL** ao lado de ANALOG/DIGITAL, só no modo analógico, salvo como `tolerance` na mesa.
   - Projetos sem o atributo abrem com TOL desligado e soam igual.
   - Projetos novos (com ou sem template) abrem com TOL ligado, a não ser que o template tenha escolhido.

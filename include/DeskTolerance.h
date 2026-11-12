@@ -35,7 +35,8 @@ namespace lmms
 /**
  * The tolerances of a channel's components: no two channels of an analog desk are quite alike, which is part of
  * how a desk sounds when they are summed. Each channel's are fixed, drawn from its number, as a physical desk's
- * channel 3 is always the same channel 3: within the usual tolerances of resistors, capacitors and pots (uniform):
+ * channel 3 is always the same channel 3, in every project and every version of the program (see forChannel()),
+ * so that one learns one's desk: within the usual tolerances of resistors, capacitors and pots (uniform):
  * +-0.1 dB of gain, +-1% on the filters' and the EQ's frequencies, +-2% on the EQ's gains, +-3% on where the gain
  * stage saturates.
  */
