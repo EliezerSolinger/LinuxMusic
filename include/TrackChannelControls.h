@@ -48,6 +48,7 @@ class VolumeKnob;
  * Makes a track's volume and panning knobs and effect rack shortcuts to its mixer channel's fader, pan and effects
  * when the track has a channel of its own (see Mixer::setUpTrackChannel()), and to the track's own volume, panning
  * and effects otherwise (a track sending to a shared channel or to the master, or with automated volume or panning).
+ * A folder has no volume, panning and effects of its own: its controls are always those of the channel it uses.
  * Follows the track when its channel changes.
  */
 class TrackChannelControls : public QObject
@@ -72,13 +73,9 @@ public:
 private:
 	Track* m_track;
 	IntModel* m_channel = nullptr;
-	FloatModel* m_volume = nullptr;
-	FloatModel* m_panning = nullptr;
-	EffectChain* m_effects = nullptr;
-
-	//! A folder has no volume and panning of its own: these stand in while it has no channel
-	std::unique_ptr<FloatModel> m_placeholderVolume;
-	std::unique_ptr<FloatModel> m_placeholderPanning;
+	FloatModel* m_volume = nullptr;		//!< the track's own, none for folders
+	FloatModel* m_panning = nullptr;	//!< the track's own, none for folders
+	EffectChain* m_effects = nullptr;	//!< the track's own, none for folders
 
 	QPointer<VolumeKnob> m_volumeKnob;
 	QPointer<Knob> m_panningKnob;

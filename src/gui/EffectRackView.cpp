@@ -151,6 +151,16 @@ void EffectRackView::moveDown( EffectView* view )
 
 
 
+auto EffectRackView::viewOf(const Effect* effect) const -> EffectView*
+{
+	const auto it = std::find_if(m_effectViews.begin(), m_effectViews.end(),
+		[effect](EffectView* view) { return view->effect() == effect; });
+	return it != m_effectViews.end() ? *it : nullptr;
+}
+
+
+
+
 auto EffectRackView::indexOf(EffectView* view) const -> int
 {
 	const auto& effects = fxChain()->effects();

@@ -106,6 +106,11 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	connect(&m_pitchModel, SIGNAL(dataChanged()), this, SLOT(updatePitch()), Qt::DirectConnection);
 	connect(&m_pitchRangeModel, SIGNAL(dataChanged()), this, SLOT(updatePitchRange()), Qt::DirectConnection);
 	connect(&m_mixerChannelModel, SIGNAL(dataChanged()), this, SLOT(updateMixerChannel()), Qt::DirectConnection);
+	// The latency of a new instrument counts at once; single-streamed instruments update it every period
+	connect(this, &InstrumentTrack::instrumentChanged, this, [this] {
+		m_latency.store(m_instrument ? m_instrument->latency() : 0, std::memory_order_relaxed);
+	});
+	Engine::mixer()->addLatencySource(&m_mixerChannelModel, &m_latency);
 	connect(Engine::mixer(), &Mixer::channelCountChanged, this, [this](int index) {
 		if (index == m_mixerChannelModel.value()) { updateTrackChannelCount(); }
 	});
@@ -202,6 +207,8 @@ InstrumentTrack::~InstrumentTrack()
 
 	// kill all running notes and the iph
 	silenceAllNotes( true );
+
+	if (const auto mixer = Engine::mixer()) { mixer->removeLatencySource(&m_latency); }
 
 	// now we're save deleting the instrument
 	m_instrument.reset();
@@ -618,7 +625,7 @@ void InstrumentTrack::playInstrument(const Instrument* instrument, std::span<Sam
 
 	m_instrumentChannels.silenceAllChannels();
 	m_instrument->process(m_instrumentChannels);
-	Engine::mixer()->reportTrackLatency(m_mixerChannelModel.value(), m_instrument->latency());
+	m_latency.store(m_instrument->latency(), std::memory_order_relaxed);
 	toInterleaved(m_instrumentChannels.groupBuffers(0), InterleavedBufferView<float, 2>{out.data(), frames});
 
 	// The main pair goes on through the track's play handle; the auxiliary pairs go straight to the mixer

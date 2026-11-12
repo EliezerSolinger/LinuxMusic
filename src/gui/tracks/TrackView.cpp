@@ -39,7 +39,6 @@
 #include "DeprecationHelper.h"
 #include "Engine.h"
 #include "FadeButton.h"
-#include "ProjectJournal.h"
 #include "StringPairDrag.h"
 #include "Track.h"
 #include "TrackGrip.h"
@@ -290,14 +289,10 @@ void TrackView::mouseMoveEvent( QMouseEvent * me )
 		{
 			const int delta = x > m_gripLevelX ? 1 : -1;
 			const int depth = m_track->folderDepth();
-			if (delta < 0 ? depth > 0 : true)
+			if (delta > 0 || depth > 0)
 			{
 				addUndoStep();
-				const auto journal = Engine::projectJournal();
-				const bool wasJournalling = journal->isJournalling();
-				journal->setJournalling(false); // in the drag's undo step
-				container->changeFolderDepth(m_track, delta);
-				journal->setJournalling(wasJournalling);
+				container->changeFolderDepth(m_track, delta, false);
 			}
 			if (m_track->folderDepth() != depth) { m_gripLevelX = x; }
 		}

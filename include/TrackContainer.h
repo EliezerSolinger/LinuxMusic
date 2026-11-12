@@ -84,9 +84,10 @@ public:
 
 	/**
 	 * Moves @p track into the folder above it (@p delta 1) or out of its folder (@p delta -1), together with what it
-	 * holds if it is a folder. One undo step.
+	 * holds if it is a folder. One undo step, unless @p addUndoStep is false (e.g. within a drag, see
+	 * addLayoutCheckPoint()).
 	 */
-	void changeFolderDepth(Track* track, int delta);
+	void changeFolderDepth(Track* track, int delta, bool addUndoStep = true);
 
 	/**
 	 * Moves @p track one place up or down among the visible tracks, with what it holds if it is a folder, as when

@@ -49,6 +49,9 @@ public:
 
 	static constexpr int DEFAULT_WIDTH = 245;
 
+	//! The view of @p effect, or nullptr
+	auto viewOf(const Effect* effect) const -> EffectView*;
+
 public slots:
 	void clearViews();
 	void moveUp(EffectView* view);
@@ -58,9 +61,11 @@ public slots:
 	void loadPreset(EffectView* view);
 	void savePreset(EffectView* view);
 
+	//! Lets the user choose an effect to add at the end
+	void addEffect();
+
 private slots:
 	virtual void update();
-	void addEffect();
 
 
 protected:

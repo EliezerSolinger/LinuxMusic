@@ -251,6 +251,12 @@ GuiApplication::GuiApplication()
 				browser->resize(320, 1000);
 				browser->grab().save(screenshotPath);
 			}
+			// =mixer captures the mixer
+			else if (screenshotAction == "mixer" && m_mixerView)
+			{
+				m_mixerView->resize(1100, m_mixerView->minimumSizeHint().height());
+				m_mixerView->grab().save(screenshotPath);
+			}
 			else { m_mainWindow->grab().save(screenshotPath); }
 			QApplication::exit(0);
 		});

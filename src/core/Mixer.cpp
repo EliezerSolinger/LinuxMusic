@@ -1033,13 +1033,21 @@ void Mixer::prepareMasterMix()
 
 
 
-void Mixer::reportTrackLatency(mix_ch_t dest, f_cnt_t latency)
+void Mixer::addLatencySource(const IntModel* channel, const std::atomic<f_cnt_t>* latency)
 {
-	if (dest >= numChannels()) { return; }
-	auto& reported = m_mixerChannels[dest]->m_reportedTrackLatency;
-	auto current = reported.load(std::memory_order_relaxed);
-	while ((current == MixerChannel::NoReport || current < latency)
-		&& !reported.compare_exchange_weak(current, latency, std::memory_order_relaxed)) {}
+	Engine::audioEngine()->requestChangeInModel();
+	m_latencySources.push_back({channel, latency});
+	Engine::audioEngine()->doneChangeInModel();
+}
+
+
+
+
+void Mixer::removeLatencySource(const std::atomic<f_cnt_t>* latency)
+{
+	Engine::audioEngine()->requestChangeInModel();
+	std::erase_if(m_latencySources, [latency](const LatencySource& source) { return source.latency == latency; });
+	Engine::audioEngine()->doneChangeInModel();
 }
 
 
@@ -1047,18 +1055,14 @@ void Mixer::reportTrackLatency(mix_ch_t dest, f_cnt_t latency)
 
 void Mixer::compensateLatency()
 {
-	// The tracks' latency of this period, kept for a while when no track reports (e.g. while one is replaced),
-	// since every change resets the delays
-	constexpr int PeriodsToKeepLatency = 32;
-	for (const auto channel : m_mixerChannels)
+	// The latest of the tracks' audio of each channel
+	for (const auto channel : m_mixerChannels) { channel->m_trackLatency = 0; }
+	for (const auto& source : m_latencySources)
 	{
-		const auto reported = channel->m_reportedTrackLatency.exchange(MixerChannel::NoReport, std::memory_order_relaxed);
-		if (reported != MixerChannel::NoReport)
-		{
-			channel->m_trackLatency = reported;
-			channel->m_periodsWithoutReport = 0;
-		}
-		else if (++channel->m_periodsWithoutReport > PeriodsToKeepLatency) { channel->m_trackLatency = 0; }
+		const int index = source.channel->value();
+		if (index < 0 || index >= numChannels()) { continue; }
+		auto& latest = m_mixerChannels[index]->m_trackLatency;
+		latest = std::max(latest, source.latency->load(std::memory_order_relaxed));
 	}
 
 	m_latencyPass.assign(m_mixerChannels.size(), 0);
@@ -1491,20 +1495,8 @@ int Mixer::setUpTrackChannel(Track* track)
 	auto channel = m_mixerChannels[index];
 
 	// A channel made for the track follows its name and color
-	if (!track->property("followedByMixerChannel").toBool())
-	{
-		track->setProperty("followedByMixerChannel", true);
-		auto follow = [this, track] {
-			const auto followed = stripOf(track);
-			const int i = followed ? followed->channel->value() : 0;
-			if (i <= 0 || i >= numChannels() || !m_mixerChannels[i]->m_trackChannel) { return; }
-			m_mixerChannels[i]->m_name = track->name();
-			m_mixerChannels[i]->setColor(track->color());
-			emit dataChanged();
-		};
-		connect(track, &Track::nameChanged, this, follow);
-		connect(track, &Track::colorChanged, this, follow);
-	}
+	connect(track, &Track::nameChanged, this, &Mixer::followTracks, Qt::UniqueConnection);
+	connect(track, &Track::colorChanged, this, &Mixer::followTracks, Qt::UniqueConnection);
 
 	// The track's effects go in front of the channel's
 	if (auto effects = strip->bus ? strip->bus->effects() : nullptr; effects && !effects->effects().empty())

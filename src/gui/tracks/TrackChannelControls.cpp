@@ -22,6 +22,7 @@
 
 #include "TrackChannelControls.h"
 
+#include <algorithm>
 #include <cassert>
 
 #include "AudioBusHandle.h"
@@ -33,7 +34,6 @@
 #include "Mixer.h"
 #include "SampleTrack.h"
 #include "Track.h"
-#include "panning.h"
 #include "volume.h"
 
 namespace lmms::gui
@@ -60,12 +60,8 @@ TrackChannelControls::TrackChannelControls(Track* track, QObject* parent) :
 	else if (auto folderTrack = dynamic_cast<FolderTrack*>(track))
 	{
 		m_channel = folderTrack->mixerChannelModel();
-		m_placeholderVolume = std::make_unique<FloatModel>(DefaultVolume, MinVolume, MaxVolume, 0.1f);
-		m_placeholderPanning = std::make_unique<FloatModel>(DefaultPanning, PanningLeft, PanningRight, 0.1f);
-		m_volume = m_placeholderVolume.get();
-		m_panning = m_placeholderPanning.get();
 	}
-	assert(m_channel && m_volume && m_panning);
+	assert(m_channel);
 
 	const auto mixer = Engine::mixer();
 	connect(mixer, &Mixer::trackChannelChanged, this, [this](Track* changed) {
@@ -74,8 +70,8 @@ TrackChannelControls::TrackChannelControls(Track* track, QObject* parent) :
 	connect(mixer, &Mixer::channelDeleted, this, &TrackChannelControls::update);
 	connect(m_channel, &IntModel::dataChanged, this, &TrackChannelControls::update);
 	// Automating the track's volume or panning keeps them on the track
-	connect(m_volume, &FloatModel::dataChanged, this, &TrackChannelControls::update);
-	connect(m_panning, &FloatModel::dataChanged, this, &TrackChannelControls::update);
+	if (m_volume) { connect(m_volume, &FloatModel::dataChanged, this, &TrackChannelControls::update); }
+	if (m_panning) { connect(m_panning, &FloatModel::dataChanged, this, &TrackChannelControls::update); }
 }
 
 
@@ -133,7 +129,13 @@ void TrackChannelControls::setEffectRack(EffectRackView* rack)
 void TrackChannelControls::update()
 {
 	const auto mixer = Engine::mixer();
-	const auto channel = mixer->trackChannel(m_track);
+	auto channel = mixer->trackChannel(m_track);
+
+	// A folder uses whatever channel it sends to, having nothing of its own
+	if (!channel && !m_volume)
+	{
+		channel = mixer->mixerChannel(std::clamp(m_channel->value(), 0, mixer->numChannels() - 1));
+	}
 
 	// The controls may still point at a channel deleted meanwhile
 	bool boundExists = false;
@@ -146,7 +148,7 @@ void TrackChannelControls::update()
 
 	if (m_volumeKnob)
 	{
-		const bool onChannel = channel && !m_volume->isAutomatedOrControlled();
+		const bool onChannel = channel && (!m_volume || !m_volume->isAutomatedOrControlled());
 		FloatModel* model = onChannel ? &channel->m_volumeModel : m_volume;
 		if (m_volumeKnob->model() != model || !oldModelsValid)
 		{
@@ -156,7 +158,8 @@ void TrackChannelControls::update()
 	}
 	if (m_panningKnob)
 	{
-		FloatModel* model = channel && !m_panning->isAutomatedOrControlled() ? &channel->m_panModel : m_panning;
+		FloatModel* model = channel && (!m_panning || !m_panning->isAutomatedOrControlled())
+			? &channel->m_panModel : m_panning;
 		if (m_panningKnob->model() != model || !oldModelsValid) { m_panningKnob->setModel(model, oldModelsValid); }
 	}
 	if (m_effectRack && m_effects)

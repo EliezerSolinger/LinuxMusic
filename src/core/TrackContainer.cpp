@@ -280,7 +280,7 @@ auto TrackContainer::isInFolder(const Track* track, const Track* folder) const -
 
 
 
-void TrackContainer::changeFolderDepth(Track* track, int delta)
+void TrackContainer::changeFolderDepth(Track* track, int delta, bool addUndoStep)
 {
 	const auto it = std::find(m_tracks.begin(), m_tracks.end(), track);
 	if (it == m_tracks.end() || delta == 0) { return; }
@@ -291,7 +291,7 @@ void TrackContainer::changeFolderDepth(Track* track, int delta)
 		: (*std::prev(it))->folderDepth() + ((*std::prev(it))->type() == Track::Type::Folder ? 1 : 0);
 	if (depth < 0 || depth > maxDepth) { return; }
 
-	m_folderLayout.addJournalCheckPoint();
+	if (addUndoStep) { m_folderLayout.addJournalCheckPoint(); }
 
 	// Out of a folder: below everything the folder holds, so that the tracks after it stay in the folder
 	if (delta < 0)

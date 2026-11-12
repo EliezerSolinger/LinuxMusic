@@ -200,6 +200,14 @@ void EffectView::deletePlugin()
 
 void EffectView::contextMenuEvent( QContextMenuEvent * )
 {
+	showMenu();
+}
+
+
+
+
+void EffectView::showMenu()
+{
 	QPointer<CaptionMenu> contextMenu = new CaptionMenu( model()->displayName(), this );
 	contextMenu->addAction( embed::getIconPixmap( "arp_up" ),
 						tr( "Move &up" ),

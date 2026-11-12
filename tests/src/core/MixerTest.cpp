@@ -1047,23 +1047,28 @@ private slots:
 		const f_cnt_t delay = 48;
 		const auto latent = mixer()->createChannel();
 		const auto plain = mixer()->createChannel();
+		auto channel = IntModel{latent, 0, 100};
+		auto latency = std::atomic<f_cnt_t>{delay};
+		mixer()->addLatencySource(&channel, &latency);
 
 		// The latent track's audio comes late already: the plain channel's audio waits for it
-		mixer()->reportTrackLatency(latent, delay);
 		feed(plain, 0.25f, 0.25f);
 		compareStep(mix(), delay, frames(), 0.25f);
 		QCOMPARE(mixer()->mixerChannel(latent)->m_latency, delay);
 		QCOMPARE(mixer()->latency(), delay);
-		mixer()->reportTrackLatency(latent, delay);
 		compareStep(mix(), 0, delay, 0.25f);
 
 		// The latent channel's own tracks are not delayed again
-		mixer()->reportTrackLatency(latent, delay);
 		feed(latent, 0.5f, 0.5f);
 		compareStep(mix(), 0, frames(), 0.5f);
 
-		// Without reports for a while, the latency goes away
-		for (int i = 0; i < 40; ++i) { mix(); }
+		// The source follows its channel, and goes away
+		channel.setValue(plain);
+		mix();
+		QCOMPARE(mixer()->mixerChannel(latent)->m_latency, f_cnt_t{0});
+		QCOMPARE(mixer()->mixerChannel(plain)->m_latency, delay);
+		mixer()->removeLatencySource(&latency);
+		mix();
 		QCOMPARE(mixer()->latency(), f_cnt_t{0});
 	}
 

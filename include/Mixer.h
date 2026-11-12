@@ -34,7 +34,6 @@
 #include "ThreadableJob.h"
 
 #include <atomic>
-#include <limits>
 #include <optional>
 #include <vector>
 #include <QColor>
@@ -163,9 +162,6 @@ public:
 	// Latency compensation, see Mixer::compensateLatency() [audio thread]
 	f_cnt_t m_latency = 0;			//!< of the channel's output: its latest input plus its effects
 	f_cnt_t m_trackLatency = 0;		//!< of the tracks' audio, e.g. of a latent instrument
-	static constexpr f_cnt_t NoReport = std::numeric_limits<f_cnt_t>::max();
-	std::atomic<f_cnt_t> m_reportedTrackLatency = NoReport; //!< the highest reported this period
-	int m_periodsWithoutReport = 0;
 	LatencyDelay m_inputDelay;		//!< aligns the tracks' audio with the latest input
 	std::vector<float> m_delayScratch;	//!< a delayed send's pair, planar (left, then right)
 
@@ -277,7 +273,7 @@ public:
 
 	/**
 	 * Plugin delay compensation (PDC). Each channel's latency is that of its latest input plus its effects'
-	 * (EffectChain::latency()); the tracks' audio counts with the latency they reported (reportTrackLatency()).
+	 * (EffectChain::latency()); the tracks' audio counts with the latency of its sources (addLatencySource()).
 	 * Every input of a channel is delayed to arrive together with its latest one: the tracks' audio by the
 	 * channel's input delay, and each send by its own.
 	 * Called at the start of every masterMix(), so latency changes take effect on the next period.
@@ -289,11 +285,12 @@ public:
 	auto latency() const -> f_cnt_t;
 
 	/**
-	 * Tells that the audio a track mixes into channel @p dest this period comes @p latency frames late, e.g. from a
-	 * latent instrument; the other inputs of the channel wait for it. Tracks report every period they play; without
-	 * reports for a while, the channel's tracks count as having no latency again. [audio thread]
+	 * Registers a track whose audio comes late, e.g. from a latent instrument: @p latency frames late into the
+	 * channel @p channel holds. The other inputs of that channel wait for it (see compensateLatency()). Both are
+	 * read on the audio thread every period, and must stay valid until removeLatencySource(). [main thread]
 	 */
-	void reportTrackLatency(mix_ch_t dest, f_cnt_t latency);
+	void addLatencySource(const IntModel* channel, const std::atomic<f_cnt_t>* latency);
+	void removeLatencySource(const std::atomic<f_cnt_t>* latency);
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
@@ -477,6 +474,13 @@ private:
 
 	//! The output latency of channel @p index, setting up the delays of its inputs (see compensateLatency())
 	auto compensateLatency(mix_ch_t index) -> f_cnt_t;
+
+	struct LatencySource
+	{
+		const IntModel* channel;
+		const std::atomic<f_cnt_t>* latency;
+	};
+	std::vector<LatencySource> m_latencySources;
 
 	//! Per channel during compensateLatency(): 0 not visited yet, 1 being visited, 2 done
 	std::vector<std::uint8_t> m_latencyPass;

@@ -24,7 +24,10 @@
 
 #include "MixerChannelView.h"
 
+#include <functional>
+
 #include <QCheckBox>
+#include <QCoreApplication>
 #include <QFont>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsScene>
@@ -43,6 +46,7 @@
 #include "Effect.h"
 #include "EffectRackView.h"
 #include "EffectSelectDialog.h"
+#include "EffectView.h"
 #include "Fader.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
@@ -64,56 +68,137 @@ namespace lmms::gui
 namespace
 {
 
-//! The channel's effect slots in miniature: one square per effect, lit while it is on
-class EffectSlotsIndicator : public QWidget
+//! The channel's effect slots, with their names: the LED turns an effect on or off, a double click opens its
+//! controls (or adds an effect in an empty slot), and the right button opens the slot's menu
+class EffectSlotList : public QWidget
 {
+	Q_DECLARE_TR_FUNCTIONS(EffectSlotList)
 public:
-	EffectSlotsIndicator(EffectChain* chain, QWidget* parent) : QWidget{parent}, m_chain{chain}
+	//! @param select selects the channel
+	EffectSlotList(EffectChain* chain, EffectRackView* rack, std::function<void()> select, QWidget* parent)
+		: QWidget{parent}, m_chain{chain}, m_rack{rack}, m_select{std::move(select)}
 	{
-		setFixedSize(SlotsPerRow * SlotSize, 2 * SlotSize);
-		setAttribute(Qt::WA_TransparentForMouseEvents);
+		setFixedSize(SlotWidth, VisibleSlots * SlotHeight);
+		setFont(adjustedToPixelSize(font(), 8));
+		setMouseTracking(true);
 		connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, [this] { refresh(); });
 		refresh();
 	}
 
 private:
-	static constexpr int SlotsPerRow = 6;
-	static constexpr int SlotSize = 8;
+	static constexpr int VisibleSlots = 5;
+	static constexpr int SlotWidth = 50;
+	static constexpr int SlotHeight = 11;
+	static constexpr int LedWidth = 9;
+
+	struct SlotState
+	{
+		QString name;
+		int state; //!< 0 off, 1 on, 2 corrupted
+		bool operator==(const SlotState&) const = default;
+	};
 
 	void refresh()
 	{
-		auto states = std::vector<int>{};
+		auto current = std::vector<SlotState>{};
 		auto names = QStringList{};
 		for (const auto& instance : m_chain->effects())
 		{
 			const auto effect = instance->effect();
 			if (!effect) { continue; }
-			states.push_back(effect->isCorrupted() ? 2 : effect->isEnabled() ? 1 : 0);
+			current.push_back({effect->displayName(), effect->isCorrupted() ? 2 : effect->isEnabled() ? 1 : 0});
 			names << effect->displayName();
 		}
-		if (states != m_states)
+		if (current != m_slots)
 		{
-			m_states = std::move(states);
+			m_slots = std::move(current);
 			setToolTip(names.join('\n'));
 			update();
 		}
 	}
 
+	//! The effect in the slot at @p pos, or nullptr for an empty slot (the last visible slot stands for the rest)
+	auto effectAt(const QPoint& pos) const -> Effect*
+	{
+		const int slot = pos.y() / SlotHeight;
+		const auto& effects = m_chain->effects();
+		if (slot < 0 || slot >= static_cast<int>(effects.size())) { return nullptr; }
+		if (slot == VisibleSlots - 1 && effects.size() > VisibleSlots) { return nullptr; }
+		return effects[slot]->effect();
+	}
+
+	void mousePressEvent(QMouseEvent* event) override
+	{
+		m_select();
+		if (event->button() != Qt::LeftButton) { return; }
+		const auto effect = effectAt(event->pos());
+		if (effect && event->pos().x() < LedWidth)
+		{
+			effect->enabledModel()->setValue(!effect->isEnabled());
+			refresh();
+		}
+	}
+
+	void mouseDoubleClickEvent(QMouseEvent* event) override
+	{
+		if (event->button() != Qt::LeftButton || event->pos().x() < LedWidth) { return; }
+		if (const auto effect = effectAt(event->pos()))
+		{
+			if (const auto view = m_rack->viewOf(effect)) { view->editControls(); }
+		}
+		else if (event->pos().y() / SlotHeight >= static_cast<int>(m_chain->effects().size()))
+		{
+			m_rack->addEffect();
+		}
+	}
+
+	void contextMenuEvent(QContextMenuEvent* event) override
+	{
+		const auto effect = effectAt(event->pos());
+		const auto view = effect ? m_rack->viewOf(effect) : nullptr;
+		if (!view)
+		{
+			event->ignore(); // the channel's menu
+			return;
+		}
+		view->showMenu();
+		refresh();
+	}
+
 	void paintEvent(QPaintEvent*) override
 	{
 		auto painter = QPainter{this};
-		const auto count = static_cast<int>(m_states.size());
-		for (int slot = 0; slot < std::min(count, 2 * SlotsPerRow); ++slot)
+		const auto count = static_cast<int>(m_slots.size());
+		const auto text = palette().text().color();
+		for (int slot = 0; slot < VisibleSlots; ++slot)
 		{
-			const auto color = m_states[slot] == 2 ? QColor{220, 60, 60}
-				: m_states[slot] == 1 ? palette().highlight().color() : palette().mid().color();
-			painter.fillRect(slot % SlotsPerRow * SlotSize + 1, slot / SlotsPerRow * SlotSize + 1, SlotSize - 2,
-				SlotSize - 2, color);
+			const auto rect = QRect{0, slot * SlotHeight, SlotWidth, SlotHeight - 1};
+			painter.fillRect(rect, QColor{255, 255, 255, 16});
+			if (slot >= count) { continue; }
+
+			if (slot == VisibleSlots - 1 && count > VisibleSlots)
+			{
+				painter.setPen(text);
+				painter.drawText(rect, Qt::AlignCenter, tr("+%1 more").arg(count - VisibleSlots + 1));
+				continue;
+			}
+
+			const auto& state = m_slots[slot];
+			const auto led = state.state == 2 ? QColor{220, 60, 60}
+				: state.state == 1 ? QColor{74, 253, 133} : QColor{70, 76, 84};
+			painter.fillRect(QRect{2, rect.top() + 3, LedWidth - 5, SlotHeight - 7}, led);
+
+			painter.setPen(state.state == 1 ? text : palette().mid().color());
+			const auto textRect = rect.adjusted(LedWidth, 0, -1, 0);
+			painter.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
+				fontMetrics().elidedText(state.name, Qt::ElideRight, textRect.width()));
 		}
 	}
 
 	EffectChain* m_chain;
-	std::vector<int> m_states;
+	EffectRackView* m_rack;
+	std::function<void()> m_select;
+	std::vector<SlotState> m_slots;
 };
 
 } // namespace
@@ -207,7 +292,9 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_effectRackView = new EffectRackView{&mixerChannel->m_fxChain, mixerView->m_racksWidget};
 	m_effectRackView->setFixedWidth(EffectRackView::DEFAULT_WIDTH);
 
-	auto slotsIndicator = new EffectSlotsIndicator{&mixerChannel->m_fxChain, this};
+	auto slotList = new EffectSlotList{&mixerChannel->m_fxChain, m_effectRackView, [this] {
+		if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
+	}, this};
 
 	auto mainLayout = new QVBoxLayout{this};
 	mainLayout->setContentsMargins(4, 4, 4, 4);
@@ -218,7 +305,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_sendArrow, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_renameLineEditView, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(slotsIndicator, 0, Qt::AlignHCenter);
+	mainLayout->addWidget(slotList, 0, Qt::AlignHCenter);
 	mainLayout->addLayout(soloMuteLayout);
 	mainLayout->addWidget(m_peakIndicator);
 	mainLayout->addWidget(m_fader, 1, Qt::AlignHCenter);

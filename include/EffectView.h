@@ -63,6 +63,9 @@ public:
 		return castModel<Effect>();
 	}
 
+	//! Shows the slot menu (move, replace, presets, sidechain source, remove) at the mouse
+	void showMenu();
+
 	static constexpr int DEFAULT_WIDTH = 215;
 	static constexpr int DEFAULT_HEIGHT = 60;
 	

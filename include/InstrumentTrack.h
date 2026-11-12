@@ -26,6 +26,7 @@
 #ifndef LMMS_INSTRUMENT_TRACK_H
 #define LMMS_INSTRUMENT_TRACK_H
 
+#include <atomic>
 #include <memory>
 #include <utility>
 
@@ -347,6 +348,9 @@ private:
 	//! The track channels single-streamed instruments are processed into
 	//! TODO: Becomes the track's channels once tracks have more than two
 	AudioBuffer m_instrumentChannels;
+
+	//! The instrument's latency, for the mixer's delay compensation (see Mixer::addLatencySource())
+	std::atomic<f_cnt_t> m_latency = 0;
 
 	InstrumentSoundShaping m_soundShaping;
 	InstrumentFunctionArpeggio m_arpeggio;
