@@ -240,7 +240,7 @@ GuiApplication::GuiApplication()
 		if (screenshotAction == "effects-browser")
 		{
 			QTimer::singleShot(2500, m_mainWindow, [this] {
-				if (auto panel = m_mainWindow->findChild<BrowserPanel*>()) { panel->select(1, false); }
+				if (auto panel = m_mainWindow->findChild<BrowserPanel*>()) { panel->select(panel->indexOf("effects"), false); }
 			});
 		}
 		QTimer::singleShot(4000, m_mainWindow, [this, screenshotPath, screenshotAction] {

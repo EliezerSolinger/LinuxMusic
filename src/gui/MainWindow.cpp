@@ -121,27 +121,27 @@ MainWindow::MainWindow() :
 	m_browserPanel = new BrowserPanel(splitter);
 
 	emit initProgress(tr("Preparing plugin browser"));
-	m_browserPanel->addBrowser(new PluginBrowser(m_browserPanel));
-	m_browserPanel->addBrowser(new EffectBrowser(m_browserPanel));
+	m_browserPanel->addBrowser(new PluginBrowser(m_browserPanel), "plugins");
+	m_browserPanel->addBrowser(new EffectBrowser(m_browserPanel), "effects");
 	emit initProgress(tr("Preparing file browsers"));
 
 	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Favorites, ConfigManager::inst()->favoriteItems().join("*"),
-		FileItem::defaultFilters(), tr("Favorites"), embed::getIconPixmap("star"), m_browserPanel, false, "", ""));
+		FileItem::defaultFilters(), tr("Favorites"), embed::getIconPixmap("star"), m_browserPanel, false, "", ""), "favorites");
 
 	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Normal,
 		confMgr->userProjectsDir() + "*" + confMgr->factoryProjectsDir(), "*.mmp *.mmpz *.xml *.mid *.mpt",
 		tr("Projects"), embed::getIconPixmap("project_file"), m_browserPanel, false,
-		confMgr->userProjectsDir(), confMgr->factoryProjectsDir()));
+		confMgr->userProjectsDir(), confMgr->factoryProjectsDir()), "projects");
 
 	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Normal,
 		confMgr->userSamplesDir() + "*" + confMgr->factorySamplesDir(), FileItem::defaultFilters(), tr("Samples"),
 		embed::getIconPixmap("sample_file"), m_browserPanel, false,
-		confMgr->userSamplesDir(), confMgr->factorySamplesDir()));
+		confMgr->userSamplesDir(), confMgr->factorySamplesDir()), "samples");
 
 	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Normal,
 		confMgr->userPresetsDir() + "*" + confMgr->factoryPresetsDir(), "*.xpf *.cs.xml *.xiz *.lv2", tr("Presets"),
 		embed::getIconPixmap("preset_file"), m_browserPanel, false,
-		confMgr->userPresetsDir(), confMgr->factoryPresetsDir()));
+		confMgr->userPresetsDir(), confMgr->factoryPresetsDir()), "presets");
 
 	// The home folder and the drives (volumes on macOS) in one tab, each as a top-level folder
 	QStringList filesRoots{QDir::homePath()};
@@ -154,7 +154,7 @@ MainWindow::MainWindow() :
 	}
 #endif
 	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Normal, filesRoots.join("*"),
-		FileItem::defaultFilters(), tr("Files"), embed::getIconPixmap("computer"), m_browserPanel, true));
+		FileItem::defaultFilters(), tr("Files"), embed::getIconPixmap("computer"), m_browserPanel, true), "files");
 
 	m_browserPanel->restoreState();
 

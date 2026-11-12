@@ -48,8 +48,14 @@ class BrowserPanel : public QWidget
 public:
 	explicit BrowserPanel(QWidget* parent);
 
-	//! Adds a browser as a tab; its own title bar is hidden, since the tab names it
-	void addBrowser(SideBarWidget* browser);
+	/**
+	 * Adds a browser as a tab; its own title bar is hidden, since the tab names it.
+	 * @param id names the browser in the settings (e.g. "projects"), so that it is remembered by name
+	 */
+	void addBrowser(SideBarWidget* browser, const QString& id);
+
+	//! The index of the browser named @p id, or -1
+	auto indexOf(const QString& id) const -> int;
 
 	//! Selects the tab remembered from the last session; call after adding all browsers
 	void restoreState();
@@ -66,6 +72,7 @@ private:
 	QHBoxLayout* m_buttonRow;
 	QLabel* m_title;
 	QStackedWidget* m_pages;
+	QStringList m_ids;
 };
 
 } // namespace lmms::gui

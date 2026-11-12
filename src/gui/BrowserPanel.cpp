@@ -22,6 +22,8 @@
 
 #include "BrowserPanel.h"
 
+#include <algorithm>
+
 #include <QButtonGroup>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -79,8 +81,9 @@ BrowserPanel::BrowserPanel(QWidget* parent) :
 
 
 
-void BrowserPanel::addBrowser(SideBarWidget* browser)
+void BrowserPanel::addBrowser(SideBarWidget* browser, const QString& id)
 {
+	m_ids << id;
 	browser->setHeaderVisible(false);
 	m_pages->addWidget(browser); // the stack shows the selected page only
 
@@ -105,8 +108,15 @@ void BrowserPanel::addBrowser(SideBarWidget* browser)
 
 void BrowserPanel::restoreState()
 {
-	const int index = ConfigManager::inst()->value("ui", "browsertab", "0").toInt();
-	select(index >= 0 && index < m_pages->count() ? index : 0);
+	const auto config = ConfigManager::inst();
+	auto id = config->value("ui", "browserpage");
+	if (id.isEmpty())
+	{
+		// Settings from before the pages had names, which kept the index in the order of back then
+		const auto before = QStringList{"plugins", "favorites", "projects", "samples", "presets", "files"};
+		id = before.value(config->value("ui", "browsertab", "0").toInt());
+	}
+	select(std::max(indexOf(id), 0));
 
 	setVisible(ConfigManager::inst()->value("ui", "browservisible", "1").toInt() != 0);
 }
@@ -132,7 +142,15 @@ void BrowserPanel::select(int index, bool remember)
 
 	const auto browser = qobject_cast<SideBarWidget*>(m_pages->widget(index));
 	m_title->setText(browser ? browser->title().toUpper() : QString{});
-	if (remember) { ConfigManager::inst()->setValue("ui", "browsertab", QString::number(index)); }
+	if (remember) { ConfigManager::inst()->setValue("ui", "browserpage", m_ids.value(index)); }
+}
+
+
+
+
+auto BrowserPanel::indexOf(const QString& id) const -> int
+{
+	return m_ids.indexOf(id);
 }
 
 } // namespace lmms::gui
