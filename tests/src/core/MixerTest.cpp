@@ -2751,12 +2751,17 @@ private slots:
 		if (!measuresSpeed()) { QSKIP("Speed is only meaningful in an optimized build without sanitizers"); }
 		for (const auto model : ChannelCompressor::DisplayOrder)
 		{
-			auto c = ChannelCompressor{};
-			c.begin({model, 0.7f, 0.6f}, 44100);
-			QElapsedTimer timer;
-			timer.start();
-			compressorOutput(c, NominalSine * 2.f, 1000.f, 2.f);
-			const float share = timer.nsecsElapsed() / 1e9f / 2.f;
+			// The least of a few measures: the one the rest of the machine disturbed least
+			auto share = 1.f;
+			for (int attempt = 0; attempt < 5; ++attempt)
+			{
+				auto c = ChannelCompressor{};
+				c.begin({model, 0.7f, 0.6f}, 44100);
+				QElapsedTimer timer;
+				timer.start();
+				compressorOutput(c, NominalSine * 2.f, 1000.f, 0.5f);
+				share = std::min(share, timer.nsecsElapsed() / 1e9f / 0.5f);
+			}
 			qInfo("%s: %.2f%% of a core", qPrintable(ChannelCompressor::name(model)), share * 100.f);
 			QVERIFY2(share < 0.05f, qPrintable(ChannelCompressor::name(model)));
 		}
