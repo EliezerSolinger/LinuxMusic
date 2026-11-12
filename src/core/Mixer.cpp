@@ -24,6 +24,8 @@
 
 #include "Mixer.h"
 
+#include "AutomationClip.h"
+
 #include <QDomElement>
 #include <QVariant>
 
@@ -1577,6 +1579,25 @@ int Mixer::setUpTrackChannel(Track* track)
 
 	emit trackChannelChanged(track);
 	return index;
+}
+
+
+
+
+void Mixer::convertLegacyAutomation()
+{
+	for (const auto& [model, span] : m_legacyInverted)
+	{
+		for (const auto clip : AutomationClip::clipsForModel(model))
+		{
+			for (auto& node : clip->getTimeMap())
+			{
+				node.setInValue(span - node.getInValue());
+				node.setOutValue(span - node.getOutValue());
+			}
+		}
+	}
+	m_legacyInverted.clear();
 }
 
 

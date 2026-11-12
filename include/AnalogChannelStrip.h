@@ -84,7 +84,7 @@ public:
 	BoolModel m_lowCutModel;
 	FloatModel m_highPassModel;		//!< Hz; off at the lowest setting
 	FloatModel m_lowPassModel;		//!< Hz; off at the highest setting
-	FloatModel m_monoBassWidthModel;		//!< % of the side kept below the mono bass frequency; off at 100
+	FloatModel m_monoBassModel;		//!< % mono below the mono bass frequency: 0 is off, 100 all mono
 	FloatModel m_monoBassFrequencyModel;	//!< Hz
 	// The dynamics (see ChannelCompressor and ChannelGate). On the strip: the compressor's model, COMP, RATIO and
 	// its speed, the gate's threshold, RANGE and mode; the compressor's release in the channel's panel. The

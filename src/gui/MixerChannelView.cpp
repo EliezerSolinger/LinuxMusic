@@ -540,8 +540,8 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	addSection(tr("FILTER"));
 	addKnob(&strip.m_highPassModel, grey, tr("HPF"), tr("High-pass"), " Hz", row, 0);
 	addKnob(&strip.m_lowPassModel, grey, tr("LPF"), tr("Low-pass"), " Hz", row++, 1);
-	addKnob(&strip.m_monoBassWidthModel, grey, tr("BASS"),
-		tr("Mono bass: width of the side below the frequency (0 = mono)"), "%", row, 0);
+	addKnob(&strip.m_monoBassModel, grey, tr("BASS"),
+		tr("Mono bass: how mono below the frequency (0 = off, 100 = all mono)"), "%", row, 0);
 	addKnob(&strip.m_monoBassFrequencyModel, grey, tr("FREQ"), tr("Mono bass frequency"), " Hz", row++, 1);
 
 	// The dynamics: the compressor, of a choice of models, which read COMP, RATIO and the speed as their units do

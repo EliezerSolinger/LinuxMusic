@@ -29,6 +29,8 @@
 
 #include <QDomElement>
 
+#include "Engine.h"
+#include "Mixer.h"
 #include "SampleFrame.h"
 #include "lmms_math.h"
 
@@ -61,7 +63,7 @@ AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 	, m_lowCutModel(false, parent)
 	, m_highPassModel(20.f, 20.f, 1000.f, 1.f, parent)
 	, m_lowPassModel(20000.f, 1000.f, 20000.f, 1.f, parent)
-	, m_monoBassWidthModel(100.f, 0.f, 100.f, 1.f, parent)
+	, m_monoBassModel(0.f, 0.f, 100.f, 1.f, parent)
 	, m_monoBassFrequencyModel(120.f, 20.f, 300.f, 1.f, parent)
 	, m_compressorTypeModel(static_cast<int>(CompressorModel::Ssl), 0, static_cast<int>(CompressorModel::Count) - 1,
 		parent)
@@ -81,7 +83,7 @@ AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 	m_highPassModel.setScaleLogarithmic(true);
 	m_lowPassModel.setScaleLogarithmic(true);
 	m_monoBassFrequencyModel.setScaleLogarithmic(true);
-	m_monoBassWidthModel.setCenterValue(100.f);
+	m_monoBassModel.setCenterValue(0.f);
 	// Knobs draw their arc from these: from the neutral setting
 	for (auto model : {&m_eqHighModel, &m_eqHighMidModel, &m_eqLowMidModel, &m_eqLowModel}) { model->setCenterValue(0.f); }
 	m_highPassModel.setCenterValue(m_highPassModel.minValue());
@@ -127,7 +129,7 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	const bool lowCut = m_lowCutModel.value();
 	const bool highPassOn = m_highPassModel.value() > m_highPassModel.minValue();
 	const bool lowPassOn = m_lowPassModel.value() < m_lowPassModel.maxValue();
-	const bool monoBassOn = m_monoBass.begin(m_monoBassFrequencyModel.value(), m_monoBassWidthModel.value() / 100.f,
+	const bool monoBassOn = m_monoBass.begin(m_monoBassFrequencyModel.value(), (100.f - m_monoBassModel.value()) / 100.f,
 		sampleRate);
 	m_gate.begin({m_gateModel.value(), m_gateRangeModel.value(), static_cast<GateMode>(m_gateModeModel.value())},
 		sampleRate);
@@ -288,7 +290,7 @@ void AnalogChannelStrip::setNeutral()
 	m_lowCutModel.setValue(false);
 	m_highPassModel.setValue(m_highPassModel.minValue());
 	m_lowPassModel.setValue(m_lowPassModel.maxValue());
-	m_monoBassWidthModel.setValue(100.f);
+	m_monoBassModel.setValue(0.f);
 	m_monoBassFrequencyModel.setValue(120.f);
 	m_compressorTypeModel.setValue(static_cast<int>(CompressorModel::Ssl));
 	m_compressorAmountModel.setValue(0.f);
@@ -316,7 +318,7 @@ void AnalogChannelStrip::setDisplayNames(const QString& channelName)
 	m_lowCutModel.setDisplayName(prefix + QObject::tr("Low cut"));
 	m_highPassModel.setDisplayName(prefix + QObject::tr("High-pass"));
 	m_lowPassModel.setDisplayName(prefix + QObject::tr("Low-pass"));
-	m_monoBassWidthModel.setDisplayName(prefix + QObject::tr("Mono bass width"));
+	m_monoBassModel.setDisplayName(prefix + QObject::tr("Mono bass"));
 	m_monoBassFrequencyModel.setDisplayName(prefix + QObject::tr("Mono bass frequency"));
 	m_compressorTypeModel.setDisplayName(prefix + QObject::tr("Compressor model"));
 	m_compressorAmountModel.setDisplayName(prefix + QObject::tr("Compressor amount"));
@@ -344,7 +346,7 @@ void AnalogChannelStrip::saveSettings(QDomDocument& doc, QDomElement& channelEle
 	m_lowCutModel.saveSettings(doc, strip, "lowcut");
 	m_highPassModel.saveSettings(doc, strip, "highpass");
 	m_lowPassModel.saveSettings(doc, strip, "lowpass");
-	m_monoBassWidthModel.saveSettings(doc, strip, "monobass");
+	m_monoBassModel.saveSettings(doc, strip, "monobassamount");
 	m_monoBassFrequencyModel.saveSettings(doc, strip, "monobassfreq");
 	m_compressorTypeModel.saveSettings(doc, strip, "compmodel");
 	m_compressorAmountModel.saveSettings(doc, strip, "comppos");
@@ -389,7 +391,17 @@ void AnalogChannelStrip::loadSettings(const QDomElement& channelElement)
 	m_lowCutModel.loadSettings(strip, "lowcut");
 	m_highPassModel.loadSettings(strip, "highpass");
 	m_lowPassModel.loadSettings(strip, "lowpass");
-	m_monoBassWidthModel.loadSettings(strip, "monobass");
+	if (strip.hasAttribute("monobassamount") || !strip.firstChildElement("monobassamount").isNull())
+	{
+		m_monoBassModel.loadSettings(strip, "monobassamount");
+	}
+	else if (strip.hasAttribute("monobass") || !strip.firstChildElement("monobass").isNull())
+	{
+		// The knob of before was the width kept, 100 being off: inverted, and its automation too
+		m_monoBassModel.loadSettings(strip, "monobass");
+		m_monoBassModel.setValue(100.f - m_monoBassModel.value());
+		Engine::mixer()->invertLegacyAutomation(&m_monoBassModel, 100.f);
+	}
 	m_monoBassFrequencyModel.loadSettings(strip, "monobassfreq");
 	auto has = [&strip](const char* name) { return strip.hasAttribute(name) || !strip.firstChildElement(name).isNull(); };
 	if (has("compmodel"))

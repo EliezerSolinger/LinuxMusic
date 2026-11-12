@@ -97,7 +97,7 @@ public:
 	void bypassTransformer() { m_transformerWasOn = false; }
 
 	// Stereo section (the width is the master channel's own width, see processStereo())
-	FloatModel m_bassWidthModel;			//!< % of the side kept below the mono bass frequency; off at 100
+	FloatModel m_monoBassModel;			//!< % mono below the mono bass frequency: 0 is off, 100 all mono
 	FloatModel m_bassFrequencyModel;		//!< Hz
 	FloatModel m_airModel;					//!< dB of the side's high shelf
 	static constexpr float AirFrequency = 12000.f;

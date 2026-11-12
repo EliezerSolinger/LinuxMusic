@@ -1833,7 +1833,7 @@ private slots:
 		// Left only: mid and side of 0.5 * 0.5 / sqrt(2) RMS each
 		const float level = 0.25f / std::sqrt(2.f);
 		master.m_bassFrequencyModel.setValue(120.f);
-		master.m_bassWidthModel.setValue(0.f);
+		master.m_monoBassModel.setValue(100.f); // all mono
 
 		const auto low = playStereo(channel, 40.f, 0.5f, 0.f, 256);
 		QVERIFY2(low.side < level * 0.05f, qPrintable(QString::number(low.side / level)));
@@ -1854,10 +1854,10 @@ private slots:
 		settle();
 		// A 100 Hz sine moves at most 2 pi 100 / 44100 * 0.5 = 0.0071 per frame; a click would be a bigger step
 		const auto levels = playStereo(channel, 100.f, 0.5f, -0.2f, 96, [&master](int period) {
-			if (period == 20) { master.m_bassWidthModel.setValue(0.f); }
+			if (period == 20) { master.m_monoBassModel.setValue(100.f); }
 			if (period == 40) { master.m_bassFrequencyModel.setValue(250.f); }
 			if (period == 60) { master.m_bassFrequencyModel.setValue(60.f); }
-			if (period == 80) { master.m_bassWidthModel.setValue(100.f); }
+			if (period == 80) { master.m_monoBassModel.setValue(0.f); }
 		});
 		QVERIFY2(levels.biggestStep < 0.0075f, qPrintable(QString::number(levels.biggestStep)));
 		master.setDefaults();
@@ -1948,7 +1948,7 @@ private slots:
 	{
 		const auto channel = mixer()->createChannel();
 		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
-		strip.m_monoBassWidthModel.setValue(0.f);
+		strip.m_monoBassModel.setValue(100.f); // all mono
 		strip.m_monoBassFrequencyModel.setValue(120.f);
 		settle();
 		const float level = 0.25f / std::sqrt(2.f);
@@ -2885,6 +2885,47 @@ private slots:
 		QCOMPARE(ChannelCompressor::ratioText(CompressorModel::Ssl, strip.m_compressorRatioModel.value()), QString{"4:1"});
 		QCOMPARE(strip.m_gateRangeModel.value(), 40.f);
 		QCOMPARE(strip.m_gateModel.value(), -28.f);
+		strip.setNeutral();
+	}
+
+	void monoBassKnobFromOffToAllMono()
+	{
+		const auto channel = mixer()->createChannel();
+		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+		auto& master = mixer()->masterSection();
+		QCOMPARE(strip.m_monoBassModel.value(), 0.f);
+		QCOMPARE(master.m_monoBassModel.value(), 0.f);
+
+		// Projects of before kept the width (100 being off): inverted, and the knob's automation too
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixerchannel");
+		auto old = doc.createElement("analogstrip");
+		old.setAttribute("monobass", 30);
+		element.appendChild(old);
+		auto clip = AutomationClip{nullptr};
+		clip.addObject(&strip.m_monoBassModel, false);
+		clip.putValue(TimePos{0}, 30.f, false);
+		clip.putValue(TimePos{192}, 100.f, false);
+		strip.loadSettings(element);
+		QCOMPARE(strip.m_monoBassModel.value(), 70.f);
+		// (the clip is not in a track, so convert it the way the mixer does)
+		for (auto& node : clip.getTimeMap())
+		{
+			node.setInValue(100.f - node.getInValue());
+			node.setOutValue(100.f - node.getOutValue());
+		}
+		QCOMPARE(clip.valueAt(TimePos{0}), 70.f);
+		QCOMPARE(clip.valueAt(TimePos{192}), 0.f);
+		mixer()->convertLegacyAutomation(); // forgets what it was told of
+
+		auto masterElement = doc.createElement("mixer");
+		auto masterStrip = doc.createElement("masterstrip");
+		masterStrip.setAttribute("basswidth", 0);
+		masterElement.appendChild(masterStrip);
+		master.loadSettings(masterElement);
+		QCOMPARE(master.m_monoBassModel.value(), 100.f);
+		mixer()->convertLegacyAutomation();
+		master.setDefaults();
 		strip.setNeutral();
 	}
 

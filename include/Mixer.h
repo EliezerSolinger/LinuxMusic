@@ -327,6 +327,14 @@ public:
 	auto toleranceModel() -> BoolModel* { return &m_toleranceModel; }
 	//! Whether the project last loaded predates the tolerances
 	auto loadedWithoutTolerance() const -> bool { return m_loadedWithoutTolerance; }
+	/**
+	 * A knob whose meaning was inverted (v becomes @p span - v), loaded from a project of before: its automation is
+	 * inverted too once the project's automation is resolved (see convertLegacyAutomation()) [while loading]
+	 */
+	void invertLegacyAutomation(AutomatableModel* model, float span) { m_legacyInverted.push_back({model, span}); }
+	//! Inverts the automation of the knobs invertLegacyAutomation() was told of [after loading]
+	void convertLegacyAutomation();
+
 	//! Before a project loads: without them, unless it has them (some projects have no mixer to load at all)
 	void forgetTolerance() { m_toleranceModel.setValue(false); m_loadedWithoutTolerance = true; }
 
@@ -552,6 +560,7 @@ private:
 	BoolModel m_analogModel;
 	BoolModel m_toleranceModel;
 	bool m_loadedWithoutTolerance = false;
+	std::vector<std::pair<AutomatableModel*, float>> m_legacyInverted;
 	MasterSection m_masterSection;
 
 	// make sure we have at least num channels

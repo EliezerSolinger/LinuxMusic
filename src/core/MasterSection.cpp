@@ -22,6 +22,9 @@
 
 #include "MasterSection.h"
 
+#include "Engine.h"
+#include "Mixer.h"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -62,7 +65,7 @@ MasterSection::MasterSection(Model* parent)
 		parent, QObject::tr("Master gain stage"))
 	, m_realisticModel(false, parent, QObject::tr("Master realistic tube"))
 	, m_transformerModel(false, parent, QObject::tr("Master output transformer"))
-	, m_bassWidthModel(100.f, 0.f, 100.f, 1.f, parent, QObject::tr("Mono bass width"))
+	, m_monoBassModel(0.f, 0.f, 100.f, 1.f, parent, QObject::tr("Mono bass"))
 	, m_bassFrequencyModel(120.f, 20.f, 300.f, 1.f, parent, QObject::tr("Mono bass frequency"))
 	, m_airModel(0.f, -6.f, 6.f, 0.1f, parent, QObject::tr("Side air"))
 	, m_compressorModel(false, parent, QObject::tr("Bus compressor"))
@@ -79,7 +82,7 @@ MasterSection::MasterSection(Model* parent)
 	, m_sideModel(false, parent, QObject::tr("Side"))
 {
 	m_bassFrequencyModel.setScaleLogarithmic(true);
-	m_bassWidthModel.setCenterValue(100.f);
+	m_monoBassModel.setCenterValue(0.f);
 	m_airModel.setCenterValue(0.f);
 
 	// Linked PRE faders move together; the one that follows does not add an undo step of its own (undoing the one
@@ -165,7 +168,7 @@ void MasterSection::processPreFaders(std::span<SampleFrame> frames, sample_rate_
 void MasterSection::processStereo(std::span<SampleFrame> frames, sample_rate_t sampleRate, float widthPercent)
 {
 	const float width = widthPercent / 100.f;
-	const bool bassActive = m_monoBass.begin(m_bassFrequencyModel.value(), m_bassWidthModel.value() / 100.f,
+	const bool bassActive = m_monoBass.begin(m_bassFrequencyModel.value(), (100.f - m_monoBassModel.value()) / 100.f,
 		sampleRate);
 	const float air = m_airModel.value();
 	// One more period after the air is back at 0 dB, so that the shelf fades out
@@ -376,7 +379,7 @@ void MasterSection::setDefaults()
 	m_driveModel.setValue(static_cast<int>(GainStage::Model::OpAmp4558));
 	m_realisticModel.setValue(false);
 	m_transformerModel.setValue(false);
-	m_bassWidthModel.setValue(100.f);
+	m_monoBassModel.setValue(0.f);
 	m_bassFrequencyModel.setValue(120.f);
 	m_airModel.setValue(0.f);
 	m_compressorModel.setValue(false);
@@ -400,7 +403,7 @@ void MasterSection::saveSettings(QDomDocument& doc, QDomElement& mixerElement)
 	m_driveModel.saveSettings(doc, master, "drive");
 	m_realisticModel.saveSettings(doc, master, "realistic");
 	m_transformerModel.saveSettings(doc, master, "transformer");
-	m_bassWidthModel.saveSettings(doc, master, "basswidth");
+	m_monoBassModel.saveSettings(doc, master, "monobassamount");
 	m_bassFrequencyModel.saveSettings(doc, master, "bassfreq");
 	m_airModel.saveSettings(doc, master, "air");
 	mixerElement.appendChild(master);
@@ -434,7 +437,17 @@ void MasterSection::loadSettings(const QDomElement& mixerElement)
 		m_driveModel.loadSettings(master, "drive");
 		m_realisticModel.loadSettings(master, "realistic");
 		m_transformerModel.loadSettings(master, "transformer");
-		m_bassWidthModel.loadSettings(master, "basswidth");
+		if (master.hasAttribute("monobassamount") || !master.firstChildElement("monobassamount").isNull())
+		{
+			m_monoBassModel.loadSettings(master, "monobassamount");
+		}
+		else if (master.hasAttribute("basswidth") || !master.firstChildElement("basswidth").isNull())
+		{
+			// The knob of before was the width kept, 100 being off: inverted, and its automation too
+			m_monoBassModel.loadSettings(master, "basswidth");
+			m_monoBassModel.setValue(100.f - m_monoBassModel.value());
+			Engine::mixer()->invertLegacyAutomation(&m_monoBassModel, 100.f);
+		}
 		m_bassFrequencyModel.loadSettings(master, "bassfreq");
 		m_airModel.loadSettings(master, "air");
 	}

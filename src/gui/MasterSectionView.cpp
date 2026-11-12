@@ -357,8 +357,8 @@ MasterSectionView::MasterSectionView(Mixer* mixer, QWidget* parent)
 	auto stereo = new QHBoxLayout{};
 	stereo->setSpacing(0);
 	stereo->addWidget(makeKnob(&masterChannel->m_widthModel, tr("WIDTH"), tr("Stereo width"), "%"));
-	stereo->addWidget(makeKnob(&master.m_bassWidthModel, tr("BASS"),
-		tr("Mono bass: width of the side below the frequency (0 = mono)"), "%"));
+	stereo->addWidget(makeKnob(&master.m_monoBassModel, tr("BASS"),
+		tr("Mono bass: how mono below the frequency (0 = off, 100 = all mono)"), "%"));
 	stereo->addWidget(makeKnob(&master.m_bassFrequencyModel, tr("FREQ"), tr("Mono bass frequency"), " Hz"));
 	stereo->addWidget(makeKnob(&master.m_airModel, tr("AIR"), tr("Air: high shelf of the side at 12 kHz"), " dB"));
 	layout->addLayout(stereo);

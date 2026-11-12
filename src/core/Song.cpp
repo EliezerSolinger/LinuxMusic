@@ -1184,6 +1184,8 @@ void Song::loadProject( const QString & fileName )
 
 	// resolve all IDs so that autoModels are automated
 	AutomationClip::resolveAllIDs();
+	// Knobs whose meaning changed: their automation follows
+	Engine::mixer()->convertLegacyAutomation();
 
 	// Every instrument and sample track gets its own mixer channel, which takes over the track's effects,
 	// volume, panning, mute and solo (projects from before that, or from LMMS)

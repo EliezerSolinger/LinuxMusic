@@ -1205,6 +1205,19 @@ O RCA passa da meta de ~2% e fica como candidato a otimização.
 
 `MixerTest` tem 114 testes.
 
+### Passo 24: knob de mono bass invertido (feito)
+
+Pedido do usuário: o knob de mono bass, no canal e no master, começa em 0% (desligado, o padrão) e vai até 100%
+(todo mono). Antes, 100% era desligado e 0% era todo mono.
+
+- **Modelo:** é a "quantidade de mono" (`m_monoBassModel`). O processamento usa a largura 100 − valor.
+- **Salvo como** `monobassamount`.
+- **Projetos de antes** (`monobass` no canal, `basswidth` no master): o valor é invertido (novo = 100 − antigo), e as
+  automações do knob também.
+  - Os nós da automação guardam o valor do knob, então são invertidos depois que o projeto resolve as automações
+    (`Mixer::invertLegacyAutomation()` e `convertLegacyAutomation()`, chamado em `Song::loadProject`).
+- Testado: o padrão 0, a conversão do canal e do master, e a automação invertida.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
@@ -1213,6 +1226,4 @@ volta a ler esse formato (teste em `AudioPortsTest`).
 
 ## Para depois (anotado pelo usuário)
 
-- **Inverter o knob de mono bass** (canal e master): hoje vai de 100% (desligado) a 0% (todo mono). Deve passar a
-  começar em 0% (desligado, padrão) e ir até 100% (100% mono). Projetos salvos convertem o valor (novo = 100 - antigo),
-  e a automação existente também precisa ser convertida.
+- **Inverter o knob de mono bass:** feito (passo 24).
