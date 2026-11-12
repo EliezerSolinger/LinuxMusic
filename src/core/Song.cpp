@@ -1072,6 +1072,7 @@ void Song::loadProject( const QString & fileName )
 	m_oldFileName = m_fileName;
 
 	clearProject();
+	Engine::mixer()->forgetTolerance();
 
 	clearErrors();
 

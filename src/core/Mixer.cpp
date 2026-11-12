@@ -466,7 +466,7 @@ Mixer::Mixer() :
 	JournallingObject(),
 	m_mixerChannels(),
 	m_analogModel(true, this, tr("Analog mixer")),
-	m_toleranceModel(true, this, tr("Channel tolerances")),
+	m_toleranceModel(false, this, tr("Channel tolerances")),
 	m_masterSection(this)
 {
 	// create master channel

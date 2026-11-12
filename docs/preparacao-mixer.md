@@ -1050,6 +1050,13 @@ Decidido pelo usuário, pergunta por pergunta, em 2026-11-12. Implementar na ord
   - transformador: harmônicos no grave, médios limpos, resposta em 20 Hz e 20 kHz;
   - XFMR só no modo analógico.
 
+- **Correção encontrada pela bateria A/B:** projetos sem elemento `<mixer>` (como os de teste) não passam por
+  `Mixer::loadSettings`, então herdavam o padrão do construtor e abriam com TOL ligado. Agora o padrão é desligado:
+  `Song::loadProject` zera o TOL antes de carregar, e só o projeto novo o liga.
+- **A/B depois do passo 20:** os projetos antigos, que abrem no modo analógico com 4558, diferem da referência só
+  pelo crossover do 4558, decidido como sempre ligado. Isso dá até 15 LSB (cerca de -67 dBFS de pico) nas bordas
+  das ondas, em poucos % das amostras, porque há dois 4558 no caminho (canal e master).
+
 O passo 20 está completo. `MixerTest` tem 104 testes.
 
 ### Correção encontrada pela bateria A/B

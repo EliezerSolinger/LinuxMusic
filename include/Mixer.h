@@ -327,6 +327,8 @@ public:
 	auto toleranceModel() -> BoolModel* { return &m_toleranceModel; }
 	//! Whether the project last loaded predates the tolerances
 	auto loadedWithoutTolerance() const -> bool { return m_loadedWithoutTolerance; }
+	//! Before a project loads: without them, unless it has them (some projects have no mixer to load at all)
+	void forgetTolerance() { m_toleranceModel.setValue(false); m_loadedWithoutTolerance = true; }
 
 	//! The master section: bus compressor, monitoring and what the master's meters show
 	auto masterSection() -> MasterSection& { return m_masterSection; }
