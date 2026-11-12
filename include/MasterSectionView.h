@@ -23,7 +23,9 @@
 #ifndef LMMS_GUI_MASTER_SECTION_VIEW_H
 #define LMMS_GUI_MASTER_SECTION_VIEW_H
 
+#include <array>
 #include <functional>
+#include <vector>
 
 #include <QWidget>
 
@@ -74,6 +76,24 @@ private:
 	float m_shown = 0.f;
 };
 
+/**
+ * A goniometer: the master's output as a cloud of points, mid upwards and side sideways. A mono signal is a
+ * vertical line, a wide one a broad cloud, signals cancelling each other spread sideways.
+ */
+class Goniometer : public QWidget
+{
+public:
+	Goniometer(std::function<void(std::vector<std::array<float, 2>>&)> points, QWidget* parent);
+	void advance();
+
+protected:
+	void paintEvent(QPaintEvent*) override;
+
+private:
+	std::function<void(std::vector<std::array<float, 2>>&)> m_points;
+	std::vector<std::array<float, 2>> m_current;
+};
+
 //! The bus compressor's gain reduction, 0 to -20 dB
 class GainReductionMeter : public QWidget
 {
@@ -90,8 +110,8 @@ private:
 };
 
 /**
- * The master section next to the master strip, as on a recording studio's desk: VU meters and a correlation meter,
- * the bus compressor and the monitoring (see MasterSection).
+ * The master section at the top of the master strip, as on a recording studio's desk: VU meters, goniometer and
+ * correlation meter, the stereo section, the bus compressor and the monitoring (see MasterSection).
  */
 class MasterSectionView : public QWidget
 {

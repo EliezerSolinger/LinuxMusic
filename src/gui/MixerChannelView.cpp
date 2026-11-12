@@ -71,6 +71,42 @@ namespace lmms::gui
 namespace
 {
 
+//! A scale of dB next to a fader: the levels its ticks stand for
+class DbScale : public QWidget
+{
+public:
+	DbScale(Fader* fader, QWidget* parent) : QWidget{parent}, m_fader{fader}
+	{
+		setFixedWidth(18);
+		setSizePolicy(QSizePolicy::Fixed, QSizePolicy::MinimumExpanding);
+	}
+
+protected:
+	void paintEvent(QPaintEvent*) override
+	{
+		auto painter = QPainter{this};
+		painter.setFont(adjustedToPixelSize(font(), 7));
+		const auto metrics = painter.fontMetrics();
+		float lastY = -100.f;
+		for (const int db : {6, 0, -6, -12, -18, -24, -30, -40, -60})
+		{
+			// Same height as the fader, so its positions are ours; labels too close to the one above are left out
+			const float y = m_fader->positionOf(static_cast<float>(db));
+			if (y - lastY < metrics.height() || y > height()) { continue; }
+			lastY = y;
+			painter.setPen(db == 0 ? QColor{230, 235, 240} : QColor{140, 150, 163});
+			const auto text = db > 0 ? QString{"+%1"}.arg(db) : QString::number(db);
+			painter.drawText(QRectF{0, y - metrics.height() / 2.f, static_cast<float>(width()), static_cast<float>(metrics.height())},
+				Qt::AlignCenter, text);
+		}
+	}
+
+private:
+	Fader* m_fader;
+};
+
+
+
 //! The channel's effect slots in analog mode, as a column of small LEDs: lit while the slot holds an effect that is on, dim while it
 //! is off, red when its audio is corrupted. Hovering one names its effect; a double click opens its controls (or adds
 //! an effect in an empty slot), and the right button opens the slot's menu.
@@ -589,6 +625,14 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	upperLayout->addStretch(1);
 	mainLayout->addWidget(m_upperArea);
 	mainLayout->addWidget(panBackground, 0, Qt::AlignHCenter);
+	if (isMasterChannel())
+	{
+		// The master has no panning; its row stays, so that the faders line up
+		auto policy = panBackground->sizePolicy();
+		policy.setRetainSizeWhenHidden(true);
+		panBackground->setSizePolicy(policy);
+		panBackground->hide();
+	}
 	auto faderColumn = new QVBoxLayout();
 	faderColumn->setContentsMargins(0, 0, 0, 0);
 	faderColumn->setSpacing(2);
@@ -598,6 +642,58 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	faderLayout->setContentsMargins(0, 0, 0, 0);
 	faderLayout->setSpacing(2);
 	faderLayout->addStretch(1); // centered on the wide master
+	if (isMasterChannel())
+	{
+		// The master's faders: PRE, one per side, which LINK moves together, then POST, its output, with a scale
+		// of dB between them. The rows above and below the faders are as tall in every column, so they line up.
+		auto& master = Engine::mixer()->masterSection();
+		const int topHeight = m_peakIndicator->sizeHint().height();
+		auto label = [this](const QString& text) {
+			auto widget = new QLabel{text, this};
+			widget->setObjectName("masterFaderLabel");
+			widget->setAlignment(Qt::AlignCenter);
+			widget->setFont(adjustedToPixelSize(font(), 7));
+			widget->setFixedHeight(9);
+			return widget;
+		};
+
+		auto link = new AutomatableButton(this, tr("Link"));
+		link->setObjectName("btn-link");
+		link->setText(tr("LINK"));
+		link->setToolTip(tr("Link the PRE faders: they move together"));
+		link->setCheckable(true);
+		link->setModel(&master.m_preLinkModel);
+		link->setFixedHeight(topHeight);
+		auto preFaders = new QHBoxLayout();
+		preFaders->setContentsMargins(0, 0, 0, 0);
+		preFaders->setSpacing(2);
+		m_preFaders[0] = new Fader{&master.m_preLeftModel, tr("Pre master left"), this};
+		m_preFaders[1] = new Fader{&master.m_preRightModel, tr("Pre master right"), this};
+		for (const auto fader : m_preFaders)
+		{
+			fader->setFixedWidth(PreFaderWidth);
+			preFaders->addWidget(fader);
+		}
+		auto preColumn = new QVBoxLayout();
+		preColumn->setContentsMargins(0, 0, 0, 0);
+		preColumn->setSpacing(2);
+		preColumn->addWidget(link, 0, Qt::AlignHCenter);
+		preColumn->addLayout(preFaders, 1);
+		preColumn->addWidget(label(tr("PRE  L  R")));
+
+		auto scaleColumn = new QVBoxLayout();
+		scaleColumn->setContentsMargins(0, 0, 0, 0);
+		scaleColumn->setSpacing(2);
+		scaleColumn->addSpacing(topHeight);
+		scaleColumn->addWidget(new DbScale{m_fader, this}, 1);
+		scaleColumn->addSpacing(9);
+
+		m_fader->setFixedWidth(PostFaderWidth);
+		faderColumn->addWidget(label(tr("POST")));
+
+		faderLayout->addLayout(preColumn);
+		faderLayout->addLayout(scaleColumn);
+	}
 	faderLayout->addLayout(faderColumn);
 	faderLayout->addLayout(soloMuteLayout);
 	faderLayout->addStretch(1);

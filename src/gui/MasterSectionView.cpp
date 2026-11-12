@@ -191,6 +191,63 @@ void CorrelationMeter::paintEvent(QPaintEvent*)
 
 
 
+Goniometer::Goniometer(std::function<void(std::vector<std::array<float, 2>>&)> points, QWidget* parent)
+	: QWidget{parent}, m_points{std::move(points)}
+{
+	setFixedHeight(56);
+	setToolTip(QCoreApplication::translate("Goniometer",
+		"Goniometer: mid upwards, side sideways. Mono is a vertical line; sideways spread means cancelling phase"));
+	followGuiUpdates(this);
+}
+
+
+
+
+void Goniometer::advance()
+{
+	m_points(m_current);
+}
+
+
+
+
+void Goniometer::paintEvent(QPaintEvent*)
+{
+	auto painter = QPainter{this};
+	const auto r = QRectF{rect()};
+	painter.fillRect(r, QColor{12, 13, 15});
+
+	// The axes: mid (vertical), side (horizontal), and L and R on the diagonals
+	const auto center = r.center();
+	const double radius = r.height() / 2.0 - 2.0;
+	painter.setPen(QPen{QColor{40, 45, 50}, 1.0});
+	painter.drawLine(QPointF{center.x(), r.top()}, QPointF{center.x(), r.bottom()});
+	painter.drawLine(QPointF{center.x() - radius, center.y()}, QPointF{center.x() + radius, center.y()});
+	painter.drawLine(center + QPointF{-radius, -radius}, center + QPointF{radius, radius});
+	painter.drawLine(center + QPointF{radius, -radius}, center + QPointF{-radius, radius});
+	painter.setPen(QColor{90, 98, 108});
+	painter.setFont(adjustedToPixelSize(font(), 6));
+	painter.drawText(QRectF{center.x() - radius - 2.0, r.top(), 10.0, 8.0}, Qt::AlignLeft, "L");
+	painter.drawText(QRectF{center.x() + radius - 8.0, r.top(), 10.0, 8.0}, Qt::AlignRight, "R");
+
+	// The points, the latest brightest
+	painter.setRenderHint(QPainter::Antialiasing);
+	const auto count = static_cast<int>(m_current.size());
+	for (int i = 0; i < count; ++i)
+	{
+		const auto& [side, mid] = m_current[i];
+		const double x = std::clamp(-side * radius, -radius, radius); // left of the mid when L is louder
+		const double y = std::clamp(mid * radius, -radius, radius);
+		auto color = QColor{74, 253, 133};
+		color.setAlphaF(0.15 + 0.6 * i / std::max(count, 1));
+		painter.setPen(QPen{color, 1.2});
+		painter.drawPoint(QPointF{center.x() + x, center.y() - y});
+	}
+}
+
+
+
+
 GainReductionMeter::GainReductionMeter(std::function<float()> takeReduction, QWidget* parent)
 	: QWidget{parent}, m_takeReduction{std::move(takeReduction)}
 {
@@ -266,7 +323,19 @@ MasterSectionView::MasterSectionView(Mixer* mixer, QWidget* parent)
 	meters->addWidget(new VuMeter{"L", [masterChannel] { return masterChannel->m_meter.rms(0); }, this});
 	meters->addWidget(new VuMeter{"R", [masterChannel] { return masterChannel->m_meter.rms(1); }, this});
 	layout->addLayout(meters);
+	layout->addWidget(new Goniometer{[&master](auto& points) { master.scopePoints(points); }, this});
 	layout->addWidget(new CorrelationMeter{[&master] { return master.correlation(); }, this});
+
+	// The stereo section, in mid/side, before the bus compressor
+	addTitle(tr("STEREO"));
+	auto stereo = new QHBoxLayout{};
+	stereo->setSpacing(0);
+	stereo->addWidget(makeKnob(&masterChannel->m_widthModel, tr("WIDTH"), tr("Stereo width"), "%"));
+	stereo->addWidget(makeKnob(&master.m_bassWidthModel, tr("BASS"),
+		tr("Mono bass: width of the side below the frequency (0 = mono)"), "%"));
+	stereo->addWidget(makeKnob(&master.m_bassFrequencyModel, tr("FREQ"), tr("Mono bass frequency"), " Hz"));
+	stereo->addWidget(makeKnob(&master.m_airModel, tr("AIR"), tr("Air: high shelf of the side at 12 kHz"), " dB"));
+	layout->addLayout(stereo);
 
 	// The bus compressor
 	addTitle(tr("BUS COMP"));
@@ -305,13 +374,13 @@ MasterSectionView::MasterSectionView(Mixer* mixer, QWidget* parent)
 	auto monitor = new QHBoxLayout{};
 	monitor->setSpacing(2);
 	monitor->addWidget(makeKnob(&master.m_monitorLevelModel, tr("LEVEL"), tr("Monitor level"), " dB"));
-	for (auto [model, text, tip] : std::array{
-		std::tuple{&master.m_dimModel, tr("DIM"), tr("Dim the monitors by 20 dB")},
-		std::tuple{&master.m_cutModel, tr("CUT"), tr("Cut the monitors")},
-		std::tuple{&master.m_monoModel, tr("MONO"), tr("Listen in mono")}})
-	{
-		monitor->addWidget(makeButton(model, text, tip));
-	}
+	auto monitorButtons = new QGridLayout{};
+	monitorButtons->setSpacing(2);
+	monitorButtons->addWidget(makeButton(&master.m_dimModel, tr("DIM"), tr("Dim the monitors by 20 dB")), 0, 0);
+	monitorButtons->addWidget(makeButton(&master.m_cutModel, tr("CUT"), tr("Cut the monitors")), 0, 1);
+	monitorButtons->addWidget(makeButton(&master.m_monoModel, tr("MONO"), tr("Listen to the mid, in mono")), 1, 0);
+	monitorButtons->addWidget(makeButton(&master.m_sideModel, tr("SIDE"), tr("Listen to the side")), 1, 1);
+	monitor->addLayout(monitorButtons);
 	layout->addLayout(monitor);
 	layout->addStretch(1);
 }

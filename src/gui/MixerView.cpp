@@ -517,6 +517,7 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 	m_swapChannelsBox->setModel(&mixerChannel->m_swapChannelsModel);
 	m_widthKnob->setModel(&mixerChannel->m_widthModel);
 	m_panKnob->setModel(&mixerChannel->m_panModel);
+	m_panKnob->setVisible(channel->channelIndex() != 0); // the master has no panning
 
 	// set up send knob
 	for (int i = 0; i < m_mixerChannelViews.size(); ++i)
@@ -791,6 +792,20 @@ void MixerView::updateFaders()
 		const float fallOff = 1.25;
 		fader->setPeak_L(std::max((*peaks)[0], fader->getPeak_L() / fallOff));
 		fader->setPeak_R(std::max((*peaks)[1], fader->getPeak_R() / fallOff));
+	}
+
+	// The master's PRE faders show the level into the master, each its own side
+	if (const auto peaks = m->masterSection().m_preMeter.takePeaks())
+	{
+		const float fallOff = 1.25;
+		const auto& faders = m_mixerChannelViews[0]->m_preFaders;
+		for (int side = 0; side < 2; ++side)
+		{
+			if (!faders[side]) { continue; }
+			const float peak = std::max((*peaks)[side], faders[side]->getPeak_L() / fallOff);
+			faders[side]->setPeak_L(peak);
+			faders[side]->setPeak_R(peak);
+		}
 	}
 }
 

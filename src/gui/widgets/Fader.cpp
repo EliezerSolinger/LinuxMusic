@@ -443,6 +443,15 @@ void Fader::setVolumeByLocalPixelValue(int y)
 	}
 }
 
+auto Fader::positionOf(float dB) const -> float
+{
+	const auto ratio = computeScaledRatio(dB);
+	return height() - (height() - m_knobSize.height()) * ratio - m_knobSize.height() / 2.f;
+}
+
+
+
+
 float Fader::computeScaledRatio(float dBValue) const
 {
 	const auto maxDb = ampToDbfs(model()->maxValue());

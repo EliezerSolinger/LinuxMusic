@@ -90,6 +90,10 @@ public:
 	inline float getMaxPeak() const { return m_fMaxPeak; }
 	inline void setMaxPeak(float maxPeak) { m_fMaxPeak = maxPeak; }
 
+	//! The height in the fader at which its knob's center stands for @p dB, as its ticks are drawn; for a scale
+	//! of dB next to it
+	auto positionOf(float dB) const -> float;
+
 	inline bool getRenderUnityLine() const { return m_renderUnityLine; }
 	inline void setRenderUnityLine(bool value = true) { m_renderUnityLine = value; }
 

@@ -152,6 +152,11 @@ private:
 	QWidget* m_effectSlotList;
 	QWidget* m_upperArea = nullptr;
 
+	//! The master's PRE faders, left and right (see MasterSection)
+	std::array<Fader*, 2> m_preFaders{};
+	static constexpr int PreFaderWidth = 24;
+	static constexpr int PostFaderWidth = 30;
+
 	//! The sends to the effect returns (see Mixer::fxReturns())
 	QWidget* m_fxSends;
 	std::array<Knob*, Mixer::FxReturnCount> m_fxSendKnobs{};

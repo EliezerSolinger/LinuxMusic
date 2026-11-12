@@ -341,6 +341,13 @@ void MixerChannel::doProcessing()
 		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
 	}
 
+	// The master's PRE faders, before its effects
+	if (isMaster() && m_buffer.hasSignal(mainPair))
+	{
+		Engine::mixer()->masterSection().processPreFaders(buffer, Engine::audioEngine()->outputSampleRate());
+		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+	}
+
 	// Analog mode: the strip of an analog desk, before the effects
 	const bool hadInput = m_buffer.hasSignal(mainPair);
 	if (!isMaster() && Engine::mixer()->isAnalog() && (hadInput || m_analogStrip.holdsSignal()))
@@ -357,10 +364,14 @@ void MixerChannel::doProcessing()
 	// The auxiliary pairs do not reach the channel's output
 	const bool hasSignal = m_buffer.hasSignal(mainPair) || m_stillRunning;
 
-	// The master's bus compressor, after its effects and before its fader
+	// The master's stereo section (with the master's width) and bus compressor, after its effects and before its
+	// fader
 	if (isMaster() && hasSignal)
 	{
-		Engine::mixer()->masterSection().processCompressor(buffer, Engine::audioEngine()->outputSampleRate());
+		auto& master = Engine::mixer()->masterSection();
+		const auto rate = Engine::audioEngine()->outputSampleRate();
+		master.processStereo(buffer, rate, m_widthModel.value());
+		master.processCompressor(buffer, rate);
 		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
 	}
 
@@ -378,8 +389,10 @@ void MixerChannel::doProcessing()
 	{
 		const bool swap = m_swapChannelsModel.value();
 		const float phase = m_phaseInvertModel.value() ? -1.f : 1.f;
-		const float width = m_widthModel.value() / 100.f;
-		const auto pan = panningToVolumeVector(static_cast<panning_t>(m_panModel.value()));
+		// The master's width is applied by its stereo section, before the bus compressor
+		const float width = isMaster() ? 1.f : m_widthModel.value() / 100.f;
+		// The master has no panning
+		const auto pan = panningToVolumeVector(static_cast<panning_t>(isMaster() ? PanningCenter : m_panModel.value()));
 		const float volume = m_volumeModel.value();
 
 		for (f_cnt_t f = 0; f < fpp; ++f)

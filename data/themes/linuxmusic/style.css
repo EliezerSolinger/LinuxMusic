@@ -1455,3 +1455,24 @@ QWidget#masterSection QPushButton#masterButton:checked {
 	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f2c25a, stop:0.1 #e0a020, stop:0.9 #e0a020, stop:1 #9c6c08);
 	color: #14161a;
 }
+
+/* The master strip's faders: the LINK button of the PRE faders, and the labels below them */
+lmms--gui--MixerChannelView QPushButton#btn-link {
+	padding: 0px 3px;
+	border: 1 solid #080b12;
+	border-radius: 2;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255, 255, 255, 20%), stop:0.1 rgba(255, 255, 255, 2%), stop:0.9 rgba(0, 0, 0, 2%), stop:1 rgba(0, 0, 0, 40%));
+	color: #d1d8e4;
+	font-size: 7px;
+	font-weight: bold;
+}
+
+lmms--gui--MixerChannelView QPushButton#btn-link:checked {
+	border: 1 solid #8a5a00;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f2c25a, stop:0.1 #e0a020, stop:0.9 #e0a020, stop:1 #9c6c08);
+	color: #14161a;
+}
+
+lmms--gui--MixerChannelView QLabel#masterFaderLabel {
+	color: #8c96a3;
+}

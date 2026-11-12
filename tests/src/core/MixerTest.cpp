@@ -24,6 +24,7 @@
 
 #include <cmath>
 #include <numbers>
+#include <functional>
 #include <vector>
 
 #include "AnalogChannelStrip.h"
@@ -38,6 +39,7 @@
 #include "FolderTrack.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "MasterSection.h"
 #include "Mixer.h"
 #include "PluginChecks.h"
 #include "PluginInstance.h"
@@ -179,6 +181,14 @@ public:
 };
 
 } // namespace
+
+//! Levels of the master's output (see MixerTest::playStereo())
+struct StereoLevels
+{
+	float mid;
+	float side;
+	float biggestStep;
+};
 
 class MixerTest : public QObject
 {
@@ -1587,6 +1597,163 @@ private slots:
 		QVERIFY(mixer()->mixerChannel(0)->m_meter.rms(0) > 0.1f);
 		master.m_cutModel.setValue(false);
 		mix();
+	}
+
+	/**
+	 * Plays sines of @p frequency into channel @p channel, @p left and @p right their amplitudes (a negative one is
+	 * the sine inverted), and returns the RMS levels of the master's mid and side over the last quarter of the
+	 * periods, and the biggest step between two frames of the left channel
+	 */
+	static auto playStereo(mix_ch_t channel, float frequency, float left, float right, int periods = 128,
+		const std::function<void(int)>& atPeriod = {}) -> StereoLevels
+	{
+		const auto rate = static_cast<float>(Engine::audioEngine()->outputSampleRate());
+		double mid = 0., side = 0.;
+		float step = 0.f, previous = 0.f;
+		f_cnt_t measured = 0;
+		f_cnt_t position = 0;
+		for (int period = 0; period < periods; ++period)
+		{
+			if (atPeriod) { atPeriod(period); }
+			auto buffer = AudioBuffer{frames()};
+			for (f_cnt_t f = 0; f < frames(); ++f, ++position)
+			{
+				const float x = std::sin(2.f * std::numbers::pi_v<float> * frequency * position / rate);
+				buffer.buffer(0)[f] = left * x;
+				buffer.buffer(1)[f] = right * x;
+			}
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+			mixer()->mixToChannel(buffer, channel);
+			const auto out = mix();
+			for (const auto& frame : out)
+			{
+				if (period > 4) { step = std::max(step, std::abs(frame.left() - previous)); }
+				previous = frame.left();
+			}
+			if (period < periods * 3 / 4) { continue; }
+			for (const auto& frame : out)
+			{
+				const double m = (frame.left() + frame.right()) / 2., sd = (frame.left() - frame.right()) / 2.;
+				mid += m * m;
+				side += sd * sd;
+			}
+			measured += out.size();
+		}
+		return {static_cast<float>(std::sqrt(mid / measured)), static_cast<float>(std::sqrt(side / measured)), step};
+	}
+
+	void masterWidthIsAppliedBeforeTheBusCompressor()
+	{
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(0)->m_widthModel.setValue(0.f);
+		settle();
+		feed(channel, 0.5f, 0.1f);
+		mix();
+		feed(channel, 0.5f, 0.1f);
+		compareOutput(mix(), 0.3f, 0.3f);
+		mixer()->mixerChannel(0)->m_widthModel.setValue(100.f);
+		mix();
+	}
+
+	void monoBassNarrowsOnlyTheLows()
+	{
+		auto& master = mixer()->masterSection();
+		const auto channel = mixer()->createChannel();
+		settle();
+		// Left only: mid and side of 0.5 * 0.5 / sqrt(2) RMS each
+		const float level = 0.25f / std::sqrt(2.f);
+		master.m_bassFrequencyModel.setValue(120.f);
+		master.m_bassWidthModel.setValue(0.f);
+
+		const auto low = playStereo(channel, 40.f, 0.5f, 0.f, 256);
+		QVERIFY2(low.side < level * 0.05f, qPrintable(QString::number(low.side / level)));
+		QVERIFY(std::abs(low.mid / level - 1.f) < 0.02f); // the mid's allpass keeps its level
+
+		const auto high = playStereo(channel, 2000.f, 0.5f, 0.f);
+		QVERIFY(std::abs(high.side / level - 1.f) < 0.02f);
+		QVERIFY(std::abs(high.mid / level - 1.f) < 0.02f);
+
+		master.setDefaults();
+		mix();
+	}
+
+	void monoBassSwitchesAndSweepsWithoutClicks()
+	{
+		auto& master = mixer()->masterSection();
+		const auto channel = mixer()->createChannel();
+		settle();
+		// A 100 Hz sine moves at most 2 pi 100 / 44100 * 0.5 = 0.0071 per frame; a click would be a bigger step
+		const auto levels = playStereo(channel, 100.f, 0.5f, -0.2f, 96, [&master](int period) {
+			if (period == 20) { master.m_bassWidthModel.setValue(0.f); }
+			if (period == 40) { master.m_bassFrequencyModel.setValue(250.f); }
+			if (period == 60) { master.m_bassFrequencyModel.setValue(60.f); }
+			if (period == 80) { master.m_bassWidthModel.setValue(100.f); }
+		});
+		QVERIFY2(levels.biggestStep < 0.0075f, qPrintable(QString::number(levels.biggestStep)));
+		master.setDefaults();
+		mix();
+	}
+
+	void airBoostsOnlyTheSidesHighs()
+	{
+		auto& master = mixer()->masterSection();
+		const auto channel = mixer()->createChannel();
+		settle();
+		const float level = 0.25f / std::sqrt(2.f);
+		master.m_airModel.setValue(6.f);
+		const auto high = playStereo(channel, 16000.f, 0.5f, 0.f);
+		QVERIFY(high.side / level > dbfsToAmp(4.f));
+		QVERIFY(std::abs(high.mid / level - 1.f) < 0.02f);
+		const auto low = playStereo(channel, 500.f, 0.5f, 0.f);
+		QVERIFY(std::abs(low.side / level - 1.f) < 0.05f);
+		master.setDefaults();
+		mix();
+	}
+
+	void preFadersMoveTogetherWhileLinked()
+	{
+		auto& master = mixer()->masterSection();
+		const auto channel = mixer()->createChannel();
+		QVERIFY(master.m_preLinkModel.value());
+		master.m_preLeftModel.setValue(0.5f);
+		QCOMPARE(master.m_preRightModel.value(), 0.5f);
+
+		master.m_preLinkModel.setValue(false);
+		master.m_preRightModel.setValue(1.f);
+		QCOMPARE(master.m_preLeftModel.value(), 0.5f);
+		feed(channel, 0.5f, 0.5f);
+		mix();
+		feed(channel, 0.5f, 0.5f);
+		compareOutput(mix(), 0.25f, 0.5f);
+
+		// Linking again puts the right one where the left one is
+		master.m_preLinkModel.setValue(true);
+		QCOMPARE(master.m_preRightModel.value(), 0.5f);
+		master.setDefaults();
+		mix();
+	}
+
+	void monitorSideAndGoniometer()
+	{
+		auto& master = mixer()->masterSection();
+		const auto channel = mixer()->createChannel();
+		settle();
+		master.m_sideModel.setValue(true);
+		feed(channel, 0.5f, 0.25f);
+		mix();
+		feed(channel, 0.5f, 0.25f);
+		compareOutput(mix(), 0.125f, 0.125f);
+		// MONO and SIDE exclude each other
+		master.m_monoModel.setValue(true);
+		QVERIFY(!master.m_sideModel.value());
+		master.m_monoModel.setValue(false);
+
+		auto points = std::vector<std::array<float, 2>>{};
+		master.scopePoints(points);
+		QCOMPARE(static_cast<int>(points.size()), MasterSection::ScopePoints);
+		QCOMPARE(points.back()[0], 0.125f); // side
+		QCOMPARE(points.back()[1], 0.375f); // mid
 	}
 
 	void opAmpSaturatesOnlyAboveItsKnee()
