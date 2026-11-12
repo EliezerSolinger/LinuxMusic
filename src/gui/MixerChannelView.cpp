@@ -53,6 +53,7 @@
 #include "GuiApplication.h"
 #include "DeskKnob.h"
 #include "Knob.h"
+#include "MasterSectionView.h"
 #include "LcdWidget.h"
 #include "lmms_math.h"
 #include "MainWindow.h"
@@ -556,13 +557,37 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->setContentsMargins(4, 4, 4, 4);
 	mainLayout->setSpacing(2);
 
-	mainLayout->addWidget(m_receiveArrowOrSendButton, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_sendKnob, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_sendArrow, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_analogSection, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_effectSlotList, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_fxSends, 0, Qt::AlignHCenter);
+	// A channel's strip has a fixed width; the master's is wider, with the master section
+	setFixedWidth(isMasterChannel() ? MasterSectionView::Width + 8 : StripWidth);
+
+	// Everything above the panning knob; the mixer makes it as tall in every strip, so that the faders line up
+	// (see MixerView::alignStrips())
+	m_upperArea = new QWidget{this};
+	auto upperLayout = new QVBoxLayout{m_upperArea};
+	upperLayout->setContentsMargins(0, 0, 0, 0);
+	upperLayout->setSpacing(2);
+	if (isMasterChannel())
+	{
+		// The master section of the desk, in place of what the other channels have there
+		upperLayout->addWidget(new MasterSectionView{Engine::mixer(), m_upperArea}, 0, Qt::AlignHCenter);
+		for (auto widget : std::initializer_list<QWidget*>{m_receiveArrowOrSendButton, m_sendKnob, m_sendArrow,
+			m_channelNumberLcd, m_analogSection, m_fxSends})
+		{
+			widget->hide();
+		}
+	}
+	else
+	{
+		upperLayout->addWidget(m_receiveArrowOrSendButton, 0, Qt::AlignHCenter);
+		upperLayout->addWidget(m_sendKnob, 0, Qt::AlignHCenter);
+		upperLayout->addWidget(m_sendArrow, 0, Qt::AlignHCenter);
+		upperLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
+		upperLayout->addWidget(m_analogSection, 0, Qt::AlignHCenter);
+		upperLayout->addWidget(m_fxSends, 0, Qt::AlignHCenter);
+	}
+	upperLayout->addWidget(m_effectSlotList, 0, Qt::AlignHCenter);
+	upperLayout->addStretch(1);
+	mainLayout->addWidget(m_upperArea);
 	mainLayout->addWidget(panBackground, 0, Qt::AlignHCenter);
 	auto faderColumn = new QVBoxLayout();
 	faderColumn->setContentsMargins(0, 0, 0, 0);
@@ -572,8 +597,10 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	auto faderLayout = new QHBoxLayout();
 	faderLayout->setContentsMargins(0, 0, 0, 0);
 	faderLayout->setSpacing(2);
+	faderLayout->addStretch(1); // centered on the wide master
 	faderLayout->addLayout(faderColumn);
 	faderLayout->addLayout(soloMuteLayout);
+	faderLayout->addStretch(1);
 	mainLayout->addLayout(faderLayout, 1);
 	mainLayout->addWidget(m_renameLineEdit, 0, Qt::AlignHCenter);
 
@@ -770,22 +797,18 @@ void MixerChannelView::updateFxSends()
 		if (send && m_fxSendKnobs[i]->model() != send->amount()) { m_fxSendKnobs[i]->setModel(send->amount()); }
 		any = any || send;
 	}
-	// The effect returns and the master keep the space, so that the faders line up
+	// The effect returns keep the space, so that the faders line up
 	auto policy = m_fxSends->sizePolicy();
 	policy.setRetainSizeWhenHidden(true);
 	m_fxSends->setSizePolicy(policy);
-	m_fxSends->setVisible(any);
+	m_fxSends->setVisible(any || !isMasterChannel());
+	for (const auto knob : m_fxSendKnobs) { knob->setVisible(any); }
 }
 
 void MixerChannelView::updateMode()
 {
 	const bool analog = Engine::mixer()->isAnalog();
 	m_analogSection->setVisible(analog && !isMasterChannel());
-
-	// The master has no desk's strip, but keeps its place so that the faders line up
-	auto policy = m_analogSection->sizePolicy();
-	policy.setRetainSizeWhenHidden(analog && isMasterChannel());
-	m_analogSection->setSizePolicy(policy);
 	m_effectLeds->setVisible(analog);
 	m_effectSlotList->setVisible(!analog);
 }

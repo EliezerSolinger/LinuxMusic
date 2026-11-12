@@ -139,6 +139,9 @@ public slots:
 	//! Puts the channels' views in place: the effect returns next to the master, the others in order
 	void placeChannelViews();
 
+	//! Makes the upper areas of all strips as tall, so that the faders line up
+	void alignStrips();
+
 private slots:
 	void updateFaders();
 	// TODO This should be improved. Currently the solo and mute models are connected via

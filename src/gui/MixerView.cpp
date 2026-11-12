@@ -154,11 +154,10 @@ MixerView::MixerView(Mixer* mixer) :
 
 	m_racksLayout->addWidget(m_mixerChannelViews[0]->m_effectRackView);
 
-	auto mixerChannelSize = masterView->sizeHint();
 
 	// The ghost channel at the end of the channels: a click makes a channel in its place
 	m_ghostChannel = new GhostChannel{m_channelAreaWidget, [this] { addNewChannel(); }};
-	m_ghostChannel->setFixedWidth(mixerChannelSize.width());
+	m_ghostChannel->setFixedWidth(MixerChannelView::StripWidth);
 
 	// add mixer channels
 	for (int i = 1; i < m_mixerChannelViews.size(); ++i)
@@ -187,7 +186,7 @@ MixerView::MixerView(Mixer* mixer) :
 	channelArea->setWidget(m_channelAreaWidget);
 	channelArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	channelArea->setFrameStyle(QFrame::NoFrame);
-	channelArea->setMinimumWidth(mixerChannelSize.width() * 6);
+	channelArea->setMinimumWidth(MixerChannelView::StripWidth * 6);
 	channelArea->setWidgetResizable(true);
 
 	int const scrollBarExtent = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
@@ -197,13 +196,15 @@ MixerView::MixerView(Mixer* mixer) :
 		for (const auto view : m_mixerChannelViews) { height = std::max(height, view->sizeHint().height()); }
 		channelArea->setMinimumHeight(height + scrollBarExtent);
 	};
+	alignStrips();
 	updateMinimumHeight();
+	connect(mixer->analogModel(), &BoolModel::dataChanged, this, &MixerView::alignStrips, Qt::QueuedConnection);
 	connect(mixer->analogModel(), &BoolModel::dataChanged, this, updateMinimumHeight, Qt::QueuedConnection);
+	connect(mixer, &Mixer::channelCreated, this, &MixerView::alignStrips, Qt::QueuedConnection);
 	connect(mixer, &Mixer::channelCreated, this, updateMinimumHeight, Qt::QueuedConnection);
 
 	ml->addWidget(channelArea, 1);
 	ml->addWidget(m_fxReturnsWidget, 0);
-	ml->addWidget(new MasterSectionView{mixer, this}, 0);
 	ml->addWidget(masterView, 0);
 
 
@@ -533,7 +534,8 @@ void MixerView::updateMixerChannel(int index)
 	const auto thisLine = m_mixerChannelViews[index];
 	thisLine->setToolTip(getMixer()->mixerChannel(index)->m_name);
 
-	const auto sendModelCurrentToThis = mixer->channelSendModel(currentIndex, index);
+	// The master's strip has its master section where the others have their send controls
+	const auto sendModelCurrentToThis = index == 0 ? nullptr : mixer->channelSendModel(currentIndex, index);
 	if (sendModelCurrentToThis == nullptr)
 	{
 		thisLine->m_sendKnob->setVisible(false);
@@ -547,7 +549,8 @@ void MixerView::updateMixerChannel(int index)
 	}
 
 	const auto sendModelThisToCurrent = mixer->channelSendModel(index, currentIndex);
-	if (sendModelThisToCurrent)
+	if (index == 0) { thisLine->m_receiveArrowOrSendButton->setVisible(false); }
+	else if (sendModelThisToCurrent)
 	{
 		thisLine->m_receiveArrowOrSendButton->setVisible(true);
 		thisLine->m_receiveArrowOrSendButton->setCurrentIndex(thisLine->m_receiveArrowStackedIndex);
@@ -633,6 +636,21 @@ void MixerView::swapChannelViews(int index, int otherIndex)
 
 
 
+void MixerView::alignStrips()
+{
+	// The tallest upper area sets them all
+	int height = 0;
+	for (const auto view : m_mixerChannelViews)
+	{
+		view->upperArea()->setMinimumHeight(0);
+		height = std::max(height, view->upperArea()->sizeHint().height());
+	}
+	for (const auto view : m_mixerChannelViews) { view->upperArea()->setMinimumHeight(height); }
+}
+
+
+
+
 void MixerView::placeChannelViews()
 {
 	if (m_mixerChannelViews.isEmpty()) { return; }
@@ -651,6 +669,7 @@ void MixerView::placeChannelViews()
 	}
 	chLayout->addWidget(m_ghostChannel);
 	m_channelAreaWidget->adjustSize();
+	alignStrips();
 }
 
 

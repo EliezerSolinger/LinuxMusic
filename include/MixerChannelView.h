@@ -60,6 +60,14 @@ class MixerChannelView : public QWidget
 	Q_PROPERTY(QColor strokeInnerInactive READ strokeInnerInactive WRITE setStrokeInnerInactive)
 public:
 	MixerChannelView(QWidget* parent, MixerView* mixerView, int channelIndex);
+
+	//! The width of a channel's strip (the master's is wider)
+	static constexpr int StripWidth = 58;
+
+	//! Everything above the panning knob (on the master, the master section), which the mixer makes as tall in
+	//! every strip so that the faders line up
+	auto upperArea() const -> QWidget* { return m_upperArea; }
+
 	void paintEvent(QPaintEvent* event) override;
 	void contextMenuEvent(QContextMenuEvent*) override;
 	void mousePressEvent(QMouseEvent*) override;
@@ -142,6 +150,7 @@ private:
 	QWidget* m_analogSection;
 	QWidget* m_effectLeds;
 	QWidget* m_effectSlotList;
+	QWidget* m_upperArea = nullptr;
 
 	//! The sends to the effect returns (see Mixer::fxReturns())
 	QWidget* m_fxSends;

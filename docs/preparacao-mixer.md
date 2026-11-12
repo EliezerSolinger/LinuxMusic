@@ -586,8 +586,12 @@ analógicos na monitoração.
   - **correlação** de L e R ao longo de 300 ms: +1 mono, 0 largo, abaixo de 0 eles se cancelam.
 
 **Interface:**
-- À direita dos canais: FX 1, FX 2, a seção master (METERS, BUS COMP, MONITOR) e a faixa do master. Os faders se
-  alinham, com os espaços que faltam a cada faixa reservados.
+- À direita dos canais: FX 1, FX 2 e o master. O master é uma faixa mais larga, com a seção master (METERS, BUS
+  COMP, MONITOR) em cima, no lugar dos controles de envio e da faixa analógica dos outros canais, e o fader embaixo,
+  como numa mesa. (Na primeira versão a seção master era um painel separado ao lado da faixa do master; o usuário
+  pediu que fosse uma peça só.)
+- Os faders se alinham: o mixer dá à área de cima de todas as faixas a altura da mais alta (`MixerView::alignStrips()`),
+  nos dois modos.
 - Cada faixa tem os knobs FX1 e FX2 (`DeskKnob`, que ganhou arquivos próprios).
 - **Canal fantasma:** o botão + virou um canal tracejado depois do último canal; um clique cria um canal no lugar
   dele.
