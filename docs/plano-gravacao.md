@@ -203,6 +203,78 @@ Hoje o driver só pede saída estéreo ao motor, e a entrada chega por um ring s
 9. ALSA e JACK (escritos e compilando; testados no Linux pelo usuário).
 10. Integração final: testes, sanitizers, A/B, gravação real no Mac, documentação.
 
+## Estado (noite de 12/11/2026)
+
+Feito, com testes, A/B e commit (em `master`, sem push):
+- **Etapa 0, sanitizers:**
+  - `build-asan` (ASan + UBSan) e `build-tsan` configurados com `-DWANT_DEBUG_ASAN/UBSAN/TSAN=ON`.
+  - Rodam limpos:
+    - os testes;
+    - a bateria A/B renderizada;
+    - abrir, tocar e fechar a interface.
+  - Correções:
+    - o espelho intercalado do `AudioBuffer` com faixas de mais de 2 canais;
+    - os workers perdiam o despertar e travavam ao sair (agora usam `std::atomic::wait`);
+    - cerca de 230 corridas de dados achadas pelo TSan nos renders:
+      - no motor: `Song`, `Mixer`, `InstrumentTrack`, `InstrumentPlayHandle`, VST sync e o renderizador;
+      - nos plugins: Xpressive, Sid e Flanger;
+    - os plugins TAP não linkavam com sanitizers;
+    - os testes não leem mais a configuração do usuário (`LINUXMUSIC_CONFIG_DIR`).
+  - Achados de terceiros, nos submódulos, não alterados:
+    - no reSID (`filter.cc`), a conversão de um valor negativo para `unsigned short` é comportamento indefinido; o resultado da tabela depende da plataforma;
+    - no `fmopl.c` do OpulenZ, deslocamento à esquerda de valor negativo.
+- **Etapa 0, crash:**
+  - `CrashHandler` grava a pilha em `crash-report.txt`, e a partida seguinte avisa onde ele está.
+  - O autosave e a recuperação do LMMS continuam como estavam.
+- **Thread de áudio:** o osciloscópio lê por um `TripleBuffer`, sem sinal Qt do áudio.
+- **Drivers:**
+  - **API duplex:** `renderNextBuffer(input, output)` e `AudioEngine::capture()`, com nomes de entradas, latências, xruns e captura sob demanda.
+  - **CoreAudio** (novo, primeira escolha no Mac): aggregate device privado para entrada e saída separadas.
+  - **ALSA** reescrito:
+    - duplex com `snd_pcm_link`, no formato nativo da placa;
+    - recuperação de xrun;
+    - reserva da placa por `org.freedesktop.ReserveDevice1`;
+    - foi escrito e checado com os headers da alsa-lib 1.2.12, e ainda precisa ser testado no Linux.
+  - **JACK:** N entradas, com latências.
+  - **PortAudio:** entrega a entrada.
+  - **SDL:** não captura mais (o callback de entrada dele não anda junto com o de saída).
+- **Gravação:**
+  - `AudioRecorder` + `Song::recordAudio()`, com ring SPSC, thread de disco e WAV float de 32 bits.
+  - Alinhamento à amostra:
+    - a regra é período − 2 períodos − latência de entrada e de saída − calibração (`recording/latencyoffset`);
+    - provado com um loopback no `RecordingTest`.
+  - Punch in e punch out tocando.
+  - A monitoração por software (desligada, ligada ou auto) passa pelos efeitos e pela mesa.
+  - Os takes viram `SampleClip` nas faixas de sample armadas, na pasta `<projeto>_media`.
+- **Interface:**
+  - No cabeçalho da faixa de sample: R (armar) e o botão de entrada, com o menu de entradas e a monitoração.
+  - O Gravar do transporte grava as faixas armadas; sem faixa armada, grava MIDI no Piano Roll como antes.
+
+Por fazer, na ordem do plano:
+- **Mapa de tempo e time-stretch:** itens 3 e 9 da arquitetura.
+- **Edição e interface:**
+  - desfazer por comandos;
+  - lanes e comping;
+  - fades automáticos;
+  - ganho por item;
+  - a faixa nova (`AudioTrack`) e o cabeçalho de duas linhas.
+- **Gravação:**
+  - pré-roll e count-in;
+  - takes em loop.
+- **Mídia:**
+  - leitura em streaming do disco;
+  - cache de picos.
+- **Gravação MIDI na linha do tempo.**
+- **Etapa 1:**
+  - o motor sem o mutex do período;
+  - o transporte com contador de frames.
+- **Etapa 0:**
+  - isolamento de plugins;
+  - a lista de problemas ao abrir um projeto.
+- **Conhecido:**
+  - a reprodução de samples (`Sample::play`) atrasa 1 amostra por causa do reamostrador, mesmo na razão 1; a gravação está alinhada ao que se ouve;
+  - a entrada do microfone no hardware do Mac não foi testada, porque o pedido de permissão do macOS bloqueia sem alguém para responder.
+
 ## Verificação
 - **Testes de unidade** (`tests/`) para cada peça: mapa de tempo, rings, gravador com um driver falso, alinhamento
   de latência, mídia, faixa de gravação, desfazer, carga corrompida.
