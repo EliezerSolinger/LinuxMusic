@@ -930,6 +930,34 @@ Decidido pelo usuário, pergunta por pergunta, em 2026-11-12. Implementar na ord
   - a inversão de fase do TL072 passado o limite de modo comum;
   - o limite de corrente de saída.
 
+**Parte 3 feita.** Como ficou:
+- **Crossover do 4558:** decisão do usuário: sempre, fiel ao chip.
+  - O estágio de saída classe AB tem uma zona morta de 40 mV, -d·tanh(x/d).
+  - A realimentação reduz o erro pelo ganho de malha: ganho DC de 106 dB e GBW de 3 MHz, ou seja, a derivada do
+    erro dividida por 2π·GBW.
+  - Resultado: 3º harmônico em -88 dB a 1 kHz e -75 dB a 8 kHz, a -6 dBFS. Cresce com a frequência, como no
+    chip.
+  - Silêncio continua silêncio.
+  - Os outros amp-ops seguem bit a bit transparentes abaixo do joelho.
+  - Consequência: um canal analógico neutro com 4558 deixa de ser idêntico ao digital, bem abaixo do audível.
+- **Inversão do TL072:** abaixo do limite de modo comum (V- + 4 V, ou -11 V, ou +22,6 dBFS de pico negativo), a
+  saída salta para o trilho positivo, a sobrecarga "feia" característica dele.
+- **Limite de corrente:** as saídas acionam 600 Ω.
+  - O trilho efetivo é o menor entre o trilho e corrente × 600 Ω.
+  - O 4558 (20 mA) cede um pouco antes do trilho.
+  - O TL072 (15 mA) cede bem antes: não foi feito para 600 Ω.
+  - O 5532/5534 (26 mA), feito para 600 Ω, não muda.
+  - SAT e CLIP usam o trilho efetivo.
+- **Testes:**
+  - trilho efetivo por modelo;
+  - inversão do TL072;
+  - crossover entre -80 e -120 dB e crescendo com a frequência;
+  - 5532 bit a bit transparente;
+  - silêncio intacto.
+  - A medição de harmônicos agora usa janela Blackman-Harris: a retangular vazava o fundamental em -65 dB.
+  - Os testes de roteamento, que comparam níveis exatos, rodam a mesa digital. Os da mesa analógica a ligam
+    explicitamente.
+
 **4. Dinâmica**
 - Compressor de canal no estilo SSL:
   - na faixa, o knob COMP e um botão FAST;

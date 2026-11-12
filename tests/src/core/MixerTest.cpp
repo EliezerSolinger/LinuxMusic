@@ -299,6 +299,13 @@ private slots:
 		mixer()->clear();
 		mixer()->clearChannel(0);
 		mixer()->ensureFxReturns();
+		// The tests of the routing compare exact levels, so they run the digital desk, which adds nothing; the
+		// tests of the analog desk (whose 4558s add their crossover distortion at every level) run the analog one
+		static const auto analogTests = QStringList{"stripMonoBassNarrowsOnlyTheLows",
+			"gainPotIsMutedToTheLeftAndUnityInTheMiddle", "masterGainStage", "gainStageModels",
+			"drivenOpAmpDoesNotAlias", "tubeStageColorsTheChannel", "analogStripFiltersAndEq", "analogStripDynamics",
+			"analogStripAndModeAreSaved", "tubeLampSwitchesModesAndIsSaved"};
+		mixer()->analogModel()->setValue(analogTests.contains(QTest::currentTestFunction()));
 		settle();
 	}
 
@@ -1862,9 +1869,43 @@ private slots:
 			for (const auto& frame : buffer) { finite = finite && std::isfinite(frame.left()) && std::abs(frame.left()) < 100.f; }
 			if (period >= 60) { out.insert(out.end(), buffer.begin(), buffer.end()); }
 		}
-		const float h1 = magnitudeAt(out, frequency) * 2.f;
-		return {h1 / level, ampToDbfs(magnitudeAt(out, 2 * frequency) * 2.f / h1),
-			ampToDbfs(magnitudeAt(out, 3 * frequency) * 2.f / h1), finite};
+		const float h1 = amplitudeAt(out, frequency);
+		return {h1 / level, ampToDbfs(amplitudeAt(out, 2 * frequency) / h1), ampToDbfs(amplitudeAt(out, 3 * frequency) / h1),
+			finite};
+	}
+
+	void opAmpDetails()
+	{
+		using M = GainStage::Model;
+		// Into 600 ohms the 4558 gives way a little before its rail, the TL072 more, the 5532 not at all
+		QVERIFY(GainStage::opAmpRail(M::OpAmp4558) < GainStage::opAmpSpec(M::OpAmp4558).rail);
+		QVERIFY(GainStage::opAmpRail(M::OpAmpTL072) / GainStage::opAmpSpec(M::OpAmpTL072).rail
+			< GainStage::opAmpRail(M::OpAmp4558) / GainStage::opAmpSpec(M::OpAmp4558).rail);
+		QCOMPARE(GainStage::opAmpRail(M::OpAmp5532), GainStage::opAmpSpec(M::OpAmp5532).rail);
+		QVERIFY(GainStage::opAmp(M::OpAmp4558, 100.f) <= GainStage::opAmpRail(M::OpAmp4558));
+
+		// The TL072's phase reversal: past its common mode range, its output flips to the positive rail
+		QVERIFY(GainStage::opAmp(M::OpAmpTL072, -12.f) < 0.f);
+		QCOMPARE(GainStage::opAmp(M::OpAmpTL072, -15.f), GainStage::opAmpRail(M::OpAmpTL072));
+		QVERIFY(GainStage::opAmp(M::OpAmp5532, -15.f) < 0.f);
+
+		// The 4558's crossover distortion: there at usual levels, very low, and rising with frequency; the 5532 is
+		// untouched below its knee, bit for bit
+		const auto low = tubeResponse(M::OpAmp4558, false, 0.5f, 1000.f);
+		const auto high = tubeResponse(M::OpAmp4558, false, 0.5f, 8000.f);
+		QVERIFY2(low.third < -80.f && low.third > -120.f, qPrintable(QString::number(low.third)));
+		QVERIFY(high.third > low.third);
+		QVERIFY(std::abs(low.gain - 1.f) < 1e-3f);
+		auto stage = GainStage{};
+		auto frames = std::vector<SampleFrame>(256);
+		for (auto f = std::size_t{0}; f < frames.size(); ++f) { frames[f] = SampleFrame{0.3f * std::sin(0.1f * f), 0.f}; }
+		const auto original = frames;
+		stage.process(frames, M::OpAmp5532, false, 44100);
+		for (auto f = std::size_t{0}; f < frames.size(); ++f) { QCOMPARE(frames[f].left(), original[f].left()); }
+		// Silence stays silent
+		auto silence = std::vector<SampleFrame>(256);
+		stage.process(silence, M::OpAmp4558, false, 44100);
+		for (const auto& frame : silence) { QCOMPARE(frame.left(), 0.f); }
 	}
 
 	void tubeLightModeFollowsTheCircuit()
@@ -2110,6 +2151,25 @@ private slots:
 			s1 = s0;
 		}
 		return std::sqrt(s1 * s1 + s2 * s2 - coefficient * s1 * s2) / static_cast<float>(out.size());
+	}
+
+	//! The amplitude of @p frequency in the left channel of @p out, through a Blackman-Harris window (its side lobes
+	//! below -92 dB, so that low harmonics are not buried in the fundamental's leakage)
+	static auto amplitudeAt(const std::vector<SampleFrame>& out, float frequency) -> float
+	{
+		const auto rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		const auto n = static_cast<double>(out.size());
+		double re = 0.0, im = 0.0, gain = 0.0;
+		for (auto i = std::size_t{0}; i < out.size(); ++i)
+		{
+			const double x = 2.0 * std::numbers::pi * i / n;
+			const double w = 0.35875 - 0.48829 * std::cos(x) + 0.14128 * std::cos(2 * x) - 0.01168 * std::cos(3 * x);
+			const double phase = 2.0 * std::numbers::pi * frequency * i / rate;
+			re += w * out[i].left() * std::cos(phase);
+			im -= w * out[i].left() * std::sin(phase);
+			gain += w;
+		}
+		return static_cast<float>(2.0 * std::hypot(re, im) / gain);
 	}
 
 	void drivenOpAmpDoesNotAlias()

@@ -58,11 +58,13 @@ public:
 	 *   level, so they are clean at usual levels and saturate when the gain is pushed (datasheet slew rates; knee and
 	 *   rails approximate each chip's output swing):
 	 *   - 4558, of many Soundcraft and Mackie desks: knee at +18 dBFS, the negative rail 5% lower (even harmonics),
-	 *     slow (1.7 V/us);
+	 *     slow (1.7 V/us), its swing giving way a little into 600 ohms, and the crossover distortion of its class
+	 *     AB output stage, which its feedback reduces less the higher the frequency (always there, very low);
 	 *   - TL072, JFET input, of Mackie desks and much studio gear: knee at +19 dBFS, rails a little lower and
-	 *     slightly asymmetric, 13 V/us;
+	 *     slightly asymmetric, 13 V/us, weak into 600 ohms, and its output flipping to the positive rail when its
+	 *     input goes past its common mode range (+22.6 dBFS negative peaks): its ugly overload;
 	 *   - NE5532, the dual NE5534, the op-amp of most clean desks (SSL, Neve, Amek, Mackie Onyx): knee at +21 dBFS,
-	 *     symmetric rails, 9 V/us;
+	 *     symmetric rails, 9 V/us, made to drive 600 ohms;
 	 *   - NE5534, the single one: as the NE5532, 13 V/us.
 	 * - Tubes, preamp triodes in a common cathode stage (Norman Koren's model, see TubeStage), driven in volts: with
 	 *   the GAIN pot in the middle, the 12AX7 starts to clip at 0 dBFS, so it colors from -6 dBFS; the others clip at
@@ -90,13 +92,25 @@ public:
 	struct OpAmpSpec
 	{
 		float knee;					//!< where it starts to saturate, linear
-		float rail;					//!< where it saturates towards, linear
+		float rail;					//!< where it saturates towards with no load, linear
 		float negativeRailRatio;	//!< the negative side's knee and rail relative to the positive one's
 		float slewRate;				//!< V/us
+		float outputCurrent;		//!< A it can drive before its swing gives way
+		float gainBandwidth;		//!< Hz
+		float crossover;			//!< V of its output stage's dead band (class AB), 0 for none worth modelling
+		float commonModeLimit;		//!< below this input (linear) its output flips to the positive rail; 0 for none
 	};
 	static auto opAmpSpec(Model model) -> OpAmpSpec;
 
-	//! The op-amp's transfer function: linear up to the knee, then softly towards the rail
+	//! The load the op-amps drive, as a desk's line driver does: 600 ohms
+	static constexpr float Load = 600.f;
+	//! Where an op-amp's output saturates towards, linear: its rail, or lower if it cannot drive the load that far
+	static auto opAmpRail(Model model) -> float;
+
+	/**
+	 * The op-amp's transfer function: linear up to the knee, then softly towards the rail (see opAmpRail()); for
+	 * the TL072, the output flips to the positive rail when the input goes past its common mode range
+	 */
 	static auto opAmp(Model model, float sample) -> float;
 
 	//! The tube's static curve, with unity gain and the same polarity for small signals, and no offset
@@ -131,6 +145,8 @@ public:
 
 private:
 	void measure(float peak, Model model);
+	//! The 4558's crossover distortion, at every level [audio thread]
+	void processCrossover(std::span<SampleFrame> frames, const OpAmpSpec& spec, sample_rate_t sampleRate);
 
 	struct State;
 	std::unique_ptr<State> m_state; //!< the oversamplers, kept out of this header, which the plugins see

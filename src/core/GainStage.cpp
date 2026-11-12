@@ -97,6 +97,7 @@ struct GainStage::State
 	std::array<Upsampler<OversamplingStages>, 2> upsamplers;
 	std::array<Downsampler<OversamplingStages>, 2> downsamplers;
 	std::array<float, 2> slewed{}; //!< the op-amp's output, which the slew rate limits
+	std::array<float, 2> crossoverError{}; //!< of the last frame
 	EqHp12Filter dcBlocker;
 	sample_rate_t sampleRate = 0;
 	bool oversampling = false;	//!< whether the oversamplers carry signal
@@ -128,6 +129,7 @@ struct GainStage::State
 		if (next == model && nextRealistic == realistic) { return; }
 		model = next;
 		realistic = nextRealistic;
+		crossoverError = {};
 		if (isTube(model))
 		{
 			for (auto& tube : tubes) { tube.setUp(&tubeModel(model), static_cast<double>(sampleRate) * Oversampling); }
@@ -176,11 +178,23 @@ auto GainStage::opAmpSpec(Model model) -> OpAmpSpec
 {
 	switch (model)
 	{
-		case Model::OpAmp5532: return {11.22f, 16.f, 1.f, 9.f};		// knee at +21 dBFS
-		case Model::OpAmp5534: return {11.22f, 16.f, 1.f, 13.f};
-		case Model::OpAmpTL072: return {8.91f, 14.8f, 0.97f, 13.f};	// knee at +19 dBFS, rail at +23.4 dBFS
-		default: return {8.f, 16.f, 0.95f, 1.7f};						// 4558: knee at +18 dBFS
+		// Knee, rail, negative side, slew rate, output current into 600 ohms, gain bandwidth, crossover dead band,
+		// common mode limit (V- + 4 V on +-15 V, in units)
+		case Model::OpAmp5532: return {11.22f, 16.f, 1.f, 9.f, 0.026f, 10e6f, 0.f, 0.f};	// knee at +21 dBFS
+		case Model::OpAmp5534: return {11.22f, 16.f, 1.f, 13.f, 0.026f, 10e6f, 0.f, 0.f};
+		case Model::OpAmpTL072:	// knee at +19 dBFS, rail at +23.4 dBFS
+			return {8.91f, 14.8f, 0.97f, 13.f, 0.015f, 3e6f, 0.f, -11.f / VoltsPerUnit};
+		default: return {8.f, 16.f, 0.95f, 1.7f, 0.02f, 3e6f, 0.04f, 0.f};				// 4558: knee at +18 dBFS
 	}
+}
+
+
+
+
+auto GainStage::opAmpRail(Model model) -> float
+{
+	const auto spec = opAmpSpec(model);
+	return std::min(spec.rail, spec.outputCurrent * Load / VoltsPerUnit);
 }
 
 
@@ -189,11 +203,13 @@ auto GainStage::opAmpSpec(Model model) -> OpAmpSpec
 auto GainStage::opAmp(Model model, float sample) -> float
 {
 	const auto spec = opAmpSpec(model);
+	const float rail = opAmpRail(model);
+	if (spec.commonModeLimit != 0.f && sample < spec.commonModeLimit) { return rail; } // phase reversal
 	const float scale = sample < 0.f ? spec.negativeRailRatio : 1.f;
 	const float knee = spec.knee * scale;
 	const float magnitude = std::abs(sample);
 	if (magnitude <= knee) { return sample; }
-	const float span = (spec.rail - spec.knee) * scale;
+	const float span = (rail - spec.knee) * scale;
 	return std::copysign(knee + span * std::tanh((magnitude - knee) / span), sample);
 }
 
@@ -260,8 +276,11 @@ void GainStage::process(std::span<SampleFrame> frames, Model model, bool realist
 		return;
 	}
 
-	// Op-amp: far below the knee, nothing to do
 	const auto spec = opAmpSpec(model);
+	if (spec.crossover > 0.f) { processCrossover(frames, spec, sampleRate); }
+
+	// Op-amp: far below the knee, nothing more to do
+
 	if (peak < spec.knee * spec.negativeRailRatio / 4.f)
 	{
 		if (state.oversampling) { state.clear(); }
@@ -300,7 +319,7 @@ void GainStage::measure(float peak, Model model)
 	{
 		const auto spec = opAmpSpec(model);
 		const float knee = spec.knee * spec.negativeRailRatio;
-		const float rail = spec.rail * spec.negativeRailRatio;
+		const float rail = opAmpRail(model) * spec.negativeRailRatio;
 		saturation = std::clamp((peak - knee) / (rail - knee), 0.f, 1.f);
 		limit = rail;
 	}
@@ -322,10 +341,33 @@ void GainStage::measure(float peak, Model model)
 
 
 
+void GainStage::processCrossover(std::span<SampleFrame> frames, const OpAmpSpec& spec, sample_rate_t sampleRate)
+{
+	// The output stage's dead band, -d tanh(x / d), as the op-amp's feedback reduces it: divided by its loop gain,
+	// its open loop gain at low frequencies and its gain bandwidth over the frequency above (so its derivative)
+	constexpr float OpenLoopGain = 2e5f;
+	auto& state = *m_state;
+	const float band = spec.crossover / VoltsPerUnit;
+	const float derivative = static_cast<float>(sampleRate) / (2.f * std::numbers::pi_v<float> * spec.gainBandwidth);
+	for (auto& frame : frames)
+	{
+		for (ch_cnt_t ch = 0; ch < 2; ++ch)
+		{
+			const float error = -band * std::tanh(frame[ch] / band);
+			frame[ch] += (error - state.crossoverError[ch]) * derivative + error / OpenLoopGain;
+			state.crossoverError[ch] = error;
+		}
+	}
+}
+
+
+
+
 void GainStage::reset()
 {
 	m_state->clear();
 	m_state->slewed = {};
+	m_state->crossoverError = {};
 }
 
 } // namespace lmms
