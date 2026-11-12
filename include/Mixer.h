@@ -25,6 +25,7 @@
 #ifndef LMMS_MIXER_H
 #define LMMS_MIXER_H
 
+#include "AnalogChannelStrip.h"
 #include "AudioBuffer.h"
 #include "ChannelMeter.h"
 #include "EffectChain.h"
@@ -107,6 +108,9 @@ public:
 	BoolModel m_phaseInvertModel;
 	FloatModel m_widthModel; //!< stereo width in percent: 0 = mono, 100 = unchanged, 200 = twice as wide
 	FloatModel m_panModel; //!< -100 (left) to 100 (right)
+
+	//! The strip of an analog desk, between the input trim and the effects, in analog mode (see Mixer::isAnalog())
+	AnalogChannelStrip m_analogStrip;
 
 	// Recording (stage 3): the channel's input, whether it records, and when it plays its input back
 	enum class MonitorMode
@@ -299,6 +303,15 @@ public:
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
+
+	/**
+	 * The mixer works like an analog desk (the default) or a digital one. In analog mode, each channel but the master
+	 * has the strip of an analog desk built in (AnalogChannelStrip): gain stage, filters, gate, compressor and EQ.
+	 * In digital mode there is no built-in processing, only the effects; the strips' settings are kept for when
+	 * the mixer is analog again. Saved with the project.
+	 */
+	auto isAnalog() const -> bool { return m_analogModel.value(); }
+	auto analogModel() -> BoolModel* { return &m_analogModel; }
 
 	//! For undo/redo, the saved state also records which channel each track sends to: changing the
 	//! channel layout (e.g. deleting a channel) renumbers the tracks' channels, and undoing must restore them
@@ -501,6 +514,8 @@ private:
 
 	// the mixer channels in the mixer. index 0 is always master.
 	std::vector<MixerChannel*> m_mixerChannels;
+
+	BoolModel m_analogModel;
 
 	// make sure we have at least num channels
 	void allocateChannelsTo(int num);

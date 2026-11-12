@@ -1302,3 +1302,51 @@ lmms--gui--MixerChannelView QWidget#mixerPanBackground {
 	background: #3b424a;
 	border-radius: 3px;
 }
+
+/* Mixer strips in analog mode: the strip of an analog desk, and its low cut button */
+lmms--gui--MixerChannelView QWidget#mixerAnalogStrip {
+	background: #2f353c;
+	border-radius: 3px;
+}
+
+lmms--gui--MixerChannelView QPushButton#btn-lowcut {
+	padding: 1;
+	min-height: 13;
+	max-height: 13;
+	min-width: 17;
+	max-width: 17;
+	border: 1 solid #080b12;
+	border-radius: 2;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255, 255, 255, 20%), stop:0.1 rgba(255, 255, 255, 2%), stop:0.9 rgba(0, 0, 0, 2%), stop:1 rgba(0, 0, 0, 40%));
+	color: #d1d8e4;
+	font-size: 8px;
+	font-weight: bold;
+}
+
+lmms--gui--MixerChannelView QPushButton#btn-lowcut:checked {
+	border: 1 solid #8a5a00;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f2c25a, stop:0.1 #e0a020, stop:0.9 #e0a020, stop:1 #9c6c08);
+	color: #14161a;
+}
+
+/* The mixer's mode switch */
+QPushButton#mixerModeButton {
+	padding: 2px 6px;
+	font-size: 9px;
+	font-weight: bold;
+	color: #d1d8e4;
+	border: 1px solid #0c0d0f;
+	background: #262b30;
+}
+
+QPushButton#mixerModeButton:checked {
+	color: #14161a;
+	background: #4afd85;
+}
+
+/* Section titles of the analog desk's strip, with a divider above */
+lmms--gui--MixerChannelView QLabel#mixerSectionTitle {
+	color: #8c96a3;
+	border-top: 1px solid #1a1d21;
+	padding-top: 1px;
+}

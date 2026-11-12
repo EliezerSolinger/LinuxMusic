@@ -110,6 +110,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_phaseInvertModel(false, _parent),
 	m_widthModel(100.f, 0.f, 200.f, 1.f, _parent),
 	m_panModel(PanningCenter, PanningLeft, PanningRight, 1.f, _parent),
+	m_analogStrip(_parent),
 	m_recordArmModel(false, _parent),
 	m_monitorModel(static_cast<int>(MonitorMode::Auto), static_cast<int>(MonitorMode::Off),
 		static_cast<int>(MonitorMode::Auto), _parent),
@@ -176,6 +177,7 @@ void MixerChannel::processMuted()
 
 	m_preFaderHasSignal = false;
 	m_meter.measureSilence();
+	m_analogStrip.reset();
 
 	// What was delayed must not come out when unmuted
 	m_inputDelay.clear();
@@ -336,6 +338,17 @@ void MixerChannel::doProcessing()
 		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
 	}
 
+	// Analog mode: the strip of an analog desk, before the effects
+	const bool hadInput = m_buffer.hasSignal(mainPair);
+	if (!isMaster() && Engine::mixer()->isAnalog() && (hadInput || m_analogStrip.holdsSignal()))
+	{
+		m_analogStrip.process(buffer, Engine::audioEngine()->outputSampleRate(), hadInput);
+		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+		m_buffer.assumeNonSilent(0);
+		m_buffer.assumeNonSilent(1);
+	}
+	else { m_analogStrip.reset(); }
+
 	m_stillRunning = m_fxChain.processAudioBuffer(m_buffer);
 
 	// The auxiliary pairs do not reach the channel's output
@@ -390,7 +403,8 @@ void MixerChannel::doProcessing()
 Mixer::Mixer() :
 	Model( nullptr ),
 	JournallingObject(),
-	m_mixerChannels()
+	m_mixerChannels(),
+	m_analogModel(true, this, tr("Analog mixer"))
 {
 	// create master channel
 	createChannel();
@@ -1162,6 +1176,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_phaseInvertModel.setValue(false);
 	ch->m_widthModel.setValue(100.f);
 	ch->m_panModel.setValue(PanningCenter);
+	ch->m_analogStrip.setNeutral();
 	ch->m_input = ChannelInput{};
 	ch->m_trackChannel = false;
 	ch->m_groupChannel = false;
@@ -1180,6 +1195,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_panModel.setDisplayName(ch->m_name + ">" + tr("Panning"));
 	ch->m_recordArmModel.setDisplayName(ch->m_name + ">" + tr("Record arm"));
 	ch->m_monitorModel.setDisplayName(ch->m_name + ">" + tr("Input monitoring"));
+	ch->m_analogStrip.setDisplayNames(ch->m_name);
 	ch->setColor(std::nullopt);
 
 	// send only to master
@@ -1204,6 +1220,8 @@ void Mixer::clearChannel(mix_ch_t index)
 
 void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 {
+	m_analogModel.saveSettings(_doc, _this, "analog");
+
 	// save channels
 	for (auto i = std::size_t{0}; i < m_mixerChannels.size(); ++i)
 	{
@@ -1233,6 +1251,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		}
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
 		if (ch->channelCount() != DEFAULT_CHANNELS) { mixch.setAttribute("channels", ch->channelCount()); }
+		if (i > 0) { ch->m_analogStrip.saveSettings(_doc, mixch); }
 		if (ch->m_trackChannel) { mixch.setAttribute("trackchannel", 1); }
 		if (ch->m_groupChannel) { mixch.setAttribute("groupchannel", 1); }
 		if (ch->m_owner) { mixch.setAttribute("owner", ch->m_owner->index()); }
@@ -1271,6 +1290,12 @@ void Mixer::allocateChannelsTo(int num)
 void Mixer::loadSettings( const QDomElement & _this )
 {
 	clear();
+	// Projects from before the modes load in analog mode, whose strips start neutral: they sound the same
+	m_analogModel.setValue(true);
+	if (_this.hasAttribute("analog") || !_this.firstChildElement("analog").isNull())
+	{
+		m_analogModel.loadSettings(_this, "analog");
+	}
 	QDomNode node = _this.firstChild();
 	auto sends = std::vector<std::pair<int, QDomElement>>{};
 	auto owners = std::vector<std::pair<int, int>>{};
@@ -1300,6 +1325,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		m_mixerChannels[num]->m_panModel.loadSettings(mixch, "pan");
 		m_mixerChannels[num]->m_recordArmModel.loadSettings(mixch, "recordarm");
 		m_mixerChannels[num]->m_monitorModel.loadSettings(mixch, "monitor");
+		m_mixerChannels[num]->m_analogStrip.loadSettings(mixch);
 		if (const auto input = mixch.firstChildElement("input");
 			!input.isNull() && input.attribute("source") == "hardware")
 		{

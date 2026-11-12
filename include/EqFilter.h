@@ -28,6 +28,7 @@
 #include <numbers>
 
 #include "BasicFilters.h"
+#include "SampleFrame.h"
 #include "lmms_math.h"
 
 namespace lmms
@@ -116,6 +117,14 @@ public:
 			m_gain = gain;
 			calcCoefficents();
 		}
+	}
+
+
+	//! Forgets the filter's past input
+	inline void clearHistory()
+	{
+		m_biQuadFrameInitial.clearHistory();
+		m_biQuadFrameTarget.clearHistory();
 	}
 
 

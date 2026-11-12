@@ -25,10 +25,12 @@
 #include "MixerChannelView.h"
 
 #include <functional>
+#include <numbers>
 
 #include <QCheckBox>
 #include <QCoreApplication>
 #include <QFont>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QMenu>
@@ -67,7 +69,61 @@ namespace lmms::gui
 namespace
 {
 
-//! The channel's effect slots as a column of small LEDs: lit while the slot holds an effect that is on, dim while it
+//! A knob of an analog desk: a colored cap with a white pointer on a dark skirt, and its name below. It behaves like
+//! any knob (dragging, wheel, value hint, automation menu); only its look differs.
+class DeskKnob : public Knob
+{
+public:
+	DeskKnob(const QColor& cap, const QString& label, const QString& name, QWidget* parent)
+		: Knob{KnobType::Styled, parent, name}, m_cap{cap}, m_label{label}
+	{
+		setFixedSize(Width, Diameter + LabelHeight);
+	}
+
+private:
+	static constexpr int Width = 25;
+	static constexpr int Diameter = 17;
+	static constexpr int LabelHeight = 8;
+	static constexpr float TotalAngle = 270.f;
+
+	void paintEvent(QPaintEvent*) override
+	{
+		auto painter = QPainter{this};
+		painter.setRenderHint(QPainter::Antialiasing);
+		const auto center = QPointF{width() / 2.0, Diameter / 2.0};
+
+		// Skirt, then the cap with light from the top left
+		painter.setPen(Qt::NoPen);
+		painter.setBrush(QColor{18, 20, 23});
+		painter.drawEllipse(center, Diameter / 2.0, Diameter / 2.0);
+		auto gradient = QRadialGradient{center - QPointF{2.0, 2.5}, Diameter / 2.0};
+		gradient.setColorAt(0.0, m_cap.lighter(150));
+		gradient.setColorAt(1.0, m_cap.darker(130));
+		painter.setBrush(gradient);
+		const double cap = Diameter / 2.0 - 2.5;
+		painter.drawEllipse(center, cap, cap);
+
+		// The pointer: 0 at the top, the range from -135 to 135 degrees
+		const auto knobModel = model();
+		const float position = (knobModel->inverseScaledValue(knobModel->value()) - knobModel->minValue())
+			/ (knobModel->maxValue() - knobModel->minValue());
+		const double angle = (position - 0.5) * TotalAngle * std::numbers::pi / 180.0;
+		const auto direction = QPointF{std::sin(angle), -std::cos(angle)};
+		painter.setPen(QPen{QColor{245, 245, 245}, 1.6, Qt::SolidLine, Qt::RoundCap});
+		painter.drawLine(center + direction * 1.5, center + direction * (cap + 1.0));
+
+		painter.setPen(QColor{170, 178, 190});
+		painter.setFont(adjustedToPixelSize(font(), 7));
+		painter.drawText(QRect{0, Diameter, width(), LabelHeight}, Qt::AlignCenter, m_label);
+	}
+
+	QColor m_cap;
+	QString m_label;
+};
+
+
+
+//! The channel's effect slots in analog mode, as a column of small LEDs: lit while the slot holds an effect that is on, dim while it
 //! is off, red when its audio is corrupted. Hovering one names its effect; a double click opens its controls (or adds
 //! an effect in an empty slot), and the right button opens the slot's menu.
 class EffectLeds : public QWidget
@@ -208,6 +264,141 @@ private:
 	std::vector<Slot> m_slots;
 };
 
+
+
+//! The channel's effect slots with their names, in digital mode: the LED turns an effect on or off, a double click
+//! opens its controls (or adds an effect in an empty slot), and the right button opens the slot's menu
+class EffectSlotList : public QWidget
+{
+	Q_DECLARE_TR_FUNCTIONS(EffectSlotList)
+public:
+	//! @param select selects the channel
+	EffectSlotList(EffectChain* chain, EffectRackView* rack, std::function<void()> select, QWidget* parent)
+		: QWidget{parent}, m_chain{chain}, m_rack{rack}, m_select{std::move(select)}
+	{
+		setFixedSize(SlotWidth, VisibleSlots * SlotHeight);
+		setFont(adjustedToPixelSize(font(), 8));
+		setMouseTracking(true);
+		connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, [this] { refresh(); });
+		refresh();
+	}
+
+private:
+	static constexpr int VisibleSlots = 5;
+	static constexpr int SlotWidth = 50;
+	static constexpr int SlotHeight = 11;
+	static constexpr int LedWidth = 9;
+
+	struct SlotState
+	{
+		QString name;
+		int state; //!< 0 off, 1 on, 2 corrupted
+		bool operator==(const SlotState&) const = default;
+	};
+
+	void refresh()
+	{
+		auto current = std::vector<SlotState>{};
+		auto names = QStringList{};
+		for (const auto& instance : m_chain->effects())
+		{
+			const auto effect = instance->effect();
+			if (!effect) { continue; }
+			current.push_back({effect->displayName(), effect->isCorrupted() ? 2 : effect->isEnabled() ? 1 : 0});
+			names << effect->displayName();
+		}
+		if (current != m_slots)
+		{
+			m_slots = std::move(current);
+			setToolTip(names.join('\n'));
+			update();
+		}
+	}
+
+	//! The effect in the slot at @p pos, or nullptr for an empty slot (the last visible slot stands for the rest)
+	auto effectAt(const QPoint& pos) const -> Effect*
+	{
+		const int slot = pos.y() / SlotHeight;
+		const auto& effects = m_chain->effects();
+		if (slot < 0 || slot >= static_cast<int>(effects.size())) { return nullptr; }
+		if (slot == VisibleSlots - 1 && effects.size() > VisibleSlots) { return nullptr; }
+		return effects[slot]->effect();
+	}
+
+	void mousePressEvent(QMouseEvent* event) override
+	{
+		m_select();
+		if (event->button() != Qt::LeftButton) { return; }
+		const auto effect = effectAt(event->pos());
+		if (effect && event->pos().x() < LedWidth)
+		{
+			effect->enabledModel()->setValue(!effect->isEnabled());
+			refresh();
+		}
+	}
+
+	void mouseDoubleClickEvent(QMouseEvent* event) override
+	{
+		if (event->button() != Qt::LeftButton || event->pos().x() < LedWidth) { return; }
+		if (const auto effect = effectAt(event->pos()))
+		{
+			if (const auto view = m_rack->viewOf(effect)) { view->editControls(); }
+		}
+		else if (event->pos().y() / SlotHeight >= static_cast<int>(m_chain->effects().size()))
+		{
+			m_rack->addEffect();
+		}
+	}
+
+	void contextMenuEvent(QContextMenuEvent* event) override
+	{
+		const auto effect = effectAt(event->pos());
+		const auto view = effect ? m_rack->viewOf(effect) : nullptr;
+		if (!view)
+		{
+			event->ignore(); // the channel's menu
+			return;
+		}
+		view->showMenu();
+		refresh();
+	}
+
+	void paintEvent(QPaintEvent*) override
+	{
+		auto painter = QPainter{this};
+		const auto count = static_cast<int>(m_slots.size());
+		const auto text = palette().text().color();
+		for (int slot = 0; slot < VisibleSlots; ++slot)
+		{
+			const auto rect = QRect{0, slot * SlotHeight, SlotWidth, SlotHeight - 1};
+			painter.fillRect(rect, QColor{255, 255, 255, 16});
+			if (slot >= count) { continue; }
+
+			if (slot == VisibleSlots - 1 && count > VisibleSlots)
+			{
+				painter.setPen(text);
+				painter.drawText(rect, Qt::AlignCenter, tr("+%1 more").arg(count - VisibleSlots + 1));
+				continue;
+			}
+
+			const auto& state = m_slots[slot];
+			const auto led = state.state == 2 ? QColor{220, 60, 60}
+				: state.state == 1 ? QColor{74, 253, 133} : QColor{70, 76, 84};
+			painter.fillRect(QRect{2, rect.top() + 3, LedWidth - 5, SlotHeight - 7}, led);
+
+			painter.setPen(state.state == 1 ? text : palette().mid().color());
+			const auto textRect = rect.adjusted(LedWidth, 0, -1, 0);
+			painter.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
+				fontMetrics().elidedText(state.name, Qt::ElideRight, textRect.width()));
+		}
+	}
+
+	EffectChain* m_chain;
+	EffectRackView* m_rack;
+	std::function<void()> m_select;
+	std::vector<SlotState> m_slots;
+};
+
 } // namespace
 
 MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int channelIndex)
@@ -290,9 +481,70 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_effectRackView = new EffectRackView{&mixerChannel->m_fxChain, mixerView->m_racksWidget};
 	m_effectRackView->setFixedWidth(EffectRackView::DEFAULT_WIDTH);
 
-	auto effectLeds = new EffectLeds{&mixerChannel->m_fxChain, m_effectRackView, [this] {
+	// The effects: LEDs beside the fader in analog mode, a list of their names in digital mode
+	auto select = [this] {
 		if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
-	}, this};
+	};
+	m_effectLeds = new EffectLeds{&mixerChannel->m_fxChain, m_effectRackView, select, this};
+	m_effectSlotList = new EffectSlotList{&mixerChannel->m_fxChain, m_effectRackView, select, this};
+
+	// The strip of an analog desk, in analog mode (the master has none)
+	m_analogSection = new QWidget{this};
+	m_analogSection->setObjectName("mixerAnalogStrip");
+	m_analogSection->setAttribute(Qt::WA_StyledBackground, true);
+	m_analogSection->setFixedWidth(NameWidth);
+	// Sections in signal order, each knob colored after its section, as on Soundcraft and SSL desks
+	auto analogLayout = new QGridLayout{m_analogSection};
+	analogLayout->setContentsMargins(0, 2, 0, 3);
+	analogLayout->setHorizontalSpacing(0);
+	analogLayout->setVerticalSpacing(1);
+	int row = 0;
+	auto addSection = [this, analogLayout, &row](const QString& title) {
+		auto label = new QLabel{title, m_analogSection};
+		label->setObjectName("mixerSectionTitle");
+		label->setAlignment(Qt::AlignCenter);
+		label->setFont(adjustedToPixelSize(font(), 7));
+		analogLayout->addWidget(label, row++, 0, 1, 2);
+	};
+	auto addKnob = [this, analogLayout](FloatModel* model, const QColor& cap, const QString& label,
+		const QString& name, const QString& unit, int row, int column) {
+		auto knob = new DeskKnob{cap, label, name, m_analogSection};
+		knob->setModel(model);
+		knob->setHintText(name + ":", unit);
+		analogLayout->addWidget(knob, row, column, Qt::AlignCenter);
+	};
+	const auto red = QColor{176, 44, 44};
+	const auto grey = QColor{96, 102, 110};
+	const auto teal = QColor{38, 140, 128};
+	const auto yellow = QColor{214, 170, 40};
+	const auto orange = QColor{210, 116, 40};
+	const auto green = QColor{46, 150, 84};
+	const auto blue = QColor{52, 102, 186};
+	auto& strip = mixerChannel->m_analogStrip;
+
+	addSection(tr("INPUT"));
+	addKnob(&mixerChannel->m_trimModel, red, tr("GAIN"), tr("Gain"), " dB", row, 0);
+	auto lowCutButton = new AutomatableButton(m_analogSection, tr("Low cut"));
+	lowCutButton->setObjectName("btn-lowcut");
+	lowCutButton->setText(tr("LC"));
+	lowCutButton->setToolTip(tr("Low cut: takes away what is below 80 Hz"));
+	lowCutButton->setCheckable(true);
+	lowCutButton->setModel(&strip.m_lowCutModel);
+	analogLayout->addWidget(lowCutButton, row++, 1, Qt::AlignCenter);
+
+	addSection(tr("FILTER"));
+	addKnob(&strip.m_highPassModel, grey, tr("HPF"), tr("High-pass"), " Hz", row, 0);
+	addKnob(&strip.m_lowPassModel, grey, tr("LPF"), tr("Low-pass"), " Hz", row++, 1);
+
+	addSection(tr("DYN"));
+	addKnob(&strip.m_gateModel, teal, tr("GATE"), tr("Gate threshold"), " dB", row, 0);
+	addKnob(&strip.m_compressorModel, yellow, tr("COMP"), tr("Compressor threshold"), " dB", row++, 1);
+
+	addSection(tr("EQ"));
+	addKnob(&strip.m_eqHighModel, orange, tr("HI"), tr("EQ high"), " dB", row, 0);
+	addKnob(&strip.m_eqMidModel, green, tr("MID"), tr("EQ mid"), " dB", row++, 1);
+	addKnob(&strip.m_eqMidFrequencyModel, green, tr("FREQ"), tr("EQ mid frequency"), " Hz", row, 0);
+	addKnob(&strip.m_eqLowModel, blue, tr("LO"), tr("EQ low"), " dB", row++, 1);
 
 	// Mute, solo and phase invert, with the effect LEDs below them, to the right of the fader, as in REAPER
 	auto soloMuteLayout = new QVBoxLayout();
@@ -302,7 +554,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	soloMuteLayout->addWidget(m_soloButton, 0, Qt::AlignHCenter);
 	soloMuteLayout->addWidget(m_phaseInvertButton, 0, Qt::AlignHCenter);
 	soloMuteLayout->addSpacing(2);
-	soloMuteLayout->addWidget(effectLeds, 0, Qt::AlignHCenter);
+	soloMuteLayout->addWidget(m_effectLeds, 0, Qt::AlignHCenter);
 	soloMuteLayout->addStretch(1);
 
 	m_fader = new Fader{&mixerChannel->m_volumeModel, tr("Fader %1").arg(channelIndex), this};
@@ -334,6 +586,8 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_sendKnob, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_sendArrow, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
+	mainLayout->addWidget(m_analogSection, 0, Qt::AlignHCenter);
+	mainLayout->addWidget(m_effectSlotList, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(panBackground, 0, Qt::AlignHCenter);
 	auto faderColumn = new QVBoxLayout();
 	faderColumn->setContentsMargins(0, 0, 0, 0);
@@ -349,6 +603,9 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_renameLineEdit, 0, Qt::AlignHCenter);
 
 	connect(m_renameLineEdit, &QLineEdit::editingFinished, this, &MixerChannelView::renameFinished);
+
+	connect(Engine::mixer()->analogModel(), &BoolModel::dataChanged, this, &MixerChannelView::updateMode);
+	updateMode();
 
 	// Channels made for tracks follow their names and colors
 	connect(Engine::mixer(), &Mixer::dataChanged, this, [this] {
@@ -524,6 +781,19 @@ void MixerChannelView::paintEvent(QPaintEvent*)
 		painter.fillRect(QRect{1, 1, 3, height - 2}, color);
 		break;
 	}
+}
+
+void MixerChannelView::updateMode()
+{
+	const bool analog = Engine::mixer()->isAnalog();
+	m_analogSection->setVisible(analog && !isMasterChannel());
+
+	// The master has no desk's strip, but keeps its place so that the faders line up
+	auto policy = m_analogSection->sizePolicy();
+	policy.setRetainSizeWhenHidden(analog && isMasterChannel());
+	m_analogSection->setSizePolicy(policy);
+	m_effectLeds->setVisible(analog);
+	m_effectSlotList->setVisible(!analog);
 }
 
 void MixerChannelView::mousePressEvent(QMouseEvent* event)

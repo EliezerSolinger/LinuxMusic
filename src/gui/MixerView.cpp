@@ -24,6 +24,7 @@
 
 #include "MixerView.h"
 
+#include <QButtonGroup>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLayout>
@@ -145,7 +146,15 @@ MixerView::MixerView(Mixer* mixer) :
 	channelArea->setWidgetResizable(true);
 
 	int const scrollBarExtent = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
-	channelArea->setMinimumHeight(mixerChannelSize.height() + scrollBarExtent);
+	// As tall as the tallest strip (in analog mode, the master has no desk's strip)
+	auto updateMinimumHeight = [this, scrollBarExtent] {
+		int height = 0;
+		for (const auto view : m_mixerChannelViews) { height = std::max(height, view->sizeHint().height()); }
+		channelArea->setMinimumHeight(height + scrollBarExtent);
+	};
+	updateMinimumHeight();
+	connect(mixer->analogModel(), &BoolModel::dataChanged, this, updateMinimumHeight, Qt::QueuedConnection);
+	connect(mixer, &Mixer::channelCreated, this, updateMinimumHeight, Qt::QueuedConnection);
 
 	ml->addWidget(channelArea, 1);
 
@@ -184,9 +193,36 @@ MixerView::MixerView(Mixer* mixer) :
 	settingsLayout->addWidget(m_widthKnob, 0, 2, 2, 1, Qt::AlignCenter);
 	settingsLayout->addWidget(m_panKnob, 0, 3, 2, 1, Qt::AlignCenter);
 
+	// The mixer's mode: an analog desk (with a desk's strip in every channel) or a digital one (effects only)
+	auto modeRow = new QHBoxLayout{};
+	modeRow->setContentsMargins(6, 4, 6, 2);
+	modeRow->setSpacing(0);
+	auto modeButtons = new QButtonGroup{this};
+	auto analogButton = new QPushButton{tr("ANALOG"), this};
+	auto digitalButton = new QPushButton{tr("DIGITAL"), this};
+	analogButton->setToolTip(tr("Analog desk: every channel has gain, filters, gate, compressor and EQ built in"));
+	digitalButton->setToolTip(tr("Digital desk: no built-in processing, only the channels' effects"));
+	for (const auto button : {analogButton, digitalButton})
+	{
+		button->setObjectName("mixerModeButton");
+		button->setCheckable(true);
+		button->setFocusPolicy(Qt::NoFocus);
+		modeButtons->addButton(button);
+		modeRow->addWidget(button);
+	}
+	const auto analogModel = mixer->analogModel();
+	auto showMode = [analogModel, analogButton, digitalButton] {
+		(analogModel->value() ? analogButton : digitalButton)->setChecked(true);
+	};
+	showMode();
+	connect(analogModel, &BoolModel::dataChanged, this, showMode);
+	connect(analogButton, &QPushButton::clicked, this, [analogModel] { analogModel->setValue(true); });
+	connect(digitalButton, &QPushButton::clicked, this, [analogModel] { analogModel->setValue(false); });
+
 	auto rightColumn = new QVBoxLayout{};
 	rightColumn->setContentsMargins(0, 0, 0, 0);
 	rightColumn->setSpacing(0);
+	rightColumn->addLayout(modeRow);
 	rightColumn->addWidget(channelSettings);
 	rightColumn->addWidget(m_racksWidget, 1);
 	ml->addLayout(rightColumn);

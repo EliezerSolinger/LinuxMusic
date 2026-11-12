@@ -22,8 +22,11 @@
 
 #include <QtTest>
 
+#include <cmath>
+#include <numbers>
 #include <vector>
 
+#include "AnalogChannelStrip.h"
 #include "AudioBuffer.h"
 #include "AudioEngine.h"
 #include "AutomationClip.h"
@@ -195,6 +198,36 @@ class MixerTest : public QObject
 		buffer.assumeNonSilent(0);
 		buffer.assumeNonSilent(1);
 		mixer()->mixToChannel(buffer, channel);
+	}
+
+	/**
+	 * Plays a sine of @p frequency and @p amplitude into channel @p channel for @p periods periods and returns the
+	 * RMS level of the master output over the last quarter of them, relative to the sine's
+	 */
+	static auto sineGain(mix_ch_t channel, float frequency, float amplitude = 0.25f, int periods = 64) -> float
+	{
+		const auto rate = static_cast<float>(Engine::audioEngine()->outputSampleRate());
+		double sum = 0.;
+		f_cnt_t measured = 0;
+		f_cnt_t position = 0;
+		for (int period = 0; period < periods; ++period)
+		{
+			auto buffer = AudioBuffer{frames()};
+			for (f_cnt_t f = 0; f < frames(); ++f, ++position)
+			{
+				const float x = amplitude * std::sin(2.f * std::numbers::pi_v<float> * frequency * position / rate);
+				buffer.buffer(0)[f] = x;
+				buffer.buffer(1)[f] = x;
+			}
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+			mixer()->mixToChannel(buffer, channel);
+			const auto out = mix();
+			if (period < periods * 3 / 4) { continue; }
+			for (const auto& frame : out) { sum += frame.left() * frame.left(); }
+			measured += out.size();
+		}
+		return static_cast<float>(std::sqrt(sum / measured) / (amplitude / std::sqrt(2.)));
 	}
 
 	//! Runs the mixer for one period and returns the master output
@@ -1428,6 +1461,103 @@ private slots:
 		deleteTrack(b);
 		deleteTrack(a);
 		deleteTrack(folder);
+	}
+
+	void opampSaturatesOnlyAboveItsKnee()
+	{
+		QCOMPARE(AnalogChannelStrip::saturate(1.5f), 1.5f);
+		QCOMPARE(AnalogChannelStrip::saturate(-8.f), -8.f);
+		const float pushed = AnalogChannelStrip::saturate(12.f);
+		QVERIFY(pushed > 8.f && pushed < 12.f);
+		QVERIFY(AnalogChannelStrip::saturate(100.f) <= AnalogChannelStrip::SaturationRail);
+		QCOMPARE(AnalogChannelStrip::saturate(-100.f), -AnalogChannelStrip::saturate(100.f));
+	}
+
+	void analogStripFiltersAndEq()
+	{
+		QVERIFY(mixer()->isAnalog());
+		const auto channel = mixer()->createChannel();
+		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+		settle();
+
+		// Neutral: untouched
+		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.01f);
+
+		// The low cut takes the sub-bass away and leaves the mids
+		strip.m_lowCutModel.setValue(true);
+		QVERIFY(sineGain(channel, 30.f) < 0.15f);
+		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.02f);
+		strip.m_lowCutModel.setValue(false);
+
+		// High-pass and low-pass
+		strip.m_highPassModel.setValue(500.f);
+		QVERIFY(sineGain(channel, 60.f) < 0.05f);
+		strip.m_highPassModel.setValue(strip.m_highPassModel.minValue());
+		strip.m_lowPassModel.setValue(2000.f);
+		QVERIFY(sineGain(channel, 10000.f) < 0.1f);
+		strip.m_lowPassModel.setValue(strip.m_lowPassModel.maxValue());
+
+		// EQ: +12 dB low shelf, -12 dB at the mid frequency
+		strip.m_eqLowModel.setValue(12.f);
+		QVERIFY(std::abs(sineGain(channel, 30.f) - dbfsToAmp(12.f)) < 0.3f);
+		strip.m_eqLowModel.setValue(0.f);
+		strip.m_eqMidFrequencyModel.setValue(1000.f);
+		strip.m_eqMidModel.setValue(-12.f);
+		QVERIFY(std::abs(sineGain(channel, 1000.f) - dbfsToAmp(-12.f)) < 0.03f);
+
+		// Digital mode: no built-in processing, and the settings stay
+		mixer()->analogModel()->setValue(false);
+		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.01f);
+		QCOMPARE(strip.m_eqMidModel.value(), -12.f);
+		mixer()->analogModel()->setValue(true);
+
+		strip.setNeutral();
+	}
+
+	void analogStripDynamics()
+	{
+		const auto channel = mixer()->createChannel();
+		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+		settle();
+
+		// The gate closes below its threshold and stays open above
+		strip.m_gateModel.setValue(-20.f);
+		QVERIFY(sineGain(channel, 1000.f, 0.01f, 256) < 0.01f);
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.5f) - 1.f) < 0.01f);
+		strip.m_gateModel.setValue(strip.m_gateModel.minValue());
+
+		// The compressor squeezes loud signals more than quiet ones (make-up gain included)
+		strip.m_compressorModel.setValue(-20.f);
+		const float loud = sineGain(channel, 1000.f, 0.9f);
+		const float quiet = sineGain(channel, 1000.f, 0.02f);
+		QVERIFY(loud < quiet);
+		QVERIFY(quiet > 1.f); // below the threshold, only the make-up gain
+		strip.setNeutral();
+	}
+
+	void analogStripAndModeAreSaved()
+	{
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(channel)->m_analogStrip.m_eqHighModel.setValue(4.5f);
+		mixer()->mixerChannel(channel)->m_analogStrip.m_lowCutModel.setValue(true);
+		mixer()->analogModel()->setValue(false);
+
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixer");
+		doc.content().appendChild(element);
+		mixer()->saveSettings(doc, element);
+		mixer()->analogModel()->setValue(true);
+		mixer()->loadSettings(element);
+
+		QVERIFY(!mixer()->isAnalog());
+		QCOMPARE(mixer()->mixerChannel(channel)->m_analogStrip.m_eqHighModel.value(), 4.5f);
+		QVERIFY(mixer()->mixerChannel(channel)->m_analogStrip.m_lowCutModel.value());
+
+		// Projects from before the modes are analog, with neutral strips
+		element.removeAttribute("analog");
+		mixer()->loadSettings(element);
+		QVERIFY(mixer()->isAnalog());
+		mixer()->mixerChannel(channel)->m_analogStrip.setNeutral();
 	}
 
 	void folderDepthIsSaved()

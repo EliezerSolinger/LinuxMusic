@@ -94,6 +94,9 @@ public slots:
 
 private slots:
 	void renameFinished();
+
+	//! Shows what the strip has in the mixer's mode (see Mixer::isAnalog())
+	void updateMode();
 	void removeChannel();
 	void removeUnusedChannels();
 	void moveChannelLeft();
@@ -127,6 +130,11 @@ private:
 	AutomatableButton* m_muteButton;
 	AutomatableButton* m_soloButton;
 	AutomatableButton* m_phaseInvertButton;
+
+	//! Analog mode: the strip of an analog desk, and the effects as LEDs; digital mode: the effects by name
+	QWidget* m_analogSection;
+	QWidget* m_effectLeds;
+	QWidget* m_effectSlotList;
 	PeakIndicator* m_peakIndicator = nullptr;
 	Fader* m_fader;
 	EffectRackView* m_effectRackView;
