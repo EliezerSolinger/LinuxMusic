@@ -28,6 +28,7 @@
 #include <QMouseEvent>
 
 #include "CaptionMenu.h"
+#include "MainWindow.h"
 #include "MixerView.h"
 #include "GuiApplication.h"
 #include "TrackView.h"
@@ -52,9 +53,7 @@ void MixerChannelLcdSpinBox::mouseDoubleClickEvent(QMouseEvent* event)
 
 	getGUI()->mixerView()->setCurrentMixerChannel(model()->value());
 
-	getGUI()->mixerView()->parentWidget()->show();
-	getGUI()->mixerView()->show();// show Mixer window
-	getGUI()->mixerView()->setFocus();// set focus to Mixer window
+	getGUI()->mainWindow()->showPage(MainWindow::Page::Mixing);
 	//engine::getMixerView()->raise();
 }
 

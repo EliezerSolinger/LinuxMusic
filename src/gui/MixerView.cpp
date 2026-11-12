@@ -229,13 +229,10 @@ MixerView::MixerView(Mixer* mixer) :
 	m_panKnob = new Knob{KnobType::Bright26, tr("PAN"), channelSettings, Knob::LabelRendering::LegacyFixedFontSize,
 		tr("Panning")};
 	m_panKnob->setHintText(tr("Panning:"), "%");
-	m_swapChannelsBox = new LedCheckBox{tr("Swap L/R"), channelSettings, tr("Swap left/right"),
-		LedCheckBox::LedColor::Green};
 
 	settingsLayout->addWidget(m_trimKnob, 0, 0, 2, 1, Qt::AlignCenter);
 	m_monoBox = new LedCheckBox{tr("Mono"), channelSettings, tr("Mono"), LedCheckBox::LedColor::Green};
-	settingsLayout->addWidget(m_swapChannelsBox, 0, 1);
-	settingsLayout->addWidget(m_monoBox, 1, 1);
+	settingsLayout->addWidget(m_monoBox, 0, 1, 2, 1);
 	settingsLayout->addWidget(m_widthKnob, 0, 2, 2, 1, Qt::AlignCenter);
 	settingsLayout->addWidget(m_panKnob, 0, 3, 2, 1, Qt::AlignCenter);
 
@@ -554,7 +551,6 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 
 	const auto mixerChannel = getMixer()->mixerChannel(channel->channelIndex());
 	m_trimKnob->setModel(&mixerChannel->m_trimModel);
-	m_swapChannelsBox->setModel(&mixerChannel->m_swapChannelsModel);
 	m_monoBox->setModel(&mixerChannel->m_monoModel);
 	m_monoBox->setVisible(channel->channelIndex() != 0); // the master has MONO in its monitoring
 	m_widthKnob->setModel(&mixerChannel->m_widthModel);
@@ -635,8 +631,8 @@ void MixerView::updateMixerChannel(int index)
 
 void MixerView::deleteChannel(int index)
 {
-	// can't delete master
-	if (index == 0) return;
+	// The master and the effect returns are part of the desk
+	if (!getMixer()->canDeleteChannel(index)) { return; }
 
 	// Disconnect from the solo/mute models of the channel we are about to delete
 	disconnectFromSoloAndMute(index);
@@ -829,8 +825,8 @@ void MixerView::setCurrentMixerChannel(int channel)
 
 void MixerView::clear()
 {
-	for (auto i = m_mixerChannelViews.size() - 1; i > 0; --i) { deleteChannel(i); }
-	getMixer()->clearChannel(0);
+	// Everything goes, the effect returns too (projects put them back)
+	getMixer()->clear();
 
 	m_mixerChannelViews[0]->reset();
 

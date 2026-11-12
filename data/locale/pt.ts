@@ -10548,6 +10548,26 @@ Double click to pick a file.</source>
 <context>
     <name>lmms::gui::MainWindow</name>
     <message>
+        <source>COMPOSITION</source>
+        <translation>COMPOSIÇÃO</translation>
+    </message>
+    <message>
+        <source>MIXING</source>
+        <translation>MIXAGEM</translation>
+    </message>
+    <message>
+        <source>Composition and recording: the song, the patterns, the piano roll and the automation (Ctrl+5 switches)</source>
+        <translation>Composição e gravação: a música, as sequências, o piano roll e a automação (Ctrl+5 alterna)</translation>
+    </message>
+    <message>
+        <source>Mixing: the mixer, with the selected channel&apos;s effects (Ctrl+5 switches)</source>
+        <translation>Mixagem: a mesa, com os efeitos do canal selecionado (Ctrl+5 alterna)</translation>
+    </message>
+    <message>
+        <source>Mixing page</source>
+        <translation>Página de mixagem</translation>
+    </message>
+    <message>
         <location filename="../../src/core/ConfigManager.cpp" line="541"/>
         <source>Configuration file</source>
         <translation>Ficheiro de configuração</translation>

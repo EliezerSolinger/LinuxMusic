@@ -689,8 +689,17 @@ int Mixer::createChannel()
 	return index;
 }
 
+auto Mixer::canDeleteChannel(int index) const -> bool
+{
+	return index > 0 && index < static_cast<int>(m_mixerChannels.size()) && !m_mixerChannels[index]->m_fxReturn;
+}
+
+
+
+
 void Mixer::deleteChannel( int index )
 {
+	if (!m_clearing && !canDeleteChannel(index)) { return; }
 	const auto change = StructureChange{*this};
 	// channel deletion is performed between mixer rounds
 	Engine::audioEngine()->requestChangeInModel();
@@ -1213,10 +1222,12 @@ void Mixer::clear()
 {
 	m_masterSection.setDefaults();
 
+	m_clearing = true;
 	while( m_mixerChannels.size() > 1 )
 	{
 		deleteChannel(1);
 	}
+	m_clearing = false;
 
 	clearChannel(0);
 }

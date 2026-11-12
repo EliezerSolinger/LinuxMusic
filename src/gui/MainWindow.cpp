@@ -32,11 +32,15 @@
 #include <QMdiArea>
 #include <QMenuBar>
 #include <QMessageBox>
-#include <QComboBox>
 #include <QShortcut>
 #include <QSplitter>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QPushButton>
+#include <QButtonGroup>
+#include <QStackedWidget>
 
 #include "AboutDialog.h"
 #include "AutomationEditor.h"
@@ -93,7 +97,6 @@ MainWindow::MainWindow() :
 	m_topDock( nullptr ),
 	m_bottomDock( nullptr ),
 	m_rightDock( nullptr ),
-	m_pluginTabs( nullptr ),
 	m_toolsMenu( nullptr ),
 	m_autoSaveTimer( this ),
 	m_viewMenu( nullptr ),
@@ -181,9 +184,11 @@ MainWindow::MainWindow() :
 	m_workspace->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	m_workspace->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-	// Docked editors fill the workspace viewport as its bottom-most layer, so plugin
-	// windows (still MDI subwindows) float above them
-	m_dockSplitter = new QSplitter(Qt::Vertical, m_workspace->viewport());
+	// The pages fill the workspace viewport as its bottom-most layer, so that the instrument and effect windows (MDI
+	// subwindows) float above them: composition (the docked editors) and mixing (the mixer)
+	m_pages = new QStackedWidget(m_workspace->viewport());
+	m_pages->setObjectName("pages");
+	m_dockSplitter = new QSplitter(Qt::Vertical, m_pages);
 	m_dockSplitter->setObjectName("dockSplitter");
 	m_topDock = new QTabWidget(m_dockSplitter);
 	m_topDock->setObjectName("topDock");
@@ -196,21 +201,14 @@ MainWindow::MainWindow() :
 	}
 	m_dockSplitter->setCollapsible(0, false);
 	m_dockSplitter->setStretchFactor(0, 1);
-	m_dockSplitter->lower();
+	m_pages->addWidget(m_dockSplitter);
+	m_mixingPage = new QWidget(m_pages);
+	m_mixingPage->setObjectName("mixingPage");
+	auto mixingLayout = new QVBoxLayout(m_mixingPage);
+	mixingLayout->setContentsMargins(0, 0, 0, 0);
+	m_pages->addWidget(m_mixingPage);
+	m_pages->lower();
 	m_workspace->viewport()->installEventFilter(this);
-
-	m_pluginTabs = new QTabWidget(m_bottomDock);
-	m_pluginTabs->setObjectName("pluginTabs");
-	m_pluginTabs->setDocumentMode(true);
-	m_pluginTabs->setTabsClosable(true);
-	m_pluginTabs->setMovable(true);
-	connect(m_pluginTabs, &QTabWidget::tabCloseRequested, this, [this](int index) {
-		auto panel = qobject_cast<DockPanel*>(m_pluginTabs->widget(index));
-		if (!panel) { return; }
-		// Let the window react as if it was closed (e.g. unchecking its track button), then drop the tab
-		panel->content()->close();
-		panel->removeFromTabs();
-	});
 
 	m_rightDock = new QTabWidget(splitter);
 	m_rightDock->setObjectName("rightDock");
@@ -424,16 +422,33 @@ void MainWindow::finalize()
 				  this, SLOT(aboutLMMS()));
 
 	// Toolbar, after the LMMS redesign concept (LMMS#1911): save and help on the left, the transport in the
-	// middle and the layout presets on the right. The other file actions are in the File menu.
+	// middle and the pages (composition, mixing) on the right. The other file actions are in the File menu.
 	auto project_save = new ToolButton(
 		embed::getIconPixmap("project_save"), tr("Save current project"), this, SLOT(saveProject()), m_toolBar);
 	auto help_button = new ToolButton(embed::getIconPixmap("help"), tr("Help"), this, SLOT(help()), m_toolBar);
 
-	auto layoutPresets = new QComboBox(m_toolBar);
-	layoutPresets->setObjectName("layoutPresets");
-	layoutPresets->setToolTip(tr("Arrangement of the editor panels"));
-	layoutPresets->addItems({tr("Arrange"), tr("Mix"), tr("Compose")});
-	connect(layoutPresets, &QComboBox::activated, this, &MainWindow::applyLayoutPreset);
+	// The pages: composition (with recording) and mixing, separate, as in a studio
+	auto pageSwitch = new QWidget(m_toolBar);
+	auto pageLayout = new QHBoxLayout(pageSwitch);
+	pageLayout->setContentsMargins(0, 0, 0, 0);
+	pageLayout->setSpacing(0);
+	auto pageButtons = new QButtonGroup(pageSwitch);
+	m_compositionButton = new QPushButton(tr("COMPOSITION"), pageSwitch);
+	m_compositionButton->setToolTip(tr("Composition and recording: the song, the patterns, the piano roll and the "
+		"automation (Ctrl+5 switches)"));
+	m_mixingButton = new QPushButton(tr("MIXING"), pageSwitch);
+	m_mixingButton->setToolTip(tr("Mixing: the mixer, with the selected channel's effects (Ctrl+5 switches)"));
+	for (const auto button : {m_compositionButton, m_mixingButton})
+	{
+		button->setObjectName("mixerModeButton");
+		button->setCheckable(true);
+		button->setFocusPolicy(Qt::NoFocus);
+		pageButtons->addButton(button);
+		pageLayout->addWidget(button);
+	}
+	m_compositionButton->setChecked(true);
+	connect(m_compositionButton, &QPushButton::clicked, this, [this] { showPage(Page::Composition); });
+	connect(m_mixingButton, &QPushButton::clicked, this, [this] { showPage(Page::Mixing); });
 
 	m_toolBarLayout->setColumnMinimumWidth(0, 5);
 	m_toolBarLayout->addWidget(project_save, 0, 1, Qt::AlignVCenter);
@@ -441,7 +456,7 @@ void MainWindow::finalize()
 	m_toolBarLayout->setColumnStretch(3, 1);
 	m_toolBarLayout->addWidget(new TransportBar(m_toolBar), 0, 4, Qt::AlignVCenter);
 	m_toolBarLayout->setColumnStretch(5, 1);
-	m_toolBarLayout->addWidget(layoutPresets, 0, 6, Qt::AlignVCenter);
+	m_toolBarLayout->addWidget(pageSwitch, 0, 6, Qt::AlignVCenter);
 	m_toolBarLayout->setColumnMinimumWidth(7, 8);
 
 	// The editor buttons are gone (the editors are tabs now), but keep their shortcuts
@@ -487,11 +502,9 @@ void MainWindow::finalize()
 	const auto gui = getGUI();
 	dockWidget(gui->songEditor(), DockArea::Top, tr("Song Editor"), embed::getIconPixmap("songeditor"));
 	dockWidget(gui->patternEditor(), DockArea::Top, tr("Pattern Editor"), embed::getIconPixmap("pattern_track"));
-	dockWidget(gui->mixerView(), DockArea::Bottom, tr("Mixer"), embed::getIconPixmap("mixer"));
+	m_mixingPage->layout()->addWidget(gui->mixerView());
 	dockWidget(gui->pianoRoll(), DockArea::Bottom, tr("Piano Roll"), embed::getIconPixmap("piano"));
 	dockWidget(gui->automationEditor(), DockArea::Bottom, tr("Automation Editor"), embed::getIconPixmap("automation"));
-	m_pluginTabsPanel = dockWidget(m_pluginTabs, DockArea::Bottom, tr("Instruments && Effects"),
-		embed::getIconPixmap("instrument_track"));
 	dockWidget(gui->getControllerRackView(), DockArea::Right, tr("Controllers"), embed::getIconPixmap("controller"));
 	dockWidget(gui->getProjectNotes(), DockArea::Right, tr("Notes"), embed::getIconPixmap("project_notes"));
 
@@ -519,36 +532,17 @@ DockPanel* MainWindow::dockWidget(QWidget* w, DockArea area, const QString& titl
 
 
 
-DockPanel* MainWindow::addPluginTab(QWidget* w)
+void MainWindow::showPage(Page page)
 {
-	auto panel = new DockPanel(w, m_pluginTabs, true);
-	connect(panel, &DockPanel::revealRequested, this, &MainWindow::revealDock);
-	return panel;
+	m_pages->setCurrentIndex(page == Page::Mixing ? 1 : 0);
+	(page == Page::Mixing ? m_mixingButton : m_compositionButton)->setChecked(true);
+	if (page == Page::Mixing) { getGUI()->mixerView()->setFocus(); }
+	else { refocus(); }
 }
 
-
-
-
-void MainWindow::applyLayoutPreset(int preset)
+auto MainWindow::page() const -> Page
 {
-	const auto gui = getGUI();
-	auto sizes = m_dockSplitter->sizes();
-	const int total = sizes[0] + sizes[1];
-	gui->songEditor()->parentWidget()->show();
-	switch (preset)
-	{
-		case 0: // Arrange: only the Song Editor
-			collapseDock(m_bottomDock);
-			break;
-		case 1: // Mix: a tall mixer
-			gui->mixerView()->parentWidget()->show();
-			m_dockSplitter->setSizes({total * 35 / 100, total * 65 / 100});
-			break;
-		case 2: // Compose: the Piano Roll
-			gui->pianoRoll()->parentWidget()->show();
-			m_dockSplitter->setSizes({total * 45 / 100, total * 55 / 100});
-			break;
-	}
+	return m_pages->currentIndex() == 1 ? Page::Mixing : Page::Composition;
 }
 
 
@@ -570,18 +564,9 @@ QTabWidget* MainWindow::dockTabs(DockArea area) const
 
 void MainWindow::revealDock(DockPanel* panel)
 {
-	if (panel->tabs() == m_pluginTabs)
-	{
-		// Bring up the "Instruments & Effects" page, and make the bottom dock tall enough for the plugin window
-		if (m_pluginTabsPanel) { m_pluginTabsPanel->show(); }
-		auto sizes = m_dockSplitter->sizes();
-		const int total = sizes[0] + sizes[1];
-		const int wanted = panel->content()->sizeHint().height()
-			+ m_bottomDock->tabBar()->sizeHint().height() + m_pluginTabs->tabBar()->sizeHint().height();
-		const int height = std::clamp(wanted, sizes[1], total * 3 / 4);
-		m_dockSplitter->setSizes({total - height, height});
-	}
-	else if (panel->tabs() == m_bottomDock)
+	// The docked editors are on the composition page
+	if (panel->tabs() != m_rightDock) { showPage(Page::Composition); }
+	if (panel->tabs() == m_bottomDock)
 	{
 		auto sizes = m_dockSplitter->sizes();
 		if (sizes.size() == 2 && sizes[1] == 0)
@@ -1166,7 +1151,7 @@ void MainWindow::toggleAutomationEditorWin()
 
 void MainWindow::toggleMixerWin()
 {
-	toggleWindow( getGUI()->mixerView() );
+	showPage(page() == Page::Mixing ? Page::Composition : Page::Mixing);
 }
 
 
@@ -1203,7 +1188,7 @@ void MainWindow::updateViewMenu()
 			      SLOT(toggleAutomationEditorWin())
 		);
 	m_viewMenu->addAction(embed::getIconPixmap( "mixer" ),
-			      tr( "Mixer" ) + "\tCtrl+5",
+			      tr( "Mixing page" ) + "\tCtrl+5",
 			      this, SLOT(toggleMixerWin())
 		);
 	m_viewMenu->addAction(embed::getIconPixmap( "controller" ),
@@ -1434,7 +1419,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 	// Keep the docked editors filling the workspace viewport
 	if (m_workspace && watched == m_workspace->viewport() && event->type() == QEvent::Resize)
 	{
-		m_dockSplitter->setGeometry(m_workspace->viewport()->rect());
+		m_pages->setGeometry(m_workspace->viewport()->rect());
 	}
 
 	// Clear modifiers when the window has been unfocused (install event filter on the window itself)

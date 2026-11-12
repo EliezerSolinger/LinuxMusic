@@ -36,7 +36,9 @@
 class QAction;
 class QDomElement;
 class QGridLayout;
+class QPushButton;
 class QSplitter;
+class QStackedWidget;
 class QTabWidget;
 
 namespace lmms
@@ -76,19 +78,22 @@ public:
 	enum class DockArea
 	{
 		Top,	//!< Main editors (Song Editor, Pattern Editor)
-		Bottom,	//!< Mixer and detail editors (Piano Roll, Automation Editor)
+		Bottom,	//!< Detail editors (Piano Roll, Automation Editor)
 		Right	//!< Side panels (controllers, project notes)
 	};
 
 	//! Docks @p w as a tab in one of the main window's dock areas
 	DockPanel* dockWidget(QWidget* w, DockArea area, const QString& title, const QPixmap& icon);
 
-	//! Adds an instrument or effect window as a closable tab in the "Instruments & Effects" panel.
-	//! The tab appears when the window is shown and goes away when it is closed.
-	DockPanel* addPluginTab(QWidget* w);
+	/**
+	 * The main window's pages: composition (and recording: the song and pattern editors, the piano roll, the
+	 * automation editor) and mixing (the mixer, with the selected channel's effects). Instruments and effects open
+	 * in small windows of their own, over either page.
+	 */
+	enum class Page { Composition, Mixing };
+	void showPage(Page page);
+	auto page() const -> Page;
 
-	//! Arranges the dock areas for a task: 0 = arrange, 1 = mix, 2 = compose
-	void applyLayoutPreset(int preset);
 
 
 	void refocus();
@@ -250,8 +255,10 @@ private:
 	QTabWidget* m_bottomDock;
 	QTabWidget* m_rightDock;
 	BrowserPanel* m_browserPanel = nullptr;
-	QTabWidget* m_pluginTabs;
-	DockPanel* m_pluginTabsPanel = nullptr;
+	QStackedWidget* m_pages = nullptr;
+	QWidget* m_mixingPage = nullptr;
+	QPushButton* m_compositionButton = nullptr;
+	QPushButton* m_mixingButton = nullptr;
 	int m_bottomDockHeight = 300;
 	int m_rightDockWidth = 360;
 

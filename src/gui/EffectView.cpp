@@ -29,11 +29,11 @@
 #include <QLayout>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QMdiSubWindow>
 #include <QPainter>
 
 #include "AudioPortsModel.h"
 #include "CaptionMenu.h"
-#include "DockPanel.h"
 #include "DummyEffect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -97,7 +97,10 @@ EffectView::EffectView(Effect* _model, QWidget* _parent, AudioPortsModel* audioP
 		m_controlView = effect()->controls()->createView();
 		if (m_controlView)
 		{
-			m_subWindow = getGUI()->mainWindow()->addPluginTab(m_controlView);
+			// The effect's controls open in a small window of their own, over the composition or the mixing
+			m_subWindow = getGUI()->mainWindow()->addWindowedWidget(m_controlView);
+			m_subWindow->setWindowFlag(Qt::WindowMaximizeButtonHint, false);
+			m_subWindow->hide();
 		}
 	}
 

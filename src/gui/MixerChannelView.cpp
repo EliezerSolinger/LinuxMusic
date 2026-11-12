@@ -467,6 +467,13 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_phaseInvertButton->setCheckable(true);
 	m_phaseInvertButton->setModel(&mixerChannel->m_phaseInvertModel);
 
+	m_swapButton = new AutomatableButton(this, tr("Swap left and right"));
+	m_swapButton->setObjectName("btn-swap");
+	m_swapButton->setText(QString{QChar{0x21C4}}); // ⇄, the two sides trading places
+	m_swapButton->setToolTip(tr("Swap left and right"));
+	m_swapButton->setCheckable(true);
+	m_swapButton->setModel(&mixerChannel->m_swapChannelsModel);
+
 	m_effectRackView = new EffectRackView{&mixerChannel->m_fxChain, mixerView->m_racksWidget};
 	m_effectRackView->setFixedWidth(EffectRackView::DEFAULT_WIDTH);
 
@@ -613,6 +620,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	soloMuteLayout->addWidget(m_muteButton, 0, Qt::AlignHCenter);
 	soloMuteLayout->addWidget(m_soloButton, 0, Qt::AlignHCenter);
 	soloMuteLayout->addWidget(m_phaseInvertButton, 0, Qt::AlignHCenter);
+	soloMuteLayout->addWidget(m_swapButton, 0, Qt::AlignHCenter);
 	soloMuteLayout->addSpacing(2);
 	soloMuteLayout->addWidget(m_effectLeds, 0, Qt::AlignHCenter);
 	soloMuteLayout->addStretch(1);
@@ -823,7 +831,8 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 	contextMenu->addAction(tr("Rename &channel"), this, &MixerChannelView::renameChannel);
 	contextMenu->addSeparator();
 
-	if (!isMasterChannel()) // no remove-option in master
+	// The master and the effect returns are part of the desk: they cannot be removed
+	if (Engine::mixer()->canDeleteChannel(m_channelIndex))
 	{
 		contextMenu->addAction(
 			embed::getIconPixmap("cancel"), tr("R&emove channel"), this, &MixerChannelView::removeChannel);

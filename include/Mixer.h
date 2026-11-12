@@ -485,11 +485,14 @@ public:
 	//! Sets where channel @p index takes audio from (see ChannelInput)
 	void setChannelInput(mix_ch_t index, const ChannelInput& input);
 
-	// delete a channel from the mixer.
+	//! Whether channel @p index can be deleted: not the master, not an effect return (they are part of the desk)
+	auto canDeleteChannel(int index) const -> bool;
+	//! Deletes channel @p index, if it can be deleted (see canDeleteChannel()); clearing the mixer deletes them all
 	void deleteChannel(int index);
 
 	// delete all the mixer channels except master and remove all effects
 	void clear();
+	bool m_clearing = false;	//!< while clear() deletes every channel, the effect returns too
 
 	// re-arrange channels
 	void moveChannelLeft(int index);

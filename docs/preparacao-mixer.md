@@ -1218,6 +1218,44 @@ Pedido do usuário: o knob de mono bass, no canal e no master, começa em 0% (de
     (`Mixer::invertLegacyAutomation()` e `convertLegacyAutomation()`, chamado em `Song::loadProject`).
 - Testado: o padrão 0, a conversão do canal e do master, e a automação invertida.
 
+### Passo 25: páginas Composição e Mixagem, plugins em janelas, ⇄ no canal, bus protegido (feito)
+
+Pedidos do usuário:
+- a mesa vira uma tela própria, separada da composição e da gravação;
+- instrumentos e efeitos abrem em janelas;
+- a aba "Instruments & Effects" some;
+- o swap L/R vai para junto do botão de fase;
+- o dropdown Arrange/Compose some;
+- um canal de bus não deve poder ser apagado.
+
+**Páginas:**
+- No canto direito da barra, **Composição** e **Mixagem** (Ctrl+5 alterna). São um `QStackedWidget` no fundo da
+  área de trabalho.
+- **Composição:** os editores encaixados, como antes: Song e Pattern Editor em cima; Piano Roll e Automation Editor
+  embaixo. A gravação fica aqui.
+- **Mixagem:** a mesa em tela cheia, com a cadeia de efeitos do canal selecionado à direita (`MainWindow::showPage()`).
+- O duplo clique com Shift ou Ctrl no número do canal de uma faixa abre a Mixagem no canal.
+- O dropdown de layouts (Arrange/Mix/Compose) saiu: as páginas o substituem.
+- Nomes traduzidos no `pt.ts`.
+
+**Plugins em janelas:**
+- Instrumentos, faixas de sample e controles de efeito voltam a abrir em janelinhas (subjanelas da área de
+  trabalho), que flutuam sobre qualquer uma das páginas.
+- A aba "Instruments & Effects" e o `addPluginTab()` saíram, e o `DockPanel` voltou à versão sem abas fecháveis
+  (reverte a parte de plugins do commit `6ff3bb1bc`).
+
+**⇄ no canal:** o swap L/R saiu do painel e virou um botão no fim do canal, embaixo do Ø, com o símbolo ⇄ (os
+dois lados trocando de lugar), no mesmo estilo.
+
+**Bus protegido:**
+- O menu do canal oferecia "Remover canal" nos retornos FX 1 e FX 2, e a tecla Delete também os apagava.
+- Agora `Mixer::canDeleteChannel()` (nem o master nem os retornos) vale para todos os caminhos.
+- Só limpar a mesa inteira, ao trocar de projeto, apaga tudo; o projeto recoloca os retornos.
+
+`MixerTest` tem 115 testes; o novo testa que os retornos e o master não podem ser apagados.
+
+**Próximo:** a entrada de áudio e o armar vão só para as faixas, não para os canais da mesa (pedido do usuário).
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que

@@ -147,6 +147,7 @@ private:
 	AutomatableButton* m_muteButton;
 	AutomatableButton* m_soloButton;
 	AutomatableButton* m_phaseInvertButton;
+	AutomatableButton* m_swapButton;
 
 	//! Analog mode: the strip of an analog desk, and the effects as LEDs; digital mode: the effects by name
 	QWidget* m_analogSection;

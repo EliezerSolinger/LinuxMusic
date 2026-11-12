@@ -283,10 +283,15 @@ InstrumentTrackWindow::InstrumentTrackWindow( InstrumentTrackView * _itv ) :
 	vlayout->addWidget( m_pianoView );
 	setModel( _itv->model() );
 
-	getGUI()->mainWindow()->addPluginTab(this);
+	QMdiSubWindow* subWin = getGUI()->mainWindow()->addWindowedWidget( this );
 
 	updateInstrumentView();
+
+	// The previous call should have given us a sub window parent. Therefore
+	// we can reuse this method.
 	updateSubWindow();
+
+	subWin->hide();
 }
 
 void InstrumentTrackWindow::resizeEvent(QResizeEvent * event) {
@@ -747,21 +752,7 @@ QMdiSubWindow* InstrumentTrackWindow::findSubWindowInParents()
 void InstrumentTrackWindow::updateSubWindow()
 {
 	auto subWindow = findSubWindowInParents();
-	if (!subWindow && m_instrumentView)
-	{
-		// Docked as a tab: size the window to its contents
-		if (m_instrumentView->isResizable())
-		{
-			const auto extraSpace = QSize(12, 208);
-			setMaximumSize(m_instrumentView->maximumSize() + extraSpace);
-			setMinimumSize(m_instrumentView->minimumSize() + extraSpace);
-		}
-		else
-		{
-			setFixedSize(sizeHint());
-		}
-	}
-	else if (subWindow && m_instrumentView)
+	if (subWindow && m_instrumentView)
 	{
 		const auto instrumentViewResizable = m_instrumentView->isResizable();
 

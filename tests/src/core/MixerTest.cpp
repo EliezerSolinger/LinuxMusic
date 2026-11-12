@@ -2929,6 +2929,31 @@ private slots:
 		strip.setNeutral();
 	}
 
+	void effectReturnsAndMasterCannotBeDeleted()
+	{
+		const auto returns = mixer()->fxReturns();
+		QCOMPARE(returns.size(), std::size_t{2});
+		const int count = mixer()->numChannels();
+		for (const auto fxReturn : returns)
+		{
+			QVERIFY(!mixer()->canDeleteChannel(fxReturn->index()));
+			mixer()->deleteChannel(fxReturn->index());
+		}
+		QVERIFY(!mixer()->canDeleteChannel(0));
+		mixer()->deleteChannel(0);
+		QCOMPARE(mixer()->numChannels(), count);
+		QCOMPARE(mixer()->fxReturns().size(), std::size_t{2});
+		// An ordinary channel can go; clearing the mixer takes everything, and projects put the returns back
+		const auto channel = mixer()->createChannel();
+		QVERIFY(mixer()->canDeleteChannel(channel));
+		mixer()->deleteChannel(channel);
+		QCOMPARE(mixer()->numChannels(), count);
+		mixer()->clear();
+		QCOMPARE(mixer()->numChannels(), 1);
+		mixer()->ensureFxReturns();
+		QCOMPARE(mixer()->fxReturns().size(), std::size_t{2});
+	}
+
 	void channelTolerances()
 	{
 		// Fixed per channel, within the components' tolerances, different from channel to channel

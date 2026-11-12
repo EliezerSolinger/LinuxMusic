@@ -101,7 +101,7 @@ private:
 	LedCheckBox * m_bypass;
 	Knob * m_wetDry;
 	TempoSyncKnob * m_autoQuit;
-	QWidget* m_subWindow; //!< The tab (DockPanel) holding the effect controls
+	QMdiSubWindow * m_subWindow;
 	EffectControlDialog * m_controlView;
 	QPushButton* m_pinConnectorButton = nullptr;
 	AudioPortsModel* m_audioPorts = nullptr; //!< owned by the effect's PluginInstance
