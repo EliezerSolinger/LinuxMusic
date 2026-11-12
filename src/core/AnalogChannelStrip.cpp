@@ -23,13 +23,11 @@
 #include "AnalogChannelStrip.h"
 
 #include <algorithm>
-#include <functional>
 #include <cmath>
 #include <numbers>
 
 #include <QDomElement>
 
-#include "OversamplingHelpers.h"
 #include "SampleFrame.h"
 #include "lmms_math.h"
 
@@ -38,90 +36,6 @@ namespace lmms
 
 namespace
 {
-
-#include "r12ax7.h"
-
-// The gain stage
-constexpr int OversamplingStages = 2; // 4 times
-constexpr int Oversampling = 1 << OversamplingStages;
-//! Volts per unit of the signal: an op-amp's rail of +24 dBFS is a swing of 13 V on a +-15 V supply
-constexpr float VoltsPerUnit = 13.f / 16.f;
-constexpr float DcBlockerFrequency = 5.f;
-//! The tubes start to clip at +12 dBFS, where their input reaches their clipping point (TubeCurve::scale)
-constexpr float TubeClipLevel = 4.f;
-
-// The 12AX7 approximations of CAPS (dsp/TwelveAX7.h, by Tim Goetze, GPL): the stage's output voltage for input a,
-// 1 being where it clips on the positive side
-
-//! The transfer curve sampled from a SPICE simulation (TwelveAX7_3), interpolated
-auto tubeSpice(float a) -> float
-{
-	a = r12AX7::Zero + a * (r12AX7::Samples - r12AX7::Zero);
-	if (a <= 0.f) { return r12AX7::v2v[0]; }
-	if (a >= r12AX7::Samples - 1) { return r12AX7::v2v[r12AX7::Samples - 1]; }
-	const auto i = static_cast<int>(a);
-	const float fraction = a - static_cast<float>(i);
-	return r12AX7::v2v[i] * (1.f - fraction) + r12AX7::v2v[i + 1] * fraction;
-}
-
-//! A cubic polynomial clipped where its slope turns to 0 (TwelveAX7 and TwelveAX7_2)
-struct TubePolynomial
-{
-	double b, c, d;
-	double low, high; //!< where it clips
-	auto operator()(double a) const -> float
-	{
-		a = std::clamp(a, low, high);
-		return static_cast<float>(a * (b + a * (c + a * d)));
-	}
-};
-
-//! TwelveAX7: CAPS' original model, "it took a good deal of fiddling to get the coefficients right"; it clips where
-//! its slope turns to 0
-constexpr auto vintageCoefficients = std::array{-0.79618574210627535, -0.21108555430962023, 0.38944033523200522};
-auto vintagePolynomial() -> TubePolynomial
-{
-	const auto [b, c, d] = vintageCoefficients;
-	const double root = std::sqrt(4 * c * c - 12 * d * b);
-	return {b, c, d, (-2 * c - root) / (6 * d), (-2 * c + root) / (6 * d)};
-}
-
-//! TwelveAX7_2: fitted to the curve, clipping at -0.52 and +0.98
-constexpr auto hotPolynomial = TubePolynomial{-1.08150605597883, -0.262760944760536, 0.445770802765903, -0.52, 0.98};
-
-//! A tube model's curve, and the input at which it starts to clip on the negative side
-struct TubeCurve
-{
-	std::function<float(float)> transfer;
-	float scale;
-	float offset;		//!< its output for no input: the stage's bias
-	float slope;		//!< its gain for small signals
-};
-
-auto makeTubeCurve(std::function<float(float)> transfer, float scale) -> TubeCurve
-{
-	const float offset = transfer(0.f);
-	const float slope = (transfer(1e-3f) - transfer(-1e-3f)) / 2e-3f;
-	return {std::move(transfer), scale, offset, slope};
-}
-
-auto tubeCurve(AnalogChannelStrip::Drive drive) -> const TubeCurve&
-{
-	using Drive = AnalogChannelStrip::Drive;
-	static const auto spice = makeTubeCurve(tubeSpice,
-		static_cast<float>(r12AX7::Zero) / static_cast<float>(r12AX7::Samples - r12AX7::Zero));
-	static const auto vintage = [] {
-		const auto polynomial = vintagePolynomial();
-		return makeTubeCurve([polynomial](float a) { return polynomial(a); }, static_cast<float>(-polynomial.low));
-	}();
-	static const auto hot = makeTubeCurve([](float a) { return hotPolynomial(a); }, static_cast<float>(-hotPolynomial.low));
-	switch (drive)
-	{
-		case Drive::Tube12AX7Vintage: return vintage;
-		case Drive::Tube12AX7Hot: return hot;
-		default: return spice;
-	}
-}
 
 // Fixed parts of the strip
 constexpr float LowCutFrequency = 80.f;
@@ -152,7 +66,8 @@ auto smoothing(float seconds, sample_rate_t rate) -> float
 
 
 AnalogChannelStrip::AnalogChannelStrip(Model* parent)
-	: m_driveModel(static_cast<int>(Drive::OpAmp4558), 0, static_cast<int>(Drive::Count) - 1, parent)
+	: m_gainModel(0.5f, 0.f, 1.f, 0.001f, parent)
+	, m_driveModel(static_cast<int>(Drive::OpAmp4558), 0, static_cast<int>(Drive::Count) - 1, parent)
 	, m_lowCutModel(false, parent)
 	, m_highPassModel(20.f, 20.f, 1000.f, 1.f, parent)
 	, m_lowPassModel(20000.f, 1000.f, 20000.f, 1.f, parent)
@@ -175,142 +90,22 @@ AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 	m_lowPassModel.setCenterValue(m_lowPassModel.maxValue());
 	m_gateModel.setCenterValue(m_gateModel.minValue());
 	m_compressorModel.setCenterValue(0.f);
-	m_drive = std::make_unique<DriveStage>();
+	m_gainModel.setCenterValue(0.5f);
 }
 
 
 
 
-struct AnalogChannelStrip::DriveStage
+auto AnalogChannelStrip::potGain(float position) -> float
 {
-	std::array<Upsampler<OversamplingStages>, 2> upsamplers;
-	std::array<Downsampler<OversamplingStages>, 2> downsamplers;
-	std::array<float, 2> slewed{}; //!< the op-amp's output, which the slew rate limits
-	EqHp12Filter dcBlocker;
-	sample_rate_t sampleRate = 0;
-	bool oversampling = false;	//!< whether the oversamplers carry signal
-	Drive model = Drive::Flat;	//!< what the oversamplers last carried
-
-	void setUp(sample_rate_t rate)
+	if (position <= 0.f) { return 0.f; }
+	if (position <= 0.5f)
 	{
-		sampleRate = rate;
-		for (auto& upsampler : upsamplers) { upsampler.setup(OversamplingStages, static_cast<float>(rate)); }
-		for (auto& downsampler : downsamplers) { downsampler.setup(OversamplingStages, static_cast<float>(rate)); }
-		dcBlocker.setParameters(static_cast<float>(rate), DcBlockerFrequency, std::numbers::sqrt2_v<float> / 2.f, 1.f);
-		oversampling = false;
+		const float x = 2.f * position;
+		return x * x * x;
 	}
-
-	//! Empties the oversamplers, so that they start afresh
-	void clear()
-	{
-		for (auto& upsampler : upsamplers) { upsampler.reset(); }
-		for (auto& downsampler : downsamplers) { downsampler.reset(); }
-		dcBlocker.clearHistory();
-		oversampling = false;
-	}
-};
-
-
-
-
-AnalogChannelStrip::~AnalogChannelStrip() = default;
-
-
-
-
-auto AnalogChannelStrip::opAmpSpec(Drive drive) -> OpAmpSpec
-{
-	if (drive == Drive::OpAmp5532) { return {11.22f, 16.f, 1.f, 9.f}; } // knee at +21 dBFS
-	return {8.f, 16.f, 0.95f, 1.7f}; // 4558: knee at +18 dBFS
+	return dbfsToAmp((position - 0.5f) * 2.f * MaxGain);
 }
-
-
-
-
-auto AnalogChannelStrip::opAmp(Drive drive, float sample) -> float
-{
-	const auto spec = opAmpSpec(drive);
-	const float scale = sample < 0.f ? spec.negativeRailRatio : 1.f;
-	const float knee = spec.knee * scale;
-	const float magnitude = std::abs(sample);
-	if (magnitude <= knee) { return sample; }
-	const float span = (spec.rail - spec.knee) * scale;
-	return std::copysign(knee + span * std::tanh((magnitude - knee) / span), sample);
-}
-
-
-
-
-auto AnalogChannelStrip::tube(Drive drive, float sample) -> float
-{
-	// Unity gain for small signals, and the same polarity: a tube stage inverts, and sits on an offset
-	const auto& curve = tubeCurve(drive);
-	const float input = curve.scale / TubeClipLevel;
-	return (curve.transfer(sample * input) - curve.offset) / (curve.slope * input);
-}
-
-
-
-
-void AnalogChannelStrip::processDriveStage(std::span<SampleFrame> frames, sample_rate_t sampleRate)
-{
-	auto& drive = *m_drive;
-	if (drive.sampleRate != sampleRate) { drive.setUp(sampleRate); }
-	const auto model = static_cast<Drive>(m_driveModel.value());
-	if (model != drive.model)
-	{
-		drive.clear();
-		drive.model = model;
-	}
-	if (model == Drive::Flat) { return; }
-
-	auto oversampled = std::array<float, Oversampling>{};
-	if (isTube(model))
-	{
-		for (auto& frame : frames)
-		{
-			for (ch_cnt_t ch = 0; ch < 2; ++ch)
-			{
-				drive.upsamplers[ch].processSample(oversampled.data(), frame[ch]);
-				for (auto& sample : oversampled) { sample = tube(model, sample); }
-				frame[ch] = drive.dcBlocker.update(drive.downsamplers[ch].processSample(oversampled.data()), ch, 1.f);
-			}
-		}
-		drive.oversampling = true;
-		return;
-	}
-
-	// Op-amp: far below the knee, nothing to do
-	const auto spec = opAmpSpec(model);
-	float peak = 0.f;
-	for (const auto& frame : frames) { peak = std::max({peak, std::abs(frame[0]), std::abs(frame[1])}); }
-	if (peak < spec.knee * spec.negativeRailRatio / 4.f)
-	{
-		if (drive.oversampling) { drive.clear(); }
-		for (const auto& frame : frames) { drive.slewed = {frame[0], frame[1]}; }
-		return;
-	}
-
-	// The slew rate in units per oversampled frame
-	const float maxStep = spec.slewRate * 1e6f / VoltsPerUnit / (static_cast<float>(sampleRate) * Oversampling);
-	for (auto& frame : frames)
-	{
-		for (ch_cnt_t ch = 0; ch < 2; ++ch)
-		{
-			// What the op-amp changes, at the oversampled rate
-			drive.upsamplers[ch].processSample(oversampled.data(), frame[ch]);
-			for (auto& sample : oversampled)
-			{
-				const float target = opAmp(model, sample);
-				drive.slewed[ch] += std::clamp(target - drive.slewed[ch], -maxStep, maxStep);
-				sample = drive.slewed[ch] - sample;
-			}
-			frame[ch] += drive.downsamplers[ch].processSample(oversampled.data());
-		}
-	}
-	drive.oversampling = true;
-}
-
 
 
 
@@ -355,6 +150,19 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 		return count > 1 ? static_cast<float>(f) / static_cast<float>(count - 1) : 1.f;
 	};
 
+	// The GAIN pot, ramped over the period so that turning it does not click
+	const float gain = potGain(m_gainModel.value());
+	if (gain != 1.f || m_gain != 1.f)
+	{
+		for (auto f = std::size_t{0}; f < count; ++f)
+		{
+			const float g = m_gain + (gain - m_gain) * progressAt(f);
+			frames[f][0] *= g;
+			frames[f][1] *= g;
+		}
+	}
+	m_gain = gain;
+
 	// The low cut comes before the gain stage, so that the op-amp or the tube gets no rumble to saturate on
 	if (lowCut)
 	{
@@ -368,11 +176,12 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 		}
 	}
 
-	processDriveStage(frames, sampleRate);
+	const auto drive = static_cast<Drive>(m_driveModel.value());
+	m_gainStage.process(frames, drive, sampleRate);
 
 	// After the input falls silent, the filters ring out for a while
 	const bool anyFilter = lowCut || highPassOn || lowPassOn || monoBassOn || eqLowOn || eqLowMidOn || eqHighMidOn
-		|| eqHighOn || isTube(static_cast<Drive>(m_driveModel.value())); // the tube's DC blocker
+		|| eqHighOn || GainStage::isTube(drive); // the tube's DC blocker
 	if (!anyFilter) { m_tailFrames = 0; }
 	else if (hadInput) { m_tailFrames = static_cast<f_cnt_t>(FilterTail * rate); }
 	else { m_tailFrames = m_tailFrames > frames.size() ? m_tailFrames - frames.size() : 0; }
@@ -476,8 +285,7 @@ void AnalogChannelStrip::reset()
 	}
 	m_tailFrames = 0;
 	m_monoBass.reset();
-	m_drive->clear();
-	m_drive->slewed = {};
+	m_gainStage.reset();
 	m_gateGain = 1.f;
 	m_gateHold = 0;
 	m_compressorEnvelope = 0.f;
@@ -488,6 +296,7 @@ void AnalogChannelStrip::reset()
 
 void AnalogChannelStrip::setNeutral()
 {
+	m_gainModel.setValue(0.5f);
 	m_driveModel.setValue(static_cast<int>(Drive::OpAmp4558));
 	m_lowCutModel.setValue(false);
 	m_highPassModel.setValue(m_highPassModel.minValue());
@@ -508,6 +317,7 @@ void AnalogChannelStrip::setNeutral()
 void AnalogChannelStrip::setDisplayNames(const QString& channelName)
 {
 	const auto prefix = channelName + ">";
+	m_gainModel.setDisplayName(prefix + QObject::tr("Gain"));
 	m_driveModel.setDisplayName(prefix + QObject::tr("Gain stage"));
 	m_lowCutModel.setDisplayName(prefix + QObject::tr("Low cut"));
 	m_highPassModel.setDisplayName(prefix + QObject::tr("High-pass"));
@@ -528,6 +338,7 @@ void AnalogChannelStrip::setDisplayNames(const QString& channelName)
 void AnalogChannelStrip::saveSettings(QDomDocument& doc, QDomElement& channelElement)
 {
 	auto strip = doc.createElement("analogstrip");
+	m_gainModel.saveSettings(doc, strip, "gain");
 	m_driveModel.saveSettings(doc, strip, "drive");
 	m_lowCutModel.saveSettings(doc, strip, "lowcut");
 	m_highPassModel.saveSettings(doc, strip, "highpass");
@@ -557,6 +368,7 @@ void AnalogChannelStrip::loadSettings(const QDomElement& channelElement)
 	}
 	// The TUBE button of before
 	else if (strip.attribute("tube", "0").toInt() != 0) { m_driveModel.setValue(static_cast<int>(Drive::Tube12AX7)); }
+	m_gainModel.loadSettings(strip, "gain");
 	m_lowCutModel.loadSettings(strip, "lowcut");
 	m_highPassModel.loadSettings(strip, "highpass");
 	m_lowPassModel.loadSettings(strip, "lowpass");

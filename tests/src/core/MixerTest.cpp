@@ -1783,9 +1783,9 @@ private slots:
 
 	void opAmpSaturatesOnlyAboveItsKnee()
 	{
-		using Strip = AnalogChannelStrip;
-		using Drive = Strip::Drive;
-		for (const auto model : {Drive::OpAmp4558, Drive::OpAmp5532})
+		using Strip = GainStage;
+		using Drive = Strip::Model;
+		for (const auto model : {Drive::OpAmp4558, Drive::OpAmp5532, Drive::OpAmp5534, Drive::OpAmpTL072})
 		{
 			const auto spec = Strip::opAmpSpec(model);
 			QCOMPARE(Strip::opAmp(model, 1.5f), 1.5f);
@@ -1800,14 +1800,20 @@ private slots:
 		// The 5532 is cleaner: still linear where the 4558 saturates
 		QCOMPARE(Strip::opAmp(Drive::OpAmp5532, 10.f), 10.f);
 		QVERIFY(Strip::opAmp(Drive::OpAmp4558, 10.f) < 10.f);
+		// The 5534 is the 5532, faster; the TL072 saturates a little earlier and slightly asymmetrically
+		QCOMPARE(Strip::opAmp(Drive::OpAmp5534, 10.f), 10.f);
+		QVERIFY(Strip::opAmpSpec(Drive::OpAmp5534).slewRate > Strip::opAmpSpec(Drive::OpAmp5532).slewRate);
+		QVERIFY(Strip::opAmp(Drive::OpAmpTL072, 10.f) < 10.f);
+		QVERIFY(-Strip::opAmp(Drive::OpAmpTL072, -100.f) < Strip::opAmp(Drive::OpAmpTL072, 100.f));
 	}
 
 	void tubesAreUnityForSmallSignalsAndColorLoudOnes()
 	{
-		using Strip = AnalogChannelStrip;
-		using Drive = Strip::Drive;
+		using Strip = GainStage;
+		using Drive = Strip::Model;
 		auto loud = std::vector<float>{};
-		for (const auto model : {Drive::Tube12AX7, Drive::Tube12AX7Vintage, Drive::Tube12AX7Hot})
+		for (const auto model : {Drive::Tube12AX7, Drive::Tube12AX7Vintage, Drive::Tube12AX7Hot, Drive::Tube12AT7,
+			Drive::Tube12AU7})
 		{
 			QVERIFY(std::abs(Strip::tube(model, 0.001f) - 0.001f) < 2e-5f);
 			QVERIFY(std::abs(Strip::tube(model, -0.001f) + 0.001f) < 2e-5f);
@@ -1818,23 +1824,153 @@ private slots:
 			QVERIFY(std::abs(Strip::tube(model, -40.f)) < 20.f);
 			loud.push_back(Strip::tube(model, 3.f));
 		}
-		// Three different characters
-		QVERIFY(loud[0] != loud[1] && loud[1] != loud[2] && loud[0] != loud[2]);
+		// Five different characters
+		for (auto i = std::size_t{0}; i < loud.size(); ++i)
+		{
+			for (auto j = i + 1; j < loud.size(); ++j) { QVERIFY(loud[i] != loud[j]); }
+		}
+		// The lower their gain, the more headroom past where they start to clip: 12AX7, 12AT7, 12AU7
+		const auto headroom = [](Drive model) { return std::abs(Strip::tube(model, -8.f)); };
+		QVERIFY(headroom(Drive::Tube12AX7) < headroom(Drive::Tube12AT7));
+		QVERIFY(headroom(Drive::Tube12AT7) < headroom(Drive::Tube12AU7));
+	}
+
+	void everyGainStageModelIsOfferedOnce()
+	{
+		auto seen = std::vector<int>(static_cast<std::size_t>(GainStage::Model::Count), 0);
+		for (const auto model : GainStage::DisplayOrder) { ++seen[static_cast<std::size_t>(model)]; }
+		for (const auto count : seen) { QCOMPARE(count, 1); }
+		for (const auto model : GainStage::DisplayOrder)
+		{
+			QVERIFY(model == GainStage::Model::Flat || GainStage::isOpAmp(model) != GainStage::isTube(model));
+		}
+	}
+
+	void gainStageMeasuresSaturationAndClip()
+	{
+		using Model = GainStage::Model;
+		auto stage = GainStage{};
+		const auto rate = Engine::audioEngine()->outputSampleRate();
+		auto run = [&](Model model, float level) {
+			auto buffer = std::vector<SampleFrame>(256);
+			for (auto f = std::size_t{0}; f < buffer.size(); ++f)
+			{
+				const float x = level * std::sin(2.f * std::numbers::pi_v<float> * 1000.f * f / rate);
+				buffer[f] = SampleFrame{x, x};
+			}
+			stage.process(buffer, model, rate);
+		};
+
+		// Usual levels: dark
+		run(Model::OpAmp4558, 1.f);
+		QCOMPARE(stage.takeSaturation(), 0.f);
+		QVERIFY(!stage.takeClip());
+		// Past the knee: SAT glows, more the harder it is driven; CLIP lights 3 dB before the rail
+		run(Model::OpAmp4558, 9.f);
+		const float some = stage.takeSaturation();
+		QVERIFY(some > 0.f && some < 0.5f);
+		QVERIFY(!stage.takeClip());
+		run(Model::OpAmp4558, 13.f);
+		QVERIFY(stage.takeSaturation() > some);
+		QVERIFY(stage.takeClip());
+		// Taking resets them
+		QCOMPARE(stage.takeSaturation(), 0.f);
+		QVERIFY(!stage.takeClip());
+		// The tubes color from 0 dBFS and clip at +12 dBFS
+		run(Model::Tube12AX7, 0.5f);
+		QCOMPARE(stage.takeSaturation(), 0.f);
+		run(Model::Tube12AX7, 2.f);
+		QVERIFY(stage.takeSaturation() > 0.4f);
+		QVERIFY(!stage.takeClip());
+		run(Model::Tube12AX7, 3.f);
+		QVERIFY(stage.takeClip());
+		QVERIFY(stage.takeSaturation() > 0.7f);
+		// FLAT never saturates, but warns where a desk would clip
+		run(Model::Flat, 14.f);
+		QCOMPARE(stage.takeSaturation(), 0.f);
+		QVERIFY(stage.takeClip());
+	}
+
+	void gainPotIsMutedToTheLeftAndUnityInTheMiddle()
+	{
+		using Strip = AnalogChannelStrip;
+		QCOMPARE(Strip::potGain(0.f), 0.f);
+		QCOMPARE(Strip::potGain(0.5f), 1.f);
+		QVERIFY(std::abs(ampToDbfs(Strip::potGain(1.f)) - Strip::MaxGain) < 0.01f);
+		QVERIFY(std::abs(ampToDbfs(Strip::potGain(0.75f)) - Strip::MaxGain / 2.f) < 0.01f);
+		QVERIFY(std::abs(ampToDbfs(Strip::potGain(0.25f)) + 18.06f) < 0.01f);
+		for (float p = 0.f; p < 1.f; p += 0.01f) { QVERIFY(Strip::potGain(p + 0.01f) > Strip::potGain(p)); }
+
+		const auto channel = mixer()->createChannel();
+		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+		settle();
+		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Flat));
+		QCOMPARE(strip.m_gainModel.value(), 0.5f);
+		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.01f);
+		strip.m_gainModel.setValue(0.75f);
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.1f) - dbfsToAmp(15.f)) < 0.05f);
+		strip.m_gainModel.setValue(0.f);
+		QVERIFY(sineGain(channel, 1000.f) < 1e-6f);
+		// Past the middle, a pushed op-amp saturates
+		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::OpAmp4558));
+		strip.m_gainModel.setValue(1.f);
+		QVERIFY(sineGain(channel, 1000.f, 0.5f) < dbfsToAmp(30.f) * 0.9f);
+		// Digital mode: no pot
+		mixer()->analogModel()->setValue(false);
+		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.01f);
+		mixer()->analogModel()->setValue(true);
+		strip.setNeutral();
+		QCOMPARE(strip.m_gainModel.value(), 0.5f);
+	}
+
+	void masterGainStage()
+	{
+		const auto channel = mixer()->createChannel();
+		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+		auto& master = mixer()->masterSection();
+		settle();
+		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Flat));
+		QCOMPARE(master.m_driveModel.value(), static_cast<int>(GainStage::Model::OpAmp4558));
+		// After the PRE faders, which drive it
+		master.m_driveModel.setValue(static_cast<int>(GainStage::Model::Tube12AX7));
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.01f) - 1.f) < 0.02f);
+		QVERIFY(sineGain(channel, 1000.f, 8.f) < 0.9f);
+		master.m_preLeftModel.setValue(0.1f);
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 8.f) - 0.1f) < 0.01f);
+		master.m_preLeftModel.setValue(1.f);
+		// Digital mode: none
+		mixer()->analogModel()->setValue(false);
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 8.f) - 1.f) < 0.01f);
+		mixer()->analogModel()->setValue(true);
+
+		// Saved with the master
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixer");
+		master.saveSettings(doc, element);
+		master.setDefaults();
+		QCOMPARE(master.m_driveModel.value(), static_cast<int>(GainStage::Model::OpAmp4558));
+		master.loadSettings(element);
+		QCOMPARE(master.m_driveModel.value(), static_cast<int>(GainStage::Model::Tube12AX7));
+		master.setDefaults();
+		strip.setNeutral();
 	}
 
 	void gainStageModels()
 	{
-		using Drive = AnalogChannelStrip::Drive;
+		using Drive = GainStage::Model;
 		const auto channel = mixer()->createChannel();
 		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
 		settle();
 
-		// FLAT: clean even when pushed far beyond the op-amps' rails
+		// FLAT: clean even when pushed far beyond the op-amps' rails (the master's too)
 		strip.m_driveModel.setValue(static_cast<int>(Drive::Flat));
+		mixer()->masterSection().m_driveModel.setValue(static_cast<int>(Drive::Flat));
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 20.f) - 1.f) < 0.001f);
+		mixer()->masterSection().setDefaults();
 
 		// The tubes: unity for quiet signals, compressed when loud
-		for (const auto model : {Drive::Tube12AX7, Drive::Tube12AX7Vintage, Drive::Tube12AX7Hot})
+		for (const auto model : {Drive::Tube12AX7, Drive::Tube12AX7Vintage, Drive::Tube12AX7Hot, Drive::Tube12AT7,
+			Drive::Tube12AU7})
 		{
 			strip.m_driveModel.setValue(static_cast<int>(model));
 			QVERIFY(std::abs(sineGain(channel, 1000.f, 0.01f) - 1.f) < 0.02f);
@@ -1906,7 +2042,7 @@ private slots:
 		const auto channel = mixer()->createChannel();
 		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
 		settle();
-		strip.m_driveModel.setValue(static_cast<int>(AnalogChannelStrip::Drive::Tube12AX7));
+		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Tube12AX7));
 		// Unity for quiet signals, compressed when loud
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.01f) - 1.f) < 0.02f);
 		QVERIFY(sineGain(channel, 1000.f, 8.f) < 0.9f);

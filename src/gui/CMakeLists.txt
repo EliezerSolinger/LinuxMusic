@@ -113,6 +113,7 @@ SET(LMMS_SRCS
 	gui/widgets/ComboBox.cpp
 	gui/widgets/Draggable.cpp
 	gui/widgets/DeskKnob.cpp
+	gui/widgets/GainStageControls.cpp
 	gui/widgets/Fader.cpp
 	gui/widgets/FloatModelEditorBase.cpp
 	gui/widgets/Graph.cpp

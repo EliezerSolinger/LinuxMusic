@@ -31,6 +31,7 @@
 #include "AutomatableModel.h"
 #include "ChannelMeter.h"
 #include "EqFilter.h"
+#include "GainStage.h"
 #include "LmmsTypes.h"
 #include "MonoBass.h"
 
@@ -46,6 +47,8 @@ class SampleFrame;
  * The master section of a recording studio's desk, in both of the mixer's modes. On the master, in signal order:
  * - the PRE faders, left and right: the mix's level into the master's processing (its effects, the stereo section
  *   and the bus compressor), before them;
+ * - in analog mode, the master's gain stage, after the PRE faders, which drive it: the summing amplifier of an analog
+ *   desk, of the same models as the channels' (see GainStage), with no gain pot of its own;
  * - the stereo section, in mid/side (M = (L+R)/2, S = (L-R)/2), before the bus compressor (see processStereo());
  * - a bus compressor, after the SSL G-series one (off by default);
  * - then the master's own fader, POST.
@@ -74,6 +77,16 @@ public:
 
 	//! The level after the PRE faders, which their meters show
 	ChannelMeter m_preMeter;
+
+	//! The gain stage's model, a GainStage::Model (analog mode)
+	IntModel m_driveModel;
+
+	//! The gain stage, after the PRE faders, in analog mode [audio thread]
+	void processDrive(std::span<SampleFrame> frames, sample_rate_t sampleRate);
+	//! Forgets the gain stage's state, out of analog mode [audio thread]
+	void resetDrive() { m_gainStage.reset(); }
+	//! The gain stage, which also measures its saturation for its LEDs
+	auto gainStage() -> GainStage& { return m_gainStage; }
 
 	// Stereo section (the width is the master channel's own width, see processStereo())
 	FloatModel m_bassWidthModel;			//!< % of the side kept below the mono bass frequency; off at 100
@@ -140,6 +153,8 @@ public:
 	void loadSettings(const QDomElement& mixerElement);
 
 private:
+	GainStage m_gainStage;
+
 	// Stereo section
 	MonoBass m_monoBass;
 	float m_width = 1.f;			//!< of the last frame, ramped

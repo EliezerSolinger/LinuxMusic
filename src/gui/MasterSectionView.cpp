@@ -37,6 +37,7 @@
 
 #include "AutomatableButton.h"
 #include "DeskKnob.h"
+#include "GainStageControls.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
@@ -325,6 +326,26 @@ MasterSectionView::MasterSectionView(Mixer* mixer, QWidget* parent)
 	layout->addLayout(meters);
 	layout->addWidget(new Goniometer{[&master](auto& points) { master.scopePoints(points); }, this});
 	layout->addWidget(new CorrelationMeter{[&master] { return master.correlation(); }, this});
+
+	// Analog mode: the master's gain stage, which the PRE faders drive
+	auto drive = new QWidget{this};
+	auto driveLayout = new QVBoxLayout{drive};
+	driveLayout->setContentsMargins(0, 0, 0, 0);
+	driveLayout->setSpacing(2);
+	auto driveTitle = new QLabel{tr("DRIVE"), drive};
+	driveTitle->setObjectName("masterSectionTitle");
+	driveTitle->setAlignment(Qt::AlignCenter);
+	driveTitle->setFont(adjustedToPixelSize(font(), 7));
+	driveLayout->addWidget(driveTitle);
+	auto driveRow = new QHBoxLayout{};
+	driveRow->setSpacing(4);
+	driveRow->addWidget(new DriveButton{&master.m_driveModel, drive});
+	driveRow->addWidget(new SaturationLeds{&master.gainStage(), drive});
+	driveLayout->addLayout(driveRow);
+	layout->addWidget(drive);
+	auto showDrive = [drive, mixer] { drive->setVisible(mixer->isAnalog()); };
+	connect(mixer->analogModel(), &BoolModel::dataChanged, drive, showDrive);
+	showDrive();
 
 	// The stereo section, in mid/side, before the bus compressor
 	addTitle(tr("STEREO"));

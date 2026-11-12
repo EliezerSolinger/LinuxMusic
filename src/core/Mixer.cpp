@@ -359,10 +359,14 @@ void MixerChannel::doProcessing()
 	}
 	m_monoMix = monoTarget;
 
-	// The master's PRE faders, before its effects
+	// The master's PRE faders, before its effects, and in analog mode the gain stage they drive
 	if (isMaster() && m_buffer.hasSignal(mainPair))
 	{
-		Engine::mixer()->masterSection().processPreFaders(buffer, Engine::audioEngine()->outputSampleRate());
+		auto& master = Engine::mixer()->masterSection();
+		const auto sampleRate = Engine::audioEngine()->outputSampleRate();
+		master.processPreFaders(buffer, sampleRate);
+		if (Engine::mixer()->isAnalog()) { master.processDrive(buffer, sampleRate); }
+		else { master.resetDrive(); }
 		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
 	}
 
