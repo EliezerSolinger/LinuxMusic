@@ -109,6 +109,7 @@ set(LMMS_SRCS
 	core/StepRecorder.cpp
 
 	core/audio/AudioAlsa.cpp
+	core/audio/AudioDeviceReservation.cpp
 	core/audio/AudioDevice.cpp
 	core/audio/AudioFileDevice.cpp
 	core/audio/AudioFileMP3.cpp

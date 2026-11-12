@@ -39,27 +39,19 @@ class QComboBox;
 namespace lmms::gui
 {
 
-class LcdSpinBox;
-
 class AudioAlsaSetupWidget : public AudioDeviceSetupWidget
 {
 	Q_OBJECT
 
 public:
 	AudioAlsaSetupWidget( QWidget * _parent );
-	~AudioAlsaSetupWidget() override;
+	~AudioAlsaSetupWidget() override = default;
 
 	void saveSettings() override;
 
-public slots:
-	void onCurrentIndexChanged(int index);
-
 private:
-	QComboBox * m_deviceComboBox;
-	LcdSpinBox * m_channels;
-
-	int m_selectedDevice;
-	AudioAlsa::DeviceInfoCollection m_deviceInfos;
+	QComboBox* m_deviceComboBox; //!< playback
+	QComboBox* m_inputComboBox; //!< capture
 };
 
 } // namespace lmms::gui

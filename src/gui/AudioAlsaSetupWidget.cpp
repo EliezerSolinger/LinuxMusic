@@ -30,64 +30,56 @@
 #ifdef LMMS_HAVE_ALSA
 
 #include "ConfigManager.h"
-#include "LcdSpinBox.h"
-#include "lmms_constants.h"
 
 namespace lmms::gui
 {
 
-AudioAlsaSetupWidget::AudioAlsaSetupWidget( QWidget * _parent ) :
-	AudioDeviceSetupWidget( AudioAlsa::name(), _parent ),
-	m_selectedDevice(-1)
+AudioAlsaSetupWidget::AudioAlsaSetupWidget(QWidget* parent)
+	: AudioDeviceSetupWidget(AudioAlsa::name(), parent)
+	, m_deviceComboBox{new QComboBox{this}}
+	, m_inputComboBox{new QComboBox{this}}
 {
-	QFormLayout * form = new QFormLayout(this);
+	auto form = new QFormLayout(this);
 
-	m_deviceInfos = AudioAlsa::getAvailableDevices();
-
-	QString deviceText = ConfigManager::inst()->value( "audioalsa", "device" );
-
-	m_deviceComboBox = new QComboBox(this);
-	for (size_t i = 0; i < m_deviceInfos.size(); ++i)
+	// Each list holds the devices for its direction; the hardware ones (hw:) are exclusive and on the card's own
+	// format, the others (default, PipeWire, PulseAudio) are shared with other programs
+	m_inputComboBox->addItem(tr("[None]"), QString{AudioAlsa::NoCapture});
+	m_inputComboBox->addItem(tr("[Same as the output]"), QString{});
+	for (const auto& device : AudioAlsa::getAvailableDevices())
 	{
-		AudioAlsa::DeviceInfo const & currentDeviceInfo = m_deviceInfos[i];
-		QString comboBoxText = currentDeviceInfo.getDeviceName();
-		m_deviceComboBox->addItem(comboBoxText, QVariant(static_cast<uint>(i)));
-
-		QString toolTipText = currentDeviceInfo.getDeviceDescription();
-		m_deviceComboBox->setItemData(i, toolTipText, Qt::ToolTipRole);
-
-		if (currentDeviceInfo.getDeviceName() == deviceText)
+		auto description = device.getDeviceDescription();
+		description.replace('\n', " - ");
+		if (device.canPlay())
 		{
-			m_deviceComboBox->setCurrentIndex(static_cast<int>(i));
+			m_deviceComboBox->addItem(device.getDeviceName(), device.getDeviceName());
+			m_deviceComboBox->setItemData(m_deviceComboBox->count() - 1, description, Qt::ToolTipRole);
+		}
+		if (device.canCapture())
+		{
+			m_inputComboBox->addItem(device.getDeviceName(), device.getDeviceName());
+			m_inputComboBox->setItemData(m_inputComboBox->count() - 1, description, Qt::ToolTipRole);
 		}
 	}
 
-	m_selectedDevice = m_deviceComboBox->currentIndex();
+	// A device set by hand, not in the lists, stays selectable
+	const auto select = [](QComboBox* box, const QString& value) {
+		auto index = box->findData(value);
+		if (index < 0)
+		{
+			box->addItem(value, value);
+			index = box->count() - 1;
+		}
+		box->setCurrentIndex(index);
+	};
+	const auto device = ConfigManager::inst()->value("audioalsa", "device");
+	select(m_deviceComboBox, device.isEmpty() ? QString{"default"} : device);
+	select(m_inputComboBox, ConfigManager::inst()->value("audioalsa", "inputdevice"));
+	m_deviceComboBox->setEditable(true);
+	m_inputComboBox->setToolTip(tr("Where the tracks record from. A hardware device (hw:) on the same card as the "
+		"output runs on the card's clock, in step with it."));
 
-	connect(m_deviceComboBox,
-			SIGNAL(currentIndexChanged(int)),
-			SLOT(onCurrentIndexChanged(int)));
-
-	form->addRow(tr("Device"), m_deviceComboBox);
-
-	auto m = new LcdSpinBoxModel(/* this */);
-	m->setRange(DEFAULT_CHANNELS, DEFAULT_CHANNELS);
-	m->setStep( 2 );
-	m->setValue( ConfigManager::inst()->value( "audioalsa",
-							"channels" ).toInt() );
-
-	m_channels = new LcdSpinBox( 1, this );
-	m_channels->setModel( m );
-
-	form->addRow(tr("Channels"), m_channels);
-}
-
-
-
-
-AudioAlsaSetupWidget::~AudioAlsaSetupWidget()
-{
-	delete m_channels->model();
+	form->addRow(tr("Output device"), m_deviceComboBox);
+	form->addRow(tr("Input device"), m_inputComboBox);
 }
 
 
@@ -95,24 +87,11 @@ AudioAlsaSetupWidget::~AudioAlsaSetupWidget()
 
 void AudioAlsaSetupWidget::saveSettings()
 {
-	QString deviceText;
-
-	if (m_selectedDevice != -1)
-	{
-		AudioAlsa::DeviceInfo const & selectedDevice = m_deviceInfos[m_selectedDevice];
-		deviceText = selectedDevice.getDeviceName();
-	}
-
-	ConfigManager::inst()->setValue( "audioalsa", "device", deviceText );
-	ConfigManager::inst()->setValue( "audioalsa", "channels",
-				QString::number( m_channels->value<int>() ) );
-}
-
-
-
-void AudioAlsaSetupWidget::onCurrentIndexChanged(int index)
-{
-	m_selectedDevice = index;
+	const auto device = m_deviceComboBox->currentText() == m_deviceComboBox->itemText(m_deviceComboBox->currentIndex())
+		? m_deviceComboBox->currentData().toString()
+		: m_deviceComboBox->currentText();
+	ConfigManager::inst()->setValue("audioalsa", "device", device);
+	ConfigManager::inst()->setValue("audioalsa", "inputdevice", m_inputComboBox->currentData().toString());
 }
 
 
