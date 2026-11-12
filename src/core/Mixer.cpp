@@ -1133,25 +1133,12 @@ void Mixer::masterMix( SampleFrame* _buf )
 			AudioEngineWorkerThread::addJob( ch );
 		}
 	}
-	while (m_mixerChannels[0]->state() != ThreadableJob::ProcessingState::Done)
-	{
-		bool found = false;
-		for( MixerChannel * ch : m_mixerChannels )
-		{
-			const auto s = ch->state();
-			if (s == ThreadableJob::ProcessingState::Queued
-				|| s == ThreadableJob::ProcessingState::InProgress)
-			{
-				found = true;
-				break;
-			}
-		}
-		if( !found )
-		{
-			break;
-		}
-		AudioEngineWorkerThread::startAndWaitForJobs();
-	}
+	// A channel is queued while the last of its senders is being processed (see MixerChannel::incrementDeps()), and
+	// waiting for the jobs lasts until every queued job is done, including those queued meanwhile: afterwards every
+	// channel is done, the master too. (Looking at the channels' states one after the other instead, as before,
+	// raced with the workers: a channel looked at early could be queued while the others were looked at, the scan
+	// found nothing in flight and gave up on the master, and the period came out silent.)
+	AudioEngineWorkerThread::startAndWaitForJobs();
 
 	// The master channel already applied its fader when it was processed; the monitoring changes only what is
 	// heard, not what is exported
