@@ -240,6 +240,38 @@ e a captura no mesmo ciclo.
 | Cabeçalho das faixas | Duas linhas, como no REAPER: nome, M/S, ● (armar) e monitor; depois a entrada, o medidor de entrada, VOL e PAN. **Todas as faixas seguem esse cabeçalho**: as de instrumento (que gravam MIDI) e as de áudio iguais; as outras (pasta, sequência, automação) com o mesmo desenho, só com os controles que fazem sentido para elas |
 | Já decidido antes | A entrada, armar e monitorar são da faixa (passo 26); a gravação fica na página Composição |
 
+
+### Segunda rodada (12/11/2026)
+
+**Plataforma:** fazer funcionar primeiro no Mac, com todas as peças prontas. O teste no ALSA do Linux vem depois.
+
+| Tema | Decisão |
+|---|---|
+| Driver no Mac | Um driver CoreAudio nativo: duplex, multicanal e com latência informada. Usa a mesma interface nova de drivers do ALSA, e valida a arquitetura aqui |
+| Placa ocupada (ALSA) | Pedir a placa ao PipeWire/PulseAudio pelo protocolo de reserva (`org.freedesktop.ReserveDevice1`); se não der, avisar quem está usando |
+| Taxa de amostragem | É do projeto. Se a placa não suportar, converte e mostra a mensagem de conversão |
+| Trocar dispositivo, buffer ou taxa | Sem reiniciar: o motor reabre o driver na hora (com o transporte parado; bloqueado durante a gravação) |
+| Latência | A do driver, mais um teste de loopback (pulso na saída, gravado pela entrada), mais um ajuste manual em ms ou amostras |
+| O que vai para o arquivo | A entrada seca. Os efeitos e a mesa só na monitoração e na reprodução |
+| Gravar com a música tocando | Entra gravando na hora (punch manual); apertar de novo sai |
+| Gravar sem faixa armada | Arma a faixa selecionada; sem faixa gravável selecionada, avisa |
+| Metrônomo | Só na monitoração, nunca na exportação nem na mesa. Configurável: só gravando ou também tocando, volume, som com acento no 1, pré-roll e count-in em compassos |
+| Entradas por faixa | Mono ou estéreo. A mesma entrada pode ser gravada por várias faixas ao mesmo tempo |
+| Arquivos | Na pasta `<projeto>_media/`, ao lado do projeto, com nomes `<faixa>_<passada>.wav` e caminhos relativos. Projeto não salvo grava numa pasta temporária, movida ao salvar |
+| Xrun gravando | Continua; o trecho perdido fica em silêncio, o ponto fica marcado no take e um contador avisa |
+| Time-stretch | **Renderizado:** ao mudar o BPM, gera um arquivo esticado com prefixo e mantém o original no disco. As mudanças seguintes partem sempre do original |
+| Ao mudar o BPM | Um modal confirma ("vai renderizar N itens, ~X s"), mostra o progresso e só fecha ao terminar. Cancelar volta o BPM |
+| Mapa de tempo | Sim: marcadores numa faixa de tempo acima da régua, com BPM e fórmula de compasso, em salto ou rampa. Os itens guardam o BPM em que foram gravados |
+| Automação de BPM de hoje | Vira marcadores ao abrir o projeto; o mapa de tempo passa a ser o único jeito de mudar o BPM |
+| Fades | Automáticos: ~5 ms nas pontas de todo item, e crossfade na sobreposição. Tudo ajustável |
+| Ganho por item | Na v1: uma alça em dB no topo do item, e normalizar |
+| Desfazer | Reescrito por comandos (só o que mudou), para o sistema novo e o que ele toca; o resto migra aos poucos |
+| MIDI por cima | Padrão overdub, com uma chave na faixa: overdub, replace ou take em lane |
+| Quantizar MIDI | Opcional na entrada, desligado por padrão (grade e força por faixa) |
+| Entrada MIDI | Por faixa: dispositivo e canal, padrão todos/omni, no cabeçalho de duas linhas |
+| Saída da faixa de sample | Quando a faixa nova cobrir loops e samples tão bem quanto ela. Aí os projetos convertem ao abrir |
+
+
 ## Anexos
 - **A:** motor de áudio e caminho da entrada
 - **B:** modelo de faixas, clipes e áudio
