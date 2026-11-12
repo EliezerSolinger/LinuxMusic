@@ -46,10 +46,12 @@ class Knob;
 class VolumeKnob;
 
 /**
- * Makes a track's volume and panning knobs and effect rack shortcuts to its mixer channel's fader, pan and effects
- * when the track has a channel of its own (see Mixer::setUpTrackChannel()), and to the track's own volume, panning
- * and effects otherwise (a track sending to a shared channel or to the master, or with automated volume or panning).
- * A folder has no volume, panning and effects of its own: its controls are always those of the channel it uses.
+ * Points a track's controls at the track or at its mixer channel:
+ * - volume and panning are the track's own, acting on the source before the channel (as in REAPER, the track is the
+ *   source and the channel the mix);
+ * - the effect rack is the channel's when the track has a channel of its own (see Mixer::setUpTrackChannel()), the
+ *   track's otherwise (a track sending to a shared channel or to the master);
+ * - a folder has no volume, panning and effects of its own: its controls are those of the channel it uses.
  * Mute and solo are the channel's too: the mute button is the channel's while the track has a channel of its own (and
  * no automated mute), and the solo button solos the channel the track plays through.
  * Follows the track when its channel changes.

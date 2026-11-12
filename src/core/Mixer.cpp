@@ -1539,31 +1539,8 @@ int Mixer::setUpTrackChannel(Track* track)
 		effects->clear();
 	}
 
-	// The track's volume becomes the channel's input trim: like the track's volume, it comes before the effects,
-	// so effects like compressors get the same level. What the trim's range cannot take goes to the fader.
-	// Automated or controlled volume and panning stay on the track, where their automation acts.
-	const float trackVolume = strip->volume ? strip->volume->value() / DefaultVolume : 1.f;
-	if (trackVolume != 1.f && !strip->volume->isAutomatedOrControlled())
-	{
-		if (trackVolume <= 0.f) { channel->m_volumeModel.setValue(0.f); }
-		else
-		{
-			const float wanted = channel->m_trimModel.value() + ampToDbfs(trackVolume);
-			const float trim = std::clamp(wanted, channel->m_trimModel.minValue(), channel->m_trimModel.maxValue());
-			channel->m_trimModel.setValue(trim);
-			if (trim != wanted)
-			{
-				channel->m_volumeModel.setValue(channel->m_volumeModel.value() * dbfsToAmp(wanted - trim));
-			}
-		}
-		strip->volume->setValue(DefaultVolume);
-	}
-	if (strip->panning && strip->panning->value() != DefaultPanning && !strip->panning->isAutomatedOrControlled())
-	{
-		channel->m_panModel.setValue(std::clamp<float>(channel->m_panModel.value() + strip->panning->value(),
-			PanningLeft, PanningRight));
-		strip->panning->setValue(DefaultPanning);
-	}
+	// The track keeps its own volume and panning, on the source before the channel (the track is the source, the
+	// channel the mix)
 
 	emit trackChannelChanged(track);
 	return index;

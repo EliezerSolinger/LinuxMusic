@@ -123,9 +123,11 @@ void TrackChannelControls::update()
 	const bool oldModelsValid = !m_boundChannel || boundExists;
 	m_boundChannel = channel;
 
+	// The track's volume and panning are its own, on the source before the channel; a folder, which has none,
+	// shows its group channel's
 	if (m_volumeKnob)
 	{
-		const bool onChannel = channel && (!m_volume || !m_volume->isAutomatedOrControlled());
+		const bool onChannel = !m_volume && channel;
 		FloatModel* model = onChannel ? &channel->m_volumeModel : m_volume;
 		if (m_volumeKnob->model() != model || !oldModelsValid)
 		{
@@ -135,8 +137,7 @@ void TrackChannelControls::update()
 	}
 	if (m_panningKnob)
 	{
-		FloatModel* model = channel && (!m_panning || !m_panning->isAutomatedOrControlled())
-			? &channel->m_panModel : m_panning;
+		FloatModel* model = !m_panning && channel ? &channel->m_panModel : m_panning;
 		if (m_panningKnob->model() != model || !oldModelsValid) { m_panningKnob->setModel(model, oldModelsValid); }
 	}
 	if (m_muteButton)

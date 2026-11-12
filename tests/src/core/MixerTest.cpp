@@ -963,7 +963,7 @@ private slots:
 		delete track;
 	}
 
-	void trackStripMovesIntoItsChannel()
+	void trackEffectsMoveIntoItsChannel()
 	{
 		// Like a track of a project from before: on the master, with its own volume, panning and an effect
 		auto track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
@@ -979,12 +979,12 @@ private slots:
 		QCOMPARE(track->mixerChannelModel()->value(), index);
 
 		const auto channel = mixer()->mixerChannel(index);
-		// The volume came before the effects, so it becomes the input trim, which does too
-		QVERIFY(std::abs(channel->m_trimModel.value() - ampToDbfs(0.5f)) < 0.001f);
+		// The track keeps its volume and panning, on the source before the channel
+		QCOMPARE(track->volumeModel()->value(), 50.f);
+		QCOMPARE(track->panningModel()->value(), -40.f);
+		QCOMPARE(channel->m_trimModel.value(), 0.f);
 		QCOMPARE(channel->m_volumeModel.value(), 1.f);
-		QVERIFY(qFuzzyCompare(channel->m_panModel.value(), -40.f));
-		QCOMPARE(track->volumeModel()->value(), static_cast<float>(DefaultVolume));
-		QCOMPARE(track->panningModel()->value(), static_cast<float>(DefaultPanning));
+		QCOMPARE(channel->m_panModel.value(), static_cast<float>(PanningCenter));
 
 		// The effect is the channel's now (a DummyEffect, since the fake effect cannot be loaded by name)
 		QVERIFY(track->audioBusHandle()->effects()->effects().empty());
@@ -1035,26 +1035,10 @@ private slots:
 		delete track;
 	}
 
-	void automatedTrackVolumeStaysOnTheTrack()
+	void trackOnAnotherTracksChannelHasNoChannelOfItsOwn()
 	{
 		auto track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
-		mixer()->releaseTrackChannel(track);
-		track->volumeModel()->setValue(50.f);
-		track->panningModel()->setValue(30.f);
-
-		auto automationTrack = AutomationTrack{Engine::getSong()};
-		auto clip = AutomationClip{&automationTrack};
-		clip.addObject(track->volumeModel());
-
-		const auto index = mixer()->setUpTrackChannel(track);
-		const auto channel = mixer()->mixerChannel(index);
-		QCOMPARE(mixer()->trackChannel(track), channel);
-
-		// The automation acts on the track's volume, so it stays there; the panning moves
-		QCOMPARE(track->volumeModel()->value(), 50.f);
-		QCOMPARE(channel->m_trimModel.value(), 0.f);
-		QVERIFY(qFuzzyCompare(channel->m_panModel.value(), 30.f));
-		QCOMPARE(track->panningModel()->value(), static_cast<float>(DefaultPanning));
+		const auto index = mixer()->trackChannel(track)->index();
 
 		// A track sending to a channel made for another track has no channel of its own
 		auto other = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));

@@ -367,13 +367,13 @@ public:
 	void setChannelCount(mix_ch_t index, ch_cnt_t channels);
 
 	/**
-	 * Makes the mixer channel the only strip of @p track (an instrument or sample track), so that effects,
-	 * volume and panning live in the mixer:
+	 * Gives @p track (an instrument, sample or folder track) a mixer channel of its own, where its effects, mute and
+	 * solo live:
 	 * - if the track sends to the master, to a channel that other tracks send to as well, or to a bus (a channel
 	 *   other channels send to), it gets a channel of its own, named and colored after it, which sends where the
 	 *   track sent; a channel only the track uses becomes the track's channel;
-	 * - the track's own effects move to the front of its channel's effects, and its volume and panning into the
-	 *   channel's input trim and pan (unless automated or controlled: then they stay on the track).
+	 * - the track's own effects move to the front of its channel's effects, and its mute and solo to the channel's.
+	 * The track keeps its volume and panning, on the source before the channel.
 	 *
 	 * @returns the track's channel, or -1 if @p track has no mixer channel
 	 */
