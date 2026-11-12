@@ -95,10 +95,12 @@ TrackOperationsWidget::TrackOperationsWidget(TrackView* parent)
 	m_muteBtn->setCheckable(true);
 	m_muteBtn->setToolTip(tr("Mute"));
 	m_muteBtn->setObjectName("btn-mute");
+	m_muteBtn->setText(tr("M"));
 	m_soloBtn = new AutomatableButton(operationsWidget, tr("Solo"));
 	m_soloBtn->setCheckable(true);
 	m_soloBtn->setToolTip(tr("Solo"));
 	m_soloBtn->setObjectName("btn-solo");
+	m_soloBtn->setText(tr("S"));
 
 	operationsLayout->addWidget(m_trackOps);
 	operationsLayout->addWidget(m_muteBtn);

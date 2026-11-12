@@ -1267,11 +1267,15 @@ QPushButton#btn-phase:checked {
 	color: #14161a;
 }
 
-/* In the mixer strips, mute and solo are letters, like the phase invert sign */
+/* In the mixer strips and the track list, mute and solo are letters, like the phase invert sign */
 lmms--gui--MixerChannelView QPushButton#btn-mute,
 lmms--gui--MixerChannelView QPushButton#btn-mute:checked,
 lmms--gui--MixerChannelView QPushButton#btn-solo,
-lmms--gui--MixerChannelView QPushButton#btn-solo:checked {
+lmms--gui--MixerChannelView QPushButton#btn-solo:checked,
+lmms--gui--TrackOperationsWidget QPushButton#btn-mute,
+lmms--gui--TrackOperationsWidget QPushButton#btn-mute:checked,
+lmms--gui--TrackOperationsWidget QPushButton#btn-solo,
+lmms--gui--TrackOperationsWidget QPushButton#btn-solo:checked {
 	image: none;
 	color: #d1d8e4;
 	font-size: 9px;
@@ -1279,6 +1283,8 @@ lmms--gui--MixerChannelView QPushButton#btn-solo:checked {
 }
 
 lmms--gui--MixerChannelView QPushButton#btn-mute:checked,
-lmms--gui--MixerChannelView QPushButton#btn-solo:checked {
+lmms--gui--MixerChannelView QPushButton#btn-solo:checked,
+lmms--gui--TrackOperationsWidget QPushButton#btn-mute:checked,
+lmms--gui--TrackOperationsWidget QPushButton#btn-solo:checked {
 	color: #ffffff;
 }
