@@ -7,6 +7,10 @@ if(MSVC)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /fp:fast")
 else()
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fno-strict-aliasing -funroll-loops -ffast-math")
+	# The TAP sources declare functions "inline" without an external definition, which C99 only allows when every
+	# call is inlined; the sanitizers keep calls (e.g. tap_dynamics' recursive get_table_gain()), so their link
+	# failed. GNU89 semantics give each such function an external definition, as the sources were written for.
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fgnu89-inline")
 endif()
 FOREACH(_item ${PLUGIN_SOURCES})
 	GET_FILENAME_COMPONENT(_plugin "${_item}" NAME_WE)
