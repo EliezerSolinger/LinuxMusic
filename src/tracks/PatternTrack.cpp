@@ -89,7 +89,7 @@ PatternTrack::~PatternTrack()
 bool PatternTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					const f_cnt_t _offset, int _clip_num )
 {
-	if( isMuted() )
+	if (isSilenced())
 	{
 		return false;
 	}

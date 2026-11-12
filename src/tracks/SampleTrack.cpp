@@ -47,7 +47,7 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 	Track(Track::Type::Sample, tc),
 	m_volumeModel(DefaultVolume, MinVolume, MaxVolume, 0.1f, this, tr("Volume")),
 	m_panningModel(DefaultPanning, PanningLeft, PanningRight, 0.1f, this, tr("Panning")),
-	m_audioBusHandle(tr("Sample track"), true, &m_volumeModel, &m_panningModel, &m_mutedModel),
+	m_audioBusHandle(tr("Sample track"), true, &m_volumeModel, &m_panningModel, this),
 	m_isPlaying(false)
 {
 	setName(tr("Sample track"));

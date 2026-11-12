@@ -33,13 +33,14 @@
 #include "Mixer.h"
 #include "Engine.h"
 #include "MixHelpers.h"
+#include "Track.h"
 
 namespace lmms
 {
 
 AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	FloatModel* volumeModel, FloatModel* panningModel,
-	BoolModel* mutedModel) :
+	const Track* track) :
 	m_bufferUsage(false),
 	m_buffer(Engine::audioEngine()->framesPerPeriod(), DEFAULT_CHANNELS, DEFAULT_CHANNELS, true),
 	m_extOutputEnabled(false),
@@ -48,7 +49,7 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	m_effects(hasEffectChain ? new EffectChain(nullptr) : nullptr),
 	m_volumeModel(volumeModel),
 	m_panningModel(panningModel),
-	m_mutedModel(mutedModel)
+	m_track(track)
 {
 	Engine::audioEngine()->addAudioBusHandle(this);
 	setExtOutputEnabled(true);
@@ -107,7 +108,8 @@ bool AudioBusHandle::processEffects()
 
 void AudioBusHandle::doProcessing()
 {
-	if (m_mutedModel && m_mutedModel->value())
+	// A silenced track (muted, or out of a solo) makes no sound
+	if (m_track && m_track->isSilenced())
 	{
 		return;
 	}

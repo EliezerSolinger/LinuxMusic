@@ -435,19 +435,42 @@ void TrackContainer::addLayoutCheckPoint()
 
 void TrackContainer::resolveLegacySolo()
 {
-	if (std::none_of(m_tracks.begin(), m_tracks.end(), [](const Track* track) { return track->legacySolo(); }))
-	{
-		return;
-	}
+	if (std::none_of(m_tracks.begin(), m_tracks.end(), [](const Track* track) { return track->isSolo(); })) { return; }
 	for (const auto track : m_tracks)
 	{
-		track->setMuted(track->legacySolo() ? false : track->legacyMutedBeforeSolo());
-		const auto type = track->type();
-		if (type != Track::Type::Instrument && type != Track::Type::Sample && type != Track::Type::Folder)
-		{
-			track->clearLegacySolo();
-		}
+		if (const auto muted = track->legacyMutedBeforeSolo()) { track->setMuted(*muted); }
 	}
+	updateSilence();
+}
+
+
+
+
+void TrackContainer::updateSilence()
+{
+	QReadLocker lock(&m_tracksMutex);
+	const bool anySolo = std::any_of(m_tracks.begin(), m_tracks.end(), [](const Track* t) { return t->isSolo(); });
+
+	// The folders holding each track, from the depths: a folder holds the tracks below it that are deeper than it
+	struct Holder { const Track* folder; int depth; };
+	auto holders = std::vector<Holder>{};
+	for (const auto track : m_tracks)
+	{
+		const int depth = track->folderDepth();
+		while (!holders.empty() && holders.back().depth >= depth) { holders.pop_back(); }
+
+		const bool inMutedFolder = std::any_of(holders.begin(), holders.end(),
+			[](const Holder& h) { return h.folder->isMuted(); });
+		const bool inSoloedFolder = std::any_of(holders.begin(), holders.end(),
+			[](const Holder& h) { return h.folder->isSolo(); });
+		const auto type = track->type();
+		const bool automation = type == Track::Type::Automation || type == Track::Type::HiddenAutomation;
+		const bool soloedOut = anySolo && !automation && !track->isSolo() && !inSoloedFolder;
+		track->setSilenced(inMutedFolder || soloedOut);
+
+		if (type == Track::Type::Folder) { holders.push_back({track, depth}); }
+	}
+	emit silenceChanged();
 }
 
 
@@ -467,6 +490,7 @@ void TrackContainer::updateFolders()
 	{
 		Engine::mixer()->updateFolderRouting();
 	}
+	updateSilence();
 	emit foldersChanged();
 }
 
@@ -571,7 +595,7 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 
 	for (Track* track: tracks)
 	{
-		if (track->isMuted()) {
+		if (track->isSilenced()) {
 			continue;
 		}
 

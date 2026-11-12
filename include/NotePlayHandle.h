@@ -244,7 +244,7 @@ public:
 	/*! Returns whether NotePlayHandle belongs to pattern track and pattern track is muted */
 	bool isPatternTrackMuted()
 	{
-		return m_patternTrack && m_patternTrack->isMuted();
+		return m_patternTrack && m_patternTrack->isSilenced();
 	}
 
 	/*! Sets attached pattern track */

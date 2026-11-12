@@ -32,6 +32,7 @@
 #include "AutomatableModel.h"
 #include "JournallingObject.h"
 #include "LmmsTypes.h"
+#include <atomic>
 #include <optional>
 
 
@@ -67,6 +68,7 @@ class LMMS_EXPORT Track : public Model, public JournallingObject
 {
 	Q_OBJECT
 	mapPropertyFromModel(bool,isMuted,setMuted,m_mutedModel);
+	mapPropertyFromModel(bool,isSolo,setSolo,m_soloModel);
 public:
 	using clipVector = std::vector<Clip*>;
 
@@ -259,20 +261,29 @@ public:
 
 	BoolModel* getMutedModel();
 
+	BoolModel* soloModel() { return &m_soloModel; }
+
 	/**
-	 * Whether the track is muted where it is heard: by its own mute, or by the mute of its own mixer channel
-	 * (see Mixer::trackChannel()), where instrument, sample and folder tracks are muted and soloed.
+	 * Whether the track's source is silent: muted, in a muted folder, or silenced by solo, as in REAPER: while tracks
+	 * of its container are soloed, only they play, with what the soloed folders hold (see
+	 * TrackContainer::updateSilence()); automation tracks keep acting. Solo and mute do not touch each other's
+	 * buttons [any thread]
+	 */
+	auto isSilenced() const -> bool { return isMuted() || m_silenced.load(std::memory_order_relaxed); }
+	//! Sets whether a folder's mute or another track's solo silences the track [main thread]
+	void setSilenced(bool silenced) { m_silenced.store(silenced, std::memory_order_relaxed); }
+
+	/**
+	 * Whether the track is silent where it is heard: silenced (see isSilenced()), or by the mute of its own mixer
+	 * channel (see Mixer::trackChannel())
 	 */
 	auto isMutedInMix() const -> bool;
 
 	/**
-	 * Solo from projects of before solo moved to the mixer channels: whether the track was soloed, and its mute from
-	 * before (LMMS soloed by muting the other tracks). Only read when loading; see TrackContainer::resolveLegacySolo()
-	 * and Mixer::setUpTrackChannel().
+	 * Projects from LMMS soloed by muting the other tracks: the track's mute from before the solo. Only read when
+	 * loading; see TrackContainer::resolveLegacySolo().
 	 */
-	auto legacySolo() const -> bool { return m_legacySolo; }
-	auto legacyMutedBeforeSolo() const -> bool { return m_legacyMutedBeforeSolo; }
-	void clearLegacySolo() { m_legacySolo = false; }
+	auto legacyMutedBeforeSolo() const -> std::optional<bool> { return m_legacyMutedBeforeSolo; }
 
 	/**
 	 * How deep the track is in folders: 0 at the top, 1 inside a folder, 2 inside a folder in a folder...
@@ -319,10 +330,11 @@ private:
 
 protected:
 	BoolModel m_mutedModel;
+	BoolModel m_soloModel;
 
 private:
-	bool m_legacySolo = false;
-	bool m_legacyMutedBeforeSolo = false;
+	std::atomic<bool> m_silenced = false;
+	std::optional<bool> m_legacyMutedBeforeSolo;
 
 	clipVector m_clips;
 

@@ -52,8 +52,8 @@ class VolumeKnob;
  * - the effect rack is the channel's when the track has a channel of its own (see Mixer::setUpTrackChannel()), the
  *   track's otherwise (a track sending to a shared channel or to the master);
  * - a folder has no volume, panning and effects of its own: its controls are those of the channel it uses.
- * Mute and solo are the channel's too: the mute button is the channel's while the track has a channel of its own (and
- * no automated mute), and the solo button solos the channel the track plays through.
+ * Mute and solo are the track's own, on its source, as in REAPER (see TrackContainer::updateSilence()); the mixer
+ * channel has its own.
  * Follows the track when its channel changes.
  */
 class TrackChannelControls : public QObject
@@ -96,6 +96,7 @@ private:
 
 	//! The channel the controls point at, if any
 	MixerChannel* m_boundChannel = nullptr;
+	QMetaObject::Connection m_channelMute;
 };
 
 } // namespace gui

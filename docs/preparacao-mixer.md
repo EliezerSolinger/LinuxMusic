@@ -1067,6 +1067,48 @@ Decidido pelo usuário, pergunta por pergunta, em 2026-11-12. Implementar na ord
 
 O passo 20 está completo. `MixerTest` tem 104 testes.
 
+### Passo 21: mute e solo voltam para as faixas (feito)
+
+Pedido do usuário: o mute da faixa muta a faixa, não o canal. Logo depois: o solo da faixa também volta. Isso
+reverte a parte das faixas do passo 13, mas não o mecanismo antigo do LMMS. Como no passo 17 (a faixa tem volume e
+pan próprios), a faixa é a fonte e o canal é a mixagem: cada um tem o seu M e o seu S.
+
+**Faixa (`Track::isSilenced()`, `TrackContainer::updateSilence()`):**
+- **Mute:** silencia a fonte da faixa, antes do canal. O mute de uma pasta silencia tudo que ela contém.
+- **Solo, como no REAPER:**
+  - com faixas em solo, só elas tocam, mais tudo que as pastas em solo contêm; as faixas de automação continuam
+    agindo;
+  - várias faixas podem ficar em solo ao mesmo tempo;
+  - o solo não mexe nos botões de mute (o LMMS solava mutando as outras faixas e restaurando depois).
+- A silência é recalculada quando muda um mute ou um solo e quando faixas entram, saem ou mudam de lugar.
+- O áudio consulta uma flag atômica: o barramento da faixa, as notas, os samples, as faixas de sequência e a
+  automação vinda delas.
+- Faixas de sequência e de automação têm solo de novo.
+- Clipes e o indicador da faixa aparecem mutados quando a faixa está silenciada ou o canal dela está mutado.
+
+**Canal:** o M e o S do mixer continuam como no passo 13, no canal (`Mixer::applySolo()`). Os dois solos convivem.
+
+**Projetos:**
+- O solo da faixa volta a ser salvo (`solo`).
+- **Projetos do LMMS:** a faixa em solo continua em solo na faixa, e as outras recuperam o mute de antes do solo
+  (`mutedBeforeSolo`, só quando o projeto tem esse atributo).
+- Projetos salvos por esta build entre os passos 13 e 20 têm os mutes e solos das faixas nos canais, e continuam
+  assim.
+
+**Exportar faixas separadas:** tira também os solos das faixas enquanto exporta, e os devolve no fim.
+
+**Verificado no render:** duas faixas iguais dão -5,97 dBFS; com solo numa, ou mute numa, dão -10,68 dBFS, o nível
+de uma só.
+
+`MixerTest` tem 106 testes. Novos:
+- mute e solo da faixa sem tocar no canal;
+- dois solos;
+- automação sempre tocando;
+- solo e mute de pasta;
+- tirar a faixa da pasta em solo a silencia;
+- salvar e carregar;
+- solo de projeto do LMMS.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que

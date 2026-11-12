@@ -40,7 +40,7 @@ namespace lmms
 
 class EffectChain;
 class FloatModel;
-class BoolModel;
+class Track;
 
 /**
 	@brief Job between @ref PlayHandle and @ref MixerChannel
@@ -58,7 +58,7 @@ class AudioBusHandle : public ThreadableJob
 public:
 	AudioBusHandle(const QString& name, bool hasEffectChain = true,
 		FloatModel* volumeModel = nullptr, FloatModel* panningModel = nullptr,
-		BoolModel* mutedModel = nullptr);
+		const Track* track = nullptr);
 	virtual ~AudioBusHandle();
 
 	// indicate whether JACK & Co should provide output-buffer at ext. port
@@ -103,7 +103,7 @@ private:
 
 	FloatModel* m_volumeModel;
 	FloatModel* m_panningModel;
-	BoolModel* m_mutedModel;
+	const Track* m_track; //!< whose source this is, silent while the track is (Track::isSilenced())
 	
 	std::atomic<bool> m_corrupted = false;
 

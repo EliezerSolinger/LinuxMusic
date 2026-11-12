@@ -120,7 +120,18 @@ void RenderManager::renderTracks()
 		}
 	}
 
-	// Solo would silence the tracks of the other channels
+	// Solo would silence the other tracks, and the tracks of the other channels
+	for (const auto container : {static_cast<TrackContainer*>(Engine::getSong()), static_cast<TrackContainer*>(Engine::patternStore())})
+	{
+		for (const auto track : container->tracks())
+		{
+			if (track->isSolo())
+			{
+				m_soloedTracks.push_back(track);
+				track->setSolo(false);
+			}
+		}
+	}
 	const auto mixer = Engine::mixer();
 	for (int i = 0; i < mixer->numChannels(); ++i)
 	{
@@ -179,6 +190,8 @@ void RenderManager::restoreMutedState()
 	}
 	for (const auto channel : m_soloed) { channel->m_soloModel.setValue(true); }
 	m_soloed.clear();
+	for (const auto track : m_soloedTracks) { track->setSolo(true); }
+	m_soloedTracks.clear();
 }
 
 // Determine the output path for a track when rendering tracks individually

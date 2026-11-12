@@ -1366,32 +1366,93 @@ private slots:
 		deleteTrack(folder);
 	}
 
-	void trackMuteAndSoloMoveToTheChannel()
+	void trackMuteAndSoloAreTheTracksOwn()
 	{
-		// As in a project from before: a muted track, and a soloed one (LMMS muted the others for it)
+		const auto song = Engine::getSong();
+		auto folder = Track::create(Track::Type::Folder, song);
+		auto inner = Track::create(Track::Type::Sample, song);
+		auto other = Track::create(Track::Type::Sample, song);
+		auto automation = Track::create(Track::Type::Automation, song);
+		song->changeFolderDepth(inner, 1);
+		const auto channel = mixer()->trackChannel(inner);
+		QVERIFY(channel);
+
+		// Mute: the track's own, not its channel's
+		inner->setMuted(true);
+		QVERIFY(inner->isSilenced());
+		QVERIFY(!channel->m_muteModel.value());
+		inner->setMuted(false);
+
+		// Solo, as in REAPER: only the soloed tracks play; automation keeps acting; no button changes
+		other->setSolo(true);
+		QVERIFY(!other->isSilenced());
+		QVERIFY(inner->isSilenced());
+		QVERIFY(!inner->isMuted());
+		QVERIFY(!automation->isSilenced());
+		QVERIFY(!channel->m_soloModel.value());
+		// Two soloed tracks both play
+		inner->setSolo(true);
+		QVERIFY(!inner->isSilenced() && !other->isSilenced());
+		inner->setSolo(false);
+		other->setSolo(false);
+		QVERIFY(!inner->isSilenced());
+
+		// A soloed folder plays what it holds; a muted one silences it
+		folder->setSolo(true);
+		QVERIFY(!inner->isSilenced());
+		QVERIFY(other->isSilenced());
+		folder->setSolo(false);
+		folder->setMuted(true);
+		QVERIFY(inner->isSilenced());
+		QVERIFY(!other->isSilenced());
+		QVERIFY(!mixer()->trackChannel(folder)->m_muteModel.value());
+		folder->setMuted(false);
+
+		// Moving a track out of the soloed folder silences it
+		folder->setSolo(true);
+		song->changeFolderDepth(inner, -1);
+		QVERIFY(inner->isSilenced());
+		folder->setSolo(false);
+
+		// Saved and loaded with the track
+		other->setSolo(true);
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("track");
+		other->saveState(doc, element);
+		other->setSolo(false);
+		other->restoreState(element.firstChildElement());
+		QVERIFY(other->isSolo());
+		other->setSolo(false);
+
+		for (auto track : {automation, other, inner, folder}) { deleteTrack(track); }
+	}
+
+	void legacySoloKeepsTheMutesFromBefore()
+	{
+		// As in a project from LMMS: a soloed track, the others muted for it, their mutes from before saved
 		const auto song = Engine::getSong();
 		auto doc = DataFile{DataFile::Type::SongProject};
 		auto element = doc.createElement("track");
+		element.setAttribute("type", static_cast<int>(Track::Type::Sample));
 		element.setAttribute("muted", 1);
 		element.setAttribute("mutedBeforeSolo", 1);
-		element.setAttribute("type", static_cast<int>(Track::Type::Sample));
 		const auto wasMuted = Track::create(element, song);
+		element.setAttribute("muted", 1);
+		element.setAttribute("mutedBeforeSolo", 0);
+		const auto mutedForTheSolo = Track::create(element, song);
 		element.setAttribute("solo", 1);
 		element.setAttribute("muted", 0);
-		element.setAttribute("mutedBeforeSolo", 0);
 		const auto soloed = Track::create(element, song);
 
 		song->resolveLegacySolo();
-		mixer()->setUpTrackChannels();
-		QVERIFY(!wasMuted->isMuted());
-		QVERIFY(mixer()->trackChannel(wasMuted)->m_muteModel.value());
-		QVERIFY(wasMuted->isMutedInMix());
-		QVERIFY(mixer()->trackChannel(soloed)->m_soloModel.value());
-		QVERIFY(!soloed->legacySolo());
+		QVERIFY(wasMuted->isMuted());
+		QVERIFY(!mutedForTheSolo->isMuted());
+		QVERIFY(mutedForTheSolo->isSilenced()); // by the solo, which stays on the track
+		QVERIFY(soloed->isSolo());
+		QVERIFY(!mixer()->trackChannel(soloed)->m_soloModel.value());
 
-		mixer()->trackChannel(soloed)->m_soloModel.setValue(false);
-		deleteTrack(soloed);
-		deleteTrack(wasMuted);
+		soloed->setSolo(false);
+		for (auto track : {soloed, mutedForTheSolo, wasMuted}) { deleteTrack(track); }
 	}
 
 	void folderChangeIsOneUndoStep()

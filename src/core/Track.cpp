@@ -55,10 +55,16 @@ Track::Track(Type type, TrackContainer* tc)
 	, m_type(type)
 	, m_name()
 	, m_mutedModel(false, this, tr("Mute"))
+	, m_soloModel(false, this, tr("Solo"))
 	, m_clips()
 {	
 	m_trackContainer->addTrack( this );
 	m_height = -1;
+	// A solo, or a folder's mute, silences other tracks
+	connect(&m_soloModel, &BoolModel::dataChanged, this, [this] { m_trackContainer->updateSilence(); });
+	connect(&m_mutedModel, &BoolModel::dataChanged, this, [this] {
+		if (m_type == Type::Folder) { m_trackContainer->updateSilence(); }
+	});
 }
 
 
@@ -189,6 +195,7 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	element.setAttribute( "type", static_cast<int>(type()) );
 	element.setAttribute( "name", name() );
 	m_mutedModel.saveSettings( doc, element, "muted" );
+	m_soloModel.saveSettings( doc, element, "solo" );
 
 	if( m_height >= MINIMAL_TRACK_HEIGHT )
 	{
@@ -232,9 +239,10 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			element.firstChild().toElement().attribute( "name" ) );
 
 	m_mutedModel.loadSettings( element, "muted" );
-	// Solo is on the mixer channels now; see legacySolo()
-	m_legacySolo = element.attribute("solo", "0").toInt() != 0;
-	m_legacyMutedBeforeSolo = element.attribute("mutedBeforeSolo", "0").toInt() != 0;
+	m_soloModel.loadSettings( element, "solo" );
+	// LMMS soloed by muting the other tracks; see legacyMutedBeforeSolo()
+	m_legacyMutedBeforeSolo = element.hasAttribute("mutedBeforeSolo")
+		? std::optional{element.attribute("mutedBeforeSolo").toInt() != 0} : std::nullopt;
 
 	if (element.hasAttribute("color"))
 	{
@@ -505,7 +513,7 @@ void Track::setFolderDepth(int depth)
 
 auto Track::isMutedInMix() const -> bool
 {
-	if (isMuted()) { return true; }
+	if (isSilenced()) { return true; }
 	const auto channel = Engine::mixer() ? Engine::mixer()->trackChannel(this) : nullptr;
 	return channel && channel->m_muteModel.value();
 }

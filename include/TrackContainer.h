@@ -108,11 +108,23 @@ public:
 	void updateFolders();
 
 	/**
-	 * Projects from before solo moved to the mixer channels soloed by muting the other tracks. While a track of
-	 * such a project is soloed, each track gets back its mute from before; the soloed instrument, sample and folder
-	 * tracks keep their solo for Mixer::setUpTrackChannel() to move to their channels. Other tracks lose theirs.
+	 * Projects from LMMS soloed by muting the other tracks: while a track of such a project is soloed, each track gets
+	 * back its mute from before, and the solo does the rest (see updateSilence()).
 	 */
 	void resolveLegacySolo();
+
+	/**
+	 * Works out which tracks a folder's mute or another track's solo silences (Track::isSilenced()), as in REAPER:
+	 * - a muted folder silences everything it holds;
+	 * - while tracks are soloed, only they play, with everything the soloed folders hold; automation tracks keep
+	 *   acting. Several tracks can be soloed; solo and mute do not touch each other's buttons.
+	 * Called when a track's mute or solo changes and when tracks are added, removed or moved.
+	 */
+	void updateSilence();
+signals:
+	//! A track's silence changed (see updateSilence()); emitted from any thread
+	void silenceChanged();
+public:
 
 	virtual void updateAfterTrackAdd();
 

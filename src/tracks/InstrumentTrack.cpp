@@ -60,7 +60,7 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	m_hasAutoMidiDev(false),
 	m_volumeModel(DefaultVolume, MinVolume, MaxVolume, 0.1f, this, tr("Volume")),
 	m_panningModel(DefaultPanning, PanningLeft, PanningRight, 0.1f, this, tr("Panning")),
-	m_audioBusHandle(tr("unnamed_track"), true, &m_volumeModel, &m_panningModel, &m_mutedModel),
+	m_audioBusHandle(tr("unnamed_track"), true, &m_volumeModel, &m_panningModel, this),
 	m_pitchModel(0, MinPitchDefault, MaxPitchDefault, 1, this, tr("Pitch")),
 	m_pitchRangeModel(1, 1, 60, this, tr("Pitch range")),
 	m_useMasterPitchModel(true, this, tr("Master pitch")),
@@ -220,7 +220,7 @@ InstrumentTrack::~InstrumentTrack()
 void InstrumentTrack::processAudioBuffer( SampleFrame* buf, const f_cnt_t frames, NotePlayHandle* n )
 {
 	// we must not play the sound if this InstrumentTrack is muted...
-	if( isMuted() || ( Engine::getSong()->playMode() != Song::PlayMode::MidiClip &&
+	if( isSilenced() || ( Engine::getSong()->playMode() != Song::PlayMode::MidiClip &&
 				n && n->isPatternTrackMuted() ) || ! m_instrument )
 	{
 		return;
@@ -630,7 +630,7 @@ void InstrumentTrack::playInstrument(const Instrument* instrument, std::span<Sam
 
 	// The main pair goes on through the track's play handle; the auxiliary pairs go straight to the mixer
 	// channel's auxiliary pairs
-	if (m_instrumentChannels.channels() > DEFAULT_CHANNELS && !isMuted())
+	if (m_instrumentChannels.channels() > DEFAULT_CHANNELS && !isSilenced())
 	{
 		Engine::mixer()->mixAuxiliaryToChannel(m_instrumentChannels, m_mixerChannelModel.value());
 	}

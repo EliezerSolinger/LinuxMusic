@@ -89,7 +89,7 @@ TrackView::TrackView(Track* track, TrackContainerView* tcv)
 			this, SLOT(createClipView(lmms::Clip*)),
 			Qt::QueuedConnection );
 
-	// The mute button shows the track's mute or its mixer channel's (see TrackChannelControls)
+	// The track looks muted while it is silent in the mix (Track::isMutedInMix())
 	connect(m_trackOperationsWidget.m_muteBtn, &QPushButton::toggled, &m_trackContentWidget,
 		qOverload<>(&QWidget::update));
 	connect(m_trackOperationsWidget.m_muteBtn, &QPushButton::toggled, this, &TrackView::muteChanged);
@@ -165,12 +165,14 @@ void TrackView::modelChanged()
 	m_track = castModel<Track>();
 	Q_ASSERT( m_track != nullptr );
 	connect( m_track, SIGNAL(destroyedTrack()), this, SLOT(close()));
-	// Tracks with a mixer channel are muted and soloed there (see TrackChannelControls); the others only mute
-	// their own playback
-	m_trackOperationsWidget.m_muteBtn->setModel( &m_track->m_mutedModel );
-	const auto type = m_track->type();
-	m_trackOperationsWidget.m_soloBtn->setVisible(
-		type == Track::Type::Instrument || type == Track::Type::Sample || type == Track::Type::Folder);
+	// The track's own mute and solo, on its source (see TrackContainer::updateSilence())
+	m_trackOperationsWidget.m_muteBtn->setModel(&m_track->m_mutedModel);
+	m_trackOperationsWidget.m_soloBtn->setModel(&m_track->m_soloModel);
+	// Another track's solo or a folder's mute may silence this one
+	connect(m_track->trackContainer(), &TrackContainer::silenceChanged, this, &TrackView::muteChanged,
+		Qt::UniqueConnection);
+	connect(m_track->trackContainer(), &TrackContainer::silenceChanged, &m_trackContentWidget,
+		qOverload<>(&QWidget::update), Qt::UniqueConnection);
 	ModelView::modelChanged();
 	setFixedHeight( m_track->getHeight() );
 }

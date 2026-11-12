@@ -79,6 +79,8 @@ private:
 
 	//! The mixer channels soloed before rendering tracks individually, which would silence the others meanwhile
 	std::vector<MixerChannel*> m_soloed;
+	//! The tracks soloed before, likewise
+	std::vector<Track*> m_soloedTracks;
 } ;
 
 

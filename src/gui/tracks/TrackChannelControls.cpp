@@ -35,6 +35,7 @@
 #include "Mixer.h"
 #include "SampleTrack.h"
 #include "Track.h"
+#include "TrackContainer.h"
 #include "volume.h"
 
 namespace lmms::gui
@@ -79,7 +80,10 @@ TrackChannelControls::TrackChannelControls(Track* track, QObject* parent) :
 
 
 
-TrackChannelControls::~TrackChannelControls() = default;
+TrackChannelControls::~TrackChannelControls()
+{
+	disconnect(m_channelMute);
+}
 
 
 
@@ -123,6 +127,15 @@ void TrackChannelControls::update()
 	const bool oldModelsValid = !m_boundChannel || boundExists;
 	m_boundChannel = channel;
 
+	// The track looks muted while its channel is (Track::isMutedInMix())
+	disconnect(m_channelMute);
+	if (channel)
+	{
+		const auto container = m_track->trackContainer();
+		m_channelMute = connect(&channel->m_muteModel, &BoolModel::dataChanged, container,
+			[container] { emit container->silenceChanged(); });
+	}
+
 	// The track's volume and panning are its own, on the source before the channel; a folder, which has none,
 	// shows its group channel's
 	if (m_volumeKnob)
@@ -140,23 +153,13 @@ void TrackChannelControls::update()
 		FloatModel* model = !m_panning && channel ? &channel->m_panModel : m_panning;
 		if (m_panningKnob->model() != model || !oldModelsValid) { m_panningKnob->setModel(model, oldModelsValid); }
 	}
-	if (m_muteButton)
+	// Mute and solo are the track's own, on its source (see TrackContainer::updateSilence()); the channel has its
+	// own in the mixer
+	if (m_muteButton && m_muteButton->model() != m_track->getMutedModel())
 	{
-		// Muting a channel shared with other tracks would mute them too
-		const auto mute = m_track->getMutedModel();
-		BoolModel* model = channel && !mute->isAutomatedOrControlled() ? &channel->m_muteModel : mute;
-		if (m_muteButton->model() != model || !oldModelsValid) { m_muteButton->setModel(model, oldModelsValid); }
+		m_muteButton->setModel(m_track->getMutedModel());
 	}
-	if (m_soloButton)
-	{
-		// The channel the track plays through, its own or not
-		const auto through = channel ? channel
-			: mixer->mixerChannel(std::clamp(m_channel->value(), 0, mixer->numChannels() - 1));
-		if (m_soloButton->model() != &through->m_soloModel || !oldModelsValid)
-		{
-			m_soloButton->setModel(&through->m_soloModel, oldModelsValid);
-		}
-	}
+	if (m_soloButton && m_soloButton->model() != m_track->soloModel()) { m_soloButton->setModel(m_track->soloModel()); }
 	if (m_effectRack && m_effects)
 	{
 		// The track's own effects stay visible while it has any (e.g. on a shared channel)

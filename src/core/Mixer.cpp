@@ -1561,17 +1561,7 @@ int Mixer::setUpTrackChannel(Track* track)
 	connect(track, &Track::nameChanged, this, &Mixer::followTracks, Qt::UniqueConnection);
 	connect(track, &Track::colorChanged, this, &Mixer::followTracks, Qt::UniqueConnection);
 
-	// Mute and solo live on the channel. A mute automated or controlled stays on the track, where its automation acts.
-	if (track->isMuted() && !track->getMutedModel()->isAutomatedOrControlled())
-	{
-		channel->m_muteModel.setValue(true);
-		track->setMuted(false);
-	}
-	if (track->legacySolo())
-	{
-		channel->m_soloModel.setValue(true);
-		track->clearLegacySolo();
-	}
+	// Mute and solo: the track's own on the track (its source), the channel's on the channel (the mix)
 
 	// The track's effects go in front of the channel's
 	if (auto effects = strip->bus ? strip->bus->effects() : nullptr; effects && !effects->effects().empty())

@@ -101,8 +101,8 @@ void SamplePlayHandle::play(std::span<SampleFrame> buffer)
 
 	const f_cnt_t initialFrameIndex = m_state.frameIndex();
 
-	if( !( m_track && m_track->isMuted() )
-				&& !(m_patternTrack && m_patternTrack->isMuted()))
+	if( !( m_track && m_track->isSilenced() )
+				&& !(m_patternTrack && m_patternTrack->isSilenced()))
 	{
 /*		StereoVolumeVector v =
 			{ { m_volumeModel->value() / DefaultVolume,
