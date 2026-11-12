@@ -45,6 +45,8 @@ struct LMMS_EXPORT Biquad
 	static auto lowPass(double frequency, double q, double sampleRate) -> Biquad;
 	static auto highPass(double frequency, double q, double sampleRate) -> Biquad;
 	static auto highPass1(double frequency, double sampleRate) -> Biquad;
+	//! First order low-pass; @p frequency may be above Nyquist
+	static auto lowPass1(double frequency, double sampleRate) -> Biquad;
 	//! (s^2 + s G/Q + 1) / (s^2 + s/Q + 1): G at the center frequency; a boost (G >= 1)
 	static auto peak(double frequency, double q, double gain, double sampleRate) -> Biquad;
 	//! First order shelves, as a Baxandall tone control's: G at the far end, 3 dB short of it at the corner; boosts
@@ -125,8 +127,13 @@ public:
 	//! The peaks' Q for a gain in dB, giving that bandwidth
 	static auto peakQ(double gain) -> double;
 
-	//! Sets this period's gains in dB [audio thread]
-	void begin(const std::array<float, Bands>& gains, double sampleRate);
+	/**
+	 * Sets this period's gains in dB [audio thread]
+	 * @param frequencies, gainFactors the channel's tolerances on the bands' frequencies and gains
+	 */
+	void begin(const std::array<float, Bands>& gains, double sampleRate,
+		const std::array<double, Bands>& frequencies = {1.0, 1.0, 1.0, 1.0},
+		const std::array<double, Bands>& gainFactors = {1.0, 1.0, 1.0, 1.0});
 	//! Whether it does anything this period
 	auto isActive() const -> bool;
 	auto process(double x, int channel, double progress) -> double;
@@ -138,7 +145,7 @@ public:
 	auto magnitude(double frequency, double sampleRate) const -> double;
 
 private:
-	auto design(int band, double gain, double sampleRate) const -> Biquad;
+	auto design(int band, double gain, double frequencyFactor, double sampleRate) const -> Biquad;
 
 	std::array<RampedBiquad, Bands> m_filters;
 	std::array<bool, Bands> m_cut{};	//!< whether each band is in the feedback, cutting

@@ -235,8 +235,17 @@ auto GainStage::tubeClipLevel(Model model) -> float
 
 
 
-void GainStage::process(std::span<SampleFrame> frames, Model model, bool realistic, sample_rate_t sampleRate)
+void GainStage::process(std::span<SampleFrame> frames, Model model, bool realistic, sample_rate_t sampleRate,
+	float drive)
 {
+	if (drive != 1.f && model != Model::Flat)
+	{
+		for (auto& frame : frames) { frame *= drive; }
+		process(frames, model, realistic, sampleRate);
+		for (auto& frame : frames) { frame *= 1.f / drive; }
+		return;
+	}
+
 	auto& state = *m_state;
 	if (state.sampleRate != sampleRate) { state.setUp(sampleRate); }
 	state.use(model, realistic && isTube(model));

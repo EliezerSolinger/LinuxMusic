@@ -31,6 +31,7 @@
 #include "AutomatableModel.h"
 #include "ChannelMeter.h"
 #include "EqFilter.h"
+#include "DeskTolerance.h"
 #include "GainStage.h"
 #include "LmmsTypes.h"
 #include "MonoBass.h"
@@ -88,6 +89,12 @@ public:
 	void resetDrive() { m_gainStage.reset(); }
 	//! The gain stage, which also measures its saturation for its LEDs
 	auto gainStage() -> GainStage& { return m_gainStage; }
+
+	//! Analog mode: the output transformer after the master's fader, Neve style (see OutputTransformer); off
+	BoolModel m_transformerModel;
+	void processTransformer(std::span<SampleFrame> frames, sample_rate_t sampleRate);
+	//! While it is out: it starts afresh when it is in again
+	void bypassTransformer() { m_transformerWasOn = false; }
 
 	// Stereo section (the width is the master channel's own width, see processStereo())
 	FloatModel m_bassWidthModel;			//!< % of the side kept below the mono bass frequency; off at 100
@@ -155,6 +162,8 @@ public:
 
 private:
 	GainStage m_gainStage;
+	OutputTransformer m_transformer;
+	bool m_transformerWasOn = false;
 
 	// Stereo section
 	MonoBass m_monoBass;

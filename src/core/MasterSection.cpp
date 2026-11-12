@@ -61,6 +61,7 @@ MasterSection::MasterSection(Model* parent)
 	, m_driveModel(static_cast<int>(GainStage::Model::OpAmp4558), 0, static_cast<int>(GainStage::Model::Count) - 1,
 		parent, QObject::tr("Master gain stage"))
 	, m_realisticModel(false, parent, QObject::tr("Master realistic tube"))
+	, m_transformerModel(false, parent, QObject::tr("Master output transformer"))
 	, m_bassWidthModel(100.f, 0.f, 100.f, 1.f, parent, QObject::tr("Mono bass width"))
 	, m_bassFrequencyModel(120.f, 20.f, 300.f, 1.f, parent, QObject::tr("Mono bass frequency"))
 	, m_airModel(0.f, -6.f, 6.f, 0.1f, parent, QObject::tr("Side air"))
@@ -352,6 +353,21 @@ void MasterSection::processDrive(std::span<SampleFrame> frames, sample_rate_t sa
 
 
 
+void MasterSection::processTransformer(std::span<SampleFrame> frames, sample_rate_t sampleRate)
+{
+	m_transformer.setUp(sampleRate);
+	if (!m_transformerWasOn) { m_transformer.reset(); }
+	m_transformerWasOn = true;
+	for (auto& frame : frames)
+	{
+		frame[0] = m_transformer.process(frame[0], 0);
+		frame[1] = m_transformer.process(frame[1], 1);
+	}
+}
+
+
+
+
 void MasterSection::setDefaults()
 {
 	m_preLinkModel.setValue(true);
@@ -359,6 +375,7 @@ void MasterSection::setDefaults()
 	m_preRightModel.setValue(1.f);
 	m_driveModel.setValue(static_cast<int>(GainStage::Model::OpAmp4558));
 	m_realisticModel.setValue(false);
+	m_transformerModel.setValue(false);
 	m_bassWidthModel.setValue(100.f);
 	m_bassFrequencyModel.setValue(120.f);
 	m_airModel.setValue(0.f);
@@ -382,6 +399,7 @@ void MasterSection::saveSettings(QDomDocument& doc, QDomElement& mixerElement)
 	m_preLinkModel.saveSettings(doc, master, "prelink");
 	m_driveModel.saveSettings(doc, master, "drive");
 	m_realisticModel.saveSettings(doc, master, "realistic");
+	m_transformerModel.saveSettings(doc, master, "transformer");
 	m_bassWidthModel.saveSettings(doc, master, "basswidth");
 	m_bassFrequencyModel.saveSettings(doc, master, "bassfreq");
 	m_airModel.saveSettings(doc, master, "air");
@@ -415,6 +433,7 @@ void MasterSection::loadSettings(const QDomElement& mixerElement)
 		m_preLinkModel.setValue(linked);
 		m_driveModel.loadSettings(master, "drive");
 		m_realisticModel.loadSettings(master, "realistic");
+		m_transformerModel.loadSettings(master, "transformer");
 		m_bassWidthModel.loadSettings(master, "basswidth");
 		m_bassFrequencyModel.loadSettings(master, "bassfreq");
 		m_airModel.loadSettings(master, "air");

@@ -123,7 +123,8 @@ auto AnalogChannelStrip::potGain(float position) -> float
 
 
 
-void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sampleRate, bool hadInput)
+void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sampleRate, bool hadInput,
+	const ChannelTolerance& tolerance)
 {
 	// Sections left at their neutral setting are skipped
 	const bool lowCut = m_lowCutModel.value();
@@ -139,7 +140,8 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	const bool gateOn = m_gate.isActive();
 	const bool compressorOn = m_compressor.isActive();
 	const double rate = sampleRate;
-	m_eq.begin({m_eqLowModel.value(), m_eqLowMidModel.value(), m_eqHighMidModel.value(), m_eqHighModel.value()}, rate);
+	m_eq.begin({m_eqLowModel.value(), m_eqLowMidModel.value(), m_eqHighMidModel.value(), m_eqHighModel.value()}, rate,
+		tolerance.eqFrequency, tolerance.eqGain);
 	const bool eqOn = m_eq.isActive();
 
 	// A section switched off starts afresh when switched on again
@@ -149,10 +151,10 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	if (!gateOn) { m_gate.reset(); }
 	if (!compressorOn) { m_compressor.reset(); }
 
-	m_lowCut2.setTarget(Biquad::highPass(LowCutFrequency, 1.0, rate));
-	m_lowCut1.setTarget(Biquad::highPass1(LowCutFrequency, rate));
-	m_highPass.setTarget(Biquad::highPass(m_highPassModel.value(), ButterworthQ, rate));
-	m_lowPass.setTarget(Biquad::lowPass(m_lowPassModel.value(), ButterworthQ, rate));
+	m_lowCut2.setTarget(Biquad::highPass(LowCutFrequency * tolerance.lowCut, 1.0, rate));
+	m_lowCut1.setTarget(Biquad::highPass1(LowCutFrequency * tolerance.lowCut, rate));
+	m_highPass.setTarget(Biquad::highPass(m_highPassModel.value() * tolerance.highPass, ButterworthQ, rate));
+	m_lowPass.setTarget(Biquad::lowPass(m_lowPassModel.value() * tolerance.lowPass, ButterworthQ, rate));
 
 	const auto count = frames.size();
 	auto progressAt = [count](std::size_t f) {
@@ -160,7 +162,7 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	};
 
 	// The GAIN pot, ramped over the period so that turning it does not click
-	const float gain = potGain(m_gainModel.value());
+	const float gain = potGain(m_gainModel.value()) * (tolerance.gain != 0.f ? dbfsToAmp(tolerance.gain) : 1.f);
 	if (gain != 1.f || m_gain != 1.f)
 	{
 		for (auto f = std::size_t{0}; f < count; ++f)
@@ -187,7 +189,7 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	}
 
 	const auto drive = static_cast<Drive>(m_driveModel.value());
-	m_gainStage.process(frames, drive, m_realisticModel.value(), sampleRate);
+	m_gainStage.process(frames, drive, m_realisticModel.value(), sampleRate, tolerance.drive);
 
 	// After the input falls silent, the filters ring out for a while
 	const bool anyFilter = lowCut || highPassOn || lowPassOn || monoBassOn || eqOn

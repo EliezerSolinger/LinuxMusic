@@ -320,6 +320,13 @@ public:
 	 */
 	auto isAnalog() const -> bool { return m_analogModel.value(); }
 	auto analogModel() -> BoolModel* { return &m_analogModel; }
+	/**
+	 * Whether the analog desk's channels differ a little, as a physical desk's do (see ChannelTolerance). On in new
+	 * projects; projects from before it load without it, so that they sound the same.
+	 */
+	auto toleranceModel() -> BoolModel* { return &m_toleranceModel; }
+	//! Whether the project last loaded predates the tolerances
+	auto loadedWithoutTolerance() const -> bool { return m_loadedWithoutTolerance; }
 
 	//! The master section: bus compressor, monitoring and what the master's meters show
 	auto masterSection() -> MasterSection& { return m_masterSection; }
@@ -541,6 +548,8 @@ private:
 	std::vector<MixerChannel*> m_mixerChannels;
 
 	BoolModel m_analogModel;
+	BoolModel m_toleranceModel;
+	bool m_loadedWithoutTolerance = false;
 	MasterSection m_masterSection;
 
 	// make sure we have at least num channels

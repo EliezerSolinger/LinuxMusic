@@ -31,6 +31,7 @@
 #include "AnalogChannelStrip.h"
 #include "DeskDynamics.h"
 #include "DeskFilters.h"
+#include "DeskTolerance.h"
 #include "AudioBuffer.h"
 #include "AudioEngine.h"
 #include "AutomationClip.h"
@@ -321,6 +322,8 @@ private slots:
 			"drivenOpAmpDoesNotAlias", "tubeStageColorsTheChannel", "analogStripFiltersAndEq", "analogStripDynamics",
 			"analogStripAndModeAreSaved", "tubeLampSwitchesModesAndIsSaved"};
 		mixer()->analogModel()->setValue(analogTests.contains(QTest::currentTestFunction()));
+		// Ideal channels, but in the tests of the tolerances
+		mixer()->toleranceModel()->setValue(false);
 		settle();
 	}
 
@@ -2516,6 +2519,109 @@ private slots:
 		QCOMPARE(strip.m_gateModel.value(), -28.f);
 		strip.setNeutral();
 		QCOMPARE(strip.m_compressorRatioModel.value(), 1.f);
+	}
+
+	void channelTolerances()
+	{
+		// Fixed per channel, within the components' tolerances, different from channel to channel
+		const auto a = ChannelTolerance::forChannel(3);
+		const auto b = ChannelTolerance::forChannel(3);
+		const auto c = ChannelTolerance::forChannel(4);
+		QCOMPARE(a.gain, b.gain);
+		QCOMPARE(a.eqFrequency, b.eqFrequency);
+		QVERIFY(a.gain != c.gain);
+		for (int channel = 1; channel < 64; ++channel)
+		{
+			const auto t = ChannelTolerance::forChannel(channel);
+			QVERIFY(std::abs(t.gain) <= 0.1f);
+			QVERIFY(std::abs(t.lowCut - 1.f) <= 0.01f && std::abs(t.drive - 1.f) <= 0.03f);
+			for (const auto f : t.eqFrequency) { QVERIFY(std::abs(f - 1.0) <= 0.01); }
+			for (const auto g : t.eqGain) { QVERIFY(std::abs(g - 1.0) <= 0.02); }
+		}
+
+		// On the desk: two channels fed alike come out a little different; ideal ones alike
+		mixer()->analogModel()->setValue(true);
+		const auto first = mixer()->createChannel();
+		const auto second = mixer()->createChannel();
+		for (const auto channel : {first, second})
+		{
+			auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+			strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Flat));
+			strip.m_eqHighMidModel.setValue(9.f);
+		}
+		settle();
+		mixer()->toleranceModel()->setValue(true);
+		const float one = sineGain(first, 2500.f);
+		const float two = sineGain(second, 2500.f);
+		QVERIFY(one != two);
+		QVERIFY(std::abs(ampToDbfs(one / two)) < 0.6f);
+		mixer()->toleranceModel()->setValue(false);
+		QCOMPARE(sineGain(first, 2500.f), sineGain(second, 2500.f));
+
+		// Projects from before them load without them; saved, they keep theirs
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixer");
+		doc.content().appendChild(element);
+		mixer()->toleranceModel()->setValue(true);
+		mixer()->saveSettings(doc, element);
+		mixer()->loadSettings(element);
+		QVERIFY(mixer()->toleranceModel()->value());
+		QVERIFY(!mixer()->loadedWithoutTolerance());
+		element.removeAttribute("tolerance");
+		mixer()->loadSettings(element);
+		QVERIFY(!mixer()->toleranceModel()->value());
+		QVERIFY(mixer()->loadedWithoutTolerance());
+	}
+
+	void outputTransformer()
+	{
+		constexpr auto rate = sample_rate_t{44100};
+		auto run = [](float frequency, float amplitude) {
+			auto transformer = OutputTransformer{};
+			transformer.setUp(rate);
+			auto out = std::vector<SampleFrame>{};
+			const int frames = static_cast<int>(rate) * 2;
+			for (int i = 0; i < frames; ++i)
+			{
+				const float x = amplitude * std::sin(2.f * std::numbers::pi_v<float> * frequency * i / rate);
+				const float y = transformer.process(x, 0);
+				if (i >= frames / 2) { out.push_back(SampleFrame{y, y}); }
+			}
+			return out;
+		};
+		// The lows thicken near full scale: about 0.5% third harmonic at 30 Hz, a fifth of it at 50 Hz
+		const auto low = run(30.f, 0.8f);
+		const float third = ampToDbfs(amplitudeAt(low, 90.f) / amplitudeAt(low, 30.f));
+		QVERIFY2(third > -55.f && third < -38.f, qPrintable(QString::number(third)));
+		const auto higher = run(50.f, 0.8f);
+		QVERIFY(ampToDbfs(amplitudeAt(higher, 150.f) / amplitudeAt(higher, 50.f)) < third - 6.f);
+		// Quiet lows stay clean; the mids are untouched
+		const auto quiet = run(30.f, 0.05f);
+		QVERIFY(ampToDbfs(amplitudeAt(quiet, 90.f) / amplitudeAt(quiet, 30.f)) < -70.f);
+		const auto mids = run(1000.f, 0.8f);
+		QVERIFY(ampToDbfs(amplitudeAt(mids, 3000.f) / amplitudeAt(mids, 1000.f)) < -90.f);
+		QVERIFY(std::abs(ampToDbfs(amplitudeAt(mids, 1000.f) / 0.8f)) < 0.05f);
+		// The frequency response: the low corner at 3 Hz, -0.5 dB at 20 kHz
+		QVERIFY(std::abs(ampToDbfs(amplitudeAt(run(20.f, 0.05f), 20.f) / 0.05f)) < 0.15f);
+		const float top = ampToDbfs(amplitudeAt(run(20000.f, 0.05f), 20000.f) / 0.05f);
+		QVERIFY2(std::abs(top + 0.46f) < 0.2f, qPrintable(QString::number(top)));
+	}
+
+	void masterTransformerIsAnAnalogOption()
+	{
+		auto& master = mixer()->masterSection();
+		QVERIFY(!master.m_transformerModel.value());
+		const auto channel = mixer()->createChannel();
+		settle();
+		mixer()->analogModel()->setValue(true);
+		master.m_driveModel.setValue(static_cast<int>(GainStage::Model::Flat));
+		mixer()->mixerChannel(channel)->m_analogStrip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Flat));
+		const float clean = sineGain(channel, 20000.f);
+		master.m_transformerModel.setValue(true);
+		QVERIFY(sineGain(channel, 20000.f) < clean * 0.97f);
+		mixer()->analogModel()->setValue(false);
+		QVERIFY(std::abs(sineGain(channel, 20000.f) - 1.f) < 0.01f);
+		master.setDefaults();
 	}
 
 	void analogStripAndModeAreSaved()

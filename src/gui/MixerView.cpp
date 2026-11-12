@@ -44,6 +44,7 @@
 #include "Fader.h"
 #include "GuiApplication.h"
 #include "Knob.h"
+#include "AutomatableButton.h"
 #include "LedCheckBox.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
@@ -301,6 +302,21 @@ MixerView::MixerView(Mixer* mixer) :
 	connect(analogModel, &BoolModel::dataChanged, this, showMode);
 	connect(analogButton, &QPushButton::clicked, this, [analogModel] { analogModel->setValue(true); });
 	connect(digitalButton, &QPushButton::clicked, this, [analogModel] { analogModel->setValue(false); });
+
+	// The analog desk's tolerances: its channels differ a little, as a physical desk's do
+	auto toleranceButton = new AutomatableButton{this, tr("Channel tolerances")};
+	toleranceButton->setObjectName("mixerModeButton");
+	toleranceButton->setText(tr("TOL"));
+	toleranceButton->setToolTip(tr("Tolerances: each channel differs a little from the others, as on a physical "
+		"desk (gain, filters, EQ, gain stage), always the same for each channel"));
+	toleranceButton->setCheckable(true);
+	toleranceButton->setFocusPolicy(Qt::NoFocus);
+	toleranceButton->setModel(mixer->toleranceModel());
+	modeRow->addSpacing(4);
+	modeRow->addWidget(toleranceButton);
+	auto showTolerance = [toleranceButton, analogModel] { toleranceButton->setVisible(analogModel->value()); };
+	showTolerance();
+	connect(analogModel, &BoolModel::dataChanged, this, showTolerance);
 
 	auto rightColumn = new QVBoxLayout{};
 	rightColumn->setContentsMargins(0, 0, 0, 0);

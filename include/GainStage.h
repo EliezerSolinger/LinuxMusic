@@ -128,8 +128,10 @@ public:
 	/**
 	 * Processes both channels of @p frames with @p model, and measures them for the LEDs [audio thread].
 	 * @param realistic for a tube: its circuit solved at each sample, rather than approximated around its curve
+	 * @param drive a factor on its input, undone at its output: where it saturates (a channel's tolerance)
 	 */
-	void process(std::span<SampleFrame> frames, Model model, bool realistic, sample_rate_t sampleRate);
+	void process(std::span<SampleFrame> frames, Model model, bool realistic, sample_rate_t sampleRate,
+		float drive = 1.f);
 
 	//! Forgets the oversamplers' and the DC blocker's state [audio thread]
 	void reset();

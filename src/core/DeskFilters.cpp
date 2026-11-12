@@ -125,6 +125,18 @@ auto Biquad::highPass1(double frequency, double sampleRate) -> Biquad
 
 
 
+auto Biquad::lowPass1(double frequency, double sampleRate) -> Biquad
+{
+	// 1 / (1 + s / wp): matched where it is down most below Nyquist, or at the corner
+	const double nyquist = sampleRate / 2.0;
+	const double match = std::min(frequency, 0.4 * sampleRate);
+	return firstOrder(1.0, frequency / std::hypot(nyquist, frequency), match, frequency / std::hypot(match, frequency),
+		sampleRate);
+}
+
+
+
+
 auto Biquad::peak(double frequency, double q, double gain, double sampleRate) -> Biquad
 {
 	if (gain == 1.0) { return {}; }
@@ -198,28 +210,29 @@ auto DeskEq::peakQ(double gain) -> double
 
 
 
-auto DeskEq::design(int band, double gain, double sampleRate) const -> Biquad
+auto DeskEq::design(int band, double gain, double frequencyFactor, double sampleRate) const -> Biquad
 {
 	// Each band as a boost; a cut is the inverse of the boost of the same amount, in the feedback
 	const double boost = std::pow(10.0, std::abs(gain) / 20.0);
 	switch (band)
 	{
-		case Low: return Biquad::lowShelf1(LowFrequency, boost, sampleRate);
-		case LowMid: return Biquad::peak(LowMidFrequency, peakQ(gain), boost, sampleRate);
-		case HighMid: return Biquad::peak(HighMidFrequency, peakQ(gain), boost, sampleRate);
-		default: return Biquad::highShelf1(HighFrequency, boost, sampleRate);
+		case Low: return Biquad::lowShelf1(LowFrequency * frequencyFactor, boost, sampleRate);
+		case LowMid: return Biquad::peak(LowMidFrequency * frequencyFactor, peakQ(gain), boost, sampleRate);
+		case HighMid: return Biquad::peak(HighMidFrequency * frequencyFactor, peakQ(gain), boost, sampleRate);
+		default: return Biquad::highShelf1(HighFrequency * frequencyFactor, boost, sampleRate);
 	}
 }
 
 
 
 
-void DeskEq::begin(const std::array<float, Bands>& gains, double sampleRate)
+void DeskEq::begin(const std::array<float, Bands>& gains, double sampleRate, const std::array<double, Bands>& frequencies,
+	const std::array<double, Bands>& gainFactors)
 {
 	for (int band = 0; band < Bands; ++band)
 	{
 		auto& filter = m_filters[band];
-		const double gain = gains[band];
+		const double gain = gains[band] * gainFactors[band];
 		const bool cut = gain < 0.0;
 		// Changing sides: flat first, then the other side from the next period on
 		if (cut != m_cut[band] && gain != 0.0)
@@ -231,7 +244,7 @@ void DeskEq::begin(const std::array<float, Bands>& gains, double sampleRate)
 			}
 			m_cut[band] = cut;
 		}
-		filter.setTarget(design(band, gain, sampleRate));
+		filter.setTarget(design(band, gain, frequencies[band], sampleRate));
 	}
 }
 

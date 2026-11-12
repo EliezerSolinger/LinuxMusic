@@ -805,7 +805,7 @@ master.
 
 Os testes de amp-op e válvula agora cobrem todos os modelos.
 
-### Passo 20: fidelidade da simulação (decisões do usuário, em andamento)
+### Passo 20: fidelidade da simulação (decisões do usuário, feito)
 
 Decidido pelo usuário, pergunta por pergunta, em 2026-11-12. Implementar na ordem abaixo.
 
@@ -1018,6 +1018,39 @@ Decidido pelo usuário, pergunta por pergunta, em 2026-11-12. Implementar na ord
   - Projetos antigos abrem com ela desligada.
 - **Transformador de saída no master,** estilo Neve: saturação de grave e queda leve acima de 20 kHz. Só com um botão
   para ativar.
+
+**Parte 5 feita.**
+- **Tolerância por canal** (`ChannelTolerance`, `include/DeskTolerance.h`): desvios fixos por canal, sorteados do
+  número do canal (SplitMix64, igual em toda plataforma). O canal 3 é sempre o mesmo canal 3, como numa mesa
+  física. Faixas, uniformes:
+  - ganho: ±0,1 dB;
+  - frequências do LC, HPF, LPF e das bandas do EQ: ±1%;
+  - ganhos do EQ: ±2%;
+  - ponto de saturação do estágio de ganho: ±3% (a entrada é escalada e a saída desfeita).
+- **Botão TOL** ao lado de ANALOG/DIGITAL, só no modo analógico, salvo como `tolerance` na mesa.
+  - Projetos sem o atributo abrem com TOL desligado e soam igual.
+  - Projetos novos (com ou sem template) abrem com TOL ligado, a não ser que o template tenha escolhido.
+- **Transformador de saída no master** (`OutputTransformer`), estilo Neve, depois do fader do master. Só no modo
+  analógico, com o botão XFMR na seção DRIVE, desligado por padrão e salvo como `transformer`. Modelo físico:
+  - a fonte aciona a indutância de magnetização do núcleo; o fluxo é a integral da tensão;
+  - corrente de magnetização = (φ + p³/φs²)/Lm, em que p segue o fluxo com uma zona morta: o operador "play", a
+    histerese (coercitividade de 2% do fluxo de saturação);
+  - resolvido implicitamente a cada amostra (Newton).
+- **Comportamento do transformador:**
+  - canto grave em 3 Hz;
+  - satura no grave alto: 3º harmônico em -44 dB (0,6%) a 30 Hz perto do fundo de escala, cai com a frequência ao
+    cubo;
+  - não faz nada nos médios (menos de -90 dB em 1 kHz);
+  - -0,46 dB em 20 kHz (indutância de dispersão, primeira ordem em 60 kHz).
+  - Ao ligar de novo, o fluxo recomeça do zero, sem baque.
+- **Testes:**
+  - tolerâncias fixas, dentro das faixas e diferentes entre canais;
+  - dois canais iguais saem levemente diferentes com TOL e iguais sem;
+  - projetos antigos sem TOL;
+  - transformador: harmônicos no grave, médios limpos, resposta em 20 Hz e 20 kHz;
+  - XFMR só no modo analógico.
+
+O passo 20 está completo. `MixerTest` tem 104 testes.
 
 ### Correção encontrada pela bateria A/B
 

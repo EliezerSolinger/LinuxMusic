@@ -342,6 +342,11 @@ MasterSectionView::MasterSectionView(Mixer* mixer, QWidget* parent)
 	driveRow->addWidget(new DriveButton{&master.m_driveModel, drive});
 	driveRow->addWidget(new SaturationLeds{&master.gainStage(), &master.m_driveModel, &master.m_realisticModel, drive});
 	driveLayout->addLayout(driveRow);
+	auto transformer = makeButton(&master.m_transformerModel, tr("XFMR"),
+		tr("Output transformer, Neve style, after the master's fader: thickens the lows when they are loud, rolls "
+		"the highs off a little"));
+	transformer->setParent(drive);
+	driveLayout->addWidget(transformer, 0, Qt::AlignHCenter);
 	layout->addWidget(drive);
 	auto showDrive = [drive, mixer] { drive->setVisible(mixer->isAnalog()); };
 	connect(mixer->analogModel(), &BoolModel::dataChanged, drive, showDrive);

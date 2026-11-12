@@ -29,6 +29,7 @@
 #include "AutomatableModel.h"
 #include "DeskDynamics.h"
 #include "DeskFilters.h"
+#include "DeskTolerance.h"
 #include "GainStage.h"
 #include "LmmsTypes.h"
 #include "MonoBass.h"
@@ -105,8 +106,12 @@ public:
 	FloatModel m_eqLowMidModel;		//!< dB
 	FloatModel m_eqLowModel;		//!< dB
 
-	//! Processes the channel's main pair in place; @p hadInput tells whether it had signal [audio thread]
-	void process(std::span<SampleFrame> frames, sample_rate_t sampleRate, bool hadInput);
+	/**
+	 * Processes the channel's main pair in place; @p hadInput tells whether it had signal [audio thread]
+	 * @param tolerance its components' (see ChannelTolerance)
+	 */
+	void process(std::span<SampleFrame> frames, sample_rate_t sampleRate, bool hadInput,
+		const ChannelTolerance& tolerance = ChannelTolerance::none());
 
 	//! Whether the filters may still ring after the input fell silent, so the channel must be processed
 	//! [audio thread]

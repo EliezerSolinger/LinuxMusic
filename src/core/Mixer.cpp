@@ -374,7 +374,9 @@ void MixerChannel::doProcessing()
 	const bool hadInput = m_buffer.hasSignal(mainPair);
 	if (!isMaster() && Engine::mixer()->isAnalog() && (hadInput || m_analogStrip.holdsSignal()))
 	{
-		m_analogStrip.process(buffer, Engine::audioEngine()->outputSampleRate(), hadInput);
+		const auto tolerance = Engine::mixer()->toleranceModel()->value() ? ChannelTolerance::forChannel(m_channelIndex)
+			: ChannelTolerance::none();
+		m_analogStrip.process(buffer, Engine::audioEngine()->outputSampleRate(), hadInput, tolerance);
 		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
 		m_buffer.assumeNonSilent(0);
 		m_buffer.assumeNonSilent(1);
@@ -436,6 +438,15 @@ void MixerChannel::doProcessing()
 		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
 	}
 
+	// Analog mode: the master's output transformer, after its fader
+	if (isMaster() && hasSignal && Engine::mixer()->isAnalog()
+		&& Engine::mixer()->masterSection().m_transformerModel.value())
+	{
+		Engine::mixer()->masterSection().processTransformer(buffer, Engine::audioEngine()->outputSampleRate());
+		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+	}
+	else if (isMaster()) { Engine::mixer()->masterSection().bypassTransformer(); }
+
 	if (hasSignal) { m_meter.measure(buffer.data(), fpp, Engine::audioEngine()->outputSampleRate()); }
 	else { m_meter.measureSilence(); }
 	if (isMaster() && hasSignal)
@@ -455,6 +466,7 @@ Mixer::Mixer() :
 	JournallingObject(),
 	m_mixerChannels(),
 	m_analogModel(true, this, tr("Analog mixer")),
+	m_toleranceModel(true, this, tr("Channel tolerances")),
 	m_masterSection(this)
 {
 	// create master channel
@@ -1269,6 +1281,7 @@ void Mixer::clearChannel(mix_ch_t index)
 void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 {
 	m_analogModel.saveSettings(_doc, _this, "analog");
+	m_toleranceModel.saveSettings(_doc, _this, "tolerance");
 	m_masterSection.saveSettings(_doc, _this);
 
 	// save channels
@@ -1347,6 +1360,10 @@ void Mixer::loadSettings( const QDomElement & _this )
 	{
 		m_analogModel.loadSettings(_this, "analog");
 	}
+	// Projects from before the tolerances load without them
+	m_loadedWithoutTolerance = !_this.hasAttribute("tolerance") && _this.firstChildElement("tolerance").isNull();
+	if (m_loadedWithoutTolerance) { m_toleranceModel.setValue(false); }
+	else { m_toleranceModel.loadSettings(_this, "tolerance"); }
 	m_masterSection.loadSettings(_this);
 	QDomNode node = _this.firstChild();
 	auto sends = std::vector<std::pair<int, QDomElement>>{};

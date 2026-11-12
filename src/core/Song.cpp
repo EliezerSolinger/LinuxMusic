@@ -980,6 +980,7 @@ void Song::createNewProject()
 	QCoreApplication::instance()->processEvents();
 
 	m_loadingProject = false;
+	Engine::mixer()->toleranceModel()->setValue(true);
 	Engine::mixer()->setUpTrackChannels();
 	Engine::mixer()->ensureFxReturns();
 	updateLength();
@@ -999,6 +1000,8 @@ void Song::createNewProject()
 void Song::createNewProjectFromTemplate( const QString & templ )
 {
 	loadProject( templ );
+	// A new project has the desk's tolerances, unless its template chose otherwise
+	if (Engine::mixer()->loadedWithoutTolerance()) { Engine::mixer()->toleranceModel()->setValue(true); }
 	// clear file-name so that user doesn't overwrite template when
 	// saving...
 	m_oldFileName = "";
