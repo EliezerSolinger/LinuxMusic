@@ -120,7 +120,12 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_dependenciesMet(0),
 	m_channelIndex(idx),
 	m_useCount(0)
-{}
+{
+	// Knobs draw their arc from these
+	m_trimModel.setCenterValue(0.f);
+	m_widthModel.setCenterValue(100.f);
+	m_panModel.setCenterValue(PanningCenter);
+}
 
 
 

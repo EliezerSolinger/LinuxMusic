@@ -27,7 +27,6 @@
 
 #include <QWidget>
 
-class QGraphicsView;
 class QLabel;
 class QLineEdit;
 class QStackedWidget;
@@ -119,8 +118,11 @@ private:
 	Knob* m_sendKnob;
 	Knob* m_panKnob;
 	LcdWidget* m_channelNumberLcd;
+	//! Widths of the name label (and the panning knob's background) and of the peak level above the fader
+	static constexpr int NameWidth = 50;
+	static constexpr int PeakWidth = 26;
+
 	QLineEdit* m_renameLineEdit;
-	QGraphicsView* m_renameLineEditView;
 	QLabel* m_sendArrow;
 	AutomatableButton* m_muteButton;
 	AutomatableButton* m_soloButton;

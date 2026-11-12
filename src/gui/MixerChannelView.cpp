@@ -29,9 +29,6 @@
 #include <QCheckBox>
 #include <QCoreApplication>
 #include <QFont>
-#include <QGraphicsProxyWidget>
-#include <QGraphicsScene>
-#include <QGraphicsView>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QMenu>
@@ -250,22 +247,15 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	const auto mixerName = mixerChannel->m_name;
 	setToolTip(mixerName);
 
-	m_renameLineEdit = new QLineEdit{mixerName, nullptr};
-	m_renameLineEdit->setFixedWidth(65);
-	m_renameLineEdit->setFont(adjustedToPixelSize(font(), LARGE_FONT_SIZE));
+	// The name, below the fader like the label strip of a mixing desk; clicks go to the strip until renaming
+	m_renameLineEdit = new QLineEdit{mixerName, this};
+	m_renameLineEdit->setObjectName("mixerChannelName");
+	m_renameLineEdit->setFixedWidth(NameWidth);
+	m_renameLineEdit->setFont(adjustedToPixelSize(font(), 9));
+	m_renameLineEdit->setAlignment(Qt::AlignCenter);
 	m_renameLineEdit->setReadOnly(true);
+	m_renameLineEdit->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 	m_renameLineEdit->installEventFilter(this);
-
-	auto renameLineEditScene = new QGraphicsScene{};
-	m_renameLineEditView = new QGraphicsView{};
-	m_renameLineEditView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-	m_renameLineEditView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-	m_renameLineEditView->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-	m_renameLineEditView->setScene(renameLineEditScene);
-
-	auto renameLineEditProxy = renameLineEditScene->addWidget(m_renameLineEdit);
-	renameLineEditProxy->setRotation(-90);
-	m_renameLineEditView->setFixedSize(m_renameLineEdit->height() + 5, m_renameLineEdit->width() + 5);
 
 	m_muteButton = new AutomatableButton(this, tr("Mute"));
 	m_muteButton->setObjectName("btn-mute");
@@ -309,9 +299,20 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 		if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
 	}, this};
 
-	m_panKnob = new Knob{KnobType::Small17, this, tr("Panning")};
+	// The panning knob on a lighter background, as in REAPER
+	auto panBackground = new QWidget{this};
+	panBackground->setObjectName("mixerPanBackground");
+	panBackground->setAttribute(Qt::WA_StyledBackground, true);
+	panBackground->setFixedWidth(NameWidth);
+	auto panLayout = new QHBoxLayout{panBackground};
+	panLayout->setContentsMargins(0, 2, 0, 2);
+	m_panKnob = new Knob{KnobType::Small17, panBackground, tr("Panning")};
 	m_panKnob->setModel(&mixerChannel->m_panModel);
 	m_panKnob->setHintText(tr("Panning:"), "%");
+	panLayout->addWidget(m_panKnob, 0, Qt::AlignCenter);
+
+	// The peak level right above the fader, as wide as the fader's column
+	m_peakIndicator->setFixedWidth(PeakWidth);
 
 	auto mainLayout = new QVBoxLayout{this};
 	mainLayout->setContentsMargins(4, 4, 4, 4);
@@ -321,16 +322,20 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_sendKnob, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_sendArrow, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_renameLineEditView, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(slotList, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_panKnob, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_peakIndicator);
+	mainLayout->addWidget(panBackground, 0, Qt::AlignHCenter);
+	auto faderColumn = new QVBoxLayout();
+	faderColumn->setContentsMargins(0, 0, 0, 0);
+	faderColumn->setSpacing(2);
+	faderColumn->addWidget(m_peakIndicator, 0, Qt::AlignHCenter);
+	faderColumn->addWidget(m_fader, 1, Qt::AlignHCenter);
 	auto faderLayout = new QHBoxLayout();
 	faderLayout->setContentsMargins(0, 0, 0, 0);
 	faderLayout->setSpacing(2);
-	faderLayout->addWidget(m_fader, 0, Qt::AlignHCenter);
+	faderLayout->addLayout(faderColumn);
 	faderLayout->addLayout(soloMuteLayout);
 	mainLayout->addLayout(faderLayout, 1);
+	mainLayout->addWidget(m_renameLineEdit, 0, Qt::AlignHCenter);
 
 	connect(m_renameLineEdit, &QLineEdit::editingFinished, this, &MixerChannelView::renameFinished);
 
@@ -557,12 +562,9 @@ void MixerChannelView::renameChannel()
 	m_inRename = true;
 	setToolTip("");
 	m_renameLineEdit->setReadOnly(false);
-
-	m_channelNumberLcd->hide();
-	m_renameLineEdit->setFixedWidth(m_renameLineEdit->width());
+	m_renameLineEdit->setAttribute(Qt::WA_TransparentForMouseEvents, false);
 	m_renameLineEdit->setText(mixerChannel()->m_name);
 
-	m_renameLineEditView->setFocus();
 	m_renameLineEdit->selectAll();
 	m_renameLineEdit->setFocus();
 }
@@ -573,8 +575,7 @@ void MixerChannelView::renameFinished()
 
 	m_renameLineEdit->deselect();
 	m_renameLineEdit->setReadOnly(true);
-	m_renameLineEdit->setFixedWidth(m_renameLineEdit->width());
-	m_channelNumberLcd->show();
+	m_renameLineEdit->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
 	auto newName = m_renameLineEdit->text();
 	setFocus();
@@ -688,9 +689,9 @@ void MixerChannelView::moveChannelRight()
 
 QString MixerChannelView::elideName(const QString& name)
 {
-	const auto maxTextHeight = m_renameLineEdit->width();
+	const auto maxTextWidth = m_renameLineEdit->width() - 4;
 	const auto metrics = QFontMetrics{m_renameLineEdit->font()};
-	const auto elidedName = metrics.elidedText(name, Qt::ElideRight, maxTextHeight);
+	const auto elidedName = metrics.elidedText(name, Qt::ElideRight, maxTextWidth);
 	return elidedName;
 }
 

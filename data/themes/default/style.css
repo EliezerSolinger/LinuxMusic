@@ -1288,3 +1288,17 @@ lmms--gui--TrackOperationsWidget QPushButton#btn-mute:checked,
 lmms--gui--TrackOperationsWidget QPushButton#btn-solo:checked {
 	color: #ffffff;
 }
+
+/* Mixer strips: the name label below the fader, and the panning knob on a lighter background (as in REAPER) */
+lmms--gui--MixerChannelView QLineEdit#mixerChannelName {
+	background: #2b3138;
+	border: 1px solid #0c0d0f;
+	border-radius: 2px;
+	color: #d1d8e4;
+	padding: 1px 0px;
+}
+
+lmms--gui--MixerChannelView QWidget#mixerPanBackground {
+	background: #3b424a;
+	border-radius: 3px;
+}
