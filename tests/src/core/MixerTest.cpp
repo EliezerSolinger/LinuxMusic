@@ -318,7 +318,7 @@ private slots:
 		// The tests of the routing compare exact levels, so they run the digital desk, which adds nothing; the
 		// tests of the analog desk (whose 4558s add their crossover distortion at every level) run the analog one
 		static const auto analogTests = QStringList{"stripMonoBassNarrowsOnlyTheLows",
-			"gainPotIsMutedToTheLeftAndUnityInTheMiddle", "masterGainStage", "gainStageModels",
+			"gainPotIsMutedToTheLeftAndUnityAtAQuarter", "masterGainStage", "gainStageModels",
 			"drivenOpAmpDoesNotAlias", "tubeStageColorsTheChannel", "analogStripFiltersAndEq", "analogStripDynamics",
 			"analogStripAndModeAreSaved", "tubeLampSwitchesModesAndIsSaved"};
 		mixer()->analogModel()->setValue(analogTests.contains(QTest::currentTestFunction()));
@@ -2119,27 +2119,33 @@ private slots:
 		QVERIFY(stage.takeClip());
 	}
 
-	void gainPotIsMutedToTheLeftAndUnityInTheMiddle()
+	void gainPotIsMutedToTheLeftAndUnityAtAQuarter()
 	{
 		using Strip = AnalogChannelStrip;
 		QCOMPARE(Strip::potGain(0.f), 0.f);
-		QCOMPARE(Strip::potGain(0.5f), 1.f);
+		QCOMPARE(Strip::potGain(0.25f), 1.f);
 		QVERIFY(std::abs(ampToDbfs(Strip::potGain(1.f)) - Strip::MaxGain) < 0.01f);
-		QVERIFY(std::abs(ampToDbfs(Strip::potGain(0.75f)) - Strip::MaxGain / 2.f) < 0.01f);
-		QVERIFY(std::abs(ampToDbfs(Strip::potGain(0.25f)) + 18.06f) < 0.01f);
+		QVERIFY(std::abs(ampToDbfs(Strip::potGain(0.625f)) - Strip::MaxGain / 2.f) < 0.01f);
+		QVERIFY(std::abs(ampToDbfs(Strip::potGain(0.125f)) + 18.06f) < 0.01f);
 		for (float p = 0.f; p < 1.f; p += 0.01f) { QVERIFY(Strip::potGain(p + 0.01f) > Strip::potGain(p)); }
+		// The pot of before, unity in the middle: the same gain where it is now
+		for (const float old : {0.f, 0.25f, 0.5f, 0.75f, 1.f})
+		{
+			const float before = old <= 0.5f ? std::pow(2.f * old, 3.f) : dbfsToAmp((old - 0.5f) * 2.f * Strip::MaxGain);
+			QVERIFY(std::abs(Strip::potGain(Strip::positionFromMiddleUnity(old)) - before) < 1e-4f * std::max(before, 1.f));
+		}
 
 		const auto channel = mixer()->createChannel();
 		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
 		settle();
 		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Flat));
-		QCOMPARE(strip.m_gainModel.value(), 0.5f);
+		QCOMPARE(strip.m_gainModel.value(), 0.25f);
 		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.01f);
-		strip.m_gainModel.setValue(0.75f);
+		strip.m_gainModel.setValue(0.625f);
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.1f) - dbfsToAmp(15.f)) < 0.05f);
 		strip.m_gainModel.setValue(0.f);
 		QVERIFY(sineGain(channel, 1000.f) < 1e-6f);
-		// Past the middle, a pushed op-amp saturates
+		// Up high, a pushed op-amp saturates
 		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::OpAmp4558));
 		strip.m_gainModel.setValue(1.f);
 		QVERIFY(sineGain(channel, 1000.f, 0.5f) < dbfsToAmp(30.f) * 0.9f);
@@ -2148,7 +2154,23 @@ private slots:
 		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.01f);
 		mixer()->analogModel()->setValue(true);
 		strip.setNeutral();
-		QCOMPARE(strip.m_gainModel.value(), 0.5f);
+		QCOMPARE(strip.m_gainModel.value(), 0.25f);
+
+		// Saved as "gainpot"; projects with the pot of before ("gain", unity in the middle) keep their gain
+		strip.m_gainModel.setValue(0.8f);
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixerchannel");
+		strip.saveSettings(doc, element);
+		strip.setNeutral();
+		strip.loadSettings(element);
+		QCOMPARE(strip.m_gainModel.value(), 0.8f);
+		auto oldElement = doc.createElement("mixerchannel");
+		auto old = doc.createElement("analogstrip");
+		old.setAttribute("gain", 0.75);
+		oldElement.appendChild(old);
+		strip.loadSettings(oldElement);
+		QVERIFY(std::abs(ampToDbfs(Strip::potGain(strip.m_gainModel.value())) - 15.f) < 0.05f);
+		strip.setNeutral();
 	}
 
 	void masterGainStage()

@@ -45,7 +45,7 @@ class SampleFrame;
 /**
  * The channel strip of an analog mixing desk, built into each mixer channel (but the master) while the mixer is in
  * analog mode (see Mixer::isAnalog()). In signal order, after the channel's trim:
- * - the GAIN pot, muted to +30 dB;
+ * - the GAIN pot, muted to +30 dB, 0 dB at a quarter of its travel;
  * - the low cut button (100 Hz, 18 dB/oct, as on Soundcraft desks), before the gain stage so that it gets no rumble
  *   to saturate on;
  * - the gain stage: flat, an op-amp or a tube, of a choice of models (see GainStage);
@@ -62,14 +62,17 @@ public:
 	explicit AnalogChannelStrip(Model* parent);
 
 	/**
-	 * The GAIN pot, as on a desk: muted at the far left, 0 dB in the middle, +30 dB at the far right, where the gain
-	 * stage saturates. Its position, 0 to 1 (see potGain()).
+	 * The GAIN pot, as on a desk: muted at the far left, 0 dB at a quarter of its travel, +30 dB at the far right,
+	 * where the gain stage saturates: most of its travel adds gain. Its position, 0 to 1 (see potGain()).
 	 */
 	FloatModel m_gainModel;
-	static constexpr float MaxGain = 30.f; // dB
-	//! The gain, linear, at pot position @p position: up to the middle, (2 position)^3 (-18 dB at a quarter), then
-	//! linear in dB up to MaxGain
+	static constexpr float MaxGain = 30.f;		// dB
+	static constexpr float UnityPosition = 0.25f;
+	//! The gain, linear, at pot position @p position: up to unity, (position / UnityPosition)^3 (-18 dB halfway
+	//! there), then linear in dB up to MaxGain
 	static auto potGain(float position) -> float;
+	//! The position for a position of the pot of before, whose unity was in the middle (projects of steps 19 to 21)
+	static auto positionFromMiddleUnity(float position) -> float;
 
 	using Drive = GainStage::Model;
 	IntModel m_driveModel;			//!< the gain stage's model, a GainStage::Model

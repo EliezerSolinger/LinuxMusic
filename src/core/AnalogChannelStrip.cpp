@@ -55,7 +55,7 @@ auto smoothing(float seconds, sample_rate_t rate) -> float
 
 
 AnalogChannelStrip::AnalogChannelStrip(Model* parent)
-	: m_gainModel(0.5f, 0.f, 1.f, 0.001f, parent)
+	: m_gainModel(UnityPosition, 0.f, 1.f, 0.001f, parent)
 	, m_driveModel(static_cast<int>(Drive::OpAmp4558), 0, static_cast<int>(Drive::Count) - 1, parent)
 	, m_realisticModel(false, parent)
 	, m_lowCutModel(false, parent)
@@ -95,7 +95,7 @@ AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 	m_compressorReleaseModel.setScaleLogarithmic(true);
 	m_gateReleaseModel.setScaleLogarithmic(true);
 	m_gateRangeModel.setCenterValue(0.f);
-	m_gainModel.setCenterValue(0.5f);
+	m_gainModel.setCenterValue(UnityPosition);
 }
 
 
@@ -112,12 +112,22 @@ auto AnalogChannelStrip::ratioAt(float setting) -> float
 auto AnalogChannelStrip::potGain(float position) -> float
 {
 	if (position <= 0.f) { return 0.f; }
-	if (position <= 0.5f)
+	if (position <= UnityPosition)
 	{
-		const float x = 2.f * position;
+		const float x = position / UnityPosition;
 		return x * x * x;
 	}
-	return dbfsToAmp((position - 0.5f) * 2.f * MaxGain);
+	return dbfsToAmp((position - UnityPosition) / (1.f - UnityPosition) * MaxGain);
+}
+
+
+
+
+auto AnalogChannelStrip::positionFromMiddleUnity(float position) -> float
+{
+	// The same gain: below unity the curve is the same, scaled; above, the same dB
+	if (position <= 0.5f) { return position * 2.f * UnityPosition; }
+	return UnityPosition + (position - 0.5f) * 2.f * (1.f - UnityPosition);
 }
 
 
@@ -278,7 +288,7 @@ void AnalogChannelStrip::reset()
 
 void AnalogChannelStrip::setNeutral()
 {
-	m_gainModel.setValue(0.5f);
+	m_gainModel.setValue(UnityPosition);
 	m_driveModel.setValue(static_cast<int>(Drive::OpAmp4558));
 	m_realisticModel.setValue(false);
 	m_lowCutModel.setValue(false);
@@ -344,7 +354,7 @@ void AnalogChannelStrip::setDisplayNames(const QString& channelName)
 void AnalogChannelStrip::saveSettings(QDomDocument& doc, QDomElement& channelElement)
 {
 	auto strip = doc.createElement("analogstrip");
-	m_gainModel.saveSettings(doc, strip, "gain");
+	m_gainModel.saveSettings(doc, strip, "gainpot");
 	m_driveModel.saveSettings(doc, strip, "drive");
 	m_realisticModel.saveSettings(doc, strip, "realistic");
 	m_lowCutModel.saveSettings(doc, strip, "lowcut");
@@ -386,7 +396,16 @@ void AnalogChannelStrip::loadSettings(const QDomElement& channelElement)
 	}
 	// The TUBE button of before
 	else if (strip.attribute("tube", "0").toInt() != 0) { m_driveModel.setValue(static_cast<int>(Drive::Tube12AX7)); }
-	m_gainModel.loadSettings(strip, "gain");
+	if (strip.hasAttribute("gainpot") || !strip.firstChildElement("gainpot").isNull())
+	{
+		m_gainModel.loadSettings(strip, "gainpot");
+	}
+	else if (strip.hasAttribute("gain") || !strip.firstChildElement("gain").isNull())
+	{
+		// The pot of before had its unity in the middle: the same gain where it is now
+		m_gainModel.loadSettings(strip, "gain");
+		m_gainModel.setValue(positionFromMiddleUnity(m_gainModel.value()));
+	}
 	m_realisticModel.loadSettings(strip, "realistic");
 	m_lowCutModel.loadSettings(strip, "lowcut");
 	m_highPassModel.loadSettings(strip, "highpass");

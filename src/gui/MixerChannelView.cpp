@@ -515,15 +515,10 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	auto gainKnob = new GainKnob{red, tr("GAIN"), tr("Gain"), m_analogSection};
 	gainKnob->setModel(&strip.m_gainModel);
 	gainKnob->setHintText(tr("Gain:"), " dB");
-	gainKnob->setToolTip(tr("Gain: muted to the left, 0 dB in the middle, up to +30 dB to the right, into the gain stage"));
+	gainKnob->setToolTip(tr("Gain: muted to the left, 0 dB at a quarter, up to +30 dB to the right, into the gain "
+		"stage"));
 	analogLayout->addWidget(gainKnob, row, 0, Qt::AlignCenter);
-	auto lowCutButton = new AutomatableButton(m_analogSection, tr("Low cut"));
-	lowCutButton->setObjectName("btn-lowcut");
-	lowCutButton->setText(tr("LC"));
-	lowCutButton->setToolTip(tr("Low cut: takes away what is below 100 Hz, 18 dB per octave"));
-	lowCutButton->setCheckable(true);
-	lowCutButton->setModel(&strip.m_lowCutModel);
-	analogLayout->addWidget(lowCutButton, row++, 1, Qt::AlignCenter);
+	addKnob(&mixerChannel->m_trimModel, grey, tr("TRIM"), tr("Input trim, clean, before the gain"), " dB", row++, 1);
 	analogLayout->addWidget(new DriveButton{&strip.m_driveModel, m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
 	analogLayout->addWidget(new SaturationLeds{&strip.gainStage(), &strip.m_driveModel, &strip.m_realisticModel, m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
 	auto monoButton = new AutomatableButton(m_analogSection, tr("Mono"));
@@ -532,7 +527,14 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	monoButton->setToolTip(tr("Mono: sums the channel to mono before its processing, so that panning places it"));
 	monoButton->setCheckable(true);
 	monoButton->setModel(&mixerChannel->m_monoModel);
-	analogLayout->addWidget(monoButton, row++, 0, 1, 2, Qt::AlignCenter);
+	analogLayout->addWidget(monoButton, row, 0, Qt::AlignCenter);
+	auto lowCutButton = new AutomatableButton(m_analogSection, tr("Low cut"));
+	lowCutButton->setObjectName("btn-lowcut");
+	lowCutButton->setText(tr("LCUT"));
+	lowCutButton->setToolTip(tr("Low cut: takes away what is below 100 Hz, 18 dB per octave, before the gain stage"));
+	lowCutButton->setCheckable(true);
+	lowCutButton->setModel(&strip.m_lowCutModel);
+	analogLayout->addWidget(lowCutButton, row++, 1, Qt::AlignCenter);
 
 	addSection(tr("FILTER"));
 	addKnob(&strip.m_highPassModel, grey, tr("HPF"), tr("High-pass"), " Hz", row, 0);
@@ -608,6 +610,11 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_panKnob->setModel(&mixerChannel->m_panModel);
 	m_panKnob->setHintText(tr("Panning:"), "%");
 	panLayout->addWidget(m_panKnob, 0, Qt::AlignCenter);
+	// In analog mode, a desk's knob (see updateMode())
+	m_deskPanKnob = new DeskKnob{QColor{150, 156, 164}, tr("PAN"), tr("Panning"), panBackground};
+	m_deskPanKnob->setModel(&mixerChannel->m_panModel);
+	m_deskPanKnob->setHintText(tr("Panning:"), "%");
+	panLayout->addWidget(m_deskPanKnob, 0, Qt::AlignCenter);
 
 	// The peak level right above the fader, as wide as the fader's column
 	m_peakIndicator->setFixedWidth(PeakWidth);
@@ -928,6 +935,8 @@ void MixerChannelView::updateMode()
 {
 	const bool analog = Engine::mixer()->isAnalog();
 	m_analogSection->setVisible(analog && !isMasterChannel());
+	m_panKnob->setVisible(!analog);
+	m_deskPanKnob->setVisible(analog);
 	m_effectLeds->setVisible(analog);
 	m_effectSlotList->setVisible(!analog);
 }

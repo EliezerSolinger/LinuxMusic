@@ -43,6 +43,7 @@ namespace lmms::gui {
 class AutomatableButton;
 class EffectRackView;
 class Fader;
+class DeskKnob;
 class Knob;
 class LcdWidget;
 class MixerView;
@@ -135,6 +136,7 @@ private:
 
 	Knob* m_sendKnob;
 	Knob* m_panKnob;
+	DeskKnob* m_deskPanKnob;	//!< the panning knob in analog mode
 	LcdWidget* m_channelNumberLcd;
 	//! Widths of the name label (and the panning knob's background) and of the peak level above the fader
 	static constexpr int NameWidth = 50;

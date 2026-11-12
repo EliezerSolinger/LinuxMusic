@@ -1109,6 +1109,22 @@ de uma só.
 - salvar e carregar;
 - solo de projeto do LMMS.
 
+### Passo 22: GAIN com 0 dB em um quarto, TRIM e LCUT na faixa, PAN de mesa (feito)
+
+Pedidos do usuário:
+- **GAIN:** o 0 dB vai para um quarto do curso (antes ficava no meio).
+  - Mudo à esquerda; abaixo de um quarto, a curva cúbica de antes, com -18 dB no meio do caminho até o 0 dB.
+  - Acima de um quarto, linear em dB até +30 dB à direita: a maior parte do curso dá ganho.
+  - O GAIN aumenta o nível de verdade: a saturação vem junto, e é o fader que traz o volume de volta.
+  - Salvo como `gainpot`. Projetos com o pot de antes (`gain`, 0 dB no meio, passos 19 a 21) são convertidos para
+    a posição com o mesmo ganho (`positionFromMiddleUnity()`).
+- **INPUT:** o knob TRIM vai para o lugar do LC, ao lado do GAIN. O TRIM limpo continua também no painel do canal.
+- **LCUT:** o botão do low cut passa a se chamar LCUT, no tamanho do MONO, ao lado dele.
+- **PAN:** no modo analógico, o PAN da faixa vira um knob de mesa (`DeskKnob`). No digital continua o knob de antes.
+
+`MixerTest` tem 106 testes: o do pot foi refeito para 0 dB em um quarto, com +15 dB em 62,5%, e testa a conversão
+dos projetos de antes.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
