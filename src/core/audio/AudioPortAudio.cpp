@@ -29,6 +29,9 @@
 
 #ifdef LMMS_HAVE_PORTAUDIO
 
+#include <algorithm>
+#include <cmath>
+
 #include "AudioEngine.h"
 #include "AudioPortAudio.h"
 #include "ConfigManager.h"
@@ -170,6 +173,23 @@ AudioPortAudio::AudioPortAudio(bool& successful, AudioEngine* engine)
 	successful = true;
 	setSampleRate(sampleRate);
 	setChannels(outputDeviceChannels);
+
+	// The input comes in the same callback as the output: the engine takes it with the output (planar)
+	const auto inputChannels = inputParametersPtr ? inputDeviceChannels : 0;
+	setInputChannels(static_cast<ch_cnt_t>(inputChannels));
+	m_inputStorage.assign(static_cast<std::size_t>(inputChannels) * framesPerBuffer, 0.f);
+	m_inputPointers.resize(inputChannels);
+	for (auto channel = 0; channel < inputChannels; ++channel)
+	{
+		m_inputPointers[channel] = m_inputStorage.data() + static_cast<std::size_t>(channel) * framesPerBuffer;
+	}
+	m_inputCapacity = framesPerBuffer;
+
+	if (const auto info = Pa_GetStreamInfo(m_paStream))
+	{
+		m_inputLatency = static_cast<f_cnt_t>(std::lround(info->inputLatency * info->sampleRate));
+		m_outputLatency = static_cast<f_cnt_t>(std::lround(info->outputLatency * info->sampleRate));
+	}
 }
 
 AudioPortAudio::~AudioPortAudio()
@@ -188,8 +208,8 @@ void AudioPortAudio::stopProcessingImpl()
 	Pa_StopStream(m_paStream);
 }
 
-int AudioPortAudio::processCallback(const void*, void* output, unsigned long frameCount,
-	const PaStreamCallbackTimeInfo*, PaStreamCallbackFlags, void* userData)
+int AudioPortAudio::processCallback(const void* input, void* output, unsigned long frameCount,
+	const PaStreamCallbackTimeInfo*, PaStreamCallbackFlags statusFlags, void* userData)
 {
 	const auto device = static_cast<AudioPortAudio*>(userData);
 	const auto channels = device->channels();
@@ -201,7 +221,33 @@ int AudioPortAudio::processCallback(const void*, void* output, unsigned long fra
 		return paComplete;
 	}
 
-	device->audioEngine()->renderNextBuffer({outputBuffer, channels, frameCount});
+	if (statusFlags & (paInputUnderflow | paInputOverflow | paOutputUnderflow | paOutputOverflow))
+	{
+		device->reportXrun();
+	}
+
+	// The stream was opened with framesPerPeriod() frames per buffer; a host that hands more is taken in parts
+	const auto inputChannels = device->inputChannels();
+	const auto inputBuffer = static_cast<const float*>(input);
+	unsigned long done = 0;
+	while (done < frameCount)
+	{
+		const auto frames = std::min<unsigned long>(frameCount - done, device->m_inputCapacity);
+		for (ch_cnt_t channel = 0; channel < inputChannels; ++channel)
+		{
+			auto* planar = device->m_inputPointers[channel];
+			for (unsigned long frame = 0; frame < frames; ++frame)
+			{
+				// A stream without input data (e.g. paInputUnderflow) hands no buffer: silence
+				planar[frame] = inputBuffer ? inputBuffer[(done + frame) * inputChannels + channel] : 0.f;
+			}
+		}
+		const auto inputView = PlanarBufferView<const float>{
+			const_cast<const float* const*>(device->m_inputPointers.data()), inputChannels, frames};
+		device->audioEngine()->renderNextBuffer(inputView,
+			InterleavedBufferView<float>{outputBuffer + done * channels, channels, frames});
+		done += frames;
+	}
 	return paContinue;
 }
 } // namespace lmms

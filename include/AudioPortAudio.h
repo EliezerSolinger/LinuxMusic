@@ -34,6 +34,7 @@
 #include <QString>
 #include <QWidget>
 #include <portaudio.h>
+#include <vector>
 
 #include "AudioDevice.h"
 #include "AudioDeviceSetupWidget.h"
@@ -78,6 +79,9 @@ public:
 
 	static auto name() -> QString { return QT_TRANSLATE_NOOP("AudioDeviceSetupWidget", "PortAudio"); }
 
+	auto inputLatency() const -> f_cnt_t override { return m_inputLatency; }
+	auto outputLatency() const -> f_cnt_t override { return m_outputLatency; }
+
 private:
 	void startProcessingImpl() override;
 	void stopProcessingImpl() override;
@@ -87,6 +91,14 @@ private:
 
 	detail::PortAudioInitializationGuard m_initGuard;
 	PaStream* m_paStream = nullptr;
+
+	//! The input, made planar for the engine (allocated when the stream opens)
+	std::vector<float> m_inputStorage;
+	std::vector<float*> m_inputPointers;
+	unsigned long m_inputCapacity = 0;
+
+	f_cnt_t m_inputLatency = 0;
+	f_cnt_t m_outputLatency = 0;
 };
 } // namespace lmms
 

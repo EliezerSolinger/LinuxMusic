@@ -47,6 +47,7 @@
 #include "AudioAlsa.h"
 #include "AudioJack.h"
 #include "AudioSndio.h"
+#include "AudioCoreAudio.h"
 #include "AudioPortAudio.h"
 #include "AudioPulseAudio.h"
 #include "AudioSdl.h"
@@ -63,7 +64,6 @@
 
 #include "BufferManager.h"
 
-#include "LocklessRingBuffer.h"
 
 
 namespace lmms
@@ -72,7 +72,6 @@ namespace lmms
 using LocklessListElement = LocklessList<PlayHandle*>::Element;
 
 static thread_local bool s_renderingThread = false;
-static const f_cnt_t FIXED_INPUT_BUFFER_CAPACITY = DEFAULT_BUFFER_SIZE * 100;
 
 
 AudioEngine::AudioEngine(bool renderOnly)
@@ -84,8 +83,6 @@ AudioEngine::AudioEngine(bool renderOnly)
 	, m_framesPerPeriod(std::min(m_framesPerAudioBuffer, DEFAULT_BUFFER_SIZE))
 	, m_baseSampleRate(
 		std::max(ConfigManager::inst()->value("audioengine", "samplerate").toInt(), SUPPORTED_SAMPLERATES.front()))
-	, m_inputBufferRead(0)
-	, m_inputBufferWrite(1)
 	, m_outputBufferRead(nullptr)
 	, m_outputBufferWrite(nullptr)
 	, m_outputBufferReadIndex(0)
@@ -100,11 +97,6 @@ AudioEngine::AudioEngine(bool renderOnly)
 	, m_clearSignal(false)
 	, m_sanitizationEnabled(ConfigManager::inst()->value("audioengine", "sanitizemix", "1").toInt())
 {
-	for( int i = 0; i < 2; ++i )
-	{
-		m_inputBuffer[i].reserve(FIXED_INPUT_BUFFER_CAPACITY);
-	}
-
 	BufferManager::init( m_framesPerPeriod );
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_outputBufferWrite = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
@@ -122,8 +114,6 @@ AudioEngine::AudioEngine(bool renderOnly)
 		m_workers.push_back(workerThread);
 	}
 
-	m_inputAudioRingBuffer = std::make_unique<LocklessRingBuffer<SampleFrame>>(FIXED_INPUT_BUFFER_CAPACITY);
-	m_inputAudioRingBufferReader = std::make_unique<LocklessRingBufferReader<SampleFrame>>(*m_inputAudioRingBuffer);
 }
 
 
@@ -162,6 +152,8 @@ void AudioEngine::initDevices()
 		m_audioDev = tryAudioDevices();
 		m_midiClient = tryMidiClients();
 	}
+	prepareCapture();
+
 	// Loading audio device may have changed the sample rate
 	emit sampleRateChanged();
 }
@@ -174,109 +166,9 @@ bool AudioEngine::criticalXRuns() const
 
 
 
-void AudioEngine::pushInputFrames(SampleFrame* inputAudioBlock, const f_cnt_t frameCount)
-{
-	if (!m_inputAudioRingBuffer || frameCount == 0) return;
-
-	std::size_t availableSpace = m_inputAudioRingBuffer->free();
-
-	if (availableSpace == 0)
-	{
-		fprintf(stderr, "AudioEngine: Critical input ring buffer overflow, %u frames dropped.\n", static_cast<unsigned int>(frameCount));
-		return;
-	}
-
-	size_t framesToWrite = frameCount;
-	if (availableSpace < frameCount)
-	{
-		framesToWrite = availableSpace;
-		fprintf(stderr, "AudioEngine: Partial input ring buffer overflow, %zu of %u frames will be written, %zu frames dropped.\n",
-				 framesToWrite, static_cast<unsigned int>(frameCount), frameCount - framesToWrite);
-	}
-
-	std::size_t framesWritten = m_inputAudioRingBuffer->write(inputAudioBlock, framesToWrite, false);
-
-	if (framesWritten < framesToWrite)
-	{
-		fprintf(stderr, "AudioEngine: Ring buffer write issue, %zu of %zu frames written (intended to write %zu).\n",
-				 framesWritten, frameCount, framesToWrite);
-	}
-}
-
-
-
-void AudioEngine::processBufferedInputFrames()
-{
-	if (!m_inputAudioRingBufferReader || !m_inputAudioRingBuffer) return;
-
-	std::size_t availableInRing = m_inputAudioRingBufferReader->read_space();
-	if (availableInRing == 0) return;
-
-	const std::size_t maxFramesPerCall = DEFAULT_BUFFER_SIZE * 2; 
-	std::size_t framesToProcess = std::min(availableInRing, maxFramesPerCall);
-
-	ringbuffer_reader_t<SampleFrame>::read_sequence_t sequence = m_inputAudioRingBufferReader->read_max(framesToProcess);
-	
-	std::size_t framesInSequence = sequence.size();
-
-	if (framesInSequence == 0) return;
-
-	requestChangeInModel();
-
-	auto& currentWriteBuf = m_inputBuffer[m_inputBufferWrite];
-	f_cnt_t currentWriteBufCapacity = currentWriteBuf.capacity();
-	f_cnt_t currentFramesInWriteBuf = currentWriteBuf.size();
-
-	f_cnt_t totalFramesSuccessfullyCopiedToMain = 0;
-
-	std::size_t len1 = sequence.first_half_size();
-	std::size_t len2 = sequence.second_half_size();
-
-	f_cnt_t spaceLeftInMainBuffer{(currentFramesInWriteBuf >= currentWriteBufCapacity)
-	? 0 : currentWriteBufCapacity - currentFramesInWriteBuf};
-
-	f_cnt_t framesWeCanActuallyCopy{static_cast<f_cnt_t>(framesInSequence) > spaceLeftInMainBuffer ?
-		spaceLeftInMainBuffer : static_cast<f_cnt_t>(framesInSequence)};
-
-	if (len1 > 0 && totalFramesSuccessfullyCopiedToMain < framesWeCanActuallyCopy)
-	{
-		f_cnt_t framesToCopyFromPart1 = std::min(static_cast<f_cnt_t>(len1),
-		framesWeCanActuallyCopy - totalFramesSuccessfullyCopiedToMain);
-		if (framesToCopyFromPart1 > 0)
-		{
-			currentWriteBuf.resize(currentFramesInWriteBuf + totalFramesSuccessfullyCopiedToMain + framesToCopyFromPart1);
-			memcpy(&currentWriteBuf[currentFramesInWriteBuf + totalFramesSuccessfullyCopiedToMain],
-				sequence.first_half_ptr(), framesToCopyFromPart1 * sizeof(SampleFrame));
-			totalFramesSuccessfullyCopiedToMain += framesToCopyFromPart1;
-		}
-	}
-
-	if (len2 > 0 && totalFramesSuccessfullyCopiedToMain < framesWeCanActuallyCopy)
-	{
-		f_cnt_t framesToCopyFromPart2 = std::min(static_cast<f_cnt_t>(len2),
-		framesWeCanActuallyCopy - totalFramesSuccessfullyCopiedToMain);
-		if (framesToCopyFromPart2 > 0)
-		{
-			currentWriteBuf.resize(currentFramesInWriteBuf + totalFramesSuccessfullyCopiedToMain + framesToCopyFromPart2);
-			memcpy(&currentWriteBuf[currentFramesInWriteBuf + totalFramesSuccessfullyCopiedToMain],
-				sequence.second_half_ptr(), framesToCopyFromPart2 * sizeof(SampleFrame));
-			totalFramesSuccessfullyCopiedToMain += framesToCopyFromPart2;
-		}
-	}
-	
-	
-	doneChangeInModel();
-}
-
-
-
-
-
 void AudioEngine::renderStageNoteSetup()
 {
 	AudioEngineProfiler::Probe profilerProbe(m_profiler, AudioEngineProfiler::DetailType::NoteSetup);
-
-	processBufferedInputFrames();
 
 	if( m_clearSignal )
 	{
@@ -437,6 +329,7 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	renderStageMix();           // STAGE 3: do master mix in mixer
 
 	s_renderingThread = false;
+	m_periodsRendered.fetch_add(1, std::memory_order_relaxed);
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);
 	m_outputBufferReadIndex = 0;
 
@@ -445,12 +338,29 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 
 void AudioEngine::swapBuffers()
 {
-	m_inputBufferWrite = (m_inputBufferWrite + 1) % 2;
-	m_inputBufferRead = (m_inputBufferRead + 1) % 2;
-	m_inputBuffer[m_inputBufferWrite].clear();
-
 	std::swap(m_outputBufferRead, m_outputBufferWrite);
 	zeroSampleFrames(m_outputBufferWrite.get(), m_framesPerPeriod);
+}
+
+void AudioEngine::prepareCapture()
+{
+	assert(!m_audioDev || !m_audioDev->isRunning());
+	m_captureChannels = m_audioDev ? m_audioDev->inputChannels() : 0;
+	for (auto half = std::size_t{0}; half < 2; ++half)
+	{
+		auto& storage = m_captureStorage[half];
+		storage.assign(static_cast<std::size_t>(m_captureChannels) * m_framesPerPeriod, 0.f);
+		auto& pointers = m_capturePointers[half];
+		pointers.resize(m_captureChannels);
+		for (ch_cnt_t channel = 0; channel < m_captureChannels; ++channel)
+		{
+			pointers[channel] = storage.data() + static_cast<std::size_t>(channel) * m_framesPerPeriod;
+		}
+	}
+	m_captureFill = 0;
+
+	// The new device starts on a new period, with its input in step from its first frame
+	m_outputBufferReadIndex = 0;
 }
 
 void AudioEngine::clear()
@@ -507,6 +417,7 @@ void AudioEngine::doSetAudioDevice( AudioDevice * _dev )
 					"Trying any working audio-device\n" );
 		m_audioDev = tryAudioDevices();
 	}
+	prepareCapture();
 }
 
 void AudioEngine::setAudioDevice(AudioDevice* _dev, bool startNow)
@@ -543,6 +454,7 @@ void AudioEngine::restoreAudioDevice()
 		delete m_audioDev;
 
 		m_audioDev = m_oldAudioDev;
+		prepareCapture();
 		emit sampleRateChanged();
 
 		startProcessing();
@@ -729,6 +641,13 @@ bool AudioEngine::isAudioDevNameValid(QString name)
 #endif
 
 
+#ifdef LMMS_BUILD_APPLE
+	if (name == AudioCoreAudio::name())
+	{
+		return true;
+	}
+#endif
+
 #ifdef LMMS_HAVE_PORTAUDIO
 	if (name == AudioPortAudio::name())
 	{
@@ -801,6 +720,20 @@ AudioDevice * AudioEngine::tryAudioDevices()
 	}
 
 	m_audioDevStartFailed = false;
+
+#ifdef LMMS_BUILD_APPLE
+	// The native driver first: duplex, multichannel, with the devices' latencies
+	if (dev_name == AudioCoreAudio::name() || dev_name.isEmpty())
+	{
+		dev = new AudioCoreAudio(success_ful, this);
+		if (success_ful)
+		{
+			m_audioDevName = AudioCoreAudio::name();
+			return dev;
+		}
+		delete dev;
+	}
+#endif
 
 #ifdef LMMS_HAVE_SDL
 	if( dev_name == AudioSdl::name() || dev_name == "" )

@@ -26,6 +26,8 @@
 #define LMMS_AUDIO_DEVICE_H
 
 #include <QMutex>
+#include <QString>
+#include <atomic>
 #include <samplerate.h>
 
 #include "LmmsTypes.h"
@@ -54,10 +56,35 @@ public:
 	virtual void unregisterPort(AudioBusHandle* port);
 	virtual void renamePort(AudioBusHandle* port);
 
-	inline bool supportsCapture() const
-	{
-		return m_supportsCapture;
-	}
+	/**
+	 * Audio input (docs/plano-gravacao.md, "Drivers"): a device that captures hands its input to the engine in the
+	 * same callback as it takes the output (AudioEngine::renderNextBuffer(input, output)), so the input is on the
+	 * same clock and in the same period as the output, with no ring buffer in between.
+	 */
+	//! @returns how many input channels the device captures (0 if it does not capture)
+	auto inputChannels() const -> ch_cnt_t { return m_inputChannels; }
+
+	//! @returns whether the device captures audio
+	bool supportsCapture() const { return m_inputChannels > 0; }
+
+	//! @returns the name of input channel @p channel (zero-based), as the interface shows it
+	virtual auto inputChannelName(ch_cnt_t channel) const -> QString;
+
+	//! @returns the frames between a sound reaching the input and the device handing it to the engine
+	virtual auto inputLatency() const -> f_cnt_t { return 0; }
+
+	//! @returns the frames between the engine handing a frame to the device and the frame leaving the output
+	virtual auto outputLatency() const -> f_cnt_t { return 0; }
+
+	/**
+	 * Asks the device to capture, or that it may stop capturing (e.g. to spare the input's CPU or a privacy
+	 * prompt) while no track records or monitors. A device that cannot stop capturing ignores it; one that is not
+	 * capturing hands the engine silence.
+	 */
+	virtual void setCaptureEnabled(bool) {}
+
+	//! @returns how many over- or underruns the device reported since it opened (any thread)
+	auto xruns() const -> unsigned { return m_xruns.load(std::memory_order_relaxed); }
 
 	inline sample_rate_t sampleRate() const
 	{
@@ -86,16 +113,21 @@ protected:
 	void setSampleRate(const sample_rate_t _new_sr) { m_sampleRate = _new_sr; }
 	void setChannels(const ch_cnt_t channels) { m_channels = channels; }
 
-	static void stopProcessingThread( QThread * thread );
-protected:
-	bool m_supportsCapture;
+	//! Sets how many input channels the device captures; only while it is not processing
+	void setInputChannels(ch_cnt_t channels) { m_inputChannels = channels; }
 
+	//! Counts an over- or underrun (any thread, also the audio callback)
+	void reportXrun() { m_xruns.fetch_add(1, std::memory_order_relaxed); }
+
+	static void stopProcessingThread( QThread * thread );
 private:
 	virtual void startProcessingImpl() = 0;
 	virtual void stopProcessingImpl() = 0;
 
 	sample_rate_t m_sampleRate;
 	ch_cnt_t m_channels;
+	ch_cnt_t m_inputChannels = 0;
+	std::atomic<unsigned> m_xruns = 0;
 	AudioEngine* m_audioEngine = nullptr;
 	std::atomic_flag m_running = ATOMIC_FLAG_INIT;
 };

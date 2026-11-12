@@ -50,6 +50,7 @@
 #include "AudioAlsaSetupWidget.h"
 #include "AudioDummy.h"
 #include "AudioJack.h"
+#include "AudioCoreAudio.h"
 #include "AudioPortAudio.h"
 #include "AudioPulseAudio.h"
 #include "AudioSdl.h"
@@ -513,6 +514,10 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 #ifdef LMMS_HAVE_PULSEAUDIO
 	m_audioIfaceSetupWidgets[AudioPulseAudio::name()] =
 			new AudioPulseAudio::setupWidget(as_w);
+#endif
+
+#ifdef LMMS_BUILD_APPLE
+	m_audioIfaceSetupWidgets[AudioCoreAudio::name()] = new AudioCoreAudio::setupWidget(as_w);
 #endif
 
 #ifdef LMMS_HAVE_PORTAUDIO

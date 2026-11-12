@@ -105,8 +105,6 @@ AudioJack::AudioJack(bool& successful, AudioEngine* audioEngineParam)
 	if (successful) {
 		connect(this, SIGNAL(zombified()), this, SLOT(restartAfterZombified()), Qt::QueuedConnection);
 	}
-
-	m_supportsCapture = true;
 }
 
 
@@ -191,16 +189,6 @@ bool AudioJack::initJackClient()
 					clientName.toLatin1().constData(), jack_get_client_name(m_client));
 	}
 
-	resizeInputBuffer(jack_get_buffer_size(m_client));
-
-	// set buffer-size callback
-	jack_set_buffer_size_callback(m_client,
-		[](jack_nframes_t nframes, void* udata) -> int {
-			static_cast<AudioJack*>(udata)->resizeInputBuffer(nframes);
-			return 0;
-		},
-		this);
-
 	// set process-callback
 	jack_set_process_callback(m_client, staticProcessCallback, this);
 
@@ -218,23 +206,22 @@ bool AudioJack::initJackClient()
 		const QString input_name = buildInputName(ch);
 		m_inputPorts.push_back(jack_port_register(m_client, input_name.toLatin1().constData(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0));
 
-		if (m_outputPorts.back() == nullptr)
+		if (m_outputPorts.back() == nullptr || m_inputPorts.back() == nullptr)
 		{
 			std::fprintf(stderr, "no more JACK-ports available!\n");
 			return false;
 		}
 	}
 
+	// The input ports are read in the same cycle as the output ports are written
+	m_tempInBufs.assign(m_inputPorts.size(), nullptr);
+	setInputChannels(static_cast<ch_cnt_t>(m_inputPorts.size()));
+
 	return true;
 }
 
 
 
-
-void AudioJack::resizeInputBuffer(jack_nframes_t nframes)
-{
-	m_inputFrameBuffer.resize(nframes);
-}
 
 void AudioJack::attemptToConnect(size_t index, const char *lmms_port_type, const char *source_port, const char *destination_port)
 {
@@ -418,19 +405,14 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 	}
 	else
 	{
-		audioEngine()->renderNextBuffer({m_tempOutBufs, channels(), nframes});
-	}
-
-	for (int c = 0; c < channels(); ++c)
-	{
-		jack_default_audio_sample_t* jack_input_buffer = (jack_default_audio_sample_t*) jack_port_get_buffer(m_inputPorts[c], nframes);
-
-		for (jack_nframes_t frame = 0; frame < nframes; frame++)
+		for (std::size_t c = 0; c < m_inputPorts.size(); ++c)
 		{
-			m_inputFrameBuffer[frame][c] = static_cast<sample_t>(jack_input_buffer[frame]);
+			m_tempInBufs[c] = static_cast<jack_default_audio_sample_t*>(jack_port_get_buffer(m_inputPorts[c], nframes));
 		}
+		const auto input = PlanarBufferView<const float>{m_tempInBufs.data(),
+			static_cast<ch_cnt_t>(m_tempInBufs.size()), nframes};
+		audioEngine()->renderNextBuffer(input, PlanarBufferView<float>{m_tempOutBufs, channels(), nframes});
 	}
-	audioEngine()->pushInputFrames (m_inputFrameBuffer.data(), nframes);
 	return 0;
 }
 

@@ -25,14 +25,16 @@
 #include <cstring>
 
 #include "AudioDevice.h"
+
+#include <QObject>
+
 #include "AudioEngine.h"
 
 namespace lmms
 {
 
 AudioDevice::AudioDevice(const ch_cnt_t _channels, AudioEngine* _audioEngine)
-	: m_supportsCapture(false)
-	, m_sampleRate(_audioEngine->outputSampleRate())
+	: m_sampleRate(_audioEngine->outputSampleRate())
 	, m_channels(_channels)
 	, m_audioEngine(_audioEngine)
 {
@@ -69,6 +71,14 @@ void AudioDevice::stopProcessingThread( QThread * thread )
 		}
 	}
 }
+
+
+
+auto AudioDevice::inputChannelName(ch_cnt_t channel) const -> QString
+{
+	return QObject::tr("Input %1").arg(channel + 1);
+}
+
 
 
 

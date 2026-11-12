@@ -31,7 +31,10 @@
 #include <samplerate.h>
 
 #include <memory>
+#include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstdint>
 #include <vector>
 
 #include "AudioBufferView.h"
@@ -43,7 +46,6 @@
 #include "AudioEngineProfiler.h"
 #include "PlayHandle.h"
 
-#include "LocklessRingBuffer.h"
 
 
 namespace lmms
@@ -236,19 +238,23 @@ public:
 	void startProcessing() { m_audioDev->startProcessing(); }
 	void stopProcessing() { m_audioDev->stopProcessing(); }
 
-	void pushInputFrames( SampleFrame* _ab, const f_cnt_t _frames );
-
-	void processBufferedInputFrames();
-
-	inline const SampleFrame* inputBuffer()
+	/**
+	 * @returns the input the audio device captured for the period being rendered: one planar buffer of
+	 *          framesPerPeriod() frames per input channel of the device (none if it does not capture). Only on the
+	 *          audio thread, while a period is rendered.
+	 *
+	 * The input of a period is what the device handed the engine together with the output of the period before
+	 * (see renderNextBuffer(input, output)): it was captured the length of a period before the output of the period
+	 * being rendered is handed to the device.
+	 */
+	auto capture() const -> PlanarBufferView<const float>
 	{
-		return m_inputBuffer[m_inputBufferRead].data();
+		const auto& pointers = m_capturePointers[1 - m_captureFill];
+		return {pointers.data(), m_captureChannels, m_captureChannels > 0 ? m_framesPerPeriod : 0};
 	}
 
-	inline f_cnt_t inputBufferFrames() const
-	{
-		return m_inputBuffer[m_inputBufferRead].size();
-	}
+	//! @returns the number of periods rendered since the engine started (any thread)
+	auto periodsRendered() const -> std::int64_t { return m_periodsRendered.load(std::memory_order_relaxed); }
 
 	/**
 	 * @returns The internal buffer size used by audio plugins and other processing done within the audio engine.
@@ -294,10 +300,29 @@ public:
 	 *
 	 * @param dst An audio buffer view to write into. Both interleaved and planar overloads are provided.
 	 */
-	void renderNextBuffer(InterleavedBufferView<float> dst) { renderNextBuffer<InterleavedBufferView<float>>(dst); }
+	void renderNextBuffer(InterleavedBufferView<float> dst) { renderNextBuffer({}, dst); }
 
 	//! @copydoc renderNextBuffer(InterleavedBufferView<float>)
-	void renderNextBuffer(PlanarBufferView<float> dst) { renderNextBuffer<PlanarBufferView<float>>(dst); }
+	void renderNextBuffer(PlanarBufferView<float> dst) { renderNextBuffer({}, dst); }
+
+	/**
+	 * @brief Renders an audio buffer into @a dst, taking the device's input for the same frames
+	 *
+	 * For devices that capture: @p input holds the frames the device captured in the same callback, one planar
+	 * buffer per input channel, as many frames as @p dst. They become capture() for the next period, so the input
+	 * stays on the same clock as the output. Channels beyond the device's inputChannels() are ignored; missing ones
+	 * are silence.
+	 */
+	void renderNextBuffer(PlanarBufferView<const float> input, InterleavedBufferView<float> dst)
+	{
+		renderNextBufferImpl(input, dst);
+	}
+
+	//! @copydoc renderNextBuffer(PlanarBufferView<const float>, InterleavedBufferView<float>)
+	void renderNextBuffer(PlanarBufferView<const float> input, PlanarBufferView<float> dst)
+	{
+		renderNextBufferImpl(input, dst);
+	}
 
 	//! Block until a change in model can be done (i.e. wait for audio thread)
 	void requestChangeInModel();
@@ -330,12 +355,30 @@ signals:
 
 
 private:
-	void renderNextBuffer(AudioBufferView<float> auto dst)
+	void renderNextBufferImpl(PlanarBufferView<const float> input, AudioBufferView<float> auto dst)
 	{
+		assert(input.channels() == 0 || input.frames() == dst.frames());
+		const auto inputChannels = std::min(input.channels(), m_captureChannels);
 		for (auto frame = f_cnt_t{0}; frame < dst.frames(); ++frame)
 		{
 			if (m_outputBufferReadIndex == m_framesPerPeriod) { m_outputBufferReadIndex = 0; }
-			if (m_outputBufferReadIndex == 0) { renderNextPeriod(); }
+			if (m_outputBufferReadIndex == 0)
+			{
+				// The input taken with the last period's output is the input of the period to render
+				m_captureFill = 1 - m_captureFill;
+				renderNextPeriod();
+			}
+
+			// Take the device's input for this frame
+			auto& fill = m_capturePointers[m_captureFill];
+			for (ch_cnt_t channel = 0; channel < inputChannels; ++channel)
+			{
+				fill[channel][m_outputBufferReadIndex] = input.sample(channel, frame);
+			}
+			for (ch_cnt_t channel = inputChannels; channel < m_captureChannels; ++channel)
+			{
+				fill[channel][m_outputBufferReadIndex] = 0.f;
+			}
 
 			switch (dst.channels())
 			{
@@ -379,6 +422,9 @@ private:
 
 	void swapBuffers();
 
+	//! Sets the capture buffers up for the audio device's inputs (not on the audio thread)
+	void prepareCapture();
+
 	void clearInternal();
 
 	bool m_renderOnly;
@@ -389,9 +435,15 @@ private:
 	f_cnt_t m_framesPerPeriod;
 	sample_rate_t m_baseSampleRate;
 
-	std::array<std::vector<SampleFrame>, 2> m_inputBuffer;
-	int m_inputBufferRead;
-	int m_inputBufferWrite;
+	/**
+	 * The device's input, by period: one half is filled with the input of the period being output, the other is
+	 * capture() for the period being rendered. Allocated when a device is set, never on the audio thread.
+	 */
+	std::array<std::vector<float>, 2> m_captureStorage;
+	std::array<std::vector<float*>, 2> m_capturePointers;
+	int m_captureFill = 0; //!< the half being filled
+	ch_cnt_t m_captureChannels = 0;
+	std::atomic<std::int64_t> m_periodsRendered = 0;
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;
@@ -432,8 +484,6 @@ private:
 	friend class AudioEngineWorkerThread;
 	friend class ProjectRenderer;
 
-	std::unique_ptr<LocklessRingBuffer<SampleFrame>> m_inputAudioRingBuffer;
-	std::unique_ptr<LocklessRingBufferReader<SampleFrame>> m_inputAudioRingBufferReader;
 } ;
 
 } // namespace lmms

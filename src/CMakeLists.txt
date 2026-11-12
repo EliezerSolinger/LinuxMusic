@@ -142,7 +142,7 @@ IF(LMMS_HAVE_WINMM)
 ENDIF()
 
 IF(LMMS_BUILD_APPLE)
-	SET(EXTRA_LIBRARIES "-framework CoreMIDI -framework CoreFoundation")
+	SET(EXTRA_LIBRARIES "-framework CoreMIDI -framework CoreFoundation -framework CoreAudio")
 ENDIF()
 
 IF(LMMS_BUILD_HAIKU)

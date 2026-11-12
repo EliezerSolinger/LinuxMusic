@@ -62,11 +62,9 @@ public:
 	
 	private:
 		void populatePlaybackDeviceComboBox();
-		void populateInputDeviceComboBox();
 
 	private:
 		QComboBox* m_playbackDeviceComboBox = nullptr;
-		QComboBox* m_inputDeviceComboBox = nullptr;
 
 		static QString s_systemDefaultDevice;
 	} ;
@@ -79,14 +77,8 @@ private:
 	static void sdlAudioCallback( void * _udata, Uint8 * _buf, int _len );
 	void sdlAudioCallback( Uint8 * _buf, int _len );
 
-	static void sdlInputAudioCallback( void * _udata, Uint8 * _buf, int _len );
-	void sdlInputAudioCallback( Uint8 * _buf, int _len );
-
 	SDL_AudioSpec m_audioHandle;
 	SDL_AudioDeviceID m_outputDevice;
-
-	SDL_AudioSpec m_inputAudioHandle;
-	SDL_AudioDeviceID m_inputDevice;
 } ;
 
 
