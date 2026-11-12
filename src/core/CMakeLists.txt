@@ -20,6 +20,7 @@ set(LMMS_SRCS
 	core/Clipboard.cpp
 	core/ComboBoxModel.cpp
 	core/ConfigManager.cpp
+	core/CrashHandler.cpp
 	core/Controller.cpp
 	core/ControllerConnection.cpp
 	core/DataFile.cpp

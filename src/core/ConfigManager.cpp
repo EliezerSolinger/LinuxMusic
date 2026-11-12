@@ -516,7 +516,9 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 				}
 				m_themeDir = ensureTrailingSlash(m_themeDir);
 			}
-			setWorkingDir(value("paths", "workingdir"));
+			// A file without a working directory keeps the default one: an empty one would put the recovery file,
+			// the recordings and the crash report wherever the program was started from
+			if (const auto workingDir = value("paths", "workingdir"); !workingDir.isEmpty()) { setWorkingDir(workingDir); }
 
 			setGIGDir(value("paths", "gigdir") == "" ? gigDir() : value("paths", "gigdir"));
 			setSF2Dir(value("paths", "sf2dir") == "" ? sf2Dir() : value("paths", "sf2dir"));
