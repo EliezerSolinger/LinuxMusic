@@ -296,6 +296,10 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 		if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
 	}, this};
 
+	m_panKnob = new Knob{KnobType::Small17, this, tr("Panning")};
+	m_panKnob->setModel(&mixerChannel->m_panModel);
+	m_panKnob->setHintText(tr("Panning:"), "%");
+
 	auto mainLayout = new QVBoxLayout{this};
 	mainLayout->setContentsMargins(4, 4, 4, 4);
 	mainLayout->setSpacing(2);
@@ -306,6 +310,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_renameLineEditView, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(slotList, 0, Qt::AlignHCenter);
+	mainLayout->addWidget(m_panKnob, 0, Qt::AlignHCenter);
 	mainLayout->addLayout(soloMuteLayout);
 	mainLayout->addWidget(m_peakIndicator);
 	mainLayout->addWidget(m_fader, 1, Qt::AlignHCenter);

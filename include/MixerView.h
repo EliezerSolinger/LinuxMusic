@@ -47,6 +47,9 @@ namespace lmms
 namespace lmms::gui
 {
 
+class Knob;
+class LedCheckBox;
+
 class LMMS_EXPORT MixerView
 	: public QWidget
 	, public ModelView
@@ -143,6 +146,13 @@ private:
 	QStackedLayout* m_racksLayout;
 	QWidget* m_racksWidget;
 	Mixer* m_mixer;
+
+	//! The selected channel's strip settings, above its effects: input trim, phase, stereo width and panning
+	Knob* m_trimKnob;
+	LedCheckBox* m_phaseInvertBox;
+	LedCheckBox* m_swapChannelsBox;
+	Knob* m_widthKnob;
+	Knob* m_panKnob;
 
 	friend class MixerChannelView;
 } ;

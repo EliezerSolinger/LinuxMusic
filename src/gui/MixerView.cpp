@@ -24,6 +24,7 @@
 
 #include "MixerView.h"
 
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLayout>
 #include <QLineEdit>
@@ -33,12 +34,14 @@
 #include <QKeyEvent>
 #include <QStackedLayout>
 #include <QStackedWidget>
+#include <QVBoxLayout>
 
 #include "EffectRackView.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
 #include "Knob.h"
+#include "LedCheckBox.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
 #include "Mixer.h"
@@ -156,8 +159,40 @@ MixerView::MixerView(Mixer* mixer) :
 	ml->addWidget(newChannelBtn, 0);
 
 
-	// add the stacked layout for the effect racks of mixer channels
-	ml->addWidget(m_racksWidget);
+	// The selected channel's strip settings, above the stacked layout of the channels' effect racks
+	auto channelSettings = new QWidget{this};
+	channelSettings->setFixedWidth(EffectRackView::DEFAULT_WIDTH);
+	auto settingsLayout = new QGridLayout{channelSettings};
+	settingsLayout->setContentsMargins(6, 2, 6, 4);
+	settingsLayout->setHorizontalSpacing(8);
+	settingsLayout->setVerticalSpacing(2);
+
+	m_trimKnob = new Knob{KnobType::Bright26, tr("TRIM"), channelSettings, Knob::LabelRendering::LegacyFixedFontSize,
+		tr("Input trim")};
+	m_trimKnob->setHintText(tr("Input trim:"), " dB");
+	m_widthKnob = new Knob{KnobType::Bright26, tr("WIDTH"), channelSettings, Knob::LabelRendering::LegacyFixedFontSize,
+		tr("Stereo width")};
+	m_widthKnob->setHintText(tr("Stereo width:"), "%");
+	m_panKnob = new Knob{KnobType::Bright26, tr("PAN"), channelSettings, Knob::LabelRendering::LegacyFixedFontSize,
+		tr("Panning")};
+	m_panKnob->setHintText(tr("Panning:"), "%");
+	m_phaseInvertBox = new LedCheckBox{tr("Invert phase"), channelSettings, tr("Invert phase"),
+		LedCheckBox::LedColor::Green};
+	m_swapChannelsBox = new LedCheckBox{tr("Swap L/R"), channelSettings, tr("Swap left/right"),
+		LedCheckBox::LedColor::Green};
+
+	settingsLayout->addWidget(m_trimKnob, 0, 0, 2, 1, Qt::AlignCenter);
+	settingsLayout->addWidget(m_phaseInvertBox, 0, 1);
+	settingsLayout->addWidget(m_swapChannelsBox, 1, 1);
+	settingsLayout->addWidget(m_widthKnob, 0, 2, 2, 1, Qt::AlignCenter);
+	settingsLayout->addWidget(m_panKnob, 0, 3, 2, 1, Qt::AlignCenter);
+
+	auto rightColumn = new QVBoxLayout{};
+	rightColumn->setContentsMargins(0, 0, 0, 0);
+	rightColumn->setSpacing(0);
+	rightColumn->addWidget(channelSettings);
+	rightColumn->addWidget(m_racksWidget, 1);
+	ml->addLayout(rightColumn);
 
 	setCurrentMixerChannel(m_mixerChannelViews[0]);
 
@@ -402,6 +437,13 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 	// select
 	m_currentMixerChannel = channel;
 	m_racksLayout->setCurrentWidget(m_mixerChannelViews[channel->channelIndex()]->m_effectRackView);
+
+	const auto mixerChannel = getMixer()->mixerChannel(channel->channelIndex());
+	m_trimKnob->setModel(&mixerChannel->m_trimModel);
+	m_phaseInvertBox->setModel(&mixerChannel->m_phaseInvertModel);
+	m_swapChannelsBox->setModel(&mixerChannel->m_swapChannelsModel);
+	m_widthKnob->setModel(&mixerChannel->m_widthModel);
+	m_panKnob->setModel(&mixerChannel->m_panModel);
 
 	// set up send knob
 	for (int i = 0; i < m_mixerChannelViews.size(); ++i)

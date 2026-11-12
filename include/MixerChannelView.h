@@ -117,6 +117,7 @@ private:
 	int m_sendButtonStackedIndex = -1;
 
 	Knob* m_sendKnob;
+	Knob* m_panKnob;
 	LcdWidget* m_channelNumberLcd;
 	QLineEdit* m_renameLineEdit;
 	QGraphicsView* m_renameLineEditView;
