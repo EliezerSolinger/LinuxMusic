@@ -27,7 +27,9 @@
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QRadialGradient>
 #include <QStyle>
 
@@ -119,11 +121,48 @@ void DriveButton::refresh()
 
 
 
-SaturationLeds::SaturationLeds(GainStage* stage, QWidget* parent) : QWidget{parent}, m_stage{stage}
+SaturationLeds::SaturationLeds(GainStage* stage, IntModel* drive, BoolModel* realistic, QWidget* parent)
+	: QWidget{parent}, m_stage{stage}, m_drive{drive}, m_realistic{realistic}
 {
 	setFixedSize(Width, Height);
-	setToolTip(tr("SAT: lights up as the gain stage saturates\nCLIP: lights up as it nears its limit, 3 dB before it"));
 	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &SaturationLeds::advance);
+	connect(m_drive, &IntModel::dataChanged, this, &SaturationLeds::refresh);
+	connect(m_realistic, &BoolModel::dataChanged, this, &SaturationLeds::refresh);
+	refresh();
+}
+
+auto SaturationLeds::isTube() const -> bool
+{
+	return GainStage::isTube(static_cast<GainStage::Model>(m_drive->value()));
+}
+
+void SaturationLeds::refresh()
+{
+	if (isTube())
+	{
+		setToolTip(m_realistic->value()
+			? tr("Tube, realistic: its circuit solved at each sample (more CPU). It glows as the tube saturates; "
+				"click for the light mode\nCLIP: lights up as it nears its limit, 3 dB before it")
+			: tr("Tube, light: its curve, with what its circuit does approximated around it. It glows as the tube "
+				"saturates; click for the realistic mode\nCLIP: lights up as it nears its limit, 3 dB before it"));
+		setCursor(Qt::PointingHandCursor);
+	}
+	else
+	{
+		setToolTip(tr("SAT: lights up as the gain stage saturates\nCLIP: lights up as it nears its limit, 3 dB before it"));
+		unsetCursor();
+	}
+	update();
+}
+
+void SaturationLeds::mousePressEvent(QMouseEvent* event)
+{
+	if (isTube() && event->button() == Qt::LeftButton && event->position().x() < Width / 2)
+	{
+		m_realistic->setValue(!m_realistic->value());
+		return;
+	}
+	QWidget::mousePressEvent(event);
 }
 
 void SaturationLeds::advance()
@@ -144,14 +183,15 @@ void SaturationLeds::paintEvent(QPaintEvent*)
 	auto painter = QPainter{this};
 	painter.setRenderHint(QPainter::Antialiasing);
 	painter.setFont(adjustedToPixelSize(font(), 6));
+	const float middle = Height / 2.f;
 	// Unlit, an LED still shows its color, dimly, as its lens does on a desk
-	const auto drawLed = [&painter](int x, const QColor& lit, float level, const QString& label) {
+	const auto drawLed = [&painter, middle](int x, const QColor& lit, float level, const QString& label) {
 		const auto off = QColor::fromRgbF(lit.redF() * 0.28f, lit.greenF() * 0.28f, lit.blueF() * 0.28f);
 		const auto color = QColor::fromRgbF(
 			off.redF() + (lit.redF() - off.redF()) * level,
 			off.greenF() + (lit.greenF() - off.greenF()) * level,
 			off.blueF() + (lit.blueF() - off.blueF()) * level);
-		const auto led = QRectF{x + 0.5, 1.5, LedSize, LedSize};
+		const auto led = QRectF{x + 0.5, middle - LedSize / 2.f, LedSize, LedSize};
 		if (level > 0.f)
 		{
 			auto glow = QRadialGradient{led.center(), LedSize};
@@ -167,10 +207,59 @@ void SaturationLeds::paintEvent(QPaintEvent*)
 		painter.setBrush(color);
 		painter.drawEllipse(led);
 		painter.setPen(QColor{150, 158, 168});
-		painter.drawText(QRectF{x + LedSize + 2, 0, 20, Height}, Qt::AlignLeft | Qt::AlignVCenter, label);
+		painter.drawText(QRectF{x + LedSize + 2, 0, 20, static_cast<float>(Height)}, Qt::AlignLeft | Qt::AlignVCenter, label);
 	};
-	drawLed(1, QColor{255, 196, 40}, m_saturation, tr("SAT"));
+
+	if (isTube()) { drawLamp(painter, QRectF{2, 0, 9, static_cast<float>(Height)}); }
+	else { drawLed(1, QColor{255, 196, 40}, m_saturation, tr("SAT")); }
 	drawLed(Width / 2 + 1, QColor{255, 40, 30}, m_clipHold > 0 ? 1.f : 0.f, tr("CLIP"));
+}
+
+void SaturationLeds::drawLamp(QPainter& painter, const QRectF& area)
+{
+	// A small preamp tube: a glass envelope with a rounded top on a dark base, its heater glowing inside, yellow in
+	// the light mode and red in the realistic one, brighter as the tube saturates
+	const bool realistic = m_realistic->value();
+	const auto lit = realistic ? QColor{255, 52, 30} : QColor{255, 200, 70};
+	const float level = 0.35f + 0.65f * m_saturation;
+
+	const auto base = QRectF{area.left() + 0.5, area.bottom() - 2.5, area.width() - 1, 2};
+	const auto glass = QRectF{area.left() + 1, area.top() + 0.5, area.width() - 2, area.height() - 3};
+
+	auto glow = QRadialGradient{glass.center(), glass.height() * (0.6f + 0.5f * m_saturation)};
+	auto halo = lit;
+	halo.setAlphaF(0.55 * level);
+	glow.setColorAt(0, halo);
+	glow.setColorAt(1, Qt::transparent);
+	painter.setPen(Qt::NoPen);
+	painter.setBrush(glow);
+	painter.drawEllipse(glass.center(), glass.height(), glass.height());
+
+	auto path = QPainterPath{};
+	const float radius = glass.width() / 2.f;
+	path.moveTo(glass.left(), glass.bottom());
+	path.lineTo(glass.left(), glass.top() + radius);
+	path.arcTo(QRectF{glass.left(), glass.top(), glass.width(), glass.width()}, 180, -180);
+	path.lineTo(glass.right(), glass.bottom());
+	path.closeSubpath();
+	painter.setBrush(QColor{70, 78, 88, 150});
+	painter.setPen(QPen{QColor{170, 180, 190, 200}, 0.8});
+	painter.drawPath(path);
+
+	// The heater
+	auto heater = lit;
+	heater.setAlphaF(std::clamp(level, 0.f, 1.f));
+	painter.setPen(QPen{heater, 1.4, Qt::SolidLine, Qt::RoundCap});
+	const float x = glass.center().x();
+	painter.drawLine(QPointF{x - 1.2, glass.bottom() - 1}, QPointF{x - 1.2, glass.top() + radius});
+	painter.drawLine(QPointF{x + 1.2, glass.bottom() - 1}, QPointF{x + 1.2, glass.top() + radius});
+
+	painter.setPen(Qt::NoPen);
+	painter.setBrush(QColor{30, 32, 36});
+	painter.drawRect(base);
+	painter.setPen(QColor{150, 158, 168});
+	painter.drawText(QRectF{area.right() + 2, 0, 14, area.height()}, Qt::AlignLeft | Qt::AlignVCenter,
+		realistic ? tr("RL") : tr("LT"));
 }
 
 

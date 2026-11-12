@@ -68,6 +68,7 @@ auto smoothing(float seconds, sample_rate_t rate) -> float
 AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 	: m_gainModel(0.5f, 0.f, 1.f, 0.001f, parent)
 	, m_driveModel(static_cast<int>(Drive::OpAmp4558), 0, static_cast<int>(Drive::Count) - 1, parent)
+	, m_realisticModel(false, parent)
 	, m_lowCutModel(false, parent)
 	, m_highPassModel(20.f, 20.f, 1000.f, 1.f, parent)
 	, m_lowPassModel(20000.f, 1000.f, 20000.f, 1.f, parent)
@@ -177,7 +178,7 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	}
 
 	const auto drive = static_cast<Drive>(m_driveModel.value());
-	m_gainStage.process(frames, drive, sampleRate);
+	m_gainStage.process(frames, drive, m_realisticModel.value(), sampleRate);
 
 	// After the input falls silent, the filters ring out for a while
 	const bool anyFilter = lowCut || highPassOn || lowPassOn || monoBassOn || eqLowOn || eqLowMidOn || eqHighMidOn
@@ -298,6 +299,7 @@ void AnalogChannelStrip::setNeutral()
 {
 	m_gainModel.setValue(0.5f);
 	m_driveModel.setValue(static_cast<int>(Drive::OpAmp4558));
+	m_realisticModel.setValue(false);
 	m_lowCutModel.setValue(false);
 	m_highPassModel.setValue(m_highPassModel.minValue());
 	m_lowPassModel.setValue(m_lowPassModel.maxValue());
@@ -319,6 +321,7 @@ void AnalogChannelStrip::setDisplayNames(const QString& channelName)
 	const auto prefix = channelName + ">";
 	m_gainModel.setDisplayName(prefix + QObject::tr("Gain"));
 	m_driveModel.setDisplayName(prefix + QObject::tr("Gain stage"));
+	m_realisticModel.setDisplayName(prefix + QObject::tr("Realistic tube"));
 	m_lowCutModel.setDisplayName(prefix + QObject::tr("Low cut"));
 	m_highPassModel.setDisplayName(prefix + QObject::tr("High-pass"));
 	m_lowPassModel.setDisplayName(prefix + QObject::tr("Low-pass"));
@@ -340,6 +343,7 @@ void AnalogChannelStrip::saveSettings(QDomDocument& doc, QDomElement& channelEle
 	auto strip = doc.createElement("analogstrip");
 	m_gainModel.saveSettings(doc, strip, "gain");
 	m_driveModel.saveSettings(doc, strip, "drive");
+	m_realisticModel.saveSettings(doc, strip, "realistic");
 	m_lowCutModel.saveSettings(doc, strip, "lowcut");
 	m_highPassModel.saveSettings(doc, strip, "highpass");
 	m_lowPassModel.saveSettings(doc, strip, "lowpass");
@@ -369,6 +373,7 @@ void AnalogChannelStrip::loadSettings(const QDomElement& channelElement)
 	// The TUBE button of before
 	else if (strip.attribute("tube", "0").toInt() != 0) { m_driveModel.setValue(static_cast<int>(Drive::Tube12AX7)); }
 	m_gainModel.loadSettings(strip, "gain");
+	m_realisticModel.loadSettings(strip, "realistic");
 	m_lowCutModel.loadSettings(strip, "lowcut");
 	m_highPassModel.loadSettings(strip, "highpass");
 	m_lowPassModel.loadSettings(strip, "lowpass");

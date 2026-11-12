@@ -340,7 +340,7 @@ MasterSectionView::MasterSectionView(Mixer* mixer, QWidget* parent)
 	auto driveRow = new QHBoxLayout{};
 	driveRow->setSpacing(4);
 	driveRow->addWidget(new DriveButton{&master.m_driveModel, drive});
-	driveRow->addWidget(new SaturationLeds{&master.gainStage(), drive});
+	driveRow->addWidget(new SaturationLeds{&master.gainStage(), &master.m_driveModel, &master.m_realisticModel, drive});
 	driveLayout->addLayout(driveRow);
 	layout->addWidget(drive);
 	auto showDrive = [drive, mixer] { drive->setVisible(mixer->isAnalog()); };

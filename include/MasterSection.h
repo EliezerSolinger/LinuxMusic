@@ -80,6 +80,7 @@ public:
 
 	//! The gain stage's model, a GainStage::Model (analog mode)
 	IntModel m_driveModel;
+	BoolModel m_realisticModel;		//!< for a tube: its circuit solved at each sample
 
 	//! The gain stage, after the PRE faders, in analog mode [audio thread]
 	void processDrive(std::span<SampleFrame> frames, sample_rate_t sampleRate);

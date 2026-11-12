@@ -42,7 +42,10 @@ class SampleFrame;
  * - op-amps: only the part the op-amp changes (its output minus its input, which is 0 below the knee) goes through
  *   the oversampling, then is added to the signal, so below the knee the signal is untouched, bit for bit; blocks far
  *   below the knee skip the oversampling. The op-amp's slew rate limits very loud, very high frequencies.
- * - tubes: the whole signal goes through the tube, then a DC blocker (its asymmetry adds an offset).
+ * - tubes: the whole signal goes through a tube stage (see TubeStage), in volts at its grid: the GAIN pot sets how
+ *   hard it is driven, and its output is brought back to unity gain. Either light (its curve, with the Miller
+ *   capacitance, blocking and sag approximated around it, then a DC blocker) or realistic (its circuit solved at each
+ *   sample).
  * It measures how far it saturates and when it nears its limit, for the SAT and CLIP LEDs.
  */
 class LMMS_EXPORT GainStage
@@ -61,14 +64,13 @@ public:
 	 *   - NE5532, the dual NE5534, the op-amp of most clean desks (SSL, Neve, Amek, Mackie Onyx): knee at +21 dBFS,
 	 *     symmetric rails, 9 V/us;
 	 *   - NE5534, the single one: as the NE5532, 13 V/us.
-	 * - Tubes, preamp triodes in a common cathode stage, which color a little at usual levels and start to clip at
-	 *   +12 dBFS:
-	 *   - 12AX7: the curve Tim Goetze sampled from a SPICE simulation for CAPS;
-	 *   - 12AX7 V (vintage): CAPS' original polynomial, tuned by ear, richest in even harmonics;
-	 *   - 12AX7 H (hot): CAPS' polynomial fitted to the curve, stronger in odd harmonics;
-	 *   - 12AT7 and 12AU7: Norman Koren's triode model with his published parameters, the stage's transfer curve
-	 *     solved numerically, normalized at whichever side clips first (the grid conducting): less gain than the
-	 *     12AX7, so more headroom past where they start to clip.
+	 * - Tubes, preamp triodes in a common cathode stage (Norman Koren's model, see TubeStage), driven in volts: with
+	 *   the GAIN pot in the middle, the 12AX7 starts to clip at 0 dBFS, so it colors from -6 dBFS; the others clip at
+	 *   their own levels:
+	 *   - 12AX7, the usual stage;
+	 *   - 12AX7 V (vintage): biased cold, clipping first towards cutoff, rich in even harmonics;
+	 *   - 12AX7 H (hot): biased hot on a higher supply, clipping alike on both sides, stronger in odd harmonics;
+	 *   - 12AT7 and 12AU7: less gain, so more headroom.
 	 */
 	enum class Model
 	{
@@ -97,11 +99,11 @@ public:
 	//! The op-amp's transfer function: linear up to the knee, then softly towards the rail
 	static auto opAmp(Model model, float sample) -> float;
 
-	//! The tube's transfer function, with unity gain and the same polarity for small signals, and no offset
+	//! The tube's static curve, with unity gain and the same polarity for small signals, and no offset
 	static auto tube(Model model, float sample) -> float;
 
-	//! Where the tubes start to clip, linear (+12 dBFS)
-	static constexpr float TubeClipLevel = 4.f;
+	//! Where a tube starts to clip, linear, with the GAIN pot in the middle (0 dBFS for the 12AX7)
+	static auto tubeClipLevel(Model model) -> float;
 
 	//! Where FLAT would clip on a desk, for its CLIP LED (+24 dBFS, an op-amp's rail)
 	static constexpr float FlatClipLevel = 16.f;
@@ -109,8 +111,11 @@ public:
 	GainStage();
 	~GainStage();
 
-	//! Processes both channels of @p frames with @p model, and measures them for the LEDs [audio thread]
-	void process(std::span<SampleFrame> frames, Model model, sample_rate_t sampleRate);
+	/**
+	 * Processes both channels of @p frames with @p model, and measures them for the LEDs [audio thread].
+	 * @param realistic for a tube: its circuit solved at each sample, rather than approximated around its curve
+	 */
+	void process(std::span<SampleFrame> frames, Model model, bool realistic, sample_rate_t sampleRate);
 
 	//! Forgets the oversamplers' and the DC blocker's state [audio thread]
 	void reset();

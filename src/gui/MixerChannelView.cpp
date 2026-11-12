@@ -525,7 +525,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	lowCutButton->setModel(&strip.m_lowCutModel);
 	analogLayout->addWidget(lowCutButton, row++, 1, Qt::AlignCenter);
 	analogLayout->addWidget(new DriveButton{&strip.m_driveModel, m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
-	analogLayout->addWidget(new SaturationLeds{&strip.gainStage(), m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
+	analogLayout->addWidget(new SaturationLeds{&strip.gainStage(), &strip.m_driveModel, &strip.m_realisticModel, m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
 	auto monoButton = new AutomatableButton(m_analogSection, tr("Mono"));
 	monoButton->setObjectName("btn-mono");
 	monoButton->setText(tr("MONO"));

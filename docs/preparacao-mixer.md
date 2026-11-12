@@ -805,6 +805,108 @@ master.
 
 Os testes de amp-op e válvula agora cobrem todos os modelos.
 
+### Passo 20: fidelidade da simulação (decisões do usuário, em andamento)
+
+Decidido pelo usuário, pergunta por pergunta, em 2026-11-12. Implementar na ordem abaixo.
+
+**1. Válvulas com memória**
+- Dois modos:
+  - **Leve** (padrão): curva estática + filtros em volta.
+  - **Realista:** o estágio resolvido a cada amostra.
+- Ao escolher uma válvula, aparece uma lâmpada na seção INPUT do canal (e na linha DRIVE do master):
+  - clicar alterna leve/realista;
+  - a luz de dentro é amarelinha no leve e vermelha no realista;
+  - a lâmpada substitui o LED SAT (brilha conforme satura); o CLIP continua.
+- O circuito é um estágio de pré: um triodo em catodo comum.
+- **Realista:**
+  - triodo de Koren com os capacitores de grade, catodo e acoplamento e a capacitância Miller;
+  - fonte com filtro RC (sag);
+  - oversampling 4x.
+- **Leve:** precisa ser mais realista que o de hoje. Tem:
+  - Miller: passa-baixa na grade pela capacitância de cada modelo;
+  - blocking: deslocamento da polarização depois de picos;
+  - sag aproximado;
+  - o mesmo esquema de ganho real.
+- **Ganho real com compensação:** o GAIN controla a tensão na grade e a saída é atenuada depois, então cada válvula
+  satura num ponto diferente do pot.
+- **Calibração:** com o GAIN no meio, o 12AX7 começa a colorir com picos de -6 dBFS.
+- **12AX7 V e H** viram variantes físicas do 12AX7:
+  - V: polarização fria, mais pares;
+  - H: polarização quente com mais tensão, mais ímpares.
+
+**Parte 1 feita.** Como ficou:
+- **Código:** `TubeStage` (`include/TubeStage.h`).
+  - Triodo de Koren para a corrente de placa e de Dempwolf-Zölzer para a corrente de grade.
+  - Circuito de catodo comum com Ci 22n, Rgl 1M, grid stopper 68k, Ck 22µ, Co 22n, RL 1M, Rs 10k, Cs 22µ.
+- **Válvulas:**
+
+  | Modelo | Placa | Catodo | B+ |
+  |---|---|---|---|
+  | 12AX7 | 100k | 1,5k | 250 V |
+  | 12AX7 V (frio) | 100k | 2,7k | 250 V |
+  | 12AX7 H (quente) | 100k | 1k | 330 V |
+  | 12AT7 | 47k | 820 | 250 V |
+  | 12AU7 | 47k | 1,5k | 250 V |
+
+  - O 12AX7 deixou a tabela SPICE do CAPS (`r12ax7.h` removido) para usar o mesmo modelo físico das outras válvulas.
+    O som dele muda um pouco.
+- **Modo realista:**
+  - análise nodal de 6 nós com capacitores trapezoidais, método DK: a matriz linear é invertida uma vez e o Newton
+    roda só nas duas correntes não lineares;
+  - custa cerca de 10% de um núcleo por canal estéreo.
+- **Modo leve:**
+  - tabelas estáticas na reta de carga AC (catodo fixo pelo capacitor);
+  - Miller como passa-baixa na grade, com a capacitância de cada modelo;
+  - blocking: Ci carregado pela corrente de grade e descarregado por Rgl;
+  - sag: a corrente média pelo RC da fonte escala as curvas;
+  - custa cerca de 0,6% de um núcleo.
+  - Acompanha o circuito resolvido com menos de 1 dB de diferença em ganho e harmônicos (testado).
+- **Calibração:** com o GAIN no meio, o 12AX7 começa a clipar em 0 dBFS. Em -6 dBFS o 2º harmônico fica em
+  -29 dB. O 12AT7 clipa em +4 dBFS e o 12AU7 em +11 dBFS.
+- **LEDs:** o SAT das válvulas cobre de 6 dB abaixo do ponto de clipagem até 6 dB acima. O CLIP acende 3 dB antes
+  de +6 dB.
+- **Lâmpada:** substitui o SAT quando o modelo é uma válvula.
+  - O filamento fica amarelo (LT, leve) ou vermelho (RL, realista) e brilha conforme satura.
+  - O clique alterna o modo; a escolha é salva como `realistic`, no canal e no master.
+- **Testes:**
+  - leve × realista concordam;
+  - calibração;
+  - V com mais pares, H com mais ímpares;
+  - Miller do 12AX7 maior que o do 12AU7;
+  - +30 dB de GAIN sem instabilidade;
+  - lâmpada salva.
+
+**2. EQ e filtros**
+- Referência: Soundcraft/Mackie.
+- Médios fixos (2,5 kHz e 400 Hz).
+- Q proporcional ao ganho e um pouco de interação entre bandas, como no circuito.
+- Biquads com casamento analógico até Nyquist (Vicanek/Orfanidis) no EQ, HPF e LPF.
+- LC em 100 Hz, 18 dB/oitava.
+
+**3. Amp-op**
+- Mantém o joelho suave.
+- Sem banda passante dependente do ganho.
+- Acrescenta:
+  - a distorção de crossover do 4558;
+  - a inversão de fase do TL072 passado o limite de modo comum;
+  - o limite de corrente de saída.
+
+**4. Dinâmica**
+- Compressor de canal no estilo SSL:
+  - na faixa, o knob COMP e um botão FAST;
+  - no painel do canal, ratio, release e PEAK/RMS.
+- Gate/expander no estilo SSL:
+  - na faixa, o knob GATE;
+  - no painel, range, release, hold e modo expander/gate.
+
+**5. Imperfeições**
+- Sem ruído de fundo e sem crosstalk.
+- **Tolerância por canal:** variações pequenas e fixas por canal.
+  - Ligada por padrão em projetos novos, com um botão global perto de ANALOG/DIGITAL.
+  - Projetos antigos abrem com ela desligada.
+- **Transformador de saída no master,** estilo Neve: saturação de grave e queda leve acima de 20 kHz. Só com um botão
+  para ativar.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que

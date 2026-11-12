@@ -30,6 +30,7 @@ set(LMMS_SRCS
 	core/fft_helpers.cpp
 	core/AnalogChannelStrip.cpp
 	core/GainStage.cpp
+	core/TubeStage.cpp
 	core/MasterSection.cpp
 	core/MonoBass.cpp
 	core/Mixer.cpp

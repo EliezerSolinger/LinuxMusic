@@ -182,6 +182,10 @@ public:
 
 } // namespace
 
+//! A gain stage's gain and harmonics, in dB below the fundamental, and whether its output stayed sane (see
+//! MixerTest::tubeResponse())
+struct StageResponse { float gain, second, third; bool finite; };
+
 //! Levels of the master's output (see MixerTest::playStereo())
 struct StereoLevels
 {
@@ -1835,6 +1839,108 @@ private slots:
 		QVERIFY(headroom(Drive::Tube12AT7) < headroom(Drive::Tube12AU7));
 	}
 
+	//! Gain and harmonics of a gain stage for a sine of @p level at @p frequency
+	static auto tubeResponse(GainStage::Model model, bool realistic, float level, float frequency = 1000.f)
+		-> StageResponse
+	{
+		const auto rate = Engine::audioEngine()->outputSampleRate();
+		auto stage = GainStage{};
+		auto out = std::vector<SampleFrame>{};
+		f_cnt_t position = 0;
+		bool finite = true;
+		for (int period = 0; period < 120; ++period)
+		{
+			auto buffer = std::vector<SampleFrame>(256);
+			for (auto& frame : buffer)
+			{
+				const float x = level * std::sin(2.f * std::numbers::pi_v<float> * frequency * position++ / rate);
+				frame = SampleFrame{x, x};
+			}
+			stage.process(buffer, model, realistic, rate);
+			for (const auto& frame : buffer) { finite = finite && std::isfinite(frame.left()) && std::abs(frame.left()) < 100.f; }
+			if (period >= 60) { out.insert(out.end(), buffer.begin(), buffer.end()); }
+		}
+		const float h1 = magnitudeAt(out, frequency) * 2.f;
+		return {h1 / level, ampToDbfs(magnitudeAt(out, 2 * frequency) * 2.f / h1),
+			ampToDbfs(magnitudeAt(out, 3 * frequency) * 2.f / h1), finite};
+	}
+
+	void tubeLightModeFollowsTheCircuit()
+	{
+		using M = GainStage::Model;
+		for (const auto model : {M::Tube12AX7, M::Tube12AX7Vintage, M::Tube12AX7Hot, M::Tube12AT7, M::Tube12AU7})
+		{
+			for (const float level : {0.01f, 0.5f, 2.f})
+			{
+				const auto light = tubeResponse(model, false, level);
+				const auto real = tubeResponse(model, true, level);
+				QVERIFY(std::abs(light.gain / real.gain - 1.f) < 0.05f);
+				if (level > 0.1f) { QVERIFY(std::abs(light.second - real.second) < 2.f); }
+			}
+		}
+	}
+
+	void tubesAreCalibratedAndColorAsDecided()
+	{
+		using M = GainStage::Model;
+		// With the GAIN pot in the middle the 12AX7 starts to clip at 0 dBFS: clean at -24 dBFS, colored at -6 dBFS
+		QVERIFY(std::abs(GainStage::tubeClipLevel(M::Tube12AX7) - 1.f) < 0.01f);
+		for (const bool realistic : {false, true})
+		{
+			QVERIFY(tubeResponse(M::Tube12AX7, realistic, dbfsToAmp(-24.f)).second < -45.f);
+			QVERIFY(tubeResponse(M::Tube12AX7, realistic, 0.5f).second > -35.f);
+		}
+		// The others clip later, the less gain they have
+		QVERIFY(GainStage::tubeClipLevel(M::Tube12AT7) > GainStage::tubeClipLevel(M::Tube12AX7));
+		QVERIFY(GainStage::tubeClipLevel(M::Tube12AU7) > GainStage::tubeClipLevel(M::Tube12AT7));
+		// Cold bias: more even harmonics than the usual stage; hot: more odd ones relative to the even
+		const auto usual = tubeResponse(M::Tube12AX7, false, 2.f);
+		const auto cold = tubeResponse(M::Tube12AX7Vintage, false, 1.f);
+		const auto usualAtOne = tubeResponse(M::Tube12AX7, false, 1.f);
+		const auto hot = tubeResponse(M::Tube12AX7Hot, false, 2.f);
+		QVERIFY(cold.second > usualAtOne.second);
+		QVERIFY(hot.third - hot.second > usual.third - usual.second);
+		// The Miller capacitance takes more treble off the 12AX7 than off the 12AU7
+		const auto ax7 = tubeResponse(M::Tube12AX7, true, 0.01f, 10000.f);
+		const auto au7 = tubeResponse(M::Tube12AU7, true, 0.01f, 10000.f);
+		QVERIFY(ax7.gain < 0.95f && au7.gain > 0.98f);
+	}
+
+	void tubeCircuitSurvivesExtremes()
+	{
+		using M = GainStage::Model;
+		for (const auto model : {M::Tube12AX7, M::Tube12AX7Hot, M::Tube12AU7})
+		{
+			// The GAIN pot all the way up on a full scale signal: +30 dB
+			QVERIFY(tubeResponse(model, true, 32.f).finite);
+			QVERIFY(tubeResponse(model, false, 32.f).finite);
+			QVERIFY(tubeResponse(model, true, 32.f, 15000.f).finite);
+		}
+	}
+
+	void tubeLampSwitchesModesAndIsSaved()
+	{
+		const auto channel = mixer()->createChannel();
+		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+		settle();
+		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Tube12AX7));
+		QCOMPARE(strip.m_realisticModel.value(), false);
+		const float light = sineGain(channel, 1000.f, 2.f);
+		strip.m_realisticModel.setValue(true);
+		const float real = sineGain(channel, 1000.f, 2.f);
+		QVERIFY(light < 0.8f && real < 0.8f);
+		QVERIFY(std::abs(light / real - 1.f) < 0.05f);
+
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixerchannel");
+		strip.saveSettings(doc, element);
+		strip.setNeutral();
+		QCOMPARE(strip.m_realisticModel.value(), false);
+		strip.loadSettings(element);
+		QCOMPARE(strip.m_realisticModel.value(), true);
+		strip.setNeutral();
+	}
+
 	void everyGainStageModelIsOfferedOnce()
 	{
 		auto seen = std::vector<int>(static_cast<std::size_t>(GainStage::Model::Count), 0);
@@ -1858,7 +1964,7 @@ private slots:
 				const float x = level * std::sin(2.f * std::numbers::pi_v<float> * 1000.f * f / rate);
 				buffer[f] = SampleFrame{x, x};
 			}
-			stage.process(buffer, model, rate);
+			stage.process(buffer, model, false, rate);
 		};
 
 		// Usual levels: dark
@@ -1876,13 +1982,13 @@ private slots:
 		// Taking resets them
 		QCOMPARE(stage.takeSaturation(), 0.f);
 		QVERIFY(!stage.takeClip());
-		// The tubes color from 0 dBFS and clip at +12 dBFS
-		run(Model::Tube12AX7, 0.5f);
+		// The 12AX7 glows from -6 dBFS, 6 dB below where it starts to clip, and nears its limit 3 dB below +6 dBFS
+		run(Model::Tube12AX7, 0.45f);
 		QCOMPARE(stage.takeSaturation(), 0.f);
-		run(Model::Tube12AX7, 2.f);
+		run(Model::Tube12AX7, 1.f);
 		QVERIFY(stage.takeSaturation() > 0.4f);
 		QVERIFY(!stage.takeClip());
-		run(Model::Tube12AX7, 3.f);
+		run(Model::Tube12AX7, 1.5f);
 		QVERIFY(stage.takeClip());
 		QVERIFY(stage.takeSaturation() > 0.7f);
 		// FLAT never saturates, but warns where a desk would clip

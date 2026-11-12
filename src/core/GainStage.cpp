@@ -24,12 +24,12 @@
 
 #include <algorithm>
 #include <cmath>
-#include <functional>
 #include <numbers>
 
 #include "EqFilter.h"
 #include "OversamplingHelpers.h"
 #include "SampleFrame.h"
+#include "TubeStage.h"
 #include "lmms_math.h"
 
 namespace lmms
@@ -37,8 +37,6 @@ namespace lmms
 
 namespace
 {
-
-#include "r12ax7.h"
 
 using Model = GainStage::Model;
 
@@ -49,198 +47,44 @@ constexpr float VoltsPerUnit = 13.f / 16.f;
 constexpr float DcBlockerFrequency = 5.f;
 //! The CLIP LED lights this close to the limit
 constexpr float ClipWarning = 0.708f; // -3 dB
-//! The SAT LED of a tube starts this far below where it clips
+//! The SAT LED of a tube spans this range, around where it starts to clip
 constexpr float TubeColorRange = 12.f; // dB
 
-// The 12AX7 approximations of CAPS (dsp/TwelveAX7.h, by Tim Goetze, GPL): the stage's output voltage for input a,
-// 1 being where it clips on the positive side
-
-//! The transfer curve sampled from a SPICE simulation (TwelveAX7_3), interpolated
-auto tubeSpice(float a) -> float
-{
-	constexpr auto zero = static_cast<float>(r12AX7::Zero);
-	constexpr auto samples = static_cast<float>(r12AX7::Samples);
-	a = zero + a * (samples - zero);
-	if (a <= 0.f) { return r12AX7::v2v[0]; }
-	if (a >= samples - 1.f) { return r12AX7::v2v[r12AX7::Samples - 1]; }
-	const auto i = static_cast<int>(a);
-	const float fraction = a - static_cast<float>(i);
-	return r12AX7::v2v[i] * (1.f - fraction) + r12AX7::v2v[i + 1] * fraction;
-}
-
-//! A cubic polynomial clipped where its slope turns to 0 (TwelveAX7 and TwelveAX7_2)
-struct TubePolynomial
-{
-	double b, c, d;
-	double low, high; //!< where it clips
-	auto operator()(double a) const -> float
-	{
-		a = std::clamp(a, low, high);
-		return static_cast<float>(a * (b + a * (c + a * d)));
-	}
-};
-
-//! TwelveAX7: CAPS' original model, "it took a good deal of fiddling to get the coefficients right"; it clips where
-//! its slope turns to 0
-auto vintagePolynomial() -> TubePolynomial
-{
-	constexpr double b = -0.79618574210627535, c = -0.21108555430962023, d = 0.38944033523200522;
-	const double root = std::sqrt(4 * c * c - 12 * d * b);
-	return {b, c, d, (-2 * c - root) / (6 * d), (-2 * c + root) / (6 * d)};
-}
-
-//! TwelveAX7_2: fitted to the curve, clipping at -0.52 and +0.98
-constexpr auto hotPolynomial = TubePolynomial{-1.08150605597883, -0.262760944760536, 0.445770802765903, -0.52, 0.98};
-
 /**
- * Norman Koren's triode model ("Improved VT models for SPICE simulations", 1996): the plate current for the grid and
- * plate voltages to the cathode, with his published parameters per tube.
+ * The tubes' stages, in the common cathode stage of TubeCircuit. Koren's parameters (mu, ex, kg1, kp, kvb) and the
+ * datasheets' capacitances (grid to plate, grid to cathode); usual plate and cathode resistors for each tube.
+ * The 12AX7 V and H are the 12AX7 biased cold (a larger cathode resistor: it clips first towards cutoff, rich in
+ * even harmonics) and hot on a higher supply (a smaller cathode resistor: both sides clip alike, stronger in odd
+ * harmonics).
  */
-struct KorenTriode
+auto tubeModel(Model model) -> const TubeModel&
 {
-	double mu, ex, kg1, kp, kvb;
-
-	auto plateCurrent(double vgk, double vpk) const -> double
-	{
-		if (vpk <= 0.0) { return 0.0; }
-		const double x = kp * (1.0 / mu + vgk / std::sqrt(kvb + vpk * vpk));
-		const double softplus = x > 30.0 ? x : std::log1p(std::exp(x));
-		const double e1 = vpk / kp * softplus;
-		return e1 > 0.0 ? 2.0 * std::pow(e1, ex) / kg1 : 0.0;
-	}
-};
-
-/**
- * A common cathode stage with a bypassed cathode resistor: its plate voltage for an input on the grid, sampled over
- * the input range in units of the input that cuts the tube off (a = -1), as a table.
- */
-class TriodeStage
-{
-public:
-	TriodeStage(KorenTriode tube, double supply, double plateResistor, double cathodeResistor)
-		: m_tube{tube}, m_supply{supply}, m_plateResistor{plateResistor}
-	{
-		// The operating point: the cathode resistor biases the grid by the current through it
-		double low = 0.0, high = supply / (plateResistor + cathodeResistor);
-		for (int i = 0; i < 60; ++i)
-		{
-			const double current = (low + high) / 2.0;
-			const double flows = tube.plateCurrent(-current * cathodeResistor,
-				supply - current * (plateResistor + cathodeResistor));
-			(current > flows ? high : low) = current;
-		}
-		m_cathode = low * cathodeResistor;
-		const double idle = low;
-
-		// The input cutting the tube off: where the current falls to 2% of the idle current
-		double off = -100.0 * m_cathode, on = 0.0;
-		for (int i = 0; i < 60; ++i)
-		{
-			const double input = (off + on) / 2.0;
-			(current(input) < 0.02 * idle ? off : on) = input;
-		}
-		m_cutoff = -off;
-
-		for (int i = 0; i < TableSize; ++i)
-		{
-			const double a = TableLow + (TableHigh - TableLow) * i / (TableSize - 1);
-			m_table[i] = static_cast<float>(plate(a * m_cutoff));
-		}
-	}
-
-	//! Where the grid starts to conduct, as an input a: the stage's first clipping point, before the cutoff (a = -1)
-	auto gridConduction() const -> float { return static_cast<float>(m_cathode / m_cutoff); }
-
-	auto operator()(float a) const -> float
-	{
-		const float position = (a - TableLow) / (TableHigh - TableLow) * (TableSize - 1);
-		if (position <= 0.f) { return m_table.front(); }
-		if (position >= TableSize - 1) { return m_table.back(); }
-		const auto i = static_cast<int>(position);
-		const float fraction = position - static_cast<float>(i);
-		return m_table[i] * (1.f - fraction) + m_table[i + 1] * fraction;
-	}
-
-private:
-	static constexpr int TableSize = 4097;
-	static constexpr float TableLow = -2.f;
-	static constexpr float TableHigh = 4.f;
-
-	//! The grid voltage to the cathode for an input; above 0 V the grid conducts and holds it near 0.6 V
-	auto gridToCathode(double input) const -> double
-	{
-		const double vgk = input - m_cathode;
-		return vgk > 0.0 ? 0.6 * std::tanh(vgk / 0.6) : vgk;
-	}
-
-	//! The plate voltage for an input: where the plate resistor's drop matches the tube's current
-	auto plate(double input) const -> double
-	{
-		const double vgk = gridToCathode(input);
-		double low = m_cathode, high = m_supply;
-		for (int i = 0; i < 60; ++i)
-		{
-			const double vp = (low + high) / 2.0;
-			const double drop = m_plateResistor * m_tube.plateCurrent(vgk, vp - m_cathode);
-			(vp < m_supply - drop ? low : high) = vp;
-		}
-		return (low + high) / 2.0;
-	}
-
-	auto current(double input) const -> double { return (m_supply - plate(input)) / m_plateResistor; }
-
-	KorenTriode m_tube;
-	double m_supply, m_plateResistor;
-	double m_cathode = 0.0;	//!< the cathode's voltage, the grid's bias
-	double m_cutoff = 1.0;
-	std::array<float, TableSize> m_table{};
-};
-
-//! A tube model's curve, normalized: the input at which it starts to clip on the negative side, its offset and its
-//! slope for small signals
-struct TubeCurve
-{
-	std::function<float(float)> transfer;
-	float scale;
-	float offset;
-	float slope;
-};
-
-auto makeTubeCurve(std::function<float(float)> transfer, float scale) -> TubeCurve
-{
-	const float offset = transfer(0.f);
-	const float slope = (transfer(1e-3f) - transfer(-1e-3f)) / 2e-3f;
-	return {std::move(transfer), scale, offset, slope};
-}
-
-auto tubeCurve(Model model) -> const TubeCurve&
-{
-	static const auto s_spice = makeTubeCurve(tubeSpice,
-		static_cast<float>(r12AX7::Zero) / static_cast<float>(r12AX7::Samples - r12AX7::Zero));
-	static const auto s_vintage = [] {
-		const auto polynomial = vintagePolynomial();
-		return makeTubeCurve([polynomial](float a) { return polynomial(a); }, static_cast<float>(-polynomial.low));
-	}();
-	static const auto s_hot = makeTubeCurve([](float a) { return hotPolynomial(a); }, static_cast<float>(-hotPolynomial.low));
-	// Koren's parameters (mu, ex, kg1, kp, kvb), in usual stages: +250 V, plate and cathode resistors
-	static const auto s_at7 = [] {
-		const auto stage = std::make_shared<TriodeStage>(KorenTriode{60.0, 1.35, 460.0, 300.0, 300.0}, 250.0,
-			47e3, 820.0);
-		return makeTubeCurve([stage](float a) { return (*stage)(a); }, std::min(1.f, stage->gridConduction()));
-	}();
-	static const auto s_au7 = [] {
-		const auto stage = std::make_shared<TriodeStage>(KorenTriode{21.5, 1.3, 1180.0, 84.0, 300.0}, 250.0,
-			47e3, 1500.0);
-		return makeTubeCurve([stage](float a) { return (*stage)(a); }, std::min(1.f, stage->gridConduction()));
-	}();
+	constexpr auto ax7 = Triode{100.0, 1.4, 1060.0, 600.0, 300.0, 1.7e-12, 1.6e-12};
+	constexpr auto at7 = Triode{60.0, 1.35, 460.0, 300.0, 300.0, 1.5e-12, 2.2e-12};
+	constexpr auto au7 = Triode{21.5, 1.3, 1180.0, 84.0, 300.0, 1.5e-12, 1.6e-12};
+	static const auto s_ax7 = TubeModel{TubeCircuit{ax7, 250.0, 100e3, 1.5e3, 22e-6}};
+	static const auto s_ax7Cold = TubeModel{TubeCircuit{ax7, 250.0, 100e3, 2.7e3, 22e-6}};
+	static const auto s_ax7Hot = TubeModel{TubeCircuit{ax7, 330.0, 100e3, 1.0e3, 22e-6}};
+	static const auto s_at7 = TubeModel{TubeCircuit{at7, 250.0, 47e3, 820.0, 22e-6}};
+	static const auto s_au7 = TubeModel{TubeCircuit{au7, 250.0, 47e3, 1.5e3, 22e-6}};
 	switch (model)
 	{
-		case Model::Tube12AX7Vintage: return s_vintage;
-		case Model::Tube12AX7Hot: return s_hot;
+		case Model::Tube12AX7Vintage: return s_ax7Cold;
+		case Model::Tube12AX7Hot: return s_ax7Hot;
 		case Model::Tube12AT7: return s_at7;
 		case Model::Tube12AU7: return s_au7;
-		default: return s_spice;
+		default: return s_ax7;
 	}
+}
+
+/**
+ * Volts at the grid per unit of the signal with the GAIN pot in the middle: the 12AX7 starts to clip at 0 dBFS, so
+ * it colors from -6 dBFS; the other tubes, at their own levels
+ */
+auto voltsPerUnit() -> float
+{
+	static const auto s_volts = static_cast<float>(tubeModel(Model::Tube12AX7).headroom);
+	return s_volts;
 }
 
 } // namespace
@@ -257,10 +101,13 @@ struct GainStage::State
 	sample_rate_t sampleRate = 0;
 	bool oversampling = false;	//!< whether the oversamplers carry signal
 	Model model = Model::Flat;	//!< what they last carried
+	bool realistic = false;
+	std::array<TubeStage, 2> tubes;
 
 	void setUp(sample_rate_t rate)
 	{
 		sampleRate = rate;
+		model = Model::Flat; // the tubes are set up when next used
 		for (auto& upsampler : upsamplers) { upsampler.setup(OversamplingStages, static_cast<float>(rate)); }
 		for (auto& downsampler : downsamplers) { downsampler.setup(OversamplingStages, static_cast<float>(rate)); }
 		dcBlocker.setParameters(static_cast<float>(rate), DcBlockerFrequency, std::numbers::sqrt2_v<float> / 2.f, 1.f);
@@ -272,7 +119,20 @@ struct GainStage::State
 		for (auto& upsampler : upsamplers) { upsampler.reset(); }
 		for (auto& downsampler : downsamplers) { downsampler.reset(); }
 		dcBlocker.clearHistory();
+		if (isTube(model)) { for (auto& tube : tubes) { tube.reset(); } }
 		oversampling = false;
+	}
+
+	void use(Model next, bool nextRealistic)
+	{
+		if (next == model && nextRealistic == realistic) { return; }
+		model = next;
+		realistic = nextRealistic;
+		if (isTube(model))
+		{
+			for (auto& tube : tubes) { tube.setUp(&tubeModel(model), static_cast<double>(sampleRate) * Oversampling); }
+		}
+		clear();
 	}
 };
 
@@ -342,24 +202,28 @@ auto GainStage::opAmp(Model model, float sample) -> float
 
 auto GainStage::tube(Model model, float sample) -> float
 {
-	// Unity gain for small signals, and the same polarity: a tube stage inverts, and sits on an offset
-	const auto& curve = tubeCurve(model);
-	const float input = curve.scale / TubeClipLevel;
-	return (curve.transfer(sample * input) - curve.offset) / (curve.slope * input);
+	// Unity gain for small signals, and the same polarity: a tube stage inverts
+	const auto& stage = tubeModel(model);
+	const float volts = voltsPerUnit();
+	return stage.at(sample * volts).plate / static_cast<float>(stage.gain * volts);
 }
 
 
 
 
-void GainStage::process(std::span<SampleFrame> frames, Model model, sample_rate_t sampleRate)
+auto GainStage::tubeClipLevel(Model model) -> float
+{
+	return static_cast<float>(tubeModel(model).headroom) / voltsPerUnit();
+}
+
+
+
+
+void GainStage::process(std::span<SampleFrame> frames, Model model, bool realistic, sample_rate_t sampleRate)
 {
 	auto& state = *m_state;
 	if (state.sampleRate != sampleRate) { state.setUp(sampleRate); }
-	if (model != state.model)
-	{
-		state.clear();
-		state.model = model;
-	}
+	state.use(model, realistic && isTube(model));
 
 	float peak = 0.f;
 	for (const auto& frame : frames) { peak = std::max({peak, std::abs(frame[0]), std::abs(frame[1])}); }
@@ -369,13 +233,27 @@ void GainStage::process(std::span<SampleFrame> frames, Model model, sample_rate_
 	auto oversampled = std::array<float, Oversampling>{};
 	if (isTube(model))
 	{
+		// In volts at the grid, and back to unity gain and the same polarity
+		const auto& stage = tubeModel(model);
+		const float volts = voltsPerUnit();
+		const float back = 1.f / static_cast<float>(stage.gain * volts);
 		for (auto& frame : frames)
 		{
 			for (ch_cnt_t ch = 0; ch < 2; ++ch)
 			{
+				auto& tube = state.tubes[ch];
 				state.upsamplers[ch].processSample(oversampled.data(), frame[ch]);
-				for (auto& sample : oversampled) { sample = tube(model, sample); }
-				frame[ch] = state.dcBlocker.update(state.downsamplers[ch].processSample(oversampled.data()), ch, 1.f);
+				if (state.realistic)
+				{
+					// The circuit's coupling capacitors take the offset away
+					for (auto& sample : oversampled) { sample = tube.processCircuit(sample * volts) * back; }
+					frame[ch] = state.downsamplers[ch].processSample(oversampled.data());
+				}
+				else
+				{
+					for (auto& sample : oversampled) { sample = tube.processLight(sample * volts) * back; }
+					frame[ch] = state.dcBlocker.update(state.downsamplers[ch].processSample(oversampled.data()), ch, 1.f);
+				}
 			}
 		}
 		state.oversampling = true;
@@ -428,9 +306,11 @@ void GainStage::measure(float peak, Model model)
 	}
 	else if (isTube(model))
 	{
-		const float level = peak > 0.f ? ampToDbfs(peak / TubeClipLevel) : -TubeColorRange;
-		saturation = std::clamp((level + TubeColorRange) / TubeColorRange, 0.f, 1.f);
-		limit = TubeClipLevel;
+		// From 6 dB below where it starts to clip to 6 dB above, where it clips hard
+		const float clip = tubeClipLevel(model);
+		const float level = peak > 0.f ? ampToDbfs(peak / clip) : -TubeColorRange;
+		saturation = std::clamp((level + TubeColorRange / 2.f) / TubeColorRange, 0.f, 1.f);
+		limit = clip * 2.f;
 	}
 
 	// The LEDs show the most since the GUI last looked

@@ -243,7 +243,9 @@ GuiApplication::GuiApplication()
 				if (auto panel = m_mainWindow->findChild<BrowserPanel*>()) { panel->select(panel->indexOf("effects"), false); }
 			});
 		}
-		QTimer::singleShot(4000, m_mainWindow, [this, screenshotPath, screenshotAction] {
+		// LINUXMUSIC_SCREENSHOT_DELAY=<ms> waits longer, e.g. for a large project to load
+		const int delay = qEnvironmentVariableIntValue("LINUXMUSIC_SCREENSHOT_DELAY");
+		QTimer::singleShot(delay > 0 ? delay : 4000, m_mainWindow, [this, screenshotPath, screenshotAction] {
 			// =plugins captures the plugin browser of the side bar instead of the main window
 			auto browser = m_mainWindow->findChild<PluginBrowser*>();
 			if (screenshotAction == "plugins" && browser)

@@ -70,6 +70,7 @@ public:
 
 	using Drive = GainStage::Model;
 	IntModel m_driveModel;			//!< the gain stage's model, a GainStage::Model
+	BoolModel m_realisticModel;		//!< for a tube: its circuit solved at each sample (see GainStage::process())
 
 	//! The gain stage, which also measures its saturation for the strip's LEDs
 	auto gainStage() -> GainStage& { return m_gainStage; }

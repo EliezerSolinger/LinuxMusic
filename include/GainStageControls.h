@@ -59,26 +59,34 @@ private:
 /**
  * The SAT and CLIP LEDs of a gain stage, as on a desk: SAT glows as the stage saturates, brighter the harder it is
  * driven, and fades out; CLIP lights red as it comes within 3 dB of its limit, and holds a moment.
+ * With a tube, a small lamp takes SAT's place: its heater glows as the tube saturates, yellow in the light mode and
+ * red in the realistic one, and a click on it switches between them.
  */
 class SaturationLeds : public QWidget
 {
 	Q_DECLARE_TR_FUNCTIONS(SaturationLeds)
 public:
-	SaturationLeds(GainStage* stage, QWidget* parent);
+	SaturationLeds(GainStage* stage, IntModel* drive, BoolModel* realistic, QWidget* parent);
 
 	static constexpr int Width = 50;
-	static constexpr int Height = 10;
+	static constexpr int Height = 12;
 
 protected:
 	void paintEvent(QPaintEvent*) override;
+	void mousePressEvent(QMouseEvent* event) override;
 
 private:
 	static constexpr float LedSize = 7.f;
 	static constexpr int ClipHold = 10; //!< GUI updates
 
+	auto isTube() const -> bool;
+	void refresh();
 	void advance();
+	void drawLamp(QPainter& painter, const QRectF& area);
 
 	GainStage* m_stage;
+	IntModel* m_drive;
+	BoolModel* m_realistic;
 	float m_saturation = 0.f;	//!< shown, 0 to 1
 	int m_clipHold = 0;			//!< GUI updates the CLIP LED stays lit
 };
