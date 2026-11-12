@@ -220,7 +220,7 @@ void MixerChannel::doProcessing()
 				m_inputDelay.process(ch, channel.data(), channel.data(), fpp);
 				m_buffer.assumeNonSilent(ch);
 			}
-			toInterleaved(m_buffer.groupBuffers(0), m_buffer.interleavedBuffer());
+			m_buffer.mainPairToInterleaved();
 		}
 		m_inputDelay.advance(fpp, hadInput);
 	}
@@ -331,14 +331,14 @@ void MixerChannel::doProcessing()
 	}
 
 	// Keep the interleaved copy of the main pair in sync
-	if (receivedMain) { toInterleaved(m_buffer.groupBuffers(0), m_buffer.interleavedBuffer()); }
+	if (receivedMain) { m_buffer.mainPairToInterleaved(); }
 
 	// Input trim
 	if (m_buffer.hasSignal(mainPair) && m_trimModel.value() != 0.f)
 	{
 		const float trim = dbfsToAmp(m_trimModel.value());
 		for (auto& frame : buffer) { frame *= trim; }
-		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+		m_buffer.interleavedToMainPair();
 	}
 
 	// Mono: summed after the trim, before the analog strip and the effects, so that they get a mono signal; switching
@@ -354,7 +354,7 @@ void MixerChannel::doProcessing()
 			buffer[f].setLeft(buffer[f].left() + (sum - buffer[f].left()) * mix);
 			buffer[f].setRight(buffer[f].right() + (sum - buffer[f].right()) * mix);
 		}
-		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+		m_buffer.interleavedToMainPair();
 	}
 	m_monoMix = monoTarget;
 
@@ -366,7 +366,7 @@ void MixerChannel::doProcessing()
 		master.processPreFaders(buffer, sampleRate);
 		if (Engine::mixer()->isAnalog()) { master.processDrive(buffer, sampleRate); }
 		else { master.resetDrive(); }
-		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+		m_buffer.interleavedToMainPair();
 	}
 
 	// Analog mode: the strip of an analog desk, before the effects
@@ -376,7 +376,7 @@ void MixerChannel::doProcessing()
 		const auto tolerance = Engine::mixer()->toleranceModel()->value() ? ChannelTolerance::forChannel(m_channelIndex)
 			: ChannelTolerance::none();
 		m_analogStrip.process(buffer, Engine::audioEngine()->outputSampleRate(), hadInput, tolerance);
-		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+		m_buffer.interleavedToMainPair();
 		m_buffer.assumeNonSilent(0);
 		m_buffer.assumeNonSilent(1);
 	}
@@ -395,7 +395,7 @@ void MixerChannel::doProcessing()
 		const auto rate = Engine::audioEngine()->outputSampleRate();
 		master.processStereo(buffer, rate, m_widthModel.value());
 		master.processCompressor(buffer, rate);
-		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+		m_buffer.interleavedToMainPair();
 	}
 
 	// Tap for pre-fader sends
@@ -434,7 +434,7 @@ void MixerChannel::doProcessing()
 			buffer[f].setLeft(left * pan.vol[0] * gain);
 			buffer[f].setRight(right * pan.vol[1] * gain);
 		}
-		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+		m_buffer.interleavedToMainPair();
 	}
 
 	// Analog mode: the master's output transformer, after its fader
@@ -442,7 +442,7 @@ void MixerChannel::doProcessing()
 		&& Engine::mixer()->masterSection().m_transformerModel.value())
 	{
 		Engine::mixer()->masterSection().processTransformer(buffer, Engine::audioEngine()->outputSampleRate());
-		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+		m_buffer.interleavedToMainPair();
 	}
 	else if (isMaster()) { Engine::mixer()->masterSection().bypassTransformer(); }
 
@@ -955,7 +955,7 @@ void Mixer::mixToChannel(const AudioBuffer& buffer, mix_ch_t dest)
 		MixHelpers::add(channel->m_buffer.groupBuffers(0), buffer.groupBuffers(0));
 
 		// Copy the planar buffer to the temporary interleaved buffer so they stay in sync
-		toInterleaved(channel->m_buffer.groupBuffers(0), channel->m_buffer.interleavedBuffer());
+		channel->m_buffer.mainPairToInterleaved();
 
 		channel->m_buffer.mixSilenceFlags(buffer);
 		channel->m_lock.unlock();

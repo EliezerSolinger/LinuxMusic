@@ -229,7 +229,7 @@ void AudioBusHandle::doProcessing()
 
 		// Copy from temporary interleaved buffer to the main planar buffer
 		// so they stay in sync
-		toPlanar(buffer, m_buffer.groupBuffers(0));
+		m_buffer.interleavedToMainPair();
 
 		const auto sanitized = Engine::audioEngine()->sanitizationEnabled() ? m_buffer.sanitizeAll() : false;
 		m_corrupted.store(sanitized, std::memory_order_relaxed);

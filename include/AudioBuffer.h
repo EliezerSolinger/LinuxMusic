@@ -531,6 +531,26 @@ public:
 	}
 
 	/**
+	 * @returns the main pair: the first two channels of the first group, which the interleaved scratch buffer
+	 *          mirrors. The first group may have more channels (e.g. a track's auxiliary channels), which the
+	 *          interleaved buffer does not hold.
+	 */
+	auto mainPair() -> PlanarBufferView<float, 2>
+	{
+		assert(groupCount() > 0 && m_groups[0].channels() >= 2);
+		return {m_groups[0].buffers(), m_frames};
+	}
+
+	//! Copies the main pair to the interleaved scratch buffer
+	void mainPairToInterleaved() { toInterleaved(mainPair(), interleavedBuffer()); }
+
+	//! Copies the interleaved scratch buffer to the main pair
+	void interleavedToMainPair()
+	{
+		toPlanar(InterleavedBufferView<const float, 2>{interleavedBuffer()}, mainPair());
+	}
+
+	/**
 	 * @brief Adds a new channel group at the end of the list.
 	 *
 	 * If the memory resource is `SharedMemoryResource`, all buffers (source, channels,

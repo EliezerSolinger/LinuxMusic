@@ -501,10 +501,10 @@ auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* np
 		const auto status = proc.process(context);
 
 		// Keep the track's planar and interleaved buffers in sync
-		if (m_interleaved) { toPlanar(trackChannels.interleavedBuffer(), trackChannels.groupBuffers(0)); }
+		if (m_interleaved) { trackChannels.interleavedToMainPair(); }
 		else if (trackChannels.hasInterleavedBuffer())
 		{
-			toInterleaved(trackChannels.groupBuffers(0), trackChannels.interleavedBuffer());
+			trackChannels.mainPairToInterleaved();
 		}
 		for (ch_cnt_t ch = 0; ch < 2; ++ch) { trackChannels.assumeNonSilent(ch); }
 		return status;
@@ -520,7 +520,7 @@ auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* np
 			auto interleaved = m_outputs.interleavedBuffer();
 			std::fill_n(interleaved.data(), interleaved.frames() * 2, 0.f);
 		}
-		else { toInterleaved(m_outputs.groupBuffers(0), m_outputs.interleavedBuffer()); }
+		else { m_outputs.mainPairToInterleaved(); }
 	}
 
 	auto context = m_fullyInPlace
@@ -529,7 +529,7 @@ auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* np
 	context.setEvents(events, &m_outputEvents);
 	const auto status = proc.process(context);
 
-	if (m_interleaved) { toPlanar(m_outputs.interleavedBuffer(), m_outputs.groupBuffers(0)); }
+	if (m_interleaved) { m_outputs.interleavedToMainPair(); }
 
 	AudioPortsRouter::receive(*m_audioPorts, m_outputs, trackChannels);
 
@@ -537,7 +537,7 @@ auto PluginInstance::processAudio(AudioBuffer& trackChannels, NotePlayHandle* np
 	const auto& usedOutputs = m_audioPorts->out().usedTrackChannels();
 	if (trackChannels.hasInterleavedBuffer() && (usedOutputs[0] || usedOutputs[1]))
 	{
-		toInterleaved(trackChannels.groupBuffers(0), trackChannels.interleavedBuffer());
+		trackChannels.mainPairToInterleaved();
 	}
 
 	return status;

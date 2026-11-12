@@ -599,7 +599,7 @@ auto AudioBuffer::sanitize(const ChannelFlags& channels, ch_cnt_t upperBound) ->
 	if (changesMade && hasInterleavedBuffer() && (channels[0] || channels[1]))
 	{
 		// Keep the temporary interleaved buffer in sync
-		toInterleaved(groupBuffers(0), interleavedBuffer());
+		mainPairToInterleaved();
 	}
 
 	return changesMade;
@@ -622,7 +622,7 @@ auto AudioBuffer::sanitizeAll() -> bool
 	if (changesMade && hasInterleavedBuffer())
 	{
 		// Keep the temporary interleaved buffer in sync
-		toInterleaved(groupBuffers(0), interleavedBuffer());
+		mainPairToInterleaved();
 	}
 
 	return changesMade;
@@ -709,7 +709,7 @@ void AudioBuffer::silenceChannels(const ChannelFlags& channels, ch_cnt_t upperBo
 	if (hasInterleavedBuffer() && (needSilenced[0] || needSilenced[1]))
 	{
 		// Keep the temporary interleaved buffer in sync
-		toInterleaved(groupBuffers(0), interleavedBuffer());
+		mainPairToInterleaved();
 	}
 
 	m_silenceFlags |= channels;
