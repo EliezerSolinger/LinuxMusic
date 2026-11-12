@@ -31,6 +31,7 @@ set(LMMS_SRCS
 	core/AnalogChannelStrip.cpp
 	core/GainStage.cpp
 	core/TubeStage.cpp
+	core/DeskFilters.cpp
 	core/MasterSection.cpp
 	core/MonoBass.cpp
 	core/Mixer.cpp

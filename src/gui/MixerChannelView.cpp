@@ -520,7 +520,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	auto lowCutButton = new AutomatableButton(m_analogSection, tr("Low cut"));
 	lowCutButton->setObjectName("btn-lowcut");
 	lowCutButton->setText(tr("LC"));
-	lowCutButton->setToolTip(tr("Low cut: takes away what is below 80 Hz"));
+	lowCutButton->setToolTip(tr("Low cut: takes away what is below 100 Hz, 18 dB per octave"));
 	lowCutButton->setCheckable(true);
 	lowCutButton->setModel(&strip.m_lowCutModel);
 	analogLayout->addWidget(lowCutButton, row++, 1, Qt::AlignCenter);

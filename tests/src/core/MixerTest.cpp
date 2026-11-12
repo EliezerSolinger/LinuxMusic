@@ -21,6 +21,7 @@
  */
 
 #include <QtTest>
+#include <complex>
 
 #include <cmath>
 #include <numbers>
@@ -28,6 +29,7 @@
 #include <vector>
 
 #include "AnalogChannelStrip.h"
+#include "DeskFilters.h"
 #include "AudioBuffer.h"
 #include "AudioEngine.h"
 #include "AutomationClip.h"
@@ -2155,6 +2157,127 @@ private slots:
 		strip.setNeutral();
 	}
 
+	void deskFiltersMatchTheirAnalogResponses()
+	{
+		// Up to 20 kHz at 44.1 kHz, where the bilinear transform cramps
+		constexpr double rate = 44100.0;
+		using C = std::complex<double>;
+		auto check = [](const char* name, const Biquad& digital, auto analog, double tolerance) {
+			double worst = 0.0;
+			double at = 0.0;
+			for (double f = 20.0; f <= 20000.0; f *= 1.05)
+			{
+				if (std::abs(analog(C{0.0, f})) < 0.01) { continue; } // deep in the stop band
+				const double error = std::abs(20.0 * std::log10(digital.magnitude(f, rate) / std::abs(analog(C{0.0, f}))));
+				if (error > worst) { worst = error; at = f; }
+			}
+			QVERIFY2(worst < tolerance, qPrintable(QString{"%1: %2 dB off at %3 Hz"}.arg(name).arg(worst).arg(at)));
+		};
+		auto second = [](double f0, double q, auto numerator) {
+			return [=](C jf) { const C s = jf / f0; return numerator(s) / (s * s + s / q + 1.0); };
+		};
+		check("low-pass 1 kHz", Biquad::lowPass(1000.0, 0.7071, rate),
+			second(1000.0, 0.7071, [](C) { return C{1.0}; }), 0.1);
+		check("low-pass 15 kHz", Biquad::lowPass(15000.0, 0.7071, rate),
+			second(15000.0, 0.7071, [](C) { return C{1.0}; }), 1.0);
+		check("high-pass 100 Hz", Biquad::highPass(100.0, 1.0, rate),
+			second(100.0, 1.0, [](C s) { return s * s; }), 0.1);
+		check("high-pass 1st order", Biquad::highPass1(100.0, rate), [](C jf) { const C s = jf / 100.0; return s / (s + 1.0); }, 0.1);
+		for (const double gain : {2.0, 5.6})
+		{
+			check("peak 2.5 kHz", Biquad::peak(2500.0, 1.2, gain, rate),
+				second(2500.0, 1.2, [=](C s) { return s * s + s * gain / 1.2 + 1.0; }), 0.5);
+			check("low shelf", Biquad::lowShelf1(80.0, gain, rate),
+				[=](C jf) { return (jf + 80.0 * gain) / (jf + 80.0); }, 0.2);
+			check("high shelf", Biquad::highShelf1(12000.0, gain, rate),
+				[=](C jf) { return gain * (jf + 12000.0 / gain) / (jf + 12000.0); }, 0.4);
+		}
+	}
+
+	void deskEqBandsInteractLikeTheCircuit()
+	{
+		constexpr double rate = 44100.0;
+		auto eq = DeskEq{};
+		auto settle = [&](std::array<float, DeskEq::Bands> gains) { eq.begin(gains, rate); eq.finish(); eq.begin(gains, rate); eq.finish(); };
+		auto db = [&](double f) { return 20.0 * std::log10(eq.magnitude(f, rate)); };
+		// Alone, each band does what its knob says
+		settle({0.f, 0.f, 12.f, 0.f});
+		QVERIFY(std::abs(db(2500.0) - 12.0) < 0.1);
+		settle({0.f, 0.f, -12.f, 0.f});
+		QVERIFY(std::abs(db(2500.0) + 12.0) < 0.1);
+		settle({15.f, 0.f, 0.f, 0.f});
+		QVERIFY(std::abs(db(20.0) - 15.0) < 0.5);
+		settle({0.f, 0.f, 0.f, -15.f});
+		QVERIFY(std::abs(db(20000.0) + 15.0) < 1.5);
+		// Proportional Q: 2.5 octaves at half the gain for +-3 dB, one for +-15 dB
+		QVERIFY(std::abs(DeskEq::peakBandwidth(3.0) - 2.5) < 1e-9 && std::abs(DeskEq::peakBandwidth(-15.0) - 1.0) < 1e-9);
+		settle({0.f, 0.f, 15.f, 0.f});
+		QVERIFY(std::abs(db(2500.0 / std::sqrt(2.0)) - 7.5) < 0.3); // half an octave below: half the gain
+		// A gentle boost is broader than a full one, relative to its gain
+		settle({0.f, 0.f, 3.f, 0.f});
+		const double gentle = db(1250.0) / 3.0;
+		settle({0.f, 0.f, 15.f, 0.f});
+		QVERIFY(db(1250.0) / 15.0 < gentle);
+		// Interaction: boosting both mids adds up to less than their sum between them, and so do cuts
+		settle({0.f, 12.f, 12.f, 0.f});
+		const double both = db(1000.0);
+		settle({0.f, 12.f, 0.f, 0.f});
+		const double low = db(1000.0);
+		settle({0.f, 0.f, 12.f, 0.f});
+		const double high = db(1000.0);
+		QVERIFY(both < low + high - 0.5);
+		settle({0.f, -12.f, -12.f, 0.f});
+		QVERIFY(db(1000.0) > -(low + high) + 0.5);
+		// And it runs as it measures
+		settle({4.f, -6.f, 9.f, -3.f});
+		const double expected = eq.magnitude(1000.0, rate);
+		double sum = 0.0;
+		int n = 0;
+		for (int i = 0; i < 44100; ++i)
+		{
+			const double x = std::sin(2.0 * std::numbers::pi * 1000.0 * i / rate);
+			const double y = eq.process(x, 0, 1.0);
+			if (i > 22050) { sum += y * y; ++n; }
+		}
+		QVERIFY(std::abs(std::sqrt(2.0 * sum / n) - expected) < 0.01);
+	}
+
+	void lowCutIsThirdOrderAt100Hz()
+	{
+		constexpr double rate = 44100.0;
+		auto db = [](double f) {
+			return 20.0 * std::log10(Biquad::highPass(100.0, 1.0, rate).magnitude(f, rate)
+				* Biquad::highPass1(100.0, rate).magnitude(f, rate));
+		};
+		QVERIFY(std::abs(db(100.0) + 3.0) < 0.1);			// Butterworth: -3 dB at the corner
+		QVERIFY(std::abs(db(25.0) - db(50.0) + 18.0) < 0.5);	// 18 dB per octave below
+		QVERIFY(db(1000.0) > -0.01);
+	}
+
+	void deskEqSwitchesSidesWithoutClicking()
+	{
+		// A band turned from a boost to a cut goes through flat; the output never jumps
+		constexpr double rate = 44100.0;
+		auto eq = DeskEq{};
+		double last = 0.0;
+		double worst = 0.0;
+		int i = 0;
+		for (int period = 0; period < 40; ++period)
+		{
+			const float gain = (period / 10) % 2 == 0 ? 12.f : -12.f;
+			eq.begin({0.f, 0.f, gain, 0.f}, rate);
+			for (int f = 0; f < 256; ++f, ++i)
+			{
+				const double y = eq.process(0.25 * std::sin(2.0 * std::numbers::pi * 2500.0 * i / rate), 0, f / 255.0);
+				if (i > 0) { worst = std::max(worst, std::abs(y - last)); }
+				last = y;
+			}
+			eq.finish();
+		}
+		// A 2.5 kHz sine of 1 (+12 dB) moves at most 2 pi 2500 / 44100 = 0.36 per sample
+		QVERIFY2(worst < 0.4, qPrintable(QString::number(worst)));
+	}
+
 	void analogStripFiltersAndEq()
 	{
 		QVERIFY(mixer()->isAnalog());
@@ -2179,9 +2302,10 @@ private slots:
 		QVERIFY(sineGain(channel, 10000.f) < 0.1f);
 		strip.m_lowPassModel.setValue(strip.m_lowPassModel.maxValue());
 
-		// EQ: +12 dB low shelf, -12 dB at the mid frequency
+		// EQ: +12 dB low shelf (first order: 3 dB short of it at 80 Hz), -12 dB at the mid frequency
 		strip.m_eqLowModel.setValue(12.f);
-		QVERIFY(std::abs(sineGain(channel, 30.f) - dbfsToAmp(12.f)) < 0.3f);
+		const float shelf = std::hypot(30.f, 80.f * dbfsToAmp(12.f)) / std::hypot(30.f, 80.f);
+		QVERIFY(std::abs(sineGain(channel, 30.f, 0.25f, 512) / shelf - 1.f) < 0.02f);
 		strip.m_eqLowModel.setValue(0.f);
 		strip.m_eqHighMidModel.setValue(-12.f);
 		QVERIFY(std::abs(sineGain(channel, 2500.f) - dbfsToAmp(-12.f)) < 0.03f);

@@ -883,6 +883,45 @@ Decidido pelo usuário, pergunta por pergunta, em 2026-11-12. Implementar na ord
 - Biquads com casamento analógico até Nyquist (Vicanek/Orfanidis) no EQ, HPF e LPF.
 - LC em 100 Hz, 18 dB/oitava.
 
+**Parte 2 feita.** Como ficou:
+- **Código:** `DeskFilters` (`include/DeskFilters.h`).
+- **Filtros com casamento analógico** (`Biquad`):
+  - segunda ordem pelo método de Martin Vicanek (2016): polos por invariância ao impulso; zeros que casam a
+    magnitude em DC, na frequência central e em Nyquist;
+  - primeira ordem com casamento exato em três pontos: DC, Nyquist e onde a curva muda mais (o polo também é
+    resolvido).
+- **Precisão até 20 kHz em 44,1 kHz** (testado contra a resposta analógica):
+
+  | Filtro | Erro máximo |
+  |---|---|
+  | LPF em 1 kHz | menor que 0,1 dB |
+  | Picos | menor que 0,5 dB, perto de Nyquist |
+  | Shelf de 12 kHz | menor que 0,4 dB |
+  | LPF em 15 kHz | menor que 1 dB |
+
+  Na transformação bilinear de antes, o LPF chegava a -∞ em Nyquist.
+- **Mudança de ajuste:** os coeficientes andam linearmente ao longo de um período, sem estalo (`RampedBiquad`).
+- **EQ (`DeskEq`):**
+  - shelves de primeira ordem (Baxandall), 80 Hz e 12 kHz, com o canto 3 dB antes do ganho total;
+  - picos em 400 Hz e 2,5 kHz.
+- **Q proporcional:** 2,5 oitavas na metade do ganho em ±3 dB, estreitando até uma oitava em ±15 dB. O Q sai em
+  forma fechada da largura.
+- **Interação entre bandas:** os reforços ficam em paralelo e os cortes na realimentação,
+  H = (1 + Σ reforços) / (1 + Σ cortes), como no circuito ativo dessas mesas.
+  - O laço sem atraso dos cortes é resolvido algebricamente.
+  - Sozinha, cada banda faz exatamente o que o knob diz. Juntas, bandas vizinhas somam menos que a soma em dB.
+  - Uma banda que passa de reforço a corte vai a plano por um período, sem estalo.
+- **LC:** 100 Hz, Butterworth de terceira ordem (18 dB/oitava).
+- **HPF/LPF:** continuam em 12 dB/oitava, agora com casamento analógico.
+- **Testes:**
+  - cada filtro contra a resposta analógica;
+  - cada banda sozinha;
+  - Q proporcional;
+  - interação de reforços e de cortes;
+  - o processamento bate com a resposta calculada;
+  - troca de lado sem salto;
+  - LC de terceira ordem.
+
 **3. Amp-op**
 - Mantém o joelho suave.
 - Sem banda passante dependente do ganho.

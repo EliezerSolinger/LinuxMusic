@@ -27,7 +27,7 @@
 #include <span>
 
 #include "AutomatableModel.h"
-#include "EqFilter.h"
+#include "DeskFilters.h"
 #include "GainStage.h"
 #include "LmmsTypes.h"
 #include "MonoBass.h"
@@ -44,14 +44,15 @@ class SampleFrame;
  * The channel strip of an analog mixing desk, built into each mixer channel (but the master) while the mixer is in
  * analog mode (see Mixer::isAnalog()). In signal order, after the channel's trim:
  * - the GAIN pot, muted to +30 dB;
- * - the low cut button (80 Hz, 24 dB/oct), before the gain stage so that it gets no rumble to saturate on;
+ * - the low cut button (100 Hz, 18 dB/oct, as on Soundcraft desks), before the gain stage so that it gets no rumble
+ *   to saturate on;
  * - the gain stage: flat, an op-amp or a tube, of a choice of models (see GainStage);
  * - sweepable high-pass and low-pass filters (12 dB/oct), and mono bass (see MonoBass);
  * - a gate and a compressor, one knob each (their thresholds), with stereo-linked detection;
- * - a classic 4-band EQ with fixed frequencies: high shelf at 12 kHz, high mid peak at 2.5 kHz, low mid peak at
- *   400 Hz, low shelf at 80 Hz.
+ * - the 4-band EQ of a Soundcraft or Mackie desk (see DeskEq): shelves at 80 Hz and 12 kHz, peaks at 400 Hz and
+ *   2.5 kHz, with proportional Q and interacting bands.
  * Each section left at its neutral setting is skipped, so a neutral strip leaves the audio untouched. The filters
- * are those of the Eq plugin (EqFilter).
+ * match their analog responses up to Nyquist (see Biquad), and ramp their changes over a period.
  */
 class LMMS_EXPORT AnalogChannelStrip
 {
@@ -106,17 +107,15 @@ public:
 
 
 private:
+	void finishFilters();
+
 	GainStage m_gainStage;
 	float m_gain = 1.f; //!< of the last frame, ramped
 
-	// The filters of the Eq plugin, which crossfade changed settings over a period
-	EqHp12Filter m_lowCut[2];	// 24 dB/oct
-	EqHp12Filter m_highPass;
-	EqLp12Filter m_lowPass;
-	EqLowShelfFilter m_eqLow;
-	EqPeakFilter m_eqHighMid;
-	EqPeakFilter m_eqLowMid;
-	EqHighShelfFilter m_eqHigh;
+	RampedBiquad m_lowCut2, m_lowCut1;	// third order Butterworth: 18 dB/oct
+	RampedBiquad m_highPass;
+	RampedBiquad m_lowPass;
+	DeskEq m_eq;
 	MonoBass m_monoBass;
 
 	//! Frames the filters may still ring for after the input fell silent

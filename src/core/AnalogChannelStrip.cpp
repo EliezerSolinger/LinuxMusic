@@ -38,13 +38,8 @@ namespace
 {
 
 // Fixed parts of the strip
-constexpr float LowCutFrequency = 80.f;
-constexpr float FilterQ = std::numbers::sqrt2_v<float> / 2.f;
-constexpr float EqLowFrequency = 80.f;
-constexpr float EqHighFrequency = 12000.f;
-constexpr float EqHighMidFrequency = 2500.f;
-constexpr float EqLowMidFrequency = 400.f;
-constexpr float EqMidBandwidth = 1.4f; // octaves
+constexpr double LowCutFrequency = 100.0;
+constexpr double ButterworthQ = std::numbers::sqrt2 / 2.0;
 constexpr float GateAttack = 0.001f;	// s
 constexpr float GateHold = 0.02f;		// s
 constexpr float GateRelease = 0.1f;		// s
@@ -121,30 +116,21 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 		sampleRate);
 	const bool gateOn = m_gateModel.value() > m_gateModel.minValue();
 	const bool compressorOn = m_compressorModel.value() < 0.f;
-	const bool eqLowOn = m_eqLowModel.value() != 0.f;
-	const bool eqHighMidOn = m_eqHighMidModel.value() != 0.f;
-	const bool eqLowMidOn = m_eqLowMidModel.value() != 0.f;
-	const bool eqHighOn = m_eqHighModel.value() != 0.f;
+	const double rate = sampleRate;
+	m_eq.begin({m_eqLowModel.value(), m_eqLowMidModel.value(), m_eqHighMidModel.value(), m_eqHighModel.value()}, rate);
+	const bool eqOn = m_eq.isActive();
 
 	// A section switched off starts afresh when switched on again
-	if (!lowCut) { m_lowCut[0].clearHistory(); m_lowCut[1].clearHistory(); }
-	if (!highPassOn) { m_highPass.clearHistory(); }
-	if (!lowPassOn) { m_lowPass.clearHistory(); }
-	if (!eqLowOn) { m_eqLow.clearHistory(); }
-	if (!eqHighMidOn) { m_eqHighMid.clearHistory(); }
-	if (!eqLowMidOn) { m_eqLowMid.clearHistory(); }
-	if (!eqHighOn) { m_eqHigh.clearHistory(); }
+	if (!lowCut) { m_lowCut2.reset(); m_lowCut1.reset(); }
+	if (!highPassOn) { m_highPass.reset(); }
+	if (!lowPassOn) { m_lowPass.reset(); }
 	if (!gateOn) { m_gateGain = 1.f; m_gateHold = 0; }
 	if (!compressorOn) { m_compressorEnvelope = 0.f; }
 
-	const auto rate = static_cast<float>(sampleRate);
-	for (auto& filter : m_lowCut) { filter.setParameters(rate, LowCutFrequency, FilterQ, 1.f); }
-	m_highPass.setParameters(rate, m_highPassModel.value(), FilterQ, 1.f);
-	m_lowPass.setParameters(rate, m_lowPassModel.value(), FilterQ, 1.f);
-	m_eqLow.setParameters(rate, EqLowFrequency, FilterQ, m_eqLowModel.value());
-	m_eqHighMid.setParameters(rate, EqHighMidFrequency, EqMidBandwidth, m_eqHighMidModel.value());
-	m_eqLowMid.setParameters(rate, EqLowMidFrequency, EqMidBandwidth, m_eqLowMidModel.value());
-	m_eqHigh.setParameters(rate, EqHighFrequency, FilterQ, m_eqHighModel.value());
+	m_lowCut2.setTarget(Biquad::highPass(LowCutFrequency, 1.0, rate));
+	m_lowCut1.setTarget(Biquad::highPass1(LowCutFrequency, rate));
+	m_highPass.setTarget(Biquad::highPass(m_highPassModel.value(), ButterworthQ, rate));
+	m_lowPass.setTarget(Biquad::lowPass(m_lowPassModel.value(), ButterworthQ, rate));
 
 	const auto count = frames.size();
 	auto progressAt = [count](std::size_t f) {
@@ -171,8 +157,9 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 		{
 			for (ch_cnt_t ch = 0; ch < 2; ++ch)
 			{
-				frames[f][ch] = m_lowCut[1].update(m_lowCut[0].update(frames[f][ch], ch, progressAt(f)), ch,
-					progressAt(f));
+				const double progress = progressAt(f);
+				frames[f][ch] = static_cast<float>(m_lowCut1.process(m_lowCut2.process(frames[f][ch], ch, progress), ch,
+					progress));
 			}
 		}
 	}
@@ -181,16 +168,16 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	m_gainStage.process(frames, drive, m_realisticModel.value(), sampleRate);
 
 	// After the input falls silent, the filters ring out for a while
-	const bool anyFilter = lowCut || highPassOn || lowPassOn || monoBassOn || eqLowOn || eqLowMidOn || eqHighMidOn
-		|| eqHighOn || GainStage::isTube(drive); // the tube's DC blocker
+	const bool anyFilter = lowCut || highPassOn || lowPassOn || monoBassOn || eqOn
+		|| GainStage::isTube(drive); // the tube's coupling
 	if (!anyFilter) { m_tailFrames = 0; }
 	else if (hadInput) { m_tailFrames = static_cast<f_cnt_t>(FilterTail * rate); }
 	else { m_tailFrames = m_tailFrames > frames.size() ? m_tailFrames - frames.size() : 0; }
 
 	// Nothing after the gain stage to do
-	if (!highPassOn && !lowPassOn && !monoBassOn && !gateOn && !compressorOn && !eqLowOn && !eqLowMidOn
-		&& !eqHighMidOn && !eqHighOn)
+	if (!highPassOn && !lowPassOn && !monoBassOn && !gateOn && !compressorOn && !eqOn)
 	{
+		finishFilters();
 		return;
 	}
 
@@ -214,8 +201,8 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 		for (ch_cnt_t ch = 0; ch < 2; ++ch)
 		{
 			float x = frame[ch];
-			if (highPassOn) { x = m_highPass.update(x, ch, progress); }
-			if (lowPassOn) { x = m_lowPass.update(x, ch, progress); }
+			if (highPassOn) { x = static_cast<float>(m_highPass.process(x, ch, progress)); }
+			if (lowPassOn) { x = static_cast<float>(m_lowPass.process(x, ch, progress)); }
 			frame[ch] = x;
 		}
 		if (monoBassOn)
@@ -255,15 +242,22 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 		for (ch_cnt_t ch = 0; ch < 2; ++ch)
 		{
 			float x = frame[ch] * gain;
-			if (eqLowOn) { x = m_eqLow.update(x, ch, progress); }
-			if (eqLowMidOn) { x = m_eqLowMid.update(x, ch, progress); }
-			if (eqHighMidOn) { x = m_eqHighMid.update(x, ch, progress); }
-			if (eqHighOn) { x = m_eqHigh.update(x, ch, progress); }
+			if (eqOn) { x = static_cast<float>(m_eq.process(x, ch, progress)); }
 			frame[ch] = x;
 		}
 	}
 
 	if (monoBassOn) { m_monoBass.end(); }
+	finishFilters();
+}
+
+
+
+
+void AnalogChannelStrip::finishFilters()
+{
+	for (auto filter : {&m_lowCut2, &m_lowCut1, &m_highPass, &m_lowPass}) { filter->finish(); }
+	m_eq.finish();
 }
 
 
@@ -279,11 +273,8 @@ auto AnalogChannelStrip::holdsSignal() const -> bool
 
 void AnalogChannelStrip::reset()
 {
-	for (auto filter : std::initializer_list<EqFilter*>{&m_lowCut[0], &m_lowCut[1], &m_highPass, &m_lowPass, &m_eqLow,
-		&m_eqLowMid, &m_eqHighMid, &m_eqHigh})
-	{
-		filter->clearHistory();
-	}
+	for (auto filter : {&m_lowCut2, &m_lowCut1, &m_highPass, &m_lowPass}) { filter->reset(); }
+	m_eq.reset();
 	m_tailFrames = 0;
 	m_monoBass.reset();
 	m_gainStage.reset();
