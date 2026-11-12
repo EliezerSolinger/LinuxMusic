@@ -240,8 +240,42 @@ AudioCoreAudio::AudioCoreAudio(bool& successful, AudioEngine* engine)
 		input = kAudioObjectUnknown;
 	}
 
-	successful = open(output, input);
+	// The input's channels are known now; it opens when capture is enabled
+	m_output = output;
+	m_input = input;
+	if (input != kAudioObjectUnknown)
+	{
+		const auto channels = channelCount(input, kAudioObjectPropertyScopeInput);
+		setInputChannels(static_cast<ch_cnt_t>(channels));
+		for (int channel = 0; channel < channels; ++channel)
+		{
+			m_inputNames.push_back(getString(input, address(kAudioObjectPropertyElementName,
+				kAudioObjectPropertyScopeInput, static_cast<AudioObjectPropertyElement>(channel + 1))));
+		}
+	}
+
+	successful = open(output, kAudioObjectUnknown);
 	if (!successful) { close(); }
+}
+
+
+
+
+void AudioCoreAudio::setCaptureEnabled(bool enabled)
+{
+	enabled = enabled && m_input != kAudioObjectUnknown;
+	if (enabled == m_capturing) { return; }
+
+	close();
+	if (enabled && open(m_output, m_input))
+	{
+		m_capturing = true;
+		return;
+	}
+	if (enabled) { qWarning("CoreAudio: could not open the input; going on without it"); }
+	close();
+	m_capturing = false;
+	if (!open(m_output, kAudioObjectUnknown)) { qWarning("CoreAudio: could not reopen the output device"); }
 }
 
 
@@ -315,7 +349,6 @@ auto AudioCoreAudio::open(AudioObjectID output, AudioObjectID input) -> bool
 	}
 
 	m_inputSlots.clear();
-	m_inputNames.clear();
 	if (input != kAudioObjectUnknown)
 	{
 		// In an aggregate, the output device's own inputs (e.g. a headset's microphone) come first
@@ -328,24 +361,19 @@ auto AudioCoreAudio::open(AudioObjectID output, AudioObjectID input) -> bool
 		{
 			m_inputSlots.push_back(all[channel]);
 		}
-		for (std::size_t channel = 0; channel < m_inputSlots.size(); ++channel)
-		{
-			m_inputNames.push_back(getString(input, address(kAudioObjectPropertyElementName,
-				kAudioObjectPropertyScopeInput, static_cast<AudioObjectPropertyElement>(channel + 1))));
-		}
 	}
 
-	// The latencies: the devices', and the IO buffer on each side
+	// The latencies: the devices', and the IO buffer on each side (the input's also while it is closed)
+	m_bufferFrames = bufferFrames;
 	m_outputLatency = deviceLatency(output, kAudioObjectPropertyScopeOutput) + bufferFrames;
-	m_inputLatency = input != kAudioObjectUnknown
-		? deviceLatency(input, kAudioObjectPropertyScopeInput) + bufferFrames
+	m_inputLatency = m_input != kAudioObjectUnknown
+		? deviceLatency(m_input, kAudioObjectPropertyScopeInput) + bufferFrames
 		: 0;
 
 	// Planar scratch for the engine; a longer callback is taken in parts
 	m_capacity = std::max<f_cnt_t>(bufferFrames, audioEngine()->framesPerAudioBuffer());
 	const auto engineOutputs = static_cast<ch_cnt_t>(std::min<std::size_t>(m_outputSlots.size(), DEFAULT_CHANNELS));
 	setChannels(engineOutputs);
-	setInputChannels(static_cast<ch_cnt_t>(m_inputSlots.size()));
 	m_inputStorage.assign(m_inputSlots.size() * m_capacity, 0.f);
 	m_outputStorage.assign(static_cast<std::size_t>(engineOutputs) * m_capacity, 0.f);
 	m_inputPointers.resize(m_inputSlots.size());

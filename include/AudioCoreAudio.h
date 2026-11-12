@@ -48,6 +48,10 @@ namespace lmms
  * devices (e.g. the built-in microphone and speakers), a private aggregate device joins them, with the input's drift
  * compensated to the output's clock. The latencies are the devices' own, their safety offsets, their streams' and
  * the IO buffer.
+ *
+ * The input is opened only while capture is enabled (AudioEngine::setCaptureEnabled()): opening it asks the user for
+ * the microphone, which should happen when they choose an input, not when the program starts. Its channels and
+ * their names are known before, from the device's properties.
  */
 class AudioCoreAudio : public AudioDevice
 {
@@ -61,6 +65,8 @@ public:
 	static auto name() -> QString { return QT_TRANSLATE_NOOP("AudioDeviceSetupWidget", "CoreAudio"); }
 
 	auto inputChannelName(ch_cnt_t channel) const -> QString override;
+	auto capturesOnDemand() const -> bool override { return true; }
+	void setCaptureEnabled(bool enabled) override;
 	auto inputLatency() const -> f_cnt_t override { return m_inputLatency; }
 	auto outputLatency() const -> f_cnt_t override { return m_outputLatency; }
 
@@ -112,6 +118,10 @@ private:
 	static auto propertyListener(AudioObjectID object, UInt32 count, const AudioObjectPropertyAddress* addresses,
 		void* clientData) -> OSStatus;
 
+	AudioObjectID m_output = kAudioObjectUnknown; //!< the output device
+	AudioObjectID m_input = kAudioObjectUnknown; //!< the input device, opened only while capturing
+	bool m_capturing = false; //!< whether the input is open
+	UInt32 m_bufferFrames = 0;
 	AudioObjectID m_device = kAudioObjectUnknown; //!< the device the IOProc runs on (maybe the aggregate)
 	AudioObjectID m_aggregate = kAudioObjectUnknown; //!< the private aggregate, if one was made
 	AudioDeviceIOProcID m_ioProcId = nullptr;

@@ -352,6 +352,12 @@ public:
 	//! @returns the frames between a sound played and its recording: the device's latencies and the calibration
 	auto recordingLatency() const -> f_cnt_t;
 
+	/**
+	 * Soon (on the event loop, once for many calls): opens the audio device's input if a sample track needs it (it
+	 * has an input and is armed or always monitored, or audio is being recorded), or closes it
+	 */
+	void scheduleCaptureUpdate();
+
 public slots:
 	void playSong();
 	void playAndRecord();
@@ -470,6 +476,7 @@ private:
 	std::atomic<PlayMode> m_playMode;
 
 	AudioRecorder m_audioRecorder;
+	bool m_captureUpdatePending = false;
 	double m_periodStartFrame = 0; //!< the song frame where the period being rendered starts (audio thread)
 	bar_t m_length;
 

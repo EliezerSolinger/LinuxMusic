@@ -62,6 +62,12 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 
 	// Software monitoring: the handle plays the input while monitoring is on (see InputMonitorHandle)
 	Engine::audioEngine()->addPlayHandle(new InputMonitorHandle{this});
+
+	// The audio device opens its input while a track needs it
+	const auto captureNeedMayChange = [] { if (auto song = Engine::getSong()) { song->scheduleCaptureUpdate(); } };
+	connect(this, &SampleTrack::inputChanged, this, captureNeedMayChange);
+	connect(&m_recordArmModel, &BoolModel::dataChanged, this, captureNeedMayChange);
+	connect(&m_monitorModel, &IntModel::dataChanged, this, captureNeedMayChange);
 }
 
 

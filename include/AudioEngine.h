@@ -253,6 +253,13 @@ public:
 		return {pointers.data(), m_captureChannels, m_captureChannels > 0 ? m_framesPerPeriod : 0};
 	}
 
+	/**
+	 * Main thread: opens or closes the audio device's input, for devices that capture on demand (briefly stopping
+	 * the device); the engine keeps the setting across device changes
+	 */
+	void setCaptureEnabled(bool enabled);
+	auto captureEnabled() const -> bool { return m_captureEnabled; }
+
 	//! @returns the number of periods rendered since the engine started (any thread)
 	auto periodsRendered() const -> std::int64_t { return m_periodsRendered.load(std::memory_order_relaxed); }
 
@@ -447,6 +454,7 @@ private:
 	std::array<std::vector<float*>, 2> m_capturePointers;
 	int m_captureFill = 0; //!< the half being filled
 	ch_cnt_t m_captureChannels = 0;
+	bool m_captureEnabled = false;
 	std::atomic<std::int64_t> m_periodsRendered = 0;
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;

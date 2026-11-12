@@ -76,10 +76,13 @@ public:
 	//! @returns the frames between the engine handing a frame to the device and the frame leaving the output
 	virtual auto outputLatency() const -> f_cnt_t { return 0; }
 
+	//! @returns whether the device opens its input only while capture is enabled (see setCaptureEnabled())
+	virtual auto capturesOnDemand() const -> bool { return false; }
+
 	/**
-	 * Asks the device to capture, or that it may stop capturing (e.g. to spare the input's CPU or a privacy
-	 * prompt) while no track records or monitors. A device that cannot stop capturing ignores it; one that is not
-	 * capturing hands the engine silence.
+	 * For devices that capture on demand: opens the input, or closes it while no track records or monitors (which
+	 * spares the input's CPU, and the system's privacy prompt until the user chooses an input). Only while the
+	 * device is not processing. While the input is closed, the device hands the engine silence on its inputChannels().
 	 */
 	virtual void setCaptureEnabled(bool) {}
 

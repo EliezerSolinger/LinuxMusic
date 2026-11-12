@@ -215,12 +215,15 @@ private slots:
 		}
 		QVERIFY(device->outputLatency() > 0);
 		if (input == "none") { QCOMPARE(device->inputChannels(), ch_cnt_t{0}); }
+		QVERIFY(device->capturesOnDemand());
 
 		engine->setAudioDevice(device, true);
+		engine->setCaptureEnabled(input != "none"); // the input opens only when asked for
 		const auto before = engine->periodsRendered();
 		QTest::qWait(1000);
 		const auto rendered = engine->periodsRendered() - before;
 		engine->stopProcessing();
+		engine->setCaptureEnabled(false);
 
 		// About a second of periods (allowing for the device starting up)
 		const auto expected = device->sampleRate() / engine->framesPerPeriod();

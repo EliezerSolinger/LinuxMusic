@@ -24,6 +24,7 @@
 
 #include "Song.h"
 #include <QTextStream>
+#include <QTimer>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QFile>
@@ -135,6 +136,9 @@ Song::Song() :
 		connect(&m_timelines[i], &Timeline::positionJumped, this, onPositionJumped);
 	}
 
+	// A removed track may have been the one that needed the audio input
+	connect(this, &TrackContainer::trackRemoved, this, &Song::scheduleCaptureUpdate);
+
 	// Inform VST plugins if the user moved the play head
 	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(); }, Qt::DirectConnection);
 }
@@ -144,6 +148,8 @@ Song::Song() :
 
 Song::~Song()
 {
+	// The tracks are removed by ~TrackContainer(), when this Song is gone already
+	disconnect(this, &TrackContainer::trackRemoved, this, &Song::scheduleCaptureUpdate);
 	m_playing = false;
 	delete m_globalAutomationTrack;
 }
@@ -736,6 +742,27 @@ auto Song::mediaDirectory() const -> QString
 
 
 
+void Song::scheduleCaptureUpdate()
+{
+	if (m_captureUpdatePending) { return; }
+	m_captureUpdatePending = true;
+	QTimer::singleShot(0, this, [this] {
+		m_captureUpdatePending = false;
+		bool needed = isRecordingAudio();
+		for (const auto* track : tracks())
+		{
+			const auto* sampleTrack = dynamic_cast<const SampleTrack*>(track);
+			needed = needed || (sampleTrack && sampleTrack->input().source == AudioInput::Source::Hardware
+				&& (sampleTrack->isRecordArmed()
+					|| sampleTrack->monitorMode() == static_cast<int>(SampleTrack::MonitorMode::On)));
+		}
+		Engine::audioEngine()->setCaptureEnabled(needed);
+	});
+}
+
+
+
+
 auto Song::recordingLatency() const -> f_cnt_t
 {
 	const auto* device = Engine::audioEngine()->audioDev();
@@ -798,6 +825,9 @@ auto Song::recordAudio() -> bool
 		return false;
 	}
 
+	// The input must be open before the first period is recorded
+	Engine::audioEngine()->setCaptureEnabled(true);
+
 	playSong();
 	const auto error = m_audioRecorder.start(requests, recordingLatency(), Engine::audioEngine()->framesPerPeriod(),
 		Engine::audioEngine()->outputSampleRate());
@@ -854,6 +884,7 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 		}
 	}
 	setModified();
+	scheduleCaptureUpdate();
 	if (!problems.isEmpty()) { emit recordingProblem(problems.join('\n')); }
 }
 

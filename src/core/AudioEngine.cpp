@@ -350,9 +350,25 @@ void AudioEngine::swapBuffers()
 	zeroSampleFrames(m_outputBufferWrite.get(), m_framesPerPeriod);
 }
 
+void AudioEngine::setCaptureEnabled(bool enabled)
+{
+	if (enabled == m_captureEnabled) { return; }
+	m_captureEnabled = enabled;
+	if (!m_audioDev || !m_audioDev->capturesOnDemand()) { return; }
+
+	const bool running = m_audioDev->isRunning();
+	if (running) { m_audioDev->stopProcessing(); }
+	prepareCapture();
+	if (running) { m_audioDev->startProcessing(); }
+}
+
+
+
+
 void AudioEngine::prepareCapture()
 {
 	assert(!m_audioDev || !m_audioDev->isRunning());
+	if (m_audioDev && m_audioDev->capturesOnDemand()) { m_audioDev->setCaptureEnabled(m_captureEnabled); }
 	m_captureChannels = m_audioDev ? m_audioDev->inputChannels() : 0;
 	for (auto half = std::size_t{0}; half < 2; ++half)
 	{
