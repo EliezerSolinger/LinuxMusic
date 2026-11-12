@@ -237,7 +237,7 @@ e a captura no mesmo ciclo.
 | Profundidade da etapa 1 | **Fundo:** o motor sem trava. O mutex do período dá lugar a snapshots imutáveis publicados pela interface; um contador de frames do transporte; nada de alocação ou E/S no áudio; o transporte num modelo próprio. Feito em passos, com a bateria A/B a cada um |
 | MIDI | Áudio e MIDI juntos na primeira versão: faixas de instrumento armadas gravam notas em clipes na linha do tempo (overdub e replace), substituindo a gravação presa ao Piano Roll |
 | Ao parar | Guarda sempre; desfazer remove. Os arquivos órfãos são limpos ao salvar ou fechar |
-| Cabeçalho das faixas graváveis | Duas linhas, como no REAPER: nome, M/S, ● (armar) e monitor; depois a entrada, o medidor de entrada, VOL e PAN |
+| Cabeçalho das faixas | Duas linhas, como no REAPER: nome, M/S, ● (armar) e monitor; depois a entrada, o medidor de entrada, VOL e PAN. **Todas as faixas seguem esse cabeçalho**: as de instrumento (que gravam MIDI) e as de áudio iguais; as outras (pasta, sequência, automação) com o mesmo desenho, só com os controles que fazem sentido para elas |
 | Já decidido antes | A entrada, armar e monitorar são da faixa (passo 26); a gravação fica na página Composição |
 
 ## Anexos
