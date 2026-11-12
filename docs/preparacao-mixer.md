@@ -669,6 +669,34 @@ master sem pan.
 - faders PRE travados e soltos;
 - monitoração SIDE e goniômetro.
 
+### Passo 17: faixa com volume e pan próprios, MONO e mono bass por canal (feito)
+
+**Mudança de conceito, pedida pelo usuário:** a faixa volta a ter volume e pan próprios, como no REAPER: a faixa é a
+**fonte** e o canal é a **mixagem**.
+- Os knobs VOL e PAN da faixa (na lista e nas janelas) são os da própria faixa e agem antes do canal, como no LMMS
+  original. Deixaram de ser atalhos do fader e do pan do canal, que era a decisão do passo 8.
+- `Mixer::setUpTrackChannel()` não move mais o volume da faixa para o trim do canal nem o pan para o pan do canal.
+  Efeitos, mute e solo continuam indo para o canal.
+- As pastas, que não têm volume e pan próprios, continuam mostrando os do canal de grupo.
+- **Consequência boa:** os projetos de teste com volume de faixa diferente de 100%, que no passo 8 mudavam no primeiro
+  período, voltaram a bater bit a bit com a build de referência.
+- Projetos salvos por esta build entre os passos 8 e 16 já têm o volume no trim do canal e a faixa em 100%; continuam
+  soando igual.
+
+**MONO por canal** (menos o master, que tem o MONO na monitoração):
+- Soma o canal em mono, (L+R)/2 nos dois lados, depois do trim e antes da faixa analógica e dos efeitos: eles recebem um
+  sinal mono, e o pan passa a posicionar a fonte em vez de só balancear L e R.
+- Ligar e desligar faz crossfade de um período, sem estalo.
+- Está no painel do canal selecionado (nos dois modos) e na seção INPUT da faixa analógica.
+
+**Mono bass por canal:**
+- Na seção FILTER da faixa analógica: BASS (largura do side abaixo da frequência, 0 = mono, 100 = desligado) e FREQ.
+- **Reaproveitamento:** o mono bass do master saiu para a classe `MonoBass` (crossover Linkwitz-Riley de filtros de
+  variáveis de estado TPT, o mid pelo mesmo crossover, crossfade de liga/desliga), usada pelo master e pelas faixas.
+
+`MixerTest` tem 85 testes. Novos: MONO soma e troca sem estalo; mono bass da faixa estreita só o grave e não age no
+modo digital. Os testes que verificavam o volume da faixa indo para o trim foram reescritos para a regra nova.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
