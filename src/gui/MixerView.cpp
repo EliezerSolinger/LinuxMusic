@@ -391,8 +391,7 @@ void MixerView::loadSettings(const QDomElement& domElement)
 
 void MixerView::toggledSolo()
 {
-	getMixer()->toggledSolo();
-
+	// The mixer applies solo itself (see Mixer::applySolo())
 	updateAllMixerChannels();
 }
 

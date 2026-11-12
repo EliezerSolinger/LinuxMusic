@@ -36,7 +36,6 @@
 
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
-#include "ConfigManager.h"
 #include "FolderTrack.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -56,7 +55,6 @@ Track::Track(Type type, TrackContainer* tc)
 	, m_type(type)
 	, m_name()
 	, m_mutedModel(false, this, tr("Mute"))
-	, m_soloModel(false, this, tr("Solo"))
 	, m_clips()
 {	
 	m_trackContainer->addTrack( this );
@@ -191,9 +189,6 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	element.setAttribute( "type", static_cast<int>(type()) );
 	element.setAttribute( "name", name() );
 	m_mutedModel.saveSettings( doc, element, "muted" );
-	m_soloModel.saveSettings( doc, element, "solo" );
-	// Save the mutedBeforeSolo value so we can recover the muted state if any solo was active (issue 5562)
-	element.setAttribute( "mutedBeforeSolo", int(m_mutedBeforeSolo) );
 
 	if( m_height >= MINIMAL_TRACK_HEIGHT )
 	{
@@ -237,10 +232,9 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			element.firstChild().toElement().attribute( "name" ) );
 
 	m_mutedModel.loadSettings( element, "muted" );
-	m_soloModel.loadSettings( element, "solo" );
-	// Get the mutedBeforeSolo value so we can recover the muted state if any solo was active.
-	// Older project files that didn't have this attribute will set the value to false (issue 5562)
-	m_mutedBeforeSolo = QVariant( element.attribute( "mutedBeforeSolo", "0" ) ).toBool();
+	// Solo is on the mixer channels now; see legacySolo()
+	m_legacySolo = element.attribute("solo", "0").toInt() != 0;
+	m_legacyMutedBeforeSolo = element.attribute("mutedBeforeSolo", "0").toInt() != 0;
 
 	if (element.hasAttribute("color"))
 	{
@@ -509,66 +503,11 @@ void Track::setFolderDepth(int depth)
 
 
 
-void Track::toggleSolo()
+auto Track::isMutedInMix() const -> bool
 {
-	const TrackContainer::TrackList & tl = m_trackContainer->tracks();
-
-	bool soloBefore = false;
-	for (const auto& track : tl)
-	{
-		if (track != this)
-		{
-			if (track->m_soloModel.value())
-			{
-				soloBefore = true;
-				break;
-			}
-		}
-	}
-
-	const bool solo = m_soloModel.value();
-	// Should we use the new behavior of solo or the older/legacy one?
-	const bool soloLegacyBehavior = ConfigManager::inst()->value("app", "sololegacybehavior", "0").toInt();
-
-	for (const auto& track : tl)
-	{
-		if (solo)
-		{
-			// save mute-state in case no track was solo before
-			if (!soloBefore)
-			{
-				track->m_mutedBeforeSolo = track->isMuted();
-			}
-			// Don't mute AutomationTracks (keep their original state) unless we are on the sololegacybehavior mode
-			// The folders holding the solo track play along with it, and so does what it holds if it is a folder
-			// (unless muted before)
-			if (track == this || m_trackContainer->isInFolder(this, track))
-			{
-				track->setMuted(false);
-			}
-			else if (m_trackContainer->isInFolder(track, this))
-			{
-				track->setMuted(track->m_mutedBeforeSolo);
-			}
-			else if (soloLegacyBehavior || track->type() != Type::Automation)
-			{
-				track->setMuted(true);
-			}
-			if (track != this)
-			{
-				track->m_soloModel.setValue(false);
-			}
-		}
-		else if (!soloBefore)
-		{
-			// Unless we are on the sololegacybehavior mode, only restores the
-			// mute state if the track isn't an Automation Track
-			if (soloLegacyBehavior || track->type() != Type::Automation)
-			{
-				track->setMuted(track->m_mutedBeforeSolo);
-			}
-		}
-	}
+	if (isMuted()) { return true; }
+	const auto channel = Engine::mixer() ? Engine::mixer()->trackChannel(this) : nullptr;
+	return channel && channel->m_muteModel.value();
 }
 
 void Track::setColor(const std::optional<QColor>& color)

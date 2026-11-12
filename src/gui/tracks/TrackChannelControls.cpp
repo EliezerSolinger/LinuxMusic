@@ -26,6 +26,7 @@
 #include <cassert>
 
 #include "AudioBusHandle.h"
+#include "AutomatableButton.h"
 #include "EffectRackView.h"
 #include "Engine.h"
 #include "FolderTrack.h"
@@ -69,6 +70,7 @@ TrackChannelControls::TrackChannelControls(Track* track, QObject* parent) :
 	});
 	connect(mixer, &Mixer::channelDeleted, this, &TrackChannelControls::update);
 	connect(m_channel, &IntModel::dataChanged, this, &TrackChannelControls::update);
+	connect(track->getMutedModel(), &BoolModel::dataChanged, this, &TrackChannelControls::update);
 	// Automating the track's volume or panning keeps them on the track
 	if (m_volume) { connect(m_volume, &FloatModel::dataChanged, this, &TrackChannelControls::update); }
 	if (m_panning) { connect(m_panning, &FloatModel::dataChanged, this, &TrackChannelControls::update); }
@@ -83,44 +85,19 @@ TrackChannelControls::~TrackChannelControls() = default;
 
 
 auto TrackChannelControls::replace(TrackChannelControls* controls, Track* track, QObject* parent,
-	VolumeKnob* volumeKnob, Knob* panningKnob, EffectRackView* effectRack) -> TrackChannelControls*
+	const Widgets& widgets) -> TrackChannelControls*
 {
 	// The widgets may point at models of the old controls, so those go after the widgets point elsewhere
 	auto replacement = new TrackChannelControls(track, parent);
-	replacement->m_volumeKnob = volumeKnob;
-	replacement->m_panningKnob = panningKnob;
-	replacement->m_effectRack = effectRack;
+	replacement->m_volumeKnob = widgets.volume;
+	replacement->m_panningKnob = widgets.panning;
+	replacement->m_effectRack = widgets.effects;
+	replacement->m_muteButton = widgets.mute;
+	replacement->m_soloButton = widgets.solo;
 	if (controls) { replacement->m_boundChannel = controls->m_boundChannel; }
 	replacement->update();
 	delete controls;
 	return replacement;
-}
-
-
-
-
-void TrackChannelControls::setVolumeKnob(VolumeKnob* knob)
-{
-	m_volumeKnob = knob;
-	update();
-}
-
-
-
-
-void TrackChannelControls::setPanningKnob(Knob* knob)
-{
-	m_panningKnob = knob;
-	update();
-}
-
-
-
-
-void TrackChannelControls::setEffectRack(EffectRackView* rack)
-{
-	m_effectRack = rack;
-	update();
 }
 
 
@@ -161,6 +138,23 @@ void TrackChannelControls::update()
 		FloatModel* model = channel && (!m_panning || !m_panning->isAutomatedOrControlled())
 			? &channel->m_panModel : m_panning;
 		if (m_panningKnob->model() != model || !oldModelsValid) { m_panningKnob->setModel(model, oldModelsValid); }
+	}
+	if (m_muteButton)
+	{
+		// Muting a channel shared with other tracks would mute them too
+		const auto mute = m_track->getMutedModel();
+		BoolModel* model = channel && !mute->isAutomatedOrControlled() ? &channel->m_muteModel : mute;
+		if (m_muteButton->model() != model || !oldModelsValid) { m_muteButton->setModel(model, oldModelsValid); }
+	}
+	if (m_soloButton)
+	{
+		// The channel the track plays through, its own or not
+		const auto through = channel ? channel
+			: mixer->mixerChannel(std::clamp(m_channel->value(), 0, mixer->numChannels() - 1));
+		if (m_soloButton->model() != &through->m_soloModel || !oldModelsValid)
+		{
+			m_soloButton->setModel(&through->m_soloModel, oldModelsValid);
+		}
 	}
 	if (m_effectRack && m_effects)
 	{

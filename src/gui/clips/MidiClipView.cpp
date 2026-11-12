@@ -630,7 +630,7 @@ void MidiClipView::paintEvent( QPaintEvent * )
 	QPainter p( &m_paintPixmap );
 
 	QColor c;
-	bool const muted = m_clip->getTrack()->isMuted() || m_clip->isMuted();
+	bool const muted = m_clip->getTrack()->isMutedInMix() || m_clip->isMuted();
 	bool current = getGUI()->pianoRoll()->currentMidiClip() == m_clip;
 	bool beatClip = m_clip->m_clipType == MidiClip::Type::BeatClip;
 

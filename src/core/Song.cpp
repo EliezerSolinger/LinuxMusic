@@ -588,7 +588,7 @@ void Song::updateLength()
 	m_tracksMutex.lockForRead();
 	for (auto track : tracks())
 	{
-		if (m_exporting && track->isMuted())
+		if (m_exporting && track->isMutedInMix())
 		{
 			continue;
 		}
@@ -1181,7 +1181,9 @@ void Song::loadProject( const QString & fileName )
 	AutomationClip::resolveAllIDs();
 
 	// Every instrument and sample track gets its own mixer channel, which takes over the track's effects,
-	// volume and panning (projects from before that, or from LMMS)
+	// volume, panning, mute and solo (projects from before that, or from LMMS)
+	resolveLegacySolo();
+	Engine::patternStore()->resolveLegacySolo();
 	Engine::mixer()->setUpTrackChannels();
 	// Folders route their tracks to their group channels
 	updateFolders();

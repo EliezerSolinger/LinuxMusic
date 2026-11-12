@@ -106,8 +106,9 @@ void FolderTrackView::modelChanged()
 
 	auto folder = castModel<FolderTrack>();
 	m_mixerChannelNumber->setModel(folder->mixerChannelModel());
-	m_channelControls = TrackChannelControls::replace(m_channelControls, folder, this, m_volumeKnob, m_panningKnob,
-		nullptr);
+	m_channelControls = TrackChannelControls::replace(m_channelControls, folder, this, {.volume = m_volumeKnob,
+		.panning = m_panningKnob, .mute = getTrackOperationsWidget()->muteButton(),
+		.solo = getTrackOperationsWidget()->soloButton()});
 
 	connect(folder, &FolderTrack::collapsedChanged, this, &FolderTrackView::updateCollapseButton,
 		Qt::UniqueConnection);

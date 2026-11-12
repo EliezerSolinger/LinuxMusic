@@ -1092,16 +1092,12 @@ void InstrumentTrack::replaceInstrument(DataFile dataFile)
 
 	InstrumentTrack::removeMidiPortNode(dataFile);
 	
-	//Replacing an instrument shouldn't change the solo/mute state.
+	// Replacing an instrument shouldn't change the mute state (solo is the mixer channel's)
 	bool oldMute = isMuted();
-	bool oldSolo = isSolo();
-	bool oldMutedBeforeSolo = isMutedBeforeSolo();
 
 	loadPreset(dataFile.content().toElement());
-	
+
 	setMuted(oldMute);
-	setSolo(oldSolo);
-	setMutedBeforeSolo(oldMutedBeforeSolo);
 	
 	m_mixerChannelModel.setValue(mixerChannel);
 	Engine::getSong()->setModified();

@@ -35,6 +35,8 @@
 namespace lmms
 {
 
+class MixerChannel;
+
 
 class RenderManager : public QObject
 {
@@ -74,6 +76,9 @@ private:
 
 	std::vector<Track*> m_tracksToRender;
 	std::vector<Track*> m_unmuted;
+
+	//! The mixer channels soloed before rendering tracks individually, which would silence the others meanwhile
+	std::vector<MixerChannel*> m_soloed;
 } ;
 
 

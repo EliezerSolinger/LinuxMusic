@@ -328,21 +328,76 @@ private slots:
 		compareOutput(mix(), 0.f, 0.f);
 	}
 
-	void soloMutesTheOtherChannels()
+	void soloSilencesTheOtherChannels()
 	{
 		const auto soloed = mixer()->createChannel();
 		const auto other = mixer()->createChannel();
 		mixer()->mixerChannel(soloed)->m_soloModel.setValue(true);
-		mixer()->toggledSolo();
 		settle();
 
 		feed(soloed, 0.25f, 0.25f);
 		feed(other, 0.5f, 0.5f);
 		compareOutput(mix(), 0.25f, 0.25f);
+		// Solo leaves the mute buttons alone
+		QCOMPARE(mixer()->mixerChannel(other)->m_muteModel.value(), false);
 
 		mixer()->mixerChannel(soloed)->m_soloModel.setValue(false);
-		mixer()->toggledSolo();
-		QCOMPARE(mixer()->mixerChannel(other)->m_muteModel.value(), false);
+		feed(soloed, 0.25f, 0.25f);
+		feed(other, 0.5f, 0.5f);
+		compareOutput(mix(), 0.75f, 0.75f);
+	}
+
+	void soloKeepsThePathAndTheSources()
+	{
+		// source --> bus --> master, other --> bus, solo on the bus: both sources are heard;
+		// solo on the source: the bus passes it, the other source is silent
+		const auto source = mixer()->createChannel();
+		const auto other = mixer()->createChannel();
+		const auto bus = mixer()->createChannel();
+		for (const auto channel : {source, other})
+		{
+			mixer()->deleteChannelSend(channel, 0);
+			mixer()->createChannelSend(channel, bus);
+		}
+		settle();
+
+		mixer()->mixerChannel(bus)->m_soloModel.setValue(true);
+		feed(source, 0.25f, 0.25f);
+		feed(other, 0.5f, 0.5f);
+		compareOutput(mix(), 0.75f, 0.75f);
+		mixer()->mixerChannel(bus)->m_soloModel.setValue(false);
+
+		mixer()->mixerChannel(source)->m_soloModel.setValue(true);
+		feed(source, 0.25f, 0.25f);
+		feed(other, 0.5f, 0.5f);
+		compareOutput(mix(), 0.25f, 0.25f);
+
+		// Two solos at once
+		mixer()->mixerChannel(other)->m_soloModel.setValue(true);
+		feed(source, 0.25f, 0.25f);
+		feed(other, 0.5f, 0.5f);
+		compareOutput(mix(), 0.75f, 0.75f);
+		mixer()->mixerChannel(source)->m_soloModel.setValue(false);
+		mixer()->mixerChannel(other)->m_soloModel.setValue(false);
+	}
+
+	void soloedChannelKeepsItsSidechainSource()
+	{
+		// The kick feeds the bass's sidechain input: soloing the bass keeps the kick in its sidechain only
+		const auto kick = mixer()->createChannel();
+		const auto bass = mixer()->createChannel();
+		QVERIFY(mixer()->toggleSidechainSend(kick, bass));
+		mixer()->mixerChannel(bass)->m_soloModel.setValue(true);
+		settle();
+
+		feed(kick, 0.5f, 0.5f);
+		feed(bass, 0.25f, 0.25f);
+		compareOutput(mix(), 0.25f, 0.25f);
+		QVERIFY(!mixer()->mixerChannel(kick)->m_silencedBySolo);
+		QVERIFY(mixer()->findChannelSend(kick, bass, 0, 1)->isLive());
+		QVERIFY(!mixer()->findChannelSend(kick, 0)->isLive());
+
+		mixer()->mixerChannel(bass)->m_soloModel.setValue(false);
 	}
 
 	void routingLoopsAreDetected()
@@ -1152,10 +1207,12 @@ private slots:
 		feed(trackChannel, 0.8f, 0.4f);
 		compareOutput(mix(), 0.4f, 0.2f);
 
-		// Muting the folder mutes its group channel
-		folder->setMuted(true);
-		QVERIFY(group->m_muteModel.value());
-		folder->setMuted(false);
+		// Muting the folder (its group channel) mutes what it holds
+		group->m_muteModel.setValue(true);
+		QVERIFY(track->isMutedInMix() == false);
+		feed(trackChannel, 0.8f, 0.4f);
+		compareOutput(mix(), 0.f, 0.f);
+		group->m_muteModel.setValue(false);
 
 		// Out of the folder again
 		song->changeFolderDepth(track, -1);
@@ -1207,31 +1264,60 @@ private slots:
 		auto outside = Track::create(Track::Type::Instrument, song);
 		song->changeFolderDepth(soloed, 1);
 		song->changeFolderDepth(sibling, 1);
+		const auto soloedChannel = mixer()->trackChannel(soloed)->index();
+		const auto siblingChannel = mixer()->trackChannel(sibling)->index();
+		const auto outsideChannel = mixer()->trackChannel(outside)->index();
+		settle();
+		auto play = [&] {
+			feed(soloedChannel, 0.125f, 0.125f);
+			feed(siblingChannel, 0.25f, 0.25f);
+			feed(outsideChannel, 0.5f, 0.5f);
+			return mix();
+		};
 
-		// Soloing a track keeps its folder playing
-		soloed->setSolo(true);
-		soloed->toggleSolo();
-		QVERIFY(!folder->isMuted());
-		QVERIFY(!soloed->isMuted());
-		QVERIFY(sibling->isMuted());
-		QVERIFY(outside->isMuted());
-		soloed->setSolo(false);
-		soloed->toggleSolo();
-		QVERIFY(!sibling->isMuted());
+		// Soloing a track keeps its folder's group channel passing it
+		mixer()->trackChannel(soloed)->m_soloModel.setValue(true);
+		compareOutput(play(), 0.125f, 0.125f);
+		mixer()->trackChannel(soloed)->m_soloModel.setValue(false);
 
 		// Soloing a folder keeps what it holds playing
-		folder->setSolo(true);
-		folder->toggleSolo();
-		QVERIFY(!soloed->isMuted());
-		QVERIFY(!sibling->isMuted());
-		QVERIFY(outside->isMuted());
-		folder->setSolo(false);
-		folder->toggleSolo();
+		mixer()->trackChannel(folder)->m_soloModel.setValue(true);
+		compareOutput(play(), 0.375f, 0.375f);
+		mixer()->trackChannel(folder)->m_soloModel.setValue(false);
+		compareOutput(play(), 0.875f, 0.875f);
 
 		deleteTrack(outside);
 		deleteTrack(sibling);
 		deleteTrack(soloed);
 		deleteTrack(folder);
+	}
+
+	void trackMuteAndSoloMoveToTheChannel()
+	{
+		// As in a project from before: a muted track, and a soloed one (LMMS muted the others for it)
+		const auto song = Engine::getSong();
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("track");
+		element.setAttribute("muted", 1);
+		element.setAttribute("mutedBeforeSolo", 1);
+		element.setAttribute("type", static_cast<int>(Track::Type::Sample));
+		const auto wasMuted = Track::create(element, song);
+		element.setAttribute("solo", 1);
+		element.setAttribute("muted", 0);
+		element.setAttribute("mutedBeforeSolo", 0);
+		const auto soloed = Track::create(element, song);
+
+		song->resolveLegacySolo();
+		mixer()->setUpTrackChannels();
+		QVERIFY(!wasMuted->isMuted());
+		QVERIFY(mixer()->trackChannel(wasMuted)->m_muteModel.value());
+		QVERIFY(wasMuted->isMutedInMix());
+		QVERIFY(mixer()->trackChannel(soloed)->m_soloModel.value());
+		QVERIFY(!soloed->legacySolo());
+
+		mixer()->trackChannel(soloed)->m_soloModel.setValue(false);
+		deleteTrack(soloed);
+		deleteTrack(wasMuted);
 	}
 
 	void folderChangeIsOneUndoStep()

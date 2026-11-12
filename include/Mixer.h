@@ -96,7 +96,6 @@ public:
 	//! Output levels after the fader, for the GUI
 	ChannelMeter m_meter;
 	AudioBuffer m_buffer;
-	bool m_muteBeforeSolo;
 	BoolModel m_muteModel;
 	BoolModel m_soloModel;
 	FloatModel m_volumeModel;
@@ -144,9 +143,9 @@ public:
 
 	//! Called instead of processing for a muted channel: keeps its parameters and meter up to date
 	void processMuted();
-	void unmuteForSolo();
-	void unmuteSenderForSolo();
-	void unmuteReceiverForSolo();
+
+	//! Whether the channel is silent this period because others are soloed (see Mixer::applySolo()) [audio thread]
+	bool m_silencedBySolo = false;
 
 	//! Whether the channel was made for a track (see Mixer::setUpTrackChannel()): it is named and colored
 	//! after the track, and goes away with it
@@ -241,8 +240,14 @@ public:
 	//! Aligns the send with the receiver's latest input (see Mixer::compensateLatency()) [audio thread]
 	auto latencyDelay() -> LatencyDelay& { return m_latencyDelay; }
 
+	//! Whether the send carries audio this period; not while it leads out of what is soloed (see
+	//! Mixer::applySolo()) [audio thread]
+	auto isLive() const -> bool { return m_live; }
+	void setLive(bool live) { m_live = live; }
+
 	private:
 		LatencyDelay m_latencyDelay;
+		bool m_live = true;
 		MixerChannel * m_from;
 		MixerChannel * m_to;
 		FloatModel m_amount;
@@ -445,9 +450,6 @@ public:
 	// or from any instrument or sample track
 	bool isChannelInUse(int index);
 
-	void toggledSolo();
-	void activateSolo();
-	void deactivateSolo();
 
 	inline mix_ch_t numChannels() const
 	{
@@ -472,6 +474,18 @@ private:
 	//! Names and colors the channels made for tracks after their tracks
 	void followTracks();
 
+	/**
+	 * Solo, as in REAPER: while channels are soloed, only they are heard, with what they pass through on the way to
+	 * the master and the channels sending to them. Several channels can be soloed, and solo leaves the mute buttons
+	 * alone. A channel feeding the sidechain input of something heard keeps feeding it without being heard. Called
+	 * at the start of every masterMix(). [audio thread]
+	 */
+	void applySolo();
+
+	//! Per channel during applySolo(): bit 1 heard, bit 2 processed (e.g. a sidechain source)
+	std::vector<std::uint8_t> m_soloState;
+	std::vector<MixerChannel*> m_soloStack;
+
 	//! The output latency of channel @p index, setting up the delays of its inputs (see compensateLatency())
 	auto compensateLatency(mix_ch_t index) -> f_cnt_t;
 
@@ -491,7 +505,6 @@ private:
 	// make sure we have at least num channels
 	void allocateChannelsTo(int num);
 
-	int m_lastSoloed;
 
 	//! Makes a structural change one undo step: only the outermost change adds a journal checkpoint
 	class StructureChange

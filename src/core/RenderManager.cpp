@@ -27,6 +27,7 @@
 
 #include "RenderManager.h"
 
+#include "Mixer.h"
 #include "PatternStore.h"
 #include "Song.h"
 
@@ -93,13 +94,13 @@ void RenderManager::renderTracks()
 {
 	const TrackContainer::TrackList& tl = Engine::getSong()->tracks();
 
-	// find all currently unnmuted tracks -- we want to render these.
+	// find all currently unmuted tracks (by themselves or on their mixer channels) -- we want to render these.
 	for (const auto& tk : tl)
 	{
 		Track::Type type = tk->type();
 
 		// Don't render automation tracks
-		if ( tk->isMuted() == false &&
+		if (!tk->isMutedInMix() &&
 				( type == Track::Type::Instrument || type == Track::Type::Sample ) )
 		{
 			m_unmuted.push_back(tk);
@@ -112,10 +113,21 @@ void RenderManager::renderTracks()
 		Track::Type type = tk->type();
 
 		// Don't render automation tracks
-		if ( tk->isMuted() == false &&
+		if (!tk->isMutedInMix() &&
 				( type == Track::Type::Instrument || type == Track::Type::Sample ) )
 		{
 			m_unmuted.push_back(tk);
+		}
+	}
+
+	// Solo would silence the tracks of the other channels
+	const auto mixer = Engine::mixer();
+	for (int i = 0; i < mixer->numChannels(); ++i)
+	{
+		if (const auto channel = mixer->mixerChannel(i); channel->m_soloModel.value())
+		{
+			m_soloed.push_back(channel);
+			channel->m_soloModel.setValue(false);
 		}
 	}
 
@@ -165,6 +177,8 @@ void RenderManager::restoreMutedState()
 		m_unmuted.pop_back();
 		restoreTrack->setMuted( false );
 	}
+	for (const auto channel : m_soloed) { channel->m_soloModel.setValue(true); }
+	m_soloed.clear();
 }
 
 // Determine the output path for a track when rendering tracks individually

@@ -107,6 +107,13 @@ public:
 	 */
 	void updateFolders();
 
+	/**
+	 * Projects from before solo moved to the mixer channels soloed by muting the other tracks. While a track of
+	 * such a project is soloed, each track gets back its mute from before; the soloed instrument, sample and folder
+	 * tracks keep their solo for Mixer::setUpTrackChannel() to move to their channels. Other tracks lose theirs.
+	 */
+	void resolveLegacySolo();
+
 	virtual void updateAfterTrackAdd();
 
 	void clearAllTracks();

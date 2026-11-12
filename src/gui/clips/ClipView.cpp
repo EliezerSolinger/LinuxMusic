@@ -1527,7 +1527,7 @@ QColor ClipView::getColorForDisplay( QColor defaultColor )
 
 	// Set variables
 	QColor c, mutedCustomColor;
-	bool muted = m_clip->getTrack()->isMuted() || m_clip->isMuted();
+	bool muted = m_clip->getTrack()->isMutedInMix() || m_clip->isMuted();
 	mutedCustomColor = clipColor;
 	mutedCustomColor.setHsv( mutedCustomColor.hsvHue(), mutedCustomColor.hsvSaturation() / 4, mutedCustomColor.value() );
 

@@ -40,6 +40,7 @@ class Track;
 namespace gui
 {
 
+class AutomatableButton;
 class EffectRackView;
 class Knob;
 class VolumeKnob;
@@ -49,6 +50,8 @@ class VolumeKnob;
  * when the track has a channel of its own (see Mixer::setUpTrackChannel()), and to the track's own volume, panning
  * and effects otherwise (a track sending to a shared channel or to the master, or with automated volume or panning).
  * A folder has no volume, panning and effects of its own: its controls are always those of the channel it uses.
+ * Mute and solo are the channel's too: the mute button is the channel's while the track has a channel of its own (and
+ * no automated mute), and the solo button solos the channel the track plays through.
  * Follows the track when its channel changes.
  */
 class TrackChannelControls : public QObject
@@ -59,13 +62,19 @@ public:
 	TrackChannelControls(Track* track, QObject* parent);
 	~TrackChannelControls() override;
 
-	//! Replaces @p controls (may be null) with controls for @p track and the given widgets (each may be null)
-	static auto replace(TrackChannelControls* controls, Track* track, QObject* parent, VolumeKnob* volumeKnob,
-		Knob* panningKnob, EffectRackView* effectRack) -> TrackChannelControls*;
+	//! The widgets the controls point; each may be null
+	struct Widgets
+	{
+		VolumeKnob* volume = nullptr;
+		Knob* panning = nullptr;
+		EffectRackView* effects = nullptr;
+		AutomatableButton* mute = nullptr;
+		AutomatableButton* solo = nullptr;
+	};
 
-	void setVolumeKnob(VolumeKnob* knob);
-	void setPanningKnob(Knob* knob);
-	void setEffectRack(EffectRackView* rack);
+	//! Replaces @p controls (may be null) with controls for @p track and @p widgets
+	static auto replace(TrackChannelControls* controls, Track* track, QObject* parent, const Widgets& widgets)
+		-> TrackChannelControls*;
 
 	//! Points the controls at the channel or the track
 	void update();
@@ -80,6 +89,8 @@ private:
 	QPointer<VolumeKnob> m_volumeKnob;
 	QPointer<Knob> m_panningKnob;
 	QPointer<EffectRackView> m_effectRack;
+	QPointer<AutomatableButton> m_muteButton;
+	QPointer<AutomatableButton> m_soloButton;
 
 	//! The channel the controls point at, if any
 	MixerChannel* m_boundChannel = nullptr;

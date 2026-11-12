@@ -89,14 +89,10 @@ TrackView::TrackView(Track* track, TrackContainerView* tcv)
 			this, SLOT(createClipView(lmms::Clip*)),
 			Qt::QueuedConnection );
 
-	connect( &m_track->m_mutedModel, SIGNAL(dataChanged()),
-			&m_trackContentWidget, SLOT(update()));
-
-	connect(&m_track->m_mutedModel, SIGNAL(dataChanged()),
-			this, SLOT(muteChanged()));
-
-	connect( &m_track->m_soloModel, SIGNAL(dataChanged()),
-			m_track, SLOT(toggleSolo()), Qt::DirectConnection );
+	// The mute button shows the track's mute or its mixer channel's (see TrackChannelControls)
+	connect(m_trackOperationsWidget.m_muteBtn, &QPushButton::toggled, &m_trackContentWidget,
+		qOverload<>(&QWidget::update));
+	connect(m_trackOperationsWidget.m_muteBtn, &QPushButton::toggled, this, &TrackView::muteChanged);
 	
 	connect(m_trackContainerView, &TrackContainerView::trackHeadWidthChanged, this, &TrackView::updateWidth);
 
@@ -169,8 +165,12 @@ void TrackView::modelChanged()
 	m_track = castModel<Track>();
 	Q_ASSERT( m_track != nullptr );
 	connect( m_track, SIGNAL(destroyedTrack()), this, SLOT(close()));
+	// Tracks with a mixer channel are muted and soloed there (see TrackChannelControls); the others only mute
+	// their own playback
 	m_trackOperationsWidget.m_muteBtn->setModel( &m_track->m_mutedModel );
-	m_trackOperationsWidget.m_soloBtn->setModel( &m_track->m_soloModel );
+	const auto type = m_track->type();
+	m_trackOperationsWidget.m_soloBtn->setVisible(
+		type == Track::Type::Instrument || type == Track::Type::Sample || type == Track::Type::Folder);
 	ModelView::modelChanged();
 	setFixedHeight( m_track->getHeight() );
 }
@@ -390,7 +390,7 @@ void TrackView::createClipView( Clip * clip )
 void TrackView::muteChanged()
 {
 	FadeButton * indicator = getActivityIndicator();
-	if (indicator) { setIndicatorMute(indicator, m_track->m_mutedModel.value()); }
+	if (indicator) { setIndicatorMute(indicator, m_track->isMutedInMix()); }
 }
 
 

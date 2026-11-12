@@ -184,13 +184,14 @@ void SampleTrackView::showEffects()
 
 void SampleTrackView::modelChanged()
 {
+	TrackView::modelChanged();
+
 	auto st = castModel<SampleTrack>();
 	m_volumeKnob->setModel(&st->m_volumeModel);
 	m_mixerChannelNumber->setModel(&st->m_mixerChannelModel);
-	m_channelControls = TrackChannelControls::replace(m_channelControls, st, this, m_volumeKnob, m_panningKnob,
-		nullptr);
-
-	TrackView::modelChanged();
+	m_channelControls = TrackChannelControls::replace(m_channelControls, st, this, {.volume = m_volumeKnob,
+		.panning = m_panningKnob, .mute = getTrackOperationsWidget()->muteButton(),
+		.solo = getTrackOperationsWidget()->soloButton()});
 }
 
 

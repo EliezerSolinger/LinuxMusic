@@ -201,10 +201,6 @@ void TrackContainer::removeTrack( Track * _track )
 	auto it = std::find(m_tracks.begin(), m_tracks.end(), _track);
 	if (it != m_tracks.end())
 	{
-		// If the track is solo, all other tracks are muted. Change this before removing the solo track:
-		if (_track->isSolo()) {
-			_track->setSolo(false);
-		}
 		// What a folder holds moves up a level
 		for (auto inner = std::next(it); _track->type() == Track::Type::Folder && inner != m_tracks.end()
 			&& (*inner)->folderDepth() > _track->folderDepth(); ++inner)
@@ -432,6 +428,26 @@ auto TrackContainer::moveTrackStep(Track* track, bool down) -> bool
 void TrackContainer::addLayoutCheckPoint()
 {
 	m_folderLayout.addJournalCheckPoint();
+}
+
+
+
+
+void TrackContainer::resolveLegacySolo()
+{
+	if (std::none_of(m_tracks.begin(), m_tracks.end(), [](const Track* track) { return track->legacySolo(); }))
+	{
+		return;
+	}
+	for (const auto track : m_tracks)
+	{
+		track->setMuted(track->legacySolo() ? false : track->legacyMutedBeforeSolo());
+		const auto type = track->type();
+		if (type != Track::Type::Instrument && type != Track::Type::Sample && type != Track::Type::Folder)
+		{
+			track->clearLegacySolo();
+		}
+	}
 }
 
 

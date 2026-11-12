@@ -67,7 +67,6 @@ class LMMS_EXPORT Track : public Model, public JournallingObject
 {
 	Q_OBJECT
 	mapPropertyFromModel(bool,isMuted,setMuted,m_mutedModel);
-	mapPropertyFromModel(bool,isSolo,setSolo,m_soloModel);
 public:
 	using clipVector = std::vector<Clip*>;
 
@@ -258,12 +257,22 @@ public:
 	auto color() const -> const std::optional<QColor>& { return m_color; }
 	void setColor(const std::optional<QColor>& color);
 
-	bool isMutedBeforeSolo() const
-	{
-		return m_mutedBeforeSolo;
-	}
-	
 	BoolModel* getMutedModel();
+
+	/**
+	 * Whether the track is muted where it is heard: by its own mute, or by the mute of its own mixer channel
+	 * (see Mixer::trackChannel()), where instrument, sample and folder tracks are muted and soloed.
+	 */
+	auto isMutedInMix() const -> bool;
+
+	/**
+	 * Solo from projects of before solo moved to the mixer channels: whether the track was soloed, and its mute from
+	 * before (LMMS soloed by muting the other tracks). Only read when loading; see TrackContainer::resolveLegacySolo()
+	 * and Mixer::setUpTrackChannel().
+	 */
+	auto legacySolo() const -> bool { return m_legacySolo; }
+	auto legacyMutedBeforeSolo() const -> bool { return m_legacyMutedBeforeSolo; }
+	void clearLegacySolo() { m_legacySolo = false; }
 
 	/**
 	 * How deep the track is in folders: 0 at the top, 1 inside a folder, 2 inside a folder in a folder...
@@ -276,17 +285,6 @@ public:
 
 public slots:
 	virtual void setName(const QString& newName);
-
-	void setMutedBeforeSolo(const bool muted)
-	{
-		m_mutedBeforeSolo = muted;
-	}
-
-	//! @brief Invert the track's solo state.
-	//!
-	//! We have to go through all the tracks determining if any other track is already soloed. Then we have to save the
-	//! mute state of all tracks, and set our mute state to on and all the others to off.
-	void toggleSolo();
 
 private:
 	//! @brief Save this track's settings to file
@@ -321,10 +319,10 @@ private:
 
 protected:
 	BoolModel m_mutedModel;
-	BoolModel m_soloModel;
 
 private:
-	bool m_mutedBeforeSolo;
+	bool m_legacySolo = false;
+	bool m_legacyMutedBeforeSolo = false;
 
 	clipVector m_clips;
 

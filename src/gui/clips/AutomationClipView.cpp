@@ -244,7 +244,7 @@ void AutomationClipView::paintEvent( QPaintEvent * )
 
 	QLinearGradient lingrad( 0, 0, 0, height() );
 	QColor c = getColorForDisplay( painter.background().color() );
-	bool muted = m_clip->getTrack()->isMuted() || m_clip->isMuted();
+	bool muted = m_clip->getTrack()->isMutedInMix() || m_clip->isMuted();
 	bool current = getGUI()->automationEditor()->currentClip() == m_clip;
 
 	lingrad.setColorAt( 1, c.darker( 300 ) );

@@ -36,9 +36,6 @@ FolderTrack::FolderTrack(TrackContainer* tc) :
 	m_mixerChannelModel(this)
 {
 	setName(tr("Folder"));
-
-	connect(&m_mutedModel, &BoolModel::dataChanged, this, &FolderTrack::applyMuteToChannel);
-	connect(&m_mixerChannelModel, &IntModel::dataChanged, this, &FolderTrack::applyMuteToChannel);
 }
 
 
@@ -98,19 +95,6 @@ void FolderTrack::setCollapsed(bool collapsed)
 	if (collapsed == m_collapsed) { return; }
 	m_collapsed = collapsed;
 	emit collapsedChanged();
-}
-
-
-
-
-void FolderTrack::applyMuteToChannel()
-{
-	const auto mixer = Engine::mixer();
-	const int index = m_mixerChannelModel.value();
-	if (!mixer || index <= 0 || index >= mixer->numChannels()) { return; }
-
-	auto& mute = mixer->mixerChannel(index)->m_muteModel;
-	if (mute.value() != isMuted()) { mute.setValue(isMuted()); }
 }
 
 } // namespace lmms

@@ -93,14 +93,12 @@ SampleTrackWindow::SampleTrackWindow(SampleTrackView* stv)
 	soloMuteLayout->setSpacing(2);
 
 	m_muteBtn = new AutomatableButton(this, tr("Mute"));
-	m_muteBtn->setModel(&m_track->m_mutedModel);
 	m_muteBtn->setObjectName("btn-mute");
 	m_muteBtn->setCheckable(true);
 	m_muteBtn->setToolTip(tr("Mute this sample track"));
 	soloMuteLayout->addWidget(m_muteBtn, 0, widgetAlignment);
 
 	m_soloBtn = new AutomatableButton(this, tr("Solo"));
-	m_soloBtn->setModel(&m_track->m_soloModel);
 	m_soloBtn->setObjectName("btn-solo");
 	m_soloBtn->setCheckable(true);
 	m_soloBtn->setToolTip(tr("Solo this sample track"));
@@ -191,8 +189,8 @@ void SampleTrackWindow::modelChanged()
 	m_volumeKnob->setModel(&m_track->m_volumeModel);
 	m_panningKnob->setModel(&m_track->m_panningModel);
 	m_mixerChannelNumber->setModel(&m_track->m_mixerChannelModel);
-	m_channelControls = TrackChannelControls::replace(m_channelControls, m_track, this, m_volumeKnob,
-		m_panningKnob, m_effectRack);
+	m_channelControls = TrackChannelControls::replace(m_channelControls, m_track, this, {.volume = m_volumeKnob,
+		.panning = m_panningKnob, .effects = m_effectRack, .mute = m_muteBtn, .solo = m_soloBtn});
 
 	updateName();
 }

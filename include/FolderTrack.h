@@ -63,9 +63,6 @@ signals:
 	void collapsedChanged();
 
 private:
-	//! The folder's mute is its group channel's
-	void applyMuteToChannel();
-
 	MixerChannelLcdModel m_mixerChannelModel;
 	bool m_collapsed = false;
 };

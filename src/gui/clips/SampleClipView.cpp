@@ -228,7 +228,7 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 
 	QPainter p( &m_paintPixmap );
 
-	bool muted = m_clip->getTrack()->isMuted() || m_clip->isMuted();
+	bool muted = m_clip->getTrack()->isMutedInMix() || m_clip->isMuted();
 	bool selected = isSelected();
 
 	QLinearGradient lingrad(0, 0, 0, height());

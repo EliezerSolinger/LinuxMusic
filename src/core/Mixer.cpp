@@ -160,61 +160,6 @@ void MixerChannel::incrementDeps()
 	}
 }
 
-void MixerChannel::unmuteForSolo()
-{
-	m_muteModel.setValue(false);
-
-	// if channel is not master, unmute also every channel it sends to/receives from
-	if (!isMaster())
-	{
-		for (const MixerRoute* sendsRoute : m_sends)
-		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
-		}
-
-		for (const MixerRoute* receiverRoute : m_receives)
-		{
-			receiverRoute->sender()->unmuteReceiverForSolo();
-		}
-	}
-}
-
-void MixerChannel::unmuteSenderForSolo()
-{
-	m_muteModel.setValue(false);
-
-	// if channel is not master, unmute every channel it sends to
-	if (!isMaster())
-	{
-		for (const MixerRoute* sendsRoute : m_sends)
-		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
-		}
-	}
-}
-
-
-void MixerChannel::unmuteReceiverForSolo()
-{
-	m_muteModel.setValue(false);
-
-	// if channel is not master, unmute every channel it receives from, and of those, unmute the channels they send to
-	if (!isMaster())
-	{
-		for (const MixerRoute* receiverRoute : m_receives)
-		{
-			receiverRoute->sender()->unmuteReceiverForSolo();
-		}
-
-		for (const MixerRoute* sendsRoute : m_sends)
-		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
-		}
-	}
-}
-
-
-
 void MixerChannel::processMuted()
 {
 	// Same parameters as doProcessing() reads, see there
@@ -279,6 +224,12 @@ void MixerChannel::doProcessing()
 	for (auto i = std::size_t{0}; i < m_receives.size(); ++i)
 	{
 		MixerRoute* route = m_receives[i];
+		if (!route->isLive())
+		{
+			// Leads out of what is soloed; what it delayed must not come out afterwards
+			route->latencyDelay().clear();
+			continue;
+		}
 		MixerChannel* sender = route->sender();
 		const auto sourcePair = route->sourcePair();
 		const auto destinationPair = route->destinationPair();
@@ -434,8 +385,7 @@ void MixerChannel::doProcessing()
 Mixer::Mixer() :
 	Model( nullptr ),
 	JournallingObject(),
-	m_mixerChannels(),
-	m_lastSoloed(-1)
+	m_mixerChannels()
 {
 	// create master channel
 	createChannel();
@@ -648,68 +598,9 @@ int Mixer::createChannel()
 	// reset channel state
 	clearChannel( index );
 
-	// if there is a soloed channel, mute the new track
-	if (m_lastSoloed != -1 && m_mixerChannels[m_lastSoloed]->m_soloModel.value())
-	{
-		m_mixerChannels[index]->m_muteBeforeSolo = m_mixerChannels[index]->m_muteModel.value();
-		m_mixerChannels[index]->m_muteModel.setValue(true);
-	}
-
 	emit channelCreated(index);
 	return index;
 }
-
-void Mixer::activateSolo()
-{
-	for (auto i = std::size_t{1}; i < m_mixerChannels.size(); ++i)
-	{
-		m_mixerChannels[i]->m_muteBeforeSolo = m_mixerChannels[i]->m_muteModel.value();
-		m_mixerChannels[i]->m_muteModel.setValue( true );
-	}
-}
-
-void Mixer::deactivateSolo()
-{
-	for (auto i = std::size_t{1}; i < m_mixerChannels.size(); ++i)
-	{
-		m_mixerChannels[i]->m_muteModel.setValue( m_mixerChannels[i]->m_muteBeforeSolo );
-	}
-}
-
-void Mixer::toggledSolo()
-{
-	int soloedChan = -1;
-	bool resetSolo = m_lastSoloed != -1;
-	//untoggle if lastsoloed is entered
-	if (resetSolo)
-	{
-		m_mixerChannels[m_lastSoloed]->m_soloModel.setValue( false );
-	}
-	//determine the soloed channel
-	for (auto i = std::size_t{0}; i < m_mixerChannels.size(); ++i)
-	{
-		if (m_mixerChannels[i]->m_soloModel.value() == true)
-			soloedChan = i;
-	}
-	// if no channel is soloed, unmute everything, else mute everything
-	if (soloedChan != -1)
-	{
-		if (resetSolo)
-		{
-			deactivateSolo();
-			activateSolo();
-		} else {
-			activateSolo();
-		}
-		// unmute the soloed chan and every channel it sends to/receives from
-		m_mixerChannels[soloedChan]->unmuteForSolo();
-	} else {
-		deactivateSolo();
-	}
-	m_lastSoloed = soloedChan;
-}
-
-
 
 void Mixer::deleteChannel( int index )
 {
@@ -728,11 +619,6 @@ void Mixer::deleteChannel( int index )
 	{
 		deleteChannelSend(ch->m_receives.front());
 	}
-
-	// if m_lastSoloed was our index, reset it
-	if (m_lastSoloed == index) { m_lastSoloed = -1; }
-	// if m_lastSoloed is > delete index, it will move left
-	else if (m_lastSoloed > index) { --m_lastSoloed; }
 
 	// Channels made for it stay as plain channels
 	for (const auto channel : m_mixerChannels)
@@ -774,13 +660,6 @@ void Mixer::moveChannelLeft( int index )
 	const auto change = StructureChange{*this};
 	// can't move master or first channel
 	if (index <= 1 || static_cast<std::size_t>(index) >= m_mixerChannels.size()) { return; }
-
-	// channels to swap
-	int a = index - 1, b = index;
-
-	// check if m_lastSoloed is one of our swaps
-	if (m_lastSoloed == a) { m_lastSoloed = b; }
-	else if (m_lastSoloed == b) { m_lastSoloed = a; }
 
 	// Swap positions in array
 	Engine::audioEngine()->requestChangeInModel();
@@ -1053,6 +932,79 @@ void Mixer::removeLatencySource(const std::atomic<f_cnt_t>* latency)
 
 
 
+void Mixer::applySolo()
+{
+	bool anySoloed = false;
+	for (const auto channel : m_mixerChannels) { anySoloed = anySoloed || channel->m_soloModel.value(); }
+	if (!anySoloed)
+	{
+		for (const auto channel : m_mixerChannels) { channel->m_silencedBySolo = false; }
+		for (const auto route : m_mixerRoutes) { route->setLive(true); }
+		return;
+	}
+
+	constexpr std::uint8_t Heard = 1;
+	constexpr std::uint8_t Processed = 2;
+	m_soloState.assign(m_mixerChannels.size(), 0);
+
+	// From each soloed channel, along the sends into main inputs: downstream (to the master) or upstream (its
+	// sources), marking the channels with @p flag
+	auto spread = [this](MixerChannel* from, bool downstream, std::uint8_t flag) {
+		m_soloStack.clear();
+		m_soloStack.push_back(from);
+		while (!m_soloStack.empty())
+		{
+			const auto channel = m_soloStack.back();
+			m_soloStack.pop_back();
+			for (const MixerRoute* route : downstream ? channel->m_sends : channel->m_receives)
+			{
+				if (route->isSidechain() && flag == Heard) { continue; }
+				const auto next = downstream ? route->receiver() : route->sender();
+				if (m_soloState[next->index()] & flag) { continue; }
+				m_soloState[next->index()] |= flag;
+				m_soloStack.push_back(next);
+			}
+		}
+	};
+	for (const auto channel : m_mixerChannels)
+	{
+		if (!channel->m_soloModel.value()) { continue; }
+		m_soloState[channel->index()] |= Heard;
+		spread(channel, true, Heard);
+		spread(channel, false, Heard);
+	}
+	m_soloState[0] |= Heard;
+
+	// Whatever is heard is processed, and so are the sources of the sidechain inputs of what is heard
+	for (auto& state : m_soloState)
+	{
+		if (state & Heard) { state |= Processed; }
+	}
+	for (const auto route : m_mixerRoutes)
+	{
+		if (!route->isSidechain() || !(m_soloState[route->receiverIndex()] & Heard)) { continue; }
+		const auto source = route->sender();
+		if (m_soloState[source->index()] & Processed) { continue; }
+		m_soloState[source->index()] |= Processed;
+		spread(source, false, Processed);
+	}
+
+	for (const auto channel : m_mixerChannels)
+	{
+		channel->m_silencedBySolo = !(m_soloState[channel->index()] & Processed);
+	}
+	// Into what is heard, only from what is heard, or into sidechain inputs
+	for (const auto route : m_mixerRoutes)
+	{
+		const auto from = m_soloState[route->senderIndex()];
+		const auto to = m_soloState[route->receiverIndex()];
+		route->setLive((from & Processed) && (to & Processed) && (!(to & Heard) || (from & Heard) || route->isSidechain()));
+	}
+}
+
+
+
+
 void Mixer::compensateLatency()
 {
 	// The latest of the tracks' audio of each channel
@@ -1116,6 +1068,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 	const int fpp = Engine::audioEngine()->framesPerPeriod();
 
 	compensateLatency();
+	applySolo();
 
 	// add the channels that have no dependencies (no incoming senders, ie.
 	// no receives) to the jobqueue. The channels that have receives get
@@ -1127,9 +1080,11 @@ void Mixer::masterMix( SampleFrame* _buf )
 	AudioEngineWorkerThread::resetJobQueue( AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic );
 	for( MixerChannel * ch : m_mixerChannels )
 	{
-		ch->m_muted = ch->m_muteModel.value();
+		ch->m_muted = ch->m_muteModel.value() || ch->m_silencedBySolo;
 		if( ch->m_muted ) // instantly "process" muted channels
 		{
+			// Silenced by solo, the channel may hold its tracks' audio, which must not reach anything
+			if (ch->m_silencedBySolo) { ch->m_buffer.silenceAllChannels(); }
 			ch->processMuted();
 			ch->processed();
 			ch->done();
@@ -1497,6 +1452,18 @@ int Mixer::setUpTrackChannel(Track* track)
 	// A channel made for the track follows its name and color
 	connect(track, &Track::nameChanged, this, &Mixer::followTracks, Qt::UniqueConnection);
 	connect(track, &Track::colorChanged, this, &Mixer::followTracks, Qt::UniqueConnection);
+
+	// Mute and solo live on the channel. A mute automated or controlled stays on the track, where its automation acts.
+	if (track->isMuted() && !track->getMutedModel()->isAutomatedOrControlled())
+	{
+		channel->m_muteModel.setValue(true);
+		track->setMuted(false);
+	}
+	if (track->legacySolo())
+	{
+		channel->m_soloModel.setValue(true);
+		track->clearLegacySolo();
+	}
 
 	// The track's effects go in front of the channel's
 	if (auto effects = strip->bus ? strip->bus->effects() : nullptr; effects && !effects->effects().empty())

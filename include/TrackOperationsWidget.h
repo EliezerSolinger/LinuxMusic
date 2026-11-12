@@ -49,6 +49,8 @@ public:
 	~TrackOperationsWidget() override = default;
 
 	TrackGrip* getTrackGrip() const { return m_trackGrip; }
+	auto muteButton() const -> AutomatableButton* { return m_muteBtn; }
+	auto soloButton() const -> AutomatableButton* { return m_soloBtn; }
 
 protected:
 	//! @brief Repaint the trackOperationsWidget

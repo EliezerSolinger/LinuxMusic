@@ -79,7 +79,6 @@ private slots:
 	void toggleOneInstrumentTrackWindow(bool enabled);
 	void toggleSideBarOnRight(bool enabled);
 	void toggleLetPreviewsFinish(bool enabled);
-	void toggleSoloLegacyBehavior(bool enabled);
 	void toggleTrackDeletionWarning(bool enabled);
 	void toggleMixerChannelDeletionWarning(bool enabled);
 	void toggleMMPZ(bool enabled);
@@ -143,7 +142,6 @@ private:
 	bool m_oneInstrumentTrackWindow;
 	bool m_sideBarOnRight;
 	bool m_letPreviewsFinish;
-	bool m_soloLegacyBehavior;
 	bool m_trackDeletionWarning;
 	bool m_mixerChannelDeletionWarning;
 	bool m_MMPZ;

@@ -104,8 +104,6 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 			"ui", "sidebaronright").toInt()),
 	m_letPreviewsFinish(ConfigManager::inst()->value(
 			"ui", "letpreviewsfinish").toInt()),
-	m_soloLegacyBehavior(ConfigManager::inst()->value(
-			"app", "sololegacybehavior", "0").toInt()),
 	m_trackDeletionWarning(ConfigManager::inst()->value(
 			"ui", "trackdeletionwarning", "1").toInt()),
 	m_mixerChannelDeletionWarning(ConfigManager::inst()->value(
@@ -248,8 +246,6 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 		m_sideBarOnRight, SLOT(toggleSideBarOnRight(bool)), true);
 	addCheckBox(tr("Let sample previews continue when mouse is released"), guiGroupBox, guiGroupLayout,
 		m_letPreviewsFinish, SLOT(toggleLetPreviewsFinish(bool)), false);
-	addCheckBox(tr("Mute automation tracks during solo"), guiGroupBox, guiGroupLayout,
-		m_soloLegacyBehavior, SLOT(toggleSoloLegacyBehavior(bool)), false);
 	addCheckBox(tr("Show warning when deleting tracks"), guiGroupBox, guiGroupLayout,
 		m_trackDeletionWarning, SLOT(toggleTrackDeletionWarning(bool)), false);
 	addCheckBox(tr("Show warning when deleting a mixer channel that is in use"), guiGroupBox, guiGroupLayout,
@@ -977,8 +973,6 @@ void SetupDialog::accept()
 					QString::number(m_sideBarOnRight));
 	ConfigManager::inst()->setValue("ui", "letpreviewsfinish",
 					QString::number(m_letPreviewsFinish));
-	ConfigManager::inst()->setValue("app", "sololegacybehavior",
-					QString::number(m_soloLegacyBehavior));
 	ConfigManager::inst()->setValue("ui", "trackdeletionwarning",
 					QString::number(m_trackDeletionWarning));
 	ConfigManager::inst()->setValue("ui", "mixerchanneldeletionwarning",
@@ -1145,12 +1139,6 @@ void SetupDialog::loopMarkerModeChanged()
 void SetupDialog::setLanguage(int lang)
 {
 	m_lang = m_languages[lang];
-}
-
-
-void SetupDialog::toggleSoloLegacyBehavior(bool enabled)
-{
-	m_soloLegacyBehavior = enabled;
 }
 
 

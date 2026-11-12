@@ -137,14 +137,12 @@ InstrumentTrackWindow::InstrumentTrackWindow( InstrumentTrackView * _itv ) :
 	soloMuteLayout->setSpacing(2);
 
 	m_muteBtn = new AutomatableButton(this, tr("Mute"));
-	m_muteBtn->setModel(&m_track->m_mutedModel);
 	m_muteBtn->setCheckable(true);
 	m_muteBtn->setObjectName("btn-mute");
 	m_muteBtn->setToolTip(tr("Mute this instrument"));
 	soloMuteLayout->addWidget(m_muteBtn, 0, widgetAlignment);
 
 	m_soloBtn = new AutomatableButton(this, tr("Solo"));
-	m_soloBtn->setModel(&m_track->m_soloModel);
 	m_soloBtn->setCheckable(true);
 	m_soloBtn->setObjectName("btn-solo");
 	m_soloBtn->setToolTip(tr("Solo this instrument"));
@@ -385,8 +383,8 @@ void InstrumentTrackWindow::modelChanged()
 	m_arpeggioView->setModel(&m_track->m_arpeggio);
 	m_midiView->setModel(&m_track->m_midiPort);
 	m_effectView->setModel(m_track->m_audioBusHandle.effects());
-	m_channelControls = TrackChannelControls::replace(m_channelControls, m_track, this, m_volumeKnob,
-		m_panningKnob, m_effectView);
+	m_channelControls = TrackChannelControls::replace(m_channelControls, m_track, this, {.volume = m_volumeKnob,
+		.panning = m_panningKnob, .effects = m_effectView, .mute = m_muteBtn, .solo = m_soloBtn});
 	m_tuningView->pitchGroupBox()->setModel(&m_track->m_useMasterPitchModel);
 	m_tuningView->microtunerGroupBox()->setModel(m_track->m_microtuner.enabledModel());
 	m_tuningView->scaleCombo()->setModel(m_track->m_microtuner.scaleModel());
