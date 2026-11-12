@@ -124,6 +124,7 @@ private:
 	QLabel* m_sendArrow;
 	AutomatableButton* m_muteButton;
 	AutomatableButton* m_soloButton;
+	AutomatableButton* m_phaseInvertButton;
 	PeakIndicator* m_peakIndicator = nullptr;
 	Fader* m_fader;
 	EffectRackView* m_effectRackView;

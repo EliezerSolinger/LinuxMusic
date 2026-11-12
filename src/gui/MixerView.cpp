@@ -176,14 +176,11 @@ MixerView::MixerView(Mixer* mixer) :
 	m_panKnob = new Knob{KnobType::Bright26, tr("PAN"), channelSettings, Knob::LabelRendering::LegacyFixedFontSize,
 		tr("Panning")};
 	m_panKnob->setHintText(tr("Panning:"), "%");
-	m_phaseInvertBox = new LedCheckBox{tr("Invert phase"), channelSettings, tr("Invert phase"),
-		LedCheckBox::LedColor::Green};
 	m_swapChannelsBox = new LedCheckBox{tr("Swap L/R"), channelSettings, tr("Swap left/right"),
 		LedCheckBox::LedColor::Green};
 
 	settingsLayout->addWidget(m_trimKnob, 0, 0, 2, 1, Qt::AlignCenter);
-	settingsLayout->addWidget(m_phaseInvertBox, 0, 1);
-	settingsLayout->addWidget(m_swapChannelsBox, 1, 1);
+	settingsLayout->addWidget(m_swapChannelsBox, 0, 1, 2, 1, Qt::AlignVCenter);
 	settingsLayout->addWidget(m_widthKnob, 0, 2, 2, 1, Qt::AlignCenter);
 	settingsLayout->addWidget(m_panKnob, 0, 3, 2, 1, Qt::AlignCenter);
 
@@ -439,7 +436,6 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 
 	const auto mixerChannel = getMixer()->mixerChannel(channel->channelIndex());
 	m_trimKnob->setModel(&mixerChannel->m_trimModel);
-	m_phaseInvertBox->setModel(&mixerChannel->m_phaseInvertModel);
 	m_swapChannelsBox->setModel(&mixerChannel->m_swapChannelsModel);
 	m_widthKnob->setModel(&mixerChannel->m_widthModel);
 	m_panKnob->setModel(&mixerChannel->m_panModel);

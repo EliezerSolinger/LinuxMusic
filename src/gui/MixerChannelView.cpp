@@ -32,6 +32,7 @@
 #include <QGraphicsProxyWidget>
 #include <QGraphicsScene>
 #include <QGraphicsView>
+#include <QHBoxLayout>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -278,11 +279,21 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_soloButton->setCheckable(true);
 	m_soloButton->setModel(&mixerChannel->m_soloModel);
 
+	m_phaseInvertButton = new AutomatableButton(this, tr("Invert phase"));
+	m_phaseInvertButton->setObjectName("btn-phase");
+	m_phaseInvertButton->setText(QString{QChar{0x00D8}}); // Ø, the usual sign of phase (polarity) inversion
+	m_phaseInvertButton->setToolTip(tr("Invert phase"));
+	m_phaseInvertButton->setCheckable(true);
+	m_phaseInvertButton->setModel(&mixerChannel->m_phaseInvertModel);
+
+	// Mute, solo and phase invert to the right of the fader, as in REAPER
 	auto soloMuteLayout = new QVBoxLayout();
-	soloMuteLayout->setContentsMargins(0, 2, 0, 2);
+	soloMuteLayout->setContentsMargins(0, 0, 0, 0);
 	soloMuteLayout->setSpacing(2);
-	soloMuteLayout->addWidget(m_soloButton, 0, Qt::AlignHCenter);
 	soloMuteLayout->addWidget(m_muteButton, 0, Qt::AlignHCenter);
+	soloMuteLayout->addWidget(m_soloButton, 0, Qt::AlignHCenter);
+	soloMuteLayout->addWidget(m_phaseInvertButton, 0, Qt::AlignHCenter);
+	soloMuteLayout->addStretch(1);
 
 	m_fader = new Fader{&mixerChannel->m_volumeModel, tr("Fader %1").arg(channelIndex), this};
 
@@ -311,9 +322,13 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_renameLineEditView, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(slotList, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_panKnob, 0, Qt::AlignHCenter);
-	mainLayout->addLayout(soloMuteLayout);
 	mainLayout->addWidget(m_peakIndicator);
-	mainLayout->addWidget(m_fader, 1, Qt::AlignHCenter);
+	auto faderLayout = new QHBoxLayout();
+	faderLayout->setContentsMargins(0, 0, 0, 0);
+	faderLayout->setSpacing(2);
+	faderLayout->addWidget(m_fader, 0, Qt::AlignHCenter);
+	faderLayout->addLayout(soloMuteLayout);
+	mainLayout->addLayout(faderLayout, 1);
 
 	connect(m_renameLineEdit, &QLineEdit::editingFinished, this, &MixerChannelView::renameFinished);
 

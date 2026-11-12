@@ -147,9 +147,9 @@ private:
 	QWidget* m_racksWidget;
 	Mixer* m_mixer;
 
-	//! The selected channel's strip settings, above its effects: input trim, phase, stereo width and panning
+	//! The selected channel's strip settings, above its effects: input trim, L/R swap, stereo width and panning
+	//! (phase invert is on each strip)
 	Knob* m_trimKnob;
-	LedCheckBox* m_phaseInvertBox;
 	LedCheckBox* m_swapChannelsBox;
 	Knob* m_widthKnob;
 	Knob* m_panKnob;
