@@ -1266,3 +1266,19 @@ QPushButton#btn-phase:checked {
 	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f2c25a, stop:0.1 #e0a020, stop:0.9 #e0a020, stop:1 #9c6c08);
 	color: #14161a;
 }
+
+/* In the mixer strips, mute and solo are letters, like the phase invert sign */
+lmms--gui--MixerChannelView QPushButton#btn-mute,
+lmms--gui--MixerChannelView QPushButton#btn-mute:checked,
+lmms--gui--MixerChannelView QPushButton#btn-solo,
+lmms--gui--MixerChannelView QPushButton#btn-solo:checked {
+	image: none;
+	color: #d1d8e4;
+	font-size: 9px;
+	font-weight: bold;
+}
+
+lmms--gui--MixerChannelView QPushButton#btn-mute:checked,
+lmms--gui--MixerChannelView QPushButton#btn-solo:checked {
+	color: #ffffff;
+}
