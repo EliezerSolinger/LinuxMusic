@@ -31,6 +31,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QSpinBox>
 #include <QToolButton>
 #include <QStringList>
 
@@ -41,6 +42,7 @@
 #include "MidiJack.h"
 #include "lmmsversion.h"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace lmms {
@@ -49,6 +51,16 @@ namespace {
 const auto audioJackClass = QString{"audiojack"};
 const auto clientNameKey = QString{"clientname"};
 const auto disconnectedRepresentation = QString{"-"};
+const auto inputsKey = QString{"inputs"};
+
+//! The most input ports
+constexpr int MaxInputs = 32;
+
+//! @returns how many input ports to register (the setup's choice, 2 by default)
+int inputCount()
+{
+	return std::clamp(ConfigManager::inst()->value(audioJackClass, inputsKey, "2").toInt(), 0, MaxInputs);
+}
 
 QString getOutputKeyByChannel(size_t channel)
 {
@@ -202,14 +214,24 @@ bool AudioJack::initJackClient()
 		const QString name = buildOutputName(ch);
 		m_outputPorts.push_back(
 			jack_port_register(m_client, name.toLatin1().constData(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0));
-
-		const QString input_name = buildInputName(ch);
-		m_inputPorts.push_back(jack_port_register(m_client, input_name.toLatin1().constData(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0));
-
-		if (m_outputPorts.back() == nullptr || m_inputPorts.back() == nullptr)
+		if (m_outputPorts.back() == nullptr)
 		{
 			std::fprintf(stderr, "no more JACK-ports available!\n");
 			return false;
+		}
+	}
+
+	// As many inputs as the setup asks for: the tracks record from them
+	for (int ch = 0; ch < inputCount(); ++ch)
+	{
+		const QString inputName = buildInputName(static_cast<ch_cnt_t>(ch));
+		m_inputPorts.push_back(
+			jack_port_register(m_client, inputName.toLatin1().constData(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0));
+		if (m_inputPorts.back() == nullptr)
+		{
+			std::fprintf(stderr, "no more JACK-ports available!\n");
+			m_inputPorts.pop_back();
+			break;
 		}
 	}
 
@@ -292,10 +314,59 @@ void AudioJack::startProcessingImpl()
 		attemptToReconnectOutput(i, cm->value(audioJackClass, getOutputKeyByChannel(i)));
 	}
 
-	for (size_t i = 0; i < numberOfChannels; ++i)
+	for (size_t i = 0; i < m_inputPorts.size(); ++i)
 	{
 		attemptToReconnectInput(i, cm->value(audioJackClass, getInputKeyByChannel(i)));
 	}
+}
+
+
+
+
+auto AudioJack::inputChannelName(ch_cnt_t channel) const -> QString
+{
+	if (channel >= m_inputPorts.size()) { return AudioDevice::inputChannelName(channel); }
+
+	// What feeds the port says most, e.g. "system:capture_3"; otherwise the port's own name
+	auto name = QString::fromLatin1(jack_port_short_name(m_inputPorts[channel]));
+	if (const char** connections = jack_port_get_connections(m_inputPorts[channel]))
+	{
+		name = QString::fromLatin1(connections[0]);
+		jack_free(connections);
+	}
+	return name;
+}
+
+
+
+
+auto AudioJack::inputLatency() const -> f_cnt_t
+{
+	// The capture latency of what is connected to our inputs, as JACK propagates it
+	auto latency = jack_nframes_t{0};
+	for (auto* port : m_inputPorts)
+	{
+		auto range = jack_latency_range_t{};
+		jack_port_get_latency_range(port, JackCaptureLatency, &range);
+		latency = std::max(latency, range.max);
+	}
+	return latency;
+}
+
+
+
+
+auto AudioJack::outputLatency() const -> f_cnt_t
+{
+	// JACK's playback latency of our outputs: from the cycle that writes them to the physical outputs
+	auto latency = jack_nframes_t{0};
+	for (auto* port : m_outputPorts)
+	{
+		auto range = jack_latency_range_t{};
+		jack_port_get_latency_range(port, JackPlaybackLatency, &range);
+		latency = std::max(latency, range.max);
+	}
+	return latency;
 }
 
 
@@ -488,18 +559,38 @@ AudioJack::setupWidget::setupWidget(QWidget* parent)
 		m_outputDevices.push_back(outputDevice);
 	}
 
-	// Inputs
-	const auto audioInputNames = getAudioInputNames();
+	// Inputs: as many as the tracks need to record from, each connected to a port of JACK
+	m_inputCount = new QSpinBox(this);
+	m_inputCount->setRange(0, MaxInputs);
+	m_inputCount->setValue(inputCount());
+	m_inputCount->setToolTip(tr("Input ports the tracks can record from"));
+	form->addRow(tr("Inputs"), m_inputCount);
 
-	constexpr size_t numberOfInputChannels = 2;
-	for (size_t i = 0; i < numberOfInputChannels; ++i)
-	{
-		const auto inputKey = getInputKeyByChannel(i);
-		const auto inputValue = cm->value(audioJackClass, inputKey);
-		auto inputDevice = buildToolButton(this, inputValue, audioInputNames, cn);
-		form->addRow(buildInputName(i) + ":", inputDevice);
-		m_inputDevices.push_back(inputDevice);
-	}
+	auto inputsBox = new QWidget(this);
+	auto inputsForm = new QFormLayout(inputsBox);
+	inputsForm->setContentsMargins(0, 0, 0, 0);
+	inputsForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+	form->addRow(inputsBox);
+
+	const auto audioInputNames = getAudioInputNames();
+	const auto showInputs = [this, inputsForm, audioInputNames, cn, buildToolButton](int count) {
+		// Keep what was chosen for the inputs that stay
+		auto chosen = QStringList{};
+		for (auto* button : m_inputDevices) { chosen << button->text(); }
+		while (inputsForm->rowCount() > 0) { inputsForm->removeRow(0); }
+		m_inputDevices.clear();
+		for (int i = 0; i < count; ++i)
+		{
+			const auto value = i < chosen.size()
+				? chosen[i]
+				: ConfigManager::inst()->value(audioJackClass, getInputKeyByChannel(i));
+			auto inputDevice = buildToolButton(inputsForm->parentWidget(), value, audioInputNames, cn);
+			inputsForm->addRow(buildInputName(static_cast<ch_cnt_t>(i)) + ":", inputDevice);
+			m_inputDevices.push_back(inputDevice);
+		}
+	};
+	showInputs(m_inputCount->value());
+	connect(m_inputCount, qOverload<int>(&QSpinBox::valueChanged), this, showInputs);
 
 	if (m_client != nullptr)
 	{
@@ -518,6 +609,7 @@ void AudioJack::setupWidget::saveSettings()
 		ConfigManager::inst()->setValue(audioJackClass, getOutputKeyByChannel(i), m_outputDevices[i]->text());	
 	}
 
+	ConfigManager::inst()->setValue(audioJackClass, inputsKey, QString::number(m_inputCount->value()));
 	for (size_t i = 0; i < m_inputDevices.size(); ++i)
 	{
 		ConfigManager::inst()->setValue(audioJackClass, getInputKeyByChannel(i), m_inputDevices[i]->text());	

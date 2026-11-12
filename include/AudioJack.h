@@ -47,6 +47,7 @@
 #endif
 
 class QLineEdit;
+class QSpinBox;
 class QMenu;
 class QToolButton;
 
@@ -69,6 +70,10 @@ public:
 	AudioJack* addMidiClient(MidiJack* midiClient);
 	void removeMidiClient() { m_midiClient = nullptr; }
 	jack_client_t* jackClient() { return m_client; };
+
+	auto inputChannelName(ch_cnt_t channel) const -> QString override;
+	auto inputLatency() const -> f_cnt_t override;
+	auto outputLatency() const -> f_cnt_t override;
 
 	inline static QString name()
 	{
@@ -94,6 +99,7 @@ public:
 
 		std::vector<QToolButton*> m_outputDevices;
 		std::vector<QToolButton*> m_inputDevices;
+		QSpinBox* m_inputCount;
 	};
 
 private slots:
