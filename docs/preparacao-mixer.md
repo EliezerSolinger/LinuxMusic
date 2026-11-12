@@ -697,6 +697,42 @@ master sem pan.
 `MixerTest` tem 85 testes. Novos: MONO soma e troca sem estalo; mono bass da faixa estreita só o grave e não age no
 modo digital. Os testes que verificavam o volume da faixa indo para o trim foram reescritos para a regra nova.
 
+### Passo 18: modelos do estágio de ganho (feito)
+
+Pedido do usuário: o botão TUBE vira um seletor de modelo, com FLAT (sem nada), dois amp-ops (fundo azul) e algumas
+válvulas (fundo âmbar), aproveitando o código de válvulas que já existia.
+
+**Modelos** (`AnalogChannelStrip::Drive`):
+- **FLAT:** estágio de ganho limpo, nada é processado.
+- **4558** (padrão, o comportamento de antes), o amp-op das Soundcraft e Mackie mais acessíveis: joelho em +18 dBFS,
+  trilho negativo 5% mais baixo (harmônicos pares), slew lento de 1,7 V/µs.
+- **5532** (NE5532), o amp-op das mesas de som limpo (SSL, Neve, Amek, Mackie Onyx): joelho em +21 dBFS, trilhos
+  simétricos, slew de 9 V/µs.
+  - **Decisão:** a primeira escolha foi o NE5534. O usuário perguntou pelo NE5532, que é a versão dupla (dois
+    amp-ops num chip, com compensação interna) e a que as mesas de fato usam. A diferença medível é o slew (9 contra
+    13 V/µs).
+- **Válvulas:** as três aproximações do 12AX7 que o CAPS embutido já tinha (Tim Goetze, GPL):
+  - **12AX7:** a curva amostrada da simulação SPICE (a de antes);
+  - **12AX7 V** (vintage): o polinômio original do CAPS, ajustado "de ouvido", o mais rico em harmônicos pares;
+  - **12AX7 H** (hot): o polinômio ajustado à curva, mais forte nos ímpares.
+  - Todas normalizadas igual: ganho unitário para sinal pequeno, mesma polaridade, sem o offset de polarização,
+    começando a clipar em +12 dBFS. Os polinômios clipam onde a inclinação zera, como no CAPS.
+  - **Decisão:** não inventar curvas de outras válvulas (12AT7, EF86) sem dados; ficam as três que vêm de modelos
+    reais.
+
+**Interface:**
+- O botão ocupa a largura da seção INPUT e mostra o nome do modelo.
+- Um clique avança para o próximo modelo; o botão direito lista todos, com a descrição.
+- Fundo neutro no FLAT, azul nos amp-ops e âmbar nas válvulas.
+
+**Compatibilidade:** salvo como `drive`; projetos com o botão TUBE de antes ligado abrem no 12AX7.
+
+`MixerTest` tem 86 testes:
+- amp-ops: joelho e trilhos de cada modelo, o 5532 mais limpo e simétrico;
+- válvulas: unitárias, assimétricas, limitadas e diferentes entre si;
+- FLAT limpo mesmo muito acima dos trilhos;
+- compatibilidade do TUBE antigo.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
