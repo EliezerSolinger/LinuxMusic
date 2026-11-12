@@ -167,6 +167,15 @@ void MasterSection::measure(std::span<const SampleFrame> frames, sample_rate_t s
 
 
 
+void MasterSection::measureSilence()
+{
+	m_sumLR = m_sumLL = m_sumRR = 0.f;
+	m_correlation.store(0.f, std::memory_order_relaxed);
+}
+
+
+
+
 void MasterSection::processMonitoring(std::span<SampleFrame> frames)
 {
 	const float target = m_cutModel.value() ? 0.f

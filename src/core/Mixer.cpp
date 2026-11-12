@@ -403,7 +403,11 @@ void MixerChannel::doProcessing()
 
 	if (hasSignal) { m_meter.measure(buffer.data(), fpp, Engine::audioEngine()->outputSampleRate()); }
 	else { m_meter.measureSilence(); }
-	if (isMaster()) { Engine::mixer()->masterSection().measure(buffer, Engine::audioEngine()->outputSampleRate()); }
+	if (isMaster() && hasSignal)
+	{
+		Engine::mixer()->masterSection().measure(buffer, Engine::audioEngine()->outputSampleRate());
+	}
+	else if (isMaster()) { Engine::mixer()->masterSection().measureSilence(); }
 
 	// increment dependency counter of all receivers
 	processed();

@@ -76,6 +76,9 @@ public:
 	//! Measures the master's output for the meters [audio thread]
 	void measure(std::span<const SampleFrame> frames, sample_rate_t sampleRate);
 
+	//! The master is silent: nothing to measure [audio thread]
+	void measureSilence();
+
 	//! The monitoring, on what goes to the speakers (not when exporting) [audio thread]
 	void processMonitoring(std::span<SampleFrame> frames);
 

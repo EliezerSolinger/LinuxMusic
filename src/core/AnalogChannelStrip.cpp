@@ -297,6 +297,13 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	else if (hadInput) { m_tailFrames = static_cast<f_cnt_t>(FilterTail * rate); }
 	else { m_tailFrames = m_tailFrames > frames.size() ? m_tailFrames - frames.size() : 0; }
 
+	// Nothing after the gain stage to do
+	if (!highPassOn && !lowPassOn && !gateOn && !compressorOn && !eqLowOn && !eqLowMidOn && !eqHighMidOn
+		&& !eqHighOn)
+	{
+		return;
+	}
+
 	const float gateThreshold = dbfsToAmp(m_gateModel.value());
 	const float gateOpen = smoothing(GateAttack, sampleRate);
 	const float gateClose = smoothing(GateRelease, sampleRate);
