@@ -108,6 +108,7 @@ AudioEngine::AudioEngine(bool renderOnly)
 	BufferManager::init( m_framesPerPeriod );
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_outputBufferWrite = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
+	m_outputMonitor.reset(std::vector<SampleFrame>(m_framesPerPeriod));
 
 	if (m_numWorkers < 0) { m_numWorkers = 0; }
 
@@ -401,7 +402,10 @@ void AudioEngine::renderStageMix()
 
 	MixHelpers::multiply(m_outputBufferWrite.get(), m_masterGain, m_framesPerPeriod);
 
-	emit nextAudioBuffer(m_outputBufferRead.get());
+	// Hand the period that goes out now to the displays, without waiting for them
+	auto& monitor = m_outputMonitor.writeSlot();
+	std::copy_n(m_outputBufferRead.get(), m_framesPerPeriod, monitor.begin());
+	m_outputMonitor.publish();
 
 	// and trigger LFOs
 	EnvelopeAndLfoParameters::instances()->trigger();

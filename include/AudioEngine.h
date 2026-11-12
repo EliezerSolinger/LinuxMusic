@@ -37,6 +37,7 @@
 #include "AudioBufferView.h"
 #include "AudioDevice.h"
 #include "LmmsTypes.h"
+#include "TripleBuffer.h"
 #include "SampleFrame.h"
 #include "LocklessList.h"
 #include "AudioEngineProfiler.h"
@@ -310,6 +311,13 @@ public:
 	static bool isAudioDevNameValid(QString name);
 	static bool isMidiDevNameValid(QString name);
 
+	/**
+	 * The latest period of the master output, for displays (e.g. the oscilloscope): the audio thread publishes each
+	 * period without waiting, and the display takes the latest one when it repaints. There must be only one reader,
+	 * on the main thread.
+	 */
+	auto outputMonitor() -> TripleBuffer<std::vector<SampleFrame>>& { return m_outputMonitor; }
+
 	//! @returns true if sanitization of inf/nan values is enabled
 	bool sanitizationEnabled() { return m_sanitizationEnabled.load(std::memory_order_relaxed); }
 
@@ -319,7 +327,6 @@ public:
 signals:
 	void qualitySettingsChanged();
 	void sampleRateChanged();
-	void nextAudioBuffer(const lmms::SampleFrame* buffer);
 
 
 private:
@@ -388,6 +395,7 @@ private:
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;
+	TripleBuffer<std::vector<SampleFrame>> m_outputMonitor;
 	f_cnt_t m_outputBufferReadIndex;
 
 	// worker thread stuff

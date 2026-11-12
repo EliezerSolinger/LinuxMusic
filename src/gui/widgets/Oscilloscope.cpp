@@ -23,6 +23,8 @@
  */
 
 
+#include <algorithm>
+
 #include <QMouseEvent>
 #include <QPainter>
 
@@ -73,13 +75,16 @@ Oscilloscope::~Oscilloscope()
 
 
 
-void Oscilloscope::updateAudioBuffer(const SampleFrame* buffer)
+void Oscilloscope::updateAudioBuffer()
 {
-	if( !Engine::getSong()->isExporting() )
-	{
-		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
-		memcpy(m_buffer, buffer, sizeof(SampleFrame) * frames);
-	}
+	// Take the latest period the audio engine published, without waiting for it
+	auto& monitor = Engine::audioEngine()->outputMonitor();
+	if (!monitor.update() || Engine::getSong()->isExporting()) { return; }
+
+	const auto& latest = monitor.readSlot();
+	const auto frames = std::min<f_cnt_t>(latest.size(), Engine::audioEngine()->framesPerPeriod());
+	std::copy_n(latest.begin(), frames, m_buffer);
+	update();
 }
 
 
@@ -90,21 +95,11 @@ void Oscilloscope::setActive( bool _active )
 	m_active = _active;
 	if( m_active )
 	{
-		connect( getGUI()->mainWindow(),
-					SIGNAL(periodicUpdate()),
-					this, SLOT(update()));
-		connect( Engine::audioEngine(),
-			SIGNAL(nextAudioBuffer(const lmms::SampleFrame*)),
-			this, SLOT(updateAudioBuffer(const lmms::SampleFrame*)));
+		connect(getGUI()->mainWindow(), SIGNAL(periodicUpdate()), this, SLOT(updateAudioBuffer()));
 	}
 	else
 	{
-		disconnect( getGUI()->mainWindow(),
-					SIGNAL(periodicUpdate()),
-					this, SLOT(update()));
-		disconnect( Engine::audioEngine(),
-			SIGNAL(nextAudioBuffer(const lmms::SampleFrame*)),
-			this, SLOT(updateAudioBuffer(const lmms::SampleFrame*)));
+		disconnect(getGUI()->mainWindow(), SIGNAL(periodicUpdate()), this, SLOT(updateAudioBuffer()));
 		// we have to update (remove last waves),
 		// because timer doesn't do that anymore
 		update();

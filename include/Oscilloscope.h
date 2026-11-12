@@ -74,7 +74,7 @@ protected:
 
 
 protected slots:
-	void updateAudioBuffer(const lmms::SampleFrame* buffer);
+	void updateAudioBuffer();
 
 private:
 	bool clips(float level) const;
