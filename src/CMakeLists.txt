@@ -187,6 +187,7 @@ SET(LMMS_REQUIRED_LIBS ${LMMS_REQUIRED_LIBS}
 
 target_link_libraries(lmmsobjs
 	${LMMS_REQUIRED_LIBS}
+	hiir
 )
 target_static_libraries(lmmsobjs ringbuffer)
 

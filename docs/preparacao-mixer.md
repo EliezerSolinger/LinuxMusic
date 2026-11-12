@@ -476,21 +476,38 @@ viram LEDs.
 
 **Faixa analógica** (`AnalogChannelStrip`), em cada canal menos o master, entre o ganho de entrada e os efeitos. Na
 ordem do sinal:
-1. **Ganho com amp-op:** o knob GAIN é o trim do canal. O estágio é linear até +18 dBFS e satura suavemente até o
-   "trilho" em +24 dBFS. **Decisão:** a primeira versão saturava acima de +6 dBFS. A comparação A/B mostrou que
-   projetos comuns mandam mais que isso para o canal (em ponto flutuante isso é normal) e mudavam de som. O limite
-   foi para a folga de uma mesa real acima do nível nominal: limpo nos níveis usuais, saturando quando se sobe o GAIN
-   (até +24 dB).
-2. **Filtros:** o botão LC corta abaixo de 80 Hz (24 dB/oitava). Os knobs HPF (20 Hz a 1 kHz) e LPF (1 a 20 kHz)
-   cortam 12 dB/oitava e ficam desligados nos extremos.
-3. **Dinâmica**, com detecção estéreo ligada:
+1. **GAIN:** é o trim do canal (±24 dB), linear.
+2. **LC (low cut):** corta abaixo de 80 Hz (24 dB/oitava). Fica **antes** do estágio de ganho, a pedido do usuário,
+   para o amp-op ou a válvula não saturarem com graves ruins.
+3. **Estágio de ganho:** amp-op ou, com o botão **TUBE**, válvula.
+   - **Amp-op**, modelado no 4558, o amp-op de muitas mesas Soundcraft e Mackie:
+     - linear até +18 dBFS, satura suavemente até o trilho em +24 dBFS;
+     - o trilho negativo é 5% mais baixo, como nos chips reais, o que dá harmônicos pares;
+     - slew rate de 1,7 V/µs (o do 4558), que só limita sinais muito altos e muito agudos, como no chip.
+     - **Oversampling de 4×** (os `Upsampler`/`Downsampler` do núcleo, os mesmos do SlewDistortion), aplicado só ao
+       que o amp-op muda: saída menos entrada, que é zero abaixo do joelho. O sinal limpo não passa pelos filtros do
+       oversampling, então abaixo do joelho o áudio sai intocado, bit a bit. Blocos 12 dB abaixo do joelho pulam o
+       oversampling.
+     - **Decisão:** a primeira versão saturava acima de +6 dBFS. O A/B mostrou que projetos comuns passam disso
+       dentro do canal (em ponto flutuante é normal) e mudavam de som. O joelho foi para a folga de uma mesa real.
+   - **Válvula (TUBE)**, um estágio pré de 12AX7:
+     - usa a curva de transferência que Tim Goetze amostrou de uma simulação SPICE para o CAPS
+       (`src/core/r12ax7.h`, copiado sem mudanças; a cópia do CAPS embutido fica como está);
+     - ganho unitário para sinais pequenos, a mesma polaridade (a válvula inverte) e sem o offset de polarização;
+     - começa a clipar em +12 dBFS e colore um pouco abaixo disso. O GAIN leva a válvula à saturação.
+     - O sinal inteiro passa pelo oversampling de 4× e depois por um bloqueador de DC em 5 Hz (a assimetria cria
+       offset).
+4. **Filtros:** HPF (20 Hz a 1 kHz) e LPF (1 a 20 kHz), 12 dB/oitava, desligados nos extremos.
+5. **Dinâmica**, com detecção estéreo ligada:
    - GATE: um knob, o limiar; abre em 1 ms, segura 20 ms e fecha em 100 ms;
    - COMP: um knob, o limiar; razão 4:1, joelho suave de 6 dB (a mesma fórmula do plugin Compressor) e ganho de
      compensação automático, metade do que o compressor tira de um sinal em 0 dBFS.
-4. **EQ de 3 bandas** (±15 dB):
-   - LO: prateleira em 80 Hz;
-   - MID: pico com frequência variável (FREQ, de 200 Hz a 6 kHz, 1,4 oitava);
-   - HI: prateleira em 12 kHz.
+6. **EQ clássico de 4 bandas**, a pedido do usuário (±15 dB, frequências fixas):
+   - HI: prateleira em 12 kHz;
+   - HMF: pico em 2,5 kHz;
+   - LMF: pico em 400 Hz;
+   - LO: prateleira em 80 Hz.
+   As bandas médias têm largura de 1,4 oitava.
 
 **Comportamento:**
 - Cada seção na posição neutra é pulada, então uma faixa neutra deixa o áudio intocado.
@@ -501,24 +518,33 @@ ordem do sinal:
 - Os filtros e o EQ são as classes do plugin Eq. `EqFilter.h` saiu do plugin e foi para o núcleo (`include/`), e o
   plugin e o mixer usam o mesmo código, incluindo a transição suave entre ajustes ao longo do período. Ganhou só
   `clearHistory()` e os includes de que precisa.
+- O oversampling é o do núcleo (`OversamplingHelpers.h`, com a biblioteca hiir, que o núcleo agora também usa). A
+  curva da válvula é a do CAPS.
 - O gate e o compressor são código próprio, poucas linhas. A lógica do plugin Compressor está presa dentro do efeito
   (modelos, slots, fator de crista, lookahead). Separá-la exigiria reescrever o plugin, com risco de mudar o som
   dele.
 
 **Interface** (cores do tema LMMS):
-- **Faixa no modo analógico:** seções INPUT (GAIN, LC), FILTER (HPF, LPF), DYN (GATE, COMP) e EQ (HI, MID, FREQ,
-  LO), com título e divisória.
+- **Faixa no modo analógico:** seções INPUT (GAIN, LC, TUBE), FILTER (HPF, LPF), DYN (GATE, COMP) e EQ (HI, HMF,
+  LMF, LO), com título e divisória. O botão TUBE aceso brilha laranja, como uma válvula.
 - **Knobs de mesa** (`DeskKnob`): capa colorida por seção, como nas Soundcraft e SSL, sobre saia escura, ponteiro
   branco e nome embaixo.
-  - Cores: GAIN vermelho, filtros cinza, gate verde-água, compressor amarelo, HI laranja, MID e FREQ verdes (mesma
-    banda, mesma cor, como na SSL), LO azul.
+  - Cores: GAIN vermelho, filtros cinza, gate verde-água, compressor amarelo; EQ como na SSL: HI laranja, HMF verde,
+    LMF azul, LO marrom.
   - Comportam-se como qualquer knob: arrastar, roda do mouse, valor e menu de automação.
 - O master não tem faixa analógica, como numa mesa real, mas guarda o espaço para os faders ficarem alinhados.
 - Os efeitos aparecem como LEDs ao lado do fader no analógico e como a lista com nomes no digital.
 
-`MixerTest` tem 70 testes. Novos: saturação só acima do joelho; LC, HPF, LPF e EQ medidos com seno; o modo digital
-ignora a faixa e guarda os ajustes; gate fecha abaixo do limiar; compressor aperta mais o sinal forte; modo e faixa
-salvos.
+`MixerTest` tem 73 testes. Novos:
+- amp-op só satura acima do joelho, com trilhos assimétricos;
+- válvula com ganho unitário para sinais pequenos, assimétrica e limitada;
+- amp-op saturado sem aliasing: o 3º harmônico de um seno de 15 kHz, que dobraria para 900 Hz, fica mais de 50 dB
+  abaixo da fundamental;
+- válvula no canal: unitária para sinal baixo, comprime sinal alto;
+- LC, HPF, LPF e as bandas do EQ medidos com seno;
+- o modo digital ignora a faixa e guarda os ajustes;
+- gate fecha abaixo do limiar; compressor aperta mais o sinal forte;
+- modo e faixa salvos.
 
 ### Correção encontrada pela bateria A/B
 

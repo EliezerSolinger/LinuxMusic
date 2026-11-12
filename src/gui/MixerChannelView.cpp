@@ -520,6 +520,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	const auto orange = QColor{210, 116, 40};
 	const auto green = QColor{46, 150, 84};
 	const auto blue = QColor{52, 102, 186};
+	const auto brown = QColor{122, 82, 48};
 	auto& strip = mixerChannel->m_analogStrip;
 
 	addSection(tr("INPUT"));
@@ -530,7 +531,18 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	lowCutButton->setToolTip(tr("Low cut: takes away what is below 80 Hz"));
 	lowCutButton->setCheckable(true);
 	lowCutButton->setModel(&strip.m_lowCutModel);
-	analogLayout->addWidget(lowCutButton, row++, 1, Qt::AlignCenter);
+	auto tubeButton = new AutomatableButton(m_analogSection, tr("Tube"));
+	tubeButton->setObjectName("btn-tube");
+	tubeButton->setText(tr("TUBE"));
+	tubeButton->setToolTip(tr("Tube: the gain stage is a 12AX7 tube instead of an op-amp"));
+	tubeButton->setCheckable(true);
+	tubeButton->setModel(&strip.m_tubeModel);
+	auto inputButtons = new QVBoxLayout{};
+	inputButtons->setContentsMargins(0, 0, 0, 0);
+	inputButtons->setSpacing(2);
+	inputButtons->addWidget(lowCutButton, 0, Qt::AlignCenter);
+	inputButtons->addWidget(tubeButton, 0, Qt::AlignCenter);
+	analogLayout->addLayout(inputButtons, row++, 1, Qt::AlignCenter);
 
 	addSection(tr("FILTER"));
 	addKnob(&strip.m_highPassModel, grey, tr("HPF"), tr("High-pass"), " Hz", row, 0);
@@ -541,10 +553,10 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	addKnob(&strip.m_compressorModel, yellow, tr("COMP"), tr("Compressor threshold"), " dB", row++, 1);
 
 	addSection(tr("EQ"));
-	addKnob(&strip.m_eqHighModel, orange, tr("HI"), tr("EQ high"), " dB", row, 0);
-	addKnob(&strip.m_eqMidModel, green, tr("MID"), tr("EQ mid"), " dB", row++, 1);
-	addKnob(&strip.m_eqMidFrequencyModel, green, tr("FREQ"), tr("EQ mid frequency"), " Hz", row, 0);
-	addKnob(&strip.m_eqLowModel, blue, tr("LO"), tr("EQ low"), " dB", row++, 1);
+	addKnob(&strip.m_eqHighModel, orange, tr("HI"), tr("EQ high (12 kHz)"), " dB", row, 0);
+	addKnob(&strip.m_eqHighMidModel, green, tr("HMF"), tr("EQ high mid (2.5 kHz)"), " dB", row++, 1);
+	addKnob(&strip.m_eqLowMidModel, blue, tr("LMF"), tr("EQ low mid (400 Hz)"), " dB", row, 0);
+	addKnob(&strip.m_eqLowModel, brown, tr("LO"), tr("EQ low (80 Hz)"), " dB", row++, 1);
 
 	// Mute, solo and phase invert, with the effect LEDs below them, to the right of the fader, as in REAPER
 	auto soloMuteLayout = new QVBoxLayout();

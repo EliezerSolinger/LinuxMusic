@@ -1350,3 +1350,24 @@ lmms--gui--MixerChannelView QLabel#mixerSectionTitle {
 	border-top: 1px solid #1a1d21;
 	padding-top: 1px;
 }
+
+/* The tube button of the analog desk's strip: glows like a tube when on */
+lmms--gui--MixerChannelView QPushButton#btn-tube {
+	padding: 0;
+	min-height: 11;
+	max-height: 11;
+	min-width: 23;
+	max-width: 23;
+	border: 1 solid #080b12;
+	border-radius: 2;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255, 255, 255, 20%), stop:0.1 rgba(255, 255, 255, 2%), stop:0.9 rgba(0, 0, 0, 2%), stop:1 rgba(0, 0, 0, 40%));
+	color: #d1d8e4;
+	font-size: 7px;
+	font-weight: bold;
+}
+
+lmms--gui--MixerChannelView QPushButton#btn-tube:checked {
+	border: 1 solid #7a2a00;
+	background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #ffb347, stop:0.6 #ff7a1a, stop:1 #b33c00);
+	color: #2a0e00;
+}

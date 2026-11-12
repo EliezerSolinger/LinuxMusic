@@ -1463,14 +1463,87 @@ private slots:
 		deleteTrack(folder);
 	}
 
-	void opampSaturatesOnlyAboveItsKnee()
+	void opAmpSaturatesOnlyAboveItsKnee()
 	{
-		QCOMPARE(AnalogChannelStrip::saturate(1.5f), 1.5f);
-		QCOMPARE(AnalogChannelStrip::saturate(-8.f), -8.f);
-		const float pushed = AnalogChannelStrip::saturate(12.f);
-		QVERIFY(pushed > 8.f && pushed < 12.f);
-		QVERIFY(AnalogChannelStrip::saturate(100.f) <= AnalogChannelStrip::SaturationRail);
-		QCOMPARE(AnalogChannelStrip::saturate(-100.f), -AnalogChannelStrip::saturate(100.f));
+		using Strip = AnalogChannelStrip;
+		QCOMPARE(Strip::opAmp(1.5f), 1.5f);
+		QCOMPARE(Strip::opAmp(-7.f), -7.f);
+		const float pushed = Strip::opAmp(12.f);
+		QVERIFY(pushed > Strip::OpAmpKnee && pushed < 12.f);
+		QVERIFY(Strip::opAmp(100.f) <= Strip::OpAmpRail);
+		// The negative rail is a little lower: even harmonics
+		QVERIFY(-Strip::opAmp(-100.f) < Strip::opAmp(100.f));
+	}
+
+	void tubeIsUnityForSmallSignalsAndColorsLoudOnes()
+	{
+		using Strip = AnalogChannelStrip;
+		QVERIFY(std::abs(Strip::tube(0.001f) - 0.001f) < 2e-5f);
+		QVERIFY(std::abs(Strip::tube(-0.001f) + 0.001f) < 2e-5f);
+		// Asymmetric (even harmonics), and limited when driven hard
+		QVERIFY(std::abs(Strip::tube(2.f) + Strip::tube(-2.f)) > 0.01f);
+		QVERIFY(std::abs(Strip::tube(40.f)) < 20.f);
+		QVERIFY(std::abs(Strip::tube(-40.f)) < 20.f);
+	}
+
+	//! The magnitude of @p frequency in the left channel of @p out (Goertzel)
+	static auto magnitudeAt(const std::vector<SampleFrame>& out, float frequency) -> float
+	{
+		const auto rate = static_cast<float>(Engine::audioEngine()->outputSampleRate());
+		const float coefficient = 2.f * std::cos(2.f * std::numbers::pi_v<float> * frequency / rate);
+		float s1 = 0.f, s2 = 0.f;
+		for (const auto& frame : out)
+		{
+			const float s0 = frame.left() + coefficient * s1 - s2;
+			s2 = s1;
+			s1 = s0;
+		}
+		return std::sqrt(s1 * s1 + s2 * s2 - coefficient * s1 * s2) / static_cast<float>(out.size());
+	}
+
+	void drivenOpAmpDoesNotAlias()
+	{
+		// A 15 kHz sine driven into the op-amp's rails: its 3rd harmonic (45 kHz) would fold back to 900 Hz at
+		// 44.1 kHz without the oversampling
+		const auto rate = static_cast<float>(Engine::audioEngine()->outputSampleRate());
+		if (rate != 44100.f) { QSKIP("Needs a sample rate of 44.1 kHz"); }
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(channel)->m_volumeModel.setValue(1.f / 16.f);
+		settle();
+		auto out = std::vector<SampleFrame>{};
+		f_cnt_t position = 0;
+		for (int period = 0; period < 64; ++period)
+		{
+			auto buffer = AudioBuffer{frames()};
+			for (f_cnt_t f = 0; f < frames(); ++f, ++position)
+			{
+				const float x = 20.f * std::sin(2.f * std::numbers::pi_v<float> * 15000.f * position / rate);
+				buffer.buffer(0)[f] = x;
+				buffer.buffer(1)[f] = x;
+			}
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+			mixer()->mixToChannel(buffer, channel);
+			const auto period_out = mix();
+			if (period >= 16) { out.insert(out.end(), period_out.begin(), period_out.end()); }
+		}
+		const float fundamental = magnitudeAt(out, 15000.f);
+		const float alias = magnitudeAt(out, 900.f);
+		QVERIFY(fundamental > 0.1f);
+		QVERIFY2(alias < fundamental * dbfsToAmp(-50.f), qPrintable(QString{"alias %1 dB below the fundamental"}
+			.arg(ampToDbfs(fundamental / alias))));
+	}
+
+	void tubeStageColorsTheChannel()
+	{
+		const auto channel = mixer()->createChannel();
+		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+		settle();
+		strip.m_tubeModel.setValue(true);
+		// Unity for quiet signals, compressed when loud
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.01f) - 1.f) < 0.02f);
+		QVERIFY(sineGain(channel, 1000.f, 8.f) < 0.9f);
+		strip.setNeutral();
 	}
 
 	void analogStripFiltersAndEq()
@@ -1501,14 +1574,16 @@ private slots:
 		strip.m_eqLowModel.setValue(12.f);
 		QVERIFY(std::abs(sineGain(channel, 30.f) - dbfsToAmp(12.f)) < 0.3f);
 		strip.m_eqLowModel.setValue(0.f);
-		strip.m_eqMidFrequencyModel.setValue(1000.f);
-		strip.m_eqMidModel.setValue(-12.f);
-		QVERIFY(std::abs(sineGain(channel, 1000.f) - dbfsToAmp(-12.f)) < 0.03f);
+		strip.m_eqHighMidModel.setValue(-12.f);
+		QVERIFY(std::abs(sineGain(channel, 2500.f) - dbfsToAmp(-12.f)) < 0.03f);
+		strip.m_eqHighMidModel.setValue(0.f);
+		strip.m_eqLowMidModel.setValue(9.f);
+		QVERIFY(std::abs(sineGain(channel, 400.f) - dbfsToAmp(9.f)) < 0.1f);
 
 		// Digital mode: no built-in processing, and the settings stay
 		mixer()->analogModel()->setValue(false);
 		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.01f);
-		QCOMPARE(strip.m_eqMidModel.value(), -12.f);
+		QCOMPARE(strip.m_eqLowMidModel.value(), 9.f);
 		mixer()->analogModel()->setValue(true);
 
 		strip.setNeutral();
