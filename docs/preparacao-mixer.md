@@ -462,6 +462,64 @@ Pedido do usuário: faixa e canal tinham mute e solo cada um, o que era redundan
 `MixerTest` tem 66 testes. Novos: solo silencia os outros sem mexer nos mutes, caminho e fontes, dois solos, sidechain
 de canal em solo, solo em pasta, mute e solo de projeto antigo indo para o canal.
 
+### Passo 14: modos analógico e digital (feito)
+
+Pedido do usuário: a mesa tem dois modos. No digital, nada de processamento embutido, só os efeitos com os nomes na
+faixa. No analógico (o padrão), cada canal tem os controles clássicos de uma mesa analógica, e os efeitos digitais
+viram LEDs.
+
+**Modo:**
+- Um só para o mixer inteiro (`Mixer::isAnalog()`), salvo no projeto (atributo `analog`) e com desfazer.
+- Projetos de antes abrem no analógico, com as faixas neutras: soam igual.
+- No digital, o processamento analógico é desligado, mas os ajustes ficam guardados para quando voltar ao analógico.
+- Botões ANALOG / DIGITAL acima do painel do canal selecionado.
+
+**Faixa analógica** (`AnalogChannelStrip`), em cada canal menos o master, entre o ganho de entrada e os efeitos. Na
+ordem do sinal:
+1. **Ganho com amp-op:** o knob GAIN é o trim do canal. O estágio é linear até +18 dBFS e satura suavemente até o
+   "trilho" em +24 dBFS. **Decisão:** a primeira versão saturava acima de +6 dBFS. A comparação A/B mostrou que
+   projetos comuns mandam mais que isso para o canal (em ponto flutuante isso é normal) e mudavam de som. O limite
+   foi para a folga de uma mesa real acima do nível nominal: limpo nos níveis usuais, saturando quando se sobe o GAIN
+   (até +24 dB).
+2. **Filtros:** o botão LC corta abaixo de 80 Hz (24 dB/oitava). Os knobs HPF (20 Hz a 1 kHz) e LPF (1 a 20 kHz)
+   cortam 12 dB/oitava e ficam desligados nos extremos.
+3. **Dinâmica**, com detecção estéreo ligada:
+   - GATE: um knob, o limiar; abre em 1 ms, segura 20 ms e fecha em 100 ms;
+   - COMP: um knob, o limiar; razão 4:1, joelho suave de 6 dB (a mesma fórmula do plugin Compressor) e ganho de
+     compensação automático, metade do que o compressor tira de um sinal em 0 dBFS.
+4. **EQ de 3 bandas** (±15 dB):
+   - LO: prateleira em 80 Hz;
+   - MID: pico com frequência variável (FREQ, de 200 Hz a 6 kHz, 1,4 oitava);
+   - HI: prateleira em 12 kHz.
+
+**Comportamento:**
+- Cada seção na posição neutra é pulada, então uma faixa neutra deixa o áudio intocado.
+- Depois que a entrada silencia, os filtros ainda tocam o rabo por 50 ms.
+- Canal mudo zera o estado da faixa.
+
+**Reaproveitamento:**
+- Os filtros e o EQ são as classes do plugin Eq. `EqFilter.h` saiu do plugin e foi para o núcleo (`include/`), e o
+  plugin e o mixer usam o mesmo código, incluindo a transição suave entre ajustes ao longo do período. Ganhou só
+  `clearHistory()` e os includes de que precisa.
+- O gate e o compressor são código próprio, poucas linhas. A lógica do plugin Compressor está presa dentro do efeito
+  (modelos, slots, fator de crista, lookahead). Separá-la exigiria reescrever o plugin, com risco de mudar o som
+  dele.
+
+**Interface** (cores do tema LMMS):
+- **Faixa no modo analógico:** seções INPUT (GAIN, LC), FILTER (HPF, LPF), DYN (GATE, COMP) e EQ (HI, MID, FREQ,
+  LO), com título e divisória.
+- **Knobs de mesa** (`DeskKnob`): capa colorida por seção, como nas Soundcraft e SSL, sobre saia escura, ponteiro
+  branco e nome embaixo.
+  - Cores: GAIN vermelho, filtros cinza, gate verde-água, compressor amarelo, HI laranja, MID e FREQ verdes (mesma
+    banda, mesma cor, como na SSL), LO azul.
+  - Comportam-se como qualquer knob: arrastar, roda do mouse, valor e menu de automação.
+- O master não tem faixa analógica, como numa mesa real, mas guarda o espaço para os faders ficarem alinhados.
+- Os efeitos aparecem como LEDs ao lado do fader no analógico e como a lista com nomes no digital.
+
+`MixerTest` tem 70 testes. Novos: saturação só acima do joelho; LC, HPF, LPF e EQ medidos com seno; o modo digital
+ignora a faixa e guarda os ajustes; gate fecha abaixo do limiar; compressor aperta mais o sinal forte; modo e faixa
+salvos.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
