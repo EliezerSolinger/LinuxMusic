@@ -21,7 +21,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
 
-	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
+	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC} src/TestEnvironment.cpp)
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 
 	# TODO CMake 3.12: Propagate usage requirements by linking to lmmsobjs

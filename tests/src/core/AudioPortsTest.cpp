@@ -73,7 +73,8 @@ public:
 	{
 		ch_cnt_t in = 2;
 		ch_cnt_t out = 2;
-		std::function<std::optional<ch_cnt_t>(ch_cnt_t)> inplacePair = [](ch_cnt_t ch) { return ch; };
+		//! Empty: each input shares its buffer with the output of the same number, if there is one
+		std::function<std::optional<ch_cnt_t>(ch_cnt_t)> inplacePair = {};
 		bool interleaved = false;
 	};
 
@@ -93,7 +94,11 @@ public:
 	{
 		return channelCount(isInput);
 	}
-	auto getInplacePair(ch_cnt_t input) const -> std::optional<ch_cnt_t> override { return m_ports.inplacePair(input); }
+	auto getInplacePair(ch_cnt_t input) const -> std::optional<ch_cnt_t> override
+	{
+		if (m_ports.inplacePair) { return m_ports.inplacePair(input); }
+		return input < m_ports.out ? std::optional{input} : std::nullopt;
+	}
 	auto usesInterleavedBuffers() const -> bool override { return m_ports.interleaved; }
 
 	void setEnabled(bool enabled) { enabledModel()->setValue(enabled); }
@@ -219,7 +224,7 @@ auto trackBuffer(float left, float right, ch_cnt_t channels = 2) -> AudioBuffer
 		std::ranges::fill(buffer.buffer(ch), ch == 0 ? left : ch == 1 ? right : 0.f);
 		buffer.assumeNonSilent(ch);
 	}
-	toInterleaved(buffer.groupBuffers(0), buffer.interleavedBuffer());
+	buffer.mainPairToInterleaved();
 	return buffer;
 }
 

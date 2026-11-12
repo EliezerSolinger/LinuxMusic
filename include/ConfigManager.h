@@ -52,6 +52,9 @@ const QString TRACK_ICON_PATH = "track_icons/";
 const QString LOCALE_PATH = "locale/";
 const QString PORTABLE_MODE_FILE = "/portable_mode.txt";
 
+//! Environment variable naming a directory for an isolated configuration (see ConfigManager::initIsolatedWorkingDir())
+constexpr const char* IsolatedConfigVariable = "LINUXMUSIC_CONFIG_DIR";
+
 class LMMS_EXPORT ConfigManager : public QObject
 {
 	Q_OBJECT
@@ -79,6 +82,7 @@ public:
 	void initInstalledWorkingDir();
 
 	void initDevelopmentWorkingDir();
+	void initIsolatedWorkingDir();
 
 	const QString & dataDir() const
 	{

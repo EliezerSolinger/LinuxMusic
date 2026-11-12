@@ -83,6 +83,7 @@ ConfigManager::ConfigManager() :
 		QDir::addSearchPath("data", QString::fromLocal8Bit(std::getenv("LMMS_DATA_DIR")));
 	}
 	initDevelopmentWorkingDir();
+	initIsolatedWorkingDir();
 
 #ifdef LMMS_BUILD_WIN32
 	QDir::addSearchPath("data", qApp->applicationDirPath() + "/data/");
@@ -743,6 +744,21 @@ void ConfigManager::initDevelopmentWorkingDir()
 
 		cmakeCache.close();
 	}
+}
+
+void ConfigManager::initIsolatedWorkingDir()
+{
+	// An isolated configuration, e.g. for the tests: its own configuration file and working directory, and nothing
+	// of the user's (whose folders may also be behind the system's privacy prompts, as Documents is on macOS)
+	const auto isolated = qEnvironmentVariable(IsolatedConfigVariable);
+	if (isolated.isEmpty()) { return; }
+
+	const auto base = ensureTrailingSlash(QDir::cleanPath(isolated));
+	m_workingDir = base + "workspace/";
+	m_lmmsRcFile = base + "." LMMS_PROJECT_ID "rc.xml";
+	m_vstDir = m_workingDir + "vst/";
+	m_sf2Dir = m_workingDir + SF2_PATH;
+	m_gigDir = m_workingDir + GIG_PATH;
 }
 
 // If configversion is not present, we will convert the LMMS version to the appropriate

@@ -305,6 +305,25 @@ struct StereoLevels
 	float biggestStep;
 };
 
+//! Whether this build's speed means anything: optimized, and not slowed down by a sanitizer
+constexpr auto measuresSpeed() -> bool
+{
+#if !defined(__OPTIMIZE__)
+	return false;
+#elif defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+	return false;
+#elif defined(__has_feature)
+#	if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || __has_feature(memory_sanitizer) \
+		|| __has_feature(undefined_behavior_sanitizer)
+	return false;
+#	else
+	return true;
+#	endif
+#else
+	return true;
+#endif
+}
+
 class MixerTest : public QObject
 {
 	Q_OBJECT
@@ -2729,6 +2748,7 @@ private slots:
 	void compressorCost()
 	{
 		// Each model, on a stereo channel, must cost a small part of a core (plan: up to about 2%)
+		if (!measuresSpeed()) { QSKIP("Speed is only meaningful in an optimized build without sanitizers"); }
 		for (const auto model : ChannelCompressor::DisplayOrder)
 		{
 			auto c = ChannelCompressor{};
