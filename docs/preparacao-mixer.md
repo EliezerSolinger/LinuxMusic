@@ -546,6 +546,58 @@ ordem do sinal:
 - gate fecha abaixo do limiar; compressor aperta mais o sinal forte;
 - modo e faixa salvos.
 
+### Passo 15: master à direita, retornos de efeito e seção master (feito)
+
+Pedido do usuário: nas duas mesas, o master fica à direita, junto com 2 bus de efeitos (para um reverb, por
+exemplo) com dois knobs de envio em cada canal, e o master ganha os recursos das mesas de estúdio. Das opções
+sugeridas, ele escolheu o compressor de barramento, a seção de monitoração e o medidor de correlação, e pediu VUs
+analógicos na monitoração.
+
+**Retornos de efeito** (`Mixer::fxReturns()`):
+- **Canais:** dois, FX 1 e FX 2, marcados com `MixerChannel::m_fxReturn` (salvo como `fxreturn`), sempre presentes
+  (`Mixer::ensureFxReturns()`).
+  - Projetos novos e de antes os ganham ao carregar, depois dos canais das faixas, que ficam com os primeiros
+    números.
+  - Não podem ser removidos como "sem uso".
+- **Envios:** todo canal manda para eles depois do fader, com quantidade 0 de início.
+  - **Decisão:** os envios são rotas comuns do mixer. Os knobs FX1 e FX2 de cada faixa são a quantidade dessas
+    rotas, então são salvos, entram no desfazer e aceitam automação, sem um segundo sistema de envios.
+  - Um envio no zero (sem automação) é pulado na mistura e não custa nada.
+  - O roteamento das pastas ignora os envios aos retornos.
+
+**Seção master** (`MasterSection`), nas duas mesas:
+- **Compressor de barramento**, no master depois dos efeitos e antes do fader, inspirado no da SSL série G:
+  - detecção estéreo ligada, joelho suave estreito (2 dB);
+  - razão 2, 4 ou 10; ataque de 0,1 a 30 ms; release de 0,1 a 1,2 s; make-up até +15 dB;
+  - **AUTO:** o release vai de 0,1 s em picos curtos a 1,2 s com compressão sustentada (que o compressor mede ao longo
+    de 1 s), para voltar rápido dos picos sem "bombear" em material denso;
+  - desligado por padrão (botão IN), salvo no projeto, entra no desfazer;
+  - medidor de redução de ganho de 0 a 20 dB.
+- **Monitoração:** nível, DIM (−20 dB), CUT e MONO. **Decisões:**
+  - age só no que vai para as caixas: o mixer não aplica durante a exportação, e os medidores mostram a mixagem, não
+    o que se ouve;
+  - são estados de escuta: não são salvos no projeto nem entram no desfazer (abrir um projeto com CUT ligado
+    confundiria);
+  - mudanças em rampa ao longo de um período, sem clique.
+- **Medidores:**
+  - **VUs analógicos** L e R: face iluminada, escala de −20 a +3 VU proporcional à tensão (como num VU de verdade),
+    agulha com a balística de 300 ms (o RMS do master). 0 VU = −18 dBFS RMS, o alinhamento usual entre digital e
+    analógico;
+  - **correlação** de L e R ao longo de 300 ms: +1 mono, 0 largo, abaixo de 0 eles se cancelam.
+
+**Interface:**
+- À direita dos canais: FX 1, FX 2, a seção master (METERS, BUS COMP, MONITOR) e a faixa do master. Os faders se
+  alinham, com os espaços que faltam a cada faixa reservados.
+- Cada faixa tem os knobs FX1 e FX2 (`DeskKnob`, que ganhou arquivos próprios).
+- **Canal fantasma:** o botão + virou um canal tracejado depois do último canal; um clique cria um canal no lugar
+  dele.
+
+`MixerTest` tem 77 testes. Novos:
+- retornos recebem os envios, salvos, e projetos de antes os ganham;
+- o compressor aperta a mixagem e informa a redução;
+- a correlação segue a fase;
+- a monitoração muda só o que se ouve.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
