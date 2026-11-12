@@ -456,6 +456,7 @@ void Lv2Proc::initPlugin()
 			connectPort(portNum);
 		}
 		lilv_instance_activate(m_instance);
+		measureLatency();
 	}
 	else
 	{
@@ -466,6 +467,37 @@ void Lv2Proc::initPlugin()
 			<< ")";
 		throw std::runtime_error("Failed to create Lv2 processor");
 	}
+}
+
+
+
+
+void Lv2Proc::measureLatency()
+{
+	if (!m_latencyValue) { return; }
+
+	// Silence in, empty event buffers, and the controls as they are
+	struct Prepare : public Lv2Ports::Visitor
+	{
+		f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		std::vector<float> silence;
+		void visit(Lv2Ports::Audio& audio) override
+		{
+			frames = std::min<f_cnt_t>(frames, audio.bufferSize());
+			if (audio.m_flow != Lv2Ports::Flow::Input) { return; }
+			silence.assign(audio.bufferSize(), 0.f);
+			audio.copyBuffersFromCore(silence.data(), static_cast<f_cnt_t>(silence.size()));
+		}
+		void visit(Lv2Ports::AtomSeq& atomPort) override
+		{
+			lv2_evbuf_reset(atomPort.m_buf.get(), atomPort.m_flow == Lv2Ports::Flow::Input);
+		}
+	} prepare;
+	for (const auto& port : m_ports) { port->accept(prepare); }
+
+	if (prepare.frames > 0) { run(prepare.frames); }
+	lilv_instance_deactivate(m_instance);
+	lilv_instance_activate(m_instance);
 }
 
 

@@ -164,6 +164,12 @@ protected:
 	//! Deactivate instance
 	void shutdownPlugin();
 
+	/**
+	 * Plugins report their latency while they run, so a plugin with a latency port runs once on silence after
+	 * being activated, and is then activated afresh (as Ardour does): the latency is known before the first period.
+	 */
+	void measureLatency();
+
 private:
 	const LilvPlugin* m_plugin;
 	//! The output control port reporting the plugin's latency (lv2:reportsLatency), if any

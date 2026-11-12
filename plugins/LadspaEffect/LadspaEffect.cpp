@@ -141,6 +141,7 @@ auto LadspaEffect::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 	if (!isOkay()) { return true; }
 
 	activateHandles();
+	measureLatency();
 	return true;
 }
 
@@ -241,6 +242,20 @@ ProcessStatus LadspaEffect::process(ProcessContext& context)
 {
 	const AudioBuffer& in = context.in();
 	AudioBuffer& out = context.out();
+
+	runProcessors(in, out);
+
+	// Mix the dry signal into the outputs. Outputs without a matching input have no dry signal.
+	mixDrySignal(in, out, static_cast<ch_cnt_t>(in.channels()));
+
+	return ProcessStatus::ContinueIfNotQuiet;
+}
+
+
+
+
+void LadspaEffect::runProcessors(const AudioBuffer& in, AudioBuffer& out)
+{
 	const auto frames = std::min(out.frames(), m_maxFrames);
 
 	Ladspa2LMMS * manager = Engine::getLADSPAManager();
@@ -313,11 +328,25 @@ ProcessStatus LadspaEffect::process(ProcessContext& context)
 	{
 		(m_descriptor->run)(m_handles[proc], frames);
 	}
+}
 
-	// Mix the dry signal into the outputs. Outputs without a matching input have no dry signal.
-	mixDrySignal(in, out, static_cast<ch_cnt_t>(in.channels()));
 
-	return ProcessStatus::ContinueIfNotQuiet;
+
+
+void LadspaEffect::measureLatency()
+{
+	if (!m_latencyPort || !m_handlesActive) { return; }
+
+	const auto frames = std::min<f_cnt_t>(Engine::audioEngine()->framesPerPeriod(), m_maxFrames);
+	const auto in = AudioBuffer{frames, static_cast<ch_cnt_t>(processorCount() * m_inputsPerProcessor)};
+	auto out = AudioBuffer{frames, static_cast<ch_cnt_t>(processorCount() * m_outputsPerProcessor)};
+	runProcessors(in, out);
+
+	// The port connections were to these buffers
+	std::fill(m_connectedAudioBuffers.begin(), m_connectedAudioBuffers.end(), nullptr);
+
+	deactivateHandles();
+	activateHandles();
 }
 
 

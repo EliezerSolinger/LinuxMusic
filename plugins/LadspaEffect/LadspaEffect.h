@@ -95,6 +95,15 @@ private:
 	void pluginDestruction();
 
 	void activateHandles();
+
+	//! Connects the ports to @p in and @p out and the controls, and runs the processors
+	void runProcessors(const AudioBuffer& in, AudioBuffer& out);
+
+	/**
+	 * Plugins report their latency while they run, so a plugin with a latency port runs once on silence after
+	 * being activated, and is then activated afresh (as Ardour does): the latency is known before the first period.
+	 */
+	void measureLatency();
 	void deactivateHandles();
 
 	LadspaControls * m_controls;
