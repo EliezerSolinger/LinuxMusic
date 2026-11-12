@@ -4,6 +4,7 @@ set(LMMS_SRCS
 	core/AudioBuffer.cpp
 	core/AudioBusHandle.cpp
 	core/AudioEngine.cpp
+	core/AudioRecorder.cpp
 	core/AudioEngineProfiler.cpp
 	core/AudioEngineWorkerThread.cpp
 	core/AudioPortsModel.cpp

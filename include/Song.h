@@ -33,6 +33,7 @@
 #include <QHash>  // IWYU pragma: keep
 
 #include "AudioEngine.h"
+#include "AudioRecorder.h"
 #include "Controller.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
@@ -334,6 +335,23 @@ public:
 
 	void removeOldAutomatedValue(AutomatableModel* am);
 
+	/**
+	 * Audio recording (docs/plano-gravacao.md, "Gravação"): starts playing the song and recording the input of the
+	 * armed sample tracks. On stop, each take becomes a clip on its track, in one undo step.
+	 * @returns false, with recordingProblem() emitted, if nothing could be recorded (e.g. no armed track)
+	 */
+	auto recordAudio() -> bool;
+
+	//! @returns whether audio is being recorded
+	auto isRecordingAudio() const -> bool { return m_audioRecorder.isRecording(); }
+
+	//! @returns the folder where recordings of this project go: "<project>_media" next to the project file, or a
+	//! folder of the working directory while the project has no file
+	auto mediaDirectory() const -> QString;
+
+	//! @returns the frames between a sound played and its recording: the device's latencies and the calibration
+	auto recordingLatency() const -> f_cnt_t;
+
 public slots:
 	void playSong();
 	void playAndRecord();
@@ -372,6 +390,9 @@ private slots:
 
 
 private:
+	//! Makes clips of the takes just recorded
+	void finishAudioRecording(const std::vector<AudioRecorder::Take>& takes);
+
 	Song();
 	Song( const Song & );
 	~Song() override;
@@ -447,6 +468,9 @@ private:
 	std::array<Timeline, PlayModeCount> m_timelines;
 
 	std::atomic<PlayMode> m_playMode;
+
+	AudioRecorder m_audioRecorder;
+	double m_periodStartFrame = 0; //!< the song frame where the period being rendered starts (audio thread)
 	bar_t m_length;
 
 	const MidiClip* m_midiClipToPlay;
@@ -485,6 +509,7 @@ signals:
 	void stopped();
 	void modified();
 	void projectFileNameChanged();
+	void recordingProblem(const QString& message);
 	void scaleListChanged(int index);
 	void keymapListChanged(int index);
 } ;

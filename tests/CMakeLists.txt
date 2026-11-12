@@ -13,7 +13,9 @@ set(LMMS_TESTS
 	src/core/MixerTest.cpp
 	src/core/PluginEventTest.cpp
 	src/core/ProjectVersionTest.cpp
+	src/core/RecordingTest.cpp
 	src/core/RelativePathsTest.cpp
+	src/core/SpscRingTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TripleBufferTest.cpp
 	src/tracks/AutomationTrackTest.cpp

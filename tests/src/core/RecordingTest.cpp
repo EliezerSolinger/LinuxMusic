@@ -1,0 +1,277 @@
+/*
+ * RecordingTest.cpp - audio recording lands where it was played
+ *
+ * This file is part of LinuxMusic, a fork of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#include <QObject>
+#include <QTemporaryDir>
+#include <QtTest>
+
+#include <cmath>
+#include <vector>
+
+#include <sndfile.h>
+
+#include "AudioDevice.h"
+#include "AudioEngine.h"
+#include "AudioRecorder.h"
+#include "PathUtil.h"
+#include "Engine.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
+#include "Song.h"
+
+namespace
+{
+
+using namespace lmms;
+
+//! A duplex device whose output comes back into its input after its latencies: a cable from output to input
+class LoopbackDevice : public AudioDevice
+{
+public:
+	LoopbackDevice(AudioEngine* engine, f_cnt_t inputLatency, f_cnt_t outputLatency)
+		: AudioDevice{2, engine}
+		, m_inputLatency{inputLatency}
+		, m_outputLatency{outputLatency}
+	{
+		setInputChannels(2);
+	}
+
+	auto inputLatency() const -> f_cnt_t override { return m_inputLatency; }
+	auto outputLatency() const -> f_cnt_t override { return m_outputLatency; }
+
+	/**
+	 * One callback of @p frames frames: the output a frame leaves the device with is heard after the output latency,
+	 * and what is heard reaches the input after the input latency
+	 */
+	void callback(f_cnt_t frames)
+	{
+		auto input = std::vector<std::vector<float>>(2, std::vector<float>(frames));
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			const auto device = m_frame + frame;
+			const auto source = device - static_cast<std::int64_t>(m_inputLatency + m_outputLatency);
+			for (int channel = 0; channel < 2; ++channel)
+			{
+				input[channel][frame] = source >= 0 && source < static_cast<std::int64_t>(m_output[channel].size())
+					? m_output[channel][source]
+					: 0.f;
+			}
+		}
+		const float* inputPointers[] = {input[0].data(), input[1].data()};
+		auto output = std::vector<float>(2 * frames);
+		audioEngine()->renderNextBuffer(PlanarBufferView<const float>{inputPointers, 2, frames},
+			InterleavedBufferView<float>{output.data(), 2, frames});
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			m_output[0].push_back(output[2 * frame]);
+			m_output[1].push_back(output[2 * frame + 1]);
+		}
+		m_frame += frames;
+	}
+
+	//! The frame and level of the loudest output sample of channel 0
+	auto outputPeak() const -> std::pair<std::int64_t, float>
+	{
+		auto peak = std::pair<std::int64_t, float>{-1, 0.f};
+		for (std::size_t frame = 0; frame < m_output[0].size(); ++frame)
+		{
+			if (std::abs(m_output[0][frame]) > peak.second) { peak = {static_cast<std::int64_t>(frame), std::abs(m_output[0][frame])}; }
+		}
+		return peak;
+	}
+
+private:
+	void startProcessingImpl() override {}
+	void stopProcessingImpl() override {}
+
+	f_cnt_t m_inputLatency;
+	f_cnt_t m_outputLatency;
+	std::int64_t m_frame = 0;
+	std::vector<float> m_output[2]; //!< everything the device played
+};
+
+//! Writes a mono float WAV of @p frames frames, silent but for a full-scale sample at @p impulse
+void writeImpulse(const QString& path, sample_rate_t rate, int frames, int impulse)
+{
+	auto info = SF_INFO{};
+	info.samplerate = static_cast<int>(rate);
+	info.channels = 1;
+	info.format = SF_FORMAT_WAV | SF_FORMAT_FLOAT;
+	auto* file = sf_open(QFile::encodeName(path).constData(), SFM_WRITE, &info);
+	QVERIFY(file);
+	auto samples = std::vector<float>(frames, 0.f);
+	samples[impulse] = 1.f;
+	sf_writef_float(file, samples.data(), frames);
+	sf_close(file);
+}
+
+//! @returns the frame of the largest absolute sample of channel 0 of a WAV file, or -1
+auto peakFrame(const QString& path) -> std::int64_t
+{
+	auto info = SF_INFO{};
+	auto* file = sf_open(QFile::encodeName(path).constData(), SFM_READ, &info);
+	if (!file) { return -1; }
+	auto samples = std::vector<float>(static_cast<std::size_t>(info.frames * info.channels));
+	sf_readf_float(file, samples.data(), info.frames);
+	sf_close(file);
+	auto peak = std::int64_t{-1};
+	auto level = 0.f;
+	for (sf_count_t frame = 0; frame < info.frames; ++frame)
+	{
+		const auto value = std::abs(samples[frame * info.channels]);
+		if (value > level) { level = value; peak = frame; }
+	}
+	return level > 0.1f ? peak : -1;
+}
+
+} // namespace
+
+class RecordingTest : public QObject
+{
+	Q_OBJECT
+
+private:
+	/**
+	 * Plays an impulse on one track and records it on an armed track through a loopback cable, with callbacks of
+	 * @p callbackFrames frames, from @p startTick on
+	 * @returns the song frame the recorded impulse landed on, minus the song frame it was heard at
+	 */
+	auto recordLoopback(f_cnt_t inputLatency, f_cnt_t outputLatency, f_cnt_t callbackFrames, tick_t startTick)
+		-> double
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto device = new LoopbackDevice{engine, inputLatency, outputLatency};
+		engine->setAudioDevice(device, false);
+
+		// The impulse, 100 frames into a clip at bar 3
+		constexpr tick_t ClipTick = 2 * 192;
+		constexpr int ImpulseOffset = 100;
+		const auto impulsePath = m_directory.filePath("impulse.wav");
+		writeImpulse(impulsePath, engine->outputSampleRate(), 20000, ImpulseOffset);
+
+		auto* player = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* clip = new SampleClip{player};
+		clip->setSampleFile(impulsePath);
+		clip->movePosition(TimePos{ClipTick});
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+
+		song->setPlayPos(startTick, Song::PlayMode::Song);
+		auto problem = QString{};
+		const auto connection = connect(song, &Song::recordingProblem, this, [&](const QString& m) { problem = m; });
+		const bool recording = song->recordAudio();
+		disconnect(connection);
+		if (!recording)
+		{
+			qWarning("not recording: %s", qPrintable(problem));
+			return 1e9;
+		}
+		const auto end = (ClipTick + 192) * static_cast<double>(Engine::framesPerTick());
+		for (double played = startTick * static_cast<double>(Engine::framesPerTick()); played < end + 3 * callbackFrames;
+			played += callbackFrames)
+		{
+			device->callback(callbackFrames);
+		}
+		song->stop();
+
+		// Where the impulse was heard: the device played song frame s at device frame s - start + 1 period (the
+		// engine hands the device each period one period late). Measuring against what was heard keeps this test
+		// about the recording, whatever the playback does.
+		const auto outputPeak = device->outputPeak();
+		if (outputPeak.second < 0.5f) { qWarning("the impulse was not played"); }
+		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
+		const auto playedAt = startTick * framesPerTick + static_cast<double>(outputPeak.first)
+			- static_cast<double>(engine->framesPerPeriod());
+
+		// The take is the recording track's clip
+		auto result = 1e9;
+		if (recorder->numOfClips() != 1) { qWarning("%d takes (%s)", recorder->numOfClips(), qPrintable(problem)); }
+		else
+		{
+			const auto* take = dynamic_cast<SampleClip*>(recorder->getClip(0));
+			const auto peak = peakFrame(PathUtil::toAbsolute(take->sampleFile()));
+			if (peak < 0) { qWarning("no impulse in %s", qPrintable(take->sampleFile())); }
+			else { result = take->startPosition().getTicks() * framesPerTick + peak - playedAt; }
+		}
+
+		const auto guard = engine->requestChangesGuard();
+		delete player;
+		delete recorder;
+		return result;
+	}
+
+private slots:
+	void initTestCase()
+	{
+		QVERIFY(m_directory.isValid());
+		Engine::init(true);
+		Engine::audioEngine()->stopProcessing();
+	}
+
+	void cleanupTestCase()
+	{
+		Engine::destroy();
+	}
+
+	void recordingLandsWhereItWasPlayed_data()
+	{
+		QTest::addColumn<int>("inputLatency");
+		QTest::addColumn<int>("outputLatency");
+		QTest::addColumn<int>("callbackFrames");
+		QTest::addColumn<int>("startTick");
+		// A device's latencies hold at least its buffer on each side (what comes in reaches the engine a buffer later)
+		QTest::newRow("buffers only, callbacks of a period") << 256 << 256 << 256 << 0;
+		QTest::newRow("latencies, callbacks of a period") << 256 + 37 << 256 + 211 << 256 << 0;
+		QTest::newRow("latencies, odd callbacks") << 97 + 113 << 97 + 517 << 97 << 0;
+		QTest::newRow("long callbacks, started mid-song") << 1024 + 64 << 1024 + 1024 << 1024 << 200;
+	}
+
+	void recordingLandsWhereItWasPlayed()
+	{
+		QFETCH(int, inputLatency);
+		QFETCH(int, outputLatency);
+		QFETCH(int, callbackFrames);
+		QFETCH(int, startTick);
+		const auto offset = recordLoopback(inputLatency, outputLatency, callbackFrames, startTick);
+		qInfo("recorded %.2f frames from where it was played", offset);
+		QVERIFY2(std::abs(offset) <= 1.0, qPrintable(QString::number(offset)));
+	}
+
+	void nothingArmedRecordsNothing()
+	{
+		auto problem = QString{};
+		auto* song = Engine::getSong();
+		const auto connection = connect(song, &Song::recordingProblem, this, [&](const QString& m) { problem = m; });
+		QVERIFY(!song->recordAudio());
+		QVERIFY(!problem.isEmpty());
+		QVERIFY(!song->isRecordingAudio());
+		disconnect(connection);
+	}
+
+private:
+	QTemporaryDir m_directory;
+};
+
+QTEST_GUILESS_MAIN(RecordingTest)
+#include "RecordingTest.moc"

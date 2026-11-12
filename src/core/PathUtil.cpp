@@ -88,6 +88,13 @@ namespace lmms::PathUtil
 			}
 			default                   : return QString("");
 		}
+		// A folder that is not set is no base: QDir would take it for the current folder, and paths would be made
+		// relative to wherever the program runs from
+		if (loc.isEmpty())
+		{
+			if (error) { *error = true; }
+			return QString("");
+		}
 		return QDir::cleanPath(loc) + "/";
 	}
 

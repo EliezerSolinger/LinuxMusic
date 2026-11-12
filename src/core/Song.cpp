@@ -27,6 +27,8 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QFile>
+#include <QFileInfo>
+#include <QRegularExpression>
 #include <QMessageBox>
 
 #include <algorithm>
@@ -54,6 +56,8 @@
 #include "ProjectNotes.h"
 #include "Scale.h"
 #include "SongEditor.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
 #include "PeakController.h"
 
 
@@ -265,6 +269,9 @@ void Song::processNextBuffer()
 	// Ensure playback begins within the loop if it is enabled
 	if (loopEnabled) { enforceLoop(timeline.loopBegin(), timeline.loopEnd()); }
 
+	// Where the period starts, for the recording (see AudioRecorder)
+	m_periodStartFrame = static_cast<double>(timeline.ticks()) * Engine::framesPerTick() + timeline.frameOffset();
+
 	const auto framesPerTick = Engine::framesPerTick();
 	const auto framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
 
@@ -345,6 +352,12 @@ void Song::processNextBuffer()
 		frameOffsetInPeriod += framesToPlay;
 		frameOffsetInTick += framesToPlay;
 		timeline.setFrameOffset(frameOffsetInTick);
+	}
+
+	// The armed tracks' input of this period goes to their takes
+	if (m_playMode == PlayMode::Song)
+	{
+		m_audioRecorder.process(Engine::audioEngine()->capture(), m_periodStartFrame, Engine::framesPerTick());
 	}
 
 }
@@ -699,10 +712,149 @@ void Song::stop()
 
 	m_playMode = PlayMode::None;
 
+	// The audio thread is held here (requestChangeInModel() above): the recording ends with this period
+	auto takes = m_audioRecorder.stop();
+
 	Engine::audioEngine()->doneChangeInModel();
+
+	if (!takes.empty()) { finishAudioRecording(takes); }
 
 	emit stopped();
 	emit playbackStateChanged();
+}
+
+
+
+
+auto Song::mediaDirectory() const -> QString
+{
+	if (m_fileName.isEmpty()) { return ConfigManager::inst()->workingDir() + "recordings"; }
+	const auto project = QFileInfo{m_fileName};
+	return project.absolutePath() + '/' + project.completeBaseName() + "_media";
+}
+
+
+
+
+auto Song::recordingLatency() const -> f_cnt_t
+{
+	const auto* device = Engine::audioEngine()->audioDev();
+	const auto calibration = ConfigManager::inst()->value("recording", "latencyoffset", "0").toInt();
+	const auto latency = device
+		? static_cast<long long>(device->inputLatency()) + static_cast<long long>(device->outputLatency())
+		: 0LL;
+	return static_cast<f_cnt_t>(std::max(0LL, latency + calibration));
+}
+
+
+
+
+auto Song::recordAudio() -> bool
+{
+	if (m_exporting || isRecordingAudio()) { return false; }
+
+	const auto* device = Engine::audioEngine()->audioDev();
+	const auto deviceInputs = device ? static_cast<int>(device->inputChannels()) : 0;
+	const auto directory = mediaDirectory();
+
+	auto requests = std::vector<AudioRecorder::Request>{};
+	auto problems = QStringList{};
+	auto usedPaths = QStringList{};
+	for (auto* track : tracks())
+	{
+		auto* sampleTrack = dynamic_cast<SampleTrack*>(track);
+		if (!sampleTrack || !sampleTrack->recordArmModel()->value()) { continue; }
+
+		const auto& input = sampleTrack->input();
+		if (input.source != AudioInput::Source::Hardware)
+		{
+			problems << tr("%1 is armed but has no input.").arg(sampleTrack->name());
+			continue;
+		}
+		if (input.firstChannel + input.channelCount > deviceInputs)
+		{
+			problems << tr("%1 records from input %2, which the audio device does not have.")
+				.arg(sampleTrack->name()).arg(input.firstChannel + input.channelCount);
+			continue;
+		}
+
+		// "<track>_<n>.wav", n the first take number free
+		auto base = sampleTrack->name();
+		base.replace(QRegularExpression{"[^\\w\\-]+"}, "_");
+		if (base.isEmpty()) { base = "take"; }
+		auto path = QString{};
+		for (int take = 1; path.isEmpty() || QFileInfo::exists(path) || usedPaths.contains(path); ++take)
+		{
+			path = QString{"%1/%2_%3.wav"}.arg(directory, base).arg(take);
+		}
+		usedPaths << path;
+		requests.push_back({sampleTrack, input, path});
+	}
+
+	if (requests.empty())
+	{
+		if (problems.isEmpty()) { problems << tr("No sample track is armed for recording."); }
+		emit recordingProblem(problems.join('\n'));
+		return false;
+	}
+
+	playSong();
+	const auto error = m_audioRecorder.start(requests, recordingLatency(), Engine::audioEngine()->framesPerPeriod(),
+		Engine::audioEngine()->outputSampleRate());
+	if (!error.isEmpty())
+	{
+		stop();
+		emit recordingProblem(error);
+		return false;
+	}
+	m_recording = true;
+	if (!problems.isEmpty()) { emit recordingProblem(problems.join('\n')); }
+	emit playbackStateChanged();
+	return true;
+}
+
+
+
+
+void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
+{
+	m_recording = false;
+	auto problems = QStringList{};
+	for (const auto& take : takes)
+	{
+		if (!take.started || take.frames == 0)
+		{
+			QFile::remove(take.path);
+			continue;
+		}
+
+		// The track may have been removed while recording: its take stays on disk
+		const auto& all = tracks();
+		if (std::find(all.begin(), all.end(), take.track) == all.end())
+		{
+			problems << tr("The track of %1 was removed while recording; the file was kept.").arg(take.path);
+			continue;
+		}
+
+		auto* track = static_cast<SampleTrack*>(take.track);
+		track->addJournalCheckPoint();
+		auto* clip = new SampleClip{track};
+		clip->setSampleFile(take.path);
+		clip->movePosition(TimePos{static_cast<tick_t>(take.startTick)});
+
+		if (take.lostFrames > 0)
+		{
+			problems << tr("%1: the disk could not keep up; %2 ms were recorded as silence.").arg(track->name())
+				.arg(take.lostFrames * 1000 / Engine::audioEngine()->outputSampleRate());
+		}
+		if (take.diskFailed)
+		{
+			problems << tr("%1: writing %2 failed; the take holds what was written before.").arg(track->name(),
+				take.path);
+		}
+	}
+	setModified();
+	if (!problems.isEmpty()) { emit recordingProblem(problems.join('\n')); }
 }
 
 
