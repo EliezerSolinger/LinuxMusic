@@ -42,6 +42,7 @@ set(LMMS_SRCS
 	core/InlineAutomation.cpp
 	core/Instrument.cpp
 	core/InstrumentFunctions.cpp
+	core/InputMonitorHandle.cpp
 	core/InstrumentPlayHandle.cpp
 	core/InstrumentSoundShaping.cpp
 	core/JournallingObject.cpp

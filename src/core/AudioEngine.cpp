@@ -216,11 +216,19 @@ void AudioEngine::renderStageNoteSetup()
 	Engine::getSong()->processNextBuffer();
 
 	// add all play-handles that have to be added
-	for( LocklessListElement * e = m_newPlayHandles.popList(); e; )
+	adoptNewPlayHandles();
+}
+
+
+
+
+void AudioEngine::adoptNewPlayHandles()
+{
+	for (LocklessListElement* e = m_newPlayHandles.popList(); e;)
 	{
 		m_playHandles += e->value;
-		LocklessListElement * next = e->next;
-		m_newPlayHandles.free( e );
+		LocklessListElement* next = e->next;
+		m_newPlayHandles.free(e);
 		e = next;
 	}
 }
@@ -376,6 +384,12 @@ void AudioEngine::clearNewPlayHandles()
 	requestChangeInModel();
 	for( LocklessListElement * e = m_newPlayHandles.popList(); e; )
 	{
+		// The handles that live as long as their tracks stay (their tracks remove them)
+		const auto type = e->value->type();
+		if (type == PlayHandle::Type::InstrumentPlayHandle || type == PlayHandle::Type::InputMonitorHandle)
+		{
+			m_playHandles += e->value;
+		}
 		LocklessListElement * next = e->next;
 		m_newPlayHandles.free( e );
 		e = next;
@@ -392,7 +406,9 @@ void AudioEngine::clearInternal()
 	// TODO: m_midiClient->noteOffAll();
 	for (auto ph : m_playHandles)
 	{
-		if (ph->type() != PlayHandle::Type::InstrumentPlayHandle)
+		// The instruments' and the input monitors' handles live as long as their tracks
+		if (ph->type() != PlayHandle::Type::InstrumentPlayHandle
+			&& ph->type() != PlayHandle::Type::InputMonitorHandle)
 		{
 			m_playHandlesToRemove.push_back(ph);
 		}
@@ -487,7 +503,8 @@ bool AudioEngine::addPlayHandle( PlayHandle* handle )
 	// Only add play handles if we have the CPU capacity to process them.
 	// Instrument play handles are not added during playback, but when the
 	// associated instrument is created, so add those unconditionally.
-	if (handle->type() == PlayHandle::Type::InstrumentPlayHandle || !criticalXRuns())
+	if (handle->type() == PlayHandle::Type::InstrumentPlayHandle
+		|| handle->type() == PlayHandle::Type::InputMonitorHandle || !criticalXRuns())
 	{
 		m_newPlayHandles.push( handle );
 		if (handle->audioBusHandle()) { handle->audioBusHandle()->addPlayHandle(handle); }
@@ -565,6 +582,10 @@ void AudioEngine::removePlayHandle(PlayHandle * ph)
 void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types types)
 {
 	requestChangeInModel();
+
+	// A handle added since the last period is still in the list of new ones: it must be found too, or the next
+	// period would adopt a handle deleted with its track
+	adoptNewPlayHandles();
 	PlayHandleList::Iterator it = m_playHandles.begin();
 	while( it != m_playHandles.end() )
 	{

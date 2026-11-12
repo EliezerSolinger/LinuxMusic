@@ -425,6 +425,10 @@ private:
 	//! Sets the capture buffers up for the audio device's inputs (not on the audio thread)
 	void prepareCapture();
 
+	//! Moves the play handles added since the last period into the list of play handles (audio thread, or holding
+	//! the change lock)
+	void adoptNewPlayHandles();
+
 	void clearInternal();
 
 	bool m_renderOnly;

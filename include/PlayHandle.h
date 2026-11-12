@@ -53,7 +53,8 @@ public:
 		NotePlayHandle = 0x01,
 		InstrumentPlayHandle = 0x02,
 		SamplePlayHandle = 0x04,
-		PresetPreviewHandle = 0x08
+		PresetPreviewHandle = 0x08,
+		InputMonitorHandle = 0x10 //!< a sample track's input, monitored (see InputMonitorHandle)
 	} ;
 	using Types = Flags<Type>;
 

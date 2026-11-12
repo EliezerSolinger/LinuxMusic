@@ -82,6 +82,7 @@ public:
 	void setInput(const AudioInput& input);
 	BoolModel* recordArmModel() { return &m_recordArmModel; }
 	auto isRecordArmed() const -> bool { return m_recordArmModel.value(); }
+	auto monitorMode() const -> int { return m_monitorModel.value(); } //!< a MonitorMode
 	IntModel* monitorModel() { return &m_monitorModel; }	//!< a MonitorMode
 
 	inline AudioBusHandle* audioBusHandle()

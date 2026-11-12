@@ -25,6 +25,8 @@
 
 #include "SampleTrack.h"
 
+#include "InputMonitorHandle.h"
+
 #include <QDomElement>
 
 #include "EffectChain.h"
@@ -57,6 +59,9 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 	m_panningModel.setCenterValue(DefaultPanning);
 
 	connect(&m_mixerChannelModel, SIGNAL(dataChanged()), this, SLOT(updateMixerChannel()));
+
+	// Software monitoring: the handle plays the input while monitoring is on (see InputMonitorHandle)
+	Engine::audioEngine()->addPlayHandle(new InputMonitorHandle{this});
 }
 
 
@@ -64,7 +69,8 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 
 SampleTrack::~SampleTrack()
 {
-	Engine::audioEngine()->removePlayHandlesOfTypes( this, PlayHandle::Type::SamplePlayHandle );
+	Engine::audioEngine()->removePlayHandlesOfTypes(this,
+		PlayHandle::Type::SamplePlayHandle | PlayHandle::Type::InputMonitorHandle);
 }
 
 

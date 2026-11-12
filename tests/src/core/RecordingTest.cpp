@@ -258,6 +258,61 @@ private slots:
 		QVERIFY2(std::abs(offset) <= 1.0, qPrintable(QString::number(offset)));
 	}
 
+	void monitoringPlaysTheInputThroughTheTrack_data()
+	{
+		QTest::addColumn<int>("mode");
+		QTest::addColumn<bool>("armed");
+		QTest::addColumn<bool>("heard");
+		QTest::newRow("off") << static_cast<int>(SampleTrack::MonitorMode::Off) << true << false;
+		QTest::newRow("on") << static_cast<int>(SampleTrack::MonitorMode::On) << false << true;
+		QTest::newRow("auto, armed, stopped") << static_cast<int>(SampleTrack::MonitorMode::Auto) << true << true;
+		QTest::newRow("auto, not armed") << static_cast<int>(SampleTrack::MonitorMode::Auto) << false << false;
+	}
+
+	void monitoringPlaysTheInputThroughTheTrack()
+	{
+		QFETCH(int, mode);
+		QFETCH(bool, armed);
+		QFETCH(bool, heard);
+
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 0, 0};
+		engine->setAudioDevice(device, false);
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		track->setInput({AudioInput::Source::Hardware, 1, 1});
+		track->monitorModel()->setValue(mode);
+		track->recordArmModel()->setValue(armed);
+
+		// A 1 kHz tone into input 2, with the song stopped
+		const auto period = engine->framesPerPeriod();
+		auto tone = std::vector<float>(period);
+		auto silence = std::vector<float>(period, 0.f);
+		const float* input[] = {silence.data(), tone.data()};
+		auto output = std::vector<float>(2 * period);
+		double energy = 0;
+		for (int callback = 0; callback < 40; ++callback)
+		{
+			for (f_cnt_t frame = 0; frame < period; ++frame)
+			{
+				tone[frame] = 0.25f * std::sin(2 * 3.14159265 * 1000 * (callback * period + frame) / engine->outputSampleRate());
+			}
+			engine->renderNextBuffer(PlanarBufferView<const float>{input, 2, period},
+				InterleavedBufferView<float>{output.data(), 2, period});
+			if (callback >= 20)
+			{
+				for (const auto sample : output) { energy += sample * sample; }
+			}
+		}
+		const auto rms = std::sqrt(energy / (20.0 * 2 * period));
+		qInfo("output rms %.4f", rms);
+		if (heard) { QVERIFY(rms > 0.05); }
+		else { QVERIFY(rms < 1e-6); }
+
+		const auto guard = engine->requestChangesGuard();
+		delete track;
+	}
+
 	void nothingArmedRecordsNothing()
 	{
 		auto problem = QString{};
