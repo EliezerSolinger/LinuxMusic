@@ -51,23 +51,6 @@ class MixerRoute;
 class Track;
 using MixerRouteVector = std::vector<MixerRoute*>;
 
-//! Where a mixer channel takes audio from, besides the tracks and channels that send to it.
-//! Used by recording (stage 3 of the LinuxMusic roadmap).
-struct ChannelInput
-{
-	enum class Source
-	{
-		None,		//!< only tracks and other channels
-		Hardware	//!< inputs of the audio interface
-	};
-
-	Source source = Source::None;
-	int firstChannel = 0; //!< zero-based input channel of the audio interface
-	int channelCount = 2; //!< 1 = mono, 2 = stereo pair starting at firstChannel
-
-	bool operator==(const ChannelInput&) const = default;
-};
-
 /**
  * A channel of the mixer.
  *
@@ -113,17 +96,6 @@ public:
 
 	//! The strip of an analog desk, between the input trim and the effects, in analog mode (see Mixer::isAnalog())
 	AnalogChannelStrip m_analogStrip;
-
-	// Recording (stage 3): the channel's input, whether it records, and when it plays its input back
-	enum class MonitorMode
-	{
-		Off,	//!< never play the input
-		On,		//!< always play the input
-		Auto	//!< play the input while armed for recording
-	};
-	ChannelInput m_input;
-	BoolModel m_recordArmModel;
-	IntModel m_monitorModel; //!< a MonitorMode
 
 	//! The signal after the effects and before the stereo section, pan and fader, for pre-fader sends
 	std::vector<SampleFrame> m_preFaderBuffer;
@@ -482,9 +454,6 @@ public:
 	void setChannelName(mix_ch_t index, const QString& name);
 	void setChannelColor(mix_ch_t index, const std::optional<QColor>& color);
 
-	//! Sets where channel @p index takes audio from (see ChannelInput)
-	void setChannelInput(mix_ch_t index, const ChannelInput& input);
-
 	//! Whether channel @p index can be deleted: not the master, not an effect return (they are part of the desk)
 	auto canDeleteChannel(int index) const -> bool;
 	//! Deletes channel @p index, if it can be deleted (see canDeleteChannel()); clearing the mixer deletes them all
@@ -518,7 +487,6 @@ public:
 
 signals:
 	void channelCreated(int index);
-	void channelInputChanged(int index);
 	void channelCountChanged(int index);
 	void channelDeleted(int index);
 	void channelsSwapped(int fromIndex, int toIndex);

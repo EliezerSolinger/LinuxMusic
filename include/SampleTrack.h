@@ -26,6 +26,7 @@
 #define LMMS_SAMPLE_TRACK_H
 
 #include "AudioBusHandle.h"
+#include "AudioInput.h"
 #include "MixerChannelLcdModel.h"
 #include "Track.h"
 
@@ -66,6 +67,22 @@ public:
 	FloatModel* volumeModel() { return &m_volumeModel; }
 	FloatModel* panningModel() { return &m_panningModel; }
 
+	/**
+	 * Recording (stage 3, docs/etapa-3-gravacao.md): audio input, arming and monitoring are the tracks', as in
+	 * REAPER, not the mixer channels'. Where the track records from, whether it records, and when it plays its
+	 * input back.
+	 */
+	enum class MonitorMode
+	{
+		Off,	//!< never play the input
+		On,		//!< always play the input
+		Auto	//!< play the input while armed for recording
+	};
+	auto input() const -> const AudioInput& { return m_input; }
+	void setInput(const AudioInput& input);
+	BoolModel* recordArmModel() { return &m_recordArmModel; }
+	IntModel* monitorModel() { return &m_monitorModel; }	//!< a MonitorMode
+
 	inline AudioBusHandle* audioBusHandle()
 	{
 		return &m_audioBusHandle;
@@ -89,6 +106,7 @@ public:
 
 signals:
 	void playingChanged();
+	void inputChanged();
 
 public slots:
 	void updateClips();
@@ -99,6 +117,9 @@ private:
 	FloatModel m_volumeModel;
 	FloatModel m_panningModel;
 	MixerChannelLcdModel m_mixerChannelModel;
+	AudioInput m_input;
+	BoolModel m_recordArmModel;
+	IntModel m_monitorModel;
 	AudioBusHandle m_audioBusHandle;
 	bool m_isPlaying;
 

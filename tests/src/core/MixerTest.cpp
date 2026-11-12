@@ -723,36 +723,34 @@ private slots:
 		QCOMPARE(mixer()->mixerChannel(0)->m_panModel.value(), 30.f);
 	}
 
-	void channelInputDefaultsToNone()
+	void audioInputArmingAndMonitoringAreTheTracks()
 	{
-		const auto channel = mixer()->createChannel();
-		const auto ch = mixer()->mixerChannel(channel);
-		QVERIFY(ch->m_input == ChannelInput{});
-		QCOMPARE(ch->m_recordArmModel.value(), false);
-		QCOMPARE(ch->m_monitorModel.value(), static_cast<int>(MixerChannel::MonitorMode::Auto));
-	}
+		// As in REAPER: the track records; its mixer channel mixes
+		const auto song = Engine::getSong();
+		auto track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		QVERIFY(track);
+		QVERIFY(track->input() == AudioInput{});
+		QCOMPARE(track->recordArmModel()->value(), false);
+		QCOMPARE(track->monitorModel()->value(), static_cast<int>(SampleTrack::MonitorMode::Auto));
 
-	void channelInputIsSavedAndLoaded()
-	{
-		const auto channel = mixer()->createChannel();
-		auto changed = QSignalSpy{mixer(), &Mixer::channelInputChanged};
-		const auto input = ChannelInput{ChannelInput::Source::Hardware, 2, 1};
-		mixer()->setChannelInput(channel, input);
+		auto changed = QSignalSpy{track, &SampleTrack::inputChanged};
+		const auto input = AudioInput{AudioInput::Source::Hardware, 2, 1};
+		track->setInput(input);
 		QCOMPARE(changed.count(), 1);
-		mixer()->mixerChannel(channel)->m_recordArmModel.setValue(true);
-		mixer()->mixerChannel(channel)->m_monitorModel.setValue(static_cast<int>(MixerChannel::MonitorMode::On));
+		track->recordArmModel()->setValue(true);
+		track->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::On));
 
 		auto doc = DataFile{DataFile::Type::SongProject};
-		auto element = doc.createElement("mixer");
-		mixer()->saveSettings(doc, element);
-		mixer()->clear();
-		QVERIFY(mixer()->numChannels() == 1);
-		mixer()->loadSettings(element);
-
-		const auto ch = mixer()->mixerChannel(channel);
-		QVERIFY(ch->m_input == input);
-		QCOMPARE(ch->m_recordArmModel.value(), true);
-		QCOMPARE(ch->m_monitorModel.value(), static_cast<int>(MixerChannel::MonitorMode::On));
+		auto element = doc.createElement("track");
+		track->saveState(doc, element);
+		track->setInput({});
+		track->recordArmModel()->setValue(false);
+		track->restoreState(element.firstChildElement());
+		QVERIFY(track->input() == input);
+		QCOMPARE(track->recordArmModel()->value(), true);
+		QCOMPARE(track->monitorModel()->value(), static_cast<int>(SampleTrack::MonitorMode::On));
+		track->recordArmModel()->setValue(false);
+		deleteTrack(track);
 	}
 
 	void undoCreateChannel()

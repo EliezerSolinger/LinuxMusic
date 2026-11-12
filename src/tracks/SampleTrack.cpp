@@ -47,6 +47,9 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 	Track(Track::Type::Sample, tc),
 	m_volumeModel(DefaultVolume, MinVolume, MaxVolume, 0.1f, this, tr("Volume")),
 	m_panningModel(DefaultPanning, PanningLeft, PanningRight, 0.1f, this, tr("Panning")),
+	m_recordArmModel(false, this, tr("Record arm")),
+	m_monitorModel(static_cast<int>(MonitorMode::Auto), static_cast<int>(MonitorMode::Off),
+		static_cast<int>(MonitorMode::Auto), this, tr("Input monitoring")),
 	m_audioBusHandle(tr("Sample track"), true, &m_volumeModel, &m_panningModel, this),
 	m_isPlaying(false)
 {
@@ -182,6 +185,26 @@ void SampleTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& this
 	m_volumeModel.saveSettings(doc, thisElem, "vol");
 	m_panningModel.saveSettings(doc, thisElem, "pan");
 	m_mixerChannelModel.saveSettings(doc, thisElem, "mixch");
+	m_recordArmModel.saveSettings(doc, thisElem, "recordarm");
+	m_monitorModel.saveSettings(doc, thisElem, "monitor");
+	if (m_input.source == AudioInput::Source::Hardware)
+	{
+		auto input = doc.createElement("input");
+		input.setAttribute("source", "hardware");
+		input.setAttribute("channel", m_input.firstChannel);
+		input.setAttribute("channels", m_input.channelCount);
+		thisElem.appendChild(input);
+	}
+}
+
+
+
+
+void SampleTrack::setInput(const AudioInput& input)
+{
+	if (m_input == input) { return; }
+	m_input = input;
+	emit inputChanged();
 }
 
 
@@ -206,6 +229,13 @@ void SampleTrack::loadTrackSpecificSettings(const QDomElement & thisElem)
 	m_panningModel.loadSettings(thisElem, "pan");
 	m_mixerChannelModel.setRange(0, Engine::mixer()->numChannels() - 1);
 	m_mixerChannelModel.loadSettings(thisElem, "mixch");
+	m_recordArmModel.loadSettings(thisElem, "recordarm");
+	m_monitorModel.loadSettings(thisElem, "monitor");
+	const auto input = thisElem.firstChildElement("input");
+	setInput(!input.isNull() && input.attribute("source") == "hardware"
+		? AudioInput{AudioInput::Source::Hardware, input.attribute("channel").toInt(),
+			std::clamp(input.attribute("channels", "2").toInt(), 1, 2)}
+		: AudioInput{});
 }
 
 

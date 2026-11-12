@@ -1254,7 +1254,22 @@ dois lados trocando de lugar), no mesmo estilo.
 
 `MixerTest` tem 115 testes; o novo testa que os retornos e o master não podem ser apagados.
 
-**Próximo:** a entrada de áudio e o armar vão só para as faixas, não para os canais da mesa (pedido do usuário).
+### Passo 26: entrada de áudio, armar e monitorar só nas faixas (feito)
+
+Pedido do usuário: "o input de áudio vai ser somente via faixa", "não vamos armar canais da mesa e sim armar
+faixas". A composição engloba a gravação.
+
+- **Saiu do canal da mesa:** `ChannelInput`, armar, monitorar, `Mixer::setChannelInput()` e o sinal
+  `channelInputChanged`. A mesa só mistura o que as faixas lhe dão.
+- **Entrou na faixa de sample** (`SampleTrack`), até a faixa de gravação da etapa 3 existir:
+  - `AudioInput` (`include/AudioInput.h`): nenhuma ou entrada da interface, mono ou estéreo, a partir de um canal;
+  - armar (`recordArmModel()`) e monitorar (`monitorModel()`: desligado, ligado ou automático);
+  - tudo salvo com a faixa.
+- **Projetos de antes:** os ajustes do canal nunca tiveram interface nem motor, então não havia o que migrar. Os
+  atributos antigos do canal são ignorados.
+- `docs/etapa-3-gravacao.md` foi atualizado.
+
+`MixerTest` tem 114 testes: os dois de entrada do canal deram lugar a um de entrada, armar e monitorar na faixa.
 
 ### Correção encontrada pela bateria A/B
 

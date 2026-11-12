@@ -23,7 +23,9 @@ soltos, não para editar áudio gravado. Por isso a gravação terá um **tipo d
   sem alterar o arquivo gravado no disco.
 - **Takes em lanes:** cada passada de gravação vira um take na mesma faixa, e dá para escolher ou montar o melhor
   (comping).
-- **Entrada, armar e monitorar** ficam na própria faixa e no canal do mixer ligado a ela (etapa 2).
+- **Entrada, armar e monitorar** ficam **só na faixa**, como no REAPER. O canal da mesa só mistura o que a faixa
+  lhe dá: não se arma um canal da mesa, arma-se a faixa (decisão do usuário, 12/11/2026). Por enquanto quem tem
+  esses ajustes é a faixa de sample (`SampleTrack`); a faixa de gravação os herda quando existir.
 
 A Sample Track atual continua existindo para loops e samples simples, pelo menos até a faixa de gravação cobrir o que
 ela faz.
