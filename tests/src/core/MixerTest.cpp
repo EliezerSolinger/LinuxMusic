@@ -279,8 +279,10 @@ private slots:
 	//! Start each test from a mixer with only the master channel at its defaults
 	void init()
 	{
+		// As in projects, with the effect returns
 		mixer()->clear();
 		mixer()->clearChannel(0);
+		mixer()->ensureFxReturns();
 		settle();
 	}
 
@@ -449,7 +451,7 @@ private slots:
 		mixer()->createChannelSend(a, b);
 		mixer()->deleteChannel(b);
 
-		QCOMPARE(mixer()->numChannels(), 2);
+		QCOMPARE(mixer()->numChannels(), 2 + Mixer::FxReturnCount);
 		QVERIFY(mixer()->channelSendModel(a, 0) != nullptr);
 		feed(a, 0.5f, 0.5f);
 		compareOutput(mix(), 0.5f, 0.5f);
@@ -625,12 +627,13 @@ private slots:
 		journal->setJournalling(true);
 		journal->clearJournal();
 
+		const auto before = mixer()->numChannels();
 		mixer()->createChannel();
-		QCOMPARE(mixer()->numChannels(), 2);
+		QCOMPARE(mixer()->numChannels(), before + 1);
 		journal->undo();
-		QCOMPARE(mixer()->numChannels(), 1);
+		QCOMPARE(mixer()->numChannels(), before);
 		journal->redo();
-		QCOMPARE(mixer()->numChannels(), 2);
+		QCOMPARE(mixer()->numChannels(), before + 1);
 
 		journal->setJournalling(false);
 	}
@@ -945,7 +948,7 @@ private slots:
 
 		// And goes away with the track
 		mixer()->releaseTrackChannel(track);
-		QCOMPARE(mixer()->numChannels(), 1);
+		QCOMPARE(mixer()->numChannels(), 1 + Mixer::FxReturnCount);
 		QCOMPARE(track->mixerChannelModel()->value(), 0);
 		delete track;
 	}
@@ -1202,11 +1205,24 @@ private slots:
 		int output = -1;
 		for (const MixerRoute* route : channel->m_sends)
 		{
-			if (route->sourcePair() != 0 || route->destinationPair() != 0) { continue; }
+			if (route->sourcePair() != 0 || route->destinationPair() != 0 || route->receiver()->m_fxReturn) { continue; }
 			if (output != -1) { return -1; }
 			output = route->receiverIndex();
 		}
 		return output;
+	}
+
+	//! Where channel @p channel sends its main output (not counting the effect returns), or -1
+	static auto mainOutputOf(const MixerChannel* channel) -> int
+	{
+		for (const MixerRoute* route : channel->m_sends)
+		{
+			if (route->sourcePair() == 0 && route->destinationPair() == 0 && !route->receiver()->m_fxReturn)
+			{
+				return route->receiverIndex();
+			}
+		}
+		return -1;
 	}
 
 	static void deleteTrack(Track* track)
@@ -1461,6 +1477,43 @@ private slots:
 		deleteTrack(b);
 		deleteTrack(a);
 		deleteTrack(folder);
+	}
+
+	void fxReturnsTakeTheChannelsSends()
+	{
+		const auto returns = mixer()->fxReturns();
+		QCOMPARE(static_cast<int>(returns.size()), Mixer::FxReturnCount);
+		QVERIFY(mixer()->isChannelInUse(returns[0]->index()));
+
+		// Every channel sends to them, with nothing at first
+		const auto channel = mixer()->createChannel();
+		const auto send = mixer()->fxSend(channel, 0);
+		QVERIFY(send);
+		QCOMPARE(send->amount()->value(), 0.f);
+		QVERIFY(mixer()->fxSend(channel, 1));
+		settle();
+		feed(channel, 0.5f, 0.5f);
+		compareOutput(mix(), 0.5f, 0.5f);
+
+		// Turned up, the effect return adds the channel's signal after its fader
+		send->amount()->setValue(0.5f);
+		mixer()->mixerChannel(channel)->m_volumeModel.setValue(0.5f);
+		settle();
+		feed(channel, 0.5f, 0.5f);
+		compareOutput(mix(), 0.25f + 0.125f, 0.25f + 0.125f);
+
+		// Saving and loading keeps them, and projects from before get them
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixer");
+		doc.content().appendChild(element);
+		mixer()->saveSettings(doc, element);
+		const auto channels = mixer()->numChannels();
+		mixer()->loadSettings(element);
+		QCOMPARE(mixer()->numChannels(), channels);
+		QCOMPARE(mixer()->fxSend(channel, 0)->amount()->value(), 0.5f);
+		mixer()->clear();
+		mixer()->loadSettings(doc.createElement("mixer"));
+		QCOMPARE(static_cast<int>(mixer()->fxReturns().size()), Mixer::FxReturnCount);
 	}
 
 	void opAmpSaturatesOnlyAboveItsKnee()
@@ -1727,10 +1780,10 @@ private slots:
 		{
 			if (route->sourcePair() == 0) { continue; }
 			names << route->receiver()->m_name;
-			QCOMPARE(route->receiver()->m_sends.front()->receiverIndex(), group);
+			QCOMPARE(mainOutputOf(route->receiver()), group);
 		}
 		QCOMPARE(names, (QStringList{"Kick", "Snare", "Cymbals"}));
-		QCOMPARE(mixer()->mixerChannel(group)->m_sends.front()->receiverIndex(), 0);
+		QCOMPARE(mainOutputOf(mixer()->mixerChannel(group)), 0);
 
 		// Sound in a pair reaches the master through its channel and the group channel
 		auto buffer = AudioBuffer{frames(), 8};
@@ -1771,18 +1824,19 @@ private slots:
 		// The group channel follows the track into a folder
 		song->changeFolderDepth(track, 1);
 		QCOMPARE(outputOf(track), mixer()->trackChannel(folder)->index());
-		QCOMPARE(mixer()->mixerChannel(group)->m_sends.front()->receiverIndex(), mixer()->trackChannel(folder)->index());
+		QCOMPARE(mainOutputOf(mixer()->mixerChannel(group)), mixer()->trackChannel(folder)->index());
 
 		// Arranging puts the channels back like the tracks: folder, track and its channels, other track
 		mixer()->moveChannelRight(trackChannel->index());
 		mixer()->moveChannelLeft(otherChannel->index());
 		QCOMPARE(track->mixerChannelModel()->value(), before + 2);
 		mixer()->arrangeChannelsByTracks();
-		QCOMPARE(mixer()->trackChannel(folder)->index(), before);
-		QCOMPARE(trackChannel->index(), before + 1);
-		QCOMPARE(track->mixerChannelModel()->value(), before + 1);
-		QCOMPARE(mixer()->mixerChannel(before + 2)->m_owner, trackChannel);
-		QCOMPARE(otherChannel->index(), before + 6);
+		const int first = 1; // the tracks' channels come first, the effect returns last
+		QCOMPARE(mixer()->trackChannel(folder)->index(), first);
+		QCOMPARE(trackChannel->index(), first + 1);
+		QCOMPARE(track->mixerChannelModel()->value(), first + 1);
+		QCOMPARE(mixer()->mixerChannel(first + 2)->m_owner, trackChannel);
+		QCOMPARE(otherChannel->index(), first + 6);
 
 		// The owners are saved
 		auto doc = DataFile{DataFile::Type::SongProject};
@@ -1790,12 +1844,12 @@ private slots:
 		doc.content().appendChild(element);
 		mixer()->saveSettings(doc, element);
 		mixer()->loadSettings(element);
-		QCOMPARE(mixer()->ownedChannels(before + 1).size(), std::size_t{4});
+		QCOMPARE(mixer()->ownedChannels(first + 1).size(), std::size_t{4});
 
 		// (Projects load the tracks' channels with the tracks)
-		dynamic_cast<FolderTrack*>(folder)->mixerChannelModel()->setValue(before);
-		track->mixerChannelModel()->setValue(before + 1);
-		dynamic_cast<SampleTrack*>(other)->mixerChannelModel()->setValue(before + 6);
+		dynamic_cast<FolderTrack*>(folder)->mixerChannelModel()->setValue(first);
+		track->mixerChannelModel()->setValue(first + 1);
+		dynamic_cast<SampleTrack*>(other)->mixerChannelModel()->setValue(first + 6);
 
 		// And go away with the track
 		deleteTrack(track);

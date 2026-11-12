@@ -980,6 +980,7 @@ void Song::createNewProject()
 	QCoreApplication::instance()->processEvents();
 
 	m_loadingProject = false;
+	Engine::mixer()->ensureFxReturns();
 	Engine::mixer()->setUpTrackChannels();
 	updateLength();
 	Engine::patternStore()->updateAfterTrackAdd();

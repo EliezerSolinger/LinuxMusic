@@ -158,6 +158,9 @@ public:
 	//! Whether the channel is a folder's group channel (see FolderTrack), which the tracks it holds send to
 	bool m_groupChannel = false;
 
+	//! Whether the channel is one of the mixer's effect returns (see Mixer::fxReturns())
+	bool m_fxReturn = false;
+
 	//! The track channel this channel was made for, e.g. a drum piece's channel (see
 	//! Mixer::setUpChannelPerOutput()): it goes away, follows the folders and is arranged with that channel
 	MixerChannel* m_owner = nullptr;
@@ -395,6 +398,20 @@ public:
 	 * @returns the group channel, or -1 if the instrument has fewer than two output groups
 	 */
 	auto setUpChannelPerOutput(InstrumentTrack* track) -> int;
+
+	/**
+	 * The effect returns, e.g. for a reverb: two channels every channel sends to after its fader (with nothing at
+	 * first; the FX 1 and FX 2 knobs of each strip set how much), shown next to the master. They are always there.
+	 */
+	static constexpr int FxReturnCount = 2;
+	auto fxReturns() const -> std::vector<MixerChannel*>;
+
+	//! Makes the effect returns if the mixer does not have them (new projects, projects from before), and the
+	//! sends of every channel to them. Not journalled: projects always have them.
+	void ensureFxReturns();
+
+	//! The send from channel @p index to effect return @p fxReturn (0 or 1), or nullptr
+	auto fxSend(mix_ch_t index, int fxReturn) const -> MixerRoute*;
 
 	//! The channels made for channel @p index (see MixerChannel::m_owner), in mixer order
 	auto ownedChannels(mix_ch_t index) const -> std::vector<MixerChannel*>;

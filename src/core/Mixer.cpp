@@ -248,7 +248,10 @@ void MixerChannel::doProcessing()
 			: sender->m_buffer.hasSignal(pairMask(sourcePair)) || sender->m_stillRunning;
 		auto& delay = route->latencyDelay();
 		const bool delayed = delay.delay() > 0;
-		if (!hasSignal && !(delayed && delay.holdsSignal()))
+		// A send turned all the way down, e.g. to an effect return, carries nothing
+		const bool closed = route->amount()->value() == 0.f && !sendBufs[i];
+		if (closed && delayed) { delay.clear(); }
+		if (closed || (!hasSignal && !(delayed && delay.holdsSignal())))
 		{
 			if (delayed) { delay.advance(fpp, false); }
 			continue;
@@ -616,6 +619,9 @@ int Mixer::createChannel()
 
 	// reset channel state
 	clearChannel( index );
+
+	// Like every channel, it sends to the effect returns, with nothing at first
+	for (const auto fxReturn : fxReturns()) { createChannelSend(index, fxReturn->index(), 0.f); }
 
 	emit channelCreated(index);
 	return index;
@@ -1180,6 +1186,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_input = ChannelInput{};
 	ch->m_trackChannel = false;
 	ch->m_groupChannel = false;
+	ch->m_fxReturn = false;
 	ch->m_owner = nullptr;
 	setChannelCount(index, DEFAULT_CHANNELS);
 	ch->m_recordArmModel.setValue(false);
@@ -1254,6 +1261,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		if (i > 0) { ch->m_analogStrip.saveSettings(_doc, mixch); }
 		if (ch->m_trackChannel) { mixch.setAttribute("trackchannel", 1); }
 		if (ch->m_groupChannel) { mixch.setAttribute("groupchannel", 1); }
+		if (ch->m_fxReturn) { mixch.setAttribute("fxreturn", 1); }
 		if (ch->m_owner) { mixch.setAttribute("owner", ch->m_owner->index()); }
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
@@ -1335,6 +1343,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		m_mixerChannels[num]->m_name = mixch.attribute( "name" );
 		m_mixerChannels[num]->m_trackChannel = mixch.attribute("trackchannel", "0").toInt() != 0;
 		m_mixerChannels[num]->m_groupChannel = mixch.attribute("groupchannel", "0").toInt() != 0;
+		m_mixerChannels[num]->m_fxReturn = mixch.attribute("fxreturn", "0").toInt() != 0;
 		if (mixch.hasAttribute("owner")) { owners.emplace_back(num, mixch.attribute("owner").toInt()); }
 		if (mixch.hasAttribute("color"))
 		{
@@ -1378,6 +1387,9 @@ void Mixer::loadSettings( const QDomElement & _this )
 		}
 	}
 
+	// Projects from before the effect returns get them
+	ensureFxReturns();
+
 	emit dataChanged();
 }
 
@@ -1393,6 +1405,9 @@ void Mixer::validateChannelName( int index, int oldIndex )
 bool Mixer::isChannelInUse(int index)
 {
 	assert(index >= 0 && index < m_mixerChannels.size());
+
+	// The effect returns are always there
+	if (m_mixerChannels[index]->m_fxReturn) { return true; }
 
 	// check if the index mixer channel receives audio from any other channel
 	if (!m_mixerChannels[index]->m_receives.empty()) { return true; }
@@ -1697,6 +1712,7 @@ void Mixer::updateFolderRouting()
 		{
 			if (route->sourcePair() != 0 || route->destinationPair() != 0 || route->isPreFader()) { continue; }
 			const auto receiver = route->receiver();
+			if (receiver->m_fxReturn) { continue; } // effect sends, not the channel's output
 			if (receiver->index() == target) { reachesTarget = true; }
 			else if (receiver->isMaster() || (receiver->m_groupChannel && receiver->m_owner != channel))
 			{
@@ -1729,6 +1745,71 @@ void Mixer::updateFolderRouting()
 	}
 
 	journal->setJournalling(wasJournalling);
+}
+
+
+
+
+auto Mixer::fxReturns() const -> std::vector<MixerChannel*>
+{
+	auto result = std::vector<MixerChannel*>{};
+	for (const auto channel : m_mixerChannels)
+	{
+		if (channel->m_fxReturn) { result.push_back(channel); }
+	}
+	return result;
+}
+
+
+
+
+void Mixer::ensureFxReturns()
+{
+	const auto journal = Engine::projectJournal();
+	const bool wasJournalling = journal->isJournalling();
+	journal->setJournalling(false);
+
+	auto returns = fxReturns();
+	while (static_cast<int>(returns.size()) < FxReturnCount)
+	{
+		const int index = createChannel();
+		auto channel = m_mixerChannels[index];
+		channel->m_fxReturn = true;
+		channel->m_name = tr("FX %1").arg(returns.size() + 1);
+		channel->m_analogStrip.setDisplayNames(channel->m_name);
+		// An effect return sends only to the master
+		while (channel->m_sends.size() > 1)
+		{
+			const auto other = std::find_if(channel->m_sends.begin(), channel->m_sends.end(),
+				[](const MixerRoute* route) { return !route->receiver()->isMaster(); });
+			if (other == channel->m_sends.end()) { break; }
+			deleteChannelSend(*other);
+		}
+		returns.push_back(channel);
+	}
+
+	// Every channel sends to them
+	for (const auto channel : m_mixerChannels)
+	{
+		if (channel->isMaster() || channel->m_fxReturn) { continue; }
+		for (const auto fxReturn : returns)
+		{
+			if (!findChannelSend(channel->index(), fxReturn->index())) { createChannelSend(channel->index(), fxReturn->index(), 0.f); }
+		}
+	}
+
+	journal->setJournalling(wasJournalling);
+	emit dataChanged();
+}
+
+
+
+
+auto Mixer::fxSend(mix_ch_t index, int fxReturn) const -> MixerRoute*
+{
+	const auto returns = fxReturns();
+	if (fxReturn < 0 || fxReturn >= static_cast<int>(returns.size())) { return nullptr; }
+	return findChannelSend(index, returns[fxReturn]->index());
 }
 
 
