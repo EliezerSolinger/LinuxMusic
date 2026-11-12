@@ -45,6 +45,8 @@
 #include "GuiApplication.h"
 #include "Knob.h"
 #include "AutomatableButton.h"
+#include "DeskDynamics.h"
+#include "GainStageControls.h"
 #include "LedCheckBox.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
@@ -237,43 +239,22 @@ MixerView::MixerView(Mixer* mixer) :
 	settingsLayout->addWidget(m_widthKnob, 0, 2, 2, 1, Qt::AlignCenter);
 	settingsLayout->addWidget(m_panKnob, 0, 3, 2, 1, Qt::AlignCenter);
 
-	// The analog strip's dynamics, beyond the knobs on the strip
+	// The analog strip's compressor's release, in its model's terms
 	m_dynamicsSettings = new QWidget{channelSettings};
-	auto dynamicsLayout = new QGridLayout{m_dynamicsSettings};
+	auto dynamicsLayout = new QHBoxLayout{m_dynamicsSettings};
 	dynamicsLayout->setContentsMargins(0, 4, 0, 0);
-	dynamicsLayout->setHorizontalSpacing(8);
-	dynamicsLayout->setVerticalSpacing(2);
-	auto makeKnob = [this](const QString& label, const QString& name, const QString& unit) {
-		auto knob = new Knob{KnobType::Bright26, label, m_dynamicsSettings, Knob::LabelRendering::LegacyFixedFontSize, name};
-		knob->setHintText(name + ":", unit);
-		return knob;
-	};
-	auto makeBox = [this](const QString& label, const QString& tip) {
-		auto box = new LedCheckBox{label, m_dynamicsSettings, tip, LedCheckBox::LedColor::Yellow};
-		box->setToolTip(tip);
-		return box;
-	};
-	auto compressorTitle = new QLabel{tr("COMP"), m_dynamicsSettings};
-	auto gateTitle = new QLabel{tr("GATE"), m_dynamicsSettings};
-	m_compressorReleaseKnob = makeKnob(tr("REL"), tr("Compressor release"), " s");
-	m_compressorPeakBox = makeBox(tr("Peak"), tr("Peak detection instead of the true RMS one"));
-	m_compressorHardKneeBox = makeBox(tr("Hard knee"), tr("A hard knee instead of the over-easy one"));
-	m_compressorLinearReleaseBox = makeBox(tr("Lin. release"),
-		tr("A linear release instead of the logarithmic one; raises the threshold by 6 dB"));
-	m_gateReleaseKnob = makeKnob(tr("REL"), tr("Gate release"), " s");
-	m_gateHoldKnob = makeKnob(tr("HOLD"), tr("Gate hold"), " s");
-	m_gateExpanderBox = makeBox(tr("Expander"), tr("A 2:1 expander instead of a 20:1 gate"));
-	m_gateFastBox = makeBox(tr("Fast"), tr("Fast attack: 100 us per 40 dB instead of 1.5 ms"));
-	dynamicsLayout->addWidget(compressorTitle, 0, 0, Qt::AlignVCenter);
-	dynamicsLayout->addWidget(m_compressorReleaseKnob, 0, 1, 2, 1, Qt::AlignCenter);
-	dynamicsLayout->addWidget(m_compressorPeakBox, 0, 2);
-	dynamicsLayout->addWidget(m_compressorHardKneeBox, 1, 2);
-	dynamicsLayout->addWidget(m_compressorLinearReleaseBox, 0, 3);
-	dynamicsLayout->addWidget(gateTitle, 2, 0, Qt::AlignVCenter);
-	dynamicsLayout->addWidget(m_gateReleaseKnob, 2, 1, 2, 1, Qt::AlignCenter);
-	dynamicsLayout->addWidget(m_gateHoldKnob, 2, 2, 2, 1, Qt::AlignLeft);
-	dynamicsLayout->addWidget(m_gateExpanderBox, 2, 3);
-	dynamicsLayout->addWidget(m_gateFastBox, 3, 3);
+	dynamicsLayout->setSpacing(8);
+	m_compressorReleaseKnob = new TextKnob{tr("REL"), tr("Compressor release"), [this](float v) {
+		const auto channel = m_currentMixerChannel ? getMixer()->mixerChannel(m_currentMixerChannel->channelIndex()) : nullptr;
+		const auto model = channel ? static_cast<CompressorModel>(channel->m_analogStrip.m_compressorTypeModel.value())
+			: CompressorModel::Ssl;
+		return ChannelCompressor::releaseText(model, v);
+	}, m_dynamicsSettings};
+	m_compressorReleaseKnob->setHintText(tr("Compressor release:"), "");
+	m_compressorReleaseLabel = new QLabel{m_dynamicsSettings};
+	m_compressorReleaseLabel->setWordWrap(true);
+	dynamicsLayout->addWidget(m_compressorReleaseKnob, 0, Qt::AlignVCenter);
+	dynamicsLayout->addWidget(m_compressorReleaseLabel, 1);
 	settingsLayout->addWidget(m_dynamicsSettings, 2, 0, 1, 4);
 	connect(mixer->analogModel(), &BoolModel::dataChanged, this, &MixerView::updateDynamicsSettings);
 
@@ -582,13 +563,9 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 
 	auto& strip = mixerChannel->m_analogStrip;
 	m_compressorReleaseKnob->setModel(&strip.m_compressorReleaseModel);
-	m_compressorPeakBox->setModel(&strip.m_compressorPeakModel);
-	m_compressorHardKneeBox->setModel(&strip.m_compressorHardKneeModel);
-	m_compressorLinearReleaseBox->setModel(&strip.m_compressorLinearReleaseModel);
-	m_gateReleaseKnob->setModel(&strip.m_gateReleaseModel);
-	m_gateHoldKnob->setModel(&strip.m_gateHoldModel);
-	m_gateExpanderBox->setModel(&strip.m_gateExpanderModel);
-	m_gateFastBox->setModel(&strip.m_gateFastModel);
+	disconnect(m_compressorTypeConnection);
+	m_compressorTypeConnection = connect(&strip.m_compressorTypeModel, &IntModel::dataChanged, this,
+		&MixerView::updateDynamicsSettings);
 	updateDynamicsSettings();
 
 	// set up send knob
@@ -602,8 +579,14 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 void MixerView::updateDynamicsSettings()
 {
 	// The master has no analog strip
-	m_dynamicsSettings->setVisible(getMixer()->isAnalog() && m_currentMixerChannel
-		&& m_currentMixerChannel->channelIndex() != 0);
+	const bool shown = getMixer()->isAnalog() && m_currentMixerChannel && m_currentMixerChannel->channelIndex() != 0;
+	m_dynamicsSettings->setVisible(shown);
+	if (!shown) { return; }
+	const auto& strip = getMixer()->mixerChannel(m_currentMixerChannel->channelIndex())->m_analogStrip;
+	const auto model = static_cast<CompressorModel>(strip.m_compressorTypeModel.value());
+	m_compressorReleaseKnob->setEnabled(ChannelCompressor::hasRelease(model));
+	m_compressorReleaseLabel->setText(tr("%1: %2").arg(ChannelCompressor::name(model), ChannelCompressor::releaseName(model)));
+	m_compressorReleaseKnob->setToolTip(m_compressorReleaseLabel->text());
 }
 
 

@@ -1125,6 +1125,86 @@ Pedidos do usuário:
 `MixerTest` tem 106 testes: o do pot foi refeito para 0 dB em um quarto, com +15 dB em 62,5%, e testa a conversão
 dos projetos de antes.
 
+### Passo 23: modelos de compressor e modos do gate (feito)
+
+Pedido do usuário:
+- um alternador de modelo de compressor, como o das válvulas;
+- FAST, NORM e SLOW;
+- um gate mais simples, com modos fixos;
+- antes de implementar, uma pesquisa profunda num `.md`, melhorada, e um plano.
+
+Isso está em `docs/pesquisa-compressores.md` (síntese revisada mais 5 dossiês) e `docs/plano-compressores.md`.
+
+**Compressor** (`ChannelCompressor`, `include/DeskDynamics.h`):
+- **Modelos:** SSL (canal E), API 2500, dbx 160, 1176, LA-2A, Fairchild 670, Gates Sta-Level, Altec 436 e RCA
+  BA-6A. Um motor só, montado por uma tabela de especificação; não são nove classes.
+- **Os controles da faixa são posições**, e cada modelo as lê como o aparelho:
+  - COMP: o threshold, ou a entrada empurrando um threshold fixo;
+  - RATIO: o ratio, seus passos, COMP/LIMIT, ou a curva do vari-mu. O mínimo desliga, bit a bit;
+  - FAST, NORM e SLOW: o ataque dentro do que o modelo permite;
+  - RELEASE (painel): o release, ou a chave de time constant do Fairchild. O meio é o ajuste de fábrica.
+  - Os knobs mostram o valor nas unidades do modelo, e as dicas dizem o que fazem nele.
+- **Motores:**
+  - **Feed-forward** (SSL, dbx): detector RMS, joelho, balística. O dbx não tem ataque nem release: os tempos do
+    manual saem do detector RMS de 36 ms.
+  - **Feedback em log** (API em OLD, 1176): o detector lê a saída, e o laço é resolvido em cada amostra (regula
+    falsi). O ratio e o joelho saem do laço. O API tem o THRUST no detector; o 1176 tem os passos 4/8/12/20 e o ALL.
+  - **Vari-mu:** o retificador carrega a rede RC do aparelho (no Fairchild, os valores de cada posição TC, com os
+    ramos em série das posições 5 e 6). A tensão de controle passa pela lei do tubo, e o laço é resolvido em cada
+    amostra. No Fairchild, a lei de corte remoto faz o ratio crescer com o nível.
+  - **Óptico** (LA-2A): o painel EL integra o sinal. A célula tem um estado rápido, um lento e a memória: a
+    soltura é mais lenta depois de compressão longa. COMP ~4:1, LIMIT ~11:1, os dois saindo do laço.
+- **Cor e resposta:**
+  - a distorção do elemento de ganho é oversampled 4x e calibrada pelas especificações;
+  - os harmônicos ímpares dominam nos push-pull;
+  - os filtros de banda são ajustados à especificação de cada aparelho; no RCA, a resposta segue a redução de ganho;
+  - os transformadores usam o modelo do XFMR, agora com parâmetros por aparelho.
+- **Make-up automático em todos:** um sinal no nível nominal sai onde entrou.
+
+**Gate** (`ChannelGate`): GATE e RANGE continuam nos knobs, e o modo traz o resto.
+- **Modos:** STD, KICK, SNARE, TOMS, VOX, GTR, BASS, NOISE e EXP.
+- **O que cada modo define:**
+  - gate de 20:1 ou expander de 2:1;
+  - ataque normal ou rápido, hold, release e histerese;
+  - filtros da chave: o KICK não abre com o chimbal.
+
+**Faixa:** DYN com COMP, RATIO, o modelo (colorido pela família: VCA azul, FET verde, óptico amarelo, vari-mu
+âmbar), FAST/NORM/SLOW, GATE, RANGE e o modo do gate. O painel do canal ficou só com o RELEASE e o que ele faz no
+modelo; no dbx 160, ele fica inativo.
+
+**Projetos de antes:**
+- A SSL dos passos 20 a 22 vira o modelo SSL nas mesmas posições: threshold, ratio, FAST e release.
+- A dinâmica de um knob vira 4:1 e gate de 40 dB.
+- EXP vira o modo EXP.
+- Peak, hard knee e lin. release somem: o modelo define esses comportamentos.
+
+**Verificado contra a pesquisa:**
+
+| Modelo | Medido |
+|---|---|
+| SSL | Ataque de 20 dB em ~30 ms (NORM) e ~3 ms (FAST); 4:1 |
+| dbx 160 | Ataque de 63% em 8 a 30 ms para 10 dB acima; release de 80 a 170 dB/s (doc: 120); 3º harmônico da ondulação |
+| API | Passos de ratio; com THRUST, o grave é menos comprimido |
+| 1176 | 4:1 e 20:1 do laço; THD baixo em 1 kHz, maior no grave e no ALL |
+| LA-2A | Metade da redução sai em menos de 0,2 s; soltura mais lenta depois de compressão longa; LIMIT mais plano que COMP; THD < 0,75% |
+| Fairchild | Ratio crescendo com o nível; TC1 mais rápido que TC4; THD < 1%, com o 3º acima do 2º |
+| Gates | Perto de 3,3:1 |
+| Altec | Ratio de ~2:1 a ~4:1 |
+| RCA | ~10:1; o Dual solta mais devagar depois de picos sustentados |
+
+**Custo por canal estéreo:**
+
+| Modelo | Custo |
+|---|---|
+| SSL e dbx | 0,05 a 0,07% de um núcleo |
+| API, 1176 e Gates | 1,2 a 1,6% |
+| LA-2A, Fairchild e Altec | 1,9 a 2,3% |
+| RCA | 3,2% (duas redes RC resolvidas por amostra) |
+
+O RCA passa da meta de ~2% e fica como candidato a otimização.
+
+`MixerTest` tem 114 testes.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que

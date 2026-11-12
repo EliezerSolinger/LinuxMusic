@@ -53,6 +53,7 @@
 #include "Fader.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
+#include "DeskDynamics.h"
 #include "DeskKnob.h"
 #include "GainStageControls.h"
 #include "Knob.h"
@@ -543,23 +544,61 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 		tr("Mono bass: width of the side below the frequency (0 = mono)"), "%", row, 0);
 	addKnob(&strip.m_monoBassFrequencyModel, grey, tr("FREQ"), tr("Mono bass frequency"), " Hz", row++, 1);
 
-	// The dynamics of an SSL E series channel: RATIO and RANGE switch the compressor and the gate in
+	// The dynamics: the compressor, of a choice of models, which read COMP, RATIO and the speed as their units do
+	// (RATIO switches it in); the gate's threshold, RANGE (which switches it in) and its mode
 	addSection(tr("DYN"));
-	addKnob(&strip.m_compressorModel, yellow, tr("COMP"), tr("Compressor threshold"), " dBu", row, 0);
-	auto ratioKnob = new RatioKnob{yellow, tr("RATIO"), tr("Compressor ratio"), m_analogSection};
+	const auto compressorType = [&strip] { return static_cast<CompressorModel>(strip.m_compressorTypeModel.value()); };
+	auto amountKnob = new TextDeskKnob{yellow, tr("COMP"), tr("Compressor"),
+		[compressorType](float v) { return ChannelCompressor::amountText(compressorType(), v); }, m_analogSection};
+	amountKnob->setModel(&strip.m_compressorAmountModel);
+	amountKnob->setHintText(tr("Compressor:"), "");
+	analogLayout->addWidget(amountKnob, row, 0, Qt::AlignCenter);
+	auto ratioKnob = new TextDeskKnob{yellow, tr("RATIO"), tr("Compressor ratio"),
+		[compressorType](float v) { return ChannelCompressor::ratioText(compressorType(), v); }, m_analogSection};
 	ratioKnob->setModel(&strip.m_compressorRatioModel);
 	ratioKnob->setHintText(tr("Compressor ratio:"), "");
-	ratioKnob->setToolTip(tr("Compressor ratio: 1:1 is out, the end a limiter"));
 	analogLayout->addWidget(ratioKnob, row++, 1, Qt::AlignCenter);
-	auto fastButton = new AutomatableButton(m_analogSection, tr("Compressor fast attack"));
-	fastButton->setObjectName("btn-fast");
-	fastButton->setText(tr("FAST"));
-	fastButton->setToolTip(tr("Fast attack: 3 ms for 20 dB of gain reduction instead of 30 ms"));
-	fastButton->setCheckable(true);
-	fastButton->setModel(&strip.m_compressorFastModel);
-	analogLayout->addWidget(fastButton, row++, 0, 1, 2, Qt::AlignCenter);
+	auto describeKnobs = [amountKnob, ratioKnob, compressorType] {
+		const auto model = compressorType();
+		amountKnob->setToolTip(tr("COMP: %1 (%2)").arg(ChannelCompressor::amountName(model), ChannelCompressor::name(model)));
+		ratioKnob->setToolTip(tr("RATIO: %1; all the way left switches the compressor out")
+			.arg(ChannelCompressor::ratioName(model)));
+	};
+	describeKnobs();
+	connect(&strip.m_compressorTypeModel, &IntModel::dataChanged, this, describeKnobs);
+
+	auto models = std::vector<ChoiceButton::Choice>{};
+	for (const auto model : ChannelCompressor::DisplayOrder)
+	{
+		const auto family = ChannelCompressor::family(model);
+		const auto kind = family == ChannelCompressor::Family::Vca ? "opamp"
+			: family == ChannelCompressor::Family::Fet ? "fet"
+			: family == ChannelCompressor::Family::Optical ? "optical" : "tube";
+		models.push_back({static_cast<int>(model), ChannelCompressor::name(model), ChannelCompressor::description(model),
+			kind});
+	}
+	analogLayout->addWidget(new ChoiceButton{&strip.m_compressorTypeModel, std::move(models), tr("Compressor"),
+		"btn-drive", m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
+	auto speeds = std::vector<ChoiceButton::Choice>{};
+	for (const auto speed : {CompressorSpeed::Fast, CompressorSpeed::Norm, CompressorSpeed::Slow})
+	{
+		speeds.push_back({static_cast<int>(speed), ChannelCompressor::speedName(speed),
+			speed == CompressorSpeed::Fast ? tr("the fastest attack the model allows")
+			: speed == CompressorSpeed::Slow ? tr("the slowest attack the model allows") : tr("the model's usual attack"),
+			""});
+	}
+	analogLayout->addWidget(new ChoiceButton{&strip.m_compressorSpeedModel, std::move(speeds), tr("Attack"),
+		"btn-choice", m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
+
 	addKnob(&strip.m_gateModel, teal, tr("GATE"), tr("Gate threshold"), " dBu", row, 0);
 	addKnob(&strip.m_gateRangeModel, teal, tr("RANGE"), tr("Gate range: 0 is out"), " dB", row++, 1);
+	auto modes = std::vector<ChoiceButton::Choice>{};
+	for (const auto mode : ChannelGate::DisplayOrder)
+	{
+		modes.push_back({static_cast<int>(mode), ChannelGate::modeName(mode), ChannelGate::modeDescription(mode), ""});
+	}
+	analogLayout->addWidget(new ChoiceButton{&strip.m_gateModeModel, std::move(modes), tr("Gate mode"), "btn-choice",
+		m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
 
 	addSection(tr("EQ"));
 	addKnob(&strip.m_eqHighModel, orange, tr("HI"), tr("EQ high (12 kHz)"), " dB", row, 0);

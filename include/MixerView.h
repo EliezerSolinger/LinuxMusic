@@ -37,6 +37,7 @@
 class QDomDocument;  // IWYU pragma: keep
 class QDomElement;  // IWYU pragma: keep
 class QHBoxLayout;
+class QLabel;
 class QStackedLayout;
 class QScrollArea;
 
@@ -49,6 +50,7 @@ namespace lmms::gui
 {
 
 class Knob;
+class TextKnob;
 class LedCheckBox;
 
 //! The ghost channel at the end of the mixer's channels: a click makes a channel in its place
@@ -182,18 +184,12 @@ private:
 	Knob* m_widthKnob;
 	Knob* m_panKnob;
 
-	//! The rest of the analog strip's dynamics (SSL E series), in analog mode: the compressor's release, peak
-	//! detection, hard knee and linear release; the gate's release, hold, expander mode and fast attack
+	//! The analog strip's compressor's release, in analog mode, in its model's terms
 	void updateDynamicsSettings();
 	QWidget* m_dynamicsSettings;
-	Knob* m_compressorReleaseKnob;
-	LedCheckBox* m_compressorPeakBox;
-	LedCheckBox* m_compressorHardKneeBox;
-	LedCheckBox* m_compressorLinearReleaseBox;
-	Knob* m_gateReleaseKnob;
-	Knob* m_gateHoldKnob;
-	LedCheckBox* m_gateExpanderBox;
-	LedCheckBox* m_gateFastBox;
+	TextKnob* m_compressorReleaseKnob;
+	QLabel* m_compressorReleaseLabel;
+	QMetaObject::Connection m_compressorTypeConnection;
 
 	friend class MixerChannelView;
 } ;

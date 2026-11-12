@@ -23,6 +23,9 @@
 #ifndef LMMS_GUI_GAIN_STAGE_CONTROLS_H
 #define LMMS_GUI_GAIN_STAGE_CONTROLS_H
 
+#include <functional>
+#include <vector>
+
 #include <QCoreApplication>
 #include <QPushButton>
 #include <QWidget>
@@ -101,14 +104,62 @@ protected:
 	auto currentValueToText() -> QString override;
 };
 
-//! The compressor's RATIO knob (AnalogChannelStrip::m_compressorRatioModel): "OFF" at 1:1, infinity at its end
-class RatioKnob : public DeskKnob
+/**
+ * A button choosing among a few options of an IntModel, as a desk's switch: a click goes to the next one, the right
+ * button lists them. Each option may have a "kind", which the style sheet colors the button after.
+ */
+class ChoiceButton : public QPushButton
+{
+	Q_DECLARE_TR_FUNCTIONS(ChoiceButton)
+public:
+	struct Choice
+	{
+		int value;
+		QString name;
+		QString description;
+		QString kind;
+	};
+
+	//! @param what what the button chooses, for its tooltip
+	ChoiceButton(IntModel* model, std::vector<Choice> choices, const QString& what, const QString& objectName,
+		QWidget* parent);
+
+protected:
+	void contextMenuEvent(QContextMenuEvent*) override;
+
+private:
+	void refresh();
+
+	IntModel* m_model;
+	std::vector<Choice> m_choices;
+	QString m_what;
+};
+
+//! A desk knob whose value reads as a function says, e.g. in the units of the compressor's model
+class TextDeskKnob : public DeskKnob
 {
 public:
-	using DeskKnob::DeskKnob;
+	TextDeskKnob(const QColor& cap, const QString& label, const QString& name, std::function<QString(float)> text,
+		QWidget* parent);
 
 protected:
 	auto currentValueToText() -> QString override;
+
+private:
+	std::function<QString(float)> m_text;
+};
+
+//! A plain knob whose value reads as a function says
+class TextKnob : public Knob
+{
+public:
+	TextKnob(const QString& label, const QString& name, std::function<QString(float)> text, QWidget* parent);
+
+protected:
+	auto currentValueToText() -> QString override;
+
+private:
+	std::function<QString(float)> m_text;
 };
 
 } // namespace lmms::gui

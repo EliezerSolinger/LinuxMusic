@@ -1494,6 +1494,32 @@ lmms--gui--MixerChannelView QPushButton#btn-drive {
 	font-weight: bold;
 }
 
+lmms--gui--MixerChannelView QPushButton#btn-drive[kind="fet"] {
+	border: 1 solid #0f4a22;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7ad89a, stop:0.1 #2fa860, stop:0.9 #2fa860, stop:1 #1b6b3c);
+	color: #ffffff;
+}
+
+lmms--gui--MixerChannelView QPushButton#btn-drive[kind="optical"] {
+	border: 1 solid #7a5a10;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fff0b0, stop:0.1 #f2d26a, stop:0.9 #f2d26a, stop:1 #b8962e);
+	color: #2a1e00;
+}
+
+lmms--gui--MixerChannelView QPushButton#btn-choice {
+	padding: 0;
+	min-height: 11;
+	max-height: 11;
+	min-width: 44;
+	max-width: 44;
+	border: 1 solid #080b12;
+	border-radius: 2;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255, 255, 255, 20%), stop:0.1 rgba(255, 255, 255, 2%), stop:0.9 rgba(0, 0, 0, 2%), stop:1 rgba(0, 0, 0, 40%));
+	color: #d1d8e4;
+	font-size: 7px;
+	font-weight: bold;
+}
+
 lmms--gui--MixerChannelView QPushButton#btn-drive[kind="opamp"] {
 	border: 1 solid #0b3a6b;
 	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6fb0f0, stop:0.1 #2f7fd0, stop:0.9 #2f7fd0, stop:1 #1b4f88);

@@ -86,24 +86,17 @@ public:
 	FloatModel m_lowPassModel;		//!< Hz; off at the highest setting
 	FloatModel m_monoBassWidthModel;		//!< % of the side kept below the mono bass frequency; off at 100
 	FloatModel m_monoBassFrequencyModel;	//!< Hz
-	// The SSL E series' dynamics (see ChannelCompressor and ChannelGate): on the strip, COMP, RATIO and FAST, GATE
-	// and RANGE; the rest in the channel's panel
-	FloatModel m_compressorModel;			//!< threshold, dBu
-	FloatModel m_compressorRatioModel;		//!< 1 (out) to MaxRatio (infinity)
-	BoolModel m_compressorFastModel;
-	FloatModel m_compressorReleaseModel;	//!< s
-	BoolModel m_compressorPeakModel;
-	BoolModel m_compressorHardKneeModel;
-	BoolModel m_compressorLinearReleaseModel;
+	// The dynamics (see ChannelCompressor and ChannelGate). On the strip: the compressor's model, COMP, RATIO and
+	// its speed, the gate's threshold, RANGE and mode; the compressor's release in the channel's panel. The
+	// compressor's controls are positions, which each model reads as its unit does
+	IntModel m_compressorTypeModel;			//!< a CompressorModel
+	FloatModel m_compressorAmountModel;		//!< COMP, 0 to 1
+	FloatModel m_compressorRatioModel;		//!< RATIO, 0 (out) to 1
+	IntModel m_compressorSpeedModel;		//!< a CompressorSpeed
+	FloatModel m_compressorReleaseModel;	//!< 0 to 1; 0.5 is the unit's factory setting
 	FloatModel m_gateModel;					//!< threshold, dBu
 	FloatModel m_gateRangeModel;			//!< dB, 0 (out) to 40
-	BoolModel m_gateExpanderModel;
-	BoolModel m_gateFastModel;
-	FloatModel m_gateReleaseModel;			//!< s
-	FloatModel m_gateHoldModel;				//!< s
-	static constexpr float MaxRatio = 20.f;	//!< the ratio knob's end, which is infinity
-	//! The compressor's ratio at a ratio knob setting
-	static auto ratioAt(float setting) -> float;
+	IntModel m_gateModeModel;				//!< a GateMode
 	FloatModel m_eqHighModel;		//!< dB
 	FloatModel m_eqHighMidModel;	//!< dB
 	FloatModel m_eqLowMidModel;		//!< dB

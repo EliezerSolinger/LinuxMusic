@@ -68,16 +68,24 @@ struct LMMS_EXPORT ChannelTolerance
 class LMMS_EXPORT OutputTransformer
 {
 public:
-	static constexpr double LowCorner = 3.0;		//!< Hz
-	static constexpr double SaturationFlux = 0.008;	//!< full scale times seconds
+	//! What makes a transformer: the master's by default; the compressors' have their own (see ChannelCompressor)
+	struct Core
+	{
+		double lowCorner = 3.0;			//!< Hz
+		double saturationFlux = 0.008;	//!< full scale times seconds
+		double highCorner = 60000.0;	//!< Hz, first order
+	};
 	static constexpr double Hysteresis = 0.02;		//!< of the saturation flux, the dead band's half width (its coercivity)
-	static constexpr double HighCorner = 60000.0;	//!< Hz, first order
+
+	OutputTransformer() = default;
+	explicit OutputTransformer(const Core& core) : m_core{core} {}
 
 	void setUp(sample_rate_t sampleRate);
 	void reset();
 	auto process(float input, int channel) -> float;
 
 private:
+	Core m_core;
 	double m_period = 0.0;
 	double m_corner = 0.0;		//!< 2 pi LowCorner, the source resistance over the inductance
 	std::array<double, 2> m_flux{}, m_lag{};

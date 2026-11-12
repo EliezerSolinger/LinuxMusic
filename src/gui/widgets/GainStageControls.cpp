@@ -279,12 +279,64 @@ auto GainKnob::currentValueToText() -> QString
 	return (db > 0.05f ? "+" : "") + QString::number(db, 'f', 1);
 }
 
-auto RatioKnob::currentValueToText() -> QString
+ChoiceButton::ChoiceButton(IntModel* model, std::vector<Choice> choices, const QString& what,
+	const QString& objectName, QWidget* parent)
+	: QPushButton{parent}, m_model{model}, m_choices{std::move(choices)}, m_what{what}
 {
-	const float ratio = AnalogChannelStrip::ratioAt(model()->value());
-	if (ratio <= 1.f) { return tr("1:1 (off)"); }
-	if (std::isinf(ratio)) { return QString{"%1:1"}.arg(QChar{0x221E}); }
-	return QString{"%1:1"}.arg(ratio, 0, 'f', 1);
+	setObjectName(objectName);
+	setFocusPolicy(Qt::NoFocus);
+	connect(this, &QPushButton::clicked, this, [this] {
+		const auto it = std::find_if(m_choices.begin(), m_choices.end(),
+			[this](const Choice& c) { return c.value == m_model->value(); });
+		const auto next = it == m_choices.end() || it + 1 == m_choices.end() ? m_choices.begin() : it + 1;
+		m_model->setValue(next->value);
+	});
+	connect(m_model, &IntModel::dataChanged, this, &ChoiceButton::refresh);
+	refresh();
 }
+
+void ChoiceButton::contextMenuEvent(QContextMenuEvent*)
+{
+	auto menu = QMenu{this};
+	for (const auto& choice : m_choices)
+	{
+		const int value = choice.value;
+		auto action = menu.addAction(QString{"%1 - %2"}.arg(choice.name, choice.description), this,
+			[this, value] { m_model->setValue(value); });
+		action->setCheckable(true);
+		action->setChecked(m_model->value() == value);
+	}
+	menu.exec(QCursor::pos());
+}
+
+void ChoiceButton::refresh()
+{
+	const auto it = std::find_if(m_choices.begin(), m_choices.end(),
+		[this](const Choice& c) { return c.value == m_model->value(); });
+	if (it == m_choices.end()) { return; }
+	setText(it->name);
+	setToolTip(tr("%1: %2 (click for the next one, right button for the list)").arg(m_what, it->description));
+	setProperty("kind", it->kind);
+	style()->unpolish(this);
+	style()->polish(this);
+}
+
+
+
+
+TextDeskKnob::TextDeskKnob(const QColor& cap, const QString& label, const QString& name,
+	std::function<QString(float)> text, QWidget* parent)
+	: DeskKnob{cap, label, name, parent}, m_text{std::move(text)}
+{
+}
+
+auto TextDeskKnob::currentValueToText() -> QString { return m_text(model()->value()); }
+
+TextKnob::TextKnob(const QString& label, const QString& name, std::function<QString(float)> text, QWidget* parent)
+	: Knob{KnobType::Bright26, label, parent, Knob::LabelRendering::LegacyFixedFontSize, name}, m_text{std::move(text)}
+{
+}
+
+auto TextKnob::currentValueToText() -> QString { return m_text(model()->value()); }
 
 } // namespace lmms::gui

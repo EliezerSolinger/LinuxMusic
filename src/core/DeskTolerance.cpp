@@ -99,8 +99,8 @@ void OutputTransformer::setUp(sample_rate_t sampleRate)
 	if (sampleRate == m_sampleRate) { return; }
 	m_sampleRate = sampleRate;
 	m_period = 1.0 / sampleRate;
-	m_corner = 2.0 * std::numbers::pi * LowCorner;
-	m_highs.setTarget(Biquad::lowPass1(HighCorner, sampleRate));
+	m_corner = 2.0 * std::numbers::pi * m_core.lowCorner;
+	m_highs.setTarget(Biquad::lowPass1(m_core.highCorner, sampleRate));
 	m_highs.finish();
 	reset();
 }
@@ -123,8 +123,8 @@ auto OutputTransformer::process(float input, int channel) -> float
 	// The voltage across the core, v = input - corner (phi + p^3 / phi_s^2), with phi = flux + v T (backward
 	// Euler), solved for v
 	const double source = input;
-	const double band = Hysteresis * SaturationFlux;
-	const double s2 = SaturationFlux * SaturationFlux;
+	const double band = Hysteresis * m_core.saturationFlux;
+	const double s2 = m_core.saturationFlux * m_core.saturationFlux;
 	double v = source;
 	double flux = 0.0, lag = 0.0;
 	for (int iteration = 0; iteration < 8; ++iteration)

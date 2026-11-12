@@ -1,5 +1,5 @@
 /*
- * DeskDynamics.h - the compressor and the gate/expander of an analog desk's channel, after the SSL E series
+ * DeskDynamics.h - the compressor and the gate/expander of an analog desk's channel
  *
  * This file is part of LinuxMusic, a fork of LMMS - https://lmms.io
  *
@@ -23,6 +23,11 @@
 #ifndef LMMS_DESK_DYNAMICS_H
 #define LMMS_DESK_DYNAMICS_H
 
+#include <array>
+#include <memory>
+
+#include <QString>
+
 #include "LmmsTypes.h"
 #include "lmms_export.h"
 
@@ -35,64 +40,104 @@ namespace lmms
  */
 constexpr float DbuToDbfs = -22.f;
 
+//! The compressors the analog strip models (see docs/pesquisa-compressores.md). Saved by number: new ones go last.
+enum class CompressorModel
+{
+	Ssl, Api2500, Dbx160, Urei1176, La2a, Fairchild670, GatesStaLevel, Altec436, RcaBa6a, Count
+};
+
+//! The attack, within what the model allows
+enum class CompressorSpeed { Fast, Norm, Slow, Count };
+
 /**
- * The channel compressor of an SSL E series desk (after SSL's E Series Dynamics user guide), stereo-linked:
- * - a true RMS detector (or a peak one);
- * - RATIO from 1:1 (out) to infinity (a limiter), with an "over-easy" soft knee, or a hard one;
- * - THRESHOLD from +4 to -26 dBu, with automatic make-up gain, so that the output stays at the same level however
- *   much it compresses: a signal at the nominal level gets back what it loses;
- * - attack: 30 ms for 20 dB of gain reduction, 3 ms with FAST (program dependent: a slope in dB);
- * - RELEASE from 0.1 to 4 s: a time constant in dB (logarithmic), or, with LIN REL, a constant slope in dB (the same
- *   slope as the logarithmic curve's from 20 dB), which also raises the threshold by 6 dB.
+ * The channel compressor, of a choice of models of real units, stereo-linked, with automatic make-up gain (a signal
+ * at the nominal level comes out where it went in). The strip's controls are positions, which each model reads as
+ * its unit does (docs/plano-compressores.md):
+ * - amount (COMP), 0 to 1, how much it compresses: a threshold, or the input driving a fixed threshold;
+ * - ratio (RATIO), 0 (out) to 1: a ratio, its steps, COMP/LIMIT, or the shape of a variable-mu curve;
+ * - speed: FAST, NORM, SLOW, the attack within what the unit allows;
+ * - release, 0 to 1: the release, or the time constant switch; 0.5 is the unit's factory setting.
+ * The engines, from the research:
+ * - feed-forward (SSL, dbx 160): an RMS detector, a gain computer with a knee, ballistics;
+ * - feedback in the log domain (API 2500 in OLD mode, 1176): the detector reads the output; the loop is solved at
+ *   each sample, so that ratio and knee come out of it as on the unit;
+ * - variable-mu (Fairchild 670, Gates Sta-Level, Altec 436, RCA BA-6A): a rectifier charging the unit's RC network,
+ *   whose control voltage sets the gain through the tube's law; the loop solved at each sample;
+ * - optical (LA-2A): a cell with fast, slow and memory states, in the loop.
+ * Then the gain element's distortion (oversampled), and the unit's frequency response and transformer.
  */
 class LMMS_EXPORT ChannelCompressor
 {
 public:
+	using Model = CompressorModel;
+	using Speed = CompressorSpeed;
+
 	struct Settings
 	{
-		float threshold = 0.f;	//!< dBu
-		float ratio = 1.f;		//!< 1 is out, Infinity a limiter
-		bool fast = false;
-		float release = 0.3f;	//!< s
-		bool peak = false;
-		bool hardKnee = false;
-		bool linearRelease = false;
+		Model model = Model::Ssl;
+		float amount = 0.f;			//!< COMP, 0 to 1
+		float ratio = 0.f;			//!< RATIO, 0 (out) to 1
+		Speed speed = Speed::Norm;
+		float release = 0.5f;		//!< 0 to 1; 0.5 is the unit's factory setting
 	};
-	static constexpr float KneeWidth = 10.f;	//!< dB of the over-easy knee
-	static constexpr float RmsTime = 0.005f;	//!< s, of the true RMS detector
 
-	//! How much a level in dBFS is reduced, before the attack and release, in dB
-	static auto staticReduction(const Settings& settings, float level) -> float;
-	//! The make-up gain in dB: what a signal at the nominal level loses
-	static auto makeup(const Settings& settings) -> float;
+	//! The order the models are offered in: the VCAs, the FET, the optical, the variable-mu
+	static constexpr auto DisplayOrder = std::array{Model::Ssl, Model::Api2500, Model::Dbx160, Model::Urei1176,
+		Model::La2a, Model::Fairchild670, Model::GatesStaLevel, Model::Altec436, Model::RcaBa6a};
+
+	enum class Family { Vca, Fet, Optical, VariMu };
+	static auto family(Model model) -> Family;
+	static auto name(Model model) -> QString;
+	static auto description(Model model) -> QString;
+	//! What the controls do on @p model, for their tooltips
+	static auto amountName(Model model) -> QString;
+	static auto ratioName(Model model) -> QString;
+	static auto releaseName(Model model) -> QString;
+	//! The controls' settings in the model's terms: "-12 dBu", "4:1", "ALL", "LIMIT", "TC 3 (2 s)"...
+	static auto amountText(Model model, float amount) -> QString;
+	static auto ratioText(Model model, float ratio) -> QString;
+	static auto releaseText(Model model, float release) -> QString;
+	static auto speedName(Speed speed) -> QString;
+	//! Whether the model has a release to set (the dbx 160's comes out of its detector)
+	static auto hasRelease(Model model) -> bool;
+
+	// For projects from before the models, all SSL: the positions of a threshold in dBu, a ratio (1 to 20, 20 being
+	// infinity) and a release in seconds
+	static auto amountForSslThreshold(float dbu) -> float;
+	static auto ratioForSslRatio(float ratio) -> float;
+	static auto releaseForSslRelease(float seconds) -> float;
+
+	ChannelCompressor();
+	~ChannelCompressor();
 
 	void begin(const Settings& settings, sample_rate_t sampleRate);
-	auto isActive() const -> bool { return m_settings.ratio > 1.f; }
-	//! The gain for a frame, linear [audio thread]
-	auto gain(float left, float right) -> float;
+	auto isActive() const -> bool { return m_settings.ratio > 0.f; }
+	//! Compresses a frame in place [audio thread]
+	void process(float& left, float& right);
 	void reset();
 	//! The gain reduction now, in dB
-	auto reduction() const -> float { return m_reduction; }
+	auto reduction() const -> float;
+	//! The make-up gain, in dB
+	auto makeup() const -> float;
+
+	struct State;
 
 private:
 	Settings m_settings;
-	float m_makeup = 0.f;
-	float m_rmsCoefficient = 0.f;
-	float m_attackStep = 0.f;		//!< dB per frame
-	float m_releaseCoefficient = 0.f;
-	float m_releaseStep = 0.f;		//!< dB per frame, linear release
-	float m_meanSquare = 0.f;
-	float m_reduction = 0.f;		//!< dB
+	std::unique_ptr<State> m_state;
 };
 
+//! The gate's operating modes: what has no knob (see docs/pesquisa-compressores.md, part 2). Saved by number.
+enum class GateMode { Std, Kick, Snare, Toms, Vox, Guitar, Bass, Noise, Expander, Count };
+
 /**
- * The gate/expander of an SSL E series channel (after SSL's E Series Dynamics user guide), stereo-linked:
- * - a 20:1 gate, or a 2:1 expander (EXP);
- * - RANGE from 0 (out) to 40 dB, how far it closes;
- * - THRESHOLD from -30 to +10 dBu, with hysteresis growing as the threshold is lowered (2 dB at +10 dBu to 8 dB at
- *   -30 dBu), so that instruments can decay below the threshold that opened it;
- * - attack (opening): a controlled linear 1.5 ms per 40 dB, or 100 us per 40 dB with FAST;
- * - HOLD from 0 to 4 s before it starts to close; RELEASE from 0.1 to 4 s, a time constant in dB.
+ * The gate/expander of an SSL E series channel, stereo-linked: THRESHOLD (-30 to +10 dBu) and RANGE (0, out, to
+ * 40 dB) on knobs; the mode sets the rest:
+ * - a 20:1 gate or a 2:1 expander;
+ * - the attack, a slope in dB: 40 dB in 1.5 ms (normal) or 100 us (fast);
+ * - hold, release (a time constant in dB, so closing further takes longer), hysteresis (the SSL's, growing as the
+ *   threshold is lowered, or the mode's own);
+ * - the key's filters, so that e.g. the kick's gate does not open on the hi-hat.
  */
 class LMMS_EXPORT ChannelGate
 {
@@ -101,14 +146,32 @@ public:
 	{
 		float threshold = -10.f;	//!< dBu
 		float range = 0.f;			//!< dB, 0 is out
-		bool expander = false;
-		bool fast = false;
-		float release = 0.3f;		//!< s
-		float hold = 0.f;			//!< s
+		GateMode mode = GateMode::Std;
 	};
 
-	//! The hysteresis at a threshold in dBu
+	static constexpr auto DisplayOrder = std::array{GateMode::Std, GateMode::Kick, GateMode::Snare, GateMode::Toms,
+		GateMode::Vox, GateMode::Guitar, GateMode::Bass, GateMode::Noise, GateMode::Expander};
+
+	//! What a mode sets
+	struct ModeSpec
+	{
+		bool expander;
+		bool fast;
+		float hold;			//!< s
+		float release;		//!< s
+		float hysteresis;	//!< dB; 0 for the SSL's, which depends on the threshold
+		float keyHighPass;	//!< Hz, 0 for none
+		float keyLowPass;	//!< Hz, 0 for none
+	};
+	static auto modeSpec(GateMode mode) -> ModeSpec;
+	static auto modeName(GateMode mode) -> QString;
+	static auto modeDescription(GateMode mode) -> QString;
+
+	//! The SSL's hysteresis at a threshold in dBu
 	static auto hysteresis(float threshold) -> float;
+
+	ChannelGate();
+	~ChannelGate();
 
 	void begin(const Settings& settings, sample_rate_t sampleRate);
 	auto isActive() const -> bool { return m_settings.range > 0.f; }
@@ -118,12 +181,16 @@ public:
 	auto reduction() const -> float { return m_reduction; }
 
 private:
+	struct Key;
+
 	Settings m_settings;
+	ModeSpec m_spec{};
+	std::unique_ptr<Key> m_key;
 	float m_attackStep = 0.f;		//!< dB per frame
 	float m_releaseCoefficient = 0.f;
 	f_cnt_t m_holdFrames = 0;
 	float m_keyRelease = 0.f;
-	float m_key = 0.f;				//!< the key's peak envelope
+	float m_envelope = 0.f;			//!< the key's peak envelope
 	bool m_open = false;
 	f_cnt_t m_holding = 0;
 	float m_reduction = 0.f;		//!< dB

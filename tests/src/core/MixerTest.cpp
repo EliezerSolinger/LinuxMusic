@@ -21,6 +21,7 @@
  */
 
 #include <QtTest>
+#include <QElapsedTimer>
 #include <complex>
 
 #include <cmath>
@@ -202,6 +203,98 @@ auto settledGain(Dynamics& dynamics, float amplitude, float seconds = 1.f) -> fl
 		gain = dynamics.gain(x, x);
 	}
 	return gain;
+}
+
+//! A sine at 0 VU (-18 dBFS RMS)
+const float NominalSine = dbfsToAmp(-18.f) * std::numbers::sqrt2_v<float>;
+
+//! The output level of a compressor, dB relative to its input, for a sine, measured over its last half second
+auto compressorOutput(ChannelCompressor& c, float amplitude, float frequency, float seconds) -> float
+{
+	const int frames = static_cast<int>(seconds * 44100.f);
+	double in = 0.0, out = 0.0;
+	for (int i = 0; i < frames; ++i)
+	{
+		const float x = amplitude * std::sin(2.f * std::numbers::pi_v<float> * frequency * i / 44100.f);
+		float l = x, r = x;
+		c.process(l, r);
+		if (i > frames - 22050) { in += x * x; out += l * l; }
+	}
+	return static_cast<float>(10.0 * std::log10(std::max(out, 1e-30) / std::max(in, 1e-30)));
+}
+
+//! How much the output rises per dB of input, well above the threshold
+auto staticSlope(const ChannelCompressor::Settings& settings, float frequency = 1000.f, float above = 12.f) -> float
+{
+	auto level = [&](float boost) {
+		auto c = ChannelCompressor{};
+		c.begin(settings, 44100);
+		return compressorOutput(c, NominalSine * dbfsToAmp(boost), frequency, 4.f) + boost;
+	};
+	return (level(above + 8.f) - level(above)) / 8.f;
+}
+
+//! Seconds until the reduction first reaches @p reduction, for a constant level
+auto timeToReduction(const ChannelCompressor::Settings& settings, float amplitude, float reduction) -> float
+{
+	auto c = ChannelCompressor{};
+	c.begin(settings, 44100);
+	for (int i = 0; i < 44100; ++i)
+	{
+		float l = amplitude, r = amplitude;
+		c.process(l, r);
+		if (c.reduction() >= reduction) { return i / 44100.f; }
+	}
+	return 1.f;
+}
+
+//! Seconds for the reduction to fall to a third (or to @p to dB) after @p seconds of a loud sine
+auto releaseTime(const ChannelCompressor::Settings& settings, float seconds = 1.f, float to = -1.f) -> float
+{
+	auto c = ChannelCompressor{};
+	c.begin(settings, 44100);
+	compressorOutput(c, NominalSine * 4.f, 1000.f, seconds);
+	const float target = to >= 0.f ? to : c.reduction() / 3.f;
+	for (int i = 0; i < 44100 * 60; ++i)
+	{
+		float l = 0.f, r = 0.f;
+		c.process(l, r);
+		if (c.reduction() < target) { return i / 44100.f; }
+	}
+	return 60.f;
+}
+
+//! A compressor's harmonics for a sine: THD in %, and the 2nd and 3rd in dB below the fundamental
+struct Harmonics { float thd, second, third; };
+auto harmonics(ChannelCompressor& c, float amplitude, float frequency) -> Harmonics
+{
+	auto out = std::vector<float>{};
+	const int frames = 44100 * 3;
+	for (int i = 0; i < frames; ++i)
+	{
+		float l = amplitude * std::sin(2.f * std::numbers::pi_v<float> * frequency * i / 44100.f), r = l;
+		c.process(l, r);
+		if (i >= frames - 44100) { out.push_back(l); }
+	}
+	auto amplitudeAt = [&out](float f) {
+		const auto n = static_cast<double>(out.size());
+		double re = 0.0, im = 0.0, gain = 0.0;
+		for (auto i = std::size_t{0}; i < out.size(); ++i)
+		{
+			const double x = 2.0 * std::numbers::pi * i / n;
+			const double w = 0.35875 - 0.48829 * std::cos(x) + 0.14128 * std::cos(2 * x) - 0.01168 * std::cos(3 * x);
+			const double phase = 2.0 * std::numbers::pi * f * i / 44100.0;
+			re += w * out[i] * std::cos(phase);
+			im -= w * out[i] * std::sin(phase);
+			gain += w;
+		}
+		return static_cast<float>(2.0 * std::hypot(re, im) / gain);
+	};
+	const float h1 = amplitudeAt(frequency);
+	float sum = 0.f;
+	for (int k = 2; k <= 7 && k * frequency < 20000.f; ++k) { const float h = amplitudeAt(k * frequency); sum += h * h; }
+	return {100.f * std::sqrt(sum) / h1, ampToDbfs(amplitudeAt(2 * frequency) / h1),
+		ampToDbfs(amplitudeAt(3 * frequency) / h1)};
 }
 
 //! Levels of the master's output (see MixerTest::playStereo())
@@ -2483,65 +2576,213 @@ private slots:
 		strip.setNeutral();
 	}
 
-	void sslCompressor()
+	void compressorModelsKeepTheNominalLevelAndCompress()
 	{
-		using C = ChannelCompressor;
-		const float nominal = dbfsToAmp(-18.f) * std::numbers::sqrt2_v<float>; // a sine at -18 dBFS RMS, 0 VU
-		auto compressor = C{};
-		// Out at 1:1
-		compressor.begin({-20.f, 1.f}, 44100);
-		QVERIFY(!compressor.isActive());
-
-		// 4:1 at -10 dBu: the make-up gain keeps a signal at the nominal level where it was
-		auto settings = C::Settings{-10.f, 4.f};
-		compressor.begin(settings, 44100);
-		QVERIFY(std::abs(ampToDbfs(settledGain(compressor, nominal))) < 0.3f);
-		// 12 dB louder comes out 3 dB louder (well above the knee)
-		compressor.reset();
-		const float louder = ampToDbfs(settledGain(compressor, nominal * dbfsToAmp(12.f))) + 12.f;
-		QVERIFY2(std::abs(louder - 3.f) < 0.5f, qPrintable(QString::number(louder)));
-
-		// A limiter at infinity: louder signals come out at the same level
-		compressor.begin({-10.f, std::numeric_limits<float>::infinity()}, 44100);
-		compressor.reset();
-		QVERIFY(std::abs(ampToDbfs(settledGain(compressor, nominal * 4.f)) + 12.04f) < 0.5f);
-
-		// The knee: over-easy compresses a little below the threshold, the hard one not at all
-		const float justBelow = -10.f + DbuToDbfs - 2.f;
-		QVERIFY(C::staticReduction(settings, justBelow) > 0.f);
-		settings.hardKnee = true;
-		QCOMPARE(C::staticReduction(settings, justBelow), 0.f);
-		settings.hardKnee = false;
-
-		// LIN REL raises the threshold by 6 dB
-		auto linear = settings;
-		linear.linearRelease = true;
-		QVERIFY(std::abs(C::staticReduction(linear, -10.f) - C::staticReduction(settings, -16.f)) < 1e-4f);
-
-		// Attack: 30 ms for 20 dB of reduction, 3 ms with FAST
-		auto attackTime = [](bool fast) {
-			auto c = C{};
-			c.begin({-26.f, std::numeric_limits<float>::infinity(), fast}, 44100);
-			for (int i = 0; i < 44100; ++i)
+		for (const auto model : ChannelCompressor::DisplayOrder)
+		{
+			const auto settings = ChannelCompressor::Settings{model, 0.6f, 0.6f, CompressorSpeed::Norm, 0.5f};
+			auto c = ChannelCompressor{};
+			c.begin(settings, 44100);
+			QVERIFY(c.isActive());
+			// The make-up gain keeps a signal at the nominal level about where it was
+			const float nominal = compressorOutput(c, NominalSine, 1000.f, 3.f);
+			QVERIFY2(std::abs(nominal) < 2.f, qPrintable(QString{"%1: %2 dB"}.arg(ChannelCompressor::name(model)).arg(nominal)));
+			// 12 dB more comes out less than 9 dB louder
+			auto louder = ChannelCompressor{};
+			louder.begin(settings, 44100);
+			const float rise = compressorOutput(louder, NominalSine * dbfsToAmp(12.f), 1000.f, 3.f) + 12.f - nominal;
+			QVERIFY2(rise < 9.f, qPrintable(QString{"%1: +%2 dB"}.arg(ChannelCompressor::name(model)).arg(rise)));
+			// Out at the ratio's minimum; extremes stay finite
+			auto off = ChannelCompressor{};
+			off.begin({model, 0.6f, 0.f}, 44100);
+			QVERIFY(!off.isActive());
+			for (const auto speed : {CompressorSpeed::Fast, CompressorSpeed::Slow})
 			{
-				c.gain(1.f, 1.f); // a step far above the threshold, in peak terms
-				if (c.reduction() >= 20.f) { return i / 44100.f; }
+				auto extreme = ChannelCompressor{};
+				extreme.begin({model, 1.f, 1.f, speed, 0.f}, 44100);
+				const float out = compressorOutput(extreme, 30.f, 50.f, 0.5f);
+				QVERIFY(std::isfinite(out) && out < 40.f);
 			}
-			return 1.f;
-		};
-		const float slow = attackTime(false);
-		const float fast = attackTime(true);
-		QVERIFY2(fast < slow / 5.f, qPrintable(QString{"%1 %2"}.arg(slow).arg(fast)));
+		}
 	}
 
-	void sslGate()
+	void sslCompressorAsDocumented()
+	{
+		// Attack: 20 dB of reduction in 30 ms, 3 ms with FAST (SSL's guide)
+		const auto attack = [](CompressorSpeed speed) {
+			return timeToReduction(ChannelCompressor::Settings{CompressorModel::Ssl, 1.f, 1.f, speed}, 1.f, 20.f);
+		};
+		const float norm = attack(CompressorSpeed::Norm), fast = attack(CompressorSpeed::Fast);
+		QVERIFY2(norm > 0.025f && norm < 0.04f && fast > 0.002f && fast < 0.006f,
+			qPrintable(QString{"%1 %2"}.arg(norm).arg(fast)));
+		// The ratio: 4:1 well above the knee
+		const float slope = staticSlope({CompressorModel::Ssl, 0.6f, ChannelCompressor::ratioForSslRatio(4.f)});
+		QVERIFY2(std::abs(slope - 0.25f) < 0.05f, qPrintable(QString::number(slope)));
+		// Projects of before: threshold, ratio and release positions
+		QVERIFY(std::abs(ChannelCompressor::amountForSslThreshold(-11.f) - 0.5f) < 1e-6f);
+		QVERIFY(std::abs(ChannelCompressor::releaseForSslRelease(0.3f) - 0.5f) < 1e-6f);
+	}
+
+	void dbxAttackAndReleaseComeOutOfItsDetector()
+	{
+		// 15 ms to 63% for 10 dB above the threshold at infinity; 120 dB/s release (dbx 160 manual)
+		const auto settings = ChannelCompressor::Settings{CompressorModel::Dbx160, 0.5f, 1.f};
+		auto c = ChannelCompressor{};
+		c.begin(settings, 44100);
+		const float threshold = 12.f - 25.f + DbuToDbfs; // dBFS RMS
+		const float amplitude = dbfsToAmp(threshold + 10.f) * std::numbers::sqrt2_v<float>;
+		int i = 0;
+		for (; i < 44100 && c.reduction() < 10.f * 0.63f; ++i)
+		{
+			float l = amplitude * std::sin(2.f * std::numbers::pi_v<float> * 1000.f * i / 44100.f), r = l;
+			c.process(l, r);
+		}
+		const float attack = i / 44100.f;
+		QVERIFY2(attack > 0.008f && attack < 0.03f, qPrintable(QString::number(attack)));
+		// Release: from 9 to 3 dB of reduction in silence
+		for (int j = 0; j < 44100; ++j) { float l = amplitude * dbfsToAmp(20.f), r = l; c.process(l, r); }
+		int from = -1, to = -1;
+		for (int j = 0; j < 44100 && to < 0; ++j)
+		{
+			float l = 0.f, r = 0.f;
+			c.process(l, r);
+			if (from < 0 && c.reduction() < 9.f) { from = j; }
+			if (from >= 0 && c.reduction() < 3.f) { to = j; }
+		}
+		const float rate = 6.f / ((to - from) / 44100.f);
+		QVERIFY2(rate > 80.f && rate < 170.f, qPrintable(QString::number(rate)));
+		// Its third harmonic, from the detector's ripple, at infinity: about 0.5%, less at higher frequencies
+		auto ripple = ChannelCompressor{};
+		ripple.begin(settings, 44100);
+		const auto low = harmonics(ripple, amplitude * 4.f, 100.f);
+		QVERIFY2(low.third > -70.f && low.third < -30.f, qPrintable(QString::number(low.third)));
+	}
+
+	void apiStepsAndThrust()
+	{
+		QCOMPARE(ChannelCompressor::ratioText(CompressorModel::Api2500, 0.01f), QString{"1.5:1"});
+		QCOMPARE(ChannelCompressor::ratioText(CompressorModel::Api2500, 0.5f), QString{"4:1"});
+		QVERIFY(ChannelCompressor::ratioText(CompressorModel::Api2500, 1.f).contains(QChar{0x221E}));
+		// THRUST: the detector hears less of the lows, so a bass note is compressed less than a mid of the same level
+		const auto settings = ChannelCompressor::Settings{CompressorModel::Api2500, 0.7f, 0.6f};
+		auto bass = ChannelCompressor{}, mid = ChannelCompressor{};
+		bass.begin(settings, 44100);
+		mid.begin(settings, 44100);
+		compressorOutput(bass, NominalSine * 2.f, 50.f, 2.f);
+		compressorOutput(mid, NominalSine * 2.f, 1000.f, 2.f);
+		QVERIFY(bass.reduction() < mid.reduction() - 3.f);
+	}
+
+	void ureiRatiosAllButtonsAndColor()
+	{
+		// The ratio buttons give their ratios out of the feedback loop
+		const float four = staticSlope({CompressorModel::Urei1176, 0.6f, 0.1f}, 1000.f, 10.f);
+		const float twenty = staticSlope({CompressorModel::Urei1176, 0.6f, 0.7f}, 1000.f, 10.f);
+		QVERIFY2(std::abs(four - 0.25f) < 0.08f && twenty < 0.12f, qPrintable(QString{"%1 %2"}.arg(four).arg(twenty)));
+		QCOMPARE(ChannelCompressor::ratioText(CompressorModel::Urei1176, 0.95f), QString{"ALL"});
+		// Its distortion: low at 1 kHz with ~8 dB of reduction (0.07% measured), more in the lows, more with ALL
+		const auto settings = ChannelCompressor::Settings{CompressorModel::Urei1176, 0.55f, 0.1f};
+		auto c = ChannelCompressor{};
+		c.begin(settings, 44100);
+		const auto mids = harmonics(c, NominalSine * 2.f, 1000.f);
+		auto lows = ChannelCompressor{};
+		lows.begin(settings, 44100);
+		const auto bass = harmonics(lows, NominalSine * 2.f, 125.f);
+		auto all = ChannelCompressor{};
+		all.begin({CompressorModel::Urei1176, 0.55f, 0.95f}, 44100);
+		const auto allButtons = harmonics(all, NominalSine * 2.f, 1000.f);
+		QVERIFY2(mids.thd < 0.3f && bass.thd > mids.thd && allButtons.thd > mids.thd,
+			qPrintable(QString{"%1 %2 %3"}.arg(mids.thd).arg(bass.thd).arg(allButtons.thd)));
+	}
+
+	void la2aCellReleasesInTwoStagesWithMemory()
+	{
+		const auto settings = ChannelCompressor::Settings{CompressorModel::La2a, 0.7f, 0.2f};
+		// Half the reduction gone in about 60 ms after a short compression
+		auto shortRelease = [&settings](float seconds) {
+			auto c = ChannelCompressor{};
+			c.begin(settings, 44100);
+			compressorOutput(c, NominalSine * 4.f, 1000.f, seconds);
+			const float start = c.reduction();
+			int half = -1, one = -1;
+			for (int i = 0; i < 44100 * 20 && one < 0; ++i)
+			{
+				float l = 0.f, r = 0.f;
+				c.process(l, r);
+				if (half < 0 && c.reduction() < start / 2.f) { half = i; }
+				if (c.reduction() < 1.f) { one = i; }
+			}
+			return std::pair{half / 44100.f, one / 44100.f};
+		};
+		const auto [halfShort, oneShort] = shortRelease(0.3f);
+		QVERIFY2(halfShort > 0.02f && halfShort < 0.2f, qPrintable(QString::number(halfShort)));
+		// After a long compression the cell holds longer (memory)
+		const auto [halfLong, oneLong] = shortRelease(8.f);
+		QVERIFY2(oneLong > oneShort * 1.3f, qPrintable(QString{"%1 %2"}.arg(oneShort).arg(oneLong)));
+		// LIMIT is flatter than COMP; COMP about 4:1
+		const float comp = staticSlope({CompressorModel::La2a, 0.6f, 0.2f});
+		const float limit = staticSlope({CompressorModel::La2a, 0.6f, 0.8f});
+		QVERIFY2(limit < comp && comp > 0.12f && comp < 0.45f, qPrintable(QString{"%1 %2"}.arg(comp).arg(limit)));
+		auto color = ChannelCompressor{};
+		color.begin(settings, 44100);
+		QVERIFY(harmonics(color, NominalSine * 2.f, 1000.f).thd < 0.75f);
+	}
+
+	void compressorCost()
+	{
+		// Each model, on a stereo channel, must cost a small part of a core (plan: up to about 2%)
+		for (const auto model : ChannelCompressor::DisplayOrder)
+		{
+			auto c = ChannelCompressor{};
+			c.begin({model, 0.7f, 0.6f}, 44100);
+			QElapsedTimer timer;
+			timer.start();
+			compressorOutput(c, NominalSine * 2.f, 1000.f, 2.f);
+			const float share = timer.nsecsElapsed() / 1e9f / 2.f;
+			qInfo("%s: %.2f%% of a core", qPrintable(ChannelCompressor::name(model)), share * 100.f);
+			QVERIFY2(share < 0.05f, qPrintable(ChannelCompressor::name(model)));
+		}
+	}
+
+	void variMuUnits()
+	{
+		// Fairchild: the ratio grows with the level
+		const auto fairchild = ChannelCompressor::Settings{CompressorModel::Fairchild670, 0.3f, 0.5f};
+		const float gentle = staticSlope(fairchild, 1000.f, -6.f);
+		const float hard = staticSlope(fairchild, 1000.f, 14.f);
+		QVERIFY2(hard < gentle, qPrintable(QString{"%1 %2"}.arg(gentle).arg(hard)));
+		// The time constant switch: position 1 releases faster than position 4; under 1% at 10 dB of reduction
+		const float tc1 = releaseTime({CompressorModel::Fairchild670, 0.7f, 0.5f, CompressorSpeed::Norm, 0.1f});
+		const float tc4 = releaseTime({CompressorModel::Fairchild670, 0.7f, 0.5f, CompressorSpeed::Norm, 0.7f});
+		QVERIFY2(tc1 < tc4, qPrintable(QString{"%1 %2"}.arg(tc1).arg(tc4)));
+		// Gates: about 3.3:1 from the factory
+		const float gates = 1.f / staticSlope({CompressorModel::GatesStaLevel, 0.6f, (3.3f - 1.6f) / 4.4f});
+		QVERIFY2(gates > 2.3f && gates < 4.8f, qPrintable(QString::number(gates)));
+		// Altec: its threshold takes the ratio from about 2:1 to about 4:1
+		const float altecLow = 1.f / staticSlope({CompressorModel::Altec436, 0.8f, 0.01f});
+		const float altecHigh = 1.f / staticSlope({CompressorModel::Altec436, 0.8f, 1.f});
+		QVERIFY2(altecHigh > altecLow * 1.4f, qPrintable(QString{"%1 %2"}.arg(altecLow).arg(altecHigh)));
+		// RCA: about 10:1; dual releases slower after sustained peaks than after a short one
+		const float rca = 1.f / staticSlope({CompressorModel::RcaBa6a, 0.6f, 1.f});
+		QVERIFY2(rca > 5.f, qPrintable(QString::number(rca)));
+		const auto dual = ChannelCompressor::Settings{CompressorModel::RcaBa6a, 0.7f, 1.f, CompressorSpeed::Norm};
+		QVERIFY(releaseTime(dual, 4.f, 1.f) > releaseTime(dual, 0.05f, 1.f) * 1.2f);
+		// Their distortion: under 1% at moderate reduction for the Fairchild, more for the Altec
+		auto f = ChannelCompressor{};
+		f.begin(fairchild, 44100);
+		const auto fd = harmonics(f, NominalSine * 2.f, 1000.f);
+		QVERIFY2(fd.thd < 1.f, qPrintable(QString::number(fd.thd)));
+		QVERIFY(fd.third > fd.second); // push-pull
+	}
+
+	void gateModes()
 	{
 		using G = ChannelGate;
 		auto gate = G{};
 		gate.begin({0.f, 0.f}, 44100);
 		QVERIFY(!gate.isActive());
 
-		// A 20:1 gate at 0 dBu (-22 dBFS) closing by its range, 40 dB
+		// STD: a 20:1 gate at 0 dBu (-22 dBFS) closing by its range
 		gate.begin({0.f, 40.f}, 44100);
 		QVERIFY(std::abs(ampToDbfs(settledGain(gate, 0.01f, 3.f)) + 40.f) < 0.5f);
 		QVERIFY(std::abs(settledGain(gate, 0.5f) - 1.f) < 1e-3f);
@@ -2551,18 +2792,29 @@ private slots:
 		QVERIFY(settledGain(gate, dbfsToAmp(-22.f - 2.f)) < 0.5f);
 		QVERIFY(G::hysteresis(-30.f) > G::hysteresis(10.f));
 
-		// The 2:1 expander: 18 dB below the threshold, 18 dB less
-		gate.begin({0.f, 40.f, true}, 44100);
+		// EXP: 2:1, 18 dB below the threshold, 18 dB less
+		gate.begin({0.f, 40.f, GateMode::Expander}, 44100);
 		gate.reset();
 		const float expanded = ampToDbfs(settledGain(gate, dbfsToAmp(-22.f - 18.f)));
 		QVERIFY2(std::abs(expanded + 18.f) < 1.5f, qPrintable(QString::number(expanded)));
 
-		// Hold keeps it open after the signal falls
-		gate.begin({0.f, 40.f, false, false, 0.1f, 0.5f}, 44100);
-		gate.reset();
-		settledGain(gate, 0.5f, 0.1f);
-		QVERIFY(std::abs(settledGain(gate, 0.001f, 0.3f) - 1.f) < 1e-3f);
-		QVERIFY(settledGain(gate, 0.001f, 1.f) < 0.1f);
+		// KICK: keyed on the lows, so a loud hi-hat does not open it, a kick does; it holds 50 ms
+		auto kick = G{};
+		kick.begin({-10.f, 40.f, GateMode::Kick}, 44100);
+		auto settled = [&kick](float amplitude, float frequency, float seconds) {
+			float g = 1.f;
+			for (int i = 0; i < static_cast<int>(seconds * 44100); ++i)
+			{
+				const float x = amplitude * std::sin(2.f * std::numbers::pi_v<float> * frequency * i / 44100.f);
+				g = kick.gain(x, x);
+			}
+			return g;
+		};
+		QVERIFY(settled(0.5f, 8000.f, 0.5f) < 0.05f);
+		QVERIFY(settled(0.5f, 60.f, 0.5f) > 0.99f);
+		QVERIFY(settled(0.001f, 60.f, 0.03f) > 0.99f);	// held
+		QVERIFY(settled(0.001f, 60.f, 1.f) < 0.05f);	// then closed
+		for (const auto mode : G::DisplayOrder) { QVERIFY(!G::modeName(mode).isEmpty()); }
 	}
 
 	void analogStripDynamics()
@@ -2580,28 +2832,60 @@ private slots:
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.5f) - 1.f) < 0.01f);
 		strip.m_gateRangeModel.setValue(0.f);
 
-		// The compressor: RATIO switches it in; louder signals are squeezed more than quiet ones
-		strip.m_compressorModel.setValue(-20.f);
+		// The compressor: RATIO switches it in; every model squeezes louder signals more
+		strip.m_compressorAmountModel.setValue(0.7f);
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.9f) - 1.f) < 0.01f);
-		strip.m_compressorRatioModel.setValue(AnalogChannelStrip::MaxRatio);
-		QVERIFY(std::isinf(AnalogChannelStrip::ratioAt(strip.m_compressorRatioModel.value())));
-		strip.m_compressorRatioModel.setValue(4.f);
-		QVERIFY(sineGain(channel, 1000.f, 0.9f) < sineGain(channel, 1000.f, 0.05f));
+		strip.m_compressorRatioModel.setValue(0.6f);
+		for (const auto model : ChannelCompressor::DisplayOrder)
+		{
+			strip.m_compressorTypeModel.setValue(static_cast<int>(model));
+			QVERIFY2(sineGain(channel, 1000.f, 0.9f, 128) < sineGain(channel, 1000.f, 0.05f, 128),
+				qPrintable(ChannelCompressor::name(model)));
+		}
 
-		// Projects with the one knob dynamics of before: a 4:1 compressor and a gate of 40 dB at their thresholds
+		// Saved with the strip
+		strip.m_compressorTypeModel.setValue(static_cast<int>(CompressorModel::La2a));
+		strip.m_compressorSpeedModel.setValue(static_cast<int>(CompressorSpeed::Slow));
+		strip.m_gateModeModel.setValue(static_cast<int>(GateMode::Snare));
 		auto doc = DataFile{DataFile::Type::SongProject};
 		auto element = doc.createElement("mixerchannel");
-		auto old = doc.createElement("analogstrip");
-		old.setAttribute("compressor", -20);
-		old.setAttribute("gate", -50);
-		element.appendChild(old);
+		strip.saveSettings(doc, element);
+		strip.setNeutral();
 		strip.loadSettings(element);
-		QCOMPARE(strip.m_compressorRatioModel.value(), 4.f);
-		QCOMPARE(strip.m_compressorModel.value(), 2.f);
+		QCOMPARE(strip.m_compressorTypeModel.value(), static_cast<int>(CompressorModel::La2a));
+		QCOMPARE(strip.m_compressorSpeedModel.value(), static_cast<int>(CompressorSpeed::Slow));
+		QCOMPARE(strip.m_gateModeModel.value(), static_cast<int>(GateMode::Snare));
+		QCOMPARE(strip.m_compressorAmountModel.value(), 0.7f);
+
+		// Projects of before the models: the SSL, at the same settings
+		auto before = doc.createElement("mixerchannel");
+		auto sslStrip = doc.createElement("analogstrip");
+		sslStrip.setAttribute("compthreshold", -11);
+		sslStrip.setAttribute("compratio", 4);
+		sslStrip.setAttribute("compfast", 1);
+		sslStrip.setAttribute("comprelease", 0.3);
+		sslStrip.setAttribute("gatethreshold", -20);
+		sslStrip.setAttribute("gaterange", 30);
+		sslStrip.setAttribute("gateexp", 1);
+		before.appendChild(sslStrip);
+		strip.loadSettings(before);
+		QCOMPARE(strip.m_compressorTypeModel.value(), static_cast<int>(CompressorModel::Ssl));
+		QVERIFY(std::abs(strip.m_compressorAmountModel.value() - 0.5f) < 1e-3f);
+		QCOMPARE(ChannelCompressor::ratioText(CompressorModel::Ssl, strip.m_compressorRatioModel.value()), QString{"4:1"});
+		QCOMPARE(strip.m_compressorSpeedModel.value(), static_cast<int>(CompressorSpeed::Fast));
+		QCOMPARE(strip.m_gateModeModel.value(), static_cast<int>(GateMode::Expander));
+		QCOMPARE(strip.m_gateRangeModel.value(), 30.f);
+		// And the one knob dynamics of before
+		auto older = doc.createElement("mixerchannel");
+		auto oldStrip = doc.createElement("analogstrip");
+		oldStrip.setAttribute("compressor", -20);
+		oldStrip.setAttribute("gate", -50);
+		older.appendChild(oldStrip);
+		strip.loadSettings(older);
+		QCOMPARE(ChannelCompressor::ratioText(CompressorModel::Ssl, strip.m_compressorRatioModel.value()), QString{"4:1"});
 		QCOMPARE(strip.m_gateRangeModel.value(), 40.f);
 		QCOMPARE(strip.m_gateModel.value(), -28.f);
 		strip.setNeutral();
-		QCOMPARE(strip.m_compressorRatioModel.value(), 1.f);
 	}
 
 	void channelTolerances()
