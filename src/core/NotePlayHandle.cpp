@@ -244,19 +244,12 @@ void NotePlayHandle::play(std::span<SampleFrame> buffer)
 	}
 
 	// number of frames that can be played this period
-	f_cnt_t framesThisPeriod = m_totalFramesPlayed == 0
+	const f_cnt_t framesThisPeriod = m_totalFramesPlayed == 0
 		? Engine::audioEngine()->framesPerPeriod() - offset()
 		: Engine::audioEngine()->framesPerPeriod();
 
-	// check if we start release during this period
-	if( m_released == false &&
-		instrumentTrack()->isSustainPedalPressed() == false &&
-		m_totalFramesPlayed + framesThisPeriod > m_frames )
-	{
-		noteOff( m_totalFramesPlayed == 0
-			? ( m_frames + offset() ) // if we have noteon and noteoff during the same period, take offset in account for release frame
-			: ( m_frames - m_totalFramesPlayed ) ); // otherwise, the offset is already negated and can be ignored
-	}
+	// check if we start release during this period (usually done already, see releaseIfEnding())
+	releaseIfEnding();
 
 	// under some circumstances we're called even if there's nothing to play
 	// therefore do an additional check which fixes crash e.g. when
@@ -365,6 +358,27 @@ f_cnt_t NotePlayHandle::framesLeftForCurrentPeriod() const
 bool NotePlayHandle::isFromTrack( const Track * _track ) const
 {
 	return m_instrumentTrack == _track || m_patternTrack == _track;
+}
+
+
+
+
+void NotePlayHandle::releaseIfEnding()
+{
+	// Not playing in this period yet
+	if (m_released || offset() >= Engine::audioEngine()->framesPerPeriod()) { return; }
+
+	// number of frames that can be played this period
+	const f_cnt_t framesThisPeriod = m_totalFramesPlayed == 0
+		? Engine::audioEngine()->framesPerPeriod() - offset()
+		: Engine::audioEngine()->framesPerPeriod();
+
+	if (!instrumentTrack()->isSustainPedalPressed() && m_totalFramesPlayed + framesThisPeriod > m_frames)
+	{
+		noteOff( m_totalFramesPlayed == 0
+			? ( m_frames + offset() ) // if we have noteon and noteoff during the same period, take offset in account for release frame
+			: ( m_frames - m_totalFramesPlayed ) ); // otherwise, the offset is already negated and can be ignored
+	}
 }
 
 

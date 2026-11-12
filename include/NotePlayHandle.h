@@ -112,6 +112,14 @@ public:
 	/*! Renders one chunk using the attached instrument into the buffer */
 	void play(std::span<SampleFrame> buffer) override;
 
+	/**
+	 * Releases the note if it ends during the coming period, together with its sub-notes (e.g. of an arpeggio).
+	 * Called for every note before the notes of the period are rendered in parallel: released from the parent's
+	 * play() instead, a sub-note rendered before its parent would be released a period late, depending on which
+	 * thread got there first. [audio engine thread, before rendering the period]
+	 */
+	void releaseIfEnding();
+
 	/*! Returns whether playback of note is finished and thus handle can be deleted */
 	bool isFinished() const override
 	{

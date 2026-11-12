@@ -338,6 +338,17 @@ void AudioEngine::renderStageInstruments()
 {
 	AudioEngineProfiler::Probe profilerProbe(m_profiler, AudioEngineProfiler::DetailType::Instruments);
 
+	// The notes ending in this period are released before any note is rendered, so that the release of sub-notes
+	// does not depend on the order the threads render them in (see NotePlayHandle::releaseIfEnding())
+	for (const auto handle : m_playHandles)
+	{
+		if (handle->type() != PlayHandle::Type::NotePlayHandle) { continue; }
+		const auto note = static_cast<NotePlayHandle*>(handle);
+		note->lock();
+		note->releaseIfEnding();
+		note->unlock();
+	}
+
 	AudioEngineWorkerThread::fillJobQueue(m_playHandles);
 	AudioEngineWorkerThread::startAndWaitForJobs();
 }
