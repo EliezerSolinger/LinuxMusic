@@ -126,7 +126,7 @@ Detalhes:
 - `MixerTest` tem 22 testes, incluindo cada etapa do caminho do sinal, a rampa e salvar/carregar.
 - Um demo renderizado antes e depois tem o mesmo nível (RMS 3.101 contra 3.103). O render dos demos não é
   determinístico (ruído e fase aleatória), então não dá para comparar amostra por amostra.
-- Os controles novos ainda **não aparecem na interface**; isso fica para o passo 9.
+- Os controles novos ganharam interface no passo 12 (painel do canal selecionado).
 
 ### Passo 3: medidores seguros e RMS (feito)
 
@@ -162,8 +162,7 @@ Tudo é salvo e carregado com o projeto. O áudio de entrada ainda **não** é l
 - O estado guardado no histórico **inclui o canal de cada faixa**. Apagar um canal renumera os canais das faixas, e
   desfazer devolve cada faixa ao canal certo. Isso só vale para o histórico; o arquivo do projeto não muda.
 - `loadSettings` passou a ignorar filhos que não são `mixerchannel`.
-- Ainda **não** entram no histórico: renomear canal e mudar a cor. A interface altera esses campos direto; isso será
-  ajustado na interface nova (passo 9).
+- Renomear canal e mudar a cor passaram a entrar no histórico no passo 12.
 - `MixerTest` tem 30 testes.
 
 ### Passo 6: sidechain e multicanal (feito)
@@ -238,11 +237,10 @@ Diferenças de som medidas na bateria A/B (43 projetos):
     período seguinte, sempre no mesmo período, então o render continua determinístico.
   - Canal mudo esvazia as suas linhas, para não soltar som velho quando volta.
   - `Mixer::latency()` é a latência da mixagem toda. A gravação (etapa 3) vai usá-la para alinhar o que for gravado.
-- **Ainda não compensado:**
-  - latência de instrumentos (precisa de atraso por faixa antes do canal);
-  - o primeiro período de um plugin LADSPA ou LV2, antes de ele informar a latência;
-  - o dry/wet dos efeitos com latência, porque o host mistura o sinal seco sem atraso;
-  - na reprodução, a mixagem toda sai atrasada pela latência do master, sem adiantar a música.
+- **Completado no passo 12:** latência de instrumentos, sinal seco dos efeitos com latência e o primeiro período
+  dos plugins LADSPA e LV2.
+- **Por escolha, como no REAPER:** na reprodução, a mixagem toda sai atrasada pela latência do master; a música não
+  é adiantada.
 - Testes: `MixerTest` tem 50 (efeito de teste que atrasa e informa a latência: caminhos alinhados, entrada das faixas
   de um barramento, efeito desligado, soma ao longo do caminho).
 
@@ -272,7 +270,7 @@ Diferenças de som medidas na bateria A/B (43 projetos):
   - faixas dentro de pastas aparecem recuadas;
   - a pasta tem um botão para recolher ou mostrar as faixas, e knobs VOL e PAN do canal de grupo.
 - As faixas do editor de sequências não entram em pastas.
-- Arrastar faixas para dentro de pastas e recolher grupos no mixer ficam para o passo 10.
+- Recolher grupos no mixer veio no passo 10; arrastar faixas para dentro de pastas, no passo 12.
 - Os canais do mixer agora mostram o nome da faixa logo ao serem criados (antes ficava "Canal N" até reabrir).
 - `MixerTest` tem 55 testes: roteamento para o grupo e de volta, pastas aninhadas, apagar pasta, solo em pasta,
   desfazer, salvar.
@@ -309,11 +307,8 @@ abertos janelas de controle duplicadas. O que entrou:
 - Cores: as do tema LMMS, sem mudança no CSS.
 - `MixerTest` tem 57 testes (inserir, mover e substituir efeitos; sidechain pelos dois lados).
 
-**Fica para depois:**
-- arrastar faixas para dentro de pastas pela alça da faixa (hoje é pelo menu; arrastar uma pasta move só a pasta, uma
-  posição por vez);
-- reordenar canais do mixer para ficarem junto do seu grupo;
-- mostrar os slots com nome dentro de cada faixa do mixer (hoje são quadrados).
+O que ficou para depois aqui (arrastar faixas para pastas, ordenar canais junto do grupo, slots com nome nas faixas
+do mixer) foi feito no passo 12.
 
 ### Passo 11: um canal por peça (feito)
 
@@ -332,9 +327,86 @@ abertos janelas de controle duplicadas. O que entrou:
   - "Mixer channel per output" no menu da faixa, para qualquer instrumento multi-saída.
 - `InstrumentTrack::setInstrumentInstance()` põe um instrumento já criado na faixa (usado nos testes).
 - `MixerTest` tem 58 testes.
-- **Limites:**
-  - apagar a faixa deixa os canais das peças (o "Remover canais sem uso" do mixer limpa);
-  - o canal de grupo das peças não acompanha a faixa quando ela muda de pasta depois.
+- Os limites daqui (canais das peças ficavam ao apagar a faixa e não seguiam a pasta) foram resolvidos no passo 12.
+
+### Passo 12: acabamento (feito)
+
+O que as etapas anteriores deixaram pela metade, e a revisão do que estava improvisado.
+
+**Canais feitos para uma faixa** (as peças da bateria e o canal de grupo delas):
+- Cada um lembra o canal da faixa para o qual foi feito (`MixerChannel::m_owner`, salvo como `owner`).
+- Ficam logo depois do canal da faixa: primeiro o canal de grupo, depois as peças.
+- Seguem a faixa quando ela muda de pasta: o canal de grupo das peças manda para onde o canal da faixa manda.
+- Saem junto com a faixa.
+- Pedir "um canal por peça" de novo não cria outro conjunto.
+
+**Ordem dos canais:**
+- "Organizar canais como as faixas", no menu do canal (`Mixer::arrangeChannelsByTracks()`), põe os canais na ordem
+  das faixas, como o mixer do REAPER: o canal de cada faixa, os canais feitos para ela, depois os do editor de
+  sequências, depois os barramentos, na ordem em que estavam. É um passo de desfazer.
+- **Decisão:** a ordem não muda sozinha quando as faixas mudam. No LMMS os canais são numerados e o número aparece na
+  faixa; reordenar sem pedir mudaria esses números o tempo todo.
+- A tela do mixer acompanha as trocas anunciadas pelo mixer (`channelsSwapped`), então qualquer reordenação aparece
+  certa.
+
+**Arrastar faixas pela alça** (`TrackContainer::moveTrackStep()`):
+- Uma pasta é arrastada com tudo o que contém.
+- Uma pasta recolhida é ultrapassada de uma vez.
+- A faixa entra e sai de pastas no caminho: fica no nível da faixa acima do novo lugar, ou dentro dela se for uma
+  pasta aberta, como no REAPER.
+- Arrastar para o lado (três recuos) põe a faixa na pasta acima ou a tira da pasta.
+- A **ordem das faixas** passou a ser guardada no histórico junto com as profundidades (`FolderLayout`, atributo
+  `order`). Um arraste inteiro é um passo de desfazer. Ao desfazer, as faixas voltam uma a uma para o lugar, e os
+  padrões do editor de sequências seguem as suas faixas.
+- "Tirar da pasta" põe a faixa depois do resto da pasta. Antes, as faixas abaixo dela também saíam.
+
+**Histórico:**
+- Renomear e mudar a cor de um canal entram no histórico (`Mixer::setChannelName()`, `setChannelColor()`).
+- **Decisão:** no canal de uma faixa, renomear ou mudar a cor muda a faixa, e o canal acompanha. Nome e cor da faixa
+  não entram no histórico do LMMS. Ao desfazer outra mudança do mixer, os canais das faixas voltam a seguir as
+  faixas, para nunca ficarem com nomes diferentes.
+
+**Latência (PDC):**
+- **Instrumentos:** cada faixa de instrumento se registra no mixer com a latência do seu instrumento
+  (`Mixer::addLatencySource()`). O som das faixas de um canal conta com essa latência, e as outras entradas e o
+  resto da mixagem esperam por ele. A latência é atualizada quando o instrumento muda e, nos instrumentos de fluxo
+  único, a cada período.
+- **Sinal seco:** `Effect::mixDrySignal()` mistura o seco depois do knob W/D, atrasado pela latência do efeito.
+  Antes, o host misturava o seco sem atraso, e o seco e o processado saíam desalinhados. LV2 e LADSPA usam essa
+  função no lugar da mistura própria.
+- **Primeiro período:** os plugins escrevem a latência enquanto processam. Agora um plugin LADSPA ou LV2 com porta de
+  latência roda uma vez em silêncio ao ser ativado e é reativado, como o Ardour faz. A latência é conhecida antes do
+  primeiro período.
+
+**Interface:**
+- **Slots com nome** em cada faixa do mixer:
+  - o LED liga e desliga o efeito;
+  - clique duplo abre os controles do efeito, ou adiciona um efeito num slot vazio;
+  - o botão direito abre o menu do slot.
+  - Cabem cinco; com mais, o último mostra "+N".
+- **Painel do canal selecionado**, acima dos efeitos: trim, inverter fase, trocar L/R, largura estéreo e pan. Até
+  aqui, esses ajustes do passo 2 não tinham interface.
+- Cada faixa do mixer ganhou um knob pequeno de pan.
+- Cores do tema LMMS (o LED aceso usa o verde dos LCDs).
+- O navegador lembra a página pelo nome (`ui/browserpage`), não mais pela posição, que mudou com a página "Efeitos".
+  A posição salva por builds anteriores é lida na ordem de então.
+
+**Refeito por estar improvisado:**
+- A latência dos instrumentos começou como um aviso a cada período, que sumia depois de 32 períodos sem aviso.
+  Virou o registro acima, sem prazo.
+- O arraste juntava passos de desfazer desligando o histórico por fora. `changeFolderDepth()` ganhou um parâmetro
+  para isso.
+- O "canal segue a faixa" marcava a faixa com uma propriedade dinâmica do Qt para não conectar duas vezes. Virou
+  conexão única (`Qt::UniqueConnection`) com `Mixer::followTracks()`.
+- Os knobs de uma pasta sem canal próprio controlavam modelos de mentira, que não faziam nada. Agora controlam o canal
+  que a pasta usa.
+
+`MixerTest` tem 63 testes. Novos: canais por saída pertencem à faixa (lugar, pasta, ordenar, salvar, apagar), faixas
+movem com as pastas (inclusive desfazer a ordem), renomear e cor no histórico, latência de faixa, sinal seco atrasado.
+
+**Fora do mixer, continua pendente:**
+- a corrida entre threads do LB302 (também no LMMS) e a do TripleOscillator sob carga (veja o passo 8);
+- entrada de áudio, armar e monitorar: os ajustes já existem no canal, mas só funcionam com a gravação (etapa 3).
 
 ### Correção encontrada pela bateria A/B
 
