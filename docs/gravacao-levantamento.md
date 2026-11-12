@@ -223,6 +223,23 @@ e a captura no mesmo ciclo.
 
 ---
 
+## 6. Decisões do usuário (12/11/2026)
+
+| Tema | Decisão |
+|---|---|
+| Drivers | ALSA e JACK, com o ALSA primeiro: ALSA puro com acesso exclusivo. Duplex no mesmo dispositivo primeiro; dispositivos separados depois |
+| Modelo de faixa | C: uma faixa de gravação nova e limpa, que vira a faixa de áudio. Quando cobrir loops e samples, o `SampleTrack` sai e os projetos convertem |
+| Tempo dos itens | **Sempre musical:** os itens gravados acompanham o BPM, com time-stretch (biblioteca de qualidade, provavelmente a Rubber Band) |
+| Arquivo dos takes | WAV float de 32 bits, um arquivo intercalado por faixa e passada |
+| Gravar por cima | Um take novo numa lane, como no REAPER 7: a de cima toca. O loop recording cria uma lane por volta |
+| Monitoração | Por software, pelos efeitos da faixa e pela mesa. Modos desligado, ligado e auto (tape auto). Os plugins com latência são contornados enquanto a faixa está armada |
+| Primeira versão | Punch in/out, loop recording com takes, pré-roll e count-in, e comping de lanes |
+| Profundidade da etapa 1 | **Fundo:** o motor sem trava. O mutex do período dá lugar a snapshots imutáveis publicados pela interface; um contador de frames do transporte; nada de alocação ou E/S no áudio; o transporte num modelo próprio. Feito em passos, com a bateria A/B a cada um |
+| MIDI | Áudio e MIDI juntos na primeira versão: faixas de instrumento armadas gravam notas em clipes na linha do tempo (overdub e replace), substituindo a gravação presa ao Piano Roll |
+| Ao parar | Guarda sempre; desfazer remove. Os arquivos órfãos são limpos ao salvar ou fechar |
+| Cabeçalho das faixas graváveis | Duas linhas, como no REAPER: nome, M/S, ● (armar) e monitor; depois a entrada, o medidor de entrada, VOL e PAN |
+| Já decidido antes | A entrada, armar e monitorar são da faixa (passo 26); a gravação fica na página Composição |
+
 ## Anexos
 - **A:** motor de áudio e caminho da entrada
 - **B:** modelo de faixas, clipes e áudio
