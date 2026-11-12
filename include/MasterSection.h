@@ -32,6 +32,7 @@
 #include "ChannelMeter.h"
 #include "EqFilter.h"
 #include "LmmsTypes.h"
+#include "MonoBass.h"
 
 class QDomDocument;
 class QDomElement;
@@ -103,13 +104,7 @@ public:
 	/**
 	 * The stereo section, on the master after its effects [audio thread]:
 	 * - WIDTH (@p widthPercent, the master channel's width): the side's level, ramped over the period;
-	 * - MONO BASS: below its frequency, the side is narrowed to its width (0 = mono). A Linkwitz-Riley crossover
-	 *   (24 dB/oct) splits the side, S' = HP(S) + width LP(S), and the mid goes through the same crossover,
-	 *   LP(M) + HP(M), an allpass of flat gain: mid and side get the same phase, so the image above the frequency
-	 *   stays where it was. (Subtracting a low-pass from the side would not do: the low-pass lags in phase, so the
-	 *   lows would not cancel.) The crossover is built from state variable filters (topology-preserving
-	 *   transform), whose frequency can glide sample by sample without clicks; switching the section on or off
-	 *   crossfades between it and the dry signal over a period.
+	 * - MONO BASS: below its frequency, the side is narrowed to its width (0 = mono), see MonoBass;
 	 * - AIR: a high shelf on the side only, opening the mix without brightening its center.
 	 * Each part at its neutral setting is skipped.
 	 */
@@ -146,31 +141,7 @@ public:
 
 private:
 	// Stereo section
-	/**
-	 * A state variable filter (Zavalishin's topology-preserving transform), Butterworth, giving its low-pass and
-	 * high-pass outputs. Its frequency may change at every sample.
-	 */
-	struct Svf
-	{
-		float ic1 = 0.f, ic2 = 0.f;
-		struct Outputs { float low; float high; };
-		auto process(float in, float g) -> Outputs;
-	};
-
-	/**
-	 * A 4th-order Linkwitz-Riley crossover: two Butterworth sections in a row for each side of the split. Its low and
-	 * high outputs sum to an allpass.
-	 */
-	struct Crossover
-	{
-		Svf low1, low2, high1, high2;
-		struct Outputs { float low; float high; };
-		auto process(float in, float g) -> Outputs;
-	};
-	std::array<Crossover, 2> m_crossover;	//!< for the mid and the side
-	float m_crossoverG = 0.f;				//!< the frequency warped for the filters, of the last frame; 0 = afresh
-	float m_bassMix = 0.f;			//!< of the processed signal against the dry one, while switching on or off
-	float m_bassWidth = 1.f;		//!< of the last frame, ramped
+	MonoBass m_monoBass;
 	float m_width = 1.f;			//!< of the last frame, ramped
 	EqHighShelfFilter m_air;
 	bool m_airWasOn = false;

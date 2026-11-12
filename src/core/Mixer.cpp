@@ -106,6 +106,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_soloModel( false, _parent ),
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
 	m_trimModel(0.f, -24.f, 24.f, 0.001f, _parent),
+	m_monoModel(false, _parent),
 	m_swapChannelsModel(false, _parent),
 	m_phaseInvertModel(false, _parent),
 	m_widthModel(100.f, 0.f, 200.f, 1.f, _parent),
@@ -340,6 +341,23 @@ void MixerChannel::doProcessing()
 		for (auto& frame : buffer) { frame *= trim; }
 		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
 	}
+
+	// Mono: summed after the trim, before the analog strip and the effects, so that they get a mono signal; switching
+	// crossfades over the period
+	const float monoTarget = m_monoModel.value() && !isMaster() ? 1.f : 0.f;
+	if ((monoTarget > 0.f || m_monoMix > 0.f) && m_buffer.hasSignal(mainPair))
+	{
+		const auto count = static_cast<float>(buffer.size());
+		for (auto f = std::size_t{0}; f < buffer.size(); ++f)
+		{
+			const float mix = m_monoMix + (monoTarget - m_monoMix) * static_cast<float>(f + 1) / count;
+			const float sum = (buffer[f].left() + buffer[f].right()) * 0.5f;
+			buffer[f].setLeft(buffer[f].left() + (sum - buffer[f].left()) * mix);
+			buffer[f].setRight(buffer[f].right() + (sum - buffer[f].right()) * mix);
+		}
+		toPlanar(m_buffer.interleavedBuffer(), m_buffer.groupBuffers(0));
+	}
+	m_monoMix = monoTarget;
 
 	// The master's PRE faders, before its effects
 	if (isMaster() && m_buffer.hasSignal(mainPair))
@@ -1195,6 +1213,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_muteModel.setValue( false );
 	ch->m_soloModel.setValue( false );
 	ch->m_trimModel.setValue(0.f);
+	ch->m_monoModel.setValue(false);
 	ch->m_swapChannelsModel.setValue(false);
 	ch->m_phaseInvertModel.setValue(false);
 	ch->m_widthModel.setValue(100.f);
@@ -1213,6 +1232,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_muteModel.setDisplayName( ch->m_name + ">" + tr( "Mute" ) );
 	ch->m_soloModel.setDisplayName( ch->m_name + ">" + tr( "Solo" ) );
 	ch->m_trimModel.setDisplayName(ch->m_name + ">" + tr("Trim"));
+	ch->m_monoModel.setDisplayName(ch->m_name + ">" + tr("Mono"));
 	ch->m_swapChannelsModel.setDisplayName(ch->m_name + ">" + tr("Swap left/right"));
 	ch->m_phaseInvertModel.setDisplayName(ch->m_name + ">" + tr("Invert phase"));
 	ch->m_widthModel.setDisplayName(ch->m_name + ">" + tr("Stereo width"));
@@ -1260,6 +1280,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		ch->m_muteModel.saveSettings( _doc, mixch, "muted" );
 		ch->m_soloModel.saveSettings( _doc, mixch, "soloed" );
 		ch->m_trimModel.saveSettings(_doc, mixch, "trim");
+		ch->m_monoModel.saveSettings(_doc, mixch, "mono");
 		ch->m_swapChannelsModel.saveSettings(_doc, mixch, "swapchannels");
 		ch->m_phaseInvertModel.saveSettings(_doc, mixch, "phaseinvert");
 		ch->m_widthModel.saveSettings(_doc, mixch, "width");
@@ -1346,6 +1367,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		m_mixerChannels[num]->m_muteModel.loadSettings( mixch, "muted" );
 		m_mixerChannels[num]->m_soloModel.loadSettings( mixch, "soloed" );
 		m_mixerChannels[num]->m_trimModel.loadSettings(mixch, "trim");
+		m_mixerChannels[num]->m_monoModel.loadSettings(mixch, "mono");
 		m_mixerChannels[num]->m_swapChannelsModel.loadSettings(mixch, "swapchannels");
 		m_mixerChannels[num]->m_phaseInvertModel.loadSettings(mixch, "phaseinvert");
 		m_mixerChannels[num]->m_widthModel.loadSettings(mixch, "width");

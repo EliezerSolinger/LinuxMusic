@@ -178,6 +178,7 @@ private:
 	//! (phase invert is on each strip)
 	Knob* m_trimKnob;
 	LedCheckBox* m_swapChannelsBox;
+	LedCheckBox* m_monoBox;
 	Knob* m_widthKnob;
 	Knob* m_panKnob;
 

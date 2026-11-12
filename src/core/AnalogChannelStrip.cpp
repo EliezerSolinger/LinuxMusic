@@ -95,6 +95,8 @@ AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 	, m_lowCutModel(false, parent)
 	, m_highPassModel(20.f, 20.f, 1000.f, 1.f, parent)
 	, m_lowPassModel(20000.f, 1000.f, 20000.f, 1.f, parent)
+	, m_monoBassWidthModel(100.f, 0.f, 100.f, 1.f, parent)
+	, m_monoBassFrequencyModel(120.f, 20.f, 300.f, 1.f, parent)
 	, m_gateModel(-80.f, -80.f, 0.f, 0.1f, parent)
 	, m_compressorModel(0.f, -40.f, 0.f, 0.1f, parent)
 	, m_eqHighModel(0.f, -15.f, 15.f, 0.1f, parent)
@@ -104,6 +106,8 @@ AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 {
 	m_highPassModel.setScaleLogarithmic(true);
 	m_lowPassModel.setScaleLogarithmic(true);
+	m_monoBassFrequencyModel.setScaleLogarithmic(true);
+	m_monoBassWidthModel.setCenterValue(100.f);
 	// Knobs draw their arc from these: from the neutral setting
 	for (auto model : {&m_eqHighModel, &m_eqHighMidModel, &m_eqLowMidModel, &m_eqLowModel}) { model->setCenterValue(0.f); }
 	m_highPassModel.setCenterValue(m_highPassModel.minValue());
@@ -243,6 +247,8 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	const bool lowCut = m_lowCutModel.value();
 	const bool highPassOn = m_highPassModel.value() > m_highPassModel.minValue();
 	const bool lowPassOn = m_lowPassModel.value() < m_lowPassModel.maxValue();
+	const bool monoBassOn = m_monoBass.begin(m_monoBassFrequencyModel.value(), m_monoBassWidthModel.value() / 100.f,
+		sampleRate);
 	const bool gateOn = m_gateModel.value() > m_gateModel.minValue();
 	const bool compressorOn = m_compressorModel.value() < 0.f;
 	const bool eqLowOn = m_eqLowModel.value() != 0.f;
@@ -291,15 +297,15 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	processDriveStage(frames, sampleRate);
 
 	// After the input falls silent, the filters ring out for a while
-	const bool anyFilter = lowCut || highPassOn || lowPassOn || eqLowOn || eqLowMidOn || eqHighMidOn
+	const bool anyFilter = lowCut || highPassOn || lowPassOn || monoBassOn || eqLowOn || eqLowMidOn || eqHighMidOn
 		|| eqHighOn || m_tubeModel.value(); // the tube's DC blocker
 	if (!anyFilter) { m_tailFrames = 0; }
 	else if (hadInput) { m_tailFrames = static_cast<f_cnt_t>(FilterTail * rate); }
 	else { m_tailFrames = m_tailFrames > frames.size() ? m_tailFrames - frames.size() : 0; }
 
 	// Nothing after the gain stage to do
-	if (!highPassOn && !lowPassOn && !gateOn && !compressorOn && !eqLowOn && !eqLowMidOn && !eqHighMidOn
-		&& !eqHighOn)
+	if (!highPassOn && !lowPassOn && !monoBassOn && !gateOn && !compressorOn && !eqLowOn && !eqLowMidOn
+		&& !eqHighMidOn && !eqHighOn)
 	{
 		return;
 	}
@@ -327,6 +333,14 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 			if (highPassOn) { x = m_highPass.update(x, ch, progress); }
 			if (lowPassOn) { x = m_lowPass.update(x, ch, progress); }
 			frame[ch] = x;
+		}
+		if (monoBassOn)
+		{
+			float mid = (frame[0] + frame[1]) * 0.5f;
+			float side = (frame[0] - frame[1]) * 0.5f;
+			m_monoBass.process(mid, side, progress);
+			frame[0] = mid + side;
+			frame[1] = mid - side;
 		}
 
 		// Stereo-linked dynamics
@@ -364,6 +378,8 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 			frame[ch] = x;
 		}
 	}
+
+	if (monoBassOn) { m_monoBass.end(); }
 }
 
 
@@ -385,6 +401,7 @@ void AnalogChannelStrip::reset()
 		filter->clearHistory();
 	}
 	m_tailFrames = 0;
+	m_monoBass.reset();
 	m_drive->clear();
 	m_drive->slewed = {};
 	m_gateGain = 1.f;
@@ -401,6 +418,8 @@ void AnalogChannelStrip::setNeutral()
 	m_lowCutModel.setValue(false);
 	m_highPassModel.setValue(m_highPassModel.minValue());
 	m_lowPassModel.setValue(m_lowPassModel.maxValue());
+	m_monoBassWidthModel.setValue(100.f);
+	m_monoBassFrequencyModel.setValue(120.f);
 	m_gateModel.setValue(m_gateModel.minValue());
 	m_compressorModel.setValue(0.f);
 	m_eqHighModel.setValue(0.f);
@@ -419,6 +438,8 @@ void AnalogChannelStrip::setDisplayNames(const QString& channelName)
 	m_lowCutModel.setDisplayName(prefix + QObject::tr("Low cut"));
 	m_highPassModel.setDisplayName(prefix + QObject::tr("High-pass"));
 	m_lowPassModel.setDisplayName(prefix + QObject::tr("Low-pass"));
+	m_monoBassWidthModel.setDisplayName(prefix + QObject::tr("Mono bass width"));
+	m_monoBassFrequencyModel.setDisplayName(prefix + QObject::tr("Mono bass frequency"));
 	m_gateModel.setDisplayName(prefix + QObject::tr("Gate"));
 	m_compressorModel.setDisplayName(prefix + QObject::tr("Compressor"));
 	m_eqHighModel.setDisplayName(prefix + QObject::tr("EQ high"));
@@ -437,6 +458,8 @@ void AnalogChannelStrip::saveSettings(QDomDocument& doc, QDomElement& channelEle
 	m_lowCutModel.saveSettings(doc, strip, "lowcut");
 	m_highPassModel.saveSettings(doc, strip, "highpass");
 	m_lowPassModel.saveSettings(doc, strip, "lowpass");
+	m_monoBassWidthModel.saveSettings(doc, strip, "monobass");
+	m_monoBassFrequencyModel.saveSettings(doc, strip, "monobassfreq");
 	m_gateModel.saveSettings(doc, strip, "gate");
 	m_compressorModel.saveSettings(doc, strip, "compressor");
 	m_eqHighModel.saveSettings(doc, strip, "eqhigh");
@@ -458,6 +481,8 @@ void AnalogChannelStrip::loadSettings(const QDomElement& channelElement)
 	m_lowCutModel.loadSettings(strip, "lowcut");
 	m_highPassModel.loadSettings(strip, "highpass");
 	m_lowPassModel.loadSettings(strip, "lowpass");
+	m_monoBassWidthModel.loadSettings(strip, "monobass");
+	m_monoBassFrequencyModel.loadSettings(strip, "monobassfreq");
 	m_gateModel.loadSettings(strip, "gate");
 	m_compressorModel.loadSettings(strip, "compressor");
 	m_eqHighModel.loadSettings(strip, "eqhigh");

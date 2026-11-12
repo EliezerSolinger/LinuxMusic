@@ -527,10 +527,20 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	inputButtons->addWidget(lowCutButton, 0, Qt::AlignCenter);
 	inputButtons->addWidget(tubeButton, 0, Qt::AlignCenter);
 	analogLayout->addLayout(inputButtons, row++, 1, Qt::AlignCenter);
+	auto monoButton = new AutomatableButton(m_analogSection, tr("Mono"));
+	monoButton->setObjectName("btn-tube");
+	monoButton->setText(tr("MONO"));
+	monoButton->setToolTip(tr("Mono: sums the channel to mono before its processing, so that panning places it"));
+	monoButton->setCheckable(true);
+	monoButton->setModel(&mixerChannel->m_monoModel);
+	analogLayout->addWidget(monoButton, row++, 0, 1, 2, Qt::AlignCenter);
 
 	addSection(tr("FILTER"));
 	addKnob(&strip.m_highPassModel, grey, tr("HPF"), tr("High-pass"), " Hz", row, 0);
 	addKnob(&strip.m_lowPassModel, grey, tr("LPF"), tr("Low-pass"), " Hz", row++, 1);
+	addKnob(&strip.m_monoBassWidthModel, grey, tr("BASS"),
+		tr("Mono bass: width of the side below the frequency (0 = mono)"), "%", row, 0);
+	addKnob(&strip.m_monoBassFrequencyModel, grey, tr("FREQ"), tr("Mono bass frequency"), " Hz", row++, 1);
 
 	addSection(tr("DYN"));
 	addKnob(&strip.m_gateModel, teal, tr("GATE"), tr("Gate threshold"), " dB", row, 0);

@@ -105,6 +105,7 @@ public:
 	// Channel strip, in signal order: input trim, effects, (pre-fader sends), swap L/R, phase invert,
 	// stereo width, pan, volume fader, (post-fader sends)
 	FloatModel m_trimModel; //!< input gain in dB, applied before the effects
+	BoolModel m_monoModel; //!< sums the channel to mono, (L+R)/2 on both sides, after the trim (not on the master)
 	BoolModel m_swapChannelsModel;
 	BoolModel m_phaseInvertModel;
 	FloatModel m_widthModel; //!< stereo width in percent: 0 = mono, 100 = unchanged, 200 = twice as wide
@@ -151,6 +152,9 @@ public:
 
 	//! Whether the channel is silent this period because others are soloed (see Mixer::applySolo()) [audio thread]
 	bool m_silencedBySolo = false;
+
+	//! How far the channel is summed to mono, ramped over a period when MONO changes [audio thread]
+	float m_monoMix = 0.f;
 
 	//! Whether the channel was made for a track (see Mixer::setUpTrackChannel()): it is named and colored
 	//! after the track, and goes away with it

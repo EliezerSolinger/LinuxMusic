@@ -30,6 +30,7 @@
 #include "AutomatableModel.h"
 #include "EqFilter.h"
 #include "LmmsTypes.h"
+#include "MonoBass.h"
 
 class QDomDocument;
 class QDomElement;
@@ -44,7 +45,7 @@ class SampleFrame;
  * analog mode (see Mixer::isAnalog()). In signal order, after the channel's gain (its trim):
  * - the low cut button (80 Hz, 24 dB/oct), before the gain stage so that it gets no rumble to saturate on;
  * - the gain stage: an op-amp, or with the TUBE button a 12AX7 tube stage (see processDriveStage());
- * - sweepable high-pass and low-pass filters (12 dB/oct);
+ * - sweepable high-pass and low-pass filters (12 dB/oct), and mono bass (see MonoBass);
  * - a gate and a compressor, one knob each (their thresholds), with stereo-linked detection;
  * - a classic 4-band EQ with fixed frequencies: high shelf at 12 kHz, high mid peak at 2.5 kHz, low mid peak at
  *   400 Hz, low shelf at 80 Hz.
@@ -61,6 +62,8 @@ public:
 	BoolModel m_lowCutModel;
 	FloatModel m_highPassModel;		//!< Hz; off at the lowest setting
 	FloatModel m_lowPassModel;		//!< Hz; off at the highest setting
+	FloatModel m_monoBassWidthModel;		//!< % of the side kept below the mono bass frequency; off at 100
+	FloatModel m_monoBassFrequencyModel;	//!< Hz
 	FloatModel m_gateModel;			//!< threshold in dB; off at the lowest setting
 	FloatModel m_compressorModel;	//!< threshold in dB; off at 0
 	FloatModel m_eqHighModel;		//!< dB
@@ -125,6 +128,7 @@ private:
 	EqPeakFilter m_eqHighMid;
 	EqPeakFilter m_eqLowMid;
 	EqHighShelfFilter m_eqHigh;
+	MonoBass m_monoBass;
 
 	//! Frames the filters may still ring for after the input fell silent
 	f_cnt_t m_tailFrames = 0;

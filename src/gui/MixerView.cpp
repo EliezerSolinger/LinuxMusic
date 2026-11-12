@@ -229,7 +229,9 @@ MixerView::MixerView(Mixer* mixer) :
 		LedCheckBox::LedColor::Green};
 
 	settingsLayout->addWidget(m_trimKnob, 0, 0, 2, 1, Qt::AlignCenter);
-	settingsLayout->addWidget(m_swapChannelsBox, 0, 1, 2, 1, Qt::AlignVCenter);
+	m_monoBox = new LedCheckBox{tr("Mono"), channelSettings, tr("Mono"), LedCheckBox::LedColor::Green};
+	settingsLayout->addWidget(m_swapChannelsBox, 0, 1);
+	settingsLayout->addWidget(m_monoBox, 1, 1);
 	settingsLayout->addWidget(m_widthKnob, 0, 2, 2, 1, Qt::AlignCenter);
 	settingsLayout->addWidget(m_panKnob, 0, 3, 2, 1, Qt::AlignCenter);
 
@@ -515,6 +517,8 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 	const auto mixerChannel = getMixer()->mixerChannel(channel->channelIndex());
 	m_trimKnob->setModel(&mixerChannel->m_trimModel);
 	m_swapChannelsBox->setModel(&mixerChannel->m_swapChannelsModel);
+	m_monoBox->setModel(&mixerChannel->m_monoModel);
+	m_monoBox->setVisible(channel->channelIndex() != 0); // the master has MONO in its monitoring
 	m_widthKnob->setModel(&mixerChannel->m_widthModel);
 	m_panKnob->setModel(&mixerChannel->m_panModel);
 	m_panKnob->setVisible(channel->channelIndex() != 0); // the master has no panning

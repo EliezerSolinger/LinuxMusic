@@ -1740,6 +1740,47 @@ private slots:
 		QCOMPARE(points.back()[1], 0.375f); // mid
 	}
 
+	void channelMonoSumsBothSides()
+	{
+		const auto channel = mixer()->createChannel();
+		mixer()->mixerChannel(channel)->m_monoModel.setValue(true);
+		settle();
+		feed(channel, 0.5f, 0.1f);
+		mix();
+		feed(channel, 0.5f, 0.1f);
+		compareOutput(mix(), 0.3f, 0.3f);
+
+		// Switching crossfades: no step bigger than the sine's own
+		const auto levels = playStereo(channel, 100.f, 0.5f, -0.5f, 48, [this, channel](int period) {
+			if (period == 16) { mixer()->mixerChannel(channel)->m_monoModel.setValue(false); }
+			if (period == 32) { mixer()->mixerChannel(channel)->m_monoModel.setValue(true); }
+		});
+		QVERIFY2(levels.biggestStep < 0.0075f, qPrintable(QString::number(levels.biggestStep)));
+		QVERIFY(levels.side < 1e-4f); // mono again at the end
+	}
+
+	void stripMonoBassNarrowsOnlyTheLows()
+	{
+		const auto channel = mixer()->createChannel();
+		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+		strip.m_monoBassWidthModel.setValue(0.f);
+		strip.m_monoBassFrequencyModel.setValue(120.f);
+		settle();
+		const float level = 0.25f / std::sqrt(2.f);
+		const auto low = playStereo(channel, 40.f, 0.5f, 0.f, 256);
+		QVERIFY(low.side < level * 0.05f);
+		QVERIFY(std::abs(low.mid / level - 1.f) < 0.02f);
+		const auto high = playStereo(channel, 2000.f, 0.5f, 0.f);
+		QVERIFY(std::abs(high.side / level - 1.f) < 0.02f);
+
+		// Digital mode: no built-in processing
+		mixer()->analogModel()->setValue(false);
+		const auto digital = playStereo(channel, 40.f, 0.5f, 0.f, 256);
+		QVERIFY(std::abs(digital.side / level - 1.f) < 0.02f);
+		mixer()->analogModel()->setValue(true);
+		strip.setNeutral();
+	}
+
 	void opAmpSaturatesOnlyAboveItsKnee()
 	{
 		using Strip = AnalogChannelStrip;

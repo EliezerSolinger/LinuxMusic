@@ -158,40 +158,11 @@ void MasterSection::processPreFaders(std::span<SampleFrame> frames, sample_rate_
 
 
 
-auto MasterSection::Svf::process(float in, float g) -> Outputs
-{
-	// Butterworth: 1/Q = sqrt(2)
-	constexpr float k = std::numbers::sqrt2_v<float>;
-	const float a1 = 1.f / (1.f + g * (g + k));
-	const float a2 = g * a1;
-	const float a3 = g * a2;
-	const float v3 = in - ic2;
-	const float v1 = a1 * ic1 + a2 * v3;
-	const float v2 = ic2 + a2 * ic1 + a3 * v3;
-	ic1 = 2.f * v1 - ic1;
-	ic2 = 2.f * v2 - ic2;
-	return {v2, in - k * v1 - v2};
-}
-
-
-
-
-auto MasterSection::Crossover::process(float in, float g) -> Outputs
-{
-	const float low = low2.process(low1.process(in, g).low, g).low;
-	const float high = high2.process(high1.process(in, g).high, g).high;
-	return {low, high};
-}
-
-
-
-
 void MasterSection::processStereo(std::span<SampleFrame> frames, sample_rate_t sampleRate, float widthPercent)
 {
 	const float width = widthPercent / 100.f;
-	const float bassWidth = m_bassWidthModel.value() / 100.f;
-	const bool bassOn = bassWidth < 1.f;
-	const bool bassActive = bassOn || m_bassMix > 0.f; // on, or fading out
+	const bool bassActive = m_monoBass.begin(m_bassFrequencyModel.value(), m_bassWidthModel.value() / 100.f,
+		sampleRate);
 	const float air = m_airModel.value();
 	// One more period after the air is back at 0 dB, so that the shelf fades out
 	const bool airActive = air != 0.f || m_airWasOn;
@@ -202,20 +173,11 @@ void MasterSection::processStereo(std::span<SampleFrame> frames, sample_rate_t s
 		m_air.clearHistory();
 		return;
 	}
-
-	const auto rate = static_cast<float>(sampleRate);
-	// The crossover's frequency, warped for the filters (bilinear transform); it glides over the period
-	const float targetG = std::tan(std::numbers::pi_v<float> * std::min(m_bassFrequencyModel.value(), 0.45f * rate)
-		/ rate);
-	if (bassActive && m_crossoverG == 0.f)
+	if (airActive)
 	{
-		// Starting afresh (faded in, see below)
-		m_crossover = {};
-		m_crossoverG = targetG;
+		m_air.setParameters(static_cast<float>(sampleRate), AirFrequency, std::numbers::sqrt2_v<float> / 2.f, air);
 	}
-	if (airActive) { m_air.setParameters(rate, AirFrequency, std::numbers::sqrt2_v<float> / 2.f, air); }
 
-	const float bassMixTarget = bassOn ? 1.f : 0.f;
 	const auto count = frames.size();
 	for (auto f = std::size_t{0}; f < count; ++f)
 	{
@@ -223,30 +185,15 @@ void MasterSection::processStereo(std::span<SampleFrame> frames, sample_rate_t s
 		const float progress = static_cast<float>(f + 1) / static_cast<float>(count);
 		float mid = (frame[0] + frame[1]) * 0.5f;
 		float side = (frame[0] - frame[1]) * 0.5f;
-
-		if (bassActive)
-		{
-			// Mid through the crossover (an allpass), side with its lows narrowed
-			const float g = m_crossoverG + (targetG - m_crossoverG) * progress;
-			const float keep = m_bassWidth + (bassWidth - m_bassWidth) * progress;
-			const auto midBands = m_crossover[0].process(mid, g);
-			const auto sideBands = m_crossover[1].process(side, g);
-			const float mix = m_bassMix + (bassMixTarget - m_bassMix) * progress;
-			mid += (midBands.low + midBands.high - mid) * mix;
-			side += (sideBands.high + keep * sideBands.low - side) * mix;
-		}
-
+		if (bassActive) { m_monoBass.process(mid, side, progress); }
 		if (airActive) { side = m_air.update(side, 0, progress); }
 		side *= m_width + (width - m_width) * progress;
-
 		frame[0] = mid + side;
 		frame[1] = mid - side;
 	}
 
+	if (bassActive) { m_monoBass.end(); }
 	m_width = width;
-	m_bassWidth = bassWidth;
-	m_bassMix = bassMixTarget;
-	m_crossoverG = bassActive && bassOn ? targetG : 0.f;
 }
 
 
