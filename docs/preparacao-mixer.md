@@ -602,6 +602,73 @@ analógicos na monitoração.
 - a correlação segue a fase;
 - a monitoração muda só o que se ouve.
 
+### Passo 16: seção estéreo, goniômetro, faders PRE e falha de período silencioso (feito)
+
+Pedidos do usuário: tratamentos mid/side no master (a partir do plugin GMonoBass), com um estudo completo para fazer
+do jeito certo; dois faders no master, PRE (L e R, com botão de travar) e POST, mais largos e com régua de dB; o
+master sem pan.
+
+**Estudo (as decisões):** M = (L+R)/2, S = (L−R)/2; L = M+S, R = M−S, reconstrução exata.
+- **MONO BASS:**
+  - **Errado:** S − passa-baixas(S). O passa-baixas IIR atrasa a fase, então a subtração não cancela o grave (com
+    corte em 120 Hz sobra ~0 dB a 30 Hz).
+  - **Certo:** crossover Linkwitz-Riley de 24 dB/oitava: S' = HP(S) + largura·LP(S). O mid passa pelo mesmo
+    crossover, LP(M)+HP(M), um passa-tudo de ganho plano, para que mid e side tenham a mesma fase e a imagem acima do
+    corte não "borre".
+  - **Estrutura do filtro:** a primeira versão usava o `LinkwitzRiley` do núcleo, uma seção de 4ª ordem na forma
+    direta II, e trocava de frequência com dois crossovers e crossfade. O teste de estalo mostrou um transiente na troca
+    de frequência (degrau de 0,0123 num seno cuja inclinação natural é 0,0071): a forma direta II não aceita coeficientes
+    mudando com o sinal passando.
+  - Refeito com filtros de variáveis de estado TPT (Zavalishin), dois Butterworth em série por lado do corte, feitos
+    para modulação: a frequência desliza amostra a amostra. O maior degrau caiu para 0,00714, a inclinação do próprio
+    seno, sem estalo nenhum.
+  - Ligar e desligar faz crossfade de um período entre o processado (com a fase do passa-tudo) e o seco.
+  - FREQ de 20 a 300 Hz (padrão 120), BASS (largura do grave) de 0 a 100% (100 = desligado).
+- **WIDTH:** é a largura do próprio master, que agora é aplicada aqui, antes do compressor de barramento, e não mais
+  depois dele. Muda em rampa ao longo do período.
+- **AIR:** prateleira de agudo só no side, em 12 kHz, de −6 a +6 dB (`EqHighShelfFilter`, que suaviza as mudanças).
+  Processa um período a mais em 0 dB antes de ser pulado, para não dar degrau.
+- **Monitoração SIDE:** o MONO já é o mid, (L+R)/2 nos dois lados, então um botão MID seria duplicado. O SIDE põe
+  (L−R)/2 nos dois lados, em fase. MONO e SIDE são exclusivos.
+- **Goniômetro:**
+  - a thread de áudio grava pares (side, mid) do master num anel lock-free (512 pontos, um a cada dois quadros);
+  - a interface desenha a nuvem com o mid para cima, o side para os lados e L e R nas diagonais;
+  - mono é uma linha vertical.
+- **Ordem no master:** PRE → efeitos de inserção → STEREO (WIDTH, MONO BASS, AIR) → BUS COMP → POST.
+
+**Faders do master:**
+- PRE L e PRE R: o nível da mixagem antes de todo o processamento do master, com medidores próprios.
+- LINK (ligado por padrão): os dois andam juntos; ao religar, o R vai para onde está o L. O fader que acompanha não
+  cria um passo de desfazer próprio.
+- POST é o fader do master de antes.
+- Faders mais largos (24 e 30 px) e régua de dB entre PRE e POST (`Fader::positionOf()`, a mesma conta das marcas do
+  fader).
+- O master não tem mais pan: o knob saiu da faixa e do painel e o processamento ignora o pan do master. O pan do master
+  só existia nesta build, desde o passo 2; o LMMS nunca teve.
+
+**Falha encontrada pela bateria A/B: período silencioso (corrigida):**
+- **Sintoma:** de vez em quando, um período inteiro da saída (256 quadros) saía em silêncio. Aconteceu em cerca de 1
+  render a cada 15 dos projetos de teste, depois que os retornos de efeito acrescentaram um nível de dependência (canal
+  → FX → master).
+- **Investigação:**
+  - a instrumentação mostrou que o `masterMix()` saía sem o master processado;
+  - logo depois, o master aparecia processado, com as dependências completas.
+- **Causa:** o `masterMix()` olhava o estado dos canais um depois do outro e desistia quando nenhum estava na fila ou em
+  processamento. O master, olhado primeiro, podia entrar na fila enquanto os outros eram olhados; a varredura não via
+  nada em andamento e desistia. O defeito é do LMMS.
+- **Correção:** um canal entra na fila enquanto o último canal que manda para ele é processado, e a espera pela fila só
+  termina quando todos os jobs enfileirados acabaram, inclusive os enfileirados durante a espera. Então basta uma
+  espera, sem varredura.
+- **Resultado:** 40 renders seguidos do projeto que falhava, nenhum período silencioso.
+
+`MixerTest` tem 83 testes. Novos:
+- largura do master antes do compressor;
+- mono bass estreita só o grave e mantém o nível do mid;
+- mono bass liga, desliga e muda de frequência sem estalo;
+- air sobe só o agudo do side;
+- faders PRE travados e soltos;
+- monitoração SIDE e goniômetro.
+
 ### Correção encontrada pela bateria A/B
 
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
