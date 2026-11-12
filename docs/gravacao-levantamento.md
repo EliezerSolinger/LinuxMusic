@@ -272,6 +272,38 @@ e a captura no mesmo ciclo.
 | Saída da faixa de sample | Quando a faixa nova cobrir loops e samples tão bem quanto ela. Aí os projetos convertem ao abrir |
 
 
+
+### Etapa 0: estabilidade antes de tudo (12/11/2026)
+
+Pedido do usuário: o LMMS tem defeitos de arquitetura que o fazem travar e cair, de sincronia e de gerenciamento de
+memória. Antes de tudo, uma varredura para torná-lo estável e à prova de falhas; e, mesmo que uma falha ocorra, ele
+deve sobreviver graciosamente.
+
+**A varredura** (antes da etapa 1, e retomada a cada etapa):
+- **Ferramentas:** builds com AddressSanitizer, ThreadSanitizer e UndefinedBehaviorSanitizer rodando a bateria de
+  testes, a bateria A/B, abrir e fechar projetos e um teste de estresse da interface. Cada achado é corrigido na
+  causa.
+- **Sincronia:**
+  - dados compartilhados entre a interface e o áudio sem proteção ou com a proteção errada (`volatile`, `m_clips`
+    sem trava, conexões diretas que rodam lógica na thread de áudio);
+  - travas no caminho de áudio e possíveis deadlocks;
+  - a ordem de destruição na saída.
+- **Memória:**
+  - ponteiros crus com dono incerto, `delete` manual, objetos destruídos com referências vivas (views de canal,
+    play handles, efeitos), `deleteLater` em cascata;
+  - vazamentos;
+  - leituras fora dos limites (buffers de canal, ring buffers, plugins).
+- **Entradas:** carregar projetos e presets corrompidos ou truncados (fuzzing dos parsers) sem cair.
+
+**Sobreviver graciosamente:**
+
+| Tema | Decisão |
+|---|---|
+| Plugins de terceiros (VST, LV2, LADSPA, Carla) | Isolamento opcional por plugin. Por padrão rodam dentro do processo; um plugin que crashar é marcado e passa a rodar num processo separado (ponte), em que só ele para se cair. Dá para forçar o isolamento por plugin |
+| Se o LinuxMusic cair | Autosave contínuo em segundo plano, a cada mudança e sem travar. Ao reabrir, oferece recuperar a sessão como estava. Os arquivos sendo gravados ficam válidos até o último bloco escrito (o cabeçalho WAV é atualizado periodicamente) e voltam como takes. Um relatório do crash é guardado |
+| Falhas que não derrubam (projeto corrompido, sample faltando, plugin que não carrega, erro interno) | Seguir, isolar e avisar. Nunca abortar: o que falhou fica desativado ou offline e marcado (um plugin vira "não carregado" e guarda os ajustes; um sample vira "offline" sem apagar a referência), e uma lista de problemas avisa. Erros internos vão para um log, e a operação é desfeita em vez de deixar estado quebrado |
+
+
 ## Anexos
 - **A:** motor de áudio e caminho da entrada
 - **B:** modelo de faixas, clipes e áudio
