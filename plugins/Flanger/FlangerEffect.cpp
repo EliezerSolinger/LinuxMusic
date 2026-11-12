@@ -97,6 +97,7 @@ auto FlangerEffect::process(ProcessContext& context) -> ProcessStatus
 	const float noise = m_flangerControls.m_whiteNoiseAmountModel.value();
 	float amplitude = m_flangerControls.m_lfoAmountModel.value() * Engine::audioEngine()->outputSampleRate();
 	bool invertFeedback = m_flangerControls.m_invertFeedbackModel.value();
+	if (m_restartLfo.exchange(false, std::memory_order_relaxed)) { m_lfo->restart(); }
 	m_lfo->setFrequency(  1.0/m_flangerControls.m_lfoFrequencyModel.value() );
 	m_lfo->setOffset(m_flangerControls.m_lfoPhaseModel.value() / 180 * std::numbers::pi);
 	m_lDelay->setFeedback( m_flangerControls.m_feedbackModel.value() );
@@ -146,7 +147,8 @@ void FlangerEffect::changeSampleRate()
 
 void FlangerEffect::restartLFO()
 {
-	m_lfo->restart();
+	// Called from the interface (on play and stop): the LFO is the audio thread's, which restarts it in process()
+	m_restartLfo.store(true, std::memory_order_relaxed);
 }
 
 

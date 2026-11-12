@@ -24,6 +24,8 @@
 
 
 #include "InstrumentPlayHandle.h"
+
+#include "Hardware.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Engine.h"
@@ -47,18 +49,24 @@ void InstrumentPlayHandle::play(std::span<SampleFrame> buffer)
 	// ensure that all our nph's have been processed first
 	auto nphv = NotePlayHandle::nphsOfInstrumentTrack(instrumentTrack, true);
 
+	// A note queued for this period is processed here if no worker took it yet, and waited for if one did. Its own
+	// state says so; asking the note whether it is finished instead read it while a worker was playing it, and could
+	// let the instrument render before the note was done.
 	bool nphsLeft;
 	do
 	{
 		nphsLeft = false;
 		for (const auto& handle : nphv)
 		{
-			if (handle->state() != ThreadableJob::ProcessingState::Done && !handle->isFinished())
+			const auto state = handle->state();
+			if (state == ThreadableJob::ProcessingState::Queued)
 			{
-				nphsLeft = true;
 				const_cast<NotePlayHandle*>(handle)->process();
+				nphsLeft = nphsLeft || handle->state() != ThreadableJob::ProcessingState::Done;
 			}
+			else if (state == ThreadableJob::ProcessingState::InProgress) { nphsLeft = true; }
 		}
+		if (nphsLeft) { busyWaitHint(); }
 	}
 	while (nphsLeft);
 

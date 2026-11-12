@@ -26,6 +26,8 @@
 #ifndef FLANGEREFFECT_H
 #define FLANGEREFFECT_H
 
+#include <atomic>
+
 #include "Effect.h"
 #include "FlangerControls.h"
 
@@ -56,6 +58,7 @@ private:
 	MonoDelay* m_lDelay;
 	MonoDelay* m_rDelay;
 	QuadratureLfo* m_lfo;
+	std::atomic<bool> m_restartLfo = false; //!< the interface asked for the LFO to restart
 };
 
 
