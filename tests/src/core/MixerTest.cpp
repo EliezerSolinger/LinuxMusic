@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "AnalogChannelStrip.h"
+#include "DeskDynamics.h"
 #include "DeskFilters.h"
 #include "AudioBuffer.h"
 #include "AudioEngine.h"
@@ -187,6 +188,20 @@ public:
 //! A gain stage's gain and harmonics, in dB below the fundamental, and whether its output stayed sane (see
 //! MixerTest::tubeResponse())
 struct StageResponse { float gain, second, third; bool finite; };
+
+//! The gain a dynamics section settles at for a 1 kHz sine of @p amplitude, linear
+template<class Dynamics>
+auto settledGain(Dynamics& dynamics, float amplitude, float seconds = 1.f) -> float
+{
+	constexpr float rate = 44100.f;
+	float gain = 1.f;
+	for (int i = 0; i < static_cast<int>(seconds * rate); ++i)
+	{
+		const float x = amplitude * std::sin(2.f * std::numbers::pi_v<float> * 1000.f * i / rate);
+		gain = dynamics.gain(x, x);
+	}
+	return gain;
+}
 
 //! Levels of the master's output (see MixerTest::playStereo())
 struct StereoLevels
@@ -2382,25 +2397,125 @@ private slots:
 		strip.setNeutral();
 	}
 
+	void sslCompressor()
+	{
+		using C = ChannelCompressor;
+		const float nominal = dbfsToAmp(-18.f) * std::numbers::sqrt2_v<float>; // a sine at -18 dBFS RMS, 0 VU
+		auto compressor = C{};
+		// Out at 1:1
+		compressor.begin({-20.f, 1.f}, 44100);
+		QVERIFY(!compressor.isActive());
+
+		// 4:1 at -10 dBu: the make-up gain keeps a signal at the nominal level where it was
+		auto settings = C::Settings{-10.f, 4.f};
+		compressor.begin(settings, 44100);
+		QVERIFY(std::abs(ampToDbfs(settledGain(compressor, nominal))) < 0.3f);
+		// 12 dB louder comes out 3 dB louder (well above the knee)
+		compressor.reset();
+		const float louder = ampToDbfs(settledGain(compressor, nominal * dbfsToAmp(12.f))) + 12.f;
+		QVERIFY2(std::abs(louder - 3.f) < 0.5f, qPrintable(QString::number(louder)));
+
+		// A limiter at infinity: louder signals come out at the same level
+		compressor.begin({-10.f, std::numeric_limits<float>::infinity()}, 44100);
+		compressor.reset();
+		QVERIFY(std::abs(ampToDbfs(settledGain(compressor, nominal * 4.f)) + 12.04f) < 0.5f);
+
+		// The knee: over-easy compresses a little below the threshold, the hard one not at all
+		const float justBelow = -10.f + DbuToDbfs - 2.f;
+		QVERIFY(C::staticReduction(settings, justBelow) > 0.f);
+		settings.hardKnee = true;
+		QCOMPARE(C::staticReduction(settings, justBelow), 0.f);
+		settings.hardKnee = false;
+
+		// LIN REL raises the threshold by 6 dB
+		auto linear = settings;
+		linear.linearRelease = true;
+		QVERIFY(std::abs(C::staticReduction(linear, -10.f) - C::staticReduction(settings, -16.f)) < 1e-4f);
+
+		// Attack: 30 ms for 20 dB of reduction, 3 ms with FAST
+		auto attackTime = [](bool fast) {
+			auto c = C{};
+			c.begin({-26.f, std::numeric_limits<float>::infinity(), fast}, 44100);
+			for (int i = 0; i < 44100; ++i)
+			{
+				c.gain(1.f, 1.f); // a step far above the threshold, in peak terms
+				if (c.reduction() >= 20.f) { return i / 44100.f; }
+			}
+			return 1.f;
+		};
+		const float slow = attackTime(false);
+		const float fast = attackTime(true);
+		QVERIFY2(fast < slow / 5.f, qPrintable(QString{"%1 %2"}.arg(slow).arg(fast)));
+	}
+
+	void sslGate()
+	{
+		using G = ChannelGate;
+		auto gate = G{};
+		gate.begin({0.f, 0.f}, 44100);
+		QVERIFY(!gate.isActive());
+
+		// A 20:1 gate at 0 dBu (-22 dBFS) closing by its range, 40 dB
+		gate.begin({0.f, 40.f}, 44100);
+		QVERIFY(std::abs(ampToDbfs(settledGain(gate, 0.01f, 3.f)) + 40.f) < 0.5f);
+		QVERIFY(std::abs(settledGain(gate, 0.5f) - 1.f) < 1e-3f);
+		// Hysteresis: once open, it stays open a little below the threshold that opened it
+		QVERIFY(std::abs(settledGain(gate, dbfsToAmp(-22.f - 2.f)) - 1.f) < 1e-3f);
+		gate.reset();
+		QVERIFY(settledGain(gate, dbfsToAmp(-22.f - 2.f)) < 0.5f);
+		QVERIFY(G::hysteresis(-30.f) > G::hysteresis(10.f));
+
+		// The 2:1 expander: 18 dB below the threshold, 18 dB less
+		gate.begin({0.f, 40.f, true}, 44100);
+		gate.reset();
+		const float expanded = ampToDbfs(settledGain(gate, dbfsToAmp(-22.f - 18.f)));
+		QVERIFY2(std::abs(expanded + 18.f) < 1.5f, qPrintable(QString::number(expanded)));
+
+		// Hold keeps it open after the signal falls
+		gate.begin({0.f, 40.f, false, false, 0.1f, 0.5f}, 44100);
+		gate.reset();
+		settledGain(gate, 0.5f, 0.1f);
+		QVERIFY(std::abs(settledGain(gate, 0.001f, 0.3f) - 1.f) < 1e-3f);
+		QVERIFY(settledGain(gate, 0.001f, 1.f) < 0.1f);
+	}
+
 	void analogStripDynamics()
 	{
 		const auto channel = mixer()->createChannel();
 		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
 		settle();
+		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Flat));
 
-		// The gate closes below its threshold and stays open above
-		strip.m_gateModel.setValue(-20.f);
-		QVERIFY(sineGain(channel, 1000.f, 0.01f, 256) < 0.01f);
+		// The gate: RANGE switches it in
+		strip.m_gateModel.setValue(0.f);
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.01f) - 1.f) < 0.01f);
+		strip.m_gateRangeModel.setValue(40.f);
+		QVERIFY(sineGain(channel, 1000.f, 0.01f, 256) < 0.015f);
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.5f) - 1.f) < 0.01f);
-		strip.m_gateModel.setValue(strip.m_gateModel.minValue());
+		strip.m_gateRangeModel.setValue(0.f);
 
-		// The compressor squeezes loud signals more than quiet ones (make-up gain included)
+		// The compressor: RATIO switches it in; louder signals are squeezed more than quiet ones
 		strip.m_compressorModel.setValue(-20.f);
-		const float loud = sineGain(channel, 1000.f, 0.9f);
-		const float quiet = sineGain(channel, 1000.f, 0.02f);
-		QVERIFY(loud < quiet);
-		QVERIFY(quiet > 1.f); // below the threshold, only the make-up gain
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.9f) - 1.f) < 0.01f);
+		strip.m_compressorRatioModel.setValue(AnalogChannelStrip::MaxRatio);
+		QVERIFY(std::isinf(AnalogChannelStrip::ratioAt(strip.m_compressorRatioModel.value())));
+		strip.m_compressorRatioModel.setValue(4.f);
+		QVERIFY(sineGain(channel, 1000.f, 0.9f) < sineGain(channel, 1000.f, 0.05f));
+
+		// Projects with the one knob dynamics of before: a 4:1 compressor and a gate of 40 dB at their thresholds
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixerchannel");
+		auto old = doc.createElement("analogstrip");
+		old.setAttribute("compressor", -20);
+		old.setAttribute("gate", -50);
+		element.appendChild(old);
+		strip.loadSettings(element);
+		QCOMPARE(strip.m_compressorRatioModel.value(), 4.f);
+		QCOMPARE(strip.m_compressorModel.value(), 2.f);
+		QCOMPARE(strip.m_gateRangeModel.value(), 40.f);
+		QCOMPARE(strip.m_gateModel.value(), -28.f);
 		strip.setNeutral();
+		QCOMPARE(strip.m_compressorRatioModel.value(), 1.f);
 	}
 
 	void analogStripAndModeAreSaved()

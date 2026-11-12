@@ -162,7 +162,7 @@ private:
 	//! The group channels whose channels are hidden (only in this view, not saved)
 	std::set<const MixerChannel*> m_collapsedGroups;
 
-	MixerChannelView* m_currentMixerChannel;
+	MixerChannelView* m_currentMixerChannel = nullptr;
 
 	QScrollArea* channelArea;
 	QHBoxLayout* chLayout;
@@ -181,6 +181,19 @@ private:
 	LedCheckBox* m_monoBox;
 	Knob* m_widthKnob;
 	Knob* m_panKnob;
+
+	//! The rest of the analog strip's dynamics (SSL E series), in analog mode: the compressor's release, peak
+	//! detection, hard knee and linear release; the gate's release, hold, expander mode and fast attack
+	void updateDynamicsSettings();
+	QWidget* m_dynamicsSettings;
+	Knob* m_compressorReleaseKnob;
+	LedCheckBox* m_compressorPeakBox;
+	LedCheckBox* m_compressorHardKneeBox;
+	LedCheckBox* m_compressorLinearReleaseBox;
+	Knob* m_gateReleaseKnob;
+	Knob* m_gateHoldKnob;
+	LedCheckBox* m_gateExpanderBox;
+	LedCheckBox* m_gateFastBox;
 
 	friend class MixerChannelView;
 } ;

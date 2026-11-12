@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 #include <QDomElement>
@@ -40,13 +41,6 @@ namespace
 // Fixed parts of the strip
 constexpr double LowCutFrequency = 100.0;
 constexpr double ButterworthQ = std::numbers::sqrt2 / 2.0;
-constexpr float GateAttack = 0.001f;	// s
-constexpr float GateHold = 0.02f;		// s
-constexpr float GateRelease = 0.1f;		// s
-constexpr float CompressorRatio = 4.f;
-constexpr float CompressorKnee = 6.f;	// dB
-constexpr float CompressorAttack = 0.005f;	// s
-constexpr float CompressorRelease = 0.12f;	// s
 constexpr float FilterTail = 0.05f;		// s, how long the filters may ring after the input
 
 //! The one-pole smoothing coefficient for time constant @p seconds
@@ -69,8 +63,19 @@ AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 	, m_lowPassModel(20000.f, 1000.f, 20000.f, 1.f, parent)
 	, m_monoBassWidthModel(100.f, 0.f, 100.f, 1.f, parent)
 	, m_monoBassFrequencyModel(120.f, 20.f, 300.f, 1.f, parent)
-	, m_gateModel(-80.f, -80.f, 0.f, 0.1f, parent)
-	, m_compressorModel(0.f, -40.f, 0.f, 0.1f, parent)
+	, m_compressorModel(0.f, -26.f, 4.f, 0.1f, parent)
+	, m_compressorRatioModel(1.f, 1.f, MaxRatio, 0.01f, parent)
+	, m_compressorFastModel(false, parent)
+	, m_compressorReleaseModel(0.3f, 0.1f, 4.f, 0.01f, parent)
+	, m_compressorPeakModel(false, parent)
+	, m_compressorHardKneeModel(false, parent)
+	, m_compressorLinearReleaseModel(false, parent)
+	, m_gateModel(-10.f, -30.f, 10.f, 0.1f, parent)
+	, m_gateRangeModel(0.f, 0.f, 40.f, 0.1f, parent)
+	, m_gateExpanderModel(false, parent)
+	, m_gateFastModel(false, parent)
+	, m_gateReleaseModel(0.3f, 0.1f, 4.f, 0.01f, parent)
+	, m_gateHoldModel(0.f, 0.f, 4.f, 0.01f, parent)
 	, m_eqHighModel(0.f, -15.f, 15.f, 0.1f, parent)
 	, m_eqHighMidModel(0.f, -15.f, 15.f, 0.1f, parent)
 	, m_eqLowMidModel(0.f, -15.f, 15.f, 0.1f, parent)
@@ -84,9 +89,21 @@ AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 	for (auto model : {&m_eqHighModel, &m_eqHighMidModel, &m_eqLowMidModel, &m_eqLowModel}) { model->setCenterValue(0.f); }
 	m_highPassModel.setCenterValue(m_highPassModel.minValue());
 	m_lowPassModel.setCenterValue(m_lowPassModel.maxValue());
-	m_gateModel.setCenterValue(m_gateModel.minValue());
-	m_compressorModel.setCenterValue(0.f);
+	m_compressorModel.setCenterValue(m_compressorModel.maxValue());
+	m_compressorRatioModel.setScaleLogarithmic(true);
+	m_compressorRatioModel.setCenterValue(1.f);
+	m_compressorReleaseModel.setScaleLogarithmic(true);
+	m_gateReleaseModel.setScaleLogarithmic(true);
+	m_gateRangeModel.setCenterValue(0.f);
 	m_gainModel.setCenterValue(0.5f);
+}
+
+
+
+
+auto AnalogChannelStrip::ratioAt(float setting) -> float
+{
+	return setting >= MaxRatio ? std::numeric_limits<float>::infinity() : setting;
 }
 
 
@@ -114,8 +131,13 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	const bool lowPassOn = m_lowPassModel.value() < m_lowPassModel.maxValue();
 	const bool monoBassOn = m_monoBass.begin(m_monoBassFrequencyModel.value(), m_monoBassWidthModel.value() / 100.f,
 		sampleRate);
-	const bool gateOn = m_gateModel.value() > m_gateModel.minValue();
-	const bool compressorOn = m_compressorModel.value() < 0.f;
+	m_gate.begin({m_gateModel.value(), m_gateRangeModel.value(), m_gateExpanderModel.value(), m_gateFastModel.value(),
+		m_gateReleaseModel.value(), m_gateHoldModel.value()}, sampleRate);
+	m_compressor.begin({m_compressorModel.value(), ratioAt(m_compressorRatioModel.value()), m_compressorFastModel.value(),
+		m_compressorReleaseModel.value(), m_compressorPeakModel.value(), m_compressorHardKneeModel.value(),
+		m_compressorLinearReleaseModel.value()}, sampleRate);
+	const bool gateOn = m_gate.isActive();
+	const bool compressorOn = m_compressor.isActive();
 	const double rate = sampleRate;
 	m_eq.begin({m_eqLowModel.value(), m_eqLowMidModel.value(), m_eqHighMidModel.value(), m_eqHighModel.value()}, rate);
 	const bool eqOn = m_eq.isActive();
@@ -124,8 +146,8 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	if (!lowCut) { m_lowCut2.reset(); m_lowCut1.reset(); }
 	if (!highPassOn) { m_highPass.reset(); }
 	if (!lowPassOn) { m_lowPass.reset(); }
-	if (!gateOn) { m_gateGain = 1.f; m_gateHold = 0; }
-	if (!compressorOn) { m_compressorEnvelope = 0.f; }
+	if (!gateOn) { m_gate.reset(); }
+	if (!compressorOn) { m_compressor.reset(); }
 
 	m_lowCut2.setTarget(Biquad::highPass(LowCutFrequency, 1.0, rate));
 	m_lowCut1.setTarget(Biquad::highPass1(LowCutFrequency, rate));
@@ -181,19 +203,6 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 		return;
 	}
 
-	const float gateThreshold = dbfsToAmp(m_gateModel.value());
-	const float gateOpen = smoothing(GateAttack, sampleRate);
-	const float gateClose = smoothing(GateRelease, sampleRate);
-	const auto gateHold = static_cast<f_cnt_t>(GateHold * rate);
-
-	// Gain computer with a soft knee, as in the Compressor plugin; the make-up gain is half of what the compressor
-	// takes off a signal at 0 dBFS
-	const float threshold = m_compressorModel.value();
-	const float slope = 1.f / CompressorRatio - 1.f;
-	const float makeup = slope * threshold / 2.f;
-	const float attack = smoothing(CompressorAttack, sampleRate);
-	const float release = smoothing(CompressorRelease, sampleRate);
-
 	for (auto f = std::size_t{0}; f < count; ++f)
 	{
 		auto& frame = frames[f];
@@ -214,30 +223,10 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 			frame[1] = mid - side;
 		}
 
-		// Stereo-linked dynamics
-		const float level = std::max(std::abs(frame[0]), std::abs(frame[1]));
+		// Stereo-linked dynamics, the gate first
 		float gain = 1.f;
-		if (gateOn)
-		{
-			if (level >= gateThreshold) { m_gateHold = gateHold; }
-			const bool open = m_gateHold > 0;
-			if (m_gateHold > 0) { --m_gateHold; }
-			m_gateGain += ((open ? 1.f : 0.f) - m_gateGain) * (open ? gateOpen : gateClose);
-			gain *= m_gateGain;
-		}
-		if (compressorOn)
-		{
-			m_compressorEnvelope += (level - m_compressorEnvelope) * (level > m_compressorEnvelope ? attack : release);
-			const float over = ampToDbfs(std::max(m_compressorEnvelope, 1e-9f)) - threshold;
-			float reduction = 0.f;
-			if (over >= CompressorKnee / 2.f) { reduction = slope * over; }
-			else if (over > -CompressorKnee / 2.f)
-			{
-				const float into = over + CompressorKnee / 2.f;
-				reduction = slope * into * into / (2.f * CompressorKnee);
-			}
-			gain *= dbfsToAmp(reduction + makeup);
-		}
+		if (gateOn) { gain *= m_gate.gain(frame[0], frame[1]); }
+		if (compressorOn) { gain *= m_compressor.gain(frame[0] * gain, frame[1] * gain); }
 
 		for (ch_cnt_t ch = 0; ch < 2; ++ch)
 		{
@@ -278,9 +267,8 @@ void AnalogChannelStrip::reset()
 	m_tailFrames = 0;
 	m_monoBass.reset();
 	m_gainStage.reset();
-	m_gateGain = 1.f;
-	m_gateHold = 0;
-	m_compressorEnvelope = 0.f;
+	m_gate.reset();
+	m_compressor.reset();
 }
 
 
@@ -296,8 +284,19 @@ void AnalogChannelStrip::setNeutral()
 	m_lowPassModel.setValue(m_lowPassModel.maxValue());
 	m_monoBassWidthModel.setValue(100.f);
 	m_monoBassFrequencyModel.setValue(120.f);
-	m_gateModel.setValue(m_gateModel.minValue());
 	m_compressorModel.setValue(0.f);
+	m_compressorRatioModel.setValue(1.f);
+	m_compressorFastModel.setValue(false);
+	m_compressorReleaseModel.setValue(0.3f);
+	m_compressorPeakModel.setValue(false);
+	m_compressorHardKneeModel.setValue(false);
+	m_compressorLinearReleaseModel.setValue(false);
+	m_gateModel.setValue(-10.f);
+	m_gateRangeModel.setValue(0.f);
+	m_gateExpanderModel.setValue(false);
+	m_gateFastModel.setValue(false);
+	m_gateReleaseModel.setValue(0.3f);
+	m_gateHoldModel.setValue(0.f);
 	m_eqHighModel.setValue(0.f);
 	m_eqHighMidModel.setValue(0.f);
 	m_eqLowMidModel.setValue(0.f);
@@ -318,8 +317,19 @@ void AnalogChannelStrip::setDisplayNames(const QString& channelName)
 	m_lowPassModel.setDisplayName(prefix + QObject::tr("Low-pass"));
 	m_monoBassWidthModel.setDisplayName(prefix + QObject::tr("Mono bass width"));
 	m_monoBassFrequencyModel.setDisplayName(prefix + QObject::tr("Mono bass frequency"));
-	m_gateModel.setDisplayName(prefix + QObject::tr("Gate"));
-	m_compressorModel.setDisplayName(prefix + QObject::tr("Compressor"));
+	m_compressorModel.setDisplayName(prefix + QObject::tr("Compressor threshold"));
+	m_compressorRatioModel.setDisplayName(prefix + QObject::tr("Compressor ratio"));
+	m_compressorFastModel.setDisplayName(prefix + QObject::tr("Compressor fast attack"));
+	m_compressorReleaseModel.setDisplayName(prefix + QObject::tr("Compressor release"));
+	m_compressorPeakModel.setDisplayName(prefix + QObject::tr("Compressor peak detection"));
+	m_compressorHardKneeModel.setDisplayName(prefix + QObject::tr("Compressor hard knee"));
+	m_compressorLinearReleaseModel.setDisplayName(prefix + QObject::tr("Compressor linear release"));
+	m_gateModel.setDisplayName(prefix + QObject::tr("Gate threshold"));
+	m_gateRangeModel.setDisplayName(prefix + QObject::tr("Gate range"));
+	m_gateExpanderModel.setDisplayName(prefix + QObject::tr("Gate expander"));
+	m_gateFastModel.setDisplayName(prefix + QObject::tr("Gate fast attack"));
+	m_gateReleaseModel.setDisplayName(prefix + QObject::tr("Gate release"));
+	m_gateHoldModel.setDisplayName(prefix + QObject::tr("Gate hold"));
 	m_eqHighModel.setDisplayName(prefix + QObject::tr("EQ high"));
 	m_eqHighMidModel.setDisplayName(prefix + QObject::tr("EQ high mid"));
 	m_eqLowMidModel.setDisplayName(prefix + QObject::tr("EQ low mid"));
@@ -340,8 +350,19 @@ void AnalogChannelStrip::saveSettings(QDomDocument& doc, QDomElement& channelEle
 	m_lowPassModel.saveSettings(doc, strip, "lowpass");
 	m_monoBassWidthModel.saveSettings(doc, strip, "monobass");
 	m_monoBassFrequencyModel.saveSettings(doc, strip, "monobassfreq");
-	m_gateModel.saveSettings(doc, strip, "gate");
-	m_compressorModel.saveSettings(doc, strip, "compressor");
+	m_compressorModel.saveSettings(doc, strip, "compthreshold");
+	m_compressorRatioModel.saveSettings(doc, strip, "compratio");
+	m_compressorFastModel.saveSettings(doc, strip, "compfast");
+	m_compressorReleaseModel.saveSettings(doc, strip, "comprelease");
+	m_compressorPeakModel.saveSettings(doc, strip, "comppeak");
+	m_compressorHardKneeModel.saveSettings(doc, strip, "comphardknee");
+	m_compressorLinearReleaseModel.saveSettings(doc, strip, "complinrel");
+	m_gateModel.saveSettings(doc, strip, "gatethreshold");
+	m_gateRangeModel.saveSettings(doc, strip, "gaterange");
+	m_gateExpanderModel.saveSettings(doc, strip, "gateexp");
+	m_gateFastModel.saveSettings(doc, strip, "gatefast");
+	m_gateReleaseModel.saveSettings(doc, strip, "gaterelease");
+	m_gateHoldModel.saveSettings(doc, strip, "gatehold");
 	m_eqHighModel.saveSettings(doc, strip, "eqhigh");
 	m_eqHighMidModel.saveSettings(doc, strip, "eqhighmid");
 	m_eqLowMidModel.saveSettings(doc, strip, "eqlowmid");
@@ -370,8 +391,38 @@ void AnalogChannelStrip::loadSettings(const QDomElement& channelElement)
 	m_lowPassModel.loadSettings(strip, "lowpass");
 	m_monoBassWidthModel.loadSettings(strip, "monobass");
 	m_monoBassFrequencyModel.loadSettings(strip, "monobassfreq");
-	m_gateModel.loadSettings(strip, "gate");
-	m_compressorModel.loadSettings(strip, "compressor");
+	if (strip.hasAttribute("compratio") || !strip.firstChildElement("compratio").isNull())
+	{
+		m_compressorModel.loadSettings(strip, "compthreshold");
+		m_compressorRatioModel.loadSettings(strip, "compratio");
+		m_compressorFastModel.loadSettings(strip, "compfast");
+		m_compressorReleaseModel.loadSettings(strip, "comprelease");
+		m_compressorPeakModel.loadSettings(strip, "comppeak");
+		m_compressorHardKneeModel.loadSettings(strip, "comphardknee");
+		m_compressorLinearReleaseModel.loadSettings(strip, "complinrel");
+		m_gateModel.loadSettings(strip, "gatethreshold");
+		m_gateRangeModel.loadSettings(strip, "gaterange");
+		m_gateExpanderModel.loadSettings(strip, "gateexp");
+		m_gateFastModel.loadSettings(strip, "gatefast");
+		m_gateReleaseModel.loadSettings(strip, "gaterelease");
+		m_gateHoldModel.loadSettings(strip, "gatehold");
+	}
+	else
+	{
+		// The one knob dynamics of before: thresholds in dBFS, a 4:1 compressor off at 0 dB, a gate off at -80 dB
+		const float compressor = strip.attribute("compressor", "0").toFloat();
+		if (compressor < 0.f)
+		{
+			m_compressorRatioModel.setValue(4.f);
+			m_compressorModel.setValue(compressor - DbuToDbfs);
+		}
+		const float gate = strip.attribute("gate", "-80").toFloat();
+		if (gate > -80.f)
+		{
+			m_gateRangeModel.setValue(40.f);
+			m_gateModel.setValue(gate - DbuToDbfs);
+		}
+	}
 	m_eqHighModel.loadSettings(strip, "eqhigh");
 	m_eqHighMidModel.loadSettings(strip, "eqhighmid");
 	m_eqLowMidModel.loadSettings(strip, "eqlowmid");

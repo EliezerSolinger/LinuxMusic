@@ -101,6 +101,16 @@ protected:
 	auto currentValueToText() -> QString override;
 };
 
+//! The compressor's RATIO knob (AnalogChannelStrip::m_compressorRatioModel): "OFF" at 1:1, infinity at its end
+class RatioKnob : public DeskKnob
+{
+public:
+	using DeskKnob::DeskKnob;
+
+protected:
+	auto currentValueToText() -> QString override;
+};
+
 } // namespace lmms::gui
 
 #endif // LMMS_GUI_GAIN_STAGE_CONTROLS_H

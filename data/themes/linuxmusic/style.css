@@ -1405,7 +1405,8 @@ lmms--gui--MixerChannelView QLabel#mixerSectionTitle {
 }
 
 /* The MONO button of the analog desk's strip */
-lmms--gui--MixerChannelView QPushButton#btn-mono {
+lmms--gui--MixerChannelView QPushButton#btn-mono,
+lmms--gui--MixerChannelView QPushButton#btn-fast {
 	padding: 0;
 	min-height: 11;
 	max-height: 11;
@@ -1419,7 +1420,8 @@ lmms--gui--MixerChannelView QPushButton#btn-mono {
 	font-weight: bold;
 }
 
-lmms--gui--MixerChannelView QPushButton#btn-mono:checked {
+lmms--gui--MixerChannelView QPushButton#btn-mono:checked,
+lmms--gui--MixerChannelView QPushButton#btn-fast:checked {
 	border: 1 solid #7a2a00;
 	background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #ffb347, stop:0.6 #ff7a1a, stop:1 #b33c00);
 	color: #2a0e00;

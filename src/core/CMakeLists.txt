@@ -32,6 +32,7 @@ set(LMMS_SRCS
 	core/GainStage.cpp
 	core/TubeStage.cpp
 	core/DeskFilters.cpp
+	core/DeskDynamics.cpp
 	core/MasterSection.cpp
 	core/MonoBass.cpp
 	core/Mixer.cpp

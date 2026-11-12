@@ -27,6 +27,7 @@
 #include <QButtonGroup>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
 #include <QPainter>
@@ -234,6 +235,46 @@ MixerView::MixerView(Mixer* mixer) :
 	settingsLayout->addWidget(m_monoBox, 1, 1);
 	settingsLayout->addWidget(m_widthKnob, 0, 2, 2, 1, Qt::AlignCenter);
 	settingsLayout->addWidget(m_panKnob, 0, 3, 2, 1, Qt::AlignCenter);
+
+	// The analog strip's dynamics, beyond the knobs on the strip
+	m_dynamicsSettings = new QWidget{channelSettings};
+	auto dynamicsLayout = new QGridLayout{m_dynamicsSettings};
+	dynamicsLayout->setContentsMargins(0, 4, 0, 0);
+	dynamicsLayout->setHorizontalSpacing(8);
+	dynamicsLayout->setVerticalSpacing(2);
+	auto makeKnob = [this](const QString& label, const QString& name, const QString& unit) {
+		auto knob = new Knob{KnobType::Bright26, label, m_dynamicsSettings, Knob::LabelRendering::LegacyFixedFontSize, name};
+		knob->setHintText(name + ":", unit);
+		return knob;
+	};
+	auto makeBox = [this](const QString& label, const QString& tip) {
+		auto box = new LedCheckBox{label, m_dynamicsSettings, tip, LedCheckBox::LedColor::Yellow};
+		box->setToolTip(tip);
+		return box;
+	};
+	auto compressorTitle = new QLabel{tr("COMP"), m_dynamicsSettings};
+	auto gateTitle = new QLabel{tr("GATE"), m_dynamicsSettings};
+	m_compressorReleaseKnob = makeKnob(tr("REL"), tr("Compressor release"), " s");
+	m_compressorPeakBox = makeBox(tr("Peak"), tr("Peak detection instead of the true RMS one"));
+	m_compressorHardKneeBox = makeBox(tr("Hard knee"), tr("A hard knee instead of the over-easy one"));
+	m_compressorLinearReleaseBox = makeBox(tr("Lin. release"),
+		tr("A linear release instead of the logarithmic one; raises the threshold by 6 dB"));
+	m_gateReleaseKnob = makeKnob(tr("REL"), tr("Gate release"), " s");
+	m_gateHoldKnob = makeKnob(tr("HOLD"), tr("Gate hold"), " s");
+	m_gateExpanderBox = makeBox(tr("Expander"), tr("A 2:1 expander instead of a 20:1 gate"));
+	m_gateFastBox = makeBox(tr("Fast"), tr("Fast attack: 100 us per 40 dB instead of 1.5 ms"));
+	dynamicsLayout->addWidget(compressorTitle, 0, 0, Qt::AlignVCenter);
+	dynamicsLayout->addWidget(m_compressorReleaseKnob, 0, 1, 2, 1, Qt::AlignCenter);
+	dynamicsLayout->addWidget(m_compressorPeakBox, 0, 2);
+	dynamicsLayout->addWidget(m_compressorHardKneeBox, 1, 2);
+	dynamicsLayout->addWidget(m_compressorLinearReleaseBox, 0, 3);
+	dynamicsLayout->addWidget(gateTitle, 2, 0, Qt::AlignVCenter);
+	dynamicsLayout->addWidget(m_gateReleaseKnob, 2, 1, 2, 1, Qt::AlignCenter);
+	dynamicsLayout->addWidget(m_gateHoldKnob, 2, 2, 2, 1, Qt::AlignLeft);
+	dynamicsLayout->addWidget(m_gateExpanderBox, 2, 3);
+	dynamicsLayout->addWidget(m_gateFastBox, 3, 3);
+	settingsLayout->addWidget(m_dynamicsSettings, 2, 0, 1, 4);
+	connect(mixer->analogModel(), &BoolModel::dataChanged, this, &MixerView::updateDynamicsSettings);
 
 	// The mixer's mode: an analog desk (with a desk's strip in every channel) or a digital one (effects only)
 	auto modeRow = new QHBoxLayout{};
@@ -523,11 +564,30 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 	m_panKnob->setModel(&mixerChannel->m_panModel);
 	m_panKnob->setVisible(channel->channelIndex() != 0); // the master has no panning
 
+	auto& strip = mixerChannel->m_analogStrip;
+	m_compressorReleaseKnob->setModel(&strip.m_compressorReleaseModel);
+	m_compressorPeakBox->setModel(&strip.m_compressorPeakModel);
+	m_compressorHardKneeBox->setModel(&strip.m_compressorHardKneeModel);
+	m_compressorLinearReleaseBox->setModel(&strip.m_compressorLinearReleaseModel);
+	m_gateReleaseKnob->setModel(&strip.m_gateReleaseModel);
+	m_gateHoldKnob->setModel(&strip.m_gateHoldModel);
+	m_gateExpanderBox->setModel(&strip.m_gateExpanderModel);
+	m_gateFastBox->setModel(&strip.m_gateFastModel);
+	updateDynamicsSettings();
+
 	// set up send knob
 	for (int i = 0; i < m_mixerChannelViews.size(); ++i)
 	{
 		updateMixerChannel(i);
 	}
+}
+
+
+void MixerView::updateDynamicsSettings()
+{
+	// The master has no analog strip
+	m_dynamicsSettings->setVisible(getMixer()->isAnalog() && m_currentMixerChannel
+		&& m_currentMixerChannel->channelIndex() != 0);
 }
 
 

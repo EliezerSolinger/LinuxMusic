@@ -966,6 +966,51 @@ Decidido pelo usuário, pergunta por pergunta, em 2026-11-12. Implementar na ord
   - na faixa, o knob GATE;
   - no painel, range, release, hold e modo expander/gate.
 
+**Parte 4 feita.** Os números vêm do guia oficial do módulo SSL E Series Dynamics.
+- **Decisões do usuário durante a parte:**
+  - o knob RATIO vai para a faixa e liga o compressor (1:1 = fora);
+  - o RANGE vai para a faixa e liga o gate (0 = fora), como no módulo SSL.
+- **Código:** `ChannelCompressor` e `ChannelGate` (`include/DeskDynamics.h`).
+- **Compressor:**
+  - detector RMS verdadeiro (5 ms), ou de pico;
+  - ratio de 1:1 a ∞ (limitador);
+  - joelho "over-easy" de 10 dB, ou duro;
+  - threshold de +4 a -26 dBu;
+  - make-up automático: um sinal no nível nominal (0 VU, -18 dBFS RMS) sai onde entrou, quanto quer que comprima;
+  - ataque de 30 ms por 20 dB de redução, ou 3 ms com FAST: uma inclinação em dB, que depende do programa;
+  - release de 0,1 a 4 s, como constante de tempo em dB (curva logarítmica). Com LIN REL vira inclinação
+    constante, igual à da curva logarítmica a partir de 20 dB, e o threshold sobe 6 dB (como no guia).
+- **Gate/expander:**
+  - gate de 20:1, ou expander de 2:1 (EXP);
+  - range de 0 a 40 dB;
+  - threshold de -30 a +10 dBu;
+  - histerese que cresce quando o threshold desce: 2 dB em +10 dBu, 8 dB em -30 dBu (o guia só diz que é
+    variável; os valores são nossos);
+  - abertura linear de 1,5 ms por 40 dB, ou 100 µs com FAST;
+  - hold de 0 a 4 s (decisão do usuário: o módulo SSL não tem);
+  - release de 0,1 a 4 s;
+  - chave de pico com 10 ms de queda, para não fechar nas passagens por zero.
+- **Níveis:** dBu → dBFS por +4 dBu = -18 dBFS RMS.
+- **Faixa:** COMP, RATIO (∞ no fim, "1:1 (off)" no início), FAST, GATE e RANGE.
+- **Painel do canal** (só no modo analógico, fora do master):
+  - compressor: REL, Peak, Hard knee, Lin. release;
+  - gate: REL, HOLD, Expander, Fast.
+- **Compatibilidade:** projetos com a dinâmica de um knob de antes viram um compressor de 4:1 e um gate de 40 dB nos
+  mesmos thresholds (dBFS convertidos para dBu).
+- **Testes:**
+  - make-up mantém o nível nominal;
+  - 4:1 dá 3 dB para cada 12 dB;
+  - limitador;
+  - knee;
+  - LIN REL +6 dB;
+  - FAST mais de 5× mais rápido;
+  - gate fecha no range;
+  - histerese;
+  - expander 2:1;
+  - hold;
+  - RATIO e RANGE ligam;
+  - compatibilidade.
+
 **5. Imperfeições**
 - Sem ruído de fundo e sem crosstalk.
 - **Tolerância por canal:** variações pequenas e fixas por canal.

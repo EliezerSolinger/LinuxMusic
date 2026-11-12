@@ -27,6 +27,7 @@
 #include <span>
 
 #include "AutomatableModel.h"
+#include "DeskDynamics.h"
 #include "DeskFilters.h"
 #include "GainStage.h"
 #include "LmmsTypes.h"
@@ -48,7 +49,7 @@ class SampleFrame;
  *   to saturate on;
  * - the gain stage: flat, an op-amp or a tube, of a choice of models (see GainStage);
  * - sweepable high-pass and low-pass filters (12 dB/oct), and mono bass (see MonoBass);
- * - a gate and a compressor, one knob each (their thresholds), with stereo-linked detection;
+ * - the dynamics of an SSL E series channel: a gate/expander and a compressor (see ChannelGate, ChannelCompressor);
  * - the 4-band EQ of a Soundcraft or Mackie desk (see DeskEq): shelves at 80 Hz and 12 kHz, peaks at 400 Hz and
  *   2.5 kHz, with proportional Q and interacting bands.
  * Each section left at its neutral setting is skipped, so a neutral strip leaves the audio untouched. The filters
@@ -81,8 +82,24 @@ public:
 	FloatModel m_lowPassModel;		//!< Hz; off at the highest setting
 	FloatModel m_monoBassWidthModel;		//!< % of the side kept below the mono bass frequency; off at 100
 	FloatModel m_monoBassFrequencyModel;	//!< Hz
-	FloatModel m_gateModel;			//!< threshold in dB; off at the lowest setting
-	FloatModel m_compressorModel;	//!< threshold in dB; off at 0
+	// The SSL E series' dynamics (see ChannelCompressor and ChannelGate): on the strip, COMP, RATIO and FAST, GATE
+	// and RANGE; the rest in the channel's panel
+	FloatModel m_compressorModel;			//!< threshold, dBu
+	FloatModel m_compressorRatioModel;		//!< 1 (out) to MaxRatio (infinity)
+	BoolModel m_compressorFastModel;
+	FloatModel m_compressorReleaseModel;	//!< s
+	BoolModel m_compressorPeakModel;
+	BoolModel m_compressorHardKneeModel;
+	BoolModel m_compressorLinearReleaseModel;
+	FloatModel m_gateModel;					//!< threshold, dBu
+	FloatModel m_gateRangeModel;			//!< dB, 0 (out) to 40
+	BoolModel m_gateExpanderModel;
+	BoolModel m_gateFastModel;
+	FloatModel m_gateReleaseModel;			//!< s
+	FloatModel m_gateHoldModel;				//!< s
+	static constexpr float MaxRatio = 20.f;	//!< the ratio knob's end, which is infinity
+	//! The compressor's ratio at a ratio knob setting
+	static auto ratioAt(float setting) -> float;
 	FloatModel m_eqHighModel;		//!< dB
 	FloatModel m_eqHighMidModel;	//!< dB
 	FloatModel m_eqLowMidModel;		//!< dB
@@ -121,10 +138,8 @@ private:
 	//! Frames the filters may still ring for after the input fell silent
 	f_cnt_t m_tailFrames = 0;
 
-	// Dynamics
-	float m_gateGain = 1.f;
-	f_cnt_t m_gateHold = 0;
-	float m_compressorEnvelope = 0.f;
+	ChannelCompressor m_compressor;
+	ChannelGate m_gate;
 };
 
 } // namespace lmms

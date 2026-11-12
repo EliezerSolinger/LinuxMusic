@@ -541,9 +541,23 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 		tr("Mono bass: width of the side below the frequency (0 = mono)"), "%", row, 0);
 	addKnob(&strip.m_monoBassFrequencyModel, grey, tr("FREQ"), tr("Mono bass frequency"), " Hz", row++, 1);
 
+	// The dynamics of an SSL E series channel: RATIO and RANGE switch the compressor and the gate in
 	addSection(tr("DYN"));
-	addKnob(&strip.m_gateModel, teal, tr("GATE"), tr("Gate threshold"), " dB", row, 0);
-	addKnob(&strip.m_compressorModel, yellow, tr("COMP"), tr("Compressor threshold"), " dB", row++, 1);
+	addKnob(&strip.m_compressorModel, yellow, tr("COMP"), tr("Compressor threshold"), " dBu", row, 0);
+	auto ratioKnob = new RatioKnob{yellow, tr("RATIO"), tr("Compressor ratio"), m_analogSection};
+	ratioKnob->setModel(&strip.m_compressorRatioModel);
+	ratioKnob->setHintText(tr("Compressor ratio:"), "");
+	ratioKnob->setToolTip(tr("Compressor ratio: 1:1 is out, the end a limiter"));
+	analogLayout->addWidget(ratioKnob, row++, 1, Qt::AlignCenter);
+	auto fastButton = new AutomatableButton(m_analogSection, tr("Compressor fast attack"));
+	fastButton->setObjectName("btn-fast");
+	fastButton->setText(tr("FAST"));
+	fastButton->setToolTip(tr("Fast attack: 3 ms for 20 dB of gain reduction instead of 30 ms"));
+	fastButton->setCheckable(true);
+	fastButton->setModel(&strip.m_compressorFastModel);
+	analogLayout->addWidget(fastButton, row++, 0, 1, 2, Qt::AlignCenter);
+	addKnob(&strip.m_gateModel, teal, tr("GATE"), tr("Gate threshold"), " dBu", row, 0);
+	addKnob(&strip.m_gateRangeModel, teal, tr("RANGE"), tr("Gate range: 0 is out"), " dB", row++, 1);
 
 	addSection(tr("EQ"));
 	addKnob(&strip.m_eqHighModel, orange, tr("HI"), tr("EQ high (12 kHz)"), " dB", row, 0);

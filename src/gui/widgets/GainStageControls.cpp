@@ -23,6 +23,7 @@
 #include "GainStageControls.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QContextMenuEvent>
 #include <QCursor>
@@ -276,6 +277,14 @@ auto GainKnob::currentValueToText() -> QString
 	if (gain <= 0.f) { return "-inf"; }
 	const float db = ampToDbfs(gain);
 	return (db > 0.05f ? "+" : "") + QString::number(db, 'f', 1);
+}
+
+auto RatioKnob::currentValueToText() -> QString
+{
+	const float ratio = AnalogChannelStrip::ratioAt(model()->value());
+	if (ratio <= 1.f) { return tr("1:1 (off)"); }
+	if (std::isinf(ratio)) { return QString{"%1:1"}.arg(QChar{0x221E}); }
+	return QString{"%1:1"}.arg(ratio, 0, 'f', 1);
 }
 
 } // namespace lmms::gui
