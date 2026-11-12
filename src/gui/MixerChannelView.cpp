@@ -35,6 +35,8 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QStyle>
+#include <QCursor>
 #include <QPainter>
 #include <QStackedWidget>
 #include <QToolTip>
@@ -70,6 +72,86 @@ namespace lmms::gui
 
 namespace
 {
+
+//! The analog strip's gain stage model (AnalogChannelStrip::Drive): a click goes to the next one, the right button
+//! lists them; lit blue for the op-amps and amber for the tubes
+class DriveButton : public QPushButton
+{
+	Q_DECLARE_TR_FUNCTIONS(DriveButton)
+public:
+	using Drive = AnalogChannelStrip::Drive;
+
+	DriveButton(IntModel* model, QWidget* parent) : QPushButton{parent}, m_model{model}
+	{
+		setObjectName("btn-drive");
+		setFocusPolicy(Qt::NoFocus);
+		connect(this, &QPushButton::clicked, this, [this] {
+			m_model->setValue((m_model->value() + 1) % static_cast<int>(Drive::Count));
+		});
+		connect(m_model, &IntModel::dataChanged, this, &DriveButton::refresh);
+		refresh();
+	}
+
+	static auto name(Drive drive) -> QString
+	{
+		switch (drive)
+		{
+			case Drive::Flat: return tr("FLAT");
+			case Drive::OpAmp4558: return "4558";
+			case Drive::OpAmp5532: return "5532";
+			case Drive::Tube12AX7: return "12AX7";
+			case Drive::Tube12AX7Vintage: return "12AX7 V";
+			case Drive::Tube12AX7Hot: return "12AX7 H";
+			default: return {};
+		}
+	}
+
+	static auto description(Drive drive) -> QString
+	{
+		switch (drive)
+		{
+			case Drive::Flat: return tr("Flat: a clean gain stage");
+			case Drive::OpAmp4558: return tr("4558 op-amp, of many Soundcraft and Mackie desks: soft, slow, even harmonics");
+			case Drive::OpAmp5532: return tr("NE5532 op-amp, of SSL, Neve and Amek desks: clean and fast");
+			case Drive::Tube12AX7: return tr("12AX7 tube, from a SPICE simulation");
+			case Drive::Tube12AX7Vintage: return tr("12AX7 tube, vintage: warm, rich in even harmonics");
+			case Drive::Tube12AX7Hot: return tr("12AX7 tube, hot: crunchier, stronger in odd harmonics");
+			default: return {};
+		}
+	}
+
+protected:
+	void contextMenuEvent(QContextMenuEvent*) override
+	{
+		auto menu = QMenu{this};
+		for (int i = 0; i < static_cast<int>(Drive::Count); ++i)
+		{
+			const auto drive = static_cast<Drive>(i);
+			auto action = menu.addAction(QString{"%1 - %2"}.arg(name(drive), description(drive)), this,
+				[this, i] { m_model->setValue(i); });
+			action->setCheckable(true);
+			action->setChecked(m_model->value() == i);
+		}
+		menu.exec(QCursor::pos());
+	}
+
+private:
+	void refresh()
+	{
+		const auto drive = static_cast<Drive>(m_model->value());
+		setText(name(drive));
+		setToolTip(tr("Gain stage: %1 (click for the next one, right button for the list)").arg(description(drive)));
+		// The style sheet colors the button after its kind
+		setProperty("kind", AnalogChannelStrip::isTube(drive) ? "tube"
+			: AnalogChannelStrip::isOpAmp(drive) ? "opamp" : "flat");
+		style()->unpolish(this);
+		style()->polish(this);
+	}
+
+	IntModel* m_model;
+};
+
+
 
 //! A scale of dB next to a fader: the levels its ticks stand for
 class DbScale : public QWidget
@@ -515,20 +597,10 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	lowCutButton->setToolTip(tr("Low cut: takes away what is below 80 Hz"));
 	lowCutButton->setCheckable(true);
 	lowCutButton->setModel(&strip.m_lowCutModel);
-	auto tubeButton = new AutomatableButton(m_analogSection, tr("Tube"));
-	tubeButton->setObjectName("btn-tube");
-	tubeButton->setText(tr("TUBE"));
-	tubeButton->setToolTip(tr("Tube: the gain stage is a 12AX7 tube instead of an op-amp"));
-	tubeButton->setCheckable(true);
-	tubeButton->setModel(&strip.m_tubeModel);
-	auto inputButtons = new QVBoxLayout{};
-	inputButtons->setContentsMargins(0, 0, 0, 0);
-	inputButtons->setSpacing(2);
-	inputButtons->addWidget(lowCutButton, 0, Qt::AlignCenter);
-	inputButtons->addWidget(tubeButton, 0, Qt::AlignCenter);
-	analogLayout->addLayout(inputButtons, row++, 1, Qt::AlignCenter);
+	analogLayout->addWidget(lowCutButton, row++, 1, Qt::AlignCenter);
+	analogLayout->addWidget(new DriveButton{&strip.m_driveModel, m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
 	auto monoButton = new AutomatableButton(m_analogSection, tr("Mono"));
-	monoButton->setObjectName("btn-tube");
+	monoButton->setObjectName("btn-mono");
 	monoButton->setText(tr("MONO"));
 	monoButton->setToolTip(tr("Mono: sums the channel to mono before its processing, so that panning places it"));
 	monoButton->setCheckable(true);

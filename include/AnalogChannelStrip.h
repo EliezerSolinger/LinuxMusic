@@ -44,7 +44,7 @@ class SampleFrame;
  * The channel strip of an analog mixing desk, built into each mixer channel (but the master) while the mixer is in
  * analog mode (see Mixer::isAnalog()). In signal order, after the channel's gain (its trim):
  * - the low cut button (80 Hz, 24 dB/oct), before the gain stage so that it gets no rumble to saturate on;
- * - the gain stage: an op-amp, or with the TUBE button a 12AX7 tube stage (see processDriveStage());
+ * - the gain stage: flat, an op-amp or a tube, of a choice of models (see Drive and processDriveStage());
  * - sweepable high-pass and low-pass filters (12 dB/oct), and mono bass (see MonoBass);
  * - a gate and a compressor, one knob each (their thresholds), with stereo-linked detection;
  * - a classic 4-band EQ with fixed frequencies: high shelf at 12 kHz, high mid peak at 2.5 kHz, low mid peak at
@@ -58,7 +58,42 @@ public:
 	explicit AnalogChannelStrip(Model* parent);
 	~AnalogChannelStrip();
 
-	BoolModel m_tubeModel;			//!< the gain stage is a tube instead of an op-amp
+	/**
+	 * The gain stage's model:
+	 * - FLAT: nothing, the gain is clean;
+	 * - op-amps, saturating softly from their knee towards their rails, the headroom of a desk above its nominal
+	 *   level, so they are clean at usual levels and saturate when the gain is pushed:
+	 *   - 4558, of many Soundcraft and Mackie desks: knee at +18 dBFS, the negative rail 5% lower than the positive
+	 *     one (even harmonics), a slow slew rate (1.7 V/us);
+	 *   - 5532 (NE5532, the dual NE5534), the op-amp most desks with a clean sound use (SSL, Neve, Amek, Mackie Onyx):
+	 *     cleaner and faster, knee at +21 dBFS, symmetric rails, 9 V/us;
+	 * - tubes, three approximations of a 12AX7 preamp stage from CAPS (Tim Goetze), which color a little at usual
+	 *   levels and start to clip at +12 dBFS:
+	 *   - 12AX7: the transfer curve sampled from a SPICE simulation;
+	 *   - 12AX7 V (vintage): CAPS' original polynomial, tuned by ear, richest in even harmonics;
+	 *   - 12AX7 H (hot): the polynomial fitted to the curve, stronger in odd harmonics.
+	 */
+	enum class Drive { Flat, OpAmp4558, OpAmp5532, Tube12AX7, Tube12AX7Vintage, Tube12AX7Hot, Count };
+	IntModel m_driveModel;			//!< a Drive
+
+	static auto isTube(Drive drive) -> bool { return drive >= Drive::Tube12AX7; }
+	static auto isOpAmp(Drive drive) -> bool { return drive == Drive::OpAmp4558 || drive == Drive::OpAmp5532; }
+
+	//! What an op-amp model is like
+	struct OpAmpSpec
+	{
+		float knee;					//!< where it starts to saturate, linear
+		float rail;					//!< where it saturates towards, linear
+		float negativeRailRatio;	//!< the negative side's knee and rail relative to the positive one's
+		float slewRate;				//!< V/us
+	};
+	static auto opAmpSpec(Drive drive) -> OpAmpSpec;
+
+	//! The op-amp's transfer function: linear up to the knee, then softly towards the rail
+	static auto opAmp(Drive drive, float sample) -> float;
+
+	//! The tube's transfer function, with unity gain and the same polarity for small signals, and no offset
+	static auto tube(Drive drive, float sample) -> float;
 	BoolModel m_lowCutModel;
 	FloatModel m_highPassModel;		//!< Hz; off at the lowest setting
 	FloatModel m_lowPassModel;		//!< Hz; off at the highest setting
@@ -88,30 +123,15 @@ public:
 	void saveSettings(QDomDocument& doc, QDomElement& channelElement);
 	void loadSettings(const QDomElement& channelElement);
 
-	/**
-	 * The op-amp's transfer function, after a 4558 (the op-amp of many Soundcraft and Mackie desks): linear up to the
-	 * knee, then softly towards the rail. The headroom is that of a desk above its nominal level, so it is clean at
-	 * any usual level and saturates when the gain is pushed. The negative rail is a little lower than the positive
-	 * one, as in real op-amps, which adds even harmonics.
-	 */
-	static constexpr float OpAmpKnee = 8.f;		// +18 dBFS
-	static constexpr float OpAmpRail = 16.f;	// +24 dBFS
-	static constexpr float OpAmpNegativeRailRatio = 0.95f;
-	static auto opAmp(float sample) -> float;
-
-	/**
-	 * The tube's transfer function: a 12AX7 preamp stage, from the SPICE simulation sampled by Tim Goetze for CAPS,
-	 * with unity gain for small signals. It starts to clip at +12 dBFS, and colors a little below that.
-	 */
-	static auto tube(float sample) -> float;
 
 private:
 	/**
 	 * The gain stage, at 4 times the sample rate so that its harmonics do not alias:
+	 * - flat: nothing;
 	 * - op-amp: only the part the op-amp changes (its output minus its input, which is 0 below the knee) goes through
 	 *   the oversampling, then is added to the signal. Below the knee the signal is untouched, bit for bit. The
-	 *   op-amp's slew rate (1.7 V/us, the 4558's) limits very loud, very high frequencies, as in the real chip. Blocks
-	 *   far below the knee skip the oversampling.
+	 *   op-amp's slew rate limits very loud, very high frequencies, as in the real chip. Blocks far below the knee
+	 *   skip the oversampling.
 	 * - tube: the whole signal goes through the tube, then a DC blocker (its asymmetry adds an offset).
 	 */
 	void processDriveStage(std::span<SampleFrame> frames, sample_rate_t sampleRate);

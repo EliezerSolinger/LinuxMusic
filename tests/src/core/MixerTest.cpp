@@ -1784,24 +1784,73 @@ private slots:
 	void opAmpSaturatesOnlyAboveItsKnee()
 	{
 		using Strip = AnalogChannelStrip;
-		QCOMPARE(Strip::opAmp(1.5f), 1.5f);
-		QCOMPARE(Strip::opAmp(-7.f), -7.f);
-		const float pushed = Strip::opAmp(12.f);
-		QVERIFY(pushed > Strip::OpAmpKnee && pushed < 12.f);
-		QVERIFY(Strip::opAmp(100.f) <= Strip::OpAmpRail);
-		// The negative rail is a little lower: even harmonics
-		QVERIFY(-Strip::opAmp(-100.f) < Strip::opAmp(100.f));
+		using Drive = Strip::Drive;
+		for (const auto model : {Drive::OpAmp4558, Drive::OpAmp5532})
+		{
+			const auto spec = Strip::opAmpSpec(model);
+			QCOMPARE(Strip::opAmp(model, 1.5f), 1.5f);
+			QCOMPARE(Strip::opAmp(model, -7.f), -7.f);
+			const float pushed = Strip::opAmp(model, 14.f);
+			QVERIFY(pushed > spec.knee && pushed < 14.f);
+			QVERIFY(Strip::opAmp(model, 100.f) <= spec.rail);
+		}
+		// The 4558's negative rail is a little lower: even harmonics; the 5532's are symmetric
+		QVERIFY(-Strip::opAmp(Drive::OpAmp4558, -100.f) < Strip::opAmp(Drive::OpAmp4558, 100.f));
+		QCOMPARE(-Strip::opAmp(Drive::OpAmp5532, -100.f), Strip::opAmp(Drive::OpAmp5532, 100.f));
+		// The 5532 is cleaner: still linear where the 4558 saturates
+		QCOMPARE(Strip::opAmp(Drive::OpAmp5532, 10.f), 10.f);
+		QVERIFY(Strip::opAmp(Drive::OpAmp4558, 10.f) < 10.f);
 	}
 
-	void tubeIsUnityForSmallSignalsAndColorsLoudOnes()
+	void tubesAreUnityForSmallSignalsAndColorLoudOnes()
 	{
 		using Strip = AnalogChannelStrip;
-		QVERIFY(std::abs(Strip::tube(0.001f) - 0.001f) < 2e-5f);
-		QVERIFY(std::abs(Strip::tube(-0.001f) + 0.001f) < 2e-5f);
-		// Asymmetric (even harmonics), and limited when driven hard
-		QVERIFY(std::abs(Strip::tube(2.f) + Strip::tube(-2.f)) > 0.01f);
-		QVERIFY(std::abs(Strip::tube(40.f)) < 20.f);
-		QVERIFY(std::abs(Strip::tube(-40.f)) < 20.f);
+		using Drive = Strip::Drive;
+		auto loud = std::vector<float>{};
+		for (const auto model : {Drive::Tube12AX7, Drive::Tube12AX7Vintage, Drive::Tube12AX7Hot})
+		{
+			QVERIFY(std::abs(Strip::tube(model, 0.001f) - 0.001f) < 2e-5f);
+			QVERIFY(std::abs(Strip::tube(model, -0.001f) + 0.001f) < 2e-5f);
+			QCOMPARE(Strip::tube(model, 0.f), 0.f);
+			// Asymmetric (even harmonics), and limited when driven hard
+			QVERIFY(std::abs(Strip::tube(model, 2.f) + Strip::tube(model, -2.f)) > 0.01f);
+			QVERIFY(std::abs(Strip::tube(model, 40.f)) < 20.f);
+			QVERIFY(std::abs(Strip::tube(model, -40.f)) < 20.f);
+			loud.push_back(Strip::tube(model, 3.f));
+		}
+		// Three different characters
+		QVERIFY(loud[0] != loud[1] && loud[1] != loud[2] && loud[0] != loud[2]);
+	}
+
+	void gainStageModels()
+	{
+		using Drive = AnalogChannelStrip::Drive;
+		const auto channel = mixer()->createChannel();
+		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
+		settle();
+
+		// FLAT: clean even when pushed far beyond the op-amps' rails
+		strip.m_driveModel.setValue(static_cast<int>(Drive::Flat));
+		QVERIFY(std::abs(sineGain(channel, 1000.f, 20.f) - 1.f) < 0.001f);
+
+		// The tubes: unity for quiet signals, compressed when loud
+		for (const auto model : {Drive::Tube12AX7, Drive::Tube12AX7Vintage, Drive::Tube12AX7Hot})
+		{
+			strip.m_driveModel.setValue(static_cast<int>(model));
+			QVERIFY(std::abs(sineGain(channel, 1000.f, 0.01f) - 1.f) < 0.02f);
+			QVERIFY(sineGain(channel, 1000.f, 8.f) < 0.9f);
+		}
+
+		// Projects with the TUBE button of before get the 12AX7
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixerchannel");
+		auto old = doc.createElement("analogstrip");
+		old.setAttribute("tube", 1);
+		element.appendChild(old);
+		strip.loadSettings(element);
+		QCOMPARE(strip.m_driveModel.value(), static_cast<int>(Drive::Tube12AX7));
+		strip.setNeutral();
+		QCOMPARE(strip.m_driveModel.value(), static_cast<int>(Drive::OpAmp4558));
 	}
 
 	//! The magnitude of @p frequency in the left channel of @p out (Goertzel)
@@ -1857,7 +1906,7 @@ private slots:
 		const auto channel = mixer()->createChannel();
 		auto& strip = mixer()->mixerChannel(channel)->m_analogStrip;
 		settle();
-		strip.m_tubeModel.setValue(true);
+		strip.m_driveModel.setValue(static_cast<int>(AnalogChannelStrip::Drive::Tube12AX7));
 		// Unity for quiet signals, compressed when loud
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.01f) - 1.f) < 0.02f);
 		QVERIFY(sineGain(channel, 1000.f, 8.f) < 0.9f);
