@@ -1130,3 +1130,9 @@ dos projetos de antes.
 O SC4 (LADSPA) saía mudo desde a fase 3: o projeto tinha os pinos no formato antigo (um `pins` dentro de outro), que
 passou a ser lido como vazio. O efeito ficava sem entrada, dormia e zerava o canal. `AudioPortsModel::loadSettings`
 volta a ler esse formato (teste em `AudioPortsTest`).
+
+## Para depois (anotado pelo usuário)
+
+- **Inverter o knob de mono bass** (canal e master): hoje vai de 100% (desligado) a 0% (todo mono). Deve passar a
+  começar em 0% (desligado, padrão) e ir até 100% (100% mono). Projetos salvos convertem o valor (novo = 100 - antigo),
+  e a automação existente também precisa ser convertida.
