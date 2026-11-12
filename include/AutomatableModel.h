@@ -25,6 +25,7 @@
 #ifndef LMMS_AUTOMATABLE_MODEL_H
 #define LMMS_AUTOMATABLE_MODEL_H
 
+#include <atomic>
 #include <cmath>
 #include <QMap>
 #include <QMutex>
@@ -316,12 +317,12 @@ public:
 
 	static void incrementPeriodCounter()
 	{
-		++s_periodCounter;
+		s_periodCounter.fetch_add(1, std::memory_order_relaxed);
 	}
 
 	static void resetPeriodCounter()
 	{
-		s_periodCounter = 0;
+		s_periodCounter.store(0, std::memory_order_relaxed);
 	}
 
 	bool useControllerValue() const
@@ -427,7 +428,8 @@ private:
 
 	ValueBuffer m_valueBuffer;
 	long m_lastUpdatedPeriod;
-	static long s_periodCounter;
+	//! Counts the audio periods (written by the audio thread, read by any thread)
+	static std::atomic<long> s_periodCounter;
 
 	bool m_hasSampleExactData;
 

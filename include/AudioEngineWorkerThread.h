@@ -28,8 +28,8 @@
 #include <QThread>
 
 #include <atomic>
+#include <cstdint>
 
-class QWaitCondition;
 
 namespace lmms
 {
@@ -73,7 +73,7 @@ public:
 		std::atomic<ThreadableJob*> m_items[JOB_QUEUE_SIZE];
 		std::atomic_size_t m_writeIndex;
 		std::atomic_size_t m_itemsDone;
-		OperationMode m_opMode;
+		std::atomic<OperationMode> m_opMode;
 	} ;
 
 
@@ -113,10 +113,15 @@ private:
 	void run() override;
 
 	static JobQueue globalJobQueue;
-	static QWaitCondition * queueReadyWaitCond;
+
+	/**
+	 * Counts the batches of jobs handed to the workers: each worker waits for it to change (std::atomic::wait()),
+	 * so a batch started before a worker began waiting is never missed, and starting one takes no lock.
+	 */
+	static std::atomic<std::uint64_t> s_generation;
 	static QList<AudioEngineWorkerThread *> workerThreads;
 
-	volatile bool m_quit;
+	std::atomic<bool> m_quit;
 } ;
 
 } // namespace lmms

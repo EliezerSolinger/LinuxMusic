@@ -38,7 +38,7 @@
 namespace lmms
 {
 
-long AutomatableModel::s_periodCounter = 0;
+std::atomic<long> AutomatableModel::s_periodCounter = 0;
 
 
 
