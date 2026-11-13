@@ -280,7 +280,16 @@ void Song::processNextBuffer()
 	m_periodStartTick.store(static_cast<double>(timeline.ticks()) + timeline.frameOffset() / Engine::framesPerTick(),
 		std::memory_order_relaxed);
 
-	const auto framesPerTick = Engine::framesPerTick();
+	// The tempo map gives the tempo at each tick (in song mode): here for where the period starts, below at each
+	// tick it reaches
+	const auto followTempoMap = [this] {
+		if (m_playMode != PlayMode::Song || m_tempoMap.isEmpty()) { return; }
+		const auto bpm = static_cast<int>(std::lround(m_tempoMap.tempoAt(getPlayPos().getTicks())));
+		if (bpm != m_tempoModel.value()) { m_tempoModel.setValue(static_cast<float>(bpm), true); }
+	};
+	followTempoMap();
+
+	auto framesPerTick = Engine::framesPerTick();
 	const auto framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
 
 	f_cnt_t frameOffsetInPeriod = 0;
@@ -326,6 +335,13 @@ void Song::processNextBuffer()
 			{
 				m_vstSyncController.stopCycle();
 			}
+		}
+
+		// A tick starts: the tempo map's tempo there
+		if (static_cast<f_cnt_t>(frameOffsetInTick) == 0)
+		{
+			followTempoMap();
+			framesPerTick = Engine::framesPerTick();
 		}
 
 		const f_cnt_t framesUntilNextPeriod = framesPerPeriod - frameOffsetInPeriod;
@@ -1167,6 +1183,8 @@ void Song::clearProject()
 
 	Engine::audioEngine()->requestChangeInModel();
 
+	m_tempoMap.clear();
+
 	if( getGUI() != nullptr && getGUI()->patternEditor() )
 	{
 		getGUI()->patternEditor()->m_editor->clearAllTracks();
@@ -1440,6 +1458,10 @@ void Song::loadProject( const QString & fileName )
 			{
 				restoreKeymapStates(node.toElement());
 			}
+			else if (node.nodeName() == m_tempoMap.nodeName())
+			{
+				m_tempoMap.restoreState(node.toElement());
+			}
 			else if( getGUI() != nullptr )
 			{
 				if( node.nodeName() == getGUI()->getControllerRackView()->nodeName() )
@@ -1481,6 +1503,8 @@ void Song::loadProject( const QString & fileName )
 
 	// resolve all IDs so that autoModels are automated
 	AutomationClip::resolveAllIDs();
+	// An automation of the tempo (an older project's) becomes the tempo map's markers
+	if (m_tempoMap.isEmpty()) { m_tempoMap.takeOverAutomation(&m_tempoModel, m_tempoModel.value()); }
 	// Knobs whose meaning changed: their automation follows
 	Engine::mixer()->convertLegacyAutomation();
 
@@ -1562,6 +1586,7 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 		getTimeline(PlayMode::Song).saveState(dataFile, dataFile.content());
 	}
 
+	if (!m_tempoMap.isEmpty()) { m_tempoMap.saveState(dataFile, dataFile.content()); }
 	saveControllerStates( dataFile, dataFile.content() );
 
 	saveScaleStates(dataFile, dataFile.content());

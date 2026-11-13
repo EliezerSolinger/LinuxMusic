@@ -35,6 +35,7 @@
 #include "AudioEngine.h"
 #include "AudioRecorder.h"
 #include "MidiRecorder.h"
+#include "TempoMap.h"
 #include "Controller.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
@@ -352,6 +353,8 @@ public:
 
 	auto midiRecorder() -> MidiRecorder& { return m_midiRecorder; }
 
+	auto tempoMap() -> TempoMap& { return m_tempoMap; }
+
 	//! Any thread: the tick being heard now (the period being rendered, less the output's latency and the period
 	//! the engine hands the device ahead)
 	auto heardTick() const -> tick_t;
@@ -495,6 +498,7 @@ private:
 	//! Where the period being rendered starts, in ticks (written by the audio thread)
 	std::atomic<double> m_periodStartTick = 0;
 	MidiRecorder m_midiRecorder;
+	TempoMap m_tempoMap;
 	bar_t m_length;
 
 	const MidiClip* m_midiClipToPlay;
