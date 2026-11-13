@@ -5519,6 +5519,14 @@ Motivo: &quot;%2&quot;</translation>
         <source>The following errors occurred while loading: </source>
         <translation>Os seguintes erros ocorreram ao carregar:</translation>
     </message>
+    <message>
+        <source>Project files</source>
+        <translation>Arquivos do projeto</translation>
+    </message>
+    <message>
+        <source>Some of the files the project uses could not be kept in its folder:</source>
+        <translation>Alguns dos arquivos que o projeto usa não puderam ficar na pasta dele:</translation>
+    </message>
 </context>
 <context>
     <name>lmms::StereoEnhancerControls</name>
@@ -16703,6 +16711,21 @@ Latency: %2 ms</source>
     <message>
         <source>Mute the master</source>
         <translation>Silenciar o master</translation>
+    </message>
+</context>
+<context>
+    <name>ProjectMedia</name>
+    <message>
+        <source>Missing: %1</source>
+        <translation>Não encontrado: %1</translation>
+    </message>
+    <message>
+        <source>The folder %1 could not be created.</source>
+        <translation>Não foi possível criar a pasta %1.</translation>
+    </message>
+    <message>
+        <source>%1 could not be copied into %2.</source>
+        <translation>Não foi possível copiar %1 para %2.</translation>
     </message>
 </context>
 </TS>

@@ -65,7 +65,13 @@ static void findIds(const QDomElement& elem, QList<jo_id_t>& idList);
 // QMap with the DOM elements that access file resources
 const DataFile::ResourcesMap DataFile::ELEMENTS_WITH_RESOURCES = {
 { "sampleclip", {"src"} },
+{ "take", {"src"} }, // a clip's takes
+{ "original", {"src"} }, // a recording's original, of which the clip plays a rendering
 { "audiofileprocessor", {"src"} },
+{ "slicert", {"src"} },
+{ "sf2player", {"src"} },
+{ "gigplayer", {"src"} },
+{ "patman", {"src"} },
 };
 
 namespace
@@ -516,32 +522,19 @@ bool DataFile::hasLocalPlugins(QDomElement parent /* = QDomElement()*/, bool fir
 		QDomNode child = children.at(i);
 		QDomElement childElement = child.toElement();
 
-		bool skipNode = false;
-		// Skip the nodes allowed to have "local:" attributes, but
-		// still check its children
-		for (const auto& element : ELEMENTS_WITH_RESOURCES)
+		// Only the attributes that refer to resources (files of samples, takes, soundfonts...) may be "local:";
+		// any other one (a plugin's library above all) may not. The children are checked too.
+		const auto allowed = ELEMENTS_WITH_RESOURCES.find(childElement.tagName());
+		auto attributes = childElement.attributes();
+		for (int i = 0; i < attributes.size(); ++i)
 		{
-			if (childElement.tagName() == element.first)
+			QDomAttr attr = attributes.item(i).toAttr();
+			const bool resource = allowed != ELEMENTS_WITH_RESOURCES.end()
+				&& std::find(allowed->second.begin(), allowed->second.end(), attr.name()) != allowed->second.end();
+			if (!resource && attr.value().startsWith(PathUtil::basePrefix(PathUtil::Base::LocalDir),
+				Qt::CaseInsensitive))
 			{
-				skipNode = true;
-				break;
-			}
-		}
-
-		// Check if they have "local:" attribute (unless they are allowed to
-		// and skipNode is true)
-		if (!skipNode)
-		{
-			auto attributes = childElement.attributes();
-			for (int i = 0; i < attributes.size(); ++i)
-			{
-				QDomNode attribute = attributes.item(i);
-				QDomAttr attr = attribute.toAttr();
-				if (attr.value().startsWith(PathUtil::basePrefix(PathUtil::Base::LocalDir),
-					Qt::CaseInsensitive))
-				{
-					return true;
-				}
+				return true;
 			}
 		}
 

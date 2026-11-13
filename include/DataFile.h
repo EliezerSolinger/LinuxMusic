@@ -105,15 +105,16 @@ public:
 		return m_type;
 	}
 
+	//! The elements whose attributes refer to files (samples, takes, soundfonts...): the only attributes that may be
+	//! "local:" (relative to the project), copied into bundles and gathered with the project (see ProjectMedia)
+	using ResourcesMap = std::map<QString, std::vector<QString>>;
+	static const ResourcesMap ELEMENTS_WITH_RESOURCES;
+
 private:
 	static Type type( const QString& typeName );
 	static QString typeName( Type type );
 
 	void cleanMetaNodes( QDomElement de );
-
-	// Map with DOM elements that access resources (for making bundles)
-	using ResourcesMap = std::map<QString, std::vector<QString>>;
-	static const ResourcesMap ELEMENTS_WITH_RESOURCES;
 
 	void loadData( const QByteArray & _data, const QString & _sourceFile );
 

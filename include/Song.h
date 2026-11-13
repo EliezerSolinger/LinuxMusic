@@ -257,7 +257,11 @@ public:
 	void loadProject( const QString & filename );
 	bool guiSaveProject();
 	bool guiSaveProjectAs(const QString & filename);
-	bool saveProjectFile(const QString & filename, bool withResources = false);
+	/**
+	 * Saves the project to @p filename. With @p gatherMedia (a save of the project itself, not the autosave), the
+	 * files it uses are gathered into its folder first (see ProjectMedia)
+	 */
+	bool saveProjectFile(const QString & filename, bool withResources = false, bool gatherMedia = false);
 
 	const QString & projectFileName() const
 	{

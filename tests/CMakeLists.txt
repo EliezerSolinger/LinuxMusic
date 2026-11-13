@@ -13,6 +13,7 @@ set(LMMS_TESTS
 	src/core/MathTest.cpp
 	src/core/MixerTest.cpp
 	src/core/PluginEventTest.cpp
+	src/core/ProjectMediaTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RecordingTest.cpp
 	src/core/RelativePathsTest.cpp

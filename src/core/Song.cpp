@@ -55,6 +55,7 @@
 #include "PatternTrack.h"
 #include "PianoRoll.h"
 #include "ProjectJournal.h"
+#include "ProjectMedia.h"
 #include "ProjectNotes.h"
 #include "Scale.h"
 #include "SongEditor.h"
@@ -1652,7 +1653,7 @@ void Song::loadProject( const QString & fileName )
 
 
 // only save current song as filename and do nothing else
-bool Song::saveProjectFile(const QString & filename, bool withResources)
+bool Song::saveProjectFile(const QString & filename, bool withResources, bool gatherMedia)
 {
 	using gui::getGUI;
 
@@ -1691,6 +1692,20 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 
 	m_savingProject = false;
 
+	// The files the project uses, into its folder (a bundle copies them its own way)
+	if (gatherMedia && !withResources)
+	{
+		if (const auto problems = ProjectMedia::gather(dataFile, filename); !problems.isEmpty())
+		{
+			if (getGUI())
+			{
+				QMessageBox::warning(nullptr, tr("Project files"), tr("Some of the files the project uses could not "
+					"be kept in its folder:") + "\n\n" + problems.join('\n'));
+			}
+			else { QTextStream(stderr) << problems.join('\n') << Qt::endl; }
+		}
+	}
+
 	bool writeStatus = dataFile.writeFile(filename, withResources);
 
 	// revert to a randomized global seed for Qt
@@ -1722,7 +1737,7 @@ bool Song::guiSaveProjectAs(const QString & filename)
 
 	bool withResources = m_saveOptions.saveAsProjectBundle.value();
 
-	bool const saveResult = saveProjectFile(fileNameWithExtension, withResources);
+	bool const saveResult = saveProjectFile(fileNameWithExtension, withResources, true);
 
 	// After saving, restore default save options.
 	m_saveOptions.setDefaultOptions();
