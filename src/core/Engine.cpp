@@ -104,6 +104,9 @@ void Engine::destroy()
 
 	s_song->clearProject();
 
+	// The metronome's bus belongs to the audio engine, which goes first
+	s_song->metronome().release();
+
 	deleteHelper( &s_patternStore );
 
 	deleteHelper( &s_mixer );

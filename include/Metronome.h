@@ -51,6 +51,9 @@ public:
 	 */
 	void prepare();
 
+	//! Main thread, with the audio engine stopped: frees the clicks and the bus (before the engine goes)
+	void release();
+
 	//! Audio thread: clicks on the beats while active, or while @p force (e.g. a count-in)
 	void processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force = false);
 

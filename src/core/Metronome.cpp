@@ -61,6 +61,17 @@ void Metronome::prepare()
 
 
 
+void Metronome::release()
+{
+	m_prepared = false;
+	m_bus.reset();
+	m_strongClick.reset();
+	m_weakClick.reset();
+}
+
+
+
+
 void Metronome::processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force)
 {
 	const auto ticksPerBeat = ticksPerBar / beatsPerBar;
