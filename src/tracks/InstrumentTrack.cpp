@@ -64,6 +64,8 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	m_pitchModel(0, MinPitchDefault, MaxPitchDefault, 1, this, tr("Pitch")),
 	m_pitchRangeModel(1, 1, 60, this, tr("Pitch range")),
 	m_useMasterPitchModel(true, this, tr("Master pitch")),
+	m_recordArmModel(false, this, tr("Record arm")),
+	m_midiRecordModeModel(0, 0, 1, this, tr("MIDI record mode")),
 	m_instrumentChannels(Engine::audioEngine()->framesPerPeriod(), DEFAULT_CHANNELS),
 	m_soundShaping(this),
 	m_arpeggio(this),
@@ -195,6 +197,8 @@ float InstrumentTrack::baseFreq() const
 
 InstrumentTrack::~InstrumentTrack()
 {
+	if (auto song = Engine::getSong()) { song->midiRecorder().forget(this); }
+
 	// De-assign midi device
 	if (s_autoAssignedTrack == this)
 	{
@@ -336,6 +340,17 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 				// play a note only if it is not already playing and if it is within configured bounds
 				if (m_notes[event.key()] == nullptr && event.key() >= firstKey() && event.key() <= lastKey())
 				{
+					// Recording: the note goes to the timeline where it was heard (see MidiRecorder)
+					if (m_recordingMidi)
+					{
+						const auto key = event.key();
+						const auto volume = event.volume(midiPort()->baseVelocity());
+						const auto tick = Engine::getSong()->heardTick();
+						QMetaObject::invokeMethod(Engine::getSong(), [this, key, volume, tick] {
+							Engine::getSong()->midiRecorder().noteOn(this, key, volume, tick);
+						}, Qt::QueuedConnection);
+					}
+
 					NotePlayHandle* nph =
 						NotePlayHandleManager::acquire(
 								this, offset,
@@ -355,6 +370,14 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 			}
 
 		case MidiNoteOff:
+			if (m_recordingMidi)
+			{
+				const auto key = event.key();
+				const auto tick = Engine::getSong()->heardTick();
+				QMetaObject::invokeMethod(Engine::getSong(), [this, key, tick] {
+					Engine::getSong()->midiRecorder().noteOff(this, key, tick);
+				}, Qt::QueuedConnection);
+			}
 			if( m_notes[event.key()] != nullptr )
 			{
 				// do actual note off and remove internal reference to NotePlayHandle (which itself will
@@ -911,6 +934,11 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	m_firstKeyModel.saveSettings(doc, thisElement, "firstkey");
 	m_lastKeyModel.saveSettings(doc, thisElement, "lastkey");
 	m_useMasterPitchModel.saveSettings( doc, thisElement, "usemasterpitch");
+	if (!presetMode)
+	{
+		m_recordArmModel.saveSettings(doc, thisElement, "recordarm");
+		m_midiRecordModeModel.saveSettings(doc, thisElement, "midirecordmode");
+	}
 	m_microtuner.saveSettings(doc, thisElement);
 
 	// Save MIDI CC stuff
@@ -982,6 +1010,11 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 		m_mixerChannelModel.loadSettings( thisElement, "mixch" );
 	}
 	m_baseNoteModel.loadSettings( thisElement, "basenote" );
+	if (!m_previewMode)
+	{
+		m_recordArmModel.loadSettings(thisElement, "recordarm");
+		m_midiRecordModeModel.loadSettings(thisElement, "midirecordmode");
+	}
 	m_firstKeyModel.loadSettings(thisElement, "firstkey");
 	m_lastKeyModel.loadSettings(thisElement, "lastkey");
 	m_useMasterPitchModel.loadSettings( thisElement, "usemasterpitch");

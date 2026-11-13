@@ -277,7 +277,8 @@ void Song::processNextBuffer()
 	if (loopEnabled) { enforceLoop(timeline.loopBegin(), timeline.loopEnd()); }
 
 	// Where the period starts, for the recording (see AudioRecorder)
-	m_periodStartFrame = static_cast<double>(timeline.ticks()) * Engine::framesPerTick() + timeline.frameOffset();
+	m_periodStartFrame.store(static_cast<double>(timeline.ticks()) * Engine::framesPerTick() + timeline.frameOffset(),
+		std::memory_order_relaxed);
 
 	const auto framesPerTick = Engine::framesPerTick();
 	const auto framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
@@ -364,7 +365,8 @@ void Song::processNextBuffer()
 	// The armed tracks' input of this period goes to their takes
 	if (m_playMode == PlayMode::Song)
 	{
-		m_audioRecorder.process(Engine::audioEngine()->capture(), m_periodStartFrame, Engine::framesPerTick());
+		m_audioRecorder.process(Engine::audioEngine()->capture(), m_periodStartFrame.load(std::memory_order_relaxed),
+			Engine::framesPerTick());
 	}
 
 }
@@ -665,6 +667,9 @@ void Song::stop()
 
 	using gui::TimeLineWidget;
 
+	// Where the recording of notes ends: what was heard last, before the play head moves
+	const auto recordingEnd = heardTick();
+
 	// To avoid race conditions with the processing threads
 	Engine::audioEngine()->requestChangeInModel();
 
@@ -726,6 +731,7 @@ void Song::stop()
 
 	Engine::audioEngine()->doneChangeInModel();
 
+	finishMidiRecording(recordingEnd);
 	if (!takes.empty()) { finishAudioRecording(takes); }
 
 	emit stopped();
@@ -779,9 +785,21 @@ auto Song::recordingLatency() const -> f_cnt_t
 
 
 
-auto Song::recordAudio() -> bool
+auto Song::heardTick() const -> tick_t
 {
-	if (m_exporting || isRecordingAudio()) { return false; }
+	const auto* engine = Engine::audioEngine();
+	const auto* device = engine->audioDev();
+	const auto ahead = static_cast<double>(engine->framesPerPeriod()) + (device ? device->outputLatency() : 0);
+	const auto frame = m_periodStartFrame.load(std::memory_order_relaxed) - ahead;
+	return std::max<tick_t>(0, static_cast<tick_t>(std::floor(frame / Engine::framesPerTick())));
+}
+
+
+
+
+auto Song::record() -> bool
+{
+	if (m_exporting || m_recording) { return false; }
 
 	const auto* device = Engine::audioEngine()->audioDev();
 	const auto deviceInputs = device ? static_cast<int>(device->inputChannels()) : 0;
@@ -821,15 +839,23 @@ auto Song::recordAudio() -> bool
 		requests.push_back({sampleTrack, input, path});
 	}
 
-	if (requests.empty())
+	// The armed instrument tracks record the notes played into them
+	auto midiTracks = std::vector<InstrumentTrack*>{};
+	for (auto* track : tracks())
 	{
-		if (problems.isEmpty()) { problems << tr("No sample track is armed for recording."); }
+		auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(track);
+		if (instrumentTrack && instrumentTrack->isRecordArmed()) { midiTracks.push_back(instrumentTrack); }
+	}
+
+	if (requests.empty() && midiTracks.empty())
+	{
+		if (problems.isEmpty()) { problems << tr("No track is armed for recording."); }
 		emit recordingProblem(problems.join('\n'));
 		return false;
 	}
 
 	// The input must be open before the first period is recorded (an armed track has opened it already)
-	Engine::audioEngine()->setCaptureEnabled(true);
+	if (!requests.empty()) { Engine::audioEngine()->setCaptureEnabled(true); }
 
 	// Playing the song, recording starts here and now (punch in); otherwise the song starts from the cursor, after
 	// the pre-roll (with the count-in's clicks, if asked for)
@@ -849,13 +875,21 @@ auto Song::recordAudio() -> bool
 		playSong();
 		getTimeline(PlayMode::Song).setPlayStartPosition(TimePos{cursor}); // stopping goes back to the cursor
 	}
-	const auto error = m_audioRecorder.start(requests, recordingLatency(), Engine::audioEngine()->framesPerPeriod(),
-		Engine::audioEngine()->outputSampleRate(), fromTick);
-	if (!error.isEmpty())
+	if (!requests.empty())
 	{
-		if (!punchIn) { stop(); }
-		emit recordingProblem(error);
-		return false;
+		const auto error = m_audioRecorder.start(requests, recordingLatency(),
+			Engine::audioEngine()->framesPerPeriod(), Engine::audioEngine()->outputSampleRate(), fromTick);
+		if (!error.isEmpty())
+		{
+			if (!punchIn) { stop(); }
+			emit recordingProblem(error);
+			return false;
+		}
+	}
+	if (!midiTracks.empty())
+	{
+		m_midiRecorder.start(midiTracks, punchIn ? heardTick() : fromTick);
+		for (auto* track : midiTracks) { track->setRecordingMidi(true); }
 	}
 	m_recording = true;
 	if (!problems.isEmpty()) { emit recordingProblem(problems.join('\n')); }
@@ -866,17 +900,32 @@ auto Song::recordAudio() -> bool
 
 
 
-void Song::stopAudioRecording()
+void Song::stopRecording()
 {
-	if (!isRecordingAudio()) { return; }
+	if (!m_recording) { return; }
 	auto takes = std::vector<AudioRecorder::Take>{};
 	{
 		// The recording ends with the period being rendered; the song plays on
 		const auto guard = Engine::audioEngine()->requestChangesGuard();
 		takes = m_audioRecorder.stop();
 	}
+	finishMidiRecording(heardTick());
 	finishAudioRecording(takes);
 	emit playbackStateChanged();
+}
+
+
+
+
+void Song::finishMidiRecording(tick_t atTick)
+{
+	if (!m_midiRecorder.isRecording()) { return; }
+	for (auto* track : tracks())
+	{
+		if (auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(track)) { instrumentTrack->setRecordingMidi(false); }
+	}
+	m_midiRecorder.stop(atTick);
+	setModified();
 }
 
 

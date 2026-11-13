@@ -262,6 +262,17 @@ public:
 		return &m_useMasterPitchModel;
 	}
 
+	/**
+	 * MIDI recording on the timeline (see MidiRecorder): an armed track records the notes played into it while the
+	 * song records, in its record mode (a MidiRecorder::Mode).
+	 */
+	BoolModel* recordArmModel() { return &m_recordArmModel; }
+	auto isRecordArmed() const -> bool { return m_recordArmModel.value(); }
+	IntModel* midiRecordModeModel() { return &m_midiRecordModeModel; }
+
+	//! Main thread: whether the notes played into the track go to the song's MIDI recording
+	void setRecordingMidi(bool recording) { m_recordingMidi = recording; }
+
 	void setPreviewMode( const bool );
 
 	bool isPreviewMode() const
@@ -342,6 +353,9 @@ private:
 	IntModel m_pitchRangeModel;
 	MixerChannelLcdModel m_mixerChannelModel;
 	BoolModel m_useMasterPitchModel;
+	BoolModel m_recordArmModel;
+	IntModel m_midiRecordModeModel;
+	std::atomic<bool> m_recordingMidi = false; //!< read by the MIDI thread
 
 	std::unique_ptr<PluginInstance> m_instrument;
 

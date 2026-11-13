@@ -37,6 +37,7 @@
 #include "embed.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "InstrumentTrack.h"
 #include "LcdSpinBox.h"
 #include "MainWindow.h"
 #include "MeterDialog.h"
@@ -163,8 +164,8 @@ TransportBar::TransportBar(QWidget* parent)
 
 	// Play, record, record while playing, stop
 	m_playButton = addButton("play", tr("Play/pause (Space)"));
-	m_recordButton = addButton("record", tr("Record the armed tracks' audio input (with no track armed: "
-		"record MIDI into the clip open in the Piano Roll)"));
+	m_recordButton = addButton("record", tr("Record the armed tracks: audio into sample tracks, notes into "
+		"instrument tracks (with no track armed: record MIDI into the clip open in the Piano Roll)"));
 	m_recordButton->setCheckable(true);
 
 	// The recording's pre-roll and count-in, in the button's menu
@@ -285,18 +286,19 @@ void TransportBar::record()
 	const auto song = Engine::getSong();
 
 	// While recording, the button ends the recording and the song plays on (punch out)
-	if (song->isRecordingAudio())
+	if (song->isRecording())
 	{
-		song->stopAudioRecording();
+		song->stopRecording();
 		return;
 	}
 
 	const auto& tracks = song->tracks();
 	const bool armed = std::any_of(tracks.begin(), tracks.end(), [](const Track* track) {
 		const auto sampleTrack = dynamic_cast<const SampleTrack*>(track);
-		return sampleTrack && sampleTrack->isRecordArmed();
+		const auto instrumentTrack = dynamic_cast<const InstrumentTrack*>(track);
+		return (sampleTrack && sampleTrack->isRecordArmed()) || (instrumentTrack && instrumentTrack->isRecordArmed());
 	});
-	if (armed) { song->recordAudio(); }
+	if (armed) { song->record(); }
 	else { getGUI()->pianoRoll()->recordAction()->trigger(); }
 	updateState();
 }
@@ -317,7 +319,7 @@ void TransportBar::updateState()
 	const auto song = Engine::getSong();
 	const bool playing = song->isPlaying() && !song->isPaused();
 	m_playButton->setIcon(embed::getIconPixmap(playing ? "pause" : "play"));
-	m_recordButton->setChecked(song->isRecordingAudio());
+	m_recordButton->setChecked(song->isRecording());
 
 	// Follow what is playing, e.g. when playback was started from the Pattern Editor
 	if (song->isPlaying())

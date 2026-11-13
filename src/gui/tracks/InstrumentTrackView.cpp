@@ -32,12 +32,14 @@
 #include <QHBoxLayout>
 #include <QMdiArea>
 #include <QMdiSubWindow>
+#include <QActionGroup>
 #include <QMenu>
 #include <QSpacerItem>
 #include <QVBoxLayout>
 
 #include "AudioEngine.h"
 #include "AudioPortsModel.h"
+#include "AutomatableButton.h"
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "FadeButton.h"
@@ -50,6 +52,7 @@
 #include "MidiClient.h"
 #include "MidiCCRackView.h"
 #include "MidiPortMenu.h"
+#include "MidiRecorder.h"
 #include "TrackChannelControls.h"
 #include "TrackContainerView.h"
 #include "Mixer.h"
@@ -150,6 +153,32 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	m_activityIndicator->setFixedSize(8, 28);
 	m_activityIndicator->show();
 
+	// Recording: R arms the track for the notes played into it; its menu chooses overdub or replace
+	m_recordArmButton = new AutomatableButton(getTrackSettingsWidget(), tr("Record arm"));
+	m_recordArmButton->setCheckable(true);
+	m_recordArmButton->setObjectName("btn-arm");
+	m_recordArmButton->setText(tr("R"));
+	m_recordArmButton->setToolTip(tr("Arm for recording: the Record button records the notes played into this track "
+		"(right-click: overdub or replace)"));
+	m_recordArmButton->setModel(_it->recordArmModel());
+	m_recordArmButton->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(m_recordArmButton, &QWidget::customContextMenuRequested, this, [this](const QPoint& where) {
+		auto* track = model();
+		auto menu = QMenu{};
+		auto* modes = new QActionGroup(&menu);
+		const auto addMode = [&](const QString& label, MidiRecorder::Mode mode) {
+			auto* action = menu.addAction(label, [track, mode] {
+				track->midiRecordModeModel()->setValue(static_cast<int>(mode));
+			});
+			action->setCheckable(true);
+			action->setChecked(track->midiRecordModeModel()->value() == static_cast<int>(mode));
+			modes->addAction(action);
+		};
+		addMode(tr("Overdub: the notes join what is there"), MidiRecorder::Mode::Overdub);
+		addMode(tr("Replace: what was there where you record goes"), MidiRecorder::Mode::Replace);
+		menu.exec(m_recordArmButton->mapToGlobal(where));
+	});
+
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
 	auto layout = new QHBoxLayout();
@@ -158,6 +187,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	layout->addWidget(m_tlb);
 	layout->addWidget(m_mixerChannelNumber);
 	layout->addWidget(m_activityIndicator);
+	layout->addWidget(m_recordArmButton);
 	layout->addWidget(m_volumeKnob);
 	layout->addWidget(m_panningKnob);
 	layout->addSpacing(4);

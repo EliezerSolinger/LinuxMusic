@@ -33,6 +33,9 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AudioRecorder.h"
+#include "InstrumentTrack.h"
+#include "MidiClip.h"
+#include "MidiRecorder.h"
 #include "ConfigManager.h"
 #include "PathUtil.h"
 #include "Engine.h"
@@ -186,7 +189,7 @@ private:
 		song->setPlayPos(startTick, Song::PlayMode::Song);
 		auto problem = QString{};
 		const auto connection = connect(song, &Song::recordingProblem, this, [&](const QString& m) { problem = m; });
-		const bool recording = song->recordAudio();
+		const bool recording = song->record();
 		disconnect(connection);
 		if (!recording)
 		{
@@ -299,9 +302,9 @@ private slots:
 		song->setPlayPos(0, Song::PlayMode::Song);
 		song->playSong();
 		for (int callback = 0; callback < callbacksUntil(192 * framesPerTick); ++callback) { device->callback(256); }
-		QVERIFY(song->recordAudio());
+		QVERIFY(song->record());
 		for (int callback = 0; callback < callbacksUntil(2 * 192 * framesPerTick) + 20; ++callback) { device->callback(256); }
-		song->stopAudioRecording();
+		song->stopRecording();
 		QVERIFY(!song->isRecordingAudio());
 		QVERIFY(song->isPlaying());
 		song->stop();
@@ -346,7 +349,7 @@ private slots:
 		// From the cursor at bar 3, the song plays from bar 2 and the take starts at bar 3
 		const auto cursor = 2 * TimePos::ticksPerBar();
 		song->setPlayPos(cursor, Song::PlayMode::Song);
-		QVERIFY(song->recordAudio());
+		QVERIFY(song->record());
 		QCOMPARE(song->getPlayPos(Song::PlayMode::Song).getTicks(), cursor - TimePos::ticksPerBar());
 		for (int callback = 0; callback < 600; ++callback) { device->callback(256); }
 		song->stop();
@@ -391,7 +394,7 @@ private slots:
 		// From the loop's start, three passes and a half
 		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
 		song->setPlayPos(bar, Song::PlayMode::Song);
-		QVERIFY(song->recordAudio());
+		QVERIFY(song->record());
 		const auto passFrames = 2 * bar * framesPerTick;
 		for (double played = 0; played < 3.5 * passFrames; played += 256) { device->callback(256); }
 		song->stop();
@@ -463,6 +466,74 @@ private slots:
 		QCOMPARE(PathUtil::toAbsolute(clip->sampleFile()), second);
 	}
 
+	void notesPlayedIntoAnArmedTrackLandInItsClips_data()
+	{
+		QTest::addColumn<int>("mode");
+		QTest::newRow("overdub") << static_cast<int>(MidiRecorder::Mode::Overdub);
+		QTest::newRow("replace") << static_cast<int>(MidiRecorder::Mode::Replace);
+	}
+
+	void notesPlayedIntoAnArmedTrackLandInItsClips()
+	{
+		QFETCH(int, mode);
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256, 256};
+		engine->setAudioDevice(device, false);
+		const auto bar = TimePos::ticksPerBar();
+
+		auto* empty = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		auto* busy = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		const auto cleanUp = qScopeGuard([&] {
+			song->stop();
+			const auto guard = engine->requestChangesGuard();
+			delete empty;
+			delete busy;
+		});
+		for (auto* track : {empty, busy})
+		{
+			track->recordArmModel()->setValue(true);
+			track->midiRecordModeModel()->setValue(mode);
+		}
+
+		// The busy track has a clip over bars 1 and 2 with a note in bar 2
+		auto* existing = dynamic_cast<MidiClip*>(busy->createClip(TimePos{0}));
+		existing->addNote(Note{TimePos{24}, TimePos{bar + 10}}, false);
+
+		song->setPlayPos(0, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		QVERIFY(song->isRecording());
+
+		// A note in bar 3 into the empty track, one in bar 2 into the busy one
+		auto& recorder = song->midiRecorder();
+		recorder.noteOn(empty, 60, 100, 2 * bar + 8);
+		recorder.noteOff(empty, 60, 2 * bar + 104);
+		recorder.noteOn(busy, 64, 90, bar + 50);
+		recorder.noteOff(busy, 64, bar + 74);
+
+		// Play on past bar 3, then stop
+		for (int callback = 0; callback < 1000; ++callback) { device->callback(256); }
+		QVERIFY(song->heardTick() > 3 * bar);
+		song->stop();
+		QVERIFY(!song->isRecording());
+
+		// The empty track has a new clip from bar 3, with the note where it was played
+		QCOMPARE(empty->numOfClips(), 1);
+		const auto* clip = dynamic_cast<MidiClip*>(empty->getClip(0));
+		QCOMPARE(clip->startPosition().getTicks(), 2 * bar);
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		QCOMPARE(clip->notes()[0]->pos().getTicks(), 8);
+		QCOMPARE(clip->notes()[0]->length().getTicks(), 96);
+		QCOMPARE(clip->notes()[0]->key(), 60);
+
+		// The busy track's clip took the note; replacing, its old note in the recorded stretch went
+		QCOMPARE(busy->numOfClips(), 1);
+		QCOMPARE(existing->notes().size(), std::size_t{mode == static_cast<int>(MidiRecorder::Mode::Replace) ? 1u : 2u});
+		const bool hasNew = std::any_of(existing->notes().begin(), existing->notes().end(),
+			[bar](const Note* note) { return note->pos().getTicks() == bar + 50 && note->key() == 64; });
+		QVERIFY(hasNew);
+	}
+
 	void monitoringPlaysTheInputThroughTheTrack_data()
 	{
 		QTest::addColumn<int>("mode");
@@ -523,7 +594,7 @@ private slots:
 		auto problem = QString{};
 		auto* song = Engine::getSong();
 		const auto connection = connect(song, &Song::recordingProblem, this, [&](const QString& m) { problem = m; });
-		QVERIFY(!song->recordAudio());
+		QVERIFY(!song->record());
 		QVERIFY(!problem.isEmpty());
 		QVERIFY(!song->isRecordingAudio());
 		disconnect(connection);

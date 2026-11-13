@@ -38,6 +38,7 @@ set(LMMS_SRCS
 	core/DeskTolerance.cpp
 	core/MasterSection.cpp
 	core/MonoBass.cpp
+	core/MidiRecorder.cpp
 	core/Mixer.cpp
 	core/ImportFilter.cpp
 	core/InlineAutomation.cpp

@@ -118,6 +118,7 @@ private:
 	Knob * m_panningKnob;
 	TrackChannelControls* m_channelControls = nullptr;
 	FadeButton * m_activityIndicator;
+	AutomatableButton* m_recordArmButton;
 
 	QMenu * m_midiMenu;
 

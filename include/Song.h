@@ -34,6 +34,7 @@
 
 #include "AudioEngine.h"
 #include "AudioRecorder.h"
+#include "MidiRecorder.h"
 #include "Controller.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
@@ -336,17 +337,24 @@ public:
 	void removeOldAutomatedValue(AutomatableModel* am);
 
 	/**
-	 * Audio recording (docs/plano-gravacao.md, "Gravação"): starts playing the song and recording the input of the
-	 * armed sample tracks. On stop, each take becomes a clip on its track, in one undo step.
+	 * Recording (docs/plano-gravacao.md, "Gravação"): starts playing the song and recording the armed tracks: the
+	 * audio input of the sample tracks, the notes played into the instrument tracks. While the song plays, recording
+	 * starts there and then (punch in). On stop, each take becomes a clip on its track.
 	 * @returns false, with recordingProblem() emitted, if nothing could be recorded (e.g. no armed track)
 	 */
-	auto recordAudio() -> bool;
+	auto record() -> bool;
 
 	//! @returns whether audio is being recorded
 	auto isRecordingAudio() const -> bool { return m_audioRecorder.isRecording(); }
 
 	//! Ends the recording (punch out) while the song plays on; the takes become clips
-	void stopAudioRecording();
+	void stopRecording();
+
+	auto midiRecorder() -> MidiRecorder& { return m_midiRecorder; }
+
+	//! Any thread: the tick being heard now (the period being rendered, less the output's latency and the period
+	//! the engine hands the device ahead)
+	auto heardTick() const -> tick_t;
 
 	//! @returns the folder where recordings of this project go: "<project>_media" next to the project file, or a
 	//! folder of the working directory while the project has no file
@@ -401,6 +409,9 @@ private slots:
 private:
 	//! Makes clips of the takes just recorded
 	void finishAudioRecording(const std::vector<AudioRecorder::Take>& takes);
+
+	//! Ends the recording of notes at @p atTick
+	void finishMidiRecording(tick_t atTick);
 
 	Song();
 	Song( const Song & );
@@ -481,7 +492,9 @@ private:
 	AudioRecorder m_audioRecorder;
 	bool m_captureUpdatePending = false;
 	std::atomic<tick_t> m_countInUntilTick = -1; //!< the metronome clicks before this tick (a recording's count-in)
-	double m_periodStartFrame = 0; //!< the song frame where the period being rendered starts (audio thread)
+	//! The song frame where the period being rendered starts (written by the audio thread)
+	std::atomic<double> m_periodStartFrame = 0;
+	MidiRecorder m_midiRecorder;
 	bar_t m_length;
 
 	const MidiClip* m_midiClipToPlay;
