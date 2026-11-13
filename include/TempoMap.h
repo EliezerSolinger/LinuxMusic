@@ -23,6 +23,7 @@
 #ifndef LMMS_TEMPO_MAP_H
 #define LMMS_TEMPO_MAP_H
 
+#include <optional>
 #include <vector>
 
 #include <QString>
@@ -46,6 +47,10 @@ class AutomatableModel;
  * While the song plays, the tempo the map gives at each tick becomes the song's (Song::processNextBuffer()), the
  * same way an automation of the tempo did; the engine's tempo is whole BPM, so a ramp goes by steps of one.
  *
+ * A marker may also change the time signature: a bar starts there, in the new one (a bar the change cuts short ends
+ * there). The time signature at the start is the song's (Song::getTimeSigModel()). The tick stays 1/192 of a whole
+ * note in every time signature: only where the bars are changes (barAt(), barStart()).
+ *
  * Changes are made on the main thread under the audio engine's change lock, which the audio thread holds while it
  * reads the markers.
  */
@@ -53,16 +58,65 @@ class LMMS_EXPORT TempoMap : public QObject, public SerializingObject
 {
 	Q_OBJECT
 public:
+	//! A time signature: @p numerator beats of a 1/@p denominator note to the bar
+	struct Meter
+	{
+		int numerator = 4;
+		int denominator = 4;
+		auto ticksPerBar() const -> tick_t;
+		auto ticksPerBeat() const -> tick_t;
+		auto operator==(const Meter&) const -> bool = default;
+	};
+
 	struct Marker
 	{
 		tick_t tick = 0;
 		double bpm = 120;
 		bool ramp = false; //!< the tempo goes from this marker's to the next one's
+		//! The time signature from here on (a bar starts here); none: the one before goes on. Not at the song's
+		//! start, where it is the song's.
+		std::optional<Meter> meter = std::nullopt;
 		auto operator==(const Marker&) const -> bool = default;
 	};
 
+	//! The bar a tick is in
+	struct Bar
+	{
+		int index = 0; //!< from 0
+		tick_t start = 0;
+		Meter meter;
+		//! Its length (the last one before a change of the time signature may be cut short)
+		tick_t length = 0;
+	};
+
+	//! The time signatures a numerator and a denominator may have
+	static constexpr int MaxNumerator = 32;
+	static auto isValid(const Meter& meter) -> bool;
+
+	TempoMap();
+
 	auto markers() const -> const std::vector<Marker>& { return m_markers; }
 	auto isEmpty() const -> bool { return m_markers.empty(); }
+
+	//! The time signature at the song's start (the song's) [main thread]
+	void setStartMeter(const Meter& meter);
+	auto startMeter() const -> const Meter& { return m_startMeter; }
+	//! Whether a marker changes the time signature
+	auto hasMeterChanges() const -> bool { return m_segments.size() > 1; }
+	auto meterAt(tick_t tick) const -> Meter;
+	//! The bar @p tick is in
+	auto barAt(tick_t tick) const -> Bar;
+	//! Where bar @p index (from 0) starts
+	auto barStart(int index) const -> tick_t;
+	//! Calls @p visit(bar) for each bar from the one @p from is in until @p to
+	template<typename Visit>
+	void forEachBar(tick_t from, tick_t to, Visit&& visit) const
+	{
+		for (auto bar = barAt(std::max(from, tick_t{0})); bar.start < to; bar = barAt(bar.start + bar.length))
+		{
+			visit(bar);
+		}
+	}
 
 	//! @returns the tempo at @p tick (the first marker's before it)
 	auto tempoAt(double tick) const -> double;
@@ -79,6 +133,11 @@ public:
 	//! Adds a marker, or replaces the one at its tick. The first marker added also gets one at the song's start,
 	//! with @p startBpm, so that the map says what the tempo is everywhere.
 	void setMarker(const Marker& marker, double startBpm);
+	/**
+	 * Changes the time signature from @p tick on (none: the one before goes on there). A marker made for it keeps
+	 * the tempo as it was (in a ramp, the ramp's tempo there, ramping on). At the song's start it is the song's.
+	 */
+	void setMeter(tick_t tick, std::optional<Meter> meter, double startBpm);
 	void removeMarker(tick_t tick);
 	//! Moves the marker at @p from to @p to (the one at the song's start stays there)
 	void moveMarker(tick_t from, tick_t to);
@@ -103,8 +162,22 @@ signals:
 
 private:
 	void sort();
+	//! The markers in order, one on each tick, without a time signature at the start or a wrong one [change lock]
+	void tidy();
+	//! The bars, from the markers' time signatures [change lock]
+	void updateSegments();
+
+	//! A stretch of bars in one time signature
+	struct Segment
+	{
+		tick_t start;
+		int firstBar;
+		Meter meter;
+	};
 
 	std::vector<Marker> m_markers;
+	Meter m_startMeter;
+	std::vector<Segment> m_segments;
 };
 
 } // namespace lmms

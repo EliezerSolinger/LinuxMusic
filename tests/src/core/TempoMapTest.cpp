@@ -22,6 +22,7 @@
 
 #include <QDomDocument>
 #include <QObject>
+#include <QScopeGuard>
 #include <QtTest>
 
 #include "AudioEngine.h"
@@ -218,6 +219,108 @@ private slots:
 		QVERIFY(map.markers().empty());
 		journal->redo();
 		QCOMPARE(map.markers().back().bpm, 90.0);
+	}
+
+	//! Without changes of the time signature, the bars are the song's, as before
+	void barsInTheSongsTimeSignature()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		const auto& map = song->tempoMap();
+		QVERIFY(!map.hasMeterChanges());
+		QCOMPARE(map.barAt(0).index, 0);
+		QCOMPARE(map.barAt(191).index, 0);
+		QCOMPARE(map.barAt(192).index, 1);
+		QCOMPARE(map.barAt(1000).start, 5 * 192);
+		QCOMPARE(map.barStart(7), 7 * 192);
+
+		// The song's time signature is the one at the start
+		song->getTimeSigModel().setNumerator(3);
+		const auto restore = qScopeGuard([&] { song->getTimeSigModel().setNumerator(4); });
+		QCOMPARE(map.startMeter(), (TempoMap::Meter{3, 4}));
+		QCOMPARE(map.barAt(144).index, 1);
+		QCOMPARE(map.barStart(2), 288);
+		QCOMPARE(map.barAt(150).length, 144);
+	}
+
+	//! A change of the time signature starts a bar; one it cuts short ends there
+	void aTimeSignatureChangeStartsABar()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto& map = song->tempoMap();
+		// 4/4 for two bars, then 3/4
+		map.setMeter(2 * 192, TempoMap::Meter{3, 4}, song->getTempo());
+		QVERIFY(map.hasMeterChanges());
+		QCOMPARE(map.barAt(383).index, 1);
+		QCOMPARE(map.barAt(383).length, 192);
+		const auto third = map.barAt(384);
+		QCOMPARE(third.index, 2);
+		QCOMPARE(third.start, 384);
+		QCOMPARE(third.length, 144);
+		QCOMPARE(third.meter, (TempoMap::Meter{3, 4}));
+		QCOMPARE(map.barAt(384 + 144).index, 3);
+		QCOMPARE(map.barStart(3), 384 + 144);
+		QCOMPARE(map.barStart(1), 192);
+		QCOMPARE(map.meterAt(100), (TempoMap::Meter{4, 4}));
+
+		// In the middle of a bar: that bar ends there
+		map.setMeter(300, TempoMap::Meter{6, 8}, song->getTempo());
+		const auto cut = map.barAt(250);
+		QCOMPARE(cut.index, 1);
+		QCOMPARE(cut.start, 192);
+		QCOMPARE(cut.length, 108);
+		QCOMPARE(map.barAt(300).index, 2);
+		QCOMPARE(map.barAt(300).length, 84); // 6/8 cut short by the 3/4 at 384
+		QCOMPARE(map.barStart(3), 384);
+
+		// The bars one by one
+		auto starts = std::vector<tick_t>{};
+		map.forEachBar(0, 700, [&](const TempoMap::Bar& bar) { starts.push_back(bar.start); });
+		QCOMPARE(starts, (std::vector<tick_t>{0, 192, 300, 384, 528, 672}));
+
+		// Taken away: the time signature before goes on
+		map.setMeter(300, std::nullopt, song->getTempo());
+		QCOMPARE(map.barAt(300).index, 1);
+	}
+
+	//! A marker made for a time signature keeps the tempo as it was, in a ramp too
+	void aTimeSignatureKeepsTheTempo()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto& map = song->tempoMap();
+		map.setMarkers({{0, 100, true}, {8 * 192, 180, false}});
+		auto before = std::vector<double>{};
+		for (tick_t tick = 0; tick < 10 * 192; tick += 37) { before.push_back(map.tempoAt(tick)); }
+		map.setMeter(3 * 192, TempoMap::Meter{7, 8}, song->getTempo());
+		QCOMPARE(map.markers().size(), std::size_t{3});
+		auto index = std::size_t{0};
+		for (tick_t tick = 0; tick < 10 * 192; tick += 37)
+		{
+			QVERIFY2(std::abs(map.tempoAt(tick) - before[index++]) < 1e-9, qPrintable(QString::number(tick)));
+		}
+	}
+
+	//! Saved and loaded; one at the start, or one not valid, is left out
+	void timeSignaturesAreSavedAndLoaded()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto& map = song->tempoMap();
+		map.setMarkers({{0, 120, false, TempoMap::Meter{5, 4}}, {384, 120, false, TempoMap::Meter{6, 8}},
+			{768, 140, false, TempoMap::Meter{3, 5}}});
+		QVERIFY(!map.markers()[0].meter);
+		QVERIFY(!map.markers()[2].meter);
+		auto document = QDomDocument{};
+		auto element = document.createElement("tempomap");
+		map.saveSettings(document, element);
+		map.clear();
+		QVERIFY(!map.hasMeterChanges());
+		map.loadSettings(element);
+		QCOMPARE(map.markers().size(), std::size_t{3});
+		QCOMPARE(map.markers()[1].meter, (std::optional<TempoMap::Meter>{TempoMap::Meter{6, 8}}));
+		QCOMPARE(map.barAt(384).meter, (TempoMap::Meter{6, 8}));
 	}
 };
 

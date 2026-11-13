@@ -209,6 +209,8 @@ void Song::setTempo()
 void Song::setTimeSignature()
 {
 	TimePos::setTicksPerBar( ticksPerBar() );
+	// The time signature at the start of the tempo map's bars
+	m_tempoMap.setStartMeter({m_timeSigModel.getNumerator(), m_timeSigModel.getDenominator()});
 	emit timeSignatureChanged( m_oldTicksPerBar, ticksPerBar() );
 	emit dataChanged();
 	m_oldTicksPerBar = ticksPerBar();

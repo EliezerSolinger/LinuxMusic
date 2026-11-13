@@ -39,6 +39,125 @@
 namespace lmms
 {
 
+auto TempoMap::Meter::ticksPerBar() const -> tick_t
+{
+	return DefaultTicksPerBar * numerator / std::max(1, denominator);
+}
+
+
+auto TempoMap::Meter::ticksPerBeat() const -> tick_t
+{
+	return DefaultTicksPerBar / std::max(1, denominator);
+}
+
+
+auto TempoMap::isValid(const Meter& meter) -> bool
+{
+	// A beat of a whole number of ticks: a note value of a power of two, down to 1/32
+	const bool powerOfTwo = meter.denominator > 0 && (meter.denominator & (meter.denominator - 1)) == 0;
+	return meter.numerator >= 1 && meter.numerator <= MaxNumerator && powerOfTwo && meter.denominator <= 32;
+}
+
+
+
+
+TempoMap::TempoMap()
+{
+	updateSegments();
+}
+
+
+
+
+void TempoMap::setStartMeter(const Meter& meter)
+{
+	if (meter == m_startMeter) { return; }
+	{
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		m_startMeter = meter;
+		updateSegments();
+	}
+	emit changed();
+}
+
+
+
+
+auto TempoMap::meterAt(tick_t tick) const -> Meter
+{
+	return barAt(tick).meter;
+}
+
+
+
+
+auto TempoMap::barAt(tick_t tick) const -> Bar
+{
+	tick = std::max(tick, tick_t{0});
+	// The last stretch that starts at or before the tick (the first one starts at 0)
+	const auto next = std::upper_bound(m_segments.begin(), m_segments.end(), tick,
+		[](tick_t at, const Segment& segment) { return at < segment.start; });
+	const auto& segment = *std::prev(next);
+	const auto length = std::max(segment.meter.ticksPerBar(), tick_t{1});
+	const auto inSegment = (tick - segment.start) / length;
+	auto bar = Bar{segment.firstBar + inSegment, segment.start + inSegment * length, segment.meter, length};
+	// The last bar before a change of the time signature ends where the change is
+	if (next != m_segments.end() && bar.start + bar.length > next->start) { bar.length = next->start - bar.start; }
+	return bar;
+}
+
+
+
+
+auto TempoMap::barStart(int index) const -> tick_t
+{
+	index = std::max(index, 0);
+	const auto next = std::upper_bound(m_segments.begin(), m_segments.end(), index,
+		[](int at, const Segment& segment) { return at < segment.firstBar; });
+	const auto& segment = *std::prev(next);
+	const auto start = static_cast<std::int64_t>(segment.start)
+		+ static_cast<std::int64_t>(index - segment.firstBar) * std::max(segment.meter.ticksPerBar(), tick_t{1});
+	return static_cast<tick_t>(std::min<std::int64_t>(start, TimePos::MaxTicks));
+}
+
+
+
+
+void TempoMap::updateSegments()
+{
+	m_segments.clear();
+	m_segments.push_back({0, 0, m_startMeter});
+	for (const auto& marker : m_markers)
+	{
+		if (!marker.meter || marker.tick <= 0) { continue; }
+		const auto last = m_segments.back();
+		const auto length = std::max(last.meter.ticksPerBar(), tick_t{1});
+		// A bar the change cuts short counts as one
+		const auto bars = (marker.tick - last.start + length - 1) / length;
+		m_segments.push_back({marker.tick, last.firstBar + bars, *marker.meter});
+	}
+}
+
+
+
+
+void TempoMap::tidy()
+{
+	sort();
+	// One marker on a tick (the first one)
+	const auto last = std::unique(m_markers.begin(), m_markers.end(),
+		[](const Marker& a, const Marker& b) { return a.tick == b.tick; });
+	m_markers.erase(last, m_markers.end());
+	for (auto& marker : m_markers)
+	{
+		// At the start the time signature is the song's
+		if (marker.meter && (marker.tick == 0 || !isValid(*marker.meter))) { marker.meter.reset(); }
+	}
+}
+
+
+
+
 auto TempoMap::tempoAt(double tick) const -> double
 {
 	if (m_markers.empty()) { return 0; }
@@ -80,7 +199,8 @@ void TempoMap::setMarkers(std::vector<Marker> markers)
 	{
 		const auto guard = Engine::audioEngine()->requestChangesGuard();
 		m_markers = std::move(markers);
-		sort();
+		tidy();
+		updateSegments();
 	}
 	emit changed();
 }
@@ -100,7 +220,35 @@ void TempoMap::setMarker(const Marker& marker, double startBpm)
 			[&](const Marker& existing) { return existing.tick == added.tick; });
 		if (same != m_markers.end()) { *same = added; }
 		else { m_markers.push_back(added); }
-		sort();
+		tidy();
+		updateSegments();
+	}
+	emit changed();
+}
+
+
+
+
+void TempoMap::setMeter(tick_t tick, std::optional<Meter> meter, double startBpm)
+{
+	tick = std::clamp(tick, 0, TimePos::MaxTicks);
+	if (tick == 0 || (meter && !isValid(*meter))) { return; }
+	{
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto at = std::find_if(m_markers.begin(), m_markers.end(),
+			[tick](const Marker& marker) { return marker.tick == tick; });
+		if (at != m_markers.end()) { at->meter = meter; }
+		else if (meter)
+		{
+			if (m_markers.empty()) { m_markers.push_back({0, startBpm, false}); }
+			// The tempo there, and a ramp on through it if it is in one (the same line in two)
+			const auto next = std::upper_bound(m_markers.begin(), m_markers.end(), tick,
+				[](tick_t at, const Marker& marker) { return at < marker.tick; });
+			const bool inRamp = next != m_markers.end() && std::prev(next)->ramp;
+			m_markers.push_back({tick, tempoAt(tick), inRamp, meter});
+		}
+		tidy();
+		updateSegments();
 	}
 	emit changed();
 }
@@ -116,6 +264,7 @@ void TempoMap::removeMarker(tick_t tick)
 
 		// Only the one at the song's start left says nothing more than the song's tempo: none then
 		if (m_markers.size() == 1 && m_markers.front().tick == 0) { m_markers.clear(); }
+		updateSegments();
 	}
 	emit changed();
 }
@@ -136,7 +285,8 @@ void TempoMap::moveMarker(tick_t from, tick_t to)
 		marker.tick = std::clamp(to, 1, TimePos::MaxTicks);
 		std::erase_if(m_markers, [&](const Marker& other) { return other.tick == marker.tick; });
 		m_markers.push_back(marker);
-		sort();
+		tidy();
+		updateSegments();
 	}
 	emit changed();
 }
@@ -150,6 +300,7 @@ void TempoMap::clear()
 	{
 		const auto guard = Engine::audioEngine()->requestChangesGuard();
 		m_markers.clear();
+		updateSegments();
 	}
 	emit changed();
 }
@@ -202,6 +353,7 @@ auto TempoMap::takeOverAutomation(AutomatableModel* tempo, double startBpm) -> b
 			[](const Marker& a, const Marker& b) { return a.tick == b.tick; });
 		m_markers.erase(m_markers.begin(), last.base());
 		if (m_markers.front().tick > 0) { m_markers.insert(m_markers.begin(), {0, startBpm, false}); }
+		updateSegments();
 	}
 	emit changed();
 	return true;
@@ -218,6 +370,11 @@ void TempoMap::saveSettings(QDomDocument& document, QDomElement& element)
 		markerElement.setAttribute("tick", marker.tick);
 		markerElement.setAttribute("bpm", marker.bpm);
 		markerElement.setAttribute("ramp", marker.ramp ? 1 : 0);
+		if (marker.meter)
+		{
+			markerElement.setAttribute("numerator", marker.meter->numerator);
+			markerElement.setAttribute("denominator", marker.meter->denominator);
+		}
 		element.appendChild(markerElement);
 	}
 }
@@ -233,17 +390,21 @@ void TempoMap::loadSettings(const QDomElement& element)
 	{
 		auto bpm = markerElement.attribute("bpm").toDouble();
 		if (!std::isfinite(bpm)) { bpm = DefaultTempo; }
-		markers.push_back({std::clamp(markerElement.attribute("tick").toInt(), 0, TimePos::MaxTicks),
+		auto marker = Marker{std::clamp(markerElement.attribute("tick").toInt(), 0, TimePos::MaxTicks),
 			std::clamp(bpm, static_cast<double>(MinTempo), static_cast<double>(MaxTempo)),
-			markerElement.attribute("ramp").toInt() != 0});
+			markerElement.attribute("ramp").toInt() != 0};
+		// (a time signature that is not valid is left out, see tidy())
+		if (markerElement.hasAttribute("numerator"))
+		{
+			marker.meter = Meter{markerElement.attribute("numerator").toInt(), markerElement.attribute("denominator").toInt()};
+		}
+		markers.push_back(marker);
 	}
 	{
 		const auto guard = Engine::audioEngine()->requestChangesGuard();
 		m_markers = std::move(markers);
-		sort();
-		const auto last = std::unique(m_markers.begin(), m_markers.end(),
-			[](const Marker& a, const Marker& b) { return a.tick == b.tick; });
-		m_markers.erase(last, m_markers.end());
+		tidy();
+		updateSegments();
 	}
 	emit changed();
 }
