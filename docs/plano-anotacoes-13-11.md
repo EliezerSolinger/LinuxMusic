@@ -341,11 +341,6 @@ Cada passo atualiza este documento, marcando o que foi feito.
 - **Etapa 9.3 feita** (13/11): nas barras do Piano Roll e do Arranjo, os seletores viraram botões de ícone que
   mostram o valor atual e abrem o mesmo menu.
 - **Falta das anotações:**
-  - 13.2 (instrumentos acústicos por soundfont): precisa baixar uma soundfont GM de licença livre (GeneralUser GS
-    ou FluidR3 em sf3);
-  - 13.3, a parte NAM: precisa do NeuralAmpModelerCore (MIT, com Eigen e nlohmann/json) como submódulo. A
-    tentativa de adicionar o submódulo foi bloqueada pela permissão do ambiente, e é preciso autorização do usuário
-    para baixar código e dados de fora;
   - o registro central de atalhos;
   - regiões na régua.
 - **Etapa 7 feita** (13/11): o compressor do mixbus segue o SSL G medido por Thompson e Heilemann (2026, um G384).
@@ -363,3 +358,13 @@ Cada passo atualiza este documento, marcando o que foi feito.
     trava o áudio, e o arquivo da IR é recurso do projeto.
   - A biblioteca é gerada por modelos (`tools/make-irs.py`, CC0): 4 caixas de guitarra, 2 corpos de violão e 4 salas.
   - `ConvolverTest` compara com a convolução direta.
+- **Etapa 13.2 feita** (13/11): vem junto a soundfont GM FluidR3 Mono (MIT, sf3 de 14,5 MB), padrão do Sf2Player,
+  com 58 presets dos instrumentos acústicos (pianos, cordas, sopros, metais, violões, coro e kits de bateria GM). A
+  GeneralUser GS ficou de fora porque a origem dos samples é incerta.
+- **Etapa 13.3, parte NAM, feita** (13/11), com o NeuralAmpModelerCore v0.6.0 como submódulo:
+  - o amp roda na taxa em que foi treinado, com reamostragem em streaming e latência medida, e com o loudness
+    normalizado em −18 dB;
+  - a cadeia é entrada → amp → IR → saída.
+  - **Modelos:** não há capturas de amps reais com licença clara para redistribuir (a coleção comunitária é GPL-3
+    no nível do repositório, sem licença por autor). Por isso nenhuma vem junto, e o menu tem um atalho para o
+    TONE3000.

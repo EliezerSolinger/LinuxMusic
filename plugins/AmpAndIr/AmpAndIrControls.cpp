@@ -22,7 +22,9 @@
 
 #include "AmpAndIrControls.h"
 
+#include <QDesktopServices>
 #include <QDir>
+#include <QUrl>
 #include <QDomElement>
 #include <QFileInfo>
 #include <QGridLayout>
@@ -157,6 +159,10 @@ void AmpAndIrControlDialog::chooseAmpModel()
 		const auto path = FileDialog::getOpenFileName(this, tr("Amp model"), QString{},
 			tr("Neural Amp Modeler models (*.nam)"));
 		if (!path.isEmpty()) { warn(m_controls->setAmpModel(path)); }
+	});
+	// Captures of real amps are the community's, each under its author's terms: none comes with the program
+	menu.addAction(tr("Find amp models online (TONE3000)..."), this, [] {
+		QDesktopServices::openUrl(QUrl{"https://www.tone3000.com"});
 	});
 	if (!m_controls->ampModel().isEmpty())
 	{

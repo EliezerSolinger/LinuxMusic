@@ -17453,6 +17453,10 @@ Latency: %2 ms</source>
         <source>Amp &amp; IR</source>
         <translation>Amp &amp; IR</translation>
     </message>
+    <message>
+        <source>Find amp models online (TONE3000)...</source>
+        <translation>Procurar modelos de amp na internet (TONE3000)...</translation>
+    </message>
 </context>
 <context>
     <name>AmpModel</name>
