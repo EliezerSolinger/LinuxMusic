@@ -53,8 +53,8 @@ class FileBrowser;
 class DockPanel;
 class PluginView;
 class ToolButton;
+class TransportBar;
 class SubWindow;
-class ToolButton;
 
 
 class MainWindow : public QMainWindow
@@ -274,6 +274,7 @@ private:
 	QWidget * m_toolBar;
 	//! Save, on the toolbar: it blinks when the work is saved for recovery (autosave)
 	ToolButton* m_saveButton = nullptr;
+	TransportBar* m_transportBar = nullptr;
 	void flashSaveButton();
 	QGridLayout * m_toolBarLayout;
 

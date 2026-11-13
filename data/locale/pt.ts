@@ -16674,4 +16674,35 @@ Latency: %2 ms</source>
         <translation>Controle</translation>
     </message>
 </context>
+<context>
+    <name>lmms::gui::TransportBar</name>
+    <message>
+        <source>Stop (Space)</source>
+        <translation>Parar (Espaço)</translation>
+    </message>
+    <message>
+        <source>Play/pause the song (Space)</source>
+        <translation>Tocar/pausar a música (Espaço)</translation>
+    </message>
+    <message>
+        <source>Record the armed tracks: audio into sample tracks, notes into instrument tracks (with no track armed: record MIDI into the clip open in the Piano Roll) (R)</source>
+        <translation>Gravar as faixas armadas: áudio nas faixas de sample, notas nas faixas de instrumento (sem faixa armada: grava MIDI no clipe aberto no Piano Roll) (R)</translation>
+    </message>
+    <message>
+        <source>Record MIDI into the clip open in the Piano Roll while the song plays</source>
+        <translation>Gravar MIDI no clipe aberto no Piano Roll enquanto a música toca</translation>
+    </message>
+    <message>
+        <source>Cycle: play the range selected on the ruler over and over (C)</source>
+        <translation>Ciclo: toca sem parar o trecho selecionado na régua (C)</translation>
+    </message>
+    <message>
+        <source>Metronome</source>
+        <translation>Metrônomo</translation>
+    </message>
+    <message>
+        <source>Mute the master</source>
+        <translation>Silenciar o master</translation>
+    </message>
+</context>
 </TS>

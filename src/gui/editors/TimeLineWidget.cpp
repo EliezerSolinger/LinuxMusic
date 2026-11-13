@@ -302,6 +302,14 @@ void TimeLineWidget::mousePressEvent(QMouseEvent* event)
 		m_action = Action::SelectSongClip;
 		m_initalXSelect = pos.x();
 	}
+	else if (event->button() == Qt::LeftButton && !ctrl && pos.y() < height() / 2 && m_timeline == &Engine::getSong()->getTimeline(Song::PlayMode::Song))
+	{
+		// The upper half of the song's ruler: a drag selects the cycle's range, a click moves the playhead
+		m_action = Action::SelectCycle;
+		m_initalXSelect = pos.x();
+		m_dragStartPos = getClickedTime(pos.x());
+		m_cycleDragged = false;
+	}
 	else if (event->button() == Qt::LeftButton && !ctrl) // move playhead
 	{
 		m_action = Action::MovePositionMarker;
@@ -387,6 +395,27 @@ void TimeLineWidget::mouseMoveEvent( QMouseEvent* event )
 			emit regionSelectedFromPixels(m_initalXSelect, pos.x());
 			break;
 
+		case Action::SelectCycle:
+		{
+			// A few pixels make it a drag rather than a click
+			if (!m_cycleDragged && std::abs(pos.x() - m_initalXSelect) < 4) { break; }
+			m_cycleDragged = true;
+			auto from = m_dragStartPos;
+			auto to = timeAtCursor;
+			if (!control)
+			{
+				from = from.quantize(m_snapSize);
+				to = to.quantize(m_snapSize);
+			}
+			if (to < from) { std::swap(from, to); }
+			// At least a snap step (a tick with Ctrl) long
+			if (to == from) { to = from + (control ? 1 : static_cast<int>(m_snapSize * TimePos::ticksPerBar())); }
+			m_timeline->setLoopPoints(from, to);
+			m_timeline->setLoopEnabled(true);
+			update();
+			break;
+		}
+
 		default:
 			break;
 	}
@@ -405,6 +434,14 @@ void TimeLineWidget::mouseReleaseEvent( QMouseEvent* event )
 	delete m_hint;
 	m_hint = nullptr;
 	if ( m_action == Action::SelectSongClip ) { emit selectionFinished(); }
+	// A click on the upper half, not a drag: the playhead goes there, as on the lower half
+	if (m_action == Action::SelectCycle && !m_cycleDragged)
+	{
+		const auto time = getClickedTime(position(event).x());
+		m_timeline->setTicks(time.getTicks());
+		if (!Engine::getSong()->isPlaying()) { Engine::getSong()->getTimeline(Song::PlayMode::None).setTicks(time.getTicks()); }
+		update();
+	}
 	m_action = Action::NoAction;
 }
 

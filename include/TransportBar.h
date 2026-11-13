@@ -60,23 +60,26 @@ class TransportBar : public QWidget
 public:
 	explicit TransportBar(QWidget* parent);
 
+	//! Starts recording, or ends it (as the record button does) [R]
+	void record();
+	//! Switches the cycle on or off [C]
+	void toggleCycle();
+
 private slots:
 	void play();
 	void stop();
-	void record();
 	void recordWhilePlaying();
 	void updateState();
 
 private:
-	QToolButton* addButton(const char* icon, const QString& toolTip);
+	QToolButton* addButton(const char* icon, const QString& toolTip, const char* name);
 
 	QToolButton* m_metronomeButton;
-	QToolButton* m_partButton;
-	QToolButton* m_songButton;
 	QToolButton* m_playButton;
 	QToolButton* m_recordButton;
-	QToolButton* m_recordWhilePlayingButton;
 	QToolButton* m_stopButton;
+	QToolButton* m_cycleButton;
+	QToolButton* m_masterMuteButton;
 };
 
 } // namespace lmms::gui

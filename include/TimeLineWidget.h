@@ -191,6 +191,7 @@ private:
 		MoveLoopEnd,
 		MoveLoop,
 		SelectSongClip,
+		SelectCycle, //!< dragging on the ruler's upper half selects the range the cycle plays
 	};
 
 	auto getClickedTime(int xPosition) const -> TimePos;
@@ -239,6 +240,7 @@ private:
 
 	TextFloat* m_hint = nullptr;
 	int m_initalXSelect;
+	bool m_cycleDragged = false; //!< (SelectCycle) whether the press became a drag, or stays a click
 
 	Action m_action = Action::NoAction;
 };

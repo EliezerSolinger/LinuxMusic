@@ -463,7 +463,8 @@ void MainWindow::finalize()
 	m_toolBarLayout->setColumnMinimumWidth(0, 5);
 	m_toolBarLayout->addWidget(m_saveButton, 0, 1, Qt::AlignVCenter);
 	m_toolBarLayout->setColumnStretch(3, 1);
-	m_toolBarLayout->addWidget(new TransportBar(m_toolBar), 0, 4, Qt::AlignVCenter);
+	m_transportBar = new TransportBar(m_toolBar);
+	m_toolBarLayout->addWidget(m_transportBar, 0, 4, Qt::AlignVCenter);
 	m_toolBarLayout->setColumnStretch(5, 1);
 	m_toolBarLayout->addWidget(pageSwitch, 0, 6, Qt::AlignVCenter);
 	m_toolBarLayout->setColumnMinimumWidth(7, 8);
@@ -483,7 +484,7 @@ void MainWindow::finalize()
 
 	// The transport bar plays and stops the song and patterns
 	getGUI()->songEditor()->hideTransportButtons();
-	getGUI()->patternEditor()->hideTransportButtons();
+	// (the Pattern Editor keeps its play and stop: the transport plays the song)
 
 	// setup-dialog opened before?
 	if( !ConfigManager::inst()->value( "app", "configured" ).toInt() )
@@ -1474,6 +1475,11 @@ void MainWindow::keyPressEvent( QKeyEvent * _ke )
 			{
 				w->pianoView()->keyPressEvent( _ke );
 			}
+			// The transport's keys (as in Logic), when nothing took them (an instrument's window plays its notes on
+			// the keyboard): R records, C switches the cycle
+			else if (_ke->modifiers() == Qt::NoModifier && _ke->key() == Qt::Key_R) { m_transportBar->record(); }
+			else if (_ke->modifiers() == Qt::NoModifier && _ke->key() == Qt::Key_C) { m_transportBar->toggleCycle(); }
+			else { _ke->ignore(); }
 			if( !_ke->isAccepted() )
 			{
 				QMainWindow::keyPressEvent( _ke );

@@ -49,6 +49,7 @@
 #include "Song.h"
 #include "SongEditor.h"
 #include "TimeDisplayWidget.h"
+#include "Timeline.h"
 
 namespace lmms::gui
 {
@@ -131,41 +132,22 @@ TransportBar::TransportBar(QWidget* parent)
 	layout->setContentsMargins(8, 4, 8, 4);
 	layout->setSpacing(4);
 
-	// Metronome
-	m_metronomeButton = addButton("metronome", tr("Metronome"));
-	m_metronomeButton->setCheckable(true);
-	m_metronomeButton->setChecked(song->metronome().active());
-	connect(m_metronomeButton, &QToolButton::toggled, this, [](bool on) {
-		Engine::getSong()->metronome().setActive(on);
-	});
-	layout->addWidget(m_metronomeButton);
+	// The transport, after Logic's: its buttons together in one rounded group, each lit in its colour when on
+	// (play green, record red, cycle yellow, metronome blue)
+	auto group = new QWidget(this);
+	group->setObjectName("transportGroup");
+	group->setAttribute(Qt::WA_StyledBackground);
+	auto groupLayout = new QHBoxLayout(group);
+	groupLayout->setContentsMargins(3, 2, 3, 2);
+	groupLayout->setSpacing(1);
+	layout->addWidget(group);
 
-	// Part/Song: what the play button plays
-	m_partButton = new QToolButton(this);
-	m_partButton->setText(tr("Part"));
-	m_partButton->setToolTip(tr("Play the pattern open in the Pattern Editor"));
-	m_songButton = new QToolButton(this);
-	m_songButton->setText(tr("Song"));
-	m_songButton->setToolTip(tr("Play the whole song"));
-	auto modeGroup = new QButtonGroup(this);
-	for (auto button : {m_partButton, m_songButton})
-	{
-		button->setObjectName("transportModeButton");
-		button->setCheckable(true);
-		button->setFocusPolicy(Qt::NoFocus);
-		modeGroup->addButton(button);
-	}
-	m_songButton->setChecked(true);
-	auto modeLayout = new QVBoxLayout;
-	modeLayout->setSpacing(0);
-	modeLayout->addWidget(m_partButton);
-	modeLayout->addWidget(m_songButton);
-	layout->addLayout(modeLayout);
-
-	// Play, record, record while playing, stop
-	m_playButton = addButton("play", tr("Play/pause (Space)"));
+	m_stopButton = addButton("stop", tr("Stop (Space)"), "transportStop");
+	m_playButton = addButton("play", tr("Play/pause the song (Space)"), "transportPlay");
+	m_playButton->setCheckable(true);
 	m_recordButton = addButton("record", tr("Record the armed tracks: audio into sample tracks, notes into "
-		"instrument tracks (with no track armed: record MIDI into the clip open in the Piano Roll)"));
+		"instrument tracks (with no track armed: record MIDI into the clip open in the Piano Roll) (R)"),
+		"transportRecord");
 	m_recordButton->setCheckable(true);
 
 	// The recording's pre-roll and count-in, in the button's menu
@@ -189,18 +171,37 @@ TransportBar::TransportBar(QWidget* parent)
 	connect(countIn, &QAction::toggled, this, [](bool on) {
 		ConfigManager::inst()->setValue("recording", "countin", on ? "1" : "0");
 	});
+	recordMenu->addSeparator();
+	auto recordMidi = recordMenu->addAction(embed::getIconPixmap("record_accompany"),
+		tr("Record MIDI into the clip open in the Piano Roll while the song plays"));
+	connect(recordMidi, &QAction::triggered, this, &TransportBar::recordWhilePlaying);
 	m_recordButton->setMenu(recordMenu);
 	m_recordButton->setPopupMode(QToolButton::MenuButtonPopup);
-	m_recordWhilePlayingButton = addButton("record_accompany",
-		tr("Record MIDI into the clip open in the Piano Roll while the song or pattern plays"));
-	m_stopButton = addButton("stop", tr("Stop (Space)"));
+
+	// Cycle: the song plays the range selected on the ruler over and over (C)
+	m_cycleButton = addButton("cycle", tr("Cycle: play the range selected on the ruler over and over (C)"),
+		"transportCycle");
+	m_cycleButton->setCheckable(true);
+	auto& timeline = song->getTimeline(Song::PlayMode::Song);
+	m_cycleButton->setChecked(timeline.loopEnabled());
+	connect(m_cycleButton, &QToolButton::toggled, this, [](bool on) {
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopEnabled(on);
+	});
+	connect(&timeline, &Timeline::loopEnabledChanged, m_cycleButton, &QToolButton::setChecked);
+
+	m_metronomeButton = addButton("metronome", tr("Metronome"), "transportMetronome");
+	m_metronomeButton->setCheckable(true);
+	m_metronomeButton->setChecked(song->metronome().active());
+	connect(m_metronomeButton, &QToolButton::toggled, this, [](bool on) {
+		Engine::getSong()->metronome().setActive(on);
+	});
+
 	connect(m_playButton, &QToolButton::clicked, this, &TransportBar::play);
 	connect(m_recordButton, &QToolButton::clicked, this, &TransportBar::record);
-	connect(m_recordWhilePlayingButton, &QToolButton::clicked, this, &TransportBar::recordWhilePlaying);
 	connect(m_stopButton, &QToolButton::clicked, this, &TransportBar::stop);
-	for (auto button : {m_playButton, m_recordButton, m_recordWhilePlayingButton, m_stopButton})
+	for (auto button : {m_stopButton, m_playButton, m_recordButton, m_cycleButton, m_metronomeButton})
 	{
-		layout->addWidget(button);
+		groupLayout->addWidget(button);
 	}
 
 	layout->addSpacing(12);
@@ -220,18 +221,22 @@ TransportBar::TransportBar(QWidget* parent)
 
 	layout->addSpacing(12);
 
-	// Master volume and pitch
-	auto volume = new LcdSpinBox(3, this, tr("Master volume"));
-	volume->setModel(&song->masterVolumeModel());
-	volume->setLabel(tr("VOL"));
-	volume->setToolTip(tr("Master volume (%)"));
-	layout->addWidget(volume);
-
-	auto pitch = new LcdSpinBox(2, this, tr("Master pitch"));
-	pitch->setModel(&song->masterPitchModel());
-	pitch->setLabel(tr("PITCH"));
-	pitch->setToolTip(tr("Global transposition (semitones)"));
-	layout->addWidget(pitch);
+	// The master's mute (the master's level is its fader, on the mixer)
+	m_masterMuteButton = addButton("speaker", tr("Mute the master"), "transportMute");
+	m_masterMuteButton->setCheckable(true);
+	auto& masterMute = Engine::mixer()->mixerChannel(0)->m_muteModel;
+	const auto showMute = [this](bool muted) {
+		m_masterMuteButton->setChecked(muted);
+		m_masterMuteButton->setIcon(embed::getIconPixmap(muted ? "speaker_slash" : "speaker"));
+	};
+	showMute(masterMute.value());
+	connect(m_masterMuteButton, &QToolButton::toggled, this, [](bool on) {
+		Engine::mixer()->mixerChannel(0)->m_muteModel.setValue(on);
+	});
+	connect(&masterMute, &BoolModel::dataChanged, this, [showMute] {
+		showMute(Engine::mixer()->mixerChannel(0)->m_muteModel.value());
+	});
+	layout->addWidget(m_masterMuteButton);
 
 	layout->addSpacing(12);
 
@@ -248,9 +253,10 @@ TransportBar::TransportBar(QWidget* parent)
 
 
 
-QToolButton* TransportBar::addButton(const char* icon, const QString& toolTip)
+QToolButton* TransportBar::addButton(const char* icon, const QString& toolTip, const char* name)
 {
 	auto button = new QToolButton(this);
+	button->setObjectName(name);
 	button->setIcon(embed::getIconPixmap(icon));
 	button->setIconSize({24, 24});
 	button->setToolTip(toolTip);
@@ -264,10 +270,8 @@ QToolButton* TransportBar::addButton(const char* icon, const QString& toolTip)
 
 void TransportBar::play()
 {
-	// The editors know how to start, pause and resume their play mode
-	const auto gui = getGUI();
-	if (m_partButton->isChecked()) { gui->patternEditor()->playAction()->trigger(); }
-	else { gui->songEditor()->playAction()->trigger(); }
+	// The song (the Pattern Editor has its own play button); the editor knows how to start, pause and resume it
+	getGUI()->songEditor()->playAction()->trigger();
 }
 
 
@@ -306,6 +310,14 @@ void TransportBar::record()
 
 
 
+void TransportBar::toggleCycle()
+{
+	m_cycleButton->toggle();
+}
+
+
+
+
 void TransportBar::recordWhilePlaying()
 {
 	getGUI()->pianoRoll()->recordAccompanyAction()->trigger();
@@ -319,14 +331,8 @@ void TransportBar::updateState()
 	const auto song = Engine::getSong();
 	const bool playing = song->isPlaying() && !song->isPaused();
 	m_playButton->setIcon(embed::getIconPixmap(playing ? "pause" : "play"));
+	m_playButton->setChecked(playing);
 	m_recordButton->setChecked(song->isRecording());
-
-	// Follow what is playing, e.g. when playback was started from the Pattern Editor
-	if (song->isPlaying())
-	{
-		if (song->playMode() == Song::PlayMode::Pattern) { m_partButton->setChecked(true); }
-		else if (song->playMode() == Song::PlayMode::Song) { m_songButton->setChecked(true); }
-	}
 }
 
 } // namespace lmms::gui

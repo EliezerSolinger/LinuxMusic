@@ -1222,17 +1222,43 @@ lmms--gui--LmmsPalette {
 	qproperty-highlightedText: #d1d8e4;
 }
 
-QToolButton#transportModeButton {
-	color: #d1d8e4;
-	background: #101213;
-	border: none;
-	padding: 1px 8px;
-	font-size: 10px;
+/* The transport, after Logic's: one rounded group, each button lit in its colour when on */
+QWidget#transportGroup {
+	background: #101215;
+	border: 1px solid #262b30;
+	border-radius: 7px;
 }
 
-QToolButton#transportModeButton:checked {
-	color: #101213;
-	background: #0bd556;
+QWidget#transportGroup QToolButton {
+	border: none;
+	border-radius: 5px;
+	padding: 3px;
+	background: transparent;
+}
+
+QWidget#transportGroup QToolButton:hover {
+	background: #262b30;
+}
+
+QToolButton#transportPlay:checked {
+	background: #1f7a43;
+}
+
+QToolButton#transportRecord:checked {
+	background: #b3261e;
+}
+
+QToolButton#transportCycle:checked {
+	background: #c99a06;
+}
+
+QToolButton#transportMetronome:checked {
+	background: #2f6fd0;
+}
+
+QToolButton#transportMute:checked {
+	background: #b3261e;
+	border-radius: 5px;
 }
 
 /* Mixer strips: mute, solo and phase invert beside the fader, smaller than elsewhere */
