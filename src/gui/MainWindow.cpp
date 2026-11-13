@@ -404,8 +404,11 @@ void MainWindow::finalize()
 	edit_menu->addSeparator();
 	edit_menu->addAction(embed::getIconPixmap("microtuner"), tr("Scales and keymaps"),
 		this, SLOT(toggleMicrotunerWin()));
-	edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Settings"),
+	// The settings page (also behind the gear beside the pages); Ctrl+, (Cmd+, on the Mac), as is usual
+	auto settingsAction = edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Settings"),
 		this, SLOT(showSettingsDialog()));
+	settingsAction->setShortcut(QKeySequence::Preferences);
+	settingsAction->setMenuRole(QAction::PreferencesRole);
 
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateUndoRedoButtons()));
 
