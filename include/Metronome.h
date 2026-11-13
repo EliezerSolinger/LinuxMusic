@@ -55,9 +55,12 @@ public:
 	//! Main thread, with the audio engine stopped: frees the clicks and the bus (before the engine goes)
 	void release();
 
-	//! Audio thread: clicks on the beats while active, or while @p force (e.g. a count-in)
-	void processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force = false,
-		bool recording = false);
+	/**
+	 * Audio thread: clicks on the beats while active, or while @p force (e.g. a count-in). @p tickInBar is the
+	 * tick played, from its bar's start; a beat is @p ticksPerBeat long (the bar's time signature's), and the first
+	 * one is accented.
+	 */
+	void processTick(int tickInBar, int ticksPerBeat, size_t bufferOffset, bool force = false, bool recording = false);
 
 	/**
 	 * The settings (docs/gravacao-levantamento.md §6, "Metrônomo"), read from the configuration ("metronome"

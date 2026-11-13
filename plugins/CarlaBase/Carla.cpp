@@ -632,12 +632,16 @@ auto CarlaInstrument::process(ProcessContext& context) -> ProcessStatus
     // Where the period starts, along the tempo map (see Transport)
     fTimeInfo.frame    = static_cast<uint64_t>(std::max<std::int64_t>(0, s->transport().frame()));
     fTimeInfo.usecs    = static_cast<uint64_t>(s->transport().seconds(Engine::audioEngine()->outputSampleRate()) * 1e6);
-    fTimeInfo.bbt.bar  = s->getBars() + 1;
-    fTimeInfo.bbt.beat = s->getBeat() + 1;
-    fTimeInfo.bbt.tick = s->getBeatTicks();
-    fTimeInfo.bbt.barStartTick   = ticksPerBeat*s->getTimeSigModel().getNumerator()*s->getBars();
-    fTimeInfo.bbt.beatsPerBar    = s->getTimeSigModel().getNumerator();
-    fTimeInfo.bbt.beatType       = s->getTimeSigModel().getDenominator();
+    // In the bar the song is in, in its time signature (the tempo map's)
+    const auto position = s->musicalPosition();
+    fTimeInfo.bbt.bar  = position.bar + 1;
+    fTimeInfo.bbt.beat = position.beat + 1;
+    fTimeInfo.bbt.tick = position.tick * ticksPerBeat / std::max(1, position.meter.ticksPerBeat());
+    // Carla's ticks are ticksPerBeat to a beat of the time signature: the song's ticks (192 to a whole note) are
+    // a beat's ticks over its note value
+    fTimeInfo.bbt.barStartTick   = position.barStart * ticksPerBeat / std::max(1, position.meter.ticksPerBeat());
+    fTimeInfo.bbt.beatsPerBar    = position.meter.numerator;
+    fTimeInfo.bbt.beatType       = position.meter.denominator;
     fTimeInfo.bbt.ticksPerBeat   = ticksPerBeat;
     fTimeInfo.bbt.beatsPerMinute = s->getTempo();
 

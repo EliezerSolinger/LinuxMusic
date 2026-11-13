@@ -539,8 +539,17 @@ void Song::processMetronome(size_t bufferOffset)
 	if (!supported || m_exporting) { return; } 
 	// The count-in clicks during the pre-roll of a recording, metronome or not
 	const bool countIn = currentPlayMode == PlayMode::Song && currentTick() < m_countInUntilTick;
-	m_metronome.processTick(currentTick(), ticksPerBar(), m_timeSigModel.getNumerator(), bufferOffset, countIn,
-		m_recording);
+	// The beats of the bar the tick is in: the song's (whose time signatures the tempo map changes), or in a clip
+	// or a pattern bars of the song's time signature from its start
+	auto tickInBar = currentTick() % std::max(1, ticksPerBar());
+	auto ticksPerBeat = ticksPerBar() / std::max(1, m_timeSigModel.getNumerator());
+	if (currentPlayMode == PlayMode::Song)
+	{
+		const auto bar = m_tempoMap.barAt(currentTick());
+		tickInBar = currentTick() - bar.start;
+		ticksPerBeat = bar.meter.ticksPerBeat();
+	}
+	m_metronome.processTick(tickInBar, ticksPerBeat, bufferOffset, countIn, m_recording);
 }
 
 void Song::setModified(bool value)
@@ -989,6 +998,30 @@ auto Song::framesBetween(tick_t from, tick_t to) const -> double
 
 
 
+auto Song::musicalPosition() const -> MusicalPosition
+{
+	const auto tick = std::max(tick_t{0}, getPlayPos(m_playMode).getTicks());
+	auto bar = TempoMap::Bar{};
+	// A beat as TimePos::getBeatWithinBar() reckons it (the bar's ticks over its beats)
+	auto beatLength = std::max(tick_t{1}, ticksPerBar() / std::max(1, m_timeSigModel.getNumerator()));
+	if (m_playMode == PlayMode::Song)
+	{
+		bar = m_tempoMap.barAt(tick);
+		beatLength = std::max(tick_t{1}, bar.meter.ticksPerBar() / std::max(1, bar.meter.numerator));
+	}
+	else
+	{
+		const auto meter = TempoMap::Meter{m_timeSigModel.getNumerator(), m_timeSigModel.getDenominator()};
+		const auto length = std::max(tick_t{1}, ticksPerBar());
+		bar = TempoMap::Bar{tick / length, tick / length * length, meter, length};
+	}
+	const auto inBar = tick - bar.start;
+	return {bar.index, inBar / beatLength, inBar % beatLength, bar.start, bar.meter};
+}
+
+
+
+
 auto Song::tempoKeyTicks(tick_t from, tick_t to) const -> std::vector<tick_t>
 {
 	auto ticks = std::vector<tick_t>{};
@@ -1292,7 +1325,8 @@ auto Song::record() -> bool
 		if (!isStopped()) { stop(); }
 		const auto cursor = getPlayPos(PlayMode::Song).getTicks();
 		const auto preRoll = std::clamp(ConfigManager::inst()->value("recording", "prerollbars", "0").toInt(), 0, 16);
-		const auto start = std::max(0, cursor - preRoll * ticksPerBar());
+		// The bars before the cursor (the song's, in their time signatures)
+		const auto start = m_tempoMap.fromBars(m_tempoMap.toBars(cursor) - preRoll);
 		const bool countIn = ConfigManager::inst()->value("recording", "countin", "0").toInt() != 0;
 		m_countInUntilTick = countIn && preRoll > 0 ? cursor : -1;
 		if (countIn) { m_metronome.prepare(); }

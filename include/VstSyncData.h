@@ -44,6 +44,7 @@ struct VstSyncData
 	double ppqPos;
 	int timeSigNumer;
 	int timeSigDenom;
+	double barStartPos; //!< where the bar the song is in starts, in quarter notes (bars change their time signatures)
 	bool isPlaying;
 	bool isCycle;
 	float cycleStart;

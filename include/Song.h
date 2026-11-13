@@ -136,9 +136,22 @@ public:
 	 */
 	auto getMilliseconds(PlayMode playMode) const -> int;
 
+	//! Where the play position is in bars: its bar (from 0) and beat (from 0), the ticks into the beat, where the
+	//! bar starts and its time signature (the song's bars when it plays the song, otherwise the song's time
+	//! signature's from the start)
+	struct MusicalPosition
+	{
+		int bar = 0;
+		int beat = 0;
+		int tick = 0;
+		tick_t barStart = 0;
+		TempoMap::Meter meter;
+	};
+	auto musicalPosition() const -> MusicalPosition;
+
 	inline int getBars() const
 	{
-		return currentBar();
+		return musicalPosition().bar;
 	}
 
 	inline int ticksPerBar() const
@@ -149,12 +162,12 @@ public:
 	// Returns the beat position inside the bar, 0-based
 	inline int getBeat() const
 	{
-		return getPlayPos().getBeatWithinBar(m_timeSigModel);
+		return musicalPosition().beat;
 	}
 	// the remainder after bar and beat are removed
 	inline int getBeatTicks() const
 	{
-		return getPlayPos().getTickWithinBeat(m_timeSigModel);
+		return musicalPosition().tick;
 	}
 	inline int getTicks() const
 	{

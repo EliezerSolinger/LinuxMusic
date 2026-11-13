@@ -100,12 +100,11 @@ void TimeDisplayWidget::updateTime()
 		}
 		case DisplayMode::BarsTicks:
 		{
-			int tick = s->getPlayPos().getTicks();
-			m_majorLCD.setValue((int)(tick / s->ticksPerBar()) + 1);
-			m_minorLCD.setValue((tick % s->ticksPerBar()) /
-						 (s->ticksPerBar() / s->getTimeSigModel().getNumerator() ) +1);
-			m_milliSecondsLCD.setValue((tick % s->ticksPerBar()) %
-							(s->ticksPerBar() / s->getTimeSigModel().getNumerator()));
+			// In the song's bars (whose time signatures the tempo map changes) when it plays the song
+			const auto position = s->musicalPosition();
+			m_majorLCD.setValue(position.bar + 1);
+			m_minorLCD.setValue(position.beat + 1);
+			m_milliSecondsLCD.setValue(position.tick);
 			break;
 		}
 		default:

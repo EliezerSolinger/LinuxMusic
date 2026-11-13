@@ -153,15 +153,13 @@ void Metronome::release()
 
 
 
-void Metronome::processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force,
-	bool recording)
+void Metronome::processTick(int tickInBar, int ticksPerBeat, size_t bufferOffset, bool force, bool recording)
 {
-	const auto ticksPerBeat = ticksPerBar / beatsPerBar;
 	const bool clicking = force || (m_active && (!m_onlyRecording || recording));
-	if (ticksPerBeat <= 0 || currentTick % ticksPerBeat != 0 || !clicking || !m_prepared || !m_handle) { return; }
+	if (ticksPerBeat <= 0 || tickInBar % ticksPerBeat != 0 || !clicking || !m_prepared || !m_handle) { return; }
 
 	// The handle plays the clicks prepared on the main thread, on the metronome's own bus
-	const bool firstBeat = currentTick % ticksPerBar == 0 && m_accent;
+	const bool firstBeat = tickInBar == 0 && m_accent;
 	m_handle->click(firstBeat ? m_strongClick.get() : m_weakClick.get(), bufferOffset, m_gain);
 }
 } // namespace lmms

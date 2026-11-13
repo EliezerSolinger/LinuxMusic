@@ -25,6 +25,7 @@
 #include <vector>
 
 #include <QObject>
+#include <QScopeGuard>
 #include <QtTest>
 
 #include "AudioEngine.h"
@@ -32,6 +33,7 @@
 #include "Engine.h"
 #include "Metronome.h"
 #include "Song.h"
+#include "TempoMap.h"
 
 using namespace lmms;
 
@@ -128,6 +130,64 @@ private slots:
 		QVERIFY(accented > 0.f && plain > 0.f);
 		QVERIFY(std::abs(accented - plain) > 1e-3f); // (the two clicks are different sounds)
 		setting("accent", "1");
+	}
+
+	//! In the song's bars: a change of the time signature starts a bar, accented, with its beats
+	void itClicksTheBarsOfTheTempoMap()
+	{
+		setting("onlyrecording", "0");
+		setting("accent", "1");
+		auto* song = Engine::getSong();
+		auto* engine = Engine::audioEngine();
+		// A bar of 4/4, then 3/8 (a beat of an eighth, 24 ticks)
+		song->tempoMap().setMeter(192, TempoMap::Meter{3, 8}, song->getTempo());
+		const auto cleanUp = qScopeGuard([&] { song->tempoMap().clear(); });
+		for (int period = 0; period < 100; ++period) { engine->renderNextPeriod(); }
+
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
+		const auto total = static_cast<int>(410 * framesPerTick) + 4096;
+		auto samples = std::vector<float>{};
+		while (static_cast<int>(samples.size()) < total)
+		{
+			for (const auto& frame : engine->renderNextPeriod()) { samples.push_back(frame.left()); }
+		}
+		song->stop();
+
+		// Where each click starts (after a silence), and how loud it is
+		auto onsets = std::vector<std::pair<int, float>>{};
+		auto quiet = 1000;
+		for (int frame = 0; frame < static_cast<int>(samples.size()); ++frame)
+		{
+			const auto level = std::abs(samples[frame]);
+			if (level > 1e-3f && quiet >= 500)
+			{
+				auto loudest = 0.f;
+				for (int at = frame; at < std::min(frame + 2000, static_cast<int>(samples.size())); ++at)
+				{
+					loudest = std::max(loudest, std::abs(samples[at]));
+				}
+				onsets.emplace_back(frame, loudest);
+			}
+			quiet = level > 1e-3f ? 0 : quiet + 1;
+		}
+
+		const auto expected = std::vector<int>{0, 48, 96, 144, 192, 216, 240, 264, 288, 312, 336, 360, 384, 408};
+		const auto accented = std::vector<bool>{true, false, false, false, true, false, false, true, false, false,
+			true, false, false, true};
+		QCOMPARE(onsets.size(), expected.size());
+		// (the song's start comes out a period into the output: from the first click on)
+		const auto start = onsets.front().first;
+		for (std::size_t index = 0; index < expected.size(); ++index)
+		{
+			const auto at = start + expected[index] * framesPerTick;
+			QVERIFY2(std::abs(onsets[index].first - at) < 64, qPrintable(QString{"click %1 at %2, not %3"}
+				.arg(index).arg(onsets[index].first).arg(at)));
+			// The accented ones sound as the first one
+			const bool strong = std::abs(onsets[index].second - onsets[0].second) < 1e-4f;
+			QVERIFY2(strong == accented[index], qPrintable(QString{"click %1"}.arg(index)));
+		}
 	}
 };
 

@@ -201,6 +201,38 @@ private slots:
 		QCOMPARE(transport.record(nullptr), Transport::RecordResult::Ended);
 		QCOMPARE(transport.state(), Transport::State::Playing);
 	}
+
+	//! The pre-roll's bars and the position shown are the song's bars, in their time signatures
+	void thePreRollAndThePositionGoByTheSongsBars()
+	{
+		auto* song = Engine::getSong();
+		auto& transport = song->transport();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		// A bar of 4/4, then bars of 3/8 (72 ticks, beats of 24)
+		song->tempoMap().setMeter(192, TempoMap::Meter{3, 8}, song->getTempo());
+		ConfigManager::inst()->setValue("recording", "prerollbars", "2");
+		const auto cleanUp = qScopeGuard([&] {
+			ConfigManager::inst()->setValue("recording", "prerollbars", "0");
+			transport.stop();
+			song->tempoMap().clear();
+		});
+
+		// From the start of the third bar, two bars before: the 3/8 one and the 4/4 one
+		song->setPlayPos(192 + 72, Song::PlayMode::Song);
+		QCOMPARE(transport.record(track), Transport::RecordResult::Started);
+		QCOMPARE(song->getPlayPos(Song::PlayMode::Song).getTicks(), 0);
+		transport.stop();
+
+		song->setPlayPos(192 + 72 + 24 + 5, Song::PlayMode::Song);
+		song->playSong();
+		const auto position = song->musicalPosition();
+		QCOMPARE(position.bar, 2);
+		QCOMPARE(position.beat, 1);
+		QCOMPARE(position.tick, 5);
+		QCOMPARE(position.barStart, 264);
+		QCOMPARE(position.meter, (TempoMap::Meter{3, 8}));
+		song->stop();
+	}
 };
 
 QTEST_GUILESS_MAIN(TransportTest)

@@ -1930,9 +1930,8 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 			{
 				_timeInfo.flags |= kVstTransportPlaying;
 			}
-			_timeInfo.barStartPos = ((int) (_timeInfo.ppqPos
-				/ (4 * syncData->timeSigNumer / (float) syncData->timeSigDenom)))
-				* (4 * syncData->timeSigNumer / (float) syncData->timeSigDenom);
+			// Where the host's bar starts (bars of several time signatures, see the tempo map)
+			_timeInfo.barStartPos = syncData->barStartPos;
 
 			_timeInfo.flags |= kVstBarsValid;
 

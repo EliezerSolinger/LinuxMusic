@@ -54,6 +54,7 @@ VstSyncController::VstSyncController()
 	m_syncData->bufferSize = Engine::audioEngine()->framesPerPeriod();
 	m_syncData->timeSigNumer = 4;
 	m_syncData->timeSigDenom = 4;
+	m_syncData->barStartPos = 0;
 
 	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, &VstSyncController::updateSampleRate);
 	updateSampleRate();
@@ -144,6 +145,12 @@ void VstSyncController::update()
 	m_syncData->playbackJumped = m_jumpPending.exchange(false, std::memory_order_relaxed) || songJumped;
 
 	m_syncData->bufferSize = Engine::audioEngine()->framesPerPeriod();
+
+	// The bar the song is in: its time signature and where it starts (in quarter notes, 48 ticks each)
+	const auto position = Engine::getSong()->musicalPosition();
+	m_syncData->timeSigNumer = position.meter.numerator;
+	m_syncData->timeSigDenom = position.meter.denominator;
+	m_syncData->barStartPos = position.barStart / 48.0;
 
 #ifdef VST_SNC_LATENCY
 	m_syncData->latency = m_syncData->bufferSize * m_syncData->bpm / (static_cast<float>(m_syncData->sampleRate) * 60);
