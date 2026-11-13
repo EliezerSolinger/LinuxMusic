@@ -25,6 +25,7 @@
 #ifndef LMMS_PLUGIN_INSTANCE_H
 #define LMMS_PLUGIN_INSTANCE_H
 
+#include <QByteArray>
 #include <array>
 #include <atomic>
 #include <functional>
@@ -110,6 +111,8 @@ public:
 
 	//! @returns the plugin's audio processor, or nullptr if the plugin does not implement AudioProcessor yet
 	auto audioProcessor() -> AudioProcessor* { return m_processor; }
+	//! The plugin's identity (see PluginGuard), for a scope around code of the plugin's run elsewhere
+	auto identity() const -> const char* { return m_identity.constData(); }
 
 	//! @returns the pin connector, or nullptr if the plugin does not implement AudioProcessor yet
 	auto audioPortsModel() -> AudioPortsModel* { return m_audioPorts.get(); }
@@ -223,6 +226,7 @@ private:
 	Plugin::Type m_type;
 	std::unique_ptr<Plugin> m_plugin;
 	AudioProcessor* m_processor = nullptr;
+	QByteArray m_identity; //!< the plugin's (PluginGuard::identity()), for the threads running its code
 
 	//! How the track channels are connected to the plugin
 	std::unique_ptr<AudioPortsModel> m_audioPorts;

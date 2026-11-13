@@ -34,6 +34,7 @@
 #include "Effect.h"
 #include "DummyEffect.h"
 #include "MixHelpers.h"
+#include "PluginGuard.h"
 #include "PluginInstance.h"
 
 namespace lmms
@@ -133,6 +134,7 @@ auto EffectChain::loadEffect(const QDomElement& effectData) -> std::unique_ptr<P
 
 	if (e->effect() && e->effectRef().isOkay() && e->effectRef().nodeName() == effectData.nodeName())
 	{
+		const auto running = PluginGuard::Running{e->identity()};
 		e->effectRef().restoreState(effectData);
 		e->loadPins(effectData);
 	}

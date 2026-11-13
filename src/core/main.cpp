@@ -59,6 +59,7 @@
 #include "MainApplication.h"
 #include "ConfigManager.h"
 #include "CrashHandler.h"
+#include "PluginGuard.h"
 #include "DataFile.h"
 #include "NotePlayHandle.h"
 #include "embed.h"
@@ -715,6 +716,17 @@ int main( int argc, char * * argv )
 	// A crash leaves a report (see CrashHandler); one left by the last run is shown once the window is up
 	const auto crashReportPath = ConfigManager::inst()->workingDir() + "crash-report.txt";
 	const auto lastCrashReport = CrashHandler::takeLastReport(crashReportPath);
+	// The plugin the crash happened in, if any, is not loaded again until the settings let it (before any project
+	// opens, the recovered one included)
+	auto suspectPlugins = QStringList{};
+	if (!lastCrashReport.isEmpty())
+	{
+		auto report = QFile{lastCrashReport};
+		if (report.open(QIODevice::ReadOnly))
+		{
+			suspectPlugins = PluginGuard::takeSuspectsFromReport(QString::fromUtf8(report.readAll()));
+		}
+	}
 	CrashHandler::install(crashReportPath);
 
 	// if we have an output file for rendering, just render the song
@@ -924,11 +936,16 @@ int main( int argc, char * * argv )
 
 		if (!lastCrashReport.isEmpty() && qEnvironmentVariable("LINUXMUSIC_SCREENSHOT").isEmpty())
 		{
-			QTimer::singleShot(0, gui::getGUI()->mainWindow(), [lastCrashReport] {
-				QMessageBox::warning(gui::getGUI()->mainWindow(), MainWindow::tr("LinuxMusic closed unexpectedly"),
-					MainWindow::tr("LinuxMusic closed unexpectedly the last time. What it was doing is in:\n%1\n\n"
-						"If it happens again, please keep that file: it shows where it happened.")
-						.arg(QDir::toNativeSeparators(lastCrashReport)));
+			QTimer::singleShot(0, gui::getGUI()->mainWindow(), [lastCrashReport, suspectPlugins] {
+				auto text = MainWindow::tr("LinuxMusic closed unexpectedly the last time. What it was doing is in:\n%1\n\n"
+					"If it happens again, please keep that file: it shows where it happened.")
+					.arg(QDir::toNativeSeparators(lastCrashReport));
+				if (!suspectPlugins.isEmpty())
+				{
+					text += "\n\n" + MainWindow::tr("It happened in the plugin %1, which is not loaded again until you "
+						"allow it (Settings, Plugins); projects keep its settings.").arg(suspectPlugins.join(", "));
+				}
+				QMessageBox::warning(gui::getGUI()->mainWindow(), MainWindow::tr("LinuxMusic closed unexpectedly"), text);
 			});
 		}
 	}

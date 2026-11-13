@@ -40,6 +40,7 @@ class QCheckBox;
 class QDoubleSpinBox;
 class QComboBox;
 class QLabel;
+class QListWidget;
 class QLineEdit;
 class QKeySequenceEdit;
 class QSpinBox;
@@ -175,6 +176,8 @@ private:
 	QComboBox* m_vstEmbedComboBox;
 	QString m_vstEmbedMethod;
 	QCheckBox * m_vstAlwaysOnTopCheckBox;
+	QListWidget* m_suspectsList = nullptr;
+	QStringList m_allowedSuspects; //!< plugins to load again, on OK
 	bool m_vstAlwaysOnTop;
 	bool m_disableAutoQuit;
 

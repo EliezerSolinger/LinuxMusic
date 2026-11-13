@@ -22,6 +22,7 @@ set(LMMS_TESTS
 	src/core/MetronomeTest.cpp
 	src/core/MixerTest.cpp
 	src/core/PluginEventTest.cpp
+	src/core/PluginGuardTest.cpp
 	src/core/ProjectMediaTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RealtimeAllocatorTest.cpp
@@ -53,6 +54,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_sources(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/core/RealtimeNew.cpp)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 
 	# TODO CMake 3.12: Propagate usage requirements by linking to lmmsobjs
 	target_include_directories(${LMMS_TEST_NAME} PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)

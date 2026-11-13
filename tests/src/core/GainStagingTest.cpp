@@ -117,8 +117,6 @@ private slots:
 	{
 		QVERIFY(m_directory.isValid());
 		NotePlayHandleManager::init(); // as main() does
-		// The build's plugins (next to the test programs' folder)
-		qputenv("LMMS_PLUGIN_DIR", QFile::encodeName(QCoreApplication::applicationDirPath() + "/../plugins"));
 		Engine::init(true);
 		Engine::audioEngine()->stopProcessing();
 	}

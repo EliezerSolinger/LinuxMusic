@@ -65,8 +65,12 @@ Motor e estabilidade:
 - [x] **Faixa de sample: saltos vistos na thread de áudio.** O salto (play head movido, ciclo) é visto pela própria
   faixa, que recomeça os clipes no mesmo período; antes, um sinal da interface chegava depois, e a exportação com
   faixa de sample podia sair diferente de uma vez para outra
-- [ ] **Isolamento de plugins** (etapa 0): plugin ativo numa queda vai para a lista de suspeitos; da próxima vez roda
-  isolado pela ponte do Carla, ou fica "não carregado" com aviso; opção por plugin para forçar o isolamento
+- [x] **Plugins suspeitos** (etapa 0): enquanto o código de um plugin roda (carregar, processar, tocar a nota,
+  restaurar os ajustes), a thread diz qual é (`PluginGuard::Running`), e o relatório de queda o nomeia. Na próxima
+  abertura ele vira suspeito: o aviso da queda diz qual foi, os projetos o abrem "não carregado" com os ajustes
+  guardados (e salvos como estavam), e adicioná-lo pede confirmação. Configurações → Desempenho → Plugins lista os
+  suspeitos, com "Carregar de novo". Rodar isolado pela ponte do Carla não é possível para os efeitos nativos, LV2 e
+  LADSPA (o Carla não tem um invólucro de efeito para eles no LMMS); VST e ZynAddSubFX já rodam em outro processo
 - [ ] **Fórmula de compasso por marcador** no mapa de tempo
 - [x] **Latência dos plugins:** VST informa o `initialDelay` do plugin (ao carregar e quando ele avisa que mudou);
   o Carla soma a dos plugins ligados do rack (no patchbay, a maior, porque as ligações não chegam ao host); o

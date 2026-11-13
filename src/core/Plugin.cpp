@@ -23,6 +23,7 @@
  */
 
 #include "Plugin.h"
+#include "PluginGuard.h"
 
 #include <QDomElement>
 #include <QLibrary>
@@ -181,6 +182,31 @@ Plugin * Plugin::instantiateWithKey(const QString& pluginName, Model * parent,
 		? static_cast<Plugin::Descriptor::SubPluginFeatures::Key*>(Engine::pickDndPluginKey())
 		: key;
 	const PluginFactory::PluginInfo& pi = getPluginFactory()->pluginInfo(pluginName.toUtf8());
+
+	// A plugin that crashed the program is not loaded again until the settings let it (see PluginGuard)
+	const auto identity = PluginGuard::identity(pluginName,
+		keyPtr ? keyPtr->attributes : Descriptor::SubPluginFeatures::Key::AttributeMap{});
+	if (PluginGuard::isSuspect(identity))
+	{
+		const auto name = PluginGuard::displayName(identity);
+		if (Engine::getSong() && Engine::getSong()->isLoadingProject())
+		{
+			Engine::getSong()->collectError(tr("\"%1\" was running when the program closed unexpectedly, so it was not "
+				"loaded (its settings are kept). To load it again: Settings, Plugins.").arg(name));
+			return new DummyPlugin();
+		}
+		if (gui::getGUI() == nullptr
+			|| QMessageBox::question(nullptr, tr("Plugin"), tr("\"%1\" was running when the program closed "
+				"unexpectedly. Load it anyway?").arg(name)) != QMessageBox::Yes)
+		{
+			return new DummyPlugin();
+		}
+		PluginGuard::clearSuspect(identity);
+	}
+	// Its code runs from here: a crash names it (see the crash handler)
+	const auto identityBytes = identity.toUtf8();
+	const auto running = PluginGuard::Running{identityBytes.constData()};
+
 	if(keyPtr)
 	{
 		// descriptor is not yet set when loading - set it now

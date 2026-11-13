@@ -21,6 +21,7 @@
  */
 
 #include "CrashHandler.h"
+#include "PluginGuard.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -70,6 +71,13 @@ void handler(int signal)
 		case SIGFPE: write("SIGFPE (arithmetic error)"); break;
 		case SIGABRT: write("SIGABRT (aborted)"); break;
 		default: write("a signal"); break;
+		}
+		// The plugin whose code the thread was running, if any: a suspect at the next start (see PluginGuard)
+		if (const char* plugin = PluginGuard::running())
+		{
+			write("\n");
+			write(PluginGuard::ReportMarker);
+			write(plugin);
 		}
 		write("\n\nStack of the crashing thread:\n");
 		void* frames[128];

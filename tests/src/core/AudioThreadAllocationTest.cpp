@@ -310,7 +310,6 @@ private slots:
 		m_observingSystem = observeSystemAllocator();
 		if (!m_observingSystem) { qWarning("the system's allocator is not observed: only operator new is counted"); }
 		NotePlayHandleManager::init();
-		qputenv("LMMS_PLUGIN_DIR", QFile::encodeName(QCoreApplication::applicationDirPath() + "/../plugins"));
 		Engine::init(true);
 		Engine::audioEngine()->stopProcessing();
 	}

@@ -79,6 +79,7 @@ set(LMMS_SRCS
 	core/PluginIssue.cpp
 	core/PluginCategories.cpp
 	core/PluginFactory.cpp
+	core/PluginGuard.cpp
 	core/PluginChecks.cpp
 	core/PluginEvent.cpp
 	core/PluginInstance.cpp

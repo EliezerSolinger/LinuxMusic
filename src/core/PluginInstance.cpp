@@ -23,6 +23,7 @@
  */
 
 #include "PluginInstance.h"
+#include "PluginGuard.h"
 
 #include <algorithm>
 #include <tuple>
@@ -143,6 +144,8 @@ void PluginInstance::attach(std::unique_ptr<Plugin> plugin)
 {
 	m_plugin = std::move(plugin);
 	if (!m_plugin) { return; }
+	// Kept as bytes for the threads that run its code to name it (see PluginGuard)
+	m_identity = PluginGuard::identity(*m_plugin).toUtf8();
 
 	// No allocations on the audio thread
 	m_periodEvents.reserve(2 * MaxEventsPerPeriod);
@@ -382,6 +385,7 @@ auto PluginInstance::process(AudioBuffer& trackChannels, NotePlayHandle* nph) ->
 	if (!m_processor || !hasState(State::Active)) { return false; }
 
 	PluginChecks::require(ThreadCheck::isAudioThread(), "process() must be called on the audio thread");
+	const auto running = PluginGuard::Running{m_identity.constData()};
 
 	if (!hasState(State::Processing))
 	{
@@ -572,7 +576,10 @@ void PluginInstance::playNote(NotePlayHandle* nph, std::span<SampleFrame> out)
 	auto instrument = this->instrument();
 	if (!instrument) { return; }
 
-	instrument->playNote(nph, out);
+	{
+		const auto running = PluginGuard::Running{m_identity.constData()};
+		instrument->playNote(nph, out);
+	}
 
 	if (!m_audioPorts || out.empty()) { return; }
 	const auto direct = m_audioPorts->directRouting();

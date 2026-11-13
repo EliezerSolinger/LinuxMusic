@@ -4856,6 +4856,18 @@ Este chip foi utilizado no computador Commodore 64.</translation>
 <context>
     <name>lmms::Plugin</name>
     <message>
+        <source>&quot;%1&quot; was running when the program closed unexpectedly, so it was not loaded (its settings are kept). To load it again: Settings, Plugins.</source>
+        <translation>&quot;%1&quot; estava rodando quando o programa fechou inesperadamente, por isso não foi carregado (as configurações dele foram mantidas). Para carregá-lo de novo: Opções, Plugins.</translation>
+    </message>
+    <message>
+        <source>Plugin</source>
+        <translation>Plugin</translation>
+    </message>
+    <message>
+        <source>&quot;%1&quot; was running when the program closed unexpectedly. Load it anyway?</source>
+        <translation>&quot;%1&quot; estava rodando quando o programa fechou inesperadamente. Carregar mesmo assim?</translation>
+    </message>
+    <message>
         <location filename="../../src/core/Plugin.cpp" line="219"/>
         <source>Plugin not found</source>
         <translation>Plugin não encontrado</translation>
@@ -10694,6 +10706,10 @@ Double click to pick a file.</source>
 <context>
     <name>lmms::gui::MainWindow</name>
     <message>
+        <source>It happened in the plugin %1, which is not loaded again until you allow it (Settings, Plugins); projects keep its settings.</source>
+        <translation>Aconteceu no plugin %1, que não é carregado de novo até você permitir (Opções, Plugins); os projetos mantêm as configurações dele.</translation>
+    </message>
+    <message>
         <source>COMPOSITION</source>
         <translation>COMPOSIÇÃO</translation>
     </message>
@@ -13938,6 +13954,18 @@ Shift-click to open the note in Automation Editor</source>
 </context>
 <context>
     <name>lmms::gui::SetupDialog</name>
+    <message>
+        <source>Not loaded, since the program closed unexpectedly while they ran (projects keep their settings):</source>
+        <translation>Não carregados, porque o programa fechou inesperadamente enquanto rodavam (os projetos mantêm as configurações deles):</translation>
+    </message>
+    <message>
+        <source>Load again</source>
+        <translation>Carregar de novo</translation>
+    </message>
+    <message>
+        <source>The selected plugins are loaded again, from the next time a project opens</source>
+        <translation>Os plugins selecionados voltam a ser carregados, a partir da próxima vez que um projeto abrir</translation>
+    </message>
     <message>
         <location filename="../../src/gui/modals/SetupDialog.cpp" line="162"/>
         <source>Settings</source>

@@ -34,6 +34,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QScrollArea>
 #include <QKeySequenceEdit>
 #include <QHeaderView>
@@ -51,6 +52,7 @@
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "MidiSetupWidget.h"
+#include "PluginGuard.h"
 #include "ProjectJournal.h"
 #include "SetupDialog.h"
 #include "LatencyCalibration.h"
@@ -475,6 +477,40 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 
 	addCheckBox(tr("Keep effects running even without input"), pluginsBox, pluginsLayout,
 		m_disableAutoQuit, SLOT(toggleDisableAutoQuit(bool)), false);
+
+	// The plugins a crash happened in: not loaded until allowed here (on OK)
+	const auto suspects = PluginGuard::suspects();
+	if (!suspects.isEmpty())
+	{
+		auto* suspectsLabel = new QLabel(tr("Not loaded, since the program closed unexpectedly while they ran "
+			"(projects keep their settings):"), pluginsBox);
+		suspectsLabel->setWordWrap(true);
+		pluginsLayout->addWidget(suspectsLabel);
+		m_suspectsList = new QListWidget(pluginsBox);
+		m_suspectsList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+		for (const auto& identity : suspects)
+		{
+			auto* item = new QListWidgetItem(PluginGuard::displayName(identity), m_suspectsList);
+			item->setData(Qt::UserRole, identity);
+			item->setToolTip(identity);
+		}
+		m_suspectsList->setMaximumHeight(m_suspectsList->sizeHintForRow(0) * std::min(4, static_cast<int>(suspects.size()))
+			+ 2 * m_suspectsList->frameWidth() + 4);
+		pluginsLayout->addWidget(m_suspectsList);
+		auto* allowButton = new QPushButton(tr("Load again"), pluginsBox);
+		allowButton->setToolTip(tr("The selected plugins are loaded again, from the next time a project opens"));
+		allowButton->setEnabled(false);
+		connect(m_suspectsList, &QListWidget::itemSelectionChanged, allowButton,
+			[this, allowButton] { allowButton->setEnabled(!m_suspectsList->selectedItems().isEmpty()); });
+		connect(allowButton, &QPushButton::clicked, this, [this] {
+			for (auto* item : m_suspectsList->selectedItems())
+			{
+				m_allowedSuspects << item->data(Qt::UserRole).toString();
+				delete item;
+			}
+		});
+		pluginsLayout->addWidget(allowButton, 0, Qt::AlignLeft);
+	}
 
 
 	// Performance layout ordering.
@@ -1135,6 +1171,7 @@ void SetupDialog::accept()
 	ConfigManager::inst()->setValue("tooltips", "disabled",
 					QString::number(!m_tooltips));
 	ConfigManager::inst()->setValue("mixer", "newprojectanalog", m_newProjectAnalog->isChecked() ? "1" : "0");
+	for (const auto& identity : m_allowedSuspects) { PluginGuard::clearSuspect(identity); }
 	for (const auto& [id, edit] : m_shortcutEdits) { Shortcuts::setKey(id, edit->keySequence()); }
 	ConfigManager::inst()->setValue("ui", "longaudioseconds", QString::number(m_longAudioSeconds->value()));
 	ConfigManager::inst()->setValue("recording", "latencyoffset", QString::number(m_latencyOffset->value()));

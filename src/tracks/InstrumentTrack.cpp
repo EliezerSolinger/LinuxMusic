@@ -22,6 +22,7 @@
  *
  */
 #include "InstrumentTrack.h"
+#include "PluginGuard.h"
 
 #include "AudioEngine.h"
 #include "AutomationClip.h"
@@ -1079,7 +1080,10 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 
 				if (reuseInstrument)
 				{
-					m_instrument->plugin()->restoreState(node.firstChildElement());
+					{
+						const auto running = PluginGuard::Running{m_instrument->identity()};
+						m_instrument->plugin()->restoreState(node.firstChildElement());
+					}
 					m_instrument->loadPins(node.firstChildElement());
 				}
 				else
@@ -1090,7 +1094,10 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 						Plugin::Type::Instrument, node.toElement().attribute("name"), this, &key);
 					m_instrument->setTrackChannelCount(trackChannelCount());
 
-					m_instrument->plugin()->restoreState(node.firstChildElement());
+					{
+						const auto running = PluginGuard::Running{m_instrument->identity()};
+						m_instrument->plugin()->restoreState(node.firstChildElement());
+					}
 					m_instrument->loadPins(node.firstChildElement());
 					// A plugin missing here: kept as it was saved, so that the project loses nothing
 					m_unloadedInstrument.clear();
@@ -1098,8 +1105,12 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 					if (QString{m_instrument->plugin()->descriptor()->name} != wanted)
 					{
 						m_unloadedInstrument.appendChild(m_unloadedInstrument.importNode(node, true));
-						Engine::getSong()->collectError(tr("The instrument \"%1\" of %2 could not be loaded; its settings "
-							"are kept, and saved as they were.").arg(wanted, name()));
+						// (a suspect plugin was told about already, see Plugin::instantiateWithKey)
+						if (!PluginGuard::isSuspect(PluginGuard::identity(wanted, key.attributes)))
+						{
+							Engine::getSong()->collectError(tr("The instrument \"%1\" of %2 could not be loaded; its "
+								"settings are kept, and saved as they were.").arg(wanted, name()));
+						}
 					}
 					emit instrumentChanged();
 				}
@@ -1124,7 +1135,10 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 				m_instrument->setTrackChannelCount(trackChannelCount());
 				if (m_instrument->plugin()->nodeName() == node.nodeName())
 				{
-					m_instrument->plugin()->restoreState(node.toElement());
+					{
+						const auto running = PluginGuard::Running{m_instrument->identity()};
+						m_instrument->plugin()->restoreState(node.toElement());
+					}
 				}
 				emit instrumentChanged();
 			}
