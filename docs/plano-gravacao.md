@@ -380,15 +380,9 @@ Feito depois (mesma noite e manhã de 13/11):
   volta ou removidos, sem mexer nos arquivos), e no loop só a última passada fica. A interface do passo 4 esconde
   as lanes nesse modo.
 
-Por fazer, na ordem do plano:
+Por fazer (a lista completa e atualizada fica em `pendencias.md`):
 - **Mapa de tempo:** a fórmula de compasso por marcador. (O desfazer das edições ficou pronto em 13/11: cada edição
   da faixa TEMPO é um comando, e um arraste é um passo.)
-- **Edição e interface:**
-  - desfazer por comandos (o atual é por grupos de snapshots);
-  - lanes visíveis;
-  - fades automáticos;
-  - ganho por item;
-  - a faixa nova (`AudioTrack`) e o cabeçalho de duas linhas.
 - **Etapa 1:**
   - nada de alocação no áudio: o `AudioThreadAllocationTest` conta cada alocação e liberação feita na thread de
     áudio com a música tocando, e mostra onde. A automação deixou de alocar (13/11: mapa plano e listas que guardam

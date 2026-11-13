@@ -14,6 +14,22 @@ A lista do que falta, atualizada a cada passo (o detalhe de cada item fica em `p
 
 ## A fazer
 
+Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
+
+- [ ] **Gravar sem faixa armada** arma a faixa selecionada, se ela grava; se não, avisa
+- [ ] **Calibração por loopback:** botão "calibrar" que toca um pulso, grava pela entrada (com um cabo), acha o pico por
+  correlação e salva o offset
+- [ ] **Metrônomo configurável:** só gravando ou também tocando, volume, som com acento no 1
+- [ ] **Xrun gravando:** o ponto fica marcado no take, e um contador avisa
+- [ ] **MIDI:** a chave da faixa ganha "take em lane"; quantização opcional na entrada (grade e força por faixa,
+  desligada por padrão); entrada MIDI por faixa (dispositivo e canal) no cabeçalho
+- [ ] **Cabeçalho de duas linhas em todas as faixas:** instrumento como a de áudio; pasta, sequência e automação com o
+  mesmo desenho, só com o que faz sentido
+- [ ] **Trocar dispositivo, buffer ou taxa sem reiniciar** (bloqueado durante a gravação); a taxa é a do projeto, e
+  quando a placa não tem, converte e avisa
+
+Motor e estabilidade:
+
 - [ ] **Transporte com contador de frames** (etapa 1): estado atômico (parado, tocando, gravando, pré-roll, count-in),
   contador absoluto de frames da linha do tempo, ações globais Tocar, Parar e Gravar
 - [ ] **Motor sem trava** (etapa 1): listas publicadas como snapshots imutáveis, travas finas tentadas, e o fim do
@@ -21,8 +37,13 @@ A lista do que falta, atualizada a cada passo (o detalhe de cada item fica em `p
 - [ ] **Isolamento de plugins** (etapa 0): plugin ativo numa queda vai para a lista de suspeitos; da próxima vez roda
   isolado pela ponte do Carla, ou fica "não carregado" com aviso; opção por plugin para forçar o isolamento
 - [ ] **Fórmula de compasso por marcador** no mapa de tempo
+- [ ] **Latência dos plugins:** VST, Carla e ZynAddSubFX ainda informam 0
+- [ ] **Sample::play** atrasa 1 amostra por causa do reamostrador, mesmo na razão 1
+- [ ] **Lista de problemas ao abrir um projeto:** conferir que mostra tudo (samples que sumiram, plugins não carregados)
 - [ ] **Integração final:** testes, sanitizers, A/B, gravação real no Mac, documentação
-- [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux
+- [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux (o usuário)
+- [ ] **Mac:** testar a entrada do microfone no hardware (precisa de alguém para aceitar o pedido de permissão)
+- [ ] **Arte própria** do logo e do splash (hoje são os do LMMS)
 
 ## Feito recentemente (13/11)
 
