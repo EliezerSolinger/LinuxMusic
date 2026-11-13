@@ -23,12 +23,17 @@
  */
 
 #include "SongEditor.h"
+
+#include "TrackContentWidget.h"
+
+#include "Clipboard.h"
 #include "TempoLaneWidget.h"
 
 #include <cmath>
 
 #include <QAction>
 #include <QDomElement>
+#include <QCursor>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMdiArea>
@@ -375,6 +380,76 @@ void SongEditor::toggleProportionalSnap()
 
 
 
+void SongEditor::copyPaste(int key)
+{
+	// The selected clips, the first (the topmost, leftmost) being the one they are copied around
+	auto selected = QVector<ClipView*>{};
+	for (const auto object : selectedObjects())
+	{
+		if (auto view = dynamic_cast<ClipView*>(object)) { selected.push_back(view); }
+	}
+	std::sort(selected.begin(), selected.end(), [](ClipView* a, ClipView* b) {
+		const auto& tracks = Engine::getSong()->tracks();
+		const auto ia = std::find(tracks.begin(), tracks.end(), a->getClip()->getTrack());
+		const auto ib = std::find(tracks.begin(), tracks.end(), b->getClip()->getTrack());
+		if (ia != ib) { return ia < ib; }
+		return a->getClip()->startPosition() < b->getClip()->startPosition();
+	});
+
+	// The track a paste goes to: the first selected clip's, else the one under the mouse, else the first
+	const auto targetTrack = [&]() -> TrackView* {
+		if (!selected.isEmpty()) { return selected.front()->getTrackView(); }
+		const auto mouse = mapFromGlobal(QCursor::pos());
+		for (const auto view : trackViews())
+		{
+			const auto area = QRect{view->mapTo(this, QPoint{0, 0}), view->size()};
+			if (area.contains(mouse)) { return view; }
+		}
+		return trackViews().isEmpty() ? nullptr : trackViews().front();
+	};
+	const auto paste = [&](const TimePos& at) {
+		if (auto view = targetTrack())
+		{
+			view->getTrackContentWidget()->pasteSelection(at, Clipboard::getMimeData(), false, at);
+		}
+	};
+
+	switch (key)
+	{
+	case Qt::Key_C:
+		if (!selected.isEmpty()) { selected.front()->copy(selected); }
+		break;
+	case Qt::Key_X:
+		if (!selected.isEmpty()) { selected.front()->cut(selected); }
+		break;
+	case Qt::Key_V:
+		// At the playhead
+		paste(m_song->getPlayPos(Song::PlayMode::Song));
+		break;
+	case Qt::Key_D:
+	{
+		// Duplicate: right after the selection
+		if (selected.isEmpty()) { break; }
+		auto end = TimePos{0};
+		auto start = selected.front()->getClip()->startPosition();
+		for (const auto view : selected)
+		{
+			end = std::max(end, view->getClip()->endPosition());
+			start = std::min(start, view->getClip()->startPosition());
+		}
+		selected.front()->copy(selected);
+		// (to the start of the bar after it, as clips are laid out)
+		paste(TimePos{start.getTicks() + TimePos{end.getTicks() - start.getTicks()}.nextFullBar() * TimePos::ticksPerBar()});
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+
+
+
 void SongEditor::keyPressEvent( QKeyEvent * ke )
 {
 	bool isShiftPressed = ke->modifiers() & Qt::ShiftModifier;
@@ -423,6 +498,11 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	else if( ke->key() == Qt::Key_A && ke->modifiers() & Qt::ControlModifier )
 	{
 		selectAllClips( !isShiftPressed );
+	}
+	else if ((ke->modifiers() & Qt::ControlModifier)
+		&& (ke->key() == Qt::Key_C || ke->key() == Qt::Key_X || ke->key() == Qt::Key_V || ke->key() == Qt::Key_D))
+	{
+		copyPaste(ke->key());
 	}
 	else if( ke->key() == Qt::Key_Escape )
 	{

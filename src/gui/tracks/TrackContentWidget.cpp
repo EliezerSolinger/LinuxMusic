@@ -378,7 +378,8 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, QDropEvent * de )
 }
 
 
-bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, bool skipSafetyCheck )
+bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, bool skipSafetyCheck,
+	std::optional<TimePos> leftmostAt )
 {
 	// For decodeKey() and decodeValue()
 	using namespace Clipboard;
@@ -427,15 +428,7 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
 	// TODO -- Need to draw the hovericon either way, or ghost the Clips
 	// onto their final position.
 
-	float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
-	// All clips should be offset the same amount as the grabbed clip
-	auto offset = TimePos(clipPos - grabbedClipPos);
-	// Users expect clips to "fall" backwards, so bias the offset
-	offset -= TimePos::ticksPerBar() * snapSize / 2;
-	// The offset is quantized (rather than the positions) to preserve fine adjustments
-	offset = offset.quantize(snapSize);
-
-	// Get the leftmost Clip and fix the offset if it reaches below bar 0
+	// Get the leftmost Clip
 	TimePos leftmostPos = grabbedClipPos;
 	for(int i = 0; i < clipNodes.length(); ++i)
 	{
@@ -445,6 +438,22 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
 		TimePos pos = clipElement.attributeNode("pos").value().toInt();
 
 		if(pos < leftmostPos) { leftmostPos = pos; }
+	}
+
+	float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
+	// All clips should be offset the same amount as the grabbed clip
+	auto offset = TimePos(clipPos - grabbedClipPos);
+	if (leftmostAt)
+	{
+		// Pasted from the keyboard: the leftmost clip goes exactly there (e.g. the playhead)
+		offset = *leftmostAt - leftmostPos;
+	}
+	else
+	{
+		// Users expect clips to "fall" backwards, so bias the offset
+		offset -= TimePos::ticksPerBar() * snapSize / 2;
+		// The offset is quantized (rather than the positions) to preserve fine adjustments
+		offset = offset.quantize(snapSize);
 	}
 	// Fix offset if it sets the left most Clip to a negative position
 	offset = std::max(offset.getTicks(), -leftmostPos.getTicks());

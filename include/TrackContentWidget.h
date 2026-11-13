@@ -25,6 +25,8 @@
 #ifndef LMMS_GUI_TRACK_CONTENT_WIDGET_H
 #define LMMS_GUI_TRACK_CONTENT_WIDGET_H
 
+#include <optional>
+
 #include <QWidget>
 
 #include "JournallingObject.h"
@@ -112,7 +114,10 @@ public:
 
 	//! @overload
 	//! Overloaded method to make it possible to call this method without a Drag&Drop event
-	bool pasteSelection(TimePos clipPos, const QMimeData* md, bool skipSafetyCheck = false);
+	//! @param leftmostAt where the leftmost clip goes, exactly (a paste from the keyboard), rather than following
+	//!        @p clipPos as the grabbed clip of a drag
+	bool pasteSelection(TimePos clipPos, const QMimeData* md, bool skipSafetyCheck = false,
+		std::optional<TimePos> leftmostAt = std::nullopt);
 
 	//! @brief Return the end position of the trackContentWidget in Bars.
 	//! @param posStart The starting position of the Widget (from getPosition())

@@ -1371,11 +1371,8 @@ void ClipView::paste()
 
 	TrackContentWidget *tcw = getTrackView()->getTrackContentWidget();
 
-	if( tcw->pasteSelection( clipPos, getMimeData() ) )
-	{
-		// If we succeed on the paste we delete the Clip we pasted on
-		remove();
-	}
+	// At the clip's start; the clip stays (a paste never deletes anything)
+	tcw->pasteSelection(clipPos, getMimeData(), false, clipPos);
 }
 
 void ClipView::toggleMute( QVector<ClipView *> clipvs )
