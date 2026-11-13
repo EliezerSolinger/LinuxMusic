@@ -514,7 +514,8 @@ private slots:
 			// Each pass heard the impulse at the same place of the loop
 			const auto peak = peakFrame(PathUtil::toAbsolute(item->file()));
 			QVERIFY(peak >= 0);
-			QVERIFY2(std::abs(bar * framesPerTick + peak - 2 * bar * framesPerTick - 1.0) <= 1.0,
+			// (within the fraction of a frame a tick's frames leave: the sample plays exactly where it is)
+			QVERIFY2(std::abs(bar * framesPerTick + peak - 2 * bar * framesPerTick) < 1.0,
 				qPrintable(QString{"lane %1: impulse %2 frames off"}.arg(lane).arg(bar * framesPerTick + peak - 2 * bar * framesPerTick)));
 		}
 		// The passes' files are "<take>.wav", "<take>-2.wav", "<take>-3.wav": the last one heard, the first lowest

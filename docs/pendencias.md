@@ -48,7 +48,8 @@ Motor e estabilidade:
   isolado pela ponte do Carla, ou fica "não carregado" com aviso; opção por plugin para forçar o isolamento
 - [ ] **Fórmula de compasso por marcador** no mapa de tempo
 - [ ] **Latência dos plugins:** VST, Carla e ZynAddSubFX ainda informam 0
-- [ ] **Sample::play** atrasa 1 amostra por causa do reamostrador, mesmo na razão 1
+- [x] **Sample::play** na razão exata de 1 toca as amostras como estão (antes o reamostrador atrasava uma amostra,
+  ou filtrava, no sinc); a A/B muda só no AudioFileProcessor, por isso
 - [ ] **Lista de problemas ao abrir um projeto:** conferir que mostra tudo (samples que sumiram, plugins não carregados)
 - [ ] **Integração final:** testes, sanitizers, A/B, gravação real no Mac, documentação
 - [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux (o usuário)

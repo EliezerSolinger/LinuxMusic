@@ -225,6 +225,27 @@ private slots:
 		}
 	}
 
+	void atARatioOfOneASamplePlaysItsFramesExactly()
+	{
+		// Each resampler (a linear one keeps a frame to interpolate from; a sinc one filters) would delay or change
+		// them: at a ratio of exactly one the frames are played as they are
+		const auto file = path("exact.wav");
+		writeWav(file, 4096, 2, m_rate);
+		const auto buffer = SampleBuffer::fromFile(file);
+		for (const auto mode : {AudioResampler::Mode::Linear, AudioResampler::Mode::SincMedium})
+		{
+			auto sample = Sample{buffer};
+			auto state = Sample::PlaybackState{mode};
+			auto out = std::vector<SampleFrame>(1000);
+			QVERIFY(sample.play(out.data(), &state, out.size()));
+			for (std::size_t frame = 0; frame < out.size(); ++frame)
+			{
+				QCOMPARE(out[frame].left(), buffer->data()[frame].left());
+				QCOMPARE(out[frame].right(), buffer->data()[frame].right());
+			}
+		}
+	}
+
 	void aClipChoosesMemoryOrDisk()
 	{
 		auto* song = Engine::getSong();

@@ -117,7 +117,40 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 
 	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / sampleRate();
 	const auto freqRatio = frequency() / DefaultBaseFreq;
-	state->m_resampler.setRatio(sampleRateRatio * freqRatio * ratio);
+	const auto totalRatio = sampleRateRatio * freqRatio * ratio;
+
+	// At a ratio of exactly 1 the frames are played as they are: the resampler would delay them by one (a linear
+	// one keeps the last frame to interpolate from)
+	if (totalRatio == 1.0)
+	{
+		state->m_direct = true;
+		while (numFrames > 0)
+		{
+			if (state->m_bufferView.empty())
+			{
+				const auto rendered = render(state->m_buffer.data(), state->m_buffer.size(), state, loop);
+				state->m_bufferView = {state->m_buffer.data(), rendered};
+				if (rendered == 0)
+				{
+					std::fill_n(dst, numFrames, SampleFrame{});
+					break;
+				}
+			}
+			const auto count = std::min(numFrames, state->m_bufferView.size());
+			std::copy_n(state->m_bufferView.data(), count, dst);
+			state->m_bufferView = state->m_bufferView.subspan(count);
+			dst += count;
+			numFrames -= count;
+		}
+		return numFrames < Engine::audioEngine()->framesPerPeriod();
+	}
+	// Back to resampling: it starts afresh from where the frames are (nothing it kept from before is right now)
+	if (state->m_direct)
+	{
+		state->m_resampler.reset();
+		state->m_direct = false;
+	}
+	state->m_resampler.setRatio(totalRatio);
 
 	// TODO: These kind of playback pipelines/graphs are repeated within other parts of the codebase that work with
 	// audio samples. We should find a way to unify this but the right abstraction is not so clear yet.

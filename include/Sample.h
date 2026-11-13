@@ -66,6 +66,7 @@ public:
 			m_bufferView = {};
 			m_frameIndex = frameIndex;
 			m_backwards = false;
+			m_direct = false;
 		}
 
 	private:
@@ -74,6 +75,7 @@ public:
 		std::span<SampleFrame> m_bufferView;
 		int m_frameIndex = 0;
 		bool m_backwards = false;
+		bool m_direct = false; //!< played without the resampler (at a ratio of exactly 1) the last time
 		friend class Sample;
 	};
 

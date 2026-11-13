@@ -394,7 +394,7 @@ Por fazer (a lista completa e atualizada fica em `pendencias.md`):
   - isolamento de plugins;
   - a lista de problemas ao abrir um projeto.
 - **Conhecido:**
-  - a reprodução de samples (`Sample::play`) atrasa 1 amostra por causa do reamostrador, mesmo na razão 1; a gravação está alinhada ao que se ouve;
+  - (corrigido em 13/11: na razão exata de 1, `Sample::play` toca as amostras como estão, sem o atraso do reamostrador);
   - a entrada do microfone no hardware do Mac não foi testada, porque o pedido de permissão do macOS bloqueia sem alguém para responder.
 
 ## Verificação
