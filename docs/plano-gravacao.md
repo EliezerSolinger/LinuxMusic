@@ -203,6 +203,9 @@ Hoje o driver só pede saída estéreo ao motor, e a entrada chega por um ring s
 9. ALSA e JACK (escritos e compilando; testados no Linux pelo usuário).
 10. Integração final: testes, sanitizers, A/B, gravação real no Mac, documentação.
 
+As anotações do usuário de 13/11 (mesa, Explorador, transporte, configurações, arquivos, exportação, samples e
+plugins) viraram as etapas 5 a 13, em `plano-anotacoes-13-11.md`, com a ordem em relação a este plano.
+
 ## Estado (noite de 12/11/2026)
 
 Feito, com testes, A/B e commit (em `master`, sem push):
