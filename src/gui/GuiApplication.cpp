@@ -254,6 +254,10 @@ GuiApplication::GuiApplication()
 			});
 		}
 		// =effects-browser shows the browser's effects page
+		if (screenshotAction == "settings")
+		{
+			QTimer::singleShot(2500, m_mainWindow, [this] { m_mainWindow->showSettingsPage(); });
+		}
 		if (screenshotAction == "effects-browser")
 		{
 			QTimer::singleShot(2500, m_mainWindow, [this] {

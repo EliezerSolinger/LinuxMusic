@@ -97,7 +97,7 @@ public:
 	 * automation editor) and mixing (the mixer, with the selected channel's effects). Instruments and effects open
 	 * in small windows of their own, over either page.
 	 */
-	enum class Page { Composition, Mixing };
+	enum class Page { Composition, Mixing, Settings };
 	void showPage(Page page);
 	auto page() const -> Page;
 
@@ -188,6 +188,8 @@ public slots:
 	bool saveProjectAsNewVersion();
 	void saveProjectAsDefaultTemplate();
 	void showSettingsDialog();
+	//! The settings, as a page of the window (the gear beside the pages), open at @p tab
+	void showSettingsPage(int tab = 0);
 	void aboutLMMS();
 	void help();
 	void toggleAutomationEditorWin();
@@ -276,6 +278,9 @@ private:
 	//! Save, on the toolbar: it blinks when the work is saved for recovery (autosave)
 	ToolButton* m_saveButton = nullptr;
 	TransportBar* m_transportBar = nullptr;
+	QPushButton* m_settingsButton = nullptr;
+	QWidget* m_settingsPage = nullptr; //!< the page holding the settings while they are open
+	Page m_pageBeforeSettings = Page::Composition;
 	//! Folds an area of the composition page (the editors above or below) to its tabs, or unfolds it
 	void toggleDockFolded(QTabWidget* tabs);
 	QHash<QTabWidget*, int> m_foldedHeights; //!< an area's height before it was folded

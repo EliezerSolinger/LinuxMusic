@@ -478,6 +478,15 @@ void MainWindow::finalize()
 		pageButtons->addButton(button);
 		pageLayout->addWidget(button);
 	}
+	// The settings, a page too, behind a gear
+	m_settingsButton = new QPushButton(embed::getIconPixmap("gear", 16, 16), QString{}, pageSwitch);
+	m_settingsButton->setToolTip(tr("Settings"));
+	m_settingsButton->setObjectName("mixerModeButton");
+	m_settingsButton->setCheckable(true);
+	m_settingsButton->setFocusPolicy(Qt::NoFocus);
+	pageButtons->addButton(m_settingsButton);
+	pageLayout->addWidget(m_settingsButton);
+	connect(m_settingsButton, &QPushButton::clicked, this, [this] { showSettingsPage(); });
 	m_compositionButton->setChecked(true);
 	connect(m_compositionButton, &QPushButton::clicked, this, [this] { showPage(Page::Composition); });
 	connect(m_mixingButton, &QPushButton::clicked, this, [this] { showPage(Page::Mixing); });
@@ -513,8 +522,7 @@ void MainWindow::finalize()
 	{
 		ConfigManager::inst()->setValue( "app", "configured", "1" );
 		// no, so show it that user can setup everything
-		SetupDialog sd;
-		sd.exec();
+		showSettingsPage();
 	}
 	// look whether the audio engine failed to start the audio device selected by the
 	// user and is using AudioDummy as a fallback
@@ -526,8 +534,7 @@ void MainWindow::finalize()
 			tr("Failed to setup audio device for playback. Try adjusting your audio device settings (e.g. the sample rate), then restart LinuxMusic."));
 
 		// if so, offer the audio settings section of the setup dialog
-		SetupDialog sd( SetupDialog::ConfigTab::AudioSettings );
-		sd.exec();
+		showSettingsPage(static_cast<int>(SetupDialog::ConfigTab::AudioSettings));
 	}
 
 	// Dock the editors (single-window layout)
@@ -566,17 +573,24 @@ DockPanel* MainWindow::dockWidget(QWidget* w, DockArea area, const QString& titl
 
 void MainWindow::showPage(Page page)
 {
-	m_pages->setCurrentIndex(page == Page::Mixing ? 1 : 0);
+	// The settings show while they are open (closing them comes back here)
+	if (page == Page::Settings && !m_settingsPage) { page = m_pageBeforeSettings; }
+	m_pages->setCurrentWidget(page == Page::Mixing ? m_mixingPage
+		: page == Page::Settings ? m_settingsPage : static_cast<QWidget*>(m_dockSplitter));
 	m_browserPanel->setPageActive(page == Page::Composition);
 	m_mixingExplorer->setPageActive(page == Page::Mixing);
-	(page == Page::Mixing ? m_mixingButton : m_compositionButton)->setChecked(true);
+	(page == Page::Mixing ? m_mixingButton : page == Page::Settings ? m_settingsButton : m_compositionButton)
+		->setChecked(true);
+	if (page == Page::Settings) { return; }
 	if (page == Page::Mixing) { getGUI()->mixerView()->setFocus(); }
 	else { refocus(); }
 }
 
 auto MainWindow::page() const -> Page
 {
-	return m_pages->currentIndex() == 1 ? Page::Mixing : Page::Composition;
+	if (m_pages->currentWidget() == m_mixingPage) { return Page::Mixing; }
+	if (m_settingsPage && m_pages->currentWidget() == m_settingsPage) { return Page::Settings; }
+	return Page::Composition;
 }
 
 
@@ -1056,8 +1070,35 @@ void MainWindow::saveProjectAsDefaultTemplate()
 
 void MainWindow::showSettingsDialog()
 {
-	SetupDialog sd;
-	sd.exec();
+	showSettingsPage();
+}
+
+
+
+
+void MainWindow::showSettingsPage(int tab)
+{
+	if (!m_settingsPage)
+	{
+		if (page() != Page::Settings) { m_pageBeforeSettings = page(); }
+		// Made each time it opens (it reads the settings then), gone when applied or discarded
+		m_settingsPage = new QWidget(m_pages);
+		auto layout = new QHBoxLayout(m_settingsPage);
+		layout->setContentsMargins(0, 12, 0, 12);
+		auto settings = new SetupDialog(static_cast<SetupDialog::ConfigTab>(tab), m_settingsPage);
+		layout->addStretch(1);
+		layout->addWidget(settings);
+		layout->addStretch(1);
+		m_pages->addWidget(m_settingsPage);
+		connect(settings, &QDialog::finished, this, [this] {
+			auto page = m_settingsPage;
+			m_settingsPage = nullptr;
+			showPage(m_pageBeforeSettings);
+			m_pages->removeWidget(page);
+			page->deleteLater();
+		});
+	}
+	showPage(Page::Settings);
 }
 
 

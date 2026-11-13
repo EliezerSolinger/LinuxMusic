@@ -61,7 +61,8 @@ public:
 		PathsSettings
 	};
 
-	SetupDialog(ConfigTab tab_to_open = ConfigTab::GeneralSettings);
+	//! @param page shows it inside @p page (the settings page of the main window) rather than as a window
+	SetupDialog(ConfigTab tab_to_open = ConfigTab::GeneralSettings, QWidget* page = nullptr);
 	~SetupDialog() override;
 
 

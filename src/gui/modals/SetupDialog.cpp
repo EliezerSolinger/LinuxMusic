@@ -88,7 +88,8 @@ inline void labelWidget(QWidget * w, const QString & txt)
 
 
 
-SetupDialog::SetupDialog(ConfigTab tab_to_open) :
+SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
+	QDialog(page),
 	m_tooltips(!ConfigManager::inst()->value(
 			"tooltips", "disabled").toInt()),
 	m_displayWaveform(ConfigManager::inst()->value(
@@ -159,8 +160,11 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 {
 	setWindowIcon(embed::getIconPixmap("setup_general"));
 	setWindowTitle(tr("Settings"));
-	setWindowFlag(Qt::WindowContextHelpButtonHint, false);
-	setModal(true);
+	if (!page)
+	{
+		setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+		setModal(true);
+	}
 
 	Engine::projectJournal()->setJournalling(false);
 
@@ -941,6 +945,12 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 	// Ensure that we cannot make the dialog smaller than it wants to be
 	setMinimumWidth(width());
 
+	if (page)
+	{
+		// A plain widget inside the page (a QDialog makes itself a window of its own even with a parent)
+		setWindowFlags(Qt::Widget);
+		setAutoFillBackground(true);
+	}
 	show();
 }
 

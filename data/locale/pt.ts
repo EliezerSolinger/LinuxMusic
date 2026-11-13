@@ -11124,6 +11124,10 @@ Por favor visite http://lmms.sf.net/wiki para ter acesso a mais infromações so
         <source>Fold or unfold this area</source>
         <translation>Recolher ou expandir esta área</translation>
     </message>
+    <message>
+        <source>Settings</source>
+        <translation>Configurações</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::MalletsInstrumentView</name>
