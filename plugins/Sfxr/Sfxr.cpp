@@ -151,13 +151,15 @@ void SfxrSynth::update( SampleFrame* buffer, const int32_t frameNum )
 {
 	for(int i=0;i<frameNum;i++)
 	{
-        if(!playing_sample)
-        {
-            for( ch_cnt_t j=0; j < DEFAULT_CHANNELS; j++ )
-            {
-                buffer[i][j]=0.0f;
-            }
-        }
+		// A finished sound is silent: the envelope has no stage after the third (going on would read past its lengths)
+		if (!playing_sample)
+		{
+			if (buffer != nullptr)
+			{
+				for (ch_cnt_t j = 0; j < DEFAULT_CHANNELS; j++) { buffer[i][j] = 0.0f; }
+			}
+			continue;
+		}
 
 		rep_time++;
 		if(rep_limit!=0 && rep_time>=rep_limit)

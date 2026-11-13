@@ -7,6 +7,7 @@ set(LMMS_TESTS
 	src/core/AmpModelTest.cpp
 	src/core/ArrayVectorTest.cpp
 	src/core/ConvolverTest.cpp
+	src/core/DrumSynthTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioInputTest.cpp
 	src/core/AudioThreadAllocationTest.cpp

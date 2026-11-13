@@ -28,6 +28,7 @@
 #include <QDomElement>
 #include <algorithm>
 #include <cassert>
+#include <utility>
 
 #include "AudioBuffer.h"
 #include "Effect.h"
@@ -214,8 +215,10 @@ void EffectChain::replaceEffect(std::size_t index, std::unique_ptr<PluginInstanc
 
 	Engine::audioEngine()->requestChangeInModel();
 	effect->setTrackChannelCount(m_trackChannels);
-	m_effects[index] = std::move(effect);
+	// The old effect dies after the list is whole again: its destructor may call back into this chain
+	auto old = std::exchange(m_effects[index], std::move(effect));
 	Engine::audioEngine()->doneChangeInModel();
+	old.reset();
 
 	emit dataChanged();
 }
@@ -270,10 +273,13 @@ void EffectChain::removeEffect( Effect * _effect )
 		return;
 	}
 
-	// Deletes the effect
+	// The effect dies after the list is whole again: its destructor may call back into this chain
+	// (a PeakController removes its effect)
+	auto removed = std::move(*found);
 	m_effects.erase( found );
 
 	Engine::audioEngine()->doneChangeInModel();
+	removed.reset();
 
 	if (m_effects.empty())
 	{
@@ -349,9 +355,19 @@ void EffectChain::clear()
 {
 	emit aboutToClear();
 
+	// The effects leave the list before any of them dies: a dying effect may call back into this chain (a
+	// PeakController's effect removes itself), and it must find a whole list, not one being destroyed
 	Engine::audioEngine()->requestChangeInModel();
-	m_effects.clear();
+	auto removed = std::exchange(m_effects, {});
 	Engine::audioEngine()->doneChangeInModel();
+
+	// One at a time, last first, each out of the list it lived in before it dies
+	while (!removed.empty())
+	{
+		auto effect = std::move(removed.back());
+		removed.pop_back();
+		effect.reset();
+	}
 
 	m_enabledModel.setValue( false );
 }

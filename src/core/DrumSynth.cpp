@@ -25,10 +25,14 @@
 
 #include "DrumSynth.h"
 
+#include <QByteArray>
 #include <QFile>
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <sstream>
 
 #include "lmms_math.h"
@@ -59,6 +63,17 @@ short DD[1200], clippoint;
 float DF[1200];
 float phi[1200];
 
+namespace {
+
+//! A value from a file's settings as a whole number: one out of range, or not a number, would be undefined
+auto toInt(double value) -> int
+{
+	if (!std::isfinite(value)) { return 0; }
+	return static_cast<int>(std::clamp(value, -2147483520.0, 2147483520.0));
+}
+
+} // namespace
+
 long wavewords, wavemode = 0;
 float mem_t = 1.0f, mem_o = 1.0f, mem_n = 1.0f, mem_b = 1.0f, mem_tune = 1.0f, mem_time = 1.0f;
 
@@ -86,7 +101,10 @@ int DrumSynth::LongestEnv()
 	}
 	// l *= timestretch;
 
-	return 2400 + (1200 * static_cast<int>(l / 1200));
+	// A drum is seconds long; a time read from a file as anything (or not a number) would overflow the length, or
+	// allocate it all. At most 2^24 frames, over six minutes
+	constexpr auto MaxBlocks = (1 << 24) / 1200;
+	return 2400 + (1200 * std::clamp(toInt(l / 1200), 0, MaxBlocks));
 }
 
 float DrumSynth::LoudestEnv()
@@ -108,13 +126,17 @@ float DrumSynth::LoudestEnv()
 void DrumSynth::UpdateEnv(int e, long t)
 {
 	// 0.2's added
-	envData[e][NEXTT] = envpts[e][0][static_cast<long>(envData[e][PNT] + 1.f)] * timestretch; // get next point
-	if (envData[e][NEXTT] < 0)
+	const auto point = static_cast<long>(envData[e][PNT]);
+	envData[e][ENV] = envpts[e][1][point] * 0.01f; // this level
+	if (envpts[e][0][point + 1] < 0)
 	{
-		envData[e][NEXTT] = 442000 * timestretch; // if end point, hold
+		// The end point holds its level (it went on towards whatever came after the end mark, and past the points)
+		envData[e][NEXTT] = 442000 * timestretch;
+		envData[e][dENV] = 0.f;
+		return;
 	}
-	envData[e][ENV] = envpts[e][1][static_cast<long>(envData[e][PNT] + 0.f)] * 0.01f;		  // this level
-	float endEnv = envpts[e][1][static_cast<long>(envData[e][PNT] + 1.f)] * 0.01f;			  // next level
+	envData[e][NEXTT] = envpts[e][0][point + 1] * timestretch; // get next point
+	float endEnv = envpts[e][1][point + 1] * 0.01f;			  // next level
 	float dT = envData[e][NEXTT] - static_cast<float>(t);
 	if (dT < 1.0)
 	{
@@ -126,48 +148,35 @@ void DrumSynth::UpdateEnv(int e, long t)
 
 void DrumSynth::GetEnv(int env, const char* sec, const char* key, QString ini)
 {
-	char en[256], s[8];
-	int i = 0, o = 0, ep = 0;
+	char en[256];
 	GetPrivateProfileString(sec, key, "0,0 100,0", en, sizeof(en), ini);
-
-	// be safe!
 	en[255] = 0;
-	s[0] = 0;
 
-	while (en[i] != 0)
+	// "time,level" pairs apart by spaces. A space at the end or two in a row add no point (one added a point with
+	// the time of an earlier file, which could make the envelope 0 long and the sound not a number), a number of any
+	// length is read whole (it was copied into 8 bytes), and there are at most as many points as there is room for,
+	// with the end mark after them
+	constexpr int MaxPoints = sizeof(envpts[0][0]) / sizeof(envpts[0][0][0]) - 1;
+	int ep = 0;
+	for (const auto& pair : QByteArray{en}.split(' '))
 	{
-		if (en[i] == ',')
-		{
-			if (sscanf(s, "%f", &envpts[env][0][ep]) == 0)
-			{
-				envpts[env][0][ep] = 0.f;
-			}
-			o = 0;
-		}
-		else if (en[i] == ' ')
-		{
-			if (sscanf(s, "%f", &envpts[env][1][ep]) == 0)
-			{
-				envpts[env][1][ep] = 0.f;
-			}
-			o = 0;
-			ep++;
-		}
-		else
-		{
-			s[o] = en[i];
-			o++;
-			s[o] = 0;
-		}
-		i++;
+		if (pair.isEmpty()) { continue; }
+		if (ep == MaxPoints) { break; }
+		const auto comma = pair.indexOf(',');
+		const auto time = comma < 0 ? pair : pair.left(comma);
+		envpts[env][0][ep] = std::strtof(time.constData(), nullptr);
+		envpts[env][1][ep] = comma < 0 ? 0.f : std::strtof(pair.mid(comma + 1).constData(), nullptr);
+		++ep;
 	}
-	if (sscanf(s, "%f", &envpts[env][1][ep]) == 0)
+	if (ep == 0)
 	{
-		envpts[env][1][ep] = 0.f;
+		envpts[env][0][0] = 0.f;
+		envpts[env][1][0] = 0.f;
+		ep = 1;
 	}
-	envpts[env][0][ep + 1] = -1;
+	envpts[env][0][ep] = -1;
 
-	envData[env][MAX] = envpts[env][0][ep];
+	envData[env][MAX] = envpts[env][0][ep - 1];
 }
 
 float DrumSynth::waveform(float ph, int form)
@@ -228,9 +237,9 @@ std::size_t DrumSynth::GetPrivateProfileString(const char* sec,
 			{
 				if (b)
 				{
-					// Trim trailing whitespace
-					k = &b[std::strlen(b)];
-					while (k >= b && (*k == ' ' || *k == '\t')) { --k; }
+					// Trim trailing whitespace (an envelope ending in a space read as one more point)
+					k = b + std::strlen(b) - 1;
+					while (k >= b && (*k == ' ' || *k == '\t' || *k == '\r')) { --k; }
 					k[1] = '\0'; // k == b - 1 when string is empty or all whitespace
 					std::strncpy(buffer, b, maxlen);
 				}
@@ -252,7 +261,9 @@ int DrumSynth::GetPrivateProfileInt(const char* sec, const char* key, int def, Q
 	int i = 0;
 
 	GetPrivateProfileString(sec, key, "", tmp, sizeof(tmp), file);
-	sscanf(tmp, "%d", &i);
+	// A number too large for an int saturates (sscanf's %d made it undefined)
+	const long value = std::strtol(tmp, nullptr, 10);
+	i = static_cast<int>(std::clamp(value, long{std::numeric_limits<int>::min()}, long{std::numeric_limits<int>::max()}));
 	if (tmp[0] == 0)
 	{
 		i = def;
@@ -483,7 +494,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BFStep = GetPrivateProfileInt(sec, "dF", 50, dsfile);
 	BQ = static_cast<float>(BFStep);
 	BQ = BQ * BQ / (10000.f - 6600.f * (std::sqrt(BF) - 0.19f));
-	BFStep = 1 + static_cast<int>((40.f - (BFStep / 2.5f)) / (BQ + 1.f + (1.f * BF)));
+	BFStep = 1 + toInt((40.f - (BFStep / 2.5f)) / (BQ + 1.f + (1.f * BF)));
 
 	std::strcpy(sec, "NoiseBand2");
 	chkOn[4] = GetPrivateProfileInt(sec, "On", 0, dsfile);
@@ -496,7 +507,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BFStep2 = GetPrivateProfileInt(sec, "dF", 50, dsfile);
 	BQ2 = static_cast<float>(BFStep2);
 	BQ2 = BQ2 * BQ2 / (10000.f - 6600.f * (std::sqrt(BF2) - 0.19f));
-	BFStep2 = 1 + static_cast<int>((40 - (BFStep2 / 2.5)) / (BQ2 + 1 + (1 * BF2)));
+	BFStep2 = 1 + toInt((40 - (BFStep2 / 2.5)) / (BQ2 + 1 + (1 * BF2)));
 
 	// read distortion parameters
 	std::strcpy(sec, "Distortion");
@@ -506,14 +517,17 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	if (DStep == 7) { DStep = 20; }
 	if (DStep == 6) { DStep = 10; }
 	if (DStep == 5) { DStep = 8; }
+	// The rates are 0 to 6; another one stepped past the block, or never ended
+	DStep = std::clamp(DStep, 1L, 1200L);
 
 	clippoint = 32700;
 	DAtten = 1.0f;
 
 	if (DiON == 1)
 	{
-		DAtten = DGain * static_cast<short>(LoudestEnv());
-		clippoint = DAtten > 32700 ? 32700 : static_cast<short>(DAtten);
+		// The loudest level squared is up to 65025, more than a short holds (converting it was undefined)
+		DAtten = DGain * LoudestEnv();
+		clippoint = static_cast<short>(std::clamp(DAtten, 0.f, 32700.f));
 		DAtten = std::exp2(2.0 * GetPrivateProfileInt(sec, "Bits", 0, dsfile));
 		DGain = DAtten * DGain * fastPow10f(0.05f * GetPrivateProfileInt(sec, "Clipping", 0, dsfile));
 	}
@@ -864,19 +878,19 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 		{
 			for (j = 0; j < 1200; j++)
 			{
-				DF[j] = DGain * static_cast<int>(DF[j] / DAtten);
+				DF[j] = DGain * toInt(DF[j] / DAtten);
 			}
 
 			for (j = 0; j < 1200; j += DStep) // downsampling
 			{
 				DownAve = 0;
 				DownStart = j;
-				DownEnd = j + DStep - 1;
+				DownEnd = std::min(j + DStep - 1, 1199L);
 				for (jj = DownStart; jj <= DownEnd; jj++)
 				{
 					DownAve = DownAve + DF[jj];
 				}
-				DownAve = DownAve / DStep;
+				DownAve = DownAve / (DownEnd - DownStart + 1);
 				for (jj = DownStart; jj <= DownEnd; jj++)
 				{
 					DF[jj] = DownAve;
@@ -903,7 +917,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 			}
 			else
 			{
-				wave[wavewords++] = static_cast<short>(DF[j]);
+				wave[wavewords++] = static_cast<short>(toInt(DF[j])); // not a number makes silence
 			}
 
 			for (int c = 1; c < channels; c++)
