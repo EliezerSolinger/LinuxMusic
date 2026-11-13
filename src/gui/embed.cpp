@@ -25,6 +25,7 @@
 #include "embed.h"
 
 #include <QDir>
+#include <QFile>
 #include <QGuiApplication>
 #include <QImageReader>
 #include <QPainter>
@@ -65,7 +66,8 @@ auto loadSvgPixmap(const QString& resourceName, int width, int height) -> QPixma
 	if (width > 0 && height > 0) { svgSize.scale(width, height, Qt::IgnoreAspectRatio); }
 
 	// Scale the svg
-	qreal devicePixelRatio = QGuiApplication::primaryScreen()->devicePixelRatio();
+	const auto* screen = QGuiApplication::primaryScreen();
+	const qreal devicePixelRatio = screen ? screen->devicePixelRatio() : 1.0;
 	svgSize *= devicePixelRatio;
 
 	QImage image(svgSize, QImage::Format_ARGB32);
@@ -87,7 +89,10 @@ auto loadPixmap(const QString& name, int width, int height, const char* const* x
 	const auto resourceName = QDir::isAbsolutePath(name) ? name : "artwork:" + name;
 	auto reader = QImageReader{resourceName};
 
-	if (reader.format().toLower() == "svg")
+	// An SVG is drawn by Qt Svg directly: Qt's SVG image-format plugin, which QImageReader needs for it, is not
+	// always installed (Linux distributions ship it apart), and without it every SVG icon came out empty
+	const auto svgName = resourceName.endsWith(".svg", Qt::CaseInsensitive) ? resourceName : resourceName + ".svg";
+	if (reader.format().toLower() == "svg" || (!reader.canRead() && QFile::exists(svgName)))
 	{
 		return loadSvgPixmap(resourceName, width, height);
 	}

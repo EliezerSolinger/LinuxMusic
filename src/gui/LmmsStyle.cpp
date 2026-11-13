@@ -26,12 +26,18 @@
 #include <array>
 
 #include <QApplication>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
+#include <QImageReader>
 #include <QPainter>
 #include <QPainterPath>  // IWYU pragma: keep
+#include <QRegularExpression>
+#include <QStandardPaths>
 #include <QStyleFactory>
 #include <QStyleOption>
+#include <QSvgRenderer>
 
 #include "embed.h"
 #include "LmmsStyle.h"
@@ -133,12 +139,61 @@ void drawPath( QPainter *p, const QPainterPath &path,
 
 
 
+namespace
+{
+
+/**
+ * The style sheet as Qt can use it here. Its SVG images need Qt's SVG image-format plugin, which Linux distributions
+ * ship apart and is not always installed; without it they are drawn here (Qt Svg is linked) to PNGs in the cache,
+ * at 1x and 2x for high DPI, and the sheet points at those.
+ */
+auto usableStyleSheet(QByteArray css) -> QString
+{
+	auto sheet = QString::fromUtf8(css);
+	if (QImageReader::supportedImageFormats().contains("svg")) { return sheet; }
+
+	const auto cache = QDir{QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/theme-svg"};
+	if (!cache.mkpath(".")) { return sheet; }
+
+	static const auto svgUrl = QRegularExpression{R"re(url\(\s*"?(resources:[^")]+\.svg)"?\s*\))re"};
+	auto replaced = QString{};
+	auto last = qsizetype{0};
+	for (auto match = svgUrl.globalMatch(sheet); match.hasNext();)
+	{
+		const auto found = match.next();
+		const auto source = found.captured(1);
+		auto renderer = QSvgRenderer{source};
+		const auto base = QFileInfo{source.mid(QString{"resources:"}.size())}.completeBaseName();
+		const auto png = cache.filePath(base + ".png");
+		auto written = renderer.isValid();
+		for (const auto scale : {1, 2})
+		{
+			if (!written) { break; }
+			auto image = QImage{renderer.defaultSize() * scale, QImage::Format_ARGB32_Premultiplied};
+			image.fill(Qt::transparent);
+			auto painter = QPainter{&image};
+			renderer.render(&painter);
+			painter.end();
+			written = image.save(scale == 1 ? png : cache.filePath(base + "@2x.png"));
+		}
+		if (!written) { continue; }
+		replaced += sheet.mid(last, found.capturedStart() - last) + QString{"url(\"%1\")"}.arg(png);
+		last = found.capturedEnd();
+	}
+	return replaced + sheet.mid(last);
+}
+
+} // namespace
+
+
+
+
 LmmsStyle::LmmsStyle() :
 	QProxyStyle()
 {
 	QFile file( "resources:style.css" );
 	file.open( QIODevice::ReadOnly );
-	qApp->setStyleSheet( file.readAll() );
+	qApp->setStyleSheet(usableStyleSheet(file.readAll()));
 
 	m_styleReloader.addPath(QFileInfo{file}.absoluteFilePath());
 	connect(&m_styleReloader, &QFileSystemWatcher::fileChanged, this,
@@ -147,7 +202,7 @@ LmmsStyle::LmmsStyle() :
 			if (auto file = QFile{path}; file.exists())
 			{
 				file.open(QIODevice::ReadOnly);
-				qApp->setStyleSheet(file.readAll());
+				qApp->setStyleSheet(usableStyleSheet(file.readAll()));
 				TextFloat::displayMessage(
 					tr("Theme updated"),
 					tr("LinuxMusic theme file %1 has been reloaded.").arg(file.fileName()),
