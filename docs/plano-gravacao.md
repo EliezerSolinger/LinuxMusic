@@ -250,21 +250,36 @@ Feito, com testes, A/B e commit (em `master`, sem push):
   - No cabeçalho da faixa de sample: R (armar) e o botão de entrada, com o menu de entradas e a monitoração.
   - O Gravar do transporte grava as faixas armadas; sem faixa armada, grava MIDI no Piano Roll como antes.
 
+Feito depois (mesma noite e manhã de 13/11):
+- **Gravação:**
+  - pré-roll e count-in, com o metrônomo sem leitura de arquivo no áudio;
+  - takes em loop: cada volta vira um take do mesmo clipe;
+  - comping: cortar o clipe e escolher o take de cada parte;
+  - mudança de tempo durante a gravação não corta o take (o gravador trabalha em ticks);
+  - medidor de nível de entrada no cabeçalho da faixa;
+  - captura sob demanda: o pedido do microfone aparece quando uma faixa precisa da entrada, sem deadlock ao abrir projetos com faixa armada.
+- **Gravação MIDI na linha do tempo** (`MidiRecorder`), em overdub ou replace, com o R nas faixas de instrumento.
+- **Desfazer:** a gravação inteira desfaz e refaz num passo só (grupos no `ProjectJournal`). Também foi corrigido o bug que criava 2 passos falsos a cada salvamento de faixa de instrumento.
+- **Mapa de tempo** (`TempoMap`):
+  - marcadores com salto ou rampa, seguidos na reprodução;
+  - a automação de BPM de projetos antigos vira marcadores ao abrir;
+  - a faixa TEMPO fica sob a régua do Editor de Arranjo.
+- **Etapa 0:** carga robusta. 140 projetos corrompidos abrem sem crash nem UB.
+- **ALSA** reescrito e **JACK** com N entradas (ver acima).
+- **Hardware no Mac:** o CoreAudio com o microfone abre o aggregate e roda sem xruns. Neste processo de teste o macOS entregou silêncio, o que indica falta de permissão de microfone para o processo ou entrada muda.
+
 Por fazer, na ordem do plano:
-- **Mapa de tempo e time-stretch:** itens 3 e 9 da arquitetura.
+- **Time-stretch renderizado** (item 9 da arquitetura).
+- **Mapa de tempo:** o desfazer das edições dos marcadores; a fórmula de compasso por marcador.
 - **Edição e interface:**
-  - desfazer por comandos;
-  - lanes e comping;
+  - desfazer por comandos (o atual é por grupos de snapshots);
+  - lanes visíveis;
   - fades automáticos;
   - ganho por item;
   - a faixa nova (`AudioTrack`) e o cabeçalho de duas linhas.
-- **Gravação:**
-  - pré-roll e count-in;
-  - takes em loop.
 - **Mídia:**
   - leitura em streaming do disco;
   - cache de picos.
-- **Gravação MIDI na linha do tempo.**
 - **Etapa 1:**
   - o motor sem o mutex do período;
   - o transporte com contador de frames.
