@@ -412,9 +412,9 @@ void TempoLaneWidget::mouseDoubleClickEvent(QMouseEvent* event)
 			}
 			else
 			{
-				const auto bar = TimePos::ticksPerBar();
-				const auto start = tick / bar * bar;
-				addRegion(start, start + bar);
+				// The song's bar it is in (in its time signature)
+				const auto bar = m_map->barAt(tick);
+				addRegion(bar.start, bar.start + bar.length);
 			}
 		}
 		return;
@@ -826,9 +826,10 @@ void TempoLaneWidget::regionMenu(QMenu& menu, int x)
 		const auto& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 		auto* fromCycle = menu.addAction(tr("Add a region over the cycle..."), this, [this] { addRegionFromCycle(); });
 		fromCycle->setEnabled(timeline.loopEnd() > timeline.loopBegin());
-		const auto bar = TimePos::ticksPerBar();
-		const auto start = tickAt(x) / bar * bar;
-		menu.addAction(tr("Add a region of a bar here..."), this, [this, start, bar] { addRegion(start, start + bar); });
+		// The song's bar it is in (in its time signature)
+		const auto bar = m_map->barAt(tickAt(x));
+		menu.addAction(tr("Add a region of a bar here..."), this,
+			[this, bar] { addRegion(bar.start, bar.start + bar.length); });
 		return;
 	}
 	const auto begin = hit->begin;

@@ -2,9 +2,10 @@
 
 A lista do que falta, atualizada a cada passo (o detalhe de cada item fica em `plano-gravacao.md`).
 
-## Em andamento
+## Feito: etapa 1 (a thread de áudio)
 
-- [ ] **Thread de áudio sem alocação, E/S ou trava** (etapa 1)
+- [x] **Thread de áudio sem alocação, E/S ou trava** (etapa 1): sem alocação (abaixo), a E/S de arquivo nas threads
+  de disco (streaming e gravação), e a trava do período sem esperar além de meio período ("Motor sem trava")
   - [x] detector: `AudioThreadAllocationTest` conta cada alocação feita na thread de áudio, por lugar (todas,
     não só as primeiras)
   - [x] automação sem alocação (era metade)

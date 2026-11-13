@@ -1,6 +1,6 @@
 # Gravação: como usar
 
-O que já funciona (12/11/2026). O plano completo e o estado de cada parte estão em `plano-gravacao.md`.
+O que já funciona (13/11/2026). O plano completo e o estado de cada parte estão em `plano-gravacao.md`.
 
 ## Configurar o áudio
 
@@ -108,18 +108,49 @@ O menu do botão Gravar (a setinha) tem:
 - O take cai no lugar em que foi tocado, com precisão de uma amostra.
   - A conta usa as latências que o driver informa.
   - Os testes provam isso com um loopback falso, para qualquer latência e tamanho de callback.
-- **Desvio:** se ainda houver diferença (conversores da interface, por exemplo), ajuste `recording/latencyoffset`, em frames, no arquivo de configuração.
+- **Desvio:** se ainda houver diferença (conversores da interface, por exemplo), meça em **Configurações → Áudio →
+  Gravação → Medir...**: ligue um cabo de uma saída a uma entrada, e o programa toca um pulso, encontra onde ele
+  volta e guarda o ajuste.
+
+## Quedas (xruns)
+
+- Quando o dispositivo falha (xrun), o ponto fica marcado em vermelho no take, e o fim da gravação avisa quantas
+  vezes aconteceu.
+- O mesmo vale quando o programa está ocupado mudando o projeto (carregando outro, por exemplo) por mais de meio
+  período: aquele período sai em silêncio, a música espera, e a queda fica marcada no take.
+
+## Mapa de tempo e fórmula de compasso
+
+Na faixa **TEMPO**, acima da régua do Arranjo:
+- **Duplo clique** ou **botão direito → Mudar o tempo aqui:** um marcador com o BPM a partir dali.
+- **Rampa até o próximo marcador** (no menu do marcador): o tempo vai mudando até o do marcador seguinte.
+- **Fórmula de compasso...** (no menu do marcador) ou **Mudar a fórmula de compasso aqui...** (num lugar vazio): a
+  fórmula a partir dali, por exemplo 3/4 ou 7/8. Um compasso começa no marcador. No marcador do início, é a fórmula
+  da música (a do mostrador COMPASSO).
+
+A régua, a grade, o encaixe, o metrônomo, o pré-roll, o mostrador de posição, os plugins (Carla e VST) e os
+arquivos MIDI exportados e importados seguem os compassos do mapa. O Piano Roll e o Editor de Automação mostram o
+clipe na fórmula do lugar onde ele começa. Os takes gravados guardam o BPM em que foram gravados e acompanham as
+mudanças de tempo (time-stretch).
+
+## Se o programa fechar sozinho
+
+- **Projeto:** o programa salva um instantâneo do projeto 2 segundos depois de cada mudança (no máximo a cada 30
+  segundos enquanto você mexe sem parar), também tocando e gravando. Na próxima abertura, ele oferece recuperar.
+  Uma gravação em andamento também volta: os takes são completados a partir dos arquivos, até o último momento
+  gravado.
+- **Plugin:** se o programa caiu enquanto um plugin trabalhava, o aviso da próxima abertura diz qual foi. Esse
+  plugin não é mais carregado até você permitir: os projetos o abrem "não carregado", com os ajustes guardados (e
+  salvos como estavam). Em **Configurações → Desempenho → Plugins**, a lista dos suspeitos tem **Carregar de novo**.
+
+## Trocar de dispositivo sem reiniciar
+
+Ao salvar as configurações, o dispositivo de áudio e o driver MIDI reabrem com o que mudou, sem reiniciar o
+programa (não durante uma gravação). As entradas MIDI das faixas continuam ligadas aos mesmos aparelhos, onde o
+driver novo os tiver; os que faltarem são avisados.
 
 ## O que ainda não existe
 
-Está no plano, mas ainda falta:
-- **mapa de tempo:** vários BPMs na música, com saltos e rampas;
-- **time-stretch** renderizado quando o BPM muda;
-- **desfazer:** a gravação ainda desfaz faixa por faixa, não numa entrada só;
-- **edição:**
-  - fades automáticos curtos nas bordas dos takes;
-  - ganho por item;
-- **faixa de gravação nova:** com cabeçalho de duas linhas e lanes visíveis;
-- **leitura da mídia:** em streaming do disco (hoje o take vai inteiro para a memória);
-- **calibração automática de latência** por loopback;
-- **marcas de xrun** no take: o xrun é contado, mas não aparece no item.
+- **Linux:** o ALSA e o JACK ainda precisam ser testados numa máquina Linux de verdade.
+- **Mac:** a entrada do microfone ainda precisa ser testada no aparelho (o pedido de permissão do macOS precisa de
+  alguém para aceitar).
