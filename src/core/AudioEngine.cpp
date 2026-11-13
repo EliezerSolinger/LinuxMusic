@@ -74,6 +74,14 @@ using LocklessListElement = LocklessList<PlayHandle*>::Element;
 static thread_local bool s_renderingThread = false;
 
 
+namespace
+{
+//! How deep this thread is in requestChangeInModel() (the change lock is recursive)
+thread_local int s_changesRequested = 0;
+}
+
+
+
 AudioEngine::AudioEngine(bool renderOnly)
 	: m_renderOnly(renderOnly)
 	, m_framesPerAudioBuffer(std::clamp(
@@ -354,7 +362,23 @@ void AudioEngine::setCaptureEnabled(bool enabled)
 {
 	if (enabled == m_captureEnabled) { return; }
 	m_captureEnabled = enabled;
+	applyCaptureEnabled();
+}
+
+
+
+
+void AudioEngine::applyCaptureEnabled()
+{
 	if (!m_audioDev || !m_audioDev->capturesOnDemand()) { return; }
+
+	// Stopping the device waits for its callback to end, which waits for the change lock: a thread holding it (e.g.
+	// loading a project, which processes events meanwhile) would wait for itself. Then the device changes later.
+	if (s_changesRequested > 0)
+	{
+		QMetaObject::invokeMethod(this, [this] { applyCaptureEnabled(); }, Qt::QueuedConnection);
+		return;
+	}
 
 	const bool running = m_audioDev->isRunning();
 	if (running) { m_audioDev->stopProcessing(); }
@@ -630,11 +654,13 @@ void AudioEngine::requestChangeInModel()
 {
 	if (s_renderingThread) { return; }
 	m_changeMutex.lock();
+	++s_changesRequested;
 }
 
 void AudioEngine::doneChangeInModel()
 {
 	if (s_renderingThread) { return; }
+	--s_changesRequested;
 	m_changeMutex.unlock();
 }
 

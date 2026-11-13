@@ -54,6 +54,31 @@ private:
 	void stopProcessingImpl() override {}
 };
 
+//! A device that opens its input on demand, counting how often it is asked to
+class OnDemandDevice : public AudioDevice
+{
+public:
+	explicit OnDemandDevice(AudioEngine* engine)
+		: AudioDevice{2, engine}
+	{
+		setInputChannels(2);
+	}
+
+	auto capturesOnDemand() const -> bool override { return true; }
+	void setCaptureEnabled(bool enabled) override
+	{
+		capturing = enabled;
+		++changes;
+	}
+
+	bool capturing = false;
+	int changes = 0;
+
+private:
+	void startProcessingImpl() override {}
+	void stopProcessingImpl() override {}
+};
+
 //! The input sample of channel @p channel at absolute frame @p frame: unique, and exact in a float
 auto inputSample(ch_cnt_t channel, std::int64_t frame) -> float
 {
@@ -160,6 +185,31 @@ private slots:
 	{
 		driveAndCheck(100, 1, 2);
 		driveAndCheck(100, 4, 2);
+	}
+
+	void captureChangesWaitWhileTheModelChanges()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* device = new OnDemandDevice{engine};
+		engine->setAudioDevice(device, false);
+		engine->setCaptureEnabled(false);
+		QCoreApplication::processEvents();
+		const auto changes = device->changes;
+
+		// Holding the change lock (as loading a project does), the device is not touched: stopping it would wait
+		// for its callback, which waits for the lock
+		{
+			const auto guard = engine->requestChangesGuard();
+			engine->setCaptureEnabled(true);
+			QCOMPARE(device->changes, changes);
+		}
+
+		// Then it is
+		QCoreApplication::processEvents();
+		QVERIFY(device->capturing);
+		QVERIFY(device->changes > changes);
+		engine->setCaptureEnabled(false);
+		QVERIFY(!device->capturing);
 	}
 
 	void outputOnlyCallbacksLeaveSilence()

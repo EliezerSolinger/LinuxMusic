@@ -432,6 +432,9 @@ private:
 	//! Sets the capture buffers up for the audio device's inputs (not on the audio thread)
 	void prepareCapture();
 
+	//! Opens or closes the device's input as captureEnabled() says, now or as soon as it is safe
+	void applyCaptureEnabled();
+
 	//! Moves the play handles added since the last period into the list of play handles (audio thread, or holding
 	//! the change lock)
 	void adoptNewPlayHandles();
