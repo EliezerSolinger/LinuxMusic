@@ -50,6 +50,7 @@ namespace gui
 class BrowserPanel;
 class DockPanel;
 class PluginView;
+class ToolButton;
 class SubWindow;
 class ToolButton;
 
@@ -263,6 +264,9 @@ private:
 	int m_rightDockWidth = 360;
 
 	QWidget * m_toolBar;
+	//! Save, on the toolbar: it blinks when the work is saved for recovery (autosave)
+	ToolButton* m_saveButton = nullptr;
+	void flashSaveButton();
 	QGridLayout * m_toolBarLayout;
 
 	struct keyModifiers

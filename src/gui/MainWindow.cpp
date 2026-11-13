@@ -29,6 +29,8 @@
 #include <QDesktopServices>
 #include <QDomElement>
 #include <QFileInfo>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
 #include <QMdiArea>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -425,11 +427,10 @@ void MainWindow::finalize()
 	help_menu->addAction( embed::getIconPixmap( "icon_small" ), tr( "About" ),
 				  this, SLOT(aboutLMMS()));
 
-	// Toolbar, after the LMMS redesign concept (LMMS#1911): save and help on the left, the transport in the
-	// middle and the pages (composition, mixing) on the right. The other file actions are in the File menu.
-	auto project_save = new ToolButton(
+	// Toolbar, after the LMMS redesign concept (LMMS#1911): save on the left, the transport in the middle and the
+	// pages (composition, mixing) on the right. The other file actions are in the File menu, help in Help.
+	m_saveButton = new ToolButton(
 		embed::getIconPixmap("project_save"), tr("Save current project"), this, SLOT(saveProject()), m_toolBar);
-	auto help_button = new ToolButton(embed::getIconPixmap("help"), tr("Help"), this, SLOT(help()), m_toolBar);
 
 	// The pages: composition (with recording) and mixing, separate, as in a studio
 	auto pageSwitch = new QWidget(m_toolBar);
@@ -455,8 +456,7 @@ void MainWindow::finalize()
 	connect(m_mixingButton, &QPushButton::clicked, this, [this] { showPage(Page::Mixing); });
 
 	m_toolBarLayout->setColumnMinimumWidth(0, 5);
-	m_toolBarLayout->addWidget(project_save, 0, 1, Qt::AlignVCenter);
-	m_toolBarLayout->addWidget(help_button, 0, 2, Qt::AlignVCenter);
+	m_toolBarLayout->addWidget(m_saveButton, 0, 1, Qt::AlignVCenter);
 	m_toolBarLayout->setColumnStretch(3, 1);
 	m_toolBarLayout->addWidget(new TransportBar(m_toolBar), 0, 4, Qt::AlignVCenter);
 	m_toolBarLayout->setColumnStretch(5, 1);
@@ -1541,7 +1541,7 @@ void MainWindow::autoSave()
 				"enablerunningautosave" ).toInt() ||
 			! Engine::getSong()->isPlaying() ) )
 	{
-		Engine::getSong()->saveProjectFile(ConfigManager::inst()->recoveryFile());
+		if (Engine::getSong()->saveProjectFile(ConfigManager::inst()->recoveryFile())) { flashSaveButton(); }
 		autoSaveTimerReset();  // Reset timer
 	}
 	else
@@ -1552,6 +1552,27 @@ void MainWindow::autoSave()
 			autoSaveTimerReset( m_autoSaveShortTime );
 		}
 	}
+}
+
+void MainWindow::flashSaveButton()
+{
+	// Two slow blinks, fading out and back in: the work was just saved for recovery
+	auto* effect = qobject_cast<QGraphicsOpacityEffect*>(m_saveButton->graphicsEffect());
+	if (!effect)
+	{
+		effect = new QGraphicsOpacityEffect{m_saveButton};
+		effect->setOpacity(1.0);
+		m_saveButton->setGraphicsEffect(effect);
+	}
+	auto* fade = new QPropertyAnimation{effect, "opacity", m_saveButton};
+	fade->setDuration(1200);
+	fade->setKeyValueAt(0.0, 1.0);
+	fade->setKeyValueAt(0.25, 0.2);
+	fade->setKeyValueAt(0.5, 1.0);
+	fade->setKeyValueAt(0.75, 0.2);
+	fade->setKeyValueAt(1.0, 1.0);
+	fade->setEasingCurve(QEasingCurve::InOutSine);
+	fade->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void MainWindow::onExportProjectMidi()
