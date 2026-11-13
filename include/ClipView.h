@@ -361,11 +361,14 @@ private:
 	//! @returns Whether the user can left-resize this clip so that the start of the clip bounds is before the start of the clip content.
 	virtual bool isResizableBeforeStart() { return true; };
 
-	
+
+public:
 	//! @brief Split this Clip into two clips
 	//! @param pos the position of the split, relative to the start of the clip
 	//! @return true if the clip could be split
 	bool splitClip(const TimePos pos);
+
+private:
 
 	//! @brief Destructively split this Clip into two clips.
 	//!

@@ -198,8 +198,11 @@ protected:
 	//! @param re The Resize Event to handle.
 	void resizeEvent(QResizeEvent* re) override;
 
-private:
+public:
+	//! Sets the track's height (at least MINIMAL_TRACK_HEIGHT)
 	void resizeToHeight(int height);
+
+private:
 
 private:
 	enum class Action

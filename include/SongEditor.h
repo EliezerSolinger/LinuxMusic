@@ -114,6 +114,8 @@ private:
 	//! Ctrl+C, Ctrl+X: the selected clips to the clipboard; Ctrl+V: pastes at the playhead, on the selected clips'
 	//! track (else the one under the mouse); Ctrl+D: duplicates the selection right after it
 	void copyPaste(int key);
+	//! S: splits the selected clips (or, with none selected, all of them) where the playhead crosses them
+	void splitAtPlayhead();
 	void wheelEvent( QWheelEvent * we ) override;
 
 	bool allowRubberband() const override;

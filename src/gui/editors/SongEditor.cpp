@@ -27,6 +27,7 @@
 #include "TrackContentWidget.h"
 
 #include "Clipboard.h"
+#include "ProjectJournal.h"
 #include "TempoLaneWidget.h"
 
 #include <cmath>
@@ -380,6 +381,30 @@ void SongEditor::toggleProportionalSnap()
 
 
 
+void SongEditor::splitAtPlayhead()
+{
+	// The selected clips the playhead crosses; with none selected, every clip it crosses (as REAPER's S)
+	const auto at = m_song->getPlayPos(Song::PlayMode::Song);
+	auto targets = QVector<ClipView*>{};
+	const auto selected = selectedObjects();
+	for (const auto view : trackViews())
+	{
+		for (const auto clipView : view->getTrackContentWidget()->clipViews())
+		{
+			const auto clip = clipView->getClip();
+			if (clip->startPosition() >= at || clip->endPosition() <= at) { continue; }
+			if (!selected.isEmpty() && !clipView->isSelected()) { continue; }
+			targets.push_back(clipView);
+		}
+	}
+	if (targets.isEmpty()) { return; }
+	const auto group = ProjectJournal::Group{Engine::projectJournal()};
+	for (const auto clipView : targets) { clipView->splitClip(at - clipView->getClip()->startPosition()); }
+}
+
+
+
+
 void SongEditor::copyPaste(int key)
 {
 	// The selected clips, the first (the topmost, leftmost) being the one they are copied around
@@ -499,6 +524,10 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	{
 		selectAllClips( !isShiftPressed );
 	}
+	else if (ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier)
+	{
+		splitAtPlayhead();
+	}
 	else if ((ke->modifiers() & Qt::ControlModifier)
 		&& (ke->key() == Qt::Key_C || ke->key() == Qt::Key_X || ke->key() == Qt::Key_V || ke->key() == Qt::Key_D))
 	{
@@ -529,15 +558,33 @@ void SongEditor::adjustLeftRightScoll(int value)
 
 void SongEditor::wheelEvent( QWheelEvent * we )
 {
+	// As in REAPER: over the clips, the wheel zooms horizontally, Ctrl+wheel the tracks' height, Alt+wheel scrolls
+	// horizontally (Qt hands it as a horizontal wheel), Shift+wheel scrolls vertically, as does the wheel over the
+	// tracks' heads; a horizontal wheel (a trackpad) scrolls horizontally
 	const auto posX = we->position().toPoint().x();
-	if ((we->modifiers() & Qt::ControlModifier) && (posX > trackHeadWidth()))
+	const bool overClips = posX > trackHeadWidth();
+	const bool vertical = std::abs(we->angleDelta().y()) >= std::abs(we->angleDelta().x());
+	const auto mods = we->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
+	if (overClips && vertical && mods == Qt::ControlModifier)
+	{
+		// The tracks' height, all together
+		const int direction = we->angleDelta().y() > 0 ? 1 : -1;
+		for (const auto view : trackViews())
+		{
+			const int height = view->getTrack()->getHeight();
+			view->resizeToHeight(std::clamp(height + direction * std::max(4, height / 8), MINIMAL_TRACK_HEIGHT, 256));
+		}
+		we->accept();
+		return;
+	}
+	if (overClips && vertical && mods == Qt::NoModifier)
 	{
 		int x = posX - trackHeadWidth();
 		// tick based on the mouse x-position where the scroll wheel was used
 		int tick = x / pixelsPerBar() * TimePos::ticksPerBar();
 
 		// move zoom slider (pixelsPerBar will change automatically)
-		int step = we->modifiers() & Qt::ShiftModifier ? 1 : 5;
+		int step = 5;
 		// when Alt is pressed, wheelEvent returns delta for x coordinate (mimics horizontal mouse wheel)
 		int direction = (we->angleDelta().y() + we->angleDelta().x()) > 0 ? 1 : -1;
 		m_zoomingModel->incValue(step * direction);
@@ -557,12 +604,9 @@ void SongEditor::wheelEvent( QWheelEvent * we )
 	{
 		adjustLeftRightScoll(we->angleDelta().x());
 	}
-	else if (we->modifiers() & Qt::ShiftModifier)
-	{
-		adjustLeftRightScoll(we->angleDelta().y());
-	}
 	else
 	{
+		// Vertical: the scroll area scrolls the tracks
 		we->ignore();
 		return;
 	}

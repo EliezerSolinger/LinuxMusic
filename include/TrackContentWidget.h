@@ -66,6 +66,9 @@ class TrackContentWidget : public QWidget, public JournallingObject
 	Q_PROPERTY(int embossOffset READ embossOffset WRITE setEmbossOffset)
 
 public:
+	//! The views of the track's clips
+	auto clipViews() const -> const QVector<ClipView*>& { return m_clipViews; }
+
 	//! @brief Create a new trackContentWidget
 	//!
 	//! Creates a new track content widget for the given track.
