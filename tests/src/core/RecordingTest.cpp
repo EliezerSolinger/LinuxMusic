@@ -582,6 +582,10 @@ private slots:
 		}
 		const auto rms = std::sqrt(energy / (20.0 * 2 * period));
 		qInfo("output rms %.4f", rms);
+
+		// The input meter sees the input whether it is heard or not
+		QVERIFY(std::abs(track->takeInputPeak() - 0.25f) < 0.01f);
+		QCOMPARE(track->takeInputPeak(), 0.f); // taken
 		if (heard) { QVERIFY(rms > 0.05); }
 		else { QVERIFY(rms < 1e-6); }
 

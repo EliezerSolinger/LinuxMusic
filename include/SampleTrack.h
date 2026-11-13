@@ -26,6 +26,8 @@
 #define LMMS_SAMPLE_TRACK_H
 
 #include "AudioBusHandle.h"
+#include <atomic>
+
 #include "AudioInput.h"
 #include "MixerChannelLcdModel.h"
 #include "Track.h"
@@ -83,6 +85,16 @@ public:
 	BoolModel* recordArmModel() { return &m_recordArmModel; }
 	auto isRecordArmed() const -> bool { return m_recordArmModel.value(); }
 	auto monitorMode() const -> int { return m_monitorModel.value(); } //!< a MonitorMode
+
+	//! Audio thread: the input's peak in a period, for the input meter
+	void reportInputPeak(float peak)
+	{
+		auto current = m_inputPeak.load(std::memory_order_relaxed);
+		while (peak > current && !m_inputPeak.compare_exchange_weak(current, peak, std::memory_order_relaxed)) {}
+	}
+
+	//! Interface: the input's peak since the last call
+	auto takeInputPeak() -> float { return m_inputPeak.exchange(0.f, std::memory_order_relaxed); }
 	IntModel* monitorModel() { return &m_monitorModel; }	//!< a MonitorMode
 
 	inline AudioBusHandle* audioBusHandle()
@@ -120,6 +132,7 @@ private:
 	FloatModel m_panningModel;
 	MixerChannelLcdModel m_mixerChannelModel;
 	AudioInput m_input;
+	std::atomic<float> m_inputPeak = 0.f;
 	BoolModel m_recordArmModel;
 	IntModel m_monitorModel;
 	AudioBusHandle m_audioBusHandle;

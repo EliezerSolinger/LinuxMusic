@@ -24,10 +24,14 @@
 
 #include "SampleTrackView.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QActionGroup>
 #include <QMenu>
+#include <QPainter>
 #include <QPushButton>
 #include <QSpacerItem>
 #include <QVBoxLayout>
@@ -57,6 +61,57 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+/**
+ * The level of a track's input, on a scale from -60 to 0 dBFS: green, yellow from -12, red from -3, with the
+ * latest peak held for a moment. It shows the input whether it is heard or not, to set the level before recording.
+ */
+class InputLevelMeter : public QWidget
+{
+public:
+	explicit InputLevelMeter(QWidget* parent)
+		: QWidget{parent}
+	{
+		setFixedSize(4, 26);
+		setToolTip(QObject::tr("Input level"));
+	}
+
+	void setPeak(float peak)
+	{
+		m_level = std::max(peak, m_level * 0.8f);
+		if (peak >= m_hold) { m_hold = peak; m_holdAge = 0; }
+		else if (++m_holdAge > 40) { m_hold = std::max(m_hold * 0.9f, m_level); }
+		update();
+	}
+
+protected:
+	void paintEvent(QPaintEvent*) override
+	{
+		auto painter = QPainter{this};
+		painter.fillRect(rect(), QColor{20, 23, 28});
+		const auto heightOf = [this](float level) {
+			const auto db = level > 0.f ? 20.f * std::log10(level) : -100.f;
+			return static_cast<int>(std::clamp((db + 60.f) / 60.f, 0.f, 1.f) * height());
+		};
+		const auto bar = heightOf(m_level);
+		const auto color = m_level >= 0.708f ? QColor{230, 60, 60}       // -3 dBFS
+			: m_level >= 0.251f ? QColor{230, 200, 60}                     // -12 dBFS
+			: QColor{71, 253, 133};
+		painter.fillRect(0, height() - bar, width(), bar, color);
+		const auto hold = heightOf(m_hold);
+		if (hold > 0) { painter.fillRect(0, height() - hold, width(), 1, m_hold >= 0.708f ? QColor{255, 80, 80} : color); }
+	}
+
+private:
+	float m_level = 0.f;
+	float m_hold = 0.f;
+	int m_holdAge = 0;
+};
+
+} // namespace
 
 
 SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
@@ -111,6 +166,12 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	m_inputButton->setMenu(inputMenu);
 	connect(_t, &SampleTrack::inputChanged, this, &SampleTrackView::updateInputButton);
 
+	auto* inputMeter = new InputLevelMeter(getTrackSettingsWidget());
+	m_inputMeter = inputMeter;
+	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, inputMeter, [this, inputMeter] {
+		if (inputMeter->isVisible()) { inputMeter->setPeak(model()->takeInputPeak()); }
+	});
+
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
 	auto layout = new QHBoxLayout();
@@ -122,6 +183,7 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	layout->addWidget(m_activityIndicator);
 	layout->addWidget(m_recordArmButton);
 	layout->addWidget(m_inputButton);
+	layout->addWidget(m_inputMeter);
 	layout->addWidget(m_volumeKnob);
 	layout->addWidget(m_panningKnob);
 	layout->addSpacing(4);
@@ -203,6 +265,7 @@ QMenu * SampleTrackView::createMixerMenu(QString title, QString newMixerLabel)
 void SampleTrackView::updateInputButton()
 {
 	const auto& input = model()->input();
+	m_inputMeter->setVisible(input.source == AudioInput::Source::Hardware);
 	if (input.source != AudioInput::Source::Hardware)
 	{
 		m_inputButton->setText(tr("-"));

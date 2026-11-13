@@ -22,6 +22,9 @@
 
 #include "InputMonitorHandle.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "SampleFrame.h"
@@ -65,17 +68,26 @@ auto InputMonitorHandle::monitoring(const SampleTrack& track) -> bool
 
 void InputMonitorHandle::play(std::span<SampleFrame> buffer)
 {
-	if (m_track->isSilenced() || !monitoring(*m_track)) { return; }
+	const auto input = m_track->input();
+	if (input.source != AudioInput::Source::Hardware) { return; }
 
 	const auto capture = Engine::audioEngine()->capture();
-	const auto input = m_track->input();
 	const auto frames = std::min<std::size_t>(buffer.size(), capture.frames());
 	const auto left = input.firstChannel;
 	const auto right = input.channelCount == 2 ? input.firstChannel + 1 : input.firstChannel;
 	if (left >= capture.channels() || right >= capture.channels()) { return; }
-
 	const float* leftSamples = capture.bufferPtr(static_cast<ch_cnt_t>(left));
 	const float* rightSamples = capture.bufferPtr(static_cast<ch_cnt_t>(right));
+
+	// The input meter shows the input whether it is heard or not (to set the level before recording)
+	auto peak = 0.f;
+	for (std::size_t frame = 0; frame < frames; ++frame)
+	{
+		peak = std::max({peak, std::abs(leftSamples[frame]), std::abs(rightSamples[frame])});
+	}
+	m_track->reportInputPeak(peak);
+
+	if (m_track->isSilenced() || !monitoring(*m_track)) { return; }
 	for (std::size_t frame = 0; frame < frames; ++frame)
 	{
 		buffer[frame][0] = leftSamples[frame];

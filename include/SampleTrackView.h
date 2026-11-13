@@ -109,6 +109,7 @@ private:
 	FadeButton * m_activityIndicator;
 	AutomatableButton* m_recordArmButton;
 	QPushButton* m_inputButton;
+	QWidget* m_inputMeter;
 
 	//! Lists the audio device's inputs, mono and in stereo pairs, and the monitoring modes
 	void fillInputMenu(QMenu* menu);
