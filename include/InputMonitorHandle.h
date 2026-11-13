@@ -28,7 +28,7 @@
 namespace lmms
 {
 
-class SampleTrack;
+class AudioInputTrack;
 
 /**
  * Software monitoring (docs/plano-gravacao.md, "Gravação"): while it is on, each period the track's input channels
@@ -38,22 +38,22 @@ class SampleTrack;
  * - On: always.
  * - Auto (tape auto): while the track is armed, when the song is stopped or recording, not while it only plays.
  *
- * The track keeps one while it has an input and monitoring is not off (SampleTrack::updateInputMonitor()).
+ * The track keeps one while it has an input and monitoring is not off (AudioInputTrack::updateInputMonitor()).
  */
 class InputMonitorHandle : public PlayHandle
 {
 public:
-	explicit InputMonitorHandle(SampleTrack* track);
+	explicit InputMonitorHandle(AudioInputTrack* track);
 
 	void play(std::span<SampleFrame> buffer) override;
 	bool isFinished() const override { return false; }
 	bool isFromTrack(const Track* track) const override;
 
 	//! @returns whether the track's input is heard now
-	static auto monitoring(const SampleTrack& track) -> bool;
+	static auto monitoring(const AudioInputTrack& track) -> bool;
 
 private:
-	SampleTrack* m_track;
+	AudioInputTrack* m_track;
 };
 
 } // namespace lmms

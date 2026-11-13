@@ -913,10 +913,10 @@ void Song::scheduleCaptureUpdate()
 		bool needed = isRecordingAudio();
 		for (const auto* track : tracks())
 		{
-			const auto* sampleTrack = dynamic_cast<const SampleTrack*>(track);
-			needed = needed || (sampleTrack && sampleTrack->input().source == AudioInput::Source::Hardware
-				&& (sampleTrack->isRecordArmed()
-					|| sampleTrack->monitorMode() == static_cast<int>(SampleTrack::MonitorMode::On)));
+			const auto* audioTrack = dynamic_cast<const AudioInputTrack*>(track);
+			needed = needed || (audioTrack && audioTrack->input().source == AudioInput::Source::Hardware
+				&& (audioTrack->isRecordArmed()
+					|| audioTrack->monitorMode() == static_cast<int>(AudioInputTrack::MonitorMode::On)));
 		}
 		Engine::audioEngine()->setCaptureEnabled(needed);
 	});

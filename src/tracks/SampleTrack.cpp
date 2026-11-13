@@ -52,28 +52,10 @@ namespace lmms
 
 
 SampleTrack::SampleTrack(TrackContainer* tc) :
-	Track(Track::Type::Sample, tc),
-	m_volumeModel(DefaultVolume, MinVolume, MaxTrackVolume, 0.1f, this, tr("Volume")),
-	m_panningModel(DefaultPanning, PanningLeft, PanningRight, 0.1f, this, tr("Panning")),
-	m_recordArmModel(false, this, tr("Record arm")),
-	m_monitorModel(static_cast<int>(MonitorMode::Auto), static_cast<int>(MonitorMode::Off),
-		static_cast<int>(MonitorMode::Auto), this, tr("Input monitoring")),
-	m_audioBusHandle(tr("Sample track"), true, &m_volumeModel, &m_panningModel, this),
+	AudioInputTrack(Track::Type::Sample, tc, tr("Sample track")),
 	m_isPlaying(false)
 {
 	setName(tr("Sample track"));
-	m_panningModel.setCenterValue(DefaultPanning);
-
-	connect(&m_mixerChannelModel, SIGNAL(dataChanged()), this, SLOT(updateMixerChannel()));
-
-	// Software monitoring: the handle plays the input while monitoring is on (see InputMonitorHandle)
-	Engine::audioEngine()->addPlayHandle(new InputMonitorHandle{this});
-
-	// The audio device opens its input while a track needs it
-	const auto captureNeedMayChange = [] { if (auto song = Engine::getSong()) { song->scheduleCaptureUpdate(); } };
-	connect(this, &SampleTrack::inputChanged, this, captureNeedMayChange);
-	connect(&m_recordArmModel, &BoolModel::dataChanged, this, captureNeedMayChange);
-	connect(&m_monitorModel, &IntModel::dataChanged, this, captureNeedMayChange);
 }
 
 
@@ -102,8 +84,7 @@ auto SampleTrack::audioFileSeconds(const QString& path) -> double
 
 SampleTrack::~SampleTrack()
 {
-	Engine::audioEngine()->removePlayHandlesOfTypes(this,
-		PlayHandle::Type::SamplePlayHandle | PlayHandle::Type::InputMonitorHandle);
+	Engine::audioEngine()->removePlayHandlesOfTypes(this, PlayHandle::Type::SamplePlayHandle);
 }
 
 
@@ -221,30 +202,7 @@ Clip * SampleTrack::createClip(const TimePos & pos)
 
 void SampleTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& thisElem, bool /*presetMode*/)
 {
-	m_audioBusHandle.effects()->saveState(doc, thisElem);
-	m_volumeModel.saveSettings(doc, thisElem, "vol");
-	m_panningModel.saveSettings(doc, thisElem, "pan");
-	m_mixerChannelModel.saveSettings(doc, thisElem, "mixch");
-	m_recordArmModel.saveSettings(doc, thisElem, "recordarm");
-	m_monitorModel.saveSettings(doc, thisElem, "monitor");
-	if (m_input.source == AudioInput::Source::Hardware)
-	{
-		auto input = doc.createElement("input");
-		input.setAttribute("source", "hardware");
-		input.setAttribute("channel", m_input.firstChannel);
-		input.setAttribute("channels", m_input.channelCount);
-		thisElem.appendChild(input);
-	}
-}
-
-
-
-
-void SampleTrack::setInput(const AudioInput& input)
-{
-	if (m_input == input) { return; }
-	m_input = input;
-	emit inputChanged();
+	saveAudioSettings(doc, thisElem);
 }
 
 
@@ -252,30 +210,7 @@ void SampleTrack::setInput(const AudioInput& input)
 
 void SampleTrack::loadTrackSpecificSettings(const QDomElement & thisElem)
 {
-	QDomNode node = thisElem.firstChild();
-	m_audioBusHandle.effects()->clear();
-	while(!node.isNull())
-	{
-		if (node.isElement())
-		{
-			if (m_audioBusHandle.effects()->nodeName() == node.nodeName())
-			{
-				m_audioBusHandle.effects()->restoreState(node.toElement());
-			}
-		}
-		node = node.nextSibling();
-	}
-	m_volumeModel.loadSettings(thisElem, "vol");
-	m_panningModel.loadSettings(thisElem, "pan");
-	m_mixerChannelModel.setRange(0, Engine::mixer()->numChannels() - 1);
-	m_mixerChannelModel.loadSettings(thisElem, "mixch");
-	m_recordArmModel.loadSettings(thisElem, "recordarm");
-	m_monitorModel.loadSettings(thisElem, "monitor");
-	const auto input = thisElem.firstChildElement("input");
-	setInput(!input.isNull() && input.attribute("source") == "hardware"
-		? AudioInput{AudioInput::Source::Hardware, input.attribute("channel").toInt(),
-			std::clamp(input.attribute("channels", "2").toInt(), 1, 2)}
-		: AudioInput{});
+	loadAudioSettings(thisElem);
 }
 
 
@@ -302,10 +237,5 @@ void SampleTrack::setPlayingClips( bool isPlaying )
 
 
 
-
-void SampleTrack::updateMixerChannel()
-{
-	m_audioBusHandle.setNextMixerChannel(m_mixerChannelModel.value());
-}
 
 } // namespace lmms

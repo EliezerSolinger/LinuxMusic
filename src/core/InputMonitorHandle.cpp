@@ -28,13 +28,13 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "SampleFrame.h"
-#include "SampleTrack.h"
+#include "AudioInputTrack.h"
 #include "Song.h"
 
 namespace lmms
 {
 
-InputMonitorHandle::InputMonitorHandle(SampleTrack* track)
+InputMonitorHandle::InputMonitorHandle(AudioInputTrack* track)
 	: PlayHandle{Type::InputMonitorHandle}
 	, m_track{track}
 {
@@ -44,20 +44,20 @@ InputMonitorHandle::InputMonitorHandle(SampleTrack* track)
 
 
 
-auto InputMonitorHandle::monitoring(const SampleTrack& track) -> bool
+auto InputMonitorHandle::monitoring(const AudioInputTrack& track) -> bool
 {
 	if (track.input().source != AudioInput::Source::Hardware) { return false; }
-	switch (static_cast<SampleTrack::MonitorMode>(track.monitorMode()))
+	switch (static_cast<AudioInputTrack::MonitorMode>(track.monitorMode()))
 	{
-	case SampleTrack::MonitorMode::On:
+	case AudioInputTrack::MonitorMode::On:
 		return true;
-	case SampleTrack::MonitorMode::Auto:
+	case AudioInputTrack::MonitorMode::Auto:
 	{
 		// Tape auto: heard while stopped or recording, not while only playing what was recorded
 		const auto* song = Engine::getSong();
 		return track.isRecordArmed() && (!song->isPlaying() || song->isRecordingAudio());
 	}
-	case SampleTrack::MonitorMode::Off:
+	case AudioInputTrack::MonitorMode::Off:
 	default:
 		return false;
 	}

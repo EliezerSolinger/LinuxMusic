@@ -43,6 +43,7 @@
 #include "PatternStore.h"
 #include "PluginInstance.h"
 #include "ProjectJournal.h"
+#include "AudioInputTrack.h"
 #include "SampleTrack.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
 #include "AudioBusHandle.h"
@@ -566,9 +567,9 @@ auto tracksWithMixerChannel() -> std::vector<std::pair<Track*, IntModel*>>
 			{
 				result.emplace_back(track, instrumentTrack->mixerChannelModel());
 			}
-			else if (auto sampleTrack = dynamic_cast<SampleTrack*>(track))
+			else if (auto audioTrack = dynamic_cast<AudioInputTrack*>(track))
 			{
-				result.emplace_back(track, sampleTrack->mixerChannelModel());
+				result.emplace_back(track, audioTrack->mixerChannelModel());
 			}
 			else if (auto folderTrack = dynamic_cast<FolderTrack*>(track))
 			{
@@ -1556,10 +1557,10 @@ auto stripOf(const Track* track) -> std::optional<TrackStrip>
 		return TrackStrip{instrumentTrack->mixerChannelModel(), instrumentTrack->volumeModel(),
 			instrumentTrack->panningModel(), instrumentTrack->audioBusHandle()};
 	}
-	if (auto sampleTrack = dynamic_cast<SampleTrack*>(const_cast<Track*>(track)))
+	if (auto audioTrack = dynamic_cast<AudioInputTrack*>(const_cast<Track*>(track)))
 	{
-		return TrackStrip{sampleTrack->mixerChannelModel(), sampleTrack->volumeModel(), sampleTrack->panningModel(),
-			sampleTrack->audioBusHandle()};
+		return TrackStrip{audioTrack->mixerChannelModel(), audioTrack->volumeModel(), audioTrack->panningModel(),
+			audioTrack->audioBusHandle()};
 	}
 	// A folder has only its group channel
 	if (auto folderTrack = dynamic_cast<FolderTrack*>(const_cast<Track*>(track)))
