@@ -404,6 +404,42 @@ private slots:
 		QCOMPARE(stays->type(), Track::Type::Sample);
 	}
 
+	void aClipCrossingChangesOfTempoLinesUpWithTheGridEverywhere()
+	{
+		auto* track = newTrack();
+		auto* song = Engine::getSong();
+		const auto file = m_directory.filePath("crossing.wav");
+		writeWav(file, 12 * m_rate, 0.5f, m_rate);
+		const auto bar = TimePos::ticksPerBar();
+		auto* item = track->addItem(file, TimePos{0});
+		// Played at 120 BPM, a point at each bar
+		auto timing = AudioItem::Timing{};
+		for (tick_t tick = 0; tick <= 6 * bar; tick += bar) { timing.push_back({tick, song->framesBetween(0, tick)}); }
+		item->setOriginalTiming(timing, file);
+		item->changeLength(TimePos{6 * bar});
+
+		// Two changes in the middle of bars, the second a ramp to a third
+		auto& map = song->tempoMap();
+		map.setMarker({bar + bar / 3, 100.0, false}, 120.0);
+		map.setMarker({3 * bar + bar / 2, 140.0, true}, 120.0);
+		map.setMarker({5 * bar, 90.0, false}, 120.0);
+		const auto jobs = song->stretchJobs();
+		QCOMPARE(jobs.size(), std::size_t{1});
+		const auto& to = jobs[0].to;
+		const auto has = [&](tick_t tick) {
+			return std::any_of(to.begin(), to.end(), [&](const auto& point) { return point.tick == tick; });
+		};
+		// A key where each change is, and along the ramp; each on the grid at the tempo map's time
+		QVERIFY(has(bar + bar / 3));
+		QVERIFY(has(3 * bar + bar / 2));
+		QVERIFY(has(4 * bar)); // (a beat of the ramp and a bar)
+		QVERIFY(has(3 * bar + bar / 2 + bar / 4)); // (a beat of the ramp)
+		for (const auto& point : to) { QCOMPARE(point.frame, song->framesBetween(0, point.tick)); }
+		// The original's frames there are where it was played (between its points)
+		QCOMPARE(jobs[0].from.size(), to.size());
+		map.clear();
+	}
+
 	void itemsAreSavedAndLoaded()
 	{
 		auto* track = newTrack();

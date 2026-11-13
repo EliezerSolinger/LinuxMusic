@@ -380,6 +380,17 @@ public:
 	//! @returns the frames the song plays from tick @p from to tick @p to at its tempo now (and tempo map)
 	auto framesBetween(tick_t from, tick_t to) const -> double;
 
+	/**
+	 * Where a recording must be held to the grid besides each bar (docs/plano-gravacao.md, "Time-stretch
+	 * renderizado"): the ticks strictly between @p from and @p to where the tempo changes, and each beat of a ramp.
+	 * A clip crossing any number of changes then lines up with the grid everywhere.
+	 */
+	auto tempoKeyTicks(tick_t from, tick_t to) const -> std::vector<tick_t>;
+	//! @p timing (a recording's, from @p start) with a point at each of tempoKeyTicks() it lacks, its frame
+	//! interpolated between the points around it
+	auto withTempoKeys(const std::vector<SampleClip::TimingPoint>& timing, tick_t start) const
+		-> std::vector<SampleClip::TimingPoint>;
+
 	//! @returns the timing of @p frames recorded from tick @p startTick at the song's tempo now (see SampleClip)
 	auto timingOf(tick_t startTick, double frames) const -> std::vector<SampleClip::TimingPoint>;
 

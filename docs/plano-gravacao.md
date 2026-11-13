@@ -370,6 +370,11 @@ Feito depois (mesma noite e manhã de 13/11):
   tempo (renderizados como os clipes); o botão "Adicionar faixa de áudio"; só a faixa de áudio grava; arquivos
   longos importados viram faixa de áudio; faixas de sample com gravações, armadas ou com entrada abrem como faixas
   de áudio (takes viram lanes). Arrastar clipes para outra faixa do mesmo tipo, como no REAPER.
+- **Clipes que cruzam mudanças de tempo** (13/11): seguem o mapa de tempo inteiro, cruzando quantas mudanças
+  houver. Além de um ponto por compasso, a gravação e a renderização têm um ponto de ajuste em cada mudança de tempo
+  dentro do clipe e em cada tempo das rampas (`Song::tempoKeyTicks`): o clipe fica na grade em todo lugar, também
+  quando a mudança cai no meio de um compasso. (A ideia de seguir só o tempo da maior parte e bloquear mais de uma
+  mudança ficou de lado: deixaria a parte menor fora da grade.)
 - **Lanes opcionais** (13/11, pedido do usuário): nas configurações, Gravação → Lanes. Desligadas, a gravação é
   simples: o take novo fica na lane que toca e substitui o que cobre (os itens por baixo são aparados, cortados em
   volta ou removidos, sem mexer nos arquivos), e no loop só a última passada fica. A interface do passo 4 esconde

@@ -940,11 +940,60 @@ auto Song::framesBetween(tick_t from, tick_t to) const -> double
 
 
 
+auto Song::tempoKeyTicks(tick_t from, tick_t to) const -> std::vector<tick_t>
+{
+	auto ticks = std::vector<tick_t>{};
+	const auto& markers = m_tempoMap.markers();
+	const auto beat = std::max(1, TimePos::ticksPerBar() / std::max(1, m_timeSigModel.getNumerator()));
+	for (std::size_t index = 0; index < markers.size(); ++index)
+	{
+		const auto& marker = markers[index];
+		if (marker.tick > from && marker.tick < to) { ticks.push_back(marker.tick); }
+		// A ramp changes the tempo all along: a key at each beat of it
+		if (marker.ramp && index + 1 < markers.size())
+		{
+			const auto rampEnd = markers[index + 1].tick;
+			for (auto tick = marker.tick + beat; tick < rampEnd; tick += beat)
+			{
+				if (tick > from && tick < to) { ticks.push_back(tick); }
+			}
+		}
+	}
+	std::sort(ticks.begin(), ticks.end());
+	ticks.erase(std::unique(ticks.begin(), ticks.end()), ticks.end());
+	return ticks;
+}
+
+
+
+
+auto Song::withTempoKeys(const std::vector<SampleClip::TimingPoint>& timing, tick_t start) const
+	-> std::vector<SampleClip::TimingPoint>
+{
+	if (timing.size() < 2) { return timing; }
+	auto result = timing;
+	for (const auto key : tempoKeyTicks(start, start + timing.back().tick))
+	{
+		const auto tick = key - start;
+		const auto after = std::lower_bound(result.begin(), result.end(), tick,
+			[](const SampleClip::TimingPoint& point, tick_t value) { return point.tick < value; });
+		if (after == result.end() || after == result.begin() || after->tick == tick) { continue; }
+		const auto before = std::prev(after);
+		const auto fraction = static_cast<double>(tick - before->tick) / static_cast<double>(after->tick - before->tick);
+		result.insert(after, {tick, before->frame + fraction * (after->frame - before->frame)});
+	}
+	return result;
+}
+
+
+
+
 auto Song::timingOf(tick_t startTick, double frames) const -> std::vector<SampleClip::TimingPoint>
 {
-	// A point at each bar, and one at the end: where each was played
+	// A point at each bar and where the tempo changed, and one at the end: where each was played
 	auto timing = std::vector<SampleClip::TimingPoint>{{0, 0.0}};
 	const auto bar = TimePos::ticksPerBar();
+	const auto keys = tempoKeyTicks(startTick, startTick + static_cast<tick_t>(frames / std::max(1.f, Engine::framesPerTick()) * 4) + 4 * bar);
 	auto played = 0.0;
 	for (tick_t tick = 0; played < frames && tick < TimePos::MaxTicks; ++tick)
 	{
@@ -958,7 +1007,10 @@ auto Song::timingOf(tick_t startTick, double frames) const -> std::vector<Sample
 			break;
 		}
 		played = next;
-		if ((tick + 1) % bar == 0) { timing.push_back({tick + 1, played}); }
+		if ((tick + 1) % bar == 0 || std::binary_search(keys.begin(), keys.end(), startTick + tick + 1))
+		{
+			timing.push_back({tick + 1, played});
+		}
 	}
 	return timing;
 }
@@ -1008,8 +1060,10 @@ auto Song::stretchJobs() -> std::vector<StretchJob>
 	for (const auto& recording : bound)
 	{
 		const auto start = recording.start;
-		// The timing the original's points have at the tempo now
-		auto target = recording.original;
+		// The original held to the grid where the tempo changes now too, and the timing its points have at the tempo
+		// now
+		const auto original = withTempoKeys(recording.original, start);
+		auto target = original;
 		for (auto& point : target) { point.frame = framesBetween(start, start + point.tick); }
 
 		// (the last point of a recording made before it was on the grid falls inside a tick: up to half a tick off)
@@ -1027,7 +1081,7 @@ auto Song::stretchJobs() -> std::vector<StretchJob>
 			}
 			return true;
 		};
-		if (same(target, recording.original))
+		if (same(target, original))
 		{
 			// Back at the tempo it was played at: the original again
 			if (recording.current != recording.original)
@@ -1041,11 +1095,11 @@ auto Song::stretchJobs() -> std::vector<StretchJob>
 		// The parts of a split clip (comping) are one recording at one place: one rendering for all of them
 		const auto source = PathUtil::toAbsolute(recording.originalFile);
 		const auto shared = std::find_if(jobs.begin(), jobs.end(), [&](const StretchJob& job) {
-			return job.source == source && same(job.from, recording.original) && same(job.to, target);
+			return job.source == source && same(job.from, original) && same(job.to, target);
 		});
 		if (shared != jobs.end())
 		{
-			jobs.push_back({recording.clip, recording.item, source, recording.original, target, shared->target,
+			jobs.push_back({recording.clip, recording.item, source, original, target, shared->target,
 				shared->seconds});
 			continue;
 		}
@@ -1059,8 +1113,8 @@ auto Song::stretchJobs() -> std::vector<StretchJob>
 			path = QString{"%1/st%2_%3%4.wav"}.arg(info.absolutePath()).arg(bpm).arg(info.completeBaseName())
 				.arg(n > 1 ? QString{"-%1"}.arg(n) : QString{});
 		}
-		jobs.push_back({recording.clip, recording.item, source, recording.original, target, path,
-			recording.original.back().frame / rate});
+		jobs.push_back({recording.clip, recording.item, source, original, target, path,
+			original.back().frame / rate});
 		noteGenerated(path);
 	}
 	return jobs;
