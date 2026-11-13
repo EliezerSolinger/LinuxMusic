@@ -28,6 +28,7 @@
 #include "ProjectJournal.h"
 #include "Engine.h"
 #include "JournallingObject.h"
+#include "UndoCommand.h"
 #include "lmms_math.h"
 #include "Song.h"
 #include "AutomationClip.h"
@@ -60,6 +61,18 @@ void ProjectJournal::undo()
 	{
 		if (group != -1 && m_undoCheckPoints.top().group != group) { break; }
 		CheckPoint c = m_undoCheckPoints.pop();
+		if (c.command)
+		{
+			{
+				const auto pause = Pause{this};
+				c.command->revert();
+			}
+			m_redoCheckPoints.push(c);
+			Engine::getSong()->setModified();
+			if (c.group == 0) { break; }
+			group = c.group;
+			continue;
+		}
 		JournallingObject *jo = m_joIDs[c.joID];
 		if (!jo) { continue; }
 
@@ -92,6 +105,18 @@ void ProjectJournal::redo()
 	{
 		if (group != -1 && m_redoCheckPoints.top().group != group) { break; }
 		CheckPoint c = m_redoCheckPoints.pop();
+		if (c.command)
+		{
+			{
+				const auto pause = Pause{this};
+				c.command->apply();
+			}
+			m_undoCheckPoints.push(c);
+			Engine::getSong()->setModified();
+			if (c.group == 0) { break; }
+			group = c.group;
+			continue;
+		}
 		JournallingObject *jo = m_joIDs[c.joID];
 		if (!jo) { continue; }
 
@@ -137,6 +162,28 @@ void ProjectJournal::addJournalCheckPoint( JournallingObject *jo )
 		}
 	}
 }
+
+
+void ProjectJournal::execute(std::unique_ptr<UndoCommand> command)
+{
+	if (!command) { return; }
+	{
+		// (what the command changes is not journalled again by the objects it changes)
+		const auto pause = Pause{this};
+		command->apply();
+	}
+	if (!isJournalling()) { return; }
+	m_redoCheckPoints.clear();
+	auto checkPoint = CheckPoint{0, DataFile{DataFile::Type::JournalData}, m_currentGroup};
+	checkPoint.command = std::move(command);
+	m_undoCheckPoints.push(checkPoint);
+	if (m_undoCheckPoints.size() > MAX_UNDO_STATES)
+	{
+		m_undoCheckPoints.remove(0, m_undoCheckPoints.size() - MAX_UNDO_STATES);
+	}
+}
+
+
 
 
 void ProjectJournal::beginGroup()

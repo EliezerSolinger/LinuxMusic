@@ -186,6 +186,33 @@ Hoje o driver só pede saída estéreo ao motor, e a entrada chega por um ring s
 
 ---
 
+### 11. Faixa de áudio: o desenho da implementação (13/11)
+
+A decisão é o modelo C (`gravacao-levantamento.md` §6): uma faixa nova e limpa, que vira a faixa de áudio; o
+`SampleTrack` sai quando ela cobrir loops e samples, e os projetos convertem. Ela é feita sobre as peças que já
+existem (`AudioStream`, `PeakCache`, `TimeStretcher`, `AudioRecorder`, a base `Clip`/`ClipView`), sem o código
+antigo de reprodução do `SampleTrack` (um `SamplePlayHandle` criado com `new` no áudio para cada clipe).
+
+Passos, cada um com testes, A/B e commit:
+1. **Desfazer por comandos** (`UndoCommand`): `apply`/`revert` com só a diferença, numa linha do tempo única com o
+   journal antigo (um comando é um passo do `ProjectJournal`, e os grupos valem para os dois). Os comandos acham
+   a faixa pelo id do journal e o item por um id próprio, então um objeto que sumiu é pulado.
+2. **Modelo** (`AudioTrack`, `AudioItem`): o item tem o arquivo (original e renderizado, com o timing, como o
+   `SampleClip`), posição, comprimento e início no arquivo em ticks, ganho em dB, fades de entrada e saída (5 ms
+   por padrão, ajustáveis, com curva), lane e mudo, e a memória (automático, RAM ou disco). A lane 0 é a de cima, e
+   é a que toca; uma lane de comp, quando existe, toca no lugar dela. Toda edição é um comando. Salva e carrega.
+3. **Reprodução:** um player por faixa, criado uma vez, que soma os itens da lane que toca a cada período, a partir
+   de um snapshot imutável publicado pela interface a cada mudança (o antigo é liberado fora do áudio). Fades,
+   ganho e crossfade onde itens se sobrepõem; reamostragem com estado por item, contínua entre períodos. Nada de
+   `new` no áudio.
+4. **Interface:** o cabeçalho de duas linhas (nome, M/S, armar e monitor; entrada, medidor, VOL e PAN), os itens
+   com a forma de onda dos picos, a alça de ganho no topo, as alças de fade nos cantos, aparar, cortar e slip; as
+   lanes visíveis, com a que toca destacada, e o comping arrastando sobre as lanes.
+5. **Gravação na faixa nova:** cada passada é uma lane nova no topo (a que toca), e o loop faz uma lane por volta.
+6. **Tempo:** os itens seguem o mapa de tempo, renderizados pela tela de processamento como os clipes de hoje.
+7. **Conversão:** "Adicionar faixa de áudio" cria a faixa nova; ao abrir, as faixas de sample viram faixas de áudio
+   quando a faixa nova cobre o que elas fazem.
+
 ## Ordem de trabalho
 
 1. Etapa 0: sanitizers e correções.

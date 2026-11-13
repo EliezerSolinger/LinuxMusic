@@ -27,6 +27,7 @@
 
 #include <QHash>
 #include <QStack>
+#include <memory>
 #include <set>
 
 #include "LmmsTypes.h"
@@ -38,6 +39,7 @@ namespace lmms
 
 
 class JournallingObject;
+class UndoCommand;
 
 
 //! @warning many parts of this class may be rewritten soon
@@ -56,6 +58,12 @@ public:
 	bool canRedo() const;
 
 	void addJournalCheckPoint( JournallingObject *jo );
+
+	/**
+	 * Applies @p command and makes it a step of the history (or part of the group being made), in the same history
+	 * as the checkpoints. While journalling is off (e.g. loading), it is only applied.
+	 */
+	void execute(std::unique_ptr<UndoCommand> command);
 
 	/**
 	 * Groups the checkpoints added until endGroup() into one step: one undo restores them all (e.g. the tracks of a
@@ -153,6 +161,7 @@ private:
 		jo_id_t joID;
 		DataFile data;
 		int group; //!< checkpoints of one group (not 0) are one step
+		std::shared_ptr<UndoCommand> command; //!< a command instead of a state (joID and data unused)
 	} ;
 	using CheckPointStack = QStack<CheckPoint>;
 
