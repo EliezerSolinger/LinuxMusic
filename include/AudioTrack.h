@@ -25,6 +25,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "AudioInputTrack.h"
@@ -109,6 +110,13 @@ signals:
 	void lanesChanged();
 
 public:
+	/**
+	 * A sample track of a project from before the audio track that holds recordings (takes, clips bound to the
+	 * tempo) or records (armed, or with an input) is an audio track now (docs/plano-gravacao.md, section 11, step 7).
+	 * @returns @p sampleTrack's element as an audio track's (a new element of its document), if it is one of them
+	 */
+	static auto fromSampleTrack(const QDomElement& sampleTrack) -> std::optional<QDomElement>;
+
 	//! The player's voices: items heard at once on a track (more are skipped)
 	static constexpr std::size_t MaxVoices = 32;
 

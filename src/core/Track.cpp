@@ -152,14 +152,18 @@ Track * Track::create( const QDomElement & element, TrackContainer * tc )
 {
 	Engine::audioEngine()->requestChangeInModel();
 
+	// A sample track with recordings is an audio track now (see AudioTrack::fromSampleTrack())
+	const auto converted = tc == Engine::getSong() ? AudioTrack::fromSampleTrack(element) : std::nullopt;
+	const auto& state = converted ? *converted : element;
+
 	s_creatingSavedTrack = true;
 	Track * t = create(
-		static_cast<Type>( element.attribute( "type" ).toInt() ),
+		static_cast<Type>( state.attribute( "type" ).toInt() ),
 									tc );
 	s_creatingSavedTrack = false;
 	if( t != nullptr )
 	{
-		t->restoreState( element );
+		t->restoreState( state );
 
 		// E.g. a cloned track, which would share the channel of the original: it gets a channel of its own
 		if (Engine::getSong() && !Engine::getSong()->isLoadingProject() && Engine::mixer()

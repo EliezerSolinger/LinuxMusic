@@ -65,8 +65,11 @@ auto clipSources(const QString& path) -> QStringList
 {
 	auto file = DataFile{path};
 	auto sources = QStringList{};
-	const auto clips = file.elementsByTagName("sampleclip");
-	for (int i = 0; i < clips.size(); ++i) { sources << clips.at(i).toElement().attribute("src"); }
+	for (const auto* tag : {"sampleclip", "audioitem"})
+	{
+		const auto clips = file.elementsByTagName(tag);
+		for (int i = 0; i < clips.size(); ++i) { sources << clips.at(i).toElement().attribute("src"); }
+	}
 	return sources;
 }
 
@@ -127,12 +130,12 @@ private slots:
 		QVERIFY(song->guiSaveProjectAs(projectFile));
 		QCOMPARE(QDir{projectDir + "/song_media"}.entryList(QDir::Files).size(), qsizetype{2});
 
-		// Opened, it plays the copies
+		// Opened, it plays the copies (a sample track with takes opens as an audio track: a lane for each take)
 		song->loadProject(projectFile);
-		auto* loaded = dynamic_cast<SampleTrack*>(song->tracks().front());
+		auto* loaded = dynamic_cast<AudioTrack*>(song->tracks().front());
 		QVERIFY(loaded);
-		auto* loadedClip = dynamic_cast<SampleClip*>(loaded->getClip(0));
-		QCOMPARE(PathUtil::toAbsolute(loadedClip->sampleFile()), QFileInfo{projectDir + "/song_media/other.wav"}.absoluteFilePath());
+		auto* heard = loaded->items().front()->lane() == 0 ? loaded->items().front() : loaded->items().back();
+		QCOMPARE(PathUtil::toAbsolute(heard->file()), QFileInfo{projectDir + "/song_media/other.wav"}.absoluteFilePath());
 
 		// Saved in another folder: the files come along
 		const auto copyDir = m_directory.filePath("copy");
@@ -140,14 +143,15 @@ private slots:
 		QVERIFY(song->guiSaveProjectAs(copyDir + "/moved.mmp"));
 		QVERIFY(QFileInfo::exists(copyDir + "/moved_media/hit.wav"));
 		QVERIFY(QFileInfo::exists(copyDir + "/moved_media/other.wav"));
-		QCOMPARE(clipSources(copyDir + "/moved.mmp"), QStringList{"local:moved_media/other.wav"});
+		auto sources = clipSources(copyDir + "/moved.mmp");
+		sources.sort();
+		QCOMPARE(sources, (QStringList{"local:moved_media/hit.wav", "local:moved_media/other.wav"}));
 
 		// A different file of the same name is not overwritten: the copy gets a number
 		writeWav(elsewhere + "/hit2.wav", 0.75f);
 		QVERIFY(QDir{}.mkpath(m_directory.filePath("other")));
 		QVERIFY(QFile::copy(elsewhere + "/hit2.wav", m_directory.filePath("other/hit.wav")));
-		auto* third = new SampleClip{loaded};
-		third->setSampleFile(m_directory.filePath("other/hit.wav"));
+		loaded->addItem(m_directory.filePath("other/hit.wav"), TimePos{0});
 		QVERIFY(song->guiSaveProjectAs(copyDir + "/moved.mmp"));
 		QVERIFY(QFileInfo::exists(copyDir + "/moved_media/hit-2.wav"));
 		song->createNewProject();

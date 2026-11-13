@@ -35,20 +35,39 @@ Em **Entradas**, escolha quantas portas de entrada criar (até 32) e a que cada 
 
 É o tamanho do buffer das configurações. Quanto menor, menor a latência.
 
-## Faixas de áudio (faixas de sample)
+## Faixas de áudio
 
-No cabeçalho de cada faixa de sample:
-- **R:** arma a faixa para gravar. Fica vermelho quando armado.
-- **Botão de entrada:** mostra `-` (sem entrada), `1`, `3` (mono) ou `1/2` (estéreo). O menu dele traz:
+A faixa de gravação é a **faixa de áudio** (botão "Adicionar faixa de áudio" no Editor de Arranjo, com o ícone de
+onda e ponto vermelho). A faixa de sample continua para tocar samples curtos na grade e as batidas do Editor de
+Sequências, e não grava. Projetos antigos com gravações em faixas de sample abrem com elas como faixas de áudio.
+
+O cabeçalho tem duas linhas:
+- **Em cima:** o nome, a atividade, **R** (arma a faixa; vermelho quando armada) e o **botão de entrada**, que
+  mostra `-` (sem entrada), `1`, `3` (mono) ou `1/2` (estéreo). O menu dele traz:
   - a escolha da entrada, mono ou em pares estéreo, com os nomes que o dispositivo dá;
   - a **monitoração por software**, que passa a entrada pelos efeitos da faixa e pela mesa:
     - **Desligada.**
     - **Ligada:** sempre.
     - **Auto:** com a faixa armada, ouve com a música parada ou gravando, mas não só tocando ("tape auto").
-- **Medidor de nível:** fica ao lado do botão de entrada e mostra a entrada mesmo sem monitorar, para acertar o ganho antes de gravar.
-  - Verde.
-  - Amarelo a partir de −12 dBFS.
-  - Vermelho a partir de −3 dBFS.
+- **Embaixo:** o canal da mesa, o **medidor de nível** da entrada (mostra a entrada mesmo sem monitorar; verde,
+  amarelo a partir de −12 dBFS, vermelho a partir de −3 dBFS), VOL e PAN.
+
+### Itens
+
+- Todo item tem fades de 5 ms nas pontas, para não entrar nem sair de repente. Onde dois itens da mesma lane se
+  sobrepõem, eles fazem crossfade de potência igual sobre a sobreposição, sozinhos.
+- No topo do item: as alças dos fades nos cantos e a do ganho ao longo dele (Shift: mais fino). Cada arraste é um
+  passo de desfazer.
+- Arrastar um item para cima ou para baixo o leva para outra faixa do mesmo tipo.
+- No menu do item: a memória (Automático, RAM ou disco, como no Ableton), zerar ganho e fades, e com lanes,
+  "Ouvir esta lane" e "Comp".
+
+### Lanes
+
+Com **Configurações → Áudio → Gravação → Lanes** ligado (padrão), cada passada vai para uma lane nova no topo, a que
+toca; as de baixo ficam esmaecidas. Para montar o melhor take (comping): corte o item da lane de baixo no trecho
+desejado e use "Comp: usar este item na lane que toca". Desligado, a gravação é simples: o take novo substitui o que
+cobre, e no loop só a última passada fica.
 
 ## Faixas de instrumento (MIDI)
 

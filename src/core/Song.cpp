@@ -1124,7 +1124,8 @@ auto Song::record() -> bool
 	auto usedPaths = QStringList{};
 	for (auto* track : tracks())
 	{
-		auto* sampleTrack = dynamic_cast<AudioInputTrack*>(track); // (a sample or audio track)
+		// (the audio track records; the sample track plays samples on the grid)
+		auto* sampleTrack = dynamic_cast<AudioTrack*>(track);
 		if (!sampleTrack || !sampleTrack->recordArmModel()->value()) { continue; }
 
 		const auto& input = sampleTrack->input();
@@ -1348,7 +1349,7 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 		// The recording's undo step is the tracks' state before it (see record()): nothing is journalled here
 		const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
 
-		// On an audio track the passes are lanes
+		// The passes are lanes
 		if (auto* audioTrack = dynamic_cast<AudioTrack*>(take.track))
 		{
 			landOnLanes(audioTrack, segments);
@@ -1363,45 +1364,7 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 			}
 			continue;
 		}
-		auto* track = static_cast<SampleTrack*>(take.track);
-
-		// The passes of a loop begin on the same tick: they become the takes of one clip, the last pass the active
-		// take. A pass shorter than 90% of the longest (stopped before the loop's end) is dropped.
-		auto passes = std::map<std::int64_t, std::vector<AudioRecorder::Segment>>{};
-		for (const auto& segment : segments) { passes[segment.startTick].push_back(segment); }
-		for (auto& [startTick, group] : passes)
-		{
-			if (group.size() > 1)
-			{
-				const auto longest = std::max_element(group.begin(), group.end(),
-					[](const auto& a, const auto& b) { return a.frames < b.frames; })->frames;
-				std::erase_if(group, [longest](const AudioRecorder::Segment& segment) {
-					const bool partial = segment.frames < longest * 9 / 10;
-					if (partial) { QFile::remove(segment.path); }
-					return partial;
-				});
-			}
-			auto* clip = new SampleClip{track};
-			clip->setSampleFile(group.front().path);
-			clip->movePosition(TimePos{static_cast<tick_t>(startTick)});
-
-			// The take is bound to the tempo it was played at: a change of tempo renders it again
-			const auto longest = std::max_element(group.begin(), group.end(),
-				[](const auto& a, const auto& b) { return a.frames < b.frames; })->frames;
-			clip->setOriginalTiming(timingOf(static_cast<tick_t>(startTick), static_cast<double>(longest)),
-				group.front().path);
-			for (std::size_t pass = 1; pass < group.size(); ++pass) { clip->addTake(group[pass].path); }
-		}
-
-		if (take.lostFrames > 0)
-		{
-			problems << tr("%1: the disk could not keep up; %2 ms were recorded as silence.").arg(track->name())
-				.arg(take.lostFrames * 1000 / Engine::audioEngine()->outputSampleRate());
-		}
-		if (take.diskFailed)
-		{
-			problems << tr("%1: writing a take failed; it holds what was written before.").arg(track->name());
-		}
+		// (only audio tracks record: see record())
 	}
 	setModified();
 	scheduleCaptureUpdate();

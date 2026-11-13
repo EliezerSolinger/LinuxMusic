@@ -39,6 +39,9 @@
 #include "DataFile.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
+#include "PathUtil.h"
 #include "Song.h"
 #include "StreamScheduler.h"
 
@@ -353,6 +356,52 @@ private slots:
 		song->setTempo(120);
 		QVERIFY(song->stretchJobs().empty());
 		QCOMPARE(item->currentTiming(), item->originalTiming());
+	}
+
+	void aSampleTrackWithRecordingsOpensAsAnAudioTrack()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		const auto first = m_directory.filePath("old-take-a.wav");
+		const auto second = m_directory.filePath("old-take-b.wav");
+		writeWav(first, m_rate, 0.25f, m_rate);
+		writeWav(second, m_rate, 0.75f, m_rate);
+		const auto bar = TimePos::ticksPerBar();
+
+		// A sample track of before: a clip with two takes (the second heard), bound to the tempo, and armed
+		auto* old = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		old->setName("Guitar");
+		old->recordArmModel()->setValue(true);
+		auto* clip = new SampleClip{old};
+		clip->setSampleFile(first);
+		clip->addTake(second);
+		clip->movePosition(TimePos{bar});
+		clip->setOriginalTiming({{0, 0.0}, {bar, song->framesBetween(bar, 2 * bar)}}, second);
+		auto document = QDomDocument{};
+		auto element = document.createElement("tracks");
+		document.appendChild(element);
+		old->saveState(document, element);
+		// (and one of samples on the grid, which stays as it is)
+		auto* grid = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		(new SampleClip{grid})->setSampleFile(first);
+		grid->saveState(document, element);
+
+		auto* converted = dynamic_cast<AudioTrack*>(Track::create(element.firstChildElement(), song));
+		QVERIFY(converted);
+		QCOMPARE(converted->name(), QString{"Guitar"});
+		QVERIFY(converted->isRecordArmed());
+		auto items = converted->items();
+		QCOMPARE(items.size(), std::size_t{2});
+		std::sort(items.begin(), items.end(), [](auto* a, auto* b) { return a->lane() < b->lane(); });
+		QCOMPARE(items[0]->lane(), 0);
+		QCOMPARE(PathUtil::toAbsolute(items[0]->file()), QFileInfo{second}.absoluteFilePath());
+		QVERIFY(items[0]->isTempoBound());
+		QCOMPARE(items[0]->startPosition().getTicks(), bar);
+		QCOMPARE(items[1]->lane(), 1);
+		QCOMPARE(PathUtil::toAbsolute(items[1]->file()), QFileInfo{first}.absoluteFilePath());
+
+		auto* stays = Track::create(element.firstChildElement().nextSiblingElement(), song);
+		QCOMPARE(stays->type(), Track::Type::Sample);
 	}
 
 	void itemsAreSavedAndLoaded()

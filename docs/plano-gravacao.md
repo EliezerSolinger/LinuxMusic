@@ -365,6 +365,11 @@ Feito depois (mesma noite e manhã de 13/11):
 - **Corrigido:** mover um take sem mudar o tempo pedia renderização. O último ponto do timing ficava no fim exato do
   arquivo, dentro de um tick, e a comparação usava a grade. Agora o ponto fica na grade (o time-stretch preserva o
   fim real do áudio), e os takes de antes são comparados com meio tick de tolerância nesse ponto.
+- **Faixa de áudio, passos 4, 6 e 7** (13/11): cabeçalho de duas linhas; itens nas suas lanes, com as que não
+  tocam esmaecidas; alças de fade e ganho; o crossfade desenhado; "Ouvir esta lane" e comp; os itens seguem o mapa de
+  tempo (renderizados como os clipes); o botão "Adicionar faixa de áudio"; só a faixa de áudio grava; arquivos
+  longos importados viram faixa de áudio; faixas de sample com gravações, armadas ou com entrada abrem como faixas
+  de áudio (takes viram lanes). Arrastar clipes para outra faixa do mesmo tipo, como no REAPER.
 - **Lanes opcionais** (13/11, pedido do usuário): nas configurações, Gravação → Lanes. Desligadas, a gravação é
   simples: o take novo fica na lane que toca e substitui o que cobre (os itens por baixo são aparados, cortados em
   volta ou removidos, sem mexer nos arquivos), e no loop só a última passada fica. A interface do passo 4 esconde

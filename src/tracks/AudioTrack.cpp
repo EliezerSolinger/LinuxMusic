@@ -641,6 +641,84 @@ void AudioTrack::publish()
 
 
 
+auto AudioTrack::fromSampleTrack(const QDomElement& sampleTrack) -> std::optional<QDomElement>
+{
+	if (static_cast<Track::Type>(sampleTrack.attribute("type").toInt()) != Track::Type::Sample) { return std::nullopt; }
+	const auto settings = sampleTrack.firstChildElement("sampletrack");
+	auto records = settings.attribute("recordarm").toInt() != 0
+		|| settings.firstChildElement("input").attribute("source") == "hardware";
+	for (auto clip = sampleTrack.firstChildElement("sampleclip"); !records && !clip.isNull();
+		clip = clip.nextSiblingElement("sampleclip"))
+	{
+		records = !clip.firstChildElement("original").isNull() || !clip.firstChildElement("take").isNull();
+	}
+	if (!records) { return std::nullopt; }
+
+	auto document = sampleTrack.ownerDocument();
+	auto audioTrack = sampleTrack.cloneNode(false).toElement(); // (its attributes: name, muted, color...)
+	audioTrack.setAttribute("type", static_cast<int>(Track::Type::Audio));
+	for (auto node = sampleTrack.firstChild(); !node.isNull(); node = node.nextSibling())
+	{
+		const auto element = node.toElement();
+		if (element.isNull()) { continue; }
+		if (element.tagName() == "sampletrack")
+		{
+			// The same settings: effects, volume, panning, channel, input, arming, monitoring
+			auto converted = element.cloneNode(true).toElement();
+			converted.setTagName("audiotrack");
+			audioTrack.appendChild(converted);
+			continue;
+		}
+		if (element.tagName() != "sampleclip")
+		{
+			audioTrack.appendChild(element.cloneNode(true));
+			continue;
+		}
+
+		// A clip: an item; its takes, items on the lanes below (the one it played on top, heard)
+		const auto toItem = [&](const QString& file, int lane, bool withRendering) {
+			auto item = document.createElement("audioitem");
+			for (const auto* name : {"pos", "len", "off", "muted", "color", "storage"})
+			{
+				if (element.hasAttribute(name)) { item.setAttribute(name, element.attribute(name)); }
+			}
+			item.setAttribute("src", file);
+			item.setAttribute("lane", lane);
+			if (const auto original = element.firstChildElement("original"); !original.isNull())
+			{
+				auto copy = original.cloneNode(true).toElement();
+				if (!withRendering) { copy.setAttribute("src", file); }
+				item.appendChild(copy);
+				if (withRendering)
+				{
+					if (const auto rendered = element.firstChildElement("rendered"); !rendered.isNull())
+					{
+						item.appendChild(rendered.cloneNode(true));
+					}
+				}
+			}
+			return item;
+		};
+		auto takes = QStringList{};
+		for (auto take = element.firstChildElement("take"); !take.isNull(); take = take.nextSiblingElement("take"))
+		{
+			takes << take.attribute("src");
+		}
+		audioTrack.appendChild(toItem(element.attribute("src"), 0, true));
+		const auto active = element.attribute("activetake").toInt();
+		auto lane = 1;
+		for (int index = 0; index < takes.size(); ++index)
+		{
+			// (the others play their files as recorded: rendered for the tempo when it asks)
+			if (index != active) { audioTrack.appendChild(toItem(takes[index], lane++, false)); }
+		}
+	}
+	return audioTrack;
+}
+
+
+
+
 void AudioTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& element, bool)
 {
 	saveAudioSettings(doc, element);

@@ -37,6 +37,7 @@
 #include "TrackContainer.h"
 #include "TrackContentWidget.h"
 #include "ProjectJournal.h"
+#include "AudioTrack.h"
 #include "SampleTrack.h"
 #include "SampleClip.h"
 #include "AudioEngine.h"
@@ -472,13 +473,11 @@ void TrackContainerView::insertAudioFiles(const QStringList& files, const TimePo
 	{
 		if (SampleTrack::audioFileSeconds(file) > SampleTrack::longAudioSeconds())
 		{
-			// A recording (a stem): a track of its own, its clip where it was dropped
-			auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, m_tc));
+			// A recording (a stem): an audio track of its own, its item where it was dropped
+			auto* track = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, m_tc));
 			if (!track) { continue; }
 			track->setName(QFileInfo{file}.completeBaseName());
-			auto* clip = dynamic_cast<SampleClip*>(track->createClip(at));
-			clip->setSampleFile(file);
-			clip->movePosition(at);
+			track->addItem(file, at);
 		}
 		else
 		{
