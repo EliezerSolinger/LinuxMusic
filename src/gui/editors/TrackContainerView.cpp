@@ -470,7 +470,7 @@ void TrackContainerView::insertAudioFiles(const QStringList& files, const TimePo
 	const auto group = ProjectJournal::Group{Engine::projectJournal()};
 	for (const auto& file : files)
 	{
-		if (SampleTrack::audioFileSeconds(file) > SampleTrack::LongAudioSeconds)
+		if (SampleTrack::audioFileSeconds(file) > SampleTrack::longAudioSeconds())
 		{
 			// A recording (a stem): a track of its own, its clip where it was dropped
 			auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, m_tc));

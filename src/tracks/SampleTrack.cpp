@@ -25,6 +25,8 @@
 
 #include "SampleTrack.h"
 
+#include "ConfigManager.h"
+
 #include <QFile>
 #include <sndfile.h>
 
@@ -72,6 +74,15 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 	connect(this, &SampleTrack::inputChanged, this, captureNeedMayChange);
 	connect(&m_recordArmModel, &BoolModel::dataChanged, this, captureNeedMayChange);
 	connect(&m_monitorModel, &IntModel::dataChanged, this, captureNeedMayChange);
+}
+
+
+
+
+auto SampleTrack::longAudioSeconds() -> double
+{
+	const auto value = ConfigManager::inst()->value("ui", "longaudioseconds").toDouble();
+	return value > 0 ? value : LongAudioSeconds;
 }
 
 

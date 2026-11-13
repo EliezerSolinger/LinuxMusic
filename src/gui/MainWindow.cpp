@@ -577,6 +577,16 @@ DockPanel* MainWindow::dockWidget(QWidget* w, DockArea area, const QString& titl
 
 void MainWindow::showPage(Page page)
 {
+	// Leaving the settings applies them (they have no OK): the page goes, and this comes back here
+	if (page != Page::Settings && m_settingsPage)
+	{
+		if (auto settings = m_settingsPage->findChild<SetupDialog*>())
+		{
+			m_pageBeforeSettings = page;
+			settings->accept();
+			return;
+		}
+	}
 	// The settings show while they are open (closing them comes back here)
 	if (page == Page::Settings && !m_settingsPage) { page = m_pageBeforeSettings; }
 	m_pages->setCurrentWidget(page == Page::Mixing ? m_mixingPage
@@ -1088,11 +1098,10 @@ void MainWindow::showSettingsPage(int tab)
 		// Made each time it opens (it reads the settings then), gone when applied or discarded
 		m_settingsPage = new QWidget(m_pages);
 		auto layout = new QHBoxLayout(m_settingsPage);
-		layout->setContentsMargins(0, 12, 0, 12);
+		layout->setContentsMargins(0, 0, 0, 0);
+		// The whole page
 		auto settings = new SetupDialog(static_cast<SetupDialog::ConfigTab>(tab), m_settingsPage);
-		layout->addStretch(1);
-		layout->addWidget(settings);
-		layout->addStretch(1);
+		layout->addWidget(settings, 1);
 		m_pages->addWidget(m_settingsPage);
 		connect(settings, &QDialog::finished, this, [this] {
 			auto page = m_settingsPage;
@@ -1475,6 +1484,11 @@ void MainWindow::redo()
 
 void MainWindow::closeEvent( QCloseEvent * _ce )
 {
+	// Settings left open apply, as when leaving their page
+	if (m_settingsPage)
+	{
+		if (auto settings = m_settingsPage->findChild<SetupDialog*>()) { settings->accept(); }
+	}
 	if( mayChangeProject(true) )
 	{
 		// delete recovery file

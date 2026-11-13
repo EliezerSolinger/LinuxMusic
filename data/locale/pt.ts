@@ -14242,6 +14242,285 @@ Latency: %2 ms</source>
         <source>Choose your background picture</source>
         <translation>Escolha um plano de fundo</translation>
     </message>
+    <message>
+        <source>Settings</source>
+        <translation>Configurações</translation>
+    </message>
+    <message>
+        <source>General</source>
+        <translation>Geral</translation>
+    </message>
+    <message>
+        <source>Graphical user interface (GUI)</source>
+        <translation>Interface</translation>
+    </message>
+    <message>
+        <source>Enable all note labels in piano roll</source>
+        <translation>Mostrar o nome de todas as notas no Piano Roll</translation>
+    </message>
+    <message>
+        <source>Enable compact track buttons</source>
+        <translation>Botões de faixa compactos</translation>
+    </message>
+    <message>
+        <source>Enable one instrument-track-window mode</source>
+        <translation>Uma janela de instrumento por vez</translation>
+    </message>
+    <message>
+        <source>Show sidebar on the right-hand side</source>
+        <translation>Explorador do lado direito</translation>
+    </message>
+    <message>
+        <source>Let sample previews continue when mouse is released</source>
+        <translation>A prévia de samples continua ao soltar o mouse</translation>
+    </message>
+    <message>
+        <source>Show warning when deleting tracks</source>
+        <translation>Avisar ao apagar faixas</translation>
+    </message>
+    <message>
+        <source>Attach and show when closed</source>
+        <translation>Encaixar e mostrar ao fechar</translation>
+    </message>
+    <message>
+        <source>Attach and hide when closed</source>
+        <translation>Encaixar e esconder ao fechar</translation>
+    </message>
+    <message>
+        <source>Always detached</source>
+        <translation>Sempre soltas</translation>
+    </message>
+    <message>
+        <source>Detached window behavior</source>
+        <translation>Janelas soltas</translation>
+    </message>
+    <message>
+        <source>Dual-button</source>
+        <translation>Dois botões</translation>
+    </message>
+    <message>
+        <source>Grab closest</source>
+        <translation>Pegar o mais próximo</translation>
+    </message>
+    <message>
+        <source>Handles</source>
+        <translation>Alças</translation>
+    </message>
+    <message>
+        <source>Loop edit mode</source>
+        <translation>Edição do loop (Shift na régua)</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation>Desligado</translation>
+    </message>
+    <message>
+        <source>Stepped (Scroll once the playhead goes out of view)</source>
+        <translation>Em passos (rola quando o cursor sai da tela)</translation>
+    </message>
+    <message>
+        <source>Continuous (Scroll constantly to keep the playhead in the center)</source>
+        <translation>Contínuo (mantém o cursor no centro)</translation>
+    </message>
+    <message>
+        <source>Default Autoscroll Mode</source>
+        <translation>Rolagem automática</translation>
+    </message>
+    <message>
+        <source>Projects</source>
+        <translation>Projetos</translation>
+    </message>
+    <message>
+        <source>Compress project files by default</source>
+        <translation>Comprimir os arquivos de projeto</translation>
+    </message>
+    <message>
+        <source>Create a backup file when saving a project</source>
+        <translation>Criar um backup ao salvar</translation>
+    </message>
+    <message>
+        <source>Reopen last project on startup</source>
+        <translation>Abrir o último projeto ao iniciar</translation>
+    </message>
+    <message>
+        <source>New projects start with the analog mixer (else the digital one)</source>
+        <translation>Projetos novos começam com a mesa analógica (senão, a digital)</translation>
+    </message>
+    <message>
+        <source>Audio files longer than this become audio tracks (shorter: samples)</source>
+        <translation>Arquivos de áudio mais longos que isto viram faixas de áudio (mais curtos: samples)</translation>
+    </message>
+    <message>
+        <source> s</source>
+        <translation> s</translation>
+    </message>
+    <message>
+        <source>Language</source>
+        <translation>Idioma</translation>
+    </message>
+    <message>
+        <source>Performance</source>
+        <translation>Desempenho</translation>
+    </message>
+    <message>
+        <source>Autosave</source>
+        <translation>Salvamento automático</translation>
+    </message>
+    <message>
+        <source>Enable autosave</source>
+        <translation>Salvar automaticamente</translation>
+    </message>
+    <message>
+        <source>Allow autosave while playing</source>
+        <translation>Salvar automaticamente também tocando</translation>
+    </message>
+    <message>
+        <source>User interface (UI) effects vs. performance</source>
+        <translation>Efeitos da interface e desempenho</translation>
+    </message>
+    <message>
+        <source>Smooth scroll in song editor</source>
+        <translation>Rolagem suave no Arranjo</translation>
+    </message>
+    <message>
+        <source>Display playback cursor in AudioFileProcessor</source>
+        <translation>Cursor de reprodução no AudioFileProcessor</translation>
+    </message>
+    <message>
+        <source>Plugins</source>
+        <translation>Plugins</translation>
+    </message>
+    <message>
+        <source>Keep plugin windows on top when not embedded</source>
+        <translation>Janelas de plugin sempre por cima quando soltas</translation>
+    </message>
+    <message>
+        <source>Keep effects running even without input</source>
+        <translation>Manter os efeitos rodando sem entrada</translation>
+    </message>
+    <message>
+        <source>Audio</source>
+        <translation>Áudio</translation>
+    </message>
+    <message>
+        <source>Audio interface</source>
+        <translation>Interface de áudio</translation>
+    </message>
+    <message>
+        <source>Sample rate</source>
+        <translation>Taxa de amostragem</translation>
+    </message>
+    <message>
+        <source>Buffer size</source>
+        <translation>Tamanho do buffer</translation>
+    </message>
+    <message>
+        <source>Reset to default value</source>
+        <translation>Voltar ao padrão</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Outros</translation>
+    </message>
+    <message>
+        <source>Enable mix sanitization</source>
+        <translation>Proteger a mixagem de áudio inválido</translation>
+    </message>
+    <message>
+        <source>Recording</source>
+        <translation>Gravação</translation>
+    </message>
+    <message>
+        <source> frames</source>
+        <translation> frames</translation>
+    </message>
+    <message>
+        <source>Latency calibration</source>
+        <translation>Calibração da latência</translation>
+    </message>
+    <message>
+        <source>Added to the latencies the audio interface reports, to align recordings exactly with what was heard (measure it with a cable from an output to an input)</source>
+        <translation>Somada às latências que a interface informa, para alinhar a gravação exatamente com o que se ouviu (meça com um cabo de uma saída para uma entrada)</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Desligado</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n bar(s)</source>
+        <translation>
+            <numerusform>%n compasso</numerusform>
+            <numerusform>%n compassos</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Pre-roll</source>
+        <translation>Pré-roll</translation>
+    </message>
+    <message>
+        <source>The metronome clicks during the pre-roll</source>
+        <translation>O metrônomo toca durante o pré-roll</translation>
+    </message>
+    <message>
+        <source>Count-in</source>
+        <translation>Contagem</translation>
+    </message>
+    <message>
+        <source>MIDI interface</source>
+        <translation>Interface MIDI</translation>
+    </message>
+    <message>
+        <source>Automatically assign MIDI controller to selected track</source>
+        <translation>Ligar o controlador MIDI à faixa selecionada</translation>
+    </message>
+    <message>
+        <source>Behavior when recording</source>
+        <translation>Ao gravar</translation>
+    </message>
+    <message>
+        <source>Auto-quantize notes in Piano Roll</source>
+        <translation>Quantizar as notas no Piano Roll</translation>
+    </message>
+    <message>
+        <source>Paths</source>
+        <translation>Pastas</translation>
+    </message>
+    <message>
+        <source>LinuxMusic working directory</source>
+        <translation>Pasta de trabalho do LinuxMusic</translation>
+    </message>
+    <message>
+        <source>VST plugins directory</source>
+        <translation>Pasta dos plugins VST</translation>
+    </message>
+    <message>
+        <source>LADSPA plugins directories</source>
+        <translation>Pastas dos plugins LADSPA</translation>
+    </message>
+    <message>
+        <source>SF2 directory</source>
+        <translation>Pasta das SoundFonts</translation>
+    </message>
+    <message>
+        <source>Default SF2</source>
+        <translation>SoundFont padrão</translation>
+    </message>
+    <message>
+        <source>GIG directory</source>
+        <translation>Pasta dos GIG</translation>
+    </message>
+    <message>
+        <source>Theme directory</source>
+        <translation>Pasta do tema</translation>
+    </message>
+    <message>
+        <source>Some changes require restarting.</source>
+        <translation>Algumas mudanças pedem reiniciar.</translation>
+    </message>
+    <message>
+        <source>The settings apply when you leave this page.</source>
+        <translation>As configurações valem ao sair desta página.</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::Sf2InstrumentView</name>

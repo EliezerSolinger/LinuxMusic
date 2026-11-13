@@ -985,7 +985,7 @@ void FileBrowserTreeWidget::openInNewInstrumentTrack(FileItem* item, bool songEd
 auto FileBrowserTreeWidget::isLongRecording(FileItem* item) -> bool
 {
 	return item->type() == FileItem::FileType::Sample
-		&& SampleTrack::audioFileSeconds(item->fullName()) > SampleTrack::LongAudioSeconds;
+		&& SampleTrack::audioFileSeconds(item->fullName()) > SampleTrack::longAudioSeconds();
 }
 
 

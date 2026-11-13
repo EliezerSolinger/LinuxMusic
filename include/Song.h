@@ -253,6 +253,8 @@ public:
 
 	// file management
 	void createNewProject();
+	//! The default template (or an empty project without one), before the settings for new projects apply
+	void createNewProjectFromDefault();
 	void createNewProjectFromTemplate( const QString & templ );
 	void loadProject( const QString & filename );
 	bool guiSaveProject();

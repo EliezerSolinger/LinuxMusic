@@ -1357,6 +1357,20 @@ void Song::clearProject()
 // create new file
 void Song::createNewProject()
 {
+	createNewProjectFromDefault();
+	// The mixer's mode a new project starts in, from the settings (digital unless asked); not an undo step
+	const bool journalling = Engine::projectJournal()->isJournalling();
+	Engine::projectJournal()->setJournalling(false);
+	Engine::mixer()->analogModel()->setValue(ConfigManager::inst()->value("mixer", "newprojectanalog", "0").toInt() != 0);
+	Engine::projectJournal()->setJournalling(journalling);
+	setModified(false);
+}
+
+
+
+
+void Song::createNewProjectFromDefault()
+{
 
 	QString defaultTemplate = ConfigManager::inst()->userTemplateDir()
 						+ "default.mpt";

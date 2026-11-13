@@ -52,8 +52,10 @@ public:
 	SampleTrack( TrackContainer* tc );
 	~SampleTrack() override;
 
-	//! An audio file longer than this is a recording (an audio track's clip), not a sample (an instrument's)
+	//! An audio file longer than this is a recording (an audio track's clip), not a sample (an instrument's): 30 s,
+	//! or the setting's
 	static constexpr double LongAudioSeconds = 30.0;
+	static auto longAudioSeconds() -> double;
 	//! @returns how long the audio file @p path is, in seconds (from its header), or 0 if it cannot be read
 	static auto audioFileSeconds(const QString& path) -> double;
 

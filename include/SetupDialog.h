@@ -38,6 +38,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QSpinBox;
 class QSlider;
 
 
@@ -66,8 +67,11 @@ public:
 	~SetupDialog() override;
 
 
-protected slots:
+public slots:
+	//! Applies the settings (and closes)
 	void accept() override;
+
+protected slots:
 
 
 private slots:
@@ -219,6 +223,13 @@ private:
 	QLineEdit * m_sf2FileLineEdit;
 #endif
 	QLineEdit * m_backgroundPicFileLineEdit;
+
+	// Added in LinuxMusic: new projects' mixer, what an audio file becomes, recording
+	QCheckBox* m_newProjectAnalog;
+	QSpinBox* m_longAudioSeconds;
+	QSpinBox* m_latencyOffset;
+	QComboBox* m_preRoll;
+	QCheckBox* m_countIn;
 
 	QLabel * restartWarningLbl;
 };

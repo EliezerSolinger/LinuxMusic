@@ -31,6 +31,8 @@
 #include <QLayout>
 #include <QLineEdit>
 #include <QScrollArea>
+#include <QSpinBox>
+#include <QFormLayout>
 
 #include "AudioEngine.h"
 #include "embed.h"
@@ -40,6 +42,8 @@
 #include "MidiSetupWidget.h"
 #include "ProjectJournal.h"
 #include "SetupDialog.h"
+
+#include "SampleTrack.h"
 #include "TabBar.h"
 #include "TabButton.h"
 #include "TimeLineWidget.h"
@@ -237,8 +241,6 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 
 	addCheckBox(tr("Enable tooltips"), guiGroupBox, guiGroupLayout,
 		m_tooltips, SLOT(toggleTooltips(bool)), true);
-	addCheckBox(tr("Enable master oscilloscope by default"), guiGroupBox, guiGroupLayout,
-		m_displayWaveform, SLOT(toggleDisplayWaveform(bool)), true);
 	addCheckBox(tr("Enable all note labels in piano roll"), guiGroupBox, guiGroupLayout,
 		m_printNoteLabels, SLOT(toggleNoteLabels(bool)), false);
 	addCheckBox(tr("Show fader ticks"), guiGroupBox, guiGroupLayout,
@@ -293,9 +295,16 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	guiGroupLayout->addWidget(new QLabel{tr("Default Autoscroll Mode"), guiGroupBox});
 	guiGroupLayout->addWidget(m_autoScrollComboBox);
 
-	generalControlsLayout->addWidget(guiGroupBox);
-
-	generalControlsLayout->addSpacing(10);
+	// Two columns, to use the page's width: the interface on the left, projects and language on the right
+	auto columns = new QHBoxLayout;
+	columns->setSpacing(16);
+	auto leftColumn = new QVBoxLayout;
+	auto rightColumn = new QVBoxLayout;
+	columns->addLayout(leftColumn, 1);
+	columns->addLayout(rightColumn, 1);
+	generalControlsLayout->addLayout(columns);
+	leftColumn->addWidget(guiGroupBox);
+	leftColumn->addStretch();
 
 	// Projects tab.
 	QGroupBox * projectsGroupBox = new QGroupBox(tr("Projects"), generalControls);
@@ -307,10 +316,22 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 		m_disableBackup, SLOT(toggleDisableBackup(bool)), false);
 	addCheckBox(tr("Reopen last project on startup"), projectsGroupBox, projectsGroupLayout,
 		m_openLastProject, SLOT(toggleOpenLastProject(bool)), false);
+	m_newProjectAnalog = new QCheckBox(tr("New projects start with the analog mixer (else the digital one)"),
+		projectsGroupBox);
+	m_newProjectAnalog->setChecked(ConfigManager::inst()->value("mixer", "newprojectanalog", "0").toInt() != 0);
+	projectsGroupLayout->addWidget(m_newProjectAnalog);
+	auto longAudioRow = new QHBoxLayout;
+	m_longAudioSeconds = new QSpinBox(projectsGroupBox);
+	m_longAudioSeconds->setRange(1, 3600);
+	m_longAudioSeconds->setSuffix(tr(" s"));
+	m_longAudioSeconds->setValue(static_cast<int>(SampleTrack::longAudioSeconds()));
+	longAudioRow->addWidget(new QLabel(tr("Audio files longer than this become audio tracks (shorter: samples)"),
+		projectsGroupBox), 1);
+	longAudioRow->addWidget(m_longAudioSeconds);
+	projectsGroupLayout->addLayout(longAudioRow);
 
-	generalControlsLayout->addWidget(projectsGroupBox);
-
-	generalControlsLayout->addSpacing(10);
+	rightColumn->addWidget(projectsGroupBox);
+	rightColumn->addSpacing(10);
 
 	// Language tab.
 	QGroupBox * languageGroupBox = new QGroupBox(tr("Language"), generalControls);
@@ -369,8 +390,8 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	connect(changeLang, SIGNAL(currentIndexChanged(int)),
 			this, SLOT(showRestartWarning()));
 
-	generalControlsLayout->addWidget(languageGroupBox);
-	generalControlsLayout->addSpacing(10);
+	rightColumn->addWidget(languageGroupBox);
+	rightColumn->addStretch();
 
 	// General layout ordering.
 	generalControlsLayout->addStretch();
@@ -654,11 +675,30 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	enableMixSanitizationCheckbox->setToolTip(tr("Provides protection from any plugins or tracks that generate "
 												 "corrupted audio, but may negatively impact performance."));
 
+	// Recording
+	const auto recordingBox = new QGroupBox(tr("Recording"), audio_w);
+	const auto recordingLayout = new QFormLayout{recordingBox};
+	m_latencyOffset = new QSpinBox(recordingBox);
+	m_latencyOffset->setRange(-48000, 48000);
+	m_latencyOffset->setSuffix(tr(" frames"));
+	m_latencyOffset->setValue(ConfigManager::inst()->value("recording", "latencyoffset", "0").toInt());
+	m_latencyOffset->setToolTip(tr("Added to the latencies the audio interface reports, to align recordings exactly "
+		"with what was heard (measure it with a cable from an output to an input)"));
+	recordingLayout->addRow(tr("Latency calibration"), m_latencyOffset);
+	m_preRoll = new QComboBox(recordingBox);
+	for (const int bars : {0, 1, 2, 4}) { m_preRoll->addItem(bars == 0 ? tr("Off") : tr("%n bar(s)", "", bars), bars); }
+	m_preRoll->setCurrentIndex(std::max(0, m_preRoll->findData(ConfigManager::inst()->value("recording", "prerollbars", "0").toInt())));
+	recordingLayout->addRow(tr("Pre-roll"), m_preRoll);
+	m_countIn = new QCheckBox(tr("The metronome clicks during the pre-roll"), recordingBox);
+	m_countIn->setChecked(ConfigManager::inst()->value("recording", "countin", "0").toInt() != 0);
+	recordingLayout->addRow(tr("Count-in"), m_countIn);
+
 	// Audio layout ordering.
 	audio_layout->addWidget(audioInterfaceBox);
 	audio_layout->addWidget(as_w);
 	audio_layout->addWidget(sampleRateBox);
 	audio_layout->addWidget(bufferSizeBox);
+	audio_layout->addWidget(recordingBox);
 	audio_layout->addWidget(otherBox);
 	audio_layout->addStretch();
 
@@ -857,10 +897,8 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 		SLOT(setThemeDir(const QString&)),
 		SLOT(openThemeDir()),
 		m_themeDirLineEdit);
-	addPathEntry(tr("Background artwork"), m_backgroundPicFile,
-		SLOT(setBackgroundPicFile(const QString&)),
-		SLOT(openBackgroundPicFile()),
-		m_backgroundPicFileLineEdit);
+	// (No background artwork: the pages cover the workspace)
+	m_backgroundPicFileLineEdit = nullptr;
 
 	pathSelectorsLayout->addStretch();
 
@@ -917,23 +955,30 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 			tr("Some changes require restarting."), extras_w);
 	restartWarningLbl->hide();
 
-	// OK button.
-	auto ok_btn = new QPushButton(embed::getIconPixmap("apply"), tr("OK"), extras_w);
-	connect(ok_btn, SIGNAL(clicked()),
-			this, SLOT(accept()));
-
-	// Cancel button.
-	auto cancel_btn = new QPushButton(embed::getIconPixmap("cancel"), tr("Cancel"), extras_w);
-	connect(cancel_btn, SIGNAL(clicked()),
-			this, SLOT(reject()));
-
 	// Extras layout ordering.
 	extras_layout->addSpacing(10);
 	extras_layout->addWidget(restartWarningLbl);
 	extras_layout->addStretch();
-	extras_layout->addWidget(ok_btn);
-	extras_layout->addSpacing(10);
-	extras_layout->addWidget(cancel_btn);
+	if (page)
+	{
+		// As a page there is nothing to confirm: the settings apply when another page is shown
+		auto note = new QLabel(tr("The settings apply when you leave this page."), extras_w);
+		note->setEnabled(false);
+		extras_layout->addWidget(note);
+	}
+	else
+	{
+		// OK button.
+		auto ok_btn = new QPushButton(embed::getIconPixmap("apply"), tr("OK"), extras_w);
+		connect(ok_btn, SIGNAL(clicked()), this, SLOT(accept()));
+
+		// Cancel button.
+		auto cancel_btn = new QPushButton(embed::getIconPixmap("cancel"), tr("Cancel"), extras_w);
+		connect(cancel_btn, SIGNAL(clicked()), this, SLOT(reject()));
+		extras_layout->addWidget(ok_btn);
+		extras_layout->addSpacing(10);
+		extras_layout->addWidget(cancel_btn);
+	}
 	extras_layout->addSpacing(10);
 
 	// Vertical layout ordering.
@@ -974,6 +1019,11 @@ void SetupDialog::accept()
 
 	ConfigManager::inst()->setValue("tooltips", "disabled",
 					QString::number(!m_tooltips));
+	ConfigManager::inst()->setValue("mixer", "newprojectanalog", m_newProjectAnalog->isChecked() ? "1" : "0");
+	ConfigManager::inst()->setValue("ui", "longaudioseconds", QString::number(m_longAudioSeconds->value()));
+	ConfigManager::inst()->setValue("recording", "latencyoffset", QString::number(m_latencyOffset->value()));
+	ConfigManager::inst()->setValue("recording", "prerollbars", m_preRoll->currentData().toString());
+	ConfigManager::inst()->setValue("recording", "countin", m_countIn->isChecked() ? "1" : "0");
 	ConfigManager::inst()->setValue("ui", "displaywaveform",
 					QString::number(m_displayWaveform));
 	ConfigManager::inst()->setValue("ui", "printnotelabels",
