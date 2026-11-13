@@ -359,6 +359,10 @@ Feito depois (mesma noite e manhã de 13/11):
   viram lanes novas no topo (a última passada na lane que toca, as lanes de antes abaixo), cada item preso ao
   tempo em que foi tocado. Um desfazer volta tudo. Os arquivos dos itens são recursos do projeto (copiados ao
   salvar, nunca limpos enquanto usados), e os itens do disco são lidos adiantados como os clipes.
+- **Lanes opcionais** (13/11, pedido do usuário): nas configurações, Gravação → Lanes. Desligadas, a gravação é
+  simples: o take novo fica na lane que toca e substitui o que cobre (os itens por baixo são aparados, cortados em
+  volta ou removidos, sem mexer nos arquivos), e no loop só a última passada fica. A interface do passo 4 esconde
+  as lanes nesse modo.
 
 Por fazer, na ordem do plano:
 - **Mapa de tempo:** o desfazer das edições dos marcadores; a fórmula de compasso por marcador.

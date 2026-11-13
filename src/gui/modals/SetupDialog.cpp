@@ -699,6 +699,11 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	m_countIn = new QCheckBox(tr("The metronome clicks during the pre-roll"), recordingBox);
 	m_countIn->setChecked(ConfigManager::inst()->value("recording", "countin", "0").toInt() != 0);
 	recordingLayout->addRow(tr("Count-in"), m_countIn);
+	m_recordInLanes = new QCheckBox(tr("Each pass on a lane of its own, the latest on top (as in REAPER)"), recordingBox);
+	m_recordInLanes->setChecked(ConfigManager::inst()->value("recording", "lanes", "1").toInt() != 0);
+	m_recordInLanes->setToolTip(tr("Off: recording is simpler, the new take replaces what it covers on the track, and "
+		"in a loop only the last pass is kept"));
+	recordingLayout->addRow(tr("Lanes"), m_recordInLanes);
 
 	// Audio layout ordering.
 	audio_layout->addWidget(audioInterfaceBox);
@@ -1082,6 +1087,7 @@ void SetupDialog::accept()
 	ConfigManager::inst()->setValue("recording", "latencyoffset", QString::number(m_latencyOffset->value()));
 	ConfigManager::inst()->setValue("recording", "prerollbars", m_preRoll->currentData().toString());
 	ConfigManager::inst()->setValue("recording", "countin", m_countIn->isChecked() ? "1" : "0");
+	ConfigManager::inst()->setValue("recording", "lanes", m_recordInLanes->isChecked() ? "1" : "0");
 	ConfigManager::inst()->setValue("ui", "displaywaveform",
 					QString::number(m_displayWaveform));
 	ConfigManager::inst()->setValue("ui", "printnotelabels",

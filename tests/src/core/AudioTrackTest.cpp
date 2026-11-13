@@ -21,6 +21,7 @@
  */
 
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <vector>
@@ -283,6 +284,45 @@ private slots:
 		QCOMPARE(AudioStream::missCount(), misses);
 		QCOMPARE(fromDisk, fromMemory);
 		QVERIFY(std::abs(fromDisk[20000] - 0.5f) < 1e-3f);
+	}
+
+	void aNewTakeWithoutLanesReplacesWhatItCovers()
+	{
+		auto* track = newTrack();
+		const auto file = m_directory.filePath("covered.wav");
+		writeWav(file, 20 * m_rate, 0.5f, m_rate);
+		const auto bar = TimePos::ticksPerBar();
+		const auto recordingStartOf = [](const AudioItem* item) {
+			return item->startPosition().getTicks() + item->startTimeOffset().getTicks();
+		};
+
+		// Around it: split in two, the file where it was under both parts
+		auto* whole = track->addItem(file, TimePos{0});
+		whole->changeLength(TimePos{4 * bar});
+		track->clearSpan(0, bar, 2 * bar);
+		auto items = track->items();
+		QCOMPARE(items.size(), std::size_t{2});
+		std::sort(items.begin(), items.end(), [](auto* a, auto* b) { return a->startPosition() < b->startPosition(); });
+		QCOMPARE(items[0]->startPosition().getTicks(), 0);
+		QCOMPARE(items[0]->endPosition().getTicks(), bar);
+		QCOMPARE(items[1]->startPosition().getTicks(), 2 * bar);
+		QCOMPARE(items[1]->endPosition().getTicks(), 4 * bar);
+		QCOMPARE(recordingStartOf(items[1]), 0);
+		QVERIFY(items[0]->id() != items[1]->id());
+
+		// Over its end: trimmed; over its start: starts later in its file; all under it: gone
+		track->clearSpan(0, bar / 2, bar + 1);
+		QCOMPARE(items[0]->endPosition().getTicks(), bar / 2);
+		track->clearSpan(0, 2 * bar - 10, 3 * bar);
+		QCOMPARE(items[1]->startPosition().getTicks(), 3 * bar);
+		QCOMPARE(items[1]->endPosition().getTicks(), 4 * bar);
+		QCOMPARE(recordingStartOf(items[1]), 0);
+		// (another lane is not touched)
+		auto* other = track->addItem(file, TimePos{0}, 1);
+		other->changeLength(TimePos{4 * bar});
+		track->clearSpan(0, 0, 8 * bar);
+		QCOMPARE(track->items().size(), std::size_t{1});
+		QCOMPARE(track->items().front(), other);
 	}
 
 	void itemsAreSavedAndLoaded()

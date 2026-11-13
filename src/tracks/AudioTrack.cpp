@@ -483,6 +483,46 @@ void AudioTrack::insertLanesOnTop(int count)
 
 
 
+void AudioTrack::clearSpan(int lane, tick_t begin, tick_t end, const AudioItem* keep)
+{
+	if (end <= begin) { return; }
+	for (auto* item : items())
+	{
+		if (item == keep || item->lane() != lane) { continue; }
+		const auto itemBegin = item->startPosition().getTicks();
+		const auto itemEnd = item->endPosition().getTicks();
+		if (itemEnd <= begin || itemBegin >= end) { continue; }
+		// Where the recording starts on the song (the file stays where it is under each part)
+		const auto recordingStart = itemBegin + item->startTimeOffset().getTicks();
+		if (itemBegin >= begin && itemEnd <= end)
+		{
+			delete item; // (all under the new take)
+			continue;
+		}
+		if (itemBegin < begin && itemEnd > end)
+		{
+			// Split around it: the part after it is a copy
+			auto* after = static_cast<AudioItem*>(item->clone());
+			after->movePosition(TimePos{end});
+			after->changeLength(TimePos{itemEnd - end});
+			after->setStartTimeOffset(TimePos{recordingStart - end});
+			item->changeLength(TimePos{begin - itemBegin});
+			continue;
+		}
+		if (itemBegin < begin) { item->changeLength(TimePos{begin - itemBegin}); } // (its end under it)
+		else
+		{
+			// Its start under it
+			item->movePosition(TimePos{end});
+			item->changeLength(TimePos{itemEnd - end});
+			item->setStartTimeOffset(TimePos{recordingStart - end});
+		}
+	}
+}
+
+
+
+
 void AudioTrack::applyPlayingLane(int lane)
 {
 	m_playingLane = std::max(lane, 0);

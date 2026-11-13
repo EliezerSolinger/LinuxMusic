@@ -237,6 +237,7 @@ private:
 	QSpinBox* m_latencyOffset;
 	QComboBox* m_preRoll;
 	QCheckBox* m_countIn;
+	QCheckBox* m_recordInLanes;
 	bool m_changed = false;
 	std::vector<std::pair<const char*, QKeySequenceEdit*>> m_shortcutEdits;
 

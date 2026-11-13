@@ -14585,6 +14585,18 @@ Latency: %2 ms</source>
         <source>The other keys of the editors and the menus' keys are fixed.</source>
         <translation>As outras teclas dos editores e as dos menus são fixas.</translation>
     </message>
+    <message>
+        <source>Each pass on a lane of its own, the latest on top (as in REAPER)</source>
+        <translation>Cada passada numa lane própria, a mais nova em cima (como no REAPER)</translation>
+    </message>
+    <message>
+        <source>Off: recording is simpler, the new take replaces what it covers on the track, and in a loop only the last pass is kept</source>
+        <translation>Desligado: a gravação fica mais simples, o take novo substitui o que ele cobre na faixa, e no loop só a última passada fica</translation>
+    </message>
+    <message>
+        <source>Lanes</source>
+        <translation>Lanes</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::Sf2InstrumentView</name>
@@ -17614,6 +17626,67 @@ Latency: %2 ms</source>
     <message>
         <source>Add a region over the cycle</source>
         <translation>Adicionar uma região sobre o ciclo</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::AudioItemView</name>
+    <message>
+        <source>Memory: from disk</source>
+        <translation>Memória: do disco</translation>
+    </message>
+    <message>
+        <source>Memory: in RAM</source>
+        <translation>Memória: na RAM</translation>
+    </message>
+    <message>
+        <source>Automatic (files of %1 s or more from disk)</source>
+        <translation>Automático (arquivos de %1 s ou mais vêm do disco)</translation>
+    </message>
+    <message>
+        <source>Load into RAM</source>
+        <translation>Carregar na RAM</translation>
+    </message>
+    <message>
+        <source>Stream from disk</source>
+        <translation>Ler do disco (streaming)</translation>
+    </message>
+    <message>
+        <source>Reset gain and fades</source>
+        <translation>Zerar ganho e fades</translation>
+    </message>
+    <message>
+        <source>Streamed from disk</source>
+        <translation>Lido do disco (streaming)</translation>
+    </message>
+    <message>
+        <source>Loaded into RAM</source>
+        <translation>Carregado na RAM</translation>
+    </message>
+    <message>
+        <source>Gain %1 dB, fades %2 ms and %3 ms</source>
+        <translation>Ganho %1 dB, fades de %2 ms e %3 ms</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::AudioTrack</name>
+    <message>
+        <source>Audio track</source>
+        <translation>Faixa de áudio</translation>
+    </message>
+    <message>
+        <source>Change audio item</source>
+        <translation>Mudar item de áudio</translation>
+    </message>
+    <message>
+        <source>Choose the lane heard</source>
+        <translation>Escolher a lane que toca</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::AudioItem</name>
+    <message>
+        <source>Audio file not found</source>
+        <translation>Arquivo de áudio não encontrado</translation>
     </message>
 </context>
 </TS>

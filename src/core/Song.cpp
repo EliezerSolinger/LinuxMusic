@@ -1220,6 +1220,30 @@ void Song::landOnLanes(AudioTrack* track, const std::vector<AudioRecorder::Segme
 		lanes = std::max(lanes, group.size());
 	}
 
+	const auto bindToTempo = [this](AudioItem* item, tick_t startTick, const AudioRecorder::Segment& segment) {
+		// Bound to the tempo it was played at: a change of tempo renders it again
+		auto timing = AudioItem::Timing{};
+		for (const auto& point : timingOf(startTick, static_cast<double>(segment.frames)))
+		{
+			timing.push_back({point.tick, point.frame});
+		}
+		item->setOriginalTiming(std::move(timing), segment.path);
+	};
+
+	// Without lanes (the settings' choice), as a simple recorder: the take replaces what it covers on the lane heard,
+	// and of a loop only the last pass stays (the others' files are cleaned when the project closes)
+	if (ConfigManager::inst()->value("recording", "lanes", "1").toInt() == 0)
+	{
+		for (const auto& [startTick, group] : passes)
+		{
+			const auto& last = group.back();
+			auto* item = track->addItem(last.path, TimePos{static_cast<tick_t>(startTick)}, track->playingLane());
+			bindToTempo(item, static_cast<tick_t>(startTick), last);
+			track->clearSpan(track->playingLane(), item->startPosition().getTicks(), item->endPosition().getTicks(), item);
+		}
+		return;
+	}
+
 	// As in REAPER: the new passes go on top, the last one on the lane heard (the first), and the lanes there were
 	// go below them
 	track->insertLanesOnTop(static_cast<int>(lanes));
@@ -1230,13 +1254,7 @@ void Song::landOnLanes(AudioTrack* track, const std::vector<AudioRecorder::Segme
 			const auto& segment = group[pass];
 			auto* item = track->addItem(segment.path, TimePos{static_cast<tick_t>(startTick)},
 				static_cast<int>(group.size() - 1 - pass));
-			// Bound to the tempo it was played at: a change of tempo renders it again
-			auto timing = AudioItem::Timing{};
-			for (const auto& point : timingOf(static_cast<tick_t>(startTick), static_cast<double>(segment.frames)))
-			{
-				timing.push_back({point.tick, point.frame});
-			}
-			item->setOriginalTiming(std::move(timing), segment.path);
+			bindToTempo(item, static_cast<tick_t>(startTick), segment);
 		}
 	}
 }

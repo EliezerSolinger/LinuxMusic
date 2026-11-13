@@ -89,6 +89,13 @@ public:
 	//! passes. Not an undo step of its own: part of the recording's, which keeps the track's state
 	void insertLanesOnTop(int count);
 
+	/**
+	 * Makes room on @p lane from @p begin to @p end for a new take, as recording without lanes does: the items there
+	 * (but @p keep) are trimmed, split around it or removed; their files stay. Not an undo step of its own: part
+	 * of the recording's, which keeps the track's state
+	 */
+	void clearSpan(int lane, tick_t begin, tick_t end, const AudioItem* keep = nullptr);
+
 	//! Gives the player what plays now. It happens by itself after each change, once the event loop runs; this does
 	//! it at once (e.g. before rendering without an event loop)
 	void publish();

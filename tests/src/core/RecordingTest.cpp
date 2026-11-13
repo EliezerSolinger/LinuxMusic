@@ -580,6 +580,59 @@ private slots:
 		QCOMPARE(recorder->items().front()->lane(), 0);
 	}
 
+	void withoutLanesTheLastPassReplacesWhatItCovers()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
+		engine->setAudioDevice(device, false);
+		ConfigManager::inst()->setValue("recording", "lanes", "0");
+
+		const auto bar = TimePos::ticksPerBar();
+		const auto impulsePath = m_directory.filePath("impulse-simple.wav");
+		writeImpulse(impulsePath, engine->outputSampleRate(), 4000, 0);
+		auto* player = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
+		auto* clip = new SampleClip{player};
+		clip->setSampleFile(impulsePath);
+		clip->movePosition(TimePos{2 * bar});
+		// An item over bars 1 to 4: the loop over bars 2 and 3 cuts a hole in it
+		auto* before = recorder->addItem(impulsePath, TimePos{0});
+		before->changeLength(TimePos{4 * bar});
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		recorder->monitorModel()->setValue(static_cast<int>(AudioInputTrack::MonitorMode::Off));
+		auto& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.setLoopPoints(TimePos{bar}, TimePos{3 * bar});
+		timeline.setLoopEnabled(true);
+		const auto cleanUp = qScopeGuard([&] {
+			ConfigManager::inst()->setValue("recording", "lanes", "1");
+			song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
+			song->stop();
+			const auto guard = engine->requestChangesGuard();
+			delete player;
+			delete recorder;
+		});
+
+		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
+		song->setPlayPos(bar, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		for (double played = 0; played < 3.5 * 2 * bar * framesPerTick; played += 256) { device->callback(256); }
+		song->stop();
+
+		// All on one lane: the item before around the take, the take the last whole pass
+		auto items = recorder->items();
+		std::sort(items.begin(), items.end(), [](auto* a, auto* b) { return a->startPosition() < b->startPosition(); });
+		QCOMPARE(items.size(), std::size_t{3});
+		for (const auto* item : items) { QCOMPARE(item->lane(), 0); }
+		QCOMPARE(recorder->laneCount(), 1);
+		QCOMPARE(items[0]->endPosition().getTicks(), bar);
+		QCOMPARE(items[1]->startPosition().getTicks(), bar);
+		QVERIFY2(items[1]->file().endsWith("-3.wav"), qPrintable(items[1]->file()));
+		QCOMPARE(items[2]->startPosition().getTicks(), items[1]->endPosition().getTicks());
+		QCOMPARE(items[2]->endPosition().getTicks(), 4 * bar);
+	}
+
 	void choosingATakeKeepsThePartOfTheClip()
 	{
 		auto* song = Engine::getSong();
