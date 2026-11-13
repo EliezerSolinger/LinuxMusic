@@ -341,8 +341,11 @@ Cada passo atualiza este documento, marcando o que foi feito.
 - **Etapa 9.3 feita** (13/11): nas barras do Piano Roll e do Arranjo, os seletores viraram botões de ícone que
   mostram o valor atual e abrem o mesmo menu.
 - **Falta das anotações:**
-  - 13.2 (instrumentos acústicos por soundfont);
-  - 13.3 (plugin IR/NAM);
+  - 13.2 (instrumentos acústicos por soundfont): precisa baixar uma soundfont GM de licença livre (GeneralUser GS
+    ou FluidR3 em sf3);
+  - 13.3, a parte NAM: precisa do NeuralAmpModelerCore (MIT, com Eigen e nlohmann/json) como submódulo. A
+    tentativa de adicionar o submódulo foi bloqueada pela permissão do ambiente, e é preciso autorização do usuário
+    para baixar código e dados de fora;
   - o registro central de atalhos;
   - regiões na régua.
 - **Etapa 7 feita** (13/11): o compressor do mixbus segue o SSL G medido por Thompson e Heilemann (2026, um G384).
@@ -354,3 +357,9 @@ Cada passo atualiza este documento, marcando o que foi feito.
   - O Auto tem dois polos: um rápido (0,1 s) e um lento (1,2 s) que o segue.
   - O medidor de redução é próprio, de ponteiro (VU), com a escala da SSL.
   - Projetos antigos convertem para o passo mais perto. A A/B não muda.
+- **Etapa 13.3, parte IR, feita** (13/11): o plugin "Amp & IR".
+  - Convolução particionada uniforme sobre o FFTW, em blocos de 256 amostras, com a latência informada ao mixer.
+  - IR mono ou estéreo, reamostrada e normalizada em energia, com ganho de entrada e de saída. A troca de IR não
+    trava o áudio, e o arquivo da IR é recurso do projeto.
+  - A biblioteca é gerada por modelos (`tools/make-irs.py`, CC0): 4 caixas de guitarra, 2 corpos de violão e 4 salas.
+  - `ConvolverTest` compara com a convolução direta.
