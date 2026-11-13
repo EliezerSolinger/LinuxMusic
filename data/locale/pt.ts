@@ -11132,6 +11132,10 @@ Por favor visite http://lmms.sf.net/wiki para ter acesso a mais infromações so
         <source>Settings</source>
         <translation>Configurações</translation>
     </message>
+    <message>
+        <source>Save the settings you changed?</source>
+        <translation>Salvar as configurações que você mudou?</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::MalletsInstrumentView</name>
@@ -14520,6 +14524,10 @@ Latency: %2 ms</source>
     <message>
         <source>The settings apply when you leave this page.</source>
         <translation>As configurações valem ao sair desta página.</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Salvar</translation>
     </message>
 </context>
 <context>

@@ -67,6 +67,9 @@ public:
 	~SetupDialog() override;
 
 
+	//! Whether a setting was changed since the page opened
+	auto hasChanges() const -> bool { return m_changed; }
+
 public slots:
 	//! Applies the settings (and closes)
 	void accept() override;
@@ -230,6 +233,7 @@ private:
 	QSpinBox* m_latencyOffset;
 	QComboBox* m_preRoll;
 	QCheckBox* m_countIn;
+	bool m_changed = false;
 
 	QLabel * restartWarningLbl;
 };

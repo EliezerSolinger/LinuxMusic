@@ -31,6 +31,9 @@
 #include <QLayout>
 #include <QLineEdit>
 #include <QScrollArea>
+#include <QAbstractButton>
+#include <QDoubleSpinBox>
+#include <QAbstractSlider>
 #include <QSpinBox>
 #include <QFormLayout>
 
@@ -961,10 +964,10 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	extras_layout->addStretch();
 	if (page)
 	{
-		// As a page there is nothing to confirm: the settings apply when another page is shown
-		auto note = new QLabel(tr("The settings apply when you leave this page."), extras_w);
-		note->setEnabled(false);
-		extras_layout->addWidget(note);
+		// As a page: Save applies them; leaving the page with changes asks (see hasChanges())
+		auto save = new QPushButton(embed::getIconPixmap("apply"), tr("Save"), extras_w);
+		connect(save, &QPushButton::clicked, this, &SetupDialog::accept);
+		extras_layout->addWidget(save);
 	}
 	else
 	{
@@ -996,6 +999,19 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 		setWindowFlags(Qt::Widget);
 		setAutoFillBackground(true);
 	}
+
+	// Any control changed is a change to save (the audio and MIDI interfaces' own widgets included)
+	const auto changed = [this] { m_changed = true; };
+	for (auto box : findChildren<QAbstractButton*>())
+	{
+		if (box->isCheckable()) { connect(box, &QAbstractButton::toggled, this, changed); }
+	}
+	for (auto box : findChildren<QComboBox*>()) { connect(box, &QComboBox::currentIndexChanged, this, changed); }
+	for (auto box : findChildren<QAbstractSpinBox*>()) { connect(box, &QAbstractSpinBox::editingFinished, this, changed); }
+	for (auto box : findChildren<QSpinBox*>()) { connect(box, &QSpinBox::valueChanged, this, changed); }
+	for (auto box : findChildren<QDoubleSpinBox*>()) { connect(box, &QDoubleSpinBox::valueChanged, this, changed); }
+	for (auto slider : findChildren<QAbstractSlider*>()) { connect(slider, &QAbstractSlider::valueChanged, this, changed); }
+	for (auto edit : findChildren<QLineEdit*>()) { connect(edit, &QLineEdit::textEdited, this, changed); }
 	show();
 }
 

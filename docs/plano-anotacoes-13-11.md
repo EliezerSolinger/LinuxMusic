@@ -145,6 +145,22 @@ Tamanho: P (pequeno), M (médio), G (grande).
     - Ctrl+Z / Ctrl+Shift+Z.
   - Os conflitos com os atalhos atuais (Shift+D/E/S/T no Piano Roll) ficam como estão no editor que já os tem.
 
+- **9.7 Marcadores na régua, como no REAPER** (M; pedido do usuário em 13/11).
+  - Um marcador é um ponto da régua com um **texto** opcional (por exemplo "Refrão", "Verso 2"), com cor, para
+    anotar as partes da música. Ele **pode ou não** marcar uma mudança de tempo: a mudança de tempo é uma
+    propriedade do marcador (BPM, salto ou rampa), ligada ou desligada.
+  - **Modelo:** o `TempoMap` atual vira uma lista de marcadores do projeto (`Markers`), cada um com `tick`,
+    `nome`, `cor` e o tempo opcional. O mapa de tempo é o conjunto dos marcadores que têm tempo, e nada muda na
+    reprodução. Projetos com o mapa de tempo de agora abrem com cada marcador de tempo sem nome.
+  - **Interface:** uma faixa de marcadores sob a régua. A faixa TEMPO atual vira essa faixa, e os marcadores sem
+    tempo aparecem como bandeiras com o texto.
+    - Duplo clique cria, arrastar move, e o menu de contexto renomeia, muda a cor, liga ou desliga o tempo e apaga.
+    - Teclas, como no REAPER: M insere um marcador no cursor; 1 a 9 vão ao marcador; Shift+M (não usada no REAPER)
+      abre a lista.
+  - **Regiões**, como no REAPER, ficam para depois: um trecho com nome (do início ao fim de uma parte), que pode
+    virar a seleção do ciclo com um clique e uma faixa de exportação no assistente.
+  - Desfazer: cada edição de marcador é um passo.
+
 ## Etapa 10: configurações dentro do app e o menu
 
 - **10.1 Configurações como página** (M).
@@ -300,3 +316,19 @@ Cada passo atualiza este documento, marcando o que foi feito.
     `local:`. "Salvar como" leva os arquivos. A checagem de `local:` passou a ser por atributo;
   - acima de 30 s, o arquivo vira faixa de sample com o clipe; abaixo, instrumento;
   - vários arquivos de uma vez (do Finder ou de "Importar arquivos de áudio..."): uma faixa por arquivo.
+- **Configurações** (13/11, pedidos do usuário):
+  - a tela ocupa a página toda, com a aba Geral em duas colunas;
+  - tem o botão Salvar. Ao sair da página com mudanças, um modal pergunta Salvar, Descartar ou Cancelar (ficar);
+  - opções novas: projetos novos com mesa analógica ou digital; quantos segundos fazem um arquivo virar faixa de
+    áudio; o grupo Gravação (calibração da latência, pré-roll, contagem);
+  - saíram as opções sem efeito: o osciloscópio do master e a imagem de fundo;
+  - a tela está em português.
+- **Etapa 12 feita** (13/11):
+  - assistente de exportação em 4 passos (trecho, formatos, processamento, pasta). Renderiza uma vez e grava todos
+    os formatos de uma vez, com normalização por pico ou loudness (ITU-R BS.1770, testada com a referência de
+    −3,01 LUFS), fades e dither TPDF;
+  - pelo menu de contexto: exportar uma faixa sozinha como áudio ou MIDI, e um clipe sozinho como áudio.
+- **Etapa 13.1 feita** (13/11): os samples acústicos saíram (106 arquivos, com o modelo AcousticDrumset e a demo
+  StrictProduction, que dependiam deles). Um teste garante que nenhum preset, demo ou modelo aponta para um sample
+  que não existe.
+- **Corrigido:** o aviso "Sample not found: samples/empty.wav", que vinha de 21 presets do TripleOscillator.

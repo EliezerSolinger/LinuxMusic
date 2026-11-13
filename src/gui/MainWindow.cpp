@@ -577,13 +577,20 @@ DockPanel* MainWindow::dockWidget(QWidget* w, DockArea area, const QString& titl
 
 void MainWindow::showPage(Page page)
 {
-	// Leaving the settings applies them (they have no OK): the page goes, and this comes back here
+	// Leaving the settings: changed ones are saved or discarded as the user says (or the page stays); the page
+	// goes, and this comes back here
 	if (page != Page::Settings && m_settingsPage)
 	{
 		if (auto settings = m_settingsPage->findChild<SetupDialog*>())
 		{
+			// (closing it shows the page asked for)
+			const auto before = m_pageBeforeSettings;
 			m_pageBeforeSettings = page;
-			settings->accept();
+			if (!closeSettings(settings))
+			{
+				m_pageBeforeSettings = before;
+				m_settingsButton->setChecked(true);
+			}
 			return;
 		}
 	}
@@ -1090,6 +1097,24 @@ void MainWindow::showSettingsDialog()
 
 
 
+auto MainWindow::closeSettings(SetupDialog* settings) -> bool
+{
+	if (!settings->hasChanges())
+	{
+		settings->reject();
+		return true;
+	}
+	const auto answer = QMessageBox::question(this, tr("Settings"), tr("Save the settings you changed?"),
+		QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
+	if (answer == QMessageBox::Cancel) { return false; }
+	if (answer == QMessageBox::Save) { settings->accept(); }
+	else { settings->reject(); }
+	return true;
+}
+
+
+
+
 void MainWindow::showSettingsPage(int tab)
 {
 	if (!m_settingsPage)
@@ -1484,10 +1509,14 @@ void MainWindow::redo()
 
 void MainWindow::closeEvent( QCloseEvent * _ce )
 {
-	// Settings left open apply, as when leaving their page
+	// Settings left open with changes: saved, discarded, or the window stays
 	if (m_settingsPage)
 	{
-		if (auto settings = m_settingsPage->findChild<SetupDialog*>()) { settings->accept(); }
+		if (auto settings = m_settingsPage->findChild<SetupDialog*>(); settings && !closeSettings(settings))
+		{
+			_ce->ignore();
+			return;
+		}
 	}
 	if( mayChangeProject(true) )
 	{

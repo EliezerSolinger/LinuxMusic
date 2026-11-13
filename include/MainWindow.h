@@ -53,6 +53,7 @@ class EffectBrowser;
 class FileBrowser;
 class DockPanel;
 class PluginView;
+class SetupDialog;
 class ToolButton;
 class TransportBar;
 class SubWindow;
@@ -190,6 +191,8 @@ public slots:
 	void showSettingsDialog();
 	//! The settings, as a page of the window (the gear beside the pages), open at @p tab
 	void showSettingsPage(int tab = 0);
+	//! Closes the open settings: saved or discarded as the user says when they changed; false: they stay open
+	auto closeSettings(SetupDialog* settings) -> bool;
 	void aboutLMMS();
 	void help();
 	void toggleAutomationEditorWin();
