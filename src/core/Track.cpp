@@ -160,7 +160,7 @@ Track * Track::create( const QDomElement & element, TrackContainer * tc )
 		if (Engine::getSong() && !Engine::getSong()->isLoadingProject() && Engine::mixer()
 			&& (tc == Engine::getSong() || tc == Engine::patternStore()))
 		{
-			Engine::mixer()->setUpTrackChannel(t);
+			Engine::mixer()->setUpTrackChannel(t, false);
 		}
 		tc->updateFolders();
 	}

@@ -1493,7 +1493,7 @@ auto stripOf(const Track* track) -> std::optional<TrackStrip>
 } // namespace
 
 
-int Mixer::setUpTrackChannel(Track* track)
+int Mixer::setUpTrackChannel(Track* track, bool keepSharing)
 {
 	const auto strip = stripOf(track);
 	if (!strip) { return -1; }
@@ -1507,9 +1507,12 @@ int Mixer::setUpTrackChannel(Track* track)
 	const auto users = std::count_if(tracks.begin(), tracks.end(), [index](const auto& entry) {
 		return entry.second->value() == index;
 	});
-	// A bus (a channel other channels send to) is not a track's own channel either, unless made for it
+	// A bus (a channel other channels send to) is not a track's own channel either, unless made for it. Several
+	// tracks on a track channel were put there on purpose (each with its volume and panning, summed in the channel);
+	// several on any other channel come from projects of before, where tracks shared channels: each gets its own
 	const bool bus = !m_mixerChannels[index]->m_trackChannel && !m_mixerChannels[index]->m_receives.empty();
-	const bool shared = index == 0 || users > 1 || bus;
+	const bool joined = keepSharing && users > 1 && m_mixerChannels[index]->m_trackChannel;
+	const bool shared = index == 0 || (users > 1 && !joined) || bus;
 	if (!shared)
 	{
 		// The track's alone on it: it is the track's channel (e.g. in projects from before)
@@ -1543,8 +1546,9 @@ int Mixer::setUpTrackChannel(Track* track)
 
 	// Mute and solo: the track's own on the track (its source), the channel's on the channel (the mix)
 
-	// The track's effects go in front of the channel's
-	if (auto effects = strip->bus ? strip->bus->effects() : nullptr; effects && !effects->effects().empty())
+	// The track's effects go in front of the channel's, when the channel is the track's alone (on a channel shared
+	// with other tracks they stay on the track, where they apply to it only)
+	if (auto effects = strip->bus && !joined ? strip->bus->effects() : nullptr; effects && !effects->effects().empty())
 	{
 		auto doc = DataFile{DataFile::Type::EffectSettings};
 		auto saved = effects->saveState(doc, doc.content());

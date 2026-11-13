@@ -21,6 +21,7 @@
  */
 
 #include <QtTest>
+#include <QDomDocument>
 #include <QElapsedTimer>
 #include <complex>
 
@@ -1366,6 +1367,54 @@ private slots:
 	{
 		mixer()->releaseTrackChannel(track);
 		delete track;
+	}
+
+	void twoTracksCanShareAChannel()
+	{
+		const auto song = Engine::getSong();
+		auto* first = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* second = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		const auto shared = first->mixerChannelModel()->value();
+		QVERIFY(shared > 0);
+		QVERIFY(second->mixerChannelModel()->value() != shared);
+
+		// The second joins the first's channel: both stay there, also when the project is set up again on loading
+		const auto own = second->mixerChannelModel()->value();
+		second->mixerChannelModel()->setValue(shared);
+		mixer()->setUpTrackChannels();
+		QCOMPARE(first->mixerChannelModel()->value(), shared);
+		QCOMPARE(second->mixerChannelModel()->value(), shared);
+		// Neither owns it: each keeps its volume and panning before the channel, which keeps its name
+		QVERIFY(!mixer()->trackChannel(first));
+		QVERIFY(!mixer()->trackChannel(second));
+		first->volumeModel()->setValue(50.f);
+		QCOMPARE(second->volumeModel()->value(), 100.f);
+
+		// A clone of a track on it gets a channel of its own
+		auto document = QDomDocument{};
+		auto parent = document.createElement("tracks");
+		document.appendChild(parent);
+		const auto element = first->saveState(document, parent);
+		auto* clone = dynamic_cast<SampleTrack*>(Track::create(element, song));
+		QVERIFY(clone);
+		QVERIFY(clone->mixerChannelModel()->value() != shared);
+
+		// Projects of before, where tracks shared a channel that was not theirs: each gets one of its own
+		const auto bus = mixer()->createChannel();
+		first->mixerChannelModel()->setValue(bus);
+		second->mixerChannelModel()->setValue(bus);
+		mixer()->setUpTrackChannels();
+		QVERIFY(first->mixerChannelModel()->value() != bus);
+		QVERIFY(second->mixerChannelModel()->value() != bus);
+		QVERIFY(first->mixerChannelModel()->value() != second->mixerChannelModel()->value());
+
+		deleteTrack(clone);
+		deleteTrack(first);
+		deleteTrack(second);
+		// (Their own channels went with them; the ones left behind go)
+		auto left = std::vector<int>{bus, own, shared};
+		std::sort(left.rbegin(), left.rend());
+		for (const auto index : left) { if (index < mixer()->numChannels()) { mixer()->deleteChannel(index); } }
 	}
 
 	void folderRoutesItsTracksToItsGroupChannel()

@@ -367,9 +367,12 @@ public:
 	 * - the track's own effects move to the front of its channel's effects, and its mute and solo to the channel's.
 	 * The track keeps its volume and panning, on the source before the channel.
 	 *
+	 * Several tracks on a track channel share it on purpose (each with its volume and panning), unless
+	 * @p keepSharing is false (a cloned or pasted track, on its original's channel, gets a channel of its own).
+	 *
 	 * @returns the track's channel, or -1 if @p track has no mixer channel
 	 */
-	int setUpTrackChannel(Track* track);
+	int setUpTrackChannel(Track* track, bool keepSharing = true);
 
 	//! setUpTrackChannel() for every instrument and sample track of the song and the pattern editor
 	void setUpTrackChannels();
