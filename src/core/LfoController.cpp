@@ -65,8 +65,7 @@ LfoController::LfoController( Model * _parent ) :
 
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 			this, SLOT(updatePhase()));
-	connect(Engine::getSong(), &Song::playbackPositionJumped,
-			this, &LfoController::updatePhase);
+	// Jumps: seen on the audio thread (updateValueBuffer), when they happen (the signal came later)
 
 	updateDuration();
 }
@@ -88,6 +87,23 @@ LfoController::~LfoController()
 void LfoController::updateValueBuffer()
 {
 	m_phaseOffset = m_phaseModel.value() / 360.0;
+
+	// The song playing jumped (the play head moved, the cycle went round, it started): the phase follows the song
+	// again, from where it plays now
+	auto* song = Engine::getSong();
+	if (song->isPlaying() || song->isExporting())
+	{
+		const auto frame = song->transport().frame();
+		const auto period = static_cast<std::int64_t>(Engine::audioEngine()->framesPerPeriod());
+		if (frame != m_lastTransportFrame && frame != m_lastTransportFrame + period)
+		{
+			m_currentPhase = static_cast<float>(static_cast<double>(frame) / m_duration);
+			m_bufferLastUpdated = s_periods - 1;
+		}
+		m_lastTransportFrame = frame;
+	}
+	else { m_lastTransportFrame = -1; }
+
 	float phase = m_currentPhase + m_phaseOffset;
 	float phasePrev = 0.0f;
 

@@ -26,6 +26,7 @@
 #define LMMS_LFO_CONTROLLER_H
 
 
+#include <cstdint>
 #include "AutomatableModel.h"
 #include "Controller.h"
 #include "ControllerDialog.h"
@@ -79,6 +80,7 @@ protected:
 	float m_duration;
 	float m_phaseOffset;
 	float m_currentPhase;
+	std::int64_t m_lastTransportFrame = -1; //!< the song's frame at the last update, to see jumps [audio thread]
 
 	sample_t (*m_sampleFunction)( const float );
 
