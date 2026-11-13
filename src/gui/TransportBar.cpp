@@ -147,9 +147,7 @@ TransportBar::TransportBar(QWidget* parent)
 	m_stopButton = addButton("stop", tr("Stop (Space)"), "transportStop");
 	m_playButton = addButton("play", tr("Play/pause the song (Space)"), "transportPlay");
 	m_playButton->setCheckable(true);
-	m_recordButton = addButton("record", tr("Record the armed tracks: audio into sample tracks, notes into "
-		"instrument tracks (with no track armed: record MIDI into the clip open in the Piano Roll) (R)"),
-		"transportRecord");
+	m_recordButton = addButton("record", recordToolTip(), "transportRecord");
 	m_recordButton->setCheckable(true);
 
 	// The recording's pre-roll and count-in, in the button's menu
@@ -245,6 +243,9 @@ TransportBar::TransportBar(QWidget* parent)
 	layout->addWidget(new TransportMeters(this));
 
 	connect(song, &Song::playbackStateChanged, this, &TransportBar::updateState);
+	// The audio thread's changes (a pre-roll that ends) are read by timer; the main thread's come at once
+	connect(&song->transport(), &Transport::stateChanged, this, &TransportBar::updateState);
+	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &TransportBar::updateState);
 	connect(song, &Song::recordingProblem, this, [this](const QString& message) {
 		QMessageBox::warning(this, tr("Recording"), message);
 	});
@@ -272,8 +273,8 @@ QToolButton* TransportBar::addButton(const char* icon, const QString& toolTip, c
 
 void TransportBar::play()
 {
-	// The song (the Pattern Editor has its own play button); the editor knows how to start, pause and resume it
-	getGUI()->songEditor()->playAction()->trigger();
+	// The song (the Pattern Editor has its own play button)
+	Engine::getSong()->transport().play();
 }
 
 
@@ -281,7 +282,7 @@ void TransportBar::play()
 
 void TransportBar::stop()
 {
-	getGUI()->songEditor()->stopAction()->trigger();
+	Engine::getSong()->transport().stop();
 }
 
 
@@ -289,41 +290,24 @@ void TransportBar::stop()
 
 void TransportBar::record()
 {
-	const auto song = Engine::getSong();
-
-	// While recording, the button ends the recording and the song plays on (punch out)
-	if (song->isRecording())
+	// With nothing armed, the selected track is armed (as in REAPER), if it records
+	auto* selected = getGUI()->songEditor()->m_editor->selectedTrack();
+	const auto result = Engine::getSong()->transport().record(selected ? selected->getTrack() : nullptr);
+	if (result == Transport::RecordResult::NothingArmed)
 	{
-		song->stopRecording();
-		return;
+		QMessageBox::information(this, tr("Record"), tr("No track is armed. Arm a track with its R button, or "
+			"select an audio or instrument track (click its header) and press Record again: it is armed."));
 	}
-
-	// The tracks that record: audio tracks (their input) and instrument tracks (the notes played)
-	const auto armedModel = [](Track* track) -> BoolModel* {
-		if (auto* audioTrack = dynamic_cast<AudioTrack*>(track)) { return audioTrack->recordArmModel(); }
-		if (auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(track)) { return instrumentTrack->recordArmModel(); }
-		return nullptr;
-	};
-	const auto& tracks = song->tracks();
-	const bool armed = std::any_of(tracks.begin(), tracks.end(), [&](Track* track) {
-		const auto* model = armedModel(track);
-		return model && model->value();
-	});
-	if (!armed)
-	{
-		// As in REAPER: nothing armed, the selected track is armed, if it records
-		auto* selected = getGUI()->songEditor()->m_editor->selectedTrack();
-		auto* model = selected ? armedModel(selected->getTrack()) : nullptr;
-		if (!model)
-		{
-			QMessageBox::information(this, tr("Record"), tr("No track is armed. Arm a track with its R button, or "
-				"select an audio or instrument track (click its header) and press Record again: it is armed."));
-			return;
-		}
-		model->setValue(true);
-	}
-	song->record();
 	updateState();
+}
+
+
+
+
+auto TransportBar::recordToolTip() -> QString
+{
+	return tr("Record the armed tracks: audio into audio tracks, notes into instrument tracks (with no track armed, "
+		"the selected one is armed) (R)");
 }
 
 
@@ -347,11 +331,15 @@ void TransportBar::recordWhilePlaying()
 
 void TransportBar::updateState()
 {
-	const auto song = Engine::getSong();
-	const bool playing = song->isPlaying() && !song->isPaused();
+	const auto& transport = Engine::getSong()->transport();
+	const auto state = transport.state();
+	const bool playing = state != Transport::State::Stopped && state != Transport::State::Paused;
 	m_playButton->setIcon(embed::getIconPixmap(playing ? "pause" : "play"));
 	m_playButton->setChecked(playing);
-	m_recordButton->setChecked(song->isRecording());
+	m_recordButton->setChecked(transport.isRecording());
+	// The record button says when the pre-roll (or count-in) still plays before the recording
+	const bool waiting = state == Transport::State::PreRoll || state == Transport::State::CountIn;
+	m_recordButton->setToolTip(waiting ? tr("Recording after the pre-roll...") : recordToolTip());
 }
 
 } // namespace lmms::gui

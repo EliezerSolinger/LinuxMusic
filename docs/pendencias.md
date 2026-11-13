@@ -51,8 +51,10 @@ Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
 
 Motor e estabilidade:
 
-- [ ] **Transporte com contador de frames** (etapa 1): estado atômico (parado, tocando, gravando, pré-roll, count-in),
-  contador absoluto de frames da linha do tempo, ações globais Tocar, Parar e Gravar
+- [x] **Transporte com contador de frames** (etapa 1): `Transport` no núcleo, com o estado num atômico (parado, pausa,
+  tocando, pré-roll, count-in, gravando; o fim do pré-roll vem da thread de áudio), o frame da linha do tempo exato
+  pelo mapa de tempo (contado de período em período, recontado nos saltos e no ciclo), e Tocar, Parar e Gravar como
+  ações do núcleo, que a barra e o Arranjo chamam. O relógio, o LFO e o Carla usam esse frame
 - [ ] **Motor sem trava** (etapa 1): listas publicadas como snapshots imutáveis, travas finas tentadas, e o fim do
   mutex do período inteiro; cada passo com TSan e A/B
 - [ ] **Autosave contínuo** (etapa 0): snapshot depois de cada mudança (debounce de ~2 s), escrito por uma thread de

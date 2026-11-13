@@ -108,6 +108,7 @@ set(LMMS_SRCS
 	core/Song.cpp
 	core/SongMarkers.cpp
 	core/TempoMap.cpp
+	core/Transport.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadedExportManager.cpp
 	core/ThreadPool.cpp

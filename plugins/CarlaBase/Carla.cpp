@@ -629,8 +629,9 @@ auto CarlaInstrument::process(ProcessContext& context) -> ProcessStatus
     // set time info
     Song * const s = Engine::getSong();
     fTimeInfo.playing  = s->isPlaying();
-    fTimeInfo.frame    = s->getPlayPos(s->playMode()).frames(Engine::framesPerTick());
-    fTimeInfo.usecs    = s->getMilliseconds()*1000;
+    // Where the period starts, along the tempo map (see Transport)
+    fTimeInfo.frame    = static_cast<uint64_t>(std::max<std::int64_t>(0, s->transport().frame()));
+    fTimeInfo.usecs    = static_cast<uint64_t>(s->transport().seconds(Engine::audioEngine()->outputSampleRate()) * 1e6);
     fTimeInfo.bbt.bar  = s->getBars() + 1;
     fTimeInfo.bbt.beat = s->getBeat() + 1;
     fTimeInfo.bbt.tick = s->getBeatTicks();

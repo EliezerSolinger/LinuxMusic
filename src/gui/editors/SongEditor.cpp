@@ -903,6 +903,14 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	setCentralWidget(m_editor);
 	setAcceptDrops(true);
 	m_toolBar->setAcceptDrops(true);
+
+	// The transport stopped (from here, the transport bar or a shortcut): the piano roll's recording ends, and the
+	// timeline's recording marks go
+	connect(&song->transport(), &Transport::stopped, this, [this] {
+		getGUI()->pianoRoll()->stopRecording();
+		m_editor->m_timeLine->setRecording(false);
+		m_editor->m_positionLine->setRecording(false);
+	});
 	connect(m_toolBar, SIGNAL(dragEntered(QDragEnterEvent*)), m_editor, SLOT(dragEnterEvent(QDragEnterEvent*)));
 	connect(m_toolBar, SIGNAL(dropped(QDropEvent*)), m_editor, SLOT(dropEvent(QDropEvent*)));
 
@@ -1062,14 +1070,7 @@ void SongEditorWindow::changeEvent(QEvent *event)
 void SongEditorWindow::play()
 {
 	emit playTriggered();
-	if( Engine::getSong()->playMode() != Song::PlayMode::Song )
-	{
-		Engine::getSong()->playSong();
-	}
-	else
-	{
-		Engine::getSong()->togglePause();
-	}
+	Engine::getSong()->transport().play();
 }
 
 
@@ -1077,10 +1078,8 @@ void SongEditorWindow::play()
 
 void SongEditorWindow::stop()
 {
-	m_editor->m_song->stop();
-	getGUI()->pianoRoll()->stopRecording();
-	m_editor->m_timeLine->setRecording(false);
-	m_editor->m_positionLine->setRecording(false);
+	// The rest follows the transport's stopped(), whoever stops it
+	Engine::getSong()->transport().stop();
 }
 
 

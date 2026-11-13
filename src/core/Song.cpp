@@ -284,6 +284,7 @@ void Song::processNextBuffer()
 		if (getPlayPos() < begin || getPlayPos() >= end)
 		{
 			getTimeline().setTicks(begin.getTicks());
+			m_transport.positionSet();
 			return true;
 		}
 		return false;
@@ -293,6 +294,9 @@ void Song::processNextBuffer()
 
 	// Ensure playback begins within the loop if it is enabled
 	if (loopEnabled) { enforceLoop(timeline.loopBegin(), timeline.loopEnd()); }
+
+	// Where the period starts on the timeline, in frames (see Transport)
+	m_transport.periodStarts(timeline.ticks(), timeline.frameOffset(), Engine::audioEngine()->framesPerPeriod());
 
 	// Where the period starts, for the recording (see AudioRecorder)
 	m_periodStartTick.store(static_cast<double>(timeline.ticks()) + timeline.frameOffset() / Engine::framesPerTick(),
@@ -403,7 +407,28 @@ void Song::processNextBuffer()
 			Engine::framesPerTick());
 	}
 
+	// Where the next period starts if nothing jumps, and the state (a recording's pre-roll may have ended)
+	m_transport.periodEnds(getTimeline().ticks(), getTimeline().frameOffset());
+	m_transport.updateState();
+
 }
+
+auto Song::getMilliseconds(PlayMode playMode) const -> int
+{
+	if (playMode != PlayMode::Song) { return static_cast<int>(1000 * getTimeline(playMode).getElapsedSeconds()); }
+	const auto sampleRate = Engine::audioEngine()->outputSampleRate();
+	if (sampleRate == 0) { return 0; }
+	if (isPlaying() && m_playMode == PlayMode::Song)
+	{
+		return static_cast<int>(std::lround(1000.0 * m_transport.seconds(sampleRate)));
+	}
+	const auto& timeline = getTimeline(PlayMode::Song);
+	const auto frames = m_tempoMap.framesBetween(0, timeline.ticks(), getTempo(), sampleRate) + timeline.frameOffset();
+	return static_cast<int>(std::lround(1000.0 * frames / sampleRate));
+}
+
+
+
 
 void Song::removeOldAutomatedValue(AutomatableModel* am)
 {
@@ -577,6 +602,8 @@ void Song::playSong()
 
 	savePlayStartPosition();
 
+	m_transport.updateState(); // the transport says so too, at once
+
 	emit playbackStateChanged();
 }
 
@@ -608,6 +635,8 @@ void Song::playPattern()
 
 	savePlayStartPosition();
 
+	m_transport.updateState(); // the transport says so too, at once
+
 	emit playbackStateChanged();
 }
 
@@ -632,6 +661,8 @@ void Song::playMidiClip( const MidiClip* midiClipToPlay, bool loop )
 	}
 
 	savePlayStartPosition();
+
+	m_transport.updateState(); // the transport says so too, at once
 
 	emit playbackStateChanged();
 }
@@ -688,6 +719,8 @@ void Song::togglePause()
 
 	m_vstSyncController.setPlaybackState( m_playing );
 
+	m_transport.updateState(); // the transport says so too, at once
+
 	emit playbackStateChanged();
 }
 
@@ -714,6 +747,9 @@ void Song::stop()
 	m_paused = false;
 	m_recording = false;
 	m_playing = false;
+	// The play head goes back: the transport counts its frames again
+	m_transport.positionSet();
+	m_transport.m_recordingStartTick.store(-1, std::memory_order_relaxed);
 
 	switch (timeline.stopBehaviour())
 	{
@@ -772,6 +808,7 @@ void Song::stop()
 	if (!takes.empty()) { finishAudioRecording(takes); }
 
 	emit stopped();
+	m_transport.updateState(); // the transport says so too, at once
 	emit playbackStateChanged();
 }
 
@@ -1278,7 +1315,10 @@ auto Song::record() -> bool
 		for (auto* track : midiTracks) { track->setRecordingMidi(true); }
 	}
 	m_recording = true;
+	// The pre-roll ends at the cursor; punching in, the recording starts now
+	m_transport.m_recordingStartTick.store(punchIn ? -1 : fromTick, std::memory_order_relaxed);
 	if (!problems.isEmpty()) { emit recordingProblem(problems.join('\n')); }
+	m_transport.updateState(); // the transport says so too, at once
 	emit playbackStateChanged();
 	return true;
 }
@@ -1297,6 +1337,7 @@ void Song::stopRecording()
 	}
 	finishMidiRecording(heardTick());
 	finishAudioRecording(takes);
+	m_transport.updateState(); // the transport says so too, at once
 	emit playbackStateChanged();
 }
 
@@ -1384,6 +1425,7 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 {
 	m_recording = false;
 	m_countInUntilTick = -1;
+	m_transport.m_recordingStartTick.store(-1, std::memory_order_relaxed);
 	auto problems = QStringList{};
 	for (const auto& take : takes)
 	{

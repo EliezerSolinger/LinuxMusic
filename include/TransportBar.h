@@ -73,6 +73,7 @@ private slots:
 
 private:
 	QToolButton* addButton(const char* icon, const QString& toolTip, const char* name);
+	static auto recordToolTip() -> QString;
 
 	QToolButton* m_metronomeButton;
 	QToolButton* m_playButton;

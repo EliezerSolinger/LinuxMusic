@@ -31,6 +31,7 @@ set(LMMS_TESTS
 	src/core/TempoMapTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TimeStretcherTest.cpp
+	src/core/TransportTest.cpp
 	src/core/TripleBufferTest.cpp
 	src/core/UndoCommandTest.cpp
 	src/gui/ShortcutsTest.cpp

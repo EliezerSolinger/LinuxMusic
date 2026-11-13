@@ -40,6 +40,7 @@
 #include "MidiRecorder.h"
 #include "SongMarkers.h"
 #include "TempoMap.h"
+#include "Transport.h"
 #include "SampleClip.h"
 #include "Controller.h"
 #include "Metronome.h"
@@ -128,12 +129,11 @@ public:
 		return getMilliseconds(m_playMode);
 	}
 
-	//! Returns the elapsed milliseconds since the start of the song
-	//! This function attempts to give the correct value even despite mid-song tempo changes
-	inline int getMilliseconds(PlayMode playMode) const
-	{
-		return 1000 * getTimeline(playMode).getElapsedSeconds();
-	}
+	/**
+	 * The milliseconds of the song up to the play head. In song mode, along the tempo map: the transport's frames
+	 * while the song plays, counted from the play head's tick when it does not
+	 */
+	auto getMilliseconds(PlayMode playMode) const -> int;
 
 	inline int getBars() const
 	{
@@ -232,6 +232,7 @@ public:
 	void setPlayPos(tick_t ticks, PlayMode playMode)
 	{
 		getTimeline(playMode).setTicks(ticks);
+		m_transport.positionSet();
 	}
 	void setPlayPos(tick_t ticks)
 	{
@@ -375,6 +376,9 @@ public:
 	auto midiRecorder() -> MidiRecorder& { return m_midiRecorder; }
 
 	auto tempoMap() -> TempoMap& { return m_tempoMap; }
+	auto tempoMap() const -> const TempoMap& { return m_tempoMap; }
+	//! What the song is doing and where, and the global play, stop and record (see Transport)
+	auto transport() -> Transport& { return m_transport; }
 
 	//! The song's named markers ("Chorus"...), see SongMarkers
 	auto markers() -> SongMarkers& { return m_songMarkers; }
@@ -523,9 +527,10 @@ private:
 		return getPlayPos(m_playMode).getTicks();
 	}
 
+	//! The timeline frame of the period being played (see Transport::frame())
 	inline f_cnt_t currentFrame() const
 	{
-		return getTimeline(m_playMode).ticks() * Engine::framesPerTick() + getTimeline(m_playMode).frameOffset();
+		return static_cast<f_cnt_t>(std::max<std::int64_t>(0, m_transport.frame()));
 	}
 
 	void saveControllerStates( QDomDocument & doc, QDomElement & element );
@@ -605,6 +610,7 @@ private:
 	std::atomic<double> m_periodStartTick = 0;
 	MidiRecorder m_midiRecorder;
 	TempoMap m_tempoMap;
+	Transport m_transport{*this};
 	SongMarkers m_songMarkers;
 	bar_t m_length;
 
@@ -633,6 +639,7 @@ private:
 	Metronome m_metronome;
 
 	friend class Engine;
+	friend class Transport;
 	friend class gui::SongEditor;
 	friend class gui::ControllerRackView;
 
