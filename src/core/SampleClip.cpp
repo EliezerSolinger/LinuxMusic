@@ -176,11 +176,15 @@ void SampleClip::setActiveTake(int index)
 	addJournalCheckPoint();
 	m_activeTake = index;
 
-	// The clip keeps its place and length: only what it plays changes
+	// The clip keeps its place, length and start in the recording (a part of a split clip stays that part, so a
+	// take can be chosen for each part: comping); only what it plays changes
 	const auto length = this->length();
+	const auto offset = startTimeOffset();
 	const auto autoResize = getAutoResize();
 	setSampleFile(m_takes[index]);
-	if (!autoResize) { changeLength(length); }
+	setAutoResize(autoResize);
+	changeLength(length);
+	setStartTimeOffset(offset);
 	emit sampleChanged();
 }
 

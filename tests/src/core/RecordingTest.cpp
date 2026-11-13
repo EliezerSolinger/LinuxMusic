@@ -20,6 +20,7 @@
  *
  */
 
+#include <QDomDocument>
 #include <QObject>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -414,6 +415,52 @@ private slots:
 			// The sample playback is a frame late (Sample::play's resampler): the take holds what was heard
 			QVERIFY(std::abs(recordedAt - heardAt - 1.0) <= 1.0);
 		}
+	}
+
+	void choosingATakeKeepsThePartOfTheClip()
+	{
+		auto* song = Engine::getSong();
+		const auto first = m_directory.filePath("take-a.wav");
+		const auto second = m_directory.filePath("take-b.wav");
+		writeImpulse(first, Engine::audioEngine()->outputSampleRate(), 200000, 10);
+		writeImpulse(second, Engine::audioEngine()->outputSampleRate(), 200000, 20);
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		const auto cleanUp = qScopeGuard([&] {
+			const auto guard = Engine::audioEngine()->requestChangesGuard();
+			delete track;
+		});
+
+		// The second part of a split clip: a later start, an offset into the recording, a shorter length
+		auto* clip = new SampleClip{track};
+		clip->setSampleFile(first);
+		clip->addTake(second);
+		clip->movePosition(TimePos{300});
+		clip->setAutoResize(false);
+		clip->changeLength(TimePos{100});
+		clip->setStartTimeOffset(TimePos{-50});
+
+		clip->setActiveTake(0);
+		QCOMPARE(clip->activeTake(), 0);
+		QCOMPARE(PathUtil::toAbsolute(clip->sampleFile()), first);
+		QCOMPARE(clip->startPosition().getTicks(), 300);
+		QCOMPARE(clip->length().getTicks(), 100);
+		QCOMPARE(clip->startTimeOffset().getTicks(), -50);
+
+		// Saved and loaded, the takes and the active one come back
+		auto document = QDomDocument{};
+		auto element = document.createElement("sampleclip");
+		document.appendChild(element);
+		clip->saveSettings(document, element);
+		auto* loaded = new SampleClip{track};
+		loaded->loadSettings(element);
+		QCOMPARE(loaded->takes().size(), qsizetype{2});
+		QCOMPARE(loaded->activeTake(), 0);
+		QCOMPARE(loaded->startTimeOffset().getTicks(), -50);
+
+		// Removing a take leaves a clip of one sample
+		clip->removeTake(0);
+		QVERIFY(clip->takes().isEmpty());
+		QCOMPARE(PathUtil::toAbsolute(clip->sampleFile()), second);
 	}
 
 	void monitoringPlaysTheInputThroughTheTrack_data()
