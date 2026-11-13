@@ -38,7 +38,7 @@ namespace lmms
  * input, a pulse is played and recorded back; where it arrives, less what the devices say their latencies are, is
  * the offset recordings need to land exactly where they were played ("recording/latencyoffset").
  *
- * start() plays the pulse and listens for a second and a half, on the audio thread (nothing is allocated there);
+ * start() plays the pulse (a maximum length sequence, found back by correlation) and listens for a second and a half, on the audio thread (nothing is allocated there);
  * result() tells, once isDone().
  */
 class LMMS_EXPORT LatencyCalibration
