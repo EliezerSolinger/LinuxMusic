@@ -24,6 +24,8 @@
 
 #include "ClipView.h"
 
+#include "ProjectJournal.h"
+
 #include "MainWindow.h"
 
 #include "ExportWizard.h"
@@ -1193,12 +1195,77 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 		setMarkerEnabled(false);
 	}
 
+	if ((m_action == Action::Move || m_action == Action::MoveSelection) && !fixedClips()) { moveToTrackUnder(me); }
+
 	m_action = Action::None;
 	delete m_hint;
 	m_hint = nullptr;
 	s_textFloat->hide();
 	updateCursor(me);
 	selectableObject::mouseReleaseEvent( me );
+}
+
+
+
+
+void ClipView::moveToTrackUnder(QMouseEvent* me)
+{
+	auto* view = m_trackView->trackContainerView();
+	const auto at = view->contentWidget()->viewport()->mapFromGlobal(me->globalPosition().toPoint());
+	const auto* target = view->trackViewAt(at.y());
+	if (!target || target == m_trackView) { return; }
+	auto* container = m_trackView->getTrack()->trackContainer();
+	const auto& tracks = container->tracks();
+	const auto indexOf = [&](const Track* track) {
+		return static_cast<int>(std::find(tracks.begin(), tracks.end(), track) - tracks.begin());
+	};
+	const auto offset = indexOf(target->getTrack()) - indexOf(m_trackView->getTrack());
+	if (offset == 0) { return; }
+
+	// The clips moved, and the track each goes to (all or none: a selection keeps its shape)
+	auto clips = std::vector<Clip*>{};
+	if (m_action == Action::MoveSelection)
+	{
+		for (auto* selected : view->selectedObjects())
+		{
+			if (auto* clipView = dynamic_cast<ClipView*>(selected)) { clips.push_back(clipView->m_clip); }
+		}
+	}
+	if (clips.empty()) { clips.push_back(m_clip); }
+	auto moves = std::vector<std::pair<Clip*, Track*>>{};
+	for (auto* clip : clips)
+	{
+		const auto index = indexOf(clip->getTrack()) + offset;
+		if (index < 0 || index >= static_cast<int>(tracks.size())) { return; }
+		auto* to = tracks[index];
+		if (to->type() != clip->getTrack()->type() || to->type() == Track::Type::Folder) { return; }
+		moves.emplace_back(clip, to);
+	}
+
+	// One undo step: the tracks before (the move along the time was journalled when it began)
+	{
+		const auto group = ProjectJournal::Group{Engine::projectJournal()};
+		auto journalled = std::set<Track*>{};
+		for (const auto& [clip, to] : moves)
+		{
+			for (auto* track : {clip->getTrack(), to})
+			{
+				if (journalled.insert(track).second) { track->addJournalCheckPoint(); }
+			}
+		}
+		const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
+		for (const auto& [clip, to] : moves)
+		{
+			auto* copy = to->createClip(clip->startPosition());
+			Clip::copyStateTo(clip, copy);
+			{
+				const auto guard = Engine::audioEngine()->requestChangesGuard();
+				clip->getTrack()->removeClip(clip);
+			}
+			clip->deleteLater(); // (this view goes with it, after this event)
+		}
+	}
+	Engine::getSong()->setModified();
 }
 
 

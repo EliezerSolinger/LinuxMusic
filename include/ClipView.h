@@ -367,6 +367,9 @@ public:
 	//! @param pos the position of the split, relative to the start of the clip
 	//! @return true if the clip could be split
 	bool splitClip(const TimePos pos);
+	//! A move dropped over another track: the clips go to the tracks as far below or above theirs, if those are of
+	//! their type (as in REAPER); otherwise they stay on theirs. One undo step with the move
+	void moveToTrackUnder(QMouseEvent* me);
 
 private:
 
