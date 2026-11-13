@@ -338,3 +338,11 @@ Cada passo atualiza este documento, marcando o que foi feito.
   - M cria um marcador no cursor e 1 a 9 vão aos marcadores, como no REAPER.
   - São salvos no projeto, e cada edição é um passo de desfazer.
   - Regiões ficam para depois.
+- **Etapa 9.3 feita** (13/11): nas barras do Piano Roll e do Arranjo, os seletores viraram botões de ícone que
+  mostram o valor atual e abrem o mesmo menu.
+- **Falta das anotações:**
+  - 7 (compressor SSL do mixbus);
+  - 13.2 (instrumentos acústicos por soundfont);
+  - 13.3 (plugin IR/NAM);
+  - o registro central de atalhos;
+  - regiões na régua.
