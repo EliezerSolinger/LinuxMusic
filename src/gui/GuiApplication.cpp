@@ -24,6 +24,10 @@
 
 #include "GuiApplication.h"
 
+#include "ExportWizard.h"
+
+#include <QFileInfo>
+
 #include "lmmsversion.h"
 
 #include "LmmsStyle.h"
@@ -254,6 +258,31 @@ GuiApplication::GuiApplication()
 			});
 		}
 		// =effects-browser shows the browser's effects page
+		if (screenshotAction == "export-run")
+		{
+			// The whole export (render, then WAV and FLAC) into the screenshot's folder, then quit
+			QTimer::singleShot(2500, m_mainWindow, [screenshotPath, this] {
+				auto wizard = ExportWizard{m_mainWindow};
+				wizard.setFolderAndName(QFileInfo{screenshotPath}.absolutePath(), "export-run");
+				wizard.accept();
+				quitWhenTheMainLoopRuns();
+			});
+			return;
+		}
+		if (screenshotAction == "export")
+		{
+			// The export wizard, on its formats page, saved by itself
+			QTimer::singleShot(2500, m_mainWindow, [screenshotPath, this] {
+				auto wizard = new ExportWizard{m_mainWindow};
+				wizard->show();
+				wizard->next();
+				QTimer::singleShot(800, wizard, [wizard, screenshotPath] {
+					wizard->grab().save(screenshotPath);
+					quitWhenTheMainLoopRuns();
+				});
+			});
+			return;
+		}
 		if (screenshotAction == "settings")
 		{
 			QTimer::singleShot(2500, m_mainWindow, [this] { m_mainWindow->showSettingsPage(); });

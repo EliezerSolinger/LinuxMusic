@@ -16748,4 +16748,176 @@ Latency: %2 ms</source>
         <translation>Não foi possível copiar %1 para %2.</translation>
     </message>
 </context>
+<context>
+    <name>lmms::gui::ExportWizard</name>
+    <message>
+        <source>Export the song</source>
+        <translation>Exportar a música</translation>
+    </message>
+    <message>
+        <source>Export</source>
+        <translation>Exportar</translation>
+    </message>
+    <message>
+        <source>What to export</source>
+        <translation>O que exportar</translation>
+    </message>
+    <message>
+        <source>The whole song</source>
+        <translation>A música inteira</translation>
+    </message>
+    <message>
+        <source>The cycle's range (selected on the ruler)</source>
+        <translation>O trecho do ciclo (selecionado na régua)</translation>
+    </message>
+    <message>
+        <source>As a loop: without the tail at the end (reverbs, releases)</source>
+        <translation>Como loop: sem a cauda no fim (reverbs, releases)</translation>
+    </message>
+    <message>
+        <source>Times:</source>
+        <translation>Vezes:</translation>
+    </message>
+    <message>
+        <source>Formats</source>
+        <translation>Formatos</translation>
+    </message>
+    <message>
+        <source>Several at once, each a file in the folder chosen at the end.</source>
+        <translation>Vários de uma vez, cada um um arquivo na pasta escolhida no fim.</translation>
+    </message>
+    <message>
+        <source>16 bits</source>
+        <translation>16 bits</translation>
+    </message>
+    <message>
+        <source>24 bits</source>
+        <translation>24 bits</translation>
+    </message>
+    <message>
+        <source>32 bits float</source>
+        <translation>32 bits float</translation>
+    </message>
+    <message>
+        <source>quality </source>
+        <translation>qualidade </translation>
+    </message>
+    <message>
+        <source>Sample rate</source>
+        <translation>Taxa de amostragem</translation>
+    </message>
+    <message>
+        <source>Processing</source>
+        <translation>Processamento</translation>
+    </message>
+    <message>
+        <source>Applied to every format.</source>
+        <translation>Aplicado a todos os formatos.</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Nenhuma</translation>
+    </message>
+    <message>
+        <source>Peak (dBFS)</source>
+        <translation>Pico (dBFS)</translation>
+    </message>
+    <message>
+        <source>Loudness (LUFS, ITU-R BS.1770)</source>
+        <translation>Loudness (LUFS, ITU-R BS.1770)</translation>
+    </message>
+    <message>
+        <source>Normalize</source>
+        <translation>Normalizar</translation>
+    </message>
+    <message>
+        <source>Target</source>
+        <translation>Alvo</translation>
+    </message>
+    <message>
+        <source>Fade in</source>
+        <translation>Fade de entrada</translation>
+    </message>
+    <message>
+        <source>Fade out</source>
+        <translation>Fade de saída</translation>
+    </message>
+    <message>
+        <source>Dither (TPDF) to 16 and 24 bits</source>
+        <translation>Dither (TPDF) em 16 e 24 bits</translation>
+    </message>
+    <message>
+        <source>Where</source>
+        <translation>Onde</translation>
+    </message>
+    <message>
+        <source>Choose...</source>
+        <translation>Escolher...</translation>
+    </message>
+    <message>
+        <source>Folder for the exported files</source>
+        <translation>Pasta dos arquivos exportados</translation>
+    </message>
+    <message>
+        <source>Folder</source>
+        <translation>Pasta</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>Nome</translation>
+    </message>
+    <message>
+        <source>untitled</source>
+        <translation>sem título</translation>
+    </message>
+    <message>
+        <source>Rendering the song...</source>
+        <translation>Renderizando a música...</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Cancelar</translation>
+    </message>
+    <message>
+        <source>Choose at least one format.</source>
+        <translation>Escolha ao menos um formato.</translation>
+    </message>
+    <message>
+        <source>Choose the folder and the name.</source>
+        <translation>Escolha a pasta e o nome.</translation>
+    </message>
+    <message>
+        <source>Writing the files...</source>
+        <translation>Gravando os arquivos...</translation>
+    </message>
+    <message>
+        <source>Exported:
+%1</source>
+        <translation>Exportado:
+%1</translation>
+    </message>
+</context>
+<context>
+    <name>ExportProcessor</name>
+    <message>
+        <source>The rendering could not be read.</source>
+        <translation>Não foi possível ler a renderização.</translation>
+    </message>
+    <message>
+        <source>The folder %1 could not be created.</source>
+        <translation>Não foi possível criar a pasta %1.</translation>
+    </message>
+    <message>
+        <source>This build cannot write %1 files.</source>
+        <translation>Esta versão não grava arquivos %1.</translation>
+    </message>
+    <message>
+        <source>%1 could not be created: %2</source>
+        <translation>Não foi possível criar %1: %2</translation>
+    </message>
+    <message>
+        <source>%1 could not be written.</source>
+        <translation>Não foi possível gravar %1.</translation>
+    </message>
+</context>
 </TS>

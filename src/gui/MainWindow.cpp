@@ -54,6 +54,7 @@
 #include "Engine.h"
 #include "ExportProjectDialog.h"
 #include "FileBrowser.h"
+#include "ExportWizard.h"
 #include "FileDialog.h"
 #include "Metronome.h"
 #include "MixerView.h"
@@ -1854,7 +1855,9 @@ bool MainWindow::guiSaveProjectAs( const QString & filename )
 
 void MainWindow::onExportProject()
 {
-	this->exportProject();
+	// Step by step: range, formats, processing, where (the tracks' export keeps its dialog)
+	auto wizard = ExportWizard{this};
+	wizard.exec();
 }
 
 void MainWindow::onExportProjectTracks()
