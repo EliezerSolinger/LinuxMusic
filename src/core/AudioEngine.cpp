@@ -29,6 +29,8 @@
 
 #include "AudioEngine.h"
 
+#include "AudioStream.h"
+
 #include "MixHelpers.h"
 
 #include "lmmsconfig.h"
@@ -346,6 +348,8 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 
 	s_renderingThread = false;
 	m_periodsRendered.fetch_add(1, std::memory_order_relaxed);
+	// (the disk thread frees a block once the period that might have read it has ended)
+	AudioStream::periodRendered(static_cast<double>(outputSampleRate()) / m_framesPerPeriod);
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);
 	m_outputBufferReadIndex = 0;
 

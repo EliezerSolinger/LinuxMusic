@@ -62,6 +62,7 @@
 #include "SampleClip.h"
 #include "PathUtil.h"
 #include "SampleTrack.h"
+#include "StreamScheduler.h"
 #include "PeakController.h"
 
 
@@ -122,6 +123,9 @@ Song::Song() :
 
 	qRegisterMetaType<lmms::Note>( "lmms::Note" );
 	setType( Type::Song );
+
+	// The clips streamed from disk are read ahead of the song's position (owned by the song)
+	new StreamScheduler{this};
 
 	for (auto& scale : m_scales) {scale = std::make_shared<Scale>();}
 	for (auto& keymap : m_keymaps) {keymap = std::make_shared<Keymap>();}

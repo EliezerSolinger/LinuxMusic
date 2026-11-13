@@ -75,6 +75,7 @@ void SampleClipView::updateSample()
 	setToolTip(
 		!m_clip->m_sample.sampleFile().isEmpty()
 			? PathUtil::toAbsolute(m_clip->m_sample.sampleFile())
+				+ (m_clip->isStreamed() ? "\n" + tr("Streamed from disk") : "\n" + tr("Loaded into RAM"))
 			: tr("Double-click to open sample")
 	);
 }
@@ -106,6 +107,28 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 		this,
 		SLOT(setAutomationGhost())
 	);
+
+	// Where the audio is while it plays, as Ableton's RAM switch
+	if (!m_clip->sampleFile().isEmpty())
+	{
+		auto* storageMenu = cm->addMenu(m_clip->isStreamed() ? tr("Memory: from disk") : tr("Memory: in RAM"));
+		auto* storages = new QActionGroup(storageMenu);
+		const auto addStorage = [&](const QString& text, SampleClip::Storage storage) {
+			auto* action = storageMenu->addAction(text);
+			action->setCheckable(true);
+			action->setChecked(m_clip->storage() == storage);
+			storages->addAction(action);
+			connect(action, &QAction::triggered, m_clip, [clip = m_clip, storage] { clip->setStorage(storage); });
+		};
+		addStorage(tr("Automatic (files of %1 s or more from disk)").arg(SampleClip::StreamAboveSeconds),
+			SampleClip::Storage::Automatic);
+		addStorage(tr("Load into RAM"), SampleClip::Storage::Memory);
+		addStorage(tr("Stream from disk"), SampleClip::Storage::Disk);
+		if (m_clip->getTrack()->trackContainer() != Engine::getSong())
+		{
+			storageMenu->setToolTip(tr("Clips in the pattern editor are always in RAM"));
+		}
+	}
 
 	// The takes of a recording: choose the one the clip plays, or drop it
 	if (const auto& takes = m_clip->takes(); takes.size() > 1)

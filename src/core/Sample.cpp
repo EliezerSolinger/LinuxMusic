@@ -44,8 +44,18 @@ Sample::Sample(std::shared_ptr<const SampleBuffer> buffer)
 {
 }
 
+Sample::Sample(std::shared_ptr<AudioStream> stream)
+	: m_stream(std::move(stream))
+	, m_startFrame(0)
+	, m_endFrame(m_stream ? static_cast<int>(m_stream->frames()) : 0)
+	, m_loopStartFrame(0)
+	, m_loopEndFrame(m_stream ? static_cast<int>(m_stream->frames()) : 0)
+{
+}
+
 Sample::Sample(const Sample& other)
 	: m_buffer(other.m_buffer)
+	, m_stream(other.m_stream)
 	, m_startFrame(other.startFrame())
 	, m_endFrame(other.endFrame())
 	, m_loopStartFrame(other.loopStartFrame())
@@ -58,6 +68,7 @@ Sample::Sample(const Sample& other)
 
 Sample::Sample(Sample&& other) noexcept
 	: m_buffer(std::move(other.m_buffer))
+	, m_stream(std::move(other.m_stream))
 	, m_startFrame(other.startFrame())
 	, m_endFrame(other.endFrame())
 	, m_loopStartFrame(other.loopStartFrame())
@@ -71,6 +82,7 @@ Sample::Sample(Sample&& other) noexcept
 auto Sample::operator=(const Sample& other) -> Sample&
 {
 	m_buffer = other.m_buffer;
+	m_stream = other.m_stream;
 	m_startFrame = other.startFrame();
 	m_endFrame = other.endFrame();
 	m_loopStartFrame = other.loopStartFrame();
@@ -85,6 +97,7 @@ auto Sample::operator=(const Sample& other) -> Sample&
 auto Sample::operator=(Sample&& other) noexcept -> Sample&
 {
 	m_buffer = std::move(other.m_buffer);
+	m_stream = std::move(other.m_stream);
 	m_startFrame = other.startFrame();
 	m_endFrame = other.endFrame();
 	m_loopStartFrame = other.loopStartFrame();
@@ -98,11 +111,11 @@ auto Sample::operator=(Sample&& other) noexcept -> Sample&
 
 bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop loop, double ratio) const
 {
-	if (!m_buffer || m_buffer->empty()) { return false; }
+	if (sampleSize() == 0) { return false; }
 
 	state->m_frameIndex = std::max<int>(m_startFrame, state->m_frameIndex);
 
-	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / m_buffer->sampleRate();
+	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / sampleRate();
 	const auto freqRatio = frequency() / DefaultBaseFreq;
 	state->m_resampler.setRatio(sampleRateRatio * freqRatio * ratio);
 
@@ -135,6 +148,22 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 
 f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loop loop) const
 {
+	const auto total = static_cast<f_cnt_t>(sampleSize());
+	// From disk: the block in hand, until the frames leave it (a missing block plays silence)
+	const SampleFrame* block = nullptr;
+	auto blockFirst = f_cnt_t{0};
+	auto haveBlock = false;
+	const auto frameAt = [&](f_cnt_t index) -> SampleFrame {
+		if (!m_stream) { return m_buffer->data()[index]; }
+		if (!haveBlock || index < blockFirst || index >= blockFirst + AudioStream::BlockFrames)
+		{
+			blockFirst = index - index % AudioStream::BlockFrames;
+			block = m_stream->blockAt(index);
+			haveBlock = true;
+		}
+		return block ? block[index - blockFirst] : SampleFrame{};
+	};
+
 	for (f_cnt_t frame = 0; frame < size; ++frame)
 	{
 		switch (loop)
@@ -166,8 +195,7 @@ f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loo
 		}
 
 		const auto value
-			= m_buffer->data()[m_reversed ? m_buffer->size() - state->m_frameIndex - 1 : state->m_frameIndex]
-			* m_amplification;
+			= frameAt(m_reversed ? total - state->m_frameIndex - 1 : state->m_frameIndex) * m_amplification;
 		dst[frame] = value;
 		state->m_backwards ? --state->m_frameIndex : ++state->m_frameIndex;
 	}
@@ -178,7 +206,7 @@ f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loo
 auto Sample::sampleDuration() const -> std::chrono::milliseconds
 {
 	const auto numFrames = endFrame() - startFrame();
-	const auto duration = numFrames / static_cast<float>(m_buffer->sampleRate()) * 1000;
+	const auto duration = numFrames / static_cast<float>(sampleRate()) * 1000;
 	return std::chrono::milliseconds{static_cast<int>(duration)};
 }
 

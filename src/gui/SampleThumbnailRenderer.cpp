@@ -25,6 +25,9 @@
 
 #include "SampleThumbnailRenderer.h"
 
+#include <algorithm>
+#include <cstddef>
+
 #include <QFileInfo>
 #include <QPainter>
 
@@ -37,7 +40,8 @@ void SampleThumbnailRenderer::visualize(VisualizeParameters parameters, QPainter
 	assert(0 <= parameters.sampleStart && parameters.sampleStart < parameters.sampleEnd && parameters.sampleEnd <= 1
 		&& "invalid sample range");
 
-	if (parameters.rect.width() == 0) { return; }
+	// (no peaks yet: those of a file streamed from disk are built in the background)
+	if (parameters.rect.width() == 0 || !parameters.cache || parameters.cache->sampleCount() == 0) { return; }
 
 	// Get the number of samples that will be drawn in this rectangle
 	const auto numSamples = (parameters.sampleEnd - parameters.sampleStart) * parameters.cache->sampleCount();
@@ -63,8 +67,13 @@ void SampleThumbnailRenderer::visualize(VisualizeParameters parameters, QPainter
 
 	for (double out = 0; out < parameters.rect.width(); ++out)
 	{
-		const auto peakStart = nearestThumbnailStart + (out / parameters.rect.width()) * nearestThumbnailRange;
-		const auto peakEnd = nearestThumbnailStart + ((out + 1) / parameters.rect.width()) * nearestThumbnailRange;
+		// The peaks under this pixel: at least one (when zoomed in further than the thumbnail's resolution, a peak
+		// covers several pixels)
+		const auto width = static_cast<std::ptrdiff_t>(nearestThumbnail.width());
+		const auto peakStart = std::clamp(static_cast<std::ptrdiff_t>(
+			nearestThumbnailStart + (out / parameters.rect.width()) * nearestThumbnailRange), std::ptrdiff_t{0}, width - 1);
+		const auto peakEnd = std::clamp(static_cast<std::ptrdiff_t>(
+			nearestThumbnailStart + ((out + 1) / parameters.rect.width()) * nearestThumbnailRange), peakStart + 1, width);
 
 		const auto peak = parameters.reversed
 			? std::accumulate(nearestThumbnail.rbegin() + peakStart, nearestThumbnail.rbegin() + peakEnd,

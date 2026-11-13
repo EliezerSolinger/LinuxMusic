@@ -54,6 +54,18 @@ SampleThumbnailCache::SampleThumbnailCache(const SampleBuffer& buffer)
 	}
 }
 
+SampleThumbnailCache::SampleThumbnailCache(std::vector<Thumbnail::Peak> peaks, f_cnt_t sampleCount)
+	: m_sampleCount{sampleCount}
+{
+	if (peaks.empty() || sampleCount == 0) { m_sampleCount = 0; return; }
+	m_thumbnails.emplace_back(std::move(peaks));
+	while (m_thumbnails.back().width() >= AggregationPerZoomStep)
+	{
+		auto thumbnail = m_thumbnails.back().compress(m_thumbnails.back().width() / AggregationPerZoomStep);
+		m_thumbnails.emplace_back(std::move(thumbnail));
+	}
+}
+
 auto SampleThumbnailCache::nearestThumbnailForWidth(f_cnt_t width) const -> const Thumbnail&
 {
 	assert(1 <= width && width <= m_sampleCount && "invalid width");
@@ -67,6 +79,9 @@ auto SampleThumbnailCache::nearestThumbnailForWidth(f_cnt_t width) const -> cons
 
 	// Check if the one we found is equal before moving back
 	if (it != m_thumbnails.end() && it->width() == width) { return *it; }
+
+	// Wider than the finest thumbnail (one built from peaks, not from every frame): the finest one
+	if (it == m_thumbnails.begin()) { return *it; }
 
 	// Move back by one to get the nearest larger thumbnail
 	return *std::prev(it);

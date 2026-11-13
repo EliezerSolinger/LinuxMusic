@@ -100,6 +100,12 @@ public:
 		{
 		}
 
+		//! @brief Constructs a thumbnail from its peaks.
+		explicit Thumbnail(std::vector<Peak> peaks)
+			: m_peaks(std::move(peaks))
+		{
+		}
+
 		//! @brief Downsamples this thumbnail to fit a smaller screen width.
 		auto compress(f_cnt_t outputWidth) const -> Thumbnail;
 
@@ -150,6 +156,14 @@ public:
 	 * @param buffer The sample buffer to downsample and analyze.
 	 */
 	SampleThumbnailCache(const SampleBuffer& buffer);
+
+	/**
+	 * @brief Constructs a cache from peaks already computed over the whole sample (e.g. read from a peak file, see
+	 * PeakCache), each covering the same number of frames; the coarser levels are aggregated from them.
+	 * @param peaks The finest level, covering the entire sample.
+	 * @param sampleCount The number of frames of the sample.
+	 */
+	SampleThumbnailCache(std::vector<Thumbnail::Peak> peaks, f_cnt_t sampleCount);
 
 	/**
 	 * @brief Get a thumbnail of the requested width.

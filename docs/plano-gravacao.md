@@ -279,6 +279,23 @@ Feito depois (mesma noite e manhã de 13/11):
     acha o frame pelo timing.
   - Falta: limpar os renderizados que ficaram órfãos (junto com a mídia, item 4).
 
+- **Mídia: streaming do disco e cache de picos** (13/11):
+  - `AudioStream`: o arquivo é lido em blocos de 32768 frames. A thread de disco (`DiskReader`) lê adiantado os
+    blocos dos próximos 6 s de cada clipe (e o início do ciclo perto do fim dele), pedidos pelo `StreamScheduler`
+    a partir da posição da música, na thread principal. O áudio pega os blocos sem esperar. Um bloco que falta toca
+    silêncio, é contado e é lido na hora pela thread de disco; renderizando offline (exportação), o áudio lê o bloco
+    ele mesmo, então nada fica de fora. Os blocos que não tocam mais são liberados e só são apagados quando o
+    período que podia estar lendo terminou (contagem de períodos).
+  - **Opção por clipe, como a chave RAM do Ableton** (pedido do usuário): Automático (arquivos de 20 s ou mais vêm
+    do disco), Carregar na RAM ou Ler do disco, no menu do clipe e salva no projeto. Os clipes do Editor de
+    Sequências ficam sempre na RAM, e um arquivo que o libsndfile não lê também.
+  - `PeakCache`: os picos de cada arquivo (256 frames por pico), calculados em segundo plano e guardados em
+    `~/Library/Caches/.../peaks` (no Linux, `~/.cache/...`), validados pelo tamanho e pela data do arquivo. A forma
+    de onda de um clipe do disco vem deles. Fica no cache do usuário, e não ao lado da mídia, porque os arquivos de
+    fábrica e de pastas sem escrita também precisam de picos.
+  - Verificado: tocar ao vivo e exportar do disco dá o mesmo resultado da RAM, bit a bit (`StreamingTest` e um
+    render pela linha de comando), sem falta de bloco ao vivo; o TSan não acha corridas.
+
 Por fazer, na ordem do plano:
 - **Mapa de tempo:** o desfazer das edições dos marcadores; a fórmula de compasso por marcador.
 - **Edição e interface:**
@@ -287,9 +304,7 @@ Por fazer, na ordem do plano:
   - fades automáticos;
   - ganho por item;
   - a faixa nova (`AudioTrack`) e o cabeçalho de duas linhas.
-- **Mídia:**
-  - leitura em streaming do disco;
-  - cache de picos.
+- **Mídia:** a forma de onda crescendo ao vivo durante a gravação; a limpeza dos arquivos órfãos.
 - **Etapa 1:**
   - o motor sem o mutex do período;
   - o transporte com contador de frames.

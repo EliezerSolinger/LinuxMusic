@@ -22,6 +22,7 @@ set(LMMS_TESTS
 	src/core/RelativePathsTest.cpp
 	src/core/SongMarkersTest.cpp
 	src/core/SpscRingTest.cpp
+	src/core/StreamingTest.cpp
 	src/core/TempoMapTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TimeStretcherTest.cpp

@@ -13681,6 +13681,38 @@ Shift-click to open the note in Automation Editor</source>
         <source>Set as ghost in automation editor</source>
         <translation type="unfinished"/>
     </message>
+    <message>
+        <source>Memory: from disk</source>
+        <translation>Memória: do disco</translation>
+    </message>
+    <message>
+        <source>Memory: in RAM</source>
+        <translation>Memória: na RAM</translation>
+    </message>
+    <message>
+        <source>Automatic (files of %1 s or more from disk)</source>
+        <translation>Automático (arquivos de %1 s ou mais vêm do disco)</translation>
+    </message>
+    <message>
+        <source>Load into RAM</source>
+        <translation>Carregar na RAM</translation>
+    </message>
+    <message>
+        <source>Stream from disk</source>
+        <translation>Ler do disco (streaming)</translation>
+    </message>
+    <message>
+        <source>Clips in the pattern editor are always in RAM</source>
+        <translation>Os clipes do Editor de Sequências ficam sempre na RAM</translation>
+    </message>
+    <message>
+        <source>Streamed from disk</source>
+        <translation>Lido do disco (streaming)</translation>
+    </message>
+    <message>
+        <source>Loaded into RAM</source>
+        <translation>Carregado na RAM</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::SampleTrackView</name>

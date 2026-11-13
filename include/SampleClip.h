@@ -90,6 +90,19 @@ public:
 	bool isCrossfadeable() const override { return true; }
 
 	/**
+	 * Where the clip's audio is while it plays, as Ableton's RAM switch (docs/plano-gravacao.md, "Mídia do
+	 * projeto"): in memory, or streamed from disk (AudioStream). Automatic streams files of StreamAboveSeconds or
+	 * more. A file that cannot be streamed (one libsndfile does not read, or a clip in the pattern editor) is in
+	 * memory whatever is chosen.
+	 */
+	enum class Storage { Automatic, Memory, Disk };
+	static constexpr double StreamAboveSeconds = 20.0;
+	auto storage() const -> Storage { return m_storage; }
+	void setStorage(Storage storage);
+	//! Whether the clip plays from disk now
+	auto isStreamed() const -> bool { return m_sample.isStreamed(); }
+
+	/**
 	 * Takes (docs/plano-gravacao.md, "Gravação"): a clip may hold several recordings of the same passage, e.g. the
 	 * passes of a loop recording. One of them, the active take, is the one the clip plays; the others are kept to
 	 * choose from. A clip without takes holds one sample, as before.
@@ -152,6 +165,7 @@ private:
 	void exportSampleBuffer(const QString& fileName);
 
 	Sample m_sample;
+	Storage m_storage = Storage::Automatic;
 	QStringList m_takes;
 	int m_activeTake = -1;
 	Timing m_originalTiming;
@@ -160,6 +174,10 @@ private:
 
 	//! Loads @p file keeping the clip's place, length and start in the recording
 	void playFile(const QString& file);
+	//! The stream to play @p file from, if the clip's storage and the file have it streamed
+	auto streamFor(const QString& file) const -> std::shared_ptr<AudioStream>;
+	//! The peaks of a streamed file arrived
+	void peaksReady(const QString& file);
 	std::shared_ptr<const SampleThumbnailCache> m_sampleThumbnailCache;
 	bool m_isPlaying;
 	int m_startFrameOffset;

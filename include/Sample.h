@@ -28,6 +28,7 @@
 #include <memory>
 
 #include "AudioResampler.h"
+#include "AudioStream.h"
 #include "Note.h"
 #include "SampleBuffer.h"
 #include "lmms_export.h"
@@ -73,6 +74,8 @@ public:
 	Sample(const Sample& other);
 	Sample(Sample&& other) noexcept;
 	explicit Sample(std::shared_ptr<const SampleBuffer> buffer);
+	//! A sample played from disk (AudioStream): it has no buffer, only the stream
+	explicit Sample(std::shared_ptr<AudioStream> stream);
 
 	auto operator=(const Sample&) -> Sample&;
 	auto operator=(Sample&&) noexcept -> Sample&;
@@ -81,9 +84,12 @@ public:
 		double ratio = 1.0) const -> bool;
 
 	auto sampleDuration() const -> std::chrono::milliseconds;
-	auto sampleFile() const -> const QString& { return m_buffer->audioFile(); }
-	auto sampleRate() const -> int { return m_buffer->sampleRate(); }
-	auto sampleSize() const -> size_t { return m_buffer->size(); }
+	auto sampleFile() const -> const QString& { return m_stream ? m_stream->file() : m_buffer->audioFile(); }
+	auto sampleRate() const -> int { return m_stream ? m_stream->sampleRate() : static_cast<int>(m_buffer->sampleRate()); }
+	auto sampleSize() const -> size_t { return m_stream ? m_stream->frames() : m_buffer->size(); }
+	//! Whether it plays from disk (then buffer() is empty)
+	auto isStreamed() const -> bool { return m_stream != nullptr; }
+	auto stream() const -> const std::shared_ptr<AudioStream>& { return m_stream; }
 
 	auto toBase64() const -> QString { return m_buffer->toBase64(); }
 
@@ -111,6 +117,7 @@ public:
 private:
 	f_cnt_t render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loop loop) const;
 	std::shared_ptr<const SampleBuffer> m_buffer = SampleBuffer::emptyBuffer();
+	std::shared_ptr<AudioStream> m_stream;
 	std::atomic<int> m_startFrame = 0;
 	std::atomic<int> m_endFrame = 0;
 	std::atomic<int> m_loopStartFrame = 0;

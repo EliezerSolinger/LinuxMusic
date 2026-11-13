@@ -31,6 +31,7 @@
 #include <numbers>
 
 #include "PatternStore.h"
+#include "PeakCache.h"
 #include "ThreadedExportManager.h"
 #include "PathUtil.h"
 #include "SampleCache.h"
@@ -73,6 +74,8 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	connect(this, &Clip::positionChanged, this, [this] {
 		if (isTempoBound()) { Engine::getSong()->requestStretchCheck(); }
 	});
+	// the waveform of a file streamed from disk comes when its peaks are built
+	connect(&PeakCache::instance(), &PeakCache::ready, this, &SampleClip::peaksReady);
 
 	updateTrackClips();
 }
@@ -85,11 +88,13 @@ SampleClip::SampleClip(Track* track)
 SampleClip::SampleClip(const SampleClip& orig) :
 	Clip(orig),
 	m_sample(std::move(orig.m_sample)),
+	m_storage(orig.m_storage),
 	m_takes(orig.m_takes),
 	m_activeTake(orig.m_activeTake),
 	m_originalTiming(orig.m_originalTiming),
 	m_originalFile(orig.m_originalFile),
 	m_renderedTiming(orig.m_renderedTiming),
+	m_sampleThumbnailCache(orig.m_sampleThumbnailCache),
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset)
 {
@@ -120,6 +125,8 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	connect(this, &Clip::positionChanged, this, [this] {
 		if (isTempoBound()) { Engine::getSong()->requestStretchCheck(); }
 	});
+	// the waveform of a file streamed from disk comes when its peaks are built
+	connect(&PeakCache::instance(), &PeakCache::ready, this, &SampleClip::peaksReady);
 
 	updateTrackClips();
 }
@@ -273,6 +280,22 @@ void SampleClip::setSampleFile(const QString& sf)
 	}
 	else
 	{
+		if (auto stream = streamFor(sf))
+		{
+			// From disk: the waveform from the file's peaks (null until they are built, see peaksReady())
+			auto peaks = PeakCache::instance().fetch(stream->path());
+			setStartTimeOffset(0);
+			{
+				const auto guard = Engine::audioEngine()->requestChangesGuard();
+				m_sample = Sample{std::move(stream)};
+			}
+			m_sampleThumbnailCache = std::move(peaks);
+			updateLength();
+			emit sampleChanged();
+			emit playbackPositionChanged();
+			return;
+		}
+
 		const auto path = PathUtil::stringToPath(sf);
 
 		// TODO: Return an error value back to the caller (via std::expected or our own polyfill)
@@ -286,7 +309,11 @@ void SampleClip::setSampleFile(const QString& sf)
 		// Remove any prior offset in the clip
 		setStartTimeOffset(0);
 
-		m_sample = Sample{std::move(buffer)};
+		{
+			// (the audio thread may be playing the sample being replaced)
+			const auto guard = Engine::audioEngine()->requestChangesGuard();
+			m_sample = Sample{std::move(buffer)};
+		}
 		m_sampleThumbnailCache = std::move(thumbnailCache);
 		updateLength();
 	}
@@ -298,6 +325,53 @@ void SampleClip::setSampleFile(const QString& sf)
 
 
 
+
+
+
+
+auto SampleClip::streamFor(const QString& file) const -> std::shared_ptr<AudioStream>
+{
+	if (m_storage == Storage::Memory) { return nullptr; }
+	// (the pattern editor plays its clips from their start at any time: they stay in memory)
+	if (!getTrack() || getTrack()->trackContainer() != Engine::getSong()) { return nullptr; }
+	auto stream = AudioStream::open(file);
+	if (!stream) { return nullptr; }
+	if (m_storage == Storage::Disk) { return stream; }
+	const auto seconds = static_cast<double>(stream->frames()) / stream->sampleRate();
+	return seconds >= StreamAboveSeconds ? stream : nullptr;
+}
+
+
+
+
+void SampleClip::setStorage(Storage storage)
+{
+	if (storage == m_storage) { return; }
+	addJournalCheckPoint();
+	m_storage = storage;
+	if (sampleFile().isEmpty()) { return; }
+
+	// The same file, from memory or from disk: the clip keeps its place, length, start and settings
+	const auto reversed = m_sample.reversed();
+	const auto amplification = m_sample.amplification();
+	const auto frequency = m_sample.frequency();
+	playFile(sampleFile());
+	m_sample.setReversed(reversed);
+	m_sample.setAmplification(amplification);
+	m_sample.setFrequency(frequency);
+	emit sampleChanged();
+	Engine::getSong()->setModified();
+}
+
+
+
+
+void SampleClip::peaksReady(const QString& file)
+{
+	if (!m_sample.isStreamed() || QFileInfo{m_sample.stream()->path()}.absoluteFilePath() != file) { return; }
+	m_sampleThumbnailCache = PeakCache::instance().fetch(file);
+	emit sampleChanged();
+}
 
 
 
@@ -452,6 +526,7 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	}
 
 	_this.setAttribute( "sample_rate", m_sample.sampleRate());
+	if (m_storage != Storage::Automatic) { _this.setAttribute("storage", m_storage == Storage::Disk ? "disk" : "ram"); }
 
 	// The recording's original and its timing, if the clip is bound to its tempo ("src" is the rendering then)
 	if (isTempoBound())
@@ -503,6 +578,10 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	{
 		movePosition( _this.attribute( "pos" ).toInt() );
 	}
+
+	// (before the file: it says where the file goes)
+	const auto storage = _this.attribute("storage");
+	m_storage = storage == "disk" ? Storage::Disk : storage == "ram" ? Storage::Memory : Storage::Automatic;
 
 	if (const auto srcFile = _this.attribute("src"); !srcFile.isEmpty())
 	{
@@ -590,7 +669,9 @@ gui::ClipView * SampleClip::createView( gui::TrackView * _tv )
 
 void SampleClip::exportSampleBuffer(const QString& fileName)
 {
-	Engine::exportManager()->startExporting(fileName, m_sample.shareBuffer());
+	// (a clip streamed from disk has no buffer: its file is read for it)
+	auto buffer = m_sample.isStreamed() ? SampleBuffer::fromFile(sampleFile()) : m_sample.shareBuffer();
+	if (buffer) { Engine::exportManager()->startExporting(fileName, std::move(buffer)); }
 }
 
 
