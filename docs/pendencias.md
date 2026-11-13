@@ -16,7 +16,7 @@ A lista do que falta, atualizada a cada passo (o detalhe de cada item fica em `p
 
 Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
 
-- [ ] **Gravar sem faixa armada** arma a faixa selecionada, se ela grava; se não, avisa
+- [x] **Gravar sem faixa armada** arma a faixa selecionada (clique no cabeçalho ou na faixa; ela fica destacada), se ela grava; se não, avisa
 - [ ] **Calibração por loopback:** botão "calibrar" que toca um pulso, grava pela entrada (com um cabo), acha o pico por
   correlação e salva o offset
 - [ ] **Metrônomo configurável:** só gravando ou também tocando, volume, som com acento no 1

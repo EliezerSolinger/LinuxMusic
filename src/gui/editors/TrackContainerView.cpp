@@ -24,6 +24,8 @@
 
 #include "TrackContainerView.h"
 
+#include <QApplication>
+
 #include "Mixer.h"
 
 
@@ -98,6 +100,8 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 	m_trackHeadWidth(ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() ? COMPACT_TRACK_WIDTH : DEFAULT_TRACK_WIDTH),
 	m_rubberBand( new RubberBand( m_scrollArea ) )
 {
+	// (a press on any of its tracks selects that track: see eventFilter())
+	qApp->installEventFilter(this);
 	m_tc->setHook( this );
 	//keeps the direction of the widget, undepended on the locale
 	setLayoutDirection( Qt::LeftToRight );
@@ -137,8 +141,58 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 
 
 
+auto TrackContainerView::selectedTrack() const -> TrackView*
+{
+	return static_cast<TrackView*>(m_selectedTrack.data());
+}
+
+
+
+
+void TrackContainerView::selectTrack(TrackView* view)
+{
+	if (view == selectedTrack()) { return; }
+	const auto mark = [](TrackView* track, bool selected) {
+		if (!track) { return; }
+		track->setProperty("selected", selected);
+		// (the theme's rule for a selected track's header applies to its children: they are polished again)
+		for (auto* widget : std::initializer_list<QWidget*>{track, track->getTrackOperationsWidget(),
+			track->getTrackSettingsWidget()})
+		{
+			widget->style()->unpolish(widget);
+			widget->style()->polish(widget);
+			widget->update();
+		}
+	};
+	mark(selectedTrack(), false);
+	m_selectedTrack = view;
+	mark(view, true);
+}
+
+
+
+
+auto TrackContainerView::eventFilter(QObject* watched, QEvent* event) -> bool
+{
+	// A press anywhere on a track of this view (its header, its lane, a clip) selects it
+	if (event->type() == QEvent::MouseButtonPress)
+	{
+		for (auto* widget = qobject_cast<QWidget*>(watched); widget; widget = widget->parentWidget())
+		{
+			auto* view = qobject_cast<TrackView*>(widget);
+			if (view && m_trackViews.contains(view)) { selectTrack(view); break; }
+			if (widget == this) { break; }
+		}
+	}
+	return QWidget::eventFilter(watched, event);
+}
+
+
+
+
 TrackContainerView::~TrackContainerView()
 {
+	qApp->removeEventFilter(this);
 	while( !m_trackViews.empty() )
 	{
 		delete m_trackViews.takeLast();

@@ -387,6 +387,11 @@ lmms--gui--TrackView > QWidget {
 	background-color: #3B424A;
 }
 
+/* The selected track (the one worked on last; Record arms it when nothing is armed) */
+lmms--gui--TrackView[selected="true"] > QWidget {
+	background-color: #4A5560;
+}
+
 
 QPushButton#btn {
 	color: #d1d8e4;

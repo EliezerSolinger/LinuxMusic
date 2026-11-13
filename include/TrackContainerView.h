@@ -27,6 +27,7 @@
 
 #include <QVector>
 #include <QScrollArea>
+#include <QPointer>
 #include <QWidget>
 #include <QThread>
 
@@ -125,6 +126,11 @@ public:
 		return m_tc;
 	}
 
+	//! The track the user worked on last (clicked its header or its lane): highlighted; Record arms it when nothing
+	//! is armed (as in REAPER)
+	auto selectedTrack() const -> TrackView*;
+	void selectTrack(TrackView* view);
+
 	const QList<TrackView *> & trackViews() const
 	{
 		return( m_trackViews );
@@ -212,6 +218,8 @@ private:
 	TrackContainer* m_tc;
 	using trackViewList = QList<TrackView*>;
 	trackViewList m_trackViews;
+	QPointer<QWidget> m_selectedTrack; //!< (a TrackView)
+	auto eventFilter(QObject* watched, QEvent* event) -> bool override;
 
 	scrollArea * m_scrollArea;
 	QVBoxLayout * m_scrollLayout;

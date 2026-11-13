@@ -338,6 +338,11 @@ GuiApplication::GuiApplication()
 				track->addItem(file, TimePos{bar}, 1)->changeLength(TimePos{7 * bar});
 				track->addItem(file, TimePos{bar}, 2)->changeLength(TimePos{7 * bar});
 				Track::create(Track::Type::Audio, Engine::getSong());
+				// (the first track selected, to see the highlight)
+				QTimer::singleShot(300, [] {
+					auto* editor = getGUI()->songEditor()->m_editor;
+					if (!editor->trackViews().isEmpty()) { editor->selectTrack(editor->trackViews().front()); }
+				});
 			});
 		}
 		if (screenshotAction == "regions")

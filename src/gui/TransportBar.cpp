@@ -46,8 +46,10 @@
 #include "PatternEditor.h"
 #include "PianoRoll.h"
 #include "SampleTrack.h"
+#include "AudioTrack.h"
 #include "Song.h"
 #include "SongEditor.h"
+#include "TrackView.h"
 #include "TimeDisplayWidget.h"
 #include "Timeline.h"
 
@@ -296,14 +298,31 @@ void TransportBar::record()
 		return;
 	}
 
+	// The tracks that record: audio tracks (their input) and instrument tracks (the notes played)
+	const auto armedModel = [](Track* track) -> BoolModel* {
+		if (auto* audioTrack = dynamic_cast<AudioTrack*>(track)) { return audioTrack->recordArmModel(); }
+		if (auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(track)) { return instrumentTrack->recordArmModel(); }
+		return nullptr;
+	};
 	const auto& tracks = song->tracks();
-	const bool armed = std::any_of(tracks.begin(), tracks.end(), [](const Track* track) {
-		const auto sampleTrack = dynamic_cast<const SampleTrack*>(track);
-		const auto instrumentTrack = dynamic_cast<const InstrumentTrack*>(track);
-		return (sampleTrack && sampleTrack->isRecordArmed()) || (instrumentTrack && instrumentTrack->isRecordArmed());
+	const bool armed = std::any_of(tracks.begin(), tracks.end(), [&](Track* track) {
+		const auto* model = armedModel(track);
+		return model && model->value();
 	});
-	if (armed) { song->record(); }
-	else { getGUI()->pianoRoll()->recordAction()->trigger(); }
+	if (!armed)
+	{
+		// As in REAPER: nothing armed, the selected track is armed, if it records
+		auto* selected = getGUI()->songEditor()->m_editor->selectedTrack();
+		auto* model = selected ? armedModel(selected->getTrack()) : nullptr;
+		if (!model)
+		{
+			QMessageBox::information(this, tr("Record"), tr("No track is armed. Arm a track with its R button, or "
+				"select an audio or instrument track (click its header) and press Record again: it is armed."));
+			return;
+		}
+		model->setValue(true);
+	}
+	song->record();
 	updateState();
 }
 

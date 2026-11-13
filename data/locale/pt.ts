@@ -17127,6 +17127,14 @@ Latency: %2 ms</source>
         <source>Mute the master</source>
         <translation>Silenciar o master</translation>
     </message>
+    <message>
+        <source>Record</source>
+        <translation>Gravar</translation>
+    </message>
+    <message>
+        <source>No track is armed. Arm a track with its R button, or select an audio or instrument track (click its header) and press Record again: it is armed.</source>
+        <translation>Nenhuma faixa está armada. Arme uma faixa no botão R dela, ou selecione uma faixa de áudio ou de instrumento (clique no cabeçalho) e aperte Gravar de novo: ela é armada.</translation>
+    </message>
 </context>
 <context>
     <name>ProjectMedia</name>
