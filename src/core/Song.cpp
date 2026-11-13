@@ -1384,16 +1384,7 @@ void Song::createNewProject()
 	m_oldFileName = "";
 	setProjectFileName("");
 
-	auto tripleOscTrack = Track::create(Track::Type::Instrument, this);
-	dynamic_cast<InstrumentTrack*>(tripleOscTrack)->loadInstrument("tripleoscillator");
-
-	auto kickerTrack = Track::create(Track::Type::Instrument, Engine::patternStore());
-	dynamic_cast<InstrumentTrack*>(kickerTrack)->loadInstrument("kicker");
-
-	Track::create( Track::Type::Sample, this );
-	Track::create( Track::Type::Pattern, this );
-	Track::create( Track::Type::Automation, this );
-
+	// A new project is empty, with the mixer in its digital mode (the factory template says the same)
 	m_tempoModel.setInitValue( DefaultTempo );
 	m_timeSigModel.reset();
 	m_masterVolumeModel.setInitValue( 100 );
@@ -1402,7 +1393,7 @@ void Song::createNewProject()
 	QCoreApplication::instance()->processEvents();
 
 	m_loadingProject = false;
-	Engine::mixer()->toleranceModel()->setValue(true);
+	Engine::mixer()->analogModel()->setValue(false);
 	Engine::mixer()->setUpTrackChannels();
 	Engine::mixer()->ensureFxReturns();
 	updateLength();
@@ -1422,8 +1413,6 @@ void Song::createNewProject()
 void Song::createNewProjectFromTemplate( const QString & templ )
 {
 	loadProject( templ );
-	// A new project has the desk's tolerances, unless its template chose otherwise
-	if (Engine::mixer()->loadedWithoutTolerance()) { Engine::mixer()->toleranceModel()->setValue(true); }
 	// clear file-name so that user doesn't overwrite template when
 	// saving...
 	m_oldFileName = "";
@@ -1494,7 +1483,8 @@ void Song::loadProject( const QString & fileName )
 	m_oldFileName = m_fileName;
 
 	clearProject();
-	Engine::mixer()->forgetTolerance();
+	// Every project plays with the desk's tolerances, also one without a mixer to load
+	Engine::mixer()->toleranceModel()->setValue(true);
 
 	clearErrors();
 

@@ -92,7 +92,7 @@ public:
 	IntModel m_compressorTypeModel;			//!< a CompressorModel
 	FloatModel m_compressorAmountModel;		//!< COMP, 0 to 1
 	FloatModel m_compressorRatioModel;		//!< RATIO, 0 (out) to 1
-	IntModel m_compressorSpeedModel;		//!< a CompressorSpeed
+	FloatModel m_compressorSpeedModel;		//!< a CompressorSpeed, in steps of 1 (a stepped knob on the strip)
 	FloatModel m_compressorReleaseModel;	//!< 0 to 1; 0.5 is the unit's factory setting
 	FloatModel m_gateModel;					//!< threshold, dBu
 	FloatModel m_gateRangeModel;			//!< dB, 0 (out) to 40

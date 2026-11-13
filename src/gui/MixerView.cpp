@@ -220,40 +220,13 @@ MixerView::MixerView(Mixer* mixer) :
 	settingsLayout->setHorizontalSpacing(8);
 	settingsLayout->setVerticalSpacing(2);
 
-	m_trimKnob = new Knob{KnobType::Bright26, tr("TRIM"), channelSettings, Knob::LabelRendering::LegacyFixedFontSize,
-		tr("Input trim")};
-	m_trimKnob->setHintText(tr("Input trim:"), " dB");
-	m_widthKnob = new Knob{KnobType::Bright26, tr("WIDTH"), channelSettings, Knob::LabelRendering::LegacyFixedFontSize,
-		tr("Stereo width")};
-	m_widthKnob->setHintText(tr("Stereo width:"), "%");
 	m_panKnob = new Knob{KnobType::Bright26, tr("PAN"), channelSettings, Knob::LabelRendering::LegacyFixedFontSize,
 		tr("Panning")};
 	m_panKnob->setHintText(tr("Panning:"), "%");
 
-	settingsLayout->addWidget(m_trimKnob, 0, 0, 2, 1, Qt::AlignCenter);
 	m_monoBox = new LedCheckBox{tr("Mono"), channelSettings, tr("Mono"), LedCheckBox::LedColor::Green};
-	settingsLayout->addWidget(m_monoBox, 0, 1, 2, 1);
-	settingsLayout->addWidget(m_widthKnob, 0, 2, 2, 1, Qt::AlignCenter);
-	settingsLayout->addWidget(m_panKnob, 0, 3, 2, 1, Qt::AlignCenter);
-
-	// The analog strip's compressor's release, in its model's terms
-	m_dynamicsSettings = new QWidget{channelSettings};
-	auto dynamicsLayout = new QHBoxLayout{m_dynamicsSettings};
-	dynamicsLayout->setContentsMargins(0, 4, 0, 0);
-	dynamicsLayout->setSpacing(8);
-	m_compressorReleaseKnob = new TextKnob{tr("REL"), tr("Compressor release"), [this](float v) {
-		const auto channel = m_currentMixerChannel ? getMixer()->mixerChannel(m_currentMixerChannel->channelIndex()) : nullptr;
-		const auto model = channel ? static_cast<CompressorModel>(channel->m_analogStrip.m_compressorTypeModel.value())
-			: CompressorModel::Ssl;
-		return ChannelCompressor::releaseText(model, v);
-	}, m_dynamicsSettings};
-	m_compressorReleaseKnob->setHintText(tr("Compressor release:"), "");
-	m_compressorReleaseLabel = new QLabel{m_dynamicsSettings};
-	m_compressorReleaseLabel->setWordWrap(true);
-	dynamicsLayout->addWidget(m_compressorReleaseKnob, 0, Qt::AlignVCenter);
-	dynamicsLayout->addWidget(m_compressorReleaseLabel, 1);
-	settingsLayout->addWidget(m_dynamicsSettings, 2, 0, 1, 4);
-	connect(mixer->analogModel(), &BoolModel::dataChanged, this, &MixerView::updateDynamicsSettings);
+	settingsLayout->addWidget(m_monoBox, 0, 0, 2, 1);
+	settingsLayout->addWidget(m_panKnob, 0, 1, 2, 1, Qt::AlignCenter);
 
 	// The mixer's mode: an analog desk (with a desk's strip in every channel) or a digital one (effects only)
 	auto modeRow = new QHBoxLayout{};
@@ -280,21 +253,6 @@ MixerView::MixerView(Mixer* mixer) :
 	connect(analogModel, &BoolModel::dataChanged, this, showMode);
 	connect(analogButton, &QPushButton::clicked, this, [analogModel] { analogModel->setValue(true); });
 	connect(digitalButton, &QPushButton::clicked, this, [analogModel] { analogModel->setValue(false); });
-
-	// The analog desk's tolerances: its channels differ a little, as a physical desk's do
-	auto toleranceButton = new AutomatableButton{this, tr("Channel tolerances")};
-	toleranceButton->setObjectName("mixerModeButton");
-	toleranceButton->setText(tr("TOL"));
-	toleranceButton->setToolTip(tr("Tolerances: each channel differs a little from the others, as on a physical "
-		"desk (gain, filters, EQ, gain stage), always the same for each channel"));
-	toleranceButton->setCheckable(true);
-	toleranceButton->setFocusPolicy(Qt::NoFocus);
-	toleranceButton->setModel(mixer->toleranceModel());
-	modeRow->addSpacing(4);
-	modeRow->addWidget(toleranceButton);
-	auto showTolerance = [toleranceButton, analogModel] { toleranceButton->setVisible(analogModel->value()); };
-	showTolerance();
-	connect(analogModel, &BoolModel::dataChanged, this, showTolerance);
 
 	auto rightColumn = new QVBoxLayout{};
 	rightColumn->setContentsMargins(0, 0, 0, 0);
@@ -550,39 +508,16 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 	m_racksLayout->setCurrentWidget(m_mixerChannelViews[channel->channelIndex()]->m_effectRackView);
 
 	const auto mixerChannel = getMixer()->mixerChannel(channel->channelIndex());
-	m_trimKnob->setModel(&mixerChannel->m_trimModel);
 	m_monoBox->setModel(&mixerChannel->m_monoModel);
 	m_monoBox->setVisible(channel->channelIndex() != 0); // the master has MONO in its monitoring
-	m_widthKnob->setModel(&mixerChannel->m_widthModel);
 	m_panKnob->setModel(&mixerChannel->m_panModel);
 	m_panKnob->setVisible(channel->channelIndex() != 0); // the master has no panning
-
-	auto& strip = mixerChannel->m_analogStrip;
-	m_compressorReleaseKnob->setModel(&strip.m_compressorReleaseModel);
-	disconnect(m_compressorTypeConnection);
-	m_compressorTypeConnection = connect(&strip.m_compressorTypeModel, &IntModel::dataChanged, this,
-		&MixerView::updateDynamicsSettings);
-	updateDynamicsSettings();
 
 	// set up send knob
 	for (int i = 0; i < m_mixerChannelViews.size(); ++i)
 	{
 		updateMixerChannel(i);
 	}
-}
-
-
-void MixerView::updateDynamicsSettings()
-{
-	// The master has no analog strip
-	const bool shown = getMixer()->isAnalog() && m_currentMixerChannel && m_currentMixerChannel->channelIndex() != 0;
-	m_dynamicsSettings->setVisible(shown);
-	if (!shown) { return; }
-	const auto& strip = getMixer()->mixerChannel(m_currentMixerChannel->channelIndex())->m_analogStrip;
-	const auto model = static_cast<CompressorModel>(strip.m_compressorTypeModel.value());
-	m_compressorReleaseKnob->setEnabled(ChannelCompressor::hasRelease(model));
-	m_compressorReleaseLabel->setText(tr("%1: %2").arg(ChannelCompressor::name(model), ChannelCompressor::releaseName(model)));
-	m_compressorReleaseKnob->setToolTip(m_compressorReleaseLabel->text());
 }
 
 

@@ -293,12 +293,11 @@ public:
 	auto isAnalog() const -> bool { return m_analogModel.value(); }
 	auto analogModel() -> BoolModel* { return &m_analogModel; }
 	/**
-	 * Whether the analog desk's channels differ a little, as a physical desk's do (see ChannelTolerance). On in new
-	 * projects; projects from before it load without it, so that they sound the same.
+	 * Whether the analog desk's channels differ a little, as a physical desk's do (see ChannelTolerance). Always on
+	 * for projects, old ones included (the user's decision of 13/11/2026); off only in tests that compare channels.
+	 * Not saved.
 	 */
 	auto toleranceModel() -> BoolModel* { return &m_toleranceModel; }
-	//! Whether the project last loaded predates the tolerances
-	auto loadedWithoutTolerance() const -> bool { return m_loadedWithoutTolerance; }
 	/**
 	 * A knob whose meaning was inverted (v becomes @p span - v), loaded from a project of before: its automation is
 	 * inverted too once the project's automation is resolved (see convertLegacyAutomation()) [while loading]
@@ -307,8 +306,6 @@ public:
 	//! Inverts the automation of the knobs invertLegacyAutomation() was told of [after loading]
 	void convertLegacyAutomation();
 
-	//! Before a project loads: without them, unless it has them (some projects have no mixer to load at all)
-	void forgetTolerance() { m_toleranceModel.setValue(false); m_loadedWithoutTolerance = true; }
 
 	//! The master section: bus compressor, monitoring and what the master's meters show
 	auto masterSection() -> MasterSection& { return m_masterSection; }
@@ -530,7 +527,6 @@ private:
 
 	BoolModel m_analogModel;
 	BoolModel m_toleranceModel;
-	bool m_loadedWithoutTolerance = false;
 	std::vector<std::pair<AutomatableModel*, float>> m_legacyInverted;
 	MasterSection m_masterSection;
 

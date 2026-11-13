@@ -69,8 +69,8 @@ AnalogChannelStrip::AnalogChannelStrip(Model* parent)
 		parent)
 	, m_compressorAmountModel(0.f, 0.f, 1.f, 0.001f, parent)
 	, m_compressorRatioModel(0.f, 0.f, 1.f, 0.001f, parent)
-	, m_compressorSpeedModel(static_cast<int>(CompressorSpeed::Norm), 0, static_cast<int>(CompressorSpeed::Count) - 1,
-		parent)
+	, m_compressorSpeedModel(static_cast<float>(CompressorSpeed::Norm), 0.f,
+		static_cast<float>(static_cast<int>(CompressorSpeed::Count) - 1), 1.f, parent)
 	, m_compressorReleaseModel(0.5f, 0.f, 1.f, 0.001f, parent)
 	, m_gateModel(-10.f, -30.f, 10.f, 0.1f, parent)
 	, m_gateRangeModel(0.f, 0.f, 40.f, 0.1f, parent)
@@ -134,7 +134,7 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	m_gate.begin({m_gateModel.value(), m_gateRangeModel.value(), static_cast<GateMode>(m_gateModeModel.value())},
 		sampleRate);
 	m_compressor.begin({static_cast<CompressorModel>(m_compressorTypeModel.value()), m_compressorAmountModel.value(),
-		m_compressorRatioModel.value(), static_cast<CompressorSpeed>(m_compressorSpeedModel.value()),
+		m_compressorRatioModel.value(), static_cast<CompressorSpeed>(static_cast<int>(m_compressorSpeedModel.value())),
 		m_compressorReleaseModel.value()}, sampleRate);
 	const bool gateOn = m_gate.isActive();
 	const bool compressorOn = m_compressor.isActive();
@@ -295,7 +295,7 @@ void AnalogChannelStrip::setNeutral()
 	m_compressorTypeModel.setValue(static_cast<int>(CompressorModel::Ssl));
 	m_compressorAmountModel.setValue(0.f);
 	m_compressorRatioModel.setValue(0.f);
-	m_compressorSpeedModel.setValue(static_cast<int>(CompressorSpeed::Norm));
+	m_compressorSpeedModel.setValue(static_cast<float>(CompressorSpeed::Norm));
 	m_compressorReleaseModel.setValue(0.5f);
 	m_gateModel.setValue(-10.f);
 	m_gateRangeModel.setValue(0.f);
@@ -420,7 +420,7 @@ void AnalogChannelStrip::loadSettings(const QDomElement& channelElement)
 		};
 		m_compressorAmountModel.setValue(ChannelCompressor::amountForSslThreshold(attribute("compthreshold", 0.f)));
 		m_compressorRatioModel.setValue(ChannelCompressor::ratioForSslRatio(attribute("compratio", 1.f)));
-		m_compressorSpeedModel.setValue(static_cast<int>(attribute("compfast", 0.f) != 0.f ? CompressorSpeed::Fast
+		m_compressorSpeedModel.setValue(static_cast<float>(attribute("compfast", 0.f) != 0.f ? CompressorSpeed::Fast
 			: CompressorSpeed::Norm));
 		m_compressorReleaseModel.setValue(ChannelCompressor::releaseForSslRelease(attribute("comprelease", 0.3f)));
 	}

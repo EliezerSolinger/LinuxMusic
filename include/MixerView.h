@@ -176,19 +176,10 @@ private:
 	QWidget* m_racksWidget;
 	Mixer* m_mixer;
 
-	//! The selected channel's strip settings, above its effects: input trim, mono, stereo width and panning
-	//! (phase invert is on each strip)
-	Knob* m_trimKnob;
+	//! The selected channel's settings, above its effects: mono and panning (trim, phase and the compressor's
+	//! release are on each strip; the stereo width keeps its model, at 100 %, without a control)
 	LedCheckBox* m_monoBox;
-	Knob* m_widthKnob;
 	Knob* m_panKnob;
-
-	//! The analog strip's compressor's release, in analog mode, in its model's terms
-	void updateDynamicsSettings();
-	QWidget* m_dynamicsSettings;
-	TextKnob* m_compressorReleaseKnob;
-	QLabel* m_compressorReleaseLabel;
-	QMetaObject::Connection m_compressorTypeConnection;
 
 	friend class MixerChannelView;
 } ;

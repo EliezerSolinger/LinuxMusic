@@ -586,16 +586,27 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	}
 	analogLayout->addWidget(new ChoiceButton{&strip.m_compressorTypeModel, std::move(models), tr("Compressor"),
 		"btn-drive", m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
-	auto speeds = std::vector<ChoiceButton::Choice>{};
-	for (const auto speed : {CompressorSpeed::Fast, CompressorSpeed::Norm, CompressorSpeed::Slow})
-	{
-		speeds.push_back({static_cast<int>(speed), ChannelCompressor::speedName(speed),
-			speed == CompressorSpeed::Fast ? tr("the fastest attack the model allows")
-			: speed == CompressorSpeed::Slow ? tr("the slowest attack the model allows") : tr("the model's usual attack"),
-			""});
-	}
-	analogLayout->addWidget(new ChoiceButton{&strip.m_compressorSpeedModel, std::move(speeds), tr("Attack"),
-		"btn-choice", m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
+	// The attack (stepped: the fastest the model allows, its usual one, the slowest) and the release, in the
+	// model's terms (some models have no release: theirs is program dependent)
+	auto attackKnob = new TextDeskKnob{yellow, tr("ATK"), tr("Compressor attack"),
+		[](float v) { return ChannelCompressor::speedName(static_cast<CompressorSpeed>(static_cast<int>(v))); },
+		m_analogSection};
+	attackKnob->setModel(&strip.m_compressorSpeedModel);
+	attackKnob->setHintText(tr("Compressor attack:"), "");
+	attackKnob->setToolTip(tr("ATK: the fastest attack the model allows, its usual one, or the slowest"));
+	analogLayout->addWidget(attackKnob, row, 0, Qt::AlignCenter);
+	auto releaseKnob = new TextDeskKnob{yellow, tr("REL"), tr("Compressor release"),
+		[compressorType](float v) { return ChannelCompressor::releaseText(compressorType(), v); }, m_analogSection};
+	releaseKnob->setModel(&strip.m_compressorReleaseModel);
+	releaseKnob->setHintText(tr("Compressor release:"), "");
+	analogLayout->addWidget(releaseKnob, row++, 1, Qt::AlignCenter);
+	auto describeRelease = [releaseKnob, compressorType] {
+		const auto model = compressorType();
+		releaseKnob->setEnabled(ChannelCompressor::hasRelease(model));
+		releaseKnob->setToolTip(tr("REL: %1 (%2)").arg(ChannelCompressor::releaseName(model), ChannelCompressor::name(model)));
+	};
+	describeRelease();
+	connect(&strip.m_compressorTypeModel, &IntModel::dataChanged, this, describeRelease);
 
 	addKnob(&strip.m_gateModel, teal, tr("GATE"), tr("Gate threshold"), " dBu", row, 0);
 	addKnob(&strip.m_gateRangeModel, teal, tr("RANGE"), tr("Gate range: 0 is out"), " dB", row++, 1);

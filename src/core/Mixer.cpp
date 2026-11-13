@@ -465,7 +465,7 @@ Mixer::Mixer() :
 	JournallingObject(),
 	m_mixerChannels(),
 	m_analogModel(true, this, tr("Analog mixer")),
-	m_toleranceModel(false, this, tr("Channel tolerances")),
+	m_toleranceModel(true, this, tr("Channel tolerances")),
 	m_masterSection(this)
 {
 	// create master channel
@@ -1280,7 +1280,6 @@ void Mixer::clearChannel(mix_ch_t index)
 void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 {
 	m_analogModel.saveSettings(_doc, _this, "analog");
-	m_toleranceModel.saveSettings(_doc, _this, "tolerance");
 	m_masterSection.saveSettings(_doc, _this);
 
 	// save channels
@@ -1349,10 +1348,8 @@ void Mixer::loadSettings( const QDomElement & _this )
 	{
 		m_analogModel.loadSettings(_this, "analog");
 	}
-	// Projects from before the tolerances load without them
-	m_loadedWithoutTolerance = !_this.hasAttribute("tolerance") && _this.firstChildElement("tolerance").isNull();
-	if (m_loadedWithoutTolerance) { m_toleranceModel.setValue(false); }
-	else { m_toleranceModel.loadSettings(_this, "tolerance"); }
+	// Every project plays with the tolerances (a "tolerance" saved by older versions is ignored)
+	m_toleranceModel.setValue(true);
 	m_masterSection.loadSettings(_this);
 	QDomNode node = _this.firstChild();
 	auto sends = std::vector<std::pair<int, QDomElement>>{};

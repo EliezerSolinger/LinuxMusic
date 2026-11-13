@@ -47,6 +47,7 @@
 #include "InstrumentTrack.h"
 #include "MasterSection.h"
 #include "Mixer.h"
+#include "PatternStore.h"
 #include "PluginChecks.h"
 #include "PluginInstance.h"
 #include "ProjectJournal.h"
@@ -2874,7 +2875,7 @@ private slots:
 
 		// Saved with the strip
 		strip.m_compressorTypeModel.setValue(static_cast<int>(CompressorModel::La2a));
-		strip.m_compressorSpeedModel.setValue(static_cast<int>(CompressorSpeed::Slow));
+		strip.m_compressorSpeedModel.setValue(static_cast<float>(CompressorSpeed::Slow));
 		strip.m_gateModeModel.setValue(static_cast<int>(GateMode::Snare));
 		auto doc = DataFile{DataFile::Type::SongProject};
 		auto element = doc.createElement("mixerchannel");
@@ -2882,7 +2883,7 @@ private slots:
 		strip.setNeutral();
 		strip.loadSettings(element);
 		QCOMPARE(strip.m_compressorTypeModel.value(), static_cast<int>(CompressorModel::La2a));
-		QCOMPARE(strip.m_compressorSpeedModel.value(), static_cast<int>(CompressorSpeed::Slow));
+		QCOMPARE(static_cast<int>(strip.m_compressorSpeedModel.value()), static_cast<int>(CompressorSpeed::Slow));
 		QCOMPARE(strip.m_gateModeModel.value(), static_cast<int>(GateMode::Snare));
 		QCOMPARE(strip.m_compressorAmountModel.value(), 0.7f);
 
@@ -2901,7 +2902,7 @@ private slots:
 		QCOMPARE(strip.m_compressorTypeModel.value(), static_cast<int>(CompressorModel::Ssl));
 		QVERIFY(std::abs(strip.m_compressorAmountModel.value() - 0.5f) < 1e-3f);
 		QCOMPARE(ChannelCompressor::ratioText(CompressorModel::Ssl, strip.m_compressorRatioModel.value()), QString{"4:1"});
-		QCOMPARE(strip.m_compressorSpeedModel.value(), static_cast<int>(CompressorSpeed::Fast));
+		QCOMPARE(static_cast<int>(strip.m_compressorSpeedModel.value()), static_cast<int>(CompressorSpeed::Fast));
 		QCOMPARE(strip.m_gateModeModel.value(), static_cast<int>(GateMode::Expander));
 		QCOMPARE(strip.m_gateRangeModel.value(), 30.f);
 		// And the one knob dynamics of before
@@ -3020,19 +3021,18 @@ private slots:
 		mixer()->toleranceModel()->setValue(false);
 		QCOMPARE(sineGain(first, 2500.f), sineGain(second, 2500.f));
 
-		// Projects from before them load without them; saved, they keep theirs
+		// Every project plays with them: old ones, and those saved with them off by older versions
 		auto doc = DataFile{DataFile::Type::SongProject};
 		auto element = doc.createElement("mixer");
 		doc.content().appendChild(element);
-		mixer()->toleranceModel()->setValue(true);
 		mixer()->saveSettings(doc, element);
+		QVERIFY(!element.hasAttribute("tolerance"));
 		mixer()->loadSettings(element);
 		QVERIFY(mixer()->toleranceModel()->value());
-		QVERIFY(!mixer()->loadedWithoutTolerance());
-		element.removeAttribute("tolerance");
+		element.setAttribute("tolerance", 0);
 		mixer()->loadSettings(element);
-		QVERIFY(!mixer()->toleranceModel()->value());
-		QVERIFY(mixer()->loadedWithoutTolerance());
+		QVERIFY(mixer()->toleranceModel()->value());
+		mixer()->toleranceModel()->setValue(false);
 	}
 
 	void channelTolerancesAreFrozen()
@@ -3303,6 +3303,19 @@ private slots:
 		deleteTrack(other);
 		deleteTrack(folder);
 		QCOMPARE(mixer()->numChannels(), before);
+	}
+
+	// Last: it replaces the song
+	void aNewProjectIsEmptyWithTheDigitalMixer()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		QVERIFY(song->tracks().empty());
+		QVERIFY(Engine::patternStore()->tracks().empty());
+		QVERIFY(!mixer()->analogModel()->value());
+		QVERIFY(mixer()->toleranceModel()->value());
+		QCOMPARE(song->getTempo(), DefaultTempo);
+		QVERIFY(!song->isModified());
 	}
 };
 
