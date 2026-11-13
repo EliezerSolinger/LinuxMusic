@@ -17322,4 +17322,54 @@ Latency: %2 ms</source>
         <translation>Tempo daqui em diante (BPM):</translation>
     </message>
 </context>
+<context>
+    <name>lmms::gui::MasterSectionView</name>
+    <message>
+        <source>THR</source>
+        <translation>THR</translation>
+    </message>
+    <message>
+        <source>Threshold</source>
+        <translation>Limiar</translation>
+    </message>
+    <message>
+        <source>Ratio</source>
+        <translation>Razão</translation>
+    </message>
+    <message>
+        <source>MAKE</source>
+        <translation>MAKE</translation>
+    </message>
+    <message>
+        <source>Make-up gain</source>
+        <translation>Ganho de compensação</translation>
+    </message>
+    <message>
+        <source>ATK</source>
+        <translation>ATK</translation>
+    </message>
+    <message>
+        <source>Attack</source>
+        <translation>Ataque</translation>
+    </message>
+    <message>
+        <source>REL</source>
+        <translation>REL</translation>
+    </message>
+    <message>
+        <source>Release</source>
+        <translation>Release</translation>
+    </message>
+    <message>
+        <source>Bus compressor in</source>
+        <translation>Compressor do bus ligado</translation>
+    </message>
+</context>
+<context>
+    <name>GainReductionMeter</name>
+    <message>
+        <source>Gain reduction of the bus compressor, on its own moving-coil meter as on the SSL: the needle rests at 0 on the right and swings left, to 20 dB</source>
+        <translation>Redução de ganho do compressor do bus, no medidor de bobina móvel próprio, como na SSL: o ponteiro descansa no 0 à direita e vai para a esquerda, até 20 dB</translation>
+    </message>
+</context>
 </TS>

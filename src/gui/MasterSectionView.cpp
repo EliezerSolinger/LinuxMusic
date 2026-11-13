@@ -252,8 +252,10 @@ void Goniometer::paintEvent(QPaintEvent*)
 GainReductionMeter::GainReductionMeter(std::function<float()> takeReduction, QWidget* parent)
 	: QWidget{parent}, m_takeReduction{std::move(takeReduction)}
 {
-	setFixedHeight(7);
-	setToolTip(QCoreApplication::translate("GainReductionMeter", "Gain reduction of the bus compressor (0 to 20 dB)"));
+	setFixedHeight(44);
+	setToolTip(QCoreApplication::translate("GainReductionMeter",
+		"Gain reduction of the bus compressor, on its own moving-coil meter as on the SSL: the needle rests at 0 on "
+		"the right and swings left, to 20 dB"));
 	followGuiUpdates(this);
 }
 
@@ -262,9 +264,18 @@ GainReductionMeter::GainReductionMeter(std::function<float()> takeReduction, QWi
 
 void GainReductionMeter::advance()
 {
-	// Falls at once, recovers gently
-	const float reduction = m_takeReduction();
-	m_shown = reduction < m_shown ? reduction : m_shown + (reduction - m_shown) * 0.2f;
+	// A moving coil: it follows the reduction with a VU's damping (about 300 ms), both ways
+	const float reduction = std::clamp(-m_takeReduction(), 0.f, 20.f);
+	m_shown += (reduction - m_shown) * 0.25f;
+}
+
+
+
+
+auto GainReductionMeter::position(float reduction) -> float
+{
+	// The SSL's scale: 0 at the right, 4 near the middle, 20 at the left (about square-root spaced)
+	return 1.f - std::sqrt(std::clamp(reduction, 0.f, 20.f) / 20.f);
 }
 
 
@@ -273,10 +284,52 @@ void GainReductionMeter::advance()
 void GainReductionMeter::paintEvent(QPaintEvent*)
 {
 	auto painter = QPainter{this};
-	const auto r = rect();
-	painter.fillRect(r, QColor{12, 13, 15});
-	const float amount = std::clamp(-m_shown / 20.f, 0.f, 1.f);
-	painter.fillRect(QRect{1, 1, static_cast<int>(amount * (r.width() - 2)), r.height() - 2}, QColor{240, 170, 40});
+	painter.setRenderHint(QPainter::Antialiasing);
+	const auto face = QRectF{rect()}.adjusted(0.5, 0.5, -0.5, -0.5);
+
+	// The backlit face, as the master's VU meters
+	auto light = QLinearGradient{face.topLeft(), face.bottomLeft()};
+	light.setColorAt(0.0, QColor{250, 236, 190});
+	light.setColorAt(1.0, QColor{226, 200, 140});
+	painter.setPen(QPen{QColor{20, 22, 25}, 1.0});
+	painter.setBrush(light);
+	painter.drawRoundedRect(face, 3, 3);
+	painter.setClipRect(face.adjusted(1, 1, -1, -1));
+
+	constexpr double swing = 48.0; // degrees each side
+	const auto pivot = QPointF{width() / 2.0, height() + 12.0};
+	const double radius = height() + 4.0;
+	auto pointAt = [&](float p, double r) {
+		const double angle = (-swing + 2.0 * swing * p) * std::numbers::pi / 180.0;
+		return pivot + QPointF{std::sin(angle) * r, -std::cos(angle) * r};
+	};
+
+	// The scale, in dB of reduction
+	const auto scaleRadius = radius - 12.0;
+	auto path = QPainterPath{};
+	path.moveTo(pointAt(0.f, scaleRadius));
+	for (float p = 0.f; p <= 1.f; p += 0.01f) { path.lineTo(pointAt(p, scaleRadius)); }
+	painter.setPen(QPen{QColor{30, 30, 30}, 1.0});
+	painter.setBrush(Qt::NoBrush);
+	painter.drawPath(path);
+	painter.setFont(adjustedToPixelSize(font(), 6));
+	for (const float db : {0.f, 2.f, 4.f, 6.f, 8.f, 10.f, 14.f, 20.f})
+	{
+		const float p = position(db);
+		painter.drawLine(pointAt(p, scaleRadius), pointAt(p, scaleRadius + 3.0));
+		if (db == 0.f || db == 4.f || db == 10.f || db == 20.f || db == 2.f)
+		{
+			const auto at = pointAt(p, scaleRadius + 8.0);
+			painter.drawText(QRectF{at.x() - 8.0, at.y() - 4.0, 16.0, 8.0}, Qt::AlignCenter, QString::number(static_cast<int>(db)));
+		}
+	}
+	painter.setPen(QColor{40, 40, 40});
+	painter.setFont(adjustedToPixelSize(font(), 7));
+	painter.drawText(QRectF{0, height() - 13.0, static_cast<double>(width()), 10.0}, Qt::AlignCenter, "GR dB");
+
+	// The needle
+	painter.setPen(QPen{QColor{20, 20, 20}, 1.2});
+	painter.drawLine(pointAt(position(m_shown), 8.0), pointAt(position(m_shown), radius - 4.0));
 }
 
 
@@ -363,37 +416,46 @@ MasterSectionView::MasterSectionView(Mixer* mixer, QWidget* parent)
 	stereo->addWidget(makeKnob(&master.m_airModel, tr("AIR"), tr("Air: high shelf of the side at 12 kHz"), " dB"));
 	layout->addLayout(stereo);
 
-	// The bus compressor
+	// The bus compressor, as the SSL G's panel: its gain-reduction meter, threshold and make-up, and the rotary
+	// switches of ratio, attack and release
 	addTitle(tr("BUS COMP"));
+	auto compressorPanel = new QWidget{this};
+	compressorPanel->setObjectName("busCompressorPanel");
+	compressorPanel->setAttribute(Qt::WA_StyledBackground, true);
+	auto panel = new QVBoxLayout{compressorPanel};
+	panel->setContentsMargins(3, 3, 3, 3);
+	panel->setSpacing(2);
 	auto compressorTop = new QHBoxLayout{};
 	compressorTop->setSpacing(4);
-	compressorTop->addWidget(makeButton(&master.m_compressorModel, tr("IN"), tr("Bus compressor in")));
-	compressorTop->addWidget(new GainReductionMeter{[&master] { return master.takeGainReduction(); }, this}, 1);
-	layout->addLayout(compressorTop);
-	auto compressorKnobs = new QHBoxLayout{};
-	compressorKnobs->setSpacing(0);
-	compressorKnobs->addWidget(makeKnob(&master.m_thresholdModel, tr("THR"), tr("Threshold"), " dB"));
-	compressorKnobs->addWidget(makeKnob(&master.m_attackModel, tr("ATK"), tr("Attack"), " ms"));
-	compressorKnobs->addWidget(makeKnob(&master.m_releaseModel, tr("REL"), tr("Release"), " s"));
-	compressorKnobs->addWidget(makeKnob(&master.m_makeupModel, tr("MAKE"), tr("Make-up gain"), " dB"));
-	layout->addLayout(compressorKnobs);
-	auto compressorButtons = new QHBoxLayout{};
-	compressorButtons->setSpacing(2);
-	auto ratios = new AutomatableButtonGroup{this, tr("Ratio")};
-	for (const auto& text : {QString{"2"}, QString{"4"}, QString{"10"}})
-	{
-		auto button = new AutomatableButton{this, tr("Ratio %1:1").arg(text)};
-		button->setObjectName("masterButton");
-		button->setText(text);
-		button->setToolTip(tr("Ratio %1:1").arg(text));
-		button->setCheckable(true);
-		ratios->addButton(button);
-		compressorButtons->addWidget(button);
-	}
-	ratios->setModel(&master.m_ratioModel);
-	compressorButtons->addStretch(1);
-	compressorButtons->addWidget(makeButton(&master.m_autoReleaseModel, tr("AUTO"), tr("Auto release")));
-	layout->addLayout(compressorButtons);
+	compressorTop->addWidget(makeButton(&master.m_compressorModel, tr("IN"), tr("Bus compressor in")), 0, Qt::AlignTop);
+	compressorTop->addWidget(new GainReductionMeter{[&master] { return master.takeGainReduction(); }, compressorPanel}, 1);
+	panel->addLayout(compressorTop);
+	const auto stepped = [compressorPanel](FloatModel* model, const QString& label, const QString& name,
+		std::function<QString(float)> text) {
+		auto knob = new TextDeskKnob{QColor{60, 64, 70}, label, name, std::move(text), compressorPanel};
+		knob->setModel(model);
+		knob->setHintText(name + ":", "");
+		return knob;
+	};
+	auto knobs = new QGridLayout{};
+	knobs->setSpacing(0);
+	knobs->addWidget(stepped(&master.m_thresholdModel, tr("THR"), tr("Threshold"),
+		[](float v) { return (v > 0.05f ? "+" : "") + QString::number(v, 'f', 1) + " dB"; }), 0, 0);
+	knobs->addWidget(stepped(&master.m_ratioModel, tr("RATIO"), tr("Ratio"), [](float v) {
+		return QString{"%1:1"}.arg(MasterSection::ratio(static_cast<MasterSection::Ratio>(static_cast<int>(v))));
+	}), 0, 1);
+	knobs->addWidget(stepped(&master.m_makeupModel, tr("MAKE"), tr("Make-up gain"),
+		[](float v) { return (v > 0.05f ? "+" : "") + QString::number(v, 'f', 1) + " dB"; }), 0, 2);
+	knobs->addWidget(stepped(&master.m_attackModel, tr("ATK"), tr("Attack"), [](float v) {
+		return QString::number(MasterSection::AttackTimes[std::clamp(static_cast<int>(v), 0, 5)]) + " ms";
+	}), 1, 0);
+	knobs->addWidget(stepped(&master.m_releaseModel, tr("REL"), tr("Release"), [](float v) {
+		const auto step = static_cast<int>(v);
+		return step >= MasterSection::AutoRelease ? QObject::tr("Auto")
+			: QString::number(MasterSection::ReleaseTimes[std::clamp(step, 0, 3)]) + " s";
+	}), 1, 1);
+	panel->addLayout(knobs);
+	layout->addWidget(compressorPanel);
 
 	// The monitoring: what is heard, not what is mixed or exported
 	addTitle(tr("MONITOR"));

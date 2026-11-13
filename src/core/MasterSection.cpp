@@ -40,11 +40,8 @@ namespace lmms
 namespace
 {
 
-constexpr float CompressorKnee = 2.f;			// dB
-constexpr float FastRelease = 0.1f;				// s, the auto release on short transients
-constexpr float SlowRelease = 1.2f;				// s, the auto release on sustained compression
-constexpr float SustainTime = 1.f;				// s, over which the auto release judges the compression
-constexpr float SustainForSlowRelease = 6.f;	// dB of sustained reduction for the slowest auto release
+constexpr float AutoFastRelease = 0.1f;			// s, Auto's fast pole
+constexpr float AutoSlowTime = 1.2f;			// s, Auto's slow pole
 constexpr float CorrelationTime = 0.3f;			// s
 
 auto smoothing(float seconds, sample_rate_t rate) -> float
@@ -69,12 +66,12 @@ MasterSection::MasterSection(Model* parent)
 	, m_bassFrequencyModel(120.f, 20.f, 300.f, 1.f, parent, QObject::tr("Mono bass frequency"))
 	, m_airModel(0.f, -6.f, 6.f, 0.1f, parent, QObject::tr("Side air"))
 	, m_compressorModel(false, parent, QObject::tr("Bus compressor"))
-	, m_thresholdModel(-10.f, -30.f, 0.f, 0.1f, parent, QObject::tr("Bus compressor threshold"))
-	, m_ratioModel(static_cast<int>(Ratio::Four), 0, 2, parent, QObject::tr("Bus compressor ratio"))
-	, m_attackModel(10.f, 0.1f, 30.f, 0.1f, parent, QObject::tr("Bus compressor attack"))
-	, m_releaseModel(0.3f, 0.1f, 1.2f, 0.01f, parent, QObject::tr("Bus compressor release"))
-	, m_autoReleaseModel(true, parent, QObject::tr("Bus compressor auto release"))
-	, m_makeupModel(0.f, 0.f, 15.f, 0.1f, parent, QObject::tr("Bus compressor make-up"))
+	, m_thresholdModel(5.f, -15.f, 15.f, 0.1f, parent, QObject::tr("Bus compressor threshold"))
+	, m_ratioModel(static_cast<float>(Ratio::Four), 0.f, 2.f, 1.f, parent, QObject::tr("Bus compressor ratio"))
+	, m_attackModel(4.f, 0.f, 5.f, 1.f, parent, QObject::tr("Bus compressor attack"))
+	, m_releaseModel(static_cast<float>(AutoRelease), 0.f, static_cast<float>(AutoRelease), 1.f, parent,
+		QObject::tr("Bus compressor release"))
+	, m_makeupModel(0.f, -5.f, 15.f, 0.1f, parent, QObject::tr("Bus compressor make-up"))
 	, m_monitorLevelModel(0.f, -60.f, 6.f, 0.1f, parent, QObject::tr("Monitor level"))
 	, m_dimModel(false, parent, QObject::tr("Dim"))
 	, m_cutModel(false, parent, QObject::tr("Cut"))
@@ -108,8 +105,8 @@ MasterSection::MasterSection(Model* parent)
 		if (m_sideModel.value()) { m_monoModel.setValue(false); }
 	});
 
-	m_attackModel.setScaleLogarithmic(true);
-	m_releaseModel.setScaleLogarithmic(true);
+	m_thresholdModel.setCenterValue(0.f);
+	m_makeupModel.setCenterValue(0.f);
 	m_monitorLevelModel.setCenterValue(0.f);
 
 	// Listening states: not part of the project's history
@@ -118,6 +115,20 @@ MasterSection::MasterSection(Model* parent)
 	{
 		model->setJournalling(false);
 	}
+}
+
+
+
+
+auto MasterSection::kneeWidth(Ratio ratio) -> float
+{
+	switch (ratio)
+	{
+		case Ratio::Two: return 10.f;
+		case Ratio::Four: return 6.f;
+		case Ratio::Ten: return 2.f;
+	}
+	return 6.f;
 }
 
 
@@ -211,47 +222,51 @@ void MasterSection::processCompressor(std::span<SampleFrame> frames, sample_rate
 	if (!m_compressorModel.value())
 	{
 		m_reduction = 0.f;
-		m_sustain = 0.f;
+		m_slowReduction = 0.f;
 		return;
 	}
 
-	const float threshold = m_thresholdModel.value();
-	const float slope = 1.f / ratio(static_cast<Ratio>(m_ratioModel.value())) - 1.f;
-	const float attack = smoothing(m_attackModel.value() / 1000.f, sampleRate);
-	const float fixedRelease = smoothing(m_releaseModel.value(), sampleRate);
-	const bool autoRelease = m_autoReleaseModel.value();
-	const float sustainCoefficient = smoothing(SustainTime, sampleRate);
+	// The SSL G bus compressor: its sidechain VCA gets the same control as the audio VCA (less the make-up, an
+	// offset on the audio VCA only), so the detector hears the compressed signal: a feedback loop, which with
+	// strength r - 1 holds the static ratio at r
+	const auto ratioStep = static_cast<Ratio>(std::clamp(static_cast<int>(m_ratioModel.value()), 0, 2));
+	const float strength = ratio(ratioStep) - 1.f;
+	const float knee = kneeWidth(ratioStep);
+	const float threshold = ThresholdReference + m_thresholdModel.value();
+	const auto attackStep = std::clamp(static_cast<int>(m_attackModel.value()), 0, static_cast<int>(AttackTimes.size()) - 1);
+	const auto releaseStep = std::clamp(static_cast<int>(m_releaseModel.value()), 0, AutoRelease);
+	const bool autoRelease = releaseStep == AutoRelease;
+	const float attack = smoothing(AttackTimes[attackStep] / 1000.f, sampleRate);
+	const float release = smoothing(autoRelease ? AutoFastRelease : ReleaseTimes[releaseStep], sampleRate);
+	const float slow = smoothing(AutoSlowTime, sampleRate);
 	const float makeup = m_makeupModel.value();
 
 	float deepest = 0.f;
 	for (auto& frame : frames)
 	{
-		// Stereo-linked, with a narrow soft knee
+		// What the detector hears: the louder side, through the sidechain VCA (the reduction so far)
 		const float level = std::max(std::abs(frame[0]), std::abs(frame[1]));
-		const float over = ampToDbfs(std::max(level, 1e-9f)) - threshold;
+		const float heard = ampToDbfs(std::max(level, 1e-9f)) + std::min(m_reduction, m_slowReduction);
+		const float over = heard - threshold;
 		float target = 0.f;
-		if (over >= CompressorKnee / 2.f) { target = slope * over; }
-		else if (over > -CompressorKnee / 2.f)
+		if (over >= knee / 2.f) { target = -strength * over; }
+		else if (over > -knee / 2.f)
 		{
-			const float into = over + CompressorKnee / 2.f;
-			target = slope * into * into / (2.f * CompressorKnee);
+			const float into = over + knee / 2.f;
+			target = -strength * into * into / (2.f * knee);
 		}
 
-		// The auto release lengthens with sustained compression, so that it recovers fast from short peaks
-		// without pumping on dense material
-		float release = fixedRelease;
-		if (autoRelease)
-		{
-			m_sustain += (-m_reduction - m_sustain) * sustainCoefficient;
-			const float amount = std::clamp(m_sustain / SustainForSlowRelease, 0.f, 1.f);
-			release = smoothing(FastRelease + (SlowRelease - FastRelease) * amount, sampleRate);
-		}
+		// The control voltage: the attack's time constant down, the release's up; with Auto, a second, slow pole
+		// follows it, and the deeper of the two holds: short peaks recover fast, sustained compression slowly
 		m_reduction += (target - m_reduction) * (target < m_reduction ? attack : release);
+		if (autoRelease) { m_slowReduction += (m_reduction - m_slowReduction) * slow; }
+		else { m_slowReduction = m_reduction; }
+		const float reduction = std::min(m_reduction, m_slowReduction);
 
-		const float gain = dbfsToAmp(m_reduction + makeup);
+		const float gain = dbfsToAmp(reduction + makeup);
 		frame[0] *= gain;
 		frame[1] *= gain;
-		deepest = std::min(deepest, m_reduction);
+		deepest = std::min(deepest, reduction);
 	}
 
 	// The meter shows the deepest reduction until the GUI reads it
@@ -383,11 +398,10 @@ void MasterSection::setDefaults()
 	m_bassFrequencyModel.setValue(120.f);
 	m_airModel.setValue(0.f);
 	m_compressorModel.setValue(false);
-	m_thresholdModel.setValue(-10.f);
-	m_ratioModel.setValue(static_cast<int>(Ratio::Four));
-	m_attackModel.setValue(10.f);
-	m_releaseModel.setValue(0.3f);
-	m_autoReleaseModel.setValue(true);
+	m_thresholdModel.setValue(5.f);
+	m_ratioModel.setValue(static_cast<float>(Ratio::Four));
+	m_attackModel.setValue(4.f);
+	m_releaseModel.setValue(static_cast<float>(AutoRelease));
 	m_makeupModel.setValue(0.f);
 }
 
@@ -410,11 +424,11 @@ void MasterSection::saveSettings(QDomDocument& doc, QDomElement& mixerElement)
 
 	auto element = doc.createElement("buscompressor");
 	m_compressorModel.saveSettings(doc, element, "on");
-	m_thresholdModel.saveSettings(doc, element, "threshold");
+	// (the panel's steps, under names of their own: projects of before had dBFS, milliseconds and seconds)
+	m_thresholdModel.saveSettings(doc, element, "thresholdssl");
 	m_ratioModel.saveSettings(doc, element, "ratio");
-	m_attackModel.saveSettings(doc, element, "attack");
-	m_releaseModel.saveSettings(doc, element, "release");
-	m_autoReleaseModel.saveSettings(doc, element, "autorelease");
+	m_attackModel.saveSettings(doc, element, "attackstep");
+	m_releaseModel.saveSettings(doc, element, "releasestep");
 	m_makeupModel.saveSettings(doc, element, "makeup");
 	mixerElement.appendChild(element);
 }
@@ -454,12 +468,41 @@ void MasterSection::loadSettings(const QDomElement& mixerElement)
 	const auto element = mixerElement.firstChildElement("buscompressor");
 	if (element.isNull()) { return; }
 	m_compressorModel.loadSettings(element, "on");
-	m_thresholdModel.loadSettings(element, "threshold");
+	const auto has = [&element](const char* name) {
+		return element.hasAttribute(name) || !element.firstChildElement(name).isNull();
+	};
 	m_ratioModel.loadSettings(element, "ratio");
-	m_attackModel.loadSettings(element, "attack");
-	m_releaseModel.loadSettings(element, "release");
-	m_autoReleaseModel.loadSettings(element, "autorelease");
 	m_makeupModel.loadSettings(element, "makeup");
+	if (has("thresholdssl")) { m_thresholdModel.loadSettings(element, "thresholdssl"); }
+	else if (has("threshold"))
+	{
+		// Before, in dBFS
+		m_thresholdModel.setValue(element.attribute("threshold").toFloat() - ThresholdReference);
+	}
+	if (has("attackstep")) { m_attackModel.loadSettings(element, "attackstep"); }
+	else if (has("attack"))
+	{
+		// Before, in milliseconds: the nearest step (in ratio)
+		const auto ms = std::max(element.attribute("attack").toFloat(), 0.01f);
+		auto best = 0;
+		for (auto i = 0; i < static_cast<int>(AttackTimes.size()); ++i)
+		{
+			if (std::abs(std::log(AttackTimes[i] / ms)) < std::abs(std::log(AttackTimes[best] / ms))) { best = i; }
+		}
+		m_attackModel.setValue(static_cast<float>(best));
+	}
+	if (has("releasestep")) { m_releaseModel.loadSettings(element, "releasestep"); }
+	else if (element.attribute("autorelease", "1").toInt() != 0) { m_releaseModel.setValue(static_cast<float>(AutoRelease)); }
+	else if (has("release"))
+	{
+		const auto seconds = std::max(element.attribute("release").toFloat(), 0.01f);
+		auto best = 0;
+		for (auto i = 0; i < static_cast<int>(ReleaseTimes.size()); ++i)
+		{
+			if (std::abs(std::log(ReleaseTimes[i] / seconds)) < std::abs(std::log(ReleaseTimes[best] / seconds))) { best = i; }
+		}
+		m_releaseModel.setValue(static_cast<float>(best));
+	}
 }
 
 } // namespace lmms

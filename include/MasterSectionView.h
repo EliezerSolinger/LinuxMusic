@@ -105,8 +105,11 @@ protected:
 	void paintEvent(QPaintEvent*) override;
 
 private:
+	//! Where @p reduction (dB, 0 to 20) is on the scale, 0 (left) to 1 (right)
+	static auto position(float reduction) -> float;
+
 	std::function<float()> m_takeReduction;
-	float m_shown = 0.f; //!< dB, 0 or less
+	float m_shown = 0.f; //!< dB of reduction, 0 to 20, as the needle shows it
 };
 
 /**

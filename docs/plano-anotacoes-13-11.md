@@ -341,8 +341,16 @@ Cada passo atualiza este documento, marcando o que foi feito.
 - **Etapa 9.3 feita** (13/11): nas barras do Piano Roll e do Arranjo, os seletores viraram botões de ícone que
   mostram o valor atual e abrem o mesmo menu.
 - **Falta das anotações:**
-  - 7 (compressor SSL do mixbus);
   - 13.2 (instrumentos acústicos por soundfont);
   - 13.3 (plugin IR/NAM);
   - o registro central de atalhos;
   - regiões na régua.
+- **Etapa 7 feita** (13/11): o compressor do mixbus segue o SSL G medido por Thompson e Heilemann (2026, um G384).
+  - O painel tem os passos do original: limiar de −15 a +15, razão 2/4/10, ataque de 0,1 a 30 ms, release de 0,1
+    a 1,2 s ou Auto, e make-up de −5 a +15 dB.
+  - O VCA do sidechain recebe o mesmo controle do áudio, sem o make-up, então o detector ouve o sinal já
+    comprimido (realimentação, com a razão estática exata).
+  - O joelho é mais redondo nas razões baixas.
+  - O Auto tem dois polos: um rápido (0,1 s) e um lento (1,2 s) que o segue.
+  - O medidor de redução é próprio, de ponteiro (VU), com a escala da SSL.
+  - Projetos antigos convertem para o passo mais perto. A A/B não muda.

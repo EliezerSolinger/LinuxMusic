@@ -51,7 +51,7 @@ class SampleFrame;
  * - in analog mode, the master's gain stage, after the PRE faders, which drive it: the summing amplifier of an analog
  *   desk, of the same models as the channels' (see GainStage), with no gain pot of its own;
  * - the stereo section, in mid/side (M = (L+R)/2, S = (L-R)/2), before the bus compressor (see processStereo());
- * - a bus compressor, after the SSL G-series one (off by default);
+ * - a bus compressor modelled on the SSL G-series one (off by default; see processCompressor());
  * - then the master's own fader, POST.
  * These are part of the mix and of the export. Besides:
  * - the monitoring: what is heard from the speakers, without changing the mix or the export: monitor level, DIM
@@ -102,17 +102,23 @@ public:
 	FloatModel m_airModel;					//!< dB of the side's high shelf
 	static constexpr float AirFrequency = 12000.f;
 
-	// Bus compressor
+	// Bus compressor, with the SSL G-series panel (Thompson and Heilemann, 2026, measuring a G384): threshold -15 to
+	// +15 dB, ratio 2, 4 or 10, attack 0.1 to 30 ms and release 0.1 to 1.2 s or Auto in steps, make-up -5 to +15 dB
 	BoolModel m_compressorModel;			//!< in or out
-	FloatModel m_thresholdModel;			//!< dB
-	IntModel m_ratioModel;					//!< a Ratio
-	FloatModel m_attackModel;				//!< ms
-	FloatModel m_releaseModel;				//!< s
-	BoolModel m_autoReleaseModel;
+	FloatModel m_thresholdModel;			//!< dB on the panel's scale: 0 is ThresholdReference dBFS
+	FloatModel m_ratioModel;				//!< a Ratio, in steps (a rotary switch)
+	FloatModel m_attackModel;				//!< an index of AttackTimes, in steps
+	FloatModel m_releaseModel;				//!< an index of ReleaseTimes, in steps; the last is Auto
 	FloatModel m_makeupModel;				//!< dB
 
 	enum class Ratio { Two, Four, Ten };
 	static auto ratio(Ratio ratio) -> float;
+	static constexpr float ThresholdReference = -15.f; //!< dBFS at the threshold's 0
+	static constexpr std::array<float, 6> AttackTimes{0.1f, 0.3f, 1.f, 3.f, 10.f, 30.f}; //!< ms
+	static constexpr std::array<float, 4> ReleaseTimes{0.1f, 0.3f, 0.6f, 1.2f}; //!< s; then Auto
+	static constexpr int AutoRelease = 4; //!< the release's last step
+	//! The knee's width at @p ratio: the curve is rounder at the lower ratios, almost hard at 10:1 (as measured)
+	static auto kneeWidth(Ratio ratio) -> float;
 
 	// Monitoring
 	FloatModel m_monitorLevelModel;			//!< dB
@@ -172,8 +178,8 @@ private:
 	bool m_airWasOn = false;
 
 	// Bus compressor
-	float m_reduction = 0.f;		//!< dB, smoothed
-	float m_sustain = 0.f;			//!< dB of reduction averaged over a second, for the auto release
+	float m_reduction = 0.f;		//!< dB, the control voltage (the fast pole with Auto)
+	float m_slowReduction = 0.f;	//!< dB, Auto's slow pole, which follows the fast one
 	std::atomic<float> m_gainReduction = 0.f;
 
 	// Correlation

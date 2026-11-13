@@ -1857,16 +1857,77 @@ private slots:
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.5f) - 1.f) < 0.01f);
 		QCOMPARE(master.takeGainReduction(), 0.f);
 
+		// The SSL G: its threshold's 0 at -15 dBFS; -5 is -20 dBFS. A sine peaking at -6 dBFS is 14 dB over: at 10:1
+		// (the feedback loop holds the ratio) it comes out 1.4 dB over, 12.6 dB down
 		master.m_compressorModel.setValue(true);
-		master.m_thresholdModel.setValue(-20.f);
-		master.m_ratioModel.setValue(static_cast<int>(MasterSection::Ratio::Ten));
-		const float loud = sineGain(channel, 1000.f, 0.5f);
-		QVERIFY(loud < 0.5f);
-		QVERIFY(master.takeGainReduction() < -6.f);
+		master.m_thresholdModel.setValue(-5.f);
+		master.m_ratioModel.setValue(static_cast<float>(MasterSection::Ratio::Ten));
+		master.m_attackModel.setValue(2.f); // 1 ms
+		master.m_releaseModel.setValue(1.f); // 0.3 s
+		const float loud = sineGain(channel, 1000.f, 0.5f, 256);
+		QVERIFY2(std::abs(ampToDbfs(loud) + 12.6f) < 1.0f, qPrintable(QString::number(ampToDbfs(loud))));
+		QVERIFY(master.takeGainReduction() < -10.f);
+		// At 2:1, 7 dB down (and a rounder knee does not change it this far over)
+		master.m_ratioModel.setValue(static_cast<float>(MasterSection::Ratio::Two));
+		const float gentle = sineGain(channel, 1000.f, 0.5f, 256);
+		QVERIFY2(std::abs(ampToDbfs(gentle) + 7.f) < 1.0f, qPrintable(QString::number(ampToDbfs(gentle))));
 		// Below the threshold, untouched (no make-up) once released
-		master.m_autoReleaseModel.setValue(false);
-		master.m_releaseModel.setValue(0.1f);
+		master.m_releaseModel.setValue(0.f); // 0.1 s
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.01f, 512) - 1.f) < 0.02f);
+		// Make-up: after the detector, a plain gain
+		master.m_makeupModel.setValue(6.f);
+		QVERIFY(std::abs(ampToDbfs(sineGain(channel, 1000.f, 0.01f, 512)) - 6.f) < 0.1f);
+		master.setDefaults();
+	}
+
+	void busCompressorAutoReleaseIsProgramDependent()
+	{
+		// Auto: two poles; after a short burst the reduction recovers faster than after a long one
+		auto& master = mixer()->masterSection();
+		const auto channel = mixer()->createChannel();
+		settle();
+		master.m_compressorModel.setValue(true);
+		master.m_thresholdModel.setValue(-5.f);
+		master.m_ratioModel.setValue(static_cast<float>(MasterSection::Ratio::Ten));
+		master.m_attackModel.setValue(0.f);
+		master.m_releaseModel.setValue(static_cast<float>(MasterSection::AutoRelease));
+		const auto recoveredAfter = [&](int burstPeriods) {
+			sineGain(channel, 1000.f, 0.5f, burstPeriods);
+			// Then quiet for 100 ms: how much reduction is left
+			const auto periods = static_cast<int>(0.1f * Engine::audioEngine()->outputSampleRate() / frames());
+			sineGain(channel, 1000.f, 0.001f, periods);
+			// (the gain of a quiet signal is the reduction left)
+			const auto left = ampToDbfs(sineGain(channel, 1000.f, 0.001f, 4));
+			sineGain(channel, 1000.f, 0.001f, 4000); // (all the way back)
+			return left;
+		};
+		const auto shortBurst = recoveredAfter(4);
+		const auto longBurst = recoveredAfter(800);
+		QVERIFY2(longBurst < shortBurst - 2.f, qPrintable(QString{"%1 %2"}.arg(shortBurst).arg(longBurst)));
+		master.setDefaults();
+	}
+
+	void busCompressorOfBeforeLoadsOnThePanelsSteps()
+	{
+		auto& master = mixer()->masterSection();
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto mixerElement = doc.createElement("mixer");
+		auto old = doc.createElement("buscompressor");
+		old.setAttribute("on", 1);
+		old.setAttribute("threshold", -20); // dBFS
+		old.setAttribute("ratio", 2);
+		old.setAttribute("attack", 2.5); // ms: the nearest step is 3
+		old.setAttribute("release", 0.5); // s: 0.6
+		old.setAttribute("autorelease", 0);
+		old.setAttribute("makeup", 3);
+		mixerElement.appendChild(old);
+		master.loadSettings(mixerElement);
+		QCOMPARE(master.m_thresholdModel.value(), -5.f);
+		QCOMPARE(MasterSection::AttackTimes[static_cast<int>(master.m_attackModel.value())], 3.f);
+		QCOMPARE(MasterSection::ReleaseTimes[static_cast<int>(master.m_releaseModel.value())], 0.6f);
+		old.setAttribute("autorelease", 1);
+		master.loadSettings(mixerElement);
+		QCOMPARE(static_cast<int>(master.m_releaseModel.value()), MasterSection::AutoRelease);
 		master.setDefaults();
 	}
 
