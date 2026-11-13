@@ -22,19 +22,54 @@
  *
  */
 
+
 #include "Metronome.h"
 
+#include "AudioBusHandle.h"
+#include "AudioEngine.h"
 #include "Engine.h"
+#include "Sample.h"
+#include "SampleBuffer.h"
 #include "SamplePlayHandle.h"
 
 namespace lmms {
+
+Metronome::Metronome() = default;
+Metronome::~Metronome() = default;
+
+
+
+
+void Metronome::setActive(bool active)
+{
+	if (active) { prepare(); }
+	m_active = active;
+}
+
+
+
+
+void Metronome::prepare()
+{
+	if (m_prepared) { return; }
+	m_strongClick = std::make_unique<Sample>(SampleBuffer::fromFile("misc/metronome02.ogg"));
+	m_weakClick = std::make_unique<Sample>(SampleBuffer::fromFile("misc/metronome01.ogg"));
+	m_bus = std::make_unique<AudioBusHandle>("Metronome", false);
+	m_prepared = true;
+}
+
+
+
+
 void Metronome::processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force)
 {
 	const auto ticksPerBeat = ticksPerBar / beatsPerBar;
-	if (currentTick % ticksPerBeat != 0 || !(m_active || force)) { return; }
+	if (ticksPerBeat <= 0 || currentTick % ticksPerBeat != 0 || !(m_active || force) || !m_prepared) { return; }
 
-	const auto handle = currentTick % ticksPerBar == 0 ? new SamplePlayHandle("misc/metronome02.ogg")
-													   : new SamplePlayHandle("misc/metronome01.ogg");
+	// The handle plays a click prepared on the main thread, on the metronome's own bus
+	auto* click = currentTick % ticksPerBar == 0 ? m_strongClick.get() : m_weakClick.get();
+	const auto handle = new SamplePlayHandle(click, false);
+	handle->setAudioBusHandle(m_bus.get());
 	handle->setOffset(bufferOffset);
 	Engine::audioEngine()->addPlayHandle(handle);
 }

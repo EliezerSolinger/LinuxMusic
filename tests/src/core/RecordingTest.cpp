@@ -325,8 +325,10 @@ private slots:
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
 		ConfigManager::inst()->setValue("recording", "prerollbars", "1");
+		ConfigManager::inst()->setValue("recording", "countin", "1");
 		const auto cleanUp = qScopeGuard([&] {
 			ConfigManager::inst()->setValue("recording", "prerollbars", "0");
+			ConfigManager::inst()->setValue("recording", "countin", "0");
 			song->stop();
 			const auto guard = engine->requestChangesGuard();
 			delete recorder;
@@ -341,6 +343,9 @@ private slots:
 		song->stop();
 		QCOMPARE(recorder->numOfClips(), 1);
 		QCOMPARE(recorder->getClip(0)->startPosition().getTicks(), cursor);
+
+		// The count-in clicked during the pre-roll (nothing else plays)
+		QVERIFY(device->outputPeak().second > 0.05f);
 	}
 
 	void monitoringPlaysTheInputThroughTheTrack_data()

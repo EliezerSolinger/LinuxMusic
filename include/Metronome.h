@@ -25,19 +25,41 @@
 #ifndef LMMS_METRONOME_H
 #define LMMS_METRONOME_H
 
+#include <atomic>
 #include <cstddef>
+#include <memory>
 
 namespace lmms {
+
+class AudioBusHandle;
+class Sample;
+
 class Metronome
 {
 public:
+	Metronome();
+	~Metronome();
+
 	bool active() const { return m_active; }
-	void setActive(bool active) { m_active = active; }
-	//! Clicks on the beats while active, or while @p force (e.g. a count-in)
+
+	//! Main thread: switches the metronome on or off (on, it is prepared first)
+	void setActive(bool active);
+
+	/**
+	 * Main thread: loads the clicks and makes the metronome's bus, once. The audio thread only plays what is
+	 * prepared: it neither reads the click files nor makes a bus.
+	 */
+	void prepare();
+
+	//! Audio thread: clicks on the beats while active, or while @p force (e.g. a count-in)
 	void processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force = false);
 
 private:
-	bool m_active = false;
+	std::atomic<bool> m_active = false;
+	std::atomic<bool> m_prepared = false;
+	std::unique_ptr<Sample> m_strongClick; //!< on the first beat of a bar
+	std::unique_ptr<Sample> m_weakClick; //!< on the others
+	std::unique_ptr<AudioBusHandle> m_bus;
 };
 } // namespace lmms
 

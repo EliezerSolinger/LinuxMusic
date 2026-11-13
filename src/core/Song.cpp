@@ -842,6 +842,7 @@ auto Song::recordAudio() -> bool
 		const auto start = std::max(0, cursor - preRoll * ticksPerBar());
 		const bool countIn = ConfigManager::inst()->value("recording", "countin", "0").toInt() != 0;
 		m_countInUntilTick = countIn && preRoll > 0 ? cursor : -1;
+		if (countIn) { m_metronome.prepare(); }
 		fromTick = cursor;
 		setPlayPos(start, PlayMode::Song);
 		playSong();
