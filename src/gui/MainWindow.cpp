@@ -80,6 +80,7 @@
 #include "TextFloat.h"
 #include "ToolButton.h"
 #include "ToolPlugin.h"
+#include "TempoRenderController.h"
 #include "TransportBar.h"
 #include "VersionedSaveDialog.h"
 
@@ -259,6 +260,9 @@ MainWindow::MainWindow() :
 				this, SLOT(updatePlayPauseIcons()));
 
 	connect(Engine::getSong(), SIGNAL(modified()), SLOT(onSongModified()));
+
+	// The processing screen of a change of tempo (renders the recordings again)
+	new TempoRenderController{this};
 	connect(Engine::getSong(), SIGNAL(projectFileNameChanged()), SLOT(onProjectFileNameChanged()));
 
 	maximized = isMaximized();

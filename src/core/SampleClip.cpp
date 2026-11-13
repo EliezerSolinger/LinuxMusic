@@ -69,6 +69,10 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
 	//care about Clip position
 	connect( this, SIGNAL(positionChanged()), this, SLOT(updateTrackClips()));
+	// a recording moved under a tempo map may need another rendering
+	connect(this, &Clip::positionChanged, this, [this] {
+		if (isTempoBound()) { Engine::getSong()->requestStretchCheck(); }
+	});
 
 	updateTrackClips();
 }
@@ -112,6 +116,10 @@ SampleClip::SampleClip(const SampleClip& orig) :
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
 	//care about Clip position
 	connect( this, SIGNAL(positionChanged()), this, SLOT(updateTrackClips()));
+	// a recording moved under a tempo map may need another rendering
+	connect(this, &Clip::positionChanged, this, [this] {
+		if (isTempoBound()) { Engine::getSong()->requestStretchCheck(); }
+	});
 
 	updateTrackClips();
 }
@@ -189,6 +197,7 @@ void SampleClip::setActiveTake(int index)
 		m_renderedTiming.clear();
 	}
 	playFile(m_takes[index]);
+	if (isTempoBound()) { Engine::getSong()->requestStretchCheck(); }
 }
 
 
@@ -351,6 +360,12 @@ void SampleClip::updateLength()
 
 void SampleClip::tempoChanged()
 {
+	if (isTempoBound())
+	{
+		// A recording is musical: its place, length and start in it stay in ticks, and a rendering follows the tempo
+		m_startFrameOffset = startTimeOffset() * Engine::framesPerTick();
+		return;
+	}
 	Clip::setStartTimeOffset(std::round(1.0f * m_startFrameOffset / Engine::framesPerTick()));
 	updateLength();
 	emit sampleChanged();
@@ -361,6 +376,30 @@ void SampleClip::setStartTimeOffset(const TimePos& startTimeOffset)
 	m_startFrameOffset = startTimeOffset * Engine::framesPerTick();
 	Clip::setStartTimeOffset(startTimeOffset);
 }
+
+
+auto SampleClip::fileFrameAt(tick_t tick) const -> f_cnt_t
+{
+	if (!isTempoBound())
+	{
+		return static_cast<f_cnt_t>(Engine::framesPerTick(m_sample.sampleRate()) * tick);
+	}
+
+	// From the timing point before it on, the file plays at its own rate while the song plays at its tempo: at the
+	// timing the file was rendered to, that lands each later point on its tick
+	const auto& timing = currentTiming();
+	auto point = std::upper_bound(timing.begin(), timing.end(), tick,
+		[](tick_t value, const TimingPoint& p) { return value < p.tick; });
+	if (point != timing.begin()) { --point; }
+	const auto* song = Engine::getSong();
+	const auto start = startPosition().getTicks() + startTimeOffset().getTicks();
+	const auto engineRate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+	const auto fileRate = static_cast<double>(m_sample.sampleRate() > 0 ? m_sample.sampleRate() : engineRate);
+	const auto frame = point->frame + song->framesBetween(start + point->tick, start + tick) * fileRate / engineRate;
+	return static_cast<f_cnt_t>(std::max(0.0, std::round(frame)));
+}
+
+
 
 
 TimePos SampleClip::sampleLength() const
@@ -536,6 +575,9 @@ void SampleClip::loadSettings( const QDomElement & _this )
 		m_sample.setReversed(true);
 		emit wasReversed(); // tell SampleClipView to update the view
 	}
+
+	// Loaded or restored by undo: its rendering may not be the one the tempo now asks for
+	if (isTempoBound()) { Engine::getSong()->requestStretchCheck(); }
 }
 
 

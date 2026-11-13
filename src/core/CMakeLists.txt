@@ -93,6 +93,7 @@ set(LMMS_SRCS
 	core/SampleDecoder.cpp
 	core/SamplePlayHandle.cpp
 	core/SampleThumbnailCache.cpp
+	core/TimeStretcher.cpp
 	core/Scale.cpp
 	core/LmmsSemaphore.cpp
 	core/SerializingObject.cpp

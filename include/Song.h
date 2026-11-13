@@ -375,9 +375,14 @@ public:
 
 	/**
 	 * @returns the recordings whose timing at the song's tempo now differs from the one they play at. Those back at
-	 *          their original timing go back to their original file here and are no job.
+	 *          their original timing go back to their original file here and are no job. Clips playing the same
+	 *          recording at the same place (the parts of a split clip) share one target: render it once.
 	 */
 	auto stretchJobs() -> std::vector<StretchJob>;
+
+	//! Something may have changed the timing a recording must play at (a clip moved, a take chosen, a clip restored
+	//! by undo): the GUI checks stretchJobs() again
+	void requestStretchCheck() { emit stretchCheckRequested(); }
 
 	//! Any thread: the tick being heard now (the period being rendered, less the output's latency and the period
 	//! the engine hands the device ahead)
@@ -562,6 +567,7 @@ signals:
 	void modified();
 	void projectFileNameChanged();
 	void recordingProblem(const QString& message);
+	void stretchCheckRequested();
 	void scaleListChanged(int index);
 	void keymapListChanged(int index);
 } ;

@@ -837,9 +837,9 @@ auto Song::stretchJobs() -> std::vector<StretchJob>
 			auto* clip = dynamic_cast<SampleClip*>(sampleTrack->getClip(index));
 			if (!clip || !clip->isTempoBound()) { continue; }
 
-			// The timing the original's points have at the tempo now (the clip's place in the song is its start
-			// less its start in the recording)
-			const auto start = clip->startPosition().getTicks() - clip->startTimeOffset().getTicks();
+			// The timing the original's points have at the tempo now (the recording's place in the song is the
+			// clip's start plus its start offset, which is negative when the clip starts later in the recording)
+			const auto start = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
 			auto target = clip->originalTiming();
 			for (auto& point : target) { point.frame = framesBetween(start, start + point.tick); }
 
@@ -859,8 +859,18 @@ auto Song::stretchJobs() -> std::vector<StretchJob>
 			}
 			if (same(target, clip->currentTiming())) { continue; }
 
-			// "st<bpm>_<name>.wav" next to the original
+			// The parts of a split clip (comping) are one recording at one place: one rendering for all of them
 			const auto source = PathUtil::toAbsolute(clip->originalFile());
+			const auto shared = std::find_if(jobs.begin(), jobs.end(), [&](const StretchJob& job) {
+				return job.source == source && same(job.from, clip->originalTiming()) && same(job.to, target);
+			});
+			if (shared != jobs.end())
+			{
+				jobs.push_back({clip, source, clip->originalTiming(), target, shared->target, shared->seconds});
+				continue;
+			}
+
+			// "st<bpm>_<name>.wav" next to the original
 			const auto info = QFileInfo{source};
 			const auto bpm = static_cast<int>(std::lround(m_tempoMap.isEmpty() ? getTempo() : m_tempoMap.tempoAt(start)));
 			auto path = QString{};

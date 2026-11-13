@@ -125,9 +125,10 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			{
 				if (!sClip->isPlaying() && _start >= (sClip->startPosition() + sClip->startTimeOffset()))
 				{
-					auto bufferFramesPerTick = Engine::framesPerTick(sClip->sample().sampleRate());
-					f_cnt_t sampleStart = bufferFramesPerTick * ( _start - sClip->startPosition() - sClip->startTimeOffset() );
-					f_cnt_t clipFrameLength = bufferFramesPerTick * ( sClip->endPosition() - sClip->startPosition() - sClip->startTimeOffset() );
+					// Ticks from the start of the recording (the clip's start less its start offset)
+					const auto from = sClip->startPosition().getTicks() + sClip->startTimeOffset().getTicks();
+					f_cnt_t sampleStart = sClip->fileFrameAt(_start.getTicks() - from);
+					f_cnt_t clipFrameLength = sClip->fileFrameAt(sClip->endPosition().getTicks() - from);
 					f_cnt_t sampleBufferLength = sClip->sample().sampleSize();
 					//if the Clip smaller than the sample length we play only until Clip end
 					//else we play the sample to the end but nothing more

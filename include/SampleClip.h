@@ -124,6 +124,11 @@ public:
 	//! The timing the clip plays its file at now: the original one, or the one it was rendered to
 	auto currentTiming() const -> const Timing& { return m_renderedTiming.empty() ? m_originalTiming : m_renderedTiming; }
 
+	//! @returns the frame of the file the clip plays that sounds at @p tick from the start of the recording (the
+	//!          clip's start plus its start offset, which is negative when the clip starts later in it): by its timing
+	//!          for a recording, at the tempo now otherwise
+	auto fileFrameAt(tick_t tick) const -> f_cnt_t;
+
 	//! Binds the clip to the timing its recording @p file was played at
 	void setOriginalTiming(Timing timing, const QString& file);
 	//! Plays @p file, a rendering of the original to @p timing

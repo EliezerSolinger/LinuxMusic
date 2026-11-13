@@ -18,6 +18,7 @@ set(LMMS_TESTS
 	src/core/SpscRingTest.cpp
 	src/core/TempoMapTest.cpp
 	src/core/TimelineTest.cpp
+	src/core/TimeStretcherTest.cpp
 	src/core/TripleBufferTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 )
