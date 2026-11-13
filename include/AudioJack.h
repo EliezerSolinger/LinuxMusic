@@ -103,6 +103,8 @@ public:
 	};
 
 private slots:
+	//! A message box, or a warning without the GUI
+	static void tellUser(const QString& title, const QString& text);
 	void restartAfterZombified();
 
 private:

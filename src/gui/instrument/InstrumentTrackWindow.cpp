@@ -604,7 +604,8 @@ void InstrumentTrackWindow::dropEvent( QDropEvent* event )
 			i = m_track->loadInstrument(piakn.info.name(), &piakn.key);
 		}
 
-		i->loadFile( value );
+		// (none if the plugin did not load)
+		if (i) { i->loadFile(value); }
 
 		event->accept();
 		setFocus();

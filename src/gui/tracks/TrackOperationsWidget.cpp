@@ -36,6 +36,8 @@
 
 #include <algorithm>
 
+#include <memory>
+
 #include <QCheckBox>
 #include <QHBoxLayout>
 #include <QFileInfo>
@@ -287,11 +289,12 @@ void TrackOperationsWidget::updateMenu()
 				tr("MIDI file (*.mid)"));
 			if (path.isEmpty()) { return; }
 			if (!path.endsWith(".mid", Qt::CaseInsensitive)) { path += ".mid"; }
-			auto* filter = dynamic_cast<ExportFilter*>(Plugin::instantiate("midiexport", nullptr, nullptr));
+			// (a stand-in when the filter does not load: deleted all the same)
+			const auto plugin = std::unique_ptr<Plugin>{Plugin::instantiate("midiexport", nullptr, nullptr)};
+			auto* filter = dynamic_cast<ExportFilter*>(plugin.get());
 			if (!filter) { return; }
 			filter->tryExport({track}, {}, Engine::getSong()->getTempo(),
 				static_cast<int>(Engine::getSong()->masterPitchModel().value()), path.toStdString());
-			delete filter;
 		});
 	}
 	if (QMenu *mixerMenu = m_trackView->createMixerMenu(tr("Channel %1: %2"), tr("Assign to new Mixer Channel")))

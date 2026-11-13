@@ -28,6 +28,7 @@
 #include "MidiExport.h"
 
 #include <algorithm>
+#include <cmath>
 #include <stack>
 
 #include "Instrument.h"
@@ -35,6 +36,9 @@
 #include "InstrumentTrack.h"
 #include "LocaleHelper.h"
 #include "PatternTrack.h"
+#include "Engine.h"
+#include "Song.h"
+#include "TempoMap.h"
 #include "plugin_export.h"
 
 namespace lmms
@@ -199,6 +203,43 @@ bool MidiExport::tryExport(const TrackContainer::TrackList& tracks,
 	return true;
 }
 
+void MidiExport::writeTempoMap(MidiFile::Track& midiTrack, int tempo)
+{
+	// The song's ticks are 48 to a quarter note, the file's TicksPerBeat
+	const auto inFile = [](tick_t tick) {
+		return static_cast<tick_t>(static_cast<std::int64_t>(tick) * MidiFile::TicksPerBeat / (DefaultTicksPerBar / 4));
+	};
+	const auto* song = Engine::getSong();
+	const auto& map = song->tempoMap();
+	const auto meter = map.startMeter();
+	midiTrack.addTimeSignature(static_cast<std::uint8_t>(meter.numerator), static_cast<std::uint8_t>(meter.denominator), 0);
+	if (map.isEmpty())
+	{
+		midiTrack.addTempo(tempo, 0);
+		return;
+	}
+	const auto& markers = map.markers();
+	for (std::size_t index = 0; index < markers.size(); ++index)
+	{
+		const auto& marker = markers[index];
+		midiTrack.addTempo(static_cast<std::uint32_t>(std::lround(marker.bpm)), inFile(marker.tick));
+		if (marker.meter)
+		{
+			midiTrack.addTimeSignature(static_cast<std::uint8_t>(marker.meter->numerator),
+				static_cast<std::uint8_t>(marker.meter->denominator), inFile(marker.tick));
+		}
+		// A ramp: a step of the tempo at each quarter note of it
+		if (marker.ramp && index + 1 < markers.size())
+		{
+			const auto quarter = DefaultTicksPerBar / 4;
+			for (auto tick = marker.tick + quarter; tick < markers[index + 1].tick; tick += quarter)
+			{
+				midiTrack.addTempo(static_cast<std::uint32_t>(std::lround(map.tempoAt(tick))), inFile(tick));
+			}
+		}
+	}
+}
+
 void MidiExport::processTrack(Track& track, MidiFile::Track& midiTrack,
 	int tempo, int masterPitch, bool isPattern)
 {
@@ -210,7 +251,8 @@ void MidiExport::processTrack(Track& track, MidiFile::Track& midiTrack,
 	// Note that this only works decently if the current bank is a GM 1~128 one
 	// (which would be needed as the default either way for successful import).
 	// Pattern tracks are always bank 128 (see MidiImport), patch 0.
-	auto patch = instTrack.instrument()->midiPatch().value_or(MidiPatch{});
+	// (a track whose instrument did not load has none)
+	auto patch = instTrack.instrument() ? instTrack.instrument()->midiPatch().value_or(MidiPatch{}) : MidiPatch{};
 	if (patch.bank == 128)
 	{
 		// Drum track, so set its channel to 10
@@ -227,7 +269,7 @@ void MidiExport::processTrack(Track& track, MidiFile::Track& midiTrack,
 	}
 
 	// Add info about tempo, track name, bank select, and program change
-	midiTrack.addTempo(tempo, 0);
+	writeTempoMap(midiTrack, tempo);
 	midiTrack.addName(track.name().toStdString(), 0);
 	midiTrack.addPatch(patch, 0);
 

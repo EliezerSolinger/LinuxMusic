@@ -78,6 +78,7 @@ void InstrumentLoaderThread::run()
 {
 	Instrument *i = m_it->loadInstrument(m_name, nullptr,
 										 true /*always DnD*/);
+	if (!i) { return; } // (the plugin did not load)
 	QObject *parent = i->parent();
 	i->setParent( 0 );
 	i->moveToThread( m_containerThread );
@@ -653,7 +654,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 		PluginFactory::PluginInfoAndKey piakn =
 			getPluginFactory()->pluginSupportingExtension(FileItem::extension(value));
 		Instrument * i = it->loadInstrument(piakn.info.name(), &piakn.key);
-		i->loadFile( value );
+		if (i) { i->loadFile(value); } // (none if the plugin did not load)
 		//it->toggledInstrumentTrackButton( true );
 		_de->accept();
 	}

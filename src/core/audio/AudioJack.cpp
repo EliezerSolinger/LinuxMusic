@@ -143,13 +143,27 @@ AudioJack::~AudioJack()
 
 
 
+void AudioJack::tellUser(const QString& title, const QString& text)
+{
+	// A window if there is one (not when rendering from the command line)
+	if (gui::getGUI() == nullptr)
+	{
+		qWarning("%s: %s", qUtf8Printable(title), qUtf8Printable(text));
+		return;
+	}
+	QMessageBox::information(gui::getGUI()->mainWindow(), title, text);
+}
+
+
+
+
 void AudioJack::restartAfterZombified()
 {
 	if (initJackClient())
 	{
 		m_active = false;
 		startProcessing();
-		QMessageBox::information(gui::getGUI()->mainWindow(), tr("JACK client restarted"),
+		tellUser(tr("JACK client restarted"),
 			tr(	"LinuxMusic was kicked by JACK for some reason. "
 				"Therefore the JACK backend of LinuxMusic has been "
 				"restarted. You will have to make manual "
@@ -157,7 +171,7 @@ void AudioJack::restartAfterZombified()
 	}
 	else
 	{
-		QMessageBox::information(gui::getGUI()->mainWindow(), tr("JACK server down"),
+		tellUser(tr("JACK server down"),
 			tr(	"The JACK server seems to have been shutdown "
 				"and starting a new instance failed. "
 				"Therefore LinuxMusic is unable to proceed. "

@@ -130,7 +130,7 @@ private:
 		//! Possible event types, ordered from most important to least important
 		enum class Type
 		{
-			NoteOn, NoteOff, Tempo, BankSelectMSB, BankSelectLSB, ProgramChange, TrackName
+			NoteOn, NoteOff, Tempo, TimeSignature, BankSelectMSB, BankSelectLSB, ProgramChange, TrackName
 		};
 		using enum Type;
 
@@ -158,6 +158,14 @@ private:
 
 			//! Tempo of event (in BPM)
 			std::uint32_t tempo = 0;
+
+			//! A time signature: beats to the bar and their note value
+			struct
+			{
+				std::uint8_t numerator;
+				std::uint8_t denominator;
+			}
+			meter;
 
 			//! Bank select and program change
 			MidiPatch patch;
@@ -193,6 +201,9 @@ public:
 
 		//! Add a tempo mark
 		void addTempo(std::uint32_t tempo, tick_t time);
+
+		//! Add a time signature (a denominator of a power of two)
+		void addTimeSignature(std::uint8_t numerator, std::uint8_t denominator, tick_t time);
 
 		//! Add bank select and program change events
 		void addPatch(MidiPatch patch, tick_t time);

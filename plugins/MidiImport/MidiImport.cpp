@@ -29,6 +29,8 @@
 #include <QMessageBox>
 #include <QProgressDialog>
 
+#include <algorithm>
+#include <cmath>
 #include <sstream>
 #include <unordered_map>
 
@@ -45,6 +47,7 @@
 #include "MainWindow.h"
 #include "TimePos.h"
 #include "Song.h"
+#include "TempoMap.h"
 
 #include "plugin_export.h"
 
@@ -212,14 +215,11 @@ public:
 				isSF2 = true;
 				it_inst->loadFile(ConfigManager::inst()->sf2File());
 
-				auto bank = it_inst->childModel("bank");
-				assert(bank != nullptr);
-				bank->setValue(0);
+				// (models it has; checked, as an assert is gone in a release build)
+				if (auto bank = it_inst->childModel("bank")) { bank->setValue(0); }
 				currentPatch.bank = 0;
 
-				auto patch = it_inst->childModel("patch");
-				assert(patch != nullptr);
-				patch->setValue(0);
+				if (auto patch = it_inst->childModel("patch")) { patch->setValue(0); }
 				currentPatch.program = 0;
 			}
 			else { it_inst = it->loadInstrument("patman"); }
@@ -276,7 +276,7 @@ bool MidiImport::readSMF(TrackContainer* tc)
 	constexpr int MIDI_CC_COUNT = 128 + 1; // 0-127 (128) + pitch bend
 	constexpr int preTrackSteps = 2;
 	QProgressDialog pd(TrackContainer::tr("Importing MIDI-file..."),
-	TrackContainer::tr("Cancel"), 0, preTrackSteps, gui::getGUI()->mainWindow());
+	TrackContainer::tr("Cancel"), 0, preTrackSteps, gui::getGUI() ? gui::getGUI()->mainWindow() : nullptr);
 	pd.setWindowTitle(TrackContainer::tr("Please wait..."));
 	pd.setWindowModality(Qt::WindowModal);
 	pd.setMinimumDuration(0);
@@ -301,58 +301,74 @@ bool MidiImport::readSMF(TrackContainer* tc)
 	std::unordered_map<long, smfMidiChannel> chs;
 	// NOTE: unordered_map::operator[] creates a new element if none exists
 
-	MeterModel & timeSigMM = Engine::getSong()->getTimeSigModel();
-	auto nt = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
-	nt->setName(tr("MIDI Time Signature Numerator"));
-	auto dt = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
-	dt->setName(tr("MIDI Time Signature Denominator"));
-	auto timeSigNumeratorPat = new AutomationClip(nt);
-	timeSigNumeratorPat->setDisplayName(tr("Numerator"));
-	timeSigNumeratorPat->addObject(&timeSigMM.numeratorModel());
-	auto timeSigDenominatorPat = new AutomationClip(dt);
-	timeSigDenominatorPat->setDisplayName(tr("Denominator"));
-	timeSigDenominatorPat->addObject(&timeSigMM.denominatorModel());
+	// The song's ticks are 48 to a quarter note (Allegro's beat)
+	double ticksPerBeat = DefaultTicksPerBar / 4.0;
+	const auto tickOf = [&](double beat) {
+		return static_cast<tick_t>(std::clamp(std::llround(beat * ticksPerBeat), 0ll, static_cast<long long>(TimePos::MaxTicks)));
+	};
 
-	// TODO: adjust these to Time.Sig changes
-	double beatsPerBar = 4;
-	double ticksPerBeat = DefaultTicksPerBar / beatsPerBar;
-
-	// Time-sig changes
-	Alg_time_sigs* timeSigs = &seq->time_sig;
-	for (int s = 0; s < timeSigs->length(); ++s)
+	// The tempo along the song: the tempo map's markers (each holds its tempo up to the next one)
+	auto* song = Engine::getSong();
+	auto markers = std::vector<TempoMap::Marker>{};
 	{
-		Alg_time_sig timeSig = (*timeSigs)[s];
-		timeSigNumeratorPat->putValue(timeSig.beat * ticksPerBeat, timeSig.num);
-		timeSigDenominatorPat->putValue(timeSig.beat * ticksPerBeat, timeSig.den);
+		Alg_time_map* timeMap = seq->get_time_map();
+		Alg_beats& beats = timeMap->beats;
+		const auto addTempo = [&](double beat, double bpm) {
+			if (!std::isfinite(bpm) || bpm <= 0) { return; }
+			bpm = std::clamp(bpm, static_cast<double>(MinTempo), static_cast<double>(MaxTempo));
+			const auto tick = tickOf(beat);
+			// The same tempo again says nothing new
+			if (!markers.empty() && std::abs(markers.back().bpm - bpm) < 1e-6) { return; }
+			if (!markers.empty() && markers.back().tick == tick) { markers.back().bpm = bpm; }
+			else { markers.push_back({tick, bpm, false}); }
+		};
+		for (int i = 0; i < beats.len - 1; ++i)
+		{
+			const auto seconds = beats[i + 1].time - beats[i].time;
+			if (seconds <= 0) { continue; }
+			addTempo(beats[i].beat, (beats[i + 1].beat - beats[i].beat) / seconds * 60.0);
+		}
+		if (timeMap->last_tempo_flag && beats.len > 0) { addTempo(beats[beats.len - 1].beat, timeMap->last_tempo * 60.0); }
 	}
-	// manually call otherwise the pattern shows being 1 bar
-	timeSigNumeratorPat->updateLength();
-	timeSigDenominatorPat->updateLength();
+	if (!markers.empty() && markers.front().tick > 0) { markers.insert(markers.begin(), {0, static_cast<double>(song->getTempo()), false}); }
 
 	pd.setValue(2);
 
-	// Tempo stuff
-	auto tt = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
-	tt->setName(tr("Tempo"));
-	auto tap = new AutomationClip(tt);
-	tap->setDisplayName(tr("Tempo"));
-	tap->addObject(&Engine::getSong()->tempoModel());
-	if (tap)
+	// The time signatures: the first one the song's, the others changes in the tempo map (each starts a bar)
+	auto& meterModel = song->getTimeSigModel();
+	Alg_time_sigs* timeSigs = &seq->time_sig;
+	for (int s = 0; s < timeSigs->length(); ++s)
 	{
-		tap->clear();
-		Alg_time_map* timeMap = seq->get_time_map();
-		Alg_beats& beats = timeMap->beats;
-		for (int i = 0; i < beats.len - 1; ++i)
+		const Alg_time_sig timeSig = (*timeSigs)[s];
+		const auto meter = TempoMap::Meter{static_cast<int>(std::lround(timeSig.num)), static_cast<int>(std::lround(timeSig.den))};
+		const auto tick = tickOf(timeSig.beat);
+		if (tick == 0)
 		{
-			Alg_beat* b = &(beats[i]);
-			double tempo = (beats[i + 1].beat - b->beat) / (beats[i + 1].time - beats[i].time);
-			tap->putValue(b->beat * ticksPerBeat, tempo * 60.0);
+			meterModel.setNumerator(std::clamp(meter.numerator, 1, TempoMap::MaxNumerator));
+			meterModel.setDenominator(std::clamp(meter.denominator, 1, 32));
+			continue;
 		}
-		if (timeMap->last_tempo_flag)
+		if (!TempoMap::isValid(meter)) { continue; }
+		auto at = std::find_if(markers.begin(), markers.end(), [tick](const TempoMap::Marker& m) { return m.tick == tick; });
+		if (at == markers.end())
 		{
-			Alg_beat* b = &beats[beats.len - 1];
-			tap->putValue(b->beat * ticksPerBeat, timeMap->last_tempo * 60.0);
+			// The tempo there: the last marker's before it
+			auto bpm = static_cast<double>(song->getTempo());
+			for (const auto& marker : markers) { if (marker.tick < tick) { bpm = marker.bpm; } }
+			if (markers.empty()) { markers.push_back({0, bpm, false}); }
+			markers.push_back({tick, bpm, false, meter});
+			std::sort(markers.begin(), markers.end(), [](const auto& a, const auto& b) { return a.tick < b.tick; });
 		}
+		else { at->meter = meter; }
+	}
+
+	// Only a tempo at the start: the song's tempo, without a map
+	if (!markers.empty())
+	{
+		song->tempoModel().setValue(static_cast<float>(std::lround(markers.front().bpm)));
+		const bool onlyStart = markers.size() == 1;
+		if (onlyStart) { song->tempoMap().clear(); }
+		else { song->tempoMap().setMarkers(std::move(markers)); }
 	}
 
 	// Update the tempo to avoid crash when playing a project imported
@@ -442,8 +458,8 @@ bool MidiImport::readSMF(TrackContainer* tc)
 					if (ch->isSF2)
 					{
 						auto& pc = pcs[evt->chan];
-						AutomatableModel* objModel = ch->it_inst->childModel("patch");
-						assert(objModel != nullptr);
+						AutomatableModel* objModel = ch->it_inst ? ch->it_inst->childModel("patch") : nullptr;
+						if (objModel == nullptr) { continue; } // (checked: an assert is gone in a release build)
 						if (time == 0)
 						{
 							objModel->setInitValue(prog);

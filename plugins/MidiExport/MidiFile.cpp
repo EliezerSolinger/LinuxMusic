@@ -169,6 +169,11 @@ void MidiFile::Track::addTempo(std::uint32_t tempo, tick_t time)
 	addEvent({.type = Event::Tempo, .tempo = tempo}, time);
 }
 
+void MidiFile::Track::addTimeSignature(std::uint8_t numerator, std::uint8_t denominator, tick_t time)
+{
+	addEvent({.type = Event::TimeSignature, .meter = {.numerator = numerator, .denominator = denominator}}, time);
+}
+
 void MidiFile::Track::addPatch(MidiPatch patch, tick_t time)
 {
 	addEvent({.type = Event::BankSelectMSB, .patch = patch}, time);
@@ -263,6 +268,16 @@ void MidiFile::Track::writeSingleEventToBuffer(Event& event)
 			const auto usec = static_cast<std::uint32_t>(6e7 / event.tempo);
 			const auto usecBigEndian = std::bit_cast<std::array<std::uint8_t, 4>>(byteswapIfLE(usec));
 			writeBytes({usecBigEndian[1], usecBigEndian[2], usecBigEndian[3]});
+			break;
+		}
+		case MidiFile::Event::TimeSignature:
+		{
+			// The numerator, the denominator as a power of two, MIDI clocks to a metronome click (a beat's: 96 to
+			// a whole note), and 32nd notes to a quarter
+			auto power = std::uint8_t{0};
+			while ((1u << (power + 1)) <= event.meter.denominator && power < 7) { ++power; }
+			const auto clocks = static_cast<std::uint8_t>(std::max(1, 96 >> power));
+			writeBytes({0xFF, 0x58, 0x04, event.meter.numerator, power, clocks, 8});
 			break;
 		}
 		case MidiFile::Event::BankSelectMSB:

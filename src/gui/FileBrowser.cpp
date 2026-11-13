@@ -644,8 +644,8 @@ void FileBrowserTreeWidget::openInSlicerT(FileItem* item, bool songEditor)
 
 	auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, tc));
 
-	track->loadInstrument("slicert");
-	track->instrument()->loadFile(item->fullName());
+	// (none if it does not load, e.g. a plugin that crashed the program)
+	if (auto* slicer = track->loadInstrument("slicert")) { slicer->loadFile(item->fullName()); }
 }
 
 QList<QAction*> FileBrowserTreeWidget::getContextActions(FileItem* file, bool songEditor)
@@ -909,7 +909,7 @@ void FileBrowserTreeWidget::handleFile(FileItem * f, InstrumentTrack * it)
 					getPluginFactory()->pluginSupportingExtension(e);
 				i = it->loadInstrument(piakn.info.name(), &piakn.key);
 			}
-			i->loadFile( f->fullName() );
+			if (i) { i->loadFile(f->fullName()); } // (none if the plugin did not load)
 			break;
 		}
 

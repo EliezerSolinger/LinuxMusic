@@ -180,7 +180,7 @@ TimePos MidiClip::beatClipLength() const
 Note * MidiClip::addNote( const Note & _new_note, const bool _quant_pos )
 {
 	auto new_note = _new_note.clone();
-	if (_quant_pos && gui::getGUI()->pianoRoll())
+	if (_quant_pos && gui::getGUI() != nullptr && gui::getGUI()->pianoRoll())
 	{
 		new_note->quantizePos(gui::getGUI()->pianoRoll()->quantization());
 	}

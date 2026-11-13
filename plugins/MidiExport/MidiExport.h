@@ -128,6 +128,8 @@ public:
 
 private:
 	//! Process a given instrument track
+	//! The song's tempo and time signatures (its tempo map's, or @p tempo without one)
+	void writeTempoMap(MidiFile::Track& midiTrack, int tempo);
 	void processTrack(Track& track, MidiFile::Track& midiTrack,
 		int tempo, int masterPitch, bool isPattern = false);
 

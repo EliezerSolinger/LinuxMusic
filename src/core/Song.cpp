@@ -2406,8 +2406,9 @@ void Song::exportProjectMidi(const std::filesystem::path& filePath) const
 	TrackContainer::TrackList const & tracks = this->tracks();
 	TrackContainer::TrackList const & patternStoreTracks = Engine::patternStore()->tracks();
 
-	ExportFilter *exf = dynamic_cast<ExportFilter *> (Plugin::instantiate("midiexport", nullptr, nullptr));
-	if (exf)
+	// (the filter is the caller's to delete)
+	auto* plugin = Plugin::instantiate("midiexport", nullptr, nullptr);
+	if (auto* exf = dynamic_cast<ExportFilter*>(plugin))
 	{
 		exf->tryExport(tracks, patternStoreTracks, getTempo(), m_masterPitchModel.value(), filePath);
 	}
@@ -2415,6 +2416,7 @@ void Song::exportProjectMidi(const std::filesystem::path& filePath) const
 	{
 		qDebug() << "failed to load midi export filter!";
 	}
+	delete plugin;
 
 }
 
