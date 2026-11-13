@@ -26,7 +26,9 @@
 
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "Engine.h"
 #include "Note.h"
+#include "ProjectJournal.h"
 #include "TimePos.h"
 
 namespace lmms
@@ -92,13 +94,14 @@ void MidiRecorder::addNote(InstrumentTrack* track, TrackState& state, int key, v
 			break;
 		}
 	}
+	// The recording's undo step is the tracks' state before it (see Song::record()): nothing is journalled here
+	const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
 	if (!clip)
 	{
-		track->addJournalCheckPoint();
 		clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{start - start % TimePos::ticksPerBar()}));
 		if (!clip) { return; }
 	}
-	if (state.clips.insert(clip).second) { clip->addJournalCheckPoint(); }
+	state.clips.insert(clip);
 
 	const auto length = std::max<tick_t>(1, end - start);
 	const auto* note = clip->addNote(Note{TimePos{length}, TimePos{start - clip->startPosition()}, key, volume}, false);
@@ -122,6 +125,7 @@ void MidiRecorder::stop(tick_t atTick)
 		// Replace: what was in the recorded stretch before goes
 		if (state.mode == Mode::Replace)
 		{
+			const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
 			for (auto* clip : state.clips)
 			{
 				auto toRemove = std::vector<Note*>{};

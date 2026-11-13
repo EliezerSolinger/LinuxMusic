@@ -38,6 +38,7 @@
 #include "MidiRecorder.h"
 #include "ConfigManager.h"
 #include "PathUtil.h"
+#include "ProjectJournal.h"
 #include "Engine.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -532,6 +533,52 @@ private slots:
 		const bool hasNew = std::any_of(existing->notes().begin(), existing->notes().end(),
 			[bar](const Note* note) { return note->pos().getTicks() == bar + 50 && note->key() == 64; });
 		QVERIFY(hasNew);
+	}
+
+	void oneUndoTakesTheRecordingBack()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* journal = Engine::projectJournal();
+		auto* device = new LoopbackDevice{engine, 256, 256};
+		engine->setAudioDevice(device, false);
+		const auto bar = TimePos::ticksPerBar();
+
+		auto* first = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		auto* second = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		const auto wasJournalling = journal->isJournalling();
+		journal->setJournalling(true);
+		const auto cleanUp = qScopeGuard([&] {
+			song->stop();
+			journal->setJournalling(wasJournalling);
+			const auto guard = engine->requestChangesGuard();
+			delete first;
+			delete second;
+		});
+		first->recordArmModel()->setValue(true);
+		second->recordArmModel()->setValue(true);
+
+		song->setPlayPos(0, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		auto& recorder = song->midiRecorder();
+		recorder.noteOn(first, 60, 100, 10);
+		recorder.noteOff(first, 60, 50);
+		recorder.noteOn(second, 62, 100, bar + 10);
+		recorder.noteOff(second, 62, bar + 50);
+		for (int callback = 0; callback < 400; ++callback) { device->callback(256); }
+		song->stop();
+		QCOMPARE(first->numOfClips(), 1);
+		QCOMPARE(second->numOfClips(), 1);
+
+		// One undo: both tracks as they were
+		journal->undo();
+		QCOMPARE(first->numOfClips(), 0);
+		QCOMPARE(second->numOfClips(), 0);
+
+		// One redo: the recording again
+		journal->redo();
+		QCOMPARE(first->numOfClips(), 1);
+		QCOMPARE(second->numOfClips(), 1);
 	}
 
 	void monitoringPlaysTheInputThroughTheTrack_data()

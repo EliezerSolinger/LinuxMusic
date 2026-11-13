@@ -854,6 +854,13 @@ auto Song::record() -> bool
 		return false;
 	}
 
+	// One undo step takes the recording back: the armed tracks' state before it
+	{
+		const auto group = ProjectJournal::Group{Engine::projectJournal()};
+		for (const auto& request : requests) { request.track->addJournalCheckPoint(); }
+		for (auto* track : midiTracks) { track->addJournalCheckPoint(); }
+	}
+
 	// The input must be open before the first period is recorded (an armed track has opened it already)
 	if (!requests.empty()) { Engine::audioEngine()->setCaptureEnabled(true); }
 
@@ -956,7 +963,9 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 			continue;
 		}
 		auto* track = static_cast<SampleTrack*>(take.track);
-		track->addJournalCheckPoint();
+
+		// The recording's undo step is the tracks' state before it (see record()): nothing is journalled here
+		const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
 
 		// The passes of a loop begin on the same tick: they become the takes of one clip, the last pass the active
 		// take. A pass shorter than 90% of the longest (stopped before the loop's end) is dropped.

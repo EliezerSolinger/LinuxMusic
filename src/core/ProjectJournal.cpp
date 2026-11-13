@@ -54,30 +54,32 @@ ProjectJournal::ProjectJournal() :
 
 void ProjectJournal::undo()
 {
-	while( !m_undoCheckPoints.isEmpty() )
+	// One step: a checkpoint, or all of a group's (objects that are gone are skipped)
+	int group = -1;
+	while (!m_undoCheckPoints.isEmpty())
 	{
+		if (group != -1 && m_undoCheckPoints.top().group != group) { break; }
 		CheckPoint c = m_undoCheckPoints.pop();
 		JournallingObject *jo = m_joIDs[c.joID];
+		if (!jo) { continue; }
 
-		if( jo )
+		DataFile curState( DataFile::Type::JournalData );
+		jo->saveState( curState, curState.content() );
+		m_redoCheckPoints.push( CheckPoint( c.joID, curState, c.group ) );
+
+		bool prev = isJournalling();
+		setJournalling( false );
+		jo->restoreState( c.data.content().firstChildElement() );
+		setJournalling( prev );
+		Engine::getSong()->setModified();
+
+		// loading AutomationClip connections correctly
+		if (!c.data.content().elementsByTagName("automationclip").isEmpty())
 		{
-			DataFile curState( DataFile::Type::JournalData );
-			jo->saveState( curState, curState.content() );
-			m_redoCheckPoints.push( CheckPoint( c.joID, curState ) );
-
-			bool prev = isJournalling();
-			setJournalling( false );
-			jo->restoreState( c.data.content().firstChildElement() );
-			setJournalling( prev );
-			Engine::getSong()->setModified();
-
-			// loading AutomationClip connections correctly
-			if (!c.data.content().elementsByTagName("automationclip").isEmpty())
-			{
-				AutomationClip::resolveAllIDs();
-			}
-			break;
+			AutomationClip::resolveAllIDs();
 		}
+		if (c.group == 0) { break; }
+		group = c.group;
 	}
 }
 
@@ -85,24 +87,25 @@ void ProjectJournal::undo()
 
 void ProjectJournal::redo()
 {
-	while( !m_redoCheckPoints.isEmpty() )
+	int group = -1;
+	while (!m_redoCheckPoints.isEmpty())
 	{
+		if (group != -1 && m_redoCheckPoints.top().group != group) { break; }
 		CheckPoint c = m_redoCheckPoints.pop();
 		JournallingObject *jo = m_joIDs[c.joID];
+		if (!jo) { continue; }
 
-		if( jo )
-		{
-			DataFile curState( DataFile::Type::JournalData );
-			jo->saveState( curState, curState.content() );
-			m_undoCheckPoints.push( CheckPoint( c.joID, curState ) );
+		DataFile curState( DataFile::Type::JournalData );
+		jo->saveState( curState, curState.content() );
+		m_undoCheckPoints.push( CheckPoint( c.joID, curState, c.group ) );
 
-			bool prev = isJournalling();
-			setJournalling( false );
-			jo->restoreState( c.data.content().firstChildElement() );
-			setJournalling( prev );
-			Engine::getSong()->setModified();
-			break;
-		}
+		bool prev = isJournalling();
+		setJournalling( false );
+		jo->restoreState( c.data.content().firstChildElement() );
+		setJournalling( prev );
+		Engine::getSong()->setModified();
+		if (c.group == 0) { break; }
+		group = c.group;
 	}
 }
 
@@ -127,13 +130,29 @@ void ProjectJournal::addJournalCheckPoint( JournallingObject *jo )
 		DataFile dataFile( DataFile::Type::JournalData );
 		jo->saveState( dataFile, dataFile.content() );
 
-		m_undoCheckPoints.push( CheckPoint( jo->id(), dataFile ) );
+		m_undoCheckPoints.push( CheckPoint( jo->id(), dataFile, m_currentGroup ) );
 		if( m_undoCheckPoints.size() > MAX_UNDO_STATES )
 		{
 			m_undoCheckPoints.remove( 0, m_undoCheckPoints.size() - MAX_UNDO_STATES );
 		}
 	}
 }
+
+
+void ProjectJournal::beginGroup()
+{
+	if (m_groupDepth++ == 0) { m_currentGroup = ++m_lastGroup; }
+}
+
+
+
+
+void ProjectJournal::endGroup()
+{
+	if (m_groupDepth > 0 && --m_groupDepth == 0) { m_currentGroup = 0; }
+}
+
+
 
 
 jo_id_t ProjectJournal::allocID(JournallingObject* obj)

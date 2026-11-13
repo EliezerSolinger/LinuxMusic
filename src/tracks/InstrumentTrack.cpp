@@ -39,6 +39,7 @@
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "PianoRoll.h"
+#include "ProjectJournal.h"
 #include "Pitch.h"
 #include "Song.h"
 
@@ -971,7 +972,9 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	if (!Engine::getSong()->isSavingProject() ||
 	    !Engine::getSong()->getSaveOptions().discardMIDIConnections.value())
 	{
-		// Don't save auto assigned midi device connection
+		// Don't save auto assigned midi device connection. Unassigning it for the moment is no change of the
+		// project's: it must not be journalled (every save of the track made two undo steps of it)
+		const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
 		bool hasAuto = m_hasAutoMidiDev;
 		autoAssignMidiDevice(false);
 

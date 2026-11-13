@@ -57,6 +57,41 @@ public:
 
 	void addJournalCheckPoint( JournallingObject *jo );
 
+	/**
+	 * Groups the checkpoints added until endGroup() into one step: one undo restores them all (e.g. the tracks of a
+	 * recording). Groups nest; the outermost one counts.
+	 */
+	void beginGroup();
+	void endGroup();
+
+	//! Stops journalling for its lifetime (changes made as part of a step journalled before)
+	class Pause
+	{
+	public:
+		explicit Pause(ProjectJournal* journal) : m_journal{journal}, m_was{journal->isJournalling()}
+		{
+			m_journal->setJournalling(false);
+		}
+		~Pause() { m_journal->setJournalling(m_was); }
+		Pause(const Pause&) = delete;
+		auto operator=(const Pause&) -> Pause& = delete;
+	private:
+		ProjectJournal* m_journal;
+		bool m_was;
+	};
+
+	//! Begins a group for its lifetime
+	class Group
+	{
+	public:
+		explicit Group(ProjectJournal* journal) : m_journal{journal} { m_journal->beginGroup(); }
+		~Group() { m_journal->endGroup(); }
+		Group(const Group&) = delete;
+		auto operator=(const Group&) -> Group& = delete;
+	private:
+		ProjectJournal* m_journal;
+	};
+
 	bool isJournalling() const
 	{
 		return m_journalling;
@@ -108,13 +143,16 @@ private:
 
 	struct CheckPoint
 	{
-		CheckPoint( jo_id_t initID = 0, const DataFile& initData = DataFile( DataFile::Type::JournalData ) ) :
+		CheckPoint( jo_id_t initID = 0, const DataFile& initData = DataFile( DataFile::Type::JournalData ),
+			int initGroup = 0 ) :
 			joID( initID ),
-			data( initData )
+			data( initData ),
+			group( initGroup )
 		{
 		}
 		jo_id_t joID;
 		DataFile data;
+		int group; //!< checkpoints of one group (not 0) are one step
 	} ;
 	using CheckPointStack = QStack<CheckPoint>;
 
@@ -125,6 +163,10 @@ private:
 	CheckPointStack m_redoCheckPoints;
 
 	bool m_journalling;
+
+	int m_groupDepth = 0;
+	int m_currentGroup = 0;
+	int m_lastGroup = 0;
 
 } ;
 
