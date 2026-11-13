@@ -481,14 +481,14 @@ void InstrumentTrackView::addPinConnectorAction(QMenu* menu)
 	const auto addAction = [=, this](const AudioPortsModel* pc = nullptr) {
 		if (pc)
 		{
-			auto pcAction = menu->addAction(embed::getIconPixmap("tool"), tr("Pin connector"),
+			auto pcAction = menu->addAction(embed::getIconPixmap("pin_connector"), tr("Pin connector"),
 				this, &InstrumentTrackView::togglePinConnector);
 
 			pcAction->setToolTip(pc->getChannelCountText());
 		}
 		else
 		{
-			auto pcAction = menu->addAction(embed::getIconPixmap("tool"), tr("Pin connector"));
+			auto pcAction = menu->addAction(embed::getIconPixmap("pin_connector"), tr("Pin connector"));
 			pcAction->setDisabled(true);
 		}
 	};

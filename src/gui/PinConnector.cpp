@@ -82,7 +82,7 @@ PinConnector::PinConnector(AudioPortsModel* model)
 	m_subWindow = getGUI()->mainWindow()->addWindowedWidget(m_scrollArea);
 	m_subWindow->setAttribute(Qt::WA_DeleteOnClose, false);
 	m_subWindow->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
-	m_subWindow->setWindowIcon(embed::getIconPixmap("tool"));
+	m_subWindow->setWindowIcon(embed::getIconPixmap("pin_connector"));
 
 	// No maximize button
 	auto flags = m_subWindow->windowFlags();

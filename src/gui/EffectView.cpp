@@ -108,7 +108,7 @@ EffectView::EffectView(Effect* _model, QWidget* _parent, AudioPortsModel* audioP
 	{
 		const auto formatString = tr("Pin connector\n%1");
 
-		m_pinConnectorButton = new QPushButton(embed::getIconPixmap("tool", 20, 20), "", this);
+		m_pinConnectorButton = new QPushButton(embed::getIconPixmap("pin_connector", 20, 20), "", this);
 		m_pinConnectorButton->setToolTip(formatString.arg(ap->getChannelCountText()));
 
 		connect(ap, &AudioPortsModel::propertiesChanged, [=, this]() {
