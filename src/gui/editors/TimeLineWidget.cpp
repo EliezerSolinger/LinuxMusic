@@ -191,6 +191,23 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 			p.drawText(cx + 5, ((height() - fontHeight) / 2) + fontAscent, QString::number(bar.index + 1));
 		});
 	}
+	else if (m_barLength > 0 && m_barLength != TimePos::ticksPerBar())
+	{
+		// A clip's bars, in the time signature where it is (see setBarLength())
+		const auto barPixels = m_ppb * m_barLength / TimePos::ticksPerBar();
+		int interval = 1;
+		while (interval * barPixels < MIN_BAR_LABEL_DISTANCE) { interval *= 2; }
+		for (auto bar = std::max(0, m_begin.getTicks() / m_barLength); ; ++bar)
+		{
+			const int cx = markerX(TimePos{bar * m_barLength});
+			if (cx >= width()) { break; }
+			if (cx < m_xOffset || bar % interval != 0) { continue; }
+			p.setPen(barLineColor);
+			p.drawLine(cx, 5, cx, height() - 6);
+			p.setPen(barNumberColor);
+			p.drawText(cx + 5, ((height() - fontHeight) / 2) + fontAscent, QString::number(bar + 1));
+		}
+	}
 	else
 	{
 		bar_t barNumber = m_begin.getBar();
@@ -247,6 +264,16 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 			height() - marker.height(), marker);
 	}
 }
+
+void TimeLineWidget::setBarLength(tick_t ticks)
+{
+	if (ticks == m_barLength) { return; }
+	m_barLength = ticks;
+	update();
+}
+
+
+
 
 auto TimeLineWidget::followsSongBars() const -> bool
 {

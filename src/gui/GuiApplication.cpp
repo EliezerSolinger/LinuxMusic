@@ -23,6 +23,8 @@
  */
 
 #include "GuiApplication.h"
+#include "Track.h"
+#include "MidiClip.h"
 
 #include "ExportWizard.h"
 
@@ -357,6 +359,23 @@ GuiApplication::GuiApplication()
 		if (screenshotAction == "arrangement")
 		{
 			QTimer::singleShot(1500, m_mainWindow, [this] { m_mainWindow->resize(1700, 900); });
+		}
+		// =pianoroll opens the first instrument track's last clip in the piano roll
+		if (screenshotAction == "pianoroll")
+		{
+			QTimer::singleShot(1500, m_mainWindow, [this] {
+				m_mainWindow->resize(1700, 900);
+				for (auto* track : Engine::getSong()->tracks())
+				{
+					if (track->type() != Track::Type::Instrument || track->getClips().empty()) { continue; }
+					if (auto* clip = dynamic_cast<MidiClip*>(track->getClips().back()))
+					{
+						m_pianoRoll->setCurrentMidiClip(clip);
+						m_pianoRoll->parentWidget()->show();
+					}
+					break;
+				}
+			});
 		}
 		if (screenshotAction == "regions")
 		{

@@ -74,7 +74,12 @@ Motor e estabilidade:
   guardados (e salvos como estavam), e adicioná-lo pede confirmação. Configurações → Desempenho → Plugins lista os
   suspeitos, com "Carregar de novo". Rodar isolado pela ponte do Carla não é possível para os efeitos nativos, LV2 e
   LADSPA (o Carla não tem um invólucro de efeito para eles no LMMS); VST e ZynAddSubFX já rodam em outro processo
-- [ ] **Fórmula de compasso por marcador** no mapa de tempo
+- [x] **Fórmula de compasso por marcador** no mapa de tempo: um marcador pode mudar a fórmula (um compasso começa
+  ali; o cortado antes termina ali); a do início é a da música. A régua, a grade e o encaixe do Arranjo seguem os
+  compassos (o encaixe é por posição em compassos, igual ao de sempre sem mudanças), assim como o metrônomo (acento
+  no 1 de cada compasso), o pré-roll, o mostrador, as setas, inserir/remover compasso, o tempo do Carla e dos VST, o
+  MIDI exportado e importado, e o Piano Roll e o Editor de Automação (na fórmula de onde o clipe começa). A faixa de
+  tempo mostra e edita a fórmula
 - [x] **Latência dos plugins:** VST informa o `initialDelay` do plugin (ao carregar e quando ele avisa que mudou);
   o Carla soma a dos plugins ligados do rack (no patchbay, a maior, porque as ligações não chegam ao host); o
   ZynAddSubFX não atrasa a saída, então 0 está certo

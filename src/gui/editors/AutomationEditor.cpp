@@ -106,6 +106,8 @@ AutomationEditor::AutomationEditor() :
 				Qt::QueuedConnection );
 	connect( Engine::getSong(), SIGNAL(timeSignatureChanged(int,int)),
 						this, SLOT(update()));
+	// (the clip's bars: the time signature where it is)
+	connect(&Engine::getSong()->tempoMap(), &TempoMap::changed, this, qOverload<>(&QWidget::update));
 
 	//keeps the direction of the widget, undepended on the locale
 	setLayoutDirection( Qt::LeftToRight );
@@ -1164,31 +1166,23 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 		}
 
 
-		// alternating shades for better contrast
-		float timeSignature = static_cast<float>( Engine::getSong()->getTimeSigModel().getNumerator() )
-				/ static_cast<float>( Engine::getSong()->getTimeSigModel().getDenominator() );
-		float zoomFactor = m_zoomXLevels[m_zoomingXModel.value()];
-		//the bars which disappears at the left side by scrolling
-		int leftBars = m_currentPosition * zoomFactor / TimePos::ticksPerBar();
+		// The clip's bars, in the time signature where it is (the ruler numbers the same ones)
+		const auto meter = clipMeter();
+		const auto barTicks = std::max(tick_t{1}, meter.ticksPerBar());
+		m_timeLine->setBarLength(barTicks);
 
-		//iterates the visible bars and draw the shading on uneven bars
-		for( int x = VALUES_WIDTH, barCount = leftBars; x < width() + m_currentPosition * zoomFactor / timeSignature; x += m_ppb, ++barCount )
+		// alternating shades for better contrast (every other bar, from the clip's start)
+		const auto firstBar = static_cast<int>(std::floor(static_cast<double>(m_currentPosition) / barTicks));
+		for (auto bar = firstBar; xCoordOfTick(bar * barTicks) < width(); ++bar)
 		{
-			if( ( barCount + leftBars )  % 2 != 0 )
-			{
-				p.fillRect(
-					x - m_currentPosition * zoomFactor / timeSignature,
-					TOP_MARGIN,
-					m_ppb,
-					height() - (SCROLLBAR_SIZE + TOP_MARGIN),
-					m_backgroundShade
-				);
-			}
+			if (bar % 2 == 0) { continue; }
+			const auto left = xCoordOfTick(bar * barTicks);
+			p.fillRect(left, TOP_MARGIN, xCoordOfTick((bar + 1) * barTicks) - left,
+				height() - (SCROLLBAR_SIZE + TOP_MARGIN), m_backgroundShade);
 		}
 
 		// Draw the beat grid
-		int ticksPerBeat = DefaultTicksPerBar /
-			Engine::getSong()->getTimeSigModel().getDenominator();
+		const int ticksPerBeat = std::max(tick_t{1}, meter.ticksPerBeat());
 
 		for (int tick = m_currentPosition - m_currentPosition % ticksPerBeat, x = xCoordOfTick(tick); x <= width();
 			 tick += ticksPerBeat, x = xCoordOfTick(tick))
@@ -1285,8 +1279,8 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 		}
 
 		// and finally bars
-		for (int tick = m_currentPosition - m_currentPosition % TimePos::ticksPerBar(), x = xCoordOfTick(tick);
-			 x <= width(); tick += TimePos::ticksPerBar(), x = xCoordOfTick(tick))
+		for (int tick = m_currentPosition - m_currentPosition % barTicks, x = xCoordOfTick(tick);
+			 x <= width(); tick += barTicks, x = xCoordOfTick(tick))
 		{
 			p.setPen(m_barLineColor);
 			p.drawLine( x, grid_bottom, x, x_line_end );
@@ -1418,6 +1412,20 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 	{
 		p.drawPixmap(mousePosition + QPoint(8, 8), *cursor);
 	}
+}
+
+
+
+
+auto AutomationEditor::clipMeter() const -> TempoMap::Meter
+{
+	auto* song = Engine::getSong();
+	const auto& map = song->tempoMap();
+	if (m_clip && m_clip->getTrack() && m_clip->getTrack()->trackContainer() == song)
+	{
+		return map.meterAt(m_clip->startPosition().getTicks());
+	}
+	return map.startMeter();
 }
 
 

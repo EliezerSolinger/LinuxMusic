@@ -35,6 +35,7 @@
 #include "ComboBoxModel.h"
 #include "SerializingObject.h"
 #include "Note.h"
+#include "TempoMap.h"
 #include "LmmsTypes.h"
 #include "Song.h"
 #include "StepRecorder.h"
@@ -258,6 +259,9 @@ signals:
 
 
 private:
+	//! The time signature of the clip's bars: where it starts in the song (one of a pattern: the song's at the start)
+	auto clipMeter() const -> TempoMap::Meter;
+
 	enum class Action
 	{
 		None,

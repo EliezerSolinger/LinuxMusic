@@ -147,6 +147,9 @@ public:
 
 	void addToolButtons(QToolBar* _tool_bar );
 
+	//! The ticks of the bars it numbers, for a clip editor (0: the song's time signature at the start)
+	void setBarLength(tick_t ticks);
+
 	inline int markerX( const TimePos & _t ) const
 	{
 		return m_xOffset + static_cast<int>( ( _t - m_begin ) *
@@ -223,6 +226,9 @@ private:
 	// Width of the unused region on the widget's left (above track labels or piano)
 	int m_xOffset;
 	float m_ppb;
+	//! The ticks of its bars (a clip editor's: the time signature where the clip is); 0, those at the song's start
+	tick_t m_barLength = 0;
+
 	//! Whether its bars are the song's with changes of the time signature (the Arrangement's, with them)
 	auto followsSongBars() const -> bool;
 	//! @p pos on the snap's grid, in the bars it shows

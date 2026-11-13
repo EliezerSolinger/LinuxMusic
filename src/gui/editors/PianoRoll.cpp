@@ -430,6 +430,8 @@ PianoRoll::PianoRoll() :
 
 	connect( Engine::getSong(), SIGNAL(timeSignatureChanged(int,int)),
 						this, SLOT(update()));
+	// (the clip's bars: the time signature where it is)
+	connect(&Engine::getSong()->tempoMap(), &TempoMap::changed, this, qOverload<>(&QWidget::update));
 
 	//connection for selection from timeline
 	connect( m_timeLine, SIGNAL(regionSelectedFromPixels(int,int)),
@@ -836,6 +838,20 @@ void PianoRoll::loadMarkedSemiTones(const QDomElement & de)
 	QList<int>::iterator new_end = std::unique(m_markedSemiTones.begin(), m_markedSemiTones.end());
 	m_markedSemiTones.erase(new_end, m_markedSemiTones.end());
 }
+
+
+auto PianoRoll::clipMeter() const -> TempoMap::Meter
+{
+	auto* song = Engine::getSong();
+	const auto& map = song->tempoMap();
+	if (m_midiClip && m_midiClip->getTrack() && m_midiClip->getTrack()->trackContainer() == song)
+	{
+		return map.meterAt(m_midiClip->startPosition().getTicks());
+	}
+	return map.startMeter();
+}
+
+
 
 
 void PianoRoll::setCurrentMidiClip( MidiClip* newMidiClip )
@@ -3596,31 +3612,23 @@ void PianoRoll::paintEvent(QPaintEvent * pe )
 		// don't draw over keys
 		p.setClipRect(m_whiteKeyWidth, keyAreaTop(), width(), noteEditBottom() - keyAreaTop());
 
-		// draw alternating shading on bars
-		float timeSignature =
-			static_cast<float>(Engine::getSong()->getTimeSigModel().getNumerator()) /
-			static_cast<float>(Engine::getSong()->getTimeSigModel().getDenominator());
-		float zoomFactor = m_zoomLevels[m_zoomingModel.value()];
-		//the bars which disappears at the left side by scrolling
-		int leftBars = m_currentPosition * zoomFactor / TimePos::ticksPerBar();
-		//iterates the visible bars and draw the shading on uneven bars
-		for (int x = m_whiteKeyWidth, barCount = leftBars;
-			x < width() + m_currentPosition * zoomFactor / timeSignature;
-			x += m_ppb, ++barCount)
+		// The clip's bars, in the time signature where it is (the ruler numbers the same ones)
+		const auto meter = clipMeter();
+		const auto barTicks = std::max(tick_t{1}, meter.ticksPerBar());
+		m_timeLine->setBarLength(barTicks);
+
+		// draw alternating shading on bars (every other one, from the clip's start)
+		const auto firstBar = static_cast<int>(std::floor(static_cast<double>(m_currentPosition) / barTicks));
+		for (auto bar = firstBar; xCoordOfTick(bar * barTicks) < width(); ++bar)
 		{
-			if ((barCount + leftBars) % 2 != 0)
-			{
-				p.fillRect(x - m_currentPosition * zoomFactor / timeSignature,
-					PR_TOP_MARGIN,
-					m_ppb,
-					height() - (PR_BOTTOM_MARGIN + PR_TOP_MARGIN),
-					m_backgroundShade);
-			}
+			if (bar % 2 == 0) { continue; }
+			const auto left = xCoordOfTick(bar * barTicks);
+			p.fillRect(left, PR_TOP_MARGIN, xCoordOfTick((bar + 1) * barTicks) - left,
+				height() - (PR_BOTTOM_MARGIN + PR_TOP_MARGIN), m_backgroundShade);
 		}
 
 		// draw vertical beat lines
-		int ticksPerBeat = DefaultTicksPerBar /
-			Engine::getSong()->getTimeSigModel().getDenominator();
+		const int ticksPerBeat = std::max(tick_t{1}, meter.ticksPerBeat());
 		p.setPen(m_beatLineColor);
 		for(tick = m_currentPosition - m_currentPosition % ticksPerBeat,
 			x = xCoordOfTick( tick );
@@ -3632,10 +3640,10 @@ void PianoRoll::paintEvent(QPaintEvent * pe )
 
 		// draw vertical bar lines
 		p.setPen(m_barLineColor);
-		for(tick = m_currentPosition - m_currentPosition % TimePos::ticksPerBar(),
+		for(tick = m_currentPosition - m_currentPosition % barTicks,
 			x = xCoordOfTick( tick );
 			x <= width();
-			tick += TimePos::ticksPerBar(), x = xCoordOfTick(tick))
+			tick += barTicks, x = xCoordOfTick(tick))
 		{
 			p.drawLine(x, PR_TOP_MARGIN, x, noteEditBottom());
 		}
