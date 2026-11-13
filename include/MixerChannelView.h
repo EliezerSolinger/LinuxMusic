@@ -80,6 +80,9 @@ public:
 	void reset();
 
 	int channelIndex() const { return m_channelIndex; }
+
+	//! Colours the fader's handle by what the channel is (master, effect return or channel)
+	void updateFaderKnob();
 	void setChannelIndex(int index);
 
 	QBrush backgroundActive() const { return m_backgroundActive; }

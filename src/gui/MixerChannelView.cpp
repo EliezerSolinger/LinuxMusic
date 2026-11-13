@@ -637,6 +637,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	soloMuteLayout->addStretch(1);
 
 	m_fader = new Fader{&mixerChannel->m_volumeModel, tr("Fader %1").arg(channelIndex), this};
+	updateFaderKnob();
 
 	m_peakIndicator = new PeakIndicator(this);
 	connect(m_fader, &Fader::peakChanged, m_peakIndicator, &PeakIndicator::updatePeak);
@@ -755,8 +756,10 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 		auto preFaders = new QHBoxLayout();
 		preFaders->setContentsMargins(0, 0, 0, 0);
 		preFaders->setSpacing(2);
-		m_preFaders[0] = new Fader{&master.m_preLeftModel, tr("Pre master left"), this};
-		m_preFaders[1] = new Fader{&master.m_preRightModel, tr("Pre master right"), this};
+		m_preFaders[0] = new Fader{&master.m_preLeftModel, tr("Pre master left"), this,
+			embed::getIconPixmap("fader_knob_pre")};
+		m_preFaders[1] = new Fader{&master.m_preRightModel, tr("Pre master right"), this,
+			embed::getIconPixmap("fader_knob_pre")};
 		for (const auto fader : m_preFaders)
 		{
 			fader->setFixedWidth(PreFaderWidth);
@@ -811,6 +814,16 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	// Effects dropped from the browser go to the end of the channel's effects
 	setAcceptDrops(true);
 }
+
+void MixerChannelView::updateFaderKnob()
+{
+	// The handle's colour says what the fader is: the master's (POST) red, an effect return's blue, a channel's
+	// green (the master's PRE faders are orange)
+	auto* channel = Engine::mixer()->mixerChannel(m_channelIndex);
+	m_fader->setKnob(embed::getIconPixmap(channel->isMaster() ? "fader_knob_post"
+		: channel->m_fxReturn ? "fader_knob_fx" : "fader_knob"));
+}
+
 
 void MixerChannelView::dragEnterEvent(QDragEnterEvent* event)
 {

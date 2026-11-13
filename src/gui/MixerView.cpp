@@ -661,6 +661,7 @@ void MixerView::placeChannelViews()
 	{
 		const bool fxReturn = getMixer()->mixerChannel(i)->m_fxReturn;
 		(fxReturn ? m_fxReturnsLayout : chLayout)->addWidget(m_mixerChannelViews[i]);
+		m_mixerChannelViews[i]->updateFaderKnob();
 	}
 	chLayout->addWidget(m_ghostChannel);
 	m_channelAreaWidget->adjustSize();

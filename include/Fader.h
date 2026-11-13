@@ -78,6 +78,9 @@ public:
 	Fader(FloatModel* model, const QString& name, QWidget* parent, const QPixmap& knob, bool modelIsLinear = true);
 	~Fader() override = default;
 
+	//! Draws the handle with @p knob (its size must be the same as the handle's)
+	void setKnob(const QPixmap& knob) { m_knob = knob; update(); }
+
 	void setPeak_L(float fPeak);
 	float getPeak_L() {	return m_fPeakValue_L;	}
 
