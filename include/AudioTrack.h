@@ -85,6 +85,10 @@ public:
 	//! Makes @p lane the one heard: one undo step
 	void setPlayingLane(int lane);
 
+	//! Moves every item @p count lanes down, and makes the first lane the one heard: room on top for a recording's
+	//! passes. Not an undo step of its own: part of the recording's, which keeps the track's state
+	void insertLanesOnTop(int count);
+
 	//! Gives the player what plays now. It happens by itself after each change, once the event loop runs; this does
 	//! it at once (e.g. before rendering without an event loop)
 	void publish();

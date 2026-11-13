@@ -473,6 +473,16 @@ void AudioTrack::setPlayingLane(int lane)
 
 
 
+void AudioTrack::insertLanesOnTop(int count)
+{
+	if (count <= 0) { return; }
+	for (auto* item : items()) { item->setLane(item->lane() + count); }
+	applyPlayingLane(0);
+}
+
+
+
+
 void AudioTrack::applyPlayingLane(int lane)
 {
 	m_playingLane = std::max(lane, 0);

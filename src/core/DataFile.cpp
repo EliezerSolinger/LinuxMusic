@@ -65,6 +65,7 @@ static void findIds(const QDomElement& elem, QList<jo_id_t>& idList);
 // QMap with the DOM elements that access file resources
 const DataFile::ResourcesMap DataFile::ELEMENTS_WITH_RESOURCES = {
 { "sampleclip", {"src"} },
+{ "audioitem", {"src"} }, // an audio track's item
 { "take", {"src"} }, // a clip's takes
 { "original", {"src"} }, // a recording's original, of which the clip plays a rendering
 { "audiofileprocessor", {"src"} },

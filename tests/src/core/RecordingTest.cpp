@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <vector>
 
 #include <sndfile.h>
@@ -34,6 +35,7 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AudioRecorder.h"
+#include "AudioTrack.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiRecorder.h"
@@ -507,6 +509,75 @@ private slots:
 			}
 			QVERIFY(loudest > 0.5f); // (the impulse is in it)
 		}
+	}
+
+	void loopPassesOnAnAudioTrackBecomeLanes()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
+		engine->setAudioDevice(device, false);
+
+		const auto bar = TimePos::ticksPerBar();
+		const auto impulsePath = m_directory.filePath("impulse-lanes.wav");
+		writeImpulse(impulsePath, engine->outputSampleRate(), 4000, 0);
+		auto* player = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
+		QVERIFY(recorder);
+		auto* clip = new SampleClip{player};
+		clip->setSampleFile(impulsePath);
+		clip->movePosition(TimePos{2 * bar});
+		// An item recorded before: it goes below the new lanes
+		auto* before = recorder->addItem(impulsePath, TimePos{0});
+		const auto beforeId = before->id();
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		recorder->monitorModel()->setValue(static_cast<int>(AudioInputTrack::MonitorMode::Off));
+		auto& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.setLoopPoints(TimePos{bar}, TimePos{3 * bar});
+		timeline.setLoopEnabled(true);
+		const auto cleanUp = qScopeGuard([&] {
+			song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
+			song->stop();
+			const auto guard = engine->requestChangesGuard();
+			delete player;
+			delete recorder;
+		});
+
+		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
+		song->setPlayPos(bar, Song::PlayMode::Song);
+		Engine::projectJournal()->setJournalling(true);
+		QVERIFY(song->record());
+		const auto passFrames = 2 * bar * framesPerTick;
+		for (double played = 0; played < 3.5 * passFrames; played += 256) { device->callback(256); }
+		song->stop();
+
+		// Three whole passes on three new lanes, the last pass on the lane heard; the item before below them
+		const auto items = recorder->items();
+		QCOMPARE(items.size(), std::size_t{4});
+		QCOMPARE(recorder->item(beforeId)->lane(), 3);
+		QCOMPARE(recorder->playingLane(), 0);
+		QCOMPARE(recorder->laneCount(), 4);
+		auto onLane = std::map<int, AudioItem*>{};
+		for (auto* item : items) { if (item->id() != beforeId) { onLane[item->lane()] = item; } }
+		QCOMPARE(onLane.size(), std::size_t{3});
+		for (const auto& [lane, item] : onLane)
+		{
+			QCOMPARE(item->startPosition().getTicks(), bar);
+			QVERIFY(item->isTempoBound());
+			// Each pass heard the impulse at the same place of the loop
+			const auto peak = peakFrame(PathUtil::toAbsolute(item->file()));
+			QVERIFY(peak >= 0);
+			QVERIFY(std::abs(bar * framesPerTick + peak - 2 * bar * framesPerTick - 1.0) <= 1.0);
+		}
+		// The passes' files are "<take>.wav", "<take>-2.wav", "<take>-3.wav": the last one heard, the first lowest
+		QVERIFY2(onLane[0]->file().endsWith("-3.wav"), qPrintable(onLane[0]->file()));
+		QVERIFY2(onLane[1]->file().endsWith("-2.wav"), qPrintable(onLane[1]->file()));
+
+		// One undo takes the recording back
+		Engine::projectJournal()->undo();
+		QCOMPARE(recorder->items().size(), std::size_t{1});
+		QCOMPARE(recorder->items().front()->lane(), 0);
 	}
 
 	void choosingATakeKeepsThePartOfTheClip()

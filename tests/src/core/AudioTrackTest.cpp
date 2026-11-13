@@ -39,6 +39,7 @@
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "Song.h"
+#include "StreamScheduler.h"
 
 using namespace lmms;
 
@@ -253,6 +254,35 @@ private slots:
 		const auto expected = static_cast<float>(bar * framesPerTick + 1000) / (8.f * m_rate);
 		QVERIFY(std::abs(out[1000] - expected) < 1e-3f);
 		QVERIFY(std::abs(out[pass + 1000] - expected) < 2e-3f);
+	}
+
+	void aStreamedItemPlaysLiveWithoutMisses()
+	{
+		const auto file = m_directory.filePath("long-stream.wav");
+		writeWav(file, 30 * m_rate, 0.5f, m_rate);
+		auto renderWith = [&](AudioItem::Storage storage) {
+			auto* track = newTrack();
+			auto* item = track->addItem(file, TimePos{0});
+			auto settings = AudioTrack::settingsOf(*item);
+			settings.storage = storage;
+			track->changeItem(item, settings);
+			track->publish();
+			if (item->isStreamed())
+			{
+				DiskReader::instance().setDemand(StreamScheduler::demandAt(*Engine::getSong(), 0, DiskReader::ReadAheadSeconds));
+				[&] { QVERIFY(DiskReader::instance().waitUntilLoaded(3000)); }();
+			}
+			return render(0, 300);
+		};
+		AudioStream::setMissPolicy(AudioStream::MissPolicy::PlaySilence);
+		const auto fromMemory = renderWith(AudioItem::Storage::Memory);
+		const auto misses = AudioStream::missCount();
+		const auto fromDisk = renderWith(AudioItem::Storage::Disk);
+		AudioStream::setMissPolicy(AudioStream::MissPolicy::Automatic);
+		DiskReader::instance().setDemand({});
+		QCOMPARE(AudioStream::missCount(), misses);
+		QCOMPARE(fromDisk, fromMemory);
+		QVERIFY(std::abs(fromDisk[20000] - 0.5f) < 1e-3f);
 	}
 
 	void itemsAreSavedAndLoaded()

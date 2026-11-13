@@ -53,6 +53,8 @@
 namespace lmms
 {
 
+class AudioTrack;
+
 class AutomationTrack;
 class Keymap;
 class MidiClip;
@@ -565,6 +567,8 @@ private:
 	//! cleanGeneratedMedia() for the project open now, whose file is @p projectFile (loading another project changes
 	//! the file name before the project open is cleared), and a media folder of its own for the next one
 	void cleanGeneratedMediaOf(const QString& projectFile);
+	//! A recording on an audio track: its passes as new lanes on top
+	void landOnLanes(AudioTrack* track, const std::vector<AudioRecorder::Segment>& segments);
 	//! The media folder of a project whose file is @p projectFile
 	auto mediaDirectoryOf(const QString& projectFile) const -> QString;
 	std::atomic<tick_t> m_countInUntilTick = -1; //!< the metronome clicks before this tick (a recording's count-in)

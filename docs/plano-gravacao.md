@@ -355,6 +355,10 @@ Feito depois (mesma noite e manhã de 13/11):
     amostras quando o arquivo está na taxa do motor;
   - `AudioTrackTest`: posição, fades, ganho, lanes, crossfade, loop, salvar e carregar, desfazer; TSan limpo.
   - A view da faixa é a da faixa de sample, generalizada; o cabeçalho de duas linhas e as alças vêm no passo 4.
+- **Faixa de áudio, passo 5: gravação** (13/11): uma faixa de áudio armada grava como a de sample; as passadas
+  viram lanes novas no topo (a última passada na lane que toca, as lanes de antes abaixo), cada item preso ao
+  tempo em que foi tocado. Um desfazer volta tudo. Os arquivos dos itens são recursos do projeto (copiados ao
+  salvar, nunca limpos enquanto usados), e os itens do disco são lidos adiantados como os clipes.
 
 Por fazer, na ordem do plano:
 - **Mapa de tempo:** o desfazer das edições dos marcadores; a fórmula de compasso por marcador.

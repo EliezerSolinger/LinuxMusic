@@ -25,6 +25,7 @@
 #include <algorithm>
 
 #include "AudioEngine.h"
+#include "AudioTrack.h"
 #include "Engine.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -67,6 +68,29 @@ auto StreamScheduler::demandAt(const Song& song, tick_t tick, double seconds) ->
 	auto ranked = std::vector<Ranked>{};
 	for (const auto* track : song.tracks())
 	{
+		// The audio tracks' items of the lane heard
+		if (const auto* audioTrack = dynamic_cast<const AudioTrack*>(track))
+		{
+			for (const auto* item : audioTrack->items())
+			{
+				if (!item->isStreamed() || item->lane() != audioTrack->playingLane()) { continue; }
+				const auto& stream = item->sample().stream();
+				const auto itemBegin = item->startPosition().getTicks();
+				const auto itemEnd = item->endPosition().getTicks();
+				const auto from = itemBegin + item->startTimeOffset().getTicks();
+				for (const auto& span : spans)
+				{
+					const auto begin = std::max(span.begin, itemBegin);
+					const auto end = std::min(span.end, itemEnd);
+					if (begin >= end) { continue; }
+					const auto last = static_cast<f_cnt_t>(stream->frames()) - 1;
+					const auto first = std::min(item->fileFrameAt(std::max(begin - from, 0)), last);
+					const auto final = std::min(item->fileFrameAt(std::max(end - from, 0)) + 1, last);
+					ranked.push_back({{stream, first, final}, span.distance + (begin - span.begin)});
+				}
+			}
+			continue;
+		}
 		if (track->type() != Track::Type::Sample) { continue; }
 		for (auto* clip : track->getClips())
 		{

@@ -32,6 +32,7 @@
 #include <sndfile.h>
 
 #include "AudioEngine.h"
+#include "AudioTrack.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "Engine.h"
@@ -280,6 +281,32 @@ private slots:
 		}
 		song->cleanAbandonedMedia();
 		QVERIFY(!QFileInfo::exists(abandoned));
+	}
+
+	void audioItemsKeepTheirFilesWithTheProject()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		const auto elsewhere = m_directory.filePath("items-elsewhere");
+		QVERIFY(QDir{}.mkpath(elsewhere));
+		writeWav(elsewhere + "/take_1.wav", 0.5f);
+		ProjectMedia::noteGenerated(elsewhere + "/take_1.wav");
+		auto* track = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
+		QVERIFY(track);
+		track->addItem(elsewhere + "/take_1.wav", TimePos{0});
+
+		// Saved: copied into the media folder, and kept when the project closes
+		const auto projectDir = m_directory.filePath("items");
+		QVERIFY(QDir{}.mkpath(projectDir));
+		QVERIFY(song->guiSaveProjectAs(projectDir + "/song.mmp"));
+		QVERIFY(QFileInfo::exists(projectDir + "/song_media/take_1.wav"));
+		song->loadProject(projectDir + "/song.mmp");
+		auto* loaded = dynamic_cast<AudioTrack*>(song->tracks().back());
+		QVERIFY(loaded);
+		QCOMPARE(PathUtil::toAbsolute(loaded->items().front()->file()),
+			QFileInfo{projectDir + "/song_media/take_1.wav"}.absoluteFilePath());
+		song->createNewProject();
+		QVERIFY(QFileInfo::exists(projectDir + "/song_media/take_1.wav"));
 	}
 
 	void factoryFilesStayWhereTheyAre()

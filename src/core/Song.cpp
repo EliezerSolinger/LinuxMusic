@@ -834,6 +834,12 @@ auto Song::filesInUse(const QString& projectFile) const -> QSet<QString>
 		{
 			for (const auto* clip : track->getClips())
 			{
+				if (const auto* item = dynamic_cast<const AudioItem*>(clip))
+				{
+					add(item->file());
+					add(item->originalFile());
+					continue;
+				}
 				const auto* sampleClip = dynamic_cast<const SampleClip*>(clip);
 				if (!sampleClip) { continue; }
 				add(sampleClip->sampleFile());
@@ -1065,7 +1071,7 @@ auto Song::record() -> bool
 	auto usedPaths = QStringList{};
 	for (auto* track : tracks())
 	{
-		auto* sampleTrack = dynamic_cast<SampleTrack*>(track);
+		auto* sampleTrack = dynamic_cast<AudioInputTrack*>(track); // (a sample or audio track)
 		if (!sampleTrack || !sampleTrack->recordArmModel()->value()) { continue; }
 
 		const auto& input = sampleTrack->input();
@@ -1195,6 +1201,49 @@ void Song::finishMidiRecording(tick_t atTick)
 
 
 
+void Song::landOnLanes(AudioTrack* track, const std::vector<AudioRecorder::Segment>& segments)
+{
+	// The passes of a loop begin on the same tick; a pass shorter than 90% of the longest of them (stopped before
+	// the loop's end) is dropped
+	auto passes = std::map<std::int64_t, std::vector<AudioRecorder::Segment>>{};
+	for (const auto& segment : segments) { passes[segment.startTick].push_back(segment); }
+	auto lanes = std::size_t{1};
+	for (auto& [startTick, group] : passes)
+	{
+		const auto longest = std::max_element(group.begin(), group.end(),
+			[](const auto& a, const auto& b) { return a.frames < b.frames; })->frames;
+		std::erase_if(group, [longest](const AudioRecorder::Segment& segment) {
+			const bool partial = segment.frames < longest * 9 / 10;
+			if (partial) { QFile::remove(segment.path); }
+			return partial;
+		});
+		lanes = std::max(lanes, group.size());
+	}
+
+	// As in REAPER: the new passes go on top, the last one on the lane heard (the first), and the lanes there were
+	// go below them
+	track->insertLanesOnTop(static_cast<int>(lanes));
+	for (const auto& [startTick, group] : passes)
+	{
+		for (std::size_t pass = 0; pass < group.size(); ++pass)
+		{
+			const auto& segment = group[pass];
+			auto* item = track->addItem(segment.path, TimePos{static_cast<tick_t>(startTick)},
+				static_cast<int>(group.size() - 1 - pass));
+			// Bound to the tempo it was played at: a change of tempo renders it again
+			auto timing = AudioItem::Timing{};
+			for (const auto& point : timingOf(static_cast<tick_t>(startTick), static_cast<double>(segment.frames)))
+			{
+				timing.push_back({point.tick, point.frame});
+			}
+			item->setOriginalTiming(std::move(timing), segment.path);
+		}
+	}
+}
+
+
+
+
 void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 {
 	m_recording = false;
@@ -1225,10 +1274,25 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 				.arg(segments.front().path);
 			continue;
 		}
-		auto* track = static_cast<SampleTrack*>(take.track);
-
 		// The recording's undo step is the tracks' state before it (see record()): nothing is journalled here
 		const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
+
+		// On an audio track the passes are lanes
+		if (auto* audioTrack = dynamic_cast<AudioTrack*>(take.track))
+		{
+			landOnLanes(audioTrack, segments);
+			if (take.lostFrames > 0)
+			{
+				problems << tr("%1: the disk could not keep up; %2 ms were recorded as silence.").arg(audioTrack->name())
+					.arg(take.lostFrames * 1000 / Engine::audioEngine()->outputSampleRate());
+			}
+			if (take.diskFailed)
+			{
+				problems << tr("%1: writing a take failed; it holds what was written before.").arg(audioTrack->name());
+			}
+			continue;
+		}
+		auto* track = static_cast<SampleTrack*>(take.track);
 
 		// The passes of a loop begin on the same tick: they become the takes of one clip, the last pass the active
 		// take. A pass shorter than 90% of the longest (stopped before the loop's end) is dropped.
