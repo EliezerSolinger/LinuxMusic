@@ -108,6 +108,20 @@ public:
 	auto barAt(tick_t tick) const -> Bar;
 	//! Where bar @p index (from 0) starts
 	auto barStart(int index) const -> tick_t;
+	/**
+	 * A position in bars: the bar's index and how far into it, in its time signature (a bar cut short by a change
+	 * of the time signature ends before its whole). The snap of the Arrangement goes by it, so that a step of a
+	 * fraction of a bar is that fraction of each bar.
+	 */
+	auto toBars(tick_t tick) const -> double;
+	//! The tick at a position in bars (one past the end of a bar cut short: where the next one starts)
+	auto fromBars(double bars) const -> tick_t;
+	//! @p tick on the grid of @p bars (whole bars, or a fraction of each bar): the nearest point (a tie to the
+	//! right), or the one at or before it
+	auto quantize(tick_t tick, double bars, bool roundDown = false) const -> tick_t;
+	//! @p from moved toward @p to by the whole steps of @p bars nearest to the distance
+	auto moveBySteps(tick_t from, tick_t to, double bars) const -> tick_t;
+
 	//! Calls @p visit(bar) for each bar from the one @p from is in until @p to
 	template<typename Visit>
 	void forEachBar(tick_t from, tick_t to, Visit&& visit) const
@@ -166,6 +180,8 @@ private:
 	void tidy();
 	//! The bars, from the markers' time signatures [change lock]
 	void updateSegments();
+	//! The ticks of a snap step of @p bars in the time signature at the start
+	auto stepTicks(double bars) const -> tick_t;
 
 	//! A stretch of bars in one time signature
 	struct Segment

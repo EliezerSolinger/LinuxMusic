@@ -302,6 +302,57 @@ private slots:
 		}
 	}
 
+	//! Without changes of the time signature, the snap in bars is the one in ticks it always was
+	void theSnapInBarsIsTheSameWithoutChanges()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		const auto& map = song->tempoMap();
+		for (const auto numerator : {4, 3, 7})
+		{
+			song->getTimeSigModel().setNumerator(numerator);
+			for (const auto bars : {4.f, 2.f, 1.f, 0.5f, 0.25f, 0.125f, 1.f / 16, 1.f / 32})
+			{
+				for (tick_t tick = 0; tick < 4000; tick += 7)
+				{
+					QCOMPARE(map.quantize(tick, bars), TimePos{tick}.quantize(bars).getTicks());
+					QCOMPARE(map.quantize(tick, bars, true), TimePos{tick}.quantize(bars, true).getTicks());
+					const auto from = tick_t{1000};
+					// (not before the song's start)
+					QCOMPARE(map.moveBySteps(from, tick, bars),
+						std::max(0, from + TimePos{tick - from}.quantize(bars).getTicks()));
+				}
+			}
+		}
+		song->getTimeSigModel().setNumerator(4);
+	}
+
+	//! With changes, the snap goes by each bar: a whole bar to a bar's start, a fraction that fraction of the bar
+	void theSnapFollowsTheBars()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto& map = song->tempoMap();
+		// 4/4, 4/4, then 3/4 from 384, then 6/8 from 300 cutting bar 1 short
+		map.setMeter(384, TempoMap::Meter{3, 4}, song->getTempo());
+		QCOMPARE(map.quantize(450, 1), 384);
+		QCOMPARE(map.quantize(460, 1), 528);
+		QCOMPARE(map.quantize(527, 1, true), 384);
+		// A quarter of a 3/4 bar is 36 ticks
+		QCOMPARE(map.quantize(384 + 40, 0.25), 384 + 36);
+		QCOMPARE(map.toBars(384 + 72), 2.5);
+		QCOMPARE(map.fromBars(2.5), 384 + 72);
+		// Two bars on: from the middle of a 4/4 bar into the 3/4 ones, the same place in the bar
+		QCOMPARE(map.moveBySteps(96, 96 + 2 * 192, 1), 384 + 72);
+		QCOMPARE(map.moveBySteps(384 + 72, 0, 1), 96 + 0 * 192 + 0);
+
+		map.setMeter(300, TempoMap::Meter{6, 8}, song->getTempo());
+		// Bar 1 ends at 300: half of it is at 192 + 96, past its end is the next bar's start
+		QCOMPARE(map.fromBars(1.5), 288);
+		QCOMPARE(map.fromBars(1.75), 300);
+		QCOMPARE(map.quantize(299, 0.5), 300);
+	}
+
 	//! Saved and loaded; one at the start, or one not valid, is left out
 	void timeSignaturesAreSavedAndLoaded()
 	{

@@ -547,6 +547,46 @@ void TrackContainerView::insertAudioFiles(const QStringList& files, const TimePo
 
 
 
+auto TrackContainerView::snap(TimePos pos, float bars, bool roundDown) const -> TimePos
+{
+	return pos.quantize(bars, roundDown);
+}
+
+
+
+
+auto TrackContainerView::snapSteps(TimePos from, TimePos to, float bars) const -> TimePos
+{
+	return from + TimePos{to - from}.quantize(bars);
+}
+
+
+
+
+auto TrackContainerView::snapStep(TimePos, float bars) const -> tick_t
+{
+	return std::max(tick_t{1}, static_cast<tick_t>(TimePos::ticksPerBar() * bars));
+}
+
+
+
+
+auto TrackContainerView::snapStepBefore(TimePos at, float bars) const -> tick_t
+{
+	return snapStep(at, bars);
+}
+
+
+
+
+auto TrackContainerView::barAndTick(TimePos pos) const -> std::pair<int, tick_t>
+{
+	return {pos.getBar() + 1, pos.getTicks() % TimePos::ticksPerBar()};
+}
+
+
+
+
 auto TrackContainerView::dropPosition(const QDropEvent* event) const -> TimePos
 {
 	// Where it was dropped in the tracks' content, snapped to the bar before; the playhead's bar if not over them
@@ -556,10 +596,10 @@ auto TrackContainerView::dropPosition(const QDropEvent* event) const -> TimePos
 		const auto x = content->mapFrom(this, event->position().toPoint()).x();
 		if (x < 0) { break; }
 		const auto ticks = currentPosition().getTicks() + static_cast<tick_t>(x * TimePos::ticksPerBar() / pixelsPerBar());
-		return TimePos{std::max(tick_t{0}, ticks)}.quantize(1.0, true);
+		return snap(TimePos{std::max(tick_t{0}, ticks)}, 1.0, true);
 	}
 	const auto playhead = Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks();
-	return TimePos{playhead}.quantize(1.0, true);
+	return snap(TimePos{playhead}, 1.0, true);
 }
 
 

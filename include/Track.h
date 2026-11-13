@@ -236,11 +236,13 @@ public:
 	//! @brief Move all the clips after a certain time later by one bar.
 	//!
 	//! @param pos The time at which we want to insert the bar.
-	void insertBar(const TimePos& pos);
+	//! Moves the clips from @p pos on later by @p length (a bar of the time signature at the start by default)
+	void insertBar(const TimePos& pos, tick_t length = 0);
 
 	//! @brief Move all the clips after a certain time earlier by one bar.
 	//! @param pos The time at which we want to remove the bar.
-	void removeBar( const TimePos & pos );
+	//! Moves the clips from @p pos on earlier by @p length (a bar of the time signature at the start by default)
+	void removeBar(const TimePos& pos, tick_t length = 0);
 
 	//! @brief Return the length of the entire track in bars
 	//!

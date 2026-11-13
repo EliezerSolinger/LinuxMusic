@@ -993,16 +993,16 @@ auto Song::tempoKeyTicks(tick_t from, tick_t to) const -> std::vector<tick_t>
 {
 	auto ticks = std::vector<tick_t>{};
 	const auto& markers = m_tempoMap.markers();
-	const auto beat = std::max(1, TimePos::ticksPerBar() / std::max(1, m_timeSigModel.getNumerator()));
 	for (std::size_t index = 0; index < markers.size(); ++index)
 	{
 		const auto& marker = markers[index];
 		if (marker.tick > from && marker.tick < to) { ticks.push_back(marker.tick); }
-		// A ramp changes the tempo all along: a key at each beat of it
+		// A ramp changes the tempo all along: a key at each beat of it (of the time signature where it is)
 		if (marker.ramp && index + 1 < markers.size())
 		{
 			const auto rampEnd = markers[index + 1].tick;
-			for (auto tick = marker.tick + beat; tick < rampEnd; tick += beat)
+			const auto beatAt = [this](tick_t tick) { return std::max(tick_t{1}, m_tempoMap.meterAt(tick).ticksPerBeat()); };
+			for (auto tick = marker.tick + beatAt(marker.tick); tick < rampEnd; tick += beatAt(tick))
 			{
 				if (tick > from && tick < to) { ticks.push_back(tick); }
 			}
@@ -1601,7 +1601,8 @@ void Song::insertBar()
 	{
 		// FIXME journal batch of tracks instead of each track individually
 		if (track->numOfClips() > 0) { track->addJournalCheckPoint(); }
-		track->insertBar(getPlayPos(PlayMode::Song));
+		// A bar of the time signature where the playhead is
+		track->insertBar(getPlayPos(PlayMode::Song), m_tempoMap.meterAt(getPlayPos(PlayMode::Song).getTicks()).ticksPerBar());
 	}
 	m_tracksMutex.unlock();
 }
@@ -1616,7 +1617,7 @@ void Song::removeBar()
 	{
 		// FIXME journal batch of tracks instead of each track individually
 		if (track->numOfClips() > 0) { track->addJournalCheckPoint(); }
-		track->removeBar(getPlayPos(PlayMode::Song));
+		track->removeBar(getPlayPos(PlayMode::Song), m_tempoMap.meterAt(getPlayPos(PlayMode::Song).getTicks()).ticksPerBar());
 	}
 	m_tracksMutex.unlock();
 }

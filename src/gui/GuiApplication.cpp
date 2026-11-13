@@ -353,6 +353,11 @@ GuiApplication::GuiApplication()
 				});
 			});
 		}
+		// =arrangement shows the Arrangement wide (the window larger), to see many bars
+		if (screenshotAction == "arrangement")
+		{
+			QTimer::singleShot(1500, m_mainWindow, [this] { m_mainWindow->resize(1700, 900); });
+		}
 		if (screenshotAction == "regions")
 		{
 			// Markers and regions on the ruler, the second region as the cycle

@@ -29,10 +29,13 @@
 
 #include <QWidget>
 
+#include <utility>
+
 #include "JournallingObject.h"
 #include "TimePos.h"
 
 class QMimeData;  // IWYU pragma: keep
+class QPainter;
 
 
 namespace lmms
@@ -163,6 +166,10 @@ public slots:
 
 	//! @brief Updates the background tile pixmap.
 	void updateBackground();
+	//! The coarse and the fine grid lines' distances, in bars (from the snap, at least a few pixels apart)
+	auto gridResolutions() const -> std::pair<float, float>;
+	//! The grid in the song's bars, when the tempo map changes their time signature
+	void paintSongBars(QPainter& p);
 
 protected:
 	enum class ContextMenuAction

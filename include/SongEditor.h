@@ -121,6 +121,13 @@ private:
 	bool allowRubberband() const override;
 	bool knifeMode() const override;
 
+	//! In the song's bars, whose time signatures the tempo map changes
+	auto snap(TimePos pos, float bars, bool roundDown = false) const -> TimePos override;
+	auto snapSteps(TimePos from, TimePos to, float bars) const -> TimePos override;
+	auto snapStep(TimePos at, float bars) const -> tick_t override;
+	auto snapStepBefore(TimePos at, float bars) const -> tick_t override;
+	auto barAndTick(TimePos pos) const -> std::pair<int, tick_t> override;
+
 	//! @brief Convert zoom slider's value to bar width in pixels
 	int calculatePixelsPerBar() const;
 

@@ -61,6 +61,7 @@
 #include "PositionLine.h"
 #include "SubWindow.h"
 #include "TextFloat.h"
+#include "TempoMap.h"
 #include "TimeDisplayWidget.h"
 #include "TimeLineWidget.h"
 #include "TrackView.h"
@@ -464,8 +465,10 @@ void SongEditor::copyPaste(int key)
 			start = std::min(start, view->getClip()->startPosition());
 		}
 		selected.front()->copy(selected);
-		// (to the start of the bar after it, as clips are laid out)
-		paste(TimePos{start.getTicks() + TimePos{end.getTicks() - start.getTicks()}.nextFullBar() * TimePos::ticksPerBar()});
+		// (to the start of the bar after it, as clips are laid out: whole bars on from its start)
+		const auto& map = m_song->tempoMap();
+		const auto bars = std::ceil(map.toBars(end.getTicks()) - map.toBars(start.getTicks()) - 1e-7);
+		paste(TimePos{map.fromBars(map.toBars(start.getTicks()) + std::max(bars, 1.0))});
 		break;
 	}
 	default:
@@ -491,7 +494,10 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	}
 	else if( ke->key() == Qt::Key_Left )
 	{
-		tick_t t = m_song->getPlayPos(Song::PlayMode::Song).getTicks() - TimePos::ticksPerBar();
+		// A bar back (in the song's bars)
+		const auto& map = m_song->tempoMap();
+		const auto from = m_song->getPlayPos(Song::PlayMode::Song).getTicks();
+		tick_t t = map.toBars(from) >= 1 ? map.fromBars(map.toBars(from) - 1) : -1;
 		if( t >= 0 )
 		{
 			m_song->setPlayPos( t, Song::PlayMode::Song );
@@ -500,7 +506,8 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	}
 	else if( ke->key() == Qt::Key_Right )
 	{
-		tick_t t = m_song->getPlayPos(Song::PlayMode::Song).getTicks() + TimePos::ticksPerBar();
+		const auto& map = m_song->tempoMap();
+		tick_t t = map.fromBars(map.toBars(m_song->getPlayPos(Song::PlayMode::Song).getTicks()) + 1);
 		if( t < MaxSongLength )
 		{
 			m_song->setPlayPos( t, Song::PlayMode::Song );
@@ -858,6 +865,51 @@ bool SongEditor::allowRubberband() const
 bool SongEditor::knifeMode() const
 {
 	return m_mode == EditMode::Knife;
+}
+
+
+
+
+auto SongEditor::snap(TimePos pos, float bars, bool roundDown) const -> TimePos
+{
+	return m_song->tempoMap().quantize(pos.getTicks(), bars, roundDown);
+}
+
+
+
+
+auto SongEditor::snapSteps(TimePos from, TimePos to, float bars) const -> TimePos
+{
+	return m_song->tempoMap().moveBySteps(from.getTicks(), to.getTicks(), bars);
+}
+
+
+
+
+auto SongEditor::snapStep(TimePos at, float bars) const -> tick_t
+{
+	const auto& map = m_song->tempoMap();
+	if (!map.hasMeterChanges()) { return TrackContainerView::snapStep(at, bars); }
+	return std::max(tick_t{1}, map.fromBars(map.toBars(at.getTicks()) + bars) - at.getTicks());
+}
+
+
+
+
+auto SongEditor::snapStepBefore(TimePos at, float bars) const -> tick_t
+{
+	const auto& map = m_song->tempoMap();
+	if (!map.hasMeterChanges()) { return TrackContainerView::snapStepBefore(at, bars); }
+	return std::max(tick_t{1}, at.getTicks() - map.fromBars(map.toBars(at.getTicks()) - bars));
+}
+
+
+
+
+auto SongEditor::barAndTick(TimePos pos) const -> std::pair<int, tick_t>
+{
+	const auto bar = m_song->tempoMap().barAt(pos.getTicks());
+	return {bar.index + 1, pos.getTicks() - bar.start};
 }
 
 

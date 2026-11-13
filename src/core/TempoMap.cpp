@@ -123,6 +123,82 @@ auto TempoMap::barStart(int index) const -> tick_t
 
 
 
+namespace
+{
+
+//! Float errors of positions in bars stay well below a tick in the smallest bar (1/32 of 192 ticks)
+constexpr double BarsTolerance = 1e-7;
+
+//! @p value / @p step rounded to the nearest whole number (a tie up), or down
+auto steps(double value, double step, bool roundDown) -> double
+{
+	const auto ratio = value / step;
+	return roundDown ? std::floor(ratio + BarsTolerance) : std::floor(ratio + 0.5 + BarsTolerance);
+}
+
+} // namespace
+
+
+auto TempoMap::stepTicks(double bars) const -> tick_t
+{
+	// As TimePos::quantize() reckons it
+	return static_cast<tick_t>(m_startMeter.ticksPerBar() * static_cast<float>(bars));
+}
+
+
+
+
+auto TempoMap::toBars(tick_t tick) const -> double
+{
+	const auto bar = barAt(tick);
+	return bar.index + static_cast<double>(std::max(tick, tick_t{0}) - bar.start)
+		/ std::max(bar.meter.ticksPerBar(), tick_t{1});
+}
+
+
+
+
+auto TempoMap::fromBars(double bars) const -> tick_t
+{
+	if (bars <= 0) { return 0; }
+	const auto index = static_cast<int>(std::min(std::floor(bars + BarsTolerance), double{TimePos::MaxTicks}));
+	const auto bar = barAt(barStart(index));
+	const auto into = std::max(bars - index, 0.0) * bar.meter.ticksPerBar();
+	return std::min(bar.start + static_cast<tick_t>(std::llround(into)), bar.start + bar.length);
+}
+
+
+
+
+auto TempoMap::quantize(tick_t tick, double bars, bool roundDown) const -> tick_t
+{
+	if (bars <= 0) { return tick; }
+	// In one time signature, in ticks as the snap always went (a step of a fraction of a tick left out)
+	if (!hasMeterChanges())
+	{
+		return std::max(tick_t{0}, TimePos::quantize(tick, stepTicks(bars), roundDown));
+	}
+	const auto before = fromBars(steps(toBars(tick), bars, true) * bars);
+	if (roundDown || before == tick) { return before; }
+	// The nearest in ticks (in a bar cut short, the next bar's start may be nearer than its last step)
+	const auto after = fromBars((steps(toBars(tick), bars, true) + 1) * bars);
+	return tick - before < after - tick ? before : after;
+}
+
+
+
+
+auto TempoMap::moveBySteps(tick_t from, tick_t to, double bars) const -> tick_t
+{
+	if (bars <= 0) { return to; }
+	if (!hasMeterChanges()) { return std::max(tick_t{0}, from + TimePos::quantize(to - from, stepTicks(bars))); }
+	const auto start = toBars(from);
+	return fromBars(start + steps(toBars(to) - start, bars, false) * bars);
+}
+
+
+
+
 void TempoMap::updateSegments()
 {
 	m_segments.clear();

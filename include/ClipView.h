@@ -347,6 +347,10 @@ private:
 	//! @brief Calculate the new position of a dragged Clip from a mouse event
 	//! @param me The QMouseEvent
 	TimePos draggedClipPos(QMouseEvent* me);
+	//! A position as the hints show it (bar:tick, in the bars of the view: the song's in the Arrangement)
+	auto positionText(TimePos pos) const -> QString;
+	//! The clip's length, and from where to where
+	auto lengthText() const -> QString;
 
 	int knifeMarkerPos( QMouseEvent * me );
 

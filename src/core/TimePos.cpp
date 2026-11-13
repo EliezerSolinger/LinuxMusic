@@ -25,6 +25,8 @@
 
 #include "TimePos.h"
 
+#include <algorithm>
+
 #include "MeterModel.h"
 
 namespace lmms
@@ -54,15 +56,23 @@ TimePos::TimePos( const tick_t ticks ) :
 
 TimePos TimePos::quantize(float bars, bool forceRoundDown) const
 {
-	//The intervals we should snap to, our new position should be a factor of this
-	int interval = s_ticksPerBar * bars;
+	return quantize(m_ticks, static_cast<tick_t>(s_ticksPerBar * bars), forceRoundDown);
+}
+
+
+
+
+auto TimePos::quantize(tick_t ticks, tick_t interval, bool forceRoundDown) -> tick_t
+{
+	// At least a tick (a snap shorter than a tick, in a short bar, divided by zero)
+	interval = std::max(interval, tick_t{1});
 	//The lower position we could snap to
-	int lowPos = m_ticks / interval;
+	int lowPos = ticks / interval;
 	//Offset from the lower position
-	int offset = m_ticks % interval;
+	int offset = ticks % interval;
 	//1 if we should snap up, 0 if we shouldn't
 	// Ternary expression is making sure that the snap happens in the direction to
-	// the right even if m_ticks is negative and the offset is exactly half-way
+	// the right even if ticks is negative and the offset is exactly half-way
 	// More details on issue #5840 and PR #5847
 	int snapUp = forceRoundDown || ((2 * offset) == -interval)
 		? 0

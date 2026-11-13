@@ -36,6 +36,9 @@
 #include "embed.h"
 #include "KeyboardShortcuts.h"
 #include "NStateButton.h"
+#include "Engine.h"
+#include "Song.h"
+#include "TempoMap.h"
 #include "TextFloat.h"
 
 namespace lmms::gui
@@ -61,6 +64,8 @@ TimeLineWidget::TimeLineWidget(const int xoff, const int yoff, const float ppb, 
 	connect( Engine::getSong(), SIGNAL(timeSignatureChanged(int,int)),
 					this, SLOT(update()));
 	connect(m_timeline, &Timeline::positionChanged, this, qOverload<>(&QWidget::update));
+	// (the bars the tempo map's time signatures make)
+	connect(&Engine::getSong()->tempoMap(), &TempoMap::changed, this, qOverload<>(&QWidget::update));
 }
 
 
@@ -165,25 +170,44 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 	QColor const & barLineColor = getBarLineColor();
 	QColor const & barNumberColor = getBarNumberColor();
 
-	bar_t barNumber = m_begin.getBar();
-	int const x = m_xOffset - ((static_cast<int>(m_begin * m_ppb) / TimePos::ticksPerBar()) % static_cast<int>(m_ppb));
-
 	// Double the interval between bar numbers until they are far enough apart
 	int barLabelInterval = 1;
 	while (barLabelInterval * m_ppb < MIN_BAR_LABEL_DISTANCE) { barLabelInterval *= 2; }
 
-	for( int i = 0; x + i * m_ppb < width(); ++i )
+	if (followsSongBars())
 	{
-		++barNumber;
-		if ((barNumber - 1) % barLabelInterval == 0)
+		// The song's bars, whose time signatures the tempo map changes
+		const auto& map = Engine::getSong()->tempoMap();
+		const auto end = m_begin.getTicks() + static_cast<tick_t>(std::ceil(width() * TimePos::ticksPerBar() / m_ppb)) + 1;
+		map.forEachBar(m_begin.getTicks(), end, [&](const TempoMap::Bar& bar) {
+			// Each one labelled where its time signature starts
+			const bool meterStarts = bar.index > 0 && map.barAt(bar.start - 1).meter != bar.meter;
+			if (bar.index % barLabelInterval != 0 && !meterStarts) { return; }
+			const int cx = markerX(TimePos{bar.start});
+			if (cx < m_xOffset) { return; }
+			p.setPen(barLineColor);
+			p.drawLine(cx, 5, cx, height() - 6);
+			p.setPen(barNumberColor);
+			p.drawText(cx + 5, ((height() - fontHeight) / 2) + fontAscent, QString::number(bar.index + 1));
+		});
+	}
+	else
+	{
+		bar_t barNumber = m_begin.getBar();
+		int const x = m_xOffset - ((static_cast<int>(m_begin * m_ppb) / TimePos::ticksPerBar()) % static_cast<int>(m_ppb));
+		for( int i = 0; x + i * m_ppb < width(); ++i )
 		{
-			const int cx = x + qRound( i * m_ppb );
-			p.setPen( barLineColor );
-			p.drawLine( cx, 5, cx, height() - 6 );
+			++barNumber;
+			if ((barNumber - 1) % barLabelInterval == 0)
+			{
+				const int cx = x + qRound( i * m_ppb );
+				p.setPen( barLineColor );
+				p.drawLine( cx, 5, cx, height() - 6 );
 
-			const QString s = QString::number( barNumber );
-			p.setPen( barNumberColor );
-			p.drawText( cx + 5, ((height() - fontHeight) / 2) + fontAscent, s );
+				const QString s = QString::number( barNumber );
+				p.setPen( barNumberColor );
+				p.drawText( cx + 5, ((height() - fontHeight) / 2) + fontAscent, s );
+			}
 		}
 	}
 
@@ -223,6 +247,38 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 			height() - marker.height(), marker);
 	}
 }
+
+auto TimeLineWidget::followsSongBars() const -> bool
+{
+	auto* song = Engine::getSong();
+	return m_timeline == &song->getTimeline(Song::PlayMode::Song) && song->tempoMap().hasMeterChanges();
+}
+
+
+
+
+auto TimeLineWidget::snapped(TimePos pos) const -> TimePos
+{
+	if (followsSongBars()) { return Engine::getSong()->tempoMap().quantize(pos.getTicks(), m_snapSize); }
+	return pos.quantize(m_snapSize);
+}
+
+
+
+
+auto TimeLineWidget::snapStep(TimePos at, bool before) const -> tick_t
+{
+	if (followsSongBars())
+	{
+		const auto& map = Engine::getSong()->tempoMap();
+		const auto other = map.fromBars(map.toBars(at.getTicks()) + (before ? -m_snapSize : m_snapSize));
+		return std::max(tick_t{1}, std::abs(other - at.getTicks()));
+	}
+	return std::max(tick_t{1}, static_cast<tick_t>(m_snapSize * TimePos::ticksPerBar()));
+}
+
+
+
 
 auto TimeLineWidget::getClickedTime(const int xPosition) const -> TimePos
 {
@@ -363,12 +419,12 @@ void TimeLineWidget::mouseMoveEvent( QMouseEvent* event )
 			}
 			else
 			{
-				timeAtCursor = timeAtCursor.quantize(m_snapSize);
+				timeAtCursor = snapped(timeAtCursor);
 			}
 			// Catch begin == end
 			if (timeAtCursor == otherPoint)
 			{
-				const int offset = control ? 1 : m_snapSize * TimePos::ticksPerBar();
+				const int offset = control ? 1 : snapStep(timeAtCursor);
 				if (m_action == Action::MoveLoopBegin) { timeAtCursor -= offset; }
 				else { timeAtCursor += offset; }
 			}
@@ -386,7 +442,7 @@ void TimeLineWidget::mouseMoveEvent( QMouseEvent* event )
 			for (auto& point : loopPos)
 			{
 				point += dragDelta;
-				if (!control) { point = point.quantize(m_snapSize); }
+				if (!control) { point = snapped(point); }
 			}
 			m_timeline->setLoopPoints(loopPos[0], loopPos[1]);
 			break;
@@ -404,12 +460,12 @@ void TimeLineWidget::mouseMoveEvent( QMouseEvent* event )
 			auto to = timeAtCursor;
 			if (!control)
 			{
-				from = from.quantize(m_snapSize);
-				to = to.quantize(m_snapSize);
+				from = snapped(from);
+				to = snapped(to);
 			}
 			if (to < from) { std::swap(from, to); }
 			// At least a snap step (a tick with Ctrl) long
-			if (to == from) { to = from + (control ? 1 : static_cast<int>(m_snapSize * TimePos::ticksPerBar())); }
+			if (to == from) { to = from + (control ? 1 : snapStep(from)); }
 			m_timeline->setLoopPoints(from, to);
 			m_timeline->setLoopEnabled(true);
 			update();
@@ -454,16 +510,16 @@ void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
 	menu.addAction(tr("Set loop begin here"), [this, event] {
 		auto begin = getClickedTime(event->x());
 		const auto end = m_timeline->loopEnd();
-		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { begin = begin.quantize(m_snapSize); }
-		if (begin == end) { m_timeline->setLoopEnd(end + m_snapSize * TimePos::ticksPerBar()); }
+		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { begin = snapped(begin); }
+		if (begin == end) { m_timeline->setLoopEnd(end + snapStep(end)); }
 		m_timeline->setLoopBegin(begin);
 		update();
 	});
 	menu.addAction(tr("Set loop end here"), [this, event] {
 		const auto begin = m_timeline->loopBegin();
 		auto end = getClickedTime(event->x());
-		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { end = end.quantize(m_snapSize); }
-		if (begin == end) { m_timeline->setLoopBegin(begin - m_snapSize * TimePos::ticksPerBar()); }
+		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { end = snapped(end); }
+		if (begin == end) { m_timeline->setLoopBegin(std::max(0, begin.getTicks() - snapStep(begin, true))); }
 		m_timeline->setLoopEnd(end);
 		update();
 	});

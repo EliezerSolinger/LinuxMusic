@@ -105,6 +105,21 @@ public:
 	virtual bool allowRubberband() const;
 	virtual bool knifeMode() const;
 
+	/**
+	 * The snap of its clips, of @p bars (whole bars or a fraction of a bar): here in the bars of the time signature
+	 * at the start; the Arrangement's in the song's bars (see TempoMap::quantize()).
+	 */
+	//! @p pos on the grid: the nearest point (a tie to the right), or the one at or before it
+	virtual auto snap(TimePos pos, float bars, bool roundDown = false) const -> TimePos;
+	//! @p from moved toward @p to by the whole steps nearest to the distance
+	virtual auto snapSteps(TimePos from, TimePos to, float bars) const -> TimePos;
+	//! The length of the step from @p at (at least a tick)
+	virtual auto snapStep(TimePos at, float bars) const -> tick_t;
+	//! The length of the step that ends at @p at (at least a tick)
+	virtual auto snapStepBefore(TimePos at, float bars) const -> tick_t;
+	//! A position as the hints show it: its bar (from 1) and its tick in the bar
+	virtual auto barAndTick(TimePos pos) const -> std::pair<int, tick_t>;
+
 	inline bool rubberBandActive() const
 	{
 		return m_rubberBand->isEnabled() && m_rubberBand->isVisible();

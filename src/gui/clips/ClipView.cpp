@@ -689,24 +689,12 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 				if( m_action == Action::Move )
 				{
 					s_textFloat->setTitle( tr( "Current position" ) );
-					s_textFloat->setText( QString( "%1:%2" ).
-						arg( m_clip->startPosition().getBar() + 1 ).
-						arg( m_clip->startPosition().getTicks() %
-								TimePos::ticksPerBar() ) );
+					s_textFloat->setText(positionText(m_clip->startPosition()));
 				}
 				else if( m_action == Action::Resize || m_action == Action::ResizeLeft )
 				{
 					s_textFloat->setTitle( tr( "Current length" ) );
-					s_textFloat->setText( tr( "%1:%2 (%3:%4 to %5:%6)" ).
-							arg( m_clip->length().getBar() ).
-							arg( m_clip->length().getTicks() %
-									TimePos::ticksPerBar() ).
-							arg( m_clip->startPosition().getBar() + 1 ).
-							arg( m_clip->startPosition().getTicks() %
-									TimePos::ticksPerBar() ).
-							arg( m_clip->endPosition().getBar() + 1 ).
-							arg( m_clip->endPosition().getTicks() %
-									TimePos::ticksPerBar() ) );
+					s_textFloat->setText(lengthText());
 				}
 				else if (m_action == Action::EditStartCrossfade)
 				{
@@ -862,10 +850,7 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 		m_clip->movePosition(newPos);
 		newPos = m_clip->startPosition(); // Get the real position the Clip was dragged to for the label
 		m_trackView->getTrackContentWidget()->changePosition();
-		s_textFloat->setText( QString( "%1:%2" ).
-				arg( newPos.getBar() + 1 ).
-				arg( newPos.getTicks() %
-						TimePos::ticksPerBar() ) );
+		s_textFloat->setText(positionText(newPos));
 		s_textFloat->moveGlobal( this, QPoint( width() + 2, height() + 2 ) );
 	}
 	else if( m_action == Action::MoveSelection )
@@ -901,8 +886,8 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 	else if( m_action == Action::Resize || m_action == Action::ResizeLeft )
 	{
 		const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
-		// Length in ticks of one snap increment
-		const TimePos snapLength = TimePos( (int)(snapSize * TimePos::ticksPerBar()) );
+		// The snap of the view the clip is in (the Arrangement's in the song's bars)
+		const auto* view = m_trackView->trackContainerView();
 
 		if( m_action == Action::Resize )
 		{
@@ -920,10 +905,10 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 			}
 			else if ( me->modifiers() & Qt::ShiftModifier )
 			{	// If shift is held, quantize clip's end position
-				TimePos end = TimePos( m_initialClipPos + l ).quantize( snapSize );
+				TimePos end = view->snap(m_initialClipPos + l, snapSize);
 				// The end position has to be after the clip's start
-				TimePos min = m_initialClipPos.quantize( snapSize );
-				if ( min <= m_initialClipPos ) min += snapLength;
+				TimePos min = view->snap(m_initialClipPos, snapSize);
+				if (min <= m_initialClipPos) { min += view->snapStep(min, snapSize); }
 
 				int newLength = qMax<int>(min - m_initialClipPos, end - m_initialClipPos);
 				if (newLength != m_clip->length())
@@ -933,14 +918,13 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 				}
 			}
 			else
-			{	// Otherwise, resize in fixed increments
-				TimePos initialLength = m_initialClipEnd - m_initialClipPos;
-				TimePos offset = TimePos( l - initialLength ).quantize( snapSize );
-				// Don't resize to less than 1 tick
-				auto min = TimePos(initialLength % snapLength);
-				if (min < 1) min += snapLength;
+			{	// Otherwise, resize in fixed increments: the end by whole steps
+				const TimePos end = view->snapSteps(m_initialClipEnd, m_initialClipPos + l, snapSize);
+				// The shortest: the first end those steps reach after the start (at least a tick)
+				auto minEnd = view->snapSteps(m_initialClipEnd, m_initialClipPos, snapSize);
+				if (minEnd <= m_initialClipPos) { minEnd += view->snapStep(minEnd, snapSize); }
 
-				int newLength = qMax<int>(min, initialLength + offset);
+				int newLength = qMax<int>(minEnd - m_initialClipPos, end - m_initialClipPos);
 				if (newLength != m_clip->length())
 				{
 					m_clip->changeLength(newLength);
@@ -973,18 +957,16 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 			else if( me->modifiers() & Qt::ShiftModifier )
 			{	// If shift is held, quantize clip's start position
 				// Don't let the start position move past the end position
-				TimePos max = m_initialClipEnd.quantize( snapSize );
-				if ( max >= m_initialClipEnd ) max -= snapLength;
-				t = qMin<int>( max, t.quantize( snapSize ) );
+				TimePos max = view->snap(m_initialClipEnd, snapSize);
+				if (max >= m_initialClipEnd) { max -= view->snapStepBefore(max, snapSize); }
+				t = qMin<int>(max, view->snap(t, snapSize));
 			}
 			else
-			{	// Otherwise, resize in fixed increments
-				// Don't resize to less than 1 tick
-				TimePos initialLength = m_initialClipEnd - m_initialClipPos;
-				auto minLength = TimePos(initialLength % snapLength);
-				if (minLength < 1) minLength += snapLength;
-				TimePos offset = TimePos(t - m_initialClipPos).quantize( snapSize );
-				t = qMin<int>( m_initialClipEnd - minLength, m_initialClipPos + offset );
+			{	// Otherwise, resize in fixed increments: the start by whole steps
+				// The latest: the last start those steps reach before the end (at least a tick before)
+				auto maxStart = view->snapSteps(m_initialClipPos, m_initialClipEnd, snapSize);
+				if (maxStart >= m_initialClipEnd) { maxStart -= view->snapStepBefore(maxStart, snapSize); }
+				t = qMin<int>(maxStart, view->snapSteps(m_initialClipPos, t, snapSize));
 			}
 
 			TimePos positionOffset = m_clip->startPosition() - t;
@@ -1012,21 +994,17 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 				m_clip->setAutoResize(false);
 			}
 		}
-		s_textFloat->setText( tr( "%1:%2 (%3:%4 to %5:%6)" ).
-				arg( m_clip->length().getBar() ).
-				arg( m_clip->length().getTicks() %
-						TimePos::ticksPerBar() ).
-				arg( m_clip->startPosition().getBar() + 1 ).
-				arg( m_clip->startPosition().getTicks() %
-						TimePos::ticksPerBar() ).
-				arg( m_clip->endPosition().getBar() + 1 ).
-				arg( m_clip->endPosition().getTicks() %
-						TimePos::ticksPerBar() ) );
+		s_textFloat->setText(lengthText());
 		s_textFloat->moveGlobal( this, QPoint( width() + 2, height() + 2) );
 	}
 	else if (m_action == Action::EditStartCrossfade || m_action == Action::EditEndCrossfade)
 	{
 		const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
+		const auto* view = m_trackView->trackContainerView();
+		// A length in whole snap steps, from the clip's start or end
+		const auto snapLength = [&](TimePos from, TimePos length) {
+			return TimePos{view->snapSteps(from, from + length, snapSize) - from};
+		};
 
 		TimePos pos = static_cast<int>(me->x() * TimePos::ticksPerBar() / ppb);
 		TimePos length;
@@ -1035,7 +1013,7 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 		{
 			// If alt or ctrl is held, quantize the length
 			length = unquantizedModHeld(me)
-				? pos.quantize(snapSize)
+				? snapLength(m_clip->startPosition(), pos)
 				: pos;
 			m_clip->setStartCrossfadeLength(std::clamp(static_cast<int>(length), 0, static_cast<int>(m_clip->length())));
 			s_textFloat->setText(QString("%1:%2").
@@ -1047,7 +1025,7 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 		{
 			// If alt or ctrl is held, quantize the length
 			length = unquantizedModHeld(me)
-				? TimePos(m_clip->length() - pos).quantize(snapSize)
+				? snapLength(m_clip->endPosition(), m_clip->length() - pos)
 				: TimePos(m_clip->length() - pos);
 			m_clip->setEndCrossfadeLength(std::clamp(static_cast<int>(length), 0, static_cast<int>(m_clip->length())));
 			s_textFloat->setText(QString("%1:%2").
@@ -1554,6 +1532,29 @@ bool ClipView::unquantizedModHeld( QMouseEvent * me )
 
 
 
+auto ClipView::positionText(TimePos pos) const -> QString
+{
+	const auto [bar, tick] = m_trackView->trackContainerView()->barAndTick(pos);
+	return QString{"%1:%2"}.arg(bar).arg(tick);
+}
+
+
+
+
+auto ClipView::lengthText() const -> QString
+{
+	// The length in bars of the time signature at the start; from and to in the bars where they are
+	const auto [startBar, startTick] = m_trackView->trackContainerView()->barAndTick(m_clip->startPosition());
+	const auto [endBar, endTick] = m_trackView->trackContainerView()->barAndTick(m_clip->endPosition());
+	return tr("%1:%2 (%3:%4 to %5:%6)")
+		.arg(m_clip->length().getBar())
+		.arg(m_clip->length().getTicks() % TimePos::ticksPerBar())
+		.arg(startBar).arg(startTick).arg(endBar).arg(endTick);
+}
+
+
+
+
 TimePos ClipView::draggedClipPos( QMouseEvent * me )
 {
 	//Pixels per bar
@@ -1570,11 +1571,11 @@ TimePos ClipView::draggedClipPos( QMouseEvent * me )
 	else if ( me->modifiers() & Qt::ShiftModifier )
 	{	// If shift is held, quantize position (Default in 1.2.0 and earlier)
 		// or end position, whichever is closest to the actual position
-		TimePos startQ = newPos.quantize( getGUI()->songEditor()->m_editor->getSnapSize() );
+		const auto* view = m_trackView->trackContainerView();
+		const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
+		TimePos startQ = view->snap(newPos, snapSize);
 		// Find start position that gives snapped clip end position
-		TimePos endQ = ( newPos + m_clip->length() );
-		endQ = endQ.quantize( getGUI()->songEditor()->m_editor->getSnapSize() );
-		endQ = endQ - m_clip->length();
+		TimePos endQ = view->snap(newPos + m_clip->length(), snapSize) - m_clip->length();
 
 		// Select the position closest to actual position
 		if (std::abs(newPos - startQ) < std::abs(newPos - endQ)) { newPos = startQ; }
@@ -1582,7 +1583,8 @@ TimePos ClipView::draggedClipPos( QMouseEvent * me )
 	}
 	else
 	{	// Otherwise, quantize moved distance (preserves user offsets)
-		newPos = m_initialClipPos + offset.quantize( getGUI()->songEditor()->m_editor->getSnapSize() );
+		newPos = m_trackView->trackContainerView()->snapSteps(m_initialClipPos, m_initialClipPos + offset,
+			getGUI()->songEditor()->m_editor->getSnapSize());
 	}
 	return newPos;
 }
@@ -1613,13 +1615,16 @@ int ClipView::knifeMarkerPos( QMouseEvent * me )
 TimePos ClipView::quantizeSplitPos(TimePos midiPos)
 {
 	const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
+	const auto* view = m_trackView->trackContainerView();
 	// quantize the length of the new left clip...
-	const TimePos leftPos = midiPos.quantize(snapSize);
+	const auto start = m_clip->startPosition();
+	const TimePos leftPos = view->snapSteps(start, start + midiPos, snapSize) - start;
 	//...or right clip...
 	const TimePos rightOff = m_clip->length() - midiPos;
-	const TimePos rightPos = m_clip->length() - rightOff.quantize(snapSize);
+	const auto end = m_clip->endPosition();
+	const TimePos rightPos = m_clip->length() - (view->snapSteps(end, end + rightOff, snapSize) - end);
 	//...or the global gridlines
-	const TimePos globalPos = TimePos(midiPos + m_initialClipPos).quantize(snapSize) - m_initialClipPos;
+	const TimePos globalPos = view->snap(midiPos + m_initialClipPos, snapSize) - m_initialClipPos;
 	//...whichever gives a position closer to the cursor
 	if (abs(leftPos - midiPos) <= abs(rightPos - midiPos) && abs(leftPos - midiPos) <= abs(globalPos - midiPos)) { return leftPos; }
 	else if (abs(rightPos - midiPos) <= abs(leftPos - midiPos) && abs(rightPos - midiPos) <= abs(globalPos - midiPos)) { return rightPos; }

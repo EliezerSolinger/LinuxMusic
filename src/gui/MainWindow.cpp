@@ -83,6 +83,7 @@
 #include "EffectBrowser.h"
 #include "SongEditor.h"
 #include "SubWindow.h"
+#include "TempoMap.h"
 #include "TemplatesMenu.h"
 #include "TextFloat.h"
 #include "ToolButton.h"
@@ -359,7 +360,9 @@ void MainWindow::finalize()
 			ConfigManager::inst()->userSamplesDir(),
 			tr("Audio files (%1)").arg(QStringList{"*.wav", "*.flac", "*.ogg", "*.mp3", "*.aif", "*.aiff"}.join(' ')));
 		if (files.isEmpty()) { return; }
-		const auto at = TimePos{Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks()}.quantize(1.0, true);
+		// The start of the playhead's bar
+		const auto at = TimePos{Engine::getSong()->tempoMap().barAt(
+			Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks()).start};
 		getGUI()->songEditor()->m_editor->insertAudioFiles(files, at);
 		showPage(Page::Composition);
 	});

@@ -223,6 +223,13 @@ private:
 	// Width of the unused region on the widget's left (above track labels or piano)
 	int m_xOffset;
 	float m_ppb;
+	//! Whether its bars are the song's with changes of the time signature (the Arrangement's, with them)
+	auto followsSongBars() const -> bool;
+	//! @p pos on the snap's grid, in the bars it shows
+	auto snapped(TimePos pos) const -> TimePos;
+	//! A snap step's ticks from @p at (or to it, @p before)
+	auto snapStep(TimePos at, bool before = false) const -> tick_t;
+
 	float m_snapSize = 1.f;
 	Timeline* m_timeline;
 	// Leftmost position visible in parent editor

@@ -27,6 +27,8 @@
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "Engine.h"
+#include "Song.h"
+#include "TempoMap.h"
 #include "Note.h"
 #include "ProjectJournal.h"
 #include "TimePos.h"
@@ -110,7 +112,8 @@ void MidiRecorder::addNote(InstrumentTrack* track, TrackState& state, int key, v
 	const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
 	if (!clip)
 	{
-		clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{start - start % TimePos::ticksPerBar()}));
+		// From the start of the bar it starts in
+		clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{Engine::getSong()->tempoMap().barAt(start).start}));
 		if (!clip) { return; }
 		clip->setLane(track->playingLane());
 	}

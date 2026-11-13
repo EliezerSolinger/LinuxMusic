@@ -435,9 +435,8 @@ void SampleTrackView::dropEvent(QDropEvent *de)
 		const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
 		TimePos clipPos = trackContainerView()->fixedClips()
 				? TimePos(0)
-				: TimePos(((xPos - trackHeadWidth) / trackContainerView()->pixelsPerBar()
-							* TimePos::ticksPerBar()) + trackContainerView()->currentPosition()
-						).quantize(snapSize, true);
+				: trackContainerView()->snap(TimePos(((xPos - trackHeadWidth) / trackContainerView()->pixelsPerBar()
+							* TimePos::ticksPerBar()) + trackContainerView()->currentPosition()), snapSize, true);
 
 		auto* clip = getTrack()->createClip(clipPos);
 		if (auto* sampleClip = dynamic_cast<SampleClip*>(clip)) { sampleClip->setSampleFile(value); }

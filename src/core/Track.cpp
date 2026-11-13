@@ -612,15 +612,16 @@ void Track::createClipsForPattern(int pattern)
 
 //! @todo If we stepped through this list last to first, and the list was in ascending order by Clip time, once we hit
 //! a Clip that was earlier than the insert time, we could fall out of the loop early.
-void Track::insertBar( const TimePos & pos )
+void Track::insertBar(const TimePos& pos, tick_t length)
 {
+	if (length <= 0) { length = TimePos::ticksPerBar(); }
 	// we'll increase the position of every Clip, positioned behind pos, by
 	// one bar
 	for (const auto& clip : m_clips)
 	{
 		if (clip->startPosition() >= pos)
 		{
-			clip->movePosition(clip->startPosition() + TimePos::ticksPerBar());
+			clip->movePosition(clip->startPosition() + length);
 		}
 	}
 }
@@ -628,15 +629,16 @@ void Track::insertBar( const TimePos & pos )
 
 
 
-void Track::removeBar( const TimePos & pos )
+void Track::removeBar(const TimePos& pos, tick_t length)
 {
+	if (length <= 0) { length = TimePos::ticksPerBar(); }
 	// we'll decrease the position of every Clip, positioned behind pos, by
 	// one bar
 	for (const auto& clip : m_clips)
 	{
 		if (clip->startPosition() >= pos)
 		{
-			clip->movePosition(clip->startPosition() - TimePos::ticksPerBar());
+			clip->movePosition(clip->startPosition() - length);
 		}
 	}
 }

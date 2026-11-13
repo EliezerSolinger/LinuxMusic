@@ -38,6 +38,7 @@
 #include "PatternEditor.h"
 #include "PatternStore.h"
 #include "Song.h"
+#include "TempoMap.h"
 #include "SongEditor.h"
 #include "StringPairDrag.h"
 #include "TrackContainerView.h"
@@ -79,6 +80,9 @@ TrackContentWidget::TrackContentWidget( TrackView * parent ) :
 	connect(getGUI()->songEditor()->m_editor, &SongEditor::proportionalSnapChanged,
 			this, &TrackContentWidget::updateBackground);
 
+	// The Arrangement's grid follows the song's bars (see paintEvent())
+	connect(&Engine::getSong()->tempoMap(), &TempoMap::changed, this, qOverload<>(&QWidget::update));
+
 	setStyle( QApplication::style() );
 
 	updateBackground();
@@ -87,21 +91,18 @@ TrackContentWidget::TrackContentWidget( TrackView * parent ) :
 
 
 
-void TrackContentWidget::updateBackground()
-{		
+auto TrackContentWidget::gridResolutions() const -> std::pair<float, float>
+{
 	// use snapSize to determine number of lines to draw
 	float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
-
-	const TrackContainerView * tcv = m_trackView->trackContainerView();
-
 	// Assume even-pixels-per-bar. Makes sense, should be like this anyways
-	int ppb = static_cast<int>( tcv->pixelsPerBar() );
+	int ppb = static_cast<int>(m_trackView->trackContainerView()->pixelsPerBar());
 
 	// Coarse grid appears every bar (less frequently if quantization > 1 bar)
 	float coarseGridResolution = (snapSize >= 1) ? snapSize : 1;
 	// Fine grid appears within bars
 	float fineGridResolution = snapSize;
-	// Increase fine grid resolution (size between lines) if it results in less than	
+	// Increase fine grid resolution (size between lines) if it results in less than
 	// 4 pixels between each line to avoid cluttering
 	float pixelsBetweenLines = ppb * snapSize;
 	if (pixelsBetweenLines < MIN_PIXELS_BETWEEN_LINES) {
@@ -110,6 +111,19 @@ void TrackContentWidget::updateBackground()
 		int scaleFactor = 1 << static_cast<int>( std::ceil( std::log2( MIN_PIXELS_BETWEEN_LINES / pixelsBetweenLines ) ) );
 		fineGridResolution *= scaleFactor;
 	}
+	return {coarseGridResolution, fineGridResolution};
+}
+
+
+
+
+void TrackContentWidget::updateBackground()
+{
+	const TrackContainerView * tcv = m_trackView->trackContainerView();
+
+	// Assume even-pixels-per-bar. Makes sense, should be like this anyways
+	int ppb = static_cast<int>( tcv->pixelsPerBar() );
+	const auto [coarseGridResolution, fineGridResolution] = gridResolutions();
 
 	int w = ppb * BARS_PER_GROUP;
 	int h = height();
@@ -309,7 +323,8 @@ bool TrackContentWidget::canPasteSelection( TimePos clipPos, const QMimeData* md
 	QDomElement metadata = dataFile.content().firstChildElement( "copyMetadata" );
 	QDomAttr clipPosAttr = metadata.attributeNode( "grabbedClipPos" );
 	TimePos grabbedClipPos = clipPosAttr.value().toInt();
-	TimePos grabbedClipBar = TimePos( grabbedClipPos.getBar(), 0 );
+	// The start of its bar (in the view's bars)
+	const TimePos grabbedClipBar = m_trackView->trackContainerView()->snap(grabbedClipPos, 1.0, true);
 
 	// Extract the track index that was originally clicked
 	QDomAttr tiAttr = metadata.attributeNode( "initialTrackIndex" );
@@ -454,8 +469,10 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
 	{
 		// Users expect clips to "fall" backwards, so bias the offset
 		offset -= TimePos::ticksPerBar() * snapSize / 2;
-		// The offset is quantized (rather than the positions) to preserve fine adjustments
-		offset = offset.quantize(snapSize);
+		// The offset is quantized (rather than the positions) to preserve fine adjustments: whole snap steps (in
+		// the view's bars) from where the grabbed clip was
+		const auto* view = m_trackView->trackContainerView();
+		offset = view->snapSteps(grabbedClipPos, grabbedClipPos + offset, snapSize) - grabbedClipPos;
 	}
 	// Fix offset if it sets the left most Clip to a negative position
 	offset = std::max(offset.getTicks(), -leftmostPos.getTicks());
@@ -472,8 +489,10 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
 		// The new position is the old position plus the offset.
 		TimePos pos = clipElement.attributeNode( "pos" ).value().toInt() + offset;
 		// If we land on ourselves, offset by one snap
-		TimePos shift = TimePos::ticksPerBar() * getGUI()->songEditor()->m_editor->getSnapSize();
-		if (offset == 0 && initialTrackIndex == currentTrackIndex) { pos += shift; }
+		if (offset == 0 && initialTrackIndex == currentTrackIndex)
+		{
+			pos += m_trackView->trackContainerView()->snapStep(pos, snapSize);
+		}
 
 		Clip * clip = t->createClip( pos );
 		clip->restoreState( clipElement );
@@ -534,7 +553,7 @@ void TrackContentWidget::mousePressEvent( QMouseEvent * me )
 		}
 		getTrack()->addJournalCheckPoint();
 		const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
-		const TimePos timePos = TimePos(getPosition(pos.x())).quantize(snapSize, true);
+		const TimePos timePos = m_trackView->trackContainerView()->snap(TimePos(getPosition(pos.x())), snapSize, true);
 		getTrack()->createClip(timePos);
 	}
 }
@@ -558,11 +577,66 @@ void TrackContentWidget::paintEvent( QPaintEvent * pe )
 	int ppb = static_cast<int>( tcv->pixelsPerBar() );
 	QPainter p( this );
 	// Don't draw background on Pattern Editor
-	if (m_trackView->trackContainerView() != getGUI()->patternEditor()->m_editor)
+	if (m_trackView->trackContainerView() == getGUI()->patternEditor()->m_editor) { return; }
+	// The Arrangement's bars, when the tempo map changes their time signature
+	if (tcv == getGUI()->songEditor()->m_editor && Engine::getSong()->tempoMap().hasMeterChanges())
 	{
-		p.drawTiledPixmap(rect(), m_background, QPoint(
-				tcv->currentPosition().getTicks() * ppb / TimePos::ticksPerBar(), 0));
+		paintSongBars(p);
+		return;
 	}
+	p.drawTiledPixmap(rect(), m_background, QPoint(
+			tcv->currentPosition().getTicks() * ppb / TimePos::ticksPerBar(), 0));
+}
+
+
+
+
+void TrackContentWidget::paintSongBars(QPainter& p)
+{
+	// As the tiled background draws them (updateBackground()), bar by bar: groups of bars shaded in turn, the
+	// coarse lines at the bars (or every few), the fine ones at the fractions of each bar
+	const auto* tcv = m_trackView->trackContainerView();
+	const auto& map = Engine::getSong()->tempoMap();
+	const auto [coarseGridResolution, fineGridResolution] = gridResolutions();
+	const auto ppb = tcv->pixelsPerBar();
+	const auto begin = tcv->currentPosition().getTicks();
+	const auto xAt = [&](double tick) { return (tick - begin) * ppb / TimePos::ticksPerBar(); };
+	const auto end = begin + static_cast<tick_t>(std::ceil(width() * TimePos::ticksPerBar() / ppb)) + 1;
+	const int h = height();
+	const auto coarseEvery = std::max(1, static_cast<int>(std::lround(coarseGridResolution)));
+
+	map.forEachBar(begin, end, [&](const TempoMap::Bar& bar) {
+		const auto left = xAt(bar.start);
+		const auto right = xAt(bar.start + bar.length);
+		p.fillRect(QRectF{left, 0.0, right - left, static_cast<double>(h)},
+			(bar.index / BARS_PER_GROUP) % 2 == 0 ? darkerColor() : lighterColor());
+		// The fine lines, each a fraction of this bar
+		p.setPen(QPen(fineGridColor(), fineGridWidth()));
+		const auto fineStep = fineGridResolution * bar.meter.ticksPerBar();
+		if (fineGridResolution < 1 && fineStep > 0)
+		{
+			for (auto tick = bar.start + fineStep; tick < bar.start + bar.length - 0.5; tick += fineStep)
+			{
+				p.drawLine(QLineF{xAt(tick), 0.0, xAt(tick), static_cast<double>(h)});
+			}
+		}
+		if (bar.index % coarseEvery == 0)
+		{
+			p.setPen(QPen(coarseGridColor(), coarseGridWidth()));
+			p.drawLine(QLineF{left, 0.0, left, static_cast<double>(h)});
+			p.setPen(QPen(embossColor(), embossWidth()));
+			const auto emboss = left + coarseGridWidth() + embossOffset();
+			p.drawLine(QLineF{emboss, 0.0, emboss, static_cast<double>(h)});
+		}
+		else
+		{
+			p.setPen(QPen(fineGridColor(), fineGridWidth()));
+			p.drawLine(QLineF{left, 0.0, left, static_cast<double>(h)});
+		}
+	});
+
+	p.setPen(QPen(horizontalColor(), horizontalWidth()));
+	p.drawLine(0, h - (horizontalWidth() + 1) / 2, width(), h - (horizontalWidth() + 1) / 2);
 }
 
 

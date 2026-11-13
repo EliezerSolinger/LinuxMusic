@@ -71,6 +71,9 @@ public:
 	TimePos( const tick_t ticks = 0 );
 
 	TimePos quantize(float bars, bool forceRoundDown = false) const;
+	//! @p ticks on the grid of @p interval ticks (at least one): the nearest point, a tie to the right, or the one
+	//! before
+	static auto quantize(tick_t ticks, tick_t interval, bool forceRoundDown = false) -> tick_t;
 	TimePos toAbsoluteBar() const { return getBar() * s_ticksPerBar; }
 
 	TimePos& operator+=(const TimePos& time)
