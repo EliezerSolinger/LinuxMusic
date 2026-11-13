@@ -46,6 +46,8 @@ class TimeLineWidget;
  * - a double-click adds a marker there (with the tempo there), or edits the tempo of the marker under the mouse;
  * - dragging a marker moves it (on sixteenths of a bar);
  * - the context menu edits a marker's tempo, makes it jump or ramp to the next one, or removes it.
+ * Above the tempo, the named markers (SongMarkers) and the regions: spans with a name, as REAPER's. A region is
+ * drawn by dragging on its row, moved by dragging it, resized by its edges, and a click on it makes it the cycle.
  * It maps ticks to pixels as the ruler does.
  */
 class TempoLaneWidget : public QWidget
@@ -77,6 +79,24 @@ private:
 	void addNamed(tick_t tick);
 	void renameNamed(tick_t tick);
 	void namedMenu(QMenu& menu, int x);
+
+	// The regions (SongMarkers' too), in the row between
+	enum class RegionDrag { None, Create, Move, Begin, End };
+	struct RegionHit { tick_t begin; RegionDrag part; };
+	auto regionAt(int x) const -> std::optional<RegionHit>;
+	static auto regionColor(const QColor& color) -> QColor;
+	void addRegion(tick_t begin, tick_t end);
+	void addRegionFromCycle();
+	void renameRegion(tick_t begin);
+	void regionMenu(QMenu& menu, int x);
+	static void cycleOver(tick_t begin, tick_t end);
+	void paintRegions(QPainter& painter);
+
+	RegionDrag m_regionDrag = RegionDrag::None;
+	tick_t m_regionOrigin = 0; //!< the dragged region's begin, as it was
+	tick_t m_pressTick = 0;
+	bool m_regionMoved = false;
+	std::pair<tick_t, tick_t> m_regionPreview{}; //!< the span while dragging (applied on release, one undo step)
 
 	TimeLineWidget* m_ruler;
 	TempoMap* m_map;

@@ -46,7 +46,9 @@
 #include "PianoRoll.h"
 #include "ProjectNotes.h"
 #include "PluginBrowser.h"
+#include "Song.h"
 #include "SongEditor.h"
+#include "SongMarkers.h"
 #include "TabWidget.h"
 
 #include <QApplication>
@@ -298,6 +300,22 @@ GuiApplication::GuiApplication()
 			// (LINUXMUSIC_SETTINGS_TAB=<n> opens it at a tab)
 			QTimer::singleShot(2500, m_mainWindow, [this] {
 				m_mainWindow->showSettingsPage(qEnvironmentVariableIntValue("LINUXMUSIC_SETTINGS_TAB"));
+			});
+		}
+		if (screenshotAction == "regions")
+		{
+			// Markers and regions on the ruler, the second region as the cycle
+			QTimer::singleShot(2500, m_mainWindow, [] {
+				auto& markers = Engine::getSong()->markers();
+				const auto bar = TimePos::ticksPerBar();
+				markers.add(0, "Start");
+				markers.add(4 * bar, "Drop");
+				markers.addRegion(0, 4 * bar, "Intro");
+				markers.addRegion(4 * bar, 12 * bar, "Chorus", QColor{200, 90, 120});
+				markers.addRegion(6 * bar, 8 * bar, "Break");
+				auto& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+				timeline.setLoopPoints(TimePos{4 * bar}, TimePos{12 * bar});
+				timeline.setLoopEnabled(true);
 			});
 		}
 		if (screenshotAction == "effects-browser")

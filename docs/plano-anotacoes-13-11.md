@@ -307,7 +307,7 @@ Cada passo atualiza este documento, marcando o que foi feito.
   - cada área de abas recolhe e expande com um botão no canto;
   - mouse como no REAPER: a roda dá zoom horizontal, Ctrl+roda muda a altura das faixas, Alt+roda rola na
     horizontal e Shift+roda na vertical. S corta no cursor;
-  - pendente: o registro central de atalhos editável nas configurações.
+  - o registro central de atalhos ficou pronto depois (ver abaixo).
 - **Etapa 10 feita** (13/11):
   - as configurações viraram uma página, atrás de uma engrenagem ao lado de COMPOSIÇÃO/MIXAGEM, com Cmd+,;
   - menu: mantido. As configurações pelo menu abrem a página; a ajuda saiu da barra e ficou no menu.
@@ -337,12 +337,21 @@ Cada passo atualiza este documento, marcando o que foi feito.
     tempo, toca dali e apaga.
   - M cria um marcador no cursor e 1 a 9 vão aos marcadores, como no REAPER.
   - São salvos no projeto, e cada edição é um passo de desfazer.
-  - Regiões ficam para depois.
+  - As regiões vieram depois (ver abaixo).
 - **Etapa 9.3 feita** (13/11): nas barras do Piano Roll e do Arranjo, os seletores viraram botões de ícone que
   mostram o valor atual e abrem o mesmo menu.
-- **Falta das anotações:**
-  - o registro central de atalhos;
-  - regiões na régua.
+- **Atalhos num registro central** (13/11): gravar, ciclo, cortar, marcador, região, copiar, recortar, colar e
+  duplicar ficam numa lista só, com os padrões do REAPER. Cada um pode ser trocado na aba Atalhos das
+  configurações (com botão para voltar ao padrão), e os editores consultam o registro.
+- **Regiões na régua, como no REAPER** (13/11): uma linha REGIÕES entre os marcadores e o tempo.
+  - Arrastar na linha desenha uma região, arrastar uma região a move e as bordas a redimensionam (um passo de
+    desfazer ao soltar). Um clique faz dela o ciclo. Duplo clique renomeia, ou cria uma sobre o ciclo.
+  - Shift+R cria uma região sobre o ciclo.
+  - O menu renomeia, muda a cor, faz o ciclo, toca do início, exporta a região como áudio (pelo assistente de
+    exportação, com a mixagem inteira) e apaga.
+  - Regiões podem se sobrepor: a mais curta fica por cima e é a que o mouse pega.
+  - São salvas no projeto, e uma região danificada é ignorada ao carregar. `SongMarkersTest` cobre tudo isso.
+- **Falta das anotações:** nada. Todas as etapas 5 a 13 foram feitas.
 - **Etapa 7 feita** (13/11): o compressor do mixbus segue o SSL G medido por Thompson e Heilemann (2026, um G384).
   - O painel tem os passos do original: limiar de −15 a +15, razão 2/4/10, ataque de 0,1 a 30 ms, release de 0,1
     a 1,2 s ou Auto, e make-up de −5 a +15 dB.

@@ -1704,7 +1704,10 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, bool ga
 	}
 
 	if (!m_tempoMap.isEmpty()) { m_tempoMap.saveState(dataFile, dataFile.content()); }
-	if (!m_songMarkers.markers().empty()) { m_songMarkers.saveState(dataFile, dataFile.content()); }
+	if (!m_songMarkers.markers().empty() || !m_songMarkers.regions().empty())
+	{
+		m_songMarkers.saveState(dataFile, dataFile.content());
+	}
 	saveControllerStates( dataFile, dataFile.content() );
 
 	saveScaleStates(dataFile, dataFile.content());

@@ -15167,6 +15167,10 @@ Latency: %2 ms</source>
         <source>Marker %1</source>
         <translation>Marcador %1</translation>
     </message>
+    <message>
+        <source>Region %1</source>
+        <translation>Região %1</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::SongEditorWindow</name>
@@ -17239,6 +17243,10 @@ Latency: %2 ms</source>
         <source>Export the track</source>
         <translation>Exportar a faixa</translation>
     </message>
+    <message>
+        <source>Export the region</source>
+        <translation>Exportar a região</translation>
+    </message>
 </context>
 <context>
     <name>ExportProcessor</name>
@@ -17344,6 +17352,46 @@ Latency: %2 ms</source>
     <message>
         <source>Tempo from here on (BPM):</source>
         <translation>Tempo daqui em diante (BPM):</translation>
+    </message>
+    <message>
+        <source>Markers above (M adds one at the playhead; right-click to add, rename, color or remove); regions in the middle (drag to draw one, click one to cycle over it, drag its edges to resize it); tempo below (double-click to add a change of tempo); drag any of them to move it</source>
+        <translation>Marcadores em cima (M adiciona um no cursor; clique direito para adicionar, renomear, colorir ou remover); regiões no meio (arraste para desenhar uma, clique numa para fazer o ciclo nela, arraste as bordas para redimensionar); andamento embaixo (clique duplo para adicionar uma mudança de andamento); arraste qualquer um para mover</translation>
+    </message>
+    <message>
+        <source>REGIONS</source>
+        <translation>REGIÕES</translation>
+    </message>
+    <message>
+        <source>Region</source>
+        <translation>Região</translation>
+    </message>
+    <message>
+        <source>Region %1</source>
+        <translation>Região %1</translation>
+    </message>
+    <message>
+        <source>Add a region over the cycle...</source>
+        <translation>Adicionar uma região sobre o ciclo...</translation>
+    </message>
+    <message>
+        <source>Add a region of a bar here...</source>
+        <translation>Adicionar uma região de um compasso aqui...</translation>
+    </message>
+    <message>
+        <source>Region color</source>
+        <translation>Cor da região</translation>
+    </message>
+    <message>
+        <source>Cycle over the region</source>
+        <translation>Fazer o ciclo na região</translation>
+    </message>
+    <message>
+        <source>Play from its start</source>
+        <translation>Tocar do início dela</translation>
+    </message>
+    <message>
+        <source>Export the region as audio...</source>
+        <translation>Exportar a região como áudio...</translation>
     </message>
 </context>
 <context>
@@ -17530,6 +17578,10 @@ Latency: %2 ms</source>
     <message>
         <source>Duplicate the selected clips</source>
         <translation>Duplicar os clipes selecionados</translation>
+    </message>
+    <message>
+        <source>Add a region over the cycle</source>
+        <translation>Adicionar uma região sobre o ciclo</translation>
     </message>
 </context>
 </TS>

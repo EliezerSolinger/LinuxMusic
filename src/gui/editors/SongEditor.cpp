@@ -537,6 +537,18 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 		markers.add(tick, tr("Marker %1").arg(markers.markers().size() + 1));
 		m_song->setModified();
 	}
+	else if (Shortcuts::matches("region", ke))
+	{
+		// A region over the cycle (named after its number; renamed with a double-click)
+		const auto& timeline = m_song->getTimeline(Song::PlayMode::Song);
+		auto& markers = m_song->markers();
+		if (timeline.loopEnd() > timeline.loopBegin())
+		{
+			markers.addRegion(timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks(),
+				tr("Region %1").arg(markers.regions().size() + 1));
+			m_song->setModified();
+		}
+	}
 	else if (ke->key() >= Qt::Key_1 && ke->key() <= Qt::Key_9 && ke->modifiers() == Qt::NoModifier)
 	{
 		// As in REAPER: to marker 1 to 9

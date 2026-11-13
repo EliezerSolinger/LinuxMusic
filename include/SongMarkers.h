@@ -58,6 +58,27 @@ public:
 	};
 
 	auto markers() const -> const std::vector<Marker>& { return m_markers; }
+
+	//! A region: a span of the song with a name ("Chorus", from its start to its end), as REAPER's
+	struct Region
+	{
+		tick_t begin = 0;
+		tick_t end = 0;
+		QString name;
+		QColor color;
+		auto operator==(const Region&) const -> bool = default;
+	};
+	auto regions() const -> const std::vector<Region>& { return m_regions; }
+	//! The region @p tick is in (the shortest, if several), if any
+	auto regionAt(tick_t tick) const -> std::optional<Region>;
+	//! Adds a region from @p begin to @p end (ordered; at least a tick)
+	void addRegion(tick_t begin, tick_t end, const QString& name, const QColor& color = {});
+	//! Changes the region that begins at @p begin
+	void renameRegion(tick_t begin, const QString& name);
+	void setRegionColor(tick_t begin, const QColor& color);
+	void removeRegion(tick_t begin);
+	//! Moves or resizes the region that begins at @p begin to @p newBegin – @p newEnd (one undo step)
+	void setRegionSpan(tick_t begin, tick_t newBegin, tick_t newEnd);
 	//! The marker at @p tick, if any
 	auto at(tick_t tick) const -> std::optional<Marker>;
 	//! The first marker after @p tick, and the last before it (for going from marker to marker)
@@ -85,6 +106,7 @@ private:
 	void sort();
 
 	std::vector<Marker> m_markers;
+	std::vector<Region> m_regions;
 };
 
 } // namespace lmms

@@ -287,6 +287,20 @@ void ExportWizard::setOnly(Track* track, std::optional<std::pair<TimePos, TimePo
 
 
 
+void ExportWizard::setSpan(TimePos begin, TimePos end, const QString& name)
+{
+	m_only = nullptr;
+	m_span = std::pair{begin, end};
+	if (!name.trimmed().isEmpty()) { m_name->setText(name.trimmed()); }
+	setWindowTitle(tr("Export the region"));
+	m_wholeSong->setChecked(true);
+	m_wholeSong->setEnabled(false);
+	m_cycleRange->setEnabled(false);
+}
+
+
+
+
 void ExportWizard::setFolderAndName(const QString& folder, const QString& name)
 {
 	m_folder->setText(folder);

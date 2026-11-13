@@ -73,6 +73,9 @@ public:
 	 */
 	void setOnly(Track* track, std::optional<std::pair<TimePos, TimePos>> span = std::nullopt);
 
+	//! Exports the whole mix between @p begin and @p end (a region's span), named @p name
+	void setSpan(TimePos begin, TimePos end, const QString& name);
+
 private:
 	auto rangePage() -> QWizardPage*;
 	auto formatsPage() -> QWizardPage*;

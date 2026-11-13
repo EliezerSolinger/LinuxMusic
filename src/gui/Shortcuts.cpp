@@ -39,6 +39,7 @@ auto actions() -> const std::vector<Action>&
 		{"cycle", QT_TRANSLATE_NOOP("Shortcuts", "Cycle on or off"), QKeySequence{Qt::Key_C}},
 		{"split", QT_TRANSLATE_NOOP("Shortcuts", "Split the clips at the playhead"), QKeySequence{Qt::Key_S}},
 		{"marker", QT_TRANSLATE_NOOP("Shortcuts", "Add a marker at the playhead"), QKeySequence{Qt::Key_M}},
+		{"region", QT_TRANSLATE_NOOP("Shortcuts", "Add a region over the cycle"), QKeySequence{Qt::SHIFT | Qt::Key_R}},
 		{"copy", QT_TRANSLATE_NOOP("Shortcuts", "Copy the selected clips"), QKeySequence{QKeySequence::Copy}},
 		{"cut", QT_TRANSLATE_NOOP("Shortcuts", "Cut the selected clips"), QKeySequence{QKeySequence::Cut}},
 		{"paste", QT_TRANSLATE_NOOP("Shortcuts", "Paste at the playhead"), QKeySequence{QKeySequence::Paste}},
