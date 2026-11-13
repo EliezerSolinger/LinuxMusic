@@ -471,7 +471,9 @@ void Song::processMetronome(size_t bufferOffset)
 		|| currentPlayMode == PlayMode::Pattern;
 
 	if (!supported || m_exporting) { return; } 
-	m_metronome.processTick(currentTick(), ticksPerBar(), m_timeSigModel.getNumerator(), bufferOffset);
+	// The count-in clicks during the pre-roll of a recording, metronome or not
+	const bool countIn = currentPlayMode == PlayMode::Song && currentTick() < m_countInUntilTick;
+	m_metronome.processTick(currentTick(), ticksPerBar(), m_timeSigModel.getNumerator(), bufferOffset, countIn);
 }
 
 void Song::setModified(bool value)
@@ -828,11 +830,25 @@ auto Song::recordAudio() -> bool
 	// The input must be open before the first period is recorded (an armed track has opened it already)
 	Engine::audioEngine()->setCaptureEnabled(true);
 
-	// Playing the song, recording starts here and now (punch in); otherwise the song starts from the cursor
+	// Playing the song, recording starts here and now (punch in); otherwise the song starts from the cursor, after
+	// the pre-roll (with the count-in's clicks, if asked for)
 	const bool punchIn = m_playing && !m_paused && m_playMode == PlayMode::Song;
-	if (!punchIn) { playSong(); }
+	auto fromTick = tick_t{0};
+	if (!punchIn)
+	{
+		if (!isStopped()) { stop(); }
+		const auto cursor = getPlayPos(PlayMode::Song).getTicks();
+		const auto preRoll = std::clamp(ConfigManager::inst()->value("recording", "prerollbars", "0").toInt(), 0, 16);
+		const auto start = std::max(0, cursor - preRoll * ticksPerBar());
+		const bool countIn = ConfigManager::inst()->value("recording", "countin", "0").toInt() != 0;
+		m_countInUntilTick = countIn && preRoll > 0 ? cursor : -1;
+		fromTick = cursor;
+		setPlayPos(start, PlayMode::Song);
+		playSong();
+		getTimeline(PlayMode::Song).setPlayStartPosition(TimePos{cursor}); // stopping goes back to the cursor
+	}
 	const auto error = m_audioRecorder.start(requests, recordingLatency(), Engine::audioEngine()->framesPerPeriod(),
-		Engine::audioEngine()->outputSampleRate());
+		Engine::audioEngine()->outputSampleRate(), fromTick);
 	if (!error.isEmpty())
 	{
 		if (!punchIn) { stop(); }
@@ -867,6 +883,7 @@ void Song::stopAudioRecording()
 void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 {
 	m_recording = false;
+	m_countInUntilTick = -1;
 	auto problems = QStringList{};
 	for (const auto& take : takes)
 	{

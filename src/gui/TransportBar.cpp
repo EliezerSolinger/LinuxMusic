@@ -26,11 +26,14 @@
 #include <QAction>
 #include <QButtonGroup>
 #include <QHBoxLayout>
+#include <QActionGroup>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
 #include <QToolButton>
 
 #include "AudioEngine.h"
+#include "ConfigManager.h"
 #include "embed.h"
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -163,6 +166,30 @@ TransportBar::TransportBar(QWidget* parent)
 	m_recordButton = addButton("record", tr("Record the armed tracks' audio input (with no track armed: "
 		"record MIDI into the clip open in the Piano Roll)"));
 	m_recordButton->setCheckable(true);
+
+	// The recording's pre-roll and count-in, in the button's menu
+	auto recordMenu = new QMenu(m_recordButton);
+	auto preRollMenu = recordMenu->addMenu(tr("Pre-roll"));
+	auto preRolls = new QActionGroup(preRollMenu);
+	const auto preRoll = ConfigManager::inst()->value("recording", "prerollbars", "0").toInt();
+	for (const int bars : {0, 1, 2, 4})
+	{
+		auto action = preRollMenu->addAction(bars == 0 ? tr("Off") : tr("%n bar(s)", "", bars));
+		action->setCheckable(true);
+		action->setChecked(bars == preRoll);
+		preRolls->addAction(action);
+		connect(action, &QAction::triggered, this, [bars] {
+			ConfigManager::inst()->setValue("recording", "prerollbars", QString::number(bars));
+		});
+	}
+	auto countIn = recordMenu->addAction(tr("Count-in: the metronome clicks during the pre-roll"));
+	countIn->setCheckable(true);
+	countIn->setChecked(ConfigManager::inst()->value("recording", "countin", "0").toInt() != 0);
+	connect(countIn, &QAction::toggled, this, [](bool on) {
+		ConfigManager::inst()->setValue("recording", "countin", on ? "1" : "0");
+	});
+	m_recordButton->setMenu(recordMenu);
+	m_recordButton->setPopupMode(QToolButton::MenuButtonPopup);
 	m_recordWhilePlayingButton = addButton("record_accompany",
 		tr("Record MIDI into the clip open in the Piano Roll while the song or pattern plays"));
 	m_stopButton = addButton("stop", tr("Stop (Space)"));

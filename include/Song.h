@@ -480,6 +480,7 @@ private:
 
 	AudioRecorder m_audioRecorder;
 	bool m_captureUpdatePending = false;
+	std::atomic<tick_t> m_countInUntilTick = -1; //!< the metronome clicks before this tick (a recording's count-in)
 	double m_periodStartFrame = 0; //!< the song frame where the period being rendered starts (audio thread)
 	bar_t m_length;
 

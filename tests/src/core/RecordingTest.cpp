@@ -32,6 +32,7 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AudioRecorder.h"
+#include "ConfigManager.h"
 #include "PathUtil.h"
 #include "Engine.h"
 #include "SampleClip.h"
@@ -312,6 +313,34 @@ private slots:
 			recordedAt - heardAt);
 		QVERIFY(peak >= 0);
 		QVERIFY(std::abs(recordedAt - heardAt) <= 1.0);
+	}
+
+	void preRollStartsEarlierAndTheTakeAtTheCursor()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256 + 20, 256 + 100};
+		engine->setAudioDevice(device, false);
+		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		ConfigManager::inst()->setValue("recording", "prerollbars", "1");
+		const auto cleanUp = qScopeGuard([&] {
+			ConfigManager::inst()->setValue("recording", "prerollbars", "0");
+			song->stop();
+			const auto guard = engine->requestChangesGuard();
+			delete recorder;
+		});
+
+		// From the cursor at bar 3, the song plays from bar 2 and the take starts at bar 3
+		const auto cursor = 2 * TimePos::ticksPerBar();
+		song->setPlayPos(cursor, Song::PlayMode::Song);
+		QVERIFY(song->recordAudio());
+		QCOMPARE(song->getPlayPos(Song::PlayMode::Song).getTicks(), cursor - TimePos::ticksPerBar());
+		for (int callback = 0; callback < 600; ++callback) { device->callback(256); }
+		song->stop();
+		QCOMPARE(recorder->numOfClips(), 1);
+		QCOMPARE(recorder->getClip(0)->startPosition().getTicks(), cursor);
 	}
 
 	void monitoringPlaysTheInputThroughTheTrack_data()

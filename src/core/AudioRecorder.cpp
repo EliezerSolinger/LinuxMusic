@@ -96,6 +96,7 @@ struct AudioRecorder::Session
 	std::vector<std::unique_ptr<TakeState>> takes;
 	f_cnt_t latency = 0;
 	f_cnt_t period = 0;
+	std::int64_t fromTick = 0;
 };
 
 
@@ -115,7 +116,7 @@ AudioRecorder::~AudioRecorder()
 
 
 auto AudioRecorder::start(const std::vector<Request>& requests, f_cnt_t latency, f_cnt_t period,
-	sample_rate_t sampleRate) -> QString
+	sample_rate_t sampleRate, std::int64_t fromTick) -> QString
 {
 	if (m_ownedSession) { return QObject::tr("Already recording"); }
 	if (requests.empty()) { return QObject::tr("No track to record"); }
@@ -123,6 +124,7 @@ auto AudioRecorder::start(const std::vector<Request>& requests, f_cnt_t latency,
 	auto session = std::make_unique<Session>();
 	session->latency = latency;
 	session->period = period;
+	session->fromTick = std::max<std::int64_t>(0, fromTick);
 
 	for (const auto& request : requests)
 	{
@@ -235,8 +237,9 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 		auto& take = *takePointer;
 		if (!take.started)
 		{
-			// The take begins on the first tick at or after its first frame
-			take.startTick = std::max<std::int64_t>(0, static_cast<std::int64_t>(std::ceil(firstFrame / framesPerTick)));
+			// The take begins on the first tick at or after its first frame, and not before the session's first tick
+			take.startTick = std::max(session->fromTick,
+				static_cast<std::int64_t>(std::ceil(firstFrame / framesPerTick)));
 			take.framesToSkip = std::max<std::int64_t>(0, std::llround(take.startTick * framesPerTick - firstFrame));
 			take.started = true;
 		}

@@ -93,10 +93,11 @@ public:
 	 * @param latency the devices' input plus output latency, and any calibration, in frames
 	 * @param period the engine's frames per period
 	 * @param sampleRate the rate of the capture
+	 * @param fromTick the takes begin there at the earliest (e.g. after a pre-roll)
 	 * @returns an error message, or an empty string if recording started
 	 */
-	auto start(const std::vector<Request>& requests, f_cnt_t latency, f_cnt_t period, sample_rate_t sampleRate)
-		-> QString;
+	auto start(const std::vector<Request>& requests, f_cnt_t latency, f_cnt_t period, sample_rate_t sampleRate,
+		std::int64_t fromTick = 0) -> QString;
 
 	/**
 	 * Main thread, while the audio thread is not in process() (e.g. under AudioEngine::requestChangesGuard()):
