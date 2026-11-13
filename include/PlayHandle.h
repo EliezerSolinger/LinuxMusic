@@ -56,7 +56,8 @@ public:
 		PresetPreviewHandle = 0x08,
 		InputMonitorHandle = 0x10, //!< a track's input, monitored (see InputMonitorHandle)
 		AudioTrackPlayHandle = 0x20, //!< an audio track's items (see AudioTrack)
-		CalibrationHandle = 0x40 //!< the latency calibration's pulse (see LatencyCalibration)
+		CalibrationHandle = 0x40, //!< the latency calibration's pulse (see LatencyCalibration)
+		MetronomeHandle = 0x80 //!< the metronome's clicks (see Metronome)
 	} ;
 	using Types = Flags<Type>;
 
@@ -64,7 +65,7 @@ public:
 	static constexpr auto livesWithTrack(Type type) -> bool
 	{
 		return type == Type::InstrumentPlayHandle || type == Type::InputMonitorHandle
-			|| type == Type::AudioTrackPlayHandle;
+			|| type == Type::AudioTrackPlayHandle || type == Type::MetronomeHandle;
 	}
 
 	constexpr static std::size_t MaxNumber = 1024;

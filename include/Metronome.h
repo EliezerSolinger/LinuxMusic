@@ -32,6 +32,7 @@
 namespace lmms {
 
 class AudioBusHandle;
+class MetronomeHandle;
 class Sample;
 
 class Metronome
@@ -55,7 +56,18 @@ public:
 	void release();
 
 	//! Audio thread: clicks on the beats while active, or while @p force (e.g. a count-in)
-	void processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force = false);
+	void processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force = false,
+		bool recording = false);
+
+	/**
+	 * The settings (docs/gravacao-levantamento.md §6, "Metrônomo"), read from the configuration ("metronome"
+	 * section) by prepare() and again by loadSettings() when they change:
+	 * - "onlyrecording": it clicks only while recording (the count-in always does);
+	 * - "volume": in dB;
+	 * - "accent": the first beat of a bar with its own click.
+	 */
+	void loadSettings();
+	static constexpr double DefaultVolumeDb = 0.0;
 
 private:
 	std::atomic<bool> m_active = false;
@@ -63,6 +75,10 @@ private:
 	std::unique_ptr<Sample> m_strongClick; //!< on the first beat of a bar
 	std::unique_ptr<Sample> m_weakClick; //!< on the others
 	std::unique_ptr<AudioBusHandle> m_bus;
+	MetronomeHandle* m_handle = nullptr; //!< plays the clicks (the engine owns it)
+	std::atomic<bool> m_onlyRecording = false;
+	std::atomic<bool> m_accent = true;
+	std::atomic<float> m_gain = 1.f;
 };
 } // namespace lmms
 

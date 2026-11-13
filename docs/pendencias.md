@@ -20,7 +20,8 @@ Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
 - [x] **Calibração por loopback:** botão "Medir..." em Configurações → Áudio → Gravação (`LatencyCalibration`;
   o teste acha a latência escondida de um loopback simulado, exata). Antes: botão "calibrar" que toca um pulso, grava pela entrada (com um cabo), acha o pico por
   correlação e salva o offset
-- [ ] **Metrônomo configurável:** só gravando ou também tocando, volume, som com acento no 1
+- [x] **Metrônomo configurável:** só gravando ou também tocando, volume, acento no 1 (Configurações → Áudio →
+  Gravação); o clique não aloca mais na thread de áudio (um play handle próprio)
 - [ ] **Xrun gravando:** o ponto fica marcado no take, e um contador avisa
 - [ ] **MIDI:** a chave da faixa ganha "take em lane"; quantização opcional na entrada (grade e força por faixa,
   desligada por padrão); entrada MIDI por faixa (dispositivo e canal) no cabeçalho

@@ -53,6 +53,7 @@
 #include "ProjectJournal.h"
 #include "SetupDialog.h"
 #include "LatencyCalibration.h"
+#include "Song.h"
 
 #include "SampleTrack.h"
 #include "Shortcuts.h"
@@ -718,6 +719,25 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 		"in a loop only the last pass is kept"));
 	recordingLayout->addRow(tr("Lanes"), m_recordInLanes);
 
+	// The metronome (heard while monitoring, never in an export)
+	auto* metronomeRow = new QHBoxLayout{};
+	m_metronomeWhen = new QComboBox(recordingBox);
+	m_metronomeWhen->addItem(tr("While playing and recording"), 0);
+	m_metronomeWhen->addItem(tr("Only while recording"), 1);
+	m_metronomeWhen->setCurrentIndex(ConfigManager::inst()->value("metronome", "onlyrecording", "0").toInt() != 0 ? 1 : 0);
+	m_metronomeVolume = new QDoubleSpinBox(recordingBox);
+	m_metronomeVolume->setRange(-60.0, 12.0);
+	m_metronomeVolume->setDecimals(1);
+	m_metronomeVolume->setSuffix(tr(" dB"));
+	m_metronomeVolume->setValue(ConfigManager::inst()->value("metronome", "volume", "0").toDouble());
+	m_metronomeAccent = new QCheckBox(tr("Accent on the first beat"), recordingBox);
+	m_metronomeAccent->setChecked(ConfigManager::inst()->value("metronome", "accent", "1").toInt() != 0);
+	metronomeRow->addWidget(m_metronomeWhen, 1);
+	metronomeRow->addWidget(new QLabel(tr("Volume"), recordingBox));
+	metronomeRow->addWidget(m_metronomeVolume);
+	metronomeRow->addWidget(m_metronomeAccent);
+	recordingLayout->addRow(tr("Metronome"), metronomeRow);
+
 	// Audio layout ordering.
 	audio_layout->addWidget(audioInterfaceBox);
 	audio_layout->addWidget(as_w);
@@ -1138,6 +1158,10 @@ void SetupDialog::accept()
 	ConfigManager::inst()->setValue("recording", "prerollbars", m_preRoll->currentData().toString());
 	ConfigManager::inst()->setValue("recording", "countin", m_countIn->isChecked() ? "1" : "0");
 	ConfigManager::inst()->setValue("recording", "lanes", m_recordInLanes->isChecked() ? "1" : "0");
+	ConfigManager::inst()->setValue("metronome", "onlyrecording", m_metronomeWhen->currentData().toString());
+	ConfigManager::inst()->setValue("metronome", "volume", QString::number(m_metronomeVolume->value()));
+	ConfigManager::inst()->setValue("metronome", "accent", m_metronomeAccent->isChecked() ? "1" : "0");
+	Engine::getSong()->metronome().loadSettings();
 	ConfigManager::inst()->setValue("ui", "displaywaveform",
 					QString::number(m_displayWaveform));
 	ConfigManager::inst()->setValue("ui", "printnotelabels",

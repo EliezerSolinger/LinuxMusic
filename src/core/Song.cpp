@@ -507,7 +507,8 @@ void Song::processMetronome(size_t bufferOffset)
 	if (!supported || m_exporting) { return; } 
 	// The count-in clicks during the pre-roll of a recording, metronome or not
 	const bool countIn = currentPlayMode == PlayMode::Song && currentTick() < m_countInUntilTick;
-	m_metronome.processTick(currentTick(), ticksPerBar(), m_timeSigModel.getNumerator(), bufferOffset, countIn);
+	m_metronome.processTick(currentTick(), ticksPerBar(), m_timeSigModel.getNumerator(), bufferOffset, countIn,
+		m_recording);
 }
 
 void Song::setModified(bool value)

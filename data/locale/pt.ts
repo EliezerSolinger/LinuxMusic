@@ -14621,6 +14621,30 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>The pulse came back after %1 frames: the calibration is %2 frames. Save to keep it.</source>
         <translation>O pulso voltou depois de %1 frames: a calibração é de %2 frames. Salve para guardar.</translation>
     </message>
+    <message>
+        <source>While playing and recording</source>
+        <translation>Tocando e gravando</translation>
+    </message>
+    <message>
+        <source>Only while recording</source>
+        <translation>Só gravando</translation>
+    </message>
+    <message>
+        <source> dB</source>
+        <translation> dB</translation>
+    </message>
+    <message>
+        <source>Accent on the first beat</source>
+        <translation>Acento no primeiro tempo</translation>
+    </message>
+    <message>
+        <source>Volume</source>
+        <translation>Volume</translation>
+    </message>
+    <message>
+        <source>Metronome</source>
+        <translation>Metrônomo</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::Sf2InstrumentView</name>

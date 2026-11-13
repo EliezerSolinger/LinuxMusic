@@ -37,6 +37,7 @@
 
 
 class QCheckBox;
+class QDoubleSpinBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -238,6 +239,9 @@ private:
 	QComboBox* m_preRoll;
 	QCheckBox* m_countIn;
 	QCheckBox* m_recordInLanes;
+	QComboBox* m_metronomeWhen;
+	QDoubleSpinBox* m_metronomeVolume;
+	QCheckBox* m_metronomeAccent;
 	//! Measures the calibration with a loopback cable (LatencyCalibration)
 	void measureLatency();
 	bool m_changed = false;

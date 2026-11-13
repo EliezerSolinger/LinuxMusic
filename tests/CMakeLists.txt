@@ -16,6 +16,7 @@ set(LMMS_TESTS
 	src/core/ExportProcessorTest.cpp
 	src/core/GainStagingTest.cpp
 	src/core/MathTest.cpp
+	src/core/MetronomeTest.cpp
 	src/core/MixerTest.cpp
 	src/core/PluginEventTest.cpp
 	src/core/ProjectMediaTest.cpp

@@ -30,9 +30,69 @@
 #include "Engine.h"
 #include "Sample.h"
 #include "SampleBuffer.h"
-#include "SamplePlayHandle.h"
+#include "ConfigManager.h"
+#include "PlayHandle.h"
+
+#include <algorithm>
+#include <cmath>
 
 namespace lmms {
+
+/**
+ * Plays the metronome's clicks: made once, it lives until the metronome is released. The metronome tells it of a
+ * click (on the audio thread, before the handles play), and it plays it from there; nothing is made per click.
+ */
+class MetronomeHandle : public PlayHandle
+{
+public:
+	explicit MetronomeHandle(AudioBusHandle* bus)
+		: PlayHandle{Type::MetronomeHandle}
+	{
+		setAudioBusHandle(bus);
+	}
+
+	//! Audio thread: @p click starts at @p offset in this period, at @p gain
+	void click(const Sample* click, std::size_t offset, float gain)
+	{
+		m_pending = click;
+		m_pendingOffset = offset;
+		m_pendingGain = gain;
+	}
+
+	void play(std::span<SampleFrame> buffer) override
+	{
+		auto from = std::size_t{0};
+		if (m_pending)
+		{
+			// The click before goes on until this one starts
+			from = std::min(m_pendingOffset, buffer.size());
+			render(buffer.subspan(0, from));
+			m_playing = m_pending;
+			m_gain = m_pendingGain;
+			m_state.restart(0);
+			m_pending = nullptr;
+		}
+		render(buffer.subspan(from));
+	}
+
+	bool isFinished() const override { return false; }
+	bool isFromTrack(const Track*) const override { return false; }
+
+private:
+	void render(std::span<SampleFrame> frames)
+	{
+		if (!m_playing || frames.empty()) { return; }
+		if (!m_playing->play(frames.data(), &m_state, frames.size())) { m_playing = nullptr; }
+		for (auto& frame : frames) { frame *= m_gain; }
+	}
+
+	const Sample* m_pending = nullptr;
+	std::size_t m_pendingOffset = 0;
+	float m_pendingGain = 1.f;
+	const Sample* m_playing = nullptr;
+	float m_gain = 1.f;
+	Sample::PlaybackState m_state;
+};
 
 Metronome::Metronome() = default;
 Metronome::~Metronome() = default;
@@ -55,7 +115,22 @@ void Metronome::prepare()
 	m_strongClick = std::make_unique<Sample>(SampleBuffer::fromFile("misc/metronome02.ogg"));
 	m_weakClick = std::make_unique<Sample>(SampleBuffer::fromFile("misc/metronome01.ogg"));
 	m_bus = std::make_unique<AudioBusHandle>("Metronome", false);
+	m_handle = new MetronomeHandle{m_bus.get()};
+	Engine::audioEngine()->addPlayHandle(m_handle);
+	loadSettings();
 	m_prepared = true;
+}
+
+
+
+
+void Metronome::loadSettings()
+{
+	const auto* config = ConfigManager::inst();
+	m_onlyRecording = config->value("metronome", "onlyrecording", "0").toInt() != 0;
+	m_accent = config->value("metronome", "accent", "1").toInt() != 0;
+	const auto volume = config->value("metronome", "volume", QString::number(DefaultVolumeDb)).toDouble();
+	m_gain = static_cast<float>(std::pow(10.0, std::clamp(std::isfinite(volume) ? volume : 0.0, -60.0, 12.0) / 20.0));
 }
 
 
@@ -64,6 +139,12 @@ void Metronome::prepare()
 void Metronome::release()
 {
 	m_prepared = false;
+	if (m_handle)
+	{
+		// (the engine deletes it)
+		Engine::audioEngine()->removePlayHandle(m_handle);
+		m_handle = nullptr;
+	}
 	m_bus.reset();
 	m_strongClick.reset();
 	m_weakClick.reset();
@@ -72,16 +153,15 @@ void Metronome::release()
 
 
 
-void Metronome::processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force)
+void Metronome::processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force,
+	bool recording)
 {
 	const auto ticksPerBeat = ticksPerBar / beatsPerBar;
-	if (ticksPerBeat <= 0 || currentTick % ticksPerBeat != 0 || !(m_active || force) || !m_prepared) { return; }
+	const bool clicking = force || (m_active && (!m_onlyRecording || recording));
+	if (ticksPerBeat <= 0 || currentTick % ticksPerBeat != 0 || !clicking || !m_prepared || !m_handle) { return; }
 
-	// The handle plays a click prepared on the main thread, on the metronome's own bus
-	auto* click = currentTick % ticksPerBar == 0 ? m_strongClick.get() : m_weakClick.get();
-	const auto handle = new SamplePlayHandle(click, false);
-	handle->setAudioBusHandle(m_bus.get());
-	handle->setOffset(bufferOffset);
-	Engine::audioEngine()->addPlayHandle(handle);
+	// The handle plays the clicks prepared on the main thread, on the metronome's own bus
+	const bool firstBeat = currentTick % ticksPerBar == 0 && m_accent;
+	m_handle->click(firstBeat ? m_strongClick.get() : m_weakClick.get(), bufferOffset, m_gain);
 }
 } // namespace lmms
