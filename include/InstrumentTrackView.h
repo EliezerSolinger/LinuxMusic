@@ -129,8 +129,8 @@ private:
 
 	QMenu * m_midiMenu;
 
-	QAction * m_midiInputAction;
-	QAction * m_midiOutputAction;
+	QAction* m_midiInputAction = nullptr; //!< (made with the menu, see fillMidiMenu())
+	QAction* m_midiOutputAction = nullptr;
 
 	std::unique_ptr<MidiCCRackView> m_midiCCRackView;
 	PinConnector* m_pinConnectorView = nullptr;

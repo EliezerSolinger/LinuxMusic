@@ -117,7 +117,6 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	_it->m_midiPort.m_writablePortsMenu = new MidiPortMenu(MidiPort::Mode::Output);
 	_it->m_midiPort.m_readablePortsMenu->setModel(&_it->m_midiPort);
 	_it->m_midiPort.m_writablePortsMenu->setModel(&_it->m_midiPort);
-	fillMidiMenu();
 	connect(&_it->m_midiPort, &MidiPort::midiClientChanged, this, &InstrumentTrackView::fillMidiMenu);
 	connect(&_it->m_midiPort, &MidiPort::modeChanged, this, &InstrumentTrackView::midiConfigChanged);
 
@@ -226,6 +225,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 
 	setModel( _it );
 	updateMidiInputButton(); // (it reads the model: once it is set)
+	fillMidiMenu(); // (the same)
 
 	onInstrumentChanged();
 }
@@ -486,6 +486,7 @@ void InstrumentTrackView::fillMidiMenu()
 
 void InstrumentTrackView::midiConfigChanged()
 {
+	if (!m_midiInputAction || !m_midiOutputAction || !model()) { return; }
 	m_midiInputAction->setChecked( model()->m_midiPort.isReadable() );
 	m_midiOutputAction->setChecked( model()->m_midiPort.isWritable() );
 }
