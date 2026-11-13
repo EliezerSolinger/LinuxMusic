@@ -47,7 +47,7 @@ namespace lmms
 
 SampleTrack::SampleTrack(TrackContainer* tc) :
 	Track(Track::Type::Sample, tc),
-	m_volumeModel(DefaultVolume, MinVolume, MaxVolume, 0.1f, this, tr("Volume")),
+	m_volumeModel(DefaultVolume, MinVolume, MaxTrackVolume, 0.1f, this, tr("Volume")),
 	m_panningModel(DefaultPanning, PanningLeft, PanningRight, 0.1f, this, tr("Panning")),
 	m_recordArmModel(false, this, tr("Record arm")),
 	m_monitorModel(static_cast<int>(MonitorMode::Auto), static_cast<int>(MonitorMode::Off),

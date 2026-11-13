@@ -2243,8 +2243,9 @@ private slots:
 		// The pot of before, unity in the middle: the same gain where it is now
 		for (const float old : {0.f, 0.25f, 0.5f, 0.75f, 1.f})
 		{
-			const float before = old <= 0.5f ? std::pow(2.f * old, 3.f) : dbfsToAmp((old - 0.5f) * 2.f * Strip::MaxGain);
-			QVERIFY(std::abs(Strip::potGain(Strip::positionFromMiddleUnity(old)) - before) < 1e-4f * std::max(before, 1.f));
+			const float before = old <= 0.5f ? std::pow(2.f * old, 3.f) : dbfsToAmp((old - 0.5f) * 2.f * Strip::FormerMaxGain);
+			const float now = Strip::positionFromRange(Strip::positionFromMiddleUnity(old), Strip::FormerMaxGain);
+			QVERIFY(std::abs(Strip::potGain(now) - before) < 1e-4f * std::max(before, 1.f));
 		}
 
 		const auto channel = mixer()->createChannel();
@@ -2253,14 +2254,14 @@ private slots:
 		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Flat));
 		QCOMPARE(strip.m_gainModel.value(), 0.25f);
 		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.01f);
-		strip.m_gainModel.setValue(0.625f);
+		strip.m_gainModel.setValue(Strip::UnityPosition + 15.f / Strip::MaxGain * (1.f - Strip::UnityPosition));
 		QVERIFY(std::abs(sineGain(channel, 1000.f, 0.1f) - dbfsToAmp(15.f)) < 0.05f);
 		strip.m_gainModel.setValue(0.f);
 		QVERIFY(sineGain(channel, 1000.f) < 1e-6f);
 		// Up high, a pushed op-amp saturates
 		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::OpAmp4558));
 		strip.m_gainModel.setValue(1.f);
-		QVERIFY(sineGain(channel, 1000.f, 0.5f) < dbfsToAmp(30.f) * 0.9f);
+		QVERIFY(sineGain(channel, 1000.f, 0.5f) < dbfsToAmp(Strip::MaxGain) * 0.9f);
 		// Digital mode: no pot
 		mixer()->analogModel()->setValue(false);
 		QVERIFY(std::abs(sineGain(channel, 1000.f) - 1.f) < 0.01f);
@@ -3128,6 +3129,24 @@ private slots:
 		QCOMPARE(mixer()->mixerChannel(channel)->m_analogStrip.m_eqHighModel.value(), 4.5f);
 		QVERIFY(mixer()->mixerChannel(channel)->m_analogStrip.m_lowCutModel.value());
 
+		// The GAIN pot went up to +30 dB before: a position saved then keeps its gain
+		const auto gainPot = [&] { return mixer()->mixerChannel(channel)->m_analogStrip.m_gainModel.value(); };
+		mixer()->mixerChannel(channel)->m_analogStrip.m_gainModel.setValue(0.75f);
+		auto saved = DataFile{DataFile::Type::SongProject};
+		auto mixerElement = saved.createElement("mixer");
+		saved.content().appendChild(mixerElement);
+		mixer()->saveSettings(saved, mixerElement);
+		mixer()->loadSettings(mixerElement);
+		QCOMPARE(gainPot(), 0.75f);
+		const auto strips = mixerElement.elementsByTagName("analogstrip");
+		for (int i = 0; i < strips.size(); ++i) { strips.at(i).toElement().removeAttribute("gainrange"); }
+		mixer()->loadSettings(mixerElement);
+		const auto before = AnalogChannelStrip::UnityPosition + (0.75f - AnalogChannelStrip::UnityPosition)
+			* AnalogChannelStrip::FormerMaxGain / AnalogChannelStrip::MaxGain;
+		QVERIFY(std::abs(gainPot() - before) < 0.002f);
+		QVERIFY(std::abs(ampToDbfs(AnalogChannelStrip::potGain(gainPot())) - 2.f / 3.f
+			* AnalogChannelStrip::FormerMaxGain) < 0.1f);
+
 		// Projects from before the modes are analog, with neutral strips
 		element.removeAttribute("analog");
 		mixer()->loadSettings(element);
@@ -3303,6 +3322,24 @@ private slots:
 		deleteTrack(other);
 		deleteTrack(folder);
 		QCOMPARE(mixer()->numChannels(), before);
+	}
+
+	void trimAllTheWayDownIsOffAndFadersReachTwelveDecibels()
+	{
+		const auto channel = mixer()->createChannel();
+		auto* ch = mixer()->mixerChannel(channel);
+		QCOMPARE(ch->m_trimModel.minValue(), MixerChannel::MinTrim);
+		ch->m_trimModel.setValue(MixerChannel::MinTrim);
+		QCOMPARE(sineGain(channel, 1000.f), 0.f);
+		ch->m_trimModel.setValue(-20.f);
+		QVERIFY(std::abs(ampToDbfs(sineGain(channel, 1000.f)) + 20.f) < 0.05f);
+		ch->m_trimModel.setValue(0.f);
+
+		QVERIFY(std::abs(ampToDbfs(ch->m_volumeModel.maxValue()) - 12.f) < 0.1f);
+		ch->m_volumeModel.setValue(ch->m_volumeModel.maxValue());
+		QVERIFY(std::abs(ampToDbfs(sineGain(channel, 1000.f)) - 12.f) < 0.1f);
+		ch->m_volumeModel.setValue(1.f);
+		mixer()->deleteChannel(channel);
 	}
 
 	// Last: it replaces the song

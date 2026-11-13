@@ -87,7 +87,9 @@ public:
 
 	// Channel strip, in signal order: input trim, effects, (pre-fader sends), swap L/R, phase invert,
 	// stereo width, pan, volume fader, (post-fader sends)
-	FloatModel m_trimModel; //!< input gain in dB, applied before the effects
+	FloatModel m_trimModel; //!< input gain in dB, applied before the effects; all the way down (MinTrim) it is off
+	static constexpr float MinTrim = -60.f;
+	static constexpr float MaxFader = 4.f; //!< the fader's top, +12 dB
 	BoolModel m_monoModel; //!< sums the channel to mono, (L+R)/2 on both sides, after the trim (not on the master)
 	BoolModel m_swapChannelsModel;
 	BoolModel m_phaseInvertModel;

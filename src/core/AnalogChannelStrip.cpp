@@ -112,6 +112,16 @@ auto AnalogChannelStrip::potGain(float position) -> float
 
 
 
+auto AnalogChannelStrip::positionFromRange(float position, float maxGain) -> float
+{
+	// Below unity the curve does not depend on the range; above, the same dB
+	if (position <= UnityPosition) { return position; }
+	return UnityPosition + (position - UnityPosition) * maxGain / MaxGain;
+}
+
+
+
+
 auto AnalogChannelStrip::positionFromMiddleUnity(float position) -> float
 {
 	// The same gain: below unity the curve is the same, scaled; above, the same dB
@@ -341,6 +351,7 @@ void AnalogChannelStrip::saveSettings(QDomDocument& doc, QDomElement& channelEle
 {
 	auto strip = doc.createElement("analogstrip");
 	m_gainModel.saveSettings(doc, strip, "gainpot");
+	strip.setAttribute("gainrange", MaxGain);
 	m_driveModel.saveSettings(doc, strip, "drive");
 	m_realisticModel.saveSettings(doc, strip, "realistic");
 	m_lowCutModel.saveSettings(doc, strip, "lowcut");
@@ -380,12 +391,15 @@ void AnalogChannelStrip::loadSettings(const QDomElement& channelElement)
 	if (strip.hasAttribute("gainpot") || !strip.firstChildElement("gainpot").isNull())
 	{
 		m_gainModel.loadSettings(strip, "gainpot");
+		// Saved when the pot went up to +30 dB: the same gain on the pot of now
+		const auto range = strip.attribute("gainrange", QString::number(FormerMaxGain)).toFloat();
+		if (range > 0.f && range != MaxGain) { m_gainModel.setValue(positionFromRange(m_gainModel.value(), range)); }
 	}
 	else if (strip.hasAttribute("gain") || !strip.firstChildElement("gain").isNull())
 	{
-		// The pot of before had its unity in the middle: the same gain where it is now
+		// The pot of before had its unity in the middle, and went up to +30 dB: the same gain where it is now
 		m_gainModel.loadSettings(strip, "gain");
-		m_gainModel.setValue(positionFromMiddleUnity(m_gainModel.value()));
+		m_gainModel.setValue(positionFromRange(positionFromMiddleUnity(m_gainModel.value()), FormerMaxGain));
 	}
 	m_realisticModel.loadSettings(strip, "realistic");
 	m_lowCutModel.loadSettings(strip, "lowcut");

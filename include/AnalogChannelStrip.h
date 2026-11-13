@@ -62,17 +62,22 @@ public:
 	explicit AnalogChannelStrip(Model* parent);
 
 	/**
-	 * The GAIN pot, as on a desk: muted at the far left, 0 dB at a quarter of its travel, +30 dB at the far right,
-	 * where the gain stage saturates: most of its travel adds gain. Its position, 0 to 1 (see potGain()).
+	 * The GAIN pot, as on a desk's microphone preamp: muted at the far left, 0 dB at a quarter of its travel, +60 dB
+	 * at the far right: most of its travel adds gain, and the gain stage saturates from about a third of it with a
+	 * signal near full scale. Its position, 0 to 1 (see potGain()).
 	 */
 	FloatModel m_gainModel;
-	static constexpr float MaxGain = 30.f;		// dB
+	static constexpr float MaxGain = 60.f;		// dB
+	//! The pot's range in projects saved before it was MaxGain (their positions are converted to the same gain)
+	static constexpr float FormerMaxGain = 30.f;	// dB
 	static constexpr float UnityPosition = 0.25f;
 	//! The gain, linear, at pot position @p position: up to unity, (position / UnityPosition)^3 (-18 dB halfway
 	//! there), then linear in dB up to MaxGain
 	static auto potGain(float position) -> float;
 	//! The position for a position of the pot of before, whose unity was in the middle (projects of steps 19 to 21)
 	static auto positionFromMiddleUnity(float position) -> float;
+	//! The position giving the gain @p position gave when the pot went up to @p maxGain dB
+	static auto positionFromRange(float position, float maxGain) -> float;
 
 	using Drive = GainStage::Model;
 	IntModel m_driveModel;			//!< the gain stage's model, a GainStage::Model

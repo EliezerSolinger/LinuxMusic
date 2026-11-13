@@ -35,6 +35,8 @@ namespace lmms
 constexpr volume_t MinVolume = 0;
 constexpr volume_t MaxVolume = 200;
 constexpr volume_t DefaultVolume = 100;
+//! A track's volume goes up to +12 dB (a note's to MaxVolume, its velocity)
+constexpr float MaxTrackVolume = 400.f; // (a volume_t holds a note's volume, up to 255)
 
 struct StereoVolumeVector
 {

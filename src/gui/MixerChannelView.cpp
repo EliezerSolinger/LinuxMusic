@@ -93,7 +93,7 @@ protected:
 		painter.setFont(adjustedToPixelSize(font(), 7));
 		const auto metrics = painter.fontMetrics();
 		float lastY = -100.f;
-		for (const int db : {6, 0, -6, -12, -18, -24, -30, -40, -60})
+		for (const int db : {12, 6, 0, -6, -12, -18, -24, -30, -40, -60})
 		{
 			// Same height as the fader, so its positions are ours; labels too close to the one above are left out
 			const float y = m_fader->positionOf(static_cast<float>(db));
@@ -523,10 +523,16 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	auto gainKnob = new GainKnob{red, tr("GAIN"), tr("Gain"), m_analogSection};
 	gainKnob->setModel(&strip.m_gainModel);
 	gainKnob->setHintText(tr("Gain:"), " dB");
-	gainKnob->setToolTip(tr("Gain: muted to the left, 0 dB at a quarter, up to +30 dB to the right, into the gain "
+	gainKnob->setToolTip(tr("Gain: muted to the left, 0 dB at a quarter, up to +60 dB to the right, into the gain "
 		"stage"));
 	analogLayout->addWidget(gainKnob, row, 0, Qt::AlignCenter);
-	addKnob(&mixerChannel->m_trimModel, grey, tr("TRIM"), tr("Input trim, clean, before the gain"), " dB", row++, 1);
+	auto trimKnob = new TextDeskKnob{grey, tr("TRIM"), tr("Input trim"), [](float v) {
+		return v <= MixerChannel::MinTrim ? QString{"-inf"} : (v > 0.05f ? "+" : "") + QString::number(v, 'f', 1);
+	}, m_analogSection};
+	trimKnob->setModel(&mixerChannel->m_trimModel);
+	trimKnob->setHintText(tr("Input trim:"), " dB");
+	trimKnob->setToolTip(tr("Input trim, clean, before the gain: off all the way to the left, up to +24 dB"));
+	analogLayout->addWidget(trimKnob, row++, 1, Qt::AlignCenter);
 	analogLayout->addWidget(new DriveButton{&strip.m_driveModel, m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
 	analogLayout->addWidget(new SaturationLeds{&strip.gainStage(), &strip.m_driveModel, &strip.m_realisticModel, m_analogSection}, row++, 0, 1, 2, Qt::AlignCenter);
 	auto monoButton = new AutomatableButton(m_analogSection, tr("Mono"));

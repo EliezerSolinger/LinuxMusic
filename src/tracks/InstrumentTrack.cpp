@@ -59,7 +59,7 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	m_firstKeyModel(0, 0, NumKeys - 1, this, tr("First note")),
 	m_lastKeyModel(0, 0, NumKeys - 1, this, tr("Last note")),
 	m_hasAutoMidiDev(false),
-	m_volumeModel(DefaultVolume, MinVolume, MaxVolume, 0.1f, this, tr("Volume")),
+	m_volumeModel(DefaultVolume, MinVolume, MaxTrackVolume, 0.1f, this, tr("Volume")),
 	m_panningModel(DefaultPanning, PanningLeft, PanningRight, 0.1f, this, tr("Panning")),
 	m_audioBusHandle(tr("unnamed_track"), true, &m_volumeModel, &m_panningModel, this),
 	m_pitchModel(0, MinPitchDefault, MaxPitchDefault, 1, this, tr("Pitch")),

@@ -9,6 +9,7 @@ set(LMMS_TESTS
 	src/core/AudioInputTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
+	src/core/GainStagingTest.cpp
 	src/core/MathTest.cpp
 	src/core/MixerTest.cpp
 	src/core/PluginEventTest.cpp

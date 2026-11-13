@@ -106,8 +106,8 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_buffer(channelBuffer(DEFAULT_CHANNELS)),
 	m_muteModel( false, _parent ),
 	m_soloModel( false, _parent ),
-	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
-	m_trimModel(0.f, -24.f, 24.f, 0.001f, _parent),
+	m_volumeModel(1.f, 0.f, MaxFader, 0.001f, _parent),
+	m_trimModel(0.f, MinTrim, 24.f, 0.001f, _parent),
 	m_monoModel(false, _parent),
 	m_swapChannelsModel(false, _parent),
 	m_phaseInvertModel(false, _parent),
@@ -336,7 +336,8 @@ void MixerChannel::doProcessing()
 	// Input trim
 	if (m_buffer.hasSignal(mainPair) && m_trimModel.value() != 0.f)
 	{
-		const float trim = dbfsToAmp(m_trimModel.value());
+		// All the way down it is off
+		const float trim = m_trimModel.value() <= MinTrim ? 0.f : dbfsToAmp(m_trimModel.value());
 		for (auto& frame : buffer) { frame *= trim; }
 		m_buffer.interleavedToMainPair();
 	}
