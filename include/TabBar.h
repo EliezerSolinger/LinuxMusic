@@ -50,10 +50,7 @@ public:
 	TabButton * addTab( QWidget * _w, const QString & _text,
 					int _id, bool _add_stretch = false,
 					bool _text_is_tooltip = false,
-					// TODO Remove fixWidgetToParentSize once it is used
-					//      with false everywhere.
-					//      At the time of writing it is only used in
-					//      LadspaBrowser with default parameters.
+					// fixWidgetToParentSize: true fits the tab's widget to the bar's parent
 					bool fixWidgetToParentSize = true );
 	void removeTab( int _id );
 
