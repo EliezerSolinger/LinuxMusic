@@ -374,7 +374,8 @@ void MixerChannel::doProcessing()
 	const bool hadInput = m_buffer.hasSignal(mainPair);
 	if (!isMaster() && Engine::mixer()->isAnalog() && (hadInput || m_analogStrip.holdsSignal()))
 	{
-		const auto tolerance = Engine::mixer()->toleranceModel()->value() ? ChannelTolerance::forChannel(m_channelIndex)
+		const auto tolerance = Engine::mixer()->toleranceModel()->value()
+			? ChannelTolerance::forChannel(Engine::mixer()->toleranceStripOf(this))
 			: ChannelTolerance::none();
 		m_analogStrip.process(buffer, Engine::audioEngine()->outputSampleRate(), hadInput, tolerance);
 		m_buffer.interleavedToMainPair();
@@ -658,12 +659,13 @@ void Mixer::followTracks()
 
 
 
-int Mixer::createChannel()
+int Mixer::createChannel(bool beforeFxReturns)
 {
 	const auto change = StructureChange{*this};
 	const int index = m_mixerChannels.size();
 	// create new channel
-	m_mixerChannels.push_back( new MixerChannel( index, this ) );
+	auto channel = new MixerChannel(index, this);
+	m_mixerChannels.push_back(channel);
 
 	// reset channel state
 	clearChannel( index );
@@ -672,7 +674,18 @@ int Mixer::createChannel()
 	for (const auto fxReturn : fxReturns()) { createChannelSend(index, fxReturn->index(), 0.f); }
 
 	emit channelCreated(index);
-	return index;
+
+	// Before the effect returns, named after its place
+	if (beforeFxReturns && channel->index() > 1 && m_mixerChannels[channel->index() - 1]->m_fxReturn)
+	{
+		while (channel->index() > 1 && m_mixerChannels[channel->index() - 1]->m_fxReturn)
+		{
+			moveChannelLeft(channel->index());
+		}
+		channel->m_name = tr("Channel %1").arg(channel->index());
+	}
+	emit trackableChannelsChanged();
+	return channel->index();
 }
 
 auto Mixer::canDeleteChannel(int index) const -> bool
@@ -1332,7 +1345,7 @@ void Mixer::allocateChannelsTo(int num)
 	if (num <= 0) { return; }
 	while (static_cast<std::size_t>(num) > m_mixerChannels.size() - 1)
 	{
-		createChannel();
+		createChannel(false);
 
 		// delete the default send to master
 		deleteChannelSend( m_mixerChannels.size()-1, 0 );
@@ -1512,7 +1525,7 @@ int Mixer::setUpTrackChannel(Track* track, bool keepSharing)
 	// several on any other channel come from projects of before, where tracks shared channels: each gets its own
 	const bool bus = !m_mixerChannels[index]->m_trackChannel && !m_mixerChannels[index]->m_receives.empty();
 	const bool joined = keepSharing && users > 1 && m_mixerChannels[index]->m_trackChannel;
-	const bool shared = index == 0 || (users > 1 && !joined) || bus;
+	const bool shared = index == 0 || (users > 1 && !joined) || bus || m_mixerChannels[index]->m_fxReturn;
 	if (!shared)
 	{
 		// The track's alone on it: it is the track's channel (e.g. in projects from before)
@@ -1684,11 +1697,13 @@ auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 	groupChannel->m_owner = source;
 	deleteChannelSend(group, 0);
 	createChannelSend(group, destination);
+	auto made = std::vector<MixerChannel*>{groupChannel};
 
 	for (auto g = std::size_t{0}; g < groups.size(); ++g)
 	{
 		const auto piece = createChannel();
 		auto pieceChannel = m_mixerChannels[piece];
+		made.push_back(pieceChannel);
 		pieceChannel->m_name = groups[g].name.empty()
 			? tr("%1 %2").arg(track->name()).arg(g + 1)
 			: QString::fromStdString(groups[g].name);
@@ -1700,11 +1715,9 @@ auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 	}
 
 	// Next to the track's channel: the group channel, then the pieces
-	const int first = source->index() + 1;
-	const int made = static_cast<int>(groups.size()) + 1;
-	for (int i = 0; i < made; ++i)
+	for (auto i = std::size_t{0}; i < made.size(); ++i)
 	{
-		for (int at = numChannels() - made + i; at > first + i; --at) { moveChannelLeft(at); }
+		while (made[i]->index() > source->index() + 1 + static_cast<int>(i)) { moveChannelLeft(made[i]->index()); }
 	}
 
 	emit dataChanged();
@@ -1804,7 +1817,7 @@ void Mixer::ensureFxReturns()
 	auto returns = fxReturns();
 	while (static_cast<int>(returns.size()) < FxReturnCount)
 	{
-		const int index = createChannel();
+		const int index = createChannel(false);
 		auto channel = m_mixerChannels[index];
 		channel->m_fxReturn = true;
 		channel->m_name = tr("FX %1").arg(returns.size() + 1);
@@ -1830,8 +1843,58 @@ void Mixer::ensureFxReturns()
 		}
 	}
 
+	// Last, after the channels
+	keepFxReturnsLast();
+
 	journal->setJournalling(wasJournalling);
 	emit dataChanged();
+}
+
+
+
+
+void Mixer::keepFxReturnsLast()
+{
+	const auto change = StructureChange{*this};
+	// A stable partition by neighbouring swaps, so that every model following a channel keeps up
+	for (bool moved = true; moved;)
+	{
+		moved = false;
+		for (int index = 2; index < numChannels(); ++index)
+		{
+			if (m_mixerChannels[index - 1]->m_fxReturn && !m_mixerChannels[index]->m_fxReturn)
+			{
+				moveChannelLeft(index);
+				moved = true;
+			}
+		}
+	}
+	emit trackableChannelsChanged();
+}
+
+
+
+
+auto Mixer::toleranceStripOf(const MixerChannel* channel) const -> int
+{
+	if (!channel->m_fxReturn) { return channel->index(); }
+	auto number = ReturnStrips;
+	for (const auto other : m_mixerChannels)
+	{
+		if (other->m_fxReturn) { ++number; }
+		if (other == channel) { break; }
+	}
+	return number;
+}
+
+
+
+
+auto Mixer::lastTrackableChannel() const -> mix_ch_t
+{
+	auto last = numChannels() - 1;
+	while (last > 0 && m_mixerChannels[last]->m_fxReturn) { --last; }
+	return static_cast<mix_ch_t>(last);
 }
 
 
@@ -1896,9 +1959,17 @@ void Mixer::arrangeChannelsByTracks()
 			}
 		}
 	}
-	for (const auto channel : m_mixerChannels)
+	// Then the channels of no track, and the effect returns last
+	for (const bool fxReturn : {false, true})
 	{
-		if (!placed[channel->index()]) { order.push_back(channel); placed[channel->index()] = true; }
+		for (const auto channel : m_mixerChannels)
+		{
+			if (!placed[channel->index()] && channel->m_fxReturn == fxReturn)
+			{
+				order.push_back(channel);
+				placed[channel->index()] = true;
+			}
+		}
 	}
 
 	// Moves each channel into place one step at a time, so that every model following a channel (the tracks'

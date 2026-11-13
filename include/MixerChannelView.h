@@ -81,8 +81,9 @@ public:
 
 	int channelIndex() const { return m_channelIndex; }
 
-	//! Colours the fader's handle by what the channel is (master, effect return or channel)
-	void updateFaderKnob();
+	//! Shows what the channel is (master, effect return or channel): the colour of its fader's handle, and its
+	//! number (an effect return has none: the channels are numbered without them, and its name says which it is)
+	void updateRole();
 	void setChannelIndex(int index);
 
 	QBrush backgroundActive() const { return m_backgroundActive; }

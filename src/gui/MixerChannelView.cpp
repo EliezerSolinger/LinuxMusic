@@ -643,7 +643,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	soloMuteLayout->addStretch(1);
 
 	m_fader = new Fader{&mixerChannel->m_volumeModel, tr("Fader %1").arg(channelIndex), this};
-	updateFaderKnob();
+	updateRole();
 
 	m_peakIndicator = new PeakIndicator(this);
 	connect(m_fader, &Fader::peakChanged, m_peakIndicator, &PeakIndicator::updatePeak);
@@ -821,13 +821,14 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	setAcceptDrops(true);
 }
 
-void MixerChannelView::updateFaderKnob()
+void MixerChannelView::updateRole()
 {
 	// The handle's colour says what the fader is: the master's (POST) red, an effect return's blue, a channel's
 	// green (the master's PRE faders are orange)
 	auto* channel = Engine::mixer()->mixerChannel(m_channelIndex);
 	m_fader->setKnob(embed::getIconPixmap(channel->isMaster() ? "fader_knob_post"
 		: channel->m_fxReturn ? "fader_knob_fx" : "fader_knob"));
+	if (!channel->isMaster()) { m_channelNumberLcd->setVisible(!channel->m_fxReturn); }
 }
 
 

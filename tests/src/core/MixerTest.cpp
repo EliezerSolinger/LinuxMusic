@@ -1417,6 +1417,54 @@ private slots:
 		for (const auto index : left) { if (index < mixer()->numChannels()) { mixer()->deleteChannel(index); } }
 	}
 
+	void effectReturnsStayLastAndTakeNoTracks()
+	{
+		const auto song = Engine::getSong();
+		const auto isLast = [] {
+			bool fx = false;
+			for (int i = 1; i < mixer()->numChannels(); ++i)
+			{
+				if (mixer()->mixerChannel(i)->m_fxReturn) { fx = true; }
+				else if (fx) { return false; }
+			}
+			return fx;
+		};
+		QVERIFY(isLast());
+
+		// Each is a return strip of its own, whose tolerances do not move when channels are added before it
+		const auto returnStrip = mixer()->toleranceStripOf(mixer()->fxReturns().front());
+		QCOMPARE(returnStrip, Mixer::ReturnStrips + 1);
+
+		// New channels come before them: the tracks' channels are numbered 1, 2... without the returns
+		auto* first = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* second = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		QVERIFY(isLast());
+		QCOMPARE(mixer()->toleranceStripOf(mixer()->fxReturns().front()), returnStrip);
+		QCOMPARE(mixer()->toleranceStripOf(mixer()->mixerChannel(first->mixerChannelModel()->value())),
+			first->mixerChannelModel()->value());
+		QCOMPARE(second->mixerChannelModel()->value(), first->mixerChannelModel()->value() + 1);
+		QCOMPARE(mixer()->mixerChannel(second->mixerChannelModel()->value())->m_name, second->name());
+		const auto last = mixer()->lastTrackableChannel();
+		QVERIFY(!mixer()->mixerChannel(last)->m_fxReturn);
+		QVERIFY(mixer()->mixerChannel(last + 1)->m_fxReturn);
+		// A track's channel number cannot reach them
+		QCOMPARE(static_cast<mix_ch_t>(first->mixerChannelModel()->maxValue()), last);
+		first->mixerChannelModel()->setValue(last + 1);
+		QCOMPARE(first->mixerChannelModel()->value(), last);
+
+		// A project of before, with a return among the channels: put back last, the tracks following their channels
+		const auto firstChannel = mixer()->mixerChannel(first->mixerChannelModel()->value());
+		const auto fxReturn = mixer()->fxReturns().front();
+		while (fxReturn->index() > 1) { mixer()->moveChannelLeft(fxReturn->index()); }
+		QVERIFY(!isLast());
+		mixer()->ensureFxReturns();
+		QVERIFY(isLast());
+		QCOMPARE(mixer()->mixerChannel(first->mixerChannelModel()->value()), firstChannel);
+
+		deleteTrack(first);
+		deleteTrack(second);
+	}
+
 	void folderRoutesItsTracksToItsGroupChannel()
 	{
 		const auto song = Engine::getSong();
@@ -3344,7 +3392,8 @@ private slots:
 		// Arranging puts the channels back like the tracks: folder, track and its channels, other track
 		mixer()->moveChannelRight(trackChannel->index());
 		mixer()->moveChannelLeft(otherChannel->index());
-		QCOMPARE(track->mixerChannelModel()->value(), before + 2);
+		// (the track's channel number follows its channel)
+		QCOMPARE(track->mixerChannelModel()->value(), trackChannel->index());
 		mixer()->arrangeChannelsByTracks();
 		const int first = 1; // the tracks' channels come first, the effect returns last
 		QCOMPARE(mixer()->trackChannel(folder)->index(), first);

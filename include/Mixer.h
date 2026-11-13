@@ -404,6 +404,8 @@ public:
 	 */
 	static constexpr int FxReturnCount = 2;
 	auto fxReturns() const -> std::vector<MixerChannel*>;
+	//! Moves the effect returns after every other channel, in their order
+	void keepFxReturnsLast();
 
 	//! Makes the effect returns if the mixer does not have them (new projects, projects from before), and the
 	//! sends of every channel to them. Not journalled: projects always have them.
@@ -445,9 +447,23 @@ public:
 	// toChannel. NULL if there is no send.
 	FloatModel * channelSendModel(mix_ch_t fromChannel, mix_ch_t toChannel);
 
-	// add a new channel to the mixer.
-	// returns the index of the channel that was just added
-	int createChannel();
+	/**
+	 * Adds a channel. It goes before the effect returns, which stay last, so that the channels are numbered 1, 2,
+	 * 3... without them, unless @p beforeFxReturns is false (while loading, where channels take the place saved).
+	 * @returns the index of the channel that was just added
+	 */
+	int createChannel(bool beforeFxReturns = true);
+
+	//! The highest channel a track can send to: the effect returns, last, take only their sends
+	auto lastTrackableChannel() const -> mix_ch_t;
+
+	/**
+	 * The desk's strip whose tolerances @p channel has (see ChannelTolerance): a channel's is its number, as on a
+	 * desk; an effect return's is a return strip of its own (ReturnStrips + 1, + 2...), which stays the same when
+	 * channels are added before it.
+	 */
+	auto toleranceStripOf(const MixerChannel* channel) const -> int;
+	static constexpr int ReturnStrips = 1000;
 
 	/**
 	 * Renames channel @p index, or changes its color. One undo step. A track's channel is named and colored after
@@ -494,6 +510,8 @@ signals:
 	void channelsSwapped(int fromIndex, int toIndex);
 	//! A track got or lost a channel of its own (see setUpTrackChannel())
 	void trackChannelChanged(lmms::Track* track);
+	//! The channels tracks can send to changed (see lastTrackableChannel())
+	void trackableChannelsChanged();
 
 private:
 	//! The track whose channel (see setUpTrackChannel()) is channel @p index, or nullptr

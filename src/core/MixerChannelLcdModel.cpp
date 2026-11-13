@@ -32,7 +32,9 @@ MixerChannelLcdModel::MixerChannelLcdModel(Model* parent)
 	: IntModel(0, 0, 0, parent, tr("Mixer channel"))
 {
 	const auto mixer = Engine::mixer();
-	setRange(0, mixer->numChannels() - 1, 1);
+	setRange(0, mixer->lastTrackableChannel(), 1);
+	// A track does not send to an effect return (they are last, and fed by the channels' FX sends only)
+	connect(mixer, &Mixer::trackableChannelsChanged, this, [this, mixer] { setRange(0, mixer->lastTrackableChannel()); });
 
 	connect(mixer, &Mixer::channelsSwapped, this, &MixerChannelLcdModel::channelsSwapped);
 	connect(mixer, &Mixer::channelDeleted, this, &MixerChannelLcdModel::channelDeleted);
@@ -67,12 +69,13 @@ void MixerChannelLcdModel::channelDeleted(int index)
 {
 	if (value() == index) { setValue(0); }
 	else if (value() > index) { setValue(value() - 1); }
-	setRange(0, maxValue() - 1);
+	setRange(0, Engine::mixer()->lastTrackableChannel());
 }
 
 void MixerChannelLcdModel::channelCreated(int index)
 {
-	setRange(0, maxValue() + 1);
+	// (While loading, a project's channels are made in the order saved: all of them may be tracks' for now)
+	setRange(0, std::max(Engine::mixer()->lastTrackableChannel(), static_cast<mix_ch_t>(maxValue() + 1)));
 }
 
 } // namespace lmms
