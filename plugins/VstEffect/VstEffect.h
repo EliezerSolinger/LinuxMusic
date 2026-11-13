@@ -25,6 +25,7 @@
 #ifndef _VST_EFFECT_H
 #define _VST_EFFECT_H
 
+#include <atomic>
 #include <string>
 
 #include <QMutex>
@@ -73,6 +74,8 @@ public:
 		return std::nullopt;
 	}
 	auto usesSharedMemoryBuffers() const -> bool override { return m_plugin != nullptr; }
+	//! The plugin's latency, as of its last period (the plugin may be being replaced) [audio thread]
+	auto latency() const -> f_cnt_t override { return m_latency.load(std::memory_order_relaxed); }
 	void onSharedMemoryChange(const SharedBufferInfo& info) override;
 
 private:
@@ -85,6 +88,7 @@ private:
 
 	QSharedPointer<VstPlugin> m_plugin;
 	QMutex m_pluginMutex;
+	std::atomic<f_cnt_t> m_latency = 0; //!< see latency()
 	EffectKey m_key;
 
 	//! Where the host put the audio buffers for the remote process

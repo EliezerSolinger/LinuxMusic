@@ -209,6 +209,18 @@ public:
 	{
 		m_resumed = resumed;
 		pluginDispatch( effMainsChanged, 0, resumed ? 1 : 0 );
+		// A plugin sets its latency for the rate and buffer size it resumes with
+		if (resumed) { reportLatency(); }
+	}
+
+	// Tells the host the plugin's latency (AEffect::initialDelay) when it changed since it last told
+	void reportLatency()
+	{
+		if (!m_plugin) { return; }
+		const int latency = std::max(0, static_cast<int>(m_plugin->initialDelay));
+		if (latency == m_reportedLatency) { return; }
+		m_reportedLatency = latency;
+		sendMessage(message(IdVstLatency).addInt(latency));
 	}
 
 	inline bool isResumed() const
@@ -466,6 +478,9 @@ private:
 	bool m_shouldQuit = false;
 #endif
 	std::queue<message> m_messageList;
+
+	// The latency last told to the host (see reportLatency())
+	int m_reportedLatency = -1;
 	bool m_shouldGiveIdle;
 
 
@@ -1940,7 +1955,11 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 		case audioMasterIOChanged:
 			SHOW_CALLBACK( "amc: audioMasterIOChanged\n" );
 			// numInputs, numOutputs, and/or latency has changed
-			return __plugin->updateInOutCount();
+		{
+			const int result = __plugin->updateInOutCount();
+			__plugin->reportLatency();
+			return result;
+		}
 
 #ifdef OLD_VST_SDK
 		case audioMasterWantMidi:

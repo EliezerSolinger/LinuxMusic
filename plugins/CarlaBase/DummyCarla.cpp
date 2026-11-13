@@ -15,3 +15,7 @@ CARLA_PLUGIN_EXPORT const NativePluginDescriptor* carla_get_native_patchbay32_pl
 CARLA_PLUGIN_EXPORT const NativePluginDescriptor* carla_get_native_patchbay64_plugin() { return nullptr; }
 CARLA_PLUGIN_EXPORT const NativePluginDescriptor* carla_get_native_patchbay_cv_plugin() { return nullptr; }
 CARLA_PLUGIN_EXPORT CarlaBackend::CarlaEngine* carla_get_native_plugin_engine(const NativePluginDescriptor* desc, NativePluginHandle handle) { return nullptr; }
+
+// The host API's handle on a rack or patchbay (see CarlaInstrument::updateLatency())
+CARLA_PLUGIN_EXPORT CarlaHostHandle carla_create_native_plugin_host_handle(const NativePluginDescriptor*, NativePluginHandle) { return nullptr; }
+CARLA_PLUGIN_EXPORT void carla_host_handle_free(CarlaHostHandle) {}

@@ -26,6 +26,8 @@
 
 #include "communication.h"
 
+#include <algorithm>
+
 #include <QtEndian>
 #include <QDebug>
 #include <QDir>
@@ -426,6 +428,10 @@ bool VstPlugin::processMessage( const message & _m )
 
 		case IdVstPluginVersion:
 			m_version = _m.getInt();
+			break;
+
+		case IdVstLatency:
+			m_latency.store(static_cast<f_cnt_t>(std::max(0, _m.getInt())), std::memory_order_relaxed);
 			break;
 
 		case IdVstPluginVendorString:

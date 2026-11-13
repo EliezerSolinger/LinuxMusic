@@ -25,6 +25,7 @@
 #ifndef AEFFECTX_H
 #define AEFFECTX_H
 
+#include <cstddef>
 #include <stdint.h>
 #include <type_traits>
 
@@ -244,8 +245,11 @@ public:
 	// Fill somewhere 28-2b
 	void *ptr1;
 	void *ptr2;
-	// Zeroes 2c-2f 30-33 34-37 38-3b
-	char empty3[4 + 4 + 4];
+	// The frames the plugin delays its output by (its latency) 2c-2f; it may change it and then tell the host
+	// with audioMasterIOChanged
+	int32_t initialDelay;
+	// Zeroes 30-33 34-37
+	char empty3[4 + 4];
 	// 1.0f 3c-3f
 	float unknown_float;
 	// An object? pointer 40-43
@@ -260,6 +264,9 @@ public:
 	void (VST_CALL_CONV * processReplacing)( AEffect * , float * * , float * * , int );
 
 } ;
+
+static_assert(offsetof(AEffect, initialDelay) + sizeof(int32_t) + 8 == offsetof(AEffect, unknown_float),
+	"AEffect keeps the layout of the VST 2 SDK");
 
 
 

@@ -86,7 +86,8 @@ enum VstRemoteMessageIDs
 	IdVstPluginUniqueID,
 	IdVstSetParameter,
 	IdVstParameterCount,
-	IdVstParameterDump
+	IdVstParameterDump,
+	IdVstLatency //!< the plugin's latency in frames (AEffect::initialDelay), on load and whenever it changes
 
 } ;
 

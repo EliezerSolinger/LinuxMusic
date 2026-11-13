@@ -25,6 +25,8 @@
 #ifndef _VST_PLUGIN_H
 #define _VST_PLUGIN_H
 
+#include <atomic>
+
 #include <QMap>
 #include <QPointer>
 #include <QSize>
@@ -71,6 +73,12 @@ public:
 	inline int version() const
 	{
 		return m_version;
+	}
+
+	//! The frames the plugin delays its output by, as it last reported (0 until it does) [any thread]
+	auto latency() const -> f_cnt_t
+	{
+		return m_latency.load(std::memory_order_relaxed);
 	}
 	
 	inline const QString & vendorString() const
@@ -160,6 +168,8 @@ private:
 
 	QString m_name;
 	int m_version;
+	//! Set when the remote process reports it, which may be on the audio thread (waiting for a period)
+	std::atomic<f_cnt_t> m_latency = 0;
 	QString m_vendorString;
 	QString m_productString;
 	QString m_currentProgramName;

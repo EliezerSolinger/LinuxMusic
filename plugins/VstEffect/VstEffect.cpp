@@ -128,6 +128,7 @@ auto VstEffect::process(ProcessContext& context) -> ProcessStatus
 	// Until the host has set up buffers for the channel counts the remote process reported
 	// (see channelCountsChanged), the remote process cannot process
 	const bool processed = buffersMatchRemote() && m_plugin->process();
+	m_latency.store(m_plugin ? m_plugin->latency() : 0, std::memory_order_relaxed);
 	m_pluginMutex.unlock();
 
 	if (!processed)

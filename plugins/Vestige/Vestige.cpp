@@ -460,6 +460,7 @@ auto VestigeInstrument::process(ProcessContext& context) -> ProcessStatus
 	const bool processed = m_plugin
 		&& m_sharedBufferInfo.channels == m_plugin->remoteChannelsIn() + m_plugin->remoteChannelsOut()
 		&& m_plugin->process();
+	m_latency.store(m_plugin ? m_plugin->latency() : 0, std::memory_order_relaxed);
 
 	m_pluginMutex.unlock();
 
@@ -529,6 +530,7 @@ void VestigeInstrument::closePlugin( void )
 	m_pluginMutex.lock();
 	delete m_plugin;
 	m_plugin = nullptr;
+	m_latency.store(0, std::memory_order_relaxed);
 	m_pluginMutex.unlock();
 }
 

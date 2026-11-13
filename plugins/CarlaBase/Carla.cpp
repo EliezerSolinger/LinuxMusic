@@ -34,12 +34,15 @@
 #include "FontHelper.h"
 #include "Song.h"
 
+#include <algorithm>
+
 #include <QApplication>
 #include <QComboBox>
 #include <QCompleter>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLibrary>
 #include <QLineEdit>
 #include <QMdiArea>
 #include <QPushButton>
@@ -148,6 +151,52 @@ static const char* host_ui_save_file(NativeHostHandle, bool isDir, const char* t
 // -----------------------------------------------------------------------
 
 
+#if CARLA_VERSION_HEX >= CARLA_MIN_LATENCY_VERSION
+namespace
+{
+
+/**
+ * Carla's host API, to read the latency of the plugins in a rack or patchbay.
+ *
+ * It lives in libcarla_host-plugin, next to libcarla_native-plugin (Carla's own plugin bundles load the two
+ * together), and is loaded when first needed rather than linked: a Carla without it still loads, with no latency.
+ */
+struct CarlaHostApi
+{
+    uint32_t (*pluginCount)(CarlaHostHandle) = nullptr;
+    float (*internalParameterValue)(CarlaHostHandle, uint, int32_t) = nullptr;
+    uint32_t (*pluginLatency)(CarlaHostHandle, uint) = nullptr;
+
+    auto available() const -> bool { return pluginCount && internalParameterValue && pluginLatency; }
+};
+
+auto carlaHostApi() -> const CarlaHostApi&
+{
+    static const auto api = [] {
+        auto result = CarlaHostApi{};
+        // Never unloaded: Carla's engines may run until the program ends
+        auto library = new QLibrary(QDir(carla_get_library_folder()).filePath("libcarla_host-plugin"));
+        if (!library->load())
+        {
+            qWarning("Carla's host library could not be loaded, so Carla's plugins report no latency: %s",
+                qUtf8Printable(library->errorString()));
+            return result;
+        }
+        result.pluginCount = reinterpret_cast<decltype(result.pluginCount)>(
+            library->resolve("carla_get_current_plugin_count"));
+        result.internalParameterValue = reinterpret_cast<decltype(result.internalParameterValue)>(
+            library->resolve("carla_get_internal_parameter_value"));
+        result.pluginLatency = reinterpret_cast<decltype(result.pluginLatency)>(
+            library->resolve("carla_get_plugin_latency"));
+        return result;
+    }();
+    return api;
+}
+
+} // namespace
+#endif
+
+
 CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay)
     : Instrument(descriptor, instrumentTrack, nullptr, Flag::IsSingleStreamed | Flag::IsMidiBased | Flag::IsNotBendable),
       kIsPatchbay(isPatchbay),
@@ -188,6 +237,13 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
 
     fHandle = fDescriptor != nullptr ? fDescriptor->instantiate(&fHost) : nullptr;
     Q_ASSERT(fHandle != nullptr);
+
+#if CARLA_VERSION_HEX >= CARLA_MIN_LATENCY_VERSION
+    if (fHandle != nullptr && carlaHostApi().available())
+    {
+        m_hostHandle = carla_create_native_plugin_host_handle(fDescriptor, fHandle);
+    }
+#endif
 
     // Carla is activated in activate(), once the host knows the sample rate and buffer size
     m_sampleRate = handleGetSampleRate();
@@ -235,6 +291,14 @@ CarlaInstrument::~CarlaInstrument()
 
     if (fHandle == nullptr)
         return;
+
+#if CARLA_VERSION_HEX >= CARLA_MIN_LATENCY_VERSION
+    if (m_hostHandle != nullptr)
+    {
+        carla_host_handle_free(m_hostHandle);
+        m_hostHandle = nullptr;
+    }
+#endif
 
     deactivate();
 
@@ -493,6 +557,28 @@ void CarlaInstrument::loadSettings(const QDomElement& elem)
 #endif
 }
 
+void CarlaInstrument::updateLatency()
+{
+#if CARLA_VERSION_HEX >= CARLA_MIN_LATENCY_VERSION
+    if (m_hostHandle == nullptr) { return; }
+
+    const auto& api = carlaHostApi();
+    f_cnt_t latency = 0;
+    const auto count = api.pluginCount(m_hostHandle);
+    for (uint32_t id = 0; id < count; ++id)
+    {
+        // A plugin turned off is bypassed, without its delay
+        if (api.internalParameterValue(m_hostHandle, id, CARLA_BACKEND_NAMESPACE::PARAMETER_ACTIVE) < 0.5f)
+        {
+            continue;
+        }
+        const auto plugin = static_cast<f_cnt_t>(api.pluginLatency(m_hostHandle, id));
+        latency = kIsPatchbay ? std::max(latency, plugin) : latency + plugin;
+    }
+    m_latency.store(latency, std::memory_order_relaxed);
+#endif
+}
+
 auto CarlaInstrument::channelCount(bool isInput) const -> ch_cnt_t
 {
     if (fDescriptor == nullptr) { return isInput ? 0 : DEFAULT_CHANNELS; }
@@ -591,6 +677,7 @@ auto CarlaInstrument::process(ProcessContext& context) -> ProcessStatus
         fMidiEventCount = 0;
     }
 
+    updateLatency();
     return ProcessStatus::Continue;
 }
 

@@ -27,6 +27,7 @@
 #define _VESTIGE_H
 
 
+#include <atomic>
 #include <string>
 
 #include <QMutex>
@@ -84,6 +85,8 @@ public:
 	// AudioProcessor implementation
 	auto process(ProcessContext& context) -> ProcessStatus override;
 	auto wantsEvents() const -> bool override { return true; }
+	//! The plugin's latency, as of its last period (the plugin may be being replaced) [audio thread]
+	auto latency() const -> f_cnt_t override { return m_latency.load(std::memory_order_relaxed); }
 	auto channelCount(bool isInput) const -> ch_cnt_t override;
 	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return channelCount(isInput) > 0 ? 1 : 0; }
 	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
@@ -118,6 +121,7 @@ private:
 
 	VstPlugin * m_plugin;
 	QMutex m_pluginMutex;
+	std::atomic<f_cnt_t> m_latency = 0; //!< see latency()
 
 	QString m_pluginDLL;
 	gui::SubWindow* m_subWindow;

@@ -28,7 +28,10 @@
 #define CARLA_SETTING_PREFIX    "PARAM_KNOB_"
 #define CARLA_MIN_PARAM_VERSION 0x020090
 #define CARLA_VERSION_HEX_3 0x30000
+//! The first Carla that tells a plugin's latency to a host of its rack or patchbay (carla_get_plugin_latency)
+#define CARLA_MIN_LATENCY_VERSION 0x020401
 
+#include <atomic>
 #include <vector>
 
 // qt
@@ -200,6 +203,8 @@ public:
     void deactivate() override;
     auto process(ProcessContext& context) -> ProcessStatus override;
     auto wantsEvents() const -> bool override { return true; }
+    //! The latency of the plugins in Carla, as of the last period (see updateLatency()) [any thread]
+    auto latency() const -> f_cnt_t override { return m_latency.load(std::memory_order_relaxed); }
     auto channelCount(bool isInput) const -> ch_cnt_t override;
     auto channelGroupCount(bool isInput) const -> group_cnt_t override { return channelCount(isInput) > 0 ? 1 : 0; }
     auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
@@ -226,6 +231,11 @@ private slots:
     void updateParamModel(uint32_t index);
 
 private:
+    //! Reads the latency of Carla's plugins, after Carla processed a period: Carla changes its list of plugins
+    //! only while it processes (see CarlaEngine::ProtectedData::doNextPluginAction), and the reads copy a pointer
+    //! and read a few values, without allocating or locking [audio thread]
+    void updateLatency();
+
     const bool kIsPatchbay;
 
     NativePluginHandle fHandle;
@@ -235,6 +245,15 @@ private:
     uint32_t        fMidiEventCount;
     NativeMidiEvent fMidiEvents[kMaxMidiEvents];
     NativeTimeInfo  fTimeInfo;
+
+#if CARLA_VERSION_HEX >= CARLA_MIN_LATENCY_VERSION
+    //! Carla's host API on this rack or patchbay, to read its plugins' latencies
+    CarlaHostHandle m_hostHandle = nullptr;
+#endif
+    //! The rack's plugins run one after the other, so their latencies add up; the patchbay's connections are not
+    //! known to the host, so it tells the largest (exact for one plugin or parallel ones). Read after each period
+    //! (see updateLatency())
+    std::atomic<f_cnt_t> m_latency = 0;
 
 
     //! Whether Carla was activated, and with which sample rate and buffer size
