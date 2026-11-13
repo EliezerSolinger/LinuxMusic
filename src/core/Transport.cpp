@@ -153,6 +153,7 @@ void Transport::periodStarts(tick_t tick, float frameOffset, f_cnt_t framesPerPe
 {
 	const bool follows = !m_positionSet.exchange(false, std::memory_order_relaxed) && tick == m_expectedTick
 		&& frameOffset == m_expectedFrameOffset;
+	m_jumped.store(!follows, std::memory_order_relaxed);
 	if (follows) { m_frame.fetch_add(framesPerPeriod, std::memory_order_relaxed); }
 	else
 	{

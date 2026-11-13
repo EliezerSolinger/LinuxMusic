@@ -31,6 +31,7 @@
 
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "Song.h"
 
 
 namespace lmms
@@ -137,8 +138,10 @@ void VstSyncController::update()
 {
 	if (!m_syncData) { return; }
 
-	// The plugins see a jump for the one period after it
-	m_syncData->playbackJumped = m_jumpPending.exchange(false, std::memory_order_relaxed);
+	// The plugins see a jump for the one period after it: the song's own (seen on this thread, when it happens), or
+	// one told from elsewhere
+	const bool songJumped = Engine::getSong()->transport().jumped();
+	m_syncData->playbackJumped = m_jumpPending.exchange(false, std::memory_order_relaxed) || songJumped;
 
 	m_syncData->bufferSize = Engine::audioEngine()->framesPerPeriod();
 

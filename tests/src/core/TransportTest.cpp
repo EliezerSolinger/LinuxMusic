@@ -108,10 +108,15 @@ private slots:
 		render(1);
 		QCOMPARE(transport.frame(), framesAt(start) + fpp);
 
-		// A jump while playing counts again
+		QVERIFY(!transport.jumped());
+
+		// A jump while playing counts again, and is told for that period only (to the VST plugins' sync)
 		song->setPlayPos(TimePos::ticksPerBar(), Song::PlayMode::Song);
 		render(1);
 		QCOMPARE(transport.frame(), framesAt(TimePos::ticksPerBar()));
+		QVERIFY(transport.jumped());
+		render(1);
+		QVERIFY(!transport.jumped());
 		transport.stop();
 	}
 

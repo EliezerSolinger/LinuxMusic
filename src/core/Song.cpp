@@ -153,8 +153,7 @@ Song::Song() :
 	// A removed track may have been the one that needed the audio input
 	connect(this, &TrackContainer::trackRemoved, this, &Song::scheduleCaptureUpdate);
 
-	// Inform VST plugins if the user moved the play head
-	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(); }, Qt::DirectConnection);
+	// VST plugins learn of jumps from the transport, in the period they happen (VstSyncController::update)
 }
 
 

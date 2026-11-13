@@ -66,6 +66,8 @@ public:
 
 	//! The timeline frame the period being played starts at (song mode), along the tempo map [any thread]
 	auto frame() const -> std::int64_t { return m_frame.load(std::memory_order_relaxed); }
+	//! Whether the period being played starts somewhere else than the last one ended (a jump, the cycle, a start)
+	auto jumped() const -> bool { return m_jumped.load(std::memory_order_relaxed); }
 	//! The same, as seconds of the song
 	auto seconds(sample_rate_t sampleRate) const -> double;
 
@@ -115,6 +117,7 @@ private:
 	Song& m_song;
 	std::atomic<State> m_state = State::Stopped;
 	std::atomic<std::int64_t> m_frame = 0;
+	std::atomic<bool> m_jumped = false;
 	std::atomic<tick_t> m_recordingStartTick = -1; //!< where the recording's pre-roll ends
 
 	// The audio thread's: what the next period would start at if nothing jumps
