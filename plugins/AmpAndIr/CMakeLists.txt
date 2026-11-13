@@ -4,6 +4,10 @@ LINK_LIBRARIES(${FFTW3F_LIBRARIES})
 
 # Neural Amp Modeler's core (MIT), with Eigen (MPL 2.0) and nlohmann/json (MIT): third-party code, built apart
 set(NAM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/NeuralAmpModelerCore")
+if(NOT EXISTS "${NAM_DIR}/NAM/dsp.h" OR NOT EXISTS "${NAM_DIR}/Dependencies/eigen/Eigen/Core")
+	message(FATAL_ERROR "The Amp & IR plugin needs NeuralAmpModelerCore and its Eigen: run "
+		"git submodule update --init --recursive plugins/AmpAndIr/NeuralAmpModelerCore")
+endif()
 # (an object library: its architectures register themselves from static objects, which a static library would drop)
 file(GLOB_RECURSE NAM_SOURCES "${NAM_DIR}/NAM/*.cpp")
 add_library(nam_core OBJECT ${NAM_SOURCES})
