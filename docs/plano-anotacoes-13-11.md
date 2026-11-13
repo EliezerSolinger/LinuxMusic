@@ -271,3 +271,17 @@ Cada passo atualiza este documento, marcando o que foi feito.
     **Não há −6 dB no caminho**: `GainStagingTest` mede 0,00 dB de ponta a ponta (−0,06 dB pela tira analógica).
     A A/B achou o `MaxTrackVolume` estourando o `volume_t` de 8 bits, e isso foi corrigido;
   - 6.7: puxadores dos faders por papel (canal verde, FX azul, PRE laranja, POST vermelho).
+- **Etapa 8 feita** (13/11):
+  - um Explorador por página: Composição (instrumentos, favoritos, projetos, samples, presets e arquivos do projeto)
+    e Mixagem (efeitos);
+  - sem a aba Computador: a pasta do projeto no lugar dela;
+  - só o campo de busca (sem título, textos, caixas Usuário/Fábrica/Ocultos e o botão de recarregar; a lista é
+    lida de novo ao aparecer). Os botões ficam juntos e centralizados, e a aba se chama "Explorador", com ícone;
+  - categorias com cor e ícone genérico de duas letras; cada efeito com o próprio logo emoldurado na cor da
+    categoria. Arquivos sem extensão conhecida são tipados pelo MIME, e `.nam` tem tipo e ícone;
+  - traduções em português das strings novas da sessão.
+- **Etapa 9.1 e 9.2 feitas** (13/11):
+  - transporte num grupo arredondado como no Logic (play verde, gravar vermelho, ciclo amarelo, metrônomo azul);
+  - sem Part/Song: o Editor de Sequências voltou a ter o próprio play;
+  - sem VOL e PITCH: no lugar, o mudo do master;
+  - o ciclo: arrastar na metade de cima da régua seleciona o trecho e liga o ciclo; tecla C. A tecla R grava.
