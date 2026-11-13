@@ -151,6 +151,13 @@ public:
 	{
 		return m_sf2File;
 	}
+
+	//! The soundfont a new SoundFont player opens: the one set in the settings, else the General MIDI one that
+	//! comes with the program (FluidR3 Mono GM, MIT)
+	QString defaultSoundFont() const
+	{
+		return m_sf2File.isEmpty() ? factorySamplesDir() + "soundfonts/FluidR3Mono_GM.sf3" : m_sf2File;
+	}
 #endif
 
 #ifdef LMMS_HAVE_STK

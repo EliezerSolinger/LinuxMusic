@@ -231,10 +231,13 @@ private slots:
 					for (const auto& attribute : {QString{"src"}, QString{"userwavefile"}})
 					{
 						const auto value = element.attribute(attribute);
-						if (value.isEmpty() || QDir::isAbsolutePath(value) || value.contains(':')) { continue; }
+						if (value.isEmpty() || QDir::isAbsolutePath(value)) { continue; }
 						if (!value.contains('.')) { continue; } // (not a file)
 						++checked;
-						if (!QFileInfo::exists(ConfigManager::inst()->factorySamplesDir() + value))
+						// (with a base's prefix, e.g. factorysample:, or relative to the factory samples)
+						const auto path = value.contains(':') ? PathUtil::toAbsolute(value)
+							: ConfigManager::inst()->factorySamplesDir() + value;
+						if (!QFileInfo::exists(path))
 						{
 							missing << QString{"%1: %2"}.arg(QFileInfo{path}.fileName(), value);
 						}

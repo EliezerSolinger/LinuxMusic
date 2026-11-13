@@ -191,7 +191,7 @@ Sf2Instrument::Sf2Instrument( InstrumentTrack * _instrument_track ) :
 	// but we don't need that when loading a project/preset/preview
 	if (!Engine::getSong()->isLoadingProject() && !instrumentTrack()->isPreviewMode())
 	{
-		loadFile(ConfigManager::inst()->sf2File());
+		loadFile(ConfigManager::inst()->defaultSoundFont());
 	}
 
 	connect( &m_bankNum, SIGNAL( dataChanged() ), this, SLOT( updatePatch() ) );

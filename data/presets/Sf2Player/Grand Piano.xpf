@@ -1,0 +1,12 @@
+<?xml version='1.0'?>
+<!DOCTYPE lmms-project>
+<lmms-project creator="LinuxMusic" type="instrumenttracksettings" version="31">
+  <head/>
+  <instrumenttracksettings muted="0" name="Grand Piano" solo="0" type="0">
+    <instrumenttrack basenote="69" pan="0" pitch="0" pitchrange="1" vol="100">
+      <instrument name="sf2player">
+        <sf2player src="factorysample:soundfonts/FluidR3Mono_GM.sf3" patch="0" bank="0" gain="1" reverbOn="1" reverbRoomSize="0.2" reverbDamping="0" reverbWidth="0.5" reverbLevel="0.6" chorusOn="0" chorusNum="3" chorusLevel="2" chorusSpeed="0.3" chorusDepth="8"/>
+      </instrument>
+    </instrumenttrack>
+  </instrumenttracksettings>
+</lmms-project>
