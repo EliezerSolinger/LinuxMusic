@@ -23,6 +23,7 @@
 #ifndef LMMS_PLUGIN_CATEGORIES_H
 #define LMMS_PLUGIN_CATEGORIES_H
 
+#include <QColor>
 #include <QString>
 #include <QStringList>
 
@@ -43,6 +44,17 @@ LMMS_EXPORT QString categoryOf(const Plugin::Descriptor* desc);
 
 //! @returns the translated categories for plugins of type @p type, in display order
 LMMS_EXPORT QStringList categories(Plugin::Type type);
+
+//! How a category shows: its colour (EQ blue, dynamics yellow...) and the two letters on its generic icon
+struct Style
+{
+	QColor color;
+	QString code;
+};
+//! The style of the (translated) category @p category; a grey one for plugins of no category
+LMMS_EXPORT auto styleOf(const QString& category) -> Style;
+//! The style of the category of the plugin with descriptor @p desc
+LMMS_EXPORT auto styleOf(const Plugin::Descriptor* desc) -> Style;
 
 //! @returns whether the plugin with descriptor @p desc is retired: it is not offered any more (what it did is part
 //! of the mixer), but projects that use it still load and play it

@@ -13162,6 +13162,10 @@ Shift-click to open the note in Automation Editor</source>
         <source>Search</source>
         <translation>Procurar</translation>
     </message>
+    <message>
+        <source>Other</source>
+        <translation>Outros</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::PluginDescWidget</name>
@@ -16594,6 +16598,80 @@ Latency: %2 ms</source>
     <message>
         <source>The rendering %1 could not be created.</source>
         <translation>Não foi possível criar a renderização %1.</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::EffectBrowser</name>
+    <message>
+        <source>Search</source>
+        <translation>Procurar</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Outros</translation>
+    </message>
+</context>
+<context>
+    <name>PluginCategories</name>
+    <message>
+        <source>Synthesizers</source>
+        <translation>Sintetizadores</translation>
+    </message>
+    <message>
+        <source>Samplers</source>
+        <translation>Samplers</translation>
+    </message>
+    <message>
+        <source>Drums</source>
+        <translation>Bateria</translation>
+    </message>
+    <message>
+        <source>Physical modeling</source>
+        <translation>Modelagem física</translation>
+    </message>
+    <message>
+        <source>Chiptune</source>
+        <translation>Chiptune</translation>
+    </message>
+    <message>
+        <source>Plugin hosts</source>
+        <translation>Hosts de plugins</translation>
+    </message>
+    <message>
+        <source>EQ &amp; filters</source>
+        <translation>EQ e filtros</translation>
+    </message>
+    <message>
+        <source>Dynamics</source>
+        <translation>Dinâmica</translation>
+    </message>
+    <message>
+        <source>Delay &amp; reverb</source>
+        <translation>Delay e reverb</translation>
+    </message>
+    <message>
+        <source>Modulation</source>
+        <translation>Modulação</translation>
+    </message>
+    <message>
+        <source>Distortion</source>
+        <translation>Distorção</translation>
+    </message>
+    <message>
+        <source>Pitch &amp; frequency</source>
+        <translation>Tom e frequência</translation>
+    </message>
+    <message>
+        <source>Stereo &amp; utility</source>
+        <translation>Estéreo e utilidades</translation>
+    </message>
+    <message>
+        <source>Analysis</source>
+        <translation>Análise</translation>
+    </message>
+    <message>
+        <source>Control</source>
+        <translation>Controle</translation>
     </message>
 </context>
 </TS>

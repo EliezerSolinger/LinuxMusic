@@ -257,7 +257,7 @@ GuiApplication::GuiApplication()
 		if (screenshotAction == "effects-browser")
 		{
 			QTimer::singleShot(2500, m_mainWindow, [this] {
-				if (auto panel = m_mainWindow->findChild<BrowserPanel*>()) { panel->select(panel->indexOf("effects"), false); }
+				m_mainWindow->showEffectsExplorer(); // the mixing page, with its explorer
 			});
 		}
 		// LINUXMUSIC_SCREENSHOT_DELAY=<ms> waits longer, e.g. for a large project to load

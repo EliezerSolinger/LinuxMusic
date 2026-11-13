@@ -37,33 +37,35 @@ struct Category
 {
 	const char* name; //!< untranslated, in the "PluginCategories" translation context
 	QStringList plugins; //!< descriptor names (plugin library names)
+	const char* color; //!< its colour, for its icons
+	const char* code; //!< two letters on its generic icon
 };
 
 // Categories are listed in display order
 const auto s_instrumentCategories = std::array{
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Synthesizers"),
-		{"tripleoscillator", "monstro", "watsyn", "organic", "bitinvader", "xpressive", "zynaddsubfx", "lb302"}},
+		{"tripleoscillator", "monstro", "watsyn", "organic", "bitinvader", "xpressive", "zynaddsubfx", "lb302"}, "#4afd85", "SY"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Samplers"),
-		{"audiofileprocessor", "sf2player", "gigplayer", "patman", "slicert"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Drums"), {"kicker", "avldrums"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Physical modeling"), {"vibedstrings", "malletsstk"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Chiptune"), {"freeboy", "nes", "sid", "opulenz", "sfxr"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Plugin hosts"), {"vestige", "carlarack", "carlapatchbay"}},
+		{"audiofileprocessor", "sf2player", "gigplayer", "patman", "slicert"}, "#f0913a", "SA"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Drums"), {"kicker", "avldrums"}, "#e85a4f", "DR"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Physical modeling"), {"vibedstrings", "malletsstk"}, "#c8a06b", "PM"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Chiptune"), {"freeboy", "nes", "sid", "opulenz", "sfxr"}, "#9b6be8", "CH"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Plugin hosts"), {"vestige", "carlarack", "carlapatchbay"}, "#9aa3ad", "PH"},
 };
 
 const auto s_effectCategories = std::array{
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "EQ & filters"),
-		{"eq", "dualfilter", "crossovereq", "bassbooster"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Dynamics"), {"compressor", "dynamicsprocessor", "lomm"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Delay & reverb"), {"delay", "multitapecho", "reverbsc"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Modulation"), {"flanger"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Distortion"), {"bitcrush", "waveshaper", "slewdistortion"}},
+		{"eq", "dualfilter", "crossovereq", "bassbooster"}, "#3d8be8", "EQ"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Dynamics"), {"compressor", "dynamicsprocessor", "lomm"}, "#e8c23d", "DY"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Delay & reverb"), {"delay", "multitapecho", "reverbsc"}, "#9b6be8", "RV"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Modulation"), {"flanger"}, "#4fc96b", "MO"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Distortion"), {"bitcrush", "waveshaper", "slewdistortion"}, "#e85a4f", "DS"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Pitch & frequency"),
-		{"granularpitchshifter", "frequencyshifter"}},
+		{"granularpitchshifter", "frequencyshifter"}, "#f0913a", "PI"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Stereo & utility"),
-		{"stereoenhancer", "dispersion"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Analysis"), {"analyzer", "oscilloscope", "vectorscope"}},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Control"), {"peakcontrollereffect"}},
+		{"stereoenhancer", "dispersion"}, "#9aa3ad", "ST"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Analysis"), {"analyzer", "oscilloscope", "vectorscope"}, "#3dc8d8", "AN"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Control"), {"peakcontrollereffect"}, "#d36bb8", "CT"},
 };
 
 QString translated(const char* name)
@@ -111,6 +113,27 @@ bool isRetired(const Plugin::Descriptor* desc)
 	// 13/11/2026)
 	static const auto retired = QStringList{"amplifier", "stereomatrix"};
 	return desc && retired.contains(QString::fromUtf8(desc->name));
+}
+
+auto styleOf(const QString& category) -> Style
+{
+	for (const auto& list : {std::span<const Category>{s_instrumentCategories}, std::span<const Category>{s_effectCategories}})
+	{
+		for (const auto& entry : list)
+		{
+			if (translated(entry.name) == category) { return {QColor{entry.color}, QString::fromLatin1(entry.code)}; }
+		}
+	}
+	// The plugins of no category (hosted ones, by host: LADSPA, LV2...)
+	return {QColor{"#7c8591"}, category.left(2).toUpper()};
+}
+
+
+
+
+auto styleOf(const Plugin::Descriptor* desc) -> Style
+{
+	return styleOf(categoryOf(desc));
 }
 
 } // namespace lmms::PluginCategories

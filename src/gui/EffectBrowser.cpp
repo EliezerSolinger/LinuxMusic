@@ -32,6 +32,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "CategoryIcon.h"
 #include "EffectSelectDialog.h"
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -137,7 +138,13 @@ void EffectBrowser::focusSearch()
 void EffectBrowser::fill()
 {
 	// By category for LinuxMusic's own effects, by host for the others (LADSPA, LV2...)
-	auto groups = std::map<QString, std::vector<std::pair<QString, QString>>>{};
+	struct Entry
+	{
+		QString name;
+		QString data;
+		QPixmap logo;
+	};
+	auto groups = std::map<QString, std::vector<Entry>>{};
 	for (const auto& key : EffectSelectDialog::availableEffects())
 	{
 		if (!key.isValid()) { continue; }
@@ -154,20 +161,26 @@ void EffectBrowser::fill()
 			if (group.isEmpty()) { group = tr("Other"); }
 			name = key.desc->displayName;
 		}
-		groups[group].emplace_back(name, EffectSelectDialog::dragData(key));
+		const auto* logo = key.logo();
+		groups[group].push_back({name, EffectSelectDialog::dragData(key), logo ? logo->pixmap() : QPixmap{}});
 	}
 
 	for (auto& [group, effects] : groups)
 	{
 		std::sort(effects.begin(), effects.end(), [](const auto& a, const auto& b) {
-			return QString::localeAwareCompare(a.first, b.first) < 0;
+			return QString::localeAwareCompare(a.name, b.name) < 0;
 		});
+		// Coloured by category (EQ blue, dynamics yellow...): its icon on the group, each effect its own logo framed
+		// in that colour, or the category's icon
+		const auto style = PluginCategories::styleOf(group);
 		auto groupItem = new QTreeWidgetItem(m_tree, QStringList{group});
-		for (const auto& [name, data] : effects)
+		groupItem->setIcon(0, categoryIcon(style));
+		for (const auto& effect : effects)
 		{
-			auto item = new QTreeWidgetItem(groupItem, QStringList{name});
-			item->setData(0, DragDataRole, data);
-			item->setToolTip(0, name);
+			auto item = new QTreeWidgetItem(groupItem, QStringList{effect.name});
+			item->setIcon(0, pluginIcon(effect.logo, style));
+			item->setData(0, DragDataRole, effect.data);
+			item->setToolTip(0, effect.name);
 		}
 	}
 }

@@ -255,6 +255,7 @@ public:
 		Patch,
 		Midi,
 		VstPlugin,
+		AmpModel,	//!< a Neural Amp Modeler model
 		Unknown
 	} ;
 

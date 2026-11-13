@@ -24,6 +24,8 @@
 
 #include "PluginBrowser.h"
 
+#include "CategoryIcon.h"
+
 #include <map>
 
 #include <QHeaderView>
@@ -141,6 +143,8 @@ void PluginBrowser::addPlugins()
 	{
 		const auto root = new QTreeWidgetItem();
 		root->setText(0, label);
+		// Coloured by category, like the effects
+		root->setIcon(0, categoryIcon(PluginCategories::styleOf(QString{label})));
 		m_descTree->addTopLevelItem(root);
 		return root;
 	};

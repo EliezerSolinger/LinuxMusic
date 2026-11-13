@@ -35,6 +35,7 @@
 #include <QMdiSubWindow>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMimeDatabase>
 #include <QProgressBar>
 #include <QScrollBar>
 #include <QPushButton>
@@ -1142,6 +1143,7 @@ void FileItem::initPixmaps()
 	static auto s_vstPluginFilePixmap = embed::getIconPixmap("vst_plugin_file", 16, 16);
 	static auto s_midiFilePixmap = embed::getIconPixmap("midi_file", 16, 16);
 	static auto s_unknownFilePixmap = embed::getIconPixmap("unknown_file");
+	static auto s_ampModelPixmap = embed::getIconPixmap("amp_model_file", 16, 16);
 
 	switch( m_type )
 	{
@@ -1163,6 +1165,9 @@ void FileItem::initPixmaps()
 			break;
 		case FileType::Midi:
 			setIcon(0, s_midiFilePixmap);
+			break;
+		case FileType::AmpModel:
+			setIcon(0, s_ampModelPixmap);
 			break;
 		case FileType::Unknown:
 		default:
@@ -1227,9 +1232,18 @@ void FileItem::determineFileType()
 		m_type = FileType::Preset;
 		m_handling = FileHandling::LoadByPlugin;
 	}
+	else if (ext == "nam")
+	{
+		// A Neural Amp Modeler model (for the amp and IR plugin)
+		m_type = FileType::AmpModel;
+	}
 	else
 	{
-		m_type = FileType::Unknown;
+		// By its contents (its MIME type), when the name does not say
+		const auto mime = QMimeDatabase{}.mimeTypeForFile(fullName());
+		if (mime.name().startsWith("audio/midi") || mime.name() == "audio/x-midi") { m_type = FileType::Midi; }
+		else if (mime.name().startsWith("audio/")) { m_type = FileType::Sample; }
+		else { m_type = FileType::Unknown; }
 	}
 
 	if( m_handling == FileHandling::NotSupported &&
@@ -1268,6 +1282,7 @@ QString FileItem::defaultFilters()
 	const auto soundFontFilters = QStringList{"*.sf2", "*.sf3"};
 	const auto patchFilters = QStringList{"*.pat"};
 	const auto midiFilters = QStringList{"*.mid", "*.midi", "*.rmi"};
+	const auto ampModelFilters = QStringList{"*.nam"};
 	
 	auto vstPluginFilters = QStringList{"*.dll"};
 #ifdef LMMS_BUILD_LINUX
@@ -1281,7 +1296,7 @@ QString FileItem::defaultFilters()
 #endif
 
 	const auto extensions = projectFilters + presetFilters + soundFontFilters + patchFilters + midiFilters
-		+ vstPluginFilters + audioFilters;
+		+ vstPluginFilters + audioFilters + ampModelFilters;
 
 	return extensions.join(" ");
 }

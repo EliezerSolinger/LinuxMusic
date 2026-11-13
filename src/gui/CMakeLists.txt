@@ -27,6 +27,7 @@ SET(LMMS_SRCS
 	gui/Lv2ViewBase.cpp
 	gui/MainApplication.cpp
 	gui/MainWindow.cpp
+	gui/CategoryIcon.cpp
 	gui/TempoRenderController.cpp
 	gui/MicrotunerConfig.cpp
 	gui/MidiCCRackView.cpp
