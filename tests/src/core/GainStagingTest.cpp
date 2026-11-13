@@ -256,6 +256,49 @@ private slots:
 		track->applyPlayingLane(1);
 		QVERIFY(loudest() > 0.01f);
 	}
+
+	void anInstrumentThatCannotBeLoadedIsKeptAsItWas()
+	{
+		auto* song = Engine::getSong();
+		auto document = QDomDocument{};
+		auto track = document.createElement("track");
+		track.setAttribute("type", static_cast<int>(Track::Type::Instrument));
+		track.setAttribute("name", "Old synth");
+		auto settings = document.createElement("instrumenttrack");
+		auto instrument = document.createElement("instrument");
+		instrument.setAttribute("name", "aplugintherenolongeris");
+		auto pluginState = document.createElement("aplugintherenolongeris");
+		pluginState.setAttribute("cutoff", "0.42");
+		instrument.appendChild(pluginState);
+		settings.appendChild(instrument);
+		track.appendChild(settings);
+		document.appendChild(track);
+
+		song->clearErrors();
+		auto* loaded = dynamic_cast<InstrumentTrack*>(Track::create(track, song));
+		QVERIFY(loaded);
+		QVERIFY(song->hasErrors());
+		QVERIFY(song->errorSummary().contains("aplugintherenolongeris"));
+
+		// Saved again: the instrument as it was
+		auto saved = QDomDocument{};
+		auto root = saved.createElement("track");
+		saved.appendChild(root);
+		loaded->saveState(saved, root);
+		const auto savedInstrument = saved.elementsByTagName("instrument").item(0).toElement();
+		QCOMPARE(savedInstrument.attribute("name"), QString{"aplugintherenolongeris"});
+		QCOMPARE(savedInstrument.firstChildElement("aplugintherenolongeris").attribute("cutoff"), QString{"0.42"});
+
+		// Another instrument chosen: that one is saved
+		QVERIFY(loaded->loadInstrument("tripleoscillator"));
+		auto again = QDomDocument{};
+		auto root2 = again.createElement("track");
+		again.appendChild(root2);
+		loaded->saveState(again, root2);
+		QCOMPARE(again.elementsByTagName("instrument").item(0).toElement().attribute("name"), QString{"tripleoscillator"});
+		song->clearErrors();
+		delete loaded;
+	}
 };
 
 QTEST_GUILESS_MAIN(GainStagingTest)

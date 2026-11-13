@@ -30,6 +30,8 @@
 #include <memory>
 #include <utility>
 
+#include <QDomDocument>
+
 #include "AudioBusHandle.h"
 #include "InstrumentFunctions.h"
 #include "InstrumentSoundShaping.h"
@@ -363,6 +365,9 @@ private:
 	BoolModel m_useMasterPitchModel;
 	BoolModel m_recordArmModel;
 	IntModel m_midiRecordModeModel;
+	//! The saved instrument that could not be loaded (a plugin missing here): kept as it was, and saved so, until
+	//! another instrument is chosen
+	QDomDocument m_unloadedInstrument;
 	IntModel m_recordQuantizeModel;
 	IntModel m_recordQuantizeStrengthModel;
 	std::atomic<bool> m_recordingMidi = false; //!< read by the MIDI thread

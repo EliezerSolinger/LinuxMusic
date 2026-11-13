@@ -973,7 +973,12 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 		m_midiCCModel[i]->saveSettings(doc, midiCC, "cc" + QString::number(i));
 	}
 
-	if (m_instrument)
+	if (m_instrument && !m_unloadedInstrument.documentElement().isNull())
+	{
+		// The instrument that could not be loaded, as it was saved
+		thisElement.appendChild(doc.importNode(m_unloadedInstrument.documentElement(), true));
+	}
+	else if (m_instrument)
 	{
 		QDomElement i = doc.createElement( "instrument" );
 		i.setAttribute( "name", m_instrument->plugin()->descriptor()->name );
@@ -1099,6 +1104,15 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 
 					m_instrument->plugin()->restoreState(node.firstChildElement());
 					m_instrument->loadPins(node.firstChildElement());
+					// A plugin missing here: kept as it was saved, so that the project loses nothing
+					m_unloadedInstrument.clear();
+					const auto wanted = node.toElement().attribute("name");
+					if (QString{m_instrument->plugin()->descriptor()->name} != wanted)
+					{
+						m_unloadedInstrument.appendChild(m_unloadedInstrument.importNode(node, true));
+						Engine::getSong()->collectError(tr("The instrument \"%1\" of %2 could not be loaded; its settings "
+							"are kept, and saved as they were.").arg(wanted, name()));
+					}
 					emit instrumentChanged();
 				}
 			}
@@ -1206,6 +1220,7 @@ Instrument* InstrumentTrack::loadInstrument(const QString& _plugin_name,
 	silenceAllNotes( true );
 
 	lock();
+	m_unloadedInstrument.clear(); // (another instrument is chosen)
 	m_instrument.reset();
 	m_instrument = std::make_unique<PluginInstance>(Plugin::Type::Instrument, _plugin_name, this, key, keyFromDnd);
 	m_instrument->setTrackChannelCount(trackChannelCount());

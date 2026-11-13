@@ -50,7 +50,9 @@ Motor e estabilidade:
 - [ ] **Latência dos plugins:** VST, Carla e ZynAddSubFX ainda informam 0
 - [x] **Sample::play** na razão exata de 1 toca as amostras como estão (antes o reamostrador atrasava uma amostra,
   ou filtrava, no sinc); a A/B muda só no AudioFileProcessor, por isso
-- [ ] **Lista de problemas ao abrir um projeto:** conferir que mostra tudo (samples que sumiram, plugins não carregados)
+- [x] **Lista de problemas ao abrir um projeto:** samples e arquivos que sumiram, soundfonts, kits, VST e plugins
+  não encontrados vão para o relatório (antes, um plugin não encontrado abria uma janela para cada um); um
+  instrumento que não carrega guarda os ajustes e é salvo como estava (antes, salvar o apagava)
 - [ ] **Integração final:** testes, sanitizers, A/B, gravação real no Mac, documentação
 - [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux (o usuário)
 - [ ] **Mac:** testar a entrada do microfone no hardware (precisa de alguém para aceitar o pedido de permissão)

@@ -2908,6 +2908,10 @@ Este chip foi utilizado no computador Commodore 64.</translation>
         <source>Quantize strength</source>
         <translation>Força da quantização</translation>
     </message>
+    <message>
+        <source>The instrument "%1" of %2 could not be loaded; its settings are kept, and saved as they were.</source>
+        <translation>O instrumento "%1" de %2 não pôde ser carregado; os ajustes dele ficam guardados e são salvos como estavam.</translation>
+    </message>
 </context>
 <context>
     <name>lmms::Keymap</name>
@@ -4872,6 +4876,10 @@ Motivo: &quot;%2&quot;</translation>
         <location filename="../../src/core/Plugin.cpp" line="242"/>
         <source>Failed to load plugin &quot;%1&quot;!</source>
         <translation>Falha ao carregar o plugin &quot;%1&quot;!</translation>
+    </message>
+    <message>
+        <source>The plugin "%1" wasn't found or could not be loaded (%2).</source>
+        <translation>O plugin "%1" não foi encontrado ou não pôde ser carregado (%2).</translation>
     </message>
 </context>
 <context>

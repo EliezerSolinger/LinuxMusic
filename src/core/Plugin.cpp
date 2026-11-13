@@ -205,7 +205,13 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 	Plugin* inst;
 	if( pi.isNull() )
 	{
-		if (gui::getGUI() != nullptr)
+		// While a project opens, it goes to the project's report (a box for each would interrupt the opening)
+		if (Engine::getSong() && Engine::getSong()->isLoadingProject())
+		{
+			Engine::getSong()->collectError(tr("The plugin \"%1\" wasn't found or could not be loaded (%2).")
+				.arg(pluginName, getPluginFactory()->errorString(pluginName)));
+		}
+		else if (gui::getGUI() != nullptr)
 		{
 			QMessageBox::information( nullptr,
 				tr( "Plugin not found" ),
@@ -227,7 +233,11 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 		}
 		else
 		{
-			if (gui::getGUI() != nullptr)
+			if (Engine::getSong() && Engine::getSong()->isLoadingProject())
+			{
+				Engine::getSong()->collectError(tr("Failed to load plugin \"%1\"!").arg(pluginName));
+			}
+			else if (gui::getGUI() != nullptr)
 			{
 				QMessageBox::information( nullptr,
 					tr( "Error while loading plugin" ),
