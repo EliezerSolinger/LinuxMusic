@@ -66,7 +66,9 @@ class ControllerRackView;
 
 
 const bpm_t MinTempo = 10;
-const bpm_t DefaultTempo = 140;
+const bpm_t DefaultTempo = 120; //!< (LMMS's was 140: see LegacyDefaultTempo)
+//! The tempo of a project that does not say it, made when the default was 140
+const bpm_t LegacyDefaultTempo = 140;
 const bpm_t MaxTempo = 999;
 const tick_t MaxSongLength = 9999 * DefaultTicksPerBar;
 

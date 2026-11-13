@@ -1,7 +1,7 @@
 <?xml version='1.0'?>
 <!DOCTYPE lmms-project>
 <lmms-project creator="LinuxMusic" creatorplatform="darwin" creatorplatformtype="macos" creatorversion="1.3.0-alpha.2.234+5ba574a" type="song" version="31">
-  <head bpm="140" masterpitch="0" mastervol="100" timesig_denominator="4" timesig_numerator="4"/>
+  <head bpm="120" masterpitch="0" mastervol="100" timesig_denominator="4" timesig_numerator="4"/>
   <song>
     <trackcontainer height="300" maximized="0" minimized="0" type="song" visible="1" width="600" x="6" y="5"/>
     <mixer height="332" maximized="0" minimized="0" visible="1" width="561" x="5" y="310">

@@ -600,8 +600,8 @@ private slots:
 		recorder.noteOn(busy, 64, 90, bar + 50);
 		recorder.noteOff(busy, 64, bar + 74);
 
-		// Play on past bar 3, then stop
-		for (int callback = 0; callback < 1000; ++callback) { device->callback(256); }
+		// Play on past bar 3 (at whatever tempo the new project has), then stop
+		for (int callback = 0; callback < 10000 && song->heardTick() <= 3 * bar + 48; ++callback) { device->callback(256); }
 		QVERIFY(song->heardTick() > 3 * bar);
 		song->stop();
 		QVERIFY(!song->isRecording());

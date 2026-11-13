@@ -1656,7 +1656,11 @@ void Song::loadProject( const QString & fileName )
 	Engine::audioEngine()->requestChangeInModel();
 
 	// get the header information from the DOM
-	m_tempoModel.loadSettings( dataFile.head(), "bpm" );
+	if (dataFile.head().hasAttribute("bpm") || !dataFile.head().firstChildElement("bpm").isNull())
+	{
+		m_tempoModel.loadSettings( dataFile.head(), "bpm" );
+	}
+	else { m_tempoModel.setValue(LegacyDefaultTempo); }
 	m_timeSigModel.loadSettings( dataFile.head(), "timesig" );
 	m_masterVolumeModel.loadSettings( dataFile.head(), "mastervol" );
 	m_masterPitchModel.loadSettings( dataFile.head(), "masterpitch" );
