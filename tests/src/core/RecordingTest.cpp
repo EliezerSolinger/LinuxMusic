@@ -22,6 +22,8 @@
 
 #include <QDomDocument>
 #include <QObject>
+
+#include <thread>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -681,6 +683,42 @@ private slots:
 		auto* loaded = static_cast<AudioItem*>(recorder->createClip(TimePos{0}));
 		loaded->loadSettings(element);
 		QCOMPARE(loaded->xruns(), take->xruns());
+
+		const auto guard = engine->requestChangesGuard();
+		delete recorder;
+	}
+
+	//! A period the engine gives silence (a change of the model held it) is a dropout of the take, as an xrun
+	void aPeriodOfSilenceIsADropoutOfTheTake()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
+		engine->setAudioDevice(device, false);
+		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		recorder->monitorModel()->setValue(static_cast<int>(AudioInputTrack::MonitorMode::Off));
+
+		song->setPlayPos(0, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		for (int callback = 0; callback < 200; ++callback) { device->callback(256); }
+		const auto skipped = engine->periodsSkipped();
+		{
+			// The device's callback, on its thread, while this one changes the model
+			const auto guard = engine->requestChangesGuard();
+			auto thread = std::thread{[device] { device->callback(256); }};
+			thread.join();
+		}
+		QCOMPARE(engine->periodsSkipped() - skipped, std::int64_t{1});
+		for (int callback = 0; callback < 200; ++callback) { device->callback(256); }
+		song->stop();
+
+		QCOMPARE(recorder->items().size(), std::size_t{1});
+		const auto* take = recorder->items().front();
+		QCOMPARE(take->xruns().size(), std::size_t{1});
+		QCOMPARE(take->xruns().front(), static_cast<std::int64_t>(200 * 256 - (2 * 256 + 256 + 40 + 256 + 200)));
 
 		const auto guard = engine->requestChangesGuard();
 		delete recorder;

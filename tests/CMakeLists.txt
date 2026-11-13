@@ -8,6 +8,7 @@ set(LMMS_TESTS
 	src/core/ArrayVectorTest.cpp
 	src/core/ConvolverTest.cpp
 	src/core/DrumSynthTest.cpp
+	src/core/DeviceWaitTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioInputTest.cpp
 	src/core/AudioThreadAllocationTest.cpp
@@ -57,6 +58,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_sources(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/core/RealtimeNew.cpp)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	if(WANT_DEBUG_TSAN)
+		# (what ThreadSanitizer cannot see through Qt, see tsan.supp)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan.supp")
+	endif()
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 
 	# TODO CMake 3.12: Propagate usage requirements by linking to lmmsobjs

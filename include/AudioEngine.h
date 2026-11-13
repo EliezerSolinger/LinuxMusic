@@ -283,6 +283,12 @@ public:
 
 	//! @returns the number of periods rendered since the engine started (any thread)
 	auto periodsRendered() const -> std::int64_t { return m_periodsRendered.load(std::memory_order_relaxed); }
+	/**
+	 * @returns the periods the device got silence for since the engine started (any thread): the device's thread
+	 * waits for a change of the model (see requestChangeInModel()) at most half a period, then the period is silence
+	 * and the song does not go on in it, a dropout as an xrun of the device is
+	 */
+	auto periodsSkipped() const -> std::int64_t { return m_periodsSkipped.load(std::memory_order_relaxed); }
 
 	/**
 	 * @returns The internal buffer size used by audio plugins and other processing done within the audio engine.
@@ -312,6 +318,9 @@ public:
 	 * and @ref renderNextBuffer(). Callers must copy the data into their own local buffers if they need it to persist.
 	 *
 	 * @returns A non-owning buffer to the next audio period.
+	 *
+	 * It waits for a change of the model under way to end (e.g. an export, which must not drop a period); the device's
+	 * periods do not wait long (see periodsSkipped()).
 	 */
 	std::span<const SampleFrame> renderNextPeriod();
 
@@ -383,8 +392,18 @@ signals:
 
 
 private:
+	//! The period's work, the change lock held
+	void renderLockedPeriod();
+	/**
+	 * A period for the device's thread: it waits for the change lock at most half a period (only tries if not
+	 * @p mayWait), else the period is silence (see periodsSkipped())
+	 * @returns whether it rendered (the next period of the buffer may wait)
+	 */
+	auto renderPeriodForDevice(bool mayWait) -> bool;
+
 	void renderNextBufferImpl(PlanarBufferView<const float> input, AudioBufferView<float> auto dst)
 	{
+		bool mayWait = true;
 		assert(input.channels() == 0 || input.frames() == dst.frames());
 		const auto inputChannels = std::min(input.channels(), m_captureChannels);
 		for (auto frame = f_cnt_t{0}; frame < dst.frames(); ++frame)
@@ -394,7 +413,8 @@ private:
 			{
 				// The input taken with the last period's output is the input of the period to render
 				m_captureFill = 1 - m_captureFill;
-				renderNextPeriod();
+				// Once a period was skipped, the others of this buffer do not wait (the device's deadline is near)
+				mayWait = renderPeriodForDevice(mayWait);
 			}
 
 			// Take the device's input for this frame
@@ -494,6 +514,7 @@ private:
 	ch_cnt_t m_captureChannels = 0;
 	bool m_captureEnabled = false;
 	std::atomic<std::int64_t> m_periodsRendered = 0;
+	std::atomic<std::int64_t> m_periodsSkipped = 0;
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;
@@ -529,7 +550,9 @@ private:
 	bool m_clearSignal;
 	std::atomic<bool> m_sanitizationEnabled = false;
 
-	std::recursive_mutex m_changeMutex;
+	//! Held by changes of the model (requestChangeInModel()) and by the period's rendering; timed, so that the
+	//! device's thread waits for it a bounded while
+	std::recursive_timed_mutex m_changeMutex;
 
 	friend class Engine;
 	friend class AudioEngineWorkerThread;

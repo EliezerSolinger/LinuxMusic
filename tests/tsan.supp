@@ -1,0 +1,7 @@
+# ThreadSanitizer suppressions for the tests (a build with WANT_DEBUG_TSAN sets them, see CMakeLists.txt).
+#
+# Qt is not built with ThreadSanitizer: a queued call (QMetaObject::invokeMethod with Qt::QueuedConnection) is made
+# on one thread and run and destroyed on the receiver's, ordered by the locks of Qt's event queue, which ThreadSanitizer
+# does not see. It then reports the call's captured values (e.g. a QString) as written on one thread and read on the
+# other. Only the queued call's own object is left out here.
+race:QtPrivate::QCallableObject

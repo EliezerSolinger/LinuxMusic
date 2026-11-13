@@ -124,6 +124,8 @@ struct AudioRecorder::Session
 {
 	unsigned deviceXruns = 0; //!< the device's count the last period (the audio thread's)
 	bool deviceXrunsKnown = false;
+	//! The engine's periods of silence (a change of the model held it past the device's wait) the last period
+	std::int64_t enginePeriodsSkipped = -1;
 	std::vector<std::unique_ptr<TakeState>> takes;
 	f_cnt_t latency = 0;
 	f_cnt_t period = 0;
@@ -338,7 +340,8 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 			firstStart.framesPerTick};
 	};
 
-	// The device dropped out since the last period (an xrun): marked where each take is (the recording goes on)
+	// The device dropped out since the last period (an xrun), or the engine gave it silence (a change of the model
+	// held it): marked where each take is (the recording goes on)
 	auto dropouts = 0u;
 	if (const auto* device = Engine::audioEngine()->audioDev())
 	{
@@ -347,6 +350,9 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 		session->deviceXruns = xruns;
 		session->deviceXrunsKnown = true;
 	}
+	const auto skipped = Engine::audioEngine()->periodsSkipped();
+	if (session->enginePeriodsSkipped >= 0) { dropouts += static_cast<unsigned>(skipped - session->enginePeriodsSkipped); }
+	session->enginePeriodsSkipped = skipped;
 
 	for (auto& takePointer : session->takes)
 	{

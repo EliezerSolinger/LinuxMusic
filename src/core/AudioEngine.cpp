@@ -339,6 +339,41 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	(void)s_denormalsDisabled;
 
 	const auto lock = std::lock_guard{m_changeMutex};
+	renderLockedPeriod();
+	return {m_outputBufferRead.get(), m_framesPerPeriod};
+}
+
+
+
+
+auto AudioEngine::renderPeriodForDevice(bool mayWait) -> bool
+{
+	// (as renderNextPeriod())
+	static thread_local const bool s_denormalsDisabled = [] { disableDenormals(); return true; }();
+	(void)s_denormalsDisabled;
+
+	const auto budget = std::chrono::duration<double>{0.5 * m_framesPerPeriod / std::max(1u, outputSampleRate())};
+	const bool locked = mayWait
+		? m_changeMutex.try_lock_for(std::chrono::duration_cast<std::chrono::microseconds>(budget))
+		: m_changeMutex.try_lock();
+	if (!locked)
+	{
+		// The main thread changes the model (e.g. loads a project): silence for this period, the song waits
+		zeroSampleFrames(m_outputBufferRead.get(), m_framesPerPeriod);
+		m_outputBufferReadIndex = 0;
+		m_periodsSkipped.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
+	const auto lock = std::lock_guard{m_changeMutex, std::adopt_lock};
+	renderLockedPeriod();
+	return true;
+}
+
+
+
+
+void AudioEngine::renderLockedPeriod()
+{
 	const auto audioThread = ThreadCheck::AudioThreadScope{};
 
 	m_profiler.startPeriod();
@@ -355,8 +390,6 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	AudioStream::periodRendered(static_cast<double>(outputSampleRate()) / m_framesPerPeriod);
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);
 	m_outputBufferReadIndex = 0;
-
-	return {m_outputBufferRead.get(), m_framesPerPeriod};
 }
 
 void AudioEngine::swapBuffers()
