@@ -24,10 +24,21 @@
 
 #include "TrackOperationsWidget.h"
 
+#include "GuiApplication.h"
+
+#include "MainWindow.h"
+
+#include "FileDialog.h"
+
+#include "ExportFilter.h"
+
+#include "ExportWizard.h"
+
 #include <algorithm>
 
 #include <QCheckBox>
 #include <QHBoxLayout>
+#include <QFileInfo>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
@@ -256,13 +267,40 @@ void TrackOperationsWidget::updateMenu()
 	{
 		toMenu->addAction( tr( "Clear this track" ), this, SLOT(clearTrack()));
 	}
+
+	// Exports of this track alone: as audio (the export wizard), or its notes as MIDI
+	auto* track = m_trackView->getTrack();
+	if (track->trackContainer() == Engine::getSong()
+		&& (track->type() == Track::Type::Instrument || track->type() == Track::Type::Sample))
+	{
+		toMenu->addAction(embed::getIconPixmap("project_export", 16, 16), tr("Export track as audio..."), this, [track] {
+			auto wizard = ExportWizard{getGUI()->mainWindow()};
+			wizard.setOnly(track);
+			wizard.exec();
+		});
+	}
+	if (track->trackContainer() == Engine::getSong() && track->type() == Track::Type::Instrument)
+	{
+		toMenu->addAction(embed::getIconPixmap("midi_file", 16, 16), tr("Export track as MIDI..."), this, [this, track] {
+			auto path = FileDialog::getSaveFileName(this, tr("Export the track as MIDI"),
+				QFileInfo{Engine::getSong()->projectFileName()}.absolutePath() + '/' + track->name() + ".mid",
+				tr("MIDI file (*.mid)"));
+			if (path.isEmpty()) { return; }
+			if (!path.endsWith(".mid", Qt::CaseInsensitive)) { path += ".mid"; }
+			auto* filter = dynamic_cast<ExportFilter*>(Plugin::instantiate("midiexport", nullptr, nullptr));
+			if (!filter) { return; }
+			filter->tryExport({track}, {}, Engine::getSong()->getTempo(),
+				static_cast<int>(Engine::getSong()->masterPitchModel().value()), path.toStdString());
+			delete filter;
+		});
+	}
 	if (QMenu *mixerMenu = m_trackView->createMixerMenu(tr("Channel %1: %2"), tr("Assign to new Mixer Channel")))
 	{
 		toMenu->addMenu(mixerMenu);
 	}
 
 	// Folders group the tracks of the song
-	Track* track = m_trackView->getTrack();
+	// (track: this track, above)
 	TrackContainer* container = track->trackContainer();
 	if (container == Engine::getSong())
 	{

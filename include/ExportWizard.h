@@ -23,7 +23,12 @@
 #ifndef LMMS_GUI_EXPORT_WIZARD_H
 #define LMMS_GUI_EXPORT_WIZARD_H
 
+#include <optional>
+#include <utility>
+
 #include <QWizard>
+
+#include "TimePos.h"
 
 #include "ExportProcessor.h"
 
@@ -33,6 +38,11 @@ class QDoubleSpinBox;
 class QLineEdit;
 class QRadioButton;
 class QSpinBox;
+
+namespace lmms
+{
+class Track;
+}
 
 namespace lmms::gui
 {
@@ -56,6 +66,12 @@ public:
 
 	//! Where the files go (also chosen on the last page)
 	void setFolderAndName(const QString& folder, const QString& name);
+
+	/**
+	 * Exports only @p track (the others are muted while it renders), between @p begin and @p end if given (a
+	 * clip's span); the range page is skipped then
+	 */
+	void setOnly(Track* track, std::optional<std::pair<TimePos, TimePos>> span = std::nullopt);
 
 private:
 	auto rangePage() -> QWizardPage*;
@@ -89,6 +105,9 @@ private:
 
 	QLineEdit* m_folder;
 	QLineEdit* m_name;
+
+	Track* m_only = nullptr;
+	std::optional<std::pair<TimePos, TimePos>> m_span;
 };
 
 } // namespace lmms::gui

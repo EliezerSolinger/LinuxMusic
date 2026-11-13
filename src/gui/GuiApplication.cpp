@@ -263,6 +263,16 @@ GuiApplication::GuiApplication()
 			// The whole export (render, then WAV and FLAC) into the screenshot's folder, then quit
 			QTimer::singleShot(2500, m_mainWindow, [screenshotPath, this] {
 				auto wizard = ExportWizard{m_mainWindow};
+				// LINUXMUSIC_EXPORT_CLIP=1: only the first track's first clip
+				if (qEnvironmentVariableIntValue("LINUXMUSIC_EXPORT_CLIP") && !Engine::getSong()->tracks().empty())
+				{
+					auto* track = Engine::getSong()->tracks().front();
+					if (track->numOfClips() > 0)
+					{
+						const auto* clip = track->getClip(0);
+						wizard.setOnly(track, std::pair{clip->startPosition(), clip->endPosition()});
+					}
+				}
 				wizard.setFolderAndName(QFileInfo{screenshotPath}.absolutePath(), "export-run");
 				wizard.accept();
 				quitWhenTheMainLoopRuns();

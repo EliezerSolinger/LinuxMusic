@@ -24,6 +24,10 @@
 
 #include "ClipView.h"
 
+#include "MainWindow.h"
+
+#include "ExportWizard.h"
+
 #include <set>
 #include <cassert>
 
@@ -1262,6 +1266,17 @@ void ClipView::contextMenuEvent( QContextMenuEvent * cme )
 		[this](){ contextMenuAction( ContextMenuAction::Mute ); } );
 
 	contextMenu.addSeparator();
+
+	// This clip alone, as audio (its track only, its span)
+	if (individualClip && m_clip->getTrack()->trackContainer() == Engine::getSong())
+	{
+		contextMenu.addAction(embed::getIconPixmap("project_export", 16, 16), tr("Export clip as audio..."), [this] {
+			auto wizard = ExportWizard{getGUI()->mainWindow()};
+			wizard.setOnly(m_clip->getTrack(), std::pair{m_clip->startPosition(), m_clip->endPosition()});
+			wizard.exec();
+		});
+		contextMenu.addSeparator();
+	}
 
 	QMenu colorMenu (tr("Clip color"), this);
 	colorMenu.setIcon(embed::getIconPixmap("colorize"));

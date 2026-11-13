@@ -40,6 +40,7 @@
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QScopeGuard>
 #include <QSpinBox>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -51,6 +52,8 @@
 #include "OutputSettings.h"
 #include "RenderManager.h"
 #include "Song.h"
+#include "Track.h"
+#include "Timeline.h"
 
 namespace lmms::gui
 {
@@ -227,8 +230,26 @@ auto ExportWizard::render(const QString& path, int sampleRate) -> bool
 {
 	auto* song = Engine::getSong();
 	song->setExportLoop(m_asLoop->isChecked());
-	song->setRenderBetweenMarkers(m_cycleRange->isChecked());
+	song->setRenderBetweenMarkers(m_cycleRange->isChecked() || m_span.has_value());
 	song->setLoopRenderCount(m_repeats->value());
+
+	// Only one track: the others muted while it renders; a clip: its span as the range (all put back after)
+	auto mutedBefore = std::vector<std::pair<Track*, bool>>{};
+	if (m_only)
+	{
+		for (const auto track : song->tracks())
+		{
+			mutedBefore.emplace_back(track, track->isMuted());
+			if (track != m_only && track->type() != Track::Type::Folder) { track->setMuted(true); }
+		}
+	}
+	auto& timeline = song->getTimeline(Song::PlayMode::Song);
+	const auto loopBefore = std::pair{timeline.loopBegin(), timeline.loopEnd()};
+	if (m_span) { timeline.setLoopPoints(m_span->first, m_span->second); }
+	const auto restore = qScopeGuard([&] {
+		for (const auto& [track, muted] : mutedBefore) { track->setMuted(muted); }
+		if (m_span) { timeline.setLoopPoints(loopBefore.first, loopBefore.second); }
+	});
 
 	const auto output = OutputSettings{static_cast<sample_rate_t>(sampleRate), 320, OutputSettings::BitDepth::Depth32Bit,
 		OutputSettings::StereoMode::Stereo};
@@ -248,6 +269,19 @@ auto ExportWizard::render(const QString& path, int sampleRate) -> bool
 	renderer.renderProject();
 	loop.exec();
 	return !cancelled;
+}
+
+
+
+
+void ExportWizard::setOnly(Track* track, std::optional<std::pair<TimePos, TimePos>> span)
+{
+	m_only = track;
+	m_span = span;
+	m_name->setText(track->name());
+	setWindowTitle(span ? tr("Export the clip") : tr("Export the track"));
+	// The range is the clip's, or the whole song for a track: the first page has nothing to choose but the loop
+	if (span) { m_wholeSong->setChecked(true); m_wholeSong->setEnabled(false); m_cycleRange->setEnabled(false); }
 }
 
 

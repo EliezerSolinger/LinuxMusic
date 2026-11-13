@@ -6838,6 +6838,10 @@ Pressione &lt;Shift&gt; para divisão destrutiva.</translation>
         <source>Enable auto-resize</source>
         <translation>Ativar tamanho automático</translation>
     </message>
+    <message>
+        <source>Export clip as audio...</source>
+        <translation>Exportar o clipe como áudio...</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::CompressorControlDialog</name>
@@ -15566,6 +15570,22 @@ Latency: %2 ms</source>
         <source>Reset clip colors</source>
         <translation type="unfinished"/>
     </message>
+    <message>
+        <source>Export track as audio...</source>
+        <translation>Exportar a faixa como áudio...</translation>
+    </message>
+    <message>
+        <source>Export track as MIDI...</source>
+        <translation>Exportar a faixa como MIDI...</translation>
+    </message>
+    <message>
+        <source>Export the track as MIDI</source>
+        <translation>Exportar a faixa como MIDI</translation>
+    </message>
+    <message>
+        <source>MIDI file (*.mid)</source>
+        <translation>Arquivo MIDI (*.mid)</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::TripleOscillatorView</name>
@@ -16895,6 +16915,14 @@ Latency: %2 ms</source>
 %1</source>
         <translation>Exportado:
 %1</translation>
+    </message>
+    <message>
+        <source>Export the clip</source>
+        <translation>Exportar o clipe</translation>
+    </message>
+    <message>
+        <source>Export the track</source>
+        <translation>Exportar a faixa</translation>
     </message>
 </context>
 <context>
