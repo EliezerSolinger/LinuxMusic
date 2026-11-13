@@ -55,7 +55,8 @@ public:
 		SamplePlayHandle = 0x04,
 		PresetPreviewHandle = 0x08,
 		InputMonitorHandle = 0x10, //!< a track's input, monitored (see InputMonitorHandle)
-		AudioTrackPlayHandle = 0x20 //!< an audio track's items (see AudioTrack)
+		AudioTrackPlayHandle = 0x20, //!< an audio track's items (see AudioTrack)
+		CalibrationHandle = 0x40 //!< the latency calibration's pulse (see LatencyCalibration)
 	} ;
 	using Types = Flags<Type>;
 

@@ -27,6 +27,10 @@
 #include <QComboBox>
 #include <QGroupBox>
 #include <QImageReader>
+#include <QElapsedTimer>
+#include <QThread>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
@@ -48,6 +52,7 @@
 #include "MidiSetupWidget.h"
 #include "ProjectJournal.h"
 #include "SetupDialog.h"
+#include "LatencyCalibration.h"
 
 #include "SampleTrack.h"
 #include "Shortcuts.h"
@@ -691,7 +696,15 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	m_latencyOffset->setValue(ConfigManager::inst()->value("recording", "latencyoffset", "0").toInt());
 	m_latencyOffset->setToolTip(tr("Added to the latencies the audio interface reports, to align recordings exactly "
 		"with what was heard (measure it with a cable from an output to an input)"));
-	recordingLayout->addRow(tr("Latency calibration"), m_latencyOffset);
+	// Measured with a cable from an output to an input (see LatencyCalibration)
+	auto* calibrateButton = new QPushButton(tr("Measure..."), recordingBox);
+	calibrateButton->setToolTip(tr("Plays a pulse and records it back through a cable from an output to an input, "
+		"and sets the calibration from where it arrives"));
+	connect(calibrateButton, &QPushButton::clicked, this, &SetupDialog::measureLatency);
+	auto* calibrationRow = new QHBoxLayout{};
+	calibrationRow->addWidget(m_latencyOffset, 1);
+	calibrationRow->addWidget(calibrateButton);
+	recordingLayout->addRow(tr("Latency calibration"), calibrationRow);
 	m_preRoll = new QComboBox(recordingBox);
 	for (const int bars : {0, 1, 2, 4}) { m_preRoll->addItem(bars == 0 ? tr("Off") : tr("%n bar(s)", "", bars), bars); }
 	m_preRoll->setCurrentIndex(std::max(0, m_preRoll->findData(ConfigManager::inst()->value("recording", "prerollbars", "0").toInt())));
@@ -1067,6 +1080,43 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 SetupDialog::~SetupDialog()
 {
 	Engine::projectJournal()->setJournalling(true);
+}
+
+
+
+
+void SetupDialog::measureLatency()
+{
+	const auto answer = QMessageBox::information(this, tr("Latency calibration"),
+		tr("Connect an output of the audio interface to an input with a cable (output 1 to input 1, for example), "
+			"and turn the input's gain to a middle level. A short pulse will play and be recorded back.\n\n"
+			"The audio interface in use is the one saved in these settings."),
+		QMessageBox::Ok | QMessageBox::Cancel);
+	if (answer != QMessageBox::Ok) { return; }
+
+	auto calibration = LatencyCalibration{};
+	calibration.start();
+	// (the audio engine plays and listens meanwhile: a second and a half)
+	auto waited = QElapsedTimer{};
+	waited.start();
+	while (!calibration.isDone() && waited.elapsed() < 5000)
+	{
+		QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+		QThread::msleep(10);
+	}
+	const auto result = calibration.result();
+	if (!calibration.isDone() || !result.found)
+	{
+		QMessageBox::warning(this, tr("Latency calibration"), tr("The pulse did not come back. Check the cable from "
+			"the output to the input, that the device has inputs, and the input's gain."));
+		return;
+	}
+	m_latencyOffset->setValue(static_cast<int>(std::clamp<long long>(result.offset, m_latencyOffset->minimum(),
+		m_latencyOffset->maximum())));
+	m_changed = true;
+	QMessageBox::information(this, tr("Latency calibration"),
+		tr("The pulse came back after %1 frames: the calibration is %2 frames. Save to keep it.")
+			.arg(result.delay).arg(result.offset));
 }
 
 

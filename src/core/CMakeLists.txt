@@ -98,6 +98,7 @@ set(LMMS_SRCS
 	core/PeakCache.cpp
 	core/AudioStream.cpp
 	core/AudioItem.cpp
+	core/LatencyCalibration.cpp
 	core/StreamScheduler.cpp
 	core/TimeStretcher.cpp
 	core/Scale.cpp

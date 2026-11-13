@@ -17,7 +17,8 @@ A lista do que falta, atualizada a cada passo (o detalhe de cada item fica em `p
 Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
 
 - [x] **Gravar sem faixa armada** arma a faixa selecionada (clique no cabeçalho ou na faixa; ela fica destacada), se ela grava; se não, avisa
-- [ ] **Calibração por loopback:** botão "calibrar" que toca um pulso, grava pela entrada (com um cabo), acha o pico por
+- [x] **Calibração por loopback:** botão "Medir..." em Configurações → Áudio → Gravação (`LatencyCalibration`;
+  o teste acha a latência escondida de um loopback simulado, exata). Antes: botão "calibrar" que toca um pulso, grava pela entrada (com um cabo), acha o pico por
   correlação e salva o offset
 - [ ] **Metrônomo configurável:** só gravando ou também tocando, volume, som com acento no 1
 - [ ] **Xrun gravando:** o ponto fica marcado no take, e um contador avisa

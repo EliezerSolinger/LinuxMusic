@@ -238,6 +238,8 @@ private:
 	QComboBox* m_preRoll;
 	QCheckBox* m_countIn;
 	QCheckBox* m_recordInLanes;
+	//! Measures the calibration with a loopback cable (LatencyCalibration)
+	void measureLatency();
 	bool m_changed = false;
 	std::vector<std::pair<const char*, QKeySequenceEdit*>> m_shortcutEdits;
 

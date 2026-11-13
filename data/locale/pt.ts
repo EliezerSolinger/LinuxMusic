@@ -14597,6 +14597,30 @@ Latency: %2 ms</source>
         <source>Lanes</source>
         <translation>Lanes</translation>
     </message>
+    <message>
+        <source>Measure...</source>
+        <translation>Medir...</translation>
+    </message>
+    <message>
+        <source>Plays a pulse and records it back through a cable from an output to an input, and sets the calibration from where it arrives</source>
+        <translation>Toca um pulso e o grava de volta por um cabo de uma saída para uma entrada, e acerta a calibração por onde ele chega</translation>
+    </message>
+    <message>
+        <source>Connect an output of the audio interface to an input with a cable (output 1 to input 1, for example), and turn the input's gain to a middle level. A short pulse will play and be recorded back.
+
+The audio interface in use is the one saved in these settings.</source>
+        <translation>Ligue uma saída da interface de áudio a uma entrada com um cabo (saída 1 na entrada 1, por exemplo) e deixe o ganho da entrada no meio. Um pulso curto vai tocar e ser gravado de volta.
+
+A interface usada é a que está salva nestas configurações.</translation>
+    </message>
+    <message>
+        <source>The pulse did not come back. Check the cable from the output to the input, that the device has inputs, and the input's gain.</source>
+        <translation>O pulso não voltou. Confira o cabo da saída para a entrada, se o dispositivo tem entradas e o ganho da entrada.</translation>
+    </message>
+    <message>
+        <source>The pulse came back after %1 frames: the calibration is %2 frames. Save to keep it.</source>
+        <translation>O pulso voltou depois de %1 frames: a calibração é de %2 frames. Salve para guardar.</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::Sf2InstrumentView</name>

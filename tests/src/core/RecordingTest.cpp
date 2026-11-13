@@ -36,6 +36,7 @@
 #include "AudioEngine.h"
 #include "AudioRecorder.h"
 #include "AudioTrack.h"
+#include "LatencyCalibration.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiRecorder.h"
@@ -57,10 +58,12 @@ using namespace lmms;
 class LoopbackDevice : public AudioDevice
 {
 public:
-	LoopbackDevice(AudioEngine* engine, f_cnt_t inputLatency, f_cnt_t outputLatency)
+	//! @param hidden latency the device does not report (what the calibration finds)
+	LoopbackDevice(AudioEngine* engine, f_cnt_t inputLatency, f_cnt_t outputLatency, f_cnt_t hidden = 0)
 		: AudioDevice{2, engine}
 		, m_inputLatency{inputLatency}
 		, m_outputLatency{outputLatency}
+		, m_hidden{hidden}
 	{
 		setInputChannels(2);
 	}
@@ -78,7 +81,7 @@ public:
 		for (f_cnt_t frame = 0; frame < frames; ++frame)
 		{
 			const auto device = m_frame + frame;
-			const auto source = device - static_cast<std::int64_t>(m_inputLatency + m_outputLatency);
+			const auto source = device - static_cast<std::int64_t>(m_inputLatency + m_outputLatency + m_hidden);
 			for (int channel = 0; channel < 2; ++channel)
 			{
 				input[channel][frame] = source >= 0 && source < static_cast<std::int64_t>(m_output[channel].size())
@@ -117,6 +120,7 @@ private:
 
 	f_cnt_t m_inputLatency;
 	f_cnt_t m_outputLatency;
+	f_cnt_t m_hidden = 0;
 	std::int64_t m_frame = 0;
 	std::vector<float> m_output[2]; //!< everything the device played
 };
@@ -572,6 +576,31 @@ private slots:
 		QVERIFY2(items[1]->file().endsWith("-3.wav"), qPrintable(items[1]->file()));
 		QCOMPARE(items[2]->startPosition().getTicks(), items[1]->endPosition().getTicks());
 		QCOMPARE(items[2]->endPosition().getTicks(), 4 * bar);
+	}
+
+	void theCalibrationFindsTheLatencyTheDeviceDoesNotReport_data()
+	{
+		QTest::addColumn<int>("hidden");
+		QTest::newRow("none") << 0;
+		QTest::newRow("37 frames") << 37;
+		QTest::newRow("a period and more") << 300;
+	}
+
+	void theCalibrationFindsTheLatencyTheDeviceDoesNotReport()
+	{
+		QFETCH(int, hidden);
+		auto* engine = Engine::audioEngine();
+		Engine::getSong()->createNewProject();
+		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200, static_cast<f_cnt_t>(hidden)};
+		engine->setAudioDevice(device, false);
+		auto calibration = LatencyCalibration{};
+		calibration.start();
+		for (int callback = 0; callback < 2000 && !calibration.isDone(); ++callback) { device->callback(256); }
+		QVERIFY(calibration.isDone());
+		const auto result = calibration.result();
+		QVERIFY(result.found);
+		qInfo("pulse back after %d frames, calibration %lld", static_cast<int>(result.delay), result.offset);
+		QCOMPARE(result.offset, static_cast<long long>(hidden));
 	}
 
 	void choosingATakeKeepsThePartOfTheClip()
