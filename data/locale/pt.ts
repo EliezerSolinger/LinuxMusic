@@ -14724,6 +14724,10 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>Metronome</source>
         <translation>Metrônomo</translation>
     </message>
+    <message>
+        <source>Audio device</source>
+        <translation>Dispositivo de áudio</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::Sf2InstrumentView</name>
@@ -17858,6 +17862,21 @@ A interface usada é a que está salva nestas configurações.</translation>
     <message>
         <source>Audio file not found</source>
         <translation>Arquivo de áudio não encontrado</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::AudioEngine</name>
+    <message>
+        <source>The audio device cannot change while recording: it changes when the recording ends and the settings are saved again.</source>
+        <translation>O dispositivo de áudio não pode mudar durante a gravação: ele muda quando a gravação acabar e as configurações forem salvas de novo.</translation>
+    </message>
+    <message>
+        <source>%1 could not be opened; %2 is used.</source>
+        <translation>Não foi possível abrir %1; %2 está em uso.</translation>
+    </message>
+    <message>
+        <source>The audio device runs at %1 Hz, not at the %2 Hz asked: the audio is converted.</source>
+        <translation>O dispositivo de áudio roda a %1 Hz, não aos %2 Hz pedidos: o áudio é convertido.</translation>
     </message>
 </context>
 </TS>

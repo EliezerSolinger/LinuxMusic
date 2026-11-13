@@ -635,7 +635,6 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 
 	setSampleRate(m_sampleRate);
 
-	connect(m_sampleRateSlider, &QSlider::valueChanged, this, &SetupDialog::showRestartWarning);
 
 	connect(m_sampleRateSlider, &QSlider::valueChanged, this,
 		[setSampleRate](int value) { setSampleRate(SUPPORTED_SAMPLERATES[value]); });
@@ -657,8 +656,6 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 
 	connect(m_bufferSizeSlider, SIGNAL(valueChanged(int)),
 			this, SLOT(setBufferSize(int)));
-	connect(m_bufferSizeSlider, SIGNAL(valueChanged(int)),
-			this, SLOT(showRestartWarning()));
 	bufferSizeSubLayout->addWidget(m_bufferSizeSlider, 1);
 
 	auto bufferSize_reset_btn = new QPushButton(embed::getIconPixmap("reload"), "", bufferSizeBox);
@@ -746,6 +743,24 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	audio_layout->addWidget(recordingBox);
 	audio_layout->addWidget(otherBox);
 	audio_layout->addStretch();
+
+	// The device, its own settings, the rate and the buffer: saving opens the device again with them (no restart);
+	// the recording settings do not need it
+	const auto audioChanged = [this] { m_audioChanged = true; };
+	for (auto* widget : audio_w->findChildren<QWidget*>())
+	{
+		if (widget == recordingBox || recordingBox->isAncestorOf(widget) || widget == otherBox || otherBox->isAncestorOf(widget))
+		{
+			continue;
+		}
+		if (auto* box = qobject_cast<QComboBox*>(widget)) { connect(box, &QComboBox::currentIndexChanged, this, audioChanged); }
+		else if (auto* slider = qobject_cast<QAbstractSlider*>(widget)) { connect(slider, &QAbstractSlider::valueChanged, this, audioChanged); }
+		else if (auto* spin = qobject_cast<QSpinBox*>(widget)) { connect(spin, &QSpinBox::valueChanged, this, audioChanged); }
+		else if (auto* button = qobject_cast<QAbstractButton*>(widget); button && button->isCheckable())
+		{
+			connect(button, &QAbstractButton::toggled, this, audioChanged);
+		}
+	}
 
 
 
@@ -1245,6 +1260,16 @@ void SetupDialog::accept()
 		it.value()->saveSettings();
 	}
 	ConfigManager::inst()->saveConfigFile();
+
+	// The audio device opens again with what changed (see AudioEngine::reopenAudioDevice())
+	if (m_audioChanged)
+	{
+		m_audioChanged = false;
+		if (const auto told = Engine::audioEngine()->reopenAudioDevice(); !told.isEmpty())
+		{
+			QMessageBox::information(this, tr("Audio device"), told);
+		}
+	}
 }
 
 

@@ -28,6 +28,7 @@
 #include "AudioCoreAudio.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AudioDummy.h"
 #include "ConfigManager.h"
 #include "Engine.h"
 
@@ -300,6 +301,23 @@ private slots:
 		QVERIFY(rendered < expected * 2);
 	}
 #endif
+
+	void theDeviceOpensAgainWithNewSettingsWithoutRestarting()
+	{
+		auto* engine = Engine::audioEngine();
+		const auto period = engine->framesPerPeriod();
+		ConfigManager::inst()->setValue("audioengine", "audiodev", AudioDummy::name());
+		ConfigManager::inst()->setValue("audioengine", "samplerate", "48000");
+		ConfigManager::inst()->setValue("audioengine", "framesperaudiobuffer", "1024");
+		const auto told = engine->reopenAudioDevice();
+		QVERIFY2(told.isEmpty(), qPrintable(told));
+		QCOMPARE(engine->audioDevName(), AudioDummy::name());
+		QCOMPARE(engine->framesPerAudioBuffer(), f_cnt_t{1024});
+		QCOMPARE(engine->outputSampleRate(), sample_rate_t{48000});
+		QCOMPARE(engine->framesPerPeriod(), period); // (the engine's period stays)
+		engine->stopProcessing(); // (the tests drive the engine themselves)
+		QCOMPARE(engine->renderNextPeriod().size(), static_cast<std::size_t>(period));
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioInputTest)

@@ -29,6 +29,8 @@
 
 #include "AudioEngine.h"
 
+#include <QStringList>
+
 #include "AudioStream.h"
 
 #include "MixHelpers.h"
@@ -489,6 +491,49 @@ void AudioEngine::setAudioDevice(AudioDevice* _dev, bool startNow)
 	emit sampleRateChanged();
 
 	if (startNow) { startProcessing(); }
+}
+
+
+
+
+auto AudioEngine::reopenAudioDevice() -> QString
+{
+	auto* song = Engine::getSong();
+	if (song && (song->isRecording() || song->isRecordingAudio()))
+	{
+		return tr("The audio device cannot change while recording: it changes when the recording ends and the "
+			"settings are saved again.");
+	}
+	const auto wanted = ConfigManager::inst()->value("audioengine", "audiodev");
+	m_framesPerAudioBuffer = std::clamp(static_cast<f_cnt_t>(ConfigManager::inst()->value("audioengine",
+		"framesperaudiobuffer", QString::number(DEFAULT_BUFFER_SIZE)).toUInt()), MINIMUM_BUFFER_SIZE, MAXIMUM_BUFFER_SIZE);
+	m_baseSampleRate = std::max(ConfigManager::inst()->value("audioengine", "samplerate").toInt(),
+		SUPPORTED_SAMPLERATES.front());
+
+	// The song stops (what plays goes on from where it was, on the new device), the old device closes
+	if (song && song->isPlaying()) { song->stop(); }
+	stopProcessing();
+	delete m_audioDev;
+	m_audioDev = nullptr;
+	m_oldAudioDev = nullptr;
+	m_audioDev = tryAudioDevices();
+	prepareCapture();
+	emit qualitySettingsChanged();
+	emit sampleRateChanged();
+	startProcessing();
+	if (song) { song->scheduleCaptureUpdate(); } // (the new device's input, if a track needs it)
+
+	auto told = QStringList{};
+	if (m_audioDevName != wanted)
+	{
+		told << tr("%1 could not be opened; %2 is used.").arg(wanted, m_audioDevName);
+	}
+	if (outputSampleRate() != m_baseSampleRate)
+	{
+		told << tr("The audio device runs at %1 Hz, not at the %2 Hz asked: the audio is converted.")
+			.arg(outputSampleRate()).arg(m_baseSampleRate);
+	}
+	return told.join('\n');
 }
 
 

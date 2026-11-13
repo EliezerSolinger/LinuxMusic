@@ -134,6 +134,15 @@ public:
 	//! Set new audio device. Old device will be deleted,
 	//! unless it's stored using storeAudioDevice
 	void setAudioDevice(AudioDevice* _dev, bool startNow);
+
+	/**
+	 * Opens the audio device again with the settings saved (its interface, sample rate and buffer), without
+	 * restarting the program (docs/gravacao-levantamento.md §6). The engine's period stays as it is (it is at most
+	 * DEFAULT_BUFFER_SIZE frames and the device's buffer is cut into periods). Main thread.
+	 * @returns what to tell: why it could not (while recording), or what it opened instead of what was asked (another
+	 *          interface, another rate); empty when it opened what was asked
+	 */
+	auto reopenAudioDevice() -> QString;
 	void storeAudioDevice();
 	void restoreAudioDevice();
 	inline AudioDevice * audioDev() { return m_audioDev; }

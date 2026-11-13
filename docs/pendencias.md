@@ -33,8 +33,10 @@ Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
 - [x] **Cabeçalho de duas linhas em todas as faixas** (altura padrão 56): instrumento e áudio com nome, atividade,
   armar e entrada em cima, canal, VOL e PAN embaixo; sample e pasta com o mesmo desenho; sequência e automação com a
   mesma altura
-- [ ] **Trocar dispositivo, buffer ou taxa sem reiniciar** (bloqueado durante a gravação); a taxa é a do projeto, e
-  quando a placa não tem, converte e avisa
+- [x] **Trocar dispositivo, buffer ou taxa sem reiniciar:** ao salvar, o dispositivo reabre com os ajustes novos
+  (bloqueado durante a gravação; avisa se abriu outro dispositivo ou outra taxa). O driver MIDI ainda pede reinício
+- [ ] **A taxa é a do projeto** (hoje é a das configurações, global): o projeto guarda a sua, e quando a placa não
+  tem, converte e avisa
 
 Motor e estabilidade:
 

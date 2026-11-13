@@ -239,6 +239,7 @@ private:
 	QComboBox* m_preRoll;
 	QCheckBox* m_countIn;
 	QCheckBox* m_recordInLanes;
+	bool m_audioChanged = false; //!< the device, its settings, the rate or the buffer: reopened on saving
 	QComboBox* m_metronomeWhen;
 	QDoubleSpinBox* m_metronomeVolume;
 	QCheckBox* m_metronomeAccent;
