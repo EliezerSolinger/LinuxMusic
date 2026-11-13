@@ -271,8 +271,15 @@ Feito depois (mesma noite e manhã de 13/11):
 - **ALSA** reescrito e **JACK** com N entradas (ver acima).
 - **Hardware no Mac:** o CoreAudio com o microfone abre o aggregate e roda sem xruns. Neste processo de teste o macOS entregou silêncio, o que indica falta de permissão de microfone para o processo ou entrada muda.
 
+- **Time-stretch renderizado** (13/11):
+  - `TimeStretcher` com a Rubber Band (R3, offline, com um key frame em cada compasso) e queda para reamostragem;
+  - a tela de processamento (`TempoRenderController`): o modal "N itens, ~X s", o progresso item por item, e o
+    Cancelar que volta o BPM e o mapa de tempo. Tudo ou nada, sem arquivo sobrando;
+  - os itens gravados ficam musicais: a mudança de tempo mantém lugar, tamanho e início em ticks, e a reprodução
+    acha o frame pelo timing.
+  - Falta: limpar os renderizados que ficaram órfãos (junto com a mídia, item 4).
+
 Por fazer, na ordem do plano:
-- **Time-stretch renderizado** (item 9 da arquitetura).
 - **Mapa de tempo:** o desfazer das edições dos marcadores; a fórmula de compasso por marcador.
 - **Edição e interface:**
   - desfazer por comandos (o atual é por grupos de snapshots);
