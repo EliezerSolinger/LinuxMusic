@@ -57,8 +57,11 @@ Motor e estabilidade:
   ações do núcleo, que a barra e o Arranjo chamam. O relógio, o LFO e o Carla usam esse frame
 - [ ] **Motor sem trava** (etapa 1): listas publicadas como snapshots imutáveis, travas finas tentadas, e o fim do
   mutex do período inteiro; cada passo com TSan e A/B
-- [ ] **Autosave contínuo** (etapa 0): snapshot depois de cada mudança (debounce de ~2 s), escrito por uma thread de
-  forma atômica; ao reabrir depois de uma queda, oferecer recuperar, com os takes que estavam sendo gravados
+- [x] **Autosave contínuo** (etapa 0): `Autosave` tira um snapshot 2 s depois de cada mudança (no máximo a cada 30 s
+  enquanto muda sem pausa), também tocando e gravando, e uma thread o grava de forma atômica (`QSaveFile`). Uma
+  gravação em andamento vai no snapshot; ao recuperar, os arquivos dos takes são completados (`WavRepair`, o
+  cabeçalho passa a dizer o que o arquivo tem) e os takes entram nas faixas como numa gravação. As configurações
+  ficaram com só a chave e uma explicação
 - [x] **Faixa de sample: saltos vistos na thread de áudio.** O salto (play head movido, ciclo) é visto pela própria
   faixa, que recomeça os clipes no mesmo período; antes, um sinal da interface chegava depois, e a exportação com
   faixa de sample podia sair diferente de uma vez para outra

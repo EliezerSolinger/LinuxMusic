@@ -25,6 +25,8 @@
 #ifndef LMMS_GUI_MAIN_WINDOW_H
 #define LMMS_GUI_MAIN_WINDOW_H
 
+#include <memory>
+
 #include <QBasicTimer>
 #include <QHash>
 #include <QTimer>
@@ -44,6 +46,8 @@ class QTabWidget;
 
 namespace lmms
 {
+
+class Autosave;
 
 namespace gui
 {
@@ -124,28 +128,11 @@ public:
 	///
 	bool mayChangeProject(bool stopPlayback);
 
-	// Auto save timer intervals. The slider in SetupDialog.cpp wants
-	// minutes and the rest milliseconds.
-	static const int DEFAULT_SAVE_INTERVAL_MINUTES = 2;
-	static const int DEFAULT_AUTO_SAVE_INTERVAL = DEFAULT_SAVE_INTERVAL_MINUTES * 60 * 1000;
-
-	static const int m_autoSaveShortTime = 10 * 1000; // 10s short loop
-
-	void autoSaveTimerReset( int msec = ConfigManager::inst()->
-					value( "ui", "saveinterval" ).toInt()
-						* 60 * 1000 )
-	{
-		if( msec < m_autoSaveShortTime ) // No 'saveinterval' in .lmmsrc.xml
-		{
-			msec = DEFAULT_AUTO_SAVE_INTERVAL;
-		}
-		m_autoSaveTimer.start( msec );
-	}
-
-	int getAutoSaveTimerInterval()
-	{
-		return m_autoSaveTimer.interval();
-	}
+	/**
+	 * Starts or stops the autosave as the settings say (see Autosave): started only once the program has offered a
+	 * recovery, so that it does not write over the recovery file before
+	 */
+	void updateAutosave();
 
 	enum class SessionState
 	{
@@ -211,8 +198,6 @@ public slots:
 	void updateUndoRedoButtons();
 	void undo();
 	void redo();
-
-	void autoSave();
 
 private slots:
 	void onExportProjectMidi();
@@ -309,8 +294,7 @@ private:
 	QList<PluginView *> m_tools;
 
 	QBasicTimer m_updateTimer;
-	QTimer m_autoSaveTimer;
-	int m_autoSaveInterval;
+	std::unique_ptr<Autosave> m_autosave;
 
 	friend class GuiApplication;
 

@@ -41,6 +41,7 @@
 #include <QDateTime>
 #include <QDir>
 #include "DataFile.h"
+#include "WavRepair.h"
 #include "ConfigManager.h"
 #include "ControllerRackView.h"
 #include "ControllerConnection.h"
@@ -542,11 +543,13 @@ void Song::processMetronome(size_t bufferOffset)
 
 void Song::setModified(bool value)
 {
-	if( !m_loadingProject && m_modified != value)
+	if (m_loadingProject) { return; }
+	if (m_modified != value)
 	{
 		m_modified = value;
 		emit modified();
 	}
+	if (value) { emit changed(); }
 }
 
 bool Song::isExportDone() const
@@ -1485,6 +1488,48 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 
 
 
+void Song::recoverInterruptedTakes(const QDomElement& element)
+{
+	auto recovered = 0;
+	auto lost = QStringList{};
+	const auto& all = tracks();
+	for (auto take = element.firstChildElement("take"); !take.isNull(); take = take.nextSiblingElement("take"))
+	{
+		const auto index = take.attribute("track").toInt();
+		auto* track = index >= 0 && index < static_cast<int>(all.size()) ? dynamic_cast<AudioTrack*>(all[index]) : nullptr;
+		auto segments = std::vector<AudioRecorder::Segment>{};
+		for (auto segment = take.firstChildElement("segment"); !segment.isNull();
+			segment = segment.nextSiblingElement("segment"))
+		{
+			const auto path = segment.attribute("path");
+			// The file's header says what was written up to its last update: what is in the file counts
+			const auto frames = WavRepair::completeLength(path);
+			if (frames <= 0)
+			{
+				lost << path;
+				continue;
+			}
+			segments.push_back({path, segment.attribute("start").toLongLong(), frames, {}, {}});
+		}
+		if (!track || segments.empty()) { continue; }
+		landOnLanes(track, segments);
+		recovered += static_cast<int>(segments.size());
+	}
+	if (recovered > 0)
+	{
+		collectError(tr("%n recording(s) in progress when the program stopped were recovered from their files, up to "
+			"the last moment written.", "", recovered));
+	}
+	if (!lost.isEmpty())
+	{
+		collectError(tr("These recordings in progress could not be recovered: %1").arg(lost.join(", ")));
+	}
+	if (recovered > 0) { setModified(); }
+}
+
+
+
+
 void Song::startExport()
 {
 	stop();
@@ -1941,6 +1986,7 @@ void Song::loadProject( const QString & fileName )
 		}
 	}
 
+	auto interruptedRecording = QDomElement{};
 	while( !node.isNull() && !isCancelled() )
 	{
 		if( node.isElement() )
@@ -1968,6 +2014,11 @@ void Song::loadProject( const QString & fileName )
 			else if (node.nodeName() == m_songMarkers.nodeName())
 			{
 				m_songMarkers.restoreState(node.toElement());
+			}
+			else if (node.nodeName() == "recordinginprogress")
+			{
+				// The takes of an interrupted recording, once the tracks are all there (see below)
+				interruptedRecording = node.toElement();
 			}
 			else if( getGUI() != nullptr )
 			{
@@ -2028,6 +2079,8 @@ void Song::loadProject( const QString & fileName )
 
 	Engine::audioEngine()->doneChangeInModel();
 
+	if (!interruptedRecording.isNull()) { recoverInterruptedTakes(interruptedRecording); }
+
 	// The project's sample rate (none saved, as a template's: the settings')
 	applyProjectSampleRate(static_cast<sample_rate_t>(std::max(0, dataFile.head().attribute("samplerate").toInt())));
 
@@ -2070,16 +2123,9 @@ void Song::loadProject( const QString & fileName )
 
 
 // only save current song as filename and do nothing else
-bool Song::saveProjectFile(const QString & filename, bool withResources, bool gatherMedia)
+auto Song::serializeProject() -> DataFile
 {
 	using gui::getGUI;
-
-	// ensure property order in file is consistent across saves
-#if QT_VERSION < QT_VERSION_CHECK(6, 6, 0)
-	qSetGlobalQHashSeed(0);
-#else
-	QHashSeed::setDeterministicGlobalSeed();
-#endif
 
 	DataFile dataFile( DataFile::Type::SongProject );
 	m_savingProject = true;
@@ -2112,7 +2158,51 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, bool ga
 	saveScaleStates(dataFile, dataFile.content());
 	saveKeymapStates(dataFile, dataFile.content());
 
+	// The takes being recorded: their files, and where they go (by the track's place in the song)
+	if (m_audioRecorder.isRecording())
+	{
+		m_audioRecorder.updateLive(m_liveTakes);
+		auto element = dataFile.createElement("recordinginprogress");
+		const auto& all = tracks();
+		for (const auto& take : m_liveTakes)
+		{
+			const auto found = std::find(all.begin(), all.end(), take.track);
+			if (found == all.end()) { continue; }
+			auto takeElement = dataFile.createElement("take");
+			takeElement.setAttribute("track", static_cast<int>(found - all.begin()));
+			const auto addSegment = [&](const QString& path, std::int64_t startTick) {
+				auto segmentElement = dataFile.createElement("segment");
+				segmentElement.setAttribute("path", path);
+				segmentElement.setAttribute("start", static_cast<qlonglong>(startTick));
+				takeElement.appendChild(segmentElement);
+			};
+			for (const auto& segment : take.segments) { addSegment(segment.path, segment.startTick); }
+			// Before the disk thread opened the first file: where it will be, from where the recording begins
+			if (take.segments.empty()) { addSegment(take.firstPath, take.fromTick); }
+			element.appendChild(takeElement);
+		}
+		dataFile.content().appendChild(element);
+	}
+
 	m_savingProject = false;
+	return dataFile;
+}
+
+
+
+
+bool Song::saveProjectFile(const QString & filename, bool withResources, bool gatherMedia)
+{
+	using gui::getGUI;
+
+	// ensure property order in file is consistent across saves
+#if QT_VERSION < QT_VERSION_CHECK(6, 6, 0)
+	qSetGlobalQHashSeed(0);
+#else
+	QHashSeed::setDeterministicGlobalSeed();
+#endif
+
+	auto dataFile = serializeProject();
 
 	// The files the project uses, into its folder (a bundle copies them its own way)
 	if (gatherMedia && !withResources)

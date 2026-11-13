@@ -5554,6 +5554,17 @@ Motivo: &quot;%2&quot;</translation>
             <numerusform>%1: o áudio falhou %n vezes durante a gravação (xruns: o computador não deu conta); os pontos estão marcados em vermelho no take.</numerusform>
         </translation>
     </message>
+    <message numerus="yes">
+        <source>%n recording(s) in progress when the program stopped were recovered from their files, up to the last moment written.</source>
+        <translation>
+            <numerusform>%n gravação em andamento quando o programa parou foi recuperada do seu arquivo, até o último momento gravado.</numerusform>
+            <numerusform>%n gravações em andamento quando o programa parou foram recuperadas dos seus arquivos, até o último momento gravado.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>These recordings in progress could not be recovered: %1</source>
+        <translation>Estas gravações em andamento não puderam ser recuperadas: %1</translation>
+    </message>
 </context>
 <context>
     <name>lmms::StereoEnhancerControls</name>
@@ -14736,6 +14747,10 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>Audio device</source>
         <translation>Dispositivo de áudio</translation>
     </message>
+    <message>
+        <source>The project is kept for a recovery two seconds after each change (and every half minute while it keeps changing), also while it plays or records: after a crash, it is offered when the program starts, with the recordings that were in progress.</source>
+        <translation>O projeto é guardado para recuperação dois segundos depois de cada mudança (e a cada meio minuto enquanto continua mudando), também tocando ou gravando: depois de uma queda, ele é oferecido quando o programa abre, com as gravações que estavam em andamento.</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::Sf2InstrumentView</name>
@@ -17273,6 +17288,14 @@ A interface usada é a que está salva nestas configurações.</translation>
     <message>
         <source>No track is armed. Arm a track with its R button, or select an audio or instrument track (click its header) and press Record again: it is armed.</source>
         <translation>Nenhuma faixa está armada. Arme uma faixa no botão R dela, ou selecione uma faixa de áudio ou de instrumento (clique no cabeçalho) e aperte Gravar de novo: ela é armada.</translation>
+    </message>
+    <message>
+        <source>Record the armed tracks: audio into audio tracks, notes into instrument tracks (with no track armed, the selected one is armed) (R)</source>
+        <translation>Grava as faixas armadas: áudio nas faixas de áudio, notas nas faixas de instrumento (sem faixa armada, a selecionada é armada) (R)</translation>
+    </message>
+    <message>
+        <source>Recording after the pre-roll...</source>
+        <translation>Grava depois do pré-roll...</translation>
     </message>
 </context>
 <context>

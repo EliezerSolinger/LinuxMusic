@@ -371,6 +371,44 @@ private slots:
 		QVERIFY(device->outputPeak().second > 0.05f);
 	}
 
+	//! A snapshot of the project while recording has the takes being written, for a recovery (see Autosave)
+	void aSnapshotWhileRecordingHasTheTakes()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256, 256};
+		engine->setAudioDevice(device, false);
+		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		recorder->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::Off));
+		const auto cleanUp = qScopeGuard([&] {
+			song->stop();
+			const auto guard = engine->requestChangesGuard();
+			delete recorder;
+		});
+
+		const auto cursor = TimePos::ticksPerBar();
+		song->setPlayPos(cursor, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		for (int callback = 0; callback < 300; ++callback) { device->callback(256); }
+
+		const auto snapshot = song->serializeProject();
+		const auto segments = snapshot.elementsByTagName("recordinginprogress").item(0).toElement()
+			.elementsByTagName("segment");
+		QCOMPARE(segments.count(), 1);
+		const auto segment = segments.item(0).toElement();
+		QVERIFY(QFile::exists(segment.attribute("path")));
+		QCOMPARE(segment.attribute("start").toInt(), cursor);
+		const auto take = segment.parentNode().toElement();
+		const auto index = take.attribute("track").toInt();
+		QCOMPARE(song->tracks().at(index), recorder);
+
+		// Not once it ended
+		song->stopRecording();
+		QVERIFY(song->serializeProject().elementsByTagName("recordinginprogress").isEmpty());
+	}
+
 	void theWaveformGrowsWhileRecordingAndIsKept()
 	{
 		auto* engine = Engine::audioEngine();

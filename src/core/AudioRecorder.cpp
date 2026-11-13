@@ -465,7 +465,7 @@ auto AudioRecorder::drain(TakeState& take) -> bool
 		take.segmentFirstFrame = take.nextStart.frame;
 		{
 			const auto lock = std::lock_guard{take.liveMutex};
-			take.live.push_back({take.nextStart.tick, 0, {}, {}});
+			take.live.push_back({take.segments.back().path, take.nextStart.tick, 0, {}, {}});
 		}
 		take.inPartial = 0;
 		take.hasNextStart = false;
@@ -546,7 +546,12 @@ void AudioRecorder::updateLive(std::vector<LiveTake>& live) const
 	if (live.size() != session->takes.size())
 	{
 		live.assign(session->takes.size(), {});
-		for (std::size_t index = 0; index < live.size(); ++index) { live[index].track = session->takes[index]->track; }
+		for (std::size_t index = 0; index < live.size(); ++index)
+		{
+			live[index].track = session->takes[index]->track;
+			live[index].firstPath = session->takes[index]->path;
+			live[index].fromTick = session->fromTick;
+		}
 	}
 	for (std::size_t index = 0; index < live.size(); ++index)
 	{
@@ -558,6 +563,7 @@ void AudioRecorder::updateLive(std::vector<LiveTake>& live) const
 		{
 			const auto& theirs = take.live[segment];
 			auto& copy = mine.segments[segment];
+			copy.path = theirs.path;
 			copy.startTick = theirs.startTick;
 			copy.frames = theirs.frames;
 			copy.partial = theirs.partial;

@@ -48,6 +48,7 @@
 #include "embed.h"
 #include "Engine.h"
 #include "FileDialog.h"
+#include "GuiApplication.h"
 #include "MainWindow.h"
 #include "MidiSetupWidget.h"
 #include "ProjectJournal.h"
@@ -138,15 +139,8 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	m_autoScroll(ConfigManager::inst()->value("ui", "autoscroll", "stepped")),
 	m_lang(ConfigManager::inst()->value(
 			"app", "language")),
-	m_saveInterval(	ConfigManager::inst()->value(
-			"ui", "saveinterval").toInt() < 1 ?
-			MainWindow::DEFAULT_SAVE_INTERVAL_MINUTES :
-			ConfigManager::inst()->value(
-			"ui", "saveinterval").toInt()),
 	m_enableAutoSave(ConfigManager::inst()->value(
 			"ui", "enableautosave", "1").toInt()),
-	m_enableRunningAutoSave(ConfigManager::inst()->value(
-			"ui", "enablerunningautosave", "0").toInt()),
 	m_smoothScroll(ConfigManager::inst()->value(
 			"ui", "smoothscroll").toInt()),
 	m_animateAFP(ConfigManager::inst()->value(
@@ -427,40 +421,14 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	// Autosave tab.
 	QGroupBox * autoSaveBox = new QGroupBox(tr("Autosave"), performance_w);
 	QVBoxLayout * autoSaveLayout = new QVBoxLayout(autoSaveBox);
-	QHBoxLayout * autoSaveSubLayout = new QHBoxLayout();
-
-	m_saveIntervalSlider = new QSlider(Qt::Horizontal, autoSaveBox);
-	m_saveIntervalSlider->setValue(m_saveInterval);
-	m_saveIntervalSlider->setRange(1, 20);
-	m_saveIntervalSlider->setTickInterval(1);
-	m_saveIntervalSlider->setPageStep(1);
-	m_saveIntervalSlider->setTickPosition(QSlider::TicksBelow);
-
-	connect(m_saveIntervalSlider, SIGNAL(valueChanged(int)),
-			this, SLOT(setAutoSaveInterval(int)));
-
-	auto autoSaveResetBtn = new QPushButton(embed::getIconPixmap("reload"), "", autoSaveBox);
-	autoSaveResetBtn->setFixedSize(32, 32);
-	connect(autoSaveResetBtn, SIGNAL(clicked()),
-		this, SLOT(resetAutoSave()));
-
-	autoSaveSubLayout->addWidget(m_saveIntervalSlider);
-	autoSaveSubLayout->addWidget(autoSaveResetBtn);
-
-	autoSaveLayout->addLayout(autoSaveSubLayout);
-
-	m_saveIntervalLbl = new QLabel(autoSaveBox);
-	setAutoSaveInterval(m_saveIntervalSlider->value());
-	autoSaveLayout->addWidget(m_saveIntervalLbl);
 
 	m_autoSave = addCheckBox(tr("Enable autosave"), autoSaveBox, autoSaveLayout,
 		m_enableAutoSave, SLOT(toggleAutoSave(bool)), false);
-
-	m_runningAutoSave = addCheckBox(tr("Allow autosave while playing"), autoSaveBox, autoSaveLayout,
-		m_enableRunningAutoSave, SLOT(toggleRunningAutoSave(bool)), false);
-
-	m_saveIntervalSlider->setEnabled(m_enableAutoSave);
-	m_runningAutoSave->setVisible(m_enableAutoSave);
+	auto autoSaveInfo = new QLabel(tr("The project is kept for a recovery two seconds after each change (and every "
+		"half minute while it keeps changing), also while it plays or records: after a crash, it is offered when "
+		"the program starts, with the recordings that were in progress."), autoSaveBox);
+	autoSaveInfo->setWordWrap(true);
+	autoSaveLayout->addWidget(autoSaveInfo);
 
 
 	// UI effect vs. performance tab.
@@ -1205,12 +1173,10 @@ void SetupDialog::accept()
 	ConfigManager::inst()->setValue("app", "loopmarkermode", m_loopMarkerMode);
 	ConfigManager::inst()->setValue("app", "language", m_lang);
 	ConfigManager::inst()->setValue("ui", "autoscroll", m_autoScroll);
-	ConfigManager::inst()->setValue("ui", "saveinterval",
-					QString::number(m_saveInterval));
 	ConfigManager::inst()->setValue("ui", "enableautosave",
 					QString::number(m_enableAutoSave));
-	ConfigManager::inst()->setValue("ui", "enablerunningautosave",
-					QString::number(m_enableRunningAutoSave));
+	// Started or stopped now (see MainWindow::updateAutosave())
+	if (lmms::gui::getGUI() && lmms::gui::getGUI()->mainWindow()) { lmms::gui::getGUI()->mainWindow()->updateAutosave(); }
 	ConfigManager::inst()->setValue("ui", "smoothscroll",
 					QString::number(m_smoothScroll));
 	ConfigManager::inst()->setValue("ui", "animateafp",
@@ -1372,38 +1338,9 @@ void SetupDialog::setLanguage(int lang)
 
 // Performance settings slots.
 
-void SetupDialog::setAutoSaveInterval(int value)
-{
-	m_saveInterval = value;
-	m_saveIntervalSlider->setValue(m_saveInterval);
-	QString minutes = m_saveInterval > 1 ? tr("minutes") : tr("minute");
-	minutes = QString("%1 %2").arg(QString::number(m_saveInterval), minutes);
-	minutes = m_enableAutoSave ?  minutes : tr("Disabled");
-	m_saveIntervalLbl->setText(
-		tr("Autosave interval: %1").arg(minutes));
-}
-
-
 void SetupDialog::toggleAutoSave(bool enabled)
 {
 	m_enableAutoSave = enabled;
-	m_saveIntervalSlider->setEnabled(enabled);
-	m_runningAutoSave->setVisible(enabled);
-	setAutoSaveInterval(m_saveIntervalSlider->value());
-}
-
-
-void SetupDialog::toggleRunningAutoSave(bool enabled)
-{
-	m_enableRunningAutoSave = enabled;
-}
-
-
-void SetupDialog::resetAutoSave()
-{
-	setAutoSaveInterval(MainWindow::DEFAULT_SAVE_INTERVAL_MINUTES);
-	m_autoSave->setChecked(true);
-	m_runningAutoSave->setChecked(false);
 }
 
 

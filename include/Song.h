@@ -39,6 +39,7 @@
 #include "AudioRecorder.h"
 #include "MidiRecorder.h"
 #include "SongMarkers.h"
+#include "DataFile.h"
 #include "TempoMap.h"
 #include "Transport.h"
 #include "SampleClip.h"
@@ -275,6 +276,11 @@ public:
 	 * files it uses are gathered into its folder first (see ProjectMedia)
 	 */
 	bool saveProjectFile(const QString & filename, bool withResources = false, bool gatherMedia = false);
+	/**
+	 * The project as it would be saved, without writing it (for the autosave, which writes it on another thread).
+	 * While recording, the takes being written are in it too (see recoverInterruptedTakes()).
+	 */
+	auto serializeProject() -> DataFile;
 
 	const QString & projectFileName() const
 	{
@@ -603,6 +609,11 @@ private:
 	void cleanGeneratedMediaOf(const QString& projectFile);
 	//! A recording on an audio track: its passes as new lanes on top
 	void landOnLanes(AudioTrack* track, const std::vector<AudioRecorder::Segment>& segments);
+	/**
+	 * The takes a recording was writing when the program stopped (a snapshot of the autosave): their files, whose
+	 * header may not say how much was written, are completed, and they land on their tracks as a recording would
+	 */
+	void recoverInterruptedTakes(const QDomElement& element);
 	//! The media folder of a project whose file is @p projectFile
 	auto mediaDirectoryOf(const QString& projectFile) const -> QString;
 	std::atomic<tick_t> m_countInUntilTick = -1; //!< the metronome clicks before this tick (a recording's count-in)
@@ -654,6 +665,8 @@ signals:
 	void controllerRemoved( lmms::Controller * );
 	void stopped();
 	void modified();
+	//! The project changed (each change, not only the first after saving): for the autosave
+	void changed();
 	void projectFileNameChanged();
 	void recordingProblem(const QString& message);
 	void stretchCheckRequested();

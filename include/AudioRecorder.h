@@ -123,6 +123,7 @@ public:
 	//! What is being recorded, as the waveform grows (docs/plano-gravacao.md, "Cache de picos")
 	struct LiveSegment
 	{
+		QString path; //!< the file it is written to (for a recovery, see Song::serializeProject())
 		std::int64_t startTick = 0;
 		std::int64_t frames = 0;
 		std::vector<Peak> peaks; //!< complete peaks (of PeakCache::FramesPerPeak frames)
@@ -131,6 +132,8 @@ public:
 	struct LiveTake
 	{
 		Track* track = nullptr;
+		QString firstPath; //!< the first segment's file, from the start (before the disk thread opened it)
+		std::int64_t fromTick = 0; //!< where the recording begins at the earliest
 		std::vector<LiveSegment> segments;
 	};
 	/**

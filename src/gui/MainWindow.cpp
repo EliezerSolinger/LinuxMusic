@@ -24,6 +24,8 @@
 
 #include "MainWindow.h"
 
+#include "Autosave.h"
+
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDesktopServices>
@@ -104,7 +106,6 @@ MainWindow::MainWindow() :
 	m_bottomDock( nullptr ),
 	m_rightDock( nullptr ),
 	m_toolsMenu( nullptr ),
-	m_autoSaveTimer( this ),
 	m_viewMenu( nullptr ),
 	m_session( SessionState::Normal )
 {
@@ -261,21 +262,7 @@ MainWindow::MainWindow() :
 
 	m_updateTimer.start( 1000 / 60, this );  // 60 fps
 
-	if( ConfigManager::inst()->value( "ui", "enableautosave" ).toInt() )
-	{
-		// connect auto save
-		connect(&m_autoSaveTimer, SIGNAL(timeout()), this, SLOT(autoSave()));
-		m_autoSaveInterval = ConfigManager::inst()->value(
-					"ui", "saveinterval" ).toInt() < 1 ?
-						DEFAULT_AUTO_SAVE_INTERVAL :
-				ConfigManager::inst()->value(
-					"ui", "saveinterval" ).toInt();
-
-		// The auto save function mustn't run until there is a project
-		// to save or it will run over recover.mmp if you hesitate at the
-		// recover messagebox for a minute. It is now started in main.
-		// See autoSaveTimerReset() in MainWindow.h
-	}
+	// The autosave is started by main, once the recovery was offered (see updateAutosave())
 
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 				this, SLOT(updatePlayPauseIcons()));
@@ -1524,13 +1511,9 @@ void MainWindow::closeEvent( QCloseEvent * _ce )
 		// The files made for the project that it does not keep (see Song::cleanGeneratedMedia())
 		Engine::getSong()->cleanGeneratedMedia();
 
-		// delete recovery file
-		if( ConfigManager::inst()->
-				value( "ui", "enableautosave" ).toInt() )
-		{
-			sessionCleanup();
-			_ce->accept();
-		}
+		// The autosave stops and its recovery file goes: the project closed as it should
+		sessionCleanup();
+		_ce->accept();
 	}
 	else
 	{
@@ -1543,6 +1526,12 @@ void MainWindow::closeEvent( QCloseEvent * _ce )
 
 void MainWindow::sessionCleanup()
 {
+	// The autosave stops (its last snapshot written) before the recovery file goes
+	if (m_autosave)
+	{
+		m_autosave->flush();
+		m_autosave.reset();
+	}
 	// delete recover session files
 	QFile::remove( ConfigManager::inst()->recoveryFile() );
 	setSession( SessionState::Normal );
@@ -1690,26 +1679,21 @@ void MainWindow::browseHelp()
 
 
 
-void MainWindow::autoSave()
+void MainWindow::updateAutosave()
 {
-	if( !Engine::getSong()->isExporting() &&
-		!Engine::getSong()->isLoadingProject() &&
-		!RemotePluginBase::isMainThreadWaiting() &&
-		!QApplication::mouseButtons() &&
-		( ConfigManager::inst()->value( "ui",
-				"enablerunningautosave" ).toInt() ||
-			! Engine::getSong()->isPlaying() ) )
+	const bool enabled = ConfigManager::inst()->value("ui", "enableautosave", "1").toInt() != 0;
+	if (enabled && !m_autosave)
 	{
-		if (Engine::getSong()->saveProjectFile(ConfigManager::inst()->recoveryFile())) { flashSaveButton(); }
-		autoSaveTimerReset();  // Reset timer
+		m_autosave = std::make_unique<Autosave>(*Engine::getSong(), ConfigManager::inst()->recoveryFile());
+		connect(m_autosave.get(), &Autosave::saved, this, &MainWindow::flashSaveButton);
+		// Once now: the recovery file also tells another instance that this one runs
+		m_autosave->saveNow();
 	}
-	else
+	else if (!enabled && m_autosave)
 	{
-		// try again in 10 seconds
-		if( getAutoSaveTimerInterval() != m_autoSaveShortTime )
-		{
-			autoSaveTimerReset( m_autoSaveShortTime );
-		}
+		m_autosave->flush();
+		m_autosave.reset();
+		QFile::remove(ConfigManager::inst()->recoveryFile());
 	}
 }
 

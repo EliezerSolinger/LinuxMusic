@@ -784,8 +784,6 @@ int main( int argc, char * * argv )
 
 		bool recoveryFilePresent = QFileInfo( recoveryFile ).exists() &&
 				QFileInfo( recoveryFile ).isFile();
-		bool autoSaveEnabled =
-			ConfigManager::inst()->value( "ui", "enableautosave" ).toInt();
 		if( recoveryFilePresent )
 		{
 			QMessageBox mb;
@@ -922,10 +920,7 @@ int main( int argc, char * * argv )
 		// Finally we start the auto save timer and also trigger the
 		// autosave one time as recover.mmp is a signal to possible other
 		// instances of LMMS.
-		if( autoSaveEnabled )
-		{
-			gui::getGUI()->mainWindow()->autoSaveTimerReset();
-		}
+		gui::getGUI()->mainWindow()->updateAutosave();
 
 		if (!lastCrashReport.isEmpty() && qEnvironmentVariable("LINUXMUSIC_SCREENSHOT").isEmpty())
 		{

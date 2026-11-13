@@ -11,6 +11,7 @@ set(LMMS_SRCS
 	core/AudioPortsRouter.cpp
 	core/AudioResampler.cpp
 	core/AutomatableModel.cpp
+	core/Autosave.cpp
 	core/AutomationClip.cpp
 	core/AutomationNode.cpp
 	core/BandLimitedWave.cpp
@@ -120,6 +121,7 @@ set(LMMS_SRCS
 	core/Clip.cpp
 	core/ValueBuffer.cpp
 	core/VstSyncController.cpp
+	core/WavRepair.cpp
 	core/StepRecorder.cpp
 
 	core/audio/AudioAlsa.cpp

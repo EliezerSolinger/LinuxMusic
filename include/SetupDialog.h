@@ -102,10 +102,7 @@ private slots:
 	void setLanguage(int lang);
 
 	// Performance settings widget.
-	void setAutoSaveInterval(int time);
-	void resetAutoSave();
 	void toggleAutoSave(bool enabled);
-	void toggleRunningAutoSave(bool enabled);
 	void toggleSmoothScroll(bool enabled);
 	void toggleAnimateAFP(bool enabled);
 	void vstEmbedMethodChanged();
@@ -170,13 +167,8 @@ private:
 	QStringList m_languages;
 
 	// Performance settings widgets.
-	int m_saveInterval;
 	bool m_enableAutoSave;
-	bool m_enableRunningAutoSave;
-	QSlider * m_saveIntervalSlider;
-	QLabel * m_saveIntervalLbl;
 	QCheckBox * m_autoSave;
-	QCheckBox * m_runningAutoSave;
 	bool m_smoothScroll;
 	bool m_animateAFP;
 	QLabel * m_vstEmbedLbl;
