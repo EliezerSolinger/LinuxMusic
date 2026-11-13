@@ -28,6 +28,7 @@ set(LMMS_SRCS
 	core/Effect.cpp
 	core/EffectChain.cpp
 	core/Engine.cpp
+	core/ExportProcessor.cpp
 	core/EnvelopeAndLfoParameters.cpp
 	core/fft_helpers.cpp
 	core/AnalogChannelStrip.cpp
