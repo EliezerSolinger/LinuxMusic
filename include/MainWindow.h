@@ -48,6 +48,7 @@ namespace gui
 {
 
 class BrowserPanel;
+class EffectBrowser;
 class DockPanel;
 class PluginView;
 class ToolButton;
@@ -70,6 +71,9 @@ public:
 	}
 
 	int addWidgetToToolBar( QWidget * _w, int _row = -1, int _col = -1 );
+
+	//! Shows the explorer's effects with the cursor in their search field
+	void showEffectsExplorer();
 	void addSpacingToToolBar( int _size );
 
 	// wrap the widget with a window decoration and add it to the workspace
@@ -256,6 +260,7 @@ private:
 	QTabWidget* m_bottomDock;
 	QTabWidget* m_rightDock;
 	BrowserPanel* m_browserPanel = nullptr;
+	EffectBrowser* m_effectBrowser = nullptr;
 	QStackedWidget* m_pages = nullptr;
 	QWidget* m_mixingPage = nullptr;
 	QPushButton* m_compositionButton = nullptr;

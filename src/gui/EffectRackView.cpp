@@ -40,6 +40,8 @@
 #include "DeprecationHelper.h"
 #include "EffectSelectDialog.h"
 #include "EffectView.h"
+#include "GuiApplication.h"
+#include "MainWindow.h"
 #include "PluginInstance.h"
 #include "GroupBox.h"
 #include "StringPairDrag.h"
@@ -71,15 +73,8 @@ EffectRackView::EffectRackView( EffectChain* model, QWidget* parent ) :
 
 	effectsLayout->addWidget( m_scrollArea );
 
-	auto addButton = new QPushButton;
-	addButton->setText( tr( "Add effect" ) );
-	addButton->setFocusPolicy(Qt::NoFocus);
-
-	effectsLayout->addWidget( addButton );
-
-	connect( addButton, SIGNAL(clicked()), this, SLOT(addEffect()));
-
-	// Effects dragged from the browser go where they are dropped
+	// Effects are added from the explorer: dragged here they go where they are dropped (no "Add effect" button and
+	// dialog any more: the user's notes of 13/11)
 	setAcceptDrops(true);
 
 
@@ -357,31 +352,7 @@ void EffectRackView::update()
 
 void EffectRackView::addEffect()
 {
-	EffectSelectDialog esd( this );
-	esd.exec();
-
-	if( esd.result() == QDialog::Rejected )
-	{
-		return;
-	}
-
-	auto instance = esd.instantiateSelectedPlugin( fxChain() );
-	Effect* fx = instance->effect();
-
-	fxChain()->appendEffect(std::move(instance));
-	update();
-
-	// Find the effectView, and show the controls
-	for (const auto& effectView : m_effectViews)
-	{
-		if (effectView->effect() == fx)
-		{
-			effectView->editControls();
-			break;
-		}
-	}
-
-
+	getGUI()->mainWindow()->showEffectsExplorer();
 }
 
 

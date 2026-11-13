@@ -99,7 +99,7 @@ EffectBrowser::EffectBrowser(QWidget* parent) :
 		"the selected mixer channel."), view);
 	hint->setWordWrap(true);
 
-	auto searchBar = new QLineEdit(view);
+	auto searchBar = m_search = new QLineEdit(view);
 	searchBar->setPlaceholderText(tr("Search"));
 	searchBar->setClearButtonEnabled(true);
 	searchBar->addAction(embed::getIconPixmap("zoom"), QLineEdit::LeadingPosition);
@@ -125,6 +125,15 @@ EffectBrowser::EffectBrowser(QWidget* parent) :
 	layout->addWidget(m_tree, 1);
 
 	fill();
+}
+
+
+
+
+void EffectBrowser::focusSearch()
+{
+	m_search->setFocus(Qt::OtherFocusReason);
+	m_search->selectAll();
 }
 
 

@@ -61,7 +61,8 @@ public slots:
 	void loadPreset(EffectView* view);
 	void savePreset(EffectView* view);
 
-	//! Lets the user choose an effect to add at the end
+	//! Shows the explorer's effects, ready to search: an effect is added by dragging it here, or by double-clicking
+	//! it (into the selected mixer channel)
 	void addEffect();
 
 private slots:

@@ -128,7 +128,8 @@ MainWindow::MainWindow() :
 
 	emit initProgress(tr("Preparing plugin browser"));
 	m_browserPanel->addBrowser(new PluginBrowser(m_browserPanel), "plugins");
-	m_browserPanel->addBrowser(new EffectBrowser(m_browserPanel), "effects");
+	m_effectBrowser = new EffectBrowser(m_browserPanel);
+	m_browserPanel->addBrowser(m_effectBrowser, "effects");
 	emit initProgress(tr("Preparing file browsers"));
 
 	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Favorites, ConfigManager::inst()->favoriteItems().join("*"),
@@ -1552,6 +1553,13 @@ void MainWindow::autoSave()
 			autoSaveTimerReset( m_autoSaveShortTime );
 		}
 	}
+}
+
+void MainWindow::showEffectsExplorer()
+{
+	m_browserPanel->setShown(true);
+	m_browserPanel->select(m_browserPanel->indexOf("effects"));
+	m_effectBrowser->focusSearch();
 }
 
 void MainWindow::flashSaveButton()

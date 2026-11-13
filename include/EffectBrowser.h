@@ -25,6 +25,7 @@
 
 #include "SideBarWidget.h"
 
+class QLineEdit;
 class QTreeWidget;
 
 namespace lmms::gui
@@ -40,11 +41,15 @@ class EffectBrowser : public SideBarWidget
 public:
 	explicit EffectBrowser(QWidget* parent);
 
+	//! Puts the cursor in the search field, ready to look for an effect
+	void focusSearch();
+
 private:
 	void fill();
 	void filter(const QString& text);
 
 	QTreeWidget* m_tree;
+	QLineEdit* m_search;
 };
 
 } // namespace lmms::gui
