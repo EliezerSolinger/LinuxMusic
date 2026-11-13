@@ -58,8 +58,14 @@ Motor e estabilidade:
   tocando, pré-roll, count-in, gravando; o fim do pré-roll vem da thread de áudio), o frame da linha do tempo exato
   pelo mapa de tempo (contado de período em período, recontado nos saltos e no ciclo), e Tocar, Parar e Gravar como
   ações do núcleo, que a barra e o Arranjo chamam. O relógio, o LFO e o Carla usam esse frame
-- [ ] **Motor sem trava** (etapa 1): listas publicadas como snapshots imutáveis, travas finas tentadas, e o fim do
-  mutex do período inteiro; cada passo com TSan e A/B
+- [x] **Motor sem trava** (etapa 1): a thread do dispositivo não espera mais as mudanças do modelo: a trava do
+  período é temporizada, e o período do dispositivo espera no máximo meio período; se a mudança continua (carregar
+  um projeto), o período sai em silêncio, a música não anda nele, e conta como queda (a gravação marca no take, como
+  um xrun). A exportação e os testes ainda esperam (não podem perder período). As outras travas que a thread de
+  áudio pega são finas (canais do mixer entre as threads do período, pontos de automação, buffer de valores), com a
+  thread principal segurando só por instantes. TSan nos testes de threads (com `tests/tsan.supp` para o que o TSan
+  não vê através do Qt). Fica como ideia para depois: publicar as listas como snapshots, se a medição mostrar
+  necessidade
 - [x] **Autosave contínuo** (etapa 0): `Autosave` tira um snapshot 2 s depois de cada mudança (no máximo a cada 30 s
   enquanto muda sem pausa), também tocando e gravando, e uma thread o grava de forma atômica (`QSaveFile`). Uma
   gravação em andamento vai no snapshot; ao recuperar, os arquivos dos takes são completados (`WavRepair`, o
