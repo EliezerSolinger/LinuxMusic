@@ -25,6 +25,7 @@
 #include <complex>
 
 #include <cmath>
+#include <ctime>
 #include <numbers>
 #include <functional>
 #include <vector>
@@ -2751,16 +2752,21 @@ private slots:
 		if (!measuresSpeed()) { QSKIP("Speed is only meaningful in an optimized build without sanitizers"); }
 		for (const auto model : ChannelCompressor::DisplayOrder)
 		{
-			// The least of a few measures: the one the rest of the machine disturbed least
+			// The thread's own CPU time, which other programs do not count in; the least of a few measures, for
+			// what they still disturb (the caches)
+			const auto threadSeconds = [] {
+				auto time = timespec{};
+				clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time);
+				return static_cast<double>(time.tv_sec) + time.tv_nsec / 1e9;
+			};
 			auto share = 1.f;
 			for (int attempt = 0; attempt < 5; ++attempt)
 			{
 				auto c = ChannelCompressor{};
 				c.begin({model, 0.7f, 0.6f}, 44100);
-				QElapsedTimer timer;
-				timer.start();
+				const auto start = threadSeconds();
 				compressorOutput(c, NominalSine * 2.f, 1000.f, 0.5f);
-				share = std::min(share, timer.nsecsElapsed() / 1e9f / 0.5f);
+				share = std::min(share, static_cast<float>((threadSeconds() - start) / 0.5));
 			}
 			qInfo("%s: %.2f%% of a core", qPrintable(ChannelCompressor::name(model)), share * 100.f);
 			QVERIFY2(share < 0.05f, qPrintable(ChannelCompressor::name(model)));
