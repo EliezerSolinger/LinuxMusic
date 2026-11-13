@@ -27,6 +27,9 @@
 
 #include <atomic>
 #include <cmath>
+#include <algorithm>
+#include <utility>
+#include <vector>
 #include <QMap>
 #include <QMutex>
 
@@ -524,7 +527,53 @@ public:
 	QString displayValue( const float val ) const override;
 } ;
 
-using AutomatedValueMap = QMap<AutomatableModel*, float>;
+/**
+ * The values automations give models at a time. Flat, so that the audio thread, which fills one each tick, allocates
+ * nothing once it has grown to the project's automations (clear() keeps the room; see Song::processAutomations()).
+ */
+class AutomatedValueMap
+{
+public:
+	using Entry = std::pair<AutomatableModel*, float>;
+
+	class Iterator
+	{
+	public:
+		explicit Iterator(std::vector<Entry>::iterator it) : m_it{it} {}
+		auto key() const -> AutomatableModel* { return m_it->first; }
+		auto value() const -> float { return m_it->second; }
+		auto operator*() const -> Entry& { return *m_it; }
+		auto operator++() -> Iterator& { ++m_it; return *this; }
+		auto operator++(int) -> Iterator { auto copy = *this; ++m_it; return copy; }
+		auto operator==(const Iterator& other) const -> bool = default;
+	private:
+		std::vector<Entry>::iterator m_it;
+	};
+
+	auto operator[](AutomatableModel* model) -> float&
+	{
+		for (auto& entry : m_entries) { if (entry.first == model) { return entry.second; } }
+		return m_entries.emplace_back(model, 0.f).second;
+	}
+	auto contains(const AutomatableModel* model) const -> bool
+	{
+		return std::any_of(m_entries.begin(), m_entries.end(), [model](const Entry& entry) { return entry.first == model; });
+	}
+	void remove(const AutomatableModel* model)
+	{
+		std::erase_if(m_entries, [model](const Entry& entry) { return entry.first == model; });
+	}
+	void clear() { m_entries.clear(); }
+	void reserve(std::size_t size) { m_entries.reserve(size); }
+	auto size() const -> std::size_t { return m_entries.size(); }
+	auto isEmpty() const -> bool { return m_entries.empty(); }
+	auto begin() -> Iterator { return Iterator{m_entries.begin()}; }
+	auto end() -> Iterator { return Iterator{m_entries.end()}; }
+	void swap(AutomatedValueMap& other) noexcept { m_entries.swap(other.m_entries); }
+
+private:
+	std::vector<Entry> m_entries;
+};
 
 } // namespace lmms
 

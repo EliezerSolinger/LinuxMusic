@@ -217,7 +217,7 @@ void PatternStore::createClipsForPattern(int pattern)
 	}
 }
 
-AutomatedValueMap PatternStore::automatedValuesAt(TimePos time, int clipNum) const
+void PatternStore::automatedValuesAt(TimePos time, int clipNum, AutomatedValueMap& values) const
 {
 	Q_ASSERT(clipNum >= 0);
 	Q_ASSERT(time.getTicks() >= 0);
@@ -229,7 +229,7 @@ AutomatedValueMap PatternStore::automatedValuesAt(TimePos time, int clipNum) con
 		time = lengthTicks;
 	}
 
-	return TrackContainer::automatedValuesAt(time + (TimePos::ticksPerBar() * clipNum), clipNum);
+	TrackContainer::automatedValuesAt(time + (TimePos::ticksPerBar() * clipNum), clipNum, values);
 }
 
 

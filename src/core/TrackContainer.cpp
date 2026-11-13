@@ -34,6 +34,8 @@
 #include "FolderTrack.h"
 #include "Mixer.h"
 #include "TrackContainer.h"
+
+#include <array>
 #include "PatternClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -583,15 +585,26 @@ bool TrackContainer::isEmpty() const
 
 
 
-AutomatedValueMap TrackContainer::automatedValuesAt(TimePos time, int clipNum) const
+void TrackContainer::automatedValuesAt(TimePos time, int clipNum, AutomatedValueMap& values) const
 {
-	return automatedValuesFromTracks(tracks(), time, clipNum);
+	automatedValuesFromTracks(tracks(), time, clipNum, values);
 }
 
 
-AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tracks, TimePos time, int clipNum)
+void TrackContainer::automatedValuesFromTracks(const TrackList& tracks, TimePos time, int clipNum,
+	AutomatedValueMap& valueMap)
 {
-	Track::clipVector clips;
+	// The audio thread calls this each tick (and again for the patterns in it): scratch that keeps its room, one
+	// for each depth of patterns
+	constexpr auto MaxDepth = 4;
+	thread_local auto s_depth = 0;
+	thread_local auto s_clips = std::array<Track::clipVector, MaxDepth>{};
+	thread_local auto s_patternValues = std::array<AutomatedValueMap, MaxDepth>{};
+	if (s_depth >= MaxDepth) { valueMap.clear(); return; }
+	auto& clips = s_clips[s_depth];
+	clips.clear();
+	++s_depth;
+	struct Leave { ~Leave() { --s_depth; } } leave;
 
 	for (Track* track: tracks)
 	{
@@ -615,7 +628,7 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 		}
 	}
 
-	AutomatedValueMap valueMap;
+	valueMap.clear();
 
 	Q_ASSERT(std::is_sorted(clips.begin(), clips.end(), Clip::comparePosition));
 
@@ -650,7 +663,8 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 			patTime = std::min(patTime, clip->length());
 			patTime = patTime % (patStore->lengthOfPattern(patIndex) * TimePos::ticksPerBar());
 
-			auto patValues = patStore->automatedValuesAt(patTime, patIndex);
+			auto& patValues = s_patternValues[s_depth - 1];
+			patStore->automatedValuesAt(patTime, patIndex, patValues);
 			for (auto it=patValues.begin(); it != patValues.end(); it++)
 			{
 				// override old values, pattern track with the highest index takes precedence
@@ -663,8 +677,7 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 		}
 	}
 
-	return valueMap;
-};
+}
 
 
 } // namespace lmms

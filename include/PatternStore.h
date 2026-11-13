@@ -92,7 +92,8 @@ public:
 	void fixIncorrectPositions();
 	void createClipsForPattern(int pattern);
 
-	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum) const override;
+	void automatedValuesAt(TimePos time, int clipNum, AutomatedValueMap& values) const override;
+	using TrackContainer::automatedValuesAt;
 
 public slots:
 	void play();

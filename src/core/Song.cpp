@@ -408,9 +408,10 @@ void Song::removeOldAutomatedValue(AutomatableModel* am)
 
 void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_cnt_t)
 {
-	AutomatedValueMap values;
-
-	QSet<const AutomatableModel*> recordedModels;
+	// (the audio thread's scratch, reused each tick: nothing is allocated once it has grown)
+	auto& values = m_automatedValues;
+	auto& recordedModels = m_recordedModels;
+	recordedModels.clear();
 
 	TrackContainer* container = this;
 	int clipNum = -1;
@@ -432,10 +433,11 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		return;
 	}
 
-	values = container->automatedValuesAt(timeStart, clipNum);
+	container->automatedValuesAt(timeStart, clipNum, values);
 	const TrackList& tracks = container->tracks();
 
-	Track::clipVector clips;
+	auto& clips = m_automationClips;
+	clips.clear();
 	for (Track* track : tracks)
 	{
 		if (track->type() == Track::Type::Automation) {
@@ -460,7 +462,7 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 			// and store that so that when playing it back, it scales the value correctly.
 			p->recordValue(relTime, recordedModel->inverseScaledValue(recordedModel->value<float>()));
 
-			recordedModels << recordedModel;
+			recordedModels.push_back(recordedModel);
 		}
 	}
 
@@ -474,13 +476,11 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 			am->setUseControllerValue(true);
 		}
 	}
-	m_oldAutomatedValues = values;
-
 	// Apply values
 	for (auto it = values.begin(); it != values.end(); it++)
 	{
 		AutomatableModel* model = it.key();
-		bool isRecording = recordedModels.contains(model);
+		bool isRecording = std::find(recordedModels.begin(), recordedModels.end(), model) != recordedModels.end();
 		model->setUseControllerValue(isRecording);
 
 		if (!isRecording)
@@ -493,6 +493,8 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 			model->setValue(model->scaledValue(it.value()), true);
 		}
 	}
+	// What was automated now is what was automated last (swapped: no copy)
+	m_oldAutomatedValues.swap(values);
 }
 
 void Song::processMetronome(size_t bufferOffset)
@@ -1567,11 +1569,13 @@ bpm_t Song::getTempo()
 }
 
 
-AutomatedValueMap Song::automatedValuesAt(TimePos time, int clipNum) const
+void Song::automatedValuesAt(TimePos time, int clipNum, AutomatedValueMap& values) const
 {
-	auto trackList = TrackList{m_globalAutomationTrack};
-	trackList.insert(trackList.end(), tracks().begin(), tracks().end());
-	return TrackContainer::automatedValuesFromTracks(trackList, time, clipNum);
+	// (a list that keeps its room: the audio thread asks each tick)
+	m_automationTracks.clear();
+	m_automationTracks.push_back(m_globalAutomationTrack);
+	m_automationTracks.insert(m_automationTracks.end(), tracks().begin(), tracks().end());
+	TrackContainer::automatedValuesFromTracks(m_automationTracks, time, clipNum, values);
 }
 
 

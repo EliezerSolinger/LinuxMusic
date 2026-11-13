@@ -9,6 +9,7 @@ set(LMMS_TESTS
 	src/core/ConvolverTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioInputTest.cpp
+	src/core/AudioThreadAllocationTest.cpp
 	src/core/AudioTrackTest.cpp
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp

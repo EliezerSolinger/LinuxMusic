@@ -390,6 +390,10 @@ Por fazer, na ordem do plano:
   - ganho por item;
   - a faixa nova (`AudioTrack`) e o cabeçalho de duas linhas.
 - **Etapa 1:**
+  - nada de alocação no áudio: o `AudioThreadAllocationTest` conta cada alocação e liberação feita na thread de
+    áudio com a música tocando, e mostra onde. A automação deixou de alocar (13/11: mapa plano e listas que guardam
+    o espaço; era a maior parte). Faltam o ciclo de vida das notas (o `NotePlayHandle` e os dados de nota que cada
+    instrumento cria com `new`), a lista de play handles do motor e a monitoração do master;
   - o motor sem o mutex do período;
   - o transporte com contador de frames.
 - **Etapa 0:**

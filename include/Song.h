@@ -257,7 +257,8 @@ public:
 	}
 
 	//TODO: Add Q_DECL_OVERRIDE when Qt4 is dropped
-	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const override;
+	void automatedValuesAt(TimePos time, int clipNum, AutomatedValueMap& values) const override;
+	using TrackContainer::automatedValuesAt;
 
 	// file management
 	void createNewProject();
@@ -612,6 +613,10 @@ private:
 	std::shared_ptr<Keymap> m_keymaps[MaxKeymapCount];
 
 	AutomatedValueMap m_oldAutomatedValues;
+	AutomatedValueMap m_automatedValues; //!< (the audio thread's, reused each tick)
+	std::vector<const AutomatableModel*> m_recordedModels; //!< (the same)
+	Track::clipVector m_automationClips; //!< (the same)
+	mutable TrackList m_automationTracks; //!< (the same)
 
 	Metronome m_metronome;
 

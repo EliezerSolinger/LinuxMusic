@@ -152,7 +152,15 @@ public:
 		return m_TrackContainerType;
 	}
 
-	virtual AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const;
+	//! The values the automations give at @p time, into @p values (cleared first; it keeps its room)
+	virtual void automatedValuesAt(TimePos time, int clipNum, AutomatedValueMap& values) const;
+	//! The same, as a new map (not for the audio thread)
+	auto automatedValuesAt(TimePos time, int clipNum = -1) const -> AutomatedValueMap
+	{
+		auto values = AutomatedValueMap{};
+		automatedValuesAt(time, clipNum, values);
+		return values;
+	}
 
 signals:
 	void trackAdded( lmms::Track * _track );
@@ -162,7 +170,7 @@ signals:
 	void foldersChanged();
 
 protected:
-	static AutomatedValueMap automatedValuesFromTracks(const TrackList &tracks, TimePos timeStart, int clipNum = -1);
+	static void automatedValuesFromTracks(const TrackList& tracks, TimePos timeStart, int clipNum, AutomatedValueMap& values);
 
 	mutable QReadWriteLock m_tracksMutex;
 
