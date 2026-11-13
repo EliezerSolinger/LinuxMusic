@@ -4,7 +4,7 @@
   <head/>
   <instrumenttracksettings>
     <instrumenttrack basenote="69" mixch="0" name="Xylophon" tab="2" vol="59">
-      <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="22" finel2="-25" finer0="0" finer1="12" finer2="-13" modalgo1="1" modalgo2="1" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="0" phoffset2="0" stphdetun0="66" stphdetun1="275" stphdetun2="0" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" userwavefile0="samples/empty.wav" userwavefile1="samples/empty.wav" userwavefile2="samples/empty.wav" vol0="100" vol1="100" vol2="100" wavetype0="0" wavetype1="0" wavetype2="0"/>
+      <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="22" finel2="-25" finer0="0" finer1="12" finer2="-13" modalgo1="1" modalgo2="1" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="0" phoffset2="0" stphdetun0="66" stphdetun1="275" stphdetun2="0" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" vol0="100" vol1="100" vol2="100" wavetype0="0" wavetype1="0" wavetype2="0"/>
       <eldata fcut="820" fres="0.5" ftype="1" fwet="0">
         <elvol amt="1" att="0" ctlenvamt="0" dec="0.5" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.01" pdel="0" rel="0.38" sus="0.999" x100="0"/>
         <elcut amt="0" att="0" ctlenvamt="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0.5" x100="0"/>

@@ -4,7 +4,7 @@
   <head/>
   <instrumenttracksettings>
     <instrumenttrack basenote="69" mixch="0" muted="0" name="Space Bass" vol="100">
-      <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="-23" finel2="0" finer0="0" finer1="13" finer2="-3" modalgo1="0" modalgo2="1" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="62" phoffset2="264" stphdetun0="250" stphdetun1="50" stphdetun2="161" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" userwavefile0="samples/empty.wav" userwavefile1="samples/empty.wav" userwavefile2="samples/empty.wav" vol0="25" vol1="25" vol2="25" wavetype0="2" wavetype1="2" wavetype2="2"/>
+      <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="-23" finel2="0" finer0="0" finer1="13" finer2="-3" modalgo1="0" modalgo2="1" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="62" phoffset2="264" stphdetun0="250" stphdetun1="50" stphdetun2="161" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" vol0="25" vol1="25" vol2="25" wavetype0="2" wavetype1="2" wavetype2="2"/>
       <eldata fcut="686" fres="0.88" ftype="6" fwet="0">
         <elvol amt="1" att="0" dec="0.297" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.0917" pdel="0" rel="0.346" sus="0.738" x100="0"/>
         <elpan amt="0" att="0.5" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0.5" x100="0"/>

@@ -287,7 +287,13 @@ void TripleOscillator::loadSettings( const QDomElement & _this )
 				m_osc[i]->m_sampleBuffer = SampleBuffer::fromFile(userWaveFile);
 				m_osc[i]->m_userAntiAliasWaveTable = Oscillator::generateAntiAliasUserWaveTable(m_osc[i]->m_sampleBuffer.get());
 			}
-			else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }
+			// Missing: an error only if the oscillator plays it (presets of before name a "samples/empty.wav" that
+			// never existed on every oscillator, whatever its wave)
+			else if (static_cast<Oscillator::WaveShape>(m_osc[i]->m_waveShapeModel.value())
+				== Oscillator::WaveShape::UserDefined)
+			{
+				Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile));
+			}
 		}
 	}
 }

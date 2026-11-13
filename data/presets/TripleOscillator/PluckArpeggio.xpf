@@ -5,7 +5,7 @@
   <instrumenttracksettings muted="0" name="Pluck Arpeggio" type="0">
     <instrumenttrack basenote="81" mixch="0" pan="0" pitch="0" vol="59">
       <instrument name="tripleoscillator">
-        <tripleoscillator coarse0="12" coarse1="0" coarse2="12" finel0="0" finel1="0" finel2="0" finer0="0" finer1="0" finer2="0" modalgo1="2" modalgo2="2" modalgo3="0" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="108" phoffset2="36" stphdetun0="0" stphdetun1="0" stphdetun2="0" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" userwavefile0="samples/empty.wav" userwavefile1="samples/empty.wav" userwavefile2="samples/empty.wav" vol0="80" vol1="90" vol2="100" wavetype0="5" wavetype1="4" wavetype2="5"/>
+        <tripleoscillator coarse0="12" coarse1="0" coarse2="12" finel0="0" finel1="0" finel2="0" finer0="0" finer1="0" finer2="0" modalgo1="2" modalgo2="2" modalgo3="0" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="108" phoffset2="36" stphdetun0="0" stphdetun1="0" stphdetun2="0" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" vol0="80" vol1="90" vol2="100" wavetype0="5" wavetype1="4" wavetype2="5"/>
       </instrument>
       <eldata fcut="1181" fres="0.95" ftype="1" fwet="1">
         <elvol amt="1" att="0.021" ctlenvamt="0" dec="0.191" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.0917" lspd_denominator="1" lspd_numerator="1" lspd_syncmode="0" pdel="0" rel="0.177" sus="0.394" syncmode="0" userwavefile="" x100="0"/>

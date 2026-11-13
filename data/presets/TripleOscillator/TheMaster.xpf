@@ -5,7 +5,7 @@
   <instrumenttracksettings muted="0" name="The Master" solo="0" type="0">
     <instrumenttrack basenote="69" mixch="0" pan="0" pitch="0" pitchrange="1" vol="100">
       <instrument name="tripleoscillator">
-        <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="-12" finel1="0" finel2="0" finer0="12" finer1="0" finer2="0" modalgo1="0" modalgo2="1" modalgo3="2" pan0="0" pan1="0" pan2="0" phoffset0="98" phoffset1="58" phoffset2="235" stphdetun0="235" stphdetun1="185" stphdetun2="209" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" userwavefile0="shapes/micro.wav" userwavefile1="samples/empty.wav" userwavefile2="samples/empty.wav" vol0="25" vol1="132" vol2="68" wavetype0="7" wavetype1="2" wavetype2="0"/>
+        <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="-12" finel1="0" finel2="0" finer0="12" finer1="0" finer2="0" modalgo1="0" modalgo2="1" modalgo3="2" pan0="0" pan1="0" pan2="0" phoffset0="98" phoffset1="58" phoffset2="235" stphdetun0="235" stphdetun1="185" stphdetun2="209" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" userwavefile0="shapes/micro.wav" vol0="25" vol1="132" vol2="68" wavetype0="7" wavetype1="2" wavetype2="0"/>
       </instrument>
       <eldata fcut="3200" fres="1.35" ftype="0" fwet="1">
         <elvol amt="1" att="0.039" ctlenvamt="0" dec="0" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.384" sustain="1" syncmode="0" userwavefile="" x100="0"/>

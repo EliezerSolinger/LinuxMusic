@@ -4,7 +4,7 @@
   <head/>
   <instrumenttracksettings>
     <instrumenttrack basenote="69" mixch="0" muted="0" name="Lovely Dream" vol="59">
-      <tripleoscillator coarse0="-7" coarse1="0" coarse2="0" finel0="0" finel1="0" finel2="-18" finer0="0" finer1="0" finer2="11" modalgo1="1" modalgo2="1" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="265" phoffset2="146" stphdetun0="0" stphdetun1="125" stphdetun2="59" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" userwavefile0="samples/empty.wav" userwavefile1="samples/empty.wav" userwavefile2="samples/empty.wav" vol0="75" vol1="75" vol2="75" wavetype0="0" wavetype1="0" wavetype2="0"/>
+      <tripleoscillator coarse0="-7" coarse1="0" coarse2="0" finel0="0" finel1="0" finel2="-18" finer0="0" finer1="0" finer2="11" modalgo1="1" modalgo2="1" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="265" phoffset2="146" stphdetun0="0" stphdetun1="125" stphdetun2="59" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" vol0="75" vol1="75" vol2="75" wavetype0="0" wavetype1="0" wavetype2="0"/>
       <eldata fcut="16000" fres="0.5" ftype="0" fwet="0">
         <elvol amt="1" att="0.03" dec="0.394" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.388" sus="0" x100="0"/>
         <elpan amt="0" att="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0.5" x100="0"/>

@@ -5,7 +5,7 @@
   <instrumenttracksettings muted="0" name="Analog Times" solo="0" type="0">
     <instrumenttrack basenote="69" mixch="0" pan="0" pitch="0" pitchrange="1" vol="59">
       <instrument name="tripleoscillator">
-        <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="-14" finel2="2" finer0="0" finer1="13" finer2="-2" modalgo1="2" modalgo2="2" modalgo3="2" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="0" phoffset2="0" stphdetun0="0" stphdetun1="0" stphdetun2="0" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" userwavefile0="samples/empty.wav" userwavefile1="samples/empty.wav" userwavefile2="samples/empty.wav" vol0="33" vol1="33" vol2="33" wavetype0="2" wavetype1="2" wavetype2="2"/>
+        <tripleoscillator coarse0="0" coarse1="0" coarse2="0" finel0="0" finel1="-14" finel2="2" finer0="0" finer1="13" finer2="-2" modalgo1="2" modalgo2="2" modalgo3="2" pan0="0" pan1="0" pan2="0" phoffset0="0" phoffset1="0" phoffset2="0" stphdetun0="0" stphdetun1="0" stphdetun2="0" useWaveTable1="0" useWaveTable2="0" useWaveTable3="0" vol0="33" vol1="33" vol2="33" wavetype0="2" wavetype1="2" wavetype2="2"/>
       </instrument>
       <eldata fcut="1118" fres="0.42" ftype="6" fwet="1">
         <elvol amt="1" att="0" ctlenvamt="0" dec="1.144" hold="0" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.0917" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.214" sustain="1" syncmode="0" userwavefile="" x100="0"/>
