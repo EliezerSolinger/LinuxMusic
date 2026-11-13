@@ -5,6 +5,7 @@ set(CMAKE_AUTOMOC ON)
 
 set(LMMS_TESTS
 	src/core/ArrayVectorTest.cpp
+	src/core/ConvolverTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioInputTest.cpp
 	src/core/AudioPortsTest.cpp
@@ -46,3 +47,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
 endforeach()
+
+# The Amp & IR plugin's convolver, tested on its own
+target_sources(ConvolverTest PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AmpAndIr/Convolver.cpp)
+target_include_directories(ConvolverTest PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AmpAndIr ${FFTW3F_INCLUDE_DIRS})
+target_link_libraries(ConvolverTest PRIVATE ${FFTW3F_LIBRARIES})

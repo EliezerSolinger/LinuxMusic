@@ -59,7 +59,7 @@ const auto s_effectCategories = std::array{
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Dynamics"), {"compressor", "dynamicsprocessor", "lomm"}, "#e8c23d", "DY"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Delay & reverb"), {"delay", "multitapecho", "reverbsc"}, "#9b6be8", "RV"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Modulation"), {"flanger"}, "#4fc96b", "MO"},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Distortion"), {"bitcrush", "waveshaper", "slewdistortion"}, "#e85a4f", "DS"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Distortion"), {"bitcrush", "waveshaper", "slewdistortion", "ampandir"}, "#e85a4f", "DS"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Pitch & frequency"),
 		{"granularpitchshifter", "frequencyshifter"}, "#f0913a", "PI"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Stereo & utility"),

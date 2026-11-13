@@ -72,6 +72,7 @@ const DataFile::ResourcesMap DataFile::ELEMENTS_WITH_RESOURCES = {
 { "sf2player", {"src"} },
 { "gigplayer", {"src"} },
 { "patman", {"src"} },
+{ "ampir", {"ir"} }, // the Amp & IR plugin's impulse response
 };
 
 namespace

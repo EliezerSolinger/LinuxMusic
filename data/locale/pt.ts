@@ -967,6 +967,10 @@ Este chip foi utilizado no computador Commodore 64.</translation>
         <source>Tap to the beat</source>
         <translation>Toque no ritmo</translation>
     </message>
+    <message>
+        <source>Impulse responses: guitar cabinets, acoustic bodies, rooms</source>
+        <translation>Respostas a impulso: caixas de guitarra, corpos de violão, salas</translation>
+    </message>
 </context>
 <context>
     <name>PluginFactory</name>
@@ -17370,6 +17374,56 @@ Latency: %2 ms</source>
     <message>
         <source>Gain reduction of the bus compressor, on its own moving-coil meter as on the SSL: the needle rests at 0 on the right and swings left, to 20 dB</source>
         <translation>Redução de ganho do compressor do bus, no medidor de bobina móvel próprio, como na SSL: o ponteiro descansa no 0 à direita e vai para a esquerda, até 20 dB</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::AmpAndIrControls</name>
+    <message>
+        <source>Input gain</source>
+        <translation>Ganho de entrada</translation>
+    </message>
+    <message>
+        <source>Output gain</source>
+        <translation>Ganho de saída</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::AmpAndIrControlDialog</name>
+    <message>
+        <source>IN</source>
+        <translation>ENTRADA</translation>
+    </message>
+    <message>
+        <source>OUT</source>
+        <translation>SAÍDA</translation>
+    </message>
+    <message>
+        <source>Input gain:</source>
+        <translation>Ganho de entrada:</translation>
+    </message>
+    <message>
+        <source>Output gain:</source>
+        <translation>Ganho de saída:</translation>
+    </message>
+    <message>
+        <source>Impulse response...</source>
+        <translation>Resposta a impulso...</translation>
+    </message>
+    <message>
+        <source>No impulse response</source>
+        <translation>Sem resposta a impulso</translation>
+    </message>
+    <message>
+        <source>From a file...</source>
+        <translation>De um arquivo...</translation>
+    </message>
+    <message>
+        <source>Impulse response</source>
+        <translation>Resposta a impulso</translation>
+    </message>
+    <message>
+        <source>Audio files (*.wav *.flac *.aif *.aiff *.ogg)</source>
+        <translation>Arquivos de áudio (*.wav *.flac *.aif *.aiff *.ogg)</translation>
     </message>
 </context>
 </TS>
