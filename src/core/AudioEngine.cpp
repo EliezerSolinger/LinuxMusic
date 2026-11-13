@@ -66,6 +66,7 @@
 #include "MidiWinMM.h"
 #include "MidiApple.h"
 #include "MidiDummy.h"
+#include "MidiPort.h"
 
 #include "BufferManager.h"
 
@@ -512,11 +513,19 @@ auto AudioEngine::reopenAudioDevice(std::optional<sample_rate_t> sampleRate) -> 
 
 	// The song stops (what plays goes on from where it was, on the new device), the old device closes
 	if (song && song->isPlaying()) { song->stop(); }
+	// A MIDI client on the old device's connection closes before it, and opens again on the new one
+	const bool midiFollows = midiClientNeedsAudioDevice();
+	auto midiPorts = midiFollows ? closeMidiClient() : std::vector<MidiPortConnections>{};
 	stopProcessing();
 	delete m_audioDev;
 	m_audioDev = nullptr;
 	m_oldAudioDev = nullptr;
 	m_audioDev = tryAudioDevices();
+	// The tracks' own outputs on the device (with a device that has them), on the new one
+	for (auto* busHandle : m_audioBusHandles)
+	{
+		if (busHandle->extOutputEnabled()) { m_audioDev->registerPort(busHandle); }
+	}
 	prepareCapture();
 	emit qualitySettingsChanged();
 	emit sampleRateChanged();
@@ -524,6 +533,13 @@ auto AudioEngine::reopenAudioDevice(std::optional<sample_rate_t> sampleRate) -> 
 	if (song) { song->scheduleCaptureUpdate(); } // (the new device's input, if a track needs it)
 
 	auto told = QStringList{};
+	if (midiFollows)
+	{
+		if (const auto missing = openMidiClient(midiPorts); !missing.isEmpty())
+		{
+			told << tr("These MIDI devices are not there now: %1").arg(missing.join(", "));
+		}
+	}
 	if (m_audioDevName != wanted)
 	{
 		told << tr("%1 could not be opened; %2 is used.").arg(wanted, m_audioDevName);
@@ -534,6 +550,107 @@ auto AudioEngine::reopenAudioDevice(std::optional<sample_rate_t> sampleRate) -> 
 			.arg(outputSampleRate()).arg(m_baseSampleRate);
 	}
 	return told.join('\n');
+}
+
+
+
+
+auto AudioEngine::reopenMidiClient() -> QString
+{
+	auto* song = Engine::getSong();
+	if (song && (song->isRecording() || song->isRecordingAudio()))
+	{
+		return tr("The MIDI driver cannot change while recording: it changes when the recording ends and the "
+			"settings are saved again.");
+	}
+	const auto wanted = ConfigManager::inst()->value("audioengine", "mididev");
+	const auto missing = openMidiClient(closeMidiClient());
+
+	auto told = QStringList{};
+	if (!wanted.isEmpty() && m_midiClientName != wanted)
+	{
+		told << tr("%1 could not be opened; %2 is used.").arg(wanted, m_midiClientName);
+	}
+	if (!missing.isEmpty())
+	{
+		told << tr("These MIDI devices are not on %1: %2").arg(m_midiClientName, missing.join(", "));
+	}
+	return told.join('\n');
+}
+
+
+
+
+auto AudioEngine::closeMidiClient() -> std::vector<MidiPortConnections>
+{
+	auto ports = std::vector<MidiPortConnections>{};
+	for (auto* port : m_midiClient->ports())
+	{
+		ports.push_back({port, port->subscribedReadablePorts(), port->subscribedWritablePorts()});
+	}
+	// (the audio thread sends MIDI out through the ports' client)
+	m_waitingMidiClient = std::make_unique<MidiDummy>();
+	requestChangeInModel();
+	for (const auto& connections : ports) { connections.port->setMidiClient(m_waitingMidiClient.get()); }
+	auto* closing = m_midiClient;
+	m_midiClient = m_waitingMidiClient.get();
+	doneChangeInModel();
+	// Closed before another opens: JACK's takes the audio device's connection, one client at a time
+	delete closing;
+	return ports;
+}
+
+
+
+
+auto AudioEngine::openMidiClient(const std::vector<MidiPortConnections>& ports) -> QStringList
+{
+	auto* opened = static_cast<MidiClient*>(nullptr);
+	if (m_renderOnly)
+	{
+		opened = new MidiDummy;
+		m_midiClientName = MidiDummy::name();
+	}
+	else { opened = tryMidiClients(); }
+
+	auto missing = QStringList{};
+	const auto readable = opened->isRaw() ? QStringList{} : opened->readablePorts();
+	const auto writable = opened->isRaw() ? QStringList{} : opened->writablePorts();
+	requestChangeInModel();
+	m_midiClient = opened;
+	for (const auto& connections : ports)
+	{
+		// A port made while the client changed is on the waiting client too
+		connections.port->setMidiClient(opened);
+		for (const auto& device : connections.readable)
+		{
+			if (readable.contains(device)) { connections.port->subscribeReadablePort(device); }
+			else if (!missing.contains(device)) { missing << device; }
+		}
+		for (const auto& device : connections.writable)
+		{
+			if (writable.contains(device)) { connections.port->subscribeWritablePort(device); }
+			else if (!missing.contains(device)) { missing << device; }
+		}
+	}
+	if (m_waitingMidiClient)
+	{
+		for (auto* port : std::vector<MidiPort*>{m_waitingMidiClient->ports()}) { port->setMidiClient(opened); }
+	}
+	doneChangeInModel();
+	m_waitingMidiClient.reset();
+	return missing;
+}
+
+
+
+
+auto AudioEngine::midiClientNeedsAudioDevice() const -> bool
+{
+#ifdef LMMS_HAVE_JACK
+	if (const auto* jack = dynamic_cast<const MidiJack*>(m_midiClient)) { return jack->sharesAudioConnection(); }
+#endif
+	return false;
 }
 
 

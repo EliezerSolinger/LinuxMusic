@@ -437,4 +437,78 @@ void MidiPort::invalidateCilent()
 }
 
 
+
+
+namespace
+{
+
+auto subscribed(const MidiPort::Map& ports) -> QStringList
+{
+	auto names = QStringList{};
+	for (auto it = ports.begin(); it != ports.end(); ++it)
+	{
+		if (it.value()) { names << it.key(); }
+	}
+	return names;
+}
+
+} // namespace
+
+
+auto MidiPort::subscribedReadablePorts() const -> QStringList
+{
+	return subscribed(m_readablePorts);
+}
+
+
+auto MidiPort::subscribedWritablePorts() const -> QStringList
+{
+	return subscribed(m_writablePorts);
+}
+
+
+
+
+void MidiPort::setMidiClient(MidiClient* client)
+{
+	if (client == nullptr || client == m_midiClient) { return; }
+	const auto readable = subscribedReadablePorts();
+	const auto writable = subscribedWritablePorts();
+
+	// Leaves the client before: its connections, its signals, its list of ports
+	for (const auto& port : readable) { m_midiClient->subscribeReadablePort(this, port, false); }
+	for (const auto& port : writable) { m_midiClient->subscribeWritablePort(this, port, false); }
+	if (auto* before = dynamic_cast<QObject*>(m_midiClient)) { QObject::disconnect(before, nullptr, this, nullptr); }
+	m_midiClient->removePort(this);
+
+	m_midiClient = client;
+	m_midiClient->addPort(this);
+	m_midiClient->applyPortName(this);
+	m_midiClient->applyPortMode(this);
+
+	// Its devices, connected again where they are
+	m_readablePorts.clear();
+	m_writablePorts.clear();
+	if (!m_midiClient->isRaw())
+	{
+		for (const auto& port : m_midiClient->readablePorts()) { m_readablePorts[port] = false; }
+		for (const auto& port : m_midiClient->writablePorts()) { m_writablePorts[port] = false; }
+		for (const auto& port : readable)
+		{
+			if (m_readablePorts.contains(port)) { subscribeReadablePort(port); }
+		}
+		for (const auto& port : writable)
+		{
+			if (m_writablePorts.contains(port)) { subscribeWritablePort(port); }
+		}
+		m_midiClient->connectRPChanged(this, SLOT(updateReadablePorts()));
+		m_midiClient->connectWPChanged(this, SLOT(updateWritablePorts()));
+	}
+
+	emit readablePortsChanged();
+	emit writablePortsChanged();
+	emit midiClientChanged();
+}
+
+
 } // namespace lmms

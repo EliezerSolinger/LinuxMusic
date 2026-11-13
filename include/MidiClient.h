@@ -59,6 +59,8 @@ public:
 	virtual void applyPortName( MidiPort * _port );
 
 	virtual void addPort( MidiPort * _port );
+	//! The ports registered with it
+	auto ports() const -> const std::vector<MidiPort*>& { return m_midiPorts; }
 
 	// re-implemented methods HAVE to call removePort() of base-class!!
 	virtual void removePort( MidiPort * _port );

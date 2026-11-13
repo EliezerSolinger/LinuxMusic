@@ -17926,6 +17926,18 @@ A interface usada é a que está salva nestas configurações.</translation>
 <context>
     <name>lmms::AudioEngine</name>
     <message>
+        <source>The MIDI driver cannot change while recording: it changes when the recording ends and the settings are saved again.</source>
+        <translation>O driver MIDI não pode mudar durante a gravação: ele muda quando a gravação termina e as configurações são salvas de novo.</translation>
+    </message>
+    <message>
+        <source>These MIDI devices are not on %1: %2</source>
+        <translation>Estes dispositivos MIDI não estão em %1: %2</translation>
+    </message>
+    <message>
+        <source>These MIDI devices are not there now: %1</source>
+        <translation>Estes dispositivos MIDI não estão disponíveis agora: %1</translation>
+    </message>
+    <message>
         <source>The audio device cannot change while recording: it changes when the recording ends and the settings are saved again.</source>
         <translation>O dispositivo de áudio não pode mudar durante a gravação: ele muda quando a gravação acabar e as configurações forem salvas de novo.</translation>
     </message>

@@ -27,6 +27,7 @@
 
 #include <mutex>
 
+#include <QStringList>
 #include <QThread>
 #include <samplerate.h>
 
@@ -53,6 +54,7 @@ namespace lmms
 {
 
 class MidiClient;
+class MidiPort;
 class AudioBusHandle;  // IWYU pragma: keep
 class AudioEngineWorkerThread;
 
@@ -174,6 +176,14 @@ public:
 	{
 		return m_midiClient;
 	}
+
+	/**
+	 * Opens the MIDI client the settings say (another driver), without restarting the program: the ports of the
+	 * tracks and controllers move to it, connected to the devices they were where it has them. Main thread.
+	 * @returns what to tell: why it could not (while recording), what it opened instead of what was asked, the
+	 *          devices it does not have; empty when all went as asked
+	 */
+	auto reopenMidiClient() -> QString;
 
 
 	// play-handle stuff
@@ -432,6 +442,20 @@ private:
 	AudioDevice * tryAudioDevices();
 	MidiClient * tryMidiClients();
 
+	//! A MIDI port and the devices it was connected to, while it moves to another client
+	struct MidiPortConnections
+	{
+		MidiPort* port;
+		QStringList readable;
+		QStringList writable;
+	};
+	//! The ports wait on a client that does nothing, and the client closes
+	auto closeMidiClient() -> std::vector<MidiPortConnections>;
+	//! The client the settings say opens, and the ports move to it; @returns the devices it does not have
+	auto openMidiClient(const std::vector<MidiPortConnections>& ports) -> QStringList;
+	//! Whether the MIDI client goes with the audio device (JACK's, on the audio device's connection)
+	auto midiClientNeedsAudioDevice() const -> bool;
+
 	void renderStageNoteSetup();
 	void renderStageInstruments();
 	void renderStageEffects();
@@ -498,6 +522,7 @@ private:
 	// MIDI device stuff
 	MidiClient * m_midiClient;
 	QString m_midiClientName;
+	std::unique_ptr<MidiClient> m_waitingMidiClient; //!< the ports' while the client changes
 
 	AudioEngineProfiler m_profiler;
 

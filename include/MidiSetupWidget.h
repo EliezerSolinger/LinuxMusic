@@ -48,6 +48,8 @@ public:
 	}
 
 	void saveSettings();
+	//! Where its settings are kept (empty: it has none)
+	auto configSection() const -> const QString& { return m_configSection; }
 
 	void show();
 private:

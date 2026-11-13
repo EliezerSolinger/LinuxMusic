@@ -29,6 +29,7 @@
 #include <QString>
 #include <QList>
 #include <QMap>
+#include <QStringList>
 
 #include "Midi.h"
 #include "TimePos.h"
@@ -141,6 +142,18 @@ public:
 
 	void invalidateCilent();
 
+	//! The devices it is connected to (with a sequencing client)
+	auto subscribedReadablePorts() const -> QStringList;
+	auto subscribedWritablePorts() const -> QStringList;
+
+	/**
+	 * Moves the port to @p client (another MIDI driver): it leaves the one before, registers with @p client, and
+	 * stays connected to the devices @p client has too. Not while the audio thread can use the port (see
+	 * AudioEngine::reopenMidiClient()).
+	 */
+	void setMidiClient(MidiClient* client);
+	auto midiClient() const -> MidiClient* { return m_midiClient; }
+
 	gui::MidiPortMenu* m_readablePortsMenu;
 	gui::MidiPortMenu* m_writablePortsMenu;
 
@@ -185,6 +198,8 @@ signals:
 	void readablePortsChanged();
 	void writablePortsChanged();
 	void modeChanged();
+	//! Another MIDI client (whether it is a raw one, with no devices to choose, may have changed)
+	void midiClientChanged();
 
 } ;
 

@@ -67,6 +67,7 @@ private:
 	LcdSpinBox * m_outputProgramSpinBox;
 	LcdSpinBox * m_fixedOutputNoteSpinBox;
 	QToolButton * m_wpBtn;
+	QMetaObject::Connection m_clientConnection; //!< to the MIDI port: its client changed
 
 	LcdSpinBox* m_baseVelocitySpinBox;
 

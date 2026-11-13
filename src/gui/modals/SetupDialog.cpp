@@ -1232,6 +1232,19 @@ void SetupDialog::accept()
 					QString::number(m_sampleRate));
 	ConfigManager::inst()->setValue("audioengine", "framesperaudiobuffer",
 					QString::number(m_bufferSize));
+	// The MIDI driver and its devices' settings, as they were: the driver opens again if they change
+	const auto midiSettings = [this] {
+		auto settings = QStringList{ConfigManager::inst()->value("audioengine", "mididev")};
+		for (const auto* widget : m_midiIfaceSetupWidgets)
+		{
+			if (!widget->configSection().isEmpty())
+			{
+				settings << ConfigManager::inst()->value(widget->configSection(), "device");
+			}
+		}
+		return settings;
+	};
+	const auto midiBefore = midiSettings();
 	ConfigManager::inst()->setValue("audioengine", "mididev",
 					m_midiIfaceNames[m_midiInterfaces->currentText()]);
 	ConfigManager::inst()->setValue("midi", "midiautoassign",
@@ -1263,6 +1276,15 @@ void SetupDialog::accept()
 		it.value()->saveSettings();
 	}
 	ConfigManager::inst()->saveConfigFile();
+
+	// The MIDI driver opens again if it changed, the tracks' ports moving to it (see AudioEngine::reopenMidiClient())
+	if (midiSettings() != midiBefore)
+	{
+		if (const auto told = Engine::audioEngine()->reopenMidiClient(); !told.isEmpty())
+		{
+			QMessageBox::information(this, tr("MIDI"), told);
+		}
+	}
 
 	// The audio device opens again with what changed (see AudioEngine::reopenAudioDevice())
 	if (m_audioChanged)

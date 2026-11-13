@@ -94,6 +94,8 @@ private slots:
 	void midiInSelected();
 	void midiOutSelected();
 	void midiConfigChanged();
+	//! The MIDI menu, for the MIDI client there is (its devices, or input and output on or off)
+	void fillMidiMenu();
 
 	//! @brief Assign a specific mixer Channel for this track
 	void assignMixerLine(int channelIndex);

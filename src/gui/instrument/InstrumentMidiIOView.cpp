@@ -123,7 +123,7 @@ InstrumentMidiIOView::InstrumentMidiIOView( QWidget* parent ) :
 	connect( m_midiOutputGroupBox->ledButton(), SIGNAL(toggled(bool)),
 		m_fixedOutputNoteSpinBox, SLOT(setEnabled(bool)));
 
-	if( !Engine::audioEngine()->midiClient()->isRaw() )
+	// The devices to choose, with a sequencing MIDI client (shown for one, see modelChanged())
 	{
 		m_rpBtn = new QToolButton;
 		m_rpBtn->setMinimumSize( 32, 32 );
@@ -178,14 +178,17 @@ void InstrumentMidiIOView::modelChanged()
 
 	m_baseVelocitySpinBox->setModel( &mp->m_baseVelocityModel );
 
-	if( m_rpBtn )
-	{
-		m_rpBtn->setMenu( mp->m_readablePortsMenu );
-	}
-	if( m_wpBtn )
-	{
-		m_wpBtn->setMenu( mp->m_writablePortsMenu );
-	}
+	m_rpBtn->setMenu( mp->m_readablePortsMenu );
+	m_wpBtn->setMenu( mp->m_writablePortsMenu );
+	// Shown with a client that has devices to choose: again when the MIDI driver changes
+	const auto showDevices = [this, mp] {
+		const bool sequencing = !mp->midiClient()->isRaw();
+		m_rpBtn->setVisible(sequencing);
+		m_wpBtn->setVisible(sequencing);
+	};
+	disconnect(m_clientConnection);
+	m_clientConnection = connect(mp, &MidiPort::midiClientChanged, this, showDevices);
+	showDevices();
 }
 
 

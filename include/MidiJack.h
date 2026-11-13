@@ -55,6 +55,8 @@ public:
 	~MidiJack() override;
 
 	jack_client_t* jackClient();
+	//! It uses the JACK audio device's connection (and goes before that device does)
+	auto sharesAudioConnection() const -> bool { return m_jackAudio != nullptr; }
 
 	static QString probeDevice();
 

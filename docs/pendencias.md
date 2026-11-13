@@ -45,7 +45,10 @@ Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
   armar e entrada em cima, canal, VOL e PAN embaixo; sample e pasta com o mesmo desenho; sequência e automação com a
   mesma altura
 - [x] **Trocar dispositivo, buffer ou taxa sem reiniciar:** ao salvar, o dispositivo reabre com os ajustes novos
-  (bloqueado durante a gravação; avisa se abriu outro dispositivo ou outra taxa). O driver MIDI ainda pede reinício
+  (bloqueado durante a gravação; avisa se abriu outro dispositivo ou outra taxa). O driver MIDI também: as portas
+  das faixas e controladores passam para o novo, ligadas aos mesmos dispositivos onde ele os tem (avisa os que
+  faltam), e os menus MIDI se refazem; o MIDI do JACK, que usa a conexão do áudio do JACK, fecha antes dele e reabre
+  depois (antes ficava com um ponteiro solto)
 - [x] **A taxa é a do projeto:** o projeto guarda a sua; abri-lo reabre o dispositivo nela (projeto novo: a das
   configurações); a placa que não tem roda na sua, os arquivos são convertidos e o relatório do projeto avisa
 

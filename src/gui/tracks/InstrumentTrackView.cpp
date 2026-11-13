@@ -110,45 +110,16 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	m_panningKnob->setHintText(tr("Panning:"), "%");
 	m_panningKnob->show();
 
+	// The devices' menus serve a sequencing MIDI client (as ALSA's); the MIDI menu is made again when the driver
+	// changes (see fillMidiMenu())
 	m_midiMenu = new QMenu( tr( "MIDI" ), this );
-
-	// sequenced MIDI?
-	if( !Engine::audioEngine()->midiClient()->isRaw() )
-	{
-		_it->m_midiPort.m_readablePortsMenu = new MidiPortMenu(
-							MidiPort::Mode::Input );
-		_it->m_midiPort.m_writablePortsMenu = new MidiPortMenu(
-							MidiPort::Mode::Output );
-		_it->m_midiPort.m_readablePortsMenu->setModel(
-							&_it->m_midiPort );
-		_it->m_midiPort.m_writablePortsMenu->setModel(
-							&_it->m_midiPort );
-		m_midiInputAction = m_midiMenu->addMenu(
-					_it->m_midiPort.m_readablePortsMenu );
-		m_midiOutputAction = m_midiMenu->addMenu(
-					_it->m_midiPort.m_writablePortsMenu );
-	}
-	else
-	{
-		m_midiInputAction = m_midiMenu->addAction( "" );
-		m_midiOutputAction = m_midiMenu->addAction( "" );
-		m_midiInputAction->setCheckable( true );
-		m_midiOutputAction->setCheckable( true );
-		connect( m_midiInputAction, SIGNAL(changed()), this,
-						SLOT(midiInSelected()));
-		connect( m_midiOutputAction, SIGNAL(changed()), this,
-					SLOT(midiOutSelected()));
-		connect( &_it->m_midiPort, SIGNAL(modeChanged()),
-				this, SLOT(midiConfigChanged()));
-	}
-
-	m_midiInputAction->setText( tr( "Input" ) );
-	m_midiOutputAction->setText( tr( "Output" ) );
-
-	QAction *midiRackAction = m_midiMenu->addAction(tr("Open/Close MIDI CC Rack"));
-	midiRackAction->setIcon(embed::getIconPixmap("midi_cc_rack"));
-	connect(midiRackAction, SIGNAL(triggered()),
-		this, SLOT(toggleMidiCCRack()));
+	_it->m_midiPort.m_readablePortsMenu = new MidiPortMenu(MidiPort::Mode::Input);
+	_it->m_midiPort.m_writablePortsMenu = new MidiPortMenu(MidiPort::Mode::Output);
+	_it->m_midiPort.m_readablePortsMenu->setModel(&_it->m_midiPort);
+	_it->m_midiPort.m_writablePortsMenu->setModel(&_it->m_midiPort);
+	fillMidiMenu();
+	connect(&_it->m_midiPort, &MidiPort::midiClientChanged, this, &InstrumentTrackView::fillMidiMenu);
+	connect(&_it->m_midiPort, &MidiPort::modeChanged, this, &InstrumentTrackView::midiConfigChanged);
 
 	m_activityIndicator = new FadeButton(getTrackSettingsWidget());
 	m_activityIndicator->setFixedSize(8, 28);
@@ -481,6 +452,38 @@ void InstrumentTrackView::midiOutSelected()
 
 
 
+void InstrumentTrackView::fillMidiMenu()
+{
+	m_midiMenu->clear();
+	auto& port = model()->m_midiPort;
+	if (!port.midiClient()->isRaw())
+	{
+		// Each menu chooses the devices, and turns the input or output on
+		m_midiInputAction = m_midiMenu->addMenu(port.m_readablePortsMenu);
+		m_midiOutputAction = m_midiMenu->addMenu(port.m_writablePortsMenu);
+	}
+	else
+	{
+		// A raw client has no devices to choose: input and output on or off
+		m_midiInputAction = m_midiMenu->addAction(QString{});
+		m_midiOutputAction = m_midiMenu->addAction(QString{});
+		m_midiInputAction->setCheckable(true);
+		m_midiOutputAction->setCheckable(true);
+		midiConfigChanged();
+		connect(m_midiInputAction, &QAction::toggled, this, &InstrumentTrackView::midiInSelected);
+		connect(m_midiOutputAction, &QAction::toggled, this, &InstrumentTrackView::midiOutSelected);
+	}
+	m_midiInputAction->setText(tr("Input"));
+	m_midiOutputAction->setText(tr("Output"));
+
+	auto* midiRackAction = m_midiMenu->addAction(tr("Open/Close MIDI CC Rack"));
+	midiRackAction->setIcon(embed::getIconPixmap("midi_cc_rack"));
+	connect(midiRackAction, &QAction::triggered, this, &InstrumentTrackView::toggleMidiCCRack);
+}
+
+
+
+
 void InstrumentTrackView::midiConfigChanged()
 {
 	m_midiInputAction->setChecked( model()->m_midiPort.isReadable() );
@@ -609,7 +612,7 @@ void InstrumentTrackView::fillMidiInputMenu(QMenu* menu)
 	receive->setCheckable(true);
 	receive->setChecked(port.isReadable());
 	// The devices (with a sequencing MIDI client, as ALSA's or JACK's)
-	if (port.m_readablePortsMenu) { menu->addMenu(port.m_readablePortsMenu)->setText(tr("Devices")); }
+	if (!port.midiClient()->isRaw()) { menu->addMenu(port.m_readablePortsMenu)->setText(tr("Devices")); }
 	menu->addSeparator();
 	auto* channels = new QActionGroup(menu);
 	for (int channel = 0; channel <= MidiChannelCount; ++channel)
