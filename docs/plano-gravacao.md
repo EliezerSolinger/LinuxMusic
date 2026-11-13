@@ -210,8 +210,11 @@ Passos, cada um com testes, A/B e commit:
    lanes visíveis, com a que toca destacada, e o comping arrastando sobre as lanes.
 5. **Gravação na faixa nova:** cada passada é uma lane nova no topo (a que toca), e o loop faz uma lane por volta.
 6. **Tempo:** os itens seguem o mapa de tempo, renderizados pela tela de processamento como os clipes de hoje.
-7. **Conversão:** "Adicionar faixa de áudio" cria a faixa nova; ao abrir, as faixas de sample viram faixas de áudio
-   quando a faixa nova cobre o que elas fazem.
+7. **Conversão:** "Adicionar faixa de áudio" cria a faixa nova. **Decisão do usuário (13/11): cada faixa pensada
+   para o seu objetivo.** A faixa de sample fica, para tocar samples curtos na grade e as batidas do Editor de
+   Sequências, e deixa de gravar (sem armar, entrada nem monitoração). A faixa de áudio é a de gravação e de
+   arquivos longos. Ao abrir, as faixas de sample com gravações (takes ou clipes presos ao tempo) viram faixas de
+   áudio; as de samples na grade ficam como estão.
 
 ## Ordem de trabalho
 
@@ -359,6 +362,9 @@ Feito depois (mesma noite e manhã de 13/11):
   viram lanes novas no topo (a última passada na lane que toca, as lanes de antes abaixo), cada item preso ao
   tempo em que foi tocado. Um desfazer volta tudo. Os arquivos dos itens são recursos do projeto (copiados ao
   salvar, nunca limpos enquanto usados), e os itens do disco são lidos adiantados como os clipes.
+- **Corrigido:** mover um take sem mudar o tempo pedia renderização. O último ponto do timing ficava no fim exato do
+  arquivo, dentro de um tick, e a comparação usava a grade. Agora o ponto fica na grade (o time-stretch preserva o
+  fim real do áudio), e os takes de antes são comparados com meio tick de tolerância nesse ponto.
 - **Lanes opcionais** (13/11, pedido do usuário): nas configurações, Gravação → Lanes. Desligadas, a gravação é
   simples: o take novo fica na lane que toca e substitui o que cobre (os itens por baixo são aparados, cortados em
   volta ou removidos, sem mexer nos arquivos), e no loop só a última passada fica. A interface do passo 4 esconde

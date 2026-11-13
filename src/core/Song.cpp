@@ -951,11 +951,10 @@ auto Song::timingOf(tick_t startTick, double frames) const -> std::vector<Sample
 		const auto next = played + framesBetween(startTick + tick, startTick + tick + 1);
 		if (next >= frames)
 		{
-			// The end falls in this tick: as a fraction of it, rounded to the nearest tick
-			const auto fraction = (frames - played) / (next - played);
-			const auto endTick = tick + (fraction >= 0.5 ? 1 : 0);
-			if (endTick > timing.back().tick) { timing.push_back({endTick, frames}); }
-			else { timing.back().frame = frames; }
+			// The end falls in this tick: the last point is where the tick ends, on the grid like the others (past the
+			// file's end: the rest of the tick is silence), so the timing at the same tempo is the same wherever the
+			// recording goes
+			if (tick + 1 > timing.back().tick) { timing.push_back({tick + 1, next}); }
 			break;
 		}
 		played = next;
@@ -986,11 +985,18 @@ auto Song::stretchJobs() -> std::vector<StretchJob>
 			auto target = clip->originalTiming();
 			for (auto& point : target) { point.frame = framesBetween(start, start + point.tick); }
 
-			const auto same = [](const SampleClip::Timing& a, const SampleClip::Timing& b) {
+			// (the last point of a recording made before it was on the grid falls inside a tick: up to half a tick off)
+			const auto lastTolerance = [&](const SampleClip::Timing& timing) {
+				if (timing.size() < 2) { return 1.0; }
+				const auto last = start + timing.back().tick;
+				return std::max(1.0, framesBetween(last - 1, last) / 2 + 1);
+			};
+			const auto same = [&](const SampleClip::Timing& a, const SampleClip::Timing& b) {
 				if (a.size() != b.size()) { return false; }
 				for (std::size_t i = 0; i < a.size(); ++i)
 				{
-					if (a[i].tick != b[i].tick || std::abs(a[i].frame - b[i].frame) > 1.0) { return false; }
+					const auto tolerance = i + 1 == a.size() ? lastTolerance(a) : 1.0;
+					if (a[i].tick != b[i].tick || std::abs(a[i].frame - b[i].frame) > tolerance) { return false; }
 				}
 				return true;
 			};

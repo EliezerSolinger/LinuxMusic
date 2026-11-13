@@ -827,6 +827,43 @@ private slots:
 		QVERIFY(take->takes().isEmpty());
 	}
 
+	void movingATakeAtTheSameTempoNeedsNoRendering()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256 + 30, 256 + 60};
+		engine->setAudioDevice(device, false);
+		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		recorder->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::Off));
+		const auto tempo = song->getTempo();
+		const auto cleanUp = qScopeGuard([&] {
+			song->stop();
+			song->tempoModel().setValue(tempo);
+			const auto guard = engine->requestChangesGuard();
+			delete recorder;
+		});
+
+		// A take whose end falls inside a tick (a few frames past one)
+		song->setPlayPos(0, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		for (int callback = 0; callback < 437; ++callback) { device->callback(256); }
+		song->stop();
+		QCOMPARE(recorder->numOfClips(), 1);
+		auto* take = dynamic_cast<SampleClip*>(recorder->getClip(0));
+		QVERIFY(take->isTempoBound());
+		QVERIFY(song->stretchJobs().empty());
+
+		// Moved, at the same tempo: nothing to render
+		take->movePosition(TimePos{take->startPosition().getTicks() + 3 * TimePos::ticksPerBar() + 7});
+		QVERIFY(song->stretchJobs().empty());
+
+		// At another tempo: rendered
+		song->tempoModel().setValue(tempo + 13);
+		QCOMPARE(song->stretchJobs().size(), std::size_t{1});
+	}
+
 	void monitoringPlaysTheInputThroughTheTrack_data()
 	{
 		QTest::addColumn<int>("mode");

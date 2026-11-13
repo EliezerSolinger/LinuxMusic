@@ -104,8 +104,16 @@ void keyFrames(const TimeStretcher::Timing& from, const TimeStretcher::Timing& t
 	out = {0};
 	for (std::size_t i = 1; i < from.size(); ++i)
 	{
-		const auto a = std::min(static_cast<sf_count_t>(std::llround(from[i].frame)), sourceFrames);
-		const auto b = static_cast<sf_count_t>(std::llround(to[i].frame));
+		auto a = static_cast<sf_count_t>(std::llround(from[i].frame));
+		auto b = static_cast<sf_count_t>(std::llround(to[i].frame));
+		if (a > sourceFrames && from[i].frame > from[i - 1].frame)
+		{
+			// A point past the source's end (the end of a recording on the tick grid): the source's end lands where
+			// the stretch of that span puts it, and the rest is silence
+			const auto ratio = (to[i].frame - to[i - 1].frame) / (from[i].frame - from[i - 1].frame);
+			b = static_cast<sf_count_t>(std::llround(to[i - 1].frame + (sourceFrames - from[i - 1].frame) * ratio));
+			a = sourceFrames;
+		}
 		if (a <= in.back() || b <= out.back()) { continue; }
 		in.push_back(a);
 		out.push_back(b);
