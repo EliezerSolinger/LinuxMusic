@@ -26,6 +26,7 @@
 #define LMMS_GUI_MAIN_WINDOW_H
 
 #include <QBasicTimer>
+#include <QHash>
 #include <QTimer>
 #include <QList>
 #include <QMainWindow>
@@ -275,6 +276,9 @@ private:
 	//! Save, on the toolbar: it blinks when the work is saved for recovery (autosave)
 	ToolButton* m_saveButton = nullptr;
 	TransportBar* m_transportBar = nullptr;
+	//! Folds an area of the composition page (the editors above or below) to its tabs, or unfolds it
+	void toggleDockFolded(QTabWidget* tabs);
+	QHash<QTabWidget*, int> m_foldedHeights; //!< an area's height before it was folded
 	void flashSaveButton();
 	QGridLayout * m_toolBarLayout;
 

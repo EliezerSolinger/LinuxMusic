@@ -11120,6 +11120,10 @@ Por favor visite http://lmms.sf.net/wiki para ter acesso a mais infromações so
         <source>Audio files (%1)</source>
         <translation>Arquivos de áudio (%1)</translation>
     </message>
+    <message>
+        <source>Fold or unfold this area</source>
+        <translation>Recolher ou expandir esta área</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::MalletsInstrumentView</name>

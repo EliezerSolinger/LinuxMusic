@@ -38,6 +38,7 @@
 #include <QSplitter>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -209,6 +210,17 @@ MainWindow::MainWindow() :
 	}
 	m_dockSplitter->setCollapsible(0, false);
 	m_dockSplitter->setStretchFactor(0, 1);
+	// Each area folds to its tabs and opens again with the button in its corner
+	for (auto tabs : {m_topDock, m_bottomDock})
+	{
+		auto button = new QToolButton(tabs);
+		button->setObjectName("dockFoldButton");
+		button->setAutoRaise(true);
+		button->setIcon(embed::getIconPixmap("arrow-down", 12, 12));
+		button->setToolTip(tr("Fold or unfold this area"));
+		tabs->setCornerWidget(button, Qt::TopRightCorner);
+		connect(button, &QToolButton::clicked, this, [this, tabs] { toggleDockFolded(tabs); });
+	}
 	m_pages->addWidget(m_dockSplitter);
 	m_mixingPage = new QWidget(m_pages);
 	m_mixingPage->setObjectName("mixingPage");
@@ -610,6 +622,37 @@ void MainWindow::revealDock(DockPanel* panel)
 		}
 	}
 	if (panel->content()->isEnabled()) { panel->content()->setFocus(); }
+}
+
+
+
+
+void MainWindow::toggleDockFolded(QTabWidget* tabs)
+{
+	// Folded, only its tabs show (its pages hidden, so that the splitter can make it that small)
+	auto* pages = tabs->findChild<QStackedWidget*>();
+	auto* button = qobject_cast<QToolButton*>(tabs->cornerWidget(Qt::TopRightCorner));
+	const int index = m_dockSplitter->indexOf(tabs);
+	const int other = 1 - index;
+	auto sizes = m_dockSplitter->sizes();
+	const bool folded = pages && !pages->isVisible();
+	if (!folded)
+	{
+		m_foldedHeights[tabs] = sizes[index];
+		if (pages) { pages->hide(); }
+		const int tabsHeight = tabs->tabBar()->sizeHint().height();
+		sizes[other] += sizes[index] - tabsHeight;
+		sizes[index] = tabsHeight;
+	}
+	else
+	{
+		if (pages) { pages->show(); }
+		const int height = std::max(m_foldedHeights.value(tabs, 200), 80);
+		sizes[other] = std::max(sizes[other] + sizes[index] - height, 0);
+		sizes[index] = height;
+	}
+	m_dockSplitter->setSizes(sizes);
+	if (button) { button->setIcon(embed::getIconPixmap(folded ? "arrow-down" : "arrow-right", 12, 12)); }
 }
 
 
