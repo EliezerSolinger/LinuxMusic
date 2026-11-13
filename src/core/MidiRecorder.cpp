@@ -89,6 +89,11 @@ void MidiRecorder::noteOff(InstrumentTrack* track, int key, tick_t atTick)
 void MidiRecorder::addNote(InstrumentTrack* track, TrackState& state, int key, volume_t volume, tick_t start,
 	tick_t end)
 {
+	// Quantized, if the track asks: the start toward the grid, the length as played
+	const auto quantized = track->quantizedRecordTick(start);
+	end += quantized - start;
+	start = quantized;
+
 	// The clip that holds the note's place, or a new one from the bar it begins in
 	MidiClip* clip = nullptr;
 	for (int index = 0; index < track->numOfClips(); ++index)

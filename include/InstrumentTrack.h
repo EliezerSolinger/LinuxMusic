@@ -269,6 +269,14 @@ public:
 	BoolModel* recordArmModel() { return &m_recordArmModel; }
 	auto isRecordArmed() const -> bool { return m_recordArmModel.value(); }
 	IntModel* midiRecordModeModel() { return &m_midiRecordModeModel; }
+	/**
+	 * Quantizing what is recorded (docs/gravacao-levantamento.md §6, off by default): the grid, 0 for off, else the
+	 * note value (4 for 1/4, 8, 16, 32 or 64); and how far toward it a note's start moves, in percent
+	 */
+	IntModel* recordQuantizeModel() { return &m_recordQuantizeModel; }
+	IntModel* recordQuantizeStrengthModel() { return &m_recordQuantizeStrengthModel; }
+	//! Where a note played at @p tick is recorded (@p tick if the track does not quantize)
+	auto quantizedRecordTick(tick_t tick) const -> tick_t;
 
 	//! Main thread: whether the notes played into the track go to the song's MIDI recording
 	void setRecordingMidi(bool recording) { m_recordingMidi = recording; }
@@ -355,6 +363,8 @@ private:
 	BoolModel m_useMasterPitchModel;
 	BoolModel m_recordArmModel;
 	IntModel m_midiRecordModeModel;
+	IntModel m_recordQuantizeModel;
+	IntModel m_recordQuantizeStrengthModel;
 	std::atomic<bool> m_recordingMidi = false; //!< read by the MIDI thread
 
 	std::unique_ptr<PluginInstance> m_instrument;

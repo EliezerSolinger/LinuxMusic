@@ -27,8 +27,9 @@ Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
 - [x] **MIDI, take em lane:** as lanes passaram para a base de todas as faixas e clipes (`Clip::lane`,
   `Track::playingLane`); a faixa de instrumento toca só a lane que ouve, e o modo "Take em lane" do R grava numa lane
   nova em cima
-- [ ] **MIDI:** quantização opcional na entrada (grade e força por faixa, desligada por padrão); entrada MIDI por
-  faixa (dispositivo e canal) no cabeçalho
+- [x] **MIDI, quantização ao gravar:** grade (1/4 a 1/64) e força (50, 75, 100%) por faixa, desligada por padrão,
+  no menu do R
+- [ ] **MIDI:** entrada MIDI por faixa (dispositivo e canal) no cabeçalho (com o cabeçalho de duas linhas)
 - [ ] **Cabeçalho de duas linhas em todas as faixas:** instrumento como a de áudio; pasta, sequência e automação com o
   mesmo desenho, só com o que faz sentido
 - [ ] **Trocar dispositivo, buffer ou taxa sem reiniciar** (bloqueado durante a gravação); a taxa é a do projeto, e

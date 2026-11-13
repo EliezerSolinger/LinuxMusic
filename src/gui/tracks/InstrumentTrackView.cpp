@@ -159,7 +159,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	m_recordArmButton->setObjectName("btn-arm");
 	m_recordArmButton->setText(tr("R"));
 	m_recordArmButton->setToolTip(tr("Arm for recording: the Record button records the notes played into this track "
-		"(right-click: overdub or replace)"));
+		"(right-click: overdub, replace or a take in a lane, and quantizing)"));
 	m_recordArmButton->setModel(_it->recordArmModel());
 	m_recordArmButton->setContextMenuPolicy(Qt::CustomContextMenu);
 	connect(m_recordArmButton, &QWidget::customContextMenuRequested, this, [this](const QPoint& where) {
@@ -178,6 +178,31 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 		addMode(tr("Replace: what was there where you record goes"), MidiRecorder::Mode::Replace);
 		addMode(tr("Take in a lane: the recording goes on a new lane on top, heard; what was there stays below"),
 			MidiRecorder::Mode::TakeLane);
+
+		// Quantizing what is recorded: the grid and how far toward it
+		menu.addSeparator();
+		auto* quantize = menu.addMenu(tr("Quantize while recording"));
+		auto* grids = new QActionGroup(quantize);
+		for (const auto value : {0, 4, 8, 16, 32, 64})
+		{
+			auto* action = quantize->addAction(value == 0 ? tr("Off") : QString{"1/%1"}.arg(value), [track, value] {
+				track->recordQuantizeModel()->setValue(value);
+			});
+			action->setCheckable(true);
+			action->setChecked(track->recordQuantizeModel()->value() == value);
+			grids->addAction(action);
+		}
+		quantize->addSeparator();
+		auto* strengths = new QActionGroup(quantize);
+		for (const auto value : {50, 75, 100})
+		{
+			auto* action = quantize->addAction(tr("Strength %1%").arg(value), [track, value] {
+				track->recordQuantizeStrengthModel()->setValue(value);
+			});
+			action->setCheckable(true);
+			action->setChecked(track->recordQuantizeStrengthModel()->value() == value);
+			strengths->addAction(action);
+		}
 		menu.exec(m_recordArmButton->mapToGlobal(where));
 	});
 

@@ -67,6 +67,8 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	m_useMasterPitchModel(true, this, tr("Master pitch")),
 	m_recordArmModel(false, this, tr("Record arm")),
 	m_midiRecordModeModel(0, 0, 2, this, tr("MIDI record mode")),
+	m_recordQuantizeModel(0, 0, 64, this, tr("Quantize while recording")),
+	m_recordQuantizeStrengthModel(100, 0, 100, this, tr("Quantize strength")),
 	m_instrumentChannels(Engine::audioEngine()->framesPerPeriod(), DEFAULT_CHANNELS),
 	m_soundShaping(this),
 	m_arpeggio(this),
@@ -790,6 +792,19 @@ void InstrumentTrack::removeMidiPortNode( DataFile & _dataFile )
 
 
 
+auto InstrumentTrack::quantizedRecordTick(tick_t tick) const -> tick_t
+{
+	const auto value = m_recordQuantizeModel.value();
+	if (value <= 0) { return tick; }
+	const auto grid = std::max(1, TimePos::ticksPerBar() / value);
+	const auto nearest = static_cast<tick_t>(std::lround(static_cast<double>(tick) / grid)) * grid;
+	const auto strength = std::clamp(m_recordQuantizeStrengthModel.value(), 0, 100) / 100.0;
+	return std::max<tick_t>(0, static_cast<tick_t>(std::lround(tick + (nearest - tick) * strength)));
+}
+
+
+
+
 bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 							const f_cnt_t _offset, int _clip_num )
 {
@@ -944,6 +959,8 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	{
 		m_recordArmModel.saveSettings(doc, thisElement, "recordarm");
 		m_midiRecordModeModel.saveSettings(doc, thisElement, "midirecordmode");
+		m_recordQuantizeModel.saveSettings(doc, thisElement, "recordquantize");
+		m_recordQuantizeStrengthModel.saveSettings(doc, thisElement, "recordquantizestrength");
 	}
 	m_microtuner.saveSettings(doc, thisElement);
 
@@ -1022,6 +1039,8 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 	{
 		m_recordArmModel.loadSettings(thisElement, "recordarm");
 		m_midiRecordModeModel.loadSettings(thisElement, "midirecordmode");
+		m_recordQuantizeModel.loadSettings(thisElement, "recordquantize");
+		m_recordQuantizeStrengthModel.loadSettings(thisElement, "recordquantizestrength");
 	}
 	m_firstKeyModel.loadSettings(thisElement, "firstkey");
 	m_lastKeyModel.loadSettings(thisElement, "lastkey");

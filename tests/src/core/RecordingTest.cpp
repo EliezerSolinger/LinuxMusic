@@ -691,6 +691,37 @@ private slots:
 		delete track;
 	}
 
+	void recordedNotesAreQuantizedWhenTheTrackAsks()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		// Off by default: as played
+		QCOMPARE(track->quantizedRecordTick(53), 53);
+		// To 1/16 (12 ticks), all the way and half way
+		track->recordQuantizeModel()->setValue(16);
+		QCOMPARE(track->quantizedRecordTick(53), 48);
+		QCOMPARE(track->quantizedRecordTick(55), 60);
+		track->recordQuantizeStrengthModel()->setValue(50);
+		QCOMPARE(track->quantizedRecordTick(53), 51); // (half of the 5 ticks, rounded)
+
+		// A note recorded keeps its length
+		track->recordQuantizeStrengthModel()->setValue(100);
+		track->recordArmModel()->setValue(true);
+		auto& recorder = song->midiRecorder();
+		recorder.start({track}, 0);
+		recorder.noteOn(track, 60, 100, 53);
+		recorder.noteOff(track, 60, 53 + 30);
+		recorder.stop(400);
+		QCOMPARE(track->numOfClips(), 1);
+		const auto* clip = dynamic_cast<MidiClip*>(track->getClip(0));
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		QCOMPARE(clip->startPosition().getTicks() + clip->notes().front()->pos().getTicks(), 48);
+		QCOMPARE(clip->notes().front()->length().getTicks(), 30);
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		delete track;
+	}
+
 	void choosingATakeKeepsThePartOfTheClip()
 	{
 		auto* song = Engine::getSong();

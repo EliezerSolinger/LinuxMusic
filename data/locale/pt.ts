@@ -2900,6 +2900,14 @@ Este chip foi utilizado no computador Commodore 64.</translation>
         <source>CC Controller %1</source>
         <translation>Controlador CC %1</translation>
     </message>
+    <message>
+        <source>Quantize while recording</source>
+        <translation>Quantizar ao gravar</translation>
+    </message>
+    <message>
+        <source>Quantize strength</source>
+        <translation>Força da quantização</translation>
+    </message>
 </context>
 <context>
     <name>lmms::Keymap</name>
@@ -9338,6 +9346,22 @@ Por favor certifique que você tem permissão para gravar o aquivo e o diretóri
     <message>
         <source>Take in a lane: the recording goes on a new lane on top, heard; what was there stays below</source>
         <translation>Take em lane: a gravação vai para uma lane nova em cima, a que toca; o que havia fica embaixo</translation>
+    </message>
+    <message>
+        <source>Quantize while recording</source>
+        <translation>Quantizar ao gravar</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Desligado</translation>
+    </message>
+    <message>
+        <source>Strength %1%</source>
+        <translation>Força %1%</translation>
+    </message>
+    <message>
+        <source>Arm for recording: the Record button records the notes played into this track (right-click: overdub, replace or a take in a lane, and quantizing)</source>
+        <translation>Armar para gravar: o botão Gravar grava as notas tocadas nesta faixa (botão direito: overdub, replace ou take em lane, e quantização)</translation>
     </message>
 </context>
 <context>
