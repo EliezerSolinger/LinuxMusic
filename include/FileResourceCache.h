@@ -59,9 +59,13 @@ public:
 		requires(std::is_invocable_r_v<std::shared_ptr<const T>, Factory>)
 	auto fetch(const std::filesystem::path& path, Factory&& factory) -> std::shared_ptr<const T>
 	{
+		// A path whose time cannot be read (gone, or one the factory resolves itself): made, and not kept
+		auto error = std::error_code{};
+		const auto lastWriteTime = std::filesystem::last_write_time(path, error);
+		if (error) { return factory(); }
+
 		auto [it, inserted] = m_entries.try_emplace(path, Entry{});
 		auto& entry = it->second;
-		const auto lastWriteTime = std::filesystem::last_write_time(path);
 
 		if (!inserted && entry.lastWriteTime == lastWriteTime)
 		{

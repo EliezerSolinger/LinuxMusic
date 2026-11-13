@@ -367,6 +367,11 @@ public:
 	//! @param pos the position of the split, relative to the start of the clip
 	//! @return true if the clip could be split
 	bool splitClip(const TimePos pos);
+public:
+	//! Where the clip is across its track's @p contentHeight: its top and height (all of it, unless the track has
+	//! lanes: see AudioItemView)
+	virtual auto verticalPlace(int contentHeight) const -> std::pair<int, int> { return {0, contentHeight - 1}; }
+protected:
 	//! A move dropped over another track: the clips go to the tracks as far below or above theirs, if those are of
 	//! their type (as in REAPER); otherwise they stay on theirs. One undo step with the move
 	void moveToTrackUnder(QMouseEvent* me);

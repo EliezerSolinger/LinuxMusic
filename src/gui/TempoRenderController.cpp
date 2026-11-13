@@ -304,7 +304,7 @@ auto TempoRenderController::render(const std::vector<Song::StretchJob>& jobs) ->
 	}
 
 	// Every clip plays its rendering (the clips cannot go away while the modal is up)
-	for (const auto& job : jobs) { job.clip->setRendering(job.target, job.to); }
+	for (const auto& job : jobs) { Song::applyStretch(job); }
 	return true;
 }
 

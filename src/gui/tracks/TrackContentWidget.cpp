@@ -186,7 +186,9 @@ void TrackContentWidget::update()
 {
 	for (const auto& clipView : m_clipViews)
 	{
-		clipView->setFixedHeight(height() - 1);
+		const auto [top, clipHeight] = clipView->verticalPlace(height());
+		clipView->setFixedHeight(std::max(clipHeight, 1));
+		clipView->move(clipView->x(), top);
 		clipView->update();
 	}
 	QWidget::update();
@@ -231,7 +233,7 @@ void TrackContentWidget::changePosition( const TimePos & newPos )
 		Clip* clip = clipView->getClip();
 
 		const auto xPos = static_cast<int>((clip->startPosition() - begin) * ppb / TimePos::ticksPerBar());
-		clipView->move(xPos, clipView->y());
+		clipView->move(xPos, clipView->verticalPlace(height()).first);
 		if (!clipView->isVisible())
 		{
 			clipView->show();
@@ -570,7 +572,8 @@ void TrackContentWidget::resizeEvent( QResizeEvent * resizeEvent )
 {
 	// Update background
 	updateBackground();
-	// Force redraw
+	// The clips follow the height (with lanes, their places in it)
+	update();
 	QWidget::resizeEvent( resizeEvent );
 }
 

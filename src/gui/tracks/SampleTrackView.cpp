@@ -53,6 +53,7 @@
 #include "GuiApplication.h"
 #include "Knob.h"
 #include "AudioItem.h"
+#include "AudioTrack.h"
 #include "SampleClip.h"
 #include "SampleTrackWindow.h"
 #include "SongEditor.h"
@@ -120,7 +121,10 @@ private:
 SampleTrackView::SampleTrackView( AudioInputTrack * _t, TrackContainerView* tcv ) :
 	TrackView( _t, tcv )
 {
-	setFixedHeight( 32 );
+	// The audio track records (two rows: what it is and records, then where it goes); the sample track plays
+	// samples on the grid (one row, nothing to record)
+	auto* audioTrack = dynamic_cast<AudioTrack*>(_t);
+	setFixedHeight(audioTrack ? AudioTrackHeight : 32);
 
 	// The take growing while this track records
 	new LiveTakeOverlay(this, getTrackContentWidget());
@@ -129,7 +133,7 @@ SampleTrackView::SampleTrackView( AudioInputTrack * _t, TrackContainerView* tcv 
 	m_tlb->setCheckable(true);
 	connect(m_tlb, SIGNAL(clicked(bool)),
 			this, SLOT(showEffects()));
-	m_tlb->setIcon(embed::getIconPixmap("sample_track"));
+	m_tlb->setIcon(embed::getIconPixmap(audioTrack ? "audio_track" : "sample_track"));
 	m_tlb->show();
 
 	m_mixerChannelNumber = new MixerChannelLcdSpinBox(2, getTrackSettingsWidget(), tr("Mixer channel"), this);
@@ -180,21 +184,60 @@ SampleTrackView::SampleTrackView( AudioInputTrack * _t, TrackContainerView* tcv 
 
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
-	auto layout = new QHBoxLayout();
-	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setSpacing(3);
-	layout->addWidget(m_tlb);
-	//layout->addStretch();
-	layout->addWidget(m_mixerChannelNumber);
-	layout->addWidget(m_activityIndicator);
-	layout->addWidget(m_recordArmButton);
-	layout->addWidget(m_inputButton);
-	layout->addWidget(m_inputMeter);
-	layout->addWidget(m_volumeKnob);
-	layout->addWidget(m_panningKnob);
-	layout->addSpacing(4);
-	masterLayout->addLayout(layout);
+	masterLayout->setSpacing(1);
+	if (audioTrack)
+	{
+		// As in REAPER: the name, activity, arming and input on top; the mixer channel, input meter, VOL and PAN below
+		auto top = new QHBoxLayout();
+		top->setContentsMargins(0, 0, 0, 0);
+		top->setSpacing(3);
+		top->addWidget(m_tlb, 1);
+		top->addWidget(m_activityIndicator);
+		top->addWidget(m_recordArmButton);
+		top->addWidget(m_inputButton);
+		top->addSpacing(4);
+		auto bottom = new QHBoxLayout();
+		bottom->setContentsMargins(0, 0, 0, 0);
+		bottom->setSpacing(3);
+		bottom->addWidget(m_mixerChannelNumber);
+		bottom->addWidget(m_inputMeter, 1);
+		bottom->addWidget(m_volumeKnob);
+		bottom->addWidget(m_panningKnob);
+		bottom->addSpacing(4);
+		m_activityIndicator->setFixedSize(8, 18);
+		masterLayout->addLayout(top);
+		masterLayout->addLayout(bottom);
+	}
+	else
+	{
+		// Playing samples on the grid: nothing is recorded here (the audio track records)
+		m_recordArmButton->hide();
+		m_inputButton->hide();
+		m_inputMeter->hide();
+		auto layout = new QHBoxLayout();
+		layout->setContentsMargins(0, 0, 0, 0);
+		layout->setSpacing(3);
+		layout->addWidget(m_tlb);
+		layout->addWidget(m_mixerChannelNumber);
+		layout->addWidget(m_activityIndicator);
+		layout->addWidget(m_volumeKnob);
+		layout->addWidget(m_panningKnob);
+		layout->addSpacing(4);
+		masterLayout->addLayout(layout);
+	}
 	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+
+	// The lanes take room below the header
+	if (audioTrack)
+	{
+		const auto fit = [this, audioTrack] {
+			const auto lanes = audioTrack->laneCount();
+			setFixedHeight(AudioTrackHeight + (lanes > 1 ? (lanes - 1) * LaneHeight : 0));
+			getTrackContentWidget()->update();
+		};
+		connect(audioTrack, &AudioTrack::lanesChanged, this, fit);
+		fit();
+	}
 
 	connect(_t, SIGNAL(playingChanged()), this, SLOT(updateIndicator()));
 	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &SampleTrackView::corruptStateUpdate);

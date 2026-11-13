@@ -378,6 +378,10 @@ void AudioTrack::watch(AudioItem* item)
 	connect(item, &Clip::lengthChanged, this, &AudioTrack::schedulePublish);
 	connect(item, &Model::dataChanged, this, &AudioTrack::schedulePublish); // (muted)
 	connect(item, &QObject::destroyed, this, &AudioTrack::schedulePublish);
+	// A recording moved under a tempo map may need another rendering
+	connect(item, &Clip::positionChanged, this, [item] {
+		if (item->isTempoBound()) { Engine::getSong()->requestStretchCheck(); }
+	});
 	schedulePublish();
 }
 
@@ -523,6 +527,20 @@ void AudioTrack::clearSpan(int lane, tick_t begin, tick_t end, const AudioItem* 
 
 
 
+void AudioTrack::compItem(AudioItem* item)
+{
+	if (!item || item->getTrack() != this || item->lane() == m_playingLane) { return; }
+	addJournalCheckPoint();
+	const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
+	auto* copy = static_cast<AudioItem*>(item->clone());
+	copy->setLane(m_playingLane);
+	clearSpan(m_playingLane, copy->startPosition().getTicks(), copy->endPosition().getTicks(), copy);
+	Engine::getSong()->setModified();
+}
+
+
+
+
 void AudioTrack::applyPlayingLane(int lane)
 {
 	m_playingLane = std::max(lane, 0);
@@ -535,9 +553,27 @@ void AudioTrack::applyPlayingLane(int lane)
 
 void AudioTrack::schedulePublish()
 {
+	// (whatever changed may change the lanes too: told with the list, see publishLanes())
 	if (m_publishPending || !m_player) { return; }
 	m_publishPending = true;
-	QTimer::singleShot(0, this, [this] { if (m_publishPending) { publish(); } });
+	QTimer::singleShot(0, this, [this] {
+		if (!m_publishPending) { return; }
+		publish();
+	});
+}
+
+
+
+
+void AudioTrack::publishLanes()
+{
+	const auto lanes = laneCount();
+	if (lanes != m_lastLaneCount || m_playingLane != m_lastPlayingLane)
+	{
+		m_lastLaneCount = lanes;
+		m_lastPlayingLane = m_playingLane;
+		emit lanesChanged();
+	}
 }
 
 
@@ -599,6 +635,7 @@ void AudioTrack::publish()
 		}
 	}
 	m_player->offer(std::move(list));
+	publishLanes();
 }
 
 

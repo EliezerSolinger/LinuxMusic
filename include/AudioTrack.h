@@ -96,10 +96,19 @@ public:
 	 */
 	void clearSpan(int lane, tick_t begin, tick_t end, const AudioItem* keep = nullptr);
 
+	//! Comping: a copy of @p item goes on the lane heard, replacing what it covers there (split the item first to
+	//! take a part of it). One undo step
+	void compItem(AudioItem* item);
+
 	//! Gives the player what plays now. It happens by itself after each change, once the event loop runs; this does
 	//! it at once (e.g. before rendering without an event loop)
 	void publish();
 
+signals:
+	//! The lanes there are, or the one heard, changed
+	void lanesChanged();
+
+public:
 	//! The player's voices: items heard at once on a track (more are skipped)
 	static constexpr std::size_t MaxVoices = 32;
 
@@ -107,6 +116,8 @@ private:
 	void applySettings(AudioItem* item, const ItemSettings& settings);
 	void applyPlayingLane(int lane);
 	void schedulePublish();
+	//! Tells of a change of the lanes (lanesChanged())
+	void publishLanes();
 	void watch(AudioItem* item);
 
 	//! Where ticks begin in the period, as the song plays them (audio thread: from play() to the player)
@@ -121,6 +132,8 @@ private:
 	std::int64_t m_tickStartsPeriod = -1;
 
 	int m_playingLane = 0;
+	int m_lastLaneCount = 1;
+	int m_lastPlayingLane = 0;
 	bool m_publishPending = false;
 	AudioTrackPlayer* m_player;
 

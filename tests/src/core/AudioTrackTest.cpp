@@ -325,6 +325,36 @@ private slots:
 		QCOMPARE(track->items().front(), other);
 	}
 
+	void aRecordedItemFollowsTheTempo()
+	{
+		auto* track = newTrack();
+		auto* song = Engine::getSong();
+		const auto file = m_directory.filePath("bound.wav");
+		writeWav(file, 4 * m_rate, 0.5f, m_rate);
+		const auto bar = TimePos::ticksPerBar();
+		auto* item = track->addItem(file, TimePos{bar});
+		// Played at 120 BPM: a point at each bar
+		auto timing = AudioItem::Timing{};
+		for (tick_t tick = 0; tick <= 2 * bar; tick += bar) { timing.push_back({tick, song->framesBetween(bar, bar + tick)}); }
+		item->setOriginalTiming(timing, file);
+		QVERIFY(song->stretchJobs().empty());
+
+		// Moved at the same tempo: nothing to render; at another tempo: rendered
+		item->movePosition(TimePos{3 * bar});
+		QVERIFY(song->stretchJobs().empty());
+		song->setTempo(90);
+		const auto jobs = song->stretchJobs();
+		QCOMPARE(jobs.size(), std::size_t{1});
+		QCOMPARE(jobs[0].item, item);
+		QVERIFY(jobs[0].to.back().frame > jobs[0].from.back().frame); // (slower: longer)
+
+		// Rendered, it plays the rendering; back at the tempo it was played at, the original again
+		Song::applyStretch(jobs[0]); // (the target file does not exist here: nothing loads, the timing is kept)
+		song->setTempo(120);
+		QVERIFY(song->stretchJobs().empty());
+		QCOMPARE(item->currentTiming(), item->originalTiming());
+	}
+
 	void itemsAreSavedAndLoaded()
 	{
 		auto* track = newTrack();

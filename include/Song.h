@@ -54,6 +54,7 @@ namespace lmms
 {
 
 class AudioTrack;
+class AudioItem;
 
 class AutomationTrack;
 class Keymap;
@@ -385,7 +386,8 @@ public:
 	//! A recording to render for the song's tempo now (see SampleClip::isTempoBound())
 	struct StretchJob
 	{
-		SampleClip* clip = nullptr;
+		SampleClip* clip = nullptr; //!< the clip to render, or
+		AudioItem* item = nullptr; //!< the audio track's item to render
 		QString source; //!< the original file
 		std::vector<SampleClip::TimingPoint> from; //!< its timing
 		std::vector<SampleClip::TimingPoint> to; //!< the timing at the song's tempo now
@@ -399,6 +401,8 @@ public:
 	 *          recording at the same place (the parts of a split clip) share one target: render it once.
 	 */
 	auto stretchJobs() -> std::vector<StretchJob>;
+	//! Makes the clip or item of @p job play its rendering (once rendered)
+	static void applyStretch(const StretchJob& job);
 
 	//! Something may have changed the timing a recording must play at (a clip moved, a take chosen, a clip restored
 	//! by undo): the GUI checks stretchJobs() again
@@ -458,6 +462,7 @@ private slots:
 	void insertBar();
 	void removeBar();
 	void addSampleTrack();
+	void addAudioTrack();
 	void addAutomationTrack();
 	void addFolderTrack();
 

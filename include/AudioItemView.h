@@ -43,14 +43,33 @@ class AudioItemView : public ClipView
 public:
 	AudioItemView(AudioItem* item, TrackView* view);
 
+	auto verticalPlace(int contentHeight) const -> std::pair<int, int> override;
+
 protected:
 	void paintEvent(QPaintEvent* event) override;
 	void constructContextMenu(QMenu* menu) override;
+	void mousePressEvent(QMouseEvent* event) override;
+	void mouseMoveEvent(QMouseEvent* event) override;
+	void mouseReleaseEvent(QMouseEvent* event) override;
 
 private:
 	void updateItem();
 
+	//! The handles on the item's top edge: its fades at the corners, its gain along it (as REAPER's)
+	enum class Handle { None, FadeIn, FadeOut, Gain };
+	auto handleAt(QPoint position) const -> Handle;
+	auto pixelsPerMs() const -> double;
+	//! Its fades as heard: at least the overlap with the items next to it on its lane (the crossfade)
+	auto heardFades() const -> std::pair<double, double>;
+
 	AudioItem* m_item;
+	Handle m_dragging = Handle::None;
+	QPoint m_dragStart;
+	double m_startValue = 0;
+	//! While dragging a handle, the value shown (applied as one undo step when let go)
+	double m_gainDb = 0;
+	double m_fadeInMs = 0;
+	double m_fadeOutMs = 0;
 };
 
 } // namespace lmms::gui

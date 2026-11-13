@@ -15335,6 +15335,18 @@ Latency: %2 ms</source>
         <source>Base snapping size</source>
         <translation type="unfinished"/>
     </message>
+    <message>
+        <source>Add audio track</source>
+        <translation>Adicionar faixa de áudio</translation>
+    </message>
+    <message>
+        <source>Add an audio track: recordings and audio files, with lanes and fades</source>
+        <translation>Adicionar uma faixa de áudio: gravações e arquivos de áudio, com lanes e fades</translation>
+    </message>
+    <message>
+        <source>Add a sample track: short samples on the grid</source>
+        <translation>Adicionar uma faixa de sample: samples curtos na grade</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::StepRecorderWidget</name>
@@ -17665,6 +17677,30 @@ Latency: %2 ms</source>
     <message>
         <source>Gain %1 dB, fades %2 ms and %3 ms</source>
         <translation>Ganho %1 dB, fades de %2 ms e %3 ms</translation>
+    </message>
+    <message>
+        <source>Hear this lane</source>
+        <translation>Ouvir esta lane</translation>
+    </message>
+    <message>
+        <source>Comp: use this item on the lane heard</source>
+        <translation>Comp: usar este item na lane que toca</translation>
+    </message>
+    <message>
+        <source>Fade in: %1 ms</source>
+        <translation>Fade de entrada: %1 ms</translation>
+    </message>
+    <message>
+        <source>Fade out: %1 ms</source>
+        <translation>Fade de saída: %1 ms</translation>
+    </message>
+    <message>
+        <source>Gain: silent</source>
+        <translation>Ganho: mudo</translation>
+    </message>
+    <message>
+        <source>Gain: %1 dB</source>
+        <translation>Ganho: %1 dB</translation>
     </message>
 </context>
 <context>

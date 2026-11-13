@@ -918,6 +918,11 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 
 	m_addSampleTrackAction = new QAction(embed::getIconPixmap("add_sample_track"),
 										 tr("Add sample-track"), this);
+	m_addSampleTrackAction->setToolTip(tr("Add a sample track: short samples on the grid"));
+
+	m_addAudioTrackAction = new QAction(embed::getIconPixmap("add_audio_track"), tr("Add audio track"), this);
+	m_addAudioTrackAction->setToolTip(tr("Add an audio track: recordings and audio files, with lanes and fades"));
+	connect(m_addAudioTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addAudioTrack()));
 
 	m_addAutomationTrackAction = new QAction(embed::getIconPixmap("add_automation"),
 											 tr("Add automation-track"), this);
@@ -930,6 +935,7 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	connect(m_addFolderTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addFolderTrack()));
 
 	trackActionsToolBar->addAction( m_addPatternTrackAction );
+	trackActionsToolBar->addAction(m_addAudioTrackAction);
 	trackActionsToolBar->addAction( m_addSampleTrackAction );
 	trackActionsToolBar->addAction( m_addAutomationTrackAction );
 	trackActionsToolBar->addAction(m_addFolderTrackAction);

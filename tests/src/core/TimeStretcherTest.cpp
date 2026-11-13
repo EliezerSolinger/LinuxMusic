@@ -294,7 +294,7 @@ private slots:
 		// A rendered part plays, from its start, the frame its tick has in the rendering
 		QCOMPARE(TimeStretcher::render(source, jobs[0].target, jobs[0].from, jobs[0].to, rate, cancel, NoProgress).status,
 			TimeStretcher::Status::Done);
-		for (const auto& job : jobs) { job.clip->setRendering(job.target, job.to); }
+		for (const auto& job : jobs) { Song::applyStretch(job); }
 		QVERIFY(song->stretchJobs().empty());
 		QVERIFY(std::abs(static_cast<double>(part->fileFrameAt(192)) - song->framesBetween(0, 192)) <= 1.0);
 

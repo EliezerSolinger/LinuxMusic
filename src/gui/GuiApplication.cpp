@@ -48,6 +48,7 @@
 #include "PluginBrowser.h"
 #include "Song.h"
 #include "SongEditor.h"
+#include "AudioTrack.h"
 #include "SampleTrack.h"
 #include "SongMarkers.h"
 #include "TabWidget.h"
@@ -316,6 +317,27 @@ GuiApplication::GuiApplication()
 				track->recordArmModel()->setValue(true);
 				song->setPlayPos(TimePos::ticksPerBar(), Song::PlayMode::Song);
 				QTimer::singleShot(500, song, [song] { song->record(); });
+			});
+		}
+		if (screenshotAction == "audio-track")
+		{
+			// An audio track with lanes: two overlapping items on the lane heard (a crossfade), passes below, a gain
+			// (LINUXMUSIC_SCREENSHOT_FILE is the audio file)
+			QTimer::singleShot(2500, m_mainWindow, [] {
+				const auto file = qEnvironmentVariable("LINUXMUSIC_SCREENSHOT_FILE");
+				auto* track = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, Engine::getSong()));
+				if (!track || file.isEmpty()) { return; }
+				const auto bar = TimePos::ticksPerBar();
+				auto* first = track->addItem(file, TimePos{bar}, 0);
+				first->changeLength(TimePos{4 * bar});
+				auto* second = track->addItem(file, TimePos{4 * bar}, 0);
+				second->changeLength(TimePos{4 * bar});
+				auto settings = AudioTrack::settingsOf(*second);
+				settings.gainDb = -6;
+				track->changeItem(second, settings);
+				track->addItem(file, TimePos{bar}, 1)->changeLength(TimePos{7 * bar});
+				track->addItem(file, TimePos{bar}, 2)->changeLength(TimePos{7 * bar});
+				Track::create(Track::Type::Audio, Engine::getSong());
 			});
 		}
 		if (screenshotAction == "regions")

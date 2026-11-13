@@ -970,70 +970,117 @@ auto Song::stretchJobs() -> std::vector<StretchJob>
 {
 	auto jobs = std::vector<StretchJob>{};
 	const auto rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+
+	// A recording bound to the tempo it was played at, a clip's or an audio item's
+	struct Bound
+	{
+		SampleClip* clip = nullptr;
+		AudioItem* item = nullptr;
+		tick_t start = 0; //!< where the recording is in the song (the start plus the start offset)
+		SampleClip::Timing original;
+		SampleClip::Timing current;
+		QString originalFile;
+	};
+	const auto convert = [](const AudioItem::Timing& timing) {
+		auto result = SampleClip::Timing{};
+		for (const auto& point : timing) { result.push_back({point.tick, point.frame}); }
+		return result;
+	};
+	auto bound = std::vector<Bound>{};
 	for (auto* track : tracks())
 	{
-		auto* sampleTrack = dynamic_cast<SampleTrack*>(track);
-		if (!sampleTrack) { continue; }
-		for (int index = 0; index < sampleTrack->numOfClips(); ++index)
+		for (auto* clip : track->getClips())
 		{
-			auto* clip = dynamic_cast<SampleClip*>(sampleTrack->getClip(index));
-			if (!clip || !clip->isTempoBound()) { continue; }
-
-			// The timing the original's points have at the tempo now (the recording's place in the song is the
-			// clip's start plus its start offset, which is negative when the clip starts later in the recording)
-			const auto start = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
-			auto target = clip->originalTiming();
-			for (auto& point : target) { point.frame = framesBetween(start, start + point.tick); }
-
-			// (the last point of a recording made before it was on the grid falls inside a tick: up to half a tick off)
-			const auto lastTolerance = [&](const SampleClip::Timing& timing) {
-				if (timing.size() < 2) { return 1.0; }
-				const auto last = start + timing.back().tick;
-				return std::max(1.0, framesBetween(last - 1, last) / 2 + 1);
-			};
-			const auto same = [&](const SampleClip::Timing& a, const SampleClip::Timing& b) {
-				if (a.size() != b.size()) { return false; }
-				for (std::size_t i = 0; i < a.size(); ++i)
-				{
-					const auto tolerance = i + 1 == a.size() ? lastTolerance(a) : 1.0;
-					if (a[i].tick != b[i].tick || std::abs(a[i].frame - b[i].frame) > tolerance) { return false; }
-				}
-				return true;
-			};
-			if (same(target, clip->originalTiming()))
+			if (auto* sampleClip = dynamic_cast<SampleClip*>(clip); sampleClip && sampleClip->isTempoBound())
 			{
-				// Back at the tempo it was played at: the original again
-				if (clip->currentTiming() != clip->originalTiming()) { clip->setRendering(clip->originalFile(), {}); }
-				continue;
+				bound.push_back({sampleClip, nullptr,
+					sampleClip->startPosition().getTicks() + sampleClip->startTimeOffset().getTicks(),
+					sampleClip->originalTiming(), sampleClip->currentTiming(), sampleClip->originalFile()});
 			}
-			if (same(target, clip->currentTiming())) { continue; }
-
-			// The parts of a split clip (comping) are one recording at one place: one rendering for all of them
-			const auto source = PathUtil::toAbsolute(clip->originalFile());
-			const auto shared = std::find_if(jobs.begin(), jobs.end(), [&](const StretchJob& job) {
-				return job.source == source && same(job.from, clip->originalTiming()) && same(job.to, target);
-			});
-			if (shared != jobs.end())
+			else if (auto* item = dynamic_cast<AudioItem*>(clip); item && item->isTempoBound())
 			{
-				jobs.push_back({clip, source, clip->originalTiming(), target, shared->target, shared->seconds});
-				continue;
+				bound.push_back({nullptr, item, item->startPosition().getTicks() + item->startTimeOffset().getTicks(),
+					convert(item->originalTiming()), convert(item->currentTiming()), item->originalFile()});
 			}
-
-			// "st<bpm>_<name>.wav" next to the original
-			const auto info = QFileInfo{source};
-			const auto bpm = static_cast<int>(std::lround(m_tempoMap.isEmpty() ? getTempo() : m_tempoMap.tempoAt(start)));
-			auto path = QString{};
-			for (int n = 1; path.isEmpty() || QFileInfo::exists(path); ++n)
-			{
-				path = QString{"%1/st%2_%3%4.wav"}.arg(info.absolutePath()).arg(bpm).arg(info.completeBaseName())
-					.arg(n > 1 ? QString{"-%1"}.arg(n) : QString{});
-			}
-			jobs.push_back({clip, source, clip->originalTiming(), target, path,
-				clip->originalTiming().back().frame / rate});
-			noteGenerated(path);
 		}
 	}
+
+	for (const auto& recording : bound)
+	{
+		const auto start = recording.start;
+		// The timing the original's points have at the tempo now
+		auto target = recording.original;
+		for (auto& point : target) { point.frame = framesBetween(start, start + point.tick); }
+
+		// (the last point of a recording made before it was on the grid falls inside a tick: up to half a tick off)
+		const auto lastTolerance = [&](const SampleClip::Timing& timing) {
+			if (timing.size() < 2) { return 1.0; }
+			const auto last = start + timing.back().tick;
+			return std::max(1.0, framesBetween(last - 1, last) / 2 + 1);
+		};
+		const auto same = [&](const SampleClip::Timing& a, const SampleClip::Timing& b) {
+			if (a.size() != b.size()) { return false; }
+			for (std::size_t i = 0; i < a.size(); ++i)
+			{
+				const auto tolerance = i + 1 == a.size() ? lastTolerance(a) : 1.0;
+				if (a[i].tick != b[i].tick || std::abs(a[i].frame - b[i].frame) > tolerance) { return false; }
+			}
+			return true;
+		};
+		if (same(target, recording.original))
+		{
+			// Back at the tempo it was played at: the original again
+			if (recording.current != recording.original)
+			{
+				applyStretch({recording.clip, recording.item, {}, recording.original, {}, recording.originalFile, 0});
+			}
+			continue;
+		}
+		if (same(target, recording.current)) { continue; }
+
+		// The parts of a split clip (comping) are one recording at one place: one rendering for all of them
+		const auto source = PathUtil::toAbsolute(recording.originalFile);
+		const auto shared = std::find_if(jobs.begin(), jobs.end(), [&](const StretchJob& job) {
+			return job.source == source && same(job.from, recording.original) && same(job.to, target);
+		});
+		if (shared != jobs.end())
+		{
+			jobs.push_back({recording.clip, recording.item, source, recording.original, target, shared->target,
+				shared->seconds});
+			continue;
+		}
+
+		// "st<bpm>_<name>.wav" next to the original
+		const auto info = QFileInfo{source};
+		const auto bpm = static_cast<int>(std::lround(m_tempoMap.isEmpty() ? getTempo() : m_tempoMap.tempoAt(start)));
+		auto path = QString{};
+		for (int n = 1; path.isEmpty() || QFileInfo::exists(path); ++n)
+		{
+			path = QString{"%1/st%2_%3%4.wav"}.arg(info.absolutePath()).arg(bpm).arg(info.completeBaseName())
+				.arg(n > 1 ? QString{"-%1"}.arg(n) : QString{});
+		}
+		jobs.push_back({recording.clip, recording.item, source, recording.original, target, path,
+			recording.original.back().frame / rate});
+		noteGenerated(path);
+	}
 	return jobs;
+}
+
+
+
+
+void Song::applyStretch(const StretchJob& job)
+{
+	// (an empty "to": back to the original, which "target" names)
+	if (job.clip)
+	{
+		job.clip->setRendering(job.target, job.to);
+		return;
+	}
+	if (!job.item) { return; }
+	auto timing = AudioItem::Timing{};
+	for (const auto& point : job.to) { timing.push_back({point.tick, point.frame}); }
+	job.item->setRendering(job.target, std::move(timing));
 }
 
 
@@ -1468,6 +1515,14 @@ void Song::addPatternTrack()
 void Song::addSampleTrack()
 {
 	( void )Track::create( Track::Type::Sample, this );
+}
+
+
+
+
+void Song::addAudioTrack()
+{
+	(void)Track::create(Track::Type::Audio, this);
 }
 
 
