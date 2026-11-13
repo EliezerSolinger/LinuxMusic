@@ -285,3 +285,18 @@ Cada passo atualiza este documento, marcando o que foi feito.
   - sem Part/Song: o Editor de Sequências voltou a ter o próprio play;
   - sem VOL e PITCH: no lugar, o mudo do master;
   - o ciclo: arrastar na metade de cima da régua seleciona o trecho e liga o ciclo; tecla C. A tecla R grava.
+- **Etapa 9.4–9.6 feitas** (13/11):
+  - no Arranjo, Ctrl+C, Ctrl+X, Ctrl+V (no cursor de reprodução) e Ctrl+D (duplica logo depois da seleção). Colar
+    nunca apaga clipe;
+  - cada área de abas recolhe e expande com um botão no canto;
+  - mouse como no REAPER: a roda dá zoom horizontal, Ctrl+roda muda a altura das faixas, Alt+roda rola na
+    horizontal e Shift+roda na vertical. S corta no cursor;
+  - pendente: o registro central de atalhos editável nas configurações.
+- **Etapa 10 feita** (13/11):
+  - as configurações viraram uma página, atrás de uma engrenagem ao lado de COMPOSIÇÃO/MIXAGEM, com Cmd+,;
+  - menu: mantido. As configurações pelo menu abrem a página; a ajuda saiu da barra e ficou no menu.
+- **Etapa 11 feita** (13/11):
+  - ao salvar, o projeto copia para `<projeto>_media/` todo arquivo que usa e que não é de fábrica, com caminho
+    `local:`. "Salvar como" leva os arquivos. A checagem de `local:` passou a ser por atributo;
+  - acima de 30 s, o arquivo vira faixa de sample com o clipe; abaixo, instrumento;
+  - vários arquivos de uma vez (do Finder ou de "Importar arquivos de áudio..."): uma faixa por arquivo.
