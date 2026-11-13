@@ -28,6 +28,7 @@
 #include <QDomElement>
 #include <QFileInfo>
 #include <QRandomGenerator>
+#include <QStringList>
 
 #include "AudioEngine.h"
 #include "AudioItemView.h"
@@ -111,6 +112,7 @@ AudioItem::AudioItem(const AudioItem& other)
 	, m_originalTiming{other.m_originalTiming}
 	, m_originalFile{other.m_originalFile}
 	, m_renderedTiming{other.m_renderedTiming}
+	, m_xruns{other.m_xruns}
 {
 	if (auto* audioTrack = dynamic_cast<AudioTrack*>(getTrack())) { audioTrack->watch(this); }
 	connect(&PeakCache::instance(), &PeakCache::ready, this, &AudioItem::peaksReady);
@@ -254,6 +256,15 @@ void AudioItem::setOriginalTiming(Timing timing, const QString& file)
 
 
 
+void AudioItem::setXruns(std::vector<std::int64_t> xruns)
+{
+	m_xruns = std::move(xruns);
+	emit itemChanged();
+}
+
+
+
+
 void AudioItem::setRendering(const QString& file, Timing timing)
 {
 	m_renderedTiming = std::move(timing);
@@ -309,6 +320,12 @@ void AudioItem::saveSettings(QDomDocument& doc, QDomElement& element)
 	element.setAttribute("fadeout", QString::number(m_fadeOutMs, 'g', 10));
 	if (m_storage != Storage::Automatic) { element.setAttribute("storage", m_storage == Storage::Disk ? "disk" : "ram"); }
 	if (const auto& c = color()) { element.setAttribute("color", c->name()); }
+	if (!m_xruns.empty())
+	{
+		auto xruns = QStringList{};
+		for (const auto frame : m_xruns) { xruns << QString::number(frame); }
+		element.setAttribute("xruns", xruns.join(','));
+	}
 	if (isTempoBound())
 	{
 		auto original = timingToElement(doc, "original", m_originalTiming);
@@ -350,6 +367,13 @@ void AudioItem::loadSettings(const QDomElement& element)
 	const auto fadeOut = element.attribute("fadeout", QString::number(DefaultFadeMs)).toDouble();
 	m_fadeInMs = std::isfinite(fadeIn) ? std::max(fadeIn, 0.0) : DefaultFadeMs;
 	m_fadeOutMs = std::isfinite(fadeOut) ? std::max(fadeOut, 0.0) : DefaultFadeMs;
+
+	m_xruns.clear();
+	for (const auto& text : element.attribute("xruns").split(',', Qt::SkipEmptyParts))
+	{
+		auto ok = false;
+		if (const auto frame = text.toLongLong(&ok); ok && frame >= 0) { m_xruns.push_back(frame); }
+	}
 
 	const auto original = element.firstChildElement("original");
 	m_originalTiming = original.isNull() ? Timing{} : timingFromElement(original);

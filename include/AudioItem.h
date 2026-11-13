@@ -105,6 +105,10 @@ public:
 	void setOriginalTiming(Timing timing, const QString& file);
 	void setRendering(const QString& file, Timing timing);
 
+	//! Where the audio device dropped out while it was recorded (frames of its file), marked on it
+	auto xruns() const -> const std::vector<std::int64_t>& { return m_xruns; }
+	void setXruns(std::vector<std::int64_t> xruns);
+
 	//! The frame of the file that sounds @p tick ticks after the start of the recording (the item's start less
 	//! its start offset): by its timing for a recording, at the tempo now otherwise (see SampleClip::fileFrameAt)
 	auto fileFrameAt(tick_t tick) const -> f_cnt_t;
@@ -143,6 +147,7 @@ private:
 	Timing m_originalTiming;
 	QString m_originalFile;
 	Timing m_renderedTiming;
+	std::vector<std::int64_t> m_xruns;
 
 	friend class AudioTrack;
 	friend class gui::AudioItemView;

@@ -5531,6 +5531,13 @@ Motivo: &quot;%2&quot;</translation>
         <source>Some of the files the project uses could not be kept in its folder:</source>
         <translation>Alguns dos arquivos que o projeto usa não puderam ficar na pasta dele:</translation>
     </message>
+    <message numerus="yes">
+        <source>%1: the audio dropped out %n time(s) while recording (an xrun: the computer did not keep up); the points are marked in red on the take.</source>
+        <translation>
+            <numerusform>%1: o áudio falhou %n vez durante a gravação (um xrun: o computador não deu conta); o ponto está marcado em vermelho no take.</numerusform>
+            <numerusform>%1: o áudio falhou %n vezes durante a gravação (xruns: o computador não deu conta); os pontos estão marcados em vermelho no take.</numerusform>
+        </translation>
+    </message>
 </context>
 <context>
     <name>lmms::StereoEnhancerControls</name>

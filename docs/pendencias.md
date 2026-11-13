@@ -22,7 +22,8 @@ Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
   correlação e salva o offset
 - [x] **Metrônomo configurável:** só gravando ou também tocando, volume, acento no 1 (Configurações → Áudio →
   Gravação); o clique não aloca mais na thread de áudio (um play handle próprio)
-- [ ] **Xrun gravando:** o ponto fica marcado no take, e um contador avisa
+- [x] **Xrun gravando:** o ponto fica marcado em vermelho no take (salvo no projeto), e o fim da gravação avisa
+  quantas vezes o áudio falhou
 - [ ] **MIDI:** a chave da faixa ganha "take em lane"; quantização opcional na entrada (grade e força por faixa,
   desligada por padrão); entrada MIDI por faixa (dispositivo e canal) no cabeçalho
 - [ ] **Cabeçalho de duas linhas em todas as faixas:** instrumento como a de áudio; pasta, sequência e automação com o

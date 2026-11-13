@@ -1350,6 +1350,7 @@ void Song::landOnLanes(AudioTrack* track, const std::vector<AudioRecorder::Segme
 			const auto& last = group.back();
 			auto* item = track->addItem(last.path, TimePos{static_cast<tick_t>(startTick)}, track->playingLane());
 			bindToTempo(item, static_cast<tick_t>(startTick), last);
+			item->setXruns(last.xruns);
 			track->clearSpan(track->playingLane(), item->startPosition().getTicks(), item->endPosition().getTicks(), item);
 		}
 		return;
@@ -1366,6 +1367,7 @@ void Song::landOnLanes(AudioTrack* track, const std::vector<AudioRecorder::Segme
 			auto* item = track->addItem(segment.path, TimePos{static_cast<tick_t>(startTick)},
 				static_cast<int>(group.size() - 1 - pass));
 			bindToTempo(item, static_cast<tick_t>(startTick), segment);
+			item->setXruns(segment.xruns);
 		}
 	}
 }
@@ -1418,6 +1420,12 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 			if (take.diskFailed)
 			{
 				problems << tr("%1: writing a take failed; it holds what was written before.").arg(audioTrack->name());
+			}
+			if (take.xruns > 0)
+			{
+				problems << tr("%1: the audio dropped out %n time(s) while recording (an xrun: the computer did not "
+					"keep up); the points are marked in red on the take.", "", static_cast<int>(take.xruns))
+					.arg(audioTrack->name());
 			}
 			continue;
 		}

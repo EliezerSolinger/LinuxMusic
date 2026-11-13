@@ -33,6 +33,9 @@
 #include <QFileInfo>
 #include <sndfile.h>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "SpscRing.h"
 
 namespace lmms
@@ -90,6 +93,10 @@ struct AudioRecorder::TakeState
 	double expectedTick = 0; //!< where the next frame belongs if the song goes straight on
 	std::int64_t segmentTick = 0;
 	std::int64_t framesQueued = 0; //!< frames given to the ring so far, silence included
+	SpscRing<std::int64_t> xruns{256}; //!< where the device dropped out (frames queued then), to the disk thread
+	std::int64_t xrunCount = 0; //!< (the audio thread's)
+	std::int64_t segmentFirstFrame = 0; //!< frames queued when the segment being written began (disk thread)
+	std::int64_t pendingXrun = -1; //!< a dropout read but past what is written yet (disk thread)
 	std::int64_t pendingSilence = 0; //!< frames that did not fit in the ring: silence, written before what follows
 	std::atomic<std::int64_t> lostFrames = 0;
 
@@ -115,6 +122,8 @@ struct AudioRecorder::TakeState
 
 struct AudioRecorder::Session
 {
+	unsigned deviceXruns = 0; //!< the device's count the last period (the audio thread's)
+	bool deviceXrunsKnown = false;
 	std::vector<std::unique_ptr<TakeState>> takes;
 	f_cnt_t latency = 0;
 	f_cnt_t period = 0;
@@ -281,6 +290,7 @@ auto AudioRecorder::stop() -> std::vector<Take>
 			}
 		}
 		take.lostFrames = state->lostFrames.load();
+		take.xruns = state->xrunCount;
 		take.diskFailed = state->diskFailed.load();
 		takes.push_back(take);
 	}
@@ -328,9 +338,24 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 			firstStart.framesPerTick};
 	};
 
+	// The device dropped out since the last period (an xrun): marked where each take is (the recording goes on)
+	auto dropouts = 0u;
+	if (const auto* device = Engine::audioEngine()->audioDev())
+	{
+		const auto xruns = device->xruns();
+		if (session->deviceXrunsKnown) { dropouts = xruns - session->deviceXruns; }
+		session->deviceXruns = xruns;
+		session->deviceXrunsKnown = true;
+	}
+
 	for (auto& takePointer : session->takes)
 	{
 		auto& take = *takePointer;
+		if (dropouts > 0 && take.writing)
+		{
+			take.xrunCount += dropouts;
+			take.xruns.write(&take.framesQueued, 1);
+		}
 		const auto channels = static_cast<std::size_t>(take.channels);
 		std::int64_t count = 0; // frames of this period for the ring
 
@@ -436,7 +461,8 @@ auto AudioRecorder::drain(TakeState& take) -> bool
 			}
 		}
 		take.firstSegmentOpen = true;
-		take.segments.push_back({segmentPath(take.path, take.segments.size()), take.nextStart.tick, 0, {}});
+		take.segments.push_back({segmentPath(take.path, take.segments.size()), take.nextStart.tick, 0, {}, {}});
+		take.segmentFirstFrame = take.nextStart.frame;
 		{
 			const auto lock = std::lock_guard{take.liveMutex};
 			take.live.push_back({take.nextStart.tick, 0, {}, {}});
@@ -462,6 +488,22 @@ auto AudioRecorder::drain(TakeState& take) -> bool
 	}
 	take.segments.back().frames += frames;
 	noteWritten(take, take.diskBuffer.data(), frames);
+	// The dropouts up to what is written, marked in the segment
+	while (true)
+	{
+		if (take.pendingXrun < 0)
+		{
+			auto xrun = std::int64_t{0};
+			if (take.xruns.read(&xrun, 1) != 1) { break; }
+			take.pendingXrun = xrun;
+		}
+		if (take.pendingXrun > take.framesWritten) { break; }
+		if (take.pendingXrun >= take.segmentFirstFrame)
+		{
+			take.segments.back().xruns.push_back(take.pendingXrun - take.segmentFirstFrame);
+		}
+		take.pendingXrun = -1;
+	}
 	return true;
 }
 

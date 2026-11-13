@@ -82,6 +82,7 @@ public:
 		std::int64_t startTick = 0; //!< where it begins on the timeline
 		std::int64_t frames = 0; //!< frames in the file
 		std::vector<Peak> peaks; //!< its waveform, as PeakCache keeps it (made while it was written)
+		std::vector<std::int64_t> xruns; //!< frames of the file where the audio device dropped out (an xrun)
 	};
 
 	//! What was recorded for one track: a segment each time the song went on from somewhere else (a loop's pass)
@@ -90,6 +91,7 @@ public:
 		Track* track = nullptr;
 		std::vector<Segment> segments;
 		std::int64_t lostFrames = 0; //!< frames that did not reach the disk in time (silence in the file)
+		std::int64_t xruns = 0; //!< the audio device's dropouts while it was recorded (marked in its segments)
 		bool diskFailed = false; //!< writing a file failed: it holds what was written before
 	};
 

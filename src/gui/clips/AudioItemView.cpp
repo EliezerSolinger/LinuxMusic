@@ -32,6 +32,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPen>
 
 #include "AudioEngine.h"
 #include "AudioItem.h"
@@ -120,6 +121,20 @@ void AudioItemView::paintEvent(QPaintEvent*)
 				.reversed = false
 			};
 			SampleThumbnailRenderer::visualize(parameters, painter);
+		}
+	}
+
+	// Where the audio device dropped out while it was recorded: red marks
+	if (!m_item->xruns().empty() && m_item->sample().sampleSize() > 0)
+	{
+		const auto fileTicks = static_cast<double>(m_item->fileLength().getTicks());
+		const auto left = m_item->startTimeOffset().getTicks() * pixelsPerTick;
+		const auto width = fileTicks * pixelsPerTick;
+		painter.setPen(QPen{QColor{235, 60, 60}, 2});
+		for (const auto frame : m_item->xruns())
+		{
+			const auto x = left + width * static_cast<double>(frame) / static_cast<double>(m_item->sample().sampleSize());
+			painter.drawLine(QPointF{x, 0}, QPointF{x, static_cast<double>(height())});
 		}
 	}
 

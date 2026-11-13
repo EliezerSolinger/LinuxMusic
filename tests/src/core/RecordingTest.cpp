@@ -69,6 +69,8 @@ public:
 	}
 
 	auto inputLatency() const -> f_cnt_t override { return m_inputLatency; }
+	//! As if the device dropped out (an xrun)
+	void dropOut() { reportXrun(); }
 	auto outputLatency() const -> f_cnt_t override { return m_outputLatency; }
 
 	/**
@@ -601,6 +603,48 @@ private slots:
 		QVERIFY(result.found);
 		qInfo("pulse back after %d frames, calibration %lld", static_cast<int>(result.delay), result.offset);
 		QCOMPARE(result.offset, static_cast<long long>(hidden));
+	}
+
+	void aDropoutIsMarkedOnTheTakeAndTold()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
+		engine->setAudioDevice(device, false);
+		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		recorder->monitorModel()->setValue(static_cast<int>(AudioInputTrack::MonitorMode::Off));
+		auto told = QString{};
+		const auto connection = connect(song, &Song::recordingProblem, this, [&](const QString& message) { told = message; });
+
+		song->setPlayPos(0, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		for (int callback = 0; callback < 200; ++callback) { device->callback(256); }
+		device->dropOut();
+		for (int callback = 0; callback < 200; ++callback) { device->callback(256); }
+		song->stop();
+		disconnect(connection);
+
+		QCOMPARE(recorder->items().size(), std::size_t{1});
+		const auto* take = recorder->items().front();
+		QCOMPARE(take->xruns().size(), std::size_t{1});
+		// Where it was: 200 periods in, less what the take starts after (the latencies and the engine's two periods)
+		const auto at = take->xruns().front();
+		QCOMPARE(at, static_cast<std::int64_t>(200 * 256 - (2 * 256 + 256 + 40 + 256 + 200)));
+		QVERIFY2(told.contains("xrun"), qPrintable(told));
+
+		// Kept with the project
+		auto document = QDomDocument{};
+		auto element = document.createElement("audioitem");
+		const_cast<AudioItem*>(take)->saveSettings(document, element);
+		auto* loaded = static_cast<AudioItem*>(recorder->createClip(TimePos{0}));
+		loaded->loadSettings(element);
+		QCOMPARE(loaded->xruns(), take->xruns());
+
+		const auto guard = engine->requestChangesGuard();
+		delete recorder;
 	}
 
 	void choosingATakeKeepsThePartOfTheClip()
