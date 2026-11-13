@@ -25,6 +25,9 @@
 
 #include "SampleTrack.h"
 
+#include <QFile>
+#include <sndfile.h>
+
 #include "InputMonitorHandle.h"
 
 #include <QDomElement>
@@ -37,6 +40,7 @@
 #include "SampleClip.h"
 #include "SamplePlayHandle.h"
 #include "SampleTrackView.h"
+#include "PathUtil.h"
 #include "Song.h"
 #include "volume.h"
 
@@ -68,6 +72,18 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 	connect(this, &SampleTrack::inputChanged, this, captureNeedMayChange);
 	connect(&m_recordArmModel, &BoolModel::dataChanged, this, captureNeedMayChange);
 	connect(&m_monitorModel, &IntModel::dataChanged, this, captureNeedMayChange);
+}
+
+
+
+
+auto SampleTrack::audioFileSeconds(const QString& path) -> double
+{
+	auto info = SF_INFO{};
+	auto* file = sf_open(QFile::encodeName(PathUtil::toAbsolute(path)).constData(), SFM_READ, &info);
+	if (!file) { return 0.0; }
+	sf_close(file);
+	return info.samplerate > 0 ? static_cast<double>(info.frames) / info.samplerate : 0.0;
 }
 
 

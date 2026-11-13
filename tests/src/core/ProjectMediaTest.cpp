@@ -176,6 +176,30 @@ private slots:
 		song->createNewProject();
 	}
 
+	void longAudioIsARecordingShortIsASample()
+	{
+		// The length comes from the header (a recording is not decoded to tell)
+		const auto write = [](const QString& path, int frames) {
+			auto info = SF_INFO{};
+			info.samplerate = 8000;
+			info.channels = 1;
+			info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
+			auto* file = sf_open(QFile::encodeName(path).constData(), SFM_WRITE, &info);
+			QVERIFY(file);
+			auto samples = std::vector<short>(static_cast<std::size_t>(frames), 0);
+			sf_writef_short(file, samples.data(), frames);
+			sf_close(file);
+		};
+		const auto stem = m_directory.filePath("stem.wav");
+		const auto hit = m_directory.filePath("hit-short.wav");
+		write(stem, 8000 * 31);
+		write(hit, 8000 * 2);
+		QVERIFY(std::abs(SampleTrack::audioFileSeconds(stem) - 31.0) < 1e-6);
+		QVERIFY(SampleTrack::audioFileSeconds(stem) > SampleTrack::LongAudioSeconds);
+		QVERIFY(SampleTrack::audioFileSeconds(hit) < SampleTrack::LongAudioSeconds);
+		QCOMPARE(SampleTrack::audioFileSeconds(m_directory.filePath("nothing.wav")), 0.0);
+	}
+
 	void onlyFileReferencesMayBeLocal()
 	{
 		const auto check = [](const QString& xml) {

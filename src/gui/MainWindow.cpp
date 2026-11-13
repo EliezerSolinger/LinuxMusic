@@ -352,6 +352,16 @@ void MainWindow::finalize()
 
 	project_menu->addAction(embed::getIconPixmap("project_import"), tr("Import..."),
 		this, &MainWindow::onImportProject);
+	project_menu->addAction(embed::getIconPixmap("sample_file"), tr("Import audio files..."), this, [this] {
+		// Several at once: each in a track (stems), at the playhead
+		const auto files = FileDialog::getOpenFileNames(this, tr("Import audio files"),
+			ConfigManager::inst()->userSamplesDir(),
+			tr("Audio files (%1)").arg(QStringList{"*.wav", "*.flac", "*.ogg", "*.mp3", "*.aif", "*.aiff"}.join(' ')));
+		if (files.isEmpty()) { return; }
+		const auto at = TimePos{Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks()}.quantize(1.0, true);
+		getGUI()->songEditor()->m_editor->insertAudioFiles(files, at);
+		showPage(Page::Composition);
+	});
 
 	addAction(project_menu, "project_export", tr("E&xport..."),
 		keySequence(Qt::CTRL, Qt::Key_E), &MainWindow::onExportProject);

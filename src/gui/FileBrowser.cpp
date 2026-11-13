@@ -507,6 +507,8 @@ void FileBrowserTreeWidget::keyPressEvent(QKeyEvent * ke )
 		bool sampleTrack = ke->modifiers() & Qt::ShiftModifier;
 		// ...but only in the song editor. So, ctrl+shift enter does nothing
 		if (sampleTrack && songEditor){ openInNewSampleTrack(file); }
+		// A long recording goes into a sample track of the song (see SampleTrack::LongAudioSeconds)
+		else if (!sampleTrack && songEditor && isLongRecording(file)) { openInNewSampleTrack(file); }
 		// Otherwise we send the item as a new instrument track
 		else if (!sampleTrack){ openInNewInstrumentTrack(file, songEditor); }
 	}
@@ -945,6 +947,8 @@ void FileBrowserTreeWidget::activateListItem(QTreeWidgetItem * item,
 	{
 		handleFile( f, nullptr );
 	}
+	// A long recording goes into a sample track of the song (see SampleTrack::LongAudioSeconds)
+	else if (isLongRecording(f)) { openInNewSampleTrack(f); }
 	else if( f->handling() != FileItem::FileHandling::NotSupported )
 	{
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::patternStore()));
@@ -973,6 +977,15 @@ void FileBrowserTreeWidget::openInNewInstrumentTrack(FileItem* item, bool songEd
 	TrackContainer* tc = Engine::getSong();
 	if (!songEditor) { tc = Engine::patternStore(); }
 	openInNewInstrumentTrack(tc, item);
+}
+
+
+
+
+auto FileBrowserTreeWidget::isLongRecording(FileItem* item) -> bool
+{
+	return item->type() == FileItem::FileType::Sample
+		&& SampleTrack::audioFileSeconds(item->fullName()) > SampleTrack::LongAudioSeconds;
 }
 
 

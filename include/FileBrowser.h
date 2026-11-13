@@ -180,6 +180,8 @@ private slots:
 	void activateListItem(QTreeWidgetItem* item, int column);
 	void openInNewInstrumentTrack(FileItem* item, bool songEditor);
 	bool openInNewSampleTrack(FileItem* item);
+	//! Whether @p item is an audio file long enough to be a recording rather than a sample
+	static auto isLongRecording(FileItem* item) -> bool;
 	void openInSlicerT(FileItem* item, bool songEditor);
 	void sendToActiveInstrumentTrack(FileItem* item);
 	void updateDirectory(QTreeWidgetItem* item);

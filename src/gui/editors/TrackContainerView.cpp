@@ -27,11 +27,18 @@
 #include "Mixer.h"
 
 
+#include <QMimeData>
+#include <QUrl>
+#include <QFileInfo>
 #include <QLayout>
 #include <QScrollBar>
 #include <QWheelEvent>
 
 #include "TrackContainer.h"
+#include "TrackContentWidget.h"
+#include "ProjectJournal.h"
+#include "SampleTrack.h"
+#include "SampleClip.h"
 #include "AudioEngine.h"
 #include "DataFile.h"
 #include "MainWindow.h"
@@ -427,6 +434,16 @@ void TrackContainerView::clearAllTracks()
 
 void TrackContainerView::dragEnterEvent( QDragEnterEvent * _dee )
 {
+	// Files from the file manager (the Finder), several at once
+	if (_dee->mimeData()->hasUrls())
+	{
+		const auto urls = _dee->mimeData()->urls();
+		if (std::any_of(urls.begin(), urls.end(), [](const QUrl& url) { return url.isLocalFile(); }))
+		{
+			_dee->acceptProposedAction();
+			return;
+		}
+	}
 	StringPairDrag::processDragEnterEvent( _dee,
 		QString( "presetfile,pluginpresetfile,samplefile,instrument,"
 				"importedproject,soundfontfile,patchfile,vstpluginfile,projectfile,"
@@ -447,11 +464,87 @@ void TrackContainerView::stopRubberBand()
 
 
 
+void TrackContainerView::insertAudioFiles(const QStringList& files, const TimePos& at)
+{
+	// One undo step for them all
+	const auto group = ProjectJournal::Group{Engine::projectJournal()};
+	for (const auto& file : files)
+	{
+		if (SampleTrack::audioFileSeconds(file) > SampleTrack::LongAudioSeconds)
+		{
+			// A recording (a stem): a track of its own, its clip where it was dropped
+			auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, m_tc));
+			if (!track) { continue; }
+			track->setName(QFileInfo{file}.completeBaseName());
+			auto* clip = dynamic_cast<SampleClip*>(track->createClip(at));
+			clip->setSampleFile(file);
+			clip->movePosition(at);
+		}
+		else
+		{
+			// A sample: an instrument playing it, as before
+			auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
+			if (!track) { continue; }
+			const auto plugin = getPluginFactory()->pluginSupportingExtension(FileItem::extension(file));
+			if (auto* instrument = track->loadInstrument(plugin.info.name(), &plugin.key)) { instrument->loadFile(file); }
+		}
+	}
+}
+
+
+
+
+auto TrackContainerView::dropPosition(const QDropEvent* event) const -> TimePos
+{
+	// Where it was dropped in the tracks' content, snapped to the bar before; the playhead's bar if not over them
+	for (const auto view : m_trackViews)
+	{
+		const auto content = view->getTrackContentWidget();
+		const auto x = content->mapFrom(this, event->position().toPoint()).x();
+		if (x < 0) { break; }
+		const auto ticks = currentPosition().getTicks() + static_cast<tick_t>(x * TimePos::ticksPerBar() / pixelsPerBar());
+		return TimePos{std::max(tick_t{0}, ticks)}.quantize(1.0, true);
+	}
+	const auto playhead = Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks();
+	return TimePos{playhead}.quantize(1.0, true);
+}
+
+
+
+
 void TrackContainerView::dropEvent( QDropEvent * _de )
 {
+	// Files from the file manager: the audio ones, each in a track (stems); a project opens
+	if (_de->mimeData()->hasUrls())
+	{
+		auto audio = QStringList{};
+		for (const auto& url : _de->mimeData()->urls())
+		{
+			if (!url.isLocalFile()) { continue; }
+			const auto path = url.toLocalFile();
+			const auto extension = FileItem::extension(path);
+			if (extension == "mmp" || extension == "mmpz")
+			{
+				if (getGUI()->mainWindow()->mayChangeProject(true)) { Engine::getSong()->loadProject(path); }
+				_de->accept();
+				return;
+			}
+			if (SampleTrack::audioFileSeconds(path) > 0.0) { audio << path; }
+		}
+		insertAudioFiles(audio, dropPosition(_de));
+		_de->accept();
+		return;
+	}
+
 	QString type = StringPairDrag::decodeKey( _de );
 	QString value = StringPairDrag::decodeValue( _de );
-	if( type == "instrument" )
+	if (type == "samplefile")
+	{
+		// A long recording becomes an audio track; a short sample, an instrument playing it
+		insertAudioFiles({value}, dropPosition(_de));
+		_de->accept();
+	}
+	else if( type == "instrument" )
 	{
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
 		auto ilt = new InstrumentLoaderThread(this, it, value);
@@ -459,7 +552,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 		//it->toggledInstrumentTrackButton( true );
 		_de->accept();
 	}
-	else if( type == "samplefile" || type == "pluginpresetfile"
+	else if( type == "pluginpresetfile"
 		|| type == "soundfontfile" || type == "vstpluginfile"
 		|| type == "patchfile" )
 	{

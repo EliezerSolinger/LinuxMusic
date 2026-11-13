@@ -11108,6 +11108,18 @@ Por favor visite http://lmms.sf.net/wiki para ter acesso a mais infromações so
         <source>Save current project</source>
         <translation>Salvar o projeto</translation>
     </message>
+    <message>
+        <source>Import audio files...</source>
+        <translation>Importar arquivos de áudio...</translation>
+    </message>
+    <message>
+        <source>Import audio files</source>
+        <translation>Importar arquivos de áudio</translation>
+    </message>
+    <message>
+        <source>Audio files (%1)</source>
+        <translation>Arquivos de áudio (%1)</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::MalletsInstrumentView</name>

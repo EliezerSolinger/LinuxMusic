@@ -170,6 +170,15 @@ public slots:
 	void deleteTrackView( lmms::gui::TrackView * _tv );
 
 	void dropEvent( QDropEvent * _de ) override;
+
+	/**
+	 * Adds a track for each audio file of @p files: one longer than SampleTrack::LongAudioSeconds is a recording
+	 * (a stem), a sample track with its clip at @p at; a shorter one a sample, an instrument playing it. One undo step.
+	 */
+	void insertAudioFiles(const QStringList& files, const TimePos& at);
+
+	//! The bar where @p event drops, in the tracks' content (the playhead's bar if not over them)
+	auto dropPosition(const QDropEvent* event) const -> TimePos;
 	void dragEnterEvent( QDragEnterEvent * _dee ) override;
 
 	///

@@ -52,6 +52,11 @@ public:
 	SampleTrack( TrackContainer* tc );
 	~SampleTrack() override;
 
+	//! An audio file longer than this is a recording (an audio track's clip), not a sample (an instrument's)
+	static constexpr double LongAudioSeconds = 30.0;
+	//! @returns how long the audio file @p path is, in seconds (from its header), or 0 if it cannot be read
+	static auto audioFileSeconds(const QString& path) -> double;
+
 	bool play( const TimePos & _start, const f_cnt_t _frames,
 						const f_cnt_t _frame_base, int _clip_num = -1 ) override;
 	gui::TrackView * createView( gui::TrackContainerView* tcv ) override;
