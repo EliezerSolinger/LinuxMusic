@@ -37,6 +37,7 @@ set(LMMS_TESTS
 	src/gui/ShortcutsTest.cpp
 	src/gui/ThemeImagesTest.cpp
 	src/tracks/AutomationTrackTest.cpp
+	src/tracks/SampleTrackTest.cpp
 )
 
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)

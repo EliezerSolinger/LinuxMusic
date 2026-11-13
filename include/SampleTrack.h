@@ -87,6 +87,8 @@ private:
 	//! Handles for its clips to play with, made on the main thread (one per clip, up to 32): a clip that starts
 	//! takes one, and the engine gives it back, so the audio thread neither makes nor deletes them
 	VoicePool<SamplePlayHandle> m_handles;
+	//! The tick the song last played the track at: a play at another than it or the next is a jump [audio thread]
+	tick_t m_lastPlayTick = -1;
 	static constexpr std::size_t MaxHandles = 32;
 	void growHandles();
 

@@ -133,6 +133,17 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	}
 	else
 	{
+		// A jump (the play head moved, the cycle went round): the clips playing stop, and start again from here.
+		// Seen here, on the audio thread, so that they start again where the song does (a signal from the main
+		// thread came a period or more later, or not at all while exporting)
+		const auto tick = _start.getTicks();
+		if (m_lastPlayTick >= 0 && tick != m_lastPlayTick && tick != m_lastPlayTick + 1)
+		{
+			Engine::audioEngine()->removePlayHandlesOfTypes(this, PlayHandle::Type::SamplePlayHandle);
+			setPlayingClips(false);
+		}
+		m_lastPlayTick = tick;
+
 		bool nowPlaying = false;
 		for( int i = 0; i < numOfClips(); ++i )
 		{

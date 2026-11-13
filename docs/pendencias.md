@@ -59,10 +59,9 @@ Motor e estabilidade:
   mutex do período inteiro; cada passo com TSan e A/B
 - [ ] **Autosave contínuo** (etapa 0): snapshot depois de cada mudança (debounce de ~2 s), escrito por uma thread de
   forma atômica; ao reabrir depois de uma queda, oferecer recuperar, com os takes que estavam sendo gravados
-- [ ] **Faixa de sample: reinício dos clipes pelo sinal da interface.** Quando a posição muda, o
-  `playbackPositionChanged` (entregue depois, pela thread principal) remove os handles e os clipes recomeçam num
-  período que varia: o começo de uma exportação com faixa de sample pode sair diferente de uma vez para outra. A
-  faixa deve ver o salto ela mesma, na thread de áudio
+- [x] **Faixa de sample: saltos vistos na thread de áudio.** O salto (play head movido, ciclo) é visto pela própria
+  faixa, que recomeça os clipes no mesmo período; antes, um sinal da interface chegava depois, e a exportação com
+  faixa de sample podia sair diferente de uma vez para outra
 - [ ] **Isolamento de plugins** (etapa 0): plugin ativo numa queda vai para a lista de suspeitos; da próxima vez roda
   isolado pela ponte do Carla, ou fica "não carregado" com aviso; opção por plugin para forçar o isolamento
 - [ ] **Fórmula de compasso por marcador** no mapa de tempo

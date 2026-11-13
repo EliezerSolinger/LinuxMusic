@@ -60,9 +60,7 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	//playbutton clicked or space key / on Export Song set isPlaying to false
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
-	//care about loops and jumps
-	connect(Engine::getSong(), &Song::playbackPositionJumped,
-			this, &SampleClip::playbackPositionChanged, Qt::DirectConnection);
+	// Loops and jumps: the track sees them itself, on the audio thread (SampleTrack::play)
 	//care about mute Clips
 	connect( this, SIGNAL(dataChanged()), this, SLOT(playbackPositionChanged()));
 	//care about mute track
@@ -111,9 +109,7 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	//playbutton clicked or space key / on Export Song set isPlaying to false
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
-	//care about loops and jumps
-	connect(Engine::getSong(), &Song::playbackPositionJumped,
-			this, &SampleClip::playbackPositionChanged, Qt::DirectConnection);
+	// Loops and jumps: the track sees them itself, on the audio thread (SampleTrack::play)
 	//care about mute Clips
 	connect( this, SIGNAL(dataChanged()), this, SLOT(playbackPositionChanged()));
 	//care about mute track
