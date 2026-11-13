@@ -255,7 +255,9 @@ public:
 	void removeFavoriteItem(const QString& item);
 	bool isFavoriteItem(const QString& item);
 
-	QString value(const QString& cls, const QString& attribute, const QString& defaultVal = "") const;
+	//! @returns the value, or @p defaultVal if there is none: by default a null string, which tells a missing value
+	//!          (isNull()) from an empty one (as the upgrades of older files need to)
+	QString value(const QString& cls, const QString& attribute, const QString& defaultVal = QString{}) const;
 
 	void setValue(const QString & cls, const QString & attribute,
 						const QString & value);
