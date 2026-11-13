@@ -52,10 +52,12 @@ class Track;
  *   file is valid up to its last second if the program stops.
  * - Alignment: the input of the period being rendered was captured while the device played the period before the
  *   one rendered before it (the engine hands the device each period one period late, and takes the input one period
- *   late), and the sound took the devices' input and output latencies to get out and back in. So the first frame
- *   of the capture belongs to the song frame (period start - 2 periods - latency). A take starts on the first tick
- *   at or after its first frame, its frames before that tick dropped: on the timeline it lies within a sample of
- *   where it was played.
+ *   late), and the sound took the devices' input and output latencies to get out and back in. So each captured frame
+ *   belongs to the song frame that was heard when it was played: the recorder keeps the start of each period it
+ *   saw, and maps each frame back through the latency to the period that was playing. Where that is not where the
+ *   last frame was (a loop went back, the play head jumped), a new segment begins, in a file of its own. A segment
+ *   starts on the first tick at or after its first frame, its frames before that tick dropped: on the timeline it
+ *   lies within a sample of where it was played.
  * - When the disk falls so far behind that a ring is full, the frames that did not fit become silence in the file,
  *   written in their place: the rest of the take stays aligned, and the take counts the frames lost.
  */
@@ -70,16 +72,21 @@ public:
 		QString path; //!< the WAV file to write
 	};
 
-	//! A recorded take
+	//! A continuous stretch of the song recorded into one file: the whole take, or a pass of a loop
+	struct Segment
+	{
+		QString path;
+		std::int64_t startTick = 0; //!< where it begins on the timeline
+		std::int64_t frames = 0; //!< frames in the file
+	};
+
+	//! What was recorded for one track: a segment each time the song went on from somewhere else (a loop's pass)
 	struct Take
 	{
 		Track* track = nullptr;
-		QString path;
-		bool started = false; //!< false if no period was recorded (the file is empty)
-		std::int64_t startTick = 0; //!< where the take begins on the timeline
-		std::int64_t frames = 0; //!< frames in the file
+		std::vector<Segment> segments;
 		std::int64_t lostFrames = 0; //!< frames that did not reach the disk in time (silence in the file)
-		bool diskFailed = false; //!< writing to the file failed: it holds what was written before
+		bool diskFailed = false; //!< writing a file failed: it holds what was written before
 	};
 
 	AudioRecorder();

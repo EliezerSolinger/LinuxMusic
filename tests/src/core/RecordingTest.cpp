@@ -89,6 +89,8 @@ public:
 		m_frame += frames;
 	}
 
+	auto outputFrames() const -> const std::vector<float>& { return m_output[0]; }
+
 	//! The frame and level of the loudest output sample of channel 0
 	auto outputPeak() const -> std::pair<std::int64_t, float>
 	{
@@ -177,6 +179,8 @@ private:
 		clip->movePosition(TimePos{ClipTick});
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
+		// Monitoring would send the input back out through the cable, round and round
+		recorder->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::Off));
 
 		song->setPlayPos(startTick, Song::PlayMode::Song);
 		auto problem = QString{};
@@ -276,6 +280,8 @@ private slots:
 		clip->movePosition(TimePos{ClipTick});
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
+		// Monitoring would send the input back out through the cable, round and round
+		recorder->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::Off));
 		const auto cleanUp = qScopeGuard([&] {
 			song->stop();
 			const auto guard = engine->requestChangesGuard();
@@ -324,6 +330,8 @@ private slots:
 		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
+		// Monitoring would send the input back out through the cable, round and round
+		recorder->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::Off));
 		ConfigManager::inst()->setValue("recording", "prerollbars", "1");
 		ConfigManager::inst()->setValue("recording", "countin", "1");
 		const auto cleanUp = qScopeGuard([&] {
@@ -346,6 +354,66 @@ private slots:
 
 		// The count-in clicked during the pre-roll (nothing else plays)
 		QVERIFY(device->outputPeak().second > 0.05f);
+	}
+
+	void loopPassesBecomeTakesOfOneClip()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
+		engine->setAudioDevice(device, false);
+
+		// A loop over bars 2 to 4, an impulse in it at bar 3
+		const auto bar = TimePos::ticksPerBar();
+		const auto impulsePath = m_directory.filePath("impulse-loop.wav");
+		writeImpulse(impulsePath, engine->outputSampleRate(), 4000, 0);
+		auto* player = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* clip = new SampleClip{player};
+		clip->setSampleFile(impulsePath);
+		clip->movePosition(TimePos{2 * bar});
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		// Monitoring would send the input back out through the cable, round and round
+		recorder->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::Off));
+		auto& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.setLoopPoints(TimePos{bar}, TimePos{3 * bar});
+		timeline.setLoopEnabled(true);
+		const auto cleanUp = qScopeGuard([&] {
+			song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
+			song->stop();
+			const auto guard = engine->requestChangesGuard();
+			delete player;
+			delete recorder;
+		});
+
+		// From the loop's start, three passes and a half
+		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
+		song->setPlayPos(bar, Song::PlayMode::Song);
+		QVERIFY(song->recordAudio());
+		const auto passFrames = 2 * bar * framesPerTick;
+		for (double played = 0; played < 3.5 * passFrames; played += 256) { device->callback(256); }
+		song->stop();
+
+		// One clip at the loop's start, with a take for each whole pass, the last one active
+		QCOMPARE(recorder->numOfClips(), 1);
+		const auto* take = dynamic_cast<SampleClip*>(recorder->getClip(0));
+		QCOMPARE(take->startPosition().getTicks(), bar);
+		QCOMPARE(take->takes().size(), qsizetype{3});
+		QCOMPARE(take->activeTake(), 2);
+
+		// Each pass heard the impulse at the same place of the loop: each take holds it there
+		const auto heardAt = 2 * bar * framesPerTick; // the impulse, on the song's timeline
+		for (const auto& file : take->takes())
+		{
+			const auto peak = peakFrame(PathUtil::toAbsolute(file));
+			QVERIFY2(peak >= 0, qPrintable(file));
+			const auto recordedAt = bar * framesPerTick + static_cast<double>(peak);
+			qInfo("%s: impulse %.2f frames from where it was heard", qPrintable(QFileInfo{file}.fileName()),
+				recordedAt - heardAt);
+			// The sample playback is a frame late (Sample::play's resampler): the take holds what was heard
+			QVERIFY(std::abs(recordedAt - heardAt - 1.0) <= 1.0);
+		}
 	}
 
 	void monitoringPlaysTheInputThroughTheTrack_data()

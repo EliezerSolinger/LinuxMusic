@@ -25,6 +25,7 @@
 #include "SampleClipView.h"
 
 #include <QApplication>
+#include <QActionGroup>
 #include <QMenu>
 #include <QPainter>
 
@@ -105,6 +106,25 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 		this,
 		SLOT(setAutomationGhost())
 	);
+
+	// The takes of a recording: choose the one the clip plays, or drop it
+	if (const auto& takes = m_clip->takes(); takes.size() > 1)
+	{
+		cm->addSeparator();
+		auto takesMenu = cm->addMenu(tr("Takes"));
+		auto choices = new QActionGroup(takesMenu);
+		for (int take = 0; take < takes.size(); ++take)
+		{
+			auto action = takesMenu->addAction(tr("Take %1: %2").arg(take + 1).arg(PathUtil::cleanName(takes[take])));
+			action->setCheckable(true);
+			action->setChecked(take == m_clip->activeTake());
+			choices->addAction(action);
+			connect(action, &QAction::triggered, m_clip, [clip = m_clip, take] { clip->setActiveTake(take); });
+		}
+		takesMenu->addSeparator();
+		takesMenu->addAction(tr("Remove the active take"), m_clip,
+			[clip = m_clip] { clip->removeTake(clip->activeTake()); });
+	}
 
 }
 
@@ -300,6 +320,10 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 	p.setBrush(QColor(0,0,0,0));
 
 	QString name = PathUtil::cleanName(m_clip->m_sample.sampleFile());
+	if (m_clip->takes().size() > 1)
+	{
+		name = tr("%1 (take %2/%3)").arg(name).arg(m_clip->activeTake() + 1).arg(m_clip->takes().size());
+	}
 	paintTextLabel(name, p);
 
 	// disable antialiasing for borders, since its not needed

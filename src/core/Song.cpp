@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 #include "AutomationTrack.h"
 #include "AutomationEditor.h"
@@ -888,25 +889,47 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 	auto problems = QStringList{};
 	for (const auto& take : takes)
 	{
-		if (!take.started || take.frames == 0)
+		// Segments nothing went into are not kept
+		auto segments = std::vector<AudioRecorder::Segment>{};
+		for (const auto& segment : take.segments)
 		{
-			QFile::remove(take.path);
-			continue;
+			if (segment.frames > 0) { segments.push_back(segment); }
+			else { QFile::remove(segment.path); }
 		}
+		if (segments.empty()) { continue; }
 
-		// The track may have been removed while recording: its take stays on disk
+		// The track may have been removed while recording: its takes stay on disk
 		const auto& all = tracks();
 		if (std::find(all.begin(), all.end(), take.track) == all.end())
 		{
-			problems << tr("The track of %1 was removed while recording; the file was kept.").arg(take.path);
+			problems << tr("The track of %1 was removed while recording; the files were kept.")
+				.arg(segments.front().path);
 			continue;
 		}
-
 		auto* track = static_cast<SampleTrack*>(take.track);
 		track->addJournalCheckPoint();
-		auto* clip = new SampleClip{track};
-		clip->setSampleFile(take.path);
-		clip->movePosition(TimePos{static_cast<tick_t>(take.startTick)});
+
+		// The passes of a loop begin on the same tick: they become the takes of one clip, the last pass the active
+		// take. A pass shorter than 90% of the longest (stopped before the loop's end) is dropped.
+		auto passes = std::map<std::int64_t, std::vector<AudioRecorder::Segment>>{};
+		for (const auto& segment : segments) { passes[segment.startTick].push_back(segment); }
+		for (auto& [startTick, group] : passes)
+		{
+			if (group.size() > 1)
+			{
+				const auto longest = std::max_element(group.begin(), group.end(),
+					[](const auto& a, const auto& b) { return a.frames < b.frames; })->frames;
+				std::erase_if(group, [longest](const AudioRecorder::Segment& segment) {
+					const bool partial = segment.frames < longest * 9 / 10;
+					if (partial) { QFile::remove(segment.path); }
+					return partial;
+				});
+			}
+			auto* clip = new SampleClip{track};
+			clip->setSampleFile(group.front().path);
+			clip->movePosition(TimePos{static_cast<tick_t>(startTick)});
+			for (std::size_t pass = 1; pass < group.size(); ++pass) { clip->addTake(group[pass].path); }
+		}
 
 		if (take.lostFrames > 0)
 		{
@@ -915,8 +938,7 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 		}
 		if (take.diskFailed)
 		{
-			problems << tr("%1: writing %2 failed; the take holds what was written before.").arg(track->name(),
-				take.path);
+			problems << tr("%1: writing a take failed; it holds what was written before.").arg(track->name());
 		}
 	}
 	setModified();

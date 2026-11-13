@@ -26,6 +26,7 @@
 
 #include <QDomElement>
 #include <QFileInfo>
+#include <algorithm>
 #include <numbers>
 
 #include "PatternStore.h"
@@ -79,6 +80,8 @@ SampleClip::SampleClip(Track* track)
 SampleClip::SampleClip(const SampleClip& orig) :
 	Clip(orig),
 	m_sample(std::move(orig.m_sample)),
+	m_takes(orig.m_takes),
+	m_activeTake(orig.m_activeTake),
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset)
 {
@@ -155,6 +158,54 @@ void SampleClip::setSampleBuffer(std::shared_ptr<const SampleBuffer> sb)
 	emit sampleChanged();
 	Engine::getSong()->setModified();
 }
+
+void SampleClip::addTake(const QString& file)
+{
+	// A clip that had one sample keeps it as its first take
+	if (m_takes.isEmpty() && !sampleFile().isEmpty()) { m_takes << sampleFile(); }
+	m_takes << file;
+	setActiveTake(static_cast<int>(m_takes.size()) - 1);
+}
+
+
+
+
+void SampleClip::setActiveTake(int index)
+{
+	if (index < 0 || index >= m_takes.size()) { return; }
+	addJournalCheckPoint();
+	m_activeTake = index;
+
+	// The clip keeps its place and length: only what it plays changes
+	const auto length = this->length();
+	const auto autoResize = getAutoResize();
+	setSampleFile(m_takes[index]);
+	if (!autoResize) { changeLength(length); }
+	emit sampleChanged();
+}
+
+
+
+
+void SampleClip::removeTake(int index)
+{
+	if (m_takes.size() < 2 || index < 0 || index >= m_takes.size()) { return; }
+	addJournalCheckPoint();
+	m_takes.removeAt(index);
+	const auto active = std::min(m_activeTake > index ? m_activeTake - 1 : m_activeTake,
+		static_cast<int>(m_takes.size()) - 1);
+	m_activeTake = -1;
+	setActiveTake(active);
+	if (m_takes.size() == 1)
+	{
+		// One take left: a clip of one sample again
+		m_takes.clear();
+		m_activeTake = -1;
+	}
+}
+
+
+
 
 void SampleClip::setSampleFile(const QString& sf)
 {
@@ -316,6 +367,18 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	}
 
 	_this.setAttribute( "sample_rate", m_sample.sampleRate());
+
+	// The takes; "src" is the active one, which older versions play
+	if (m_takes.size() > 1)
+	{
+		_this.setAttribute("activetake", m_activeTake);
+		for (const auto& take : m_takes)
+		{
+			auto element = _doc.createElement("take");
+			element.setAttribute("src", PathUtil::toShortestRelative(take));
+			_this.appendChild(element);
+		}
+	}
 	if (const auto& c = color())
 	{
 		_this.setAttribute("color", c->name());
@@ -351,6 +414,18 @@ void SampleClip::loadSettings( const QDomElement & _this )
 		auto sampleRate = _this.hasAttribute("sample_rate") ? _this.attribute("sample_rate").toInt() :
 			Engine::audioEngine()->outputSampleRate();
 		setSampleBuffer(SampleBuffer::fromBase64(_this.attribute("data"), sampleRate));
+	}
+
+	// The takes, if any: the active one was loaded above as "src"
+	m_takes.clear();
+	m_activeTake = -1;
+	for (auto element = _this.firstChildElement("take"); !element.isNull(); element = element.nextSiblingElement("take"))
+	{
+		m_takes << element.attribute("src");
+	}
+	if (!m_takes.isEmpty())
+	{
+		m_activeTake = std::clamp(_this.attribute("activetake").toInt(), 0, static_cast<int>(m_takes.size()) - 1);
 	}
 
 	changeLength( _this.attribute( "len" ).toInt() );

@@ -87,6 +87,21 @@ public:
 
 	bool isCrossfadeable() const override { return true; }
 
+	/**
+	 * Takes (docs/plano-gravacao.md, "Gravação"): a clip may hold several recordings of the same passage, e.g. the
+	 * passes of a loop recording. One of them, the active take, is the one the clip plays; the others are kept to
+	 * choose from. A clip without takes holds one sample, as before.
+	 */
+	//! @returns the takes' files (empty for a clip without takes)
+	auto takes() const -> const QStringList& { return m_takes; }
+	auto activeTake() const -> int { return m_activeTake; }
+	//! Adds a take and makes it the active one
+	void addTake(const QString& file);
+	//! Makes take @p index the one the clip plays
+	void setActiveTake(int index);
+	//! Removes take @p index (not the last one left)
+	void removeTake(int index);
+
 	SampleClip* clone() override
 	{
 		return new SampleClip(*this);
@@ -105,6 +120,8 @@ private:
 	void exportSampleBuffer(const QString& fileName);
 
 	Sample m_sample;
+	QStringList m_takes;
+	int m_activeTake = -1;
 	std::shared_ptr<const SampleThumbnailCache> m_sampleThumbnailCache;
 	bool m_isPlaying;
 	int m_startFrameOffset;
