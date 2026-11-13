@@ -25,6 +25,8 @@
 
 #include <vector>
 
+#include <QString>
+
 #include <QObject>
 
 #include "LmmsTypes.h"
@@ -64,6 +66,15 @@ public:
 
 	//! @returns the tempo at @p tick (the first marker's before it)
 	auto tempoAt(double tick) const -> double;
+
+	/**
+	 * @returns the frames the song plays from tick @p from to tick @p to: tick by tick, at the whole BPM the engine
+	 *          plays each tick at (the map's, or @p songBpm without markers)
+	 */
+	auto framesBetween(tick_t from, tick_t to, double songBpm, sample_rate_t sampleRate) const -> double;
+
+	//! Replaces all the markers (e.g. to go back to what they were)
+	void setMarkers(std::vector<Marker> markers);
 
 	//! Adds a marker, or replaces the one at its tick. The first marker added also gets one at the song's start,
 	//! with @p startBpm, so that the map says what the tempo is everywhere.

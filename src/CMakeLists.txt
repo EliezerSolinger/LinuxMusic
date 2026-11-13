@@ -157,6 +157,10 @@ if(LMMS_HAVE_PORTAUDIO)
 	list(APPEND EXTRA_LIBRARIES portaudio::portaudio)
 endif()
 
+if(LMMS_HAVE_RUBBERBAND)
+	list(APPEND EXTRA_LIBRARIES PkgConfig::RUBBERBAND)
+endif()
+
 if(LMMS_HAVE_MP3LAME)
 	list(APPEND EXTRA_LIBRARIES mp3lame::mp3lame)
 endif()

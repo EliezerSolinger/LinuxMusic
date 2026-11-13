@@ -57,6 +57,35 @@ auto TempoMap::tempoAt(double tick) const -> double
 
 
 
+auto TempoMap::framesBetween(tick_t from, tick_t to, double songBpm, sample_rate_t sampleRate) const -> double
+{
+	const auto framesPerTickAt = [&](double bpm) {
+		// As Engine::framesPerTick() reckons it, for the whole BPM the engine plays at
+		return sampleRate * 60.0 * 4 / DefaultTicksPerBar / std::clamp(std::round(bpm), 1.0, 1e6);
+	};
+	if (to <= from) { return 0; }
+	if (m_markers.empty()) { return (to - from) * framesPerTickAt(songBpm); }
+	auto frames = 0.0;
+	for (auto tick = from; tick < to; ++tick) { frames += framesPerTickAt(tempoAt(tick)); }
+	return frames;
+}
+
+
+
+
+void TempoMap::setMarkers(std::vector<Marker> markers)
+{
+	{
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		m_markers = std::move(markers);
+		sort();
+	}
+	emit changed();
+}
+
+
+
+
 void TempoMap::setMarker(const Marker& marker, double startBpm)
 {
 	{

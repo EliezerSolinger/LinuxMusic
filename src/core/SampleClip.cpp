@@ -27,6 +27,7 @@
 #include <QDomElement>
 #include <QFileInfo>
 #include <algorithm>
+#include <cmath>
 #include <numbers>
 
 #include "PatternStore.h"
@@ -82,6 +83,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	m_sample(std::move(orig.m_sample)),
 	m_takes(orig.m_takes),
 	m_activeTake(orig.m_activeTake),
+	m_originalTiming(orig.m_originalTiming),
+	m_originalFile(orig.m_originalFile),
+	m_renderedTiming(orig.m_renderedTiming),
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset)
 {
@@ -177,15 +181,53 @@ void SampleClip::setActiveTake(int index)
 	m_activeTake = index;
 
 	// The clip keeps its place, length and start in the recording (a part of a split clip stays that part, so a
-	// take can be chosen for each part: comping); only what it plays changes
+	// take can be chosen for each part: comping); only what it plays changes. A take is played as recorded until
+	// it is rendered for the tempo too.
+	if (isTempoBound())
+	{
+		m_originalFile = m_takes[index];
+		m_renderedTiming.clear();
+	}
+	playFile(m_takes[index]);
+}
+
+
+
+
+void SampleClip::playFile(const QString& file)
+{
 	const auto length = this->length();
 	const auto offset = startTimeOffset();
 	const auto autoResize = getAutoResize();
-	setSampleFile(m_takes[index]);
-	setAutoResize(autoResize);
-	changeLength(length);
-	setStartTimeOffset(offset);
+	const bool hadFile = !sampleFile().isEmpty();
+	setSampleFile(file);
+	if (hadFile)
+	{
+		setAutoResize(autoResize);
+		changeLength(length);
+		setStartTimeOffset(offset);
+	}
 	emit sampleChanged();
+}
+
+
+
+
+void SampleClip::setOriginalTiming(Timing timing, const QString& file)
+{
+	m_originalTiming = std::move(timing);
+	m_originalFile = file;
+	m_renderedTiming.clear();
+}
+
+
+
+
+void SampleClip::setRendering(const QString& file, Timing timing)
+{
+	m_renderedTiming = std::move(timing);
+	playFile(file);
+	Engine::getSong()->setModified();
 }
 
 
@@ -372,6 +414,25 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 	_this.setAttribute( "sample_rate", m_sample.sampleRate());
 
+	// The recording's original and its timing, if the clip is bound to its tempo ("src" is the rendering then)
+	if (isTempoBound())
+	{
+		const auto saveTiming = [&](const char* name, const Timing& timing) {
+			auto element = _doc.createElement(name);
+			for (const auto& point : timing)
+			{
+				auto pointElement = _doc.createElement("point");
+				pointElement.setAttribute("tick", point.tick);
+				pointElement.setAttribute("frame", QString::number(point.frame, 'f', 3));
+				element.appendChild(pointElement);
+			}
+			_this.appendChild(element);
+			return element;
+		};
+		saveTiming("original", m_originalTiming).setAttribute("src", PathUtil::toShortestRelative(m_originalFile));
+		if (!m_renderedTiming.empty()) { saveTiming("rendered", m_renderedTiming); }
+	}
+
 	// The takes; "src" is the active one, which older versions play
 	if (m_takes.size() > 1)
 	{
@@ -418,6 +479,30 @@ void SampleClip::loadSettings( const QDomElement & _this )
 		auto sampleRate = _this.hasAttribute("sample_rate") ? _this.attribute("sample_rate").toInt() :
 			Engine::audioEngine()->outputSampleRate();
 		setSampleBuffer(SampleBuffer::fromBase64(_this.attribute("data"), sampleRate));
+	}
+
+	// The recording's original and its timing
+	const auto loadTiming = [](const QDomElement& element) {
+		auto timing = Timing{};
+		for (auto point = element.firstChildElement("point"); !point.isNull(); point = point.nextSiblingElement("point"))
+		{
+			const auto frame = point.attribute("frame").toDouble();
+			timing.push_back({std::clamp(point.attribute("tick").toInt(), 0, TimePos::MaxTicks),
+				std::isfinite(frame) ? std::max(0.0, frame) : 0.0});
+		}
+		return timing;
+	};
+	const auto original = _this.firstChildElement("original");
+	m_originalTiming = original.isNull() ? Timing{} : loadTiming(original);
+	m_originalFile = original.attribute("src");
+	m_renderedTiming = loadTiming(_this.firstChildElement("rendered"));
+	if (m_originalTiming.size() < 2) { m_originalTiming.clear(); m_renderedTiming.clear(); }
+
+	// A rendering that is gone: the original plays (and is rendered again when asked)
+	if (isTempoBound() && sampleFile().isEmpty() && QFileInfo::exists(PathUtil::toAbsolute(m_originalFile)))
+	{
+		m_renderedTiming.clear();
+		setSampleFile(m_originalFile);
 	}
 
 	// The takes, if any: the active one was loaded above as "src"

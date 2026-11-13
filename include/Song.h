@@ -36,6 +36,7 @@
 #include "AudioRecorder.h"
 #include "MidiRecorder.h"
 #include "TempoMap.h"
+#include "SampleClip.h"
 #include "Controller.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
@@ -354,6 +355,29 @@ public:
 	auto midiRecorder() -> MidiRecorder& { return m_midiRecorder; }
 
 	auto tempoMap() -> TempoMap& { return m_tempoMap; }
+
+	//! @returns the frames the song plays from tick @p from to tick @p to at its tempo now (and tempo map)
+	auto framesBetween(tick_t from, tick_t to) const -> double;
+
+	//! @returns the timing of @p frames recorded from tick @p startTick at the song's tempo now (see SampleClip)
+	auto timingOf(tick_t startTick, double frames) const -> std::vector<SampleClip::TimingPoint>;
+
+	//! A recording to render for the song's tempo now (see SampleClip::isTempoBound())
+	struct StretchJob
+	{
+		SampleClip* clip = nullptr;
+		QString source; //!< the original file
+		std::vector<SampleClip::TimingPoint> from; //!< its timing
+		std::vector<SampleClip::TimingPoint> to; //!< the timing at the song's tempo now
+		QString target; //!< the file to render to
+		double seconds = 0; //!< how long the original is
+	};
+
+	/**
+	 * @returns the recordings whose timing at the song's tempo now differs from the one they play at. Those back at
+	 *          their original timing go back to their original file here and are no job.
+	 */
+	auto stretchJobs() -> std::vector<StretchJob>;
 
 	//! Any thread: the tick being heard now (the period being rendered, less the output's latency and the period
 	//! the engine hands the device ahead)

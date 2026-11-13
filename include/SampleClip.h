@@ -27,6 +27,8 @@
 
 #include <memory>
 #include "Clip.h"
+#include <vector>
+
 #include "Sample.h"
 
 namespace lmms
@@ -102,6 +104,31 @@ public:
 	//! Removes take @p index (not the last one left)
 	void removeTake(int index);
 
+	/**
+	 * Tempo (docs/plano-gravacao.md, "Time-stretch renderizado"): a recording is bound to the tempo it was played
+	 * at. Its original timing says which frame of the original file was played at which tick (from the clip's
+	 * start); when the song's tempo changes, the clip plays a rendering of the original stretched to the new
+	 * timing. A clip without an original timing (an imported sample) plays its file as it is.
+	 */
+	struct TimingPoint
+	{
+		tick_t tick = 0;
+		double frame = 0;
+		auto operator==(const TimingPoint&) const -> bool = default;
+	};
+	using Timing = std::vector<TimingPoint>;
+
+	auto isTempoBound() const -> bool { return !m_originalTiming.empty(); }
+	auto originalTiming() const -> const Timing& { return m_originalTiming; }
+	auto originalFile() const -> const QString& { return m_originalFile; }
+	//! The timing the clip plays its file at now: the original one, or the one it was rendered to
+	auto currentTiming() const -> const Timing& { return m_renderedTiming.empty() ? m_originalTiming : m_renderedTiming; }
+
+	//! Binds the clip to the timing its recording @p file was played at
+	void setOriginalTiming(Timing timing, const QString& file);
+	//! Plays @p file, a rendering of the original to @p timing
+	void setRendering(const QString& file, Timing timing);
+
 	SampleClip* clone() override
 	{
 		return new SampleClip(*this);
@@ -122,6 +149,12 @@ private:
 	Sample m_sample;
 	QStringList m_takes;
 	int m_activeTake = -1;
+	Timing m_originalTiming;
+	QString m_originalFile;
+	Timing m_renderedTiming;
+
+	//! Loads @p file keeping the clip's place, length and start in the recording
+	void playFile(const QString& file);
 	std::shared_ptr<const SampleThumbnailCache> m_sampleThumbnailCache;
 	bool m_isPlaying;
 	int m_startFrameOffset;

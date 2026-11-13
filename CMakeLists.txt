@@ -305,6 +305,20 @@ ENDIF()
 FIND_PACKAGE(Qt${QT_VERSION_MAJOR}Test)
 SET(QT_QTTEST_LIBRARY Qt${QT_VERSION_MAJOR}::Test)
 
+# Rubber Band: time-stretching recorded audio when the tempo changes (GPL v2+)
+OPTION(WANT_RUBBERBAND "Include Rubber Band for time-stretching" ON)
+IF(WANT_RUBBERBAND)
+	PKG_CHECK_MODULES(RUBBERBAND IMPORTED_TARGET rubberband>=1.8)
+	IF(RUBBERBAND_FOUND)
+		SET(LMMS_HAVE_RUBBERBAND TRUE)
+		SET(STATUS_RUBBERBAND "OK")
+	ELSE()
+		SET(STATUS_RUBBERBAND "not found, please install librubberband-dev (or similar): without it, audio follows a change of tempo by resampling (its pitch changes)")
+	ENDIF()
+ELSE()
+	SET(STATUS_RUBBERBAND "disabled")
+ENDIF()
+
 # check for libsndfile
 FIND_PACKAGE(SndFile REQUIRED)
 IF(SNDFILE_FOUND)
@@ -883,6 +897,7 @@ MESSAGE(
 "* JACK                        : ${STATUS_JACK}\n"
 "* Sndio                       : ${STATUS_SNDIO}\n"
 "* PortAudio                   : ${STATUS_PORTAUDIO}\n"
+"* Rubber Band (time-stretch)  : ${STATUS_RUBBERBAND}\n"
 "* PulseAudio                  : ${STATUS_PULSEAUDIO}\n"
 "* SDL                         : ${STATUS_SDL}\n"
 )

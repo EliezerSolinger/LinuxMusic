@@ -59,6 +59,7 @@
 #include "Scale.h"
 #include "SongEditor.h"
 #include "SampleClip.h"
+#include "PathUtil.h"
 #include "SampleTrack.h"
 #include "PeakController.h"
 
@@ -788,6 +789,96 @@ void Song::scheduleCaptureUpdate()
 
 
 
+auto Song::framesBetween(tick_t from, tick_t to) const -> double
+{
+	return m_tempoMap.framesBetween(from, to, getTempo(), Engine::audioEngine()->outputSampleRate());
+}
+
+
+
+
+auto Song::timingOf(tick_t startTick, double frames) const -> std::vector<SampleClip::TimingPoint>
+{
+	// A point at each bar, and one at the end: where each was played
+	auto timing = std::vector<SampleClip::TimingPoint>{{0, 0.0}};
+	const auto bar = TimePos::ticksPerBar();
+	auto played = 0.0;
+	for (tick_t tick = 0; played < frames && tick < TimePos::MaxTicks; ++tick)
+	{
+		const auto next = played + framesBetween(startTick + tick, startTick + tick + 1);
+		if (next >= frames)
+		{
+			// The end falls in this tick: as a fraction of it, rounded to the nearest tick
+			const auto fraction = (frames - played) / (next - played);
+			const auto endTick = tick + (fraction >= 0.5 ? 1 : 0);
+			if (endTick > timing.back().tick) { timing.push_back({endTick, frames}); }
+			else { timing.back().frame = frames; }
+			break;
+		}
+		played = next;
+		if ((tick + 1) % bar == 0) { timing.push_back({tick + 1, played}); }
+	}
+	return timing;
+}
+
+
+
+
+auto Song::stretchJobs() -> std::vector<StretchJob>
+{
+	auto jobs = std::vector<StretchJob>{};
+	const auto rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+	for (auto* track : tracks())
+	{
+		auto* sampleTrack = dynamic_cast<SampleTrack*>(track);
+		if (!sampleTrack) { continue; }
+		for (int index = 0; index < sampleTrack->numOfClips(); ++index)
+		{
+			auto* clip = dynamic_cast<SampleClip*>(sampleTrack->getClip(index));
+			if (!clip || !clip->isTempoBound()) { continue; }
+
+			// The timing the original's points have at the tempo now (the clip's place in the song is its start
+			// less its start in the recording)
+			const auto start = clip->startPosition().getTicks() - clip->startTimeOffset().getTicks();
+			auto target = clip->originalTiming();
+			for (auto& point : target) { point.frame = framesBetween(start, start + point.tick); }
+
+			const auto same = [](const SampleClip::Timing& a, const SampleClip::Timing& b) {
+				if (a.size() != b.size()) { return false; }
+				for (std::size_t i = 0; i < a.size(); ++i)
+				{
+					if (a[i].tick != b[i].tick || std::abs(a[i].frame - b[i].frame) > 1.0) { return false; }
+				}
+				return true;
+			};
+			if (same(target, clip->originalTiming()))
+			{
+				// Back at the tempo it was played at: the original again
+				if (clip->currentTiming() != clip->originalTiming()) { clip->setRendering(clip->originalFile(), {}); }
+				continue;
+			}
+			if (same(target, clip->currentTiming())) { continue; }
+
+			// "st<bpm>_<name>.wav" next to the original
+			const auto source = PathUtil::toAbsolute(clip->originalFile());
+			const auto info = QFileInfo{source};
+			const auto bpm = static_cast<int>(std::lround(m_tempoMap.isEmpty() ? getTempo() : m_tempoMap.tempoAt(start)));
+			auto path = QString{};
+			for (int n = 1; path.isEmpty() || QFileInfo::exists(path); ++n)
+			{
+				path = QString{"%1/st%2_%3%4.wav"}.arg(info.absolutePath()).arg(bpm).arg(info.completeBaseName())
+					.arg(n > 1 ? QString{"-%1"}.arg(n) : QString{});
+			}
+			jobs.push_back({clip, source, clip->originalTiming(), target, path,
+				clip->originalTiming().back().frame / rate});
+		}
+	}
+	return jobs;
+}
+
+
+
+
 auto Song::recordingLatency() const -> f_cnt_t
 {
 	const auto* device = Engine::audioEngine()->audioDev();
@@ -1002,6 +1093,12 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 			auto* clip = new SampleClip{track};
 			clip->setSampleFile(group.front().path);
 			clip->movePosition(TimePos{static_cast<tick_t>(startTick)});
+
+			// The take is bound to the tempo it was played at: a change of tempo renders it again
+			const auto longest = std::max_element(group.begin(), group.end(),
+				[](const auto& a, const auto& b) { return a.frames < b.frames; })->frames;
+			clip->setOriginalTiming(timingOf(static_cast<tick_t>(startTick), static_cast<double>(longest)),
+				group.front().path);
 			for (std::size_t pass = 1; pass < group.size(); ++pass) { clip->addTake(group[pass].path); }
 		}
 
