@@ -51,6 +51,12 @@ PlayHandle::~PlayHandle()
 }
 
 
+void PlayHandle::setAffinityToCurrentThread()
+{
+	m_affinity = QThread::currentThread();
+}
+
+
 void PlayHandle::doProcessing()
 {
 	if( m_usesBuffer )

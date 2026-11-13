@@ -207,11 +207,7 @@ void AudioEngine::renderStageNoteSetup()
 		if( it != m_playHandles.end() )
 		{
 			if ((*it)->audioBusHandle()) { (*it)->audioBusHandle()->removePlayHandle(*it); }
-			if((*it)->type() == PlayHandle::Type::NotePlayHandle)
-			{
-				NotePlayHandleManager::release((NotePlayHandle*)*it);
-			}
-			else { delete *it; }
+			(*it)->dispose();
 			it = m_playHandles.erase(it);
 			removedFromPlayHandles = true;
 		}
@@ -297,11 +293,7 @@ void AudioEngine::renderStageEffects()
 		if( ( *it )->isFinished() )
 		{
 			if ((*it)->audioBusHandle()) { (*it)->audioBusHandle()->removePlayHandle(*it); }
-			if((*it)->type() == PlayHandle::Type::NotePlayHandle)
-			{
-				NotePlayHandleManager::release((NotePlayHandle*)*it);
-			}
-			else delete *it;
+			(*it)->dispose();
 			it = m_playHandles.erase(it);
 		}
 		else
@@ -606,11 +598,7 @@ bool AudioEngine::addPlayHandle( PlayHandle* handle )
 		return true;
 	}
 
-	if( handle->type() == PlayHandle::Type::NotePlayHandle )
-	{
-		NotePlayHandleManager::release( (NotePlayHandle*)handle );
-	}
-	else delete handle;
+	handle->dispose();
 
 	return false;
 }
@@ -657,11 +645,7 @@ void AudioEngine::removePlayHandle(PlayHandle * ph)
 		// (See tobydox's 2008 commit 4583e48)
 		if ( removedFromList )
 		{
-			if (ph->type() == PlayHandle::Type::NotePlayHandle)
-			{
-				NotePlayHandleManager::release(dynamic_cast<NotePlayHandle*>(ph));
-			}
-			else { delete ph; }
+			ph->dispose();
 		}
 	}
 	else
@@ -687,11 +671,7 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 		if ((*it)->isFromTrack(track) && ((*it)->type() & types))
 		{
 			if ((*it)->audioBusHandle()) { (*it)->audioBusHandle()->removePlayHandle(*it); }
-			if((*it)->type() == PlayHandle::Type::NotePlayHandle)
-			{
-				NotePlayHandleManager::release((NotePlayHandle*)*it);
-			}
-			else delete *it;
+			(*it)->dispose();
 			it = m_playHandles.erase(it);
 		}
 		else

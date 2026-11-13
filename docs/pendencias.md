@@ -16,8 +16,12 @@ A lista do que falta, atualizada a cada passo (o detalhe de cada item fica em `p
     cada instrumento tocando
   - [x] instrumentos sem alocar: TripleOscillator, BitInvader, Kicker, LB302, Monstro, NES, Organic, Sfxr, SID,
     Watsyn (versões das ondas compartilhadas), FreeBoy, OpulenZ, AudioFileProcessor, SlicerT
-  - [ ] instrumentos que ainda fazem a voz na thread de áudio: Mallets (STK), Xpressive (compila a expressão),
-    ZynAddSubFX, Vibed (cordas do tamanho da nota). Precisam de vozes preparadas fora dela
+  - [x] os que fazem a voz com bibliotecas: FreeBoy e Mallets com vozes feitas antes (`VoicePool`,
+    `FreshVoicePool`, som idêntico); ZynAddSubFX, Xpressive e Vibed pelo pool de tempo real do `operator new`
+    (`RealtimeAllocator`, TLSF de 64 MB); estados do libsamplerate num pool; estado aleatório no núcleo
+  - [x] o teste vê também o `malloc` direto (Qt, C) pela biblioteca `AllocationObserver`
+  - [x] faixa de sample (grade): os clipes tocam com handles feitos antes, que voltam à faixa (`dispose()` no lugar
+    do `delete` do motor)
 
 ## A fazer
 
@@ -51,6 +55,12 @@ Motor e estabilidade:
   contador absoluto de frames da linha do tempo, ações globais Tocar, Parar e Gravar
 - [ ] **Motor sem trava** (etapa 1): listas publicadas como snapshots imutáveis, travas finas tentadas, e o fim do
   mutex do período inteiro; cada passo com TSan e A/B
+- [ ] **Autosave contínuo** (etapa 0): snapshot depois de cada mudança (debounce de ~2 s), escrito por uma thread de
+  forma atômica; ao reabrir depois de uma queda, oferecer recuperar, com os takes que estavam sendo gravados
+- [ ] **Faixa de sample: reinício dos clipes pelo sinal da interface.** Quando a posição muda, o
+  `playbackPositionChanged` (entregue depois, pela thread principal) remove os handles e os clipes recomeçam num
+  período que varia: o começo de uma exportação com faixa de sample pode sair diferente de uma vez para outra. A
+  faixa deve ver o salto ela mesma, na thread de áudio
 - [ ] **Isolamento de plugins** (etapa 0): plugin ativo numa queda vai para a lista de suspeitos; da próxima vez roda
   isolado pela ponte do Carla, ou fica "não carregado" com aviso; opção por plugin para forçar o isolamento
 - [ ] **Fórmula de compasso por marcador** no mapa de tempo

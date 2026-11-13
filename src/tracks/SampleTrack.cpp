@@ -94,9 +94,20 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 {
 	bool played_a_note = false; // will be return variable
 
-
-	clipVector clips;
 	class PatternTrack * pattern_track = nullptr;
+	// A clip that starts plays with a handle from the track's pool (made on the main thread); one made now only when
+	// more clips play at once than the pool holds
+	const auto startClip = [&](SampleClip* clip) {
+		if (clip->isMuted()) { return; }
+		auto* handle = m_handles.take();
+		if (handle) { handle->restart(clip, &m_handles); }
+		else { handle = new SamplePlayHandle(clip); }
+		handle->setPatternTrack(pattern_track);
+		handle->setOffset(_offset);
+		// send it to the audio engine
+		Engine::audioEngine()->addPlayHandle(handle);
+		played_a_note = true;
+	};
 	if( _clip_num >= 0 )
 	{
 		auto sClip = dynamic_cast<SampleClip*>(getClip(_clip_num));
@@ -109,7 +120,6 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			return false;
 		}
-		clips.push_back(sClip);
 		if (trackContainer() == Engine::patternStore())
 		{
 			auto bufferFramesPerTick = Engine::framesPerTick(sClip->sample().sampleRate());
@@ -119,6 +129,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			sClip->setIsPlaying(true);
 			setPlaying(true);
 		}
+		startClip(sClip);
 	}
 	else
 	{
@@ -146,7 +157,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					{
 						sClip->setSampleStartFrame( sampleStart );
 						sClip->setSamplePlayLength( samplePlayLength );
-						clips.push_back( sClip );
+						startClip(sClip);
 						sClip->setIsPlaying( true );
 						nowPlaying = true;
 					}
@@ -159,20 +170,6 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			nowPlaying = nowPlaying || sClip->isPlaying();
 		}
 		setPlaying(nowPlaying);
-	}
-
-	for (const auto& clip : clips)
-	{
-		auto st = dynamic_cast<SampleClip*>(clip);
-		if( !st->isMuted() )
-		{
-			auto handle = new SamplePlayHandle(st);
-			handle->setPatternTrack(pattern_track);
-			handle->setOffset( _offset );
-			// send it to the audio engine
-			Engine::audioEngine()->addPlayHandle( handle );
-			played_a_note = true;
-		}
 	}
 
 	return played_a_note;
@@ -193,7 +190,16 @@ Clip * SampleTrack::createClip(const TimePos & pos)
 {
 	auto sClip = new SampleClip(this);
 	sClip->movePosition(pos);
+	growHandles();
 	return sClip;
+}
+
+
+void SampleTrack::growHandles()
+{
+	// One more than its clips, up to the most (a clip plays with one handle at a time)
+	const auto wanted = std::min<std::size_t>(static_cast<std::size_t>(numOfClips()) + 1, MaxHandles);
+	m_handles.grow(wanted, [] { return std::make_unique<SamplePlayHandle>(); });
 }
 
 

@@ -90,6 +90,9 @@ public:
 					Origin origin = Origin::MidiClip );
 	~NotePlayHandle() override;
 
+	//! Back to the note pool (NotePlayHandleManager)
+	void dispose() override;
+
 	void * operator new ( size_t size, void * p )
 	{
 		return p;

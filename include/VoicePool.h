@@ -90,6 +90,36 @@ public:
 		}
 	}
 
+	//! Makes voices with @p make, of the current set, until it has @p count [main thread]
+	template<class Make>
+	void grow(std::size_t count, Make&& make)
+	{
+		std::size_t have = 0;
+		{
+			auto lock = Lock{m_lock};
+			for (const auto& slot : m_slots) { have += slot.generation == m_generation ? 1 : 0; }
+		}
+		if (have >= count) { return; }
+
+		auto made = std::vector<std::unique_ptr<T>>{};
+		for (; have + made.size() < count;)
+		{
+			auto voice = make();
+			if (!voice) { break; }
+			made.push_back(std::move(voice));
+		}
+
+		auto lock = Lock{m_lock};
+		m_slots.reserve(m_slots.size() + made.size());
+		m_free.reserve(m_slots.size() + made.size());
+		m_retired.reserve(m_slots.size() + made.size());
+		for (auto& voice : made)
+		{
+			m_free.push_back(voice.get());
+			m_slots.push_back(Slot{std::move(voice), m_generation});
+		}
+	}
+
 	//! A voice not in use (of the current set), or none when all are taken
 	auto take() -> T*
 	{

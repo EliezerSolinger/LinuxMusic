@@ -28,6 +28,7 @@
 
 #include "Sample.h"
 #include "PlayHandle.h"
+#include "VoicePool.h"
 
 namespace lmms
 {
@@ -44,6 +45,8 @@ public:
 	SamplePlayHandle(Sample* sample, bool ownAudioBusHandle = true);
 	SamplePlayHandle( const QString& sampleFile );
 	SamplePlayHandle( SampleClip* clip );
+	//! A handle for a sample track's pool: nothing to play until restart() gives it a clip
+	SamplePlayHandle();
 	~SamplePlayHandle() override;
 
 	inline bool affinityMatters() const override
@@ -72,7 +75,15 @@ public:
 		m_patternTrack = pt;
 	}
 
+	//! Plays @p clip from its start again, as a new handle for it would: for a handle from a sample track's pool
+	//! (allocates nothing) [audio thread]
+	void restart(SampleClip* clip, VoicePool<SamplePlayHandle>* pool);
+
+	//! Back to its sample track's pool, or deleted
+	void dispose() override;
+
 private:
+	VoicePool<SamplePlayHandle>* m_pool = nullptr; //!< the pool it came from, if any
 	Sample::PlaybackState m_state;
 	f_cnt_t m_frame = 0;
 	Sample* m_sample = nullptr;

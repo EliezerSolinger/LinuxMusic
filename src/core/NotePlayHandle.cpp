@@ -675,7 +675,9 @@ void NotePlayHandleManager::addSlots(int count)
 {
 	// The list of available places takes all of them (they all may be given back at once)
 	auto* list = new Slot[s_size + count];
-	std::copy(s_available, s_available + s_availableIndex + 1, list);
+	// How many are available, counted first: the first time there is no list (and adding -1 to it is undefined)
+	const int available = s_availableIndex + 1;
+	if (available > 0) { std::copy_n(s_available, available, list); }
 	delete[] s_available;
 	s_available = list;
 	s_size += count;
@@ -717,6 +719,12 @@ NotePlayHandle * NotePlayHandleManager::acquire( InstrumentTrack* instrumentTrac
 		midiEventChannel, origin );
 	nph->m_poolFilter = slot.filter;
 	return nph;
+}
+
+
+void NotePlayHandle::dispose()
+{
+	NotePlayHandleManager::release(this);
 }
 
 

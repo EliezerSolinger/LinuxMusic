@@ -28,6 +28,8 @@
 #include <atomic>
 
 #include "AudioInputTrack.h"
+#include "SamplePlayHandle.h"
+#include "VoicePool.h"
 
 
 namespace lmms
@@ -80,6 +82,13 @@ public slots:
 
 	friend class gui::SampleTrackView;
 	friend class gui::SampleTrackWindow;
+
+private:
+	//! Handles for its clips to play with, made on the main thread (one per clip, up to 32): a clip that starts
+	//! takes one, and the engine gives it back, so the audio thread neither makes nor deletes them
+	VoicePool<SamplePlayHandle> m_handles;
+	static constexpr std::size_t MaxHandles = 32;
+	void growHandles();
 
 } ;
 

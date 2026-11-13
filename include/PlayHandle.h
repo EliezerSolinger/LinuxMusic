@@ -85,6 +85,15 @@ public:
 
 	virtual ~PlayHandle();
 
+	/**
+	 * Gives the handle up once the engine is done with it: deleted, unless it goes back to the pool it came from (a
+	 * note, a sample track's handle), so that the audio thread need not free it
+	 */
+	virtual void dispose() { delete this; }
+
+	//! The thread the engine finishes the handle on (see affinityMatters()), for a handle used again on another
+	void setAffinityToCurrentThread();
+
 	virtual bool affinityMatters() const
 	{
 		return false;

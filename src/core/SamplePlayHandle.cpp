@@ -56,6 +56,14 @@ SamplePlayHandle::SamplePlayHandle( const QString& sampleFile ) :
 
 
 
+SamplePlayHandle::SamplePlayHandle()
+	: PlayHandle(Type::SamplePlayHandle)
+{
+}
+
+
+
+
 SamplePlayHandle::SamplePlayHandle( SampleClip* clip ) :
 	SamplePlayHandle(&clip->sample(), false)
 {
@@ -65,6 +73,35 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip ) :
 }
 
 
+
+
+void SamplePlayHandle::restart(SampleClip* clip, VoicePool<SamplePlayHandle>* pool)
+{
+	m_state.restart(0);
+	m_frame = 0;
+	m_sample = &clip->sample();
+	m_clip = clip;
+	m_track = clip->getTrack();
+	m_patternTrack = nullptr;
+	m_doneMayReturnTrue = true;
+	m_pool = pool;
+	setOffset(0);
+	releaseBuffer();
+	setAudioBusHandle(static_cast<SampleTrack*>(clip->getTrack())->audioBusHandle());
+	// Finished by the engine on the thread it plays on now (it was made on the main thread)
+	setAffinityToCurrentThread();
+}
+
+
+void SamplePlayHandle::dispose()
+{
+	if (m_pool)
+	{
+		m_clip = nullptr;
+		m_pool->give(this);
+	}
+	else { delete this; }
+}
 
 
 SamplePlayHandle::~SamplePlayHandle()

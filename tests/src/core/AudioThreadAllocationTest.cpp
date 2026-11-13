@@ -148,7 +148,20 @@ auto observeSystemAllocator() -> bool
 	auto* observer = reinterpret_cast<void (**)()>(dlsym(RTLD_DEFAULT, "lmmsAllocationObserver"));
 	if (!observer) { return false; }
 	*observer = countSystemCall;
-	return true;
+
+	// Seen only if the library really stands before the system's allocator (not under the address sanitizer,
+	// which replaces malloc itself): checked with an allocation of its own
+	s_events = 0;
+	s_counting = true;
+	{
+		const auto audioThread = lmms::ThreadCheck::AudioThreadScope{};
+		void* volatile memory = std::malloc(64);
+		std::free(memory);
+	}
+	s_counting = false;
+	const bool seen = s_events.load() >= 2;
+	s_events = 0;
+	return seen;
 }
 
 auto allocate(std::size_t size) -> void*
@@ -425,6 +438,27 @@ private slots:
 		report(events);
 		QVERIFY2(events == 0, qPrintable(QString{"%1 allocations or frees on the audio thread"}.arg(events)));
 		QCOMPARE(BufferManager::overflows(), 0L);
+	}
+
+	//! A sample track (the grid's), its clips starting one after the other: each start plays the clip's sample
+	void sampleTrackAllocatesNothing()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		const auto file = m_directory.filePath("hit.wav");
+		writeWav(file, static_cast<int>(Engine::audioEngine()->outputSampleRate() / 4));
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		for (int step = 0; step < 16; ++step)
+		{
+			auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos{step * 48}));
+			clip->setSampleFile(file);
+			clip->changeLength(TimePos{48});
+		}
+		Engine::mixer()->setUpTrackChannels();
+
+		const auto events = playCounting(40, 1200);
+		report(events);
+		QVERIFY2(events == 0, qPrintable(QString{"%1 allocations or frees on the audio thread"}.arg(events)));
 	}
 
 	//! Each instrument playing notes: what its notes allocate on the audio thread
