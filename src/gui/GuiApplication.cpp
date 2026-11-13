@@ -54,6 +54,7 @@
 #include <QMessageBox>
 #include <QSplashScreen>
 #include <QSocketNotifier>
+#include <QThread>
 #include <QTimer>
 
 #ifdef LMMS_BUILD_WIN32
@@ -89,6 +90,22 @@ bool GuiApplication::isWayland()
 {
 	return QGuiApplication::platformName().contains("wayland");
 }
+
+
+
+namespace
+{
+
+//! Quits once the main loop runs: a project still loading (its events processed before the loop starts) would make
+//! an exit before it do nothing
+void quitWhenTheMainLoopRuns()
+{
+	if (QThread::currentThread()->loopLevel() > 0) { QApplication::exit(0); }
+	else { QTimer::singleShot(100, qApp, &quitWhenTheMainLoopRuns); }
+}
+
+} // namespace
+
 
 
 
@@ -260,10 +277,12 @@ GuiApplication::GuiApplication()
 				m_mixerView->grab().save(screenshotPath);
 			}
 			else { m_mainWindow->grab().save(screenshotPath); }
-			QApplication::exit(0);
+
+			quitWhenTheMainLoopRuns();
 		});
 	}
 }
+
 
 GuiApplication::~GuiApplication()
 {
