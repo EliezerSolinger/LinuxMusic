@@ -38,6 +38,9 @@
 
 #include "AutomationTrack.h"
 #include "AutomationEditor.h"
+#include <QDateTime>
+#include <QDir>
+#include "DataFile.h"
 #include "ConfigManager.h"
 #include "ControllerRackView.h"
 #include "ControllerConnection.h"
@@ -126,6 +129,8 @@ Song::Song() :
 
 	// The clips streamed from disk are read ahead of the song's position (owned by the song)
 	new StreamScheduler{this};
+
+	m_unsavedMediaId = QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss-zzz");
 
 	for (auto& scale : m_scales) {scale = std::make_shared<Scale>();}
 	for (auto& keymap : m_keymaps) {keymap = std::make_shared<Keymap>();}
@@ -765,9 +770,125 @@ void Song::stop()
 
 auto Song::mediaDirectory() const -> QString
 {
-	if (m_fileName.isEmpty()) { return ConfigManager::inst()->workingDir() + "recordings"; }
-	const auto project = QFileInfo{m_fileName};
+	return mediaDirectoryOf(m_fileName);
+}
+
+
+
+
+auto Song::mediaDirectoryOf(const QString& projectFile) const -> QString
+{
+	if (projectFile.isEmpty() || projectFile == ConfigManager::inst()->recoveryFile())
+	{
+		return ConfigManager::inst()->workingDir() + "recordings/" + ProjectMedia::UnsavedPrefix + m_unsavedMediaId;
+	}
+	const auto project = QFileInfo{projectFile};
 	return project.absolutePath() + '/' + project.completeBaseName() + "_media";
+}
+
+
+
+
+void Song::noteGenerated(const QString& path)
+{
+	const auto folder = QFileInfo{path}.absolutePath();
+	if (!QDir{}.mkpath(folder)) { return; }
+	// An unsaved project's folder is held while this instance uses it, so another instance starting does not take
+	// it for abandoned
+	if (QFileInfo{folder}.fileName().startsWith(ProjectMedia::UnsavedPrefix) && !m_unsavedMediaLock
+		&& folder == QFileInfo{mediaDirectory()}.absoluteFilePath())
+	{
+		m_unsavedMediaLock = std::make_unique<QLockFile>(folder + "/.lock");
+		if (!m_unsavedMediaLock->tryLock(0)) { m_unsavedMediaLock.reset(); }
+	}
+	ProjectMedia::noteGenerated(path);
+	m_generatedFolders.insert(folder);
+}
+
+
+
+
+auto Song::filesInUse(const QString& projectFile) const -> QSet<QString>
+{
+	auto files = QSet<QString>{};
+	const auto add = [&](const QString& file) {
+		if (file.isEmpty()) { return; }
+		if (auto path = ProjectMedia::absolutePath(file, projectFile); !path.isEmpty()) { files.insert(path); }
+	};
+	auto containers = std::vector<const TrackContainer*>{this};
+	if (Engine::patternStore()) { containers.push_back(Engine::patternStore()); }
+	for (const auto* container : containers)
+	{
+		for (const auto* track : container->tracks())
+		{
+			for (const auto* clip : track->getClips())
+			{
+				const auto* sampleClip = dynamic_cast<const SampleClip*>(clip);
+				if (!sampleClip) { continue; }
+				add(sampleClip->sampleFile());
+				add(sampleClip->originalFile());
+				for (const auto& take : sampleClip->takes()) { add(take); }
+			}
+		}
+	}
+	return files;
+}
+
+
+
+
+void Song::cleanGeneratedMediaOf(const QString& projectFile)
+{
+	// Where the program made files for this project: this run's folders, its media folder, and the folders of the
+	// files its clips use (a project opened or recovered refers to files made in other runs)
+	auto folders = QStringList{m_generatedFolders.begin(), m_generatedFolders.end()};
+	folders << mediaDirectoryOf(projectFile);
+	for (const auto& file : filesInUse(projectFile)) { folders << QFileInfo{file}.absolutePath(); }
+	folders.removeDuplicates();
+
+	// What stays: what the saved project refers to (nothing, for a project never saved)
+	auto keep = QSet<QString>{};
+	const bool saved = !projectFile.isEmpty() && projectFile != ConfigManager::inst()->recoveryFile()
+		&& QFileInfo{projectFile}.isFile();
+	if (saved)
+	{
+		auto file = DataFile{projectFile};
+		if (file.content().isNull()) { return; } // (unreadable: nothing is cleaned)
+		keep = ProjectMedia::referencedFiles(file, projectFile);
+	}
+	ProjectMedia::cleanOrphans(folders, keep);
+	m_generatedFolders.clear();
+
+	// The unsaved project's folder is let go (and removed if nothing is left in it)
+	if (m_unsavedMediaLock)
+	{
+		const auto folder = QFileInfo{m_unsavedMediaLock->fileName()}.absolutePath();
+		m_unsavedMediaLock.reset();
+		QDir{}.rmdir(folder);
+	}
+	m_unsavedMediaId = QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss-zzz");
+}
+
+
+
+
+void Song::cleanAbandonedMedia()
+{
+	const auto recordings = QDir{ConfigManager::inst()->workingDir() + "recordings"};
+	if (!recordings.exists()) { return; }
+	const auto inUse = filesInUse(m_fileName);
+	const auto mine = QFileInfo{mediaDirectory()}.absoluteFilePath();
+	for (const auto& name : recordings.entryList({QString{ProjectMedia::UnsavedPrefix} + "*"}, QDir::Dirs | QDir::NoDotAndDotDot))
+	{
+		const auto folder = recordings.absoluteFilePath(name);
+		if (folder == mine) { continue; }
+		// Held by a running instance: not abandoned (a lock left by a process that is gone is taken over)
+		auto lock = QLockFile{folder + "/.lock"};
+		if (!lock.tryLock(0)) { continue; }
+		ProjectMedia::cleanOrphans({folder}, inUse);
+		lock.unlock();
+		QDir{}.rmdir(folder);
+	}
 }
 
 
@@ -886,6 +1007,7 @@ auto Song::stretchJobs() -> std::vector<StretchJob>
 			}
 			jobs.push_back({clip, source, clip->originalTiming(), target, path,
 				clip->originalTiming().back().frame / rate});
+			noteGenerated(path);
 		}
 	}
 	return jobs;
@@ -959,6 +1081,7 @@ auto Song::record() -> bool
 		}
 		usedPaths << path;
 		requests.push_back({sampleTrack, input, path});
+		noteGenerated(path);
 	}
 
 	// The armed instrument tracks record the notes played into them
@@ -1397,6 +1520,8 @@ void Song::createNewProjectFromDefault()
 
 	m_loadingProject = true;
 
+	// The files made for the project being closed that it does not keep
+	cleanGeneratedMediaOf(m_fileName);
 	clearProject();
 
 	Engine::projectJournal()->setJournalling( false );
@@ -1455,6 +1580,7 @@ void Song::loadProject( const QString & fileName )
 
 	Engine::projectJournal()->setJournalling( false );
 
+	const auto closingFile = m_fileName; // (the project open now, closed below if the other one can be loaded)
 	m_oldFileName = m_fileName;
 	setProjectFileName(fileName);
 
@@ -1502,6 +1628,8 @@ void Song::loadProject( const QString & fileName )
 
 	m_oldFileName = m_fileName;
 
+	// The files made for the project being closed that it does not keep ("local:" is still relative to its file)
+	cleanGeneratedMediaOf(closingFile);
 	clearProject();
 	// Every project plays with the desk's tolerances, also one without a mixer to load
 	Engine::mixer()->toleranceModel()->setValue(true);

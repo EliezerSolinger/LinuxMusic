@@ -32,6 +32,7 @@ namespace
  * Linked into every test program: before main(), points the configuration at a fresh directory of its own, which is
  * removed at exit. Without it, the tests read and overwrote the build's configuration file, and scanned the user's
  * working directory (in Documents, where on macOS each newly built test program waited for the privacy prompt).
+ * The trash and the cache are the tests' own too.
  */
 struct IsolatedConfiguration
 {
@@ -39,6 +40,9 @@ struct IsolatedConfiguration
 	{
 		if (!directory.isValid()) { qFatal("Could not create a directory for the tests' configuration"); }
 		qputenv(lmms::IsolatedConfigVariable, directory.path().toLocal8Bit());
+		// Nor the user's trash (files the program made and no longer uses go there) or cache (peak files)
+		qputenv("LINUXMUSIC_TRASH_DIR", (directory.path() + "/trash").toLocal8Bit());
+		qputenv("LINUXMUSIC_CACHE_DIR", (directory.path() + "/cache").toLocal8Bit());
 	}
 
 	QTemporaryDir directory;

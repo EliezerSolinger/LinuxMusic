@@ -24,6 +24,7 @@
 #define LMMS_PROJECT_MEDIA_H
 
 #include <QString>
+#include <QSet>
 #include <QStringList>
 
 #include "lmms_export.h"
@@ -56,6 +57,38 @@ public:
 
 	//! @returns whether @p path is one of the program's own files (factory samples, presets, soundfonts...)
 	static auto isFactoryFile(const QString& path) -> bool;
+
+	/**
+	 * Files the program makes (docs/plano-gravacao.md, "Mídia do projeto"): takes, renderings for the tempo, and
+	 * their copies in a media folder. Each folder lists the ones it has in a hidden file, GeneratedList; only
+	 * those are ever cleaned, never a file the user put there.
+	 */
+	static constexpr const char* GeneratedList = ".linuxmusic-generated";
+
+	//! Notes that the program made the file @p path
+	static void noteGenerated(const QString& path);
+	//! @returns whether the program made @p path
+	static auto isGenerated(const QString& path) -> bool;
+	//! The files the program made in @p folder (absolute paths, existing)
+	static auto generatedIn(const QString& folder) -> QStringList;
+
+	//! The files @p file refers to (absolute paths; "local:" relative to @p projectFile)
+	static auto referencedFiles(const DataFile& file, const QString& projectFile) -> QSet<QString>;
+
+	//! @p path as a project refers to it, absolute: "local:" relative to @p projectFile (which may be empty for a
+	//! project without a file), the other bases as PathUtil::toAbsolute()
+	static auto absolutePath(const QString& path, const QString& projectFile) -> QString;
+
+	/**
+	 * Cleans the orphans of @p folders: the files the program made there that @p keep does not have (absolute
+	 * paths) go to the system's trash, so a file another project still uses can be taken back. A folder left with
+	 * nothing is removed if it is a folder of an unsaved project (UnsavedPrefix).
+	 * @returns the files moved to the trash
+	 */
+	static auto cleanOrphans(const QStringList& folders, const QSet<QString>& keep) -> QStringList;
+
+	//! The media folders of unsaved projects are named so
+	static constexpr const char* UnsavedPrefix = "unsaved-";
 };
 
 } // namespace lmms

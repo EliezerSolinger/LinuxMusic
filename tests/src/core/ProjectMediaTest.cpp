@@ -26,6 +26,7 @@
 #include <QDirIterator>
 #include <QDomDocument>
 #include <QObject>
+#include <QLockFile>
 #include <QTemporaryDir>
 #include <QtTest>
 #include <sndfile.h>
@@ -149,6 +150,136 @@ private slots:
 		QVERIFY(song->guiSaveProjectAs(copyDir + "/moved.mmp"));
 		QVERIFY(QFileInfo::exists(copyDir + "/moved_media/hit-2.wav"));
 		song->createNewProject();
+	}
+
+	void onlyFilesTheProgramMadeAreListed()
+	{
+		const auto folder = m_directory.filePath("listed");
+		QVERIFY(QDir{}.mkpath(folder));
+		writeWav(folder + "/take_1.wav", 0.1f);
+		writeWav(folder + "/mine.wav", 0.1f);
+		ProjectMedia::noteGenerated(folder + "/take_1.wav");
+		ProjectMedia::noteGenerated(folder + "/take_1.wav"); // (once)
+		QVERIFY(ProjectMedia::isGenerated(folder + "/take_1.wav"));
+		QVERIFY(!ProjectMedia::isGenerated(folder + "/mine.wav"));
+		QCOMPARE(ProjectMedia::generatedIn(folder), QStringList{QFileInfo{folder + "/take_1.wav"}.absoluteFilePath()});
+
+		// A list that names something outside the folder is not followed
+		auto list = QFile{folder + '/' + ProjectMedia::GeneratedList};
+		QVERIFY(list.open(QIODevice::Append | QIODevice::Text));
+		list.write("../elsewhere.wav\nsub/x.wav\n..\n");
+		list.close();
+		QCOMPARE(ProjectMedia::generatedIn(folder).size(), qsizetype{1});
+	}
+
+	void orphansGoToTheTrashAndNothingElse()
+	{
+		const auto folder = m_directory.filePath("orphans");
+		QVERIFY(QDir{}.mkpath(folder));
+		for (const auto* name : {"kept.wav", "orphan.wav", "users.wav"}) { writeWav(folder + '/' + name, 0.1f); }
+		ProjectMedia::noteGenerated(folder + "/kept.wav");
+		ProjectMedia::noteGenerated(folder + "/orphan.wav");
+		ProjectMedia::noteGenerated(folder + "/gone.wav"); // (never made)
+
+		const auto moved = ProjectMedia::cleanOrphans({folder}, {QFileInfo{folder + "/kept.wav"}.absoluteFilePath()});
+		QCOMPARE(moved, QStringList{QFileInfo{folder + "/orphan.wav"}.absoluteFilePath()});
+		QVERIFY(QFileInfo::exists(folder + "/kept.wav"));
+		QVERIFY(!QFileInfo::exists(folder + "/orphan.wav"));
+		QVERIFY(QFileInfo::exists(folder + "/users.wav")); // the user's own file is never touched
+		QVERIFY(QFileInfo::exists(qEnvironmentVariable("LINUXMUSIC_TRASH_DIR") + "/orphan.wav"));
+		QCOMPARE(ProjectMedia::generatedIn(folder), QStringList{QFileInfo{folder + "/kept.wav"}.absoluteFilePath()});
+
+		// An unsaved project's folder left with nothing goes too
+		const auto unsaved = m_directory.filePath(QString{ProjectMedia::UnsavedPrefix} + "x");
+		QVERIFY(QDir{}.mkpath(unsaved));
+		writeWav(unsaved + "/take.wav", 0.1f);
+		ProjectMedia::noteGenerated(unsaved + "/take.wav");
+		ProjectMedia::cleanOrphans({unsaved}, {});
+		QVERIFY(!QFileInfo::exists(unsaved));
+	}
+
+	void closingAProjectCleansWhatItsFileDoesNotUse()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		const auto projectDir = m_directory.filePath("cleaned");
+		QVERIFY(QDir{}.mkpath(projectDir + "/song_media"));
+		const auto used = projectDir + "/song_media/take_1.wav";
+		const auto undone = projectDir + "/song_media/take_2.wav";
+		writeWav(used, 0.2f);
+		writeWav(undone, 0.3f);
+		ProjectMedia::noteGenerated(used);
+		ProjectMedia::noteGenerated(undone);
+
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* clip = new SampleClip{track};
+		clip->setSampleFile(used);
+		QVERIFY(song->guiSaveProjectAs(projectDir + "/song.mmp"));
+		// The second take is used after the save only, and not saved: discarded with the project
+		auto* other = new SampleClip{track};
+		other->setSampleFile(undone);
+
+		song->createNewProject();
+		QVERIFY(QFileInfo::exists(used));
+		QVERIFY(!QFileInfo::exists(undone));
+
+		// Opened and closed again: what it uses stays
+		song->loadProject(projectDir + "/song.mmp");
+		song->createNewProject();
+		QVERIFY(QFileInfo::exists(used));
+
+		// Closed by opening another project (whose file name is set before the one open is cleared): cleaned
+		// against its own file, not the other's
+		song->loadProject(projectDir + "/song.mmp");
+		const auto later = projectDir + "/song_media/take_3.wav";
+		writeWav(later, 0.4f);
+		ProjectMedia::noteGenerated(later);
+		auto* laterClip = new SampleClip{dynamic_cast<SampleTrack*>(song->tracks().front())};
+		laterClip->setSampleFile(later);
+		const auto otherDir = m_directory.filePath("cleaned-other");
+		QVERIFY(QDir{}.mkpath(otherDir));
+		// (one that cannot be loaded leaves the project open, and nothing is cleaned)
+		auto broken = QFile{otherDir + "/broken.mmp"};
+		QVERIFY(broken.open(QIODevice::WriteOnly));
+		broken.write("not a project");
+		broken.close();
+		song->loadProject(otherDir + "/broken.mmp");
+		QVERIFY(QFileInfo::exists(later));
+		song->loadProject(projectDir + "/song.mmp"); // (the same one again: it closes the one open)
+		QVERIFY(QFileInfo::exists(used));
+		QVERIFY(!QFileInfo::exists(later));
+		song->createNewProject();
+	}
+
+	void anUnsavedProjectKeepsNothingAndAbandonedFoldersAreCleaned()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		const auto folder = song->mediaDirectory();
+		QVERIFY(QFileInfo{folder}.fileName().startsWith(ProjectMedia::UnsavedPrefix));
+		QVERIFY(QDir{}.mkpath(folder));
+		writeWav(folder + "/take_1.wav", 0.2f);
+		ProjectMedia::noteGenerated(folder + "/take_1.wav");
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		(new SampleClip{track})->setSampleFile(folder + "/take_1.wav");
+		song->createNewProject();
+		QVERIFY(!QFileInfo::exists(folder + "/take_1.wav"));
+		QVERIFY(!QFileInfo::exists(folder));
+		QVERIFY(song->mediaDirectory() != folder); // the next project has a folder of its own
+
+		// Left by a run that crashed: cleaned at start, unless another instance holds it
+		const auto abandoned = ConfigManager::inst()->workingDir() + "recordings/" + ProjectMedia::UnsavedPrefix + "old";
+		QVERIFY(QDir{}.mkpath(abandoned));
+		writeWav(abandoned + "/take_1.wav", 0.2f);
+		ProjectMedia::noteGenerated(abandoned + "/take_1.wav");
+		{
+			auto held = QLockFile{abandoned + "/.lock"};
+			QVERIFY(held.tryLock(0));
+			song->cleanAbandonedMedia();
+			QVERIFY(QFileInfo::exists(abandoned + "/take_1.wav"));
+		}
+		song->cleanAbandonedMedia();
+		QVERIFY(!QFileInfo::exists(abandoned));
 	}
 
 	void factoryFilesStayWhereTheyAre()

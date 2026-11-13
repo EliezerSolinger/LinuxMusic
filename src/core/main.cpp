@@ -906,6 +906,10 @@ int main( int argc, char * * argv )
 			Engine::getSong()->createNewProject();
 		}
 
+		// What a run that ended without closing its project (a crash) left in unsaved projects' folders, unless the
+		// project recovered above uses it
+		Engine::getSong()->cleanAbandonedMedia();
+
 		// Finally we start the auto save timer and also trigger the
 		// autosave one time as recover.mmp is a signal to possible other
 		// instances of LMMS.

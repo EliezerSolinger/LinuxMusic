@@ -31,6 +31,8 @@
 
 #include <QString>
 #include <QHash>  // IWYU pragma: keep
+#include <QLockFile>
+#include <QSet>
 
 #include "AudioEngine.h"
 #include "AudioRecorder.h"
@@ -399,8 +401,22 @@ public:
 	auto heardTick() const -> tick_t;
 
 	//! @returns the folder where recordings of this project go: "<project>_media" next to the project file, or a
-	//! folder of the working directory while the project has no file
+	//! folder of its own in the working directory's "recordings" while the project has no file
 	auto mediaDirectory() const -> QString;
+
+	/**
+	 * The files the program made for this project that it no longer uses (docs/plano-gravacao.md, "Mídia do
+	 * projeto"): takes undone or discarded, renderings for a tempo left behind. When the project is closed, the
+	 * ones its saved file does not refer to go to the trash (ProjectMedia::cleanOrphans()); an unsaved project
+	 * keeps none. Done when the project closes, so the undo history never refers to a file that went.
+	 */
+	void cleanGeneratedMedia() { cleanGeneratedMediaOf(m_fileName); }
+	//! At start: the folders of unsaved projects left by a run that ended without closing them (a crash), that no
+	//! running instance holds and the project open now does not use
+	void cleanAbandonedMedia();
+	//! The files the clips of the project open now use (their files, takes and originals; "local:" relative to
+	//! @p projectFile)
+	auto filesInUse(const QString& projectFile) const -> QSet<QString>;
 
 	//! @returns the frames between a sound played and its recording: the device's latencies and the calibration
 	auto recordingLatency() const -> f_cnt_t;
@@ -533,6 +549,17 @@ private:
 
 	AudioRecorder m_audioRecorder;
 	bool m_captureUpdatePending = false;
+
+	QString m_unsavedMediaId; //!< names the media folder of the project while it has no file
+	QSet<QString> m_generatedFolders; //!< the folders the program made files in for this project
+	std::unique_ptr<QLockFile> m_unsavedMediaLock; //!< held while this instance uses its unsaved media folder
+	//! Notes a file the program made for this project
+	void noteGenerated(const QString& path);
+	//! cleanGeneratedMedia() for the project open now, whose file is @p projectFile (loading another project changes
+	//! the file name before the project open is cleared), and a media folder of its own for the next one
+	void cleanGeneratedMediaOf(const QString& projectFile);
+	//! The media folder of a project whose file is @p projectFile
+	auto mediaDirectoryOf(const QString& projectFile) const -> QString;
 	std::atomic<tick_t> m_countInUntilTick = -1; //!< the metronome clicks before this tick (a recording's count-in)
 	//! Where the period being rendered starts, in ticks (written by the audio thread)
 	std::atomic<double> m_periodStartTick = 0;

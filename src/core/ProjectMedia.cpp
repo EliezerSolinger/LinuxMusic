@@ -31,6 +31,7 @@
 #include <QFileInfo>
 
 #include "ConfigManager.h"
+#include "PeakCache.h"
 #include "DataFile.h"
 #include "PathUtil.h"
 
@@ -76,6 +77,158 @@ auto ProjectMedia::isFactoryFile(const QString& path) -> bool
 	const auto data = QFileInfo{ConfigManager::inst()->dataDir()}.canonicalFilePath();
 	const auto file = QFileInfo{path}.canonicalFilePath();
 	return !data.isEmpty() && !file.isEmpty() && inside(file, data).has_value();
+}
+
+
+namespace
+{
+
+auto readList(const QString& folder) -> QStringList
+{
+	auto file = QFile{folder + '/' + ProjectMedia::GeneratedList};
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) { return {}; }
+	auto names = QStringList{};
+	for (const auto& line : QString::fromUtf8(file.readAll()).split('\n', Qt::SkipEmptyParts))
+	{
+		// (names only: nothing outside the folder is ever listed)
+		const auto name = line.trimmed();
+		if (!name.isEmpty() && !name.contains('/') && !name.contains('\\') && name != "." && name != ".."
+			&& !names.contains(name))
+		{
+			names << name;
+		}
+	}
+	return names;
+}
+
+auto writeList(const QString& folder, const QStringList& names) -> bool
+{
+	const auto path = folder + '/' + ProjectMedia::GeneratedList;
+	if (names.isEmpty()) { return !QFileInfo::exists(path) || QFile::remove(path); }
+	auto file = QFile{path};
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) { return false; }
+	return file.write((names.join('\n') + '\n').toUtf8()) > 0;
+}
+
+auto absoluteOf(const QString& path) -> QString
+{
+	return QFileInfo{path}.absoluteFilePath();
+}
+
+auto moveToTrash(const QString& path) -> bool
+{
+	const auto trash = qEnvironmentVariable("LINUXMUSIC_TRASH_DIR");
+	if (trash.isEmpty()) { return QFile::moveToTrash(path); }
+	if (!QDir{}.mkpath(trash)) { return false; }
+	const auto info = QFileInfo{path};
+	auto target = trash + '/' + info.fileName();
+	for (int n = 2; QFileInfo::exists(target); ++n) { target = QString{"%1/%2 %3"}.arg(trash, info.fileName()).arg(n); }
+	return QFile::rename(path, target);
+}
+
+} // namespace
+
+
+void ProjectMedia::noteGenerated(const QString& path)
+{
+	const auto info = QFileInfo{path};
+	const auto folder = info.absolutePath();
+	auto names = readList(folder);
+	if (names.contains(info.fileName())) { return; }
+	if (!QDir{}.mkpath(folder)) { return; }
+	names << info.fileName();
+	writeList(folder, names);
+}
+
+
+auto ProjectMedia::isGenerated(const QString& path) -> bool
+{
+	const auto info = QFileInfo{path};
+	return readList(info.absolutePath()).contains(info.fileName());
+}
+
+
+auto ProjectMedia::generatedIn(const QString& folder) -> QStringList
+{
+	auto files = QStringList{};
+	for (const auto& name : readList(folder))
+	{
+		const auto path = absoluteOf(folder + '/' + name);
+		if (QFileInfo{path}.isFile()) { files << path; }
+	}
+	return files;
+}
+
+
+auto ProjectMedia::absolutePath(const QString& path, const QString& projectFile) -> QString
+{
+	const auto local = PathUtil::basePrefix(PathUtil::Base::LocalDir);
+	if (path.startsWith(local))
+	{
+		if (projectFile.isEmpty()) { return {}; }
+		return absoluteOf(QFileInfo{projectFile}.absolutePath() + '/' + path.mid(local.size()));
+	}
+	return absoluteOf(PathUtil::toAbsolute(path));
+}
+
+
+auto ProjectMedia::referencedFiles(const DataFile& file, const QString& projectFile) -> QSet<QString>
+{
+	auto files = QSet<QString>{};
+	for (const auto& [tag, attributes] : DataFile::ELEMENTS_WITH_RESOURCES)
+	{
+		const auto elements = file.elementsByTagName(tag);
+		for (int i = 0; i < elements.size(); ++i)
+		{
+			const auto element = elements.at(i).toElement();
+			for (const auto& attribute : attributes)
+			{
+				if (const auto value = element.attribute(attribute); !value.isEmpty())
+				{
+					if (auto path = absolutePath(value, projectFile); !path.isEmpty()) { files.insert(path); }
+				}
+			}
+		}
+	}
+	return files;
+}
+
+
+auto ProjectMedia::cleanOrphans(const QStringList& folders, const QSet<QString>& keep) -> QStringList
+{
+	auto moved = QStringList{};
+	auto done = QSet<QString>{};
+	for (const auto& folderName : folders)
+	{
+		const auto folder = absoluteOf(folderName);
+		if (folder.isEmpty() || done.contains(folder) || !QFileInfo{folder}.isDir()) { continue; }
+		done.insert(folder);
+
+		auto names = readList(folder);
+		auto left = QStringList{};
+		for (const auto& name : names)
+		{
+			const auto path = absoluteOf(folder + '/' + name);
+			if (!QFileInfo::exists(path)) { continue; } // (gone already: dropped from the list)
+			if (keep.contains(path)) { left << name; continue; }
+			// To the trash, not deleted: another project may still use it. Where there is no trash it stays.
+			// (LINUXMUSIC_TRASH_DIR gives another folder for it, for tests)
+			if (moveToTrash(path))
+			{
+				moved << path;
+				QFile::remove(PeakCache::peakFileOf(path));
+			}
+			else { left << name; }
+		}
+		if (left != names) { writeList(folder, left); }
+
+		// An unsaved project's folder with nothing left goes too
+		if (QFileInfo{folder}.fileName().startsWith(UnsavedPrefix) && left.isEmpty())
+		{
+			QDir{}.rmdir(folder); // (only if empty)
+		}
+	}
+	return moved;
 }
 
 
@@ -144,6 +297,8 @@ auto ProjectMedia::gather(DataFile& file, const QString& projectFile) -> QString
 					problems << tr("%1 could not be copied into %2.").arg(path, mediaDir);
 					continue;
 				}
+				// (a copy of a file the program made is one too: cleaned when orphaned)
+				if (isGenerated(path)) { noteGenerated(target); }
 				gathered[path] = local + mediaName + '/' + QFileInfo{target}.fileName();
 				element.setAttribute(attribute, gathered[path]);
 			}

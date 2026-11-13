@@ -1521,6 +1521,9 @@ void MainWindow::closeEvent( QCloseEvent * _ce )
 	}
 	if( mayChangeProject(true) )
 	{
+		// The files made for the project that it does not keep (see Song::cleanGeneratedMedia())
+		Engine::getSong()->cleanGeneratedMedia();
+
 		// delete recovery file
 		if( ConfigManager::inst()->
 				value( "ui", "enableautosave" ).toInt() )

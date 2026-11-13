@@ -296,6 +296,19 @@ Feito depois (mesma noite e manhã de 13/11):
   - Verificado: tocar ao vivo e exportar do disco dá o mesmo resultado da RAM, bit a bit (`StreamingTest` e um
     render pela linha de comando), sem falta de bloco ao vivo; o TSan não acha corridas.
 
+- **Limpeza dos arquivos órfãos** (13/11):
+  - cada pasta lista num arquivo oculto (`.linuxmusic-generated`) os arquivos que o programa fez nela: takes,
+    renderizações para o tempo e as cópias deles na pasta de mídia. Só esses são limpos, nunca um arquivo que o
+    usuário pôs lá;
+  - quando um projeto fecha (abrir outro, criar um novo, sair), os arquivos feitos para ele que o arquivo salvo não
+    usa vão para a **Lixeira do sistema**, não são apagados, porque outro projeto ("Salvar como" na mesma pasta)
+    pode ainda usá-los. É ao fechar, e não ao salvar, para o desfazer nunca apontar para um arquivo que sumiu;
+  - um projeto sem arquivo grava numa pasta só dele (`recordings/unsaved-<data>`), presa por um lock enquanto a
+    instância roda. Ao fechar sem salvar, ela é limpa e removida; ao abrir o programa, as pastas deixadas por uma
+    queda que nenhuma instância segura e que o projeto recuperado não usa também são limpas;
+  - `ProjectMediaTest` cobre isso, inclusive abrir outro projeto (que troca o nome do arquivo antes de fechar o
+    atual) e um projeto que não abre (nada é limpo).
+
 Por fazer, na ordem do plano:
 - **Mapa de tempo:** o desfazer das edições dos marcadores; a fórmula de compasso por marcador.
 - **Edição e interface:**
@@ -304,7 +317,7 @@ Por fazer, na ordem do plano:
   - fades automáticos;
   - ganho por item;
   - a faixa nova (`AudioTrack`) e o cabeçalho de duas linhas.
-- **Mídia:** a forma de onda crescendo ao vivo durante a gravação; a limpeza dos arquivos órfãos.
+- **Mídia:** a forma de onda crescendo ao vivo durante a gravação.
 - **Etapa 1:**
   - o motor sem o mutex do período;
   - o transporte com contador de frames.
