@@ -88,6 +88,9 @@ public:
 	}
 
 	static constexpr int LaneHeight = 30; //!< each lane past the first (see Track::laneCount())
+	//! Every track's header has two rows, as REAPER's (docs/gravacao-levantamento.md §6): what it is and how it
+	//! records on top, where it goes below
+	static constexpr int TwoRowHeight = 56; // (DEFAULT_TRACK_HEIGHT: a track starts with two rows)
 
 	inline TrackOperationsWidget * getTrackOperationsWidget()
 	{

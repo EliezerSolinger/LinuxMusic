@@ -52,6 +52,9 @@
 namespace lmms::gui
 {
 
+static_assert(TrackView::TwoRowHeight == DEFAULT_TRACK_HEIGHT, "a track starts with its two rows");
+
+
 TrackView::TrackView(Track* track, TrackContainerView* tcv)
 	: QWidget(tcv->contentWidget())
 	, ModelView(nullptr, this)
@@ -180,7 +183,10 @@ void TrackView::modelChanged()
 	connect(m_track->trackContainer(), &TrackContainer::silenceChanged, &m_trackContentWidget,
 		qOverload<>(&QWidget::update), Qt::UniqueConnection);
 	ModelView::modelChanged();
+	// Its height, and its lanes' (see fitLanes())
+	m_lanesExpanded = false;
 	setFixedHeight( m_track->getHeight() );
+	fitLanes();
 }
 
 

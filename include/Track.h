@@ -58,7 +58,7 @@ class TrackContainerView;
 //! Tracks can be resized by shift-dragging anywhere inside the track display. This sets the minimum size in pixels
 //! for a track.
 const int MINIMAL_TRACK_HEIGHT = 32;
-const int DEFAULT_TRACK_HEIGHT = 32;
+const int DEFAULT_TRACK_HEIGHT = 56; //!< the two rows of every track's header (see TrackView::TwoRowHeight)
 
 char const *const FILENAME_FILTER = "[\\0000-\x1f\"*/:<>?\\\\|\x7f]";
 

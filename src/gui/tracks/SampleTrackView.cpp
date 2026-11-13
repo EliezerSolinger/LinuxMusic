@@ -124,7 +124,7 @@ SampleTrackView::SampleTrackView( AudioInputTrack * _t, TrackContainerView* tcv 
 	// The audio track records (two rows: what it is and records, then where it goes); the sample track plays
 	// samples on the grid (one row, nothing to record)
 	auto* audioTrack = dynamic_cast<AudioTrack*>(_t);
-	setFixedHeight(audioTrack ? AudioTrackHeight : 32);
+	setFixedHeight(TwoRowHeight);
 
 	// The take growing while this track records
 	new LiveTakeOverlay(this, getTrackContentWidget());
@@ -214,16 +214,23 @@ SampleTrackView::SampleTrackView( AudioInputTrack * _t, TrackContainerView* tcv 
 		m_recordArmButton->hide();
 		m_inputButton->hide();
 		m_inputMeter->hide();
-		auto layout = new QHBoxLayout();
-		layout->setContentsMargins(0, 0, 0, 0);
-		layout->setSpacing(3);
-		layout->addWidget(m_tlb);
-		layout->addWidget(m_mixerChannelNumber);
-		layout->addWidget(m_activityIndicator);
-		layout->addWidget(m_volumeKnob);
-		layout->addWidget(m_panningKnob);
-		layout->addSpacing(4);
-		masterLayout->addLayout(layout);
+		auto top = new QHBoxLayout();
+		top->setContentsMargins(0, 0, 0, 0);
+		top->setSpacing(3);
+		top->addWidget(m_tlb, 1);
+		top->addWidget(m_activityIndicator);
+		top->addSpacing(4);
+		auto bottom = new QHBoxLayout();
+		bottom->setContentsMargins(0, 0, 0, 0);
+		bottom->setSpacing(3);
+		bottom->addWidget(m_mixerChannelNumber);
+		bottom->addStretch(1);
+		bottom->addWidget(m_volumeKnob);
+		bottom->addWidget(m_panningKnob);
+		bottom->addSpacing(4);
+		m_activityIndicator->setFixedSize(8, 18);
+		masterLayout->addLayout(top);
+		masterLayout->addLayout(bottom);
 	}
 	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 

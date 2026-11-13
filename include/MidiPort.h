@@ -126,6 +126,9 @@ public:
 	void subscribeReadablePort( const QString& port, bool subscribe = true );
 	void subscribeWritablePort( const QString& port, bool subscribe = true );
 
+	//! The channel it receives on (0: all of them)
+	IntModel* inputChannelModel() { return &m_inputChannelModel; }
+
 	const Map& readablePorts() const
 	{
 		return m_readablePorts;

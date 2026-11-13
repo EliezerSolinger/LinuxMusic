@@ -40,7 +40,7 @@ namespace lmms::gui
 FolderTrackView::FolderTrackView(FolderTrack* folder, TrackContainerView* tcv) :
 	TrackView(folder, tcv)
 {
-	setFixedHeight(32);
+	setFixedHeight(TwoRowHeight);
 
 	m_collapseButton = new QToolButton(getTrackSettingsWidget());
 	m_collapseButton->setAutoRaise(true);
@@ -72,16 +72,23 @@ FolderTrackView::FolderTrackView(FolderTrack* folder, TrackContainerView* tcv) :
 
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
-	auto layout = new QHBoxLayout();
-	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setSpacing(3);
-	layout->addWidget(m_collapseButton);
-	layout->addWidget(tlb, 1);
-	layout->addWidget(m_mixerChannelNumber);
-	layout->addWidget(m_volumeKnob);
-	layout->addWidget(m_panningKnob);
-	layout->addSpacing(4);
-	masterLayout->addLayout(layout);
+	masterLayout->setSpacing(1);
+	auto top = new QHBoxLayout();
+	top->setContentsMargins(0, 0, 0, 0);
+	top->setSpacing(3);
+	top->addWidget(m_collapseButton);
+	top->addWidget(tlb, 1);
+	top->addSpacing(4);
+	auto bottom = new QHBoxLayout();
+	bottom->setContentsMargins(0, 0, 0, 0);
+	bottom->setSpacing(3);
+	bottom->addWidget(m_mixerChannelNumber);
+	bottom->addStretch(1);
+	bottom->addWidget(m_volumeKnob);
+	bottom->addWidget(m_panningKnob);
+	bottom->addSpacing(4);
+	masterLayout->addLayout(top);
+	masterLayout->addLayout(bottom);
 	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
 	setModel(folder);

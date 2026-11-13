@@ -37,6 +37,7 @@
 #include "BrowserPanel.h"
 #include "ConfigManager.h"
 #include "ControllerRackView.h"
+#include "InstrumentTrack.h"
 #include "InstrumentTrackView.h"
 #include "InstrumentTrackWindow.h"
 #include "MixerView.h"
@@ -338,6 +339,13 @@ GuiApplication::GuiApplication()
 				track->addItem(file, TimePos{bar}, 1)->changeLength(TimePos{7 * bar});
 				track->addItem(file, TimePos{bar}, 2)->changeLength(TimePos{7 * bar});
 				Track::create(Track::Type::Audio, Engine::getSong());
+				// The other kinds, to see their headers
+				if (auto* instrument = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong())))
+				{
+					instrument->loadInstrument("tripleoscillator");
+				}
+				Track::create(Track::Type::Sample, Engine::getSong());
+				Track::create(Track::Type::Folder, Engine::getSong());
 				// (the first track selected, to see the highlight)
 				QTimer::singleShot(300, [] {
 					auto* editor = getGUI()->songEditor()->m_editor;

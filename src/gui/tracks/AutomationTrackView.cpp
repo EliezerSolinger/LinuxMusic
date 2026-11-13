@@ -43,7 +43,7 @@ namespace lmms::gui
 AutomationTrackView::AutomationTrackView( AutomationTrack * _at, TrackContainerView* tcv ) :
 	TrackView( _at, tcv )
 {
-        setFixedHeight( 32 );
+        setFixedHeight(TwoRowHeight); // (the same two rows: what it has fits the top one)
 		auto tlb = new TrackLabelButton(this, getTrackSettingsWidget());
 		tlb->setIcon(embed::getIconPixmap("automation_track"));
 		tlb->show();

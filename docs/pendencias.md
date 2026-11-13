@@ -29,9 +29,10 @@ Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
   nova em cima
 - [x] **MIDI, quantização ao gravar:** grade (1/4 a 1/64) e força (50, 75, 100%) por faixa, desligada por padrão,
   no menu do R
-- [ ] **MIDI:** entrada MIDI por faixa (dispositivo e canal) no cabeçalho (com o cabeçalho de duas linhas)
-- [ ] **Cabeçalho de duas linhas em todas as faixas:** instrumento como a de áudio; pasta, sequência e automação com o
-  mesmo desenho, só com o que faz sentido
+- [x] **MIDI:** entrada MIDI por faixa no cabeçalho: botão com receber, dispositivos e canal (omni por padrão)
+- [x] **Cabeçalho de duas linhas em todas as faixas** (altura padrão 56): instrumento e áudio com nome, atividade,
+  armar e entrada em cima, canal, VOL e PAN embaixo; sample e pasta com o mesmo desenho; sequência e automação com a
+  mesma altura
 - [ ] **Trocar dispositivo, buffer ou taxa sem reiniciar** (bloqueado durante a gravação); a taxa é a do projeto, e
   quando a placa não tem, converte e avisa
 

@@ -9363,6 +9363,38 @@ Por favor certifique que você tem permissão para gravar o aquivo e o diretóri
         <source>Arm for recording: the Record button records the notes played into this track (right-click: overdub, replace or a take in a lane, and quantizing)</source>
         <translation>Armar para gravar: o botão Gravar grava as notas tocadas nesta faixa (botão direito: overdub, replace ou take em lane, e quantização)</translation>
     </message>
+    <message>
+        <source>Omni</source>
+        <translation>Omni</translation>
+    </message>
+    <message>
+        <source>MIDI input: off</source>
+        <translation>Entrada MIDI: desligada</translation>
+    </message>
+    <message>
+        <source>MIDI input: all channels</source>
+        <translation>Entrada MIDI: todos os canais</translation>
+    </message>
+    <message>
+        <source>MIDI input: channel %1</source>
+        <translation>Entrada MIDI: canal %1</translation>
+    </message>
+    <message>
+        <source>Receive MIDI</source>
+        <translation>Receber MIDI</translation>
+    </message>
+    <message>
+        <source>Devices</source>
+        <translation>Dispositivos</translation>
+    </message>
+    <message>
+        <source>All channels (omni)</source>
+        <translation>Todos os canais (omni)</translation>
+    </message>
+    <message>
+        <source>Channel %1</source>
+        <translation>Canal %1</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::InstrumentTrackWindow</name>

@@ -109,6 +109,11 @@ private:
 	static QPixmap determinePixmap(InstrumentTrack* instrumentTrack);
 
 private:
+	//! The MIDI input button: off, omni or the channel; its menu chooses (see fillMidiInputMenu())
+	void updateMidiInputButton();
+	void fillMidiInputMenu(QMenu* menu);
+	QPushButton* m_midiInputButton = nullptr;
+
 	InstrumentTrackWindow * m_window;
 
 	// widgets in track-settings-widget

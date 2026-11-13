@@ -54,7 +54,6 @@ class SampleTrackView : public TrackView
 public:
 	SampleTrackView( AudioInputTrack* Track, TrackContainerView* tcv );
 
-	static constexpr int AudioTrackHeight = 46; //!< an audio track's two rows
 	~SampleTrackView() override;
 
 	SampleTrackWindow * getSampleTrackWindow()

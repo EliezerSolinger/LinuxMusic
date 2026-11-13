@@ -1305,7 +1305,8 @@ QPushButton#btn-swap:checked {
 /* Recording on the track heads: R arms the track (red while armed), the input button shows the input channels */
 lmms--gui--SampleTrackView QPushButton#btn-arm,
 lmms--gui--InstrumentTrackView QPushButton#btn-arm,
-lmms--gui--SampleTrackView QPushButton#btn-input {
+lmms--gui--SampleTrackView QPushButton#btn-input,
+lmms--gui--InstrumentTrackView QPushButton#btn-input {
 	border: 1 solid #080b12;
 	border-top: 1 solid #0e1218;
 	border-bottom: 1 solid #03060b;
@@ -1325,12 +1326,14 @@ lmms--gui--InstrumentTrackView QPushButton#btn-arm {
 	max-width: 16;
 }
 
-lmms--gui--SampleTrackView QPushButton#btn-input {
+lmms--gui--SampleTrackView QPushButton#btn-input,
+lmms--gui--InstrumentTrackView QPushButton#btn-input {
 	min-width: 26;
 	max-width: 26;
 }
 
-lmms--gui--SampleTrackView QPushButton#btn-input::menu-indicator {
+lmms--gui--SampleTrackView QPushButton#btn-input::menu-indicator,
+lmms--gui--InstrumentTrackView QPushButton#btn-input::menu-indicator {
 	image: none;
 	width: 0;
 }

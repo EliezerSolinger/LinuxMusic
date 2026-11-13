@@ -34,6 +34,7 @@
 #include <QMdiSubWindow>
 #include <QActionGroup>
 #include <QMenu>
+#include <QPushButton>
 #include <QSpacerItem>
 #include <QVBoxLayout>
 
@@ -72,7 +73,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	m_lastPos( -1, -1 )
 {
 	setAcceptDrops( true );
-	setFixedHeight( 32 );
+	setFixedHeight(TwoRowHeight);
 
 	m_tlb = new TrackLabelButton( this, getTrackSettingsWidget() );
 	m_tlb->setCheckable( true );
@@ -206,19 +207,40 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 		menu.exec(m_recordArmButton->mapToGlobal(where));
 	});
 
+	// The MIDI input: whether it receives, from which devices, on which channel (omni by default)
+	m_midiInputButton = new QPushButton(getTrackSettingsWidget());
+	m_midiInputButton->setObjectName("btn-input");
+	m_midiInputButton->setFocusPolicy(Qt::NoFocus);
+	m_midiInputButton->setCursor(Qt::PointingHandCursor);
+	auto* midiInputMenu = new QMenu(m_midiInputButton);
+	connect(midiInputMenu, &QMenu::aboutToShow, this, [this, midiInputMenu] { fillMidiInputMenu(midiInputMenu); });
+	m_midiInputButton->setMenu(midiInputMenu);
+	connect(&_it->m_midiPort, &MidiPort::modeChanged, this, &InstrumentTrackView::updateMidiInputButton);
+	connect(_it->m_midiPort.inputChannelModel(), &IntModel::dataChanged, this, &InstrumentTrackView::updateMidiInputButton);
+
+	// Two rows, as the audio track's: the name, activity, arming and input on top; the channel, VOL and PAN below
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
-	auto layout = new QHBoxLayout();
-	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setSpacing(3);
-	layout->addWidget(m_tlb);
-	layout->addWidget(m_mixerChannelNumber);
-	layout->addWidget(m_activityIndicator);
-	layout->addWidget(m_recordArmButton);
-	layout->addWidget(m_volumeKnob);
-	layout->addWidget(m_panningKnob);
-	layout->addSpacing(4);
-	masterLayout->addLayout(layout);
+	masterLayout->setSpacing(1);
+	auto top = new QHBoxLayout();
+	top->setContentsMargins(0, 0, 0, 0);
+	top->setSpacing(3);
+	top->addWidget(m_tlb, 1);
+	top->addWidget(m_activityIndicator);
+	top->addWidget(m_recordArmButton);
+	top->addWidget(m_midiInputButton);
+	top->addSpacing(4);
+	auto bottom = new QHBoxLayout();
+	bottom->setContentsMargins(0, 0, 0, 0);
+	bottom->setSpacing(3);
+	bottom->addWidget(m_mixerChannelNumber);
+	bottom->addStretch(1);
+	bottom->addWidget(m_volumeKnob);
+	bottom->addWidget(m_panningKnob);
+	bottom->addSpacing(4);
+	m_activityIndicator->setFixedSize(8, 18);
+	masterLayout->addLayout(top);
+	masterLayout->addLayout(bottom);
 	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
 	connect( m_activityIndicator, SIGNAL(pressed()),
@@ -232,6 +254,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &InstrumentTrackView::corruptStateUpdate);
 
 	setModel( _it );
+	updateMidiInputButton(); // (it reads the model: once it is set)
 
 	onInstrumentChanged();
 }
@@ -565,5 +588,41 @@ void InstrumentTrackView::corruptStateUpdate()
 		m_activityIndicator->setToolTip(QString{});
 	}
 }
+
+void InstrumentTrackView::updateMidiInputButton()
+{
+	auto& port = model()->m_midiPort;
+	const auto channel = port.inputChannel();
+	m_midiInputButton->setText(!port.isReadable() ? QString{"-"} : channel == 0 ? tr("Omni") : QString::number(channel));
+	m_midiInputButton->setToolTip(!port.isReadable() ? tr("MIDI input: off")
+		: channel == 0 ? tr("MIDI input: all channels") : tr("MIDI input: channel %1").arg(channel));
+}
+
+
+
+
+void InstrumentTrackView::fillMidiInputMenu(QMenu* menu)
+{
+	menu->clear();
+	auto& port = model()->m_midiPort;
+	auto* receive = menu->addAction(tr("Receive MIDI"), [&port](bool on) { port.setReadable(on); });
+	receive->setCheckable(true);
+	receive->setChecked(port.isReadable());
+	// The devices (with a sequencing MIDI client, as ALSA's or JACK's)
+	if (port.m_readablePortsMenu) { menu->addMenu(port.m_readablePortsMenu)->setText(tr("Devices")); }
+	menu->addSeparator();
+	auto* channels = new QActionGroup(menu);
+	for (int channel = 0; channel <= MidiChannelCount; ++channel)
+	{
+		auto* action = menu->addAction(channel == 0 ? tr("All channels (omni)") : tr("Channel %1").arg(channel),
+			[&port, channel] { port.setInputChannel(channel); });
+		action->setCheckable(true);
+		action->setChecked(port.inputChannel() == channel);
+		channels->addAction(action);
+	}
+}
+
+
+
 
 } // namespace lmms::gui
