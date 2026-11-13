@@ -200,6 +200,52 @@ private slots:
 		QCOMPARE(SampleTrack::audioFileSeconds(m_directory.filePath("nothing.wav")), 0.0);
 	}
 
+	void factoryFilesReferOnlyToFactorySamplesThatExist()
+	{
+		// Presets, demos and templates: every sample they name is one of the program's (removing samples must
+		// take what uses them along)
+		const auto data = QDir{ConfigManager::inst()->dataDir()};
+		auto missing = QStringList{};
+		auto checked = 0;
+		for (const auto& folder : {QString{"presets"}, QString{"projects"}})
+		{
+			for (auto it = QDirIterator{data.filePath(folder), {"*.xpf", "*.mmp", "*.mpt"}, QDir::Files,
+				QDirIterator::Subdirectories}; it.hasNext();)
+			{
+				const auto path = it.next();
+				auto file = QFile{path};
+				QVERIFY(file.open(QIODevice::ReadOnly));
+				auto document = QDomDocument{};
+				if (!document.setContent(&file)) { continue; }
+				// Every element, depth first
+				auto elements = std::vector<QDomElement>{document.documentElement()};
+				for (std::size_t n = 0; n < elements.size(); ++n)
+				{
+					for (auto child = elements[n].firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
+					{
+						elements.push_back(child);
+					}
+				}
+				for (const auto& element : elements)
+				{
+					for (const auto& attribute : {QString{"src"}, QString{"userwavefile"}})
+					{
+						const auto value = element.attribute(attribute);
+						if (value.isEmpty() || QDir::isAbsolutePath(value) || value.contains(':')) { continue; }
+						if (!value.contains('.')) { continue; } // (not a file)
+						++checked;
+						if (!QFileInfo::exists(ConfigManager::inst()->factorySamplesDir() + value))
+						{
+							missing << QString{"%1: %2"}.arg(QFileInfo{path}.fileName(), value);
+						}
+					}
+				}
+			}
+		}
+		QVERIFY2(checked > 0, qPrintable(data.absolutePath()));
+		QVERIFY2(missing.isEmpty(), qPrintable(missing.join('\n')));
+	}
+
 	void onlyFileReferencesMayBeLocal()
 	{
 		const auto check = [](const QString& xml) {
