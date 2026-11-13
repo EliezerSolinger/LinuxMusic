@@ -15139,6 +15139,10 @@ Latency: %2 ms</source>
         <source>Value: %1 keys</source>
         <translation>Valor: %1 teclas</translation>
     </message>
+    <message>
+        <source>Marker %1</source>
+        <translation>Marcador %1</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::SongEditorWindow</name>
@@ -17233,6 +17237,89 @@ Latency: %2 ms</source>
     <message>
         <source>%1 could not be written.</source>
         <translation>Não foi possível gravar %1.</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::TempoLaneWidget</name>
+    <message>
+        <source>MARKERS</source>
+        <translation>MARCADORES</translation>
+    </message>
+    <message>
+        <source>TEMPO</source>
+        <translation>TEMPO</translation>
+    </message>
+    <message>
+        <source>Markers above (M adds one at the playhead; right-click to add, rename, color or remove), tempo below (double-click to add a change of tempo); drag either to move it</source>
+        <translation>Marcadores em cima (M cria um no cursor; botão direito para criar, renomear, mudar a cor ou apagar), tempo embaixo (duplo clique cria uma mudança de tempo); arraste para mover</translation>
+    </message>
+    <message>
+        <source>%1 BPM - double-click to add a change of tempo</source>
+        <translation>%1 BPM - duplo clique para mudar o tempo</translation>
+    </message>
+    <message>
+        <source>Add a change of tempo here</source>
+        <translation>Mudar o tempo aqui</translation>
+    </message>
+    <message>
+        <source>Add a marker here...</source>
+        <translation>Criar um marcador aqui...</translation>
+    </message>
+    <message>
+        <source>Marker</source>
+        <translation>Marcador</translation>
+    </message>
+    <message>
+        <source>Name (e.g. Chorus):</source>
+        <translation>Nome (por exemplo, Refrão):</translation>
+    </message>
+    <message>
+        <source>Marker %1</source>
+        <translation>Marcador %1</translation>
+    </message>
+    <message>
+        <source>Name:</source>
+        <translation>Nome:</translation>
+    </message>
+    <message>
+        <source>Rename...</source>
+        <translation>Renomear...</translation>
+    </message>
+    <message>
+        <source>Color...</source>
+        <translation>Cor...</translation>
+    </message>
+    <message>
+        <source>Marker color</source>
+        <translation>Cor do marcador</translation>
+    </message>
+    <message>
+        <source>Marks a change of tempo</source>
+        <translation>Marca uma mudança de tempo</translation>
+    </message>
+    <message>
+        <source>Play from here</source>
+        <translation>Tocar daqui</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Apagar</translation>
+    </message>
+    <message>
+        <source>Edit tempo...</source>
+        <translation>Editar o tempo...</translation>
+    </message>
+    <message>
+        <source>Ramp to the next marker</source>
+        <translation>Rampa até o próximo marcador</translation>
+    </message>
+    <message>
+        <source>Change of tempo</source>
+        <translation>Mudança de tempo</translation>
+    </message>
+    <message>
+        <source>Tempo from here on (BPM):</source>
+        <translation>Tempo daqui em diante (BPM):</translation>
     </message>
 </context>
 </TS>

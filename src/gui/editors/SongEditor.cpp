@@ -528,6 +528,26 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	{
 		splitAtPlayhead();
 	}
+	else if (ke->key() == Qt::Key_M && ke->modifiers() == Qt::NoModifier)
+	{
+		// As in REAPER: a marker at the playhead, named after its number (renamed with a double-click)
+		auto& markers = m_song->markers();
+		const auto tick = m_song->getPlayPos(Song::PlayMode::Song).getTicks();
+		markers.add(tick, tr("Marker %1").arg(markers.markers().size() + 1));
+		m_song->setModified();
+	}
+	else if (ke->key() >= Qt::Key_1 && ke->key() <= Qt::Key_9 && ke->modifiers() == Qt::NoModifier)
+	{
+		// As in REAPER: to marker 1 to 9
+		const auto index = static_cast<std::size_t>(ke->key() - Qt::Key_1);
+		const auto& markers = m_song->markers().markers();
+		if (index < markers.size())
+		{
+			const auto tick = markers[index].tick;
+			m_song->setPlayPos(tick, Song::PlayMode::Song);
+			if (!m_song->isPlaying()) { m_song->setPlayPos(tick, Song::PlayMode::None); }
+		}
+	}
 	else if ((ke->modifiers() & Qt::ControlModifier)
 		&& (ke->key() == Qt::Key_C || ke->key() == Qt::Key_X || ke->key() == Qt::Key_V || ke->key() == Qt::Key_D))
 	{

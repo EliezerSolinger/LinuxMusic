@@ -149,9 +149,9 @@ Tamanho: P (pequeno), M (médio), G (grande).
   - Um marcador é um ponto da régua com um **texto** opcional (por exemplo "Refrão", "Verso 2"), com cor, para
     anotar as partes da música. Ele **pode ou não** marcar uma mudança de tempo: a mudança de tempo é uma
     propriedade do marcador (BPM, salto ou rampa), ligada ou desligada.
-  - **Modelo:** o `TempoMap` atual vira uma lista de marcadores do projeto (`Markers`), cada um com `tick`,
-    `nome`, `cor` e o tempo opcional. O mapa de tempo é o conjunto dos marcadores que têm tempo, e nada muda na
-    reprodução. Projetos com o mapa de tempo de agora abrem com cada marcador de tempo sem nome.
+  - **Modelo (decidido ao fazer):** os marcadores com nome são uma lista própria do projeto (`SongMarkers`: tick,
+    nome, cor), e o tempo fica no `TempoMap`. Um marcador "marca o tempo" quando há uma mudança de tempo no mesmo
+    tick (uma opção no menu dele). Assim a reprodução fica exatamente como era.
   - **Interface:** uma faixa de marcadores sob a régua. A faixa TEMPO atual vira essa faixa, e os marcadores sem
     tempo aparecem como bandeiras com o texto.
     - Duplo clique cria, arrastar move, e o menu de contexto renomeia, muda a cor, liga ou desliga o tempo e apaga.
@@ -332,3 +332,9 @@ Cada passo atualiza este documento, marcando o que foi feito.
   StrictProduction, que dependiam deles). Um teste garante que nenhum preset, demo ou modelo aponta para um sample
   que não existe.
 - **Corrigido:** o aviso "Sample not found: samples/empty.wav", que vinha de 21 presets do TripleOscillator.
+- **Etapa 9.7 feita** (13/11): marcadores com nome e cor numa linha acima do tempo, sob a régua.
+  - Duplo clique cria ou renomeia, arrastar move. O menu renomeia, muda a cor, marca ou desmarca a mudança de
+    tempo, toca dali e apaga.
+  - M cria um marcador no cursor e 1 a 9 vão aos marcadores, como no REAPER.
+  - São salvos no projeto, e cada edição é um passo de desfazer.
+  - Regiões ficam para depois.

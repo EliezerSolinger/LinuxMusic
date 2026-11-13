@@ -29,6 +29,8 @@
 
 #include "LmmsTypes.h"
 
+class QMenu;
+
 namespace lmms
 {
 class TempoMap;
@@ -69,10 +71,18 @@ private:
 	void editTempo(tick_t tick);
 	void addMarker(tick_t tick);
 
+	// The named markers (SongMarkers), in the row above the tempo
+	auto namedMarkerAt(int x) const -> std::optional<tick_t>;
+	static auto markerColor(const QColor& color) -> QColor;
+	void addNamed(tick_t tick);
+	void renameNamed(tick_t tick);
+	void namedMenu(QMenu& menu, int x);
+
 	TimeLineWidget* m_ruler;
 	TempoMap* m_map;
 	int m_headWidth;
-	std::optional<tick_t> m_dragged; //!< the marker being dragged
+	std::optional<tick_t> m_dragged; //!< the tempo marker being dragged
+	std::optional<tick_t> m_draggedNamed; //!< the named marker being dragged
 };
 
 } // namespace lmms::gui

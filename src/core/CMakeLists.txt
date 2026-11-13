@@ -100,6 +100,7 @@ set(LMMS_SRCS
 	core/LmmsSemaphore.cpp
 	core/SerializingObject.cpp
 	core/Song.cpp
+	core/SongMarkers.cpp
 	core/TempoMap.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadedExportManager.cpp

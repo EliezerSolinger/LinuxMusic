@@ -1292,6 +1292,7 @@ void Song::clearProject()
 	Engine::audioEngine()->requestChangeInModel();
 
 	m_tempoMap.clear();
+	m_songMarkers.clear();
 
 	if( getGUI() != nullptr && getGUI()->patternEditor() )
 	{
@@ -1574,6 +1575,10 @@ void Song::loadProject( const QString & fileName )
 			{
 				m_tempoMap.restoreState(node.toElement());
 			}
+			else if (node.nodeName() == m_songMarkers.nodeName())
+			{
+				m_songMarkers.restoreState(node.toElement());
+			}
 			else if( getGUI() != nullptr )
 			{
 				if( node.nodeName() == getGUI()->getControllerRackView()->nodeName() )
@@ -1699,6 +1704,7 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, bool ga
 	}
 
 	if (!m_tempoMap.isEmpty()) { m_tempoMap.saveState(dataFile, dataFile.content()); }
+	if (!m_songMarkers.markers().empty()) { m_songMarkers.saveState(dataFile, dataFile.content()); }
 	saveControllerStates( dataFile, dataFile.content() );
 
 	saveScaleStates(dataFile, dataFile.content());

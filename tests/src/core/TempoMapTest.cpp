@@ -28,6 +28,7 @@
 #include "AutomationClip.h"
 #include "Engine.h"
 #include "Song.h"
+#include "ProjectJournal.h"
 #include "TempoMap.h"
 #include "TimePos.h"
 
@@ -153,6 +154,48 @@ private slots:
 		QCOMPARE(markers[1].bpm, 150.0);
 		QVERIFY(!markers[0].ramp);
 		QVERIFY(clip->getTimeMap().isEmpty()); // the automation no longer changes the tempo
+	}
+
+	void namedMarkersAreEditedSavedAndUndone()
+	{
+		auto* song = Engine::getSong();
+		auto& markers = song->markers();
+		markers.clear();
+		const auto journal = Engine::projectJournal();
+		journal->clearJournal();
+		journal->setJournalling(true);
+
+		markers.add(384, "Chorus", QColor{Qt::red});
+		markers.add(0, "Intro");
+		QCOMPARE(markers.markers().size(), std::size_t{2});
+		QCOMPARE(markers.markers().front().name, QString{"Intro"}); // in order
+		QCOMPARE(markers.next(0)->name, QString{"Chorus"});
+		QCOMPARE(markers.previous(384)->name, QString{"Intro"});
+		markers.rename(384, "Refrão");
+		markers.move(384, 768);
+		QVERIFY(!markers.at(384));
+		QCOMPARE(markers.at(768)->name, QString{"Refrão"});
+		QCOMPARE(markers.at(768)->color, QColor{Qt::red});
+
+		// Saved and loaded
+		auto document = QDomDocument{};
+		auto root = document.createElement("song");
+		document.appendChild(root);
+		const auto element = markers.saveState(document, root);
+		const auto saved = markers.markers();
+		markers.clear();
+		markers.restoreState(element);
+		QCOMPARE(markers.markers(), saved);
+
+		// Each edit is an undo step
+		markers.remove(0);
+		QVERIFY(!markers.at(0));
+		journal->undo();
+		QVERIFY(markers.at(0));
+		journal->undo(); // (the restore above is not an edit: this undoes the move)
+		QVERIFY(markers.at(384));
+		journal->setJournalling(false);
+		markers.clear();
 	}
 };
 

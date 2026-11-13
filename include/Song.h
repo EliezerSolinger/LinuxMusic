@@ -35,6 +35,7 @@
 #include "AudioEngine.h"
 #include "AudioRecorder.h"
 #include "MidiRecorder.h"
+#include "SongMarkers.h"
 #include "TempoMap.h"
 #include "SampleClip.h"
 #include "Controller.h"
@@ -362,6 +363,9 @@ public:
 
 	auto tempoMap() -> TempoMap& { return m_tempoMap; }
 
+	//! The song's named markers ("Chorus"...), see SongMarkers
+	auto markers() -> SongMarkers& { return m_songMarkers; }
+
 	//! @returns the frames the song plays from tick @p from to tick @p to at its tempo now (and tempo map)
 	auto framesBetween(tick_t from, tick_t to) const -> double;
 
@@ -534,6 +538,7 @@ private:
 	std::atomic<double> m_periodStartTick = 0;
 	MidiRecorder m_midiRecorder;
 	TempoMap m_tempoMap;
+	SongMarkers m_songMarkers;
 	bar_t m_length;
 
 	const MidiClip* m_midiClipToPlay;
