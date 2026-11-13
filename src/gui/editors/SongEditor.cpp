@@ -23,6 +23,7 @@
  */
 
 #include "SongEditor.h"
+#include "TempoLaneWidget.h"
 
 #include <cmath>
 
@@ -130,6 +131,13 @@ SongEditor::SongEditor( Song * song ) :
 
 
 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
+
+	// The tempo map's lane, under the ruler and on its scale
+	m_tempoLane = new TempoLaneWidget(m_timeLine, &m_song->tempoMap(), trackHeadWidth(), this);
+	static_cast<QVBoxLayout*>(layout())->insertWidget(1, m_tempoLane);
+	connect(this, &TrackContainerView::positionChanged, m_tempoLane, qOverload<>(&QWidget::update));
+	connect(this, &TrackContainerView::trackHeadWidthChanged, m_tempoLane, &TempoLaneWidget::setHeadWidth);
+	connect(m_song, &Song::tempoChanged, m_tempoLane, qOverload<>(&QWidget::update));
 
 	m_leftRightScroll = new QScrollBar( Qt::Horizontal, this );
 	m_leftRightScroll->setMinimum(0);
@@ -662,6 +670,7 @@ void SongEditor::zoomingChanged()
 	setPixelsPerBar(ppb);
 
 	m_timeLine->setPixelsPerBar(ppb);
+	m_tempoLane->update();
 	realignTracks();
 	updateRubberband();
 	m_timeLine->setSnapSize(getSnapSize());

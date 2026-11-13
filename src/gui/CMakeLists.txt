@@ -63,6 +63,7 @@ SET(LMMS_SRCS
 	gui/editors/Rubberband.cpp
 	gui/editors/SongEditor.cpp
 	gui/editors/StepRecorderWidget.cpp
+	gui/editors/TempoLaneWidget.cpp
 	gui/editors/TimeLineWidget.cpp
 	gui/editors/TrackContainerView.cpp
 

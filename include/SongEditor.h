@@ -50,6 +50,7 @@ class LcdSpinBox;
 class MeterDialog;
 class PositionLine;
 class TextFloat;
+class TempoLaneWidget;
 class TimeLineWidget;
 
 
@@ -132,6 +133,7 @@ private:
 
 
 	TimeLineWidget* m_timeLine;
+	TempoLaneWidget* m_tempoLane;
 	PositionLine* m_positionLine;
 
 
