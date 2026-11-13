@@ -5,12 +5,19 @@ A lista do que falta, atualizada a cada passo (o detalhe de cada item fica em `p
 ## Em andamento
 
 - [ ] **Thread de áudio sem alocação, E/S ou trava** (etapa 1)
-  - [x] detector: `AudioThreadAllocationTest` conta cada alocação feita na thread de áudio e mostra onde
+  - [x] detector: `AudioThreadAllocationTest` conta cada alocação feita na thread de áudio, por lugar (todas,
+    não só as primeiras)
   - [x] automação sem alocação (era metade)
-  - [ ] ciclo de vida das notas: `NotePlayHandle` e os dados de nota que cada instrumento cria com `new`
-  - [ ] lista de play handles do motor
-  - [ ] monitoração do master
-  - [ ] o teste passa a exigir zero (tirar o `QEXPECT_FAIL`)
+  - [x] ciclo de vida das notas: buffers de período de um pool (`BufferManager`), notas filhas e da faixa em listas
+    ligadas pela própria nota, filtro da nota e o seu segundo estágio feitos com o lugar da nota no pool, um espaço
+    de 16 KB na nota para os dados do instrumento (`makePluginData`), arpejo sem lista alocada
+  - [x] o motor: lista de clipes, lista de faixas, envios do mixer, listas de play handles reservadas
+  - [x] o teste exige zero: música com faixa de áudio e instrumento; acordes, arpejo, filtro duplo, envio e efeito;
+    cada instrumento tocando
+  - [x] instrumentos sem alocar: TripleOscillator, BitInvader, Kicker, LB302, Monstro, NES, Organic, Sfxr, SID,
+    Watsyn (versões das ondas compartilhadas), FreeBoy, OpulenZ, AudioFileProcessor, SlicerT
+  - [ ] instrumentos que ainda fazem a voz na thread de áudio: Mallets (STK), Xpressive (compila a expressão),
+    ZynAddSubFX, Vibed (cordas do tamanho da nota). Precisam de vozes preparadas fora dela
 
 ## A fazer
 
@@ -47,12 +54,21 @@ Motor e estabilidade:
 - [ ] **Isolamento de plugins** (etapa 0): plugin ativo numa queda vai para a lista de suspeitos; da próxima vez roda
   isolado pela ponte do Carla, ou fica "não carregado" com aviso; opção por plugin para forçar o isolamento
 - [ ] **Fórmula de compasso por marcador** no mapa de tempo
-- [ ] **Latência dos plugins:** VST, Carla e ZynAddSubFX ainda informam 0
+- [x] **Latência dos plugins:** VST informa o `initialDelay` do plugin (ao carregar e quando ele avisa que mudou);
+  o Carla soma a dos plugins ligados do rack (no patchbay, a maior, porque as ligações não chegam ao host); o
+  ZynAddSubFX não atrasa a saída, então 0 está certo
+- [x] **Varredura com ASan e UBSan** renderizando todos os projetos (A/B e demos): queda ao fechar um projeto com o
+  efeito do PeakController (o efeito se removia da cadeia no meio da limpeza), índices trocados no ZynAddSubFX,
+  envelope do Sfxr lido além do fim, DrumSynth (espaço no fim do envelope virava ponto, número longo estourava 8
+  bytes, taxa fora da faixa escrevia além do bloco), conversões indefinidas no SID, OpulenZ, TAP, SWH e Calf
 - [x] **Sample::play** na razão exata de 1 toca as amostras como estão (antes o reamostrador atrasava uma amostra,
   ou filtrava, no sinc); a A/B muda só no AudioFileProcessor, por isso
 - [x] **Lista de problemas ao abrir um projeto:** samples e arquivos que sumiram, soundfonts, kits, VST e plugins
   não encontrados vão para o relatório (antes, um plugin não encontrado abria uma janela para cada um); um
   instrumento que não carrega guarda os ajustes e é salvo como estava (antes, salvar o apagava)
+- [ ] **Antes de publicar:** as correções em submódulos (ZynAddSubFX, adplug, veal, swh, tap, resid) estão em
+  commits locais no ramo `linuxmusic` de cada um; precisam ir para forks do LinuxMusic e o `.gitmodules` apontar
+  para eles
 - [ ] **Integração final:** testes, sanitizers, A/B, gravação real no Mac, documentação
 - [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux (o usuário)
 - [ ] **Mac:** testar a entrada do microfone no hardware (precisa de alguém para aceitar o pedido de permissão)

@@ -27,6 +27,11 @@
 #define WATSYN_H
 
 #include "AudioResampler.h"
+#include <atomic>
+#include <memory>
+#include <vector>
+
+#include "AudioEngine.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
 #include "Graph.h"
@@ -64,6 +69,18 @@ const int	NUM_OSCS = 4;
 
 class WatsynInstrument;
 
+//! One version of the four oversampled waves, shared by the notes that started with it: editing a wave makes
+//! another version, so a note keeps the sound it started with, and the audio thread copies nothing (see
+//! WatsynInstrument::publishWaves())
+struct WatsynWaves
+{
+	std::atomic<int> users = 0; //!< the notes using it
+	float A1[WAVELEN];
+	float A2[WAVELEN];
+	float B1[WAVELEN];
+	float B2[WAVELEN];
+};
+
 namespace gui
 {
 class AutomatableButtonGroup;
@@ -74,21 +91,20 @@ class WatsynView;
 class WatsynObject
 {
 public:
-	WatsynObject( 	float * _A1wave, float * _A2wave,
-					float * _B1wave, float * _B2wave,
-					int _amod, int _bmod, const sample_rate_t _samplerate, NotePlayHandle * _nph, f_cnt_t _frames,
-					WatsynInstrument * _w );
+	//! Uses @p waves (taken with WatsynInstrument::takeWaves()) until it goes
+	WatsynObject(WatsynWaves* waves, int _amod, int _bmod, const sample_rate_t _samplerate, NotePlayHandle * _nph,
+					f_cnt_t _frames, WatsynInstrument * _w );
 	virtual ~WatsynObject();
 
 	void renderOutput( f_cnt_t _frames );
 
-	inline SampleFrame* abuf() const
+	inline SampleFrame* abuf()
 	{
-		return m_abuf;
+		return m_abuf.data();
 	}
-	inline SampleFrame* bbuf() const
+	inline SampleFrame* bbuf()
 	{
-		return m_bbuf;
+		return m_bbuf.data();
 	}
 	inline sample_rate_t samplerate() const
 	{
@@ -106,16 +122,14 @@ private:
 
 	WatsynInstrument * m_parent;
 
-	SampleFrame* m_abuf;
-	SampleFrame* m_bbuf;
+	// A period's frames at most (in the note's room, see NotePlayHandle::makePluginData())
+	std::array<SampleFrame, DEFAULT_BUFFER_SIZE> m_abuf;
+	std::array<SampleFrame, DEFAULT_BUFFER_SIZE> m_bbuf;
 
 	float m_lphase [NUM_OSCS];
 	float m_rphase [NUM_OSCS];
 
-	float m_A1wave [WAVELEN];
-	float m_A2wave [WAVELEN];
-	float m_B1wave [WAVELEN];
-	float m_B2wave [WAVELEN];
+	WatsynWaves* m_waves;
 };
 
 class WatsynInstrument : public LegacyInstrument
@@ -273,6 +287,15 @@ private:
 	float A2_wave [WAVELEN];
 	float B1_wave [WAVELEN];
 	float B2_wave [WAVELEN];
+
+	//! Makes the waves as they are now the version new notes take [GUI thread]
+	void publishWaves();
+	//! The current version, for a note to use until it gives it back (users) [audio thread]
+	auto takeWaves() -> WatsynWaves*;
+
+	//! Every version made; a version no note uses is written again for the next edit [GUI thread]
+	std::vector<std::unique_ptr<WatsynWaves>> m_waveVersions;
+	std::atomic<WatsynWaves*> m_currentWaves = nullptr;
 
 	friend class WatsynObject;
 	friend class gui::WatsynView;

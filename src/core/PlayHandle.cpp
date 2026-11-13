@@ -58,7 +58,7 @@ void PlayHandle::doProcessing()
 		m_bufferReleased = false;
 
 		zeroSampleFrames(m_playHandleBuffer.data(), m_playHandleBuffer.size());
-		play(m_playHandleBuffer);
+		play(m_playHandleBuffer.span());
 	}
 	else
 	{
@@ -74,7 +74,7 @@ void PlayHandle::releaseBuffer()
 
 std::span<SampleFrame> PlayHandle::buffer()
 {
-	return m_bufferReleased ? std::span<SampleFrame>{} : m_playHandleBuffer;
+	return m_bufferReleased ? std::span<SampleFrame>{} : m_playHandleBuffer.span();
 };
 
 } // namespace lmms

@@ -21,6 +21,7 @@
  */
 
 #include "PluginChecks.h"
+#include "lmms_math.h"
 
 #include <atomic>
 #include <cstdlib>
@@ -38,6 +39,11 @@ namespace
 {
 
 thread_local bool s_audioThread = false;
+// In the same library as the audio thread's mark, so that marking a thread (before it plays) makes the system set up
+// this library's thread-local storage for it: none is allocated later, while it plays
+thread_local unsigned long s_fastRandNext = 1;
+std::atomic<unsigned> s_nextEngineSeed{17};
+thread_local std::mt19937 s_randomEngine{s_nextEngineSeed.fetch_add(1, std::memory_order_relaxed)};
 
 //! The thread that loaded the program: the main thread, also before and after the QCoreApplication exists
 const auto s_startThread = std::this_thread::get_id();
@@ -65,6 +71,16 @@ auto ThreadCheck::isMainThread() -> bool
 	return app ? QThread::currentThread() == app->thread() : std::this_thread::get_id() == s_startThread;
 }
 
+auto fastRandState() noexcept -> unsigned long&
+{
+	return s_fastRandNext;
+}
+
+auto threadRandomEngine() noexcept -> std::mt19937&
+{
+	return s_randomEngine;
+}
+
 auto ThreadCheck::isAudioThread() -> bool
 {
 	return s_audioThread;
@@ -74,6 +90,7 @@ ThreadCheck::AudioThreadScope::AudioThreadScope()
 	: m_wasAudioThread{s_audioThread}
 {
 	s_audioThread = true;
+	threadRandomEngine(); // set up (the first time) before the scope's work, see markAsAudioThread()
 }
 
 ThreadCheck::AudioThreadScope::~AudioThreadScope()
@@ -84,6 +101,8 @@ ThreadCheck::AudioThreadScope::~AudioThreadScope()
 void ThreadCheck::markAsAudioThread()
 {
 	s_audioThread = true;
+	// The engine set up now, before the thread plays
+	threadRandomEngine();
 }
 
 

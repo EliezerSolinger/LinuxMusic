@@ -24,8 +24,11 @@
 
 #include "AudioResampler.h"
 
+#include <algorithm>
+#include <atomic>
 #include <samplerate.h>
 #include <stdexcept>
+#include <vector>
 
 namespace lmms {
 
@@ -49,15 +52,133 @@ constexpr auto converterType(AudioResampler::Mode mode) -> int
 		throw std::invalid_argument{"Invalid interpolation mode"};
 	}
 }
+//! The states made in advance for each mode, mono and stereo (see AudioResampler::reserve())
+constexpr std::size_t ModeCount = 5;
+constexpr ch_cnt_t PooledChannels = 2;
+
+struct StatePool
+{
+	std::vector<SRC_STATE*> states; //!< its room holds every state made for it, so giving one back never allocates
+	std::size_t target = 0;
+	std::size_t made = 0;
+};
+
+struct Pools
+{
+	std::atomic_flag lock = ATOMIC_FLAG_INIT;
+	StatePool pools[ModeCount][PooledChannels];
+	std::atomic<bool> wantsRefill = false;
+	std::atomic<long> misses = 0;
+};
+
+auto pools() -> Pools&
+{
+	static auto* s_pools = new Pools{}; // never destroyed: a resampler may go while the program ends
+	return *s_pools;
+}
+
+class PoolLock
+{
+public:
+	PoolLock() : m_pools{pools()}
+	{
+		// Held for a few steps: spinning, without asking the system to sleep or wake (which the audio thread avoids)
+		while (m_pools.lock.test_and_set(std::memory_order_acquire))
+		{
+			while (m_pools.lock.test(std::memory_order_relaxed)) {}
+		}
+	}
+	~PoolLock()
+	{
+		m_pools.lock.clear(std::memory_order_release);
+	}
+	PoolLock(const PoolLock&) = delete;
+	auto operator=(const PoolLock&) -> PoolLock& = delete;
+
+private:
+	Pools& m_pools;
+};
+
+auto poolOf(AudioResampler::Mode mode, ch_cnt_t channels) -> StatePool*
+{
+	const auto index = static_cast<std::size_t>(mode);
+	if (index >= ModeCount || channels < 1 || channels > PooledChannels) { return nullptr; }
+	return &pools().pools[index][channels - 1];
+}
+
+//! Makes states until @p pool holds @p count [pool locked]
+void fill(StatePool& pool, AudioResampler::Mode mode, ch_cnt_t channels, std::size_t count)
+{
+	while (pool.states.size() < count)
+	{
+		int error = 0;
+		auto* state = src_new(converterType(mode), channels, &error);
+		if (!state) { return; }
+		++pool.made;
+		pool.states.reserve(pool.made);
+		pool.states.push_back(state);
+	}
+}
+
 } // namespace
 
 AudioResampler::AudioResampler(Mode mode, ch_cnt_t channels)
-	: m_state{src_new(converterType(mode), channels, &m_error)}
+	: m_state{nullptr, StateDeleter{mode, channels}}
 	, m_mode{mode}
 	, m_channels{channels}
 {
 	if (channels <= 0) { throw std::logic_error{"Invalid channel count"}; }
-	if (!m_state) { throw std::runtime_error{src_strerror(m_error)}; }
+
+	// A state from the pool, as new; else one made now
+	if (auto* pool = poolOf(mode, channels))
+	{
+		auto lock = PoolLock{};
+		if (!pool->states.empty())
+		{
+			m_state.reset(pool->states.back());
+			pool->states.pop_back();
+			if (pool->states.size() < pool->target / 2) { pools().wantsRefill.store(true, std::memory_order_relaxed); }
+		}
+		else if (pool->target > 0)
+		{
+			pools().misses.fetch_add(1, std::memory_order_relaxed);
+			pools().wantsRefill.store(true, std::memory_order_relaxed);
+		}
+	}
+	if (m_state) { src_reset(static_cast<SRC_STATE*>(m_state.get())); }
+	else
+	{
+		m_state.reset(src_new(converterType(mode), channels, &m_error));
+		if (!m_state) { throw std::runtime_error{src_strerror(m_error)}; }
+	}
+}
+
+void AudioResampler::reserve(Mode mode, ch_cnt_t channels, std::size_t count)
+{
+	auto* pool = poolOf(mode, channels);
+	if (!pool) { return; }
+	auto lock = PoolLock{};
+	pool->target = std::max(pool->target, count);
+	fill(*pool, mode, channels, pool->target);
+}
+
+void AudioResampler::refillPools()
+{
+	if (!pools().wantsRefill.exchange(false, std::memory_order_relaxed)) { return; }
+	auto lock = PoolLock{};
+	for (std::size_t mode = 0; mode < ModeCount; ++mode)
+	{
+		for (ch_cnt_t channels = 1; channels <= PooledChannels; ++channels)
+		{
+			auto& pool = pools().pools[mode][channels - 1];
+			fill(pool, static_cast<Mode>(mode), channels, pool.target);
+		}
+	}
+}
+
+auto AudioResampler::poolMisses() -> long
+{
+	return pools().misses.load(std::memory_order_relaxed);
 }
 
 auto AudioResampler::process(InterleavedBufferView<const float> input, InterleavedBufferView<float> output) -> Result
@@ -96,6 +217,16 @@ void AudioResampler::reset()
 
 void AudioResampler::StateDeleter::operator()(void* state)
 {
+	// Back to its pool, which has room for it; one made past the pool goes too (it has room for all it made)
+	if (auto* pool = poolOf(mode, channels))
+	{
+		auto lock = PoolLock{};
+		if (pool->states.size() < pool->states.capacity())
+		{
+			pool->states.push_back(static_cast<SRC_STATE*>(state));
+			return;
+		}
+	}
 	src_delete(static_cast<SRC_STATE*>(state));
 }
 

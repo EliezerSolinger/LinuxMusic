@@ -109,7 +109,7 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 	}
 
 	const auto startFrame = static_cast<int>(sliceStart * m_originalSample.sampleSize());
-	if (!handle->m_pluginData) { handle->m_pluginData = new Sample::PlaybackState(AudioResampler::Mode::Linear, startFrame); }
+	if (!handle->m_pluginData) { handle->makePluginData<Sample::PlaybackState>(AudioResampler::Mode::Linear, startFrame); }
 
 	auto playbackState = static_cast<Sample::PlaybackState*>(handle->m_pluginData);
 	const auto endFrame = sliceEnd * m_originalSample.sampleSize();
@@ -138,7 +138,7 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 
 void SlicerT::deleteNotePluginData(NotePlayHandle* handle)
 {
-	delete static_cast<Sample::PlaybackState*>(handle->m_pluginData);
+	handle->destroyPluginData<Sample::PlaybackState>();
 	emit isPlaying(-1, 0, 0);
 }
 

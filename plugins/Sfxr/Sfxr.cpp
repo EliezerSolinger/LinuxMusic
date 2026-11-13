@@ -25,6 +25,9 @@
 
 #include "Sfxr.h"
 
+#include <algorithm>
+#include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
@@ -444,7 +447,7 @@ void SfxrInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out
 	const f_cnt_t offset = _n->noteOffset();
 	if (!_n->m_pluginData)
 	{
-		_n->m_pluginData = new SfxrSynth( this );
+		_n->makePluginData<SfxrSynth>( this );
 	}
 	else if( static_cast<SfxrSynth*>(_n->m_pluginData)->isPlaying() == false )
 	{
@@ -461,17 +464,26 @@ void SfxrInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out
 // debug code
 //	qDebug( "pFN %d", pitchedFrameNum );
 
-	auto pitchedBuffer = new SampleFrame[pitchedFrameNum];
-	static_cast<SfxrSynth*>(_n->m_pluginData)->update( pitchedBuffer, pitchedFrameNum );
-	for( f_cnt_t i=0; i<frameNum; i++ )
+	// The synth renders the note's frames at its own pitch, a block at a time (the synth goes on from one block to
+	// the next as in one go), and each output frame takes the one rendered at its place: nothing allocated however
+	// high the note (a buffer of the whole was allocated each period, and read past when it had no frames)
+	auto* synth = static_cast<SfxrSynth*>(_n->m_pluginData);
+	constexpr int32_t BlockFrames = 512;
+	auto block = std::array<SampleFrame, BlockFrames>{};
+	int32_t rendered = 0;
+	f_cnt_t frame = 0;
+	while (rendered < pitchedFrameNum)
 	{
-		for( ch_cnt_t j=0; j<DEFAULT_CHANNELS; j++ )
+		const auto count = std::min(BlockFrames, pitchedFrameNum - rendered);
+		synth->update(block.data(), count);
+		for (; frame < frameNum; ++frame)
 		{
-			out[i+offset][j] = pitchedBuffer[i*pitchedFrameNum/frameNum][j];
+			const auto source = static_cast<int32_t>(static_cast<int64_t>(frame) * pitchedFrameNum / frameNum);
+			if (source >= rendered + count) { break; }
+			out[frame + offset] = block[source - rendered];
 		}
+		rendered += count;
 	}
-
-	delete[] pitchedBuffer;
 
 	applyRelease(out.data(), _n);
 }
@@ -481,7 +493,7 @@ void SfxrInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out
 
 void SfxrInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<SfxrSynth *>( _n->m_pluginData );
+	_n->destroyPluginData<SfxrSynth>();
 }
 
 

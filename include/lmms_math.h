@@ -32,9 +32,11 @@
 #include <cstdint>
 #include <cstring>
 #include <numbers>
+#include <random>
 #include <concepts>
 
 #include "lmms_constants.h"
+#include "lmms_export.h"
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -83,13 +85,27 @@ inline auto absFraction(std::floating_point auto x) noexcept
 }
 
 
+/**
+ * The calling thread's state of fastRand(): one for the whole program, kept by its core. A thread-local variable in
+ * this header would be one per plugin library, each allocated by the system the first time a thread uses it, which
+ * on an audio thread is an allocation where there should be none.
+ */
+LMMS_EXPORT auto fastRandState() noexcept -> unsigned long&;
+
+/**
+ * The calling thread's Mersenne Twister engine (std::mt19937), each thread's seeded apart from the others': kept by
+ * the program's core, for the same reason as fastRandState() (a thread-local engine in a plugin is set up by the
+ * system, allocating, the first time an audio thread draws from it).
+ */
+LMMS_EXPORT auto threadRandomEngine() noexcept -> std::mt19937&;
+
 //! @brief Returns a pseudorandom integer within [0, 32768).
 //! @returns A pseudorandom integer greater than or equal to 0 and less than 32767.
 inline int fastRand() noexcept
 {
-	thread_local unsigned long s_next = 1;
-	s_next = s_next * 1103515245 + 12345;
-	return s_next / 65536 % 32768;
+	auto& next = fastRandState();
+	next = next * 1103515245 + 12345;
+	return next / 65536 % 32768;
 }
 
 

@@ -30,6 +30,7 @@
 #include <QColor>
 
 #include "AutomatableModel.h"
+#include "Clip.h"
 #include "JournallingObject.h"
 #include "LmmsTypes.h"
 #include <atomic>
@@ -186,6 +187,39 @@ public:
 	//! @param start The MIDI start time of the range.
 	//! @param end The MIDI endi time of the range.
 	void getClipsInRange(clipVector& clipV, const TimePos& start, const TimePos& end);
+
+	/**
+	 * Calls @p visit with each clip overlapping [@p start, @p end], in the order getClipsInRange() gives them (by
+	 * position, then as they are in the track), without collecting them: for the audio thread, which allocates
+	 * nothing. Looks at the clips once for each clip visited (a few at a time play).
+	 */
+	template<class Visit>
+	void forEachClipInRange(const TimePos& start, const TimePos& end, Visit&& visit) const
+	{
+		const auto overlaps = [&](const Clip* clip) {
+			return clip->startPosition() <= end && clip->endPosition() >= start;
+		};
+		auto previous = m_clips.size(); // none yet
+		while (true)
+		{
+			auto next = m_clips.size();
+			for (auto index = std::size_t{0}; index < m_clips.size(); ++index)
+			{
+				const Clip* clip = m_clips[index];
+				if (!overlaps(clip)) { continue; }
+				if (previous < m_clips.size())
+				{
+					// Only those after the one visited last
+					const auto last = m_clips[previous]->startPosition();
+					if (clip->startPosition() < last || (clip->startPosition() == last && index <= previous)) { continue; }
+				}
+				if (next == m_clips.size() || clip->startPosition() < m_clips[next]->startPosition()) { next = index; }
+			}
+			if (next == m_clips.size()) { return; }
+			visit(m_clips[next]);
+			previous = next;
+		}
+	}
 
 	//! @brief Swap the position of two clips.
 	//!

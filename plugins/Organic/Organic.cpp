@@ -227,66 +227,38 @@ void OrganicInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 
 	if (!_n->m_pluginData)
 	{
-		auto oscs_l = std::array<Oscillator*, NUM_OSCILLATORS>{};
-		auto oscs_r = std::array<Oscillator*, NUM_OSCILLATORS>{};
+		auto* oscillators = _n->makePluginData<NoteOscillators>();
 
-		auto newOsc = new oscPtr;
-		_n->m_pluginData = newOsc;
-
+		// The last one first: each one takes the next as the one it is mixed with or modulates
 		for (int i = m_numOscillators - 1; i >= 0; --i)
 		{
-			newOsc->phaseOffsetLeft[i] = fastRand(1.f);
-			newOsc->phaseOffsetRight[i] = fastRand(1.f);
+			oscillators->phaseOffsetLeft[i] = fastRand(1.f);
+			oscillators->phaseOffsetRight[i] = fastRand(1.f);
 
-			// initialise ocillators
-			if (i == m_numOscillators - 1)
-			{
-				// create left oscillator
-				oscs_l[i] = new Oscillator(
-					&m_osc[i]->m_waveShape,
-					&m_modulationAlgo,
-					_n->frequency(),
-					m_osc[i]->m_detuningLeft,
-					newOsc->phaseOffsetLeft[i],
-					m_osc[i]->m_volumeLeft);
-				// create right oscillator
-				oscs_r[i] = new Oscillator(
-					&m_osc[i]->m_waveShape,
-					&m_modulationAlgo,
-					_n->frequency(),
-					m_osc[i]->m_detuningRight,
-					newOsc->phaseOffsetRight[i],
-					m_osc[i]->m_volumeRight);
-			}
-			else
-			{
-				// create left oscillator
-				oscs_l[i] = new Oscillator(
-					&m_osc[i]->m_waveShape,
-					&m_modulationAlgo,
-					_n->frequency(),
-					m_osc[i]->m_detuningLeft,
-					newOsc->phaseOffsetLeft[i],
-					m_osc[i]->m_volumeLeft,
-					oscs_l[i + 1]);
-				// create right oscillator
-				oscs_r[i] = new Oscillator(
-					&m_osc[i]->m_waveShape,
-					&m_modulationAlgo,
-					_n->frequency(),
-					m_osc[i]->m_detuningRight,
-					newOsc->phaseOffsetRight[i],
-					m_osc[i]->m_volumeRight,
-					oscs_r[i + 1]);
-			}
+			Oscillator* nextLeft = i == m_numOscillators - 1 ? nullptr : &*oscillators->left[i + 1];
+			Oscillator* nextRight = i == m_numOscillators - 1 ? nullptr : &*oscillators->right[i + 1];
+			oscillators->left[i].emplace(
+				&m_osc[i]->m_waveShape,
+				&m_modulationAlgo,
+				_n->frequency(),
+				m_osc[i]->m_detuningLeft,
+				oscillators->phaseOffsetLeft[i],
+				m_osc[i]->m_volumeLeft,
+				nextLeft);
+			oscillators->right[i].emplace(
+				&m_osc[i]->m_waveShape,
+				&m_modulationAlgo,
+				_n->frequency(),
+				m_osc[i]->m_detuningRight,
+				oscillators->phaseOffsetRight[i],
+				m_osc[i]->m_volumeRight,
+				nextRight);
 		}
-		newOsc->oscLeft = oscs_l[0];
-		newOsc->oscRight = oscs_r[0];
 	}
 
-	auto osc = static_cast<oscPtr*>(_n->m_pluginData);
-	osc->oscLeft->update(out.data() + offset, frames, 0);
-	osc->oscRight->update(out.data() + offset, frames, 1);
+	auto* oscillators = static_cast<NoteOscillators*>(_n->m_pluginData);
+	oscillators->left[0]->update(out.data() + offset, frames, 0);
+	oscillators->right[0]->update(out.data() + offset, frames, 1);
 
 	// -- fx section --
 
@@ -307,12 +279,7 @@ void OrganicInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 
 void OrganicInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<Oscillator *>( static_cast<oscPtr *>(
-						_n->m_pluginData )->oscLeft );
-	delete static_cast<Oscillator *>( static_cast<oscPtr *>(
-						_n->m_pluginData )->oscRight );
-
-	delete static_cast<oscPtr *>( _n->m_pluginData );
+	_n->destroyPluginData<NoteOscillators>();
 }
 
 /*float inline OrganicInstrument::foldback(float in, float threshold)

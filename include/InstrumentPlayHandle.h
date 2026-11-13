@@ -25,6 +25,7 @@
 #ifndef LMMS_INSTRUMENT_PLAY_HANDLE_H
 #define LMMS_INSTRUMENT_PLAY_HANDLE_H
 
+#include "NotePlayHandle.h"
 #include "PlayHandle.h"
 #include "lmms_export.h"
 
@@ -52,6 +53,8 @@ public:
 
 private:
 	Instrument* m_instrument;
+	//! The track's notes, looked up each period into the same room (made with the handle)
+	ConstNotePlayHandleList m_notes;
 };
 
 } // namespace lmms

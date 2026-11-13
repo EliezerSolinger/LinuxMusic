@@ -352,7 +352,7 @@ private:
 	bool m_hasAutoMidiDev;
 	static InstrumentTrack *s_autoAssignedTrack;
 
-	NotePlayHandleList m_processHandles;
+	NotePlayHandle::ProcessHandleList m_processHandles; //!< its notes without a parent (linked, allocating nothing)
 
 	FloatModel m_volumeModel;
 	FloatModel m_panningModel;

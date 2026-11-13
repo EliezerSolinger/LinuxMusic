@@ -296,8 +296,18 @@ public:
 		delete m_subFilter;
 	}
 
+	//! Makes the second stage of the double filters now, so that choosing one later allocates nothing (on the audio
+	//! thread)
+	void reserveSubFilter()
+	{
+		if (m_subFilter == nullptr) { m_subFilter = new BasicFilters<CHANNELS>(static_cast<sample_rate_t>(m_sampleRate)); }
+	}
+
 	inline void clearHistory()
 	{
+		// The second stage's too: a filter used again starts as a new one would
+		if (m_subFilter != nullptr) { m_subFilter->clearHistory(); }
+
 		// reset in/out history for biquads
 		m_biQuad.clearHistory();
 

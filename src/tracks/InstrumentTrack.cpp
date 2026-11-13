@@ -814,21 +814,10 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	}
 	const float frames_per_tick = Engine::framesPerTick();
 
-	clipVector clips;
 	class PatternTrack * pattern_track = nullptr;
-	if( _clip_num >= 0 )
+	if (_clip_num >= 0 && trackContainer() == Engine::patternStore())
 	{
-		Clip * clip = getClip( _clip_num );
-		clips.push_back( clip );
-		if (trackContainer() == Engine::patternStore())
-		{
-			pattern_track = PatternTrack::findPatternTrack(_clip_num);
-		}
-	}
-	else
-	{
-		getClipsInRange( clips, _start, _start + static_cast<int>(
-					_frames / frames_per_tick ) );
+		pattern_track = PatternTrack::findPatternTrack(_clip_num);
 	}
 
 	// Handle automation: detuning
@@ -838,27 +827,21 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			_start, m_pitchModel.value(), gui::getGUI() && gui::getGUI()->pianoRoll()->isRecording());
 	}
 
-	if ( clips.size() == 0 )
-	{
-		unlock();
-		return false;
-	}
-
 	bool played_a_note = false;	// will be return variable
 
-	for (const auto& clip : clips)
+	const auto playClip = [&](Clip* clip)
 	{
 		auto c = dynamic_cast<MidiClip*>(clip);
 		// everything which is not a MIDI clip won't be played
 		// A MIDI clip playing in the Piano Roll window will always play
 		if (c == nullptr || (Engine::getSong()->playMode() != Song::PlayMode::MidiClip && clip->isMuted()))
 		{
-			continue;
+			return;
 		}
 		// Only the lane heard plays on the song (a clip open in the piano roll always does)
 		if (_clip_num < 0 && Engine::getSong()->playMode() == Song::PlayMode::Song && clip->lane() != playingLane())
 		{
-			continue;
+			return;
 		}
 		TimePos cur_start = _start;
 		if( _clip_num < 0 )
@@ -917,7 +900,12 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			played_a_note = true;
 			++nit;
 		}
-	}
+	};
+
+	// The clips playing now, without collecting them (the audio thread allocates nothing)
+	if (_clip_num >= 0) { playClip(getClip(_clip_num)); }
+	else { forEachClipInRange(_start, _start + static_cast<int>(_frames / frames_per_tick), playClip); }
+
 	unlock();
 	return played_a_note;
 }

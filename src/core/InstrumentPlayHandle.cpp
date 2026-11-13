@@ -39,6 +39,7 @@ InstrumentPlayHandle::InstrumentPlayHandle(Instrument * instrument, InstrumentTr
 	PlayHandle(Type::InstrumentPlayHandle),
 	m_instrument(instrument)
 {
+	m_notes.reserve(INITIAL_NPH_CACHE);
 	setAudioBusHandle(instrumentTrack->audioBusHandle());
 }
 
@@ -47,7 +48,7 @@ void InstrumentPlayHandle::play(std::span<SampleFrame> buffer)
 	InstrumentTrack * instrumentTrack = m_instrument->instrumentTrack();
 
 	// ensure that all our nph's have been processed first
-	auto nphv = NotePlayHandle::nphsOfInstrumentTrack(instrumentTrack, true);
+	NotePlayHandle::nphsOfInstrumentTrack(instrumentTrack, m_notes, true);
 
 	// A note queued for this period is processed here if no worker took it yet, and waited for if one did. Its own
 	// state says so; asking the note whether it is finished instead read it while a worker was playing it, and could
@@ -56,7 +57,7 @@ void InstrumentPlayHandle::play(std::span<SampleFrame> buffer)
 	do
 	{
 		nphsLeft = false;
-		for (const auto& handle : nphv)
+		for (const auto& handle : m_notes)
 		{
 			const auto state = handle->state();
 			if (state == ThreadableJob::ProcessingState::Queued)

@@ -164,7 +164,7 @@ void KickerInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> 
 
 	if (!nph->m_pluginData)
 	{
-		nph->m_pluginData = new SweepOsc(
+		nph->makePluginData<SweepOsc>(
 					DistFX( m_distModel.value(),
 							m_gainModel.value() ),
 					m_startNoteModel.value() ? nph->frequency() : m_startFreqModel.value(),
@@ -212,7 +212,7 @@ void KickerInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> 
 
 void KickerInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<SweepOsc *>( _n->m_pluginData );
+	_n->destroyPluginData<SweepOsc>();
 }
 
 

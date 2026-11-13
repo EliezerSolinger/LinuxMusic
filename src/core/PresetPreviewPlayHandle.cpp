@@ -251,16 +251,14 @@ void PresetPreviewPlayHandle::cleanup()
 
 
 
-ConstNotePlayHandleList PresetPreviewPlayHandle::nphsOfInstrumentTrack(
-						const InstrumentTrack * _it )
+void PresetPreviewPlayHandle::nphsOfInstrumentTrack(const InstrumentTrack* _it, FixedNotePlayHandleList& cnphv)
 {
-	ConstNotePlayHandleList cnphv;
+	cnphv.clear();
 	if( s_previewTC->previewNote() != nullptr &&
 		s_previewTC->previewNote()->instrumentTrack() == _it )
 	{
 		cnphv.push_back( s_previewTC->previewNote() );
 	}
-	return cnphv;
 }
 
 

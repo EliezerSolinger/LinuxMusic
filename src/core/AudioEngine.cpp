@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "AudioEngine.h"
+#include "AudioResampler.h"
 
 #include <QStringList>
 
@@ -110,6 +111,13 @@ AudioEngine::AudioEngine(bool renderOnly)
 	, m_sanitizationEnabled(ConfigManager::inst()->value("audioengine", "sanitizemix", "1").toInt())
 {
 	BufferManager::init( m_framesPerPeriod );
+	// The lists the audio thread adds to hold as many handles as can be added at once (see m_newPlayHandles), so
+	// adding allocates nothing; removing keeps their room
+	m_playHandles.reserve(PlayHandle::MaxNumber);
+	m_playHandlesToRemove.reserve(PlayHandle::MaxNumber);
+	// The resamplers notes and sample clips make on the audio thread take their state from a pool (instruments that
+	// use another mode reserve their own, see AudioFileProcessor)
+	AudioResampler::reserve(AudioResampler::Mode::Linear, DEFAULT_CHANNELS, 128);
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_outputBufferWrite = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_outputMonitor.reset(std::vector<SampleFrame>(m_framesPerPeriod));

@@ -207,9 +207,7 @@ void MixerChannel::doProcessing()
 	m_trimModel.valueBuffer();
 	m_widthModel.valueBuffer();
 	m_panModel.valueBuffer();
-	auto sendBufs = std::vector<ValueBuffer*>{};
-	sendBufs.reserve(m_receives.size());
-	for (MixerRoute* route : m_receives) { sendBufs.push_back(route->amount()->valueBuffer()); }
+	for (MixerRoute* route : m_receives) { route->readPeriodAmount(); }
 
 	m_preFaderHasSignal = false;
 
@@ -259,7 +257,7 @@ void MixerChannel::doProcessing()
 		auto& delay = route->latencyDelay();
 		const bool delayed = delay.delay() > 0;
 		// A send turned all the way down, e.g. to an effect return, carries nothing
-		const bool closed = route->amount()->value() == 0.f && !sendBufs[i];
+		const bool closed = route->amount()->value() == 0.f && !route->periodAmount();
 		if (closed && delayed) { delay.clear(); }
 		if (closed || (!hasSignal && !(delayed && delay.holdsSignal())))
 		{
@@ -270,7 +268,7 @@ void MixerChannel::doProcessing()
 		auto left = m_buffer.buffer(2 * destinationPair);
 		auto right = m_buffer.buffer(2 * destinationPair + 1);
 		const float amount = route->amount()->value();
-		const ValueBuffer* amountBuf = sendBufs[i];
+		const ValueBuffer* amountBuf = route->periodAmount();
 		auto gain = [&](f_cnt_t f) { return amountBuf ? amountBuf->values()[f] : amount; };
 
 		if (delayed)

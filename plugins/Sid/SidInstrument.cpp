@@ -292,12 +292,11 @@ void SidInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 
 	if (!_n->m_pluginData)
 	{
-		auto sid = new reSID::SID();
+		auto sid = _n->makePluginData<reSID::SID>();
 		sid->set_sampling_parameters(clockrate, reSID::SAMPLE_FAST, samplerate);
 		sid->set_chip_model(reSID::MOS8580);
 		sid->enable_filter( true );
 		sid->reset();
-		_n->m_pluginData = sid;
 	}
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
@@ -430,7 +429,7 @@ void SidInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 
 void SidInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<reSID::SID*>(_n->m_pluginData);
+	_n->destroyPluginData<reSID::SID>();
 }
 
 

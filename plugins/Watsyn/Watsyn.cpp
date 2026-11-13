@@ -22,6 +22,9 @@
  *
  */
 
+#include <algorithm>
+#include <iterator>
+
 #include <QDomElement>
 
 #include "Watsyn.h"
@@ -62,10 +65,9 @@ Plugin::Descriptor PLUGIN_EXPORT watsyn_plugin_descriptor =
 
 
 
-WatsynObject::WatsynObject( float * _A1wave, float * _A2wave,
-					float * _B1wave, float * _B2wave,
-					int _amod, int _bmod, const sample_rate_t _samplerate, NotePlayHandle * _nph, f_cnt_t _frames,
-					WatsynInstrument * _w ) :
+WatsynObject::WatsynObject(WatsynWaves* waves, int _amod, int _bmod, const sample_rate_t _samplerate,
+					NotePlayHandle * _nph, f_cnt_t _frames, WatsynInstrument * _w ) :
+				m_waves( waves ),
 				m_amod( _amod ),
 				m_bmod( _bmod ),
 				m_samplerate( _samplerate ),
@@ -73,8 +75,7 @@ WatsynObject::WatsynObject( float * _A1wave, float * _A2wave,
 				m_fpp( _frames ),
 				m_parent( _w )
 {
-	m_abuf = new SampleFrame[_frames];
-	m_bbuf = new SampleFrame[_frames];
+	assert(_frames <= DEFAULT_BUFFER_SIZE);
 
 	m_lphase[A1_OSC] = 0.0f;
 	m_lphase[A2_OSC] = 0.0f;
@@ -86,30 +87,18 @@ WatsynObject::WatsynObject( float * _A1wave, float * _A2wave,
 	m_rphase[B1_OSC] = 0.0f;
 	m_rphase[B2_OSC] = 0.0f;
 
-	// copy wavegraphs to the synth object to prevent race conditions
-
-	memcpy( &m_A1wave, _A1wave, sizeof( m_A1wave ) );
-	memcpy( &m_A2wave, _A2wave, sizeof( m_A2wave ) );
-	memcpy( &m_B1wave, _B1wave, sizeof( m_B1wave ) );
-	memcpy( &m_B2wave, _B2wave, sizeof( m_B2wave ) );
 }
-
 
 
 WatsynObject::~WatsynObject()
 {
-	delete[] m_abuf;
-	delete[] m_bbuf;
+	m_waves->users.fetch_sub(1, std::memory_order_release);
 }
+
 
 
 void WatsynObject::renderOutput( f_cnt_t _frames )
 {
-	if( m_abuf == nullptr )
-		m_abuf = new SampleFrame[m_fpp];
-	if( m_bbuf == nullptr )
-		m_bbuf = new SampleFrame[m_fpp];
-
 	for( f_cnt_t frame = 0; frame < _frames; frame++ )
 	{
 		// put phases of 1-series oscs into variables because phase modulation might happen
@@ -122,13 +111,13 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 
 		// A2
 		sample_t A2_L = m_parent->m_lvol[A2_OSC] * std::lerp(
-			m_A2wave[static_cast<int>(m_lphase[A2_OSC])],
-			m_A2wave[static_cast<int>(m_lphase[A2_OSC] + 1) % WAVELEN],
+			m_waves->A2[static_cast<int>(m_lphase[A2_OSC])],
+			m_waves->A2[static_cast<int>(m_lphase[A2_OSC] + 1) % WAVELEN],
 			fraction(m_lphase[A2_OSC])
 		);
 		sample_t A2_R = m_parent->m_rvol[A2_OSC] * std::lerp(
-			m_A2wave[static_cast<int>(m_rphase[A2_OSC])],
-			m_A2wave[static_cast<int>(m_rphase[A2_OSC] + 1) % WAVELEN],
+			m_waves->A2[static_cast<int>(m_rphase[A2_OSC])],
+			m_waves->A2[static_cast<int>(m_rphase[A2_OSC] + 1) % WAVELEN],
 			fraction(m_rphase[A2_OSC])
 		);
 
@@ -142,13 +131,13 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 		}
 		// A1
 		sample_t A1_L = m_parent->m_lvol[A1_OSC] * std::lerp(
-			m_A1wave[static_cast<int>(A1_lphase)],
-			m_A1wave[static_cast<int>(A1_lphase + 1) % WAVELEN],
+			m_waves->A1[static_cast<int>(A1_lphase)],
+			m_waves->A1[static_cast<int>(A1_lphase + 1) % WAVELEN],
 			fraction(A1_lphase)
 		);
 		sample_t A1_R = m_parent->m_rvol[A1_OSC] * std::lerp(
-			m_A1wave[static_cast<int>(A1_rphase)],
-			m_A1wave[static_cast<int>(A1_rphase + 1) % WAVELEN],
+			m_waves->A1[static_cast<int>(A1_rphase)],
+			m_waves->A1[static_cast<int>(A1_rphase + 1) % WAVELEN],
 			fraction(A1_rphase)
 		);
 
@@ -156,13 +145,13 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 
 		// B2
 		sample_t B2_L = m_parent->m_lvol[B2_OSC] * std::lerp(
-			m_B2wave[static_cast<int>(m_lphase[B2_OSC])],
-			m_B2wave[static_cast<int>(m_lphase[B2_OSC] + 1) % WAVELEN],
+			m_waves->B2[static_cast<int>(m_lphase[B2_OSC])],
+			m_waves->B2[static_cast<int>(m_lphase[B2_OSC] + 1) % WAVELEN],
 			fraction(m_lphase[B2_OSC])
 		);
 		sample_t B2_R = m_parent->m_rvol[B2_OSC] * std::lerp(
-			m_B2wave[static_cast<int>(m_rphase[B2_OSC])],
-			m_B2wave[static_cast<int>(m_rphase[B2_OSC] + 1) % WAVELEN],
+			m_waves->B2[static_cast<int>(m_rphase[B2_OSC])],
+			m_waves->B2[static_cast<int>(m_rphase[B2_OSC] + 1) % WAVELEN],
 			fraction(m_rphase[B2_OSC])
 		);
 
@@ -184,13 +173,13 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 		}
 		// B1
 		sample_t B1_L = m_parent->m_lvol[B1_OSC] * std::lerp(
-			m_B1wave[static_cast<int>(B1_lphase) % WAVELEN],
-			m_B1wave[static_cast<int>(B1_lphase + 1) % WAVELEN],
+			m_waves->B1[static_cast<int>(B1_lphase) % WAVELEN],
+			m_waves->B1[static_cast<int>(B1_lphase + 1) % WAVELEN],
 			fraction(B1_lphase)
 		);
 		sample_t B1_R = m_parent->m_rvol[B1_OSC] * std::lerp(
-			m_B1wave[static_cast<int>(B1_rphase) % WAVELEN],
-			m_B1wave[static_cast<int>(B1_rphase + 1) % WAVELEN],
+			m_waves->B1[static_cast<int>(B1_rphase) % WAVELEN],
+			m_waves->B1[static_cast<int>(B1_rphase + 1) % WAVELEN],
 			fraction(B1_rphase)
 		);
 
@@ -345,10 +334,8 @@ void WatsynInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 {
 	if (!_n->m_pluginData)
 	{
-		auto w = new WatsynObject(&A1_wave[0], &A2_wave[0], &B1_wave[0], &B2_wave[0], m_amod.value(), m_bmod.value(),
+		_n->makePluginData<WatsynObject>(takeWaves(), m_amod.value(), m_bmod.value(),
 			Engine::audioEngine()->outputSampleRate(), _n, Engine::audioEngine()->framesPerPeriod(), this);
-
-		_n->m_pluginData = w;
 	}
 
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
@@ -464,7 +451,7 @@ void WatsynInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 
 void WatsynInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<WatsynObject *>( _n->m_pluginData );
+	_n->destroyPluginData<WatsynObject>();
 }
 
 
@@ -639,10 +626,48 @@ void WatsynInstrument::updateFreqB2()
 }
 
 
+void WatsynInstrument::publishWaves()
+{
+	// A version no note uses (and not the current one, which a note may be taking now), else a new one
+	auto* current = m_currentWaves.load(std::memory_order_acquire);
+	WatsynWaves* target = nullptr;
+	for (const auto& version : m_waveVersions)
+	{
+		if (version.get() != current && version->users.load(std::memory_order_acquire) == 0)
+		{
+			target = version.get();
+			break;
+		}
+	}
+	if (!target) { target = m_waveVersions.emplace_back(std::make_unique<WatsynWaves>()).get(); }
+
+	std::copy(std::begin(A1_wave), std::end(A1_wave), target->A1);
+	std::copy(std::begin(A2_wave), std::end(A2_wave), target->A2);
+	std::copy(std::begin(B1_wave), std::end(B1_wave), target->B1);
+	std::copy(std::begin(B2_wave), std::end(B2_wave), target->B2);
+	m_currentWaves.store(target, std::memory_order_release);
+}
+
+
+auto WatsynInstrument::takeWaves() -> WatsynWaves*
+{
+	// Counted as used, then checked to be still the current one: a version that stopped being current before the
+	// count showed may be written again by the next edit, so the note takes the new current one instead
+	while (true)
+	{
+		auto* waves = m_currentWaves.load(std::memory_order_acquire);
+		waves->users.fetch_add(1, std::memory_order_acq_rel);
+		if (m_currentWaves.load(std::memory_order_acquire) == waves) { return waves; }
+		waves->users.fetch_sub(1, std::memory_order_release);
+	}
+}
+
+
 void WatsynInstrument::updateWaveA1()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &A1_wave[0], const_cast<float*>( a1_graph.samples() ) );
+	publishWaves();
 }
 
 
@@ -650,6 +675,7 @@ void WatsynInstrument::updateWaveA2()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &A2_wave[0], const_cast<float*>( a2_graph.samples() ) );
+	publishWaves();
 }
 
 
@@ -657,6 +683,7 @@ void WatsynInstrument::updateWaveB1()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &B1_wave[0], const_cast<float*>( b1_graph.samples() ) );
+	publishWaves();
 }
 
 
@@ -664,6 +691,7 @@ void WatsynInstrument::updateWaveB2()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &B2_wave[0], const_cast<float*>( b2_graph.samples() ) );
+	publishWaves();
 }
 
 

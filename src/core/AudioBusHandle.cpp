@@ -51,6 +51,9 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	m_panningModel(panningModel),
 	m_track(track)
 {
+	// Its play handles are added on the audio thread: room for as many as the engine can have, so adding allocates
+	// nothing (removing keeps the room)
+	m_playHandles.reserve(PlayHandle::MaxNumber);
 	Engine::audioEngine()->addAudioBusHandle(this);
 	setExtOutputEnabled(true);
 }

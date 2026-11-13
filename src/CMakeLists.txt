@@ -109,6 +109,7 @@ GENERATE_EXPORT_HEADER(lmmsobjs
 
 ADD_EXECUTABLE(lmms
 	core/main.cpp
+	core/RealtimeNew.cpp
 	"${WINRC}"
 )
 TARGET_INCLUDE_DIRECTORIES(lmms

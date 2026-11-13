@@ -26,9 +26,15 @@
 #ifndef LMMS_NOTE_PLAY_HANDLE_H
 #define LMMS_NOTE_PLAY_HANDLE_H
 
+#include <cstddef>
 #include <memory>
+#include <new>
+#include <utility>
+#include <vector>
 
+#include "ArrayVector.h"
 #include "BasicFilters.h"
+#include "IntrusiveList.h"
 #include "Note.h"
 #include "PlayHandle.h"
 #include "Track.h"
@@ -42,13 +48,26 @@ class InstrumentTrack;
 class NotePlayHandle;
 
 using NotePlayHandleList = QList<NotePlayHandle*>;
-using ConstNotePlayHandleList = QList<const NotePlayHandle*>;
+//! Filled again by each lookup, so that one kept (with its room) allocates no more (see nphsOfInstrumentTrack())
+using ConstNotePlayHandleList = std::vector<const NotePlayHandle*>;
+//! A list of a track's notes in fixed room, for a lookup that may run on any audio thread (see the arpeggio): it
+//! holds the first 256 and never allocates
+using FixedNotePlayHandleList = ArrayVector<const NotePlayHandle*, 256>;
 
 class LMMS_EXPORT NotePlayHandle : public PlayHandle, public Note
 {
 public:
+	//! The links of the lists a note is in, which allocate nothing (see IntrusiveList)
+	NotePlayHandle* m_nextSubNote = nullptr; //!< in its parent's chord or arpeggio notes
+	NotePlayHandle* m_nextProcessHandle = nullptr; //!< in its track's notes without a parent
+	using SubNoteList = IntrusiveList<NotePlayHandle, &NotePlayHandle::m_nextSubNote>;
+	using ProcessHandleList = IntrusiveList<NotePlayHandle, &NotePlayHandle::m_nextProcessHandle>;
+
 	void * m_pluginData;
-	std::unique_ptr<BasicFilters<>> m_filter;
+
+	//! The note's filter (InstrumentSoundShaping): the one of the note's place in the pool, made with it, or one
+	//! made now for a note made elsewhere; cleared for each note
+	auto filter() -> BasicFilters<>&;
 
 	// length of the declicking fade in
 	f_cnt_t m_fadeInLength;
@@ -74,6 +93,33 @@ public:
 	void * operator new ( size_t size, void * p )
 	{
 		return p;
+	}
+
+	//! Room for an instrument's data for the note, made with the note (in the note pool): data that fits is made
+	//! there, without allocating on the audio thread
+	static constexpr std::size_t PluginDataRoom = 16384;
+
+	/**
+	 * Makes the instrument's data for this note as m_pluginData, in the note's room: it must fit (checked when
+	 * compiled), and allocate nothing itself. Destroy it with destroyPluginData<T>() (in
+	 * Instrument::deleteNotePluginData()).
+	 */
+	template<class T, class... Args>
+	auto makePluginData(Args&&... args) -> T*
+	{
+		static_assert(sizeof(T) <= PluginDataRoom, "the note's data must fit its room");
+		static_assert(alignof(T) <= alignof(std::max_align_t), "the note's data must fit its room's alignment");
+		auto* data = new (static_cast<void*>(m_pluginDataRoom)) T(std::forward<Args>(args)...);
+		m_pluginData = data;
+		return data;
+	}
+
+	//! Destroys the data made by makePluginData<T>()
+	template<class T>
+	void destroyPluginData()
+	{
+		if (auto* data = static_cast<T*>(m_pluginData)) { data->~T(); }
+		m_pluginData = nullptr;
 	}
 
 	void setVolume( volume_t volume ) override;
@@ -233,10 +279,14 @@ public:
 	    Ignores child note-play-handles, returns -1 when called on one */
 	int index() const;
 
-	/*! Returns list of note-play-handles belonging to given instrument track.
+	/*! Fills @p list (emptied first) with the note-play-handles belonging to given instrument track.
 	    If allPlayHandles = true, also released note-play-handles and children
-	    are returned */
-	static ConstNotePlayHandleList nphsOfInstrumentTrack( const InstrumentTrack* Track, bool allPlayHandles = false );
+	    are returned. A list kept from call to call allocates only when it needs more room than before */
+	static void nphsOfInstrumentTrack(const InstrumentTrack* track, ConstNotePlayHandleList& list,
+		bool allPlayHandles = false);
+	//! The same, into fixed room: the notes past its 256 are left out
+	static void nphsOfInstrumentTrack(const InstrumentTrack* track, FixedNotePlayHandleList& list,
+		bool allPlayHandles = false);
 
 	/*! Returns whether given NotePlayHandle instance is equal to *this */
 	bool operator==( const NotePlayHandle & _nph ) const;
@@ -280,6 +330,7 @@ private:
 	class BaseDetuning
 	{
 	public:
+		BaseDetuning() = default;
 		BaseDetuning( DetuningHelper* detuning );
 
 		void setValue( float val )
@@ -294,7 +345,7 @@ private:
 
 
 	private:
-		float m_value;
+		float m_value = 0.f;
 
 	} ;
 
@@ -312,7 +363,7 @@ private:
 											// played after release
 	f_cnt_t m_releaseFramesDone;			// number of frames done after
 											// release of note
-	NotePlayHandleList m_subNotes;			// used for chords and arpeggios
+	SubNoteList m_subNotes;			// used for chords and arpeggios
 	volatile bool m_released;				// indicates whether note is released
 	bool m_releaseStarted;
 	bool m_hasMidiNote;
@@ -331,6 +382,7 @@ private:
 	float m_frequency;
 	float m_unpitchedFrequency;
 
+	BaseDetuning m_ownBaseDetuning; //!< a note without a parent's; its chord or arpeggio notes share it
 	BaseDetuning* m_baseDetuning;
 	TimePos m_songGlobalParentOffset;
 
@@ -338,6 +390,13 @@ private:
 	Origin m_origin;
 
 	bool m_frequencyNeedsUpdate;				// used to update pitch
+
+	alignas(std::max_align_t) std::byte m_pluginDataRoom[PluginDataRoom]; //!< see makePluginData()
+
+	friend class NotePlayHandleManager;
+	BasicFilters<>* m_poolFilter = nullptr; //!< the pool's filter for this place, lent while the note lives
+	BasicFilters<>* m_filter = nullptr; //!< the filter in use, once one is (see filter())
+	std::unique_ptr<BasicFilters<>> m_ownFilter; //!< a note from outside the pool makes its own
 } ;
 
 
@@ -360,7 +419,16 @@ public:
 	static void free();
 
 private:
-	static NotePlayHandle ** s_available;
+	//! A place for a note, with its filter (made with the place, so that a note made on the audio thread allocates
+	//! nothing)
+	struct Slot
+	{
+		NotePlayHandle* memory;
+		BasicFilters<>* filter;
+	};
+	static void addSlots(int count);
+
+	static Slot* s_available;
 	static QReadWriteLock s_mutex;
 	static std::atomic_int s_availableIndex;
 	static int s_size;

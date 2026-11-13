@@ -137,11 +137,8 @@ void InstrumentSoundShaping::processAudioBuffer( SampleFrame* buffer,
 		int old_filter_cut = 0;
 		int old_filter_res = 0;
 
-		if( n->m_filter == nullptr )
-		{
-			n->m_filter = std::make_unique<BasicFilters<>>( Engine::audioEngine()->outputSampleRate() );
-		}
-		n->m_filter->setFilterType( static_cast<BasicFilters<>::FilterType>(m_filterModel.value()) );
+		auto& filter = n->filter();
+		filter.setFilterType( static_cast<BasicFilters<>::FilterType>(m_filterModel.value()) );
 
 		if (cutoffParameters.isUsed())
 		{
@@ -168,13 +165,13 @@ void InstrumentSoundShaping::processAudioBuffer( SampleFrame* buffer,
 				if( static_cast<int>( new_cut_val ) != old_filter_cut ||
 					static_cast<int>( new_res_val*RES_PRECISION ) != old_filter_res )
 				{
-					n->m_filter->calcFilterCoeffs( new_cut_val, new_res_val );
+					filter.calcFilterCoeffs( new_cut_val, new_res_val );
 					old_filter_cut = static_cast<int>( new_cut_val );
 					old_filter_res = static_cast<int>( new_res_val*RES_PRECISION );
 				}
 
-				buffer[frame][0] = n->m_filter->update( buffer[frame][0], 0 );
-				buffer[frame][1] = n->m_filter->update( buffer[frame][1], 1 );
+				buffer[frame][0] = filter.update( buffer[frame][0], 0 );
+				buffer[frame][1] = filter.update( buffer[frame][1], 1 );
 			}
 		}
 		else if (cutoffParameters.isUsed())
@@ -186,12 +183,12 @@ void InstrumentSoundShaping::processAudioBuffer( SampleFrame* buffer,
 
 				if( static_cast<int>( new_cut_val ) != old_filter_cut )
 				{
-					n->m_filter->calcFilterCoeffs( new_cut_val, frv );
+					filter.calcFilterCoeffs( new_cut_val, frv );
 					old_filter_cut = static_cast<int>( new_cut_val );
 				}
 
-				buffer[frame][0] = n->m_filter->update( buffer[frame][0], 0 );
-				buffer[frame][1] = n->m_filter->update( buffer[frame][1], 1 );
+				buffer[frame][0] = filter.update( buffer[frame][0], 0 );
+				buffer[frame][1] = filter.update( buffer[frame][1], 1 );
 			}
 		}
 		else if(resonanceParameters.isUsed() )
@@ -202,22 +199,22 @@ void InstrumentSoundShaping::processAudioBuffer( SampleFrame* buffer,
 
 				if( static_cast<int>( new_res_val*RES_PRECISION ) != old_filter_res )
 				{
-					n->m_filter->calcFilterCoeffs( fcv, new_res_val );
+					filter.calcFilterCoeffs( fcv, new_res_val );
 					old_filter_res = static_cast<int>( new_res_val*RES_PRECISION );
 				}
 
-				buffer[frame][0] = n->m_filter->update( buffer[frame][0], 0 );
-				buffer[frame][1] = n->m_filter->update( buffer[frame][1], 1 );
+				buffer[frame][0] = filter.update( buffer[frame][0], 0 );
+				buffer[frame][1] = filter.update( buffer[frame][1], 1 );
 			}
 		}
 		else
 		{
-			n->m_filter->calcFilterCoeffs( fcv, frv );
+			filter.calcFilterCoeffs( fcv, frv );
 
 			for( f_cnt_t frame = 0; frame < frames; ++frame )
 			{
-				buffer[frame][0] = n->m_filter->update( buffer[frame][0], 0 );
-				buffer[frame][1] = n->m_filter->update( buffer[frame][1], 1 );
+				buffer[frame][0] = filter.update( buffer[frame][0], 0 );
+				buffer[frame][1] = filter.update( buffer[frame][1], 1 );
 			}
 		}
 	}

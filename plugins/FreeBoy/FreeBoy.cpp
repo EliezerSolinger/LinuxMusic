@@ -240,8 +240,17 @@ void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 	if (!nph->m_pluginData)
 	{
-		auto papu = new GbApuWrapper{};
-		papu->setSampleRate(samplerate, CLOCK_RATE);
+		auto* noteVoice = nph->makePluginData<NoteVoice>();
+		noteVoice->voice = m_voices.take();
+		if (noteVoice->voice) { noteVoice->voice->restart(); }
+		else
+		{
+			// More notes at once than voices: one made now (allocating)
+			noteVoice->own = std::make_unique<GbApuWrapper>();
+			noteVoice->own->setSampleRate(samplerate, CLOCK_RATE);
+			noteVoice->voice = noteVoice->own.get();
+		}
+		auto papu = noteVoice->voice;
 
 		// Master sound circuitry power control
 		papu->writeRegister(0xff26, 0x80);
@@ -268,10 +277,9 @@ void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 		data += m_ch4SweepStepLengthModel.value();
 		papu->writeRegister(0xff21, data);
 
-		nph->m_pluginData = papu;
 	}
 
-	auto papu = static_cast<GbApuWrapper*>(nph->m_pluginData);
+	auto papu = static_cast<NoteVoice*>(nph->m_pluginData)->voice;
 
 	papu->trebleEq(m_trebleModel.value());
 	papu->bassFreq(m_bassModel.value());
@@ -409,9 +417,25 @@ void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 
 
+auto FreeBoyInstrument::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
+{
+	(void)maxFrameCount;
+	m_voices.rebuild(32, [sampleRate] {
+		auto voice = std::make_unique<GbApuWrapper>();
+		voice->setSampleRate(static_cast<long>(sampleRate), CLOCK_RATE);
+		return voice;
+	});
+	return true;
+}
+
+
 void FreeBoyInstrument::deleteNotePluginData(NotePlayHandle* nph)
 {
-	delete static_cast<GbApuWrapper*>(nph->m_pluginData);
+	if (auto* noteVoice = static_cast<NoteVoice*>(nph->m_pluginData); noteVoice && !noteVoice->own)
+	{
+		m_voices.give(noteVoice->voice);
+	}
+	nph->destroyPluginData<NoteVoice>();
 }
 
 

@@ -28,7 +28,11 @@
 
 
 #include "AutomatableModel.h"
+#include <memory>
+
+#include "GbApuWrapper.h"
 #include "Instrument.h"
+#include "VoicePool.h"
 #include "InstrumentView.h"
 #include "Graph.h"
 
@@ -54,6 +58,9 @@ public:
 	FreeBoyInstrument( InstrumentTrack * _instrument_track );
 	~FreeBoyInstrument() override = default;
 
+	//! Makes its voices for @p sampleRate (their buffers are allocated)
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+
 	void deleteNotePluginData(NotePlayHandle* nph) override;
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
@@ -72,6 +79,15 @@ public:
 
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+
+	//! A note's voice: one from the pool, or one made at once when all are in use
+	struct NoteVoice
+	{
+		GbApuWrapper* voice = nullptr;
+		std::unique_ptr<GbApuWrapper> own;
+	};
+	//! The notes' voices, made in advance (see VoicePool): a note takes one without allocating on the audio thread
+	VoicePool<GbApuWrapper> m_voices;
 
 	FloatModel m_ch1SweepTimeModel;
 	BoolModel m_ch1SweepDirModel;

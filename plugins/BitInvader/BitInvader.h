@@ -27,6 +27,8 @@
 #ifndef BIT_INVADER_H
 #define BIT_INVADER_H
 
+#include <array>
+
 #include "AutomatableModel.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
@@ -51,15 +53,18 @@ public:
 	BSynth( float * sample, NotePlayHandle * _nph,
 			bool _interpolation, float factor, 
 			const sample_rate_t _sample_rate );
-	virtual ~BSynth();
+	virtual ~BSynth() = default;
 	
 	sample_t nextStringSample( float sample_length );
 
 
+	static constexpr int WavetableSize = 200;
+
 private:
 	int sample_index;
 	float sample_realindex;
-	float* sample_shape;
+	//! The note's copy of the wave, held in the note's room with the rest (see NotePlayHandle::makePluginData())
+	std::array<float, WavetableSize> sample_shape;
 	NotePlayHandle* nph;
 	const sample_rate_t sample_rate;
 

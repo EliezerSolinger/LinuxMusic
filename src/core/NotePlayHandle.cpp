@@ -84,7 +84,8 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 	lock();
 	if( hasParent() == false )
 	{
-		m_baseDetuning = new BaseDetuning(detuning().get());
+		m_ownBaseDetuning = BaseDetuning{detuning().get()};
+		m_baseDetuning = &m_ownBaseDetuning;
 		m_instrumentTrack->m_processHandles.push_back( this );
 	}
 	else
@@ -127,8 +128,7 @@ NotePlayHandle::~NotePlayHandle()
 
 	if( hasParent() == false )
 	{
-		delete m_baseDetuning;
-		m_instrumentTrack->m_processHandles.removeAll( this );
+		m_instrumentTrack->m_processHandles.removeOne( this );
 	}
 	else
 	{
@@ -494,20 +494,42 @@ int NotePlayHandle::index() const
 
 
 
-ConstNotePlayHandleList NotePlayHandle::nphsOfInstrumentTrack( const InstrumentTrack * _it, bool _all_ph )
+namespace
+{
+
+template<class List>
+void collectNotesOf(const InstrumentTrack* track, List& list, bool all, auto&& instrumentTrackOf)
 {
 	const PlayHandleList & playHandles = Engine::audioEngine()->playHandles();
-	ConstNotePlayHandleList cnphv;
+	list.clear();
 
 	for (const auto& playHandle : playHandles)
 	{
 		const auto nph = dynamic_cast<const NotePlayHandle*>(playHandle);
-		if( nph != nullptr && nph->m_instrumentTrack == _it && ( ( nph->isReleased() == false && nph->hasParent() == false ) || _all_ph == true ) )
+		if (nph != nullptr && instrumentTrackOf(nph) == track
+			&& ((nph->isReleased() == false && nph->hasParent() == false) || all))
 		{
-			cnphv.push_back( nph );
+			if constexpr (requires { list.full(); })
+			{
+				if (list.full()) { return; }
+			}
+			list.push_back(nph);
 		}
 	}
-	return cnphv;
+}
+
+} // namespace
+
+
+void NotePlayHandle::nphsOfInstrumentTrack(const InstrumentTrack* _it, ConstNotePlayHandleList& cnphv, bool _all_ph)
+{
+	collectNotesOf(_it, cnphv, _all_ph, [](const NotePlayHandle* nph) { return nph->m_instrumentTrack; });
+}
+
+
+void NotePlayHandle::nphsOfInstrumentTrack(const InstrumentTrack* _it, FixedNotePlayHandleList& cnphv, bool _all_ph)
+{
+	collectNotesOf(_it, cnphv, _all_ph, [](const NotePlayHandle* nph) { return nph->m_instrumentTrack; });
 }
 
 
@@ -620,25 +642,60 @@ void NotePlayHandle::resize( const bpm_t _new_tempo )
 }
 
 
-NotePlayHandle ** NotePlayHandleManager::s_available;
+auto NotePlayHandle::filter() -> BasicFilters<>&
+{
+	if (m_filter == nullptr)
+	{
+		const auto rate = Engine::audioEngine()->outputSampleRate();
+		if (m_poolFilter != nullptr)
+		{
+			m_poolFilter->setSampleRate(rate);
+			m_poolFilter->clearHistory();
+			m_filter = m_poolFilter;
+		}
+		else
+		{
+			m_ownFilter = std::make_unique<BasicFilters<>>(rate);
+			m_filter = m_ownFilter.get();
+		}
+	}
+	return *m_filter;
+}
+
+
+
+
+NotePlayHandleManager::Slot* NotePlayHandleManager::s_available;
 QReadWriteLock NotePlayHandleManager::s_mutex;
 std::atomic_int NotePlayHandleManager::s_availableIndex;
 int NotePlayHandleManager::s_size;
 
 
+void NotePlayHandleManager::addSlots(int count)
+{
+	// The list of available places takes all of them (they all may be given back at once)
+	auto* list = new Slot[s_size + count];
+	std::copy(s_available, s_available + s_availableIndex + 1, list);
+	delete[] s_available;
+	s_available = list;
+	s_size += count;
+
+	auto* memory = static_cast<NotePlayHandle*>(std::malloc(sizeof(NotePlayHandle) * count));
+	for (int index = 0; index < count; ++index)
+	{
+		auto* filter = new BasicFilters<>(44100); // set to the engine's when a note uses it
+		filter->reserveSubFilter();
+		s_available[++s_availableIndex] = Slot{memory + index, filter};
+	}
+}
+
+
 void NotePlayHandleManager::init()
 {
-	s_available = new NotePlayHandle*[INITIAL_NPH_CACHE];
-
-	auto n = static_cast<NotePlayHandle *>(std::malloc(sizeof(NotePlayHandle) * INITIAL_NPH_CACHE));
-
-	for( int i=0; i < INITIAL_NPH_CACHE; ++i )
-	{
-		s_available[ i ] = n;
-		++n;
-	}
-	s_availableIndex = INITIAL_NPH_CACHE - 1;
-	s_size = INITIAL_NPH_CACHE;
+	s_available = nullptr;
+	s_size = 0;
+	s_availableIndex = -1;
+	addSlots(INITIAL_NPH_CACHE);
 }
 
 
@@ -650,45 +707,42 @@ NotePlayHandle * NotePlayHandleManager::acquire( InstrumentTrack* instrumentTrac
 				int midiEventChannel,
 				NotePlayHandle::Origin origin )
 {
-	// TODO: use some lockless data structures
 	s_mutex.lockForWrite();
-	if (s_availableIndex < 0) { extend(NPH_CACHE_INCREMENT); }
-	NotePlayHandle * nph = s_available[s_availableIndex--];
+	// More notes at once than the pool holds: more places, allocated where they should not be
+	if (s_availableIndex < 0) { addSlots(NPH_CACHE_INCREMENT); }
+	const auto slot = s_available[s_availableIndex--];
 	s_mutex.unlock();
 
-	new( (void*)nph ) NotePlayHandle( instrumentTrack, offset, frames, noteToPlay, parent, midiEventChannel, origin );
+	auto* nph = new( (void*)slot.memory ) NotePlayHandle( instrumentTrack, offset, frames, noteToPlay, parent,
+		midiEventChannel, origin );
+	nph->m_poolFilter = slot.filter;
 	return nph;
 }
 
 
 void NotePlayHandleManager::release( NotePlayHandle * nph )
 {
+	auto* filter = nph->m_poolFilter;
 	nph->NotePlayHandle::~NotePlayHandle();
-	s_mutex.lockForRead();
-	s_available[++s_availableIndex] = nph;
+	// Writes the list: a read lock let two releases (or a release and an acquire) write the same place
+	s_mutex.lockForWrite();
+	s_available[++s_availableIndex] = Slot{nph, filter};
 	s_mutex.unlock();
 }
 
 
 void NotePlayHandleManager::extend( int c )
 {
-	s_size += c;
-	auto tmp = new NotePlayHandle*[s_size];
-	delete[] s_available;
-	s_available = tmp;
-
-	auto n = static_cast<NotePlayHandle *>(std::malloc(sizeof(NotePlayHandle) * c));
-
-	for( int i=0; i < c; ++i )
-	{
-		s_available[++s_availableIndex] = n;
-		++n;
-	}
+	s_mutex.lockForWrite();
+	addSlots(c);
+	s_mutex.unlock();
 }
 
 void NotePlayHandleManager::free()
 {
+	// The places' memory and filters stay until the program ends (a note may still be released while it does)
 	delete[] s_available;
+	s_available = nullptr;
 }
 
 

@@ -360,15 +360,12 @@ struct RandomVectorFunction : public exprtk::ifunction<float>
 
 namespace SimpleRandom {
 	// The notes are rendered on several threads at once: each thread draws from its own engine (mt19937, a standard
-	// mersenne_twister_engine), seeded apart from the others'
-	std::atomic<unsigned> s_nextSeed{17};
-	thread_local std::mt19937 generator(s_nextSeed.fetch_add(1, std::memory_order_relaxed));
-	thread_local std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+	// mersenne_twister_engine), seeded apart from the others', kept by the program (see threadRandomEngine())
 	struct float_random_with_engine
 	{
 		static inline float process()
 		{
-			return dist(generator);
+			return std::uniform_real_distribution<float>{-1.0f, 1.0f}(threadRandomEngine());
 		}
 	};
 } // namespace SimpleRandom
@@ -379,7 +376,7 @@ class ExprFrontData
 {
 public:
 	ExprFrontData(int last_func_samples):
-	m_rand_vec(SimpleRandom::generator()),
+	m_rand_vec(threadRandomEngine()()),
 	m_integ_func(nullptr),
 	m_last_func(last_func_samples)
 	{}
@@ -540,7 +537,7 @@ ExprFront::ExprFront(const char * expr, int last_func_samples)
 
 		m_data->m_symbol_table.add_constant("e", std::numbers::e_v<float>);
 
-		m_data->m_symbol_table.add_constant("seed", SimpleRandom::generator() & max_float_integer_mask);
+		m_data->m_symbol_table.add_constant("seed", threadRandomEngine()() & max_float_integer_mask);
 
 		m_data->m_symbol_table.add_function("sinew", sin_wave_func);
 		m_data->m_symbol_table.add_function("squarew", square_wave_func);

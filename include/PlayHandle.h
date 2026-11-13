@@ -30,6 +30,7 @@
 #include <span>
 #include <vector>
 
+#include "BufferManager.h"
 #include "Flags.h"
 #include "LmmsTypes.h"
 #include "SampleFrame.h"
@@ -166,7 +167,7 @@ private:
 	f_cnt_t m_offset;
 	QThread* m_affinity;
 	QMutex m_processingLock;
-	std::vector<SampleFrame> m_playHandleBuffer;
+	BufferManager::Buffer m_playHandleBuffer; //!< from the pool, so a play handle made on the audio thread allocates none
 	bool m_bufferReleased;
 	bool m_usesBuffer;
 	AudioBusHandle* m_audioBusHandle;

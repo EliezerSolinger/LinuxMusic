@@ -239,9 +239,15 @@ public:
 	auto isLive() const -> bool { return m_live; }
 	void setLive(bool live) { m_live = live; }
 
+	//! The amount's values this period, or none when it does not change in it: read once a period by the receiver
+	//! (reading advances a ramp) and kept here, so that nothing is allocated to keep it [audio thread]
+	auto periodAmount() const -> const ValueBuffer* { return m_periodAmount; }
+	void readPeriodAmount() { m_periodAmount = m_amount.valueBuffer(); }
+
 	private:
 		LatencyDelay m_latencyDelay;
 		bool m_live = true;
+		const ValueBuffer* m_periodAmount = nullptr;
 		MixerChannel * m_from;
 		MixerChannel * m_to;
 		FloatModel m_amount;

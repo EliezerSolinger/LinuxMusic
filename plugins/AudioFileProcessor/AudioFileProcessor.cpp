@@ -100,7 +100,25 @@ AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 	m_interpolationModel.addItem( tr( "Sinc" ) );
 	m_interpolationModel.setValue( 1 );
 
+	// Each note makes a resampler of the chosen mode on the audio thread: their states made here in advance
+	const auto reserveResamplers = [this] {
+		AudioResampler::reserve(interpolationMode(), DEFAULT_CHANNELS, 64);
+	};
+	connect(&m_interpolationModel, &IntModel::dataChanged, this, reserveResamplers);
+	reserveResamplers();
+
 	pointChanged();
+}
+
+
+auto AudioFileProcessor::interpolationMode() const -> AudioResampler::Mode
+{
+	switch (m_interpolationModel.value())
+	{
+		case 0: return AudioResampler::Mode::ZOH;
+		case 2: return AudioResampler::Mode::SincMedium;
+		default: return AudioResampler::Mode::Linear;
+	}
 }
 
 
@@ -131,21 +149,7 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 			m_nextPlayBackwards = false;
 		}
 		// set interpolation mode for libsamplerate
-		auto interpolationMode = AudioResampler::Mode::Linear;
-		switch( m_interpolationModel.value() )
-		{
-			case 0:
-				interpolationMode = AudioResampler::Mode::ZOH;
-				break;
-			case 1:
-				interpolationMode = AudioResampler::Mode::Linear;
-				break;
-			case 2:
-				interpolationMode = AudioResampler::Mode::SincMedium;
-				break;
-		}
-
-		nph->m_pluginData = new Sample::PlaybackState(interpolationMode);
+		nph->makePluginData<Sample::PlaybackState>(interpolationMode());
 		static_cast<Sample::PlaybackState*>(nph->m_pluginData)->setFrameIndex(m_nextPlayStartPoint);
 		static_cast<Sample::PlaybackState*>(nph->m_pluginData)->setBackwards(m_nextPlayBackwards);
 
@@ -187,7 +191,7 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 
 void AudioFileProcessor::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<Sample::PlaybackState*>(_n->m_pluginData);
+	_n->destroyPluginData<Sample::PlaybackState>();
 }
 
 

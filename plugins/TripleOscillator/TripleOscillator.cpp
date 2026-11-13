@@ -313,68 +313,44 @@ void TripleOscillator::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 {
 	if (!_n->m_pluginData)
 	{
-		auto oscs_l = std::array<Oscillator*, NUM_OF_OSCILLATORS>{};
-		auto oscs_r = std::array<Oscillator*, NUM_OF_OSCILLATORS>{};
+		auto* oscillators = _n->makePluginData<NoteOscillators>();
+		auto& oscs_l = oscillators->left;
+		auto& oscs_r = oscillators->right;
 
+		// The last one first: each one takes the next as the one it modulates or is mixed with
 		for( int i = NUM_OF_OSCILLATORS - 1; i >= 0; --i )
 		{
-
-			// the last oscs needs no sub-oscs...
-			if( i == NUM_OF_OSCILLATORS - 1 )
-			{
-				oscs_l[i] = new Oscillator(
-						&m_osc[i]->m_waveShapeModel,
-						&m_osc[i]->m_modulationAlgoModel,
-						_n->frequency(),
-						m_osc[i]->m_detuningLeft,
-						m_osc[i]->m_phaseOffsetLeft,
-						m_osc[i]->m_volumeLeft );
-				oscs_l[i]->setUseWaveTable(m_osc[i]->m_useWaveTable);
-				oscs_r[i] = new Oscillator(
-						&m_osc[i]->m_waveShapeModel,
-						&m_osc[i]->m_modulationAlgoModel,
-						_n->frequency(),
-						m_osc[i]->m_detuningRight,
-						m_osc[i]->m_phaseOffsetRight,
-						m_osc[i]->m_volumeRight );
-				oscs_r[i]->setUseWaveTable(m_osc[i]->m_useWaveTable);
-			}
-			else
-			{
-				oscs_l[i] = new Oscillator(
-						&m_osc[i]->m_waveShapeModel,
-						&m_osc[i]->m_modulationAlgoModel,
-						_n->frequency(),
-						m_osc[i]->m_detuningLeft,
-						m_osc[i]->m_phaseOffsetLeft,
-						m_osc[i]->m_volumeLeft,
-						oscs_l[i + 1] );
-				oscs_l[i]->setUseWaveTable(m_osc[i]->m_useWaveTable);
-				oscs_r[i] = new Oscillator(
-						&m_osc[i]->m_waveShapeModel,
-						&m_osc[i]->m_modulationAlgoModel,
-						_n->frequency(),
-						m_osc[i]->m_detuningRight,
-						m_osc[i]->m_phaseOffsetRight,
-						m_osc[i]->m_volumeRight,
-						oscs_r[i + 1] );
-				oscs_r[i]->setUseWaveTable(m_osc[i]->m_useWaveTable);
-			}
+			Oscillator* nextLeft = i == NUM_OF_OSCILLATORS - 1 ? nullptr : &*oscs_l[i + 1];
+			Oscillator* nextRight = i == NUM_OF_OSCILLATORS - 1 ? nullptr : &*oscs_r[i + 1];
+			oscs_l[i].emplace(
+					&m_osc[i]->m_waveShapeModel,
+					&m_osc[i]->m_modulationAlgoModel,
+					_n->frequency(),
+					m_osc[i]->m_detuningLeft,
+					m_osc[i]->m_phaseOffsetLeft,
+					m_osc[i]->m_volumeLeft,
+					nextLeft );
+			oscs_l[i]->setUseWaveTable(m_osc[i]->m_useWaveTable);
+			oscs_r[i].emplace(
+					&m_osc[i]->m_waveShapeModel,
+					&m_osc[i]->m_modulationAlgoModel,
+					_n->frequency(),
+					m_osc[i]->m_detuningRight,
+					m_osc[i]->m_phaseOffsetRight,
+					m_osc[i]->m_volumeRight,
+					nextRight );
+			oscs_r[i]->setUseWaveTable(m_osc[i]->m_useWaveTable);
 
 			oscs_l[i]->setUserWave( m_osc[i]->m_sampleBuffer );
 			oscs_r[i]->setUserWave( m_osc[i]->m_sampleBuffer );
 			oscs_l[i]->setUserAntiAliasWaveTable(m_osc[i]->m_userAntiAliasWaveTable);
 			oscs_r[i]->setUserAntiAliasWaveTable(m_osc[i]->m_userAntiAliasWaveTable);
 		}
-
-		_n->m_pluginData = new oscPtr;
-		static_cast<oscPtr *>( _n->m_pluginData )->oscLeft = oscs_l[0];
-		static_cast< oscPtr *>( _n->m_pluginData )->oscRight =
-								oscs_r[0];
 	}
 
-	Oscillator * osc_l = static_cast<oscPtr *>( _n->m_pluginData )->oscLeft;
-	Oscillator * osc_r = static_cast<oscPtr *>( _n->m_pluginData )->oscRight;
+	auto* oscillators = static_cast<NoteOscillators*>(_n->m_pluginData);
+	Oscillator* osc_l = &*oscillators->left[0];
+	Oscillator* osc_r = &*oscillators->right[0];
 
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
@@ -391,11 +367,7 @@ void TripleOscillator::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 
 void TripleOscillator::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<Oscillator *>( static_cast<oscPtr *>(
-						_n->m_pluginData )->oscLeft );
-	delete static_cast<Oscillator *>( static_cast<oscPtr *>(
-						_n->m_pluginData )->oscRight );
-	delete static_cast<oscPtr *>( _n->m_pluginData );
+	_n->destroyPluginData<NoteOscillators>();
 }
 
 

@@ -93,6 +93,9 @@ signals:
 	void sampleUpdated();
 
 private:
+	//! The resampler's mode its notes use (the interpolation chosen)
+	auto interpolationMode() const -> AudioResampler::Mode;
+
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
 	Sample m_sample;

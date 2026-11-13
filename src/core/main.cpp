@@ -64,6 +64,7 @@
 #include "embed.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "RealtimeAllocator.h"
 #include "Hardware.h"
 #include "ImportFilter.h"
 #include "MainWindow.h"
@@ -668,6 +669,14 @@ int main( int argc, char * * argv )
 	}
 
 	ConfigManager::inst()->loadConfigFile(configFile);
+
+	// The audio threads' memory (see RealtimeAllocator): 64 MB unless the settings say otherwise, made before the
+	// engine starts
+	{
+		const auto megabytes = std::clamp(
+			ConfigManager::inst()->value("audioengine", "realtimepool", "64").toInt(), 8, 4096);
+		RealtimeAllocator::init(static_cast<std::size_t>(megabytes) << 20);
+	}
 
 	// set language
 	QString pos = ConfigManager::inst()->value( "app", "language" );

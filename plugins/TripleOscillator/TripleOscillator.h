@@ -28,9 +28,13 @@
 
 #include <memory>
 
+#include <array>
+#include <optional>
+
 #include "Instrument.h"
 #include "InstrumentView.h"
 #include "AutomatableModel.h"
+#include "Oscillator.h"
 #include "OscillatorConstants.h"
 #include "SampleBuffer.h"
 
@@ -134,11 +138,13 @@ private:
 
 	OscillatorObject * m_osc[NUM_OF_OSCILLATORS];
 
-	struct oscPtr
+	//! A note's oscillators, each one modulating or mixed with the next: made in the note's room (see
+	//! NotePlayHandle::makePluginData()), so a note allocates nothing on the audio thread
+	struct NoteOscillators
 	{
-		Oscillator * oscLeft;
-		Oscillator * oscRight;
-	} ;
+		std::array<std::optional<Oscillator>, NUM_OF_OSCILLATORS> left;
+		std::array<std::optional<Oscillator>, NUM_OF_OSCILLATORS> right;
+	};
 
 
 	friend class gui::TripleOscillatorView;

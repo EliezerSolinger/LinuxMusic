@@ -27,6 +27,8 @@
 #include "AudioEngine.h"
 #include "AudioTrack.h"
 #include "Engine.h"
+#include "AudioResampler.h"
+#include "RealtimeAllocator.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
@@ -132,6 +134,11 @@ auto StreamScheduler::demandAt(const Song& song, tick_t tick, double seconds) ->
 
 void StreamScheduler::update()
 {
+	// The audio thread's housekeeping, on this thread: what it took from the pools is made again, and what it let go
+	// of the system's memory is freed (see AudioResampler::reserve(), RealtimeAllocator::deferFree())
+	AudioResampler::refillPools();
+	RealtimeAllocator::drainDeferredIfAny();
+
 	if (m_song->isLoadingProject()) { return; }
 	DiskReader::instance().setDemand(demandAt(*m_song, m_song->getPlayPos(Song::PlayMode::Song).getTicks(),
 		DiskReader::ReadAheadSeconds));

@@ -239,7 +239,10 @@ void Song::processNextBuffer()
 		EnvelopeAndLfoParameters::instances()->reset();
 	}
 
-	TrackList trackList;
+	// The tracks to play, without copying them (the audio thread allocates nothing): the song's (they change only
+	// while the engine waits), or the one track of a pattern or clip
+	Track* singleTrack[1] = {nullptr};
+	auto trackList = std::span<Track* const>{};
 	int clipNum = -1; // The number of the clip that will be played
 
 	// Determine the list of tracks to play and the clip number
@@ -253,7 +256,8 @@ void Song::processNextBuffer()
 			if (Engine::patternStore()->numOfPatterns() > 0)
 			{
 				clipNum = Engine::patternStore()->currentPattern();
-				trackList.push_back(PatternTrack::findPatternTrack(clipNum));
+				singleTrack[0] = PatternTrack::findPatternTrack(clipNum);
+				trackList = singleTrack;
 			}
 			break;
 
@@ -261,7 +265,8 @@ void Song::processNextBuffer()
 			if (m_midiClipToPlay)
 			{
 				clipNum = m_midiClipToPlay->getTrack()->getClipNum(m_midiClipToPlay);
-				trackList.push_back(m_midiClipToPlay->getTrack());
+				singleTrack[0] = m_midiClipToPlay->getTrack();
+				trackList = singleTrack;
 			}
 			break;
 
@@ -406,7 +411,7 @@ void Song::removeOldAutomatedValue(AutomatableModel* am)
 	m_oldAutomatedValues.remove(am);
 }
 
-void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_cnt_t)
+void Song::processAutomations(std::span<Track* const> tracklist, TimePos timeStart, f_cnt_t)
 {
 	// (the audio thread's scratch, reused each tick: nothing is allocated once it has grown)
 	auto& values = m_automatedValues;
@@ -423,8 +428,8 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	case PlayMode::Pattern:
 	{
 		if (tracklist.empty()) { return; }
-		Q_ASSERT(tracklist.at(0)->type() == Track::Type::Pattern);
-		auto patternTrack = dynamic_cast<PatternTrack*>(tracklist.at(0));
+		Q_ASSERT(tracklist[0]->type() == Track::Type::Pattern);
+		auto patternTrack = dynamic_cast<PatternTrack*>(tracklist[0]);
 		container = Engine::patternStore();
 		clipNum = patternTrack->patternIndex();
 	}

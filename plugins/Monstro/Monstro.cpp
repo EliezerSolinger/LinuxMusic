@@ -100,10 +100,9 @@ MonstroSynth::MonstroSynth( MonstroInstrument * _i, NotePlayHandle * _nph ) :
 	m_counter3l = 0;
 	m_counter3r = 0;
 
-	m_lfo[0].resize( m_parent->m_fpp );
-	m_lfo[1].resize( m_parent->m_fpp );
-	m_env[0].resize( m_parent->m_fpp );
-	m_env[1].resize( m_parent->m_fpp );
+	assert(m_parent->m_fpp <= DEFAULT_BUFFER_SIZE);
+	for (auto& values : m_lfo) { values.fill(0.f); }
+	for (auto& values : m_env) { values.fill(0.f); }
 }
 
 
@@ -1065,7 +1064,7 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 	if (!nph->m_pluginData)
 	{
-		nph->m_pluginData = new MonstroSynth(this, nph);
+		nph->makePluginData<MonstroSynth>(this, nph);
 	}
 
 	auto ms = static_cast<MonstroSynth*>(nph->m_pluginData);
@@ -1077,7 +1076,7 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 void MonstroInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<MonstroSynth *>( _n->m_pluginData );
+	_n->destroyPluginData<MonstroSynth>();
 }
 
 

@@ -551,8 +551,7 @@ void NesInstrument::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 	
 	if (!n->m_pluginData)
 	{
-		auto nes = new NesObject(this, Engine::audioEngine()->outputSampleRate(), n);
-		n->m_pluginData = nes;
+		n->makePluginData<NesObject>(this, Engine::audioEngine()->outputSampleRate(), n);
 	}
 
 	auto nes = static_cast<NesObject*>(n->m_pluginData);
@@ -565,7 +564,7 @@ void NesInstrument::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 
 void NesInstrument::deleteNotePluginData( NotePlayHandle * n )
 {
-	delete static_cast<NesObject *>( n->m_pluginData );
+	n->destroyPluginData<NesObject>();
 }
 
 

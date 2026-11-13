@@ -45,7 +45,7 @@ namespace lmms
 {
 
 
-static const int wavetableSize = 200;
+static constexpr int wavetableSize = BSynth::WavetableSize;
 static const float defaultNormalizationFactor = 1.0f;
 
 extern "C"
@@ -76,7 +76,6 @@ BSynth::BSynth( float * _shape, NotePlayHandle * _nph, bool _interpolation,
 	sample_rate( _sample_rate ),
 	interpolation( _interpolation)
 {
-	sample_shape = new float[wavetableSize];
 	for (int i=0; i < wavetableSize; ++i)
 	{
 		float buf = _shape[i] * _factor;
@@ -91,12 +90,6 @@ BSynth::BSynth( float * _shape, NotePlayHandle * _nph, bool _interpolation,
 		}
 		sample_shape[i] = buf;
 	}
-}
-
-
-BSynth::~BSynth()
-{
-	delete[] sample_shape;
 }
 
 
@@ -259,7 +252,7 @@ void BitInvader::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 	if (!nph->m_pluginData)
 	{
 		float factor = !m_normalize.value() ? defaultNormalizationFactor : m_normalizeFactor;
-		nph->m_pluginData = new BSynth(
+		nph->makePluginData<BSynth>(
 					const_cast<float*>( m_graph.samples() ),
 					nph,
 					m_interpolation.value(), factor,
@@ -283,7 +276,7 @@ void BitInvader::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 
 void BitInvader::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<BSynth *>( _n->m_pluginData );
+	_n->destroyPluginData<BSynth>();
 }
 
 

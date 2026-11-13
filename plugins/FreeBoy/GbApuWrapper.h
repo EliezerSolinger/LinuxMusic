@@ -44,6 +44,8 @@ public:
 	void trebleEq(const blip_eq_t& eq) { Gb_Apu::treble_eq(eq); }
 	void bassFreq(int freq);
 	void endFrame(blip_time_t endTime);
+	//! Back to how a new one is after setSampleRate(), keeping its buffers: for a voice used again
+	void restart();
 
 private:
 	Stereo_Buffer m_buf;

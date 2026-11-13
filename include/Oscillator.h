@@ -84,10 +84,8 @@ public:
 			const float &phase_offset,
 			const float &volume,
 			Oscillator *m_subOsc = nullptr);
-	virtual ~Oscillator()
-	{
-		delete m_subOsc;
-	}
+	//! The sub-oscillator is not this one's: whoever made the two keeps both (a note's room, see TripleOscillator)
+	virtual ~Oscillator() = default;
 
 	static void waveTableInit();
 	static void destroyFFTPlans();

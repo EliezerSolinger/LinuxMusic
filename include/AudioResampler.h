@@ -25,6 +25,7 @@
 #ifndef LMMS_AUDIO_RESAMPLER_H
 #define LMMS_AUDIO_RESAMPLER_H
 
+#include <cstddef>
 #include <memory>
 #include "AudioBufferView.h"
 #include "lmms_export.h"
@@ -114,8 +115,24 @@ public:
 	//! @returns the interpolation mode used by this resampler.
 	auto mode() const -> Mode { return m_mode; }
 
+	/**
+	 * Makes sure @p count resamplers of @p mode and @p channels can be made without allocating: their states are
+	 * made now and kept in a pool, which a resampler takes its state from and gives it back to. A resampler made on
+	 * the audio thread (a note's, a sample clip's) so allocates nothing. [not on the audio thread]
+	 */
+	static void reserve(Mode mode, ch_cnt_t channels, std::size_t count);
+	//! Tops the pools up to what was reserved, after the audio thread took from them [not on the audio thread]
+	static void refillPools();
+	//! How many resamplers had to make their state because their pool was empty (each an allocation)
+	static auto poolMisses() -> long;
+
 private:
-	struct LMMS_EXPORT StateDeleter { void operator()(void* state); };
+	struct LMMS_EXPORT StateDeleter
+	{
+		Mode mode = Mode::Linear;
+		ch_cnt_t channels = 0;
+		void operator()(void* state);
+	};
 	std::unique_ptr<void, StateDeleter> m_state;
 	Mode m_mode;
 	ch_cnt_t m_channels = 0;

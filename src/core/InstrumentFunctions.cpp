@@ -350,12 +350,14 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 	const int selected_arp = m_arpModel.value();
 	const auto arpMode = static_cast<ArpMode>(m_arpModeModel.value());
 
-	ConstNotePlayHandleList cnphv = NotePlayHandle::nphsOfInstrumentTrack(_n->instrumentTrack());
+	// The track's notes, in room of its own (notes are played on several threads at once): allocates nothing
+	auto cnphv = FixedNotePlayHandleList{};
+	NotePlayHandle::nphsOfInstrumentTrack(_n->instrumentTrack(), cnphv);
 
 	if(arpMode != ArpMode::Free && cnphv.size() == 0 )
 	{
 		// maybe we're playing only a preset-preview-note?
-		cnphv = PresetPreviewPlayHandle::nphsOfInstrumentTrack( _n->instrumentTrack() );
+		PresetPreviewPlayHandle::nphsOfInstrumentTrack(_n->instrumentTrack(), cnphv);
 		if( cnphv.size() == 0 )
 		{
 			// still nothing found here, so lets return
@@ -366,7 +368,7 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 
 	// avoid playing same key for all
 	// currently playing notes if sort mode is enabled
-	if (arpMode == ArpMode::Sort && _n != cnphv.first()) { return; }
+	if (arpMode == ArpMode::Sort && _n != cnphv.front()) { return; }
 
 	const InstrumentFunctionNoteStacking::ChordTable & chord_table = InstrumentFunctionNoteStacking::ChordTable::getInstance();
 	const int cur_chord_size = chord_table.chords()[selected_arp].size();
@@ -392,10 +394,10 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 	// arp_frames-1, otherwise the first arp-note will not be setup
 	// correctly... -> arp_frames frames silence at the start of every note!
 	int cur_frame = (arpMode != ArpMode::Free ?
-						cnphv.first()->totalFramesPlayed() :
+						cnphv.front()->totalFramesPlayed() :
 						_n->totalFramesPlayed()) + arp_frames - 1;
 	// used for loop
-	f_cnt_t frames_processed = arpMode != ArpMode::Free ? cnphv.first()->noteOffset() : _n->noteOffset();
+	f_cnt_t frames_processed = arpMode != ArpMode::Free ? cnphv.front()->noteOffset() : _n->noteOffset();
 
 	while( frames_processed < Engine::audioEngine()->framesPerPeriod() )
 	{

@@ -54,7 +54,8 @@ public:
 
 	static void init();
 	static void cleanup();
-	static ConstNotePlayHandleList nphsOfInstrumentTrack( const InstrumentTrack* instrumentTrack );
+	//! Fills @p list (emptied first) with the preview's note, if it plays on @p instrumentTrack
+	static void nphsOfInstrumentTrack(const InstrumentTrack* instrumentTrack, FixedNotePlayHandleList& list);
 
 	static bool isPreviewing();
 

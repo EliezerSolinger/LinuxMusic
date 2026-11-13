@@ -29,7 +29,12 @@
 
 #include <stk/Instrmnt.h>
 
+#include <array>
+
+#include <QTimer>
+
 #include "ComboBox.h"
+#include "FreshVoicePool.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
 #include "Knob.h"
@@ -60,7 +65,7 @@ class MalletsSynth
 {
 public:
 	// ModalBar
-	MalletsSynth( const StkFloat _pitch,
+	MalletsSynth( Instrmnt* voice, const StkFloat _pitch,
 			const StkFloat _velocity,
 			const StkFloat _control1,
 			const StkFloat _control2,
@@ -68,11 +73,10 @@ public:
 			const StkFloat _control8,
 			const StkFloat _control11,
 			const int _control16,
-			const uint8_t _delay,
-			const sample_rate_t _sample_rate );
+			const uint8_t _delay );
 
 	// TubeBell
-	MalletsSynth( const StkFloat _pitch,
+	MalletsSynth( Instrmnt* voice, const StkFloat _pitch,
 			const StkFloat _velocity,
 			const int _preset,
 			const StkFloat _control1,
@@ -80,11 +84,10 @@ public:
 			const StkFloat _control4,
 			const StkFloat _control11,
 			const StkFloat _control128,
-			const uint8_t _delay,
-			const sample_rate_t _sample_rate );
+			const uint8_t _delay );
 
 	// BandedWG
-	MalletsSynth( const StkFloat _pitch,
+	MalletsSynth( Instrmnt* voice, const StkFloat _pitch,
 			const StkFloat _velocity,
 			const StkFloat _control2,
 			const StkFloat _control4,
@@ -92,15 +95,15 @@ public:
 			const int _control16,
 			const StkFloat _control64,
 			const StkFloat _control128,
-			const uint8_t _delay,
-			const sample_rate_t _sample_rate );
+			const uint8_t _delay );
 
+	//! The voice is the instrument's, which deletes it on the main thread (see MalletsInstrument::m_modalBars)
 	inline ~MalletsSynth()
 	{
 		if (m_voice) {m_voice->noteOff(0.0);}
-		delete[] m_delay;
-		delete m_voice;
 	}
+
+	auto voice() const -> Instrmnt* { return m_voice; }
 
 	inline sample_t nextSampleLeft()
 	{
@@ -173,7 +176,7 @@ protected:
 	int m_presetIndex;
 	Instrmnt * m_voice;
 
-	StkFloat * m_delay;
+	std::array<StkFloat, 256> m_delay = {}; //!< read and written with wrapping 8 bit indices
 	uint8_t m_delayRead;
 	uint8_t m_delayWrite;
 };
@@ -200,6 +203,25 @@ public:
 
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+
+	//! Builds its voices for @p sampleRate (STK's instruments are built at a sample rate)
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+
+	//! The STK instrument preset @p preset plays on (made on the main thread: it reads wave files and allocates)
+	static auto makeVoice(int preset) -> Instrmnt*;
+	auto voicesOf(int preset) -> FreshVoicePool<Instrmnt>&;
+	//! Keeps voices ready for the preset chosen (and a few for the others), deletes the used ones [main thread]
+	void refillVoices(bool discardReady = false);
+
+	/**
+	 * New voices for the notes, by kind (ModalBar, TubeBell, BandedWG): a note takes one, made in advance, instead
+	 * of building it on the audio thread, which read the instrument's wave files and allocated; the voice goes back
+	 * to be deleted here. Each note still has a voice no other note used, as before.
+	 */
+	FreshVoicePool<Instrmnt> m_modalBars;
+	FreshVoicePool<Instrmnt> m_tubeBells;
+	FreshVoicePool<Instrmnt> m_bandedWGs;
+	QTimer m_voiceTimer;
 
 	FloatModel m_hardnessModel;
 	FloatModel m_positionModel;

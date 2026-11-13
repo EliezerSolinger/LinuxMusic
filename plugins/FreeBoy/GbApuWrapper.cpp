@@ -53,6 +53,13 @@ void GbApuWrapper::bassFreq(int freq)
 	m_buf.bass_freq(freq);
 }
 
+void GbApuWrapper::restart()
+{
+	Gb_Apu::reset();
+	m_buf.clear();
+	m_time = 0;
+}
+
 void GbApuWrapper::endFrame(blip_time_t endTime)
 {
 	m_time = 0;

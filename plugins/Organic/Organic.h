@@ -25,9 +25,13 @@
 #ifndef LMMS_ORGANIC_H
 #define LMMS_ORGANIC_H
 
+#include <array>
+#include <optional>
+
 #include <QString>
 
 #include "Instrument.h"
+#include "Oscillator.h"
 #include "InstrumentView.h"
 #include "AutomatableModel.h"
 
@@ -152,13 +156,15 @@ private:
 
 	OscillatorObject ** m_osc;
 
-	struct oscPtr
+	//! A note's oscillators, each one mixed with or modulating the next, with their phase offsets (which they
+	//! refer to): made in the note's room (see NotePlayHandle::makePluginData()), allocating nothing
+	struct NoteOscillators
 	{
-		Oscillator * oscLeft;
-		Oscillator * oscRight;
+		std::array<std::optional<Oscillator>, NUM_OSCILLATORS> left;
+		std::array<std::optional<Oscillator>, NUM_OSCILLATORS> right;
 		float phaseOffsetLeft[NUM_OSCILLATORS];
-		float phaseOffsetRight[NUM_OSCILLATORS];		
-	} ;
+		float phaseOffsetRight[NUM_OSCILLATORS];
+	};
 
 	const IntModel m_modulationAlgo;
 

@@ -26,6 +26,8 @@
 #ifndef MONSTRO_H
 #define MONSTRO_H
 
+#include <array>
+#include <cassert>
 #include <vector>
 
 #include "ComboBoxModel.h"
@@ -287,8 +289,9 @@ private:
 	int m_counter3l;
 	int m_counter3r;
 
-	std::vector<float> m_lfo[2];
-	std::vector<float> m_env[2];
+	// A period's values at most (in the note's room, see NotePlayHandle::makePluginData())
+	std::array<float, DEFAULT_BUFFER_SIZE> m_lfo[2];
+	std::array<float, DEFAULT_BUFFER_SIZE> m_env[2];
 };
 
 class MonstroInstrument : public LegacyInstrument
