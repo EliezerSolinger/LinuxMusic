@@ -273,6 +273,23 @@ private slots:
 		QTest::qWait(1000);
 		const auto rendered = engine->periodsRendered() - before;
 		engine->stopProcessing();
+
+		// The input brings sound (the room's noise at least), not silence
+		if (input != "none")
+		{
+			const auto capture = engine->capture();
+			auto peak = 0.f;
+			for (ch_cnt_t channel = 0; channel < capture.channels(); ++channel)
+			{
+				for (f_cnt_t frame = 0; frame < capture.frames(); ++frame)
+				{
+					peak = std::max(peak, std::abs(capture.sample(channel, frame)));
+				}
+			}
+			// Silence is all macOS hands a program not allowed to use the microphone (or a muted one)
+			if (peak > 0.f) { qInfo("input peak %.6f", peak); }
+			else { qWarning("the input is silent: is this program allowed to use the microphone, is it muted?"); }
+		}
 		engine->setCaptureEnabled(false);
 
 		// About a second of periods (allowing for the device starting up)
