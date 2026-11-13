@@ -430,7 +430,7 @@ void AudioEngine::clearNewPlayHandles()
 	{
 		// The handles that live as long as their tracks stay (their tracks remove them)
 		const auto type = e->value->type();
-		if (type == PlayHandle::Type::InstrumentPlayHandle || type == PlayHandle::Type::InputMonitorHandle)
+		if (PlayHandle::livesWithTrack(type))
 		{
 			m_playHandles += e->value;
 		}
@@ -451,8 +451,7 @@ void AudioEngine::clearInternal()
 	for (auto ph : m_playHandles)
 	{
 		// The instruments' and the input monitors' handles live as long as their tracks
-		if (ph->type() != PlayHandle::Type::InstrumentPlayHandle
-			&& ph->type() != PlayHandle::Type::InputMonitorHandle)
+		if (!PlayHandle::livesWithTrack(ph->type()))
 		{
 			m_playHandlesToRemove.push_back(ph);
 		}
@@ -547,8 +546,7 @@ bool AudioEngine::addPlayHandle( PlayHandle* handle )
 	// Only add play handles if we have the CPU capacity to process them.
 	// Instrument play handles are not added during playback, but when the
 	// associated instrument is created, so add those unconditionally.
-	if (handle->type() == PlayHandle::Type::InstrumentPlayHandle
-		|| handle->type() == PlayHandle::Type::InputMonitorHandle || !criticalXRuns())
+	if (PlayHandle::livesWithTrack(handle->type()) || !criticalXRuns())
 	{
 		m_newPlayHandles.push( handle );
 		if (handle->audioBusHandle()) { handle->audioBusHandle()->addPlayHandle(handle); }

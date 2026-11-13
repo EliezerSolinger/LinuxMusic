@@ -26,7 +26,7 @@
 #define LMMS_GUI_SAMPLE_TRACK_VIEW_H
 
 
-#include "SampleTrack.h"
+#include "AudioInputTrack.h"
 #include "TrackView.h"
 
 class QMenu;
@@ -52,7 +52,7 @@ class SampleTrackView : public TrackView
 {
 	Q_OBJECT
 public:
-	SampleTrackView( SampleTrack* Track, TrackContainerView* tcv );
+	SampleTrackView( AudioInputTrack* Track, TrackContainerView* tcv );
 	~SampleTrackView() override;
 
 	SampleTrackWindow * getSampleTrackWindow()
@@ -60,14 +60,14 @@ public:
 		return m_window;
 	}
 
-	SampleTrack * model()
+	AudioInputTrack * model()
 	{
-		return castModel<SampleTrack>();
+		return castModel<AudioInputTrack>();
 	}
 
-	const SampleTrack * model() const
+	const AudioInputTrack * model() const
 	{
-		return castModel<SampleTrack>();
+		return castModel<AudioInputTrack>();
 	}
 
 

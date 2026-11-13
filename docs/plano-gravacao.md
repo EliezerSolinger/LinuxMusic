@@ -344,6 +344,18 @@ Feito depois (mesma noite e manhã de 13/11):
 - **Driver Dummy com duas entradas silenciosas**, para experimentar a gravação sem placa de som
   (`LINUXMUSIC_DUMMY_INPUT_TONE=1` toca um tom nelas, para desenvolvimento). Não quando o motor só renderiza.
 
+- **Faixa de áudio, passos 1 a 3** (13/11, seção 11):
+  - desfazer por comandos (`UndoCommand`, `ProjectJournal::execute`), numa história só com os checkpoints;
+  - a base `AudioInputTrack` (volume, pan, canal da mesa, entrada, armar, monitorar, medidor), da qual derivam a
+    faixa de sample e a nova;
+  - `AudioTrack` e `AudioItem`: itens com arquivo (RAM ou disco), ganho, fades de 5 ms, lane e timing de tempo;
+    ganho, fades, lane, memória e lane tocada mudam por comandos; salva e carrega (`audiotrack`, `audioitem`);
+  - o player: um play handle por faixa, vozes pré-alocadas que seguem os ticks da música e recomeçam nos saltos,
+    a lista publicada pela interface (`Handoff`), crossfade de potência igual nas sobreposições e cópia exata das
+    amostras quando o arquivo está na taxa do motor;
+  - `AudioTrackTest`: posição, fades, ganho, lanes, crossfade, loop, salvar e carregar, desfazer; TSan limpo.
+  - A view da faixa é a da faixa de sample, generalizada; o cabeçalho de duas linhas e as alças vêm no passo 4.
+
 Por fazer, na ordem do plano:
 - **Mapa de tempo:** o desfazer das edições dos marcadores; a fórmula de compasso por marcador.
 - **Edição e interface:**

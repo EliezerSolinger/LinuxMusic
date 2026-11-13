@@ -70,26 +70,11 @@ public:
 		return "sampletrack";
 	}
 
-	bool isPlaying()
-	{
-		return m_isPlaying;
-	}
-
-	void setPlaying(bool playing)
-	{
-		if (m_isPlaying != playing) { emit playingChanged(); }
-		m_isPlaying = playing;
-	}
-
-signals:
-	void playingChanged();
 
 public slots:
 	void updateClips();
 	void setPlayingClips( bool isPlaying );
 
-private:
-	bool m_isPlaying;
 
 
 

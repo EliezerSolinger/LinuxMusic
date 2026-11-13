@@ -52,8 +52,7 @@ namespace lmms
 
 
 SampleTrack::SampleTrack(TrackContainer* tc) :
-	AudioInputTrack(Track::Type::Sample, tc, tr("Sample track")),
-	m_isPlaying(false)
+	AudioInputTrack(Track::Type::Sample, tc, tr("Sample track"))
 {
 	setName(tr("Sample track"));
 }

@@ -54,9 +54,17 @@ public:
 		InstrumentPlayHandle = 0x02,
 		SamplePlayHandle = 0x04,
 		PresetPreviewHandle = 0x08,
-		InputMonitorHandle = 0x10 //!< a sample track's input, monitored (see InputMonitorHandle)
+		InputMonitorHandle = 0x10, //!< a track's input, monitored (see InputMonitorHandle)
+		AudioTrackPlayHandle = 0x20 //!< an audio track's items (see AudioTrack)
 	} ;
 	using Types = Flags<Type>;
+
+	//! Whether handles of @p type live as long as their track (which removes them), not as long as a sound
+	static constexpr auto livesWithTrack(Type type) -> bool
+	{
+		return type == Type::InstrumentPlayHandle || type == Type::InputMonitorHandle
+			|| type == Type::AudioTrackPlayHandle;
+	}
 
 	constexpr static std::size_t MaxNumber = 1024;
 

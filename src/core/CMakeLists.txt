@@ -97,6 +97,7 @@ set(LMMS_SRCS
 	core/SampleThumbnailCache.cpp
 	core/PeakCache.cpp
 	core/AudioStream.cpp
+	core/AudioItem.cpp
 	core/StreamScheduler.cpp
 	core/TimeStretcher.cpp
 	core/Scale.cpp

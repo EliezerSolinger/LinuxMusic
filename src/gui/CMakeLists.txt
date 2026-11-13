@@ -57,6 +57,7 @@ SET(LMMS_SRCS
 	gui/clips/MidiClipView.cpp
 	gui/clips/PatternClipView.cpp
 	gui/clips/SampleClipView.cpp
+	gui/clips/AudioItemView.cpp
 
 	gui/editors/AutomationEditor.cpp
 	gui/editors/Editor.cpp

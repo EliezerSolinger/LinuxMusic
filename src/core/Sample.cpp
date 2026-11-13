@@ -146,6 +146,15 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 	return numFrames < Engine::audioEngine()->framesPerPeriod();
 }
 
+auto Sample::copyFrames(SampleFrame* dst, PlaybackState* state, std::size_t numFrames) const -> std::size_t
+{
+	if (sampleSize() == 0) { std::fill_n(dst, numFrames, SampleFrame{}); return 0; }
+	state->m_frameIndex = std::max<int>(m_startFrame, state->m_frameIndex);
+	const auto rendered = static_cast<std::size_t>(render(dst, static_cast<f_cnt_t>(numFrames), state, Loop::Off));
+	std::fill(dst + rendered, dst + numFrames, SampleFrame{});
+	return rendered;
+}
+
 f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loop loop) const
 {
 	const auto total = static_cast<f_cnt_t>(sampleSize());

@@ -28,7 +28,7 @@
 #include <QWidget>
 
 #include "ModelView.h"
-#include "SampleTrack.h"
+#include "AudioInputTrack.h"
 #include "SerializingObject.h"
 
 class QLineEdit;
@@ -53,14 +53,14 @@ public:
 	SampleTrackWindow(SampleTrackView* stv);
 	~SampleTrackWindow() override = default;
 
-	SampleTrack * model()
+	AudioInputTrack * model()
 	{
-		return castModel<SampleTrack>();
+		return castModel<AudioInputTrack>();
 	}
 
-	const SampleTrack * model() const
+	const AudioInputTrack * model() const
 	{
-		return castModel<SampleTrack>();
+		return castModel<AudioInputTrack>();
 	}
 
 	void setSampleTrackView(SampleTrackView * tv);
@@ -87,7 +87,7 @@ protected:
 private:
 	void modelChanged() override;
 
-	SampleTrack * m_track;
+	AudioInputTrack * m_track;
 	SampleTrackView * m_stv;
 
 	// widgets on the top of an sample-track-window

@@ -35,6 +35,7 @@
 #include <QVariant>
 
 #include "AutomationClip.h"
+#include "AudioTrack.h"
 #include "AutomationTrack.h"
 #include "FolderTrack.h"
 #include "Engine.h"
@@ -112,6 +113,10 @@ Track * Track::create( Type tt, TrackContainer * tc )
 		case Type::Automation: t = new class AutomationTrack( tc ); break;
 		case Type::HiddenAutomation:
 						t = new class AutomationTrack( tc, true ); break;
+		case Type::Audio:
+			// Audio tracks play on the song's timeline
+			if (tc == Engine::getSong()) { t = new AudioTrack(tc); }
+			break;
 		case Type::Folder:
 			// Folders only group the tracks of the song
 			if (tc == Engine::getSong()) { t = new FolderTrack(tc); }

@@ -52,6 +52,7 @@
 #include "MixerView.h"
 #include "GuiApplication.h"
 #include "Knob.h"
+#include "AudioItem.h"
 #include "SampleClip.h"
 #include "SampleTrackWindow.h"
 #include "SongEditor.h"
@@ -116,7 +117,7 @@ private:
 } // namespace
 
 
-SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
+SampleTrackView::SampleTrackView( AudioInputTrack * _t, TrackContainerView* tcv ) :
 	TrackView( _t, tcv )
 {
 	setFixedHeight( 32 );
@@ -169,7 +170,7 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	auto inputMenu = new QMenu(m_inputButton);
 	connect(inputMenu, &QMenu::aboutToShow, this, [this, inputMenu] { fillInputMenu(inputMenu); });
 	m_inputButton->setMenu(inputMenu);
-	connect(_t, &SampleTrack::inputChanged, this, &SampleTrackView::updateInputButton);
+	connect(_t, &AudioInputTrack::inputChanged, this, &SampleTrackView::updateInputButton);
 
 	auto* inputMeter = new InputLevelMeter(getTrackSettingsWidget());
 	m_inputMeter = inputMeter;
@@ -334,15 +335,15 @@ void SampleTrackView::fillInputMenu(QMenu* menu)
 	menu->addSection(tr("Monitoring"));
 	auto* monitoring = new QActionGroup(menu);
 	const auto mode = track->monitorModel()->value();
-	const auto addMode = [&](const QString& label, SampleTrack::MonitorMode value) {
+	const auto addMode = [&](const QString& label, AudioInputTrack::MonitorMode value) {
 		auto* action = menu->addAction(label, [track, value] { track->monitorModel()->setValue(static_cast<int>(value)); });
 		action->setCheckable(true);
 		action->setChecked(mode == static_cast<int>(value));
 		monitoring->addAction(action);
 	};
-	addMode(tr("Off"), SampleTrack::MonitorMode::Off);
-	addMode(tr("On"), SampleTrack::MonitorMode::On);
-	addMode(tr("Auto (while armed, unless playing without recording)"), SampleTrack::MonitorMode::Auto);
+	addMode(tr("Off"), AudioInputTrack::MonitorMode::Off);
+	addMode(tr("On"), AudioInputTrack::MonitorMode::On);
+	addMode(tr("Auto (while armed, unless playing without recording)"), AudioInputTrack::MonitorMode::Auto);
 }
 
 
@@ -359,7 +360,7 @@ void SampleTrackView::modelChanged()
 {
 	TrackView::modelChanged();
 
-	auto st = castModel<SampleTrack>();
+	auto st = castModel<AudioInputTrack>();
 	m_volumeKnob->setModel(st->volumeModel());
 	m_mixerChannelNumber->setModel(st->mixerChannelModel());
 	m_channelControls = TrackChannelControls::replace(m_channelControls, st, this, {.volume = m_volumeKnob,
@@ -399,8 +400,9 @@ void SampleTrackView::dropEvent(QDropEvent *de)
 							* TimePos::ticksPerBar()) + trackContainerView()->currentPosition()
 						).quantize(snapSize, true);
 
-		auto sClip = static_cast<SampleClip*>(getTrack()->createClip(clipPos));
-		if (sClip) { sClip->setSampleFile(value); }
+		auto* clip = getTrack()->createClip(clipPos);
+		if (auto* sampleClip = dynamic_cast<SampleClip*>(clip)) { sampleClip->setSampleFile(value); }
+		else if (auto* item = dynamic_cast<AudioItem*>(clip)) { item->setFile(value); }
 	}
 }
 

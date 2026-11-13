@@ -183,7 +183,7 @@ void SampleTrackWindow::setSampleTrackView(SampleTrackView* tv)
 
 void SampleTrackWindow::modelChanged()
 {
-	m_track = castModel<SampleTrack>();
+	m_track = castModel<AudioInputTrack>();
 
 	m_nameLineEdit->setText(m_track->name());
 

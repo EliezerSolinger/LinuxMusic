@@ -58,6 +58,15 @@ public:
 
 		void setFrameIndex(int index) { m_frameIndex = index; }
 		void setBackwards(bool backwards) { m_backwards = backwards; }
+		//! Plays from @p frameIndex as from nothing before (a new sound: the resampler forgets the last one).
+		//! Allocates nothing (for the audio thread)
+		void restart(int frameIndex)
+		{
+			m_resampler.reset();
+			m_bufferView = {};
+			m_frameIndex = frameIndex;
+			m_backwards = false;
+		}
 
 	private:
 		AudioResampler m_resampler;
@@ -82,6 +91,9 @@ public:
 
 	auto play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop loopMode = Loop::Off,
 		double ratio = 1.0) const -> bool;
+	//! Plays @p numFrames frames as they are in the sample, without resampling (for a sample at the engine's rate:
+	//! exactly its frames), silence past its end. @returns the frames of the sample played
+	auto copyFrames(SampleFrame* dst, PlaybackState* state, std::size_t numFrames) const -> std::size_t;
 
 	auto sampleDuration() const -> std::chrono::milliseconds;
 	auto sampleFile() const -> const QString& { return m_stream ? m_stream->file() : m_buffer->audioFile(); }

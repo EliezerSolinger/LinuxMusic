@@ -66,6 +66,7 @@
 #include "SampleClip.h"
 #include "PathUtil.h"
 #include "SampleTrack.h"
+#include "AudioTrack.h"
 #include "StreamScheduler.h"
 #include "PeakController.h"
 
@@ -1818,6 +1819,11 @@ void Song::loadProject( const QString & fileName )
 	}
 
 	m_loadingProject = false;
+	// The audio tracks' players have what to play before anything renders (e.g. from the command line)
+	for (auto* track : tracks())
+	{
+		if (auto* audioTrack = dynamic_cast<AudioTrack*>(track)) { audioTrack->publish(); }
+	}
 	updateLength();
 	setModified(false);
 	m_loadOnLaunch = false;

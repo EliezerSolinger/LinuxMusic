@@ -74,8 +74,17 @@ public:
 	//! Interface: the input's peak since the last call
 	auto takeInputPeak() -> float { return m_inputPeak.exchange(0.f, std::memory_order_relaxed); }
 
+	//! Whether it plays something now (for the activity indicator)
+	auto isPlaying() const -> bool { return m_isPlaying; }
+	void setPlaying(bool playing)
+	{
+		if (m_isPlaying != playing) { emit playingChanged(); }
+		m_isPlaying = playing;
+	}
+
 signals:
 	void inputChanged();
+	void playingChanged();
 
 public slots:
 	void updateMixerChannel();
@@ -94,6 +103,7 @@ private:
 	BoolModel m_recordArmModel;
 	IntModel m_monitorModel;
 	AudioBusHandle m_audioBusHandle;
+	bool m_isPlaying = false;
 };
 
 } // namespace lmms

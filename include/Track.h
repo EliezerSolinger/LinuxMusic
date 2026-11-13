@@ -82,6 +82,7 @@ public:
 		Automation,
 		HiddenAutomation,
 		Folder,		//!< groups the tracks below it (see FolderTrack)
+		Audio,		//!< recordings and audio files (see AudioTrack)
 		Count
 	} ;
 
