@@ -581,6 +581,40 @@ private slots:
 		QCOMPARE(second->numOfClips(), 1);
 	}
 
+	void aChangeOfTempoDoesNotSplitATake()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256 + 30, 256 + 60};
+		engine->setAudioDevice(device, false);
+		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		recorder->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::Off));
+		const auto tempo = song->getTempo();
+		const auto cleanUp = qScopeGuard([&] {
+			song->stop();
+			song->tempoModel().setValue(tempo);
+			const auto guard = engine->requestChangesGuard();
+			delete recorder;
+		});
+
+		// The tempo changes twice while recording
+		song->setPlayPos(0, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		for (int callback = 0; callback < 200; ++callback) { device->callback(256); }
+		song->tempoModel().setValue(97);
+		for (int callback = 0; callback < 200; ++callback) { device->callback(256); }
+		song->tempoModel().setValue(173);
+		for (int callback = 0; callback < 200; ++callback) { device->callback(256); }
+		song->stop();
+
+		// One take, all of it
+		QCOMPARE(recorder->numOfClips(), 1);
+		const auto* take = dynamic_cast<SampleClip*>(recorder->getClip(0));
+		QVERIFY(take->takes().isEmpty());
+	}
+
 	void monitoringPlaysTheInputThroughTheTrack_data()
 	{
 		QTest::addColumn<int>("mode");

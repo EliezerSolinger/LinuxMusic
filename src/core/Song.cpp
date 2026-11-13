@@ -277,7 +277,7 @@ void Song::processNextBuffer()
 	if (loopEnabled) { enforceLoop(timeline.loopBegin(), timeline.loopEnd()); }
 
 	// Where the period starts, for the recording (see AudioRecorder)
-	m_periodStartFrame.store(static_cast<double>(timeline.ticks()) * Engine::framesPerTick() + timeline.frameOffset(),
+	m_periodStartTick.store(static_cast<double>(timeline.ticks()) + timeline.frameOffset() / Engine::framesPerTick(),
 		std::memory_order_relaxed);
 
 	const auto framesPerTick = Engine::framesPerTick();
@@ -365,7 +365,7 @@ void Song::processNextBuffer()
 	// The armed tracks' input of this period goes to their takes
 	if (m_playMode == PlayMode::Song)
 	{
-		m_audioRecorder.process(Engine::audioEngine()->capture(), m_periodStartFrame.load(std::memory_order_relaxed),
+		m_audioRecorder.process(Engine::audioEngine()->capture(), m_periodStartTick.load(std::memory_order_relaxed),
 			Engine::framesPerTick());
 	}
 
@@ -790,8 +790,8 @@ auto Song::heardTick() const -> tick_t
 	const auto* engine = Engine::audioEngine();
 	const auto* device = engine->audioDev();
 	const auto ahead = static_cast<double>(engine->framesPerPeriod()) + (device ? device->outputLatency() : 0);
-	const auto frame = m_periodStartFrame.load(std::memory_order_relaxed) - ahead;
-	return std::max<tick_t>(0, static_cast<tick_t>(std::floor(frame / Engine::framesPerTick())));
+	const auto tick = m_periodStartTick.load(std::memory_order_relaxed) - ahead / Engine::framesPerTick();
+	return std::max<tick_t>(0, static_cast<tick_t>(std::floor(tick)));
 }
 
 

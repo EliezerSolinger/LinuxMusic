@@ -86,8 +86,7 @@ struct AudioRecorder::TakeState
 	std::vector<float> interleaved; //!< one period, interleaved
 	bool started = false; //!< whether the first frame was seen
 	bool writing = false; //!< whether the frames go to a segment, or wait for its first tick
-	double expectedSongFrame = 0; //!< where the next frame belongs if the song goes straight on
-	double segmentFirstFrame = 0; //!< the song frame of the waiting segment's first tick
+	double expectedTick = 0; //!< where the next frame belongs if the song goes straight on
 	std::int64_t segmentTick = 0;
 	std::int64_t framesQueued = 0; //!< frames given to the ring so far, silence included
 	std::int64_t pendingSilence = 0; //!< frames that did not fit in the ring: silence, written before what follows
@@ -115,8 +114,14 @@ struct AudioRecorder::Session
 	f_cnt_t period = 0;
 	std::int64_t fromTick = 0;
 
-	//! The song frame where each of the latest periods started, by period number (the audio thread's)
-	std::vector<double> periodStarts;
+	//! Where each of the latest periods started on the song's timeline, and its tempo, by period number (the audio
+	//! thread's): positions are in ticks, so that a change of tempo is no jump
+	struct PeriodStart
+	{
+		double tick = 0;
+		double framesPerTick = 1;
+	};
+	std::vector<PeriodStart> periodStarts;
 	std::int64_t periods = 0;
 };
 
@@ -174,7 +179,7 @@ auto AudioRecorder::start(const std::vector<Request>& requests, f_cnt_t latency,
 	session->period = period;
 	session->fromTick = std::max<std::int64_t>(0, fromTick);
 	// Enough periods to look back through the latency
-	session->periodStarts.assign(static_cast<std::size_t>(latency / std::max<f_cnt_t>(period, 1)) + 8, 0.0);
+	session->periodStarts.assign(static_cast<std::size_t>(latency / std::max<f_cnt_t>(period, 1)) + 8, {});
 
 	for (const auto& request : requests)
 	{
@@ -269,7 +274,7 @@ auto AudioRecorder::stop() -> std::vector<Take>
 
 
 
-void AudioRecorder::process(PlanarBufferView<const float> capture, double periodStartFrame, double framesPerTick)
+void AudioRecorder::process(PlanarBufferView<const float> capture, double periodStartTick, double framesPerTick)
 {
 	auto* session = m_session.load(std::memory_order_acquire);
 	if (!session) { return; }
@@ -281,20 +286,29 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 
 	// This period's start, for the frames that will be heard against it
 	const auto now = session->periods++;
-	starts[static_cast<std::size_t>(now % history)] = periodStartFrame;
-	const auto firstStart = now < history ? starts[0] : 0.0; // the first period seen, while it is remembered
+	starts[static_cast<std::size_t>(now % history)] = {periodStartTick, framesPerTick};
+	const auto firstStart = now < history ? starts[0] : Session::PeriodStart{}; // the first period, while remembered
 
-	// The song frame heard when the capture's frame @p index was played (see the header): the capture of period n
-	// holds the device frames of the period before; minus the latency, they were played against the output of the
-	// period after the one rendered then
-	const auto songFrameOf = [&](std::int64_t index) {
+	// The song position (in ticks) heard when the capture's frame @p index was played, and the tempo then (see the
+	// header): the capture of period n holds the device frames of the period before; minus the latency, they were
+	// played against the output of the period after the one rendered then
+	struct Heard
+	{
+		double tick;
+		double framesPerTick;
+	};
+	const auto heardAt = [&](std::int64_t index) {
 		const auto device = (now - 1) * period + index - static_cast<std::int64_t>(session->latency);
 		const auto outputPeriod = (device >= 0 ? device / period : -((-device + period - 1) / period)) - 1;
-		const auto offset = device - (outputPeriod + 1) * period;
-		const double start = outputPeriod >= 0 && outputPeriod > now - history
-			? starts[static_cast<std::size_t>(outputPeriod % history)]
-			: firstStart + static_cast<double>(outputPeriod * period); // before recording began: as if straight on
-		return start + static_cast<double>(offset);
+		const auto offset = static_cast<double>(device - (outputPeriod + 1) * period);
+		if (outputPeriod >= 0 && outputPeriod > now - history)
+		{
+			const auto& start = starts[static_cast<std::size_t>(outputPeriod % history)];
+			return Heard{start.tick + offset / start.framesPerTick, start.framesPerTick};
+		}
+		// Before recording began: as if the song had gone straight on to its first period
+		return Heard{firstStart.tick + (static_cast<double>(outputPeriod * period) + offset) / firstStart.framesPerTick,
+			firstStart.framesPerTick};
 	};
 
 	for (auto& takePointer : session->takes)
@@ -330,16 +344,18 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 
 		for (std::int64_t frame = 0; frame < frames; ++frame)
 		{
-			const auto song = songFrameOf(frame);
+			const auto heard = heardAt(frame);
+			const auto halfFrame = 0.5 / heard.framesPerTick; // half a frame, in ticks
 
 			// The song went on from elsewhere (or this is the first frame): a new segment, on the tick it went on in.
 			// A loop goes back into its first tick, not to its start (the song keeps the fraction of a tick it was
 			// at): the part of the tick before is silence, so that every pass begins on the loop's first tick.
-			if (!take.started || std::abs(song - take.expectedSongFrame) > 0.5)
+			// (A change of tempo is no jump, though the song may then move by less than a tick: it reckons the part of
+			// the tick it is in again, at the new tempo. A loop or a move of the play head goes a tick or more.)
+			if (!take.started || std::abs(heard.tick - take.expectedTick) >= 1.0)
 			{
 				const auto earliest = take.started ? std::int64_t{0} : session->fromTick;
-				take.segmentTick = std::max(earliest, static_cast<std::int64_t>(std::floor(song / framesPerTick + 1e-9)));
-				take.segmentFirstFrame = static_cast<double>(take.segmentTick) * framesPerTick;
+				take.segmentTick = std::max(earliest, static_cast<std::int64_t>(std::floor(heard.tick + 1e-9)));
 				take.started = true;
 				if (take.writing)
 				{
@@ -347,11 +363,11 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 					take.writing = false;
 				}
 			}
-			take.expectedSongFrame = song + 1;
+			take.expectedTick = heard.tick + 1.0 / heard.framesPerTick;
 
 			if (!take.writing)
 			{
-				if (song < take.segmentFirstFrame - 0.5) { continue; }
+				if (heard.tick < static_cast<double>(take.segmentTick) - halfFrame) { continue; }
 				// The segment's first tick: the disk thread starts its file at this frame
 				flush();
 				// (the frames queued count those that will be silence)
@@ -359,7 +375,8 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 				take.writing = true;
 
 				// The part of the first tick the song skipped: silence, before the segment's first frame
-				const auto skipped = std::llround(song - take.segmentFirstFrame);
+				const auto skipped = std::llround((heard.tick - static_cast<double>(take.segmentTick))
+					* heard.framesPerTick);
 				if (skipped > 0)
 				{
 					take.pendingSilence += skipped;

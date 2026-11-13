@@ -117,10 +117,10 @@ public:
 	/**
 	 * Audio thread, once per period while the song plays
 	 * @param capture the input captured for this period (AudioEngine::capture())
-	 * @param periodStartFrame the song frame where the period being rendered starts
-	 * @param framesPerTick the song's frames per tick
+	 * @param periodStartTick where the period being rendered starts on the song's timeline, in ticks (and fractions)
+	 * @param framesPerTick the song's frames per tick in the period (the tempo may change from one to the next)
 	 */
-	void process(PlanarBufferView<const float> capture, double periodStartFrame, double framesPerTick);
+	void process(PlanarBufferView<const float> capture, double periodStartTick, double framesPerTick);
 
 private:
 	struct TakeState;
