@@ -5327,72 +5327,67 @@ PianoRollWindow::PianoRollWindow() :
 
 	DropToolBar *zoomAndNotesToolBar = addDropToolBarToTop( tr( "Zoom and note controls" ) );
 
-	auto zoom_lbl = new QLabel(m_toolBar);
-	zoom_lbl->setPixmap( embed::getIconPixmap( "zoom_x" ) );
 
 	m_zoomingComboBox = new ComboBox( m_toolBar );
 	m_zoomingComboBox->setModel( &m_editor->m_zoomingModel );
-	m_zoomingComboBox->setFixedSize( 64, ComboBox::DEFAULT_HEIGHT );
+	m_zoomingComboBox->setFixedSize(84, ComboBox::DEFAULT_HEIGHT);
 	m_zoomingComboBox->setToolTip( tr( "Horizontal zooming") );
+	m_zoomingComboBox->setIcon(embed::getIconPixmap("zoom_x"));
 
-	auto zoom_y_lbl = new QLabel(m_toolBar);
-	zoom_y_lbl->setPixmap(embed::getIconPixmap("zoom_y"));
 
 	m_zoomingYComboBox = new ComboBox(m_toolBar);
 	m_zoomingYComboBox->setModel(&m_editor->m_zoomingYModel);
-	m_zoomingYComboBox->setFixedSize(64, ComboBox::DEFAULT_HEIGHT);
+	m_zoomingYComboBox->setFixedSize(84, ComboBox::DEFAULT_HEIGHT);
 	m_zoomingYComboBox->setToolTip(tr("Vertical zooming"));
+	m_zoomingYComboBox->setIcon(embed::getIconPixmap("zoom_y"));
 
 	// setup quantize-stuff
-	auto quantize_lbl = new QLabel(m_toolBar);
-	quantize_lbl->setPixmap( embed::getIconPixmap( "quantize" ) );
 
 	m_quantizeComboBox = new ComboBox( m_toolBar );
 	m_quantizeComboBox->setModel( &m_editor->m_quantizeModel );
 	m_quantizeComboBox->setFixedSize(85, ComboBox::DEFAULT_HEIGHT);
 	m_quantizeComboBox->setToolTip( tr( "Quantization") );
+	m_quantizeComboBox->setIcon(embed::getIconPixmap("quantize"));
 
 	// setup note-len-stuff
-	auto note_len_lbl = new QLabel(m_toolBar);
-	note_len_lbl->setPixmap( embed::getIconPixmap( "note" ) );
 
 	m_noteLenComboBox = new ComboBox( m_toolBar );
 	m_noteLenComboBox->setModel( &m_editor->m_noteLenModel );
 	m_noteLenComboBox->setFixedSize( 105, ComboBox::DEFAULT_HEIGHT );
 	m_noteLenComboBox->setToolTip( tr( "Note length") );
+	m_noteLenComboBox->setIcon(embed::getIconPixmap("note"));
 
 	// setup key-stuff
 	m_keyComboBox = new ComboBox(m_toolBar);
 	m_keyComboBox->setModel(&m_editor->m_keyModel);
 	m_keyComboBox->setFixedSize(72, ComboBox::DEFAULT_HEIGHT);
 	m_keyComboBox->setToolTip(tr("Key"));
+	m_keyComboBox->setIcon(embed::getIconPixmap("piano"));
+	m_keyComboBox->setFixedSize(84, ComboBox::DEFAULT_HEIGHT);
 
 	// setup scale-stuff
-	auto scale_lbl = new QLabel(m_toolBar);
-	scale_lbl->setPixmap( embed::getIconPixmap( "scale" ) );
 
 	m_scaleComboBox = new ComboBox( m_toolBar );
 	m_scaleComboBox->setModel( &m_editor->m_scaleModel );
 	m_scaleComboBox->setFixedSize(155, ComboBox::DEFAULT_HEIGHT);
 	m_scaleComboBox->setToolTip( tr( "Scale") );
+	m_scaleComboBox->setIcon(embed::getIconPixmap("scale"));
 
 	// setup chord-stuff
-	auto chord_lbl = new QLabel(m_toolBar);
-	chord_lbl->setPixmap( embed::getIconPixmap( "chord" ) );
 
 	m_chordComboBox = new ComboBox( m_toolBar );
 	m_chordComboBox->setModel( &m_editor->m_chordModel );
 	m_chordComboBox->setFixedSize(125, ComboBox::DEFAULT_HEIGHT);
 	m_chordComboBox->setToolTip( tr( "Chord" ) );
+	m_chordComboBox->setIcon(embed::getIconPixmap("chord"));
 
 	// setup snap-stuff
-	auto snapLbl = new QLabel(m_toolBar);
-	snapLbl->setPixmap(embed::getIconPixmap("gridmode"));
 
 	m_snapComboBox = new ComboBox(m_toolBar);
 	m_snapComboBox->setModel(&m_editor->m_snapModel);
 	m_snapComboBox->setFixedSize(96, ComboBox::DEFAULT_HEIGHT);
 	m_snapComboBox->setToolTip(tr("Snap mode"));
+	m_snapComboBox->setIcon(embed::getIconPixmap("gridmode"));
 
 	// -- Clear ghost MIDI clip button
 	m_clearGhostButton = new QPushButton( m_toolBar );
@@ -5407,7 +5402,6 @@ PianoRollWindow::PianoRollWindow() :
 	auto zoom_widget = new QWidget();
 	auto zoom_hbox = new QHBoxLayout();
 	zoom_hbox->setContentsMargins(0, 0, 0, 0);
-	zoom_hbox->addWidget(zoom_lbl);
 	zoom_hbox->addWidget(m_zoomingComboBox);
 	zoom_widget->setLayout(zoom_hbox);
 	zoomAndNotesToolBar->addWidget(zoom_widget);
@@ -5415,7 +5409,6 @@ PianoRollWindow::PianoRollWindow() :
 	auto zoomY_widget = new QWidget();
 	auto zoomY_hbox = new QHBoxLayout();
 	zoomY_hbox->setContentsMargins(0, 0, 0, 0);
-	zoomY_hbox->addWidget(zoom_y_lbl);
 	zoomY_hbox->addWidget(m_zoomingYComboBox);
 	zoomY_widget->setLayout(zoomY_hbox);
 	zoomAndNotesToolBar->addWidget(zoomY_widget);
@@ -5423,7 +5416,6 @@ PianoRollWindow::PianoRollWindow() :
 	auto quantize_widget = new QWidget();
 	auto quantize_hbox = new QHBoxLayout();
 	quantize_hbox->setContentsMargins(0, 0, 0, 0);
-	quantize_hbox->addWidget(quantize_lbl);
 	quantize_hbox->addWidget(m_quantizeComboBox);
 	quantize_widget->setLayout(quantize_hbox);
 	zoomAndNotesToolBar->addSeparator();
@@ -5432,7 +5424,6 @@ PianoRollWindow::PianoRollWindow() :
 	auto note_widget = new QWidget();
 	auto note_hbox = new QHBoxLayout();
 	note_hbox->setContentsMargins(0, 0, 0, 0);
-	note_hbox->addWidget(note_len_lbl);
 	note_hbox->addWidget(m_noteLenComboBox);
 	note_widget->setLayout(note_hbox);
 	zoomAndNotesToolBar->addSeparator();
@@ -5441,7 +5432,6 @@ PianoRollWindow::PianoRollWindow() :
 	auto scale_widget = new QWidget();
 	auto scale_hbox = new QHBoxLayout();
 	scale_hbox->setContentsMargins(0, 0, 0, 0);
-	scale_hbox->addWidget(scale_lbl);
 	// Add the key selection between scale label and key
 	scale_hbox->addWidget(m_keyComboBox);
 	scale_hbox->addWidget(m_scaleComboBox);
@@ -5452,7 +5442,6 @@ PianoRollWindow::PianoRollWindow() :
 	auto chord_widget = new QWidget();
 	auto chord_hbox = new QHBoxLayout();
 	chord_hbox->setContentsMargins(0, 0, 0, 0);
-	chord_hbox->addWidget(chord_lbl);
 	chord_hbox->addWidget(m_chordComboBox);
 	chord_widget->setLayout(chord_hbox);
 	zoomAndNotesToolBar->addSeparator();
@@ -5464,7 +5453,6 @@ PianoRollWindow::PianoRollWindow() :
 	auto snapWidget = new QWidget();
 	auto snapHbox = new QHBoxLayout();
 	snapHbox->setContentsMargins(0, 0, 0, 0);
-	snapHbox->addWidget(snapLbl);
 	snapHbox->addWidget(m_snapComboBox);
 	snapWidget->setLayout(snapHbox);
 	zoomAndNotesToolBar->addSeparator();

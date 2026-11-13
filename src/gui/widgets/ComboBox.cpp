@@ -152,9 +152,43 @@ void ComboBox::mousePressEvent( QMouseEvent* event )
 
 
 
+void ComboBox::paintAsButton(QPainter& p)
+{
+	p.setRenderHint(QPainter::Antialiasing);
+	const auto hovered = underMouse() || m_pressed;
+	p.setPen(Qt::NoPen);
+	p.setBrush(hovered ? QColor{48, 54, 61} : QColor{32, 36, 42});
+	p.drawRoundedRect(QRectF{rect()}.adjusted(0.5, 1.5, -0.5, -1.5), 4, 4);
+	auto x = 4;
+	if (!m_icon.isNull())
+	{
+		const auto icon = m_icon.height() > 16 ? m_icon.scaledToHeight(16, Qt::SmoothTransformation) : m_icon;
+		p.drawPixmap(x, (height() - icon.height()) / 2, icon);
+		x += icon.width() + 4;
+	}
+	// The current choice, and a small arrow for the menu
+	p.setPen(QColor{209, 216, 228});
+	p.setFont(font());
+	const auto text = model() && model()->size() > 0 ? model()->currentText() : QString{};
+	p.drawText(QRect{x, 0, width() - x - 12, height()}, Qt::AlignVCenter,
+		p.fontMetrics().elidedText(text, Qt::ElideRight, width() - x - 12));
+	p.setBrush(QColor{140, 150, 163});
+	const auto cx = width() - 7.0, cy = height() / 2.0 + 1.0;
+	const QPointF arrow[] = {{cx - 3.0, cy - 2.0}, {cx + 3.0, cy - 2.0}, {cx, cy + 2.0}};
+	p.drawPolygon(arrow, 3);
+}
+
+
+
+
 void ComboBox::paintEvent( QPaintEvent * _pe )
 {
 	QPainter p( this );
+	if (!m_icon.isNull())
+	{
+		paintAsButton(p);
+		return;
+	}
 
 	p.fillRect(2, 2, width() - 2, height() - 4, m_background);
 

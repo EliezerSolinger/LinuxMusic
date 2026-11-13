@@ -53,6 +53,9 @@ public:
 
 	static constexpr int DEFAULT_HEIGHT = 22;
 
+	//! Shows as a flat button with @p icon and the current choice (a toolbar's), rather than a combo box
+	void setIcon(const QPixmap& icon) { m_icon = icon; setAttribute(Qt::WA_Hover); update(); }
+
 public slots:
 	void selectNext();
 	void selectPrevious();
@@ -71,6 +74,8 @@ private:
 	QPixmap m_arrowSelected = embed::getIconPixmap("combobox_arrow_selected");
 
 	QMenu m_menu;
+	QPixmap m_icon;
+	void paintAsButton(QPainter& painter);
 
 	bool m_pressed;
 
