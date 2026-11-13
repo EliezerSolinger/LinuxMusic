@@ -475,6 +475,17 @@ private slots:
 	void removeBar();
 	void addSampleTrack();
 	void addAudioTrack();
+
+public:
+	/**
+	 * The sample rate is the project's (docs/gravacao-levantamento.md §6): a project keeps the rate it was made at,
+	 * and opening it opens the audio device at that rate (a new project: the settings' rate). A device that does not
+	 * have it runs at its own, the files are converted, and the project's errors say so. @p rate 0: the settings'.
+	 * Not when only rendering (the command line chooses its rate).
+	 */
+	void applyProjectSampleRate(sample_rate_t rate);
+
+public slots:
 	void addAutomationTrack();
 	void addFolderTrack();
 

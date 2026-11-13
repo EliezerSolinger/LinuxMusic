@@ -1548,6 +1548,22 @@ void Song::addSampleTrack()
 
 
 
+void Song::applyProjectSampleRate(sample_rate_t rate)
+{
+	auto* engine = Engine::audioEngine();
+	if (engine->renderOnly() || !gui::getGUI()) { return; }
+	if (rate == 0)
+	{
+		rate = static_cast<sample_rate_t>(std::max(ConfigManager::inst()->value("audioengine", "samplerate").toInt(),
+			SUPPORTED_SAMPLERATES.front()));
+	}
+	if (rate == engine->baseSampleRate()) { return; }
+	if (const auto told = engine->reopenAudioDevice(rate); !told.isEmpty()) { collectError(told); }
+}
+
+
+
+
 void Song::addAudioTrack()
 {
 	(void)Track::create(Track::Type::Audio, this);
@@ -1729,6 +1745,7 @@ void Song::createNewProjectFromDefault()
 	QCoreApplication::instance()->processEvents();
 
 	m_loadingProject = false;
+	applyProjectSampleRate(0);
 	Engine::mixer()->analogModel()->setValue(false);
 	Engine::mixer()->setUpTrackChannels();
 	Engine::mixer()->ensureFxReturns();
@@ -1965,6 +1982,9 @@ void Song::loadProject( const QString & fileName )
 
 	Engine::audioEngine()->doneChangeInModel();
 
+	// The project's sample rate (none saved, as a template's: the settings')
+	applyProjectSampleRate(static_cast<sample_rate_t>(std::max(0, dataFile.head().attribute("samplerate").toInt())));
+
 	ConfigManager::inst()->addRecentlyOpenedProject( fileName );
 
 	Engine::projectJournal()->setJournalling( true );
@@ -2022,6 +2042,7 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, bool ga
 	m_timeSigModel.saveSettings( dataFile, dataFile.head(), "timesig" );
 	m_masterVolumeModel.saveSettings( dataFile, dataFile.head(), "mastervol" );
 	m_masterPitchModel.saveSettings( dataFile, dataFile.head(), "masterpitch" );
+	dataFile.head().setAttribute("samplerate", Engine::audioEngine()->baseSampleRate());
 
 	saveState( dataFile, dataFile.content() );
 

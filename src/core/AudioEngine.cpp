@@ -496,7 +496,7 @@ void AudioEngine::setAudioDevice(AudioDevice* _dev, bool startNow)
 
 
 
-auto AudioEngine::reopenAudioDevice() -> QString
+auto AudioEngine::reopenAudioDevice(std::optional<sample_rate_t> sampleRate) -> QString
 {
 	auto* song = Engine::getSong();
 	if (song && (song->isRecording() || song->isRecordingAudio()))
@@ -507,8 +507,8 @@ auto AudioEngine::reopenAudioDevice() -> QString
 	const auto wanted = ConfigManager::inst()->value("audioengine", "audiodev");
 	m_framesPerAudioBuffer = std::clamp(static_cast<f_cnt_t>(ConfigManager::inst()->value("audioengine",
 		"framesperaudiobuffer", QString::number(DEFAULT_BUFFER_SIZE)).toUInt()), MINIMUM_BUFFER_SIZE, MAXIMUM_BUFFER_SIZE);
-	m_baseSampleRate = std::max(ConfigManager::inst()->value("audioengine", "samplerate").toInt(),
-		SUPPORTED_SAMPLERATES.front());
+	m_baseSampleRate = sampleRate.value_or(static_cast<sample_rate_t>(std::max(
+		ConfigManager::inst()->value("audioengine", "samplerate").toInt(), SUPPORTED_SAMPLERATES.front())));
 
 	// The song stops (what plays goes on from where it was, on the new device), the old device closes
 	if (song && song->isPlaying()) { song->stop(); }

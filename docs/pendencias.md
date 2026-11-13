@@ -35,8 +35,8 @@ Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
   mesma altura
 - [x] **Trocar dispositivo, buffer ou taxa sem reiniciar:** ao salvar, o dispositivo reabre com os ajustes novos
   (bloqueado durante a gravação; avisa se abriu outro dispositivo ou outra taxa). O driver MIDI ainda pede reinício
-- [ ] **A taxa é a do projeto** (hoje é a das configurações, global): o projeto guarda a sua, e quando a placa não
-  tem, converte e avisa
+- [x] **A taxa é a do projeto:** o projeto guarda a sua; abri-lo reabre o dispositivo nela (projeto novo: a das
+  configurações); a placa que não tem roda na sua, os arquivos são convertidos e o relatório do projeto avisa
 
 Motor e estabilidade:
 

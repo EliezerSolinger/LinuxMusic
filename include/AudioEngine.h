@@ -31,6 +31,7 @@
 #include <samplerate.h>
 
 #include <memory>
+#include <optional>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -138,11 +139,12 @@ public:
 	/**
 	 * Opens the audio device again with the settings saved (its interface, sample rate and buffer), without
 	 * restarting the program (docs/gravacao-levantamento.md §6). The engine's period stays as it is (it is at most
-	 * DEFAULT_BUFFER_SIZE frames and the device's buffer is cut into periods). Main thread.
+	 * DEFAULT_BUFFER_SIZE frames and the device's buffer is cut into periods). @p sampleRate asks for a rate other
+	 * than the settings' (a project's). Main thread, with no change in the model under way.
 	 * @returns what to tell: why it could not (while recording), or what it opened instead of what was asked (another
 	 *          interface, another rate); empty when it opened what was asked
 	 */
-	auto reopenAudioDevice() -> QString;
+	auto reopenAudioDevice(std::optional<sample_rate_t> sampleRate = std::nullopt) -> QString;
 	void storeAudioDevice();
 	void restoreAudioDevice();
 	inline AudioDevice * audioDev() { return m_audioDev; }
