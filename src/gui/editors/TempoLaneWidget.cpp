@@ -26,7 +26,13 @@
 #include <cmath>
 
 #include <QContextMenuEvent>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QInputDialog>
+#include <QPushButton>
+#include <QSpinBox>
 #include <QLineEdit>
 #include <QColorDialog>
 #include <QMenu>
@@ -215,7 +221,10 @@ void TempoLaneWidget::paintEvent(QPaintEvent*)
 			? QString::number(static_cast<int>(std::round(marker.bpm)))
 			: QString::number(marker.bpm, 'f', 2);
 		painter.setPen(QColor{209, 216, 228});
-		painter.drawText(QRect{x + 3, top, 80, rowHeight}, Qt::AlignVCenter, marker.ramp ? bpm + QString{" ↗"} : bpm);
+		auto text = marker.ramp ? bpm + QString{" ↗"} : bpm;
+		// A change of the time signature, after the tempo
+		if (marker.meter) { text += QString{"  %1/%2"}.arg(marker.meter->numerator).arg(marker.meter->denominator); }
+		painter.drawText(QRect{x + 3, top, 120, rowHeight}, Qt::AlignVCenter, text);
 	}
 
 	painter.setClipping(false);
@@ -448,6 +457,7 @@ void TempoLaneWidget::contextMenuEvent(QContextMenuEvent* event)
 		const auto found = std::find_if(markers.begin(), markers.end(),
 			[tick](const TempoMap::Marker& m) { return m.tick == tick; });
 		menu.addAction(tr("Edit tempo..."), this, [this, tick] { editTempo(tick); });
+		menu.addAction(tr("Time signature..."), this, [this, tick] { editMeter(tick); });
 		auto* ramp = menu.addAction(tr("Ramp to the next marker"));
 		ramp->setCheckable(true);
 		ramp->setChecked(found != markers.end() && found->ramp);
@@ -478,6 +488,9 @@ void TempoLaneWidget::contextMenuEvent(QContextMenuEvent* event)
 	{
 		const auto tick = tickAt(x);
 		menu.addAction(tr("Add a change of tempo here"), this, [this, tick] { addMarker(tick); });
+		// A new time signature starts a bar: at the start of the nearest one
+		const auto barStart = m_map->quantize(tick, 1);
+		menu.addAction(tr("Change the time signature here..."), this, [this, barStart] { editMeter(barStart); });
 		menu.addAction(tr("Add a marker here..."), this, [this, tick] { addNamed(tick); });
 	}
 	menu.exec(event->globalPos());
@@ -498,6 +511,71 @@ void TempoLaneWidget::addMarker(tick_t tick)
 	m_map->setMarker({tick, bpm, false}, song->getTempo());
 	recordTempoEdit(std::move(before));
 	song->setModified();
+}
+
+
+
+
+void TempoLaneWidget::editMeter(tick_t tick)
+{
+	auto* song = Engine::getSong();
+	if (tick <= 0)
+	{
+		// At the start it is the song's (the time signature display's)
+		auto& model = song->getTimeSigModel();
+		const auto chosen = askMeter({model.getNumerator(), model.getDenominator()}, false);
+		if (!chosen || !*chosen) { return; }
+		model.setNumerator((*chosen)->numerator);
+		model.setDenominator((*chosen)->denominator);
+		song->setModified();
+		return;
+	}
+	const auto& markers = m_map->markers();
+	const auto found = std::find_if(markers.begin(), markers.end(),
+		[tick](const TempoMap::Marker& marker) { return marker.tick == tick; });
+	const bool hasOne = found != markers.end() && found->meter;
+	const auto chosen = askMeter(hasOne ? *found->meter : m_map->meterAt(tick), hasOne);
+	if (!chosen) { return; }
+	auto before = m_map->markers();
+	m_map->setMeter(tick, *chosen, song->getTempo());
+	recordTempoEdit(std::move(before));
+	song->setModified();
+}
+
+
+
+
+auto TempoLaneWidget::askMeter(const TempoMap::Meter& current, bool removable)
+	-> std::optional<std::optional<TempoMap::Meter>>
+{
+	auto dialog = QDialog{this};
+	dialog.setWindowTitle(tr("Time signature"));
+	auto* layout = new QFormLayout{&dialog};
+	auto* numerator = new QSpinBox{&dialog};
+	numerator->setRange(1, TempoMap::MaxNumerator);
+	numerator->setValue(current.numerator);
+	auto* denominator = new QComboBox{&dialog};
+	for (const auto value : {1, 2, 4, 8, 16, 32}) { denominator->addItem(QString::number(value), value); }
+	denominator->setCurrentIndex(std::max(0, denominator->findData(current.denominator)));
+	layout->addRow(tr("Beats to the bar:"), numerator);
+	layout->addRow(tr("Note value of a beat:"), denominator);
+	auto* buttons = new QDialogButtonBox{QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog};
+	auto removed = false;
+	if (removable)
+	{
+		// The time signature before goes on from here
+		auto* remove = buttons->addButton(tr("Take the change away"), QDialogButtonBox::DestructiveRole);
+		connect(remove, &QPushButton::clicked, &dialog, [&] {
+			removed = true;
+			dialog.accept();
+		});
+	}
+	connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+	connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+	layout->addRow(buttons);
+	if (dialog.exec() != QDialog::Accepted) { return std::nullopt; }
+	if (removed) { return std::optional<TempoMap::Meter>{}; }
+	return std::optional<TempoMap::Meter>{TempoMap::Meter{numerator->value(), denominator->currentData().toInt()}};
 }
 
 

@@ -17528,6 +17528,30 @@ A interface usada é a que está salva nestas configurações.</translation>
 <context>
     <name>lmms::gui::TempoLaneWidget</name>
     <message>
+        <source>Time signature...</source>
+        <translation>Fórmula de compasso...</translation>
+    </message>
+    <message>
+        <source>Change the time signature here...</source>
+        <translation>Mudar a fórmula de compasso aqui...</translation>
+    </message>
+    <message>
+        <source>Time signature</source>
+        <translation>Fórmula de compasso</translation>
+    </message>
+    <message>
+        <source>Beats to the bar:</source>
+        <translation>Tempos por compasso:</translation>
+    </message>
+    <message>
+        <source>Note value of a beat:</source>
+        <translation>Figura de cada tempo:</translation>
+    </message>
+    <message>
+        <source>Take the change away</source>
+        <translation>Tirar a mudança</translation>
+    </message>
+    <message>
         <source>MARKERS</source>
         <translation>MARCADORES</translation>
     </message>

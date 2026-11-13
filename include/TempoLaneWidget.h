@@ -69,6 +69,13 @@ private:
 	auto markerAt(int x) const -> std::optional<tick_t>;
 	void editTempo(tick_t tick);
 	void addMarker(tick_t tick);
+	/**
+	 * Asks for a time signature from @p tick on (at the song's start, the song's): @p current to begin with; for a
+	 * marker that has one, the change can be taken away
+	 */
+	void editMeter(tick_t tick);
+	//! A time signature asked for: none if cancelled; a null one to take the change away
+	auto askMeter(const TempoMap::Meter& current, bool removable) -> std::optional<std::optional<TempoMap::Meter>>;
 	//! Makes the change of the tempo map since @p before an undo step
 	void recordTempoEdit(std::vector<TempoMap::Marker> before);
 	std::vector<TempoMap::Marker> m_tempoBefore; //!< the markers when a drag began
