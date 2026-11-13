@@ -98,7 +98,8 @@ Motor e estabilidade:
 - [ ] **Integração final:** testes, sanitizers, A/B, gravação real no Mac, documentação
 - [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux (o usuário)
 - [ ] **Mac:** testar a entrada do microfone no hardware (precisa de alguém para aceitar o pedido de permissão)
-- [ ] **Arte própria** do logo e do splash (hoje são os do LMMS)
+- [x] **Arte própria** do logo e do splash: um anel de gravar em volta das barras de uma forma de onda, no verde do
+  tema (`tools/artwork`: os SVGs e o gerador de todos os ícones, do splash e das artes dos instaladores)
 
 ## Feito recentemente (13/11)
 

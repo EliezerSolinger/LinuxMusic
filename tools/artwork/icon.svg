@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- LinuxMusic's icon: a record ring around the bars of a waveform, in the theme's green.
+     Part of LinuxMusic (GPL-2.0-or-later); tools/artwork/make-artwork.cpp renders the bitmaps from it. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#37c272"/>
+      <stop offset="1" stop-color="#1f9a53"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="48" fill="#17803f"/>
+  <rect x="16" y="12" width="224" height="224" rx="48" fill="url(#face)"/>
+  <rect x="24" y="18" width="208" height="104" rx="42" fill="url(#shine)"/>
+  <g fill="none" stroke="#0f6a33" stroke-opacity="0.35" stroke-width="15">
+    <circle cx="128" cy="127" r="76"/>
+  </g>
+  <g fill="#0f6a33" fill-opacity="0.35">
+    <rect x="77.5" y="107" width="13" height="40" rx="6.5"/>
+    <rect x="99.5" y="89" width="13" height="76" rx="6.5"/>
+    <rect x="121.5" y="71" width="13" height="112" rx="6.5"/>
+    <rect x="143.5" y="89" width="13" height="76" rx="6.5"/>
+    <rect x="165.5" y="107" width="13" height="40" rx="6.5"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-width="15">
+    <circle cx="128" cy="123" r="76"/>
+  </g>
+  <g fill="#ffffff">
+    <rect x="77.5" y="103" width="13" height="40" rx="6.5"/>
+    <rect x="99.5" y="85" width="13" height="76" rx="6.5"/>
+    <rect x="121.5" y="67" width="13" height="112" rx="6.5"/>
+    <rect x="143.5" y="85" width="13" height="76" rx="6.5"/>
+    <rect x="165.5" y="103" width="13" height="40" rx="6.5"/>
+  </g>
+</svg>

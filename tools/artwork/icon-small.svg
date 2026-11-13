@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- LinuxMusic's icon for the smallest sizes (16 and 24 pixels): icon.svg with fewer, bolder strokes.
+     Part of LinuxMusic (GPL-2.0-or-later); tools/artwork/make-artwork.cpp renders the bitmaps from it. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#37c272"/>
+      <stop offset="1" stop-color="#1f9a53"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="44" fill="url(#face)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="26">
+    <circle cx="128" cy="128" r="80"/>
+  </g>
+  <g fill="#ffffff">
+    <rect x="77" y="104" width="24" height="48" rx="12"/>
+    <rect x="116" y="76" width="24" height="104" rx="12"/>
+    <rect x="155" y="104" width="24" height="48" rx="12"/>
+  </g>
+</svg>

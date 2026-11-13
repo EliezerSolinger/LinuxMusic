@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- LinuxMusic's project file icon: a page with the icon's ring and bars.
+     Part of LinuxMusic (GPL-2.0-or-later); tools/artwork/make-artwork.cpp renders the bitmaps from it. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#37c272"/>
+      <stop offset="1" stop-color="#1f9a53"/>
+    </linearGradient>
+  </defs>
+  <path d="M60 18 H164 L216 70 V226 a14 14 0 0 1 -14 14 H60 a14 14 0 0 1 -14 -14 V32 a14 14 0 0 1 14 -14 Z" fill="#17803f"/>
+  <path d="M60 14 H164 L216 66 V222 a14 14 0 0 1 -14 14 H60 a14 14 0 0 1 -14 -14 V28 a14 14 0 0 1 14 -14 Z" fill="url(#page)"/>
+  <path d="M164 14 V54 a12 12 0 0 0 12 12 H216 Z" fill="#7be0a4"/>
+  <g fill="none" stroke="#ffffff" stroke-width="11">
+    <circle cx="131" cy="145" r="54"/>
+  </g>
+  <g fill="#ffffff">
+    <rect x="95" y="131" width="9" height="28" rx="4.5"/>
+    <rect x="111" y="118" width="9" height="54" rx="4.5"/>
+    <rect x="126.5" y="105" width="9" height="80" rx="4.5"/>
+    <rect x="142" y="118" width="9" height="54" rx="4.5"/>
+    <rect x="158" y="131" width="9" height="28" rx="4.5"/>
+  </g>
+</svg>
