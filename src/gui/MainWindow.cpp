@@ -76,6 +76,7 @@
 #include "RecentProjectsMenu.h"
 #include "RemotePluginBase.h"
 #include "SetupDialog.h"
+#include "Shortcuts.h"
 #include "BrowserPanel.h"
 #include "EffectBrowser.h"
 #include "SongEditor.h"
@@ -1618,8 +1619,8 @@ void MainWindow::keyPressEvent( QKeyEvent * _ke )
 			}
 			// The transport's keys (as in Logic), when nothing took them (an instrument's window plays its notes on
 			// the keyboard): R records, C switches the cycle
-			else if (_ke->modifiers() == Qt::NoModifier && _ke->key() == Qt::Key_R) { m_transportBar->record(); }
-			else if (_ke->modifiers() == Qt::NoModifier && _ke->key() == Qt::Key_C) { m_transportBar->toggleCycle(); }
+			else if (Shortcuts::matches("record", _ke)) { m_transportBar->record(); }
+			else if (Shortcuts::matches("cycle", _ke)) { m_transportBar->toggleCycle(); }
 			else { _ke->ignore(); }
 			if( !_ke->isAccepted() )
 			{

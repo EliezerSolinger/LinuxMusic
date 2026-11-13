@@ -31,6 +31,9 @@
 #include <QLayout>
 #include <QLineEdit>
 #include <QScrollArea>
+#include <QKeySequenceEdit>
+#include <QHeaderView>
+#include <QTableWidget>
 #include <QAbstractButton>
 #include <QDoubleSpinBox>
 #include <QAbstractSlider>
@@ -47,6 +50,7 @@
 #include "SetupDialog.h"
 
 #include "SampleTrack.h"
+#include "Shortcuts.h"
 #include "TabBar.h"
 #include "TabButton.h"
 #include "TimeLineWidget.h"
@@ -913,6 +917,39 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	paths_layout->addWidget(pathsScroll, 1);
 	paths_layout->addStretch();
 
+	// Shortcuts: each action's key, changeable, with its default back on a click
+	auto shortcuts_w = new QWidget(settings_w);
+	auto shortcutsLayout = new QVBoxLayout(shortcuts_w);
+	shortcutsLayout->setSpacing(10);
+	shortcutsLayout->setContentsMargins(0, 0, 0, 0);
+	labelWidget(shortcuts_w, tr("Shortcuts"));
+	auto shortcutTable = new QTableWidget(static_cast<int>(Shortcuts::actions().size()), 3, shortcuts_w);
+	shortcutTable->setHorizontalHeaderLabels({tr("Action"), tr("Key"), QString{}});
+	shortcutTable->verticalHeader()->hide();
+	shortcutTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+	shortcutTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+	shortcutTable->setColumnWidth(1, 220);
+	shortcutTable->setSelectionMode(QAbstractItemView::NoSelection);
+	auto row = 0;
+	for (const auto& action : Shortcuts::actions())
+	{
+		auto label = new QTableWidgetItem(Shortcuts::text(action));
+		label->setFlags(Qt::ItemIsEnabled);
+		shortcutTable->setItem(row, 0, label);
+		auto edit = new QKeySequenceEdit(Shortcuts::key(action.id), shortcutTable);
+		edit->setMaximumSequenceLength(1);
+		shortcutTable->setCellWidget(row, 1, edit);
+		connect(edit, &QKeySequenceEdit::keySequenceChanged, this, [this] { m_changed = true; });
+		auto reset = new QPushButton(tr("Default"), shortcutTable);
+		connect(reset, &QPushButton::clicked, edit, [edit, fallback = action.fallback] { edit->setKeySequence(fallback); });
+		shortcutTable->setCellWidget(row, 2, reset);
+		m_shortcutEdits.emplace_back(action.id, edit);
+		++row;
+	}
+	shortcutsLayout->addWidget(new QLabel(tr("The other keys of the editors and the menus' keys are fixed."),
+		shortcuts_w));
+	shortcutsLayout->addWidget(shortcutTable, 1);
+
 	// Add all main widgets to the layout of the settings widget
 	// This is needed so that we automatically get the correct sizes.
 	settingsLayout->addWidget(general_w);
@@ -920,6 +957,7 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 	settingsLayout->addWidget(audio_w);
 	settingsLayout->addWidget(midi_w);
 	settingsLayout->addWidget(paths_w);
+	settingsLayout->addWidget(shortcuts_w);
 
 	// Major tabs ordering.
 	m_tabBar->addTab(general_w,
@@ -935,8 +973,11 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 			tr("MIDI"), 3, false, true, false)->setIcon(
 					embed::getIconPixmap("setup_midi"));
 	m_tabBar->addTab(paths_w,
-			tr("Paths"), 4, true, true, false)->setIcon(
+			tr("Paths"), 4, false, true, false)->setIcon(
 					embed::getIconPixmap("setup_directories"));
+	m_tabBar->addTab(shortcuts_w,
+			tr("Shortcuts"), 5, true, true, false)->setIcon(
+					embed::getIconPixmap("setup_shortcuts", 64, 64));
 
 	m_tabBar->setActiveTab(static_cast<int>(tab_to_open));
 
@@ -1036,6 +1077,7 @@ void SetupDialog::accept()
 	ConfigManager::inst()->setValue("tooltips", "disabled",
 					QString::number(!m_tooltips));
 	ConfigManager::inst()->setValue("mixer", "newprojectanalog", m_newProjectAnalog->isChecked() ? "1" : "0");
+	for (const auto& [id, edit] : m_shortcutEdits) { Shortcuts::setKey(id, edit->keySequence()); }
 	ConfigManager::inst()->setValue("ui", "longaudioseconds", QString::number(m_longAudioSeconds->value()));
 	ConfigManager::inst()->setValue("recording", "latencyoffset", QString::number(m_latencyOffset->value()));
 	ConfigManager::inst()->setValue("recording", "prerollbars", m_preRoll->currentData().toString());

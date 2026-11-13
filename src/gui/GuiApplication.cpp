@@ -295,7 +295,10 @@ GuiApplication::GuiApplication()
 		}
 		if (screenshotAction == "settings")
 		{
-			QTimer::singleShot(2500, m_mainWindow, [this] { m_mainWindow->showSettingsPage(); });
+			// (LINUXMUSIC_SETTINGS_TAB=<n> opens it at a tab)
+			QTimer::singleShot(2500, m_mainWindow, [this] {
+				m_mainWindow->showSettingsPage(qEnvironmentVariableIntValue("LINUXMUSIC_SETTINGS_TAB"));
+			});
 		}
 		if (screenshotAction == "effects-browser")
 		{

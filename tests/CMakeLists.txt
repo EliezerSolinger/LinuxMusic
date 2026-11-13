@@ -25,6 +25,7 @@ set(LMMS_TESTS
 	src/core/TimelineTest.cpp
 	src/core/TimeStretcherTest.cpp
 	src/core/TripleBufferTest.cpp
+	src/gui/ShortcutsTest.cpp
 	src/gui/ThemeImagesTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 )

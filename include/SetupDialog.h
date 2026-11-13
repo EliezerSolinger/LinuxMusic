@@ -26,6 +26,8 @@
 #define LMMS_GUI_SETUP_DIALOG_H
 
 #include <QDialog>
+#include <utility>
+#include <vector>
 #include <QMap>
 
 #include "AudioDevice.h"
@@ -38,6 +40,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QKeySequenceEdit;
 class QSpinBox;
 class QSlider;
 
@@ -59,7 +62,8 @@ public:
 		PerformanceSettings,
 		AudioSettings,
 		MidiSettings,
-		PathsSettings
+		PathsSettings,
+		ShortcutsSettings
 	};
 
 	//! @param page shows it inside @p page (the settings page of the main window) rather than as a window
@@ -234,6 +238,7 @@ private:
 	QComboBox* m_preRoll;
 	QCheckBox* m_countIn;
 	bool m_changed = false;
+	std::vector<std::pair<const char*, QKeySequenceEdit*>> m_shortcutEdits;
 
 	QLabel * restartWarningLbl;
 };

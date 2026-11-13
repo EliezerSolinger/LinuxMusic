@@ -14533,6 +14533,26 @@ Latency: %2 ms</source>
         <source>Save</source>
         <translation>Salvar</translation>
     </message>
+    <message>
+        <source>Shortcuts</source>
+        <translation>Atalhos</translation>
+    </message>
+    <message>
+        <source>Action</source>
+        <translation>Ação</translation>
+    </message>
+    <message>
+        <source>Key</source>
+        <translation>Tecla</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>Padrão</translation>
+    </message>
+    <message>
+        <source>The other keys of the editors and the menus' keys are fixed.</source>
+        <translation>As outras teclas dos editores e as dos menus são fixas.</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::Sf2InstrumentView</name>
@@ -17475,6 +17495,41 @@ Latency: %2 ms</source>
     <message>
         <source>The amp model's resampling could not start: %1</source>
         <translation>A reamostragem do modelo de amp não pôde começar: %1</translation>
+    </message>
+</context>
+<context>
+    <name>Shortcuts</name>
+    <message>
+        <source>Record</source>
+        <translation>Gravar</translation>
+    </message>
+    <message>
+        <source>Cycle on or off</source>
+        <translation>Ligar ou desligar o ciclo</translation>
+    </message>
+    <message>
+        <source>Split the clips at the playhead</source>
+        <translation>Cortar os clipes no cursor</translation>
+    </message>
+    <message>
+        <source>Add a marker at the playhead</source>
+        <translation>Criar um marcador no cursor</translation>
+    </message>
+    <message>
+        <source>Copy the selected clips</source>
+        <translation>Copiar os clipes selecionados</translation>
+    </message>
+    <message>
+        <source>Cut the selected clips</source>
+        <translation>Recortar os clipes selecionados</translation>
+    </message>
+    <message>
+        <source>Paste at the playhead</source>
+        <translation>Colar no cursor</translation>
+    </message>
+    <message>
+        <source>Duplicate the selected clips</source>
+        <translation>Duplicar os clipes selecionados</translation>
     </message>
 </context>
 </TS>

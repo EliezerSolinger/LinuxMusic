@@ -28,6 +28,7 @@
 
 #include "Clipboard.h"
 #include "ProjectJournal.h"
+#include "Shortcuts.h"
 #include "TempoLaneWidget.h"
 
 #include <cmath>
@@ -524,11 +525,11 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	{
 		selectAllClips( !isShiftPressed );
 	}
-	else if (ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier)
+	else if (Shortcuts::matches("split", ke))
 	{
 		splitAtPlayhead();
 	}
-	else if (ke->key() == Qt::Key_M && ke->modifiers() == Qt::NoModifier)
+	else if (Shortcuts::matches("marker", ke))
 	{
 		// As in REAPER: a marker at the playhead, named after its number (renamed with a double-click)
 		auto& markers = m_song->markers();
@@ -548,11 +549,10 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 			if (!m_song->isPlaying()) { m_song->setPlayPos(tick, Song::PlayMode::None); }
 		}
 	}
-	else if ((ke->modifiers() & Qt::ControlModifier)
-		&& (ke->key() == Qt::Key_C || ke->key() == Qt::Key_X || ke->key() == Qt::Key_V || ke->key() == Qt::Key_D))
-	{
-		copyPaste(ke->key());
-	}
+	else if (Shortcuts::matches("copy", ke)) { copyPaste(Qt::Key_C); }
+	else if (Shortcuts::matches("cut", ke)) { copyPaste(Qt::Key_X); }
+	else if (Shortcuts::matches("paste", ke)) { copyPaste(Qt::Key_V); }
+	else if (Shortcuts::matches("duplicate", ke)) { copyPaste(Qt::Key_D); }
 	else if( ke->key() == Qt::Key_Escape )
 	{
 		selectAllClips( false );
