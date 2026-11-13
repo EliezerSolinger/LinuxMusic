@@ -240,3 +240,18 @@ Depois do item 19 do plano de gravação (time-stretch), que está em andamento:
 5. **Etapas 11, 9.3–9.6, 10, 12, 7, 13**.
 
 Cada passo atualiza este documento, marcando o que foi feito.
+
+## Estado
+
+- **Etapa 5 feita** (13/11, com testes, A/B e commits):
+  - 5.1: os ícones SVG carregam sem o plugin `qsvg`, e as imagens SVG do CSS viram PNG no cache quando ele falta
+    (`ThemeImagesTest`, que falha sem a correção);
+  - 5.2: projeto novo vazio, com a mesa digital;
+  - 5.3: sem o TOL, com a tolerância sempre ligada. Na A/B, os projetos antigos (que abrem no modo analógico)
+    mudam de −40 a −65 dB, como esperado; essa passa a ser a referência;
+  - 5.4: o painel ficou só com MONO e PAN. O release do compressor foi para a tira, ao lado de um knob ATK em
+    degraus (FAST/NORM/SLOW), que substitui o botão de ataque;
+  - 5.5 e 5.6: sem o botão de ajuda, e o salvar pisca no autosave;
+  - 5.7: sem o LADSPA browser;
+  - 5.8: Amplifier e Stereo Matrix fora das listas; projetos que os usam tocam igual;
+  - 5.9: abas escuras nas áreas e no explorador.
