@@ -376,7 +376,8 @@ Feito depois (mesma noite e manhã de 13/11):
   as lanes nesse modo.
 
 Por fazer, na ordem do plano:
-- **Mapa de tempo:** o desfazer das edições dos marcadores; a fórmula de compasso por marcador.
+- **Mapa de tempo:** a fórmula de compasso por marcador. (O desfazer das edições ficou pronto em 13/11: cada edição
+  da faixa TEMPO é um comando, e um arraste é um passo.)
 - **Edição e interface:**
   - desfazer por comandos (o atual é por grupos de snapshots);
   - lanes visíveis;

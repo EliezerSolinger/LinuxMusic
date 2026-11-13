@@ -84,6 +84,9 @@ public:
 	void moveMarker(tick_t from, tick_t to);
 	void clear();
 
+	//! Makes the change since the markers were @p before an undo step (a command: the markers before and after)
+	void recordChange(std::vector<Marker> before);
+
 	/**
 	 * Turns the automations of @p tempo (an older project's) into markers: each point a marker, a ramp to the next
 	 * where the automation was not discrete. The automations no longer change the tempo afterwards.

@@ -39,6 +39,8 @@
 #include "MainWindow.h"
 #include "Song.h"
 #include "TempoMap.h"
+#include "UndoCommand.h"
+#include "ProjectJournal.h"
 #include "TimeLineWidget.h"
 #include "TimePos.h"
 
@@ -257,7 +259,11 @@ void TempoLaneWidget::mousePressEvent(QMouseEvent* event)
 	{
 		if (upper) { m_draggedNamed = namedMarkerAt(x); }
 		// The tempo marker at the song's start stays there
-		else if (const auto marker = markerAt(x); marker && *marker > 0) { m_dragged = marker; }
+		else if (const auto marker = markerAt(x); marker && *marker > 0)
+		{
+			m_dragged = marker;
+			m_tempoBefore = m_map->markers(); // (the drag is one undo step)
+		}
 	}
 	QWidget::mousePressEvent(event);
 }
@@ -343,6 +349,7 @@ void TempoLaneWidget::mouseMoveEvent(QMouseEvent* event)
 void TempoLaneWidget::mouseReleaseEvent(QMouseEvent* event)
 {
 	if (m_dragged || m_draggedNamed) { Engine::getSong()->setModified(); }
+	if (m_dragged) { recordTempoEdit(std::exchange(m_tempoBefore, {})); }
 	if (m_regionDrag != RegionDrag::None && event->button() == Qt::LeftButton)
 	{
 		const auto drag = std::exchange(m_regionDrag, RegionDrag::None);
@@ -449,7 +456,9 @@ void TempoLaneWidget::contextMenuEvent(QContextMenuEvent* event)
 			{
 				if (marker.tick != tick) { continue; }
 				marker.ramp = on;
+				auto before = m_map->markers();
 				m_map->setMarker(marker, Engine::getSong()->getTempo());
+				recordTempoEdit(std::move(before));
 				Engine::getSong()->setModified();
 				break;
 			}
@@ -458,7 +467,9 @@ void TempoLaneWidget::contextMenuEvent(QContextMenuEvent* event)
 		{
 			menu.addSeparator();
 			menu.addAction(tr("Remove"), this, [this, tick] {
+				auto before = m_map->markers();
 				m_map->removeMarker(tick);
+				recordTempoEdit(std::move(before));
 				Engine::getSong()->setModified();
 			});
 		}
@@ -483,7 +494,9 @@ void TempoLaneWidget::addMarker(tick_t tick)
 	const auto bpm = QInputDialog::getDouble(this, tr("Change of tempo"), tr("Tempo from here on (BPM):"), current,
 		MinTempo, MaxTempo, 2, &ok);
 	if (!ok) { return; }
+	auto before = m_map->markers();
 	m_map->setMarker({tick, bpm, false}, song->getTempo());
+	recordTempoEdit(std::move(before));
 	song->setModified();
 }
 
@@ -500,7 +513,9 @@ void TempoLaneWidget::editTempo(tick_t tick)
 			marker.bpm, MinTempo, MaxTempo, 2, &ok);
 		if (!ok) { return; }
 		marker.bpm = bpm;
+		auto before = m_map->markers();
 		m_map->setMarker(marker, Engine::getSong()->getTempo());
+		recordTempoEdit(std::move(before));
 		Engine::getSong()->setModified();
 		return;
 	}
@@ -561,7 +576,13 @@ void TempoLaneWidget::namedMenu(QMenu& menu, int x)
 	marks->setChecked(marksTempo);
 	connect(marks, &QAction::toggled, this, [this, tick](bool on) {
 		if (on) { addMarker(tick); }
-		else if (tick > 0) { m_map->removeMarker(tick); Engine::getSong()->setModified(); }
+		else if (tick > 0)
+		{
+			auto before = m_map->markers();
+			m_map->removeMarker(tick);
+			recordTempoEdit(std::move(before));
+			Engine::getSong()->setModified();
+		}
 	});
 	menu.addAction(tr("Play from here"), this, [tick] {
 		Engine::getSong()->setPlayPos(tick, Song::PlayMode::Song);
@@ -761,6 +782,11 @@ void TempoLaneWidget::regionMenu(QMenu& menu, int x)
 		Engine::getSong()->markers().removeRegion(begin);
 		Engine::getSong()->setModified();
 	});
+}
+
+void TempoLaneWidget::recordTempoEdit(std::vector<TempoMap::Marker> before)
+{
+	m_map->recordChange(std::move(before));
 }
 
 } // namespace lmms::gui

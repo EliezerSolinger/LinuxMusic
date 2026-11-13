@@ -31,10 +31,7 @@
 
 class QMenu;
 
-namespace lmms
-{
-class TempoMap;
-}
+#include "TempoMap.h"
 
 namespace lmms::gui
 {
@@ -72,6 +69,9 @@ private:
 	auto markerAt(int x) const -> std::optional<tick_t>;
 	void editTempo(tick_t tick);
 	void addMarker(tick_t tick);
+	//! Makes the change of the tempo map since @p before an undo step
+	void recordTempoEdit(std::vector<TempoMap::Marker> before);
+	std::vector<TempoMap::Marker> m_tempoBefore; //!< the markers when a drag began
 
 	// The named markers (SongMarkers), in the row above the tempo
 	auto namedMarkerAt(int x) const -> std::optional<tick_t>;

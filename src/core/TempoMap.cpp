@@ -31,6 +31,8 @@
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
+#include "UndoCommand.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -244,6 +246,40 @@ void TempoMap::loadSettings(const QDomElement& element)
 		m_markers.erase(last, m_markers.end());
 	}
 	emit changed();
+}
+
+namespace
+{
+
+//! A change of the tempo map: its markers before and after
+class TempoMapCommand : public UndoCommand
+{
+public:
+	TempoMapCommand(std::vector<TempoMap::Marker> before, std::vector<TempoMap::Marker> after)
+		: m_before{std::move(before)}
+		, m_after{std::move(after)}
+	{
+	}
+	void apply() override { Engine::getSong()->tempoMap().setMarkers(m_after); }
+	void revert() override { Engine::getSong()->tempoMap().setMarkers(m_before); }
+	auto text() const -> QString override { return QObject::tr("Change the tempo"); }
+
+private:
+	std::vector<TempoMap::Marker> m_before;
+	std::vector<TempoMap::Marker> m_after;
+};
+
+} // namespace
+
+
+
+
+void TempoMap::recordChange(std::vector<Marker> before)
+{
+	auto after = m_markers;
+	if (before == after) { return; }
+	// (already done: applying it again changes nothing)
+	Engine::projectJournal()->execute(std::make_unique<TempoMapCommand>(std::move(before), std::move(after)));
 }
 
 } // namespace lmms

@@ -197,6 +197,28 @@ private slots:
 		journal->setJournalling(false);
 		markers.clear();
 	}
+
+	void editsOfTheMapAreUndone()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* journal = Engine::projectJournal();
+		journal->setJournalling(true);
+		auto& map = song->tempoMap();
+		auto before = map.markers();
+		map.setMarker({4 * 192, 90.0, false}, song->getTempo());
+		map.recordChange(before);
+		before = map.markers();
+		map.moveMarker(4 * 192, 8 * 192);
+		map.recordChange(before);
+		QCOMPARE(map.markers().back().tick, 8 * 192);
+		journal->undo();
+		QCOMPARE(map.markers().back().tick, 4 * 192);
+		journal->undo();
+		QVERIFY(map.markers().empty());
+		journal->redo();
+		QCOMPARE(map.markers().back().bpm, 90.0);
+	}
 };
 
 QTEST_GUILESS_MAIN(TempoMapTest)
