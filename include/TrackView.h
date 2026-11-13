@@ -87,6 +87,8 @@ public:
 		return m_trackContainerView;
 	}
 
+	static constexpr int LaneHeight = 30; //!< each lane past the first (see Track::laneCount())
+
 	inline TrackOperationsWidget * getTrackOperationsWidget()
 	{
 		return &m_trackOperationsWidget;
@@ -205,6 +207,11 @@ public:
 private:
 
 private:
+	//! The track grows by a lane's height for each lane past the first, and back
+	void fitLanes();
+	int m_singleLaneHeight = 0;
+	bool m_lanesExpanded = false;
+
 	enum class Action
 	{
 		None,

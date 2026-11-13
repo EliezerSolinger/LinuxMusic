@@ -42,6 +42,12 @@ void MidiRecorder::start(const std::vector<InstrumentTrack*>& tracks, tick_t fro
 	{
 		auto& state = m_tracks[track];
 		state.mode = static_cast<Mode>(track->midiRecordModeModel()->value());
+		// A take of its own: what was there goes a lane down (the recording's undo step keeps the track's state)
+		if (state.mode == Mode::TakeLane)
+		{
+			const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
+			track->insertLanesOnTop(1);
+		}
 	}
 }
 
@@ -88,7 +94,8 @@ void MidiRecorder::addNote(InstrumentTrack* track, TrackState& state, int key, v
 	for (int index = 0; index < track->numOfClips(); ++index)
 	{
 		auto* candidate = dynamic_cast<MidiClip*>(track->getClip(index));
-		if (candidate && candidate->startPosition() <= start && start < candidate->endPosition())
+		if (candidate && candidate->lane() == track->playingLane() && candidate->startPosition() <= start
+			&& start < candidate->endPosition())
 		{
 			clip = candidate;
 			break;
@@ -100,6 +107,7 @@ void MidiRecorder::addNote(InstrumentTrack* track, TrackState& state, int key, v
 	{
 		clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{start - start % TimePos::ticksPerBar()}));
 		if (!clip) { return; }
+		clip->setLane(track->playingLane());
 	}
 	state.clips.insert(clip);
 

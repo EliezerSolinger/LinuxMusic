@@ -24,8 +24,11 @@ Decisões do usuário ainda não feitas (`gravacao-levantamento.md` §6):
   Gravação); o clique não aloca mais na thread de áudio (um play handle próprio)
 - [x] **Xrun gravando:** o ponto fica marcado em vermelho no take (salvo no projeto), e o fim da gravação avisa
   quantas vezes o áudio falhou
-- [ ] **MIDI:** a chave da faixa ganha "take em lane"; quantização opcional na entrada (grade e força por faixa,
-  desligada por padrão); entrada MIDI por faixa (dispositivo e canal) no cabeçalho
+- [x] **MIDI, take em lane:** as lanes passaram para a base de todas as faixas e clipes (`Clip::lane`,
+  `Track::playingLane`); a faixa de instrumento toca só a lane que ouve, e o modo "Take em lane" do R grava numa lane
+  nova em cima
+- [ ] **MIDI:** quantização opcional na entrada (grade e força por faixa, desligada por padrão); entrada MIDI por
+  faixa (dispositivo e canal) no cabeçalho
 - [ ] **Cabeçalho de duas linhas em todas as faixas:** instrumento como a de áudio; pasta, sequência e automação com o
   mesmo desenho, só com o que faz sentido
 - [ ] **Trocar dispositivo, buffer ou taxa sem reiniciar** (bloqueado durante a gravação); a taxa é a do projeto, e

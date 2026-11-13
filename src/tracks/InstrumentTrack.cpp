@@ -66,7 +66,7 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	m_pitchRangeModel(1, 1, 60, this, tr("Pitch range")),
 	m_useMasterPitchModel(true, this, tr("Master pitch")),
 	m_recordArmModel(false, this, tr("Record arm")),
-	m_midiRecordModeModel(0, 0, 1, this, tr("MIDI record mode")),
+	m_midiRecordModeModel(0, 0, 2, this, tr("MIDI record mode")),
 	m_instrumentChannels(Engine::audioEngine()->framesPerPeriod(), DEFAULT_CHANNELS),
 	m_soundShaping(this),
 	m_arpeggio(this),
@@ -837,6 +837,11 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		// everything which is not a MIDI clip won't be played
 		// A MIDI clip playing in the Piano Roll window will always play
 		if (c == nullptr || (Engine::getSong()->playMode() != Song::PlayMode::MidiClip && clip->isMuted()))
+		{
+			continue;
+		}
+		// Only the lane heard plays on the song (a clip open in the piano roll always does)
+		if (_clip_num < 0 && Engine::getSong()->playMode() == Song::PlayMode::Song && clip->lane() != playingLane())
 		{
 			continue;
 		}

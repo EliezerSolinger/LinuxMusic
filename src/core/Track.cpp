@@ -28,6 +28,8 @@
 
 
 #include "Track.h"
+#include "UndoCommand.h"
+#include "ProjectJournal.h"
 
 #include <algorithm>
 
@@ -217,6 +219,7 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	}
 
 	if (m_folderDepth > 0 && !presetMode) { element.setAttribute("folderdepth", m_folderDepth); }
+	if (m_playingLane > 0 && !presetMode) { element.setAttribute("playinglane", m_playingLane); }
 	
 	QDomElement tsDe = doc.createElement( nodeName() );
 	// let actual track (InstrumentTrack, PatternTrack, SampleTrack etc.) save its settings
@@ -228,10 +231,11 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 		return;
 	}
 
-	// now save settings of all Clip's
+	// now save settings of all Clip's (with their lanes)
 	for (const auto& clip : m_clips)
 	{
 		clip->saveState(doc, element);
+		if (clip->lane() > 0) { element.lastChildElement().setAttribute("lane", clip->lane()); }
 	}
 }
 
@@ -258,7 +262,11 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		setColor(QColor{element.attribute("color")});
 	}
 
-	if (!presetMode) { setFolderDepth(element.attribute("folderdepth", "0").toInt()); }
+	if (!presetMode)
+	{
+		setFolderDepth(element.attribute("folderdepth", "0").toInt());
+		applyPlayingLane(element.attribute("playinglane", "0").toInt());
+	}
 
 	if (presetMode)
 	{
@@ -296,7 +304,11 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			{
 				Clip * clip = createClip(
 								TimePos( 0 ) );
-				if (clip) { clip->restoreState(node.toElement()); }
+				if (clip)
+				{
+					clip->restoreState(node.toElement());
+					clip->setLane(node.toElement().attribute("lane", "0").toInt());
+				}
 			}
 		}
 		node = node.nextSibling();
@@ -334,9 +346,150 @@ void Track::loadSettings(const QDomElement& element)
 
 
 
+namespace
+{
+
+//! Chooses the lane heard (finds the track by its journal id)
+class PlayingLaneCommand : public UndoCommand
+{
+public:
+	PlayingLaneCommand(Track* track, int before, int after) : m_track{track->id()}, m_before{before}, m_after{after} {}
+	void apply() override { set(m_after); }
+	void revert() override { set(m_before); }
+	auto text() const -> QString override { return Track::tr("Choose the lane heard"); }
+
+private:
+	void set(int lane)
+	{
+		if (auto* track = dynamic_cast<Track*>(Engine::projectJournal()->journallingObject(m_track)))
+		{
+			track->applyPlayingLane(lane);
+		}
+	}
+	jo_id_t m_track;
+	int m_before;
+	int m_after;
+};
+
+} // namespace
+
+
+
+
+void Track::setPlayingLane(int lane)
+{
+	lane = std::max(lane, 0);
+	if (lane == m_playingLane) { return; }
+	Engine::projectJournal()->execute(std::make_unique<PlayingLaneCommand>(this, m_playingLane, lane));
+	if (auto* song = Engine::getSong()) { song->setModified(); }
+}
+
+
+
+
+void Track::applyPlayingLane(int lane)
+{
+	lane = std::max(lane, 0);
+	if (lane == m_playingLane) { return; }
+	m_playingLane = lane;
+	checkLanes();
+	emit dataChanged();
+}
+
+
+
+
+auto Track::laneCount() const -> int
+{
+	auto count = std::max(1, m_playingLane + 1);
+	for (const auto* clip : m_clips) { count = std::max(count, clip->lane() + 1); }
+	return count;
+}
+
+
+
+
+void Track::checkLanes()
+{
+	const auto lanes = laneCount();
+	if (lanes == m_lastLaneCount && m_playingLane == m_lastPlayingLane) { return; }
+	m_lastLaneCount = lanes;
+	m_lastPlayingLane = m_playingLane;
+	emit lanesChanged();
+}
+
+
+
+
+void Track::insertLanesOnTop(int count)
+{
+	if (count <= 0) { return; }
+	for (auto* clip : m_clips) { clip->setLane(clip->lane() + count); }
+	applyPlayingLane(0);
+}
+
+
+
+
+void Track::clearSpan(int lane, tick_t begin, tick_t end, const Clip* keep)
+{
+	if (end <= begin) { return; }
+	const auto clips = m_clips; // (clips are removed and added below)
+	for (auto* clip : clips)
+	{
+		if (clip == keep || clip->lane() != lane) { continue; }
+		const auto clipBegin = clip->startPosition().getTicks();
+		const auto clipEnd = clip->endPosition().getTicks();
+		if (clipEnd <= begin || clipBegin >= end) { continue; }
+		// Where its content starts on the song (it stays there under each part)
+		const auto contentStart = clipBegin + clip->startTimeOffset().getTicks();
+		if (clipBegin >= begin && clipEnd <= end)
+		{
+			delete clip; // (all under it)
+			continue;
+		}
+		if (clipBegin < begin && clipEnd > end)
+		{
+			// Split around it: the part after it is a copy
+			auto* after = clip->clone();
+			after->movePosition(TimePos{end});
+			after->changeLength(TimePos{clipEnd - end});
+			after->setStartTimeOffset(TimePos{contentStart - end});
+			clip->changeLength(TimePos{begin - clipBegin});
+			continue;
+		}
+		if (clipBegin < begin) { clip->changeLength(TimePos{begin - clipBegin}); } // (its end under it)
+		else
+		{
+			// Its start under it
+			clip->movePosition(TimePos{end});
+			clip->changeLength(TimePos{clipEnd - end});
+			clip->setStartTimeOffset(TimePos{contentStart - end});
+		}
+	}
+}
+
+
+
+
+void Track::compClip(Clip* clip)
+{
+	if (!clip || clip->getTrack() != this || clip->lane() == m_playingLane) { return; }
+	addJournalCheckPoint();
+	const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
+	auto* copy = clip->clone();
+	copy->setLane(m_playingLane);
+	clearSpan(m_playingLane, copy->startPosition().getTicks(), copy->endPosition().getTicks(), copy);
+	if (auto* song = Engine::getSong()) { song->setModified(); }
+}
+
+
+
+
 Clip * Track::addClip( Clip * clip )
 {
 	m_clips.push_back( clip );
+	connect(clip, &Clip::laneChanged, this, &Track::checkLanes);
 
 	emit clipAdded( clip );
 
@@ -352,6 +505,8 @@ void Track::removeClip( Clip * clip )
 	if( it != m_clips.end() )
 	{
 		m_clips.erase( it );
+		clip->disconnect(this);
+		checkLanes();
 		if( Engine::getSong() )
 		{
 			Engine::getSong()->updateLength();

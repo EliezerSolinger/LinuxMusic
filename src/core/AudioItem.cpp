@@ -105,7 +105,6 @@ AudioItem::AudioItem(const AudioItem& other)
 	, m_sample{other.m_sample}
 	, m_peaks{other.m_peaks}
 	, m_storage{other.m_storage}
-	, m_lane{other.m_lane}
 	, m_gainDb{other.m_gainDb}
 	, m_fadeInMs{other.m_fadeInMs}
 	, m_fadeOutMs{other.m_fadeOutMs}
@@ -194,17 +193,6 @@ auto AudioItem::fileLength() const -> TimePos
 	if (m_sample.sampleSize() == 0) { return TimePos{0}; }
 	const auto framesPerTick = Engine::framesPerTick(m_sample.sampleRate());
 	return TimePos{static_cast<tick_t>(std::ceil(m_sample.sampleSize() / framesPerTick))};
-}
-
-
-
-
-void AudioItem::setLane(int lane)
-{
-	lane = std::max(lane, 0);
-	if (lane == m_lane) { return; }
-	m_lane = lane;
-	emit itemChanged();
 }
 
 
@@ -314,7 +302,6 @@ void AudioItem::saveSettings(QDomDocument& doc, QDomElement& element)
 	element.setAttribute("muted", isMuted());
 	element.setAttribute("src", PathUtil::toShortestRelative(m_file));
 	element.setAttribute("id", QString::number(m_id));
-	element.setAttribute("lane", m_lane);
 	element.setAttribute("gain", QString::number(m_gainDb, 'g', 10));
 	element.setAttribute("fadein", QString::number(m_fadeInMs, 'g', 10));
 	element.setAttribute("fadeout", QString::number(m_fadeOutMs, 'g', 10));
@@ -360,7 +347,6 @@ void AudioItem::loadSettings(const QDomElement& element)
 
 	const auto storage = element.attribute("storage");
 	m_storage = storage == "disk" ? Storage::Disk : storage == "ram" ? Storage::Memory : Storage::Automatic;
-	m_lane = std::max(element.attribute("lane").toInt(), 0);
 	const auto gain = element.attribute("gain", "0").toDouble();
 	m_gainDb = std::isfinite(gain) ? std::clamp(gain, MinGainDb, MaxGainDb) : 0.0;
 	const auto fadeIn = element.attribute("fadein", QString::number(DefaultFadeMs)).toDouble();

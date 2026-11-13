@@ -55,7 +55,6 @@ public:
 	SampleTrackView( AudioInputTrack* Track, TrackContainerView* tcv );
 
 	static constexpr int AudioTrackHeight = 46; //!< an audio track's two rows
-	static constexpr int LaneHeight = 30; //!< each lane past the first
 	~SampleTrackView() override;
 
 	SampleTrackWindow * getSampleTrackWindow()

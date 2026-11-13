@@ -228,6 +228,34 @@ private slots:
 		qInfo("instrument: %s: L %+.2f dB, R %+.2f dB", analog ? "analog" : "digital", left, right);
 		QVERIFY2(std::abs(left) < 0.5f && std::abs(right) < 0.5f, qPrintable(QString{"%1 %2"}.arg(left).arg(right)));
 	}
+
+	void anInstrumentPlaysOnlyTheLaneHeard()
+	{
+		auto* song = Engine::getSong();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		Engine::mixer()->setUpTrackChannels();
+		QVERIFY(track->loadInstrument("tripleoscillator"));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
+		clip->addNote(Note{TimePos{192}, TimePos{0}, DefaultKey}, false);
+		clip->setLane(1); // (a lane below the one heard)
+
+		const auto loudest = [&] {
+			auto* engine = Engine::audioEngine();
+			for (int period = 0; period < 4; ++period) { engine->renderNextPeriod(); }
+			song->setPlayPos(0, Song::PlayMode::Song);
+			song->playSong();
+			auto level = 0.f;
+			for (int period = 0; period < 100; ++period)
+			{
+				for (const auto& frame : engine->renderNextPeriod()) { level = std::max(level, std::abs(frame.left())); }
+			}
+			song->stop();
+			return level;
+		};
+		QCOMPARE(loudest(), 0.f);
+		track->applyPlayingLane(1);
+		QVERIFY(loudest() > 0.01f);
+	}
 };
 
 QTEST_GUILESS_MAIN(GainStagingTest)

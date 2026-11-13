@@ -227,17 +227,6 @@ SampleTrackView::SampleTrackView( AudioInputTrack * _t, TrackContainerView* tcv 
 	}
 	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
-	// The lanes take room below the header
-	if (audioTrack)
-	{
-		const auto fit = [this, audioTrack] {
-			const auto lanes = audioTrack->laneCount();
-			setFixedHeight(AudioTrackHeight + (lanes > 1 ? (lanes - 1) * LaneHeight : 0));
-			getTrackContentWidget()->update();
-		};
-		connect(audioTrack, &AudioTrack::lanesChanged, this, fit);
-		fit();
-	}
 
 	connect(_t, SIGNAL(playingChanged()), this, SLOT(updateIndicator()));
 	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &SampleTrackView::corruptStateUpdate);

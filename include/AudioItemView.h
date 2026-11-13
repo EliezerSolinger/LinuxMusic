@@ -43,8 +43,6 @@ class AudioItemView : public ClipView
 public:
 	AudioItemView(AudioItem* item, TrackView* view);
 
-	auto verticalPlace(int contentHeight) const -> std::pair<int, int> override;
-
 protected:
 	void paintEvent(QPaintEvent* event) override;
 	void constructContextMenu(QMenu* menu) override;

@@ -182,9 +182,17 @@ public:
 public slots:
 	void toggleMute(); //!< Mutes this Clip
 
+	/**
+	 * Lanes (docs/plano-gravacao.md, section 11): the clips of a track lie on lanes, the first on top; the track's
+	 * playing lane is the one heard (see Track::playingLane()). Saved with the track.
+	 */
+	auto lane() const -> int { return m_lane; }
+	void setLane(int lane);
+
 signals:
 	void lengthChanged();
 	void positionChanged();
+	void laneChanged();
 	void destroyedClip();
 	void colorChanged();
 
@@ -214,6 +222,7 @@ private:
 	bool m_selectViewOnCreate;
 
 	std::optional<QColor> m_color;
+	int m_lane = 0;
 
 	friend class ClipView;
 };

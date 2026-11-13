@@ -370,7 +370,9 @@ public:
 public:
 	//! Where the clip is across its track's @p contentHeight: its top and height (all of it, unless the track has
 	//! lanes: see AudioItemView)
-	virtual auto verticalPlace(int contentHeight) const -> std::pair<int, int> { return {0, contentHeight - 1}; }
+	virtual auto verticalPlace(int contentHeight) const -> std::pair<int, int>;
+	//! Whether the clip is on its track's lane heard (the others are drawn dimmed)
+	auto isOnHeardLane() const -> bool;
 protected:
 	//! A move dropped over another track: the clips go to the tracks as far below or above theirs, if those are of
 	//! their type (as in REAPER); otherwise they stay on theirs. One undo step with the move

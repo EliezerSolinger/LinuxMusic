@@ -66,9 +66,6 @@ public:
 	//! Adds an item playing @p file from @p position on @p lane
 	auto addItem(const QString& file, const TimePos& position, int lane = 0) -> AudioItem*;
 
-	//! The lanes there are (at least one, and one past the last item's)
-	auto laneCount() const -> int;
-	auto playingLane() const -> int { return m_playingLane; }
 
 	//! An item's own settings
 	struct ItemSettings
@@ -83,33 +80,12 @@ public:
 	static auto settingsOf(const AudioItem& item) -> ItemSettings;
 	//! Changes @p item's settings to @p settings: one undo step (nothing if they are the same)
 	void changeItem(AudioItem* item, const ItemSettings& settings);
-	//! Makes @p lane the one heard: one undo step
-	void setPlayingLane(int lane);
 
-	//! Moves every item @p count lanes down, and makes the first lane the one heard: room on top for a recording's
-	//! passes. Not an undo step of its own: part of the recording's, which keeps the track's state
-	void insertLanesOnTop(int count);
-
-	/**
-	 * Makes room on @p lane from @p begin to @p end for a new take, as recording without lanes does: the items there
-	 * (but @p keep) are trimmed, split around it or removed; their files stay. Not an undo step of its own: part
-	 * of the recording's, which keeps the track's state
-	 */
-	void clearSpan(int lane, tick_t begin, tick_t end, const AudioItem* keep = nullptr);
-
-	//! Comping: a copy of @p item goes on the lane heard, replacing what it covers there (split the item first to
-	//! take a part of it). One undo step
-	void compItem(AudioItem* item);
 
 	//! Gives the player what plays now. It happens by itself after each change, once the event loop runs; this does
 	//! it at once (e.g. before rendering without an event loop)
 	void publish();
 
-signals:
-	//! The lanes there are, or the one heard, changed
-	void lanesChanged();
-
-public:
 	/**
 	 * A sample track of a project from before the audio track that holds recordings (takes, clips bound to the
 	 * tempo) or records (armed, or with an input) is an audio track now (docs/plano-gravacao.md, section 11, step 7).
@@ -122,10 +98,7 @@ public:
 
 private:
 	void applySettings(AudioItem* item, const ItemSettings& settings);
-	void applyPlayingLane(int lane);
 	void schedulePublish();
-	//! Tells of a change of the lanes (lanesChanged())
-	void publishLanes();
 	void watch(AudioItem* item);
 
 	//! Where ticks begin in the period, as the song plays them (audio thread: from play() to the player)
@@ -139,16 +112,12 @@ private:
 	std::size_t m_tickStartCount = 0;
 	std::int64_t m_tickStartsPeriod = -1;
 
-	int m_playingLane = 0;
-	int m_lastLaneCount = 1;
-	int m_lastPlayingLane = 0;
 	bool m_publishPending = false;
 	AudioTrackPlayer* m_player;
 
 	friend class AudioItem;
 	friend class AudioTrackPlayer;
 	friend class ItemSettingsCommand;
-	friend class PlayingLaneCommand;
 };
 
 } // namespace lmms

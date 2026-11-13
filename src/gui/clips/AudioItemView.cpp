@@ -90,8 +90,7 @@ void AudioItemView::paintEvent(QPaintEvent*)
 	if (muted) { background = background.darker(150); }
 	if (isSelected()) { background = background.darker(150); }
 	// A lane not heard: dimmed
-	const auto* track = dynamic_cast<const AudioTrack*>(m_item->getTrack());
-	const bool heard = !track || m_item->lane() == track->playingLane();
+	const bool heard = isOnHeardLane();
 	if (!heard) { background = background.darker(170); }
 	painter.fillRect(rect(), QColor{0, 0, 0});
 	auto gradient = QLinearGradient{0, 0, 0, static_cast<qreal>(height())};
@@ -223,12 +222,6 @@ void AudioItemView::constructContextMenu(QMenu* menu)
 	addStorage(tr("Load into RAM"), AudioItem::Storage::Memory);
 	addStorage(tr("Stream from disk"), AudioItem::Storage::Disk);
 
-	if (track->laneCount() > 1 && m_item->lane() != track->playingLane())
-	{
-		menu->addAction(tr("Hear this lane"), m_item, [track, lane = m_item->lane()] { track->setPlayingLane(lane); });
-		menu->addAction(tr("Comp: use this item on the lane heard"), m_item, [track, item = m_item] { track->compItem(item); });
-	}
-
 	menu->addAction(tr("Reset gain and fades"), m_item, [track, item = m_item] {
 		auto settings = AudioTrack::settingsOf(*item);
 		settings.gainDb = 0.0;
@@ -236,19 +229,6 @@ void AudioItemView::constructContextMenu(QMenu* menu)
 		track->changeItem(item, settings);
 	});
 }
-
-auto AudioItemView::verticalPlace(int contentHeight) const -> std::pair<int, int>
-{
-	const auto* track = dynamic_cast<const AudioTrack*>(m_item->getTrack());
-	const auto lanes = track ? track->laneCount() : 1;
-	if (lanes <= 1) { return {0, contentHeight - 1}; }
-	// Each lane a band across the track, the first on top
-	const auto laneHeight = std::max(contentHeight / lanes, 4);
-	return {m_item->lane() * laneHeight, laneHeight - 1};
-}
-
-
-
 
 auto AudioItemView::pixelsPerMs() const -> double
 {

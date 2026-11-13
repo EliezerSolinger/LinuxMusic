@@ -75,7 +75,8 @@ Clip::Clip(const Clip& other):
 	m_mutedModel(other.m_mutedModel.value(), this, tr( "Mute" )),
 	m_autoResize(other.m_autoResize),
 	m_selectViewOnCreate{other.m_selectViewOnCreate},
-	m_color(other.m_color)
+	m_color(other.m_color),
+	m_lane(other.m_lane)
 {
 	if (getTrack())
 	{
@@ -144,6 +145,17 @@ void Clip::copyStateTo( Clip *src, Clip *dst )
 		gui::getGUI()->automationEditor()->m_editor->updateAfterClipChange();
 	}
 }
+
+void Clip::setLane(int lane)
+{
+	lane = std::max(lane, 0);
+	if (lane == m_lane) { return; }
+	m_lane = lane;
+	emit laneChanged();
+}
+
+
+
 
 bool Clip::hasTrackContainer() const
 {

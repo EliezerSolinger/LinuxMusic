@@ -647,6 +647,50 @@ private slots:
 		delete recorder;
 	}
 
+	void aMidiTakeInALaneLeavesWhatWasThereBelow()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* device = new LoopbackDevice{engine, 256, 256};
+		engine->setAudioDevice(device, false);
+		const auto bar = TimePos::ticksPerBar();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		track->recordArmModel()->setValue(true);
+		track->midiRecordModeModel()->setValue(static_cast<int>(MidiRecorder::Mode::TakeLane));
+		auto* existing = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
+		existing->addNote(Note{TimePos{24}, TimePos{bar + 10}}, false);
+		Engine::projectJournal()->setJournalling(true);
+
+		song->setPlayPos(0, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		auto& recorder = song->midiRecorder();
+		recorder.noteOn(track, 64, 90, bar + 50);
+		recorder.noteOff(track, 64, bar + 74);
+		for (int callback = 0; callback < 10000 && song->heardTick() <= 2 * bar; ++callback) { device->callback(256); }
+		song->stop();
+
+		// What was there a lane down, the take on the lane heard
+		QCOMPARE(existing->lane(), 1);
+		QCOMPARE(track->playingLane(), 0);
+		QCOMPARE(track->laneCount(), 2);
+		auto* take = static_cast<MidiClip*>(nullptr);
+		for (auto* clip : track->getClips()) { if (clip != existing) { take = dynamic_cast<MidiClip*>(clip); } }
+		QVERIFY(take);
+		QCOMPARE(take->lane(), 0);
+		QCOMPARE(take->notes().size(), std::size_t{1});
+		QCOMPARE(existing->notes().size(), std::size_t{1}); // (untouched)
+
+		// One undo takes it all back
+		Engine::projectJournal()->undo();
+		QCOMPARE(track->numOfClips(), 1);
+		QCOMPARE(track->getClip(0)->lane(), 0);
+		QCOMPARE(track->laneCount(), 1);
+
+		const auto guard = engine->requestChangesGuard();
+		delete track;
+	}
+
 	void choosingATakeKeepsThePartOfTheClip()
 	{
 		auto* song = Engine::getSong();

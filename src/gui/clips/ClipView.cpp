@@ -1208,6 +1208,26 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 
 
 
+auto ClipView::verticalPlace(int contentHeight) const -> std::pair<int, int>
+{
+	const auto lanes = m_clip->getTrack() ? m_clip->getTrack()->laneCount() : 1;
+	if (lanes <= 1) { return {0, contentHeight - 1}; }
+	// Each lane a band across the track, the first on top
+	const auto laneHeight = std::max(contentHeight / lanes, 4);
+	return {m_clip->lane() * laneHeight, laneHeight - 1};
+}
+
+
+
+
+auto ClipView::isOnHeardLane() const -> bool
+{
+	return !m_clip->getTrack() || m_clip->lane() == m_clip->getTrack()->playingLane();
+}
+
+
+
+
 void ClipView::moveToTrackUnder(QMouseEvent* me)
 {
 	auto* view = m_trackView->trackContainerView();
@@ -1357,6 +1377,17 @@ void ClipView::contextMenuEvent( QContextMenuEvent * cme )
 		m_clip->getAutoResize() ? tr("Disable auto-resize") : tr("Enable auto-resize"),
 		this, &ClipView::toggleSelectedAutoResize
 	);
+
+	// Lanes: hear this one, or comp this clip onto the one heard
+	if (individualClip && m_clip->getTrack()->laneCount() > 1 && !isOnHeardLane() && !fixedClips())
+	{
+		contextMenu.addSeparator();
+		auto* track = m_clip->getTrack();
+		contextMenu.addAction(tr("Hear this lane"), m_clip, [track, lane = m_clip->lane()] { track->setPlayingLane(lane); });
+		contextMenu.addAction(tr("Comp: use this clip on the lane heard"), m_clip, [track, clip = m_clip] {
+			track->compClip(clip);
+		});
+	}
 
 	constructContextMenu( &contextMenu );
 

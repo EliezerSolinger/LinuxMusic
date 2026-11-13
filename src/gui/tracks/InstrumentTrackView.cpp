@@ -176,6 +176,8 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 		};
 		addMode(tr("Overdub: the notes join what is there"), MidiRecorder::Mode::Overdub);
 		addMode(tr("Replace: what was there where you record goes"), MidiRecorder::Mode::Replace);
+		addMode(tr("Take in a lane: the recording goes on a new lane on top, heard; what was there stays below"),
+			MidiRecorder::Mode::TakeLane);
 		menu.exec(m_recordArmButton->mapToGlobal(where));
 	});
 

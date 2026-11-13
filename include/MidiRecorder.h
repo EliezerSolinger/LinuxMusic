@@ -46,6 +46,9 @@ class Note;
  * - Overdub (the default): the notes go into the clip that holds their place, or into a new clip from the bar they
  *   begin in; what was there stays.
  * - Replace: as overdub, and at the end the notes that were there before, in the recorded stretch, are removed.
+ * - Take in a lane: the clips there were go a lane down, and the recording goes into new clips on the lane heard
+ *   (as an audio track's passes; see Track::insertLanesOnTop()).
+ * The notes go into the clips of the lane heard.
  */
 class LMMS_EXPORT MidiRecorder
 {
@@ -53,7 +56,8 @@ public:
 	enum class Mode
 	{
 		Overdub,
-		Replace
+		Replace,
+		TakeLane
 	};
 
 	//! Starts recording the tracks, from @p fromTick on

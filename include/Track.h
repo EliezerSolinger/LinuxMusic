@@ -292,6 +292,25 @@ public:
 	 */
 	auto folderDepth() const -> int { return m_folderDepth; }
 
+	//! The lane heard (see Clip::lane()): the first unless another is chosen
+	auto playingLane() const -> int { return m_playingLane; }
+	//! Makes @p lane the one heard: one undo step
+	void setPlayingLane(int lane);
+	//! The lanes there are (at least one, and one past the last clip's and the heard one)
+	auto laneCount() const -> int;
+	//! Moves every clip @p count lanes down and makes the first lane the one heard: room on top for a recording's
+	//! passes. Not an undo step of its own: part of the recording's, which keeps the track's state
+	void insertLanesOnTop(int count);
+	/**
+	 * Makes room on @p lane from @p begin to @p end (a new take, a comp): the clips there (but @p keep) are trimmed,
+	 * split around it or removed. Not an undo step of its own
+	 */
+	void clearSpan(int lane, tick_t begin, tick_t end, const Clip* keep = nullptr);
+	//! Comping: a copy of @p clip goes on the lane heard, replacing what it covers there. One undo step
+	void compClip(Clip* clip);
+	//! Without journalling (the commands' and loading's)
+	void applyPlayingLane(int lane);
+
 	//! Sets the folder depth of this track only; see TrackContainer::changeFolderDepth() for user actions
 	void setFolderDepth(int depth);
 
@@ -344,6 +363,11 @@ private:
 	std::optional<QColor> m_color;
 
 	int m_folderDepth = 0;
+	int m_playingLane = 0;
+	int m_lastLaneCount = 1;
+	int m_lastPlayingLane = 0;
+	//! Tells of a change of the lanes (lanesChanged()), if there is one
+	void checkLanes();
 
 	friend class gui::TrackView;
 
@@ -354,6 +378,8 @@ signals:
 	void clipAdded( lmms::Clip * );
 	void colorChanged();
 	void folderDepthChanged();
+	//! The lanes there are, or the one heard, changed
+	void lanesChanged();
 } ;
 
 

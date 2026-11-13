@@ -643,6 +643,8 @@ void MidiClipView::paintEvent( QPaintEvent * )
 	{
 		c = getColorForDisplay( painter.background().color() );
 	}
+	// A lane not heard: dimmed
+	if (!isOnHeardLane()) { c = c.darker(170); }
 
 	// invert the gradient for the background in the B&B editor
 	QLinearGradient lingrad( 0, 0, 0, height() );

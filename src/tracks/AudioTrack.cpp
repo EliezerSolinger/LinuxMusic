@@ -278,38 +278,6 @@ private:
 
 
 
-//! Chooses the lane heard
-class PlayingLaneCommand : public UndoCommand
-{
-public:
-	PlayingLaneCommand(AudioTrack* track, int before, int after)
-		: m_track{track->id()}
-		, m_before{before}
-		, m_after{after}
-	{
-	}
-
-	void apply() override { set(m_after); }
-	void revert() override { set(m_before); }
-	auto text() const -> QString override { return AudioTrack::tr("Choose the lane heard"); }
-
-private:
-	void set(int lane)
-	{
-		if (auto* track = dynamic_cast<AudioTrack*>(Engine::projectJournal()->journallingObject(m_track)))
-		{
-			track->applyPlayingLane(lane);
-		}
-	}
-
-	jo_id_t m_track;
-	int m_before;
-	int m_after;
-};
-
-
-
-
 AudioTrack::AudioTrack(TrackContainer* container)
 	: AudioInputTrack{Track::Type::Audio, container, tr("Audio track")}
 	, m_player{new AudioTrackPlayer{this}}
@@ -320,6 +288,7 @@ AudioTrack::AudioTrack(TrackContainer* container)
 	connect(Engine::getSong(), &Song::tempoChanged, this, &AudioTrack::schedulePublish);
 	connect(&Engine::getSong()->tempoMap(), &TempoMap::changed, this, &AudioTrack::schedulePublish);
 	connect(getMutedModel(), &BoolModel::dataChanged, this, &AudioTrack::schedulePublish);
+	connect(this, &Track::lanesChanged, this, &AudioTrack::schedulePublish);
 	publish();
 }
 
@@ -378,6 +347,7 @@ void AudioTrack::watch(AudioItem* item)
 	connect(item, &Clip::lengthChanged, this, &AudioTrack::schedulePublish);
 	connect(item, &Model::dataChanged, this, &AudioTrack::schedulePublish); // (muted)
 	connect(item, &QObject::destroyed, this, &AudioTrack::schedulePublish);
+	connect(item, &Clip::laneChanged, this, &AudioTrack::schedulePublish);
 	// A recording moved under a tempo map may need another rendering
 	connect(item, &Clip::positionChanged, this, [item] {
 		if (item->isTempoBound()) { Engine::getSong()->requestStretchCheck(); }
@@ -417,19 +387,9 @@ auto AudioTrack::item(std::uint64_t id) const -> AudioItem*
 auto AudioTrack::addItem(const QString& file, const TimePos& position, int lane) -> AudioItem*
 {
 	auto* item = static_cast<AudioItem*>(createClip(position));
-	item->m_lane = std::max(lane, 0);
+	item->setLane(lane);
 	item->setFile(file);
 	return item;
-}
-
-
-
-
-auto AudioTrack::laneCount() const -> int
-{
-	auto count = std::max(1, m_playingLane + 1);
-	for (const auto* item : items()) { count = std::max(count, item->lane() + 1); }
-	return count;
 }
 
 
@@ -466,91 +426,6 @@ void AudioTrack::applySettings(AudioItem* item, const ItemSettings& settings)
 
 
 
-void AudioTrack::setPlayingLane(int lane)
-{
-	lane = std::max(lane, 0);
-	if (lane == m_playingLane) { return; }
-	Engine::projectJournal()->execute(std::make_unique<PlayingLaneCommand>(this, m_playingLane, lane));
-	Engine::getSong()->setModified();
-}
-
-
-
-
-void AudioTrack::insertLanesOnTop(int count)
-{
-	if (count <= 0) { return; }
-	for (auto* item : items()) { item->setLane(item->lane() + count); }
-	applyPlayingLane(0);
-}
-
-
-
-
-void AudioTrack::clearSpan(int lane, tick_t begin, tick_t end, const AudioItem* keep)
-{
-	if (end <= begin) { return; }
-	for (auto* item : items())
-	{
-		if (item == keep || item->lane() != lane) { continue; }
-		const auto itemBegin = item->startPosition().getTicks();
-		const auto itemEnd = item->endPosition().getTicks();
-		if (itemEnd <= begin || itemBegin >= end) { continue; }
-		// Where the recording starts on the song (the file stays where it is under each part)
-		const auto recordingStart = itemBegin + item->startTimeOffset().getTicks();
-		if (itemBegin >= begin && itemEnd <= end)
-		{
-			delete item; // (all under the new take)
-			continue;
-		}
-		if (itemBegin < begin && itemEnd > end)
-		{
-			// Split around it: the part after it is a copy
-			auto* after = static_cast<AudioItem*>(item->clone());
-			after->movePosition(TimePos{end});
-			after->changeLength(TimePos{itemEnd - end});
-			after->setStartTimeOffset(TimePos{recordingStart - end});
-			item->changeLength(TimePos{begin - itemBegin});
-			continue;
-		}
-		if (itemBegin < begin) { item->changeLength(TimePos{begin - itemBegin}); } // (its end under it)
-		else
-		{
-			// Its start under it
-			item->movePosition(TimePos{end});
-			item->changeLength(TimePos{itemEnd - end});
-			item->setStartTimeOffset(TimePos{recordingStart - end});
-		}
-	}
-}
-
-
-
-
-void AudioTrack::compItem(AudioItem* item)
-{
-	if (!item || item->getTrack() != this || item->lane() == m_playingLane) { return; }
-	addJournalCheckPoint();
-	const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
-	auto* copy = static_cast<AudioItem*>(item->clone());
-	copy->setLane(m_playingLane);
-	clearSpan(m_playingLane, copy->startPosition().getTicks(), copy->endPosition().getTicks(), copy);
-	Engine::getSong()->setModified();
-}
-
-
-
-
-void AudioTrack::applyPlayingLane(int lane)
-{
-	m_playingLane = std::max(lane, 0);
-	schedulePublish();
-	emit dataChanged();
-}
-
-
-
-
 void AudioTrack::schedulePublish()
 {
 	// (whatever changed may change the lanes too: told with the list, see publishLanes())
@@ -560,20 +435,6 @@ void AudioTrack::schedulePublish()
 		if (!m_publishPending) { return; }
 		publish();
 	});
-}
-
-
-
-
-void AudioTrack::publishLanes()
-{
-	const auto lanes = laneCount();
-	if (lanes != m_lastLaneCount || m_playingLane != m_lastPlayingLane)
-	{
-		m_lastLaneCount = lanes;
-		m_lastPlayingLane = m_playingLane;
-		emit lanesChanged();
-	}
 }
 
 
@@ -589,7 +450,7 @@ void AudioTrack::publish()
 	auto list = std::make_unique<PlayList>();
 	for (const auto* item : items())
 	{
-		if (item->lane() != m_playingLane || item->isMuted() || item->sample().sampleSize() == 0) { continue; }
+		if (item->lane() != playingLane() || item->isMuted() || item->sample().sampleSize() == 0) { continue; }
 		auto entry = PlayItem{};
 		entry.id = item->id();
 		entry.sample = item->sample();
@@ -635,7 +496,6 @@ void AudioTrack::publish()
 		}
 	}
 	m_player->offer(std::move(list));
-	publishLanes();
 }
 
 
@@ -722,7 +582,6 @@ auto AudioTrack::fromSampleTrack(const QDomElement& sampleTrack) -> std::optiona
 void AudioTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& element, bool)
 {
 	saveAudioSettings(doc, element);
-	element.setAttribute("playinglane", m_playingLane);
 }
 
 
@@ -731,7 +590,6 @@ void AudioTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& eleme
 void AudioTrack::loadTrackSpecificSettings(const QDomElement& element)
 {
 	loadAudioSettings(element);
-	m_playingLane = std::max(element.attribute("playinglane").toInt(), 0);
 	schedulePublish();
 }
 

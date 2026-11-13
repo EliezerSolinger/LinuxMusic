@@ -89,8 +89,7 @@ public:
 	//! The file's length on the song from where the item starts in it, at the tempo now
 	auto fileLength() const -> TimePos;
 
-	// The item's own settings (changed by commands: see AudioTrack)
-	auto lane() const -> int { return m_lane; }
+	// The item's own settings (changed by commands: see AudioTrack); its lane is the clip's
 	auto gainDb() const -> double { return m_gainDb; }
 	auto fadeInMs() const -> double { return m_fadeInMs; }
 	auto fadeOutMs() const -> double { return m_fadeOutMs; }
@@ -126,7 +125,6 @@ signals:
 
 private:
 	//! The setters, for the commands (AudioTrack's)
-	void setLane(int lane);
 	void setGainDb(double gainDb);
 	void setFades(double inMs, double outMs);
 	void setStorage(Storage storage);
@@ -140,7 +138,6 @@ private:
 	Sample m_sample;
 	std::shared_ptr<const SampleThumbnailCache> m_peaks;
 	Storage m_storage = Storage::Automatic;
-	int m_lane = 0;
 	double m_gainDb = 0.0;
 	double m_fadeInMs = DefaultFadeMs;
 	double m_fadeOutMs = DefaultFadeMs;

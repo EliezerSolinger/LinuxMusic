@@ -25,6 +25,8 @@
 
 #include "TrackView.h"
 
+#include <QTimer>
+
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QMouseEvent>
@@ -75,6 +77,10 @@ TrackView::TrackView(Track* track, TrackContainerView* tcv)
 	setFixedHeight( m_track->getHeight() );
 
 	resizeEvent( nullptr );
+
+	// Lanes take room (the subclasses set their own height first: checked once they are made)
+	connect(m_track, &Track::lanesChanged, this, &TrackView::fitLanes);
+	QTimer::singleShot(0, this, &TrackView::fitLanes);
 
 	setAcceptDrops( true );
 	setMouseTracking(true);
@@ -203,6 +209,26 @@ void TrackView::dropEvent( QDropEvent * de )
 		Engine::audioEngine()->doneChangeInModel();
 		de->accept();
 	}
+}
+
+
+
+
+void TrackView::fitLanes()
+{
+	const auto lanes = m_track->laneCount();
+	if (!m_lanesExpanded) { m_singleLaneHeight = height(); }
+	if (lanes > 1)
+	{
+		setFixedHeight(m_singleLaneHeight + (lanes - 1) * LaneHeight);
+		m_lanesExpanded = true;
+	}
+	else if (m_lanesExpanded)
+	{
+		setFixedHeight(m_singleLaneHeight);
+		m_lanesExpanded = false;
+	}
+	m_trackContentWidget.update();
 }
 
 
