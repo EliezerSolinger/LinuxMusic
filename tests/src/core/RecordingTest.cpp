@@ -25,6 +25,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -38,6 +39,7 @@
 #include "MidiRecorder.h"
 #include "ConfigManager.h"
 #include "PathUtil.h"
+#include "PeakCache.h"
 #include "ProjectJournal.h"
 #include "Engine.h"
 #include "SampleClip.h"
@@ -418,6 +420,92 @@ private slots:
 				recordedAt - heardAt);
 			// The sample playback is a frame late (Sample::play's resampler): the take holds what was heard
 			QVERIFY(std::abs(recordedAt - heardAt - 1.0) <= 1.0);
+		}
+	}
+
+	void theWaveformGrowsWhileRecordingAndIsKept()
+	{
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
+		engine->setAudioDevice(device, false);
+
+		// Loop passes, so there are segments of their own
+		const auto bar = TimePos::ticksPerBar();
+		const auto impulsePath = m_directory.filePath("impulse-peaks.wav");
+		writeImpulse(impulsePath, engine->outputSampleRate(), 4000, 0);
+		auto* player = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* clip = new SampleClip{player};
+		clip->setSampleFile(impulsePath);
+		clip->movePosition(TimePos{2 * bar});
+		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
+		recorder->recordArmModel()->setValue(true);
+		recorder->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::Off));
+		auto& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.setLoopPoints(TimePos{bar}, TimePos{3 * bar});
+		timeline.setLoopEnabled(true);
+		const auto cleanUp = qScopeGuard([&] {
+			song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
+			song->stop();
+			const auto guard = engine->requestChangesGuard();
+			delete player;
+			delete recorder;
+		});
+
+		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
+		song->setPlayPos(bar, Song::PlayMode::Song);
+		QVERIFY(song->record());
+		const auto passFrames = 2 * bar * framesPerTick;
+		auto grown = std::vector<std::size_t>{};
+		for (double played = 0; played < 2.5 * passFrames; played += 256)
+		{
+			device->callback(256);
+			if (static_cast<int>(played / 256) % 200 == 0)
+			{
+				QTest::qWait(150); // (the disk thread writes every so often)
+				song->refreshLiveTakes();
+				const auto& live = song->liveTakes();
+				QCOMPARE(live.size(), std::size_t{1});
+				QCOMPARE(live[0].track, static_cast<Track*>(recorder));
+				auto peaks = std::size_t{0};
+				for (const auto& segment : live[0].segments) { peaks += segment.peaks.size(); }
+				grown.push_back(peaks);
+			}
+		}
+		QVERIFY(grown.size() >= 3);
+		QVERIFY(std::is_sorted(grown.begin(), grown.end()));
+		QVERIFY(grown.back() > grown.front());
+		QTest::qWait(150);
+		song->refreshLiveTakes();
+		QVERIFY(song->liveTakes().front().segments.size() >= 2); // a segment for each pass
+		song->stop();
+		song->refreshLiveTakes();
+		QVERIFY(song->liveTakes().empty());
+
+		// Each take's peaks were kept as it was written: the same as built from its file afterwards
+		QCOMPARE(recorder->numOfClips(), 1);
+		const auto* take = dynamic_cast<SampleClip*>(recorder->getClip(0));
+		QVERIFY(take->takes().size() >= 2);
+		for (const auto& file : take->takes())
+		{
+			const auto path = PathUtil::toAbsolute(file);
+			const auto kept = PeakCache::readPeakFile(path);
+			QVERIFY2(kept, qPrintable(file));
+			const auto built = PeakCache::build(path);
+			QVERIFY(built);
+			QCOMPARE(kept->sampleCount(), built->sampleCount());
+			const auto& a = kept->nearestThumbnailForWidth(kept->sampleCount());
+			const auto& b = built->nearestThumbnailForWidth(built->sampleCount());
+			QCOMPARE(a.width(), b.width());
+			auto loudest = 0.f;
+			for (f_cnt_t peak = 0; peak < a.width(); ++peak)
+			{
+				QCOMPARE(a[peak].min, b[peak].min);
+				QCOMPARE(a[peak].max, b[peak].max);
+				loudest = std::max(loudest, a[peak].max);
+			}
+			QVERIFY(loudest > 0.5f); // (the impulse is in it)
 		}
 	}
 

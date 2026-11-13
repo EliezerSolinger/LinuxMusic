@@ -358,6 +358,10 @@ public:
 	//! @returns whether audio is being recorded
 	auto isRecordingAudio() const -> bool { return m_audioRecorder.isRecording(); }
 
+	//! Main thread: the takes being recorded, as their waveform grows (refreshLiveTakes() brings them up to date)
+	auto liveTakes() const -> const std::vector<AudioRecorder::LiveTake>& { return m_liveTakes; }
+	void refreshLiveTakes();
+
 	//! Ends the recording (punch out) while the song plays on; the takes become clips
 	void stopRecording();
 
@@ -550,6 +554,7 @@ private:
 	AudioRecorder m_audioRecorder;
 	bool m_captureUpdatePending = false;
 
+	std::vector<AudioRecorder::LiveTake> m_liveTakes;
 	QString m_unsavedMediaId; //!< names the media folder of the project while it has no file
 	QSet<QString> m_generatedFolders; //!< the folders the program made files in for this project
 	std::unique_ptr<QLockFile> m_unsavedMediaLock; //!< held while this instance uses its unsaved media folder

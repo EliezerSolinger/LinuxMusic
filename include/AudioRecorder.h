@@ -36,6 +36,7 @@
 #include "AudioBufferView.h"
 #include "AudioInput.h"
 #include "LmmsTypes.h"
+#include "PeakCache.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -72,12 +73,15 @@ public:
 		QString path; //!< the WAV file to write
 	};
 
+	using Peak = PeakBuilder::Peak;
+
 	//! A continuous stretch of the song recorded into one file: the whole take, or a pass of a loop
 	struct Segment
 	{
 		QString path;
 		std::int64_t startTick = 0; //!< where it begins on the timeline
 		std::int64_t frames = 0; //!< frames in the file
+		std::vector<Peak> peaks; //!< its waveform, as PeakCache keeps it (made while it was written)
 	};
 
 	//! What was recorded for one track: a segment each time the song went on from somewhere else (a loop's pass)
@@ -114,6 +118,25 @@ public:
 
 	auto isRecording() const -> bool { return m_session.load(std::memory_order_acquire) != nullptr; }
 
+	//! What is being recorded, as the waveform grows (docs/plano-gravacao.md, "Cache de picos")
+	struct LiveSegment
+	{
+		std::int64_t startTick = 0;
+		std::int64_t frames = 0;
+		std::vector<Peak> peaks; //!< complete peaks (of PeakCache::FramesPerPeak frames)
+		Peak partial; //!< the frames after them
+	};
+	struct LiveTake
+	{
+		Track* track = nullptr;
+		std::vector<LiveSegment> segments;
+	};
+	/**
+	 * Main thread, while recording: brings @p live up to date with what was written to disk since, adding only
+	 * the new peaks (@p live is the caller's, kept from one call to the next; empty at the start of a recording)
+	 */
+	void updateLive(std::vector<LiveTake>& live) const;
+
 	/**
 	 * Audio thread, once per period while the song plays
 	 * @param capture the input captured for this period (AudioEngine::capture())
@@ -128,6 +151,8 @@ private:
 
 	void diskThread();
 	static auto drain(TakeState& take) -> bool;
+	//! Disk thread: frames @p data of @p frames frames were written to the take's segment
+	static void noteWritten(TakeState& take, const float* data, std::int64_t frames);
 
 	std::atomic<Session*> m_session = nullptr;
 	std::unique_ptr<Session> m_ownedSession; //!< the session the main thread made (m_session points to it)

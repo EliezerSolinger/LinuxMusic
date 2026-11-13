@@ -309,6 +309,14 @@ Feito depois (mesma noite e manhã de 13/11):
   - `ProjectMediaTest` cobre isso, inclusive abrir outro projeto (que troca o nome do arquivo antes de fechar o
     atual) e um projeto que não abre (nada é limpo).
 
+- **Forma de onda ao vivo** (13/11): a thread de disco do gravador faz os picos de cada take enquanto o escreve
+  (como o `PeakCache` faria lendo o arquivo); a faixa mostra o take crescendo em vermelho, do início ao cursor, com
+  a forma de onda (`LiveTakeOverlay`, 20 vezes por segundo, copiando só os picos novos). Ao parar, os picos viram o
+  arquivo de picos de cada passada, idênticos aos feitos do arquivo depois (`RecordingTest`), e o clipe aparece já
+  desenhado. Cada passada de um loop entra na lista de arquivos gerados.
+- **Driver Dummy com duas entradas silenciosas**, para experimentar a gravação sem placa de som
+  (`LINUXMUSIC_DUMMY_INPUT_TONE=1` toca um tom nelas, para desenvolvimento). Não quando o motor só renderiza.
+
 Por fazer, na ordem do plano:
 - **Mapa de tempo:** o desfazer das edições dos marcadores; a fórmula de compasso por marcador.
 - **Edição e interface:**
@@ -317,7 +325,6 @@ Por fazer, na ordem do plano:
   - fades automáticos;
   - ganho por item;
   - a faixa nova (`AudioTrack`) e o cabeçalho de duas linhas.
-- **Mídia:** a forma de onda crescendo ao vivo durante a gravação.
 - **Etapa 1:**
   - o motor sem o mutex do período;
   - o transporte com contador de frames.

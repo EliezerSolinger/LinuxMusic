@@ -280,6 +280,21 @@ void PeakCache::deliver()
 
 
 
+void PeakCache::store(const QString& fileName, std::vector<PeakBuilder::Peak> peaks, std::int64_t frames)
+{
+	if (peaks.empty() || frames <= 0) { return; }
+	const auto file = absolute(fileName);
+	writePeakFile(file, peaks, frames);
+	auto cache = std::make_shared<const SampleThumbnailCache>(std::move(peaks), static_cast<f_cnt_t>(frames));
+	m_known[file] = cache;
+	m_holding = cache; // (until a clip takes it)
+	emit ready(file);
+	m_holding.reset();
+}
+
+
+
+
 void PeakCache::forget(const QString& fileName)
 {
 	const auto file = absolute(fileName);

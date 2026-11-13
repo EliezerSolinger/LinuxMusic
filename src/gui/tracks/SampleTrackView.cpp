@@ -24,6 +24,8 @@
 
 #include "SampleTrackView.h"
 
+#include "LiveTakeOverlay.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -118,6 +120,9 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	TrackView( _t, tcv )
 {
 	setFixedHeight( 32 );
+
+	// The take growing while this track records
+	new LiveTakeOverlay(this, getTrackContentWidget());
 
 	m_tlb = new TrackLabelButton(this, getTrackSettingsWidget());
 	m_tlb->setCheckable(true);

@@ -102,6 +102,7 @@ SET(LMMS_SRCS
 	gui/tracks/InstrumentTrackView.cpp
 	gui/tracks/PatternTrackView.cpp
 	gui/tracks/SampleTrackView.cpp
+	gui/tracks/LiveTakeOverlay.cpp
 	gui/tracks/TrackChannelControls.cpp
 	gui/tracks/TrackContentWidget.cpp
 	gui/tracks/TrackLabelButton.cpp

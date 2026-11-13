@@ -48,6 +48,7 @@
 #include "PluginBrowser.h"
 #include "Song.h"
 #include "SongEditor.h"
+#include "SampleTrack.h"
 #include "SongMarkers.h"
 #include "TabWidget.h"
 
@@ -300,6 +301,21 @@ GuiApplication::GuiApplication()
 			// (LINUXMUSIC_SETTINGS_TAB=<n> opens it at a tab)
 			QTimer::singleShot(2500, m_mainWindow, [this] {
 				m_mainWindow->showSettingsPage(qEnvironmentVariableIntValue("LINUXMUSIC_SETTINGS_TAB"));
+			});
+		}
+		if (screenshotAction == "recording")
+		{
+			// An armed sample track recording its input (with the Dummy driver and LINUXMUSIC_DUMMY_INPUT_TONE=1,
+			// a tone), the screenshot taken while it records
+			QTimer::singleShot(1500, m_mainWindow, [] {
+				auto* song = Engine::getSong();
+				auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+				if (!track) { return; }
+				track->setInput({AudioInput::Source::Hardware, 0, 2});
+				track->monitorModel()->setValue(static_cast<int>(SampleTrack::MonitorMode::Off));
+				track->recordArmModel()->setValue(true);
+				song->setPlayPos(TimePos::ticksPerBar(), Song::PlayMode::Song);
+				QTimer::singleShot(500, song, [song] { song->record(); });
 			});
 		}
 		if (screenshotAction == "regions")

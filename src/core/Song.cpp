@@ -58,6 +58,7 @@
 #include "PatternTrack.h"
 #include "PianoRoll.h"
 #include "ProjectJournal.h"
+#include "PeakCache.h"
 #include "ProjectMedia.h"
 #include "ProjectNotes.h"
 #include "Scale.h"
@@ -789,6 +790,15 @@ auto Song::mediaDirectoryOf(const QString& projectFile) const -> QString
 
 
 
+void Song::refreshLiveTakes()
+{
+	if (m_audioRecorder.isRecording()) { m_audioRecorder.updateLive(m_liveTakes); }
+	else { m_liveTakes.clear(); }
+}
+
+
+
+
 void Song::noteGenerated(const QString& path)
 {
 	const auto folder = QFileInfo{path}.absolutePath();
@@ -1129,6 +1139,7 @@ auto Song::record() -> bool
 	}
 	if (!requests.empty())
 	{
+		m_liveTakes.clear();
 		const auto error = m_audioRecorder.start(requests, recordingLatency(),
 			Engine::audioEngine()->framesPerPeriod(), Engine::audioEngine()->outputSampleRate(), fromTick);
 		if (!error.isEmpty())
@@ -1194,7 +1205,13 @@ void Song::finishAudioRecording(const std::vector<AudioRecorder::Take>& takes)
 		auto segments = std::vector<AudioRecorder::Segment>{};
 		for (const auto& segment : take.segments)
 		{
-			if (segment.frames > 0) { segments.push_back(segment); }
+			if (segment.frames > 0)
+			{
+				segments.push_back(segment);
+				// Every pass's file is one the program made; its waveform was made while it was written
+				noteGenerated(segment.path);
+				PeakCache::instance().store(segment.path, segment.peaks, segment.frames);
+			}
 			else { QFile::remove(segment.path); }
 		}
 		if (segments.empty()) { continue; }

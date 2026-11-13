@@ -97,6 +97,10 @@ public:
 	//! Forgets the peaks of @p file (it was rewritten) and removes its peak file
 	void forget(const QString& file);
 
+	//! Keeps @p peaks as those of @p file, which has @p frames frames (made as it was written, e.g. a recording),
+	//! in memory and in its peak file
+	void store(const QString& file, std::vector<PeakBuilder::Peak> peaks, std::int64_t frames);
+
 	//! Waits until no peaks are being built (for tests and when quitting)
 	void waitForBuilds();
 

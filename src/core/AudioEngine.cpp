@@ -154,7 +154,7 @@ void AudioEngine::initDevices()
 {
 	bool success_ful = false;
 	if( m_renderOnly ) {
-		m_audioDev = new AudioDummy( success_ful, this );
+		m_audioDev = new AudioDummy(success_ful, this, false);
 		m_audioDevName = AudioDummy::name();
 		m_midiClient = new MidiDummy;
 		m_midiClientName = MidiDummy::name();

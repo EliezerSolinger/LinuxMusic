@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <mutex>
 
 #include <QDir>
 #include <QFile>
@@ -102,6 +103,11 @@ struct AudioRecorder::TakeState
 	SegmentStart nextStart;
 	bool hasNextStart = false;
 	sample_rate_t sampleRate = 0;
+
+	// The waveform, for the main thread while recording (the disk thread's, under liveMutex)
+	mutable std::mutex liveMutex;
+	std::vector<LiveSegment> live;
+	std::size_t inPartial = 0; //!< frames in the current segment's partial peak (disk thread)
 };
 
 
@@ -251,6 +257,7 @@ auto AudioRecorder::stop() -> std::vector<Take>
 					break;
 				}
 				if (!state->segments.empty()) { state->segments.back().frames += frames; }
+				noteWritten(*state, state->diskBuffer.data(), frames);
 				left -= frames;
 			}
 		}
@@ -263,6 +270,16 @@ auto AudioRecorder::stop() -> std::vector<Take>
 		auto take = Take{};
 		take.track = state->track;
 		take.segments = state->segments;
+		{
+			// Each segment's waveform, its partial peak last (as PeakCache::build() makes them)
+			const auto lock = std::lock_guard{state->liveMutex};
+			for (std::size_t segment = 0; segment < take.segments.size() && segment < state->live.size(); ++segment)
+			{
+				auto& live = state->live[segment];
+				take.segments[segment].peaks = std::move(live.peaks);
+				if (live.frames % PeakCache::FramesPerPeak != 0) { take.segments[segment].peaks.push_back(live.partial); }
+			}
+		}
 		take.lostFrames = state->lostFrames.load();
 		take.diskFailed = state->diskFailed.load();
 		takes.push_back(take);
@@ -419,7 +436,12 @@ auto AudioRecorder::drain(TakeState& take) -> bool
 			}
 		}
 		take.firstSegmentOpen = true;
-		take.segments.push_back({segmentPath(take.path, take.segments.size()), take.nextStart.tick, 0});
+		take.segments.push_back({segmentPath(take.path, take.segments.size()), take.nextStart.tick, 0, {}});
+		{
+			const auto lock = std::lock_guard{take.liveMutex};
+			take.live.push_back({take.nextStart.tick, 0, {}, {}});
+		}
+		take.inPartial = 0;
 		take.hasNextStart = false;
 		return true;
 	}
@@ -439,7 +461,69 @@ auto AudioRecorder::drain(TakeState& take) -> bool
 		return false;
 	}
 	take.segments.back().frames += frames;
+	noteWritten(take, take.diskBuffer.data(), frames);
 	return true;
+}
+
+
+
+
+void AudioRecorder::noteWritten(TakeState& take, const float* data, std::int64_t frames)
+{
+	// The peaks as PeakBuilder makes them from the file (PeakCache::build()), so they can be kept as its peaks
+	auto complete = std::vector<Peak>{};
+	const auto lock = std::lock_guard{take.liveMutex};
+	if (take.live.empty()) { return; }
+	auto& segment = take.live.back();
+	auto partial = segment.partial;
+	for (std::int64_t frame = 0; frame < frames; ++frame)
+	{
+		const auto* at = data + frame * take.channels;
+		const auto value = take.channels == 1 ? at[0] : (at[0] + at[1]) / 2.f;
+		partial.min = std::min(partial.min, value);
+		partial.max = std::max(partial.max, value);
+		if (++take.inPartial == static_cast<std::size_t>(PeakCache::FramesPerPeak))
+		{
+			complete.push_back(partial);
+			partial = Peak{};
+			take.inPartial = 0;
+		}
+	}
+	segment.peaks.insert(segment.peaks.end(), complete.begin(), complete.end());
+	segment.partial = partial;
+	segment.frames += frames;
+}
+
+
+
+
+void AudioRecorder::updateLive(std::vector<LiveTake>& live) const
+{
+	const auto* session = m_ownedSession.get();
+	if (!session) { return; }
+	if (live.size() != session->takes.size())
+	{
+		live.assign(session->takes.size(), {});
+		for (std::size_t index = 0; index < live.size(); ++index) { live[index].track = session->takes[index]->track; }
+	}
+	for (std::size_t index = 0; index < live.size(); ++index)
+	{
+		const auto& take = *session->takes[index];
+		auto& mine = live[index];
+		const auto lock = std::lock_guard{take.liveMutex};
+		mine.segments.resize(take.live.size());
+		for (std::size_t segment = 0; segment < take.live.size(); ++segment)
+		{
+			const auto& theirs = take.live[segment];
+			auto& copy = mine.segments[segment];
+			copy.startTick = theirs.startTick;
+			copy.frames = theirs.frames;
+			copy.partial = theirs.partial;
+			// Only what is new (the peaks only ever grow)
+			copy.peaks.insert(copy.peaks.end(), theirs.peaks.begin() + static_cast<std::ptrdiff_t>(std::min(
+				copy.peaks.size(), theirs.peaks.size())), theirs.peaks.end());
+		}
+	}
 }
 
 
