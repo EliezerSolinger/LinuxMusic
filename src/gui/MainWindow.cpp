@@ -123,13 +123,15 @@ MainWindow::MainWindow() :
 	ConfigManager* confMgr = ConfigManager::inst();
 	bool sideBarOnRight = confMgr->value("ui", "sidebaronright").toInt();
 
-	// The browsers, with tabs on top
+	// The explorers: one for the composition page (instruments, presets, samples, the project's files) and one for
+	// the mixing page (effects), each beside its page
 	m_browserPanel = new BrowserPanel(splitter);
+	m_mixingExplorer = new BrowserPanel(splitter, "mixexplorer");
 
 	emit initProgress(tr("Preparing plugin browser"));
 	m_browserPanel->addBrowser(new PluginBrowser(m_browserPanel), "plugins");
-	m_effectBrowser = new EffectBrowser(m_browserPanel);
-	m_browserPanel->addBrowser(m_effectBrowser, "effects");
+	m_effectBrowser = new EffectBrowser(m_mixingExplorer);
+	m_mixingExplorer->addBrowser(m_effectBrowser, "effects");
 	emit initProgress(tr("Preparing file browsers"));
 
 	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Favorites, ConfigManager::inst()->favoriteItems().join("*"),
@@ -150,20 +152,22 @@ MainWindow::MainWindow() :
 		embed::getIconPixmap("preset_file"), m_browserPanel, false,
 		confMgr->userPresetsDir(), confMgr->factoryPresetsDir()), "presets");
 
-	// The home folder and the drives (volumes on macOS) in one tab, each as a top-level folder
-	QStringList filesRoots{QDir::homePath()};
-#ifdef LMMS_BUILD_APPLE
-	filesRoots += "/Volumes";
-#else
-	for (const QFileInfo& drive : QDir::drives())
-	{
-		filesRoots += drive.absolutePath();
-	}
-#endif
-	m_browserPanel->addBrowser(new FileBrowser(FileBrowser::Type::Normal, filesRoots.join("*"),
-		FileItem::defaultFilters(), tr("Files"), embed::getIconPixmap("computer"), m_browserPanel, true), "files");
+	// The project's folder (where the project file is, with its recordings): the files it uses are there, with
+	// relative paths, rather than anywhere on the computer
+	m_projectFiles = new FileBrowser(FileBrowser::Type::Normal, QString{}, FileItem::defaultFilters(),
+		tr("Project files"), embed::getIconPixmap("project_folder"), m_browserPanel);
+	m_browserPanel->addBrowser(m_projectFiles, "projectfiles");
+	const auto followProject = [this] {
+		const auto file = Engine::getSong()->projectFileName();
+		m_projectFiles->setDirectories(file.isEmpty() ? QString{} : QFileInfo{file}.absolutePath());
+	};
+	connect(Engine::getSong(), &Song::projectFileNameChanged, this, followProject);
+	connect(Engine::getSong(), &Song::projectLoaded, this, followProject);
+	followProject();
 
 	m_browserPanel->restoreState();
+	m_mixingExplorer->restoreState();
+	m_mixingExplorer->setPageActive(false);
 
 	m_workspace = new MovableQMdiArea(splitter);
 
@@ -540,6 +544,8 @@ DockPanel* MainWindow::dockWidget(QWidget* w, DockArea area, const QString& titl
 void MainWindow::showPage(Page page)
 {
 	m_pages->setCurrentIndex(page == Page::Mixing ? 1 : 0);
+	m_browserPanel->setPageActive(page == Page::Composition);
+	m_mixingExplorer->setPageActive(page == Page::Mixing);
 	(page == Page::Mixing ? m_mixingButton : m_compositionButton)->setChecked(true);
 	if (page == Page::Mixing) { getGUI()->mixerView()->setFocus(); }
 	else { refocus(); }
@@ -1124,7 +1130,8 @@ void MainWindow::toggleSongEditorWin()
 
 void MainWindow::toggleBrowser()
 {
-	m_browserPanel->setShown(!m_browserPanel->isVisible());
+	auto* explorer = page() == Page::Mixing ? m_mixingExplorer : m_browserPanel;
+	explorer->setShown(!explorer->isShown());
 }
 
 
@@ -1207,7 +1214,7 @@ void MainWindow::updateViewMenu()
 	auto browserAction = m_viewMenu->addAction(embed::getIconPixmap("folder"), tr("Browser") + "\tCtrl+8",
 		this, SLOT(toggleBrowser()));
 	browserAction->setCheckable(true);
-	browserAction->setChecked(m_browserPanel->isVisible());
+	browserAction->setChecked((page() == Page::Mixing ? m_mixingExplorer : m_browserPanel)->isShown());
 
 	m_viewMenu->addSeparator();
 	
@@ -1557,8 +1564,8 @@ void MainWindow::autoSave()
 
 void MainWindow::showEffectsExplorer()
 {
-	m_browserPanel->setShown(true);
-	m_browserPanel->select(m_browserPanel->indexOf("effects"));
+	showPage(Page::Mixing);
+	m_mixingExplorer->setShown(true);
 	m_effectBrowser->focusSearch();
 }
 

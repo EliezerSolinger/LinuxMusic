@@ -95,10 +95,6 @@ EffectBrowser::EffectBrowser(QWidget* parent) :
 	layout->setContentsMargins(5, 5, 5, 5);
 	layout->setSpacing(5);
 
-	auto hint = new QLabel(tr("Drag an effect onto a mixer channel or its effects, or double-click it to add it to "
-		"the selected mixer channel."), view);
-	hint->setWordWrap(true);
-
 	auto searchBar = m_search = new QLineEdit(view);
 	searchBar->setPlaceholderText(tr("Search"));
 	searchBar->setClearButtonEnabled(true);
@@ -120,7 +116,6 @@ EffectBrowser::EffectBrowser(QWidget* parent) :
 		if (auto effect = EffectSelectDialog::instantiateDragged(data, &chain)) { chain.appendEffect(std::move(effect)); }
 	});
 
-	layout->addWidget(hint);
 	layout->addWidget(searchBar);
 	layout->addWidget(m_tree, 1);
 

@@ -63,13 +63,6 @@ PluginBrowser::PluginBrowser( QWidget * _parent ) :
 	view_layout->setSpacing( 5 );
 
 
-	auto hint = new QLabel( tr( "Drag an instrument "
-					"into either the Song Editor, the "
-					"Pattern Editor or an "
-					"existing instrument track." ),
-								m_view );
-	hint->setWordWrap( true );
-
 	auto searchBar = new QLineEdit(m_view);
 	searchBar->setPlaceholderText(tr("Search"));
 	searchBar->setMaxLength(64);
@@ -85,7 +78,6 @@ PluginBrowser::PluginBrowser( QWidget * _parent ) :
 	connect( searchBar, SIGNAL( textEdited( const QString& ) ),
 			this, SLOT( onFilterChanged( const QString& ) ) );
 
-	view_layout->addWidget( hint );
 	view_layout->addWidget( searchBar );
 	view_layout->addWidget( m_descTree );
 

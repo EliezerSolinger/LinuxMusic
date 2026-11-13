@@ -81,6 +81,9 @@ public:
 
 	~FileBrowser() override = default;
 
+	//! Shows @p directories (split with '*') from now on
+	void setDirectories(const QString& directories);
+
 	static QDir::Filters dirFilters() { return QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden; }
 	static QDir::SortFlags sortFlags() { return QDir::LocaleAware | QDir::DirsFirst | QDir::Name | QDir::IgnoreCase; }
 
@@ -88,6 +91,10 @@ private slots:
 	void reloadTree();
 	void expandItems(const QList<QString>& expandedDirs, QTreeWidgetItem* item = nullptr);
 	void giveFocusToFilter();
+
+protected:
+	//! Read again each time it is shown (the explorer has no reload button)
+	void showEvent(QShowEvent* event) override;
 
 private:
 	void keyPressEvent( QKeyEvent * ke ) override;
@@ -101,8 +108,6 @@ private:
 	void onSearchMatch(const QString& path);
 	void onSearchStarted();
 	void onSearchFinished();
-
-	void addContentCheckBox();
 
 	FileBrowserTreeWidget * m_fileBrowserTreeWidget;
 	FileBrowserTreeWidget * m_searchTreeWidget;
@@ -118,11 +123,6 @@ private:
 
 	bool m_dirsAsItems;
 
-	QCheckBox* m_showUserContent = nullptr;
-	QCheckBox* m_showFactoryContent = nullptr;
-	QCheckBox* m_showHiddenContent = nullptr;
-
-	QBoxLayout *filterWidgetLayout = nullptr;
 	QBoxLayout *hiddenWidgetLayout = nullptr;
 	QBoxLayout *outerLayout = nullptr;
 	QString m_userDir;

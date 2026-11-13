@@ -49,6 +49,7 @@ namespace gui
 
 class BrowserPanel;
 class EffectBrowser;
+class FileBrowser;
 class DockPanel;
 class PluginView;
 class ToolButton;
@@ -261,6 +262,8 @@ private:
 	QTabWidget* m_rightDock;
 	BrowserPanel* m_browserPanel = nullptr;
 	EffectBrowser* m_effectBrowser = nullptr;
+	BrowserPanel* m_mixingExplorer = nullptr; //!< the mixing page's explorer (effects)
+	FileBrowser* m_projectFiles = nullptr; //!< the project's folder, in the composition page's explorer
 	QStackedWidget* m_pages = nullptr;
 	QWidget* m_mixingPage = nullptr;
 	QPushButton* m_compositionButton = nullptr;

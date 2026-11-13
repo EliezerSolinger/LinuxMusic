@@ -46,7 +46,8 @@ class BrowserPanel : public QWidget
 {
 	Q_OBJECT
 public:
-	explicit BrowserPanel(QWidget* parent);
+	//! @param key names its settings (which page it shows, whether it is shown)
+	explicit BrowserPanel(QWidget* parent, const QString& key = "browser");
 
 	/**
 	 * Adds a browser as a tab; its own title bar is hidden, since the tab names it.
@@ -62,6 +63,10 @@ public:
 
 	//! Shows or hides the panel and remembers it
 	void setShown(bool shown);
+	//! Whether the user wants it shown (when its page is shown)
+	auto isShown() const -> bool { return m_shown; }
+	//! Its page is the one shown (@p active) or not: it shows when both its page and the user want it
+	void setPageActive(bool active);
 
 	//! Shows browser @p index, and remembers it for the next session if @p remember
 	void select(int index, bool remember = true);
@@ -70,9 +75,11 @@ private:
 	QTabBar* m_header;
 	QButtonGroup* m_buttons;
 	QHBoxLayout* m_buttonRow;
-	QLabel* m_title;
 	QStackedWidget* m_pages;
 	QStringList m_ids;
+	QString m_key;
+	bool m_shown = true;
+	bool m_pageActive = true;
 };
 
 } // namespace lmms::gui

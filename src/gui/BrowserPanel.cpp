@@ -33,18 +33,19 @@
 #include <QVBoxLayout>
 
 #include "ConfigManager.h"
+#include "embed.h"
 #include "SideBarWidget.h"
 
 namespace lmms::gui
 {
 
-BrowserPanel::BrowserPanel(QWidget* parent) :
+BrowserPanel::BrowserPanel(QWidget* parent, const QString& key) :
 	QWidget(parent),
 	m_header(new QTabBar(this)),
 	m_buttons(new QButtonGroup(this)),
 	m_buttonRow(new QHBoxLayout),
-	m_title(new QLabel(this)),
-	m_pages(new QStackedWidget(this))
+	m_pages(new QStackedWidget(this)),
+	m_key(key)
 {
 	setObjectName("browserPanel");
 	setMinimumWidth(220);
@@ -53,26 +54,20 @@ BrowserPanel::BrowserPanel(QWidget* parent) :
 	m_header->setObjectName("browserHeader");
 	m_header->setDocumentMode(true);
 	m_header->setExpanding(false);
-	m_header->addTab(tr("Browser"));
+	m_header->addTab(embed::getIconPixmap("explorer"), tr("Explorer"));
 
 	m_buttons->setExclusive(true);
-	// Aligned with the browsers' contents, which have 6 px margins
-	m_buttonRow->setContentsMargins(6, 6, 6, 0);
-	m_buttonRow->setSpacing(3);
+	// The buttons side by side, centered
+	m_buttonRow->setContentsMargins(6, 6, 6, 2);
+	m_buttonRow->setSpacing(0);
 	m_buttonRow->addStretch(1);
-
-	m_title->setObjectName("browserTitle");
-	m_title->setContentsMargins(6, 8, 6, 0);
-	auto titleFont = m_title->font();
-	titleFont.setBold(true);
-	m_title->setFont(titleFont);
+	m_buttonRow->addStretch(1);
 
 	auto layout = new QVBoxLayout(this);
 	layout->setContentsMargins(0, 0, 0, 0);
 	layout->setSpacing(0);
 	layout->addWidget(m_header);
 	layout->addLayout(m_buttonRow);
-	layout->addWidget(m_title);
 	layout->addWidget(m_pages, 1);
 
 	connect(m_buttons, &QButtonGroup::idClicked, this, [this](int index) { select(index); });
@@ -98,7 +93,7 @@ void BrowserPanel::addBrowser(SideBarWidget* browser, const QString& id)
 	button->setToolTip(browser->title());
 	const int index = m_pages->count() - 1;
 	m_buttons->addButton(button, index);
-	m_buttonRow->insertWidget(index, button);
+	m_buttonRow->insertWidget(index + 1, button); // (after the leading stretch)
 
 	if (index == 0) { select(0, false); }
 }
@@ -109,8 +104,8 @@ void BrowserPanel::addBrowser(SideBarWidget* browser, const QString& id)
 void BrowserPanel::restoreState()
 {
 	const auto config = ConfigManager::inst();
-	auto id = config->value("ui", "browserpage");
-	if (id.isEmpty())
+	auto id = config->value("ui", m_key + "page");
+	if (id.isEmpty() && m_key == "browser")
 	{
 		// Settings from before the pages had names, which kept the index in the order of back then
 		const auto before = QStringList{"plugins", "favorites", "projects", "samples", "presets", "files"};
@@ -118,7 +113,8 @@ void BrowserPanel::restoreState()
 	}
 	select(std::max(indexOf(id), 0));
 
-	setVisible(ConfigManager::inst()->value("ui", "browservisible", "1").toInt() != 0);
+	m_shown = config->value("ui", m_key + "visible", "1").toInt() != 0;
+	setVisible(m_shown && m_pageActive);
 }
 
 
@@ -126,8 +122,18 @@ void BrowserPanel::restoreState()
 
 void BrowserPanel::setShown(bool shown)
 {
-	setVisible(shown);
-	ConfigManager::inst()->setValue("ui", "browservisible", shown ? "1" : "0");
+	m_shown = shown;
+	setVisible(m_shown && m_pageActive);
+	ConfigManager::inst()->setValue("ui", m_key + "visible", shown ? "1" : "0");
+}
+
+
+
+
+void BrowserPanel::setPageActive(bool active)
+{
+	m_pageActive = active;
+	setVisible(m_shown && m_pageActive);
 }
 
 
@@ -140,9 +146,7 @@ void BrowserPanel::select(int index, bool remember)
 	m_pages->setCurrentIndex(index);
 	if (auto button = m_buttons->button(index)) { button->setChecked(true); }
 
-	const auto browser = qobject_cast<SideBarWidget*>(m_pages->widget(index));
-	m_title->setText(browser ? browser->title().toUpper() : QString{});
-	if (remember) { ConfigManager::inst()->setValue("ui", "browserpage", m_ids.value(index)); }
+	if (remember) { ConfigManager::inst()->setValue("ui", m_key + "page", m_ids.value(index)); }
 }
 
 

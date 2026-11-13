@@ -91,9 +91,7 @@ FileBrowser::FileBrowser(Type type, const QString& directories, const QString& f
 	, m_userDir(userDir)
 	, m_factoryDir(factoryDir)
 {
-	setWindowTitle( tr( "Browser" ) );
-
-	addContentCheckBox();
+	setWindowTitle(tr("Explorer"));
 
 	auto searchWidget = new QWidget(contentParent());
 	searchWidget->setFixedHeight( 24 );
@@ -112,13 +110,8 @@ FileBrowser::FileBrowser(Type type, const QString& directories, const QString& f
 	connect(&m_searchJob, &FileSearchJob::finished, this, &FileBrowser::onSearchFinished, Qt::QueuedConnection);
 	connect(&m_searchJob, &FileSearchJob::foundMatch, this, &FileBrowser::onSearchMatch, Qt::QueuedConnection);
 
-	auto reload_btn = new QPushButton(embed::getIconPixmap("reload"), QString(), searchWidget);
-	reload_btn->setToolTip( tr( "Refresh list" ) );
-	connect( reload_btn, SIGNAL(clicked()), this, SLOT(reloadTree()));
-
-	searchWidgetLayout->addWidget( m_filterEdit );
-	searchWidgetLayout->addSpacing( 5 );
-	searchWidgetLayout->addWidget( reload_btn );
+	// Only the search field: the list is read again each time it is shown
+	searchWidgetLayout->addWidget(m_filterEdit);
 
 	addContentWidget( searchWidget );
 
@@ -151,65 +144,6 @@ FileBrowser::FileBrowser(Type type, const QString& directories, const QString& f
 	show();
 }
 
-void FileBrowser::addContentCheckBox()
-{
-	// user dir and factory dir checkboxes will display individually depending on whether they are empty.
-	const bool user_checkbox = !m_userDir.isEmpty();
-	const bool factory = !m_factoryDir.isEmpty();
-
-	auto filterWidget = new QWidget(contentParent());
-
-	outerLayout = new QBoxLayout(QBoxLayout::Direction::TopToBottom, filterWidget);
-	outerLayout->setSpacing(0);
-
-	if (user_checkbox || factory){
-		filterWidgetLayout = new QBoxLayout(QBoxLayout::Direction::LeftToRight);
-		filterWidgetLayout->setContentsMargins(0, 0, 0, 0);
-		filterWidgetLayout->setSpacing(0);
-
-		outerLayout->addLayout(filterWidgetLayout);
-	}
-
-	hiddenWidgetLayout = new QBoxLayout(QBoxLayout::Direction::LeftToRight);
-	hiddenWidgetLayout->setContentsMargins(0, 0, 0, 0);
-	hiddenWidgetLayout->setSpacing(0);
-
-	outerLayout->addLayout(hiddenWidgetLayout);
-
-	auto configCheckBox = [this](QBoxLayout* boxLayout, QCheckBox* box, Qt::CheckState checkState)
-	{
-		box->setCheckState(checkState);
-
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 7, 0))
-		connect(box, &QCheckBox::checkStateChanged, this, &FileBrowser::reloadTree);
-#else
-		connect(box, &QCheckBox::stateChanged, this, &FileBrowser::reloadTree);
-#endif
-
-		boxLayout->addWidget(box);
-	};
-
-	// Short labels in one row, so that they fit in a narrow browser panel; the tooltips say more
-	if (user_checkbox) {
-		m_showUserContent = new QCheckBox(tr("User"));
-		m_showUserContent->setToolTip(tr("Show your own files"));
-		configCheckBox(hiddenWidgetLayout, m_showUserContent, Qt::Checked);
-	}
-
-	if (factory) {
-		m_showFactoryContent = new QCheckBox(tr("Factory"));
-		m_showFactoryContent->setToolTip(tr("Show the files that come with LinuxMusic"));
-		configCheckBox(hiddenWidgetLayout, m_showFactoryContent, Qt::Checked);
-	}
-
-	m_showHiddenContent = new QCheckBox(tr("Hidden"));
-	m_showHiddenContent->setToolTip(tr("Show hidden files"));
-	configCheckBox(hiddenWidgetLayout, m_showHiddenContent, Qt::Unchecked);
-	hiddenWidgetLayout->setSpacing(8);
-	hiddenWidgetLayout->addStretch(1);
-
-	addContentWidget(filterWidget);
-}
 
 void FileBrowser::saveDirectoriesStates()
 {	
@@ -230,13 +164,10 @@ void FileBrowser::onSearch(const QString& filter)
 		return;
 	}
 
-	auto directories = m_directories.split('*');
-	if (m_showUserContent && !m_showUserContent->isChecked()) { directories.removeAll(m_userDir); }
-	if (m_showFactoryContent && !m_showFactoryContent->isChecked()) { directories.removeAll(m_factoryDir); }
+	const auto directories = m_directories.isEmpty() ? QStringList{} : m_directories.split('*');
 	if (directories.isEmpty()) { return; }
 
-	auto directoryFilters = QDir::AllEntries | QDir::NoDotAndDotDot;
-	if (m_showHiddenContent) { directoryFilters |= QDir::Hidden; }
+	const auto directoryFilters = QDir::AllEntries | QDir::NoDotAndDotDot;
 
 	const auto searchTask = FileSearchJob::Task{.filter = filter,
 		.paths = directories,
@@ -269,6 +200,19 @@ void FileBrowser::onSearchFinished()
 	m_searchIndicator->setRange(0, 1);
 }
 
+void FileBrowser::setDirectories(const QString& directories)
+{
+	if (directories == m_directories) { return; }
+	m_directories = directories;
+	reloadTree();
+}
+
+void FileBrowser::showEvent(QShowEvent* event)
+{
+	SideBarWidget::showEvent(event);
+	if (m_filterEdit->text().isEmpty()) { reloadTree(); }
+}
+
 void FileBrowser::reloadTree()
 {
 	if (m_filterEdit->text().isEmpty())
@@ -279,16 +223,6 @@ void FileBrowser::reloadTree()
 	m_fileBrowserTreeWidget->clear();
 
 	auto paths = m_directories.isEmpty() ? QStringList{} : m_directories.split('*');
-
-	if (m_showUserContent && !m_showUserContent->isChecked())
-	{
-		paths.removeAll(m_userDir);
-	}
-
-	if (m_showFactoryContent && !m_showFactoryContent->isChecked())
-	{
-		paths.removeAll(m_factoryDir);
-	}
 
 	switch (m_type)
 	{
@@ -389,7 +323,7 @@ void FileBrowser::addItems(const QString & path )
 	for (const auto& entry : entries)
 	{
 		QString fileName = entry.fileName();
-		if (entry.isHidden() && m_showHiddenContent && !m_showHiddenContent->isChecked()) continue;
+		if (entry.isHidden()) { continue; }
 		if (entry.isDir())
 		{
 			// Merge dir's together

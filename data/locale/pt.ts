@@ -3697,6 +3697,34 @@ Este chip foi utilizado no computador Commodore 64.</translation>
         <source>Solo</source>
         <translation>Solo</translation>
     </message>
+    <message>
+        <source>Effects insert point</source>
+        <translation>Ponto de inserção dos efeitos</translation>
+    </message>
+    <message>
+        <source>Pre gain</source>
+        <translation>Antes do ganho</translation>
+    </message>
+    <message>
+        <source>Post gain</source>
+        <translation>Depois do ganho</translation>
+    </message>
+    <message>
+        <source>Post filter</source>
+        <translation>Depois dos filtros</translation>
+    </message>
+    <message>
+        <source>Post dynamics</source>
+        <translation>Depois da dinâmica</translation>
+    </message>
+    <message>
+        <source>Post EQ</source>
+        <translation>Depois da EQ</translation>
+    </message>
+    <message>
+        <source>Pre pan</source>
+        <translation>Antes do pan</translation>
+    </message>
 </context>
 <context>
     <name>lmms::MixerRoute</name>
@@ -8276,6 +8304,10 @@ Por favor certifique que você tem permissão para gravar o aquivo e o diretóri
         <source>Show hidden files</source>
         <translation>Mostrar arquivos ocultos</translation>
     </message>
+    <message>
+        <source>Explorer</source>
+        <translation>Explorador</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::FileBrowserTreeWidget</name>
@@ -11060,6 +11092,14 @@ Por favor visite http://lmms.sf.net/wiki para ter acesso a mais infromações so
         <source>All file types</source>
         <translation>Todos os tipos de arquivos</translation>
     </message>
+    <message>
+        <source>Project files</source>
+        <translation>Arquivos do projeto</translation>
+    </message>
+    <message>
+        <source>Save current project</source>
+        <translation>Salvar o projeto</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::MalletsInstrumentView</name>
@@ -11831,6 +11871,54 @@ Aviso: Esta operação não pode ser desfeita.</translation>
         <source>Don&apos;t ask again</source>
         <translation>Não perguntar novamente</translation>
     </message>
+    <message>
+        <source>ATK</source>
+        <translation>ATK</translation>
+    </message>
+    <message>
+        <source>Compressor attack</source>
+        <translation>Ataque do compressor</translation>
+    </message>
+    <message>
+        <source>Compressor attack:</source>
+        <translation>Ataque do compressor:</translation>
+    </message>
+    <message>
+        <source>ATK: the fastest attack the model allows, its usual one, or the slowest</source>
+        <translation>ATK: o ataque mais rápido que o modelo permite, o usual dele, ou o mais lento</translation>
+    </message>
+    <message>
+        <source>REL</source>
+        <translation>REL</translation>
+    </message>
+    <message>
+        <source>Compressor release</source>
+        <translation>Release do compressor</translation>
+    </message>
+    <message>
+        <source>Compressor release:</source>
+        <translation>Release do compressor:</translation>
+    </message>
+    <message>
+        <source>REL: %1 (%2)</source>
+        <translation>REL: %1 (%2)</translation>
+    </message>
+    <message>
+        <source>Input trim</source>
+        <translation>Trim de entrada</translation>
+    </message>
+    <message>
+        <source>Input trim:</source>
+        <translation>Trim de entrada:</translation>
+    </message>
+    <message>
+        <source>Input trim, clean, before the gain: off all the way to the left, up to +24 dB</source>
+        <translation>Trim de entrada, limpo, antes do ganho: desligado todo à esquerda, até +24 dB</translation>
+    </message>
+    <message>
+        <source>Gain: muted to the left, 0 dB at a quarter, up to +60 dB to the right, into the gain stage</source>
+        <translation>Ganho: mudo à esquerda, 0 dB a um quarto, até +60 dB à direita, para o estágio de ganho</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::MixerView</name>
@@ -11838,6 +11926,18 @@ Aviso: Esta operação não pode ser desfeita.</translation>
         <location filename="../../src/gui/MixerView.cpp" line="72"/>
         <source>Mixer</source>
         <translation>Mixer</translation>
+    </message>
+    <message>
+        <source>FX</source>
+        <translation>FX</translation>
+    </message>
+    <message>
+        <source>Where the effects go in the channel's signal path (in digital mode, every point but Pre pan is before the fader)</source>
+        <translation>Onde os efeitos entram no caminho do sinal do canal (no modo digital, todos os pontos menos Antes do pan ficam antes do fader)</translation>
+    </message>
+    <message>
+        <source>Effects insert point</source>
+        <translation>Ponto de inserção dos efeitos</translation>
     </message>
 </context>
 <context>
@@ -16400,6 +16500,100 @@ Latency: %2 ms</source>
         <location filename="../../plugins/ZynAddSubFx/ZynAddSubFx.cpp" line="534"/>
         <source>Show GUI</source>
         <translation>Mostrar GUI</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::BrowserPanel</name>
+    <message>
+        <source>Explorer</source>
+        <translation>Explorador</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::TempoRenderController</name>
+    <message>
+        <source>Render recordings</source>
+        <translation>Renderizar gravações</translation>
+    </message>
+    <message numerus="yes">
+        <source>The new tempo needs %n recorded item(s) rendered again from their originals.</source>
+        <translation>
+            <numerusform>O novo tempo precisa renderizar %n item gravado de novo, a partir do original.</numerusform>
+            <numerusform>O novo tempo precisa renderizar %n itens gravados de novo, a partir dos originais.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n recorded item(s) no longer play at the song's tempo and need to be rendered again.</source>
+        <translation>
+            <numerusform>%n item gravado não toca mais no tempo da música e precisa ser renderizado de novo.</numerusform>
+            <numerusform>%n itens gravados não tocam mais no tempo da música e precisam ser renderizados de novo.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>It takes about %n second(s).</source>
+        <translation>
+            <numerusform>Leva cerca de %n segundo.</numerusform>
+            <numerusform>Leva cerca de %n segundos.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>This build has no Rubber Band: the items are resampled, which changes their pitch.</source>
+        <translation>Esta versão não tem a Rubber Band: os itens são reamostrados, o que muda o tom.</translation>
+    </message>
+    <message>
+        <source>Render</source>
+        <translation>Renderizar</translation>
+    </message>
+    <message>
+        <source>Cancel (back to %1 BPM)</source>
+        <translation>Cancelar (volta a %1 BPM)</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Cancelar</translation>
+    </message>
+    <message>
+        <source>Rendering recordings</source>
+        <translation>Renderizando as gravações</translation>
+    </message>
+    <message>
+        <source>Item %1 of %2: %3</source>
+        <translation>Item %1 de %2: %3</translation>
+    </message>
+    <message>
+        <source>Cancelling…</source>
+        <translation>Cancelando…</translation>
+    </message>
+    <message>
+        <source>Rendering failed</source>
+        <translation>A renderização falhou</translation>
+    </message>
+    <message>
+        <source>The recordings could not be rendered: %1</source>
+        <translation>Não foi possível renderizar as gravações: %1</translation>
+    </message>
+</context>
+<context>
+    <name>TimeStretcher</name>
+    <message>
+        <source>The recording could not be read again.</source>
+        <translation>Não foi possível ler a gravação de novo.</translation>
+    </message>
+    <message>
+        <source>The rendering could not be written.</source>
+        <translation>Não foi possível gravar a renderização.</translation>
+    </message>
+    <message>
+        <source>The recording's timing is not valid.</source>
+        <translation>O timing da gravação não é válido.</translation>
+    </message>
+    <message>
+        <source>The recording %1 could not be opened.</source>
+        <translation>Não foi possível abrir a gravação %1.</translation>
+    </message>
+    <message>
+        <source>The rendering %1 could not be created.</source>
+        <translation>Não foi possível criar a renderização %1.</translation>
     </message>
 </context>
 </TS>
