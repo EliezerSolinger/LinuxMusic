@@ -46,19 +46,24 @@ public:
 	auto createView() -> gui::EffectControlDialog* override;
 	auto controlCount() -> int override { return 2; }
 
-	//! Loads @p path as the impulse response; @returns an error, or nothing
+	//! Loads @p path as the impulse response (empty: none); @returns an error, or nothing
 	auto setImpulseResponse(const QString& path) -> QString;
 	auto impulseResponse() const -> const QString& { return m_impulseResponse; }
+	//! Loads @p path as the amp model (.nam; empty: none); @returns an error, or nothing
+	auto setAmpModel(const QString& path) -> QString;
+	auto ampModel() const -> const QString& { return m_ampModel; }
 
 	FloatModel m_inputModel;	//!< dB
 	FloatModel m_outputModel;	//!< dB
 
 signals:
 	void impulseResponseChanged();
+	void ampModelChanged();
 
 private:
 	AmpAndIrEffect* m_effect;
 	QString m_impulseResponse;
+	QString m_ampModel;
 };
 
 
@@ -72,9 +77,12 @@ public:
 	explicit AmpAndIrControlDialog(AmpAndIrControls* controls);
 
 private:
-	void choose();
+	void chooseImpulseResponse();
+	void chooseAmpModel();
+	void warn(const QString& error);
 	AmpAndIrControls* m_controls;
 	QLabel* m_name;
+	QLabel* m_ampName;
 };
 
 } // namespace gui

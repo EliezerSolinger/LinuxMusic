@@ -54,10 +54,19 @@ AmpAndIrControls::AmpAndIrControls(AmpAndIrEffect* effect) :
 
 auto AmpAndIrControls::setImpulseResponse(const QString& path) -> QString
 {
-	const auto error = m_effect->loadImpulseResponse(path);
-	if (!error.isEmpty()) { return error; }
-	m_impulseResponse = PathUtil::toShortestRelative(PathUtil::toAbsolute(path));
+	if (path.isEmpty()) { m_effect->clearImpulseResponse(); }
+	else if (const auto error = m_effect->loadImpulseResponse(path); !error.isEmpty()) { return error; }
+	m_impulseResponse = path.isEmpty() ? QString{} : PathUtil::toShortestRelative(PathUtil::toAbsolute(path));
 	emit impulseResponseChanged();
+	return {};
+}
+
+
+auto AmpAndIrControls::setAmpModel(const QString& path) -> QString
+{
+	if (const auto error = m_effect->loadAmpModel(path); !error.isEmpty()) { return error; }
+	m_ampModel = path.isEmpty() ? QString{} : PathUtil::toShortestRelative(PathUtil::toAbsolute(path));
+	emit ampModelChanged();
 	return {};
 }
 
@@ -67,6 +76,7 @@ void AmpAndIrControls::saveSettings(QDomDocument& doc, QDomElement& parent)
 	m_inputModel.saveSettings(doc, parent, "input");
 	m_outputModel.saveSettings(doc, parent, "output");
 	parent.setAttribute("ir", m_impulseResponse);
+	parent.setAttribute("nam", m_ampModel);
 }
 
 
@@ -74,9 +84,11 @@ void AmpAndIrControls::loadSettings(const QDomElement& parent)
 {
 	m_inputModel.loadSettings(parent, "input");
 	m_outputModel.loadSettings(parent, "output");
-	if (const auto ir = parent.attribute("ir"); !ir.isEmpty())
+	// (a missing file: reported, the rest of the effect loads)
+	if (const auto error = setAmpModel(parent.attribute("nam")); !error.isEmpty()) { Engine::getSong()->collectError(error); }
+	if (const auto error = setImpulseResponse(parent.attribute("ir")); !error.isEmpty())
 	{
-		if (const auto error = setImpulseResponse(ir); !error.isEmpty()) { Engine::getSong()->collectError(error); }
+		Engine::getSong()->collectError(error);
 	}
 }
 
@@ -96,32 +108,65 @@ AmpAndIrControlDialog::AmpAndIrControlDialog(AmpAndIrControls* controls) :
 {
 	auto layout = new QGridLayout(this);
 	layout->setContentsMargins(8, 8, 8, 8);
+	layout->setHorizontalSpacing(8);
 	auto makeKnob = [this](FloatModel* model, const QString& label, const QString& hint) {
 		auto knob = new Knob(KnobType::Bright26, label, this);
 		knob->setModel(model);
 		knob->setHintText(hint, " dB");
 		return knob;
 	};
+	// IN, then the amp, then the IR, then OUT: the signal's way
 	layout->addWidget(makeKnob(&controls->m_inputModel, tr("IN"), tr("Input gain:")), 0, 0, 2, 1);
+	m_ampName = new QLabel(this);
+	m_ampName->setMinimumWidth(150);
+	layout->addWidget(m_ampName, 0, 1);
+	auto amp = new QPushButton(tr("Amp model..."), this);
+	connect(amp, &QPushButton::clicked, this, &AmpAndIrControlDialog::chooseAmpModel);
+	layout->addWidget(amp, 1, 1);
 	m_name = new QLabel(this);
-	m_name->setMinimumWidth(160);
-	layout->addWidget(m_name, 0, 1);
+	m_name->setMinimumWidth(150);
+	layout->addWidget(m_name, 0, 2);
 	auto choose = new QPushButton(tr("Impulse response..."), this);
-	connect(choose, &QPushButton::clicked, this, &AmpAndIrControlDialog::choose);
-	layout->addWidget(choose, 1, 1);
-	layout->addWidget(makeKnob(&controls->m_outputModel, tr("OUT"), tr("Output gain:")), 0, 2, 2, 1);
+	connect(choose, &QPushButton::clicked, this, &AmpAndIrControlDialog::chooseImpulseResponse);
+	layout->addWidget(choose, 1, 2);
+	layout->addWidget(makeKnob(&controls->m_outputModel, tr("OUT"), tr("Output gain:")), 0, 3, 2, 1);
 	layout->setSizeConstraint(QLayout::SetFixedSize);
 
-	const auto showName = [this] {
+	const auto showNames = [this] {
 		const auto ir = m_controls->impulseResponse();
 		m_name->setText(ir.isEmpty() ? tr("No impulse response") : QFileInfo{ir}.completeBaseName());
+		const auto amp = m_controls->ampModel();
+		m_ampName->setText(amp.isEmpty() ? tr("No amp model") : QFileInfo{amp}.completeBaseName());
 	};
-	connect(controls, &AmpAndIrControls::impulseResponseChanged, this, showName);
-	showName();
+	connect(controls, &AmpAndIrControls::impulseResponseChanged, this, showNames);
+	connect(controls, &AmpAndIrControls::ampModelChanged, this, showNames);
+	showNames();
 }
 
 
-void AmpAndIrControlDialog::choose()
+void AmpAndIrControlDialog::warn(const QString& error)
+{
+	if (!error.isEmpty()) { QMessageBox::warning(this, tr("Amp & IR"), error); }
+}
+
+
+void AmpAndIrControlDialog::chooseAmpModel()
+{
+	auto menu = QMenu{this};
+	menu.addAction(tr("From a file (.nam)..."), this, [this] {
+		const auto path = FileDialog::getOpenFileName(this, tr("Amp model"), QString{},
+			tr("Neural Amp Modeler models (*.nam)"));
+		if (!path.isEmpty()) { warn(m_controls->setAmpModel(path)); }
+	});
+	if (!m_controls->ampModel().isEmpty())
+	{
+		menu.addAction(tr("None"), this, [this] { warn(m_controls->setAmpModel({})); });
+	}
+	menu.exec(QCursor::pos());
+}
+
+
+void AmpAndIrControlDialog::chooseImpulseResponse()
 {
 	// The library that comes with the program, or a file
 	auto menu = QMenu{this};
@@ -132,10 +177,7 @@ void AmpAndIrControlDialog::choose()
 		for (const auto& file : QDir{library.filePath(folder)}.entryInfoList({"*.wav"}, QDir::Files))
 		{
 			sub->addAction(file.completeBaseName(), this, [this, path = file.absoluteFilePath()] {
-				if (const auto error = m_controls->setImpulseResponse(path); !error.isEmpty())
-				{
-					QMessageBox::warning(this, tr("Impulse response"), error);
-				}
+				warn(m_controls->setImpulseResponse(path));
 			});
 		}
 	}
@@ -143,12 +185,12 @@ void AmpAndIrControlDialog::choose()
 	menu.addAction(tr("From a file..."), this, [this] {
 		const auto path = FileDialog::getOpenFileName(this, tr("Impulse response"), QString{},
 			tr("Audio files (*.wav *.flac *.aif *.aiff *.ogg)"));
-		if (path.isEmpty()) { return; }
-		if (const auto error = m_controls->setImpulseResponse(path); !error.isEmpty())
-		{
-			QMessageBox::warning(this, tr("Impulse response"), error);
-		}
+		if (!path.isEmpty()) { warn(m_controls->setImpulseResponse(path)); }
 	});
+	if (!m_controls->impulseResponse().isEmpty())
+	{
+		menu.addAction(tr("None"), this, [this] { warn(m_controls->setImpulseResponse({})); });
+	}
 	menu.exec(QCursor::pos());
 }
 

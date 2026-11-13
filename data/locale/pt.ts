@@ -17425,5 +17425,52 @@ Latency: %2 ms</source>
         <source>Audio files (*.wav *.flac *.aif *.aiff *.ogg)</source>
         <translation>Arquivos de áudio (*.wav *.flac *.aif *.aiff *.ogg)</translation>
     </message>
+    <message>
+        <source>Amp model...</source>
+        <translation>Modelo de amp...</translation>
+    </message>
+    <message>
+        <source>No amp model</source>
+        <translation>Sem modelo de amp</translation>
+    </message>
+    <message>
+        <source>From a file (.nam)...</source>
+        <translation>De um arquivo (.nam)...</translation>
+    </message>
+    <message>
+        <source>Amp model</source>
+        <translation>Modelo de amp</translation>
+    </message>
+    <message>
+        <source>Neural Amp Modeler models (*.nam)</source>
+        <translation>Modelos do Neural Amp Modeler (*.nam)</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Nenhum</translation>
+    </message>
+    <message>
+        <source>Amp &amp; IR</source>
+        <translation>Amp &amp; IR</translation>
+    </message>
+</context>
+<context>
+    <name>AmpModel</name>
+    <message>
+        <source>The amp model %1 could not be loaded: %2</source>
+        <translation>Não foi possível carregar o modelo de amp %1: %2</translation>
+    </message>
+    <message>
+        <source>The amp model %1 could not be loaded.</source>
+        <translation>Não foi possível carregar o modelo de amp %1.</translation>
+    </message>
+    <message>
+        <source>The amp model %1 is not mono (one input, one output).</source>
+        <translation>O modelo de amp %1 não é mono (uma entrada, uma saída).</translation>
+    </message>
+    <message>
+        <source>The amp model's resampling could not start: %1</source>
+        <translation>A reamostragem do modelo de amp não pôde começar: %1</translation>
+    </message>
 </context>
 </TS>

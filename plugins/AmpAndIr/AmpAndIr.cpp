@@ -60,15 +60,33 @@ Plugin::Descriptor PLUGIN_EXPORT ampandir_plugin_descriptor =
 
 AmpAndIrEffect::AmpAndIrEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
 	Effect(&ampandir_plugin_descriptor, parent, key),
-	m_controls(this)
+	m_controls(this),
+	m_mid(AmpModel::MaxFrames)
 {
 }
 
 
-AmpAndIrEffect::~AmpAndIrEffect()
+auto AmpAndIrEffect::loadAmpModel(const QString& path) -> QString
 {
-	delete m_pending.exchange(nullptr);
-	delete m_retired.exchange(nullptr);
+	if (path.isEmpty())
+	{
+		m_amp.offer(nullptr);
+		m_ampLatency = 0;
+		return {};
+	}
+	auto error = QString{};
+	auto model = AmpModel::load(PathUtil::toAbsolute(path), Engine::audioEngine()->outputSampleRate(), error);
+	if (!model) { return error; }
+	m_ampLatency = model->latency();
+	m_amp.offer(std::move(model));
+	return {};
+}
+
+
+void AmpAndIrEffect::clearImpulseResponse()
+{
+	m_impulseResponse.offer(nullptr);
+	m_irLatency = 0;
 }
 
 
@@ -116,44 +134,62 @@ auto AmpAndIrEffect::loadImpulseResponse(const QString& path) -> QString
 	}
 	if (energy <= 0.0) { return tr("The impulse response %1 is silent.").arg(path); }
 	const auto scale = static_cast<float>(1.0 / std::sqrt(energy / 2.0));
-	auto loaded = std::make_unique<Loaded>();
+	auto loaded = std::make_unique<ImpulseResponse>();
 	for (int side = 0; side < 2; ++side)
 	{
 		for (auto& x : sides[side]) { x *= scale; }
 		loaded->sides[side] = std::make_unique<Convolver>(sides[side]);
 	}
 
-	// To the audio thread (what it gave back before is freed here, never there)
-	delete m_retired.exchange(nullptr);
-	delete m_pending.exchange(loaded.release());
-	m_hasIr = true;
+	// To the audio thread
+	m_impulseResponse.offer(std::move(loaded));
+	m_irLatency = Convolver::BlockSize;
 	return {};
 }
 
 
 auto AmpAndIrEffect::process(ProcessContext& context) -> ProcessStatus
 {
-	// A new IR, if one is waiting and the one before has been freed
-	if (m_retired.load() == nullptr)
-	{
-		if (auto* next = m_pending.exchange(nullptr))
-		{
-			m_retired.store(m_current.release());
-			m_current.reset(next);
-		}
-	}
+	auto* impulseResponse = m_impulseResponse.take();
+	auto* amp = m_amp.take();
 
 	const auto& in = context.in();
 	auto& out = context.out();
 	const auto inGain = dbfsToAmp(m_controls.m_inputModel.value());
 	const auto outGain = dbfsToAmp(m_controls.m_outputModel.value());
+	const auto frames = static_cast<int>(out.buffer(0).size());
+	const auto left = in.buffer(0);
+	const auto right = in.buffer(1);
+	auto outLeft = out.buffer(0);
+	auto outRight = out.buffer(1);
+
+	if (amp)
+	{
+		// The amp is mono: the sides' mid, in pieces it can take, to both sides
+		for (int at = 0; at < frames; at += AmpModel::MaxFrames)
+		{
+			const auto count = std::min(AmpModel::MaxFrames, frames - at);
+			for (int f = 0; f < count; ++f) { m_mid[f] = (left[at + f] + right[at + f]) * 0.5f * inGain; }
+			amp->process(m_mid.data(), count);
+			for (int f = 0; f < count; ++f) { outLeft[at + f] = outRight[at + f] = m_mid[f]; }
+		}
+	}
+	else
+	{
+		for (int f = 0; f < frames; ++f)
+		{
+			outLeft[f] = left[f] * inGain;
+			outRight[f] = right[f] * inGain;
+		}
+	}
+	if (impulseResponse)
+	{
+		impulseResponse->sides[0]->process(outLeft.data(), frames);
+		impulseResponse->sides[1]->process(outRight.data(), frames);
+	}
 	for (ch_cnt_t ch = 0; ch < 2; ++ch)
 	{
-		const auto src = in.buffer(ch);
-		auto dst = out.buffer(ch);
-		for (std::size_t f = 0; f < dst.size(); ++f) { dst[f] = src[f] * inGain; }
-		if (m_current) { m_current->sides[ch]->process(dst.data(), static_cast<int>(dst.size())); }
-		for (auto& x : dst) { x *= outGain; }
+		for (auto& x : out.buffer(ch)) { x *= outGain; }
 	}
 	// The dry signal, delayed by the latency, under the W/D knob
 	mixDrySignal(in, out, 2);

@@ -4,6 +4,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 
 set(LMMS_TESTS
+	src/core/AmpModelTest.cpp
 	src/core/ArrayVectorTest.cpp
 	src/core/ConvolverTest.cpp
 	src/core/AudioBufferTest.cpp
@@ -52,3 +53,10 @@ endforeach()
 target_sources(ConvolverTest PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AmpAndIr/Convolver.cpp)
 target_include_directories(ConvolverTest PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AmpAndIr ${FFTW3F_INCLUDE_DIRS})
 target_link_libraries(ConvolverTest PRIVATE ${FFTW3F_LIBRARIES})
+
+# The Amp & IR plugin's amp model, tested on its own with Neural Amp Modeler's example models
+target_sources(AmpModelTest PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AmpAndIr/AmpModel.cpp)
+target_include_directories(AmpModelTest PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AmpAndIr)
+target_link_libraries(AmpModelTest PRIVATE nam_core ${SAMPLERATE_LIBRARIES})
+target_compile_definitions(AmpModelTest PRIVATE
+	AMP_MODEL_EXAMPLES="${CMAKE_SOURCE_DIR}/plugins/AmpAndIr/NeuralAmpModelerCore/example_models")

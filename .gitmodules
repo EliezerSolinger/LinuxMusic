@@ -47,3 +47,6 @@
 [submodule "plugins/MidiImport/portsmf"]
 	path = plugins/MidiImport/portsmf
 	url = https://github.com/portsmf/portsmf
+[submodule "plugins/AmpAndIr/NeuralAmpModelerCore"]
+	path = plugins/AmpAndIr/NeuralAmpModelerCore
+	url = https://github.com/sdatkinson/NeuralAmpModelerCore

@@ -28,6 +28,7 @@
 #include <memory>
 
 #include "AmpAndIrControls.h"
+#include "AmpModel.h"
 #include "Convolver.h"
 #include "Effect.h"
 
@@ -35,22 +36,69 @@ namespace lmms
 {
 
 /**
- * The IR plugin (docs/plano-anotacoes-13-11.md, 13.3): the input, through its gain, convolved with an impulse
- * response (a guitar cabinet, an acoustic body, a room), then its output gain; the W/D knob mixes the dry signal,
- * delayed as the convolution is (Convolver::BlockSize frames, its latency). A mono IR serves both sides; a stereo
- * one each its own. The IR is resampled to the engine's rate and normalized in energy, so that changing it keeps
- * about the same level.
+ * The Amp & IR plugin (docs/plano-anotacoes-13-11.md, 13.3): the input, through its gain, into an amp model
+ * (Neural Amp Modeler, mono: the sides' mid), then convolved with an impulse response (a guitar cabinet, an
+ * acoustic body, a room), then its output gain; either may be absent. The W/D knob mixes the dry signal, delayed
+ * as the wet one is (the latency: the amp's resampling and the convolution's block). A mono IR serves both sides;
+ * a stereo one each its own. The IR is resampled to the engine's rate and normalized in energy, so that changing
+ * it keeps about the same level.
  *
- * An IR is loaded off the audio thread and handed over to it without locks (the old one goes back to be freed).
+ * Amp and IR are loaded off the audio thread and handed over to it without locks (see Handoff).
  */
+/**
+ * Hands something made off the audio thread to it without locks: offer() (any other thread) leaves it pending;
+ * take() (the audio thread) swaps it in when the one it replaces has been given back, which the next offer() (or
+ * the destructor) frees: the audio thread never frees. An empty offer removes what it has.
+ */
+template<typename T>
+class Handoff
+{
+public:
+	~Handoff()
+	{
+		delete m_pending.exchange(nullptr);
+		delete m_retired.exchange(nullptr);
+	}
+
+	void offer(std::unique_ptr<T> next)
+	{
+		delete m_retired.exchange(nullptr);
+		delete m_pending.exchange(new Slot{std::move(next)});
+	}
+
+	//! [audio thread] What it has now
+	auto take() -> T*
+	{
+		if (m_retired.load() == nullptr)
+		{
+			if (auto* next = m_pending.exchange(nullptr))
+			{
+				m_retired.store(m_current.release());
+				m_current.reset(next);
+			}
+		}
+		return m_current ? m_current->value.get() : nullptr;
+	}
+
+private:
+	struct Slot
+	{
+		std::unique_ptr<T> value;
+	};
+	std::unique_ptr<Slot> m_current;
+	std::atomic<Slot*> m_pending = nullptr;
+	std::atomic<Slot*> m_retired = nullptr;
+};
+
+
 class AmpAndIrEffect : public Effect
 {
 public:
 	AmpAndIrEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
-	~AmpAndIrEffect() override;
+	~AmpAndIrEffect() override = default;
 
 	auto controls() -> EffectControls* override { return &m_controls; }
-	auto latency() const -> f_cnt_t override { return m_hasIr.load() ? Convolver::BlockSize : 0; }
+	auto latency() const -> f_cnt_t override { return m_irLatency.load() + m_ampLatency.load(); }
 
 	auto channelCount(bool) const -> ch_cnt_t override { return 2; }
 	auto channelGroupCount(bool) const -> group_cnt_t override { return 1; }
@@ -62,20 +110,25 @@ public:
 	 * @returns an error, or nothing if it loaded
 	 */
 	auto loadImpulseResponse(const QString& path) -> QString;
+	//! Loads the amp model (.nam) in @p path, likewise; an empty one removes it
+	auto loadAmpModel(const QString& path) -> QString;
+	//! Removes the impulse response
+	void clearImpulseResponse();
 
 private:
 	auto process(ProcessContext& context) -> ProcessStatus override;
 
-	struct Loaded
+	struct ImpulseResponse
 	{
 		std::array<std::unique_ptr<Convolver>, 2> sides;
 	};
 
 	AmpAndIrControls m_controls;
-	std::unique_ptr<Loaded> m_current;			//!< the audio thread's
-	std::atomic<Loaded*> m_pending = nullptr;	//!< loaded, for the audio thread to take
-	std::atomic<Loaded*> m_retired = nullptr;	//!< the one it took over from, to free
-	std::atomic<bool> m_hasIr = false;
+	Handoff<ImpulseResponse> m_impulseResponse;
+	Handoff<AmpModel> m_amp;
+	std::atomic<f_cnt_t> m_irLatency = 0;
+	std::atomic<f_cnt_t> m_ampLatency = 0;
+	std::vector<float> m_mid; //!< the amp's mono signal
 
 	friend class AmpAndIrControls;
 };
