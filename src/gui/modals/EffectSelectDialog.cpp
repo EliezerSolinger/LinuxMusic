@@ -190,6 +190,7 @@ auto EffectSelectDialog::availableEffects() -> EffectKeyList
 	auto subPluginKeys = EffectKeyList{};
 	for (const auto desc : getPluginFactory()->descriptors(Plugin::Type::Effect))
 	{
+		if (PluginCategories::isRetired(desc)) { continue; }
 		if (desc->subPluginFeatures) { desc->subPluginFeatures->listSubPluginKeys(desc, subPluginKeys); }
 		else { keys << EffectKey(desc, desc->name); }
 	}

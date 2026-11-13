@@ -61,7 +61,7 @@ const auto s_effectCategories = std::array{
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Pitch & frequency"),
 		{"granularpitchshifter", "frequencyshifter"}},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Stereo & utility"),
-		{"amplifier", "stereoenhancer", "stereomatrix", "dispersion"}},
+		{"stereoenhancer", "dispersion"}},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Analysis"), {"analyzer", "oscilloscope", "vectorscope"}},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Control"), {"peakcontrollereffect"}},
 };
@@ -100,6 +100,17 @@ QStringList categories(Plugin::Type type)
 		: std::span<const Category>{s_effectCategories};
 	for (const auto& category : list) { result << translated(category.name); }
 	return result;
+}
+
+
+
+
+bool isRetired(const Plugin::Descriptor* desc)
+{
+	// What these did is in every mixer channel: the trim, the fader, PAN, phase, swap and MONO (the user's notes of
+	// 13/11/2026)
+	static const auto retired = QStringList{"amplifier", "stereomatrix"};
+	return desc && retired.contains(QString::fromUtf8(desc->name));
 }
 
 } // namespace lmms::PluginCategories

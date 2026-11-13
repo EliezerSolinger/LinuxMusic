@@ -44,6 +44,10 @@ LMMS_EXPORT QString categoryOf(const Plugin::Descriptor* desc);
 //! @returns the translated categories for plugins of type @p type, in display order
 LMMS_EXPORT QStringList categories(Plugin::Type type);
 
+//! @returns whether the plugin with descriptor @p desc is retired: it is not offered any more (what it did is part
+//! of the mixer), but projects that use it still load and play it
+LMMS_EXPORT bool isRetired(const Plugin::Descriptor* desc);
+
 } // namespace PluginCategories
 
 } // namespace lmms
