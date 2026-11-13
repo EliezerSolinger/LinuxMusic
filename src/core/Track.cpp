@@ -78,6 +78,9 @@ Track::~Track()
 	lock();
 	emit destroyedTrack();
 
+	// The derived track is gone already: nothing it connected to its own signals may run now (a clip removed
+	// tells of the lanes, see removeClip())
+	blockSignals(true);
 	while (!m_clips.empty())
 	{
 		delete m_clips.back();
