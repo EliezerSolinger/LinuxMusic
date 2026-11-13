@@ -43,6 +43,7 @@
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
+#include "ComboBox.h"
 #include "Knob.h"
 #include "AutomatableButton.h"
 #include "DeskDynamics.h"
@@ -227,6 +228,17 @@ MixerView::MixerView(Mixer* mixer) :
 	m_monoBox = new LedCheckBox{tr("Mono"), channelSettings, tr("Mono"), LedCheckBox::LedColor::Green};
 	settingsLayout->addWidget(m_monoBox, 0, 0, 2, 1);
 	settingsLayout->addWidget(m_panKnob, 0, 1, 2, 1, Qt::AlignCenter);
+
+	// Where the channel's effects go in its signal path
+	m_insertPointLabel = new QLabel{tr("FX"), channelSettings};
+	m_insertPointLabel->setToolTip(tr("Where the effects go in the channel's signal path (in digital mode, every "
+		"point but Pre pan is before the fader)"));
+	m_insertPointBox = new ComboBox{channelSettings, tr("Effects insert point")};
+	m_insertPointBox->setFixedWidth(110);
+	m_insertPointBox->setToolTip(m_insertPointLabel->toolTip());
+	settingsLayout->addWidget(m_insertPointLabel, 0, 2, Qt::AlignRight | Qt::AlignVCenter);
+	settingsLayout->addWidget(m_insertPointBox, 0, 3, 2, 1, Qt::AlignVCenter);
+	settingsLayout->setColumnStretch(2, 1);
 
 	// The mixer's mode: an analog desk (with a desk's strip in every channel) or a digital one (effects only)
 	auto modeRow = new QHBoxLayout{};
@@ -509,6 +521,10 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 
 	const auto mixerChannel = getMixer()->mixerChannel(channel->channelIndex());
 	m_monoBox->setModel(&mixerChannel->m_monoModel);
+	m_insertPointBox->setModel(&mixerChannel->m_fxInsertModel);
+	// The master's effects have their place, before its stereo section
+	m_insertPointBox->setVisible(channel->channelIndex() != 0);
+	m_insertPointLabel->setVisible(channel->channelIndex() != 0);
 	m_monoBox->setVisible(channel->channelIndex() != 0); // the master has MONO in its monitoring
 	m_panKnob->setModel(&mixerChannel->m_panModel);
 	m_panKnob->setVisible(channel->channelIndex() != 0); // the master has no panning

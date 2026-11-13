@@ -114,6 +114,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_widthModel(100.f, 0.f, 200.f, 1.f, _parent),
 	m_panModel(PanningCenter, PanningLeft, PanningRight, 1.f, _parent),
 	m_analogStrip(_parent),
+	m_fxInsertModel(_parent, Mixer::tr("Effects insert point")),
 	m_preFaderBuffer(Engine::audioEngine()->framesPerPeriod()),
 	m_name(),
 	m_lock(),
@@ -122,6 +123,14 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_channelIndex(idx),
 	m_useCount(0)
 {
+	for (const auto& name : {Mixer::tr("Pre gain"), Mixer::tr("Post gain"), Mixer::tr("Post filter"),
+		Mixer::tr("Post dynamics"), Mixer::tr("Post EQ"), Mixer::tr("Pre pan")})
+	{
+		m_fxInsertModel.addItem(name);
+	}
+	m_fxInsertModel.setInitValue(static_cast<int>(InsertPoint::PostGain));
+	m_fxInsertModel.setJournalling(true);
+
 	// Knobs draw their arc from these
 	m_trimModel.setCenterValue(0.f);
 	m_widthModel.setCenterValue(100.f);
@@ -370,24 +379,45 @@ void MixerChannel::doProcessing()
 		m_buffer.interleavedToMainPair();
 	}
 
-	// Analog mode: the strip of an analog desk, before the effects
-	const bool hadInput = m_buffer.hasSignal(mainPair);
+	// The effects, once, at their insert point (the master's are after its PRE stage, before its stereo section)
+	const auto point = isMaster() ? InsertPoint::PostEq : fxInsertPoint();
+	bool effectsRan = false;
+	const auto runEffects = [this, &effectsRan] {
+		m_buffer.interleavedToMainPair();
+		m_stillRunning = m_fxChain.processAudioBuffer(m_buffer); // (leaves the interleaved copy in sync)
+		effectsRan = true;
+	};
+	class EffectsHook final : public AnalogChannelStrip::InsertHook
+	{
+	public:
+		explicit EffectsHook(const decltype(runEffects)& run) : m_run{run} {}
+		void operator()(std::span<SampleFrame>) override { m_run(); }
+	private:
+		const decltype(runEffects)& m_run;
+	};
+
+	// Analog mode: the strip of an analog desk, with the effects where they go in it. Effects still ringing
+	// (a reverb's tail) before its end keep it going.
+	const bool effectsInStrip = point < InsertPoint::PostEq && m_stillRunning;
+	const bool hadInput = m_buffer.hasSignal(mainPair) || effectsInStrip;
 	if (!isMaster() && Engine::mixer()->isAnalog() && (hadInput || m_analogStrip.holdsSignal()))
 	{
 		const auto tolerance = Engine::mixer()->toleranceModel()->value()
 			? ChannelTolerance::forChannel(Engine::mixer()->toleranceStripOf(this))
 			: ChannelTolerance::none();
-		m_analogStrip.process(buffer, Engine::audioEngine()->outputSampleRate(), hadInput, tolerance);
+		auto hook = EffectsHook{runEffects};
+		m_analogStrip.process(buffer, Engine::audioEngine()->outputSampleRate(), hadInput, tolerance, point, &hook);
 		m_buffer.interleavedToMainPair();
 		m_buffer.assumeNonSilent(0);
 		m_buffer.assumeNonSilent(1);
 	}
 	else { m_analogStrip.reset(); }
 
-	m_stillRunning = m_fxChain.processAudioBuffer(m_buffer);
+	// Without the strip (digital mode, the master, or nothing to process), every point but PrePan is here
+	if (!effectsRan && point != InsertPoint::PrePan) { runEffects(); }
 
 	// The auxiliary pairs do not reach the channel's output
-	const bool hasSignal = m_buffer.hasSignal(mainPair) || m_stillRunning;
+	bool hasSignal = m_buffer.hasSignal(mainPair) || m_stillRunning;
 
 	// The master's stereo section (with the master's width) and bus compressor, after its effects and before its
 	// fader
@@ -419,6 +449,9 @@ void MixerChannel::doProcessing()
 		// The master has no panning
 		const auto pan = panningToVolumeVector(static_cast<panning_t>(isMaster() ? PanningCenter : m_panModel.value()));
 		const float volume = m_volumeModel.value();
+		// Post-fader effects go between the fader and the panning
+		const bool effectsBeforePan = point == InsertPoint::PrePan;
+		const auto faderPan = effectsBeforePan ? std::array{1.f, 1.f} : std::array{pan.vol[0], pan.vol[1]};
 
 		for (f_cnt_t f = 0; f < fpp; ++f)
 		{
@@ -433,10 +466,35 @@ void MixerChannel::doProcessing()
 				right = mid - side;
 			}
 			const float gain = volBuf ? volBuf->values()[f] : volume;
-			buffer[f].setLeft(left * pan.vol[0] * gain);
-			buffer[f].setRight(right * pan.vol[1] * gain);
+			buffer[f].setLeft(left * faderPan[0] * gain);
+			buffer[f].setRight(right * faderPan[1] * gain);
+		}
+		if (effectsBeforePan)
+		{
+			runEffects();
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				buffer[f].setLeft(buffer[f].left() * pan.vol[0]);
+				buffer[f].setRight(buffer[f].right() * pan.vol[1]);
+			}
 		}
 		m_buffer.interleavedToMainPair();
+	}
+	else if (point == InsertPoint::PrePan)
+	{
+		// Nothing came: the effects still run (their tails, or to go to sleep)
+		runEffects();
+		hasSignal = m_stillRunning;
+		if (hasSignal)
+		{
+			const auto pan = panningToVolumeVector(static_cast<panning_t>(m_panModel.value()));
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				buffer[f].setLeft(buffer[f].left() * pan.vol[0]);
+				buffer[f].setRight(buffer[f].right() * pan.vol[1]);
+			}
+			m_buffer.interleavedToMainPair();
+		}
 	}
 
 	// Analog mode: the master's output transformer, after its fader
@@ -1251,6 +1309,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_swapChannelsModel.setValue(false);
 	ch->m_phaseInvertModel.setValue(false);
 	ch->m_widthModel.setValue(100.f);
+	ch->m_fxInsertModel.setValue(static_cast<int>(MixerChannel::InsertPoint::PostGain));
 	ch->m_panModel.setValue(PanningCenter);
 	ch->m_analogStrip.setNeutral();
 	ch->m_trackChannel = false;
@@ -1309,6 +1368,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		ch->m_muteModel.saveSettings( _doc, mixch, "muted" );
 		ch->m_soloModel.saveSettings( _doc, mixch, "soloed" );
 		ch->m_trimModel.saveSettings(_doc, mixch, "trim");
+		ch->m_fxInsertModel.saveSettings(_doc, mixch, "fxinsert");
 		ch->m_monoModel.saveSettings(_doc, mixch, "mono");
 		ch->m_swapChannelsModel.saveSettings(_doc, mixch, "swapchannels");
 		ch->m_phaseInvertModel.saveSettings(_doc, mixch, "phaseinvert");
@@ -1394,6 +1454,12 @@ void Mixer::loadSettings( const QDomElement & _this )
 		m_mixerChannels[num]->m_widthModel.loadSettings(mixch, "width");
 		m_mixerChannels[num]->m_panModel.loadSettings(mixch, "pan");
 		m_mixerChannels[num]->m_analogStrip.loadSettings(mixch);
+		// Where the effects go: at the end of the strip in projects of before, where they were
+		if (mixch.hasAttribute("fxinsert") || !mixch.firstChildElement("fxinsert").isNull())
+		{
+			m_mixerChannels[num]->m_fxInsertModel.loadSettings(mixch, "fxinsert");
+		}
+		else { m_mixerChannels[num]->m_fxInsertModel.setValue(static_cast<int>(MixerChannel::InsertPoint::PostEq)); }
 		// (Audio input, arming and monitoring are the tracks', see AudioInput; a channel's of before had no use)
 		m_mixerChannels[num]->m_name = mixch.attribute( "name" );
 		m_mixerChannels[num]->m_trackChannel = mixch.attribute("trackchannel", "0").toInt() != 0;

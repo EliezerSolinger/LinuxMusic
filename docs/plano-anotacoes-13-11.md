@@ -255,3 +255,19 @@ Cada passo atualiza este documento, marcando o que foi feito.
   - 5.7: sem o LADSPA browser;
   - 5.8: Amplifier e Stereo Matrix fora das listas; projetos que os usam tocam igual;
   - 5.9: abas escuras nas áreas e no explorador.
+- **Etapa 6 feita** (13/11):
+  - 6.1: várias faixas no mesmo canal, cada uma com VOL e PAN. Abrir o projeto não separa mais; faixas que
+    dividiam um canal que não era de faixa (projetos antigos) ganham um canal cada, como antes;
+  - 6.2: as voltas FX ficam sempre por último e não recebem faixa, e os canais são numerados 1, 2, 3. As voltas
+    não mostram número e têm a sua própria tolerância (faixa 1001, 1002), que não muda quando entram canais. Na
+    A/B, só o `ladspa-sc4`, que tinha voltas no meio dos canais, muda (−41 dB);
+  - 6.3: seletor "FX" no painel, com antes do ganho, depois do ganho (padrão), depois dos filtros, depois da
+    dinâmica, depois da EQ e antes do pan (pós-fader). Os projetos antigos abrem "depois da EQ", onde os efeitos
+    estavam; a A/B não muda;
+  - 6.4: sem o "Adicionar efeito": arrastar ou dar duplo clique no explorador. O duplo clique num slot vazio abre os
+    efeitos no explorador;
+  - 6.5: ícone do pin connector (plugue P10 com cabo);
+  - 6.6: GAIN até +60 dB (projetos antigos mantêm o ganho), TRIM até desligado, faixas e faders até +12 dB.
+    **Não há −6 dB no caminho**: `GainStagingTest` mede 0,00 dB de ponta a ponta (−0,06 dB pela tira analógica).
+    A A/B achou o `MaxTrackVolume` estourando o `volume_t` de 8 bits, e isso foi corrigido;
+  - 6.7: puxadores dos faders por papel (canal verde, FX azul, PRE laranja, POST vermelho).

@@ -159,6 +159,42 @@ private:
 	std::size_t m_position = 0;
 };
 
+//! Passes its stereo input through, keeping the peak of each side in the last period it saw: where it is in a
+//! channel's signal path
+class FakeProbe : public Effect
+{
+public:
+	FakeProbe() : Effect{&s_duckerDescriptor, nullptr, nullptr}, m_controls{this} {}
+
+	auto controls() -> EffectControls* override { return &m_controls; }
+	auto process(ProcessContext& context) -> ProcessStatus override
+	{
+		const auto& in = context.in();
+		auto& out = context.out();
+		s_peak = {};
+		for (ch_cnt_t ch = 0; ch < 2; ++ch)
+		{
+			const auto src = in.buffer(ch);
+			auto dst = out.buffer(ch);
+			for (std::size_t f = 0; f < dst.size(); ++f)
+			{
+				s_peak[ch] = std::max(s_peak[ch], std::abs(src[f]));
+				dst[f] = src[f];
+			}
+		}
+		return ProcessStatus::Continue;
+	}
+	auto channelCount(bool) const -> ch_cnt_t override { return 2; }
+	auto channelGroupCount(bool) const -> group_cnt_t override { return 1; }
+	auto getChannelGroup(group_cnt_t, bool, AudioBuffer::ChannelGroup&) const -> ch_cnt_t override { return 2; }
+	auto getInplacePair(ch_cnt_t) const -> std::optional<ch_cnt_t> override { return std::nullopt; }
+
+	static inline std::array<float, 2> s_peak{};
+
+private:
+	DuckerControls m_controls;
+};
+
 Plugin::Descriptor s_multiOutputDescriptor = {
 	"fakemultioutput", "Fake multi-output instrument", "Instrument for tests", "LinuxMusic", 0x0100,
 	Plugin::Type::Instrument, nullptr, nullptr, nullptr
@@ -435,7 +471,7 @@ private slots:
 		static const auto analogTests = QStringList{"stripMonoBassNarrowsOnlyTheLows",
 			"gainPotIsMutedToTheLeftAndUnityAtAQuarter", "masterGainStage", "gainStageModels",
 			"drivenOpAmpDoesNotAlias", "tubeStageColorsTheChannel", "analogStripFiltersAndEq", "analogStripDynamics",
-			"analogStripAndModeAreSaved", "tubeLampSwitchesModesAndIsSaved"};
+			"analogStripAndModeAreSaved", "tubeLampSwitchesModesAndIsSaved", "effectsGoWhereTheirInsertPointIs"};
 		mixer()->analogModel()->setValue(analogTests.contains(QTest::currentTestFunction()));
 		// Ideal channels, but in the tests of the tolerances
 		mixer()->toleranceModel()->setValue(false);
@@ -3280,6 +3316,73 @@ private slots:
 
 		deleteTrack(track);
 		deleteTrack(folder);
+	}
+
+	void effectsGoWhereTheirInsertPointIs()
+	{
+		using Point = MixerChannel::InsertPoint;
+		using Strip = AnalogChannelStrip;
+		const auto channel = mixer()->createChannel();
+		auto* ch = mixer()->mixerChannel(channel);
+		auto& strip = ch->m_analogStrip;
+		QCOMPARE(ch->fxInsertPoint(), Point::PostGain); // a new channel's
+		ch->m_fxChain.appendEffect(std::make_unique<PluginInstance>(std::make_unique<FakeProbe>(), Plugin::Type::Effect));
+		strip.m_driveModel.setValue(static_cast<int>(GainStage::Model::Flat));
+		settle();
+
+		// The peak the effects see of a sine of amplitude 0.1, relative to it, left and right
+		const auto seen = [&](Point point, float frequency) {
+			ch->m_fxInsertModel.setValue(static_cast<int>(point));
+			sineGain(channel, frequency, 0.1f, 32); // (the last period's: the filters settled)
+			return std::array{FakeProbe::s_peak[0] / 0.1f, FakeProbe::s_peak[1] / 0.1f};
+		};
+		const auto near = [](float value, float dB) { return std::abs(ampToDbfs(value) - dB) < 0.3f; };
+
+		// Before or after the GAIN pot (+12 dB)
+		strip.m_gainModel.setValue(Strip::UnityPosition + 12.f / Strip::MaxGain * (1.f - Strip::UnityPosition));
+		QVERIFY(near(seen(Point::PreGain, 1000.f)[0], 0.f));
+		QVERIFY(near(seen(Point::PostGain, 1000.f)[0], 12.f));
+		strip.m_gainModel.setValue(Strip::UnityPosition);
+
+		// Before or after the HPF (at 2 kHz, a sine at 100 Hz)
+		strip.m_highPassModel.setValue(2000.f);
+		QVERIFY(near(seen(Point::PostGain, 100.f)[0], 0.f));
+		QVERIFY(seen(Point::PostFilter, 100.f)[0] < 0.1f);
+		strip.m_highPassModel.setValue(strip.m_highPassModel.minValue());
+
+		// Before or after the EQ (HI +9 dB, a sine at 12 kHz)
+		strip.m_eqHighModel.setValue(9.f);
+		QVERIFY(near(seen(Point::PostDynamics, 12000.f)[0], 0.f));
+		QVERIFY(seen(Point::PostEq, 12000.f)[0] > dbfsToAmp(6.f));
+		strip.m_eqHighModel.setValue(0.f);
+
+		// After the fader (-6 dB) but before the panning (hard left): both sides, at the fader's level
+		ch->m_volumeModel.setValue(0.5f);
+		ch->m_panModel.setValue(PanningLeft);
+		const auto postEq = seen(Point::PostEq, 1000.f);
+		QVERIFY(near(postEq[0], 0.f) && near(postEq[1], 0.f));
+		const auto prePan = seen(Point::PrePan, 1000.f);
+		QVERIFY(near(prePan[0], -6.02f) && near(prePan[1], -6.02f));
+		// ... and the output is still panned
+		QVERIFY(near(sineGain(channel, 1000.f), -6.02f));
+		ch->m_volumeModel.setValue(1.f);
+		ch->m_panModel.setValue(PanningCenter);
+
+		// Saved; a channel of a project of before has them at the end of the strip, where they were
+		auto doc = DataFile{DataFile::Type::SongProject};
+		auto element = doc.createElement("mixer");
+		doc.content().appendChild(element);
+		ch->m_fxInsertModel.setValue(static_cast<int>(Point::PostFilter));
+		mixer()->saveSettings(doc, element);
+		mixer()->loadSettings(element);
+		QCOMPARE(mixer()->mixerChannel(channel)->fxInsertPoint(), Point::PostFilter);
+		const auto channels = element.elementsByTagName("mixerchannel");
+		for (int i = 0; i < channels.size(); ++i) { channels.at(i).toElement().removeAttribute("fxinsert"); }
+		mixer()->loadSettings(element);
+		QCOMPARE(mixer()->mixerChannel(channel)->fxInsertPoint(), Point::PostEq);
+		mixer()->mixerChannel(channel)->m_fxChain.clear();
+		mixer()->mixerChannel(channel)->m_analogStrip.setNeutral();
+		mixer()->deleteChannel(channel);
 	}
 
 	void effectsCanBeInsertedMovedAndReplaced()

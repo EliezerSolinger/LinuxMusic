@@ -133,8 +133,11 @@ auto AnalogChannelStrip::positionFromMiddleUnity(float position) -> float
 
 
 void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sampleRate, bool hadInput,
-	const ChannelTolerance& tolerance)
+	const ChannelTolerance& tolerance, InsertPoint point, InsertHook* hook)
 {
+	const auto insertAt = [&](InsertPoint here) { if (hook && point == here) { (*hook)(frames); } };
+	insertAt(InsertPoint::PreGain);
+
 	// Sections left at their neutral setting are skipped
 	const bool lowCut = m_lowCutModel.value();
 	const bool highPassOn = m_highPassModel.value() > m_highPassModel.minValue();
@@ -199,6 +202,7 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 
 	const auto drive = static_cast<Drive>(m_driveModel.value());
 	m_gainStage.process(frames, drive, m_realisticModel.value(), sampleRate, tolerance.drive);
+	insertAt(InsertPoint::PostGain);
 
 	// After the input falls silent, the filters ring out for a while
 	const bool anyFilter = lowCut || highPassOn || lowPassOn || monoBassOn || eqOn
@@ -207,52 +211,67 @@ void AnalogChannelStrip::process(std::span<SampleFrame> frames, sample_rate_t sa
 	else if (hadInput) { m_tailFrames = static_cast<f_cnt_t>(FilterTail * rate); }
 	else { m_tailFrames = m_tailFrames > frames.size() ? m_tailFrames - frames.size() : 0; }
 
-	// Nothing after the gain stage to do
-	if (!highPassOn && !lowPassOn && !monoBassOn && !gateOn && !compressorOn && !eqOn)
+	// The filters, the dynamics and the EQ, each over the period in turn (each works sample by sample, so this is
+	// the same as one pass), so that the effects can go between them
+	if (highPassOn || lowPassOn || monoBassOn)
 	{
-		finishFilters();
-		return;
-	}
-
-	for (auto f = std::size_t{0}; f < count; ++f)
-	{
-		auto& frame = frames[f];
-		const float progress = progressAt(f);
-		for (ch_cnt_t ch = 0; ch < 2; ++ch)
+		for (auto f = std::size_t{0}; f < count; ++f)
 		{
-			float x = frame[ch];
-			if (highPassOn) { x = static_cast<float>(m_highPass.process(x, ch, progress)); }
-			if (lowPassOn) { x = static_cast<float>(m_lowPass.process(x, ch, progress)); }
-			frame[ch] = x;
-		}
-		if (monoBassOn)
-		{
-			float mid = (frame[0] + frame[1]) * 0.5f;
-			float side = (frame[0] - frame[1]) * 0.5f;
-			m_monoBass.process(mid, side, progress);
-			frame[0] = mid + side;
-			frame[1] = mid - side;
-		}
-
-		// Stereo-linked dynamics, the gate first
-		float gain = 1.f;
-		if (gateOn) { gain *= m_gate.gain(frame[0], frame[1]); }
-		if (compressorOn)
-		{
-			float left = frame[0] * gain, right = frame[1] * gain;
-			m_compressor.process(left, right);
-			frame[0] = left;
-			frame[1] = right;
-			gain = 1.f;
-		}
-
-		for (ch_cnt_t ch = 0; ch < 2; ++ch)
-		{
-			float x = frame[ch] * gain;
-			if (eqOn) { x = static_cast<float>(m_eq.process(x, ch, progress)); }
-			frame[ch] = x;
+			auto& frame = frames[f];
+			const float progress = progressAt(f);
+			for (ch_cnt_t ch = 0; ch < 2; ++ch)
+			{
+				float x = frame[ch];
+				if (highPassOn) { x = static_cast<float>(m_highPass.process(x, ch, progress)); }
+				if (lowPassOn) { x = static_cast<float>(m_lowPass.process(x, ch, progress)); }
+				frame[ch] = x;
+			}
+			if (monoBassOn)
+			{
+				float mid = (frame[0] + frame[1]) * 0.5f;
+				float side = (frame[0] - frame[1]) * 0.5f;
+				m_monoBass.process(mid, side, progress);
+				frame[0] = mid + side;
+				frame[1] = mid - side;
+			}
 		}
 	}
+	insertAt(InsertPoint::PostFilter);
+
+	// Stereo-linked dynamics, the gate first
+	if (gateOn || compressorOn)
+	{
+		for (auto& frame : frames)
+		{
+			const float gain = gateOn ? m_gate.gain(frame[0], frame[1]) : 1.f;
+			if (compressorOn)
+			{
+				float left = frame[0] * gain, right = frame[1] * gain;
+				m_compressor.process(left, right);
+				frame[0] = left;
+				frame[1] = right;
+			}
+			else
+			{
+				frame[0] *= gain;
+				frame[1] *= gain;
+			}
+		}
+	}
+	insertAt(InsertPoint::PostDynamics);
+
+	if (eqOn)
+	{
+		for (auto f = std::size_t{0}; f < count; ++f)
+		{
+			const float progress = progressAt(f);
+			for (ch_cnt_t ch = 0; ch < 2; ++ch)
+			{
+				frames[f][ch] = static_cast<float>(m_eq.process(frames[f][ch], ch, progress));
+			}
+		}
+	}
+	insertAt(InsertPoint::PostEq);
 
 	if (monoBassOn) { m_monoBass.end(); }
 	finishFilters();

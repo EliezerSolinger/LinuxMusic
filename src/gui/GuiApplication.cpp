@@ -271,8 +271,10 @@ GuiApplication::GuiApplication()
 				browser->grab().save(screenshotPath);
 			}
 			// =mixer captures the mixer
-			else if (screenshotAction == "mixer" && m_mixerView)
+			else if ((screenshotAction == "mixer" || screenshotAction == "mixer-channel") && m_mixerView)
 			{
+				// mixer-channel: with the first channel selected (its settings and effects beside the strips)
+				if (screenshotAction == "mixer-channel") { m_mixerView->setCurrentMixerChannel(1); }
 				m_mixerView->resize(1100, m_mixerView->minimumSizeHint().height());
 				m_mixerView->grab().save(screenshotPath);
 			}

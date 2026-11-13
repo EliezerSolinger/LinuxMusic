@@ -28,6 +28,7 @@
 #include "AnalogChannelStrip.h"
 #include "AudioBuffer.h"
 #include "ChannelMeter.h"
+#include "ComboBoxModel.h"
 #include "EffectChain.h"
 #include "LatencyDelay.h"
 #include "MasterSection.h"
@@ -98,6 +99,13 @@ public:
 
 	//! The strip of an analog desk, between the input trim and the effects, in analog mode (see Mixer::isAnalog())
 	AnalogChannelStrip m_analogStrip;
+
+	using InsertPoint = AnalogChannelStrip::InsertPoint;
+	//! Where the effects go in the signal path (an InsertPoint): a new channel's after the gain, a channel of a
+	//! project of before at the end of the strip, where they were. In digital mode, where there is no strip, every
+	//! point but PrePan is the same: before the fader.
+	ComboBoxModel m_fxInsertModel;
+	auto fxInsertPoint() const -> InsertPoint { return static_cast<InsertPoint>(m_fxInsertModel.value()); }
 
 	//! The signal after the effects and before the stereo section, pan and fader, for pre-fader sends
 	std::vector<SampleFrame> m_preFaderBuffer;

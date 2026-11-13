@@ -49,6 +49,7 @@ namespace lmms
 namespace lmms::gui
 {
 
+class ComboBox;
 class Knob;
 class TextKnob;
 class LedCheckBox;
@@ -179,6 +180,8 @@ private:
 	//! The selected channel's settings, above its effects: mono and panning (trim, phase and the compressor's
 	//! release are on each strip; the stereo width keeps its model, at 100 %, without a control)
 	LedCheckBox* m_monoBox;
+	QLabel* m_insertPointLabel;
+	ComboBox* m_insertPointBox;
 	Knob* m_panKnob;
 
 	friend class MixerChannelView;

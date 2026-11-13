@@ -107,12 +107,35 @@ public:
 	FloatModel m_eqLowMidModel;		//!< dB
 	FloatModel m_eqLowModel;		//!< dB
 
+	//! Where the channel's effects go in its signal path (the user's notes of 13/11)
+	enum class InsertPoint
+	{
+		PreGain,		//!< before the GAIN pot
+		PostGain,		//!< after the gain stage (and the low cut): the default
+		PostFilter,		//!< after the HPF, the LPF and the mono bass
+		PostDynamics,	//!< after the gate and the compressor
+		PostEq,			//!< after the EQ: the end of the strip, where the effects were before
+		PrePan,			//!< after the fader, before the panning (post-fader)
+		Count
+	};
+
+	//! What the strip calls at its insert point: the channel's effects on the frames [audio thread]
+	class InsertHook
+	{
+	public:
+		virtual void operator()(std::span<SampleFrame> frames) = 0;
+	protected:
+		~InsertHook() = default;
+	};
+
 	/**
 	 * Processes the channel's main pair in place; @p hadInput tells whether it had signal [audio thread]
 	 * @param tolerance its components' (see ChannelTolerance)
+	 * @param hook called once where @p point is in the strip (not for InsertPoint::PrePan, which is after it)
 	 */
 	void process(std::span<SampleFrame> frames, sample_rate_t sampleRate, bool hadInput,
-		const ChannelTolerance& tolerance = ChannelTolerance::none());
+		const ChannelTolerance& tolerance = ChannelTolerance::none(), InsertPoint point = InsertPoint::PostEq,
+		InsertHook* hook = nullptr);
 
 	//! Whether the filters may still ring after the input fell silent, so the channel must be processed
 	//! [audio thread]
