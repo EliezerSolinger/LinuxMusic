@@ -1528,3 +1528,42 @@ lmms--gui--MixerChannelView QPushButton#btn-drive[kind="tube"] {
 	background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #ffb347, stop:0.6 #ff7a1a, stop:1 #b33c00);
 	color: #2a0e00;
 }
+
+/* Tabs of the main window's areas and of the explorer: all dark, like the explorer's (the user's notes of 13/11) */
+
+QTabWidget#topDock::pane, QTabWidget#bottomDock::pane,
+QTabWidget#rightDock::pane, QTabWidget#pluginTabs::pane {
+	border: none;
+	border-top: 1px solid #262b30;
+}
+
+QTabWidget#topDock QTabBar, QTabWidget#bottomDock QTabBar,
+QTabWidget#rightDock QTabBar, QTabWidget#pluginTabs QTabBar, QTabBar#browserHeader {
+	background: #14161a;
+}
+
+QTabWidget#topDock QTabBar::tab, QTabWidget#bottomDock QTabBar::tab,
+QTabWidget#rightDock QTabBar::tab, QTabWidget#pluginTabs QTabBar::tab, QTabBar#browserHeader::tab {
+	background: #181b1f;
+	color: #8c96a3;
+	border: none;
+	border-right: 1px solid #0f1114;
+	border-bottom: 2px solid transparent;
+	padding: 4px 12px;
+	min-height: 16px;
+}
+
+QTabWidget#topDock QTabBar::tab:selected, QTabWidget#bottomDock QTabBar::tab:selected,
+QTabWidget#rightDock QTabBar::tab:selected, QTabWidget#pluginTabs QTabBar::tab:selected,
+QTabBar#browserHeader::tab:selected {
+	background: #262b30;
+	color: #4afd85;
+	border-bottom: 2px solid #4afd85;
+}
+
+QTabWidget#topDock QTabBar::tab:hover:!selected, QTabWidget#bottomDock QTabBar::tab:hover:!selected,
+QTabWidget#rightDock QTabBar::tab:hover:!selected, QTabWidget#pluginTabs QTabBar::tab:hover:!selected,
+QTabBar#browserHeader::tab:hover:!selected {
+	background: #20242a;
+	color: #d1d8e4;
+}

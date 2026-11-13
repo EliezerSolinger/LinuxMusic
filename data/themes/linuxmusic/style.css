@@ -1235,7 +1235,7 @@ QTabWidget#rightDock::pane, QTabWidget#pluginTabs::pane {
 }
 
 QTabWidget#topDock QTabBar::tab, QTabWidget#bottomDock QTabBar::tab,
-QTabWidget#rightDock QTabBar::tab, QTabWidget#pluginTabs QTabBar::tab {
+QTabWidget#rightDock QTabBar::tab, QTabWidget#pluginTabs QTabBar::tab, QTabBar#browserHeader::tab {
 	background: #26292d;
 	color: #9aa0a6;
 	border: none;
@@ -1245,14 +1245,16 @@ QTabWidget#rightDock QTabBar::tab, QTabWidget#pluginTabs QTabBar::tab {
 }
 
 QTabWidget#topDock QTabBar::tab:selected, QTabWidget#bottomDock QTabBar::tab:selected,
-QTabWidget#rightDock QTabBar::tab:selected, QTabWidget#pluginTabs QTabBar::tab:selected {
+QTabWidget#rightDock QTabBar::tab:selected, QTabWidget#pluginTabs QTabBar::tab:selected,
+QTabBar#browserHeader::tab:selected {
 	background: #3a3d42;
 	color: #2bd4a8;
 	border-bottom: 2px solid #2bd4a8;
 }
 
 QTabWidget#topDock QTabBar::tab:hover:!selected, QTabWidget#bottomDock QTabBar::tab:hover:!selected,
-QTabWidget#rightDock QTabBar::tab:hover:!selected, QTabWidget#pluginTabs QTabBar::tab:hover:!selected {
+QTabWidget#rightDock QTabBar::tab:hover:!selected, QTabWidget#pluginTabs QTabBar::tab:hover:!selected,
+QTabBar#browserHeader::tab:hover:!selected {
 	background: #313439;
 	color: #d6d9dd;
 }
