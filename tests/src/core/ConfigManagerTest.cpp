@@ -83,6 +83,19 @@ private slots:
 		QCOMPARE(config->value("audioengine", "framesperaudiobuffer"), QString{"512"});
 		QVERIFY(config->value("mixer", "audiodev").isNull());
 	}
+
+	//! A value with lines (e.g. the suspect plugins, one a line) comes back from the file as it was
+	void aValueWithLinesIsKept()
+	{
+		auto* config = ConfigManager::inst();
+		const auto path = configFile("version=\"1.3.0\" configversion=\"3\"", "");
+		config->loadConfigFile(path);
+		config->setValue("plugins", "suspects", "ladspaeffect|file=a b.so\nvestige|file=Synth.dll");
+		config->saveConfigFile();
+		config->setValue("plugins", "suspects", "");
+		config->loadConfigFile(path);
+		QCOMPARE(config->value("plugins", "suspects"), QString{"ladspaeffect|file=a b.so\nvestige|file=Synth.dll"});
+	}
 };
 
 QTEST_GUILESS_MAIN(ConfigManagerTest)
