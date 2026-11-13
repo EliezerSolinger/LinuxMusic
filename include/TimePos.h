@@ -124,6 +124,10 @@ public:
 		return TimePos(static_cast<int>(frames / framesPerTick));
 	}
 
+	//! The farthest a position or a length may be (about 350,000 bars): positions from files are kept within it, so
+	//! that sums of them and their frames do not overflow
+	static constexpr tick_t MaxTicks = tick_t{1} << 26;
+
 	static tick_t ticksPerBar() { return s_ticksPerBar; }
 	static tick_t ticksPerBar(const TimeSig& sig) { return DefaultTicksPerBar * sig.numerator() / sig.denominator(); }
 

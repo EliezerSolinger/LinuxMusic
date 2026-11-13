@@ -815,9 +815,12 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 		}
 		if( element.tagName() == "time" )
 		{
-			int timeMapPos = element.attribute("pos").toInt();
+			// Kept within range whatever the file holds
+			int timeMapPos = std::clamp(element.attribute("pos").toInt(), 0, TimePos::MaxTicks);
 			float timeMapInValue = LocaleHelper::toFloat(element.attribute("value"));
 			float timeMapOutValue = LocaleHelper::toFloat(element.attribute("outValue"));
+			if (!std::isfinite(timeMapInValue)) { timeMapInValue = 0.f; }
+			if (!std::isfinite(timeMapOutValue)) { timeMapOutValue = timeMapInValue; }
 
 			m_timeMap[timeMapPos] = AutomationNode(this, timeMapInValue, timeMapOutValue, timeMapPos);
 

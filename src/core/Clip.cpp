@@ -97,7 +97,7 @@ Clip::~Clip()
 
 void Clip::movePosition( const TimePos & pos )
 {
-	TimePos newPos = std::max(0, pos.getTicks());
+	TimePos newPos = std::clamp(pos.getTicks(), 0, TimePos::MaxTicks);
 	if (m_startPosition != newPos)
 	{
 		Engine::audioEngine()->requestChangeInModel();
@@ -109,8 +109,9 @@ void Clip::movePosition( const TimePos & pos )
 }
 
 
-void Clip::changeLength( const TimePos & length )
+void Clip::changeLength(const TimePos& newLength)
 {
+	const auto length = TimePos{std::clamp(newLength.getTicks(), 0, TimePos::MaxTicks)};
 	if (m_length == length) { return; }
 
 	m_length = length;

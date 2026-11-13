@@ -25,10 +25,13 @@
 
 #include <QDomElement>
 
+#include <algorithm>
 #include <cmath>
 
 #include "Note.h"
 #include "DetuningHelper.h"
+#include "panning.h"
+#include "volume.h"
 
 namespace lmms
 {
@@ -205,15 +208,18 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 
 void Note::loadSettings( const QDomElement & _this )
 {
+	// Values from a file are kept within their ranges, whatever the file holds
 	const int oldKey = _this.attribute( "tone" ).toInt() + _this.attribute( "oct" ).toInt() * KeysPerOctave;
-	m_key = std::max(oldKey, _this.attribute("key").toInt());
-	m_volume = _this.attribute( "vol" ).toInt();
-	m_panning = _this.attribute( "pan" ).toInt();
-	m_length = _this.attribute( "len" ).toInt();
-	m_pos = _this.attribute( "pos" ).toInt();
+	m_key = std::clamp(std::max(oldKey, _this.attribute("key").toInt()), 0, NumKeys - 1);
+	m_volume = static_cast<volume_t>(std::clamp(_this.attribute("vol").toInt(), static_cast<int>(MinVolume),
+		static_cast<int>(MaxVolume)));
+	m_panning = static_cast<panning_t>(std::clamp(_this.attribute("pan").toInt(), static_cast<int>(PanningLeft),
+		static_cast<int>(PanningRight)));
+	m_length = std::clamp(_this.attribute("len").toInt(), -TimePos::MaxTicks, TimePos::MaxTicks);
+	m_pos = std::clamp(_this.attribute("pos").toInt(), -TimePos::MaxTicks, TimePos::MaxTicks);
 	// Default m_type value is 0, which corresponds to RegularNote
 	static_assert(0 == static_cast<int>(Type::Regular));
-	m_type = static_cast<Type>(_this.attribute("type", "0").toInt());
+	m_type = _this.attribute("type", "0").toInt() == static_cast<int>(Type::Step) ? Type::Step : Type::Regular;
 
 	if( _this.hasChildNodes() )
 	{

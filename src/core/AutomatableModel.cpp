@@ -413,6 +413,9 @@ void AutomatableModel::setStep( const float step )
 
 float AutomatableModel::fittedValue(float value) const
 {
+	// Not a number (e.g. from a damaged project) is no value: the model's initial one stands in. (Clamping would
+	// keep it: every comparison with NaN is false.)
+	if (std::isnan(value)) { value = std::isnan(m_initValue) ? m_minValue : m_initValue; }
 	value = std::clamp(value, m_minValue, m_maxValue);
 
 	if (m_step != 0 && m_hasStrictStepSize)

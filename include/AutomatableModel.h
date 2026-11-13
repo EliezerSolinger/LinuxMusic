@@ -403,7 +403,7 @@ private:
 
 	ScaleType m_scaleType; //!< scale type, linear by default
 	float m_value;
-	float m_initValue;
+	float m_initValue = 0.f;
 	float m_minValue;
 	float m_maxValue;
 	float m_step;
