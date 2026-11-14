@@ -15,8 +15,9 @@ Já feita no nível do produto: executável `linuxmusic`, textos da interface e 
 `~/Documents/LinuxMusic`, `/usr/lib/linuxmusic` e `/usr/share/linuxmusic`, `.desktop`, ícones, tipo MIME
 `application/x-linuxmusic-project`, man page, bash completion, AppImage e nome do cliente no JACK, PulseAudio e ALSA.
 
-Mantido de propósito: o namespace C++ `lmms` e as macros `LMMS_*` (internos e invisíveis para o usuário),
-as extensões `.mmp`/`.mmpz` e o logo/splash do LMMS (ainda falta arte própria).
+Mantido de propósito: o namespace C++ `lmms` e as macros `LMMS_*` (internos e invisíveis para o usuário) e as
+extensões `.mmp`/`.mmpz`. O logo, os ícones e o splash são próprios (`tools/artwork`, que gera todos a partir dos
+SVGs); os créditos do LMMS e a GPL continuam no Sobre e no splash.
 
 ## Trazendo atualizações do LMMS
 
