@@ -380,18 +380,19 @@ Feito depois (mesma noite e manhã de 13/11):
   volta ou removidos, sem mexer nos arquivos), e no loop só a última passada fica. A interface do passo 4 esconde
   as lanes nesse modo.
 
-Por fazer (a lista completa e atualizada fica em `pendencias.md`):
-- **Mapa de tempo:** a fórmula de compasso por marcador. (O desfazer das edições ficou pronto em 13/11: cada edição
-  da faixa TEMPO é um comando, e um arraste é um passo.)
+Feito em 13/11 (a lista completa fica em `pendencias.md`):
+- **Mapa de tempo:** a fórmula de compasso por marcador (um compasso começa no marcador; régua, grade, encaixe,
+  metrônomo, pré-roll, mostrador, plugins, MIDI e editores de clipe seguem os compassos).
 - **Etapa 1:**
-  - nada de alocação no áudio: o `AudioThreadAllocationTest` conta cada alocação e liberação feita na thread de
-    áudio com a música tocando, e mostra onde. A automação deixou de alocar (13/11: mapa plano e listas que guardam
-    o espaço; era a maior parte). Faltam o ciclo de vida das notas (o `NotePlayHandle` e os dados de nota que cada
-    instrumento cria com `new`), a lista de play handles do motor e a monitoração do master;
-  - o motor sem o mutex do período;
-  - o transporte com contador de frames.
+  - nada de alocação no áudio: notas, motor, instrumentos e um pool de tempo real (`AudioThreadAllocationTest`
+    exige zero);
+  - o motor não espera mais as mudanças do modelo na thread do dispositivo (meio período no máximo; depois,
+    silêncio contado como queda);
+  - o transporte com contador de frames (`Transport`).
 - **Etapa 0:**
-  - isolamento de plugins;
+  - isolamento de plugins: o plugin ativo numa queda vai para a lista de suspeitos e não é carregado até ser
+    permitido (Configurações → Desempenho → Plugins). Rodar isolado pela ponte do Carla não é possível para os
+    efeitos nativos, LV2 e LADSPA; VST e ZynAddSubFX já rodam em outro processo;
   - a lista de problemas ao abrir um projeto.
 - **Conhecido:**
   - (corrigido em 13/11: na razão exata de 1, `Sample::play` toca as amostras como estão, sem o atraso do reamostrador);
