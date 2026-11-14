@@ -102,7 +102,9 @@ Motor e estabilidade:
 - [ ] **Antes de publicar:** as correções em submódulos (ZynAddSubFX, adplug, veal, swh, tap, resid) estão em
   commits locais no ramo `linuxmusic` de cada um; precisam ir para forks do LinuxMusic e o `.gitmodules` apontar
   para eles
-- [ ] **Integração final:** testes, sanitizers, A/B, gravação real no Mac, documentação
+- [x] **Integração final:** 41 testes; ASan e UBSan nos testes e nos 83 projetos sem nenhum erro; TSan nos testes de
+  threads; A/B igual (só os plugins aleatórios variam); `gravacao-como-usar.md` atualizado. A gravação real no Mac
+  fica no item do microfone, abaixo
 - [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux (o usuário)
 - [ ] **Mac:** testar a entrada do microfone no hardware (precisa de alguém para aceitar o pedido de permissão)
 - [x] **Arte própria** do logo e do splash: um anel de gravar em volta das barras de uma forma de onda, no verde do
