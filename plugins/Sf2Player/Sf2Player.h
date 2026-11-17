@@ -28,6 +28,7 @@
 #define SF2_PLAYER_H
 
 #include <array>
+#include <vector>
 #include <fluidsynth/types.h>
 #include <QMutex>
 #include <samplerate.h>
@@ -147,7 +148,8 @@ private:
 	FloatModel m_chorusSpeed;
 	FloatModel m_chorusDepth;
 
-	QVector<NotePlayHandle *> m_playingNotes;
+	//! The notes starting or ending this period (room kept for them: it grows on the audio thread only past that)
+	std::vector<NotePlayHandle*> m_playingNotes;
 	QMutex m_playingNotesMutex;
 
 private:

@@ -141,7 +141,9 @@ auto FrequencyShifterEffect::process(ProcessContext& context) -> ProcessStatus
 		const float base1 = fs + spread;
 		m_trueShift[0] = (1.f - glideCoeff) * base0 + glideCoeff * m_trueShift[0];
 		m_trueShift[1] = (1.f - glideCoeff) * base1 + glideCoeff * m_trueShift[1];
-		m_trueDelay = std::max((1.f - delayGlideCoeff) * delayLen + delayGlideCoeff * m_trueDelay, 1.f);
+		// (inside the ring, room left for the interpolation's points)
+		m_trueDelay = std::clamp((1.f - delayGlideCoeff) * delayLen + delayGlideCoeff * m_trueDelay, 1.f,
+			static_cast<float>(m_ringBufSize - 4));
 		m_truePhase = (1.f - glideCoeff) * phase + glideCoeff * m_truePhase;
 
 		// delay line with 4-point hermite interpolation
@@ -275,7 +277,10 @@ void FrequencyShifterEffect::updateSampleRate()
 	
 	// +6 provides space for interpolation
 	m_ringBufSize = (m_controls.m_delayLengthLong.maxValue() + m_controls.m_delayLengthShort.maxValue()) * 0.001f * m_sampleRate + 6.f;
-	m_ringBuf.resize(m_ringBufSize);
+	// What was in it was at the old rate: it starts empty, writing from its start, the delay within it
+	m_ringBuf.assign(m_ringBufSize, {0.f, 0.f});
+	m_writeIndex = 0;
+	m_trueDelay = std::clamp(m_trueDelay, 1.f, static_cast<float>(m_ringBufSize - 4));
 }
 
 } // namespace lmms

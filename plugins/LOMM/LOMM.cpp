@@ -94,6 +94,8 @@ void LOMMEffect::changeSampleRate()
 			m_scLookBuf[j][i].resize(m_lookBufLength, LOMM_MIN_FLOOR);
 		}
 	}
+	// (the buffers may have shrunk: writing goes on from inside them)
+	m_lookWrite = 0;
 
 	std::fill(m_yL.begin(), m_yL.end(), std::array<float, 2>{LOMM_MIN_FLOOR, LOMM_MIN_FLOOR});
 	m_rms = m_gainResult = m_displayIn = m_displayOut = m_prevOut = m_yL;

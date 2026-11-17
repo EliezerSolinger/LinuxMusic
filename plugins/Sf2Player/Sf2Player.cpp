@@ -154,6 +154,9 @@ Sf2Instrument::Sf2Instrument( InstrumentTrack * _instrument_track ) :
 	m_chorusSpeed(FLUID_CHORUS_DEFAULT_SPEED, 0.29f, 5.f, 0.01f, this, tr("Chorus speed")),
 	m_chorusDepth(FLUID_CHORUS_DEFAULT_DEPTH, 0, 46.f, 0.05f, this, tr("Chorus depth"))
 {
+	// Room for the notes of a period (it would grow on the audio thread)
+	m_playingNotes.reserve(1024);
+
 	// Deactivate all audio drivers in fluidsynth
 	const char* none[] = { nullptr };
 	fluid_audio_driver_register(none);
@@ -652,7 +655,8 @@ void Sf2Instrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 	{
 		const int baseVelocity = instrumentTrack()->midiPort()->baseVelocity();
 
-		auto pluginData = new Sf2PluginData;
+		// (in the note's own room: nothing allocated on the audio thread)
+		auto* pluginData = _n->makePluginData<Sf2PluginData>();
 		pluginData->midiNote = midiNote;
 		pluginData->lastPanning = 0;
 		pluginData->lastVelocity = _n->midiVelocity( baseVelocity );
@@ -661,11 +665,9 @@ void Sf2Instrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 		pluginData->noteOffSent = false;
 		pluginData->panning = _n->getPanning();
 
-		_n->m_pluginData = pluginData;
-
 		// insert the nph to the playing notes vector
 		m_playingNotesMutex.lock();
-		m_playingNotes.append( _n );
+		m_playingNotes.push_back(_n);
 		m_playingNotesMutex.unlock();
 	}
 	else if( _n->isReleased() && ! _n->instrumentTrack()->isSustainPedalPressed() ) // note is released during this period
@@ -675,7 +677,7 @@ void Sf2Instrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 		pluginData->isNew = false;
 
 		m_playingNotesMutex.lock();
-		m_playingNotes.append( _n );
+		m_playingNotes.push_back(_n);
 		m_playingNotesMutex.unlock();
 	}
 
@@ -785,7 +787,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 		m_synthMutex.unlock();
 	}
 	// if we have no new noteons/noteoffs, just render a period and call it a day
-	if( m_playingNotes.isEmpty() )
+	if (m_playingNotes.empty())
 	{
 		renderFrames(out.size(), out.data());
 		return;
@@ -795,11 +797,11 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 	// go through noteplayhandles in processing order
 	f_cnt_t currentFrame = 0;
 
-	while( ! m_playingNotes.isEmpty() )
+	while (!m_playingNotes.empty())
 	{
 		// find the note with lowest offset
 		NotePlayHandle * currentNote = m_playingNotes[0];
-		for( int i = 1; i < m_playingNotes.size(); ++i )
+		for (std::size_t i = 1; i < m_playingNotes.size(); ++i)
 		{
 			auto currentData = static_cast<Sf2PluginData*>(currentNote->m_pluginData);
 			auto iData = static_cast<Sf2PluginData*>(m_playingNotes[i]->m_pluginData);
@@ -828,7 +830,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 			else // otherwise remove the handle
 			{
 				m_playingNotesMutex.lock();
-				m_playingNotes.remove( m_playingNotes.indexOf( currentNote ) );
+				std::erase(m_playingNotes, currentNote);
 				m_playingNotesMutex.unlock();
 			}
 		}
@@ -836,7 +838,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 		{
 			noteOff( currentData );
 			m_playingNotesMutex.lock();
-			m_playingNotes.remove( m_playingNotes.indexOf( currentNote ) );
+			std::erase(m_playingNotes, currentNote);
 			m_playingNotesMutex.unlock();
 		}
 	}
@@ -895,13 +897,10 @@ void Sf2Instrument::deleteNotePluginData( NotePlayHandle * _n )
 	{
 		noteOff( pluginData );
 		m_playingNotesMutex.lock();
-		if( m_playingNotes.indexOf( _n ) >= 0 )
-		{
-			m_playingNotes.remove( m_playingNotes.indexOf( _n ) );
-		}
+		std::erase(m_playingNotes, _n);
 		m_playingNotesMutex.unlock();
 	}
-	delete pluginData;
+	_n->destroyPluginData<Sf2PluginData>();
 }
 
 

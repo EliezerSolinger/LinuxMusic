@@ -467,3 +467,20 @@ Processo, igual para as duas:
   - os estáticos (fase 8);
   - o `PeakController` que apaga a si mesmo (vai para a fase 5, plugins internos).
 - Os ponteiros estáticos do `Engine` ficam crus até a fase 8 (ciclo de vida).
+
+### Fase 5: plugins internos à prova de falhas: concluída
+- [x] 5.1 `BuiltinPluginsTest`: cada instrumento (20) e efeito (25) interno, achado pela fábrica de plugins.
+  - Toca com os parâmetros no padrão, todos no mínimo, todos no máximo e em três sorteios.
+  - Salva e carrega, e muda a taxa para 96 e 192 kHz e de volta.
+  - A saída fica finita, e ASan/UBSan ficam limpos.
+  - Os hospedeiros de terceiros e os players que precisam de arquivos próprios (GIG, PAT) ficam de fora.
+  - Achou:
+    - FrequencyShifter: o atraso passava do buffer circular (lia fora dele) e, na troca de taxa, o índice de escrita
+      ficava além do buffer;
+    - na varredura do mesmo padrão, o LOMM: o índice do buffer de antecipação não voltava a zero quando ele
+      encolhia.
+- [x] 5.2 `AudioThreadAllocationTest` cobre todos os efeitos internos e também o Sf2Player e o AVL Drums.
+  - O Sf2Player alocava na thread de áudio: os dados de cada nota com `new`, e a lista de notas crescia. Agora
+    usa o espaço da nota (`makePluginData`) e uma lista com espaço reservado.
+- [ ] Ainda com trava na thread de áudio: as `QMutex` do Sf2Player (síntese e lista de notas) e do envelope/LFO.
+  Vão na fase 7 (render sem trava).

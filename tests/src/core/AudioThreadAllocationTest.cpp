@@ -51,6 +51,7 @@
 #include "Note.h"
 #include "NotePlayHandle.h"
 #include "PluginChecks.h"
+#include "PluginFactory.h"
 #include "PluginInstance.h"
 #include "RealtimeAllocator.h"
 #include "SampleClip.h"
@@ -482,7 +483,7 @@ private slots:
 		QTest::addColumn<QString>("instrument");
 		for (const auto* name : {"tripleoscillator", "bitinvader", "kicker", "lb302", "monstro", "nes", "organic",
 			"sfxr", "sid", "vibedstrings", "watsyn", "xpressive", "freeboy", "malletsstk", "opulenz",
-			"audiofileprocessor", "slicert", "zynaddsubfx"})
+			"audiofileprocessor", "slicert", "zynaddsubfx", "sf2player", "avldrums"})
 		{
 			QTest::newRow(name) << QString{name};
 		}
@@ -544,6 +545,46 @@ private slots:
 			qInfo("realtime pool: %zu KB at most in use, %ld frees of the system's memory handed over",
 				stats.peakBytes / 1024, s_handedOver.load());
 		}
+		QVERIFY2(events == 0, qPrintable(QString{"%1 allocations or frees on the audio thread"}.arg(events)));
+	}
+
+	//! Each built-in effect on a mixer channel, a track playing through it: what it allocates on the audio thread
+	void effectsAllocateNothing_data()
+	{
+		QTest::addColumn<QString>("effect");
+		auto names = QStringList{};
+		for (const auto* descriptor : getPluginFactory()->descriptors(Plugin::Type::Effect))
+		{
+			const auto name = QString::fromUtf8(descriptor->name);
+			// (third-party hosts: their plugins are not ours)
+			if (name == "ladspaeffect" || name == "lv2effect" || name == "vsteffect") { continue; }
+			names << name;
+		}
+		names.sort();
+		for (const auto& name : names) { QTest::newRow(qPrintable(name)) << name; }
+	}
+
+	void effectsAllocateNothing()
+	{
+		QFETCH(QString, effect);
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track->loadInstrument("tripleoscillator"));
+		auto* mixer = Engine::mixer();
+		const auto channelIndex = mixer->createChannel();
+		track->mixerChannelModel()->setValue(channelIndex);
+		auto* chain = &mixer->mixerChannel(channelIndex)->m_fxChain;
+		chain->appendEffect(std::make_unique<PluginInstance>(Plugin::Type::Effect, effect, chain, nullptr));
+		mixer->setUpTrackChannels();
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
+		for (int note = 0; note < 16; ++note)
+		{
+			clip->addNote(Note{TimePos{36}, TimePos{note * 24}, DefaultKey + note % 12});
+		}
+
+		const auto events = playCounting(40, 600);
+		report(events);
 		QVERIFY2(events == 0, qPrintable(QString{"%1 allocations or frees on the audio thread"}.arg(events)));
 	}
 };
