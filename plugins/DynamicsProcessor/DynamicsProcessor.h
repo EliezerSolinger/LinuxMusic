@@ -27,6 +27,8 @@
 #ifndef DYNPROC_H
 #define DYNPROC_H
 
+#include <atomic>
+
 #include "Effect.h"
 #include "DynamicsProcessorControls.h"
 
@@ -62,7 +64,8 @@ private:
 	double m_attCoeff;
 	double m_relCoeff;
 	
-	bool m_needsUpdate;
+	//! Set by the controls when the sample rate changes (GUI thread), taken by process() (audio thread)
+	std::atomic<bool> m_needsUpdate = true;
 	
 	RmsHelper * m_rms [2];
 

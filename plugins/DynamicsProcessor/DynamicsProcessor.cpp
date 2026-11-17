@@ -115,13 +115,12 @@ auto DynProcEffect::process(ProcessContext& context) -> ProcessStatus
 // debug code
 //	qDebug( "peaks %f %f", m_currentPeak[0], m_currentPeak[1] );
 
-	if( m_needsUpdate )
+	if (m_needsUpdate.exchange(false))
 	{
 		m_rms[0]->setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
 		m_rms[1]->setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
 		calcAttack();
 		calcRelease();
-		m_needsUpdate = false;
 	}
 	else
 	{
