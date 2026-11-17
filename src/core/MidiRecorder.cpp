@@ -120,7 +120,7 @@ void MidiRecorder::addNote(InstrumentTrack* track, TrackState& state, int key, v
 	state.clips.insert(clip);
 
 	const auto length = std::max<tick_t>(1, end - start);
-	const auto* note = clip->addNote(Note{TimePos{length}, TimePos{start - clip->startPosition()}, key, volume}, false);
+	const auto* note = clip->addNote(Note{TimePos{length}, TimePos{start - clip->startPosition()}, key, volume});
 	state.added.insert(note);
 }
 

@@ -128,10 +128,7 @@ public:
 	void loadGhostNotes( const QDomElement & de );
 	void loadMarkedSemiTones(const QDomElement & de);
 
-	inline void stopRecording()
-	{
-		m_recording = false;
-	}
+	void stopRecording() { setRecording(false); }
 
 	inline bool isRecording() const
 	{
@@ -398,6 +395,8 @@ private:
 
 	TimePos m_currentPosition;
 	bool m_recording;
+	//! Records or stops, and tells the song (which the audio thread asks)
+	void setRecording(bool recording);
 	bool m_doAutoQuantization{false};
 	QList<Note> m_recordingNotes;
 

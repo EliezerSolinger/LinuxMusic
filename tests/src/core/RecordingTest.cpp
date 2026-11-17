@@ -736,7 +736,7 @@ private slots:
 		track->recordArmModel()->setValue(true);
 		track->midiRecordModeModel()->setValue(static_cast<int>(MidiRecorder::Mode::TakeLane));
 		auto* existing = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
-		existing->addNote(Note{TimePos{24}, TimePos{bar + 10}}, false);
+		existing->addNote(Note{TimePos{24}, TimePos{bar + 10}});
 		Engine::projectJournal()->setJournalling(true);
 
 		song->setPlayPos(0, Song::PlayMode::Song);
@@ -877,7 +877,7 @@ private slots:
 
 		// The busy track has a clip over bars 1 and 2 with a note in bar 2
 		auto* existing = dynamic_cast<MidiClip*>(busy->createClip(TimePos{0}));
-		existing->addNote(Note{TimePos{24}, TimePos{bar + 10}}, false);
+		existing->addNote(Note{TimePos{24}, TimePos{bar + 10}});
 
 		song->setPlayPos(0, Song::PlayMode::Song);
 		QVERIFY(song->record());

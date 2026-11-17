@@ -220,7 +220,7 @@ private slots:
 
 		// A note at the default volume, at the sample's own pitch (A4 plays it as it is)
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
-		clip->addNote(Note{TimePos{192}, TimePos{0}, DefaultKey}, false);
+		clip->addNote(Note{TimePos{192}, TimePos{0}, DefaultKey});
 
 		const auto [left, right] = playedLevel();
 		qInfo("instrument: %s: L %+.2f dB, R %+.2f dB", analog ? "analog" : "digital", left, right);
@@ -234,7 +234,7 @@ private slots:
 		Engine::mixer()->setUpTrackChannels();
 		QVERIFY(track->loadInstrument("tripleoscillator"));
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
-		clip->addNote(Note{TimePos{192}, TimePos{0}, DefaultKey}, false);
+		clip->addNote(Note{TimePos{192}, TimePos{0}, DefaultKey});
 		clip->setLane(1); // (a lane below the one heard)
 
 		const auto loudest = [&] {

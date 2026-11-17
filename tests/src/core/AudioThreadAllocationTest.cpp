@@ -370,7 +370,7 @@ private slots:
 		auto* clip = dynamic_cast<MidiClip*>(instrumentTrack->createClip(TimePos{0}));
 		for (int note = 0; note < 32; ++note)
 		{
-			clip->addNote(Note{TimePos{24}, TimePos{note * 24}, DefaultKey + note % 12}, false);
+			clip->addNote(Note{TimePos{24}, TimePos{note * 24}, DefaultKey + note % 12});
 		}
 		Engine::mixer()->setUpTrackChannels();
 
@@ -430,7 +430,7 @@ private slots:
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
 		for (int note = 0; note < 16; ++note)
 		{
-			clip->addNote(Note{TimePos{48}, TimePos{note * 24}, DefaultKey + note % 7}, false);
+			clip->addNote(Note{TimePos{48}, TimePos{note * 24}, DefaultKey + note % 7});
 		}
 
 		const auto events = playCounting(40, 1200);
@@ -510,7 +510,7 @@ private slots:
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
 		for (int note = 0; note < 16; ++note)
 		{
-			clip->addNote(Note{TimePos{36}, TimePos{note * 24}, DefaultKey + note % 12}, false);
+			clip->addNote(Note{TimePos{36}, TimePos{note * 24}, DefaultKey + note % 12});
 		}
 
 		// These make each note's voice on the audio thread as a library builds it, with new (Xpressive's compiled

@@ -158,7 +158,7 @@ private slots:
 
 		MidiClip midiClip(&instrumentTrack);
 		midiClip.changeLength(TimePos(4, 0));
-		Note* note = midiClip.addNote(Note(TimePos(4, 0)), false);
+		Note* note = midiClip.addNote(Note(TimePos(4, 0)));
 		note->createDetuning();
 
 		auto clip = note->detuning()->automationClip();

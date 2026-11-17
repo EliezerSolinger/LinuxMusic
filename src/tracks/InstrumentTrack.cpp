@@ -29,7 +29,6 @@
 #include "ConfigManager.h"
 #include "ControllerConnection.h"
 #include "DataFile.h"
-#include "GuiApplication.h"
 #include "Mixer.h"
 #include "Instrument.h"
 #include "Keymap.h"
@@ -38,7 +37,6 @@
 #include "MixHelpers.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
-#include "PianoRoll.h"
 #include "ProjectJournal.h"
 #include "Pitch.h"
 #include "Song.h"
@@ -824,7 +822,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	for (const auto& processHandle : m_processHandles)
 	{
 		processHandle->processTimePos(
-			_start, m_pitchModel.value(), gui::getGUI() && gui::getGUI()->pianoRoll()->isRecording());
+			_start, m_pitchModel.value(), Engine::getSong()->isRecordingInPianoRoll());
 	}
 
 	bool played_a_note = false;	// will be return variable

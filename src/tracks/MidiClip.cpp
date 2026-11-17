@@ -28,10 +28,9 @@
 #include <algorithm>
 #include <QDomElement>
 
-#include "GuiApplication.h"
 #include "InstrumentTrack.h"
 #include "PatternStore.h"
-#include "PianoRoll.h"
+#include "Song.h"
 
 
 
@@ -176,13 +175,9 @@ TimePos MidiClip::beatClipLength() const
 
 
 
-Note * MidiClip::addNote( const Note & _new_note, const bool _quant_pos )
+Note * MidiClip::addNote(const Note& newNote)
 {
-	auto new_note = _new_note.clone();
-	if (_quant_pos && gui::getGUI() != nullptr && gui::getGUI()->pianoRoll())
-	{
-		new_note->quantizePos(gui::getGUI()->pianoRoll()->quantization());
-	}
+	auto new_note = newNote.clone();
 
 	instrumentTrack()->lock();
 	m_notes.insert(std::upper_bound(m_notes.begin(), m_notes.end(), new_note, Note::lessThan), new_note);
@@ -281,7 +276,7 @@ Note * MidiClip::addStepNote( int step )
 	Note stepNote = Note(TimePos(DefaultTicksPerBar / 16), TimePos::stepPosition(step));
 	stepNote.setType(Note::Type::Step);
 
-	return addNote(stepNote, false);
+	return addNote(stepNote);
 }
 
 
@@ -353,7 +348,7 @@ void MidiClip::splitNotes(const NoteVector& notes, TimePos pos)
 		newNote.setLength(rightLength);
 		newNote.setPos(note->pos() + leftLength);
 
-		addNote(newNote, false);
+		addNote(newNote);
 	}
 }
 
@@ -387,12 +382,12 @@ void MidiClip::splitNotesAlongLine(const NoteVector notes, TimePos pos1, int key
 
 			if (deleteShortEnds)
 			{
-				addNote(newNote1.length() >= newNote2.length() ? newNote1 : newNote2, false);
+				addNote(newNote1.length() >= newNote2.length() ? newNote1 : newNote2);
 			}
 			else
 			{
-				addNote(newNote1, false);
-				addNote(newNote2, false);
+				addNote(newNote1);
+				addNote(newNote2);
 			}
 
 			removeNote(note);
@@ -621,13 +616,7 @@ void MidiClip::updatePatternTrack()
 	{
 		Engine::patternStore()->updatePatternTrack(this);
 	}
-
-	if (gui::getGUI() != nullptr
-		&& gui::getGUI()->pianoRoll()
-		&& gui::getGUI()->pianoRoll()->currentMidiClip() == this)
-	{
-		gui::getGUI()->pianoRoll()->update();
-	}
+	// (the Piano Roll showing this clip redraws on its dataChanged() and lengthChanged())
 }
 
 

@@ -385,6 +385,10 @@ public:
 	//! @returns whether audio is being recorded
 	auto isRecordingAudio() const -> bool { return m_audioRecorder.isRecording(); }
 
+	//! Whether the Piano Roll records into its clip what is played (set by it, read by the audio thread)
+	void setRecordingInPianoRoll(bool recording) { m_recordingInPianoRoll = recording; }
+	auto isRecordingInPianoRoll() const -> bool { return m_recordingInPianoRoll; }
+
 	//! Main thread: the takes being recorded, as their waveform grows (refreshLiveTakes() brings them up to date)
 	auto liveTakes() const -> const std::vector<AudioRecorder::LiveTake>& { return m_liveTakes; }
 	void refreshLiveTakes();
@@ -591,6 +595,7 @@ private:
 	// interface
 	std::atomic<bool> m_recording;
 	std::atomic<bool> m_exporting;
+	std::atomic<bool> m_recordingInPianoRoll = false;
 	std::atomic<bool> m_exportLoop;
 	std::atomic<bool> m_renderBetweenMarkers;
 	std::atomic<bool> m_playing;
