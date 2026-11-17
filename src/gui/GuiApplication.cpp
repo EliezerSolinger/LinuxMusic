@@ -38,6 +38,7 @@
 #include "AutomationEditor.h"
 #include "BrowserPanel.h"
 #include "ConfigManager.h"
+#include "embed.h"
 #include "ControllerRackView.h"
 #include "InstrumentTrack.h"
 #include "InstrumentTrackView.h"
@@ -55,6 +56,8 @@
 #include "SampleTrack.h"
 #include "SongMarkers.h"
 #include "TabWidget.h"
+#include "TextFloat.h"
+#include "UserNotice.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -63,6 +66,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QProgressDialog>
 #include <QSplashScreen>
 #include <QSocketNotifier>
 #include <QThread>
@@ -91,6 +95,65 @@ GuiApplication* getGUI()
 
 
 GuiApplication* GuiApplication::s_instance = nullptr;
+
+namespace
+{
+
+//! What the core's notices and questions open on: the main window once it is shown
+auto noticeParent() -> QWidget*
+{
+	auto* gui = getGUI();
+	auto* window = gui ? gui->mainWindow() : nullptr;
+	return window && window->isVisible() ? window : nullptr;
+}
+
+void showNotice(const UserNotice::Notice& notice)
+{
+	switch (notice.level)
+	{
+	case UserNotice::Level::Hint:
+		TextFloat::displayMessage(notice.title, notice.text, embed::getIconPixmap("whatsthis", 24, 24), 4000);
+		break;
+	case UserNotice::Level::Information: QMessageBox::information(noticeParent(), notice.title, notice.text); break;
+	case UserNotice::Level::Warning: QMessageBox::warning(noticeParent(), notice.title, notice.text); break;
+	case UserNotice::Level::Error: QMessageBox::critical(noticeParent(), notice.title, notice.text); break;
+	}
+}
+
+auto askQuestion(const UserNotice::Notice& notice) -> bool
+{
+	return QMessageBox::question(noticeParent(), notice.title, notice.text) == QMessageBox::Yes;
+}
+
+//! A long task's progress (see UserNotice::Progress): a dialog with a Cancel button, over the whole program
+class ProgressDialog : public UserNotice::ProgressView
+{
+public:
+	ProgressDialog(const QString& title, const QString& text, int maximum) :
+		m_dialog{text, QCoreApplication::translate("lmms::TrackContainer", "Cancel"), 0, maximum, noticeParent()}
+	{
+		m_dialog.setWindowTitle(title);
+		m_dialog.setWindowModality(Qt::ApplicationModal);
+		m_dialog.setMinimumDuration(0);
+		m_dialog.setValue(0);
+		m_dialog.show();
+	}
+
+	void setMaximum(int maximum) override { m_dialog.setMaximum(maximum); }
+	void setValue(int value) override { m_dialog.setValue(value); }
+	void setText(const QString& text) override { m_dialog.setLabelText(text); }
+
+	auto cancelled() -> bool override
+	{
+		QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+		return m_dialog.wasCanceled();
+	}
+
+private:
+	QProgressDialog m_dialog;
+};
+
+} // namespace
 
 GuiApplication* GuiApplication::instance()
 {
@@ -181,6 +244,12 @@ GuiApplication::GuiApplication()
 
 	connect(Engine::inst(), SIGNAL(initProgress(const QString&)), 
 		this, SLOT(displayInitProgress(const QString&)));
+
+	// What the core tells the user, from here on, in a message box (see UserNotice)
+	UserNotice::setPresenter(showNotice, askQuestion);
+	UserNotice::setProgressViewFactory([](const QString& title, const QString& text, int maximum) {
+		return std::make_unique<ProgressDialog>(title, text, maximum);
+	});
 
 	// Init central engine which handles all components of LMMS
 	Engine::init(false);
@@ -427,6 +496,8 @@ GuiApplication::GuiApplication()
 
 GuiApplication::~GuiApplication()
 {
+	UserNotice::setPresenter({}, {});
+	UserNotice::setProgressViewFactory({});
 	s_instance = nullptr;
 }
 

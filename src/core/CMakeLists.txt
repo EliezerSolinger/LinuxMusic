@@ -117,6 +117,7 @@ set(LMMS_SRCS
 	core/Timeline.cpp
 	core/TimePos.cpp
 	core/ToolPlugin.cpp
+	core/UserNotice.cpp
 	core/Track.cpp
 	core/TrackContainer.cpp
 	core/Clip.cpp

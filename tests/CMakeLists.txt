@@ -41,6 +41,7 @@ set(LMMS_TESTS
 	src/core/TransportTest.cpp
 	src/core/TripleBufferTest.cpp
 	src/core/UndoCommandTest.cpp
+	src/core/UserNoticeTest.cpp
 	src/gui/ShortcutsTest.cpp
 	src/gui/ThemeImagesTest.cpp
 	src/tracks/AutomationTrackTest.cpp
