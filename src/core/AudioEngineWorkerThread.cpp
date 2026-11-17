@@ -105,9 +105,11 @@ void AudioEngineWorkerThread::JobQueue::wait()
 // implementation of worker threads
 
 AudioEngineWorkerThread::AudioEngineWorkerThread( AudioEngine* audioEngine ) :
-	QThread( audioEngine ),
+	// (no Qt parent: the engine owns its workers, see AudioEngine::m_workers)
+	QThread(),
 	m_quit( false )
 {
+	(void)audioEngine;
 	// keep track of all instantiated worker threads - this is used for
 	// processing the last worker thread "inline", see comments in
 	// AudioEngineWorkerThread::startAndWaitForJobs() for details

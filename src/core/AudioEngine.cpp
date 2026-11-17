@@ -127,12 +127,12 @@ AudioEngine::AudioEngine(bool renderOnly)
 
 	for (int i = 0; i < m_numWorkers + 1; ++i)
 	{
-		auto workerThread = new AudioEngineWorkerThread(this);
+		auto workerThread = std::make_unique<AudioEngineWorkerThread>(this);
 		if( i < m_numWorkers )
 		{
 			workerThread->start(QThread::TimeCriticalPriority);
 		}
-		m_workers.push_back(workerThread);
+		m_workers.push_back(std::move(workerThread));
 	}
 
 }
@@ -149,10 +149,17 @@ AudioEngine::~AudioEngine()
 
 	AudioEngineWorkerThread::startAndWaitForJobs();
 
+	// Until they ended: a thread deleted while it runs crashes the program (they end at once, see quit())
 	for( int w = 0; w < m_numWorkers; ++w )
 	{
-		m_workers[w]->wait( 500 );
+		if (!m_workers[w]->wait(5000))
+		{
+			ErrorLog::report(ErrorLog::Severity::Error, "AudioEngine::~AudioEngine",
+				"a worker thread did not end in 5 seconds: waiting for it (its index)", w);
+			m_workers[w]->wait();
+		}
 	}
+	m_workers.clear();
 
 	// (the MIDI client first: JACK's shares the audio device's connection)
 	m_midiClient = nullptr;

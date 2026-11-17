@@ -525,7 +525,7 @@ private:
 	f_cnt_t m_outputBufferReadIndex;
 
 	// worker thread stuff
-	std::vector<AudioEngineWorkerThread *> m_workers;
+	std::vector<std::unique_ptr<AudioEngineWorkerThread>> m_workers;
 	int m_numWorkers;
 
 	// playhandle stuff
