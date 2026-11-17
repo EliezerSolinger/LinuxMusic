@@ -181,7 +181,7 @@ private:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto device = new LoopbackDevice{engine, inputLatency, outputLatency};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 
 		// The impulse, 100 frames into a clip at bar 3
 		constexpr tick_t ClipTick = 2 * 192;
@@ -285,7 +285,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 256 + 50, 256 + 300};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 
 		constexpr tick_t ClipTick = 3 * 192;
 		const auto impulsePath = m_directory.filePath("impulse-punch.wav");
@@ -343,7 +343,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 256 + 20, 256 + 100};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
@@ -379,7 +379,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 256, 256};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
@@ -416,7 +416,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 
 		// Loop passes, so there are segments of their own
 		const auto bar = TimePos::ticksPerBar();
@@ -502,7 +502,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 
 		const auto bar = TimePos::ticksPerBar();
 		const auto impulsePath = m_directory.filePath("impulse-lanes.wav");
@@ -573,7 +573,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		ConfigManager::inst()->setValue("recording", "lanes", "0");
 
 		const auto bar = TimePos::ticksPerBar();
@@ -635,7 +635,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		Engine::getSong()->createNewProject();
 		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200, static_cast<f_cnt_t>(hidden)};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		auto calibration = LatencyCalibration{};
 		calibration.start();
 		for (int callback = 0; callback < 2000 && !calibration.isDone(); ++callback) { device->callback(256); }
@@ -652,7 +652,7 @@ private slots:
 		auto* song = Engine::getSong();
 		song->createNewProject();
 		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
@@ -695,7 +695,7 @@ private slots:
 		auto* song = Engine::getSong();
 		song->createNewProject();
 		auto* device = new LoopbackDevice{engine, 256 + 40, 256 + 200};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
@@ -730,7 +730,7 @@ private slots:
 		auto* song = Engine::getSong();
 		song->createNewProject();
 		auto* device = new LoopbackDevice{engine, 256, 256};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		const auto bar = TimePos::ticksPerBar();
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
 		track->recordArmModel()->setValue(true);
@@ -858,7 +858,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 256, 256};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		const auto bar = TimePos::ticksPerBar();
 
 		auto* empty = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
@@ -919,7 +919,7 @@ private slots:
 		auto* song = Engine::getSong();
 		auto* journal = Engine::projectJournal();
 		auto* device = new LoopbackDevice{engine, 256, 256};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		const auto bar = TimePos::ticksPerBar();
 
 		auto* first = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
@@ -964,7 +964,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 256 + 30, 256 + 60};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
@@ -996,7 +996,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 256 + 30, 256 + 60};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		auto* recorder = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
 		recorder->setInput({AudioInput::Source::Hardware, 0, 1});
 		recorder->recordArmModel()->setValue(true);
@@ -1048,7 +1048,7 @@ private slots:
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto* device = new LoopbackDevice{engine, 0, 0};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		auto* track = dynamic_cast<AudioTrack*>(Track::create(Track::Type::Audio, song));
 		track->setInput({AudioInput::Source::Hardware, 1, 1});
 		track->monitorModel()->setValue(mode);

@@ -101,7 +101,7 @@ private:
 	void driveAndCheck(f_cnt_t callbackFrames, ch_cnt_t deviceInputs, ch_cnt_t engineInputs)
 	{
 		auto* engine = Engine::audioEngine();
-		engine->setAudioDevice(new FakeDuplexDevice{engineInputs, engine}, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{new FakeDuplexDevice{engineInputs, engine}}, false);
 		QCOMPARE(engine->audioDev()->inputChannels(), engineInputs);
 		QCOMPARE(engine->audioDev()->inputLatency(), f_cnt_t{32});
 
@@ -192,7 +192,7 @@ private slots:
 	{
 		auto* engine = Engine::audioEngine();
 		auto* device = new OnDemandDevice{engine};
-		engine->setAudioDevice(device, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, false);
 		engine->setCaptureEnabled(false);
 		QCoreApplication::processEvents();
 		const auto changes = device->changes;
@@ -216,7 +216,7 @@ private slots:
 	void outputOnlyCallbacksLeaveSilence()
 	{
 		auto* engine = Engine::audioEngine();
-		engine->setAudioDevice(new FakeDuplexDevice{2, engine}, false);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{new FakeDuplexDevice{2, engine}}, false);
 		const auto period = engine->framesPerPeriod();
 		auto output = std::vector<float>(2 * period);
 		for (int callback = 0; callback < 3; ++callback)
@@ -268,7 +268,7 @@ private slots:
 		if (input == "none") { QCOMPARE(device->inputChannels(), ch_cnt_t{0}); }
 		QVERIFY(device->capturesOnDemand());
 
-		engine->setAudioDevice(device, true);
+		engine->setAudioDevice(std::unique_ptr<AudioDevice>{device}, true);
 		engine->setCaptureEnabled(input != "none"); // the input opens only when asked for
 		const auto before = engine->periodsRendered();
 		QTest::qWait(1000);

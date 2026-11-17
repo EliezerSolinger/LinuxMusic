@@ -84,14 +84,11 @@ ProjectRenderer::ProjectRenderer(
 	{
 		bool successful = false;
 
-		m_fileDev = audioEncoderFactory(
+		m_ownedFileDev.reset(audioEncoderFactory(
 					outputFilename, outputSettings, DEFAULT_CHANNELS,
-					Engine::audioEngine(), successful );
-		if( !successful )
-		{
-			delete m_fileDev;
-			m_fileDev = nullptr;
-		}
+					Engine::audioEngine(), successful ));
+		if (!successful) { m_ownedFileDev.reset(); }
+		m_fileDev = m_ownedFileDev.get();
 	}
 }
 
@@ -135,7 +132,8 @@ void ProjectRenderer::startProcessing()
 	{
 		// Have to do audio engine stuff with GUI-thread affinity in order to
 		// make slots connected to sampleRateChanged()-signals being called immediately.
-		Engine::audioEngine()->setAudioDevice(m_fileDev, false);
+		// (the engine owns it from here; we keep writing to it until it is replaced or restored)
+		Engine::audioEngine()->setAudioDevice(std::move(m_ownedFileDev), false);
 
 		start(
 #ifndef LMMS_BUILD_WIN32

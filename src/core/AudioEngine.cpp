@@ -29,6 +29,7 @@
 
 #include "AudioEngine.h"
 #include "Controller.h"
+#include "ErrorLog.h"
 #include "AudioResampler.h"
 
 #include <QStringList>
@@ -105,8 +106,6 @@ AudioEngine::AudioEngine(bool renderOnly)
 	, m_numWorkers(QThread::idealThreadCount() - 1)
 	, m_newPlayHandles(PlayHandle::MaxNumber)
 	, m_masterGain(1.0f)
-	, m_audioDev(nullptr)
-	, m_oldAudioDev(nullptr)
 	, m_audioDevStartFailed(false)
 	, m_profiler()
 	, m_clearSignal(false)
@@ -155,8 +154,11 @@ AudioEngine::~AudioEngine()
 		m_workers[w]->wait( 500 );
 	}
 
-	delete m_midiClient;
-	delete m_audioDev;
+	// (the MIDI client first: JACK's shares the audio device's connection)
+	m_midiClient = nullptr;
+	m_ownedMidiClient.reset();
+	m_audioDev.reset();
+	m_storedAudioDev.reset();
 }
 
 
@@ -166,13 +168,15 @@ void AudioEngine::initDevices()
 {
 	bool success_ful = false;
 	if( m_renderOnly ) {
-		m_audioDev = new AudioDummy(success_ful, this, false);
+		m_audioDev = std::make_unique<AudioDummy>(success_ful, this, false);
 		m_audioDevName = AudioDummy::name();
-		m_midiClient = new MidiDummy;
+		m_ownedMidiClient = std::make_unique<MidiDummy>();
+		m_midiClient = m_ownedMidiClient.get();
 		m_midiClientName = MidiDummy::name();
 	} else {
 		m_audioDev = tryAudioDevices();
-		m_midiClient = tryMidiClients();
+		m_ownedMidiClient = tryMidiClients();
+		m_midiClient = m_ownedMidiClient.get();
 	}
 	prepareCapture();
 
@@ -498,32 +502,30 @@ void AudioEngine::clearInternal()
 	}
 }
 
-void AudioEngine::doSetAudioDevice( AudioDevice * _dev )
+void AudioEngine::doSetAudioDevice(std::unique_ptr<AudioDevice> device)
 {
-	// TODO: Use shared_ptr here in the future.
-	// Currently, this is safe, because this is only called by
-	// ProjectRenderer, and after ProjectRenderer calls this function,
-	// it does not access the old device anymore.
-	if( m_audioDev != m_oldAudioDev ) {delete m_audioDev;}
+	// The device stored for an export stays (the first one replaced while storing); any other goes
+	if (m_storingAudioDev && !m_storedAudioDev) { m_storedAudioDev = std::move(m_audioDev); }
+	m_audioDev.reset();
 
-	if( _dev )
+	if (device)
 	{
-		m_audioDev = _dev;
+		m_audioDev = std::move(device);
 	}
 	else
 	{
-		printf( "param _dev == NULL in AudioEngine::setAudioDevice(...). "
-					"Trying any working audio-device\n" );
+		ErrorLog::report(ErrorLog::Severity::Warning, "AudioEngine::setAudioDevice",
+			"no audio device given: trying any that works");
 		m_audioDev = tryAudioDevices();
 	}
 	prepareCapture();
 }
 
-void AudioEngine::setAudioDevice(AudioDevice* _dev, bool startNow)
+void AudioEngine::setAudioDevice(std::unique_ptr<AudioDevice> device, bool startNow)
 {
 	stopProcessing();
 
-	doSetAudioDevice( _dev );
+	doSetAudioDevice(std::move(device));
 
 	emit qualitySettingsChanged();
 	emit sampleRateChanged();
@@ -554,9 +556,9 @@ auto AudioEngine::reopenAudioDevice(std::optional<sample_rate_t> sampleRate) -> 
 	const bool midiFollows = midiClientNeedsAudioDevice();
 	auto midiPorts = midiFollows ? closeMidiClient() : std::vector<MidiPortConnections>{};
 	stopProcessing();
-	delete m_audioDev;
-	m_audioDev = nullptr;
-	m_oldAudioDev = nullptr;
+	m_audioDev.reset();
+	// (a device stored for an export is not brought back over the new one)
+	m_storedAudioDev.reset();
 	m_audioDev = tryAudioDevices();
 	// The tracks' own outputs on the device (with a device that has them), on the new one
 	for (auto* busHandle : m_audioBusHandles)
@@ -629,11 +631,11 @@ auto AudioEngine::closeMidiClient() -> std::vector<MidiPortConnections>
 	m_waitingMidiClient = std::make_unique<MidiDummy>();
 	requestChangeInModel();
 	for (const auto& connections : ports) { connections.port->setMidiClient(m_waitingMidiClient.get()); }
-	auto* closing = m_midiClient;
+	auto closing = std::move(m_ownedMidiClient);
 	m_midiClient = m_waitingMidiClient.get();
 	doneChangeInModel();
 	// Closed before another opens: JACK's takes the audio device's connection, one client at a time
-	delete closing;
+	closing.reset();
 	return ports;
 }
 
@@ -642,10 +644,10 @@ auto AudioEngine::closeMidiClient() -> std::vector<MidiPortConnections>
 
 auto AudioEngine::openMidiClient(const std::vector<MidiPortConnections>& ports) -> QStringList
 {
-	auto* opened = static_cast<MidiClient*>(nullptr);
+	auto opened = std::unique_ptr<MidiClient>{};
 	if (m_renderOnly)
 	{
-		opened = new MidiDummy;
+		opened = std::make_unique<MidiDummy>();
 		m_midiClientName = MidiDummy::name();
 	}
 	else { opened = tryMidiClients(); }
@@ -654,11 +656,12 @@ auto AudioEngine::openMidiClient(const std::vector<MidiPortConnections>& ports) 
 	const auto readable = opened->isRaw() ? QStringList{} : opened->readablePorts();
 	const auto writable = opened->isRaw() ? QStringList{} : opened->writablePorts();
 	requestChangeInModel();
-	m_midiClient = opened;
+	m_ownedMidiClient = std::move(opened);
+	m_midiClient = m_ownedMidiClient.get();
 	for (const auto& connections : ports)
 	{
 		// A port made while the client changed is on the waiting client too
-		connections.port->setMidiClient(opened);
+		connections.port->setMidiClient(m_midiClient);
 		for (const auto& device : connections.readable)
 		{
 			if (readable.contains(device)) { connections.port->subscribeReadablePort(device); }
@@ -672,7 +675,7 @@ auto AudioEngine::openMidiClient(const std::vector<MidiPortConnections>& ports) 
 	}
 	if (m_waitingMidiClient)
 	{
-		for (auto* port : std::vector<MidiPort*>{m_waitingMidiClient->ports()}) { port->setMidiClient(opened); }
+		for (auto* port : std::vector<MidiPort*>{m_waitingMidiClient->ports()}) { port->setMidiClient(m_midiClient); }
 	}
 	doneChangeInModel();
 	m_waitingMidiClient.reset();
@@ -695,10 +698,8 @@ auto AudioEngine::midiClientNeedsAudioDevice() const -> bool
 
 void AudioEngine::storeAudioDevice()
 {
-	if( !m_oldAudioDev )
-	{
-		m_oldAudioDev = m_audioDev;
-	}
+	// (kept by doSetAudioDevice() when the export's device replaces it)
+	m_storingAudioDev = true;
 }
 
 
@@ -706,18 +707,17 @@ void AudioEngine::storeAudioDevice()
 
 void AudioEngine::restoreAudioDevice()
 {
-	if( m_oldAudioDev && m_audioDev != m_oldAudioDev )
+	if (m_storedAudioDev)
 	{
 		stopProcessing();
-		delete m_audioDev;
-
-		m_audioDev = m_oldAudioDev;
+		// (the export's device goes)
+		m_audioDev = std::move(m_storedAudioDev);
 		prepareCapture();
 		emit sampleRateChanged();
 
 		startProcessing();
 	}
-	m_oldAudioDev = nullptr;
+	m_storingAudioDev = false;
 }
 
 
@@ -969,7 +969,7 @@ bool AudioEngine::isMidiDevNameValid(QString name)
 	return false;
 }
 
-AudioDevice * AudioEngine::tryAudioDevices()
+auto AudioEngine::tryAudioDevices() -> std::unique_ptr<AudioDevice>
 {
 	bool success_ful = false;
 	AudioDevice * dev = nullptr;
@@ -989,7 +989,7 @@ AudioDevice * AudioEngine::tryAudioDevices()
 		if (success_ful)
 		{
 			m_audioDevName = AudioCoreAudio::name();
-			return dev;
+			return std::unique_ptr<AudioDevice>{dev};
 		}
 		delete dev;
 	}
@@ -1002,7 +1002,7 @@ AudioDevice * AudioEngine::tryAudioDevices()
 		if( success_ful )
 		{
 			m_audioDevName = AudioSdl::name();
-			return dev;
+			return std::unique_ptr<AudioDevice>{dev};
 		}
 		delete dev;
 	}
@@ -1016,7 +1016,7 @@ AudioDevice * AudioEngine::tryAudioDevices()
 		if( success_ful )
 		{
 			m_audioDevName = AudioAlsa::name();
-			return dev;
+			return std::unique_ptr<AudioDevice>{dev};
 		}
 		delete dev;
 	}
@@ -1030,7 +1030,7 @@ AudioDevice * AudioEngine::tryAudioDevices()
 		if( success_ful )
 		{
 			m_audioDevName = AudioPulseAudio::name();
-			return dev;
+			return std::unique_ptr<AudioDevice>{dev};
 		}
 		delete dev;
 	}
@@ -1043,7 +1043,7 @@ AudioDevice * AudioEngine::tryAudioDevices()
 		if( success_ful )
 		{
 			m_audioDevName = AudioSndio::name();
-			return dev;
+			return std::unique_ptr<AudioDevice>{dev};
 		}
 		delete dev;
 	}
@@ -1057,7 +1057,7 @@ AudioDevice * AudioEngine::tryAudioDevices()
 		if( success_ful )
 		{
 			m_audioDevName = AudioJack::name();
-			return dev;
+			return std::unique_ptr<AudioDevice>{dev};
 		}
 		delete dev;
 	}
@@ -1071,7 +1071,7 @@ AudioDevice * AudioEngine::tryAudioDevices()
 		if( success_ful )
 		{
 			m_audioDevName = AudioPortAudio::name();
-			return dev;
+			return std::unique_ptr<AudioDevice>{dev};
 		}
 		delete dev;
 	}
@@ -1097,13 +1097,13 @@ AudioDevice * AudioEngine::tryAudioDevices()
 
 	m_audioDevName = AudioDummy::name();
 
-	return new AudioDummy( success_ful, this );
+	return std::make_unique<AudioDummy>(success_ful, this);
 }
 
 
 
 
-MidiClient * AudioEngine::tryMidiClients()
+auto AudioEngine::tryMidiClients() -> std::unique_ptr<MidiClient>
 {
 	QString client_name = ConfigManager::inst()->value( "audioengine", "mididev" );
 	if( !isMidiDevNameValid( client_name ) )
@@ -1118,7 +1118,7 @@ MidiClient * AudioEngine::tryMidiClients()
 		if( malsas->isRunning() )
 		{
 			m_midiClientName = MidiAlsaSeq::name();
-			return malsas;
+			return std::unique_ptr<MidiClient>{malsas};
 		}
 		delete malsas;
 	}
@@ -1129,7 +1129,7 @@ MidiClient * AudioEngine::tryMidiClients()
 		if( malsar->isRunning() )
 		{
 			m_midiClientName = MidiAlsaRaw::name();
-			return malsar;
+			return std::unique_ptr<MidiClient>{malsar};
 		}
 		delete malsar;
 	}
@@ -1142,7 +1142,7 @@ MidiClient * AudioEngine::tryMidiClients()
 		if( mjack->isRunning() )
 		{
 			m_midiClientName = MidiJack::name();
-			return mjack;
+			return std::unique_ptr<MidiClient>{mjack};
 		}
 		delete mjack;
 	}
@@ -1155,7 +1155,7 @@ MidiClient * AudioEngine::tryMidiClients()
 		if( msndio->isRunning() )
 		{
 			m_midiClientName = MidiSndio::name();
-			return msndio;
+			return std::unique_ptr<MidiClient>{msndio};
 		}
 		delete msndio;
 	}
@@ -1168,7 +1168,7 @@ MidiClient * AudioEngine::tryMidiClients()
 //		if( moss->isRunning() )
 		{
 			m_midiClientName = MidiWinMM::name();
-			return mwmm;
+			return std::unique_ptr<MidiClient>{mwmm};
 		}
 		delete mwmm;
 	}
@@ -1181,7 +1181,7 @@ MidiClient * AudioEngine::tryMidiClients()
 		MidiApple * mapple = new MidiApple;
 		m_midiClientName = MidiApple::name();
 		printf( "Returning midi apple\n" );
-		return mapple;
+		return std::unique_ptr<MidiClient>{mapple};
 	}
 	printf( "midi apple didn't work: client_name=%s\n", client_name.toUtf8().constData());
 #endif
@@ -1201,7 +1201,7 @@ MidiClient * AudioEngine::tryMidiClients()
 
 	m_midiClientName = MidiDummy::name();
 
-	return new MidiDummy;
+	return std::make_unique<MidiDummy>();
 }
 
 } // namespace lmms

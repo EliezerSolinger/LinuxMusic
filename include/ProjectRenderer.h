@@ -26,6 +26,7 @@
 #define LMMS_PROJECT_RENDERER_H
 
 #include <atomic>
+#include <memory>
 
 #include "AudioFileDevice.h"
 #include "AudioEngine.h"
@@ -90,7 +91,9 @@ signals:
 private:
 	void run() override;
 
-	AudioFileDevice * m_fileDev;
+	//! The file being written: the audio engine's once rendering starts (see startProcessing()), ours before
+	AudioFileDevice* m_fileDev;
+	std::unique_ptr<AudioFileDevice> m_ownedFileDev;
 
 	std::atomic<int> m_progress; //!< written by the render thread, read by the interface
 	std::atomic<bool> m_abort;

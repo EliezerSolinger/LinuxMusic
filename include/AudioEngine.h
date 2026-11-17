@@ -134,9 +134,9 @@ public:
 		return m_audioDevStartFailed;
 	}
 
-	//! Set new audio device. Old device will be deleted,
-	//! unless it's stored using storeAudioDevice
-	void setAudioDevice(AudioDevice* _dev, bool startNow);
+	//! Sets a new audio device, which the engine owns from now on; the old one is deleted, unless it was stored
+	//! with storeAudioDevice() (an export: restoreAudioDevice() brings it back). A null one: any that works.
+	void setAudioDevice(std::unique_ptr<AudioDevice> device, bool startNow);
 
 	/**
 	 * Opens the audio device again with the settings saved (its interface, sample rate and buffer), without
@@ -149,8 +149,8 @@ public:
 	auto reopenAudioDevice(std::optional<sample_rate_t> sampleRate = std::nullopt) -> QString;
 	void storeAudioDevice();
 	void restoreAudioDevice();
-	inline AudioDevice * audioDev() { return m_audioDev; }
-	inline const AudioDevice* audioDev() const { return m_audioDev; }
+	inline AudioDevice * audioDev() { return m_audioDev.get(); }
+	inline const AudioDevice* audioDev() const { return m_audioDev.get(); }
 
 	bool captureDeviceAvailable() const;
 
@@ -462,8 +462,8 @@ private:
 
 
 
-	AudioDevice * tryAudioDevices();
-	MidiClient * tryMidiClients();
+	auto tryAudioDevices() -> std::unique_ptr<AudioDevice>;
+	auto tryMidiClients() -> std::unique_ptr<MidiClient>;
 
 	//! A MIDI port and the devices it was connected to, while it moves to another client
 	struct MidiPortConnections
@@ -537,14 +537,18 @@ private:
 	float m_masterGain;
 
 	// audio device stuff
-	void doSetAudioDevice( AudioDevice *_dev );
-	AudioDevice * m_audioDev;
-	AudioDevice * m_oldAudioDev;
+	void doSetAudioDevice(std::unique_ptr<AudioDevice> device);
+	std::unique_ptr<AudioDevice> m_audioDev;
+	//! The device storeAudioDevice() keeps while another plays (an export's), for restoreAudioDevice()
+	std::unique_ptr<AudioDevice> m_storedAudioDev;
+	bool m_storingAudioDev = false; //!< between storeAudioDevice() and restoreAudioDevice()
 	QString m_audioDevName;
 	bool m_audioDevStartFailed;
 
 	// MIDI device stuff
-	MidiClient * m_midiClient;
+	//! The client the ports use: the one owned below, or the waiting one while the client changes
+	MidiClient* m_midiClient = nullptr;
+	std::unique_ptr<MidiClient> m_ownedMidiClient;
 	QString m_midiClientName;
 	std::unique_ptr<MidiClient> m_waitingMidiClient; //!< the ports' while the client changes
 
