@@ -91,24 +91,14 @@ void Effect::loadSettings( const QDomElement & _this )
 
 
 
-Effect * Effect::instantiate( const QString& pluginName,
+auto Effect::instantiate( const QString& pluginName,
 				Model * _parent,
-				const Descriptor::SubPluginFeatures::Key * _key )
+				const Descriptor::SubPluginFeatures::Key * _key ) -> std::unique_ptr<Effect>
 {
-	Plugin * p = Plugin::instantiateWithKey( pluginName, _parent, _key );
-	// check whether instantiated plugin is an effect
-	if( dynamic_cast<Effect *>( p ) != nullptr )
-	{
-		// everything ok, so return pointer
-		auto effect = dynamic_cast<Effect*>(p);
-		effect->m_parent = dynamic_cast<EffectChain *>(_parent);
-		return effect;
-	}
-
-	// not quite... so delete plugin and leave it up to the caller to instantiate a DummyEffect
-	delete p;
-
-	return nullptr;
+	// (what is not an effect is deleted here: the caller puts in a DummyEffect)
+	auto effect = pluginAs<Effect>(Plugin::instantiateWithKey(pluginName, _parent, _key));
+	if (effect) { effect->m_parent = dynamic_cast<EffectChain*>(_parent); }
+	return effect;
 }
 
 

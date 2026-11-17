@@ -25,6 +25,8 @@
 #ifndef LMMS_PLUGIN_H
 #define LMMS_PLUGIN_H
 
+#include <memory>
+
 #include <QStringList>
 #include <QMap>
 
@@ -289,7 +291,7 @@ public:
 
 	//! Overload if the argument passed to the plugin is a subPluginKey
 	//! If you can not pass the key and are aware that it's stored in Engine::pickDndPluginKey(), use this function, too
-	static Plugin* instantiateWithKey(
+	static std::unique_ptr<Plugin> instantiateWithKey(
 		const QString& pluginName,
 		Model* parent,
 		const Descriptor::SubPluginFeatures::Key* key,
@@ -303,7 +305,7 @@ public:
 	//! @param pluginName The name of the desired plugin to search for
 	//! @param parent The parent Model
 	//! @param data Anything the plugin expects. If this is a pointer to a sub plugin key, use instantiateWithKey instead
-	static Plugin* instantiate(const QString& pluginName, Model* parent, void* data);
+	static std::unique_ptr<Plugin> instantiate(const QString& pluginName, Model* parent, void* data);
 
 	//! Create a view for the model
 	gui::PluginView * createView( QWidget * parent );
@@ -330,6 +332,17 @@ private:
 
 	friend class PluginInstance;
 } ;
+
+
+//! The plugin as a T, still owned; null (and the plugin deleted) when it is not one
+template<typename T>
+auto pluginAs(std::unique_ptr<Plugin> plugin) -> std::unique_ptr<T>
+{
+	auto* as = dynamic_cast<T*>(plugin.get());
+	if (!as) { return nullptr; }
+	plugin.release(); // (now owned as a T)
+	return std::unique_ptr<T>{as};
+}
 
 
 } // namespace lmms

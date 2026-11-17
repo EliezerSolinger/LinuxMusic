@@ -40,9 +40,8 @@ public:
 	ToolPlugin( const Descriptor * _descriptor, Model * _parent );
 	~ToolPlugin() override = default;
 
-	// instantiate tool-plugin with given name or return NULL
-	// on failure
-	static ToolPlugin * instantiate( const QString & _plugin_name,
+	//! The tool plugin with the given name, or null when it is not one
+	static std::unique_ptr<ToolPlugin> instantiate( const QString & _plugin_name,
 										Model * _parent );
 
 } ;

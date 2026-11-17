@@ -50,10 +50,9 @@ auto instantiate(Plugin::Type type, const QString& pluginName, Model* parent,
 {
 	if (type == Plugin::Type::Instrument)
 	{
-		return std::unique_ptr<Plugin>{
-			Instrument::instantiate(pluginName, dynamic_cast<InstrumentTrack*>(parent), key, keyFromDnd)};
+		return Instrument::instantiate(pluginName, dynamic_cast<InstrumentTrack*>(parent), key, keyFromDnd);
 	}
-	return std::unique_ptr<Plugin>{Effect::instantiate(pluginName, parent, key)};
+	return Effect::instantiate(pluginName, parent, key);
 }
 
 } // namespace

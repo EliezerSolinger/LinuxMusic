@@ -148,7 +148,8 @@ public:
 
 	virtual EffectControls * controls() = 0;
 
-	static Effect * instantiate( const QString & _plugin_name,
+	//! The effect plugin with the given name, or null when it is not one (the caller puts in a DummyEffect)
+	static std::unique_ptr<Effect> instantiate( const QString & _plugin_name,
 				Model * _parent,
 				const Descriptor::SubPluginFeatures::Key * _key );
 

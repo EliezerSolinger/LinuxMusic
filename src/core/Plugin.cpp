@@ -171,9 +171,9 @@ void Plugin::loadFile( const QString & )
 
 
 
-Plugin * Plugin::instantiateWithKey(const QString& pluginName, Model * parent,
+auto Plugin::instantiateWithKey(const QString& pluginName, Model * parent,
 				const Descriptor::SubPluginFeatures::Key *key,
-				bool keyFromDnd)
+				bool keyFromDnd) -> std::unique_ptr<Plugin>
 {
 	if(keyFromDnd)
 		Q_ASSERT(!key);
@@ -192,12 +192,12 @@ Plugin * Plugin::instantiateWithKey(const QString& pluginName, Model * parent,
 		{
 			Engine::getSong()->collectError(tr("\"%1\" was running when the program closed unexpectedly, so it was not "
 				"loaded (its settings are kept). To load it again: Settings, Plugins.").arg(name));
-			return new DummyPlugin();
+			return std::make_unique<DummyPlugin>();
 		}
 		if (!UserNotice::ask(tr("Plugin"), tr("\"%1\" was running when the program closed "
 				"unexpectedly. Load it anyway?").arg(name), false))
 		{
-			return new DummyPlugin();
+			return std::make_unique<DummyPlugin>();
 		}
 		PluginGuard::clearSuspect(identity);
 	}
@@ -221,12 +221,12 @@ Plugin * Plugin::instantiateWithKey(const QString& pluginName, Model * parent,
 
 
 
-Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
-								void *data)
+auto Plugin::instantiate(const QString& pluginName, Model * parent,
+								void *data) -> std::unique_ptr<Plugin>
 {
 	const PluginFactory::PluginInfo& pi = getPluginFactory()->pluginInfo(pluginName.toUtf8());
 
-	Plugin* inst;
+	std::unique_ptr<Plugin> inst;
 	if( pi.isNull() )
 	{
 		// While a project opens, it goes to the project's report (a box for each would interrupt the opening)
@@ -241,17 +241,16 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 				tr("The plugin \"%1\" wasn't found or could not be loaded!\nReason: \"%2\"")
 					.arg(pluginName).arg(getPluginFactory()->errorString(pluginName)));
 		}
-		inst = new DummyPlugin();
+		inst = std::make_unique<DummyPlugin>();
 	}
 	else
 	{
 		auto instantiationHook = reinterpret_cast<InstantiationHook>(pi.library->resolve("lmms_plugin_main"));
 		if (instantiationHook)
 		{
-			inst = instantiationHook(parent, data);
-			if(!inst) {
-				inst = new DummyPlugin();
-			}
+			// (the plugin's library hands it over to us)
+			inst.reset(instantiationHook(parent, data));
+			if (!inst) { inst = std::make_unique<DummyPlugin>(); }
 		}
 		else
 		{
@@ -264,7 +263,7 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 				UserNotice::information(tr("Error while loading plugin"),
 					tr("Failed to load plugin \"%1\"!").arg(pluginName));
 			}
-			inst = new DummyPlugin();
+			inst = std::make_unique<DummyPlugin>();
 		}
 	}
 

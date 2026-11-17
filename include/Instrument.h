@@ -191,9 +191,8 @@ public:
 	// provided functions:
 	// --------------------------------------------------------------------
 
-	//! instantiate instrument-plugin with given name or return NULL
-	//! on failure
-	static Instrument * instantiate(const QString & _plugin_name,
+	//! The instrument plugin with the given name, or a stand-in when it does not load
+	static std::unique_ptr<Instrument> instantiate(const QString & _plugin_name,
 		InstrumentTrack * _instrument_track,
 		const Plugin::Descriptor::SubPluginFeatures::Key* key,
 		bool keyFromDnd = false);

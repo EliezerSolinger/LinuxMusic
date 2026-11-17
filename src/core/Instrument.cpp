@@ -50,17 +50,19 @@ Instrument::Instrument(const Descriptor* _descriptor,
 
 
 
-Instrument *Instrument::instantiate(const QString &_plugin_name,
+auto Instrument::instantiate(const QString &_plugin_name,
 	InstrumentTrack *_instrument_track, const Descriptor::SubPluginFeatures::Key *key, bool keyFromDnd)
+	-> std::unique_ptr<Instrument>
 {
 	if(keyFromDnd)
 		Q_ASSERT(!key);
 	// copy from above // TODO! common cleaner func
-	Plugin * p = Plugin::instantiateWithKey(_plugin_name, _instrument_track, key, keyFromDnd);
-	if(dynamic_cast<Instrument *>(p))
-		return dynamic_cast<Instrument *>(p);
-	delete p;
-	return( new DummyInstrument( _instrument_track ) );
+	if (auto instrument = pluginAs<Instrument>(
+		Plugin::instantiateWithKey(_plugin_name, _instrument_track, key, keyFromDnd)))
+	{
+		return instrument;
+	}
+	return std::make_unique<DummyInstrument>(_instrument_track);
 }
 
 

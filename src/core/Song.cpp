@@ -62,6 +62,7 @@
 #include "AudioTrack.h"
 #include "StreamScheduler.h"
 #include "UserNotice.h"
+#include "ErrorLog.h"
 #include "PeakController.h"
 
 
@@ -2357,17 +2358,15 @@ void Song::exportProjectMidi(const std::filesystem::path& filePath) const
 	TrackContainer::TrackList const & tracks = this->tracks();
 	TrackContainer::TrackList const & patternStoreTracks = Engine::patternStore()->tracks();
 
-	// (the filter is the caller's to delete)
-	auto* plugin = Plugin::instantiate("midiexport", nullptr, nullptr);
-	if (auto* exf = dynamic_cast<ExportFilter*>(plugin))
+	const auto plugin = Plugin::instantiate("midiexport", nullptr, nullptr);
+	if (auto* exf = dynamic_cast<ExportFilter*>(plugin.get()))
 	{
 		exf->tryExport(tracks, patternStoreTracks, getTempo(), m_masterPitchModel.value(), filePath);
 	}
 	else
 	{
-		qDebug() << "failed to load midi export filter!";
+		ErrorLog::reportText(ErrorLog::Severity::Error, "Song::exportProjectMidi", "the MIDI export filter did not load");
 	}
-	delete plugin;
 
 }
 

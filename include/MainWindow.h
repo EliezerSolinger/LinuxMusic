@@ -26,6 +26,7 @@
 #define LMMS_GUI_MAIN_WINDOW_H
 
 #include <memory>
+#include <vector>
 
 #include <QBasicTimer>
 #include <QHash>
@@ -48,6 +49,7 @@ namespace lmms
 {
 
 class Autosave;
+class ToolPlugin;
 
 namespace gui
 {
@@ -291,6 +293,8 @@ private:
 	QMenu * m_toolsMenu;
 	QAction * m_undoAction;
 	QAction * m_redoAction;
+	//! The tools (owned) and their windows, in the menu's order; the windows go first
+	std::vector<std::unique_ptr<ToolPlugin>> m_toolPlugins;
 	QList<PluginView *> m_tools;
 
 	QBasicTimer m_updateTimer;

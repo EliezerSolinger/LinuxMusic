@@ -290,7 +290,7 @@ void TrackOperationsWidget::updateMenu()
 			if (path.isEmpty()) { return; }
 			if (!path.endsWith(".mid", Qt::CaseInsensitive)) { path += ".mid"; }
 			// (a stand-in when the filter does not load: deleted all the same)
-			const auto plugin = std::unique_ptr<Plugin>{Plugin::instantiate("midiexport", nullptr, nullptr)};
+			const auto plugin = Plugin::instantiate("midiexport", nullptr, nullptr);
 			auto* filter = dynamic_cast<ExportFilter*>(plugin.get());
 			if (!filter) { return; }
 			filter->tryExport({track}, {}, Engine::getSong()->getTempo(),

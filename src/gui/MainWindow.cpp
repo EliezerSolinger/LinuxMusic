@@ -88,6 +88,7 @@
 #include "TextFloat.h"
 #include "ToolButton.h"
 #include "ToolPlugin.h"
+#include "ErrorLog.h"
 #include "TempoRenderController.h"
 #include "TransportBar.h"
 #include "VersionedSaveDialog.h"
@@ -290,11 +291,10 @@ MainWindow::MainWindow() :
 
 MainWindow::~MainWindow()
 {
-	for( PluginView *view : m_tools )
-	{
-		delete view->model();
-		delete view;
-	}
+	// The windows go before their tools
+	qDeleteAll(m_tools);
+	m_tools.clear();
+	m_toolPlugins.clear();
 	// TODO: Close tools
 	// dependencies are such that the editors must be destroyed BEFORE Song is deletect in Engine::destroy
 	//   see issue #2015 on github
@@ -417,8 +417,15 @@ void MainWindow::finalize()
 	for( const Plugin::Descriptor* desc : getPluginFactory()->descriptors(Plugin::Type::Tool) )
 	{
 		m_toolsMenu->addAction( desc->logo->pixmap(), desc->displayName );
-		m_tools.push_back( ToolPlugin::instantiate( desc->name, /*this*/nullptr )
-						   ->createView(this) );
+		auto tool = ToolPlugin::instantiate(desc->name, nullptr);
+		if (!tool)
+		{
+			ErrorLog::reportText(ErrorLog::Severity::Error, "MainWindow", QString{"the tool %1 did not load"}.arg(desc->name));
+			m_toolsMenu->removeAction(m_toolsMenu->actions().last());
+			continue;
+		}
+		m_tools.push_back(tool->createView(this));
+		m_toolPlugins.push_back(std::move(tool));
 	}
 	if( !m_toolsMenu->isEmpty() )
 	{

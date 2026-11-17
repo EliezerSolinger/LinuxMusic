@@ -38,19 +38,10 @@ ToolPlugin::ToolPlugin( const Descriptor * _descriptor, Model * _parent ) :
 
 
 
-ToolPlugin * ToolPlugin::instantiate( const QString & _plugin_name, Model * _parent )
+auto ToolPlugin::instantiate(const QString& _plugin_name, Model* _parent) -> std::unique_ptr<ToolPlugin>
 {
-	Plugin * p = Plugin::instantiate( _plugin_name, _parent, nullptr );
-	// check whether instantiated plugin is a tool
-	if( p->type() == Plugin::Type::Tool )
-	{
-		// everything ok, so return pointer
-		return dynamic_cast<ToolPlugin *>( p );
-	}
-
-	// not quite... so delete plugin
-	delete p;
-	return nullptr;
+	// (what is not a tool is deleted here)
+	return pluginAs<ToolPlugin>(Plugin::instantiate(_plugin_name, _parent, nullptr));
 }
 
 

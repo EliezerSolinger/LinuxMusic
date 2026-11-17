@@ -63,7 +63,7 @@ void ImportFilter::import( const QString & _file_to_import,
 
 	for (const Plugin::Descriptor* desc : getPluginFactory()->descriptors(Plugin::Type::ImportFilter))
 	{
-		unique_ptr<Plugin> p(Plugin::instantiate( desc->name, nullptr, s.data() ));
+		const auto p = Plugin::instantiate(desc->name, nullptr, s.data());
 		if( dynamic_cast<ImportFilter *>( p.get() ) != nullptr &&
 			dynamic_cast<ImportFilter *>( p.get() )->tryImport( tc ) )
 		{
