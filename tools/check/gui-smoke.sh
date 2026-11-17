@@ -3,6 +3,10 @@
 # Opens the GUI headless (QT_QPA_PLATFORM=offscreen, no sound device) with each project (the A/B and demo
 # projects if none are given), shows the Piano Roll and the Song Editor, saves a screenshot and quits, which
 # also clears the project. Reports a crash, a hang (two minutes), or a sanitizer finding with a sanitizer build.
+# GUI_SMOKE_ACTIONS chooses what to do (LINUXMUSIC_SCREENSHOT_ACTION values; "pianoroll arrangement" by default;
+# "play" plays the song with the mixer and the Piano Roll open, for ThreadSanitizer), and GUI_SMOKE_DELAY how
+# long to wait before the screenshot, in milliseconds (GUI_SMOKE_TIMEOUT: how long before a run counts as hung,
+# 120 seconds by default).
 set -u
 if [ $# -lt 2 ]; then echo "usage: $0 <build dir> <output dir> [<projects>...]" >&2; exit 2; fi
 build=$(cd "$1" && pwd) || exit 2
@@ -35,12 +39,13 @@ for project in "${projects[@]}"; do
   <paths workingdir="$config/workspace/"/>
 </linuxmusic>
 XML
-	for action in pianoroll arrangement; do
+	for action in ${GUI_SMOKE_ACTIONS:-pianoroll arrangement}; do
 		log="$out/$name.$action.log"
 		LINUXMUSIC_CONFIG_DIR="$config" LINUXMUSIC_SCREENSHOT="$out/$name.$action.png" \
-			LINUXMUSIC_SCREENSHOT_ACTION=$action "$build/linuxmusic" "$project" > "$log" 2>&1 &
+			LINUXMUSIC_SCREENSHOT_ACTION=$action LINUXMUSIC_SCREENSHOT_DELAY=${GUI_SMOKE_DELAY:-0} \
+			"$build/linuxmusic" "$project" > "$log" 2>&1 &
 		pid=$!
-		( sleep 120; kill -9 $pid 2>/dev/null ) & watchdog=$!
+		( sleep ${GUI_SMOKE_TIMEOUT:-120}; kill -9 $pid 2>/dev/null ) & watchdog=$!
 		wait $pid; status=$?
 		kill $watchdog 2>/dev/null; wait $watchdog 2>/dev/null
 		if [ $status -ne 0 ] || [ ! -s "$out/$name.$action.png" ] \

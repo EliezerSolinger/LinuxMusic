@@ -434,6 +434,26 @@ GuiApplication::GuiApplication()
 				});
 			});
 		}
+		// =play plays the song with the mixer and the Piano Roll open until the screenshot (the audio, the meters,
+		// the automation and the GUI all running at once; for ThreadSanitizer, see tools/check/gui-smoke.sh)
+		if (screenshotAction == "play")
+		{
+			QTimer::singleShot(1500, m_mainWindow, [this] {
+				m_mainWindow->resize(1700, 900);
+				if (m_mixerView) { m_mixerView->parentWidget()->show(); }
+				for (auto* track : Engine::getSong()->tracks())
+				{
+					if (track->type() != Track::Type::Instrument || track->getClips().empty()) { continue; }
+					if (auto* clip = dynamic_cast<MidiClip*>(track->getClips().back()))
+					{
+						m_pianoRoll->setCurrentMidiClip(clip);
+						m_pianoRoll->parentWidget()->show();
+					}
+					break;
+				}
+				Engine::getSong()->playSong();
+			});
+		}
 		// =arrangement shows the Arrangement wide (the window larger), to see many bars
 		if (screenshotAction == "arrangement")
 		{
