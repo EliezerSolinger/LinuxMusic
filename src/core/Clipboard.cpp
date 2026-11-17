@@ -22,8 +22,8 @@
  *
  */
 
-#include <QApplication>
 #include <QClipboard>
+#include <QGuiApplication>
 #include <QMimeData>
 
 #include "Clipboard.h"
@@ -32,9 +32,23 @@
 namespace lmms::Clipboard
 {
 
+	namespace
+	{
+	//! The system's clipboard; none without a GUI (rendering from the command line, the tests)
+	auto systemClipboard() -> QClipboard*
+	{
+		return qobject_cast<QGuiApplication*>(QCoreApplication::instance()) ? QGuiApplication::clipboard() : nullptr;
+	}
+	} // namespace
+
+
 	const QMimeData * getMimeData()
 	{
-		return QApplication::clipboard()->mimeData( QClipboard::Clipboard );
+		// Never null: an empty clipboard (or none) has empty data
+		static const auto s_empty = QMimeData{};
+		const auto* clipboard = systemClipboard();
+		const auto* data = clipboard ? clipboard->mimeData(QClipboard::Clipboard) : nullptr;
+		return data ? data : &s_empty;
 	}
 
 
@@ -53,7 +67,8 @@ namespace lmms::Clipboard
 		auto content = new QMimeData;
 
 		content->setData( mimeType( mT ), str.toUtf8() );
-		QApplication::clipboard()->setMimeData( content, QClipboard::Clipboard );
+		if (auto* clipboard = systemClipboard()) { clipboard->setMimeData(content, QClipboard::Clipboard); }
+		else { delete content; }
 	}
 
 
@@ -73,7 +88,8 @@ namespace lmms::Clipboard
 
 		auto content = new QMimeData;
 		content->setData( mimeType( MimeType::StringPair ), finalString.toUtf8() );
-		QApplication::clipboard()->setMimeData( content, QClipboard::Clipboard );
+		if (auto* clipboard = systemClipboard()) { clipboard->setMimeData(content, QClipboard::Clipboard); }
+		else { delete content; }
 	}
 
 
@@ -81,6 +97,7 @@ namespace lmms::Clipboard
 
 	QString decodeKey( const QMimeData * mimeData )
 	{
+		if (!mimeData) { return {}; }
 		return( QString::fromUtf8( mimeData->data( mimeType( MimeType::StringPair ) ) ).section( ':', 0, 0 ) );
 	}
 
@@ -89,6 +106,7 @@ namespace lmms::Clipboard
 
 	QString decodeValue( const QMimeData * mimeData )
 	{
+		if (!mimeData) { return {}; }
 		return( QString::fromUtf8( mimeData->data( mimeType( MimeType::StringPair ) ) ).section( ':', 1, -1 ) );
 	}
 

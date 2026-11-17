@@ -195,6 +195,8 @@ signals:
 	void laneChanged();
 	void destroyedClip();
 	void colorChanged();
+	//! Its whole content was replaced by another clip's (copyStateTo())
+	void contentReplaced();
 
 protected:
 

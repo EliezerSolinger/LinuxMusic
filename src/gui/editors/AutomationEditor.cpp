@@ -182,6 +182,7 @@ void AutomationEditor::setCurrentClip(AutomationClip * new_clip )
 	{
 		connect(m_clip, SIGNAL(dataChanged()), this, SLOT(update()));
 		connect(m_clip, &AutomationClip::lengthChanged, this, qOverload<>(&QWidget::update));
+		connect(m_clip, &AutomationClip::contentReplaced, this, &AutomationEditor::updateAfterClipChange);
 	}
 
 	emit currentClipChanged();

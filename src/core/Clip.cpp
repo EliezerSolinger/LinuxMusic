@@ -26,10 +26,8 @@
 
 #include <QDomDocument>
 
-#include "AutomationEditor.h"
 #include "AutomationClip.h"
 #include "Engine.h"
-#include "GuiApplication.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -142,10 +140,7 @@ void Clip::copyStateTo( Clip *src, Clip *dst )
 		dst->movePosition( pos );
 
 		AutomationClip::resolveAllIDs();
-		if (gui::getGUI() != nullptr && gui::getGUI()->automationEditor())
-		{
-			gui::getGUI()->automationEditor()->m_editor->updateAfterClipChange();
-		}
+		emit dst->contentReplaced();
 	}
 }
 

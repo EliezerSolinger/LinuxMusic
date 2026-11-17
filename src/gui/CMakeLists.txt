@@ -24,6 +24,7 @@ SET(LMMS_SRCS
 	gui/LinkedModelGroupViews.cpp
 	gui/LmmsPalette.cpp
 	gui/LmmsStyle.cpp
+	gui/Lv2SubPluginDescription.cpp
 	gui/Lv2ViewBase.cpp
 	gui/MainApplication.cpp
 	gui/MainWindow.cpp
@@ -67,6 +68,7 @@ SET(LMMS_SRCS
 	gui/editors/PositionLine.cpp
 	gui/editors/Rubberband.cpp
 	gui/editors/SongEditor.cpp
+	gui/editors/StepRecorder.cpp
 	gui/editors/StepRecorderWidget.cpp
 	gui/editors/TempoLaneWidget.cpp
 	gui/editors/TimeLineWidget.cpp
