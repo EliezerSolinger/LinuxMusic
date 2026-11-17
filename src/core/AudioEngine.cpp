@@ -979,7 +979,6 @@ bool AudioEngine::isMidiDevNameValid(QString name)
 auto AudioEngine::tryAudioDevices() -> std::unique_ptr<AudioDevice>
 {
 	bool success_ful = false;
-	AudioDevice * dev = nullptr;
 	QString dev_name = ConfigManager::inst()->value( "audioengine", "audiodev" );
 	if( !isAudioDevNameValid( dev_name ) )
 	{
@@ -992,26 +991,24 @@ auto AudioEngine::tryAudioDevices() -> std::unique_ptr<AudioDevice>
 	// The native driver first: duplex, multichannel, with the devices' latencies
 	if (dev_name == AudioCoreAudio::name() || dev_name.isEmpty())
 	{
-		dev = new AudioCoreAudio(success_ful, this);
+		auto dev = std::make_unique<AudioCoreAudio>(success_ful, this);
 		if (success_ful)
 		{
 			m_audioDevName = AudioCoreAudio::name();
-			return std::unique_ptr<AudioDevice>{dev};
+			return dev;
 		}
-		delete dev;
 	}
 #endif
 
 #ifdef LMMS_HAVE_SDL
 	if( dev_name == AudioSdl::name() || dev_name == "" )
 	{
-		dev = new AudioSdl( success_ful, this );
+		auto dev = std::make_unique<AudioSdl>(success_ful, this);
 		if( success_ful )
 		{
 			m_audioDevName = AudioSdl::name();
-			return std::unique_ptr<AudioDevice>{dev};
+			return dev;
 		}
-		delete dev;
 	}
 #endif
 
@@ -1019,13 +1016,12 @@ auto AudioEngine::tryAudioDevices() -> std::unique_ptr<AudioDevice>
 #ifdef LMMS_HAVE_ALSA
 	if( dev_name == AudioAlsa::name() || dev_name == "" )
 	{
-		dev = new AudioAlsa( success_ful, this );
+		auto dev = std::make_unique<AudioAlsa>(success_ful, this);
 		if( success_ful )
 		{
 			m_audioDevName = AudioAlsa::name();
-			return std::unique_ptr<AudioDevice>{dev};
+			return dev;
 		}
-		delete dev;
 	}
 #endif
 
@@ -1033,26 +1029,24 @@ auto AudioEngine::tryAudioDevices() -> std::unique_ptr<AudioDevice>
 #ifdef LMMS_HAVE_PULSEAUDIO
 	if( dev_name == AudioPulseAudio::name() || dev_name == "" )
 	{
-		dev = new AudioPulseAudio( success_ful, this );
+		auto dev = std::make_unique<AudioPulseAudio>(success_ful, this);
 		if( success_ful )
 		{
 			m_audioDevName = AudioPulseAudio::name();
-			return std::unique_ptr<AudioDevice>{dev};
+			return dev;
 		}
-		delete dev;
 	}
 #endif
 
 #ifdef LMMS_HAVE_SNDIO
 	if( dev_name == AudioSndio::name() || dev_name == "" )
 	{
-		dev = new AudioSndio( success_ful, this );
+		auto dev = std::make_unique<AudioSndio>(success_ful, this);
 		if( success_ful )
 		{
 			m_audioDevName = AudioSndio::name();
-			return std::unique_ptr<AudioDevice>{dev};
+			return dev;
 		}
-		delete dev;
 	}
 #endif
 
@@ -1060,13 +1054,12 @@ auto AudioEngine::tryAudioDevices() -> std::unique_ptr<AudioDevice>
 #ifdef LMMS_HAVE_JACK
 	if( dev_name == AudioJack::name() || dev_name == "" )
 	{
-		dev = new AudioJack( success_ful, this );
+		auto dev = std::make_unique<AudioJack>(success_ful, this);
 		if( success_ful )
 		{
 			m_audioDevName = AudioJack::name();
-			return std::unique_ptr<AudioDevice>{dev};
+			return dev;
 		}
-		delete dev;
 	}
 #endif
 
@@ -1074,13 +1067,12 @@ auto AudioEngine::tryAudioDevices() -> std::unique_ptr<AudioDevice>
 #ifdef LMMS_HAVE_PORTAUDIO
 	if (dev_name == AudioPortAudio::name() || dev_name.isEmpty())
 	{
-		dev = new AudioPortAudio( success_ful, this );
+		auto dev = std::make_unique<AudioPortAudio>(success_ful, this);
 		if( success_ful )
 		{
 			m_audioDevName = AudioPortAudio::name();
-			return std::unique_ptr<AudioDevice>{dev};
+			return dev;
 		}
-		delete dev;
 	}
 #endif
 
@@ -1121,63 +1113,58 @@ auto AudioEngine::tryMidiClients() -> std::unique_ptr<MidiClient>
 #ifdef LMMS_HAVE_ALSA
 	if( client_name == MidiAlsaSeq::name() || client_name == "" )
 	{
-		auto malsas = new MidiAlsaSeq;
+		auto malsas = std::make_unique<MidiAlsaSeq>();
 		if( malsas->isRunning() )
 		{
 			m_midiClientName = MidiAlsaSeq::name();
-			return std::unique_ptr<MidiClient>{malsas};
+			return malsas;
 		}
-		delete malsas;
 	}
 
 	if( client_name == MidiAlsaRaw::name() || client_name == "" )
 	{
-		auto malsar = new MidiAlsaRaw;
+		auto malsar = std::make_unique<MidiAlsaRaw>();
 		if( malsar->isRunning() )
 		{
 			m_midiClientName = MidiAlsaRaw::name();
-			return std::unique_ptr<MidiClient>{malsar};
+			return malsar;
 		}
-		delete malsar;
 	}
 #endif
 
 #ifdef LMMS_HAVE_JACK
 	if( client_name == MidiJack::name() || client_name == "" )
 	{
-		auto mjack = new MidiJack;
+		auto mjack = std::make_unique<MidiJack>();
 		if( mjack->isRunning() )
 		{
 			m_midiClientName = MidiJack::name();
-			return std::unique_ptr<MidiClient>{mjack};
+			return mjack;
 		}
-		delete mjack;
 	}
 #endif
 
 #ifdef LMMS_HAVE_SNDIO
 	if( client_name == MidiSndio::name() || client_name == "" )
 	{
-		MidiSndio * msndio = new MidiSndio;
+		auto msndio = std::make_unique<MidiSndio>();
 		if( msndio->isRunning() )
 		{
 			m_midiClientName = MidiSndio::name();
-			return std::unique_ptr<MidiClient>{msndio};
+			return msndio;
 		}
-		delete msndio;
 	}
 #endif
 
 #ifdef LMMS_HAVE_WINMM
 	if( client_name == MidiWinMM::name() || client_name == "" )
 	{
-		MidiWinMM * mwmm = new MidiWinMM;
+		auto mwmm = std::make_unique<MidiWinMM>();
 //		if( moss->isRunning() )
 		{
 			m_midiClientName = MidiWinMM::name();
-			return std::unique_ptr<MidiClient>{mwmm};
+			return mwmm;
 		}
-		delete mwmm;
 	}
 #endif
 
@@ -1185,10 +1172,10 @@ auto AudioEngine::tryMidiClients() -> std::unique_ptr<MidiClient>
 	printf( "trying midi apple...\n" );
 	if( client_name == MidiApple::name() || client_name == "" )
 	{
-		MidiApple * mapple = new MidiApple;
+		auto mapple = std::make_unique<MidiApple>();
 		m_midiClientName = MidiApple::name();
 		printf( "Returning midi apple\n" );
-		return std::unique_ptr<MidiClient>{mapple};
+		return mapple;
 	}
 	printf( "midi apple didn't work: client_name=%s\n", client_name.toUtf8().constData());
 #endif

@@ -1,0 +1,14 @@
+---
+# The core's checks: the project's (../../.clang-tidy) plus ownership and bug-finding ones
+# (docs/regras-de-codigo.md). Run on the core's files with:
+#   /opt/homebrew/opt/llvm/bin/clang-tidy -p build src/core/<file>.cpp
+InheritParentConfig: true
+Checks: >
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-implicit-widening-of-multiplication-result,
+  cppcoreguidelines-owning-memory,
+  clang-analyzer-*,
+  performance-*,
+  -performance-enum-size

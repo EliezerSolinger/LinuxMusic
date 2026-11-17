@@ -889,16 +889,15 @@ MixerRoute* Mixer::createRoute(MixerChannel* from, MixerChannel* to, float amoun
 	if (sourcePair >= from->pairCount() || destinationPair >= to->pairCount()) { return nullptr; }
 
 	Engine::audioEngine()->requestChangeInModel();
-	auto route = new MixerRoute(from, to, amount, sourcePair, destinationPair);
+	// the mixer's list owns us
+	auto* route = Engine::mixer()->m_mixerRoutes.emplace_back(
+		std::make_unique<MixerRoute>(from, to, amount, sourcePair, destinationPair)).get();
 
 	// add us to from's sends
 	from->m_sends.push_back(route);
 
 	// add us to to's receives
 	to->m_receives.push_back(route);
-
-	// add us to mixer's list
-	Engine::mixer()->m_mixerRoutes.emplace_back(route);
 	Engine::audioEngine()->doneChangeInModel();
 
 	return route;
@@ -1731,7 +1730,8 @@ auto Mixer::toggleSidechainSend(mix_ch_t from, mix_ch_t to) -> bool
 auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 {
 	const auto instance = track->instrumentInstance();
-	const auto groups = instance ? instance->outputGroups() : std::vector<PluginInstance::OutputGroup>{};
+	if (!instance) { return -1; }
+	const auto groups = instance->outputGroups();
 	if (groups.size() < 2) { return -1; }
 
 	// Done already
