@@ -28,6 +28,8 @@
 
 #include <memory>
 
+#include <QStringList>
+
 #include "ProjectRenderer.h"
 #include "OutputSettings.h"
 
@@ -54,6 +56,9 @@ public:
 
 	void abortProcessing();
 
+	//! The files that could not be written (their device could not open them)
+	auto failedOutputs() const -> const QStringList& { return m_failedOutputs; }
+
 signals:
 	void progressChanged( int );
 	void finished();
@@ -73,6 +78,7 @@ private:
 	QString m_outputPath;
 
 	std::unique_ptr<ProjectRenderer> m_activeRenderer;
+	QStringList m_failedOutputs;
 
 	std::vector<Track*> m_tracksToRender;
 	std::vector<Track*> m_unmuted;

@@ -257,6 +257,8 @@ int main( int argc, char * * argv )
 	bool allowRoot = false;
 	bool renderLoop = false;
 	bool renderTracks = false;
+	//! The command line's render, if it renders
+	RenderManager* renderManager = nullptr;
 	QString fileToLoad, fileToImport, renderOut, profilerOutputFile, configFile;
 
 	// first of two command-line parsing stages
@@ -757,8 +759,10 @@ int main( int argc, char * * argv )
 
 		// create renderer
 		auto r = new RenderManager(os, eff, renderOut);
-		QCoreApplication::instance()->connect( r,
-				SIGNAL(finished()), SLOT(quit()));
+		renderManager = r;
+		// (queued: a render that fails at once finishes before the event loop runs, where quit() would be lost)
+		QObject::connect(r, &RenderManager::finished, QCoreApplication::instance(), &QCoreApplication::quit,
+			Qt::QueuedConnection);
 
 		// timer for progress-updates
 		auto t = new QTimer(r);
@@ -950,7 +954,12 @@ int main( int argc, char * * argv )
 		}
 	}
 
-	const int ret = app->exec();
+	int ret = app->exec();
+	if (renderManager && !renderManager->failedOutputs().isEmpty())
+	{
+		fprintf(stderr, "\nCould not write %s\n", qPrintable(renderManager->failedOutputs().join(", ")));
+		ret = EXIT_FAILURE;
+	}
 	delete app;
 
 	if( destroyEngine )

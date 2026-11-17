@@ -30,7 +30,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
-#include <QMessageBox>
 
 #include <algorithm>
 #include <cmath>
@@ -69,6 +68,7 @@
 #include "SampleTrack.h"
 #include "AudioTrack.h"
 #include "StreamScheduler.h"
+#include "UserNotice.h"
 #include "PeakController.h"
 
 
@@ -1937,18 +1937,9 @@ void Song::loadProject( const QString & fileName )
 		{
 			cantLoadProject = true;
 
-			if (getGUI() != nullptr)
-			{
-				QMessageBox::critical(nullptr, tr("Aborting project load"),
-					tr("Project file contains local paths to plugins, which could be used to "
-						"run malicious code."));
-			}
-			else
-			{
-				QTextStream(stderr) << tr("Can't load project: "
-					"Project file contains local paths to plugins.")
-					<< Qt::endl;
-			}
+			UserNotice::error(tr("Aborting project load"),
+				tr("Project file contains local paths to plugins, which could be used to "
+					"run malicious code."));
 		}
 	}
 
@@ -2136,15 +2127,7 @@ void Song::loadProject( const QString & fileName )
 
 	if ( hasErrors())
 	{
-		if ( getGUI() != nullptr )
-		{
-			QMessageBox::warning( nullptr, tr("LinuxMusic Error report"), errorSummary(),
-							QMessageBox::Ok );
-		}
-		else
-		{
-			QTextStream(stderr) << Engine::getSong()->errorSummary() << Qt::endl;
-		}
+		UserNotice::warning(tr("LinuxMusic Error report"), errorSummary());
 	}
 
 	m_loadingProject = false;
@@ -2246,12 +2229,8 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, bool ga
 	{
 		if (const auto problems = ProjectMedia::gather(dataFile, filename); !problems.isEmpty())
 		{
-			if (getGUI())
-			{
-				QMessageBox::warning(nullptr, tr("Project files"), tr("Some of the files the project uses could not "
-					"be kept in its folder:") + "\n\n" + problems.join('\n'));
-			}
-			else { QTextStream(stderr) << problems.join('\n') << Qt::endl; }
+			UserNotice::warning(tr("Project files"), tr("Some of the files the project uses could not "
+				"be kept in its folder:") + "\n\n" + problems.join('\n'));
 		}
 	}
 

@@ -25,12 +25,12 @@
 #include "SampleBuffer.h"
 
 #include <QDebug>
-#include <QMessageBox>
+#include <QObject>
 #include <cstring>
 
-#include "GuiApplication.h"
 #include "PathUtil.h"
 #include "SampleDecoder.h"
+#include "UserNotice.h"
 
 namespace lmms {
 
@@ -81,18 +81,14 @@ std::shared_ptr<const SampleBuffer> SampleBuffer::fromFile(const QString& filePa
 
 	if (!result)
 	{
-		// TODO: Improve error handling. We dont always want to show a message box on failure when there is a GUI (e.g.
-		// when loading the project), and this function also shouldn't be concerned with handling the error.
-		if (gui::getGUI())
+		// (any thread may load a sample: the notice reaches the user on the main thread)
+		qWarning() << QObject::tr(
+			"Failed to load sample at path %1, the file may not exist, be corrupted, or is unsupported.")
+						  .arg(absolutePath);
+		if (UserNotice::hasUser())
 		{
-			QMessageBox::warning(nullptr, QObject::tr("Failed to load sample"),
+			UserNotice::warning(QObject::tr("Failed to load sample"),
 				QObject::tr("The sample may be corrupted or unsupported."));
-		}
-		else
-		{
-			qWarning() << QObject::tr(
-				"Failed to load sample at path %1, the file may not exist, be corrupted, or is unsupported.")
-							  .arg(absolutePath);
 		}
 
 		return SampleBuffer::emptyBuffer();
@@ -110,16 +106,10 @@ std::shared_ptr<const SampleBuffer> SampleBuffer::fromBase64(const QString& str,
 
 	if (bytes.size() % sizeof(SampleFrame) != 0)
 	{
-		// TODO: Improve error handling. We dont always want to show a message box on failure when there is a GUI (e.g.
-		// when loading the project), and this function also shouldn't be concerned with handling the error.
-		if (gui::getGUI())
+		qWarning() << QObject::tr("Failed to load Base64 sample, invalid size");
+		if (UserNotice::hasUser())
 		{
-			QMessageBox::warning(
-				nullptr, QObject::tr("Failed to load sample"), QObject::tr("The sample size is invalid."));
-		}
-		else
-		{
-			qWarning() << QObject::tr("Failed to load Base64 sample, invalid size");
+			UserNotice::warning(QObject::tr("Failed to load sample"), QObject::tr("The sample size is invalid."));
 		}
 
 		return SampleBuffer::emptyBuffer();

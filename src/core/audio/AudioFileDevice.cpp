@@ -23,14 +23,23 @@
  *
  */
 
-#include <QMessageBox>
-
 #include "AudioFileDevice.h"
-#include "ExportProjectDialog.h"
-#include "GuiApplication.h"
+
+#include <QCoreApplication>
+
+#include "UserNotice.h"
 
 namespace lmms
 {
+
+namespace
+{
+//! The messages keep the translations they had when the export dialog showed them
+class Text
+{
+	Q_DECLARE_TR_FUNCTIONS(lmms::gui::ExportProjectDialog)
+};
+} // namespace
 
 AudioFileDevice::AudioFileDevice( OutputSettings const & outputSettings,
 					const ch_cnt_t _channels,
@@ -40,33 +49,18 @@ AudioFileDevice::AudioFileDevice( OutputSettings const & outputSettings,
 	m_outputFile( _file ),
 	m_outputSettings(outputSettings)
 {
-	using gui::ExportProjectDialog;
-
 	setSampleRate( outputSettings.getSampleRate() );
 
 	if( m_outputFile.open( QFile::WriteOnly | QFile::Truncate ) == false )
 	{
-		QString title, message;
-		title = ExportProjectDialog::tr( "Could not open file" );
-		message = ExportProjectDialog::tr( "Could not open file %1 "
-						"for writing.\nPlease make "
-						"sure you have write "
-						"permission to the file and "
-						"the directory containing the "
-						"file and try again!"
-								).arg( _file );
-
-		if (gui::getGUI() != nullptr)
-		{
-			QMessageBox::critical( nullptr, title, message,
-						QMessageBox::Ok,
-						QMessageBox::NoButton );
-		}
-		else
-		{
-			fprintf( stderr, "%s\n", message.toUtf8().constData() );
-			exit( EXIT_FAILURE );
-		}
+		// The device is not ready (outputFileOpened() is false): whoever made it goes on without it
+		UserNotice::error(Text::tr("Could not open file"),
+			Text::tr("Could not open file %1 "
+				"for writing.\nPlease make "
+				"sure you have write "
+				"permission to the file and "
+				"the directory containing the "
+				"file and try again!").arg(_file));
 	}
 }
 

@@ -30,11 +30,11 @@
 #include <cmath>
 #include <map>
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
-#include <QMessageBox>
 #include <QRegularExpression>
 #include <QSaveFile>
 
@@ -42,21 +42,27 @@
 #include "ConfigManager.h"
 #include "DeprecationHelper.h"
 #include "Effect.h"
-#include "embed.h"
-#include "GuiApplication.h"
 #include "LocaleHelper.h"
 #include "Note.h"
 #include "PluginFactory.h"
 #include "ProjectVersion.h"
-#include "SongEditor.h"
-#include "TextFloat.h"
 #include "Track.h"
 #include "PathUtil.h"
+#include "UserNotice.h"
 
 #include "lmmsversion.h"
 
 namespace lmms
 {
+
+namespace
+{
+//! The messages keep the translations they had when the song editor showed them
+class Text
+{
+	Q_DECLARE_TR_FUNCTIONS(lmms::gui::SongEditor)
+};
+} // namespace
 
 
 static void findIds(const QDomElement& elem, QList<jo_id_t>& idList);
@@ -139,16 +145,12 @@ DataFile::DataFile( const QString & _fileName ) :
 	QFile inFile( _fileName );
 	if( !inFile.open( QIODevice::ReadOnly ) )
 	{
-		if (gui::getGUI() != nullptr)
-		{
-			QMessageBox::critical( nullptr,
-				gui::SongEditor::tr( "Could not open file" ),
-				gui::SongEditor::tr( "Could not open file %1. You probably "
-						"have no permissions to read this "
-						"file.\n Please make sure to have at "
-						"least read permissions to the file "
-						"and try again." ).arg( _fileName ) );
-		}
+		UserNotice::error(Text::tr("Could not open file"),
+			Text::tr("Could not open file %1. You probably "
+				"have no permissions to read this "
+				"file.\n Please make sure to have at "
+				"least read permissions to the file "
+				"and try again.").arg(_fileName));
 
 		return;
 	}
@@ -291,21 +293,7 @@ void DataFile::write( QTextStream & _strm )
 bool DataFile::writeFile(const QString& filename, bool withResources)
 {
 	// Small lambda function for displaying errors
-	auto showError = [](QString title, QString body){
-		if (gui::getGUI() != nullptr)
-		{
-			QMessageBox mb;
-			mb.setWindowTitle(title);
-			mb.setText(body);
-			mb.setIcon(QMessageBox::Warning);
-			mb.setStandardButtons(QMessageBox::Ok);
-			mb.exec();
-		}
-		else
-		{
-			qWarning() << body;
-		}
-	};
+	auto showError = [](const QString& title, const QString& body) { UserNotice::warning(title, body); };
 
 	// If we are saving without resources, filename is just the file we are
 	// saving to. If we are saving with resources (project bundle), filename
@@ -322,7 +310,6 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 	const QString fullNameTemp = fullName + ".new";
 	const QString fullNameBak = fullName + ".bak";
 
-	using gui::SongEditor;
 
 	// If we are saving with resources, setup the bundle folder first
 	if (withResources)
@@ -332,8 +319,8 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 		// project bundle.
 		if (QDir(bundleDir).exists())
 		{
-			showError(SongEditor::tr("Operation denied"),
-				SongEditor::tr("A bundle folder with that name already exists on the "
+			showError(Text::tr("Operation denied"),
+				Text::tr("A bundle folder with that name already exists on the "
 				"selected path. Can't overwrite a project bundle. Please select a different "
 				"name."));
 
@@ -343,24 +330,24 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 		// Create bundle folder
 		if (!QDir().mkdir(bundleDir))
 		{
-			showError(SongEditor::tr("Error"),
-				SongEditor::tr("Couldn't create bundle folder."));
+			showError(Text::tr("Error"),
+				Text::tr("Couldn't create bundle folder."));
 			return false;
 		}
 
 		// Create resources folder
 		if (!QDir().mkdir(resourcesDir))
 		{
-			showError(SongEditor::tr("Error"),
-				SongEditor::tr("Couldn't create resources folder."));
+			showError(Text::tr("Error"),
+				Text::tr("Couldn't create resources folder."));
 			return false;
 		}
 
 		// Copy resources to folder and update paths
 		if (!copyResources(resourcesDir))
 		{
-			showError(SongEditor::tr("Error"),
-				SongEditor::tr("Failed to copy resources."));
+			showError(Text::tr("Error"),
+				Text::tr("Failed to copy resources."));
 			return false;
 		}
 	}
@@ -369,8 +356,8 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 
 	if (!outfile.open(QIODevice::WriteOnly | QIODevice::Truncate))
 	{
-		showError(SongEditor::tr("Could not write file"),
-			SongEditor::tr("Could not open %1 for writing. You probably are not permitted to "
+		showError(Text::tr("Could not write file"),
+			Text::tr("Could not open %1 for writing. You probably are not permitted to "
 				"write to this file. Please make sure you have write-access to "
 				"the file and try again.").arg(fullName));
 
@@ -393,8 +380,8 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 
 	if (!outfile.commit())
 	{
-		showError(SongEditor::tr("Could not write file"),
-			SongEditor::tr("An unknown error has occurred and the file could not be saved."));
+		showError(Text::tr("Could not write file"),
+			Text::tr("An unknown error has occurred and the file could not be saved."));
 		return false;
 	}
 
@@ -626,18 +613,9 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
 		}
 		if( line >= 0 && col >= 0 )
 		{
-			using gui::SongEditor;
-
 			qWarning() << "at line" << line << "column" << errorMsg;
-			if (gui::getGUI() != nullptr)
-			{
-				QMessageBox::critical( nullptr,
-					SongEditor::tr( "Error in file" ),
-					SongEditor::tr( "The file %1 seems to contain "
-							"errors and therefore can't be "
-							"loaded." ).
-								arg( _sourceFile ) );
-			}
+			UserNotice::error(Text::tr("Error in file"),
+				Text::tr("The file %1 seems to contain errors and therefore can't be loaded.").arg(_sourceFile));
 
 			return;
 		}
@@ -653,26 +631,17 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
 
 	if (root.hasAttribute("creatorversion"))
 	{
-		using gui::SongEditor;
-
 		// compareType defaults to All, so it doesn't have to be set here
 		ProjectVersion createdWith = root.attribute("creatorversion");
 		ProjectVersion openedWith = LMMS_VERSION;
 
 		if (createdWith.setCompareType(ProjectVersion::CompareType::Minor)
 		 !=  openedWith.setCompareType(ProjectVersion::CompareType::Minor)
-		 && gui::getGUI() != nullptr && root.attribute("type") == "song"
+		 && UserNotice::hasUser() && root.attribute("type") == "song"
 		){
-			auto projectType = _sourceFile.endsWith(".mpt") ?
-				SongEditor::tr("template") : SongEditor::tr("project");
-
-			gui::TextFloat::displayMessage(
-				SongEditor::tr("Version difference"),
-				SongEditor::tr("This %1 was created with LinuxMusic %2")
-				.arg(projectType).arg(createdWith.getVersion()),
-				embed::getIconPixmap("whatsthis", 24, 24),
-				2500
-			);
+			auto projectType = _sourceFile.endsWith(".mpt") ? Text::tr("template") : Text::tr("project");
+			UserNotice::hint(Text::tr("Version difference"),
+				Text::tr("This %1 was created with LinuxMusic %2").arg(projectType).arg(createdWith.getVersion()));
 		}
 	}
 
@@ -681,14 +650,10 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
 	{
 		qWarning() << "File" << _sourceFile << "uses an old file format (version" << m_fileVersion
 			<< ") and may not load correctly";
-		if (gui::getGUI() != nullptr && root.attribute("type") == "song")
+		if (UserNotice::hasUser() && root.attribute("type") == "song")
 		{
-			gui::TextFloat::displayMessage(
-				gui::SongEditor::tr("Old file format"),
-				gui::SongEditor::tr("This file was made with an older version and may not load correctly."),
-				embed::getIconPixmap("whatsthis", 24, 24),
-				4000
-			);
+			UserNotice::hint(Text::tr("Old file format"),
+				Text::tr("This file was made with an older version and may not load correctly."));
 		}
 	}
 

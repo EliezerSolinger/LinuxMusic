@@ -26,16 +26,13 @@
 
 #ifdef LMMS_HAVE_JACK
 
-#include <QCoreApplication>
-#include <QMessageBox>
 
 #include "AudioEngine.h"
 #include "AudioJack.h"
 #include "ConfigManager.h"
-#include "GuiApplication.h"
 #include "Engine.h"
-#include "MainWindow.h"
 #include "lmmsversion.h"
+#include "UserNotice.h"
 
 namespace lmms
 {
@@ -60,15 +57,8 @@ static void JackMidiShutdown(void *arg)
 	QString msg_short = MidiJack::tr("JACK server down");
         //: When JACK(JACK Audio Connection Kit) disconnects, it will show the following message (dialog message)
 	QString msg_long = MidiJack::tr("The JACK server seems to be shut down.");
-	// (called on JACK's thread: told on the main thread, with a window if there is one)
-	QMetaObject::invokeMethod(QCoreApplication::instance(), [msg_short, msg_long] {
-		if (gui::getGUI() == nullptr)
-		{
-			qWarning("%s: %s", qUtf8Printable(msg_short), qUtf8Printable(msg_long));
-			return;
-		}
-		QMessageBox::information(gui::getGUI()->mainWindow(), msg_short, msg_long);
-	}, Qt::QueuedConnection);
+	// (called on JACK's thread: the notice reaches the user on the main thread)
+	UserNotice::information(msg_short, msg_long);
 }
 
 MidiJack::MidiJack() :

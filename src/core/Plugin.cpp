@@ -27,15 +27,14 @@
 
 #include <QDomElement>
 #include <QLibrary>
-#include <QMessageBox>
 
-#include "embed.h"
+#include "PixmapLoader.h"
 #include "Engine.h"
-#include "GuiApplication.h"
 #include "DummyPlugin.h"
 #include "AutomatableModel.h"
 #include "Song.h"
 #include "PluginFactory.h"
+#include "UserNotice.h"
 
 namespace lmms
 {
@@ -195,9 +194,8 @@ Plugin * Plugin::instantiateWithKey(const QString& pluginName, Model * parent,
 				"loaded (its settings are kept). To load it again: Settings, Plugins.").arg(name));
 			return new DummyPlugin();
 		}
-		if (gui::getGUI() == nullptr
-			|| QMessageBox::question(nullptr, tr("Plugin"), tr("\"%1\" was running when the program closed "
-				"unexpectedly. Load it anyway?").arg(name)) != QMessageBox::Yes)
+		if (!UserNotice::ask(tr("Plugin"), tr("\"%1\" was running when the program closed "
+				"unexpectedly. Load it anyway?").arg(name), false))
 		{
 			return new DummyPlugin();
 		}
@@ -237,13 +235,11 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 			Engine::getSong()->collectError(tr("The plugin \"%1\" wasn't found or could not be loaded (%2).")
 				.arg(pluginName, getPluginFactory()->errorString(pluginName)));
 		}
-		else if (gui::getGUI() != nullptr)
+		else
 		{
-			QMessageBox::information( nullptr,
-				tr( "Plugin not found" ),
-				tr( "The plugin \"%1\" wasn't found or could not be loaded!\nReason: \"%2\"" ).
-						arg( pluginName ).arg( getPluginFactory()->errorString(pluginName) ),
-				QMessageBox::Ok | QMessageBox::Default );
+			UserNotice::information(tr("Plugin not found"),
+				tr("The plugin \"%1\" wasn't found or could not be loaded!\nReason: \"%2\"")
+					.arg(pluginName).arg(getPluginFactory()->errorString(pluginName)));
 		}
 		inst = new DummyPlugin();
 	}
@@ -263,12 +259,10 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 			{
 				Engine::getSong()->collectError(tr("Failed to load plugin \"%1\"!").arg(pluginName));
 			}
-			else if (gui::getGUI() != nullptr)
+			else
 			{
-				QMessageBox::information( nullptr,
-					tr( "Error while loading plugin" ),
-					tr( "Failed to load plugin \"%1\"!").arg( pluginName ),
-					QMessageBox::Ok | QMessageBox::Default );
+				UserNotice::information(tr("Error while loading plugin"),
+					tr("Failed to load plugin \"%1\"!").arg(pluginName));
 			}
 			inst = new DummyPlugin();
 		}

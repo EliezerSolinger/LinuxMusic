@@ -24,10 +24,8 @@
 
 
 #include <QDir>
-#include <QApplication>
+#include <QCoreApplication>
 #include <QFile>
-#include <QMessageBox>
-#include <QProgressDialog>
 
 #include <algorithm>
 #include <cmath>
@@ -43,11 +41,10 @@
 #include "MidiClip.h"
 #include "MidiPatch.h"
 #include "Instrument.h"
-#include "GuiApplication.h"
-#include "MainWindow.h"
 #include "TimePos.h"
 #include "Song.h"
 #include "TempoMap.h"
+#include "UserNotice.h"
 
 #include "plugin_export.h"
 
@@ -96,10 +93,9 @@ bool MidiImport::tryImport(TrackContainer* tc)
 	if (!openFile()) { return false; }
 
 #ifdef LMMS_HAVE_FLUIDSYNTH
-	if (gui::getGUI() != nullptr && ConfigManager::inst()->sf2File().isEmpty())
+	if (UserNotice::hasUser() && ConfigManager::inst()->sf2File().isEmpty())
 	{
-		QMessageBox::information(gui::getGUI()->mainWindow(),
-			tr("Setup incomplete"),
+		UserNotice::information(tr("Setup incomplete"),
 			tr("You have not set up a default soundfont in "
 				"the settings dialog (Edit->Settings). "
 				"Therefore no sound will be played back after "
@@ -108,10 +104,9 @@ bool MidiImport::tryImport(TrackContainer* tc)
 				"settings dialog and try again."));
 	}
 #else
-	if (gui::getGUI() != nullptr)
+	if (UserNotice::hasUser())
 	{
-		QMessageBox::information(gui::getGUI()->mainWindow(),
-			tr("Setup incomplete"),
+		UserNotice::information(tr("Setup incomplete"),
 			tr("You did not compile LinuxMusic with support for "
 				"SoundFont2 player, which is used to add default "
 				"sound to imported MIDI files. "
@@ -153,7 +148,7 @@ public:
 			// Keep LMMS responsive, for now the import runs
 			// in the main thread. This should probably be
 			// removed if that ever changes.
-			qApp->processEvents();
+			QCoreApplication::processEvents();
 			at = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, tc));
 		}
 		if (tn != "") { at->setName(tn); }
@@ -204,7 +199,7 @@ public:
 	{
 		if (!it) {
 			// Keep LMMS responsive
-			qApp->processEvents();
+			QCoreApplication::processEvents();
 			it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, tc));
 
 #ifdef LMMS_HAVE_FLUIDSYNTH
@@ -275,13 +270,8 @@ bool MidiImport::readSMF(TrackContainer* tc)
 {
 	constexpr int MIDI_CC_COUNT = 128 + 1; // 0-127 (128) + pitch bend
 	constexpr int preTrackSteps = 2;
-	QProgressDialog pd(TrackContainer::tr("Importing MIDI-file..."),
-	TrackContainer::tr("Cancel"), 0, preTrackSteps, gui::getGUI() ? gui::getGUI()->mainWindow() : nullptr);
-	pd.setWindowTitle(TrackContainer::tr("Please wait..."));
-	pd.setWindowModality(Qt::WindowModal);
-	pd.setMinimumDuration(0);
-
-	pd.setValue(0);
+	auto pd = UserNotice::Progress{TrackContainer::tr("Please wait..."), TrackContainer::tr("Importing MIDI-file..."),
+		preTrackSteps};
 
 	std::istringstream stream(readAllData().toStdString());
 	auto seq = new Alg_seq(stream, true);

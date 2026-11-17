@@ -24,22 +24,29 @@
 
 #include "ConfigManager.h"
 
-#include <QApplication>
+#include <QCoreApplication>
 #include <QDir>
 #include <QDomElement>
-#include <QMessageBox>
 #include <QStandardPaths>
 #include <QTextStream>
 
 #include "DeprecationHelper.h"
-#include "GuiApplication.h"
-#include "MainWindow.h"
 #include "PathUtil.h"
 #include "ProjectVersion.h"
+#include "UserNotice.h"
 #include "lmmsversion.h"
 
 namespace lmms
 {
+
+namespace
+{
+//! The messages keep the translations they had when the main window showed them
+class Text
+{
+	Q_DECLARE_TR_FUNCTIONS(lmms::gui::MainWindow)
+};
+} // namespace
 
 
 // Vector with all the upgrade methods
@@ -65,7 +72,7 @@ ConfigManager::ConfigManager() :
 	m_version(defaultVersion()),
 	m_configVersion( UPGRADE_METHODS.size() )
 {
-	if (QFileInfo::exists(qApp->applicationDirPath() + PORTABLE_MODE_FILE))
+	if (QFileInfo::exists(QCoreApplication::applicationDirPath() + PORTABLE_MODE_FILE))
 	{
 		initPortableWorkingDir();
 	}
@@ -86,9 +93,9 @@ ConfigManager::ConfigManager() :
 	initIsolatedWorkingDir();
 
 #ifdef LMMS_BUILD_WIN32
-	QDir::addSearchPath("data", qApp->applicationDirPath() + "/data/");
+	QDir::addSearchPath("data", QCoreApplication::applicationDirPath() + "/data/");
 #else
-	QDir::addSearchPath("data", qApp->applicationDirPath().section('/', 0, -2) + "/share/" LMMS_PROJECT_ID "/");
+	QDir::addSearchPath("data", QCoreApplication::applicationDirPath().section('/', 0, -2) + "/share/" LMMS_PROJECT_ID "/");
 #endif
 
 }
@@ -532,13 +539,11 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 		#endif
 			setBackgroundPicFile(value("paths", "backgroundtheme"));
 		}
-		else if (gui::getGUI() != nullptr)
+		else
 		{
-			QMessageBox::warning(nullptr, gui::MainWindow::tr("Configuration file"),
-									gui::MainWindow::tr("Error while parsing configuration file at line %1:%2: %3").
-													arg(errorLine).
-													arg(errorCol).
-													arg(errorString));
+			UserNotice::warning(Text::tr("Configuration file"),
+				Text::tr("Error while parsing configuration file at line %1:%2: %3")
+					.arg(errorLine).arg(errorCol).arg(errorString));
 		}
 		cfg_file.close();
 	}
@@ -569,7 +574,7 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 		m_stkDir = m_dataDir + "stk/rawwaves/";
 #else
 		// Look for bundled raw waves first
-		m_stkDir = qApp->applicationDirPath() + "/../share/stk/rawwaves/";
+		m_stkDir = QCoreApplication::applicationDirPath() + "/../share/stk/rawwaves/";
 		// Try system installations if not exists
 		if (!QDir(m_stkDir).exists())
 		{
@@ -670,23 +675,13 @@ void ConfigManager::saveConfigFile()
 	QFile outfile(m_lmmsRcFile);
 	if(!outfile.open(QIODevice::WriteOnly | QIODevice::Truncate))
 	{
-		using gui::MainWindow;
-
-		QString title, message;
-		title = MainWindow::tr("Could not open file");
-		message = MainWindow::tr("Could not open file %1 "
-					"for writing.\nPlease make "
-					"sure you have write "
-					"permission to the file and "
-					"the directory containing the "
-					"file and try again!"
-						).arg(m_lmmsRcFile);
-		if (gui::getGUI() != nullptr)
-		{
-			QMessageBox::critical(nullptr, title, message,
-						QMessageBox::Ok,
-						QMessageBox::NoButton);
-		}
+		UserNotice::error(Text::tr("Could not open file"),
+			Text::tr("Could not open file %1 "
+				"for writing.\nPlease make "
+				"sure you have write "
+				"permission to the file and "
+				"the directory containing the "
+				"file and try again!").arg(m_lmmsRcFile));
 		return;
 	}
 
@@ -696,7 +691,7 @@ void ConfigManager::saveConfigFile()
 
 void ConfigManager::initPortableWorkingDir()
 {
-	QString applicationPath = qApp->applicationDirPath();
+	QString applicationPath = QCoreApplication::applicationDirPath();
 	m_workingDir = applicationPath + "/" LMMS_PROJECT_ID "-workspace/";
 	m_lmmsRcFile = applicationPath + "/." LMMS_PROJECT_ID "rc.xml";
 }
@@ -711,14 +706,13 @@ void ConfigManager::initDevelopmentWorkingDir()
 {
 	// If we're in development (lmms is not installed) let's get the source and
 	// binary directories by reading the CMake Cache
-	QDir appPath = qApp->applicationDirPath();
+	QDir appPath = QCoreApplication::applicationDirPath();
 	// If in tests, get parent directory
 	if (appPath.dirName() == "tests") {
 		appPath.cdUp();
 	}
 	QFile cmakeCache(appPath.absoluteFilePath("CMakeCache.txt"));
-	if (cmakeCache.exists()) {
-		cmakeCache.open(QFile::ReadOnly);
+	if (cmakeCache.exists() && cmakeCache.open(QFile::ReadOnly)) {
 		QTextStream stream(&cmakeCache);
 
 		// Find the lines containing something like lmms_SOURCE_DIR:static=<dir>

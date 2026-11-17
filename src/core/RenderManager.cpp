@@ -27,6 +27,8 @@
 
 #include "RenderManager.h"
 
+#include <QDebug>
+
 #include "Mixer.h"
 #include "PatternStore.h"
 #include "Song.h"
@@ -174,7 +176,8 @@ void RenderManager::render(QString outputPath)
 	}
 	else
 	{
-		qDebug( "Renderer failed to acquire a file device!" );
+		qWarning() << "Could not write" << outputPath;
+		m_failedOutputs.append(outputPath);
 		renderNextTrack();
 	}
 }

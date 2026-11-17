@@ -24,13 +24,13 @@
 
 
 #include <memory>
-#include <QMessageBox>
 
 #include "ImportFilter.h"
 #include "Engine.h"
 #include "TrackContainer.h"
 #include "PluginFactory.h"
 #include "ProjectJournal.h"
+#include "UserNotice.h"
 
 
 namespace lmms
@@ -76,16 +76,12 @@ void ImportFilter::import( const QString & _file_to_import,
 
 	if( successful == false )
 	{
-		QMessageBox::information( nullptr,
-			TrackContainer::tr( "Couldn't import file" ),
-			TrackContainer::tr( "Couldn't find a filter for "
+		UserNotice::information(TrackContainer::tr("Couldn't import file"),
+			TrackContainer::tr("Couldn't find a filter for "
 						"importing file %1.\n"
 						"You should convert this file "
 						"into a format supported by "
-						"LinuxMusic using another software."
-						).arg( _file_to_import ),
-					QMessageBox::Ok,
-					QMessageBox::NoButton );
+						"LinuxMusic using another software.").arg(_file_to_import));
 	}
 }
 
@@ -96,17 +92,13 @@ bool ImportFilter::openFile()
 {
 	if( m_file.open( QFile::ReadOnly ) == false )
 	{
-		QMessageBox::critical( nullptr,
-			TrackContainer::tr( "Couldn't open file" ),
-			TrackContainer::tr( "Couldn't open file %1 "
+		UserNotice::error(TrackContainer::tr("Couldn't open file"),
+			TrackContainer::tr("Couldn't open file %1 "
 						"for reading.\nPlease make "
 						"sure you have read-"
 						"permission to the file and "
 						"the directory containing the "
-						"file and try again!" ).arg(
-							m_file.fileName() ),
-					QMessageBox::Ok,
-					QMessageBox::NoButton );
+						"file and try again!").arg(m_file.fileName()));
 		return false;
 	}
 	return true;

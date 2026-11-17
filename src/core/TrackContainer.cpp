@@ -24,26 +24,23 @@
  */
 
 
-#include <QCoreApplication>
-#include <QProgressDialog>
 #include <QDomElement>
+#include <QScopeGuard>
 #include <QWriteLocker>
 
 #include "AutomationClip.h"
-#include "embed.h"
 #include "FolderTrack.h"
 #include "Mixer.h"
 #include "TrackContainer.h"
 
 #include <array>
+#include <optional>
+
 #include "PatternClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "Song.h"
-
-#include "GuiApplication.h"
-#include "MainWindow.h"
-#include "TextFloat.h"
+#include "UserNotice.h"
 
 namespace lmms
 {
@@ -93,39 +90,26 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 		clearAllTracks();
 	}
 
-	static QProgressDialog * pd = nullptr;
-	bool was_null = ( pd == nullptr );
-	if (!journalRestore && gui::getGUI() != nullptr)
+	// One progress for the whole load: track containers inside the project (the patterns') add to the song's
+	static UserNotice::Progress* s_progress = nullptr;
+	auto ownProgress = std::optional<UserNotice::Progress>{};
+	if (!journalRestore && s_progress == nullptr)
 	{
-		if( pd == nullptr )
-		{
-			pd = new QProgressDialog( tr( "Loading project..." ),
-						tr( "Cancel" ), 0,
-						Engine::getSong()->getLoadingTrackCount(),
-						gui::getGUI()->mainWindow());
-			pd->setWindowModality( Qt::ApplicationModal );
-			pd->setWindowTitle( tr( "Please wait..." ) );
-			pd->show();
-		}
+		ownProgress.emplace(tr("Please wait..."), tr("Loading project..."),
+			Engine::getSong()->getLoadingTrackCount());
+		s_progress = &*ownProgress;
 	}
+	const auto progressEnds = qScopeGuard([&] { if (ownProgress) { s_progress = nullptr; } });
 
 	QDomNode node = _this.firstChild();
 	while( !node.isNull() )
 	{
-		if( pd != nullptr )
+		if (s_progress != nullptr)
 		{
-			pd->setValue( pd->value() + 1 );
-			QCoreApplication::instance()->processEvents(
-						QEventLoop::AllEvents, 100 );
-			if( pd->wasCanceled() )
+			s_progress->setValue(s_progress->value() + 1);
+			if (s_progress->cancelled())
 			{
-				if (gui::getGUI() != nullptr)
-				{
-					gui::TextFloat::displayMessage( tr( "Loading cancelled" ),
-					tr( "Project loading was cancelled." ),
-					embed::getIconPixmap( "project_file", 24, 24 ),
-					2000 );
-				}
+				UserNotice::hint(tr("Loading cancelled"), tr("Project loading was cancelled."));
 				Engine::getSong()->loadingCancelled();
 				break;
 			}
@@ -137,23 +121,14 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 			QString trackName = node.toElement().hasAttribute( "name" ) ?
 						node.toElement().attribute( "name" ) :
 						node.firstChild().toElement().attribute( "name" );
-			if( pd != nullptr )
+			if (s_progress != nullptr)
 			{
-				pd->setLabelText( tr("Loading Track %1 (%2/Total %3)").arg( trackName ).
-						  arg( pd->value() + 1 ).arg( Engine::getSong()->getLoadingTrackCount() ) );
+				s_progress->setText(tr("Loading Track %1 (%2/Total %3)").arg(trackName)
+					.arg(s_progress->value() + 1).arg(Engine::getSong()->getLoadingTrackCount()));
 			}
 			Track::create( node.toElement(), this );
 		}
 		node = node.nextSibling();
-	}
-
-	if( pd != nullptr )
-	{
-		if( was_null )
-		{
-			delete pd;
-			pd = nullptr;
-		}
 	}
 }
 

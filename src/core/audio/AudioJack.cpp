@@ -30,17 +30,15 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
-#include <QMessageBox>
 #include <QSpinBox>
 #include <QToolButton>
 #include <QStringList>
 
 #include "AudioEngine.h"
 #include "ConfigManager.h"
-#include "GuiApplication.h"
-#include "MainWindow.h"
 #include "MidiJack.h"
 #include "lmmsversion.h"
+#include "UserNotice.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -145,13 +143,8 @@ AudioJack::~AudioJack()
 
 void AudioJack::tellUser(const QString& title, const QString& text)
 {
-	// A window if there is one (not when rendering from the command line)
-	if (gui::getGUI() == nullptr)
-	{
-		qWarning("%s: %s", qUtf8Printable(title), qUtf8Printable(text));
-		return;
-	}
-	QMessageBox::information(gui::getGUI()->mainWindow(), title, text);
+	// (from any thread: the notice reaches the user, if there is one, on the main thread)
+	UserNotice::information(title, text);
 }
 
 
