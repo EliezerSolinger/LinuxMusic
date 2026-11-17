@@ -22,6 +22,7 @@ set(LMMS_TESTS
 	src/core/ExportProcessorTest.cpp
 	src/core/GainStagingTest.cpp
 	src/core/LfoControllerTest.cpp
+	src/core/LoadCorruptedTest.cpp
 	src/core/Lv2WorkerTest.cpp
 	src/core/MathTest.cpp
 	src/core/MetronomeTest.cpp
@@ -83,6 +84,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
 endforeach()
+
+# The damaged projects are made from the A/B projects
+target_compile_definitions(LoadCorruptedTest PRIVATE LMMS_TEST_AB_PROJECTS="${CMAKE_SOURCE_DIR}/tools/check/ab-projects")
 
 # The Amp & IR plugin's convolver, tested on its own
 target_sources(ConvolverTest PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AmpAndIr/Convolver.cpp)
