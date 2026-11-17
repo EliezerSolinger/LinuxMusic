@@ -115,7 +115,7 @@ private:
 	const SaControls *m_controls;
 
 	// thread communication and control
-	bool m_terminate;
+	std::atomic<bool> m_terminate; //!< (set by the GUI, read by the analysis thread)
 
 	// currently valid configuration
 	unsigned int m_zeroPadFactor = 2;		//!< use n-steps bigger FFT for given block size
@@ -142,14 +142,14 @@ private:
 	// spectrum history for waterfall: new normSpectrum lines are added on top
 	std::vector<uchar> m_history_work;		//!< local history buffer for render
 	std::vector<uchar> m_history;			//!< public buffer for reading
-	bool m_flipRequest;						//!< update public buffer only when requested
+	std::atomic<bool> m_flipRequest;						//!< update public buffer only when requested
 	std::atomic<unsigned int> m_waterfallHeight;	//!< number of stored lines in history buffer
 											// Note: high values may make it harder to see transients.
 	const unsigned int m_waterfallMaxWidth = 3840;
 
 	// book keeping
-	bool m_spectrumActive;
-	bool m_waterfallActive;
+	std::atomic<bool> m_spectrumActive;
+	std::atomic<bool> m_waterfallActive;
 	std::atomic<unsigned int> m_waterfallNotEmpty;	//!< number of lines remaining visible on display
 	bool m_reallocating;
 

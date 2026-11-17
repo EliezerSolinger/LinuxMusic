@@ -66,6 +66,7 @@ private:
 	// Private members
 private:
 	AudioFileProcessorWaveView* m_waveView;
+	f_cnt_t m_shownPlayingFrame = 0; //!< where the cursor is shown (see the constructor)
 	Knob* m_ampKnob;
 	Knob* m_startKnob;
 	Knob* m_endKnob;

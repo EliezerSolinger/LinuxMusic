@@ -26,6 +26,7 @@
 #ifndef LMMS_AUDIO_FILE_PROCESSOR_H
 #define LMMS_AUDIO_FILE_PROCESSOR_H
 
+#include <atomic>
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
 #include "Instrument.h"
@@ -50,6 +51,9 @@ public:
 	void loadSettings(const QDomElement& elem) override;
 
 	void loadFile( const QString & _file ) override;
+
+	//! Where the latest note is playing (0 when none) [any thread]
+	auto playingFrame() const -> f_cnt_t { return m_playingFrame.load(std::memory_order_relaxed); }
 
 	QString nodeName() const override;
 
@@ -89,7 +93,7 @@ private slots:
 
 
 signals:
-	void isPlaying( lmms::f_cnt_t _current_frame );
+
 	void sampleUpdated();
 
 private:
@@ -110,8 +114,11 @@ private:
 	BoolModel m_stutterModel;
 	ComboBoxModel m_interpolationModel;
 
-	f_cnt_t m_nextPlayStartPoint;
-	bool m_nextPlayBackwards;
+	//! Where the next note starts and in which direction, with stutter (set by the notes, on the audio threads)
+	std::atomic<f_cnt_t> m_nextPlayStartPoint;
+	std::atomic<bool> m_nextPlayBackwards;
+	//! Where the latest note is, for the view's cursor (read by the GUI on its timer; 0 when none plays)
+	std::atomic<f_cnt_t> m_playingFrame = 0;
 } ;
 
 } // namespace lmms

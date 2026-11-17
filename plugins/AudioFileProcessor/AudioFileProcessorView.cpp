@@ -28,6 +28,7 @@
 #include "AudioFileProcessorWaveView.h"
 
 #include <QPainter>
+#include <QTimer>
 
 #include "ComboBox.h"
 #include "DataFile.h"
@@ -139,8 +140,18 @@ AudioFileProcessorView::AudioFileProcessorView(Instrument* instrument,
 	m_waveView = 0;
 	newWaveView();
 
-	connect(castModel<AudioFileProcessor>(), SIGNAL(isPlaying(lmms::f_cnt_t)),
-			m_waveView, SLOT(isPlaying(lmms::f_cnt_t)));
+	// The cursor follows the note playing, read on a timer (the audio thread only stores where it is)
+	auto* cursorTimer = new QTimer(this);
+	cursorTimer->start(30);
+	connect(cursorTimer, &QTimer::timeout, this, [this] {
+		if (!m_waveView) { return; }
+		const auto frame = castModel<AudioFileProcessor>()->playingFrame();
+		if (frame != m_shownPlayingFrame)
+		{
+			m_shownPlayingFrame = frame;
+			m_waveView->isPlaying(frame);
+		}
+	});
 
 	qRegisterMetaType<lmms::f_cnt_t>("lmms::f_cnt_t");
 

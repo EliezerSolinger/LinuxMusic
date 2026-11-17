@@ -167,22 +167,27 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 						DefaultBaseFreq / nph->frequency()))
 		{
 			applyRelease(out.data(), nph);
-			emit isPlaying(static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex());
+			m_playingFrame.store(static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex(),
+				std::memory_order_relaxed);
 		}
 		else
 		{
 			zeroSampleFrames(out.data(), frames + offset);
-			emit isPlaying( 0 );
+			m_playingFrame.store(0, std::memory_order_relaxed);
 		}
 	}
 	else
 	{
-		emit isPlaying( 0 );
+		m_playingFrame.store(0, std::memory_order_relaxed);
 	}
 	if( m_stutterModel.value() == true )
 	{
-		m_nextPlayStartPoint = static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex();
-		m_nextPlayBackwards = static_cast<Sample::PlaybackState*>(nph->m_pluginData)->backwards();
+		// (notes of this instrument may play at once on several audio threads: the last one sets where the next
+		// starts)
+		m_nextPlayStartPoint.store(static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex(),
+			std::memory_order_relaxed);
+		m_nextPlayBackwards.store(static_cast<Sample::PlaybackState*>(nph->m_pluginData)->backwards(),
+			std::memory_order_relaxed);
 	}
 }
 
@@ -295,9 +300,10 @@ auto AudioFileProcessor::beatLen(NotePlayHandle* note) const -> f_cnt_t
 		/ Engine::audioEngine()->baseSampleRate();
 	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / m_sample.sampleRate();
 
-	const auto startFrame = m_nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame())
+	const auto nextPlayStartPoint = m_nextPlayStartPoint.load(std::memory_order_relaxed);
+	const auto startFrame = nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame())
 		? m_sample.startFrame()
-		: m_nextPlayStartPoint;
+		: nextPlayStartPoint;
 	const auto duration = m_sample.endFrame() - startFrame;
 
 	return static_cast<f_cnt_t>(std::floor(duration * freqFactor * sampleRateRatio));

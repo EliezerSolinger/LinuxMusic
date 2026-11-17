@@ -360,7 +360,7 @@ private:
 	InstrumentTrack* m_instrumentTrack;		// needed for calling
 											// InstrumentTrack::playNote
 	f_cnt_t m_frames;						// total frames to play
-	f_cnt_t m_totalFramesPlayed;			// total frame-counter - used for
+	std::atomic<f_cnt_t> m_totalFramesPlayed;	// total frame-counter (read by sibling notes on other threads) - used for
 											// figuring out whether a whole note
 											// has been played
 	f_cnt_t m_framesBeforeRelease;			// number of frames after which note
