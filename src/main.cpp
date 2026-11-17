@@ -808,8 +808,10 @@ int main( int argc, char * * argv )
 		// recover a file?
 		QString recoveryFile = ConfigManager::inst()->recoveryFile();
 
+		// (not asked when the program runs by itself for a screenshot, where nobody would answer: left as it is)
 		bool recoveryFilePresent = QFileInfo( recoveryFile ).exists() &&
-				QFileInfo( recoveryFile ).isFile();
+				QFileInfo( recoveryFile ).isFile()
+				&& qEnvironmentVariable("LINUXMUSIC_SCREENSHOT").isEmpty();
 		if( recoveryFilePresent )
 		{
 			QMessageBox mb;
