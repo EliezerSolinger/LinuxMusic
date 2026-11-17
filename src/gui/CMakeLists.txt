@@ -2,7 +2,13 @@ SET(LMMS_SRCS
 	${LMMS_SRCS}
 	gui/ActionGroup.cpp
 	gui/AudioAlsaSetupWidget.cpp
+	gui/AudioCoreAudioSetupWidget.cpp
 	gui/AudioDeviceSetupWidget.cpp
+	gui/AudioJackSetupWidget.cpp
+	gui/AudioPortAudioSetupWidget.cpp
+	gui/AudioPulseAudioSetupWidget.cpp
+	gui/AudioSdlSetupWidget.cpp
+	gui/AudioSndioSetupWidget.cpp
 	gui/AutomatableModelView.cpp
 	gui/ControlLayout.cpp
 	gui/ControllerDialog.cpp

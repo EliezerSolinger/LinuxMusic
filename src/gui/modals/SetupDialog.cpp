@@ -68,6 +68,13 @@
 // Platform-specific audio-interface classes.
 #include "AudioAlsa.h"
 #include "AudioAlsaSetupWidget.h"
+#include "AudioCoreAudioSetupWidget.h"
+#include "AudioDummySetupWidget.h"
+#include "AudioJackSetupWidget.h"
+#include "AudioPortAudioSetupWidget.h"
+#include "AudioPulseAudioSetupWidget.h"
+#include "AudioSdlSetupWidget.h"
+#include "AudioSndioSetupWidget.h"
 #include "AudioDummy.h"
 #include "AudioJack.h"
 #include "AudioCoreAudio.h"
@@ -545,7 +552,7 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 
 #ifdef LMMS_HAVE_JACK
 	m_audioIfaceSetupWidgets[AudioJack::name()] =
-			new AudioJack::setupWidget(as_w);
+			new AudioJackSetupWidget(as_w);
 #endif
 
 #ifdef LMMS_HAVE_ALSA
@@ -555,11 +562,11 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 
 #ifdef LMMS_HAVE_PULSEAUDIO
 	m_audioIfaceSetupWidgets[AudioPulseAudio::name()] =
-			new AudioPulseAudio::setupWidget(as_w);
+			new AudioPulseAudioSetupWidget(as_w);
 #endif
 
 #ifdef LMMS_BUILD_APPLE
-	m_audioIfaceSetupWidgets[AudioCoreAudio::name()] = new AudioCoreAudio::setupWidget(as_w);
+	m_audioIfaceSetupWidgets[AudioCoreAudio::name()] = new AudioCoreAudioSetupWidget(as_w);
 #endif
 
 #ifdef LMMS_HAVE_PORTAUDIO
@@ -569,16 +576,16 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 
 #ifdef LMMS_HAVE_SDL
 	m_audioIfaceSetupWidgets[AudioSdl::name()] =
-			new AudioSdl::setupWidget(as_w);
+			new AudioSdlSetupWidget(as_w);
 #endif
 
 #ifdef LMMS_HAVE_SNDIO
 	m_audioIfaceSetupWidgets[AudioSndio::name()] =
-			new AudioSndio::setupWidget(as_w);
+			new AudioSndioSetupWidget(as_w);
 #endif
 
 	m_audioIfaceSetupWidgets[AudioDummy::name()] =
-			new AudioDummy::setupWidget(as_w);
+			new AudioDummySetupWidget(as_w);
 
 
 	for(AswMap::iterator it = m_audioIfaceSetupWidgets.begin();

@@ -1317,7 +1317,7 @@ Bu çip Commodore 64 bilgisayarında kullanıldı.</translation>
     </message>
 </context>
 <context>
-    <name>lmms::AudioSdl::setupWidget</name>
+    <name>lmms::gui::AudioSdlSetupWidget</name>
     <message>
         <location filename="../../src/core/audio/AudioSdl.cpp" line="202"/>
         <source>Playback device</source>

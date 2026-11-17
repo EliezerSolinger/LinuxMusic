@@ -34,16 +34,14 @@
 #include <sndio.h>
 
 #include "AudioDevice.h"
-#include "AudioDeviceSetupWidget.h"
 
-class QLineEdit;
 
 namespace lmms
 {
 
 namespace gui
 {
-class LcdSpinBox;
+class AudioSndioSetupWidget;
 }
 
 
@@ -58,19 +56,6 @@ public:
 	{
 		return QT_TRANSLATE_NOOP( "AudioDeviceSetupWidget", "sndio" );
 	}
-
-	class setupWidget : public gui::AudioDeviceSetupWidget
-	{
-	public:
-		setupWidget( QWidget * _parent );
-		~setupWidget() override = default;
-
-		void saveSettings() override;
-
-	private:
-		QLineEdit * m_device;
-		gui::LcdSpinBox * m_channels;
-	} ;
 
 private:
 	void startProcessingImpl() override;

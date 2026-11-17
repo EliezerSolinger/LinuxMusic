@@ -29,17 +29,71 @@
 
 #ifdef LMMS_HAVE_PORTAUDIO
 
-#include <QComboBox>
-#include <QFormLayout>
 #include <QString>
-#include <QWidget>
 #include <portaudio.h>
 #include <vector>
 
 #include "AudioDevice.h"
-#include "AudioDeviceSetupWidget.h"
 
 namespace lmms {
+
+//! What PortAudio's settings are called (the driver reads them, its setup widget writes them)
+namespace PortAudioSettings {
+enum class Direction
+{
+	Input,
+	Output
+};
+
+constexpr auto tag()
+{
+	return "audioportaudio";
+}
+
+constexpr auto backendAttribute()
+{
+	return "backend";
+}
+
+constexpr auto deviceNameAttribute(Direction direction)
+{
+	switch (direction)
+	{
+	case Direction::Input:
+		return "inputdevice";
+	case Direction::Output:
+		return "outputdevice";
+	}
+
+	return "";
+}
+
+constexpr auto channelsAttribute(Direction direction)
+{
+	switch (direction)
+	{
+	case Direction::Input:
+		return "inputchannels";
+	case Direction::Output:
+		return "outputchannels";
+	}
+
+	return "";
+}
+
+inline int maxChannels(const PaDeviceInfo* info, Direction direction)
+{
+	switch (direction)
+	{
+	case Direction::Input:
+		return info->maxInputChannels;
+	case Direction::Output:
+		return info->maxOutputChannels;
+	}
+
+	return 0;
+}
+} // namespace PortAudioSettings
 
 namespace detail {
 class PortAudioInitializationGuard
@@ -101,23 +155,6 @@ private:
 	f_cnt_t m_outputLatency = 0;
 };
 } // namespace lmms
-
-namespace lmms::gui {
-class AudioPortAudioSetupWidget : public AudioDeviceSetupWidget
-{
-public:
-	AudioPortAudioSetupWidget(QWidget* parent);
-
-	void show() override;
-	void saveSettings() override;
-
-private:
-	class DeviceSelectorWidget;
-	QComboBox* m_backendComboBox = nullptr;
-	DeviceSelectorWidget* m_inputDevice = nullptr;
-	DeviceSelectorWidget* m_outputDevice = nullptr;
-};
-} // namespace lmms::gui
 
 #endif // LMMS_HAVE_PORTAUDIO
 

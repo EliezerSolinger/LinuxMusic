@@ -35,9 +35,7 @@
 #include <QString>
 
 #include "AudioDevice.h"
-#include "AudioDeviceSetupWidget.h"
 
-class QComboBox;
 
 namespace lmms
 {
@@ -64,6 +62,12 @@ public:
 
 	static auto name() -> QString { return QT_TRANSLATE_NOOP("AudioDeviceSetupWidget", "CoreAudio"); }
 
+	//! Where the settings keep the devices
+	static constexpr auto ConfigSection = "audiocoreaudio";
+	static constexpr auto ConfigOutputDevice = "outputdevice"; //!< the output device's UID; empty: the system's default
+	static constexpr auto ConfigInputDevice = "inputdevice"; //!< the input device's UID; empty: the system's default
+	static constexpr auto NoInput = "none"; //!< the input device's value for no input
+
 	auto inputChannelName(ch_cnt_t channel) const -> QString override;
 	auto capturesOnDemand() const -> bool override { return true; }
 	void setCaptureEnabled(bool enabled) override;
@@ -82,17 +86,6 @@ public:
 
 	//! @returns the devices of the system
 	static auto devices() -> std::vector<DeviceInfo>;
-
-	class setupWidget : public gui::AudioDeviceSetupWidget
-	{
-	public:
-		setupWidget(QWidget* parent);
-		void saveSettings() override;
-
-	private:
-		QComboBox* m_outputDevice;
-		QComboBox* m_inputDevice;
-	};
 
 private:
 	//! Where one channel of the device sits in the IOProc's buffer lists

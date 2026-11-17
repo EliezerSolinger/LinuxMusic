@@ -46,18 +46,6 @@ QT_WIDGETS = set('''
 
 # Files that still include the GUI, with what they include (see docs/plano-refatoracao.md, phase 1)
 EXCEPTIONS: dict[str, set[str]] = {
-	'include/AudioCoreAudio.h': {'AudioDeviceSetupWidget.h'},
-	'include/AudioJack.h': {'AudioDeviceSetupWidget.h'},
-	'include/AudioPortAudio.h': {'AudioDeviceSetupWidget.h', 'QComboBox', 'QFormLayout', 'QWidget'},
-	'include/AudioPulseAudio.h': {'AudioDeviceSetupWidget.h'},
-	'include/AudioSdl.h': {'AudioDeviceSetupWidget.h'},
-	'include/AudioSndio.h': {'AudioDeviceSetupWidget.h'},
-	'src/core/audio/AudioCoreAudio.cpp': {'QComboBox', 'QFormLayout'},
-	'src/core/audio/AudioJack.cpp': {'QFormLayout', 'QLabel', 'QLineEdit', 'QMenu', 'QSpinBox', 'QToolButton'},
-	'src/core/audio/AudioPortAudio.cpp': {'LcdSpinBox.h'},
-	'src/core/audio/AudioPulseAudio.cpp': {'LcdSpinBox.h', 'QFormLayout', 'QLineEdit'},
-	'src/core/audio/AudioSdl.cpp': {'QComboBox', 'QFormLayout'},
-	'src/core/audio/AudioSndio.cpp': {'LcdSpinBox.h', 'QFormLayout', 'QLineEdit'},
 	'src/core/main.cpp': {'GuiApplication.h', 'MainApplication.h', 'MainWindow.h', 'QApplication', 'QMessageBox', 'QPushButton', 'embed.h'},
 }
 

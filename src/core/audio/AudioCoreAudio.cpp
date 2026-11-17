@@ -29,8 +29,6 @@
 #include <unistd.h>
 
 #include <CoreFoundation/CoreFoundation.h>
-#include <QComboBox>
-#include <QFormLayout>
 #include <QtDebug>
 
 #include "AudioEngine.h"
@@ -41,11 +39,6 @@ namespace lmms
 
 namespace
 {
-
-constexpr auto Section = "audiocoreaudio";
-constexpr auto OutputDeviceKey = "outputdevice"; //!< the output device's UID; empty: the system's default
-constexpr auto InputDeviceKey = "inputdevice"; //!< the input device's UID; empty: the system's default
-constexpr auto NoInput = "none"; //!< the input device's value for no input
 
 auto address(AudioObjectPropertySelector selector, AudioObjectPropertyScope scope = kAudioObjectPropertyScopeGlobal,
 	AudioObjectPropertyElement element = kAudioObjectPropertyElementMain) -> AudioObjectPropertyAddress
@@ -223,8 +216,8 @@ AudioCoreAudio::AudioCoreAudio(bool& successful, AudioEngine* engine)
 {
 	successful = false;
 
-	const auto outputUid = ConfigManager::inst()->value(Section, OutputDeviceKey);
-	const auto inputUid = ConfigManager::inst()->value(Section, InputDeviceKey);
+	const auto outputUid = ConfigManager::inst()->value(ConfigSection, ConfigOutputDevice);
+	const auto inputUid = ConfigManager::inst()->value(ConfigSection, ConfigInputDevice);
 
 	const auto output = outputUid.isEmpty() ? defaultDevice(false) : deviceForUid(outputUid);
 	if (output == kAudioObjectUnknown)
@@ -619,50 +612,6 @@ auto AudioCoreAudio::propertyListener(AudioObjectID, UInt32 count, const AudioOb
 		}
 	}
 	return noErr;
-}
-
-
-
-
-AudioCoreAudio::setupWidget::setupWidget(QWidget* parent)
-	: gui::AudioDeviceSetupWidget{AudioCoreAudio::name(), parent}
-	, m_outputDevice{new QComboBox{this}}
-	, m_inputDevice{new QComboBox{this}}
-{
-	auto* form = new QFormLayout{this};
-	form->addRow(tr("Output device"), m_outputDevice);
-	form->addRow(tr("Input device"), m_inputDevice);
-
-	m_outputDevice->addItem(tr("[System Default]"), QString{});
-	m_inputDevice->addItem(tr("[None]"), QString{NoInput});
-	m_inputDevice->addItem(tr("[System Default]"), QString{});
-	for (const auto& device : AudioCoreAudio::devices())
-	{
-		if (device.outputChannels > 0)
-		{
-			m_outputDevice->addItem(QString{"%1 (%2)"}.arg(device.name).arg(device.outputChannels), device.uid);
-		}
-		if (device.inputChannels > 0)
-		{
-			m_inputDevice->addItem(QString{"%1 (%2)"}.arg(device.name).arg(device.inputChannels), device.uid);
-		}
-	}
-
-	const auto select = [](QComboBox* box, const QString& uid) {
-		const auto index = box->findData(uid);
-		box->setCurrentIndex(index >= 0 ? index : box->findData(QString{}));
-	};
-	select(m_outputDevice, ConfigManager::inst()->value(Section, OutputDeviceKey));
-	select(m_inputDevice, ConfigManager::inst()->value(Section, InputDeviceKey));
-}
-
-
-
-
-void AudioCoreAudio::setupWidget::saveSettings()
-{
-	ConfigManager::inst()->setValue(Section, OutputDeviceKey, m_outputDevice->currentData().toString());
-	ConfigManager::inst()->setValue(Section, InputDeviceKey, m_inputDevice->currentData().toString());
 }
 
 } // namespace lmms

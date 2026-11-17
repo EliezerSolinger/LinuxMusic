@@ -34,6 +34,9 @@
 #include <weak_libjack.h>
 #endif
 
+#include <QObject>
+#include <QString>
+
 #include <atomic>
 #include <vector>
 #ifdef AUDIO_BUS_HANDLE_SUPPORT
@@ -41,18 +44,46 @@
 #endif
 
 #include "AudioDevice.h"
-#include "AudioDeviceSetupWidget.h"
 #ifdef AUDIO_BUS_HANDLE_SUPPORT
 #include "AudioBusHandle.h"
 #endif
 
-class QLineEdit;
-class QSpinBox;
-class QMenu;
-class QToolButton;
 
 namespace lmms
 {
+
+namespace gui
+{
+class AudioJackSetupWidget;
+}
+
+//! What JACK's settings and ports are called (the driver uses them, its setup widget writes them)
+namespace JackSettings
+{
+
+inline const auto audioJackClass = QString{"audiojack"};
+inline const auto clientNameKey = QString{"clientname"};
+inline const auto disconnectedRepresentation = QString{"-"};
+inline const auto inputsKey = QString{"inputs"};
+
+//! The most input ports
+constexpr int MaxInputs = 32;
+
+//! @returns how many input ports to register (the setup's choice, 2 by default)
+auto inputCount() -> int;
+
+inline auto getOutputKeyByChannel(size_t channel) -> QString { return "output" + QString::number(channel + 1); }
+inline auto getInputKeyByChannel(size_t channel) -> QString { return "input" + QString::number(channel + 1); }
+
+inline auto buildChannelSuffix(ch_cnt_t ch) -> QString
+{
+	return (ch % 2 ? "R" : "L") + QString::number(ch / 2 + 1);
+}
+
+inline auto buildOutputName(ch_cnt_t ch) -> QString { return QString("master out ") + buildChannelSuffix(ch); }
+inline auto buildInputName(ch_cnt_t ch) -> QString { return QString("master in ") + buildChannelSuffix(ch); }
+
+} // namespace JackSettings
 
 class MidiJack;
 
@@ -79,28 +110,6 @@ public:
 	{
 		return QT_TRANSLATE_NOOP("AudioDeviceSetupWidget", "JACK (JACK Audio Connection Kit)");
 	}
-
-	class setupWidget : public gui::AudioDeviceSetupWidget
-	{
-	public:
-		setupWidget(QWidget* parent);
-		void saveSettings() override;
-
-	private:
-		std::vector<std::string> getAudioPortNames(JackPortFlags portFlags) const;
-		std::vector<std::string> getAudioInputNames() const;
-		std::vector<std::string> getAudioOutputNames() const;
-		static QMenu* buildMenu(QToolButton* toolButton, const std::vector<std::string>& names, const QString& filteredLMMSClientName);
-
-	private:
-		QLineEdit* m_clientName;
-		// Because we do not have access to a JackAudio driver instance we have to be our own client to display inputs and outputs...
-		jack_client_t* m_client;
-
-		std::vector<QToolButton*> m_outputDevices;
-		std::vector<QToolButton*> m_inputDevices;
-		QSpinBox* m_inputCount;
-	};
 
 private slots:
 	//! A message box, or a warning without the GUI

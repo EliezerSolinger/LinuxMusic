@@ -27,8 +27,6 @@
 
 #ifdef LMMS_HAVE_SDL
 
-#include <QFormLayout>
-#include <QComboBox>
 #include <SDL.h>
 
 #include "AudioEngine.h"
@@ -37,8 +35,6 @@
 namespace lmms
 {
 
-constexpr auto SectionSDL = "audiosdl";
-constexpr auto PlaybackDeviceSDL = "device";
 
 AudioSdl::AudioSdl(bool& _success_ful, AudioEngine* _audioEngine)
 	: AudioDevice(DEFAULT_CHANNELS, _audioEngine)
@@ -64,7 +60,7 @@ AudioSdl::AudioSdl(bool& _success_ful, AudioEngine* _audioEngine)
 
   	SDL_AudioSpec actual; 
 
-	const auto playbackDevice = ConfigManager::inst()->value(SectionSDL, PlaybackDeviceSDL).toStdString();
+	const auto playbackDevice = ConfigManager::inst()->value(ConfigSection, ConfigDevice).toStdString();
 	const bool isDefaultPlayback = playbackDevice.empty();
 
 	// Try with the configured device
@@ -144,59 +140,6 @@ void AudioSdl::sdlAudioCallback( Uint8 * _buf, int _len )
 	const auto frameCount = _len / sizeof(float) / channels();
 	audioEngine()->renderNextBuffer({reinterpret_cast<float*>(_buf), channels(), frameCount});
 }
-
-QString AudioSdl::setupWidget::s_systemDefaultDevice = AudioDeviceSetupWidget::tr("[System Default]");
-
-AudioSdl::setupWidget::setupWidget( QWidget * _parent ) :
-	AudioDeviceSetupWidget( AudioSdl::name(), _parent )
-{
-	QFormLayout * form = new QFormLayout(this);
-	form->setRowWrapPolicy(QFormLayout::WrapLongRows);
-
-	m_playbackDeviceComboBox = new QComboBox(this);
-
-	populatePlaybackDeviceComboBox();
-
-	form->addRow(tr("Playback device"), m_playbackDeviceComboBox);
-}
-
-
-
-
-void AudioSdl::setupWidget::saveSettings()
-{
-	const auto currentPlaybackDevice = m_playbackDeviceComboBox->currentText();
-	if (currentPlaybackDevice == s_systemDefaultDevice)
-	{
-		// Represent the default playback device with an empty string
-		ConfigManager::inst()->setValue(SectionSDL, PlaybackDeviceSDL, "");
-	}
-	else if (!currentPlaybackDevice.isEmpty())
-	{
-		ConfigManager::inst()->setValue(SectionSDL, PlaybackDeviceSDL, currentPlaybackDevice);
-	}
-}
-
-void AudioSdl::setupWidget::populatePlaybackDeviceComboBox()
-{
-	m_playbackDeviceComboBox->addItem(s_systemDefaultDevice);
-
-	QStringList playbackDevices;
-	const int numberOfPlaybackDevices = SDL_GetNumAudioDevices(0);
-	for (int i = 0; i < numberOfPlaybackDevices; ++i)
-	{
-		const QString deviceName = SDL_GetAudioDeviceName(i, 0);
-		playbackDevices.append(deviceName);
-	}
-
-	playbackDevices.sort();
-
-	m_playbackDeviceComboBox->addItems(playbackDevices);
-
-	const auto playbackDevice = ConfigManager::inst()->value(SectionSDL, PlaybackDeviceSDL);
-	m_playbackDeviceComboBox->setCurrentText(playbackDevice.isEmpty() ? s_systemDefaultDevice : playbackDevice);
-}
-
 
 } // namespace lmms
 

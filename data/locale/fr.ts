@@ -1317,7 +1317,7 @@ Cette puce était utilisée dans l&apos;ordinateur Commodore 64.</translation>
     </message>
 </context>
 <context>
-    <name>lmms::AudioSdl::setupWidget</name>
+    <name>lmms::gui::AudioSdlSetupWidget</name>
     <message>
         <location filename="../../src/core/audio/AudioSdl.cpp" line="202"/>
         <source>Playback device</source>

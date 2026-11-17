@@ -34,16 +34,14 @@
 #include <QThread>
 
 #include "AudioDevice.h"
-#include "AudioDeviceSetupWidget.h"
 
-class QLineEdit;
 
 namespace lmms
 {
 
 namespace gui
 {
-class LcdSpinBox;
+class AudioPulseAudioSetupWidget;
 }
 
 
@@ -59,22 +57,6 @@ public:
 	}
 
 	static QString probeDevice();
-
-
-	class setupWidget : public gui::AudioDeviceSetupWidget
-	{
-	public:
-		setupWidget( QWidget * _parent );
-		~setupWidget() override;
-
-		void saveSettings() override;
-
-	private:
-		QLineEdit * m_device;
-		gui::LcdSpinBox * m_channels;
-
-	} ;
-
 
 	void streamWriteCallback( pa_stream * s, size_t length );
 

@@ -1317,7 +1317,7 @@ Detta chip användes i Commodore 64-datorn.</translation>
     </message>
 </context>
 <context>
-    <name>lmms::AudioSdl::setupWidget</name>
+    <name>lmms::gui::AudioSdlSetupWidget</name>
     <message>
         <location filename="../../src/core/audio/AudioSdl.cpp" line="202"/>
         <source>Playback device</source>

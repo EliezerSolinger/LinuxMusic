@@ -32,16 +32,22 @@
 #include <SDL2/SDL_audio.h>
 
 #include "AudioDevice.h"
-#include "AudioDeviceSetupWidget.h"
-
-class QComboBox;
 
 namespace lmms
 {
 
+namespace gui
+{
+class AudioSdlSetupWidget;
+}
+
 class AudioSdl : public AudioDevice
 {
 public:
+	//! Where the settings keep the playback device (empty: the system's default)
+	static constexpr auto ConfigSection = "audiosdl";
+	static constexpr auto ConfigDevice = "device";
+
 	AudioSdl( bool & _success_ful, AudioEngine* audioEngine );
 	~AudioSdl() override;
 
@@ -50,25 +56,6 @@ public:
 		return QT_TRANSLATE_NOOP( "AudioDeviceSetupWidget",
 					"SDL (Simple DirectMedia Layer)" );
 	}
-
-
-	class setupWidget : public gui::AudioDeviceSetupWidget
-	{
-	public:
-		setupWidget( QWidget * _parent );
-		~setupWidget() override = default;
-
-		void saveSettings() override;
-	
-	private:
-		void populatePlaybackDeviceComboBox();
-
-	private:
-		QComboBox* m_playbackDeviceComboBox = nullptr;
-
-		static QString s_systemDefaultDevice;
-	} ;
-
 
 private:
 	void startProcessingImpl() override;
