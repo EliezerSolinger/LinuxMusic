@@ -27,7 +27,9 @@
 #include "DataFile.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 #include <map>
 
 #include <QCoreApplication>
@@ -37,6 +39,8 @@
 #include <QDir>
 #include <QRegularExpression>
 #include <QSaveFile>
+
+#include <zlib.h>
 
 #include "base64.h"
 #include "ConfigManager.h"
@@ -596,17 +600,54 @@ void DataFile::cleanMetaNodes( QDomElement _de )
 	}
 }
 
+auto DataFile::uncompress(const QByteArray& data, qsizetype limit) -> std::optional<QByteArray>
+{
+	if (data.size() < 4) { return std::nullopt; }
+	const auto* bytes = reinterpret_cast<const unsigned char*>(data.constData());
+	const auto expected = (qsizetype{bytes[0]} << 24) | (qsizetype{bytes[1]} << 16) | (qsizetype{bytes[2]} << 8)
+		| qsizetype{bytes[3]};
+	if (expected == 0 || expected > limit) { return std::nullopt; }
+
+	auto out = QByteArray{};
+	// Grown as it inflates, never past the size it says (a header that lies costs nothing up front)
+	out.reserve(std::min(expected, std::max(qsizetype{1} << 20, (data.size() - 4) * 8)));
+
+	auto stream = z_stream{};
+	if (inflateInit(&stream) != Z_OK) { return std::nullopt; }
+	stream.next_in = const_cast<Bytef*>(bytes + 4);
+	stream.avail_in = static_cast<uInt>(std::min<qsizetype>(data.size() - 4, std::numeric_limits<uInt>::max()));
+
+	auto chunk = std::array<char, 64 * 1024>{};
+	auto result = Z_OK;
+	while (result == Z_OK)
+	{
+		stream.next_out = reinterpret_cast<Bytef*>(chunk.data());
+		stream.avail_out = static_cast<uInt>(chunk.size());
+		result = inflate(&stream, Z_NO_FLUSH);
+		if (result != Z_OK && result != Z_STREAM_END) { break; }
+		const auto produced = static_cast<qsizetype>(chunk.size() - stream.avail_out);
+		if (out.size() + produced > expected) { result = Z_DATA_ERROR; break; } // more than it said
+		out.append(chunk.data(), produced);
+		if (produced == 0 && result == Z_OK && stream.avail_in == 0) { result = Z_DATA_ERROR; break; } // cut short
+	}
+	inflateEnd(&stream);
+	if (result != Z_STREAM_END || out.size() != expected) { return std::nullopt; }
+	return out;
+}
+
+
+
+
 void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
 {
 	QString errorMsg;
 	int line = -1, col = -1;
 	if (!lmms::setContent(*this, _data, &errorMsg, &line, &col))
 	{
-		// parsing failed? then try to uncompress data
-		QByteArray uncompressed = qUncompress( _data );
-		if( !uncompressed.isEmpty() )
+		// parsing failed? then try to uncompress data (within a limit: the file may come from anywhere)
+		if (const auto uncompressed = uncompress(_data))
 		{
-			if (lmms::setContent(*this, uncompressed, &errorMsg, &line, &col))
+			if (lmms::setContent(*this, *uncompressed, &errorMsg, &line, &col))
 			{
 				line = col = -1;
 			}

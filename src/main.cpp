@@ -450,8 +450,13 @@ int main( int argc, char * * argv )
 				fprintf(stderr, "Could not open %s\n", argv[i]);
 				return EXIT_FAILURE;
 			}
-			QString d = qUncompress( f.readAll() );
-			printf( "%s\n", d.toUtf8().constData() );
+			const auto d = DataFile::uncompress(f.readAll());
+			if (!d)
+			{
+				fprintf(stderr, "%s is not a compressed project, or a damaged one\n", argv[i]);
+				return EXIT_FAILURE;
+			}
+			printf("%s\n", d->constData());
 
 			return EXIT_SUCCESS;
 		}

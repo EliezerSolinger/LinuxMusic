@@ -17,6 +17,7 @@ set(LMMS_TESTS
 	src/core/AudioPortsTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/AutosaveTest.cpp
+	src/core/CompressedProjectTest.cpp
 	src/core/ConfigManagerTest.cpp
 	src/core/ExportProcessorTest.cpp
 	src/core/GainStagingTest.cpp

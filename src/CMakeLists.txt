@@ -190,9 +190,13 @@ SET(LMMS_REQUIRED_LIBS ${LMMS_REQUIRED_LIBS}
 	${EXTRA_LIBRARIES}
 )
 
+# Compressed projects are inflated with a limit of our own (see DataFile::uncompress())
+find_package(ZLIB REQUIRED)
+
 target_link_libraries(lmmsobjs
 	${LMMS_REQUIRED_LIBS}
 	hiir
+	ZLIB::ZLIB
 )
 target_static_libraries(lmmsobjs ringbuffer)
 

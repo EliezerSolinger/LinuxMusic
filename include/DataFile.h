@@ -27,6 +27,7 @@
 #define LMMS_DATA_FILE_H
 
 #include <map>
+#include <optional>
 #include <QDomDocument>
 #include <vector>
 
@@ -48,6 +49,16 @@ class LMMS_EXPORT DataFile : public QDomDocument
 	static constexpr unsigned int FILE_VERSION = 31;
 
 public:
+	//! The most a compressed project may inflate to (a bigger one is refused, not loaded into memory)
+	static constexpr qsizetype MaxUncompressedSize = qsizetype{512} << 20;
+
+	/**
+	 * The data compressed in @p data (qCompress()'s format: the size, 4 bytes big-endian, then zlib's stream), or
+	 * nothing if it is not such data, says it is bigger than @p limit, or inflates to more than it says. Unlike
+	 * qUncompress(), it never holds more than the size it says (a small file cannot fill the memory).
+	 */
+	static auto uncompress(const QByteArray& data, qsizetype limit = MaxUncompressedSize) -> std::optional<QByteArray>;
+
 	enum class Type
 	{
 		Unknown,
