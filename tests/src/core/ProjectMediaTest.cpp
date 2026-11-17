@@ -364,21 +364,29 @@ private slots:
 
 	void factoryFilesReferOnlyToFactorySamplesThatExist()
 	{
-		// Presets, demos and templates: every sample they name is one of the program's (removing samples must
+		// Presets, projects and templates: every sample they name is one of the program's (removing samples must
 		// take what uses them along)
 		const auto data = QDir{ConfigManager::inst()->dataDir()};
 		auto missing = QStringList{};
 		auto checked = 0;
 		for (const auto& folder : {QString{"presets"}, QString{"projects"}})
 		{
-			for (auto it = QDirIterator{data.filePath(folder), {"*.xpf", "*.mmp", "*.mpt"}, QDir::Files,
+			for (auto it = QDirIterator{data.filePath(folder), {"*.xpf", "*.mmp", "*.mmpz", "*.mpt"}, QDir::Files,
 				QDirIterator::Subdirectories}; it.hasNext();)
 			{
 				const auto path = it.next();
 				auto file = QFile{path};
 				QVERIFY(file.open(QIODevice::ReadOnly));
+				auto content = file.readAll();
+				// (compressed projects too: the demos that named removed samples were all .mmpz)
+				if (path.endsWith(".mmpz"))
+				{
+					const auto uncompressed = DataFile::uncompress(content);
+					QVERIFY2(uncompressed.has_value(), qPrintable(path));
+					content = *uncompressed;
+				}
 				auto document = QDomDocument{};
-				if (!document.setContent(&file)) { continue; }
+				if (!document.setContent(content)) { continue; }
 				// Every element, depth first
 				auto elements = std::vector<QDomElement>{document.documentElement()};
 				for (std::size_t n = 0; n < elements.size(); ++n)

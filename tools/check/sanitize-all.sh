@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # sanitize-all.sh <sanitizer build dir> <output dir> [<more projects>...]
-# Renders the A/B projects, the bundled demo projects and any others given with a build configured with
+# Renders the A/B projects, the bundled projects and any others given with a build configured with
 # -DWANT_DEBUG_ASAN=ON (AddressSanitizer and UndefinedBehaviorSanitizer) or -DWANT_DEBUG_TSAN=ON, and reports
 # each project whose render failed, took longer than five minutes, or made the sanitizer report anything.
 set -u

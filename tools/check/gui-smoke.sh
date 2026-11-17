@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # gui-smoke.sh <build dir> <output dir> [<projects>...]
-# Opens the GUI headless (QT_QPA_PLATFORM=offscreen, no sound device) with each project (the A/B and demo
+# Opens the GUI headless (QT_QPA_PLATFORM=offscreen, no sound device) with each project (the A/B and shorties
 # projects if none are given), shows the Piano Roll and the Song Editor, saves a screenshot and quits, which
 # also clears the project. Reports a crash, a hang (two minutes), or a sanitizer finding with a sanitizer build.
 # GUI_SMOKE_ACTIONS chooses what to do (LINUXMUSIC_SCREENSHOT_ACTION values; "pianoroll arrangement" by default;
@@ -19,7 +19,7 @@ if [ $# -gt 2 ]; then
 	projects=("${@:3}")
 else
 	projects=("$here"/ab-projects/*.mmp)
-	while IFS= read -r -d '' f; do projects+=("$f"); done < <(find "$root/data/projects/demos" -name '*.mmp*' -print0)
+	while IFS= read -r -d '' f; do projects+=("$f"); done < <(find "$root/data/projects/shorties" -name '*.mmp*' -print0)
 fi
 export ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1
 export TSAN_OPTIONS="suppressions=$root/tests/tsan.supp"
