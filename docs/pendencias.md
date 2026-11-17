@@ -106,6 +106,9 @@ Motor e estabilidade:
   threads; A/B igual (só os plugins aleatórios variam); `gravacao-como-usar.md` atualizado. A gravação real no Mac
   fica no item do microfone, abaixo
 - [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux (o usuário)
+  - O JACK já foi testado neste Mac em 17/11, com um servidor `jackd` de teste (`-d dummy`), também sob ASan:
+    áudio e MIDI do JACK na mesma conexão, tocando e fechando sem erro, e as ligações automáticas às portas físicas
+    certas. Falta o hardware real e o ALSA.
 - [ ] **Mac:** testar a entrada do microfone no hardware (precisa de alguém para aceitar o pedido de permissão)
 - [x] **Demos com amostras removidas:** a pasta `data/projects/demos` foi apagada (pedido do usuário em 17/11: voltam
   quando a nova versão estiver pronta), junto com três projetos de `shorties` que citavam amostras tiradas

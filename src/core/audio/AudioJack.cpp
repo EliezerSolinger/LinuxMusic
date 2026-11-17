@@ -244,7 +244,7 @@ void AudioJack::attemptToReconnectOutput(size_t outputIndex, const QString& targ
 {
 	if (outputIndex >= m_outputPorts.size()) { return; }
 
-	if (targetPort == disconnectedRepresentation)
+	if (targetPort == disconnectedRepresentation || targetPort.isEmpty())
 	{
 		std::fprintf(stderr, "Output port %u is not connected.\n", static_cast<unsigned int>(outputIndex));
 		return;
@@ -260,7 +260,7 @@ void AudioJack::attemptToReconnectInput(size_t inputIndex, const QString& source
 {
 	if (inputIndex >= m_inputPorts.size()) { return; }
 
-	if (sourcePort == disconnectedRepresentation)
+	if (sourcePort == disconnectedRepresentation || sourcePort.isEmpty())
 	{
 		std::fprintf(stderr, "Input port %u is not connected.\n", static_cast<unsigned int>(inputIndex));
 		return;
@@ -290,15 +290,33 @@ void AudioJack::startProcessingImpl()
 
 	const auto cm = ConfigManager::inst();
 
+	// What the settings say; with nothing saved, the hardware's ports in order (our outputs to its playback ports,
+	// its capture ports to our inputs), as JACK programs usually do
+	const auto physicalPorts = [this](unsigned long flags) {
+		auto names = QStringList{};
+		if (const char** ports = jack_get_ports(m_client, nullptr, JACK_DEFAULT_AUDIO_TYPE, JackPortIsPhysical | flags))
+		{
+			for (auto port = ports; *port; ++port) { names << QString::fromLatin1(*port); }
+			jack_free(ports);
+		}
+		return names;
+	};
+	const auto playback = physicalPorts(JackPortIsInput);
+	const auto capture = physicalPorts(JackPortIsOutput);
+	const auto savedOr = [](const QString& saved, const QStringList& defaults, std::size_t index) {
+		if (!saved.isEmpty()) { return saved; }
+		return index < static_cast<std::size_t>(defaults.size()) ? defaults[index] : disconnectedRepresentation;
+	};
+
 	const auto numberOfChannels = channels();
 	for (size_t i = 0; i < numberOfChannels; ++i)
 	{
-		attemptToReconnectOutput(i, cm->value(audioJackClass, getOutputKeyByChannel(i)));
+		attemptToReconnectOutput(i, savedOr(cm->value(audioJackClass, getOutputKeyByChannel(i)), playback, i));
 	}
 
 	for (size_t i = 0; i < m_inputPorts.size(); ++i)
 	{
-		attemptToReconnectInput(i, cm->value(audioJackClass, getInputKeyByChannel(i)));
+		attemptToReconnectInput(i, savedOr(cm->value(audioJackClass, getInputKeyByChannel(i)), capture, i));
 	}
 }
 
