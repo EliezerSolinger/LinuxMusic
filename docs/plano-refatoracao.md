@@ -51,8 +51,11 @@ plugins de fora tratados como entrada não confiável.
 | 7 | Estado de render sem trava (retratos imutáveis) | alto | alto |
 | 8 | Ciclo de vida explícito (singletons) | médio | contínuo |
 | 9 | Revisão final e documentação | — | baixo |
+| 10 | Bibliotecas confirmadas: libebur128 e libremidi | médio | médio |
 
-A fase 7 vem depois das fases 2 e 4 porque depende de valores atômicos e de posse clara dos objetos.
+A fase 7 vem depois das fases 2 e 4 porque depende de valores atômicos e de posse clara dos objetos. A fase 10
+foi pedida pelo usuário em 17/11, depois do levantamento em `docs/levantamento-bibliotecas.md`; ela roda antes da
+revisão final (fase 9).
 
 ---
 
@@ -213,7 +216,8 @@ Os plugins internos continuam no caminho de áudio. Eles ficam seguros por verif
 - **6.2** Testes com um cliente falso: mensagens malformadas, processo que morre no meio, processo que não
   responde.
 - **6.3 Hospedeiro de plugins em outro processo** (`linuxmusic-plugin-host`), opcional por plugin, para LADSPA
-  e LV2 de terceiros, reaproveitando o protocolo do `RemotePlugin`:
+  e LV2 de terceiros, reaproveitando o protocolo do `RemotePlugin`. Decisão do usuário (17/11): o isolamento fica
+  com o nosso `RemotePlugin`, e a ponte do Carla não é adotada:
   - primeiro LADSPA (API simples);
   - depois LV2 sem interface própria, com portas de controle, áudio, átomos/MIDI e estado;
   - liga sozinho para um plugin que o `PluginGuard` marcou como suspeito, e o usuário pode ligar para qualquer
@@ -257,6 +261,66 @@ render esperar (contador `periodsSkipped` zerado num teste de estresse), e o TSa
 - Atualizar `docs/estado-atual.md` e `docs/pendencias.md`.
 
 ---
+
+## Fase 10: bibliotecas confirmadas (libebur128 e libremidi)
+
+Só as duas que passaram na verificação de `docs/levantamento-bibliotecas.md`. Regra do usuário: **uma biblioteca só
+entra se for melhor que a nossa, medido aqui, e tiver no mínimo todos os recursos que temos.**
+
+Processo, igual para as duas:
+1. A biblioteca entra como dependência opcional do build e é ligada atrás da mesma interface que já usamos
+   (`ExportProcessor::measure`, `MidiClient`). O código atual continua.
+2. Os mesmos testes rodam contra as duas implementações. Cada item das listas abaixo é um teste ou uma medição
+   registrada aqui.
+3. Ela só substitui a nossa se cumprir todos os itens de "mantém" e algum de "melhora", sem piorar latência,
+   alocação na thread de áudio, determinismo nem A/B. Se não cumprir, fica a nossa, e o motivo vai anotado aqui com
+   os números.
+4. O código antigo só sai num commit separado, depois de tudo isso.
+
+### 10.1 libebur128 (medição de loudness na exportação)
+- **Mantém** o que o `ExportProcessor` faz hoje:
+  - loudness integrado BS.1770 com as portas absoluta (-70 LUFS) e relativa (-10 LU);
+  - pico de amostra;
+  - qualquer taxa de amostragem e número de canais que exportamos;
+  - silêncio (resultado sem loudness);
+  - medição sobre o render inteiro, com cancelamento;
+  - normalização para alvo de pico ou de loudness;
+  - o mesmo resultado em toda execução.
+- **Melhora** (pelo menos um, medido):
+  - os sinais oficiais da EBU (Tech 3341 e 3342) dentro da tolerância da norma, onde a nossa falhar;
+  - pico verdadeiro (*true peak*, com sobreamostragem), para normalizar sem passar de 0 dBTP;
+  - LRA, loudness de curto prazo e momentâneo, para o assistente de exportação mostrar.
+- **Medir:**
+  - os sinais da EBU nas duas implementações;
+  - a diferença em LUFS nos projetos A/B;
+  - o tempo de medição de um render longo.
+
+### 10.2 libremidi (entrada e saída MIDI)
+- **Mantém** tudo o que os drivers atuais fazem:
+  - clientes de sequenciador (ALSA seq, CoreMIDI): listam as portas legíveis e graváveis, inscrevem cada porta de
+    faixa nos aparelhos escolhidos, avisam quando a lista de portas muda, e dão o nome da porta de origem de um
+    evento (usado para aprender um controlador);
+  - portas com o nome da faixa onde o driver atual as cria (ALSA seq), visíveis a outros programas;
+  - clientes crus (ALSA raw, JACK, sndio, WinMM) e o modo de cada porta (entrada, saída ou as duas);
+  - JACK: o MIDI no mesmo cliente do áudio, com o instante de cada evento dentro do período (precisão de amostra);
+  - trocar o driver sem reiniciar (`AudioEngine::closeMidiClient`/`openMidiClient`), com as portas voltando
+    inscritas nos mesmos aparelhos;
+  - mensagens de tempo real e posição (`MidiSync`, `MidiStart`, `MidiSongPosition`);
+  - nada alocado nem travado na thread de áudio ao enviar e receber (`AudioThreadAllocationTest`);
+  - Linux, macOS, Windows MSVC e MinGW.
+- **Melhora** (pelo menos um, medido):
+  - conexão e desconexão de aparelhos a quente;
+  - MIDI 2/UMP;
+  - PipeWire;
+  - USB identificado;
+  - menos código nosso por plataforma (hoje são cerca de 2.150 linhas nos drivers).
+- **Medir:**
+  - latência de entrada, de evento a nota, com o teste de laço de volta;
+  - jitter do instante dentro do período;
+  - alocação e trava na thread de áudio;
+  - os testes de MIDI que já existem (`MidiClientChangeTest`, `MidiTempoMapTest`), passando nas duas
+    implementações.
+- O ALSA e o JACK no Linux continuam dependendo do teste numa máquina Linux (pendência do usuário).
 
 ## Andamento
 
