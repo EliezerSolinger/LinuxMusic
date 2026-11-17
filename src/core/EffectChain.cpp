@@ -33,6 +33,7 @@
 #include "AudioBuffer.h"
 #include "Effect.h"
 #include "DummyEffect.h"
+#include "ErrorLog.h"
 #include "MixHelpers.h"
 #include "PluginGuard.h"
 #include "PluginInstance.h"
@@ -182,6 +183,13 @@ void EffectChain::setTrackChannelCount(ch_cnt_t channels)
 
 void EffectChain::appendEffect(std::unique_ptr<PluginInstance> effect)
 {
+	// Every effect in a chain has its plugin (the chain and the views use it): one that did not load is refused here,
+	// whoever asks (the loading code puts a DummyEffect in its place, see loadEffect())
+	if (!effect || !effect->effect())
+	{
+		ErrorLog::report(ErrorLog::Severity::Error, "EffectChain", "an effect whose plugin did not load was refused");
+		return;
+	}
 	Engine::audioEngine()->requestChangeInModel();
 	effect->setTrackChannelCount(m_trackChannels);
 	m_effects.push_back(std::move(effect));
@@ -197,6 +205,13 @@ void EffectChain::appendEffect(std::unique_ptr<PluginInstance> effect)
 
 void EffectChain::insertEffect(std::size_t index, std::unique_ptr<PluginInstance> effect)
 {
+	// Every effect in a chain has its plugin (the chain and the views use it): one that did not load is refused here,
+	// whoever asks (the loading code puts a DummyEffect in its place, see loadEffect())
+	if (!effect || !effect->effect())
+	{
+		ErrorLog::report(ErrorLog::Severity::Error, "EffectChain", "an effect whose plugin did not load was refused");
+		return;
+	}
 	Engine::audioEngine()->requestChangeInModel();
 	effect->setTrackChannelCount(m_trackChannels);
 	m_effects.insert(m_effects.begin() + static_cast<std::ptrdiff_t>(std::min(index, m_effects.size())),
