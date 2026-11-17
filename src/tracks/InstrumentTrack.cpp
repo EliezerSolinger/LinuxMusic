@@ -330,6 +330,14 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 
 	bool eventHandled = false;
 
+	// A key out of the keyboard (from a device, a file or a transposition) has no note to play or change
+	const bool keyIsValid = event.key() >= 0 && event.key() < NumKeys;
+	if (!keyIsValid && (event.type() == MidiNoteOn || event.type() == MidiNoteOff || event.type() == MidiKeyPressure
+		|| (event.type() == MidiMetaEvent && event.metaEvent() == MidiNotePanning)))
+	{
+		return;
+	}
+
 	switch( event.type() )
 	{
 		// we don't send MidiNoteOn, MidiNoteOff and MidiKeyPressure

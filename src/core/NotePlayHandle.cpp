@@ -150,7 +150,8 @@ NotePlayHandle::~NotePlayHandle()
 		m_instrumentTrack->deleteNotePluginData( this );
 	}
 
-	if( m_instrumentTrack->m_notes[key()] == this )
+	// (a note's key may be out of the keyboard: one from a damaged file, or transposed past it)
+	if (key() >= 0 && key() < NumKeys && m_instrumentTrack->m_notes[key()] == this)
 	{
 		m_instrumentTrack->m_notes[key()] = nullptr;
 	}
