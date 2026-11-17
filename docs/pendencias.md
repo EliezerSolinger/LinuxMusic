@@ -183,16 +183,34 @@ queda do Mallets, que é queda e entra antes.
   - No navegador de efeitos, o Guitarix é uma categoria própria, com as peças como subplugins dela (por exemplo:
     Guitarix → Amplificadores, Cabeçotes, Gabinetes, Pedais...). Isso usa o mesmo segundo nível de categoria das
     subcategorias de sintetizador.
+  - **Decisão do usuário (17/11):** o mesmo código e os mesmos nomes do Guitarix: unidades, parâmetros e
+    presets, sem renomear. Fica registrado que alguns nomes são marcas de terceiros, como o próprio Guitarix já usa.
+  - **O visual vem junto, portado e não reescrito (usuário, 17/11):** o mesmo código adaptado para funcionar aqui.
+    - As interfaces das unidades (`trunk/src/LV2/gx_*.lv2/*_ui.cpp`) usam o **xputty**, o toolkit do autor que
+      desenha com cairo.
+    - O xputty separa a parte de sistema em `xwidget-linux.cpp` (X11) e `xwidget-mswin.cpp` (Windows).
+    - O porte acrescenta uma terceira, `xwidget-qt.cpp`: cada janela do xputty vira um widget Qt que mostra a
+      superfície cairo e repassa mouse e teclado.
+    - Assim entram sem reescrita:
+      - a interface de cada unidade;
+      - os widgets do xputty (knob, slider, combobox, medidor, afinador);
+      - os recursos PNG.
+    - Só se escrevem a camada Qt e a ligação com o nosso sistema de plugins. Nova dependência: cairo (Homebrew,
+      MSYS2/MinGW, Linux).
+    - O DSP também vem como está: o C++ gerado pelo Faust, os zita e as tabelas.
+  - **Licença (usuário, 17/11):** o Guitarix é GPL, e o LinuxMusic é GPL-2 ou posterior. Pode vir tudo, inclusive
+    as partes GPL-3 (zita-resampler e zita-convolver). Com elas, o programa distribuído vale como GPL-3, o que a
+    licença permite. Obrigatório: citar o Guitarix e os autores nos créditos (Sobre e arquivo de créditos) e manter
+    os avisos de copyright nos arquivos portados.
   - Pesquisa feita: `docs/pesquisas/guitarix.md`.
-    - O código próprio do Guitarix é GPL-2+ e serve.
-    - Ficam de fora o `zita-convolver` e o `zita-resampler` (GPL-3) e o `abgate` (LGPL-3).
-    - 44 unidades sobreamostram com o zita-resampler: trocar pelo hiir que já temos.
+    - O código próprio do Guitarix é GPL-2+; o `zita-convolver` e o `zita-resampler` são GPL-3 e o `abgate` é
+      LGPL-3. Pela decisão acima, tudo pode vir, o mesmo código.
+    - 44 unidades sobreamostram com o zita-resampler: vem junto, como no Guitarix.
     - O C++ gerado pelo Faust já vem pronto no repositório dele: não precisamos do Faust.
     - Inventário: 18 pré-amplificadores, 6 amplificadores de potência, 27 tonestacks, 17 gabinetes e cerca de 80
       pedais.
     - Piloto sugerido: o Tube Screamer.
   - Antes de começar:
-    - verificar a licença (precisa ser compatível com GPL-2.0-ou-posterior) e manter os créditos;
     - levantar como o DSP dele é gerado (Faust) e o que isso exige no nosso build;
     - listar todas as peças e o que já temos de parecido (AmpAndIr/NAM, mixer analógico);
     - definir a interface de cada uma, que deve caber no rack de efeitos (item acima).

@@ -12,6 +12,14 @@ Guitarix nem os seus pacotes LV2.
 **Decisão do usuário (17/11):** no navegador de efeitos, o Guitarix é uma categoria própria, com as peças como
 subplugins dela (por exemplo: amplificadores, cabeçotes, gabinetes, pedais).
 
+**Decisão do usuário (17/11):** portar o mesmo código com os mesmos nomes do Guitarix: unidades, parâmetros e
+presets. Isso vale por cima da sugestão de renomear feita mais abaixo.
+
+**Decisão do usuário (17/11), licença:** vem tudo, inclusive o zita-resampler e o zita-convolver (GPL-3). O
+LinuxMusic é GPL-2 ou posterior, então o programa com eles passa a ser distribuído como GPL-3. Obrigatório citar o
+Guitarix e os autores nos créditos e manter os avisos de copyright. Isso vale por cima das sugestões de trocar o
+reamostrador mais abaixo.
+
 ## Resumo
 
 - **Licença: compatível**, com duas exceções que é preciso evitar. O código escrito para o Guitarix é GPL-2.0 ou
