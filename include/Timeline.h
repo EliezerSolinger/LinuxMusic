@@ -26,6 +26,9 @@
 
 #include <QObject>
 
+#include <atomic>
+#include <cstdint>
+
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "JournallingObject.h"
@@ -45,17 +48,21 @@ public:
 		KeepPosition
 	};
 
-	auto pos() const -> const TimePos& { return m_pos; }
+	// The position and the loop are written by the audio thread (as the song plays) or the GUI, and read by both:
+	// they are atomic, and the loop's begin and end change together
 
-	auto ticks() const -> tick_t { return m_pos.getTicks(); }
+	auto pos() const -> TimePos { return TimePos{ticks()}; }
+
+	auto ticks() const -> tick_t { return m_ticks.load(std::memory_order_relaxed); }
 
 	//! Forcefully sets the current ticks, resets the frame offset, and sets the elapsed seconds based on the global position (ignoring potential mid-song tempo changes)
 	//! Unless `jumped` is passed as false, this function will emit the `positionJumped` signal to allow other widgets to update accordingly.
 	void setTicks(tick_t ticks, bool jumped = true)
 	{
-		m_pos.setTicks(ticks);
-		m_frameOffset = 0;
-		m_elapsedSeconds = ticks * Engine::framesPerTick() / Engine::audioEngine()->outputSampleRate();
+		m_ticks.store(ticks, std::memory_order_relaxed);
+		m_frameOffset.store(0, std::memory_order_relaxed);
+		m_elapsedSeconds.store(ticks * Engine::framesPerTick() / Engine::audioEngine()->outputSampleRate(),
+			std::memory_order_relaxed);
 		if (jumped) { emit positionJumped(); }
 		emit positionChanged();
 	}
@@ -63,30 +70,37 @@ public:
 	//! Advances the current timeline position by a certain number of ticks, in addition to updating the elapsed time based on the current tempo.
 	void incrementTicks(tick_t increment)
 	{
-		m_pos.setTicks(ticks() + increment);
-		m_elapsedSeconds += increment * Engine::framesPerTick() / Engine::audioEngine()->outputSampleRate();
+		m_ticks.store(ticks() + increment, std::memory_order_relaxed);
+		m_elapsedSeconds.store(m_elapsedSeconds.load(std::memory_order_relaxed)
+			+ increment * Engine::framesPerTick() / Engine::audioEngine()->outputSampleRate(), std::memory_order_relaxed);
 		emit positionChanged();
 	}
 
-	auto frameOffset() const -> float { return m_frameOffset; }
-	void setFrameOffset(const float frame) { m_frameOffset = frame; }
+	auto frameOffset() const -> float { return m_frameOffset.load(std::memory_order_relaxed); }
+	void setFrameOffset(const float frame) { m_frameOffset.store(frame, std::memory_order_relaxed); }
 
-	auto loopBegin() const -> TimePos { return m_loopBegin; }
-	auto loopEnd() const -> TimePos { return m_loopEnd; }
-	auto loopEnabled() const -> bool { return m_loopEnabled; }
+	auto loopBegin() const -> TimePos { return TimePos{loopBeginTicks(m_loop.load(std::memory_order_relaxed))}; }
+	auto loopEnd() const -> TimePos { return TimePos{loopEndTicks(m_loop.load(std::memory_order_relaxed))}; }
+	auto loopEnabled() const -> bool { return m_loopEnabled.load(std::memory_order_relaxed); }
 
 	void setLoopBegin(TimePos begin);
 	void setLoopEnd(TimePos end);
 	void setLoopPoints(TimePos begin, TimePos end);
 	void setLoopEnabled(bool enabled);
 
-	auto playStartPosition() const -> TimePos { return m_playStartPosition; }
-	auto stopBehaviour() const -> StopBehaviour { return m_stopBehaviour; }
+	auto playStartPosition() const -> TimePos { return TimePos{m_playStartPosition.load(std::memory_order_relaxed)}; }
+	auto stopBehaviour() const -> StopBehaviour { return m_stopBehaviour.load(std::memory_order_relaxed); }
 
-	void setPlayStartPosition(TimePos position) { m_playStartPosition = position; }
+	void setPlayStartPosition(TimePos position)
+	{
+		m_playStartPosition.store(position.getTicks(), std::memory_order_relaxed);
+	}
 	void setStopBehaviour(StopBehaviour behaviour);
 
-	auto getElapsedSeconds() const -> double { return m_elapsedSeconds + frameOffset() / Engine::audioEngine()->outputSampleRate(); }
+	auto getElapsedSeconds() const -> double
+	{
+		return m_elapsedSeconds.load(std::memory_order_relaxed) + frameOffset() / Engine::audioEngine()->outputSampleRate();
+	}
 
 	auto nodeName() const -> QString override { return "timeline"; }
 
@@ -101,17 +115,31 @@ protected:
 	void loadSettings(const QDomElement& element) override;
 
 private:
-	TimePos m_loopBegin = TimePos{0};
-	TimePos m_loopEnd = TimePos{DefaultTicksPerBar};
-	bool m_loopEnabled = false;
-	TimePos m_pos = TimePos{0};
+	//! The loop's begin and end in one word (see packLoop()), so that nobody sees one changed without the other
+	static constexpr auto packLoop(tick_t begin, tick_t end) -> std::uint64_t
+	{
+		return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(begin)) << 32) | static_cast<std::uint32_t>(end);
+	}
+	static constexpr auto loopBeginTicks(std::uint64_t loop) -> tick_t
+	{
+		return static_cast<tick_t>(static_cast<std::uint32_t>(loop >> 32));
+	}
+	static constexpr auto loopEndTicks(std::uint64_t loop) -> tick_t
+	{
+		return static_cast<tick_t>(static_cast<std::uint32_t>(loop));
+	}
+	void setLoop(TimePos begin, TimePos end);
 
-	float m_frameOffset = 0;
+	std::atomic<std::uint64_t> m_loop = packLoop(0, DefaultTicksPerBar);
+	std::atomic<bool> m_loopEnabled = false;
+	std::atomic<tick_t> m_ticks = 0;
 
-	double m_elapsedSeconds = 0;
+	std::atomic<float> m_frameOffset = 0;
 
-	StopBehaviour m_stopBehaviour = StopBehaviour::BackToStart;
-	TimePos m_playStartPosition = TimePos{-1};
+	std::atomic<double> m_elapsedSeconds = 0;
+
+	std::atomic<StopBehaviour> m_stopBehaviour = StopBehaviour::BackToStart;
+	std::atomic<tick_t> m_playStartPosition = -1;
 };
 
 } // namespace lmms

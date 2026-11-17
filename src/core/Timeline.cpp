@@ -24,40 +24,43 @@
 #include "Timeline.h"
 
 #include <algorithm>
-#include <tuple>
 
 #include <QDomElement>
 
 namespace lmms {
 
+void Timeline::setLoop(TimePos begin, TimePos end)
+{
+	const auto [first, last] = std::minmax(begin.getTicks(), end.getTicks());
+	m_loop.store(packLoop(first, last), std::memory_order_relaxed);
+}
+
 void Timeline::setLoopBegin(TimePos begin)
 {
-	std::tie(m_loopBegin, m_loopEnd) = std::minmax(begin, TimePos{m_loopEnd});
+	setLoop(begin, loopEnd());
 }
 
 void Timeline::setLoopEnd(TimePos end)
 {
-	std::tie(m_loopBegin, m_loopEnd) = std::minmax(TimePos{m_loopBegin}, end);
+	setLoop(loopBegin(), end);
 }
 
 void Timeline::setLoopPoints(TimePos begin, TimePos end)
 {
-	std::tie(m_loopBegin, m_loopEnd) = std::minmax(begin, end);
+	setLoop(begin, end);
 }
 
 void Timeline::setLoopEnabled(bool enabled)
 {
-	if (enabled != m_loopEnabled) {
-		m_loopEnabled = enabled;
-		emit loopEnabledChanged(m_loopEnabled);
+	if (m_loopEnabled.exchange(enabled, std::memory_order_relaxed) != enabled) {
+		emit loopEnabledChanged(enabled);
 	}
 }
 
 void Timeline::setStopBehaviour(StopBehaviour behaviour)
 {
-	if (behaviour != m_stopBehaviour) {
-		m_stopBehaviour = behaviour;
-		emit stopBehaviourChanged(m_stopBehaviour);
+	if (m_stopBehaviour.exchange(behaviour, std::memory_order_relaxed) != behaviour) {
+		emit stopBehaviourChanged(behaviour);
 	}
 }
 
