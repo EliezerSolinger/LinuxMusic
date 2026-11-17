@@ -1,0 +1,14 @@
+<?xml version='1.0'?>
+<!DOCTYPE lmms-project>
+<lmms-project creator="LinuxMusic" type="song" version="31"><head bpm="140" masterpitch="0" mastervol="100" timesig_denominator="4" timesig_numerator="4" /><song><trackcontainer type="song"><track muted="0" name="inst-bitinvader" solo="0" type="0"><instrumenttrack basenote="69" mixch="0" name="alien_strings" tab="1" vol="59">
+      <bitinvader interpolation="1" normalize="0" sampleLength="128" sampleShape="PKaOPeKT5r6uR+G9CtejvczMTL2PwvW8CtejvAAAAAAK16M8CtejPI/C9TzMzEw9j8J1PY/CdT2PwnU9j8J1PY/CdT2PwnU9j8J1PczMTD2PwvU8CtejPArXIzwK1yO8CtejvI/C9bzMzEy9KVyPvQrXo73sUbi9rkfhvY/C9b2PwvW9uB4FvpqZGb4K1yO+CtcjvnsULr7sUTi+XI9Cvs3MTL7NzEy+zcxMvs3MTL7NzEy+PgpXvq5HYb6uR2G+rkdhvh6Fa76PwnW+j8J1vo/Cdb6PwnW+j8J1vo/Cdb6PwnW+j8J1vo/Cdb6PwnW+j8J1vo/Cdb6PwnW+HoVrvq5HYb4+Cle+zcxMvlyPQr57FC6+CtcjvpqZGb64HgW+rkfhvc3MzL3sUbi9KVyPvczMTL0K1yO9j8L1vArXI7wK1yM8CtejPI/C9TyPwvU8CtcjPSlcjz3sUbg9rkfhPY/C9T24HgU+mpkZPgrXIz57FC4+7FE4PlyPQj7NzEw+PgpXPh6Faz64HoU+KVyPPuJ6lD5SuJ4+exSuPuxRuD5cj8I+hevRPq5H4T7Xo/A+j8L1PgAAAD+4HgU/zMwMP+F6FD8+Chc/9igcP2ZmJj/XozA/MzMzP5DCNT9I4To/XI9CP3A9Sj/NzEw/KVxPP4XrUT/helQ/9ihcP2ZmZj8=" version="0.1" />
+      <eldata fcut="3840" fres="0.21" ftype="0" fwet="1">
+        <elvol amt="1" att="0.4" ctlenvamt="0" dec="0.897" hold="0" lamt="0" latt="0" lfosyncmode="0" lpdel="0" lshp="0" lspd="0.7311" pdel="0" rel="0.33" sus="0.49" userwavefile="" x100="1" />
+        <elcut amt="0" att="0.494" ctlenvamt="1" dec="0.499" hold="0" lamt="0" latt="0" lfosyncmode="0" lpdel="0" lshp="0" lspd="0.01" pdel="0" rel="0.274" sus="0" userwavefile="" x100="0" />
+        <elres amt="1" att="0.804" ctlenvamt="0" dec="0.499" hold="0" lamt="0" latt="0" lfosyncmode="0" lpdel="0" lshp="0" lspd="0.1" pdel="0" rel="0.1" sus="0" userwavefile="" x100="0" />
+      </eldata>
+      <arpeggiator arp="74" arp-enabled="0" arpdir="0" arpdisabled="1" arpgate="100" arpmode="1" arprange="1" arpsyncmode="6" arptime="107" chord="0" chord-enabled="0" chorddisabled="1" chordrange="4" />
+      <midiport inputchannel="0" outputchannel="1" receive="0" send="0" />
+      <chordcreator arp="74" arp-enabled="0" arpdir="0" arpdisabled="1" arpgate="100" arpmode="1" arprange="1" arpsyncmode="6" arptime="107" chord="0" chord-enabled="0" chorddisabled="1" chordrange="4" />
+      <fxchain enabled="0" numofeffects="0" /></instrumenttrack>
+  <midiclip len="384" muted="0" name="" pos="0" steps="16" type="1"><note key="57" len="96" pan="0" pos="0" vol="100" /><note key="60" len="96" pan="0" pos="96" vol="100" /><note key="64" len="96" pan="0" pos="192" vol="100" /><note key="69" len="96" pan="0" pos="288" vol="100" /><note key="57" len="384" pan="0" pos="0" vol="100" /><note key="64" len="384" pan="0" pos="0" vol="100" /></midiclip></track></trackcontainer></song></lmms-project>

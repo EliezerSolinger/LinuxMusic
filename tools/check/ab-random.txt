@@ -1,0 +1,7 @@
+# Projects that render differently on every run (they use random numbers): ab-compare.py reports them without
+# judging them. Found by rendering the same build twice.
+fx-granularpitchshifter
+inst-kicker
+inst-nes
+inst-organic
+inst-vibed

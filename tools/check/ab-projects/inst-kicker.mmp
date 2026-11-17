@@ -1,0 +1,16 @@
+<?xml version='1.0'?>
+<!DOCTYPE lmms-project>
+<lmms-project creator="LinuxMusic" type="song" version="31"><head bpm="140" masterpitch="0" mastervol="100" timesig_denominator="4" timesig_numerator="4" /><song><trackcontainer type="song"><track muted="0" name="inst-kicker" solo="0" type="0"><instrumenttrack basenote="69" mixch="0" pan="0" pitch="0" pitchrange="1" scale_type="linear" vol="100">
+      <instrument name="kicker">
+        <kicker click="0.4" decay="223" decay_denominator="4" decay_numerator="4" decay_syncmode="0" dist="0" distend="0" endfreq="40" endnote="0" env="0.568" gain="1" noise="1" scale_type="linear" slope="0.06" startfreq="150" startnote="0" syncmode="0" version="1" />
+      </instrument>
+      <eldata fcut="3114" fres="1.64" ftype="0" fwet="0" scale_type="linear">
+        <elvol amt="1" att="0" ctlenvamt="0" dec="0.357" hold="0" lamt="-1" latt="0" lpdel="0" lshp="2" lspd="0.0997" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0" scale_type="linear" sustain="0" syncmode="0" userwavefile="" x100="1" />
+        <elcut amt="0" att="0" ctlenvamt="1" dec="0.5" hold="0.5" lamt="1" latt="0" lpdel="0" lshp="2" lspd="0.001" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.1" scale_type="linear" sustain="0.5" syncmode="0" userwavefile="" x100="0" />
+        <elres amt="0" att="0" ctlenvamt="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.1" scale_type="linear" sustain="0.5" syncmode="0" userwavefile="" x100="0" />
+      </eldata>
+      <chordcreator chord="0" chord-enabled="0" chordrange="1" scale_type="linear" />
+      <arpeggiator arp="0" arp-enabled="0" arpdir="0" arpgate="100" arpmode="0" arprange="1" arptime="100" arptime_denominator="4" arptime_numerator="4" arptime_syncmode="0" scale_type="linear" syncmode="0" />
+      <midiport basevelocity="63" fixedinputvelocity="-1" fixedoutputnote="-1" fixedoutputvelocity="-1" inputchannel="0" inputcontroller="0" outputchannel="1" outputcontroller="0" outputprogram="1" readable="0" scale_type="linear" writable="0" />
+      <fxchain enabled="0" numofeffects="0" /></instrumenttrack>
+  <midiclip len="384" muted="0" name="" pos="0" steps="16" type="1"><note key="57" len="96" pan="0" pos="0" vol="100" /><note key="60" len="96" pan="0" pos="96" vol="100" /><note key="64" len="96" pan="0" pos="192" vol="100" /><note key="69" len="96" pan="0" pos="288" vol="100" /><note key="57" len="384" pan="0" pos="0" vol="100" /><note key="64" len="384" pan="0" pos="0" vol="100" /></midiclip></track></trackcontainer></song></lmms-project>
