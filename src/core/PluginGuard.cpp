@@ -51,6 +51,8 @@ auto identity(const QString& pluginName, const QMap<QString, QString>& attribute
 	// The attributes that tell which one (a QMap keeps them in order of their names)
 	for (auto it = attributes.begin(); it != attributes.end(); ++it)
 	{
+		// (how it runs is not which one it is: a plugin isolated or not is the same plugin)
+		if (it.key() == "isolated") { continue; }
 		result += '|' + it.key() + '=' + it.value();
 	}
 	return result;

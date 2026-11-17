@@ -81,6 +81,7 @@ struct LadspaManagerDescription
 	LadspaPluginType type;
 	uint16_t inputChannels;
 	uint16_t outputChannels;
+	QString libraryPath; //!< the library's whole path (a plugin process loads it again, see RemoteLadspaHost)
 };
 
 class LMMS_EXPORT LadspaManager
@@ -117,6 +118,8 @@ public:
 
 	/* Returns the name of the plug-in */
 	QString  getName( const ladspa_key_t & _plugin );
+	//! The whole path of the plugin's library; empty when the plugin is unknown
+	QString getLibraryPath(const ladspa_key_t& plugin);
 
 	/* Returns the the plug-in's author */
 	QString  getMaker( const ladspa_key_t & _plugin );
@@ -333,7 +336,7 @@ public:
 
 private:
 	void  addPlugins( LADSPA_Descriptor_Function _descriptor_func,
-						const QString & _file );
+						const QString & _file, const QString& path );
 	uint16_t  getPluginInputs( const LADSPA_Descriptor * _descriptor );
 	uint16_t  getPluginOutputs( const LADSPA_Descriptor * _descriptor );
 

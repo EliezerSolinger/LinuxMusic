@@ -98,8 +98,7 @@ LadspaManager::LadspaManager()
 				auto descriptorFunction = (LADSPA_Descriptor_Function)plugin_lib.resolve("ladspa_descriptor");
 				if( descriptorFunction != nullptr )
 				{
-					addPlugins( descriptorFunction,
-							f.fileName() );
+					addPlugins(descriptorFunction, f.fileName(), f.absoluteFilePath());
 				}
 			}
 			else
@@ -124,6 +123,15 @@ LadspaManager::~LadspaManager() = default;
 
 
 
+QString LadspaManager::getLibraryPath(const ladspa_key_t& plugin)
+{
+	const auto* description = getDescription(plugin);
+	return description ? description->libraryPath : QString{};
+}
+
+
+
+
 LadspaManagerDescription * LadspaManager::getDescription(
 						const ladspa_key_t & _plugin )
 {
@@ -136,7 +144,7 @@ LadspaManagerDescription * LadspaManager::getDescription(
 
 void LadspaManager::addPlugins(
 		LADSPA_Descriptor_Function _descriptor_func,
-						const QString & _file )
+						const QString & _file, const QString& path )
 {
 	for (long pluginIndex = 0; const auto descriptor = _descriptor_func(pluginIndex); ++pluginIndex)
 	{
@@ -144,6 +152,7 @@ void LadspaManager::addPlugins(
 		if (m_ladspaManagerMap.contains(key)) { continue; }
 
 		auto* plugIn = &m_ladspaManagerMap[key];
+		plugIn->libraryPath = path;
 		plugIn->descriptorFunction = _descriptor_func;
 		plugIn->index = pluginIndex;
 		plugIn->inputChannels = getPluginInputs( descriptor );

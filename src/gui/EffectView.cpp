@@ -87,7 +87,8 @@ EffectView::EffectView(Effect* _model, QWidget* _parent, AudioPortsModel* audioP
 
 	setModel( _model );
 
-	if( effect()->controls()->controlCount() > 0 )
+	// (an effect whose plugin did not load has no controls)
+	if (effect()->controls() && effect()->controls()->controlCount() > 0)
 	{
 		auto ctls_btn = new QPushButton(embed::getIconPixmap("gear", 20, 20), "", this);
 		ctls_btn->setToolTip(tr("Controls"));
@@ -143,7 +144,7 @@ EffectView::~EffectView()
 
 void EffectView::editControls()
 {
-	if( m_subWindow )
+	if (m_subWindow && m_controlView && effect()->controls())
 	{
 		if (!m_controlView->isVisible())
 		{
@@ -226,6 +227,20 @@ void EffectView::showMenu()
 	if (!dynamic_cast<DummyEffect*>(effect()))
 	{
 		contextMenu->addAction(tr("&Save preset..."), this, [this] { emit savePresetRequested(this); });
+	}
+
+	// A third-party plugin can run in a process of its own: a crash there leaves the program running (a little more
+	// latency and CPU). Plugins that can say so have the "isolated" property
+	if (const auto isolated = effect()->property("isolated"); isolated.isValid())
+	{
+		contextMenu->addSeparator();
+		auto* action = contextMenu->addAction(tr("Run in a separate &process (safer)"));
+		action->setCheckable(true);
+		action->setChecked(isolated.toBool());
+		action->setToolTip(tr("A crash of this plugin then stops only the plugin, not the program"));
+		connect(action, &QAction::toggled, this, [effect = QPointer<Effect>{effect()}](bool on) {
+			if (effect) { effect->setProperty("isolated", on); }
+		});
 	}
 
 	// Effects with a sidechain input (more inputs than the main pair) on a mixer channel: where it comes from

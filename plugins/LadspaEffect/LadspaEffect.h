@@ -28,7 +28,12 @@
 
 #include <vector>
 
+#include <memory>
+#include <string>
+
 #include "Effect.h"
+#include "LadspaPorts.h"
+#include "SharedMemory.h"
 #include "ladspa.h"
 #include "LadspaControls.h"
 #include "LadspaManager.h"
@@ -36,6 +41,7 @@
 namespace lmms
 {
 
+class RemotePlugin;
 struct port_desc_t;
 using multi_proc_t = QVector<port_desc_t*>;
 
@@ -49,16 +55,26 @@ using multi_proc_t = QVector<port_desc_t*>;
  *
  * The plugin's audio ports are connected straight to the host's planar buffers, so no audio is copied
  * in or out of the plugin.
+ *
+ * Isolated (an option of each effect, and what a plugin the PluginGuard suspects gets), the plugin runs in a process
+ * of its own (RemoteLadspaHost): a crash there leaves the program running. Its channels are then in shared memory
+ * (usesSharedMemoryBuffers()), and its control ports' values in a shared control block (see LadspaPorts::Layout).
  */
 class LadspaEffect : public Effect
 {
 	Q_OBJECT
+	//! (the effect's menu offers it, see EffectView)
+	Q_PROPERTY(bool isolated READ isolated WRITE setIsolated)
 public:
 	LadspaEffect( Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key );
 	~LadspaEffect() override;
 
 	void setControl( int _control, LADSPA_Data _data );
+
+	//! Whether it runs in a process of its own (see the class); changing it makes the plugin again [main thread]
+	auto isolated() const -> bool { return m_isolated; }
+	Q_INVOKABLE void setIsolated(bool isolated);
 
 	EffectControls * controls() override
 	{
@@ -86,6 +102,8 @@ public:
 	auto getChannelGroup(group_cnt_t index, bool isInput, AudioBuffer::ChannelGroup& group) const
 		-> ch_cnt_t override;
 	auto getInplacePair(ch_cnt_t inputIndex) const -> std::optional<ch_cnt_t> override;
+	auto usesSharedMemoryBuffers() const -> bool override { return m_isolated; }
+	void onSharedMemoryChange(const SharedBufferInfo& info) override;
 
 private:
 	//! Instantiates the plugin again for a new sample rate, keeping the control values. [main thread]
@@ -94,10 +112,14 @@ private:
 	void pluginInstantiation(sample_rate_t sampleRate, f_cnt_t maxFrames);
 	void pluginDestruction();
 
+	//! Starts the plugin's process and makes the instances there; false (and why, to the user) when it could not
+	auto startIsolated(sample_rate_t sampleRate, f_cnt_t maxFrames) -> bool;
+
 	void activateHandles();
 
 	//! Connects the ports to @p in and @p out and the controls, and runs the processors
-	void runProcessors(const AudioBuffer& in, AudioBuffer& out);
+	//! (isolated: false when the plugin process did not run the period)
+	auto runProcessors(const AudioBuffer& in, AudioBuffer& out) -> bool;
 
 	/**
 	 * Plugins report their latency while they run, so a plugin with a latency port runs once on silence after
@@ -136,6 +158,13 @@ private:
 
 	//! The buffer each audio port is currently connected to, to only call connect_port() when it changes
 	std::vector<LADSPA_Data*> m_connectedAudioBuffers;
+
+	//! Isolated: wanted (see setIsolated()), and the plugin's process with its control block
+	bool m_isolated = false;
+	std::unique_ptr<RemotePlugin> m_remote;
+	SharedMemory<float[]> m_controlBlock;
+	SharedBufferInfo m_sharedBufferInfo{};
+	std::string m_sharedBufferKey;
 };
 
 

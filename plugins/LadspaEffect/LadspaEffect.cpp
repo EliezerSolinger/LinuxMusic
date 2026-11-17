@@ -43,6 +43,12 @@
 
 #include "plugin_export.h"
 #include "UserNotice.h"
+#include "ErrorLog.h"
+#include "PluginGuard.h"
+#include "Host.h"
+#include "RemotePlugin.h"
+
+#include <chrono>
 
 namespace lmms
 {
@@ -83,6 +89,9 @@ LadspaEffect::LadspaEffect(Model* _parent, const Descriptor::SubPluginFeatures::
 	}
 
 	setDisplayName( manager->getShortName( m_key ) );
+
+	// (a plugin the PluginGuard suspects comes isolated, see Plugin::instantiateWithKey())
+	m_isolated = _key && _key->attributes.value("isolated") == "1";
 
 	pluginInstantiation(Engine::audioEngine()->outputSampleRate(), Engine::audioEngine()->framesPerPeriod());
 }
@@ -138,11 +147,40 @@ auto LadspaEffect::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 		changeSampleRate(rate);
 	}
 
+	else if (m_isolated != (m_remote != nullptr))
+	{
+		// Isolated or back in the program (see setIsolated())
+		changeSampleRate(rate);
+	}
+
 	if (!isOkay()) { return true; }
 
 	activateHandles();
 	measureLatency();
 	return true;
+}
+
+
+
+
+void LadspaEffect::setIsolated(bool isolated)
+{
+	if (isolated == m_isolated) { return; }
+	m_isolated = isolated;
+	// The host moves the buffers into or out of shared memory and activates it again, which makes the plugin again
+	// (see activate())
+	if (host()) { host()->useRemotePluginBuffers(isolated); }
+}
+
+
+
+
+void LadspaEffect::onSharedMemoryChange(const SharedBufferInfo& info)
+{
+	m_sharedBufferKey = std::string{info.key};
+	m_sharedBufferInfo = info;
+	m_sharedBufferInfo.key = m_sharedBufferKey;
+	if (m_remote) { m_remote->setSharedAudioBuffer(m_sharedBufferInfo); }
 }
 
 
@@ -160,6 +198,14 @@ void LadspaEffect::activateHandles()
 {
 	if (m_handlesActive) { return; }
 
+	if (m_remote)
+	{
+		m_remote->lock();
+		m_remote->sendMessage(RemotePlugin::message{LadspaPorts::IdLadspaActivate});
+		m_remote->unlock();
+		m_handlesActive = true;
+		return;
+	}
 	Ladspa2LMMS * manager = Engine::getLADSPAManager();
 	for (const auto handle : m_handles)
 	{
@@ -175,6 +221,14 @@ void LadspaEffect::deactivateHandles()
 {
 	if (!m_handlesActive) { return; }
 
+	if (m_remote)
+	{
+		m_remote->lock();
+		m_remote->sendMessage(RemotePlugin::message{LadspaPorts::IdLadspaDeactivate});
+		m_remote->unlock();
+		m_handlesActive = false;
+		return;
+	}
 	Ladspa2LMMS * manager = Engine::getLADSPAManager();
 	for (const auto handle : m_handles)
 	{
@@ -243,7 +297,8 @@ ProcessStatus LadspaEffect::process(ProcessContext& context)
 	const AudioBuffer& in = context.in();
 	AudioBuffer& out = context.out();
 
-	runProcessors(in, out);
+	// (isolated, a plugin process that is gone or hung leaves it silent; the dry signal still passes)
+	if (!runProcessors(in, out)) { out.silenceAllChannels(); }
 
 	// Mix the dry signal into the outputs. Outputs without a matching input have no dry signal.
 	mixDrySignal(in, out, static_cast<ch_cnt_t>(in.channels()));
@@ -254,7 +309,7 @@ ProcessStatus LadspaEffect::process(ProcessContext& context)
 
 
 
-void LadspaEffect::runProcessors(const AudioBuffer& in, AudioBuffer& out)
+auto LadspaEffect::runProcessors(const AudioBuffer& in, AudioBuffer& out) -> bool
 {
 	const auto frames = std::min(out.frames(), m_maxFrames);
 
@@ -274,6 +329,8 @@ void LadspaEffect::runProcessors(const AudioBuffer& in, AudioBuffer& out)
 				case BufferRate::ChannelIn:
 				case BufferRate::ChannelOut:
 				{
+					// (isolated, the plugin process connects them to the shared buffers)
+					if (m_remote) { break; }
 					// LADSPA does not have const input ports, but plugins must not write to their inputs
 					auto buffer = pp->rate == BufferRate::ChannelIn
 						? const_cast<LADSPA_Data*>(in.buffer(input++).data())
@@ -323,11 +380,19 @@ void LadspaEffect::runProcessors(const AudioBuffer& in, AudioBuffer& out)
 		}
 	}
 
+	if (m_remote)
+	{
+		// The period's frames, then its run in the plugin process (the controls are in the shared block already)
+		m_controlBlock[0] = static_cast<float>(frames);
+		return m_remote->process();
+	}
+
 	// Process the buffers.
 	for( ch_cnt_t proc = 0; proc < processorCount(); ++proc )
 	{
 		(m_descriptor->run)(m_handles[proc], frames);
 	}
+	return true;
 }
 
 
@@ -336,6 +401,15 @@ void LadspaEffect::runProcessors(const AudioBuffer& in, AudioBuffer& out)
 void LadspaEffect::measureLatency()
 {
 	if (!m_latencyPort || !m_handlesActive) { return; }
+
+	if (m_remote)
+	{
+		m_remote->lock();
+		m_remote->sendMessage(RemotePlugin::message{LadspaPorts::IdLadspaMeasureLatency});
+		m_remote->waitForMessage(RemotePlugin::message{LadspaPorts::IdLadspaMeasured}, std::chrono::seconds{5});
+		m_remote->unlock();
+		return;
+	}
 
 	const auto frames = std::min<f_cnt_t>(Engine::audioEngine()->framesPerPeriod(), m_maxFrames);
 	const auto in = AudioBuffer{frames, static_cast<ch_cnt_t>(processorCount() * m_inputsPerProcessor)};
@@ -379,6 +453,27 @@ void LadspaEffect::pluginInstantiation(sample_rate_t sampleRate, f_cnt_t maxFram
 	// Categorize the ports, and create the buffers. The audio channels use the host's buffers.
 	m_portCount = manager->getPortCount( m_key );
 
+	// Isolated, the control ports' values are in a block shared with the plugin process, in the places both sides
+	// work out the same way (LadspaPorts::layoutOf())
+	const auto* descriptor = manager->getDescriptor(m_key);
+	auto layout = LadspaPorts::Layout{};
+	if (m_isolated && descriptor)
+	{
+		layout = LadspaPorts::layoutOf(*descriptor, processorCount(), maxFrames);
+		try { m_controlBlock.create(layout.size); }
+		catch (const std::exception& error)
+		{
+			ErrorLog::reportText(ErrorLog::Severity::Error, "LadspaEffect",
+				QString{"no shared control block (%1): it runs in the program"}.arg(error.what()));
+			m_isolated = false;
+		}
+	}
+	else { m_isolated = false; }
+	const auto bufferFor = [&](ch_cnt_t proc, int port, std::size_t values) -> LADSPA_Data* {
+		if (!m_isolated) { return new LADSPA_Data[values]; }
+		return &m_controlBlock[layout.places[static_cast<std::size_t>(proc) * m_portCount + port]];
+	};
+
 	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
 	{
 		multi_proc_t ports;
@@ -409,17 +504,17 @@ void LadspaEffect::pluginInstantiation(sample_rate_t sampleRate, f_cnt_t maxFram
 				else if( manager->isPortInput( m_key, port ) )
 				{
 					p->rate = BufferRate::AudioRateInput;
-					p->buffer = new LADSPA_Data[maxFrames];
+					p->buffer = bufferFor(proc, port, maxFrames);
 				}
 				else
 				{
 					p->rate = BufferRate::AudioRateOutput;
-					p->buffer = new LADSPA_Data[maxFrames];
+					p->buffer = bufferFor(proc, port, maxFrames);
 				}
 			}
 			else
 			{
-				p->buffer = new LADSPA_Data[1];
+				p->buffer = bufferFor(proc, port, 1);
 
 				if( manager->isPortInput( m_key, port ) )
 				{
@@ -543,7 +638,7 @@ void LadspaEffect::pluginInstantiation(sample_rate_t sampleRate, f_cnt_t maxFram
 	m_controls = new LadspaControls( this );
 
 	// Instantiate the processing units.
-	m_descriptor = manager->getDescriptor( m_key );
+	m_descriptor = descriptor;
 	if( m_descriptor == nullptr )
 	{
 		UserNotice::warning("Effect",
@@ -556,6 +651,12 @@ void LadspaEffect::pluginInstantiation(sample_rate_t sampleRate, f_cnt_t maxFram
 		UserNotice::warning("Effect",
 			"Plugin has no processor: " + m_key.second);
 		setDontRun( true );
+	}
+	if (m_isolated)
+	{
+		// The instances and the port connections are in the plugin's process
+		if (!startIsolated(sampleRate, maxFrames)) { setOkay(false); }
+		return;
 	}
 	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
 	{
@@ -601,6 +702,44 @@ void LadspaEffect::pluginInstantiation(sample_rate_t sampleRate, f_cnt_t maxFram
 
 
 
+auto LadspaEffect::startIsolated(sample_rate_t sampleRate, f_cnt_t maxFrames) -> bool
+{
+	const auto fail = [this](const QString& why) {
+		UserNotice::warning(tr("Effect"), tr("The LADSPA plugin %1 could not run in a process of its own: %2")
+			.arg(m_key.second, why));
+		return false;
+	};
+	const auto path = Engine::getLADSPAManager()->getLibraryPath(m_key);
+	if (path.isEmpty()) { return fail(tr("its library is unknown.")); }
+
+	auto remote = std::make_unique<RemotePlugin>();
+	remote->setGuardIdentity(PluginGuard::identity(*this));
+	// (init() says whether it failed)
+	if (remote->init("RemoteLadspaHost", false)) { return fail(tr("its process did not start.")); }
+	remote->lock();
+	remote->waitForInitDone(false);
+	remote->sendMessage(RemotePlugin::message{LadspaPorts::IdLadspaLoad}
+		.addString(path.toStdString())
+		.addString(m_key.second.toStdString())
+		.addInt(static_cast<int>(sampleRate))
+		.addInt(static_cast<int>(maxFrames))
+		.addInt(static_cast<int>(processorCount()))
+		.addString(m_controlBlock.key()));
+	const auto answer = remote->waitForMessage(RemotePlugin::message{LadspaPorts::IdLadspaLoaded},
+		std::chrono::seconds{30});
+	remote->unlock();
+	if (answer.id != LadspaPorts::IdLadspaLoaded) { return fail(tr("its process did not answer.")); }
+	if (answer.getInt(0) != 1) { return fail(QString::fromStdString(answer.getString(1))); }
+
+	m_remote = std::move(remote);
+	// (the host may have put the buffers in shared memory already)
+	if (!m_sharedBufferKey.empty()) { m_remote->setSharedAudioBuffer(m_sharedBufferInfo); }
+	return true;
+}
+
+
+
+
 void LadspaEffect::pluginDestruction()
 {
 	delete m_controls;
@@ -609,6 +748,10 @@ void LadspaEffect::pluginDestruction()
 
 	// LADSPA requires deactivate() before cleanup() for activated instances
 	deactivateHandles();
+
+	// Isolated: the plugin process ends with its instances, and the port buffers are in the control block
+	const bool buffersInBlock = m_controlBlock.get() != nullptr;
+	m_remote.reset();
 
 	Ladspa2LMMS * manager = Engine::getLADSPAManager();
 	for( ch_cnt_t proc = 0; proc < m_ports.size(); proc++ )
@@ -620,7 +763,7 @@ void LadspaEffect::pluginDestruction()
 		for (const auto pp : m_ports[proc])
 		{
 			// The audio channel ports do not own a buffer
-			delete[] pp->buffer;
+			if (!buffersInBlock) { delete[] pp->buffer; }
 			delete pp;
 		}
 		m_ports[proc].clear();
@@ -629,6 +772,7 @@ void LadspaEffect::pluginDestruction()
 	m_ports.clear();
 	m_handles.clear();
 	m_portControls.clear();
+	m_controlBlock.detach();
 }
 
 extern "C"

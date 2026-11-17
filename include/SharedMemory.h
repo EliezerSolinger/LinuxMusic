@@ -32,6 +32,14 @@
 #include <string>
 #include <type_traits>
 
+// (the plugins use it too, through the program; a plugin process has it built in)
+#ifdef BUILD_REMOTE_PLUGIN_CLIENT
+#define LMMS_SHARED_MEMORY_EXPORT
+#else
+#include "lmms_export.h"
+#define LMMS_SHARED_MEMORY_EXPORT LMMS_EXPORT
+#endif
+
 
 namespace lmms
 {
@@ -41,7 +49,7 @@ namespace detail
 
 class SharedMemoryImpl;
 
-class SharedMemoryData
+class LMMS_SHARED_MEMORY_EXPORT SharedMemoryData
 {
 public:
 	SharedMemoryData() noexcept;

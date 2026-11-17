@@ -62,7 +62,8 @@ void Effect::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	m_enabledModel.saveSettings( _doc, _this, "on" );
 	m_wetDryModel.saveSettings( _doc, _this, "wet" );
 	m_autoQuitModel.saveSettings( _doc, _this, "autoquit" );
-	controls()->saveState( _doc, _this );
+	// (an effect whose plugin did not load, e.g. a LADSPA plugin not installed here, has no controls)
+	if (auto* effectControls = controls()) { effectControls->saveState(_doc, _this); }
 }
 
 
@@ -74,14 +75,16 @@ void Effect::loadSettings( const QDomElement & _this )
 	m_wetDryModel.loadSettings( _this, "wet" );
 	m_autoQuitModel.loadSettings( _this, "autoquit" );
 
+	auto* effectControls = controls();
+	if (!effectControls) { return; } // (see saveSettings())
 	QDomNode node = _this.firstChild();
 	while( !node.isNull() )
 	{
 		if( node.isElement() )
 		{
-			if( controls()->nodeName() == node.nodeName() )
+			if( effectControls->nodeName() == node.nodeName() )
 			{
-				controls()->restoreState( node.toElement() );
+				effectControls->restoreState( node.toElement() );
 			}
 		}
 		node = node.nextSibling();

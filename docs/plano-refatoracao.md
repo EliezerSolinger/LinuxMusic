@@ -525,4 +525,34 @@ Processo, igual para as duas:
     barramento.
   - O `ThreadStressTest` sob TSan mostrou outra: a nota de um acorde ou arpejo recalculava a frequência das notas
     filhas enquanto elas tocavam em outra thread. Agora ela só as marca, e cada uma recalcula a sua.
-- [ ] 6.3 Hospedeiro em outro processo para LADSPA e LV2 de terceiros.
+- [x] 6.3 LADSPA isolado, opcional por efeito (o padrão continua no programa):
+  - `RemoteLadspaHost`, com o mesmo protocolo do `RemotePlugin`:
+    - carrega a biblioteca do plugin e cria as instâncias;
+    - o áudio vai pelos buffers compartilhados que já existem (`usesSharedMemoryBuffers`);
+    - os controles vão por um bloco de memória compartilhada, com o mesmo layout dos dois lados
+      (`include/LadspaPorts.h`, sem Qt). Nenhuma mensagem nova por período, nada alocado na thread de áudio;
+    - os denormais ficam desligados, como nas threads de áudio.
+  - Ligar e desligar:
+    - pelo menu do efeito ("Rodar em um processo separado");
+    - salvo no projeto;
+    - automático para um plugin suspeito, que antes era recusado e agora carrega isolado, com aviso.
+  - Se o processo do plugin cai:
+    - o programa continua e o efeito fica mudo, com o sinal seco passando;
+    - o erro vai para o log;
+    - o plugin vira suspeito e o usuário é avisado.
+    Antes, travado e morto se confundiam.
+  - A identidade no `PluginGuard` ignora o atributo "isolated" (é o mesmo plugin).
+  - `LadspaIsolationTest`:
+    - isolado, o som é idêntico (diferença zero) em três plugins TAP: mono e estéreo, com filtros, eco e
+      reverb;
+    - vai e volta durante o uso;
+    - fica salvo e carregado;
+    - um plugin de teste que cai (`tests/src/helpers/CrashingLadspa.c`) só derruba o próprio processo, e
+      depois carrega isolado sozinho.
+  - O teste achou e foi consertado:
+    - um efeito com plugin que não carregou (um LADSPA não instalado) derrubava o programa ao salvar ou
+      carregar, porque não tem controles; a interface tinha o mesmo problema;
+    - o `SharedMemoryData` não era exportado para os plugins.
+  - Observado, ainda não investigado: a primeira renderização com um plugin recém-carregado sai um período
+    atrasada; as seguintes não.
+- [ ] 6.3 LV2 isolado (sem interface própria; portas de controle, áudio, átomos/MIDI e estado).

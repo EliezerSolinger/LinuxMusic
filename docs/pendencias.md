@@ -122,7 +122,7 @@ Motor e estabilidade:
 O usuário pediu que cada item seja feito com muita atenção. Vêm depois do `docs/plano-refatoracao.md`. A exceção é a
 queda do Mallets, que é queda e entra antes.
 
-- [ ] **Mallets sem STK derruba o programa (segfault).** Ao abrir, ele avisa que falta o STK e cai.
+- [x] **Mallets sem STK derruba o programa (segfault)** (consertado em a8aebdef0: a queda e o falso "falta o STK"; falta decidir se o STK continua como dependência e completar os recursos). Ao abrir, ele avisa que falta o STK e cai.
   - Consertar a queda.
   - Depois, varrer os outros instrumentos pelo mesmo padrão: dependência ausente seguida de uso.
   - Decidir se a dependência própria do STK é necessária. Hoje ela serve só a ele: ver o que o Mallets usa do STK e

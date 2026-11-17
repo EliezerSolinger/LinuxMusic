@@ -375,7 +375,9 @@ bool RemotePlugin::process()
 	// (with a deadline: a hung plugin must not hang the audio thread)
 	const auto done = waitForMessage(message{IdProcessingDone}, ProcessTimeout).id == IdProcessingDone;
 	unlock();
-	if (!done && !m_stoppedResponding.exchange(true))
+	// (a process that died broke the connection: that is handled in processFinished(); this is one that is alive
+	// and did not answer)
+	if (!done && !isInvalid() && !m_stoppedResponding.exchange(true))
 	{
 		// It is silent from now on; its process is ended by the watcher (see ProcessWatcher::run())
 		m_failed = true;
@@ -439,7 +441,21 @@ void RemotePlugin::processFinished( int exitCode,
 {
 	if ( exitStatus == QProcess::CrashExit )
 	{
-		qCritical() << "Remote plugin crashed";
+		// The plugin's process crashed, not the program: it is silent from now on, and a suspect
+		m_failed = true;
+		invalidate();
+		ErrorLog::reportText(ErrorLog::Severity::Error, "RemotePlugin",
+			QString{"a plugin's process crashed (%1)"}.arg(m_guardIdentity.isEmpty() ? m_exec : m_guardIdentity));
+		// (this runs on the watcher's thread: the suspect and the notice are the main thread's)
+		if (!m_stoppedResponding.load() && !m_guardIdentity.isEmpty())
+		{
+			QMetaObject::invokeMethod(this, [this] {
+				PluginGuard::addSuspect(m_guardIdentity);
+				UserNotice::warning(tr("Plugin"), tr("%1 crashed in its own process. The program goes on; the plugin "
+					"is silent now, and is not loaded again until you allow it (Settings, Plugins).")
+					.arg(PluginGuard::displayName(m_guardIdentity)));
+			}, Qt::QueuedConnection);
+		}
 	}
 	else if ( exitCode )
 	{

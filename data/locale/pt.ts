@@ -3248,6 +3248,26 @@ Este chip foi utilizado no computador Commodore 64.</translation>
 <context>
     <name>lmms::LadspaEffect</name>
     <message>
+        <source>Effect</source>
+        <translation>Efeito</translation>
+    </message>
+    <message>
+        <source>The LADSPA plugin %1 could not run in a process of its own: %2</source>
+        <translation>O plugin LADSPA %1 não pôde rodar em um processo próprio: %2</translation>
+    </message>
+    <message>
+        <source>its library is unknown.</source>
+        <translation>a biblioteca dele é desconhecida.</translation>
+    </message>
+    <message>
+        <source>its process did not start.</source>
+        <translation>o processo dele não iniciou.</translation>
+    </message>
+    <message>
+        <source>its process did not answer.</source>
+        <translation>o processo dele não respondeu.</translation>
+    </message>
+    <message>
         <location filename="../../plugins/LadspaEffect/LadspaEffect.cpp" line="77"/>
         <source>Unknown LADSPA plugin %1 requested.</source>
         <translation>Plugin LADSPA %1 desconhecido requisitado.</translation>
@@ -4855,6 +4875,10 @@ Este chip foi utilizado no computador Commodore 64.</translation>
 </context>
 <context>
     <name>lmms::Plugin</name>
+    <message>
+        <source>&quot;%1&quot; crashed or hung before, so it runs in a process of its own now (safer).</source>
+        <translation>&quot;%1&quot; falhou ou travou antes, então agora roda em um processo próprio (mais seguro).</translation>
+    </message>
     <message>
         <source>&quot;%1&quot; was running when the program closed unexpectedly, so it was not loaded (its settings are kept). To load it again: Settings, Plugins.</source>
         <translation>&quot;%1&quot; estava rodando quando o programa fechou inesperadamente, por isso não foi carregado (as configurações dele foram mantidas). Para carregá-lo de novo: Opções, Plugins.</translation>
@@ -7836,6 +7860,14 @@ Pressione &lt;Shift&gt; para divisão destrutiva.</translation>
 </context>
 <context>
     <name>lmms::gui::EffectView</name>
+    <message>
+        <source>Run in a separate &amp;process (safer)</source>
+        <translation>Rodar em um &amp;processo separado (mais seguro)</translation>
+    </message>
+    <message>
+        <source>A crash of this plugin then stops only the plugin, not the program</source>
+        <translation>Assim, uma falha deste plugin para só o plugin, não o programa</translation>
+    </message>
     <message>
         <location filename="../../src/gui/EffectView.cpp" line="63"/>
         <location filename="../../src/gui/EffectView.cpp" line="259"/>
@@ -17976,6 +18008,25 @@ A interface usada é a que está salva nestas configurações.</translation>
     <message>
         <source>The audio device runs at %1 Hz, not at the %2 Hz asked: the audio is converted.</source>
         <translation>O dispositivo de áudio roda a %1 Hz, não aos %2 Hz pedidos: o áudio é convertido.</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::RemotePlugin</name>
+    <message>
+        <source>Plugin</source>
+        <translation>Plugin</translation>
+    </message>
+    <message>
+        <source>A plugin</source>
+        <translation>Um plugin</translation>
+    </message>
+    <message>
+        <source>%1 stopped responding, so it was stopped and is silent now. It is not loaded again until you allow it (Settings, Plugins).</source>
+        <translation>%1 parou de responder, então foi encerrado e está mudo agora. Ele não é carregado de novo até você permitir (Configurações, Plugins).</translation>
+    </message>
+    <message>
+        <source>%1 crashed in its own process. The program goes on; the plugin is silent now, and is not loaded again until you allow it (Settings, Plugins).</source>
+        <translation>%1 falhou no próprio processo. O programa continua; o plugin está mudo agora e não é carregado de novo até você permitir (Configurações, Plugins).</translation>
     </message>
 </context>
 </TS>

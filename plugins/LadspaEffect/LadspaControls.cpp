@@ -107,6 +107,7 @@ void LadspaControls::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	{
 		_this.setAttribute( "link", m_stereoLinkModel.value() );
 	}
+	if (m_effect->isolated()) { _this.setAttribute("isolated", 1); }
 	
 	multi_proc_t controls = m_effect->getPortControls();
 	_this.setAttribute( "ports", controls.count() );
@@ -132,6 +133,15 @@ void LadspaControls::loadSettings( const QDomElement & _this )
 	{
 		QString n = "port" + QString::number(control->proc) + QString::number(control->port_id);
 		control->control->loadSettings(_this, n);
+	}
+
+	// Run in a process of its own, or not. Later: changing it makes the plugin again, these controls included
+	const bool isolated = _this.attribute("isolated").toInt() == 1;
+	if (isolated != m_effect->isolated())
+	{
+		QMetaObject::invokeMethod(m_effect, [effect = QPointer<LadspaEffect>{m_effect}, isolated] {
+			if (effect) { effect->setIsolated(isolated); }
+		}, Qt::QueuedConnection);
 	}
 }
 

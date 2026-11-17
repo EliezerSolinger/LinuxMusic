@@ -24,6 +24,7 @@ set(LMMS_TESTS
 	src/core/ExportProcessorTest.cpp
 	src/core/GainStagingTest.cpp
 	src/core/ControllerConnectionTest.cpp
+	src/core/LadspaIsolationTest.cpp
 	src/core/LfoControllerTest.cpp
 	src/core/LoadCorruptedTest.cpp
 	src/core/Lv2WorkerTest.cpp
@@ -106,6 +107,17 @@ find_package(Threads REQUIRED)
 target_link_libraries(FakeRemotePlugin PRIVATE Threads::Threads)
 add_dependencies(RemotePluginHangTest FakeRemotePlugin)
 set_tests_properties(RemotePluginHangTest PROPERTIES ENVIRONMENT "LMMS_PLUGIN_DIR=${CMAKE_CURRENT_BINARY_DIR}")
+
+# A LADSPA plugin that crashes on demand, for LadspaIsolationTest (in a folder of its own, given in LADSPA_PATH)
+add_library(CrashingLadspa MODULE src/helpers/CrashingLadspa.c)
+target_include_directories(CrashingLadspa PRIVATE ${CMAKE_SOURCE_DIR}/include)
+set_target_properties(CrashingLadspa PROPERTIES PREFIX "" SUFFIX ".so"
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ladspa-test")
+if(WIN32)
+	set_target_properties(CrashingLadspa PROPERTIES SUFFIX ".dll")
+endif()
+add_dependencies(LadspaIsolationTest CrashingLadspa)
+target_compile_definitions(LadspaIsolationTest PRIVATE LMMS_TEST_LADSPA_DIR="${CMAKE_CURRENT_BINARY_DIR}/ladspa-test")
 
 # The damaged projects are made from the A/B projects
 target_compile_definitions(LoadCorruptedTest PRIVATE LMMS_TEST_AB_PROJECTS="${CMAKE_SOURCE_DIR}/tools/check/ab-projects")

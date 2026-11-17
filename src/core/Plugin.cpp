@@ -185,7 +185,18 @@ auto Plugin::instantiateWithKey(const QString& pluginName, Model * parent,
 	// A plugin that crashed the program is not loaded again until the settings let it (see PluginGuard)
 	const auto identity = PluginGuard::identity(pluginName,
 		keyPtr ? keyPtr->attributes : Descriptor::SubPluginFeatures::Key::AttributeMap{});
-	if (PluginGuard::isSuspect(identity))
+	// A third-party plugin that can run in a process of its own (see LadspaEffect) does so instead: a crash there
+	// leaves the program running
+	auto isolate = false;
+	if (PluginGuard::isSuspect(identity) && keyPtr && pluginName == "ladspaeffect")
+	{
+		isolate = true;
+		const auto told = tr("\"%1\" crashed or hung before, so it runs in a process of its own now (safer).")
+			.arg(PluginGuard::displayName(identity));
+		if (Engine::getSong() && Engine::getSong()->isLoadingProject()) { Engine::getSong()->collectError(told); }
+		else { UserNotice::information(tr("Plugin"), told); }
+	}
+	else if (PluginGuard::isSuspect(identity))
 	{
 		const auto name = PluginGuard::displayName(identity);
 		if (Engine::getSong() && Engine::getSong()->isLoadingProject())
@@ -210,6 +221,7 @@ auto Plugin::instantiateWithKey(const QString& pluginName, Model * parent,
 		// descriptor is not yet set when loading - set it now
 		Descriptor::SubPluginFeatures::Key keyCopy = *keyPtr;
 		keyCopy.desc = pi.descriptor;
+		if (isolate) { keyCopy.attributes["isolated"] = "1"; }
 		return Plugin::instantiate(pluginName, parent, &keyCopy);
 	}
 	else
