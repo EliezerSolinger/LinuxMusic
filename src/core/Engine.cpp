@@ -24,6 +24,7 @@
 
 
 #include "Engine.h"
+#include "ErrorLog.h"
 #include "NotePlayHandle.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
@@ -61,6 +62,10 @@ void* Engine::s_dndPluginKey = nullptr;
 void Engine::init( bool renderOnly )
 {
 	Engine *engine = inst();
+
+	// The error log, into the working directory's logs/ (only the standard error without one)
+	ErrorLog::start(ConfigManager::inst()->hasWorkingDir()
+		? ErrorLog::fileIn(ConfigManager::inst()->workingDir()) : QString{});
 
 	// The notes' places, before anything can play a note
 	NotePlayHandleManager::init();
@@ -132,6 +137,9 @@ void Engine::destroy()
 
 	// Last: the song's and the previews' notes went back to it above
 	NotePlayHandleManager::free();
+
+	// What was reported until now, written out
+	ErrorLog::stop();
 
 	// The oscillator FFT plans remain throughout the application lifecycle
 	// due to being expensive to create, and being used whenever a userwave form is changed

@@ -27,6 +27,7 @@ set(LMMS_SRCS
 	core/DataFile.cpp
 	core/DrumSynth.cpp
 	core/Effect.cpp
+	core/ErrorLog.cpp
 	core/EffectChain.cpp
 	core/Engine.cpp
 	core/ExportProcessor.cpp

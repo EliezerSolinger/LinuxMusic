@@ -44,6 +44,7 @@
 #include "BufferManager.h"
 #include "ConfigManager.h"
 #include "Engine.h"
+#include "ErrorLog.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "Mixer.h"
@@ -339,6 +340,23 @@ private slots:
 		s_counting = false;
 		QCOMPARE(s_events.load(), onAudioThread);
 		QVERIFY2(onAudioThread >= (m_observingSystem ? 4 : 2), qPrintable(QString::number(onAudioThread)));
+	}
+
+	//! The error log takes reports from the audio thread without allocating (see ErrorLog::report())
+	void reportingAnErrorAllocatesNothing()
+	{
+		s_events = 0;
+		s_counting = true;
+		{
+			const auto audioThread = ThreadCheck::AudioThreadScope{};
+			for (int i = 0; i < 100; ++i)
+			{
+				ErrorLog::report(ErrorLog::Severity::Error, "AudioThreadAllocationTest", "reported", i);
+			}
+			ErrorLog::report(ErrorLog::Severity::Warning, "AudioThreadAllocationTest", "no value");
+		}
+		s_counting = false;
+		QCOMPARE(s_events.load(), 0);
 	}
 
 	void playingASongAllocatesNothingOnTheAudioThread()
