@@ -45,7 +45,56 @@ As licenças citadas são as que eu conheço; confirmar na hora de adotar.
 - **Leitura de áudio**: já é a libsndfile (WAV, FLAC, Ogg, MP3) e a libvorbis. Está bom.
 - **Esticar o tempo**: já é o Rubber Band.
 
-## Ordem sugerida
+## Verificação da etapa 1 (17/11/2026, prioridade alta)
+
+Fontes: a API pública do GitHub (licença, último push, commits desde 17/11/2025, colaboradores, versões), os arquivos
+de licença, os README e as CIs dos repositórios, e o que este build já tem instalado. "Commits" e "colaboradores"
+medem atividade, não qualidade: valem junto com os testes de cada projeto. A etapa 2 (protótipo medido aqui contra a
+nossa implementação) ainda não foi feita.
+
+| | libremidi | RtMidi (alternativa) | libebur128 | Carla (ponte) | crashpad | sentry-native |
+|---|---|---|---|---|---|---|
+| Licença (arquivo lido) | BSD-2; derivada do RtMidi (MIT) e do ModernMidi (BSD-2) | MIT | MIT | GPL-2.0-ou-posterior (cabeçalho SPDX do código) | Apache-2.0 | MIT |
+| Último commit | 28/10/2026 | 15/10/2026 | 15/11/2026 | 19/03/2026 | 06/11/2026 | 17/11/2026 |
+| Commits em 12 meses | 169 | 130 | 8 | 5 | 58 | 708 |
+| Colaboradores | 36 | 92 | 21 | 63 | 200 | 106 |
+| Última versão | v5.4.3 (01/2026) | 6.1.0 (10/2026) | v1.2.6 (02/2021) | v2.5.10 (07/2025) | sem versões (segue o Chromium) | 0.17.6 (11/2026) |
+| Testes | CI: Ubuntu gcc e clang, macOS 14, Windows MSVC e ARM, MinGW64 (MSYS2), Android, WASM | CI própria | Testes com os sinais oficiais da EBU (Tech 3341 e 3342), *fuzzer*, cobertura exigida na CI (adicionada nesta semana) | CI; poucos testes automáticos | Os do Chromium | CI própria |
+
+O que cada verificação mostrou:
+
+- **libremidi: confirmada.**
+  - Ativa, com licença compatível e CI em todas as nossas plataformas, inclusive MinGW. É C++20, como nós.
+  - Backends: ALSA (seq e raw), JACK, CoreMIDI, WinMM, Windows MIDI Services, PipeWire e rede. Também trata MIDI 2 e
+    conexão a quente (README).
+  - **Falta saber:** se enviar e receber mensagens aloca memória ou trava. Isso só a etapa 2 responde, com o nosso
+    `AudioThreadAllocationTest`.
+  - O RtMidi é mais conservador (MIDI 1, API mais antiga) e é a alternativa caso a libremidi falhe nesse ponto.
+- **libebur128: confirmada.**
+  - Pouca atividade porque está estável (a última versão é de 2021), mas os testes usam os sinais de referência da
+    EBU, tem *fuzzer* e acabou de ganhar uma exigência de cobertura na CI.
+  - A etapa 2 é rodar os mesmos sinais da EBU no nosso BS.1770 e nela.
+- **Ponte do Carla: rebaixada para média.**
+  - Funciona: o Carla do Homebrew instalado aqui (2.5.10) traz o `carla-bridge-native`.
+  - Mas o projeto está quase parado: 5 commits no ano, o último em março, e a última versão é de julho de 2025.
+  - Além disso, o LinuxMusic liga o Carla de forma fraca, ou seja, ele só existe se o usuário o instalar. O isolamento
+    dependeria de uma instalação externa que não controlamos.
+  - Antes de decidir, comparar com a fase 6 original (o nosso `RemotePlugin`, que já funciona para VST e Zyn).
+- **crashpad / sentry-native: rebaixados para baixa.** Não servem às nossas plataformas hoje:
+  - o sentry-native pede macOS 15+, e o LinuxMusic sai para macOS 10.15 (Intel) e 11.0 (ARM);
+  - no Windows, o crashpad precisa de clang (LLVM-MinGW ou MSVC) para gerar os `.pdb`, e o nosso Windows x64 sai com
+    MinGW GCC.
+  - O `CrashHandler` próprio continua. Revisitar se os alvos de plataforma mudarem.
+
+## Ordem sugerida (revista depois da verificação)
+
+1. **libebur128.**
+2. **libremidi**, se passar no teste de alocação na thread de áudio; senão, RtMidi.
+3. Decidir o isolamento de plugins de terceiros (fase 6): o nosso `RemotePlugin` ou a ponte do Carla, pesando o
+   ritmo atual do Carla e a dependência externa.
+4. **miniaudio** para os drivers secundários (falta verificar como as quatro de cima).
+
+## Ordem sugerida (antes da verificação)
 
 1. **libebur128**: uma função, mais correção na exportação.
 2. **libremidi**: tira cerca de 2.700 linhas (entrada, saída e escrita MIDI) e cobre o Linux que não testamos aqui.
