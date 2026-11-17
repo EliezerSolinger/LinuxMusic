@@ -26,6 +26,10 @@
 #include <QPainter>
 
 #include "Graph.h"
+#include <vector>
+#include <algorithm>
+#include <cstring>
+#include <cmath>
 #include "DeprecationHelper.h"
 #include "FileDialog.h"
 #include "StringPairDrag.h"
@@ -516,6 +520,31 @@ void graphModel::setSamples( const float * _samples )
 	std::copy( _samples, _samples + length(), m_samples.begin());
 
 	emit samplesChanged( 0, length()-1 );
+}
+
+
+
+void graphModel::setSamples(std::span<const float> samples)
+{
+	const auto count = std::min(samples.size(), static_cast<std::size_t>(length()));
+	if (count == 0) { return; }
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		const auto value = samples[i];
+		// (saved shapes may lie a little out of the range, e.g. after normalizing: kept as they are)
+		m_samples[static_cast<int>(i)] = std::isfinite(value) ? value : 0.f;
+	}
+	emit samplesChanged(0, static_cast<int>(count) - 1);
+}
+
+
+
+void graphModel::setSamplesFromBase64(const QString& base64)
+{
+	const auto bytes = QByteArray::fromBase64(base64.toUtf8());
+	auto samples = std::vector<float>(static_cast<std::size_t>(bytes.size()) / sizeof(float));
+	std::memcpy(samples.data(), bytes.constData(), samples.size() * sizeof(float));
+	setSamples(std::span<const float>{samples});
 }
 
 

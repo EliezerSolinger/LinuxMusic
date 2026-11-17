@@ -40,12 +40,14 @@ namespace lmms::base64
 		_dst = QByteArray( _data, _size ).toBase64();
 	}
 
+	//! Decodes @p _b64 into a new array of T (which the caller deletes[]), @p _size bytes of data; an array of whole
+	//! Ts holding them all, the rest zero (data of a size that is not a multiple of T's comes from a damaged file)
 	template<class T>
 	inline void decode( const QString & _b64, T * * _data, int * _size )
 	{
 		QByteArray data = QByteArray::fromBase64( _b64.toUtf8() );
 		*_size = data.size();
-		*_data = new T[*_size / sizeof(T)];
+		*_data = new T[(*_size + sizeof(T) - 1) / sizeof(T)]{};
 		memcpy( *_data, data.constData(), *_size );
 	}
 

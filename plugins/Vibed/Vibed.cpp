@@ -185,13 +185,7 @@ void Vibed::loadSettings(const QDomElement& elem)
 			m_randomModels[i]->loadSettings(elem, "slap" + is);
 			m_impulseModels[i]->loadSettings(elem, "impulse" + is);
 
-			int size = 0;
-			float* shp = nullptr;
-			base64::decode(elem.attribute("graph" + is), &shp, &size);
-
-			assert(size == 128 * sizeof(float));
-			m_graphModels[i]->setSamples(shp);
-			delete[] shp;
+			m_graphModels[i]->setSamplesFromBase64(elem.attribute("graph" + is));
 		}
 	}
 }

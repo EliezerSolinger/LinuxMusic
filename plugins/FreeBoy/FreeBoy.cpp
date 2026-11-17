@@ -206,10 +206,7 @@ void FreeBoyInstrument::loadSettings( const QDomElement & _this )
 	m_trebleModel.loadSettings( _this, "Treble" );
 	m_bassModel.loadSettings( _this, "Bass" );
 
-	int size = 0;
-	char * dst = 0;
-	base64::decode( _this.attribute( "sampleShape"), &dst, &size );
-	m_graphModel.setSamples( (float*) dst );
+	m_graphModel.setSamplesFromBase64(_this.attribute("sampleShape"));
 }
 
 QString FreeBoyInstrument::nodeName() const

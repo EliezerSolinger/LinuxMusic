@@ -185,14 +185,10 @@ void BitInvader::loadSettings( const QDomElement & _this )
 	int sampleLength = (int)m_sampleLength.value();
 
 	// Load sample shape
-	int size = 0;
-	char * dst = 0;
-	base64::decode( _this.attribute( "sampleShape"), &dst, &size );
-
-	m_graph.setLength(size / sizeof(float));
-	m_graph.setSamples(reinterpret_cast<float*>(dst));
+	// (all it has, up to the longest shape, then the length it plays)
+	m_graph.setLength(static_cast<int>(m_sampleLength.maxValue()));
+	m_graph.setSamplesFromBase64(_this.attribute("sampleShape"));
 	m_graph.setLength(sampleLength);
-	delete[] dst;
 
 	// Load LED normalize 
 	m_interpolation.loadSettings( _this, "interpolation" );

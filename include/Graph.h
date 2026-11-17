@@ -27,6 +27,8 @@
 #define LMMS_GUI_GRAPH_H
 
 #include <QWidget>
+
+#include <span>
 #include <QPixmap>
 #include <QCursor>
 
@@ -189,6 +191,12 @@ public slots:
 	void setSampleAt( int x, float val );
 	//! Update samples array
 	void setSamples( const float * _value );
+	//! Sets as many samples as @p samples has, up to the length (the others stay as they are); a value that is not
+	//! a finite number becomes 0
+	void setSamples(std::span<const float> samples);
+	//! Sets the samples saved as base64 (as the plugins save their graphs); data of another size, from a damaged or
+	//! older file, sets what it has
+	void setSamplesFromBase64(const QString& base64);
 
 	void setWaveToSine();
 	void setWaveToTriangle();

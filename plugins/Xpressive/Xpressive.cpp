@@ -166,20 +166,9 @@ void Xpressive::loadSettings(const QDomElement & _this) {
 	m_panning2.loadSettings(_this,"PAN2");
 	m_relTransition.loadSettings(_this,"RELTRANS");
 
-	int size = 0;
-	char * dst = 0;
-	base64::decode( _this.attribute( "W1sample"), &dst, &size );
-
-	m_rawgraphW1.setSamples( (float*) dst );
-	delete[] dst;
-	base64::decode( _this.attribute( "W2sample"), &dst, &size );
-
-	m_rawgraphW2.setSamples( (float*) dst );
-	delete[] dst;
-	base64::decode( _this.attribute( "W3sample"), &dst, &size );
-
-	m_rawgraphW3.setSamples( (float*) dst );
-	delete[] dst;
+	m_rawgraphW1.setSamplesFromBase64(_this.attribute("W1sample"));
+	m_rawgraphW2.setSamplesFromBase64(_this.attribute("W2sample"));
+	m_rawgraphW3.setSamplesFromBase64(_this.attribute("W3sample"));
 
 	smooth(m_smoothW1.value(),&m_rawgraphW1,&m_graphW1);
 	smooth(m_smoothW2.value(),&m_rawgraphW2,&m_graphW2);
