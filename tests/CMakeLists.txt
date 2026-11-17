@@ -39,6 +39,7 @@ set(LMMS_TESTS
 	src/core/ProjectVersionTest.cpp
 	src/core/RealtimeAllocatorTest.cpp
 	src/core/RecordingTest.cpp
+	src/core/RemotePluginHangTest.cpp
 	src/core/RemotePluginIpcTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/SongMarkersTest.cpp
@@ -89,6 +90,22 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
 endforeach()
+
+# A plugin process for RemotePluginHangTest, speaking the same protocol as the real ones (next to the test, where
+# RemotePlugin looks for it first on macOS; elsewhere through LMMS_PLUGIN_DIR)
+add_executable(FakeRemotePlugin
+	src/helpers/FakeRemotePlugin.cpp
+	${CMAKE_SOURCE_DIR}/src/common/RemotePluginBase.cpp
+	${CMAKE_SOURCE_DIR}/src/common/SharedMemory.cpp
+	${CMAKE_SOURCE_DIR}/src/common/SystemSemaphore.cpp
+)
+target_compile_definitions(FakeRemotePlugin PRIVATE BUILD_REMOTE_PLUGIN_CLIENT)
+target_include_directories(FakeRemotePlugin PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_BINARY_DIR})
+target_compile_features(FakeRemotePlugin PRIVATE cxx_std_20)
+find_package(Threads REQUIRED)
+target_link_libraries(FakeRemotePlugin PRIVATE Threads::Threads)
+add_dependencies(RemotePluginHangTest FakeRemotePlugin)
+set_tests_properties(RemotePluginHangTest PROPERTIES ENVIRONMENT "LMMS_PLUGIN_DIR=${CMAKE_CURRENT_BINARY_DIR}")
 
 # The damaged projects are made from the A/B projects
 target_compile_definitions(LoadCorruptedTest PRIVATE LMMS_TEST_AB_PROJECTS="${CMAKE_SOURCE_DIR}/tools/check/ab-projects")

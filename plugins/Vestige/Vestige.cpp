@@ -22,6 +22,7 @@
  *
  */
 
+#include "PluginGuard.h"
 #include "Vestige.h"
 
 #include <QDomElement>
@@ -379,6 +380,7 @@ void VestigeInstrument::loadFile( const QString & _file )
 	// the host then sets up new buffers (in the main thread, since this may come from the audio thread)
 	connect(m_plugin, &RemotePlugin::channelCountsChanged, this, [this] { rescanAudioPorts(); },
 		Qt::QueuedConnection);
+	m_plugin->setGuardIdentity(PluginGuard::identity(*this));
 
 	if ( !(instrumentTrack() != nullptr && instrumentTrack()->isPreviewMode()))
 	{

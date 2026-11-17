@@ -23,6 +23,7 @@
  */
 
 
+#include "PluginGuard.h"
 #include "VstEffect.h"
 
 #include <QMutexLocker>
@@ -200,6 +201,7 @@ bool VstEffect::openPlugin(const QString& plugin)
 	connect(m_plugin.data(), &RemotePlugin::channelCountsChanged, this, [this] {
 		if (host()) { host()->rescanAudioPorts(Host::AudioPortsRescanFlag::ChannelCount); }
 	}, Qt::QueuedConnection);
+	m_plugin->setGuardIdentity(PluginGuard::identity(*this));
 
 	delete tf;
 

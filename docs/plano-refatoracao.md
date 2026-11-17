@@ -512,6 +512,17 @@ Processo, igual para as duas:
   - prazo do semáforo.
   - Também foi conferido um processo remoto real (o ZynAddSubFX tocando na interface).
   - O caminho da fila (Windows) passou por uma checagem de sintaxe forçada aqui.
-- [ ] Marcar como suspeito no `PluginGuard` o plugin que travou (o `RemotePlugin` não sabe a identidade do plugin;
-  quem o usa, Vestige, VstEffect e ZynAddSubFX, sabe).
+- [x] O plugin que travou vira suspeito no `PluginGuard` e o usuário é avisado (quem usa o `RemotePlugin` informa a
+  identidade: Vestige, VstEffect, ZynAddSubFX).
+  - `RemotePluginHangTest`, de ponta a ponta: um processo de plugin de teste (`tests/src/helpers/FakeRemotePlugin`,
+    com o mesmo protocolo) responde e depois trava. O teste confere:
+    - a thread de áudio desiste em 2 s;
+    - as chamadas seguintes saem na hora;
+    - o processo é encerrado;
+    - o plugin vira suspeito.
+  - Sob TSan, ele mostrou uma corrida no vigia (`m_quit` era `volatile bool`). A varredura trocou por atômicos os
+    `volatile bool` entre threads: os `m_quit` dos drivers MIDI, o `m_released` da nota e o `m_bufferUsage` do
+    barramento.
+  - O `ThreadStressTest` sob TSan mostrou outra: a nota de um acorde ou arpejo recalculava a frequência das notas
+    filhas enquanto elas tocavam em outra thread. Agora ela só as marca, e cada uma recalcula a sua.
 - [ ] 6.3 Hospedeiro em outro processo para LADSPA e LV2 de terceiros.

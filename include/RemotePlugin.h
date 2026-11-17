@@ -67,7 +67,7 @@ private:
 	void run() override;
 
 	RemotePlugin * m_plugin;
-	volatile bool m_quit;
+	std::atomic<bool> m_quit;
 
 } ;
 
@@ -152,6 +152,10 @@ public:
 	//! The remote process stopped answering while processing (it was given up, and is ended)
 	auto stoppedResponding() const -> bool { return m_stoppedResponding.load(std::memory_order_relaxed); }
 
+	//! Who it is, for the PluginGuard (see PluginGuard::identity()): a plugin that hangs is not loaded again until
+	//! the user allows it
+	void setGuardIdentity(const QString& identity) { m_guardIdentity = identity; }
+
 	//! How long processing a period may take before the remote process counts as hung
 	static constexpr auto ProcessTimeout = std::chrono::seconds{2};
 
@@ -185,6 +189,11 @@ private:
 
 	QString m_exec;
 	QStringList m_args;
+	QString m_guardIdentity;
+
+	//! On the main thread, once the watcher ended a process that stopped answering
+	void tellStoppedResponding();
+	friend class ProcessWatcher;
 
 	QRecursiveMutex m_commMutex;
 

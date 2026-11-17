@@ -22,6 +22,7 @@
  *
  */
 
+#include "PluginGuard.h"
 #include "ZynAddSubFx.h"
 
 #include <QDir>
@@ -514,6 +515,7 @@ void ZynAddSubFxInstrument::initPlugin()
 	if( m_hasGUI )
 	{
 		m_remotePlugin = new ZynAddSubFxRemotePlugin();
+		m_remotePlugin->setGuardIdentity(PluginGuard::identity(*this));
 		m_remotePlugin->lock();
 		m_remotePlugin->waitForInitDone( false );
 

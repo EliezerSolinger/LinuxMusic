@@ -41,7 +41,9 @@
 #include "ErrorLog.h"
 #include "Engine.h"
 #include "MidiEvent.h"
+#include "PluginGuard.h"
 #include "Song.h"
+#include "UserNotice.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -118,7 +120,12 @@ void ProcessWatcher::run()
 	auto hung = QTimer{};
 	hung.setInterval(200);
 	QObject::connect(&hung, &QTimer::timeout, [&] {
-		if (m_plugin->stoppedResponding() && process.state() != QProcess::NotRunning) { process.kill(); }
+		if (m_plugin->stoppedResponding() && process.state() != QProcess::NotRunning)
+		{
+			process.kill();
+			QMetaObject::invokeMethod(m_plugin, [plugin = m_plugin] { plugin->tellStoppedResponding(); },
+				Qt::QueuedConnection);
+		}
 	});
 	hung.start();
 	exec();
@@ -442,6 +449,17 @@ void RemotePlugin::processFinished( int exitCode,
 	invalidate();
 #endif
 }
+
+void RemotePlugin::tellStoppedResponding()
+{
+	const auto name = m_guardIdentity.isEmpty() ? tr("A plugin") : PluginGuard::displayName(m_guardIdentity);
+	if (!m_guardIdentity.isEmpty()) { PluginGuard::addSuspect(m_guardIdentity); }
+	UserNotice::warning(tr("Plugin"), tr("%1 stopped responding, so it was stopped and is silent now. It is not "
+		"loaded again until you allow it (Settings, Plugins).").arg(name));
+}
+
+
+
 
 void RemotePlugin::processErrored( QProcess::ProcessError err )
 {
