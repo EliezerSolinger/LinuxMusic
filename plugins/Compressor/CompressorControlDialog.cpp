@@ -379,36 +379,36 @@ void CompressorControlDialog::updateDisplay()
 
 	if (!m_controls->m_effect->isProcessingAudio())
 	{
-		m_controls->m_effect->m_displayPeak[0] = COMP_NOISE_FLOOR;
-		m_controls->m_effect->m_displayPeak[1] = COMP_NOISE_FLOOR;
-		m_controls->m_effect->m_displayGain[0] = 1;
-		m_controls->m_effect->m_displayGain[1] = 1;
+		for (int i = 0; i < 2; ++i)
+		{
+			m_controls->m_effect->m_displayPeak[i].set(COMP_NOISE_FLOOR);
+			m_controls->m_effect->m_displayGain[i].set(1);
+		}
 	}
 
-	m_peakAvg = (m_controls->m_effect->m_displayPeak[0] + m_controls->m_effect->m_displayPeak[1]) * 0.5f;
-	m_gainAvg = (m_controls->m_effect->m_displayGain[0] + m_controls->m_effect->m_displayGain[1]) * 0.5f;
-
-	m_controls->m_effect->m_displayPeak[0] = m_controls->m_effect->m_yL[0];
-	m_controls->m_effect->m_displayPeak[1] = m_controls->m_effect->m_yL[1];
-	m_controls->m_effect->m_displayGain[0] = m_controls->m_effect->m_gainResult[0];
-	m_controls->m_effect->m_displayGain[1] = m_controls->m_effect->m_gainResult[1];
+	// The highest since the last look, which starts again from where the envelope and the gain are now
+	auto* effect = m_controls->m_effect;
+	m_peakAvg = (effect->m_displayPeak[0].take(effect->m_currentPeak[0].value())
+		+ effect->m_displayPeak[1].take(effect->m_currentPeak[1].value())) * 0.5f;
+	m_gainAvg = (effect->m_displayGain[0].take(effect->m_currentGain[0].value())
+		+ effect->m_displayGain[1].take(effect->m_currentGain[1].value())) * 0.5f;
 
 	m_yPoint = dbfsToYPoint(ampToDbfs(m_peakAvg));
 	m_yGainPoint = dbfsToYPoint(ampToDbfs(m_gainAvg));
 
-	m_threshYPoint = dbfsToYPoint(m_controls->m_effect->m_thresholdVal);
+	m_threshYPoint = dbfsToYPoint(m_controls->m_effect->m_thresholdVal.load(std::memory_order_relaxed));
 	m_threshXPoint = m_kneeWindowSizeY - m_threshYPoint;
 
 	drawVisPixmap();
 
-	if (m_controls->m_effect->m_redrawKnee)
+	if (m_controls->m_effect->m_redrawKnee.load(std::memory_order_relaxed))
 	{
 		redrawKnee();
 	}
 
 	drawKneePixmap2();
 
-	if (m_controls->m_effect->m_redrawThreshold)
+	if (m_controls->m_effect->m_redrawThreshold.load(std::memory_order_relaxed))
 	{
 		drawMiscPixmap();
 	}
@@ -491,11 +491,11 @@ void CompressorControlDialog::redrawKnee()
 	m_p.setPen(QPen(m_kneeColor, 3));
 
 	// Limiter = infinite ratio
-	float actualRatio = m_controls->m_limiterModel.value() ? 0 : m_controls->m_effect->m_ratioVal;
+	float actualRatio = m_controls->m_limiterModel.value() ? 0 : m_controls->m_effect->m_ratioVal.load(std::memory_order_relaxed);
 
 	// Calculate endpoints for the two straight lines
-	const float thresholdVal = m_controls->m_effect->m_thresholdVal;
-	const float kneeVal = m_controls->m_effect->m_kneeVal;
+	const float thresholdVal = m_controls->m_effect->m_thresholdVal.load(std::memory_order_relaxed);
+	const float kneeVal = m_controls->m_effect->m_kneeVal.load(std::memory_order_relaxed);
 	float kneePoint1 = thresholdVal - kneeVal;
 	float kneePoint2X = thresholdVal + kneeVal;
 	float kneePoint2Y = thresholdVal + kneeVal * actualRatio;

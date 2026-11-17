@@ -25,6 +25,7 @@
 #ifndef EQCONTROLS_H
 #define EQCONTROLS_H
 
+#include "AtomicPeak.h"
 #include "EffectControls.h"
 #include "EqSpectrumView.h"
 
@@ -62,18 +63,19 @@ public:
 
 	gui::EffectControlDialog* createView() override;
 
-	float m_inPeakL;
-	float m_inPeakR;
-	float m_outPeakL;
-	float m_outPeakR;
+	// The meters' levels: set by the effect on the audio thread, taken by the faders in the GUI
+	AtomicPeak m_inPeakL;
+	AtomicPeak m_inPeakR;
+	AtomicPeak m_outPeakL;
+	AtomicPeak m_outPeakR;
 
 	// The following are linear peaks
-	float m_lowShelfPeakL, m_lowShelfPeakR;
-	float m_para1PeakL, m_para1PeakR;
-	float m_para2PeakL, m_para2PeakR;
-	float m_para3PeakL, m_para3PeakR;
-	float m_para4PeakL, m_para4PeakR;
-	float m_highShelfPeakL, m_highShelfPeakR;
+	AtomicPeak m_lowShelfPeakL, m_lowShelfPeakR;
+	AtomicPeak m_para1PeakL, m_para1PeakR;
+	AtomicPeak m_para2PeakL, m_para2PeakR;
+	AtomicPeak m_para3PeakL, m_para3PeakR;
+	AtomicPeak m_para4PeakL, m_para4PeakR;
+	AtomicPeak m_highShelfPeakL, m_highShelfPeakR;
 
 	EqAnalyser m_inFftBands;
 	EqAnalyser m_outFftBands;

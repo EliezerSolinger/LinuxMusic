@@ -25,6 +25,7 @@
 #ifndef DELAYCONTROLS_H
 #define DELAYCONTROLS_H
 
+#include "AtomicPeak.h"
 #include "EffectControls.h"
 #include "DelayControlsDialog.h"
 
@@ -55,8 +56,9 @@ public:
 		return new gui::DelayControlsDialog( this );
 	}
 
-	float m_outPeakL;
-	float m_outPeakR;
+	// The meter's level: set by the effect on the audio thread, taken by the fader in the GUI
+	AtomicPeak m_outPeakL;
+	AtomicPeak m_outPeakR;
 
 
 private slots:

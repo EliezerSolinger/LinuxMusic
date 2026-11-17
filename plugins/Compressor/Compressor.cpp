@@ -108,17 +108,20 @@ void CompressorEffect::calcAutoMakeup()
 {
 	// Formulas using the compressor's Threshold, Ratio, and Knee values to estimate a good makeup gain value
 
+	const float thresholdVal = m_thresholdVal.load(std::memory_order_relaxed);
+	const float kneeVal = m_kneeVal.load(std::memory_order_relaxed);
+	const float ratioVal = m_ratioVal.load(std::memory_order_relaxed);
 	float tempGainResult;
-	if (-m_thresholdVal < m_kneeVal)
+	if (-thresholdVal < kneeVal)
 	{
-		const float temp = -m_thresholdVal + m_kneeVal;
-		tempGainResult = ((m_compressorControls.m_limiterModel.value() ? 0 : m_ratioVal) - 1) * temp * temp / (4 * m_kneeVal);
+		const float temp = -thresholdVal + kneeVal;
+		tempGainResult = ((m_compressorControls.m_limiterModel.value() ? 0 : ratioVal) - 1) * temp * temp / (4 * kneeVal);
 	}
 	else// Above knee
 	{
 		tempGainResult = m_compressorControls.m_limiterModel.value()
-			? m_thresholdVal
-			: m_thresholdVal - m_thresholdVal * m_ratioVal;
+			? thresholdVal
+			: thresholdVal - thresholdVal * ratioVal;
 	}
 
 	m_autoMakeupVal = 1.f / dbfsToAmp(tempGainResult);
@@ -162,7 +165,7 @@ void CompressorEffect::calcOutGain()
 
 void CompressorEffect::calcRatio()
 {
-	m_ratioVal = 1.f / m_compressorControls.m_ratioModel.value();
+	m_ratioVal.store(1.f / m_compressorControls.m_ratioModel.value(), std::memory_order_relaxed);
 	m_redrawKnee = true;
 }
 
@@ -187,15 +190,16 @@ void CompressorEffect::calcLookaheadLength()
 
 void CompressorEffect::calcThreshold()
 {
-	m_thresholdVal = m_compressorControls.m_thresholdModel.value();
-	m_thresholdAmpVal = dbfsToAmp(m_thresholdVal);
+	const auto threshold = m_compressorControls.m_thresholdModel.value();
+	m_thresholdVal.store(threshold, std::memory_order_relaxed);
+	m_thresholdAmpVal = dbfsToAmp(threshold);
 	m_redrawKnee = true;
 	m_redrawThreshold = true;
 }
 
 void CompressorEffect::calcKnee()
 {
-	m_kneeVal = m_compressorControls.m_kneeModel.value() * 0.5f;
+	m_kneeVal.store(m_compressorControls.m_kneeModel.value() * 0.5f, std::memory_order_relaxed);
 	m_redrawKnee = true;
 }
 
@@ -260,6 +264,13 @@ auto CompressorEffect::process(ProcessContext& context) -> ProcessStatus
 	const int stereoLink = m_compressorControls.m_stereoLinkModel.value();
 	const bool audition = m_compressorControls.m_auditionModel.value();
 	const bool feedback = m_compressorControls.m_feedbackModel.value();
+	// (once per period: they may change on another thread meanwhile)
+	const float thresholdVal = m_thresholdVal.load(std::memory_order_relaxed);
+	const float kneeVal = m_kneeVal.load(std::memory_order_relaxed);
+	const float ratioVal = m_ratioVal.load(std::memory_order_relaxed);
+	// The visualizer's highest envelope and gain over this period
+	float displayPeak[2] = {COMP_NOISE_FLOOR, COMP_NOISE_FLOOR};
+	float displayGain[2] = {COMP_NOISE_FLOOR, COMP_NOISE_FLOOR};
 	const bool lookahead = m_compressorControls.m_lookaheadModel.value();
 
 	for (float* frame : inOut.framesView())
@@ -352,26 +363,26 @@ auto CompressorEffect::process(ProcessContext& context) -> ProcessStatus
 			}
 
 			// For the visualizer
-			m_displayPeak[i] = qMax(scVal, m_displayPeak[i]);
+			displayPeak[i] = qMax(scVal, displayPeak[i]);
 
 			const float currentPeakDbfs = ampToDbfs(scVal);
 
 			// Now find the gain change that should be applied,
 			// depending on the measured input value.
-			if (currentPeakDbfs - m_thresholdVal < -m_kneeVal)// Below knee
+			if (currentPeakDbfs - thresholdVal < -kneeVal)// Below knee
 			{
 				m_gainResult[i] = currentPeakDbfs;
 			}
-			else if (currentPeakDbfs - m_thresholdVal < m_kneeVal)// Within knee
+			else if (currentPeakDbfs - thresholdVal < kneeVal)// Within knee
 			{
-				const float temp = currentPeakDbfs - m_thresholdVal + m_kneeVal;
-				m_gainResult[i] = currentPeakDbfs + ((limiter ? 0 : m_ratioVal) - 1) * temp * temp / (4 * m_kneeVal);
+				const float temp = currentPeakDbfs - thresholdVal + kneeVal;
+				m_gainResult[i] = currentPeakDbfs + ((limiter ? 0 : ratioVal) - 1) * temp * temp / (4 * kneeVal);
 			}
 			else// Above knee
 			{
 				m_gainResult[i] = limiter
-					? m_thresholdVal
-					: m_thresholdVal + (currentPeakDbfs - m_thresholdVal) * m_ratioVal;
+					? thresholdVal
+					: thresholdVal + (currentPeakDbfs - thresholdVal) * ratioVal;
 			}
 
 			m_gainResult[i] = dbfsToAmp(m_gainResult[i]) / scVal;
@@ -436,8 +447,8 @@ auto CompressorEffect::process(ProcessContext& context) -> ProcessStatus
 		}
 
 		// For visualizer
-		m_displayGain[0] = qMax(m_gainResult[0], m_displayGain[0]);
-		m_displayGain[1] = qMax(m_gainResult[1], m_displayGain[1]);
+		displayGain[0] = qMax(m_gainResult[0], displayGain[0]);
+		displayGain[1] = qMax(m_gainResult[1], displayGain[1]);
 
 		// Delay the signal by 20 ms via ring buffer if lookahead is enabled
 		if (lookahead)
@@ -507,10 +518,18 @@ auto CompressorEffect::process(ProcessContext& context) -> ProcessStatus
 		rOutPeak = s[1] > rOutPeak ? s[1] : rOutPeak;
 	}
 
-	m_compressorControls.m_outPeakL = lOutPeak;
-	m_compressorControls.m_outPeakR = rOutPeak;
-	m_compressorControls.m_inPeakL = lInPeak;
-	m_compressorControls.m_inPeakR = rInPeak;
+	for (int i = 0; i < 2; ++i)
+	{
+		m_displayPeak[i].raise(displayPeak[i]);
+		m_displayGain[i].raise(displayGain[i]);
+		m_currentPeak[i].set(m_yL[i]);
+		m_currentGain[i].set(m_gainResult[i]);
+	}
+
+	m_compressorControls.m_outPeakL.set(lOutPeak);
+	m_compressorControls.m_outPeakR.set(rOutPeak);
+	m_compressorControls.m_inPeakL.set(lInPeak);
+	m_compressorControls.m_inPeakR.set(rInPeak);
 
 	return ProcessStatus::ContinueIfNotQuiet;
 }
@@ -522,8 +541,13 @@ void CompressorEffect::processBypassedImpl()
 	{
 		m_yL[0] = m_yL[1] = COMP_NOISE_FLOOR;
 		m_gainResult[0] = m_gainResult[1] = 1;
-		m_displayPeak[0] = m_displayPeak[1] = COMP_NOISE_FLOOR;
-		m_displayGain[0] = m_displayGain[1] = COMP_NOISE_FLOOR;
+		for (int i = 0; i < 2; ++i)
+		{
+			m_displayPeak[i].set(COMP_NOISE_FLOOR);
+			m_displayGain[i].set(COMP_NOISE_FLOOR);
+			m_currentPeak[i].set(COMP_NOISE_FLOOR);
+			m_currentGain[i].set(1);
+		}
 		std::fill(std::begin(m_scLookBuf[0]), std::end(m_scLookBuf[0]), COMP_NOISE_FLOOR);
 		std::fill(std::begin(m_scLookBuf[1]), std::end(m_scLookBuf[1]), COMP_NOISE_FLOOR);
 		std::fill(std::begin(m_inLookBuf[0]), std::end(m_inLookBuf[0]), 0);

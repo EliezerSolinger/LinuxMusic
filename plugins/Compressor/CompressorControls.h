@@ -27,6 +27,7 @@
 
 #include "CompressorControlDialog.h"
 
+#include "AtomicPeak.h"
 #include "EffectControls.h"
 
 namespace lmms
@@ -90,10 +91,11 @@ private:
 	IntModel m_stereoLinkModel;
 	FloatModel m_mixModel;
 
-	float m_inPeakL;
-	float m_inPeakR;
-	float m_outPeakL;
-	float m_outPeakR;
+	// The meters' levels: set by the effect on the audio thread, taken by the faders in the GUI
+	AtomicPeak m_inPeakL;
+	AtomicPeak m_inPeakR;
+	AtomicPeak m_outPeakL;
+	AtomicPeak m_outPeakR;
 
 	friend class gui::CompressorControlDialog;
 	friend class CompressorEffect;

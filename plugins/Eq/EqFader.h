@@ -26,6 +26,7 @@
 #include <QList>
 #include <QWidget>
 
+#include "AtomicPeak.h"
 #include "EffectControls.h"
 #include "Fader.h"
 #include "GuiApplication.h"
@@ -42,7 +43,7 @@ class EqFader : public Fader
 public:
 	Q_OBJECT
 public:
-	EqFader( FloatModel * model, const QString & name, QWidget * parent,  float* lPeak, float* rPeak ) :
+	EqFader(FloatModel* model, const QString& name, QWidget* parent, AtomicPeak* lPeak, AtomicPeak* rPeak) :
 		Fader(model, name, parent, false)
 	{
 		setMinimumSize( 23, 116 );
@@ -68,25 +69,9 @@ private slots:
 		const float opl = getPeak_L();
 		const float opr = getPeak_R();
 		const float fallOff = 1.07f;
-		if( *m_lPeak > opl )
-		{
-			setPeak_L( *m_lPeak );
-			*m_lPeak = 0;
-		}
-		else
-		{
-			setPeak_L( opl/fallOff );
-		}
-
-		if( *m_rPeak > opr )
-		{
-			setPeak_R( *m_rPeak );
-			*m_rPeak = 0;
-		}
-		else
-		{
-			setPeak_R( opr/fallOff );
-		}
+		// A peak above what the meter shows is shown (and taken); else the meter falls
+		setPeak_L(m_lPeak->takeAbove(opl).value_or(opl / fallOff));
+		setPeak_R(m_rPeak->takeAbove(opr).value_or(opr / fallOff));
 		update();
 	}
 
@@ -94,8 +79,8 @@ private slots:
 
 
 private:
-	float* m_lPeak;
-	float* m_rPeak;
+	AtomicPeak* m_lPeak;
+	AtomicPeak* m_rPeak;
 	FloatModel* m_model;
 
 };

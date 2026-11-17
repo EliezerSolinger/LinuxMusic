@@ -29,6 +29,8 @@
 
 #include <QWidget>
 
+#include "AtomicPeak.h"
+
 
 namespace lmms
 {
@@ -62,8 +64,8 @@ public :
 	int x;
 	int y;
 	QString name;
-	float *peakL;
-	float *peakR;
+	AtomicPeak* peakL;
+	AtomicPeak* peakR;
 };
 
 

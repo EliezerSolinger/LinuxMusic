@@ -138,8 +138,8 @@ auto DelayEffect::process(ProcessContext& context) -> ProcessStatus
 		feedbackPtr += feedbackInc;
 	}
 
-	m_delayControls.m_outPeakL = peak.left();
-	m_delayControls.m_outPeakR = peak.right();
+	m_delayControls.m_outPeakL.set(peak.left());
+	m_delayControls.m_outPeakR.set(peak.right());
 
 	return ProcessStatus::ContinueIfNotQuiet;
 }

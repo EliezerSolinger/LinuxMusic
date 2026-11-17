@@ -26,6 +26,9 @@
 #ifndef COMPRESSOR_H
 #define COMPRESSOR_H
 
+#include <atomic>
+
+#include "AtomicPeak.h"
 #include "Effect.h"
 #include "CompressorControls.h"
 
@@ -130,15 +133,21 @@ private:
 
 	float m_yL[2];
 	float m_gainResult[2];
-	float m_displayPeak[2];
-	float m_displayGain[2];
 
-	float m_kneeVal;
-	float m_thresholdVal;
-	float m_ratioVal;
+	// For the visualizer in the GUI: the highest envelope and gain since it last looked (raised by the audio
+	// thread every period), and where they are now (set every period), where it starts again
+	AtomicPeak m_displayPeak[2];
+	AtomicPeak m_displayGain[2];
+	AtomicPeak m_currentPeak[2];
+	AtomicPeak m_currentGain[2];
 
-	bool m_redrawKnee = true;
-	bool m_redrawThreshold = true;
+	// Set when their models change (by the GUI or the automation), read by the audio thread and the visualizer
+	std::atomic<float> m_kneeVal = 0.f;
+	std::atomic<float> m_thresholdVal = 0.f;
+	std::atomic<float> m_ratioVal = 1.f;
+
+	std::atomic<bool> m_redrawKnee = true;
+	std::atomic<bool> m_redrawThreshold = true;
 
 	friend class CompressorControls;
 	friend class gui::CompressorControlDialog;

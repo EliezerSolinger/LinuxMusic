@@ -40,8 +40,6 @@ DelayControls::DelayControls( DelayEffect* effect ):
 	m_outGainModel(0.f, -60.f, 20.f, 0.01f, this, tr("Output gain"))
 {
 	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ), this, SLOT( changeSampleRate() ) );
-	m_outPeakL = 0.0;
-	m_outPeakR = 0.0;
 }
 
 
