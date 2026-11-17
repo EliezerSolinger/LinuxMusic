@@ -490,10 +490,10 @@ bool MidiImport::readSMF(TrackContainer* tc)
 						switch (ccid)
 						{
 							case 0:
-								if (ch->isSF2 && ch->it_inst)
+								// (a SoundFont player that did not load, e.g. a suspect, has no bank: the CC is left)
+								if (ch->isSF2 && ch->it_inst && ch->it_inst->childModel("bank"))
 								{
 									modelObject = ch->it_inst->childModel("bank");
-									assert(modelObject != nullptr);
 									printf("BANK SELECT (MSB) %f %d\n", cc, static_cast<int>(cc * 127));
 									ch->currentPatch.setBankMSB(static_cast<std::uint8_t>(cc * 127));
 									cc = static_cast<double>(ch->currentPatch.bank);
@@ -511,10 +511,10 @@ bool MidiImport::readSMF(TrackContainer* tc)
 								break;
 
 							case 32:
-								if (ch->isSF2 && ch->it_inst)
+								// (a SoundFont player that did not load, e.g. a suspect, has no bank: the CC is left)
+								if (ch->isSF2 && ch->it_inst && ch->it_inst->childModel("bank"))
 								{
 									modelObject = ch->it_inst->childModel("bank");
-									assert(modelObject != nullptr);
 									printf("BANK SELECT (LSB) %f %d\n", cc, static_cast<int>(cc * 127));
 									ch->currentPatch.setBankLSB(static_cast<std::uint8_t>(cc * 127));
 									cc = static_cast<double>(ch->currentPatch.bank);
@@ -579,15 +579,17 @@ bool MidiImport::readSMF(TrackContainer* tc)
 		if (c.first % 16l == 9 /* channel 10 */
 			&& c.second.hasNotes && c.second.it_inst && c.second.isSF2)
 		{
-			auto bank = c.second.it_inst->childModel("bank");
-			assert(bank != nullptr);
-			bank->setValue(128);
-			c.second.currentPatch.bank = 128;
-
-			auto patch = c.second.it_inst->childModel("patch");
-			assert(patch != nullptr);
-			patch->setValue(0);
-			c.second.currentPatch.program = 0;
+			// (a SoundFont player that did not load has neither)
+			if (auto bank = c.second.it_inst->childModel("bank"))
+			{
+				bank->setValue(128);
+				c.second.currentPatch.bank = 128;
+			}
+			if (auto patch = c.second.it_inst->childModel("patch"))
+			{
+				patch->setValue(0);
+				c.second.currentPatch.program = 0;
+			}
 		}
 	}
 
