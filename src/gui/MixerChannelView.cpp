@@ -68,6 +68,7 @@
 #include "SendButtonIndicator.h"
 #include "StringPairDrag.h"
 #include "Song.h"
+#include "embed.h"
 
 namespace lmms::gui
 {

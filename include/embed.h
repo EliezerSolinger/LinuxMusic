@@ -32,6 +32,7 @@
 #include <QString>
 
 #include "lmms_export.h"
+#include "PixmapLoader.h"
 #ifdef PLUGIN_NAME
 #include "LmmsCommonMacros.h"
 #endif
@@ -69,41 +70,7 @@ inline auto logicalSize(const QPixmap& pixmap) noexcept
 
 } // namespace embed
 
-class PixmapLoader
-{
-public:
-	PixmapLoader() = default;
-
-	explicit PixmapLoader(std::string name, const char* const* xpm = nullptr) :
-		m_name{std::move(name)},
-		m_xpm{xpm}
-	{ }
-
-	virtual ~PixmapLoader() = default;
-
-	auto pixmap(int width = -1, int height = -1) const -> QPixmap
-	{
-		return embed::getIconPixmap(m_name, width, height, m_xpm);
-	}
-
-	auto pixmapName() const -> const std::string& { return m_name; }
-
-private:
-	std::string m_name;
-	const char* const* m_xpm = nullptr;
-};
-
 #ifdef PLUGIN_NAME
-
-class PluginPixmapLoader : public PixmapLoader
-{
-public:
-	PluginPixmapLoader() = default;
-
-	explicit PluginPixmapLoader(std::string name, const char* const* xpm = nullptr) :
-		PixmapLoader{LMMS_STRINGIFY(PLUGIN_NAME) "/" + name, xpm}
-	{ }
-};
 
 namespace PLUGIN_NAME {
 

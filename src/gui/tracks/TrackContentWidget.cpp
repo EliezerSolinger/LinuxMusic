@@ -44,6 +44,7 @@
 #include "TrackContainerView.h"
 #include "ClipView.h"
 #include "TrackView.h"
+#include "embed.h"
 
 namespace lmms::gui
 {

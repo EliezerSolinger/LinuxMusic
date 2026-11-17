@@ -40,6 +40,7 @@
 #include "Song.h"
 #include "StepRecorder.h"
 #include "StepRecorderWidget.h"
+#include "embed.h"
 
 class QPushButton;
 class QScrollBar;

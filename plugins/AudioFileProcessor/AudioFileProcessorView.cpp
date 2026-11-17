@@ -38,6 +38,7 @@
 #include "StringPairDrag.h"
 #include "Track.h"
 #include "Clipboard.h"
+#include "embed.h"
 
 
 namespace lmms

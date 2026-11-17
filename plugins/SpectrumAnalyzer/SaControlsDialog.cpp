@@ -41,6 +41,7 @@
 #include "SaProcessor.h"
 #include "SaSpectrumView.h"
 #include "SaWaterfallView.h"
+#include "embed.h"
 
 
 namespace lmms::gui

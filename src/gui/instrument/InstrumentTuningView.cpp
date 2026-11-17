@@ -38,6 +38,7 @@
 #include "LedCheckBox.h"
 #include "MainWindow.h"
 #include "PixmapButton.h"
+#include "embed.h"
 
 
 namespace lmms::gui

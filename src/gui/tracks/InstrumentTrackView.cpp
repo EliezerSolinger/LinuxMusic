@@ -61,6 +61,7 @@
 #include "MixerView.h"
 #include "PinConnector.h"
 #include "TrackLabelButton.h"
+#include "embed.h"
 
 
 namespace lmms::gui

@@ -44,6 +44,7 @@
 #include "SongEditor.h"
 #include "TrackContainerView.h"
 #include "TrackView.h"
+#include "embed.h"
 
 namespace lmms::gui
 {

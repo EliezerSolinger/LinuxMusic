@@ -38,6 +38,7 @@
 #include "SampleClip.h"
 #include "TempoMap.h"
 #include "TimePos.h"
+#include "embed.h"
 
 class QPushButton;
 class QScrollBar;

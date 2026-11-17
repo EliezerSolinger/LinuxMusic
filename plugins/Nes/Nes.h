@@ -30,6 +30,7 @@
 #include "InstrumentView.h"
 #include "AutomatableModel.h"
 #include "PixmapButton.h"
+#include "embed.h"
 
 
 #define makeknob( name, x, y, hint, unit, oname ) 		\

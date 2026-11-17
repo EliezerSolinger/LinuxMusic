@@ -38,6 +38,7 @@
 #include "AudioPortsModel.h"
 #include "StringPairDrag.h"
 #include "SubWindow.h"
+#include "embed.h"
 
 namespace lmms::gui
 {

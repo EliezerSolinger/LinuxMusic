@@ -28,6 +28,7 @@
 #include "Controls.h"
 #include "ControlLayout.h"
 #include "LinkedModelGroups.h"
+#include "embed.h"
 
 namespace lmms::gui
 {

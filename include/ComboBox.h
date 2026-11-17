@@ -30,6 +30,7 @@
 
 #include "ComboBoxModel.h"
 #include "AutomatableModelView.h"
+#include "embed.h"
 
 namespace lmms::gui
 {

@@ -30,6 +30,7 @@
 #include "Knob.h"
 #include "LedCheckBox.h"
 #include "ComboBox.h"
+#include "embed.h"
 
 namespace lmms::gui
 {

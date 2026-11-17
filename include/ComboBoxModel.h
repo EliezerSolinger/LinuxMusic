@@ -30,7 +30,7 @@
 #include <vector>
 
 #include "AutomatableModel.h"
-#include "embed.h"
+#include "PixmapLoader.h"
 
 namespace lmms
 {

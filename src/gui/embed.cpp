@@ -147,3 +147,14 @@ auto getText(std::string_view name) -> QString
 }
 
 } // namespace lmms::embed
+
+
+namespace lmms
+{
+
+auto PixmapLoader::pixmap(int width, int height) const -> QPixmap
+{
+	return embed::getIconPixmap(m_name, width, height, m_xpm);
+}
+
+} // namespace lmms

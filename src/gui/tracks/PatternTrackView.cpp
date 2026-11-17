@@ -33,6 +33,7 @@
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "TrackLabelButton.h"
+#include "embed.h"
 
 namespace lmms::gui
 {

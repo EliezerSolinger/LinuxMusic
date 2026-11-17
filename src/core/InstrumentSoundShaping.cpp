@@ -28,7 +28,7 @@
 #include "InstrumentSoundShaping.h"
 #include "AudioEngine.h"
 #include "BasicFilters.h"
-#include "embed.h"
+#include "PixmapLoader.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"

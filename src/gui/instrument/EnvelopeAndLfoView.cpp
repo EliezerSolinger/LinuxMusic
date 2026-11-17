@@ -41,6 +41,7 @@
 #include "TempoSyncKnob.h"
 #include "TextFloat.h"
 #include "Track.h"
+#include "embed.h"
 
 namespace lmms
 {

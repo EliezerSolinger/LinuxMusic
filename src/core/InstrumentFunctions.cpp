@@ -25,7 +25,7 @@
 
 #include "InstrumentFunctions.h"
 #include "AudioEngine.h"
-#include "embed.h"
+#include "PixmapLoader.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "lmms_math.h"

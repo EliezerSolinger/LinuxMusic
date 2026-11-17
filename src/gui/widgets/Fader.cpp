@@ -57,6 +57,7 @@
 #include "DeprecationHelper.h"
 #include "KeyboardShortcuts.h"
 #include "SimpleTextFloat.h"
+#include "embed.h"
 
 namespace
 {
