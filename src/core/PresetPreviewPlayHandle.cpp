@@ -25,6 +25,8 @@
 #include <QFileInfo>
 
 #include "PresetPreviewPlayHandle.h"
+
+#include <memory>
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "Instrument.h"
@@ -150,22 +152,17 @@ PresetPreviewPlayHandle::PresetPreviewPlayHandle( const QString & _preset_file, 
 	}
 	else
 	{
-		bool dataFileCreated = false;
-		if( dataFile == 0 )
+		// (read here when the caller has not)
+		auto ownDataFile = std::unique_ptr<DataFile>{};
+		if (!dataFile)
 		{
-			dataFile = new DataFile( _preset_file );
-			dataFileCreated = true;
+			ownDataFile = std::make_unique<DataFile>(_preset_file);
+			dataFile = ownDataFile.get();
 		}
 
 		s_previewTC->previewInstrumentTrack()->loadTrackSpecificSettings(
 					dataFile->content().firstChild().toElement());
-
-		if( dataFileCreated )
-		{
-			delete dataFile;
-		}
 	}
-	dataFile = 0;
 	// make sure, our preset-preview-track does not appear in any MIDI-
 	// devices list, so just disable receiving/sending MIDI-events at all
 	s_previewTC->previewInstrumentTrack()->

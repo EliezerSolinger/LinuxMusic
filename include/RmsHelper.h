@@ -26,49 +26,31 @@
 #ifndef LMMS_RMS_HELPER_H
 #define LMMS_RMS_HELPER_H
 
+#include <algorithm>
+#include <vector>
+
 #include "lmms_math.h"
 
 
 namespace lmms
 {
 
-
+//! The RMS of the last size() values given to update()
 class RmsHelper
 {
 public:
-	RmsHelper(std::size_t size) :
-		m_buffer( nullptr )
+	explicit RmsHelper(std::size_t size)
 	{
 		setSize( size );
 	}
-	virtual ~RmsHelper() 
-	{
-		if( m_buffer ) delete[] m_buffer;
-	}
+	virtual ~RmsHelper() = default;
 
+	//! Allocates only when it grows past what it had
 	void setSize(std::size_t size)
 	{
-		if( m_buffer )
-		{
-			if( m_size < size )
-			{
-				delete m_buffer;
-				m_buffer = new float[ size ];
-				m_size = size;
-				reset();
-			}
-			else
-			{
-				m_size = size;
-				reset();
-			}
-		}
-		else
-		{
-			m_buffer = new float[ size ];
-			m_size = size;
-			reset();
-		}
+		m_size = std::max<std::size_t>(size, 1);
+		m_buffer.assign(m_size, 0.f);
+		reset();
 	}
 
 	inline void reset()
@@ -76,7 +58,7 @@ public:
 		m_sizef = 1.0f / (float) m_size;
 		m_pos = 0;
 		m_sum = 0.0f;
-		memset( m_buffer, 0, m_size * sizeof( float ) );
+		std::fill(m_buffer.begin(), m_buffer.end(), 0.f);
 	}
 
 	inline float update( const float in )
@@ -88,11 +70,11 @@ public:
 	}
 
 private:
-	float * m_buffer;
-	float m_sum;
-	std::size_t m_pos;
-	std::size_t m_size;
-	float m_sizef;
+	std::vector<float> m_buffer;
+	float m_sum = 0.f;
+	std::size_t m_pos = 0;
+	std::size_t m_size = 1;
+	float m_sizef = 1.f;
 };
 
 

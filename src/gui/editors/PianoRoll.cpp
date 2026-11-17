@@ -625,8 +625,7 @@ void PianoRoll::setGhostMidiClip( MidiClip* newMidiClip )
 	{
 		for( Note *note : newMidiClip->notes() )
 		{
-			auto new_note = new Note(note->length(), note->pos(), note->key());
-			m_ghostNotes.push_back( new_note );
+			m_ghostNotes.emplace_back(note->length(), note->pos(), note->key());
 		}
 		emit ghostClipSet( true );
 	}
@@ -641,10 +640,9 @@ void PianoRoll::loadGhostNotes( const QDomElement & de )
 		QDomNode node = de.firstChild();
 		while( !node.isNull() )
 		{
-			auto n = new Note;
-			n->restoreState( node.toElement() );
-			n->setVolume(DefaultVolume);
-			m_ghostNotes.push_back( n );
+			auto& n = m_ghostNotes.emplace_back();
+			n.restoreState( node.toElement() );
+			n.setVolume(DefaultVolume);
 			node = node.nextSibling();
 		}
 		emit ghostClipSet( true );
@@ -3730,8 +3728,9 @@ void PianoRoll::paintEvent(QPaintEvent * pe )
 		// -- Begin ghost MIDI clip
 		if( !m_ghostNotes.empty() )
 		{
-			for( const Note *note : m_ghostNotes )
+			for (const auto& ghost : m_ghostNotes)
 			{
+				const auto* note = &ghost;
 				int len_ticks = note->length();
 
 				if( len_ticks == 0 )
@@ -5613,8 +5612,9 @@ void PianoRollWindow::saveSettings( QDomDocument & doc, QDomElement & de )
 	if( !m_editor->ghostNotes().empty() )
 	{
 		QDomElement ghostNotesRoot = doc.createElement( "ghostnotes" );
-		for( Note *note : m_editor->ghostNotes() )
+		for (const auto& ghost : m_editor->ghostNotes())
 		{
+			const auto* note = &ghost;
 			QDomElement ghostNoteNode = doc.createElement( "ghostnote" );
 			ghostNoteNode.setAttribute( "len", note->length() );
 			ghostNoteNode.setAttribute( "key", note->key() );

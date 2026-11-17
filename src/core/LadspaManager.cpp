@@ -109,8 +109,7 @@ LadspaManager::LadspaManager()
 		}
 	}
 	
-	l_ladspa_key_t keys = m_ladspaManagerMap.keys();
-	for (const auto& key : keys)
+	for (const auto& [key, description] : m_ladspaManagerMap)
 	{
 		m_sortedPlugins.append(qMakePair(getName(key), key));
 	}
@@ -120,14 +119,7 @@ LadspaManager::LadspaManager()
 
 
 
-LadspaManager::~LadspaManager()
-{
-	for( LadspaManagerMapType::iterator it = m_ladspaManagerMap.begin();
-					it != m_ladspaManagerMap.end(); ++it )
-	{
-		delete it.value();
-	}
-}
+LadspaManager::~LadspaManager() = default;
 
 
 
@@ -136,7 +128,7 @@ LadspaManagerDescription * LadspaManager::getDescription(
 						const ladspa_key_t & _plugin )
 {
 	auto const it = m_ladspaManagerMap.find(_plugin);
-	return it != m_ladspaManagerMap.end() ? *it : nullptr;
+	return it != m_ladspaManagerMap.end() ? &it->second : nullptr;
 }
 
 
@@ -149,12 +141,9 @@ void LadspaManager::addPlugins(
 	for (long pluginIndex = 0; const auto descriptor = _descriptor_func(pluginIndex); ++pluginIndex)
 	{
 		ladspa_key_t key( _file, QString( descriptor->Label ) );
-		if( m_ladspaManagerMap.contains( key ) )
-		{
-			continue;
-		}
+		if (m_ladspaManagerMap.contains(key)) { continue; }
 
-		auto plugIn = new LadspaManagerDescription;
+		auto* plugIn = &m_ladspaManagerMap[key];
 		plugIn->descriptorFunction = _descriptor_func;
 		plugIn->index = pluginIndex;
 		plugIn->inputChannels = getPluginInputs( descriptor );
@@ -178,8 +167,6 @@ void LadspaManager::addPlugins(
 		{
 			plugIn->type = LadspaPluginType::Other;
 		}
-
-		m_ladspaManagerMap[key] = plugIn;
 	}
 }
 
@@ -565,7 +552,7 @@ const LADSPA_Descriptor * LadspaManager::getDescriptor(const ladspa_key_t & _plu
 	auto const it = m_ladspaManagerMap.find(_plugin);
 	if (it != m_ladspaManagerMap.end())
 	{
-		auto const plugin = *it;
+		auto const* plugin = &it->second;
 
 		LADSPA_Descriptor_Function descriptorFunction = plugin->descriptorFunction;
 		const LADSPA_Descriptor* descriptor = descriptorFunction(plugin->index);

@@ -25,14 +25,11 @@
 #ifndef LMMS_THREADED_EXPORT_MANAGER_H
 #define LMMS_THREADED_EXPORT_MANAGER_H
 
-#include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <memory>
-#include <thread>
-#include <tuple>
-#include <vector>
 #include <mutex>
-
-#include <sndfile.h>
+#include <thread>
 
 #include <QString>
 
@@ -43,24 +40,44 @@ class SampleBuffer;
 
 typedef void (*callbackFn)(void*);
 
+/**
+ * Writes sample buffers to FLAC files on a thread of its own, in the order they were asked for. The thread starts
+ * with the first request and waits for more; stopExporting() (and the destructor) writes what is still queued and
+ * then ends it.
+ */
 class ThreadedExportManager
 {
 public:
-	ThreadedExportManager();
+	ThreadedExportManager() = default;
 	~ThreadedExportManager();
 
+	ThreadedExportManager(const ThreadedExportManager&) = delete;
+	ThreadedExportManager& operator=(const ThreadedExportManager&) = delete;
+
 	//! @param outputLocationAndName: should include path and name, could include ".flac"
-	void startExporting(const QString& outputLocationAndName, std::shared_ptr<const SampleBuffer> buffer, callbackFn callbackFunction = nullptr, void* callbackObject = nullptr);
+	//! @param callbackFunction called on the export thread once the file is written (or failed)
+	void startExporting(const QString& outputLocationAndName, std::shared_ptr<const SampleBuffer> buffer,
+		callbackFn callbackFunction = nullptr, void* callbackObject = nullptr);
+	//! Writes what is queued and ends the thread (a later request starts it again)
 	void stopExporting();
 
 private:
-	static void threadedExportMethod(ThreadedExportManager* thisExporter, std::atomic<bool>* shouldRun);
+	struct Request
+	{
+		QString path;
+		std::shared_ptr<const SampleBuffer> buffer;
+		callbackFn callback;
+		void* callbackObject;
+	};
 
-	std::vector<std::tuple<QString, std::shared_ptr<const SampleBuffer>, callbackFn, void*>> m_buffers;
+	void run();
+	static void write(const Request& request);
 
-	std::atomic<bool> m_isThreadRunning = false;
-	std::mutex m_readMutex;
-	std::thread* m_thread = nullptr;
+	std::mutex m_mutex;
+	std::condition_variable m_requested;
+	std::deque<Request> m_requests; //!< Under m_mutex
+	bool m_stopping = false; //!< Under m_mutex
+	std::thread m_thread;
 };
 
 } // namespace lmms

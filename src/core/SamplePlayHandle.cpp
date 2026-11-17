@@ -34,22 +34,20 @@
 namespace lmms
 {
 
-SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
+SamplePlayHandle::SamplePlayHandle(std::unique_ptr<Sample> sample)
 	: PlayHandle(Type::SamplePlayHandle)
-	, m_sample(sample)
-	, m_ownAudioBusHandle(ownAudioBusHandle)
+	, m_sample(sample.get())
+	, m_ownSample(std::move(sample))
+	, m_ownBus(std::make_unique<AudioBusHandle>("SamplePlayHandle", false))
 {
-	if (ownAudioBusHandle)
-	{
-		setAudioBusHandle(new AudioBusHandle("SamplePlayHandle", false));
-	}
+	setAudioBusHandle(m_ownBus.get());
 }
 
 
 
 
 SamplePlayHandle::SamplePlayHandle( const QString& sampleFile ) :
-	SamplePlayHandle(new Sample(SampleBuffer::fromFile(sampleFile)), true)
+	SamplePlayHandle(std::make_unique<Sample>(SampleBuffer::fromFile(sampleFile)))
 {
 }
 
@@ -65,8 +63,9 @@ SamplePlayHandle::SamplePlayHandle()
 
 
 SamplePlayHandle::SamplePlayHandle( SampleClip* clip ) :
-	SamplePlayHandle(&clip->sample(), false)
+	PlayHandle(Type::SamplePlayHandle)
 {
+	m_sample = &clip->sample();
 	m_clip = clip;
 	m_track = clip->getTrack();
 	setAudioBusHandle(((SampleTrack *)clip->getTrack())->audioBusHandle());
@@ -104,14 +103,7 @@ void SamplePlayHandle::dispose()
 }
 
 
-SamplePlayHandle::~SamplePlayHandle()
-{
-	if(m_ownAudioBusHandle)
-	{
-		delete audioBusHandle();
-		delete m_sample;
-	}
-}
+SamplePlayHandle::~SamplePlayHandle() = default;
 
 
 

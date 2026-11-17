@@ -23,40 +23,26 @@
  */
 
 #include "MonoDelay.h"
-#include "string.h"
+
+#include <algorithm>
 
 namespace lmms
 {
 
 
 MonoDelay::MonoDelay( int maxTime , int sampleRate )
+	: m_maxTime{static_cast<float>(maxTime)}
 {
-	m_buffer = 0;
-	m_maxTime = static_cast<float>(maxTime);
-	m_maxLength = maxTime * sampleRate;
-	m_length = static_cast<float>(m_maxLength);
-
-	m_writeIndex = 0;
-	m_feedback = 0.0f;
 	setSampleRate( sampleRate );
+	m_length = static_cast<float>(m_maxLength);
 }
 
-
-
-
-MonoDelay::~MonoDelay()
-{
-	if( m_buffer )
-	{
-		delete m_buffer;
-	}
-}
 
 
 
 void MonoDelay::tick( sample_t* sample )
 {
-	m_writeIndex = ( m_writeIndex + 1 ) % ( int )m_maxLength;
+	m_writeIndex = ( m_writeIndex + 1 ) % m_maxLength;
 	int readIndex = m_writeIndex - static_cast<int>(m_length);
 	if (readIndex < 0 ) { readIndex += m_maxLength; }
 	float out = m_buffer[ readIndex ];
@@ -69,14 +55,11 @@ void MonoDelay::tick( sample_t* sample )
 
 void MonoDelay::setSampleRate( int sampleRate )
 {
-	if( m_buffer )
-	{
-		delete m_buffer;
-	}
-
-
-	m_buffer = new sample_t[( int )( sampleRate * m_maxTime ) ];
-	memset( m_buffer, 0, sizeof(float) * ( int )( sampleRate * m_maxTime ) );
+	// The longest delay in frames at this rate (one frame at least), and what was in it, gone
+	m_maxLength = std::max(1, static_cast<int>(static_cast<float>(sampleRate) * m_maxTime));
+	m_buffer.assign(m_maxLength, 0.f);
+	m_writeIndex = 0;
+	m_length = std::min(m_length, static_cast<float>(m_maxLength));
 }
 
 

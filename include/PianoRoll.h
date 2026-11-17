@@ -381,9 +381,10 @@ private:
 	int resizeGripWidth(const Note& note) const;
 
 	MidiClip* m_midiClip;
-	NoteVector m_ghostNotes;
+	//! Another clip's notes, drawn behind (copies, by value)
+	std::vector<Note> m_ghostNotes;
 
-	inline const NoteVector & ghostNotes() const
+	inline const std::vector<Note>& ghostNotes() const
 	{
 		return m_ghostNotes;
 	}

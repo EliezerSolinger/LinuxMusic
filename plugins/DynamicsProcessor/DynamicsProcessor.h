@@ -27,15 +27,15 @@
 #ifndef DYNPROC_H
 #define DYNPROC_H
 
+#include <array>
 #include <atomic>
 
 #include "Effect.h"
 #include "DynamicsProcessorControls.h"
+#include "RmsHelper.h"
 
 namespace lmms
 {
-
-class RmsHelper;
 
 
 class DynProcEffect : public LegacyEffect
@@ -67,7 +67,7 @@ private:
 	//! Set by the controls when the sample rate changes (GUI thread), taken by process() (audio thread)
 	std::atomic<bool> m_needsUpdate = true;
 	
-	RmsHelper * m_rms [2];
+	std::array<RmsHelper, 2> m_rms;
 
 	friend class DynProcControls;
 

@@ -36,10 +36,7 @@ namespace lmms::base64
 
 QVariant decode(const QString& b64, QMetaType::Type forceType)
 {
-	char * dst = nullptr;
-	int dsize = 0;
-	base64::decode(b64, &dst, &dsize);
-	QByteArray ba( dst, dsize );
+	auto ba = QByteArray::fromBase64(b64.toUtf8());
 	QBuffer buf( &ba );
 	buf.open( QBuffer::ReadOnly );
 	QDataStream in( &buf );
@@ -51,7 +48,6 @@ QVariant decode(const QString& b64, QMetaType::Type forceType)
 		in.setVersion( QDataStream::Qt_3_3 );
 		in >> ret;
 	}
-	delete[] dst;
 	return( ret );
 }
 

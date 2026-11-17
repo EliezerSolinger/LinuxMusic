@@ -63,11 +63,11 @@ const double DNF_LOG = -1.0;
 DynProcEffect::DynProcEffect( Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key ) :
 	LegacyEffect(&dynamicsprocessor_plugin_descriptor, _parent, _key),
-	m_dpControls( this )
+	m_dpControls( this ),
+	m_rms{RmsHelper(64 * Engine::audioEngine()->outputSampleRate() / 44100),
+		RmsHelper(64 * Engine::audioEngine()->outputSampleRate() / 44100)}
 {
 	m_currentPeak[0] = m_currentPeak[1] = DYN_NOISE_FLOOR;
-	m_rms[0] = new RmsHelper( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
-	m_rms[1] = new RmsHelper( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
 	calcAttack();
 	calcRelease();
 }
@@ -75,11 +75,7 @@ DynProcEffect::DynProcEffect( Model * _parent,
 
 
 
-DynProcEffect::~DynProcEffect()
-{
-	delete m_rms[0];
-	delete m_rms[1];
-}
+DynProcEffect::~DynProcEffect() = default;
 
 
 inline void DynProcEffect::calcAttack()
@@ -117,8 +113,8 @@ auto DynProcEffect::process(ProcessContext& context) -> ProcessStatus
 
 	if (m_needsUpdate.exchange(false))
 	{
-		m_rms[0]->setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
-		m_rms[1]->setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
+		m_rms[0].setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
+		m_rms[1].setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
 		calcAttack();
 		calcRelease();
 	}
@@ -145,7 +141,7 @@ auto DynProcEffect::process(ProcessContext& context) -> ProcessStatus
 // update peak values
 		for ( i=0; i <= 1; i++ )
 		{
-			const double t = m_rms[i]->update( s[i] );
+			const double t = m_rms[i].update( s[i] );
 			if( t > m_currentPeak[i] )
 			{
 				m_currentPeak[i] = m_currentPeak[i] * m_attCoeff + (1 - m_attCoeff) * t;

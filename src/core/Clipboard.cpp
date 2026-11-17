@@ -23,6 +23,8 @@
  */
 
 #include <QClipboard>
+
+#include <memory>
 #include <QGuiApplication>
 #include <QMimeData>
 
@@ -64,11 +66,10 @@ namespace lmms::Clipboard
 
 	void copyString( const QString & str, MimeType mT )
 	{
-		auto content = new QMimeData;
-
+		auto content = std::make_unique<QMimeData>();
 		content->setData( mimeType( mT ), str.toUtf8() );
-		if (auto* clipboard = systemClipboard()) { clipboard->setMimeData(content, QClipboard::Clipboard); }
-		else { delete content; }
+		// (the clipboard takes it)
+		if (auto* clipboard = systemClipboard()) { clipboard->setMimeData(content.release(), QClipboard::Clipboard); }
 	}
 
 
@@ -86,10 +87,10 @@ namespace lmms::Clipboard
 	{
 		QString finalString = key + ":" + value;
 
-		auto content = new QMimeData;
+		auto content = std::make_unique<QMimeData>();
 		content->setData( mimeType( MimeType::StringPair ), finalString.toUtf8() );
-		if (auto* clipboard = systemClipboard()) { clipboard->setMimeData(content, QClipboard::Clipboard); }
-		else { delete content; }
+		// (the clipboard takes it)
+		if (auto* clipboard = systemClipboard()) { clipboard->setMimeData(content.release(), QClipboard::Clipboard); }
 	}
 
 

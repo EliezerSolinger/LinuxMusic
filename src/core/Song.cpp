@@ -75,9 +75,7 @@ tick_t TimePos::s_ticksPerBar = DefaultTicksPerBar;
 
 Song::Song() :
 	TrackContainer(),
-	m_globalAutomationTrack( dynamic_cast<AutomationTrack *>(
-				Track::create( Track::Type::HiddenAutomation,
-								this ) ) ),
+	m_globalAutomationTrack(static_cast<AutomationTrack*>(Track::create(Track::Type::HiddenAutomation, this))),
 	m_tempoModel( DefaultTempo, MinTempo, MaxTempo, this, tr( "Tempo" ) ),
 	m_timeSigModel( this ),
 	m_oldTicksPerBar( DefaultTicksPerBar ),
@@ -159,7 +157,8 @@ Song::~Song()
 	// The tracks are removed by ~TrackContainer(), when this Song is gone already
 	disconnect(this, &TrackContainer::trackRemoved, this, &Song::scheduleCaptureUpdate);
 	m_playing = false;
-	delete m_globalAutomationTrack;
+	// (before the models its clips automate)
+	m_globalAutomationTrack.reset();
 }
 
 
@@ -1735,7 +1734,7 @@ void Song::automatedValuesAt(TimePos time, int clipNum, AutomatedValueMap& value
 {
 	// (a list that keeps its room: the audio thread asks each tick)
 	m_automationTracks.clear();
-	m_automationTracks.push_back(m_globalAutomationTrack);
+	m_automationTracks.push_back(m_globalAutomationTrack.get());
 	m_automationTracks.insert(m_automationTracks.end(), tracks().begin(), tracks().end());
 	TrackContainer::automatedValuesFromTracks(m_automationTracks, time, clipNum, values);
 }

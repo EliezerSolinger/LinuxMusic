@@ -26,6 +26,7 @@
 #ifndef LMMS_RING_BUFFER_H
 #define LMMS_RING_BUFFER_H
 
+#include <vector>
 #include <cmath>
 #include <QObject>
 #include "LmmsTypes.h"
@@ -216,7 +217,7 @@ private:
 	const f_cnt_t m_fpp;
 	sample_rate_t m_samplerate;
 	size_t m_size;
-	SampleFrame* m_buffer;
+	std::vector<SampleFrame> m_buffer;
 	volatile unsigned int m_position;
 
 };

@@ -412,3 +412,43 @@ Processo, igual para as duas:
   log de erros. O `ErrorLog` (075f31904) é seguro na thread de áudio (sem trava nem alocação) e grava em
   `<pasta de trabalho>/logs/errors.log` e no stderr. Ele está ligado em todos esses pontos e recebe também os avisos
   ao usuário (fabdde10e).
+
+### Fase 4: posse de memória (em andamento)
+- [x] 4.1 Regras em `docs/regras-de-codigo.md`; 4.2 `.clang-tidy` do núcleo e das faixas (54e32ae7f).
+- [x] `AudioEngine`: dispositivos de áudio e MIDI e workers em `unique_ptr` desde a criação; `Mixer`: canais e rotas
+  (afdc6c798, 54e32ae7f).
+- [x] Plugins: `Plugin::instantiate` e as de instrumento, efeito e ferramenta devolvem `unique_ptr`; `pluginAs<T>()`
+  no lugar do `delete` manual; a janela principal é dona das ferramentas (fbcfd5930).
+- [x] `ControllerConnection`: o modelo é dono da conexão (`unique_ptr`), e a conexão é dona do controlador MIDI.
+  Quando um controlador da música some, a conexão avisa (`orphaned()`) e o modelo a apaga: acabou o `delete this`.
+  Trocas sob a trava do motor. Consertou:
+  - conexão num arquivo com controlador de outro tipo (LFO, pico, desconhecido): derrubava o programa;
+  - carregar o estado de novo (desfazer) vazava a conexão anterior, que continuava ligada;
+  - conexão movida para outro controlador era apagada quando o primeiro sumia;
+  - o controlador "vazio" compartilhado podia ser apagado (e apagado de novo) ao limpar a música.
+  Teste: `ControllerConnectionTest`.
+- [ ] Faixas e clipes: já têm um dono, o pai do Qt (contêiner e faixa); os `delete` que restam apagam antes um
+  filho do Qt, o que a regra aceita. Falta conferir se algum é chamado com o motor tocando sem a trava.
+- [ ] `PeakController`: apaga a si mesmo quando o efeito morre fora da lista da música (prévia). Precisa de um dono
+  único (o efeito).
+- [x] Donos explícitos no resto do núcleo:
+  - a faixa de automação global da música, o barramento da calibração de latência, a amostra e o barramento
+    próprios do `SamplePlayHandle`, o arquivo lido pela prévia de preset;
+  - as descrições do `LadspaManager` (por valor), o `QMimeData` da área de transferência;
+  - os buffers do envelope/LFO, do `RingBuffer` e do `RmsHelper` (`std::vector`).
+  - Também foram consertados:
+    - o `RmsHelper` liberava com `delete` o que veio de `new[]`;
+    - o atraso do Flanger (`MonoDelay`) tinha o mesmo erro e, com a taxa de amostragem mais baixa, escrevia fora do
+      buffer;
+    - as notas fantasma do piano roll vazavam (agora são guardadas por valor);
+    - a exportação em segundo plano (`ThreadedExportManager`) só gravava a primeira exportação: a thread terminava
+      mas continuava marcada como rodando. Agora é uma fila com condição de espera, que grava o que falta antes de
+      parar (`ThreadedExportTest`).
+  - Apagados `Delay.h` e `FifoBuffer.h`, que ninguém usava, e a decodificação base64 para vetor cru.
+- [ ] Notas do `MidiClip`: o clipe é o único dono, mas guarda `Note*` num `NoteVector`, porque o mesmo vetor é lido
+  pelos editores e pela thread de áudio sem alocar. Os `delete` ficam todos dentro do `MidiClip`. Trocar por
+  `unique_ptr` muda 52 lugares; fica para quando o render usar instantâneos (fase 7).
+- [ ] Estáticos com criação preguiçosa (`PresetPreviewPlayHandle::s_previewTC`, as instâncias de LFO do envelope):
+  vão com os do `Engine` na fase 8.
+- [ ] 4.4 Observadores (`QPointer` ou aviso de morte).
+- Os ponteiros estáticos do `Engine` ficam crus até a fase 8 (ciclo de vida).

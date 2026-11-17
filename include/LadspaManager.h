@@ -27,6 +27,8 @@
 #ifndef LMMS_LADSPA_MANAGER_H
 #define LMMS_LADSPA_MANAGER_H
 
+#include <map>
+
 #include <ladspa.h>
 
 #include <QMap>
@@ -340,7 +342,8 @@ private:
 	const LADSPA_PortRangeHint* getPortRangeHint( const ladspa_key_t& _plugin,
 													uint32_t _port );
 
-	using LadspaManagerMapType = QMap<ladspa_key_t, LadspaManagerDescription*>;
+	//! (the descriptions stay where they are while the map lives: getDescription() hands them out)
+	using LadspaManagerMapType = std::map<ladspa_key_t, LadspaManagerDescription>;
 	LadspaManagerMapType m_ladspaManagerMap;
 	l_sortable_plugin_t m_sortedPlugins;
 

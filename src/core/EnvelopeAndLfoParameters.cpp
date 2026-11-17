@@ -106,10 +106,6 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 	m_valueForZeroAmount( _value_for_zero_amount ),
 	m_pahdFrames( 0 ),
 	m_rFrames( 0 ),
-	m_pahdEnv( nullptr ),
-	m_rEnv( nullptr ),
-	m_pahdBufSize( 0 ),
-	m_rBufSize( 0 ),
 	m_lfoPredelayModel(0.f, 0.f, 1.f, 0.001f, this, tr("LFO pre-delay")),
 	m_lfoAttackModel(0.f, 0.f, 1.f, 0.001f, this, tr("LFO attack")),
 	m_lfoSpeedModel(0.1f, 0.001f, 1.f, 0.0001f,
@@ -121,7 +117,7 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 	m_controlEnvAmountModel( false, this, tr( "Modulate env amount" ) ),
 	m_lfoFrame( 0 ),
 	m_lfoAmountIsZero( false ),
-	m_lfoShapeData(nullptr)
+	m_lfoShapeData(Engine::audioEngine()->framesPerPeriod())
 {
 	m_amountModel.setCenterValue( 0 );
 	m_lfoAmountModel.setCenterValue( 0 );
@@ -165,9 +161,6 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 				this, SLOT(updateSampleVars()));
 
 
-	m_lfoShapeData =
-		new sample_t[Engine::audioEngine()->framesPerPeriod()];
-
 	updateSampleVars();
 }
 
@@ -189,10 +182,6 @@ EnvelopeAndLfoParameters::~EnvelopeAndLfoParameters()
 	m_lfoAmountModel.disconnect( this );
 	m_lfoWaveModel.disconnect( this );
 	m_x100Model.disconnect( this );
-
-	delete[] m_pahdEnv;
-	delete[] m_rEnv;
-	delete[] m_lfoShapeData;
 
 	instances()->remove( this );
 
@@ -443,20 +432,8 @@ void EnvelopeAndLfoParameters::updateSampleVars()
 	}
 
 	// if the buffers are too small, make bigger ones - so we only alloc new memory when necessary
-	if( m_pahdBufSize < m_pahdFrames )
-	{
-		sample_t * tmp = m_pahdEnv;
-		m_pahdEnv = new sample_t[m_pahdFrames];
-		delete[] tmp;
-		m_pahdBufSize = m_pahdFrames;
-	}
-	if( m_rBufSize < m_rFrames )
-	{
-		sample_t * tmp = m_rEnv;
-		m_rEnv = new sample_t[m_rFrames];
-		delete[] tmp;
-		m_rBufSize = m_rFrames;
-	}
+	if (m_pahdEnv.size() < static_cast<std::size_t>(m_pahdFrames)) { m_pahdEnv.resize(m_pahdFrames); }
+	if (m_rEnv.size() < static_cast<std::size_t>(m_rFrames)) { m_rEnv.resize(m_rFrames); }
 
 	const float aa = m_amountAdd;
 	for( f_cnt_t i = 0; i < predelay_frames; ++i )

@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 #include "AudioBusHandle.h"
 #include "AudioDevice.h"
@@ -60,12 +61,10 @@ public:
 	explicit CalibrationHandle(std::shared_ptr<LatencyCalibration::Shared> shared)
 		: PlayHandle{Type::CalibrationHandle}
 		, m_shared{std::move(shared)}
-		, m_bus{new AudioBusHandle{"Latency calibration", false}}
+		, m_bus{std::make_unique<AudioBusHandle>("Latency calibration", false)}
 	{
-		setAudioBusHandle(m_bus);
+		setAudioBusHandle(m_bus.get());
 	}
-
-	~CalibrationHandle() override { delete m_bus; }
 
 	void play(std::span<SampleFrame> buffer) override
 	{
@@ -96,7 +95,7 @@ public:
 
 private:
 	std::shared_ptr<LatencyCalibration::Shared> m_shared;
-	AudioBusHandle* m_bus;
+	std::unique_ptr<AudioBusHandle> m_bus;
 };
 
 } // namespace

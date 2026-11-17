@@ -26,6 +26,7 @@
 #define LMMS_ENVELOPE_AND_LFO_PARAMETERS_H
 
 #include <memory>
+#include <vector>
 
 #include "JournallingObject.h"
 #include "AutomatableModel.h"
@@ -175,10 +176,9 @@ private:
 	float  m_amountAdd;
 	f_cnt_t m_pahdFrames;
 	f_cnt_t m_rFrames;
-	sample_t * m_pahdEnv;
-	sample_t * m_rEnv;
-	f_cnt_t m_pahdBufSize;
-	f_cnt_t m_rBufSize;
+	//! The envelope until the release, and the release (they only grow: allocated when the times get longer)
+	std::vector<sample_t> m_pahdEnv;
+	std::vector<sample_t> m_rEnv;
 
 
 	FloatModel m_lfoPredelayModel;
@@ -197,7 +197,7 @@ private:
 	f_cnt_t m_lfoFrame;
 	float m_lfoAmount;
 	bool m_lfoAmountIsZero;
-	sample_t * m_lfoShapeData;
+	std::vector<sample_t> m_lfoShapeData; //!< One period's frames
 	sample_t m_random;
 	bool m_bad_lfoShapeData;
 	std::shared_ptr<const SampleBuffer> m_userWave = SampleBuffer::emptyBuffer();

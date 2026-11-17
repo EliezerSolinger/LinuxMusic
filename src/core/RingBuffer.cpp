@@ -37,8 +37,7 @@ RingBuffer::RingBuffer( f_cnt_t size ) :
 	m_samplerate( Engine::audioEngine()->outputSampleRate() ),
 	m_size( size + m_fpp )
 {
-	m_buffer = new SampleFrame[ m_size ];
-	zeroSampleFrames(m_buffer, m_size);
+	m_buffer.assign(m_size, SampleFrame{});
 	m_position = 0;
 }
 
@@ -48,23 +47,19 @@ RingBuffer::RingBuffer( float size ) :
 	m_samplerate( Engine::audioEngine()->outputSampleRate() )
 {
 	m_size = msToFrames( size ) + m_fpp;
-	m_buffer = new SampleFrame[ m_size ];
-	zeroSampleFrames(m_buffer, m_size);
+	m_buffer.assign(m_size, SampleFrame{});
 	m_position = 0;
 	setSamplerateAware( true );
 	//qDebug( "m_size %d, m_position %d", m_size, m_position );
 }
 
 
-RingBuffer::~RingBuffer()
-{
-	delete[] m_buffer;
-}
+RingBuffer::~RingBuffer() = default;
 
 
 void RingBuffer::reset()
 {
-	zeroSampleFrames(m_buffer, m_size);
+	zeroSampleFrames(m_buffer.data(), m_size);
 	m_position = 0;
 }
 
@@ -72,12 +67,9 @@ void RingBuffer::reset()
 void RingBuffer::changeSize( f_cnt_t size )
 {
 	size += m_fpp;
-	SampleFrame* tmp = m_buffer;
 	m_size = size;
-	m_buffer = new SampleFrame[ m_size ];
-	zeroSampleFrames(m_buffer, m_size);
+	m_buffer.assign(m_size, SampleFrame{});
 	m_position = 0;
-	delete[] tmp;
 }
 
 
@@ -133,8 +125,8 @@ void RingBuffer::pop( SampleFrame* dst )
 		memcpy( dst, & m_buffer [ m_position ], first * sizeof( SampleFrame ) );
 		zeroSampleFrames(&m_buffer[m_position], first);
 		
-		memcpy( & dst [first], m_buffer, second * sizeof( SampleFrame ) );
-		zeroSampleFrames(m_buffer, second);
+		memcpy( & dst [first],  m_buffer.data(), second * sizeof( SampleFrame ) );
+		zeroSampleFrames(m_buffer.data(), second);
 	}
 	
 	m_position = ( m_position + m_fpp ) % m_size;
@@ -156,7 +148,7 @@ void RingBuffer::read( SampleFrame* dst, f_cnt_t offset )
 		
 		memcpy( dst, & m_buffer [pos], first * sizeof( SampleFrame ) );
 		
-		memcpy( & dst [first], m_buffer, second * sizeof( SampleFrame ) );
+		memcpy( & dst [first],  m_buffer.data(), second * sizeof( SampleFrame ) );
 	}
 }
 
@@ -182,7 +174,7 @@ void RingBuffer::read( SampleFrame* dst, f_cnt_t offset, f_cnt_t length )
 		
 		memcpy( dst, & m_buffer [pos], first * sizeof( SampleFrame ) );
 		
-		memcpy( & dst [first], m_buffer, second * sizeof( SampleFrame ) );
+		memcpy( & dst [first],  m_buffer.data(), second * sizeof( SampleFrame ) );
 	}
 }
 
@@ -209,7 +201,7 @@ void RingBuffer::write( SampleFrame* src, f_cnt_t offset, f_cnt_t length )
 
 		memcpy( & m_buffer [pos], src, first * sizeof( SampleFrame ) );
 		
-		memcpy( m_buffer, & src [first], second * sizeof( SampleFrame ) );
+		memcpy(  m_buffer.data(), & src [first], second * sizeof( SampleFrame ) );
 	}
 }
 
@@ -236,7 +228,7 @@ void RingBuffer::writeAdding( SampleFrame* src, f_cnt_t offset, f_cnt_t length )
 
 		MixHelpers::add( & m_buffer[pos], src, first );
 		
-		MixHelpers::add( m_buffer, & src[first], second );
+		MixHelpers::add(  m_buffer.data(), & src[first], second );
 	}
 }
 
@@ -264,7 +256,7 @@ void RingBuffer::writeAddingMultiplied( SampleFrame* src, f_cnt_t offset, f_cnt_
 
 		MixHelpers::addMultiplied( & m_buffer[pos], src, level, first );
 		
-		MixHelpers::addMultiplied( m_buffer, & src [first], level, second );
+		MixHelpers::addMultiplied(  m_buffer.data(), & src [first], level, second );
 	}
 }
 
@@ -292,7 +284,7 @@ void RingBuffer::writeSwappedAddingMultiplied( SampleFrame* src, f_cnt_t offset,
 
 		MixHelpers::addSwappedMultiplied( & m_buffer [pos], src, level, first );
 		
-		MixHelpers::addSwappedMultiplied( m_buffer, & src [first], level, second );
+		MixHelpers::addSwappedMultiplied(  m_buffer.data(), & src [first], level, second );
 	}
 }
 
@@ -308,9 +300,7 @@ void RingBuffer::updateSamplerate()
 	float newsize = static_cast<float>( ( m_size - m_fpp ) * Engine::audioEngine()->outputSampleRate() ) / m_samplerate;
 	m_size = static_cast<f_cnt_t>( ceilf( newsize ) ) + m_fpp;
 	m_samplerate = Engine::audioEngine()->outputSampleRate();
-	delete[] m_buffer;
-	m_buffer = new SampleFrame[ m_size ];
-	zeroSampleFrames(m_buffer, m_size);
+	m_buffer.assign(m_size, SampleFrame{});
 	m_position = 0;
 }
 

@@ -24,14 +24,12 @@
 
 #include "ThreadedExportManager.h"
 
+#include "ErrorLog.h"
 #include "FlacExporter.h"
 #include "SampleBuffer.h"
 
 namespace lmms
 {
-
-ThreadedExportManager::ThreadedExportManager()
-{}
 
 ThreadedExportManager::~ThreadedExportManager()
 {
@@ -39,63 +37,75 @@ ThreadedExportManager::~ThreadedExportManager()
 }
 
 
-void ThreadedExportManager::startExporting(const QString& outputLocationAndName, std::shared_ptr<const SampleBuffer> buffer, callbackFn callbackFunction, void* callbackObject)
-{
-	m_readMutex.lock();
-	m_buffers.push_back(std::make_tuple(outputLocationAndName, buffer, callbackFunction, callbackObject));
-	m_readMutex.unlock();
 
-	if (m_isThreadRunning == false)
+
+void ThreadedExportManager::startExporting(const QString& outputLocationAndName,
+	std::shared_ptr<const SampleBuffer> buffer, callbackFn callbackFunction, void* callbackObject)
+{
+	if (!buffer) { return; }
 	{
-		stopExporting();
-		m_isThreadRunning = true;
-		m_thread = new std::thread(&ThreadedExportManager::threadedExportMethod, this, &m_isThreadRunning);
+		const auto lock = std::lock_guard{m_mutex};
+		m_requests.push_back({outputLocationAndName, std::move(buffer), callbackFunction, callbackObject});
+		if (!m_thread.joinable())
+		{
+			m_stopping = false;
+			m_thread = std::thread{&ThreadedExportManager::run, this};
+		}
 	}
+	m_requested.notify_one();
 }
+
+
+
 
 void ThreadedExportManager::stopExporting()
 {
-	if (m_thread != nullptr)
 	{
-		m_isThreadRunning = false;
-		m_thread->join();
-		delete m_thread;
-		m_thread = nullptr;
+		const auto lock = std::lock_guard{m_mutex};
+		if (!m_thread.joinable()) { return; }
+		m_stopping = true;
+	}
+	m_requested.notify_one();
+	m_thread.join();
+	m_thread = std::thread{};
+}
+
+
+
+
+void ThreadedExportManager::run()
+{
+	auto lock = std::unique_lock{m_mutex};
+	while (true)
+	{
+		m_requested.wait(lock, [this] { return !m_requests.empty() || m_stopping; });
+		// (what is queued is written before stopping)
+		if (m_requests.empty()) { return; }
+		const auto request = std::move(m_requests.front());
+		m_requests.pop_front();
+
+		lock.unlock();
+		write(request);
+		lock.lock();
 	}
 }
 
 
-void ThreadedExportManager::threadedExportMethod(ThreadedExportManager* thisExporter, std::atomic<bool>* shouldRun)
+
+
+void ThreadedExportManager::write(const Request& request)
 {
-	while (*shouldRun == true)
+	// (its file is closed before the callback)
 	{
-		std::tuple<QString, std::shared_ptr<const SampleBuffer>, callbackFn, void*> curBuffer = std::make_tuple(QString(""), nullptr, nullptr, nullptr);
-		thisExporter->m_readMutex.lock();
-		bool shouldExit = thisExporter->m_buffers.size() <= 0;
-		if (shouldExit == false)
+		auto exporter = FlacExporter{static_cast<int>(request.buffer->sampleRate()), 24, request.path};
+		if (exporter.getIsSuccesful()) { exporter.writeThisBuffer(request.buffer->data(), request.buffer->size()); }
+		else
 		{
-			curBuffer = thisExporter->m_buffers[thisExporter->m_buffers.size() - 1];
-			thisExporter->m_buffers.pop_back();
-		}
-		thisExporter->m_readMutex.unlock();
-		if (shouldExit) { break; }
-
-		// important new scope
-		// can't call back if flacExporter's file is open
-		{
-			FlacExporter flacExporter(std::get<1>(curBuffer)->sampleRate(), 24, std::get<0>(curBuffer));
-			if (flacExporter.getIsSuccesful())
-			{
-				flacExporter.writeThisBuffer(std::get<1>(curBuffer)->data(), std::get<1>(curBuffer)->size());
-			}
-		}
-
-		if (std::get<2>(curBuffer))
-		{
-			// calling callback funcion
-			std::get<2>(curBuffer)(std::get<3>(curBuffer));
+			ErrorLog::reportText(ErrorLog::Severity::Error, "ThreadedExportManager",
+				QString{"could not write %1"}.arg(request.path));
 		}
 	}
+	if (request.callback) { request.callback(request.callbackObject); }
 }
 
 } // namespace lmms

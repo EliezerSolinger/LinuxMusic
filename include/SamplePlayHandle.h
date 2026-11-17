@@ -26,6 +26,8 @@
 #ifndef LMMS_SAMPLE_PLAY_HANDLE_H
 #define LMMS_SAMPLE_PLAY_HANDLE_H
 
+#include <memory>
+
 #include "Sample.h"
 #include "PlayHandle.h"
 #include "VoicePool.h"
@@ -42,8 +44,9 @@ class Track;
 class LMMS_EXPORT SamplePlayHandle : public PlayHandle
 {
 public:
-	SamplePlayHandle(Sample* sample, bool ownAudioBusHandle = true);
-	SamplePlayHandle( const QString& sampleFile );
+	//! Plays a sample of its own, on a bus of its own (a preview, a click)
+	explicit SamplePlayHandle(std::unique_ptr<Sample> sample);
+	explicit SamplePlayHandle( const QString& sampleFile );
 	SamplePlayHandle( SampleClip* clip );
 	//! A handle for a sample track's pool: nothing to play until restart() gives it a clip
 	SamplePlayHandle();
@@ -87,11 +90,12 @@ private:
 	Sample::PlaybackState m_state;
 	f_cnt_t m_frame = 0;
 	Sample* m_sample = nullptr;
+	std::unique_ptr<Sample> m_ownSample; //!< When the sample is its own
+	std::unique_ptr<AudioBusHandle> m_ownBus; //!< When the bus is its own
 	Track* m_track = nullptr;
 	SampleClip* m_clip = nullptr;
 	PatternTrack* m_patternTrack = nullptr;
 	bool m_doneMayReturnTrue = true;
-	bool m_ownAudioBusHandle = false;
 } ;
 
 

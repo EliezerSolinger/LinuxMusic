@@ -269,7 +269,7 @@ public:
 
 	AutomationTrack * globalAutomationTrack()
 	{
-		return m_globalAutomationTrack;
+		return m_globalAutomationTrack.get();
 	}
 
 	//TODO: Add Q_DECL_OVERRIDE when Qt4 is dropped
@@ -582,7 +582,8 @@ private:
 
 	void setProjectFileName(QString const & projectFileName);
 
-	AutomationTrack * m_globalAutomationTrack;
+	//! (its Qt parent is this song too, for the model tree: it goes first, in ~Song())
+	std::unique_ptr<AutomationTrack> m_globalAutomationTrack;
 
 	IntModel m_tempoModel;
 	MeterModel m_timeSigModel;

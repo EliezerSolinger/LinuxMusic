@@ -25,6 +25,8 @@
 #ifndef MONODELAY_H
 #define MONODELAY_H
 
+#include <vector>
+
 #include "LmmsTypes.h"
 
 namespace lmms
@@ -35,9 +37,9 @@ class MonoDelay
 {
 public:
 	MonoDelay( int maxTime , int sampleRate );
-	~MonoDelay();
 	inline void setLength( float length )
 	{
+		// (m_maxLength reads the oldest frame, the one written next)
 		if( length <= m_maxLength && length >= 0 )
 		{
 			m_length = length;
@@ -53,11 +55,11 @@ public:
 	void setSampleRate( int sampleRate );
 
 private:
-	sample_t* m_buffer;
-	int m_maxLength;
-	float m_length;
-	int m_writeIndex;
-	float m_feedback;
+	std::vector<sample_t> m_buffer;
+	int m_maxLength = 1;
+	float m_length = 0.f;
+	int m_writeIndex = 0;
+	float m_feedback = 0.f;
 	float m_maxTime;
 };
 
