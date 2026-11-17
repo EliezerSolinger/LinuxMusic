@@ -158,15 +158,16 @@ private:
 
 
 	// tab-widget with all children
-	TabWidget * m_tabWidget;
-	PluginView * m_instrumentView;
-	InstrumentSoundShapingView * m_ssView;
-	InstrumentFunctionNoteStackingView* m_noteStackingView;
-	InstrumentFunctionArpeggioView* m_arpeggioView;
-	QWidget* m_instrumentFunctionsView; // container of note stacking and arpeggio
-	InstrumentMidiIOView * m_midiView;
-	EffectRackView * m_effectView;
-	InstrumentTuningView *m_tuningView;
+	// (null until made: a resize can come while the window is still being built)
+	TabWidget * m_tabWidget = nullptr;
+	PluginView * m_instrumentView = nullptr;
+	InstrumentSoundShapingView * m_ssView = nullptr;
+	InstrumentFunctionNoteStackingView* m_noteStackingView = nullptr;
+	InstrumentFunctionArpeggioView* m_arpeggioView = nullptr;
+	QWidget* m_instrumentFunctionsView = nullptr; // container of note stacking and arpeggio
+	InstrumentMidiIOView * m_midiView = nullptr;
+	EffectRackView * m_effectView = nullptr;
+	InstrumentTuningView *m_tuningView = nullptr;
 
 
 	// test-piano at the bottom of every instrument-settings-window

@@ -33,6 +33,8 @@
 #cmakedefine LMMS_HAVE_PULSEAUDIO
 #cmakedefine LMMS_HAVE_SDL
 #cmakedefine LMMS_HAVE_STK
+//! Where the build found STK's wave files (the Mallets need them)
+#define LMMS_STK_RAWWAVE_ROOT "@STK_RAWWAVE_ROOT@"
 #cmakedefine LMMS_HAVE_VST
 #cmakedefine LMMS_HAVE_VST_32
 #cmakedefine LMMS_HAVE_VST_64

@@ -27,8 +27,8 @@
 #include "Mallets.h"
 
 #include <QDir>
+#include <QLabel>
 #include <QDomElement>
-#include <QMessageBox>
 
 #include <stk/BandedWG.h>
 #include <stk/ModalBar.h>
@@ -515,14 +515,17 @@ MalletsInstrumentView::MalletsInstrumentView( MalletsInstrument * _instrument,
 	m_randomKnob->move(190, 190);
 	m_randomKnob->setHintText(tr("Random:"), "");
 
-	// try to inform user about missing Stk-installation
-	if( _instrument->m_filesMissing && getGUI() != nullptr )
+	// Without STK's wave files it plays nothing: said here, in the view (a modal box while the instrument window is
+	// being built ran its events half-made, and it crashed)
+	if (_instrument->m_filesMissing)
 	{
-		QMessageBox::information( 0, tr( "Missing files" ),
-				tr( "Your Stk-installation seems to be "
-					"incomplete. Please make sure "
-					"the full Stk-package is installed!" ),
-				QMessageBox::Ok );
+		auto* missing = new QLabel(tr("STK's wave files were not found, so this instrument plays nothing. Install "
+			"the STK package, or set its folder in Settings, Paths."), this);
+		missing->setWordWrap(true);
+		missing->setAlignment(Qt::AlignCenter);
+		missing->setAutoFillBackground(true);
+		missing->setStyleSheet("QLabel { background: rgba(0, 0, 0, 200); color: #ff6b6b; padding: 6px; }");
+		missing->setGeometry(10, 10, 230, 70);
 	}
 }
 

@@ -24,6 +24,8 @@
 
 #include "InstrumentTrackWindow.h"
 
+#include <utility>
+
 #include <QDir>
 #include <QDropEvent>
 #include <QHBoxLayout>
@@ -461,7 +463,8 @@ void InstrumentTrackWindow::updateName()
 
 void InstrumentTrackWindow::updateInstrumentView()
 {
-	delete m_instrumentView;
+	// (null while the new one is made: making it may run events, a resize among them)
+	delete std::exchange(m_instrumentView, nullptr);
 	if (auto instrument = m_track->instrument())
 	{
 		m_instrumentView = instrument->createView( m_tabWidget );
@@ -722,6 +725,7 @@ void InstrumentTrackWindow::viewPrevInstrument()
 
 void InstrumentTrackWindow::adjustTabSize(QWidget *w)
 {
+	if (!w) { return; } // (not made yet)
 	// "-1" :
 	// in "TabWidget::addTab", under "Position tab's window", the widget is
 	// moved up by 1 pixel

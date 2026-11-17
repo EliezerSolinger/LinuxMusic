@@ -24,13 +24,17 @@
 
 #include "ConfigManager.h"
 
+#include <algorithm>
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QDomElement>
+#include <QFileInfo>
 #include <QStandardPaths>
 #include <QTextStream>
 
 #include "DeprecationHelper.h"
+#include "ErrorLog.h"
 #include "PathUtil.h"
 #include "ProjectVersion.h"
 #include "UserNotice.h"
@@ -567,24 +571,27 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 	}
 
 #ifdef LMMS_HAVE_STK
-	if(m_stkDir.isEmpty() || m_stkDir == QDir::separator() || m_stkDir == "/" ||
-			!QDir(m_stkDir).exists())
+	// The folder with STK's wave files: the one set, if it has them; else the first that has them
+	const auto hasRawwaves = [](const QString& dir) {
+		return !dir.isEmpty() && dir != "/" && QFileInfo::exists(QDir{dir}.filePath("sinewave.raw"));
+	};
+	if (!hasRawwaves(m_stkDir))
 	{
-#if defined(LMMS_BUILD_WIN32)
-		m_stkDir = m_dataDir + "stk/rawwaves/";
-#else
-		// Look for bundled raw waves first
-		m_stkDir = QCoreApplication::applicationDirPath() + "/../share/stk/rawwaves/";
-		// Try system installations if not exists
-		if (!QDir(m_stkDir).exists())
+		const auto candidates = QStringList{
+			m_dataDir + "stk/rawwaves/", // bundled with the program (Windows, macOS)
+			QCoreApplication::applicationDirPath() + "/../share/stk/rawwaves/",
+			QString{LMMS_STK_RAWWAVE_ROOT}, // where the build found STK
+			"/opt/homebrew/share/stk/rawwaves/",
+			"/usr/local/share/stk/rawwaves/",
+			"/usr/share/stk/rawwaves/",
+			"/usr/share/libstk/rawwaves/"};
+		const auto found = std::find_if(candidates.begin(), candidates.end(), hasRawwaves);
+		if (found != candidates.end()) { m_stkDir = ensureTrailingSlash(*found); }
+		else
 		{
-			m_stkDir = "/usr/local/share/stk/rawwaves/";
+			ErrorLog::reportText(ErrorLog::Severity::Warning, "ConfigManager",
+				"STK's wave files were not found: the Mallets instrument cannot play");
 		}
-		if (!QDir(m_stkDir).exists())
-		{
-			m_stkDir = "/usr/share/stk/rawwaves/";
-		}
-#endif
 	}
 #endif // LMMS_HAVE_STK
 
