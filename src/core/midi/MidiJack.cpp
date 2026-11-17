@@ -29,6 +29,7 @@
 
 #include "AudioEngine.h"
 #include "AudioJack.h"
+#include "ErrorLog.h"
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "lmmsversion.h"
@@ -73,13 +74,11 @@ MidiJack::MidiJack() :
 	// and also handles the callback, we pass it our address
 	// so that we can also process during the callback
 
-	m_jackAudio = dynamic_cast<AudioJack*>(Engine::audioEngine()->audioDev());
-	if( m_jackAudio )
+	// (a JACK audio device without a connection of its own takes no MIDI client)
+	auto* jackAudio = dynamic_cast<AudioJack*>(Engine::audioEngine()->audioDev());
+	m_jackAudio = jackAudio ? jackAudio->addMidiClient(this) : nullptr;
+	if (!m_jackAudio)
 	{
-		// if a jack connection has been created for audio we use that
-		m_jackAudio->addMidiClient(this);
-	}else{
-		m_jackAudio = nullptr;
 		m_jackClient = jack_client_open(probeDevice().toLatin1().data(),
 										JackNoStartServer, nullptr);
 
@@ -125,7 +124,7 @@ MidiJack::~MidiJack()
 			m_jackAudio->removeMidiClient();
 		}
 
-		if( jack_port_unregister( jackClient(), m_input_port) != 0){
+		if (m_input_port && jack_port_unregister(jackClient(), m_input_port) != 0) {
 			printf("Failed to unregister jack midi input\n");
 		}
 
@@ -177,9 +176,24 @@ QString MidiJack::probeDevice()
 }
 
 // we read data from jack
+void MidiJack::audioConnectionClosed()
+{
+	// (the audio device's callbacks have stopped: its client is deactivated)
+	m_jackAudio = nullptr;
+	m_input_port = nullptr;
+	m_output_port = nullptr;
+	ErrorLog::report(ErrorLog::Severity::Warning, "MidiJack",
+		"the JACK audio connection it shared closed: no JACK MIDI input until the MIDI device opens again");
+}
+
+
+
+
 void MidiJack::JackMidiRead(jack_nframes_t nframes)
 {
-	void* port_buf = jack_port_get_buffer(m_input_port, nframes);
+	auto* const port = m_input_port.load();
+	if (!port) { return; }
+	void* port_buf = jack_port_get_buffer(port, nframes);
 	jack_midi_event_t in_event;
 	jack_nframes_t event_index = 0;
 	jack_nframes_t event_count = jack_midi_get_event_count(port_buf);

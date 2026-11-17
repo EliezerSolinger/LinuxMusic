@@ -35,6 +35,8 @@
 #include <weak_libjack.h>
 #endif
 
+#include <atomic>
+
 #include <QThread>
 
 #include "MidiClient.h"
@@ -66,6 +68,9 @@ public:
 			"Jack-MIDI" ) );
 	}
 
+	//! The JACK audio device's connection it used is closing: it has no connection (nor port) now
+	void audioConnectionClosed();
+
 	void JackMidiWrite(jack_nframes_t nframes);
 	void JackMidiRead(jack_nframes_t nframes);
 
@@ -84,7 +89,8 @@ protected:
 private:
 	AudioJack *m_jackAudio;
 	jack_client_t *m_jackClient;
-	jack_port_t *m_input_port;
+	//! (read by the callback on JACK's thread)
+	std::atomic<jack_port_t*> m_input_port;
 	jack_port_t *m_output_port;
 	uint8_t m_jack_buffer[JACK_MIDI_BUFFER_MAX * 4];
 

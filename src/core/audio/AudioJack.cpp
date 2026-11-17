@@ -24,6 +24,8 @@
 
 #include "AudioJack.h"
 
+#include <thread>
+
 #ifdef LMMS_HAVE_JACK
 
 #include <QStringList>
@@ -94,6 +96,8 @@ AudioJack::~AudioJack()
 	if (m_client != nullptr)
 	{
 		if (m_active) { jack_deactivate(m_client); }
+		// A MIDI client on this connection loses it (its port goes with the client)
+		if (auto* midi = m_midiClient.exchange(nullptr)) { midi->audioConnectionClosed(); }
 		jack_client_close(m_client);
 	}
 
@@ -133,6 +137,15 @@ void AudioJack::restartAfterZombified()
 				"You should save your project and restart "
 				"JACK and LinuxMusic."));
 	}
+}
+
+
+
+
+void AudioJack::removeMidiClient()
+{
+	m_midiClient.store(nullptr);
+	while (m_inCallback.load()) { std::this_thread::yield(); }
 }
 
 
@@ -408,11 +421,15 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 {
 	// do midi processing first so that midi input can
 	// add to the following sound processing
-	if (m_midiClient && nframes > 0)
+	// (read once, and marked in use: removeMidiClient() waits for it; both sequentially consistent, so a remover
+	// that sees the callback outside has made every later callback see no client)
+	m_inCallback.store(true);
+	if (auto* midi = m_midiClient.load(); midi && nframes > 0)
 	{
-		m_midiClient.load()->JackMidiRead(nframes);
-		m_midiClient.load()->JackMidiWrite(nframes);
+		midi->JackMidiRead(nframes);
+		midi->JackMidiWrite(nframes);
 	}
+	m_inCallback.store(false);
 
 	for (int c = 0; c < channels(); ++c)
 	{

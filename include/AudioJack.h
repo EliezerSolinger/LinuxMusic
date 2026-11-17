@@ -99,7 +99,8 @@ public:
 	// the jack callback is handled here, we call the midi client so that it can read
 	// it's midi data during the callback
 	AudioJack* addMidiClient(MidiJack* midiClient);
-	void removeMidiClient() { m_midiClient = nullptr; }
+	//! Once it returns, the callback does not use the MIDI client any more (it may be deleted)
+	void removeMidiClient();
 	jack_client_t* jackClient() { return m_client; };
 
 	auto inputChannelName(ch_cnt_t channel) const -> QString override;
@@ -140,6 +141,8 @@ private:
 	bool m_active;
 
 	std::atomic<MidiJack*> m_midiClient;
+	//! The callback is using the MIDI client (see removeMidiClient())
+	std::atomic<bool> m_inCallback = false;
 	std::vector<jack_port_t*> m_outputPorts;
 	std::vector<jack_port_t*> m_inputPorts;
 	jack_default_audio_sample_t** m_tempOutBufs;
