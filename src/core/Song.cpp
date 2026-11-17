@@ -1560,6 +1560,8 @@ void Song::recoverInterruptedTakes(const QDomElement& element)
 void Song::startExport()
 {
 	stop();
+	// (an export starts from rest, the same whatever played before)
+	Engine::mixer()->discardProcessingState();
 
 	m_exporting = true;
 	updateLength();
@@ -1751,6 +1753,8 @@ void Song::clearProject()
 	{
 		stop();
 	}
+	// (the next project starts from rest: nothing of this one's audio held in the mixer)
+	if (Engine::mixer()) { Engine::mixer()->discardProcessingState(); }
 
 	for (auto i = std::size_t{0}; i < PlayModeCount; i++)
 	{

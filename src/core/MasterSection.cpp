@@ -306,6 +306,23 @@ void MasterSection::measure(std::span<const SampleFrame> frames, sample_rate_t s
 
 
 
+void MasterSection::resetState()
+{
+	m_gainStage.reset();
+	m_transformer.reset();
+	m_transformerWasOn = false;
+	m_monoBass.reset();
+	m_air.clearHistory();
+	m_airWasOn = false;
+	m_reduction = 0.f;
+	m_slowReduction = 0.f;
+	m_gainReduction.store(0.f, std::memory_order_relaxed);
+	measureSilence();
+}
+
+
+
+
 void MasterSection::measureSilence()
 {
 	m_preMeter.measureSilence();

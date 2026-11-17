@@ -156,6 +156,7 @@ public:
 	f_cnt_t m_latency = 0;			//!< of the channel's output: its latest input plus its effects
 	f_cnt_t m_trackLatency = 0;		//!< of the tracks' audio, e.g. of a latent instrument
 	LatencyDelay m_inputDelay;		//!< aligns the tracks' audio with the latest input
+	unsigned m_seenStateEpoch = 0; //!< the Mixer's state epoch this channel has reset for
 	std::vector<float> m_delayScratch;	//!< a delayed send's pair, planar (left, then right)
 
 	auto color() const -> const std::optional<QColor>& { return m_color; }
@@ -325,6 +326,14 @@ public:
 
 	//! The master section: bus compressor, monitoring and what the master's meters show
 	auto masterSection() -> MasterSection& { return m_masterSection; }
+
+	/**
+	 * What the channels hold from the audio played before (the analog strips' filters and dynamics, the latency
+	 * delay lines, the master section) is let go, so that what plays next starts from rest: a new project, an export
+	 * (the same each time, whatever played before). Each channel does it on the audio thread, at its next period.
+	 */
+	void discardProcessingState() { m_stateEpoch.fetch_add(1, std::memory_order_relaxed); }
+	auto stateEpoch() const -> unsigned { return m_stateEpoch.load(std::memory_order_relaxed); }
 
 	//! For undo/redo, the saved state also records which channel each track sends to: changing the
 	//! channel layout (e.g. deleting a channel) renumbers the tracks' channels, and undoing must restore them
@@ -569,6 +578,7 @@ private:
 	BoolModel m_toleranceModel;
 	std::vector<std::pair<AutomatableModel*, float>> m_legacyInverted;
 	MasterSection m_masterSection;
+	std::atomic<unsigned> m_stateEpoch = 0; //!< see discardProcessingState()
 
 	// make sure we have at least num channels
 	void allocateChannelsTo(int num);

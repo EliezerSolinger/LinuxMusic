@@ -213,6 +213,16 @@ void MixerChannel::doProcessing()
 {
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
 
+	// A new project or an export: nothing held from the audio played before (see Mixer::discardProcessingState())
+	if (const auto epoch = Engine::mixer()->stateEpoch(); epoch != m_seenStateEpoch)
+	{
+		m_seenStateEpoch = epoch;
+		m_analogStrip.reset();
+		m_inputDelay.clear();
+		for (MixerRoute* route : m_receives) { route->latencyDelay().clear(); }
+		if (isMaster()) { Engine::mixer()->masterSection().resetState(); }
+	}
+
 	// Read every parameter in every period, even without signal: a parameter change ramps to its new value
 	// over the next period that reads it, so skipping silent periods would delay the ramp until sound arrives
 	ValueBuffer* volBuf = m_volumeModel.valueBuffer();

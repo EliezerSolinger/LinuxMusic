@@ -96,6 +96,10 @@ public:
 	//! While it is out: it starts afresh when it is in again
 	void bypassTransformer() { m_transformerWasOn = false; }
 
+	//! Back to rest: what the drive, the transformer, the stereo section and the bus compressor held from before
+	//! (a new project, an export) [the master's processing thread]
+	void resetState();
+
 	// Stereo section (the width is the master channel's own width, see processStereo())
 	FloatModel m_monoBassModel;			//!< % mono below the mono bass frequency: 0 is off, 100 all mono
 	FloatModel m_bassFrequencyModel;		//!< Hz
