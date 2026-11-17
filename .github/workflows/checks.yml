@@ -19,6 +19,8 @@ jobs:
         run: tests/scripted/check-strings
       - name: Run check-namespace
         run: tests/scripted/check-namespace
+      - name: Run check-core-gui
+        run: tests/scripted/check-core-gui
   shellcheck:
     runs-on: ubuntu-latest
     container: koalaman/shellcheck-alpine:v0.9.0

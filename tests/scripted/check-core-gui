@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+
+# This script checks that the core (src/core, src/tracks and their headers) does not include the GUI: neither a
+# header whose code is in src/gui, nor a Qt Widgets class. The core must run without a GUI (rendering, importing
+# and exporting from the command line, the tests), and a dependency on a window there is how a headless run
+# crashes. The files that still do it are listed in EXCEPTIONS below: the list may only shrink, and a file listed
+# that no longer includes the GUI is reported too, so that it leaves the list.
+
+import re
+import sys
+from pathlib import Path
+
+# Qt Widgets' classes (Qt 6)
+QT_WIDGETS = set('''
+	QAbstractButton QAbstractGraphicsShapeItem QAbstractItemDelegate QAbstractItemView QAbstractScrollArea
+	QAbstractSlider QAbstractSpinBox QAccessibleWidget QApplication QBoxLayout QButtonGroup QCalendarWidget
+	QCheckBox QColorDialog QColormap QColumnView QComboBox QCommandLinkButton QCommonStyle QCompleter
+	QDataWidgetMapper QDateEdit QDateTimeEdit QDial QDialog QDialogButtonBox QDockWidget QDoubleSpinBox
+	QErrorMessage QFileDialog QFileIconProvider QFocusFrame QFontComboBox QFontDialog QFormLayout QFrame QGesture
+	QGestureEvent QGestureRecognizer QGraphicsAnchor QGraphicsAnchorLayout QGraphicsBlurEffect
+	QGraphicsColorizeEffect QGraphicsDropShadowEffect QGraphicsEffect QGraphicsEllipseItem QGraphicsGridLayout
+	QGraphicsItem QGraphicsItemAnimation QGraphicsItemGroup QGraphicsLayout QGraphicsLayoutItem QGraphicsLineItem
+	QGraphicsLinearLayout QGraphicsObject QGraphicsOpacityEffect QGraphicsPathItem QGraphicsPixmapItem
+	QGraphicsPolygonItem QGraphicsProxyWidget QGraphicsRectItem QGraphicsRotation QGraphicsScale QGraphicsScene
+	QGraphicsSceneContextMenuEvent QGraphicsSceneDragDropEvent QGraphicsSceneEvent QGraphicsSceneHelpEvent
+	QGraphicsSceneHoverEvent QGraphicsSceneMouseEvent QGraphicsSceneMoveEvent QGraphicsSceneResizeEvent
+	QGraphicsSceneWheelEvent QGraphicsSimpleTextItem QGraphicsTextItem QGraphicsTransform QGraphicsView
+	QGraphicsWidget QGridLayout QGroupBox QHBoxLayout QHeaderView QInputDialog QItemDelegate QItemEditorCreator
+	QItemEditorCreatorBase QItemEditorFactory QKeySequenceEdit QLCDNumber QLabel QLayout QLayoutItem QLineEdit
+	QListView QListWidget QListWidgetItem QMainWindow QMdiArea QMdiSubWindow QMenu QMenuBar QMessageBox
+	QPanGesture QPinchGesture QPlainTextDocumentLayout QPlainTextEdit QProgressBar QProgressDialog QProxyStyle
+	QPushButton QRadioButton QRhiWidget QRubberBand QScrollArea QScrollBar QScroller QScrollerProperties
+	QSizeGrip QSizePolicy QSlider QSpacerItem QSpinBox QSplashScreen QSplitter QSplitterHandle QStackedLayout
+	QStackedWidget QStandardItemEditorCreator QStatusBar QStyle QStyleFactory QStyleHintReturn
+	QStyleHintReturnMask QStyleHintReturnVariant QStyleOption QStyleOptionButton QStyleOptionComboBox
+	QStyleOptionComplex QStyleOptionDockWidget QStyleOptionFocusRect QStyleOptionFrame QStyleOptionGraphicsItem
+	QStyleOptionGroupBox QStyleOptionHeader QStyleOptionMenuItem QStyleOptionProgressBar QStyleOptionRubberBand
+	QStyleOptionSizeGrip QStyleOptionSlider QStyleOptionSpinBox QStyleOptionTab QStyleOptionTabBarBase
+	QStyleOptionTabWidgetFrame QStyleOptionTitleBar QStyleOptionToolBar QStyleOptionToolBox
+	QStyleOptionToolButton QStyleOptionViewItem QStylePainter QStylePlugin QStyledItemDelegate QSwipeGesture
+	QSystemTrayIcon QTabBar QTabWidget QTableView QTableWidget QTableWidgetItem QTableWidgetSelectionRange
+	QTapAndHoldGesture QTapGesture QTextBrowser QTextEdit QTileRules QTimeEdit QToolBar QToolBox QToolButton
+	QToolTip QTreeView QTreeWidget QTreeWidgetItem QTreeWidgetItemIterator QUndoView QVBoxLayout QWhatsThis
+	QWidget QWidgetAction QWidgetData QWidgetItem QWizard QWizardPage
+'''.split())
+
+# Files that still include the GUI, with what they include (see docs/plano-refatoracao.md, phase 1)
+EXCEPTIONS: dict[str, set[str]] = {
+	'include/AudioCoreAudio.h': {'AudioDeviceSetupWidget.h'},
+	'include/AudioJack.h': {'AudioDeviceSetupWidget.h'},
+	'include/AudioPortAudio.h': {'AudioDeviceSetupWidget.h', 'QComboBox', 'QFormLayout', 'QWidget'},
+	'include/AudioPulseAudio.h': {'AudioDeviceSetupWidget.h'},
+	'include/AudioSdl.h': {'AudioDeviceSetupWidget.h'},
+	'include/AudioSndio.h': {'AudioDeviceSetupWidget.h'},
+	'include/ComboBoxModel.h': {'embed.h'},
+	'include/LfoController.h': {'ControllerDialog.h'},
+	'include/MidiController.h': {'QWidget'},
+	'include/PeakController.h': {'ControllerDialog.h'},
+	'src/core/AudioItem.cpp': {'AudioItemView.h'},
+	'src/core/AudioPortsModel.cpp': {'PinConnector.h'},
+	'src/core/AutomationClip.cpp': {'AutomationClipView.h'},
+	'src/core/Clip.cpp': {'AutomationEditor.h', 'GuiApplication.h'},
+	'src/core/Clipboard.cpp': {'QApplication'},
+	'src/core/ConfigManager.cpp': {'GuiApplication.h', 'MainWindow.h', 'QApplication', 'QMessageBox'},
+	'src/core/Controller.cpp': {'ControllerDialog.h'},
+	'src/core/DataFile.cpp': {'GuiApplication.h', 'QMessageBox', 'SongEditor.h', 'TextFloat.h', 'embed.h'},
+	'src/core/Effect.cpp': {'EffectView.h'},
+	'src/core/ImportFilter.cpp': {'QMessageBox'},
+	'src/core/InstrumentFunctions.cpp': {'embed.h'},
+	'src/core/InstrumentSoundShaping.cpp': {'embed.h'},
+	'src/core/PatternClip.cpp': {'PatternClipView.h'},
+	'src/core/PeakController.cpp': {'QMessageBox'},
+	'src/core/Plugin.cpp': {'GuiApplication.h', 'QMessageBox', 'embed.h'},
+	'src/core/SampleBuffer.cpp': {'GuiApplication.h', 'QMessageBox'},
+	'src/core/SampleClip.cpp': {'SampleClipView.h'},
+	'src/core/Song.cpp': {'AutomationEditor.h', 'ControllerRackView.h', 'GuiApplication.h', 'MixerView.h', 'PatternEditor.h', 'PianoRoll.h', 'ProjectNotes.h', 'QMessageBox', 'SongEditor.h'},
+	'src/core/StepRecorder.cpp': {'PianoRoll.h', 'StepRecorderWidget.h'},
+	'src/core/TrackContainer.cpp': {'GuiApplication.h', 'MainWindow.h', 'QProgressDialog', 'TextFloat.h', 'embed.h'},
+	'src/core/audio/AudioCoreAudio.cpp': {'QComboBox', 'QFormLayout'},
+	'src/core/audio/AudioFileDevice.cpp': {'ExportProjectDialog.h', 'GuiApplication.h', 'QMessageBox'},
+	'src/core/audio/AudioJack.cpp': {'GuiApplication.h', 'MainWindow.h', 'QFormLayout', 'QLabel', 'QLineEdit', 'QMenu', 'QMessageBox', 'QSpinBox', 'QToolButton'},
+	'src/core/audio/AudioPortAudio.cpp': {'LcdSpinBox.h'},
+	'src/core/audio/AudioPulseAudio.cpp': {'LcdSpinBox.h', 'QFormLayout', 'QLineEdit'},
+	'src/core/audio/AudioSdl.cpp': {'QComboBox', 'QFormLayout'},
+	'src/core/audio/AudioSndio.cpp': {'LcdSpinBox.h', 'QFormLayout', 'QLineEdit'},
+	'src/core/lv2/Lv2SubPluginFeatures.cpp': {'QHBoxLayout', 'QLabel'},
+	'src/core/main.cpp': {'GuiApplication.h', 'MainApplication.h', 'MainWindow.h', 'QApplication', 'QMessageBox', 'QPushButton', 'embed.h'},
+	'src/core/midi/MidiJack.cpp': {'GuiApplication.h', 'MainWindow.h', 'QMessageBox'},
+	'src/tracks/AudioTrack.cpp': {'SampleTrackView.h'},
+	'src/tracks/AutomationTrack.cpp': {'AutomationTrackView.h'},
+	'src/tracks/FolderTrack.cpp': {'FolderTrackView.h'},
+	'src/tracks/InstrumentTrack.cpp': {'GuiApplication.h', 'InstrumentTrackView.h', 'PianoRoll.h'},
+	'src/tracks/MidiClip.cpp': {'GuiApplication.h', 'MidiClipView.h', 'PianoRoll.h'},
+	'src/tracks/PatternTrack.cpp': {'PatternTrackView.h'},
+	'src/tracks/SampleTrack.cpp': {'SampleTrackView.h'},
+}
+
+INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
+
+
+def main() -> int:
+	root = Path(__file__).resolve().parent.parent.parent
+	gui_sources = {p.stem for p in (root / 'src/gui').rglob('*.cpp')}
+	core_dirs = [root / 'src/core', root / 'src/tracks']
+	core_sources = [p for d in core_dirs for p in d.rglob('*') if p.suffix in ('.cpp', '.h')]
+	core_stems = {p.stem for p in core_sources if p.suffix == '.cpp'}
+	# The core's headers: those in include/ whose code is in the core, not in the GUI
+	core_headers = [root / 'include' / f'{stem}.h' for stem in sorted(core_stems - gui_sources)
+		if (root / 'include' / f'{stem}.h').exists()]
+
+	def gui_includes(path: Path) -> set[str]:
+		found = set()
+		for name in INCLUDE.findall(path.read_text(encoding='utf-8', errors='replace')):
+			base = Path(name).name
+			stem = base[:-2] if base.endswith('.h') else base
+			if name.startswith('QtWidgets/') or (not base.endswith('.h') and stem in QT_WIDGETS):
+				found.add(name)
+			elif base.endswith('.h') and stem in gui_sources and stem not in core_stems:
+				found.add(name)
+		return found
+
+	errors = 0
+	seen = set()
+	for path in sorted(core_sources + core_headers):
+		relative = path.relative_to(root).as_posix()
+		found = gui_includes(path)
+		allowed = EXCEPTIONS.get(relative, set())
+		if found:
+			seen.add(relative)
+		for name in sorted(found - allowed):
+			print(f'{relative}: includes the GUI: {name}')
+			errors += 1
+		for name in sorted(allowed - found):
+			print(f'{relative}: no longer includes {name}: remove it from EXCEPTIONS in {Path(__file__).name}')
+			errors += 1
+	for relative in sorted(set(EXCEPTIONS) - seen - {p.relative_to(root).as_posix() for p in core_sources + core_headers}):
+		print(f'{relative}: listed in EXCEPTIONS but not a core file any more')
+		errors += 1
+	return 1 if errors else 0
+
+
+if __name__ == '__main__':
+	sys.exit(main())

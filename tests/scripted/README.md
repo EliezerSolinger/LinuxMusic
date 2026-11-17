@@ -22,3 +22,9 @@ matching the code.
 [check-namespace](check-namespace) checks namespaces and a few related things
 like `#ifdef`s.
 
+
+## Check core GUI
+
+[check-core-gui](check-core-gui) checks that the core (`src/core`, `src/tracks` and their headers) does not
+include the GUI: neither a header whose code is in `src/gui` nor a Qt Widgets class. The files that still do are
+listed in the script; the list may only shrink. It also runs as a test (`ctest -R check-core-gui`).
