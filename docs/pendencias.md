@@ -107,6 +107,12 @@ Motor e estabilidade:
   fica no item do microfone, abaixo
 - [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux (o usuário)
 - [ ] **Mac:** testar a entrada do microfone no hardware (precisa de alguém para aceitar o pedido de permissão)
+- [ ] **Demos com amostras removidas (decisão do usuário):** 11 projetos de `data/projects/demos` citam 26 amostras de
+  fábrica tiradas em `1090ff67c` (percussão e instrumentos acústicos): Alf42red-Mauiwowi, DnB, EsoXLB-CPU,
+  Farbro-Tectonic, Greippi, Oglsdl-PpTrip, Saber-FinalStep, Settel-InnerRecreation e Thomasso-AxeFromThe80s, entre
+  outros. Ao abrir, eles avisam que as amostras não foram encontradas e tocam sem elas. Saídas possíveis: trocar por
+  amostras parecidas que ficaram, devolver essas amostras, ou tirar as demos (a lista completa sai do script em
+  `docs/plano-refatoracao.md`, fase 2)
 - [x] **Arte própria** do logo e do splash: um anel de gravar em volta das barras de uma forma de onda, no verde do
   tema (`tools/artwork`: os SVGs e o gerador de todos os ícones, do splash e das artes dos instaladores)
 

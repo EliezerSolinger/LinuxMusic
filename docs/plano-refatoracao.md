@@ -296,3 +296,36 @@ render esperar (contador `periodsSkipped` zerado num teste de estresse), e o TSa
   refatoração.
 - Ferramenta: a worktree com o build de antes da refatoração (`56a30bfff`) fica em
   `~/.claude/jobs/49dcb579/tmp/refactor/base-src/build`, para comparar comportamentos.
+
+### Fase 2: sinais e valores entre threads
+- [x] 2.1 Levantamento empírico: `tools/check/gui-smoke.sh` com `GUI_SMOKE_ACTIONS=play` no build TSan toca projetos
+  com a interface aberta (a91c…: a ação `play`, a095f2689). Corridas encontradas e corrigidas:
+  - teclas do `Piano` (44cc1a831);
+  - medidores do EQ, Delay e Compressor, e o visualizador do compressor (`AtomicPeak`, 7bfa93263);
+  - controladores atualizados por várias threads, e a interface lendo o buffer (ee197b514, 24df4d38f);
+  - posição e loop do `Timeline` (f528569cb; duas referências pendentes que isso criou foram corrigidas em
+    23ecf4196);
+  - `InstrumentTrack` emitia um sinal por nota nas threads de áudio e MIDI, agora conta (554043cee);
+  - ZynAddSubFX: o gerador aleatório e os contadores globais (74f600343, bc6d6c7b8).
+- [x] 2.2 `AutomatableModel`: o valor é atômico (6fc4f7c6f).
+- [x] 2.3 O indicador de atividade da faixa lê contadores atômicos em vez de receber sinais (554043cee).
+- [x] 2.4 `ThreadStressTest` (98c34d514): a interface e o áudio ao mesmo tempo. Ele achou as referências pendentes e
+  o pool de notas fora do ciclo de vida do motor; agora o `Engine` é dono dele (43b11b9cc).
+- Achados de determinismo no caminho (as renderizações variavam entre execuções):
+  - o LB302 tocava a nota que chegasse por último, na ordem das threads (fd62e74ad);
+  - o barramento somava as notas na ordem em que as threads as criavam (dcf9fe6b3).
+  - Agora as renderizações são idênticas bit a bit entre execuções (`tools/check/determinism.sh`), fora as
+    aleatórias e o ladspa-mbeq (planos do FFTW medidos na hora).
+- Outros achados: a captura de tela travava com uma caixa modal de erro de carregamento, e os avisos agora vão
+  sempre também para o log (2569f0c6b).
+- Para fases seguintes (anotado aqui):
+  - Fase 5: os `calc*`/`update*` dos efeitos e instrumentos internos rodam na thread que muda o modelo (interface ou
+    automação) e escrevem coeficientes que o `process()` lê. É o mesmo padrão em quase todos; a correção é
+    recalcular no `process()` quando o modelo mudou (`isValueChanged()`).
+  - Fase 5: instrumentos de fluxo único (SF2, GIG, OpulenZ, SID, FreeBoy, LV2) recebem notas simultâneas na ordem das
+    threads: a alocação de vozes pode variar. A saída é ordenar os eventos do período como no LB302.
+  - Fase 6 (terceiros): no ZynAddSubFX, o tempo do LFO "contínuo" é um só para todas as instâncias. Cada `Master`
+    precisa do seu, como o `AbsTime` do Zyn 3.
+  - Fase 7: os sinais `valueChanged` de cada controlador por período e os `dataChanged` emitidos pela automação na
+    thread de áudio alocam eventos do Qt (do pool de tempo real).
+
