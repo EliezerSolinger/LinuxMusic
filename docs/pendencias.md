@@ -114,6 +114,87 @@ Motor e estabilidade:
 - [x] **Arte própria** do logo e do splash: um anel de gravar em volta das barras de uma forma de onda, no verde do
   tema (`tools/artwork`: os SVGs e o gerador de todos os ícones, do splash e das artes dos instaladores)
 
+## Pedidos de 17/11 (depois da refatoração do núcleo)
+
+O usuário pediu que cada item seja feito com muita atenção. Vêm depois do `docs/plano-refatoracao.md`. A exceção é a
+queda do Mallets, que é queda e entra antes.
+
+- [ ] **Mallets sem STK derruba o programa (segfault).** Ao abrir, ele avisa que falta o STK e cai.
+  - Consertar a queda.
+  - Depois, varrer os outros instrumentos pelo mesmo padrão: dependência ausente seguida de uso.
+  - Decidir se a dependência própria do STK é necessária. Hoje ela serve só a ele: ver o que o Mallets usa do STK e
+    se dá para trazer só isso (licença do STK: MIT-like) ou embutir os arquivos de dados (rawwaves) que faltam.
+  - Completar os recursos que faltam nele.
+- [ ] **Cadeia de efeitos vira "Rack de efeitos"**, como os racks analógicos:
+  - mais larga, com o painel de cada efeito que couber direto no rack;
+  - por efeito, uma barrinha de topo bem pequena (ligar, nome, mover, remover), com os knobs P/L e DEC mais
+    discretos;
+  - o botão de configuração some para os efeitos que cabem;
+  - os de tela grande ganham "Ajustar efeito", que abre a janela deles;
+  - vale para os nativos e os LADSPA. Conferir o tamanho de cada janela antes de escolher a largura.
+- [ ] **Sintetizadores incompletos:** levantar comentários na internet e em fóruns sobre cada sintetizador, listar
+  as limitações e os problemas citados pelos usuários, e consertar todos. Primeiro a lista por sintetizador, com as
+  fontes; depois os consertos.
+  - Pesquisa feita: `docs/pesquisas/sintetizadores-reclamacoes.md` (22 instrumentos, com as issues do LMMS).
+  - Os primeiros da lista:
+    - queda ao abrir a janela do AudioFileProcessor (#8647): não se repetiu aqui (o teste da interface abriu a
+      janela do `inst-afp` sem cair em 17/11). Testar ainda com um arquivo carregado e mudando o loop;
+    - Vibed a 192 kHz (divisão inteira que dá zero);
+    - Xpressive trava por overflow;
+    - notas presas (OpulenZ, Zyn com arpejador, troca de canal);
+    - LB302 não reseta entre exportações;
+    - volumes padrão muito desiguais;
+    - o host LV2 não abre a interface nativa dos plugins;
+    - aliasing em vários osciladores;
+    - FreeBoy com offset DC.
+- [ ] **Bibliotecas de sons para os players:**
+  - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
+  - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.
+  - Só arquivos com licença que permita distribuir com um programa GPL. Conferir a licença de cada um e
+    registrá-la (créditos).
+  - Pesquisa feita: `docs/pesquisas/bibliotecas-de-sons.md`.
+    - SF2: GeneralUser GS e instrumentos CC0 do FreePats.
+    - GIG: não existe um conjunto `.gig` pronto com licença livre confirmada. Vamos gerar os nossos com o
+      `wav2gig` da libgig, a partir de amostras CC0 (VSCO-2 CE, VCSL, FreePats).
+    - PAT: o conjunto GUS do FreePats (GPL-2+).
+    - O `data/samples/CMakeLists.txt` ainda não instala `.gig` nem `.pat`.
+- [ ] **Kicker: ataque padrão 0 dá um clique** a cada nota. O padrão passa a ser um ataque mínimo, nunca 0.
+  Conferir os outros instrumentos e efeitos com o mesmo problema.
+- [ ] **Configurações que só valem depois de reiniciar** (o backend de áudio, por exemplo): ao sair da tela de
+  configurações, nada muda até reiniciar à mão.
+  - Aplicar na hora o que der.
+  - O que precisar reiniciar avisa e oferece reiniciar.
+  - Levantar a lista de opções e o que cada uma precisa.
+  - Levantamento do código: `docs/pesquisas/levantamentos-codigo.md`.
+- [ ] **Categorias dos instrumentos:**
+  - o Vibed sai de "modelagem física" e vai para "sintetizador";
+  - subcategorias de sintetizador, porque são muitos.
+- [ ] **Plugin de baterias eletrônicas:** um instrumento visual como o AVL Drums, que:
+  - usa as amostras de baterias eletrônicas que já temos;
+  - mapeia cada peça numa nota MIDI;
+  - troca de bateria com a foto de cada uma, como no AVL.
+- [ ] **Guitarix integrado de verdade:** as peças dele viram efeitos nativos do LinuxMusic, compilados aqui
+  dentro: cabeçotes, amplificadores, gabinetes, pedais e efeitos. Não é hospedar o programa nem os LV2 dele.
+  - Cada peça é um efeito interno, no processo e no caminho do render, como os outros nativos
+    ([[builtin-plugins-in-process]]).
+  - No navegador de efeitos, o Guitarix é uma categoria própria, com as peças como subplugins dela (por exemplo:
+    Guitarix → Amplificadores, Cabeçotes, Gabinetes, Pedais...). Isso usa o mesmo segundo nível de categoria das
+    subcategorias de sintetizador.
+  - Pesquisa feita: `docs/pesquisas/guitarix.md`.
+    - O código próprio do Guitarix é GPL-2+ e serve.
+    - Ficam de fora o `zita-convolver` e o `zita-resampler` (GPL-3) e o `abgate` (LGPL-3).
+    - 44 unidades sobreamostram com o zita-resampler: trocar pelo hiir que já temos.
+    - O C++ gerado pelo Faust já vem pronto no repositório dele: não precisamos do Faust.
+    - Inventário: 18 pré-amplificadores, 6 amplificadores de potência, 27 tonestacks, 17 gabinetes e cerca de 80
+      pedais.
+    - Piloto sugerido: o Tube Screamer.
+  - Antes de começar:
+    - verificar a licença (precisa ser compatível com GPL-2.0-ou-posterior) e manter os créditos;
+    - levantar como o DSP dele é gerado (Faust) e o que isso exige no nosso build;
+    - listar todas as peças e o que já temos de parecido (AmpAndIr/NAM, mixer analógico);
+    - definir a interface de cada uma, que deve caber no rack de efeitos (item acima).
+- [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
+
 ## Feito recentemente (13/11)
 
 - [x] Faixa de áudio: modelo, player, interface (duas linhas, lanes, alças, crossfade, comp), tempo, gravação,
