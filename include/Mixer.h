@@ -526,6 +526,8 @@ signals:
 	void trackChannelChanged(lmms::Track* track);
 	//! The channels tracks can send to changed (see lastTrackableChannel())
 	void trackableChannelsChanged();
+	//! All channels were loaded anew (from a project)
+	void restored();
 
 private:
 	//! The track whose channel (see setUpTrackChannel()) is channel @p index, or nullptr

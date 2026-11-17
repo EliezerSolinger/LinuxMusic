@@ -52,7 +52,6 @@ EXCEPTIONS: dict[str, set[str]] = {
 	'include/AudioPulseAudio.h': {'AudioDeviceSetupWidget.h'},
 	'include/AudioSdl.h': {'AudioDeviceSetupWidget.h'},
 	'include/AudioSndio.h': {'AudioDeviceSetupWidget.h'},
-	'src/core/Song.cpp': {'AutomationEditor.h', 'ControllerRackView.h', 'GuiApplication.h', 'MixerView.h', 'PatternEditor.h', 'PianoRoll.h', 'ProjectNotes.h', 'SongEditor.h'},
 	'src/core/audio/AudioCoreAudio.cpp': {'QComboBox', 'QFormLayout'},
 	'src/core/audio/AudioJack.cpp': {'QFormLayout', 'QLabel', 'QLineEdit', 'QMenu', 'QSpinBox', 'QToolButton'},
 	'src/core/audio/AudioPortAudio.cpp': {'LcdSpinBox.h'},

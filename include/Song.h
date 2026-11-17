@@ -385,6 +385,14 @@ public:
 	//! @returns whether audio is being recorded
 	auto isRecordingAudio() const -> bool { return m_audioRecorder.isRecording(); }
 
+	/**
+	 * Parts of the project that others keep (the GUI's editors and notes), saved in the project and loaded back
+	 * by their node names, in the order they were added. Elements of the project nobody here reads (such parts,
+	 * when there is no GUI, or a newer program's) are kept as they were and saved back unchanged.
+	 */
+	void addProjectState(SerializingObject* state);
+	void removeProjectState(SerializingObject* state);
+
 	//! Whether the Piano Roll records into its clip what is played (set by it, read by the audio thread)
 	void setRecordingInPianoRoll(bool recording) { m_recordingInPianoRoll = recording; }
 	auto isRecordingInPianoRoll() const -> bool { return m_recordingInPianoRoll; }
@@ -641,6 +649,11 @@ private:
 	TempoMap m_tempoMap;
 	Transport m_transport{*this};
 	SongMarkers m_songMarkers;
+
+	//! See addProjectState()
+	std::vector<SerializingObject*> m_projectStates;
+	//! The project's elements nobody read when it loaded, saved back as they were (see addProjectState())
+	QDomDocument m_keptProjectElements;
 	bar_t m_length;
 
 	const MidiClip* m_midiClipToPlay;
@@ -673,6 +686,8 @@ private:
 	friend class gui::ControllerRackView;
 
 signals:
+	//! The project is about to be cleared: views of its tracks, clips and channels let go of them (main thread)
+	void aboutToClearProject();
 	void projectLoaded();
 	void playbackStateChanged();
 	void playbackPositionJumped();

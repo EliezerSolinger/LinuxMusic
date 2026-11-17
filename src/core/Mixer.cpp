@@ -1511,6 +1511,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 	ensureFxReturns();
 
 	emit dataChanged();
+	emit restored();
 }
 
 

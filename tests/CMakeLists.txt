@@ -28,6 +28,7 @@ set(LMMS_TESTS
 	src/core/PluginEventTest.cpp
 	src/core/PluginGuardTest.cpp
 	src/core/ProjectMediaTest.cpp
+	src/core/ProjectStateTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RealtimeAllocatorTest.cpp
 	src/core/RecordingTest.cpp

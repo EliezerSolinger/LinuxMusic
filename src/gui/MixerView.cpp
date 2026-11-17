@@ -114,6 +114,8 @@ MixerView::MixerView(Mixer* mixer) :
 	// Effect returns may be marked after their channels were made (see Mixer::ensureFxReturns())
 	connect(mixer, &Mixer::dataChanged, this, &MixerView::placeChannelViews);
 	connect(mixer, &Mixer::channelsSwapped, this, &MixerView::swapChannelViews);
+	// A project's channels: all views anew
+	connect(mixer, &Mixer::restored, this, &MixerView::refreshDisplay);
 
 	//QPalette pal = palette();
 	//pal.setColor(QPalette::Window, QColor(72, 76, 88));

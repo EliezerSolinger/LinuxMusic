@@ -301,6 +301,16 @@ GuiApplication::GuiApplication()
 	m_automationEditor = new AutomationEditorWindow;
 	connect(m_automationEditor, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
+	// What projects keep of the GUI (see Song::addProjectState), in the order the files have it
+	for (const auto& [owner, state] : std::initializer_list<std::pair<QObject*, SerializingObject*>>{
+		{m_controllerRackView, m_controllerRackView}, {m_pianoRoll, m_pianoRoll},
+		{m_automationEditor, m_automationEditor->m_editor}, {m_projectNotes, m_projectNotes}})
+	{
+		Engine::getSong()->addProjectState(state);
+		m_projectStates.insert(owner, state);
+	}
+	connect(Engine::getSong(), &Song::aboutToClearProject, this, &GuiApplication::clearProjectViews);
+
 	splashScreen.finish(m_mainWindow);
 	m_mainWindow->finalize();
 
@@ -512,8 +522,28 @@ void GuiApplication::displayInitProgress(const QString &msg)
 	qApp->processEvents();
 }
 
+void GuiApplication::clearProjectViews()
+{
+	if (m_patternEditor) { m_patternEditor->m_editor->clearAllTracks(); }
+	if (m_songEditor) { m_songEditor->m_editor->clearAllTracks(); }
+	if (m_mixerView) { m_mixerView->clear(); }
+	if (m_automationEditor) { m_automationEditor->setCurrentClip(nullptr); }
+	if (m_pianoRoll) { m_pianoRoll->reset(); }
+	if (m_projectNotes) { m_projectNotes->clear(); }
+}
+
+
+
+
 void GuiApplication::childDestroyed(QObject *obj)
 {
+	// A part of the project the GUI kept is gone with its window
+	if (const auto state = m_projectStates.find(obj); state != m_projectStates.end())
+	{
+		if (auto* song = Engine::getSong()) { song->removeProjectState(*state); }
+		m_projectStates.erase(state);
+	}
+
 	// when any object that can be reached via getGUI()->mainWindow(), getGUI()->mixerView(), etc
 	//   is destroyed, ensure that their accessor functions will return null instead of a garbage pointer.
 	if (obj == m_mainWindow)

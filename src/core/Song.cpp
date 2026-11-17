@@ -35,34 +35,27 @@
 #include <cmath>
 #include <map>
 
+#include "AutomationClip.h"
 #include "AutomationTrack.h"
-#include "AutomationEditor.h"
 #include <QDateTime>
 #include <QDir>
 #include "DataFile.h"
 #include "WavRepair.h"
 #include "ConfigManager.h"
-#include "ControllerRackView.h"
 #include "ControllerConnection.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "Mixer.h"
-#include "MixerView.h"
-#include "GuiApplication.h"
 #include "ExportFilter.h"
 #include "InstrumentTrack.h"
 #include "Keymap.h"
 #include "NotePlayHandle.h"
 #include "MidiClip.h"
-#include "PatternEditor.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
-#include "PianoRoll.h"
 #include "ProjectJournal.h"
 #include "PeakCache.h"
 #include "ProjectMedia.h"
-#include "ProjectNotes.h"
 #include "Scale.h"
-#include "SongEditor.h"
 #include "SampleClip.h"
 #include "PathUtil.h"
 #include "SampleTrack.h"
@@ -747,8 +740,6 @@ void Song::stop()
 	{
 		return;
 	}
-
-	using gui::TimeLineWidget;
 
 	// Where the recording of notes ends: what was heard last, before the play head moves
 	const auto recordingEnd = heardTick();
@@ -1676,10 +1667,27 @@ void Song::addSampleTrack()
 
 
 
+void Song::addProjectState(SerializingObject* state)
+{
+	if (std::find(m_projectStates.begin(), m_projectStates.end(), state) == m_projectStates.end())
+	{
+		m_projectStates.push_back(state);
+	}
+}
+
+
+void Song::removeProjectState(SerializingObject* state)
+{
+	std::erase(m_projectStates, state);
+}
+
+
+
+
 void Song::applyProjectSampleRate(sample_rate_t rate)
 {
 	auto* engine = Engine::audioEngine();
-	if (engine->renderOnly() || !gui::getGUI()) { return; }
+	if (engine->renderOnly()) { return; }
 	if (rate == 0)
 	{
 		rate = static_cast<sample_rate_t>(std::max(ConfigManager::inst()->value("audioengine", "samplerate").toInt(),
@@ -1736,7 +1744,6 @@ void Song::automatedValuesAt(TimePos time, int clipNum, AutomatedValueMap& value
 
 void Song::clearProject()
 {
-	using gui::getGUI;
 
 	Engine::projectJournal()->setJournalling( false );
 
@@ -1756,33 +1763,13 @@ void Song::clearProject()
 	m_tempoMap.clear();
 	m_songMarkers.clear();
 
-	if( getGUI() != nullptr && getGUI()->patternEditor() )
-	{
-		getGUI()->patternEditor()->m_editor->clearAllTracks();
-	}
-	if( getGUI() != nullptr && getGUI()->songEditor() )
-	{
-		getGUI()->songEditor()->m_editor->clearAllTracks();
-	}
-	if( getGUI() != nullptr && getGUI()->mixerView() )
-	{
-		getGUI()->mixerView()->clear();
-	}
+	// The views let go of what is about to go (the editors' tracks, the mixer's channels, the clips the editors show)
+	emit aboutToClearProject();
 	QCoreApplication::sendPostedEvents();
 	Engine::patternStore()->clearAllTracks();
 	clearAllTracks();
 
 	Engine::mixer()->clear();
-
-	if( getGUI() != nullptr && getGUI()->automationEditor() )
-	{
-		getGUI()->automationEditor()->setCurrentClip( nullptr );
-	}
-
-	if( getGUI() != nullptr && getGUI()->pianoRoll() )
-	{
-		getGUI()->pianoRoll()->reset();
-	}
 
 	m_tempoModel.reset();
 	m_masterVolumeModel.reset();
@@ -1800,10 +1787,7 @@ void Song::clearProject()
 
 	Engine::audioEngine()->doneChangeInModel();
 
-	if( getGUI() != nullptr && getGUI()->getProjectNotes() )
-	{
-		getGUI()->getProjectNotes()->clear();
-	}
+	m_keptProjectElements = QDomDocument{};
 
 	removeAllControllers();
 
@@ -1908,7 +1892,6 @@ void Song::createNewProjectFromTemplate( const QString & templ )
 // load given song
 void Song::loadProject( const QString & fileName )
 {
-	using gui::getGUI;
 
 	QDomNode node;
 
@@ -1985,11 +1968,6 @@ void Song::loadProject( const QString & fileName )
 	if( !node.isNull() )
 	{
 		Engine::mixer()->restoreState( node.toElement() );
-		if( getGUI() != nullptr )
-		{
-			// refresh MixerView
-			getGUI()->mixerView()->refreshDisplay();
-		}
 	}
 
 	node = dataFile.content().firstChild();
@@ -2048,27 +2026,22 @@ void Song::loadProject( const QString & fileName )
 				// The takes of an interrupted recording, once the tracks are all there (see below)
 				interruptedRecording = node.toElement();
 			}
-			else if( getGUI() != nullptr )
+			else if (node.nodeName() == getTimeline(PlayMode::Song).nodeName())
 			{
-				if( node.nodeName() == getGUI()->getControllerRackView()->nodeName() )
+				getTimeline(PlayMode::Song).restoreState(node.toElement());
+			}
+			else if (node.nodeName() != Engine::mixer()->nodeName())
+			{
+				const auto state = std::find_if(m_projectStates.begin(), m_projectStates.end(),
+					[&](SerializingObject* s) { return s->nodeName() == node.nodeName(); });
+				if (state != m_projectStates.end()) { (*state)->restoreState(node.toElement()); }
+				else
 				{
-					getGUI()->getControllerRackView()->restoreState( node.toElement() );
-				}
-				else if( node.nodeName() == getGUI()->pianoRoll()->nodeName() )
-				{
-					getGUI()->pianoRoll()->restoreState( node.toElement() );
-				}
-				else if( node.nodeName() == getGUI()->automationEditor()->m_editor->nodeName() )
-				{
-					getGUI()->automationEditor()->m_editor->restoreState( node.toElement() );
-				}
-				else if( node.nodeName() == getGUI()->getProjectNotes()->nodeName() )
-				{
-					 getGUI()->getProjectNotes()->SerializingObject::restoreState( node.toElement() );
-				}
-				else if (node.nodeName() == getTimeline(PlayMode::Song).nodeName())
-				{
-					getTimeline(PlayMode::Song).restoreState(node.toElement());
+					if (m_keptProjectElements.documentElement().isNull())
+					{
+						m_keptProjectElements.appendChild(m_keptProjectElements.createElement("kept"));
+					}
+					m_keptProjectElements.documentElement().appendChild(m_keptProjectElements.importNode(node, true));
 				}
 			}
 		}
@@ -2145,7 +2118,6 @@ void Song::loadProject( const QString & fileName )
 // only save current song as filename and do nothing else
 auto Song::serializeProject() -> DataFile
 {
-	using gui::getGUI;
 
 	DataFile dataFile( DataFile::Type::SongProject );
 	m_savingProject = true;
@@ -2159,14 +2131,15 @@ auto Song::serializeProject() -> DataFile
 	saveState( dataFile, dataFile.content() );
 
 	Engine::mixer()->saveState( dataFile, dataFile.content() );
-	if( getGUI() != nullptr )
+	for (auto* state : m_projectStates) { state->saveState(dataFile, dataFile.content()); }
+	for (auto kept = m_keptProjectElements.documentElement().firstChildElement(); !kept.isNull();
+		kept = kept.nextSiblingElement())
 	{
-		getGUI()->getControllerRackView()->saveState( dataFile, dataFile.content() );
-		getGUI()->pianoRoll()->saveState( dataFile, dataFile.content() );
-		getGUI()->automationEditor()->m_editor->saveState( dataFile, dataFile.content() );
-		getGUI()->getProjectNotes()->SerializingObject::saveState( dataFile, dataFile.content() );
-		getTimeline(PlayMode::Song).saveState(dataFile, dataFile.content());
+		const auto taken = std::any_of(m_projectStates.begin(), m_projectStates.end(),
+			[&](SerializingObject* s) { return s->nodeName() == kept.nodeName(); });
+		if (!taken) { dataFile.content().appendChild(dataFile.importNode(kept, true)); }
 	}
+	getTimeline(PlayMode::Song).saveState(dataFile, dataFile.content());
 
 	if (!m_tempoMap.isEmpty()) { m_tempoMap.saveState(dataFile, dataFile.content()); }
 	if (!m_songMarkers.markers().empty() || !m_songMarkers.regions().empty())
@@ -2213,7 +2186,6 @@ auto Song::serializeProject() -> DataFile
 
 bool Song::saveProjectFile(const QString & filename, bool withResources, bool gatherMedia)
 {
-	using gui::getGUI;
 
 	// ensure property order in file is consistent across saves
 #if QT_VERSION < QT_VERSION_CHECK(6, 6, 0)

@@ -563,7 +563,7 @@ private:
 
 
 
-class PianoRollWindow : public Editor, SerializingObject
+class PianoRollWindow : public Editor, public SerializingObject
 {
 	Q_OBJECT
 public:

@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_GUI_APPLICATION_H
 #define LMMS_GUI_GUI_APPLICATION_H
 
+#include <QHash>
 #include <QObject>
 
 #include "lmms_export.h"
@@ -32,6 +33,11 @@
 
 class QLabel;
 class QSocketNotifier;
+
+namespace lmms
+{
+class SerializingObject;
+}
 
 namespace lmms::gui
 {
@@ -89,10 +95,15 @@ public slots:
 
 private slots:
 	void childDestroyed(QObject *obj);
+	//! Lets go of the project's tracks, clips and channels before they go (see Song::aboutToClearProject())
+	void clearProjectViews();
 	void sigintOccurred();
 
 private:
 	static GuiApplication* s_instance;
+
+	//! What projects keep of the GUI, by the window that has it (see Song::addProjectState())
+	QHash<QObject*, SerializingObject*> m_projectStates;
 
 	MainWindow* m_mainWindow;
 	MixerView* m_mixerView;
