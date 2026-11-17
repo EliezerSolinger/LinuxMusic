@@ -278,3 +278,14 @@ void PatternClipView::update()
 }
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::ClipView* PatternClip::createView(gui::TrackView* tv)
+{
+	return new gui::PatternClipView(this, tv);
+}
+
+} // namespace lmms

@@ -30,7 +30,6 @@
 
 #include "GuiApplication.h"
 #include "InstrumentTrack.h"
-#include "MidiClipView.h"
 #include "PatternStore.h"
 #include "PianoRoll.h"
 
@@ -614,16 +613,6 @@ void MidiClip::removeSteps()
 		emit dataChanged();
 	}
 }
-
-
-
-
-gui::ClipView * MidiClip::createView( gui::TrackView * _tv )
-{
-	return new gui::MidiClipView( this, _tv );
-}
-
-
 
 
 void MidiClip::updatePatternTrack()

@@ -62,6 +62,7 @@
 #include "PinConnector.h"
 #include "TrackLabelButton.h"
 #include "embed.h"
+#include "InstrumentTrack.h"
 
 
 namespace lmms::gui
@@ -631,3 +632,14 @@ void InstrumentTrackView::fillMidiInputMenu(QMenu* menu)
 
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::TrackView* InstrumentTrack::createView( gui::TrackContainerView* tcv )
+{
+	return new gui::InstrumentTrackView( this, tcv );
+}
+
+} // namespace lmms

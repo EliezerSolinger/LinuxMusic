@@ -37,3 +37,16 @@ ControllerDialog::ControllerDialog(Controller* controller, QWidget* parent)
 }
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::ControllerDialog * Controller::createDialog( QWidget * _parent )
+{
+	auto d = new gui::ControllerDialog(this, _parent);
+
+	return d;
+}
+
+} // namespace lmms

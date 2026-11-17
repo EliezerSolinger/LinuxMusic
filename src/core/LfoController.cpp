@@ -275,11 +275,4 @@ QString LfoController::nodeName() const
 }
 
 
-
-gui::ControllerDialog * LfoController::createDialog( QWidget * _parent )
-{
-	return new gui::LfoControllerDialog( this, _parent );
-}
-
-
 } // namespace lmms

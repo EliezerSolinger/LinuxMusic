@@ -98,3 +98,14 @@ void AutomationTrackView::dropEvent( QDropEvent * _de )
 
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::TrackView* AutomationTrack::createView( gui::TrackContainerView* tcv )
+{
+	return new gui::AutomationTrackView( this, tcv );
+}
+
+} // namespace lmms

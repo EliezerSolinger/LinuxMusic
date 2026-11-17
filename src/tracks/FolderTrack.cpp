@@ -25,7 +25,6 @@
 #include <QDomElement>
 
 #include "Engine.h"
-#include "FolderTrackView.h"
 #include "Mixer.h"
 
 namespace lmms
@@ -49,16 +48,6 @@ bool FolderTrack::play(const TimePos& start, const f_cnt_t frames, const f_cnt_t
 	(void)clipNum;
 	return false;
 }
-
-
-
-
-gui::TrackView* FolderTrack::createView(gui::TrackContainerView* view)
-{
-	return new gui::FolderTrackView(this, view);
-}
-
-
 
 
 Clip* FolderTrack::createClip(const TimePos& pos)

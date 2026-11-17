@@ -30,7 +30,7 @@
 
 #include "embed.h"
 
-#include "PeakController.h"
+#include "PeakControllerDialog.h"
 
 namespace lmms::gui
 {
@@ -85,3 +85,14 @@ void PeakControllerDialog::modelChanged()
 
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::ControllerDialog * PeakController::createDialog( QWidget * _parent )
+{
+	return new gui::PeakControllerDialog( this, _parent );
+}
+
+} // namespace lmms

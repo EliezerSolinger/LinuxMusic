@@ -41,6 +41,7 @@
 #include "TrackView.h"
 
 #include "Engine.h"
+#include "AutomationClip.h"
 
 
 namespace lmms::gui
@@ -495,3 +496,16 @@ void AutomationClipView::scaleTimemapToFit( float oldMin, float oldMax )
 }
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::ClipView * AutomationClip::createView( gui::TrackView * _tv )
+{
+	QMutexLocker m(&m_clipMutex);
+
+	return new gui::AutomationClipView( this, _tv );
+}
+
+} // namespace lmms

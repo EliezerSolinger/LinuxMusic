@@ -31,7 +31,6 @@
 #include <QStringList>
 
 #include "AudioEngine.h"
-#include "AudioItemView.h"
 #include "AudioStream.h"
 #include "AudioTrack.h"
 #include "Engine.h"
@@ -391,12 +390,5 @@ void AudioItem::loadSettings(const QDomElement& element)
 	emit itemChanged();
 }
 
-
-
-
-gui::ClipView* AudioItem::createView(gui::TrackView* view)
-{
-	return new gui::AudioItemView{this, view};
-}
 
 } // namespace lmms

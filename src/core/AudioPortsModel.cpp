@@ -35,7 +35,6 @@
 #include "AudioBufferView.h"
 #include "AudioEngine.h"
 #include "Engine.h"
-#include "PinConnector.h"
 
 namespace lmms
 {
@@ -363,12 +362,6 @@ void AudioPortsModel::updateDirectRouting()
 	}
 }
 
-auto AudioPortsModel::instantiateView() const -> gui::PinConnector*
-{
-	// This method does not modify AudioPortsModel, but it needs PinConnector to store
-	// a mutable pointer to the AudioPortsModel, hence the const_cast.
-	return new gui::PinConnector{const_cast<AudioPortsModel*>(this)};
-}
 
 auto AudioPortsModel::getChannelCountText() const -> QString
 {

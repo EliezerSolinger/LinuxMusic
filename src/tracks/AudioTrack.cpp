@@ -35,7 +35,6 @@
 #include "Handoff.h"
 #include "PlayHandle.h"
 #include "ProjectJournal.h"
-#include "SampleTrackView.h"
 #include "Song.h"
 #include "UndoCommand.h"
 
@@ -318,16 +317,6 @@ bool AudioTrack::play(const TimePos& start, const f_cnt_t, const f_cnt_t offset,
 	if (m_tickStartCount < m_tickStarts.size()) { m_tickStarts[m_tickStartCount++] = {offset, start.getTicks()}; }
 	return false;
 }
-
-
-
-
-gui::TrackView* AudioTrack::createView(gui::TrackContainerView* view)
-{
-	return new gui::SampleTrackView{this, view};
-}
-
-
 
 
 Clip* AudioTrack::createClip(const TimePos& pos)

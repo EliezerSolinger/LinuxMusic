@@ -35,7 +35,6 @@
 #include "ThreadedExportManager.h"
 #include "PathUtil.h"
 #include "SampleCache.h"
-#include "SampleClipView.h"
 #include "SampleTrack.h"
 #include "Song.h"
 
@@ -655,13 +654,6 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	if (isTempoBound()) { Engine::getSong()->requestStretchCheck(); }
 }
 
-
-
-
-gui::ClipView * SampleClip::createView( gui::TrackView * _tv )
-{
-	return new gui::SampleClipView( this, _tv );
-}
 
 void SampleClip::exportSampleBuffer(const QString& fileName)
 {

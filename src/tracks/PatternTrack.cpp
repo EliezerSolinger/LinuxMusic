@@ -29,7 +29,6 @@
 #include "Engine.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
-#include "PatternTrackView.h"
 #include "PlayHandle.h"
 
 
@@ -132,16 +131,6 @@ bool PatternTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	}
 	return false;
 }
-
-
-
-
-gui::TrackView* PatternTrack::createView(gui::TrackContainerView* tcv)
-{
-	return new gui::PatternTrackView(this, tcv);
-}
-
-
 
 
 Clip* PatternTrack::createClip(const TimePos & pos)

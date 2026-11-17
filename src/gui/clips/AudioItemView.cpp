@@ -352,3 +352,14 @@ void AudioItemView::mouseReleaseEvent(QMouseEvent* event)
 }
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::ClipView* AudioItem::createView(gui::TrackView* view)
+{
+	return new gui::AudioItemView{this, view};
+}
+
+} // namespace lmms

@@ -92,3 +92,14 @@ void PatternTrackView::clickedTrackLabel()
 
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::TrackView* PatternTrack::createView(gui::TrackContainerView* tcv)
+{
+	return new gui::PatternTrackView(this, tcv);
+}
+
+} // namespace lmms

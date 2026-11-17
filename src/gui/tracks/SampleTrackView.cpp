@@ -61,6 +61,7 @@
 #include "TrackChannelControls.h"
 #include "TrackContainerView.h"
 #include "TrackLabelButton.h"
+#include "SampleTrack.h"
 
 
 namespace lmms::gui
@@ -484,3 +485,20 @@ void SampleTrackView::corruptStateUpdate()
 
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::TrackView * SampleTrack::createView( gui::TrackContainerView* tcv )
+{
+	return new gui::SampleTrackView( this, tcv );
+}
+
+
+gui::TrackView* AudioTrack::createView(gui::TrackContainerView* view)
+{
+	return new gui::SampleTrackView{this, view};
+}
+
+} // namespace lmms

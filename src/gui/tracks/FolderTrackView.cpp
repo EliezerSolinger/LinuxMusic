@@ -135,3 +135,14 @@ void FolderTrackView::updateCollapseButton()
 }
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::TrackView* FolderTrack::createView(gui::TrackContainerView* view)
+{
+	return new gui::FolderTrackView(this, view);
+}
+
+} // namespace lmms

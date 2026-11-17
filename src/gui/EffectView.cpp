@@ -47,6 +47,7 @@
 #include "SubWindow.h"
 #include "TempoSyncKnob.h"
 #include "embed.h"
+#include "Effect.h"
 
 
 namespace lmms::gui
@@ -338,3 +339,14 @@ void EffectView::corruptStateUpdate()
 }
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::PluginView * Effect::instantiateView( QWidget * _parent )
+{
+	return new gui::EffectView( this, _parent );
+}
+
+} // namespace lmms

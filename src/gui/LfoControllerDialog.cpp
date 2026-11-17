@@ -29,7 +29,7 @@
 
 
 #include "FontHelper.h"
-#include "LfoController.h"
+#include "LfoControllerDialog.h"
 #include "Knob.h"
 #include "TempoSyncKnob.h"
 #include "PixmapButton.h"
@@ -259,3 +259,14 @@ void LfoControllerDialog::modelChanged()
 
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::ControllerDialog * LfoController::createDialog( QWidget * _parent )
+{
+	return new gui::LfoControllerDialog( this, _parent );
+}
+
+} // namespace lmms

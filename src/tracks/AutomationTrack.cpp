@@ -26,7 +26,6 @@
 
 #include "AutomationTrack.h"
 
-#include "AutomationTrackView.h"
 #include "AutomationClip.h"
 
 namespace lmms
@@ -44,16 +43,6 @@ bool AutomationTrack::play( const TimePos & time_start, const f_cnt_t _frames,
 {
 	return false;
 }
-
-
-
-
-gui::TrackView* AutomationTrack::createView( gui::TrackContainerView* tcv )
-{
-	return new gui::AutomationTrackView( this, tcv );
-}
-
-
 
 
 Clip* AutomationTrack::createClip(const TimePos & pos)

@@ -528,3 +528,16 @@ auto PinConnector::MatrixView::getColor(ch_cnt_t trackChannel, ch_cnt_t processo
 }
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+auto AudioPortsModel::instantiateView() const -> gui::PinConnector*
+{
+	// This method does not modify AudioPortsModel, but it needs PinConnector to store
+	// a mutable pointer to the AudioPortsModel, hence the const_cast.
+	return new gui::PinConnector{const_cast<AudioPortsModel*>(this)};
+}
+
+} // namespace lmms

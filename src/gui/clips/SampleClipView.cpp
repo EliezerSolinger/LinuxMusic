@@ -417,3 +417,14 @@ void SampleClipView::exportSampleBuffer()
 }
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::ClipView * SampleClip::createView( gui::TrackView * _tv )
+{
+	return new gui::SampleClipView( this, _tv );
+}
+
+} // namespace lmms

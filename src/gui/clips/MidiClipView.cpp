@@ -974,3 +974,14 @@ bool MidiClipView::destructiveSplitClip(const TimePos pos)
 
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::ClipView * MidiClip::createView( gui::TrackView * _tv )
+{
+	return new gui::MidiClipView( this, _tv );
+}
+
+} // namespace lmms
