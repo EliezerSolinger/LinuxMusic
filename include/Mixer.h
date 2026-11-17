@@ -338,7 +338,7 @@ public:
 
 	MixerChannel * mixerChannel( int _ch )
 	{
-		return m_mixerChannels[_ch];
+		return m_mixerChannels[_ch].get();
 	}
 
 	// make the output of channel fromChannel go to the input of channel toChannel
@@ -515,7 +515,8 @@ public:
 		return m_mixerChannels.size();
 	}
 
-	MixerRouteVector m_mixerRoutes;
+	//! Every send, which the mixer owns (the channels' m_sends and m_receives only point to them)
+	std::vector<std::unique_ptr<MixerRoute>> m_mixerRoutes;
 
 signals:
 	void channelCreated(int index);
@@ -562,7 +563,7 @@ private:
 	std::vector<std::uint8_t> m_latencyPass;
 
 	// the mixer channels in the mixer. index 0 is always master.
-	std::vector<MixerChannel*> m_mixerChannels;
+	std::vector<std::unique_ptr<MixerChannel>> m_mixerChannels;
 
 	BoolModel m_analogModel;
 	BoolModel m_toleranceModel;

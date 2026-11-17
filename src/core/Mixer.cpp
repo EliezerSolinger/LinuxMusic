@@ -24,6 +24,8 @@
 
 #include "Mixer.h"
 
+#include <ranges>
+
 #include "AutomationClip.h"
 
 #include <QDomElement>
@@ -51,6 +53,16 @@
 
 namespace lmms
 {
+
+namespace
+{
+//! The objects a vector of owners holds, as plain pointers (a view: nothing allocated, so the audio thread too)
+template<class T>
+auto pointers(const std::vector<std::unique_ptr<T>>& owners)
+{
+	return owners | std::views::transform([](const std::unique_ptr<T>& owner) { return owner.get(); });
+}
+} // namespace
 
 
 MixerRoute::MixerRoute(MixerChannel* from, MixerChannel* to, float amount, ch_cnt_t sourcePair,
@@ -537,14 +549,10 @@ Mixer::~Mixer()
 {
 	while (!m_mixerRoutes.empty())
 	{
-		deleteChannelSend(m_mixerRoutes.front());
+		deleteChannelSend(m_mixerRoutes.front().get());
 	}
-	while( m_mixerChannels.size() )
-	{
-		MixerChannel * f = m_mixerChannels[m_mixerChannels.size() - 1];
-		m_mixerChannels.pop_back();
-		delete f;
-	}
+	// (the last first, as before)
+	while (!m_mixerChannels.empty()) { m_mixerChannels.pop_back(); }
 }
 
 
@@ -692,7 +700,7 @@ auto Mixer::trackOf(mix_ch_t index) const -> Track*
 	if (index <= 0 || index >= numChannels() || !m_mixerChannels[index]->m_trackChannel) { return nullptr; }
 	for (const auto& [track, channel] : tracksWithMixerChannel())
 	{
-		if (channel->value() == index && trackChannel(track) == m_mixerChannels[index]) { return track; }
+		if (channel->value() == index && trackChannel(track) == m_mixerChannels[index].get()) { return track; }
 	}
 	return nullptr;
 }
@@ -721,8 +729,7 @@ int Mixer::createChannel(bool beforeFxReturns)
 	const auto change = StructureChange{*this};
 	const int index = m_mixerChannels.size();
 	// create new channel
-	auto channel = new MixerChannel(index, this);
-	m_mixerChannels.push_back(channel);
+	auto* channel = m_mixerChannels.emplace_back(std::make_unique<MixerChannel>(index, this)).get();
 
 	// reset channel state
 	clearChannel( index );
@@ -760,7 +767,7 @@ void Mixer::deleteChannel( int index )
 	// channel deletion is performed between mixer rounds
 	Engine::audioEngine()->requestChangeInModel();
 
-	MixerChannel * ch = m_mixerChannels[index];
+	MixerChannel * ch = m_mixerChannels[index].get();
 
 	// delete all of this channel's sends and receives
 	while (!ch->m_sends.empty())
@@ -773,14 +780,13 @@ void Mixer::deleteChannel( int index )
 	}
 
 	// Channels made for it stay as plain channels
-	for (const auto channel : m_mixerChannels)
+	for (const auto channel : pointers(m_mixerChannels))
 	{
 		if (channel->m_owner == ch) { channel->m_owner = nullptr; }
 	}
 
 	// actually delete the channel
 	m_mixerChannels.erase(m_mixerChannels.begin() + index);
-	delete ch;
 
 	for (auto i = static_cast<std::size_t>(index); i < m_mixerChannels.size(); ++i)
 	{
@@ -854,14 +860,14 @@ MixerRoute* Mixer::createChannelSend(mix_ch_t fromChannel, mix_ch_t toChannel, f
 	}
 
 	// connection does not exist. create a new one
-	return createRoute(m_mixerChannels[fromChannel], m_mixerChannels[toChannel], amount, sourcePair, destinationPair);
+	return createRoute(m_mixerChannels[fromChannel].get(), m_mixerChannels[toChannel].get(), amount, sourcePair, destinationPair);
 }
 
 
 auto Mixer::findChannelSend(mix_ch_t fromChannel, mix_ch_t toChannel, ch_cnt_t sourcePair,
 	ch_cnt_t destinationPair) const -> MixerRoute*
 {
-	const MixerChannel* to = m_mixerChannels[toChannel];
+	const MixerChannel* to = m_mixerChannels[toChannel].get();
 	for (MixerRoute* send : m_mixerChannels[fromChannel]->m_sends)
 	{
 		if (send->receiver() == to && send->sourcePair() == sourcePair && send->destinationPair() == destinationPair)
@@ -892,7 +898,7 @@ MixerRoute* Mixer::createRoute(MixerChannel* from, MixerChannel* to, float amoun
 	to->m_receives.push_back(route);
 
 	// add us to mixer's list
-	Engine::mixer()->m_mixerRoutes.push_back(route);
+	Engine::mixer()->m_mixerRoutes.emplace_back(route);
 	Engine::audioEngine()->doneChangeInModel();
 
 	return route;
@@ -926,10 +932,9 @@ void Mixer::deleteChannelSend( MixerRoute * route )
 	// remove us from to's receives
 	removeFromMixerRoute(route->receiver()->m_receives);
 
-	// remove us from mixer's list
-	removeFromMixerRoute(Engine::mixer()->m_mixerRoutes);
-
-	delete route;
+	// remove us from mixer's list, which deletes us
+	auto& routes = Engine::mixer()->m_mixerRoutes;
+	routes.erase(std::find_if(routes.begin(), routes.end(), [route](const auto& owned) { return owned.get() == route; }));
 	Engine::audioEngine()->doneChangeInModel();
 }
 
@@ -937,8 +942,8 @@ void Mixer::deleteChannelSend( MixerRoute * route )
 bool Mixer::isInfiniteLoop( mix_ch_t sendFrom, mix_ch_t sendTo )
 {
 	if( sendFrom == sendTo ) return true;
-	MixerChannel * from = m_mixerChannels[sendFrom];
-	MixerChannel * to = m_mixerChannels[sendTo];
+	MixerChannel * from = m_mixerChannels[sendFrom].get();
+	MixerChannel * to = m_mixerChannels[sendTo].get();
 	bool b = checkInfiniteLoop( from, to );
 	return b;
 }
@@ -947,7 +952,7 @@ bool Mixer::isInfiniteLoop( mix_ch_t sendFrom, mix_ch_t sendTo )
 bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 {
 	// can't send master to anything
-	if( from == m_mixerChannels[0] )
+	if( from == m_mixerChannels[0].get() )
 	{
 		return true;
 	}
@@ -990,7 +995,7 @@ void Mixer::setChannelCount(mix_ch_t index, ch_cnt_t channels)
 {
 	channels = std::clamp<ch_cnt_t>(static_cast<ch_cnt_t>((channels + 1) / 2 * 2), DEFAULT_CHANNELS,
 		MaxMixerChannelTrackChannels);
-	MixerChannel* channel = m_mixerChannels[index];
+	MixerChannel* channel = m_mixerChannels[index].get();
 	if (channel->channelCount() == channels) { return; }
 
 	const auto change = StructureChange{*this};
@@ -1019,7 +1024,7 @@ void Mixer::setChannelCount(mix_ch_t index, ch_cnt_t channels)
 
 void Mixer::mixToChannel(const AudioBuffer& buffer, mix_ch_t dest)
 {
-	const auto channel = m_mixerChannels[dest];
+	const auto channel = m_mixerChannels[dest].get();
 	if (!channel->m_muteModel.value())
 	{
 		channel->m_lock.lock();
@@ -1038,7 +1043,7 @@ void Mixer::mixToChannel(const AudioBuffer& buffer, mix_ch_t dest)
 
 void Mixer::mixAuxiliaryToChannel(const AudioBuffer& buffer, mix_ch_t dest)
 {
-	const auto channel = m_mixerChannels[dest];
+	const auto channel = m_mixerChannels[dest].get();
 	if (channel->m_muteModel.value()) { return; }
 
 	const auto channels = std::min(buffer.channels(), channel->channelCount());
@@ -1087,11 +1092,11 @@ void Mixer::removeLatencySource(const std::atomic<f_cnt_t>* latency)
 void Mixer::applySolo()
 {
 	bool anySoloed = false;
-	for (const auto channel : m_mixerChannels) { anySoloed = anySoloed || channel->m_soloModel.value(); }
+	for (const auto channel : pointers(m_mixerChannels)) { anySoloed = anySoloed || channel->m_soloModel.value(); }
 	if (!anySoloed)
 	{
-		for (const auto channel : m_mixerChannels) { channel->m_silencedBySolo = false; }
-		for (const auto route : m_mixerRoutes) { route->setLive(true); }
+		for (const auto channel : pointers(m_mixerChannels)) { channel->m_silencedBySolo = false; }
+		for (const auto route : pointers(m_mixerRoutes)) { route->setLive(true); }
 		return;
 	}
 
@@ -1118,7 +1123,7 @@ void Mixer::applySolo()
 			}
 		}
 	};
-	for (const auto channel : m_mixerChannels)
+	for (const auto channel : pointers(m_mixerChannels))
 	{
 		if (!channel->m_soloModel.value()) { continue; }
 		m_soloState[channel->index()] |= Heard;
@@ -1132,7 +1137,7 @@ void Mixer::applySolo()
 	{
 		if (state & Heard) { state |= Processed; }
 	}
-	for (const auto route : m_mixerRoutes)
+	for (const auto route : pointers(m_mixerRoutes))
 	{
 		if (!route->isSidechain() || !(m_soloState[route->receiverIndex()] & Heard)) { continue; }
 		const auto source = route->sender();
@@ -1141,12 +1146,12 @@ void Mixer::applySolo()
 		spread(source, false, Processed);
 	}
 
-	for (const auto channel : m_mixerChannels)
+	for (const auto channel : pointers(m_mixerChannels))
 	{
 		channel->m_silencedBySolo = !(m_soloState[channel->index()] & Processed);
 	}
 	// Into what is heard, only from what is heard, or into sidechain inputs
-	for (const auto route : m_mixerRoutes)
+	for (const auto route : pointers(m_mixerRoutes))
 	{
 		const auto from = m_soloState[route->senderIndex()];
 		const auto to = m_soloState[route->receiverIndex()];
@@ -1160,7 +1165,7 @@ void Mixer::applySolo()
 void Mixer::compensateLatency()
 {
 	// The latest of the tracks' audio of each channel
-	for (const auto channel : m_mixerChannels) { channel->m_trackLatency = 0; }
+	for (const auto channel : pointers(m_mixerChannels)) { channel->m_trackLatency = 0; }
 	for (const auto& source : m_latencySources)
 	{
 		const int index = source.channel->value();
@@ -1181,7 +1186,7 @@ void Mixer::compensateLatency()
 
 auto Mixer::compensateLatency(mix_ch_t index) -> f_cnt_t
 {
-	MixerChannel* channel = m_mixerChannels[index];
+	MixerChannel* channel = m_mixerChannels[index].get();
 	if (m_latencyPass[index] == 2) { return channel->m_latency; }
 	if (m_latencyPass[index] == 1) { return 0; } // a loop, which the mixer does not allow
 	m_latencyPass[index] = 1;
@@ -1231,13 +1236,13 @@ void Mixer::masterMix( SampleFrame* _buf )
 	// recipients right away.
 	// Every channel's mute is settled before any job is queued: a worker may start on a queued channel at once, and
 	// a processed channel reads the mute of the channels it sends to (MixerChannel::processed())
-	for (MixerChannel* ch : m_mixerChannels)
+	for (MixerChannel* ch : pointers(m_mixerChannels))
 	{
 		ch->m_muted = ch->m_muteModel.value() || ch->m_silencedBySolo;
 	}
 
 	AudioEngineWorkerThread::resetJobQueue( AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic );
-	for( MixerChannel * ch : m_mixerChannels )
+	for( MixerChannel * ch : pointers(m_mixerChannels))
 	{
 		if( ch->m_muted ) // instantly "process" muted channels
 		{
@@ -1298,7 +1303,7 @@ void Mixer::clear()
 
 void Mixer::clearChannel(mix_ch_t index)
 {
-	MixerChannel * ch = m_mixerChannels[index];
+	MixerChannel * ch = m_mixerChannels[index].get();
 	ch->m_fxChain.clear();
 	ch->m_volumeModel.setValue( 1.0f );
 	ch->m_muteModel.setValue( false );
@@ -1357,7 +1362,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	// save channels
 	for (auto i = std::size_t{0}; i < m_mixerChannels.size(); ++i)
 	{
-		MixerChannel * ch = m_mixerChannels[i];
+		MixerChannel * ch = m_mixerChannels[i].get();
 
 		QDomElement mixch = _doc.createElement( QString( "mixerchannel" ) );
 		_this.appendChild( mixch );
@@ -1490,7 +1495,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 
 	for (const auto& [num, owner] : owners)
 	{
-		if (owner > 0 && owner < numChannels() && owner != num) { m_mixerChannels[num]->m_owner = m_mixerChannels[owner]; }
+		if (owner > 0 && owner < numChannels() && owner != num) { m_mixerChannels[num]->m_owner = m_mixerChannels[owner].get(); }
 	}
 
 	for (const auto& [num, send] : sends)
@@ -1602,7 +1607,7 @@ int Mixer::setUpTrackChannel(Track* track, bool keepSharing)
 	{
 		const int sendTo = index;
 		index = createChannel();
-		auto channel = m_mixerChannels[index];
+		auto channel = m_mixerChannels[index].get();
 		channel->m_name = track->name();
 		channel->setColor(track->color());
 		channel->m_trackChannel = true;
@@ -1617,7 +1622,7 @@ int Mixer::setUpTrackChannel(Track* track, bool keepSharing)
 		}
 		strip->channel->setValue(index);
 	}
-	auto channel = m_mixerChannels[index];
+	auto channel = m_mixerChannels[index].get();
 
 	// A channel made for the track follows its name and color
 	connect(track, &Track::nameChanged, this, &Mixer::followTracks, Qt::UniqueConnection);
@@ -1695,7 +1700,7 @@ void Mixer::releaseTrackChannel(Track* track)
 	strip->channel->setValue(0);
 
 	// The channels made for it, e.g. its drum pieces, go with it
-	const auto channel = m_mixerChannels[index];
+	const auto channel = m_mixerChannels[index].get();
 	for (const auto owned : ownedChannels(index)) { deleteChannel(owned->index()); }
 	deleteChannel(channel->index());
 	emit trackChannelChanged(track);
@@ -1742,7 +1747,7 @@ auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 
 	if (!trackChannel(track)) { setUpTrackChannel(track); }
 	const auto trackIndex = static_cast<mix_ch_t>(track->mixerChannelModel()->value());
-	auto source = m_mixerChannels[trackIndex];
+	auto source = m_mixerChannels[trackIndex].get();
 
 	// Where the track's channel sends its main output
 	mix_ch_t destination = 0;
@@ -1756,7 +1761,7 @@ auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 	if (!instance->routeOutputGroupsToPairs()) { return -1; }
 
 	const auto group = createChannel();
-	auto groupChannel = m_mixerChannels[group];
+	auto groupChannel = m_mixerChannels[group].get();
 	groupChannel->m_name = tr("%1 (pieces)").arg(track->name());
 	groupChannel->setColor(track->color());
 	groupChannel->m_groupChannel = true;
@@ -1768,7 +1773,7 @@ auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 	for (auto g = std::size_t{0}; g < groups.size(); ++g)
 	{
 		const auto piece = createChannel();
-		auto pieceChannel = m_mixerChannels[piece];
+		auto pieceChannel = m_mixerChannels[piece].get();
 		made.push_back(pieceChannel);
 		pieceChannel->m_name = groups[g].name.empty()
 			? tr("%1 %2").arg(track->name()).arg(g + 1)
@@ -1795,7 +1800,7 @@ auto Mixer::setUpChannelPerOutput(InstrumentTrack* track) -> int
 
 auto Mixer::channelOf(const EffectChain* chain) const -> int
 {
-	for (const auto channel : m_mixerChannels)
+	for (const auto channel : pointers(m_mixerChannels))
 	{
 		if (&channel->m_fxChain == chain) { return channel->index(); }
 	}
@@ -1864,7 +1869,7 @@ void Mixer::updateFolderRouting()
 auto Mixer::fxReturns() const -> std::vector<MixerChannel*>
 {
 	auto result = std::vector<MixerChannel*>{};
-	for (const auto channel : m_mixerChannels)
+	for (const auto channel : pointers(m_mixerChannels))
 	{
 		if (channel->m_fxReturn) { result.push_back(channel); }
 	}
@@ -1884,7 +1889,7 @@ void Mixer::ensureFxReturns()
 	while (static_cast<int>(returns.size()) < FxReturnCount)
 	{
 		const int index = createChannel(false);
-		auto channel = m_mixerChannels[index];
+		auto channel = m_mixerChannels[index].get();
 		channel->m_fxReturn = true;
 		channel->m_name = tr("FX %1").arg(returns.size() + 1);
 		channel->m_analogStrip.setDisplayNames(channel->m_name);
@@ -1900,7 +1905,7 @@ void Mixer::ensureFxReturns()
 	}
 
 	// Every channel sends to them
-	for (const auto channel : m_mixerChannels)
+	for (const auto channel : pointers(m_mixerChannels))
 	{
 		if (channel->isMaster() || channel->m_fxReturn) { continue; }
 		for (const auto fxReturn : returns)
@@ -1945,7 +1950,7 @@ auto Mixer::toleranceStripOf(const MixerChannel* channel) const -> int
 {
 	if (!channel->m_fxReturn) { return channel->index(); }
 	auto number = ReturnStrips;
-	for (const auto other : m_mixerChannels)
+	for (const auto other : pointers(m_mixerChannels))
 	{
 		if (other->m_fxReturn) { ++number; }
 		if (other == channel) { break; }
@@ -1980,9 +1985,9 @@ auto Mixer::ownedChannels(mix_ch_t index) const -> std::vector<MixerChannel*>
 {
 	auto result = std::vector<MixerChannel*>{};
 	if (index <= 0 || index >= numChannels()) { return result; }
-	for (const auto channel : m_mixerChannels)
+	for (const auto channel : pointers(m_mixerChannels))
 	{
-		if (channel->m_owner == m_mixerChannels[index]) { result.push_back(channel); }
+		if (channel->m_owner == m_mixerChannels[index].get()) { result.push_back(channel); }
 	}
 	return result;
 }
@@ -1992,7 +1997,7 @@ auto Mixer::ownedChannels(mix_ch_t index) const -> std::vector<MixerChannel*>
 
 void Mixer::arrangeChannelsByTracks()
 {
-	auto order = std::vector<MixerChannel*>{m_mixerChannels[0]};
+	auto order = std::vector<MixerChannel*>{m_mixerChannels[0].get()};
 	auto placed = std::vector<bool>(m_mixerChannels.size(), false);
 	placed[0] = true;
 
@@ -2021,14 +2026,14 @@ void Mixer::arrangeChannelsByTracks()
 			const int index = strip->channel->value();
 			if (index > 0 && index < numChannels() && m_mixerChannels[index]->m_trackChannel)
 			{
-				place(m_mixerChannels[index]);
+				place(m_mixerChannels[index].get());
 			}
 		}
 	}
 	// Then the channels of no track, and the effect returns last
 	for (const bool fxReturn : {false, true})
 	{
-		for (const auto channel : m_mixerChannels)
+		for (const auto channel : pointers(m_mixerChannels))
 		{
 			if (!placed[channel->index()] && channel->m_fxReturn == fxReturn)
 			{
@@ -2063,7 +2068,7 @@ auto Mixer::trackChannel(const Track* track) const -> MixerChannel*
 	const auto users = std::count_if(tracks.begin(), tracks.end(), [index](const auto& entry) {
 		return entry.second->value() == index;
 	});
-	return users == 1 ? m_mixerChannels[index] : nullptr;
+	return users == 1 ? m_mixerChannels[index].get() : nullptr;
 }
 
 
