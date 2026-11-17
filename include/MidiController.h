@@ -25,6 +25,8 @@
 #ifndef LMMS_MIDI_CONTROLLER_H
 #define LMMS_MIDI_CONTROLLER_H
 
+#include <atomic>
+
 #include "AutomatableModel.h"
 #include "Controller.h"
 #include "MidiEventProcessor.h"
@@ -80,8 +82,9 @@ protected:
 	MidiPort m_midiPort;
 
 
-	float m_lastValue;
-	float m_previousValue;
+	//! The latest value received (written by the MIDI input's thread, read by the audio thread)
+	std::atomic<float> m_lastValue;
+	float m_previousValue; //!< the value at the end of the last period (audio thread)
 
 	friend class gui::ControllerConnectionDialog;
 	friend class AutoDetectMidiController;

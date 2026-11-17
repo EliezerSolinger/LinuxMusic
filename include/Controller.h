@@ -28,6 +28,8 @@
 
 #include "lmms_export.h"
 #include "Engine.h"
+
+#include <atomic>
 #include "Model.h"
 #include "JournallingObject.h"
 #include "ValueBuffer.h"
@@ -130,6 +132,13 @@ public:
 	static void triggerFrameCounter();
 	static void resetFrameCounter();
 
+	/**
+	 * Brings every controller's values up to the period about to render, once, on the audio thread before the
+	 * worker threads start: they then only read them. (Each controller used to update itself on its first read in
+	 * a period, from whichever worker thread read it first, while others read.)
+	 */
+	static void updateAllValueBuffers();
+
 	//Accepts a ControllerConnection * as it may be used in the future.
 	void addConnection( ControllerConnection * );
 	void removeConnection( ControllerConnection * );
@@ -159,7 +168,8 @@ protected:
 	// when we last updated the valuebuffer - so we know if we have to update it
 	long m_bufferLastUpdated;
 
-	float m_currentValue;
+	//! The last value asked for (by any thread: the GUI and the worker threads)
+	std::atomic<float> m_currentValue = 0.f;
 	bool  m_sampleExact;
 	int m_connectionCount;
 
@@ -167,6 +177,8 @@ protected:
 	ControllerType m_type;
 
 	static ControllerVector s_controllers;
+	//! Every controller, for updateAllValueBuffers() (changed under the audio engine's change lock)
+	static ControllerVector s_allControllers;
 
 	static long s_periods;
 

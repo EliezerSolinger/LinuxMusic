@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "AudioEngine.h"
+#include "Controller.h"
 #include "AudioResampler.h"
 
 #include <QStringList>
@@ -255,6 +256,9 @@ void AudioEngine::adoptNewPlayHandles()
 void AudioEngine::renderStageInstruments()
 {
 	AudioEngineProfiler::Probe profilerProbe(m_profiler, AudioEngineProfiler::DetailType::Instruments);
+
+	// The controllers' values for this period, before the worker threads read them
+	Controller::updateAllValueBuffers();
 
 	// The notes ending in this period are released before any note is rendered, so that the release of sub-notes
 	// does not depend on the order the threads render them in (see NotePlayHandle::releaseIfEnding())
@@ -830,6 +834,14 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 		}
 	}
 	doneChangeInModel();
+}
+
+
+
+
+auto AudioEngine::isRenderingThread() -> bool
+{
+	return s_renderingThread;
 }
 
 

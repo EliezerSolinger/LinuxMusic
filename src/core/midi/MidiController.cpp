@@ -48,14 +48,16 @@ MidiController::MidiController( Model * _parent ) :
 
 void MidiController::updateValueBuffer()
 {
-	if( m_previousValue != m_lastValue )
+	// From where the last period ended to the latest value received
+	const auto lastValue = m_lastValue.load(std::memory_order_relaxed);
+	if (m_previousValue != lastValue)
 	{
-		m_valueBuffer.interpolate( m_previousValue, m_lastValue );
-		m_previousValue = m_lastValue;
+		m_valueBuffer.interpolate(m_previousValue, lastValue);
+		m_previousValue = lastValue;
 	}
 	else
 	{
-		m_valueBuffer.fill( m_lastValue );
+		m_valueBuffer.fill(lastValue);
 	}
 	m_bufferLastUpdated = s_periods;
 }
@@ -83,8 +85,7 @@ void MidiController::processInEvent(const MidiEvent& event, const TimePos& time,
 				(m_midiPort.inputChannel() == event.channel() + 1 || m_midiPort.inputChannel() == 0))
 			{
 				unsigned char val = event.controllerValue();
-				m_previousValue = m_lastValue;
-				m_lastValue = static_cast<float>(val) / 127.0f;
+				m_lastValue.store(static_cast<float>(val) / 127.0f, std::memory_order_relaxed);
 				emit valueChanged();
 			}
 			break;

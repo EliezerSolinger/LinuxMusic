@@ -370,6 +370,9 @@ public:
 		return RequestChangesGuard{this};
 	}
 
+	//! Whether the calling thread renders a period now (not the worker threads helping it)
+	static auto isRenderingThread() -> bool;
+
 	static bool isAudioDevNameValid(QString name);
 	static bool isMidiDevNameValid(QString name);
 

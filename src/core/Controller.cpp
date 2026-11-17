@@ -40,6 +40,7 @@ namespace lmms
 
 long Controller::s_periods = 0;
 std::vector<Controller*> Controller::s_controllers;
+std::vector<Controller*> Controller::s_allControllers;
 
 
 
@@ -52,6 +53,9 @@ Controller::Controller( ControllerType _type, Model * _parent,
 	m_connectionCount( 0 ),
 	m_type( _type )
 {
+	// (the audio thread goes through the lists every period)
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+	s_allControllers.push_back(this);
 	if( _type != ControllerType::Dummy && _type != ControllerType::Midi )
 	{
 		s_controllers.push_back(this);
@@ -85,10 +89,14 @@ Controller::Controller( ControllerType _type, Model * _parent,
 
 Controller::~Controller()
 {
-	auto it = std::find(s_controllers.begin(), s_controllers.end(), this);
-	if (it != s_controllers.end())
 	{
-		s_controllers.erase(it);
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		std::erase(s_allControllers, this);
+		auto it = std::find(s_controllers.begin(), s_controllers.end(), this);
+		if (it != s_controllers.end())
+		{
+			s_controllers.erase(it);
+		}
 	}
 
 	m_valueBuffer.clear();
@@ -102,17 +110,21 @@ float Controller::currentValue( int _offset )
 {
 	if( _offset == 0 || isSampleExact() )
 	{
-		m_currentValue = fittedValue( value( _offset ) );
+		const auto value = fittedValue(this->value(_offset));
+		m_currentValue.store(value, std::memory_order_relaxed);
+		return value;
 	}
-	
-	return m_currentValue;
+
+	return m_currentValue.load(std::memory_order_relaxed);
 }
 
 
 
 float Controller::value( int offset )
 {
-	if( m_bufferLastUpdated != s_periods )
+	// Only the thread rendering the period brings the values up to date (see updateAllValueBuffers()): the worker
+	// threads find them so, and other threads (the GUI) read the last ones
+	if (m_bufferLastUpdated != s_periods && AudioEngine::isRenderingThread())
 	{
 		updateValueBuffer();
 	}
@@ -122,7 +134,8 @@ float Controller::value( int offset )
 
 ValueBuffer * Controller::valueBuffer()
 {
-	if( m_bufferLastUpdated != s_periods )
+	// (as value())
+	if (m_bufferLastUpdated != s_periods && AudioEngine::isRenderingThread())
 	{
 		updateValueBuffer();
 	}
@@ -166,6 +179,16 @@ void Controller::triggerFrameCounter()
 
 	s_periods ++;
 	//emit s_signaler.triggerValueChanged();
+}
+
+
+
+void Controller::updateAllValueBuffers()
+{
+	for (auto* controller : s_allControllers)
+	{
+		if (controller->m_bufferLastUpdated != s_periods) { controller->updateValueBuffer(); }
+	}
 }
 
 
