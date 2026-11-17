@@ -362,8 +362,6 @@ private slots:
 				[&] { QVERIFY(DiskReader::instance().waitUntilLoaded(3000)); }();
 			}
 			auto output = std::vector<SampleFrame>{};
-			// (the engine hands out each period one period late: the last one of the render before is flushed)
-			for (int period = 0; period < 2; ++period) { Engine::audioEngine()->renderNextPeriod(); }
 			song->setPlayPos(0, Song::PlayMode::Song);
 			song->playSong();
 			for (int period = 0; period < 400; ++period)

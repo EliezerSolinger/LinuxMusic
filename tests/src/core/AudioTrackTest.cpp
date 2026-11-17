@@ -129,10 +129,9 @@ private slots:
 		// Silent before the item, its file in it (between its fades), silent after it
 		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
 		const auto out = render(0, static_cast<int>((bar + item->length().getTicks()) * framesPerTick / 256) + 20);
-		// (the engine hands out each period a period late)
-		const auto lag = static_cast<std::size_t>(Engine::audioEngine()->framesPerPeriod());
-		const auto start = static_cast<std::size_t>(bar * framesPerTick) + lag;
-		const auto end = static_cast<std::size_t>((bar + item->length().getTicks()) * framesPerTick) + lag;
+		// (the engine hands out each period as it renders it)
+		const auto start = static_cast<std::size_t>(bar * framesPerTick);
+		const auto end = static_cast<std::size_t>((bar + item->length().getTicks()) * framesPerTick);
 		const auto fade = static_cast<std::size_t>(AudioItem::DefaultFadeMs * m_rate / 1000.0) + 4;
 		QVERIFY(std::abs(out[start - 300]) < 1e-6f);
 		QVERIFY(std::abs(out[start + fade + 100] - 0.5f) < 1e-3f);

@@ -217,14 +217,14 @@ private:
 		}
 		song->stop();
 
-		// Where the impulse was heard: the device played song frame s at device frame s - start + 1 period (the
-		// engine hands the device each period one period late). Measuring against what was heard keeps this test
-		// about the recording, whatever the playback does.
+		// Where the impulse was heard: the device played song frame s at device frame s - start (the engine hands the
+		// device each period as it renders it). Measuring against what was heard keeps this test about the
+		// recording, whatever the playback does.
 		const auto outputPeak = device->outputPeak();
 		if (outputPeak.second < 0.5f) { qWarning("the impulse was not played"); }
 		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
-		const auto playedAt = startTick * framesPerTick + static_cast<double>(outputPeak.first)
-			- static_cast<double>(engine->framesPerPeriod());
+		// (the device plays each period as the engine renders it)
+		const auto playedAt = startTick * framesPerTick + static_cast<double>(outputPeak.first);
 
 		// The take is the recording track's clip
 		auto result = 1e9;
@@ -325,12 +325,13 @@ private slots:
 		QCOMPARE(recorder->numOfClips(), 1);
 		const auto* take = dynamic_cast<AudioItem*>(recorder->getClip(0));
 
-		// The take starts where the punch in was heard: two periods and the latencies before bar 2
-		const auto expectedStart = (192 * framesPerTick - 2 * 256.0 - (50 + 300 + 512)) / framesPerTick;
+		// The take starts where the punch in was heard: a period (the input is taken a period late) and the latencies
+		// before bar 2
+		const auto expectedStart = (192 * framesPerTick - 256.0 - (50 + 300 + 512)) / framesPerTick;
 		QVERIFY(std::abs(take->startPosition().getTicks() - expectedStart) <= 1.0);
 		const auto peak = peakFrame(PathUtil::toAbsolute(take->file()));
 		const auto outputPeak = device->outputPeak();
-		const auto heardAt = static_cast<double>(outputPeak.first) - static_cast<double>(engine->framesPerPeriod());
+		const auto heardAt = static_cast<double>(outputPeak.first);
 		const auto recordedAt = take->startPosition().getTicks() * framesPerTick + static_cast<double>(peak);
 		qInfo("punched take at tick %d, impulse %.2f frames from where it was heard", take->startPosition().getTicks(),
 			recordedAt - heardAt);
@@ -671,9 +672,10 @@ private slots:
 		QCOMPARE(recorder->items().size(), std::size_t{1});
 		const auto* take = recorder->items().front();
 		QCOMPARE(take->xruns().size(), std::size_t{1});
-		// Where it was: 200 periods in, less what the take starts after (the latencies and the engine's two periods)
+		// Where it was: 200 periods in, less what the take starts after (the latencies and the engine's period: the
+		// input is taken a period late)
 		const auto at = take->xruns().front();
-		QCOMPARE(at, static_cast<std::int64_t>(200 * 256 - (2 * 256 + 256 + 40 + 256 + 200)));
+		QCOMPARE(at, static_cast<std::int64_t>(200 * 256 - (256 + 256 + 40 + 256 + 200)));
 		QVERIFY2(told.contains("xrun"), qPrintable(told));
 
 		// Kept with the project
@@ -718,7 +720,7 @@ private slots:
 		QCOMPARE(recorder->items().size(), std::size_t{1});
 		const auto* take = recorder->items().front();
 		QCOMPARE(take->xruns().size(), std::size_t{1});
-		QCOMPARE(take->xruns().front(), static_cast<std::int64_t>(200 * 256 - (2 * 256 + 256 + 40 + 256 + 200)));
+		QCOMPARE(take->xruns().front(), static_cast<std::int64_t>(200 * 256 - (256 + 256 + 40 + 256 + 200)));
 
 		const auto guard = engine->requestChangesGuard();
 		delete recorder;

@@ -320,7 +320,7 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 
 	// The song position (in ticks) heard when the capture's frame @p index was played, and the tempo then (see the
 	// header): the capture of period n holds the device frames of the period before; minus the latency, they were
-	// played against the output of the period after the one rendered then
+	// played against the output of the period rendered then
 	struct Heard
 	{
 		double tick;
@@ -328,8 +328,8 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 	};
 	const auto heardAt = [&](std::int64_t index) {
 		const auto device = (now - 1) * period + index - static_cast<std::int64_t>(session->latency);
-		const auto outputPeriod = (device >= 0 ? device / period : -((-device + period - 1) / period)) - 1;
-		const auto offset = static_cast<double>(device - (outputPeriod + 1) * period);
+		const auto outputPeriod = device >= 0 ? device / period : -((-device + period - 1) / period);
+		const auto offset = static_cast<double>(device - outputPeriod * period);
 		if (outputPeriod >= 0 && outputPeriod > now - history)
 		{
 			const auto& start = starts[static_cast<std::size_t>(outputPeriod % history)];

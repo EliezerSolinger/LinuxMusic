@@ -150,8 +150,6 @@ void ProjectRenderer::run()
 	PerfLogTimer perfLog("Project Render");
 
 	Engine::getSong()->startExport();
-	// Skip first empty buffer.
-	Engine::audioEngine()->renderNextPeriod();
 
 	m_progress = 0;
 

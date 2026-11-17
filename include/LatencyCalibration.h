@@ -52,7 +52,7 @@ public:
 	{
 		bool found = false; //!< the pulse came back
 		f_cnt_t delay = 0; //!< frames from the pulse to its return
-		long long offset = 0; //!< the calibration: the delay less the devices' latencies and the engine's periods
+		long long offset = 0; //!< the calibration: the delay less the devices' latencies and the engine's period
 		float peak = 0.f; //!< how loud it came back
 	};
 

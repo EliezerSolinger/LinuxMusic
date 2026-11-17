@@ -235,8 +235,6 @@ void AudioEngine::renderStageNoteSetup()
 		}
 	}
 
-	swapBuffers();
-
 	// prepare master mix (clear internal buffers etc.)
 	Mixer * mixer = Engine::mixer();
 	mixer->prepareMasterMix();
@@ -332,7 +330,7 @@ void AudioEngine::renderStageMix()
 
 	// Hand the period that goes out now to the displays, without waiting for them
 	auto& monitor = m_outputMonitor.writeSlot();
-	std::copy_n(m_outputBufferRead.get(), m_framesPerPeriod, monitor.begin());
+	std::copy_n(m_outputBufferWrite.get(), m_framesPerPeriod, monitor.begin());
 	m_outputMonitor.publish();
 
 	// and trigger LFOs
@@ -398,6 +396,9 @@ void AudioEngine::renderLockedPeriod()
 	renderStageInstruments();   // STAGE 1: run and render all play handles
 	renderStageEffects();       // STAGE 2: process effects of all instrument- and sampletracks
 	renderStageMix();           // STAGE 3: do master mix in mixer
+	// The period just rendered is the one that goes out now (it used to be the one before it: a period of latency
+	// for the devices, and the first period of a playback was the last one of the previous playback)
+	swapBuffers();
 
 	s_renderingThread = false;
 	m_periodsRendered.fetch_add(1, std::memory_order_relaxed);

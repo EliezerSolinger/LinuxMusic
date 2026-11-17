@@ -184,9 +184,9 @@ auto LatencyCalibration::result() const -> Result
 	result.found = result.peak >= MinimumPeak;
 	if (!result.found) { return result; }
 	result.delay = static_cast<f_cnt_t>(bestAt);
-	// What the recorder already counts: the devices' latencies and the engine's two periods (the output is handed
-	// to the device a period late, and the input taken a period late)
-	const auto expected = static_cast<long long>(m_shared->inputLatency) + m_shared->outputLatency + 2LL * m_shared->period;
+	// What the recorder already counts: the devices' latencies and the engine's period (the input is taken a period
+	// late; the output goes to the device as it is rendered)
+	const auto expected = static_cast<long long>(m_shared->inputLatency) + m_shared->outputLatency + m_shared->period;
 	result.offset = static_cast<long long>(result.delay) - expected;
 	return result;
 }

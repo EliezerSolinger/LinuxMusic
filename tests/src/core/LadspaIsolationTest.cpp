@@ -112,10 +112,6 @@ private slots:
 		qputenv("LADSPA_PATH", LMMS_TEST_LADSPA_DIR);
 		Engine::init(true);
 		Engine::audioEngine()->stopProcessing();
-		// (the first song played after starting renders a period later than the next ones: played once here, so that
-		// all the renders compared start alike)
-		Engine::getSong()->createNewProject();
-		render(4);
 	}
 
 	void cleanupTestCase()
@@ -138,11 +134,8 @@ private slots:
 	{
 		QFETCH(QString, file);
 		QFETCH(QString, label);
-		// (the first render with a plugin just loaded starts a period late, see docs/plano-refatoracao.md: the second
-		// one is the reference, and a third, the same, shows the comparison is fair)
+		// (a third render, the same as this one, shows the comparison is fair)
 		if (!setUp(file, label, false)) { QSKIP("not built here"); }
-		render(300);
-		setUp(file, label, false);
 		const auto inProgram = render(300);
 		if (loudness(inProgram) < 1e-4f) { QSKIP("the plugin is not here (silent)"); }
 		setUp(file, label, false);
@@ -160,9 +153,8 @@ private slots:
 	//! Moved into a process of its own while the project is open, and back: it goes on sounding the same
 	void itMovesThereAndBack()
 	{
-		if (!setUp("tap_tubewarmth", "tap_tubewarmth", false)) { QSKIP("not built here"); }
-		render(200);
 		auto* effect = setUp("tap_tubewarmth", "tap_tubewarmth", false);
+		if (!effect) { QSKIP("not built here"); }
 		const auto before = render(200);
 		if (loudness(before) < 1e-4f) { QSKIP("the plugin is not here (silent)"); }
 

@@ -51,9 +51,9 @@ class Track;
  *   ring of its own, pre-allocated: no allocation, lock or file access there.
  * - A disk thread empties the rings into 32-bit float WAV files and updates their headers every second, so that a
  *   file is valid up to its last second if the program stops.
- * - Alignment: the input of the period being rendered was captured while the device played the period before the
- *   one rendered before it (the engine hands the device each period one period late, and takes the input one period
- *   late), and the sound took the devices' input and output latencies to get out and back in. So each captured frame
+ * - Alignment: the input of the period being rendered was captured while the device played the period rendered
+ *   before it (the engine hands the device each period as it renders it, and takes the input one period late), and
+ *   the sound took the devices' input and output latencies to get out and back in. So each captured frame
  *   belongs to the song frame that was heard when it was played: the recorder keeps the start of each period it
  *   saw, and maps each frame back through the latency to the period that was playing. Where that is not where the
  *   last frame was (a loop went back, the play head jumped), a new segment begins, in a file of its own. A segment
