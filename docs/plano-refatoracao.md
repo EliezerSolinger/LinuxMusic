@@ -329,3 +329,22 @@ render esperar (contador `periodsSkipped` zerado num teste de estresse), e o TSa
   - Fase 7: os sinais `valueChanged` de cada controlador por período e os `dataChanged` emitidos pela automação na
     thread de áudio alocam eventos do Qt (do pool de tempo real).
 
+
+### Fase 3: entrada não confiável
+- [x] 3.1 Projetos compactados descompactam com limite: zlib próprio, 512 MB, tamanho anunciado conferido
+  (67716855d, `CompressedProjectTest`).
+- [x] 3.2 / 3.5 `LoadCorruptedTest` (4e3c84085): variantes danificadas dos 43 projetos A/B, carregadas e tocadas,
+  também sob ASan/UBSan. Achou:
+  - estouro de heap ao carregar gráficos em base64 em oito plugins (40db94239);
+  - tecla fora do teclado indexando a tabela de notas (5d5f1f561);
+  - `bool` não inicializado no DynamicsProcessor (94a47bd83);
+  - exceção do reamostrador na thread de áudio, que encerrava o programa (7155dbc0d).
+- [x] 3.3 Fila do worker LV2: mensagens inteiras e as sem dados (27727f85c, `Lv2WorkerTest`). MIDI: um SF2 que não
+  carregou não tem banco (578226e65).
+- [x] 3.4 Os `assert` sobre dados de fora viraram checagens (MidiImport, LV2, AudioPortsModel). Os que restam testam
+  invariantes internas.
+- [x] 3.6 Caminhos enormes, inválidos, para fora ou pastas fazem parte das variantes do `LoadCorruptedTest`.
+- [x] Pedido do usuário (17/11): onde um erro deixou de lançar exceção ou de derrubar o programa, ele vai para um
+  log de erros. O `ErrorLog` (075f31904) é seguro na thread de áudio (sem trava nem alocação) e grava em
+  `<pasta de trabalho>/logs/errors.log` e no stderr. Ele está ligado em todos esses pontos e recebe também os avisos
+  ao usuário (fabdde10e).
