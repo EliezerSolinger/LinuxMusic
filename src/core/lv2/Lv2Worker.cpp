@@ -24,6 +24,8 @@
 
 #include "Lv2Worker.h"
 
+#include <cstring>
+
 #include <cassert>
 
 #ifdef LMMS_HAVE_LV2
@@ -118,6 +120,7 @@ Lv2Worker::~Lv2Worker()
 // Let the worker send responses to the audio thread
 LV2_Worker_Status Lv2Worker::respond(uint32_t size, const void* data)
 {
+	if (!data) { size = 0; } // (a size without data would put the next message's bytes in its place)
 	if(m_threaded)
 	{
 		if(m_responses.free() < sizeof(size) + size)
@@ -126,8 +129,12 @@ LV2_Worker_Status Lv2Worker::respond(uint32_t size, const void* data)
 		}
 		else
 		{
-			m_responses.write((const char*)&size, sizeof(size));
-			if(size && data) { m_responses.write((const char*)data, size); }
+			// The size and the data in one write: the audio thread reads without waiting for us, and must never
+			// see a size whose data is not there yet
+			m_responseMessage.resize(sizeof(size) + size);
+			std::memcpy(m_responseMessage.data(), &size, sizeof(size));
+			if (size) { std::memcpy(m_responseMessage.data() + sizeof(size), data, size); }
+			m_responses.write(m_responseMessage.data(), m_responseMessage.size());
 		}
 	}
 	else
@@ -152,10 +159,15 @@ void Lv2Worker::workerFunc()
 		if (m_exit) { break; }
 
 		const std::size_t readSpace = m_requestsReader.read_space();
-		if (readSpace <= sizeof(size)) { continue; } // (should not happen)
+		if (readSpace < sizeof(size)) { continue; } // (should not happen: the request is written before the post)
 
 		m_requestsReader.read(sizeof(size)).copy((char*)&size, sizeof(size));
-		assert(size <= readSpace - sizeof(size));
+		if (size > readSpace - sizeof(size))
+		{
+			// (cannot happen with whole requests; if it did, the rest could not be trusted)
+			m_requestsReader.read(readSpace - sizeof(size));
+			continue;
+		}
 		if(size > buf.size()) { buf.resize(size); }
 		if(size) { m_requestsReader.read(size).copy(buf.data(), size); }
 
@@ -173,6 +185,7 @@ void Lv2Worker::workerFunc()
 // Let the audio thread schedule work for the worker
 LV2_Worker_Status Lv2Worker::scheduleWork(uint32_t size, const void *data)
 {
+	if (!data) { size = 0; } // (as respond())
 	if (m_threaded)
 	{
 		if(m_requests.free() < sizeof(size) + size)
@@ -208,14 +221,22 @@ void Lv2Worker::emitResponses()
 {
 	std::size_t read_space = m_responsesReader.read_space();
 	uint32_t size;
-	while (read_space > sizeof(size))
+	// (a response of no data is just its size: it is read too)
+	while (read_space >= sizeof(size))
 	{
 		assert(m_handle);
 		assert(m_interface);
 		m_responsesReader.read(sizeof(size)).copy((char*)&size, sizeof(size));
+		read_space -= sizeof(size);
+		if (size > read_space || size > m_response.size())
+		{
+			// (cannot happen with whole responses; if it did, the rest could not be trusted)
+			m_responsesReader.read(read_space);
+			return;
+		}
 		if(size) { m_responsesReader.read(size).copy(m_response.data(), size); }
 		m_interface->work_response(m_handle, size, m_response.data());
-		read_space -= sizeof(size) + size;
+		read_space -= size;
 	}
 }
 
