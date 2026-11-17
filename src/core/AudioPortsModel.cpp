@@ -540,19 +540,12 @@ void AudioPortsModel::Matrix::loadSettings(const QDomElement& elem)
 	}
 
 	auto addConnection = [&](const QString& name) {
+		// "c<track channel>_<processor channel>"; anything else (from a damaged file) is no connection
 		const auto pos = name.indexOf('_');
-#ifndef NDEBUG
-		constexpr auto minSize = static_cast<int>(std::string_view{"c#_#"}.size());
-		if (name.size() < minSize) { throw std::runtime_error{"string too small"}; }
-		if (name[0] != 'c') { throw std::runtime_error{"invalid string: \"" + name.toStdString() + "\""}; }
-		if (pos <= 0) { throw std::runtime_error{"parse failure"}; }
-#endif
+		if (name.size() < 4 || name[0] != 'c' || pos <= 1) { return; }
 
 		auto trackChannel = QStringView{name}.mid(1, pos - 1).toInt();
 		auto processorChannel = QStringView{name}.mid(pos + 1).toInt();
-#ifndef NDEBUG
-		if (trackChannel == 0 || processorChannel == 0) { throw std::runtime_error{"failed to parse integer"}; }
-#endif
 
 		// Connections to track or processor channels that do not exist (anymore) are dropped
 		if (trackChannel < 1 || trackChannel > static_cast<int>(m_pins.size())

@@ -201,7 +201,9 @@ auto AudioResampler::process(InterleavedBufferView<const float> input, Interleav
 
 	if ((m_error = src_process(static_cast<SRC_STATE*>(m_state.get()), &data)))
 	{
-		throw std::runtime_error{src_strerror(m_error)};
+		// (on the audio thread, where nothing may throw: silence instead; the error stays in m_error)
+		std::fill_n(output.data(), output.frames() * output.channels(), 0.f);
+		return {0, static_cast<f_cnt_t>(output.frames())};
 	}
 
 	return {static_cast<f_cnt_t>(data.input_frames_used), static_cast<f_cnt_t>(data.output_frames_gen)};
@@ -209,10 +211,8 @@ auto AudioResampler::process(InterleavedBufferView<const float> input, Interleav
 
 void AudioResampler::reset()
 {
-	if ((m_error = src_reset(static_cast<SRC_STATE*>(m_state.get()))))
-	{
-		throw std::runtime_error{src_strerror(m_error)};
-	}
+	// (as process(): it runs on the audio thread; a reset that fails leaves the state as it was)
+	m_error = src_reset(static_cast<SRC_STATE*>(m_state.get()));
 }
 
 void AudioResampler::StateDeleter::operator()(void* state)

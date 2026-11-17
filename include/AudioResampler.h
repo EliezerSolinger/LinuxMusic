@@ -26,6 +26,8 @@
 #define LMMS_AUDIO_RESAMPLER_H
 
 #include <cstddef>
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include "AudioBufferView.h"
 #include "lmms_export.h"
@@ -97,14 +99,25 @@ public:
 	 * @brief Sets the resampling ratio to `ratio`.
 	 * @param ratio Output sample rate divided by input sample rate.
 	 */
-	void setRatio(double ratio) { m_ratio = ratio; }
+	void setRatio(double ratio) { m_ratio = validRatio(ratio); }
 
 	/**
 	 * @brief Sets the resampling ratio to `output / input`.
 	 * @param input Input sample rate.
 	 * @param output Output sample rate.
 	 */
-	void setRatio(sample_rate_t input, sample_rate_t output) { m_ratio = static_cast<double>(output) / input; }
+	void setRatio(sample_rate_t input, sample_rate_t output)
+	{
+		m_ratio = validRatio(input ? static_cast<double>(output) / input : 1.0);
+	}
+
+	//! The ratios libsamplerate takes; any other is brought into them (not a number, or none, is 1)
+	static constexpr double MinRatio = 1.0 / 256;
+	static constexpr double MaxRatio = 256.0;
+	static auto validRatio(double ratio) -> double
+	{
+		return std::isfinite(ratio) && ratio > 0 ? std::clamp(ratio, MinRatio, MaxRatio) : 1.0;
+	}
 
 	//! @returns the resampling ratio.
 	auto ratio() const -> double { return m_ratio; }
