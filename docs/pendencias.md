@@ -211,6 +211,17 @@ queda do Mallets, que é queda e entra antes.
     - listar todas as peças e o que já temos de parecido (AmpAndIr/NAM, mixer analógico);
     - definir a interface de cada uma, que deve caber no rack de efeitos (item acima).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
+- [ ] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
+  - Um visor grande de posição e um menor de tempo, clicáveis para trocar o formato.
+  - Estado escrito e colorido (parado, tocando, gravando, contagem).
+  - Andamento editável no lugar, com Tap.
+- [ ] **Configurações novas (design aprovado em 17/11):** `docs/design-sugestoes/08-configuracoes.png`.
+  - Seções numa lista lateral com busca.
+  - Cada opção diz se aplica na hora ou pede reinício.
+  - A latência real ao lado do buffer.
+  - Faixa "Reiniciar agora" para o que pede reinício.
+  - Junta-se ao item "Configurações que só valem depois de reiniciar".
+- As outras sete telas de `docs/design-sugestoes` esperam a revisão do usuário: não implementar antes.
 
 ## Feito recentemente (13/11)
 
