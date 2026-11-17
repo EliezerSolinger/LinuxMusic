@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "AudioEngine.h"
+#include "PluginChecks.h"
 #include "ControllerConnection.h"
 #include "LfoController.h"
 #include "MidiController.h"
@@ -38,7 +39,7 @@ namespace lmms
 {
 
 
-long Controller::s_periods = 0;
+std::atomic<long> Controller::s_periods = 0;
 std::vector<Controller*> Controller::s_controllers;
 std::vector<Controller*> Controller::s_allControllers;
 
@@ -124,9 +125,12 @@ float Controller::value( int offset )
 {
 	// Only the thread rendering the period brings the values up to date (see updateAllValueBuffers()): the worker
 	// threads find them so, and other threads (the GUI) read the last ones
-	if (m_bufferLastUpdated != s_periods && AudioEngine::isRenderingThread())
+	// (other threads, the GUI, take the value published at the end of the last update: the buffer may be being
+	// written meanwhile)
+	if (!ThreadCheck::isAudioThread()) { return m_publishedValue.load(std::memory_order_relaxed); }
+	if (AudioEngine::isRenderingThread() && m_bufferLastUpdated != s_periods)
 	{
-		updateValueBuffer();
+		refresh();
 	}
 	return m_valueBuffer.values()[ offset ];
 }
@@ -134,13 +138,25 @@ float Controller::value( int offset )
 
 ValueBuffer * Controller::valueBuffer()
 {
-	// (as value())
-	if (m_bufferLastUpdated != s_periods && AudioEngine::isRenderingThread())
+	// (as value(); for the audio threads only)
+	if (AudioEngine::isRenderingThread() && m_bufferLastUpdated != s_periods)
 	{
-		updateValueBuffer();
+		refresh();
 	}
 	return &m_valueBuffer;
 }
+
+
+void Controller::refresh()
+{
+	updateValueBuffer();
+	if (const auto length = m_valueBuffer.length(); length > 0)
+	{
+		m_publishedValue.store(m_valueBuffer.values()[length - 1], std::memory_order_relaxed);
+	}
+}
+
+
 
 
 void Controller::updateValueBuffer()
@@ -187,7 +203,7 @@ void Controller::updateAllValueBuffers()
 {
 	for (auto* controller : s_allControllers)
 	{
-		if (controller->m_bufferLastUpdated != s_periods) { controller->updateValueBuffer(); }
+		if (controller->m_bufferLastUpdated != s_periods) { controller->refresh(); }
 	}
 }
 

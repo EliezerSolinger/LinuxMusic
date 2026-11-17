@@ -168,6 +168,11 @@ protected:
 	// when we last updated the valuebuffer - so we know if we have to update it
 	long m_bufferLastUpdated;
 
+	//! The last value of the last period updated, for threads other than the audio threads (the GUI)
+	std::atomic<float> m_publishedValue = 0.5f;
+	//! updateValueBuffer(), then publishes its last value
+	void refresh();
+
 	//! The last value asked for (by any thread: the GUI and the worker threads)
 	std::atomic<float> m_currentValue = 0.f;
 	bool  m_sampleExact;
@@ -180,7 +185,8 @@ protected:
 	//! Every controller, for updateAllValueBuffers() (changed under the audio engine's change lock)
 	static ControllerVector s_allControllers;
 
-	static long s_periods;
+	//! The periods rendered (counted by the audio thread, read by any)
+	static std::atomic<long> s_periods;
 
 
 signals:
