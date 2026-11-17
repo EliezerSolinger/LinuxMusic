@@ -23,6 +23,10 @@
 
 #include "SystemSemaphore.h"
 
+#include <chrono>
+#include <ctime>
+#include <thread>
+
 #include <limits>  // IWYU pragma: keep
 #include <system_error>
 #include <type_traits>
@@ -109,6 +113,29 @@ public:
 		}) == 0;
 	}
 
+	auto tryAcquireFor(std::chrono::microseconds timeout) noexcept -> bool
+	{
+		const auto deadline = std::chrono::steady_clock::now() + timeout;
+#if defined(LMMS_BUILD_APPLE)
+		// (macOS has no sem_timedwait: short tries until the deadline, yielding at first and then sleeping a little)
+		for (int tries = 0;; ++tries)
+		{
+			if (retryWhileInterrupted([&]() noexcept { return sem_trywait(m_sem); }) == 0) { return true; }
+			if (errno != EAGAIN || std::chrono::steady_clock::now() >= deadline) { return false; }
+			if (tries < 64) { std::this_thread::yield(); }
+			else { std::this_thread::sleep_for(std::chrono::microseconds{50}); }
+		}
+#else
+		(void)deadline;
+		auto when = timespec{};
+		clock_gettime(CLOCK_REALTIME, &when);
+		const auto total = std::chrono::nanoseconds{when.tv_nsec} + timeout;
+		when.tv_sec += static_cast<time_t>(std::chrono::duration_cast<std::chrono::seconds>(total).count());
+		when.tv_nsec = static_cast<long>((total % std::chrono::seconds{1}).count());
+		return retryWhileInterrupted([&]() noexcept { return sem_timedwait(m_sem, &when); }) == 0;
+#endif
+	}
+
 	auto release() noexcept -> bool { return sem_post(m_sem) == 0; }
 
 private:
@@ -148,6 +175,11 @@ public:
 	}
 
 	auto acquire() noexcept -> bool { return WaitForSingleObject(m_sem.get(), INFINITE) == WAIT_OBJECT_0; }
+	auto tryAcquireFor(std::chrono::microseconds timeout) noexcept -> bool
+	{
+		const auto milliseconds = std::chrono::ceil<std::chrono::milliseconds>(timeout).count();
+		return WaitForSingleObject(m_sem.get(), static_cast<DWORD>(milliseconds)) == WAIT_OBJECT_0;
+	}
 	auto release() noexcept -> bool { return ReleaseSemaphore(m_sem.get(), 1, nullptr); }
 
 private:
@@ -176,6 +208,10 @@ SystemSemaphore::SystemSemaphore(SystemSemaphore&& other) noexcept = default;
 auto SystemSemaphore::operator=(SystemSemaphore&& other) noexcept -> SystemSemaphore& = default;
 
 auto SystemSemaphore::acquire() noexcept -> bool { return m_impl->acquire(); }
+auto SystemSemaphore::tryAcquireFor(std::chrono::microseconds timeout) noexcept -> bool
+{
+	return m_impl->tryAcquireFor(timeout);
+}
 auto SystemSemaphore::release() noexcept -> bool { return m_impl->release(); }
 
 } // namespace lmms

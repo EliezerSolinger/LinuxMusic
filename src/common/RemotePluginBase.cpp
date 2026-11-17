@@ -24,9 +24,13 @@
 
 #include "RemotePluginBase.h"
 
+#include <chrono>
+
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 #include <QCoreApplication>
 #include <QThread>
+
+#include "ErrorLog.h"
 #endif
 
 
@@ -107,13 +111,28 @@ RemotePluginBase::message RemotePluginBase::receiveMessage()
 {
 #ifdef SYNC_WITH_SHM_FIFO
 	m_in->waitForMessage();
+#endif
+	return readMessage();
+}
+
+
+
+
+auto RemotePluginBase::readMessage() -> message
+{
+	// (the counts come from the other process: impossible ones mean it is broken)
+#ifdef SYNC_WITH_SHM_FIFO
 	m_in->lock();
 	message m;
 	m.id = m_in->readInt();
 	const int s = m_in->readInt();
-	for (int i = 0; i < s; ++i)
+	if (s < 0 || s > MaxMessageParts) { m_in->broken("a message of an impossible size"); }
+	else
 	{
-		m.data.push_back(m_in->readString());
+		for (int i = 0; i < s && !isInvalid(); ++i)
+		{
+			m.data.push_back(m_in->readString());
+		}
 	}
 	m_in->unlock();
 #else
@@ -121,12 +140,21 @@ RemotePluginBase::message RemotePluginBase::receiveMessage()
 	message m;
 	m.id = readInt();
 	const int s = readInt();
-	for (int i = 0; i < s; ++i)
+	if (s < 0 || s > MaxMessageParts)
 	{
-		m.data.push_back(readString());
+		std::fprintf(stderr, "RemotePlugin: a message of an impossible size (%d): the connection is broken\n", s);
+		invalidate();
+	}
+	else
+	{
+		for (int i = 0; i < s && !isInvalid(); ++i)
+		{
+			m.data.push_back(readString());
+		}
 	}
 	pthread_mutex_unlock(&m_receiveMutex);
 #endif
+	if (isInvalid()) { return message{}; }
 	return m;
 }
 
@@ -190,5 +218,60 @@ RemotePluginBase::message RemotePluginBase::waitForMessage(
 
 	return message();
 }
+
+
+
+
+auto RemotePluginBase::messageArrives(std::chrono::microseconds timeout) -> bool
+{
+	if (isInvalid()) { return false; }
+#ifdef SYNC_WITH_SHM_FIFO
+	return m_in->waitForMessage(timeout);
+#else
+	auto socket = pollfd{};
+	socket.fd = m_socket;
+	socket.events = POLLIN;
+	const auto milliseconds = static_cast<int>(std::chrono::ceil<std::chrono::milliseconds>(timeout).count());
+	while (true)
+	{
+		const auto result = poll(&socket, 1, milliseconds);
+		if (result < 0 && errno == EINTR) { continue; }
+		// (a closed connection is readable: reading it then marks it invalid)
+		return result > 0;
+	}
+#endif
+}
+
+
+
+
+RemotePluginBase::message RemotePluginBase::waitForMessage(const message& wanted, std::chrono::microseconds timeout)
+{
+	const auto deadline = std::chrono::steady_clock::now() + timeout;
+	while (!isInvalid())
+	{
+		const auto left = std::chrono::duration_cast<std::chrono::microseconds>(
+			deadline - std::chrono::steady_clock::now());
+		if (left.count() <= 0 || !messageArrives(left)) { break; }
+		const auto m = readMessage();
+		processMessage(m);
+		if (m.id == wanted.id || m.id == IdUndefined) { return m; }
+	}
+	return message{};
+}
+
+
+
+
+#ifdef SYNC_WITH_SHM_FIFO
+void shmFifo::reportBroken(const char* what)
+{
+#ifdef BUILD_REMOTE_PLUGIN_CLIENT
+	std::fprintf(stderr, "RemotePlugin: %s: the connection is broken\n", what);
+#else
+	ErrorLog::report(ErrorLog::Severity::Error, "RemotePlugin", what);
+#endif
+}
+#endif
 
 } // namespace lmms

@@ -24,6 +24,7 @@
 #ifndef LMMS_SYSTEM_SEMAPHORE_H
 #define LMMS_SYSTEM_SEMAPHORE_H
 
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -47,6 +48,8 @@ public:
 	auto operator=(SystemSemaphore&& other) noexcept -> SystemSemaphore&;
 
 	auto acquire() noexcept -> bool;
+	//! Acquires it if that happens within @p timeout; false otherwise (or on an error)
+	auto tryAcquireFor(std::chrono::microseconds timeout) noexcept -> bool;
 	auto release() noexcept -> bool;
 
 	auto key() const noexcept -> const std::string& { return m_key; }

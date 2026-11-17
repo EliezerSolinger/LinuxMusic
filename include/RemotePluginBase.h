@@ -57,6 +57,8 @@
 #define LMMS_EXPORT
 
 #ifndef SYNC_WITH_SHM_FIFO
+#include <cerrno>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #endif // SYNC_WITH_SHM_FIFO
@@ -66,11 +68,14 @@
 #include <QString>
 
 #ifndef SYNC_WITH_SHM_FIFO
+#include <cerrno>
 #include <poll.h>
 #include <unistd.h>  // IWYU pragma: keep
 #endif // SYNC_WITH_SHM_FIFO
 
 #endif // BUILD_REMOTE_PLUGIN_CLIENT
+
+#include <chrono>
 
 #ifdef SYNC_WITH_SHM_FIFO
 #include "SharedMemory.h"
@@ -87,6 +92,18 @@ namespace lmms
 // sometimes we need to exchange bigger messages (e.g. for VST parameter dumps)
 // so set a usable value here
 const int SHM_FIFO_SIZE = 512*1024;
+
+//! How long a message's data may take to arrive once the message is announced (the other side writes it all before
+//! announcing it: waiting longer means it is broken)
+constexpr auto ShmFifoDataTimeout = std::chrono::seconds{1};
+#endif // SYNC_WITH_SHM_FIFO
+
+//! The most a message may carry, as the other process says it (a bigger or negative count means it is broken): its
+//! texts, each one (a plugin's whole state fits), and how many
+constexpr int MaxMessageText = 256 * 1024 * 1024;
+constexpr int MaxMessageParts = 1 << 20;
+
+#ifdef SYNC_WITH_SHM_FIFO
 
 
 // implements a FIFO inside a shared memory segment
@@ -182,6 +199,12 @@ public:
 		}
 	}
 
+	//! Waits for a message at most @p timeout: false when none came
+	auto waitForMessage(std::chrono::microseconds timeout) -> bool
+	{
+		return !isInvalid() && m_messageSem.tryAcquireFor(timeout);
+	}
+
 	// increase message-semaphore
 	inline void messageSent()
 	{
@@ -205,11 +228,16 @@ public:
 	{
 		std::string ret;
 		const int len = readInt();
+		// (the length comes from the other process: one that cannot fit the FIFO is broken)
+		if (len < 0 || len > SHM_FIFO_SIZE)
+		{
+			broken("a text of an impossible length");
+			return ret;
+		}
 		if (len > 0)
 		{
 			ret.resize(static_cast<std::size_t>(len));
 			read(ret.data(), len);
-			ret[len] = '\0';
 		}
 		return ret;
 	}
@@ -230,9 +258,18 @@ public:
 			return false;
 		}
 		lock();
-		const bool empty = ( m_data->startPtr == m_data->endPtr );
+		const bool empty = !consistent() || ( m_data->startPtr == m_data->endPtr );
 		unlock();
 		return !empty;
+	}
+
+	//! Marks it broken (the other side wrote something impossible, or stopped in the middle): nothing more is read
+	//! from it or written to it, and whoever waits for a message is woken
+	void broken(const char* what)
+	{
+		reportBroken(what);
+		invalidate();
+		messageSent();
 	}
 
 
@@ -243,22 +280,51 @@ public:
 
 
 private:
+	//! The FIFO's positions are in shared memory, which the other process writes too: they are checked before use
+	auto consistent() const -> bool
+	{
+		const auto start = m_data->startPtr;
+		const auto end = m_data->endPtr;
+		return 0 <= start && start <= end && end <= SHM_FIFO_SIZE;
+	}
+
+	static void reportBroken(const char* what);
+
 	void read( void * _buf, int _len )
 	{
+		if (_len < 0 || _len > SHM_FIFO_SIZE)
+		{
+			broken("a read of an impossible length");
+			return;
+		}
 		if( isInvalid() )
 		{
 			memset( _buf, 0, _len );
 			return;
 		}
 		lock();
-		while( isInvalid() == false &&
-				_len > m_data->endPtr - m_data->startPtr )
+		// (the data of an announced message is all there already: it may only be late, not missing)
+		const auto deadline = std::chrono::steady_clock::now() + ShmFifoDataTimeout;
+		while (!isInvalid() && consistent() && _len > m_data->endPtr - m_data->startPtr)
 		{
 			unlock();
+			if (std::chrono::steady_clock::now() >= deadline)
+			{
+				broken("a message whose data never came");
+				memset(_buf, 0, _len);
+				return;
+			}
 #ifndef LMMS_BUILD_WIN32
 			usleep( 5 );
 #endif
 			lock();
+		}
+		if (isInvalid() || !consistent())
+		{
+			unlock();
+			if (!isInvalid()) { broken("positions outside the FIFO"); }
+			memset(_buf, 0, _len);
+			return;
 		}
 		std::memcpy(_buf, m_data->data + m_data->startPtr, _len);
 		m_data->startPtr += _len;
@@ -273,12 +339,12 @@ private:
 
 	void write( const void * _buf, int _len )
 	{
-		if( isInvalid() || _len > SHM_FIFO_SIZE )
+		if (isInvalid() || _len < 0 || _len > SHM_FIFO_SIZE)
 		{
 			return;
 		}
 		lock();
-		while( _len > SHM_FIFO_SIZE - m_data->endPtr )
+		while (!isInvalid() && consistent() && _len > SHM_FIFO_SIZE - m_data->endPtr)
 		{
 			// if no space is left, try to move data to front
 			if( m_data->startPtr > 0 )
@@ -296,12 +362,18 @@ private:
 #endif
 			lock();
 		}
+		if (isInvalid() || !consistent())
+		{
+			unlock();
+			if (!isInvalid()) { broken("positions outside the FIFO"); }
+			return;
+		}
 		std::memcpy(m_data->data + m_data->endPtr, _buf, _len);
 		m_data->endPtr += _len;
 		unlock();
 	}
 
-	volatile bool m_invalid;
+	std::atomic<bool> m_invalid;
 	bool m_master;
 	SharedMemory<shmData> m_data;
 	SystemSemaphore m_dataSem;
@@ -441,6 +513,8 @@ public:
 
 	int sendMessage( const message & _m );
 	message receiveMessage();
+	//! Whether a message came within @p timeout (the next receive then reads it without waiting)
+	auto messageArrives(std::chrono::microseconds timeout) -> bool;
 
 	inline bool isInvalid() const
 	{
@@ -453,6 +527,10 @@ public:
 
 	message waitForMessage( const message & _m,
 						bool _busy_waiting = false );
+
+	//! Waits at most @p timeout for message @p wanted (handling the others that come first). What comes back is it,
+	//! or, when the other side is broken or did not answer in time, a message of IdUndefined
+	message waitForMessage(const message& wanted, std::chrono::microseconds timeout);
 
 	inline message fetchAndProcessNextMessage()
 	{
@@ -478,11 +556,17 @@ public:
 	{
 		std::string ret;
 		const int len = readInt();
+		// (the length comes from the other process)
+		if (len < 0 || len > MaxMessageText)
+		{
+			std::fprintf(stderr, "RemotePlugin: a text of an impossible length (%d): the connection is broken\n", len);
+			invalidate();
+			return ret;
+		}
 		if (len > 0)
 		{
 			ret.resize(static_cast<std::size_t>(len));
 			read(ret.data(), len);
-			ret[len] = '\0';
 		}
 		return ret;
 	}
@@ -562,6 +646,9 @@ protected:
 
 
 private:
+	//! Reads a message already announced (see receiveMessage())
+	auto readMessage() -> message;
+
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 	static int & waitDepthCounter()
 	{
@@ -585,16 +672,14 @@ private:
 		int remaining = _len;
 		while ( remaining )
 		{
-			ssize_t nread = ::read( m_socket, buf, remaining );
-			switch ( nread )
+			const ssize_t nread = ::read( m_socket, buf, remaining );
+			if (nread < 0 && errno == EINTR) { continue; } // (a signal: not an error)
+			if (nread <= 0)
 			{
-				case -1:
-					fprintf( stderr,
-						"Error while reading.\n" );
-				case 0:
-					invalidate();
-					memset( _buf, 0, _len );
-					return;
+				if (nread < 0) { std::fprintf(stderr, "RemotePlugin: error while reading\n"); }
+				invalidate();
+				memset( _buf, 0, _len );
+				return;
 			}
 			buf += nread;
 			remaining -= nread;
@@ -611,15 +696,13 @@ private:
 		int remaining = _len;
 		while ( remaining )
 		{
-			ssize_t nwritten = ::write( m_socket, buf, remaining );
-			switch ( nwritten )
+			const ssize_t nwritten = ::write( m_socket, buf, remaining );
+			if (nwritten < 0 && errno == EINTR) { continue; } // (a signal: not an error)
+			if (nwritten <= 0)
 			{
-				case -1:
-					fprintf( stderr,
-						"Error while writing.\n" );
-				case 0:
-					invalidate();
-					return;
+				if (nwritten < 0) { std::fprintf(stderr, "RemotePlugin: error while writing\n"); }
+				invalidate();
+				return;
 			}
 			buf += nwritten;
 			remaining -= nwritten;
@@ -627,7 +710,7 @@ private:
 	}
 
 
-	bool m_invalid;
+	std::atomic<bool> m_invalid; //!< (read by the audio thread, set by others)
 
 	pthread_mutex_t m_receiveMutex;
 	pthread_mutex_t m_sendMutex;

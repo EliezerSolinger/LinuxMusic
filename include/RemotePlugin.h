@@ -25,6 +25,9 @@
 #ifndef LMMS_REMOTE_PLUGIN_H
 #define LMMS_REMOTE_PLUGIN_H
 
+#include <atomic>
+#include <chrono>
+
 #include <span>
 #include <QThread>
 #include <QProcess>
@@ -146,6 +149,12 @@ public:
 		return m_failed;
 	}
 
+	//! The remote process stopped answering while processing (it was given up, and is ended)
+	auto stoppedResponding() const -> bool { return m_stoppedResponding.load(std::memory_order_relaxed); }
+
+	//! How long processing a period may take before the remote process counts as hung
+	static constexpr auto ProcessTimeout = std::chrono::seconds{2};
+
 	inline void lock()
 	{
 		m_commMutex.lock();
@@ -166,7 +175,9 @@ signals:
 	void channelCountsChanged(lmms::ch_cnt_t channelsIn, lmms::ch_cnt_t channelsOut);
 
 protected:
-	bool m_failed;
+	//! (the audio thread reads it, the main thread sets it)
+	std::atomic<bool> m_failed;
+	std::atomic<bool> m_stoppedResponding = false;
 
 private:
 	QProcess m_process;

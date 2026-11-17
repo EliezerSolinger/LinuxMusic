@@ -39,6 +39,7 @@ set(LMMS_TESTS
 	src/core/ProjectVersionTest.cpp
 	src/core/RealtimeAllocatorTest.cpp
 	src/core/RecordingTest.cpp
+	src/core/RemotePluginIpcTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/SongMarkersTest.cpp
 	src/core/SpscRingTest.cpp

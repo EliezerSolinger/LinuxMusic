@@ -38,6 +38,7 @@
 #endif
 
 #include "AudioEngine.h"
+#include "ErrorLog.h"
 #include "Engine.h"
 #include "MidiEvent.h"
 #include "Song.h"
@@ -45,6 +46,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QTimer>
 #include <QUuid>
 
 #ifdef LMMS_BUILD_WIN32
@@ -112,7 +114,15 @@ void ProcessWatcher::run()
 	}
 #endif // LMMS_BUILD_WIN32
 
+	// A process that stopped answering is ended (the audio thread gave up on it, see RemotePlugin::process())
+	auto hung = QTimer{};
+	hung.setInterval(200);
+	QObject::connect(&hung, &QTimer::timeout, [&] {
+		if (m_plugin->stoppedResponding() && process.state() != QProcess::NotRunning) { process.kill(); }
+	});
+	hung.start();
 	exec();
+	hung.stop();
 	process.moveToThread(m_plugin->thread());
 	while (!m_quit && m_plugin->messagesLeft())
 	{
@@ -355,10 +365,18 @@ bool RemotePlugin::process()
 		return false;
 	}
 
-	waitForMessage(IdProcessingDone);
+	// (with a deadline: a hung plugin must not hang the audio thread)
+	const auto done = waitForMessage(message{IdProcessingDone}, ProcessTimeout).id == IdProcessingDone;
 	unlock();
-
-	return true;
+	if (!done && !m_stoppedResponding.exchange(true))
+	{
+		// It is silent from now on; its process is ended by the watcher (see ProcessWatcher::run())
+		m_failed = true;
+		invalidate();
+		ErrorLog::report(ErrorLog::Severity::Error, "RemotePlugin",
+			"a plugin's process did not finish a period in time: it is silent now and its process is ended");
+	}
+	return done;
 }
 
 

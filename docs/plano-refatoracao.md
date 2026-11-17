@@ -484,3 +484,34 @@ Processo, igual para as duas:
     usa o espaço da nota (`makePluginData`) e uma lista com espaço reservado.
 - [ ] Ainda com trava na thread de áudio: as `QMutex` do Sf2Player (síntese e lista de notas) e do envelope/LFO.
   Vão na fase 7 (render sem trava).
+
+### Fase 6: plugins de terceiros e IPC (em andamento)
+- [x] 6.1 `RemotePluginBase`:
+  - Tamanhos vindos do outro processo limitados nos dois caminhos: socket no Linux e no Mac, fila em memória
+    compartilhada no Windows. Textos e partes de mensagem acima do máximo, ou negativos, quebram a conexão em vez de
+    alocar ou esperar para sempre.
+  - Na fila em memória compartilhada:
+    - as posições escritas pelo outro processo são conferidas antes de cada uso;
+    - os dados de uma mensagem anunciada têm prazo de 1 s;
+    - o que quebra vai para o `ErrorLog`.
+  - No socket, um sinal (`EINTR`) não quebra mais a conexão.
+  - O marcador de "inválido" é atômico.
+  - `waitForMessage(mensagem, prazo)`: no socket usa `poll`; na fila, o novo `SystemSemaphore::tryAcquireFor`
+    (`sem_timedwait` no Linux, tentativas curtas no Mac, que não o tem, e espera com prazo no Windows).
+  - Um plugin que não termina um período em 2 s (`RemotePlugin::ProcessTimeout`):
+    - fica mudo;
+    - vai para o log;
+    - tem o processo encerrado pelo vigia.
+    Antes, prendia a thread de áudio para sempre.
+- [x] 6.2 `RemotePluginIpcTest`, com um "plugin" falso do outro lado de um par de sockets:
+  - mensagem certa;
+  - plugin calado (prazo);
+  - tamanho de texto e número de partes impossíveis;
+  - processo que morre no meio da mensagem;
+  - conexão já quebrada;
+  - prazo do semáforo.
+  - Também foi conferido um processo remoto real (o ZynAddSubFX tocando na interface).
+  - O caminho da fila (Windows) passou por uma checagem de sintaxe forçada aqui.
+- [ ] Marcar como suspeito no `PluginGuard` o plugin que travou (o `RemotePlugin` não sabe a identidade do plugin;
+  quem o usa, Vestige, VstEffect e ZynAddSubFX, sabe).
+- [ ] 6.3 Hospedeiro em outro processo para LADSPA e LV2 de terceiros.
