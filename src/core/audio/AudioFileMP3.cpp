@@ -30,7 +30,6 @@
 #ifdef LMMS_HAVE_MP3LAME
 
 
-#include <cassert>
 
 namespace lmms
 {
@@ -42,22 +41,20 @@ AudioFileMP3::AudioFileMP3(	OutputSettings const & outputSettings,
 				AudioEngine* audioEngine ) :
 	AudioFileDevice( outputSettings, channels, file, audioEngine )
 {
-	successful = true;
 	// For now only accept stereo sources
-	successful &= channels == 2;
-	successful &= initEncoder();
-	successful &= outputFileOpened();
+	m_encoding = channels == 2 && outputFileOpened() && initEncoder();
+	successful = m_encoding;
 }
 
 AudioFileMP3::~AudioFileMP3()
 {
-	flushRemainingBuffers();
+	if (m_encoding) { flushRemainingBuffers(); }
 	tearDownEncoder();
 }
 
 void AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
 {
-	if (_frames < 1)
+	if (_frames < 1 || !m_encoding)
 	{
 		return;
 	}
@@ -73,9 +70,8 @@ void AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
 	std::vector<unsigned char> encodingBuffer(minimumBufferSize);
 
 	int bytesWritten = lame_encode_buffer_interleaved_ieee_float(m_lame, &interleavedDataBuffer[0], _frames, &encodingBuffer[0], static_cast<int>(encodingBuffer.size()));
-	assert (bytesWritten >= 0);
-
-	writeData(&encodingBuffer[0], bytesWritten);
+	// (negative: an error of the encoder, nothing to write)
+	if (bytesWritten > 0) { writeData(&encodingBuffer[0], bytesWritten); }
 }
 
 void AudioFileMP3::flushRemainingBuffers()
@@ -84,9 +80,7 @@ void AudioFileMP3::flushRemainingBuffers()
 	std::vector<unsigned char> encodingBuffer(7200 * 4);
 
 	int bytesWritten = lame_encode_flush(m_lame, &encodingBuffer[0], static_cast<int>(encodingBuffer.size()));
-	assert (bytesWritten >= 0);
-
-	writeData(&encodingBuffer[0], bytesWritten);
+	if (bytesWritten > 0) { writeData(&encodingBuffer[0], bytesWritten); }
 }
 
 MPEG_mode mapToMPEG_mode(OutputSettings::StereoMode stereoMode)
@@ -107,6 +101,7 @@ MPEG_mode mapToMPEG_mode(OutputSettings::StereoMode stereoMode)
 bool AudioFileMP3::initEncoder()
 {
 	m_lame = lame_init();
+	if (!m_lame) { return false; }
 
 	// Handle stereo/joint/mono settings
 	OutputSettings::StereoMode stereoMode = getOutputSettings().getStereoMode();
@@ -128,7 +123,8 @@ bool AudioFileMP3::initEncoder()
 
 void AudioFileMP3::tearDownEncoder()
 {
-	lame_close(m_lame);
+	if (m_lame) { lame_close(m_lame); }
+	m_lame = nullptr;
 }
 
 } // namespace lmms

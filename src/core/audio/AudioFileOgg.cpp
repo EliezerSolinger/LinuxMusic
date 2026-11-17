@@ -43,13 +43,14 @@ AudioFileOgg::AudioFileOgg(OutputSettings const& outputSettings, const ch_cnt_t 
 	: AudioFileDevice(outputSettings, channels, file, audioEngine)
 {
 	vorbis_info_init(&m_vi);
+	successful = false;
+	if (!outputFileOpened()) { return; }
 
 	const auto bitrate = outputSettings.bitrate();
 	static constexpr auto maxBitrate = 320;
 
 	if (vorbis_encode_init_vbr(&m_vi, channels, sampleRate(), static_cast<float>(bitrate) / maxBitrate))
 	{
-		successful = false;
 		return;
 	}
 
@@ -74,18 +75,23 @@ AudioFileOgg::AudioFileOgg(OutputSettings const& outputSettings, const ch_cnt_t 
 	}
 
 	vorbis_block_init(&m_vds, &m_vb);
+	m_encoding = true;
 	successful = true;
 }
 
 AudioFileOgg::~AudioFileOgg()
 {
-	// writing 0 frames is how we flush any remaining data to the file
-	writeBuffer(nullptr, 0);
+	// (the encoder's state exists only if it started: a device that could not start is deleted at once)
+	if (m_encoding)
+	{
+		// writing 0 frames is how we flush any remaining data to the file
+		writeBuffer(nullptr, 0);
 
-	ogg_stream_clear(&m_oss);
-	vorbis_block_clear(&m_vb);
-	vorbis_dsp_clear(&m_vds);
-	vorbis_comment_clear(&m_vc);
+		ogg_stream_clear(&m_oss);
+		vorbis_block_clear(&m_vb);
+		vorbis_dsp_clear(&m_vds);
+		vorbis_comment_clear(&m_vc);
+	}
 	vorbis_info_clear(&m_vi);
 }
 

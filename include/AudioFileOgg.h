@@ -63,6 +63,8 @@ private:
 	vorbis_comment m_vc;
 	vorbis_block m_vb;
 	ogg_stream_state m_oss;
+	//! Whether the encoder started (the states above are set up)
+	bool m_encoding = false;
 	ogg_packet m_packet;
 	ogg_page m_page;
 };

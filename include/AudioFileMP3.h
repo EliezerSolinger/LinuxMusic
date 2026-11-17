@@ -66,7 +66,9 @@ private:
 	void tearDownEncoder();
 
 private:
-	lame_t m_lame;
+	lame_t m_lame = nullptr;
+	//! Whether the encoder started
+	bool m_encoding = false;
 };
 
 } // namespace lmms
