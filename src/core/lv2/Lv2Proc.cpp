@@ -196,7 +196,7 @@ private:
 
 
 
-Lv2Proc::Lv2Proc(const LilvPlugin *plugin, Model* parent) :
+Lv2Proc::Lv2Proc(const LilvPlugin *plugin, Model* parent, bool local) :
 	LinkedModelGroup(parent),
 	m_plugin(plugin),
 	m_workLock(1),
@@ -204,7 +204,7 @@ Lv2Proc::Lv2Proc(const LilvPlugin *plugin, Model* parent) :
 	m_midiInputReader(m_midiInputBuf)
 {
 	createPorts();
-	initPlugin();
+	if (local) { initPlugin(); }
 }
 
 
@@ -216,6 +216,15 @@ Lv2Proc::~Lv2Proc() { shutdownPlugin(); }
 
 
 void Lv2Proc::reload() { Lv2ProcSuspender(this); }
+
+
+
+
+void Lv2Proc::setLocal(bool local)
+{
+	if (local && !m_instance) { initPlugin(); }
+	else if (!local && m_instance) { shutdownPlugin(); }
+}
 
 
 
@@ -505,9 +514,14 @@ void Lv2Proc::measureLatency()
 
 void Lv2Proc::shutdownPlugin()
 {
-	lilv_instance_deactivate(m_instance);
-	lilv_instance_free(m_instance);
+	// (none when the plugin runs in a process of its own)
+	if (m_instance)
+	{
+		lilv_instance_deactivate(m_instance);
+		lilv_instance_free(m_instance);
+	}
 	m_instance = nullptr;
+	m_worker.reset();
 
 	m_features.clear();
 	m_options.clear();
@@ -685,6 +699,27 @@ void Lv2Proc::createPort(std::size_t portNum)
 			port = ctrl;
 			break;
 		}
+		case Lv2Ports::Type::Cv:
+		{
+			// An audio-rate control: a buffer of the period's frames, filled from its model on input (it was an
+			// unknown port before, connected to nothing, so a plugin reading it read from null)
+			auto cv = new Lv2Ports::Cv;
+			cv->m_buffer.assign(static_cast<std::size_t>(Engine::audioEngine()->framesPerPeriod()), meta.def());
+			if (meta.m_flow == Lv2Ports::Flow::Input)
+			{
+				AutoLilvNode node(lilv_port_get_name(m_plugin, lilvPort));
+				const QString dispName = lilv_node_as_string(node.get());
+				const sample_rate_t sr = Engine::audioEngine()->outputSampleRate();
+				float stepSize = (meta.max(sr) - meta.min(sr)) / 1000.0f;
+				const float minStep = (stepSize >= 1.0f) ? 0.1f : 0.01f;
+				stepSize = std::max(stepSize - std::fmod(stepSize, minStep), minStep);
+				cv->m_connectedModel.reset(new FloatModel(meta.def(), meta.min(sr), meta.max(sr), stepSize, nullptr,
+					dispName));
+				if (meta.m_logarithmic) { cv->m_connectedModel->setScaleLogarithmic(); }
+			}
+			port = cv;
+			break;
+		}
 		case Lv2Ports::Type::Audio:
 		{
 			auto audio = new Lv2Ports::Audio(static_cast<std::size_t>(Engine::audioEngine()->framesPerPeriod()),
@@ -725,6 +760,7 @@ void Lv2Proc::createPort(std::size_t portNum)
 				}
 			}
 
+			atomPort->m_capacity = static_cast<std::size_t>(minimumSize);
 			atomPort->m_buf.reset(
 				lv2_evbuf_new(static_cast<uint32_t>(minimumSize),
 								mgr->uridMap().map(LV2_ATOM__Chunk),
@@ -778,6 +814,17 @@ void Lv2Proc::createPorts()
 										m_proc->m_plugin, ctrl.m_port)),
 					amo);
 				m_proc->addModel(amo, ctrl.uri());
+			}
+		}
+
+		void visit(Lv2Ports::Cv& cv) override
+		{
+			if (cv.m_flow == Lv2Ports::Flow::Input)
+			{
+				AutomatableModel* amo = cv.m_connectedModel.get();
+				m_proc->m_connectedModels.emplace(
+					lilv_node_as_string(lilv_port_get_symbol(m_proc->m_plugin, cv.m_port)), amo);
+				m_proc->addModel(amo, cv.uri());
 			}
 		}
 
@@ -872,6 +919,7 @@ struct ConnectPortVisitor : public Lv2Ports::Visitor
 		connectPort(lv2_evbuf_get_buffer(atomSeq.m_buf.get()));
 	}
 	void visit(Lv2Ports::Control& ctrl) override { connectPort(&ctrl.m_val); }
+	void visit(Lv2Ports::Cv& cv) override { connectPort(cv.m_buffer.data()); }
 	void visit(Lv2Ports::Audio& audio) override
 	{
 		// Every audio port gets a buffer, including optional and sidechain ports

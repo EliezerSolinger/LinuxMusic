@@ -79,7 +79,11 @@ public:
 		std::vector<PluginIssue> &issues);
 
 	void shutdown();
-	void init(Model* meAsModel);
+	void init(Model* meAsModel, bool local = true);
+
+	//! The plugin instances here, or not (see Lv2Proc::setLocal()); under the audio engine's change lock
+	void setLocal(bool local);
+	auto procCount() const -> std::size_t { return m_procs.size(); }
 
 	const LilvPlugin* getPlugin() const { return m_plugin; }
 
@@ -114,7 +118,8 @@ protected:
 	//! @param that the class inheriting this class and inheriting Model;
 	//!   this is the same pointer as this, but a different type
 	//! @param uri the Lv2 URI telling this class what plugin to construct
-	Lv2ControlBase(class Model *that, const QString& uri);
+	//! @param local whether the plugin runs here (see Lv2Proc)
+	Lv2ControlBase(class Model *that, const QString& uri, bool local = true);
 	Lv2ControlBase(const Lv2ControlBase&) = delete;
 	~Lv2ControlBase() override;
 	void reload();

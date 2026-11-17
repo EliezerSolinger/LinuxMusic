@@ -188,7 +188,7 @@ auto Plugin::instantiateWithKey(const QString& pluginName, Model * parent,
 	// A third-party plugin that can run in a process of its own (see LadspaEffect) does so instead: a crash there
 	// leaves the program running
 	auto isolate = false;
-	if (PluginGuard::isSuspect(identity) && keyPtr && pluginName == "ladspaeffect")
+	if (PluginGuard::isSuspect(identity) && keyPtr && (pluginName == "ladspaeffect" || pluginName == "lv2effect"))
 	{
 		isolate = true;
 		const auto told = tr("\"%1\" crashed or hung before, so it runs in a process of its own now (safer).")

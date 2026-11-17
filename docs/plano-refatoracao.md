@@ -555,4 +555,30 @@ Processo, igual para as duas:
     - o `SharedMemoryData` não era exportado para os plugins.
   - Observado, ainda não investigado: a primeira renderização com um plugin recém-carregado sai um período
     atrasada; as seguintes não.
-- [ ] 6.3 LV2 isolado (sem interface própria; portas de controle, áudio, átomos/MIDI e estado).
+- [x] 6.3 LV2 isolado, também opcional por efeito, como o LADSPA:
+  - `RemoteLv2Host`: carrega só o bundle do plugin com lilv e oferece os mesmos *features* do programa (URID,
+    opções, worker, os de tamanho de bloco). O worker é síncrono quando o programa só renderiza e tem thread quando
+    há interface, como no programa.
+  - O efeito manda um plano das portas: canais de áudio, lugares no bloco de controles para controles e CV,
+    portas de eventos vazias. O remoto não tem regras próprias. Os modelos continuam no programa (`Lv2Proc` sem
+    instância local).
+  - Menu, projeto e isolamento automático de suspeitos, como no LADSPA.
+  - `Lv2IsolationTest`, com um plugin LV2 de teste (`tests/src/helpers/TestLv2`: ganho pelo worker, CV, latência,
+    porta de eventos, queda sob comando): som idêntico, controles chegando, ida e volta, salvo e carregado, queda
+    isolada e suspeito carregando isolado.
+  - Achados no caminho, consertados na causa:
+    - **Portas CV:** um plugin com porta CV era recusado; e, se não fosse, a porta ficava ligada a nulo. Agora
+      ela tem buffer e modelo.
+    - **Efeito sem plugin numa cadeia:** um efeito cujo plugin não carregou (um LV2 não instalado) derrubava o
+      programa. A própria cadeia passa a recusá-lo, venha de onde vier.
+    - **A saída um período atrasada:** `renderNextPeriod` devolvia o período anterior (os buffers trocavam no
+      começo do período). Consequências:
+      - a placa de som recebia tudo um período mais tarde que o necessário (latência a mais à toa);
+      - o primeiro período de cada reprodução era o último da anterior;
+      - a exportação perdia o último período.
+      Agora os buffers trocam no fim, e o gravador e a calibração contam um período a menos (só a entrada chega
+      atrasada). A A/B confirmou o mesmo som, com um período a mais no fim. A referência foi refeita
+      (a antiga está em `base1-before-period-fix`).
+    - **Estado de antes num projeto novo ou numa exportação:** o drive, o transformador, o compressor de
+      barramento e as linhas de atraso guardavam o que tocou antes. Um projeto novo e uma exportação agora começam
+      do repouso (`Mixer::discardProcessingState()`, feito por cada canal na thread de áudio).

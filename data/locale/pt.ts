@@ -18029,4 +18029,27 @@ A interface usada é a que está salva nestas configurações.</translation>
         <translation>%1 falhou no próprio processo. O programa continua; o plugin está mudo agora e não é carregado de novo até você permitir (Configurações, Plugins).</translation>
     </message>
 </context>
+<context>
+    <name>lmms::Lv2Effect</name>
+    <message>
+        <source>Effect</source>
+        <translation>Efeito</translation>
+    </message>
+    <message>
+        <source>The LV2 plugin %1 could not run in a process of its own: %2</source>
+        <translation>O plugin LV2 %1 não pôde rodar em um processo próprio: %2</translation>
+    </message>
+    <message>
+        <source>it is unknown.</source>
+        <translation>ele é desconhecido.</translation>
+    </message>
+    <message>
+        <source>its process did not start.</source>
+        <translation>o processo dele não iniciou.</translation>
+    </message>
+    <message>
+        <source>its process did not answer.</source>
+        <translation>o processo dele não respondeu.</translation>
+    </message>
+</context>
 </TS>

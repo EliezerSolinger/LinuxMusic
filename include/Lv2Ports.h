@@ -220,6 +220,7 @@ struct AtomSeq : public VisitablePort<AtomSeq, PortBase>
 	};
 	using AutoLv2Evbuf = std::unique_ptr<LV2_Evbuf, Lv2EvbufDeleter>;
 	AutoLv2Evbuf m_buf;
+	std::size_t m_capacity = 0; //!< bytes m_buf holds
 };
 
 struct Unknown : public VisitablePort<Unknown, PortBase>

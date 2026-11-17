@@ -51,12 +51,12 @@ Plugin::Type Lv2ControlBase::check(const LilvPlugin *plugin,
 
 
 
-Lv2ControlBase::Lv2ControlBase(Model* that, const QString &uri) :
+Lv2ControlBase::Lv2ControlBase(Model* that, const QString &uri, bool local) :
 	m_plugin(Engine::getLv2Manager()->getPlugin(uri))
 {
 	if (m_plugin)
 	{
-		init(that);
+		init(that, local);
 	}
 	else
 	{
@@ -73,17 +73,17 @@ Lv2ControlBase::~Lv2ControlBase() = default;
 
 
 
-void Lv2ControlBase::init(Model* meAsModel)
+void Lv2ControlBase::init(Model* meAsModel, bool local)
 {
 	m_sampleRate = Engine::audioEngine()->outputSampleRate();
 
 	// Mono plugins run once per stereo channel, all others once with all of their channels
-	m_procs.push_back(std::make_unique<Lv2Proc>(m_plugin, meAsModel));
+	m_procs.push_back(std::make_unique<Lv2Proc>(m_plugin, meAsModel, local));
 	if (Lv2Proc::isMono(m_procs[0]->mainInputCount(), m_procs[0]->outputCount()))
 	{
 		for (ch_cnt_t proc = 1; proc < DEFAULT_CHANNELS; ++proc)
 		{
-			m_procs.push_back(std::make_unique<Lv2Proc>(m_plugin, meAsModel));
+			m_procs.push_back(std::make_unique<Lv2Proc>(m_plugin, meAsModel, local));
 		}
 	}
 	linkAllModels();
@@ -95,6 +95,15 @@ void Lv2ControlBase::init(Model* meAsModel)
 void Lv2ControlBase::shutdown()
 {
 	// currently nothing to do here
+}
+
+
+
+
+void Lv2ControlBase::setLocal(bool local)
+{
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+	for (const auto& proc : m_procs) { proc->setLocal(local); }
 }
 
 

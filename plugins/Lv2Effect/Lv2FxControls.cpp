@@ -28,14 +28,18 @@
 #include "Engine.h"
 #include "Lv2Effect.h"
 #include "Lv2FxControlDialog.h"
+#include "Lv2Effect.h"
+
+#include <QDomElement>
+#include <QPointer>
 
 namespace lmms
 {
 
 
-Lv2FxControls::Lv2FxControls(class Lv2Effect *effect, const QString& uri) :
+Lv2FxControls::Lv2FxControls(class Lv2Effect *effect, const QString& uri, bool local) :
 	EffectControls(effect),
-	Lv2ControlBase(this, uri)
+	Lv2ControlBase(this, uri, local)
 {
 	// Sample rate changes reach the plugin through Lv2Effect::activate()
 }
@@ -55,6 +59,7 @@ void Lv2FxControls::reload()
 void Lv2FxControls::saveSettings(QDomDocument &doc, QDomElement &that)
 {
 	Lv2ControlBase::saveSettings(doc, that);
+	if (static_cast<Lv2Effect*>(effect())->isolated()) { that.setAttribute("isolated", 1); }
 }
 
 
@@ -63,6 +68,16 @@ void Lv2FxControls::saveSettings(QDomDocument &doc, QDomElement &that)
 void Lv2FxControls::loadSettings(const QDomElement &that)
 {
 	Lv2ControlBase::loadSettings(that);
+
+	// Run in a process of its own, or not: once the loading is over (it makes the plugin again)
+	const bool isolated = that.attribute("isolated").toInt() == 1;
+	auto* lv2Effect = static_cast<Lv2Effect*>(effect());
+	if (isolated != lv2Effect->isolated())
+	{
+		QMetaObject::invokeMethod(lv2Effect, [target = QPointer<Lv2Effect>{lv2Effect}, isolated] {
+			if (target) { target->setIsolated(isolated); }
+		}, Qt::QueuedConnection);
+	}
 }
 
 

@@ -25,6 +25,7 @@ set(LMMS_TESTS
 	src/core/GainStagingTest.cpp
 	src/core/ControllerConnectionTest.cpp
 	src/core/LadspaIsolationTest.cpp
+	src/core/Lv2IsolationTest.cpp
 	src/core/LfoControllerTest.cpp
 	src/core/LoadCorruptedTest.cpp
 	src/core/Lv2WorkerTest.cpp
@@ -118,6 +119,19 @@ if(WIN32)
 endif()
 add_dependencies(LadspaIsolationTest CrashingLadspa)
 target_compile_definitions(LadspaIsolationTest PRIVATE LMMS_TEST_LADSPA_DIR="${CMAKE_CURRENT_BINARY_DIR}/ladspa-test")
+
+# An LV2 plugin for Lv2IsolationTest (a bundle in a folder of its own, given in LV2_PATH): gain through the worker, a CV
+# input, a latency, an event input, and a crash on demand
+if(LMMS_HAVE_LV2)
+	set(TEST_LV2_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/lv2-test/linuxmusic-test.lv2")
+	add_library(linuxmusic_test_lv2 MODULE src/helpers/TestLv2/plugin.c)
+	target_include_directories(linuxmusic_test_lv2 SYSTEM PRIVATE ${LV2_INCLUDE_DIRS})
+	set_target_properties(linuxmusic_test_lv2 PROPERTIES PREFIX "" SUFFIX ".so" LIBRARY_OUTPUT_DIRECTORY "${TEST_LV2_BUNDLE}")
+	configure_file(src/helpers/TestLv2/manifest.ttl "${TEST_LV2_BUNDLE}/manifest.ttl" COPYONLY)
+	configure_file(src/helpers/TestLv2/plugin.ttl "${TEST_LV2_BUNDLE}/plugin.ttl" COPYONLY)
+	add_dependencies(Lv2IsolationTest linuxmusic_test_lv2)
+	target_compile_definitions(Lv2IsolationTest PRIVATE LMMS_TEST_LV2_DIR="${CMAKE_CURRENT_BINARY_DIR}/lv2-test")
+endif()
 
 # The damaged projects are made from the A/B projects
 target_compile_definitions(LoadCorruptedTest PRIVATE LMMS_TEST_AB_PROJECTS="${CMAKE_SOURCE_DIR}/tools/check/ab-projects")

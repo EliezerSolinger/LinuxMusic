@@ -81,10 +81,19 @@ public:
 	/*
 		ctor/dtor/reload
 	*/
-	Lv2Proc(const LilvPlugin* plugin, Model *parent);
+	//! @param local whether the plugin runs here (otherwise only the ports and their models are made: the plugin
+	//!   runs in a process of its own, see Lv2Effect)
+	Lv2Proc(const LilvPlugin* plugin, Model *parent, bool local = true);
 	~Lv2Proc() override;
 	void reload();
 	void onSampleRateChanged();
+
+	//! Whether the plugin runs here; changing it makes or frees the instance (not while the audio thread uses it)
+	auto isLocal() const -> bool { return m_instance != nullptr; }
+	void setLocal(bool local);
+
+	//! The ports, in port order (the isolated effect plans its plugin process from them)
+	auto ports() const -> const std::vector<std::unique_ptr<Lv2Ports::PortBase>>& { return m_ports; }
 
 	/*
 		port access

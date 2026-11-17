@@ -145,12 +145,7 @@ std::vector<PluginIssue> Meta::get(const LilvPlugin *plugin,
 		// CV ports are mostly the same as control ports, so we take
 		// mostly the same metadata
 
-		if (isA(LV2_CORE__CVPort))
-		{
-			// currently not supported, but we can still check the metadata
-			issue(PluginIssueType::BadPortType, "cvPort");
-		}
-
+		// (CV ports are supported: an audio-rate control, filled from its model each period, see Lv2Proc)
 		m_type = isA(LV2_CORE__CVPort) ? Type::Cv : Type::Control;
 
 		bool isToggle = m_vis == Vis::Toggled;
