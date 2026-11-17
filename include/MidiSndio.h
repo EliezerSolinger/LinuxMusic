@@ -26,6 +26,7 @@
 #ifndef LMMS_MIDI_SNDIO_H
 #define LMMS_MIDI_SNDIO_H
 
+#include <atomic>
 #include "lmmsconfig.h"
 
 #ifdef LMMS_HAVE_SNDIO
@@ -67,7 +68,7 @@ protected:
 
 private:
 	mio_hdl *m_hdl;
-	volatile bool m_quit;
+	std::atomic<bool> m_quit;
 } ;
 
 

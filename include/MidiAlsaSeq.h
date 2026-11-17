@@ -25,6 +25,7 @@
 #ifndef LMMS_MIDI_ALSA_SEQ_H
 #define LMMS_MIDI_ALSA_SEQ_H
 
+#include <atomic>
 #include "lmmsconfig.h"
 
 #ifdef LMMS_HAVE_ALSA
@@ -137,7 +138,7 @@ private:
 
 	int m_queueID;
 
-	volatile bool m_quit;
+	std::atomic<bool> m_quit;
 
 	QTimer m_portListUpdateTimer;
 	QStringList m_readablePorts;

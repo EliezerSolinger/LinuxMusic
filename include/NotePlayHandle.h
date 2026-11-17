@@ -370,7 +370,7 @@ private:
 	f_cnt_t m_releaseFramesDone;			// number of frames done after
 											// release of note
 	SubNoteList m_subNotes;			// used for chords and arpeggios
-	volatile bool m_released;				// indicates whether note is released
+	std::atomic<bool> m_released;				// indicates whether note is released
 	bool m_releaseStarted;
 	bool m_hasMidiNote;
 	bool m_hasParent;						// indicates whether note has parent
@@ -395,7 +395,7 @@ private:
 	int m_midiChannel;
 	Origin m_origin;
 
-	bool m_frequencyNeedsUpdate;				// used to update pitch
+	std::atomic<bool> m_frequencyNeedsUpdate;	// used to update pitch (set from other threads)
 
 	//! See mixOrder(): the root note's serial in the high 32 bits, then the child's index at each level (8 bits each)
 	std::uint64_t m_mixOrder = 0;

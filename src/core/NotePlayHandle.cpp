@@ -598,9 +598,11 @@ void NotePlayHandle::updateFrequency()
 		m_unpitchedFrequency = DefaultBaseFreq * std::exp2(pitch);
 	}
 
+	// Each sub-note (of a chord, an arpeggio) works its own out when it plays: it may be playing now, on another of
+	// the audio threads, and its oscillators read its frequency
 	for (auto it : m_subNotes)
 	{
-		it->updateFrequency();
+		it->setFrequencyUpdate();
 	}
 }
 
