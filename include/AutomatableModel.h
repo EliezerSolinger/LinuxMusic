@@ -153,7 +153,7 @@ public:
 		}
 	}
 
-	float oldValue() const { return m_oldValue; }
+	float oldValue() const { return m_oldValue.load(std::memory_order_relaxed); }
 
 	template<class T>
 	inline T value( int frameOffset = 0 ) const
@@ -164,7 +164,7 @@ public:
 		// This becomes even worse in the case of linked Models, where it has to
 		// loop through the list of all links.
 
-		if (m_useControllerValue)
+		if (m_useControllerValue.load(std::memory_order_relaxed))
 		{
 			if (m_controllerConnection)
 			{
@@ -178,7 +178,7 @@ public:
 				}
 			}
 		}
-		return castValue<T>( m_value );
+		return castValue<T>(m_value.load(std::memory_order_relaxed));
 	}
 
 	float controllerValue( int frameOffset ) const;
@@ -195,7 +195,7 @@ public:
 
 	bool isAtInitValue() const
 	{
-		return m_value == m_initValue;
+		return m_value.load(std::memory_order_relaxed) == m_initValue;
 	}
 
 	template<class T>
@@ -231,7 +231,7 @@ public:
 
 	void incValue( int steps )
 	{
-		setValue( m_value + steps * m_step );
+		setValue(m_value.load(std::memory_order_relaxed) + steps * m_step);
 	}
 
 	float range() const
@@ -303,9 +303,8 @@ public:
 	// has to be accessed by more than one object, then this function shouldn't be used.
 	bool isValueChanged()
 	{
-		if( m_valueChanged || valueBuffer() )
+		if (m_valueChanged.exchange(false, std::memory_order_relaxed) || valueBuffer())
 		{
-			m_valueChanged = false;
 			return true;
 		}
 		return false;
@@ -405,7 +404,8 @@ private:
 
 
 	ScaleType m_scaleType; //!< scale type, linear by default
-	float m_value;
+	//! The value (written by whoever sets it, the GUI or the automation on the audio thread; read by any thread)
+	std::atomic<float> m_value;
 	float m_initValue = 0.f;
 	float m_minValue;
 	float m_maxValue;
@@ -413,8 +413,8 @@ private:
 	float m_range;
 	float m_centerValue;
 
-	bool m_valueChanged;
-	float m_oldValue; //!< used by valueBuffer for interpolation
+	std::atomic<bool> m_valueChanged;
+	std::atomic<float> m_oldValue; //!< used by valueBuffer for interpolation
 
 	// used to determine if step size should be applied strictly (ie. always)
 	// or only when value set from gui (default)
@@ -439,7 +439,7 @@ private:
 	// prevent several threads from attempting to write the same vb at the same time
 	QMutex m_valueBufferMutex;
 
-	bool m_useControllerValue;
+	std::atomic<bool> m_useControllerValue;
 
 signals:
 	void initValueChanged( float val );

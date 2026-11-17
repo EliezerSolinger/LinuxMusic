@@ -63,7 +63,7 @@ AutomatableModel::AutomatableModel(
 	m_useControllerValue(true)
 
 {
-	m_value = fittedValue( val );
+	m_value.store(fittedValue(val), std::memory_order_relaxed);
 	setInitValue( val );
 }
 
@@ -112,7 +112,7 @@ void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, co
 
 		QDomElement me = doc.createElement( mustQuote ? QString("automatablemodel") : name );
 		me.setAttribute( "id", ProjectJournal::idToSave( id() ) );
-		me.setAttribute( "value", m_value );
+		me.setAttribute("value", m_value.load(std::memory_order_relaxed));
 		me.setAttribute( "scale_type", m_scaleType == ScaleType::Logarithmic ? "log" : "linear" );
 		if(mustQuote) {
 			me.setAttribute( "nodename", name );
@@ -125,13 +125,13 @@ void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, co
 		{
 			QDomElement me = doc.createElement( "automatablemodel" );
 			me.setAttribute( "nodename", name );
-			me.setAttribute( "value", m_value );
+			me.setAttribute("value", m_value.load(std::memory_order_relaxed));
 			element.appendChild( me );
 		}
 		else
 		{
 			// non automation, linear scale (default), can be saved as attribute
-			element.setAttribute( name, m_value );
+			element.setAttribute(name, m_value.load(std::memory_order_relaxed));
 		}
 	}
 
@@ -293,7 +293,7 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 
 void AutomatableModel::setValue(const float value, const bool isAutomated)
 {
-	if (fittedValue(value) == m_value)
+	if (fittedValue(value) == m_value.load(std::memory_order_relaxed))
 	{
 		// TODO check why we need this signal, is there a better solution?
 		if (!isAutomated) { emit dataUnchanged(); }
@@ -315,12 +315,13 @@ void AutomatableModel::setValue(const float value, const bool isAutomated)
 
 void AutomatableModel::setValueInternal(const float value)
 {
-	m_oldValue = m_value;
-	m_value = fittedValue(value);
+	const auto oldValue = m_value.load(std::memory_order_relaxed);
+	m_oldValue.store(oldValue, std::memory_order_relaxed);
+	m_value.store(fittedValue(value), std::memory_order_relaxed);
 
-	if (m_oldValue != m_value)
+	if (oldValue != m_value.load(std::memory_order_relaxed))
 	{
-		m_valueChanged = true;
+		m_valueChanged.store(true, std::memory_order_relaxed);
 		emit dataChanged();
 	}
 }
@@ -478,7 +479,7 @@ void AutomatableModel::linkToModel(AutomatableModel* other)
 			valueBuffer()->data());
 	}
 	// copy data from other to this
-	setValue(other->m_value);
+	setValue(other->m_value.load(std::memory_order_relaxed));
 	// link the models
 	AutomatableModel* thisEnd = getLastLinkedModel();
 	AutomatableModel* otherEnd = other->getLastLinkedModel();
@@ -506,7 +507,7 @@ void AutomatableModel::setControllerConnection( ControllerConnection* c )
 		QObject::connect( m_controllerConnection, SIGNAL(valueChanged()),
 				this, SIGNAL(dataChanged()), Qt::DirectConnection );
 		QObject::connect( m_controllerConnection, SIGNAL(destroyed()), this, SLOT(unlinkControllerConnection()));
-		m_valueChanged = true;
+		m_valueChanged.store(true, std::memory_order_relaxed);
 		emit dataChanged();
 	}
 }
@@ -551,14 +552,14 @@ ValueBuffer * AutomatableModel::valueBuffer()
 			: nullptr;
 	}
 
-	float val = m_value; // make sure our m_value doesn't change midway
+	float val = m_value.load(std::memory_order_relaxed); // make sure our m_value doesn't change midway
 
 	// TODO
 	// Let the Controller set the value of connected Models,
 	// instead of each Model checking the Controller value every time.
 
 	// Get value buffer from our controller
-	if (m_controllerConnection && m_useControllerValue && m_controllerConnection->getController()->isSampleExact())
+	if (m_controllerConnection && m_useControllerValue.load(std::memory_order_relaxed) && m_controllerConnection->getController()->isSampleExact())
 	{
 		auto vb = m_controllerConnection->valueBuffer();
 		if( vb )
@@ -591,7 +592,7 @@ ValueBuffer * AutomatableModel::valueBuffer()
 	}
 
 	// Get value buffer from one of the linked models' controller
-	if (m_useControllerValue)
+	if (m_useControllerValue.load(std::memory_order_relaxed))
 	{
 		for (auto next = m_nextLink; next != this; next = next->m_nextLink)
 		{
@@ -617,10 +618,10 @@ ValueBuffer * AutomatableModel::valueBuffer()
 	// will be the same (even if it is calculated separatly for each model).
 
 	// Populate value buffer by interpolatating between the old and new value
-	if (m_oldValue != val)
+	if (m_oldValue.load(std::memory_order_relaxed) != val)
 	{
-		m_valueBuffer.interpolate(m_oldValue, val);
-		m_oldValue = val;
+		m_valueBuffer.interpolate(m_oldValue.load(std::memory_order_relaxed), val);
+		m_oldValue.store(val, std::memory_order_relaxed);
 		m_lastUpdatedPeriod = s_periodCounter;
 		m_hasSampleExactData = true;
 		return &m_valueBuffer;
@@ -652,7 +653,7 @@ void AutomatableModel::setInitValue( const float value )
 	m_initValue = fittedValue( value );
 	bool journalling = testAndSetJournalling( false );
 	setValue( value );
-	m_oldValue = m_value;
+	m_oldValue.store(m_value.load(std::memory_order_relaxed), std::memory_order_relaxed);
 	setJournalling( journalling );
 	emit initValueChanged( value );
 }
@@ -675,7 +676,7 @@ float AutomatableModel::globalAutomationValueAt( const TimePos& time )
 	if (clips.empty())
 	{
 		// if no such clips exist, return current value
-		return m_value;
+		return m_value.load(std::memory_order_relaxed);
 	}
 	else
 	{
@@ -722,7 +723,7 @@ float AutomatableModel::globalAutomationValueAt( const TimePos& time )
 		}
 		// if we still find no clip, the value at that time is undefined so
 		// just return current value as the best we can do
-		else return m_value;
+		else return m_value.load(std::memory_order_relaxed);
 	}
 }
 
@@ -730,12 +731,12 @@ void AutomatableModel::setUseControllerValue(bool b)
 {
 	if (b)
 	{
-		m_useControllerValue = true;
+		m_useControllerValue.store(true, std::memory_order_relaxed);
 		emit dataChanged();
 	}
-	else if (m_controllerConnection && m_useControllerValue)
+	else if (m_controllerConnection && m_useControllerValue.load(std::memory_order_relaxed))
 	{
-		m_useControllerValue = false;
+		m_useControllerValue.store(false, std::memory_order_relaxed);
 		emit dataChanged();
 	}
 }
