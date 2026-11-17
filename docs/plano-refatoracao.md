@@ -245,6 +245,44 @@ interface.
 **Pronto quando:** tocar e editar ao mesmo tempo (adicionar e remover faixas, efeitos, envios) não faz o
 render esperar (contador `periodsSkipped` zerado num teste de estresse), e o TSan sai limpo.
 
+### Decisão (17/11): medir primeiro, encurtar a trava; retratos só onde a medida pedir
+
+A trava de mudança já não é o que o plano supunha: o render não espera por ela, desiste dela depois de meio
+período e toca um período de silêncio (`periodsSkipped`). O problema real é quanto tempo a interface a segura.
+Por isso, em vez de reescrever o render sobre retratos (7.2 a 7.5), a fase:
+
+1. mede: `EditWhilePlayingTest` toca como uma placa de som (um período a cada período, numa thread) enquanto a
+   thread principal edita como o usuário, e diz, por tipo de edição, quantos períodos foram pulados e quanto tempo
+   a trava ficou presa no máximo (`AudioEngine::takeLongestChangeHold()`); roda também com TSan;
+2. encurta cada espera longa com a mesma regra: **o que é pesado se faz fora da trava; dentro dela, só o momento
+   de pôr ou tirar a peça do que o render percorre** (preparar, publicar; retirar, destruir);
+3. corrige as corridas que aparecem no caminho: estruturas que o render percorre e que a interface mudava sem a
+   trava;
+4. só cria retratos imutáveis se, depois disso, uma edição ainda segurar a trava por tempo que se ouça.
+
+Medidas (período de 256 quadros a 44,1 kHz, meio período = 2,9 ms):
+
+| Edição | Antes | Depois |
+|---|---|---|
+| Criar uma faixa de instrumento | 3 a 4,6 ms | 0,01 ms |
+| Apagar uma faixa de instrumento (como a interface faz) | 5,3 a 5,6 ms | (próximo passo) |
+| Trocar o instrumento | 0,01 ms | |
+| Pôr e tirar um efeito | 0,00 ms | |
+| Criar e apagar um canal do mixer com envio | 0,06 ms | |
+| Notas e mover um clipe | 0,00 ms | |
+| Mudar o andamento | 0,00 ms | |
+
+Passos feitos:
+
+- **Criar uma faixa:** `Track::create` monta a faixa inteira (e, vinda de um projeto ou de um clone, restaura o
+  estado dela, carregando instrumento e amostras) sem a trava, e só então a publica (`Track::publish`): a trava
+  fica presa só para pôr a faixa na lista. O canal do mixer dela e as pastas vêm depois, cada passo do mixer com
+  a trava pelo seu instante; o sinal `trackAdded` (que monta as vistas) sai com a trava livre. Uma faixa só entra
+  num contêiner por `Track::create`.
+- **Criar um canal do mixer:** o canal é montado (modelos, buffers, faixa de console) fora da trava e posto na
+  lista sob ela. Antes, `createChannel` acrescentava à lista **sem trava nenhuma**, enquanto o render a percorria
+  (`masterMix`): acrescentar pode mudar a lista inteira de lugar na memória. Era uma corrida de verdade.
+
 ## Fase 8: ciclo de vida explícito
 
 - **8.1** Documentar e testar a ordem de criação e destruição do `Engine`. `EngineLifecycleTest` faz

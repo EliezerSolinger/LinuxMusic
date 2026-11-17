@@ -22,6 +22,8 @@
  *
  */
 
+#include <memory>
+
 #include <QtTest>
 
 
@@ -40,6 +42,14 @@
 class AutomationTrackTest : public QObject
 {
 	Q_OBJECT
+
+	//! A track made as the program makes them (Track::create()), deleted with the test
+	template<class T>
+	static auto made(lmms::Track::Type type, lmms::TrackContainer* container) -> std::unique_ptr<T>
+	{
+		return std::unique_ptr<T>{dynamic_cast<T*>(lmms::Track::create(type, container))};
+	}
+
 private slots:
 	void initTestCase()
 	{
@@ -92,7 +102,8 @@ private slots:
 		FloatModel model;
 
 		auto song = Engine::getSong();
-		AutomationTrack track(song);
+		const auto trackMade = made<AutomationTrack>(Track::Type::Automation, song);
+		auto& track = *trackMade;
 
 		AutomationClip c1(&track);
 		c1.setProgressionType(AutomationClip::ProgressionType::Linear);
@@ -128,7 +139,8 @@ private slots:
 		FloatModel model;
 
 		auto song = Engine::getSong();
-		AutomationTrack track(song);
+		const auto trackMade = made<AutomationTrack>(Track::Type::Automation, song);
+		auto& track = *trackMade;
 
 		AutomationClip c(&track);
 		c.setProgressionType(AutomationClip::ProgressionType::Linear);
@@ -154,7 +166,8 @@ private slots:
 
 		auto song = Engine::getSong();
 
-		InstrumentTrack instrumentTrack(song);
+		const auto instrumentTrackMade = made<InstrumentTrack>(Track::Type::Instrument, song);
+		auto& instrumentTrack = *instrumentTrackMade;
 
 		MidiClip midiClip(&instrumentTrack);
 		midiClip.changeLength(TimePos(4, 0));
@@ -178,8 +191,10 @@ private slots:
 
 		auto song = Engine::getSong();
 		auto patternStore = Engine::patternStore();
-		PatternTrack patternTrack(song);
-		AutomationTrack automationTrack(patternStore);
+		const auto patternTrackMade = made<PatternTrack>(Track::Type::Pattern, song);
+		auto& patternTrack = *patternTrackMade;
+		const auto automationTrackMade = made<AutomationTrack>(Track::Type::Automation, patternStore);
+		auto& automationTrack = *automationTrackMade;
 		automationTrack.createClipsForPattern(patternStore->numOfPatterns() - 1);
 
 		QVERIFY(automationTrack.numOfClips());
@@ -198,7 +213,8 @@ private slots:
 		QCOMPARE(patternStore->automatedValuesAt(10, patternTrack.patternIndex())[&model], 1.0f);
 		QCOMPARE(patternStore->automatedValuesAt(50, patternTrack.patternIndex())[&model], 1.0f);
 
-		PatternTrack patternTrack2(song);
+		const auto patternTrack2Made = made<PatternTrack>(Track::Type::Pattern, song);
+		auto& patternTrack2 = *patternTrack2Made;
 
 		QCOMPARE(patternStore->automatedValuesAt(5, patternTrack.patternIndex())[&model], 0.5f);
 		QVERIFY(! patternStore->automatedValuesAt(5, patternTrack2.patternIndex()).size());
@@ -223,7 +239,8 @@ private slots:
 		auto globalTrack = song->globalAutomationTrack();
 		AutomationClip globalClip(globalTrack);
 
-		AutomationTrack localTrack(song);
+		const auto localTrackMade = made<AutomationTrack>(Track::Type::Automation, song);
+		auto& localTrack = *localTrackMade;
 		AutomationClip localClip(&localTrack);
 
 		FloatModel model;

@@ -162,7 +162,7 @@ void TrackContainer::addTrack( Track * _track )
 		m_tracks.push_back( _track );
 		m_tracksMutex.unlock();
 		_track->unlock();
-		emit trackAdded( _track );
+		// (trackAdded is emitted by Track::create(), once the track is in place and the audio engine's lock is free)
 	}
 }
 

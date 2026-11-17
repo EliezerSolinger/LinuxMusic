@@ -28,6 +28,8 @@
 #include <vector>
 
 #include "AudioEngine.h"
+
+#include <chrono>
 #include "Controller.h"
 #include "ErrorLog.h"
 #include "AudioResampler.h"
@@ -86,6 +88,8 @@ namespace
 {
 //! How deep this thread is in requestChangeInModel() (the change lock is recursive)
 thread_local int s_changesRequested = 0;
+//! When this thread took the change lock (the outermost time)
+thread_local std::chrono::steady_clock::time_point s_changeStarted;
 }
 
 
@@ -859,13 +863,21 @@ void AudioEngine::requestChangeInModel()
 {
 	if (s_renderingThread) { return; }
 	m_changeMutex.lock();
-	++s_changesRequested;
+	if (s_changesRequested++ == 0) { s_changeStarted = std::chrono::steady_clock::now(); }
 }
 
 void AudioEngine::doneChangeInModel()
 {
 	if (s_renderingThread) { return; }
-	--s_changesRequested;
+	if (--s_changesRequested == 0)
+	{
+		// How long the audio thread may have waited (see longestChangeHold())
+		const auto held = std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - s_changeStarted).count();
+		auto longest = m_longestChangeHold.load(std::memory_order_relaxed);
+		while (held > longest
+			&& !m_longestChangeHold.compare_exchange_weak(longest, held, std::memory_order_relaxed)) {}
+	}
 	m_changeMutex.unlock();
 }
 

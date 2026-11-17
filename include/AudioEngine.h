@@ -291,6 +291,12 @@ public:
 	auto periodsSkipped() const -> std::int64_t { return m_periodsSkipped.load(std::memory_order_relaxed); }
 
 	/**
+	 * @returns the longest time, in microseconds, a change of the model held the change lock since the last call
+	 * (any thread): what the audio thread could have had to wait. It starts again from zero.
+	 */
+	auto takeLongestChangeHold() -> std::int64_t { return m_longestChangeHold.exchange(0, std::memory_order_relaxed); }
+
+	/**
 	 * @returns The internal buffer size used by audio plugins and other processing done within the audio engine.
 	 * Its value is @ref DEFAULT_BUFFER_SIZE or @ref framesPerAudioBuffer(), whichever is lower.
 	 * @see renderNextPeriod()
@@ -560,6 +566,7 @@ private:
 	//! Held by changes of the model (requestChangeInModel()) and by the period's rendering; timed, so that the
 	//! device's thread waits for it a bounded while
 	std::recursive_timed_mutex m_changeMutex;
+	std::atomic<std::int64_t> m_longestChangeHold = 0; //!< microseconds, see takeLongestChangeHold()
 
 	friend class Engine;
 	friend class AudioEngineWorkerThread;

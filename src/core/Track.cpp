@@ -60,8 +60,8 @@ Track::Track(Type type, TrackContainer* tc)
 	, m_mutedModel(false, this, tr("Mute"))
 	, m_soloModel(false, this, tr("Solo"))
 	, m_clips()
-{	
-	m_trackContainer->addTrack( this );
+{
+	// (published in the container once it is whole, by create())
 	m_height = -1;
 	// A solo, or a folder's mute, silences other tracks
 	connect(&m_soloModel, &BoolModel::dataChanged, this, [this] { m_trackContainer->updateSilence(); });
@@ -93,60 +93,71 @@ Track::~Track()
 
 
 
-namespace
+auto Track::make(Type tt, TrackContainer* tc) -> Track*
 {
-
-//! Set while a track is created from saved settings, which say which mixer channel it uses
-thread_local bool s_creatingSavedTrack = false;
-
-} // namespace
-
-
-Track * Track::create( Type tt, TrackContainer * tc )
-{
-	Engine::audioEngine()->requestChangeInModel();
-
-	Track * t = nullptr;
-
+	// Made whole without the audio engine's change lock (the parts that the audio thread sees, its buses and MIDI
+	// ports, take the lock themselves for their moment): the audio thread does not wait for it
 	switch( tt )
 	{
-		case Type::Instrument: t = new class InstrumentTrack( tc ); break;
-		case Type::Pattern: t = new class PatternTrack( tc ); break;
-		case Type::Sample: t = new class SampleTrack( tc ); break;
+		case Type::Instrument: return new class InstrumentTrack( tc );
+		case Type::Pattern: return new class PatternTrack( tc );
+		case Type::Sample: return new class SampleTrack( tc );
 //		case Type::Event:
 //		case Type::Video:
-		case Type::Automation: t = new class AutomationTrack( tc ); break;
-		case Type::HiddenAutomation:
-						t = new class AutomationTrack( tc, true ); break;
+		case Type::Automation: return new class AutomationTrack( tc );
+		case Type::HiddenAutomation: return new class AutomationTrack( tc, true );
 		case Type::Audio:
 			// Audio tracks play on the song's timeline
-			if (tc == Engine::getSong()) { t = new AudioTrack(tc); }
-			break;
+			return tc == Engine::getSong() ? new AudioTrack(tc) : nullptr;
 		case Type::Folder:
 			// Folders only group the tracks of the song
-			if (tc == Engine::getSong()) { t = new FolderTrack(tc); }
-			break;
-		default: break;
+			return tc == Engine::getSong() ? new FolderTrack(tc) : nullptr;
+		default: return nullptr;
 	}
+}
 
-	if (tc == Engine::patternStore() && t)
+
+
+
+void Track::publish(Track* t, TrackContainer* tc, bool newTrack)
+{
+	// A new track of the pattern editor has a clip for each pattern: made while no one else sees the track
+	if (newTrack && tc == Engine::patternStore())
 	{
 		t->createClipsForPattern(Engine::patternStore()->numOfPatterns() - 1);
 	}
 
+	{
+		// Under the lock, briefly: the audio thread goes through the tracks
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		tc->addTrack(t);
+	}
+
+	// E.g. the first track of the pattern editor makes the song's pattern track (a track of its own, published so)
 	tc->updateAfterTrackAdd();
 
-	// A new instrument or sample track of the song or the pattern editor gets its own mixer channel
-	// (not while the engine itself is being set up)
-	if (t && !s_creatingSavedTrack && Engine::getSong() && Engine::mixer() && Engine::patternStore()
-		&& !Engine::getSong()->isLoadingProject() && (tc == Engine::getSong() || tc == Engine::patternStore()))
+	// A track of the song or the pattern editor gets its own mixer channel: a new instrument or sample track, or a
+	// saved one that would share another's (a cloned track); not while a project loads (it has its channels). Each
+	// step of the mixer takes the lock for its own moment (a channel is made whole outside it): until then the track
+	// plays into the channel its settings name, as when the user picks another
+	if (Engine::getSong() && Engine::mixer() && Engine::patternStore() && !Engine::getSong()->isLoadingProject()
+		&& (tc == Engine::getSong() || tc == Engine::patternStore()))
 	{
-		Engine::mixer()->setUpTrackChannel(t);
+		Engine::mixer()->setUpTrackChannel(t, newTrack);
 	}
-	if (t) { tc->updateFolders(); }
+	tc->updateFolders();
 
-	Engine::audioEngine()->doneChangeInModel();
+	// Told last, the lock released: the GUI makes the track's views for it
+	if (t->type() != Type::HiddenAutomation) { emit tc->trackAdded(t); }
+}
 
+
+
+
+Track * Track::create( Type tt, TrackContainer * tc )
+{
+	auto* t = make(tt, tc);
+	if (t) { publish(t, tc, true); }
 	return t;
 }
 
@@ -155,32 +166,15 @@ Track * Track::create( Type tt, TrackContainer * tc )
 
 Track * Track::create( const QDomElement & element, TrackContainer * tc )
 {
-	Engine::audioEngine()->requestChangeInModel();
-
 	// A sample track with recordings is an audio track now (see AudioTrack::fromSampleTrack())
 	const auto converted = tc == Engine::getSong() ? AudioTrack::fromSampleTrack(element) : std::nullopt;
 	const auto& state = converted ? *converted : element;
 
-	s_creatingSavedTrack = true;
-	Track * t = create(
-		static_cast<Type>( state.attribute( "type" ).toInt() ),
-									tc );
-	s_creatingSavedTrack = false;
-	if( t != nullptr )
-	{
-		t->restoreState( state );
-
-		// E.g. a cloned track, which would share the channel of the original: it gets a channel of its own
-		if (Engine::getSong() && !Engine::getSong()->isLoadingProject() && Engine::mixer()
-			&& (tc == Engine::getSong() || tc == Engine::patternStore()))
-		{
-			Engine::mixer()->setUpTrackChannel(t, false);
-		}
-		tc->updateFolders();
-	}
-
-	Engine::audioEngine()->doneChangeInModel();
-
+	// Made and restored whole first (its instrument and samples loaded), then published
+	auto* t = make(static_cast<Type>(state.attribute("type").toInt()), tc);
+	if (!t) { return nullptr; }
+	t->restoreState(state);
+	publish(t, tc, false);
 	return t;
 }
 

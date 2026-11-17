@@ -737,9 +737,16 @@ void Mixer::followTracks()
 int Mixer::createChannel(bool beforeFxReturns)
 {
 	const auto change = StructureChange{*this};
-	const int index = m_mixerChannels.size();
-	// create new channel
-	auto* channel = m_mixerChannels.emplace_back(std::make_unique<MixerChannel>(index, this)).get();
+
+	// Made whole (its models, buffers and console strip) without the audio engine's change lock, then put among the
+	// channels under it, briefly: the audio thread goes through them (masterMix()), and adding one may move them all
+	auto made = std::make_unique<MixerChannel>(static_cast<int>(m_mixerChannels.size()), this);
+	MixerChannel* channel = nullptr;
+	{
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		channel = m_mixerChannels.emplace_back(std::move(made)).get();
+	}
+	const int index = channel->index();
 
 	// reset channel state
 	clearChannel( index );

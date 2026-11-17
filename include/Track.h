@@ -110,6 +110,14 @@ public:
 	//! @param tc The track container to attach to
 	static Track* create(const QDomElement& element, TrackContainer* tc);
 
+private:
+	//! A track of type @p tt, whole but not yet in @p tc (see publish())
+	static auto make(Type tt, TrackContainer* tc) -> Track*;
+	//! Puts @p t in @p tc, with its mixer channel (a new one for a @p newTrack), and tells the views
+	static void publish(Track* t, TrackContainer* tc, bool newTrack);
+
+public:
+
 	//! @brief Clone a track from this track
 	Track * clone();
 
