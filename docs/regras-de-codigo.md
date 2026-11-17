@@ -8,6 +8,9 @@ Valem para código novo e para todo código que for mexido. O código antigo vai
 - **Um dono só, e explícito.** Quem cria e apaga um objeto o guarda num `std::unique_ptr` (ou num contêiner de
   `unique_ptr`). Um `QObject` pode, em vez disso, ter um pai do Qt que o apaga, mas **nunca as duas coisas**: um
   objeto num `unique_ptr` não tem pai do Qt.
+  - Exceção: um `Model` usa o pai do Qt também como lugar na árvore de modelos (o nome completo,
+    `fullDisplayName()`). Ele pode ter os dois só quando o `unique_ptr` morre antes do pai, porque é guardado
+    dentro dele (um efeito: o `PluginInstance` na `EffectChain`, que é o pai).
 - **Quem só usa, observa.** Um ponteiro cru ou uma referência quer dizer "não sou dono". Se o objeto observado pode
   morrer antes de quem observa:
   - quando é um `QObject`, use `QPointer`, que vira nulo sozinho;

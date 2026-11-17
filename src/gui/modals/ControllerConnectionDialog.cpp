@@ -79,9 +79,9 @@ public:
 
 	// Would be a nice copy ctor, but too hard to add copy ctor because
 	// model has none.
-	MidiController* copyToMidiController( Model* parent )
+	auto copyToMidiController() -> std::unique_ptr<MidiController>
 	{
-		auto c = new MidiController(parent);
+		auto c = std::make_unique<MidiController>(nullptr);
 		c->m_midiPort.setInputChannel( m_midiPort.inputChannel() );
 		c->m_midiPort.setInputController( m_midiPort.inputController() );
 		c->subscribeReadablePorts( m_midiPort.readablePorts() );
@@ -299,7 +299,7 @@ void ControllerConnectionDialog::selectController()
 	{
 		if( m_midiControllerSpinBox->model()->value() > 0 )
 		{
-			auto mc = m_midiController->copyToMidiController(Engine::getSong());
+			auto mc = m_midiController->copyToMidiController();
 
 			/*
 			if( m_targetModel->getTrack() && 
@@ -315,7 +315,7 @@ void ControllerConnectionDialog::selectController()
 			}
 			*/
 			mc->m_midiPort.setName( m_targetModel->fullDisplayName() );
-			m_controller = mc;
+			m_newController = std::move(mc);
 		}
 	}
 	// User

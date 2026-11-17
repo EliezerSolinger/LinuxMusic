@@ -27,6 +27,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <memory>
 #include <algorithm>
 #include <utility>
 #include <vector>
@@ -129,11 +130,11 @@ public:
 
 	ControllerConnection* controllerConnection() const
 	{
-		return m_controllerConnection;
+		return m_controllerConnection.get();
 	}
 
-
-	void setControllerConnection( ControllerConnection* c );
+	//! Takes @p connection, deleting the one there was; null removes it
+	void setControllerConnection(std::unique_ptr<ControllerConnection> connection);
 
 
 	template<class T>
@@ -337,6 +338,7 @@ public:
 public slots:
 	virtual void reset();
 	void unlink();
+	//! Deletes the connection (when its controller went away, see ControllerConnection::orphaned())
 	void unlinkControllerConnection();
 	void setUseControllerValue(bool b = true);
 
@@ -425,8 +427,9 @@ private:
 	AutomatableModel* m_nextLink;
 
 
-	//! NULL if not appended to controller, otherwise connection info
-	ControllerConnection* m_controllerConnection;
+	//! Null if not appended to controller, otherwise connection info (the audio thread reads it: it changes under
+	//! the audio engine's change lock)
+	std::unique_ptr<ControllerConnection> m_controllerConnection;
 
 
 	ValueBuffer m_valueBuffer;

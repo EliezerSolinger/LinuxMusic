@@ -2277,11 +2277,12 @@ void Song::restoreControllerStates( const QDomElement & element )
 	while( !node.isNull() && !isCancelled() )
 	{
 		Controller * c = Controller::create( node.toElement(), this );
-		if (c) {addController(c);}
+		if (c && c->type() != Controller::ControllerType::Dummy) { addController(c); }
 		else
 		{
-			// Fix indices to ensure correct connections
-			m_controllers.push_back(Controller::create(Controller::ControllerType::Dummy, this));
+			// A stand-in keeps the indices the connections use (the shared dummy controller: removed, never
+			// deleted, once the connections are made)
+			m_controllers.push_back(Controller::create(Controller::ControllerType::Dummy, nullptr));
 		}
 
 		node = node.nextSibling();
@@ -2419,6 +2420,8 @@ void Song::removeController( Controller * controller )
 	{
 		m_controllers.erase(it);
 
+		// (a stand-in for a controller that did not load is the shared dummy, see restoreControllerStates())
+		if (controller->type() == Controller::ControllerType::Dummy) { return; }
 		emit controllerRemoved( controller );
 		delete controller;
 

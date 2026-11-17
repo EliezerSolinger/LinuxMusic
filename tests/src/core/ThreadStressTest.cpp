@@ -89,7 +89,7 @@ private slots:
 		mixer->setUpTrackChannels();
 		auto* lfo = new LfoController(song);
 		song->addController(lfo);
-		track->volumeModel()->setControllerConnection(new ControllerConnection(lfo));
+		track->volumeModel()->setControllerConnection(std::make_unique<ControllerConnection>(lfo));
 
 		auto& timeline = song->getTimeline(Song::PlayMode::Song);
 		timeline.setLoopPoints(TimePos{0}, TimePos{4 * TimePos::ticksPerBar()});

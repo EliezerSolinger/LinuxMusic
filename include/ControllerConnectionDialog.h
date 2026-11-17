@@ -26,6 +26,8 @@
 #ifndef LMMS_GUI_CONTROLLER_CONNECTION_DIALOG_H
 #define LMMS_GUI_CONTROLLER_CONNECTION_DIALOG_H
 
+#include <memory>
+
 #include <QDialog>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
@@ -62,9 +64,16 @@ public:
 			const AutomatableModel * _target_model );
 	~ControllerConnectionDialog() override;
 
+	//! One of the song's controllers, when that was chosen
 	Controller * chosenController()
 	{
 		return m_controller;
+	}
+
+	//! A new MIDI controller, when that was chosen: for the connection to own
+	auto takeNewController() -> std::unique_ptr<Controller>
+	{
+		return std::move(m_newController);
 	}
 
 public slots:
@@ -99,6 +108,7 @@ private:
 	QLineEdit * m_mappingFunction;
 
 	Controller * m_controller;
+	std::unique_ptr<Controller> m_newController;
 	const AutomatableModel * m_targetModel;
 
 	// Temporary midiController

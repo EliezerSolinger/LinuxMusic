@@ -24,12 +24,17 @@
  *
  */
 
-#include <QDomElement>
-#include <QObject>
-
-
-#include "Song.h"
 #include "ControllerConnection.h"
+
+#include <algorithm>
+
+#include <QDomElement>
+
+#include "AudioEngine.h"
+#include "Engine.h"
+#include "ErrorLog.h"
+#include "MidiController.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -37,32 +42,50 @@ namespace lmms
 
 ControllerConnectionVector ControllerConnection::s_connections;
 
-
-
-ControllerConnection::ControllerConnection(Controller * _controller) :
-	m_controller( nullptr ),
-	m_controllerId( -1 ),
-	m_ownsController(false)
+namespace
 {
-	if( _controller != nullptr )
-	{
-		setController( _controller );
-	}
-	else
-	{
-		m_controller = Controller::create( Controller::ControllerType::Dummy,
-									nullptr );
-	}
+
+//! The audio thread reads the controller (the song's models go after the audio engine, at the end)
+auto changesGuard() -> AudioEngine::RequestChangesGuard
+{
+	return Engine::audioEngine() ? Engine::audioEngine()->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
+}
+
+auto dummyController() -> Controller*
+{
+	return Controller::create(Controller::ControllerType::Dummy, nullptr);
+}
+
+} // namespace
+
+
+
+
+ControllerConnection::ControllerConnection(Controller* controller)
+	: m_controller{dummyController()}
+	, m_controllerId{-1}
+{
 	s_connections.push_back(this);
+	setController(controller);
 }
 
 
 
 
-ControllerConnection::ControllerConnection( int _controllerId ) :
-	m_controller( Controller::create( Controller::ControllerType::Dummy, nullptr ) ),
-	m_controllerId( _controllerId ),
-	m_ownsController( false )
+ControllerConnection::ControllerConnection(std::unique_ptr<Controller> ownController)
+	: m_controller{dummyController()}
+	, m_controllerId{-1}
+{
+	s_connections.push_back(this);
+	setController(std::move(ownController));
+}
+
+
+
+
+ControllerConnection::ControllerConnection(int controllerId)
+	: m_controller{dummyController()}
+	, m_controllerId{controllerId}
 {
 	s_connections.push_back(this);
 }
@@ -72,81 +95,75 @@ ControllerConnection::ControllerConnection( int _controllerId ) :
 
 ControllerConnection::~ControllerConnection()
 {
-	if( m_controller && m_controller->type() != Controller::ControllerType::Dummy )
+	attach(dummyController(), nullptr);
+	std::erase(s_connections, this);
+}
+
+
+
+
+void ControllerConnection::attach(Controller* controller, std::unique_ptr<Controller> ownController)
+{
+	// The audio thread reads the controller
+	auto previousOwn = std::unique_ptr<Controller>{};
 	{
-		m_controller->removeConnection( this );
+		const auto guard = changesGuard();
+		if (m_controller->type() != Controller::ControllerType::Dummy) { m_controller->removeConnection(this); }
+		QObject::disconnect(m_controller, nullptr, this, nullptr);
+		previousOwn = std::move(m_ownController);
+		m_controller = controller;
+		m_ownController = std::move(ownController);
 	}
+	// (deleted outside the lock: a MIDI controller unsubscribes its ports)
+	previousOwn.reset();
 
-	auto it = std::find(s_connections.begin(), s_connections.end(), this);
-	if (it != s_connections.end()) { s_connections.erase(it); };
-
-	if( m_ownsController )
+	if (m_controller->type() == Controller::ControllerType::Dummy) { return; }
+	m_controller->addConnection(this);
+	QObject::connect(m_controller, &Controller::valueChanged, this, &ControllerConnection::valueChanged,
+		Qt::DirectConnection);
+	if (!m_ownController)
 	{
-		delete m_controller;
+		QObject::connect(m_controller, &QObject::destroyed, this, &ControllerConnection::controllerDestroyed);
 	}
 }
 
 
 
 
-void ControllerConnection::setController( int /*_controllerId*/ )
+void ControllerConnection::setController(Controller* controller)
 {
-}
-
-
-
-
-void ControllerConnection::setController( Controller * _controller )
-{
-	if( m_ownsController && m_controller )
-	{
-		delete m_controller;
-		m_controller = nullptr;
-	}
-
-	if( m_controller && m_controller->type() != Controller::ControllerType::Dummy )
-	{
-		m_controller->removeConnection( this );
-	}
-
-	if( !_controller )
-	{
-		m_controller = Controller::create( Controller::ControllerType::Dummy, nullptr );
-	}
-	else
-	{
-		m_controller = _controller;
-	}
 	m_controllerId = -1;
-
-	if( _controller->type() != Controller::ControllerType::Dummy )
-	{
-		_controller->addConnection( this );
-		QObject::connect( _controller, SIGNAL(valueChanged()),
-				this, SIGNAL(valueChanged()), Qt::DirectConnection );
-	}
-
-	m_ownsController =
-		(_controller->type() == Controller::ControllerType::Midi);
-
-	// If we don't own the controller, allow deletion of controller
-	// to delete the connection
-	if( !m_ownsController ) {
-		QObject::connect( _controller, SIGNAL(destroyed()),
-				this, SLOT(deleteConnection()));
-	}
+	attach(controller ? controller : dummyController(), nullptr);
 }
 
 
 
-inline void ControllerConnection::setTargetName( const QString & _name )
+
+void ControllerConnection::setController(std::unique_ptr<Controller> ownController)
 {
-	m_targetName = _name;
-	if( m_controller )
+	m_controllerId = -1;
+	if (!ownController)
 	{
-	//	m_controller->getMidiPort()->setName( _name );
+		attach(dummyController(), nullptr);
+		return;
 	}
+	auto* controller = ownController.get();
+	attach(controller, std::move(ownController));
 }
+
+
+
+
+void ControllerConnection::controllerDestroyed()
+{
+	// The controller is in its destructor: nothing of it may be used now
+	{
+		const auto guard = changesGuard();
+		m_controller = dummyController();
+	}
+	emit orphaned();
+}
+
 
 
 
@@ -159,19 +176,22 @@ inline void ControllerConnection::setTargetName( const QString & _name )
  */
 void ControllerConnection::finalizeConnections()
 {
-	for (auto i = std::size_t{0}; i < s_connections.size(); ++i)
+	auto orphans = ControllerConnectionVector{};
+	for (auto* c : s_connections)
 	{
-		ControllerConnection * c = s_connections[i];
 		if (!c->isFinalized() && static_cast<std::size_t>(c->m_controllerId) < Engine::getSong()->controllers().size())
 		{
-			c->setController( Engine::getSong()->
-					controllers().at( c->m_controllerId ) );
+			c->setController(Engine::getSong()->controllers().at(c->m_controllerId));
 		}
 		else if (c->getController()->type() == Controller::ControllerType::Dummy)
 		{
-			delete c;
-			--i;
+			orphans.push_back(c);
 		}
+	}
+	// Each one's model deletes it
+	for (auto* c : orphans)
+	{
+		if (std::find(s_connections.begin(), s_connections.end(), c) != s_connections.end()) { emit c->orphaned(); }
 	}
 }
 
@@ -182,7 +202,7 @@ void ControllerConnection::saveSettings( QDomDocument & _doc, QDomElement & _thi
 {
 	if( Engine::getSong() )
 	{
-		if( m_ownsController )
+		if (m_ownController)
 		{
 			m_controller->saveState( _doc, _this );
 		}
@@ -207,14 +227,31 @@ void ControllerConnection::loadSettings( const QDomElement & _this )
 	QDomNode node = _this.firstChild();
 	if( !node.isNull() )
 	{
-		setController( Controller::create( node.toElement(), Engine::getSong() ) );
+		// Only a MIDI controller is saved in its connection (see saveSettings())
+		const auto element = node.toElement();
+		if (static_cast<Controller::ControllerType>(element.attribute("type").toInt())
+			!= Controller::ControllerType::Midi)
+		{
+			ErrorLog::report(ErrorLog::Severity::Warning, "ControllerConnection::loadSettings",
+				"a connection held a controller other than MIDI: left without one");
+			setController(nullptr);
+			return;
+		}
+		auto controller = std::make_unique<MidiController>(nullptr);
+		controller->restoreState(element);
+		setController(std::move(controller));
 	}
 	else
 	{
+		setController(nullptr);
 		m_controllerId = _this.attribute( "id", "-1" ).toInt();
 		if( m_controllerId < 0 )
 		{
-			qWarning( "controller index invalid\n" );
+			if (_this.hasAttribute("id"))
+			{
+				ErrorLog::report(ErrorLog::Severity::Warning, "ControllerConnection::loadSettings",
+					"a controller index was invalid", m_controllerId);
+			}
 			m_controllerId = -1;
 		}
 
@@ -225,17 +262,7 @@ void ControllerConnection::loadSettings( const QDomElement & _this )
 			setController( Engine::getSong()->
 					controllers().at( m_controllerId ) );
 		}
-		else
-		{
-			m_controller = Controller::create( Controller::ControllerType::Dummy, nullptr );
-		}
 	}
-}
-
-
-void ControllerConnection::deleteConnection()
-{
-	delete this;
 }
 
 

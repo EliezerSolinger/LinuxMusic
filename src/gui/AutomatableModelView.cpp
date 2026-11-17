@@ -208,21 +208,17 @@ void AutomatableModelViewSlots::execConnectionDialog()
 
 	if( d.exec() == 1 )
 	{
-		// Actually chose something
-		if( d.chosenController() )
+		// A new MIDI controller, for the connection to own
+		if (auto newController = d.takeNewController())
 		{
-			// Update
-			if( m->controllerConnection() )
-			{
-				m->controllerConnection()->setController( d.chosenController() );
-			}
-			// New
-			else
-			{
-				auto cc = new ControllerConnection(d.chosenController());
-				m->setControllerConnection( cc );
-				//cc->setTargetName( m->displayName() );
-			}
+			if (m->controllerConnection()) { m->controllerConnection()->setController(std::move(newController)); }
+			else { m->setControllerConnection(std::make_unique<ControllerConnection>(std::move(newController))); }
+		}
+		// One of the song's controllers
+		else if (d.chosenController())
+		{
+			if (m->controllerConnection()) { m->controllerConnection()->setController(d.chosenController()); }
+			else { m->setControllerConnection(std::make_unique<ControllerConnection>(d.chosenController())); }
 		}
 		// no controller, so delete existing connection
 		else
@@ -239,11 +235,7 @@ void AutomatableModelViewSlots::removeConnection()
 {
 	AutomatableModel* m = m_amv->modelUntyped();
 
-	if( m->controllerConnection() )
-	{
-		delete m->controllerConnection();
-		m->setControllerConnection( nullptr );
-	}
+	m->setControllerConnection(nullptr);
 }
 
 

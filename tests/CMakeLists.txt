@@ -22,6 +22,7 @@ set(LMMS_TESTS
 	src/core/ConfigManagerTest.cpp
 	src/core/ExportProcessorTest.cpp
 	src/core/GainStagingTest.cpp
+	src/core/ControllerConnectionTest.cpp
 	src/core/LfoControllerTest.cpp
 	src/core/LoadCorruptedTest.cpp
 	src/core/Lv2WorkerTest.cpp

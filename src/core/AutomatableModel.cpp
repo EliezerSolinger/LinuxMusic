@@ -56,7 +56,6 @@ AutomatableModel::AutomatableModel(
 	m_oldValue(val),
 	m_hasStrictStepSize( false ),
 	m_nextLink(this),
-	m_controllerConnection( nullptr ),
 	m_valueBuffer( static_cast<int>( Engine::audioEngine()->framesPerPeriod() ) ),
 	m_lastUpdatedPeriod( -1 ),
 	m_hasSampleExactData(false),
@@ -74,10 +73,7 @@ AutomatableModel::~AutomatableModel()
 {
 	unlink();
 
-	if (m_controllerConnection)
-	{
-		delete m_controllerConnection;
-	}
+	setControllerConnection(nullptr);
 
 	m_valueBuffer.clear();
 
@@ -217,9 +213,9 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 		}
 		if( thisConnection.isElement() )
 		{
-			setControllerConnection(new ControllerConnection(nullptr));
-			m_controllerConnection->loadSettings( thisConnection.toElement() );
-			//m_controllerConnection->setTargetName( displayName() );
+			auto connection = std::make_unique<ControllerConnection>(nullptr);
+			connection->loadSettings(thisConnection.toElement());
+			setControllerConnection(std::move(connection));
 		}
 	}
 
@@ -499,14 +495,26 @@ void AutomatableModel::unlink()
 
 
 
-void AutomatableModel::setControllerConnection( ControllerConnection* c )
+void AutomatableModel::setControllerConnection(std::unique_ptr<ControllerConnection> connection)
 {
-	m_controllerConnection = c;
-	if( c )
+	if (!connection && !m_controllerConnection) { return; }
+	auto previous = std::unique_ptr<ControllerConnection>{};
 	{
-		QObject::connect( m_controllerConnection, SIGNAL(valueChanged()),
-				this, SIGNAL(dataChanged()), Qt::DirectConnection );
-		QObject::connect( m_controllerConnection, SIGNAL(destroyed()), this, SLOT(unlinkControllerConnection()));
+		// The audio thread reads it (the song's models go after the audio engine, at the end)
+		const auto guard = Engine::audioEngine() ? Engine::audioEngine()->requestChangesGuard()
+			: AudioEngine::RequestChangesGuard{};
+		previous = std::exchange(m_controllerConnection, std::move(connection));
+	}
+	if (previous) { previous->disconnect(this); }
+	// (deleted outside the lock)
+	previous.reset();
+
+	if (m_controllerConnection)
+	{
+		QObject::connect(m_controllerConnection.get(), &ControllerConnection::valueChanged,
+			this, &AutomatableModel::dataChanged, Qt::DirectConnection);
+		QObject::connect(m_controllerConnection.get(), &ControllerConnection::orphaned,
+			this, &AutomatableModel::unlinkControllerConnection);
 		m_valueChanged.store(true, std::memory_order_relaxed);
 		emit dataChanged();
 	}
@@ -637,12 +645,7 @@ ValueBuffer * AutomatableModel::valueBuffer()
 
 void AutomatableModel::unlinkControllerConnection()
 {
-	if( m_controllerConnection )
-	{
-		m_controllerConnection->disconnect( this );
-	}
-
-	m_controllerConnection = nullptr;
+	setControllerConnection(nullptr);
 }
 
 
