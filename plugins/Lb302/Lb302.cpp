@@ -30,6 +30,8 @@
 
 #include "Lb302.h"
 
+#include <algorithm>
+
 #include <cmath>
 #include <numbers>
 
@@ -575,19 +577,32 @@ void Lb302Synth::playImpl(std::span<SampleFrame> out)
 {
 	const auto readIdx = m_notesReadSeq.load(std::memory_order_relaxed);
 	const auto writeCommitted = m_notesWriteCommitted.load(std::memory_order_acquire);
-	// Process notes, but process new notes last
+
+	// The notes arrive from the worker threads in whatever order they ran, and the last new note processed is the
+	// one heard (the synth plays one note at a time): processed in an order of their own, the same note wins on
+	// every run. Notes already playing come first, then the new ones by where they start in the period, and of
+	// notes starting together, the lowest last (low-note priority, as in the classic monophonic synths).
+	struct Pending
+	{
+		NotePlayHandle* nph;
+		bool isNew; //!< (read once: the note's own thread may count its frames meanwhile)
+		f_cnt_t offset;
+		int key;
+	};
+	auto pending = std::array<Pending, s_maxPendingNotes>{};
+	auto count = std::size_t{0};
 	for (auto i = readIdx; i < writeCommitted; ++i)
 	{
-		const auto& nph = m_notes[i & s_notesBufMask];
-		if (nph->totalFramesPlayed() == 0) { continue; }
-		processNote(nph);
+		auto* nph = m_notes[i & s_notesBufMask];
+		pending[count++] = Pending{nph, nph->totalFramesPlayed() == 0, nph->offset(), nph->key()};
 	}
-	for (auto i = readIdx; i < writeCommitted; ++i)
-	{
-		const auto& nph = m_notes[i & s_notesBufMask];
-		if (nph->totalFramesPlayed() != 0) { continue; }
-		processNote(nph);
-	}
+	std::sort(pending.begin(), pending.begin() + count, [](const Pending& a, const Pending& b) {
+		if (a.isNew != b.isNew) { return b.isNew; }
+		if (a.offset != b.offset) { return a.offset < b.offset; }
+		return a.key > b.key;
+	});
+	for (auto i = std::size_t{0}; i < count; ++i) { processNote(pending[i].nph); }
+
 	// Mark the processed notes as having been read so that playNote() calls can overwrite them
 	m_notesReadSeq.fetch_add(writeCommitted - readIdx, std::memory_order_release);
 
