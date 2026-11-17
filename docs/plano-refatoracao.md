@@ -413,7 +413,7 @@ Processo, igual para as duas:
   `<pasta de trabalho>/logs/errors.log` e no stderr. Ele está ligado em todos esses pontos e recebe também os avisos
   ao usuário (fabdde10e).
 
-### Fase 4: posse de memória (em andamento)
+### Fase 4: posse de memória: concluída
 - [x] 4.1 Regras em `docs/regras-de-codigo.md`; 4.2 `.clang-tidy` do núcleo e das faixas (54e32ae7f).
 - [x] `AudioEngine`: dispositivos de áudio e MIDI e workers em `unique_ptr` desde a criação; `Mixer`: canais e rotas
   (afdc6c798, 54e32ae7f).
@@ -450,5 +450,20 @@ Processo, igual para as duas:
   `unique_ptr` muda 52 lugares; fica para quando o render usar instantâneos (fase 7).
 - [ ] Estáticos com criação preguiçosa (`PresetPreviewPlayHandle::s_previewTC`, as instâncias de LFO do envelope):
   vão com os do `Engine` na fase 8.
-- [ ] 4.4 Observadores (`QPointer` ou aviso de morte).
+- [x] 4.4 Observadores.
+  - JACK: o MIDI e o áudio que dividem a conexão sabem quando o outro some. A callback lê o cliente MIDI uma vez
+    só, e `removeMidiClient()` espera ela sair. Sem ligação salva, as portas vão para as físicas certas
+    (eb4a00480, b5e845b9b). Testado com um `jackd` de teste neste Mac, também sob ASan.
+  - Os outros já estavam protegidos:
+    - as vistas observam os modelos por `QPointer` (`ModelView`);
+    - as automações guardam `QPointer<AutomatableModel>`;
+    - o piano roll e o gravador de passos largam o clipe apagado (`destroyedMidiClip`);
+    - o `PeakController` larga o efeito pelo `destroyed`;
+    - os ponteiros para o "pai" (clipe → faixa, instrumento → faixa, controles → efeito) apontam para quem vive
+      mais.
+- Exceções anotadas que ficam:
+  - os filhos do Qt apagados antes do pai (faixas e clipes);
+  - as notas do `MidiClip`;
+  - os estáticos (fase 8);
+  - o `PeakController` que apaga a si mesmo (vai para a fase 5, plugins internos).
 - Os ponteiros estáticos do `Engine` ficam crus até a fase 8 (ciclo de vida).
