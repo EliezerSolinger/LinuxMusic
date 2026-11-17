@@ -67,7 +67,6 @@ void present(const Notice& notice)
 		presenter = s_presenter;
 	}
 	if (presenter) { presenter(notice); }
-	else { log(notice); }
 }
 
 } // namespace
@@ -76,7 +75,9 @@ void present(const Notice& notice)
 void notify(Level level, const QString& title, const QString& text)
 {
 	auto notice = Notice{level, title, text};
-	if (!hasUser()) { log(notice); return; }
+	// (always in the log too: what the user was told is then there when something goes wrong)
+	log(notice);
+	if (!hasUser()) { return; }
 	if (onMainThread()) { present(notice); return; }
 	// To the main thread; the presenter is looked up there, so that one removed meanwhile is not called
 	QMetaObject::invokeMethod(QCoreApplication::instance(), [notice = std::move(notice)] { present(notice); },

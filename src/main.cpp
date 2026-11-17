@@ -954,6 +954,7 @@ int main( int argc, char * * argv )
 		}
 	}
 
+	if (!coreOnly) { gui::GuiApplication::mainLoopStarts(); }
 	int ret = app->exec();
 	if (renderManager && !renderManager->failedOutputs().isEmpty())
 	{

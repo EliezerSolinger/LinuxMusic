@@ -37,7 +37,7 @@ namespace lmms
  * What the core tells the user: a file it could not open, a plugin it could not load, a device that went away. The
  * core never opens a window itself (it runs without one when rendering, importing or exporting from the command
  * line, and in the tests): it hands the notice here, and the GUI, when there is one, installs who shows it.
- * Without a GUI, a notice goes to the log and a question gets the answer given for that case.
+ * A notice always goes to the log as well; without a GUI, a question gets the answer given for that case.
  *
  * Any thread may notify (not the audio thread's processing, which must not allocate): the notice reaches the
  * presenter on the main thread. A question is answered on the main thread only; asked from another thread, or with

@@ -61,6 +61,9 @@ public:
 
 	static GuiApplication* instance();
 
+	//! Called by main() right before the main event loop (see quitWhenTheMainLoopRuns() in GuiApplication.cpp)
+	static void mainLoopStarts();
+
 	//! @brief Called from main when SIGINT is fired
 	//!
 	//! Unix signal handlers can only call async-signal-safe functions:

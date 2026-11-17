@@ -56,6 +56,8 @@ private slots:
 		auto shown = std::vector<UserNotice::Notice>{};
 		UserNotice::setPresenter([&](const UserNotice::Notice& notice) { shown.push_back(notice); }, {});
 		QVERIFY(UserNotice::hasUser());
+		// (in the log too, with a GUI as without)
+		QTest::ignoreMessage(QtCriticalMsg, "Could not open file: No permission");
 		UserNotice::error("Could not open file", "No permission");
 		QCOMPARE(shown.size(), std::size_t{1});
 		QCOMPARE(shown[0].level, UserNotice::Level::Error);
@@ -75,8 +77,8 @@ private slots:
 		QCOMPARE(shownOn[0], QCoreApplication::instance()->thread());
 	}
 
-	//! A presenter removed before the main thread gets to a notice is not called: the notice goes to the log
-	void aNoticePendingWhenThePresenterGoesIsLogged()
+	//! A presenter removed before the main thread gets to a notice is not called (the notice is in the log)
+	void aNoticePendingWhenThePresenterGoesIsNotShown()
 	{
 		auto calls = 0;
 		UserNotice::setPresenter([&](const UserNotice::Notice&) { ++calls; }, {});

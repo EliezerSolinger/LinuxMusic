@@ -172,13 +172,26 @@ namespace
 
 //! Quits once the main loop runs: a project still loading (its events processed before the loop starts) would make
 //! an exit before it do nothing
+//! Whether main() has entered the main event loop (see GuiApplication::mainLoopStarts())
+bool s_mainLoopStarted = false;
+
 void quitWhenTheMainLoopRuns()
 {
-	if (QThread::currentThread()->loopLevel() > 0) { QApplication::exit(0); }
+	// Not while a project still loads before the main loop: a loop running then (e.g. a plugin waiting for its
+	// process) would be the one to quit, and the main loop would then run on
+	if (s_mainLoopStarted && QThread::currentThread()->loopLevel() > 0) { QApplication::exit(0); }
 	else { QTimer::singleShot(100, qApp, &quitWhenTheMainLoopRuns); }
 }
 
 } // namespace
+
+
+
+
+void GuiApplication::mainLoopStarts()
+{
+	s_mainLoopStarted = true;
+}
 
 
 
@@ -245,8 +258,9 @@ GuiApplication::GuiApplication()
 	connect(Engine::inst(), SIGNAL(initProgress(const QString&)), 
 		this, SLOT(displayInitProgress(const QString&)));
 
-	// What the core tells the user, from here on, in a message box (see UserNotice)
-	UserNotice::setPresenter(showNotice, askQuestion);
+	// What the core tells the user, from here on, in a message box (see UserNotice); not when the program runs by
+	// itself to take a screenshot (see below), where nobody would close it: the log has it
+	if (qEnvironmentVariable("LINUXMUSIC_SCREENSHOT").isEmpty()) { UserNotice::setPresenter(showNotice, askQuestion); }
 	UserNotice::setProgressViewFactory([](const QString& title, const QString& text, int maximum) {
 		return std::make_unique<ProgressDialog>(title, text, maximum);
 	});
