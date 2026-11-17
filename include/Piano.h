@@ -26,6 +26,7 @@
 #define LMMS_PIANO_H
 
 #include <array>
+#include <atomic>
 
 #include "Model.h"
 #include "Note.h"
@@ -59,7 +60,7 @@ public:
 
 	bool isKeyPressed(int key) const
 	{
-		return m_pressedKeys[key];
+		return isValidKey(key) && m_pressedKeys[key].load(std::memory_order_relaxed);
 	}
 
 	//! @brief Handle a note being pressed on our keyboard display
@@ -99,7 +100,8 @@ private:
 
 	InstrumentTrack* m_instrumentTrack;
 	MidiEventProcessor* m_midiEvProc;
-	std::array<bool, NumKeys> m_pressedKeys = {};
+	//! Which keys are down (set by the MIDI input and the song on their threads, drawn by the GUI)
+	std::array<std::atomic<bool>, NumKeys> m_pressedKeys = {};
 
 } ;
 
