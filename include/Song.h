@@ -34,8 +34,10 @@
 #include <QHash>  // IWYU pragma: keep
 #include <QLockFile>
 #include <QSet>
+#include <QTimer>
 
 #include "AudioEngine.h"
+#include "LockFreeQueue.h"
 #include "AudioRecorder.h"
 #include "MidiRecorder.h"
 #include "SongMarkers.h"
@@ -89,6 +91,10 @@ public:
 	//! @p clip leaves its track (see Track::removeClip()), under the audio engine's change lock: if the piano roll
 	//! plays it alone, nothing plays anymore (the playing stops after)
 	void forgetClip(const Clip* clip);
+
+	//! Puts the values the audio thread recorded into automation clips in them (a timer does it while playing; also
+	//! when a clip leaves its track, whose own values are dropped then: @p dropFor)
+	void applyRecordedAutomation(const Clip* dropFor = nullptr);
 
 	enum class PlayMode
 	{
@@ -679,6 +685,17 @@ private:
 
 	AutomatedValueMap m_oldAutomatedValues;
 	AutomatedValueMap m_automatedValues; //!< (the audio thread's, reused each tick)
+
+	//! A value the audio thread recorded into an automation clip (processAutomations()): put in the clip on the main
+	//! thread (applyRecordedAutomation()), as the clip's points change only there, under the audio engine's lock
+	struct RecordedAutomation
+	{
+		AutomationClip* clip;
+		TimePos time;
+		float value;
+	};
+	LockFreeQueue<RecordedAutomation, 4096> m_recordedAutomation;
+	QTimer m_recordedAutomationTimer;
 	std::vector<const AutomatableModel*> m_recordedModels; //!< (the same)
 	Track::clipVector m_automationClips; //!< (the same)
 	mutable TrackList m_automationTracks; //!< (the same)

@@ -126,6 +126,9 @@ private slots:
 
 		auto made = std::vector<Track*>{};
 		auto* automation = Track::create(Track::Type::Automation, song);
+		auto* drawn = dynamic_cast<AutomationClip*>(automation->createClip(TimePos{0}));
+		drawn->addObject(&mixer->mixerChannel(channelIndex)->m_panModel);
+		drawn->changeLength(TimePos{4 * TimePos::ticksPerBar()});
 		const auto edits = std::vector<Edit>{
 			{"a track with an instrument made", [&](int) { made.push_back(newInstrumentTrack("tripleoscillator")); }},
 			{"a track with an instrument deleted", [&](int) {
@@ -160,6 +163,14 @@ private slots:
 			}},
 			{"a pattern made and deleted", [&](int) {
 				Track::destroy(Track::create(Track::Type::Pattern, song));
+			}},
+			{"an automation clip's points drawn while it plays", [&](int round) {
+				for (int point = 0; point < 16; ++point)
+				{
+					drawn->putValue(TimePos{(round * 16 + point) % (4 * TimePos::ticksPerBar())},
+						static_cast<float>(point % 4) / 4.f, false);
+				}
+				drawn->removeNode(TimePos{round * 7 % (4 * TimePos::ticksPerBar())});
 			}},
 			{"a mixer channel with effects and automation deleted", [&](int) {
 				const auto added = mixer->createChannel();
@@ -216,6 +227,34 @@ private slots:
 		}
 		song->stop();
 		QCOMPARE(skippedInAll, std::int64_t{0});
+	}
+
+	//! Automation recorded while playing: the audio thread records, the values reach the clip on the main thread
+	//! (Song::applyRecordedAutomation()), where its points change
+	void automationIsRecordedWhilePlaying()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = newInstrumentTrack("tripleoscillator");
+		auto* automation = Track::create(Track::Type::Automation, song);
+		auto* clip = dynamic_cast<AutomationClip*>(automation->createClip(TimePos{0}));
+		auto* model = dynamic_cast<InstrumentTrack*>(track)->volumeModel();
+		clip->addObject(model);
+		clip->changeLength(TimePos{4 * TimePos::ticksPerBar()});
+		clip->setRecording(true);
+		song->playSong();
+		{
+			const auto device = Device{};
+			for (int step = 0; step < 40; ++step)
+			{
+				model->setValue(static_cast<float>(20 + step * 2));
+				std::this_thread::sleep_for(5ms);
+				QCoreApplication::processEvents();
+			}
+		}
+		song->stop();
+		song->applyRecordedAutomation();
+		QVERIFY(clip->getTimeMap().size() > 5);
 	}
 
 	//! The clip the piano roll plays alone (Song::playMidiClip()) is deleted while it plays: the playing stops, and the

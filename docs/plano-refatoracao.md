@@ -310,9 +310,8 @@ Passos feitos:
     (`AudioBusHandle`) agora são atômicos; um LFO entra na lista que o render percorre só quando está inteiro e
     sai primeiro, e a marca de "forma do LFO desatualizada", escrita pelas duas threads, é atômica; o render, com
     o clipe do piano roll esquecido, não toca nada até parar (antes, lia o ponteiro nulo).
-  - O TSan também acusa o mapa de pontos da automação, protegido pelo `QRecursiveMutex` do clipe, que o TSan não
-    enxerga (o Qt não é compilado com TSan; o `QMutex` comum é anotado, o recursivo não): é o mutex que o render
-    ainda pega, já na lista da fase 4 ("QMutex restantes na thread de áudio"); fica para aquele passo.
+  - O TSan também acusava o mapa de pontos da automação, protegido pelo `QRecursiveMutex` do clipe (o TSan não o
+    enxerga: o Qt não é compilado com TSan). Resolvido no passo 7.4, abaixo.
 
 | Edição (com o teste novo) | Trava presa no máximo |
 |---|---|
@@ -332,6 +331,20 @@ Passos feitos:
 | Edição | Trava presa no máximo |
 |---|---|
 | Criar e apagar um canal com três efeitos e o volume automatizado | 0,07 ms |
+
+- **7.4 Automação sem mutex no render** (um item da fase 4 também: "QMutex restantes na thread de áudio"): quem
+  muda os pontos ou os controles de um clipe de automação pega a trava do motor de áudio e depois o mutex do clipe
+  (`AutomationClip::Change`); o render, que segura a trava, lê sem pegar mutex nenhum, então nunca espera a
+  interface. A gravação de automação era a única escrita feita pela thread de áudio: agora o render põe os valores
+  numa fila sem trava (`Song::m_recordedAutomation`), e a thread principal os põe no clipe (a cada 25 ms, e quando
+  um clipe sai da faixa, que leva os seus junto). A marca "gravando" do clipe é atômica. O clipe de detuning de
+  uma nota tocando continua gravado pelo render: só ele usa esse clipe enquanto a nota toca.
+  Com isso o TSan sai **limpo** nos testes de edição tocando, estresse, automação, gravação, mixer e modelos.
+
+| Edição | Trava presa no máximo |
+|---|---|
+| Desenhar pontos num clipe de automação que está tocando | 0,01 ms |
+| Gravar automação tocando | (o render não espera) |
 
 ## Fase 8: ciclo de vida explícito
 

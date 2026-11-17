@@ -73,7 +73,7 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 	m_tension( _clip_to_copy.m_tension ),
 	m_progressionType(_clip_to_copy.m_progressionType),
 	m_dragging(false),
-	m_isRecording(_clip_to_copy.m_isRecording),
+	m_isRecording(_clip_to_copy.m_isRecording.load()),
 	m_lastRecordedValue(0)
 {
 	// Locks the mutex of the copied AutomationClip to make sure it
@@ -141,7 +141,7 @@ bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 void AutomationClip::setProgressionType(
 					ProgressionType _new_progression_type )
 {
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	if ( _new_progression_type == ProgressionType::Discrete ||
 		_new_progression_type == ProgressionType::Linear ||
@@ -157,7 +157,7 @@ void AutomationClip::setProgressionType(
 
 void AutomationClip::setTension( QString _new_tension )
 {
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	bool ok;
 	float nt = LocaleHelper::toFloat(_new_tension, & ok);
@@ -173,7 +173,6 @@ void AutomationClip::setTension( QString _new_tension )
 
 const AutomatableModel * AutomationClip::firstObject() const
 {
-	QMutexLocker m(&m_clipMutex);
 
 	AutomatableModel* model;
 	if (!m_objects.empty() && (model = m_objects.front()) != nullptr)
@@ -187,7 +186,6 @@ const AutomatableModel * AutomationClip::firstObject() const
 
 const AutomationClip::objectVector& AutomationClip::objects() const
 {
-	QMutexLocker m(&m_clipMutex);
 
 	return m_objects;
 }
@@ -197,7 +195,6 @@ const AutomationClip::objectVector& AutomationClip::objects() const
 
 TimePos AutomationClip::timeMapLength() const
 {
-	QMutexLocker m(&m_clipMutex);
 
 	TimePos one_bar = TimePos(1, 0);
 	if (m_timeMap.isEmpty()) { return one_bar; }
@@ -245,7 +242,7 @@ TimePos AutomationClip::putValue(
 {
 	// (before the clip's mutex: the audio engine's lock comes first, see cleanObjects())
 	cleanObjects();
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	TimePos newTime = quantPos ? Note::quantized(time, quantization()) : time;
 	newTime = std::max(TimePos(0), newTime);
@@ -291,7 +288,7 @@ TimePos AutomationClip::putValues(
 {
 	// (before the clip's mutex: the audio engine's lock comes first, see cleanObjects())
 	cleanObjects();
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	TimePos newTime = quantPos ? Note::quantized(time, quantization()) : time;
 	newTime = std::max(TimePos(0), newTime);
@@ -331,7 +328,7 @@ void AutomationClip::removeNode(const TimePos & time)
 {
 	// (before the clip's mutex: the audio engine's lock comes first, see cleanObjects())
 	cleanObjects();
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	m_timeMap.remove( time );
 	timeMap::iterator it = m_timeMap.lowerBound(time);
@@ -351,6 +348,7 @@ void AutomationClip::removeNode(const TimePos & time)
 
 void AutomationClip::removeNodes(const int tick0, const int tick1)
 {
+	const auto change = Change{*this};
 	if (tick0 == tick1)
 	{
 		removeNode(TimePos(tick0));
@@ -381,6 +379,7 @@ void AutomationClip::removeNodes(const int tick0, const int tick1)
 
 void AutomationClip::resetNodes(const int tick0, const int tick1)
 {
+	const auto change = Change{*this};
 	if (tick0 == tick1)
 	{
 		auto it = m_timeMap.find(TimePos(tick0));
@@ -402,6 +401,7 @@ void AutomationClip::resetNodes(const int tick0, const int tick1)
 
 void AutomationClip::resetTangents(const int tick0, const int tick1)
 {
+	const auto change = Change{*this};
 	if (tick0 == tick1)
 	{
 		auto it = m_timeMap.find(TimePos(tick0));
@@ -428,7 +428,7 @@ void AutomationClip::resetTangents(const int tick0, const int tick1)
 
 void AutomationClip::recordValue(TimePos time, float value)
 {
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	if( value != m_lastRecordedValue )
 	{
@@ -450,7 +450,7 @@ TimePos AutomationClip::setDragValue(
 	const bool quantPos,
 	const bool controlKey
 ) {
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	if (m_dragging == false)
 	{
@@ -529,7 +529,7 @@ TimePos AutomationClip::setDragValue(
 
 void AutomationClip::applyDragValue()
 {
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	m_dragging = false;
 }
@@ -539,7 +539,6 @@ void AutomationClip::applyDragValue()
 
 float AutomationClip::valueAt( const TimePos & _time ) const
 {
-	QMutexLocker m(&m_clipMutex);
 
 	if( m_timeMap.isEmpty() )
 	{
@@ -581,7 +580,6 @@ float AutomationClip::valueAt( const TimePos & _time ) const
 // that node and the inValue of the next node for the calculations.
 float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 {
-	QMutexLocker m(&m_clipMutex);
 
 	// We never use it with offset 0, but doesn't hurt to return a correct
 	// value if we do
@@ -630,7 +628,6 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 
 float *AutomationClip::valuesAfter( const TimePos & _time ) const
 {
-	QMutexLocker m(&m_clipMutex);
 
 	timeMap::const_iterator v = m_timeMap.lowerBound(_time);
 	auto const nv = std::next(v);
@@ -656,7 +653,7 @@ float *AutomationClip::valuesAfter( const TimePos & _time ) const
 
 void AutomationClip::flipY(int min, int max)
 {
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	bool changedTimeMap = false;
 
@@ -696,7 +693,7 @@ void AutomationClip::flipX(int start, int end)
 {
 	// (before the clip's mutex: the audio engine's lock comes first, see cleanObjects())
 	cleanObjects();
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	timeMap::const_iterator firstIterator = m_timeMap.lowerBound(0);
 
@@ -765,7 +762,6 @@ void AutomationClip::flipX(int start, int end)
 
 void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 {
-	QMutexLocker m(&m_clipMutex);
 
 	_this.setAttribute( "pos", startPosition() );
 	_this.setAttribute( "len", length() );
@@ -810,7 +806,7 @@ void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 void AutomationClip::loadSettings( const QDomElement & _this )
 {
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	// Legacy compatibility: Previously tangents were not stored in
 	// the project file. So if any node doesn't have tangent information
@@ -893,7 +889,6 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 
 QString AutomationClip::name() const
 {
-	QMutexLocker m(&m_clipMutex);
 
 	if( !Clip::name().isEmpty() )
 	{
@@ -1052,7 +1047,7 @@ void AutomationClip::resolveAllIDs()
 
 void AutomationClip::clear()
 {
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	m_timeMap.clear();
 
@@ -1129,7 +1124,7 @@ void AutomationClip::generateTangents()
 // outTangent values of the node will be the same too.
 void AutomationClip::generateTangents(timeMap::iterator it, int numToGenerate)
 {
-	QMutexLocker m(&m_clipMutex);
+	const auto change = Change{*this};
 
 	for (int i = 0; i < numToGenerate && it != m_timeMap.end(); ++i, ++it)
 	{

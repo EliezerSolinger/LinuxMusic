@@ -103,6 +103,11 @@ Song::Song() :
 	m_loopRenderRemaining(1),
 	m_oldAutomatedValues()
 {
+	// The values the audio thread records into automation clips go in them from here, a few times a second
+	m_recordedAutomationTimer.setInterval(25);
+	connect(&m_recordedAutomationTimer, &QTimer::timeout, this, [this] { applyRecordedAutomation(); });
+	m_recordedAutomationTimer.start();
+
 	connect( &m_tempoModel, SIGNAL(dataChanged()),
 			this, SLOT(setTempo()), Qt::DirectConnection );
 	connect( &m_tempoModel, SIGNAL(dataUnchanged()),
@@ -484,7 +489,14 @@ void Song::processAutomations(std::span<Track* const> tracklist, TimePos timeSta
 			// you can see that the true values are stored by their inverse scaled value....which is wrong, since they weren't scaled in the first place...?
 			// Anyhow, in the meantime before we redo the automation system, when recording automations, we have to get the inverseScaledValue
 			// and store that so that when playing it back, it scales the value correctly.
-			p->recordValue(relTime, recordedModel->inverseScaledValue(recordedModel->value<float>()));
+			// Put in the clip by the main thread (see applyRecordedAutomation())
+			const auto recorded = RecordedAutomation{p, relTime,
+				recordedModel->inverseScaledValue(recordedModel->value<float>())};
+			if (!m_recordedAutomation.tryPush(recorded))
+			{
+				ErrorLog::report(ErrorLog::Severity::Warning, "Song::processAutomations",
+					"automation recorded faster than it is stored: a value is lost");
+			}
 
 			recordedModels.push_back(recordedModel);
 		}
@@ -650,10 +662,25 @@ void Song::playPattern()
 
 void Song::forgetClip(const Clip* clip)
 {
+	// What the audio thread recorded into it is dropped, and what it recorded into others put in them: nothing in the
+	// queue points to it anymore (it no longer reaches the audio thread)
+	applyRecordedAutomation(clip);
+
 	if (clip == nullptr || clip != m_midiClipToPlay) { return; }
 	m_midiClipToPlay = nullptr;
 	// Stopped once the lock is free (stop() tells everyone)
 	QMetaObject::invokeMethod(this, &Song::stop, Qt::QueuedConnection);
+}
+
+
+
+
+void Song::applyRecordedAutomation(const Clip* dropFor)
+{
+	while (const auto recorded = m_recordedAutomation.tryPop())
+	{
+		if (recorded->clip != dropFor) { recorded->clip->recordValue(recorded->time, recorded->value); }
+	}
 }
 
 

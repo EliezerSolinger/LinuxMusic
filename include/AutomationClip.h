@@ -28,10 +28,12 @@
 #define LMMS_AUTOMATION_CLIP_H
 
 #include <QMap>
+#include <atomic>
 #include <functional>
 
 #include <QPointer>
 
+#include "AudioEngine.h"
 #include "AutomationNode.h"
 #include "Clip.h"
 
@@ -281,6 +283,24 @@ private:
 	// Mutable so we can lock it from const objects
 	mutable QRecursiveMutex m_clipMutex;
 
+	/**
+	 * Held while the clip's points or controls change: the audio engine's change lock first (the audio thread reads
+	 * them while it renders, holding that lock, and takes no lock of the clip's), then the clip's mutex. Nothing
+	 * else changes them: the audio thread's recordings come through Song (see Song::recordAutomation()).
+	 */
+	class Change
+	{
+	public:
+		explicit Change(const AutomationClip& clip)
+			: m_guard{AudioEngine::changesGuard()}
+			, m_lock{&clip.m_clipMutex}
+		{
+		}
+	private:
+		AudioEngine::RequestChangesGuard m_guard;
+		QMutexLocker<QRecursiveMutex> m_lock;
+	};
+
 	AutomationTrack * m_autoTrack;
 	std::vector<jo_id_t> m_idsToResolve;
 	objectVector m_objects;
@@ -297,7 +317,7 @@ private:
 	float m_dragInTan; // The dragged node's inTangent
 	float m_dragOutTan; // The dragged node's outTangent
 
-	bool m_isRecording;
+	std::atomic<bool> m_isRecording; //!< (set by the main thread, read by the audio thread)
 	float m_lastRecordedValue;
 
 	static int s_quantization;
