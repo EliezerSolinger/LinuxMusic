@@ -299,7 +299,7 @@ private slots:
 			patternClip->setStorage(SampleClip::Storage::Disk);
 			patternClip->setSampleFile(longFile);
 			QVERIFY(!patternClip->isStreamed());
-			delete patternTrack;
+			Track::destroy(patternTrack);
 		}
 	}
 

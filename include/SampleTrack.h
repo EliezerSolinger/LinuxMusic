@@ -49,7 +49,11 @@ class SampleTrack : public AudioInputTrack
 	Q_OBJECT
 public:
 	SampleTrack( TrackContainer* tc );
+protected:
+	//! (see Track::destroy())
 	~SampleTrack() override;
+
+public:
 
 	//! An audio file longer than this is a recording (an audio track's clip), not a sample (an instrument's): 30 s,
 	//! or the setting's

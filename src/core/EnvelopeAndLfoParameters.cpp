@@ -122,13 +122,6 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 	m_amountModel.setCenterValue( 0 );
 	m_lfoAmountModel.setCenterValue( 0 );
 
-	if( s_lfoInstances == nullptr )
-	{
-		s_lfoInstances = new LfoInstances();
-	}
-
-	instances()->add( this );
-
 	connect( &m_predelayModel, SIGNAL(dataChanged()),
 			this, SLOT(updateSampleVars()), Qt::DirectConnection );
 	connect( &m_attackModel, SIGNAL(dataChanged()),
@@ -162,6 +155,13 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 
 
 	updateSampleVars();
+
+	// The audio thread steps every LFO each period (LfoInstances::trigger()): this one only once it is whole
+	if( s_lfoInstances == nullptr )
+	{
+		s_lfoInstances = new LfoInstances();
+	}
+	instances()->add( this );
 }
 
 
@@ -169,6 +169,9 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 
 EnvelopeAndLfoParameters::~EnvelopeAndLfoParameters()
 {
+	// First, while it is whole (see the constructor)
+	instances()->remove( this );
+
 	m_predelayModel.disconnect( this );
 	m_attackModel.disconnect( this );
 	m_holdModel.disconnect( this );
@@ -182,8 +185,6 @@ EnvelopeAndLfoParameters::~EnvelopeAndLfoParameters()
 	m_lfoAmountModel.disconnect( this );
 	m_lfoWaveModel.disconnect( this );
 	m_x100Model.disconnect( this );
-
-	instances()->remove( this );
 
 	if( instances()->isEmpty() )
 	{

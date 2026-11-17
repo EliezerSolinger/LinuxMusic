@@ -52,7 +52,11 @@ class LMMS_EXPORT AudioTrack : public AudioInputTrack
 	Q_OBJECT
 public:
 	explicit AudioTrack(TrackContainer* container);
+protected:
+	//! (see Track::destroy())
 	~AudioTrack() override;
+
+public:
 
 	bool play(const TimePos& start, f_cnt_t frames, f_cnt_t offset, int clipNum = -1) override;
 	gui::TrackView* createView(gui::TrackContainerView* view) override;

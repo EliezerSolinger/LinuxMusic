@@ -86,6 +86,10 @@ class LMMS_EXPORT Song : public TrackContainer
 	mapPropertyFromModel( int,masterPitch,setMasterPitch,m_masterPitchModel );
 	mapPropertyFromModel( int,masterVolume,setMasterVolume, m_masterVolumeModel );
 public:
+	//! @p clip leaves its track (see Track::removeClip()), under the audio engine's change lock: if the piano roll
+	//! plays it alone, nothing plays anymore (the playing stops after)
+	void forgetClip(const Clip* clip);
+
 	enum class PlayMode
 	{
 		None,
@@ -583,7 +587,7 @@ private:
 	void setProjectFileName(QString const & projectFileName);
 
 	//! (its Qt parent is this song too, for the model tree: it goes first, in ~Song())
-	std::unique_ptr<AutomationTrack> m_globalAutomationTrack;
+	std::unique_ptr<AutomationTrack, Track::Deleter> m_globalAutomationTrack;
 
 	IntModel m_tempoModel;
 	MeterModel m_timeSigModel;

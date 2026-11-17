@@ -29,6 +29,7 @@
 #include <QtTest>
 
 #include "AudioEngine.h"
+#include "AutomationClip.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -124,15 +125,14 @@ private slots:
 		song->playSong();
 
 		auto made = std::vector<Track*>{};
+		auto* automation = Track::create(Track::Type::Automation, song);
 		const auto edits = std::vector<Edit>{
 			{"a track with an instrument made", [&](int) { made.push_back(newInstrumentTrack("tripleoscillator")); }},
 			{"a track with an instrument deleted", [&](int) {
 				if (made.empty()) { return; }
 				// As the track's view deletes it (TrackContainerView::deleteTrackView())
-				Engine::audioEngine()->requestChangeInModel();
 				mixer->releaseTrackChannel(made.back());
-				delete made.back();
-				Engine::audioEngine()->doneChangeInModel();
+				Track::destroy(made.back());
 				made.pop_back();
 			}},
 			{"the instrument of a track swapped", [&](int round) {
@@ -153,6 +153,27 @@ private slots:
 				clip->movePosition(TimePos{round % 2 * 48});
 			}},
 			{"the tempo changed", [&](int round) { song->tempoModel().setValue(100 + round % 60); }},
+			{"a clip with notes made and deleted", [&](int round) {
+				auto* clip = dynamic_cast<MidiClip*>(playing->createClip(TimePos{round % 4 * TimePos::ticksPerBar()}));
+				for (int note = 0; note < 8; ++note) { clip->addNote(Note{TimePos{24}, TimePos{note * 24}, DefaultKey}); }
+				playing->deleteClip(clip);
+			}},
+			{"a pattern made and deleted", [&](int) {
+				Track::destroy(Track::create(Track::Type::Pattern, song));
+			}},
+			{"an automated track deleted", [&](int) {
+				// Another track's clip sets its volume while it plays
+				auto* track = newInstrumentTrack("tripleoscillator");
+				auto* clip = dynamic_cast<AutomationClip*>(automation->createClip(TimePos{0}));
+				clip->addObject(dynamic_cast<InstrumentTrack*>(track)->volumeModel());
+				clip->putValue(TimePos{0}, 0.5f, false);
+				clip->putValue(TimePos{2 * TimePos::ticksPerBar()}, 1.f, false);
+				clip->changeLength(TimePos{4 * TimePos::ticksPerBar()});
+				std::this_thread::sleep_for(10ms);
+				mixer->releaseTrackChannel(track);
+				Track::destroy(track);
+				automation->deleteClip(clip);
+			}},
 		};
 
 		auto skippedInAll = std::int64_t{0};
@@ -179,6 +200,27 @@ private slots:
 		}
 		song->stop();
 		QCOMPARE(skippedInAll, std::int64_t{0});
+	}
+
+	//! The clip the piano roll plays alone (Song::playMidiClip()) is deleted while it plays: the playing stops, and the
+	//! audio thread never sees the clip gone (Song::forgetClip())
+	void theClipThePianoRollPlaysIsDeleted()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = newInstrumentTrack("tripleoscillator");
+		auto* clip = dynamic_cast<MidiClip*>(track->getClip(0));
+		song->playMidiClip(clip);
+		QCOMPARE(song->playMode(), Song::PlayMode::MidiClip);
+		{
+			const auto device = Device{};
+			std::this_thread::sleep_for(30ms);
+			track->deleteClip(clip);
+			std::this_thread::sleep_for(30ms);
+			QCoreApplication::processEvents();
+			std::this_thread::sleep_for(10ms);
+		}
+		QVERIFY(song->isStopped());
 	}
 };
 

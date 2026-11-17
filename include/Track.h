@@ -95,9 +95,25 @@ public:
 	//! @param tc The track Container object to encapsulate in this track.
 	Track(Type type, TrackContainer* tc);
 
-	//! @brief Delete the clips and remove this track from the track container.
+	/**
+	 * Deletes @p track, the audio playing or not. What the audio thread reaches of it goes first, in a moment under
+	 * the audio engine's change lock: the track leaves its container (it is no longer played). The track is then
+	 * deleted without the lock: its play handles, buses, MIDI port, clips and automated controls each unhook
+	 * themselves, for their own moment under it. The only way a track is deleted (its destructor is not public).
+	 */
+	static void destroy(Track* track);
+
+	//! For a std::unique_ptr that owns a track
+	struct Deleter
+	{
+		void operator()(Track* track) const { destroy(track); }
+	};
+
+protected:
+	//! Deletes the clips; see destroy()
 	~Track() override;
 
+public:
 	//! @brief Create a track based on the given track type and container.
 	//!
 	//! @param tt The type of track to create
@@ -157,6 +173,13 @@ public:
 	//! @param clip The Clip to remove from this track.
 	void removeClip(Clip* clip);
 	// -------------------------------------------------------
+
+	/**
+	 * Takes @p clip out of the track, so the audio thread no longer plays it (a moment under the audio engine's
+	 * change lock), then deletes it without the lock. Clips are deleted so (or with deleteLater() once taken out);
+	 * one deleted while in the track would be played half gone.
+	 */
+	void deleteClip(Clip* clip);
 
 	//! @brief Remove all Clips from this track
 	void deleteClips();

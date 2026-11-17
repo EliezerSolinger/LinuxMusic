@@ -26,6 +26,8 @@
 #define LMMS_ENGINE_H
 
 #include <QString>
+#include <atomic>
+
 #include <QObject>
 
 #include "lmmsconfig.h"
@@ -99,9 +101,10 @@ public:
 		return s_ladspaManager;
 	}
 
+	//! (set by the main thread when the tempo changes, read by the audio thread)
 	static float framesPerTick()
 	{
-		return s_framesPerTick;
+		return s_framesPerTick.load(std::memory_order_relaxed);
 	}
 
 	static float framesPerTick(sample_rate_t sample_rate);
@@ -135,7 +138,7 @@ private:
 		delete tmp;
 	}
 
-	static float s_framesPerTick;
+	static std::atomic<float> s_framesPerTick;
 
 	// core
 	static AudioEngine *s_audioEngine;

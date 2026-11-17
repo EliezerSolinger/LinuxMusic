@@ -224,6 +224,13 @@ public:
 	static AutomationClip * globalAutomationClip( AutomatableModel * _m );
 	static void resolveAllIDs();
 
+	/**
+	 * Every automation clip forgets the controls under @p owner (it, or its children: e.g. a track's), as when they are
+	 * deleted (found again by their ids if they come back: an undo). For many controls about to be deleted at once
+	 * (a track), under one moment of the audio engine's change lock instead of one each (objectDestroyed())
+	 */
+	static void forgetObjectsUnder(const QObject* owner);
+
 	bool isRecording() const { return m_isRecording; }
 	void setRecording( const bool b ) { m_isRecording = b; }
 

@@ -238,8 +238,8 @@ private:
 		}
 
 		const auto guard = engine->requestChangesGuard();
-		delete player;
-		delete recorder;
+		Track::destroy(player);
+		Track::destroy(recorder);
 		return result;
 	}
 
@@ -302,8 +302,8 @@ private slots:
 		const auto cleanUp = qScopeGuard([&] {
 			song->stop();
 			const auto guard = engine->requestChangesGuard();
-			delete player;
-			delete recorder;
+			Track::destroy(player);
+			Track::destroy(recorder);
 		});
 
 		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
@@ -357,7 +357,7 @@ private slots:
 			ConfigManager::inst()->setValue("recording", "countin", "0");
 			song->stop();
 			const auto guard = engine->requestChangesGuard();
-			delete recorder;
+			Track::destroy(recorder);
 		});
 
 		// From the cursor at bar 3, the song plays from bar 2 and the take starts at bar 3
@@ -388,7 +388,7 @@ private slots:
 		const auto cleanUp = qScopeGuard([&] {
 			song->stop();
 			const auto guard = engine->requestChangesGuard();
-			delete recorder;
+			Track::destroy(recorder);
 		});
 
 		const auto cursor = TimePos::ticksPerBar();
@@ -438,8 +438,8 @@ private slots:
 			song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
 			song->stop();
 			const auto guard = engine->requestChangesGuard();
-			delete player;
-			delete recorder;
+			Track::destroy(player);
+			Track::destroy(recorder);
 		});
 
 		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
@@ -527,8 +527,8 @@ private slots:
 			song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
 			song->stop();
 			const auto guard = engine->requestChangesGuard();
-			delete player;
-			delete recorder;
+			Track::destroy(player);
+			Track::destroy(recorder);
 		});
 
 		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
@@ -599,8 +599,8 @@ private slots:
 			song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
 			song->stop();
 			const auto guard = engine->requestChangesGuard();
-			delete player;
-			delete recorder;
+			Track::destroy(player);
+			Track::destroy(recorder);
 		});
 
 		const auto framesPerTick = static_cast<double>(Engine::framesPerTick());
@@ -687,7 +687,7 @@ private slots:
 		QCOMPARE(loaded->xruns(), take->xruns());
 
 		const auto guard = engine->requestChangesGuard();
-		delete recorder;
+		Track::destroy(recorder);
 	}
 
 	//! A period the engine gives silence (a change of the model held it) is a dropout of the take, as an xrun
@@ -723,7 +723,7 @@ private slots:
 		QCOMPARE(take->xruns().front(), static_cast<std::int64_t>(200 * 256 - (256 + 256 + 40 + 256 + 200)));
 
 		const auto guard = engine->requestChangesGuard();
-		delete recorder;
+		Track::destroy(recorder);
 	}
 
 	void aMidiTakeInALaneLeavesWhatWasThereBelow()
@@ -767,7 +767,7 @@ private slots:
 		QCOMPARE(track->laneCount(), 1);
 
 		const auto guard = engine->requestChangesGuard();
-		delete track;
+		Track::destroy(track);
 	}
 
 	void recordedNotesAreQuantizedWhenTheTrackAsks()
@@ -798,7 +798,7 @@ private slots:
 		QCOMPARE(clip->startPosition().getTicks() + clip->notes().front()->pos().getTicks(), 48);
 		QCOMPARE(clip->notes().front()->length().getTicks(), 30);
 		const auto guard = Engine::audioEngine()->requestChangesGuard();
-		delete track;
+		Track::destroy(track);
 	}
 
 	void choosingATakeKeepsThePartOfTheClip()
@@ -811,7 +811,7 @@ private slots:
 		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
 		const auto cleanUp = qScopeGuard([&] {
 			const auto guard = Engine::audioEngine()->requestChangesGuard();
-			delete track;
+			Track::destroy(track);
 		});
 
 		// The second part of a split clip: a later start, an offset into the recording, a shorter length
@@ -868,8 +868,8 @@ private slots:
 		const auto cleanUp = qScopeGuard([&] {
 			song->stop();
 			const auto guard = engine->requestChangesGuard();
-			delete empty;
-			delete busy;
+			Track::destroy(empty);
+			Track::destroy(busy);
 		});
 		for (auto* track : {empty, busy})
 		{
@@ -932,8 +932,8 @@ private slots:
 			song->stop();
 			journal->setJournalling(wasJournalling);
 			const auto guard = engine->requestChangesGuard();
-			delete first;
-			delete second;
+			Track::destroy(first);
+			Track::destroy(second);
 		});
 		first->recordArmModel()->setValue(true);
 		second->recordArmModel()->setValue(true);
@@ -976,7 +976,7 @@ private slots:
 			song->stop();
 			song->tempoModel().setValue(tempo);
 			const auto guard = engine->requestChangesGuard();
-			delete recorder;
+			Track::destroy(recorder);
 		});
 
 		// The tempo changes twice while recording
@@ -1008,7 +1008,7 @@ private slots:
 			song->stop();
 			song->tempoModel().setValue(tempo);
 			const auto guard = engine->requestChangesGuard();
-			delete recorder;
+			Track::destroy(recorder);
 		});
 
 		// A take whose end falls inside a tick (a few frames past one)
@@ -1086,7 +1086,7 @@ private slots:
 		else { QVERIFY(rms < 1e-6); }
 
 		const auto guard = engine->requestChangesGuard();
-		delete track;
+		Track::destroy(track);
 	}
 
 	void nothingArmedRecordsNothing()

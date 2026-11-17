@@ -743,7 +743,7 @@ int Mixer::createChannel(bool beforeFxReturns)
 	auto made = std::make_unique<MixerChannel>(static_cast<int>(m_mixerChannels.size()), this);
 	MixerChannel* channel = nullptr;
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		channel = m_mixerChannels.emplace_back(std::move(made)).get();
 	}
 	const int index = channel->index();

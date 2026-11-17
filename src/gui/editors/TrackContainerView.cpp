@@ -398,11 +398,10 @@ void TrackContainerView::deleteTrackView( TrackView * _tv )
 	removeTrackView( _tv );
 	delete _tv;
 
-	Engine::audioEngine()->requestChangeInModel();
-	// The mixer channel made for the track goes with it, unless something else uses it
+	// The mixer channel made for the track goes with it, unless something else uses it; each takes the audio
+	// engine's change lock only for its moment (see Track::destroy())
 	Engine::mixer()->releaseTrackChannel(t);
-	delete t;
-	Engine::audioEngine()->doneChangeInModel();
+	Track::destroy(t);
 }
 
 
@@ -481,7 +480,7 @@ void TrackContainerView::clearAllTracks()
 		TrackView * tv = m_trackViews.takeLast();
 		Track * t = tv->getTrack();
 		delete tv;
-		delete t;
+		Track::destroy(t);
 	}
 }
 

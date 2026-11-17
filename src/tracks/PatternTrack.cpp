@@ -23,9 +23,13 @@
  */
 #include "PatternTrack.h"
 
+#include <memory>
+#include <vector>
+
 #include <QDomElement>
 
 #include "AudioEngine.h"
+#include "Clip.h"
 #include "Engine.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
@@ -43,7 +47,11 @@ PatternTrack::PatternTrack(TrackContainer* tc) :
 	Track(Track::Type::Pattern, tc)
 {
 	int patternNum = s_infoMap.size();
-	s_infoMap[this] = patternNum;
+	{
+		// The audio thread finds the pattern tracks by their numbers (findPatternTrack())
+		const auto guard = AudioEngine::changesGuard();
+		s_infoMap[this] = patternNum;
+	}
 
 	setName(tr("Pattern %1").arg(patternNum));
 	Engine::patternStore()->createClipsForPattern(patternNum);
@@ -64,17 +72,24 @@ PatternTrack::~PatternTrack()
 					| PlayHandle::Type::InstrumentPlayHandle
 					| PlayHandle::Type::SamplePlayHandle );
 
-	const int pattern = s_infoMap[this];
-	Engine::patternStore()->removePattern(pattern);
-	for( infoMap::iterator it = s_infoMap.begin(); it != s_infoMap.end();
-									++it )
+	auto taken = std::vector<std::unique_ptr<Clip>>{};
 	{
-		if (it.value() > pattern)
+		// Its pattern goes and the patterns after it move down by one, at once for the audio thread (it plays the
+		// patterns by their numbers)
+		const auto guard = AudioEngine::changesGuard();
+		const int pattern = patternIndex();
+		if (pattern >= 0)
 		{
-			--it.value();
+			taken = Engine::patternStore()->takePattern(pattern);
+			for (auto it = s_infoMap.begin(); it != s_infoMap.end(); ++it)
+			{
+				if (it.value() > pattern) { --it.value(); }
+			}
 		}
+		s_infoMap.remove( this );
 	}
-	s_infoMap.remove( this );
+	// Its clips are deleted without the lock
+	taken.clear();
 
 	// remove us from the Song and update the pattern selection combobox to reflect the change
 	trackContainer()->removeTrack( this );
@@ -95,7 +110,7 @@ bool PatternTrack::play( const TimePos & _start, const f_cnt_t _frames,
 
 	if( _clip_num >= 0 )
 	{
-		return Engine::patternStore()->play(_start, _frames, _offset, s_infoMap[this]);
+		return Engine::patternStore()->play(_start, _frames, _offset, patternIndex());
 	}
 
 	clipVector clips;
@@ -127,7 +142,7 @@ bool PatternTrack::play( const TimePos & _start, const f_cnt_t _frames,
 
 	if( _start - lastPosition < lastLength )
 	{
-		return Engine::patternStore()->play(_start - lastPosition + lastOffset, _frames, _offset, s_infoMap[this]);
+		return Engine::patternStore()->play(_start - lastPosition + lastOffset, _frames, _offset, patternIndex());
 	}
 	return false;
 }
@@ -146,9 +161,9 @@ Clip* PatternTrack::createClip(const TimePos & pos)
 void PatternTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& _this, bool presetMode)
 {
 //	_this.setAttribute( "icon", m_trackLabel->pixmapFile() );
-/*	_this.setAttribute( "current", s_infoMap[this] ==
+/*	_this.setAttribute( "current", patternIndex() ==
 					engine::getPatternEditor()->currentPattern() );*/
-	if( s_infoMap[this] == 0 &&
+	if( patternIndex() == 0 &&
 			_this.parentNode().parentNode().nodeName() != "clonedtrack" &&
 			_this.parentNode().parentNode().nodeName() != "journaldata" )
 	{
@@ -157,7 +172,7 @@ void PatternTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& _th
 	// If we are creating drag-n-drop data for Track::clone() only save pattern ID, not pattern content
 	if (_this.parentNode().parentNode().nodeName() == "clonedtrack")
 	{
-		_this.setAttribute("sourcepattern", s_infoMap[this]);
+		_this.setAttribute("sourcepattern", patternIndex());
 	}
 }
 
@@ -176,7 +191,7 @@ void PatternTrack::loadTrackSpecificSettings(const QDomElement& _this)
 	if (_this.hasAttribute("sourcepattern"))
 	{
 		const int src = _this.attribute("sourcepattern").toInt();
-		const int dst = s_infoMap[this];
+		const int dst = patternIndex();
 		// copy clips of all tracks from source pattern (at bar "src") to destination
 		// clips (which are created if they do not exist yet)
 		for (const auto& track : Engine::patternStore()->tracks())
@@ -200,7 +215,7 @@ void PatternTrack::loadTrackSpecificSettings(const QDomElement& _this)
 	help at all....
 	if( _this.attribute( "current" ).toInt() )
 	{
-		engine::getPatternEditor()->setCurrentPattern( s_infoMap[this] );
+		engine::getPatternEditor()->setCurrentPattern( patternIndex() );
 	}*/
 }
 
@@ -230,9 +245,13 @@ void PatternTrack::swapPatternTracks(Track* track1, Track* track2)
 	auto t2 = dynamic_cast<PatternTrack*>(track2);
 	if( t1 != nullptr && t2 != nullptr )
 	{
-		qSwap( s_infoMap[t1], s_infoMap[t2] );
-		Engine::patternStore()->swapPattern(s_infoMap[t1], s_infoMap[t2]);
-		Engine::patternStore()->setCurrentPattern(s_infoMap[t1]);
+		{
+			// The numbers and the patterns' clips change at once for the audio thread
+			const auto guard = AudioEngine::changesGuard();
+			qSwap( s_infoMap[t1], s_infoMap[t2] );
+			Engine::patternStore()->swapPattern(t1->patternIndex(), t2->patternIndex());
+		}
+		Engine::patternStore()->setCurrentPattern(t1->patternIndex());
 	}
 }
 

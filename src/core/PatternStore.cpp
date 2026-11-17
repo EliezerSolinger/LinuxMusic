@@ -25,6 +25,7 @@
 
 #include "PatternStore.h"
 
+#include "AudioEngine.h"
 #include "Clip.h"
 #include "Engine.h"
 #include "PatternTrack.h"
@@ -110,18 +111,27 @@ int PatternStore::numOfPatterns() const
 
 
 
-void PatternStore::removePattern(int pattern)
+auto PatternStore::takePattern(int pattern) -> std::vector<std::unique_ptr<Clip>>
 {
-	const TrackList& tl = tracks();
-	for (Track * t : tl)
+	auto taken = std::vector<std::unique_ptr<Clip>>{};
 	{
-		delete t->getClip(pattern);
-		t->removeBar(pattern * DefaultTicksPerBar);
+		const auto guard = AudioEngine::changesGuard();
+		for (Track* t : tracks())
+		{
+			if (pattern < t->numOfClips())
+			{
+				auto* clip = t->getClip(pattern);
+				t->removeClip(clip);
+				taken.emplace_back(clip);
+			}
+			t->removeBar(pattern * DefaultTicksPerBar);
+		}
 	}
 	if (pattern <= currentPattern())
 	{
 		setCurrentPattern(std::max(currentPattern() - 1, 0));
 	}
+	return taken;
 }
 
 

@@ -70,7 +70,11 @@ class LMMS_EXPORT InstrumentTrack : public Track, public MidiEventProcessor
 	mapPropertyFromModel(int,getVolume,setVolume,m_volumeModel);
 public:
 	InstrumentTrack( TrackContainer* tc );
+protected:
+	//! (see Track::destroy())
 	~InstrumentTrack() override;
+
+public:
 
 	// used by instrument
 	void processAudioBuffer( SampleFrame* _buf, const f_cnt_t _frames,

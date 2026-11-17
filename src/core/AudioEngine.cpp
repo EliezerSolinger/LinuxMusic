@@ -859,6 +859,12 @@ auto AudioEngine::isRenderingThread() -> bool
 
 
 
+auto AudioEngine::changesGuard() -> RequestChangesGuard
+{
+	if (auto* engine = Engine::audioEngine()) { return engine->requestChangesGuard(); }
+	return RequestChangesGuard{};
+}
+
 void AudioEngine::requestChangeInModel()
 {
 	if (s_renderingThread) { return; }

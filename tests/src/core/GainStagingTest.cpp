@@ -293,7 +293,7 @@ private slots:
 		loaded->saveState(again, root2);
 		QCOMPARE(again.elementsByTagName("instrument").item(0).toElement().attribute("name"), QString{"tripleoscillator"});
 		song->clearErrors();
-		delete loaded;
+		Track::destroy(loaded);
 	}
 };
 

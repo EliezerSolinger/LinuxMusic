@@ -48,7 +48,11 @@ class LMMS_EXPORT PatternTrack : public Track
 	Q_OBJECT
 public:
 	PatternTrack(TrackContainer* tc);
+protected:
+	//! (see Track::destroy())
 	~PatternTrack() override;
+
+public:
 
 	bool play( const TimePos & _start, const f_cnt_t _frames,
 
@@ -62,9 +66,11 @@ public:
 	static PatternTrack* findPatternTrack(int pattern_num);
 	static void swapPatternTracks(Track* track1, Track* track2);
 
-	int patternIndex()
+	//! Its pattern's number (-1 while it is made or deleted); read by the audio thread too, so it never adds to the
+	//! numbers (changed only under the audio engine's change lock)
+	int patternIndex() const
 	{
-		return s_infoMap[this];
+		return s_infoMap.value(const_cast<PatternTrack*>(this), -1);
 	}
 
 	bool automationDisabled( Track * _track )

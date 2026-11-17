@@ -265,7 +265,7 @@ Medidas (período de 256 quadros a 44,1 kHz, meio período = 2,9 ms):
 | Edição | Antes | Depois |
 |---|---|---|
 | Criar uma faixa de instrumento | 3 a 4,6 ms | 0,01 ms |
-| Apagar uma faixa de instrumento (como a interface faz) | 5,3 a 5,6 ms | (próximo passo) |
+| Apagar uma faixa de instrumento (como a interface faz) | 5,3 a 5,6 ms | 0,05 ms |
 | Trocar o instrumento | 0,01 ms | |
 | Pôr e tirar um efeito | 0,00 ms | |
 | Criar e apagar um canal do mixer com envio | 0,06 ms | |
@@ -282,6 +282,43 @@ Passos feitos:
 - **Criar um canal do mixer:** o canal é montado (modelos, buffers, faixa de console) fora da trava e posto na
   lista sob ela. Antes, `createChannel` acrescentava à lista **sem trava nenhuma**, enquanto o render a percorria
   (`masterMix`): acrescentar pode mudar a lista inteira de lugar na memória. Era uma corrida de verdade.
+- **Apagar uma faixa:** `Track::destroy` primeiro tira a faixa do contêiner (a trava só para isso: o render deixa
+  de tocá-la, e ela sai inteira) e faz a automação de outras faixas soltar os controles dela, todos num instante
+  só (`AutomationClip::forgetObjectsUnder`), guardando os ids para o desfazer religar. Depois apaga a faixa sem a
+  trava: as peças dela que o render usa (notas tocando, barramentos, porta MIDI) se soltam sozinhas, cada uma no
+  seu instante. Antes, a interface apagava a faixa inteira sob a trava (descarregar o instrumento incluído), e um
+  `delete` sem trava deixava o render tocar uma faixa já meio destruída (o TSan mostrou). Agora é o único jeito de
+  apagar uma faixa: os destrutores das faixas são protegidos, e o compilador recusa um `delete`.
+- **Mesma regra, pelo caminho** (corridas achadas na varredura):
+  - pôr, tirar e mover faixas na lista (`addTrack`, `removeTrack`, `moveTrack`) passa pela trava;
+  - os clipes de uma faixa: `addClip`, `removeClip` e a troca de lugar passam pela trava; `Track::deleteClip`
+    tira o clipe e só depois o apaga (antes, apagar um clipe deixava o render ver um clipe MIDI sem as notas);
+  - o clipe que o piano roll toca sozinho: `Song::m_midiClipToPlay` ficava apontando para um clipe apagado;
+    agora o clipe que sai da faixa é esquecido sob a trava e o tocar para;
+  - os números dos padrões (`PatternTrack::s_infoMap`), que o render usa para achar o padrão: mudam sob a trava,
+    e ao apagar um padrão os clipes dele saem e os números descem num instante só; o render lia o mapa com
+    `operator[]`, que **insere** quando não acha, e agora usa `patternIndex()`, que só lê;
+  - os controles de um clipe de automação: pôr (`addObject`) e tirar (`objectDestroyed`) passam pela trava,
+    pega antes do mutex do clipe (o render segura a trava quando pega o mutex: a ordem contrária travaria os
+    dois); a cópia de um clipe agora também é avisada quando um controle é apagado, então não sobra ponteiro
+    nulo; `~AutomatableModel` avisa primeiro, ainda inteiro;
+  - `AudioEngine::changesGuard()`: a trava do motor de áudio, ou nada quando ele ainda não existe ou já foi
+    desmontado (nada toca então).
+  - achados pelo TSan com o teste novo (apagar um clipe, um padrão, uma faixa automatizada, e o clipe que o piano
+    roll toca, tudo tocando): `InstrumentTrack::play` olhava o instrumento antes de travar a faixa (a troca de
+    instrumento o substitui com a faixa travada); `Engine::framesPerTick` e o canal do mixer de um barramento
+    (`AudioBusHandle`) agora são atômicos; um LFO entra na lista que o render percorre só quando está inteiro e
+    sai primeiro, e a marca de "forma do LFO desatualizada", escrita pelas duas threads, é atômica; o render, com
+    o clipe do piano roll esquecido, não toca nada até parar (antes, lia o ponteiro nulo).
+  - O TSan também acusa o mapa de pontos da automação, protegido pelo `QRecursiveMutex` do clipe, que o TSan não
+    enxerga (o Qt não é compilado com TSan; o `QMutex` comum é anotado, o recursivo não): é o mutex que o render
+    ainda pega, já na lista da fase 4 ("QMutex restantes na thread de áudio"); fica para aquele passo.
+
+| Edição (com o teste novo) | Trava presa no máximo |
+|---|---|
+| Criar e apagar um clipe com notas | 0,00 ms |
+| Criar e apagar um padrão | 0,01 ms |
+| Apagar uma faixa cujos controles outra faixa automatiza | 0,08 ms |
 
 ## Fase 8: ciclo de vida explícito
 

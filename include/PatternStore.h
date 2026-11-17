@@ -25,6 +25,9 @@
 #ifndef LMMS_PATTERN_STORE_H
 #define LMMS_PATTERN_STORE_H
 
+#include <memory>
+#include <vector>
+
 #include "TrackContainer.h"
 #include "ComboBoxModel.h"
 
@@ -84,7 +87,12 @@ public:
 		return lengthOfPattern(currentPattern());
 	}
 	int numOfPatterns() const;
-	void removePattern(int pattern);
+	/**
+	 * Takes pattern @p pattern's clips out of the tracks and moves the patterns after it down by a bar, under the
+	 * audio engine's change lock (the caller may hold it longer, for the patterns' numbers to change at once).
+	 * @returns the clips taken out, to be deleted without the lock
+	 */
+	[[nodiscard]] auto takePattern(int pattern) -> std::vector<std::unique_ptr<Clip>>;
 
 	void swapPattern(int p1, int p2);
 

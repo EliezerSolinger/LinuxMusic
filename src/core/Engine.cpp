@@ -43,7 +43,7 @@
 namespace lmms
 {
 
-float Engine::s_framesPerTick;
+std::atomic<float> Engine::s_framesPerTick = 0.f;
 AudioEngine* Engine::s_audioEngine = nullptr;
 Mixer * Engine::s_mixer = nullptr;
 PatternStore * Engine::s_patternStore = nullptr;
@@ -160,7 +160,7 @@ float Engine::framesPerTick(sample_rate_t sampleRate)
 
 void Engine::updateFramesPerTick()
 {
-	s_framesPerTick = s_audioEngine->outputSampleRate() * 60.0f * 4 / DefaultTicksPerBar / s_song->getTempo();
+	s_framesPerTick.store(s_audioEngine->outputSampleRate() * 60.0f * 4 / DefaultTicksPerBar / s_song->getTempo(), std::memory_order_relaxed);
 }
 
 

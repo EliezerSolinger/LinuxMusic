@@ -45,9 +45,9 @@ class AutomationTrackTest : public QObject
 
 	//! A track made as the program makes them (Track::create()), deleted with the test
 	template<class T>
-	static auto made(lmms::Track::Type type, lmms::TrackContainer* container) -> std::unique_ptr<T>
+	static auto made(lmms::Track::Type type, lmms::TrackContainer* container) -> std::unique_ptr<T, lmms::Track::Deleter>
 	{
-		return std::unique_ptr<T>{dynamic_cast<T*>(lmms::Track::create(type, container))};
+		return std::unique_ptr<T, lmms::Track::Deleter>{dynamic_cast<T*>(lmms::Track::create(type, container))};
 	}
 
 private slots:

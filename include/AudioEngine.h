@@ -376,6 +376,10 @@ public:
 		return RequestChangesGuard{this};
 	}
 
+	//! requestChangesGuard() of the program's audio engine; nothing while there is none (it is not made yet, or gone
+	//! already when the engine is taken down): then nothing plays, and nothing needs to wait for it
+	static auto changesGuard() -> RequestChangesGuard;
+
 	//! Whether the calling thread renders a period now (not the worker threads helping it)
 	static auto isRenderingThread() -> bool;
 

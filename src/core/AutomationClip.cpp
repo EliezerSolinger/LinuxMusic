@@ -26,6 +26,9 @@
 
 #include "AutomationClip.h"
 
+#include <algorithm>
+
+#include "AudioEngine.h"
 #include "AutomationNode.h"
 #include "AutomationTrack.h"
 #include "KeyboardShortcuts.h"
@@ -74,6 +77,16 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 	// doesn't change while it's being copied
 	QMutexLocker m(&_clip_to_copy.m_clipMutex);
 
+	// Told when a control it automates is deleted, as the original is (see objectDestroyed())
+	for (const auto& object : m_objects)
+	{
+		if (object)
+		{
+			connect(object, SIGNAL(destroyed(lmms::jo_id_t)), this, SLOT(objectDestroyed(lmms::jo_id_t)),
+				Qt::DirectConnection);
+		}
+	}
+
 	for( timeMap::const_iterator it = _clip_to_copy.m_timeMap.begin();
 				it != _clip_to_copy.m_timeMap.end(); ++it )
 	{
@@ -87,6 +100,10 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 {
 	assert(_obj != nullptr);
+	// The audio thread goes through the controls (TrackContainer::automatedValuesFromTracks()), and adding one may
+	// move them all: under the audio engine's change lock, taken before the clip's mutex (the audio thread holds the
+	// lock when it takes the mutex)
+	const auto guard = AudioEngine::changesGuard();
 	QMutexLocker m(&m_clipMutex);
 
 	if (_search_dup && std::find(m_objects.begin(), m_objects.end(), _obj) != m_objects.end())
@@ -220,9 +237,9 @@ TimePos AutomationClip::putValue(
 	const bool ignoreSurroundingPoints
 )
 {
-	QMutexLocker m(&m_clipMutex);
-
+	// (before the clip's mutex: the audio engine's lock comes first, see cleanObjects())
 	cleanObjects();
+	QMutexLocker m(&m_clipMutex);
 
 	TimePos newTime = quantPos ? Note::quantized(time, quantization()) : time;
 	newTime = std::max(TimePos(0), newTime);
@@ -266,9 +283,9 @@ TimePos AutomationClip::putValues(
 	const bool ignoreSurroundingPoints
 )
 {
-	QMutexLocker m(&m_clipMutex);
-
+	// (before the clip's mutex: the audio engine's lock comes first, see cleanObjects())
 	cleanObjects();
+	QMutexLocker m(&m_clipMutex);
 
 	TimePos newTime = quantPos ? Note::quantized(time, quantization()) : time;
 	newTime = std::max(TimePos(0), newTime);
@@ -306,9 +323,9 @@ TimePos AutomationClip::putValues(
 
 void AutomationClip::removeNode(const TimePos & time)
 {
-	QMutexLocker m(&m_clipMutex);
-
+	// (before the clip's mutex: the audio engine's lock comes first, see cleanObjects())
 	cleanObjects();
+	QMutexLocker m(&m_clipMutex);
 
 	m_timeMap.remove( time );
 	timeMap::iterator it = m_timeMap.lowerBound(time);
@@ -671,6 +688,8 @@ void AutomationClip::flipY()
 
 void AutomationClip::flipX(int start, int end)
 {
+	// (before the clip's mutex: the audio engine's lock comes first, see cleanObjects())
+	cleanObjects();
 	QMutexLocker m(&m_clipMutex);
 
 	timeMap::const_iterator firstIterator = m_timeMap.lowerBound(0);
@@ -730,7 +749,6 @@ void AutomationClip::flipX(int start, int end)
 
 	m_timeMap = tempMap;
 
-	cleanObjects();
 
 	generateTangents();
 	emit dataChanged();
@@ -1040,6 +1058,9 @@ void AutomationClip::clear()
 
 void AutomationClip::objectDestroyed( jo_id_t _id )
 {
+	// Taken out before the control is gone (it tells first, see ~AutomatableModel()), under the audio engine's change
+	// lock: the audio thread sets the controls it finds here (see addObject())
+	const auto guard = AudioEngine::changesGuard();
 	QMutexLocker m(&m_clipMutex);
 
 	// TODO: distict between temporary removal (e.g. LADSPA controls
@@ -1057,7 +1078,7 @@ void AutomationClip::objectDestroyed( jo_id_t _id )
 			//Assign to objIt so that this loop work even break; is removed.
 			objIt = m_objects.erase( objIt );
 
-			Engine::getSong()->removeOldAutomatedValue(objPtr);
+			if (const auto song = Engine::getSong()) { song->removeOldAutomatedValue(objPtr); }
 			break;
 		}
 	}
@@ -1070,19 +1091,19 @@ void AutomationClip::objectDestroyed( jo_id_t _id )
 
 void AutomationClip::cleanObjects()
 {
-	QMutexLocker m(&m_clipMutex);
+	// A deleted control is taken out when it goes (objectDestroyed()): none should be left. If one is, it is taken out
+	// under the audio engine's change lock (see addObject()), taken before the clip's mutex: so the callers call this
+	// before they lock it
+	const auto anyGone = [this] {
+		QMutexLocker m(&m_clipMutex);
+		return std::any_of(m_objects.begin(), m_objects.end(), [](const auto& object) { return object.isNull(); });
+	};
+	if (!anyGone()) { return; }
 
-	for( objectVector::iterator it = m_objects.begin(); it != m_objects.end(); )
-	{
-		if( *it )
-		{
-			++it;
-		}
-		else
-		{
-			it = m_objects.erase( it );
-		}
-	}
+	const auto guard = AudioEngine::changesGuard();
+	QMutexLocker m(&m_clipMutex);
+	m_objects.erase(std::remove_if(m_objects.begin(), m_objects.end(), [](const auto& object) { return object.isNull(); }),
+		m_objects.end());
 }
 
 
@@ -1161,16 +1182,64 @@ void AutomationClip::generateTangents(timeMap::iterator it, int numToGenerate)
 	}
 }
 
+void AutomationClip::forgetObjectsUnder(const QObject* owner)
+{
+	const auto under = [owner](const QObject* object) {
+		for (; object != nullptr; object = object->parent())
+		{
+			if (object == owner) { return true; }
+		}
+		return false;
+	};
+
+	const auto guard = AudioEngine::changesGuard();
+	for (auto* track : combineAllTracks())
+	{
+		if (track->type() != Track::Type::Automation && track->type() != Track::Type::HiddenAutomation) { continue; }
+		for (auto* clip : track->getClips())
+		{
+			auto* a = dynamic_cast<AutomationClip*>(clip);
+			if (!a) { continue; }
+			auto forgotten = false;
+			{
+				QMutexLocker m(&a->m_clipMutex);
+				for (auto it = a->m_objects.begin(); it != a->m_objects.end();)
+				{
+					AutomatableModel* model = *it;
+					if (!model || !under(model)) { ++it; continue; }
+					// As when it is deleted (objectDestroyed()): found again by its id if it comes back (an undo)
+					a->m_idsToResolve.push_back(model->id());
+					disconnect(model, SIGNAL(destroyed(lmms::jo_id_t)), a, SLOT(objectDestroyed(lmms::jo_id_t)));
+					if (const auto song = Engine::getSong()) { song->removeOldAutomatedValue(model); }
+					it = a->m_objects.erase(it);
+					forgotten = true;
+				}
+			}
+			if (forgotten) { emit a->dataChanged(); }
+		}
+	}
+}
+
+
+
+
 std::vector<Track*> AutomationClip::combineAllTracks()
 {
 	std::vector<Track*> combinedTrackList;
 
-	auto& songTracks = Engine::getSong()->tracks();
-	auto& patternStoreTracks = Engine::patternStore()->tracks();
-
-	combinedTrackList.insert(combinedTrackList.end(), songTracks.begin(), songTracks.end());
-	combinedTrackList.insert(combinedTrackList.end(), patternStoreTracks.begin(), patternStoreTracks.end());
-	combinedTrackList.push_back(Engine::getSong()->globalAutomationTrack());
+	// (while the engine is taken down, the song or the pattern store may be gone already)
+	if (const auto song = Engine::getSong())
+	{
+		combinedTrackList.insert(combinedTrackList.end(), song->tracks().begin(), song->tracks().end());
+	}
+	if (const auto patternStore = Engine::patternStore())
+	{
+		combinedTrackList.insert(combinedTrackList.end(), patternStore->tracks().begin(), patternStore->tracks().end());
+	}
+	if (const auto song = Engine::getSong(); song && song->globalAutomationTrack())
+	{
+		combinedTrackList.push_back(song->globalAutomationTrack());
+	}
 
 	return combinedTrackList;
 }

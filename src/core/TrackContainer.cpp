@@ -157,6 +157,8 @@ void TrackContainer::addTrack( Track * _track )
 {
 	if( _track->type() != Track::Type::HiddenAutomation )
 	{
+		// The audio thread goes through the tracks (they change only while it waits), and adding one may move them
+		const auto guard = AudioEngine::changesGuard();
 		_track->lock();
 		m_tracksMutex.lockForWrite();
 		m_tracks.push_back( _track );
@@ -171,13 +173,14 @@ void TrackContainer::addTrack( Track * _track )
 
 void TrackContainer::removeTrack( Track * _track )
 {
-	// need a read locker to ensure that m_tracks doesn't change after reading index.
-	//   After checking that index != -1, we need to upgrade the lock to a write locker before changing m_tracks.
-	//   But since Qt offers no function to promote a read lock to a write lock, we must start with the write locker.
-	QWriteLocker lockTracksAccess(&m_tracksMutex);
-	auto it = std::find(m_tracks.begin(), m_tracks.end(), _track);
-	if (it != m_tracks.end())
 	{
+		// The audio thread goes through the tracks (they change only while it waits): taken out under the audio
+		// engine's change lock, for the moment
+		const auto guard = AudioEngine::changesGuard();
+		QWriteLocker lockTracksAccess(&m_tracksMutex);
+		const auto it = std::find(m_tracks.begin(), m_tracks.end(), _track);
+		if (it == m_tracks.end()) { return; }
+
 		// What a folder holds moves up a level
 		for (auto inner = std::next(it); _track->type() == Track::Type::Folder && inner != m_tracks.end()
 			&& (*inner)->folderDepth() > _track->folderDepth(); ++inner)
@@ -185,15 +188,14 @@ void TrackContainer::removeTrack( Track * _track )
 			(*inner)->setFolderDepth((*inner)->folderDepth() - 1);
 		}
 		m_tracks.erase(it);
-		lockTracksAccess.unlock();
-
-		if( Engine::getSong() )
-		{
-			Engine::getSong()->setModified();
-		}
-		updateFolders();
-		emit trackRemoved();
 	}
+
+	if( Engine::getSong() )
+	{
+		Engine::getSong()->setModified();
+	}
+	updateFolders();
+	emit trackRemoved();
 }
 
 void TrackContainer::moveTrack(Track* track, int indexTo)
@@ -538,7 +540,7 @@ void TrackContainer::clearAllTracks()
 	//m_tracksMutex.lockForWrite();
 	while (!m_tracks.empty())
 	{
-		delete m_tracks.front();
+		Track::destroy(m_tracks.front());
 	}
 	//m_tracksMutex.unlock();
 }

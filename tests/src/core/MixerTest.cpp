@@ -857,7 +857,7 @@ private slots:
 		QCOMPARE(track->mixerChannelModel()->value(), b);
 
 		journal->setJournalling(false);
-		delete track;
+		Track::destroy(track);
 	}
 
 	void peakMeterShowsPostFaderLevel()
@@ -1140,7 +1140,7 @@ private slots:
 		mixer()->releaseTrackChannel(track);
 		QCOMPARE(mixer()->numChannels(), 1 + Mixer::FxReturnCount);
 		QCOMPARE(track->mixerChannelModel()->value(), 0);
-		delete track;
+		Track::destroy(track);
 	}
 
 	void trackEffectsMoveIntoItsChannel()
@@ -1175,7 +1175,7 @@ private slots:
 		QCOMPARE(channel->m_fxChain.effects().size(), std::size_t{1});
 
 		channel->m_fxChain.clear();
-		delete track;
+		Track::destroy(track);
 	}
 
 	void trackOnASharedChannelGetsItsOwnSendingThere()
@@ -1198,8 +1198,8 @@ private slots:
 		QVERIFY(mixer()->channelSendModel(ownB, bus) != nullptr);
 		QVERIFY(mixer()->channelSendModel(ownA, 0) == nullptr);
 
-		delete a;
-		delete b;
+		Track::destroy(a);
+		Track::destroy(b);
 	}
 
 	void releasingKeepsAChannelOthersUse()
@@ -1212,7 +1212,7 @@ private slots:
 		mixer()->releaseTrackChannel(track);
 		QCOMPARE(track->mixerChannelModel()->value(), index);
 		QVERIFY(index < mixer()->numChannels());
-		delete track;
+		Track::destroy(track);
 	}
 
 	void trackOnAnotherTracksChannelHasNoChannelOfItsOwn()
@@ -1227,10 +1227,10 @@ private slots:
 		QCOMPARE(mixer()->trackChannel(other), static_cast<MixerChannel*>(nullptr));
 
 		other->mixerChannelModel()->setValue(0);
-		delete other;
+		Track::destroy(other);
 		mixer()->releaseTrackChannel(track);
 		QCOMPARE(mixer()->trackChannel(track), static_cast<MixerChannel*>(nullptr));
-		delete track;
+		Track::destroy(track);
 	}
 
 	//! Adds an effect delaying by @p delay frames, with that latency, to channel @p channel
@@ -1402,7 +1402,7 @@ private slots:
 	static void deleteTrack(Track* track)
 	{
 		mixer()->releaseTrackChannel(track);
-		delete track;
+		Track::destroy(track);
 	}
 
 	void twoTracksCanShareAChannel()

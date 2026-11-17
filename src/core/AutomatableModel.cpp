@@ -71,13 +71,15 @@ AutomatableModel::AutomatableModel(
 
 AutomatableModel::~AutomatableModel()
 {
+	// Told first, while it is whole: the automation that sets it lets it go (under the audio engine's change lock,
+	// see AutomationClip::objectDestroyed()) before any of it is taken apart
+	emit destroyed( id() );
+
 	unlink();
 
 	setControllerConnection(nullptr);
 
 	m_valueBuffer.clear();
-
-	emit destroyed( id() );
 }
 
 

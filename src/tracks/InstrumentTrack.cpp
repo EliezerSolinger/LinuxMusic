@@ -818,8 +818,11 @@ auto InstrumentTrack::quantizedRecordTick(tick_t tick) const -> tick_t
 bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 							const f_cnt_t _offset, int _clip_num )
 {
-	if( ! m_instrument || ! tryLock() )
+	// The instrument is replaced while the track is locked (loadInstrument()): looked at only with the lock
+	if (!tryLock()) { return false; }
+	if (!m_instrument)
 	{
+		unlock();
 		return false;
 	}
 	const float frames_per_tick = Engine::framesPerTick();

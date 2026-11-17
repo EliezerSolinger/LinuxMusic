@@ -25,6 +25,7 @@
 #ifndef LMMS_ENVELOPE_AND_LFO_PARAMETERS_H
 #define LMMS_ENVELOPE_AND_LFO_PARAMETERS_H
 
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -199,7 +200,8 @@ private:
 	bool m_lfoAmountIsZero;
 	std::vector<sample_t> m_lfoShapeData; //!< One period's frames
 	sample_t m_random;
-	bool m_bad_lfoShapeData;
+	//! Set by both threads: the main one when a knob changes, the audio one each period
+	std::atomic<bool> m_bad_lfoShapeData;
 	std::shared_ptr<const SampleBuffer> m_userWave = SampleBuffer::emptyBuffer();
 
 	constexpr static auto NumLfoShapes = static_cast<std::size_t>(LfoShape::Count);

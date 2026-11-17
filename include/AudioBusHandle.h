@@ -68,8 +68,9 @@ public:
 
 	// next mixer-channel after this audio-bus-handle
 	// (-1 = none  0 = master)
-	mix_ch_t nextMixerChannel() const { return m_nextMixerChannel; }
-	void setNextMixerChannel(const mix_ch_t chnl) { m_nextMixerChannel = chnl; }
+	//! (chosen by the main thread, used by the audio thread)
+	mix_ch_t nextMixerChannel() const { return m_nextMixerChannel.load(std::memory_order_relaxed); }
+	void setNextMixerChannel(const mix_ch_t chnl) { m_nextMixerChannel.store(chnl, std::memory_order_relaxed); }
 
 	const QString& name() const { return m_name; }
 	void setName(const QString& newName);
@@ -93,7 +94,7 @@ private:
 	AudioBuffer m_buffer;
 
 	bool m_extOutputEnabled;
-	mix_ch_t m_nextMixerChannel;
+	std::atomic<mix_ch_t> m_nextMixerChannel;
 
 	QString m_name;
 

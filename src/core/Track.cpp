@@ -83,11 +83,30 @@ Track::~Track()
 	blockSignals(true);
 	while (!m_clips.empty())
 	{
-		delete m_clips.back();
+		deleteClip(m_clips.back());
 	}
 
+	// (out of it already when deleted by destroy(): then nothing happens)
 	m_trackContainer->removeTrack( this );
 	unlock();
+}
+
+
+
+
+void Track::destroy(Track* track)
+{
+	if (!track) { return; }
+
+	// Out of its container first: the audio thread no longer plays it, and it is whole when it leaves (each of these
+	// takes the lock for its moment)
+	track->m_trackContainer->removeTrack(track);
+	// The automation of its controls (other tracks' clips set them) lets them go, all in one moment rather than one
+	// moment each as they are deleted
+	AutomationClip::forgetObjectsUnder(track);
+
+	// Then deleted without the lock (see the documentation)
+	delete track;
 }
 
 
@@ -129,7 +148,7 @@ void Track::publish(Track* t, TrackContainer* tc, bool newTrack)
 
 	{
 		// Under the lock, briefly: the audio thread goes through the tracks
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		tc->addTrack(t);
 	}
 
@@ -282,7 +301,7 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	}
 
 	{
-		auto guard = Engine::audioEngine()->requestChangesGuard();
+		auto guard = AudioEngine::changesGuard();
 		deleteClips();
 	}
 
@@ -442,7 +461,7 @@ void Track::clearSpan(int lane, tick_t begin, tick_t end, const Clip* keep)
 		const auto contentStart = clipBegin + clip->startTimeOffset().getTicks();
 		if (clipBegin >= begin && clipEnd <= end)
 		{
-			delete clip; // (all under it)
+			deleteClip(clip); // (all under it)
 			continue;
 		}
 		if (clipBegin < begin && clipEnd > end)
@@ -485,7 +504,11 @@ void Track::compClip(Clip* clip)
 
 Clip * Track::addClip( Clip * clip )
 {
-	m_clips.push_back( clip );
+	{
+		// The audio thread goes through the clips (play(), the automation), and adding one may move them all
+		const auto guard = AudioEngine::changesGuard();
+		m_clips.push_back( clip );
+	}
 	connect(clip, &Clip::laneChanged, this, &Track::checkLanes);
 
 	emit clipAdded( clip );
@@ -498,10 +521,16 @@ Clip * Track::addClip( Clip * clip )
 
 void Track::removeClip( Clip * clip )
 {
-	clipVector::iterator it = std::find( m_clips.begin(), m_clips.end(), clip );
+	auto it = std::find(m_clips.begin(), m_clips.end(), clip);
 	if( it != m_clips.end() )
 	{
-		m_clips.erase( it );
+		{
+			// The audio thread goes through the clips: it takes them as they are before or after, not halfway
+			const auto guard = AudioEngine::changesGuard();
+			m_clips.erase( it );
+			// The piano roll may be playing it alone
+			if (const auto song = Engine::getSong()) { song->forgetClip(clip); }
+		}
 		clip->disconnect(this);
 		checkLanes();
 		if( Engine::getSong() )
@@ -513,11 +542,21 @@ void Track::removeClip( Clip * clip )
 }
 
 
+void Track::deleteClip(Clip* clip)
+{
+	if (!clip) { return; }
+	removeClip(clip);
+	delete clip;
+}
+
+
+
+
 void Track::deleteClips()
 {
 	while (!m_clips.empty())
 	{
-		delete m_clips.front();
+		deleteClip(m_clips.front());
 	}
 }
 
@@ -580,6 +619,8 @@ void Track::getClipsInRange( clipVector & clipV, const TimePos & start,
 
 void Track::swapPositionOfClips( int clipNum1, int clipNum2 )
 {
+	// The audio thread goes through the clips
+	const auto guard = AudioEngine::changesGuard();
 	qSwap( m_clips[clipNum1], m_clips[clipNum2] );
 
 	const TimePos pos = m_clips[clipNum1]->startPosition();

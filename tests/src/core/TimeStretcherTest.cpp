@@ -249,7 +249,7 @@ private slots:
 		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
 		const auto cleanUp = qScopeGuard([&] {
 			const auto guard = Engine::audioEngine()->requestChangesGuard();
-			delete track;
+			Track::destroy(track);
 			song->tempoModel().setValue(120);
 		});
 		auto* clip = new SampleClip{track};

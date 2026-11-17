@@ -42,6 +42,12 @@ class LMMS_EXPORT FolderTrack : public Track
 public:
 	explicit FolderTrack(TrackContainer* tc);
 
+protected:
+	//! (see Track::destroy())
+	~FolderTrack() override = default;
+
+public:
+
 	bool play(const TimePos& start, const f_cnt_t frames, const f_cnt_t frameBase, int clipNum = -1) override;
 	QString nodeName() const override { return "foldertrack"; }
 

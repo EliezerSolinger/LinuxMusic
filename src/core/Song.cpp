@@ -257,12 +257,11 @@ void Song::processNextBuffer()
 			break;
 
 		case PlayMode::MidiClip:
-			if (m_midiClipToPlay)
-			{
-				clipNum = m_midiClipToPlay->getTrack()->getClipNum(m_midiClipToPlay);
-				singleTrack[0] = m_midiClipToPlay->getTrack();
-				trackList = singleTrack;
-			}
+			// None once it left its track (forgetClip()): nothing plays until the playing stops
+			if (!m_midiClipToPlay) { return; }
+			clipNum = m_midiClipToPlay->getTrack()->getClipNum(m_midiClipToPlay);
+			singleTrack[0] = m_midiClipToPlay->getTrack();
+			trackList = singleTrack;
 			break;
 
 		default:
@@ -649,6 +648,17 @@ void Song::playPattern()
 
 
 
+void Song::forgetClip(const Clip* clip)
+{
+	if (clip == nullptr || clip != m_midiClipToPlay) { return; }
+	m_midiClipToPlay = nullptr;
+	// Stopped once the lock is free (stop() tells everyone)
+	QMetaObject::invokeMethod(this, &Song::stop, Qt::QueuedConnection);
+}
+
+
+
+
 void Song::playMidiClip( const MidiClip* midiClipToPlay, bool loop )
 {
 	if( isStopped() == false )
@@ -758,7 +768,7 @@ void Song::stop()
 	switch (timeline.stopBehaviour())
 	{
 		case Timeline::StopBehaviour::BackToZero:
-			if (m_playMode == PlayMode::MidiClip)
+			if (m_playMode == PlayMode::MidiClip && m_midiClipToPlay)
 			{
 				timeline.setTicks(std::max(0, -m_midiClipToPlay->startTimeOffset()));
 			}

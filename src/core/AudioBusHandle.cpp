@@ -258,7 +258,7 @@ void AudioBusHandle::doProcessing()
 	if (anyOutputAfterEffects || m_bufferUsage)
 	{
 		// TODO: improve the flow here - convert to pull model
-		Engine::mixer()->mixToChannel(m_buffer, m_nextMixerChannel); // send output to mixer
+		Engine::mixer()->mixToChannel(m_buffer, nextMixerChannel()); // send output to mixer
 		m_bufferUsage = false;
 	}
 }
