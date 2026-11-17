@@ -234,11 +234,11 @@ public:
 		return m_playMode;
 	}
 
-	const TimePos& getPlayPos(PlayMode pm) const
+	TimePos getPlayPos(PlayMode pm) const
 	{
 		return getTimeline(pm).pos();
 	}
-	const TimePos& getPlayPos() const
+	TimePos getPlayPos() const
 	{
 		return getPlayPos(m_playMode);
 	}

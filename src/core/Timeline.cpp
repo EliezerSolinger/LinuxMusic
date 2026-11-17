@@ -31,8 +31,10 @@ namespace lmms {
 
 void Timeline::setLoop(TimePos begin, TimePos end)
 {
-	const auto [first, last] = std::minmax(begin.getTicks(), end.getTicks());
-	m_loop.store(packLoop(first, last), std::memory_order_relaxed);
+	// (by value: std::minmax would return references to the temporaries)
+	const tick_t a = begin.getTicks();
+	const tick_t b = end.getTicks();
+	m_loop.store(packLoop(std::min(a, b), std::max(a, b)), std::memory_order_relaxed);
 }
 
 void Timeline::setLoopBegin(TimePos begin)
