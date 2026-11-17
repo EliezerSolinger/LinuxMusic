@@ -27,6 +27,7 @@
 #include "InstrumentView.h"
 #include "embed.h"
 #include "InstrumentTrackWindow.h"
+#include "DummyInstrument.h"
 
 namespace lmms::gui
 {
@@ -77,3 +78,14 @@ InstrumentTrackWindow * InstrumentView::instrumentTrackWindow()
 
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::PluginView* DummyInstrument::instantiateView(QWidget* parent)
+{
+	return new gui::InstrumentViewFixedSize(this, parent);
+}
+
+} // namespace lmms

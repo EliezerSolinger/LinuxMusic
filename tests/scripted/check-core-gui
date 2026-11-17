@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-# This script checks that the core (src/core, src/tracks and their headers) does not include the GUI: neither a
-# header whose code is in src/gui, nor a Qt Widgets class. The core must run without a GUI (rendering, importing
+# This script checks that the core (src/core, src/tracks, their headers and every header they include) does not
+# include the GUI: neither a header whose code is in src/gui, nor a Qt Widgets class. The core must run without a GUI (rendering, importing
 # and exporting from the command line, the tests), and a dependency on a window there is how a headless run
 # crashes. The files that still do it are listed in EXCEPTIONS below: the list may only shrink, and a file listed
 # that no longer includes the GUI is reported too, so that it leaves the list.
@@ -46,7 +46,6 @@ QT_WIDGETS = set('''
 
 # Files that still include the GUI, with what they include (see docs/plano-refatoracao.md, phase 1)
 EXCEPTIONS: dict[str, set[str]] = {
-	'src/core/main.cpp': {'GuiApplication.h', 'MainApplication.h', 'MainWindow.h', 'QApplication', 'QMessageBox', 'QPushButton', 'embed.h'},
 }
 
 INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
@@ -73,9 +72,24 @@ def main() -> int:
 				found.add(name)
 		return found
 
+	# Every project header the core includes, directly or through other headers (a header with no code of its
+	# own, like DummyPlugin.h, is the core's when the core includes it), up to the GUI's headers
+	include_dir = root / 'include'
+	reached = {p.resolve() for p in core_sources + core_headers}
+	queue = list(reached)
+	while queue:
+		path = queue.pop()
+		for name in INCLUDE.findall(path.read_text(encoding='utf-8', errors='replace')):
+			header = include_dir / name
+			stem = Path(name).stem
+			if (header.exists() and header.resolve() not in reached
+					and not (stem in gui_sources and stem not in core_stems)):
+				reached.add(header.resolve())
+				queue.append(header.resolve())
+
 	errors = 0
 	seen = set()
-	for path in sorted(core_sources + core_headers):
+	for path in sorted(reached):
 		relative = path.relative_to(root).as_posix()
 		found = gui_includes(path)
 		allowed = EXCEPTIONS.get(relative, set())
@@ -87,7 +101,7 @@ def main() -> int:
 		for name in sorted(allowed - found):
 			print(f'{relative}: no longer includes {name}: remove it from EXCEPTIONS in {Path(__file__).name}')
 			errors += 1
-	for relative in sorted(set(EXCEPTIONS) - seen - {p.relative_to(root).as_posix() for p in core_sources + core_headers}):
+	for relative in sorted(set(EXCEPTIONS) - seen - {p.relative_to(root).as_posix() for p in reached}):
 		print(f'{relative}: listed in EXCEPTIONS but not a core file any more')
 		errors += 1
 	return 1 if errors else 0

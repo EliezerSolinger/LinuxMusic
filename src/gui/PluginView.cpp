@@ -23,6 +23,7 @@
  */
 
 #include "PluginView.h"
+#include "DummyPlugin.h"
 
 namespace lmms
 {
@@ -35,6 +36,17 @@ gui::PluginView* Plugin::createView(QWidget* parent)
 		pv->setModel(this);
 	}
 	return pv;
+}
+
+} // namespace lmms
+
+
+namespace lmms
+{
+
+gui::PluginView* DummyPlugin::instantiateView(QWidget* parent)
+{
+	return new gui::PluginView(this, parent);
 }
 
 } // namespace lmms

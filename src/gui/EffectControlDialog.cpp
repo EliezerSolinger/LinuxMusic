@@ -26,6 +26,7 @@
 #include "EffectControlDialog.h"
 
 #include "EffectControls.h"
+#include "DummyEffect.h"
 
 namespace lmms::gui
 {
@@ -40,3 +41,14 @@ EffectControlDialog::EffectControlDialog(EffectControls* controls)
 }
 
 } // namespace lmms::gui
+
+
+namespace lmms
+{
+
+gui::EffectControlDialog* DummyEffectControls::createView()
+{
+	return new gui::EffectControlDialog(this);
+}
+
+} // namespace lmms

@@ -29,7 +29,6 @@
 #include <cstring>
 
 #include "Instrument.h"
-#include "InstrumentView.h"
 #include "SampleFrame.h"
 
 namespace lmms
@@ -64,10 +63,7 @@ public:
 		return "dummyinstrument";
 	}
 
-	gui::PluginView * instantiateView( QWidget * _parent ) override
-	{
-		return new gui::InstrumentViewFixedSize( this, _parent );
-	}
+	gui::PluginView* instantiateView(QWidget* parent) override; // (the GUI's code, see InstrumentView.cpp)
 } ;
 
 

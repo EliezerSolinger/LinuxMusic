@@ -36,6 +36,7 @@
 #include "CaptionMenu.h"
 #include "DummyEffect.h"
 #include "EffectChain.h"
+#include "EffectControlDialog.h"
 #include "Engine.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"

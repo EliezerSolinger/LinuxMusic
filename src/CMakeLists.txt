@@ -108,7 +108,7 @@ GENERATE_EXPORT_HEADER(lmmsobjs
 )
 
 ADD_EXECUTABLE(lmms
-	core/main.cpp
+	main.cpp
 	core/RealtimeNew.cpp
 	"${WINRC}"
 )
