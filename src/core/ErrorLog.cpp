@@ -87,6 +87,13 @@ std::condition_variable s_wake;
 std::thread s_thread;
 bool s_stopping = false;
 
+//! Stops the log's thread when the program ends without stop() (a std::thread destroyed while it runs ends the
+//! program); declared after it, so destroyed before it
+struct StopAtExit
+{
+	~StopAtExit() { stop(); }
+};
+
 auto now() noexcept -> std::int64_t
 {
 	return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -289,6 +296,11 @@ auto reportedCount() noexcept -> std::uint64_t
 auto droppedCount() noexcept -> std::uint64_t
 {
 	return s_dropped.load(std::memory_order_relaxed);
+}
+
+namespace
+{
+const StopAtExit s_stopAtExit;
 }
 
 auto fileIn(const QString& workingDir) -> QString
