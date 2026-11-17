@@ -219,10 +219,9 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 				this, SLOT(activityIndicatorPressed()));
 	connect( m_activityIndicator, SIGNAL(released()),
 				this, SLOT(activityIndicatorReleased()));
-	connect( _it, SIGNAL(newNote()),
-			 m_activityIndicator, SLOT(activate()));
-	connect( _it, SIGNAL(endNote()),
-	 		m_activityIndicator, SLOT(noteEnd()));
+	m_notesStartedSeen = _it->notesStarted();
+	m_notesEndedSeen = _it->notesEnded();
+	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &InstrumentTrackView::updateActivity);
 	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &InstrumentTrackView::corruptStateUpdate);
 
 	setModel( _it );
@@ -580,6 +579,22 @@ QPixmap InstrumentTrackView::determinePixmap(InstrumentTrack* instrumentTrack)
 
 	return embed::getIconPixmap("instrument_track");
 }
+
+void InstrumentTrackView::updateActivity()
+{
+	auto* track = model();
+	for (const auto started = track->notesStarted(); m_notesStartedSeen != started; ++m_notesStartedSeen)
+	{
+		m_activityIndicator->activate();
+	}
+	for (const auto ended = track->notesEnded(); m_notesEndedSeen != ended; ++m_notesEndedSeen)
+	{
+		m_activityIndicator->noteEnd();
+	}
+}
+
+
+
 
 void InstrumentTrackView::corruptStateUpdate()
 {

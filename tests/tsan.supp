@@ -5,3 +5,9 @@
 # does not see. It then reports the call's captured values (e.g. a QString) as written on one thread and read on the
 # other. Only the queued call's own object is left out here.
 race:QtPrivate::QCallableObject
+#
+# The same for any event that crosses threads through Qt's queue: one made on an audio thread (a queued signal,
+# allocated from the real-time pool) and read by the main thread that receives it. The event's memory was last
+# touched by the pool's bookkeeping under its lock on the audio thread, and the hand-over through Qt's queue is
+# not seen.
+race:QEvent::type

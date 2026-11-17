@@ -533,7 +533,8 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 
 			}
 			m_midiNotesMutex.unlock();
-			emit newNote();
+			// (counted, not signalled: this runs on the audio and MIDI threads)
+			m_notesStarted.fetch_add(1, std::memory_order_relaxed);
 			break;
 
 		case MidiNoteOff:
@@ -545,7 +546,7 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 				deliverToInstrument(MidiEvent(MidiNoteOff, handleEventOutputChannel, key, 0), time, offset);
 			}
 			m_midiNotesMutex.unlock();
-			emit endNote();
+			m_notesEnded.fetch_add(1, std::memory_order_relaxed);
 			break;
 
 		default:

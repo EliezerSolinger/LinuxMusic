@@ -299,12 +299,14 @@ public:
 	//! Returns a non-owning pointer to the model for the knob at the given index in the track's MIDI CC rack
 	FloatModel* midiCCModel(int index) const { return m_midiCCModel[index].get(); }
 
+	//! How many notes started and ended so far (see InstrumentTrackView's activity light); wrap around
+	auto notesStarted() const -> unsigned { return m_notesStarted.load(std::memory_order_relaxed); }
+	auto notesEnded() const -> unsigned { return m_notesEnded.load(std::memory_order_relaxed); }
+
 signals:
 	void instrumentChanged();
 	void midiNoteOn( const lmms::Note& );
 	void midiNoteOff( const lmms::Note& );
-	void newNote();
-	void endNote();
 
 protected:
 	QString nodeName() const override
@@ -371,6 +373,10 @@ private:
 	IntModel m_recordQuantizeModel;
 	IntModel m_recordQuantizeStrengthModel;
 	std::atomic<bool> m_recordingMidi = false; //!< read by the MIDI thread
+
+	//! The notes started and ended so far (by the MIDI input's and the song's threads), for the GUI's activity light
+	std::atomic<unsigned> m_notesStarted = 0;
+	std::atomic<unsigned> m_notesEnded = 0;
 
 	std::unique_ptr<PluginInstance> m_instrument;
 

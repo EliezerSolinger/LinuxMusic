@@ -106,6 +106,8 @@ private slots:
 	void handleConfigChange(QString cls, QString attr, QString value);
 	
 	void corruptStateUpdate();
+	//! Lights the activity indicator for the notes started and ended since it last looked
+	void updateActivity();
 
 private:
 	static QPixmap determinePixmap(InstrumentTrack* instrumentTrack);
@@ -125,6 +127,8 @@ private:
 	Knob * m_panningKnob;
 	TrackChannelControls* m_channelControls = nullptr;
 	FadeButton * m_activityIndicator;
+	unsigned m_notesStartedSeen = 0; //!< see updateActivity()
+	unsigned m_notesEndedSeen = 0;
 	AutomatableButton* m_recordArmButton;
 
 	QMenu * m_midiMenu;
