@@ -309,7 +309,6 @@ private slots:
 		RealtimeAllocator::init(64 << 20);
 		m_observingSystem = observeSystemAllocator();
 		if (!m_observingSystem) { qWarning("the system's allocator is not observed: only operator new is counted"); }
-		NotePlayHandleManager::init();
 		Engine::init(true);
 		Engine::audioEngine()->stopProcessing();
 	}
@@ -317,7 +316,6 @@ private slots:
 	void cleanupTestCase()
 	{
 		Engine::destroy();
-		NotePlayHandleManager::free();
 	}
 
 	//! The counting sees what the audio thread allocates itself, through operator new and through the system (as Qt

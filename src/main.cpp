@@ -350,9 +350,6 @@ int main( int argc, char * * argv )
 	}
 #endif
 
-	// initialize memory managers
-	NotePlayHandleManager::init();
-
 	// initialize RNG
 	srand( getpid() + time( 0 ) );
 
@@ -448,7 +445,11 @@ int main( int argc, char * * argv )
 
 
 			QFile f( QString::fromLocal8Bit( argv[i] ) );
-			f.open( QIODevice::ReadOnly );
+			if (!f.open(QIODevice::ReadOnly))
+			{
+				fprintf(stderr, "Could not open %s\n", argv[i]);
+				return EXIT_FAILURE;
+			}
 			QString d = qUncompress( f.readAll() );
 			printf( "%s\n", d.toUtf8().constData() );
 
@@ -464,7 +465,11 @@ int main( int argc, char * * argv )
 			}
 
 			QFile f( QString::fromLocal8Bit( argv[i] ) );
-			f.open( QIODevice::ReadOnly );
+			if (!f.open(QIODevice::ReadOnly))
+			{
+				fprintf(stderr, "Could not open %s\n", argv[i]);
+				return EXIT_FAILURE;
+			}
 			QByteArray d = qCompress( f.readAll() ) ;
 			fwrite( d.constData(), sizeof(char), d.size(), stdout );
 
@@ -985,7 +990,6 @@ int main( int argc, char * * argv )
 #endif
 
 
-	NotePlayHandleManager::free();
 
 	return ret;
 }

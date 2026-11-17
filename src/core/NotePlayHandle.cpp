@@ -703,6 +703,8 @@ void NotePlayHandleManager::addSlots(int count)
 
 void NotePlayHandleManager::init()
 {
+	// (the engine's: Engine::init() and Engine::destroy() make and free it, once each)
+	if (s_available) { return; }
 	s_available = nullptr;
 	s_size = 0;
 	s_availableIndex = -1;

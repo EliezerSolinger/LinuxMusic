@@ -116,7 +116,6 @@ private slots:
 	void initTestCase()
 	{
 		QVERIFY(m_directory.isValid());
-		NotePlayHandleManager::init(); // as main() does
 		Engine::init(true);
 		Engine::audioEngine()->stopProcessing();
 	}
@@ -124,7 +123,6 @@ private slots:
 	void cleanupTestCase()
 	{
 		Engine::destroy();
-		NotePlayHandleManager::free();
 	}
 
 	void init()

@@ -24,6 +24,7 @@
 
 
 #include "Engine.h"
+#include "NotePlayHandle.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "Mixer.h"
@@ -60,6 +61,9 @@ void* Engine::s_dndPluginKey = nullptr;
 void Engine::init( bool renderOnly )
 {
 	Engine *engine = inst();
+
+	// The notes' places, before anything can play a note
+	NotePlayHandleManager::init();
 
 	emit engine->initProgress(tr("Generating wavetables"));
 	// generate (load from file) bandlimited wavetables
@@ -125,6 +129,9 @@ void Engine::destroy()
 	deleteHelper(&s_exportManager);
 
 	delete ConfigManager::inst();
+
+	// Last: the song's and the previews' notes went back to it above
+	NotePlayHandleManager::free();
 
 	// The oscillator FFT plans remain throughout the application lifecycle
 	// due to being expensive to create, and being used whenever a userwave form is changed
