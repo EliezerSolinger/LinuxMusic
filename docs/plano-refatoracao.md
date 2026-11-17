@@ -320,6 +320,19 @@ Passos feitos:
 | Criar e apagar um padrão | 0,01 ms |
 | Apagar uma faixa cujos controles outra faixa automatiza | 0,08 ms |
 
+- **Clipes entram na faixa inteiros:** o construtor de `Clip` punha o clipe na faixa antes de as partes dele
+  existirem (um clipe MIDI sem notas, um de automação sem pontos), e o render podia tocá-lo assim. Agora cada
+  clipe concreto entra por último no seu construtor (`Clip::enterTrack()`), e sai antes de ser desmontado
+  (`Track::deleteClip()`).
+- **Apagar um canal do mixer:** a renumeração dos canais e das faixas continua num instante só sob a trava (o
+  render vê tudo antes ou depois); o canal sai da lista ali, e a automação solta os controles dele, mas ele é
+  destruído depois, sem a trava, levando os efeitos e os plugins deles. `moveTrack` agora também passa pela
+  trava.
+
+| Edição | Trava presa no máximo |
+|---|---|
+| Criar e apagar um canal com três efeitos e o volume automatizado | 0,07 ms |
+
 ## Fase 8: ciclo de vida explícito
 
 - **8.1** Documentar e testar a ordem de criação e destruição do `Engine`. `EngineLifecycleTest` faz

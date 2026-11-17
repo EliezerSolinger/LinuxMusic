@@ -48,10 +48,7 @@ Clip::Clip( Track * track ) :
 	m_mutedModel( false, this, tr( "Mute" ) ),
 	m_selectViewOnCreate{false}
 {
-	if( getTrack() )
-	{
-		getTrack()->addClip( this );
-	}
+	// (put in its track by the concrete clip's constructor, once whole: enterTrack())
 	setJournalling( false );
 	movePosition( 0 );
 	changeLength( 0 );
@@ -76,10 +73,14 @@ Clip::Clip(const Clip& other):
 	m_color(other.m_color),
 	m_lane(other.m_lane)
 {
-	if (getTrack())
-	{
-		getTrack()->addClip(this);
-	}
+	// (put in its track by the concrete clip's constructor, once whole: enterTrack())
+}
+
+
+
+void Clip::enterTrack()
+{
+	if (getTrack()) { getTrack()->addClip(this); }
 }
 
 

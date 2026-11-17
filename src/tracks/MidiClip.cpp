@@ -48,6 +48,9 @@ MidiClip::MidiClip( InstrumentTrack * _instrument_track ) :
 		resizeToFirstTrack();
 	}
 	init();
+
+	// In its track last, whole: the audio thread plays what is there (see Clip::enterTrack())
+	enterTrack();
 }
 
 
@@ -65,6 +68,9 @@ MidiClip::MidiClip( const MidiClip& other ) :
 	}
 
 	init();
+
+	// In its track last, whole: the audio thread plays what is there (see Clip::enterTrack())
+	enterTrack();
 }
 
 
@@ -96,9 +102,10 @@ void MidiClip::resizeToFirstTrack()
 			{
 				const auto& instrumentTrackClips = m_instrumentTrack->getClips();
 				const auto currentClipIt = std::find(instrumentTrackClips.begin(), instrumentTrackClips.end(), this);
-				unsigned int currentClip = currentClipIt != instrumentTrackClips.end() ?
-					std::distance(instrumentTrackClips.begin(), currentClipIt) : -1;
-				m_steps = static_cast<MidiClip*>(track->getClip(currentClip))->m_steps;
+				// (while it is made it is not in the track yet: its place is the next one)
+				const auto currentClip = static_cast<std::size_t>(std::distance(instrumentTrackClips.begin(),
+					currentClipIt));
+				if (const auto* first = dynamic_cast<MidiClip*>(track->getClip(currentClip))) { m_steps = first->m_steps; }
 			}
 			break;
 		}

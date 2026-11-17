@@ -44,6 +44,9 @@ PatternClip::PatternClip(Track* track) :
 		changeLength( TimePos( t, 0 ) );
 		restoreJournallingState();
 	}
+
+	// In its track last, whole: the audio thread plays what is there (see Clip::enterTrack())
+	enterTrack();
 }
 
 void PatternClip::saveSettings(QDomDocument& doc, QDomElement& element)

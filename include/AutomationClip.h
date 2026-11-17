@@ -28,6 +28,8 @@
 #define LMMS_AUTOMATION_CLIP_H
 
 #include <QMap>
+#include <functional>
+
 #include <QPointer>
 
 #include "AutomationNode.h"
@@ -230,6 +232,12 @@ public:
 	 * (a track), under one moment of the audio engine's change lock instead of one each (objectDestroyed())
 	 */
 	static void forgetObjectsUnder(const QObject* owner);
+
+	//! forgetObjectsUnder() for the controls @p which picks (e.g. a mixer channel's, held in it by value)
+	static void forgetObjectsIf(const std::function<bool(const AutomatableModel*)>& which);
+
+	//! Whether @p object is @p owner or one of its children, at any depth
+	static auto isUnder(const QObject* object, const QObject* owner) -> bool;
 
 	bool isRecording() const { return m_isRecording; }
 	void setRecording( const bool b ) { m_isRecording = b; }

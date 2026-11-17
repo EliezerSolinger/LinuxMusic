@@ -781,10 +781,20 @@ void Mixer::deleteChannel( int index )
 {
 	if (!m_clearing && !canDeleteChannel(index)) { return; }
 	const auto change = StructureChange{*this};
-	// channel deletion is performed between mixer rounds
-	Engine::audioEngine()->requestChangeInModel();
+
+	// Taken out of the channels under the lock (it, its sends, and the channels and tracks after it renumbered, all
+	// at once for the audio thread), then deleted without it: its effects and their plugins go with it
+	auto gone = std::unique_ptr<MixerChannel>{};
+	{
+	const auto guard = AudioEngine::changesGuard();
 
 	MixerChannel * ch = m_mixerChannels[index].get();
+	// Automation lets go of its controls (held in it by value) and its effects', in this moment
+	AutomationClip::forgetObjectsIf([ch](const AutomatableModel* model) {
+		const auto* at = reinterpret_cast<const std::byte*>(model);
+		const auto* begin = reinterpret_cast<const std::byte*>(ch);
+		return (at >= begin && at < begin + sizeof(MixerChannel)) || AutomationClip::isUnder(model, &ch->m_fxChain);
+	});
 
 	// delete all of this channel's sends and receives
 	while (!ch->m_sends.empty())
@@ -802,7 +812,8 @@ void Mixer::deleteChannel( int index )
 		if (channel->m_owner == ch) { channel->m_owner = nullptr; }
 	}
 
-	// actually delete the channel
+	// actually delete the channel (below, once the lock is free)
+	gone = std::move(m_mixerChannels[index]);
 	m_mixerChannels.erase(m_mixerChannels.begin() + index);
 
 	for (auto i = static_cast<std::size_t>(index); i < m_mixerChannels.size(); ++i)
@@ -824,8 +835,7 @@ void Mixer::deleteChannel( int index )
 	}
 
 	emit channelDeleted(index);
-
-	Engine::audioEngine()->doneChangeInModel();
+	}
 }
 
 

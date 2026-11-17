@@ -200,8 +200,14 @@ void TrackContainer::removeTrack( Track * _track )
 
 void TrackContainer::moveTrack(Track* track, int indexTo)
 {
-	m_tracks.erase(std::find(m_tracks.begin(), m_tracks.end(), track));
-	m_tracks.insert(m_tracks.begin() + indexTo, track);
+	{
+		// The audio thread goes through the tracks: it sees them before or after, not halfway
+		const auto guard = AudioEngine::changesGuard();
+		const auto it = std::find(m_tracks.begin(), m_tracks.end(), track);
+		if (it == m_tracks.end()) { return; }
+		m_tracks.erase(it);
+		m_tracks.insert(m_tracks.begin() + std::clamp<std::ptrdiff_t>(indexTo, 0, std::ssize(m_tracks)), track);
+	}
 
 	updateFolders();
 	emit trackMoved();

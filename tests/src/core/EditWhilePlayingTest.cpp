@@ -161,6 +161,22 @@ private slots:
 			{"a pattern made and deleted", [&](int) {
 				Track::destroy(Track::create(Track::Type::Pattern, song));
 			}},
+			{"a mixer channel with effects and automation deleted", [&](int) {
+				const auto added = mixer->createChannel();
+				auto* channel = mixer->mixerChannel(added);
+				for (const auto* effect : {"amplifier", "stereoenhancer", "bassbooster"})
+				{
+					channel->m_fxChain.appendEffect(
+						std::make_unique<PluginInstance>(Plugin::Type::Effect, effect, &channel->m_fxChain, nullptr));
+				}
+				auto* clip = dynamic_cast<AutomationClip*>(automation->createClip(TimePos{0}));
+				clip->addObject(&channel->m_volumeModel);
+				clip->putValue(TimePos{0}, 0.5f, false);
+				clip->changeLength(TimePos{4 * TimePos::ticksPerBar()});
+				std::this_thread::sleep_for(10ms);
+				mixer->deleteChannel(added);
+				automation->deleteClip(clip);
+			}},
 			{"an automated track deleted", [&](int) {
 				// Another track's clip sets its volume while it plays
 				auto* track = newInstrumentTrack("tripleoscillator");

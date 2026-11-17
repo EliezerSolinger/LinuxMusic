@@ -204,6 +204,13 @@ protected:
 	//! @param other The clip object which will be copied.
 	Clip(const Clip& other);
 
+	/**
+	 * Puts the clip in its track: the last thing each concrete clip's constructor does, once the clip is whole (the
+	 * audio thread plays what is in the track; a clip put there by this base's constructor was played before its
+	 * own parts were made). A clip leaves the track before it is taken apart: Track::deleteClip().
+	 */
+	void enterTrack();
+
 private:
 	Track * m_track;
 	QString m_name;

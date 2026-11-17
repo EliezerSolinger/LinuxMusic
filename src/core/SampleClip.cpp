@@ -75,6 +75,9 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	connect(&PeakCache::instance(), &PeakCache::ready, this, &SampleClip::peaksReady);
 
 	updateTrackClips();
+
+	// In its track last, whole: the audio thread plays what is there (see Clip::enterTrack())
+	enterTrack();
 }
 
 SampleClip::SampleClip(Track* track)
@@ -124,6 +127,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	connect(&PeakCache::instance(), &PeakCache::ready, this, &SampleClip::peaksReady);
 
 	updateTrackClips();
+
+	// In its track last, whole: the audio thread plays what is there (see Clip::enterTrack())
+	enterTrack();
 }
 
 

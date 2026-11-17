@@ -58,6 +58,9 @@ AutomationClip::AutomationClip( AutomationTrack * _auto_track ) :
 	m_lastRecordedValue( 0 )
 {
 	changeLength( TimePos( 1, 0 ) );
+
+	// In its track last, whole: the audio thread plays what is there (see Clip::enterTrack())
+	enterTrack();
 }
 
 
@@ -95,6 +98,9 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 		// Sets the node's clip to this one
 		m_timeMap[POS(it)].setClip(this);
 	}
+
+	// In its track last, whole: the audio thread plays what is there (see Clip::enterTrack())
+	enterTrack();
 }
 
 bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
@@ -1182,16 +1188,28 @@ void AutomationClip::generateTangents(timeMap::iterator it, int numToGenerate)
 	}
 }
 
+auto AutomationClip::isUnder(const QObject* object, const QObject* owner) -> bool
+{
+	for (; object != nullptr; object = object->parent())
+	{
+		if (object == owner) { return true; }
+	}
+	return false;
+}
+
+
+
+
 void AutomationClip::forgetObjectsUnder(const QObject* owner)
 {
-	const auto under = [owner](const QObject* object) {
-		for (; object != nullptr; object = object->parent())
-		{
-			if (object == owner) { return true; }
-		}
-		return false;
-	};
+	forgetObjectsIf([owner](const AutomatableModel* model) { return isUnder(model, owner); });
+}
 
+
+
+
+void AutomationClip::forgetObjectsIf(const std::function<bool(const AutomatableModel*)>& which)
+{
 	const auto guard = AudioEngine::changesGuard();
 	for (auto* track : combineAllTracks())
 	{
@@ -1206,7 +1224,7 @@ void AutomationClip::forgetObjectsUnder(const QObject* owner)
 				for (auto it = a->m_objects.begin(); it != a->m_objects.end();)
 				{
 					AutomatableModel* model = *it;
-					if (!model || !under(model)) { ++it; continue; }
+					if (!model || !which(model)) { ++it; continue; }
 					// As when it is deleted (objectDestroyed()): found again by its id if it comes back (an undo)
 					a->m_idsToResolve.push_back(model->id());
 					disconnect(model, SIGNAL(destroyed(lmms::jo_id_t)), a, SLOT(objectDestroyed(lmms::jo_id_t)));

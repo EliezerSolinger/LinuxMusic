@@ -92,6 +92,9 @@ AudioItem::AudioItem(Track* track)
 	connect(&PeakCache::instance(), &PeakCache::ready, this, &AudioItem::peaksReady);
 	// (a change of tempo changes the file's length on the song, unless the item follows it)
 	connect(Engine::getSong(), &Song::tempoChanged, this, [this] { if (!isTempoBound()) { emit itemChanged(); } });
+
+	// In its track last, whole: the audio thread plays what is there (see Clip::enterTrack())
+	enterTrack();
 }
 
 
@@ -115,6 +118,9 @@ AudioItem::AudioItem(const AudioItem& other)
 	if (auto* audioTrack = dynamic_cast<AudioTrack*>(getTrack())) { audioTrack->watch(this); }
 	connect(&PeakCache::instance(), &PeakCache::ready, this, &AudioItem::peaksReady);
 	connect(Engine::getSong(), &Song::tempoChanged, this, [this] { if (!isTempoBound()) { emit itemChanged(); } });
+
+	// In its track last, whole: the audio thread plays what is there (see Clip::enterTrack())
+	enterTrack();
 }
 
 
