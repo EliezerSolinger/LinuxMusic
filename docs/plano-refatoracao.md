@@ -261,3 +261,38 @@ render esperar (contador `periodsSkipped` zerado num teste de estresse), e o TSa
 ## Andamento
 
 (Atualizado a cada etapa.)
+
+### Fase 0: concluída
+- [x] 0.1 `tools/check/` com A/B, varredura de sanitizadores e projetos corrompidos (4f5467075^).
+  - Projetos aleatórios por natureza ficam em `ab-random.txt`.
+  - O limite é -90 dBFS: builds idênticos diferem até -97 dBFS pela ordem de soma das threads.
+- [x] 0.2 `tests/scripted/check-core-gui`, também no `ctest` e na CI (4f5467075).
+- [x] Extra: `tools/check/gui-smoke.sh`, que abre a interface offscreen com cada projeto (bbbeed3fe).
+
+### Fase 1: concluída
+- [x] 1.1 `UserNotice`: avisos, perguntas e progresso, com teste (97acb4f6f).
+- [x] 1.2 O núcleo não abre janelas (8a4fc1e6c).
+  - Achados: `PeakController`, `ImportFilter`, o efeito LADSPA e o progresso do `MidiImport` abriam janelas sem
+    interface.
+  - O `AudioFileDevice` dava `exit()` lá de dentro; agora a renderização pela linha de comando sai com erro.
+  - Os codificadores Ogg/MP3 que não iniciavam liberavam estado não inicializado (8343ce85c).
+- [x] `PixmapLoader` separado do `embed.h` (c17ebfa7b).
+- [x] 1.3 As vistas são criadas no código da interface (6393e6494).
+- [x] 1.4 O `Song` sem os editores (e94580252).
+  - Registro de estados do projeto e sinal `aboutToClearProject`.
+  - Achado: sem interface, salvar perdia notas e estados dos editores, e a linha do tempo (loop) não carregava.
+- [x] 1.5 `InstrumentTrack`/`MidiClip` não consultam o Piano Roll (853b0a819).
+  - Achado: a thread de áudio lia `pianoRoll()->isRecording()`, uma corrida de dados.
+  - `Clip`, `Clipboard`, `StepRecorder` e a descrição LV2 também saíram (64e3fb3ad).
+  - Achado: colar com a área de transferência vazia desreferenciava nulo.
+- [x] 1.6 As telas dos drivers foram para `src/gui` (396968a83).
+- [x] 1.7 `main.cpp` em `src/` (99455c04a).
+- [x] 1.8 A garantia ficou com o `check-core-gui`, que agora segue as inclusões transitivamente e roda no `ctest` e
+  na CI. A lista de exceções está vazia.
+  - Decisão: não separei o núcleo num alvo do CMake sem `QtWidgets`. Os plugins se ligam ao executável, e o
+    `lmmsobjs` tem *export header*, definições e AUTOMOC próprios: o risco é alto e o ganho é pequeno, porque a
+    checagem já pega qualquer inclusão nova.
+- Para investigar (Fase 6): `ladspa-dj_eq` renderiza diferente entre execuções (-76 dB), já antes da
+  refatoração.
+- Ferramenta: a worktree com o build de antes da refatoração (`56a30bfff`) fica em
+  `~/.claude/jobs/49dcb579/tmp/refactor/base-src/build`, para comparar comportamentos.
