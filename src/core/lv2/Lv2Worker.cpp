@@ -23,6 +23,7 @@
  */
 
 #include "Lv2Worker.h"
+#include "ErrorLog.h"
 
 #include <cstring>
 
@@ -165,6 +166,8 @@ void Lv2Worker::workerFunc()
 		if (size > readSpace - sizeof(size))
 		{
 			// (cannot happen with whole requests; if it did, the rest could not be trusted)
+			ErrorLog::report(ErrorLog::Severity::Error, "Lv2Worker::workerFunc",
+				"a request larger than the queue held: the queued requests were dropped (its size)", size);
 			m_requestsReader.read(readSpace - sizeof(size));
 			continue;
 		}
@@ -231,6 +234,8 @@ void Lv2Worker::emitResponses()
 		if (size > read_space || size > m_response.size())
 		{
 			// (cannot happen with whole responses; if it did, the rest could not be trusted)
+			ErrorLog::report(ErrorLog::Severity::Error, "Lv2Worker::emitResponses",
+				"a response larger than the queue held: the queued responses were dropped (its size)", size);
 			m_responsesReader.read(read_space);
 			return;
 		}

@@ -27,6 +27,7 @@
 #include <thread>
 #include <vector>
 
+#include "ErrorLog.h"
 #include "UserNotice.h"
 
 using namespace lmms;
@@ -56,9 +57,10 @@ private slots:
 		auto shown = std::vector<UserNotice::Notice>{};
 		UserNotice::setPresenter([&](const UserNotice::Notice& notice) { shown.push_back(notice); }, {});
 		QVERIFY(UserNotice::hasUser());
-		// (in the log too, with a GUI as without)
-		QTest::ignoreMessage(QtCriticalMsg, "Could not open file: No permission");
+		// (in the error log too, with a GUI as without)
+		const auto reported = ErrorLog::reportedCount();
 		UserNotice::error("Could not open file", "No permission");
+		QCOMPARE(ErrorLog::reportedCount(), reported + 1);
 		QCOMPARE(shown.size(), std::size_t{1});
 		QCOMPARE(shown[0].level, UserNotice::Level::Error);
 		QCOMPARE(shown[0].title, QString{"Could not open file"});

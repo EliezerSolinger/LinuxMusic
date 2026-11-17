@@ -25,6 +25,7 @@
 
 
 #include "DataFile.h"
+#include "ErrorLog.h"
 
 #include <algorithm>
 #include <array>
@@ -606,7 +607,15 @@ auto DataFile::uncompress(const QByteArray& data, qsizetype limit) -> std::optio
 	const auto* bytes = reinterpret_cast<const unsigned char*>(data.constData());
 	const auto expected = (qsizetype{bytes[0]} << 24) | (qsizetype{bytes[1]} << 16) | (qsizetype{bytes[2]} << 8)
 		| qsizetype{bytes[3]};
-	if (expected == 0 || expected > limit) { return std::nullopt; }
+	// (logged only for what looks like compressed data: plain XML that did not parse comes here too)
+	const bool looksCompressed = data.size() > 4 && bytes[4] == 0x78;
+	if (expected > limit)
+	{
+		if (looksCompressed) ErrorLog::reportText(ErrorLog::Severity::Warning, "DataFile::uncompress",
+			QStringLiteral("refused: it says it inflates to %1 bytes, more than %2").arg(expected).arg(limit));
+		return std::nullopt;
+	}
+	if (expected == 0) { return std::nullopt; }
 
 	auto out = QByteArray{};
 	// Grown as it inflates, never past the size it says (a header that lies costs nothing up front)
@@ -631,7 +640,12 @@ auto DataFile::uncompress(const QByteArray& data, qsizetype limit) -> std::optio
 		if (produced == 0 && result == Z_OK && stream.avail_in == 0) { result = Z_DATA_ERROR; break; } // cut short
 	}
 	inflateEnd(&stream);
-	if (result != Z_STREAM_END || out.size() != expected) { return std::nullopt; }
+	if (result != Z_STREAM_END || out.size() != expected)
+	{
+		if (looksCompressed) ErrorLog::reportText(ErrorLog::Severity::Warning, "DataFile::uncompress",
+			QStringLiteral("refused: it says %1 bytes but inflated to %2 or is damaged").arg(expected).arg(out.size()));
+		return std::nullopt;
+	}
 	return out;
 }
 

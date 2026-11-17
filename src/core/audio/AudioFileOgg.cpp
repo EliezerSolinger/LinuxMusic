@@ -27,6 +27,7 @@
  */
 
 #include "AudioFileOgg.h"
+#include "ErrorLog.h"
 
 #ifdef LMMS_HAVE_OGGVORBIS
 
@@ -49,8 +50,10 @@ AudioFileOgg::AudioFileOgg(OutputSettings const& outputSettings, const ch_cnt_t 
 	const auto bitrate = outputSettings.bitrate();
 	static constexpr auto maxBitrate = 320;
 
-	if (vorbis_encode_init_vbr(&m_vi, channels, sampleRate(), static_cast<float>(bitrate) / maxBitrate))
+	if (const auto error = vorbis_encode_init_vbr(&m_vi, channels, sampleRate(), static_cast<float>(bitrate) / maxBitrate))
 	{
+		ErrorLog::report(ErrorLog::Severity::Error, "AudioFileOgg",
+			"the Vorbis encoder could not start with these settings (libvorbis' error code)", error);
 		return;
 	}
 

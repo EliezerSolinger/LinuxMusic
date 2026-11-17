@@ -30,6 +30,7 @@
 #include <cmath>
 #include <memory>
 #include "AudioBufferView.h"
+#include "ErrorLog.h"
 #include "lmms_export.h"
 
 namespace lmms {
@@ -99,7 +100,7 @@ public:
 	 * @brief Sets the resampling ratio to `ratio`.
 	 * @param ratio Output sample rate divided by input sample rate.
 	 */
-	void setRatio(double ratio) { m_ratio = validRatio(ratio); }
+	void setRatio(double ratio) { m_ratio = checkedRatio(ratio); }
 
 	/**
 	 * @brief Sets the resampling ratio to `output / input`.
@@ -108,7 +109,7 @@ public:
 	 */
 	void setRatio(sample_rate_t input, sample_rate_t output)
 	{
-		m_ratio = validRatio(input ? static_cast<double>(output) / input : 1.0);
+		m_ratio = checkedRatio(input ? static_cast<double>(output) / input : 0.0);
 	}
 
 	//! The ratios libsamplerate takes; any other is brought into them (not a number, or none, is 1)
@@ -118,6 +119,21 @@ public:
 	{
 		return std::isfinite(ratio) && ratio > 0 ? std::clamp(ratio, MinRatio, MaxRatio) : 1.0;
 	}
+
+private:
+	//! validRatio(), with any change reported (see ErrorLog; the audio threads set ratios too)
+	static auto checkedRatio(double ratio) -> double
+	{
+		const auto valid = validRatio(ratio);
+		if (valid != ratio)
+		{
+			ErrorLog::report(ErrorLog::Severity::Warning, "AudioResampler::setRatio",
+				"a ratio libsamplerate cannot take was replaced by the nearest it can (the ratio asked)", ratio);
+		}
+		return valid;
+	}
+
+public:
 
 	//! @returns the resampling ratio.
 	auto ratio() const -> double { return m_ratio; }

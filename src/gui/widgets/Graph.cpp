@@ -31,6 +31,7 @@
 #include <cstring>
 #include <cmath>
 #include "DeprecationHelper.h"
+#include "ErrorLog.h"
 #include "FileDialog.h"
 #include "StringPairDrag.h"
 #include "Oscillator.h"
@@ -542,6 +543,11 @@ void graphModel::setSamples(std::span<const float> samples)
 void graphModel::setSamplesFromBase64(const QString& base64)
 {
 	const auto bytes = QByteArray::fromBase64(base64.toUtf8());
+	if (bytes.size() != static_cast<qsizetype>(length() * sizeof(float)))
+	{
+		ErrorLog::reportText(ErrorLog::Severity::Warning, "graphModel::setSamplesFromBase64",
+			QStringLiteral("a saved graph of %1 bytes for %2 points: set as far as it goes").arg(bytes.size()).arg(length()));
+	}
 	auto samples = std::vector<float>(static_cast<std::size_t>(bytes.size()) / sizeof(float));
 	std::memcpy(samples.data(), bytes.constData(), samples.size() * sizeof(float));
 	setSamples(std::span<const float>{samples});

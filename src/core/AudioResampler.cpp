@@ -201,7 +201,9 @@ auto AudioResampler::process(InterleavedBufferView<const float> input, Interleav
 
 	if ((m_error = src_process(static_cast<SRC_STATE*>(m_state.get()), &data)))
 	{
-		// (on the audio thread, where nothing may throw: silence instead; the error stays in m_error)
+		// (on the audio thread, where nothing may throw: silence instead, and the error in the log)
+		ErrorLog::report(ErrorLog::Severity::Error, "AudioResampler::process",
+			"libsamplerate could not resample: the period is silence (libsamplerate's error code)", m_error);
 		std::fill_n(output.data(), output.frames() * output.channels(), 0.f);
 		return {0, static_cast<f_cnt_t>(output.frames())};
 	}
@@ -212,7 +214,11 @@ auto AudioResampler::process(InterleavedBufferView<const float> input, Interleav
 void AudioResampler::reset()
 {
 	// (as process(): it runs on the audio thread; a reset that fails leaves the state as it was)
-	m_error = src_reset(static_cast<SRC_STATE*>(m_state.get()));
+	if ((m_error = src_reset(static_cast<SRC_STATE*>(m_state.get()))))
+	{
+		ErrorLog::report(ErrorLog::Severity::Error, "AudioResampler::reset",
+			"libsamplerate could not reset (libsamplerate's error code)", m_error);
+	}
 }
 
 void AudioResampler::StateDeleter::operator()(void* state)

@@ -45,6 +45,7 @@
 #include "Song.h"
 #include "TempoMap.h"
 #include "UserNotice.h"
+#include "ErrorLog.h"
 
 #include "plugin_export.h"
 
@@ -580,6 +581,11 @@ bool MidiImport::readSMF(TrackContainer* tc)
 			&& c.second.hasNotes && c.second.it_inst && c.second.isSF2)
 		{
 			// (a SoundFont player that did not load has neither)
+			if (!c.second.it_inst->childModel("bank") || !c.second.it_inst->childModel("patch"))
+			{
+				ErrorLog::reportText(ErrorLog::Severity::Warning, "MidiImport::readSMF",
+					QStringLiteral("channel 10's SoundFont player has no bank or patch (it did not load): left as it is"));
+			}
 			if (auto bank = c.second.it_inst->childModel("bank"))
 			{
 				bank->setValue(128);

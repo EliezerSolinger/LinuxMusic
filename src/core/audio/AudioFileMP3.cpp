@@ -24,6 +24,7 @@
  */
 
 #include "AudioFileMP3.h"
+#include "ErrorLog.h"
 
 #include "SampleFrame.h"
 
@@ -43,6 +44,10 @@ AudioFileMP3::AudioFileMP3(	OutputSettings const & outputSettings,
 {
 	// For now only accept stereo sources
 	m_encoding = channels == 2 && outputFileOpened() && initEncoder();
+	if (!m_encoding && outputFileOpened())
+	{
+		ErrorLog::report(ErrorLog::Severity::Error, "AudioFileMP3", "the MP3 encoder could not start (channels)", channels);
+	}
 	successful = m_encoding;
 }
 
@@ -71,6 +76,11 @@ void AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
 
 	int bytesWritten = lame_encode_buffer_interleaved_ieee_float(m_lame, &interleavedDataBuffer[0], _frames, &encodingBuffer[0], static_cast<int>(encodingBuffer.size()));
 	// (negative: an error of the encoder, nothing to write)
+	if (bytesWritten < 0)
+	{
+		ErrorLog::report(ErrorLog::Severity::Error, "AudioFileMP3::writeBuffer",
+			"LAME could not encode a period: it is missing from the file (LAME's error code)", bytesWritten);
+	}
 	if (bytesWritten > 0) { writeData(&encodingBuffer[0], bytesWritten); }
 }
 

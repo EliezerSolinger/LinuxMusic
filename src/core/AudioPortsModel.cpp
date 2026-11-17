@@ -24,6 +24,7 @@
  */
 
 #include "AudioPortsModel.h"
+#include "ErrorLog.h"
 
 #include <algorithm>
 
@@ -542,7 +543,12 @@ void AudioPortsModel::Matrix::loadSettings(const QDomElement& elem)
 	auto addConnection = [&](const QString& name) {
 		// "c<track channel>_<processor channel>"; anything else (from a damaged file) is no connection
 		const auto pos = name.indexOf('_');
-		if (name.size() < 4 || name[0] != 'c' || pos <= 1) { return; }
+		if (name.size() < 4 || name[0] != 'c' || pos <= 1)
+		{
+			ErrorLog::reportText(ErrorLog::Severity::Warning, "AudioPortsModel::Matrix::loadSettings",
+				QStringLiteral("a pin connection with a damaged name was skipped: \"%1\"").arg(name));
+			return;
+		}
 
 		auto trackChannel = QStringView{name}.mid(1, pos - 1).toInt();
 		auto processorChannel = QStringView{name}.mid(pos + 1).toInt();

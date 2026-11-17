@@ -21,6 +21,7 @@
  */
 
 #include "UserNotice.h"
+#include "ErrorLog.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -53,8 +54,13 @@ void log(const Notice& notice)
 	{
 	case Level::Hint:
 	case Level::Information: qInfo().noquote() << line; break;
-	case Level::Warning: qWarning().noquote() << line; break;
-	case Level::Error: qCritical().noquote() << line; break;
+	// (warnings and errors into the error log, which also prints them)
+	case Level::Warning:
+		ErrorLog::reportText(ErrorLog::Severity::Warning, "UserNotice", line);
+		break;
+	case Level::Error:
+		ErrorLog::reportText(ErrorLog::Severity::Error, "UserNotice", line);
+		break;
 	}
 }
 

@@ -22,6 +22,7 @@
  *
  */
 #include "InstrumentTrack.h"
+#include "ErrorLog.h"
 #include "PluginGuard.h"
 
 #include "AudioEngine.h"
@@ -335,6 +336,8 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 	if (!keyIsValid && (event.type() == MidiNoteOn || event.type() == MidiNoteOff || event.type() == MidiKeyPressure
 		|| (event.type() == MidiMetaEvent && event.metaEvent() == MidiNotePanning)))
 	{
+		ErrorLog::report(ErrorLog::Severity::Warning, "InstrumentTrack::processInEvent",
+			"a note event with a key out of the keyboard was ignored (the key)", event.key());
 		return;
 	}
 
