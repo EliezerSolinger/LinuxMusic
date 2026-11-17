@@ -27,6 +27,7 @@
 #define LMMS_NOTE_PLAY_HANDLE_H
 
 #include <cstddef>
+#include <atomic>
 #include <memory>
 #include <new>
 #include <utility>
@@ -89,6 +90,8 @@ public:
 					int midiEventChannel = -1,
 					Origin origin = Origin::MidiClip );
 	~NotePlayHandle() override;
+
+	auto mixOrder() const -> std::uint64_t override { return m_mixOrder; }
 
 	//! Back to the note pool (NotePlayHandleManager)
 	void dispose() override;
@@ -393,6 +396,13 @@ private:
 	Origin m_origin;
 
 	bool m_frequencyNeedsUpdate;				// used to update pitch
+
+	//! See mixOrder(): the root note's serial in the high 32 bits, then the child's index at each level (8 bits each)
+	std::uint64_t m_mixOrder = 0;
+	int m_depth = 0; //!< 0 for a note without a parent
+	int m_childrenMade = 0; //!< the chord and arpeggio notes made so far, which numbers the next one
+	//! Numbers the notes without a parent in the order they are made (by their tracks, one after another)
+	static std::atomic<std::uint32_t> s_nextRootSerial;
 
 	alignas(std::max_align_t) std::byte m_pluginDataRoom[PluginDataRoom]; //!< see makePluginData()
 

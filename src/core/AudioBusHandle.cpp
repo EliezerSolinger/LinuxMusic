@@ -122,7 +122,17 @@ void AudioBusHandle::doProcessing()
 	// clear the buffer
 	m_buffer.silenceAllChannels();
 
-	//qDebug( "Playhandles: %d", m_playHandles.size() );
+	// Summed in their own order (see PlayHandle::mixOrder()): an insertion sort, which keeps equal ones in place,
+	// allocates nothing, and has little to do since the list stays sorted from one period to the next
+	for (auto i = 1; i < m_playHandles.size(); ++i)
+	{
+		auto* handle = m_playHandles[i];
+		const auto order = handle->mixOrder();
+		auto j = i;
+		for (; j > 0 && m_playHandles[j - 1]->mixOrder() > order; --j) { m_playHandles[j] = m_playHandles[j - 1]; }
+		m_playHandles[j] = handle;
+	}
+
 	for (PlayHandle* ph : m_playHandles) // now we mix all playhandle buffers into our internal buffer
 	{
 		if (auto phBuffer = ph->buffer(); phBuffer.data() != nullptr)

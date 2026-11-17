@@ -5,8 +5,8 @@ Compares each pair of WAVs (same name in both directories): the largest and the 
 A project listed in the noise file (one name per line, '#' comments; ab-random.txt beside this script unless
 another is given) renders differently on every run (it uses
 random numbers) and is reported but not judged. Exits 1 if any other project differs by more than the limit
-(default -90 dBFS: identical builds differ by up to about -97 dBFS, from the order in which the worker
-threads sum, amplified by feedback in a few effects), or if a file is missing or has another length.
+(default -120 dBFS: renders are the same on every run, bit for bit, but for ladspa-mbeq, whose FFTW plans are
+measured at run time and differ around -138 dBFS), or if a file is missing or has another length.
 """
 import array, math, os, struct, sys
 
@@ -33,7 +33,7 @@ def db(x):
 
 def main():
     args = sys.argv[1:]
-    noise, limit = set(), -90.0
+    noise, limit = set(), -120.0
     noise_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ab-random.txt')
     if '--noise' in args:
         i = args.index('--noise')

@@ -27,6 +27,7 @@
 
 #include <QList>
 #include <QMutex>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -131,6 +132,14 @@ public:
 	}
 	virtual void play(std::span<SampleFrame> buffer) = 0;
 	virtual bool isFinished() const = 0;
+
+	/**
+	 * Where this handle's output is summed among the others of its bus (see AudioBusHandle::doProcessing()):
+	 * the same order on every run, whichever thread made the handle, so that a render does not change with the
+	 * threads' timing (summing floats in another order rounds them differently). Handles of equal order keep the
+	 * order they were added in.
+	 */
+	virtual auto mixOrder() const -> std::uint64_t { return 0; }
 
 	// returns the frameoffset at the start of the playhandle,
 	// ie. how many empty frames should be inserted at the start of the first period

@@ -36,6 +36,8 @@
 namespace lmms
 {
 
+std::atomic<std::uint32_t> NotePlayHandle::s_nextRootSerial{0};
+
 NotePlayHandle::BaseDetuning::BaseDetuning( DetuningHelper *detuning ) :
 	m_value( detuning ? detuning->automationClip()->valueAt( 0 ) : 0 )
 {
@@ -84,6 +86,7 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 	lock();
 	if( hasParent() == false )
 	{
+		m_mixOrder = static_cast<std::uint64_t>(s_nextRootSerial.fetch_add(1, std::memory_order_relaxed)) << 32;
 		m_ownBaseDetuning = BaseDetuning{detuning().get()};
 		m_baseDetuning = &m_ownBaseDetuning;
 		m_instrumentTrack->m_processHandles.push_back( this );
@@ -91,6 +94,12 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 	else
 	{
 		m_baseDetuning = parent->m_baseDetuning;
+
+		// The parent makes its chord and arpeggio notes one after another, so their numbers are always the same
+		m_depth = parent->m_depth + 1;
+		const auto index = static_cast<std::uint64_t>(std::min(parent->m_childrenMade++, 254) + 1);
+		m_mixOrder = parent->m_mixOrder;
+		if (m_depth <= 4) { m_mixOrder |= index << (32 - 8 * m_depth); }
 
 		parent->m_subNotes.push_back( this );
 		parent->m_hadChildren = true;
