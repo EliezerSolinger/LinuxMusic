@@ -107,12 +107,19 @@ Motor e estabilidade:
   fica no item do microfone, abaixo
 - [ ] **Linux:** testar o ALSA e o JACK numa máquina Linux (o usuário)
 - [ ] **Mac:** testar a entrada do microfone no hardware (precisa de alguém para aceitar o pedido de permissão)
-- [ ] **Demos com amostras removidas (decisão do usuário):** 11 projetos de `data/projects/demos` citam 26 amostras de
-  fábrica tiradas em `1090ff67c` (percussão e instrumentos acústicos): Alf42red-Mauiwowi, DnB, EsoXLB-CPU,
-  Farbro-Tectonic, Greippi, Oglsdl-PpTrip, Saber-FinalStep, Settel-InnerRecreation e Thomasso-AxeFromThe80s, entre
-  outros. Ao abrir, eles avisam que as amostras não foram encontradas e tocam sem elas. Saídas possíveis: trocar por
-  amostras parecidas que ficaram, devolver essas amostras, ou tirar as demos (a lista completa sai do script em
-  `docs/plano-refatoracao.md`, fase 2)
+- [ ] **Demos com amostras removidas (decisão do usuário):** 9 projetos de `data/projects` citam
+  26 amostras de fábrica tiradas em `1090ff67c` (percussão e instrumentos
+  acústicos). Ao abrir, eles avisam que as amostras não foram encontradas e tocam sem elas. Saídas possíveis: trocar
+  por amostras parecidas que ficaram, devolver essas amostras, ou tirar as demos.
+  - Alf42red-Mauiwowi.mmpz: `drums/bassdrum_acoustic01.ogg`, `drums/crash01.ogg`, `drumsynth/acoustic/Ride3.ds`
+  - DnB.mmpz: `drums/ride01.ogg`, `drumsynth/farfisa/Fisa_Cym.ds`
+  - EsoXLB-CPU.mmpz: `drums/crash02.ogg`, `drums/ride02.ogg`
+  - Farbro-Tectonic.mmpz: `drums/bassdrum_acoustic01.ogg`, `drums/crash01.ogg`, `drums/crash02.ogg`, `drums/sidestick01.ogg`, `drums/tom03.ogg`, `drums/tom04.ogg`, `drums/tom05.ogg`
+  - Greippi - Krem Kaakkuja (Second Flight Remix).mmpz: `drums/crash01.ogg`
+  - Oglsdl-PpTrip.mmpz: `drumsynth/instrument/mute_bass.ds`
+  - Saber-FinalStep.mmpz: `drumsynth/latin/one_clap.ds`
+  - Settel-InnerRecreation.mmpz: `drums/snare_acoustic01.ogg`, `drumsynth/acoustic/JazzSnr.ds`, `drumsynth/acoustic/Kick.ds`, `drumsynth/acoustic/Plain_Kick.ds`
+  - Thomasso-AxeFromThe80s.mmpz: `drums/snare_acoustic01.ogg`, `drums/tom_hi01.ogg`, `drums/tom_low01.ogg`, `drums/tom_mid01.ogg`, `instruments/bassslap01.ogg`
 - [x] **Arte própria** do logo e do splash: um anel de gravar em volta das barras de uma forma de onda, no verde do
   tema (`tools/artwork`: os SVGs e o gerador de todos os ícones, do splash e das artes dos instaladores)
 

@@ -299,7 +299,7 @@ render esperar (contador `periodsSkipped` zerado num teste de estresse), e o TSa
 
 ### Fase 2: sinais e valores entre threads
 - [x] 2.1 Levantamento empírico: `tools/check/gui-smoke.sh` com `GUI_SMOKE_ACTIONS=play` no build TSan toca projetos
-  com a interface aberta (a91c…: a ação `play`, a095f2689). Corridas encontradas e corrigidas:
+  com a interface aberta (a ação `play`, a095f2689). Corridas encontradas e corrigidas:
   - teclas do `Piano` (44cc1a831);
   - medidores do EQ, Delay e Compressor, e o visualizador do compressor (`AtomicPeak`, 7bfa93263);
   - controladores atualizados por várias threads, e a interface lendo o buffer (ee197b514, 24df4d38f);
