@@ -16,7 +16,8 @@ subplugins dela (por exemplo: amplificadores, cabeçotes, gabinetes, pedais).
 presets. Isso vale por cima da sugestão de renomear feita mais abaixo.
 
 **Decisão do usuário (17/11), som e visual:** o DSP é o mesmo código do Guitarix, para soar igual. A
-interface é nativa do LinuxMusic (os nossos widgets e tema, no rack de efeitos), sem o xputty.
+interface tem a mesma aparência do Guitarix (imagens, botões, cores, disposição), desenhada pelos nossos widgets Qt
+no rack de efeitos, sem o xputty nem o cairo.
 
 **Decisão do usuário (17/11), licença:** vem tudo, inclusive o zita-resampler e o zita-convolver (GPL-3). O
 LinuxMusic é GPL-2 ou posterior, então o programa com eles passa a ser distribuído como GPL-3. Obrigatório citar o

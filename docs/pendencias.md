@@ -189,8 +189,11 @@ queda do Mallets, que é queda e entra antes.
     - O núcleo de cada efeito é o mesmo código do Guitarix, adaptado só no necessário para rodar aqui: o C++
       gerado pelo Faust, os zita, as tabelas e os IRs. Ele tem que soar igual.
     - Conferir com uma comparação de áudio contra o Guitarix (os LV2 dele), unidade por unidade.
-    - A interface é a mais nativa possível do LinuxMusic: os nossos knobs, o nosso tema e o tamanho do rack de
-      efeitos. Não usar o xputty nem o cairo.
+    - **O visual é o do Guitarix, desenhado aqui em Qt (usuário, 17/11):** a mesma aparência de cada unidade,
+      desenhada pelos nossos widgets Qt, não pelo xputty nem pelo cairo.
+      - Vêm do Guitarix: as imagens (PNG dos painéis e dos knobs, em `trunk/src/LV2/xputty/resources` e nos
+        `gx_*.lv2`), os botões, as cores e a disposição.
+      - Cada unidade cabe no rack de efeitos.
   - **Licença (usuário, 17/11):** o Guitarix é GPL, e o LinuxMusic é GPL-2 ou posterior. Pode vir tudo, inclusive
     as partes GPL-3 (zita-resampler e zita-convolver). Com elas, o programa distribuído vale como GPL-3, o que a
     licença permite. Obrigatório: citar o Guitarix e os autores nos créditos (Sobre e arquivo de créditos) e manter
