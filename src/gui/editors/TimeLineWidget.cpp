@@ -66,6 +66,13 @@ TimeLineWidget::TimeLineWidget(const int xoff, const int yoff, const float ppb, 
 	connect(m_timeline, &Timeline::positionChanged, this, qOverload<>(&QWidget::update));
 	// (the bars the tempo map's time signatures make)
 	connect(&Engine::getSong()->tempoMap(), &TempoMap::changed, this, qOverload<>(&QWidget::update));
+	// The way it follows the playhead, as the setting changes (its button shows it)
+	connect(ConfigManager::inst(), &ConfigManager::valueChanged, this, [this](const QString& cls, const QString& attribute) {
+		if (cls != "ui" || attribute != "autoscroll") { return; }
+		const auto state = defaultAutoScrollState();
+		if (m_autoScrollButton) { m_autoScrollButton->changeState(static_cast<int>(state)); }
+		m_autoScroll = state;
+	});
 }
 
 
@@ -94,6 +101,7 @@ void TimeLineWidget::addToolButtons( QToolBar * _tool_bar )
 	autoScroll->changeState(static_cast<int>(m_autoScroll));
 	connect( autoScroll, SIGNAL(changedState(int)), this,
 					SLOT(toggleAutoScroll(int)));
+	m_autoScrollButton = autoScroll;
 
 	auto loopPoints = new NStateButton(_tool_bar);
 	loopPoints->setGeneralToolTip( tr( "Loop points" ) );

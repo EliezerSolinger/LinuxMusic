@@ -1,9 +1,9 @@
 /*
- * SetupDialog.cpp - dialog for setting up LMMS
+ * SetupDialog.cpp - the settings
  *
  * Copyright (c) 2005-2014 Tobias Doerffel <tobydox/at/users.sourceforge.net>
  *
- * This file is part of LMMS - https://lmms.io
+ * This file is part of LinuxMusic, a fork of LMMS - https://lmms.io
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public
@@ -22,48 +22,51 @@
  *
  */
 
+#include "SetupDialog.h"
 
+#include <algorithm>
+
+#include <QAbstractButton>
+#include <QAbstractSlider>
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QGroupBox>
-#include <QImageReader>
+#include <QCoreApplication>
+#include <QDoubleSpinBox>
 #include <QElapsedTimer>
-#include <QThread>
-#include <QMessageBox>
-#include <QPushButton>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QKeySequenceEdit>
 #include <QLabel>
-#include <QLayout>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QScrollArea>
-#include <QKeySequenceEdit>
-#include <QHeaderView>
-#include <QTableWidget>
-#include <QAbstractButton>
-#include <QDoubleSpinBox>
-#include <QAbstractSlider>
+#include <QSlider>
 #include <QSpinBox>
-#include <QFormLayout>
+#include <QStackedWidget>
+#include <QTableWidget>
+#include <QThread>
+#include <QVBoxLayout>
 
+#include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ConfigManager.h"
 #include "embed.h"
 #include "Engine.h"
 #include "FileDialog.h"
 #include "GuiApplication.h"
+#include "LatencyCalibration.h"
 #include "MainWindow.h"
+#include "MidiClient.h"
 #include "MidiSetupWidget.h"
 #include "PluginGuard.h"
 #include "ProjectJournal.h"
-#include "SetupDialog.h"
-#include "LatencyCalibration.h"
-#include "Song.h"
-
 #include "SampleTrack.h"
 #include "Shortcuts.h"
-#include "TabBar.h"
-#include "TabButton.h"
+#include "Song.h"
 #include "TimeLineWidget.h"
-
 
 // Platform-specific audio-interface classes.
 #include "AudioAlsa.h"
@@ -96,88 +99,49 @@
 namespace lmms::gui
 {
 
-
-constexpr int BUFFERSIZE_RESOLUTION = 32;
-
-inline void labelWidget(QWidget * w, const QString & txt)
+namespace
 {
-	auto title = new QLabel(txt, w);
-	QFont f = title->font();
-	f.setBold(true);
-	title->setFont(f);
 
-	QBoxLayout * boxLayout = dynamic_cast<QBoxLayout *>(w->layout());
-	assert(boxLayout);
+constexpr int BufferSizeResolution = 32;
 
-	boxLayout->addWidget(title);
+//! How the search compares: without case or accents ("Áudio" is found by "audio")
+auto folded(const QString& text) -> QString
+{
+	auto result = QString{};
+	for (const auto c : text.normalized(QString::NormalizationForm_D))
+	{
+		if (c.category() != QChar::Mark_NonSpacing) { result += c.toLower(); }
+	}
+	return result;
 }
 
-
-
-
-SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
-	QDialog(page),
-	m_tooltips(!ConfigManager::inst()->value(
-			"tooltips", "disabled").toInt()),
-	m_displayWaveform(ConfigManager::inst()->value(
-			"ui", "displaywaveform").toInt()),
-	m_printNoteLabels(ConfigManager::inst()->value(
-			"ui", "printnotelabels").toInt()),
-	m_showFaderTicks(ConfigManager::inst()->value(
-			"ui", "showfaderticks").toInt()),
-	m_compactTrackButtons(ConfigManager::inst()->value(
-			"ui", "compacttrackbuttons").toInt()),
-	m_oneInstrumentTrackWindow(ConfigManager::inst()->value(
-			"ui", "oneinstrumenttrackwindow").toInt()),
-	m_sideBarOnRight(ConfigManager::inst()->value(
-			"ui", "sidebaronright").toInt()),
-	m_letPreviewsFinish(ConfigManager::inst()->value(
-			"ui", "letpreviewsfinish").toInt()),
-	m_trackDeletionWarning(ConfigManager::inst()->value(
-			"ui", "trackdeletionwarning", "1").toInt()),
-	m_mixerChannelDeletionWarning(ConfigManager::inst()->value(
-			"ui", "mixerchanneldeletionwarning", "1").toInt()),
-	m_MMPZ(!ConfigManager::inst()->value(
-			"app", "nommpz").toInt()),
-	m_disableBackup(!ConfigManager::inst()->value(
-			"app", "disablebackup").toInt()),
-	m_openLastProject(ConfigManager::inst()->value(
-			"app", "openlastproject").toInt()),
-	m_detachBehavior{ConfigManager::inst()->value("ui", "detachbehavior", "show")},
-	m_loopMarkerMode{ConfigManager::inst()->value("app", "loopmarkermode", "dual")},
-	m_autoScroll(ConfigManager::inst()->value("ui", "autoscroll", "stepped")),
-	m_lang(ConfigManager::inst()->value(
-			"app", "language")),
-	m_enableAutoSave(ConfigManager::inst()->value(
-			"ui", "enableautosave", "1").toInt()),
-	m_smoothScroll(ConfigManager::inst()->value(
-			"ui", "smoothscroll").toInt()),
-	m_animateAFP(ConfigManager::inst()->value(
-			"ui", "animateafp", "1").toInt()),
-	m_vstEmbedMethod(ConfigManager::inst()->vstEmbedMethod()),
-	m_vstAlwaysOnTop(ConfigManager::inst()->value(
-			"ui", "vstalwaysontop").toInt()),
-	m_disableAutoQuit(ConfigManager::inst()->value(
-			"ui", "disableautoquit", "1").toInt()),
-	m_bufferSize(ConfigManager::inst()->value(
-			"audioengine", "framesperaudiobuffer", QString::number(DEFAULT_BUFFER_SIZE)).toInt()),
-	m_mixSanitization(ConfigManager::inst()->value(
-			"audioengine", "sanitizemix", "1").toInt()),
-	m_sampleRate(ConfigManager::inst()->value(
-			"audioengine", "samplerate").toInt()),
-	m_midiAutoQuantize(ConfigManager::inst()->value(
-			"midi", "autoquantize", "0").toInt() != 0),
-	m_workingDir(QDir::toNativeSeparators(ConfigManager::inst()->workingDir())),
-	m_vstDir(QDir::toNativeSeparators(ConfigManager::inst()->vstDir())),
-	m_ladspaDir(QDir::toNativeSeparators(ConfigManager::inst()->ladspaDir())),
-	m_gigDir(QDir::toNativeSeparators(ConfigManager::inst()->gigDir())),
-	m_sf2Dir(QDir::toNativeSeparators(ConfigManager::inst()->sf2Dir())),
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	m_sf2File(QDir::toNativeSeparators(ConfigManager::inst()->sf2File())),
-#endif
-	m_themeDir(QDir::toNativeSeparators(ConfigManager::inst()->themeDir())),
-	m_backgroundPicFile(QDir::toNativeSeparators(ConfigManager::inst()->backgroundPicFile()))
+//! The texts a control offers (a combo box's choices, a check box's text), for the search
+auto textsOf(QWidget* widget) -> QString
 {
+	auto texts = QStringList{};
+	for (auto* box : widget->findChildren<QComboBox*>())
+	{
+		for (int i = 0; i < box->count(); ++i) { texts << box->itemText(i); }
+	}
+	if (auto* box = qobject_cast<QComboBox*>(widget))
+	{
+		for (int i = 0; i < box->count(); ++i) { texts << box->itemText(i); }
+	}
+	for (auto* button : widget->findChildren<QAbstractButton*>()) { texts << button->text(); }
+	if (auto* button = qobject_cast<QAbstractButton*>(widget)) { texts << button->text(); }
+	for (auto* label : widget->findChildren<QLabel*>()) { texts << label->text(); }
+	return texts.join(' ');
+}
+
+} // namespace
+
+
+
+
+SetupDialog::SetupDialog(ConfigTab tabToOpen, QWidget* page) :
+	QDialog(page)
+{
+	setObjectName("settings");
 	setWindowIcon(embed::getIconPixmap("setup_general"));
 	setWindowTitle(tr("Settings"));
 	if (!page)
@@ -188,915 +152,97 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 
 	Engine::projectJournal()->setJournalling(false);
 
+	m_audioReopen.setSingleShot(true);
+	m_audioReopen.setInterval(400);
+	connect(&m_audioReopen, &QTimer::timeout, this, &SetupDialog::reopenAudioDevice);
+	m_midiReopen.setSingleShot(true);
+	m_midiReopen.setInterval(400);
+	connect(&m_midiReopen, &QTimer::timeout, this, &SetupDialog::reopenMidiClient);
+	m_saveConfig.setSingleShot(true);
+	m_saveConfig.setInterval(500);
+	connect(&m_saveConfig, &QTimer::timeout, this, [] { ConfigManager::inst()->saveConfigFile(); });
 
-	// Main widget.
-	auto main_w = new QWidget(this);
+	auto* layout = new QHBoxLayout(this);
+	layout->setContentsMargins(0, 0, 0, 0);
+	layout->setSpacing(0);
 
-	// Vertical layout.
-	auto vlayout = new QVBoxLayout(this);
-	vlayout->setSpacing(0);
-	vlayout->setContentsMargins(0, 0, 0, 0);
+	// The side: the search over the list of sections
+	auto* side = new QWidget(this);
+	side->setObjectName("settingsSide");
+	side->setFixedWidth(220);
+	auto* sideLayout = new QVBoxLayout(side);
+	sideLayout->setContentsMargins(10, 12, 10, 12);
+	sideLayout->setSpacing(10);
+	m_search = new QLineEdit(side);
+	m_search->setObjectName("settingsSearch");
+	m_search->setPlaceholderText(tr("Search settings…"));
+	m_search->setClearButtonEnabled(true);
+	sideLayout->addWidget(m_search);
+	m_sectionList = new QListWidget(side);
+	m_sectionList->setObjectName("settingsSections");
+	m_sectionList->setFrameShape(QFrame::NoFrame);
+	m_sectionList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	sideLayout->addWidget(m_sectionList, 1);
+	layout->addWidget(side);
 
-	// Horizontal layout.
-	auto hlayout = new QHBoxLayout(main_w);
-	hlayout->setSpacing(0);
-	hlayout->setContentsMargins(0, 0, 0, 0);
+	// The section shown, with the strip offering a restart under it
+	auto* main = new QWidget(this);
+	main->setObjectName("settingsMain");
+	auto* mainLayout = new QVBoxLayout(main);
+	mainLayout->setContentsMargins(0, 0, 0, 0);
+	mainLayout->setSpacing(0);
+	m_pages = new QStackedWidget(main);
+	mainLayout->addWidget(m_pages, 1);
 
-	// Tab bar for the main tabs.
-	m_tabBar = new TabBar(main_w, QBoxLayout::TopToBottom);
-	m_tabBar->setExclusive(true);
-	m_tabBar->setFixedWidth(72);
+	m_restartStrip = new QFrame(main);
+	m_restartStrip->setObjectName("settingsRestartStrip");
+	auto* stripLayout = new QHBoxLayout(m_restartStrip);
+	stripLayout->setContentsMargins(14, 8, 14, 8);
+	m_restartText = new QLabel(m_restartStrip);
+	m_restartText->setWordWrap(true);
+	stripLayout->addWidget(m_restartText, 1);
+	auto* later = new QPushButton(tr("Later"), m_restartStrip);
+	later->setObjectName("settingsRestartLater");
+	auto* restart = new QPushButton(tr("Restart now"), m_restartStrip);
+	restart->setObjectName("settingsRestartNow");
+	stripLayout->addWidget(later);
+	stripLayout->addWidget(restart);
+	connect(later, &QPushButton::clicked, m_restartStrip, &QWidget::hide);
+	connect(restart, &QPushButton::clicked, this, &SetupDialog::restartNow);
+	m_restartStrip->hide();
+	auto* stripMargin = new QHBoxLayout;
+	stripMargin->setContentsMargins(24, 0, 24, 16);
+	stripMargin->addWidget(m_restartStrip);
+	mainLayout->addLayout(stripMargin);
+	layout->addWidget(main, 1);
 
-	// Settings widget.
-	auto settings_w = new QWidget(main_w);
+	buildGeneral();
+	buildAudio();
+	buildMidi();
+	buildRecording();
+	buildPlugins();
+	buildFolders();
+	buildAppearance();
+	buildShortcuts();
+	buildAdvanced();
 
-	QVBoxLayout * settingsLayout = new QVBoxLayout(settings_w);
+	connect(m_sectionList, &QListWidget::currentRowChanged, m_pages, &QStackedWidget::setCurrentIndex);
+	connect(m_search, &QLineEdit::textChanged, this, &SetupDialog::search);
 
-	// General widget.
-	auto general_w = new QWidget(settings_w);
-	auto general_layout = new QVBoxLayout(general_w);
-	general_layout->setSpacing(10);
-	general_layout->setContentsMargins(0, 0, 0, 0);
-	labelWidget(general_w, tr("General"));
-
-	// General scroll area.
-	auto generalScroll = new QScrollArea(general_w);
-	generalScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
-	generalScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-
-	// General controls widget.
-	auto generalControls = new QWidget(general_w);
-
-	// Path selectors layout.
-	auto generalControlsLayout = new QVBoxLayout;
-	generalControlsLayout->setSpacing(10);
-	generalControlsLayout->setContentsMargins(0, 0, 0, 0);
-
-	auto addCheckBox = [&](const QString& ledText, QWidget* parent, QBoxLayout * layout,
-									  bool initialState, const char* toggledSlot, bool showRestartWarning) -> QCheckBox * {
-		auto checkBox = new QCheckBox(ledText, parent);
-		checkBox->setChecked(initialState);
-		connect(checkBox, SIGNAL(toggled(bool)), this, toggledSlot);
-
-		if (showRestartWarning)
+	// The tabs it had, to their sections
+	const auto first = [&] {
+		switch (tabToOpen)
 		{
-			connect(checkBox, SIGNAL(toggled(bool)), this, SLOT(showRestartWarning()));
+		case ConfigTab::PerformanceSettings: return 8;
+		case ConfigTab::AudioSettings: return 1;
+		case ConfigTab::MidiSettings: return 2;
+		case ConfigTab::PathsSettings: return 5;
+		case ConfigTab::ShortcutsSettings: return 7;
+		case ConfigTab::GeneralSettings: break;
 		}
-
-		if (layout)
-		{
-			layout->addWidget(checkBox);
-		}
-
-		return checkBox;
-	};
-
-	// GUI tab.
-	QGroupBox * guiGroupBox = new QGroupBox(tr("Graphical user interface (GUI)"), generalControls);
-	QVBoxLayout * guiGroupLayout = new QVBoxLayout(guiGroupBox);
-
-	addCheckBox(tr("Enable tooltips"), guiGroupBox, guiGroupLayout,
-		m_tooltips, SLOT(toggleTooltips(bool)), true);
-	addCheckBox(tr("Enable all note labels in piano roll"), guiGroupBox, guiGroupLayout,
-		m_printNoteLabels, SLOT(toggleNoteLabels(bool)), false);
-	addCheckBox(tr("Show fader ticks"), guiGroupBox, guiGroupLayout,
-		m_showFaderTicks, SLOT(toggleShowFaderTicks(bool)), false);
-	addCheckBox(tr("Enable compact track buttons"), guiGroupBox, guiGroupLayout,
-		m_compactTrackButtons, SLOT(toggleCompactTrackButtons(bool)), true);
-	addCheckBox(tr("Enable one instrument-track-window mode"), guiGroupBox, guiGroupLayout,
-		m_oneInstrumentTrackWindow, SLOT(toggleOneInstrumentTrackWindow(bool)), true);
-	addCheckBox(tr("Show sidebar on the right-hand side"), guiGroupBox, guiGroupLayout,
-		m_sideBarOnRight, SLOT(toggleSideBarOnRight(bool)), true);
-	addCheckBox(tr("Let sample previews continue when mouse is released"), guiGroupBox, guiGroupLayout,
-		m_letPreviewsFinish, SLOT(toggleLetPreviewsFinish(bool)), false);
-	addCheckBox(tr("Show warning when deleting tracks"), guiGroupBox, guiGroupLayout,
-		m_trackDeletionWarning, SLOT(toggleTrackDeletionWarning(bool)), false);
-	addCheckBox(tr("Show warning when deleting a mixer channel that is in use"), guiGroupBox, guiGroupLayout,
-		m_mixerChannelDeletionWarning,	SLOT(toggleMixerChannelDeletionWarning(bool)), false);
-
-	m_detachBehaviorComboBox = new QComboBox{guiGroupBox};
-
-	m_detachBehaviorComboBox->addItem(tr("Attach and show when closed"), "show");
-	m_detachBehaviorComboBox->addItem(tr("Attach and hide when closed"), "hide");
-	m_detachBehaviorComboBox->addItem(tr("Always detached"), "detached");
-
-	m_detachBehaviorComboBox->setCurrentIndex(m_detachBehaviorComboBox->findData(m_detachBehavior));
-	connect(m_detachBehaviorComboBox, qOverload<int>(&QComboBox::currentIndexChanged),
-		this, &SetupDialog::detachBehaviorChanged);
-
-	guiGroupLayout->addWidget(new QLabel{tr("Detached window behavior"), guiGroupBox});
-	guiGroupLayout->addWidget(m_detachBehaviorComboBox);
-
-	m_loopMarkerComboBox = new QComboBox{guiGroupBox};
-
-	m_loopMarkerComboBox->addItem(tr("Dual-button"), "dual");
-	m_loopMarkerComboBox->addItem(tr("Grab closest"), "closest");
-	m_loopMarkerComboBox->addItem(tr("Handles"), "handles");
-
-	m_loopMarkerComboBox->setCurrentIndex(m_loopMarkerComboBox->findData(m_loopMarkerMode));
-	connect(m_loopMarkerComboBox, qOverload<int>(&QComboBox::currentIndexChanged),
-		this, &SetupDialog::loopMarkerModeChanged);
-
-	guiGroupLayout->addWidget(new QLabel{tr("Loop edit mode"), guiGroupBox});
-	guiGroupLayout->addWidget(m_loopMarkerComboBox);
-
-	m_autoScrollComboBox = new QComboBox{guiGroupBox};
-	m_autoScrollComboBox->addItem(tr("Disabled"), TimeLineWidget::AutoScrollDisabledString);
-	m_autoScrollComboBox->addItem(tr("Stepped (Scroll once the playhead goes out of view)"), TimeLineWidget::AutoScrollSteppedString);
-	m_autoScrollComboBox->addItem(tr("Continuous (Scroll constantly to keep the playhead in the center)"), TimeLineWidget::AutoScrollContinuousString);
-	m_autoScrollComboBox->setCurrentIndex(m_autoScrollComboBox->findData(m_autoScroll));
-	connect(m_autoScrollComboBox, qOverload<int>(&QComboBox::currentIndexChanged),
-		this, [this](){ m_autoScroll = m_autoScrollComboBox->currentData().toString(); });
-
-	guiGroupLayout->addWidget(new QLabel{tr("Default Autoscroll Mode"), guiGroupBox});
-	guiGroupLayout->addWidget(m_autoScrollComboBox);
-
-	// Two columns, to use the page's width: the interface on the left, projects and language on the right
-	auto columns = new QHBoxLayout;
-	columns->setSpacing(16);
-	auto leftColumn = new QVBoxLayout;
-	auto rightColumn = new QVBoxLayout;
-	columns->addLayout(leftColumn, 1);
-	columns->addLayout(rightColumn, 1);
-	generalControlsLayout->addLayout(columns);
-	leftColumn->addWidget(guiGroupBox);
-	leftColumn->addStretch();
-
-	// Projects tab.
-	QGroupBox * projectsGroupBox = new QGroupBox(tr("Projects"), generalControls);
-	QVBoxLayout * projectsGroupLayout = new QVBoxLayout(projectsGroupBox);
-
-	addCheckBox(tr("Compress project files by default"), projectsGroupBox, projectsGroupLayout,
-		m_MMPZ, SLOT(toggleMMPZ(bool)), true);
-	addCheckBox(tr("Create a backup file when saving a project"), projectsGroupBox, projectsGroupLayout,
-		m_disableBackup, SLOT(toggleDisableBackup(bool)), false);
-	addCheckBox(tr("Reopen last project on startup"), projectsGroupBox, projectsGroupLayout,
-		m_openLastProject, SLOT(toggleOpenLastProject(bool)), false);
-	m_newProjectAnalog = new QCheckBox(tr("New projects start with the analog mixer (else the digital one)"),
-		projectsGroupBox);
-	m_newProjectAnalog->setChecked(ConfigManager::inst()->value("mixer", "newprojectanalog", "0").toInt() != 0);
-	projectsGroupLayout->addWidget(m_newProjectAnalog);
-	auto longAudioRow = new QHBoxLayout;
-	m_longAudioSeconds = new QSpinBox(projectsGroupBox);
-	m_longAudioSeconds->setRange(1, 3600);
-	m_longAudioSeconds->setSuffix(tr(" s"));
-	m_longAudioSeconds->setValue(static_cast<int>(SampleTrack::longAudioSeconds()));
-	longAudioRow->addWidget(new QLabel(tr("Audio files longer than this become audio tracks (shorter: samples)"),
-		projectsGroupBox), 1);
-	longAudioRow->addWidget(m_longAudioSeconds);
-	projectsGroupLayout->addLayout(longAudioRow);
-
-	rightColumn->addWidget(projectsGroupBox);
-	rightColumn->addSpacing(10);
-
-	// Language tab.
-	QGroupBox * languageGroupBox = new QGroupBox(tr("Language"), generalControls);
-	QVBoxLayout * languageGroupLayout = new QVBoxLayout(languageGroupBox);
-
-	auto changeLang = new QComboBox(languageGroupBox);
-	languageGroupLayout->addWidget(changeLang);
-
-	QDir dir(ConfigManager::inst()->localeDir());
-	QStringList fileNames = dir.entryList(QStringList("*.qm"));
-	for(int i = 0; i < fileNames.size(); ++i)
-	{
-		// Extract ISO-639 language code from filename
-		fileNames[i].truncate(fileNames[i].lastIndexOf('.'));
-		// Skip invalid language codes
-		QLocale locale(fileNames[i]);
-		if (locale.language() == QLocale::C)
-		{
-			continue;
-		}
-		// Display the native language name or fallback to the English name
-		QString langName = locale.nativeLanguageName();
-		if (langName.isEmpty())
-		{
-			langName = QLocale::languageToString(locale.language());
-		}
-		m_languages.append(fileNames[i]);
-		changeLang->addItem(langName);
-	}
-
-	// If language unset, fallback to system language when available.
-	if(m_lang == "")
-	{
-		QString tmp = QLocale::system().name().left(2);
-		if(m_languages.contains(tmp))
-		{
-			m_lang = tmp;
-		}
-		else
-		{
-			m_lang = "en";
-		}
-	}
-
-	for(int i = 0; i < changeLang->count(); ++i)
-	{
-		if(m_lang == m_languages.at(i))
-		{
-			changeLang->setCurrentIndex(i);
-			break;
-		}
-	}
-
-	connect(changeLang, SIGNAL(currentIndexChanged(int)),
-			this, SLOT(setLanguage(int)));
-	connect(changeLang, SIGNAL(currentIndexChanged(int)),
-			this, SLOT(showRestartWarning()));
-
-	rightColumn->addWidget(languageGroupBox);
-	rightColumn->addStretch();
-
-	// General layout ordering.
-	generalControlsLayout->addStretch();
-	generalControls->setLayout(generalControlsLayout);
-	generalScroll->setWidget(generalControls);
-	generalScroll->setWidgetResizable(true);
-	general_layout->addWidget(generalScroll, 1);
-
-
-
-	// Performance widget.
-	auto performance_w = new QWidget(settings_w);
-	auto performance_layout = new QVBoxLayout(performance_w);
-	performance_layout->setSpacing(10);
-	performance_layout->setContentsMargins(0, 0, 0, 0);
-	labelWidget(performance_w,
-			tr("Performance"));
-
-
-	// Autosave tab.
-	QGroupBox * autoSaveBox = new QGroupBox(tr("Autosave"), performance_w);
-	QVBoxLayout * autoSaveLayout = new QVBoxLayout(autoSaveBox);
-
-	m_autoSave = addCheckBox(tr("Enable autosave"), autoSaveBox, autoSaveLayout,
-		m_enableAutoSave, SLOT(toggleAutoSave(bool)), false);
-	auto autoSaveInfo = new QLabel(tr("The project is kept for a recovery two seconds after each change (and every "
-		"half minute while it keeps changing), also while it plays or records: after a crash, it is offered when "
-		"the program starts, with the recordings that were in progress."), autoSaveBox);
-	autoSaveInfo->setWordWrap(true);
-	autoSaveLayout->addWidget(autoSaveInfo);
-
-
-	// UI effect vs. performance tab.
-	QGroupBox * uiFxBox = new QGroupBox(tr("User interface (UI) effects vs. performance"), performance_w);
-	QVBoxLayout * uiFxLayout = new QVBoxLayout(uiFxBox);
-
-	addCheckBox(tr("Smooth scroll in song editor"), uiFxBox, uiFxLayout,
-		m_smoothScroll, SLOT(toggleSmoothScroll(bool)), false);
-	addCheckBox(tr("Display playback cursor in AudioFileProcessor"), uiFxBox, uiFxLayout,
-		m_animateAFP, SLOT(toggleAnimateAFP(bool)), false);
-
-
-	// Plugins group
-	QGroupBox * pluginsBox = new QGroupBox(tr("Plugins"), performance_w);
-	QVBoxLayout * pluginsLayout = new QVBoxLayout(pluginsBox);
-
-	m_vstEmbedLbl = new QLabel(pluginsBox);
-	m_vstEmbedLbl->setText(tr("VST plugins embedding:"));
-	pluginsLayout->addWidget(m_vstEmbedLbl);
-
-	m_vstEmbedComboBox = new QComboBox(pluginsBox);
-
-	QStringList embedMethods = ConfigManager::availableVstEmbedMethods();
-	m_vstEmbedComboBox->addItem(tr("No embedding"), "none");
-	if(embedMethods.contains("qt"))
-	{
-		m_vstEmbedComboBox->addItem(tr("Embed using Qt API"), "qt");
-	}
-	if(embedMethods.contains("win32"))
-	{
-		m_vstEmbedComboBox->addItem(tr("Embed using native Win32 API"), "win32");
-	}
-	if(embedMethods.contains("xembed"))
-	{
-		m_vstEmbedComboBox->addItem(tr("Embed using XEmbed protocol"), "xembed");
-	}
-	m_vstEmbedComboBox->setCurrentIndex(m_vstEmbedComboBox->findData(m_vstEmbedMethod));
-	connect(m_vstEmbedComboBox, SIGNAL(currentIndexChanged(int)),
-			this, SLOT(vstEmbedMethodChanged()));
-	pluginsLayout->addWidget(m_vstEmbedComboBox);
-
-	m_vstAlwaysOnTopCheckBox = addCheckBox(tr("Keep plugin windows on top when not embedded"), pluginsBox, pluginsLayout,
-		m_vstAlwaysOnTop, SLOT(toggleVSTAlwaysOnTop(bool)), false);
-
-	addCheckBox(tr("Keep effects running even without input"), pluginsBox, pluginsLayout,
-		m_disableAutoQuit, SLOT(toggleDisableAutoQuit(bool)), false);
-
-	// The plugins a crash happened in: not loaded until allowed here (on OK)
-	const auto suspects = PluginGuard::suspects();
-	if (!suspects.isEmpty())
-	{
-		auto* suspectsLabel = new QLabel(tr("Not loaded, since the program closed unexpectedly while they ran "
-			"(projects keep their settings):"), pluginsBox);
-		suspectsLabel->setWordWrap(true);
-		pluginsLayout->addWidget(suspectsLabel);
-		m_suspectsList = new QListWidget(pluginsBox);
-		m_suspectsList->setSelectionMode(QAbstractItemView::ExtendedSelection);
-		for (const auto& identity : suspects)
-		{
-			auto* item = new QListWidgetItem(PluginGuard::displayName(identity), m_suspectsList);
-			item->setData(Qt::UserRole, identity);
-			item->setToolTip(identity);
-		}
-		m_suspectsList->setMaximumHeight(m_suspectsList->sizeHintForRow(0) * std::min(4, static_cast<int>(suspects.size()))
-			+ 2 * m_suspectsList->frameWidth() + 4);
-		pluginsLayout->addWidget(m_suspectsList);
-		auto* allowButton = new QPushButton(tr("Load again"), pluginsBox);
-		allowButton->setToolTip(tr("The selected plugins are loaded again, from the next time a project opens"));
-		allowButton->setEnabled(false);
-		connect(m_suspectsList, &QListWidget::itemSelectionChanged, allowButton,
-			[this, allowButton] { allowButton->setEnabled(!m_suspectsList->selectedItems().isEmpty()); });
-		connect(allowButton, &QPushButton::clicked, this, [this] {
-			for (auto* item : m_suspectsList->selectedItems())
-			{
-				m_allowedSuspects << item->data(Qt::UserRole).toString();
-				delete item;
-			}
-		});
-		pluginsLayout->addWidget(allowButton, 0, Qt::AlignLeft);
-	}
-
-
-	// Performance layout ordering.
-	performance_layout->addWidget(autoSaveBox);
-	performance_layout->addWidget(uiFxBox);
-	performance_layout->addWidget(pluginsBox);
-	performance_layout->addStretch();
-
-
-
-	// Audio widget.
-	auto audio_w = new QWidget(settings_w);
-	auto audio_layout = new QVBoxLayout(audio_w);
-	audio_layout->setSpacing(10);
-	audio_layout->setContentsMargins(0, 0, 0, 0);
-	labelWidget(audio_w,
-			tr("Audio"));
-
-	// Audio interface group
-	QGroupBox * audioInterfaceBox = new QGroupBox(tr("Audio interface"), audio_w);
-	QVBoxLayout * audioInterfaceLayout = new QVBoxLayout(audioInterfaceBox);
-
-	m_audioInterfaces = new QComboBox(audioInterfaceBox);
-	audioInterfaceLayout->addWidget(m_audioInterfaces);
-
-	// Ifaces-settings-widget.
-	auto as_w = new QWidget(audio_w);
-
-	auto as_w_layout = new QHBoxLayout(as_w);
-	as_w_layout->setSpacing(0);
-	as_w_layout->setContentsMargins(0, 0, 0, 0);
-
-#ifdef LMMS_HAVE_JACK
-	m_audioIfaceSetupWidgets[AudioJack::name()] =
-			new AudioJackSetupWidget(as_w);
-#endif
-
-#ifdef LMMS_HAVE_ALSA
-	m_audioIfaceSetupWidgets[AudioAlsa::name()] =
-			new AudioAlsaSetupWidget(as_w);
-#endif
-
-#ifdef LMMS_HAVE_PULSEAUDIO
-	m_audioIfaceSetupWidgets[AudioPulseAudio::name()] =
-			new AudioPulseAudioSetupWidget(as_w);
-#endif
-
-#ifdef LMMS_BUILD_APPLE
-	m_audioIfaceSetupWidgets[AudioCoreAudio::name()] = new AudioCoreAudioSetupWidget(as_w);
-#endif
-
-#ifdef LMMS_HAVE_PORTAUDIO
-	m_audioIfaceSetupWidgets[AudioPortAudio::name()] =
-			new AudioPortAudioSetupWidget(as_w);
-#endif
-
-#ifdef LMMS_HAVE_SDL
-	m_audioIfaceSetupWidgets[AudioSdl::name()] =
-			new AudioSdlSetupWidget(as_w);
-#endif
-
-#ifdef LMMS_HAVE_SNDIO
-	m_audioIfaceSetupWidgets[AudioSndio::name()] =
-			new AudioSndioSetupWidget(as_w);
-#endif
-
-	m_audioIfaceSetupWidgets[AudioDummy::name()] =
-			new AudioDummySetupWidget(as_w);
-
-
-	for(AswMap::iterator it = m_audioIfaceSetupWidgets.begin();
-		it != m_audioIfaceSetupWidgets.end(); ++it)
-	{
-		m_audioIfaceNames[
-			AudioDeviceSetupWidget::tr(it.key().toUtf8())] = it.key();
-	}
-	for(trMap::iterator it = m_audioIfaceNames.begin();
-		it != m_audioIfaceNames.end(); ++it)
-	{
-		QWidget * audioWidget = m_audioIfaceSetupWidgets[it.value()];
-		audioWidget->hide();
-		as_w_layout->addWidget(audioWidget);
-		m_audioInterfaces->addItem(it.key());
-	}
-
-	// If no preferred audio device is saved, save the current one.
-	QString audioDevName = ConfigManager::inst()->value("audioengine", "audiodev");
-	if (m_audioInterfaces->findText(audioDevName) < 0)
-	{
-		audioDevName = Engine::audioEngine()->audioDevName();
-		ConfigManager::inst()->setValue("audioengine", "audiodev", audioDevName);
-	}
-	m_audioInterfaces->
-		setCurrentIndex(m_audioInterfaces->findText(audioDevName));
-	m_audioIfaceSetupWidgets[audioDevName]->show();
-
-	connect(m_audioInterfaces, &QComboBox::textActivated, this, &SetupDialog::audioInterfaceChanged);
-
-	auto sampleRateBox = new QGroupBox{tr("Sample rate"), audio_w};
-
-	m_sampleRateSlider = new QSlider{Qt::Horizontal};
-	m_sampleRateSlider->setRange(0, SUPPORTED_SAMPLERATES.size() - 1);
-	m_sampleRateSlider->setTickPosition(QSlider::TicksBelow);
-
-	auto sampleRateResetButton = new QPushButton{embed::getIconPixmap("reload"), ""};
-	sampleRateResetButton->setFixedSize(32, 32);
-
-	auto sampleRateSubLayout = new QHBoxLayout{};
-	sampleRateSubLayout->addWidget(m_sampleRateSlider);
-	sampleRateSubLayout->addWidget(sampleRateResetButton);
-
-	auto sampleRateLabel = new QLabel{sampleRateBox};
-	auto sampleRateLayout = new QVBoxLayout{sampleRateBox};
-	sampleRateLayout->addLayout(sampleRateSubLayout);
-	sampleRateLayout->addWidget(sampleRateLabel);
-
-	auto setSampleRate = [this, sampleRateLabel](int sampleRate)
-	{	
-		const auto it = std::find(SUPPORTED_SAMPLERATES.begin(), SUPPORTED_SAMPLERATES.end(), sampleRate);
-		const auto index = it == SUPPORTED_SAMPLERATES.end() ? 0 : std::distance(SUPPORTED_SAMPLERATES.begin(), it);
-
-		m_sampleRate = SUPPORTED_SAMPLERATES[index];
-		m_sampleRateSlider->setValue(index);
-		sampleRateLabel->setText(tr("Sample rate: %1").arg(m_sampleRate));
-	};
-
-	setSampleRate(m_sampleRate);
-
-
-	connect(m_sampleRateSlider, &QSlider::valueChanged, this,
-		[setSampleRate](int value) { setSampleRate(SUPPORTED_SAMPLERATES[value]); });
-
-	connect(sampleRateResetButton, &QPushButton::clicked, this,
-		[setSampleRate] { setSampleRate(SUPPORTED_SAMPLERATES.front()); });
-
-	// Buffer size group
-	QGroupBox * bufferSizeBox = new QGroupBox(tr("Buffer size"), audio_w);
-	QVBoxLayout * bufferSizeLayout = new QVBoxLayout(bufferSizeBox);
-	QHBoxLayout * bufferSizeSubLayout = new QHBoxLayout();
-
-	m_bufferSizeSlider = new QSlider(Qt::Horizontal, bufferSizeBox);
-	m_bufferSizeSlider->setRange(1, MAXIMUM_BUFFER_SIZE / BUFFERSIZE_RESOLUTION);
-	m_bufferSizeSlider->setTickInterval(8);
-	m_bufferSizeSlider->setPageStep(8);
-	m_bufferSizeSlider->setValue(m_bufferSize / BUFFERSIZE_RESOLUTION);
-	m_bufferSizeSlider->setTickPosition(QSlider::TicksBelow);
-
-	connect(m_bufferSizeSlider, SIGNAL(valueChanged(int)),
-			this, SLOT(setBufferSize(int)));
-	bufferSizeSubLayout->addWidget(m_bufferSizeSlider, 1);
-
-	auto bufferSize_reset_btn = new QPushButton(embed::getIconPixmap("reload"), "", bufferSizeBox);
-	bufferSize_reset_btn->setFixedSize(32, 32);
-	connect(bufferSize_reset_btn, SIGNAL(clicked()),
-		this, SLOT(resetBufferSize()));
-	bufferSize_reset_btn->setToolTip(
-		tr("Reset to default value"));
-
-	bufferSizeSubLayout->addWidget(bufferSize_reset_btn);
-	bufferSizeLayout->addLayout(bufferSizeSubLayout);
-
-	m_bufferSizeLbl = new QLabel(bufferSizeBox);
-	bufferSizeLayout->addWidget(m_bufferSizeLbl);
-
-	m_bufferSizeWarnLbl = new QLabel(bufferSizeBox);
-	m_bufferSizeWarnLbl->setWordWrap(true);
-	bufferSizeLayout->addWidget(m_bufferSizeWarnLbl);
-
-	setBufferSize(m_bufferSizeSlider->value());
-
-	const auto otherBox = new QGroupBox(tr("Other"), audio_w);
-	const auto otherBoxLayout = new QVBoxLayout{otherBox};
-
-	const auto enableMixSanitizationCheckbox = addCheckBox(tr("Enable mix sanitization"), otherBox, otherBoxLayout,
-		m_mixSanitization, SLOT(toggleMixSanitization(bool)), false);
-	enableMixSanitizationCheckbox->setToolTip(tr("Provides protection from any plugins or tracks that generate "
-												 "corrupted audio, but may negatively impact performance."));
-
-	// Recording
-	const auto recordingBox = new QGroupBox(tr("Recording"), audio_w);
-	const auto recordingLayout = new QFormLayout{recordingBox};
-	m_latencyOffset = new QSpinBox(recordingBox);
-	m_latencyOffset->setRange(-48000, 48000);
-	m_latencyOffset->setSuffix(tr(" frames"));
-	m_latencyOffset->setValue(ConfigManager::inst()->value("recording", "latencyoffset", "0").toInt());
-	m_latencyOffset->setToolTip(tr("Added to the latencies the audio interface reports, to align recordings exactly "
-		"with what was heard (measure it with a cable from an output to an input)"));
-	// Measured with a cable from an output to an input (see LatencyCalibration)
-	auto* calibrateButton = new QPushButton(tr("Measure..."), recordingBox);
-	calibrateButton->setToolTip(tr("Plays a pulse and records it back through a cable from an output to an input, "
-		"and sets the calibration from where it arrives"));
-	connect(calibrateButton, &QPushButton::clicked, this, &SetupDialog::measureLatency);
-	auto* calibrationRow = new QHBoxLayout{};
-	calibrationRow->addWidget(m_latencyOffset, 1);
-	calibrationRow->addWidget(calibrateButton);
-	recordingLayout->addRow(tr("Latency calibration"), calibrationRow);
-	m_preRoll = new QComboBox(recordingBox);
-	for (const int bars : {0, 1, 2, 4}) { m_preRoll->addItem(bars == 0 ? tr("Off") : tr("%n bar(s)", "", bars), bars); }
-	m_preRoll->setCurrentIndex(std::max(0, m_preRoll->findData(ConfigManager::inst()->value("recording", "prerollbars", "0").toInt())));
-	recordingLayout->addRow(tr("Pre-roll"), m_preRoll);
-	m_countIn = new QCheckBox(tr("The metronome clicks during the pre-roll"), recordingBox);
-	m_countIn->setChecked(ConfigManager::inst()->value("recording", "countin", "0").toInt() != 0);
-	recordingLayout->addRow(tr("Count-in"), m_countIn);
-	m_recordInLanes = new QCheckBox(tr("Each pass on a lane of its own, the latest on top (as in REAPER)"), recordingBox);
-	m_recordInLanes->setChecked(ConfigManager::inst()->value("recording", "lanes", "1").toInt() != 0);
-	m_recordInLanes->setToolTip(tr("Off: recording is simpler, the new take replaces what it covers on the track, and "
-		"in a loop only the last pass is kept"));
-	recordingLayout->addRow(tr("Lanes"), m_recordInLanes);
-
-	// The metronome (heard while monitoring, never in an export)
-	auto* metronomeRow = new QHBoxLayout{};
-	m_metronomeWhen = new QComboBox(recordingBox);
-	m_metronomeWhen->addItem(tr("While playing and recording"), 0);
-	m_metronomeWhen->addItem(tr("Only while recording"), 1);
-	m_metronomeWhen->setCurrentIndex(ConfigManager::inst()->value("metronome", "onlyrecording", "0").toInt() != 0 ? 1 : 0);
-	m_metronomeVolume = new QDoubleSpinBox(recordingBox);
-	m_metronomeVolume->setRange(-60.0, 12.0);
-	m_metronomeVolume->setDecimals(1);
-	m_metronomeVolume->setSuffix(tr(" dB"));
-	m_metronomeVolume->setValue(ConfigManager::inst()->value("metronome", "volume", "0").toDouble());
-	m_metronomeAccent = new QCheckBox(tr("Accent on the first beat"), recordingBox);
-	m_metronomeAccent->setChecked(ConfigManager::inst()->value("metronome", "accent", "1").toInt() != 0);
-	metronomeRow->addWidget(m_metronomeWhen, 1);
-	metronomeRow->addWidget(new QLabel(tr("Volume"), recordingBox));
-	metronomeRow->addWidget(m_metronomeVolume);
-	metronomeRow->addWidget(m_metronomeAccent);
-	recordingLayout->addRow(tr("Metronome"), metronomeRow);
-
-	// Audio layout ordering.
-	audio_layout->addWidget(audioInterfaceBox);
-	audio_layout->addWidget(as_w);
-	audio_layout->addWidget(sampleRateBox);
-	audio_layout->addWidget(bufferSizeBox);
-	audio_layout->addWidget(recordingBox);
-	audio_layout->addWidget(otherBox);
-	audio_layout->addStretch();
-
-	// The device, its own settings, the rate and the buffer: saving opens the device again with them (no restart);
-	// the recording settings do not need it
-	const auto audioChanged = [this] { m_audioChanged = true; };
-	for (auto* widget : audio_w->findChildren<QWidget*>())
-	{
-		if (widget == recordingBox || recordingBox->isAncestorOf(widget) || widget == otherBox || otherBox->isAncestorOf(widget))
-		{
-			continue;
-		}
-		if (auto* box = qobject_cast<QComboBox*>(widget)) { connect(box, &QComboBox::currentIndexChanged, this, audioChanged); }
-		else if (auto* slider = qobject_cast<QAbstractSlider*>(widget)) { connect(slider, &QAbstractSlider::valueChanged, this, audioChanged); }
-		else if (auto* spin = qobject_cast<QSpinBox*>(widget)) { connect(spin, &QSpinBox::valueChanged, this, audioChanged); }
-		else if (auto* button = qobject_cast<QAbstractButton*>(widget); button && button->isCheckable())
-		{
-			connect(button, &QAbstractButton::toggled, this, audioChanged);
-		}
-	}
-
-
-
-	// MIDI widget.
-	auto midi_w = new QWidget(settings_w);
-	auto midi_layout = new QVBoxLayout(midi_w);
-	midi_layout->setSpacing(10);
-	midi_layout->setContentsMargins(0, 0, 0, 0);
-	labelWidget(midi_w, tr("MIDI"));
-
-	// MIDI interface group
-	QGroupBox * midiInterfaceBox = new QGroupBox(tr("MIDI interface"), midi_w);
-	QVBoxLayout * midiInterfaceLayout = new QVBoxLayout(midiInterfaceBox);
-
-	m_midiInterfaces = new QComboBox(midiInterfaceBox);
-	midiInterfaceLayout->addWidget(m_midiInterfaces);
-
-	// Ifaces-settings-widget.
-	auto ms_w = new QWidget(midi_w);
-
-	auto ms_w_layout = new QHBoxLayout(ms_w);
-	ms_w_layout->setSpacing(0);
-	ms_w_layout->setContentsMargins(0, 0, 0, 0);
-
-#ifdef LMMS_HAVE_ALSA
-	m_midiIfaceSetupWidgets[MidiAlsaSeq::name()] =
-			MidiSetupWidget::create<MidiAlsaSeq>(ms_w);
-	m_midiIfaceSetupWidgets[MidiAlsaRaw::name()] =
-			MidiSetupWidget::create<MidiAlsaRaw>(ms_w);
-#endif
-
-#ifdef LMMS_HAVE_JACK
-	m_midiIfaceSetupWidgets[MidiJack::name()] =
-			MidiSetupWidget::create<MidiJack>(ms_w);
-#endif
-
-#ifdef LMMS_HAVE_SNDIO
-	m_midiIfaceSetupWidgets[MidiSndio::name()] =
-			MidiSetupWidget::create<MidiSndio>(ms_w);
-#endif
-
-#ifdef LMMS_HAVE_WINMM
-	m_midiIfaceSetupWidgets[MidiWinMM::name()] =
-			MidiSetupWidget::create<MidiWinMM>(ms_w);
-#endif
-
-#ifdef LMMS_BUILD_APPLE
-    m_midiIfaceSetupWidgets[MidiApple::name()] =
-			MidiSetupWidget::create<MidiApple>(ms_w);
-#endif
-
-	m_midiIfaceSetupWidgets[MidiDummy::name()] =
-			MidiSetupWidget::create<MidiDummy>(ms_w);
-
-
-	for(MswMap::iterator it = m_midiIfaceSetupWidgets.begin();
-		it != m_midiIfaceSetupWidgets.end(); ++it)
-	{
-		m_midiIfaceNames[
-			MidiSetupWidget::tr(it.key().toUtf8())] = it.key();
-	}
-	for(trMap::iterator it = m_midiIfaceNames.begin();
-		it != m_midiIfaceNames.end(); ++it)
-	{
-		QWidget * midiWidget = m_midiIfaceSetupWidgets[it.value()];
-		midiWidget->hide();
-		ms_w_layout->addWidget(midiWidget);
-		m_midiInterfaces->addItem(it.key());
-	}
-
-	QString midiDevName = ConfigManager::inst()->value("audioengine", "mididev");
-	if (m_midiInterfaces->findText(midiDevName) < 0)
-	{
-		midiDevName = Engine::audioEngine()->midiClientName();
-		ConfigManager::inst()->setValue("audioengine", "mididev", midiDevName);
-	}
-	m_midiInterfaces->setCurrentIndex(m_midiInterfaces->findText(midiDevName));
-	m_midiIfaceSetupWidgets[midiDevName]->show();
-
-	connect(m_midiInterfaces, &QComboBox::textActivated, this, &SetupDialog::midiInterfaceChanged);
-
-	// MIDI autoassign group
-	QGroupBox * midiAutoAssignBox = new QGroupBox(tr("Automatically assign MIDI controller to selected track"), midi_w);
-	QVBoxLayout * midiAutoAssignLayout = new QVBoxLayout(midiAutoAssignBox);
-
-	m_assignableMidiDevices = new QComboBox(midiAutoAssignBox);
-	midiAutoAssignLayout->addWidget(m_assignableMidiDevices);
-	m_assignableMidiDevices->addItem("none");
-	if ( !Engine::audioEngine()->midiClient()->isRaw() )
-	{
-		m_assignableMidiDevices->addItems(Engine::audioEngine()->midiClient()->readablePorts());
-	}
-	else
-	{
-		m_assignableMidiDevices->addItem("all");
-	}
-	int current = m_assignableMidiDevices->findText(ConfigManager::inst()->value("midi", "midiautoassign"));
-	if (current >= 0)
-	{
-		m_assignableMidiDevices->setCurrentIndex(current);
-	}
-
-	// MIDI Recording tab
-	auto* midiRecordingTab = new QGroupBox(tr("Behavior when recording"), midi_w);
-	auto* midiRecordingLayout = new QVBoxLayout(midiRecordingTab);
-	{
-		auto *box = addCheckBox(tr("Auto-quantize notes in Piano Roll"),
-								midiRecordingTab, midiRecordingLayout,
-								m_midiAutoQuantize, SLOT(toggleMidiAutoQuantization(bool)),
-								false);
-		box->setToolTip(tr("If enabled, notes will be automatically quantized when recording them from a MIDI controller. If disabled, they are always recorded at the highest possible resolution."));
-	}
-
-	// MIDI layout ordering.
-	midi_layout->addWidget(midiInterfaceBox);
-	midi_layout->addWidget(ms_w);
-	midi_layout->addWidget(midiAutoAssignBox);
-	midi_layout->addWidget(midiRecordingTab);
-	midi_layout->addStretch();
-
-
-
-	// Paths widget.
-	auto paths_w = new QWidget(settings_w);
-
-	auto paths_layout = new QVBoxLayout(paths_w);
-	paths_layout->setSpacing(10);
-	paths_layout->setContentsMargins(0, 0, 0, 0);
-
-	labelWidget(paths_w, tr("Paths"));
-
-
-	// Paths scroll area.
-	auto pathsScroll = new QScrollArea(paths_w);
-	pathsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
-	pathsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-
-	// Path selectors widget.
-	auto pathSelectors = new QWidget(paths_w);
-
-	// Path selectors layout.
-	auto pathSelectorsLayout = new QVBoxLayout;
-	pathSelectorsLayout->setSpacing(10);
-	pathSelectorsLayout->setContentsMargins(0, 0, 0, 0);
-
-	auto addPathEntry = [&](const QString& caption, const QString& content, const char* setSlot, const char* openSlot,
-							QLineEdit*& lineEdit, const char* pixmap = "project_open") {
-		auto pathEntryGroupBox = new QGroupBox(caption, pathSelectors);
-		QHBoxLayout * pathEntryLayout = new QHBoxLayout(pathEntryGroupBox);
-
-		lineEdit = new QLineEdit(content, pathEntryGroupBox);
-		connect(lineEdit, SIGNAL(textChanged(const QString&)),
-			this, setSlot);
-
-		pathEntryLayout->addWidget(lineEdit, 1);
-
-		auto selectBtn = new QPushButton(embed::getIconPixmap(pixmap, 16, 16), "", pathEntryGroupBox);
-		selectBtn->setFixedSize(24, 24);
-		connect(selectBtn, SIGNAL(clicked()), this, openSlot);
-
-		pathEntryLayout->addWidget(selectBtn, 0);
-
-		pathSelectorsLayout->addWidget(pathEntryGroupBox);
-		pathSelectorsLayout->addSpacing(10);
-	};
-
-	addPathEntry(tr("LinuxMusic working directory"), m_workingDir,
-		SLOT(setWorkingDir(const QString&)),
-		SLOT(openWorkingDir()),
-		m_workingDirLineEdit);
-	addPathEntry(tr("VST plugins directory"), m_vstDir,
-		SLOT(setVSTDir(const QString&)),
-		SLOT(openVSTDir()),
-		m_vstDirLineEdit);
-	addPathEntry(tr("LADSPA plugins directories"), m_ladspaDir,
-		SLOT(setLADSPADir(const QString&)),
-		SLOT(openLADSPADir()),
-		m_ladspaDirLineEdit, "add_folder");
-	addPathEntry(tr("SF2 directory"), m_sf2Dir,
-		SLOT(setSF2Dir(const QString&)),
-		SLOT(openSF2Dir()),
-		m_sf2DirLineEdit);
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	addPathEntry(tr("Default SF2"), m_sf2File,
-		SLOT(setSF2File(const QString&)),
-		SLOT(openSF2File()),
-		m_sf2FileLineEdit);
-#endif
-	addPathEntry(tr("GIG directory"), m_gigDir,
-		SLOT(setGIGDir(const QString&)),
-		SLOT(openGIGDir()),
-		m_gigDirLineEdit);
-	addPathEntry(tr("Theme directory"), m_themeDir,
-		SLOT(setThemeDir(const QString&)),
-		SLOT(openThemeDir()),
-		m_themeDirLineEdit);
-	// (No background artwork: the pages cover the workspace)
-	m_backgroundPicFileLineEdit = nullptr;
-
-	pathSelectorsLayout->addStretch();
-
-	pathSelectors->setLayout(pathSelectorsLayout);
-
-	pathsScroll->setWidget(pathSelectors);
-	pathsScroll->setWidgetResizable(true);
-
-	paths_layout->addWidget(pathsScroll, 1);
-	paths_layout->addStretch();
-
-	// Shortcuts: each action's key, changeable, with its default back on a click
-	auto shortcuts_w = new QWidget(settings_w);
-	auto shortcutsLayout = new QVBoxLayout(shortcuts_w);
-	shortcutsLayout->setSpacing(10);
-	shortcutsLayout->setContentsMargins(0, 0, 0, 0);
-	labelWidget(shortcuts_w, tr("Shortcuts"));
-	auto shortcutTable = new QTableWidget(static_cast<int>(Shortcuts::actions().size()), 3, shortcuts_w);
-	shortcutTable->setHorizontalHeaderLabels({tr("Action"), tr("Key"), QString{}});
-	shortcutTable->verticalHeader()->hide();
-	shortcutTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-	shortcutTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
-	shortcutTable->setColumnWidth(1, 220);
-	shortcutTable->setSelectionMode(QAbstractItemView::NoSelection);
-	auto row = 0;
-	for (const auto& action : Shortcuts::actions())
-	{
-		auto label = new QTableWidgetItem(Shortcuts::text(action));
-		label->setFlags(Qt::ItemIsEnabled);
-		shortcutTable->setItem(row, 0, label);
-		auto edit = new QKeySequenceEdit(Shortcuts::key(action.id), shortcutTable);
-		edit->setMaximumSequenceLength(1);
-		shortcutTable->setCellWidget(row, 1, edit);
-		connect(edit, &QKeySequenceEdit::keySequenceChanged, this, [this] { m_changed = true; });
-		auto reset = new QPushButton(tr("Default"), shortcutTable);
-		connect(reset, &QPushButton::clicked, edit, [edit, fallback = action.fallback] { edit->setKeySequence(fallback); });
-		shortcutTable->setCellWidget(row, 2, reset);
-		m_shortcutEdits.emplace_back(action.id, edit);
-		++row;
-	}
-	shortcutsLayout->addWidget(new QLabel(tr("The other keys of the editors and the menus' keys are fixed."),
-		shortcuts_w));
-	shortcutsLayout->addWidget(shortcutTable, 1);
-
-	// Add all main widgets to the layout of the settings widget
-	// This is needed so that we automatically get the correct sizes.
-	settingsLayout->addWidget(general_w);
-	settingsLayout->addWidget(performance_w);
-	settingsLayout->addWidget(audio_w);
-	settingsLayout->addWidget(midi_w);
-	settingsLayout->addWidget(paths_w);
-	settingsLayout->addWidget(shortcuts_w);
-
-	// Major tabs ordering.
-	m_tabBar->addTab(general_w,
-			tr("General"), 0, false, true, false)->setIcon(
-					embed::getIconPixmap("setup_general"));
-	m_tabBar->addTab(performance_w,
-			tr("Performance"), 1, false, true, false)->setIcon(
-					embed::getIconPixmap("setup_performance"));
-	m_tabBar->addTab(audio_w,
-			tr("Audio"), 2, false, true, false)->setIcon(
-					embed::getIconPixmap("setup_audio"));
-	m_tabBar->addTab(midi_w,
-			tr("MIDI"), 3, false, true, false)->setIcon(
-					embed::getIconPixmap("setup_midi"));
-	m_tabBar->addTab(paths_w,
-			tr("Paths"), 4, false, true, false)->setIcon(
-					embed::getIconPixmap("setup_directories"));
-	m_tabBar->addTab(shortcuts_w,
-			tr("Shortcuts"), 5, true, true, false)->setIcon(
-					embed::getIconPixmap("setup_shortcuts", 64, 64));
-
-	m_tabBar->setActiveTab(static_cast<int>(tab_to_open));
-
-	// Horizontal layout ordering.
-	hlayout->addSpacing(2);
-	hlayout->addWidget(m_tabBar);
-	hlayout->addSpacing(10);
-	hlayout->addWidget(settings_w);
-	hlayout->addSpacing(10);
-
-	// Extras widget and layout.
-	auto extras_w = new QWidget(this);
-	auto extras_layout = new QHBoxLayout(extras_w);
-	extras_layout->setSpacing(0);
-	extras_layout->setContentsMargins(0, 0, 0, 0);
-
-	// Restart warning label.
-	restartWarningLbl = new QLabel(
-			tr("Some changes require restarting."), extras_w);
-	restartWarningLbl->hide();
-
-	// Extras layout ordering.
-	extras_layout->addSpacing(10);
-	extras_layout->addWidget(restartWarningLbl);
-	extras_layout->addStretch();
-	if (page)
-	{
-		// As a page: Save applies them; leaving the page with changes asks (see hasChanges())
-		auto save = new QPushButton(embed::getIconPixmap("apply"), tr("Save"), extras_w);
-		connect(save, &QPushButton::clicked, this, &SetupDialog::accept);
-		extras_layout->addWidget(save);
-	}
-	else
-	{
-		// OK button.
-		auto ok_btn = new QPushButton(embed::getIconPixmap("apply"), tr("OK"), extras_w);
-		connect(ok_btn, SIGNAL(clicked()), this, SLOT(accept()));
-
-		// Cancel button.
-		auto cancel_btn = new QPushButton(embed::getIconPixmap("cancel"), tr("Cancel"), extras_w);
-		connect(cancel_btn, SIGNAL(clicked()), this, SLOT(reject()));
-		extras_layout->addWidget(ok_btn);
-		extras_layout->addSpacing(10);
-		extras_layout->addWidget(cancel_btn);
-	}
-	extras_layout->addSpacing(10);
-
-	// Vertical layout ordering.
-	vlayout->addWidget(main_w, 1);
-	vlayout->addSpacing(10);
-	vlayout->addWidget(extras_w);
-	vlayout->addSpacing(10);
-
-	// Ensure that we cannot make the dialog smaller than it wants to be
-	setMinimumWidth(width());
+		return 0;
+	}();
+	m_sectionList->setCurrentRow(first);
 
 	if (page)
 	{
@@ -1104,19 +250,9 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 		setWindowFlags(Qt::Widget);
 		setAutoFillBackground(true);
 	}
+	else { resize(980, 640); }
 
-	// Any control changed is a change to save (the audio and MIDI interfaces' own widgets included)
-	const auto changed = [this] { m_changed = true; };
-	for (auto box : findChildren<QAbstractButton*>())
-	{
-		if (box->isCheckable()) { connect(box, &QAbstractButton::toggled, this, changed); }
-	}
-	for (auto box : findChildren<QComboBox*>()) { connect(box, &QComboBox::currentIndexChanged, this, changed); }
-	for (auto box : findChildren<QAbstractSpinBox*>()) { connect(box, &QAbstractSpinBox::editingFinished, this, changed); }
-	for (auto box : findChildren<QSpinBox*>()) { connect(box, &QSpinBox::valueChanged, this, changed); }
-	for (auto box : findChildren<QDoubleSpinBox*>()) { connect(box, &QDoubleSpinBox::valueChanged, this, changed); }
-	for (auto slider : findChildren<QAbstractSlider*>()) { connect(slider, &QAbstractSlider::valueChanged, this, changed); }
-	for (auto edit : findChildren<QLineEdit*>()) { connect(edit, &QLineEdit::textEdited, this, changed); }
+	m_building = false;
 	show();
 }
 
@@ -1125,7 +261,784 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open, QWidget* page) :
 
 SetupDialog::~SetupDialog()
 {
+	// What still waited applies now (the page goes as soon as it is left)
+	if (m_audioReopen.isActive()) { reopenAudioDevice(); }
+	if (m_midiReopen.isActive()) { reopenMidiClient(); }
+	if (m_saveConfig.isActive()) { ConfigManager::inst()->saveConfigFile(); }
 	Engine::projectJournal()->setJournalling(true);
+}
+
+
+
+
+void SetupDialog::accept()
+{
+	if (m_audioReopen.isActive()) { reopenAudioDevice(); }
+	if (m_midiReopen.isActive()) { reopenMidiClient(); }
+	if (m_saveConfig.isActive())
+	{
+		m_saveConfig.stop();
+		ConfigManager::inst()->saveConfigFile();
+	}
+	QDialog::accept();
+}
+
+
+
+
+void SetupDialog::reject()
+{
+	// Nothing to undo: each setting applied as it changed
+	accept();
+}
+
+
+
+
+auto SetupDialog::addSection(const QString& title, const QString& subtitle) -> int
+{
+	auto section = Section{};
+	section.title = title;
+
+	auto* scroll = new QScrollArea(m_pages);
+	scroll->setObjectName("settingsPage");
+	scroll->setWidgetResizable(true);
+	scroll->setFrameShape(QFrame::NoFrame);
+	scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	auto* content = new QWidget(scroll);
+	content->setObjectName("settingsPageContent");
+	auto* layout = new QVBoxLayout(content);
+	layout->setContentsMargins(24, 18, 24, 18);
+	layout->setSpacing(0);
+	auto* heading = new QLabel(title, content);
+	heading->setObjectName("settingsTitle");
+	layout->addWidget(heading);
+	if (!subtitle.isEmpty())
+	{
+		auto* line = new QLabel(subtitle, content);
+		line->setObjectName("settingsSubtitle");
+		line->setWordWrap(true);
+		layout->addWidget(line);
+	}
+	layout->addSpacing(14);
+	section.rows = new QVBoxLayout;
+	section.rows->setSpacing(0);
+	layout->addLayout(section.rows);
+	layout->addStretch(1);
+	scroll->setWidget(content);
+	section.page = scroll;
+	m_pages->addWidget(scroll);
+
+	section.item = new QListWidgetItem(title, m_sectionList);
+	m_sections.push_back(section);
+	return static_cast<int>(m_sections.size()) - 1;
+}
+
+
+
+
+auto SetupDialog::tagFor(Applies applies, QWidget* parent) -> QLabel*
+{
+	auto* tag = new QLabel(applies == Applies::Now ? tr("applies at once") : tr("asks for a restart"), parent);
+	tag->setObjectName(applies == Applies::Now ? "settingsTagNow" : "settingsTagRestart");
+	tag->setToolTip(applies == Applies::Now ? tr("Changing it takes effect right away")
+		: tr("Changing it takes effect after the program starts again"));
+	return tag;
+}
+
+
+
+
+auto SetupDialog::addRow(int section, const QString& label, Applies applies, QWidget* control, const QString& hint)
+	-> QWidget*
+{
+	auto* row = new QWidget(m_sections[section].page);
+	row->setObjectName("settingsRow");
+	auto* layout = new QHBoxLayout(row);
+	layout->setContentsMargins(0, 9, 0, 9);
+	layout->setSpacing(12);
+
+	// The name and what it takes, in a column of their own; the control, and the line after it (under it when
+	// the page is narrow: see fitRows())
+	auto* nameColumn = new QWidget(row);
+	nameColumn->setFixedWidth(250);
+	auto* nameLayout = new QHBoxLayout(nameColumn);
+	nameLayout->setContentsMargins(0, 0, 0, 0);
+	nameLayout->setSpacing(6);
+	auto* name = new QLabel(label, nameColumn);
+	name->setObjectName("settingsName");
+	name->setWordWrap(true);
+	nameLayout->addWidget(name);
+	nameLayout->addWidget(tagFor(applies, nameColumn), 0, Qt::AlignVCenter);
+	nameLayout->addStretch(1);
+	layout->addWidget(nameColumn, 0, Qt::AlignVCenter);
+
+	auto* body = new QBoxLayout(QBoxLayout::LeftToRight);
+	body->setSpacing(12);
+	control->setParent(row);
+	body->addWidget(control, 0, Qt::AlignVCenter | Qt::AlignLeft);
+	if (!hint.isEmpty())
+	{
+		auto* after = new QLabel(hint, row);
+		after->setObjectName("settingsHint");
+		after->setWordWrap(true);
+		body->addWidget(after, 1, Qt::AlignVCenter);
+	}
+	else { body->addStretch(1); }
+	layout->addLayout(body, 1);
+
+	m_sections[section].rows->addWidget(row);
+	m_rows.push_back({row, section, folded(label + ' ' + hint + ' ' + textsOf(control)), body});
+	return row;
+}
+
+
+
+
+auto SetupDialog::addBlock(int section, const QString& label, Applies applies, QWidget* block, const QString& hint)
+	-> QWidget*
+{
+	auto* row = new QWidget(m_sections[section].page);
+	row->setObjectName("settingsRow");
+	auto* layout = new QVBoxLayout(row);
+	layout->setContentsMargins(0, 9, 0, 9);
+	layout->setSpacing(6);
+	auto* top = new QHBoxLayout;
+	top->setSpacing(6);
+	auto* name = new QLabel(label, row);
+	name->setObjectName("settingsName");
+	top->addWidget(name);
+	top->addWidget(tagFor(applies, row));
+	if (!hint.isEmpty())
+	{
+		auto* after = new QLabel(hint, row);
+		after->setObjectName("settingsHint");
+		after->setWordWrap(true);
+		top->addSpacing(12);
+		top->addWidget(after, 1);
+	}
+	else { top->addStretch(1); }
+	layout->addLayout(top);
+	block->setParent(row);
+	layout->addWidget(block);
+	m_sections[section].rows->addWidget(row);
+	m_rows.push_back({row, section, folded(label + ' ' + hint + ' ' + textsOf(block))});
+	return row;
+}
+
+
+
+
+void SetupDialog::set(const QString& cls, const QString& attribute, const QString& value)
+{
+	if (m_building) { return; }
+	ConfigManager::inst()->setValue(cls, attribute, value);
+	m_saveConfig.start();
+}
+
+
+
+
+void SetupDialog::restartFor(const QString& what)
+{
+	if (m_building) { return; }
+	if (!m_restartNeeded.contains(what)) { m_restartNeeded << what; }
+	m_restartText->setText(tr("%1: changes after the program restarts.").arg(m_restartNeeded.join(", ")));
+	m_restartStrip->show();
+}
+
+
+
+
+auto SetupDialog::checkSetting(const QString& cls, const QString& attribute, bool fallback, bool inverted)
+	-> QWidget*
+{
+	auto* box = new QCheckBox;
+	const auto saved = ConfigManager::inst()->value(cls, attribute, fallback != inverted ? "1" : "0");
+	box->setChecked((saved.toInt() != 0) != inverted);
+	connect(box, &QCheckBox::toggled, this, [this, cls, attribute, inverted](bool on) {
+		set(cls, attribute, on != inverted ? "1" : "0");
+	});
+	return box;
+}
+
+
+
+
+auto SetupDialog::pathSetting(const QString& value, const QString& caption, bool file, const QString& filter,
+	std::function<void(const QString&)> save) -> QWidget*
+{
+	auto* holder = new QWidget;
+	holder->setMinimumWidth(380);
+	auto* layout = new QHBoxLayout(holder);
+	layout->setContentsMargins(0, 0, 0, 0);
+	layout->setSpacing(6);
+	auto* edit = new QLineEdit(QDir::toNativeSeparators(value), holder);
+	layout->addWidget(edit, 1);
+	auto* choose = new QPushButton(embed::getIconPixmap("project_open", 16, 16), "", holder);
+	choose->setFixedSize(28, 24);
+	choose->setToolTip(caption);
+	layout->addWidget(choose);
+	// Saved when the typing ends (each letter would be a folder that does not exist), or when chosen
+	connect(edit, &QLineEdit::editingFinished, this, [this, edit, save] {
+		if (m_building) { return; }
+		save(QDir::fromNativeSeparators(edit->text()));
+		m_saveConfig.start();
+	});
+	connect(choose, &QPushButton::clicked, this, [this, edit, caption, file, filter, save] {
+		const auto chosen = file ? FileDialog::getOpenFileName(this, caption, edit->text(), filter)
+			: FileDialog::getExistingDirectory(this, caption, edit->text());
+		if (chosen.isEmpty()) { return; }
+		edit->setText(QDir::toNativeSeparators(chosen));
+		save(chosen);
+		m_saveConfig.start();
+	});
+	return holder;
+}
+
+
+
+
+// Geral
+void SetupDialog::buildGeneral()
+{
+	const auto s = addSection(tr("General"), tr("Projects and how the program behaves."));
+
+	addRow(s, tr("Reopen the last project on startup"), Applies::Now, checkSetting("app", "openlastproject", false));
+	addRow(s, tr("Compress project files"), Applies::Now, checkSetting("app", "nommpz", true, true),
+		tr("Saved as .mmpz (smaller); off: .mmp, plain XML"));
+	addRow(s, tr("Keep a backup when saving"), Applies::Now, checkSetting("app", "disablebackup", true, true),
+		tr("The previous version is kept beside the project"));
+	addRow(s, tr("Autosave"), Applies::Now, [this] {
+		auto* box = checkSetting("ui", "enableautosave", true);
+		// Started or stopped now (see MainWindow::updateAutosave())
+		connect(static_cast<QCheckBox*>(box), &QCheckBox::toggled, this, [] {
+			if (getGUI() && getGUI()->mainWindow()) { getGUI()->mainWindow()->updateAutosave(); }
+		});
+		return box;
+	}(), tr("Two seconds after each change, also while playing or recording; after a crash it is offered when the "
+		"program starts"));
+	addRow(s, tr("New projects use the analog mixer"), Applies::Now, checkSetting("mixer", "newprojectanalog", false),
+		tr("Off: the digital one"));
+
+	auto* longAudio = new QSpinBox;
+	longAudio->setRange(1, 3600);
+	longAudio->setSuffix(tr(" s"));
+	longAudio->setValue(static_cast<int>(SampleTrack::longAudioSeconds()));
+	connect(longAudio, &QSpinBox::valueChanged, this,
+		[this](int seconds) { set("ui", "longaudioseconds", QString::number(seconds)); });
+	addRow(s, tr("Long audio files become audio tracks"), Applies::Now, longAudio,
+		tr("Longer than this, an audio file dropped in the project is an audio track; shorter, a sample"));
+
+	addRow(s, tr("Previews play to the end"), Applies::Now, checkSetting("ui", "letpreviewsfinish", false),
+		tr("A sample previewed in the browser goes on when the mouse button is released"));
+	addRow(s, tr("Ask before deleting a track"), Applies::Now, checkSetting("ui", "trackdeletionwarning", true));
+	addRow(s, tr("Ask before deleting a mixer channel in use"), Applies::Now,
+		checkSetting("ui", "mixerchanneldeletionwarning", true));
+
+	// The language: the translations found, by their own names
+	auto* language = new QComboBox;
+	auto current = ConfigManager::inst()->value("app", "language");
+	auto codes = QStringList{};
+	for (auto fileName : QDir{ConfigManager::inst()->localeDir()}.entryList({"*.qm"}))
+	{
+		fileName.truncate(fileName.lastIndexOf('.'));
+		const auto locale = QLocale{fileName};
+		if (locale.language() == QLocale::C) { continue; }
+		auto name = locale.nativeLanguageName();
+		if (name.isEmpty()) { name = QLocale::languageToString(locale.language()); }
+		codes << fileName;
+		language->addItem(name, fileName);
+	}
+	if (current.isEmpty())
+	{
+		// Unset: the system's, if there is a translation of it
+		const auto system = QLocale::system().name().left(2);
+		current = codes.contains(system) ? system : "en";
+	}
+	language->setCurrentIndex(std::max(0, language->findData(current)));
+	connect(language, &QComboBox::currentIndexChanged, this, [this, language] {
+		set("app", "language", language->currentData().toString());
+		restartFor(tr("The language"));
+	});
+	addRow(s, tr("Language"), Applies::Restart, language);
+}
+
+
+
+
+// Áudio
+void SetupDialog::buildAudio()
+{
+	const auto s = addSection(tr("Audio"), tr("Everything here applies as it changes: the device opens again by "
+		"itself."));
+
+	// The drivers built here, each with its own settings
+	auto* drivers = new QWidget;
+	auto* driversLayout = new QVBoxLayout(drivers);
+	driversLayout->setContentsMargins(0, 0, 0, 0);
+	const auto add = [&](const QString& name, AudioDeviceSetupWidget* widget) {
+		m_audioSetupWidgets[name] = widget;
+		widget->setParent(drivers);
+		widget->setFlat(true);
+		widget->setTitle(QString{});
+		widget->hide();
+		driversLayout->addWidget(widget);
+	};
+#ifdef LMMS_HAVE_JACK
+	add(AudioJack::name(), new AudioJackSetupWidget(drivers));
+#endif
+#ifdef LMMS_HAVE_ALSA
+	add(AudioAlsa::name(), new AudioAlsaSetupWidget(drivers));
+#endif
+#ifdef LMMS_HAVE_PULSEAUDIO
+	add(AudioPulseAudio::name(), new AudioPulseAudioSetupWidget(drivers));
+#endif
+#ifdef LMMS_BUILD_APPLE
+	add(AudioCoreAudio::name(), new AudioCoreAudioSetupWidget(drivers));
+#endif
+#ifdef LMMS_HAVE_PORTAUDIO
+	add(AudioPortAudio::name(), new AudioPortAudioSetupWidget(drivers));
+#endif
+#ifdef LMMS_HAVE_SDL
+	add(AudioSdl::name(), new AudioSdlSetupWidget(drivers));
+#endif
+#ifdef LMMS_HAVE_SNDIO
+	add(AudioSndio::name(), new AudioSndioSetupWidget(drivers));
+#endif
+	add(AudioDummy::name(), new AudioDummySetupWidget(drivers));
+
+	m_audioInterfaces = new QComboBox;
+	m_audioInterfaces->setMinimumWidth(260);
+	auto names = QMap<QString, QString>{}; // (sorted by what is shown)
+	for (auto it = m_audioSetupWidgets.begin(); it != m_audioSetupWidgets.end(); ++it)
+	{
+		names[AudioDeviceSetupWidget::tr(it.key().toUtf8())] = it.key();
+	}
+	for (auto it = names.begin(); it != names.end(); ++it) { m_audioInterfaces->addItem(it.key(), it.value()); }
+
+	// No driver saved (or one not built here): the one in use
+	auto driver = ConfigManager::inst()->value("audioengine", "audiodev");
+	if (!m_audioSetupWidgets.contains(driver))
+	{
+		driver = Engine::audioEngine()->audioDevName();
+		ConfigManager::inst()->setValue("audioengine", "audiodev", driver);
+	}
+	m_audioInterfaces->setCurrentIndex(std::max(0, m_audioInterfaces->findData(driver)));
+	showAudioInterface(driver);
+	connect(m_audioInterfaces, &QComboBox::currentIndexChanged, this, [this] {
+		showAudioInterface(m_audioInterfaces->currentData().toString());
+		audioSettingChanged();
+	});
+	addRow(s, tr("Audio system"), Applies::Now, m_audioInterfaces, tr("JACK, PortAudio, SDL... as the system has them"));
+	m_audioDeviceRow = addBlock(s, tr("Device"), Applies::Now, drivers);
+	showAudioInterface(driver);
+
+	// A driver's own settings: each change opens the device again (a text when its typing ends)
+	for (auto* widget : drivers->findChildren<QWidget*>())
+	{
+		if (auto* box = qobject_cast<QComboBox*>(widget))
+		{
+			connect(box, &QComboBox::currentIndexChanged, this, &SetupDialog::audioSettingChanged);
+		}
+		else if (auto* spin = qobject_cast<QSpinBox*>(widget))
+		{
+			connect(spin, &QSpinBox::valueChanged, this, &SetupDialog::audioSettingChanged);
+		}
+		else if (auto* edit = qobject_cast<QLineEdit*>(widget); edit && !qobject_cast<QSpinBox*>(edit->parent()))
+		{
+			connect(edit, &QLineEdit::editingFinished, this, &SetupDialog::audioSettingChanged);
+		}
+		else if (auto* button = qobject_cast<QAbstractButton*>(widget); button && button->isCheckable())
+		{
+			connect(button, &QAbstractButton::toggled, this, &SetupDialog::audioSettingChanged);
+		}
+	}
+
+	// The sample rate: one of the rates the program runs at
+	auto* rates = new QWidget;
+	rates->setObjectName("settingsRates");
+	auto* ratesLayout = new QHBoxLayout(rates);
+	ratesLayout->setContentsMargins(0, 0, 0, 0);
+	ratesLayout->setSpacing(4);
+	m_sampleRates = new QButtonGroup(this);
+	m_sampleRates->setExclusive(true);
+	const auto savedRate = ConfigManager::inst()->value("audioengine", "samplerate").toInt();
+	for (const auto rate : SUPPORTED_SAMPLERATES)
+	{
+		auto* button = new QPushButton(QLocale{}.toString(rate / 1000.0, 'g', 4), rates);
+		button->setObjectName("settingsRate");
+		button->setCheckable(true);
+		button->setChecked(rate == savedRate || (savedRate <= 0 && rate == SUPPORTED_SAMPLERATES.front()));
+		m_sampleRates->addButton(button, rate);
+		ratesLayout->addWidget(button);
+	}
+	if (!m_sampleRates->checkedButton()) { m_sampleRates->buttons().front()->setChecked(true); }
+	ratesLayout->addWidget(new QLabel(tr("kHz"), rates));
+	connect(m_sampleRates, &QButtonGroup::idClicked, this, [this](int rate) {
+		set("audioengine", "samplerate", QString::number(rate));
+		updateBufferLabel();
+		audioSettingChanged();
+	});
+	addRow(s, tr("Sample rate"), Applies::Now, rates, tr("New projects; a project opens at its own rate"));
+
+	// The buffer, with the latency the device has with it
+	auto* buffer = new QWidget;
+	auto* bufferLayout = new QHBoxLayout(buffer);
+	bufferLayout->setContentsMargins(0, 0, 0, 0);
+	bufferLayout->setSpacing(10);
+	m_bufferSlider = new QSlider(Qt::Horizontal, buffer);
+	m_bufferSlider->setMinimumWidth(180);
+	m_bufferSlider->setRange(1, MAXIMUM_BUFFER_SIZE / BufferSizeResolution);
+	m_bufferSlider->setPageStep(8);
+	m_bufferSlider->setValue(ConfigManager::inst()->value("audioengine", "framesperaudiobuffer",
+		QString::number(DEFAULT_BUFFER_SIZE)).toInt() / BufferSizeResolution);
+	m_bufferLabel = new QLabel(buffer);
+	m_bufferLabel->setObjectName("settingsValue");
+	m_bufferLabel->setMinimumWidth(90);
+	auto* reset = new QPushButton(embed::getIconPixmap("reload"), "", buffer);
+	reset->setFixedSize(28, 24);
+	reset->setToolTip(tr("Back to the default (%1)").arg(DEFAULT_BUFFER_SIZE));
+	bufferLayout->addWidget(m_bufferSlider);
+	bufferLayout->addWidget(m_bufferLabel);
+	bufferLayout->addWidget(reset);
+	connect(reset, &QPushButton::clicked, this,
+		[this] { m_bufferSlider->setValue(DEFAULT_BUFFER_SIZE / BufferSizeResolution); });
+	connect(m_bufferSlider, &QSlider::valueChanged, this, [this](int value) {
+		// Above the default's step, in steps of it (32, 64... then 256, 512...)
+		const int step = DEFAULT_BUFFER_SIZE / BufferSizeResolution;
+		if (value > step && value % step)
+		{
+			const int rest = value % step;
+			m_bufferSlider->setValue(rest < step / 2 ? value - rest : value + step - rest);
+			return;
+		}
+		set("audioengine", "framesperaudiobuffer", QString::number(value * BufferSizeResolution));
+		updateBufferLabel();
+		audioSettingChanged();
+	});
+	m_latencyLabel = new QLabel;
+	m_latencyLabel->setObjectName("settingsHint");
+	m_latencyLabel->setWordWrap(true);
+	addRow(s, tr("Buffer size"), Applies::Now, buffer);
+	// (the latency in the line after the buffer, as a hint, changing with it)
+	m_rows.back().body->insertWidget(1, m_latencyLabel, 1);
+	m_bufferWarning = new QLabel;
+	m_bufferWarning->setObjectName("settingsWarning");
+	m_bufferWarning->setWordWrap(true);
+	m_sections[s].rows->addWidget(m_bufferWarning);
+	updateBufferLabel();
+	updateLatencyLabel();
+	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, &SetupDialog::updateLatencyLabel);
+
+	m_audioStatus = new QLabel;
+	m_audioStatus->setObjectName("settingsWarning");
+	m_audioStatus->setWordWrap(true);
+	m_audioStatus->hide();
+	m_sections[s].rows->addWidget(m_audioStatus);
+}
+
+
+
+
+void SetupDialog::showAudioInterface(const QString& name)
+{
+	for (auto it = m_audioSetupWidgets.begin(); it != m_audioSetupWidgets.end(); ++it)
+	{
+		it.value()->setVisible(it.key() == name);
+	}
+	// (a driver with nothing of its own to set: no empty block)
+	if (m_audioDeviceRow)
+	{
+		const auto* widget = m_audioSetupWidgets.value(name);
+		m_audioDeviceRow->setVisible(widget && !widget->findChildren<QWidget*>().isEmpty());
+	}
+}
+
+
+
+
+void SetupDialog::audioSettingChanged()
+{
+	if (m_building) { return; }
+	m_audioReopen.start();
+}
+
+
+
+
+void SetupDialog::reopenAudioDevice()
+{
+	m_audioReopen.stop();
+	// The driver, its own settings (each widget saves its own), the rate and the buffer: the device opens with them
+	ConfigManager::inst()->setValue("audioengine", "audiodev", m_audioInterfaces->currentData().toString());
+	for (auto* widget : m_audioSetupWidgets) { widget->saveSettings(); }
+	ConfigManager::inst()->saveConfigFile();
+	const auto told = Engine::audioEngine()->reopenAudioDevice();
+	m_audioStatus->setText(told);
+	m_audioStatus->setVisible(!told.isEmpty());
+	updateLatencyLabel();
+}
+
+
+
+
+void SetupDialog::updateBufferLabel()
+{
+	const auto frames = m_bufferSlider->value() * BufferSizeResolution;
+	m_bufferLabel->setText(tr("%1 frames").arg(frames));
+	auto warnings = QStringList{};
+	// Not a power of 2 under 256 (above it, the program works in periods of 256 and plugins never see more)
+	if ((frames & (frames - 1)) != 0 && frames < 256)
+	{
+		warnings << tr("Not a power of 2 (32, 64, 128, 256): some plugins may not be available.");
+	}
+	if (frames <= 32) { warnings << tr("32 frames or fewer: some plugins may not be available."); }
+	m_bufferWarning->setText(warnings.join(' '));
+	m_bufferWarning->setVisible(!warnings.isEmpty());
+	updateLatencyLabel();
+}
+
+
+
+
+void SetupDialog::updateLatencyLabel()
+{
+	if (!m_latencyLabel) { return; }
+	const auto* engine = Engine::audioEngine();
+	const auto rate = static_cast<double>(engine->outputSampleRate());
+	const auto frames = m_bufferSlider->value() * BufferSizeResolution;
+	const auto* device = engine->audioDev();
+	const bool waiting = m_audioReopen.isActive()
+		|| frames != static_cast<int>(engine->framesPerAudioBuffer());
+	if (device && device->outputLatency() > 0 && !waiting)
+	{
+		// What the device says it takes, from the program to the output
+		m_latencyLabel->setText(tr("%1 ms of output latency (measured by the device)")
+			.arg(QLocale{}.toString(1000.0 * device->outputLatency() / rate, 'f', 1)));
+	}
+	else
+	{
+		m_latencyLabel->setText(tr("%1 ms of buffer (the device adds its own)")
+			.arg(QLocale{}.toString(1000.0 * frames / rate, 'f', 1)));
+	}
+}
+
+
+
+
+// MIDI
+void SetupDialog::buildMidi()
+{
+	const auto s = addSection(tr("MIDI"), tr("Applies as it changes: the driver opens again, and the tracks keep "
+		"their devices."));
+
+	auto* drivers = new QWidget;
+	auto* driversLayout = new QVBoxLayout(drivers);
+	driversLayout->setContentsMargins(0, 0, 0, 0);
+	const auto add = [&](const QString& name, MidiSetupWidget* widget) {
+		m_midiSetupWidgets[name] = widget;
+		widget->setParent(drivers);
+		widget->setFlat(true);
+		widget->setTitle(QString{});
+		widget->hide();
+		driversLayout->addWidget(widget);
+	};
+#ifdef LMMS_HAVE_ALSA
+	add(MidiAlsaSeq::name(), MidiSetupWidget::create<MidiAlsaSeq>(drivers));
+	add(MidiAlsaRaw::name(), MidiSetupWidget::create<MidiAlsaRaw>(drivers));
+#endif
+#ifdef LMMS_HAVE_JACK
+	add(MidiJack::name(), MidiSetupWidget::create<MidiJack>(drivers));
+#endif
+#ifdef LMMS_HAVE_SNDIO
+	add(MidiSndio::name(), MidiSetupWidget::create<MidiSndio>(drivers));
+#endif
+#ifdef LMMS_HAVE_WINMM
+	add(MidiWinMM::name(), MidiSetupWidget::create<MidiWinMM>(drivers));
+#endif
+#ifdef LMMS_BUILD_APPLE
+	add(MidiApple::name(), MidiSetupWidget::create<MidiApple>(drivers));
+#endif
+	add(MidiDummy::name(), MidiSetupWidget::create<MidiDummy>(drivers));
+
+	m_midiInterfaces = new QComboBox;
+	m_midiInterfaces->setMinimumWidth(260);
+	auto names = QMap<QString, QString>{};
+	for (auto it = m_midiSetupWidgets.begin(); it != m_midiSetupWidgets.end(); ++it)
+	{
+		names[MidiSetupWidget::tr(it.key().toUtf8())] = it.key();
+	}
+	for (auto it = names.begin(); it != names.end(); ++it) { m_midiInterfaces->addItem(it.key(), it.value()); }
+	auto driver = ConfigManager::inst()->value("audioengine", "mididev");
+	if (!m_midiSetupWidgets.contains(driver))
+	{
+		driver = Engine::audioEngine()->midiClientName();
+		ConfigManager::inst()->setValue("audioengine", "mididev", driver);
+	}
+	m_midiInterfaces->setCurrentIndex(std::max(0, m_midiInterfaces->findData(driver)));
+	showMidiInterface(driver);
+	connect(m_midiInterfaces, &QComboBox::currentIndexChanged, this, [this] {
+		showMidiInterface(m_midiInterfaces->currentData().toString());
+		midiSettingChanged();
+	});
+	addRow(s, tr("MIDI system"), Applies::Now, m_midiInterfaces);
+	m_midiDeviceRow = addBlock(s, tr("Device"), Applies::Now, drivers);
+	showMidiInterface(driver);
+	for (auto* edit : drivers->findChildren<QLineEdit*>())
+	{
+		connect(edit, &QLineEdit::editingFinished, this, &SetupDialog::midiSettingChanged);
+	}
+
+	// A controller that follows the selected track
+	m_assignableMidiDevices = new QComboBox;
+	m_assignableMidiDevices->setMinimumWidth(260);
+	const auto fillAssignable = [this] {
+		const auto saved = ConfigManager::inst()->value("midi", "midiautoassign");
+		const QSignalBlocker blocker{m_assignableMidiDevices};
+		m_assignableMidiDevices->clear();
+		m_assignableMidiDevices->addItem(tr("None"), "none");
+		if (auto* client = Engine::audioEngine()->midiClient(); client && !client->isRaw())
+		{
+			for (const auto& port : client->readablePorts()) { m_assignableMidiDevices->addItem(port, port); }
+		}
+		else { m_assignableMidiDevices->addItem(tr("All"), "all"); }
+		m_assignableMidiDevices->setCurrentIndex(std::max(0, m_assignableMidiDevices->findData(saved)));
+	};
+	fillAssignable();
+	connect(m_assignableMidiDevices, &QComboBox::currentIndexChanged, this,
+		[this] { set("midi", "midiautoassign", m_assignableMidiDevices->currentData().toString()); });
+	addRow(s, tr("Controller for the selected track"), Applies::Now, m_assignableMidiDevices,
+		tr("This device plays the track selected, whichever it is"));
+	// (the devices of the driver opened again)
+	connect(&m_midiReopen, &QTimer::timeout, this, fillAssignable);
+
+	addRow(s, tr("Quantize notes recorded in the Piano Roll"), Applies::Now, checkSetting("midi", "autoquantize", false),
+		tr("Off: recorded at the finest resolution"));
+
+	m_midiStatus = new QLabel;
+	m_midiStatus->setObjectName("settingsWarning");
+	m_midiStatus->setWordWrap(true);
+	m_midiStatus->hide();
+	m_sections[s].rows->addWidget(m_midiStatus);
+}
+
+
+
+
+void SetupDialog::showMidiInterface(const QString& name)
+{
+	for (auto it = m_midiSetupWidgets.begin(); it != m_midiSetupWidgets.end(); ++it)
+	{
+		it.value()->setVisible(it.key() == name);
+	}
+	if (m_midiDeviceRow)
+	{
+		const auto* widget = m_midiSetupWidgets.value(name);
+		m_midiDeviceRow->setVisible(widget && !widget->configSection().isEmpty());
+	}
+}
+
+
+
+
+void SetupDialog::midiSettingChanged()
+{
+	if (m_building) { return; }
+	m_midiReopen.start();
+}
+
+
+
+
+void SetupDialog::reopenMidiClient()
+{
+	m_midiReopen.stop();
+	// The driver and its devices' settings, as they were: it opens again only if they changed
+	const auto settings = [this] {
+		auto values = QStringList{ConfigManager::inst()->value("audioengine", "mididev")};
+		for (const auto* widget : m_midiSetupWidgets)
+		{
+			if (!widget->configSection().isEmpty())
+			{
+				values << ConfigManager::inst()->value(widget->configSection(), "device");
+			}
+		}
+		return values;
+	};
+	const auto before = settings();
+	ConfigManager::inst()->setValue("audioengine", "mididev", m_midiInterfaces->currentData().toString());
+	for (auto* widget : m_midiSetupWidgets) { widget->saveSettings(); }
+	ConfigManager::inst()->saveConfigFile();
+	if (settings() == before) { return; }
+	// The tracks' ports move to it (see AudioEngine::reopenMidiClient())
+	const auto told = Engine::audioEngine()->reopenMidiClient();
+	m_midiStatus->setText(told);
+	m_midiStatus->setVisible(!told.isEmpty());
+}
+
+
+
+
+// Gravação
+void SetupDialog::buildRecording()
+{
+	const auto s = addSection(tr("Recording"), tr("Recording audio and MIDI, and the metronome."));
+
+	auto* calibration = new QWidget;
+	auto* calibrationLayout = new QHBoxLayout(calibration);
+	calibrationLayout->setContentsMargins(0, 0, 0, 0);
+	m_latencyOffset = new QSpinBox(calibration);
+	m_latencyOffset->setRange(-48000, 48000);
+	m_latencyOffset->setSuffix(tr(" frames"));
+	m_latencyOffset->setValue(ConfigManager::inst()->value("recording", "latencyoffset", "0").toInt());
+	connect(m_latencyOffset, &QSpinBox::valueChanged, this,
+		[this](int frames) { set("recording", "latencyoffset", QString::number(frames)); });
+	auto* measure = new QPushButton(tr("Measure..."), calibration);
+	measure->setToolTip(tr("Plays a pulse and records it back through a cable from an output to an input, and sets "
+		"the calibration from where it arrives"));
+	connect(measure, &QPushButton::clicked, this, &SetupDialog::measureLatency);
+	calibrationLayout->addWidget(m_latencyOffset);
+	calibrationLayout->addWidget(measure);
+	addRow(s, tr("Latency calibration"), Applies::Now, calibration,
+		tr("Added to the latency the device reports, so that recordings line up with what was heard"));
+
+	auto* preRoll = new QComboBox;
+	for (const int bars : {0, 1, 2, 4}) { preRoll->addItem(bars == 0 ? tr("Off") : tr("%n bar(s)", "", bars), bars); }
+	preRoll->setCurrentIndex(std::max(0, preRoll->findData(
+		ConfigManager::inst()->value("recording", "prerollbars", "0").toInt())));
+	connect(preRoll, &QComboBox::currentIndexChanged, this,
+		[this, preRoll] { set("recording", "prerollbars", preRoll->currentData().toString()); });
+	addRow(s, tr("Pre-roll"), Applies::Now, preRoll, tr("Bars played before the recording starts"));
+	addRow(s, tr("Count-in"), Applies::Now, checkSetting("recording", "countin", false),
+		tr("The metronome clicks during the pre-roll"));
+	addRow(s, tr("Takes in lanes"), Applies::Now, checkSetting("recording", "lanes", true),
+		tr("Each pass on a lane of its own, the latest on top; off: the new take replaces what it covers"));
+
+	// The metronome (heard while monitoring, never in an export): applied to it as it changes
+	const auto metronomeChanged = [] { Engine::getSong()->metronome().loadSettings(); };
+	auto* when = new QComboBox;
+	when->addItem(tr("While playing and recording"), 0);
+	when->addItem(tr("Only while recording"), 1);
+	when->setCurrentIndex(ConfigManager::inst()->value("metronome", "onlyrecording", "0").toInt() != 0 ? 1 : 0);
+	connect(when, &QComboBox::currentIndexChanged, this, [this, when, metronomeChanged] {
+		set("metronome", "onlyrecording", when->currentData().toString());
+		metronomeChanged();
+	});
+	addRow(s, tr("Metronome"), Applies::Now, when);
+	auto* volume = new QDoubleSpinBox;
+	volume->setRange(-60.0, 12.0);
+	volume->setDecimals(1);
+	volume->setSuffix(tr(" dB"));
+	volume->setValue(ConfigManager::inst()->value("metronome", "volume", "0").toDouble());
+	connect(volume, &QDoubleSpinBox::valueChanged, this, [this, metronomeChanged](double db) {
+		set("metronome", "volume", QString::number(db));
+		metronomeChanged();
+	});
+	addRow(s, tr("Metronome volume"), Applies::Now, volume);
+	auto* accent = checkSetting("metronome", "accent", true);
+	connect(static_cast<QCheckBox*>(accent), &QCheckBox::toggled, this, metronomeChanged);
+	addRow(s, tr("Accent on the first beat"), Applies::Now, accent);
 }
 
 
@@ -1135,10 +1048,11 @@ void SetupDialog::measureLatency()
 {
 	const auto answer = QMessageBox::information(this, tr("Latency calibration"),
 		tr("Connect an output of the audio interface to an input with a cable (output 1 to input 1, for example), "
-			"and turn the input's gain to a middle level. A short pulse will play and be recorded back.\n\n"
-			"The audio interface in use is the one saved in these settings."),
+			"and turn the input's gain to a middle level. A short pulse will play and be recorded back."),
 		QMessageBox::Ok | QMessageBox::Cancel);
 	if (answer != QMessageBox::Ok) { return; }
+	// (with the device as the settings have it now)
+	if (m_audioReopen.isActive()) { reopenAudioDevice(); }
 
 	auto calibration = LatencyCalibration{};
 	calibration.start();
@@ -1159,555 +1073,319 @@ void SetupDialog::measureLatency()
 	}
 	m_latencyOffset->setValue(static_cast<int>(std::clamp<long long>(result.offset, m_latencyOffset->minimum(),
 		m_latencyOffset->maximum())));
-	m_changed = true;
 	QMessageBox::information(this, tr("Latency calibration"),
-		tr("The pulse came back after %1 frames: the calibration is %2 frames. Save to keep it.")
-			.arg(result.delay).arg(result.offset));
+		tr("The pulse came back after %1 frames: the calibration is %2 frames.").arg(result.delay).arg(result.offset));
 }
 
 
 
 
-void SetupDialog::accept()
+// Plugins
+void SetupDialog::buildPlugins()
 {
-	/* Hide dialog before setting values. This prevents an obscure bug
-	where non-embedded VST windows would steal focus and prevent LMMS
-	from taking mouse input, rendering the application unusable. */
-	QDialog::accept();
+	const auto s = addSection(tr("Plugins"), tr("Plugin windows, and the plugins that were not loaded after a "
+		"crash."));
 
-	ConfigManager::inst()->setValue("tooltips", "disabled",
-					QString::number(!m_tooltips));
-	ConfigManager::inst()->setValue("mixer", "newprojectanalog", m_newProjectAnalog->isChecked() ? "1" : "0");
-	for (const auto& identity : m_allowedSuspects) { PluginGuard::clearSuspect(identity); }
-	for (const auto& [id, edit] : m_shortcutEdits) { Shortcuts::setKey(id, edit->keySequence()); }
-	ConfigManager::inst()->setValue("ui", "longaudioseconds", QString::number(m_longAudioSeconds->value()));
-	ConfigManager::inst()->setValue("recording", "latencyoffset", QString::number(m_latencyOffset->value()));
-	ConfigManager::inst()->setValue("recording", "prerollbars", m_preRoll->currentData().toString());
-	ConfigManager::inst()->setValue("recording", "countin", m_countIn->isChecked() ? "1" : "0");
-	ConfigManager::inst()->setValue("recording", "lanes", m_recordInLanes->isChecked() ? "1" : "0");
-	ConfigManager::inst()->setValue("metronome", "onlyrecording", m_metronomeWhen->currentData().toString());
-	ConfigManager::inst()->setValue("metronome", "volume", QString::number(m_metronomeVolume->value()));
-	ConfigManager::inst()->setValue("metronome", "accent", m_metronomeAccent->isChecked() ? "1" : "0");
-	Engine::getSong()->metronome().loadSettings();
-	ConfigManager::inst()->setValue("ui", "displaywaveform",
-					QString::number(m_displayWaveform));
-	ConfigManager::inst()->setValue("ui", "printnotelabels",
-					QString::number(m_printNoteLabels));
-	ConfigManager::inst()->setValue("ui", "showfaderticks",
-					QString::number(m_showFaderTicks));
-	ConfigManager::inst()->setValue("ui", "compacttrackbuttons",
-					QString::number(m_compactTrackButtons));
-	ConfigManager::inst()->setValue("ui", "oneinstrumenttrackwindow",
-					QString::number(m_oneInstrumentTrackWindow));
-	ConfigManager::inst()->setValue("ui", "sidebaronright",
-					QString::number(m_sideBarOnRight));
-	ConfigManager::inst()->setValue("ui", "letpreviewsfinish",
-					QString::number(m_letPreviewsFinish));
-	ConfigManager::inst()->setValue("ui", "trackdeletionwarning",
-					QString::number(m_trackDeletionWarning));
-	ConfigManager::inst()->setValue("ui", "mixerchanneldeletionwarning",
-					QString::number(m_mixerChannelDeletionWarning));
-	ConfigManager::inst()->setValue("app", "nommpz",
-					QString::number(!m_MMPZ));
-	ConfigManager::inst()->setValue("app", "disablebackup",
-					QString::number(!m_disableBackup));
-	ConfigManager::inst()->setValue("app", "openlastproject",
-					QString::number(m_openLastProject));
-	ConfigManager::inst()->setValue("ui", "detachbehavior", m_detachBehavior);
-	ConfigManager::inst()->setValue("app", "loopmarkermode", m_loopMarkerMode);
-	ConfigManager::inst()->setValue("app", "language", m_lang);
-	ConfigManager::inst()->setValue("ui", "autoscroll", m_autoScroll);
-	ConfigManager::inst()->setValue("ui", "enableautosave",
-					QString::number(m_enableAutoSave));
-	// Started or stopped now (see MainWindow::updateAutosave())
-	if (lmms::gui::getGUI() && lmms::gui::getGUI()->mainWindow()) { lmms::gui::getGUI()->mainWindow()->updateAutosave(); }
-	ConfigManager::inst()->setValue("ui", "smoothscroll",
-					QString::number(m_smoothScroll));
-	ConfigManager::inst()->setValue("ui", "animateafp",
-					QString::number(m_animateAFP));
-	ConfigManager::inst()->setValue("ui", "vstembedmethod",
-					m_vstEmbedComboBox->currentData().toString());
-	ConfigManager::inst()->setValue("ui", "vstalwaysontop",
-					QString::number(m_vstAlwaysOnTop));
-	ConfigManager::inst()->setValue("ui", "disableautoquit",
-					QString::number(m_disableAutoQuit));
-	ConfigManager::inst()->setValue("audioengine", "audiodev",
-					m_audioIfaceNames[m_audioInterfaces->currentText()]);
-	ConfigManager::inst()->setValue("audioengine", "sanitizemix",
-					QString::number(m_mixSanitization));
-	ConfigManager::inst()->setValue("audioengine", "samplerate",
-					QString::number(m_sampleRate));
-	ConfigManager::inst()->setValue("audioengine", "framesperaudiobuffer",
-					QString::number(m_bufferSize));
-	// The MIDI driver and its devices' settings, as they were: the driver opens again if they change
-	const auto midiSettings = [this] {
-		auto settings = QStringList{ConfigManager::inst()->value("audioengine", "mididev")};
-		for (const auto* widget : m_midiIfaceSetupWidgets)
+	auto* embedding = new QComboBox;
+	const auto methods = ConfigManager::availableVstEmbedMethods();
+	embedding->addItem(tr("No embedding"), "none");
+	if (methods.contains("qt")) { embedding->addItem(tr("Embed using Qt API"), "qt"); }
+	if (methods.contains("win32")) { embedding->addItem(tr("Embed using native Win32 API"), "win32"); }
+	if (methods.contains("xembed")) { embedding->addItem(tr("Embed using XEmbed protocol"), "xembed"); }
+	embedding->setCurrentIndex(std::max(0, embedding->findData(ConfigManager::inst()->vstEmbedMethod())));
+	addRow(s, tr("VST windows"), Applies::Now, embedding, tr("For the plugin windows opened from now on"));
+	auto* onTop = addRow(s, tr("Plugin windows on top"), Applies::Now, checkSetting("ui", "vstalwaysontop", false),
+		tr("When not embedded"));
+	onTop->setVisible(embedding->currentData().toString() == "none");
+	connect(embedding, &QComboBox::currentIndexChanged, this, [this, embedding, onTop] {
+		set("ui", "vstembedmethod", embedding->currentData().toString());
+		onTop->setVisible(embedding->currentData().toString() == "none");
+	});
+
+	// The plugins a crash happened in: not loaded until allowed here
+	const auto suspects = PluginGuard::suspects();
+	if (suspects.isEmpty()) { return; }
+	auto* block = new QWidget;
+	auto* blockLayout = new QVBoxLayout(block);
+	blockLayout->setContentsMargins(0, 0, 0, 0);
+	auto* list = new QListWidget(block);
+	list->setSelectionMode(QAbstractItemView::ExtendedSelection);
+	for (const auto& identity : suspects)
+	{
+		auto* item = new QListWidgetItem(PluginGuard::displayName(identity), list);
+		item->setData(Qt::UserRole, identity);
+		item->setToolTip(identity);
+	}
+	list->setMaximumHeight(list->sizeHintForRow(0) * std::min(6, static_cast<int>(suspects.size()))
+		+ 2 * list->frameWidth() + 4);
+	blockLayout->addWidget(list);
+	auto* allow = new QPushButton(tr("Load again"), block);
+	allow->setToolTip(tr("The selected plugins load again, from the next time a project opens"));
+	allow->setEnabled(false);
+	connect(list, &QListWidget::itemSelectionChanged, allow,
+		[list, allow] { allow->setEnabled(!list->selectedItems().isEmpty()); });
+	connect(allow, &QPushButton::clicked, this, [list] {
+		for (auto* item : list->selectedItems())
 		{
-			if (!widget->configSection().isEmpty())
-			{
-				settings << ConfigManager::inst()->value(widget->configSection(), "device");
-			}
+			PluginGuard::clearSuspect(item->data(Qt::UserRole).toString());
+			delete item;
 		}
-		return settings;
-	};
-	const auto midiBefore = midiSettings();
-	ConfigManager::inst()->setValue("audioengine", "mididev",
-					m_midiIfaceNames[m_midiInterfaces->currentText()]);
-	ConfigManager::inst()->setValue("midi", "midiautoassign",
-					m_assignableMidiDevices->currentText());
-	ConfigManager::inst()->setValue("midi", "autoquantize", QString::number(m_midiAutoQuantize));
+	});
+	blockLayout->addWidget(allow, 0, Qt::AlignLeft);
+	addBlock(s, tr("Not loaded since a crash"), Applies::Now, block,
+		tr("The program closed unexpectedly while they ran; projects keep their settings"));
+}
 
 
-	ConfigManager::inst()->setWorkingDir(QDir::fromNativeSeparators(m_workingDir));
-	ConfigManager::inst()->setVSTDir(QDir::fromNativeSeparators(m_vstDir));
-	ConfigManager::inst()->setLADSPADir(QDir::fromNativeSeparators(m_ladspaDir));
-	ConfigManager::inst()->setSF2Dir(QDir::fromNativeSeparators(m_sf2Dir));
+
+
+// Pastas
+void SetupDialog::buildFolders()
+{
+	const auto s = addSection(tr("Folders"), tr("Where the program keeps and looks for files."));
+	auto* config = ConfigManager::inst();
+
+	addRow(s, tr("Working folder"), Applies::Restart, pathSetting(config->workingDir(),
+		tr("Choose the LinuxMusic working directory"), false, {}, [this](const QString& dir) {
+			ConfigManager::inst()->setWorkingDir(dir);
+			restartFor(tr("The working folder"));
+		}), tr("Projects, samples, presets and recordings"));
+	addRow(s, tr("VST plugins"), Applies::Now, pathSetting(config->vstDir(),
+		tr("Choose your VST plugins directory"), false, {},
+		[](const QString& dir) { ConfigManager::inst()->setVSTDir(dir); }));
+	// (several folders, separated by commas: the chooser adds one)
+	addRow(s, tr("LADSPA plugins"), Applies::Restart, pathSetting(config->ladspaDir(),
+		tr("Choose your LADSPA plugins directory"), false, {}, [this](const QString& dir) {
+			ConfigManager::inst()->setLADSPADir(dir);
+			restartFor(tr("The LADSPA folders"));
+		}), tr("Folders separated by commas; looked through when the program starts"));
+	addRow(s, tr("SoundFonts"), Applies::Now, pathSetting(config->sf2Dir(), tr("Choose your SF2 directory"), false, {},
+		[](const QString& dir) { ConfigManager::inst()->setSF2Dir(dir); }));
 #ifdef LMMS_HAVE_FLUIDSYNTH
-	ConfigManager::inst()->setSF2File(m_sf2File);
+	addRow(s, tr("Default SoundFont"), Applies::Now, pathSetting(config->sf2File(), tr("Choose your default SF2"),
+		true, tr("SoundFont 2 files (*.sf2)"), [](const QString& file) { ConfigManager::inst()->setSF2File(file); }),
+		tr("For new Sf2 Player instruments"));
 #endif
-	ConfigManager::inst()->setGIGDir(QDir::fromNativeSeparators(m_gigDir));
-	ConfigManager::inst()->setThemeDir(QDir::fromNativeSeparators(m_themeDir));
-	ConfigManager::inst()->setBackgroundPicFile(m_backgroundPicFile);
+	addRow(s, tr("GIG files"), Applies::Now, pathSetting(config->gigDir(), tr("Choose your GIG directory"), false, {},
+		[](const QString& dir) { ConfigManager::inst()->setGIGDir(dir); }));
+}
 
-	// Tell all audio-settings-widgets to save their settings.
-	for(AswMap::iterator it = m_audioIfaceSetupWidgets.begin();
-		it != m_audioIfaceSetupWidgets.end(); ++it)
+
+
+
+// Aparência
+void SetupDialog::buildAppearance()
+{
+	const auto s = addSection(tr("Appearance"), tr("How the windows look and behave."));
+
+	addRow(s, tr("Tooltips"), Applies::Now, checkSetting("tooltips", "disabled", true, true));
+	addRow(s, tr("Compact track headers"), Applies::Now, checkSetting("ui", "compacttrackbuttons", false),
+		tr("Narrower; each header can still be widened by dragging its edge"));
+	addRow(s, tr("Explorer on the right"), Applies::Now, checkSetting("ui", "sidebaronright", false));
+	addRow(s, tr("One instrument window at a time"), Applies::Now,
+		checkSetting("ui", "oneinstrumenttrackwindow", false), tr("Opening one closes the other"));
+	addRow(s, tr("Note names in the Piano Roll"), Applies::Now, checkSetting("ui", "printnotelabels", false));
+	addRow(s, tr("Fader ticks"), Applies::Now, checkSetting("ui", "showfaderticks", false));
+	addRow(s, tr("Smooth scrolling in the Song Editor"), Applies::Now, checkSetting("ui", "smoothscroll", false));
+	addRow(s, tr("Playback position in the AudioFileProcessor"), Applies::Now, checkSetting("ui", "animateafp", true));
+
+	const auto choice = [this](const QString& cls, const QString& attribute, const QString& fallback,
+		const std::vector<std::pair<QString, QString>>& items) {
+		auto* box = new QComboBox;
+		for (const auto& [text, value] : items) { box->addItem(text, value); }
+		box->setCurrentIndex(std::max(0, box->findData(ConfigManager::inst()->value(cls, attribute, fallback))));
+		connect(box, &QComboBox::currentIndexChanged, this,
+			[this, box, cls, attribute] { set(cls, attribute, box->currentData().toString()); });
+		return box;
+	};
+	addRow(s, tr("Detached windows"), Applies::Now, choice("ui", "detachbehavior", "show", {
+		{tr("Attach and show when closed"), "show"},
+		{tr("Attach and hide when closed"), "hide"},
+		{tr("Always detached"), "detached"}}));
+	addRow(s, tr("Loop edit mode"), Applies::Now, choice("app", "loopmarkermode", "dual", {
+		{tr("Dual-button"), "dual"},
+		{tr("Grab closest"), "closest"},
+		{tr("Handles"), "handles"}}));
+	addRow(s, tr("Following the playhead"), Applies::Now, choice("ui", "autoscroll",
+		TimeLineWidget::AutoScrollSteppedString, {
+		{tr("Off"), TimeLineWidget::AutoScrollDisabledString},
+		{tr("Stepped (once it leaves the view)"), TimeLineWidget::AutoScrollSteppedString},
+		{tr("Continuous (kept in the middle)"), TimeLineWidget::AutoScrollContinuousString}}),
+		tr("The editors follow the playhead this way (each one's button changes it there)"));
+
+	addRow(s, tr("Theme folder"), Applies::Restart, pathSetting(ConfigManager::inst()->themeDir(),
+		tr("Choose your theme directory"), false, {}, [this](const QString& dir) {
+			ConfigManager::inst()->setThemeDir(dir);
+			restartFor(tr("The theme"));
+		}));
+}
+
+
+
+
+// Teclado e atalhos
+void SetupDialog::buildShortcuts()
+{
+	const auto s = addSection(tr("Keyboard and shortcuts"), tr("Each action's key, applied as it is set. The other "
+		"keys of the editors and the menus' keys are fixed."));
+	auto* table = new QTableWidget(static_cast<int>(Shortcuts::actions().size()), 3);
+	table->setObjectName("settingsShortcuts");
+	table->setHorizontalHeaderLabels({tr("Action"), tr("Key"), QString{}});
+	table->verticalHeader()->hide();
+	table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+	table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+	table->setColumnWidth(1, 220);
+	table->setSelectionMode(QAbstractItemView::NoSelection);
+	auto row = 0;
+	for (const auto& action : Shortcuts::actions())
 	{
-		it.value()->saveSettings();
+		auto* label = new QTableWidgetItem(Shortcuts::text(action));
+		label->setFlags(Qt::ItemIsEnabled);
+		table->setItem(row, 0, label);
+		auto* edit = new QKeySequenceEdit(Shortcuts::key(action.id), table);
+		edit->setMaximumSequenceLength(1);
+		table->setCellWidget(row, 1, edit);
+		connect(edit, &QKeySequenceEdit::keySequenceChanged, this, [this, id = action.id](const QKeySequence& key) {
+			if (m_building) { return; }
+			Shortcuts::setKey(id, key);
+			m_saveConfig.start();
+		});
+		auto* reset = new QPushButton(tr("Default"), table);
+		connect(reset, &QPushButton::clicked, edit, [edit, fallback = action.fallback] { edit->setKeySequence(fallback); });
+		table->setCellWidget(row, 2, reset);
+		++row;
 	}
-	// Tell all MIDI-settings-widgets to save their settings.
-	for(MswMap::iterator it = m_midiIfaceSetupWidgets.begin();
-		it != m_midiIfaceSetupWidgets.end(); ++it)
+	table->setMinimumHeight(std::min(row, 14) * table->verticalHeader()->defaultSectionSize()
+		+ table->horizontalHeader()->height() + 4);
+	addBlock(s, tr("Shortcuts"), Applies::Now, table);
+	// (the actions' names, for the search)
+	auto names = QStringList{};
+	for (const auto& action : Shortcuts::actions()) { names << Shortcuts::text(action); }
+	m_rows.back().searchText += ' ' + folded(names.join(' '));
+}
+
+
+
+
+// Avançado
+void SetupDialog::buildAdvanced()
+{
+	const auto s = addSection(tr("Advanced"), tr("Safety and performance."));
+
+	auto* sanitize = checkSetting("audioengine", "sanitizemix", true);
+	connect(static_cast<QCheckBox*>(sanitize), &QCheckBox::toggled, this,
+		[](bool on) { Engine::audioEngine()->setSanitizationEnabled(on); });
+	addRow(s, tr("Mix sanitization"), Applies::Now, sanitize, tr("Silences a channel when a plugin or track makes "
+		"something that is not a number (NaN or infinity), at a small cost"));
+	addRow(s, tr("Effects keep running without input"), Applies::Now, checkSetting("ui", "disableautoquit", true),
+		tr("Off: an effect whose input went silent stops after its tail, sparing the processor"));
+}
+
+
+
+
+void SetupDialog::resizeEvent(QResizeEvent* event)
+{
+	QDialog::resizeEvent(event);
+	fitRows();
+}
+
+
+
+
+void SetupDialog::fitRows()
+{
+	// Wide: the line after a control beside it, as in the design; narrow: under it (nothing cut)
+	const auto direction = m_pages->width() >= 900 ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom;
+	for (const auto& row : m_rows)
 	{
-		it.value()->saveSettings();
+		if (row.body && row.body->direction() != direction) { row.body->setDirection(direction); }
 	}
-	ConfigManager::inst()->saveConfigFile();
+}
 
-	// The MIDI driver opens again if it changed, the tracks' ports moving to it (see AudioEngine::reopenMidiClient())
-	if (midiSettings() != midiBefore)
+
+
+
+auto SetupDialog::sectionTitles(bool shownOnly) const -> QStringList
+{
+	auto titles = QStringList{};
+	for (const auto& section : m_sections)
 	{
-		if (const auto told = Engine::audioEngine()->reopenMidiClient(); !told.isEmpty())
-		{
-			QMessageBox::information(this, tr("MIDI"), told);
-		}
+		if (!shownOnly || !section.item->isHidden()) { titles << section.title; }
 	}
+	return titles;
+}
 
-	// The audio device opens again with what changed (see AudioEngine::reopenAudioDevice())
-	if (m_audioChanged)
+
+
+
+auto SetupDialog::currentSection() const -> QString
+{
+	const auto row = m_sectionList->currentRow();
+	return row >= 0 && row < static_cast<int>(m_sections.size()) ? m_sections[row].title : QString{};
+}
+
+
+
+
+void SetupDialog::search(const QString& text)
+{
+	if (m_search->text() != text)
 	{
-		m_audioChanged = false;
-		if (const auto told = Engine::audioEngine()->reopenAudioDevice(); !told.isEmpty())
-		{
-			QMessageBox::information(this, tr("Audio device"), told);
-		}
-	}
-}
-
-
-
-
-// General settings slots.
-
-void SetupDialog::toggleTooltips(bool enabled)
-{
-	m_tooltips = enabled;
-}
-
-
-void SetupDialog::toggleDisplayWaveform(bool enabled)
-{
-	m_displayWaveform = enabled;
-}
-
-
-void SetupDialog::toggleNoteLabels(bool enabled)
-{
-	m_printNoteLabels = enabled;
-}
-
-void SetupDialog::toggleShowFaderTicks(bool enabled)
-{
-	m_showFaderTicks = enabled;
-}
-
-void SetupDialog::toggleCompactTrackButtons(bool enabled)
-{
-	m_compactTrackButtons = enabled;
-}
-
-
-void SetupDialog::toggleOneInstrumentTrackWindow(bool enabled)
-{
-	m_oneInstrumentTrackWindow = enabled;
-}
-
-
-void SetupDialog::toggleSideBarOnRight(bool enabled)
-{
-	m_sideBarOnRight = enabled;
-}
-
-
-void SetupDialog::toggleLetPreviewsFinish(bool enabled)
-{
-	m_letPreviewsFinish = enabled;
-}
-
-
-void SetupDialog::toggleTrackDeletionWarning(bool enabled)
-{
-	m_trackDeletionWarning = enabled;
-}
-
-void SetupDialog::toggleMixerChannelDeletionWarning(bool enabled)
-{
-	m_mixerChannelDeletionWarning = enabled;
-}
-
-
-void SetupDialog::toggleMMPZ(bool enabled)
-{
-	m_MMPZ = enabled;
-}
-
-
-void SetupDialog::toggleDisableBackup(bool enabled)
-{
-	m_disableBackup = enabled;
-}
-
-
-void SetupDialog::toggleOpenLastProject(bool enabled)
-{
-	m_openLastProject = enabled;
-}
-
-
-void SetupDialog::detachBehaviorChanged()
-{
-	m_detachBehavior = m_detachBehaviorComboBox->currentData().toString();
-}
-
-
-void SetupDialog::loopMarkerModeChanged()
-{
-	m_loopMarkerMode = m_loopMarkerComboBox->currentData().toString();
-}
-
-
-void SetupDialog::setLanguage(int lang)
-{
-	m_lang = m_languages[lang];
-}
-
-
-// Performance settings slots.
-
-void SetupDialog::toggleAutoSave(bool enabled)
-{
-	m_enableAutoSave = enabled;
-}
-
-
-void SetupDialog::toggleSmoothScroll(bool enabled)
-{
-	m_smoothScroll = enabled;
-}
-
-
-void SetupDialog::toggleAnimateAFP(bool enabled)
-{
-	m_animateAFP = enabled;
-}
-
-
-void SetupDialog::vstEmbedMethodChanged()
-{
-	m_vstEmbedMethod = m_vstEmbedComboBox->currentData().toString();
-	m_vstAlwaysOnTopCheckBox->setVisible(m_vstEmbedMethod == "none");
-}
-
-
-void SetupDialog::toggleVSTAlwaysOnTop(bool enabled)
-{
-	m_vstAlwaysOnTop = enabled;
-}
-
-
-void SetupDialog::toggleDisableAutoQuit(bool enabled)
-{
-	m_disableAutoQuit = enabled;
-}
-
-void SetupDialog::toggleMixSanitization(bool enabled)
-{
-	m_mixSanitization = enabled;
-	Engine::audioEngine()->setSanitizationEnabled(m_mixSanitization);
-}
-
-void SetupDialog::audioInterfaceChanged(const QString & iface)
-{
-	for(AswMap::iterator it = m_audioIfaceSetupWidgets.begin();
-		it != m_audioIfaceSetupWidgets.end(); ++it)
-	{
-		it.value()->hide();
-	}
-
-	m_audioIfaceSetupWidgets[m_audioIfaceNames[iface]]->show();
-}
-
-
-void SetupDialog::updateBufferSizeWarning(int value)
-{
-	QString text = "<ul>";
-	// 'value' is not a power of 2 (for value > 0) and under 256. On buffer sizes larger than 256
-	// lmms works with chunks of size 256 and only the final mix will use the actual buffer size.
-	// Plugins don't see a larger buffer size than 256 so anything larger than this is functionally
-	// a 'power of 2' value.
-	if(((value & (value - 1)) != 0) && value < 256)
-	{
-		text += "<li>" + tr("The currently selected value is not a power of 2 "
-					"(32, 64, 128, 256). Some plugins may not be available.") + "</li>";
-	}
-	if(value <= 32)
-	{
-		text += "<li>" + tr("The currently selected value is less than or equal to 32. "
-					"Some plugins may not be available.") + "</li>";
-	}
-	text += "</ul>";
-	m_bufferSizeWarnLbl->setText(text);
-}
-
-
-void SetupDialog::setBufferSize(int value)
-{
-	const int step = DEFAULT_BUFFER_SIZE / BUFFERSIZE_RESOLUTION;
-	if(value > step && value % step)
-	{
-		int mod_value = value % step;
-		if(mod_value < step / 2)
-		{
-			m_bufferSizeSlider->setValue(value - mod_value);
-		}
-		else
-		{
-			m_bufferSizeSlider->setValue(value + step - mod_value);
-		}
+		m_search->setText(text); // (comes back here)
 		return;
 	}
-
-	if(m_bufferSizeSlider->value() != value)
+	const auto wanted = folded(text.trimmed());
+	auto found = std::vector<int>(m_sections.size(), 0);
+	for (const auto& row : m_rows)
 	{
-		m_bufferSizeSlider->setValue(value);
+		// A section's title finds all of its settings
+		const bool shown = wanted.isEmpty() || row.searchText.contains(wanted)
+			|| folded(m_sections[row.section].title).contains(wanted);
+		const bool empty = (row.widget == m_audioDeviceRow || row.widget == m_midiDeviceRow) && !rowHasContent(row.widget);
+		row.widget->setVisible(shown && !empty);
+		if (shown && !empty) { ++found[row.section]; }
 	}
-
-	m_bufferSize = value * BUFFERSIZE_RESOLUTION;
-	m_bufferSizeLbl->setText(tr("Frames: %1\nLatency: %2 ms").arg(m_bufferSize).arg(
-		1000.0f * m_bufferSize / Engine::audioEngine()->outputSampleRate(), 0, 'f', 1));
-	updateBufferSizeWarning(m_bufferSize);
-}
-
-
-void SetupDialog::resetBufferSize()
-{
-	setBufferSize(DEFAULT_BUFFER_SIZE / BUFFERSIZE_RESOLUTION);
-}
-
-
-// MIDI settings slots.
-
-void SetupDialog::midiInterfaceChanged(const QString & iface)
-{
-	for(MswMap::iterator it = m_midiIfaceSetupWidgets.begin();
-		it != m_midiIfaceSetupWidgets.end(); ++it)
+	for (std::size_t i = 0; i < m_sections.size(); ++i)
 	{
-		it.value()->hide();
+		m_sections[i].item->setHidden(found[i] == 0);
 	}
-
-	m_midiIfaceSetupWidgets[m_midiIfaceNames[iface]]->show();
-}
-
-void SetupDialog::toggleMidiAutoQuantization(bool enabled)
-{
-	m_midiAutoQuantize = enabled;
-}
-
-
-// Paths settings slots.
-
-void SetupDialog::openWorkingDir()
-{
-	QString new_dir = FileDialog::getExistingDirectory(this,
-		tr("Choose the LinuxMusic working directory"), m_workingDir);
-	if (!new_dir.isEmpty())
+	// The section shown is one that has what was searched
+	if (const auto current = m_sectionList->currentRow(); current < 0 || found[current] == 0)
 	{
-		m_workingDirLineEdit->setText(new_dir);
+		const auto first = std::find_if(found.begin(), found.end(), [](int count) { return count > 0; });
+		if (first != found.end()) { m_sectionList->setCurrentRow(static_cast<int>(first - found.begin())); }
 	}
 }
 
 
-void SetupDialog::setWorkingDir(const QString & workingDir)
-{
-	m_workingDir = workingDir;
-}
 
 
-void SetupDialog::openVSTDir()
+auto SetupDialog::rowHasContent(const QWidget* row) const -> bool
 {
-	QString new_dir = FileDialog::getExistingDirectory(this,
-		tr("Choose your VST plugins directory"), m_vstDir);
-	if (!new_dir.isEmpty())
+	if (row == m_audioDeviceRow)
 	{
-		m_vstDirLineEdit->setText(new_dir);
+		const auto* widget = m_audioSetupWidgets.value(m_audioInterfaces->currentData().toString());
+		return widget && !widget->findChildren<QWidget*>().isEmpty();
 	}
-}
-
-
-void SetupDialog::setVSTDir(const QString & vstDir)
-{
-	m_vstDir = vstDir;
-}
-
-
-void SetupDialog::openLADSPADir()
-{
-	QString new_dir = FileDialog::getExistingDirectory(this,
-		tr("Choose your LADSPA plugins directory"), m_ladspaDir);
-	if (!new_dir.isEmpty())
+	if (row == m_midiDeviceRow)
 	{
-		if(m_ladspaDirLineEdit->text() == "")
-		{
-			m_ladspaDirLineEdit->setText(new_dir);
-		}
-		else
-		{
-			m_ladspaDirLineEdit->setText(m_ladspaDirLineEdit->text() + "," +
-								new_dir);
-		}
+		const auto* widget = m_midiSetupWidgets.value(m_midiInterfaces->currentData().toString());
+		return widget && !widget->configSection().isEmpty();
 	}
-}
-
-
-void SetupDialog::setLADSPADir(const QString & ladspaDir)
-{
-	m_ladspaDir = ladspaDir;
-}
-
-
-void SetupDialog::openSF2Dir()
-{
-	QString new_dir = FileDialog::getExistingDirectory(this,
-		tr("Choose your SF2 directory"), m_sf2Dir);
-	if (!new_dir.isEmpty())
-	{
-		m_sf2DirLineEdit->setText(new_dir);
-	}
-}
-
-
-void SetupDialog::setSF2Dir(const QString & sf2Dir)
-{
-	m_sf2Dir = sf2Dir;
-}
-
-
-void SetupDialog::openSF2File()
-{
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	QString new_file = FileDialog::getOpenFileName(this,
-		tr("Choose your default SF2"), m_sf2File, "SoundFont 2 files (*.sf2)");
-
-	if (!new_file.isEmpty())
-	{
-		m_sf2FileLineEdit->setText(new_file);
-	}
-#endif
-}
-
-
-void SetupDialog::setSF2File(const QString & sf2File)
-{
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	m_sf2File = sf2File;
-#endif
-}
-
-
-void SetupDialog::openGIGDir()
-{
-	QString new_dir = FileDialog::getExistingDirectory(this,
-		tr("Choose your GIG directory"), m_gigDir);
-	if(!new_dir.isEmpty())
-	{
-		m_gigDirLineEdit->setText(new_dir);
-	}
-}
-
-
-void SetupDialog::setGIGDir(const QString & gigDir)
-{
-	m_gigDir = gigDir;
-}
-
-
-void SetupDialog::openThemeDir()
-{
-	QString new_dir = FileDialog::getExistingDirectory(this,
-		tr("Choose your theme directory"), m_themeDir);
-	if(!new_dir.isEmpty())
-	{
-		m_themeDirLineEdit->setText(new_dir);
-	}
-}
-
-
-void SetupDialog::setThemeDir(const QString & themeDir)
-{
-	m_themeDir = themeDir;
-}
-
-
-void SetupDialog::openBackgroundPicFile()
-{
-	QList<QByteArray> fileTypesList = QImageReader::supportedImageFormats();
-	QString fileTypes;
-	for(int i = 0; i < fileTypesList.count(); i++)
-	{
-		if(fileTypesList[i] != fileTypesList[i].toUpper())
-		{
-			if(!fileTypes.isEmpty())
-			{
-				fileTypes += " ";
-			}
-			fileTypes += "*." + QString(fileTypesList[i]);
-		}
-	}
-
-	QString dir = (m_backgroundPicFile.isEmpty()) ?
-		m_themeDir :
-		m_backgroundPicFile;
-	QString new_file = FileDialog::getOpenFileName(this,
-		tr("Choose your background picture"), dir, "Picture files (" + fileTypes + ")");
-
-	if(!new_file.isEmpty())
-	{
-		m_backgroundPicFileLineEdit->setText(new_file);
-	}
-}
-
-
-void SetupDialog::setBackgroundPicFile(const QString & backgroundPicFile)
-{
-	m_backgroundPicFile = backgroundPicFile;
+	return true;
 }
 
 
 
 
-void SetupDialog::showRestartWarning()
+void SetupDialog::restartNow()
 {
-	restartWarningLbl->show();
+	auto* window = getGUI() ? getGUI()->mainWindow() : nullptr;
+	if (!window) { return; }
+	accept();
+	// The project saved (or not, as the user says), and opened again by the program started again
+	GuiApplication::restartAfterQuit(window);
 }
 
 

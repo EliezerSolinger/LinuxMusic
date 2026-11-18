@@ -1537,3 +1537,138 @@ lmms--gui--MixerChannelView QPushButton#btn-drive[kind="tube"] {
 	background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #ffb347, stop:0.6 #ff7a1a, stop:1 #b33c00);
 	color: #2a0e00;
 }
+
+/* The settings (design 08): sections at the side with a search, each setting saying what applying it takes */
+QDialog#settings {
+	background: #181a1e;
+}
+
+QWidget#settingsSide {
+	background: #14161a;
+	border-right: 1px solid #262b30;
+}
+
+QLineEdit#settingsSearch {
+	background: #1e2227;
+	border: 1px solid #343840;
+	border-radius: 4px;
+	padding: 4px 6px;
+	color: #d1d8e4;
+}
+
+QListWidget#settingsSections {
+	background: transparent;
+	outline: none;
+	font-size: 12px;
+}
+
+QListWidget#settingsSections::item {
+	color: #8c96a3;
+	padding: 7px 10px;
+	border-radius: 4px;
+	margin-bottom: 2px;
+}
+
+QListWidget#settingsSections::item:hover {
+	background: #1e2227;
+	color: #d1d8e4;
+}
+
+QListWidget#settingsSections::item:selected {
+	background: #262b30;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+QScrollArea#settingsPage, QWidget#settingsPageContent {
+	background: #181a1e;
+	border: none;
+}
+
+QLabel#settingsTitle {
+	color: #ffffff;
+	font-size: 18px;
+	font-weight: bold;
+}
+
+QLabel#settingsSubtitle, QLabel#settingsHint {
+	color: #8c96a3;
+	font-size: 11px;
+}
+
+QWidget#settingsRow {
+	border-bottom: 1px solid #22262b;
+}
+
+QLabel#settingsName {
+	color: #d1d8e4;
+	font-size: 12px;
+}
+
+QLabel#settingsValue {
+	color: #ffffff;
+	font-size: 12px;
+}
+
+QLabel#settingsTagNow {
+	color: #0bd556;
+	font-size: 9px;
+}
+
+QLabel#settingsTagRestart {
+	color: #f2c25a;
+	font-size: 9px;
+	border: 1px solid #c99a06;
+	border-radius: 3px;
+	padding: 0px 3px;
+}
+
+QLabel#settingsWarning {
+	color: #f2c25a;
+	font-size: 11px;
+	padding: 4px 0px;
+}
+
+QPushButton#settingsRate {
+	background: #262b30;
+	border: 1px solid #343840;
+	border-radius: 3px;
+	color: #d1d8e4;
+	padding: 3px 8px;
+	font-size: 11px;
+}
+
+QPushButton#settingsRate:checked {
+	background: #0bd556;
+	border-color: #0bd556;
+	color: #0c0d0f;
+	font-weight: bold;
+}
+
+QFrame#settingsRestartStrip {
+	background: #2a2414;
+	border: 1px solid #6b5a1a;
+	border-radius: 6px;
+}
+
+QFrame#settingsRestartStrip QLabel {
+	color: #f2e6c4;
+	font-size: 12px;
+}
+
+QPushButton#settingsRestartLater {
+	background: #343840;
+	border: 1px solid #3B424A;
+	border-radius: 4px;
+	color: #d1d8e4;
+	padding: 5px 12px;
+}
+
+QPushButton#settingsRestartNow {
+	background: #0bd556;
+	border: 1px solid #0bd556;
+	border-radius: 4px;
+	color: #0c0d0f;
+	font-weight: bold;
+	padding: 5px 12px;
+}

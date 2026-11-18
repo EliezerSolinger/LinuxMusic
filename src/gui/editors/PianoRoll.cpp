@@ -254,14 +254,13 @@ PianoRoll::PianoRoll() :
 	connect( markChordAction, &QAction::triggered, [this](){ markSemiTone(SemiToneMarkerAction::MarkCurrentChord); });
 	connect( unmarkAllAction, &QAction::triggered, [this](){ markSemiTone(SemiToneMarkerAction::UnmarkAll); });
 	connect( copyAllNotesAction, &QAction::triggered, [this](){ markSemiTone(SemiToneMarkerAction::CopyAllNotesOnKey); });
-	connect(ConfigManager::inst(), &ConfigManager::valueChanged,
+	// (with this as the context: the connection goes with the Piano Roll)
+	connect(ConfigManager::inst(), &ConfigManager::valueChanged, this,
 		[this](QString const& cls, QString const& attribute, QString const& value)
 		{
-			if (!(cls == "midi" && attribute == "autoquantize"))
-			{
-				return;
-			}
-			this->m_doAutoQuantization = (value.toInt() != 0);
+			if (cls == "midi" && attribute == "autoquantize") { m_doAutoQuantization = value.toInt() != 0; }
+			// (read as it draws)
+			else if (cls == "ui" && attribute == "printnotelabels") { update(); }
 		});
 
 	markScaleAction->setEnabled( false );

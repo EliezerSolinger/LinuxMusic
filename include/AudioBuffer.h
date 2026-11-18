@@ -25,6 +25,7 @@
 #ifndef LMMS_AUDIO_BUFFER_H
 #define LMMS_AUDIO_BUFFER_H
 
+#include <atomic>
 #include <bitset>
 #include <memory_resource>
 #include <vector>
@@ -626,6 +627,19 @@ public:
 	void enableSilenceTracking(bool enabled);
 	auto silenceTrackingEnabled() const -> bool { return m_silenceTrackingEnabled; }
 
+	/**
+	 * Whether the buffers track silence, which effects' auto-quit needs (the setting "Effects keep running without
+	 * input" off). Changed while playing: each buffer takes the change the next time its flags are updated, on the
+	 * thread using it (until then it goes on as it was, which is safe either way: without tracking, channels are
+	 * taken as not silent). A buffer set otherwise with enableSilenceTracking() stays so until the next change.
+	 */
+	static void setSilenceTrackingWanted(bool wanted)
+	{
+		s_silenceTrackingWanted.store(wanted, std::memory_order_relaxed);
+		s_silenceTrackingChanges.fetch_add(1, std::memory_order_release);
+	}
+	static auto silenceTrackingWanted() -> bool { return s_silenceTrackingWanted.load(std::memory_order_relaxed); }
+
 	//! Mixes the silence flags of the other `AudioBuffer` with this `AudioBuffer`
 	void mixSilenceFlags(const AudioBuffer& other);
 
@@ -706,6 +720,28 @@ private:
 	ChannelFlags m_silenceFlags;
 
 	bool m_silenceTrackingEnabled = false;
+	static inline std::atomic<bool> s_silenceTrackingWanted = false;
+	static inline std::atomic<unsigned> s_silenceTrackingChanges = 0;	//!< (counts the changes of the wish)
+	unsigned m_silenceTrackingChangesSeen = 0;
+
+	//! Whether silenceTrackingWanted() changed since this buffer last looked (and @p wanted, what it is now)
+	auto silenceTrackingChanged(bool& wanted) -> bool
+	{
+		const auto changes = s_silenceTrackingChanges.load(std::memory_order_acquire);
+		if (changes == m_silenceTrackingChangesSeen) { return false; }
+		m_silenceTrackingChangesSeen = changes;
+		wanted = silenceTrackingWanted();
+		return true;
+	}
+
+	//! Takes a change of silenceTrackingWanted()
+	void followSilenceTracking()
+	{
+		if (auto wanted = false; silenceTrackingChanged(wanted) && wanted != m_silenceTrackingEnabled)
+		{
+			enableSilenceTracking(wanted);
+		}
+	}
 
 	//! Divides channels into arbitrary groups
 	ArrayVector<ChannelGroup, MaxGroupsPerAudioBuffer> m_groups;

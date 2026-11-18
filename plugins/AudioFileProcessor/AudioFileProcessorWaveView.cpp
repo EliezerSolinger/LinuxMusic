@@ -89,6 +89,15 @@ AudioFileProcessorWaveView::AudioFileProcessorWaveView(QWidget* parent, int w, i
 {
 	setFixedSize(w, h);
 	setMouseTracking(true);
+	// The playback position shown or not, as the setting changes
+	connect(ConfigManager::inst(), &ConfigManager::valueChanged, this,
+		[this](const QString& cls, const QString& attribute, const QString& value) {
+			if (cls == "ui" && attribute == "animateafp")
+			{
+				m_animation = value.toInt() != 0;
+				update();
+			}
+		});
 
 	configureKnobRelationsAndWaveViews();
 

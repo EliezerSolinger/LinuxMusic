@@ -180,8 +180,12 @@ public slots:
 	void showSettingsDialog();
 	//! The settings, as a page of the window (the gear beside the pages), open at @p tab
 	void showSettingsPage(int tab = 0);
-	//! Closes the open settings: saved or discarded as the user says when they changed; false: they stay open
+	//! Closes the open settings (what still waits applies now); false: they stay open
 	auto closeSettings(SetupDialog* settings) -> bool;
+	//! A setting that changes this window, as it changes (ConfigManager::valueChanged)
+	void applySetting(const QString& cls, const QString& attribute, const QString& value);
+	//! The explorers on the left of the workspace, or on its right
+	void placeExplorers(bool onTheRight);
 	void aboutLMMS();
 	void help();
 	void toggleAutomationEditorWin();

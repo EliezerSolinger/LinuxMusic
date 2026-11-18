@@ -186,8 +186,19 @@ queda do Mallets, que é queda e entra antes.
     do que o anel guarda.
   - Efeitos: os ataques com 0 no mínimo (LOMM, Peak Controller) são tempos de detecção do nível, não o começo de
     um som: não dão clique.
-- [ ] **Configurações que só valem depois de reiniciar** (o backend de áudio, por exemplo): ao sair da tela de
-  configurações, nada muda até reiniciar à mão.
+- [x] **Configurações que só valem depois de reiniciar** (o backend de áudio, por exemplo): ao sair da tela de
+  configurações, nada muda até reiniciar à mão. Feito com o design 08 (item abaixo): cada opção vale assim que
+  muda, sem "Salvar".
+  - O áudio (sistema, dispositivo, taxa, buffer) e o MIDI abrem de novo sozinhos, 0,4 s depois da última mudança
+    (arrastar o buffer abre o dispositivo uma vez); o que ele disser (outro dispositivo, outra taxa) aparece na
+    própria seção, sem caixa de mensagem.
+  - Passaram a valer na hora: dicas, cabeçalhos compactos, explorador à direita, nomes das notas no Piano Roll,
+    marcas dos faders, cursor do AudioFileProcessor, modo de seguir o cursor (os editores abertos também),
+    limpeza da mixagem e "efeitos continuam sem entrada" (cada buffer adota a mudança na própria thread de
+    áudio). O meio comum: `ConfigManager::valueChanged`, que agora também avisa quando a chave é nova.
+  - Pedem reinício de verdade: idioma, tema, pasta de trabalho e pastas LADSPA (lidas ao abrir). A faixa
+    "Reiniciar agora" fecha o programa pelo caminho normal (pergunta se salva o projeto) e o `main()` o abre de
+    novo com o projeto, depois de tudo fechado.
   - Aplicar na hora o que der.
   - O que precisar reiniciar avisa e oferece reiniciar.
   - Levantar a lista de opções e o que cada uma precisa.
@@ -238,7 +249,12 @@ queda do Mallets, que é queda e entra antes.
   - Um visor grande de posição e um menor de tempo, clicáveis para trocar o formato.
   - Estado escrito e colorido (parado, tocando, gravando, contagem).
   - Andamento editável no lugar, com Tap.
-- [ ] **Configurações novas (design aprovado em 17/11):** `docs/design-sugestoes/08-configuracoes.png`.
+- [x] **Configurações novas (design aprovado em 17/11):** `docs/design-sugestoes/08-configuracoes.png`.
+  - Seções Geral, Áudio, MIDI, Gravação, Plugins, Pastas, Aparência, Teclado e atalhos, Avançado; a busca acha
+    pelo nome, pela linha de ajuda e pelas escolhas, sem diferenciar maiúsculas nem acentos.
+  - A latência ao lado do buffer: a que o dispositivo mede, quando ele informa; senão, a do buffer.
+  - Em janela estreita, a linha de ajuda vai para baixo do controle. `SetupDialogTest` cobre seções, busca,
+    gravar na hora, avisos, o motor seguindo e o dispositivo abrindo uma vez só.
   - Seções numa lista lateral com busca.
   - Cada opção diz se aplica na hora ou pede reinício.
   - A latência real ao lado do buffer.

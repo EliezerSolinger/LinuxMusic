@@ -26,6 +26,7 @@
 #ifndef LMMS_EFFECT_H
 #define LMMS_EFFECT_H
 
+#include "AudioBuffer.h"
 #include "AudioBufferView.h"
 #include "AudioEngine.h"
 #include "AudioProcessor.h"
@@ -138,9 +139,10 @@ public:
 		return &m_autoQuitModel;
 	}
 
+	//! (the setting "Effects keep running without input" off; it applies as it changes)
 	bool autoQuitEnabled() const
 	{
-		return m_autoQuitEnabled;
+		return AudioBuffer::silenceTrackingWanted();
 	}
 
 	EffectChain * effectChain() const
@@ -232,7 +234,6 @@ private:
 	FloatModel m_wetDryModel;
 	TempoSyncKnobModel m_autoQuitModel;
 
-	bool m_autoQuitEnabled = false;
 
 	//! The dry signal of latent effects (see mixDrySignal())
 	LatencyDelay m_dryDelay;

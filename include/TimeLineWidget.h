@@ -27,6 +27,7 @@
 
 #include <array>
 
+#include <QPointer>
 #include <QSize>
 #include <QWidget>
 
@@ -45,6 +46,7 @@ class Timeline;
 namespace lmms::gui
 {
 
+class NStateButton;
 class TextFloat;
 
 
@@ -242,6 +244,7 @@ private:
 	const TimePos & m_begin;
 
 	AutoScrollState m_autoScroll = defaultAutoScrollState();
+	QPointer<NStateButton> m_autoScrollButton;	//!< (in the editor's tool bar, if it has one)
 
 	// When in MoveLoop mode we need the initial positions. Storing only the latest
 	// position allows for unquantized drag but fails when toggling quantization.

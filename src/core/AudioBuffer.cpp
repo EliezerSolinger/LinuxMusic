@@ -640,6 +640,7 @@ auto AudioBuffer::updateSilenceFlags(const ChannelFlags& channels, ch_cnt_t uppe
 
 	const auto totalChannels = std::min(upperBound, this->channels());
 
+	followSilenceTracking();
 	if (!m_silenceTrackingEnabled)
 	{
 		// Mark specified channels (up to the upper bound) as non-silent
@@ -673,6 +674,8 @@ auto AudioBuffer::updateAllSilenceFlags() -> bool
 	// If there are no channels, return true (all channels are silent)
 	if (channels() == 0) { return true; }
 
+	// (a change of the wish; enableSilenceTracking() comes back here with it taken)
+	if (auto wanted = false; silenceTrackingChanged(wanted)) { m_silenceTrackingEnabled = wanted; }
 	if (!m_silenceTrackingEnabled)
 	{
 		// Mark all channels below `channels()` as non-silent
@@ -740,7 +743,8 @@ auto AudioBuffer::absPeakValue(ch_cnt_t channel) const -> float
 
 void AudioBuffer::initAudioBuffer()
 {
-	m_silenceTrackingEnabled = ConfigManager::inst()->value("ui", "disableautoquit", "1").toInt() == 0;
+	m_silenceTrackingChangesSeen = s_silenceTrackingChanges.load(std::memory_order_acquire);
+	m_silenceTrackingEnabled = silenceTrackingWanted();
 
 	if (channels() == 0)
 	{

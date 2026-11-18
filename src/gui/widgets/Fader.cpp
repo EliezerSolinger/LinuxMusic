@@ -93,6 +93,12 @@ Fader::Fader(FloatModel* model, const QString& name, QWidget* parent, bool model
 
 	m_conversionFactor = 100.0;
 
+	// The ticks, as the setting changes (read as it draws)
+	connect(ConfigManager::inst(), &ConfigManager::valueChanged, this,
+		[this](const QString& cls, const QString& attribute) {
+			if (cls == "ui" && attribute == "showfaderticks") { update(); }
+		});
+
 	if (model)
 	{
 		// We currently assume that the model is not changed later on and only connect here once

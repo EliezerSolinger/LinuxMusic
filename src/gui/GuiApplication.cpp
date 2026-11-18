@@ -23,6 +23,9 @@
  */
 
 #include "GuiApplication.h"
+
+#include <optional>
+#include <utility>
 #include "Track.h"
 #include "MidiClip.h"
 
@@ -60,6 +63,7 @@
 #include "UserNotice.h"
 
 #include <QApplication>
+#include <QProcess>
 #include <QDebug>
 #include <QDir>
 #include <QtGlobal>
@@ -191,6 +195,43 @@ void quitWhenTheMainLoopRuns()
 void GuiApplication::mainLoopStarts()
 {
 	s_mainLoopStarted = true;
+}
+
+
+
+
+namespace
+{
+//! The program and its arguments, to start once this one has ended (see GuiApplication::restartAfterQuit())
+std::optional<std::pair<QString, QStringList>> s_startAgain;
+}
+
+
+void GuiApplication::restartAfterQuit(MainWindow* window)
+{
+	// The project, as it will be saved (a new project unsaved: a new one)
+	auto arguments = QStringList{};
+	const auto project = Engine::getSong()->projectFileName();
+	s_startAgain = std::pair{QCoreApplication::applicationFilePath(), arguments};
+	if (!window->close())
+	{
+		// The user kept the program open (cancelled saving)
+		s_startAgain.reset();
+		return;
+	}
+	// (saved now, if it was to be saved)
+	const auto saved = Engine::getSong()->projectFileName();
+	if (!saved.isEmpty() && QFileInfo::exists(saved)) { s_startAgain->second << saved; }
+	else if (!project.isEmpty() && QFileInfo::exists(project)) { s_startAgain->second << project; }
+	QCoreApplication::quit();
+}
+
+
+void GuiApplication::startAgainIfAsked()
+{
+	if (!s_startAgain) { return; }
+	QProcess::startDetached(s_startAgain->first, s_startAgain->second);
+	s_startAgain.reset();
 }
 
 

@@ -1,9 +1,9 @@
 /*
- * SetupDialog.h - dialog for setting up LMMS
+ * SetupDialog.h - the settings
  *
  * Copyright (c) 2005-2014 Tobias Doerffel <tobydox/at/users.sourceforge.net>
  *
- * This file is part of LMMS - https://lmms.io
+ * This file is part of LinuxMusic, a fork of LMMS - https://lmms.io
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public
@@ -26,38 +26,43 @@
 #define LMMS_GUI_SETUP_DIALOG_H
 
 #include <QDialog>
-#include <utility>
-#include <vector>
 #include <QMap>
+#include <QStringList>
+#include <QTimer>
+#include <functional>
+#include <vector>
 
-#include "AudioDevice.h"
-#include "AudioDeviceSetupWidget.h"
-#include "MidiClient.h"
-#include "MidiSetupWidget.h"
-
-
-class QCheckBox;
-class QDoubleSpinBox;
+class QBoxLayout;
+class QButtonGroup;
 class QComboBox;
 class QLabel;
-class QListWidget;
 class QLineEdit;
-class QKeySequenceEdit;
-class QSpinBox;
+class QListWidget;
+class QListWidgetItem;
 class QSlider;
-
+class QSpinBox;
+class QStackedWidget;
+class QVBoxLayout;
 
 namespace lmms::gui
 {
 
+class AudioDeviceSetupWidget;
+class MidiSetupWidget;
 
-class TabBar;
-
+/**
+ * The settings (design 08 in docs/design-sugestoes): sections in a list at the side, with a search, and each
+ * setting applied as it changes, as far as it can be: the audio device and the MIDI driver open again by
+ * themselves (a moment after the last change, so that dragging the buffer opens it once). Each setting says before
+ * it is changed whether it applies at once or asks for a restart; the ones that do (the language, the theme...)
+ * show a strip offering to restart, which saves the project and opens it again.
+ */
 class SetupDialog : public QDialog
 {
 	Q_OBJECT
 
 public:
+	//! The section to open at (kept for the callers of the tabs it had)
 	enum class ConfigTab
 	{
 		GeneralSettings,
@@ -69,181 +74,120 @@ public:
 	};
 
 	//! @param page shows it inside @p page (the settings page of the main window) rather than as a window
-	SetupDialog(ConfigTab tab_to_open = ConfigTab::GeneralSettings, QWidget* page = nullptr);
+	SetupDialog(ConfigTab tabToOpen = ConfigTab::GeneralSettings, QWidget* page = nullptr);
 	~SetupDialog() override;
 
+	//! What changed and asks for a restart (shown in the strip at the bottom)
+	auto restartNeeded() const -> const QStringList& { return m_restartNeeded; }
 
-	//! Whether a setting was changed since the page opened
-	auto hasChanges() const -> bool { return m_changed; }
+	//! The section titles (in their order) and which are shown by the search
+	auto sectionTitles(bool shownOnly = false) const -> QStringList;
+	auto currentSection() const -> QString;
+	//! Searches the settings (as typing in the search box)
+	void search(const QString& text);
 
 public slots:
-	//! Applies the settings (and closes)
+	//! Applies what is still waiting (the device opening again a moment after the last change), and closes
 	void accept() override;
-
-protected slots:
-
-
-private slots:
-	// General settings widget.
-	void toggleTooltips(bool enabled);
-	void toggleDisplayWaveform(bool enabled);
-	void toggleNoteLabels(bool enabled);
-	void toggleShowFaderTicks(bool enabled);
-	void toggleCompactTrackButtons(bool enabled);
-	void toggleOneInstrumentTrackWindow(bool enabled);
-	void toggleSideBarOnRight(bool enabled);
-	void toggleLetPreviewsFinish(bool enabled);
-	void toggleTrackDeletionWarning(bool enabled);
-	void toggleMixerChannelDeletionWarning(bool enabled);
-	void toggleMMPZ(bool enabled);
-	void toggleDisableBackup(bool enabled);
-	void toggleOpenLastProject(bool enabled);
-	void detachBehaviorChanged();
-	void loopMarkerModeChanged();
-	void setLanguage(int lang);
-
-	// Performance settings widget.
-	void toggleAutoSave(bool enabled);
-	void toggleSmoothScroll(bool enabled);
-	void toggleAnimateAFP(bool enabled);
-	void vstEmbedMethodChanged();
-	void toggleVSTAlwaysOnTop(bool en);
-	void toggleDisableAutoQuit(bool enabled);
-	void toggleMixSanitization(bool enabled);
-
-	// Audio settings widget.
-	void audioInterfaceChanged(const QString & driver);
-	void updateBufferSizeWarning(int value);
-	void setBufferSize(int value);
-	void resetBufferSize();
-
-	// MIDI settings widget.
-	void midiInterfaceChanged(const QString & driver);
-	void toggleMidiAutoQuantization(bool enabled);
-
-	// Paths settings widget.
-	void openWorkingDir();
-	void setWorkingDir(const QString & workingDir);
-	void openVSTDir();
-	void setVSTDir(const QString & vstDir);
-	void openLADSPADir();
-	void setLADSPADir(const QString & ladspaDir);
-	void openSF2Dir();
-	void setSF2Dir(const QString & sf2Dir);
-	void openSF2File();
-	void setSF2File(const QString & sf2File);
-	void openGIGDir();
-	void setGIGDir(const QString & gigDir);
-	void openThemeDir();
-	void setThemeDir(const QString & themeDir);
-	void openBackgroundPicFile();
-	void setBackgroundPicFile(const QString & backgroundPicFile);
-
-	void showRestartWarning();
+	void reject() override;
 
 private:
-	TabBar * m_tabBar;
+	enum class Applies
+	{
+		Now,		//!< as it changes
+		Restart		//!< after the program starts again
+	};
 
-	// General settings widgets.
-	bool m_tooltips;
-	bool m_displayWaveform;
-	bool m_printNoteLabels;
-	bool m_showFaderTicks;
-	bool m_compactTrackButtons;
-	bool m_oneInstrumentTrackWindow;
-	bool m_sideBarOnRight;
-	bool m_letPreviewsFinish;
-	bool m_trackDeletionWarning;
-	bool m_mixerChannelDeletionWarning;
-	bool m_MMPZ;
-	bool m_disableBackup;
-	bool m_openLastProject;
-	QString m_detachBehavior;
-	QComboBox* m_detachBehaviorComboBox;
-	QString m_loopMarkerMode;
-	QComboBox* m_loopMarkerComboBox;
-	QString m_autoScroll;
-	QComboBox* m_autoScrollComboBox;
-	QString m_lang;
-	QStringList m_languages;
+	struct Section
+	{
+		QString title;
+		QWidget* page = nullptr;
+		QVBoxLayout* rows = nullptr;
+		QListWidgetItem* item = nullptr;
+	};
 
-	// Performance settings widgets.
-	bool m_enableAutoSave;
-	QCheckBox * m_autoSave;
-	bool m_smoothScroll;
-	bool m_animateAFP;
-	QLabel * m_vstEmbedLbl;
-	QComboBox* m_vstEmbedComboBox;
-	QString m_vstEmbedMethod;
-	QCheckBox * m_vstAlwaysOnTopCheckBox;
-	QListWidget* m_suspectsList = nullptr;
-	QStringList m_allowedSuspects; //!< plugins to load again, on OK
-	bool m_vstAlwaysOnTop;
-	bool m_disableAutoQuit;
+	struct Row
+	{
+		QWidget* widget = nullptr;
+		int section = 0;
+		QString searchText;	//!< what the search finds it by (label, hint, choices), folded
+		QBoxLayout* body = nullptr;	//!< the control and the line after it (see fitRows())
+	};
 
-	using AswMap = QMap<QString, AudioDeviceSetupWidget*>;
-	using MswMap = QMap<QString, MidiSetupWidget*>;
-	using trMap = QMap<QString, QString>;
+	auto addSection(const QString& title, const QString& subtitle) -> int;
+	//! A setting: its name with what applying it takes, the control, and a line after it (empty for none)
+	auto addRow(int section, const QString& label, Applies applies, QWidget* control, const QString& hint = {})
+		-> QWidget*;
+	//! A setting whose control is a whole block (the device's own settings, the shortcuts table)
+	auto addBlock(int section, const QString& label, Applies applies, QWidget* block, const QString& hint = {})
+		-> QWidget*;
+	auto tagFor(Applies applies, QWidget* parent) -> QLabel*;
 
-	// Audio settings widgets.
-	QComboBox * m_audioInterfaces;
-	AswMap m_audioIfaceSetupWidgets;
-	trMap m_audioIfaceNames;
-	int m_bufferSize;
-	QSlider * m_bufferSizeSlider;
-	QLabel * m_bufferSizeLbl;
-	QLabel * m_bufferSizeWarnLbl;
-	bool m_mixSanitization;
-	int m_sampleRate;
-	QSlider* m_sampleRateSlider;
+	//! A check box saved in @p cls/@p attribute (as "1"/"0", or inverted), applied as it changes
+	auto checkSetting(const QString& cls, const QString& attribute, bool fallback, bool inverted = false) -> QWidget*;
+	//! Sets a value; the parts of the program that use it hear ConfigManager::valueChanged
+	void set(const QString& cls, const QString& attribute, const QString& value);
+	void restartFor(const QString& what);
 
-	// MIDI settings widgets.
-	QComboBox * m_midiInterfaces;
-	MswMap m_midiIfaceSetupWidgets;
-	trMap m_midiIfaceNames;
-	QComboBox * m_assignableMidiDevices;
-	bool m_midiAutoQuantize;
+	void buildGeneral();
+	void buildAudio();
+	void buildMidi();
+	void buildRecording();
+	void buildPlugins();
+	void buildFolders();
+	void buildAppearance();
+	void buildShortcuts();
+	void buildAdvanced();
 
-	// Paths settings widgets.
-	QString m_workingDir;
-	QString m_vstDir;
-	QString m_ladspaDir;
-	QString m_gigDir;
-	QString m_sf2Dir;
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	QString m_sf2File;
-#endif
-	QString m_themeDir;
-	QString m_backgroundPicFile;
+	//! A folder or file chooser saved with @p save (and a restart asked when @p applies says so)
+	auto pathSetting(const QString& value, const QString& caption, bool file, const QString& filter,
+		std::function<void(const QString&)> save) -> QWidget*;
 
-	QLineEdit * m_workingDirLineEdit;
-	QLineEdit * m_vstDirLineEdit;
-	QLineEdit * m_themeDirLineEdit;
-	QLineEdit * m_ladspaDirLineEdit;
-	QLineEdit * m_gigDirLineEdit;
-	QLineEdit * m_sf2DirLineEdit;
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	QLineEdit * m_sf2FileLineEdit;
-#endif
-	QLineEdit * m_backgroundPicFileLineEdit;
-
-	// Added in LinuxMusic: new projects' mixer, what an audio file becomes, recording
-	QCheckBox* m_newProjectAnalog;
-	QSpinBox* m_longAudioSeconds;
-	QSpinBox* m_latencyOffset;
-	QComboBox* m_preRoll;
-	QCheckBox* m_countIn;
-	QCheckBox* m_recordInLanes;
-	bool m_audioChanged = false; //!< the device, its settings, the rate or the buffer: reopened on saving
-	QComboBox* m_metronomeWhen;
-	QDoubleSpinBox* m_metronomeVolume;
-	QCheckBox* m_metronomeAccent;
-	//! Measures the calibration with a loopback cable (LatencyCalibration)
+	void showAudioInterface(const QString& name);
+	void showMidiInterface(const QString& name);
+	void audioSettingChanged();
+	void reopenAudioDevice();
+	void midiSettingChanged();
+	void reopenMidiClient();
+	void updateBufferLabel();
+	void updateLatencyLabel();
 	void measureLatency();
-	bool m_changed = false;
-	std::vector<std::pair<const char*, QKeySequenceEdit*>> m_shortcutEdits;
+	void restartNow();
+	void resizeEvent(QResizeEvent* event) override;
+	void fitRows();
+	auto rowHasContent(const QWidget* row) const -> bool;
 
-	QLabel * restartWarningLbl;
+	std::vector<Section> m_sections;
+	std::vector<Row> m_rows;
+	QListWidget* m_sectionList = nullptr;
+	QStackedWidget* m_pages = nullptr;
+	QLineEdit* m_search = nullptr;
+
+	QWidget* m_restartStrip = nullptr;
+	QLabel* m_restartText = nullptr;
+	QStringList m_restartNeeded;
+
+	QComboBox* m_audioInterfaces = nullptr;
+	QWidget* m_audioDeviceRow = nullptr;
+	QWidget* m_midiDeviceRow = nullptr;
+	QMap<QString, AudioDeviceSetupWidget*> m_audioSetupWidgets;	//!< by driver name
+	QButtonGroup* m_sampleRates = nullptr;
+	QSlider* m_bufferSlider = nullptr;
+	QLabel* m_bufferLabel = nullptr;
+	QLabel* m_latencyLabel = nullptr;
+	QLabel* m_bufferWarning = nullptr;
+	QTimer m_audioReopen;	//!< the device opens again a moment after the last change
+	QLabel* m_audioStatus = nullptr;	//!< what opening it again said (another device, another rate...)
+	QSpinBox* m_latencyOffset = nullptr;
+
+	QComboBox* m_midiInterfaces = nullptr;
+	QMap<QString, MidiSetupWidget*> m_midiSetupWidgets;	//!< by driver name
+	QTimer m_midiReopen;
+	QLabel* m_midiStatus = nullptr;
+	QComboBox* m_assignableMidiDevices = nullptr;
+
+	QTimer m_saveConfig;	//!< the settings file written a moment after the last change
+	bool m_building = true;	//!< (the controls being set up: nothing to apply)
 };
 
 

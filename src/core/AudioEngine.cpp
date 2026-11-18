@@ -28,6 +28,8 @@
 #include <vector>
 
 #include "AudioEngine.h"
+#include "AudioBuffer.h"
+#include "ConfigManager.h"
 #include "InstrumentTrack.h"
 #include "InstrumentPlayHandle.h"
 #include "Instrument.h"
@@ -119,6 +121,13 @@ AudioEngine::AudioEngine(bool renderOnly)
 	, m_sanitizationEnabled(ConfigManager::inst()->value("audioengine", "sanitizemix", "1").toInt())
 {
 	BufferManager::init( m_framesPerPeriod );
+	// The settings it applies as they change (see SetupDialog)
+	AudioBuffer::setSilenceTrackingWanted(ConfigManager::inst()->value("ui", "disableautoquit", "1").toInt() == 0);
+	connect(ConfigManager::inst(), &ConfigManager::valueChanged, this,
+		[this](const QString& cls, const QString& attribute, const QString& value) {
+			if (cls == "ui" && attribute == "disableautoquit") { AudioBuffer::setSilenceTrackingWanted(value.toInt() == 0); }
+			else if (cls == "audioengine" && attribute == "sanitizemix") { setSanitizationEnabled(value.toInt() != 0); }
+		});
 	// The lists the audio thread adds to hold as many handles as can be added at once (see m_newPlayHandles), so
 	// adding allocates nothing; removing keeps their room
 	m_playHandles.reserve(PlayHandle::MaxNumber);

@@ -242,10 +242,7 @@ MainWindow::MainWindow() :
 
 	hbox->addWidget(splitter);
 	// If the user wants the browsers on the right, they go after the workspace
-	if (sideBarOnRight)
-	{
-		splitter->insertWidget(0, m_workspace);
-	}
+	placeExplorers(sideBarOnRight);
 
 	// create global-toolbar at the top of our window
 	m_toolBar = new QWidget( main_widget );
@@ -282,6 +279,8 @@ MainWindow::MainWindow() :
 	{
 		qApp->installEventFilter(this);
 	}
+	// The settings that change how this window is, as they change (see SetupDialog)
+	connect(ConfigManager::inst(), &ConfigManager::valueChanged, this, &MainWindow::applySetting);
 
 	installEventFilter(this);
 }
@@ -1097,16 +1096,8 @@ void MainWindow::showSettingsDialog()
 
 auto MainWindow::closeSettings(SetupDialog* settings) -> bool
 {
-	if (!settings->hasChanges())
-	{
-		settings->reject();
-		return true;
-	}
-	const auto answer = QMessageBox::question(this, tr("Settings"), tr("Save the settings you changed?"),
-		QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
-	if (answer == QMessageBox::Cancel) { return false; }
-	if (answer == QMessageBox::Save) { settings->accept(); }
-	else { settings->reject(); }
+	// Each setting applied as it changed: what still waits (the device opening again) applies now
+	settings->accept();
 	return true;
 }
 
@@ -1400,6 +1391,42 @@ void MainWindow::updateViewMenu()
 
 
 
+void MainWindow::placeExplorers(bool onTheRight)
+{
+	// The explorers beside the workspace, on its left or its right (the docks on the right stay last)
+	if (onTheRight) { m_mainSplitter->insertWidget(0, m_workspace); }
+	else { m_mainSplitter->insertWidget(m_mainSplitter->indexOf(m_mixingExplorer) + 1, m_workspace); }
+}
+
+
+
+
+void MainWindow::applySetting(const QString& cls, const QString& attribute, const QString& value)
+{
+	if (cls == "tooltips" && attribute == "disabled")
+	{
+		// (the filter blocks them only while they are off; installed once)
+		qApp->removeEventFilter(this);
+		if (value.toInt()) { qApp->installEventFilter(this); }
+	}
+	else if (cls == "ui" && attribute == "sidebaronright") { placeExplorers(value.toInt() != 0); }
+	// The View menu's checks follow the settings changed elsewhere
+	if (cls == "ui" && m_viewMenu)
+	{
+		for (auto* action : m_viewMenu->actions())
+		{
+			if (action->isCheckable() && action->data().toString() == attribute)
+			{
+				const QSignalBlocker blocker{action};
+				action->setChecked(value.toInt() != 0);
+			}
+		}
+	}
+}
+
+
+
+
 void MainWindow::updateConfig( QAction * _who )
 {
 	QString tag = _who->data().toString();
@@ -1407,11 +1434,9 @@ void MainWindow::updateConfig( QAction * _who )
 
 	if (tag == "tooltips")
 	{
+		// (applied by applySetting())
 		ConfigManager::inst()->setValue( "tooltips", "disabled",
 						 QString::number(!checked) );
-
-		if (checked) { qApp->removeEventFilter(this); }
-		else { qApp->installEventFilter(this); }
 
 	}
 	else if ( tag == "smoothscroll" )
@@ -1586,8 +1611,11 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 		return QObject::eventFilter(watched, event);
 	}
 
-	// Block tooltips globally (install event filter on QApplication instance)
-	if (event->type() == QEvent::ToolTip) { return true; }
+	// Block tooltips globally (install event filter on QApplication instance), when they are off
+	if (event->type() == QEvent::ToolTip && ConfigManager::inst()->value("tooltips", "disabled").toInt())
+	{
+		return true;
+	}
 
 	return QObject::eventFilter(watched, event);
 }

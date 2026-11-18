@@ -103,6 +103,14 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 {
 	// (a press on any of its tracks selects that track: see eventFilter())
 	qApp->installEventFilter(this);
+	// Compact headers, as the setting changes (the width dragged by hand starts from it again)
+	connect(ConfigManager::inst(), &ConfigManager::valueChanged, this,
+		[this](const QString& cls, const QString& attribute, const QString& value) {
+			if (cls == "ui" && attribute == "compacttrackbuttons")
+			{
+				setTrackHeadWidth(value.toInt() ? COMPACT_TRACK_WIDTH : DEFAULT_TRACK_WIDTH);
+			}
+		});
 	m_tc->setHook( this );
 	//keeps the direction of the widget, undepended on the locale
 	setLayoutDirection( Qt::LeftToRight );

@@ -14823,6 +14823,410 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>The project is kept for a recovery two seconds after each change (and every half minute while it keeps changing), also while it plays or records: after a crash, it is offered when the program starts, with the recordings that were in progress.</source>
         <translation>O projeto é guardado para recuperação dois segundos depois de cada mudança (e a cada meio minuto enquanto continua mudando), também tocando ou gravando: depois de uma queda, ele é oferecido quando o programa abre, com as gravações que estavam em andamento.</translation>
     </message>
+    <message>
+        <source>Search settings…</source>
+        <translation>Buscar configuração…</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Depois</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>Reiniciar agora</translation>
+    </message>
+    <message>
+        <source>applies at once</source>
+        <translation>aplica na hora</translation>
+    </message>
+    <message>
+        <source>asks for a restart</source>
+        <translation>pede reinício</translation>
+    </message>
+    <message>
+        <source>Changing it takes effect right away</source>
+        <translation>A mudança vale na hora</translation>
+    </message>
+    <message>
+        <source>Changing it takes effect after the program starts again</source>
+        <translation>A mudança vale depois que o programa abre de novo</translation>
+    </message>
+    <message>
+        <source>%1: changes after the program restarts.</source>
+        <translation>%1: muda depois de reiniciar o programa.</translation>
+    </message>
+    <message>
+        <source>Projects and how the program behaves.</source>
+        <translation>Projetos e o jeito do programa.</translation>
+    </message>
+    <message>
+        <source>Reopen the last project on startup</source>
+        <translation>Abrir o último projeto ao iniciar</translation>
+    </message>
+    <message>
+        <source>Compress project files</source>
+        <translation>Comprimir os arquivos de projeto</translation>
+    </message>
+    <message>
+        <source>Saved as .mmpz (smaller); off: .mmp, plain XML</source>
+        <translation>Salvos como .mmpz (menores); desligado: .mmp, XML simples</translation>
+    </message>
+    <message>
+        <source>Keep a backup when saving</source>
+        <translation>Guardar uma cópia ao salvar</translation>
+    </message>
+    <message>
+        <source>The previous version is kept beside the project</source>
+        <translation>A versão anterior fica ao lado do projeto</translation>
+    </message>
+    <message>
+        <source>Two seconds after each change, also while playing or recording; after a crash it is offered when the program starts</source>
+        <translation>Dois segundos depois de cada mudança, também tocando ou gravando; depois de uma queda, é oferecido quando o programa abre</translation>
+    </message>
+    <message>
+        <source>New projects use the analog mixer</source>
+        <translation>Projetos novos usam o mixer analógico</translation>
+    </message>
+    <message>
+        <source>Off: the digital one</source>
+        <translation>Desligado: o digital</translation>
+    </message>
+    <message>
+        <source>Long audio files become audio tracks</source>
+        <translation>Áudios longos viram faixas de áudio</translation>
+    </message>
+    <message>
+        <source>Longer than this, an audio file dropped in the project is an audio track; shorter, a sample</source>
+        <translation>Mais longo que isto, um arquivo de áudio solto no projeto vira faixa de áudio; mais curto, um sample</translation>
+    </message>
+    <message>
+        <source>Previews play to the end</source>
+        <translation>Prévias tocam até o fim</translation>
+    </message>
+    <message>
+        <source>A sample previewed in the browser goes on when the mouse button is released</source>
+        <translation>Um sample ouvido no navegador continua quando o botão do mouse é solto</translation>
+    </message>
+    <message>
+        <source>Ask before deleting a track</source>
+        <translation>Perguntar antes de apagar uma faixa</translation>
+    </message>
+    <message>
+        <source>Ask before deleting a mixer channel in use</source>
+        <translation>Perguntar antes de apagar um canal do mixer em uso</translation>
+    </message>
+    <message>
+        <source>The language</source>
+        <translation>O idioma</translation>
+    </message>
+    <message>
+        <source>Everything here applies as it changes: the device opens again by itself.</source>
+        <translation>Tudo aqui vale assim que muda: o dispositivo abre de novo sozinho.</translation>
+    </message>
+    <message>
+        <source>Audio system</source>
+        <translation>Sistema de áudio</translation>
+    </message>
+    <message>
+        <source>JACK, PortAudio, SDL... as the system has them</source>
+        <translation>JACK, PortAudio, SDL... conforme o sistema</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>Dispositivo</translation>
+    </message>
+    <message>
+        <source>kHz</source>
+        <translation>kHz</translation>
+    </message>
+    <message>
+        <source>New projects; a project opens at its own rate</source>
+        <translation>Projetos novos; um projeto abre na sua própria taxa</translation>
+    </message>
+    <message>
+        <source>Back to the default (%1)</source>
+        <translation>Voltar ao padrão (%1)</translation>
+    </message>
+    <message>
+        <source>%1 frames</source>
+        <translation>%1 amostras</translation>
+    </message>
+    <message>
+        <source>Not a power of 2 (32, 64, 128, 256): some plugins may not be available.</source>
+        <translation>Não é potência de 2 (32, 64, 128, 256): alguns plugins podem não estar disponíveis.</translation>
+    </message>
+    <message>
+        <source>32 frames or fewer: some plugins may not be available.</source>
+        <translation>32 amostras ou menos: alguns plugins podem não estar disponíveis.</translation>
+    </message>
+    <message>
+        <source>%1 ms of output latency (measured by the device)</source>
+        <translation>%1 ms de latência de saída (medida do dispositivo)</translation>
+    </message>
+    <message>
+        <source>%1 ms of buffer (the device adds its own)</source>
+        <translation>%1 ms de buffer (o dispositivo soma a dele)</translation>
+    </message>
+    <message>
+        <source>Applies as it changes: the driver opens again, and the tracks keep their devices.</source>
+        <translation>Vale assim que muda: o driver abre de novo, e as faixas continuam com os seus dispositivos.</translation>
+    </message>
+    <message>
+        <source>MIDI system</source>
+        <translation>Sistema MIDI</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Nenhum</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>Todos</translation>
+    </message>
+    <message>
+        <source>Controller for the selected track</source>
+        <translation>Controlador da faixa selecionada</translation>
+    </message>
+    <message>
+        <source>This device plays the track selected, whichever it is</source>
+        <translation>Este dispositivo toca a faixa selecionada, qualquer que seja</translation>
+    </message>
+    <message>
+        <source>Quantize notes recorded in the Piano Roll</source>
+        <translation>Quantizar as notas gravadas no Piano Roll</translation>
+    </message>
+    <message>
+        <source>Off: recorded at the finest resolution</source>
+        <translation>Desligado: gravadas na resolução mais fina</translation>
+    </message>
+    <message>
+        <source>Recording audio and MIDI, and the metronome.</source>
+        <translation>Gravação de áudio e MIDI, e o metrônomo.</translation>
+    </message>
+    <message>
+        <source>Added to the latency the device reports, so that recordings line up with what was heard</source>
+        <translation>Somada à latência que o dispositivo informa, para que as gravações fiquem alinhadas com o que se ouviu</translation>
+    </message>
+    <message>
+        <source>Bars played before the recording starts</source>
+        <translation>Compassos tocados antes de a gravação começar</translation>
+    </message>
+    <message>
+        <source>Takes in lanes</source>
+        <translation>Takes em lanes</translation>
+    </message>
+    <message>
+        <source>Each pass on a lane of its own, the latest on top; off: the new take replaces what it covers</source>
+        <translation>Cada passada numa lane própria, a mais recente em cima; desligado: o take novo substitui o que cobre</translation>
+    </message>
+    <message>
+        <source>Metronome volume</source>
+        <translation>Volume do metrônomo</translation>
+    </message>
+    <message>
+        <source>Connect an output of the audio interface to an input with a cable (output 1 to input 1, for example), and turn the input's gain to a middle level. A short pulse will play and be recorded back.</source>
+        <translation>Ligue uma saída da interface de áudio a uma entrada com um cabo (saída 1 na entrada 1, por exemplo) e deixe o ganho da entrada no meio. Um pulso curto vai tocar e ser gravado de volta.</translation>
+    </message>
+    <message>
+        <source>The pulse came back after %1 frames: the calibration is %2 frames.</source>
+        <translation>O pulso voltou depois de %1 amostras: a calibração é de %2 amostras.</translation>
+    </message>
+    <message>
+        <source>Plugin windows, and the plugins that were not loaded after a crash.</source>
+        <translation>As janelas dos plugins, e os plugins que não foram carregados depois de uma queda.</translation>
+    </message>
+    <message>
+        <source>VST windows</source>
+        <translation>Janelas VST</translation>
+    </message>
+    <message>
+        <source>For the plugin windows opened from now on</source>
+        <translation>Para as janelas de plugin abertas daqui em diante</translation>
+    </message>
+    <message>
+        <source>Plugin windows on top</source>
+        <translation>Janelas de plugin por cima</translation>
+    </message>
+    <message>
+        <source>When not embedded</source>
+        <translation>Quando não embutidas</translation>
+    </message>
+    <message>
+        <source>The selected plugins load again, from the next time a project opens</source>
+        <translation>Os plugins selecionados voltam a carregar, a partir da próxima vez que um projeto abrir</translation>
+    </message>
+    <message>
+        <source>Not loaded since a crash</source>
+        <translation>Não carregados desde uma queda</translation>
+    </message>
+    <message>
+        <source>The program closed unexpectedly while they ran; projects keep their settings</source>
+        <translation>O programa fechou inesperadamente enquanto rodavam; os projetos guardam os ajustes deles</translation>
+    </message>
+    <message>
+        <source>Folders</source>
+        <translation>Pastas</translation>
+    </message>
+    <message>
+        <source>Where the program keeps and looks for files.</source>
+        <translation>Onde o programa guarda e procura arquivos.</translation>
+    </message>
+    <message>
+        <source>Working folder</source>
+        <translation>Pasta de trabalho</translation>
+    </message>
+    <message>
+        <source>The working folder</source>
+        <translation>A pasta de trabalho</translation>
+    </message>
+    <message>
+        <source>Projects, samples, presets and recordings</source>
+        <translation>Projetos, samples, presets e gravações</translation>
+    </message>
+    <message>
+        <source>VST plugins</source>
+        <translation>Plugins VST</translation>
+    </message>
+    <message>
+        <source>LADSPA plugins</source>
+        <translation>Plugins LADSPA</translation>
+    </message>
+    <message>
+        <source>The LADSPA folders</source>
+        <translation>As pastas LADSPA</translation>
+    </message>
+    <message>
+        <source>Folders separated by commas; looked through when the program starts</source>
+        <translation>Pastas separadas por vírgulas; lidas quando o programa abre</translation>
+    </message>
+    <message>
+        <source>SoundFonts</source>
+        <translation>SoundFonts</translation>
+    </message>
+    <message>
+        <source>Default SoundFont</source>
+        <translation>SoundFont padrão</translation>
+    </message>
+    <message>
+        <source>SoundFont 2 files (*.sf2)</source>
+        <translation>Arquivos SoundFont 2 (*.sf2)</translation>
+    </message>
+    <message>
+        <source>For new Sf2 Player instruments</source>
+        <translation>Para os instrumentos Sf2 Player novos</translation>
+    </message>
+    <message>
+        <source>GIG files</source>
+        <translation>Arquivos GIG</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>Aparência</translation>
+    </message>
+    <message>
+        <source>How the windows look and behave.</source>
+        <translation>Como as janelas são e se comportam.</translation>
+    </message>
+    <message>
+        <source>Tooltips</source>
+        <translation>Dicas</translation>
+    </message>
+    <message>
+        <source>Compact track headers</source>
+        <translation>Cabeçalhos de faixa compactos</translation>
+    </message>
+    <message>
+        <source>Narrower; each header can still be widened by dragging its edge</source>
+        <translation>Mais estreitos; cada cabeçalho ainda pode ser alargado arrastando a borda</translation>
+    </message>
+    <message>
+        <source>Explorer on the right</source>
+        <translation>Explorador à direita</translation>
+    </message>
+    <message>
+        <source>One instrument window at a time</source>
+        <translation>Uma janela de instrumento por vez</translation>
+    </message>
+    <message>
+        <source>Opening one closes the other</source>
+        <translation>Abrir uma fecha a outra</translation>
+    </message>
+    <message>
+        <source>Note names in the Piano Roll</source>
+        <translation>Nomes das notas no Piano Roll</translation>
+    </message>
+    <message>
+        <source>Fader ticks</source>
+        <translation>Marcas nos faders</translation>
+    </message>
+    <message>
+        <source>Smooth scrolling in the Song Editor</source>
+        <translation>Rolagem suave no Arranjo</translation>
+    </message>
+    <message>
+        <source>Playback position in the AudioFileProcessor</source>
+        <translation>Posição de reprodução no AudioFileProcessor</translation>
+    </message>
+    <message>
+        <source>Detached windows</source>
+        <translation>Janelas destacadas</translation>
+    </message>
+    <message>
+        <source>Following the playhead</source>
+        <translation>Seguir o cursor de reprodução</translation>
+    </message>
+    <message>
+        <source>Stepped (once it leaves the view)</source>
+        <translation>Em saltos (quando ele sai da vista)</translation>
+    </message>
+    <message>
+        <source>Continuous (kept in the middle)</source>
+        <translation>Contínuo (mantido no meio)</translation>
+    </message>
+    <message>
+        <source>The editors follow the playhead this way (each one's button changes it there)</source>
+        <translation>Os editores seguem o cursor assim (o botão de cada um muda ali)</translation>
+    </message>
+    <message>
+        <source>Theme folder</source>
+        <translation>Pasta do tema</translation>
+    </message>
+    <message>
+        <source>The theme</source>
+        <translation>O tema</translation>
+    </message>
+    <message>
+        <source>Keyboard and shortcuts</source>
+        <translation>Teclado e atalhos</translation>
+    </message>
+    <message>
+        <source>Each action's key, applied as it is set. The other keys of the editors and the menus' keys are fixed.</source>
+        <translation>A tecla de cada ação, valendo assim que é definida. As outras teclas dos editores e as dos menus são fixas.</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Avançado</translation>
+    </message>
+    <message>
+        <source>Safety and performance.</source>
+        <translation>Segurança e desempenho.</translation>
+    </message>
+    <message>
+        <source>Mix sanitization</source>
+        <translation>Limpeza da mixagem</translation>
+    </message>
+    <message>
+        <source>Silences a channel when a plugin or track makes something that is not a number (NaN or infinity), at a small cost</source>
+        <translation>Silencia um canal quando um plugin ou faixa produz algo que não é número (NaN ou infinito), com um pequeno custo</translation>
+    </message>
+    <message>
+        <source>Effects keep running without input</source>
+        <translation>Efeitos continuam rodando sem entrada</translation>
+    </message>
+    <message>
+        <source>Off: an effect whose input went silent stops after its tail, sparing the processor</source>
+        <translation>Desligado: um efeito cuja entrada silenciou para depois da cauda, poupando o processador</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::Sf2InstrumentView</name>

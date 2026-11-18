@@ -64,6 +64,15 @@ public:
 	//! Called by main() right before the main event loop (see quitWhenTheMainLoopRuns() in GuiApplication.cpp)
 	static void mainLoopStarts();
 
+	/**
+	 * Closes the program to start it again (a setting that asks for a restart): @p window closes as when the user
+	 * closes it (the project saved or not, as they say; nothing happens if they cancel), and once the program has
+	 * ended, main() starts it again with the project (startAgainIfAsked()).
+	 */
+	static void restartAfterQuit(MainWindow* window);
+	//! Called by main() at its very end: starts the program again if restartAfterQuit() asked
+	static void startAgainIfAsked();
+
 	//! @brief Called from main when SIGINT is fired
 	//!
 	//! Unix signal handlers can only call async-signal-safe functions:

@@ -452,8 +452,10 @@ void ConfigManager::setValue(const QString & cls,
 			}
 		}
 	}
-	// not in map yet, so we have to add it...
+	// not in map yet, so we have to add it... (and those who use it hear it too: a setting never set before changes
+	// from its default)
 	m_settings[cls].push_back(qMakePair(attribute, value));
+	emit valueChanged(cls, attribute, value);
 }
 
 

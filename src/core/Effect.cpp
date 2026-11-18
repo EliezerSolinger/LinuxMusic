@@ -47,8 +47,7 @@ Effect::Effect( const Plugin::Descriptor * _desc,
 	m_awake(false),
 	m_enabledModel( true, this, tr( "Effect enabled" ) ),
 	m_wetDryModel( 1.0f, -1.0f, 1.0f, 0.01f, this, tr( "Wet/Dry mix" ) ),
-	m_autoQuitModel( 1.0f, 1.0f, 8000.0f, 100.0f, 1.0f, this, tr( "Decay" ) ),
-	m_autoQuitEnabled(ConfigManager::inst()->value("ui", "disableautoquit", "1").toInt() == 0)
+	m_autoQuitModel( 1.0f, 1.0f, 8000.0f, 100.0f, 1.0f, this, tr( "Decay" ) )
 {
 	m_wetDryModel.setCenterValue(0);
 
@@ -150,7 +149,7 @@ void Effect::mixDrySignal(const AudioBuffer& in, AudioBuffer& out, ch_cnt_t dryC
 
 void Effect::handleAutoQuit(bool silentOutput)
 {
-	if (!m_autoQuitEnabled)
+	if (!autoQuitEnabled())
 	{
 		return;
 	}

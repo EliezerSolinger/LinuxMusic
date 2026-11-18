@@ -980,6 +980,9 @@ int main( int argc, char * * argv )
 		Engine::destroy();
 	}
 
+	// A setting asked for a restart (see GuiApplication::restartAfterQuit()): started again now that all is closed
+	if (!coreOnly) { gui::GuiApplication::startAgainIfAsked(); }
+
 	// ProjectRenderer::updateConsoleProgress() doesn't return line after render
 	if( coreOnly )
 	{

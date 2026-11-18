@@ -314,6 +314,31 @@ private slots:
 		QCOMPARE(ab.silenceTrackingEnabled(), false);
 	}
 
+	//! The setting changed while playing (the global wish): each buffer takes it as its flags are next updated; one
+	//! set otherwise by hand stays so until the setting changes again
+	void SilenceTracking_FollowsTheSetting()
+	{
+		const auto before = AudioBuffer::silenceTrackingWanted();
+		AudioBuffer::setSilenceTrackingWanted(false);
+		auto ab = AudioBuffer{10, 2};
+		QCOMPARE(ab.silenceTrackingEnabled(), false);
+
+		AudioBuffer::setSilenceTrackingWanted(true);
+		QCOMPARE(ab.silenceTrackingEnabled(), false); // (not until it is used)
+		ab.updateAllSilenceFlags();
+		QCOMPARE(ab.silenceTrackingEnabled(), true);
+		QCOMPARE(ab.silenceFlags().all(), true); // (silent, and known so now)
+
+		ab.enableSilenceTracking(false);
+		ab.updateSilenceFlags(0b11);
+		QCOMPARE(ab.silenceTrackingEnabled(), false); // (by hand: stays)
+
+		AudioBuffer::setSilenceTrackingWanted(true);
+		ab.updateSilenceFlags(0b11);
+		QCOMPARE(ab.silenceTrackingEnabled(), true);
+		AudioBuffer::setSilenceTrackingWanted(before);
+	}
+
 	//! Verifies that `enableSilenceTracking(true)` also updates silence flags
 	void EnableSilenceTracking_UpdatesSilenceFlags()
 	{
