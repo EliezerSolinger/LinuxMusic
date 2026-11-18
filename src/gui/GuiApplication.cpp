@@ -471,6 +471,18 @@ GuiApplication::GuiApplication()
 			});
 			return;
 		}
+		// =delete-tracks deletes the song's tracks one by one, as the track's menu does (each its mixer channel; the
+		// windows of the tracks gone must not see the channels go after them)
+		if (screenshotAction == "delete-tracks")
+		{
+			QTimer::singleShot(2500, m_mainWindow, [this] {
+				auto* editor = m_songEditor->m_editor;
+				qInfo("delete-tracks: %d tracks, %d mixer channels", static_cast<int>(editor->trackViews().size()),
+					Engine::mixer()->numChannels());
+				while (!editor->trackViews().isEmpty()) { editor->deleteTrackView(editor->trackViews().first()); }
+				qInfo("delete-tracks: done, %d mixer channels", Engine::mixer()->numChannels());
+			});
+		}
 		if (screenshotAction == "settings")
 		{
 			// (LINUXMUSIC_SETTINGS_TAB=<n> opens it at a tab)

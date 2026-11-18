@@ -65,6 +65,13 @@ TrackChannelControls::TrackChannelControls(Track* track, QObject* parent) :
 	}
 	assert(m_channel);
 
+	// Its track gone, the controls do nothing more: whoever keeps them must not reach the track's models through them
+	connect(track, &Track::destroyedTrack, this, [this] {
+		QObject::disconnect(Engine::mixer(), nullptr, this, nullptr);
+		disconnect(m_channelMute);
+		m_track = nullptr;
+	});
+
 	const auto mixer = Engine::mixer();
 	connect(mixer, &Mixer::trackChannelChanged, this, [this](Track* changed) {
 		if (changed == m_track) { update(); }
@@ -109,6 +116,8 @@ auto TrackChannelControls::replace(TrackChannelControls* controls, Track* track,
 
 void TrackChannelControls::update()
 {
+	// (its track gone: see the constructor)
+	if (!m_track) { return; }
 	const auto mixer = Engine::mixer();
 	auto channel = mixer->trackChannel(m_track);
 

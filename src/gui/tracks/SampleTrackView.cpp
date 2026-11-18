@@ -260,11 +260,9 @@ void SampleTrackView::updateIndicator()
 
 SampleTrackView::~SampleTrackView()
 {
-	if(m_window != nullptr)
-	{
-		m_window->setSampleTrackView(nullptr);
-		m_window->parentWidget()->hide();
-	}
+	// The window goes with the view, as an instrument track's does: kept (hidden), it outlived the track, its
+	// controls still on the track's models, and the next channel deleted crashed it (see TrackChannelControls)
+	delete m_window;
 	m_window = nullptr;
 }
 

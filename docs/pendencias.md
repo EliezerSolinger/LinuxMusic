@@ -623,6 +623,14 @@ queda do Mallets, que é queda e entra antes.
 
 ## Observado (18/11)
 
+- [x] Queda ao remover uma faixa (o usuário, 18/11). A janela de uma faixa de áudio/sample era criada com a faixa e,
+  ao apagá-la, só escondida: ela sobrevivia à faixa, com os controles dela (`TrackChannelControls`) ainda nos modelos
+  da faixa apagada. O próximo canal do mixer apagado (ao remover outra faixa, que leva o seu canal) chegava a esses
+  controles, que liam o modelo morto. Agora a janela vai com a faixa, como a do instrumento, e os controles param de
+  vez quando a faixa deles vai. Reproduzido no programa (uma faixa de áudio e uma de instrumento, apagadas uma a uma:
+  `LINUXMUSIC_SCREENSHOT_ACTION=delete-tracks`), a mesma pilha da queda, e sem ela com a correção. Varredura: só a
+  vista de áudio deixava a janela viva; os outros que ouvem o mixer ou a música não guardam uma faixa.
+
 - [ ] O `ArpeggioSyncTest` falhou uma vez numa rodada completa do ctest com os builds de sanitizador compilando ao
   mesmo tempo (carga muito alta), e passou ao repetir; 72 execuções em paralelo depois não reproduziram. O log da
   falha se perdeu (o ctest o sobrescreveu ao repetir): o log de cada rodada passa a ser guardado para pegar o

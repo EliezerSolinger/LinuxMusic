@@ -169,6 +169,18 @@ SampleTrackWindow::SampleTrackWindow(SampleTrackView* stv)
 }
 
 
+SampleTrackWindow::~SampleTrackWindow()
+{
+	if (parentWidget())
+	{
+		parentWidget()->hide();
+		parentWidget()->deleteLater();
+	}
+}
+
+
+
+
 void SampleTrackWindow::setSampleTrackView(SampleTrackView* tv)
 {
 	if(m_stv && tv)

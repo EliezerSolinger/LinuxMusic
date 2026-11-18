@@ -51,7 +51,8 @@ class SampleTrackWindow : public QWidget, public ModelView, public SerializingOb
 	Q_OBJECT
 public:
 	SampleTrackWindow(SampleTrackView* stv);
-	~SampleTrackWindow() override = default;
+	//! Its sub-window goes too (it holds the window)
+	~SampleTrackWindow() override;
 
 	AudioInputTrack * model()
 	{
