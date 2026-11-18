@@ -471,7 +471,12 @@ namespace
 {
 
 constexpr int ControlsHeight = 34;
-constexpr int PadsPerRow = 8;
+constexpr int PadsPerRow = 8; //!< (on the drawn panel)
+//! Under a photo: the pads' height, their narrowest width, the gap between them, the band's margin around them
+constexpr int PhotoPadHeight = 36;
+constexpr int PhotoPadMinWidth = 44;
+constexpr int PadGap = 6;
+constexpr int BandMargin = 8;
 
 } // namespace
 
@@ -525,10 +530,32 @@ auto DrumMachinesView::hasPhoto() const -> bool
 
 
 
+auto DrumMachinesView::pieceCount() const -> int
+{
+	const auto kit = castModel<DrumMachinesInstrument>()->loadedKit();
+	return kit < 0 ? 0 : static_cast<int>(DrumMachinesInstrument::kits()[kit].pieces.size());
+}
+
+
+
+
+auto DrumMachinesView::padColumns(int count) const -> int
+{
+	// Under a photo: as many to a row as fit at their narrowest, the rows then evened out (21 pads: 11 and 10)
+	const auto width = machineRect().width() - 2 * BandMargin;
+	const auto fit = std::clamp((width + PadGap) / (PhotoPadMinWidth + PadGap), 1, std::max(count, 1));
+	const auto rows = (count + fit - 1) / fit;
+	return (count + std::max(rows, 1) - 1) / std::max(rows, 1);
+}
+
+
+
+
 auto DrumMachinesView::photoRect() const -> QRect
 {
-	// The whole machine's area: the photo fills it (cropped to its proportions), the pads over its lower part
-	return machineRect();
+	// The machine's area above the pads' band: the photo fills it (cropped to its proportions), nothing over it
+	const auto machine = machineRect();
+	return {machine.left(), machine.top(), machine.width(), padsRect(pieceCount()).top() - PadGap - machine.top()};
 }
 
 
@@ -536,12 +563,12 @@ auto DrumMachinesView::photoRect() const -> QRect
 
 auto DrumMachinesView::padsRect(int count) const -> QRect
 {
-	// Over the photo: a band along its bottom, as high as the rows of pads need (a fifth of the width each, at most)
+	// Under the photo: a band along the machine's bottom, as high as its rows of pads
 	const auto machine = machineRect();
-	const auto rows = (count + PadsPerRow - 1) / PadsPerRow;
-	const auto padHeight = std::min(56, machine.width() / (PadsPerRow + 2));
-	const auto height = rows * padHeight + (rows - 1) * 8 + 24;
-	return {machine.left(), machine.bottom() - height, machine.width(), height + 1};
+	const auto columns = padColumns(count);
+	const auto rows = (count + columns - 1) / columns;
+	const auto height = rows * PhotoPadHeight + (rows - 1) * PadGap + 2 * BandMargin;
+	return {machine.left(), machine.bottom() + 1 - height, machine.width(), height};
 }
 
 
@@ -549,16 +576,18 @@ auto DrumMachinesView::padsRect(int count) const -> QRect
 
 auto DrumMachinesView::padRect(int index, int count) const -> QRect
 {
-	// The pads in rows of up to eight, under the machine's name strip (under its photo, when it has one)
-	const auto machine = machineRect();
-	const auto rows = (count + PadsPerRow - 1) / PadsPerRow;
-	const auto columns = std::min(count, PadsPerRow);
-	const auto area = hasPhoto() ? padsRect(count).adjusted(14, 12, -14, -12) : machine.adjusted(18, 64, -18, -22);
-	const auto gap = 8;
+	// Under the photo, in its band: low and wide, in even rows. On the drawn panel: square, in rows of up to
+	// eight, under the machine's name strip
+	const auto photo = hasPhoto();
+	const auto columns = photo ? padColumns(count) : std::min(count, PadsPerRow);
+	const auto rows = (count + columns - 1) / std::max(columns, 1);
+	const auto area = photo ? padsRect(count).adjusted(BandMargin, BandMargin, -BandMargin, -BandMargin)
+		: machineRect().adjusted(18, 64, -18, -22);
+	const auto gap = photo ? PadGap : 8;
 	const auto width = (area.width() - gap * (columns - 1)) / std::max(columns, 1);
-	const auto height = std::min(width, (area.height() - gap * (rows - 1)) / std::max(rows, 1));
-	const auto row = index / PadsPerRow;
-	const auto column = index % PadsPerRow;
+	const auto height = photo ? PhotoPadHeight : std::min(width, (area.height() - gap * (rows - 1)) / std::max(rows, 1));
+	const auto row = index / columns;
+	const auto column = index % columns;
 	const auto top = area.top() + (area.height() - (height * rows + gap * (rows - 1))) / 2;
 	return {area.left() + column * (width + gap), top + row * (height + gap), width, height};
 }
@@ -651,7 +680,7 @@ void DrumMachinesView::paintEvent(QPaintEvent*)
 	p.setPen(QPen{look.body.darker(160), 1.5});
 	p.drawPath(body);
 
-	// The machine's photo, its credit on it (its license asks for it); the pads under it
+	// The machine's photo, its credit on it (its license asks for it); the pads under it, on the machine's body
 	if (m_photoKit != kitIndex)
 	{
 		m_photoKit = kitIndex;
@@ -685,27 +714,21 @@ void DrumMachinesView::paintEvent(QPaintEvent*)
 			auto fitted = QSizeF(source);
 			fitted.scale(QSizeF(photo.size()) * 0.92, Qt::KeepAspectRatio);
 			fitted = fitted.boundedTo(source * 1.5);
-			const auto top = photo.top() + std::max(4.0, (padsRect(static_cast<int>(kit.pieces.size())).top() - photo.top()
-				- fitted.height()) / 2);
+			const auto top = photo.top() + std::max(4.0, (photo.height() - fitted.height()) / 2);
 			p.drawPixmap(QRectF(QPointF(photo.center().x() - fitted.width() / 2, top), fitted), m_photo,
 				QRectF(QPointF(0, 0), source));
 		}
-		// The band the pads are on: dark, fading in from above
-		const auto band = QRectF(padsRect(static_cast<int>(kit.pieces.size())));
-		auto shade = QLinearGradient{band.topLeft() - QPointF(0, 24), band.topLeft() + QPointF(0, 12)};
-		shade.setColorAt(0, QColor{0, 0, 0, 0});
-		shade.setColorAt(1, QColor{0, 0, 0, 170});
-		p.fillRect(band.adjusted(0, -24, 0, 0), shade);
 		p.restore();
 		p.setPen(QPen{QColor{0, 0, 0, 160}, 1.5});
 		p.drawPath(frame);
-		// Its credit (its license asks for it), on its upper right corner
+		// Its credit (its license asks for it), on its lower right corner (the machines' names are on top)
 		auto credit = adjustedToPixelSize(font(), 9);
 		p.setFont(credit);
 		const auto text = tr(kit.credit);
 		const auto metrics = QFontMetrics{credit};
 		const auto width = metrics.horizontalAdvance(text) + 10.0;
-		const auto box = QRectF(photo.right() - width - 8, photo.top() + 8, width, metrics.height() + 4);
+		const auto box = QRectF(photo.right() - width - 8, photo.bottom() - metrics.height() - 10, width,
+			metrics.height() + 4);
 		auto pill = QPainterPath{};
 		pill.addRoundedRect(box, 4, 4);
 		p.fillPath(pill, QColor{0, 0, 0, 140});

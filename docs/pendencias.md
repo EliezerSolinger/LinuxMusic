@@ -348,7 +348,9 @@ queda do Mallets, que é queda e entra antes.
     crédito na própria foto e em `plugins/DrumMachines/photos/CREDITS.md` e `doc/AUTHORS`: TR-808, TR-909, TR-606,
     CR-8000, TR-77, LinnDrum; o kit Electro, a Oberheim DMX (hoje a Simmons SDS 5), e o R&B, a E-mu SP-1200. A CR-78
     não tem foto com licença livre no Commons: o painel dela continua desenhado. A foto preenche o plugin (em alta
-    resolução, até 1920 px), os pads numa faixa sobre a parte de baixo dela.
+    resolução, até 1920 px), os pads numa faixa sob ela, sem cobri-la (pedido do usuário, 18/11: os pads cobriam
+    quase toda a foto nos kits de muitas peças): baixos e largos, quantos couberem por fileira, o crédito no canto de
+    baixo da foto (os nomes das máquinas ficam em cima).
   - Máquinas novas, uma por uma (pedido do usuário, 18/11; as decisões dele: DMX e TR-707 emuladas no DrumSynth,
     porque os sons delas são gravações PCM dos fabricantes e não podem ser distribuídos; MPC60 e SP-1200, que são
     samplers sem sons próprios, como kits no estilo delas feitos de sons livres; a CR-78 com gravações dela):
