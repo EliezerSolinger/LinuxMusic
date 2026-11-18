@@ -184,12 +184,26 @@ auto newParameter(const char* id, const char* name, const char* kind, float valu
 	return s_registering->parameters().emplace_back(std::move(parameter));
 }
 
+//! How many values a selector has (its list ends with a null id)
+auto valueCount(const value_pair* values) -> int
+{
+	auto count = 0;
+	for (auto pair = values; pair && pair->value_id; ++pair) { ++count; }
+	return count;
+}
+
 auto registerFloat(const char* id, const char* name, const char* kind, const char*, float* var, float value,
 	float low, float up, float step, const value_pair* values) -> float*
 {
 	auto* parameter = parameterFor(id);
 	if (!parameter)
 	{
+		// (a selector's range is its values', from its lower bound, a step each: Guitarix's FloatEnumParameter)
+		if (values)
+		{
+			up = low + static_cast<float>(std::max(0, valueCount(values) - 1));
+			step = 1.f;
+		}
 		parameter = &newParameter(id, name, kind, value, low, up, step, s_registering);
 		for (auto pair = values; pair && pair->value_id; ++pair)
 		{
@@ -207,6 +221,12 @@ auto registerInt(const char* id, const char* name, const char* kind, const char*
 	auto* parameter = parameterFor(id);
 	if (!parameter)
 	{
+		// (a selector's range is its values', from 0: Guitarix's EnumParameter)
+		if (values)
+		{
+			low = 0;
+			up = std::max(0, valueCount(values) - 1);
+		}
 		parameter = &newParameter(id, name, kind, static_cast<float>(value), static_cast<float>(low),
 			static_cast<float>(up), 1.f, s_registering);
 		for (auto pair = values; pair && pair->value_id; ++pair)

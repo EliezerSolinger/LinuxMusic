@@ -58,6 +58,12 @@ struct Unit
 	const FileState* fileState = nullptr;
 };
 
+//! Guitarix's units that are a choice among others (GuitarixSelectors.cpp)
+auto makeCrybaby() -> PluginDef*;
+auto makeWah() -> PluginDef*;
+auto makeTonestack() -> PluginDef*;
+auto makePoweramp() -> PluginDef*;
+
 //! The Vibe (GuitarixVibe.cpp), mono and stereo, each made on zeroed memory (see there)
 auto makeVibeMono() -> PluginDef*;
 auto makeVibeStereo() -> PluginDef*;

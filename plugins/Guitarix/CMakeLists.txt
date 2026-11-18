@@ -94,6 +94,52 @@ SET(GUITARIX_FAUST_UNITS
 	gx_effects/bass_enhancer
 	gx_effects/ring_modulator_st
 	gx_effects/duck_delay_st
+	# (the modules of the units that are a choice among others: GuitarixSelectors.cpp)
+	gx_effects/crybaby
+	gx_effects/autowah
+	gx_effects/colwah
+	gx_effects/dallaswah
+	gx_effects/foxwah
+	gx_effects/jenwah
+	gx_effects/maestrowah
+	gx_effects/selwah
+	gx_effects/voxwah
+	gx_effects/rolwah
+	gx_effects/colbwah
+	gx_effects/jenbasswah
+	gx_tonestacks/tonestack_default
+	gx_tonestacks/tonestack_bassman
+	gx_tonestacks/tonestack_twin
+	gx_tonestacks/tonestack_princeton
+	gx_tonestacks/tonestack_jcm800
+	gx_tonestacks/tonestack_jcm2000
+	gx_tonestacks/tonestack_mlead
+	gx_tonestacks/tonestack_m2199
+	gx_tonestacks/tonestack_ac30
+	gx_tonestacks/tonestack_soldano
+	gx_tonestacks/tonestack_mesa
+	gx_tonestacks/tonestack_jtm45
+	gx_tonestacks/tonestack_ac15
+	gx_tonestacks/tonestack_peavey
+	gx_tonestacks/tonestack_ibanez
+	gx_tonestacks/tonestack_roland
+	gx_tonestacks/tonestack_ampeg
+	gx_tonestacks/tonestack_ampeg_rev
+	gx_tonestacks/tonestack_sovtek
+	gx_tonestacks/tonestack_bogner
+	gx_tonestacks/tonestack_groove
+	gx_tonestacks/tonestack_crunch
+	gx_tonestacks/tonestack_fender_blues
+	gx_tonestacks/tonestack_fender_default
+	gx_tonestacks/tonestack_fender_deville
+	gx_tonestacks/tonestack_gibsen
+	gx_tonestacks/tonestack_engl
+	gx_poweramps/champ
+	gx_poweramps/epiphone
+	gx_poweramps/princeton
+	gx_poweramps/orangedarkterror
+	gx_poweramps/plexiel34
+	gx_poweramps/supersonic
 )
 SET(GUITARIX_FAUST_SOURCES)
 FOREACH(UNIT ${GUITARIX_FAUST_UNITS})
@@ -115,7 +161,7 @@ SET(GUITARIX_SUPPORT
 
 # Its look: Guitarix's default style's images (gx/rcstyles) and its font (gx/fonts: Roboto Condensed, Apache 2.0)
 BUILD_PLUGIN(guitarix
-	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp GuitarixLayout.cpp GuitarixWidgets.cpp GuitarixVibe.cpp
+	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp GuitarixLayout.cpp GuitarixWidgets.cpp GuitarixVibe.cpp GuitarixSelectors.cpp
 	${GUITARIX_UNITS} ${GUITARIX_FAUST_SOURCES} ${GUITARIX_SUPPORT}
 	MOCFILES GuitarixEffect.h GuitarixControlDialog.h GuitarixWidgets.h
 	EMBEDDED_RESOURCES gx/rcstyles/*.png gx/fonts/RobotoCondensed-Regular.ttf gx/builder/*.glade

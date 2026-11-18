@@ -425,9 +425,16 @@ queda do Mallets, que é queda e entra antes.
     que outros efeitos leem processando).
   - Corrigido: os rótulos saíam cinza-claro (a folha de estilo do programa passava por cima da cor); agora são
     `#222222` no verde e `#aaaaaa` nos inversos, como no Guitarix.
+  - As unidades que são uma escolha entre outras (o `ModuleSelectorFromList` do motor dele): Crybaby (crybaby e
+    autowah), Wah (10 modelos), Tonestack (27) e PowerAmp (6 estágios de potência), com os glades em arquivo
+    deles: 92 unidades. Um `PluginDef` nosso faz o que o seletor dele faz (registra o seletor e os parâmetros de
+    todos os módulos, processa o escolhido, zera o estado do módulo ao escolhê-lo, como o motor dele zera a cadeia).
+    `GuitarixTest::selectorsChooseTheirModules` passa por cada módulo de cada um.
+  - Corrigido: um parâmetro com lista de valores (seletor) tem a faixa da lista, como no Guitarix (inteiro: 0 a
+    n-1; float: do mínimo, um por valor); antes ficava com a faixa registrada (0 a 0 nos seletores do motor).
   - Falta: o JCM800 Preamp (`jcm800pre`) precisa da biblioteca Eigen, que não está instalada (baixar pede a sua
-    aprovação); as internas do Guitarix (crybaby, wah, detune, convolvers...); os amps, tonestacks, estágios de
-    potência e caixas (montados pelos seletores do motor dele).
+    aprovação); as outras internas do Guitarix (detune, convolvers, caixas e preamps por convolução, looper...);
+    os amps (o seletor `ampstack` dele).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
   - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.

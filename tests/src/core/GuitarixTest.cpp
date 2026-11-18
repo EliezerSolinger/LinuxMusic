@@ -279,6 +279,49 @@ private slots:
 		QVERIFY2(difference < 1e-6f, qPrintable(QString{"after a rest it depends on what played before: %1"}.arg(difference)));
 	}
 
+	void selectorsChooseTheirModules_data()
+	{
+		QTest::addColumn<QString>("unit");
+		QTest::addColumn<int>("modules");
+		QTest::newRow("crybaby") << "crybaby" << 2;
+		QTest::newRow("wah") << "wah" << 10;
+		QTest::newRow("amp.tonestack") << "amp.tonestack" << 27;
+		QTest::newRow("poweramp") << "poweramp" << 6;
+	}
+
+	//! A unit that is a choice among others (Guitarix's ModuleSelectorFromList): each of its modules, chosen, sounds
+	//! (finite), and not all the same
+	void selectorsChooseTheirModules()
+	{
+		if (getPluginFactory()->pluginInfo("guitarix").isNull()) { QSKIP("not built here"); }
+		QFETCH(QString, unit);
+		QFETCH(int, modules);
+		const auto models = setUpUnit(unit);
+		QVERIFY2(!models.isEmpty(), "not made");
+		auto* selector = static_cast<AutomatableModel*>(nullptr);
+		for (auto* model : models) { if (model->displayName() == "select") { selector = model; } }
+		QVERIFY(selector);
+		QCOMPARE(selector->maxValue<int>() - selector->minValue<int>() + 1, modules);
+		auto sounds = std::vector<std::vector<float>>{};
+		for (int module = 0; module < modules; ++module)
+		{
+			selector->setValue(static_cast<float>(module));
+			renderPeriods(4);
+			auto sound = renderPeriods(8);
+			for (const auto sample : sound) { QVERIFY2(std::isfinite(sample), qPrintable(QString::number(module))); }
+			sounds.push_back(std::move(sound));
+		}
+		auto differ = false;
+		for (std::size_t m = 1; m < sounds.size() && !differ; ++m)
+		{
+			for (std::size_t i = 0; i < sounds[m].size() && i < sounds[0].size(); ++i)
+			{
+				if (std::abs(sounds[m][i] - sounds[0][i]) > 1e-4f) { differ = true; break; }
+			}
+		}
+		QVERIFY2(differ, "every module sounds the same");
+	}
+
 	//! A mono unit runs in two instances, one for each channel; the Vibe's LFO keeps its state in its file (Guitarix
 	//! runs one instance): each instance has its own, so the same input on both channels comes out the same on both
 	//! (were it shared, it would run twice as fast, the channels apart)
