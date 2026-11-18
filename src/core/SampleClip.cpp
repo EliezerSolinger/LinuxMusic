@@ -380,8 +380,7 @@ void SampleClip::peaksReady(const QString& file)
 void SampleClip::playbackPositionChanged()
 {
 	Engine::audioEngine()->removePlayHandlesOfTypes( getTrack(), PlayHandle::Type::SamplePlayHandle );
-	auto st = dynamic_cast<SampleTrack*>(getTrack());
-	st->setPlayingClips( false );
+	if (auto st = dynamic_cast<SampleTrack*>(getTrack())) { st->setPlayingClips(false); }
 }
 
 

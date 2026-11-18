@@ -33,6 +33,7 @@
 #include "InstrumentTrack.h"
 #include "Knob.h"
 #include "Mixer.h"
+#include "AudioInputTrack.h"
 #include "SampleTrack.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -52,7 +53,9 @@ TrackChannelControls::TrackChannelControls(Track* track, QObject* parent) :
 		m_panning = instrumentTrack->panningModel();
 		m_effects = instrumentTrack->audioBusHandle()->effects();
 	}
-	else if (auto sampleTrack = dynamic_cast<SampleTrack*>(track))
+	// (a sample track and an audio track, both: an audio track is no sample track, and with no channel model its
+	// controls crashed opening a project with one)
+	else if (auto sampleTrack = dynamic_cast<AudioInputTrack*>(track))
 	{
 		m_channel = sampleTrack->mixerChannelModel();
 		m_volume = sampleTrack->volumeModel();
