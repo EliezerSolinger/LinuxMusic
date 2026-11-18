@@ -404,7 +404,7 @@ queda do Mallets, que é queda e entra antes.
     estéreo, digital, duck), reverbs (Freeverb, Stereoverb, Dattorro), tremolo, phaser, chorus, flanger, moog, ring
     modulator, panorama, bass enhancer, fuzz face, transistor buffer... São os arquivos que o Guitarix gera
     (`src/faust-generated`), como estão, cada um compilado dentro do namespace dele em `gx_engine`, como o
-    `gx_faust_plugins.cpp` do Guitarix faz (o CMake gera um arquivo por unidade). Agora são 85 unidades, na ordem do
+    `gx_faust_plugins.cpp` do Guitarix faz (o CMake gera um arquivo por unidade). Eram 85 unidades, na ordem do
     rack dele (as mono, depois as estéreo). As 85 passam pelo `GuitarixTest` (extremos, repouso) e pelo teste de
     alocações (zero). Os glades delas (inline, ou em arquivo do `builder` dele, embutidos aqui) usam também
     GxPaintBox, GxSwitch, GxVSlider e GtkEventBox; os 247 `var_id` batem com os parâmetros. Uma unidade sem UI no
@@ -413,9 +413,21 @@ queda do Mallets, que é queda e entra antes.
   - Corrigido: os medidores mostram o valor como o GxFastMeter mostra: na faixa do parâmetro (os das unidades, de
     passo 0), ou, num parâmetro com passo, como potência em dB pelo `log_meter`. (Antes todos iam pelo `log_meter`:
     o do compressor, 0 a 40, aparecia aceso no repouso.)
-  - Falta: as unidades do Guitarix que não são Faust (vibe, abgate, reversedelay, jcm800pre e as internas: crybaby,
-    wah, detune, convolvers...), os amps, tonestacks, estágios de potência e caixas (montados pelos seletores do
-    motor dele).
+  - O Vibe (mono e estéreo), o abGate e o ReverseDelay (código escrito à mão do Guitarix, com os glades em arquivo
+    deles e o GxPortDisplay do buffer): 88 unidades. Dois defeitos do código do Vibe, resolvidos sem mudá-lo: (1) o
+    LFO dele guarda o estado no arquivo (o Guitarix roda uma instância de cada unidade); aqui cada instância tem a
+    sua cópia, posta no arquivo em volta do processamento, sob uma trava (outros Vibes, em outras threads). Sem isso
+    as duas instâncias da unidade mono (L e R) avançavam o mesmo LFO duas vezes por bloco: velocidade dobrada e os
+    canais defasados (`GuitarixTest::vibeChannelsAlike` falha assim). (2) Membros dele (o estado dos filtros) não
+    são iniciados nem pelo construtor nem pelo `init`: o Vibe é feito sobre memória zerada.
+  - O repouso agora refaz as unidades pela fábrica delas (nem todas zeram todo o estado ao serem reiniciadas), e a
+    iniciação de uma unidade segura a trava de mudanças do motor: algumas preenchem tabelas do arquivo (as mesmas
+    que outros efeitos leem processando).
+  - Corrigido: os rótulos saíam cinza-claro (a folha de estilo do programa passava por cima da cor); agora são
+    `#222222` no verde e `#aaaaaa` nos inversos, como no Guitarix.
+  - Falta: o JCM800 Preamp (`jcm800pre`) precisa da biblioteca Eigen, que não está instalada (baixar pede a sua
+    aprovação); as internas do Guitarix (crybaby, wah, detune, convolvers...); os amps, tonestacks, estágios de
+    potência e caixas (montados pelos seletores do motor dele).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
   - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.

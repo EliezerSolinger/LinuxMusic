@@ -25,6 +25,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <vector>
 
@@ -102,9 +103,9 @@ private:
  * on the audio thread. Each unit is one of the plugin's sub-plugins (the key's "unit"). A mono unit (most) runs in
  * two instances, one for each channel; a stereo one in one.
  *
- * The units are made on the main thread, and made again (initialized at the rate) there when the rate changes and
- * before a rest (Mixer::processingStateDiscarding): their resamplers keep what came before, and setting them up
- * allocates. On the audio thread they only process.
+ * The units are made on the main thread, initialized there at the rate when it changes, and made anew from their
+ * factory before a rest (Mixer::processingStateDiscarding: not all of them clear all of their state when started
+ * again), with no period being rendered meanwhile. On the audio thread they only process.
  */
 class GuitarixEffect : public LegacyEffect
 {
@@ -127,6 +128,9 @@ private:
 	auto process(ProcessContext& context) -> ProcessStatus override;
 	//! Initializes the instances at @p sampleRate (anew: from rest) [main thread]
 	void initialize(unsigned int sampleRate);
+	//! The unit's instances made (anew), their parameters bound to the models [main thread]
+	void makeInstances();
+	void deleteInstances();
 	//! The models' values to the instances' parameters [audio thread]
 	void applyParameters();
 	//! The instances' outputs to the parameters' (for the view) [audio thread]
@@ -141,6 +145,9 @@ private:
 	static constexpr f_cnt_t Chunk = 256;
 	std::array<std::array<float, Chunk>, 2> m_input = {};
 	std::array<std::array<float, Chunk>, 2> m_output = {};
+
+	//! Each instance's copy of the state its unit's code keeps in its file (see guitarix::FileState)
+	std::array<std::vector<std::byte>, 2> m_fileStates;
 
 	GuitarixControls m_controls;
 

@@ -107,9 +107,7 @@ const auto FrameInversedBorder = QColor{50, 50, 50, 178}; //!< #frame_inversed b
 void styleInverseLabel(QLabel* label)
 {
 	label->setFont(font(7));
-	auto palette = label->palette();
-	palette.setColor(QPalette::WindowText, InverseLabelColor);
-	label->setPalette(palette);
+	setTextColor(label, InverseLabelColor);
 }
 
 
@@ -234,6 +232,7 @@ private:
 		else if (kind == "GxHSlider") { built.widget = slider<HSlider>(properties, parent); built.leaf = true; }
 		else if (kind == "GxVSlider") { built.widget = slider<VSlider>(properties, parent); built.leaf = true; }
 		else if (kind == "GxSwitch") { built.widget = toggle(properties, parent); built.leaf = true; }
+		else if (kind == "GxPortDisplay") { built.widget = portDisplay(properties, parent); built.leaf = true; }
 		else
 		{
 			// (a window, or what holds one child: what it holds)
@@ -243,7 +242,15 @@ private:
 			}
 			return built;
 		}
-		if (built.widget) { applyMargins(built, parent); }
+		if (built.widget)
+		{
+			// (its size request: at least so large)
+			const auto width = properties.integer("width_request", -1);
+			const auto height = properties.integer("height_request", -1);
+			if (width > 0) { built.widget->setMinimumWidth(std::max(width, built.widget->minimumWidth())); }
+			if (height > 0) { built.widget->setMinimumHeight(std::max(height, built.widget->minimumHeight())); }
+			applyMargins(built, parent);
+		}
 		return built;
 	}
 
@@ -565,6 +572,18 @@ private:
 		widget->setHintText(parameter->name + ":", "");
 		if (properties.has("label_ref")) { m_labelNames.emplace_back(properties.text("label_ref"), parameter->name); }
 		return widget;
+	}
+
+	auto portDisplay(const Properties& properties, QWidget* parent) -> QWidget*
+	{
+		auto* parameter = parameterOf(properties);
+		if (!parameter || !parameter->output)
+		{
+			auto widget = new PortDisplay(nullptr, 0.f, 1.f, parent);
+			widget->setEnabled(false);
+			return widget;
+		}
+		return new PortDisplay(parameter->output.get(), parameter->lower, parameter->upper, parent);
 	}
 
 	//! A GxSwitch: its base name's images (switch by default), on its parameter

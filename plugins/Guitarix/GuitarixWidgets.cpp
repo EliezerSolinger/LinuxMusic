@@ -148,12 +148,17 @@ auto font(double points) -> QFont
 }
 
 
+void setTextColor(QLabel* label, const QColor& color)
+{
+	// (by a style sheet of its own: the program's style sheet colors labels, over a palette)
+	label->setStyleSheet(QString{"color: %1; background: transparent;"}.arg(color.name()));
+}
+
+
 void styleRackLabel(QLabel* label)
 {
 	label->setFont(font(8));
-	auto palette = label->palette();
-	palette.setColor(QPalette::WindowText, LabelColor);
-	label->setPalette(palette);
+	setTextColor(label, LabelColor);
 }
 
 
@@ -170,9 +175,7 @@ RackUnit::RackUnit(const QString& title, QWidget* controls, QWidget* parent) :
 
 	auto label = new QLabel(title, this);
 	label->setFont(guitarix::font(10));
-	auto palette = label->palette();
-	palette.setColor(QPalette::WindowText, LabelColor);
-	label->setPalette(palette);
+	setTextColor(label, LabelColor);
 	label->setFixedHeight(31);
 	label->setContentsMargins(4, 0, 0, 0);
 	layout->addWidget(label);
@@ -789,6 +792,48 @@ void PaintBox::paintEvent(QPaintEvent*)
 	if (m_tile.isNull()) { return; }
 	auto p = QPainter{this};
 	p.drawTiledPixmap(rect(), m_tile);
+}
+
+
+
+
+PortDisplay::PortDisplay(const std::atomic<float>* value, float lower, float upper, QWidget* parent) :
+	QWidget(parent),
+	m_value(value),
+	m_lower(lower),
+	m_upper(upper),
+	m_image(image("portdisplay"))
+{
+	// (its size request: half its image wide, its image high and 2)
+	setMinimumSize(m_image.width() / 2, m_image.height() + 2);
+	setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+	// (by name: MainWindow is not exported to the plugins)
+	connect(getGUI()->mainWindow(), SIGNAL(periodicUpdate()), this, SLOT(poll()));
+}
+
+
+void PortDisplay::poll()
+{
+	if (!m_value || !isVisible() || m_upper == m_lower) { return; }
+	const auto width = m_image.width() / 2;
+	const auto value = std::clamp(m_value->load(std::memory_order_relaxed), std::min(m_lower, m_upper),
+		std::max(m_lower, m_upper));
+	const auto shown = static_cast<int>(std::lround((value - m_lower) / (m_upper - m_lower) * width));
+	if (shown != m_shown)
+	{
+		m_shown = shown;
+		update();
+	}
+}
+
+
+void PortDisplay::paintEvent(QPaintEvent*)
+{
+	// (port_display_expose: the image's window, its width wide, slid by the value)
+	const auto width = m_image.width() / 2;
+	auto p = QPainter{this};
+	const auto source = width - (isEnabled() ? m_shown : 0);
+	p.drawPixmap(0, 0, m_image, source, 0, width, m_image.height());
 }
 
 

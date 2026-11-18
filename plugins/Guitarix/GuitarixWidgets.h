@@ -45,6 +45,9 @@ auto image(const char* name) -> QPixmap;
 //! Guitarix's font (Roboto Condensed, as its fonts/), @p points large (Guitarix's sizes are points at 96 dpi)
 auto font(double points) -> QFont;
 
+//! A label's text color (over the program's style sheet)
+void setTextColor(QLabel* label, const QColor& color);
+
 //! What its labels are (".rack_label": condensed 8pt, #222222 on the panel)
 void styleRackLabel(QLabel* label);
 
@@ -243,6 +246,31 @@ protected:
 
 private:
 	QPixmap m_tile;
+};
+
+
+/**
+ * An output shown as GxPortDisplay shows it (its default image, portdisplay.png: half of it lit up to where the value
+ * is in its range, read as a meter is, at MainWindow's periodic update).
+ */
+class PortDisplay : public QWidget
+{
+	Q_OBJECT
+public:
+	PortDisplay(const std::atomic<float>* value, float lower, float upper, QWidget* parent = nullptr);
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+
+private slots:
+	void poll();
+
+private:
+	const std::atomic<float>* m_value;
+	float m_lower;
+	float m_upper;
+	QPixmap m_image;
+	int m_shown = 0; //!< (pixels)
 };
 
 

@@ -123,6 +123,27 @@ Plugin::Descriptor PLUGIN_EXPORT guitarix_plugin_descriptor =
 namespace
 {
 
+//! Holds a unit's file state's lock (spinning: on the audio thread; held for an effect's period at most), if it
+//! has one
+class FileStateLock
+{
+public:
+	explicit FileStateLock(const guitarix::FileState* state) : m_lock(state ? state->lock : nullptr)
+	{
+		if (!m_lock) { return; }
+		while (m_lock->test_and_set(std::memory_order_acquire)) {}
+	}
+	~FileStateLock()
+	{
+		if (m_lock) { m_lock->clear(std::memory_order_release); }
+	}
+	FileStateLock(const FileStateLock&) = delete;
+	auto operator=(const FileStateLock&) -> FileStateLock& = delete;
+
+private:
+	std::atomic_flag* m_lock;
+};
+
 //! The parameters being registered (Guitarix's ParamReg takes plain functions: the effect being made, on the main
 //! thread, and which instance)
 GuitarixControls* s_registering = nullptr;
@@ -276,6 +297,51 @@ GuitarixEffect::GuitarixEffect(Model* parent, const Descriptor::SubPluginFeature
 	if (!m_unit && (!key || !key->attributes.contains("unit"))) { m_unit = &guitarix::units().front(); }
 	if (!m_unit) { return; }
 
+	makeInstances();
+
+	// Before a rest (an export, a new project), on this thread: made anew there, the audio thread's reset() finds
+	// them at rest
+	QObject::connect(Engine::mixer(), &Mixer::processingStateDiscarding, &m_controls, [this] {
+		if (m_sampleRate == 0) { return; }
+		const auto guard = AudioEngine::changesGuard();
+		// (made anew from the factory: not all of Guitarix's units clear all of their state when started again)
+		makeInstances();
+		initialize(m_sampleRate);
+	});
+
+	initialize(Engine::audioEngine()->outputSampleRate());
+}
+
+
+GuitarixEffect::~GuitarixEffect()
+{
+	deleteInstances();
+}
+
+
+void GuitarixEffect::deleteInstances()
+{
+	for (auto*& instance : m_instances)
+	{
+		if (!instance) { continue; }
+		if (instance->activate_plugin) { instance->activate_plugin(false, instance); }
+		instance->delete_instance(instance);
+		instance = nullptr;
+	}
+}
+
+
+void GuitarixEffect::makeInstances()
+{
+	deleteInstances();
+	// The parameters are bound to the new instances' variables (the models stay: the values are the user's)
+	for (auto& parameter : m_controls.m_parameters)
+	{
+		parameter.vars.clear();
+		parameter.intVars.clear();
+		parameter.boolVars.clear();
+	}
+
 	// Two instances of a mono unit, one of a stereo one; their parameters in the models (the same ids)
 	m_instances[0] = m_unit->make();
 	m_stereo = m_instances[0]->stereo_audio != nullptr;
@@ -292,26 +358,9 @@ GuitarixEffect::GuitarixEffect(Model* parent, const Descriptor::SubPluginFeature
 		instance->register_params(registrar);
 	}
 	s_registering = nullptr;
-
-	// Before a rest (an export, a new project), on this thread: made anew there, the audio thread's reset() finds
-	// them at rest
-	QObject::connect(Engine::mixer(), &Mixer::processingStateDiscarding, &m_controls, [this] {
-		if (m_sampleRate == 0) { return; }
-		const auto guard = AudioEngine::changesGuard();
-		initialize(m_sampleRate);
-	});
-
-	initialize(Engine::audioEngine()->outputSampleRate());
-}
-
-
-GuitarixEffect::~GuitarixEffect()
-{
-	for (auto* instance : m_instances)
+	if (m_unit->fileState)
 	{
-		if (!instance) { continue; }
-		if (instance->activate_plugin) { instance->activate_plugin(false, instance); }
-		instance->delete_instance(instance);
+		for (auto& state : m_fileStates) { state.assign(m_unit->fileState->size, std::byte{0}); }
 	}
 }
 
@@ -333,6 +382,9 @@ auto GuitarixEffect::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 
 void GuitarixEffect::initialize(unsigned int sampleRate)
 {
+	// (with no period being rendered: some units fill tables of their file when started, tables the same units in
+	// other effects are reading as they process; the same values, but not while they read)
+	const auto guard = AudioEngine::changesGuard();
 	m_sampleRate = sampleRate;
 	for (auto* instance : m_instances)
 	{
@@ -340,6 +392,12 @@ void GuitarixEffect::initialize(unsigned int sampleRate)
 		// (as Guitarix starts a unit: the rate, which clears its state, then its activation)
 		if (instance->set_samplerate) { instance->set_samplerate(sampleRate, instance); }
 		if (instance->activate_plugin) { instance->activate_plugin(true, instance); }
+	}
+	// (the state its code keeps in its file, as starting it left it: each instance's own from now on)
+	if (const auto* state = m_unit ? m_unit->fileState : nullptr)
+	{
+		const auto lock = FileStateLock{state};
+		for (auto& copy : m_fileStates) { state->save(copy.data()); }
 	}
 }
 
@@ -360,6 +418,9 @@ void GuitarixEffect::applyParameters()
 auto GuitarixEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	if (!m_instances[0]) { return ProcessStatus::Continue; }
+	// (a unit with state in its file: its controls set and its code run with no other effect's in between)
+	const auto* state = m_unit->fileState;
+	const auto lock = FileStateLock{state};
 	applyParameters();
 
 	const auto dry = dryLevel();
@@ -377,15 +438,19 @@ auto GuitarixEffect::process(ProcessContext& context) -> ProcessStatus
 		}
 		if (m_stereo)
 		{
+			if (state) { state->restore(m_fileStates[0].data()); }
 			m_instances[0]->stereo_audio(static_cast<int>(count), m_input[0].data(), m_input[1].data(),
 				m_output[0].data(), m_output[1].data(), m_instances[0]);
+			if (state) { state->save(m_fileStates[0].data()); }
 		}
 		else
 		{
 			for (int ch = 0; ch < 2; ++ch)
 			{
+				if (state) { state->restore(m_fileStates[ch].data()); }
 				m_instances[ch]->mono_audio(static_cast<int>(count), m_input[ch].data(), m_output[ch].data(),
 					m_instances[ch]);
+				if (state) { state->save(m_fileStates[ch].data()); }
 			}
 		}
 		for (f_cnt_t f = 0; f < count; ++f)

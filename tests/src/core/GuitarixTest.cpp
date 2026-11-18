@@ -279,6 +279,26 @@ private slots:
 		QVERIFY2(difference < 1e-6f, qPrintable(QString{"after a rest it depends on what played before: %1"}.arg(difference)));
 	}
 
+	//! A mono unit runs in two instances, one for each channel; the Vibe's LFO keeps its state in its file (Guitarix
+	//! runs one instance): each instance has its own, so the same input on both channels comes out the same on both
+	//! (were it shared, it would run twice as fast, the channels apart)
+	void vibeChannelsAlike()
+	{
+		if (getPluginFactory()->pluginInfo("guitarix").isNull()) { QSKIP("not built here"); }
+		const auto models = setUpUnit("univibe_mono");
+		QVERIFY2(!models.isEmpty(), "not made");
+		const auto samples = renderPeriods(80);
+		auto loudest = 0.f;
+		auto difference = 0.f;
+		for (std::size_t i = 0; i + 1 < samples.size(); i += 2)
+		{
+			loudest = std::max(loudest, std::abs(samples[i]));
+			difference = std::max(difference, std::abs(samples[i] - samples[i + 1]));
+		}
+		QVERIFY2(loudest > 0.01f, "silent");
+		QVERIFY2(difference < 1e-6f, qPrintable(QString{"left and right differ: %1"}.arg(difference)));
+	}
+
 	//! What a unit measures (its meters' levels: Guitarix's output parameters) is not a control: no knob, no
 	//! automation, not saved; what it is set by is
 	void outputsAreNotControls()

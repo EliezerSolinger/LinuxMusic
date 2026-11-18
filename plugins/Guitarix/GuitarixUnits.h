@@ -27,6 +27,8 @@
 #ifndef LMMS_GUITARIX_UNITS_H
 #define LMMS_GUITARIX_UNITS_H
 
+#include <atomic>
+#include <cstddef>
 #include <span>
 
 struct PluginDef;
@@ -34,13 +36,35 @@ struct PluginDef;
 namespace lmms::guitarix
 {
 
+/**
+ * The state a unit's code keeps in its file, not in its instances (Guitarix runs one instance of each unit: the
+ * Vibe's LFOs are such). Each instance here keeps its own copy, put in the file around its processing, under the
+ * lock (other effects, on other threads, run the same code).
+ */
+struct FileState
+{
+	std::size_t size; //!< (bytes)
+	void (*save)(std::byte* to);
+	void (*restore)(const std::byte* from);
+	std::atomic_flag* lock;
+};
+
 //! A unit of Guitarix: its id (Guitarix's) and how one is made (Guitarix's own factory: a PluginDef, the unit's
 //! interface, with its name and category, deleted by its delete_instance)
 struct Unit
 {
 	const char* id;
 	PluginDef* (*make)();
+	const FileState* fileState = nullptr;
 };
+
+//! The Vibe (GuitarixVibe.cpp), mono and stereo, each made on zeroed memory (see there)
+auto makeVibeMono() -> PluginDef*;
+auto makeVibeStereo() -> PluginDef*;
+
+//! The Vibe's LFOs' state (GuitarixVibe.cpp), stereo and mono
+extern const FileState vibeLfoState;
+extern const FileState vibeMonoLfoState;
 
 //! Every unit, in the browser's order
 auto units() -> std::span<const Unit>;
