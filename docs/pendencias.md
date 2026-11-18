@@ -580,6 +580,9 @@ queda do Mallets, que é queda e entra antes.
     - não vêm, por serem ferramentas do programa Guitarix e não efeitos do rack (o LinuxMusic tem as suas): afinador,
       osciloscópio, looper, gravador, sequenciador de bateria, metrônomo e o medidor de VU como unidade.
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
+  - **Design aprovado (18/11):** `docs/design-sugestoes/02-cabecalho-de-faixa.png`, refeito no TCP do REAPER: número na
+    cor da faixa, gravar, nome num campo, M e S; knobs de volume e pan (sem régua), FX e I/O; o medidor na borda;
+    alturas normal, grande e compacta; o menu de contexto curto. Implementar.
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
   - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.
   - Dois relógios, o grande e o pequeno, cada um no formato escolhido com um clique (compassos e tempos, minutos

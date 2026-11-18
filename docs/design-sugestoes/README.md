@@ -4,12 +4,12 @@ Propostas para o programa todo, menos o mixer e a cadeia de efeitos, que ficam c
 tema atual: o fundo cinza-azulado escuro e o verde do LMMS. Cada imagem mostra a proposta, e várias mostram também o
 que existe hoje, para comparar. Os números verdes na imagem correspondem às explicações da coluna da direita.
 
-Em 17/11 o usuário aprovou a 3 e a 8; as outras esperam a revisão dele, tela por tela. Marque o que aprovar (troque `[ ]` por `[x]`), ou escreva ao lado o que mudar. Nada disso foi implementado ainda.
+Em 17/11 o usuário aprovou a 3 e a 8, e em 18/11 a 2 (refeita); as outras esperam a revisão dele, tela por tela. Marque o que aprovar (troque `[ ]` por `[x]`), ou escreva ao lado o que mudar. Nada disso foi implementado ainda.
 
 | # | Imagem | Aprovo | Observações |
 |---|---|---|---|
 | 1 | [Janela principal](01-janela-principal.png): uma barra superior só, navegador com abas, inspetor à direita, editores encaixados embaixo, barra de status | [ ] | |
-| 2 | [Cabeçalho de faixa no estilo REAPER](02-cabecalho-de-faixa.png): o TCP do REAPER, volume e pan em knobs (sem régua), três alturas | [ ] | Refeito em 18/11: a versão anterior tinha régua de volume e não seguia o REAPER |
+| 2 | [Cabeçalho de faixa no estilo REAPER](02-cabecalho-de-faixa.png): o TCP do REAPER, volume e pan em knobs (sem régua), três alturas | [x] | Refeito e aprovado pelo usuário em 18/11 |
 | 3 | [Barra de transporte](03-transporte.png): um visor grande, estados por cor e por palavra | [x] | Aprovado pelo usuário em 17/11 |
 | 4 | [Piano roll](04-piano-roll.png): uma barra com texto, escala à vista, notas fantasmas, lanes com abas | [ ] | |
 | 5 | [Janela do instrumento](05-janela-do-instrumento.png): painel encaixado, abas com texto, rodapé fixo | [ ] | |
