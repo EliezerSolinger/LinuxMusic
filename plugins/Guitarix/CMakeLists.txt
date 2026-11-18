@@ -215,7 +215,7 @@ SET(GUITARIX_SUPPORT
 
 # Its look: Guitarix's default style's images (gx/rcstyles) and its font (gx/fonts: Roboto Condensed, Apache 2.0)
 BUILD_PLUGIN(guitarix
-	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp GuitarixLayout.cpp GuitarixWidgets.cpp GuitarixVibe.cpp GuitarixSelectors.cpp GuitarixConvolution.cpp GuitarixAmp.cpp gx/zita-convolver/zita-convolver.cc
+	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp GuitarixLayout.cpp GuitarixWidgets.cpp GuitarixVibe.cpp GuitarixSelectors.cpp GuitarixConvolution.cpp GuitarixAmp.cpp GuitarixDetune.cpp gx/zita-convolver/zita-convolver.cc
 	${GUITARIX_UNITS} ${GUITARIX_FAUST_SOURCES} ${GUITARIX_SUPPORT}
 	MOCFILES GuitarixEffect.h GuitarixControlDialog.h GuitarixWidgets.h
 	EMBEDDED_RESOURCES gx/rcstyles/*.png gx/fonts/RobotoCondensed-Regular.ttf gx/builder/*.glade

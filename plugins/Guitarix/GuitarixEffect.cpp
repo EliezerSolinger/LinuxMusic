@@ -457,6 +457,7 @@ void GuitarixEffect::initialize(unsigned int sampleRate)
 	const auto guard = AudioEngine::changesGuard();
 	m_sampleRate = sampleRate;
 	m_framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
+	m_block = static_cast<f_cnt_t>(guitarix::blockFrames());
 	// (the parameters' values first: a unit starts with what is chosen, its impulse response, say)
 	applyParameters();
 	for (auto* instance : m_instances)
@@ -500,9 +501,9 @@ auto GuitarixEffect::process(ProcessContext& context) -> ProcessStatus
 	const auto wet = wetLevel();
 	auto inOut = context.inOut().interleavedBuffer();
 	const auto frames = inOut.frames();
-	for (f_cnt_t start = 0; start < frames; start += Chunk)
+	for (f_cnt_t start = 0; start < frames; start += m_block)
 	{
-		const auto count = std::min(Chunk, frames - start);
+		const auto count = std::min(m_block, frames - start);
 		for (f_cnt_t f = 0; f < count; ++f)
 		{
 			const auto& frame = inOut.sampleFrameAt(start + f);

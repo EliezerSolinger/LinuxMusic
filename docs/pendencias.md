@@ -454,6 +454,12 @@ queda do Mallets, que é queda e entra antes.
     categorias do próprio Guitarix (controle de tom, distorção, diversos, eco/delay, efeitos de guitarra, fuzz,
     modulação, reverb). As sub-plugins de um plugin ganharam um grupo (`Key::group()`), que esses dois mostram como
     um nível próprio ("Guitarix › Distorção" no diálogo).
+  - O Detune (o `smbPitchShift` do Guitarix, pitch shifter por FFT, de Stephan Bernsee): 96 unidades. O código é o
+    dele, portado (o que dependia do motor dele passou a ser da unidade; a troca de latência refaz os buffers na
+    thread principal; os buffers de `new[]` agora saem com `delete[]`). `GuitarixTest::detuneShifts` confere que 7
+    semitons levam o seno de 220 Hz para a quinta.
+  - As unidades recebem sempre blocos do mesmo tamanho, como no Guitarix (o período do JACK dele): a maior potência
+    de dois, até 256, que divide o período. O Detune só processa blocos do tamanho com que foi montado.
   - Falta: o JCM800 Preamp (`jcm800pre`) precisa da biblioteca Eigen, que não está instalada (baixar pede a sua
     aprovação); as outras internas do Guitarix (detune, looper, convolver com arquivo...).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.

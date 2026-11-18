@@ -349,6 +349,23 @@ private slots:
 		QVERIFY2(difference < 1e-6f, qPrintable(QString{"left and right differ: %1"}.arg(difference)));
 	}
 
+	//! Guitarix's Detune (its smbPitchShift) shifts a sine: 7 semitones up, all wet, the 220 Hz sine's power goes to
+	//! about 330 Hz; it processes only blocks of the size it was set up for, all of the effect's being the same
+	void detuneShifts()
+	{
+		if (getPluginFactory()->pluginInfo("guitarix").isNull()) { QSKIP("not built here"); }
+		const auto shifted = play("smbPitchShift", [](const auto& models) {
+			set(models, "Detune", 7.f);
+			set(models, "Wet", 100.f);
+			set(models, "Dry", 0.f);
+		});
+		QVERIFY(!shifted.empty());
+		const auto fifth = 220.0 * std::pow(2.0, 7.0 / 12.0);
+		const auto name = QString{"220 Hz %1, %2 Hz %3"}.arg(powerAt(shifted, 220.0)).arg(fifth)
+			.arg(powerAt(shifted, fifth));
+		QVERIFY2(powerAt(shifted, fifth) > 30 * powerAt(shifted, 220.0), qPrintable(name));
+	}
+
 	//! What a unit measures (its meters' levels: Guitarix's output parameters) is not a control: no knob, no
 	//! automation, not saved; what it is set by is
 	void outputsAreNotControls()

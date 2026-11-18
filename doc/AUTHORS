@@ -97,6 +97,9 @@ Hermann Meyer, James Warden, Andreas Degert, Pete Shorthose
   Guitarix's pedals, amps and cabinets, and their look (its style's images,
   in plugins/Guitarix/gx/rcstyles)
 
+Stephan M. Bernsee
+  smbPitchShift (Wide Open License), Guitarix's Detune
+
 Christian Robertson (Google)
   Roboto Condensed (Apache License 2.0, plugins/Guitarix/gx/fonts), the
   font Guitarix's look is in

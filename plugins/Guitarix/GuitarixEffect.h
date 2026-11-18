@@ -150,6 +150,8 @@ private:
 
 	//! A chunk of each channel, its input and output (Guitarix processes channels apart)
 	static constexpr f_cnt_t Chunk = 256;
+	//! How many frames the units get at a time (guitarix::blockFrames(): always the same, up to a chunk)
+	f_cnt_t m_block = Chunk;
 	std::array<std::array<float, Chunk>, 2> m_input = {};
 	std::array<std::array<float, Chunk>, 2> m_output = {};
 

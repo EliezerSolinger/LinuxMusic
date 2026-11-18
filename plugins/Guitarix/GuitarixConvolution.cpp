@@ -150,17 +150,6 @@ auto upsampling(unsigned int rate) -> unsigned int
 	return (std::max)(1u, 96000u / (std::max)(1u, rate));
 }
 
-//! The largest power of two (at most 256, the effect's chunk) that the period is a multiple of: every call a
-//! unit gets is a multiple of it
-auto blockFrames() -> unsigned int
-{
-	const auto period = static_cast<unsigned int>(lmms::Engine::audioEngine()->framesPerPeriod());
-	auto block = 256u;
-	while (block > 1 && period % block != 0) { block /= 2; }
-	return block;
-}
-
-
 /**
  * Guitarix's GxSimpleConvolver (gx_convolver.cpp) on the zita-convolver: an impulse response (resampled to the rate
  * it convolves at) convolved with what comes, in place. Here in one partition level, the block's size (its quantum,

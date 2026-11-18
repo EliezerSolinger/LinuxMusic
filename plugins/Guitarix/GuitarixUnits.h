@@ -77,6 +77,10 @@ auto makeContrast() -> PluginDef*;
 void updateContrast(PluginDef* plugin);
 auto makeAmpstack() -> PluginDef*;
 
+//! Guitarix's Detune (GuitarixDetune.cpp), and its update (its latency setting)
+auto makeDetune() -> PluginDef*;
+void updateDetune(PluginDef* plugin);
+
 //! The amp head (GuitarixAmp.cpp)
 auto makeAmpHead() -> PluginDef*;
 void updateAmpHead(PluginDef* plugin);
@@ -88,6 +92,10 @@ auto makeVibeStereo() -> PluginDef*;
 //! The Vibe's LFOs' state (GuitarixVibe.cpp), stereo and mono
 extern const FileState vibeLfoState;
 extern const FileState vibeMonoLfoState;
+
+//! How many frames a unit processes at a time: always the same, as in Guitarix (its JACK period): the largest power
+//! of two, at most 256, the period is a multiple of [main thread]
+auto blockFrames() -> unsigned int;
 
 //! Every unit, in the browser's order
 auto units() -> std::span<const Unit>;

@@ -22,6 +22,9 @@
 
 #include "GuitarixUnits.h"
 
+#include "AudioEngine.h"
+#include "Engine.h"
+
 #include <array>
 #include <cstring>
 
@@ -46,6 +49,7 @@ const auto s_units = std::array{
 	Unit{"crybaby", &makeCrybaby},
 	Unit{"poweramp", &makePoweramp},
 	Unit{"wah", &makeWah},
+	Unit{"smbPitchShift", &makeDetune, nullptr, &updateDetune},
 	Unit{"gx_distortion", &gx_engine::gx_effects::gx_distortion::plugin},
 	Unit{"bitdowner", &gx_engine::gx_effects::bitdowner::plugin},
 	Unit{"thick_distortion", &gx_engine::gx_effects::thick_distortion::plugin},
@@ -137,6 +141,15 @@ const auto s_units = std::array{
 };
 
 } // namespace
+
+
+auto blockFrames() -> unsigned int
+{
+	const auto period = static_cast<unsigned int>(Engine::audioEngine()->framesPerPeriod());
+	auto block = 256u;
+	while (block > 1 && period % block != 0) { block /= 2; }
+	return block;
+}
 
 
 auto units() -> std::span<const Unit>
