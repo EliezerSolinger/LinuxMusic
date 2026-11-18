@@ -971,6 +971,10 @@ Este chip foi utilizado no computador Commodore 64.</translation>
         <source>Impulse responses: guitar cabinets, acoustic bodies, rooms</source>
         <translation>Respostas a impulso: caixas de guitarra, corpos de violão, salas</translation>
     </message>
+    <message>
+        <source>Guitarix's pedals, amps and cabinets, built in</source>
+        <translation>Os pedais, amplificadores e gabinetes do Guitarix, embutidos</translation>
+    </message>
 </context>
 <context>
     <name>PluginFactory</name>
@@ -17861,6 +17865,10 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>Formulas</source>
         <translation>Fórmulas</translation>
     </message>
+    <message>
+        <source>Guitarix</source>
+        <translation>Guitarix</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::TransportBar</name>
@@ -18775,6 +18783,17 @@ A interface usada é a que está salva nestas configurações.</translation>
     <message>
         <source>On: the voice moves to the new note without starting again. Off: it starts again</source>
         <translation>Ligado: a voz passa para a nota nova sem recomeçar. Desligado: ela recomeça</translation>
+    </message>
+</context>
+<context>
+    <name>GuitarixEffect</name>
+    <message>
+        <source>Distortion</source>
+        <translation>Distorção</translation>
+    </message>
+    <message>
+        <source>From Guitarix (guitarix.org), by Hermann Meyer, James Warden, Andreas Degert, Pete Shorthose and its other authors: its own code, built in.</source>
+        <translation>Do Guitarix (guitarix.org), de Hermann Meyer, James Warden, Andreas Degert, Pete Shorthose e os outros autores: o próprio código dele, embutido.</translation>
     </message>
 </context>
 </TS>

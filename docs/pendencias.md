@@ -370,6 +370,18 @@ queda do Mallets, que é queda e entra antes.
     - levantar como o DSP dele é gerado (Faust) e o que isso exige no nosso build;
     - listar todas as peças e o que já temos de parecido (AmpAndIr/NAM, mixer analógico);
     - definir a interface de cada uma, que deve caber no rack de efeitos (item acima).
+  - Andamento (19/11): **fase 0 e piloto (TS9) feitos.** O efeito `guitarix` (categoria própria no navegador)
+    tem as unidades do Guitarix como subplugins, pelos ids e nomes dele. O código de cada unidade é o gerado do
+    Guitarix, sem mudança (em `plugins/Guitarix/gx/`), compilado contra os cabeçalhos dele (`gx_plugin.h`,
+    `gx_faust_support.h`...) e o zita-resampler que ele usa para rodar a 96 kHz (GPL-3, aceito pelo usuário): soa
+    como no Guitarix. Cada unidade em mono roda em duas instâncias (esquerda e direita). Os parâmetros viram modelos
+    a partir do `register_par` da própria unidade (salvos pelos ids do Guitarix). As unidades são refeitas na thread
+    principal quando a taxa muda e antes de um repouso (o reamostrador guarda o passado, e configurá-lo aloca); na
+    thread de áudio só processam: zero alocações (`AudioThreadAllocationTest`), e o `BuiltinPluginsTest` passa
+    (extremos dos parâmetros, repouso). `GuitarixTest`: o TS9 distorce um seno, mais com mais drive, e o level é o
+    nível de saída em dB. Créditos no `doc/AUTHORS`.
+  - Falta: as outras unidades (pedais, amps, tonestacks, caixas) e a aparência do Guitarix na interface (hoje uma
+    janela genérica de knobs).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
   - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.

@@ -30,6 +30,7 @@ set(LMMS_TESTS
 	src/core/ConfigManagerTest.cpp
 	src/core/ExportProcessorTest.cpp
 	src/core/GainStagingTest.cpp
+	src/core/GuitarixTest.cpp
 	src/core/ControllerConnectionTest.cpp
 	src/core/LadspaIsolationTest.cpp
 	src/core/Lv2IsolationTest.cpp

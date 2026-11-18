@@ -67,6 +67,8 @@ const auto s_effectCategories = std::array{
 		{"stereoenhancer", "dispersion"}, "#9aa3ad", "ST"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Analysis"), {"analyzer", "oscilloscope", "vectorscope"}, "#3dc8d8", "AN"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Control"), {"peakcontrollereffect"}, "#d36bb8", "CT"},
+	// (Guitarix's pedals, amps and cabinets: its units are the plugin's sub-plugins, see plugins/Guitarix)
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Guitarix"), {"guitarix"}, "#e8743d", "GX"},
 };
 
 //! A second level inside a category, when it has many plugins (the synthesizers, by how they make sound)

@@ -42,6 +42,7 @@ SET(LMMS_PLUGIN_LIST
 	Flanger
 	FrequencyShifter
 	GranularPitchShifter
+	Guitarix
 	LadspaEffect
 	LOMM
 	Lv2Effect
