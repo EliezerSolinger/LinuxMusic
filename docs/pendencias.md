@@ -277,6 +277,15 @@ queda do Mallets, que é queda e entra antes.
       fade do fim ignorava a taxa do sample e dividia por zero com fade 0; a primeira fatia de um sample que começa
       em silêncio era apagada; o plano do FFTW nunca era destruído; o ajuste das fatias não era salvo; e a onda de
       um sample aberto com o projeto não aparecia.
+    - [x] AudioFileProcessor: queda com LFOs movendo os pontos de início, fim e loop um por cima do outro (#2149,
+      reproduzida): estouro de pilha. O botão de cada ponto movia os outros para mantê-los em ordem, e com um
+      controlador o botão não fica com o valor posto (o valor é o do controlador): um movia o outro sem fim (e cada
+      volta gravava um passo do desfazer). Agora os pontos do sample são postos em ordem a partir dos três valores,
+      seja o que for que os mova, e os botões só se seguem sem controlador, uma vez. Varredura do mesmo padrão
+      (tratadores de mudança que mudam outros modelos): o MONO e o SIDE do monitor se excluem nos dois sentidos, mas
+      só desligando o outro, então param (testado com LFOs nos dois); o resto é de um sentido só. A troca de
+      instrumento com controladores no pitch (#8271) não se reproduziu; ficou como teste
+      (`InstrumentFixesTest`, os dois).
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.

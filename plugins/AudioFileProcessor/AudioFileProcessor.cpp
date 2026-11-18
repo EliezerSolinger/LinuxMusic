@@ -24,6 +24,8 @@
 
 #include "AudioFileProcessor.h"
 
+#include <algorithm>
+
 #include "AudioEngine.h"
 #include "AudioFileProcessorView.h"
 
@@ -407,6 +409,18 @@ void AudioFileProcessor::stutterModelChanged()
 
 void AudioFileProcessor::startPointChanged()
 {
+	// The knobs follow each other, as they are moved by hand or automation, to keep the points in order: once (the
+	// knobs it moves do not start it again), and not when a controller moves one (its value is the controller's:
+	// the knob moved would not get there, and the two would move each other without end, #2149). The sample's
+	// points are put in order anyway (pointChanged()).
+	if (m_orderingPoints || m_startPointModel.controllerConnection() || m_endPointModel.controllerConnection()
+		|| m_loopPointModel.controllerConnection())
+	{
+		if (!m_orderingPoints) { pointChanged(); }
+		return;
+	}
+	m_orderingPoints = true;
+
 	// check if start is over end and swap values if so
 	if( m_startPointModel.value() > m_endPointModel.value() )
 	{
@@ -433,6 +447,7 @@ void AudioFileProcessor::startPointChanged()
 		m_endPointModel.setValue( qMin( m_endPointModel.value() + 0.001f, 1.0f ) );
 	}
 
+	m_orderingPoints = false;
 	pointChanged();
 
 }
@@ -446,6 +461,14 @@ void AudioFileProcessor::endPointChanged()
 
 void AudioFileProcessor::loopPointChanged()
 {
+	// (once, and not with a controller: see startPointChanged())
+	if (m_orderingPoints || m_startPointModel.controllerConnection() || m_endPointModel.controllerConnection()
+		|| m_loopPointModel.controllerConnection())
+	{
+		if (!m_orderingPoints) { pointChanged(); }
+		return;
+	}
+	m_orderingPoints = true;
 
 	// check that loop point is between start-end points and not overlapping with endpoint
 	// ...and move start/end points ahead if loop point is moved over them
@@ -464,14 +487,27 @@ void AudioFileProcessor::loopPointChanged()
 		m_startPointModel.setValue( m_loopPointModel.value() );
 	}
 
+	m_orderingPoints = false;
 	pointChanged();
 }
 
 void AudioFileProcessor::pointChanged()
 {
-	const auto f_start = static_cast<f_cnt_t>(m_startPointModel.value() * m_sample.sampleSize());
-	const auto f_end = static_cast<f_cnt_t>(m_endPointModel.value() * m_sample.sampleSize());
-	const auto f_loop = static_cast<f_cnt_t>(m_loopPointModel.value() * m_sample.sampleSize());
+	// In order whatever the knobs say (a controller or automation may cross them): the start before the end, at
+	// least a frame apart, and the loop between them
+	const auto size = static_cast<f_cnt_t>(m_sample.sampleSize());
+	const auto frame = [size](float position) {
+		return std::clamp(static_cast<f_cnt_t>(position * size), f_cnt_t{0}, size);
+	};
+	auto f_start = frame(m_startPointModel.value());
+	auto f_end = frame(m_endPointModel.value());
+	if (f_start > f_end) { std::swap(f_start, f_end); }
+	if (f_end - f_start < 1 && size > 0)
+	{
+		if (f_end < size) { ++f_end; }
+		else { f_start = f_end - 1; }
+	}
+	const auto f_loop = std::clamp(frame(m_loopPointModel.value()), f_start, f_end > f_start ? f_end - 1 : f_start);
 
 	m_nextPlayStartPoint = f_start;
 	m_nextPlayBackwards = false;

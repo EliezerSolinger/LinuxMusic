@@ -89,6 +89,7 @@ private slots:
 	void loopPointChanged();
 	void startPointChanged();
 	void endPointChanged();
+	//! The sample's points from the three knobs, in order whatever moves them (see startPointChanged())
 	void pointChanged();
 	void stutterModelChanged();
 
@@ -125,6 +126,8 @@ private:
 	std::atomic<bool> m_nextPlayBackwards;
 	//! Where the latest note is, for the view's cursor (read by the GUI on its timer; 0 when none plays)
 	std::atomic<f_cnt_t> m_playingFrame = 0;
+	//! (while a knob is moved to keep the points in order: the knobs moved then do not start it again)
+	bool m_orderingPoints = false;
 } ;
 
 } // namespace lmms

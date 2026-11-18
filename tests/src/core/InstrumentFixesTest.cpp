@@ -38,12 +38,14 @@
 #include "AutomationClip.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
+#include "ControllerConnection.h"
 #include "DataFile.h"
 #include "Engine.h"
 #include "EffectChain.h"
 #include "PluginInstance.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "LfoController.h"
 #include "MidiClip.h"
 #include "Mixer.h"
 #include "Note.h"
@@ -217,6 +219,49 @@ class InstrumentFixesTest : public QObject
 		auto state = DataFile{DataFile::Type::InstrumentTrackSettings};
 		track->saveState(state, state.content());
 		return state.content().firstChildElement().elementsByTagName("instrument").item(0).firstChildElement();
+	}
+
+	//! An LFO controller of the song, around @p base by @p amount, @p speed fast, starting at @p phase degrees
+	static auto lfo(float base, float speed, float amount, float phase = 0.f) -> LfoController*
+	{
+		auto* song = Engine::getSong();
+		auto* controller = new LfoController(song);
+		song->addController(controller);
+		for (auto* model : controller->findChildren<FloatModel*>())
+		{
+			if (model->displayName() == "Base value") { model->setValue(base); }
+			if (model->displayName() == "Oscillator speed") { model->setValue(speed); }
+			if (model->displayName() == "Oscillator amount") { model->setValue(amount); }
+			if (model->displayName() == "Oscillator phase") { model->setValue(phase); }
+		}
+		return controller;
+	}
+
+	//! A track with @p instrument and a bar of short notes, then a long one
+	static auto trackPlaying(const QString& instrument) -> InstrumentTrack*
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		if (!track || !track->loadInstrument(instrument)) { return nullptr; }
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
+		for (int i = 0; i < 16; ++i) { clip->addNote(Note{TimePos{24}, TimePos{i * 24}, 57 + i % 5}); }
+		clip->addNote(Note{TimePos{4 * 192}, TimePos{0}, 45});
+		return track;
+	}
+
+	//! @p periods rendered: false if a sample is not a number
+	static auto renderFinite(int periods) -> bool
+	{
+		auto finite = true;
+		for (int i = 0; i < periods; ++i)
+		{
+			for (const auto& frame : Engine::audioEngine()->renderNextPeriod())
+			{
+				finite = finite && std::isfinite(frame.left()) && std::isfinite(frame.right());
+			}
+		}
+		return finite;
 	}
 
 private slots:
@@ -922,6 +967,78 @@ private slots:
 			xpressive.setAttribute("O2", "saww(1e20*t)");
 		});
 		QVERIFY(played.finite);
+	}
+
+	/**
+	 * #2149: LFOs moving the AudioFileProcessor's start, end and loop points across each other crashed it (a stack
+	 * overflow: each point's knob moved the others to keep them in order, and with a controller the knob does not
+	 * take the value set, so they moved each other without end). The points are put in order for the sample instead.
+	 */
+	void audioFileProcessorPointsCrossedByControllers()
+	{
+		auto* track = trackPlaying("audiofileprocessor");
+		QVERIFY(track);
+		auto* afp = track->instrument();
+		QMetaObject::invokeMethod(afp, "setAudioFile", Q_ARG(QString, QString{"drums/bassdrum01.ogg"}),
+			Q_ARG(bool, true));
+		auto phase = 0.f;
+		for (auto* model : afp->findChildren<FloatModel*>())
+		{
+			const auto name = model->displayName();
+			if (name == "Start of sample" || name == "End of sample" || name == "Loopback point")
+			{
+				model->setControllerConnection(std::make_unique<ControllerConnection>(lfo(0.5f, 13.f, 1.f, phase)));
+				phase += 120.f;
+			}
+		}
+		auto* song = Engine::getSong();
+		for (const auto mode : {0, 1, 2})
+		{
+			for (auto* model : afp->findChildren<IntModel*>())
+			{
+				if (model->displayName() == "Loop mode") { model->setValue(mode); }
+			}
+			song->setPlayPos(0, Song::PlayMode::Song);
+			song->playSong();
+			QVERIFY(renderFinite(400));
+			song->stop();
+		}
+	}
+
+	//! #8271: another instrument chosen while controllers move the track's pitch and the instrument's knobs
+	void instrumentChangedWhileControlled_data()
+	{
+		QTest::addColumn<QString>("first");
+		for (const auto* name : {"nes", "tripleoscillator", "sid", "freeboy", "lb302", "opulenz", "monstro"})
+		{
+			QTest::newRow(name) << QString{name};
+		}
+	}
+
+	void instrumentChangedWhileControlled()
+	{
+		QFETCH(QString, first);
+		auto* track = trackPlaying(first);
+		QVERIFY(track);
+		const auto controlAll = [track](float speed) {
+			for (auto* model : track->instrument()->findChildren<FloatModel*>())
+			{
+				model->setControllerConnection(std::make_unique<ControllerConnection>(lfo(0.5f, speed, 1.f)));
+			}
+		};
+		track->pitchModel()->setControllerConnection(std::make_unique<ControllerConnection>(lfo(0.5f, 5.f, 1.f)));
+		controlAll(7.f);
+		auto* song = Engine::getSong();
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		QVERIFY(renderFinite(40));
+		for (const auto* next : {"nes", "kicker", "tripleoscillator", "nes", "sid"})
+		{
+			QVERIFY(track->loadInstrument(next));
+			controlAll(9.f);
+			QVERIFY(renderFinite(30));
+		}
+		song->stop();
 	}
 };
 
