@@ -43,6 +43,7 @@ class QThread;
 namespace lmms
 {
 
+class Instrument;
 class Track;
 class AudioBusHandle;
 class SampleFrame;
@@ -155,6 +156,13 @@ public:
 
 
 	virtual bool isFromTrack( const Track * _track ) const = 0;
+
+	//! Whether it plays @p instrument itself (an instrument's own handle, see InstrumentPlayHandle)
+	virtual bool isFromInstrument(const Instrument* instrument) const
+	{
+		(void)instrument;
+		return false;
+	}
 
 	bool usesBuffer() const
 	{

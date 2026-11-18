@@ -236,9 +236,9 @@ Sf2Instrument::Sf2Instrument( InstrumentTrack * _instrument_track ) :
 
 Sf2Instrument::~Sf2Instrument()
 {
-	Engine::audioEngine()->removePlayHandlesOfTypes( instrumentTrack(),
-				PlayHandle::Type::NotePlayHandle
-				| PlayHandle::Type::InstrumentPlayHandle );
+	// Its own play handle only: the track's notes are the track's, and the instrument taking its place may be
+	// there already (see AudioEngine::removePlayHandlesOf())
+	Engine::audioEngine()->removePlayHandlesOf(this);
 	freeFont();
 	delete_fluid_synth( m_synth );
 	delete_fluid_settings( m_settings );

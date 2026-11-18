@@ -185,9 +185,9 @@ VestigeInstrument::~VestigeInstrument()
 		knobFModel = nullptr;
 	}
 
-	Engine::audioEngine()->removePlayHandlesOfTypes( instrumentTrack(),
-				PlayHandle::Type::NotePlayHandle
-				| PlayHandle::Type::InstrumentPlayHandle );
+	// Its own play handle only: the track's notes are the track's, and the instrument taking its place may be
+	// there already (see AudioEngine::removePlayHandlesOf())
+	Engine::audioEngine()->removePlayHandlesOf(this);
 	closePlugin();
 }
 

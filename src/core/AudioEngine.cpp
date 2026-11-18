@@ -828,6 +828,27 @@ void AudioEngine::removePlayHandle(PlayHandle * ph)
 
 
 
+void AudioEngine::removePlayHandlesOf(const Instrument* instrument)
+{
+	requestChangeInModel();
+	// (one added since the last period is still in the list of new ones: it is found too)
+	adoptNewPlayHandles();
+	for (auto it = m_playHandles.begin(); it != m_playHandles.end();)
+	{
+		if ((*it)->isFromInstrument(instrument))
+		{
+			if ((*it)->audioBusHandle()) { (*it)->audioBusHandle()->removePlayHandle(*it); }
+			(*it)->dispose();
+			it = m_playHandles.erase(it);
+		}
+		else { ++it; }
+	}
+	doneChangeInModel();
+}
+
+
+
+
 void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types types)
 {
 	requestChangeInModel();

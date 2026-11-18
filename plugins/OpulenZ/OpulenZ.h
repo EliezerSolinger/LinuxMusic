@@ -65,6 +65,9 @@ public:
 
 	bool handleMidiEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset = 0 ) override;
 
+	//! Its notes and MIDI come with the period, each at its frame, in a fixed order (see LegacyInstrument)
+	auto wantsEvents() const -> bool override { return true; }
+
 	void saveSettings( QDomDocument & _doc, QDomElement & _this ) override;
 	void loadSettings( const QDomElement & _this ) override;
 	void loadPatch(const unsigned char inst[14]);
@@ -114,13 +117,19 @@ public:
 	BoolModel trem_depth_mdl;
 
 
+protected:
+	void playImpl(std::span<SampleFrame> out, InputEvents events) override;
+
+private:
+	//! Applies @p event to the emulator (emulatorMutex held)
+	void applyMidi(const MidiEvent& event);
+
 private slots:
 	void updatePatch();
 	void reloadEmulator();
 	void loadGMPatch();
 
 private:
-	void playImpl(std::span<SampleFrame> out) override;
 
 	Copl *theEmulator;
 	QString storedname;

@@ -48,6 +48,7 @@ set(LMMS_TESTS
 	src/core/ProjectVersionTest.cpp
 	src/core/RealtimeAllocatorTest.cpp
 	src/core/RecordingTest.cpp
+	src/core/SingleStreamOrderTest.cpp
 	src/core/RemotePluginHangTest.cpp
 	src/core/RemotePluginIpcTest.cpp
 	src/core/RelativePathsTest.cpp

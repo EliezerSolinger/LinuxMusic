@@ -53,6 +53,8 @@
 namespace lmms
 {
 
+class Instrument;
+
 class MidiClient;
 class MidiPort;
 class AudioBusHandle;  // IWYU pragma: keep
@@ -197,6 +199,13 @@ public:
 	}
 
 	void removePlayHandlesOfTypes(Track * track, PlayHandle::Types types);
+
+	/**
+	 * Removes @p instrument's own play handle (the InstrumentPlayHandle of a single-streamed instrument): what its
+	 * destructor does. Not the track's handles: the instrument that takes its place is made before it goes (see
+	 * InstrumentTrack::swapInstrument()), and the track's notes are the track's to remove (silenceAllNotes())
+	 */
+	void removePlayHandlesOf(const Instrument* instrument);
 
 	AudioEngineProfiler& profiler()
 	{

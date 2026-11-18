@@ -249,13 +249,26 @@ public:
 
 	auto process(ProcessContext& context) -> ProcessStatus final
 	{
-		playImpl(context.out().interleavedBuffer().asSampleFrames());
+		const auto out = context.out().interleavedBuffer().asSampleFrames();
+		if (wantsEvents()) { playImpl(out, context.inEvents()); }
+		else { playImpl(out); }
 		return ProcessStatus::Continue;
 	}
 
 protected:
 	//! Renders all notes into @p out, which is silent; to be implemented by single-streamed instruments
 	virtual void playImpl(std::span<SampleFrame> out) { (void)out; }
+
+	/**
+	 * playImpl() for a single-streamed instrument that takes its notes and MIDI with the period (wantsEvents()):
+	 * @p events in a fixed order (by frame, then notes ending, MIDI, notes starting, by key), each to apply at its
+	 * frame. The order the audio threads played the notes in does not matter then (see SingleStreamOrderTest).
+	 */
+	virtual void playImpl(std::span<SampleFrame> out, InputEvents events)
+	{
+		(void)events;
+		playImpl(out);
+	}
 
 	auto channelCount(bool isInput) const -> ch_cnt_t final
 	{

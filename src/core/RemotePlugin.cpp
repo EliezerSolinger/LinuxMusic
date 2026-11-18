@@ -203,20 +203,24 @@ RemotePlugin::~RemotePlugin()
 	m_watcher.stop();
 	m_watcher.wait();
 
-	if( m_failed == false )
+	// The process ends because the plugin goes, not by crashing: nothing it does from now on is reported (its exit
+	// would otherwise come as a crash, into processFinished(), while this is taken apart)
+	m_process.disconnect(this);
+
+	if (m_process.state() != QProcess::NotRunning)
 	{
-		if( isRunning() )
+		if (!m_failed && isRunning())
 		{
 			lock();
 			sendMessage( IdQuit );
-
-			m_process.waitForFinished( 1000 );
-			if( m_process.state() != QProcess::NotRunning )
-			{
-				m_process.terminate();
-				m_process.kill();
-			}
 			unlock();
+			m_process.waitForFinished(3000);
+		}
+		// Gone before the QProcess is (destroying it with the process running kills it there)
+		if (m_process.state() != QProcess::NotRunning)
+		{
+			m_process.kill();
+			m_process.waitForFinished(3000);
 		}
 	}
 

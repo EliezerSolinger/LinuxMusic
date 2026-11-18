@@ -221,9 +221,9 @@ OpulenzInstrument::OpulenzInstrument( InstrumentTrack * _instrument_track ) :
 
 OpulenzInstrument::~OpulenzInstrument() {
 	delete theEmulator;
-	Engine::audioEngine()->removePlayHandlesOfTypes( instrumentTrack(),
-				PlayHandle::Type::NotePlayHandle
-				| PlayHandle::Type::InstrumentPlayHandle );
+	// Its own play handle only: the track's notes are the track's, and the instrument taking its place may be
+	// there already (see AudioEngine::removePlayHandlesOf())
+	Engine::audioEngine()->removePlayHandlesOf(this);
 	delete [] renderbuffer;
 }
 
@@ -294,8 +294,19 @@ int OpulenzInstrument::pushVoice(int v) {
 
 bool OpulenzInstrument::handleMidiEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset )
 {
-	emulatorMutex.lock();
+	(void)time;
+	(void)offset;
+	// (not called by the host, as the instrument takes its events with the period: kept for any other caller)
+	const QMutexLocker lock(&emulatorMutex);
+	applyMidi(event);
+	return true;
+}
 
+
+
+
+void OpulenzInstrument::applyMidi(const MidiEvent& event)
+{
 	int key = event.key();
 	int vel = event.velocity();
 	switch (event.type())
@@ -375,8 +386,6 @@ bool OpulenzInstrument::handleMidiEvent( const MidiEvent& event, const TimePos& 
 #endif
 		break;
 		}
-	emulatorMutex.unlock();
-	return true;
 }
 
 QString OpulenzInstrument::nodeName() const
@@ -390,20 +399,31 @@ gui::PluginView* OpulenzInstrument::instantiateView( QWidget * _parent )
 }
 
 
-void OpulenzInstrument::playImpl(std::span<SampleFrame> out)
+void OpulenzInstrument::playImpl(std::span<SampleFrame> out, InputEvents events)
 {
-	emulatorMutex.lock();
-	theEmulator->update(renderbuffer, frameCount);
+	const QMutexLocker lock(&emulatorMutex);
+	const auto frames = std::min<f_cnt_t>(static_cast<f_cnt_t>(out.size()), frameCount);
 
-	for( f_cnt_t frame = 0; frame < frameCount; ++frame )
-        {
-                sample_t s = float(renderbuffer[frame]) / 8192.0;
-                for( ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch )
-                {
-                        out[frame][ch] = s;
-                }
+	// The emulator renders up to each event, which then applies at its frame
+	const auto render = [&](f_cnt_t from, f_cnt_t count) {
+		if (count <= 0) { return; }
+		theEmulator->update(renderbuffer + from, static_cast<int>(count));
+		for (auto frame = from; frame < from + count; ++frame)
+		{
+			const auto s = static_cast<sample_t>(renderbuffer[frame]) / 8192.f;
+			out[frame][0] = s;
+			out[frame][1] = s;
+		}
+	};
+	auto position = f_cnt_t{0};
+	for (const auto& event : events)
+	{
+		const auto at = std::clamp<f_cnt_t>(event.time, position, frames);
+		render(position, at - position);
+		position = at;
+		if (const auto midi = event.toMidi()) { applyMidi(*midi); }
 	}
-	emulatorMutex.unlock();
+	render(position, frames - position);
 }
 
 

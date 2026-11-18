@@ -447,6 +447,34 @@ TSan sai limpo. Os retratos imutáveis (7.2 a 7.5 do plano original) não foram 
 - Conferir cada item deste plano e marcar `[x]` com o commit.
 - Atualizar `docs/estado-atual.md` e `docs/pendencias.md`.
 
+### Feito (18/11)
+
+Bateria: os 65 testes, sob ASan/UBSan e sob TSan (em paralelo, como o `ctest -j3`), a A/B no build normal e no
+de ASan (renders sem achado nenhum dos sanitizadores; o build de ASan, sem otimização, difere do de referência só
+pela aritmética de ponto flutuante), e o determinismo (`tools/check/determinism.sh`: todos os projetos idênticos
+bit a bit entre duas execuções, o `ladspa-dj_eq` incluído, que a fase 0 tinha anotado).
+
+Achados e consertados:
+- **Regressão do passo 7.5:** um instrumento de fluxo único vindo de um projeto (Sf2 Player, AVL Drums,
+  ZynAddSubFX, OpulenZ, GigPlayer, LV2, Carla, Vestige) ficava mudo. Desde o 7.5 o instrumento novo é feito antes
+  de o velho ir embora, e o destrutor do velho tirava as play handles de instrumento *da faixa*, a do novo
+  junto. Agora cada instrumento tira só a sua (`AudioEngine::removePlayHandlesOf`); as notas são da faixa
+  (`silenceAllNotes`). A bateria A/B não tem projeto com esses instrumentos: o `SingleStreamOrderTest` carrega
+  cada um como um projeto faz e confere que soa.
+- **Ordem das threads nos instrumentos de fluxo único:** o OpulenZ recebia as notas de um acorde na ordem em que
+  as threads chegavam (a alocação de vozes mudava a cada render). Agora recebe os eventos com o período, numa
+  ordem fixa, cada um no seu quadro (`LegacyInstrument::playImpl` com eventos); as notas começam no quadro certo,
+  não no começo do período (a A/B do `inst-opulenz` muda por isso: o mesmo RMS, 0,7%). O `SingleStreamOrderTest`
+  renderiza acordes oito vezes em cada um (Sf2, AVL, OpulenZ, LB302) e exige o mesmo resultado bit a bit.
+- **O arpejo ainda dependia das threads** (sob ASan): a nota que ele segue era a primeira da lista de notas da
+  faixa, na ordem em que as threads as criaram (e no modo Sort a escolha vinha antes da ordenação). Agora é
+  escolhida por um critério fixo (Sync: a que começou primeiro, depois a tecla; Sort: a tecla).
+- **Plugin isolado fechado como se tivesse caído:** o `QProcess` era destruído com o processo ainda rodando (o
+  pedido de saída esperava 1 s, e nem era feito depois de uma falha), e a saída forçada chegava como queda ao
+  `processFinished`, que lia a identidade do plugin já destruída (o texto saía como lixo: uso depois de liberar) e
+  podia marcar o plugin como suspeito. Agora o plugin se desliga dos sinais do processo antes, pede a saída, espera,
+  e só então o mata e espera que termine.
+
 ---
 
 ## Fase 10: bibliotecas confirmadas (libebur128 e libremidi)
@@ -603,8 +631,9 @@ desenho para todos os drivers e do teste no Linux.
   - Decisão: não separei o núcleo num alvo do CMake sem `QtWidgets`. Os plugins se ligam ao executável, e o
     `lmmsobjs` tem *export header*, definições e AUTOMOC próprios: o risco é alto e o ganho é pequeno, porque a
     checagem já pega qualquer inclusão nova.
-- Para investigar (Fase 6): `ladspa-dj_eq` renderiza diferente entre execuções (-76 dB), já antes da
-  refatoração.
+- ~~Para investigar (Fase 6): `ladspa-dj_eq` renderiza diferente entre execuções (-76 dB), já antes da
+  refatoração.~~ Resolvido (fase 9: idêntico bit a bit entre execuções; provavelmente pela correção do período
+  do motor e pelo estado limpo a cada exportação).
 - Ferramenta: a worktree com o build de antes da refatoração (`56a30bfff`) fica em
   `~/.claude/jobs/49dcb579/tmp/refactor/base-src/build`, para comparar comportamentos.
 

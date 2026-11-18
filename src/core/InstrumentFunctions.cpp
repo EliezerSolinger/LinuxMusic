@@ -366,6 +366,26 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 		}
 	}
 
+	// The track's notes come in the order the audio threads made them, which is not the same each time: put in an
+	// order of their own, so that the note the arpeggio follows is the same whichever thread plays first. Sort: by key;
+	// Sync: the note that began first (the most frames played as the period began), then by key
+	if (arpMode == ArpMode::Sort)
+	{
+		std::sort(cnphv.begin(), cnphv.end(), [](const NotePlayHandle* a, const NotePlayHandle* b)
+		{
+			return a->key() < b->key();
+		});
+	}
+	else if (arpMode == ArpMode::Sync)
+	{
+		std::sort(cnphv.begin(), cnphv.end(), [](const NotePlayHandle* a, const NotePlayHandle* b)
+		{
+			const auto playedA = a->framesPlayedAtPeriodStart();
+			const auto playedB = b->framesPlayedAtPeriodStart();
+			return playedA != playedB ? playedA > playedB : a->key() < b->key();
+		});
+	}
+
 	// avoid playing same key for all
 	// currently playing notes if sort mode is enabled
 	if (arpMode == ArpMode::Sort && _n != cnphv.front()) { return; }
@@ -377,14 +397,6 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 	const int singleNoteRange = static_cast<int>(cur_chord_size * m_arpRangeModel.value() * m_arpRepeatsModel.value());
 	// how many notes are in the final chord
 	const int range = arpMode == ArpMode::Sort ? singleNoteRange * cnphv.size() : singleNoteRange;
-
-	if (arpMode == ArpMode::Sort)
-	{
-		std::sort(cnphv.begin(), cnphv.end(), [](const NotePlayHandle* a, const NotePlayHandle* b)
-		{
-			return a->key() < b->key();
-		});
-	}
 
 	// number of frames that every note should be played
 	const auto arp_frames = (f_cnt_t)(m_arpTimeModel.value() / 1000.0f * Engine::audioEngine()->outputSampleRate());
