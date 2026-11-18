@@ -25,6 +25,9 @@
 
 #include "Sf2Player.h"
 
+#include <optional>
+#include <utility>
+
 #include <fluidsynth.h>
 #include <QDebug>
 #include <QDomElement>
@@ -306,7 +309,11 @@ void Sf2Instrument::loadFile( const QString & _file )
 		openFile( _file, false );
 	}
 
-	// setting the first bank and patch number that is found
+	// setting the first bank and patch number that is found (the synth read under its mutex; the models set after
+	// it, as their change selects the patch, which takes the mutex)
+	auto first = std::optional<std::pair<int, int>>{};
+	{
+	const auto lock = std::lock_guard{m_synthMutex};
 	auto sSoundCount = ::fluid_synth_sfcount( m_synth );
 	for ( int i = 0; i < sSoundCount; ++i ) {
 		int iBank = 0;
@@ -332,11 +339,16 @@ void Sf2Instrument::loadFile( const QString & _file )
 
 				::fluid_synth_bank_select( m_synth, 1, iBank );
 				::fluid_synth_program_change( m_synth, 1, iProg );
-				m_bankNum.setValue( iBank );
-				m_patchNum.setValue ( iProg );
+				first = std::pair{iBank, iProg};
 				break;
 			}
 		}
+	}
+	}
+	if (first)
+	{
+		m_bankNum.setValue(first->first);
+		m_patchNum.setValue(first->second);
 	}
 }
 
@@ -470,6 +482,8 @@ void Sf2Instrument::updatePatch()
 {
 	if( m_bankNum.value() >= 0 && m_patchNum.value() >= 0 )
 	{
+		// (each call to the synth under its mutex: see playNoteImpl())
+		const auto lock = std::lock_guard{m_synthMutex};
 		fluid_synth_program_select( m_synth, m_channel, m_fontId,
 				m_bankNum.value(), m_patchNum.value() );
 	}
@@ -482,6 +496,7 @@ QString Sf2Instrument::getCurrentPatchName()
 {
 	int iBankSelected = m_bankNum.value();
 	int iProgSelected = m_patchNum.value();
+	const auto lock = std::lock_guard{m_synthMutex};
 
 	// For all soundfonts (in reversed stack order) fill the available programs...
 	int cSoundFonts = ::fluid_synth_sfcount( m_synth );
@@ -521,16 +536,19 @@ QString Sf2Instrument::getCurrentPatchName()
 
 void Sf2Instrument::updateGain()
 {
+	const auto lock = std::lock_guard{m_synthMutex};
 	fluid_synth_set_gain( m_synth, m_gain.value() );
 }
 
 void Sf2Instrument::updateReverbOn()
 {
+	const auto lock = std::lock_guard{m_synthMutex};
 	fluid_synth_reverb_on(m_synth, -1, m_reverbOn.value() ? 1 : 0);
 }
 
 void Sf2Instrument::updateReverb()
 {
+	const auto lock = std::lock_guard{m_synthMutex};
 	fluid_synth_set_reverb_group_roomsize(m_synth, -1, m_reverbRoomSize.value());
 	fluid_synth_set_reverb_group_damp(m_synth, -1, m_reverbDamping.value());
 	fluid_synth_set_reverb_group_width(m_synth, -1, m_reverbWidth.value());
@@ -539,11 +557,13 @@ void Sf2Instrument::updateReverb()
 
 void Sf2Instrument::updateChorusOn()
 {
+	const auto lock = std::lock_guard{m_synthMutex};
 	fluid_synth_chorus_on(m_synth, -1, m_chorusOn.value() ? 1 : 0);
 }
 
 void Sf2Instrument::updateChorus()
 {
+	const auto lock = std::lock_guard{m_synthMutex};
 	fluid_synth_set_chorus_group_nr(m_synth, -1, static_cast<int>(m_chorusNum.value()));
 	fluid_synth_set_chorus_group_level(m_synth, -1, m_chorusLevel.value());
 	fluid_synth_set_chorus_group_speed(m_synth, -1, m_chorusSpeed.value());
@@ -553,6 +573,7 @@ void Sf2Instrument::updateChorus()
 
 void Sf2Instrument::updateTuning()
 {
+	const auto lock = std::lock_guard{m_synthMutex};
 	if (instrumentTrack()->microtuner()->enabledModel()->value())
 	{
 		auto centArray = std::array<double, 128>{};
@@ -591,9 +612,6 @@ void Sf2Instrument::reloadSynth()
 	fluid_settings_setnum( m_settings, (char *) "synth.sample-rate", Engine::audioEngine()->outputSampleRate() );
 	fluid_settings_getnum( m_settings, (char *) "synth.sample-rate", &tempRate );
 
-	m_internalSampleRate = static_cast<int>( tempRate );
-	m_resampler.setRatio(m_internalSampleRate, Engine::audioEngine()->outputSampleRate());
-
 	// A new synth, made without any lock, takes the old one's place (and its soundfont) in a moment under the audio
 	// engine's change lock and the synth's mutex; the old one is deleted after, without them
 	auto* made = new_fluid_synth( m_settings );
@@ -607,6 +625,9 @@ void Sf2Instrument::reloadSynth()
 			m_fontId = fluid_synth_add_sfont( made, m_font );
 		}
 		old = std::exchange(m_synth, made);
+		// (what the render reads, changed with the synth)
+		m_internalSampleRate = static_cast<int>( tempRate );
+		m_resampler.setRatio(m_internalSampleRate, Engine::audioEngine()->outputSampleRate());
 	}
 	if (old != nullptr) { delete_fluid_synth(old); }
 
@@ -690,9 +711,12 @@ void Sf2Instrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 		m_playingNotesMutex.unlock();
 	}
 
-	// Update the pitch of all the voices
-	if (const auto data = static_cast<Sf2PluginData*>(_n->m_pluginData)) {
+	// Update the pitch of all the voices. Under the synth's mutex: FluidSynth's voice functions are not part of its
+	// locked API, and they queue events for its render, which takes one writer at a time (notes play on several
+	// threads, the render and the controls on others: unguarded, the queue broke and the render called a null pointer)
+	if (const auto data = static_cast<Sf2PluginData*>(_n->m_pluginData); data && !data->fluidVoices.empty()) {
 		const auto detuning = _n->currentDetuning();
+		const auto lock = std::lock_guard{m_synthMutex};
 		for (const auto& voice : data->fluidVoices) {
 			if (voice.isValid()) {
 				fluid_voice_gen_set(voice.get(), GEN_COARSETUNE, voice.coarseTune() + detuning);
