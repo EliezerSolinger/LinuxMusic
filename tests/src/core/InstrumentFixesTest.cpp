@@ -37,6 +37,7 @@
 #include "AudioDummy.h"
 #include "AutomationClip.h"
 #include "AudioEngine.h"
+#include "ComboBoxModel.h"
 #include "ConfigManager.h"
 #include "ControllerConnection.h"
 #include "DataFile.h"
@@ -386,10 +387,14 @@ private slots:
 			}
 			levels.emplace_back(name, 20 * std::log10(std::max(rms, 1e-9)));
 		}
+		// The Mallets' presets are struck: set by their peak (about 6 dB under full scale at the base velocity, so that
+		// a hard hit does not go past it, see velocityAsTheOtherInstruments()), their loudness lower than the others'
+		const auto percussive = [](const QString& name) { return name == "malletsstk"; };
 		auto lowest = 0.0, highest = -200.0;
 		for (const auto& [name, db] : levels)
 		{
 			if (qEnvironmentVariableIsSet("LINUXMUSIC_PRINT_LEVELS")) { qInfo("%-18s %6.1f dB", qPrintable(name), db); }
+			if (percussive(name)) { continue; }
 			lowest = std::min(lowest, db);
 			highest = std::max(highest, db);
 		}
@@ -398,7 +403,8 @@ private slots:
 		// About -12 dB each at its loudest, within a few dB (it was 30 dB from the quietest to the loudest)
 		for (const auto& [name, db] : levels)
 		{
-			QVERIFY2(db > -18 && db < -8, qPrintable(QString{"%1 at %2 dB"}.arg(name).arg(db, 0, 'f', 1)));
+			const auto low = percussive(name) ? -24 : -18;
+			QVERIFY2(db > low && db < -8, qPrintable(QString{"%1 at %2 dB"}.arg(name).arg(db, 0, 'f', 1)));
 		}
 		QVERIFY2(highest - lowest < 8, qPrintable(QString{"%1 dB between them"}.arg(highest - lowest, 0, 'f', 1)));
 	}
@@ -1078,6 +1084,7 @@ private slots:
 		QCOMPARE(track->monoMode().enabled(), mono);
 		QVERIFY(renderFinite(3));
 		auto* client = Engine::audioEngine()->midiClient();
+		auto hardest = 0.f;
 		for (int hit = 0; hit < 3; ++hit)
 		{
 			client->queueInEvent(track->midiPort(), MidiEvent{MidiNoteOn, 0, 40, 110});
@@ -1091,7 +1098,77 @@ private slots:
 				}
 			}
 			QVERIFY2(loudest > 0.02f, qPrintable(QString{"hit %1: %2"}.arg(hit).arg(loudest)));
+			hardest = std::max(hardest, loudest);
 		}
+		// And it ends: the note off reached the instrument after the note on (an instrument taking events with the
+		// period got both together, the note off first, and its voice rang on)
+		QVERIFY(renderFinite(1000));
+		auto left = 0.f;
+		for (int period = 0; period < 100; ++period)
+		{
+			for (const auto& frame : Engine::audioEngine()->renderNextPeriod())
+			{
+				left = std::max(left, std::abs(frame.left()));
+			}
+		}
+		QVERIFY2(left < hardest / 4, qPrintable(QString{"%1 six seconds later (%2 at the hits)"}.arg(left).arg(hardest)));
+	}
+
+	/**
+	 * Velocity, as the other instruments: twice the velocity, 6 dB louder, and a hard hit about full scale. The
+	 * OpulenZ went 24 dB from the base velocity to the top (the chip's levels in steps), past 0 dBFS with the volume
+	 * the new instruments have; the Mallets' struck presets 12 dB for twice the velocity, and most peaked over full
+	 * scale already at the base velocity.
+	 */
+	void velocityAsTheOtherInstruments_data()
+	{
+		QTest::addColumn<QString>("instrument");
+		QTest::addColumn<int>("preset");
+		QTest::newRow("tripleoscillator") << QString{"tripleoscillator"} << -1;
+		QTest::newRow("opulenz") << QString{"opulenz"} << -1;
+		for (const auto preset : {0, 2, 6, 7, 9})
+		{
+			QTest::newRow(qPrintable(QString{"malletsstk %1"}.arg(preset))) << QString{"malletsstk"} << preset;
+		}
+	}
+
+	void velocityAsTheOtherInstruments()
+	{
+		QFETCH(QString, instrument);
+		QFETCH(int, preset);
+		auto* client = Engine::audioEngine()->midiClient();
+		const auto peakAt = [&](int velocity) {
+			auto* song = Engine::getSong();
+			song->createNewProject();
+			auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+			if (!track || !track->loadInstrument(instrument)) { return -1.f; }
+			for (auto* model : track->instrument()->findChildren<ComboBoxModel*>())
+			{
+				if (preset >= 0 && model->displayName() == "Instrument") { model->setValue(preset); }
+			}
+			renderFinite(3);
+			client->queueInEvent(track->midiPort(), MidiEvent{MidiNoteOn, 0, 57, static_cast<std::int16_t>(velocity)});
+			auto loudest = 0.f;
+			for (int period = 0; period < 120; ++period)
+			{
+				for (const auto& frame : Engine::audioEngine()->renderNextPeriod())
+				{
+					loudest = std::max({loudest, std::abs(frame.left()), std::abs(frame.right())});
+				}
+			}
+			client->queueInEvent(track->midiPort(), MidiEvent{MidiNoteOff, 0, 57, 0});
+			renderFinite(300);
+			return loudest;
+		};
+		const auto base = peakAt(63);
+		const auto top = peakAt(127);
+		QVERIFY(base > 0.f && top > 0.f);
+		const auto rise = 20 * std::log10(top / base);
+		const auto name = QString{"base %1, top %2 (%3 dB)"}.arg(base).arg(top).arg(rise);
+		QVERIFY2(rise > 4.5f && rise < 7.5f, qPrintable(name));
+		// (the levels are set on average over six octaves, some 6 dB under full scale at the base velocity: a key
+		// goes a little over or under it)
+		QVERIFY2(top < 1.2f, qPrintable(name));
 	}
 };
 

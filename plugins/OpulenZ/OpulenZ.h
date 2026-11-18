@@ -123,6 +123,13 @@ public:
 	BoolModel trem_depth_mdl;
 	//! The output, in dB (the chip alone is some 16 dB under the other instruments: upstream's #1207, #7852)
 	FloatModel m_volumeModel;
+	/**
+	 * How loud a velocity plays. On (new instruments): as the other instruments, the amplitude in proportion to the
+	 * velocity over the track's base velocity (twice the velocity, 6 dB more), the level at the base velocity as
+	 * before. Off (projects from before): as the chip's original code, the operator's level in proportion to the
+	 * velocity in steps of 0.75 dB, some 24 dB from the base velocity to the top (with the volume above, past 0 dBFS).
+	 */
+	bool m_proportionalVelocity = true;
 
 
 protected:

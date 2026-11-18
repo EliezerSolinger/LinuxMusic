@@ -164,6 +164,7 @@ void MalletsInstrument::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	m_randomModel.saveSettings(_doc, _this, "randomness");
 	m_versionModel.saveSettings( _doc, _this, "version" );
 	m_isOldVersionModel.saveSettings( _doc, _this, "oldversion" );
+	_this.setAttribute("levelled", m_levelled ? 1 : 0);
 }
 
 
@@ -196,6 +197,8 @@ void MalletsInstrument::loadSettings( const QDomElement & _this )
 	m_spreadModel.loadSettings( _this, "spread" );
 	m_randomModel.loadSettings(_this, "randomness");
 	m_isOldVersionModel.loadSettings( _this, "oldversion" );
+	// (see m_levelled: only the instruments saved with it)
+	m_levelled = _this.attribute("levelled", "0").toInt() != 0;
 
 	// To maintain backward compatibility
 	if( !_this.hasAttribute( "version" ) )
@@ -364,6 +367,16 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 				static_cast<uint8_t>(m_spreadModel.value()));
 		}
 		static_cast<MalletsSynth *>(_n->m_pluginData)->setPresetIndex(p);
+		if (m_levelled)
+		{
+			// (see m_levelled; the trims in dB, measured at the base velocity, keys 33 to 93)
+			static constexpr auto Trims = std::array{-7.f, -8.5f, -11.f, -6.f, -5.f, -6.f, -16.5f, -12.5f, -6.5f, -0.5f,
+				-3.f, -5.f, -3.f};
+			auto level = dbfsToAmp(Trims[std::clamp<std::size_t>(p, 0, Trims.size() - 1)]);
+			// Struck (bars, bells): the strike's own law is the square of its velocity, made proportional to it
+			if (p <= 9) { level *= DefaultVolume / std::max(static_cast<float>(_n->getVolume()), 1.f); }
+			static_cast<MalletsSynth*>(_n->m_pluginData)->setLevel(level);
+		}
 	}
 
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
@@ -393,8 +406,8 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 
 	for( f_cnt_t frame = offset; frame < frames + offset; ++frame )
 	{
-		out[frame][0] = ps->nextSampleLeft() * (m_scalers[p] + add_scale);
-		out[frame][1] = ps->nextSampleRight() * (m_scalers[p] + add_scale);
+		out[frame][0] = ps->nextSampleLeft() * (m_scalers[p] + add_scale) * ps->level();
+		out[frame][1] = ps->nextSampleRight() * (m_scalers[p] + add_scale) * ps->level();
 	}
 }
 

@@ -176,12 +176,17 @@ public:
 		m_presetIndex = presetIndex;
 	}
 
+	//! The note's level (see MalletsInstrument::m_levelled), set when it starts
+	auto level() const -> float { return m_level; }
+	void setLevel(float level) { m_level = level; }
+
 
 protected:
 	int m_presetIndex;
 	Instrmnt * m_voice;
 	StkFloat m_frequency = 0; //!< the voice's, last set (see setFrequency())
 	StkFloat m_gain = 1; //!< of the voice's output (the bowed bars': see the BandedWG constructor)
+	float m_level = 1.f;
 
 	std::array<StkFloat, 256> m_delay = {}; //!< read and written with wrapping 8 bit indices
 	uint8_t m_delayRead;
@@ -252,6 +257,13 @@ private:
 	FloatModel m_randomModel;
 	IntModel m_versionModel;
 	BoolModel m_isOldVersionModel;
+	/**
+	 * New instruments: each preset's level trimmed so that its peak is some 6 dB under full scale at the base
+	 * velocity (measured over six octaves: they peaked from 0 to +10 dBFS there, the struck bars and bells louder
+	 * by 12 dB for twice the velocity), and the struck ones louder by 6 dB for twice the velocity, as the other
+	 * instruments (the strike still brighter as it is harder). Projects from before: as they sounded.
+	 */
+	bool m_levelled = true;
 
 	QVector<sample_t> m_scalers;
 

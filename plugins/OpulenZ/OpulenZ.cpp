@@ -277,8 +277,17 @@ void OpulenzInstrument::reset()
 
 // This shall only be called from code protected by the holy Mutex!
 void OpulenzInstrument::setVoiceVelocity(int voice, int vel) {
+	// An operator's attenuation (in the chip's steps of 0.75 dB, 63 the most) for @p level at the velocity
+	const auto attenuation = [this, vel](double level) {
+		if (!m_proportionalVelocity) { return static_cast<int>(63 - (level * vel / 127.0)); }
+		// (see m_proportionalVelocity: the level at the base velocity, then the amplitude as the velocity)
+		const auto base = std::max(1, instrumentTrack()->midiPort()->baseVelocity());
+		if (vel <= 0) { return 63; }
+		const auto steps = 63 - level * base / 127.0 + 20 * std::log10(static_cast<double>(base) / vel) / 0.75;
+		return static_cast<int>(std::lround(std::clamp(steps, 0.0, 63.0)));
+	};
 	int vel_adjusted = !fm_mdl.value()
-		? 63 - (op1_lvl_mdl.value() * vel / 127.0)
+		? attenuation(op1_lvl_mdl.value())
 		: 63 - op1_lvl_mdl.value();
 
 	// Velocity calculation, some kind of approximation
@@ -288,7 +297,7 @@ void OpulenzInstrument::setVoiceVelocity(int voice, int vel) {
 			   ( vel_adjusted & 0x3f ) );
 
 
-	vel_adjusted = 63 - ( op2_lvl_mdl.value() * vel/127.0 );
+	vel_adjusted = attenuation(op2_lvl_mdl.value());
 	// vel_adjusted = 63 - op2_lvl_mdl.value();
 	theEmulator->write(0x43+adlib_opadd[voice],
 			   ((static_cast<int>(op2_scale_mdl.value()) & 0x03) << 6) +
@@ -496,7 +505,8 @@ void OpulenzInstrument::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	trem_depth_mdl.saveSettings( _doc, _this, "trem_depth" );
 	m_volumeModel.saveSettings(_doc, _this, "volume");
 
-	_this.setAttribute("version", 1);
+	// (2: the velocity in proportion, see m_proportionalVelocity)
+	_this.setAttribute("version", 2);
 }
 
 void OpulenzInstrument::loadSettings( const QDomElement & _this )
@@ -545,6 +555,10 @@ void OpulenzInstrument::loadSettings( const QDomElement & _this )
 		m_volumeModel.loadSettings(_this, "volume");
 	}
 	else { m_volumeModel.setValue(0.f); } // (made before the volume existed: as it sounded)
+	// The velocity as the other instruments since version 2, and in the instruments saved with the volume (made
+	// before version 2 by a day: with the volume and the chip's velocity, a hard hit went past 0 dBFS)
+	m_proportionalVelocity = _this.attribute("version", "0").toInt() >= 2 || _this.hasAttribute("volume")
+		|| !_this.firstChildElement("volume").isNull();
 
 }
 

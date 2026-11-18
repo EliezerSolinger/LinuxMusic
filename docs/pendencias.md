@@ -296,6 +296,19 @@ queda do Mallets, que é queda e entra antes.
       notas que ele não leu saem da fila dele quando vão (antes ficava na fila o endereço de uma nota apagada).
       `InstrumentFixesTest`: três batidas curtas em cada instrumento, e duas com o modo mono (12 falham sem a
       correção).
+    - [x] Velocidade (achado medindo as batidas curtas, 18/11): quase todos os instrumentos sobem 6 dB do dobro da
+      velocidade, como o volume da nota; o OpulenZ subia 24 dB da velocidade base ao topo (o chip, em degraus de
+      0,75 dB) e, com o volume que dei aos novos (+16 dB, medido só na velocidade base), uma batida forte passava de
+      +13 dBFS; o Mallets subia 12 dB (o golpe do STK é quadrático) e a maioria dos presets dele já passava de 0
+      dBFS na velocidade base (de 0 a +10 dBFS de pico; a minha medida de antes era de RMS, que esconde o pico de
+      um som percussivo). Agora, só nos instrumentos novos (projetos de antes soam como soavam): o OpulenZ com a
+      amplitude proporcional à velocidade sobre a base da faixa, no mesmo nível na base; o Mallets com cada preset
+      a uns 6 dB abaixo do máximo na base (média de seis oitavas) e os golpeados proporcionais à velocidade (o golpe
+      continua mais brilhante quanto mais forte). Sf2 e AVL ficam com a curva do padrão SoundFont e as camadas de
+      velocidade dos samples. `InstrumentFixesTest`: 6 dB do dobro da velocidade e o topo perto do máximo; o Mallets
+      tem o critério de pico (é percussivo) no teste de níveis. E as batidas curtas agora exigem que o som acabe:
+      a nota off de uma batida curta chegava ao OpulenZ e ao Zyn antes da nota on (as duas no mesmo quadro), e a voz
+      ficava tocando; ela sai no fim do período tocado.
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.
