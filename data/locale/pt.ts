@@ -6191,6 +6191,10 @@ Por favor certifique-se que você tem permissões de leitura para o arquivo e pa
         <source>Forward MIDI control change events</source>
         <translation type="unfinished"/>
     </message>
+    <message>
+        <source>Portamento time</source>
+        <translation>Tempo do portamento</translation>
+    </message>
 </context>
 <context>
     <name>lmms::graphModel</name>
@@ -17664,6 +17668,10 @@ A interface usada é a que está salva nestas configurações.</translation>
         <location filename="../../plugins/ZynAddSubFx/ZynAddSubFx.cpp" line="534"/>
         <source>Show GUI</source>
         <translation>Mostrar GUI</translation>
+    </message>
+    <message>
+        <source>Portamento time (0: off):</source>
+        <translation>Tempo do portamento (0: desligado):</translation>
     </message>
 </context>
 <context>

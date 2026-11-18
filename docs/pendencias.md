@@ -229,6 +229,16 @@ queda do Mallets, que é queda e entra antes.
       parava de vez com as mensagens novas de volume e de repouso: o laço de mensagens já segura o mutex do mestre
       (um `std::mutex`) e elas o pegavam de novo. Os testes usam o Zyn dentro do programa, que só trava uma vez: o
       `ZynRemoteTest` agora roda o processo de verdade e falha sem a correção.
+    - [x] ZynAddSubFX: o knob de portamento (#3936) mandava o CC65, que só liga ou desliga (no 64): de 0 a 63 não
+      fazia nada e o tempo não se ajustava. Agora 0 desliga e acima dele é o tempo (a escala do próprio Zyn, de 0,02
+      a 2 s); projetos de antes ficam como estavam (abaixo de 64 desligado; acima, ligado no tempo padrão);
+    - [x] ZynAddSubFX no processo próprio: iniciava os motores de áudio do Zyn, e o "NULL" renderizava, numa thread
+      própria e em tempo real, um mestre global que ninguém ouvia, disputando com o do plugin as variáveis globais do
+      synth (o TSan achou). Agora os motores são criados sem iniciar. Não mudava o som nem a CPU de forma mensurável;
+      o `ZynRemoteTest` também confere que a mesma nota sai igual, bit a bit, em outro processo.
+    - ZynAddSubFX ainda por fazer: o corte de áudio ao mostrar a janela (#1825) precisa ser medido com a janela de
+      verdade (a interface só pega o mutex do mestre nos callbacks, e o VU usa outro); a automação de mais controles
+      (#4263) pede um jeito de expor os parâmetros do Zyn como modelos.
     - [x] FreeBoy (#6556, #8043): medido, não há offset DC com o padrão (o filtro "Bass" do emulador o tira); os
       botões de saída diziam o lado errado (o de "SO2 (Esquerda)" saía à direita: o comportamento era o do Game Boy,
       SO1 = direita) e os dois volumes de saída agiam como um só (o emulador tem um volume): rótulos corrigidos e

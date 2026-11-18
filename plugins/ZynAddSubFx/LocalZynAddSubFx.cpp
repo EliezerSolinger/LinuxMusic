@@ -308,6 +308,24 @@ void LocalZynAddSubFx::setMasterVolumeLocked(int volume)
 
 
 
+void LocalZynAddSubFx::setPortamentoTime(int time)
+{
+	const auto lock = std::lock_guard{m_master->mutex};
+	setPortamentoTimeLocked(time);
+}
+
+
+void LocalZynAddSubFx::setPortamentoTimeLocked(int time)
+{
+	for (auto* part : m_master->part)
+	{
+		if (part) { part->ctl.portamento.time = static_cast<unsigned char>(std::clamp(time, 0, 127)); }
+	}
+}
+
+
+
+
 void LocalZynAddSubFx::process(float* left, float* right, f_cnt_t frames)
 {
 	assert(frames == static_cast<f_cnt_t>(synth->buffersize));

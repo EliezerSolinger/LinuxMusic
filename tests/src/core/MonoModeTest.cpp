@@ -347,6 +347,37 @@ private slots:
 		QVERIFY2(near(pitch(back.samples), DefaultKey), qPrintable(QString::number(pitch(back.samples))));
 	}
 
+	//! ZynAddSubFX's portamento knob (#3936): it was CC65, on or off at 64 (0 to 63 did nothing) with no time; now 0 is
+	//! off and above it the time. A note after another starts at the first one's pitch and slides
+	void zynPortamentoKnob()
+	{
+		for (const auto knob : {0, 40}) // (40: under 64, which turned it on before)
+		{
+			makeTrack(-1);
+			QVERIFY(m_track->loadInstrument("zynaddsubfx"));
+			{
+				auto state = DataFile{DataFile::Type::InstrumentTrackSettings};
+				m_track->saveState(state, state.content());
+				auto settings = state.content().firstChildElement();
+				auto zyn = settings.elementsByTagName("instrument").item(0).firstChildElement();
+				zyn.setAttribute("portamento", knob);
+				zyn.setAttribute("portamentotime", 1);
+				zyn.setAttribute("modifiedcontrollers", QString::number(65));
+				m_track->restoreState(settings);
+			}
+			addNotes({{DefaultKey - 12, 0, Beat}, {DefaultKey - 5, 2 * Beat, 2 * Beat}});
+			play();
+			renderUntil(Beat / 2);
+			const auto start = pitch(renderUntil(2 * Beat).samples);
+			const auto low = 440.0 * std::exp2(-12 / 12.0);
+			const auto high = 440.0 * std::exp2(-5 / 12.0);
+			const auto name = QString{"knob %1: %2 Hz at the second note's start"}.arg(knob).arg(start);
+			if (knob == 0) { QVERIFY2(std::abs(start - high) < high * 0.02, qPrintable(name)); }
+			else { QVERIFY2(start < high * 0.97 && start > low * 0.97, qPrintable(name)); }
+			Engine::getSong()->stop();
+		}
+	}
+
 	//! Keys from a device or the piano: the last one held plays; let go, the voice goes back to one still held
 	void keysHeld()
 	{

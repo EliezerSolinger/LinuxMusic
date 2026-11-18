@@ -37,7 +37,8 @@ enum ZasfRemoteMessageIDs
 	IdZasfLmmsWorkingDirectory,
 	IdZasfSetPitchWheelBendRange,
 	IdZasfShutUp, //!< every note and effect tail let go (back to rest)
-	IdZasfSetMasterVolume //!< ZynAddSubFX's master volume (0 to 127)
+	IdZasfSetMasterVolume, //!< ZynAddSubFX's master volume (0 to 127)
+	IdZasfSetPortamentoTime //!< every part's portamento time (ZynAddSubFX's 0 to 127)
 } ;
 
 

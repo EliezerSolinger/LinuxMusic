@@ -29,6 +29,7 @@
 #include <winsock2.h>
 #endif
 
+#include <atomic>
 #include <queue>
 #include "ThreadShims.h"
 
@@ -56,7 +57,10 @@ public:
 		m_guiSleepTime( 100 ),
 		m_guiExit( false )
 	{
-		Nio::start();
+		// The engines made, not started: started, ZynAddSubFX's "NULL" audio engine renders a master of its own (the
+		// global one, not this plugin's) on a thread, in real time, for nothing, racing with this one on the synth's
+		// globals (ThreadSanitizer). The program feeds this one the notes and asks for its sound (process())
+		Nio::init();
 
 		setInputOutputCount(0, 2);
 		sendMessage( IdInitDone );
@@ -137,6 +141,10 @@ public:
 				LocalZynAddSubFx::setMasterVolumeLocked(_m.getInt());
 				break;
 
+			case IdZasfSetPortamentoTime:
+				LocalZynAddSubFx::setPortamentoTimeLocked(_m.getInt());
+				break;
+
 			default:
 				return RemotePluginClient::processMessage( _m );
 		}
@@ -164,7 +172,7 @@ private:
 	std::thread m_messageThread;
 	std::mutex m_guiMutex;
 	std::queue<RemotePluginClient::message> m_guiMessages;
-	bool m_guiExit;
+	std::atomic<bool> m_guiExit; //!< the message loop ended (written there, read by guiLoop() on the main thread)
 
 } ;
 

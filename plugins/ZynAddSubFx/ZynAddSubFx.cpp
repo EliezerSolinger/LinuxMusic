@@ -25,6 +25,8 @@
 #include "PluginGuard.h"
 #include "ZynAddSubFx.h"
 
+#include <algorithm>
+
 #include <QDir>
 #include <QDomDocument>
 #include <QTemporaryFile>
@@ -109,7 +111,7 @@ ZynAddSubFxInstrument::ZynAddSubFxInstrument(
 	m_remotePlugin( nullptr ),
 	m_sampleRate(Engine::audioEngine()->outputSampleRate()),
 	m_bufferSize(Engine::audioEngine()->framesPerPeriod()),
-	m_portamentoModel( 0, 0, 127, 1, this, tr( "Portamento" ) ),
+	m_portamentoModel(0, 0, 127, 1, this, tr("Portamento time")),
 	m_filterFreqModel( 64, 0, 127, 1, this, tr( "Filter frequency" ) ),
 	m_filterQModel( 64, 0, 127, 1, this, tr( "Filter resonance" ) ),
 	m_bandwidthModel( 64, 0, 127, 1, this, tr( "Bandwidth" ) ),
@@ -176,6 +178,8 @@ void ZynAddSubFxInstrument::saveSettings( QDomDocument & _doc,
 											QDomElement & _this )
 {
 	m_portamentoModel.saveSettings( _doc, _this, "portamento" );
+	// (its value is the time now: older projects had it as on or off, see loadSettings())
+	_this.setAttribute("portamentotime", 1);
 	m_filterFreqModel.saveSettings( _doc, _this, "filterfreq" );
 	m_filterQModel.saveSettings( _doc, _this, "filterq" );
 	m_bandwidthModel.saveSettings( _doc, _this, "bandwidth" );
@@ -235,6 +239,11 @@ void ZynAddSubFxInstrument::loadSettings( const QDomElement & _this )
 	}
 
 	m_portamentoModel.loadSettings( _this, "portamento" );
+	// Older projects: the knob was on (64 and above) or off; on, with ZynAddSubFX's default time (64)
+	if (!_this.hasAttribute("portamentotime"))
+	{
+		m_portamentoModel.setValue(m_portamentoModel.value() >= 64 ? 64 : 0);
+	}
 	m_filterFreqModel.loadSettings( _this, "filterfreq" );
 	m_filterQModel.loadSettings( _this, "filterq" );
 	m_bandwidthModel.loadSettings( _this, "bandwidth" );
@@ -513,7 +522,20 @@ void ZynAddSubFxInstrument::updatePitchRange()
 			}
 
 
-GEN_CC_SLOT(updatePortamento,C_portamento,m_portamentoModel);
+void ZynAddSubFxInstrument::updatePortamento()
+{
+	// 0: off; above, on, the value its time (ZynAddSubFX's own scale, 0.02 to 2 s). The knob sent CC65, which is only
+	// on or off (at 64): from 0 to 63 it did nothing, and the time could not be set (upstream's #3936)
+	const auto value = std::clamp(static_cast<int>(m_portamentoModel.value()), 0, 127);
+	if (value > 0)
+	{
+		const auto lock = QMutexLocker{&m_pluginMutex};
+		if (m_remotePlugin) { m_remotePlugin->sendMessage(RemotePlugin::message(IdZasfSetPortamentoTime).addInt(value)); }
+		else if (m_localPlugin) { m_localPlugin->setPortamentoTime(value); }
+	}
+	sendControlChange(C_portamento, value > 0 ? 127 : 0);
+	m_modifiedControllers[C_portamento] = true;
+}
 GEN_CC_SLOT(updateFilterFreq,C_filtercutoff,m_filterFreqModel);
 GEN_CC_SLOT(updateFilterQ,C_filterq,m_filterQModel);
 GEN_CC_SLOT(updateBandwidth,C_bandwidth,m_bandwidthModel);
@@ -613,7 +635,7 @@ ZynAddSubFxView::ZynAddSubFxView( Instrument * _instrument, QWidget * _parent ) 
 	l->setHorizontalSpacing( 10 );
 
 	m_portamento = new Knob(KnobType::Bright26, tr("PORT"), SMALL_FONT_SIZE, this);
-	m_portamento->setHintText( tr( "Portamento:" ), "" );
+	m_portamento->setHintText(tr("Portamento time (0: off):"), "");
 
 	m_filterFreq = new Knob(KnobType::Bright26, tr("FREQ"), SMALL_FONT_SIZE, this);
 	m_filterFreq->setHintText( tr( "Filter frequency:" ), "" );

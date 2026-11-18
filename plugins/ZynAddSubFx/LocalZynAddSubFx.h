@@ -74,6 +74,10 @@ public:
 	void setMasterVolume(int volume);
 	//! As setMasterVolume(), the master's mutex already held
 	void setMasterVolumeLocked(int volume);
+	//! Every part's portamento time (0 to 127: 0.02 to 2 s)
+	void setPortamentoTime(int time);
+	//! As setPortamentoTime(), the master's mutex already held
+	void setPortamentoTimeLocked(int time);
 
 	inline Master * master()
 	{
