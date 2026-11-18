@@ -18795,5 +18795,29 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>From Guitarix (guitarix.org), by Hermann Meyer, James Warden, Andreas Degert, Pete Shorthose and its other authors: its own code, built in.</source>
         <translation>Do Guitarix (guitarix.org), de Hermann Meyer, James Warden, Andreas Degert, Pete Shorthose e os outros autores: o próprio código dele, embutido.</translation>
     </message>
+    <message>
+        <source>Fuzz</source>
+        <translation>Fuzz</translation>
+    </message>
+    <message>
+        <source>Modulation</source>
+        <translation>Modulação</translation>
+    </message>
+    <message>
+        <source>Tone Control</source>
+        <translation>Controle de tom</translation>
+    </message>
+    <message>
+        <source>Guitar Effects</source>
+        <translation>Efeitos de guitarra</translation>
+    </message>
+    <message>
+        <source>Echo / Delay</source>
+        <translation>Eco / Delay</translation>
+    </message>
+    <message>
+        <source>Reverb</source>
+        <translation>Reverb</translation>
+    </message>
 </context>
 </TS>

@@ -34,12 +34,11 @@ struct PluginDef;
 namespace lmms::guitarix
 {
 
-//! A unit of Guitarix: its id (Guitarix's), the group it is in on the browser, and how one is made (Guitarix's own
-//! factory: a PluginDef, the unit's interface, deleted by its delete_instance)
+//! A unit of Guitarix: its id (Guitarix's) and how one is made (Guitarix's own factory: a PluginDef, the unit's
+//! interface, with its name and category, deleted by its delete_instance)
 struct Unit
 {
 	const char* id;
-	const char* group; //!< untranslated, in the "GuitarixEffect" translation context
 	PluginDef* (*make)();
 };
 

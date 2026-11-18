@@ -380,7 +380,14 @@ queda do Mallets, que é queda e entra antes.
     thread de áudio só processam: zero alocações (`AudioThreadAllocationTest`), e o `BuiltinPluginsTest` passa
     (extremos dos parâmetros, repouso). `GuitarixTest`: o TS9 distorce um seno, mais com mais drive, e o level é o
     nível de saída em dB. Créditos no `doc/AUTHORS`.
-  - Falta: as outras unidades (pedais, amps, tonestacks, caixas) e a aparência do Guitarix na interface (hoje uma
+  - As 41 unidades do `pluginlib` do Guitarix (overdrives, distorções, fuzzes, multibanda, flanger, Zita Rev1...),
+    na ordem do rack dele, com os nomes e ids dele (o `pluginlib.h` dele declara as fábricas). O `GuitarixTest` passa
+    por cada uma: como vem, tudo no mínimo e no máximo (som finito), e o repouso depois de dois passados diferentes dá
+    o mesmo som (falha em 41 delas se o repouso não refaz a unidade). Zero alocações em cada uma. Algumas (as de
+    tabelas de diodo assimétricas) dão uma constante pequena no silêncio, como no Guitarix, que só bloqueia o DC no
+    começo da cadeia dele.
+  - Falta: as unidades do `gx_effects` (compressor, delays, chorus, phaser, EQs...), os amps, tonestacks, estágios
+    de potência e caixas (montados pelos seletores do motor dele), e a aparência do Guitarix na interface (hoje uma
     janela genérica de knobs).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.

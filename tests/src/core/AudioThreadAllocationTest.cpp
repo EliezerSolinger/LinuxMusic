@@ -610,11 +610,32 @@ private slots:
 		}
 		names.sort();
 		for (const auto& name : names) { QTest::newRow(qPrintable(name)) << name; }
+		// Guitarix: each of its units (sub-plugins), "guitarix:unit"
+		if (const auto info = getPluginFactory()->pluginInfo("guitarix"); !info.isNull())
+		{
+			auto keys = Plugin::Descriptor::SubPluginFeatures::KeyList{};
+			info.descriptor->subPluginFeatures->listSubPluginKeys(info.descriptor, keys);
+			for (const auto& key : keys)
+			{
+				const auto row = "guitarix:" + key.attributes.value("unit");
+				QTest::newRow(qPrintable(row)) << row;
+			}
+		}
 	}
 
 	void effectsAllocateNothing()
 	{
 		QFETCH(QString, effect);
+		// (a sub-plugin: "plugin:unit")
+		auto key = Plugin::Descriptor::SubPluginFeatures::Key{};
+		if (effect.contains(':'))
+		{
+			auto attributes = Plugin::Descriptor::SubPluginFeatures::Key::AttributeMap{};
+			attributes["unit"] = effect.section(':', 1);
+			effect = effect.section(':', 0, 0);
+			key = Plugin::Descriptor::SubPluginFeatures::Key{getPluginFactory()->pluginInfo(qPrintable(effect)).descriptor,
+				attributes["unit"], attributes};
+		}
 		auto* song = Engine::getSong();
 		song->createNewProject();
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
@@ -623,7 +644,8 @@ private slots:
 		const auto channelIndex = mixer->createChannel();
 		track->mixerChannelModel()->setValue(channelIndex);
 		auto* chain = &mixer->mixerChannel(channelIndex)->m_fxChain;
-		chain->appendEffect(std::make_unique<PluginInstance>(Plugin::Type::Effect, effect, chain, nullptr));
+		chain->appendEffect(std::make_unique<PluginInstance>(Plugin::Type::Effect, effect, chain,
+			key.isValid() ? &key : nullptr));
 		mixer->setUpTrackChannels();
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
 		for (int note = 0; note < 16; ++note)

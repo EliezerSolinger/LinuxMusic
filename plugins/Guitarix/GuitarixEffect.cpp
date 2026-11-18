@@ -65,11 +65,20 @@ public:
 		const auto* unit = guitarix::unit(key->attributes.value("unit").toUtf8().constData());
 		auto text = QString{"<p><b>%1</b></p><p>%2</p><p>%3</p>"}.arg(
 			unit ? nameOf(*unit) : key->name,
-			unit ? QCoreApplication::translate("GuitarixEffect", unit->group) : QString{},
+			unit ? categoryOf(*unit) : QString{},
 			QCoreApplication::translate("GuitarixEffect", "From Guitarix (guitarix.org), by Hermann Meyer, James "
 				"Warden, Andreas Degert, Pete Shorthose and its other authors: its own code, built in."));
 		auto label = new QLabel(text, parent);
 		label->setWordWrap(true);
+	}
+
+	//! The unit's category, as Guitarix gives it (distortion, fuzz, modulation...), translated
+	static auto categoryOf(const guitarix::Unit& unit) -> QString
+	{
+		auto* def = unit.make();
+		const auto category = QCoreApplication::translate("GuitarixEffect", def->category);
+		def->delete_instance(def);
+		return category;
 	}
 
 	//! The unit's name, as Guitarix gives it

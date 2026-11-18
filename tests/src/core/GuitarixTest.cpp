@@ -32,6 +32,7 @@
 #include "AutomatableModel.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
+#include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -144,6 +145,65 @@ class GuitarixTest : public QObject
 		QFAIL(qPrintable("no parameter " + name));
 	}
 
+	//! A note through the unit @p unit (its key), its parameters as @p change sets them; the song plays on
+	static auto setUpUnit(const QString& unit, bool withNotes = true) -> QList<AutomatableModel*>
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		if (!track || !track->loadInstrument("tripleoscillator")) { return {}; }
+		auto* mixer = Engine::mixer();
+		const auto channel = mixer->createChannel();
+		track->mixerChannelModel()->setValue(channel);
+		auto* chain = &mixer->mixerChannel(channel)->m_fxChain;
+		const auto key = keyOf(unit);
+		chain->appendEffect(std::make_unique<PluginInstance>(Plugin::Type::Effect, "guitarix", chain, &key));
+		auto* plugin = chain->effects().back()->plugin();
+		if (!plugin) { return {}; }
+		mixer->setUpTrackChannels();
+		if (withNotes)
+		{
+			auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
+			for (int note = 0; note < 8; ++note)
+			{
+				clip->addNote(Note{TimePos{24}, TimePos{note * 24}, DefaultKey - 12 + note * 3});
+			}
+			song->setPlayPos(0, Song::PlayMode::Song);
+			song->playSong();
+		}
+		return plugin->findChildren<AutomatableModel*>();
+	}
+
+	//! @p periods periods' samples (both channels)
+	static auto renderPeriods(int periods) -> std::vector<float>
+	{
+		auto samples = std::vector<float>{};
+		for (int period = 0; period < periods; ++period)
+		{
+			for (const auto& frame : Engine::audioEngine()->renderNextPeriod())
+			{
+				samples.push_back(frame.left());
+				samples.push_back(frame.right());
+			}
+		}
+		return samples;
+	}
+
+	//! Renders @p periods periods: whether every sample is finite (@p loudest: the loudest)
+	static auto rendersFinite(int periods, float& loudest) -> bool
+	{
+		loudest = 0.f;
+		for (int period = 0; period < periods; ++period)
+		{
+			for (const auto& frame : Engine::audioEngine()->renderNextPeriod())
+			{
+				if (!std::isfinite(frame.left()) || !std::isfinite(frame.right())) { return false; }
+				loudest = std::max({loudest, std::abs(frame.left()), std::abs(frame.right())});
+			}
+		}
+		return true;
+	}
+
 private slots:
 	void initTestCase()
 	{
@@ -165,6 +225,57 @@ private slots:
 		auto names = QStringList{};
 		for (const auto& key : keys) { names << key.attributes.value("unit") + "=" + key.displayName(); }
 		QVERIFY2(names.contains("ts9sim=Tube Screamer"), qPrintable(names.join(", ")));
+	}
+
+	void everyUnit_data()
+	{
+		QTest::addColumn<QString>("unit");
+		const auto info = getPluginFactory()->pluginInfo("guitarix");
+		if (info.isNull()) { return; }
+		auto keys = Plugin::Descriptor::SubPluginFeatures::KeyList{};
+		info.descriptor->subPluginFeatures->listSubPluginKeys(info.descriptor, keys);
+		for (const auto& key : keys)
+		{
+			const auto unit = key.attributes.value("unit");
+			QTest::newRow(qPrintable(unit)) << unit;
+		}
+	}
+
+	//! Every unit: as it comes, all at their minimum and at their maximum, its sound finite; then brought to rest, it
+	//! is silent (an export, a new project: its past let go)
+	void everyUnit()
+	{
+		QFETCH(QString, unit);
+		auto models = setUpUnit(unit);
+		QVERIFY2(!models.isEmpty(), "not made");
+		auto loudest = 0.f;
+		QVERIFY2(rendersFinite(60, loudest), "as it comes");
+		for (auto* model : models) { model->setValue(model->minValue<float>()); }
+		QVERIFY2(rendersFinite(60, loudest), "at the minimum");
+		for (auto* model : models) { model->setValue(model->maxValue<float>()); }
+		QVERIFY2(rendersFinite(60, loudest), "at the maximum");
+		for (auto* model : models) { model->reset(); }
+		QVERIFY2(rendersFinite(60, loudest), "back as it came");
+
+		// Brought to rest after two pasts (at the maximum, and as it comes), the same parameters then: the same
+		// sound after (an export the same whatever played before; some give a constant at silence, Guitarix's diode
+		// tables not being symmetric and Guitarix blocking the DC at the start of its chain only)
+		const auto afterRest = [&] {
+			Engine::getSong()->stop();
+			for (auto* track : Engine::getSong()->tracks()) { track->setMuted(true); }
+			Engine::mixer()->discardProcessingState();
+			return renderPeriods(8);
+		};
+		const auto first = afterRest();
+		for (auto* track : Engine::getSong()->tracks()) { track->setMuted(false); }
+		Engine::getSong()->setPlayPos(0, Song::PlayMode::Song);
+		Engine::getSong()->playSong();
+		QVERIFY2(rendersFinite(60, loudest), "again");
+		const auto second = afterRest();
+		QCOMPARE(second.size(), first.size());
+		auto difference = 0.f;
+		for (std::size_t i = 0; i < first.size(); ++i) { difference = std::max(difference, std::abs(first[i] - second[i])); }
+		QVERIFY2(difference < 1e-6f, qPrintable(QString{"after a rest it depends on what played before: %1"}.arg(difference)));
 	}
 
 	//! The Tube Screamer (Guitarix's ts9sim, run at 96 kHz as there): a sine comes out with harmonics, more with
