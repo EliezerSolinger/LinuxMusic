@@ -342,6 +342,8 @@ queda do Mallets, que é queda e entra antes.
       pouco errada. Agora a fase e a razão são double até o fim (o `Oscillator`, o TripleOscillator e o Organic, que
       usa as razões exatas dos parciais). Varredura: Monstro, Watsyn medidos estáveis; Kicker e LFO têm um oscilador
       só. `InstrumentFixesTest`: um C6 segurado 40 s mantém o pico (falha sem a correção nos dois).
+    - Não reproduzido (18/11): o clone de uma faixa do Sf2Player (#4327) fica com o nome dela e os clipes com os
+      seus, na música e no editor de padrões.
     - Medido e não reproduzido (18/11): o ZynAddSubFX a 192 kHz (#5534) toca igual a 44,1 e 96 kHz (o mesmo pico, o
       maior salto entre amostras 1,6 vezes o passo médio nas três taxas, nada fora de número).
     - [ ] AudioFileProcessor: tocar o trecho depois do loop ao soltar a tecla (#5793). Hoje o loop vai sempre até o
