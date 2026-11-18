@@ -285,6 +285,13 @@ private:
 	FloatModel m_gain;
 
 	// Locking for the data
+	/**
+	 * Puts @p made (read before, without any lock) in place of the instance, under the audio engine's change lock and
+	 * the mutexes below; its file is @p filename
+	 * @returns the old instance, for the caller to delete without the locks
+	 */
+	auto swapInstance(GigInstance* made, const QString& filename) -> GigInstance*;
+
 	QMutex m_synthMutex;
 	QMutex m_notesMutex;
 

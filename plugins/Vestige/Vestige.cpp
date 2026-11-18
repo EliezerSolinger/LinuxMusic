@@ -751,15 +751,15 @@ void VestigeInstrumentView::openPlugin()
 		{
 			return;
 		}
-		Engine::audioEngine()->requestChangeInModel();
-
+		// Without the audio engine's change lock: the plugin starts in a process of its own, which may take long; the
+		// audio thread only tries the instrument's own lock meanwhile (play()), and the ports change in a moment under
+		// the engine's lock (PluginInstance::reactivate())
 		if (m_vi->p_subWindow != nullptr) {
 			delete m_vi->p_subWindow;
 			m_vi->p_subWindow = nullptr;
 		}
 
 		m_vi->loadFile( ofd.selectedFiles()[0] );
-		Engine::audioEngine()->doneChangeInModel();
 		if( m_vi->m_plugin && m_vi->m_plugin->pluginWidget() )
 		{
 			m_vi->m_plugin->pluginWidget()->setWindowIcon(

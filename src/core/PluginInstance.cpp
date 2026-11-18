@@ -358,8 +358,8 @@ void PluginInstance::deactivate()
 void PluginInstance::setState(State flag, bool on)
 {
 	const auto bit = static_cast<std::uint8_t>(flag);
-	if (on) { m_state.fetch_or(bit, std::memory_order_relaxed); }
-	else { m_state.fetch_and(static_cast<std::uint8_t>(~bit), std::memory_order_relaxed); }
+	if (on) { m_state.fetch_or(bit, std::memory_order_release); }
+	else { m_state.fetch_and(static_cast<std::uint8_t>(~bit), std::memory_order_release); }
 }
 
 
@@ -369,11 +369,17 @@ void PluginInstance::reactivate()
 {
 	if (!m_processor) { return; }
 
-	Engine::audioEngine()->requestChangeInModel();
-	deactivate();
+	{
+		// Out of the processing in a moment under the audio engine's change lock: the audio thread touches the plugin
+		// and its buffers only in process(), which it enters only while the plugin is Active
+		const auto guard = AudioEngine::changesGuard();
+		deactivate();
+	}
+	// The rest without the lock, as long as it takes (new buffers; for a plugin in a process of its own, starting the
+	// process and loading it there): only this plugin is not processed meanwhile (an effect lets the sound through).
+	// Active is set last, published with all that was set up (see state())
 	setUpAudioPorts();
 	activate();
-	Engine::audioEngine()->doneChangeInModel();
 }
 
 

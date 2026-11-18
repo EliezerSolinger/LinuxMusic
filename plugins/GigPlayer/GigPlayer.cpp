@@ -193,20 +193,25 @@ QString GigInstrument::nodeName() const
 
 void GigInstrument::freeInstance()
 {
+	delete swapInstance(nullptr, QString{});
+}
+
+
+
+
+auto GigInstrument::swapInstance(GigInstance* made, const QString& filename) -> GigInstance*
+{
+	// Under the audio engine's change lock and the plugin's own (the audio thread plays the instance, playImpl()):
+	// a moment, as the instance was made before; the old one is deleted by the caller, without them
+	const auto guard = AudioEngine::changesGuard();
 	QMutexLocker synthLock( &m_synthMutex );
 	QMutexLocker notesLock( &m_notesMutex );
 
-	if( m_instance != nullptr )
-	{
-		delete m_instance;
-		m_instance = nullptr;
-
-		// If we're changing instruments, we got to make sure that we
-		// remove all pointers to the old samples and don't try accessing
-		// that instrument again
-		m_instrument = nullptr;
-		m_notes.clear();
-	}
+	// The old instrument's samples are not to be played anymore
+	m_instrument = nullptr;
+	m_notes.clear();
+	m_filename = filename;
+	return std::exchange(m_instance, made);
 }
 
 
@@ -216,23 +221,17 @@ void GigInstrument::openFile( const QString & _gigFile, bool updateTrackName )
 {
 	emit fileLoading();
 
-	// Remove the current instrument if one is selected
-	freeInstance();
-
+	// Read without any lock (it may take long: the audio thread must not wait for it), then put in place at once
+	auto* made = static_cast<GigInstance*>(nullptr);
+	try
 	{
-		QMutexLocker locker( &m_synthMutex );
-
-		try
-		{
-			m_instance = new GigInstance( PathUtil::toAbsolute( _gigFile ) );
-			m_filename = PathUtil::toShortestRelative( _gigFile );
-		}
-		catch( ... )
-		{
-			m_instance = nullptr;
-			m_filename = "";
-		}
+		made = new GigInstance( PathUtil::toAbsolute( _gigFile ) );
 	}
+	catch( ... )
+	{
+		made = nullptr;
+	}
+	delete swapInstance(made, made ? PathUtil::toShortestRelative(_gigFile) : QString{});
 
 	emit fileChanged();
 
@@ -337,7 +336,9 @@ void GigInstrument::playImpl(std::span<SampleFrame> out)
 	// Initialize to zeros
 	zeroSampleFrames(out.data(), out.size());
 
-	m_synthMutex.lock();
+	// The main thread holds it only for a moment (swapInstance(), getInstrument()): then this period is silent rather
+	// than the audio thread waiting
+	if (!m_synthMutex.tryLock()) { return; }
 	m_notesMutex.lock();
 
 	if( m_instance == nullptr || m_instrument == nullptr )

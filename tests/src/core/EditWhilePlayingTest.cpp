@@ -20,6 +20,7 @@
  *
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -32,6 +33,7 @@
 #include "AutomationClip.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "Mixer.h"
@@ -66,7 +68,12 @@ class EditWhilePlayingTest : public QObject
 				auto next = std::chrono::steady_clock::now();
 				while (!m_stop.load())
 				{
+					const auto started = std::chrono::steady_clock::now();
 					engine->renderNextBuffer(InterleavedBufferView<float>{buffer.data(), 2, engine->framesPerPeriod()});
+					const auto took = std::chrono::duration_cast<std::chrono::microseconds>(
+						std::chrono::steady_clock::now() - started).count();
+					auto longest = m_longestRender.load();
+					while (took > longest && !m_longestRender.compare_exchange_weak(longest, took)) {}
 					next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
 					std::this_thread::sleep_until(next);
 				}
@@ -79,8 +86,13 @@ class EditWhilePlayingTest : public QObject
 			m_thread.join();
 		}
 
+		//! The longest a period took to render since asked last, in µs: the audio thread waited for nothing (not a
+		//! plugin's own lock held by the main thread either) when it is short
+		auto takeLongestRender() const -> std::int64_t { return m_longestRender.exchange(0); }
+
 	private:
 		std::atomic<bool> m_stop = false;
+		mutable std::atomic<std::int64_t> m_longestRender = 0;
 		std::thread m_thread;
 	};
 
@@ -126,6 +138,9 @@ private slots:
 
 		auto made = std::vector<Track*>{};
 		auto* automation = Track::create(Track::Type::Automation, song);
+		auto* sf2 = newInstrumentTrack("sf2player");
+		auto* sampler = newInstrumentTrack("audiofileprocessor");
+		auto* slicer = newInstrumentTrack("slicert");
 		auto* drawn = dynamic_cast<AutomationClip*>(automation->createClip(TimePos{0}));
 		drawn->addObject(&mixer->mixerChannel(channelIndex)->m_panModel);
 		drawn->changeLength(TimePos{4 * TimePos::ticksPerBar()});
@@ -188,6 +203,21 @@ private slots:
 				mixer->deleteChannel(added);
 				automation->deleteClip(clip);
 			}},
+			{"a soundfont loaded into Sf2 Player", [&](int round) {
+				static const char* const fonts[] = {"Black_Pearl_4_LV2.sf2", "Blonde_Bop_LV2.sf2"};
+				sf2->instrument()->loadFile(QString{QT_TESTCASE_SOURCEDIR "/../data/avldrums/"} + fonts[round % 2]);
+			}},
+			{"a sample loaded into AudioFileProcessor", [&](int round) {
+				static const char* const samples[] = {"hit01.ogg", "electric_ping01.ogg"};
+				sampler->instrument()->loadFile(QString{QT_TESTCASE_SOURCEDIR "/../data/samples/misc/"} + samples[round % 2]);
+			}},
+			{"a sample loaded into SlicerT", [&](int round) {
+				static const char* const samples[] = {"snaph01.ogg", "hit02.ogg"};
+				slicer->instrument()->loadFile(QString{QT_TESTCASE_SOURCEDIR "/../data/samples/misc/"} + samples[round % 2]);
+			}},
+			{"the instrument of a track swapped (to Sf2 Player)", [&](int round) {
+				playing->loadInstrument(round % 2 ? "sf2player" : "tripleoscillator");
+			}},
 			{"an automated track deleted", [&](int) {
 				// Another track's clip sets its volume while it plays
 				auto* track = newInstrumentTrack("tripleoscillator");
@@ -204,6 +234,7 @@ private slots:
 		};
 
 		auto skippedInAll = std::int64_t{0};
+		auto longestRender = std::int64_t{0};
 		{
 			const auto device = Device{};
 			std::this_thread::sleep_for(100ms);
@@ -211,6 +242,7 @@ private slots:
 			{
 				const auto before = Engine::audioEngine()->periodsSkipped();
 				Engine::audioEngine()->takeLongestChangeHold();
+				device.takeLongestRender();
 				for (int round = 0; round < 12; ++round)
 				{
 					edit.run(round);
@@ -220,13 +252,18 @@ private slots:
 				std::this_thread::sleep_for(20ms);
 				const auto skipped = Engine::audioEngine()->periodsSkipped() - before;
 				const auto longest = Engine::audioEngine()->takeLongestChangeHold();
-				qInfo("%-45s %3lld periods skipped, the change lock held %.2f ms at most", edit.name,
-					static_cast<long long>(skipped), static_cast<double>(longest) / 1000.0);
+				const auto render = device.takeLongestRender();
+				qInfo("%-50s %3lld skipped, lock held %.2f ms, a period rendered in %.2f ms at most", edit.name,
+					static_cast<long long>(skipped), static_cast<double>(longest) / 1000.0,
+					static_cast<double>(render) / 1000.0);
 				skippedInAll += skipped;
+				longestRender = std::max(longestRender, render);
 			}
 		}
 		song->stop();
 		QCOMPARE(skippedInAll, std::int64_t{0});
+		// Reading a 20 to 30 MB soundfont takes far longer: the audio thread did not wait for it
+		QVERIFY2(longestRender < 100'000, qPrintable(QString{"a period took %1 ms"}.arg(longestRender / 1000.0)));
 	}
 
 	//! Automation recorded while playing: the audio thread records, the values reach the clip on the main thread

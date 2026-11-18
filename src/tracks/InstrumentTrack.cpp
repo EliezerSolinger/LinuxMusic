@@ -1090,17 +1090,17 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 				}
 				else
 				{
-					// The old instrument goes away before the new one is created
-					m_instrument.reset();
-					m_instrument = std::make_unique<PluginInstance>(
+					// Made and restored whole before it is the track's (see swapInstrument()); the old one goes
+					// after, without the audio engine's lock
+					auto made = std::make_unique<PluginInstance>(
 						Plugin::Type::Instrument, node.toElement().attribute("name"), this, &key);
-					m_instrument->setTrackChannelCount(trackChannelCount());
-
+					made->setTrackChannelCount(trackChannelCount());
 					{
-						const auto running = PluginGuard::Running{m_instrument->identity()};
-						m_instrument->plugin()->restoreState(node.firstChildElement());
+						const auto running = PluginGuard::Running{made->identity()};
+						made->plugin()->restoreState(node.firstChildElement());
 					}
-					m_instrument->loadPins(node.firstChildElement());
+					made->loadPins(node.firstChildElement());
+					swapInstrument(std::move(made)).reset();
 					// A plugin missing here: kept as it was saved, so that the project loses nothing
 					m_unloadedInstrument.clear();
 					const auto wanted = node.toElement().attribute("name");
@@ -1131,17 +1131,15 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 					ControllerConnection::classNodeName() != node.nodeName() &&
 					!node.toElement().hasAttribute( "id" ))
 			{
-				m_instrument.reset();
-				m_instrument = std::make_unique<PluginInstance>(
+				auto made = std::make_unique<PluginInstance>(
 					Plugin::Type::Instrument, node.nodeName(), this, nullptr, true);
-				m_instrument->setTrackChannelCount(trackChannelCount());
-				if (m_instrument->plugin()->nodeName() == node.nodeName())
+				made->setTrackChannelCount(trackChannelCount());
+				if (made->plugin()->nodeName() == node.nodeName())
 				{
-					{
-						const auto running = PluginGuard::Running{m_instrument->identity()};
-						m_instrument->plugin()->restoreState(node.toElement());
-					}
+					const auto running = PluginGuard::Running{made->identity()};
+					made->plugin()->restoreState(node.toElement());
 				}
+				swapInstrument(std::move(made)).reset();
 				emit instrumentChanged();
 			}
 		}
@@ -1215,6 +1213,19 @@ void InstrumentTrack::setInstrumentInstance(std::unique_ptr<PluginInstance> inst
 
 
 
+auto InstrumentTrack::swapInstrument(std::unique_ptr<PluginInstance> made) -> std::unique_ptr<PluginInstance>
+{
+	// Under the audio engine's change lock: the audio thread plays notes through the instrument (playNote(), with
+	// the instrument's own data for each note); notes come from MIDI input at any time, so those that came since the
+	// caller silenced the track go with the old one, in the same moment
+	const auto guard = AudioEngine::changesGuard();
+	silenceAllNotes(false);
+	return std::exchange(m_instrument, std::move(made));
+}
+
+
+
+
 Instrument* InstrumentTrack::loadInstrument(const QString& _plugin_name,
 	const Plugin::Descriptor::SubPluginFeatures::Key *key, bool keyFromDnd)
 {
@@ -1223,12 +1234,16 @@ Instrument* InstrumentTrack::loadInstrument(const QString& _plugin_name,
 
 	silenceAllNotes( true );
 
+	// Made without any lock: nothing plays it until it is the track's (see swapInstrument())
+	auto made = std::make_unique<PluginInstance>(Plugin::Type::Instrument, _plugin_name, this, key, keyFromDnd);
+	made->setTrackChannelCount(trackChannelCount());
+
 	lock();
 	m_unloadedInstrument.clear(); // (another instrument is chosen)
-	m_instrument.reset();
-	m_instrument = std::make_unique<PluginInstance>(Plugin::Type::Instrument, _plugin_name, this, key, keyFromDnd);
-	m_instrument->setTrackChannelCount(trackChannelCount());
+	auto old = swapInstrument(std::move(made));
 	unlock();
+	// The old one goes without the locks
+	old.reset();
 	setName(m_instrument->plugin()->displayName());
 
 	emit instrumentChanged();

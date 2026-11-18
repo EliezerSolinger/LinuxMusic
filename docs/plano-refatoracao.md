@@ -346,6 +346,38 @@ Passos feitos:
 | Desenhar pontos num clipe de automação que está tocando | 0,01 ms |
 | Gravar automação tocando | (o render não espera) |
 
+- **7.5 Carregar instrumentos e arquivos tocando.** O teste agora mede também quanto o render de cada período
+  demora (o render pode esperar por uma trava do próprio plugin, e isso não aparece como período pulado):
+  - **trocar o instrumento:** o novo é feito (e, vindo de um preset ou projeto, restaurado) sem trava nenhuma, e
+    entra no lugar do velho num instante sob a trava da faixa e a do motor (`InstrumentTrack::swapInstrument`); as
+    notas que chegaram pelo MIDI nesse meio tempo saem com o velho, que é apagado depois, sem as travas (antes, a
+    troca era só sob a trava da faixa, e uma nota vinda do MIDI podia tocar pelo instrumento sendo trocado);
+  - **Sf2 Player:** lia o soundfont inteiro segurando o mutex do sintetizador, que o render também pega: carregar um
+    soundfont de 30 MB fazia **um período levar 24 ms** (o programa todo atrasava uns 4 períodos). Agora o arquivo
+    é lido por um sintetizador à parte, sem trava, e passado para o do instrumento num instante (0,30 ms por
+    período no máximo; a trava fica 0,55 ms, o FluidSynth liberando o soundfont velho). A troca de sintetizador
+    quando muda a taxa de amostragem segue a mesma regra;
+  - **GigPlayer:** o mesmo (lia o .gig inteiro sob o mutex que o render pega); agora lê sem trava e troca num
+    instante, e o render só *tenta* o mutex (se a interface o segura naquele instante, só esse instrumento fica
+    quieto naquele período);
+  - **AudioFileProcessor, SlicerT, Patman:** trocavam a amostra (e as fatias, e os patches) **sem trava nenhuma**
+    enquanto o render tocava; agora leem antes e põem no lugar num instante sob a trava; as vistas do SlicerT mudam
+    uma cópia das fatias e a entregam ao instrumento (`setSlicePoints`). O SlicerT lia uma fatia além do fim;
+  - **navegador de arquivos:** segurava a trava do motor durante o carregamento inteiro (um preset, uma amostra,
+    um instrumento com o arquivo dele, uma importação): não segura mais, cada peça cuida de si; o Vestige também;
+  - **um plugin reativado** (portas novas, ou ir para um processo próprio e voltar): `PluginInstance::reactivate`
+    tira o plugin do processamento num instante sob a trava e faz o resto sem ela (só esse plugin deixa de ser
+    processado; um efeito deixa o som passar); o estado `Active` é publicado por último, com release/acquire.
+    **Mover um efeito para um processo próprio prendia a trava 21 a 25 ms** (o processo nascendo e carregando o
+    plugin); agora 0,00 ms, com o som idêntico.
+
+| Edição tocando | Trava presa | Período mais longo |
+|---|---|---|
+| Carregar um soundfont de 20 a 30 MB no Sf2 Player | 0,55 ms | 0,30 ms (antes 24 ms) |
+| Carregar uma amostra no AudioFileProcessor ou no SlicerT | 0,00 ms | 0,21 ms |
+| Trocar o instrumento por Sf2 Player | 0,01 ms | 0,22 ms |
+| Mover um efeito LV2 ou LADSPA para um processo próprio | 0,00 ms (antes 21 a 25) | |
+
 ## Fase 8: ciclo de vida explícito
 
 - **8.1** Documentar e testar a ordem de criação e destruição do `Engine`. `EngineLifecycleTest` faz

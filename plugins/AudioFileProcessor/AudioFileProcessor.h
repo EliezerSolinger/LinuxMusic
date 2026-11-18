@@ -102,6 +102,9 @@ private:
 
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
+	//! Puts @p sample in place of the sample, at once for the audio thread; the old one goes without the lock
+	void setSample(Sample sample);
+
 	Sample m_sample;
 	std::shared_ptr<const SampleThumbnailCache> m_sampleThumbnailCache;
 

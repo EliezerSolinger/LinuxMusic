@@ -123,14 +123,9 @@ Knob* SlicerTView::createStyledKnob()
 // Clear all notes
 void SlicerTView::clearSlices()
 {
-	m_slicerTParent->m_slicePoints.clear();
-
 	// Points are added to the start (0) and end (1) of the sample,
 	// so the whole sample can still be copied using MIDI.
-	m_slicerTParent->m_slicePoints.emplace_back(0);
-	m_slicerTParent->m_slicePoints.emplace_back(1);
-
-	emit m_slicerTParent->dataChanged();
+	m_slicerTParent->setSlicePoints({0.f, 1.f});
 }
 
 // copied from piano roll

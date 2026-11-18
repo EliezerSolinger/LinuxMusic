@@ -57,6 +57,11 @@ public:
 
 	void loadFile(const QString& file) override;
 	void findSlices();
+
+	//! The slices, as fractions of the sample (read on the main thread; see setSlicePoints())
+	auto slicePoints() const -> const std::vector<float>& { return m_slicePoints; }
+	//! Puts @p points in place of the slices, at once for the audio thread (the views change a copy and give it here)
+	void setSlicePoints(std::vector<float> points);
 	void findBPM();
 
 	QString getSampleName() { return m_originalSample.sampleFile(); }
@@ -74,6 +79,9 @@ private:
 	IntModel m_originalBPM;
 	ComboBoxModel m_sliceSnap;
 	BoolModel m_enableSync;
+
+	//! Puts @p sample in place of the sample, at once for the audio thread; the old one goes without the lock
+	void setSample(Sample sample);
 
 	Sample m_originalSample;
 	std::shared_ptr<const SampleThumbnailCache> m_sampleThumbnailCache;

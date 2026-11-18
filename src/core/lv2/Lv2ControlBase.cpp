@@ -102,7 +102,7 @@ void Lv2ControlBase::shutdown()
 
 void Lv2ControlBase::setLocal(bool local)
 {
-	const auto guard = Engine::audioEngine()->requestChangesGuard();
+	// (called while the plugin is inactive, see PluginInstance::reactivate(): the audio thread does not use it)
 	for (const auto& proc : m_procs) { proc->setLocal(local); }
 }
 
@@ -112,10 +112,17 @@ void Lv2ControlBase::setLocal(bool local)
 void Lv2ControlBase::reload()
 {
 	// The plugin instances are created again, so the audio thread must not use them meanwhile
-	Engine::audioEngine()->requestChangeInModel();
+	const auto guard = AudioEngine::changesGuard();
+	reloadWhileInactive();
+}
+
+
+
+
+void Lv2ControlBase::reloadWhileInactive()
+{
 	m_sampleRate = Engine::audioEngine()->outputSampleRate();
 	for (const auto& c : m_procs) { c->reload(); }
-	Engine::audioEngine()->doneChangeInModel();
 }
 
 

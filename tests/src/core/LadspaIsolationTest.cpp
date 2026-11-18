@@ -158,9 +158,17 @@ private slots:
 		const auto before = render(200);
 		if (loudness(before) < 1e-4f) { QSKIP("the plugin is not here (silent)"); }
 
+		Engine::audioEngine()->takeLongestChangeHold();
 		QVERIFY(QMetaObject::invokeMethod(effect, "setIsolated", Q_ARG(bool, true)));
+		// The process starts and loads the plugin without the audio engine's lock (see PluginInstance::reactivate())
+		const auto movingHeld = Engine::audioEngine()->takeLongestChangeHold();
+		qInfo("moving it to its process held the change lock %.2f ms", movingHeld / 1000.0);
+		QVERIFY2(movingHeld < 2'000, "moving it to its process held the audio engine's lock");
 		const auto there = render(200);
 		QVERIFY(QMetaObject::invokeMethod(effect, "setIsolated", Q_ARG(bool, false)));
+		const auto backHeld = Engine::audioEngine()->takeLongestChangeHold();
+		qInfo("bringing it back held the change lock %.2f ms", backHeld / 1000.0);
+		QVERIFY2(backHeld < 2'000, "bringing it back held the audio engine's lock");
 		const auto back = render(200);
 
 		// (made again each time, so from the same state)

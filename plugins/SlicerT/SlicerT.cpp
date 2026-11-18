@@ -24,6 +24,8 @@
 
 #include "SlicerT.h"
 
+#include "AudioEngine.h"
+
 #include <QDomElement>
 #include <cmath>
 #include <fftw3.h>
@@ -96,7 +98,7 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 		sliceStart = 0;
 		sliceEnd = 1;
 	}
-	else if (noteIndex > 0 && static_cast<std::size_t>(noteIndex) < m_slicePoints.size())
+	else if (noteIndex > 0 && static_cast<std::size_t>(noteIndex) + 1 < m_slicePoints.size())
 	{
 		noteIndex -= 1;
 		sliceStart = m_slicePoints[noteIndex];
@@ -148,7 +150,7 @@ void SlicerT::deleteNotePluginData(NotePlayHandle* handle)
 void SlicerT::findSlices()
 {
 	if (m_originalSample.sampleSize() <= 1) { return; }
-	m_slicePoints = {};
+	auto points = std::vector<float>{};
 
 	const int windowSize = 512;
 	const float minBeatLength = 0.05f; // in seconds, ~ 1/4 length at 220 bpm
@@ -209,18 +211,18 @@ void SlicerT::findSlices()
 
 		if (spectralFlux / prevFlux > 1.0f + m_noteThreshold.value() && i - lastPoint > minDist)
 		{
-			m_slicePoints.push_back(i);
+			points.push_back(i);
 			lastPoint = i;
-			if (m_slicePoints.size() > 128) { break; } // no more keys on the keyboard
+			if (points.size() > 128) { break; } // no more keys on the keyboard
 		}
 
 		prevFlux = spectralFlux;
 		spectralFlux = 1E-10f; // again for no divison by zero
 	}
 
-	m_slicePoints.push_back(m_originalSample.sampleSize());
+	points.push_back(m_originalSample.sampleSize());
 
-	for (float& sliceValue : m_slicePoints)
+	for (float& sliceValue : points)
 	{
 		auto closestZeroCrossing = std::lower_bound(zeroCrossings.begin(), zeroCrossings.end(), sliceValue);
 		if (closestZeroCrossing == zeroCrossings.end()) { continue; }
@@ -232,23 +234,26 @@ void SlicerT::findSlices()
 	int noteSnap = m_sliceSnap.value();
 	int sliceLock = samplesPerBeat / std::exp2(noteSnap + 1);
 	if (noteSnap == 0) { sliceLock = 1; }
-	for (float& sliceValue : m_slicePoints)
+	for (float& sliceValue : points)
 	{
 		sliceValue += sliceLock / 2.f;
 		sliceValue -= static_cast<int>(sliceValue) % sliceLock;
 	}
 
-	m_slicePoints.erase(std::unique(m_slicePoints.begin(), m_slicePoints.end()), m_slicePoints.end());
+	points.erase(std::unique(points.begin(), points.end()), points.end());
 
-	for (float& sliceIndex : m_slicePoints)
+	for (float& sliceIndex : points)
 	{
 		sliceIndex /= m_originalSample.sampleSize();
 	}
 
-	m_slicePoints[0] = 0;
-	m_slicePoints[m_slicePoints.size() - 1] = 1;
+	points[0] = 0;
+	points[points.size() - 1] = 1;
 
 	emit dataChanged();
+
+	// Put where the audio thread reads them, at once
+	setSlicePoints(std::move(points));
 }
 
 // find the bpm of the sample by assuming its in 4/4 time signature ,
@@ -317,7 +322,7 @@ void SlicerT::updateFile(QString file)
 	auto thumbnailCache = SampleCache::instance().fetchThumbnailCache(path);
 	if (!thumbnailCache) { return; }
 
-	m_originalSample = Sample{std::move(buffer)};
+	setSample(Sample{std::move(buffer)});
 	m_sampleThumbnailCache = std::move(thumbnailCache);
 
 	findBPM();
@@ -325,6 +330,32 @@ void SlicerT::updateFile(QString file)
 
 	emit dataChanged();
 }
+
+void SlicerT::setSample(Sample sample)
+{
+	{
+		// The audio thread plays it (playNoteImpl())
+		const auto guard = AudioEngine::changesGuard();
+		std::swap(m_originalSample, sample);
+	}
+	// (the old one goes here, without the lock)
+}
+
+
+
+
+void SlicerT::setSlicePoints(std::vector<float> points)
+{
+	{
+		// The audio thread reads them (playNoteImpl()): they change at once, never one by one under it
+		const auto guard = AudioEngine::changesGuard();
+		m_slicePoints.swap(points);
+	}
+	emit dataChanged();
+}
+
+
+
 
 void SlicerT::loadFile(const QString& file)
 {
@@ -365,7 +396,7 @@ void SlicerT::loadSettings(const QDomElement& element)
 		{
 			if (auto buffer = SampleCache::instance().fetchBuffer(PathUtil::stringToPath(srcFile)))
 			{
-				m_originalSample = Sample{std::move(buffer)};
+				setSample(Sample{std::move(buffer)});
 			}
 			else
 			{
@@ -381,18 +412,19 @@ void SlicerT::loadSettings(const QDomElement& element)
 	else if (auto sampleData = element.attribute("sampledata"); !sampleData.isEmpty())
 	{
 		auto buffer = SampleBuffer::fromBase64(sampleData);
-		m_originalSample = Sample{std::move(buffer)};
+		setSample(Sample{std::move(buffer)});
 		m_sampleThumbnailCache = std::make_shared<const SampleThumbnailCache>(m_originalSample.buffer());
 	}
 
 	if (!element.attribute("totalSlices").isEmpty())
 	{
 		int totalSlices = element.attribute("totalSlices").toInt();
-		m_slicePoints = {};
+		auto points = std::vector<float>{};
 		for (int i = 0; i < totalSlices; i++)
 		{
-			m_slicePoints.push_back(element.attribute(QString("slice_%1").arg(i)).toFloat());
+			points.push_back(element.attribute(QString("slice_%1").arg(i)).toFloat());
 		}
+		setSlicePoints(std::move(points));
 	}
 
 	m_fadeOutFrames.loadSettings(element, "fadeOut");

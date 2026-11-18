@@ -25,6 +25,10 @@
 
 #include "Patman.h"
 
+#include <QScopeGuard>
+
+#include "AudioEngine.h"
+
 #include <QDragEnterEvent>
 #include <QPainter>
 #include <QDomElement>
@@ -135,10 +139,8 @@ QString PatmanInstrument::nodeName() const
 
 void PatmanInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 {
-	if( m_patchFile == "" )
-	{
-		return;
-	}
+	// (not the file's name: a QString the main thread changes)
+	if (m_patchSamples.empty()) { return; }
 
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
@@ -212,7 +214,13 @@ void PatmanInstrument::setFile( const QString & _patch_file, bool _rename )
 PatmanInstrument::LoadError PatmanInstrument::loadPatch(
 						const QString & _filename )
 {
-	unloadCurrentPatch();
+	// Read into a list of its own, put where the audio thread reads it at once when this returns (empty after an
+	// error, as before); the old samples go after, without the lock
+	auto samples = QVector<std::shared_ptr<Sample>>{};
+	const auto publish = qScopeGuard([&] {
+		const auto guard = AudioEngine::changesGuard();
+		m_patchSamples.swap(samples);
+	});
 
 	FILE * fd = fopen( _filename.toUtf8().constData() , "rb" );
 	if( !fd )
@@ -361,7 +369,7 @@ PatmanInstrument::LoadError PatmanInstrument::loadPatch(
 			psample->setLoopEndFrame( loop_end );
 		}
 
-		m_patchSamples.push_back(psample);
+		samples.push_back(psample);
 
 		delete[] data;
 	}
@@ -374,9 +382,11 @@ PatmanInstrument::LoadError PatmanInstrument::loadPatch(
 
 void PatmanInstrument::unloadCurrentPatch()
 {
-	while( !m_patchSamples.empty() )
+	auto old = QVector<std::shared_ptr<Sample>>{};
 	{
-		m_patchSamples.pop_back();
+		// The audio thread reads them (playNoteImpl())
+		const auto guard = AudioEngine::changesGuard();
+		m_patchSamples.swap(old);
 	}
 }
 

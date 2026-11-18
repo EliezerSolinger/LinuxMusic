@@ -70,6 +70,15 @@ class LMMS_EXPORT InstrumentTrack : public Track, public MidiEventProcessor
 	mapPropertyFromModel(int,getVolume,setVolume,m_volumeModel);
 public:
 	InstrumentTrack( TrackContainer* tc );
+private:
+	/**
+	 * Puts @p made in place of the instrument, with the track locked by the caller (the audio thread plays the
+	 * instrument through the track only when it can lock it, see playInstrument()) and under the audio engine's
+	 * change lock (it plays notes through it too). @p made is whole: made, and restored, before.
+	 * @returns the old instrument, to be deleted by the caller (without the audio engine's lock)
+	 */
+	auto swapInstrument(std::unique_ptr<PluginInstance> made) -> std::unique_ptr<PluginInstance>;
+
 protected:
 	//! (see Track::destroy())
 	~InstrumentTrack() override;

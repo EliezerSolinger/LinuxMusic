@@ -118,7 +118,9 @@ public:
 	auto audioPortsModel() -> AudioPortsModel* { return m_audioPorts.get(); }
 	auto audioPortsModel() const -> const AudioPortsModel* { return m_audioPorts.get(); }
 
-	auto state() const -> std::uint8_t { return m_state.load(std::memory_order_relaxed); }
+	//! (published by the main thread with release, read by the audio thread with acquire: what was set up before a
+	//! plugin became Active, its buffers, is seen with it; see reactivate())
+	auto state() const -> std::uint8_t { return m_state.load(std::memory_order_acquire); }
 	auto hasState(State flag) const -> bool { return state() & static_cast<std::uint8_t>(flag); }
 	auto isRemotePlugin() const -> bool { return m_isRemotePlugin; }
 

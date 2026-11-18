@@ -888,7 +888,10 @@ void FileBrowserTreeWidget::mouseReleaseEvent(QMouseEvent * me )
 
 void FileBrowserTreeWidget::handleFile(FileItem * f, InstrumentTrack * it)
 {
-	Engine::audioEngine()->requestChangeInModel();
+	// Without the audio engine's change lock: the playing goes on while a file loads. Each piece takes care of itself
+	// (a project loads with the playing stopped; an instrument is made whole and put in the track in a moment, see
+	// InstrumentTrack::swapInstrument(); an instrument reads its file before it puts the result where the audio thread
+	// reads it; tracks imported are made whole and published, see Track::create())
 	switch( f->handling() )
 	{
 		case FileItem::FileHandling::LoadAsProject:
@@ -927,7 +930,6 @@ void FileBrowserTreeWidget::handleFile(FileItem * f, InstrumentTrack * it)
 		default:
 			break;
 	}
-	Engine::audioEngine()->doneChangeInModel();
 }
 
 
@@ -999,11 +1001,10 @@ bool FileBrowserTreeWidget::openInNewSampleTrack(FileItem* item)
 	// Create a new sample track for this sample
 	auto sampleTrack = static_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
 
-	// Add the sample clip to the track
-	Engine::audioEngine()->requestChangeInModel();
+	// Add the sample clip to the track (the clip enters it whole; the sample is read first, then put in the clip in a
+	// moment under the audio engine's change lock, see SampleClip::setSampleFile())
 	SampleClip* clip = static_cast<SampleClip*>(sampleTrack->createClip(0));
 	clip->setSampleFile(item->fullName());
-	Engine::audioEngine()->doneChangeInModel();
 	return true;
 }
 

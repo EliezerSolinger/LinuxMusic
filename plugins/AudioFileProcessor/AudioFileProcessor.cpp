@@ -23,6 +23,8 @@
  */
 
 #include "AudioFileProcessor.h"
+
+#include "AudioEngine.h"
 #include "AudioFileProcessorView.h"
 
 #include "InstrumentTrack.h"
@@ -234,7 +236,7 @@ void AudioFileProcessor::loadSettings(const QDomElement& elem)
 	}
 	else if (auto sampleData = elem.attribute("sampledata"); !sampleData.isEmpty())
 	{
-		m_sample = Sample{SampleBuffer::fromBase64(sampleData)};
+		setSample(Sample{SampleBuffer::fromBase64(sampleData)});
 		m_sampleThumbnailCache = std::make_shared<const SampleThumbnailCache>(m_sample.buffer());
 	}
 
@@ -317,6 +319,20 @@ gui::PluginView* AudioFileProcessor::instantiateView( QWidget * _parent )
 	return new gui::AudioFileProcessorView( this, _parent );
 }
 
+void AudioFileProcessor::setSample(Sample sample)
+{
+	{
+		// The audio thread plays it (playNoteImpl()): replaced at once under the audio engine's change lock (its
+		// settings, held in it, are atomic and set after)
+		const auto guard = AudioEngine::changesGuard();
+		std::swap(m_sample, sample);
+	}
+	// (the old one goes here, without the lock)
+}
+
+
+
+
 void AudioFileProcessor::setAudioFile(const QString& _audio_file, bool _rename)
 {
 	const auto path = PathUtil::stringToPath(_audio_file);
@@ -340,7 +356,7 @@ void AudioFileProcessor::setAudioFile(const QString& _audio_file, bool _rename)
 	}
 	// else we don't touch the track-name, because the user named it self
 
-	m_sample = Sample{std::move(buffer)};
+	setSample(Sample{std::move(buffer)});
 	m_sampleThumbnailCache = std::move(thumbnailCache);
 
 	loopPointChanged();

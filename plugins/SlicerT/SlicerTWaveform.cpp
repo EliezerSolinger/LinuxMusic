@@ -373,9 +373,11 @@ void SlicerTWaveform::mousePressEvent(QMouseEvent* me)
 		m_seekerMiddle = static_cast<float>(pos.x() - s_seekerHorMargin) / m_seekerWidth;
 		break;
 	case Qt::MouseButton::RightButton:
-		if (m_slicerTParent->m_slicePoints.size() > 2 && m_closestObject == UIObjects::SlicePoint)
+		if (m_slicerTParent->slicePoints().size() > 2 && m_closestObject == UIObjects::SlicePoint)
 		{
-			m_slicerTParent->m_slicePoints.erase(m_slicerTParent->m_slicePoints.begin() + m_closestSlice);
+			auto points = m_slicerTParent->slicePoints();
+			points.erase(points.begin() + m_closestSlice);
+			m_slicerTParent->setSlicePoints(std::move(points));
 		}
 		break;
 	default:;
@@ -386,7 +388,9 @@ void SlicerTWaveform::mousePressEvent(QMouseEvent* me)
 // sort slices after moving and remove draggable object
 void SlicerTWaveform::mouseReleaseEvent(QMouseEvent* me)
 {
-	std::sort(m_slicerTParent->m_slicePoints.begin(), m_slicerTParent->m_slicePoints.end());
+	auto points = m_slicerTParent->slicePoints();
+	std::sort(points.begin(), points.end());
+	m_slicerTParent->setSlicePoints(std::move(points));
 	updateClosest(me);
 }
 
@@ -436,10 +440,12 @@ void SlicerTWaveform::mouseMoveEvent(QMouseEvent* me)
 
 	case UIObjects::SlicePoint:
 		if (m_closestSlice == -1) { break; }
-		m_slicerTParent->m_slicePoints.at(m_closestSlice)
-			= startFrame + normalizedClickEditor * (endFrame - startFrame);
-		m_slicerTParent->m_slicePoints.at(m_closestSlice)
-			= std::clamp(m_slicerTParent->m_slicePoints.at(m_closestSlice), 0.0f, 1.0f);
+	{
+		auto points = m_slicerTParent->slicePoints();
+		points.at(m_closestSlice)
+			= std::clamp(startFrame + normalizedClickEditor * (endFrame - startFrame), 0.0f, 1.0f);
+		m_slicerTParent->setSlicePoints(std::move(points));
+	}
 		break;
 	case UIObjects::Nothing:
 		break;
@@ -461,8 +467,10 @@ void SlicerTWaveform::mouseDoubleClickEvent(QMouseEvent* me)
 	float endFrame = m_seekerEnd;
 	float slicePosition = startFrame + normalizedClickEditor * (endFrame - startFrame);
 
-	m_slicerTParent->m_slicePoints.insert(m_slicerTParent->m_slicePoints.begin(), slicePosition);
-	std::sort(m_slicerTParent->m_slicePoints.begin(), m_slicerTParent->m_slicePoints.end());
+	auto points = m_slicerTParent->slicePoints();
+	points.insert(points.begin(), slicePosition);
+	std::sort(points.begin(), points.end());
+	m_slicerTParent->setSlicePoints(std::move(points));
 }
 
 void SlicerTWaveform::wheelEvent(QWheelEvent* we)

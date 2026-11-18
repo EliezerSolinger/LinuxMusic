@@ -282,11 +282,11 @@ auto Lv2Effect::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 	{
 		// Isolated, or back here (see setIsolated()), or a new rate there: made again where it runs now
 		stopIsolated();
-		if (rateChanged) { m_controls.reload(); }
+		if (rateChanged) { m_controls.reloadWhileInactive(); }
 		m_controls.setLocal(!m_isolated);
 		if (m_isolated && !startIsolated()) { return true; } // (silent: told to the user)
 	}
-	else if (rateChanged) { m_controls.reload(); }
+	else if (rateChanged) { m_controls.reloadWhileInactive(); }
 
 	if (m_remote && !m_remoteActive)
 	{

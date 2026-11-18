@@ -123,6 +123,9 @@ protected:
 	Lv2ControlBase(const Lv2ControlBase&) = delete;
 	~Lv2ControlBase() override;
 	void reload();
+	//! reload() while the plugin is inactive (see PluginInstance::reactivate()): the audio thread does not use it, so
+	//! no lock is taken
+	void reloadWhileInactive();
 
 	Lv2ControlBase& operator=(const Lv2ControlBase&) = delete;
 

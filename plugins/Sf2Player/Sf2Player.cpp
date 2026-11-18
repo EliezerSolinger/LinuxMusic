@@ -382,15 +382,48 @@ QString Sf2Instrument::nodeName() const
 
 void Sf2Instrument::freeFont()
 {
-	m_synthMutex.lock();
+	setFont(nullptr);
+}
 
+
+
+
+auto Sf2Instrument::readFont(const std::string& path) -> fluid_sfont_t*
+{
+	// Read by a synth of its own, without any lock (a soundfont may take long to read), then taken out of it to be
+	// moved into the instrument's (as reloadSynth() moves it between synths)
+	if (!fluid_is_soundfont(path.c_str())) { return nullptr; }
+	auto* reader = new_fluid_synth(m_settings);
+	auto* font = static_cast<fluid_sfont_t*>(nullptr);
+	if (fluid_synth_sfload(reader, path.c_str(), false) >= 0 && fluid_synth_sfcount(reader) > 0)
+	{
+		font = fluid_synth_get_sfont(reader, 0);
+		fluid_synth_remove_sfont(reader, font);
+	}
+	delete_fluid_synth(reader);
+	return font;
+}
+
+
+
+
+void Sf2Instrument::setFont(fluid_sfont_t* font)
+{
+	// A moment under the audio engine's change lock and the synth's mutex: the audio thread plays the synth (it does
+	// not wait for the main thread then, which holds them only for this)
+	const auto guard = AudioEngine::changesGuard();
+	const auto lock = std::lock_guard{m_synthMutex};
 	if (m_font != nullptr)
 	{
+		// (FluidSynth keeps it until its last voice is done)
 		fluid_synth_sfunload(m_synth, m_fontId, true);
 		m_font = nullptr;
 	}
-
-	m_synthMutex.unlock();
+	if (font != nullptr)
+	{
+		m_fontId = fluid_synth_add_sfont(m_synth, font);
+		m_font = font;
+	}
 }
 
 
@@ -402,32 +435,16 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 	const auto filePath = PathUtil::toAbsolute(_sf2File).toStdString();
 	QString relativePath = PathUtil::toShortestRelative( _sf2File );
 
-	// free the soundfont if one is selected
-	freeFont();
+	// Read without any lock, then put in place of the one there (if any) at once
+	auto* font = readFont(filePath);
+	setFont(font);
 
-	m_synthMutex.lock();
-
-	bool loaded = false;
-	if (fluid_is_soundfont(filePath.c_str()))
-	{
-		m_fontId = fluid_synth_sfload(m_synth, filePath.c_str(), true);
-
-		if (fluid_synth_sfcount(m_synth) > 0)
-		{
-			// Grab this sf from the top of the stack and add to list
-			m_font = fluid_synth_get_sfont(m_synth, 0);
-			loaded = true;
-		}
-	}
-
-	if (!loaded)
+	if (!font)
 	{
 		collectErrorForUI(Sf2Instrument::tr("A soundfont %1 could not be loaded.").arg(QFileInfo(_sf2File).baseName()));
 	}
 
-	m_synthMutex.unlock();
-
-	if( m_fontId >= 0 )
+	if (font && m_fontId >= 0)
 	{
 		// Don't reset patch/bank, so that it isn't cleared when
 		// someone resolves a missing file
@@ -577,32 +594,24 @@ void Sf2Instrument::reloadSynth()
 	m_internalSampleRate = static_cast<int>( tempRate );
 	m_resampler.setRatio(m_internalSampleRate, Engine::audioEngine()->outputSampleRate());
 
-	if( m_font )
+	// A new synth, made without any lock, takes the old one's place (and its soundfont) in a moment under the audio
+	// engine's change lock and the synth's mutex; the old one is deleted after, without them
+	auto* made = new_fluid_synth( m_settings );
+	auto* old = static_cast<fluid_synth_t*>(nullptr);
 	{
-		// Now, delete the old one and replace
-		m_synthMutex.lock();
-		fluid_synth_remove_sfont( m_synth, m_font );
-		delete_fluid_synth( m_synth );
-
-		// New synth
-		m_synth = new_fluid_synth( m_settings );
-		m_fontId = fluid_synth_add_sfont( m_synth, m_font );
-		m_synthMutex.unlock();
-
-		// synth program change (set bank and patch)
-		updatePatch();
-	}
-	else
-	{
-		// Recreate synth with no soundfonts
-		m_synthMutex.lock();
-		if (m_synth != nullptr)
+		const auto guard = AudioEngine::changesGuard();
+		const auto lock = std::lock_guard{m_synthMutex};
+		if (m_font && m_synth)
 		{
-			delete_fluid_synth(m_synth);
+			fluid_synth_remove_sfont( m_synth, m_font );
+			m_fontId = fluid_synth_add_sfont( made, m_font );
 		}
-		m_synth = new_fluid_synth( m_settings );
-		m_synthMutex.unlock();
+		old = std::exchange(m_synth, made);
 	}
+	if (old != nullptr) { delete_fluid_synth(old); }
+
+	// synth program change (set bank and patch)
+	if (m_font) { updatePatch(); }
 
 	m_synthMutex.lock();
 

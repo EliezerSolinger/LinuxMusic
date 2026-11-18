@@ -115,6 +115,11 @@ private:
 
 	fluid_sfont_t* m_font;
 
+	//! The soundfont at @p path, read without any lock and in no synth yet (nullptr if it cannot be read)
+	auto readFont(const std::string& path) -> fluid_sfont_t*;
+	//! Puts @p font in the synth in place of the one there (deleted), in a moment for the audio thread
+	void setFont(fluid_sfont_t* font);
+
 	int m_fontId;
 	QString m_filename;
 
