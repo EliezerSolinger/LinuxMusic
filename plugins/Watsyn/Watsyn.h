@@ -27,6 +27,7 @@
 #define WATSYN_H
 
 #include "AudioResampler.h"
+#include <array>
 #include <atomic>
 #include <memory>
 #include <vector>
@@ -36,6 +37,7 @@
 #include "InstrumentView.h"
 #include "Graph.h"
 #include "AutomatableModel.h"
+#include "DrawnWave.h"
 #include "TempoSyncKnob.h"
 #include <samplerate.h>
 
@@ -79,11 +81,15 @@ struct WatsynWaves
 	float A2[WAVELEN];
 	float B1[WAVELEN];
 	float B2[WAVELEN];
+	//! The same waves as tables without aliasing (A1, A2, B1, B2), shared with the versions that have the same
+	//! wave; none with anti-aliasing off. Made and let go on the GUI thread (see WatsynInstrument::publishWaves())
+	std::array<std::shared_ptr<const DrawnWave>, 4> drawn;
 };
 
 namespace gui
 {
 class AutomatableButtonGroup;
+class LedCheckBox;
 class PixmapButton;
 class WatsynView;
 }
@@ -283,6 +289,14 @@ private:
 	IntModel m_bmod;
 
 	IntModel m_selectedGraph;
+
+	//! Band limited (#6098): high notes do not fold their harmonics back down. On in new instruments, off in
+	//! projects from before it (they sound as they did)
+	BoolModel m_antiAliasing;
+	//! Each oscillator's wave as tables without aliasing, made when its wave changes; none when off [GUI thread]
+	std::array<std::shared_ptr<const DrawnWave>, 4> m_drawn;
+	//! Makes m_drawn[@p osc] again from its wave (@p wave, oversampled) [GUI thread]
+	void updateDrawn(int osc, const float* wave);
 	
 	float A1_wave [WAVELEN];
 	float A2_wave [WAVELEN];
@@ -397,6 +411,7 @@ private:
 	PixmapButton * m_normalizeButton;
 	PixmapButton * m_invertButton;
 	PixmapButton * m_smoothButton;
+	LedCheckBox* m_antiAliasingToggle;
 	PixmapButton * m_phaseLeftButton;
 	PixmapButton * m_phaseRightButton;
 	PixmapButton * m_loadButton;

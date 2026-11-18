@@ -24,6 +24,10 @@
 
 #include "Monstro.h"
 
+#include <array>
+#include <cmath>
+#include <numbers>
+
 
 #include "ComboBox.h"
 #include "Engine.h"
@@ -36,6 +40,52 @@
 
 namespace lmms
 {
+
+namespace
+{
+/**
+ * The scale of the band limited saw in each of BandLimitedWave's tables: they are normalized to a peak of 1 (its
+ * overshoot by the steps), so each has its own; the saw's first harmonic in the sum it is made of is 1, which gives
+ * the table's back. Worked out once (a fraction of a millisecond), on the first call: see MonstroInstrument
+ */
+auto sawScales() -> const std::array<float, MAXTBL + 1>&
+{
+	static const auto scales = [] {
+		auto result = std::array<float, MAXTBL + 1>{};
+		auto& saw = BandLimitedWave::s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLSaw)];
+		for (int table = 0; table <= MAXTBL; ++table)
+		{
+			const auto length = TLENS[table];
+			auto first = 0.0;
+			for (int ph = 0; ph < length; ++ph)
+			{
+				first += saw.sampleAt(table, ph) * std::sin(2 * std::numbers::pi * ph / length);
+			}
+			first *= 2.0 / length;
+			result[table] = first != 0 ? static_cast<float>(1.0 / std::abs(first)) : 1.f;
+		}
+		return result;
+	}();
+	return scales;
+}
+
+/**
+ * A band limited pulse, 1 from @p phase 0 to @p width and -1 after, a period @p wavelength samples long: two band
+ * limited saws (the ones oscillators 2 and 3 play) a width apart, one taken from the other, and the pulse's mean
+ * added back
+ */
+inline auto bandLimitedPulse(float phase, float width, float wavelength) -> float
+{
+	auto table = 0;
+	while (table < MAXTBL && wavelength >= TLENS[table + 1]) { ++table; }
+	const auto saw = [wavelength](float at) {
+		return BandLimitedWave::oscillate(absFraction(at), wavelength, BandLimitedWave::Waveform::BLSaw);
+	};
+	return (saw(phase - width) - saw(phase)) * sawScales()[table] * (2.f / std::numbers::pi_v<float>)
+		+ (2.f * width - 1.f);
+}
+} // namespace
+
 
 
 extern "C"
@@ -449,16 +499,14 @@ void MonstroSynth::renderOutput( f_cnt_t _frames, SampleFrame* _buf  )
 			}
 		}
 
-		// update last before signal is touched
-		// also do a very simple amp delta cap
-		const sample_t tmpl = m_osc1l_last;
-		const sample_t tmpr = m_osc1r_last;
-
+		// update last before signal is touched (the syncs above go by the pulse's steps)
 		m_osc1l_last = O1L;
 		m_osc1r_last = O1R;
 
-		if( tmpl != O1L ) O1L = 0.0f;
-		if( tmpr != O1R ) O1R = 0.0f;
+		// Band limited (#6098): the pulse as two band limited saws. The steps above were all it had (and a sample of 0
+		// at each): its harmonics past half the rate folded back down (-22 dB on a 1 kHz note)
+		O1L = bandLimitedPulse(leftph, o1_pw, m_parent->m_samplerate / o1l_f);
+		O1R = bandLimitedPulse(rightph, o1_pw, m_parent->m_samplerate / o1r_f);
 
 		// modulate volume
 		O1L *= o1lv;
@@ -986,6 +1034,9 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 		m_sub3lfo2( 0.0f, -1.0f, 1.0f, 0.001f, this, tr( "Osc 3 - Sub LFO 2" ) )
 
 {
+	// (the band limited pulse's scales, worked out here rather than by the first note, on the audio thread)
+	sawScales();
+
 
 // setup waveboxes
 	setwavemodel( m_osc2Wave )

@@ -88,6 +88,8 @@ void Oscillator::update(SampleFrame* ab, const f_cnt_t frames, const ch_cnt_t ch
 	// The sampling functions will check this variable and avoid using band-limited
 	// wavetables, since they contain ringing that would lead to unexpected results.
 	m_isModulator = modulator;
+	// The table of the wave's pitch (once a period: the phase and frequency modulations take theirs every sample)
+	setBandForStep(m_freq * m_detuning_div_samplerate);
 	if (m_subOsc != nullptr)
 	{
 		switch (static_cast<ModulationAlgo>(m_modulationAlgoModel->value()))
@@ -609,6 +611,21 @@ void Oscillator::updatePM( SampleFrame* _ab, const f_cnt_t _frames,
 	recalcPhase();
 	const float osc_coeff = m_freq * m_detuning_div_samplerate;
 
+	if (m_useWaveTable)
+	{
+		// The table for the highest pitch the wave reaches in the period: its own, and how fast the modulation
+		// moves its phase (a table a sample, switching, spread the harmonics it cut off and on)
+		auto fastest = std::abs(osc_coeff);
+		auto last = m_lastModulation;
+		for (f_cnt_t frame = 0; frame < _frames; ++frame)
+		{
+			fastest = std::max(fastest, std::abs(osc_coeff + _ab[frame][_chnl] - last));
+			last = _ab[frame][_chnl];
+		}
+		// (and the modulation's sidebands reach a modulator's pitch past it: Carson's rule)
+		setBandForStep(fastest + std::abs(m_subOsc->m_freq * m_subOsc->m_detuning_div_samplerate));
+	}
+	if (_frames > 0) { m_lastModulation = _ab[_frames - 1][_chnl]; }
 	for( f_cnt_t frame = 0; frame < _frames; ++frame )
 	{
 		_ab[frame][_chnl] = getSample<W>( m_phase +
@@ -693,6 +710,17 @@ void Oscillator::updateFM( SampleFrame* _ab, const f_cnt_t _frames,
 	const float osc_coeff = m_freq * m_detuning_div_samplerate;
 	const float sampleRateCorrection = 44100.0f / Engine::audioEngine()->outputSampleRate();
 
+	if (m_useWaveTable)
+	{
+		// The table for the highest pitch the wave reaches in the period: its own and the modulation's push
+		auto fastest = std::abs(osc_coeff);
+		for (f_cnt_t frame = 0; frame < _frames; ++frame)
+		{
+			fastest = std::max(fastest, std::abs(osc_coeff + _ab[frame][_chnl] * sampleRateCorrection));
+		}
+		// (and the modulation's sidebands reach a modulator's pitch past it: Carson's rule)
+		setBandForStep(fastest + std::abs(m_subOsc->m_freq * m_subOsc->m_detuning_div_samplerate));
+	}
 	for( f_cnt_t frame = 0; frame < _frames; ++frame )
 	{
 		m_phase += _ab[frame][_chnl] * sampleRateCorrection;

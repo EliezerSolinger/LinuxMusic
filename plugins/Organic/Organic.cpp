@@ -246,6 +246,10 @@ void OrganicInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 				oscillators->phaseOffsetRight[i],
 				m_osc[i]->m_volumeRight,
 				nextRight);
+			// Band limited (#6098): the tables of the Oscillator, as the TripleOscillator's (a saw or a square with
+			// a high harmonic folded back down below the note)
+			oscillators->left[i]->setUseWaveTable(true);
+			oscillators->right[i]->setUseWaveTable(true);
 		}
 	}
 

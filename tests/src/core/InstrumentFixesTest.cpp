@@ -51,6 +51,8 @@
 #include "Sample.h"
 #include "Song.h"
 #include "Track.h"
+#include "base64.h"
+#include "../helpers/Spectrum.h"
 
 using namespace lmms;
 
@@ -663,6 +665,135 @@ private slots:
 			const auto name = QString{"loop mode %1: %2 early, %3 late"}.arg(loopMode).arg(early).arg(late);
 			QVERIFY2(early > 0.3f, qPrintable(name));
 			QVERIFY2(loopMode == 0 ? late == 0.f : late > 0.3f, qPrintable(name));
+		}
+	}
+
+	//! #6098: Organic's saws and squares folded their high harmonics back down (it did not use the Oscillator's band
+	//! limited tables): a high saw has (almost) nothing between its harmonics
+	void organicIsBandLimited()
+	{
+		for (const auto wave : {1, 2})
+		{
+			const auto played = play("organic", [wave](QDomElement& organic) {
+				for (int i = 0; i < 8; ++i)
+				{
+					organic.setAttribute(QString{"wavetype%1"}.arg(i), wave);
+					organic.setAttribute(QString{"vol%1"}.arg(i), i == 0 ? 100 : 0);
+					organic.setAttribute(QString{"newharmonic%1"}.arg(i), 2);
+					organic.setAttribute(QString{"newdetune%1"}.arg(i), 0);
+				}
+			}, 200, DefaultKey + 39);
+			const auto frequency = 440.0 * std::exp2(39 / 12.0);
+			const auto folded = tests::aliasing(played.samples, 4096, frequency, Engine::audioEngine()->outputSampleRate(), 2);
+			QVERIFY2(folded < -60, qPrintable(QString{"wave %1: %2 dB folded"}.arg(wave).arg(folded)));
+		}
+	}
+
+	//! #6098: BitInvader played its points as they were, folding high notes' harmonics back down. Band limited in a
+	//! new instrument (held or joined points alike); a project from before it plays as it did
+	void bitInvaderIsBandLimited()
+	{
+		auto saw = std::array<float, 200>{};
+		for (std::size_t i = 0; i < saw.size(); ++i) { saw[i] = -0.5f + static_cast<float>(i) / saw.size(); }
+		auto shape = QString{};
+		base64::encode(reinterpret_cast<const char*>(saw.data()), sizeof(saw), shape);
+		const auto frequency = 440.0 * std::exp2(39 / 12.0);
+		for (const auto interpolation : {0, 1})
+		{
+			for (const auto antiAliasing : {-1, 0, 1}) // -1: from before it
+			{
+				const auto played = play("bitinvader", [&](QDomElement& bitInvader) {
+					bitInvader.setAttribute("sampleShape", shape);
+					bitInvader.setAttribute("sampleLength", 200);
+					bitInvader.setAttribute("interpolation", interpolation);
+					if (antiAliasing >= 0) { bitInvader.setAttribute("antialias", antiAliasing); }
+					else { bitInvader.removeAttribute("antialias"); }
+				}, 200, DefaultKey + 39);
+				QVERIFY(played.finite && played.loudest > 0.1f);
+				const auto folded = tests::aliasing(played.samples, 4096, frequency, Engine::audioEngine()->outputSampleRate(), 2);
+				const auto name = QString{"interpolation %1, anti-aliasing %2: %3 dB folded"}.arg(interpolation).arg(antiAliasing).arg(folded);
+				QVERIFY2(antiAliasing == 1 ? folded < -80 : folded > -40, qPrintable(name));
+			}
+		}
+	}
+
+	//! #6098: Watsyn's oversampled waves folded high notes' harmonics back down. Band limited in a new instrument;
+	//! a project from before it plays as it did
+	void watsynIsBandLimited()
+	{
+		auto saw = std::array<float, 220>{};
+		for (std::size_t i = 0; i < saw.size(); ++i) { saw[i] = -0.5f + static_cast<float>(i) / saw.size(); }
+		auto shape = QString{};
+		base64::encode(reinterpret_cast<const char*>(saw.data()), sizeof(saw), shape);
+		const auto frequency = 440.0 * std::exp2(27 / 12.0);
+		for (const auto antiAliasing : {-1, 0, 1}) // -1: from before it
+		{
+			const auto played = play("watsyn", [&](QDomElement& watsyn) {
+				// A1 alone (the A side, all of it), at the note's pitch
+				for (const auto* wave : {"a1_wave", "a2_wave", "b1_wave", "b2_wave"}) { watsyn.setAttribute(wave, shape); }
+				watsyn.setAttribute("a1_vol", 100);
+				for (const auto* volume : {"a2_vol", "b1_vol", "b2_vol"}) { watsyn.setAttribute(volume, 0); }
+				watsyn.setAttribute("a1_mult", 8);
+				watsyn.setAttribute("a1_ltune", 0);
+				watsyn.setAttribute("a1_rtune", 0);
+				watsyn.setAttribute("abmix", -100);
+				watsyn.setAttribute("amod", 0);
+				watsyn.setAttribute("envAmt", 0);
+				if (antiAliasing >= 0) { watsyn.setAttribute("antialias", antiAliasing); }
+				else { watsyn.removeAttribute("antialias"); }
+			}, 200, DefaultKey + 27);
+			QVERIFY(played.finite && played.loudest > 0.05f);
+			const auto folded = tests::aliasing(played.samples, 4096, frequency, Engine::audioEngine()->outputSampleRate(), 2);
+			const auto name = QString{"anti-aliasing %1: %2 dB folded"}.arg(antiAliasing).arg(folded);
+			QVERIFY2(antiAliasing == 1 ? folded < -80 : folded > -40, qPrintable(name));
+		}
+	}
+
+	//! #6098: with phase or frequency modulation, the TripleOscillator took its band limited table by the note's
+	//! pitch, while the modulation pushes the wave's pitch past it: harmonics folded back down (-10 dB with this phase
+	//! modulation). It takes the table of the highest pitch the wave reaches in the period, and the sidebands'
+	void tripleOscillatorModulationIsBandLimited()
+	{
+		for (const auto algo : {0, 4}) // phase, frequency modulation
+		{
+			const auto played = play("tripleoscillator", [algo](QDomElement& triple) {
+				triple.setAttribute("wavetype0", 2); // a saw
+				triple.setAttribute("vol0", 100);
+				triple.setAttribute("wavetype1", 0); // modulated by a sine of the same pitch
+				// (frequency modulation by a sine 3% loud already pushes the pitch 1.3 kHz each way; much louder, the
+				// sidebands of a sine itself reach past half the rate, which no table removes)
+				triple.setAttribute("vol1", algo == 0 ? 40 : 3);
+				triple.setAttribute("vol2", 0);
+				triple.setAttribute("modalgo1", algo);
+				triple.setAttribute("modalgo2", 2);
+				for (int i = 0; i < 3; ++i)
+				{
+					triple.setAttribute(QString{"coarse%1"}.arg(i), 0);
+					triple.setAttribute(QString{"finel%1"}.arg(i), 0);
+					triple.setAttribute(QString{"finer%1"}.arg(i), 0);
+					triple.setAttribute(QString{"useWaveTable%1"}.arg(i + 1), 1);
+				}
+			}, 200, DefaultKey + 24);
+			const auto frequency = 440.0 * std::exp2(24 / 12.0);
+			const auto folded = tests::aliasing(played.samples, 4096, frequency, Engine::audioEngine()->outputSampleRate(), 2);
+			QVERIFY2(folded < -60, qPrintable(QString{"modulation %1: %2 dB folded"}.arg(algo).arg(folded)));
+		}
+	}
+
+	//! #6098: Monstro's first oscillator, a pulse, stepped from 1 to -1 with only a sample of 0 between: its harmonics
+	//! past half the rate folded back down (-22 dB on a 1 kHz note, -14 on a 7 kHz one). It is two band limited saws
+	//! now, as clean as the other oscillators, and as loud as it was
+	void monstroPulseIsBandLimited()
+	{
+		for (const auto key : {15, 27, 39})
+		{
+			const auto played = play("monstro", [](QDomElement& monstro) {
+				for (int i = 1; i <= 3; ++i) { monstro.setAttribute(QString{"o%1vol"}.arg(i), i == 1 ? 100 : 0); }
+			}, 200, DefaultKey + key);
+			const auto frequency = 440.0 * std::exp2(key / 12.0);
+			const auto folded = tests::aliasing(played.samples, 4096, frequency, Engine::audioEngine()->outputSampleRate(), 2);
+			QVERIFY2(folded < -60, qPrintable(QString{"%1 Hz: %2 dB folded"}.arg(frequency).arg(folded)));
+			QVERIFY2(played.loudest > 0.9f && played.loudest < 1.2f, qPrintable(QString::number(played.loudest)));
 		}
 	}
 

@@ -179,7 +179,24 @@ queda do Mallets, que é queda e entra antes.
       sob carga, 7 a 10 ms e um período pulado. Agora um sintetizador novo é montado sem trava e só os ponteiros
       trocam (0,00 ms medidos);
     - o host LV2 não abre a interface nativa dos plugins;
-    - aliasing em vários osciladores;
+    - [x] aliasing (#6098), medido como a potência fora dos harmônicos de uma nota aguda (FFT de 2^15 amostras,
+      janela Blackman-Harris; o chão da medida é -88 dB):
+      - BitInvader e Watsyn tocam as ondas desenhadas por tabelas sem harmônicos acima do corte (`DrawnWave`: os
+        harmônicos da onda como ela toca, calculados dos pontos, parados em degraus ou ligados por retas; uma
+        tabela a cada dois semitons, lida com cúbica): de -15/-12 dB para -88 dB. Botão "Anti-aliasing" nos dois,
+        ligado nos novos e desligado nos projetos de antes (tocam como tocavam);
+      - Organic usa as tabelas do Oscillator, como o TripleOscillator (sempre: as fases aleatórias já tornavam cada
+        render diferente);
+      - TripleOscillator com PM e FM: a tabela era a da altura da nota, e a modulação empurra a onda acima dela
+        (-10 dB). Agora a da altura mais alta que a onda alcança no período, mais as bandas laterais (regra de
+        Carson): -60 dB ou menos. Uma FM muito funda passa da metade da taxa até numa senoide, e isso nenhuma tabela
+        tira (precisaria de oversampling);
+      - Monstro: o oscilador 1 (pulso) só punha um 0 em cada degrau (-22 dB a 1 kHz, -14 a 7 kHz); agora são duas
+        serras com banda limitada (as dos osciladores 2 e 3): -73/-67 dB, no mesmo volume. Também nos projetos de
+        antes, porque substitui o anti-aliasing que ele já tentava ter;
+      - Os outros instrumentos citados ficam como estão: o LB302 já tem as suas ondas com banda limitada (as
+        variantes "BL"), o Kicker são senoides graves, SID, Nescaline e Sfxr imitam chips cujo caráter é a onda
+        crua, e o AFP já tem a interpolação sinc na escolha de interpolação.
     - [x] FreeBoy (#6556, #8043): medido, não há offset DC com o padrão (o filtro "Bass" do emulador o tira); os
       botões de saída diziam o lado errado (o de "SO2 (Esquerda)" saía à direita: o comportamento era o do Game Boy,
       SO1 = direita) e os dois volumes de saída agiam como um só (o emulador tem um volume): rótulos corrigidos e

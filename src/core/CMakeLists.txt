@@ -25,6 +25,7 @@ set(LMMS_SRCS
 	core/Controller.cpp
 	core/ControllerConnection.cpp
 	core/DataFile.cpp
+	core/DrawnWave.cpp
 	core/DrumSynth.cpp
 	core/Effect.cpp
 	core/ErrorLog.cpp

@@ -28,8 +28,10 @@
 #define BIT_INVADER_H
 
 #include <array>
+#include <memory>
 
 #include "AutomatableModel.h"
+#include "DrawnWave.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
 #include "Graph.h"
@@ -56,6 +58,8 @@ public:
 	virtual ~BSynth() = default;
 	
 	sample_t nextStringSample( float sample_length );
+	//! The next sample of @p table, the wave band limited for the note (see BitInvader::m_drawn); none: silence
+	sample_t nextDrawnSample(const DrawnWave::Table* table, float sample_length);
 
 
 	static constexpr int WavetableSize = 200;
@@ -69,6 +73,7 @@ private:
 	const sample_rate_t sample_rate;
 
 	bool interpolation;
+	float m_factor; //!< the normalization's
 	
 } ;
 
@@ -103,6 +108,9 @@ protected slots:
 
 
 private:
+	//! Makes m_drawn again from the wave the notes play, if they play it band limited [main thread]
+	void updateDrawnWave();
+
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
 	FloatModel  m_sampleLength;
@@ -110,11 +118,17 @@ private:
 	
 	BoolModel m_interpolation;
 	BoolModel m_normalize;
+	//! Band limited (#6098): high notes do not fold their harmonics back down. On in new instruments, off in
+	//! projects from before it (they sound as they did)
+	BoolModel m_antiAliasing;
 	
 	float m_normalizeFactor;
 	//! The wave the notes play: a copy of the graph's (see normalize())
 	std::array<float, BSynth::WavetableSize> m_wave = {};
 	int m_waveLength = BSynth::WavetableSize;
+	//! The wave as tables without aliasing, made from m_wave on the main thread and put in place under the audio
+	//! engine's change lock (the notes read it each period: they follow the drawing as it changes); none when off
+	std::unique_ptr<const DrawnWave> m_drawn;
 	
 	friend class gui::BitInvaderView;
 } ;
@@ -164,6 +178,7 @@ private:
 	Graph * m_graph;
 	LedCheckBox * m_interpolationToggle;
 	LedCheckBox * m_normalizeToggle;
+	LedCheckBox * m_antiAliasingToggle;
 
 } ;
 

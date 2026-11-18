@@ -9,6 +9,7 @@ set(LMMS_TESTS
 	src/core/AtomicPeakTest.cpp
 	src/core/ArrayVectorTest.cpp
 	src/core/ConvolverTest.cpp
+	src/core/DrawnWaveTest.cpp
 	src/core/DrumSynthTest.cpp
 	src/core/EditWhilePlayingTest.cpp
 	src/core/PeakControllerTest.cpp

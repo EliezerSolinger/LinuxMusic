@@ -32,6 +32,7 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "LedCheckBox.h"
 #include "PixmapButton.h"
 #include "Song.h"
 #include "lmms_math.h"
@@ -99,6 +100,26 @@ WatsynObject::~WatsynObject()
 
 void WatsynObject::renderOutput( f_cnt_t _frames )
 {
+	// Band limited: each oscillator's table for its pitch now, left and right (none: a note above the cutoff)
+	const auto drawn = m_waves->drawn[A1_OSC] != nullptr;
+	std::array<const DrawnWave::Table*, NUM_OSCS> leftTables = {};
+	std::array<const DrawnWave::Table*, NUM_OSCS> rightTables = {};
+	if (drawn)
+	{
+		for (int osc = 0; osc < NUM_OSCS; ++osc)
+		{
+			const auto rate = static_cast<float>(m_samplerate);
+			leftTables[osc] = m_waves->drawn[osc]->tableFor(m_nph->frequency() * m_parent->m_lfreq[osc], rate);
+			rightTables[osc] = m_waves->drawn[osc]->tableFor(m_nph->frequency() * m_parent->m_rfreq[osc], rate);
+		}
+	}
+	//! The wave at @p phase (0 to WAVELEN): its table's, or the oversampled points, linearly interpolated
+	const auto wave = [drawn](const float* points, const DrawnWave::Table* table, float phase) -> sample_t {
+		if (drawn) { return table ? DrawnWave::at(*table, phase * (1.f / WAVELEN)) : 0.f; }
+		return std::lerp(points[static_cast<int>(phase) % WAVELEN], points[static_cast<int>(phase + 1) % WAVELEN],
+			fraction(phase));
+	};
+
 	for( f_cnt_t frame = 0; frame < _frames; frame++ )
 	{
 		// put phases of 1-series oscs into variables because phase modulation might happen
@@ -110,16 +131,8 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 		/////////////   A-series   /////////////////
 
 		// A2
-		sample_t A2_L = m_parent->m_lvol[A2_OSC] * std::lerp(
-			m_waves->A2[static_cast<int>(m_lphase[A2_OSC])],
-			m_waves->A2[static_cast<int>(m_lphase[A2_OSC] + 1) % WAVELEN],
-			fraction(m_lphase[A2_OSC])
-		);
-		sample_t A2_R = m_parent->m_rvol[A2_OSC] * std::lerp(
-			m_waves->A2[static_cast<int>(m_rphase[A2_OSC])],
-			m_waves->A2[static_cast<int>(m_rphase[A2_OSC] + 1) % WAVELEN],
-			fraction(m_rphase[A2_OSC])
-		);
+		sample_t A2_L = m_parent->m_lvol[A2_OSC] * wave(m_waves->A2, leftTables[A2_OSC], m_lphase[A2_OSC]);
+		sample_t A2_R = m_parent->m_rvol[A2_OSC] * wave(m_waves->A2, rightTables[A2_OSC], m_rphase[A2_OSC]);
 
 		// if phase mod, add to phases
 		if( m_amod == MOD_PM )
@@ -130,30 +143,14 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 			if( A1_rphase < 0 ) A1_rphase += WAVELEN;
 		}
 		// A1
-		sample_t A1_L = m_parent->m_lvol[A1_OSC] * std::lerp(
-			m_waves->A1[static_cast<int>(A1_lphase)],
-			m_waves->A1[static_cast<int>(A1_lphase + 1) % WAVELEN],
-			fraction(A1_lphase)
-		);
-		sample_t A1_R = m_parent->m_rvol[A1_OSC] * std::lerp(
-			m_waves->A1[static_cast<int>(A1_rphase)],
-			m_waves->A1[static_cast<int>(A1_rphase + 1) % WAVELEN],
-			fraction(A1_rphase)
-		);
+		sample_t A1_L = m_parent->m_lvol[A1_OSC] * wave(m_waves->A1, leftTables[A1_OSC], A1_lphase);
+		sample_t A1_R = m_parent->m_rvol[A1_OSC] * wave(m_waves->A1, rightTables[A1_OSC], A1_rphase);
 
 		/////////////   B-series   /////////////////
 
 		// B2
-		sample_t B2_L = m_parent->m_lvol[B2_OSC] * std::lerp(
-			m_waves->B2[static_cast<int>(m_lphase[B2_OSC])],
-			m_waves->B2[static_cast<int>(m_lphase[B2_OSC] + 1) % WAVELEN],
-			fraction(m_lphase[B2_OSC])
-		);
-		sample_t B2_R = m_parent->m_rvol[B2_OSC] * std::lerp(
-			m_waves->B2[static_cast<int>(m_rphase[B2_OSC])],
-			m_waves->B2[static_cast<int>(m_rphase[B2_OSC] + 1) % WAVELEN],
-			fraction(m_rphase[B2_OSC])
-		);
+		sample_t B2_L = m_parent->m_lvol[B2_OSC] * wave(m_waves->B2, leftTables[B2_OSC], m_lphase[B2_OSC]);
+		sample_t B2_R = m_parent->m_rvol[B2_OSC] * wave(m_waves->B2, rightTables[B2_OSC], m_rphase[B2_OSC]);
 
 		// if crosstalk active, add a1
 		const float xt = m_parent->m_xtalk.value();
@@ -172,16 +169,8 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 			if( B1_rphase < 0 ) B1_rphase += WAVELEN;
 		}
 		// B1
-		sample_t B1_L = m_parent->m_lvol[B1_OSC] * std::lerp(
-			m_waves->B1[static_cast<int>(B1_lphase) % WAVELEN],
-			m_waves->B1[static_cast<int>(B1_lphase + 1) % WAVELEN],
-			fraction(B1_lphase)
-		);
-		sample_t B1_R = m_parent->m_rvol[B1_OSC] * std::lerp(
-			m_waves->B1[static_cast<int>(B1_rphase) % WAVELEN],
-			m_waves->B1[static_cast<int>(B1_rphase + 1) % WAVELEN],
-			fraction(B1_rphase)
-		);
+		sample_t B1_L = m_parent->m_lvol[B1_OSC] * wave(m_waves->B1, leftTables[B1_OSC], B1_lphase);
+		sample_t B1_R = m_parent->m_rvol[B1_OSC] * wave(m_waves->B1, rightTables[B1_OSC], B1_rphase);
 
 
 		// A-series modulation)
@@ -282,7 +271,8 @@ WatsynInstrument::WatsynInstrument( InstrumentTrack * _instrument_track ) :
 		m_amod( 0, 0, 3, this, tr( "A2-A1 modulation" ) ),
 		m_bmod( 0, 0, 3, this, tr( "B2-B1 modulation" ) ),
 
-		m_selectedGraph( 0, 0, 3, this, tr( "Selected graph" ) )
+		m_selectedGraph( 0, 0, 3, this, tr( "Selected graph" ) ),
+		m_antiAliasing(true, this, tr("Anti-aliasing"))
 {
 	// Volumes and tunings reach the notes on the audio thread, once a period (preparePeriod()); the waves by their
 	// own versions (publishWaves())
@@ -305,6 +295,15 @@ WatsynInstrument::WatsynInstrument( InstrumentTrack * _instrument_track ) :
 	updateWaveA2();
 	updateWaveB1();
 	updateWaveB2();
+
+	// (on the GUI thread: automated, it comes by a queued call)
+	connect(&m_antiAliasing, &BoolModel::dataChanged, this, [this] {
+		updateDrawn(A1_OSC, A1_wave);
+		updateDrawn(A2_OSC, A2_wave);
+		updateDrawn(B1_OSC, B1_wave);
+		updateDrawn(B2_OSC, B2_wave);
+		publishWaves();
+	});
 }
 
 
@@ -483,6 +482,7 @@ void WatsynInstrument::saveSettings( QDomDocument & _doc,
 
 	m_amod.saveSettings( _doc, _this, "amod" );
 	m_bmod.saveSettings( _doc, _this, "bmod" );
+	m_antiAliasing.saveSettings(_doc, _this, "antialias");
 /*	m_selectedGraph.saveSettings( _doc, _this, "selgraph" );*/
 }
 
@@ -531,6 +531,12 @@ void WatsynInstrument::loadSettings( const QDomElement & _this )
 
 	m_amod.loadSettings( _this, "amod" );
 	m_bmod.loadSettings( _this, "bmod" );
+	// (projects from before it play the waves as they are)
+	if (_this.hasAttribute("antialias") || !_this.firstChildElement("antialias").isNull())
+	{
+		m_antiAliasing.loadSettings(_this, "antialias");
+	}
+	else { m_antiAliasing.setValue(false); }
 /*	m_selectedGraph.loadSettings( _this, "selgraph" );*/
 }
 
@@ -632,7 +638,19 @@ void WatsynInstrument::publishWaves()
 	std::copy(std::begin(A2_wave), std::end(A2_wave), target->A2);
 	std::copy(std::begin(B1_wave), std::end(B1_wave), target->B1);
 	std::copy(std::begin(B2_wave), std::end(B2_wave), target->B2);
+	// (the tables the version had go here, on this thread: no note uses it)
+	target->drawn = m_drawn;
 	m_currentWaves.store(target, std::memory_order_release);
+}
+
+
+void WatsynInstrument::updateDrawn(int osc, const float* wave)
+{
+	// Up to the 128th harmonic: the oversampling (a sinc interpolation of the 220 points) leaves nothing above the
+	// 110th, and it is quick (a few milliseconds a wave, as it is drawn)
+	m_drawn[osc] = m_antiAliasing.value()
+		? std::make_shared<const DrawnWave>(std::span<const float>{wave, WAVELEN}, DrawnWave::Hold::Linear, 128)
+		: nullptr;
 }
 
 
@@ -654,6 +672,7 @@ void WatsynInstrument::updateWaveA1()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &A1_wave[0], const_cast<float*>( a1_graph.samples() ) );
+	updateDrawn(A1_OSC, A1_wave);
 	publishWaves();
 }
 
@@ -662,6 +681,7 @@ void WatsynInstrument::updateWaveA2()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &A2_wave[0], const_cast<float*>( a2_graph.samples() ) );
+	updateDrawn(A2_OSC, A2_wave);
 	publishWaves();
 }
 
@@ -670,6 +690,7 @@ void WatsynInstrument::updateWaveB1()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &B1_wave[0], const_cast<float*>( b1_graph.samples() ) );
+	updateDrawn(B1_OSC, B1_wave);
 	publishWaves();
 }
 
@@ -678,6 +699,7 @@ void WatsynInstrument::updateWaveB2()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &B2_wave[0], const_cast<float*>( b2_graph.samples() ) );
+	updateDrawn(B2_OSC, B2_wave);
 	publishWaves();
 }
 
@@ -934,6 +956,11 @@ WatsynView::WatsynView( Instrument * _instrument,
 	m_sqrWaveButton -> setActiveGraphic( PLUGIN_NAME::getIconPixmap( "sqr_active" ) );
 	m_sqrWaveButton -> setInactiveGraphic( PLUGIN_NAME::getIconPixmap( "sqr_inactive" ) );
 	m_sqrWaveButton->setToolTip(tr("Square wave"));
+
+	m_antiAliasingToggle = new LedCheckBox(tr("Anti-aliasing"), this, tr("Anti-aliasing"), LedCheckBox::LedColor::Green);
+	m_antiAliasingToggle->move(150, 2);
+	m_antiAliasingToggle->setToolTip(tr("High notes without the tones their harmonics make when they fold back "
+		"below half the sample rate"));
 
 
 
@@ -1235,6 +1262,7 @@ void WatsynView::modelChanged()
 {
 	auto w = castModel<WatsynInstrument>();
 
+	m_antiAliasingToggle->setModel(&w->m_antiAliasing);
 	a1_volKnob -> setModel( &w -> a1_vol );
 	a2_volKnob -> setModel( &w -> a2_vol );
 	b1_volKnob -> setModel( &w -> b1_vol );

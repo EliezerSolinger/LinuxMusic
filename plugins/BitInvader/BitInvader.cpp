@@ -76,7 +76,8 @@ BSynth::BSynth( float * _shape, NotePlayHandle * _nph, bool _interpolation,
 	sample_realindex( 0 ),
 	nph( _nph ),
 	sample_rate( _sample_rate ),
-	interpolation( _interpolation)
+	interpolation( _interpolation),
+	m_factor(_factor)
 {
 	for (int i=0; i < wavetableSize; ++i)
 	{
@@ -116,6 +117,16 @@ sample_t BSynth::nextStringSample( float sample_length )
 
 	const auto nextIndex = currentIndex < sample_length - 1 ? currentIndex + 1 : 0;
 	return std::lerp(sample_shape[currentIndex], sample_shape[nextIndex], fraction(currentRealIndex));
+}
+
+
+sample_t BSynth::nextDrawnSample(const DrawnWave::Table* table, float sample_length)
+{
+	const auto sample_step = static_cast<float>(sample_length / (sample_rate / nph->frequency()));
+	while (sample_realindex >= sample_length) { sample_realindex -= sample_length; }
+	const auto phase = sample_realindex / sample_length;
+	sample_realindex += sample_step;
+	return table ? DrawnWave::at(*table, phase) * m_factor : 0.f;
 }	
 
 /***********************************************************************
@@ -132,7 +143,8 @@ BitInvader::BitInvader( InstrumentTrack * _instrument_track ) :
 	m_sampleLength(wavetableSize, 4, wavetableSize, 1, this, tr("Sample length")),
 	m_graph(-1.0f, 1.0f, wavetableSize, this),
 	m_interpolation(false, this, tr("Interpolation")),
-	m_normalize(false, this, tr("Normalize"))
+	m_normalize(false, this, tr("Normalize")),
+	m_antiAliasing(true, this, tr("Anti-aliasing"))
 {
 	m_graph.setWaveToSine();
 	{
@@ -152,6 +164,9 @@ BitInvader::BitInvader( InstrumentTrack * _instrument_track ) :
 			this, SLOT( samplesChanged( int, int ) ) );
 	// (a length set on the graph itself, e.g. while loading, is the notes' too: published again, see normalize())
 	connect(&m_graph, &graphModel::lengthChanged, this, &BitInvader::normalize);
+	// (the tables follow how the points play, and whether they are used)
+	connect(&m_interpolation, &BoolModel::dataChanged, this, &BitInvader::updateDrawnWave);
+	connect(&m_antiAliasing, &BoolModel::dataChanged, this, &BitInvader::updateDrawnWave);
 }
 
 
@@ -181,6 +196,7 @@ void BitInvader::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	
 	// save LED 
 	m_normalize.saveSettings( _doc, _this, "normalize" );
+	m_antiAliasing.saveSettings(_doc, _this, "antialias");
 }
 
 
@@ -206,7 +222,12 @@ void BitInvader::loadSettings( const QDomElement & _this )
 	m_interpolation.loadSettings( _this, "interpolation" );
 	// Load LED 
 	m_normalize.loadSettings( _this, "normalize" );
-
+	// (projects from before it play the points as they are)
+	if (_this.hasAttribute("antialias") || !_this.firstChildElement("antialias").isNull())
+	{
+		m_antiAliasing.loadSettings(_this, "antialias");
+	}
+	else { m_antiAliasing.setValue(false); }
 }
 
 
@@ -243,10 +264,32 @@ void BitInvader::normalize()
 		const float f = std::abs(samples[i]);
 		if (f > max) { max = f; }
 	}
-	const auto guard = AudioEngine::changesGuard();
-	std::copy_n(samples, length, m_wave.begin());
-	m_waveLength = length;
-	m_normalizeFactor = 1.0 / max;
+	{
+		const auto guard = AudioEngine::changesGuard();
+		std::copy_n(samples, length, m_wave.begin());
+		m_waveLength = length;
+		m_normalizeFactor = 1.0 / max;
+	}
+	updateDrawnWave();
+}
+
+
+
+
+void BitInvader::updateDrawnWave()
+{
+	auto drawn = std::unique_ptr<const DrawnWave>{};
+	if (m_antiAliasing.value())
+	{
+		// (m_wave only changes here, on this thread)
+		drawn = std::make_unique<const DrawnWave>(std::span<const float>{m_wave.data(), static_cast<std::size_t>(m_waveLength)},
+			m_interpolation.value() ? DrawnWave::Hold::Linear : DrawnWave::Hold::Step);
+	}
+	{
+		const auto guard = AudioEngine::changesGuard();
+		std::swap(m_drawn, drawn);
+	}
+	// (the old tables go here, without the lock)
 }
 
 
@@ -276,9 +319,21 @@ void BitInvader::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 	const f_cnt_t offset = nph->noteOffset();
 
 	auto ps = static_cast<BSynth*>(nph->m_pluginData);
-	for( f_cnt_t frame = offset; frame < frames + offset; ++frame )
+	if (m_drawn)
 	{
-		out[frame] = SampleFrame(ps->nextStringSample(m_waveLength));
+		// The table of the note's pitch now (it may bend)
+		const auto* table = m_drawn->tableFor(nph->frequency(), Engine::audioEngine()->outputSampleRate());
+		for (f_cnt_t frame = offset; frame < frames + offset; ++frame)
+		{
+			out[frame] = SampleFrame(ps->nextDrawnSample(table, m_waveLength));
+		}
+	}
+	else
+	{
+		for (f_cnt_t frame = offset; frame < frames + offset; ++frame)
+		{
+			out[frame] = SampleFrame(ps->nextStringSample(m_waveLength));
+		}
 	}
 
 	applyRelease(out.data(), nph);
@@ -411,6 +466,11 @@ BitInvaderView::BitInvaderView( Instrument * _instrument,
 	m_normalizeToggle = new LedCheckBox( "Normalize", this,
 							tr( "Normalize" ), LedCheckBox::LedColor::Green );
 	m_normalizeToggle->move( 131, 236 );
+
+	m_antiAliasingToggle = new LedCheckBox(tr("Anti-aliasing"), this, tr("Anti-aliasing"), LedCheckBox::LedColor::Green);
+	m_antiAliasingToggle->move(38, 236);
+	m_antiAliasingToggle->setToolTip(tr("High notes without the tones their harmonics make when they fold back "
+		"below half the sample rate"));
 	
 	
 	connect( m_sinWaveBtn, SIGNAL (clicked () ),
@@ -448,6 +508,7 @@ void BitInvaderView::modelChanged()
 	m_sampleLengthKnob->setModel( &b->m_sampleLength );
 	m_interpolationToggle->setModel( &b->m_interpolation );
 	m_normalizeToggle->setModel( &b->m_normalize );
+	m_antiAliasingToggle->setModel(&b->m_antiAliasing);
 
 }
 

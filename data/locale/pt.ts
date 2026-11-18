@@ -1454,6 +1454,10 @@ Este chip foi utilizado no computador Commodore 64.</translation>
         <source>Normalize</source>
         <translation>Normalizar</translation>
     </message>
+    <message>
+        <source>Anti-aliasing</source>
+        <translation>Anti-aliasing</translation>
+    </message>
 </context>
 <context>
     <name>lmms::BitcrushControls</name>
@@ -6074,6 +6078,10 @@ Por favor certifique-se que você tem permissões de leitura para o arquivo e pa
         <source>Selected graph</source>
         <translation type="unfinished"/>
     </message>
+    <message>
+        <source>Anti-aliasing</source>
+        <translation>Anti-aliasing</translation>
+    </message>
 </context>
 <context>
     <name>lmms::WaveShaperControls</name>
@@ -6649,6 +6657,14 @@ Por favor certifique-se que você tem permissões de leitura para o arquivo e pa
         <location filename="../../plugins/BitInvader/BitInvader.cpp" line="407"/>
         <source>Normalize</source>
         <translation>Normalizar</translation>
+    </message>
+    <message>
+        <source>Anti-aliasing</source>
+        <translation>Anti-aliasing</translation>
+    </message>
+    <message>
+        <source>High notes without the tones their harmonics make when they fold back below half the sample rate</source>
+        <translation>Notas agudas sem os tons que os harmônicos fazem ao se dobrar abaixo da metade da taxa de amostragem</translation>
     </message>
 </context>
 <context>
@@ -17357,6 +17373,14 @@ A interface usada é a que está salva nestas configurações.</translation>
         <location filename="../../plugins/Watsyn/Watsyn.cpp" line="922"/>
         <source>Square wave</source>
         <translation>Onda quadrada</translation>
+    </message>
+    <message>
+        <source>Anti-aliasing</source>
+        <translation>Anti-aliasing</translation>
+    </message>
+    <message>
+        <source>High notes without the tones their harmonics make when they fold back below half the sample rate</source>
+        <translation>Notas agudas sem os tons que os harmônicos fazem ao se dobrar abaixo da metade da taxa de amostragem</translation>
     </message>
 </context>
 <context>

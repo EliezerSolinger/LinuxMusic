@@ -188,8 +188,7 @@ public:
 		control.f2 = control.f1 < OscillatorConstants::WAVETABLE_LENGTH - 1 ?
 					control.f1 + 1 :
 					0;
-		control.band = waveTableBandFromFreq(
-			m_freq * m_detuning_div_samplerate * Engine::audioEngine()->outputSampleRate());
+		control.band = m_band;
 		return control;
 	}
 
@@ -254,6 +253,16 @@ private:
 	// There are many update*() variants; the modulator flag is stored as a member variable to avoid
 	// adding more explicit parameters to all of them. Can be converted to a parameter if needed.
 	bool m_isModulator;
+	//! The band limited table the wave plays now: the one of the wave's pitch, set once a period (with phase or
+	//! frequency modulation, of the highest pitch the modulation gives it in the period: #6098)
+	int m_band = 1;
+	//! The modulation's last value (phase modulation: how much it moved the phase since, see updatePM())
+	float m_lastModulation = 0.f;
+	//! Takes the table for a wave moving @p phaseStep periods a sample (either way)
+	void setBandForStep(float phaseStep)
+	{
+		m_band = waveTableBandFromFreq(std::max(std::abs(phaseStep), 1e-6f) * Engine::audioEngine()->outputSampleRate());
+	}
 
 	/* Multiband WaveTable */
 	static sample_t s_waveTables[NumWaveShapeTables][OscillatorConstants::WAVE_TABLES_PER_WAVEFORM_COUNT][OscillatorConstants::WAVETABLE_LENGTH];
