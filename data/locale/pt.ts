@@ -2924,6 +2924,10 @@ Este chip foi utilizado no computador Commodore 64.</translation>
 <context>
     <name>lmms::KickerInstrument</name>
     <message>
+        <source>Attack</source>
+        <translation>Ataque</translation>
+    </message>
+    <message>
         <location filename="../../plugins/Kicker/Kicker.cpp" line="68"/>
         <source>Start frequency</source>
         <translation>Frequência inicial</translation>
@@ -9653,6 +9657,10 @@ Por favor certifique que você tem permissão para gravar o aquivo e o diretóri
 </context>
 <context>
     <name>lmms::gui::KickerInstrumentView</name>
+    <message>
+        <source>Attack:</source>
+        <translation>Ataque:</translation>
+    </message>
     <message>
         <location filename="../../plugins/Kicker/Kicker.cpp" line="286"/>
         <source>Start frequency:</source>

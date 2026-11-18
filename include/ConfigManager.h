@@ -83,6 +83,9 @@ public:
 
 	void initDevelopmentWorkingDir();
 	void initIsolatedWorkingDir();
+	//! The VST, LADSPA and STK folders where none (or one that does not exist) is set; @p reportMissing logs what
+	//! is not found
+	void resolveDefaultPaths(bool reportMissing);
 
 	const QString & dataDir() const
 	{

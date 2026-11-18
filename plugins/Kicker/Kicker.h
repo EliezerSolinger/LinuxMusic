@@ -83,6 +83,7 @@ private:
 	FloatModel m_noiseModel;
 	FloatModel m_clickModel;
 	FloatModel m_slopeModel;
+	FloatModel m_attackModel;	//!< ms; never 0: a note starting at full level clicks
 
 	BoolModel m_startNoteModel;
 	BoolModel m_endNoteModel;
@@ -118,6 +119,7 @@ private:
 	Knob * m_noiseKnob;
 	Knob * m_clickKnob;
 	Knob * m_slopeKnob;
+	Knob * m_attackKnob;
 
 	LedCheckBox * m_startNoteToggle;
 	LedCheckBox * m_endNoteToggle;

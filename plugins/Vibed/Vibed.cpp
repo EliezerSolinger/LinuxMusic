@@ -243,6 +243,9 @@ void Vibed::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 			}
 		}
 	}
+
+	// The note starts from silence, never with a jump to its first sample (a click on every note)
+	applyFadeIn(out.data(), n);
 }
 
 void Vibed::deleteNotePluginData(NotePlayHandle* n)

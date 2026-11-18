@@ -265,6 +265,9 @@ void OrganicInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 	}
 
 	// -- --
+
+	// The note starts from silence, never with a jump to its first sample (a click on every note)
+	applyFadeIn(out.data(), _n);
 }
 
 

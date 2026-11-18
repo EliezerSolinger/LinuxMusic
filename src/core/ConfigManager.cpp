@@ -95,6 +95,8 @@ ConfigManager::ConfigManager() :
 	}
 	initDevelopmentWorkingDir();
 	initIsolatedWorkingDir();
+	// Usable without a configuration file too (the first run, the tests): the folders found where they are
+	resolveDefaultPaths(false);
 
 #ifdef LMMS_BUILD_WIN32
 	QDir::addSearchPath("data", QCoreApplication::applicationDirPath() + "/data/");
@@ -112,6 +114,57 @@ ConfigManager::~ConfigManager()
 	saveConfigFile();
 	// The next inst() makes a new one (the engine is taken down and made again, e.g. in the tests)
 	if (s_instanceOfMe == this) { s_instanceOfMe = nullptr; }
+}
+
+
+
+void ConfigManager::resolveDefaultPaths(bool reportMissing)
+{
+	// Plugins are searched recursively, block problematic locations
+	if( m_vstDir.isEmpty() || m_vstDir == QDir::separator() || m_vstDir == "/" ||
+			m_vstDir == ensureTrailingSlash( QDir::homePath() ) ||
+			!QDir( m_vstDir ).exists() )
+	{
+#ifdef LMMS_BUILD_WIN32
+		QString programFiles = QString::fromLocal8Bit(getenv("ProgramFiles"));
+		m_vstDir =  programFiles + "/VstPlugins/";
+#else
+		m_vstDir =  m_workingDir + "plugins/vst/";
+#endif
+	}
+
+	if(m_ladspaDir.isEmpty() )
+	{
+		m_ladspaDir = userLadspaDir();
+	}
+
+#ifdef LMMS_HAVE_STK
+	// The folder with STK's wave files: the one set, if it has them; else the first that has them
+	const auto hasRawwaves = [](const QString& dir) {
+		return !dir.isEmpty() && dir != "/" && QFileInfo::exists(QDir{dir}.filePath("sinewave.raw"));
+	};
+	if (!hasRawwaves(m_stkDir))
+	{
+		const auto candidates = QStringList{
+			m_dataDir + "stk/rawwaves/", // bundled with the program (Windows, macOS)
+			QCoreApplication::applicationDirPath() + "/../share/stk/rawwaves/",
+			QString{LMMS_STK_RAWWAVE_ROOT}, // where the build found STK
+			"/opt/homebrew/share/stk/rawwaves/",
+			"/usr/local/share/stk/rawwaves/",
+			"/usr/share/stk/rawwaves/",
+			"/usr/share/libstk/rawwaves/"};
+		const auto found = std::find_if(candidates.begin(), candidates.end(), hasRawwaves);
+		if (found != candidates.end()) { m_stkDir = ensureTrailingSlash(*found); }
+		else if (reportMissing)
+		{
+			ErrorLog::reportText(ErrorLog::Severity::Warning, "ConfigManager",
+				"STK's wave files were not found: the Mallets instrument cannot play");
+		}
+	}
+#endif // LMMS_HAVE_STK
+#ifndef LMMS_HAVE_STK
+	(void)reportMissing;
+#endif
 }
 
 
@@ -554,48 +607,7 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 		cfg_file.close();
 	}
 
-	// Plugins are searched recursively, block problematic locations
-	if( m_vstDir.isEmpty() || m_vstDir == QDir::separator() || m_vstDir == "/" ||
-			m_vstDir == ensureTrailingSlash( QDir::homePath() ) ||
-			!QDir( m_vstDir ).exists() )
-	{
-#ifdef LMMS_BUILD_WIN32
-		QString programFiles = QString::fromLocal8Bit(getenv("ProgramFiles"));
-		m_vstDir =  programFiles + "/VstPlugins/";
-#else
-		m_vstDir =  m_workingDir + "plugins/vst/";
-#endif
-	}
-
-	if(m_ladspaDir.isEmpty() )
-	{
-		m_ladspaDir = userLadspaDir();
-	}
-
-#ifdef LMMS_HAVE_STK
-	// The folder with STK's wave files: the one set, if it has them; else the first that has them
-	const auto hasRawwaves = [](const QString& dir) {
-		return !dir.isEmpty() && dir != "/" && QFileInfo::exists(QDir{dir}.filePath("sinewave.raw"));
-	};
-	if (!hasRawwaves(m_stkDir))
-	{
-		const auto candidates = QStringList{
-			m_dataDir + "stk/rawwaves/", // bundled with the program (Windows, macOS)
-			QCoreApplication::applicationDirPath() + "/../share/stk/rawwaves/",
-			QString{LMMS_STK_RAWWAVE_ROOT}, // where the build found STK
-			"/opt/homebrew/share/stk/rawwaves/",
-			"/usr/local/share/stk/rawwaves/",
-			"/usr/share/stk/rawwaves/",
-			"/usr/share/libstk/rawwaves/"};
-		const auto found = std::find_if(candidates.begin(), candidates.end(), hasRawwaves);
-		if (found != candidates.end()) { m_stkDir = ensureTrailingSlash(*found); }
-		else
-		{
-			ErrorLog::reportText(ErrorLog::Severity::Warning, "ConfigManager",
-				"STK's wave files were not found: the Mallets instrument cannot play");
-		}
-	}
-#endif // LMMS_HAVE_STK
+	resolveDefaultPaths(true);
 
 	upgrade();
 

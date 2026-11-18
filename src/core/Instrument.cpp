@@ -103,19 +103,23 @@ static int countZeroCrossings(SampleFrame* buf, f_cnt_t start, f_cnt_t frames)
 }
 
 // helper function for Instrument::applyFadeIn
-f_cnt_t getFadeInLength(float maxLength, f_cnt_t frames, int zeroCrossings)
+static f_cnt_t getFadeInLength(float maxLength, f_cnt_t frames, int zeroCrossings, float blockFrames)
 {
 	// calculate the length of the fade in
 	// Length is inversely proportional to the max of zeroCrossings,
 	// because for low frequencies, we need a longer fade in to
 	// prevent clicking.
-	return (f_cnt_t) (maxLength  / ((float) zeroCrossings / ((float) frames / 128.0f) + 1.0f));
+	return (f_cnt_t) (maxLength  / ((float) zeroCrossings / ((float) frames / blockFrames) + 1.0f));
 }
 
 
 void Instrument::applyFadeIn(SampleFrame* buf, NotePlayHandle * n)
 {
-	const static float MAX_FADE_IN_LENGTH = 85.0;
+	// At most 85 frames at 44.1 kHz (about 2 ms), shorter the more often the note crosses zero (counted per 128
+	// frames at 44.1 kHz): the same time at any sample rate
+	const float rateFactor = Engine::audioEngine()->outputSampleRate() / 44100.f;
+	const float maxFadeInLength = 85.f * rateFactor;
+	const float blockFrames = 128.f * rateFactor;
 	f_cnt_t total = n->totalFramesPlayed();
 	if (total == 0)
 	{
@@ -127,7 +131,7 @@ void Instrument::applyFadeIn(SampleFrame* buf, NotePlayHandle * n)
 		// determining the fade in length. Hence 1
 		int maxZeroCrossings = countZeroCrossings(buf, offset + 1, offset + frames);
 
-		f_cnt_t length = getFadeInLength(MAX_FADE_IN_LENGTH, frames, maxZeroCrossings);
+		f_cnt_t length = getFadeInLength(maxFadeInLength, frames, maxZeroCrossings, blockFrames);
 		n->m_fadeInLength = length;
 
 		// apply fade in
@@ -145,20 +149,19 @@ void Instrument::applyFadeIn(SampleFrame* buf, NotePlayHandle * n)
 		const f_cnt_t frames = n->framesLeftForCurrentPeriod();
 
 		int new_zc = countZeroCrossings(buf, 1, frames);
-		f_cnt_t new_length = getFadeInLength(MAX_FADE_IN_LENGTH, frames, new_zc);
+		f_cnt_t new_length = getFadeInLength(maxFadeInLength, frames, new_zc, blockFrames);
 
 		for (f_cnt_t f = 0; f < frames; ++f)
 		{
-			for (ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch)
+			const float currentLength = n->m_fadeInLength * (1.0f - (float) f / frames) + new_length * ((float) f / frames);
+			if (total + f >= currentLength)
 			{
-				float currentLength = n->m_fadeInLength * (1.0f - (float) f / frames) + new_length * ((float) f / frames);
-				buf[f][ch] *= 0.5 - 0.5 * std::cos(std::numbers::pi_v<float> * static_cast<float>(total + f) / currentLength);
-				if (total + f >= currentLength)
-				{
-					n->m_fadeInLength = currentLength;
-					return;
-				}
+				// Faded in (both channels alike)
+				n->m_fadeInLength = currentLength;
+				return;
 			}
+			const float gain = 0.5f - 0.5f * std::cos(std::numbers::pi_v<float> * static_cast<float>(total + f) / currentLength);
+			for (ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch) { buf[f][ch] *= gain; }
 		}
 		n->m_fadeInLength = new_length;
 	}

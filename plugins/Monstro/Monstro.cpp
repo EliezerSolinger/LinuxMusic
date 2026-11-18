@@ -1048,6 +1048,8 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 	ms->renderOutput(frames, out.data() + offset);
 
+	// The note starts from silence, never with a jump to its first sample (a click on every note)
+	applyFadeIn(out.data(), nph);
 	//applyRelease(out.data(), nph); // we have our own release
 }
 

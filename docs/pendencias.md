@@ -166,8 +166,26 @@ queda do Mallets, que é queda e entra antes.
       `wav2gig` da libgig, a partir de amostras CC0 (VSCO-2 CE, VCSL, FreePats).
     - PAT: o conjunto GUS do FreePats (GPL-2+).
     - O `data/samples/CMakeLists.txt` ainda não instala `.gig` nem `.pat`.
-- [ ] **Kicker: ataque padrão 0 dá um clique** a cada nota. O padrão passa a ser um ataque mínimo, nunca 0.
+- [x] **Kicker: ataque padrão 0 dá um clique** a cada nota. O padrão passa a ser um ataque mínimo, nunca 0.
   Conferir os outros instrumentos e efeitos com o mesmo problema.
+  - O Kicker ganhou o botão **Attack** (0,1 a 20 ms, padrão 1 ms), no envelope de volume, desenhado na arte como os
+    outros. O "Click" continua (ele começa a senoide fora do zero); o ataque sobe do silêncio depois dele. Projetos
+    de antes (sem ataque, que era 0) abrem com o mínimo, 0,1 ms: o mais perto de como soavam, sem o salto.
+  - Varredura: o `BuiltinPluginsTest` toca uma nota em cada instrumento interno, como vem, e exige que nos dois
+    primeiros quadros ela não passe de um quarto do seu pico. Tinham o mesmo salto: Organic (fases aleatórias),
+    Monstro, sfxr, SID (o original pulava para 1,3 no segundo quadro), Vibed e Xpressive. Eles passam a usar o
+    `applyFadeIn` que o LMMS já tinha (só o TripleOscillator usava): até ~2 ms, mais curto quanto mais aguda a
+    nota. Ele agora dura o mesmo tempo em qualquer taxa (era contado em quadros de 44,1 kHz) e trata os dois
+    canais igual (o direito ficava sem o último quadro do fade).
+  - Achado no caminho: **o Mallets ficava mudo** sem arquivo de configuração (a primeira execução, os testes): a
+    pasta do STK só era procurada ao ler o arquivo. Agora as pastas padrão (VST, LADSPA, STK) são resolvidas também
+    na criação das configurações. O teste do Sf2Player agora toca com um soundfont de verdade.
+  - O ASan, com o Mallets tocando de verdade e outros sorteios, achou mais dois: o filtro de formantes do
+    envelope (o "Vogal") lia além da tabela de vogais acima de 17,5 kHz (a frequência ia até 20 kHz; a tabela, até
+    17,5), e o GranularPitchShifter lia antes do começo do anel quando um grão grande, agudo e com spray pedia mais
+    do que o anel guarda.
+  - Efeitos: os ataques com 0 no mínimo (LOMM, Peak Controller) são tempos de detecção do nível, não o começo de
+    um som: não dão clique.
 - [ ] **Configurações que só valem depois de reiniciar** (o backend de áudio, por exemplo): ao sair da tela de
   configurações, nada muda até reiniciar à mão.
   - Aplicar na hora o que der.

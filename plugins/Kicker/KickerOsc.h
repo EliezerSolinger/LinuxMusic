@@ -42,7 +42,8 @@ class KickerOsc
 {
 public:
 	KickerOsc( const FX & fx, const float start, const float end, const float noise, const float offset, 
-		const float slope, const float env, const float diststart, const float distend, const float length ) :
+		const float slope, const float env, const float diststart, const float distend, const float length,
+		const float attack ) :
 		m_phase( offset ),
 		m_startFreq( start ),
 		m_endFreq( end ),
@@ -53,6 +54,7 @@ public:
 		m_distEnd( distend ),
 		m_hasDistEnv( diststart != distend ),
 		m_length( length ),
+		m_attack(std::max(attack, 1.f)),
 		m_FX( fx ),
 		m_counter( 0 ),
 		m_freq( start )
@@ -79,6 +81,14 @@ public:
 			}
 			
 			m_FX.nextSample( buf[frame][0], buf[frame][1] );
+
+			// The attack: from silence, never a jump to the first sample (the "Click" starts the sine off zero)
+			if (m_counter < m_attack)
+			{
+				const auto rise = static_cast<float>(0.5 - 0.5 * std::cos(std::numbers::pi * m_counter / m_attack));
+				buf[frame][0] *= rise;
+				buf[frame][1] *= rise;
+			}
 			m_phase += m_freq / sampleRate;
 
 			const double change = (m_counter < m_length) ? ((m_startFreq - m_endFreq) * (1 - fastPow(m_counter / m_length, m_slope))) : 0;
@@ -99,6 +109,7 @@ private:
 	const float m_distEnd;
 	const bool m_hasDistEnv;
 	const float m_length;
+	const float m_attack;	//!< frames
 	FX m_FX;
 
 	unsigned long m_counter;

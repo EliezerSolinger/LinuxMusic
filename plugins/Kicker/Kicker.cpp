@@ -75,6 +75,7 @@ KickerInstrument::KickerInstrument( InstrumentTrack * _instrument_track ) :
 	m_noiseModel( 0.0f, 0.0f, 1.0f, 0.01f, this, tr( "Noise" ) ),
 	m_clickModel( 0.4f, 0.0f, 1.0f, 0.05f, this, tr( "Click" ) ),
 	m_slopeModel( 0.06f, 0.001f, 1.0f, 0.001f, this, tr( "Frequency slope" ) ),
+	m_attackModel(1.0f, 0.1f, 20.0f, 0.1f, this, tr("Attack")),
 	m_startNoteModel( true, this, tr( "Start from note" ) ),
 	m_endNoteModel( false, this, tr( "End to note" ) ),
 	m_versionModel( KICKER_PRESET_VERSION, 0, KICKER_PRESET_VERSION, this, "" )
@@ -96,6 +97,7 @@ void KickerInstrument::saveSettings(QDomDocument& doc, QDomElement& elem)
 	m_noiseModel.saveSettings(doc, elem, "noise");
 	m_clickModel.saveSettings(doc, elem, "click");
 	m_slopeModel.saveSettings(doc, elem, "slope");
+	m_attackModel.saveSettings(doc, elem, "attack");
 	m_startNoteModel.saveSettings(doc, elem, "startnote");
 	m_endNoteModel.saveSettings(doc, elem, "endnote");
 	m_versionModel.saveSettings(doc, elem, "version");
@@ -125,6 +127,16 @@ void KickerInstrument::loadSettings(const QDomElement& elem)
 	m_noiseModel.loadSettings(elem, "noise");
 	m_clickModel.loadSettings(elem, "click");
 	m_slopeModel.loadSettings(elem, "slope");
+	if (elem.hasAttribute("attack") || !elem.firstChildElement("attack").isNull())
+	{
+		m_attackModel.loadSettings(elem, "attack");
+	}
+	else
+	{
+		// Made before the attack existed (it was 0): the shortest one, the closest to how it sounded, without the
+		// jump from silence to full level
+		m_attackModel.setValue(m_attackModel.minValue());
+	}
 	m_startNoteModel.loadSettings(elem, "startnote");
 	if (m_versionModel.value() < 1)
 	{
@@ -175,7 +187,8 @@ void KickerInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> 
 					m_envModel.value(),
 					m_distModel.value(),
 					m_distEndModel.value(),
-					decfr );
+					decfr,
+					m_attackModel.value() * Engine::audioEngine()->outputSampleRate() / 1000.0f);
 	}
 	else if (tfp > decfr && !nph->isReleased())
 	{
@@ -309,6 +322,10 @@ KickerInstrumentView::KickerInstrumentView( Instrument * _instrument,
 	m_clickKnob->setHintText( tr( "Click:" ), "" );
 	m_clickKnob->move( COL5, ROW1 );
 
+	m_attackKnob = new KickerKnob(this);
+	m_attackKnob->setHintText(tr("Attack:"), "ms");
+	m_attackKnob->move(COL4 + 2, ROW3);
+
 	m_noiseKnob = new KickerKnob( this );
 	m_noiseKnob->setHintText( tr( "Noise:" ), "" );
 	m_noiseKnob->move( COL5, ROW3 );
@@ -349,6 +366,7 @@ void KickerInstrumentView::modelChanged()
 	m_noiseKnob->setModel( &k->m_noiseModel );
 	m_clickKnob->setModel( &k->m_clickModel );
 	m_slopeKnob->setModel( &k->m_slopeModel );
+	m_attackKnob->setModel(&k->m_attackModel);
 	m_startNoteToggle->setModel( &k->m_startNoteModel );
 	m_endNoteToggle->setModel( &k->m_endNoteModel );
 }

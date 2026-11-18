@@ -216,6 +216,9 @@ void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 	const f_cnt_t offset = nph->noteOffset();
 
 	ps->renderOutput(frames, out.data() + offset);
+
+	// The note starts from silence, never with a jump to its first sample (a click on every note)
+	applyFadeIn(out.data(), nph);
 }
 
 void Xpressive::deleteNotePluginData(NotePlayHandle* nph) {

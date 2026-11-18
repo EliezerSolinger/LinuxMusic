@@ -174,7 +174,11 @@ auto GranularPitchShifterEffect::process(ProcessContext& context) -> ProcessStat
 			int latency = std::max(static_cast<int>(std::max(sizeSamples * (std::max(m_speed[0], m_speed[1]) * grainSpeed - 1.), 0.) + SafetyLatency), minLatency);
 			for (int i = 0; i < 2; ++i)
 			{
-				readPoint[i] = m_writePoint - latency - sprayResult[i];
+				// Never further back than the ring holds: a big grain at a high pitch with spray, in a short
+				// range, asked for more (and the point, below the ring's start even once wrapped, read before it)
+				const auto point = std::max(m_writePoint - latency - sprayResult[i],
+					static_cast<float>(m_writePoint - (m_ringBufLength - 1)));
+				readPoint[i] = static_cast<int>(point);
 				if (readPoint[i] < 0) { readPoint[i] += m_ringBufLength; }
 			}
 			const double phaseInc = 1. / sizeSamples;

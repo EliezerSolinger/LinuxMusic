@@ -754,9 +754,10 @@ public:
 			// Stretch Q/resonance
 			m_vfq = _q * 0.25f;
 
-			// frequency in lmms ranges from 1Hz to 14000Hz
-			const float vowelf = _freq * freqRatio;
-			const int vowel = static_cast<int>( vowelf );
+			// frequency in lmms ranges from 1Hz to 14000Hz (a to u), and on to the last a at 17500 Hz; above it,
+			// that a (the frequency is limited to 20000 Hz, past the table: it read beyond its end)
+			const float vowelf = std::min(_freq * freqRatio, 5.f);
+			const int vowel = std::min(static_cast<int>(vowelf), 4);
 			const float fract = vowelf - vowel;
 
 			// interpolate between formant frequencies

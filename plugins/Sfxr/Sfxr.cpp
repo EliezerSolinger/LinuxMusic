@@ -485,6 +485,8 @@ void SfxrInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out
 		rendered += count;
 	}
 
+	// The note starts from silence, never with a jump to its first sample (a click on every note)
+	applyFadeIn(out.data(), _n);
 	applyRelease(out.data(), _n);
 }
 

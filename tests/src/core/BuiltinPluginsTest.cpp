@@ -140,7 +140,7 @@ class BuiltinPluginsTest : public QObject
 		Plugin* plugin = nullptr;
 	};
 
-	auto setUp(const QString& name, bool instrument) -> Setup
+	auto setUp(const QString& name, bool instrument, bool withNotes = true) -> Setup
 	{
 		auto* song = Engine::getSong();
 		song->createNewProject();
@@ -164,6 +164,11 @@ class BuiltinPluginsTest : public QObject
 			plugin.setAttribute("src", file);
 			track->restoreState(settings);
 		}
+		if (instrument && name == "sf2player")
+		{
+			// A soundfont to play: an AVL drum kit
+			track->instrument()->loadFile(QT_TESTCASE_SOURCEDIR "/../data/avldrums/Black_Pearl_4_LV2.sf2");
+		}
 		auto* mixer = Engine::mixer();
 		const auto channelIndex = mixer->createChannel();
 		track->mixerChannelModel()->setValue(channelIndex);
@@ -175,7 +180,7 @@ class BuiltinPluginsTest : public QObject
 			plugin = chain->effects().back()->plugin();
 		}
 		mixer->setUpTrackChannels();
-		addNotes(track);
+		if (withNotes) { addNotes(track); }
 		return {track, plugin};
 	}
 
@@ -297,6 +302,43 @@ private slots:
 	{
 		QFETCH(QString, plugin);
 		exercise(plugin, true);
+	}
+
+	/**
+	 * A note starts from silence: no jump from nothing to its first sample (a click on every note, as the Kicker
+	 * made with its attack at 0). With the defaults, as a new instrument comes.
+	 */
+	void notesStartFromSilence_data() { addRows(Plugin::Type::Instrument); }
+
+	void notesStartFromSilence()
+	{
+		QFETCH(QString, plugin);
+		auto setup = setUp(plugin, true, false);
+		if (!setup.plugin) { QSKIP("not built here"); }
+		auto* clip = dynamic_cast<MidiClip*>(setup.track->createClip(TimePos{0}));
+		// (a drum kit: its kick)
+		clip->addNote(Note{TimePos{96}, TimePos{48}, plugin == "avldrums" || plugin == "sf2player" ? 36 : DefaultKey});
+		auto* engine = Engine::audioEngine();
+		auto* song = Engine::getSong();
+		auto out = std::vector<float>{};
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		const auto rate = static_cast<std::size_t>(engine->outputSampleRate());
+		while (out.size() < rate * 2)
+		{
+			for (const auto& frame : engine->renderNextPeriod()) { out.push_back(frame[0] + frame[1]); }
+		}
+		song->stop();
+		auto start = std::size_t{1};
+		while (start < out.size() && std::abs(out[start]) < 1e-4f) { ++start; }
+		QVERIFY2(start < out.size(), "silent");
+		// How far the note gets in its first two frames (0.05 ms), against its peak in the first 10 ms: a sine at
+		// this pitch from zero gets to an eighth of its peak; a click, from silence to most of it
+		auto peak = 0.f;
+		for (auto f = start; f < std::min(out.size(), start + rate / 100); ++f) { peak = std::max(peak, std::abs(out[f])); }
+		const auto jump = std::max(std::abs(out[start]), std::abs(out[start + 1])) / peak;
+		qInfo("%s: in two frames, %.3f of the peak", qPrintable(plugin), jump);
+		QVERIFY2(jump < 0.25f, qPrintable(QString{"the note jumps from silence to %1 of its peak"}.arg(jump)));
 	}
 
 	void effects_data() { addRows(Plugin::Type::Effect); }

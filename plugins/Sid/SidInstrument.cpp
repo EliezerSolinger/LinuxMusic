@@ -422,6 +422,9 @@ void SidInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 			out[frame+offset][ch] = s;
 		}
 	}
+
+	// The note starts from silence, never with a jump to its first sample (a click on every note)
+	applyFadeIn(out.data(), _n);
 }
 
 
