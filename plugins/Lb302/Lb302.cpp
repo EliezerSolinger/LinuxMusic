@@ -530,6 +530,9 @@ void Lb302Synth::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>)
 {
 	if (nph->isMasterNote() || (nph->hasParent() && nph->isReleased())) { return; }
 
+	// (marked as queued, so that the synth hears when it goes, even if it never reads it: see deleteNotePluginData())
+	if (nph->m_pluginData == nullptr) { nph->m_pluginData = &m_queuedMarker; }
+
 	// Enqueue new note in m_notes
 	auto tries = s_maxNoteEnqueueRetries;
 	auto writeClaimedExpected = m_notesWriteClaimed.load(std::memory_order_relaxed);
@@ -576,14 +579,18 @@ void Lb302Synth::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>)
 void Lb302Synth::processNote(NotePlayHandle* nph)
 {
 	/// Start a new note.
-	if (nph->m_pluginData != this)
+	const bool isNew = nph->m_pluginData != this;
+	if (isNew)
 	{
 		m_playingNote = nph;
 		nph->m_pluginData = this;
 		m_newFreq = true;
 	}
 
-	m_releaseFrame = std::max(m_releaseFrame, nph->framesLeft() + nph->offset());
+	// The synth reads a note a period after it starts (its handle may play first): a new note let go already (held
+	// less than a period, as a key hit and let go at once) sounds for as long as it was held, not for nothing
+	const auto held = isNew && nph->isReleased() ? nph->totalFramesPlayed() : f_cnt_t{0};
+	m_releaseFrame = std::max({m_releaseFrame, nph->framesLeft() + nph->offset(), held});
 	
 	if (!m_playingNote && !nph->isReleased() && m_releaseFrame > 0)
 	{
@@ -622,8 +629,26 @@ void Lb302Synth::playImpl(std::span<SampleFrame> out)
 	auto count = std::size_t{0};
 	for (auto i = readIdx; i < writeCommitted; ++i)
 	{
-		auto* nph = m_notes[i & s_notesBufMask];
-		pending[count++] = Pending{nph, nph->totalFramesPlayed() == 0, nph->offset(), nph->key()};
+		// (a note gone before it was read is no longer there: see deleteNotePluginData())
+		if (auto* nph = m_notes[i & s_notesBufMask])
+		{
+			pending[count++] = Pending{nph, nph->totalFramesPlayed() == 0, nph->offset(), nph->key()};
+		}
+	}
+
+	// A note that ended before it was read: started now, as long as it was held (no note to follow: its volume and
+	// panning kept)
+	if (m_missedNote)
+	{
+		m_playingNote = nullptr;
+		m_newFreq = true;
+		m_trueFreq = m_missedNote->frequency;
+		const auto trueInc = phaseInc(m_trueFreq);
+		if (m_slideToggle.value()) { m_slideBase = trueInc; } else { m_vcoInc = trueInc; }
+		m_noteVolume = m_missedNote->volume;
+		m_notePan = std::clamp(m_missedNote->panning, PanningLeft, PanningRight);
+		m_releaseFrame = std::max<f_cnt_t>(m_missedNote->frames, 1);
+		m_missedNote.reset();
 	}
 	std::sort(pending.begin(), pending.begin() + count, [](const Pending& a, const Pending& b) {
 		if (a.isNew != b.isNew) { return b.isNew; }
@@ -642,6 +667,24 @@ void Lb302Synth::playImpl(std::span<SampleFrame> out)
 void Lb302Synth::deleteNotePluginData(NotePlayHandle* nph)
 {
 	if (m_playingNote == nph) { m_playingNote = nullptr; }
+
+	// Out of the notes waiting to be read (it would be read after it is gone). Notes go at the start of a period or
+	// under the change lock: the synth does not read nor the notes write the queue meanwhile.
+	const auto unread = nph->m_pluginData == &m_queuedMarker;
+	const auto readIdx = m_notesReadSeq.load(std::memory_order_relaxed);
+	const auto writeCommitted = m_notesWriteCommitted.load(std::memory_order_acquire);
+	for (auto i = readIdx; i < writeCommitted; ++i)
+	{
+		if (m_notes[i & s_notesBufMask] == nph) { m_notes[i & s_notesBufMask] = nullptr; }
+	}
+	// Never read, it ended having sounded: the synth plays it next (it was shorter than a period)
+	if (unread && nph->totalFramesPlayed() > 0 && !nph->isMasterNote())
+	{
+		constexpr float volRatio = 1.f / DefaultVolume;
+		m_missedNote = MissedNote{nph->frequency(), nph->getVolume() * volRatio, nph->getPanning(),
+			nph->totalFramesPlayed()};
+	}
+	nph->m_pluginData = nullptr;
 }
 
 

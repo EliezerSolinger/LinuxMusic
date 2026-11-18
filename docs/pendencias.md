@@ -286,6 +286,16 @@ queda do Mallets, que é queda e entra antes.
       só desligando o outro, então param (testado com LFOs nos dois); o resto é de um sentido só. A troca de
       instrumento com controladores no pitch (#8271) não se reproduziu; ficou como teste
       (`InstrumentFixesTest`, os dois).
+    - [x] Notas curtas vindas de MIDI não tocavam (#6264, reproduzido): a tecla batida e solta no mesmo período (a
+      entrada chega um período por vez) soltava a nota antes de ela soar. Sem release, ela não tinha nenhum quadro;
+      os instrumentos tocados por eventos MIDI (Zyn, Sf2, AVL, Drum Machines, OpulenZ…) nem recebiam o note on; e o
+      LB302, que lê as notas um período depois, a soltava no quadro 0. Mudo em 10 dos 19 instrumentos medidos.
+      Agora a tecla solta antes de a nota soar a deixa soar o primeiro período e solta depois
+      (`NotePlayHandle::noteOffOnceStarted`), na faixa e na voz do modo mono (só a entrada ao vivo: parar a música
+      ou silenciar corta na hora). O LB302 toca uma nota que chega já solta pelo tempo que ela foi segurada, e as
+      notas que ele não leu saem da fila dele quando vão (antes ficava na fila o endereço de uma nota apagada).
+      `InstrumentFixesTest`: três batidas curtas em cada instrumento, e duas com o modo mono (12 falham sem a
+      correção).
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.

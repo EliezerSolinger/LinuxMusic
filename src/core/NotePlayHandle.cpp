@@ -223,6 +223,8 @@ void NotePlayHandle::play(std::span<SampleFrame> buffer)
 
 	if (m_muted)
 	{
+		// (muted, it never sounds: a release waiting for it to start is done now)
+		if (m_releaseWhenStarted) { m_releaseWhenStarted = false; noteOff(0); }
 		return;
 	}
 
@@ -363,6 +365,12 @@ void NotePlayHandle::play(std::span<SampleFrame> buffer)
 
 	// update internal data
 	m_totalFramesPlayed += framesThisPeriod;
+	// Let go before it sounded: it has had its first period, released from the next (see noteOffOnceStarted())
+	if (m_releaseWhenStarted)
+	{
+		m_releaseWhenStarted = false;
+		noteOff(0);
+	}
 	unlock();
 }
 
@@ -430,8 +438,18 @@ void NotePlayHandle::releaseIfEnding()
 
 
 
+void NotePlayHandle::noteOffOnceStarted(const f_cnt_t offset)
+{
+	if (m_released || m_totalFramesPlayed > 0) { noteOff(offset); }
+	else { m_releaseWhenStarted = true; }
+}
+
+
+
+
 void NotePlayHandle::noteOff( const f_cnt_t _s )
 {
+	m_releaseWhenStarted = false;
 	if( m_released )
 	{
 		return;

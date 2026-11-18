@@ -107,7 +107,8 @@ void MonoMode::noteOff(int key, f_cnt_t offset)
 		if (!wasPlaying) { return; }
 		if (m_heldCount == 0)
 		{
-			if (m_voice && !m_voice->isReleased()) { m_voice->noteOff(offset); }
+			// (a key let go before its voice sounded still sounds: see NotePlayHandle::noteOffOnceStarted())
+			if (m_voice && !m_voice->isReleased()) { m_voice->noteOffOnceStarted(offset); }
 			m_voice = nullptr;
 			m_voiceKey = -1;
 			return;

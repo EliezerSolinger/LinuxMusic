@@ -34,6 +34,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <optional>
 
 #include "Hardware.h"
 #include "Instrument.h"
@@ -288,6 +289,21 @@ private:
 	//! @see m_notesWriteCommitted
 	//! @see m_notesWriteClaimed
 	std::array<NotePlayHandle*, s_maxPendingNotes> m_notes {};
+
+	//! (a note queued and not read yet carries its address as its plugin data, so that the synth hears when it goes:
+	//! see deleteNotePluginData())
+	char m_queuedMarker = 0;
+
+	//! A note that ended before the synth read it (shorter than a period: a key hit and let go at once), played in
+	//! the next period for as long as it was held
+	struct MissedNote
+	{
+		float frequency;
+		float volume;
+		panning_t panning;
+		f_cnt_t frames;
+	};
+	std::optional<MissedNote> m_missedNote;
 
 	//! @brief Sequence number indicating complete dequeue operations.
 	//!

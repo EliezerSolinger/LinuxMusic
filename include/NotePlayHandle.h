@@ -190,6 +190,14 @@ public:
 	/*! Releases the note (and plays release frames) */
 	void noteOff( const f_cnt_t offset = 0 );
 
+	/**
+	 * A key let go (live input): as noteOff(), but a note that has not sounded yet (the key hit and let go in the
+	 * same period: input comes a period at a time) sounds for its first period, then is released. Released at once,
+	 * it would play nothing (no release: no frames at all; and an instrument played by MIDI events would not get
+	 * its note on), and a short hit on a pad would be lost (#6264).
+	 */
+	void noteOffOnceStarted(f_cnt_t offset = 0);
+
 	/*! Returns number of frames to be played until the note is going to be released */
 	f_cnt_t framesBeforeRelease() const
 	{
@@ -393,6 +401,7 @@ private:
 											// release of note
 	SubNoteList m_subNotes;			// used for chords and arpeggios
 	std::atomic<bool> m_released;				// indicates whether note is released
+	bool m_releaseWhenStarted = false; //!< (see noteOffOnceStarted(); under the note's lock or the change lock)
 	bool m_releaseStarted;
 	bool m_hasMidiNote;
 	bool m_hasParent;						// indicates whether note has parent

@@ -46,6 +46,7 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "LfoController.h"
+#include "MidiClient.h"
 #include "MidiClip.h"
 #include "Mixer.h"
 #include "Note.h"
@@ -1039,6 +1040,58 @@ private slots:
 			QVERIFY(renderFinite(30));
 		}
 		song->stop();
+	}
+
+	/**
+	 * #6264: a pad hit short (a key hit and let go in the same period: input comes a period at a time) played
+	 * nothing: the note was released before it sounded (no release: no frames; an instrument played by MIDI events
+	 * did not even get its note on; the LB302, reading notes a period late, released it at once). It sounds for its
+	 * first period now, then is released, again and again.
+	 */
+	void shortHitsSound_data()
+	{
+		QTest::addColumn<QString>("instrument");
+		QTest::addColumn<bool>("mono");
+		for (const auto* name : {"tripleoscillator", "kicker", "drummachines", "avldrums", "sf2player", "lb302",
+			"opulenz", "zynaddsubfx", "monstro", "sid", "nes", "freeboy", "organic", "bitinvader", "watsyn", "sfxr",
+			"vibedstrings", "malletsstk", "xpressive"})
+		{
+			QTest::newRow(name) << QString{name} << false;
+		}
+		// (a mono voice, let go before it sounded)
+		QTest::newRow("tripleoscillator, mono") << QString{"tripleoscillator"} << true;
+		QTest::newRow("sf2player, mono") << QString{"sf2player"} << true;
+	}
+
+	void shortHitsSound()
+	{
+		QFETCH(QString, instrument);
+		QFETCH(bool, mono);
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track && track->loadInstrument(instrument));
+		for (auto* model : track->monoMode().findChildren<BoolModel*>())
+		{
+			if (model->displayName() == "Mono") { model->setValue(mono); }
+		}
+		QCOMPARE(track->monoMode().enabled(), mono);
+		QVERIFY(renderFinite(3));
+		auto* client = Engine::audioEngine()->midiClient();
+		for (int hit = 0; hit < 3; ++hit)
+		{
+			client->queueInEvent(track->midiPort(), MidiEvent{MidiNoteOn, 0, 40, 110});
+			client->queueInEvent(track->midiPort(), MidiEvent{MidiNoteOff, 0, 40, 0});
+			auto loudest = 0.f;
+			for (int period = 0; period < 60; ++period)
+			{
+				for (const auto& frame : Engine::audioEngine()->renderNextPeriod())
+				{
+					loudest = std::max(loudest, std::abs(frame.left()));
+				}
+			}
+			QVERIFY2(loudest > 0.02f, qPrintable(QString{"hit %1: %2"}.arg(hit).arg(loudest)));
+		}
 	}
 };
 

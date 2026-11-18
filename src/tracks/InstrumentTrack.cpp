@@ -432,7 +432,8 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 				// do actual note off and remove internal reference to NotePlayHandle (which itself will
 				// be deleted later automatically)
 				Engine::audioEngine()->requestChangeInModel();
-				m_notes[event.key()]->noteOff( offset );
+				// (a key hit and let go before its note sounded still sounds: see noteOffOnceStarted())
+				m_notes[event.key()]->noteOffOnceStarted(offset);
 				if (isSustainPedalPressed() &&
 					m_notes[event.key()]->origin() ==
 					NotePlayHandle::Origin::MidiInput)
