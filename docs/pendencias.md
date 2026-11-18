@@ -178,12 +178,9 @@ queda do Mallets, que é queda e entra antes.
     - [x] (no caminho) carregar um soundfont segurava a trava do motor enquanto o FluidSynth trocava as fontes:
       sob carga, 7 a 10 ms e um período pulado. Agora um sintetizador novo é montado sem trava e só os ponteiros
       trocam (0,00 ms medidos);
-    - o host LV2 não abre a interface nativa dos plugins. **Parado, esperando o usuário (18/11):**
-      - precisa do `suil` (no Homebrew, não instalado): instalar é baixar um pacote, o que pede a sua aprovação;
-      - os LV2 de terceiros rodam isolados em outro processo, e muitas interfaces pedem `instance-access` (o plugin
-        no mesmo processo; a do Carla, a única com interface instalada aqui, pede). Então a interface teria de abrir
-        no processo isolado, com o suil lá. Decidir: instalar o suil e abrir as interfaces no processo isolado
-        (recomendado), ou rodar no processo do programa os LV2 cuja interface peça isso.
+    - [x] o host LV2 não abre a interface nativa dos plugins: **fica como está (decisão do usuário, 18/11: o LV2 não
+      precisa entrar no rack).** O suil do Homebrew não foi instalado: pede o Qt 5 (o programa é Qt 6, e o embrulho
+      dele não carrega junto), a fórmula está obsoleta e o suporte a Cocoa sai em 19/11.
     - [x] aliasing (#6098), medido como a potência fora dos harmônicos de uma nota aguda (FFT de 2^15 amostras,
       janela Blackman-Harris; o chão da medida é -88 dB):
       - BitInvader e Watsyn tocam as ondas desenhadas por tabelas sem harmônicos acima do corte (`DrawnWave`: os
