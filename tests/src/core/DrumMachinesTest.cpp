@@ -98,7 +98,7 @@ private slots:
 	void everyKit_data()
 	{
 		QTest::addColumn<int>("kit");
-		for (int kit = 0; kit < 12; ++kit) { QTest::newRow(qPrintable(QString::number(kit))) << kit; }
+		for (int kit = 0; kit < 13; ++kit) { QTest::newRow(qPrintable(QString::number(kit))) << kit; }
 	}
 
 	//! Every kit loads (every piece's DrumSynth file read) and its pieces sound, finite: its notes from the

@@ -197,6 +197,15 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 				{"ride.ds", Ride, "RD"}, {"tamb.ds", Tambourine, "TB"}, {"shaker.ds", Maracas, "SH"},
 				{"bass3.ds", Extra, "B3"}, {"snare3.ds", Extra + 1, "S3"}},
 			"photo_dmx.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Oberheim DMX. Photo: Alison, CC BY-SA 4.0")},
+		{"TR-707", "drumsynth/tr707", L{{0xc8, 0xc6, 0xc0}, {0xa9, 0xa7, 0xa1}, {0xe8, 0x6a, 0x2c}, {0x2a, 0x2a, 0x2a},
+			{QColor{0x4a, 0x4a, 0x4a}, QColor{0xe8, 0x6a, 0x2c}, QColor{0x4a, 0x4a, 0x4a}, QColor{0x6e, 0x6e, 0x6e}}},
+			{{"bass1.ds", BassDrum, "BD1"}, {"bass2.ds", BassDrum2, "BD2"}, {"rimshot.ds", SideStick, "RIM"},
+				{"snare1.ds", Snare, "SD1"}, {"handclap.ds", HandClap, "HCP"}, {"snare2.ds", Snare2, "SD2"},
+				{"hihat_closed.ds", ClosedHat, "CH", HiHats}, {"tom_low.ds", LowTom, "LT"},
+				{"hihat_open.ds", OpenHat, "OH", HiHats}, {"tom_mid.ds", LowMidTom, "MT"}, {"crash.ds", Crash, "CR"},
+				{"tom_high.ds", HighTom, "HT"}, {"ride.ds", Ride, "RD"}, {"tambourine.ds", Tambourine, "TB"},
+				{"cowbell.ds", Cowbell, "CB"}},
+			"photo_tr707.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Speculos, CC BY-SA 3.0")},
 	};
 	return s_kits;
 }

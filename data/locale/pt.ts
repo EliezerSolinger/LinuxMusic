@@ -18893,5 +18893,9 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>Simmons SDS 5. Photo: Ben Franske, CC BY-SA 2.5</source>
         <translation>Simmons SDS 5. Foto: Ben Franske, CC BY-SA 2.5</translation>
     </message>
+    <message>
+        <source>Photo: Speculos, CC BY-SA 3.0</source>
+        <translation>Foto: Speculos, CC BY-SA 3.0</translation>
+    </message>
 </context>
 </TS>

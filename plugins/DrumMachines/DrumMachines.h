@@ -44,8 +44,8 @@ namespace lmms
 /**
  * The drum machines of the DrumSynth kits that come with the program (data/samples/drumsynth: CR-78, CR-8000,
  * TR-606, TR-77, TR-808, TR-909, LinnDrum, and the Electro and R&B kits), the CR-78 recorded, and kits in the style of
- * the SP-1200 and the MPC60 (samplers: the program's own samples given their character), the Oberheim DMX
- * emulated (DrumSynth patches of their voices with their sampling), each piece on its note of the General MIDI
+ * the SP-1200 and the MPC60 (samplers: the program's own samples given their character), the Oberheim DMX and the
+ * Roland TR-707 emulated (DrumSynth patches of their voices with their sampling), each piece on its note of the General MIDI
  * drum map (the variations with no note there on the notes after it, from 82), so that drum parts written for
  * any General MIDI kit play.
  *

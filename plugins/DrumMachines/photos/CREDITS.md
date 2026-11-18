@@ -13,3 +13,4 @@ From Wikimedia Commons, under the licenses below (resized to 1920 pixels wide at
 - `photo_mpc60.jpg`: Akai MPC60 (the MPC60 style kit). "Akai MPC60.jpg" by The original uploader was Kimi95 at Italian Wikipedia, CC BY 3.0 (https://creativecommons.org/licenses/by/3.0), https://commons.wikimedia.org/wiki/File:Akai_MPC60.jpg
 - `photo_mpc2000xl.jpg`: Akai MPC2000XL (the R&B kit). "Akai MPC2000XL.jpg" by user:withe, Public domain, https://commons.wikimedia.org/wiki/File:Akai_MPC2000XL.jpg
 - `photo_simmons.jpg`: Simmons SDS 5 (the Electro kit). "Simmons SDS5 Electric Drum.jpg" by Ben Franske (BenFranske), CC BY-SA 2.5 (https://creativecommons.org/licenses/by-sa/2.5), https://commons.wikimedia.org/wiki/File:Simmons_SDS5_Electric_Drum.jpg (resized from 3456 pixels wide)
+- `photo_tr707.jpg`: TR-707. "Roland TR-707.jpg" by Speculos, CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0), https://commons.wikimedia.org/wiki/File:Roland_TR-707.jpg
