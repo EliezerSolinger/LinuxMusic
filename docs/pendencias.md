@@ -331,6 +331,10 @@ queda do Mallets, que é queda e entra antes.
       3 dB ao desligar, mas nenhuma distorção que fique: depois, o som é igual ao de uma nota começada no modo
       novo. E o estalo no canal direito com notas sobrepostas no AudioFileProcessor (#7073): os dois canais saltam
       igual (bumbo, caixa e chimbal, com e sem microfades, notas a 3, 6 e 12 ticks).
+    - [x] "Pitch bend não faz nada" (fórum, Sf2Player): medido com a roda de um teclado (autocorrelação), todos os
+      instrumentos sobem o alcance certo, o Sf2Player também. O que pesa é o alcance padrão de 1 semitom: o General
+      MIDI, os teclados e os arquivos MIDI esperam 2 (a importação MIDI já punha 2). As faixas novas vêm com 2;
+      projetos e presets guardam o seu, e um salvo sem alcance fica com o 1 de então (`InstrumentFixesTest`).
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.

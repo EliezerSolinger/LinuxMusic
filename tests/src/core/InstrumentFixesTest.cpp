@@ -1264,6 +1264,24 @@ private slots:
 		QVERIFY(!PresetPreviewPlayHandle::previewTrack()->isArpeggioEnabled());
 		QVERIFY2(oscillatorVolume() != 3.f, qPrintable(QString::number(oscillatorVolume())));
 	}
+
+	//! The pitch wheel bends 2 semitones each way on a new track, General MIDI's (it was 1: "pitch bend does nothing");
+	//! a project or preset saved without a range keeps the 1 it had
+	void newTracksBendTwoSemitones()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track && track->loadInstrument("tripleoscillator"));
+		QCOMPARE(track->pitchRangeModel()->value(), 2);
+		auto state = DataFile{DataFile::Type::InstrumentTrackSettings};
+		track->savePreset(state, state.content());
+		auto settings = state.content().firstChildElement("instrumenttrack");
+		QCOMPARE(settings.attribute("pitchrange").toInt(), 2);
+		settings.removeAttribute("pitchrange");
+		track->loadTrackSpecificSettings(settings);
+		QCOMPARE(track->pitchRangeModel()->value(), 1);
+	}
 };
 
 QTEST_GUILESS_MAIN(InstrumentFixesTest)

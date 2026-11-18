@@ -62,7 +62,9 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	m_panningModel(DefaultPanning, PanningLeft, PanningRight, 0.1f, this, tr("Panning")),
 	m_audioBusHandle(tr("unnamed_track"), true, &m_volumeModel, &m_panningModel, this),
 	m_pitchModel(0, MinPitchDefault, MaxPitchDefault, 1, this, tr("Pitch")),
-	m_pitchRangeModel(1, 1, 60, this, tr("Pitch range")),
+	// (2 semitones each way, General MIDI's: with 1 the wheel did half what a keyboard or a MIDI file expects; the MIDI
+	// import set 2 already)
+	m_pitchRangeModel(2, 1, 60, this, tr("Pitch range")),
 	m_useMasterPitchModel(true, this, tr("Master pitch")),
 	m_recordArmModel(false, this, tr("Record arm")),
 	m_midiRecordModeModel(0, 0, 2, this, tr("MIDI record mode")),
@@ -1112,7 +1114,12 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 
 	m_volumeModel.loadSettings( thisElement, "vol" );
 	m_panningModel.loadSettings( thisElement, "pan" );
-	m_pitchRangeModel.loadSettings( thisElement, "pitchrange" );
+	// (saved by every version since long ago; one saved without it had 1, the default then)
+	if (thisElement.hasAttribute("pitchrange") || !thisElement.firstChildElement("pitchrange").isNull())
+	{
+		m_pitchRangeModel.loadSettings(thisElement, "pitchrange");
+	}
+	else { m_pitchRangeModel.setValue(1); }
 	m_pitchModel.loadSettings( thisElement, "pitch" );
 	m_mixerChannelModel.setRange( 0, Engine::mixer()->numChannels()-1 );
 	if ( !m_previewMode )
