@@ -49,11 +49,12 @@ EnvelopeAndLfoParameters::LfoInstances * EnvelopeAndLfoParameters::s_lfoInstance
 
 void EnvelopeAndLfoParameters::LfoInstances::trigger()
 {
-	QMutexLocker m( &m_lfoListMutex );
+	// On the audio thread, once a period, after the workers (AudioEngine::renderStageMix()): each LFO in use moves on
+	// and works out its shape for the next period, which the workers then only read (fillLfoLevel())
 	for (const auto& lfo : m_lfos)
 	{
 		lfo->m_lfoFrame += Engine::audioEngine()->framesPerPeriod();
-		lfo->m_bad_lfoShapeData = true;
+		if (!lfo->m_lfoAmountIsZero) { lfo->updateLfoShapeData(); }
 	}
 }
 
@@ -62,11 +63,11 @@ void EnvelopeAndLfoParameters::LfoInstances::trigger()
 
 void EnvelopeAndLfoParameters::LfoInstances::reset()
 {
-	QMutexLocker m( &m_lfoListMutex );
+	// (on the audio thread, before the workers: Song::processNextBuffer())
 	for (const auto& lfo : m_lfos)
 	{
 		lfo->m_lfoFrame = 0;
-		lfo->m_bad_lfoShapeData = true;
+		if (!lfo->m_lfoAmountIsZero) { lfo->updateLfoShapeData(); }
 	}
 }
 
@@ -75,7 +76,8 @@ void EnvelopeAndLfoParameters::LfoInstances::reset()
 
 void EnvelopeAndLfoParameters::LfoInstances::add( EnvelopeAndLfoParameters * lfo )
 {
-	QMutexLocker m( &m_lfoListMutex );
+	// The audio thread goes through the list (trigger()): under the audio engine's change lock, for the moment
+	const auto guard = AudioEngine::changesGuard();
 	m_lfos.append( lfo );
 }
 
@@ -84,7 +86,7 @@ void EnvelopeAndLfoParameters::LfoInstances::add( EnvelopeAndLfoParameters * lfo
 
 void EnvelopeAndLfoParameters::LfoInstances::remove( EnvelopeAndLfoParameters * lfo )
 {
-	QMutexLocker m( &m_lfoListMutex );
+	const auto guard = AudioEngine::changesGuard();
 	m_lfos.removeAll( lfo );
 }
 
@@ -241,7 +243,6 @@ void EnvelopeAndLfoParameters::updateLfoShapeData()
 	{
 		m_lfoShapeData[offset] = lfoShapeSample( offset );
 	}
-	m_bad_lfoShapeData = false;
 }
 
 
@@ -261,10 +262,7 @@ inline void EnvelopeAndLfoParameters::fillLfoLevel( float * _buf,
 	}
 	_frame -= m_lfoPredelayFrames;
 
-	if( m_bad_lfoShapeData )
-	{
-		updateLfoShapeData();
-	}
+	// (the shape of this period was worked out before the workers ran, see LfoInstances::trigger())
 
 	f_cnt_t offset = 0;
 	const float lafI = 1.0f / std::max(minimumFrames, m_lfoAttackFrames);
@@ -286,8 +284,7 @@ void EnvelopeAndLfoParameters::fillLevel( float * _buf, f_cnt_t _frame,
 						const f_cnt_t _release_begin,
 						const f_cnt_t _frames )
 {
-	QMutexLocker m(&m_paramMutex);
-
+	// No lock: the audio thread's workers only read here (see updateSampleVars() and LfoInstances::trigger())
 	fillLfoLevel( _buf, _frame, _frames );
 
 	for( f_cnt_t offset = 0; offset < _frames; ++offset, ++_buf, ++_frame )
@@ -378,7 +375,7 @@ void EnvelopeAndLfoParameters::loadSettings( const QDomElement & _this )
 	{
 		if (QFileInfo(PathUtil::toAbsolute(userWaveFile)).exists())
 		{
-			m_userWave = SampleBuffer::fromFile(_this.attribute("userwavefile"));
+			setUserWave(SampleBuffer::fromFile(_this.attribute("userwavefile")));
 		}
 		else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }  
 	}
@@ -389,9 +386,27 @@ void EnvelopeAndLfoParameters::loadSettings( const QDomElement & _this )
 
 
 
+void EnvelopeAndLfoParameters::setUserWave(std::shared_ptr<const SampleBuffer> wave)
+{
+	{
+		// The audio thread reads it (lfoShapeSample(), from trigger())
+		const auto guard = AudioEngine::changesGuard();
+		std::swap(m_userWave, wave);
+		updateLfoShapeData();
+	}
+	// (the old one goes here, without the lock)
+}
+
+
+
+
 void EnvelopeAndLfoParameters::updateSampleVars()
 {
-	QMutexLocker m(&m_paramMutex);
+	// Worked out without any lock, then put where the audio thread reads it (fillLevel(), on the workers, which take
+	// no lock) in a moment under the audio engine's change lock. Automation changes the knobs on the audio thread
+	// itself (Song::processAutomations(), before the workers run): there the tables are written in place, without
+	// allocating unless they must grow, and nothing else reads them meanwhile
+	const bool rendering = AudioEngine::isRenderingThread();
 
 	const float frames_per_env_seg = SECS_PER_ENV_SEGMENT *
 				Engine::audioEngine()->outputSampleRate();
@@ -410,106 +425,100 @@ void EnvelopeAndLfoParameters::updateSampleVars()
 					expKnobVal(m_decayModel.value() *
 					(1 - m_sustainModel.value()))));
 
-	m_sustainLevel = m_sustainModel.value();
-	m_amount = m_amountModel.value();
-	if( m_amount >= 0 )
+	const float sustain = m_sustainModel.value();
+	const float amount = m_amountModel.value();
+	const float amountAdd = amount >= 0 ? (1.0f - amount) * m_valueForZeroAmount : m_valueForZeroAmount;
+
+	const f_cnt_t pahdFrames = predelay_frames + attack_frames + hold_frames + decay_frames;
+	f_cnt_t rFrames = std::max(minimumFrames,
+		static_cast<f_cnt_t>(frames_per_env_seg * expKnobVal(m_releaseModel.value())));
+	if (static_cast<int>(floorf(amount * 1000.0f)) == 0) { rFrames = minimumFrames; }
+
+	// The tables: in place on the audio thread (they only grow), new ones here
+	auto newPahd = std::vector<sample_t>{};
+	auto newR = std::vector<sample_t>{};
+	auto& pahdEnv = rendering ? m_pahdEnv : newPahd;
+	auto& rEnv = rendering ? m_rEnv : newR;
+	if (!rendering)
 	{
-		m_amountAdd = ( 1.0f - m_amount ) * m_valueForZeroAmount;
+		pahdEnv.resize(std::max(m_pahdEnv.size(), static_cast<std::size_t>(pahdFrames)));
+		rEnv.resize(std::max(m_rEnv.size(), static_cast<std::size_t>(rFrames)));
 	}
-	else
-	{
-		m_amountAdd = m_valueForZeroAmount;
-	}
+	if (pahdEnv.size() < static_cast<std::size_t>(pahdFrames)) { pahdEnv.resize(pahdFrames); }
+	if (rEnv.size() < static_cast<std::size_t>(rFrames)) { rEnv.resize(rFrames); }
 
-	m_pahdFrames = predelay_frames + attack_frames + hold_frames +
-								decay_frames;
-	m_rFrames = static_cast<f_cnt_t>( frames_per_env_seg *
-					expKnobVal( m_releaseModel.value() ) );
-	m_rFrames = std::max(minimumFrames, m_rFrames);
-
-	if( static_cast<int>( floorf( m_amount * 1000.0f ) ) == 0 )
-	{
-		m_rFrames = minimumFrames;
-	}
-
-	// if the buffers are too small, make bigger ones - so we only alloc new memory when necessary
-	if (m_pahdEnv.size() < static_cast<std::size_t>(m_pahdFrames)) { m_pahdEnv.resize(m_pahdFrames); }
-	if (m_rEnv.size() < static_cast<std::size_t>(m_rFrames)) { m_rEnv.resize(m_rFrames); }
-
-	const float aa = m_amountAdd;
+	const float aa = amountAdd;
 	for( f_cnt_t i = 0; i < predelay_frames; ++i )
 	{
-		m_pahdEnv[i] = aa;
+		pahdEnv[i] = aa;
 	}
 
 	f_cnt_t add = predelay_frames;
 
-	const float afI = ( 1.0f / attack_frames ) * m_amount;
+	const float afI = ( 1.0f / attack_frames ) * amount;
 	for( f_cnt_t i = 0; i < attack_frames; ++i )
 	{
-		m_pahdEnv[add+i] = i * afI + aa;
+		pahdEnv[add+i] = i * afI + aa;
 	}
 
 	add += attack_frames;
-	const float amsum = m_amount + m_amountAdd;
+	const float amsum = amount + amountAdd;
 	for( f_cnt_t i = 0; i < hold_frames; ++i )
 	{
-		m_pahdEnv[add + i] = amsum;
+		pahdEnv[add + i] = amsum;
 	}
 
 	add += hold_frames;
-	const float dfI = ( 1.0 / decay_frames ) * ( m_sustainLevel -1 ) * m_amount;
+	const float dfI = ( 1.0 / decay_frames ) * ( sustain -1 ) * amount;
 	for( f_cnt_t i = 0; i < decay_frames; ++i )
 	{
-/*
-		m_pahdEnv[add + i] = ( m_sustainLevel + ( 1.0f -
-						(float)i / decay_frames ) *
-						( 1.0f - m_sustainLevel ) ) *
-							m_amount + m_amountAdd;
-*/
-		m_pahdEnv[add + i] = amsum + i*dfI;
+		pahdEnv[add + i] = amsum + i*dfI;
 	}
 
-	const float rfI = ( 1.0f / m_rFrames ) * m_amount;
-	for( f_cnt_t i = 0; i < m_rFrames; ++i )
+	const float rfI = ( 1.0f / rFrames ) * amount;
+	for( f_cnt_t i = 0; i < rFrames; ++i )
 	{
-		m_rEnv[i] = (float)( m_rFrames - i ) * rfI;
+		rEnv[i] = (float)( rFrames - i ) * rfI;
 	}
-
-	// save this calculation in real-time-part
-	m_sustainLevel = m_sustainLevel * m_amount + m_amountAdd;
-
 
 	const float frames_per_lfo_oscillation = SECS_PER_LFO_OSCILLATION *
 				Engine::audioEngine()->outputSampleRate();
-	m_lfoPredelayFrames = static_cast<f_cnt_t>( frames_per_lfo_oscillation *
-				expKnobVal( m_lfoPredelayModel.value() ) );
-	m_lfoAttackFrames = static_cast<f_cnt_t>( frames_per_lfo_oscillation *
-				expKnobVal( m_lfoAttackModel.value() ) );
-	m_lfoOscillationFrames = static_cast<f_cnt_t>(
-						frames_per_lfo_oscillation *
-						m_lfoSpeedModel.value() );
+	const auto lfoPredelayFrames = static_cast<f_cnt_t>(frames_per_lfo_oscillation
+		* expKnobVal(m_lfoPredelayModel.value()));
+	const auto lfoAttackFrames = static_cast<f_cnt_t>(frames_per_lfo_oscillation
+		* expKnobVal(m_lfoAttackModel.value()));
+	auto lfoOscillationFrames = static_cast<f_cnt_t>(frames_per_lfo_oscillation * m_lfoSpeedModel.value());
 	if( m_x100Model.value() )
 	{
-		m_lfoOscillationFrames /= 100;
+		lfoOscillationFrames /= 100;
 	}
-	m_lfoAmount = m_lfoAmountModel.value() * 0.5f;
+	const float lfoAmount = m_lfoAmountModel.value() * 0.5f;
+	const bool lfoAmountIsZero = static_cast<int>(floorf(lfoAmount * 1000.0f)) == 0;
+	const bool used = !lfoAmountIsZero || static_cast<int>(floorf(amount * 1000.0f)) != 0;
 
-	m_used = true;
-	if( static_cast<int>( floorf( m_lfoAmount * 1000.0f ) ) == 0 )
 	{
-		m_lfoAmountIsZero = true;
-		if( static_cast<int>( floorf( m_amount * 1000.0f ) ) == 0 )
+		const auto guard = AudioEngine::changesGuard();
+		if (!rendering)
 		{
-			m_used = false;
+			m_pahdEnv.swap(newPahd);
+			m_rEnv.swap(newR);
 		}
+		m_amount = amount;
+		m_amountAdd = amountAdd;
+		m_pahdFrames = pahdFrames;
+		m_rFrames = rFrames;
+		// (worked out here once, not in the real-time part)
+		m_sustainLevel = sustain * amount + amountAdd;
+		m_lfoPredelayFrames = lfoPredelayFrames;
+		m_lfoAttackFrames = lfoAttackFrames;
+		m_lfoOscillationFrames = std::max<f_cnt_t>(1, lfoOscillationFrames);
+		m_lfoAmount = lfoAmount;
+		m_lfoAmountIsZero = lfoAmountIsZero;
+		m_used = used;
+		// The LFO's shape for this period, with what changed (then each period, see LfoInstances::trigger())
+		updateLfoShapeData();
 	}
-	else
-	{
-		m_lfoAmountIsZero = false;
-	}
-
-	m_bad_lfoShapeData = true;
+	// (the old tables go here, without the lock)
 
 	emit dataChanged();
 

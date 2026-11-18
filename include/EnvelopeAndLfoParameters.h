@@ -68,7 +68,6 @@ public:
 		void remove( EnvelopeAndLfoParameters * lfo );
 
 	private:
-		QMutex m_lfoListMutex;
 		using LfoList = QList<EnvelopeAndLfoParameters*>;
 		LfoList m_lfos;
 
@@ -148,6 +147,8 @@ public:
 	const BoolModel& getX100Model() const { return m_x100Model; }
 	const IntModel& getLfoWaveModel() const { return m_lfoWaveModel; }
 	std::shared_ptr<const SampleBuffer> getLfoUserWave() const { return m_userWave; }
+	//! The LFO's own wave: put where the audio thread reads it in a moment (the old one goes after)
+	void setUserWave(std::shared_ptr<const SampleBuffer> wave);
 
 public slots:
 	void updateSampleVars();
@@ -161,7 +162,6 @@ private:
 	static LfoInstances * s_lfoInstances;
 	bool m_used;
 
-	QMutex m_paramMutex;
 
 	FloatModel m_predelayModel;
 	FloatModel m_attackModel;
@@ -200,8 +200,6 @@ private:
 	bool m_lfoAmountIsZero;
 	std::vector<sample_t> m_lfoShapeData; //!< One period's frames
 	sample_t m_random;
-	//! Set by both threads: the main one when a knob changes, the audio one each period
-	std::atomic<bool> m_bad_lfoShapeData;
 	std::shared_ptr<const SampleBuffer> m_userWave = SampleBuffer::emptyBuffer();
 
 	constexpr static auto NumLfoShapes = static_cast<std::size_t>(LfoShape::Count);
