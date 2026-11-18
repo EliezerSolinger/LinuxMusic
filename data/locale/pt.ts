@@ -18853,5 +18853,33 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>DRUM MACHINE</source>
         <translation>BATERIA ELETRÔNICA</translation>
     </message>
+    <message>
+        <source>Photo: Blair Rideout, CC BY 2.0</source>
+        <translation>Foto: Blair Rideout, CC BY 2.0</translation>
+    </message>
+    <message>
+        <source>Photo: Midas Wouters, CC BY-SA 3.0</source>
+        <translation>Foto: Midas Wouters, CC BY-SA 3.0</translation>
+    </message>
+    <message>
+        <source>Photo: Trouby, CC BY-SA 3.0</source>
+        <translation>Foto: Trouby, CC BY-SA 3.0</translation>
+    </message>
+    <message>
+        <source>Photo: Brandon Daniel, Clusternote, CC BY-SA 2.0</source>
+        <translation>Foto: Brandon Daniel, Clusternote, CC BY-SA 2.0</translation>
+    </message>
+    <message>
+        <source>Photo: Linn Electronics / Forat Electronics, CC BY-SA 3.0</source>
+        <translation>Foto: Linn Electronics / Forat Electronics, CC BY-SA 3.0</translation>
+    </message>
+    <message>
+        <source>Oberheim DMX. Photo: Matt Mechtley, Shoulder-synth, CC BY-SA 2.0</source>
+        <translation>Oberheim DMX. Foto: Matt Mechtley, Shoulder-synth, CC BY-SA 2.0</translation>
+    </message>
+    <message>
+        <source>Akai MPC60. Photo: Kimi95, CC BY 3.0</source>
+        <translation>Akai MPC60. Foto: Kimi95, CC BY 3.0</translation>
+    </message>
 </context>
 </TS>

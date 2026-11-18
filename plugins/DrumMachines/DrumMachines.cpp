@@ -41,6 +41,7 @@
 #include "MidiPort.h"
 #include "Mixer.h"
 #include "SampleBuffer.h"
+#include "embed.h"
 #include "Song.h"
 
 #include "plugin_export.h"
@@ -108,31 +109,36 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 			{{"Kick", BassDrum, "BD"}, {"Snare", Snare, "SD"}, {"Rim", SideStick, "RS"}, {"Clap", HandClap, "CP"},
 				{"Hat_c", ClosedHat, "CH", HiHats}, {"Hat_o", OpenHat, "OH", HiHats}, {"Cymbal", Crash, "CY"},
 				{"Cowbell", Cowbell, "CB"}, {"Clave", Claves, "CL"}, {"Conga_m", OpenHighConga, "HC"},
-				{"Conga_l", LowConga, "LC"}}},
+				{"Conga_l", LowConga, "LC"}},
+			"photo_cr8000.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Blair Rideout, CC BY 2.0")},
 		{"TR-606", "tr606", L{{0xc9, 0xcc, 0xd1}, {0x2b, 0x2b, 0x2b}, {0xc8, 0x37, 0x2d}, {0x20, 0x20, 0x20},
 			{QColor{0xc8, 0x37, 0x2d}, QColor{0xd8, 0xd8, 0xd8}, QColor{0xc8, 0x37, 0x2d}, QColor{0xd8, 0xd8, 0xd8}}},
 			{{"TR606_Kick", BassDrum, "BD"}, {"TR606_Snare", Snare, "SD"}, {"TR606_Hat_C", ClosedHat, "CH", HiHats},
 				{"TR606_Hat_O", OpenHat, "OH", HiHats}, {"TR606_Cymbal", Crash, "CY"}, {"TR606_Tom_L", LowTom, "LT"},
-				{"TR606_Tom_H", HighTom, "HT"}}},
+				{"TR606_Tom_H", HighTom, "HT"}},
+			"photo_tr606.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Midas Wouters, CC BY-SA 3.0")},
 		{"TR-77", "tr77", L{{0x5a, 0x3b, 0x26}, {0xe8, 0xdc, 0xc0}, {0x3b, 0x6f, 0xb6}, {0x22, 0x22, 0x22},
 			{QColor{0x3b, 0x6f, 0xb6}, QColor{0xf4, 0xee, 0xe0}, QColor{0x3b, 0x6f, 0xb6}, QColor{0xf4, 0xee, 0xe0}}},
 			{{"Tr77_kick", BassDrum, "BD"}, {"Tr77_snare", Snare, "SD"}, {"Tr77_hat", ClosedHat, "HH", HiHats},
 				{"Tr77_cym", Crash, "CY"}, {"Tr77_tom1", HighTom, "HT"}, {"Tr77_tom2", LowTom, "LT"},
-				{"Tr77_cui1", MuteCuica, "C1"}, {"Tr77_cui2", OpenCuica, "C2"}}},
+				{"Tr77_cui1", MuteCuica, "C1"}, {"Tr77_cui2", OpenCuica, "C2"}},
+			"photo_tr77.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Trouby, CC BY-SA 3.0")},
 		{"TR-808", "tr808", L{{0x4a, 0x4a, 0x46}, {0x2f, 0x2f, 0x2c}, {0xec, 0x7a, 0x1c}, {0xe8, 0xe3, 0xd3},
 			{QColor{0xd8, 0x32, 0x2b}, QColor{0xec, 0x7a, 0x1c}, QColor{0xe9, 0xc4, 0x3a}, QColor{0xe8, 0xe3, 0xd3}}},
 			{{"Kick", BassDrum, "BD"}, {"Kickhard", BassDrum2, "BD2"}, {"Rimshot", SideStick, "RS"},
 				{"Snare", Snare, "SD"}, {"Handclap", HandClap, "CP"}, {"Snr_snap", Snare2, "SD2"},
 				{"Hat_c", ClosedHat, "CH", HiHats}, {"Hat_o", OpenHat, "OH", HiHats}, {"Tom_lo", LowTom, "LT"},
 				{"Tom_mid", LowMidTom, "MT"}, {"Tom_hi", HighTom, "HT"}, {"Ride", Ride, "RD"},
-				{"Cowbell", Cowbell, "CB"}, {"Clave", Claves, "CL"}, {"Kicklong", Extra, "BDL"}}},
+				{"Cowbell", Cowbell, "CB"}, {"Clave", Claves, "CL"}, {"Kicklong", Extra, "BDL"}},
+			"photo_tr808.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Brandon Daniel, Clusternote, CC BY-SA 2.0")},
 		{"TR-909", "tr909", L{{0xb9, 0xbc, 0xbe}, {0x3a, 0x3a, 0x3a}, {0xf0, 0x8a, 0x24}, {0x1e, 0x1e, 0x1e},
 			{QColor{0xf0, 0x8a, 0x24}, QColor{0xe2, 0xe2, 0xe2}, QColor{0xe2, 0xe2, 0xe2}, QColor{0xe2, 0xe2, 0xe2}}},
 			{{"Kick", BassDrum, "BD"}, {"Kick_1", BassDrum2, "BD2"}, {"Snare", Snare, "SD"},
 				{"Snare2", Snare2, "SD2"}, {"Clap", HandClap, "CP"}, {"Hat-c", ClosedHat, "CH", HiHats},
 				{"Hat-c2", PedalHat, "PH", HiHats}, {"Hat-o", OpenHat, "OH", HiHats},
 				{"Hat-o2", Extra, "OH2", HiHats}, {"Kick_2", Extra + 1, "BD3"}, {"Kick_3", Extra + 2, "BD4"},
-				{"TR909_Kick", Extra + 3, "BD5"}, {"TR909_Clap", Extra + 4, "CP2"}}},
+				{"TR909_Kick", Extra + 3, "BD5"}, {"TR909_Clap", Extra + 4, "CP2"}},
+			"photo_tr909.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Brandon Daniel, Clusternote, CC BY-SA 2.0")},
 		{"LinnDrum", "linn", L{{0x1b, 0x1b, 0x1b}, {0x2a, 0x2a, 0x2a}, {0xc9, 0xa2, 0x27}, {0xe6, 0xe1, 0xd5},
 			{QColor{0xe6, 0xe1, 0xd5}, QColor{0xc9, 0xa2, 0x27}, QColor{0xe6, 0xe1, 0xd5}, QColor{0x9c, 0x9c, 0x9c}}},
 			{{"linn_kik", BassDrum, "BD"}, {"linn_stk", SideStick, "ST"}, {"linn_snr", Snare, "SD"},
@@ -140,14 +146,16 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 				{"linn_tom3", LowMidTom, "T3"}, {"linn_tom2", HighMidTom, "T2"}, {"linn_tom1", HighTom, "T1"},
 				{"linn_tamb", Tambourine, "TB"}, {"linn_cow", Cowbell, "CB"}, {"linn_cgam", MuteHighConga, "CM"},
 				{"linn_cga1", OpenHighConga, "C1"}, {"linn_cga2", LowConga, "C2"}, {"linn_cab", Cabasa, "CA"},
-				{"linn_cga3", Extra, "C3"}}},
+				{"linn_cga3", Extra, "C3"}},
+			"photo_linn.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Linn Electronics / Forat Electronics, CC BY-SA 3.0")},
 		{"Electro", "electro", L{{0x20, 0x24, 0x2a}, {0x12, 0x15, 0x1a}, {0x2f, 0xd1, 0xc5}, {0xd8, 0xf4, 0xf1},
 			{QColor{0x2f, 0xd1, 0xc5}, QColor{0xd6, 0x4f, 0xc8}, QColor{0x2f, 0xd1, 0xc5}, QColor{0x6c, 0x7a, 0xe0}}},
 			{{"K_Linn", BassDrum, "BD"}, {"K_8bit", BassDrum2, "BD2"}, {"S_Linn", Snare, "SD"},
 				{"S_8bit", Snare2, "SD2"}, {"Boom", LowFloorTom, "BM"}, {"H_closed", ClosedHat, "CH", HiHats},
 				{"H_open", OpenHat, "OH", HiHats}, {"Syntom_2", LowTom, "LT"}, {"Syntom_1", HighTom, "HT"},
 				{"K_reverb", Extra, "BDR"}, {"S_reverb", Extra + 1, "SDR"}, {"s_eq", Extra + 2, "SEQ"},
-				{"Hi-q", Extra + 3, "HQ"}, {"Hi-q_2", Extra + 4, "HQ2"}}},
+				{"Hi-q", Extra + 3, "HQ"}, {"Hi-q_2", Extra + 4, "HQ2"}},
+			"photo_dmx.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Oberheim DMX. Photo: Matt Mechtley, Shoulder-synth, CC BY-SA 2.0")},
 		{"R&B", "r_n_b", L{{0x2b, 0x21, 0x35}, {0x1a, 0x14, 0x20}, {0xd6, 0x5d, 0xb1}, {0xf0, 0xe0, 0xec},
 			{QColor{0xd6, 0x5d, 0xb1}, QColor{0xe8, 0xc5, 0x6a}, QColor{0xd6, 0x5d, 0xb1}, QColor{0xb9, 0xa8, 0xd8}}},
 			{{"k_hard", BassDrum, "BD"}, {"k_soft", BassDrum2, "BD2"}, {"popsnare", Snare, "SD"},
@@ -155,7 +163,8 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 				{"Hat_O", OpenHat, "OH", HiHats}, {"k_muffle", Extra, "BDM"}, {"old_kik", Extra + 1, "BDO"},
 				{"clapfilt", Extra + 2, "CPF"}, {"s_pitch", Extra + 3, "SDP"}, {"s_spit", Extra + 4, "SDS"},
 				{"snare&hat", Extra + 5, "S+H"}, {"x_backwd", Extra + 6, "REV"},
-				{"hat_rattle", Extra + 7, "HR", HiHats}}},
+				{"hat_rattle", Extra + 7, "HR", HiHats}},
+			"photo_mpc60.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Akai MPC60. Photo: Kimi95, CC BY 3.0")},
 	};
 	return s_kits;
 }
@@ -446,13 +455,38 @@ auto DrumMachinesView::machineRect() const -> QRect
 
 
 
+auto DrumMachinesView::hasPhoto() const -> bool
+{
+	return !m_photo.isNull() && m_photoKit == castModel<DrumMachinesInstrument>()->loadedKit();
+}
+
+
+
+
+auto DrumMachinesView::photoRect() const -> QRect
+{
+	// The photo's room, the upper three fifths of the machine; the photo in it, as large as fits, centered
+	const auto machine = machineRect();
+	const auto room = QRect{machine.left() + 14, machine.top() + 14, machine.width() - 28,
+		machine.height() * 3 / 5 - 14};
+	if (m_photo.isNull()) { return room; }
+	auto size = embed::logicalSize(m_photo);
+	size.scale(room.size(), Qt::KeepAspectRatio);
+	return {room.left() + (room.width() - size.width()) / 2, room.top() + (room.height() - size.height()) / 2,
+		size.width(), size.height()};
+}
+
+
+
+
 auto DrumMachinesView::padRect(int index, int count) const -> QRect
 {
-	// The pads in rows of up to eight, under the machine's name strip
+	// The pads in rows of up to eight, under the machine's name strip (under its photo, when it has one)
 	const auto machine = machineRect();
 	const auto rows = (count + PadsPerRow - 1) / PadsPerRow;
 	const auto columns = std::min(count, PadsPerRow);
-	const auto area = machine.adjusted(18, 64, -18, -22);
+	const auto area = hasPhoto() ? QRect{machine.left() + 18, photoRect().bottom() + 14, machine.width() - 36,
+		machine.bottom() - photoRect().bottom() - 30} : machine.adjusted(18, 64, -18, -22);
 	const auto gap = 8;
 	const auto width = (area.width() - gap * (columns - 1)) / std::max(columns, 1);
 	const auto height = std::min(width, (area.height() - gap * (rows - 1)) / std::max(rows, 1));
@@ -550,6 +584,39 @@ void DrumMachinesView::paintEvent(QPaintEvent*)
 	p.setPen(QPen{look.body.darker(160), 1.5});
 	p.drawPath(body);
 
+	// The machine's photo, its credit on it (its license asks for it); the pads under it
+	if (m_photoKit != kitIndex)
+	{
+		m_photoKit = kitIndex;
+		m_photo = kit.photo ? PLUGIN_NAME::getIconPixmap(kit.photo) : QPixmap{};
+	}
+	if (hasPhoto())
+	{
+		const auto photo = photoRect();
+		auto frame = QPainterPath{};
+		frame.addRoundedRect(QRectF(photo), 6, 6);
+		p.save();
+		p.setClipPath(frame);
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+		p.drawPixmap(photo, m_photo);
+		p.restore();
+		p.setPen(QPen{look.body.darker(170), 1.5});
+		p.drawPath(frame);
+		auto credit = adjustedToPixelSize(font(), 9);
+		p.setFont(credit);
+		const auto text = tr(kit.credit);
+		const auto metrics = QFontMetrics{credit};
+		// (on the photo's corner; under it, centered, when wider than the photo)
+		const auto width = metrics.horizontalAdvance(text) + 8.0;
+		const auto box = width + 8 <= photo.width()
+			? QRectF(photo.right() - width - 4, photo.bottom() - metrics.height() - 4, width, metrics.height() + 2)
+			: QRectF(photo.center().x() - width / 2, photo.bottom() + 1, width, metrics.height() + 2);
+		p.fillRect(box, QColor{0, 0, 0, 150});
+		p.setPen(QColor{0xee, 0xee, 0xee});
+		p.drawText(box, Qt::AlignCenter, text);
+	}
+	else
+	{
 	// The panel: the machine's name, and its accent stripe
 	const auto panel = QRectF(machine.adjusted(12, 12, -12, -12));
 	auto panelPath = QPainterPath{};
@@ -568,6 +635,7 @@ void DrumMachinesView::paintEvent(QPaintEvent*)
 	p.setPen(look.text.darker(130));
 	p.drawText(QRectF(panel.left() + 14, panel.top() + 6, panel.width() - 28, 32), Qt::AlignRight | Qt::AlignVCenter,
 		tr("DRUM MACHINE"));
+	}
 
 	// The pads: lit when hit
 	const auto count = static_cast<int>(kit.pieces.size());

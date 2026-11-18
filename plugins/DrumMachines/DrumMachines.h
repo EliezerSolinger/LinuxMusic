@@ -29,6 +29,7 @@
 #include <vector>
 
 #include <QColor>
+#include <QPixmap>
 #include <QMutex>
 
 #include "ComboBoxModel.h"
@@ -79,6 +80,9 @@ public:
 		const char* folder; //!< in data/samples/drumsynth
 		Look look;
 		std::vector<Piece> pieces;
+		//! A photo of the machine (embedded, photos/: see photos/CREDITS.md) and its credit, none if there is none
+		const char* photo = nullptr;
+		const char* credit = nullptr;
 	};
 
 	static auto kits() -> const std::vector<Kit>&;
@@ -158,8 +162,8 @@ namespace gui
 class ComboBox;
 
 /**
- * The kit's machine, drawn: its body, its name, and a pad for each of its pieces, which lights up when the piece
- * is hit and plays it when clicked.
+ * The kit's machine: its photo (the CR-78 has none with a free license: its panel drawn), and, under it, a pad for
+ * each of its pieces, which lights up when the piece is hit and plays it when clicked.
  */
 class DrumMachinesView : public InstrumentView
 {
@@ -177,13 +181,17 @@ protected:
 
 private:
 	void modelChanged() override;
-	//! The machine's area, and each pad's in it
+	//! The machine's area, and each pad's in it; its photo's above the pads, when it has one
 	auto machineRect() const -> QRect;
+	auto photoRect() const -> QRect;
+	auto hasPhoto() const -> bool;
 	auto padRect(int index, int count) const -> QRect;
 	//! The pad at @p pos, or -1
 	auto padAt(const QPoint& pos) const -> int;
 
 	ComboBox* m_kitBox;
+	mutable int m_photoKit = -1;
+	mutable QPixmap m_photo; //!< (the shown kit's)
 	std::vector<float> m_glow;
 	int m_heldNote = -1;
 };
