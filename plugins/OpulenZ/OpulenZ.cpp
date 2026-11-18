@@ -42,6 +42,7 @@
 #include "Instrument.h"
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "lmms_math.h"
 #include "InstrumentPlayHandle.h"
 #include "InstrumentTrack.h"
 
@@ -140,7 +141,9 @@ OpulenzInstrument::OpulenzInstrument( InstrumentTrack * _instrument_track ) :
 
 	fm_mdl(true, this, tr( "FM" )   ),
 	vib_depth_mdl(false, this, tr( "Vibrato depth" )   ),
-	trem_depth_mdl(false, this, tr( "Tremolo depth" )   )
+	trem_depth_mdl(false, this, tr( "Tremolo depth" )   ),
+	// (+16 dB: a new instrument as loud as the others; a project from before it opens at 0 dB, as it sounded)
+	m_volumeModel(16.f, -24.f, 24.f, 0.1f, this, tr("Volume"))
 {
 
 	// Create an emulator - samplerate, 16 bit, mono
@@ -434,13 +437,15 @@ void OpulenzInstrument::playImpl(std::span<SampleFrame> out, InputEvents events)
 	const QMutexLocker lock(&emulatorMutex);
 	const auto frames = std::min<f_cnt_t>(static_cast<f_cnt_t>(out.size()), frameCount);
 
+	// (the chip's 16-bit output, at the volume)
+	const auto gain = dbfsToAmp(m_volumeModel.value()) / 8192.f;
 	// The emulator renders up to each event, which then applies at its frame
 	const auto render = [&](f_cnt_t from, f_cnt_t count) {
 		if (count <= 0) { return; }
 		theEmulator->update(renderbuffer + from, static_cast<int>(count));
 		for (auto frame = from; frame < from + count; ++frame)
 		{
-			const auto s = static_cast<sample_t>(renderbuffer[frame]) / 8192.f;
+			const auto s = static_cast<sample_t>(renderbuffer[frame]) * gain;
 			out[frame][0] = s;
 			out[frame][1] = s;
 		}
@@ -489,6 +494,7 @@ void OpulenzInstrument::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	fm_mdl.saveSettings( _doc, _this, "fm" );
 	vib_depth_mdl.saveSettings( _doc, _this, "vib_depth" );
 	trem_depth_mdl.saveSettings( _doc, _this, "trem_depth" );
+	m_volumeModel.saveSettings(_doc, _this, "volume");
 
 	_this.setAttribute("version", 1);
 }
@@ -534,6 +540,11 @@ void OpulenzInstrument::loadSettings( const QDomElement & _this )
 	fm_mdl.loadSettings( _this, "fm" );
 	vib_depth_mdl.loadSettings( _this, "vib_depth" );
 	trem_depth_mdl.loadSettings( _this, "trem_depth" );
+	if (_this.hasAttribute("volume") || !_this.firstChildElement("volume").isNull())
+	{
+		m_volumeModel.loadSettings(_this, "volume");
+	}
+	else { m_volumeModel.setValue(0.f); } // (made before the volume existed: as it sounded)
 
 }
 
@@ -820,6 +831,7 @@ OpulenzInstrumentView::OpulenzInstrumentView( Instrument * _instrument,
 	BUTTON_GEN(fm_btn, "FM", 9, 220);
 	BUTTON_GEN(vib_depth_btn, "Vibrato depth", 65, 220);
 	BUTTON_GEN(trem_depth_btn, "Tremolo depth", 93, 220);
+	KNOB_GEN(m_volumeKnob, "Volume", " dB", 222, 219);
 
 
 	setAutoFillBackground( true );
@@ -920,6 +932,7 @@ void OpulenzInstrumentView::modelChanged()
 	fm_btn->setModel( &m->fm_mdl );
 	vib_depth_btn->setModel( &m->vib_depth_mdl );
 	trem_depth_btn->setModel( &m->trem_depth_mdl );
+	m_volumeKnob->setModel(&m->m_volumeModel);
 
 
 	// All knobs needing a user friendly unit

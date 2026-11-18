@@ -121,6 +121,8 @@ public:
 	BoolModel fm_mdl;
 	BoolModel vib_depth_mdl;
 	BoolModel trem_depth_mdl;
+	//! The output, in dB (the chip alone is some 16 dB under the other instruments: upstream's #1207, #7852)
+	FloatModel m_volumeModel;
 
 
 protected:
@@ -220,6 +222,7 @@ public:
 	PixmapButton *fm_btn;
 	PixmapButton *vib_depth_btn;
 	PixmapButton *trem_depth_btn;
+	Knob* m_volumeKnob;
 
 	private slots:
 	void updateKnobHints();

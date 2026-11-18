@@ -68,6 +68,8 @@ public:
 	void process(float* left, float* right, f_cnt_t frames);
 	//! Every note and every effect's tail let go, at once (ZynAddSubFX's panic)
 	void shutUp();
+	//! ZynAddSubFX's master volume, 0 to 127 (80 by its default)
+	void setMasterVolume(int volume);
 
 	inline Master * master()
 	{

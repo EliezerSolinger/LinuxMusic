@@ -26,6 +26,8 @@
 #include <QDomElement>
 
 #include "BitInvader.h"
+
+#include <vector>
 #include "AudioEngine.h"
 #include "base64.h"
 #include "Engine.h"
@@ -133,6 +135,13 @@ BitInvader::BitInvader( InstrumentTrack * _instrument_track ) :
 	m_normalize(false, this, tr("Normalize"))
 {
 	m_graph.setWaveToSine();
+	{
+		// A new instrument as loud as the others (about -12 dB at its loudest; upstream's #7852): its sine at 0.35
+		// (projects keep the wave they saved)
+		auto wave = std::vector<float>(m_graph.samples(), m_graph.samples() + m_graph.length());
+		for (auto& sample : wave) { sample *= 0.35f; }
+		m_graph.setSamples(wave.data());
+	}
 	lengthChanged();
 
 	// (on the main thread: the graph is the GUI's; a length set by automation comes by a queued call)

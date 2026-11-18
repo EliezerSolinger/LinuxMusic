@@ -70,7 +70,9 @@ Plugin::Descriptor PLUGIN_EXPORT tripleoscillator_plugin_descriptor =
 
 OscillatorObject::OscillatorObject( Model * _parent, int _idx ) :
 	Model( _parent ),
-	m_volumeModel( DefaultVolume / NUM_OF_OSCILLATORS, MinVolume,
+	// (20 each: a new instrument as loud as the others, about -12 dB at its loudest; upstream's #7852. Projects and
+	// presets keep the volumes they saved)
+	m_volumeModel( 20.0f, MinVolume,
 			MaxVolume, 1.0f, this, tr( "Osc %1 volume" ).arg( _idx+1 ) ),
 	m_panModel( DefaultPanning, PanningLeft, PanningRight, 1.0f, this,
 			tr( "Osc %1 panning" ).arg( _idx+1 ) ),

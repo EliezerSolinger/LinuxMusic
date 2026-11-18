@@ -36,7 +36,8 @@ enum ZasfRemoteMessageIDs
 	IdZasfPresetDirectory = RemoteMessageIDs::IdUserBase,
 	IdZasfLmmsWorkingDirectory,
 	IdZasfSetPitchWheelBendRange,
-	IdZasfShutUp //!< every note and effect tail let go (back to rest)
+	IdZasfShutUp, //!< every note and effect tail let go (back to rest)
+	IdZasfSetMasterVolume //!< ZynAddSubFX's master volume (0 to 127)
 } ;
 
 

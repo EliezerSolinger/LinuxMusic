@@ -861,7 +861,8 @@ inline sample_t MonstroSynth::calcSlope( int slope, sample_t s )
 MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 		LegacyInstrument(&monstro_plugin_descriptor, _instrument_track),
 
-		m_osc1Vol(33.f, 0.f, 200.f, 0.1f, this, tr("Osc 1 volume")),
+		// (10 each: a new instrument as loud as the others; upstream's #7852. Projects keep what they saved)
+		m_osc1Vol(10.f, 0.f, 200.f, 0.1f, this, tr("Osc 1 volume")),
 		m_osc1Pan(0.f, -100.f, 100.f, 0.1f, this, tr("Osc 1 panning")),
 		m_osc1Crs( 0.0, -24.0, 24.0, 1.0, this, tr( "Osc 1 coarse detune" ) ),
 		m_osc1Ftl( 0.0, -100.0, 100.0, 1.0, this, tr( "Osc 1 fine detune left" ) ),
@@ -871,7 +872,7 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 		m_osc1SSR( false, this, tr( "Osc 1 sync send on rise" ) ),
 		m_osc1SSF( false, this, tr( "Osc 1 sync send on fall" ) ),
 
-		m_osc2Vol(33.f, 0.f, 200.f, 0.1f, this, tr("Osc 2 volume")),
+		m_osc2Vol(10.f, 0.f, 200.f, 0.1f, this, tr("Osc 2 volume")),
 		m_osc2Pan(0.f, -100.f, 100.f, 0.1f, this, tr("Osc 2 panning")),
 		m_osc2Crs( 0.0, -24.0, 24.0, 1.0, this, tr( "Osc 2 coarse detune" ) ),
 		m_osc2Ftl( 0.0, -100.0, 100.0, 1.0, this, tr( "Osc 2 fine detune left" ) ),
@@ -881,7 +882,7 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 		m_osc2SyncH( false, this, tr( "Osc 2 sync hard" ) ),
 		m_osc2SyncR( false, this, tr( "Osc 2 sync reverse" ) ),
 
-		m_osc3Vol(33.f, 0.f, 200.f, 0.1f, this, tr("Osc 3 volume")),
+		m_osc3Vol(10.f, 0.f, 200.f, 0.1f, this, tr("Osc 3 volume")),
 		m_osc3Pan(0.f, -100.f, 100.f, 0.1f, this, tr("Osc 3 panning")),
 		m_osc3Crs( 0.0, -24.0, 24.0, 1.0, this, tr( "Osc 3 coarse detune" ) ),
 		m_osc3Spo(0.f, -180.f, 180.f, 0.1f, this, tr("Osc 3 Stereo phase offset")),

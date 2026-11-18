@@ -120,6 +120,15 @@ ZynAddSubFxInstrument::ZynAddSubFxInstrument(
 {
 	initPlugin();
 
+	// A new instrument as loud as the others (about -12 dB at its loudest; upstream's #1207, #7852: it was some 20 dB
+	// under them): ZynAddSubFX's master volume at its top (its own default is 80). A project or a preset brings its
+	// own (its settings are loaded after this)
+	{
+		const auto lock = QMutexLocker{&m_pluginMutex};
+		if (m_remotePlugin) { m_remotePlugin->sendMessage(RemotePlugin::message(IdZasfSetMasterVolume).addInt(127)); }
+		else if (m_localPlugin) { m_localPlugin->setMasterVolume(127); }
+	}
+
 	connect( &m_portamentoModel, SIGNAL( dataChanged() ),
 			this, SLOT( updatePortamento() ), Qt::DirectConnection );
 	connect( &m_filterFreqModel, SIGNAL( dataChanged() ),

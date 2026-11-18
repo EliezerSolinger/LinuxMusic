@@ -132,6 +132,10 @@ public:
 				LocalZynAddSubFx::shutUp();
 				break;
 
+			case IdZasfSetMasterVolume:
+				LocalZynAddSubFx::setMasterVolume(_m.getInt());
+				break;
+
 			default:
 				return RemotePluginClient::processMessage( _m );
 		}

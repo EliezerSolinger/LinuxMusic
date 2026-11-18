@@ -105,8 +105,9 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 	m_W3(GRAPH_LENGTH),
 	m_exprValid(false, this)
 {
-	m_outputExpression[0]="sinew(integrate(f*(1+0.05sinew(12t))))*(2^(-(1.1+A2)*t)*(0.4+0.1(1+A3)+0.4sinew((2.5+2A1)t))^2)";
-	m_outputExpression[1]="expw(integrate(f*atan(500t)*2/pi))*0.5+0.12";
+	// (each at half its old level: a new instrument as loud as the others, upstream's #7852; projects keep theirs)
+	m_outputExpression[0]="0.5*sinew(integrate(f*(1+0.05sinew(12t))))*(2^(-(1.1+A2)*t)*(0.4+0.1(1+A3)+0.4sinew((2.5+2A1)t))^2)";
+	m_outputExpression[1]="0.5*(expw(integrate(f*atan(500t)*2/pi))*0.5+0.12)";
 }
 
 void Xpressive::saveSettings(QDomDocument & _doc, QDomElement & _this) {

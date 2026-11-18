@@ -289,6 +289,15 @@ void LocalZynAddSubFx::shutUp()
 
 
 
+void LocalZynAddSubFx::setMasterVolume(int volume)
+{
+	const auto lock = std::lock_guard{m_master->mutex};
+	m_master->setPvolume(static_cast<char>(std::clamp(volume, 0, 127)));
+}
+
+
+
+
 void LocalZynAddSubFx::process(float* left, float* right, f_cnt_t frames)
 {
 	assert(frames == static_cast<f_cnt_t>(synth->buffersize));

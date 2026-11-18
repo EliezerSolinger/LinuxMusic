@@ -239,10 +239,11 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 WatsynInstrument::WatsynInstrument( InstrumentTrack * _instrument_track ) :
 		LegacyInstrument(&watsyn_plugin_descriptor, _instrument_track),
 
-		a1_vol( 100.0f, 0.0f, 200.0f, 0.1f, this, tr( "Volume A1" ) ),
-		a2_vol( 100.0f, 0.0f, 200.0f, 0.1f, this, tr( "Volume A2" ) ),
-		b1_vol( 100.0f, 0.0f, 200.0f, 0.1f, this, tr( "Volume B1" ) ),
-		b2_vol( 100.0f, 0.0f, 200.0f, 0.1f, this, tr( "Volume B2" ) ),
+		// (32 each: a new instrument as loud as the others; upstream's #7852. Projects keep what they saved)
+		a1_vol( 32.0f, 0.0f, 200.0f, 0.1f, this, tr( "Volume A1" ) ),
+		a2_vol( 32.0f, 0.0f, 200.0f, 0.1f, this, tr( "Volume A2" ) ),
+		b1_vol( 32.0f, 0.0f, 200.0f, 0.1f, this, tr( "Volume B1" ) ),
+		b2_vol( 32.0f, 0.0f, 200.0f, 0.1f, this, tr( "Volume B2" ) ),
 
 		a1_pan( 0.0f, -100.0f, 100.0f, 0.1f, this, tr( "Panning A1" ) ),
 		a2_pan( 0.0f, -100.0f, 100.0f, 0.1f, this, tr( "Panning A2" ) ),

@@ -190,6 +190,49 @@ private slots:
 		QVERIFY2(at == first.size(), qPrintable(QString{"differs at frame %1"}.arg(at / 2)));
 	}
 
+	/**
+	 * #1207, #7852: the instruments as they come played at very different levels (Nescaline about 28 dB over
+	 * ZynAddSubFX). A note (A4) of each new instrument, its loudness at its loudest moment: all about the same
+	 * (LINUXMUSIC_PRINT_LEVELS prints them). Only new instruments: projects and presets keep what they saved.
+	 */
+	void newInstrumentsPlayAtSimilarLevels()
+	{
+		auto levels = std::vector<std::pair<QString, double>>{};
+		for (const auto* name : {"tripleoscillator", "bitinvader", "kicker", "lb302", "monstro", "nes", "organic",
+			"sfxr", "sid", "vibedstrings", "watsyn", "xpressive", "freeboy", "malletsstk", "opulenz", "zynaddsubfx"})
+		{
+			const auto played = play(name, nullptr, 180, name == QString{"kicker"} ? DefaultKey - 24 : DefaultKey);
+			if (played.samples.empty()) { continue; }
+			// The note's second (it starts at the first frame)
+			const auto rate = static_cast<std::size_t>(Engine::audioEngine()->outputSampleRate());
+			// Its loudest moment: the RMS of 50 ms windows (a drum or a bell is loud at its start only)
+			const auto window = 2 * rate / 20;
+			auto rms = 0.0;
+			for (std::size_t start = 0; start + window <= std::min(played.samples.size(), 2 * rate); start += window / 2)
+			{
+				auto sum = 0.0;
+				for (auto i = start; i < start + window; ++i) { sum += played.samples[i] * played.samples[i]; }
+				rms = std::max(rms, std::sqrt(sum / static_cast<double>(window)));
+			}
+			levels.emplace_back(name, 20 * std::log10(std::max(rms, 1e-9)));
+		}
+		auto lowest = 0.0, highest = -200.0;
+		for (const auto& [name, db] : levels)
+		{
+			if (qEnvironmentVariableIsSet("LINUXMUSIC_PRINT_LEVELS")) { qInfo("%-18s %6.1f dB", qPrintable(name), db); }
+			lowest = std::min(lowest, db);
+			highest = std::max(highest, db);
+		}
+		QVERIFY(!levels.empty());
+		if (qEnvironmentVariableIsSet("LINUXMUSIC_PRINT_LEVELS")) { qInfo("spread %.1f dB", highest - lowest); }
+		// About -12 dB each at its loudest, within a few dB (it was 30 dB from the quietest to the loudest)
+		for (const auto& [name, db] : levels)
+		{
+			QVERIFY2(db > -18 && db < -8, qPrintable(QString{"%1 at %2 dB"}.arg(name).arg(db, 0, 'f', 1)));
+		}
+		QVERIFY2(highest - lowest < 8, qPrintable(QString{"%1 dB between them"}.arg(highest - lowest, 0, 'f', 1)));
+	}
+
 	//! #5877: a phase past an int's range was converted to an int (undefined; it crashed)
 	void xpressiveWithHugeValues()
 	{

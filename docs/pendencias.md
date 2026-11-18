@@ -169,7 +169,15 @@ queda do Mallets, que é queda e entra antes.
       do projeto seguinte sumiam. Agora só com o dispositivo tocando em tempo real. E uma handle descartada por
       outro caminho (projeto novo, notas silenciadas) ficava na lista "a remover": agora todo descarte passa por
       `AudioEngine::disposePlayHandle()`, que a tira de lá (senão uma handle nova no mesmo endereço seria removida);
-    - volumes padrão muito desiguais;
+    - [x] volumes padrão muito desiguais (#1207, #7852): medidos (o momento mais alto de uma nota, janelas de 50
+      ms), iam de -32 dB (ZynAddSubFX) a -2 dB (Monstro). Agora todos entre -10 e -16 dB, só nos instrumentos
+      novos (projetos e presets guardam os seus valores): TripleOscillator 33 → 20 por oscilador, Monstro 33 → 10,
+      Watsyn 100 → 32, BitInvader com a senoide a 0,35, Xpressive com as expressões pela metade, o ZynAddSubFX com o
+      volume mestre no topo, e o OpulenZ ganhou um botão VOL (em dB; +16 nos novos, 0 nos projetos de antes, desenhado
+      na arte com as letras dela). `InstrumentFixesTest` verifica;
+    - [x] (no caminho) carregar um soundfont segurava a trava do motor enquanto o FluidSynth trocava as fontes:
+      sob carga, 7 a 10 ms e um período pulado. Agora um sintetizador novo é montado sem trava e só os ponteiros
+      trocam (0,00 ms medidos);
     - o host LV2 não abre a interface nativa dos plugins;
     - aliasing em vários osciladores;
     - FreeBoy com offset DC.

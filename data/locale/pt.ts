@@ -4696,6 +4696,10 @@ Este chip foi utilizado no computador Commodore 64.</translation>
         <source>Tremolo depth</source>
         <translation type="unfinished"/>
     </message>
+    <message>
+        <source>Volume</source>
+        <translation>Volume</translation>
+    </message>
 </context>
 <context>
     <name>lmms::OrganicInstrument</name>
@@ -12600,6 +12604,10 @@ Aviso: Esta operação não pode ser desfeita.</translation>
         <location filename="../../plugins/OpulenZ/OpulenZ.cpp" line="815"/>
         <source>Frequency multiplier</source>
         <translation type="unfinished"/>
+    </message>
+    <message>
+        <source>Volume</source>
+        <translation>Volume</translation>
     </message>
 </context>
 <context>
