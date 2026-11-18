@@ -164,6 +164,77 @@ void styleRackLabel(QLabel* label)
 
 
 
+void paintSkin(QPainter& p, const QRect& area, double alternateTop, double alternateBottom)
+{
+	const auto w = area.width();
+	const auto h = area.height();
+	const auto panelHeight = h - 4;
+	p.save();
+	p.translate(area.topLeft());
+	// draw_skin: the panel; the part its alternate box leaves in the other image, when it is higher than 64 pixels
+	p.drawTiledPixmap(QRect{0, 0, w, panelHeight}, image("background1"));
+	if (h > 64 && (alternateTop > 0 || alternateBottom > 0))
+	{
+		const auto top = static_cast<int>(panelHeight * alternateTop);
+		const auto height = static_cast<int>(panelHeight * (1 - alternateBottom - alternateTop)) + 1;
+		p.drawTiledPixmap(QRect{0, top, w + 1, height}, image("background2"), QPoint{0, top});
+	}
+	bevel(p, QRectF(0, 0, w, panelHeight), 0.11);
+	auto shadow = QLinearGradient{QPointF(0, panelHeight), QPointF(0, h)};
+	shadow.setColorAt(0, QColor::fromRgbF(0, 0, 0, 0.8f));
+	shadow.setColorAt(1, QColor::fromRgbF(0, 0, 0, 0));
+	p.fillRect(QRect{0, panelHeight, w, h - panelHeight}, shadow);
+	p.restore();
+}
+
+
+void paintScrews(QPainter& p, const QRect& area)
+{
+	p.save();
+	p.translate(area.topLeft());
+	const auto w = area.width();
+	const auto h = area.height();
+	// draw_screws: at the corners, or halfway down the sides of a low unit
+	const auto screw = image("screw");
+	const auto screwHeight = h - 3;
+	if (screwHeight > 2 * screw.height())
+	{
+		p.drawPixmap(0, 0, screw);
+		p.drawPixmap(0, screwHeight - screw.height(), screw);
+		p.drawPixmap(w - screw.width(), screwHeight - screw.height(), screw);
+		p.drawPixmap(w - screw.width(), 0, screw);
+	}
+	else if (screwHeight > screw.height())
+	{
+		const auto y = screwHeight / 2 - screw.height() / 2;
+		p.drawPixmap(0, y, screw);
+		p.drawPixmap(w - screw.width(), y, screw);
+	}
+	p.restore();
+}
+
+
+SkinBox::SkinBox(double alternateTop, double alternateBottom, QWidget* content, QWidget* parent) :
+	QWidget(parent),
+	m_alternateTop(alternateTop),
+	m_alternateBottom(alternateBottom)
+{
+	auto layout = new QVBoxLayout(this);
+	// (the screws' room at the sides, the shadow's beneath)
+	layout->setContentsMargins(32, 4, 32, 8);
+	content->setParent(this);
+	layout->addWidget(content);
+}
+
+
+void SkinBox::paintEvent(QPaintEvent*)
+{
+	auto p = QPainter{this};
+	paintSkin(p, rect(), m_alternateTop, m_alternateBottom);
+	paintScrews(p, rect());
+}
+
+
 RackUnit::RackUnit(const QString& title, QWidget* controls, QWidget* parent) :
 	QWidget(parent)
 {
@@ -191,19 +262,8 @@ void RackUnit::paintEvent(QPaintEvent*)
 	const auto h = height();
 	const auto panelHeight = h - 4;
 
-	// draw_skin: the panel; its lower 40 % in the other image when it is higher than 64 pixels
-	p.drawTiledPixmap(QRect{0, 0, w, panelHeight}, image("background1"));
-	if (h > 64)
-	{
-		const auto top = static_cast<int>(panelHeight * 0.6);
-		p.drawTiledPixmap(QRect{0, top, w + 1, static_cast<int>(panelHeight * 0.4) + 1}, image("background2"),
-			QPoint{0, top});
-	}
-	bevel(p, QRectF(0, 0, w, panelHeight), 0.11);
-	auto shadow = QLinearGradient{QPointF(0, panelHeight), QPointF(0, h)};
-	shadow.setColorAt(0, QColor::fromRgbF(0, 0, 0, 0.8f));
-	shadow.setColorAt(1, QColor::fromRgbF(0, 0, 0, 0));
-	p.fillRect(QRect{0, panelHeight, w, h - panelHeight}, shadow);
+	// (a rack unit's: minimal.scss's alternate box, 60 0 0 0)
+	paintSkin(p, rect(), 0.6, 0.0);
 
 	// draw_handles
 	const auto left = image("handle_left");
@@ -215,22 +275,7 @@ void RackUnit::paintEvent(QPaintEvent*)
 	p.fillRect(QRect{w - right.width() - 1, 0, 1, panelHeight}, QColor::fromRgbF(0, 0, 0, 0.5f));
 	p.fillRect(QRect{w - right.width(), 0, 1, panelHeight}, QColor::fromRgbF(1, 1, 1, 0.05f));
 
-	// draw_screws: at the corners, or halfway down the sides of a low unit
-	const auto screw = image("screw");
-	const auto screwHeight = h - 3;
-	if (screwHeight > 2 * screw.height())
-	{
-		p.drawPixmap(0, 0, screw);
-		p.drawPixmap(0, screwHeight - screw.height(), screw);
-		p.drawPixmap(w - screw.width(), screwHeight - screw.height(), screw);
-		p.drawPixmap(w - screw.width(), 0, screw);
-	}
-	else if (screwHeight > screw.height())
-	{
-		const auto y = screwHeight / 2 - screw.height() / 2;
-		p.drawPixmap(0, y, screw);
-		p.drawPixmap(w - screw.width(), y, screw);
-	}
+	paintScrews(p, rect());
 }
 
 
@@ -551,7 +596,9 @@ void Meter::poll()
 	const auto elapsedMs = static_cast<double>(m_sincePoll.restart());
 	if (!m_level || !isVisible()) { return; }
 	static_assert(std::atomic<float>::is_always_lock_free);
-	const auto value = m_level->load(std::memory_order_relaxed);
+	// (a peak meter's level is taken: the unit's processing gathers the next from nothing)
+	const auto value = m_scale.peak ? const_cast<std::atomic<float>*>(m_level)->exchange(0.f, std::memory_order_relaxed)
+		: m_level->load(std::memory_order_relaxed);
 	auto target = 0.f;
 	if (m_scale.power)
 	{

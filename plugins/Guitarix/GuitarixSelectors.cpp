@@ -192,6 +192,18 @@ auto makeTonestack() -> PluginDef*
 		"amp.tonestack.select", N_("select"), tonestackUi);
 }
 
+auto makeAmpstack() -> PluginDef*
+{
+	// (the amp head's: GuitarixAmp.cpp; its UI is the head's)
+	using namespace gx_amps;
+	return new ModuleSelector("ampstack", N_("Amp"), "",
+		{gxamp::plugin, gxamp3::plugin, gxamp14::plugin, gxamp10::plugin, gxamp18::plugin, gxamp2::plugin,
+			gxamp9::plugin, gxamp11::plugin, gxamp17::plugin, gxamp13::plugin, gxamp5::plugin, gxamp4::plugin,
+			gxamp15::plugin, gxamp12::plugin, gxamp7::plugin, gxamp8::plugin, gxamp16::plugin, gxamp6::plugin,
+			gxnoamp::plugin},
+		"tube.select", N_("select"), nullptr);
+}
+
 auto makePoweramp() -> PluginDef*
 {
 	using namespace gx_poweramps;

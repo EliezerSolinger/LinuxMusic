@@ -10,7 +10,7 @@
 #endif
 
 namespace gx_engine {
-namespace @UNIT_NAMESPACE@ {
-#include "@WRAPPED@"
-}
+@UNIT_OPEN@
+@WRAPPED_INCLUDES@
+@UNIT_CLOSE@
 }

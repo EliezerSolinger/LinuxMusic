@@ -140,18 +140,72 @@ SET(GUITARIX_FAUST_UNITS
 	gx_poweramps/orangedarkterror
 	gx_poweramps/plexiel34
 	gx_poweramps/supersonic
+	# (the amp head's chain: GuitarixAmp.cpp)
+	gx_effects/noise_shaper
+	gx_effects/softclip
+	gx_effects/bassbooster
+	gx_effects/gx_ampout
+	gx_effects/gxfeed
+	gx_effects/gx_outputlevel
+	gx_engine/balance
+	gx_engine/fizz_remover
+	gx_engine/hardlim
+	gx_amps/gxamp
+	gx_amps/gxamp2
+	gx_amps/gxamp3
+	gx_amps/gxamp4
+	gx_amps/gxamp5
+	gx_amps/gxamp6
+	gx_amps/gxamp7
+	gx_amps/gxamp8
+	gx_amps/gxamp9
+	gx_amps/gxamp10
+	gx_amps/gxamp11
+	gx_amps/gxamp12
+	gx_amps/gxamp13
+	gx_amps/gxamp14
+	gx_amps/gxamp15
+	gx_amps/gxamp16
+	gx_amps/gxamp17
+	gx_amps/gxamp18
+	gx_amps/gxnoamp
 )
 SET(GUITARIX_FAUST_SOURCES)
+# (the amps, gx_amps, in one file, as in Guitarix: they share the tube tables their valve.h defines)
+SET(GUITARIX_AMPS_INCLUDES "")
+SET(GUITARIX_AMPS_DEPENDS)
 FOREACH(UNIT ${GUITARIX_FAUST_UNITS})
 	STRING(REPLACE "/" ";" PARTS "${UNIT}")
 	LIST(GET PARTS 0 UNIT_NAMESPACE)
 	LIST(GET PARTS 1 UNIT_NAME)
-	SET(WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/gx_faust/${UNIT_NAMESPACE}_${UNIT_NAME}.cpp")
 	SET(WRAPPED "${CMAKE_CURRENT_SOURCE_DIR}/gx/faust-generated/${UNIT_NAME}.cc")
+	IF(UNIT_NAMESPACE STREQUAL "gx_amps")
+		STRING(APPEND GUITARIX_AMPS_INCLUDES "#include \"${WRAPPED}\"\n")
+		LIST(APPEND GUITARIX_AMPS_DEPENDS "${WRAPPED}")
+		CONTINUE()
+	ENDIF()
+	SET(WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/gx_faust/${UNIT_NAMESPACE}_${UNIT_NAME}.cpp")
+	SET(WRAPPED_INCLUDES "#include \"${WRAPPED}\"")
+	# (in a namespace of gx_engine, or, "gx_engine/<name>", in gx_engine itself, as Guitarix has them)
+	IF(UNIT_NAMESPACE STREQUAL "gx_engine")
+		SET(UNIT_OPEN "")
+		SET(UNIT_CLOSE "")
+	ELSE()
+		SET(UNIT_OPEN "namespace ${UNIT_NAMESPACE} {")
+		SET(UNIT_CLOSE "}")
+	ENDIF()
 	CONFIGURE_FILE("${CMAKE_CURRENT_SOURCE_DIR}/gx/faust_unit.cpp.in" "${WRAPPER}" @ONLY)
 	SET_SOURCE_FILES_PROPERTIES("${WRAPPER}" PROPERTIES OBJECT_DEPENDS "${WRAPPED}")
 	LIST(APPEND GUITARIX_FAUST_SOURCES "${WRAPPER}")
 ENDFOREACH()
+SET(UNIT_NAME "amps")
+SET(UNIT_OPEN "namespace gx_amps {")
+SET(UNIT_CLOSE "}")
+SET(WRAPPED_INCLUDES "${GUITARIX_AMPS_INCLUDES}")
+SET(WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/gx_faust/gx_amps.cpp")
+CONFIGURE_FILE("${CMAKE_CURRENT_SOURCE_DIR}/gx/faust_unit.cpp.in" "${WRAPPER}" @ONLY)
+SET_SOURCE_FILES_PROPERTIES("${WRAPPER}" PROPERTIES OBJECT_DEPENDS "${GUITARIX_AMPS_DEPENDS}")
+LIST(APPEND GUITARIX_FAUST_SOURCES "${WRAPPER}")
 
 SET(GUITARIX_SUPPORT
 	gx/gx_resampler.cpp
@@ -161,7 +215,7 @@ SET(GUITARIX_SUPPORT
 
 # Its look: Guitarix's default style's images (gx/rcstyles) and its font (gx/fonts: Roboto Condensed, Apache 2.0)
 BUILD_PLUGIN(guitarix
-	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp GuitarixLayout.cpp GuitarixWidgets.cpp GuitarixVibe.cpp GuitarixSelectors.cpp GuitarixConvolution.cpp gx/zita-convolver/zita-convolver.cc
+	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp GuitarixLayout.cpp GuitarixWidgets.cpp GuitarixVibe.cpp GuitarixSelectors.cpp GuitarixConvolution.cpp GuitarixAmp.cpp gx/zita-convolver/zita-convolver.cc
 	${GUITARIX_UNITS} ${GUITARIX_FAUST_SOURCES} ${GUITARIX_SUPPORT}
 	MOCFILES GuitarixEffect.h GuitarixControlDialog.h GuitarixWidgets.h
 	EMBEDDED_RESOURCES gx/rcstyles/*.png gx/fonts/RobotoCondensed-Regular.ttf gx/builder/*.glade

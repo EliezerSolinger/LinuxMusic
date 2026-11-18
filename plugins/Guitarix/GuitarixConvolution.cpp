@@ -207,6 +207,22 @@ public:
 		}
 	}
 
+	//! Sets @p count samples of @p ir anew, the same length it was set up for [main thread, no period rendered]
+	auto update(int count, const float* ir, unsigned int irRate, unsigned int rate) -> bool
+	{
+		if (state() == Convproc::ST_IDLE) { return false; }
+		auto resampled = std::unique_ptr<float[]>{};
+		auto data = const_cast<float*>(ir);
+		if (irRate != rate)
+		{
+			auto resampler = gx_resample::BufferResampler{};
+			resampled.reset(resampler.process(static_cast<int>(irRate), count, data, static_cast<int>(rate), &count));
+			if (!resampled) { return false; }
+			data = resampled.get();
+		}
+		return impdata_update(0, 0, 1, data, 0, count) == 0;
+	}
+
 private:
 	void stop()
 	{
@@ -336,6 +352,104 @@ private:
 };
 
 
+/**
+ * Guitarix's ContrastConvolver (gx_internal_plugins.cpp), the amp head's presence: its impulse response shaped by the
+ * presence level (a Faust filter over it), convolved at near 96 kHz, crossfaded with the dry signal by the level (its
+ * DELT_PRESENCE_HACK). A new level shapes the response anew [main thread: update()].
+ */
+class Contrast : public PluginDef
+{
+public:
+	Contrast() :
+		PluginDef() // (value-initialized: its function pointers not set here are null)
+	{
+		version = PLUGINDEF_VERSION;
+		id = "con";
+		name = N_("Contrast convolver");
+		mono_audio = &Contrast::process;
+		set_samplerate = &Contrast::initialize;
+		register_params = &Contrast::registerParameters;
+		delete_instance = [](PluginDef* plugin) { delete static_cast<Contrast*>(plugin); };
+	}
+
+	static void update(PluginDef* plugin)
+	{
+		auto& self = *static_cast<Contrast*>(plugin);
+		if (self.m_rate != 0 && std::abs(self.m_sum - self.m_level) > 0.01f) { self.shape(false); }
+	}
+
+private:
+	static constexpr float NoSum = 1e10f;
+
+	//! The response shaped by the level, set up anew (@p configure) or updated
+	void shape(bool configure)
+	{
+		auto shaped = std::vector<float>(static_cast<std::size_t>(contrast_ir_desc.ir_count));
+		m_presence.compute(contrast_ir_desc.ir_count, contrast_ir_desc.ir_data, shaped.data());
+		const auto irRate = static_cast<unsigned int>(contrast_ir_desc.ir_sr);
+		if (configure)
+		{
+			m_convolver.configure(contrast_ir_desc.ir_count, shaped.data(), irRate, m_rate * m_factor,
+				m_block * m_factor);
+		}
+		else { m_convolver.update(contrast_ir_desc.ir_count, shaped.data(), irRate, m_rate * m_factor); }
+		m_sum = m_level;
+	}
+
+	static void initialize(unsigned int rate, PluginDef* plugin)
+	{
+		auto& self = *static_cast<Contrast*>(plugin);
+		self.m_rate = rate;
+		self.m_factor = upsampling(rate);
+		self.m_block = blockFrames();
+		self.m_resampler.setup(static_cast<int>(rate), static_cast<int>(self.m_factor * rate));
+		self.m_presence.init(static_cast<unsigned int>(contrast_ir_desc.ir_sr));
+		const auto room = static_cast<std::size_t>(self.m_resampler.max_out_count(256)) + 16;
+		self.m_wet.assign(room, 0.f);
+		self.m_dry.assign(room, 0.f);
+		self.shape(true);
+	}
+
+	static void process(int count, float* input, float* output, PluginDef* plugin)
+	{
+		auto& self = *static_cast<Contrast*>(plugin);
+		if (input != output) { std::copy_n(input, count, output); }
+		const auto total = self.m_resampler.max_out_count(count);
+		const auto upsampled = self.m_resampler.up(count, output, self.m_wet.data());
+		std::copy_n(self.m_wet.data(), total, self.m_dry.data());
+		// (crossfade over the knob's whole range, 0...5: smoothstep, equal power)
+		const auto t = (std::min)(self.m_level * 0.2f, 1.0f);
+		const auto mix = t * t * (3.0f - 2.0f * t);
+		const auto halfPi = 1.57079632679f;
+		const auto dryGain = std::cos(halfPi * mix);
+		const auto wetGain = std::sin(halfPi * mix) / 2;
+		self.m_convolver.compute(upsampled, self.m_wet.data());
+		for (int i = 0; i < total; ++i) { self.m_wet[i] = self.m_dry[i] * dryGain + self.m_wet[i] * wetGain; }
+		self.m_resampler.down(self.m_wet.data(), output);
+	}
+
+	static auto registerParameters(const ParamReg& reg) -> int
+	{
+		auto& self = *static_cast<Contrast*>(reg.plugin);
+		// (Guitarix's: its granularity changed from 0.5 to 0.1, "too coarse and jumpy")
+		reg.registerFloatVar("con.Level", "", "S", "", &self.m_level, 1.0f, 0.1f, 5.0f, 0.1f, nullptr);
+		self.m_presence.register_par(reg);
+		return 0;
+	}
+
+	float m_level = 1.f;
+	float m_sum = NoSum;
+	unsigned int m_rate = 0;
+	unsigned int m_factor = 1;
+	unsigned int m_block = 256;
+	gx_resample::FixedRateResampler m_resampler;
+	std::vector<float> m_wet;
+	std::vector<float> m_dry;
+	Convolver m_convolver;
+	presence_level::Dsp m_presence;
+};
+
+
 // Their UIs, as Guitarix gives them (gx_internal_plugins.cpp: cab_load_ui, pre_load_ui): their glade files
 
 auto cabinetUi(const UiBuilder& builder, int format) -> int
@@ -366,6 +480,16 @@ auto makePreamp() -> PluginDef*
 {
 	return new Preamp("pre", N_("Amp Impulse"), "pre.select", "pre.Level", 0.1f, 2.1f, 0.1f, "pre.bass",
 		"pre.treble", s_preamps.data(), static_cast<int>(s_preamps.size()), preampUi);
+}
+
+auto makeContrast() -> PluginDef*
+{
+	return new Contrast;
+}
+
+void updateContrast(PluginDef* plugin)
+{
+	Contrast::update(plugin);
 }
 
 void updateCabinet(PluginDef* plugin)

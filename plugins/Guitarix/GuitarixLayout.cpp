@@ -22,11 +22,14 @@
 
 #include "GuitarixLayout.h"
 
+#include <array>
 #include <cmath>
+#include <cstring>
 
 #include <QBoxLayout>
 #include <QDomDocument>
 #include <QFile>
+#include <QPointer>
 #include <QGridLayout>
 #include <QHash>
 #include <QLabel>
@@ -186,8 +189,8 @@ class GladeReader
 public:
 	explicit GladeReader(GuitarixControls* controls) : m_controls(controls) {}
 
-	//! The unit expanded ("rackbox"), from @p glade (none if it is not there)
-	auto read(const QString& glade, QWidget* parent) -> QWidget*
+	//! The object @p root of @p glade (a unit's "rackbox": the unit expanded), none if it is not there
+	auto read(const QString& glade, const QString& root, QWidget* parent) -> QWidget*
 	{
 		auto document = QDomDocument{};
 		if (!document.setContent(glade)) { return nullptr; }
@@ -195,7 +198,7 @@ public:
 		for (int i = 0; i < objects.size(); ++i)
 		{
 			const auto object = objects.at(i).toElement();
-			if (object.attribute("id").section(':', 0, 0) != "rackbox") { continue; }
+			if (object.attribute("id").section(':', 0, 0) != root) { continue; }
 			auto built = this->object(object, parent);
 			// (a label a knob refers to shows its parameter's name: GxRegler's cp_configure)
 			for (const auto& [label, name] : m_labelNames)
@@ -206,6 +209,9 @@ public:
 		}
 		return nullptr;
 	}
+
+	//! A widget read, by its glade id (as it was put in its place: with its margins)
+	auto widget(const QString& id) const -> QWidget* { return m_widgets.value(id); }
 
 private:
 	auto object(const QDomElement& object, QWidget* parent) -> Built
@@ -250,6 +256,7 @@ private:
 			if (width > 0) { built.widget->setMinimumWidth(std::max(width, built.widget->minimumWidth())); }
 			if (height > 0) { built.widget->setMinimumHeight(std::max(height, built.widget->minimumHeight())); }
 			applyMargins(built, parent);
+			m_widgets.insert(object.attribute("id"), built.widget);
 		}
 		return built;
 	}
@@ -539,8 +546,10 @@ private:
 	auto meter(const Properties& properties, QWidget* parent) -> QWidget*
 	{
 		auto* parameter = parameterOf(properties);
-		const auto scale = parameter
-			? Meter::Scale{parameter->lower, parameter->upper, parameter->step != 0.f} : Meter::Scale{};
+		// (a level in dB, by log_meter, for a parameter with a step or a log display; else where it is in its range)
+		const auto options = parameter ? parameter->kind.mid(1) : QString{};
+		const auto scale = parameter ? Meter::Scale{parameter->lower, parameter->upper,
+			parameter->step != 0.f || options.contains('L'), options.contains('M')} : Meter::Scale{};
 		auto widget = new Meter(parameter ? parameter->output.get() : nullptr, scale,
 			properties.text("orientation") == "vertical" ? Qt::Vertical : Qt::Horizontal,
 			properties.integer("dimen", 0), properties.flag("falloff", false), parent);
@@ -606,26 +615,71 @@ private:
 	QHash<QString, QLabel*> m_labels; //!< by their ids
 	std::vector<std::pair<QString, QString>> m_labelNames; //!< labels the knobs refer to, and their names
 	int m_onDark = 0; //!< (within how many dark pages: a notebook's)
+	QHash<QString, QWidget*> m_widgets; //!< by their ids
 };
 
 
-//! The glade a unit gives (its load_ui asked for it), or nothing
-auto gladeOf(PluginDef* definition) -> QString
+//! A part of a glade a unit gives: the glade, and its object to show
+struct GladePart
 {
-	static auto s_glade = QString{};
+	QString glade;
+	QString root;
+};
+
+/**
+ * The glades a unit gives (its load_ui asked for them): one inline or in a file of Guitarix's builder directory
+ * (embedded here, gx/builder), its "rackbox" shown; or, "<file>#<object>", that object of the file (the amp head's
+ * parts of Guitarix's main window). None if it gives none.
+ */
+auto gladesOf(PluginDef* definition) -> std::vector<GladePart>
+{
+	static auto s_parts = std::vector<GladePart>{};
 	if (!definition || !definition->load_ui) { return {}; }
-	s_glade.clear();
+	s_parts.clear();
 	auto builder = UiBuilder{};
 	builder.plugin = definition;
-	builder.load_glade = [](const char* data) { s_glade = QString::fromUtf8(data); };
-	// (a glade in a file of Guitarix's builder directory: embedded here, gx/builder)
+	builder.load_glade = [](const char* data) { s_parts.push_back({QString::fromUtf8(data), "rackbox"}); };
 	builder.load_glade_file = [](const char* name) {
-		auto file = QFile{QString{":/artwork/guitarix/%1"}.arg(QString::fromUtf8(name))};
-		if (file.open(QIODevice::ReadOnly)) { s_glade = QString::fromUtf8(file.readAll()); }
+		const auto spec = QString::fromUtf8(name);
+		auto file = QFile{QString{":/artwork/guitarix/%1"}.arg(spec.section('#', 0, 0))};
+		if (!file.open(QIODevice::ReadOnly)) { return; }
+		const auto root = spec.contains('#') ? spec.section('#', 1) : QString{"rackbox"};
+		s_parts.push_back({QString::fromUtf8(file.readAll()), root});
 	};
 	// (only its glade is asked for: what else it can give is laid out as below)
 	definition->load_ui(builder, UI_FORM_GLADE);
-	return s_glade;
+	return s_parts;
+}
+
+
+/**
+ * The amp head's knobs as Guitarix's main window shows them (MainWindow::amp_controls_visible): with no amp (the
+ * last of its selector's, "---") a gain knob alone, else the pregain, drive, distortion and gain knobs.
+ */
+void showAmpControls(const GladeReader& reader, GuitarixControls* controls)
+{
+	auto* selector = controls->parameter("tube.select");
+	if (!selector || !selector->model) { return; }
+	const auto ids = std::array<std::pair<const char*, bool>, 10>{{
+		{"gxmediumknobpregain", false}, {"gxmediumknobdrive", false}, {"gxmediumknobdist", false},
+		{"gxmediumknobgain", false}, {"labelpregain:effekt_label", false}, {"labeldrive:effekt_label", false},
+		{"labeldist:effekt_label", false}, {"labelgain:effekt_label", false},
+		{"gxbigknobgain", true}, {"labelgain2:effekt_label", true}}};
+	auto widgets = std::vector<std::pair<QPointer<QWidget>, bool>>{};
+	for (const auto& [id, withoutAmp] : ids)
+	{
+		if (auto* widget = reader.widget(id)) { widgets.emplace_back(widget, withoutAmp); }
+	}
+	auto* model = selector->model.get();
+	const auto apply = [model, widgets] {
+		const auto noAmp = std::abs(model->value() - model->maxValue()) < 0.5f;
+		for (const auto& [widget, withoutAmp] : widgets)
+		{
+			if (widget) { widget->setVisible(withoutAmp == noAmp); }
+		}
+	};
+	apply();
+	if (!widgets.empty()) { QObject::connect(model, &Model::dataChanged, widgets.front().first, apply); }
 }
 
 
@@ -669,12 +723,35 @@ auto buildControls(GuitarixControls* controls, QWidget* parent) -> QWidget*
 	// (one that describes no UI shows none: Guitarix's rack shows its title only)
 	auto* definition = controls->effect()->definition();
 	if (!definition || !definition->load_ui) { return new QWidget(parent); }
-	const auto glade = gladeOf(definition);
-	if (!glade.isEmpty())
+	const auto parts = gladesOf(definition);
+	if (parts.empty()) { return plainControls(controls, parent); }
+	auto reader = GladeReader{controls};
+	auto widgets = std::vector<QWidget*>{};
+	for (const auto& part : parts)
 	{
-		if (auto* widget = GladeReader{controls}.read(glade, parent)) { return widget; }
+		if (auto* widget = reader.read(part.glade, part.root, nullptr)) { widgets.push_back(widget); }
 	}
-	return plainControls(controls, parent);
+	if (widgets.empty()) { return plainControls(controls, parent); }
+	if (std::strcmp(definition->id, "ampstack") == 0 && widgets.size() == 2)
+	{
+		showAmpControls(reader, controls);
+		// (as Guitarix paints them: the amp box, #PLUI-ampstack .rackmain, its alternate box 33 0 33 0; the amp
+		// details, #ampdetails, 0 0 0 0)
+		widgets[0] = new SkinBox(0.33, 0.33, widgets[0]);
+		widgets[1] = new SkinBox(0, 0, widgets[1]);
+	}
+	if (widgets.size() == 1)
+	{
+		widgets.front()->setParent(parent);
+		return widgets.front();
+	}
+	// (parts one under the other)
+	auto widget = new QWidget(parent);
+	auto layout = new QVBoxLayout(widget);
+	layout->setContentsMargins(0, 0, 0, 0);
+	layout->setSpacing(4);
+	for (auto* part : widgets) { layout->addWidget(part); }
+	return widget;
 }
 
 } // namespace lmms::gui::guitarix

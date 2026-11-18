@@ -290,6 +290,8 @@ private slots:
 		// (the convolvers: their impulse response changes on the main thread, as their update runs)
 		QTest::newRow("cab") << "cab" << 17;
 		QTest::newRow("pre") << "pre" << 10;
+		// (the amp head's amps: its 19 tube models, "---" the last)
+		QTest::newRow("ampstack") << "ampstack" << 19;
 	}
 
 	//! A unit that is a choice among others (Guitarix's ModuleSelectorFromList; a convolver's impulse responses):

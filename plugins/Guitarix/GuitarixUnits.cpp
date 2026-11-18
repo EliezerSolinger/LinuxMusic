@@ -41,6 +41,8 @@ const auto s_units = std::array{
 	Unit{"low_highpass", &gx_engine::gx_effects::low_high_pass::plugin},
 	Unit{"highbooster", &gx_engine::gx_effects::highbooster::plugin},
 	Unit{"eqs", &gx_engine::gx_effects::selecteq::plugin},
+	// (the amp head: around the rack in Guitarix, before its units here)
+	Unit{"ampstack", &makeAmpHead, nullptr, &updateAmpHead},
 	Unit{"crybaby", &makeCrybaby},
 	Unit{"poweramp", &makePoweramp},
 	Unit{"wah", &makeWah},

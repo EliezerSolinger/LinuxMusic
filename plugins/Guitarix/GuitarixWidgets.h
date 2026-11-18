@@ -52,6 +52,28 @@ void setTextColor(QLabel* label, const QColor& color);
 void styleRackLabel(QLabel* label);
 
 
+//! GxPaintBox's draw_skin in @p area: background1, its alternate box (top and bottom, fractions) in background2,
+//! the bevel, the shadow beneath
+void paintSkin(QPainter& p, const QRect& area, double alternateTop, double alternateBottom);
+//! GxPaintBox's draw_screws in @p area
+void paintScrews(QPainter& p, const QRect& area);
+
+//! A box painted as GxPaintBox's gx_rack_amp_expose paints one (the skin, its alternate box its own; the screws)
+class SkinBox : public QWidget
+{
+	Q_OBJECT
+public:
+	SkinBox(double alternateTop, double alternateBottom, QWidget* content, QWidget* parent = nullptr);
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+
+private:
+	double m_alternateTop;
+	double m_alternateBottom;
+};
+
+
 /**
  * A unit in the rack, as GxPaintBox's gx_rack_unit_expose paints it: the panel (background1, the lower part in
  * background2 when it is high enough: "alternate-box: 60 0 0 0"), its bevel and the shadow beneath, the handles at
@@ -140,6 +162,7 @@ public:
 		float lower = 0.f;
 		float upper = 1.f;
 		bool power = false;
+		bool peak = false; //!< (its level is taken as it is read: the highest since)
 	};
 
 	Meter(const std::atomic<float>* level, Scale scale, Qt::Orientation orientation, int dimension, bool falloff,

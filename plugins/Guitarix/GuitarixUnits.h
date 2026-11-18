@@ -72,6 +72,14 @@ auto makeCabinet() -> PluginDef*;
 auto makePreamp() -> PluginDef*;
 void updateCabinet(PluginDef* plugin);
 void updatePreamp(PluginDef* plugin);
+//! The amp head's presence (Guitarix's ContrastConvolver), and the amp head's amps (its ampstack)
+auto makeContrast() -> PluginDef*;
+void updateContrast(PluginDef* plugin);
+auto makeAmpstack() -> PluginDef*;
+
+//! The amp head (GuitarixAmp.cpp)
+auto makeAmpHead() -> PluginDef*;
+void updateAmpHead(PluginDef* plugin);
 
 //! The Vibe (GuitarixVibe.cpp), mono and stereo, each made on zeroed memory (see there)
 auto makeVibeMono() -> PluginDef*;

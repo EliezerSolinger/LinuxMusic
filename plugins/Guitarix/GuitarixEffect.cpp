@@ -524,7 +524,16 @@ void GuitarixEffect::collectOutputs()
 		if (!parameter.output || parameter.vars.empty()) { continue; }
 		auto highest = *parameter.vars.front();
 		for (auto* var : parameter.vars) { highest = std::max(highest, *var); }
-		parameter.output->store(highest, std::memory_order_relaxed);
+		if (!parameter.kind.mid(1).contains('M'))
+		{
+			parameter.output->store(highest, std::memory_order_relaxed);
+			continue;
+		}
+		// (a peak, "M": the highest until the view reads it, which takes it; the unit's own starts again from 0)
+		auto shown = parameter.output->load(std::memory_order_relaxed);
+		while (highest > shown
+			&& !parameter.output->compare_exchange_weak(shown, highest, std::memory_order_relaxed)) {}
+		for (auto* var : parameter.vars) { *var = 0.f; }
 	}
 }
 
