@@ -67,6 +67,7 @@ set(LMMS_TESTS
 	src/gui/SetupDialogTest.cpp
 	src/gui/ShortcutsTest.cpp
 	src/gui/ThemeImagesTest.cpp
+	src/gui/TransportBarTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	src/tracks/SampleTrackTest.cpp
 )

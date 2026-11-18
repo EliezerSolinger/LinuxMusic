@@ -199,6 +199,14 @@ SongEditor::~SongEditor()
 }
 
 
+void SongEditor::changeTempoAtPlayhead()
+{
+	m_tempoLane->addMarker(m_song->getPlayPos(Song::PlayMode::Song));
+}
+
+
+
+
 void SongEditor::saveSettings( QDomDocument& doc, QDomElement& element )
 {
 	MainWindow::saveWidgetState( parentWidget(), element );

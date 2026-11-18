@@ -71,6 +71,8 @@ public:
 	auto jumped() const -> bool { return m_jumped.load(std::memory_order_relaxed); }
 	//! The same, as seconds of the song
 	auto seconds(sample_rate_t sampleRate) const -> double;
+	//! Where a recording's pre-roll (or count-in) ends and it records (-1: none) [any thread]
+	auto recordingStartTick() const -> tick_t { return m_recordingStartTick.load(std::memory_order_relaxed); }
 
 	// The global actions [main thread]
 

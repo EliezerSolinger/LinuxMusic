@@ -1254,11 +1254,12 @@ QToolButton#transportRecord:checked {
 }
 
 QToolButton#transportCycle:checked {
-	background: #c99a06;
+	background: #1f7a43;
 }
 
 QToolButton#transportMetronome:checked {
-	background: #2f6fd0;
+	background: #1f7a43;
+	border-radius: 5px;
 }
 
 QToolButton#transportMute:checked {
@@ -1735,4 +1736,41 @@ QPushButton#settingsRestartNow {
 	color: #0c0d0f;
 	font-weight: bold;
 	padding: 5px 12px;
+}
+
+/* The transport's state in a word (its colour set by the program), the time signature and the pre-roll */
+QLabel#transportState {
+	font-size: 10px;
+	font-weight: bold;
+	padding: 0px 4px;
+}
+
+QToolButton#transportTimeSig, QToolButton#transportPreRoll {
+	background: #262b30;
+	border: 1px solid #3B424A;
+	border-radius: 4px;
+	color: #d1d8e4;
+	padding: 3px 8px;
+	font-size: 11px;
+}
+
+QToolButton#transportTimeSig:hover, QToolButton#transportPreRoll:hover {
+	background: #343840;
+}
+
+QToolButton#transportTimeSig::menu-indicator, QToolButton#transportPreRoll::menu-indicator {
+	image: none;
+	width: 0px;
+}
+
+QToolButton#transportMetronome {
+	border-radius: 5px;
+	padding: 3px;
+}
+
+QLineEdit#transportTempoEditor {
+	background: #0a0c0e;
+	border: 1px solid #0bd556;
+	border-radius: 4px;
+	color: #ffffff;
 }

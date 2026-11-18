@@ -245,7 +245,19 @@ queda do Mallets, que é queda e entra antes.
     - listar todas as peças e o que já temos de parecido (AmpAndIr/NAM, mixer analógico);
     - definir a interface de cada uma, que deve caber no rack de efeitos (item acima).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
-- [ ] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
+- [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
+  - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.
+  - Dois relógios, o grande e o pequeno, cada um no formato escolhido com um clique (compassos e tempos, minutos
+    e segundos, amostras, timecode SMPTE a 30 quadros), guardado nas configurações. A borda do grande fica verde
+    tocando, vermelha gravando e amarela na contagem.
+  - O estado numa palavra colorida: PARADO, PAUSADO, TOCANDO, GRAVANDO, CONTAGEM/PRÉ-ROLL com os compassos que
+    faltam.
+  - O andamento no lugar: arrastar para cima ou para baixo, rodinha (Shift: de 10 em 10), duplo clique para
+    digitar; um clique oferece digitar, marcar batendo (Tap: a média das últimas batidas; para sozinho dois
+    segundos depois) e mudar o andamento a partir do cursor no mapa de tempo.
+  - A fórmula de compasso num botão "4/4" (abre os dois números), o metrônomo e o pré-roll num botão que mostra
+    os compassos (com a contagem no menu dele).
+  - `TransportBarTest`: os formatos, o formato guardado, a rodinha, arrastar e o Tap.
   - Um visor grande de posição e um menor de tempo, clicáveis para trocar o formato.
   - Estado escrito e colorido (parado, tocando, gravando, contagem).
   - Andamento editável no lugar, com Tap.
@@ -273,6 +285,13 @@ queda do Mallets, que é queda e entra antes.
 - [x] Desfazer das edições do mapa de tempo
 - [x] Padrão de 120 BPM
 - [x] Streaming do disco com opção RAM/disco por clipe, cache de picos, forma de onda ao vivo, limpeza de órfãos
+
+## Observado (18/11)
+
+- [ ] O `ArpeggioSyncTest` falhou uma vez numa rodada completa do ctest com os builds de sanitizador compilando ao
+  mesmo tempo (carga muito alta), e passou ao repetir; 72 execuções em paralelo depois não reproduziram. O log da
+  falha se perdeu (o ctest o sobrescreveu ao repetir): o log de cada rodada passa a ser guardado para pegar o
+  detalhe se voltar.
 
 ## Achado na fase 10 (17/11)
 

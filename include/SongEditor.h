@@ -71,6 +71,9 @@ public:
 	void saveSettings( QDomDocument& doc, QDomElement& element ) override;
 	void loadSettings( const QDomElement& element ) override;
 
+	//! A change of tempo from the playhead on, in the tempo map (the transport's tempo menu)
+	void changeTempoAtPlayhead();
+
 	ComboBoxModel* snappingModel() const;
 
 	//! @brief Return grid size as number of bars

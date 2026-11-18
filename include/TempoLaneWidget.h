@@ -54,6 +54,8 @@ public:
 	TempoLaneWidget(TimeLineWidget* ruler, TempoMap* map, int headWidth, QWidget* parent);
 
 	void setHeadWidth(int width);
+	//! Asks for a change of tempo at @p tick (the tempo there first), and puts it in the map
+	void addMarker(tick_t tick);
 
 protected:
 	void paintEvent(QPaintEvent* event) override;
@@ -68,7 +70,6 @@ private:
 	auto tickAt(int x) const -> tick_t; //!< on sixteenths of a bar
 	auto markerAt(int x) const -> std::optional<tick_t>;
 	void editTempo(tick_t tick);
-	void addMarker(tick_t tick);
 	/**
 	 * Asks for a time signature from @p tick on (at the song's start, the song's): @p current to begin with; for a
 	 * marker that has one, the change can be taken away

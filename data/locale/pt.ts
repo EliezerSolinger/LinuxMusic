@@ -17773,6 +17773,69 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>Recording after the pre-roll...</source>
         <translation>Grava depois do pré-roll...</translation>
     </message>
+    <message>
+        <source>To the start of the song</source>
+        <translation>Para o começo da música</translation>
+    </message>
+    <message>
+        <source>COUNT-IN 4...</source>
+        <translation>CONTAGEM 4...</translation>
+    </message>
+    <message>
+        <source>The song's time signature (the tempo map changes it along the song)</source>
+        <translation>A fórmula de compasso da música (o mapa de tempo a muda ao longo dela)</translation>
+    </message>
+    <message>
+        <source>Bars played before a recording starts, and whether the metronome counts them in</source>
+        <translation>Compassos tocados antes de a gravação começar, e se o metrônomo faz a contagem</translation>
+    </message>
+    <message>
+        <source>No pre-roll</source>
+        <translation>Sem pré-roll</translation>
+    </message>
+    <message>
+        <source>Count-in: the metronome clicks during the pre-roll</source>
+        <translation>Contagem: o metrônomo toca durante o pré-roll</translation>
+    </message>
+    <message>
+        <source>Recording</source>
+        <translation>Gravação</translation>
+    </message>
+    <message>
+        <source>Pre-roll %1</source>
+        <translation>Pré-roll %1</translation>
+    </message>
+    <message>
+        <source>STOPPED</source>
+        <translation>PARADO</translation>
+    </message>
+    <message>
+        <source>PAUSED</source>
+        <translation>PAUSADO</translation>
+    </message>
+    <message>
+        <source>PLAYING</source>
+        <translation>TOCANDO</translation>
+    </message>
+    <message>
+        <source>RECORDING</source>
+        <translation>GRAVANDO</translation>
+    </message>
+    <message>
+        <source>COUNT-IN %1...</source>
+        <translation>CONTAGEM %1...</translation>
+    </message>
+    <message>
+        <source>PRE-ROLL %1...</source>
+        <translation>PRÉ-ROLL %1...</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n bar(s) of pre-roll</source>
+        <translation>
+            <numerusform>%n compasso de pré-roll</numerusform>
+            <numerusform>%n compassos de pré-roll</numerusform>
+        </translation>
+    </message>
 </context>
 <context>
     <name>ProjectMedia</name>
@@ -18462,6 +18525,71 @@ A interface usada é a que está salva nestas configurações.</translation>
     <message>
         <source>its process did not answer.</source>
         <translation>o processo dele não respondeu.</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::TransportMeters</name>
+    <message>
+        <source>CPU load and master output level</source>
+        <translation>Carga da CPU e nível de saída do master</translation>
+    </message>
+    <message>
+        <source>CPU</source>
+        <translation>CPU</translation>
+    </message>
+    <message>
+        <source>OUT</source>
+        <translation>OUT</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::TransportClock</name>
+    <message>
+        <source>%1 (click to show it another way)</source>
+        <translation>%1 (clique para mostrar de outro jeito)</translation>
+    </message>
+    <message>
+        <source>Bars and beats</source>
+        <translation>Compassos e tempos</translation>
+    </message>
+    <message>
+        <source>Minutes and seconds</source>
+        <translation>Minutos e segundos</translation>
+    </message>
+    <message>
+        <source>Samples</source>
+        <translation>Amostras</translation>
+    </message>
+    <message>
+        <source>Timecode (SMPTE)</source>
+        <translation>Timecode (SMPTE)</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::TransportTempo</name>
+    <message>
+        <source>The song's tempo (BPM): drag up or down, turn the wheel, double-click to type it; a click offers tapping it and the tempo map</source>
+        <translation>O andamento da música (BPM): arraste para cima ou para baixo, gire a rodinha, dê um duplo clique para digitar; um clique oferece marcar batendo e o mapa de tempo</translation>
+    </message>
+    <message>
+        <source>Tap</source>
+        <translation>Bata</translation>
+    </message>
+    <message>
+        <source>Type the tempo...</source>
+        <translation>Digitar o andamento...</translation>
+    </message>
+    <message>
+        <source>Tap the tempo</source>
+        <translation>Marcar o andamento batendo (Tap)</translation>
+    </message>
+    <message>
+        <source>Change the tempo from the playhead on (tempo map)...</source>
+        <translation>Mudar o andamento a partir do cursor (mapa de tempo)...</translation>
+    </message>
+    <message>
+        <source>Click on each beat; it stops two seconds after the last click</source>
+        <translation>Clique a cada batida; para dois segundos depois do último clique</translation>
     </message>
 </context>
 </TS>
