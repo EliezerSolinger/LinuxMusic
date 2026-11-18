@@ -124,14 +124,22 @@ private:
 
 
 /**
- * A level meter as GxFastMeter draws it (dB in, its deflection by log_meter): a bar of LEDs, those under the level
- * lit in the gradient of Guitarix's style, the rest dimmed; the level falls off linearly (500 ms for the scale).
+ * A level meter as GxFastMeter draws it: a bar of LEDs, those under the level lit in the gradient of Guitarix's
+ * style, the rest dimmed; the level falls off linearly (500 ms for the scale). Its parameter's range is its scale
+ * (cp_configure), or, for a parameter with a step (a "power" meter), the level is a power shown in dB by log_meter.
  */
 class Meter : public QWidget
 {
 	Q_OBJECT
 public:
-	Meter(const std::atomic<float>* level, Qt::Orientation orientation, int dimension, bool falloff,
+	struct Scale
+	{
+		float lower = 0.f;
+		float upper = 1.f;
+		bool power = false;
+	};
+
+	Meter(const std::atomic<float>* level, Scale scale, Qt::Orientation orientation, int dimension, bool falloff,
 		QWidget* parent = nullptr);
 
 	auto sizeHint() const -> QSize override;
@@ -147,6 +155,7 @@ private slots:
 private:
 
 	const std::atomic<float>* m_level;
+	Scale m_scale;
 	Qt::Orientation m_orientation;
 	int m_dimension;
 	bool m_falloff;
@@ -173,6 +182,67 @@ protected:
 private:
 	QPixmap m_image;
 	bool m_hovered = false;
+};
+
+
+/**
+ * A vertical slider as GxVSlider draws it: its image's track (vslider.png's top), its knob on it (the next 36
+ * pixels; the 36 after those when hovered), up for more.
+ */
+class VSlider : public FloatModelEditorBase
+{
+	Q_OBJECT
+public:
+	explicit VSlider(QWidget* parent = nullptr);
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+	void enterEvent(QEnterEvent* event) override;
+	void leaveEvent(QEvent* event) override;
+
+private:
+	QPixmap m_image;
+	bool m_hovered = false;
+};
+
+
+/**
+ * A switch as GxSwitch draws it: its base name's images, <name>_on and <name>_off (switch, switch_mid,
+ * frbutton...). A click turns it over.
+ */
+class Switch : public FloatModelEditorBase
+{
+	Q_OBJECT
+public:
+	explicit Switch(const QString& baseName, QWidget* parent = nullptr);
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+	void mousePressEvent(QMouseEvent* event) override;
+	void mouseMoveEvent(QMouseEvent* event) override;
+	void mouseReleaseEvent(QMouseEvent* event) override;
+	void mouseDoubleClickEvent(QMouseEvent* event) override;
+
+private:
+	auto isOn() const -> bool;
+
+	QPixmap m_on;
+	QPixmap m_off;
+};
+
+
+//! A box painted as a GxPaintBox's paint function paints it: one of Guitarix's backgrounds, tiled
+class PaintBox : public QWidget
+{
+	Q_OBJECT
+public:
+	PaintBox(const QString& paintFunction, QWidget* parent = nullptr);
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+
+private:
+	QPixmap m_tile;
 };
 
 

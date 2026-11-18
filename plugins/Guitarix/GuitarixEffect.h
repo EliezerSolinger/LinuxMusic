@@ -64,6 +64,9 @@ struct GuitarixParameter
 	std::vector<int*> intVars; //!< (an integer parameter, a selector)
 	std::vector<bool*> boolVars; //!< (a switch)
 	QStringList labels; //!< a selector's values
+	float lower = 0.f; //!< its range and step, as registered
+	float upper = 1.f;
+	float step = 0.f;
 };
 
 class GuitarixControls : public EffectControls

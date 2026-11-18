@@ -35,9 +35,10 @@ namespace gui::guitarix
 
 /**
  * The controls of @p controls' unit as Guitarix's rack shows them, from the unit's own description of them (its
- * load_ui): its glade (GtkBuilder XML: its "rackbox", the unit expanded) read here into Qt widgets, or the calls
- * of its stack builder (openHorizontalBox, create_small_rackknob...) done here as Guitarix's StackBoxBuilder does
- * them. The widgets are Guitarix's (GuitarixWidgets.h) on the units' parameters.
+ * load_ui): its glade (GtkBuilder XML, inline or in a file of Guitarix's builder directory: its "rackbox", the unit
+ * expanded) read here into Qt widgets. Every unit here has one, but one (trbuff) that describes no UI, which shows
+ * none, as in Guitarix. (A unit that only had the calls of Guitarix's stack builder would get its parameters in a
+ * row: none does.) The widgets are Guitarix's (GuitarixWidgets.h) on the units' parameters.
  */
 auto buildControls(GuitarixControls* controls, QWidget* parent) -> QWidget*;
 

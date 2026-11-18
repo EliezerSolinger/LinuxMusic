@@ -26,6 +26,7 @@
 
 #include <QBoxLayout>
 #include <QDomDocument>
+#include <QFile>
 #include <QGridLayout>
 #include <QHash>
 #include <QLabel>
@@ -216,7 +217,7 @@ private:
 		const auto kind = object.attribute("class");
 		const auto& properties = built.properties;
 
-		if (kind == "GtkBox") { built.widget = box(object, parent); }
+		if (kind == "GtkBox" || kind == "GxPaintBox") { built.widget = box(object, parent); }
 		else if (kind == "GtkGrid") { built.widget = grid(object, parent); }
 		else if (kind == "GtkLabel") { built.widget = label(object, parent); built.leaf = true; }
 		else if (kind == "GtkFrame") { built.widget = frame(object, parent); }
@@ -230,7 +231,9 @@ private:
 		// (a meter fills what it is given, its bar at the start of it)
 		else if (kind == "GxFastMeter") { built.widget = meter(properties, parent); }
 		else if (kind == "GxValueDisplay") { built.widget = valueDisplay(properties, parent); built.leaf = true; }
-		else if (kind == "GxHSlider") { built.widget = slider(properties, parent); built.leaf = true; }
+		else if (kind == "GxHSlider") { built.widget = slider<HSlider>(properties, parent); built.leaf = true; }
+		else if (kind == "GxVSlider") { built.widget = slider<VSlider>(properties, parent); built.leaf = true; }
+		else if (kind == "GxSwitch") { built.widget = toggle(properties, parent); built.leaf = true; }
 		else
 		{
 			// (a window, or what holds one child: what it holds)
@@ -304,7 +307,9 @@ private:
 	{
 		const auto properties = Properties{object};
 		const auto horizontal = properties.text("orientation", "horizontal") != "vertical";
-		auto widget = new QWidget(parent);
+		// (a GxPaintBox is a box its paint function paints)
+		auto widget = object.attribute("class") == "GxPaintBox"
+			? new PaintBox(properties.text("paint_func"), parent) : new QWidget(parent);
 		auto layout = new QBoxLayout(horizontal ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom, widget);
 		layout->setContentsMargins(0, 0, 0, 0);
 		layout->setSpacing(properties.integer("spacing", 0));
@@ -520,13 +525,16 @@ private:
 		}
 		widget->setModel(parameter->model.get());
 		widget->setHintText(parameter->name + ":", "");
+		if (properties.has("label_ref")) { m_labelNames.emplace_back(properties.text("label_ref"), parameter->name); }
 		return widget;
 	}
 
 	auto meter(const Properties& properties, QWidget* parent) -> QWidget*
 	{
 		auto* parameter = parameterOf(properties);
-		auto widget = new Meter(parameter ? parameter->output.get() : nullptr,
+		const auto scale = parameter
+			? Meter::Scale{parameter->lower, parameter->upper, parameter->step != 0.f} : Meter::Scale{};
+		auto widget = new Meter(parameter ? parameter->output.get() : nullptr, scale,
 			properties.text("orientation") == "vertical" ? Qt::Vertical : Qt::Horizontal,
 			properties.integer("dimen", 0), properties.flag("falloff", false), parent);
 		if (properties.has("tooltip_text")) { widget->setToolTip(properties.text("tooltip_text")); }
@@ -543,9 +551,10 @@ private:
 		return widget;
 	}
 
+	template<typename Slider>
 	auto slider(const Properties& properties, QWidget* parent) -> QWidget*
 	{
-		auto widget = new HSlider(parent);
+		auto widget = new Slider(parent);
 		auto* parameter = parameterOf(properties);
 		if (!parameter || !parameter->model)
 		{
@@ -554,6 +563,23 @@ private:
 		}
 		widget->setModel(parameter->model.get());
 		widget->setHintText(parameter->name + ":", "");
+		if (properties.has("label_ref")) { m_labelNames.emplace_back(properties.text("label_ref"), parameter->name); }
+		return widget;
+	}
+
+	//! A GxSwitch: its base name's images (switch by default), on its parameter
+	auto toggle(const Properties& properties, QWidget* parent) -> QWidget*
+	{
+		auto widget = new Switch(properties.text("base_name", "switch"), parent);
+		auto* parameter = parameterOf(properties);
+		if (!parameter || !parameter->model)
+		{
+			widget->setEnabled(false);
+			return widget;
+		}
+		widget->setModel(parameter->model.get());
+		widget->setHintText(parameter->name + ":", "");
+		if (properties.has("label_ref")) { m_labelNames.emplace_back(properties.text("label_ref"), parameter->name); }
 		return widget;
 	}
 
@@ -573,13 +599,18 @@ auto gladeOf(PluginDef* definition) -> QString
 	auto builder = UiBuilder{};
 	builder.plugin = definition;
 	builder.load_glade = [](const char* data) { s_glade = QString::fromUtf8(data); };
+	// (a glade in a file of Guitarix's builder directory: embedded here, gx/builder)
+	builder.load_glade_file = [](const char* name) {
+		auto file = QFile{QString{":/artwork/guitarix/%1"}.arg(QString::fromUtf8(name))};
+		if (file.open(QIODevice::ReadOnly)) { s_glade = QString::fromUtf8(file.readAll()); }
+	};
 	// (only its glade is asked for: what else it can give is laid out as below)
 	definition->load_ui(builder, UI_FORM_GLADE);
 	return s_glade;
 }
 
 
-//! A unit that gives no glade: its parameters, each a knob (a selector for one with values) under its name
+//! A unit that lays out its UI only by Guitarix's stack builder (none of these units): its parameters, each a knob (a selector for one with values) under its name
 auto plainControls(GuitarixControls* controls, QWidget* parent) -> QWidget*
 {
 	auto widget = new QWidget(parent);
@@ -616,7 +647,10 @@ auto plainControls(GuitarixControls* controls, QWidget* parent) -> QWidget*
 
 auto buildControls(GuitarixControls* controls, QWidget* parent) -> QWidget*
 {
-	const auto glade = gladeOf(controls->effect()->definition());
+	// (one that describes no UI shows none: Guitarix's rack shows its title only)
+	auto* definition = controls->effect()->definition();
+	if (!definition || !definition->load_ui) { return new QWidget(parent); }
+	const auto glade = gladeOf(definition);
 	if (!glade.isEmpty())
 	{
 		if (auto* widget = GladeReader{controls}.read(glade, parent)) { return widget; }

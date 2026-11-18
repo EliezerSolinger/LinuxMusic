@@ -145,6 +145,9 @@ auto newParameter(const char* id, const char* name, const char* kind, float valu
 	parameter.name = name && *name ? QString::fromUtf8(name) : parameter.id.section('.', -1);
 	if (!(name && *name) && !parameter.name.isEmpty()) { parameter.name[0] = parameter.name[0].toUpper(); }
 	parameter.kind = QString::fromUtf8(kind ? kind : "");
+	parameter.lower = low;
+	parameter.upper = up;
+	parameter.step = step;
 	// (its options after the first letter: O output, not saved; o output, saved; s not saved; L log; N no MIDI)
 	if (parameter.kind.mid(1).contains('O') || parameter.kind.mid(1).contains('o'))
 	{

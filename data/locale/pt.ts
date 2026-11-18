@@ -18819,5 +18819,9 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>Reverb</source>
         <translation>Reverb</translation>
     </message>
+    <message>
+        <source>Misc</source>
+        <translation>Diversos</translation>
+    </message>
 </context>
 </TS>

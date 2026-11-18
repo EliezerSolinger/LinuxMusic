@@ -517,10 +517,11 @@ constexpr auto FalloffPerMs = 1. / 500.;
 } // namespace
 
 
-Meter::Meter(const std::atomic<float>* level, Qt::Orientation orientation, int dimension, bool falloff,
+Meter::Meter(const std::atomic<float>* level, Scale scale, Qt::Orientation orientation, int dimension, bool falloff,
 	QWidget* parent) :
 	QWidget(parent),
 	m_level(level),
+	m_scale(scale),
 	m_orientation(orientation),
 	m_dimension(dimension > 0 ? dimension : DefaultDimension),
 	m_falloff(falloff)
@@ -547,7 +548,19 @@ void Meter::poll()
 	const auto elapsedMs = static_cast<double>(m_sincePoll.restart());
 	if (!m_level || !isVisible()) { return; }
 	static_assert(std::atomic<float>::is_always_lock_free);
-	const auto target = static_cast<float>(logMeter(m_level->load(std::memory_order_relaxed)));
+	const auto value = m_level->load(std::memory_order_relaxed);
+	auto target = 0.f;
+	if (m_scale.power)
+	{
+		// (gx_fast_meter_set_by_power: a power, in dB by log_meter; none at all is nothing)
+		target = value > 0 ? static_cast<float>(logMeter(20. * std::log10(value))) : 0.f;
+	}
+	else if (m_scale.upper != m_scale.lower)
+	{
+		// (gx_fast_meter_set: where it is in the range)
+		target = (std::clamp(value, std::min(m_scale.lower, m_scale.upper), std::max(m_scale.lower, m_scale.upper))
+			- m_scale.lower) / (m_scale.upper - m_scale.lower);
+	}
 	auto shown = target;
 	if (m_falloff && target < m_shown)
 	{
@@ -659,6 +672,123 @@ void HSlider::leaveEvent(QEvent* event)
 	m_hovered = false;
 	update();
 	FloatModelEditorBase::leaveEvent(event);
+}
+
+
+
+
+VSlider::VSlider(QWidget* parent) :
+	FloatModelEditorBase(DirectionOfManipulation::Vertical, parent),
+	m_image(image("vslider"))
+{
+	setFixedSize(m_image.width(), m_image.height() - 2 * SliderWidth);
+}
+
+
+void VSlider::paintEvent(QPaintEvent*)
+{
+	const auto track = height();
+	const auto state = model() ? std::clamp(static_cast<double>(model()->normValue(model()->value())), 0., 1.) : 0.;
+	const auto position = (track - SliderWidth) - static_cast<int>(std::lround(state * (track - SliderWidth)));
+	auto p = QPainter{this};
+	p.drawPixmap(0, 0, m_image, 0, 0, width(), track);
+	p.drawPixmap(0, position, m_image, 0, track + (m_hovered ? SliderWidth : 0), width(), SliderWidth);
+}
+
+
+void VSlider::enterEvent(QEnterEvent* event)
+{
+	m_hovered = true;
+	update();
+	FloatModelEditorBase::enterEvent(event);
+}
+
+
+void VSlider::leaveEvent(QEvent* event)
+{
+	m_hovered = false;
+	update();
+	FloatModelEditorBase::leaveEvent(event);
+}
+
+
+
+
+Switch::Switch(const QString& baseName, QWidget* parent) :
+	FloatModelEditorBase(DirectionOfManipulation::Vertical, parent),
+	m_on(image(QString{baseName + "_on"}.toUtf8().constData())),
+	m_off(image(QString{baseName + "_off"}.toUtf8().constData()))
+{
+	// (as a check button holds its indicator: a little room around it)
+	setFixedSize(std::max(m_on.width(), m_off.width()) + 4, std::max(m_on.height(), m_off.height()) + 4);
+	setCursor(Qt::PointingHandCursor);
+}
+
+
+auto Switch::isOn() const -> bool
+{
+	return model() && model()->value() > (model()->minValue() + model()->maxValue()) / 2;
+}
+
+
+void Switch::paintEvent(QPaintEvent*)
+{
+	const auto& shown = isOn() ? m_on : m_off;
+	auto p = QPainter{this};
+	if (!isEnabled()) { p.setOpacity(0.5); }
+	p.drawPixmap((width() - shown.width()) / 2, (height() - shown.height()) / 2, shown);
+}
+
+
+void Switch::mousePressEvent(QMouseEvent* event)
+{
+	if (event->button() != Qt::LeftButton || event->modifiers() != Qt::NoModifier || !model())
+	{
+		FloatModelEditorBase::mousePressEvent(event);
+		return;
+	}
+	model()->setValue(isOn() ? model()->minValue() : model()->maxValue());
+}
+
+
+void Switch::mouseMoveEvent(QMouseEvent* event)
+{
+	if (event->buttons() & Qt::LeftButton && event->modifiers() == Qt::NoModifier) { return; }
+	FloatModelEditorBase::mouseMoveEvent(event);
+}
+
+
+void Switch::mouseReleaseEvent(QMouseEvent* event)
+{
+	if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) { return; }
+	FloatModelEditorBase::mouseReleaseEvent(event);
+}
+
+
+void Switch::mouseDoubleClickEvent(QMouseEvent* event)
+{
+	// (as a second click)
+	mousePressEvent(event);
+}
+
+
+
+
+PaintBox::PaintBox(const QString& paintFunction, QWidget* parent) :
+	QWidget(parent),
+	// (box_uni_1_expose, box_uni_2_expose: draw_tiled with background1, background2; the units' glades use no
+	// other in a unit's controls)
+	m_tile(paintFunction == "box_uni_1_expose" ? image("background1")
+		: paintFunction == "box_uni_2_expose" ? image("background2") : QPixmap{})
+{
+}
+
+
+void PaintBox::paintEvent(QPaintEvent*)
+{
+	if (m_tile.isNull()) { return; }
+	auto p = QPainter{this};
+	p.drawTiledPixmap(rect(), m_tile);
 }
 
 

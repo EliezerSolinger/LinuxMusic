@@ -389,8 +389,8 @@ queda do Mallets, que é queda e entra antes.
   - A aparência do Guitarix: cada unidade é desenhada como no rack dele, com o estilo padrão dele ("Guitarix"): o
     painel (as imagens `background1`/`background2` dele, o bisel e a sombra), os puxadores dos lados, os parafusos
     nos cantos, o título, e os controles dele desenhados como a libgxw desenha (GxKnob: a imagem do knob, o anel
-    tracejado com o arco do valor em laranja e o indicador; GxSelector; GxFastMeter com o `log_meter` dele;
-    GxValueDisplay; GxHSlider), na fonte dele (Roboto Condensed). A disposição é a dele: o glade de cada unidade (a
+    tracejado com o arco do valor em laranja e o indicador; GxSelector; GxFastMeter;
+    GxValueDisplay; GxHSlider, GxVSlider; GxSwitch; GxPaintBox), na fonte dele (Roboto Condensed). A disposição é a dele: o glade de cada unidade (a
     parte "rackbox", a unidade aberta) é lido e montado com widgets Qt, com as regras de caixa do GTK (expand, fill,
     pack end, padding, grids homogêneas, frames, alinhamentos, abas `tab_rack`), e os rótulos ligados a um knob
     recebem o nome do parâmetro, como o GxRegler faz. Os 321 `var_id` dos layouts das 41 unidades batem com os
@@ -399,10 +399,23 @@ queda do Mallets, que é queda e entra antes.
     lê; não viram knob, automação nem são salvos no projeto (antes eram knobs e o processamento sobrescrevia o que
     a unidade media). Os parâmetros que o Guitarix não salva ("s") também não são salvos; um parâmetro sem nome leva
     o fim do id com inicial maiúscula, como no Guitarix. `GuitarixTest::outputsAreNotControls` confere.
-  - Falta: as unidades do `gx_effects` (compressor, delays, chorus, phaser, EQs...) e o construtor em pilha do
-    Guitarix (`StackBoxBuilder`: openHorizontalBox, create_small_rackknob...) que as unidades sem glade usam para a
-    disposição, com as chaves (switches) e sliders que elas usam; os amps, tonestacks, estágios de potência e caixas
-    (montados pelos seletores do motor dele).
+  - As 44 unidades Faust do rack do Guitarix (`gx_effects` e o módulo de amp do `gx_amps`): ganho, filtros, EQs
+    (seletiva, de picos, gráfica, Baxandall, 3 bandas), distorções, compressor, expander, ecos e delays (mono e
+    estéreo, digital, duck), reverbs (Freeverb, Stereoverb, Dattorro), tremolo, phaser, chorus, flanger, moog, ring
+    modulator, panorama, bass enhancer, fuzz face, transistor buffer... São os arquivos que o Guitarix gera
+    (`src/faust-generated`), como estão, cada um compilado dentro do namespace dele em `gx_engine`, como o
+    `gx_faust_plugins.cpp` do Guitarix faz (o CMake gera um arquivo por unidade). Agora são 85 unidades, na ordem do
+    rack dele (as mono, depois as estéreo). As 85 passam pelo `GuitarixTest` (extremos, repouso) e pelo teste de
+    alocações (zero). Os glades delas (inline, ou em arquivo do `builder` dele, embutidos aqui) usam também
+    GxPaintBox, GxSwitch, GxVSlider e GtkEventBox; os 247 `var_id` batem com os parâmetros. Uma unidade sem UI no
+    Guitarix (o Transistor Buffer) mostra só o título, como lá. Nenhuma unidade usa só o construtor em pilha do
+    Guitarix, então ele não foi feito.
+  - Corrigido: os medidores mostram o valor como o GxFastMeter mostra: na faixa do parâmetro (os das unidades, de
+    passo 0), ou, num parâmetro com passo, como potência em dB pelo `log_meter`. (Antes todos iam pelo `log_meter`:
+    o do compressor, 0 a 40, aparecia aceso no repouso.)
+  - Falta: as unidades do Guitarix que não são Faust (vibe, abgate, reversedelay, jcm800pre e as internas: crybaby,
+    wah, detune, convolvers...), os amps, tonestacks, estágios de potência e caixas (montados pelos seletores do
+    motor dele).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
   - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.
