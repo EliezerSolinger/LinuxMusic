@@ -270,13 +270,17 @@ void LocalZynAddSubFx::processMidiEvent( const MidiEvent& event )
 
 void LocalZynAddSubFx::shutUp()
 {
-	{
-		const auto lock = std::lock_guard{m_master->mutex};
-		m_master->ShutUp();
-		// Its random numbers (the notes' phases, detune...) from where they start, as when the program starts: the
-		// same notes render the same again
-		sprng(0x1234);
-	}
+	const auto lock = std::lock_guard{m_master->mutex};
+	shutUpLocked();
+}
+
+
+void LocalZynAddSubFx::shutUpLocked()
+{
+	m_master->ShutUp();
+	// Its random numbers (the notes' phases, detune...) from where they start, as when the program starts: the same
+	// notes render the same again
+	sprng(0x1234);
 	// It hands out the block it rendered the time before (its output is a block behind): that one, from before the
 	// shut up, is taken and dropped, so that the next is from rest
 	if (static_cast<int>(m_flushLeft.size()) >= synth->buffersize)
@@ -292,6 +296,12 @@ void LocalZynAddSubFx::shutUp()
 void LocalZynAddSubFx::setMasterVolume(int volume)
 {
 	const auto lock = std::lock_guard{m_master->mutex};
+	setMasterVolumeLocked(volume);
+}
+
+
+void LocalZynAddSubFx::setMasterVolumeLocked(int volume)
+{
 	m_master->setPvolume(static_cast<char>(std::clamp(volume, 0, 127)));
 }
 

@@ -68,6 +68,7 @@ set(LMMS_TESTS
 	src/core/TripleBufferTest.cpp
 	src/core/UndoCommandTest.cpp
 	src/core/UserNoticeTest.cpp
+	src/core/ZynRemoteTest.cpp
 	src/gui/SampleThumbnailRendererTest.cpp
 	src/gui/SetupDialogTest.cpp
 	src/gui/ShortcutsTest.cpp
@@ -124,6 +125,13 @@ find_package(Threads REQUIRED)
 target_link_libraries(FakeRemotePlugin PRIVATE Threads::Threads)
 add_dependencies(RemotePluginHangTest FakeRemotePlugin)
 set_tests_properties(RemotePluginHangTest PROPERTIES ENVIRONMENT "LMMS_PLUGIN_DIR=${CMAKE_CURRENT_BINARY_DIR}")
+
+# ZynAddSubFX's own process, as the program runs it while its window is shown (the message ids are the plugin's)
+target_include_directories(ZynRemoteTest PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ZynAddSubFx)
+if(TARGET RemoteZynAddSubFx)
+	add_dependencies(ZynRemoteTest RemoteZynAddSubFx)
+endif()
+set_tests_properties(ZynRemoteTest PROPERTIES ENVIRONMENT "LMMS_PLUGIN_DIR=${CMAKE_BINARY_DIR}/plugins")
 
 # A LADSPA plugin that crashes on demand, for LadspaIsolationTest (in a folder of its own, given in LADSPA_PATH)
 add_library(CrashingLadspa MODULE src/helpers/CrashingLadspa.c)

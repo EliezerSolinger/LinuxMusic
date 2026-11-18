@@ -225,6 +225,10 @@ queda do Mallets, que é queda e entra antes.
         período, e a iteração das regiões guardava estado no instrumento (compartilhado entre threads);
       - GIG: a dimensão do pedal de sustain (#4517) escolhe os samples gravados com o pedal abaixado; e a altura
         segue a nota no meio dela (legato e deslize do modo mono).
+    - [x] (no caminho, um erro meu de 18/11) o ZynAddSubFX no processo próprio (como roda com a janela dele aberta)
+      parava de vez com as mensagens novas de volume e de repouso: o laço de mensagens já segura o mutex do mestre
+      (um `std::mutex`) e elas o pegavam de novo. Os testes usam o Zyn dentro do programa, que só trava uma vez: o
+      `ZynRemoteTest` agora roda o processo de verdade e falha sem a correção.
     - [x] FreeBoy (#6556, #8043): medido, não há offset DC com o padrão (o filtro "Bass" do emulador o tira); os
       botões de saída diziam o lado errado (o de "SO2 (Esquerda)" saía à direita: o comportamento era o do Game Boy,
       SO1 = direita) e os dois volumes de saída agiam como um só (o emulador tem um volume): rótulos corrigidos e

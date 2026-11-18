@@ -128,12 +128,13 @@ public:
 				LocalZynAddSubFx::setPitchWheelBendRange( _m.getInt() );
 				break;
 
+			// (messageLoop() holds the master's mutex: the versions that do not take it again, a std::mutex)
 			case IdZasfShutUp:
-				LocalZynAddSubFx::shutUp();
+				LocalZynAddSubFx::shutUpLocked();
 				break;
 
 			case IdZasfSetMasterVolume:
-				LocalZynAddSubFx::setMasterVolume(_m.getInt());
+				LocalZynAddSubFx::setMasterVolumeLocked(_m.getInt());
 				break;
 
 			default:

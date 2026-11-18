@@ -68,8 +68,12 @@ public:
 	void process(float* left, float* right, f_cnt_t frames);
 	//! Every note and every effect's tail let go, at once (ZynAddSubFX's panic)
 	void shutUp();
+	//! As shutUp(), the master's mutex already held (the remote process holds it for every message)
+	void shutUpLocked();
 	//! ZynAddSubFX's master volume, 0 to 127 (80 by its default)
 	void setMasterVolume(int volume);
+	//! As setMasterVolume(), the master's mutex already held
+	void setMasterVolumeLocked(int volume);
 
 	inline Master * master()
 	{
