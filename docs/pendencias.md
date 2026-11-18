@@ -234,3 +234,12 @@ queda do Mallets, que é queda e entra antes.
 - [x] Desfazer das edições do mapa de tempo
 - [x] Padrão de 120 BPM
 - [x] Streaming do disco com opção RAM/disco por clipe, cache de picos, forma de onda ao vivo, limpeza de órfãos
+
+## Achado na fase 10 (17/11)
+
+- [ ] Entrada MIDI × porta apagada, em todos os drivers (ALSA, JACK, CoreMIDI): a thread do MIDI entrega o evento à
+  porta sem nada que impeça a porta de ser apagada ao mesmo tempo. Segurar uma trava durante a entrega pode travar
+  (a nota desligada pega a trava do motor; limpar o projeto apaga portas segurando essa trava). Precisa de um desenho
+  comum aos drivers (por exemplo, a entrada passar por uma fila sem trava lida no início do período, como o JACK já
+  faz no callback) e do teste numa máquina Linux. Ver `docs/plano-refatoracao.md`, fase 10.2.
+

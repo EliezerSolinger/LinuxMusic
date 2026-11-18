@@ -1,5 +1,5 @@
 /*
- * MidiApple.h - Apple raw MIDI client
+ * MidiApple.h - the macOS MIDI client (CoreMIDI)
  *
  * Copyright (c) 2005-2014 Tobias Doerffel <tobydox/at/users.sourceforge.net>
  * Copyright (c) 2015 Maurizio Lo Bosco (rageboge on github)
@@ -30,24 +30,40 @@
 
 #ifdef LMMS_BUILD_APPLE
 
-#include "MidiClient.h"
-#include "MidiPort.h"
+#include <map>
+#include <memory>
+#include <mutex>
+#include <vector>
+
 #include <CoreMIDI/CoreMIDI.h>
 
-
-class QLineEdit;
+#include "MidiByteParser.h"
+#include "MidiClient.h"
+#include "MidiPort.h"
 
 
 namespace lmms
 {
 
 
+/**
+ * The macOS MIDI client (CoreMIDI). Every source and destination online is a port to subscribe to: a device's are
+ * named "device:endpoint" (as projects saved them), a virtual one (another program's) by its own name. Devices
+ * plugged in or out while the program runs come and go (hotplug); a track's subscriptions are kept by name, so a
+ * device plugged in again is subscribed again.
+ *
+ * Threads: the lists and subscriptions change on the main thread, under m_routingMutex. CoreMIDI hands the bytes
+ * received to a thread of its own (readProc()); the events sent may come from the audio thread. Those threads take
+ * nothing but the routing they need, under the mutex, which a thread other than the main one only tries: while the
+ * main thread changes the routing (a moment), an event there is dropped rather than the thread waiting. Nothing is
+ * allocated on them.
+ */
 class MidiApple : public QObject, public MidiClient
 {
 	Q_OBJECT
 public:
 	MidiApple();
-	virtual ~MidiApple();
+	~MidiApple() override;
 
 	inline static QString probeDevice()
 	{
@@ -62,92 +78,74 @@ public:
 	{
 		return QString(); // no configuration settings
 	}
-	
-	virtual void processOutEvent( const MidiEvent & _me,
-								const TimePos & _time,
-								const MidiPort * _port );
-	
-	virtual void applyPortMode( MidiPort * _port );
-	virtual void removePort( MidiPort * _port );
 
+	void processOutEvent(const MidiEvent& event, const TimePos& time, const MidiPort* port) override;
+
+	void applyPortMode(MidiPort* port) override;
+	void removePort(MidiPort* port) override;
 
 	// list devices as ports
-	virtual QStringList readablePorts() const
-	{
-		return m_inputDevices.keys();
-	}
+	QStringList readablePorts() const override;
+	QStringList writablePorts() const override;
 
-	virtual QStringList writablePorts() const
-	{
-		return m_outputDevices.keys();
-	}
-
-	// return name of port which specified MIDI event came from
-	virtual QString sourcePortName( const MidiEvent & ) const;
+	//! The name of the source @p event came from (for learning a controller)
+	QString sourcePortName(const MidiEvent& event) const override;
 
 	// (un)subscribe given MidiPort to/from destination-port
-	virtual void subscribeReadablePort( MidiPort * _port,
-									const QString & _dest,
-									bool _subscribe = true );
+	void subscribeReadablePort(MidiPort* port, const QString& dest, bool subscribe = true) override;
+	void subscribeWritablePort(MidiPort* port, const QString& dest, bool subscribe = true) override;
 
-	virtual void subscribeWritablePort( MidiPort * _port,
-									const QString & _dest,
-									bool _subscribe = true );
-
-	virtual void connectRPChanged( QObject * _receiver,
-									const char * _member )
+	void connectRPChanged(QObject* receiver, const char* member) override
 	{
-		connect( this, SIGNAL( readablePortsChanged() ),
-				_receiver, _member );
+		connect(this, SIGNAL(readablePortsChanged()), receiver, member);
 	}
 
-
-	virtual void connectWPChanged( QObject * _receiver,
-									const char * _member )
+	void connectWPChanged(QObject* receiver, const char* member) override
 	{
-		connect( this, SIGNAL( writablePortsChanged() ),
-				_receiver, _member );
+		connect(this, SIGNAL(writablePortsChanged()), receiver, member);
 	}
 
-
-	virtual bool isRaw() const
+	bool isRaw() const override
 	{
 		return false;
 	}
 
-
-private:// slots:
-	void updateDeviceList();
-
-
-private:
-	void openDevices();
-	void closeDevices();
-	void openMidiReference( MIDIEndpointRef reference, QString refName,bool isIn );
-	MIDIClientRef getMidiClientRef();
-	void midiInClose( MIDIEndpointRef reference );
-	static void NotifyCallback( const MIDINotification *message, void *refCon );
-	static void ReadCallback( const MIDIPacketList *pktlist, void *readProcRefCon, void *srcConnRefCon );
-	void HandleReadCallback( const MIDIPacketList *pktlist, void *srcConnRefCon );
-	void notifyMidiPortList( MidiPortList portList, MidiEvent midiEvent);
-	char * getFullName( MIDIEndpointRef &endpoint_ref );
-	void sendMidiOut( MIDIEndpointRef & endPointRef, const MidiEvent& event );
-	MIDIPacketList createMidiPacketList( const MidiEvent& event );
-
-	MIDIClientRef mClient = 0;
-	QMap<QString, MIDIEndpointRef> m_inputDevices;
-	QMap<QString, MIDIEndpointRef> m_outputDevices;
-	QMap<MIDIEndpointRef, MIDIPortRef> m_sourcePortRef;
-
-	// subscriptions
-	using SubMap = QMap<QString, MidiPortList>;
-	SubMap m_inputSubs;
-	SubMap m_outputSubs;
+	//! Looks at the sources and destinations online again (CoreMIDI says when they change; tests call it too)
+	void rescan();
 
 signals:
 	void readablePortsChanged();
 	void writablePortsChanged();
 
+private:
+	//! A source seen since the client was made (by CoreMIDI's unique id): it stays as long as the client, as its
+	//! address is its connection's context and its name the events' source (see sourcePortName())
+	struct Source
+	{
+		QString name;
+		MIDIEndpointRef ref = 0;
+		bool connected = false;
+		MidiByteParser parser; //!< (CoreMIDI's thread's)
+	};
+
+	static void readProc(const MIDIPacketList* packets, void* client, void* source);
+	static void notifyProc(const MIDINotification* message, void* client);
+	static auto endpointName(MIDIEndpointRef endpoint) -> QString;
+
+	MIDIClientRef m_client = 0;
+	MIDIPortRef m_inputPort = 0;
+	MIDIPortRef m_outputPort = 0;
+
+	std::map<MIDIUniqueID, std::unique_ptr<Source>> m_sources; //!< (main thread)
+	std::vector<std::unique_ptr<Source>> m_renamedSources;	//!< sources whose name changed: kept, see Source
+
+	// The routing (see the class's documentation)
+	mutable std::mutex m_routingMutex;
+	QMap<QString, MIDIEndpointRef> m_inputDevices;
+	QMap<QString, MIDIEndpointRef> m_outputDevices;
+	using SubMap = QMap<QString, MidiPortList>;
+	SubMap m_inputSubs;
+	SubMap m_outputSubs;
 } ;
 
 

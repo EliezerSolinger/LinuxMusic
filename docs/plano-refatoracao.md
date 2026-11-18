@@ -533,6 +533,42 @@ em todas as plataformas de build (MinGW).
     implementações.
 - O ALSA e o JACK no Linux continuam dependendo do teste numa máquina Linux (pendência do usuário).
 
+**Resultado (17/11): não adotada agora; o driver do macOS foi refeito.** Pela regra (melhor que a nossa, medido
+aqui, com tudo o que temos), a libremidi só poderia ser medida neste Mac contra o driver CoreMIDI: os itens de
+"mantém" do ALSA, do JACK, do sndio e do WinMM dependem de máquinas que não temos aqui. Trocar só o macOS traria
+uma árvore grande de código de fora para substituir 635 linhas, sem tirar código nosso das outras plataformas. E a
+melhoria que ela mostraria aqui (conexão a quente) era só o que faltava ao nosso driver. Fica para quando o teste
+no Linux existir; os números de cada item entram então.
+
+O que a avaliação achou no driver CoreMIDI (`MidiApple`) e foi consertado, com testes:
+- sem conexão a quente: o aviso do CoreMIDI só era registrado; um teclado ligado com o programa aberto não
+  aparecia. Agora a lista é refeita quando o CoreMIDI avisa, e as inscrições de uma faixa ficam pelo nome: o
+  aparelho desligado e religado volta inscrito;
+- só via os pontos de aparelhos; os virtuais (de outros programas) agora aparecem;
+- lia além do pacote nas mensagens de 1 e 2 bytes, ignorava o *running status* e descartava relógio, início,
+  parada e posição; mandava 3 bytes para mudança de programa e pressão de canal, e o *pitch bend* errado;
+- `processOutEvent` (na thread de áudio) alocava (`QStringList`, texto de depuração) e lia mapas que a thread
+  principal mudava; o callback de leitura (thread do CoreMIDI) também: agora uma trava curta que só a thread
+  principal espera (as outras só tentam), e nada alocado;
+- vazava os nomes e as portas do CoreMIDI; o evento levava ponteiro para variável local como origem (aprender um
+  controlador não sabia de onde veio).
+
+Com isso, peças comuns a todos os drivers:
+- `MidiByteParser`: o leitor de bytes MIDI (tirado do `MidiClientRaw`), agora com tempo real em qualquer ponto,
+  posição da música, SysEx pulado e *running status*; usado pelo CoreMIDI, pelo JACK, pelo ALSA cru e pelo sndio;
+- `writeToByteSeq` escreve também as mensagens de tempo real e a posição; o `MidiClientRaw` o usa para enviar, e
+  passou a enviar controles, programa e *pitch bend* (só mandava notas).
+
+Testes: `MidiByteParserTest` (todas as plataformas) e `MidiAppleTest` (macOS, com pontos MIDI virtuais do próprio
+teste: ligar, desligar e religar com a inscrição mantida, os eventos e o nome da origem, os bytes enviados de outra
+thread).
+
+**Pendente (anotado em `docs/pendencias.md`):** entregar a entrada MIDI de forma segura enquanto uma porta é
+apagada, em todos os drivers. Hoje (no ALSA, no JACK e no CoreMIDI) a thread do MIDI chama a porta sem nada que
+impeça a porta de ser apagada ao mesmo tempo. Segurar uma trava durante a entrega pode travar o programa (a nota
+desligada pega a trava do motor, e limpar o projeto apaga portas segurando essa trava); a solução precisa de um
+desenho para todos os drivers e do teste no Linux.
+
 ## Andamento
 
 (Atualizado a cada etapa.)

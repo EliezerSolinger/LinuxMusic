@@ -97,8 +97,25 @@ std::size_t writeToByteSeq(
 
 		case MidiPitchBend:
 			data[1] = ev.pitchBend() & 0x7f;
-			data[2] = ev.pitchBend() >> 7;
+			data[2] = (ev.pitchBend() >> 7) & 0x7f;
 			size    = 3;
+			break;
+
+		// System messages: no channel
+		case MidiSongPosition:
+			data[0] = MidiSongPosition;
+			data[1] = ev.param(0) & 0x7f;
+			data[2] = (ev.param(0) >> 7) & 0x7f;
+			size    = 3;
+			break;
+
+		case MidiSync:
+		case MidiStart:
+		case MidiContinue:
+		case MidiStop:
+		case MidiSystemReset:
+			data[0] = static_cast<uint8_t>(ev.type());
+			size    = 1;
 			break;
 
 		default:

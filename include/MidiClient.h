@@ -29,6 +29,7 @@
 #include <vector>
 
 
+#include "MidiByteParser.h"
 #include "MidiEvent.h"
 
 class QObject;
@@ -120,9 +121,6 @@ protected:
 
 
 
-const uint32_t RAW_MIDI_PARSE_BUF_SIZE = 16;
-
-
 class MidiClientRaw : public MidiClient
 {
 public:
@@ -145,31 +143,14 @@ protected:
 
 
 private:
-	// this does MIDI-event-process
-	void processParsedEvent();
+	//! Hands @p event to every port
+	void processParsedEvent(const MidiEvent& event);
 	void processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port ) override;
 
-	// small helper function returning length of a certain event - this
-	// is necessary for parsing raw-MIDI-data
-	static int eventLength( const unsigned char event );
 
+	//! The events of the stream received (see MidiByteParser)
+	MidiByteParser m_parser;
 
-	// data being used for parsing
-	struct midiParserData
-	{
-		uint8_t m_status;		// identifies the type of event, that
-					// is currently received ('Noteon',
-					// 'Pitch Bend' etc).
-		uint8_t m_channel;	// The channel of the event that is
-					// received (in case of a channel event)
-		uint32_t m_bytes;		// How many bytes have been read for
-					// the current event?
-		uint32_t m_bytesTotal;	// How many bytes does the current
-					// event type include?
-		uint32_t m_buffer[RAW_MIDI_PARSE_BUF_SIZE];
-					// buffer for incoming data
-		MidiEvent m_midiEvent;	// midi-event
-	} m_midiParseData;
 
 } ;
 

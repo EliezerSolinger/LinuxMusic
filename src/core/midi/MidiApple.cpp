@@ -1,5 +1,5 @@
 /*
- * MidiApple.cpp - Apple MIDI client
+ * MidiApple.cpp - the macOS MIDI client (CoreMIDI)
  *
  * Copyright (c) 2005-2014 Tobias Doerffel <tobydox/at/users.sourceforge.net>
  * Copyright (c) 2015 Maurizio Lo Bosco (rageboge on github)
@@ -27,332 +27,224 @@
 
 #ifdef LMMS_BUILD_APPLE
 
-#include <QtAlgorithms>
 #include <algorithm>
+#include <array>
 
-#include "ConfigManager.h"
+#include <QMetaObject>
+
+#include "MidiEventToByteSeq.h"
 #include "MidiPort.h"
-#include "Note.h"
-
-#include <CoreMIDI/CoreMIDI.h>
+#include "PluginChecks.h"
 
 
 namespace lmms
 {
 
 
-const unsigned int SYSEX_LENGTH=1024;
-
-MidiApple::MidiApple() :
-	MidiClient(),
-	m_inputDevices(),
-	m_outputDevices(),
-	m_inputSubs(),
-	m_outputSubs()
+namespace
 {
-	openDevices();
+
+//! Room for the ports a source or destination is subscribed by, taken on CoreMIDI's or the audio thread (no allocation)
+constexpr auto MaxSubscribers = std::size_t{64};
+
+auto stringProperty(MIDIObjectRef object, CFStringRef property) -> QString
+{
+	auto value = CFStringRef{nullptr};
+	if (MIDIObjectGetStringProperty(object, property, &value) != noErr || value == nullptr) { return {}; }
+	const auto text = QString::fromCFString(value);
+	CFRelease(value);
+	return text;
 }
+
+auto isOnline(MIDIObjectRef object) -> bool
+{
+	auto offline = SInt32{0};
+	return MIDIObjectGetIntegerProperty(object, kMIDIPropertyOffline, &offline) != noErr || offline == 0;
+}
+
+//! Locks @p mutex on the main thread; elsewhere only tries (see MidiApple's documentation)
+auto routingLock(std::mutex& mutex) -> std::unique_lock<std::mutex>
+{
+	if (ThreadCheck::isMainThread()) { return std::unique_lock{mutex}; }
+	return std::unique_lock{mutex, std::try_to_lock};
+}
+
+} // namespace
+
+
+
+
+MidiApple::MidiApple()
+{
+	MIDIClientCreate(CFSTR("LinuxMusic"), &MidiApple::notifyProc, this, &m_client);
+	if (m_client)
+	{
+		MIDIInputPortCreate(m_client, CFSTR("LinuxMusic in"), &MidiApple::readProc, this, &m_inputPort);
+		MIDIOutputPortCreate(m_client, CFSTR("LinuxMusic out"), &m_outputPort);
+	}
+	rescan();
+}
+
 
 
 
 MidiApple::~MidiApple()
 {
-	closeDevices();
+	// (no callback runs after its port is gone, so the sources may go afterwards)
+	if (m_inputPort) { MIDIPortDispose(m_inputPort); }
+	if (m_outputPort) { MIDIPortDispose(m_outputPort); }
+	if (m_client) { MIDIClientDispose(m_client); }
 }
 
 
 
-void MidiApple::processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port )
+
+auto MidiApple::endpointName(MIDIEndpointRef endpoint) -> QString
 {
-	qDebug("MidiApple:processOutEvent displayName:'%s'",port->displayName().toLatin1().constData());
-	
-	QStringList outDevs;
-	for( SubMap::ConstIterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
+	// A device's endpoint: "device:endpoint", as projects saved it; another program's (virtual): its own name
+	const auto name = stringProperty(endpoint, kMIDIPropertyName);
+	auto entity = MIDIEntityRef{0};
+	auto device = MIDIDeviceRef{0};
+	if (MIDIEndpointGetEntity(endpoint, &entity) == noErr && entity
+		&& MIDIEntityGetDevice(entity, &device) == noErr && device)
 	{
-		for( MidiPortList::ConstIterator jt = it.value().begin(); jt != it.value().end(); ++jt )
+		return stringProperty(device, kMIDIPropertyName) + ":" + name;
+	}
+	return name.isEmpty() ? stringProperty(endpoint, kMIDIPropertyDisplayName) : name;
+}
+
+
+
+
+void MidiApple::rescan()
+{
+	// Names made unique (two of the same device): the second one numbered
+	const auto unique = [](const QMap<QString, MIDIEndpointRef>& taken, QString name) {
+		if (!taken.contains(name)) { return name; }
+		for (int n = 2;; ++n)
 		{
-			if( *jt == port )
+			if (const auto numbered = QString{"%1 (%2)"}.arg(name).arg(n); !taken.contains(numbered)) { return numbered; }
+		}
+	};
+
+	auto inputs = QMap<QString, MIDIEndpointRef>{};
+	auto seen = std::vector<MIDIUniqueID>{};
+	for (ItemCount i = 0, count = MIDIGetNumberOfSources(); i < count; ++i)
+	{
+		const auto ref = MIDIGetSource(i);
+		if (!ref || !isOnline(ref)) { continue; }
+		const auto name = unique(inputs, endpointName(ref));
+		inputs.insert(name, ref);
+
+		auto id = MIDIUniqueID{0};
+		MIDIObjectGetIntegerProperty(ref, kMIDIPropertyUniqueID, &id);
+		seen.push_back(id);
+		auto& source = m_sources[id];
+		if (source && source->name != name)
+		{
+			// Renamed: a new one, the old one kept (a callback may still be reading its name)
+			if (source->connected) { MIDIPortDisconnectSource(m_inputPort, source->ref); }
+			m_renamedSources.push_back(std::move(source));
+		}
+		if (!source)
+		{
+			source = std::make_unique<Source>();
+			source->name = name;
+		}
+		if (!source->connected || source->ref != ref)
+		{
+			if (source->connected) { MIDIPortDisconnectSource(m_inputPort, source->ref); }
+			source->ref = ref;
+			source->connected = m_inputPort && MIDIPortConnectSource(m_inputPort, ref, source.get()) == noErr;
+		}
+	}
+	// The sources gone (unplugged)
+	for (auto& [id, source] : m_sources)
+	{
+		if (source->connected && std::find(seen.begin(), seen.end(), id) == seen.end())
+		{
+			MIDIPortDisconnectSource(m_inputPort, source->ref);
+			source->connected = false;
+		}
+	}
+
+	auto outputs = QMap<QString, MIDIEndpointRef>{};
+	for (ItemCount i = 0, count = MIDIGetNumberOfDestinations(); i < count; ++i)
+	{
+		const auto ref = MIDIGetDestination(i);
+		if (!ref || !isOnline(ref)) { continue; }
+		outputs.insert(unique(outputs, endpointName(ref)), ref);
+	}
+
+	auto readableChanged = false;
+	auto writableChanged = false;
+	{
+		const auto lock = std::lock_guard{m_routingMutex};
+		readableChanged = inputs.keys() != m_inputDevices.keys();
+		writableChanged = outputs.keys() != m_outputDevices.keys();
+		m_inputDevices = std::move(inputs);
+		m_outputDevices = std::move(outputs);
+	}
+	if (readableChanged) { emit readablePortsChanged(); }
+	if (writableChanged) { emit writablePortsChanged(); }
+}
+
+
+
+
+void MidiApple::notifyProc(const MIDINotification* message, void* client)
+{
+	// (on the main thread's run loop, where the client was made) Devices plugged in or out: looked at again once
+	// CoreMIDI is done telling
+	switch (message->messageID)
+	{
+	case kMIDIMsgSetupChanged:
+	case kMIDIMsgObjectAdded:
+	case kMIDIMsgObjectRemoved:
+	case kMIDIMsgPropertyChanged:
+	{
+		auto* self = static_cast<MidiApple*>(client);
+		QMetaObject::invokeMethod(self, [self] { self->rescan(); }, Qt::QueuedConnection);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+
+
+
+void MidiApple::readProc(const MIDIPacketList* packets, void* client, void* sourceContext)
+{
+	auto* self = static_cast<MidiApple*>(client);
+	auto* source = static_cast<Source*>(sourceContext);
+	if (!self || !source) { return; }
+
+	// The ports subscribed to this source, copied into room of their own; the events go to them after
+	auto ports = std::array<MidiPort*, MaxSubscribers>{};
+	auto count = std::size_t{0};
+	{
+		const auto lock = routingLock(self->m_routingMutex);
+		if (!lock.owns_lock()) { return; }
+		if (const auto it = self->m_inputSubs.constFind(source->name); it != self->m_inputSubs.cend())
+		{
+			for (auto* port : *it)
 			{
-				outDevs += it.key();
-				break;
+				if (count < ports.size()) { ports[count++] = port; }
 			}
 		}
 	}
-	
-	for( QMap<QString, MIDIEndpointRef>::Iterator it = m_outputDevices.begin(); it != m_outputDevices.end(); ++it )
+
+	const auto* packet = &packets->packet[0];
+	for (UInt32 i = 0; i < packets->numPackets; ++i)
 	{
-		if( outDevs.contains( it.key() ) )
+		for (UInt16 b = 0; b < packet->length; ++b)
 		{
-			sendMidiOut( it.value(), event );
-		}
-	}
-
-}
-
-
-
-void MidiApple::sendMidiOut( MIDIEndpointRef &endPointRef, const MidiEvent& event )
-{
-	MIDIPacketList packetList=createMidiPacketList(event);
-	MIDIPortRef port = m_sourcePortRef.value(endPointRef);
-	MIDISend(port, endPointRef, &packetList);
-}
-
-
-
-MIDIPacketList MidiApple::createMidiPacketList( const MidiEvent& event )
-{
-	MIDIPacketList packetList;
-	packetList.numPackets = 1;
-	MIDIPacket* firstPacket = &packetList.packet[0];
-	firstPacket->timeStamp = 0; // send immediately
-	firstPacket->length = 3;
-	firstPacket->data[0] = ( event.type() + event.channel() );
-	firstPacket->data[1] = ( event.param( 0 ) & 0xff );
-	firstPacket->data[2] = ( event.param( 1 ) & 0xff );
-	return packetList;
-}
-
-
-
-void MidiApple::applyPortMode( MidiPort* port )
-{
-	qDebug("applyPortMode displayName:'%s'",port->displayName().toLatin1().constData());
-	// make sure no subscriptions exist which are not possible with
-	// current port-mode
-	if( !port->isInputEnabled() )
-	{
-		for( SubMap::Iterator it = m_inputSubs.begin(); it != m_inputSubs.end(); ++it )
-		{
-			it.value().removeAll( port );
-		}
-	}
-	
-	if( !port->isOutputEnabled() )
-	{
-		for( SubMap::Iterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
-		{
-			it.value().removeAll( port );
-		}
-	}
-}
-
-
-
-void MidiApple::removePort( MidiPort* port )
-{
-	qDebug("removePort displayName:'%s'",port->displayName().toLatin1().constData());
-	for( SubMap::Iterator it = m_inputSubs.begin(); it != m_inputSubs.end(); ++it )
-	{
-		it.value().removeAll( port );
-	}
-	
-	for( SubMap::Iterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
-	{
-		it.value().removeAll( port );
-	}
-	
-	MidiClient::removePort( port );
-}
-
-
-
-QString MidiApple::sourcePortName( const MidiEvent& event ) const
-{
-	qDebug("sourcePortName");
-	/*
-	if( event.sourcePort() )
-	{
-		return m_inputDevices.value( *static_cast<const HMIDIIN *>( event.sourcePort() ) );
-	}
-	*/
-	return MidiClient::sourcePortName( event );
-}
-
-
-
-void MidiApple::subscribeReadablePort( MidiPort* port, const QString& dest, bool subscribe )
-{
-	qDebug("subscribeReadablePort %s subscribe=%d",dest.toLatin1().constData(),subscribe);
-	if( subscribe && port->isInputEnabled() == false )
-	{
-		qWarning( "port %s can't be (un)subscribed!", port->displayName().toLatin1().constData() );
-		return;
-	}
-	
-	m_inputSubs[dest].removeAll( port );
-	if( subscribe )
-	{
-		qDebug("Subscribing %s",dest.toLatin1().constData());
-		m_inputSubs[dest].push_back( port );
-	}
-	else
-	{
-		MidiPortList list = m_inputSubs[dest];
-		if(list.empty()){
-			m_inputSubs.remove(dest);
-		}
-	}
-}
-
-
-
-void MidiApple::subscribeWritablePort( MidiPort* port, const QString& dest, bool subscribe )
-{
-	qDebug("subscribeWritablePort %s", port->displayName().toLatin1().constData());
-	
-	if( subscribe && port->isOutputEnabled() == false )
-	{
-		qWarning( "port %s can't be (un)subscribed!", port->displayName().toLatin1().constData() );
-		return;
-	}
-	
-	m_outputSubs[dest].removeAll( port );
-	if( subscribe )
-	{
-		m_outputSubs[dest].push_back( port );
-	}
-	else
-	{
-		MidiPortList list = m_outputSubs[dest];
-		if(list.empty()){
-			m_outputSubs.remove(dest);
-		}
-	}
-}
-
-
-
-void MidiApple::ReadCallback( const MIDIPacketList *pktlist, void *readProcRefCon, void *srcConnRefCon )
-{
-	MidiApple *caller = static_cast<MidiApple*>(readProcRefCon);
-	if (!caller)
-	{
-		qDebug("Error: !caller: MidiApple::ReadCallback");
-		return;
-	}
-	caller->HandleReadCallback(pktlist,srcConnRefCon);
-}
-
-
-
-void MidiApple::HandleReadCallback( const MIDIPacketList *pktlist, void *srcConnRefCon )
-{
-	const char * refName = (const char *) srcConnRefCon;
-
-	MIDIEndpointRef endPointRef = m_inputDevices.value(refName);
-	if( !m_inputSubs.contains( refName ) )
-	{
-//		qDebug("HandleReadCallback '%s' not subscribed",refName);
-//		printQStringKeys("m_inputDevices", m_inputDevices);
-		return;
-	}
-//	qDebug("HandleReadCallback '%s' subscribed",refName);
-	bool continueSysEx = false;
-	unsigned int nBytes;
-	const MIDIPacket *packet = &pktlist->packet[0];
-	unsigned char sysExMessage[SYSEX_LENGTH];
-	unsigned int sysExLength = 0;
-	
-	for (uint32_t i=0; i<pktlist->numPackets; ++i)
-	{
-		nBytes = packet->length;
-		// Check if this is the end of a continued SysEx message
-		if (continueSysEx) {
-			unsigned int lengthToCopy = std::min(nBytes, SYSEX_LENGTH - sysExLength);
-			// Copy the message into our SysEx message buffer,
-			// making sure not to overrun the buffer
-			memcpy(sysExMessage + sysExLength, packet->data, lengthToCopy);
-			sysExLength += lengthToCopy;
-			// Check if the last byte is SysEx End.
-			continueSysEx = (packet->data[nBytes - 1] == 0xF7);
-			if (!continueSysEx || sysExLength == SYSEX_LENGTH) {
-				// We would process the SysEx message here, as it is we're just ignoring it
-				
-				sysExLength = 0;
-			}
-		}
-		else
-		{
-			UInt16 iByte, size;
-			
-			iByte = 0;
-			while (iByte < nBytes)
-			{
-				size = 0;
-				
-				// First byte should be status
-				unsigned char status = packet->data[iByte];
-				if (status < 0xC0) {
-					size = 3;
-				}
-				else if (status < 0xE0)
-				{
-					size = 2;
-				}
-				else if (status < 0xF0)
-				{
-					size = 3;
-				}
-				else if (status == 0xF0)
-				{
-					// MIDI SysEx then we copy the rest of the message into the SysEx message buffer
-					unsigned int lengthLeftInMessage = nBytes - iByte;
-					unsigned int lengthToCopy = std::min(lengthLeftInMessage, SYSEX_LENGTH);
-					
-					memcpy(sysExMessage + sysExLength, packet->data, lengthToCopy);
-					sysExLength += lengthToCopy;
-					
-					size = 0;
-					iByte = nBytes;
-					
-					// Check whether the message at the end is the end of the SysEx
-					continueSysEx = (packet->data[nBytes - 1] != 0xF7);
-				}
-				else if (status < 0xF3)
-				{
-					size = 3;
-				}
-				else if (status == 0xF3)
-				{
-					size = 2;
-				}
-				else
-				{
-					size = 1;
-				}
-				
-				unsigned char messageChannel = status & 0xF;
-				const MidiEventTypes cmdtype = static_cast<MidiEventTypes>(status & 0xF0);
-				const int par1 = packet->data[iByte + 1];
-				const int par2 = packet->data[iByte + 2];
-
-				switch (cmdtype)
-				{
-					case MidiNoteOff:			//0x80:
-					case MidiNoteOn:			//0x90:
-					case MidiKeyPressure:		//0xA0:
-					case MidiControlChange:		//0xB0:
-					case MidiProgramChange:		//0xC0:
-					case MidiChannelPressure:	//0xD0:
-						notifyMidiPortList(
-							m_inputSubs[refName],
-							MidiEvent(cmdtype, messageChannel, par1, par2 & 0xff, &endPointRef));
-						break;
-					case MidiPitchBend:			//0xE0:
-						notifyMidiPortList(
-							m_inputSubs[refName],
-							MidiEvent(cmdtype, messageChannel, par1 + par2 * 128, 0, &endPointRef));
-						break;
-					case MidiActiveSensing:		//0xF0
-					case 0xF0:
-						break;
-					default:
-						qDebug("endPointRef name='%s':Some other message %d", refName, cmdtype);
-						break;
-				}
-				iByte += size;
-			}
+			// (the parser goes on even with nobody subscribed: it keeps the running status)
+			source->parser.feed(packet->data[b], &source->name, [&](const MidiEvent& event) {
+				for (std::size_t p = 0; p < count; ++p) { ports[p]->processInEvent(event); }
+			});
 		}
 		packet = MIDIPacketNext(packet);
 	}
@@ -360,273 +252,128 @@ void MidiApple::HandleReadCallback( const MIDIPacketList *pktlist, void *srcConn
 
 
 
-void MidiApple::updateDeviceList()
+
+void MidiApple::processOutEvent(const MidiEvent& event, const TimePos&, const MidiPort* port)
 {
-	closeDevices();
-	openDevices();
-	
-	emit readablePortsChanged();
-	emit writablePortsChanged();
-}
+	auto bytes = std::array<std::uint8_t, 3>{};
+	const auto size = writeToByteSeq(event, bytes.data(), bytes.size());
+	if (size == 0 || !m_outputPort) { return; }
 
-
-
-void MidiApple::closeDevices()
-{
-	m_inputSubs.clear();
-	m_outputSubs.clear();
-
-	QMapIterator<QString, MIDIEndpointRef> i( m_inputDevices );
-	while( i.hasNext() )
+	// The destinations @p port is subscribed to (from any thread: see the class's documentation)
+	auto destinations = std::array<MIDIEndpointRef, MaxSubscribers>{};
+	auto count = std::size_t{0};
 	{
-		midiInClose( i.next().value() );
-	}
-	
-	QMapIterator<QString, MIDIEndpointRef> o( m_outputDevices );
-	while( o.hasNext() )
-	{
-		midiInClose( o.next().value() );
-	}
-	
-	m_inputDevices.clear();
-	m_outputDevices.clear();
-}
-
-
-
-void MidiApple::midiInClose( MIDIEndpointRef reference )
-{
-	qDebug("midiInClose '%s'", getFullName(reference));
-	MIDIPortRef portRef = m_sourcePortRef[reference];
-	MIDIPortDisconnectSource(portRef, reference);
-}
-
-
-
-char *getName( const MIDIObjectRef &object )
-{
-	// Returns the name of a given MIDIObjectRef as char *
-	CFStringRef name = nullptr;
-	if (noErr != MIDIObjectGetStringProperty(object, kMIDIPropertyName, &name))
-		return nullptr;
-	int len = CFStringGetLength(name)+1;
-	char *value = (char *) malloc(len);
-	
-	CFStringGetCString(name, value, len, 0);
-	CFRelease(name);
-	return value;
-}
-
-
-
-const void printQStringKeys( char const * mapName, const QMap<QString,MIDIEndpointRef> &inputMap )
-{
-	qDebug("%s:", mapName);
-	QMapIterator<QString, MIDIEndpointRef> i( inputMap );
-	while( i.hasNext() )
-	{
-		QString key = i.next().key();
-		qDebug("  key='%s'",  key.toLatin1().constData());
-	}
-}
-
-
-
-void MidiApple::openDevices()
-{
-	qDebug("openDevices");
-	m_inputDevices.clear();
-	// How many MIDI devices do we have?
-	ItemCount deviceCount = MIDIGetNumberOfDevices();
-	
-	// Iterate through all MIDI devices
-	for (ItemCount i = 0 ; i < deviceCount ; ++i)
-	{
-		// Grab a reference to current device
-		MIDIDeviceRef device = MIDIGetDevice(i);
-		char * deviceName = getName(device);
-		QString qsDeviceName = QString::fromUtf8((char*)(deviceName));
-		qDebug("Device name:%s",deviceName);
-		
-		// Is this device online? (Currently connected?)
-		SInt32 isOffline = 0;
-		MIDIObjectGetIntegerProperty(device, kMIDIPropertyOffline, &isOffline);
-		qDebug(" is online: %s", (isOffline ? "No" : "Yes"));
-		// How many entities do we have?
-		ItemCount entityCount = MIDIDeviceGetNumberOfEntities(device);
-		
-		// Iterate through this device's entities
-		for (ItemCount j = 0 ; j < entityCount ; ++j)
+		const auto lock = routingLock(m_routingMutex);
+		if (!lock.owns_lock()) { return; }
+		for (auto it = m_outputSubs.cbegin(); it != m_outputSubs.cend(); ++it)
 		{
-			// Grab a reference to an entity
-			MIDIEntityRef entity = MIDIDeviceGetEntity(device, j);
-			qDebug("  Entity: %s", getName(entity));
-			
-			// Iterate through this device's source endpoints (MIDI In)
-			ItemCount sourceCount = MIDIEntityGetNumberOfSources(entity);
-			for ( ItemCount k = 0 ; k < sourceCount ; ++k )
+			if (!it.value().contains(const_cast<MidiPort*>(port))) { continue; }
+			if (const auto ref = m_outputDevices.value(it.key(), 0); ref && count < destinations.size())
 			{
-				// Grab a reference to a source endpoint
-				MIDIEndpointRef source = MIDIEntityGetSource(entity, k);
-				char * name = getName(source);
-				qDebug("	Source: '%s'", name);
-				QString sourceName = qsDeviceName + ":" + QString::fromUtf8((char*)(name));
-				qDebug("	Source name: '%s'", sourceName.toLatin1().constData() );
-				m_inputDevices.insert(sourceName, source);
-				openMidiReference(source,sourceName,true);
-			}
-			
-			// Iterate through this device's destination endpoints (MIDI Out)
-			ItemCount destCount = MIDIEntityGetNumberOfDestinations(entity);
-			for ( ItemCount k = 0 ; k < destCount ; ++k )
-			{
-				// Grab a reference to a destination endpoint
-				MIDIEndpointRef dest = MIDIEntityGetDestination(entity, k);
-				char * name = getName(dest);
-				qDebug("	Destination: '%s'", name);
-				QString destinationName = qsDeviceName + ":" + QString::fromUtf8((char*)(name));
-				qDebug("	Destination name: '%s'", destinationName.toLatin1().constData() );
-				m_outputDevices.insert(destinationName, dest);
-				openMidiReference(dest,destinationName,false);
+				destinations[count++] = ref;
 			}
 		}
-		qDebug("------");
 	}
-	printQStringKeys("m_inputDevices:",m_inputDevices);
-	printQStringKeys("m_outputDevices:",m_outputDevices);
+
+	auto buffer = std::array<Byte, 64>{};
+	auto* list = reinterpret_cast<MIDIPacketList*>(buffer.data());
+	auto* packet = MIDIPacketListInit(list);
+	packet = MIDIPacketListAdd(list, buffer.size(), packet, 0, size, bytes.data()); // (time 0: now)
+	if (!packet) { return; }
+	for (std::size_t d = 0; d < count; ++d) { MIDISend(m_outputPort, destinations[d], list); }
 }
 
 
 
-void MidiApple::openMidiReference( MIDIEndpointRef reference, QString refName, bool isIn )
+
+QStringList MidiApple::readablePorts() const
 {
-	char * registeredName = (char*) malloc(refName.length()+1);
-	std::snprintf(registeredName, refName.length() + 1, "%s",refName.toLatin1().constData());
-	qDebug("openMidiReference refName '%s'",refName.toLatin1().constData());
-	
-	MIDIClientRef mClient = getMidiClientRef();
-	MIDIPortRef mPort = 0;
-	
-	CFStringRef inName = CFStringCreateWithCString(0, registeredName, kCFStringEncodingASCII);
-	if(isIn)
-	{
-		MIDIInputPortCreate(mClient, inName, &MidiApple::ReadCallback, this, &mPort);
-	}
-	else
-	{
-		MIDIOutputPortCreate(mClient, inName, &mPort);
-	}
-	MIDIPortConnectSource(mPort, reference, (void *)registeredName);
-	m_sourcePortRef.insert(reference, mPort);
-	CFRelease(inName);
-	qDebug("openMidiReference registeredName '%s'",registeredName);
+	const auto lock = std::lock_guard{m_routingMutex};
+	return m_inputDevices.keys();
 }
 
 
 
-MIDIClientRef MidiApple::getMidiClientRef()
+
+QStringList MidiApple::writablePorts() const
 {
-	if(mClient==0)
-	{
-		CFStringRef deviceClientName = CFSTR("MIDI In Device Client");
-		MIDIClientCreate(deviceClientName, NotifyCallback, this, &mClient);
-		CFRelease(deviceClientName);
-	}
-	return mClient;
+	const auto lock = std::lock_guard{m_routingMutex};
+	return m_outputDevices.keys();
 }
 
 
 
-void MidiApple::notifyMidiPortList( MidiPortList l, MidiEvent event )
+
+QString MidiApple::sourcePortName(const MidiEvent& event) const
 {
-	for( MidiPortList::ConstIterator it = l.begin(); it != l.end(); ++it )
-	{
-		( *it )->processInEvent( event);
-	}
+	// (the events received point to their source's name, which lives as long as this client, see Source)
+	if (const auto* name = static_cast<const QString*>(event.sourcePort())) { return *name; }
+	return MidiClient::sourcePortName(event);
 }
 
 
 
-void MidiApple::NotifyCallback( const MIDINotification *message, void *refCon )
-{
-	//refCon is a pointer to MidiApple class
-	MidiApple *midiApple = (MidiApple *)refCon;
-	qDebug("MidiApple::NotifyCallback '%d'",message->messageID);
-	switch (message->messageID)
-	{
-		case kMIDIMsgObjectAdded:
-		{
-			MIDIObjectAddRemoveNotification* msg = (MIDIObjectAddRemoveNotification*)message ;
-			MIDIEndpointRef endpoint_ref = (MIDIEndpointRef)msg->child ;
-			char * fullName = midiApple->getFullName(endpoint_ref);
 
-			if (msg->childType == kMIDIObjectType_Source) {
-				qDebug("kMIDIMsgObjectAdded source '%s'",fullName);
-				// Here your code to save the new source ref
-				// and update your internal "clients" (eg
-				// update a popup menu, a list, ...)
-			}
-			if (msg->childType == kMIDIObjectType_Destination) {
-				qDebug("kMIDIMsgObjectAdded destination '%s'",fullName);
-				// Here your code to save the new destination ref
-				// and update your internal "clients"
-			}
-			break;
-		}
-		case kMIDIMsgObjectRemoved:
-		{
-			MIDIObjectAddRemoveNotification*
-			msg = (MIDIObjectAddRemoveNotification*)message ;
-			MIDIEndpointRef endpoint_ref = (MIDIEndpointRef)msg->child ;
-			char * fullName = midiApple->getFullName(endpoint_ref);
-			
-			if (msg->childType == kMIDIObjectType_Source) {
-				// Here your code to remove the source ref
-				// and update your internal "clients"
-				qDebug("kMIDIMsgObjectRemoved source '%s'",fullName);
-			}
-			if (msg->childType == kMIDIObjectType_Destination) {
-				// Here your code to remove the destination ref
-				// and update your internal "clients"
-				qDebug("kMIDIMsgObjectRemoved destination '%s'",fullName);			}
-			break;
-		}
-		case kMIDIMsgPropertyChanged:
-			// Currently ignored
-			qDebug("kMIDIMsgPropertyChanged");
-			break;
-		case kMIDIMsgThruConnectionsChanged:
-			// Currently ignored
-			qDebug("kMIDIMsgThruConnectionsChanged");
-			break;
-		case kMIDIMsgSerialPortOwnerChanged:
-			// Currently ignored
-			qDebug("kMIDIMsgSerialPortOwnerChanged");
-			break;
-		default:
-			qDebug("unhandled message type");
-			break;
+void MidiApple::applyPortMode(MidiPort* port)
+{
+	// No subscription the port's mode does not allow anymore
+	const auto lock = std::lock_guard{m_routingMutex};
+	if (!port->isInputEnabled())
+	{
+		for (auto& ports : m_inputSubs) { ports.removeAll(port); }
+	}
+	if (!port->isOutputEnabled())
+	{
+		for (auto& ports : m_outputSubs) { ports.removeAll(port); }
 	}
 }
 
 
 
-char * MidiApple::getFullName(MIDIEndpointRef &endpoint_ref)
+
+void MidiApple::removePort(MidiPort* port)
 {
-	MIDIEntityRef entity = 0;
-	MIDIEndpointGetEntity(endpoint_ref, &entity); //get the entity
-	MIDIDeviceRef device = 0;
-	MIDIEntityGetDevice(entity, &device);
-	char * deviceName = getName(device);
-	char * endPointName = getName(endpoint_ref);
-	qDebug("device name='%s' endpoint name='%s'",deviceName,endPointName);
-	size_t deviceNameLen = deviceName == nullptr ? 0 : strlen(deviceName);
-	size_t endPointNameLen = endPointName == nullptr ? 0 : strlen(endPointName);
-	char * fullName = (char *)malloc(deviceNameLen + endPointNameLen + 2);
-	std::snprintf(fullName, deviceNameLen + endPointNameLen + 2, "%s:%s", deviceName,endPointName);
-	if (deviceName != nullptr) { free(deviceName); }
-	if (endPointName != nullptr) { free(endPointName); }
-	return fullName;
+	{
+		const auto lock = std::lock_guard{m_routingMutex};
+		for (auto& ports : m_inputSubs) { ports.removeAll(port); }
+		for (auto& ports : m_outputSubs) { ports.removeAll(port); }
+	}
+	MidiClient::removePort(port);
+}
+
+
+
+
+void MidiApple::subscribeReadablePort(MidiPort* port, const QString& dest, bool subscribe)
+{
+	if (subscribe && !port->isInputEnabled())
+	{
+		qWarning("port %s can't be (un)subscribed!", qPrintable(port->displayName()));
+		return;
+	}
+	// (kept by name: a device plugged in later is subscribed when it comes)
+	const auto lock = std::lock_guard{m_routingMutex};
+	auto& ports = m_inputSubs[dest];
+	ports.removeAll(port);
+	if (subscribe) { ports.push_back(port); }
+	if (ports.empty()) { m_inputSubs.remove(dest); }
+}
+
+
+
+
+void MidiApple::subscribeWritablePort(MidiPort* port, const QString& dest, bool subscribe)
+{
+	if (subscribe && !port->isOutputEnabled())
+	{
+		qWarning("port %s can't be (un)subscribed!", qPrintable(port->displayName()));
+		return;
+	}
+	const auto lock = std::lock_guard{m_routingMutex};
+	auto& ports = m_outputSubs[dest];
+	ports.removeAll(port);
+	if (subscribe) { ports.push_back(port); }
+	if (ports.empty()) { m_outputSubs.remove(dest); }
 }
 
 
