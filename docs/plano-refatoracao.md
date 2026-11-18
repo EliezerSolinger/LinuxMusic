@@ -412,6 +412,35 @@ TSan sai limpo. Os retratos imutáveis (7.2 a 7.5 do plano original) não foram 
 - **8.3** Encerramento: parar o áudio e o MIDI, depois o projeto, depois os gerenciadores. Nenhum objeto
   destruído pode ser usado por uma thread que ainda roda.
 
+### Feito (17/11)
+
+- **8.1** `EngineLifecycleTest`: faz o motor, dá a ele um projeto que toca (Triple Oscillator, Sf2 Player com um
+  soundfont, AudioFileProcessor e SlicerT com amostras, um canal do mixer com três efeitos e o volume automatizado,
+  um padrão com um instrumento no editor de padrões), confere que soa, desmonta o motor com a música tocando e faz
+  tudo de novo, duas vezes; roda também sob ASan. Achou na primeira vida:
+  - `delete ConfigManager::inst()` deixava o ponteiro da instância apontando para memória liberada: a segunda vida
+    lia a configuração liberada (o ASan mostrou: heap-use-after-free em `ConfigManager::hasWorkingDir`) e o segundo
+    `destroy` a liberava de novo. O destrutor agora zera a instância;
+  - na mesma varredura: os planos de FFT do oscilador ficavam apontando para o que foi liberado (agora zerados).
+- **8.3** `Engine::destroy` em três passos, cada um documentado no código:
+  1. nada mais chama o programa: o dispositivo para de pedir períodos, a entrada MIDI para (as portas ganham um
+     cliente que não faz nada), nada é registrado no histórico, nenhuma exportação roda;
+  2. o projeto: as pré-escutas, as faixas (com plugins, notas e clipes), o barramento do metrônomo;
+  3. o resto, cada peça antes do que ela usa: o editor de padrões e o mixer, a música, o motor de áudio (as threads
+     dele terminam), os gerenciadores de plugins (nenhum plugin sobrou), o histórico (nenhum objeto registrado
+     sobrou), a configuração.
+  Antes, a música era apagada depois do motor de áudio e do histórico que ela usa, e o gerenciador de exportação,
+  que usa tudo, por último.
+- **8.2** As peças que a música tem recebem o que usam pelo construtor, dado pela música: `AudioRecorder` e
+  `Metronome` o motor de áudio (as quedas do dispositivo, os períodos pulados; onde tocar), `Transport` a música e
+  o motor (a taxa de amostragem), `MidiRecorder` o mapa de andamentos e o histórico. O `TempoMap` pega a trava por
+  `AudioEngine::changesGuard()`, que vale sem motor (um mapa de andamentos pode ser testado sozinho). Ficam com o
+  `Engine`: `Engine::framesPerTick()` (um valor do motor inteiro, atômico) e os comandos de desfazer do mapa de
+  andamentos (desfazem a música).
+- **Mesma varredura (estáticos que sobrevivem ao motor):** `Lv2Options` guardava as opções que o gerenciador de
+  LV2 diz suportar num conjunto estático que ninguém esvaziava: o segundo motor dizia as mesmas de novo (uma
+  asserção, no ASan, que é um build de depuração). O gerenciador agora as esquece quando vai embora.
+
 ## Fase 9: revisão final
 
 - Rodar tudo: testes, A/B, ASan/UBSan (testes, renders e corrompidos) e TSan.
@@ -585,10 +614,26 @@ Processo, igual para as duas:
   - conexão movida para outro controlador era apagada quando o primeiro sumia;
   - o controlador "vazio" compartilhado podia ser apagado (e apagado de novo) ao limpar a música.
   Teste: `ControllerConnectionTest`.
-- [ ] Faixas e clipes: já têm um dono, o pai do Qt (contêiner e faixa); os `delete` que restam apagam antes um
-  filho do Qt, o que a regra aceita. Falta conferir se algum é chamado com o motor tocando sem a trava.
-- [ ] `PeakController`: apaga a si mesmo quando o efeito morre fora da lista da música (prévia). Precisa de um dono
-  único (o efeito).
+- [x] Faixas e clipes: já têm um dono, o pai do Qt (contêiner e faixa). Apagar com o motor tocando foi resolvido
+  na fase 7: `Track::destroy` (o único jeito de apagar uma faixa: os destrutores são protegidos) e
+  `Track::deleteClip` tiram a peça do que o render percorre antes de apagá-la.
+- [x] `PeakController` (17/11): o efeito é o dono do controlador. Quando o efeito vai, avisa o controlador sob a
+  trava do motor (o render lê o efeito através dele) e o entrega à música para apagar, se está na lista dela, ou o
+  apaga; quando o controlador é tirado da música (o rack de controladores), avisa o efeito antes e o tira da
+  cadeia. Acabou o `delete this`. Consertou também: o controlador lia o ataque e o decaimento do efeito antes de
+  ver se o efeito ainda existia, e, com os efeitos destruídos fora da trava (fase 7), o render podia ler um efeito
+  sendo destruído. Teste: `PeakControllerTest` (os dois sentidos, um projeto que lista o efeito e não o
+  controlador, e apagar tocando com um botão seguindo o controlador).
+  - O TSan, nesse teste, achou o mesmo padrão das faixas e clipes nos controladores: o render percorre a lista de
+    todos os controladores a cada período (`Controller::updateAllValueBuffers`), e um controlador entrava nela no
+    construtor da base, antes das partes dele existirem, e saía no destrutor da base, depois de elas terem ido
+    (antes da fase 7 isso ficava escondido: o efeito, e com ele o controlador, era apagado sob a trava). Agora cada
+    controlador concreto (LFO, pico, MIDI) entra na lista por último no seu construtor (`publish`) e sai primeiro no
+    seu destrutor (`withdraw`), sob a trava; o "vazio" é a própria base.
+  - E mais um, no `EditWhilePlayingTest` sob TSan: `AudioEngine::addPlayHandle`, chamado de qualquer thread (aqui,
+    um Sf2 Player sendo montado fora da trava, que cria a sua play handle), punha a handle na lista do barramento na
+    hora, enquanto um worker percorria essa lista. Agora a handle entra no barramento quando o render a adota
+    (`adoptNewPlayHandles`, antes dos workers, ou com a trava do motor): ela só toca depois de adotada.
 - [x] Donos explícitos no resto do núcleo:
   - a faixa de automação global da música, o barramento da calibração de latência, a amostra e o barramento
     próprios do `SamplePlayHandle`, o arquivo lido pela prévia de preset;
@@ -603,11 +648,27 @@ Processo, igual para as duas:
       mas continuava marcada como rodando. Agora é uma fila com condição de espera, que grava o que falta antes de
       parar (`ThreadedExportTest`).
   - Apagados `Delay.h` e `FifoBuffer.h`, que ninguém usava, e a decodificação base64 para vetor cru.
-- [ ] Notas do `MidiClip`: o clipe é o único dono, mas guarda `Note*` num `NoteVector`, porque o mesmo vetor é lido
-  pelos editores e pela thread de áudio sem alocar. Os `delete` ficam todos dentro do `MidiClip`. Trocar por
-  `unique_ptr` muda 52 lugares; fica para quando o render usar instantâneos (fase 7).
-- [ ] Estáticos com criação preguiçosa (`PresetPreviewPlayHandle::s_previewTC`, as instâncias de LFO do envelope):
-  vão com os do `Engine` na fase 8.
+- [x] Notas do `MidiClip` (decidido em 17/11: ficam assim): o clipe é o único dono e guarda `Note*` num
+  `NoteVector`, lido pelos editores e pela thread de áudio; os `delete` ficam todos dentro do `MidiClip`, e mudar
+  as notas é sob a trava da faixa, que o render só tenta (`tryLock`). A fase 7 não usou instantâneos (a medida não
+  pediu), que era a razão para trocar por `unique_ptr`; a troca mudaria 52 lugares sem mudar quem é o dono.
+- [x] Envelope e LFO sem mutex no render (17/11; era um dos "QMutex restantes na thread de áudio"): o
+  `m_paramMutex` servia a duas coisas. (1) A interface refazia as tabelas do envelope enquanto o render as lia:
+  agora `updateSampleVars` as faz sem trava e as põe no lugar num instante sob a trava do motor (a automação, que
+  muda os botões no próprio render antes dos workers, escreve no lugar, sem alocar). (2) A forma do LFO era
+  calculada sob demanda pelo worker que chegasse primeiro, e as notas de um mesmo instrumento podem tocar em
+  workers diferentes ao mesmo tempo: agora a forma de cada LFO em uso é calculada uma vez por período, no fim do
+  render, depois dos workers (`LfoInstances::trigger`), e os workers só leem. A lista de LFOs muda sob a trava do
+  motor (acabou o mutex dela também), e a onda do usuário é trocada num instante (`setUserWave`).
+- [x] Arpejo em modo Sync ou Sort dependia da ordem das threads (17/11): ele segue a primeira nota do acorde, que
+  pode tocar em outro worker antes ou depois dele, e lia o contador de quadros dela, que só anda quando ela toca:
+  os passos vinham um período atrasados ou não, conforme as threads. Agora lê os quadros que ela tinha quando o
+  período começou (`NotePlayHandle::framesPlayedAtPeriodStart`, sem trava: cada nota diz, ao começar o período,
+  o que tinha antes). `ArpeggioSyncTest` renderiza o mesmo acorde seis vezes e exige o mesmo resultado bit a bit;
+  com o código antigo, o modo Sync saía diferente (na amostra 1889 numa rodada, 50563 em outra).
+- [x] Estáticos com criação preguiçosa (`PresetPreviewPlayHandle::s_previewTC`, as instâncias de LFO do envelope):
+  feito na fase 8; o `EngineLifecycleTest` faz e desfaz o motor duas vezes sob ASan (achou o `ConfigManager` e as
+  opções de LV2, consertados).
 - [x] 4.4 Observadores.
   - JACK: o MIDI e o áudio que dividem a conexão sabem quando o outro some. A callback lê o cliente MIDI uma vez
     só, e `removeMidiClient()` espera ela sair. Sem ligação salva, as portas vão para as físicas certas
@@ -622,8 +683,8 @@ Processo, igual para as duas:
 - Exceções anotadas que ficam:
   - os filhos do Qt apagados antes do pai (faixas e clipes);
   - as notas do `MidiClip`;
-  - os estáticos (fase 8);
-  - o `PeakController` que apaga a si mesmo (vai para a fase 5, plugins internos).
+  - os estáticos (feito na fase 8);
+  - o `PeakController` que apaga a si mesmo (feito em 17/11).
 - Os ponteiros estáticos do `Engine` ficam crus até a fase 8 (ciclo de vida).
 
 ### Fase 5: plugins internos à prova de falhas: concluída

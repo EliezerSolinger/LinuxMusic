@@ -255,9 +255,12 @@ void AudioEngine::renderStageNoteSetup()
 
 void AudioEngine::adoptNewPlayHandles()
 {
+	// Before the workers run (or with the audio engine's change lock held): the handles join their buses here, so
+	// that no worker goes through a bus's handles while one is added (a handle plays only once it is adopted)
 	for (LocklessListElement* e = m_newPlayHandles.popList(); e;)
 	{
 		m_playHandles += e->value;
+		if (auto* bus = e->value->audioBusHandle()) { bus->addPlayHandle(e->value); }
 		LocklessListElement* next = e->next;
 		m_newPlayHandles.free(e);
 		e = next;
@@ -759,8 +762,9 @@ bool AudioEngine::addPlayHandle( PlayHandle* handle )
 	// associated instrument is created, so add those unconditionally.
 	if (PlayHandle::livesWithTrack(handle->type()) || !criticalXRuns())
 	{
+		// (it joins its bus when the audio thread adopts it, see adoptNewPlayHandles(): the workers go through the
+		// bus's handles, and this may be called from any thread while they do)
 		m_newPlayHandles.push( handle );
-		if (handle->audioBusHandle()) { handle->audioBusHandle()->addPlayHandle(handle); }
 		return true;
 	}
 
