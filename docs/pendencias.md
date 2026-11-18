@@ -623,6 +623,11 @@ queda do Mallets, que é queda e entra antes.
 
 ## Observado (18/11)
 
+- [x] Validação completa de 18/11 (checkP): o A/B ganhou uma diferença, `fx-bitcrush` (pico -14,5 dB, RMS -50,7 dB),
+  contra as 33 de antes. Provado que vem só da fase em double dos osciladores (#2047): com ela voltada para float, o
+  `fx-bitcrush` sai idêntico à referência e a lista volta às 33. A fase agora evolui certa, a forma de onda se afasta
+  da de antes com o tempo, e a quantização do Bitcrush aumenta isso. Intencional.
+
 - [x] Queda ao remover uma faixa (o usuário, 18/11). A janela de uma faixa de áudio/sample era criada com a faixa e,
   ao apagá-la, só escondida: ela sobrevivia à faixa, com os controles dela (`TrackChannelControls`) ainda nos modelos
   da faixa apagada. O próximo canal do mixer apagado (ao remover outra faixa, que leva o seu canal) chegava a esses
