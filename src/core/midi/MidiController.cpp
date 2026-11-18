@@ -41,6 +41,18 @@ MidiController::MidiController( Model * _parent ) :
 	setSampleExact( true );
 	connect( &m_midiPort, SIGNAL(modeChanged()),
 			this, SLOT(updateName()));
+
+	// In the lists the audio thread goes through last, whole (see Controller::publish())
+	publish();
+}
+
+
+
+
+MidiController::~MidiController()
+{
+	// Out of the lists the audio thread goes through first, whole (see Controller::publish())
+	withdraw();
 }
 
 

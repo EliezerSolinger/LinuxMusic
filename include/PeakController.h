@@ -56,10 +56,15 @@ public:
 
 	static PeakControllerEffectVector s_effects;
 
+	/**
+	 * Its effect is going (the effect owns it, see ~PeakControllerEffect()): it no longer reads the effect. Called
+	 * under the audio engine's change lock, as the audio thread reads the effect (updateValueBuffer())
+	 */
+	void effectGone();
+
 
 public slots:
 	gui::ControllerDialog * createDialog( QWidget * _parent ) override;
-	void handleDestroyedEffect();
 	void updateCoeffs();
 
 protected:

@@ -68,6 +68,9 @@ LfoController::LfoController( Model * _parent ) :
 	// Jumps: seen on the audio thread (updateValueBuffer), when they happen (the signal came later)
 
 	updateDuration();
+
+	// In the lists the audio thread goes through last, whole (see Controller::publish())
+	publish();
 }
 
 
@@ -75,6 +78,8 @@ LfoController::LfoController( Model * _parent ) :
 
 LfoController::~LfoController()
 {
+	// Out of the lists the audio thread goes through first, whole (see Controller::publish())
+	withdraw();
 	m_baseModel.disconnect( this );
 	m_speedModel.disconnect( this );
 	m_amountModel.disconnect( this );

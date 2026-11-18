@@ -56,6 +56,9 @@ public:
 	{
 		return m_autoController;
 	}
+
+	//! Its controller is being deleted as a controller of the song (see ~PeakController()): nothing to delete then
+	void controllerGone() { m_autoController = nullptr; }
 	
 	FloatModel * attackModel()
 	{

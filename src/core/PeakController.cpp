@@ -50,17 +50,16 @@ PeakController::PeakController( Model * _parent,
 	m_currentSample( 0.0f )
 {
 	setSampleExact( true );
-	if( m_peakEffect )
-	{
-		connect( m_peakEffect, SIGNAL(destroyed()),
-			this, SLOT(handleDestroyedEffect()));
-	}
+	// (the effect owns it and tells it when it goes, see effectGone())
 	connect( Engine::audioEngine(), SIGNAL(sampleRateChanged()), this, SLOT(updateCoeffs()));
 	connect( m_peakEffect->attackModel(), SIGNAL(dataChanged()),
 			this, SLOT(updateCoeffs()), Qt::DirectConnection );
 	connect( m_peakEffect->decayModel(), SIGNAL(dataChanged()),
 			this, SLOT(updateCoeffs()), Qt::DirectConnection );
 	m_coeffNeedsUpdate = true;
+
+	// In the lists the audio thread goes through last, whole (see Controller::publish())
+	publish();
 }
 
 
@@ -68,16 +67,22 @@ PeakController::PeakController( Model * _parent,
 
 PeakController::~PeakController()
 {
-	if( m_peakEffect != nullptr && m_peakEffect->effectChain() != nullptr )
+	// Out of the lists the audio thread goes through first, whole (see Controller::publish())
+	withdraw();
+	// Deleted as a controller of the song (taken out of the controller rack): its effect goes too, told first that
+	// it no longer has a controller to delete
+	if (m_peakEffect != nullptr)
 	{
-		m_peakEffect->effectChain()->removeEffect( m_peakEffect );
+		auto* effect = std::exchange(m_peakEffect, nullptr);
+		effect->controllerGone();
+		if (effect->effectChain() != nullptr) { effect->effectChain()->removeEffect(effect); }
 	}
 }
 
 
 void PeakController::updateValueBuffer()
 {
-	if( m_coeffNeedsUpdate )
+	if (m_coeffNeedsUpdate && m_peakEffect)
 	{
 		const float ratio = 44100.0f / Engine::audioEngine()->outputSampleRate();
 		m_attackCoeff = 1.0f - powf( 2.0f, -0.3f * ( 1.0f - m_peakEffect->attackModel()->value() ) * ratio );
@@ -126,14 +131,12 @@ void PeakController::updateCoeffs()
 }
 
 
-void PeakController::handleDestroyedEffect()
+void PeakController::effectGone()
 {
-	// possible race condition...
-	//printf("disconnecting effect\n");
-	disconnect( m_peakEffect );
+	if (m_peakEffect == nullptr) { return; }
+	m_peakEffect->attackModel()->disconnect(this);
+	m_peakEffect->decayModel()->disconnect(this);
 	m_peakEffect = nullptr;
-	//deleteLater();
-	delete this;
 }
 
 

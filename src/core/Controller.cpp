@@ -54,10 +54,22 @@ Controller::Controller( ControllerType _type, Model * _parent,
 	m_connectionCount( 0 ),
 	m_type( _type )
 {
+	// A concrete controller is put in the lists the audio thread goes through by its own constructor, once whole
+	// (publish()); the dummy one is this class itself
+	if (_type == ControllerType::Dummy) { publish(); }
+	updateValueBuffer();
+}
+
+
+
+
+void Controller::publish()
+{
 	// (the audio thread goes through the lists every period)
-	const auto guard = Engine::audioEngine()->requestChangesGuard();
+	const auto guard = AudioEngine::changesGuard();
+	if (std::find(s_allControllers.begin(), s_allControllers.end(), this) != s_allControllers.end()) { return; }
 	s_allControllers.push_back(this);
-	if( _type != ControllerType::Dummy && _type != ControllerType::Midi )
+	if( m_type != ControllerType::Dummy && m_type != ControllerType::Midi )
 	{
 		s_controllers.push_back(this);
 		// Determine which name to use
@@ -83,22 +95,24 @@ Controller::Controller( ControllerType _type, Model * _parent,
 			}
 		}
 	}
-	updateValueBuffer();
+}
+
+
+
+
+void Controller::withdraw()
+{
+	const auto guard = AudioEngine::changesGuard();
+	std::erase(s_allControllers, this);
+	std::erase(s_controllers, this);
 }
 
 
 
 Controller::~Controller()
 {
-	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
-		std::erase(s_allControllers, this);
-		auto it = std::find(s_controllers.begin(), s_controllers.end(), this);
-		if (it != s_controllers.end())
-		{
-			s_controllers.erase(it);
-		}
-	}
+	// (taken out already by the concrete controller's destructor, while it was whole: withdraw())
+	withdraw();
 
 	m_valueBuffer.clear();
 	// Remove connections by destroyed signal

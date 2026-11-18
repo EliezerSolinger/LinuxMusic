@@ -50,7 +50,7 @@ class MidiController : public Controller, public MidiEventProcessor
 public:
 	static constexpr int NONE = -1;
 	MidiController( Model * _parent );
-	~MidiController() override = default;
+	~MidiController() override;
 
 	void processInEvent( const MidiEvent & _me,
 					const TimePos & _time, f_cnt_t offset = 0 ) override;

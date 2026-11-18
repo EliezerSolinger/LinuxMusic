@@ -156,6 +156,15 @@ public slots:
 
 
 protected:
+	/**
+	 * Puts it in the lists the audio thread goes through (updateAllValueBuffers()): the last thing a concrete
+	 * controller's constructor does, once it is whole. withdraw() takes it out: the first thing its destructor does,
+	 * while it is still whole. (A controller put there by this class's constructor was refreshed by the audio thread
+	 * before its own parts were made, and after they were gone.)
+	 */
+	void publish();
+	void withdraw();
+
 	// The internal per-controller get-value function
 	virtual float value( int _offset );
 

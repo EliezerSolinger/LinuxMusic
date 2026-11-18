@@ -28,6 +28,8 @@
 #include "PresetPreviewPlayHandle.h"
 #include "PeakController.h"
 #include "PeakControllerEffect.h"
+
+#include "AudioEngine.h"
 #include "lmms_math.h"
 
 #include "embed.h"
@@ -85,11 +87,23 @@ PeakControllerEffect::PeakControllerEffect(
 PeakControllerEffect::~PeakControllerEffect()
 {
 	auto it = std::find(PeakController::s_effects.begin(), PeakController::s_effects.end(), this);
-	if (it != PeakController::s_effects.end())
+	if (it != PeakController::s_effects.end()) { PeakController::s_effects.erase(it); }
+
+	// It owns its controller: the controller goes with it
+	auto* controller = std::exchange(m_autoController, nullptr);
+	if (controller == nullptr) { return; } // (being deleted already, see controllerGone())
 	{
-		PeakController::s_effects.erase(it);
-		Engine::getSong()->removeController(m_autoController);
+		// The audio thread reads this effect through it (PeakController::updateValueBuffer()): told under the lock
+		const auto guard = AudioEngine::changesGuard();
+		controller->effectGone();
 	}
+	// The song deletes it when it is one of its controllers (it tells the controller rack); otherwise (a preview, or
+	// a project that did not list it) it is deleted here
+	const auto* song = Engine::getSong();
+	const bool inSong = song && std::find(song->controllers().begin(), song->controllers().end(), controller)
+		!= song->controllers().end();
+	if (inSong) { Engine::getSong()->removeController(controller); }
+	else { delete controller; }
 }
 
 
