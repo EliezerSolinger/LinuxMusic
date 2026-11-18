@@ -48,14 +48,8 @@ AutomationTrackView::AutomationTrackView( AutomationTrack * _at, TrackContainerV
 		tlb->setIcon(embed::getIconPixmap("automation_track"));
 		tlb->show();
 
-		auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
-		masterLayout->setContentsMargins(0, 1, 0, 0);
-		auto layout = new QHBoxLayout();
-		layout->setContentsMargins(0, 0, 0, 0);
-		layout->addWidget(tlb);
-		layout->addSpacing(4);
-		masterLayout->addLayout(layout);
-		masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+		// (the header as REAPER's track panel, TrackView::buildHeader(): an automation track has its name only)
+		buildHeader(HeaderParts{.label = tlb});
 
 		setModel(_at);
 }

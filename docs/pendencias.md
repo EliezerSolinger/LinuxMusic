@@ -579,13 +579,26 @@ queda do Mallets, que é queda e entra antes.
       RTNeural), que não estão instalados; baixar pede a sua aprovação;
     - não vêm, por serem ferramentas do programa Guitarix e não efeitos do rack (o LinuxMusic tem as suas): afinador,
       osciloscópio, looper, gravador, sequenciador de bateria, metrônomo e o medidor de VU como unidade.
+- [ ] **Estados de carregamento em todo o sistema (pedido do usuário, 18/11):** o programa mostra estados inválidos nos
+  intermediários (algo pela metade enquanto carrega); onde houver espera, mostrar que está carregando (um spinner etc.)
+  em vez do estado intermediário. Primeiro levantar todos os lugares (abrir projeto, trocar instrumento, carregar
+  soundfont, sample, kit, preset, plugin externo, janela de plugin, renderização da forma de onda...), depois um
+  componente comum de carregamento usado por todos.
 - [ ] **Janela do instrumento nova (design aprovado em 18/11):** `docs/design-sugestoes/05-janela-do-instrumento.png`:
   painel encaixado (embaixo ou no inspetor), abas com texto, cabeçalho com o nome, o instrumento, os presets e salvar,
   rodapé fixo com volume, pan, altura, faixa de notas, canal do mixer e o teclado. Implementar.
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
   - **Design aprovado (18/11):** `docs/design-sugestoes/02-cabecalho-de-faixa.png`, refeito no TCP do REAPER: número na
     cor da faixa, gravar, nome num campo, M e S; knobs de volume e pan (sem régua), FX e I/O; o medidor na borda;
-    alturas normal, grande e compacta; o menu de contexto curto. Implementar.
+    alturas normal, grande e compacta; o menu de contexto curto.
+  - Feito (18/11): a coluna da esquerda é o número da faixa na cor dela (mais escura se muda), que também é a
+    alça para arrastar; o menu da engrenagem abre no clique direito em qualquer parte do cabeçalho. Em cima:
+    gravar (●), o nome num campo escuro, M e S em letras (mudo laranja, solo amarelo). Embaixo: os knobs de volume
+    e pan, o nível de entrada (faixa de áudio armada), FX (verde com o número de efeitos; abre os efeitos) e I/O
+    (canal do mixer, MIDI e entrada MIDI, entrada de áudio). Na borda direita, o nível do canal do mixer (o RMS,
+    sem tirar os picos da faixa do mixer). Abaixo de 44 px só a primeira linha; a partir de 100 px uma terceira
+    (a entrada e o número do canal). Todos os tipos: instrumento, áudio, sample, pasta, padrão e automação
+    (`TrackView::buildHeader`). Falta: o menu de contexto no formato do design (hoje é o da engrenagem).
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
   - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.
   - Dois relógios, o grande e o pequeno, cada um no formato escolhido com um clique (compassos e tempos, minutos

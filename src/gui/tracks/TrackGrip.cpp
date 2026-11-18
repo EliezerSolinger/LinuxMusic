@@ -30,6 +30,7 @@
 #include "StringPairDrag.h"
 #include "Track.h"
 #include "TrackView.h"
+#include "TrackContainerView.h"
 
 #include <QPainter>
 #include <QPixmap>
@@ -62,7 +63,7 @@ TrackGrip::TrackGrip(TrackView* trackView, QWidget* parent) :
 
 	setCursor(Qt::OpenHandCursor);
 
-	setFixedWidth(std::max(s_grabbedPixmap->width(), s_releasedPixmap->width()) + 2 * c_margin);
+	setToolTip(tr("Drag to move the track (Ctrl: copy it); right click: the track's menu"));
 }
 
 void TrackGrip::mousePressEvent(QMouseEvent* m)
@@ -110,18 +111,31 @@ void TrackGrip::paintEvent(QPaintEvent*)
 {
 	QPainter p(this);
 
-	// Check if the color of the track should be used for the background
+	// The track's color (a neutral one without, darker while muted), its number on it, as REAPER's column; the
+	// grip's dots under the number while it is held
 	const auto color = m_trackView->getTrack()->color();
 	const auto muted = m_trackView->getTrack()->getMutedModel()->value();
+	auto fill = color.value_or(QColor{70, 78, 88});
+	if (muted) { fill = fill.darker(220); }
+	if (m_isGrabbed) { fill = fill.lighter(120); }
+	p.fillRect(rect(), fill);
 
-	if (color.has_value() && !muted) 
+	const auto index = m_trackView->trackContainerView()->trackViews().indexOf(m_trackView);
+	if (index >= 0)
 	{
-		p.fillRect(rect(), color.value());
+		auto font = p.font();
+		font.setPixelSize(11);
+		font.setBold(true);
+		p.setFont(font);
+		// (dark on a light color, light on a dark one)
+		p.setPen(fill.lightnessF() > 0.55 ? QColor{12, 14, 16} : QColor{238, 240, 242});
+		p.drawText(QRect{0, 4, width(), 16}, Qt::AlignHCenter | Qt::AlignTop, QString::number(index + 1));
 	}
-
-	// Paint the pixmap
-	auto r = rect().marginsRemoved(QMargins(c_margin, c_margin, c_margin, c_margin));
-	p.drawTiledPixmap(r, m_isGrabbed ? *s_grabbedPixmap : *s_releasedPixmap);
+	if (m_isGrabbed)
+	{
+		auto r = rect().marginsRemoved(QMargins(c_margin, 24, c_margin, c_margin));
+		p.drawTiledPixmap(r, *s_grabbedPixmap);
+	}
 }
 
 } // namespace lmms::gui

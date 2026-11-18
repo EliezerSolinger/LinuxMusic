@@ -52,6 +52,9 @@ public:
 	auto muteButton() const -> AutomatableButton* { return m_muteBtn; }
 	auto soloButton() const -> AutomatableButton* { return m_soloBtn; }
 
+	//! The track's menu (as the gear had it), at @p where (a right click on the header: see TrackView)
+	void showMenu(const QPoint& where);
+
 protected:
 	//! @brief Repaint the trackOperationsWidget
 	//!

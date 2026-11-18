@@ -183,57 +183,36 @@ SampleTrackView::SampleTrackView( AudioInputTrack * _t, TrackContainerView* tcv 
 		if (inputMeter->isVisible()) { inputMeter->setPeak(model()->takeInputPeak()); }
 	});
 
-	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
-	masterLayout->setContentsMargins(0, 1, 0, 0);
-	masterLayout->setSpacing(1);
-	if (audioTrack)
+	// The header as REAPER's track panel (TrackView::buildHeader()): an audio track arms, shows its input's level
+	// and chooses its input; a sample track (beats on the grid) records nothing here
+	m_activityIndicator->hide();
+	m_recordArmButton->setText(QString{QChar{0x25CF}});
+	auto* fx = makeFxButton(_t->audioBusHandle()->effects(), [this] { showEffects(); });
+	auto* io = makeIoButton([this, audioTrack](QMenu* menu) {
+		qDeleteAll(menu->findChildren<QMenu*>(Qt::FindDirectChildrenOnly));
+		if (auto* mixerMenu = createMixerMenu(tr("Channel %1: %2"), tr("Assign to new Mixer Channel")))
+		{
+			mixerMenu->setParent(menu, mixerMenu->windowFlags());
+			menu->addMenu(mixerMenu);
+		}
+		if (audioTrack)
+		{
+			auto* input = new QMenu(tr("Input"), menu);
+			fillInputMenu(input);
+			menu->addMenu(input);
+		}
+	});
+	if (!audioTrack)
 	{
-		// As in REAPER: the name, activity, arming and input on top; the mixer channel, input meter, VOL and PAN below
-		auto top = new QHBoxLayout();
-		top->setContentsMargins(0, 0, 0, 0);
-		top->setSpacing(3);
-		top->addWidget(m_tlb, 1);
-		top->addWidget(m_activityIndicator);
-		top->addWidget(m_recordArmButton);
-		top->addWidget(m_inputButton);
-		top->addSpacing(4);
-		auto bottom = new QHBoxLayout();
-		bottom->setContentsMargins(0, 0, 0, 0);
-		bottom->setSpacing(3);
-		bottom->addWidget(m_mixerChannelNumber);
-		bottom->addWidget(m_inputMeter, 1);
-		bottom->addWidget(m_volumeKnob);
-		bottom->addWidget(m_panningKnob);
-		bottom->addSpacing(4);
-		m_activityIndicator->setFixedSize(8, 18);
-		masterLayout->addLayout(top);
-		masterLayout->addLayout(bottom);
-	}
-	else
-	{
-		// Playing samples on the grid: nothing is recorded here (the audio track records)
 		m_recordArmButton->hide();
 		m_inputButton->hide();
 		m_inputMeter->hide();
-		auto top = new QHBoxLayout();
-		top->setContentsMargins(0, 0, 0, 0);
-		top->setSpacing(3);
-		top->addWidget(m_tlb, 1);
-		top->addWidget(m_activityIndicator);
-		top->addSpacing(4);
-		auto bottom = new QHBoxLayout();
-		bottom->setContentsMargins(0, 0, 0, 0);
-		bottom->setSpacing(3);
-		bottom->addWidget(m_mixerChannelNumber);
-		bottom->addStretch(1);
-		bottom->addWidget(m_volumeKnob);
-		bottom->addWidget(m_panningKnob);
-		bottom->addSpacing(4);
-		m_activityIndicator->setFixedSize(8, 18);
-		masterLayout->addLayout(top);
-		masterLayout->addLayout(bottom);
 	}
-	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+	buildHeader(HeaderParts{.arm = audioTrack ? m_recordArmButton : nullptr, .label = m_tlb,
+		.volume = m_volumeKnob, .panning = m_panningKnob, .middle = audioTrack ? m_inputMeter : nullptr, .fx = fx,
+		.io = io, .extra = audioTrack ? std::vector<QWidget*>{m_inputButton, m_mixerChannelNumber}
+			: std::vector<QWidget*>{m_mixerChannelNumber},
+		.channel = _t->mixerChannelModel()});
 
 
 	connect(_t, SIGNAL(playingChanged()), this, SLOT(updateIndicator()));

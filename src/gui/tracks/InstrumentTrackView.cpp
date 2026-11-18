@@ -54,6 +54,7 @@
 #include "MidiCCRackView.h"
 #include "MidiPortMenu.h"
 #include "MidiRecorder.h"
+#include "TabWidget.h"
 #include "TrackChannelControls.h"
 #include "TrackContainerView.h"
 #include "Mixer.h"
@@ -190,30 +191,30 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	connect(&_it->m_midiPort, &MidiPort::modeChanged, this, &InstrumentTrackView::updateMidiInputButton);
 	connect(_it->m_midiPort.inputChannelModel(), &IntModel::dataChanged, this, &InstrumentTrackView::updateMidiInputButton);
 
-	// Two rows, as the audio track's: the name, activity, arming and input on top; the channel, VOL and PAN below
-	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
-	masterLayout->setContentsMargins(0, 1, 0, 0);
-	masterLayout->setSpacing(1);
-	auto top = new QHBoxLayout();
-	top->setContentsMargins(0, 0, 0, 0);
-	top->setSpacing(3);
-	top->addWidget(m_tlb, 1);
-	top->addWidget(m_activityIndicator);
-	top->addWidget(m_recordArmButton);
-	top->addWidget(m_midiInputButton);
-	top->addSpacing(4);
-	auto bottom = new QHBoxLayout();
-	bottom->setContentsMargins(0, 0, 0, 0);
-	bottom->setSpacing(3);
-	bottom->addWidget(m_mixerChannelNumber);
-	bottom->addStretch(1);
-	bottom->addWidget(m_volumeKnob);
-	bottom->addWidget(m_panningKnob);
-	bottom->addSpacing(4);
-	m_activityIndicator->setFixedSize(8, 18);
-	masterLayout->addLayout(top);
-	masterLayout->addLayout(bottom);
-	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+	// The header as REAPER's track panel (TrackView::buildHeader()): arming, the name, mute and solo on top; the
+	// knobs, FX and I/O below; the MIDI input and the mixer channel when the track is tall; the level on the edge
+	m_recordArmButton->setText(QString{QChar{0x25CF}});
+	m_activityIndicator->hide();
+	auto* fx = makeFxButton(_it->audioBusHandle()->effects(), [this] {
+		auto* window = getInstrumentTrackWindow();
+		window->toggleVisibility(true);
+		window->tabWidgetParent()->setActiveTab(3);
+	});
+	auto* io = makeIoButton([this](QMenu* menu) {
+		qDeleteAll(menu->findChildren<QMenu*>(Qt::FindDirectChildrenOnly));
+		if (auto* mixerMenu = createMixerMenu(tr("Channel %1: %2"), tr("Assign to new Mixer Channel")))
+		{
+			mixerMenu->setParent(menu, mixerMenu->windowFlags());
+			menu->addMenu(mixerMenu);
+		}
+		auto* input = new QMenu(tr("MIDI input"), menu);
+		fillMidiInputMenu(input);
+		menu->addMenu(input);
+		menu->addMenu(m_midiMenu);
+	});
+	buildHeader(HeaderParts{.arm = m_recordArmButton, .label = m_tlb, .volume = m_volumeKnob,
+		.panning = m_panningKnob, .fx = fx, .io = io, .extra = {m_midiInputButton, m_mixerChannelNumber},
+		.channel = _it->mixerChannelModel()});
 
 	connect( m_activityIndicator, SIGNAL(pressed()),
 				this, SLOT(activityIndicatorPressed()));

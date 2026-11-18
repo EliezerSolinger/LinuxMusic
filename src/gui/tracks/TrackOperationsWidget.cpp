@@ -88,12 +88,15 @@ TrackOperationsWidget::TrackOperationsWidget(TrackView* parent)
 	layout->setSpacing(0);
 	layout->setAlignment(Qt::AlignTop);
 
+	// The column is the track's number on its color, which is the grip too (as REAPER's); the gear's menu opens
+	// on a right click on the header (see showMenu()), mute and solo are in the header (TrackView::buildHeader())
 	m_trackGrip = new TrackGrip(m_trackView, this);
-	layout->addWidget(m_trackGrip);
+	m_trackGrip->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	layout->addWidget(m_trackGrip, 1);
 
-	// This widget holds the gear icon and the mute and solo
-	// buttons in a layout.
+	// (kept, hidden: the menu's holder; mute and solo go to the header)
 	auto operationsWidget = new QWidget(this);
+	operationsWidget->hide();
 	auto operationsLayout = new QHBoxLayout(operationsWidget);
 	operationsLayout->setContentsMargins(2, 6, 0, 6);
 	operationsLayout->setSpacing(2);
@@ -119,7 +122,6 @@ TrackOperationsWidget::TrackOperationsWidget(TrackView* parent)
 	operationsLayout->addWidget(m_muteBtn);
 	operationsLayout->addWidget(m_soloBtn);
 
-	layout->addWidget(operationsWidget, 0, Qt::AlignTop | Qt::AlignLeading);
 
 	connect( this, SIGNAL(trackRemovalScheduled(lmms::gui::TrackView*)),
 			m_trackView->trackContainerView(),
@@ -251,6 +253,13 @@ void TrackOperationsWidget::resetClipColors()
 		clip->setColor(std::nullopt);
 	}
 	Engine::getSong()->setModified();
+}
+
+
+void TrackOperationsWidget::showMenu(const QPoint& where)
+{
+	updateMenu();
+	m_trackOps->menu()->exec(where);
 }
 
 

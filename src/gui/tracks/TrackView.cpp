@@ -28,6 +28,11 @@
 #include <QTimer>
 
 #include <QApplication>
+#include <QContextMenuEvent>
+#include <QAbstractButton>
+#include <QMenu>
+#include <QPushButton>
+#include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QPainter>
@@ -41,6 +46,10 @@
 #include "DeprecationHelper.h"
 #include "Engine.h"
 #include "FadeButton.h"
+#include "GuiApplication.h"
+#include "MainWindow.h"
+#include "EffectChain.h"
+#include "Mixer.h"
 #include "StringPairDrag.h"
 #include "Track.h"
 #include "TrackGrip.h"
@@ -132,6 +141,226 @@ void TrackView::resizeEvent( QResizeEvent * re )
 	m_trackSettingsWidget.setFixedSize(m_trackContainerView->trackHeadWidth() - m_trackOperationsWidget.width(), height() - 1);
 
 	m_trackContentWidget.setFixedHeight(height());
+	fitHeaderRows();
+}
+
+
+
+
+namespace
+{
+
+/**
+ * The level of the track's mixer channel, on the right edge of its header: its RMS (the mixer's strip takes the
+ * channel's peaks, so they are left to it), green, then yellow and red near full scale
+ */
+class TrackLevelMeter : public QWidget
+{
+public:
+	TrackLevelMeter(Track* track, const IntModel* channel, QWidget* parent) :
+		QWidget(parent), m_track(track), m_channel(channel)
+	{
+		setFixedWidth(6);
+		setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+		connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, [this] {
+			const auto level = currentLevel();
+			if (std::abs(level - m_shown) > 0.002f) { m_shown = level; update(); }
+		});
+	}
+
+protected:
+	void paintEvent(QPaintEvent*) override
+	{
+		auto p = QPainter{this};
+		const auto r = rect().adjusted(1, 3, -1, -3);
+		p.fillRect(r, QColor{11, 13, 15});
+		// (in dB from -60 to 0: as a meter reads, not as the amplitude)
+		const auto db = m_shown > 0 ? 20.f * std::log10(m_shown) : -60.f;
+		const auto fraction = std::clamp((db + 60.f) / 60.f, 0.f, 1.f);
+		const auto filled = static_cast<int>(r.height() * fraction);
+		if (filled <= 0) { return; }
+		auto gradient = QLinearGradient{QPointF(0, r.bottom()), QPointF(0, r.top())};
+		gradient.setColorAt(0, QColor{47, 209, 111});
+		gradient.setColorAt(0.75, QColor{47, 209, 111});
+		gradient.setColorAt(0.9, QColor{242, 215, 58});
+		gradient.setColorAt(1, QColor{232, 69, 60});
+		p.fillRect(QRect{r.left(), r.bottom() - filled + 1, r.width(), filled}, gradient);
+	}
+
+private:
+	auto currentLevel() const -> float
+	{
+		const auto mixer = Engine::mixer();
+		auto* channel = mixer->trackChannel(m_track);
+		if (!channel && m_channel)
+		{
+			channel = mixer->mixerChannel(std::clamp(m_channel->value(), 0, mixer->numChannels() - 1));
+		}
+		return channel ? std::max(channel->m_meter.rms(0), channel->m_meter.rms(1)) : 0.f;
+	}
+
+	Track* m_track;
+	const IntModel* m_channel;
+	float m_shown = 0.f;
+};
+
+} // namespace
+
+
+void TrackView::buildHeader(const HeaderParts& parts)
+{
+	auto* settings = getTrackSettingsWidget();
+	auto* outer = new QHBoxLayout(settings);
+	outer->setContentsMargins(4, 2, 2, 1);
+	outer->setSpacing(4);
+	auto* rows = new QVBoxLayout();
+	rows->setContentsMargins(0, 0, 0, 0);
+	rows->setSpacing(1);
+	outer->addLayout(rows, 1);
+
+	const auto addTo = [](QHBoxLayout* row, QWidget* widget, int stretch = 0) {
+		if (!widget) { return; }
+		row->addWidget(widget, stretch);
+		widget->show();
+	};
+
+	// On top: arming, the name, mute and solo (they were in the column on the left, with the gear)
+	auto* first = new QHBoxLayout();
+	first->setContentsMargins(0, 0, 0, 0);
+	first->setSpacing(3);
+	addTo(first, parts.leading);
+	addTo(first, parts.arm);
+	// (the name in a field of the row's height, its icon small, as in REAPER: the knobs' row below keeps its room)
+	if (auto* label = qobject_cast<QAbstractButton*>(parts.label))
+	{
+		label->setFixedHeight(20);
+		label->setIconSize(QSize{16, 16});
+	}
+	addTo(first, parts.label, 1);
+	auto* mute = m_trackOperationsWidget.m_muteBtn;
+	auto* solo = m_trackOperationsWidget.m_soloBtn;
+	mute->setParent(settings);
+	solo->setParent(settings);
+	addTo(first, mute);
+	addTo(first, solo);
+	rows->addLayout(first);
+
+	// Below: the knobs, then FX and I/O
+	m_secondRow = new QWidget(settings);
+	auto* second = new QHBoxLayout(m_secondRow);
+	second->setContentsMargins(0, 0, 0, 0);
+	second->setSpacing(4);
+	// (the knobs at their size: an input meter between them and FX hides itself while the track is not armed)
+	for (auto* knob : {parts.volume, parts.panning})
+	{
+		if (knob) { knob->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed); }
+	}
+	addTo(second, parts.volume);
+	addTo(second, parts.panning);
+	if (parts.middle) { addTo(second, parts.middle, 1); }
+	second->addStretch(parts.middle ? 0 : 1);
+	addTo(second, parts.fx);
+	addTo(second, parts.io);
+	rows->addWidget(m_secondRow);
+
+	// When tall: the rest (input, monitor, recording)
+	if (!parts.extra.empty())
+	{
+		m_thirdRow = new QWidget(settings);
+		auto* third = new QHBoxLayout(m_thirdRow);
+		third->setContentsMargins(0, 0, 0, 0);
+		third->setSpacing(4);
+		for (auto* widget : parts.extra) { addTo(third, widget); }
+		third->addStretch(1);
+		rows->addWidget(m_thirdRow);
+	}
+	rows->addStretch(1);
+
+	// The level, on the right edge (a track with a mixer channel)
+	if (parts.channel || Engine::mixer()->trackChannel(m_track))
+	{
+		outer->addWidget(new TrackLevelMeter(m_track, parts.channel, settings));
+	}
+	fitHeaderRows();
+}
+
+
+
+
+auto TrackView::makeFxButton(const EffectChain* chain, std::function<void()> open) -> QWidget*
+{
+	auto* button = new QPushButton(tr("FX"), getTrackSettingsWidget());
+	button->setObjectName("btn-fx");
+	button->setFocusPolicy(Qt::NoFocus);
+	button->setCursor(Qt::PointingHandCursor);
+	button->setCheckable(true);
+	button->setToolTip(tr("The track's effects"));
+	const auto refresh = [button, chain] {
+		const auto count = chain ? static_cast<int>(chain->effects().size()) : 0;
+		const auto text = count > 0 ? tr("FX %1").arg(count) : tr("FX");
+		if (button->text() != text) { button->setText(text); }
+		// (lit while it has effects, as REAPER's)
+		button->setChecked(count > 0);
+	};
+	refresh();
+	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, button, refresh);
+	connect(button, &QPushButton::clicked, button, [refresh, open = std::move(open)] {
+		open();
+		refresh();
+	});
+	return button;
+}
+
+
+
+
+auto TrackView::makeIoButton(std::function<void(QMenu*)> fill) -> QWidget*
+{
+	auto* button = new QPushButton(tr("I/O"), getTrackSettingsWidget());
+	button->setObjectName("btn-io");
+	button->setFocusPolicy(Qt::NoFocus);
+	button->setCursor(Qt::PointingHandCursor);
+	button->setToolTip(tr("Where the track takes its input from and goes to: its mixer channel, MIDI"));
+	auto* menu = new QMenu(button);
+	connect(menu, &QMenu::aboutToShow, button, [menu, fill = std::move(fill)] {
+		menu->clear();
+		fill(menu);
+	});
+	button->setMenu(menu);
+	return button;
+}
+
+
+
+
+void TrackView::fitHeaderRows()
+{
+	// (by the height of the track's own lane: its lanes past the first add below)
+	const auto own = m_lanesExpanded && m_singleLaneHeight > 0 ? m_singleLaneHeight : height();
+	if (m_secondRow) { m_secondRow->setVisible(own >= CompactHeight); }
+	if (m_thirdRow) { m_thirdRow->setVisible(own >= LargeHeight); }
+}
+
+
+
+
+void TrackView::contextMenuEvent(QContextMenuEvent* event)
+{
+	// (on the header only: the clips have their own menus)
+	if (!m_trackSettingsWidget.geometry().contains(event->pos())
+		&& !m_trackOperationsWidget.geometry().contains(event->pos()))
+	{
+		return QWidget::contextMenuEvent(event);
+	}
+	showTrackMenu(event->globalPos());
+}
+
+
+
+
+void TrackView::showTrackMenu(const QPoint& where)
+{
+	m_trackOperationsWidget.showMenu(where);
 }
 
 

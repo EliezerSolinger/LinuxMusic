@@ -685,18 +685,20 @@ QToolButton::menu-button {
 
 /* track label buttons - the part that contains the icon and track title */
 
+/* (the name in a dark field, as REAPER's track panel: docs/design-sugestoes/02) */
 lmms--gui--TrackLabelButton {
-	background-color: #3B424A;
-	border: 1px solid #3B424A;
+	background-color: #15191D;
+	border: 1px solid #0B0D0F;
+	border-radius: 3px;
 	font-size: 11px;
-	font-weight: normal;
-	padding: 2px 1px;
+	font-weight: bold;
+	padding: 0px 4px;
 }
 
 lmms--gui--TrackLabelButton:hover {
-	background: #3B424A;
+	background: #1C2126;
 	border: 1px solid #515B66;
-	border-radius: none;
+	border-radius: 3px;
 }
 
 lmms--gui--TrackLabelButton:pressed {
@@ -1773,4 +1775,67 @@ QLineEdit#transportTempoEditor {
 	border: 1px solid #0bd556;
 	border-radius: 4px;
 	color: #ffffff;
+}
+
+/* The track header as REAPER's track panel (docs/design-sugestoes/02): M and S as letters (mute orange, solo
+   yellow), FX lit green while the track has effects, I/O with its menu; the size of the arming button */
+lmms--gui--TrackView QPushButton#btn-mute,
+lmms--gui--TrackView QPushButton#btn-solo,
+lmms--gui--TrackView QPushButton#btn-fx,
+lmms--gui--TrackView QPushButton#btn-io {
+	image: none;
+	border: 1 solid #080b12;
+	border-top: 1 solid #0e1218;
+	border-bottom: 1 solid #03060b;
+	border-radius: 2;
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255, 255, 255, 20%), stop:0.1 rgba(255, 255, 255, 2%), stop:0.9 rgba(0, 0, 0, 2%), stop:1 rgba(0, 0, 0, 40%));
+	color: #d1d8e4;
+	font-size: 9px;
+	font-weight: bold;
+	padding: 0;
+	min-height: 18;
+	max-height: 18;
+}
+
+lmms--gui--TrackView QPushButton#btn-mute,
+lmms--gui--TrackView QPushButton#btn-solo {
+	min-width: 16;
+	max-width: 16;
+}
+
+lmms--gui--TrackView QPushButton#btn-fx,
+lmms--gui--TrackView QPushButton#btn-io {
+	min-width: 30;
+	max-width: 30;
+}
+
+lmms--gui--TrackView QPushButton#btn-io::menu-indicator {
+	image: none;
+	width: 0;
+}
+
+lmms--gui--TrackView QPushButton#btn-mute:hover,
+lmms--gui--TrackView QPushButton#btn-solo:hover,
+lmms--gui--TrackView QPushButton#btn-fx:hover,
+lmms--gui--TrackView QPushButton#btn-io:hover {
+	background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255, 255, 255, 25%), stop:0.1 rgba(255, 255, 255, 7%), stop:0.9 transparent, stop:1 rgba(0, 0, 0, 35%));
+}
+
+lmms--gui--TrackView QPushButton#btn-mute:checked {
+	image: none;
+	border: 1 solid #8a5a00;
+	background: #f0a33a;
+	color: #1a1205;
+}
+
+lmms--gui--TrackView QPushButton#btn-solo:checked {
+	border: 1 solid #8a7a00;
+	background: #f2d73a;
+	color: #1a1705;
+}
+
+lmms--gui--TrackView QPushButton#btn-fx:checked {
+	border: 1 solid #1f8f4c;
+	background: #2fd16f;
+	color: #0b1a10;
 }

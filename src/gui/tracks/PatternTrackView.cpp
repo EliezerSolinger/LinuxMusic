@@ -50,14 +50,8 @@ PatternTrackView::PatternTrackView(PatternTrack* pt, TrackContainerView* tcv) :
 	m_trackLabel->setIcon( embed::getIconPixmap("pattern_track"));
 	m_trackLabel->show();
 
-	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
-	masterLayout->setContentsMargins(0, 1, 0, 0);
-	auto layout = new QHBoxLayout();
-	layout->setContentsMargins(0, 0, 0, 0);
-	layout->addWidget(m_trackLabel);
-	layout->addSpacing(4);
-	masterLayout->addLayout(layout);
-	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+	// (the header as REAPER's track panel, TrackView::buildHeader(): a pattern track has its name only)
+	buildHeader(HeaderParts{.label = m_trackLabel});
 
 	connect( m_trackLabel, SIGNAL(clicked(bool)),
 			this, SLOT(clickedTrackLabel()));

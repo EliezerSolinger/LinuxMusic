@@ -25,8 +25,12 @@
 #ifndef LMMS_GUI_TRACK_VIEW_H
 #define LMMS_GUI_TRACK_VIEW_H
 
+#include <functional>
+#include <vector>
+
 #include <QWidget>
 
+#include "AutomatableModel.h"
 #include "JournallingObject.h"
 #include "ModelView.h"
 #include "TrackContentWidget.h"
@@ -39,6 +43,7 @@ namespace lmms
 
 class Track;
 class Clip;
+class EffectChain;
 
 
 namespace gui
@@ -48,7 +53,8 @@ class FadeButton;
 class TrackContainerView;
 
 
-const int TRACK_OP_WIDTH = 78;
+//! The column on the left of a track's header: its number on its color, which is also the grip (as REAPER's)
+const int TRACK_OP_WIDTH = 24;
 
 const int DEFAULT_TRACK_WIDTH = 338;
 const int COMPACT_TRACK_WIDTH = 214;
@@ -122,6 +128,40 @@ public:
 
 	/*! The width of the resize grip in pixels */
 	static constexpr int ResizeGripWidth = 6;
+
+	//! Below it a header shows its first row only (compact), from LargeHeight its third too (docs/design-sugestoes 02)
+	static constexpr int CompactHeight = 44;
+	static constexpr int LargeHeight = 100;
+
+	/**
+	 * What a view puts in its header, laid out as REAPER's track panel (docs/design-sugestoes/02, approved 18/11):
+	 * on top the arming (if any), the name and mute and solo; below the volume and panning knobs, then FX and I/O;
+	 * the extra row (input, monitor...) when the track is tall; the level meter on the right edge. Absent parts are
+	 * left out.
+	 */
+	struct HeaderParts
+	{
+		QWidget* leading = nullptr; //!< before the name (a folder's collapse button)
+		QWidget* arm = nullptr;
+		QWidget* label = nullptr;
+		QWidget* volume = nullptr;
+		QWidget* panning = nullptr;
+		QWidget* middle = nullptr; //!< between the knobs and FX (an audio track's input level)
+		QWidget* fx = nullptr;
+		QWidget* io = nullptr;
+		std::vector<QWidget*> extra; //!< the third row
+		//! The mixer channel the meter shows: the track's own, else this model's (none: no meter)
+		const IntModel* channel = nullptr;
+	};
+	void buildHeader(const HeaderParts& parts);
+
+	//! The header's FX button: "FX" and how many effects @p chain has (lit when it has any); a click calls @p open
+	auto makeFxButton(const EffectChain* chain, std::function<void()> open) -> QWidget*;
+	//! The header's I/O button: its menu filled by @p fill when it opens (the mixer channel, MIDI, the input...)
+	auto makeIoButton(std::function<void(QMenu*)> fill) -> QWidget*;
+
+	//! The track's menu (cloning, removing, exporting, the mixer channel, folders...), at @p where
+	void showTrackMenu(const QPoint& where);
 
 
 public slots:
@@ -203,6 +243,9 @@ protected:
 	//! @param re The Resize Event to handle.
 	void resizeEvent(QResizeEvent* re) override;
 
+	//! The track's menu, on a right click anywhere on its header (it had a gear button of its own)
+	void contextMenuEvent(QContextMenuEvent* event) override;
+
 public:
 	//! Sets the track's height (at least MINIMAL_TRACK_HEIGHT)
 	void resizeToHeight(int height);
@@ -212,6 +255,10 @@ private:
 private:
 	//! The track grows by a lane's height for each lane past the first, and back
 	void fitLanes();
+	//! The header's rows shown for the track's height (see CompactHeight, LargeHeight)
+	void fitHeaderRows();
+	QWidget* m_secondRow = nullptr;
+	QWidget* m_thirdRow = nullptr;
 	int m_singleLaneHeight = 0;
 	bool m_lanesExpanded = false;
 

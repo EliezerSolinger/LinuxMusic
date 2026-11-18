@@ -23,6 +23,7 @@
 #include "FolderTrackView.h"
 
 #include <QHBoxLayout>
+#include <QMenu>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -70,26 +71,17 @@ FolderTrackView::FolderTrackView(FolderTrack* folder, TrackContainerView* tcv) :
 		Knob::LabelRendering::LegacyFixedFontSize, tr("Panning"));
 	m_panningKnob->setHintText(tr("Panning:"), "%");
 
-	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
-	masterLayout->setContentsMargins(0, 1, 0, 0);
-	masterLayout->setSpacing(1);
-	auto top = new QHBoxLayout();
-	top->setContentsMargins(0, 0, 0, 0);
-	top->setSpacing(3);
-	top->addWidget(m_collapseButton);
-	top->addWidget(tlb, 1);
-	top->addSpacing(4);
-	auto bottom = new QHBoxLayout();
-	bottom->setContentsMargins(0, 0, 0, 0);
-	bottom->setSpacing(3);
-	bottom->addWidget(m_mixerChannelNumber);
-	bottom->addStretch(1);
-	bottom->addWidget(m_volumeKnob);
-	bottom->addWidget(m_panningKnob);
-	bottom->addSpacing(4);
-	masterLayout->addLayout(top);
-	masterLayout->addLayout(bottom);
-	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+	// The header as REAPER's track panel (TrackView::buildHeader()): its group channel's knobs and I/O
+	auto* io = makeIoButton([this](QMenu* menu) {
+		qDeleteAll(menu->findChildren<QMenu*>(Qt::FindDirectChildrenOnly));
+		if (auto* mixerMenu = createMixerMenu(tr("Channel %1: %2"), tr("Assign to new Mixer Channel")))
+		{
+			mixerMenu->setParent(menu, mixerMenu->windowFlags());
+			menu->addMenu(mixerMenu);
+		}
+	});
+	buildHeader(HeaderParts{.leading = m_collapseButton, .label = tlb, .volume = m_volumeKnob,
+		.panning = m_panningKnob, .io = io, .extra = {m_mixerChannelNumber}, .channel = folder->mixerChannelModel()});
 
 	setModel(folder);
 }
