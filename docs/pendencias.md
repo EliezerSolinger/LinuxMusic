@@ -342,6 +342,12 @@ queda do Mallets, que é queda e entra antes.
       pouco errada. Agora a fase e a razão são double até o fim (o `Oscillator`, o TripleOscillator e o Organic, que
       usa as razões exatas dos parciais). Varredura: Monstro, Watsyn medidos estáveis; Kicker e LFO têm um oscilador
       só. `InstrumentFixesTest`: um C6 segurado 40 s mantém o pico (falha sem a correção nos dois).
+    - Medido e não reproduzido (18/11): o ZynAddSubFX a 192 kHz (#5534) toca igual a 44,1 e 96 kHz (o mesmo pico, o
+      maior salto entre amostras 1,6 vezes o passo médio nas três taxas, nada fora de número).
+    - [ ] AudioFileProcessor: tocar o trecho depois do loop ao soltar a tecla (#5793). Hoje o loop vai sempre até o
+      fim do sample (o fim do loop é o fim): não existe um "depois do loop". Precisa de um quinto ponto, o fim do
+      loop separado do fim (o modelo, salvo nos projetos, o marcador na forma de onda e o botão), e de a nota, ao ser
+      solta, tocar até o fim (o tempo de release de cada nota, que o motor hoje só tem por instrumento).
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.
