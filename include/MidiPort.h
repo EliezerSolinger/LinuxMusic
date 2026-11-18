@@ -26,6 +26,7 @@
 #ifndef LMMS_MIDI_PORT_H
 #define LMMS_MIDI_PORT_H
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 
@@ -187,6 +188,9 @@ private:
 	MidiEventProcessor* m_midiEventProcessor;
 	const std::uint64_t m_serial;
 	bool m_detached = false;
+	//! The key each note sent out has (the fixed note), by its channel and key, -1 for none: its note off is sent
+	//! there though the output channel or the fixed note changed meanwhile (#8030) [the threads sending]
+	std::array<std::atomic<std::int8_t>, MidiChannelCount * (MidiMaxKey + 1)> m_sentNotes;
 	bool m_inputClosed = false; //!< (changed under the change lock, read by the audio thread holding it)
 
 	//! Leaves its client (the destructor): no more input nor output; whatever it is asked to do then goes nowhere

@@ -70,6 +70,7 @@ MidiPort::MidiPort( const QString& name,
 	m_readableModel( false, this, tr( "Receive MIDI-events" ) ),
 	m_writableModel( false, this, tr( "Send MIDI-events" ) )
 {
+	for (auto& sent : m_sentNotes) { sent.store(-1, std::memory_order_relaxed); }
 	{
 		// (the audio thread goes through the client's ports to deliver the input: see MidiClient)
 		const auto guard = AudioEngine::changesGuard();
@@ -193,6 +194,23 @@ void MidiPort::processInEvent( const MidiEvent& event, const TimePos& time )
 
 void MidiPort::processOutEvent( const MidiEvent& event, const TimePos& time )
 {
+	// A note's end goes where its start went, though the channel or the fixed note changed since (see m_sentNotes)
+	const auto isNote = event.type() == MidiNoteOn || event.type() == MidiNoteOff;
+	constexpr auto Keys = MidiMaxKey + 1;
+	const auto slot = isNote && event.channel() >= 0 && event.channel() < MidiChannelCount && event.key() >= 0
+		&& event.key() < Keys ? event.channel() * Keys + event.key() : -1;
+	const auto ending = event.type() == MidiNoteOff || (event.type() == MidiNoteOn && event.velocity() == 0);
+	if (slot >= 0 && ending)
+	{
+		if (const auto sentKey = m_sentNotes[slot].exchange(-1, std::memory_order_relaxed); sentKey >= 0)
+		{
+			auto outEvent = event;
+			outEvent.setKey(sentKey);
+			m_midiClient->processOutEvent(outEvent, time, this);
+			return;
+		}
+	}
+
 	// When output is enabled, route midi events if the selected channel matches
 	// the event channel or if there's no selected channel (value 0, represented by "--")
 	if( isOutputEnabled() && ( outputChannel() == 0 || realOutputChannel() == event.channel() ) )
@@ -211,6 +229,7 @@ void MidiPort::processOutEvent( const MidiEvent& event, const TimePos& time )
 			outEvent.setKey( fixedOutputNote() );
 		}
 
+		if (slot >= 0 && !ending) { m_sentNotes[slot].store(static_cast<std::int8_t>(outEvent.key()), std::memory_order_relaxed); }
 		m_midiClient->processOutEvent( outEvent, time, this );
 	}
 }

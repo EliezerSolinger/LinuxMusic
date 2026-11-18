@@ -582,6 +582,17 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 
 			if( key >= 0 && key < NumKeys )
 			{
+				// The key's note before, gone elsewhere (the master pitch or the channel changed): ended there
+				if (event.key() >= 0 && event.key() < NumKeys)
+				{
+					const auto before = m_noteRoutes[event.key()];
+					if (before.key >= 0 && (before.key != key || before.channel != handleEventOutputChannel)
+						&& m_runningMidiNotes[before.key] > 0 && --m_runningMidiNotes[before.key] == 0)
+					{
+						deliverToInstrument(MidiEvent(MidiNoteOff, before.channel, before.key, 0), time, offset);
+					}
+					m_noteRoutes[event.key()] = NoteRoute{key, handleEventOutputChannel};
+				}
 				if( m_runningMidiNotes[key] > 0 )
 				{
 					deliverToInstrument(MidiEvent(MidiNoteOff, handleEventOutputChannel, key, 0), time, offset);
@@ -599,9 +610,22 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 			m_midiNotesMutex.lock();
 			m_piano.setKeyState( event.key(), false );	// event.key() = original key
 
-			if( key >= 0 && key < NumKeys && --m_runningMidiNotes[key] <= 0 )
 			{
-				deliverToInstrument(MidiEvent(MidiNoteOff, handleEventOutputChannel, key, 0), time, offset);
+				// Where its note on went (see m_noteRoutes), else where it would go now
+				auto route = NoteRoute{key, handleEventOutputChannel};
+				if (event.key() >= 0 && event.key() < NumKeys && m_noteRoutes[event.key()].key >= 0)
+				{
+					route = m_noteRoutes[event.key()];
+				}
+				if (route.key >= 0 && route.key < NumKeys)
+				{
+					if (m_runningMidiNotes[route.key] > 0) { --m_runningMidiNotes[route.key]; }
+					if (m_runningMidiNotes[route.key] == 0)
+					{
+						deliverToInstrument(MidiEvent(MidiNoteOff, route.channel, route.key, 0), time, offset);
+						if (event.key() >= 0 && event.key() < NumKeys) { m_noteRoutes[event.key()] = NoteRoute{}; }
+					}
+				}
 			}
 			m_midiNotesMutex.unlock();
 			m_notesEnded.fetch_add(1, std::memory_order_relaxed);
@@ -627,6 +651,7 @@ void InstrumentTrack::silenceAllNotes( bool removeIPH )
 		m_notes[i] = nullptr;
 		m_runningMidiNotes[i] = 0;
 	}
+	m_noteRoutes = {};
 	m_midiNotesMutex.unlock();
 
 	Engine::audioEngine()->requestChangeInModel();

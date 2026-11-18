@@ -26,6 +26,7 @@
 #ifndef LMMS_INSTRUMENT_TRACK_H
 #define LMMS_INSTRUMENT_TRACK_H
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <utility>
@@ -357,7 +358,15 @@ private:
 	NotePlayHandleList m_sustainedNotes;
 
 	int m_runningMidiNotes[NumKeys];
-	QMutex m_midiNotesMutex;
+	//! Where each key's note went to the instrument (the key after the master pitch, the channel), by the key played:
+	//! its note off goes there, though the master pitch or the output channel changed meanwhile (#8030). Key -1: none.
+	struct NoteRoute
+	{
+		int key = -1;
+		int channel = 0;
+	};
+	std::array<NoteRoute, NumKeys> m_noteRoutes{};
+	QMutex m_midiNotesMutex; //!< (m_runningMidiNotes, m_noteRoutes)
 
 	bool m_sustainPedalPressed;
 

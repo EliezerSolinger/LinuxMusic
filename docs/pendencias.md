@@ -309,6 +309,12 @@ queda do Mallets, que é queda e entra antes.
       tem o critério de pico (é percussivo) no teste de níveis. E as batidas curtas agora exigem que o som acabe:
       a nota off de uma batida curta chegava ao OpulenZ e ao Zyn antes da nota on (as duas no mesmo quadro), e a voz
       ficava tocando; ela sai no fim do período tocado.
+    - [x] Notas presas ao trocar o canal de saída no meio da nota (#8030): a nota off ia pelo canal (e pela nota fixa)
+      de agora. Na saída MIDI externa ela nem saía (o filtro de canal a barrava) ou ia para outra tecla: agora a
+      porta lembra para onde cada nota foi e manda o fim dela para lá (`NoteOffRoutingTest`, falha sem a correção).
+      Na faixa, a nota off vai para a tecla e o canal da nota on, para os instrumentos que separam por canal (os
+      VST e LV2 multitimbrais); os internos ignoram o canal, e a tecla já era estável (a nota compensa a mudança da
+      nota base), então lá não há diferença a medir.
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.

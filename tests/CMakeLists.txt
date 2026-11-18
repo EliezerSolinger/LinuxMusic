@@ -45,6 +45,7 @@ set(LMMS_TESTS
 	src/core/MetronomeTest.cpp
 	src/core/MidiClientChangeTest.cpp
 	src/core/MidiInputDeliveryTest.cpp
+	src/core/NoteOffRoutingTest.cpp
 	src/core/MidiTempoMapTest.cpp
 	src/core/MixerTest.cpp
 	src/core/MonoModeTest.cpp
