@@ -52,27 +52,38 @@ def barra_superior():
   <span class="btn ic">⚙</span>
 </div>'''
 
-def cabecalho_faixa(nome, cor, tipo, armado=False, mudo=False, solo=False, fx=0, nivel=60, altura=58, pasta=0, sel=False):
+def knob_pequeno(rotulo, angulo=0, tamanho=22):
+    """Um knob como os do REAPER: a marca gira de -135 a 135 graus; o rótulo embaixo, pequeno"""
+    return (f'<div style="display:flex;flex-direction:column;align-items:center;gap:1px">'
+            f'<div style="width:{tamanho}px;height:{tamanho}px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#59626d,#2a3036);'
+            f'border:1px solid #111;position:relative;transform:rotate({angulo}deg)">'
+            f'<div style="position:absolute;left:{tamanho//2-1}px;top:2px;width:2px;height:{tamanho//2-3}px;background:var(--green);border-radius:1px"></div></div>'
+            f'<span style="font-size:8.5px;color:var(--tx3);letter-spacing:.04em">{rotulo}</span></div>')
+
+def cabecalho_faixa(nome, cor, tipo, armado=False, mudo=False, solo=False, fx=0, nivel=60, altura=58, pasta=0, sel=False,
+                    numero=1, pan=0):
+    """O painel de uma faixa como o TCP do REAPER: número na cor da faixa, gravar, nome num campo, mudo e solo; embaixo os
+    knobs de volume e pan, FX e roteamento; o medidor na borda direita"""
     fundo = "#2c333b" if sel else "var(--bg2)"
     return f'''
-<div style="height:{altura}px;display:flex;border-bottom:1px solid var(--line);background:{fundo};padding-left:{pasta*14}px">
-  <div style="width:5px;background:{cor}"></div>
-  <div style="flex:1;padding:6px 8px;display:flex;flex-direction:column;gap:5px;min-width:0">
-    <div style="display:flex;align-items:center;gap:5px">
-      <span style="font-size:11px;color:var(--tx3);width:14px">{tipo}</span>
-      <span style="flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{nome}</span>
+<div style="height:{altura+12}px;display:flex;border-bottom:1px solid var(--line);background:{fundo};padding-left:{pasta*14}px">
+  <div style="width:22px;background:{cor};color:#0b0d0f;font-size:11px;font-weight:800;display:flex;justify-content:center;padding-top:7px">{numero}</div>
+  <div style="flex:1;padding:5px 7px;display:flex;flex-direction:column;gap:4px;min-width:0">
+    <div style="display:flex;align-items:center;gap:4px">
       <span class="btn sm ic rec {'on' if armado else ''}">●</span>
+      <span style="flex:1;height:20px;background:#15191d;border:1px solid #0b0d0f;border-radius:3px;padding:0 6px;display:flex;align-items:center;gap:5px;min-width:0">
+        <span style="font-size:10px;color:var(--tx3)">{tipo}</span><span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{nome}</span></span>
       <span class="btn sm ic mute {'on' if mudo else ''}">M</span>
       <span class="btn sm ic solo {'on' if solo else ''}">S</span>
-      <span class="btn sm {'on' if fx else ''}" style="min-width:30px">FX{(' '+str(fx)) if fx else ''}</span>
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <div class="slider" style="flex:1"><i style="width:{nivel}%"></i><b style="left:calc({nivel}% - 3px)"></b></div>
-      <span style="font-size:10px;color:var(--tx2);width:38px;text-align:right">-{(100-nivel)//8:.0f},0 dB</span>
-      <div class="slider" style="width:40px"><i style="width:50%;background:transparent"></i><b style="left:calc(50% - 3px)"></b></div>
+    <div style="display:flex;align-items:center;gap:6px">
+      {knob_pequeno("VOL", -135 + nivel * 2.7, 20)}{knob_pequeno("PAN", pan, 20)}
+      <div style="flex:1"></div>
+      <span class="btn sm {'on' if fx else ''}" style="min-width:30px">FX{(' '+str(fx)) if fx else ''}</span>
+      <span class="btn sm">I/O</span>
     </div>
   </div>
-  <div style="width:8px;padding:4px 2px"><div class="meter" style="height:100%"><i style="height:{nivel-10}%"></i></div></div>
+  <div style="width:9px;padding:4px 2px"><div class="meter" style="height:100%"><i style="height:{nivel-10}%"></i></div></div>
 </div>'''
 
 def clipe(x, w, cor, nome, y=6, h=46, tipo="notas"):
@@ -96,7 +107,7 @@ def tela_principal():
         ("Pad", "#3dc8d8", "🎹", False, False, False, 1, 48, 0, False),
     ]
     cab = "".join(cabecalho_faixa(f[0], f[1], f[2], armado=f[3], mudo=f[4], solo=f[5], fx=f[6], nivel=f[7],
-        pasta=f[8], sel=f[9]) for f in faixas)
+        pasta=f[8], sel=f[9], numero=i + 1, pan=(i * 37) % 70 - 35) for i, f in enumerate(faixas))
     clips = [
         [(0, 520, "#e8735f", "Batida A"), (530, 520, "#e8735f", "Batida B")],
         [(0, 1040, "#f2a457", "Baixo")],
@@ -183,7 +194,7 @@ def tela_principal():
         "<b>Medidores de CPU e saída legíveis</b>, com números, e as abas Arranjo, Mixer e Sequências no lugar do par 'Composição/Mixagem'.",
         "<b>Navegador com abas verticais</b> (buscar, instrumentos, efeitos, arquivos, favoritos) e <b>subcategorias</b>. Os recentes ficam no topo.",
         "<b>Uma barra de ferramentas por editor, com texto.</b> Hoje o arranjo e o piano roll empilham duas barras de ícones parecidos.",
-        "<b>Cabeçalho de faixa no estilo REAPER</b>: cor, nome grande, gravar, mudo, solo e FX com contador; volume em régua horizontal, pan e medidor de altura inteira. Ver a imagem 2.",
+        "<b>Cabeçalho de faixa no estilo REAPER</b>: número na cor da faixa, nome num campo, gravar, mudo, solo, FX com contador, volume e pan em knobs e o medidor na borda. Ver a imagem 2.",
         "<b>Clipes com nome e conteúdo</b> (notas ou forma de onda), cor da faixa, região de loop clara na régua e cursor de reprodução visível.",
         "<b>Inspetor à direita</b> para a faixa selecionada: entrada, armar e monitorar, volume, efeitos, envios e saída, sem abrir janelas flutuantes.",
         "<b>Editores encaixados embaixo</b>, em abas (piano roll, automação, mixer), que abrem e fecham sem cobrir o arranjo.",
@@ -202,20 +213,22 @@ def recorte(img, x, y, w, h, escala=2, largura=1700):
 def tela_faixas():
     hoje = recorte("atual-arranjo.png", 226, 224, 340, 56, 2)
     estados = "".join([
-        cabecalho_faixa("Bateria", "#e85a4f", "🥁", fx=2, nivel=70),
-        cabecalho_faixa("Voz principal", "#9b6be8", "🎤", armado=True, fx=3, nivel=80, sel=True),
-        cabecalho_faixa("Backing", "#9b6be8", "🎤", mudo=True, nivel=55, pasta=1),
-        cabecalho_faixa("Guitarra", "#3d8be8", "🎸", solo=True, fx=1, nivel=66),
+        cabecalho_faixa("Bateria", "#e85a4f", "🥁", fx=2, nivel=70, numero=1),
+        cabecalho_faixa("Voz principal", "#9b6be8", "🎤", armado=True, fx=3, nivel=80, sel=True, numero=2, pan=-30),
+        cabecalho_faixa("Backing", "#9b6be8", "🎤", mudo=True, nivel=55, pasta=1, numero=3, pan=40),
+        cabecalho_faixa("Guitarra", "#3d8be8", "🎸", solo=True, fx=1, nivel=66, numero=4, pan=25),
     ])
     expandida = f'''
 <div style="height:120px;display:flex;border:1px solid var(--line);background:var(--bg2);border-radius:6px;overflow:hidden">
-  <div style="width:5px;background:#9b6be8"></div>
+  <div style="width:22px;background:#9b6be8;color:#0b0d0f;font-size:11px;font-weight:800;display:flex;justify-content:center;padding-top:9px">2</div>
   <div style="flex:1;padding:8px 10px;display:flex;flex-direction:column;gap:8px">
-    <div style="display:flex;align-items:center;gap:6px"><span style="color:var(--tx3);font-size:11px">4</span><b style="font-size:14px;flex:1">Voz principal</b>
-      <span class="btn sm ic rec on">●</span><span class="btn sm ic mon on">◉</span><span class="btn sm ic mute">M</span><span class="btn sm ic solo">S</span><span class="btn sm on">FX 3</span><span class="btn sm ic">⋯</span></div>
-    <div style="display:flex;align-items:center;gap:8px"><span class="btn sm" style="width:130px;justify-content:space-between">Entrada 1 (mono) ▾</span><span class="btn sm" style="width:120px;justify-content:space-between">Saída: Vocais ▾</span><span class="btn sm">Lanes 3</span></div>
-    <div style="display:flex;align-items:center;gap:8px"><span style="font-size:10px;color:var(--tx3);width:24px">VOL</span><div class="slider" style="flex:1"><i style="width:80%"></i><b style="left:calc(80% - 3px)"></b></div><span style="font-size:10px;width:40px">-2,4 dB</span>
-      <span style="font-size:10px;color:var(--tx3)">PAN</span><div class="slider" style="width:70px"><b style="left:calc(50% - 3px)"></b></div><span style="font-size:10px">C</span></div>
+    <div style="display:flex;align-items:center;gap:5px"><span class="btn sm ic rec on">●</span>
+      <span style="flex:1;height:22px;background:#15191d;border:1px solid #0b0d0f;border-radius:3px;padding:0 6px;display:flex;align-items:center;gap:5px"><span style="font-size:10px;color:var(--tx3)">🎤</span><b>Voz principal</b></span>
+      <span class="btn sm ic mute">M</span><span class="btn sm ic solo">S</span></div>
+    <div style="display:flex;align-items:center;gap:8px">{knob_pequeno("VOL", 80*2.7-135, 26)}{knob_pequeno("PAN", -30, 26)}
+      <span style="font-size:10px;color:var(--tx2);width:70px;line-height:1.3">-2,4 dB<br>12% E</span>
+      <div style="flex:1"></div><span class="btn sm on">FX 3</span><span class="btn sm">I/O</span><span class="btn sm">ENV</span></div>
+    <div style="display:flex;align-items:center;gap:6px"><span class="btn sm ic mon on">◉</span><span class="btn sm" style="width:130px;justify-content:space-between">Entrada 1 (mono) ▾</span><span class="btn sm">Gravar: entrada ▾</span><span class="btn sm">Lanes 3</span></div>
   </div>
   <div style="width:12px;padding:5px 3px;display:flex;gap:1px"><div class="meter" style="flex:1"><i style="height:72%"></i></div><div class="meter" style="flex:1"><i style="height:64%"></i></div></div>
 </div>'''
@@ -224,18 +237,18 @@ def tela_faixas():
   <div style="width:700px;display:flex;flex-direction:column;gap:14px">
     <div class="tag" style="font-size:12px;color:var(--tx2)">Hoje (ampliado 2×)</div>{hoje}
     <div style="color:var(--tx2);font-size:12.5px;line-height:1.5;max-width:680px">Botões de 14 px sem rótulo (engrenagem, M, S, R, "Omni"), knobs de volume e pan minúsculos, o número do canal do mixer num visor à parte e o nome espremido.</div>
-    <div class="tag" style="font-size:12px;color:var(--tx2);margin-top:14px">Proposta: altura normal (58 px)</div>
-    <div style="width:360px;border:1px solid var(--line);border-radius:6px;overflow:hidden;position:relative">{estados}
-      {b(1,-12,-10)}{b(2,150,-10)}{b(3,330,62)}{b(4,140,40)}{b(5,350,150)}{b(7,-12,128)}</div>
+    <div class="tag" style="font-size:12px;color:var(--tx2);margin-top:14px">Proposta: altura normal (70 px)</div>
+    <div style="width:360px;border:1px solid var(--line);border-radius:6px;position:relative">{estados}
+      {b(1,-14,-12)}{b(2,175,-14)}{b(3,346,-14)}{b(4,96,30)}{b(5,250,30)}{b(7,-14,150)}</div>
     <div style="color:var(--tx2);font-size:12px">Estados: normal, armada para gravar (selecionada), muda e dentro de uma pasta, solo.</div>
   </div>
   <div style="flex:1;display:flex;flex-direction:column;gap:14px;position:relative">
     <div class="tag" style="font-size:12px;color:var(--tx2)">Proposta: altura grande (arrastar a borda)</div>
     <div style="width:470px;position:relative">{expandida}{b(6,440,-10)}</div>
     <div class="tag" style="font-size:12px;color:var(--tx2);margin-top:20px">Proposta: compacta (24 px, para muitas faixas)</div>
-    <div style="width:470px;height:24px;display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:0 6px;position:relative">
-      <div style="width:4px;height:16px;background:#e85a4f"></div><b style="flex:1;font-size:12px">Bateria</b><span class="btn sm ic rec">●</span><span class="btn sm ic mute">M</span><span class="btn sm ic solo">S</span>
-      <div class="hmeter" style="width:60px"><i style="width:70%"></i></div>{b(8,450,-10)}</div>
+    <div style="width:470px;height:24px;display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:0 6px 0 0;position:relative;overflow:visible">
+      <div style="width:22px;align-self:stretch;background:#e85a4f;color:#0b0d0f;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center">1</div><span class="btn sm ic rec">●</span><b style="flex:1;font-size:12px">Bateria</b><span class="btn sm ic mute">M</span><span class="btn sm ic solo">S</span>
+      <div class="meter" style="width:5px;height:16px"><i style="height:70%"></i></div>{b(8,450,-10)}</div>
     <div class="tag" style="font-size:12px;color:var(--tx2);margin-top:20px">Clique direito no cabeçalho</div>
     <div style="width:250px;background:var(--bg3);border:1px solid var(--line2);border-radius:8px;padding:6px;font-size:12px;display:flex;flex-direction:column;gap:2px;position:relative">
       <div style="padding:5px 8px">Renomear…</div><div style="padding:5px 8px">Cor ▸</div><div style="padding:5px 8px">Ícone ▸</div>
@@ -244,18 +257,18 @@ def tela_faixas():
   </div>
 </div>'''
     notas = [
-        "<b>Barra de cor</b> à esquerda, a mesma cor dos clipes e do canal no mixer. O ícone diz o tipo (instrumento, áudio, pasta).",
-        "<b>Nome grande e legível</b>, sem visor separado do número do canal. O canal aparece no inspetor e no mixer.",
-        "<b>Botões de 20 px com estados por cor</b>: gravar vermelho, mudo laranja, solo amarelo, FX verde com o número de efeitos. Clique no FX abre os efeitos no inspetor.",
-        "<b>Volume em régua horizontal</b> com o valor em dB e pan ao lado, no lugar dos knobs minúsculos. Arrastar com Shift faz o ajuste fino; duplo clique volta ao padrão.",
-        "<b>Medidor de altura inteira</b> na borda direita, para ver de longe o que está tocando.",
-        "<b>Altura grande</b>: entrada, saída, lanes e monitor aparecem sem abrir janela.",
-        "<b>Pastas recuam</b> as faixas de dentro e somam a cor do grupo.",
-        "<b>Altura compacta</b> para projetos grandes: só o essencial numa linha.",
+        "<b>Número da faixa na cor dela</b>, numa coluna à esquerda, como no REAPER. A cor é a mesma dos clipes e do canal no mixer.",
+        "<b>O nome num campo</b> (duplo clique para renomear), com o ícone do tipo (instrumento, áudio, pasta) dentro dele.",
+        "<b>Gravar à esquerda do nome, M e S à direita</b>, como no REAPER, com estados por cor: gravar vermelho, mudo laranja, solo amarelo.",
+        "<b>Volume e pan em knobs</b>, como no REAPER (nada de régua): o valor aparece ao passar o mouse e ao arrastar; Shift ajusta fino; duplo clique volta ao padrão.",
+        "<b>FX e I/O</b> (roteamento) ao lado dos knobs; o FX fica verde com o número de efeitos. O medidor fica na borda direita.",
+        "<b>Altura grande</b> (arrastar a borda): os knobs maiores com o valor escrito, ENV (automação), monitor, entrada, modo de gravação e lanes.",
+        "<b>Pastas recuam</b> as faixas de dentro.",
+        "<b>Altura compacta</b> para projetos grandes: número, gravar, nome, M, S e o medidor.",
         "<b>Menu de contexto curto</b>, com as ações destrutivas separadas e em vermelho.",
     ]
     pagina("02-cabecalho-de-faixa", "2 · Cabeçalho de faixa (estilo REAPER)",
-           "O controle das faixas, que você disse que ainda está ruim. Três alturas, cores por estado e nada de botões sem rótulo.",
+           "O controle das faixas no modelo do TCP do REAPER: volume e pan em knobs, sem régua. Três alturas.",
            mock, notas)
 
 # ---------------------------------------------------------------------------------------------------------------

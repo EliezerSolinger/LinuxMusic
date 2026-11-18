@@ -9,7 +9,7 @@ Em 17/11 o usuário aprovou a 3 e a 8; as outras esperam a revisão dele, tela p
 | # | Imagem | Aprovo | Observações |
 |---|---|---|---|
 | 1 | [Janela principal](01-janela-principal.png): uma barra superior só, navegador com abas, inspetor à direita, editores encaixados embaixo, barra de status | [ ] | |
-| 2 | [Cabeçalho de faixa no estilo REAPER](02-cabecalho-de-faixa.png): três alturas, cores por estado, volume em régua | [ ] | |
+| 2 | [Cabeçalho de faixa no estilo REAPER](02-cabecalho-de-faixa.png): o TCP do REAPER, volume e pan em knobs (sem régua), três alturas | [ ] | Refeito em 18/11: a versão anterior tinha régua de volume e não seguia o REAPER |
 | 3 | [Barra de transporte](03-transporte.png): um visor grande, estados por cor e por palavra | [x] | Aprovado pelo usuário em 17/11 |
 | 4 | [Piano roll](04-piano-roll.png): uma barra com texto, escala à vista, notas fantasmas, lanes com abas | [ ] | |
 | 5 | [Janela do instrumento](05-janela-do-instrumento.png): painel encaixado, abas com texto, rodapé fixo | [ ] | |
