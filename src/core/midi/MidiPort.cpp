@@ -67,8 +67,8 @@ MidiPort::MidiPort( const QString& name,
 {
 	m_midiClient->addPort( this );
 
-	m_readableModel.setValue( m_mode == Mode::Input || m_mode == Mode::Duplex );
-	m_writableModel.setValue( m_mode == Mode::Output || m_mode == Mode::Duplex );
+	m_readableModel.setValue(mode == Mode::Input || mode == Mode::Duplex);
+	m_writableModel.setValue(mode == Mode::Output || mode == Mode::Duplex);
 
 	connect( &m_readableModel, SIGNAL(dataChanged()),
 			this, SLOT(updateMidiPortMode()), Qt::DirectConnection );
@@ -120,7 +120,7 @@ void MidiPort::setName( const QString& name )
 
 void MidiPort::setMode( Mode mode )
 {
-	m_mode = mode;
+	m_mode.store(mode, std::memory_order_relaxed);
 	m_midiClient->applyPortMode( this );
 }
 

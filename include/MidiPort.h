@@ -26,6 +26,8 @@
 #ifndef LMMS_MIDI_PORT_H
 #define LMMS_MIDI_PORT_H
 
+#include <atomic>
+
 #include <QString>
 #include <QList>
 #include <QMap>
@@ -87,9 +89,10 @@ public:
 
 	void setName( const QString& name );
 
+	//! (read by the audio thread as notes send their events, set on the main thread: atomic)
 	Mode mode() const
 	{
-		return m_mode;
+		return m_mode.load(std::memory_order_relaxed);
 	}
 
 	void setMode( Mode mode );
@@ -172,7 +175,7 @@ private:
 	MidiClient* m_midiClient;
 	MidiEventProcessor* m_midiEventProcessor;
 
-	Mode m_mode;
+	std::atomic<Mode> m_mode;
 
 	IntModel m_inputChannelModel;
 	IntModel m_outputChannelModel;
