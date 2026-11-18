@@ -527,6 +527,8 @@ private slots:
 			// Slices for the notes to play (one per key from the base note up)
 			plugin.setAttribute("totalSlices", 13);
 			for (int slice = 0; slice < 13; ++slice) { plugin.setAttribute(QString{"slice_%1"}.arg(slice), slice / 12.0); }
+			// (SlicerT's slices go back and forth while held, and fade out after: the looped path and its release)
+			if (instrument == "slicert") { plugin.setAttribute("loopMode", 2); }
 			track->restoreState(settings);
 		}
 		Engine::mixer()->setUpTrackChannels();

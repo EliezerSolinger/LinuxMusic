@@ -74,6 +74,11 @@ SlicerTView::SlicerTView(SlicerT* instrument, QWidget* parent)
 	m_syncToggle->setToolTip(tr("Enable BPM sync"));
 	m_syncToggle->setModel(&m_slicerTParent->m_enableSync);
 
+	m_loopSetting = new ComboBox(this, tr("Loop"));
+	m_loopSetting->setFixedSize(84, ComboBox::DEFAULT_HEIGHT);
+	m_loopSetting->setToolTip(tr("How slices play while their note is held: once, looped or back and forth"));
+	m_loopSetting->setModel(&m_slicerTParent->m_loopMode);
+
 	m_clearButton = new PixmapButton(this, tr("Clear all slices"));
 	m_clearButton->setActiveGraphic(PLUGIN_NAME::getIconPixmap("clear_slices_active"));
 	m_clearButton->setInactiveGraphic(PLUGIN_NAME::getIconPixmap("clear_slices_inactive"));
@@ -292,6 +297,7 @@ void SlicerTView::resizeEvent(QResizeEvent* re)
 	// For explanation on the choice of constants, look at #7850
 	m_syncToggle->move((width() - 100), m_y1 - 7);
 	m_clearButton->move((width() - 100), m_y1 + 17);
+	m_loopSetting->move((width() - 100), m_y1 + 40);
 
 	m_folderButton->move(width() - 20, height() - s_bottomBoxHeight - s_sampleBoxHeight + 1);
 

@@ -115,9 +115,23 @@ auto Sample::operator=(Sample&& other) noexcept -> Sample&
 
 bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop loop, double ratio) const
 {
+	return play(dst, state, numFrames, bounds(), loop, ratio);
+}
+
+bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Bounds bounds, Loop loop,
+	double ratio) const
+{
 	if (sampleSize() == 0) { return false; }
 
-	state->m_frameIndex = std::max<int>(m_startFrame, state->m_frameIndex);
+	const auto size = static_cast<int>(sampleSize());
+	bounds.start = std::clamp(bounds.start, 0, size);
+	bounds.end = std::clamp(bounds.end, bounds.start, size);
+	bounds.loopStart = std::clamp(bounds.loopStart, 0, size);
+	bounds.loopEnd = std::clamp(bounds.loopEnd, bounds.loopStart, size);
+	// A loop with nothing in it plays as no loop (it would not move)
+	if (bounds.loopEnd <= bounds.loopStart) { loop = Loop::Off; }
+
+	state->m_frameIndex = std::max<int>(bounds.start, state->m_frameIndex);
 
 	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / sampleRate();
 	const auto freqRatio = frequency() / DefaultBaseFreq;
@@ -132,7 +146,7 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 		{
 			if (state->m_bufferView.empty())
 			{
-				const auto rendered = render(state->m_buffer.data(), state->m_buffer.size(), state, loop);
+				const auto rendered = render(state->m_buffer.data(), state->m_buffer.size(), state, loop, bounds);
 				state->m_bufferView = {state->m_buffer.data(), rendered};
 				if (rendered == 0)
 				{
@@ -162,7 +176,7 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 	{
 		if (state->m_bufferView.empty())
 		{
-			const auto rendered = render(state->m_buffer.data(), state->m_buffer.size(), state, loop);
+			const auto rendered = render(state->m_buffer.data(), state->m_buffer.size(), state, loop, bounds);
 			state->m_bufferView = {state->m_buffer.data(), rendered};
 		}
  
@@ -187,12 +201,13 @@ auto Sample::copyFrames(SampleFrame* dst, PlaybackState* state, std::size_t numF
 {
 	if (sampleSize() == 0) { std::fill_n(dst, numFrames, SampleFrame{}); return 0; }
 	state->m_frameIndex = std::max<int>(m_startFrame, state->m_frameIndex);
-	const auto rendered = static_cast<std::size_t>(render(dst, static_cast<f_cnt_t>(numFrames), state, Loop::Off));
+	const auto rendered = static_cast<std::size_t>(render(dst, static_cast<f_cnt_t>(numFrames), state, Loop::Off,
+		bounds()));
 	std::fill(dst + rendered, dst + numFrames, SampleFrame{});
 	return rendered;
 }
 
-f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loop loop) const
+f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loop loop, const Bounds& bounds) const
 {
 	const auto total = static_cast<f_cnt_t>(sampleSize());
 	// From disk: the block in hand, until the frames leave it (a missing block plays silence)
@@ -212,38 +227,38 @@ f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loo
 
 	// (the microfades, see setDeclick(): 2 ms of the sample, one frame at least)
 	const auto declickFrames = m_declick ? std::max<f_cnt_t>(1, static_cast<f_cnt_t>(sampleRate() / 500)) : f_cnt_t{0};
-	const auto startFrame = static_cast<f_cnt_t>(m_startFrame);
-	const auto endFrame = static_cast<f_cnt_t>(m_endFrame);
-	const auto loopStart = static_cast<f_cnt_t>(m_loopStartFrame);
-	const auto loopEnd = static_cast<f_cnt_t>(m_loopEndFrame);
+	const auto startFrame = static_cast<f_cnt_t>(bounds.start);
+	const auto endFrame = static_cast<f_cnt_t>(bounds.end);
+	const auto loopStart = static_cast<f_cnt_t>(bounds.loopStart);
+	const auto loopEnd = static_cast<f_cnt_t>(bounds.loopEnd);
 	for (f_cnt_t frame = 0; frame < size; ++frame)
 	{
 		switch (loop)
 		{
 		case Loop::Off:
-			if (state->m_frameIndex < 0 || state->m_frameIndex >= m_endFrame) { return frame; }
+			if (state->m_frameIndex < 0 || state->m_frameIndex >= endFrame) { return frame; }
 			break;
 		case Loop::On:
-			if (state->m_frameIndex < m_loopStartFrame && state->m_backwards)
+			if (state->m_frameIndex < loopStart && state->m_backwards)
 			{
-				state->m_frameIndex = m_loopEndFrame - 1;
+				state->m_frameIndex = loopEnd - 1;
 				state->m_wrapped = true;
 			}
-			else if (state->m_frameIndex >= m_loopEndFrame)
+			else if (state->m_frameIndex >= loopEnd)
 			{
-				state->m_frameIndex = m_loopStartFrame;
+				state->m_frameIndex = loopStart;
 				state->m_wrapped = true;
 			}
 			break;
 		case Loop::PingPong:
-			if (state->m_frameIndex < m_loopStartFrame && state->m_backwards)
+			if (state->m_frameIndex < loopStart && state->m_backwards)
 			{
-				state->m_frameIndex = m_loopStartFrame;
+				state->m_frameIndex = loopStart;
 				state->m_backwards = false;
 			}
-			else if (state->m_frameIndex >= m_loopEndFrame)
+			else if (state->m_frameIndex >= loopEnd)
 			{
-				state->m_frameIndex = m_loopEndFrame - 1;
+				state->m_frameIndex = loopEnd - 1;
 				state->m_backwards = true;
 			}
 			break;

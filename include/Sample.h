@@ -93,8 +93,21 @@ public:
 	auto operator=(const Sample&) -> Sample&;
 	auto operator=(Sample&&) noexcept -> Sample&;
 
+	//! The frames a play goes through: from start to end, round the loop from loop start to loop end
+	struct Bounds
+	{
+		int start = 0;
+		int end = 0;
+		int loopStart = 0;
+		int loopEnd = 0;
+	};
+
 	auto play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop loopMode = Loop::Off,
 		double ratio = 1.0) const -> bool;
+	//! Plays within @p bounds instead of the sample's own points (a part of it: SlicerT's slices). They are kept
+	//! within the sample
+	auto play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Bounds bounds, Loop loopMode,
+		double ratio) const -> bool;
 	//! Plays @p numFrames frames as they are in the sample, without resampling (for a sample at the engine's rate:
 	//! exactly its frames), silence past its end. @returns the frames of the sample played
 	auto copyFrames(SampleFrame* dst, PlaybackState* state, std::size_t numFrames) const -> std::size_t;
@@ -138,7 +151,8 @@ public:
 	auto declick() const -> bool { return m_declick.load(std::memory_order_relaxed); }
 
 private:
-	f_cnt_t render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loop loop) const;
+	auto bounds() const -> Bounds { return {startFrame(), endFrame(), loopStartFrame(), loopEndFrame()}; }
+	f_cnt_t render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loop loop, const Bounds& bounds) const;
 	std::shared_ptr<const SampleBuffer> m_buffer = SampleBuffer::emptyBuffer();
 	std::shared_ptr<AudioStream> m_stream;
 	std::atomic<int> m_startFrame = 0;

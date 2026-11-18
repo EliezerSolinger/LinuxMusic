@@ -5512,32 +5512,44 @@ Motivo: &quot;%2&quot;</translation>
     <message>
         <location filename="../../plugins/SlicerT/SlicerT.cpp" line="60"/>
         <source>Note threshold</source>
-        <translation type="unfinished"/>
+        <translation>Limiar de notas</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerT.cpp" line="61"/>
         <source>FadeOut</source>
-        <translation type="unfinished"/>
+        <translation>Fade-out</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerT.cpp" line="62"/>
         <source>Original bpm</source>
-        <translation type="unfinished"/>
+        <translation>BPM original</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerT.cpp" line="63"/>
         <source>Slice snap</source>
-        <translation type="unfinished"/>
+        <translation>Ajuste das fatias</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerT.cpp" line="64"/>
         <source>BPM sync</source>
-        <translation type="unfinished"/>
+        <translation>Sincronizar BPM</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerT.cpp" line="359"/>
         <source>Sample not found: %1</source>
         <translation>Amostra não encontrada: %1</translation>
+    </message>
+    <message>
+        <source>Loop</source>
+        <translation>Loop</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Desligado</translation>
+    </message>
+    <message>
+        <source>Ping-pong</source>
+        <translation>Vaivém</translation>
     </message>
 </context>
 <context>
@@ -15650,58 +15662,58 @@ A interface usada é a que está salva nestas configurações.</translation>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="65"/>
         <source>Slice snap</source>
-        <translation type="unfinished"/>
+        <translation>Ajuste das fatias</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="67"/>
         <source>Set slice snapping for detection</source>
-        <translation type="unfinished"/>
+        <translation>Ajuste das fatias na detecção</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="70"/>
         <source>Sync sample</source>
-        <translation type="unfinished"/>
+        <translation>Sincronizar amostra</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="74"/>
         <source>Enable BPM sync</source>
-        <translation type="unfinished"/>
+        <translation>Ativar a sincronia de BPM</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="77"/>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="80"/>
         <source>Clear all slices</source>
-        <translation type="unfinished"/>
+        <translation>Apagar todas as fatias</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="84"/>
         <source>Original sample BPM</source>
-        <translation type="unfinished"/>
+        <translation>BPM original da amostra</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="88"/>
         <source>Threshold used for slicing</source>
-        <translation type="unfinished"/>
+        <translation>Limiar usado para fatiar</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="92"/>
         <source>Fade Out per note in milliseconds</source>
-        <translation type="unfinished"/>
+        <translation>Fade-out por nota, em milissegundos</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="97"/>
         <source>Copy midi pattern to clipboard</source>
-        <translation type="unfinished"/>
+        <translation>Copiar o padrão MIDI para a área de transferência</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="103"/>
         <source>Open sample selector</source>
-        <translation type="unfinished"/>
+        <translation>Abrir o seletor de amostras</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="108"/>
         <source>Reset slices</source>
-        <translation type="unfinished"/>
+        <translation>Refazer as fatias</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="240"/>
@@ -15711,7 +15723,7 @@ A interface usada é a que está salva nestas configurações.</translation>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="241"/>
         <source>Fade Out</source>
-        <translation type="unfinished"/>
+        <translation>Fade-out</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="242"/>
@@ -15721,17 +15733,25 @@ A interface usada é a que está salva nestas configurações.</translation>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="243"/>
         <source>Midi</source>
-        <translation type="unfinished"/>
+        <translation>MIDI</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="244"/>
         <source>BPM</source>
-        <translation type="unfinished"/>
+        <translation>BPM</translation>
     </message>
     <message>
         <location filename="../../plugins/SlicerT/SlicerTView.cpp" line="245"/>
         <source>Snap</source>
-        <translation type="unfinished"/>
+        <translation>Ajuste</translation>
+    </message>
+    <message>
+        <source>Loop</source>
+        <translation>Loop</translation>
+    </message>
+    <message>
+        <source>How slices play while their note is held: once, looped or back and forth</source>
+        <translation>Como as fatias tocam enquanto a nota é segurada: uma vez, em loop ou de ida e volta</translation>
     </message>
 </context>
 <context>

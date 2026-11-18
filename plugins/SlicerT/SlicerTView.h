@@ -87,6 +87,7 @@ private:
 	Knob* m_fadeOutKnob;
 	LcdSpinBox* m_bpmBox;
 	ComboBox* m_snapSetting;
+	ComboBox* m_loopSetting;
 	PixmapButton* m_syncToggle;
 	PixmapButton* m_clearButton;
 	PixmapButton* m_folderButton;

@@ -51,6 +51,7 @@ public:
 	SlicerT(InstrumentTrack* instrumentTrack);
 
 	void deleteNotePluginData(NotePlayHandle* handle) override;
+	float desiredReleaseTimeMs() const override;
 
 	void saveSettings(QDomDocument& document, QDomElement& element) override;
 	void loadSettings(const QDomElement& element) override;
@@ -79,6 +80,11 @@ private:
 	IntModel m_originalBPM;
 	ComboBoxModel m_sliceSnap;
 	BoolModel m_enableSync;
+	//! How every slice plays while its note is held (Sample::Loop): once, round, back and forth
+	ComboBoxModel m_loopMode;
+
+	//! The sample's tempo, from its onsets (see findBPM()); 0 without a beat to find
+	auto estimateTempo() const -> double;
 
 	//! Puts @p sample in place of the sample, at once for the audio thread; the old one goes without the lock
 	void setSample(Sample sample);

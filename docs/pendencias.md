@@ -204,6 +204,15 @@ queda do Mallets, que é queda e entra antes.
       do arco (com integração 0 ela era zerada a cada amostra; agora ficava o lixo da memória, e a voz dava infinito
       desde a primeira amostra); a voz nasce em repouso. O `ModalBar` e o `TubeBell` não dependem da memória
       (testados com ela cheia de lixo).
+    - [x] SlicerT: o BPM era o comprimento do sample tomado como um compasso (#8102); agora vem dos ataques (o
+      fluxo espectral, sua autocorrelação e um pente nos tempos e entre eles, depois a oitava mais provável), e um
+      loop de compassos inteiros fica com o tempo exato. Acerta os 13 beats que vêm com o programa (o jungle de 168
+      dá 84, o mesmo pulso) e loops sintéticos de 87 a 174 BPM com e sem sobra no fim. As fatias podem tocar em
+      loop ou vaivém enquanto a nota é segurada (#7364; `Sample::play` com limites próprios, sem a nota guardar
+      uma cópia do sample, que soltaria memória na thread de áudio), com o fade-out como release. No caminho: o
+      fade do fim ignorava a taxa do sample e dividia por zero com fade 0; a primeira fatia de um sample que começa
+      em silêncio era apagada; o plano do FFTW nunca era destruído; o ajuste das fatias não era salvo; e a onda de
+      um sample aberto com o projeto não aparecia.
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.

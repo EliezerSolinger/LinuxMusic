@@ -20,11 +20,16 @@
  *
  */
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <vector>
 
+#include <QDataStream>
 #include <QDirIterator>
+#include <QFile>
+#include <QTemporaryDir>
 #include <QtTest>
 
 #include "AudioDummy.h"
@@ -100,6 +105,85 @@ class InstrumentFixesTest : public QObject
 		}
 		song->stop();
 		return played;
+	}
+
+	//! Writes @p frames (stereo, -1 to 1) as a 16 bit WAV file at @p sampleRate
+	static void writeWav(const QString& path, const std::vector<std::array<float, 2>>& frames, int sampleRate)
+	{
+		auto file = QFile{path};
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		auto stream = QDataStream{&file};
+		stream.setByteOrder(QDataStream::LittleEndian);
+		const auto dataBytes = static_cast<quint32>(frames.size() * 4);
+		stream.writeRawData("RIFF", 4);
+		stream << quint32{36 + dataBytes};
+		stream.writeRawData("WAVEfmt ", 8);
+		stream << quint32{16} << quint16{1} << quint16{2} << quint32(sampleRate) << quint32(sampleRate * 4)
+			<< quint16{4} << quint16{16};
+		stream.writeRawData("data", 4);
+		stream << dataBytes;
+		for (const auto& frame : frames)
+		{
+			for (const auto sample : frame) { stream << static_cast<qint16>(std::clamp(sample, -1.f, 1.f) * 32767); }
+		}
+	}
+
+	//! A drum loop: a kick on beats 1 and 3, a snare on 2 and 4, a hi-hat on every eighth, @p bars bars at @p bpm
+	//! and @p tail seconds more (the hats go on)
+	//! (@p fourOnTheFloor: a kick on every beat and nothing else)
+	static auto drumLoop(double bpm, int bars, double tail, int sampleRate, bool fourOnTheFloor = false)
+		-> std::vector<std::array<float, 2>>
+	{
+		const auto beat = 60.0 / bpm;
+		const auto length = static_cast<std::size_t>((bars * 4 * beat + tail) * sampleRate);
+		auto frames = std::vector<std::array<float, 2>>(length, {0.f, 0.f});
+		auto noise = std::uint32_t{12345};
+		const auto random = [&noise] { noise = noise * 1664525u + 1013904223u; return (noise >> 8) / 8388608.f - 1.f; };
+		const auto add = [&](double at, double seconds, auto&& sound) {
+			const auto first = static_cast<std::size_t>(at * sampleRate);
+			for (auto i = std::size_t{0}; i < static_cast<std::size_t>(seconds * sampleRate) && first + i < length; ++i)
+			{
+				const auto value = sound(static_cast<double>(i) / sampleRate);
+				frames[first + i][0] += value;
+				frames[first + i][1] += value;
+			}
+		};
+		for (auto eighth = 0; eighth * beat / 2 < length / static_cast<double>(sampleRate); ++eighth)
+		{
+			const auto at = eighth * beat / 2;
+			const auto beatInBar = (eighth / 2) % 4;
+			if (fourOnTheFloor)
+			{
+				if (eighth % 2 == 0)
+				{
+					add(at, 0.25, [](double t) { return 0.8 * std::sin(2 * M_PI * 55 * t - 30 * std::exp(-t * 30)) * std::exp(-t * 12); });
+				}
+				continue;
+			}
+			if (eighth % 2 == 0 && (beatInBar == 0 || beatInBar == 2))
+			{
+				add(at, 0.25, [](double t) { return 0.8 * std::sin(2 * M_PI * 55 * t - 30 * std::exp(-t * 30)) * std::exp(-t * 12); });
+			}
+			if (eighth % 2 == 0 && (beatInBar == 1 || beatInBar == 3))
+			{
+				add(at, 0.15, [&](double t) { return 0.5 * random() * std::exp(-t * 25); });
+			}
+			add(at, 0.04, [&](double t) { return 0.2 * random() * std::exp(-t * 120); });
+		}
+		return frames;
+	}
+
+	//! Loads @p file into a new SlicerT; @returns its saved settings
+	static auto slicerWith(const QString& file) -> QDomElement
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		if (!track || !track->loadInstrument("slicert")) { return {}; }
+		track->instrument()->loadFile(file);
+		auto state = DataFile{DataFile::Type::InstrumentTrackSettings};
+		track->saveState(state, state.content());
+		return state.content().firstChildElement().elementsByTagName("instrument").item(0).firstChildElement();
 	}
 
 private slots:
@@ -471,6 +555,114 @@ private slots:
 				QVERIFY2(lastQuarter > played.loudest / 3,
 					qPrintable(QString{"%1: %2 at the end, %3 at most"}.arg(name).arg(lastQuarter).arg(played.loudest)));
 			}
+		}
+	}
+
+	/**
+	 * #8102: SlicerT's tempo was the sample's length taken as a bar, doubled or halved into 100 to 200 BPM: right
+	 * only for loops of whole bars. It finds the beat: whole bars or not, it is the tempo played (87 and 174 are the
+	 * same beat, and either is right)
+	 */
+	void slicerTFindsTheTempo()
+	{
+		const auto dir = QTemporaryDir{};
+		QVERIFY(dir.isValid());
+		for (const auto bpm : {87.0, 100.0, 125.0, 140.0, 160.0, 174.0})
+		{
+			for (const auto& [bars, tail] : {std::pair{2, 0.0}, std::pair{4, 0.0}, std::pair{2, 0.37}, std::pair{3, 0.11}})
+			{
+				const auto path = dir.filePath(QString{"loop-%1-%2-%3.wav"}.arg(bpm).arg(bars).arg(tail));
+				writeWav(path, drumLoop(bpm, bars, tail, 44100), 44100);
+				const auto settings = slicerWith(path);
+				QVERIFY(!settings.isNull());
+				const auto found = settings.attribute("origBPM").toDouble();
+				const auto name = QString{"%1 BPM, %2 bars and %3 s: %4"}.arg(bpm).arg(bars).arg(tail).arg(found);
+				const auto right = std::abs(found - bpm) <= 1
+					|| (bpm == 87.0 && std::abs(found - 174) <= 1) || (bpm == 174.0 && std::abs(found - 87) <= 1);
+				QVERIFY2(right, qPrintable(name));
+			}
+		}
+		for (const auto bpm : {118.0, 128.0, 135.0})
+		{
+			const auto path = dir.filePath(QString{"kicks-%1.wav"}.arg(bpm));
+			writeWav(path, drumLoop(bpm, 4, 0.2, 48000, true), 48000);
+			const auto found = slicerWith(path).attribute("origBPM").toDouble();
+			QVERIFY2(std::abs(found - bpm) <= 1, qPrintable(QString{"%1 BPM, four on the floor: %2"}.arg(bpm).arg(found)));
+		}
+
+		// No beat (a held tone): the length's estimate, as before (a bar of 2.4 s: 100 BPM)
+		const auto path = dir.filePath("tone.wav");
+		auto tone = std::vector<std::array<float, 2>>(2.4 * 44100);
+		for (auto i = std::size_t{0}; i < tone.size(); ++i)
+		{
+			const auto value = static_cast<float>(0.4 * std::sin(2 * M_PI * 220 * i / 44100.0));
+			tone[i] = {value, value};
+		}
+		writeWav(path, tone, 44100);
+		QCOMPARE(slicerWith(path).attribute("origBPM").toInt(), 100);
+	}
+
+	//! The beats that come with the program say their tempo in their names: SlicerT finds it (or its double or half:
+	//! the same beat)
+	void slicerTFindsTheFactoryBeatsTempo()
+	{
+		auto it = QDirIterator{QT_TESTCASE_SOURCEDIR "/../data/samples/beats", {"*BPM.ogg"}, QDir::Files};
+		auto count = 0;
+		while (it.hasNext())
+		{
+			const auto path = it.next();
+			const auto name = QFileInfo{path}.completeBaseName();
+			const auto bpm = name.section(" - ", 1).section(' ', 0, 0).toDouble();
+			QVERIFY2(bpm > 0, qPrintable(name));
+			const auto found = slicerWith(path).attribute("origBPM").toDouble();
+			qInfo("%s: %g", qPrintable(name), found);
+			const auto right = std::abs(found - bpm) <= 1 || std::abs(found - bpm * 2) <= 2
+				|| std::abs(found - bpm / 2) <= 1;
+			QVERIFY2(right, qPrintable(QString{"%1: %2"}.arg(name).arg(found)));
+			++count;
+		}
+		QVERIFY(count >= 10);
+	}
+
+	//! #7364: SlicerT's slices can loop (round or back and forth) while their note is held; played once, by default
+	void slicerTLoopsSlices()
+	{
+		const auto dir = QTemporaryDir{};
+		QVERIFY(dir.isValid());
+		const auto path = dir.filePath("tone.wav");
+		auto tone = std::vector<std::array<float, 2>>(22050);
+		for (auto i = std::size_t{0}; i < tone.size(); ++i)
+		{
+			const auto value = static_cast<float>(0.5 * std::sin(2 * M_PI * 441 * i / 44100.0));
+			tone[i] = {value, value};
+		}
+		writeWav(path, tone, 44100);
+
+		for (const auto loopMode : {0, 1, 2})
+		{
+			const auto played = play("slicert", [&](QDomElement& slicer) {
+				slicer.setAttribute("src", path);
+				slicer.setAttribute("totalSlices", 2);
+				slicer.setAttribute("slice_0", 0);
+				slicer.setAttribute("slice_1", 1);
+				slicer.setAttribute("loopMode", loopMode);
+			}, 400);
+			QVERIFY(played.finite);
+			// A second into the note (two bars long, from the start), well after the sample's half second
+			const auto noteStart = std::size_t{0};
+			auto late = 0.f;
+			for (auto i = 2 * (noteStart + 44100); i < std::min(played.samples.size(), 2 * (noteStart + 66150)); ++i)
+			{
+				late = std::max(late, std::abs(played.samples[i]));
+			}
+			auto early = 0.f;
+			for (auto i = 2 * (noteStart + 4410); i < std::min(played.samples.size(), 2 * (noteStart + 17640)); ++i)
+			{
+				early = std::max(early, std::abs(played.samples[i]));
+			}
+			const auto name = QString{"loop mode %1: %2 early, %3 late"}.arg(loopMode).arg(early).arg(late);
+			QVERIFY2(early > 0.3f, qPrintable(name));
+			QVERIFY2(loopMode == 0 ? late == 0.f : late > 0.3f, qPrintable(name));
 		}
 	}
 
