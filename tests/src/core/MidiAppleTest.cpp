@@ -35,6 +35,7 @@
 #include <CoreMIDI/CoreMIDI.h>
 #include <unistd.h>
 
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "MidiApple.h"
 #include "MidiEventProcessor.h"
@@ -110,6 +111,14 @@ class MidiAppleTest : public QObject
 		MIDIReceived(source, list);
 	}
 
+	//! The events @p client received, handed to its ports, as the audio thread does with the engine's client (this
+	//! client is the test's own: see MidiClient)
+	static void deliver(MidiClient& client)
+	{
+		const auto guard = AudioEngine::changesGuard();
+		client.deliverInEvents();
+	}
+
 	template<class Done>
 	static auto waitFor(Done done) -> bool
 	{
@@ -150,7 +159,11 @@ private slots:
 		QVERIFY2(waitFor([&] { return client.readablePorts().contains(name); }), "the source plugged in was not seen");
 
 		send(source, {0x90, 60, 100, 62, 90, 0xF8, 0xC1, 5, 0xE0, 0x00, 0x40});
-		QVERIFY(waitFor([&] { const auto lock = std::lock_guard{collector.mutex}; return collector.events.size() >= 5; }));
+		QVERIFY(waitFor([&] {
+			deliver(client);
+			const auto lock = std::lock_guard{collector.mutex};
+			return collector.events.size() >= 5;
+		}));
 		const auto events = collector.taken();
 		QCOMPARE(events.size(), std::size_t{5});
 		QCOMPARE(events[0].key(), 60);
@@ -168,7 +181,11 @@ private slots:
 		CFRelease(again);
 		QVERIFY(waitFor([&] { return client.readablePorts().contains(name); }));
 		send(source, {0x80, 60, 0});
-		QVERIFY2(waitFor([&] { const auto lock = std::lock_guard{collector.mutex}; return !collector.events.empty(); }),
+		QVERIFY2(waitFor([&] {
+			deliver(client);
+			const auto lock = std::lock_guard{collector.mutex};
+			return !collector.events.empty();
+		}),
 			"plugged in again, it was not received from");
 		QCOMPARE(collector.taken().front().type(), MidiNoteOff);
 		MIDIEndpointDispose(source);

@@ -31,6 +31,8 @@
 #include <windows.h>
 #include <mmsystem.h>
 
+#include <mutex>
+
 #include "MidiClient.h"
 #include "MidiPort.h"
 
@@ -130,6 +132,9 @@ private:
 							DWORD_PTR _param2 );
 	void handleInputEvent( HMIDIIN _hm, DWORD _ev );
 
+	//! The devices and the subscriptions change on the main thread under it; the input callback and the audio thread
+	//! (sending) read them under it
+	mutable std::mutex m_routingMutex;
 	QMap<HMIDIIN, QString> m_inputDevices;
 	QMap<HMIDIOUT, QString> m_outputDevices;
 

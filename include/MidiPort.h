@@ -27,6 +27,7 @@
 #define LMMS_MIDI_PORT_H
 
 #include <atomic>
+#include <cstdint>
 
 #include <QString>
 #include <QList>
@@ -145,6 +146,16 @@ public:
 
 	void invalidateCilent();
 
+	/**
+	 * No more input from now on (the audio thread delivers it under the change lock, which this takes): its owner
+	 * calls it first thing when it is destroyed, before the port (a member) is, since input delivered to a
+	 * half-destroyed owner would play on it. Its output goes on (the notes its owner silences reach their devices).
+	 */
+	void closeInput();
+
+	//! Unique among the ports made in this run (unlike their addresses, which a new port may reuse)
+	auto serial() const -> std::uint64_t { return m_serial; }
+
 	//! The devices it is connected to (with a sequencing client)
 	auto subscribedReadablePorts() const -> QStringList;
 	auto subscribedWritablePorts() const -> QStringList;
@@ -174,6 +185,12 @@ private slots:
 private:
 	MidiClient* m_midiClient;
 	MidiEventProcessor* m_midiEventProcessor;
+	const std::uint64_t m_serial;
+	bool m_detached = false;
+	bool m_inputClosed = false; //!< (changed under the change lock, read by the audio thread holding it)
+
+	//! Leaves its client (the destructor): no more input nor output; whatever it is asked to do then goes nowhere
+	void detach();
 
 	std::atomic<Mode> m_mode;
 

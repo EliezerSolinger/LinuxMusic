@@ -26,6 +26,7 @@
 #include <QDomElement>
 
 #include "MidiPort.h"
+#include "AudioEngine.h"
 #include "MidiClient.h"
 #include "MidiDummy.h"
 #include "MidiEventProcessor.h"
@@ -40,6 +41,9 @@ namespace lmms
 
 static MidiDummy s_dummyClient;
 
+//! (see MidiPort::serial())
+static std::atomic<std::uint64_t> s_nextSerial = 1;
+
 
 
 MidiPort::MidiPort( const QString& name,
@@ -52,6 +56,7 @@ MidiPort::MidiPort( const QString& name,
 	m_writablePortsMenu( nullptr ),
 	m_midiClient( client ),
 	m_midiEventProcessor( eventProcessor ),
+	m_serial(s_nextSerial.fetch_add(1, std::memory_order_relaxed)),
 	m_mode( mode ),
 	m_inputChannelModel( 0, 0, MidiChannelCount, this, tr( "Input channel" ) ),
 	m_outputChannelModel( 1, 0, MidiChannelCount, this, tr( "Output channel" ) ),
@@ -65,7 +70,11 @@ MidiPort::MidiPort( const QString& name,
 	m_readableModel( false, this, tr( "Receive MIDI-events" ) ),
 	m_writableModel( false, this, tr( "Send MIDI-events" ) )
 {
-	m_midiClient->addPort( this );
+	{
+		// (the audio thread goes through the client's ports to deliver the input: see MidiClient)
+		const auto guard = AudioEngine::changesGuard();
+		m_midiClient->addPort( this );
+	}
 
 	m_readableModel.setValue(mode == Mode::Input || mode == Mode::Duplex);
 	m_writableModel.setValue(mode == Mode::Output || mode == Mode::Duplex);
@@ -98,12 +107,27 @@ MidiPort::MidiPort( const QString& name,
 
 MidiPort::~MidiPort()
 {
+	detach();
+}
+
+
+
+
+void MidiPort::detach()
+{
+	if (m_detached) { return; }
+	// (first the lock, then the driver's own: the order the audio thread takes them in when it sends)
+	const auto guard = AudioEngine::changesGuard();
 	// unsubscribe ports
 	m_readableModel.setValue( false );
 	m_writableModel.setValue( false );
 
 	// and finally unregister ourself
+	if (auto* const object = dynamic_cast<QObject*>(m_midiClient)) { QObject::disconnect(object, nullptr, this, nullptr); }
 	m_midiClient->removePort( this );
+	// (whatever it is asked to do from now on goes nowhere: a client of no ports, on which nothing happens)
+	m_midiClient = &s_dummyClient;
+	m_detached = true;
 }
 
 
@@ -127,8 +151,19 @@ void MidiPort::setMode( Mode mode )
 
 
 
+void MidiPort::closeInput()
+{
+	const auto guard = AudioEngine::changesGuard();
+	m_inputClosed = true;
+}
+
+
+
+
 void MidiPort::processInEvent( const MidiEvent& event, const TimePos& time )
 {
+	if (m_inputClosed) { return; }
+
 	// mask event
 	if( isInputEnabled() &&
 		( inputChannel() == 0 || inputChannel()-1 == event.channel() ) )
@@ -471,7 +506,7 @@ auto MidiPort::subscribedWritablePorts() const -> QStringList
 
 void MidiPort::setMidiClient(MidiClient* client)
 {
-	if (client == nullptr || client == m_midiClient) { return; }
+	if (client == nullptr || client == m_midiClient || m_detached) { return; }
 	const auto readable = subscribedReadablePorts();
 	const auto writable = subscribedWritablePorts();
 

@@ -27,6 +27,7 @@
 
 #include "MidiEventToByteSeq.h"
 
+#include <algorithm>
 #include <array>
 
 #include "MidiPort.h"
@@ -85,6 +86,36 @@ void MidiClient::removePort( MidiPort* port )
 
 
 
+void MidiClient::queueInEvent(MidiPort* port, const MidiEvent& event, const TimePos& time)
+{
+	const auto item = QueuedInEvent{port, port ? port->serial() : 0, event, time};
+	if (!m_inEvents.tryPush(item)) { m_droppedInEvents.fetch_add(1, std::memory_order_relaxed); }
+}
+
+
+
+
+void MidiClient::deliverInEvents()
+{
+	while (const auto item = m_inEvents.tryPop())
+	{
+		if (!item->port)
+		{
+			for (auto* port : m_midiPorts) { port->processInEvent(item->event, item->time); }
+			continue;
+		}
+		// (a port deleted since, or another made at its address, is not it)
+		if (std::find(m_midiPorts.begin(), m_midiPorts.end(), item->port) != m_midiPorts.end()
+			&& item->port->serial() == item->serial)
+		{
+			item->port->processInEvent(item->event, item->time);
+		}
+	}
+}
+
+
+
+
 void MidiClient::subscribeReadablePort( MidiPort*, const QString& , bool )
 {
 }
@@ -112,10 +143,8 @@ void MidiClientRaw::parseData( const unsigned char c )
 
 void MidiClientRaw::processParsedEvent(const MidiEvent& event)
 {
-	for (const auto& midiPort : m_midiPorts)
-	{
-		midiPort->processInEvent(event);
-	}
+	// (to every port, by the audio thread: see MidiClient)
+	queueInEvent(nullptr, event);
 }
 
 

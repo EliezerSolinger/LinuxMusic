@@ -560,9 +560,26 @@ queda do Mallets, que é queda e entra antes.
 
 ## Achado na fase 10 (17/11)
 
-- [ ] Entrada MIDI × porta apagada, em todos os drivers (ALSA, JACK, CoreMIDI): a thread do MIDI entrega o evento à
+- [x] Entrada MIDI × porta apagada, em todos os drivers (ALSA, JACK, CoreMIDI): a thread do MIDI entrega o evento à
   porta sem nada que impeça a porta de ser apagada ao mesmo tempo. Segurar uma trava durante a entrega pode travar
   (a nota desligada pega a trava do motor; limpar o projeto apaga portas segurando essa trava). Precisa de um desenho
   comum aos drivers (por exemplo, a entrada passar por uma fila sem trava lida no início do período, como o JACK já
   faz no callback) e do teste numa máquina Linux. Ver `docs/plano-refatoracao.md`, fase 10.2.
+  - Feito (18/11): a thread de cada driver não entrega mais o evento à porta, ela o põe numa fila sem trava e sem
+    alocação do cliente (`MidiClient::queueInEvent`), com a porta e o número de série dela; a thread de áudio entrega
+    a fila no começo de cada período (`deliverInEvents`), segurando a trava de mudanças, só às portas ainda
+    registradas e com o mesmo número de série (uma porta nova no endereço de uma apagada não recebe o que era da
+    outra). As portas entram e saem do cliente sob essa trava (antes da trava do driver, na ordem em que a thread de
+    áudio as pega ao enviar). O dono de uma porta (a faixa de instrumento, o controlador MIDI) fecha a entrada dela
+    primeiro no destrutor (`MidiPort::closeInput`), antes de se desmontar, e a saída continua até a porta ir (as
+    notas silenciadas ainda chegam aos aparelhos). Nos drivers: CoreMIDI e ALSA seq enfileiram sob a trava da
+    própria rota (enquanto a rota tem a porta, ela existe); o ALSA seq passou a ler e mudar a rota só sob a trava
+    (a saída, da thread de áudio, lia e até criava entradas no mapa sem ela) e guarda o endereço de origem num
+    lugar que dura (antes apontava para o evento do ALSA, reaproveitado); o WinMM ganhou uma trava para a rota (não
+    tinha nenhuma) e dá como origem o próprio aparelho (antes, o endereço de um argumento da função); os clientes
+    crus (ALSA raw, JACK, sndio) passam pela fila no parser comum. `MidiInputDeliveryTest`: entregue pela thread de
+    áudio, a todas as portas no cliente cru, nada a uma porta apagada nem à nova no endereço dela (falha sem o
+    número de série), nada depois de fechar a entrada, a faixa apagada com notas a caminho, e portas indo e vindo
+    enquanto uma thread recebe e outra renderiza. ALSA e WinMM conferidos só na sintaxe (com cabeçalhos de mentira,
+    não compilam no Mac): falta o teste numa máquina Linux e numa Windows (pendência do usuário, acima).
 

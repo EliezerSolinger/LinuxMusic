@@ -53,7 +53,8 @@ namespace lmms
  * device plugged in again is subscribed again.
  *
  * Threads: the lists and subscriptions change on the main thread, under m_routingMutex. CoreMIDI hands the bytes
- * received to a thread of its own (readProc()); the events sent may come from the audio thread. Those threads take
+ * received to a thread of its own (readProc()), which queues the events for their ports (the audio thread delivers
+ * them: see MidiClient); the events sent may come from the audio thread. Those threads take
  * nothing but the routing they need, under the mutex, which a thread other than the main one only tries: while the
  * main thread changes the routing (a moment), an event there is dropped rather than the thread waiting. Nothing is
  * allocated on them.

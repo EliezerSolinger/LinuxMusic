@@ -31,8 +31,11 @@
 #ifdef LMMS_HAVE_ALSA
 #include <alsa/asoundlib.h>
 
+#include <vector>
+
 #include <QMap>
 #include <QMutex>
+#include <QMutexLocker>
 #include <QThread>
 #include <QTimer>
 
@@ -134,6 +137,9 @@ private:
 		private: int p[2];
 	} ;
 	QMap<MidiPort *, Ports> m_portIDs;
+	//! The address of each sender (by client and port), for the events received to name their source with: it
+	//! lasts as long as the client (ALSA's own event is reused once read)
+	std::vector<snd_seq_addr_t> m_sourceAddresses;
 #endif
 
 	int m_queueID;

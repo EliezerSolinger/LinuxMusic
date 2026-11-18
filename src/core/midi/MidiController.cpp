@@ -51,6 +51,8 @@ MidiController::MidiController( Model * _parent ) :
 
 MidiController::~MidiController()
 {
+	// No more MIDI input before anything here goes (the port, a member, goes last: see MidiPort::closeInput())
+	m_midiPort.closeInput();
 	// Out of the lists the audio thread goes through first, whole (see Controller::publish())
 	withdraw();
 }

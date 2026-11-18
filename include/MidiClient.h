@@ -26,7 +26,11 @@
 #define LMMS_MIDI_CLIENT_H
 
 #include <QStringList>
+#include <cstdint>
 #include <vector>
+
+#include "LockFreeQueue.h"
+#include "TimePos.h"
 
 
 #include "MidiByteParser.h"
@@ -42,7 +46,15 @@ class MidiPort;
 class TimePos;
 
 
-// base-class for all MIDI-clients
+/**
+ * The base of the MIDI clients (the drivers).
+ *
+ * Input: a driver's thread does not hand an event to a port itself (the port could be deleted meanwhile, and a
+ * port's track takes the audio engine's change lock, which the thread deleting ports may hold): it queues it
+ * (queueInEvent(), no lock, no allocation), and the audio thread delivers the queue at the start of each period
+ * (deliverInEvents()), under the change lock, to the ports still registered. The ports register and leave under that
+ * lock (MidiPort, detach()), so a port is either there for the whole delivery or gone.
+ */
 class MidiClient
 {
 public:
@@ -113,8 +125,34 @@ public:
 	// any other working
 	static MidiClient * openMidiClient();
 
+	/**
+	 * Queues @p event for @p port, nullptr for every port (a raw client's) [any thread: a driver's]. The caller makes
+	 * sure @p port is alive meanwhile (a driver: while its routing holds it, under its lock): the port's serial is
+	 * read here, and the event goes to it only if it is still that port when delivered (not one made since at the
+	 * same address).
+	 */
+	void queueInEvent(MidiPort* port, const MidiEvent& event, const TimePos& time = TimePos{});
+
+	//! Hands the events received since the last call to their ports [audio thread, under the change lock]
+	void deliverInEvents();
+
+	//! How many events received were dropped because the queue was full (input while the audio stopped)
+	auto droppedInEvents() const -> std::uint64_t { return m_droppedInEvents.load(std::memory_order_relaxed); }
+
 protected:
 	std::vector<MidiPort *> m_midiPorts;
+
+private:
+	struct QueuedInEvent
+	{
+		MidiPort* port;
+		std::uint64_t serial;
+		MidiEvent event;
+		TimePos time;
+	};
+	//! (a few seconds of a busy controller, while the audio thread does not run)
+	LockFreeQueue<QueuedInEvent, 4096> m_inEvents;
+	std::atomic<std::uint64_t> m_droppedInEvents = 0;
 
 } ;
 

@@ -221,21 +221,11 @@ void MidiApple::readProc(const MIDIPacketList* packets, void* client, void* sour
 	auto* source = static_cast<Source*>(sourceContext);
 	if (!self || !source) { return; }
 
-	// The ports subscribed to this source, copied into room of their own; the events go to them after
-	auto ports = std::array<MidiPort*, MaxSubscribers>{};
-	auto count = std::size_t{0};
-	{
-		const auto lock = routingLock(self->m_routingMutex);
-		if (!lock.owns_lock()) { return; }
-		if (const auto it = self->m_inputSubs.constFind(source->name); it != self->m_inputSubs.cend())
-		{
-			for (auto* port : *it)
-			{
-				if (count < ports.size()) { ports[count++] = port; }
-			}
-		}
-	}
-
+	// The events queued for the ports subscribed to this source (the audio thread hands them over: see MidiClient),
+	// under the routing lock: while the routing holds a port, it is alive
+	const auto lock = routingLock(self->m_routingMutex);
+	if (!lock.owns_lock()) { return; }
+	const auto it = self->m_inputSubs.constFind(source->name);
 	const auto* packet = &packets->packet[0];
 	for (UInt32 i = 0; i < packets->numPackets; ++i)
 	{
@@ -243,7 +233,8 @@ void MidiApple::readProc(const MIDIPacketList* packets, void* client, void* sour
 		{
 			// (the parser goes on even with nobody subscribed: it keeps the running status)
 			source->parser.feed(packet->data[b], &source->name, [&](const MidiEvent& event) {
-				for (std::size_t p = 0; p < count; ++p) { ports[p]->processInEvent(event); }
+				if (it == self->m_inputSubs.cend()) { return; }
+				for (auto* port : *it) { self->queueInEvent(port, event); }
 			});
 		}
 		packet = MIDIPacketNext(packet);

@@ -227,6 +227,10 @@ void AudioEngine::renderStageNoteSetup()
 		clearInternal();
 	}
 
+	// The MIDI received since the last period, to its ports (under the change lock, which this thread holds: no port
+	// leaves meanwhile; see MidiClient)
+	if (m_midiClient) { m_midiClient->deliverInEvents(); }
+
 	// remove all play-handles that have to be deleted and delete
 	// them if they still exist...
 	// maybe this algorithm could be optimized...

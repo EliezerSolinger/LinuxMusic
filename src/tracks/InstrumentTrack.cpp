@@ -200,6 +200,8 @@ float InstrumentTrack::baseFreq() const
 
 InstrumentTrack::~InstrumentTrack()
 {
+	// No more MIDI input before anything here goes (the port, a member, goes last: see MidiPort::closeInput())
+	m_midiPort.closeInput();
 	if (auto song = Engine::getSong()) { song->midiRecorder().forget(this); }
 
 	// De-assign midi device

@@ -74,6 +74,7 @@ MidiAlsaSeq::MidiAlsaSeq() :
 	MidiClient(),
 	m_seqMutex(),
 	m_seqHandle( nullptr ),
+	m_sourceAddresses(256 * 256),
 	m_queueID( -1 ),
 	m_quit( false ),
 	m_portListUpdateTimer( this )
@@ -158,15 +159,15 @@ QString MidiAlsaSeq::probeDevice()
 
 void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port )
 {
-	// HACK!!! - need a better solution which isn't that easy since we
-	// cannot store const-ptrs in our map because we need to call non-const
-	// methods of MIDI-port - it's a mess...
-	auto p = const_cast<MidiPort*>(port);
+	// (from the audio thread too: the routing read under the lock, never added to, as it changes on the main thread)
+	QMutexLocker lock(&m_seqMutex);
+	const auto found = m_portIDs.constFind(const_cast<MidiPort*>(port));
+	if (found == m_portIDs.cend()) { return; }
+	auto ids = found.value();
 
 	snd_seq_event_t ev;
 	snd_seq_ev_clear( &ev );
-	snd_seq_ev_set_source( &ev, ( m_portIDs[p][1] != -1 ) ?
-					m_portIDs[p][1] : m_portIDs[p][0] );
+	snd_seq_ev_set_source(&ev, ids[1] != -1 ? ids[1] : ids[0]);
 	snd_seq_ev_set_subs( &ev );
 	snd_seq_ev_schedule_tick( &ev, m_queueID, 1, static_cast<int>( time ) );
 	ev.queue =  m_queueID;
@@ -223,10 +224,8 @@ void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, 
 			return;
 	}
 
-	m_seqMutex.lock();
 	snd_seq_event_output( m_seqHandle, &ev );
 	snd_seq_drain_output( m_seqHandle );
-	m_seqMutex.unlock();
 
 }
 
@@ -331,14 +330,16 @@ void MidiAlsaSeq::applyPortName( MidiPort * _port )
 
 void MidiAlsaSeq::removePort( MidiPort * _port )
 {
-	if( m_portIDs.contains( _port ) )
 	{
-		m_seqMutex.lock();
-		snd_seq_delete_simple_port( m_seqHandle, m_portIDs[_port][0] );
-		snd_seq_delete_simple_port( m_seqHandle, m_portIDs[_port][1] );
-		m_seqMutex.unlock();
-
-		m_portIDs.remove( _port );
+		// (out of the routing under the lock: the input thread queues events for the ports there; see run())
+		QMutexLocker lock(&m_seqMutex);
+		if (const auto found = m_portIDs.constFind(_port); found != m_portIDs.cend())
+		{
+			auto ids = found.value();
+			snd_seq_delete_simple_port(m_seqHandle, ids[0]);
+			snd_seq_delete_simple_port(m_seqHandle, ids[1]);
+			m_portIDs.remove(_port);
+		}
 	}
 	MidiClient::removePort( _port );
 }
@@ -488,7 +489,9 @@ void MidiAlsaSeq::run()
 			break;
 		}
 
-		m_seqMutex.lock();
+		// The events, each queued for the port it was sent to (the audio thread hands them over: see MidiClient),
+		// under the lock: the ports' routing (m_portIDs) changes under it, and while it holds a port, the port is alive
+		QMutexLocker lock(&m_seqMutex);
 
 		// while event queue is not empty
 		while( snd_seq_event_input_pending( m_seqHandle, true ) > 0 )
@@ -496,26 +499,22 @@ void MidiAlsaSeq::run()
 			snd_seq_event_t * ev;
 			if( snd_seq_event_input( m_seqHandle, &ev ) < 0 )
 			{
-				m_seqMutex.unlock();
-
 				qCritical( "error while fetching MIDI event from sequencer" );
 				break;
 			}
-			m_seqMutex.unlock();
 
-			snd_seq_addr_t * source = nullptr;
+			const snd_seq_addr_t* source = nullptr;
 			MidiPort * dest = nullptr;
-			for( int i = 0; i < m_portIDs.size(); ++i )
+			for (auto it = m_portIDs.cbegin(); it != m_portIDs.cend(); ++it)
 			{
-				if( m_portIDs.values()[i][0] == ev->dest.port )
+				auto ids = it.value();
+				if (ids[0] == ev->dest.port) { dest = it.key(); }
+				if ((ids[1] != -1 && ids[1] == ev->source.port) || ids[0] == ev->source.port)
 				{
-					dest = m_portIDs.keys()[i];
-				}
-				if( ( m_portIDs.values()[i][1] != -1 &&
-						m_portIDs.values()[i][1] == ev->source.port ) ||
-							m_portIDs.values()[i][0] == ev->source.port )
-				{
-					source = &ev->source;
+					// (an address that lasts: the event is read by the audio thread, after ALSA's buffer is reused)
+					auto& address = m_sourceAddresses[ev->source.client * 256 + ev->source.port];
+					address = ev->source;
+					source = &address;
 				}
 			}
 
@@ -527,67 +526,38 @@ void MidiAlsaSeq::run()
 			switch( ev->type )
 			{
 				case SND_SEQ_EVENT_NOTEON:
-					dest->processInEvent( MidiEvent( MidiNoteOn,
-								ev->data.note.channel,
-								ev->data.note.note,
-								ev->data.note.velocity,
-								source
-								),
-							TimePos( ev->time.tick ) );
+					queueInEvent(dest, MidiEvent(MidiNoteOn, ev->data.note.channel, ev->data.note.note,
+						ev->data.note.velocity, source), TimePos(ev->time.tick));
 					break;
 
 				case SND_SEQ_EVENT_NOTEOFF:
-					dest->processInEvent( MidiEvent( MidiNoteOff,
-								ev->data.note.channel,
-								ev->data.note.note,
-								ev->data.note.velocity,
-								source
-								),
-							TimePos( ev->time.tick) );
+					queueInEvent(dest, MidiEvent(MidiNoteOff, ev->data.note.channel, ev->data.note.note,
+						ev->data.note.velocity, source), TimePos(ev->time.tick));
 					break;
 
 				case SND_SEQ_EVENT_KEYPRESS:
-					dest->processInEvent( MidiEvent(
-									MidiKeyPressure,
-								ev->data.note.channel,
-								ev->data.note.note,
-								ev->data.note.velocity,
-								source
-								), TimePos() );
+					queueInEvent(dest, MidiEvent(MidiKeyPressure, ev->data.note.channel, ev->data.note.note,
+						ev->data.note.velocity, source));
 					break;
 
 				case SND_SEQ_EVENT_CONTROLLER:
-					dest->processInEvent( MidiEvent(
-							MidiControlChange,
-							ev->data.control.channel,
-							ev->data.control.param,
-							ev->data.control.value, source ),
-									TimePos() );
+					queueInEvent(dest, MidiEvent(MidiControlChange, ev->data.control.channel,
+						ev->data.control.param, ev->data.control.value, source));
 					break;
 
 				case SND_SEQ_EVENT_PGMCHANGE:
-					dest->processInEvent( MidiEvent(
-							MidiProgramChange,
-							ev->data.control.channel,
-							ev->data.control.value,	0,
-							source ),
-								TimePos() );
+					queueInEvent(dest, MidiEvent(MidiProgramChange, ev->data.control.channel,
+						ev->data.control.value, 0, source));
 					break;
 
 				case SND_SEQ_EVENT_CHANPRESS:
-					dest->processInEvent( MidiEvent(
-								MidiChannelPressure,
-							ev->data.control.channel,
-							ev->data.control.param,
-							ev->data.control.value, source ),
-									TimePos() );
+					queueInEvent(dest, MidiEvent(MidiChannelPressure, ev->data.control.channel,
+						ev->data.control.param, ev->data.control.value, source));
 					break;
 
 				case SND_SEQ_EVENT_PITCHBEND:
-					dest->processInEvent( MidiEvent( MidiPitchBend,
-							ev->data.control.channel,
-							ev->data.control.value + 8192, 0, source ),
-									TimePos() );
+					queueInEvent(dest, MidiEvent(MidiPitchBend, ev->data.control.channel,
+						ev->data.control.value + 8192, 0, source));
 					break;
 
 				case SND_SEQ_EVENT_SENSING:
@@ -600,12 +570,7 @@ void MidiAlsaSeq::run()
 							"event %d\n", ev->type );
 					break;
 			}	// end switch
-
-			m_seqMutex.lock();
-
 		}	// end while
-
-		m_seqMutex.unlock();
 
 	}
 

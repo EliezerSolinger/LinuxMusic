@@ -58,6 +58,9 @@ void MidiWinMM::processOutEvent( const MidiEvent& event, const TimePos& time, co
 				( ( event.param( 0 ) & 0xff ) << 8 ) +
 				( ( event.param( 1 ) & 0xff ) << 16 );
 
+	// (from the audio thread too: the routing changes on the main thread, under the lock)
+	const auto lock = std::lock_guard{m_routingMutex};
+
 	QStringList outDevs;
 	for( SubMap::ConstIterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
 	{
@@ -85,6 +88,7 @@ void MidiWinMM::processOutEvent( const MidiEvent& event, const TimePos& time, co
 
 void MidiWinMM::applyPortMode( MidiPort* port )
 {
+	const auto lock = std::lock_guard{m_routingMutex};
 	// make sure no subscriptions exist which are not possible with
 	// current port-mode
 	if( !port->isInputEnabled() )
@@ -109,14 +113,18 @@ void MidiWinMM::applyPortMode( MidiPort* port )
 
 void MidiWinMM::removePort( MidiPort* port )
 {
-	for( SubMap::Iterator it = m_inputSubs.begin(); it != m_inputSubs.end(); ++it )
 	{
-		it.value().removeAll( port );
-	}
+		// (out of the routing under the lock: the input callback queues events for the ports there)
+		const auto lock = std::lock_guard{m_routingMutex};
+		for( SubMap::Iterator it = m_inputSubs.begin(); it != m_inputSubs.end(); ++it )
+		{
+			it.value().removeAll( port );
+		}
 
-	for( SubMap::Iterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
-	{
-		it.value().removeAll( port );
+		for( SubMap::Iterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
+		{
+			it.value().removeAll( port );
+		}
 	}
 
 	MidiClient::removePort( port );
@@ -129,7 +137,9 @@ QString MidiWinMM::sourcePortName( const MidiEvent& event ) const
 {
 	if( event.sourcePort() )
 	{
-		return m_inputDevices.value( *static_cast<const HMIDIIN *>( event.sourcePort() ) );
+		// (the source is the device's handle itself)
+		const auto lock = std::lock_guard{m_routingMutex};
+		return m_inputDevices.value(static_cast<HMIDIIN>(const_cast<void*>(event.sourcePort())));
 	}
 
 	return MidiClient::sourcePortName( event );
@@ -146,6 +156,7 @@ void MidiWinMM::subscribeReadablePort( MidiPort* port, const QString& dest, bool
 		return;
 	}
 
+	const auto lock = std::lock_guard{m_routingMutex};
 	m_inputSubs[dest].removeAll( port );
 	if( subscribe )
 	{
@@ -164,6 +175,7 @@ void MidiWinMM::subscribeWritablePort( MidiPort* port, const QString& dest, bool
 		return;
 	}
 
+	const auto lock = std::lock_guard{m_routingMutex};
 	m_outputSubs[dest].removeAll( port );
 	if( subscribe )
 	{
@@ -197,14 +209,19 @@ void MidiWinMM::handleInputEvent( HMIDIIN hm, DWORD ev )
 	const MidiEventTypes cmdtype = static_cast<MidiEventTypes>( cmd & 0xf0 );
 	const int chan = cmd & 0x0f;
 
+	// The event queued for each port subscribed to the device (the audio thread hands it over: see MidiClient), under
+	// the lock: the routing changes under it, and while it holds a port, the port is alive
+	const auto lock = std::lock_guard{m_routingMutex};
 	const QString d = m_inputDevices.value( hm );
-	if( d.isEmpty() || !m_inputSubs.contains( d ) )
+	const auto subs = m_inputSubs.constFind(d);
+	if (d.isEmpty() || subs == m_inputSubs.cend())
 	{
 		return;
 	}
 
-	const MidiPortList & l = m_inputSubs[d];
-	for (MidiPortList::ConstIterator it = l.begin(); it != l.end(); ++it)
+	// (the source: the device's handle, which lasts while it is open, unlike the callback's argument)
+	const auto source = static_cast<const void*>(hm);
+	for (auto* port : subs.value())
 	{
 		switch (cmdtype)
 		{
@@ -214,11 +231,11 @@ void MidiWinMM::handleInputEvent( HMIDIIN hm, DWORD ev )
 			case MidiControlChange:
 			case MidiProgramChange:
 			case MidiChannelPressure:
-				(*it)->processInEvent(MidiEvent(cmdtype, chan, par1, par2 & 0xff, &hm));
+				queueInEvent(port, MidiEvent(cmdtype, chan, par1, par2 & 0xff, source));
 				break;
 
 			case MidiPitchBend:
-				(*it)->processInEvent(MidiEvent(cmdtype, chan, par1 + par2 * 128, 0, &hm));
+				queueInEvent(port, MidiEvent(cmdtype, chan, par1 + par2 * 128, 0, source));
 				break;
 
 			default:
@@ -244,9 +261,13 @@ void MidiWinMM::updateDeviceList()
 
 void MidiWinMM::closeDevices()
 {
-	m_inputSubs.clear();
-	m_outputSubs.clear();
+	{
+		const auto lock = std::lock_guard{m_routingMutex};
+		m_inputSubs.clear();
+		m_outputSubs.clear();
+	}
 
+	// (closed outside the lock: closing waits for the device's callback, which takes it)
 	QMapIterator<HMIDIIN, QString> i( m_inputDevices );
 
 	HMIDIIN hInDev;
@@ -263,6 +284,7 @@ void MidiWinMM::closeDevices()
 		midiOutClose( o.next().key() );
 	}
 
+	const auto lock = std::lock_guard{m_routingMutex};
 	m_inputDevices.clear();
 	m_outputDevices.clear();
 }
@@ -272,7 +294,11 @@ void MidiWinMM::closeDevices()
 
 void MidiWinMM::openDevices()
 {
-	m_inputDevices.clear();
+	{
+		const auto lock = std::lock_guard{m_routingMutex};
+		m_inputDevices.clear();
+		m_outputDevices.clear();
+	}
 	for( unsigned int i = 0; i < midiInGetNumDevs(); ++i )
 	{
 		MIDIINCAPSW c;
@@ -283,12 +309,14 @@ void MidiWinMM::openDevices()
 							CALLBACK_FUNCTION );
 		if( res == MMSYSERR_NOERROR )
 		{
-			m_inputDevices[hm] = QString::fromWCharArray(c.szPname);
+			{
+				const auto lock = std::lock_guard{m_routingMutex};
+				m_inputDevices[hm] = QString::fromWCharArray(c.szPname);
+			}
 			midiInStart( hm );
 		}
 	}
 
-	m_outputDevices.clear();
 	for( unsigned int i = 0; i < midiOutGetNumDevs(); ++i )
 	{
 		MIDIOUTCAPSW c;
@@ -297,6 +325,7 @@ void MidiWinMM::openDevices()
 		MMRESULT res = midiOutOpen( &hm, i, 0, 0, CALLBACK_NULL );
 		if( res == MMSYSERR_NOERROR )
 		{
+			const auto lock = std::lock_guard{m_routingMutex};
 			m_outputDevices[hm] = QString::fromWCharArray(c.szPname);
 		}
 	}
