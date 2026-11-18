@@ -36,6 +36,10 @@
 
 #include "lmmsconfig.h"
 
+#ifdef LMMS_HAVE_EBUR128
+#include <ebur128.h>
+#endif
+
 namespace lmms
 {
 
@@ -116,7 +120,44 @@ auto fadeGain(sf_count_t frame, sf_count_t total, sf_count_t fadeIn, sf_count_t 
 } // namespace
 
 
+auto ExportProcessor::hasEbur128() -> bool
+{
+#ifdef LMMS_HAVE_EBUR128
+	return true;
+#else
+	return false;
+#endif
+}
+
+
+
+
 auto ExportProcessor::measure(const QString& source, bool* ok) -> Measure
+{
+	return measureWith(source, hasEbur128() ? Meter::Ebur128 : Meter::Own, ok);
+}
+
+
+
+
+auto ExportProcessor::measureWith(const QString& source, Meter meter, bool* ok) -> Measure
+{
+	if (meter == Meter::Ebur128)
+	{
+#ifdef LMMS_HAVE_EBUR128
+		return measureEbur128(source, ok);
+#else
+		if (ok) { *ok = false; }
+		return Measure{};
+#endif
+	}
+	return measureOwn(source, ok);
+}
+
+
+
+
+auto ExportProcessor::measureOwn(const QString& source, bool* ok) -> Measure
 {
 	auto info = SF_INFO{};
 	auto file = open(source, info);
@@ -176,6 +217,62 @@ auto ExportProcessor::measure(const QString& source, bool* ok) -> Measure
 }
 
 
+#ifdef LMMS_HAVE_EBUR128
+auto ExportProcessor::measureEbur128(const QString& source, bool* ok) -> Measure
+{
+	auto info = SF_INFO{};
+	auto file = open(source, info);
+	if (ok) { *ok = file != nullptr && info.channels > 0; }
+	auto result = Measure{};
+	if (!file || info.channels <= 0) { return result; }
+
+	const auto channels = static_cast<unsigned>(info.channels);
+	const auto state = std::unique_ptr<ebur128_state, void (*)(ebur128_state*)>{
+		ebur128_init(channels, static_cast<unsigned long>(info.samplerate), EBUR128_MODE_I | EBUR128_MODE_LRA
+			| EBUR128_MODE_SAMPLE_PEAK | EBUR128_MODE_TRUE_PEAK),
+		[](ebur128_state* s) { ebur128_destroy(&s); }};
+	if (!state)
+	{
+		if (ok) { *ok = false; }
+		return result;
+	}
+
+	auto buffer = std::vector<float>(static_cast<std::size_t>(BlockFrames * channels));
+	for (sf_count_t got; (got = sf_readf_float(file.get(), buffer.data(), BlockFrames)) > 0;)
+	{
+		if (ebur128_add_frames_float(state.get(), buffer.data(), static_cast<std::size_t>(got)) != EBUR128_SUCCESS)
+		{
+			if (ok) { *ok = false; }
+			return Measure{};
+		}
+	}
+
+	auto peak = 0.0;
+	auto truePeak = 0.0;
+	for (unsigned c = 0; c < channels; ++c)
+	{
+		if (auto p = 0.0; ebur128_sample_peak(state.get(), c, &p) == EBUR128_SUCCESS) { peak = std::max(peak, p); }
+		if (auto p = 0.0; ebur128_true_peak(state.get(), c, &p) == EBUR128_SUCCESS) { truePeak = std::max(truePeak, p); }
+	}
+	result.peak = peak;
+	result.truePeak = std::max(truePeak, peak);
+
+	// Silence (nothing over the absolute gate) is -inf there: the same as ours, no loudness
+	if (auto global = 0.0; ebur128_loudness_global(state.get(), &global) == EBUR128_SUCCESS && std::isfinite(global))
+	{
+		result.loudness = global;
+	}
+	if (auto range = 0.0; ebur128_loudness_range(state.get(), &range) == EBUR128_SUCCESS && std::isfinite(range))
+	{
+		result.loudnessRange = range;
+	}
+	return result;
+}
+#endif
+
+
+
+
 auto ExportProcessor::extension(Format format) -> QString
 {
 	switch (format)
@@ -213,9 +310,11 @@ auto ExportProcessor::process(const QString& source, const Settings& settings, c
 
 	// The gain normalization asks for
 	auto gain = 1.0;
-	if (settings.normalization == Normalization::Peak && measured.peak > 0.0)
+	// (to a peak: the true one when it is known, so that the export does not go over the target between its samples)
+	const auto peak = std::isfinite(measured.truePeak) ? measured.truePeak : measured.peak;
+	if (settings.normalization == Normalization::Peak && peak > 0.0)
 	{
-		gain = std::pow(10.0, settings.target / 20.0) / measured.peak;
+		gain = std::pow(10.0, settings.target / 20.0) / peak;
 	}
 	else if (settings.normalization == Normalization::Loudness && measured.loudness > -1e8)
 	{

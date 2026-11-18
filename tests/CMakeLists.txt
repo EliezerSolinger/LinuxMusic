@@ -31,6 +31,7 @@ set(LMMS_TESTS
 	src/core/LadspaIsolationTest.cpp
 	src/core/Lv2IsolationTest.cpp
 	src/core/LfoControllerTest.cpp
+	src/core/LoudnessReferenceTest.cpp
 	src/core/LoadCorruptedTest.cpp
 	src/core/Lv2WorkerTest.cpp
 	src/core/MathTest.cpp

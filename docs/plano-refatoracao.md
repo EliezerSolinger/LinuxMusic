@@ -482,6 +482,30 @@ Processo, igual para as duas:
   - a diferença em LUFS nos projetos A/B;
   - o tempo de medição de um render longo.
 
+**Resultado (17/11): adotada.** `LoudnessReferenceTest` gera os sinais da EBU como a norma os descreve e mede com
+as duas (`ExportProcessor::measureWith`):
+
+| Medida | A nossa | libebur128 |
+|---|---|---|
+| Tech 3341 casos 1 a 5 (loudness integrado, ±0,1 LU) | passa (erro máximo 0,021 LU) | passa, os mesmos valores até a 3ª casa |
+| 44,1, 48 e 96 kHz; mono e estéreo; silêncio | iguais | iguais |
+| 5.1 (6 canais) | todos os canais com peso 1 | os pesos da BS.1770 (LFE 0, traseiros 1,41): 0,13 LU de diferença, exatamente essa |
+| Tech 3342 casos 1 a 4 (LRA, ±1 LU) | não mede | 10, 5, 20 e 15 LU, exatos |
+| Pico verdadeiro (seno a 1/4 da taxa, 45°: amostras a −3,01 dBFS, onda a 0 dBTP) | não mede | 0,10 dBTP (tolerância +0,2/−0,4) |
+| Normalizar para pico de −1 dB esse sinal | a exportação chega a ~+2 dBTP | −1,00 dBTP |
+| 43 renders da bateria A/B | | diferença máxima 0,0000 LU |
+| Mesmo resultado em toda execução | sim | sim |
+| Medir 10 min estéreo a 48 kHz | 0,2 s | 1,7 s |
+
+Mantém tudo e melhora três itens (pico verdadeiro, LRA, pesos de surround). O custo é ~1,5 s a mais por 10 minutos
+exportados, fora da thread de áudio (a exportação mede o render já feito); medir também o loudness momentâneo e de
+curto prazo a cada 100 ms custava mais 1,5 s e ficou de fora, porque nada no programa o mostra ainda. A
+normalização por pico agora usa o pico verdadeiro: a exportação não passa do alvo entre as amostras.
+
+A nossa implementação **fica** como reserva para os builds sem a biblioteca (ela é opcional no CMake, e o resumo do
+CMake diz o que se perde sem ela): decidido assim em vez de tirar o código, porque a libebur128 não está garantida
+em todas as plataformas de build (MinGW).
+
 ### 10.2 libremidi (entrada e saída MIDI)
 - **Mantém** tudo o que os drivers atuais fazem:
   - clientes de sequenciador (ALSA seq, CoreMIDI): listam as portas legíveis e graváveis, inscrevem cada porta de

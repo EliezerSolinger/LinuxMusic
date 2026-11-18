@@ -306,6 +306,19 @@ FIND_PACKAGE(Qt${QT_VERSION_MAJOR}Test)
 SET(QT_QTTEST_LIBRARY Qt${QT_VERSION_MAJOR}::Test)
 
 # Rubber Band: time-stretching recorded audio when the tempo changes (GPL v2+)
+OPTION(WANT_EBUR128 "Measure loudness on export with libebur128 (true peak, loudness range)" ON)
+IF(WANT_EBUR128)
+	PKG_CHECK_MODULES(EBUR128 IMPORTED_TARGET libebur128>=1.2)
+	IF(EBUR128_FOUND)
+		SET(LMMS_HAVE_EBUR128 TRUE)
+		SET(STATUS_EBUR128 "OK")
+	ELSE()
+		SET(STATUS_EBUR128 "not found, please install libebur128-dev (or similar): without it, exports are measured by our own BS.1770 code (no true peak, no loudness range)")
+	ENDIF()
+ELSE()
+	SET(STATUS_EBUR128 "disabled")
+ENDIF()
+
 OPTION(WANT_RUBBERBAND "Include Rubber Band for time-stretching" ON)
 IF(WANT_RUBBERBAND)
 	PKG_CHECK_MODULES(RUBBERBAND IMPORTED_TARGET rubberband>=1.8)
@@ -918,6 +931,7 @@ MESSAGE(
 "* WAVE                        : OK\n"
 "* FLAC                        : OK\n"
 "* OGG/VORBIS                  : ${STATUS_OGGVORBIS}\n"
+"* Loudness (libebur128)       : ${STATUS_EBUR128}\n"
 "* MP3/Lame                    : ${STATUS_MP3LAME}\n"
 )
 

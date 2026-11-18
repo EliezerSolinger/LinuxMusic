@@ -25,12 +25,14 @@
 
 #include <atomic>
 #include <functional>
+#include <limits>
 #include <vector>
 
 #include <QString>
 #include <QStringList>
 
 #include "lmms_export.h"
+#include "lmmsconfig.h"
 
 namespace lmms
 {
@@ -83,12 +85,27 @@ public:
 
 	struct Measure
 	{
-		double peak = 0.0;			//!< linear
+		double peak = 0.0;			//!< linear, the highest sample
 		double loudness = -1e9;		//!< LUFS, integrated (-1e9: silence)
+		//! What only libebur128 measures (NaN without it): the true peak (linear, between the samples too, 4x
+		//! oversampled, EBU Tech 3341) and the loudness range (LU, EBU Tech 3342)
+		double truePeak = std::numeric_limits<double>::quiet_NaN();
+		double loudnessRange = std::numeric_limits<double>::quiet_NaN();
 	};
 
-	//! Measures the rendering @p source (its peak and integrated loudness); @p ok tells whether it could be read
+	//! Which code measures (docs/plano-refatoracao.md, phase 10.1: both are kept to be compared)
+	enum class Meter
+	{
+		Own,		//!< ours: BS.1770 integrated loudness and the sample peak (every channel weighted 1)
+		Ebur128		//!< libebur128: the same (BS.1770's surround weights too), the true peak and the loudness range
+	};
+	//! Whether this build has libebur128
+	static auto hasEbur128() -> bool;
+
+	//! Measures the rendering @p source (libebur128 when this build has it); @p ok tells whether it could be read
 	static auto measure(const QString& source, bool* ok = nullptr) -> Measure;
+	//! measure() with @p meter (nothing measured, @p ok false, for libebur128 in a build without it)
+	static auto measureWith(const QString& source, Meter meter, bool* ok = nullptr) -> Measure;
 
 	//! @returns the extension of @p format's files
 	static auto extension(Format format) -> QString;
@@ -108,6 +125,12 @@ public:
 	 */
 	static auto process(const QString& source, const Settings& settings, const std::atomic<bool>& cancel,
 		const std::function<void(double)>& progress) -> Result;
+
+private:
+	static auto measureOwn(const QString& source, bool* ok) -> Measure;
+#ifdef LMMS_HAVE_EBUR128
+	static auto measureEbur128(const QString& source, bool* ok) -> Measure;
+#endif
 };
 
 } // namespace lmms

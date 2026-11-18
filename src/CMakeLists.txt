@@ -166,6 +166,10 @@ if(LMMS_HAVE_MP3LAME)
 	list(APPEND EXTRA_LIBRARIES mp3lame::mp3lame)
 endif()
 
+if(LMMS_HAVE_EBUR128)
+	list(APPEND EXTRA_LIBRARIES PkgConfig::EBUR128)
+endif()
+
 if(LMMS_HAVE_OGGVORBIS)
 	list(APPEND EXTRA_LIBRARIES Vorbis::vorbisenc Vorbis::vorbisfile)
 endif()
