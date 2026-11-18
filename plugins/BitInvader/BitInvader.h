@@ -112,6 +112,9 @@ private:
 	BoolModel m_normalize;
 	
 	float m_normalizeFactor;
+	//! The wave the notes play: a copy of the graph's (see normalize())
+	std::array<float, BSynth::WavetableSize> m_wave = {};
+	int m_waveLength = BSynth::WavetableSize;
 	
 	friend class gui::BitInvaderView;
 } ;

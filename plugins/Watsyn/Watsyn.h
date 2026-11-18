@@ -140,6 +140,7 @@ public:
 	~WatsynInstrument() override = default;
 
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
+	void preparePeriod() override;
 
 	void saveSettings( QDomDocument & _doc,
 							QDomElement & _this ) override;

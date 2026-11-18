@@ -27,6 +27,8 @@
 
 
 #include "AutomatableModel.h"
+#include <vector>
+
 #include "Instrument.h"
 #include "InstrumentView.h"
 
@@ -67,6 +69,8 @@ public:
 
 	//! Its notes and MIDI come with the period, each at its frame, in a fixed order (see LegacyInstrument)
 	auto wantsEvents() const -> bool override { return true; }
+
+	void preparePeriod() override;
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _this ) override;
 	void loadSettings( const QDomElement & _this ) override;
@@ -121,6 +125,9 @@ protected:
 	void playImpl(std::span<SampleFrame> out, InputEvents events) override;
 
 private:
+	//! The knobs of the patch, taken into the emulator by preparePeriod()
+	std::vector<AutomatableModel*> m_patchKnobs;
+
 	//! Applies @p event to the emulator (emulatorMutex held)
 	void applyMidi(const MidiEvent& event);
 

@@ -36,9 +36,7 @@ StereoEnhancerControls::StereoEnhancerControls( StereoEnhancerEffect * _eff ) :
 		m_effect( _eff ),
 		m_widthModel(0.0f, 0.0f, 180.0f, 1.0f, this, tr( "Width" ) )
 {
-	connect( &m_widthModel, SIGNAL( dataChanged() ),
-			this, SLOT( changeWideCoeff() ) );
-
+	// (the width reaches the effect on the audio thread, in its process(): it processes meanwhile)
 	changeWideCoeff();
 }
 

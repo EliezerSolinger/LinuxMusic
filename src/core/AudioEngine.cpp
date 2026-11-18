@@ -28,6 +28,9 @@
 #include <vector>
 
 #include "AudioEngine.h"
+#include "InstrumentTrack.h"
+#include "InstrumentPlayHandle.h"
+#include "Instrument.h"
 
 #include <chrono>
 #include "Controller.h"
@@ -278,10 +281,19 @@ void AudioEngine::renderStageInstruments()
 
 	// The notes ending in this period are released before any note is rendered, so that the release of sub-notes
 	// does not depend on the order the threads render them in (see NotePlayHandle::releaseIfEnding())
+	// The instruments playing take the changes of their knobs, here, before their notes are rendered on several
+	// threads (see Instrument::preparePeriod())
+	const auto period = periodsRendered();
 	for (const auto handle : m_playHandles)
 	{
+		if (handle->type() == PlayHandle::Type::InstrumentPlayHandle)
+		{
+			if (auto* instrument = static_cast<InstrumentPlayHandle*>(handle)->instrument()) { instrument->prepareFor(period); }
+			continue;
+		}
 		if (handle->type() != PlayHandle::Type::NotePlayHandle) { continue; }
 		const auto note = static_cast<NotePlayHandle*>(handle);
+		if (auto* instrument = note->instrumentTrack()->instrument()) { instrument->prepareFor(period); }
 		note->lock();
 		note->releaseIfEnding();
 		note->unlock();

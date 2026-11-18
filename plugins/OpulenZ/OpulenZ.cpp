@@ -173,8 +173,8 @@ OpulenzInstrument::OpulenzInstrument( InstrumentTrack * _instrument_track ) :
 		 this, SLOT( reloadEmulator() ) );
 	// Connect knobs
 	// This one's for testing...
-	connect( &m_patchModel, SIGNAL( dataChanged() ), this, SLOT( loadGMPatch() ) );
-#define MOD_CON( model ) connect( &model, SIGNAL( dataChanged() ), this, SLOT( updatePatch() ) );
+	// The knobs reach the emulator on the audio thread, once a period (preparePeriod()): it renders meanwhile
+#define MOD_CON( model ) m_patchKnobs.push_back(&model);
 	MOD_CON( op1_a_mdl );
 	MOD_CON( op1_d_mdl );
 	MOD_CON( op1_s_mdl );
@@ -551,6 +551,19 @@ void OpulenzInstrument::loadGMPatch() {
 }
 
 // Update patch from the models to the chip emulation
+void OpulenzInstrument::preparePeriod()
+{
+	// (every flag taken: | rather than ||)
+	auto changed = false;
+	for (auto* knob : m_patchKnobs) { changed = knob->isValueChanged() | changed; }
+	const auto patch = m_patchModel.isValueChanged();
+	if (!changed && !patch) { return; }
+	// (each takes the emulator's mutex for its writes)
+	if (patch) { loadGMPatch(); }
+	else { updatePatch(); }
+}
+
+
 void OpulenzInstrument::updatePatch() {
 	auto inst = std::array<unsigned char, 14>{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 	inst[0] = ( op1_trem_mdl.value() ?  128 : 0  ) +
@@ -584,14 +597,19 @@ void OpulenzInstrument::updatePatch() {
 	inst[12] = 0;
 	inst[13] = 0;
 
-	// Not part of the per-voice patch info
-	theEmulator->write(0xBD, (trem_depth_mdl.value() ? 128 : 0 ) +
-			   (vib_depth_mdl.value() ? 64 : 0 ));
+	{
+		// (the emulator renders on the audio thread: its writes under its mutex)
+		const QMutexLocker lock(&emulatorMutex);
+		// Not part of the per-voice patch info
+		theEmulator->write(0xBD, (trem_depth_mdl.value() ? 128 : 0 ) +
+				   (vib_depth_mdl.value() ? 64 : 0 ));
 
-	// have to do this, as the level knobs might've changed
-	for( int voice = 0; voice < OPL2_VOICES ; ++voice) {
-		if(voiceNote[voice] && OPL2_VOICE_FREE == 0) {
-			setVoiceVelocity(voice, velocities[voiceNote[voice]] );
+		// have to do this, as the level knobs might've changed
+		for( int voice = 0; voice < OPL2_VOICES ; ++voice) {
+			// (a voice playing: its note without the free flag)
+			if ((voiceNote[voice] & OPL2_VOICE_FREE) == 0) {
+				setVoiceVelocity(voice, velocities[voiceNote[voice]] );
+			}
 		}
 	}
 #ifdef false

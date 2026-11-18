@@ -28,6 +28,7 @@
 
 #include <QString>
 #include <cmath>
+#include <cstdint>
 #include <span>
 
 #include "AudioProcessor.h"
@@ -147,6 +148,22 @@ public:
 	 */
 	virtual auto beatLen(NotePlayHandle* nph) const -> f_cnt_t { return 0; }
 
+	/**
+	 * Called on the audio thread once a period while the instrument plays (it has notes, or a play handle of its
+	 * own), by one thread, before any of its notes is rendered: where an instrument takes the changes of its knobs
+	 * (AutomatableModel::isValueChanged()) into what its notes read. A knob's slot, run by the thread that turned it
+	 * (the GUI's, or the automation's), would write that while notes read it on other threads.
+	 */
+	virtual void preparePeriod() {}
+
+	//! preparePeriod(), once for the period @p period (the audio engine's)
+	void prepareFor(std::int64_t period)
+	{
+		if (m_preparedPeriod == period) { return; }
+		m_preparedPeriod = period;
+		preparePeriod();
+	}
+
 	virtual bool hasNoteInput() const { return true; }
 
 	// This method can be overridden by instruments that need a certain
@@ -228,6 +245,7 @@ private:
 	//! Not used yet; NotePlayHandle-based instruments use playNote(NotePlayHandle*, std::span<SampleFrame>)
 	void playNote(ProcessContext&) final {}
 
+	std::int64_t m_preparedPeriod = -1; //!< (see prepareFor())
 	InstrumentTrack * m_instrumentTrack;
 	Flags m_flags;
 };

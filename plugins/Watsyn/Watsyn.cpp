@@ -283,31 +283,8 @@ WatsynInstrument::WatsynInstrument( InstrumentTrack * _instrument_track ) :
 
 		m_selectedGraph( 0, 0, 3, this, tr( "Selected graph" ) )
 {
-	connect( &a1_vol, SIGNAL( dataChanged() ), this, SLOT( updateVolumes() ) );
-	connect( &a2_vol, SIGNAL( dataChanged() ), this, SLOT( updateVolumes() ) );
-	connect( &b1_vol, SIGNAL( dataChanged() ), this, SLOT( updateVolumes() ) );
-	connect( &b2_vol, SIGNAL( dataChanged() ), this, SLOT( updateVolumes() ) );
-
-	connect( &a1_pan, SIGNAL( dataChanged() ), this, SLOT( updateVolumes() ) );
-	connect( &a2_pan, SIGNAL( dataChanged() ), this, SLOT( updateVolumes() ) );
-	connect( &b1_pan, SIGNAL( dataChanged() ), this, SLOT( updateVolumes() ) );
-	connect( &b2_pan, SIGNAL( dataChanged() ), this, SLOT( updateVolumes() ) );
-
-	connect( &a1_mult, SIGNAL( dataChanged() ), this, SLOT( updateFreqA1() ) );
-	connect( &a2_mult, SIGNAL( dataChanged() ), this, SLOT( updateFreqA2() ) );
-	connect( &b1_mult, SIGNAL( dataChanged() ), this, SLOT( updateFreqB1() ) );
-	connect( &b2_mult, SIGNAL( dataChanged() ), this, SLOT( updateFreqB2() ) );
-
-	connect( &a1_ltune, SIGNAL( dataChanged() ), this, SLOT( updateFreqA1() ) );
-	connect( &a2_ltune, SIGNAL( dataChanged() ), this, SLOT( updateFreqA2() ) );
-	connect( &b1_ltune, SIGNAL( dataChanged() ), this, SLOT( updateFreqB1() ) );
-	connect( &b2_ltune, SIGNAL( dataChanged() ), this, SLOT( updateFreqB2() ) );
-
-	connect( &a1_rtune, SIGNAL( dataChanged() ), this, SLOT( updateFreqA1() ) );
-	connect( &a2_rtune, SIGNAL( dataChanged() ), this, SLOT( updateFreqA2() ) );
-	connect( &b1_rtune, SIGNAL( dataChanged() ), this, SLOT( updateFreqB1() ) );
-	connect( &b2_rtune, SIGNAL( dataChanged() ), this, SLOT( updateFreqB2() ) );
-	
+	// Volumes and tunings reach the notes on the audio thread, once a period (preparePeriod()); the waves by their
+	// own versions (publishWaves())
 	connect( &a1_graph, SIGNAL( samplesChanged( int, int ) ), this, SLOT( updateWaveA1() ) );
 	connect( &a2_graph, SIGNAL( samplesChanged( int, int ) ), this, SLOT( updateWaveA2() ) );
 	connect( &b1_graph, SIGNAL( samplesChanged( int, int ) ), this, SLOT( updateWaveB1() ) );
@@ -567,6 +544,24 @@ gui::PluginView* WatsynInstrument::instantiateView( QWidget * _parent )
 {
 	return( new gui::WatsynView( this, _parent ) );
 }
+
+
+void WatsynInstrument::preparePeriod()
+{
+	// (every flag taken: | rather than ||)
+	auto volumes = false;
+	for (auto* model : {&a1_vol, &a2_vol, &b1_vol, &b2_vol, &a1_pan, &a2_pan, &b1_pan, &b2_pan})
+	{
+		volumes = model->isValueChanged() | volumes;
+	}
+	if (volumes) { updateVolumes(); }
+	if (a1_mult.isValueChanged() | a1_ltune.isValueChanged() | a1_rtune.isValueChanged()) { updateFreqA1(); }
+	if (a2_mult.isValueChanged() | a2_ltune.isValueChanged() | a2_rtune.isValueChanged()) { updateFreqA2(); }
+	if (b1_mult.isValueChanged() | b1_ltune.isValueChanged() | b1_rtune.isValueChanged()) { updateFreqB1(); }
+	if (b2_mult.isValueChanged() | b2_ltune.isValueChanged() | b2_rtune.isValueChanged()) { updateFreqB2(); }
+}
+
+
 
 
 void WatsynInstrument::updateVolumes()

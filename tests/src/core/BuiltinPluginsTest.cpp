@@ -22,6 +22,9 @@
 
 #include <cmath>
 #include <memory>
+#include <atomic>
+#include <thread>
+#include <chrono>
 #include <random>
 #include <vector>
 
@@ -201,6 +204,40 @@ class BuiltinPluginsTest : public QObject
 				model->setValue(between(random));
 			}
 			QVERIFY2(playsFinite(60, why), qPrintable(QString{"random (seed %1): "}.arg(seed) + why));
+		}
+
+		// Turned while it plays, as the user turns a knob: the main thread sets the parameters while a thread renders
+		// (under TSan: what process() reads, the knobs' slots must not write meanwhile)
+		{
+			auto* song = Engine::getSong();
+			song->setPlayPos(0, Song::PlayMode::Song);
+			song->playSong();
+			auto done = std::atomic<bool>{false};
+			auto finite = std::atomic<bool>{true};
+			auto audio = std::thread{[&] {
+				for (int period = 0; period < 80; ++period)
+				{
+					for (const auto& frame : Engine::audioEngine()->renderNextPeriod())
+					{
+						if (!std::isfinite(frame[0]) || !std::isfinite(frame[1])) { finite = false; }
+					}
+				}
+				done = true;
+			}};
+			auto random = std::mt19937{7};
+			while (!done)
+			{
+				for (auto* model : parameters)
+				{
+					auto between = std::uniform_real_distribution<float>{model->minValue<float>(), model->maxValue<float>()};
+					model->setValue(between(random));
+				}
+				QCoreApplication::processEvents();
+				std::this_thread::sleep_for(std::chrono::milliseconds{1});
+			}
+			audio.join();
+			song->stop();
+			QVERIFY2(finite, "turned while it plays: not finite");
 		}
 
 		// Saved and loaded (as a project, or undo, does), then played

@@ -205,6 +205,7 @@ public:
 	~NesInstrument() override = default;
 
 	void deleteNotePluginData( NotePlayHandle * n ) override;
+	void preparePeriod() override;
 
 	void saveSettings( QDomDocument & doc,
 							QDomElement & element ) override;

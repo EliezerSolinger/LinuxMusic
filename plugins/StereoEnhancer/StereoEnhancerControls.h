@@ -68,6 +68,7 @@ private:
 	FloatModel m_widthModel;
 	
 	friend class gui::StereoEnhancerControlDialog;
+	friend class StereoEnhancerEffect; // (reads the width in its process())
 
 } ;
 

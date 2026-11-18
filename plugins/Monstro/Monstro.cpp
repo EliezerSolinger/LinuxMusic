@@ -985,56 +985,8 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 	setlfowavemodel( m_lfo1Wave )
 	setlfowavemodel( m_lfo2Wave )
 
-// make connections:
-
-// updateVolumes
-
-	connect( &m_osc1Vol, SIGNAL( dataChanged() ), this, SLOT( updateVolume1() ), Qt::DirectConnection );
-	connect( &m_osc1Pan, SIGNAL( dataChanged() ), this, SLOT( updateVolume1() ), Qt::DirectConnection );
-	connect( &m_osc2Vol, SIGNAL( dataChanged() ), this, SLOT( updateVolume2() ), Qt::DirectConnection );
-	connect( &m_osc2Pan, SIGNAL( dataChanged() ), this, SLOT( updateVolume2() ), Qt::DirectConnection );
-	connect( &m_osc3Vol, SIGNAL( dataChanged() ), this, SLOT( updateVolume3() ), Qt::DirectConnection );
-	connect( &m_osc3Pan, SIGNAL( dataChanged() ), this, SLOT( updateVolume3() ), Qt::DirectConnection );
-
-// updateFreq
-
-	connect( &m_osc1Crs, SIGNAL( dataChanged() ), this, SLOT( updateFreq1() ), Qt::DirectConnection );
-	connect( &m_osc2Crs, SIGNAL( dataChanged() ), this, SLOT( updateFreq2() ), Qt::DirectConnection );
-	connect( &m_osc3Crs, SIGNAL( dataChanged() ), this, SLOT( updateFreq3() ), Qt::DirectConnection );
-
-	connect( &m_osc1Ftl, SIGNAL( dataChanged() ), this, SLOT( updateFreq1() ), Qt::DirectConnection );
-	connect( &m_osc2Ftl, SIGNAL( dataChanged() ), this, SLOT( updateFreq2() ), Qt::DirectConnection );
-
-	connect( &m_osc1Ftr, SIGNAL( dataChanged() ), this, SLOT( updateFreq1() ), Qt::DirectConnection );
-	connect( &m_osc2Ftr, SIGNAL( dataChanged() ), this, SLOT( updateFreq2() ), Qt::DirectConnection );
-
-// updatePO
-	connect( &m_osc1Spo, SIGNAL( dataChanged() ), this, SLOT( updatePO1() ), Qt::DirectConnection );
-	connect( &m_osc2Spo, SIGNAL( dataChanged() ), this, SLOT( updatePO2() ), Qt::DirectConnection );
-	connect( &m_osc3Spo, SIGNAL( dataChanged() ), this, SLOT( updatePO3() ), Qt::DirectConnection );
-
-// updateEnvelope1
-
-	connect( &m_env1Pre, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope1() ), Qt::DirectConnection );
-	connect( &m_env1Att, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope1() ), Qt::DirectConnection );
-	connect( &m_env1Hold, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope1() ), Qt::DirectConnection );
-	connect( &m_env1Dec, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope1() ), Qt::DirectConnection );
-	connect( &m_env1Rel, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope1() ), Qt::DirectConnection );
-	connect( &m_env1Slope, SIGNAL( dataChanged() ), this, SLOT( updateSlope1() ), Qt::DirectConnection );
-
-// updateEnvelope2
-
-	connect( &m_env2Pre, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope2() ), Qt::DirectConnection );
-	connect( &m_env2Att, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope2() ), Qt::DirectConnection );
-	connect( &m_env2Hold, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope2() ), Qt::DirectConnection );
-	connect( &m_env2Dec, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope2() ), Qt::DirectConnection );
-	connect( &m_env2Rel, SIGNAL( dataChanged() ), this, SLOT( updateEnvelope2() ), Qt::DirectConnection );
-	connect( &m_env2Slope, SIGNAL( dataChanged() ), this, SLOT( updateSlope2() ), Qt::DirectConnection );
-
-// updateLFOAtts
-
-	connect( &m_lfo1Att, SIGNAL( dataChanged() ), this, SLOT( updateLFOAtts() ), Qt::DirectConnection );
-	connect( &m_lfo2Att, SIGNAL( dataChanged() ), this, SLOT( updateLFOAtts() ), Qt::DirectConnection );
+// The knobs reach the notes on the audio thread, once a period (preparePeriod()): the notes read the values these
+// make on other threads meanwhile
 
 // updateSampleRate
 
@@ -1054,6 +1006,31 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 	updatePO3();
 	updateSlope1();
 	updateSlope2();
+}
+
+
+void MonstroInstrument::preparePeriod()
+{
+	// (every flag taken once: | rather than ||)
+	const auto changed = [](std::initializer_list<AutomatableModel*> models) {
+		auto any = false;
+		for (auto* model : models) { any = model->isValueChanged() | any; }
+		return any;
+	};
+	if (changed({&m_osc1Vol, &m_osc1Pan})) { updateVolume1(); }
+	if (changed({&m_osc2Vol, &m_osc2Pan})) { updateVolume2(); }
+	if (changed({&m_osc3Vol, &m_osc3Pan})) { updateVolume3(); }
+	if (changed({&m_osc1Crs, &m_osc1Ftl, &m_osc1Ftr})) { updateFreq1(); }
+	if (changed({&m_osc2Crs, &m_osc2Ftl, &m_osc2Ftr})) { updateFreq2(); }
+	if (changed({&m_osc3Crs})) { updateFreq3(); }
+	if (changed({&m_osc1Spo})) { updatePO1(); }
+	if (changed({&m_osc2Spo})) { updatePO2(); }
+	if (changed({&m_osc3Spo})) { updatePO3(); }
+	if (changed({&m_env1Pre, &m_env1Att, &m_env1Hold, &m_env1Dec, &m_env1Rel})) { updateEnvelope1(); }
+	if (changed({&m_env1Slope})) { updateSlope1(); }
+	if (changed({&m_env2Pre, &m_env2Att, &m_env2Hold, &m_env2Dec, &m_env2Rel})) { updateEnvelope2(); }
+	if (changed({&m_env2Slope})) { updateSlope2(); }
+	if (changed({&m_lfo1Att, &m_lfo2Att})) { updateLFOAtts(); }
 }
 
 

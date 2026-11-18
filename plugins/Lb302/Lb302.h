@@ -145,6 +145,7 @@ public:
 
 protected:
 	void playImpl(std::span<SampleFrame> out) override;
+	void preparePeriod() override;
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
 public:

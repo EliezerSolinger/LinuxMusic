@@ -72,6 +72,9 @@ private slots:
 
 private:
 	auto process(ProcessContext& context) -> ProcessStatus override;
+
+	//! The knobs changed since the last period, into what process() uses (on the audio thread)
+	void applyKnobChanges();
 	void processBypassedImpl() override;
 
 	float msToCoeff(float ms);

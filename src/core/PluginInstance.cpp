@@ -404,6 +404,7 @@ auto PluginInstance::process(AudioBuffer& trackChannels, NotePlayHandle* nph) ->
 
 	if (effect)
 	{
+		effect->takeEnabledChange();
 		if (!effect->isAwake())
 		{
 			if (!trackChannels.hasSignal(m_audioPorts->in().usedTrackChannels()))

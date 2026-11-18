@@ -238,9 +238,8 @@ auto GranularPitchShifterEffect::process(ProcessContext& context) -> ProcessStat
 		frame[1] = d * frame[1] + w * s[1];
 	}
 	
-	if (m_sampleRateNeedsUpdate)
+	if (m_sampleRateNeedsUpdate.exchange(false))
 	{
-		m_sampleRateNeedsUpdate = false;
 		changeSampleRate();
 	}
 

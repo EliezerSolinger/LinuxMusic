@@ -52,9 +52,10 @@ Effect::Effect( const Plugin::Descriptor * _desc,
 {
 	m_wetDryModel.setCenterValue(0);
 
-	// Call the virtual method onEnabledChanged so that effects can react to changes,
-	// e.g. by resetting state.
-	connect(&m_enabledModel, &BoolModel::dataChanged, [this] { onEnabledChanged(); });
+	// The effect reacts to being switched on or off (onEnabledChanged(), e.g. to reset its state) on the audio
+	// thread, before it processes again: the switch may be turned on any thread while it processes
+	connect(&m_enabledModel, &BoolModel::dataChanged, this,
+		[this] { m_enabledChanged.store(true, std::memory_order_release); }, Qt::DirectConnection);
 }
 
 void Effect::saveSettings( QDomDocument & _doc, QDomElement & _this )

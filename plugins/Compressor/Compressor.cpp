@@ -65,29 +65,7 @@ CompressorEffect::CompressorEffect(Model* parent, const Descriptor::SubPluginFea
 	// 200 ms
 	m_crestTimeConst = std::exp(-1.f / (0.2f * m_sampleRate));
 
-	connect(&m_compressorControls.m_attackModel, SIGNAL(dataChanged()), this, SLOT(calcAttack()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_releaseModel, SIGNAL(dataChanged()), this, SLOT(calcRelease()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_holdModel, SIGNAL(dataChanged()), this, SLOT(calcHold()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_ratioModel, SIGNAL(dataChanged()), this, SLOT(calcRatio()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_rangeModel, SIGNAL(dataChanged()), this, SLOT(calcRange()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_rmsModel, SIGNAL(dataChanged()), this, SLOT(resizeRMS()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_lookaheadLengthModel, SIGNAL(dataChanged()), this, SLOT(calcLookaheadLength()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_thresholdModel, SIGNAL(dataChanged()), this, SLOT(calcThreshold()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_kneeModel, SIGNAL(dataChanged()), this, SLOT(calcKnee()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_outGainModel, SIGNAL(dataChanged()), this, SLOT(calcOutGain()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_inGainModel, SIGNAL(dataChanged()), this, SLOT(calcInGain()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_tiltModel, SIGNAL(dataChanged()), this, SLOT(calcTiltCoeffs()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_tiltFreqModel, SIGNAL(dataChanged()), this, SLOT(calcTiltCoeffs()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_limiterModel, SIGNAL(dataChanged()), this, SLOT(redrawKnee()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_mixModel, SIGNAL(dataChanged()), this, SLOT(calcMix()), Qt::DirectConnection);
-
-	connect(&m_compressorControls.m_autoAttackModel, SIGNAL(dataChanged()), this, SLOT(calcAutoAttack()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_autoReleaseModel, SIGNAL(dataChanged()), this, SLOT(calcAutoRelease()), Qt::DirectConnection);
-
-	connect(&m_compressorControls.m_thresholdModel, SIGNAL(dataChanged()), this, SLOT(calcAutoMakeup()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_ratioModel, SIGNAL(dataChanged()), this, SLOT(calcAutoMakeup()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_kneeModel, SIGNAL(dataChanged()), this, SLOT(calcAutoMakeup()), Qt::DirectConnection);
-	connect(&m_compressorControls.m_autoMakeupModel, SIGNAL(dataChanged()), this, SLOT(calcAutoMakeup()), Qt::DirectConnection);
+	// The knobs reach the processing on the audio thread, at the start of process() (applyKnobChanges())
 
 	connect(Engine::audioEngine(), SIGNAL(sampleRateChanged()), this, SLOT(changeSampleRate()));
 	changeSampleRate();
@@ -240,10 +218,39 @@ void CompressorEffect::calcMix()
 
 
 
+void CompressorEffect::applyKnobChanges()
+{
+	// (every flag taken: | rather than ||)
+	auto& c = m_compressorControls;
+	if (c.m_attackModel.isValueChanged()) { calcAttack(); }
+	if (c.m_releaseModel.isValueChanged()) { calcRelease(); }
+	if (c.m_holdModel.isValueChanged()) { calcHold(); }
+	const auto threshold = c.m_thresholdModel.isValueChanged();
+	const auto ratio = c.m_ratioModel.isValueChanged();
+	const auto knee = c.m_kneeModel.isValueChanged();
+	const auto limiter = c.m_limiterModel.isValueChanged();
+	if (threshold) { calcThreshold(); }
+	if (ratio) { calcRatio(); }
+	if (knee) { calcKnee(); }
+	if (c.m_rangeModel.isValueChanged()) { calcRange(); }
+	if (c.m_rmsModel.isValueChanged()) { resizeRMS(); }
+	if (c.m_lookaheadLengthModel.isValueChanged()) { calcLookaheadLength(); }
+	if (c.m_outGainModel.isValueChanged()) { calcOutGain(); }
+	if (c.m_inGainModel.isValueChanged()) { calcInGain(); }
+	if (c.m_tiltModel.isValueChanged() | c.m_tiltFreqModel.isValueChanged()) { calcTiltCoeffs(); }
+	if (limiter) { redrawKnee(); }
+	if (c.m_mixModel.isValueChanged()) { calcMix(); }
+	if (c.m_autoAttackModel.isValueChanged()) { calcAutoAttack(); }
+	if (c.m_autoReleaseModel.isValueChanged()) { calcAutoRelease(); }
+	if (threshold | ratio | knee | limiter | c.m_autoMakeupModel.isValueChanged()) { calcAutoMakeup(); }
+}
+
+
 auto CompressorEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();
 	m_cleanedBuffers = false;
+	applyKnobChanges();
 
 	const float d = dryLevel();
 	const float w = wetLevel();

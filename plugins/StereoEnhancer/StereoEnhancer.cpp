@@ -86,6 +86,7 @@ auto StereoEnhancerEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();
 	m_delayBufferCleared = false;
+	if (m_bbControls.m_widthModel.isValueChanged()) { m_seFX.setWideCoeff(m_bbControls.m_widthModel.value()); }
 	const float d = dryLevel();
 	const float w = wetLevel();
 

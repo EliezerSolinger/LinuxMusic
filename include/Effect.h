@@ -32,6 +32,8 @@
 #include "AutomatableModel.h"
 #include "Engine.h"
 #include "LatencyDelay.h"
+#include <atomic>
+
 #include "Plugin.h"
 #include "TempoSyncKnobModel.h"
 
@@ -182,7 +184,17 @@ protected:
 		m_awake = true;
 	}
 
+	//! Switched on or off since it last processed (on the audio thread, see takeEnabledChange())
 	virtual void onEnabledChanged() {}
+
+public:
+	//! Runs onEnabledChanged() if the switch changed (the host, on the audio thread, before processing) [audio thread]
+	void takeEnabledChange()
+	{
+		if (m_enabledChanged.exchange(false, std::memory_order_acquire)) { onEnabledChanged(); }
+	}
+
+protected:
 
 	//! Runs instead of process() while the effect is awake but disabled or not running
 	virtual void processBypassedImpl() {}
@@ -216,6 +228,7 @@ private:
 	f_cnt_t m_quietBufferCount = 0;
 
 	BoolModel m_enabledModel;
+	std::atomic<bool> m_enabledChanged = false; //!< (see takeEnabledChange())
 	FloatModel m_wetDryModel;
 	TempoSyncKnobModel m_autoQuitModel;
 

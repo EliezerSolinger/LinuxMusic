@@ -87,17 +87,10 @@ OrganicInstrument::OrganicInstrument( InstrumentTrack * _instrument_track ) :
 		m_osc[i] = new OscillatorObject( this, i );
 		m_osc[i]->m_numOscillators = m_numOscillators;
 
-		// Connect events
+		// Connect events (the wave's button sets a model; volume and detuning reach the oscillators on the audio
+		// thread, once a period, see preparePeriod())
 		connect( &m_osc[i]->m_oscModel, SIGNAL( dataChanged() ),
 				m_osc[i], SLOT ( oscButtonChanged() ) );
-		connect( &m_osc[i]->m_harmModel, SIGNAL( dataChanged() ),
-				m_osc[i], SLOT( updateDetuning() ) );
-		connect( &m_osc[i]->m_volModel, SIGNAL( dataChanged() ),
-				m_osc[i], SLOT( updateVolume() ) );
-		connect( &m_osc[i]->m_panModel, SIGNAL( dataChanged() ),
-				m_osc[i], SLOT( updateVolume() ) );
-		connect( &m_osc[i]->m_detuneModel, SIGNAL( dataChanged() ),
-				m_osc[i], SLOT( updateDetuning() ) );
 
 		m_osc[i]->updateVolume();
 
@@ -314,6 +307,14 @@ void OrganicInstrument::randomiseSettings()
 }
 
 
+void OrganicInstrument::preparePeriod()
+{
+	for (int i = 0; i < m_numOscillators; ++i) { m_osc[i]->applyChanges(); }
+}
+
+
+
+
 void OrganicInstrument::updateAllDetuning()
 {
 	for( int i = 0; i < m_numOscillators; ++i )
@@ -528,6 +529,16 @@ void OscillatorObject::oscButtonChanged()
 
 	m_waveShape.setValue( static_cast<float>(shapes[(int)roundf( m_oscModel.value() )]) );
 
+}
+
+
+
+
+void OscillatorObject::applyChanges()
+{
+	// (each flag taken once: | rather than ||)
+	if (m_volModel.isValueChanged() | m_panModel.isValueChanged()) { updateVolume(); }
+	if (m_harmModel.isValueChanged() | m_detuneModel.isValueChanged()) { updateDetuning(); }
 }
 
 

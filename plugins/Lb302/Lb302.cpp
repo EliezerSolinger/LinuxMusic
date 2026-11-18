@@ -230,13 +230,9 @@ Lb302Synth::Lb302Synth(InstrumentTrack* instrumentTrack)
 	, m_db24Toggle(false, this, tr("24dB/oct Filter"))
 	, m_vcfs{std::make_unique<Lb302FilterIIR2>(&m_fs), std::make_unique<Lb302Filter3Pole>(&m_fs)}
 {
+	// (the engine is stopped while its rate changes)
 	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, &Lb302Synth::filterChanged);
-	connect(&m_vcfCutKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
-	connect(&m_vcfResKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
-	connect(&m_vcfModKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
-	connect(&m_vcfDecKnob, &FloatModel::dataChanged, this, &Lb302Synth::decayChanged);
-	connect(&m_db24Toggle, &BoolModel::dataChanged, this, &Lb302Synth::db24Toggled);
-	connect(&m_distKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
+	// The knobs reach the filter on the audio thread, once a period (preparePeriod()): it renders meanwhile
 
 	// db24Toggled() would be called here, but all it does is call
 	// recalcFilter(), which is already done in filterChanged(), so there's no
@@ -284,6 +280,19 @@ void Lb302Synth::loadSettings(const QDomElement& el)
 	// need to explicitly call recalcFilter() again.
 	filterChanged();
 	decayChanged();
+}
+
+
+void Lb302Synth::preparePeriod()
+{
+	// (every flag taken: | rather than ||)
+	const auto filter = m_vcfCutKnob.isValueChanged() | m_vcfResKnob.isValueChanged() | m_vcfModKnob.isValueChanged()
+		| m_distKnob.isValueChanged();
+	const auto decay = m_vcfDecKnob.isValueChanged();
+	const auto db24 = m_db24Toggle.isValueChanged();
+	if (filter) { filterChanged(); }
+	else if (db24) { db24Toggled(); }
+	if (decay) { decayChanged(); }
 }
 
 

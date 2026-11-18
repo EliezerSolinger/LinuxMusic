@@ -25,6 +25,8 @@
 #ifndef LMMS_PEAK_CONTROLLER_H
 #define LMMS_PEAK_CONTROLLER_H
 
+#include <atomic>
+
 #include "Controller.h"
 
 class QWidget;
@@ -84,7 +86,7 @@ private:
 	
 	float m_attackCoeff;
 	float m_decayCoeff;
-	bool m_coeffNeedsUpdate;
+	std::atomic<bool> m_coeffNeedsUpdate = true; //!< (set by the knobs' slot, taken on the audio thread)
 } ;
 
 } // namespace lmms

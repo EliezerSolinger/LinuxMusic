@@ -474,6 +474,24 @@ Achados e consertados:
   `processFinished`, que lia a identidade do plugin já destruída (o texto saía como lixo: uso depois de liberar) e
   podia marcar o plugin como suspeito. Agora o plugin se desliga dos sinais do processo antes, pede a saída, espera,
   e só então o mata e espera que termine.
+- **Botões girados enquanto toca** (a anotação da fase 2 para a fase 5): o `BuiltinPluginsTest` agora gira todos os
+  parâmetros de cada plugin interno enquanto uma thread renderiza, como o usuário faz. Sob TSan: **147 corridas**, o
+  mesmo padrão em todas: o slot do botão (na thread da interface, ou na da automação) recalculava o que o
+  `process()` ou as notas liam ao mesmo tempo (coeficientes de filtro, frequências, envelopes, volumes, a onda).
+  Consertado na causa, plugin por plugin, com duas regras:
+  - efeitos e instrumentos de fluxo único aplicam a mudança no começo do próprio `process()`, na thread de áudio
+    (`isValueChanged()`, o jeito que o LOMM, o BassBooster e o Bitcrush já usavam): Compressor, StereoEnhancer,
+    LB302, OpulenZ (que também escrevia nos registradores do emulador sem a trava dele, e tinha um teste de
+    precedência que nunca deixava atualizar o nível das vozes tocando);
+  - instrumentos cujas notas tocam em várias threads: um gancho novo, `Instrument::preparePeriod()`, chamado pelo
+    motor uma vez por período, por uma thread, antes de qualquer nota (na passada que já soltava as notas que
+    terminam): TripleOscillator, Organic, Watsyn, Monstro, NES;
+  - o que a interface desenha (a onda do BitInvader, os gráficos do MultitapEcho) é publicado: copiado num instante
+    sob a trava do motor, e as notas leem a cópia;
+  - um `Effect` reage a ser ligado ou desligado (`onEnabledChanged`) na thread de áudio, antes de processar de
+    novo (o DualFilter limpava o histórico dos filtros enquanto eles rodavam);
+  - as marcas "precisa recalcular" do GranularPitchShifter e do PeakController viraram atômicas.
+  Depois: **0 corridas** em duas rodadas.
 
 ---
 

@@ -27,6 +27,8 @@
 #include <QVarLengthArray>
 
 #include "MultitapEchoControls.h"
+
+#include "AudioEngine.h"
 #include "MultitapEcho.h"
 #include "lmms_math.h"
 #include "base64.h"
@@ -119,6 +121,8 @@ void MultitapEchoControls::setDefaultLpShape()
 
 void MultitapEchoControls::ampSamplesChanged( int begin, int end )
 {
+	// (what process() reads, written in a moment under the audio engine's change lock: the GUI draws while it plays)
+	const auto guard = AudioEngine::changesGuard();
 	const float * samples = m_ampGraph.samples();
 	for( int i = begin; i <= end; ++i )
 	{
@@ -135,6 +139,8 @@ void MultitapEchoControls::ampResetClicked()
 
 void MultitapEchoControls::lpSamplesChanged( int begin, int end )
 {
+	// (what process() reads, written in a moment under the audio engine's change lock: the GUI draws while it plays)
+	const auto guard = AudioEngine::changesGuard();
 	//qDebug( "b/e %d - %d", begin, end );
 	const float * samples = m_lpGraph.samples();
 	for( int i = begin; i <= end; ++i )
@@ -153,6 +159,8 @@ void MultitapEchoControls::lpResetClicked()
 
 void MultitapEchoControls::lengthChanged()
 {
+	// (what process() reads, written in a moment under the audio engine's change lock: the GUI draws while it plays)
+	const auto guard = AudioEngine::changesGuard();
 	const int len = m_steps.value();
 	m_ampGraph.setLength( len );
 	ampSamplesChanged( 0, len - 1 );
@@ -164,6 +172,8 @@ void MultitapEchoControls::lengthChanged()
 
 void MultitapEchoControls::sampleRateChanged()
 {
+	// (what process() reads, written in a moment under the audio engine's change lock: the GUI draws while it plays)
+	const auto guard = AudioEngine::changesGuard();
 	m_effect->m_sampleRate = Engine::audioEngine()->outputSampleRate();
 	m_effect->m_sampleRatio = 1.0f / m_effect->m_sampleRate;
 	m_effect->updateFilters( 0, 19 );

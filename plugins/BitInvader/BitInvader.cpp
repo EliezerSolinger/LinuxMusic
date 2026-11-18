@@ -135,11 +135,14 @@ BitInvader::BitInvader( InstrumentTrack * _instrument_track ) :
 	m_graph.setWaveToSine();
 	lengthChanged();
 
+	// (on the main thread: the graph is the GUI's; a length set by automation comes by a queued call)
 	connect( &m_sampleLength, SIGNAL( dataChanged() ),
-			this, SLOT( lengthChanged() ), Qt::DirectConnection );
+			this, SLOT( lengthChanged() ) );
 
 	connect( &m_graph, SIGNAL( samplesChanged( int, int ) ),
 			this, SLOT( samplesChanged( int, int ) ) );
+	// (a length set on the graph itself, e.g. while loading, is the notes' too: published again, see normalize())
+	connect(&m_graph, &graphModel::lengthChanged, this, &BitInvader::normalize);
 }
 
 
@@ -221,14 +224,19 @@ void BitInvader::samplesChanged( int _begin, int _end )
 
 void BitInvader::normalize()
 {
-	// analyze
+	// The wave the notes play: the graph's (the GUI draws on it) copied, with its normalization, in a moment under
+	// the audio engine's change lock (the notes read the copy on other threads)
+	const auto length = std::clamp(m_graph.length(), 1, wavetableSize);
 	float max = std::numeric_limits<float>::epsilon();
 	const float* samples = m_graph.samples();
-	for(int i=0; i < m_graph.length(); i++)
+	for (int i = 0; i < length; i++)
 	{
 		const float f = std::abs(samples[i]);
 		if (f > max) { max = f; }
 	}
+	const auto guard = AudioEngine::changesGuard();
+	std::copy_n(samples, length, m_wave.begin());
+	m_waveLength = length;
 	m_normalizeFactor = 1.0 / max;
 }
 
@@ -249,7 +257,7 @@ void BitInvader::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 	{
 		float factor = !m_normalize.value() ? defaultNormalizationFactor : m_normalizeFactor;
 		nph->makePluginData<BSynth>(
-					const_cast<float*>( m_graph.samples() ),
+					m_wave.data(),
 					nph,
 					m_interpolation.value(), factor,
 				Engine::audioEngine()->outputSampleRate() );
@@ -261,7 +269,7 @@ void BitInvader::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 	auto ps = static_cast<BSynth*>(nph->m_pluginData);
 	for( f_cnt_t frame = offset; frame < frames + offset; ++frame )
 	{
-		out[frame] = SampleFrame(ps->nextStringSample(m_graph.length()));
+		out[frame] = SampleFrame(ps->nextStringSample(m_waveLength));
 	}
 
 	applyRelease(out.data(), nph);

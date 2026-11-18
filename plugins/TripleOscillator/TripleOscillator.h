@@ -91,6 +91,10 @@ private:
 	friend class TripleOscillator;
 	friend class gui::TripleOscillatorView;
 
+	//! The knobs changed since the last period, into the values the notes read (on the audio thread, see
+	//! Instrument::preparePeriod())
+	void applyChanges();
+
 
 private slots:
 	void oscUserDefWaveDblClick();
@@ -115,6 +119,8 @@ public:
 	~TripleOscillator() override = default;
 
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
+
+	void preparePeriod() override;
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;

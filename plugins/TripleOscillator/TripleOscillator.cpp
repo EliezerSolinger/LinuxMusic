@@ -102,36 +102,30 @@ OscillatorObject::OscillatorObject( Model * _parent, int _idx ) :
 	m_phaseOffsetRight( 0.0f ),
 	m_useWaveTable( true )
 {
-	// Connect knobs with Oscillators' inputs
-	connect( &m_volumeModel, SIGNAL( dataChanged() ),
-					this, SLOT( updateVolume() ), Qt::DirectConnection );
-	connect( &m_panModel, SIGNAL( dataChanged() ),
-					this, SLOT( updateVolume() ), Qt::DirectConnection );
+	// The knobs reach the oscillators on the audio thread, once a period (applyChanges(), from
+	// TripleOscillator::preparePeriod()): the notes read these values on other threads meanwhile
 	updateVolume();
-
-	connect( &m_coarseModel, SIGNAL( dataChanged() ),
-				this, SLOT( updateDetuningLeft() ), Qt::DirectConnection );
-	connect( &m_coarseModel, SIGNAL( dataChanged() ),
-				this, SLOT( updateDetuningRight() ), Qt::DirectConnection );
-	connect( &m_fineLeftModel, SIGNAL( dataChanged() ),
-				this, SLOT( updateDetuningLeft() ), Qt::DirectConnection );
-	connect( &m_fineRightModel, SIGNAL( dataChanged() ),
-				this, SLOT( updateDetuningRight() ), Qt::DirectConnection );
 	updateDetuningLeft();
 	updateDetuningRight();
-
-	connect( &m_phaseOffsetModel, SIGNAL( dataChanged() ),
-			this, SLOT( updatePhaseOffsetLeft() ), Qt::DirectConnection );
-	connect( &m_phaseOffsetModel, SIGNAL( dataChanged() ),
-			this, SLOT( updatePhaseOffsetRight() ), Qt::DirectConnection );
-	connect( &m_stereoPhaseDetuningModel, SIGNAL( dataChanged() ),
-			this, SLOT( updatePhaseOffsetLeft() ), Qt::DirectConnection );
-	connect ( &m_useWaveTableModel, SIGNAL(dataChanged()),
-			this, SLOT( updateUseWaveTable()));
-
 	updatePhaseOffsetLeft();
 	updatePhaseOffsetRight();
+	updateUseWaveTable();
+}
 
+
+
+
+void OscillatorObject::applyChanges()
+{
+	// (each flag taken once, with | rather than ||, as two values may follow the same knob)
+	if (m_volumeModel.isValueChanged() | m_panModel.isValueChanged()) { updateVolume(); }
+	const bool coarse = m_coarseModel.isValueChanged();
+	if (coarse | m_fineLeftModel.isValueChanged()) { updateDetuningLeft(); }
+	if (coarse | m_fineRightModel.isValueChanged()) { updateDetuningRight(); }
+	const bool phase = m_phaseOffsetModel.isValueChanged();
+	if (phase | m_stereoPhaseDetuningModel.isValueChanged()) { updatePhaseOffsetLeft(); }
+	if (phase) { updatePhaseOffsetRight(); }
+	if (m_useWaveTableModel.isValueChanged()) { updateUseWaveTable(); }
 }
 
 void OscillatorObject::oscUserDefWaveDblClick()
@@ -223,6 +217,14 @@ TripleOscillator::TripleOscillator( InstrumentTrack * _instrument_track ) :
 
 	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ),
 			this, SLOT( updateAllDetuning() ) );
+}
+
+
+
+
+void TripleOscillator::preparePeriod()
+{
+	for (auto* osc : m_osc) { osc->applyChanges(); }
 }
 
 

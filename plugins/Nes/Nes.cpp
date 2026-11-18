@@ -533,9 +533,7 @@ NesInstrument::NesInstrument( InstrumentTrack * instrumentTrack ) :
 	m_masterVol( 1.0f, 0.0f, 2.0f, 0.01f, this, tr( "Master volume" ) ),
 	m_vibrato( 0.0f, 0.0f, 15.0f, 1.0f, this, tr( "Vibrato" ) )
 {
-	connect( &m_ch1Crs, SIGNAL( dataChanged() ), this, SLOT( updateFreq1() ), Qt::DirectConnection );
-	connect( &m_ch2Crs, SIGNAL( dataChanged() ), this, SLOT( updateFreq2() ), Qt::DirectConnection );
-	connect( &m_ch3Crs, SIGNAL( dataChanged() ), this, SLOT( updateFreq3() ), Qt::DirectConnection );
+	// The coarse tunings reach the notes on the audio thread, once a period (preparePeriod())
 	
 	updateFreq1();
 	updateFreq2();
@@ -693,6 +691,14 @@ gui::PluginView* NesInstrument::instantiateView( QWidget * parent )
 	return( new gui::NesInstrumentView( this, parent ) );
 }
 
+
+
+void NesInstrument::preparePeriod()
+{
+	if (m_ch1Crs.isValueChanged()) { updateFreq1(); }
+	if (m_ch2Crs.isValueChanged()) { updateFreq2(); }
+	if (m_ch3Crs.isValueChanged()) { updateFreq3(); }
+}
 
 
 void NesInstrument::updateFreq1()

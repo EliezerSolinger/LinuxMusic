@@ -25,6 +25,7 @@
 #ifndef LMMS_GRANULAR_PITCH_SHIFTER_EFFECT_H
 #define LMMS_GRANULAR_PITCH_SHIFTER_EFFECT_H
 
+#include <atomic>
 #include <numbers>
 
 #include "Effect.h"
@@ -175,7 +176,7 @@ private:
 	double m_oldGlide = -1;
 	double m_glideCoef = 0;
 
-	bool m_sampleRateNeedsUpdate = false;
+	std::atomic<bool> m_sampleRateNeedsUpdate = false; //!< (set by the knobs' slot, taken by process())
 	bool m_updatePitches = true;
 
 	friend class GranularPitchShifterControls;
