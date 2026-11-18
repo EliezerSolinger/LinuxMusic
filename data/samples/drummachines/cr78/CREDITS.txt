@@ -1,0 +1,9 @@
+Roland CR-78 CompuRhythm, recorded from the machine (the Drum Machines instrument's CR-78 kit)
+
+From Freesound, as their public high quality previews (decoded to FLAC; otherwise unchanged):
+
+- kick, snare, rim, hihat, cymbal, clave, bongo_high, bongo_low, conga, maracas: the "Roland CR78 Sounds" pack by
+  wikter, https://freesound.org/people/wikter/packs/40417/ - Creative Commons 0 (public domain dedication)
+- tambourine: "tambourine_1.wav" from the "Roland CR-78" pack by Bjornmossa,
+  https://freesound.org/people/Bjornmossa/sounds/662410/ - Creative Commons Attribution 4.0
+  (https://creativecommons.org/licenses/by/4.0/)

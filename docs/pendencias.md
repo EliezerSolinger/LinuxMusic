@@ -349,6 +349,13 @@ queda do Mallets, que é queda e entra antes.
     TR-606, CR-8000, TR-77, LinnDrum; o kit Electro, a Oberheim DMX, e o R&B, a E-mu SP-1200. A CR-78 não tem foto
     com licença livre no Commons: o painel dela continua desenhado. A foto preenche o plugin (em alta resolução,
     até 1920 px), os pads numa faixa sobre a parte de baixo dela.
+  - Máquinas novas, uma por uma (pedido do usuário, 18/11; as decisões dele: DMX e TR-707 emuladas no DrumSynth,
+    porque os sons delas são gravações PCM dos fabricantes e não podem ser distribuídos; MPC60 e SP-1200, que são
+    samplers sem sons próprios, como kits no estilo delas feitos de sons livres; a CR-78 com gravações dela):
+    - CR-78: agora com a própria máquina gravada (Freesound: o pacote CC0 do wikter, e o pandeiro, CC BY 4.0, do
+      Bjornmossa; as prévias públicas em alta qualidade, sem login, convertidas para FLAC), em
+      `data/samples/drummachines/cr78`. O plugin toca também gravações, convertidas para a taxa do motor ao
+      carregar.
   - Corrigido (pedido do usuário): o plugin não se redesenhava ao trocar de máquina. Causa: `Plugin::createView`
     chamava `setModel` de novo numa tela que já tinha o modelo, e o `ModelView::setModel` desconecta os sinais do
     modelo para a tela: o que o construtor da tela ligara ao instrumento se perdia (o mesmo acontecia com o

@@ -77,7 +77,7 @@ public:
 	struct Kit
 	{
 		const char* name;
-		const char* folder; //!< in data/samples/drumsynth
+		const char* folder; //!< in data/samples: drumsynth/<machine> (DrumSynth files), drummachines/<machine> (recordings)
 		Look look;
 		std::vector<Piece> pieces;
 		//! A photo of the machine (embedded, photos/: see photos/CREDITS.md) and its credit, none if there is none

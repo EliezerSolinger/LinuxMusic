@@ -25,6 +25,8 @@
 #include <algorithm>
 
 #include <QDomElement>
+
+#include <samplerate.h>
 #include <QMouseEvent>
 #include <QMutexLocker>
 #include <QPainter>
@@ -98,72 +100,72 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 {
 	using L = Look;
 	static const auto s_kits = std::vector<Kit>{
-		{"CR-78", "cr78", L{{0x6b, 0x42, 0x26}, {0x1d, 0x1d, 0x1d}, {0xe0, 0x6b, 0x2a}, {0xee, 0xe6, 0xd2},
+		{"CR-78", "drummachines/cr78", L{{0x6b, 0x42, 0x26}, {0x1d, 0x1d, 0x1d}, {0xe0, 0x6b, 0x2a}, {0xee, 0xe6, 0xd2},
 			{QColor{0xe8, 0xdf, 0xc8}, QColor{0xe0, 0x6b, 0x2a}, QColor{0xe8, 0xdf, 0xc8}, QColor{0x9a, 0x9a, 0x9a}}},
-			{{"Kick", BassDrum, "BD"}, {"Snare", Snare, "SD"}, {"Rim", SideStick, "RS"},
-				{"Hihat", ClosedHat, "HH", HiHats}, {"Cymbal", Crash, "CY"}, {"Bongo_h", HighBongo, "HB"},
-				{"Bongo_l", LowBongo, "LB"}, {"Conga", OpenHighConga, "CG"}, {"Clave", Claves, "CL"},
-				{"Maracas", Maracas, "MA"}, {"Tamb", Tambourine, "TB"}}},
-		{"CR-8000", "cr8000", L{{0x3a, 0x3a, 0x3a}, {0x24, 0x24, 0x24}, {0xd9, 0xa2, 0x27}, {0xe6, 0xe6, 0xe6},
+			{{"kick.flac", BassDrum, "BD"}, {"snare.flac", Snare, "SD"}, {"rim.flac", SideStick, "RS"},
+				{"hihat.flac", ClosedHat, "HH", HiHats}, {"cymbal.flac", Crash, "CY"}, {"bongo_high.flac", HighBongo, "HB"},
+				{"bongo_low.flac", LowBongo, "LB"}, {"conga.flac", OpenHighConga, "CG"}, {"clave.flac", Claves, "CL"},
+				{"maracas.flac", Maracas, "MA"}, {"tambourine.flac", Tambourine, "TB"}}},
+		{"CR-8000", "drumsynth/cr8000", L{{0x3a, 0x3a, 0x3a}, {0x24, 0x24, 0x24}, {0xd9, 0xa2, 0x27}, {0xe6, 0xe6, 0xe6},
 			{QColor{0xd9, 0xa2, 0x27}, QColor{0xcf, 0xcf, 0xcf}, QColor{0x8c, 0xb4, 0xd8}, QColor{0xcf, 0xcf, 0xcf}}},
-			{{"Kick", BassDrum, "BD"}, {"Snare", Snare, "SD"}, {"Rim", SideStick, "RS"}, {"Clap", HandClap, "CP"},
-				{"Hat_c", ClosedHat, "CH", HiHats}, {"Hat_o", OpenHat, "OH", HiHats}, {"Cymbal", Crash, "CY"},
-				{"Cowbell", Cowbell, "CB"}, {"Clave", Claves, "CL"}, {"Conga_m", OpenHighConga, "HC"},
-				{"Conga_l", LowConga, "LC"}},
+			{{"Kick.ds", BassDrum, "BD"}, {"Snare.ds", Snare, "SD"}, {"Rim.ds", SideStick, "RS"}, {"Clap.ds", HandClap, "CP"},
+				{"Hat_c.ds", ClosedHat, "CH", HiHats}, {"Hat_o.ds", OpenHat, "OH", HiHats}, {"Cymbal.ds", Crash, "CY"},
+				{"Cowbell.ds", Cowbell, "CB"}, {"Clave.ds", Claves, "CL"}, {"Conga_m.ds", OpenHighConga, "HC"},
+				{"Conga_l.ds", LowConga, "LC"}},
 			"photo_cr8000.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Blair Rideout, CC BY 2.0")},
-		{"TR-606", "tr606", L{{0xc9, 0xcc, 0xd1}, {0x2b, 0x2b, 0x2b}, {0xc8, 0x37, 0x2d}, {0x20, 0x20, 0x20},
+		{"TR-606", "drumsynth/tr606", L{{0xc9, 0xcc, 0xd1}, {0x2b, 0x2b, 0x2b}, {0xc8, 0x37, 0x2d}, {0x20, 0x20, 0x20},
 			{QColor{0xc8, 0x37, 0x2d}, QColor{0xd8, 0xd8, 0xd8}, QColor{0xc8, 0x37, 0x2d}, QColor{0xd8, 0xd8, 0xd8}}},
-			{{"TR606_Kick", BassDrum, "BD"}, {"TR606_Snare", Snare, "SD"}, {"TR606_Hat_C", ClosedHat, "CH", HiHats},
-				{"TR606_Hat_O", OpenHat, "OH", HiHats}, {"TR606_Cymbal", Crash, "CY"}, {"TR606_Tom_L", LowTom, "LT"},
-				{"TR606_Tom_H", HighTom, "HT"}},
+			{{"TR606_Kick.ds", BassDrum, "BD"}, {"TR606_Snare.ds", Snare, "SD"}, {"TR606_Hat_C.ds", ClosedHat, "CH", HiHats},
+				{"TR606_Hat_O.ds", OpenHat, "OH", HiHats}, {"TR606_Cymbal.ds", Crash, "CY"}, {"TR606_Tom_L.ds", LowTom, "LT"},
+				{"TR606_Tom_H.ds", HighTom, "HT"}},
 			"photo_tr606.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Midas Wouters, CC BY-SA 3.0")},
-		{"TR-77", "tr77", L{{0x5a, 0x3b, 0x26}, {0xe8, 0xdc, 0xc0}, {0x3b, 0x6f, 0xb6}, {0x22, 0x22, 0x22},
+		{"TR-77", "drumsynth/tr77", L{{0x5a, 0x3b, 0x26}, {0xe8, 0xdc, 0xc0}, {0x3b, 0x6f, 0xb6}, {0x22, 0x22, 0x22},
 			{QColor{0x3b, 0x6f, 0xb6}, QColor{0xf4, 0xee, 0xe0}, QColor{0x3b, 0x6f, 0xb6}, QColor{0xf4, 0xee, 0xe0}}},
-			{{"Tr77_kick", BassDrum, "BD"}, {"Tr77_snare", Snare, "SD"}, {"Tr77_hat", ClosedHat, "HH", HiHats},
-				{"Tr77_cym", Crash, "CY"}, {"Tr77_tom1", HighTom, "HT"}, {"Tr77_tom2", LowTom, "LT"},
-				{"Tr77_cui1", MuteCuica, "C1"}, {"Tr77_cui2", OpenCuica, "C2"}},
+			{{"Tr77_kick.ds", BassDrum, "BD"}, {"Tr77_snare.ds", Snare, "SD"}, {"Tr77_hat.ds", ClosedHat, "HH", HiHats},
+				{"Tr77_cym.ds", Crash, "CY"}, {"Tr77_tom1.ds", HighTom, "HT"}, {"Tr77_tom2.ds", LowTom, "LT"},
+				{"Tr77_cui1.ds", MuteCuica, "C1"}, {"Tr77_cui2.ds", OpenCuica, "C2"}},
 			"photo_tr77.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Trouby, CC BY-SA 3.0")},
-		{"TR-808", "tr808", L{{0x4a, 0x4a, 0x46}, {0x2f, 0x2f, 0x2c}, {0xec, 0x7a, 0x1c}, {0xe8, 0xe3, 0xd3},
+		{"TR-808", "drumsynth/tr808", L{{0x4a, 0x4a, 0x46}, {0x2f, 0x2f, 0x2c}, {0xec, 0x7a, 0x1c}, {0xe8, 0xe3, 0xd3},
 			{QColor{0xd8, 0x32, 0x2b}, QColor{0xec, 0x7a, 0x1c}, QColor{0xe9, 0xc4, 0x3a}, QColor{0xe8, 0xe3, 0xd3}}},
-			{{"Kick", BassDrum, "BD"}, {"Kickhard", BassDrum2, "BD2"}, {"Rimshot", SideStick, "RS"},
-				{"Snare", Snare, "SD"}, {"Handclap", HandClap, "CP"}, {"Snr_snap", Snare2, "SD2"},
-				{"Hat_c", ClosedHat, "CH", HiHats}, {"Hat_o", OpenHat, "OH", HiHats}, {"Tom_lo", LowTom, "LT"},
-				{"Tom_mid", LowMidTom, "MT"}, {"Tom_hi", HighTom, "HT"}, {"Ride", Ride, "RD"},
-				{"Cowbell", Cowbell, "CB"}, {"Clave", Claves, "CL"}, {"Kicklong", Extra, "BDL"}},
+			{{"Kick.ds", BassDrum, "BD"}, {"Kickhard.ds", BassDrum2, "BD2"}, {"Rimshot.ds", SideStick, "RS"},
+				{"Snare.ds", Snare, "SD"}, {"Handclap.ds", HandClap, "CP"}, {"Snr_snap.ds", Snare2, "SD2"},
+				{"Hat_c.ds", ClosedHat, "CH", HiHats}, {"Hat_o.ds", OpenHat, "OH", HiHats}, {"Tom_lo.ds", LowTom, "LT"},
+				{"Tom_mid.ds", LowMidTom, "MT"}, {"Tom_hi.ds", HighTom, "HT"}, {"Ride.ds", Ride, "RD"},
+				{"Cowbell.ds", Cowbell, "CB"}, {"Clave.ds", Claves, "CL"}, {"Kicklong.ds", Extra, "BDL"}},
 			"photo_tr808.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Brandon Daniel, Clusternote, CC BY-SA 2.0")},
-		{"TR-909", "tr909", L{{0xb9, 0xbc, 0xbe}, {0x3a, 0x3a, 0x3a}, {0xf0, 0x8a, 0x24}, {0x1e, 0x1e, 0x1e},
+		{"TR-909", "drumsynth/tr909", L{{0xb9, 0xbc, 0xbe}, {0x3a, 0x3a, 0x3a}, {0xf0, 0x8a, 0x24}, {0x1e, 0x1e, 0x1e},
 			{QColor{0xf0, 0x8a, 0x24}, QColor{0xe2, 0xe2, 0xe2}, QColor{0xe2, 0xe2, 0xe2}, QColor{0xe2, 0xe2, 0xe2}}},
-			{{"Kick", BassDrum, "BD"}, {"Kick_1", BassDrum2, "BD2"}, {"Snare", Snare, "SD"},
-				{"Snare2", Snare2, "SD2"}, {"Clap", HandClap, "CP"}, {"Hat-c", ClosedHat, "CH", HiHats},
-				{"Hat-c2", PedalHat, "PH", HiHats}, {"Hat-o", OpenHat, "OH", HiHats},
-				{"Hat-o2", Extra, "OH2", HiHats}, {"Kick_2", Extra + 1, "BD3"}, {"Kick_3", Extra + 2, "BD4"},
-				{"TR909_Kick", Extra + 3, "BD5"}, {"TR909_Clap", Extra + 4, "CP2"}},
+			{{"Kick.ds", BassDrum, "BD"}, {"Kick_1.ds", BassDrum2, "BD2"}, {"Snare.ds", Snare, "SD"},
+				{"Snare2.ds", Snare2, "SD2"}, {"Clap.ds", HandClap, "CP"}, {"Hat-c.ds", ClosedHat, "CH", HiHats},
+				{"Hat-c2.ds", PedalHat, "PH", HiHats}, {"Hat-o.ds", OpenHat, "OH", HiHats},
+				{"Hat-o2.ds", Extra, "OH2", HiHats}, {"Kick_2.ds", Extra + 1, "BD3"}, {"Kick_3.ds", Extra + 2, "BD4"},
+				{"TR909_Kick.ds", Extra + 3, "BD5"}, {"TR909_Clap.ds", Extra + 4, "CP2"}},
 			"photo_tr909.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Brandon Daniel, Clusternote, CC BY-SA 2.0")},
-		{"LinnDrum", "linn", L{{0x1b, 0x1b, 0x1b}, {0x2a, 0x2a, 0x2a}, {0xc9, 0xa2, 0x27}, {0xe6, 0xe1, 0xd5},
+		{"LinnDrum", "drumsynth/linn", L{{0x1b, 0x1b, 0x1b}, {0x2a, 0x2a, 0x2a}, {0xc9, 0xa2, 0x27}, {0xe6, 0xe1, 0xd5},
 			{QColor{0xe6, 0xe1, 0xd5}, QColor{0xc9, 0xa2, 0x27}, QColor{0xe6, 0xe1, 0xd5}, QColor{0x9c, 0x9c, 0x9c}}},
-			{{"linn_kik", BassDrum, "BD"}, {"linn_stk", SideStick, "ST"}, {"linn_snr", Snare, "SD"},
-				{"linn_clp", HandClap, "CP"}, {"linn_tom5", HighFloorTom, "T5"}, {"linn_tom4", LowTom, "T4"},
-				{"linn_tom3", LowMidTom, "T3"}, {"linn_tom2", HighMidTom, "T2"}, {"linn_tom1", HighTom, "T1"},
-				{"linn_tamb", Tambourine, "TB"}, {"linn_cow", Cowbell, "CB"}, {"linn_cgam", MuteHighConga, "CM"},
-				{"linn_cga1", OpenHighConga, "C1"}, {"linn_cga2", LowConga, "C2"}, {"linn_cab", Cabasa, "CA"},
-				{"linn_cga3", Extra, "C3"}},
+			{{"linn_kik.ds", BassDrum, "BD"}, {"linn_stk.ds", SideStick, "ST"}, {"linn_snr.ds", Snare, "SD"},
+				{"linn_clp.ds", HandClap, "CP"}, {"linn_tom5.ds", HighFloorTom, "T5"}, {"linn_tom4.ds", LowTom, "T4"},
+				{"linn_tom3.ds", LowMidTom, "T3"}, {"linn_tom2.ds", HighMidTom, "T2"}, {"linn_tom1.ds", HighTom, "T1"},
+				{"linn_tamb.ds", Tambourine, "TB"}, {"linn_cow.ds", Cowbell, "CB"}, {"linn_cgam.ds", MuteHighConga, "CM"},
+				{"linn_cga1.ds", OpenHighConga, "C1"}, {"linn_cga2.ds", LowConga, "C2"}, {"linn_cab.ds", Cabasa, "CA"},
+				{"linn_cga3.ds", Extra, "C3"}},
 			"photo_linn.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Photo: Linn Electronics / Forat Electronics, CC BY-SA 3.0")},
-		{"Electro", "electro", L{{0x20, 0x24, 0x2a}, {0x12, 0x15, 0x1a}, {0x2f, 0xd1, 0xc5}, {0xd8, 0xf4, 0xf1},
+		{"Electro", "drumsynth/electro", L{{0x20, 0x24, 0x2a}, {0x12, 0x15, 0x1a}, {0x2f, 0xd1, 0xc5}, {0xd8, 0xf4, 0xf1},
 			{QColor{0x2f, 0xd1, 0xc5}, QColor{0xd6, 0x4f, 0xc8}, QColor{0x2f, 0xd1, 0xc5}, QColor{0x6c, 0x7a, 0xe0}}},
-			{{"K_Linn", BassDrum, "BD"}, {"K_8bit", BassDrum2, "BD2"}, {"S_Linn", Snare, "SD"},
-				{"S_8bit", Snare2, "SD2"}, {"Boom", LowFloorTom, "BM"}, {"H_closed", ClosedHat, "CH", HiHats},
-				{"H_open", OpenHat, "OH", HiHats}, {"Syntom_2", LowTom, "LT"}, {"Syntom_1", HighTom, "HT"},
-				{"K_reverb", Extra, "BDR"}, {"S_reverb", Extra + 1, "SDR"}, {"s_eq", Extra + 2, "SEQ"},
-				{"Hi-q", Extra + 3, "HQ"}, {"Hi-q_2", Extra + 4, "HQ2"}},
+			{{"K_Linn.ds", BassDrum, "BD"}, {"K_8bit.ds", BassDrum2, "BD2"}, {"S_Linn.ds", Snare, "SD"},
+				{"S_8bit.ds", Snare2, "SD2"}, {"Boom.ds", LowFloorTom, "BM"}, {"H_closed.ds", ClosedHat, "CH", HiHats},
+				{"H_open.ds", OpenHat, "OH", HiHats}, {"Syntom_2.ds", LowTom, "LT"}, {"Syntom_1.ds", HighTom, "HT"},
+				{"K_reverb.ds", Extra, "BDR"}, {"S_reverb.ds", Extra + 1, "SDR"}, {"s_eq.ds", Extra + 2, "SEQ"},
+				{"Hi-q.ds", Extra + 3, "HQ"}, {"Hi-q_2.ds", Extra + 4, "HQ2"}},
 			"photo_dmx.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Oberheim DMX. Photo: Alison, CC BY-SA 4.0")},
-		{"R&B", "r_n_b", L{{0x2b, 0x21, 0x35}, {0x1a, 0x14, 0x20}, {0xd6, 0x5d, 0xb1}, {0xf0, 0xe0, 0xec},
+		{"R&B", "drumsynth/r_n_b", L{{0x2b, 0x21, 0x35}, {0x1a, 0x14, 0x20}, {0xd6, 0x5d, 0xb1}, {0xf0, 0xe0, 0xec},
 			{QColor{0xd6, 0x5d, 0xb1}, QColor{0xe8, 0xc5, 0x6a}, QColor{0xd6, 0x5d, 0xb1}, QColor{0xb9, 0xa8, 0xd8}}},
-			{{"k_hard", BassDrum, "BD"}, {"k_soft", BassDrum2, "BD2"}, {"popsnare", Snare, "SD"},
-				{"popclap", HandClap, "CP"}, {"S_hollow", Snare2, "SD2"}, {"hat", ClosedHat, "CH", HiHats},
-				{"Hat_O", OpenHat, "OH", HiHats}, {"k_muffle", Extra, "BDM"}, {"old_kik", Extra + 1, "BDO"},
-				{"clapfilt", Extra + 2, "CPF"}, {"s_pitch", Extra + 3, "SDP"}, {"s_spit", Extra + 4, "SDS"},
-				{"snare&hat", Extra + 5, "S+H"}, {"x_backwd", Extra + 6, "REV"},
-				{"hat_rattle", Extra + 7, "HR", HiHats}},
+			{{"k_hard.ds", BassDrum, "BD"}, {"k_soft.ds", BassDrum2, "BD2"}, {"popsnare.ds", Snare, "SD"},
+				{"popclap.ds", HandClap, "CP"}, {"S_hollow.ds", Snare2, "SD2"}, {"hat.ds", ClosedHat, "CH", HiHats},
+				{"Hat_O.ds", OpenHat, "OH", HiHats}, {"k_muffle.ds", Extra, "BDM"}, {"old_kik.ds", Extra + 1, "BDO"},
+				{"clapfilt.ds", Extra + 2, "CPF"}, {"s_pitch.ds", Extra + 3, "SDP"}, {"s_spit.ds", Extra + 4, "SDS"},
+				{"snare&hat.ds", Extra + 5, "S+H"}, {"x_backwd.ds", Extra + 6, "REV"},
+				{"hat_rattle.ds", Extra + 7, "HR", HiHats}},
 			"photo_sp1200.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "E-mu SP-1200. Photo: 2xUeL, public domain")},
 	};
 	return s_kits;
@@ -210,18 +212,36 @@ void DrumMachinesInstrument::loadKit()
 	if (index == m_loadedKit.load(std::memory_order_relaxed) && m_loadedRate == m_sampleRate) { return; }
 
 	const auto& kit = kits()[index];
-	const auto folder = ConfigManager::inst()->factorySamplesDir() + "drumsynth/" + kit.folder + "/";
+	const auto folder = ConfigManager::inst()->factorySamplesDir() + kit.folder + "/";
 	auto sounds = std::vector<Sound>{};
 	auto ofNote = std::array<int, 128>{};
 	ofNote.fill(-1);
 	for (const auto& piece : kit.pieces)
 	{
 		auto sound = Sound{{}, piece.note, piece.choke};
-		// (DrumSynth renders at the engine's rate; a file that cannot be read leaves the piece silent)
+		// (DrumSynth renders at the engine's rate, a recording is resampled to it; a file that cannot be read leaves
+		// the piece silent)
 		try
 		{
-			const auto buffer = SampleBuffer::fromFile(folder + piece.file + ".ds");
+			const auto buffer = SampleBuffer::fromFile(folder + piece.file);
 			sound.frames.assign(buffer->begin(), buffer->end());
+			// (a recording at another rate: converted to the engine's, so that it plays at its pitch)
+			if (buffer->sampleRate() != m_sampleRate && !sound.frames.empty())
+			{
+				const auto ratio = static_cast<double>(m_sampleRate) / buffer->sampleRate();
+				auto converted = std::vector<SampleFrame>(static_cast<std::size_t>(sound.frames.size() * ratio) + 16);
+				auto data = SRC_DATA{};
+				data.data_in = &sound.frames.front()[0];
+				data.input_frames = static_cast<long>(sound.frames.size());
+				data.data_out = &converted.front()[0];
+				data.output_frames = static_cast<long>(converted.size());
+				data.src_ratio = ratio;
+				if (src_simple(&data, SRC_SINC_BEST_QUALITY, DEFAULT_CHANNELS) == 0)
+				{
+					converted.resize(static_cast<std::size_t>(data.output_frames_gen));
+					sound.frames = std::move(converted);
+				}
+			}
 		}
 		catch (const std::exception&) {}
 		ofNote[piece.note] = static_cast<int>(sounds.size());
