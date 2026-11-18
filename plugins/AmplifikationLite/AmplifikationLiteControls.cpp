@@ -53,7 +53,7 @@ AmplifikationLiteControls::AmplifikationLiteControls(AmplifikationLiteEffect* ef
 	m_treble(0.5f, 0.f, 1.f, 0.001f, this, tr("Treble")),
 	m_presence(0.5f, 0.f, 1.f, 0.001f, this, tr("Presence")),
 	m_volume(0.5f, 0.f, 1.f, 0.001f, this, tr("Volume")),
-	m_cabinet(1.f, 0.f, 2.f, 1.f, this, tr("Cabinet")),
+	m_cabinet(0.f, 0.f, 2.f, 1.f, this, tr("Cabinet")),
 	m_effect(effect)
 {
 }
@@ -70,6 +70,7 @@ auto AmplifikationLiteControls::settings() const -> amplite::AmpLiteDsp::Setting
 	s.treble = m_treble.value();
 	s.presence = m_presence.value();
 	s.volume = m_volume.value();
+	s.internalCabinet = cabinet() == Cabinet::Internal;
 	return s;
 }
 
@@ -254,7 +255,7 @@ AmplifikationLiteControlDialog::AmplifikationLiteControlDialog(AmplifikationLite
 	auto* cabinet = new ToggleSwitch(switchStrip, this);
 	cabinet->setModel(&controls->m_cabinet);
 	cabinet->move(CabinetSwitch);
-	cabinet->setToolTip(tr("Cabinet: INT (built-in, not available yet: passes as OFF), OFF, EXT (the loaded impulse response)"));
+	cabinet->setToolTip(tr("Cabinet: INT (built-in), OFF, EXT (a loaded impulse response)"));
 
 	// the IR's load button: only there when the cabinet is on EXT
 	auto* ir = new QPushButton(this);

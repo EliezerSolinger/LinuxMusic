@@ -43,7 +43,7 @@ class Convolver;
 /**
  * The amp of Amplifikation Lite as measured from outside (docs: ~/Desktop/AmplifikationLite-RE/NOTAS.md): three
  * channels (clean, rhythm, lead), gain, a Marshall-type tone stack, presence, volume, and a cabinet switch: INT
- * (the built-in cabinet: none yet, so it passes as OFF), OFF, EXT (an impulse response loaded by its button).
+ * (the built-in cabinet, measured from the original), OFF, EXT (an impulse response loaded by its button).
  * The model runs at 48 kHz, the rate it was measured at: at another engine rate the mono signal (the sides' mid)
  * is resampled to it and back, with a fixed latency.
  */
@@ -59,6 +59,10 @@ public:
 	auto latency() const -> f_cnt_t override;
 	//! [audio thread] From rest again (a new project, an export): the model's filters, the resamplers, the cabinet
 	void reset() override;
+	//! [main thread] At the engine's rate (it may have changed since the effect was made)
+	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+	//! [audio thread] The processing (re)starts from rest
+	auto startProcessing() -> bool override;
 
 	auto channelCount(bool) const -> ch_cnt_t override { return 2; }
 	auto channelGroupCount(bool) const -> group_cnt_t override { return 1; }
@@ -72,6 +76,8 @@ public:
 private:
 	auto process(ProcessContext& context) -> ProcessStatus override;
 	void runModel(float* io, int frames);
+	void configureRate(double rate);
+	void resetModel(); //!< the model and the resamplers from rest (not the cabinet's IR: that is the audio thread's)
 
 	struct ImpulseResponse
 	{

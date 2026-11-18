@@ -130,12 +130,14 @@ struct ModeData
 	int postFirSize;
 	const double* gainTable;
 	const double* transformer; //!< flux lowpass (Hz), saturation, amount
+	const double* stage0;      //!< (the lead's first stage) present, drive, highpass (Hz), lowpass (Hz)
+	const float* nl0;
 };
 
 #define AMPLITE_MODE(n) ModeData{Mode##n##InputRef, Mode##n##PreHp, Mode##n##PreX, Mode##n##K1, Mode##n##Mid, \
 	Mode##n##EHp, Mode##n##ELp, Mode##n##Nl1, Mode##n##Nl2, Mode##n##MidFir, \
 	static_cast<int>(std::size(Mode##n##MidFir)), Mode##n##PostFir, static_cast<int>(std::size(Mode##n##PostFir)), \
-	GainTable##n, Mode##n##Transformer}
+	GainTable##n, Mode##n##Transformer, Mode##n##Stage0, Mode##n##Nl0}
 
 const ModeData Modes[3] = {AMPLITE_MODE(0), AMPLITE_MODE(1), AMPLITE_MODE(2)};
 
@@ -189,8 +191,11 @@ void Oversampler::reset()
 
 AmpLiteDsp::AmpLiteDsp() :
 	m_midHistory(512, 0.0),
-	m_block(8192)
+	m_block(8192),
+	m_cabinetHistory(2 * CabinetHead, 0.f),
+	m_tail(8192)
 {
+	m_cabinetTail = std::make_unique<Convolver>(std::vector<float>(CabinetIr + CabinetHead, CabinetIr + std::size(CabinetIr)));
 	for (int mode = 0; mode < 3; ++mode)
 	{
 		const auto& data = Modes[mode];
@@ -203,10 +208,11 @@ AmpLiteDsp::AmpLiteDsp() :
 AmpLiteDsp::~AmpLiteDsp() = default;
 
 
-auto AmpLiteDsp::latency() -> int
+auto AmpLiteDsp::latency() const -> int
 {
-	// the response FIR's own lead, its partitions, the two oversamplers' (linear-phase) filters
-	return PostLatency + MidLatency + Convolver::BlockSize + OversampleTaps / Oversample;
+	// the response FIR's own lead, its partitions, the oversamplers' (linear-phase) filters (one more for the lead)
+	const int stages = m_stage0 ? 3 : 2;
+	return PostLatency + MidLatency + Convolver::BlockSize + stages * OversampleTaps / Oversample;
 }
 
 
@@ -224,6 +230,9 @@ void AmpLiteDsp::setMode(int channel)
 	m_fluxAlpha = 1.0 - std::exp(-2 * M_PI * data.transformer[0] / (ModelRate * Oversample));
 	m_fluxSaturation = data.transformer[1];
 	m_fluxAmount = data.transformer[2];
+	m_stage0 = data.stage0[0] > 0.5;
+	m_nl0 = data.nl0;
+	m_stage0Drive = data.stage0[1];
 	auto keep = [](Biquad& target, const Biquad& next) {
 		const double z1 = target.z1, z2 = target.z2;
 		target = next;
@@ -235,6 +244,11 @@ void AmpLiteDsp::setMode(int channel)
 	keep(m_preLp, lowpass(data.preX[2]));
 	keep(m_eHp, highpass(data.eHp));
 	keep(m_eLp, lowpass(data.eLp));
+	if (m_stage0)
+	{
+		keep(m_aHp, highpass(data.stage0[2]));
+		keep(m_aLp, lowpass(data.stage0[3]));
+	}
 }
 
 
@@ -289,13 +303,19 @@ void AmpLiteDsp::set(const Settings& s)
 
 void AmpLiteDsp::reset()
 {
-	for (auto* q : {&m_gainFilter, &m_preHp, &m_preShelf, &m_preLp, &m_eHp, &m_eLp, &m_presence}) { q->reset(); }
+	for (auto* q : {&m_gainFilter, &m_preHp, &m_preShelf, &m_preLp, &m_eHp, &m_eLp, &m_presence, &m_aHp, &m_aLp})
+	{
+		q->reset();
+	}
+	m_os0.reset();
 	m_toneStack.reset();
 	m_os1.reset();
 	m_os2.reset();
 	std::fill(m_midHistory.begin(), m_midHistory.end(), 0.0);
 	m_flux = 0;
 	for (auto& post : m_post) { post->reset(); }
+	m_cabinetTail->reset();
+	std::fill(m_cabinetHistory.begin(), m_cabinetHistory.end(), 0.f);
 }
 
 
@@ -310,6 +330,14 @@ void AmpLiteDsp::process(float* io, int frames)
 		x = m_gainFilter.process(x);
 		x = m_preLp.process(m_preShelf.process(m_preHp.process(x)));
 		x *= m_k1;
+
+		// the lead's first stage, its coupling (highpass) and Miller (lowpass) filters
+		if (m_stage0)
+		{
+			m_os0.up(x, up);
+			for (double& v : up) { v = shape(m_nl0, v); }
+			x = m_aLp.process(m_aHp.process(m_os0.down(up) * m_stage0Drive));
+		}
 
 		// stage 1
 		m_os1.up(x, up);
@@ -343,6 +371,24 @@ void AmpLiteDsp::process(float* io, int frames)
 	for (int f = 0; f < frames; ++f)
 	{
 		io[f] = static_cast<float>(m_presence.process(io[f]) * m_volume);
+	}
+
+	// the built-in cabinet (INT): the head directly, the tail partitioned
+	if (!m_settings.internalCabinet) { return; }
+	for (int at = 0; at < frames; at += static_cast<int>(m_tail.size()))
+	{
+		const int count = std::min(frames - at, static_cast<int>(m_tail.size()));
+		std::copy(io + at, io + at + count, m_tail.begin());
+		m_cabinetTail->process(m_tail.data(), count);
+		for (int f = 0; f < count; ++f)
+		{
+			m_cabinetPos = (m_cabinetPos + CabinetHead - 1) % CabinetHead;
+			m_cabinetHistory[m_cabinetPos] = m_cabinetHistory[m_cabinetPos + CabinetHead] = io[at + f];
+			const float* x = m_cabinetHistory.data() + m_cabinetPos;
+			float acc = 0.f;
+			for (int k = 0; k < CabinetHead; ++k) { acc += CabinetIr[k] * x[k]; }
+			io[at + f] = acc + m_tail[f];
+		}
 	}
 }
 

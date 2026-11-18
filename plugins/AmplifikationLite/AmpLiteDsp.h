@@ -98,6 +98,7 @@ public:
 	{
 		int channel = 0;	//!< 0 clean, 1 rhythm, 2 lead
 		float input = 0.2f, gain = 0.5f, bass = 0.5f, middle = 0.5f, treble = 0.5f, presence = 0.5f, volume = 0.5f;
+		bool internalCabinet = true; //!< the built-in cabinet (INT)
 	};
 
 	//! [audio thread] New knob values (cheap: coefficients only)
@@ -107,7 +108,7 @@ public:
 	void reset();
 
 	//! Samples the output comes after the input (the response's FIR and its partitions)
-	static auto latency() -> int;
+	auto latency() const -> int;
 
 private:
 	void setMode(int channel);
@@ -122,6 +123,10 @@ private:
 	const float* m_midFir = nullptr;
 	int m_midFirSize = 0;
 	double m_fluxAlpha = 0, m_fluxSaturation = 1, m_fluxAmount = 0, m_flux = 0;
+	bool m_stage0 = false;	//!< the lead's extra first stage
+	const float* m_nl0 = nullptr;
+	double m_stage0Drive = 1;
+	Biquad m_aHp, m_aLp;
 
 	Biquad m_gainFilter;
 	Biquad m_preHp, m_preShelf, m_preLp;
@@ -130,12 +135,19 @@ private:
 	Biquad m_presence;
 	double m_volume = 1;
 
-	Oversampler m_os1, m_os2;
+	Oversampler m_os0, m_os1, m_os2;
 	std::vector<double> m_midHistory; //!< (twice the between-stages FIR's length: a mirrored ring)
 	int m_midPos = 0;
 
 	std::array<std::unique_ptr<Convolver>, 3> m_post; //!< the power amp's response, per mode
 	std::vector<float> m_block;
+
+	// the built-in cabinet: its first taps convolved directly (no latency), the rest partitioned (whose latency is
+	// exactly where the rest starts)
+	std::unique_ptr<Convolver> m_cabinetTail;
+	std::vector<float> m_cabinetHistory; //!< a mirrored ring of the head's input
+	int m_cabinetPos = 0;
+	std::vector<float> m_tail;
 };
 
 } // namespace amplite

@@ -18,7 +18,7 @@ analisada. O binário nunca foi desmontado, porque o EULA proíbe.
 | Bass / Middle / Treble | 0.5 | tone stack TMB exato: R1 220k, R2 1M (taper v²), R3 10k, R4 47k, C1 470p, C2 100n, C3 22n |
 | Presence | 0.5 | tabela exata de biquads P(v)/P(1), 101 posições |
 | Volume | 0.5 | ganho proporcional ao knob, depois de toda a distorção |
-| Cabinet | OFF | **INT** passa como OFF (o IR interno é da Kuassa e falta permissão); OFF; **EXT** usa o IR carregado |
+| Cabinet | INT | **INT**: o gabinete interno, medido do original; **OFF**; **EXT**: o IR carregado |
 
 - **Botão de carregar IR:** é um botão só e aparece apenas em EXT.
 - **Chaves:** um clique sobe ou desce uma posição.
@@ -33,7 +33,8 @@ input -> filtro do gain -> passa-altas de entrada + shelf -> x K1
 -> FIR entre os estágios (decimação / correção de agudos)
 -> [oversampling 4x] estágio 2 (curva + saturação de fluxo do transformador de saída) [decimação]
 -> resposta do power amp (FIR de 4096 pontos, convolução particionada)
--> presence -> volume -> gabinete (EXT)
+-> presence -> volume -> gabinete INT (2048 pontos: 256 diretos + o resto particionado, sem latência)
+-> (no efeito) gabinete EXT
 ```
 
 - **Taxa interna:** o modelo roda a 48 kHz, a taxa em que foi medido. Com o motor em outra taxa, o plugin
@@ -46,7 +47,16 @@ input -> filtro do gain -> passa-altas de entrada + shelf -> x K1
 - **Reset:** o `reset()` leva tudo ao silêncio (projeto novo, exportação).
   Os testes `BuiltinPluginsTest::effectsFromRest(amplifikationlite)` e `effects(amplifikationlite)` passam.
 
-## Fidelidade atual (C++ contra o plugin original, gain 1, TS 0.5, gabinete desligado)
+## Fidelidade atual (C++ contra o plugin original, gain 1, TS 0.5)
+
+Com o gabinete INT, que é o padrão:
+
+| Canal | Pequeno sinal | Senoides | Dois tons | Notas e acordes | Média |
+|---|---|---|---|---|---|
+| Clean | ±0,02 dB | -51 dB | -45 dB | -29 a -30 dB | **-37 dB** |
+| Rhythm | ±0,02 dB | -41 dB | -36 dB | -24 dB | **-29 dB** |
+
+Com o gabinete desligado (mais exigente, porque os agudos ficam expostos):
 
 Os números são o ESR do nulo da forma de onda, medido pelo `compare.py` do estudo.
 
@@ -64,7 +74,9 @@ Os números são o ESR do nulo da forma de onda, medido pelo `compare.py` do est
 
 1. **Lead:** medir e ajustar os 3 estágios dele (2 antes do TS e 1 depois).
 2. **Rhythm:** acertar os agudos dos sinais densos.
-3. **INT:** depende da permissão da Kuassa para usar o IR de gabinete deles.
+3. **INT:** o IR (`CabinetIr` em `AmpLiteData.h`) é o gabinete da Kuassa, medido pela razão gabinete ligado /
+   desligado. Erro ≤ 0,15 dB de 20 Hz a 18 kHz, e é igual em qualquer ajuste. **Confirmar com o Arie a
+   permissão para distribuí-lo**, junto com a das imagens.
 4. **Abaixo de 60 Hz:** o FIR do power amp erra ~1 dB em 30 Hz. Dá para trocar por um IIR mais uma linha
    de atraso, que também tiraria ~5 ms de latência.
 

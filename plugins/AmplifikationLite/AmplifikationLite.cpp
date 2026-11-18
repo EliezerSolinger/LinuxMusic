@@ -94,21 +94,46 @@ AmplifikationLiteEffect::AmplifikationLiteEffect(Model* parent, const Descriptor
 	m_controls(this),
 	m_mono(MaxFrames)
 {
-	const double rate = Engine::audioEngine()->outputSampleRate();
+	configureRate(Engine::audioEngine()->outputSampleRate());
+}
+
+
+void AmplifikationLiteEffect::configureRate(double rate)
+{
+	// [main thread, the plugin not processing] the resampling to the model's rate, for the engine's rate now
+	if (m_up) { src_delete(m_up); m_up = nullptr; }
+	if (m_down) { src_delete(m_down); m_down = nullptr; }
 	m_ratio = amplite::ModelRate / rate;
 	m_resampling = std::abs(rate - amplite::ModelRate) > 0.5;
+	m_resampleLatency = 0;
 	if (m_resampling)
 	{
 		auto error = 0;
 		m_up = src_new(Converter, 1, &error);
 		m_down = src_new(Converter, 1, &error);
-		m_atModel.resize(static_cast<std::size_t>(std::ceil(MaxFrames * m_ratio)) + 256);
-		m_back.resize(MaxFrames + 256);
+		m_atModel.assign(static_cast<std::size_t>(std::ceil(MaxFrames * m_ratio)) + 256, 0.f);
+		m_back.assign(MaxFrames + 256, 0.f);
 		m_fifo.assign(4 * MaxFrames + Cushion, 0.f);
-		m_fifoFill = Cushion;
 		// the cushion and the two converters' delays (about half their filters each)
 		m_resampleLatency = Cushion + 2 * 32;
 	}
+	resetModel();
+}
+
+
+auto AmplifikationLiteEffect::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
+{
+	(void)maxFrameCount;
+	configureRate(sampleRate);
+	return true;
+}
+
+
+auto AmplifikationLiteEffect::startProcessing() -> bool
+{
+	// the processing (re)starts from rest, whatever it held when it stopped
+	reset();
+	return true;
 }
 
 
@@ -121,15 +146,22 @@ AmplifikationLiteEffect::~AmplifikationLiteEffect()
 
 auto AmplifikationLiteEffect::latency() const -> f_cnt_t
 {
-	const double modelLatency = amplite::AmpLiteDsp::latency() / m_ratio;
+	const double modelLatency = m_dsp.latency() / m_ratio;
 	return static_cast<f_cnt_t>(std::lround(modelLatency)) + m_resampleLatency + m_irLatency.load();
 }
 
 
 void AmplifikationLiteEffect::reset()
 {
+	resetModel();
+	if (auto* impulseResponse = m_impulseResponse.take()) { impulseResponse->convolver->reset(); }
+}
+
+
+void AmplifikationLiteEffect::resetModel()
+{
 	m_dsp.reset();
-	if (m_resampling)
+	if (m_resampling && m_up && m_down)
 	{
 		src_reset(m_up);
 		src_reset(m_down);
@@ -137,7 +169,6 @@ void AmplifikationLiteEffect::reset()
 		m_fifoRead = 0;
 		m_fifoFill = Cushion;
 	}
-	if (auto* impulseResponse = m_impulseResponse.take()) { impulseResponse->convolver->reset(); }
 }
 
 
@@ -239,7 +270,7 @@ auto AmplifikationLiteEffect::process(ProcessContext& context) -> ProcessStatus
 		// the amp is mono: the sides' mid
 		for (int f = 0; f < count; ++f) { m_mono[f] = (left[at + f] + right[at + f]) * 0.5f; }
 		runModel(m_mono.data(), count);
-		// the cabinet: EXT convolves with the loaded impulse response; INT (no built-in one yet) and OFF pass
+		// the cabinet: INT is the model's (built in), EXT convolves with the loaded impulse response, OFF passes
 		if (m_controls.cabinet() == AmplifikationLiteControls::Cabinet::External && impulseResponse)
 		{
 			impulseResponse->convolver->process(m_mono.data(), count);
