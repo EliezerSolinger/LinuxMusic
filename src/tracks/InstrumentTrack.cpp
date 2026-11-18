@@ -334,6 +334,11 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 		return;
 	}
 
+	// The notes held (m_notes) change here and on the audio thread (a note going clears its key): under the change
+	// lock, which the audio thread holds when it renders (the MIDI input comes then, see MidiClient) and the
+	// keyboard of the window and the pads take now (they called this from the main thread without it)
+	const auto guard = AudioEngine::changesGuard();
+
 	bool eventHandled = false;
 
 	// A key out of the keyboard (from a device, a file or a transposition) has no note to play or change
@@ -647,6 +652,9 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 
 void InstrumentTrack::silenceAllNotes( bool removeIPH )
 {
+	// (the notes held are cleared by the audio thread too, when a note goes: under the change lock, then the notes'
+	// mutex, the order the audio thread takes them in)
+	Engine::audioEngine()->requestChangeInModel();
 	m_midiNotesMutex.lock();
 	for( int i = 0; i < NumKeys; ++i )
 	{
@@ -656,7 +664,6 @@ void InstrumentTrack::silenceAllNotes( bool removeIPH )
 	m_noteRoutes = {};
 	m_midiNotesMutex.unlock();
 
-	Engine::audioEngine()->requestChangeInModel();
 	// (mono: nothing held, no voice)
 	m_monoMode.reset();
 	m_monoSustained = {};
