@@ -198,6 +198,16 @@ public:
 	 */
 	void noteOffOnceStarted(f_cnt_t offset = 0);
 
+private:
+	/**
+	 * noteOff(), its release @p framesBeforeRelease into the next period played, and the note off sent to the
+	 * instrument @p eventOffset frames into this period (a release after the period just played: its end, so that
+	 * an instrument taking events with the period gets it after the note on, even when both reach it together)
+	 */
+	void release(f_cnt_t framesBeforeRelease, f_cnt_t eventOffset);
+
+public:
+
 	/*! Returns number of frames to be played until the note is going to be released */
 	f_cnt_t framesBeforeRelease() const
 	{

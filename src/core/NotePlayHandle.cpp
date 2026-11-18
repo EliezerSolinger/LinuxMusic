@@ -365,11 +365,12 @@ void NotePlayHandle::play(std::span<SampleFrame> buffer)
 
 	// update internal data
 	m_totalFramesPlayed += framesThisPeriod;
-	// Let go before it sounded: it has had its first period, released from the next (see noteOffOnceStarted())
+	// Let go before it sounded: it has had its first period, released from the next (see noteOffOnceStarted()), its
+	// note off at the end of this one
 	if (m_releaseWhenStarted)
 	{
 		m_releaseWhenStarted = false;
-		noteOff(0);
+		release(0, Engine::audioEngine()->framesPerPeriod());
 	}
 	unlock();
 }
@@ -449,6 +450,15 @@ void NotePlayHandle::noteOffOnceStarted(const f_cnt_t offset)
 
 void NotePlayHandle::noteOff( const f_cnt_t _s )
 {
+	release(_s, _s);
+}
+
+
+
+
+void NotePlayHandle::release(const f_cnt_t framesBeforeRelease, const f_cnt_t eventOffset)
+{
+	const auto _s = eventOffset;
 	m_releaseWhenStarted = false;
 	if( m_released )
 	{
@@ -460,12 +470,12 @@ void NotePlayHandle::noteOff( const f_cnt_t _s )
 	for( NotePlayHandle * n : m_subNotes )
 	{
 		n->lock();
-		n->noteOff( _s );
+		n->release(framesBeforeRelease, eventOffset);
 		n->unlock();
 	}
 
 	// then set some variables indicating release-state
-	m_framesBeforeRelease = _s;
+	m_framesBeforeRelease = framesBeforeRelease;
 	m_releaseFramesToDo = std::max<f_cnt_t>(0, actualReleaseFramesToDo());
 
 	if( m_hasMidiNote )
