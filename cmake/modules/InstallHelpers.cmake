@@ -22,7 +22,7 @@ ENDMACRO(LIST_CONTAINS)
 
 MACRO(INSTALL_DATA_SUBDIRS _subdir _wildcards)
 	FOREACH(_wildcard ${_wildcards})
-		FILE(GLOB_RECURSE files ${_wildcard})
+		FILE(GLOB_RECURSE files CONFIGURE_DEPENDS ${_wildcard})
 		LIST(SORT files)
 		SET(SUBDIRS)
 
@@ -36,7 +36,7 @@ MACRO(INSTALL_DATA_SUBDIRS _subdir _wildcards)
 		ENDFOREACH(_item ${files})
 
 		FOREACH(_item ${SUBDIRS})
-			FILE(GLOB files "${_item}/${_wildcard}")
+			FILE(GLOB files CONFIGURE_DEPENDS "${_item}/${_wildcard}")
 			LIST(SORT files)
 			FOREACH(_file ${files})
 				INSTALL(FILES "${_file}" DESTINATION "${LMMS_DATA_DIR}/${_subdir}/${_item}/")

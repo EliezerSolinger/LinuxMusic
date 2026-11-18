@@ -29,7 +29,7 @@ function(add_gen_qrc RCC_OUT QRC_NAME)
 	# Determine input files
 	set(FILES ${RC_UNPARSED_ARGUMENTS})
 	if(DEFINED RC_GLOB)
-		file(GLOB GLOB_FILES "${RC_GLOB}")
+		file(GLOB GLOB_FILES CONFIGURE_DEPENDS "${RC_GLOB}")
 		list(APPEND FILES ${GLOB_FILES})
 	endif()
 

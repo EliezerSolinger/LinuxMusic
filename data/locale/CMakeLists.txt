@@ -20,7 +20,7 @@ SET(ts_targets "")
 SET(qm_targets "")
 SET(QM_FILES "")
 
-FILE(GLOB lmms_LOCALES ${CMAKE_CURRENT_SOURCE_DIR}/*.ts)
+FILE(GLOB lmms_LOCALES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.ts)
 LIST(SORT lmms_LOCALES)
 FOREACH(_ts_file ${lmms_LOCALES})
 	GET_FILENAME_COMPONENT(_ts_target "${_ts_file}" NAME)
