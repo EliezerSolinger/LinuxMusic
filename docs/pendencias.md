@@ -332,10 +332,21 @@ queda do Mallets, que é queda e entra antes.
     BitInvader), Aditivos (Organic, ZynAddSubFX), Cordas (Vibed) e Fórmulas (Xpressive). O navegador mostra a
     subcategoria como um segundo nível dentro da categoria (a busca também a esconde quando nada dela é achado).
     O mesmo segundo nível serve às categorias de efeitos (o Guitarix). `PluginCategoriesTest`.
-- [ ] **Plugin de baterias eletrônicas:** um instrumento visual como o AVL Drums, que:
+- [x] **Plugin de baterias eletrônicas:** um instrumento visual como o AVL Drums, que:
   - usa as amostras de baterias eletrônicas que já temos;
   - mapeia cada peça numa nota MIDI;
   - troca de bateria com a foto de cada uma, como no AVL.
+  - Feito: "Drum Machines" (categoria Bateria), com 9 kits, as máquinas do DrumSynth que vêm com o programa
+    (CR-78, CR-8000, TR-606, TR-77, TR-808, TR-909, LinnDrum) e os kits Electro e R&B: 110 peças, cada uma na sua
+    nota do mapa de bateria General MIDI (as variações sem nota lá, a partir da 82). As peças são sintetizadas ao
+    escolher o kit (thread principal) e tocadas da memória com vozes feitas antes (zero alocações na thread de
+    áudio); o chimbal fechado abafa o aberto, como nas máquinas; meio milissegundo de entrada (o DrumSynth começa
+    num degrau, que estala). A tela desenha a máquina de cada kit (o corpo, o painel, as cores dela) com um pad
+    por peça, que acende quando a peça toca e a toca quando clicado. `DrumMachinesTest`: os 9 kits carregam e
+    tocam, e o abafamento (o teste falha sem ele).
+  - Fotos de verdade das máquinas não vieram: não temos fotos com licença para distribuir; a tela é desenhada.
+    Se quiser fotos, preciso da sua aprovação para buscar imagens com licença livre (Wikimedia Commons, por
+    exemplo) e creditá-las.
 - [ ] **Guitarix integrado de verdade:** as peças dele viram efeitos nativos do LinuxMusic, compilados aqui
   dentro: cabeçotes, amplificadores, gabinetes, pedais e efeitos. Não é hospedar o programa nem os LV2 dele.
   - Cada peça é um efeito interno, no processo e no caminho do render, como os outros nativos

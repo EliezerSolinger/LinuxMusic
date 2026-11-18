@@ -36,6 +36,7 @@ SET(LMMS_PLUGIN_LIST
 	CrossoverEQ
 	Delay
 	Dispersion
+	DrumMachines
 	DualFilter
 	DynamicsProcessor
 	Eq

@@ -351,7 +351,7 @@ private slots:
 		if (!setup.plugin) { QSKIP("not built here"); }
 		auto* clip = dynamic_cast<MidiClip*>(setup.track->createClip(TimePos{0}));
 		// (a drum kit: its kick)
-		clip->addNote(Note{TimePos{96}, TimePos{48}, plugin == "avldrums" || plugin == "sf2player" ? 36 : DefaultKey});
+		clip->addNote(Note{TimePos{96}, TimePos{48}, plugin == "avldrums" || plugin == "drummachines" || plugin == "sf2player" ? 36 : DefaultKey});
 		auto* engine = Engine::audioEngine();
 		auto* song = Engine::getSong();
 		auto out = std::vector<float>{};

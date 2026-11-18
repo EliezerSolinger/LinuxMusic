@@ -48,7 +48,7 @@ const auto s_instrumentCategories = std::array{
 			"vibedstrings"}, "#4afd85", "SY"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Samplers"),
 		{"audiofileprocessor", "sf2player", "gigplayer", "patman", "slicert"}, "#f0913a", "SA"},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Drums"), {"kicker", "avldrums"}, "#e85a4f", "DR"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Drums"), {"kicker", "avldrums", "drummachines"}, "#e85a4f", "DR"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Physical modeling"), {"malletsstk"}, "#c8a06b", "PM"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Chiptune"), {"freeboy", "nes", "sid", "opulenz", "sfxr"}, "#9b6be8", "CH"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Plugin hosts"), {"vestige", "carlarack", "carlapatchbay"}, "#9aa3ad", "PH"},

@@ -975,6 +975,10 @@ Este chip foi utilizado no computador Commodore 64.</translation>
         <source>Guitarix's pedals, amps and cabinets, built in</source>
         <translation>Os pedais, amplificadores e gabinetes do Guitarix, embutidos</translation>
     </message>
+    <message>
+        <source>Classic drum machines (CR-78, TR-808, TR-909, LinnDrum...) on the General MIDI drum map</source>
+        <translation>Baterias eletrônicas clássicas (CR-78, TR-808, TR-909, LinnDrum...) no mapa de bateria General MIDI</translation>
+    </message>
 </context>
 <context>
     <name>PluginFactory</name>
@@ -18822,6 +18826,32 @@ A interface usada é a que está salva nestas configurações.</translation>
     <message>
         <source>Misc</source>
         <translation>Diversos</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::DrumMachinesInstrument</name>
+    <message>
+        <source>Drum machine</source>
+        <translation>Bateria eletrônica</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::DrumMachinesView</name>
+    <message>
+        <source>Drum machine</source>
+        <translation>Bateria eletrônica</translation>
+    </message>
+    <message>
+        <source>Click a pad to play it</source>
+        <translation>Clique num pad para tocá-lo</translation>
+    </message>
+    <message>
+        <source>The drum machine could not be loaded</source>
+        <translation>Não foi possível carregar a bateria eletrônica</translation>
+    </message>
+    <message>
+        <source>DRUM MACHINE</source>
+        <translation>BATERIA ELETRÔNICA</translation>
     </message>
 </context>
 </TS>

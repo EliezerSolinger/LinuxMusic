@@ -492,7 +492,7 @@ private slots:
 		QTest::addColumn<QString>("instrument");
 		for (const auto* name : {"tripleoscillator", "bitinvader", "kicker", "lb302", "monstro", "nes", "organic",
 			"sfxr", "sid", "vibedstrings", "watsyn", "xpressive", "freeboy", "malletsstk", "opulenz",
-			"audiofileprocessor", "slicert", "zynaddsubfx", "sf2player", "avldrums", "gigplayer",
+			"audiofileprocessor", "slicert", "zynaddsubfx", "sf2player", "avldrums", "drummachines", "gigplayer",
 			// (one note at a time, legato with a glide: the voice moves and goes back on the audio thread)
 			"tripleoscillator+mono", "sf2player+mono"})
 		{
@@ -573,9 +573,11 @@ private slots:
 		}
 		Engine::mixer()->setUpTrackChannels();
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
+		// (a drum kit plays its pieces: the General MIDI drum map's, from its kick)
+		const bool drums = instrument == "avldrums" || instrument == "drummachines";
 		for (int note = 0; note < 16; ++note)
 		{
-			clip->addNote(Note{TimePos{36}, TimePos{note * 24}, DefaultKey + note % 12});
+			clip->addNote(Note{TimePos{36}, TimePos{note * 24}, (drums ? 35 : DefaultKey) + note % 12});
 		}
 
 		// These make each note's voice on the audio thread as a library builds it, with new (Xpressive's compiled
