@@ -1170,6 +1170,54 @@ private slots:
 		// goes a little over or under it)
 		QVERIFY2(top < 1.2f, qPrintable(name));
 	}
+
+	//! The pitch of @p samples (interleaved stereo, the left channel) from @p from to @p to: from the time between
+	//! its first and last rising zero crossings (each placed between its two samples), the crossings counted
+	static auto pitchOf(const std::vector<float>& samples, std::size_t from, std::size_t to, double rate) -> double
+	{
+		auto first = -1.0, last = -1.0;
+		auto crossings = 0;
+		for (auto i = from + 1; i < std::min(to, samples.size() / 2); ++i)
+		{
+			const auto before = samples[2 * (i - 1)], now = samples[2 * i];
+			if (before < 0 && now >= 0)
+			{
+				const auto at = static_cast<double>(i - 1) + before / (before - now);
+				if (first < 0) { first = at; }
+				last = at;
+				++crossings;
+			}
+		}
+		return crossings > 1 ? (crossings - 1) * rate / (last - first) : 0.0;
+	}
+
+	/**
+	 * #389, #1010: the Sfxr, which runs at 44.1 kHz, took each period's frames at its pitch as whole frames, the
+	 * fraction dropped: the notes went flat, the more the lower and the higher the rate (an A2 at 96 kHz by a quarter
+	 * of a semitone). The same note at 44.1 and 96 kHz is the same pitch now.
+	 */
+	void sfxrInTuneAtAnyRate()
+	{
+		auto* engine = Engine::audioEngine();
+		for (const auto key : {33, 45, 60})
+		{
+			auto pitches = std::vector<double>{};
+			for (const auto rate : {sample_rate_t{44100}, sample_rate_t{96000}})
+			{
+				engine->reopenAudioDevice(rate);
+				engine->stopProcessing();
+				const auto played = play("sfxr", nullptr, 150, key);
+				QVERIFY(played.finite);
+				pitches.push_back(pitchOf(played.samples, rate / 50, rate / 4, rate));
+			}
+			QVERIFY(pitches[0] > 0 && pitches[1] > 0);
+			const auto cents = 1200 * std::log2(pitches[1] / pitches[0]);
+			QVERIFY2(std::abs(cents) < 3, qPrintable(QString{"key %1: %2 Hz at 44.1 kHz, %3 Hz at 96 kHz (%4 cents)"}
+				.arg(key).arg(pitches[0]).arg(pitches[1]).arg(cents)));
+		}
+		engine->reopenAudioDevice(44100);
+		engine->stopProcessing();
+	}
 };
 
 QTEST_GUILESS_MAIN(InstrumentFixesTest)

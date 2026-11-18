@@ -456,10 +456,10 @@ void SfxrInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out
 		return;
 	}
 
+	// (the synth runs at 44.1 kHz)
 	const auto baseFreq = instrumentTrack()->baseFreq();
-	int32_t pitchedFrameNum = (_n->frequency() / baseFreq) * frameNum;
-
-	pitchedFrameNum /= ( currentSampleRate / 44100 );
+	const int32_t pitchedFrameNum = static_cast<SfxrSynth*>(_n->m_pluginData)->framesFor(
+		static_cast<double>(_n->frequency()) / baseFreq * frameNum * 44100.0 / currentSampleRate);
 
 // debug code
 //	qDebug( "pFN %d", pitchedFrameNum );

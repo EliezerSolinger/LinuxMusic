@@ -88,7 +88,19 @@ public:
 
 	bool isPlaying() const;
 
+	//! The synth's frames (at its own rate, 44.1 kHz) a note's @p frames take at the pitch it plays: whole frames, the
+	//! fraction carried to the next period (dropped each period, it detuned the notes: up to a quarter of a semitone
+	//! for low notes at high rates)
+	auto framesFor(double frames) -> int32_t
+	{
+		const auto due = frames + m_fractionDue;
+		const auto whole = static_cast<int32_t>(due);
+		m_fractionDue = due - whole;
+		return whole;
+	}
+
 private:
+	double m_fractionDue = 0;
 	const SfxrInstrument * s;
 	bool playing_sample;
 	int phase;

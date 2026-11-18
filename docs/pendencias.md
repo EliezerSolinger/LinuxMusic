@@ -315,6 +315,11 @@ queda do Mallets, que é queda e entra antes.
       Na faixa, a nota off vai para a tecla e o canal da nota on, para os instrumentos que separam por canal (os
       VST e LV2 multitimbrais); os internos ignoram o canal, e a tecla já era estável (a nota compensa a mudança da
       nota base), então lá não há diferença a medir.
+    - [x] Sfxr desafinado (#389, #1010): ele roda a 44,1 kHz, e os quadros de cada período na altura da nota eram
+      tomados inteiros, a fração jogada fora: as notas ficavam baixas, mais quanto mais graves e quanto maior a taxa
+      (um A1 a 96 kHz, 85 cents). A fração passa para o período seguinte; a mesma nota a 44,1 e a 96 kHz dá a mesma
+      altura (`InstrumentFixesTest`, falha sem). Varredura: nenhum outro conta quadros assim (o SID deixa a conversão
+      ao reSID, que guarda a sua fração).
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.
