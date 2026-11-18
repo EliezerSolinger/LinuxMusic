@@ -24,6 +24,7 @@ ENDIF()
 SET(LMMS_PLUGIN_LIST
 	${MINIMAL_LIST}
 	AmpAndIr
+	AmplifikationLite
 	Amplifier
 	BassBooster
 	BitInvader

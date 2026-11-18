@@ -52,6 +52,9 @@ public:
 
 	auto partitions() const -> int { return static_cast<int>(m_irSpectra.size()); }
 
+	//! Lets go of the input it holds (from rest again); neither allocates nor locks
+	void reset();
+
 private:
 	void processBlock();
 

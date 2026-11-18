@@ -104,6 +104,17 @@ void Convolver::process(float* io, int frames)
 }
 
 
+void Convolver::reset()
+{
+	for (auto& spectrum : m_inputSpectra) { std::fill(spectrum.begin(), spectrum.end(), std::complex<float>{}); }
+	std::fill(m_timeIn.begin(), m_timeIn.end(), 0.f);
+	std::fill(m_timeOut.begin(), m_timeOut.end(), 0.f);
+	std::fill(m_inBlock.begin(), m_inBlock.end(), 0.f);
+	std::fill(m_outBlock.begin(), m_outBlock.end(), 0.f);
+	m_position = 0;
+}
+
+
 void Convolver::processBlock()
 {
 	// Overlap-save: the last two blocks of input, transformed
