@@ -346,7 +346,7 @@ queda do Mallets, que é queda e entra antes.
     tocam, e o abafamento (o teste falha sem ele).
   - Cada kit mostra a foto real da máquina (a pedido do usuário, 18/11), do Wikimedia Commons com licença livre
     e crédito na própria foto e em `plugins/DrumMachines/photos/CREDITS.md` e `doc/AUTHORS`: TR-808, TR-909,
-    TR-606, CR-8000, TR-77, LinnDrum; o kit Electro, a Oberheim DMX, e o R&B, a E-mu SP-1200. A CR-78 não tem foto
+    TR-606, CR-8000, TR-77, LinnDrum; o kit Electro, a Oberheim DMX (hoje a Simmons SDS 5), e o R&B, a E-mu SP-1200. A CR-78 não tem foto
     com licença livre no Commons: o painel dela continua desenhado. A foto preenche o plugin (em alta resolução,
     até 1920 px), os pads numa faixa sobre a parte de baixo dela.
   - Máquinas novas, uma por uma (pedido do usuário, 18/11; as decisões dele: DMX e TR-707 emuladas no DrumSynth,
@@ -363,6 +363,12 @@ queda do Mallets, que é queda e entra antes.
       MPC60 a 40 kHz e 16 bits, com saturação suave e o passa-baixa da saída. Com a foto de cada uma (a da MPC60 é
       a única livre, pequena: numa janela grande, o fundo é ela desfocada e ela fica no meio, sem ampliar demais).
       O kit R&B passou a mostrar uma Akai MPC2000XL (domínio público).
+    - DMX (emulada): kit "DMX", patches de DrumSynth próprios em `data/samples/drumsynth/dmx`, feitos por `tools/drummachines/make-ds-kits.py` a partir do patch
+      do programa mais próximo de cada voz (afinado e com o decaimento ajustado) e com a amostragem de cada
+      máquina pela redução de bits e de taxa do próprio DrumSynth: a DMX em 8 bits, perto de 22 kHz. As vozes de cada uma nos nomes e na ordem do painel dela (DMX: 3 bumbos, 3 caixas, 3
+      chimbais, 6 tons, aro, palmas, ride, crash, pandeiro, shaker). No fim da lista, para os projetos já
+      salvos (o kit é salvo pelo índice) continuarem na mesma máquina. Com a foto dela; o kit Electro
+      passou a mostrar a bateria eletrônica Simmons SDS 5 (CC BY-SA 2.5), a foto da DMX agora é do kit DMX.
   - Corrigido (pedido do usuário): o plugin não se redesenhava ao trocar de máquina. Causa: `Plugin::createView`
     chamava `setModel` de novo numa tela que já tinha o modelo, e o `ModelView::setModel` desconecta os sinais do
     modelo para a tela: o que o construtor da tela ligara ao instrumento se perdia (o mesmo acontecia com o

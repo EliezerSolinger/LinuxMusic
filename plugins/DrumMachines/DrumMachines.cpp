@@ -158,7 +158,7 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 				{"H_open.ds", OpenHat, "OH", HiHats}, {"Syntom_2.ds", LowTom, "LT"}, {"Syntom_1.ds", HighTom, "HT"},
 				{"K_reverb.ds", Extra, "BDR"}, {"S_reverb.ds", Extra + 1, "SDR"}, {"s_eq.ds", Extra + 2, "SEQ"},
 				{"Hi-q.ds", Extra + 3, "HQ"}, {"Hi-q_2.ds", Extra + 4, "HQ2"}},
-			"photo_dmx.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Oberheim DMX. Photo: Alison, CC BY-SA 4.0")},
+			"photo_simmons.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Simmons SDS 5. Photo: Ben Franske, CC BY-SA 2.5")},
 		{"R&B", "drumsynth/r_n_b", L{{0x2b, 0x21, 0x35}, {0x1a, 0x14, 0x20}, {0xd6, 0x5d, 0xb1}, {0xf0, 0xe0, 0xec},
 			{QColor{0xd6, 0x5d, 0xb1}, QColor{0xe8, 0xc5, 0x6a}, QColor{0xd6, 0x5d, 0xb1}, QColor{0xb9, 0xa8, 0xd8}}},
 			{{"k_hard.ds", BassDrum, "BD"}, {"k_soft.ds", BassDrum2, "BD2"}, {"popsnare.ds", Snare, "SD"},
@@ -184,6 +184,19 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 				{"hihat_open.flac", OpenHat, "OH", HiHats}, {"cabasa.flac", Cabasa, "CA"}, {"shaker.flac", Maracas, "SH"},
 				{"snare3.flac", Extra, "SD3"}, {"kick3.flac", Extra + 1, "BD3"}},
 			"photo_mpc60.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Akai MPC60. Photo: Kimi95, CC BY 3.0")},
+		// The emulated machines (their own sounds are their makers' recordings, not free): DrumSynth patches of their
+		// voices with their sampling, made by tools/drummachines/make-ds-kits.py
+		{"DMX", "drumsynth/dmx", L{{0x16, 0x16, 0x18}, {0x2c, 0x2d, 0x30}, {0x4f, 0x8f, 0xd6}, {0xe8, 0xe8, 0xe8},
+			{QColor{0xe8, 0xe8, 0xe8}, QColor{0x4f, 0x8f, 0xd6}, QColor{0xe8, 0xe8, 0xe8}, QColor{0x9a, 0x9c, 0xa0}}},
+			{{"bass1.ds", BassDrum, "B1"}, {"bass2.ds", BassDrum2, "B2"}, {"rimshot.ds", SideStick, "RIM"},
+				{"snare1.ds", Snare, "S1"}, {"claps.ds", HandClap, "CLP"}, {"snare2.ds", Snare2, "S2"},
+				{"tom6.ds", LowFloorTom, "T6"}, {"hihat_closed.ds", ClosedHat, "HC", HiHats},
+				{"tom5.ds", HighFloorTom, "T5"}, {"hihat_accent.ds", PedalHat, "HA", HiHats},
+				{"tom4.ds", LowTom, "T4"}, {"hihat_open.ds", OpenHat, "HO", HiHats}, {"tom3.ds", LowMidTom, "T3"},
+				{"tom2.ds", HighMidTom, "T2"}, {"crash.ds", Crash, "CR"}, {"tom1.ds", HighTom, "T1"},
+				{"ride.ds", Ride, "RD"}, {"tamb.ds", Tambourine, "TB"}, {"shaker.ds", Maracas, "SH"},
+				{"bass3.ds", Extra, "B3"}, {"snare3.ds", Extra + 1, "S3"}},
+			"photo_dmx.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Oberheim DMX. Photo: Alison, CC BY-SA 4.0")},
 	};
 	return s_kits;
 }
