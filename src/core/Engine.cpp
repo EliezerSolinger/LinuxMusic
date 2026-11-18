@@ -106,43 +106,39 @@ void Engine::init( bool renderOnly )
 
 void Engine::destroy()
 {
+	// Taken down in three steps, so that nothing deleted is used afterwards by a thread that still runs (phase 8 of
+	// docs/plano-refatoracao.md; EngineLifecycleTest takes it down while a project plays, twice, under ASan too)
+
+	// 1. Nothing calls into the program anymore: the audio device stops asking for periods, the MIDI input stops (its
+	//    ports get a client that does nothing), no change is journalled, no export runs
 	s_projectJournal->stopAllJournalling();
 	s_audioEngine->stopProcessing();
-
-	PresetPreviewPlayHandle::cleanup();
-
-	s_song->clearProject();
-
-	// The metronome's bus belongs to the audio engine, which goes first
-	s_song->metronome().release();
-
-	deleteHelper( &s_patternStore );
-
-	deleteHelper( &s_mixer );
-	deleteHelper( &s_audioEngine );
-
-#ifdef LMMS_HAVE_LV2
-	deleteHelper( &s_lv2Manager );
-#endif
-	deleteHelper( &s_ladspaManager );
-
-	//delete ConfigManager::inst();
-	deleteHelper( &s_projectJournal );
-
-	deleteHelper( &s_song );
-
+	s_audioEngine->closeMidiClient();
 	deleteHelper(&s_exportManager);
 
+	// 2. The project: the previews, the tracks (and their plugins, notes and clips), the metronome's bus
+	PresetPreviewPlayHandle::cleanup();
+	s_song->clearProject();
+	s_song->metronome().release();
+
+	// 3. What is left, each before what it uses: the pattern store and the mixer (their tracks and effects), the song,
+	//    the audio engine (its threads end), the plugin managers (no plugin is left), the journal (every journalled
+	//    object is gone), the configuration
+	deleteHelper(&s_patternStore);
+	deleteHelper(&s_mixer);
+	deleteHelper(&s_song);
+	deleteHelper(&s_audioEngine);
+#ifdef LMMS_HAVE_LV2
+	deleteHelper(&s_lv2Manager);
+#endif
+	deleteHelper(&s_ladspaManager);
+	deleteHelper(&s_projectJournal);
 	delete ConfigManager::inst();
 
-	// Last: the song's and the previews' notes went back to it above
+	// What the program keeps besides the engine: the notes' places (every note went back above), the error log
+	// (what was reported until now, written out), the oscillators' FFT plans (made again by init())
 	NotePlayHandleManager::free();
-
-	// What was reported until now, written out
 	ErrorLog::stop();
-
-	// The oscillator FFT plans remain throughout the application lifecycle
-	// due to being expensive to create, and being used whenever a userwave form is changed
 	Oscillator::destroyFFTPlans();
 }
 

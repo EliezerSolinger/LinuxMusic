@@ -42,6 +42,7 @@
 namespace lmms
 {
 
+class AudioEngine;
 class Track;
 
 /**
@@ -95,7 +96,8 @@ public:
 		bool diskFailed = false; //!< writing a file failed: it holds what was written before
 	};
 
-	AudioRecorder();
+	//! (what it asks of the engine: the device's dropouts and the periods it skipped; the song gives it)
+	explicit AudioRecorder(AudioEngine& engine);
 	~AudioRecorder();
 
 	AudioRecorder(const AudioRecorder&) = delete;
@@ -151,6 +153,7 @@ public:
 	void process(PlanarBufferView<const float> capture, double periodStartTick, double framesPerTick);
 
 private:
+	AudioEngine& m_engine;
 	struct TakeState;
 	struct Session;
 

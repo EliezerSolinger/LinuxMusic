@@ -73,7 +73,7 @@ void TempoMap::setStartMeter(const Meter& meter)
 {
 	if (meter == m_startMeter) { return; }
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		m_startMeter = meter;
 		updateSegments();
 	}
@@ -273,7 +273,7 @@ auto TempoMap::framesBetween(tick_t from, tick_t to, double songBpm, sample_rate
 void TempoMap::setMarkers(std::vector<Marker> markers)
 {
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		m_markers = std::move(markers);
 		tidy();
 		updateSegments();
@@ -287,7 +287,7 @@ void TempoMap::setMarkers(std::vector<Marker> markers)
 void TempoMap::setMarker(const Marker& marker, double startBpm)
 {
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		auto added = marker;
 		added.tick = std::clamp(added.tick, 0, TimePos::MaxTicks);
 		added.bpm = std::clamp(added.bpm, static_cast<double>(MinTempo), static_cast<double>(MaxTempo));
@@ -310,7 +310,7 @@ void TempoMap::setMeter(tick_t tick, std::optional<Meter> meter, double startBpm
 	tick = std::clamp(tick, 0, TimePos::MaxTicks);
 	if (tick == 0 || (meter && !isValid(*meter))) { return; }
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		const auto at = std::find_if(m_markers.begin(), m_markers.end(),
 			[tick](const Marker& marker) { return marker.tick == tick; });
 		if (at != m_markers.end()) { at->meter = meter; }
@@ -335,7 +335,7 @@ void TempoMap::setMeter(tick_t tick, std::optional<Meter> meter, double startBpm
 void TempoMap::removeMarker(tick_t tick)
 {
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		std::erase_if(m_markers, [tick](const Marker& marker) { return marker.tick == tick; });
 
 		// Only the one at the song's start left says nothing more than the song's tempo: none then
@@ -352,7 +352,7 @@ void TempoMap::moveMarker(tick_t from, tick_t to)
 {
 	if (from == 0 || from == to) { return; }
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		const auto moved = std::find_if(m_markers.begin(), m_markers.end(),
 			[from](const Marker& marker) { return marker.tick == from; });
 		if (moved == m_markers.end()) { return; }
@@ -374,7 +374,7 @@ void TempoMap::clear()
 {
 	if (m_markers.empty()) { return; }
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		m_markers.clear();
 		updateSegments();
 	}
@@ -416,7 +416,7 @@ auto TempoMap::takeOverAutomation(AutomatableModel* tempo, double startBpm) -> b
 	if (markers.empty()) { return false; }
 
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		m_markers = std::move(markers);
 		for (auto& marker : m_markers)
 		{
@@ -477,7 +477,7 @@ void TempoMap::loadSettings(const QDomElement& element)
 		markers.push_back(marker);
 	}
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const auto guard = AudioEngine::changesGuard();
 		m_markers = std::move(markers);
 		tidy();
 		updateSegments();

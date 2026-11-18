@@ -65,6 +65,8 @@ public:
 	static bool isOptionSupported(LV2_URID key);
 	//! Mark option as supported
 	static void supportOption(LV2_URID key);
+	//! The manager going (it says them again when made)
+	static void forgetSupportedOptions();
 
 	//! Initialize an option
 	template<typename Opt, typename Arg>

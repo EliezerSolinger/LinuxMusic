@@ -145,7 +145,10 @@ struct AudioRecorder::Session
 
 
 
-AudioRecorder::AudioRecorder() = default;
+AudioRecorder::AudioRecorder(AudioEngine& engine)
+	: m_engine{engine}
+{
+}
 
 
 
@@ -343,14 +346,14 @@ void AudioRecorder::process(PlanarBufferView<const float> capture, double period
 	// The device dropped out since the last period (an xrun), or the engine gave it silence (a change of the model
 	// held it): marked where each take is (the recording goes on)
 	auto dropouts = 0u;
-	if (const auto* device = Engine::audioEngine()->audioDev())
+	if (const auto* device = m_engine.audioDev())
 	{
 		const auto xruns = device->xruns();
 		if (session->deviceXrunsKnown) { dropouts = xruns - session->deviceXruns; }
 		session->deviceXruns = xruns;
 		session->deviceXrunsKnown = true;
 	}
-	const auto skipped = Engine::audioEngine()->periodsSkipped();
+	const auto skipped = m_engine.periodsSkipped();
 	if (session->enginePeriodsSkipped >= 0) { dropouts += static_cast<unsigned>(skipped - session->enginePeriodsSkipped); }
 	session->enginePeriodsSkipped = skipped;
 

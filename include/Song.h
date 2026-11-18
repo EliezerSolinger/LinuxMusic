@@ -42,6 +42,7 @@
 #include "MidiRecorder.h"
 #include "SongMarkers.h"
 #include "DataFile.h"
+#include "Engine.h"
 #include "TempoMap.h"
 #include "Transport.h"
 #include "SampleClip.h"
@@ -632,7 +633,7 @@ private:
 
 	std::atomic<PlayMode> m_playMode;
 
-	AudioRecorder m_audioRecorder;
+	AudioRecorder m_audioRecorder{*Engine::audioEngine()};
 	bool m_captureUpdatePending = false;
 
 	std::vector<AudioRecorder::LiveTake> m_liveTakes;
@@ -656,9 +657,9 @@ private:
 	std::atomic<tick_t> m_countInUntilTick = -1; //!< the metronome clicks before this tick (a recording's count-in)
 	//! Where the period being rendered starts, in ticks (written by the audio thread)
 	std::atomic<double> m_periodStartTick = 0;
-	MidiRecorder m_midiRecorder;
+	MidiRecorder m_midiRecorder{m_tempoMap, *Engine::projectJournal()};
 	TempoMap m_tempoMap;
-	Transport m_transport{*this};
+	Transport m_transport{*this, *Engine::audioEngine()};
 	SongMarkers m_songMarkers;
 
 	//! See addProjectState()
@@ -700,7 +701,7 @@ private:
 	Track::clipVector m_automationClips; //!< (the same)
 	mutable TrackList m_automationTracks; //!< (the same)
 
-	Metronome m_metronome;
+	Metronome m_metronome{*Engine::audioEngine()};
 
 	friend class Engine;
 	friend class Transport;

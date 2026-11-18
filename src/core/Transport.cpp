@@ -34,8 +34,9 @@
 namespace lmms
 {
 
-Transport::Transport(Song& song)
+Transport::Transport(Song& song, AudioEngine& engine)
 	: m_song{song}
+	, m_engine{engine}
 {
 }
 
@@ -159,7 +160,7 @@ void Transport::periodStarts(tick_t tick, float frameOffset, f_cnt_t framesPerPe
 	{
 		// Counted from the song's start, tick by tick as the engine plays them (the tempo map's tempo at each, or
 		// the song's), plus the frames into the tick
-		const auto sampleRate = Engine::audioEngine()->outputSampleRate();
+		const auto sampleRate = m_engine.outputSampleRate();
 		const auto& tempoMap = m_song.tempoMap();
 		const auto frames = m_song.playMode() == Song::PlayMode::Song
 			? tempoMap.framesBetween(0, tick, m_song.getTempo(), sampleRate)

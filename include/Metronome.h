@@ -32,13 +32,15 @@
 namespace lmms {
 
 class AudioBusHandle;
+class AudioEngine;
 class MetronomeHandle;
 class Sample;
 
 class Metronome
 {
 public:
-	Metronome();
+	//! (it plays through @p engine; the song gives it)
+	explicit Metronome(AudioEngine& engine);
 	~Metronome();
 
 	bool active() const { return m_active; }
@@ -73,6 +75,7 @@ public:
 	static constexpr double DefaultVolumeDb = 0.0;
 
 private:
+	AudioEngine& m_engine;
 	std::atomic<bool> m_active = false;
 	std::atomic<bool> m_prepared = false;
 	std::unique_ptr<Sample> m_strongClick; //!< on the first beat of a bar

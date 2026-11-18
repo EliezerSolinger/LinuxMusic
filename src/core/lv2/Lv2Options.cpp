@@ -55,6 +55,14 @@ void Lv2Options::supportOption(LV2_URID key)
 
 
 
+void Lv2Options::forgetSupportedOptions()
+{
+	s_supportedOptions.clear();
+}
+
+
+
+
 void Lv2Options::createOptionVectors()
 {
 	// create vector of options

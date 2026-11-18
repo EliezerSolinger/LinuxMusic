@@ -50,6 +50,9 @@ class Note;
  *   (as an audio track's passes; see Track::insertLanesOnTop()).
  * The notes go into the clips of the lane heard.
  */
+class ProjectJournal;
+class TempoMap;
+
 class LMMS_EXPORT MidiRecorder
 {
 public:
@@ -59,6 +62,9 @@ public:
 		Replace,
 		TakeLane
 	};
+
+	//! New clips start at the bars of @p tempoMap; changes are journalled in @p journal (the song gives them)
+	MidiRecorder(const TempoMap& tempoMap, ProjectJournal& journal);
 
 	//! Starts recording the tracks, from @p fromTick on
 	void start(const std::vector<InstrumentTrack*>& tracks, tick_t fromTick);
@@ -92,6 +98,8 @@ private:
 
 	void addNote(InstrumentTrack* track, TrackState& state, int key, volume_t volume, tick_t start, tick_t end);
 
+	const TempoMap& m_tempoMap;
+	ProjectJournal& m_journal;
 	std::map<InstrumentTrack*, TrackState> m_tracks;
 	tick_t m_fromTick = 0;
 };

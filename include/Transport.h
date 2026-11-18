@@ -34,6 +34,7 @@
 namespace lmms
 {
 
+class AudioEngine;
 class Song;
 class Track;
 
@@ -59,7 +60,7 @@ public:
 		Recording
 	};
 
-	explicit Transport(Song& song);
+	Transport(Song& song, AudioEngine& engine);
 
 	auto state() const -> State { return m_state.load(std::memory_order_acquire); }
 	auto isRecording() const -> bool;
@@ -115,6 +116,7 @@ private:
 	void positionSet();
 
 	Song& m_song;
+	AudioEngine& m_engine;
 	std::atomic<State> m_state = State::Stopped;
 	std::atomic<std::int64_t> m_frame = 0;
 	std::atomic<bool> m_jumped = false;

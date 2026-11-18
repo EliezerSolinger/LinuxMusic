@@ -235,9 +235,13 @@ void Oscillator::createFFTPlans()
 
 void Oscillator::destroyFFTPlans()
 {
-	fftwf_destroy_plan(s_fftPlan);
-	fftwf_destroy_plan(s_ifftPlan);
+	// (none left behind: the engine is taken down and made again, e.g. in the tests, and makes them again)
+	if (s_fftPlan) { fftwf_destroy_plan(s_fftPlan); }
+	if (s_ifftPlan) { fftwf_destroy_plan(s_ifftPlan); }
 	fftwf_free(s_specBuf);
+	s_fftPlan = nullptr;
+	s_ifftPlan = nullptr;
+	s_specBuf = nullptr;
 }
 
 void Oscillator::generateWaveTables()

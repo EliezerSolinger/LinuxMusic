@@ -94,7 +94,10 @@ private:
 	Sample::PlaybackState m_state;
 };
 
-Metronome::Metronome() = default;
+Metronome::Metronome(AudioEngine& engine)
+	: m_engine{engine}
+{
+}
 Metronome::~Metronome() = default;
 
 
@@ -116,7 +119,7 @@ void Metronome::prepare()
 	m_weakClick = std::make_unique<Sample>(SampleBuffer::fromFile("misc/metronome01.ogg"));
 	m_bus = std::make_unique<AudioBusHandle>("Metronome", false);
 	m_handle = new MetronomeHandle{m_bus.get()};
-	Engine::audioEngine()->addPlayHandle(m_handle);
+	m_engine.addPlayHandle(m_handle);
 	loadSettings();
 	m_prepared = true;
 }
@@ -142,7 +145,7 @@ void Metronome::release()
 	if (m_handle)
 	{
 		// (the engine deletes it)
-		Engine::audioEngine()->removePlayHandle(m_handle);
+		m_engine.removePlayHandle(m_handle);
 		m_handle = nullptr;
 	}
 	m_bus.reset();

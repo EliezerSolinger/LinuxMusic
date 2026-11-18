@@ -10,6 +10,7 @@ set(LMMS_TESTS
 	src/core/ConvolverTest.cpp
 	src/core/DrumSynthTest.cpp
 	src/core/EditWhilePlayingTest.cpp
+	src/core/EngineLifecycleTest.cpp
 	src/core/ErrorLogTest.cpp
 	src/core/DeviceWaitTest.cpp
 	src/core/AudioBufferTest.cpp

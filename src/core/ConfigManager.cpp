@@ -110,6 +110,8 @@ ConfigManager::ConfigManager() :
 ConfigManager::~ConfigManager()
 {
 	saveConfigFile();
+	// The next inst() makes a new one (the engine is taken down and made again, e.g. in the tests)
+	if (s_instanceOfMe == this) { s_instanceOfMe = nullptr; }
 }
 
 

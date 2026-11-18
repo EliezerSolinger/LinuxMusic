@@ -203,6 +203,8 @@ Lv2Manager::Lv2Manager() :
 
 Lv2Manager::~Lv2Manager()
 {
+	// The options it said were supported go with it (their URIDs are its own): the next manager says them again
+	Lv2Options::forgetSupportedOptions();
 	lilv_world_free(m_world);
 }
 

@@ -36,6 +36,13 @@
 namespace lmms
 {
 
+
+MidiRecorder::MidiRecorder(const TempoMap& tempoMap, ProjectJournal& journal)
+	: m_tempoMap{tempoMap}
+	, m_journal{journal}
+{
+}
+
 void MidiRecorder::start(const std::vector<InstrumentTrack*>& tracks, tick_t fromTick)
 {
 	m_tracks.clear();
@@ -47,7 +54,7 @@ void MidiRecorder::start(const std::vector<InstrumentTrack*>& tracks, tick_t fro
 		// A take of its own: what was there goes a lane down (the recording's undo step keeps the track's state)
 		if (state.mode == Mode::TakeLane)
 		{
-			const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
+			const auto pause = ProjectJournal::Pause{&m_journal};
 			track->insertLanesOnTop(1);
 		}
 	}
@@ -109,11 +116,11 @@ void MidiRecorder::addNote(InstrumentTrack* track, TrackState& state, int key, v
 		}
 	}
 	// The recording's undo step is the tracks' state before it (see Song::record()): nothing is journalled here
-	const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
+	const auto pause = ProjectJournal::Pause{&m_journal};
 	if (!clip)
 	{
 		// From the start of the bar it starts in
-		clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{Engine::getSong()->tempoMap().barAt(start).start}));
+		clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{m_tempoMap.barAt(start).start}));
 		if (!clip) { return; }
 		clip->setLane(track->playingLane());
 	}
@@ -141,7 +148,7 @@ void MidiRecorder::stop(tick_t atTick)
 		// Replace: what was in the recorded stretch before goes
 		if (state.mode == Mode::Replace)
 		{
-			const auto pause = ProjectJournal::Pause{Engine::projectJournal()};
+			const auto pause = ProjectJournal::Pause{&m_journal};
 			for (auto* clip : state.clips)
 			{
 				auto toRemove = std::vector<Note*>{};
