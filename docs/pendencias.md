@@ -460,8 +460,13 @@ queda do Mallets, que é queda e entra antes.
     semitons levam o seno de 220 Hz para a quinta.
   - As unidades recebem sempre blocos do mesmo tamanho, como no Guitarix (o período do JACK dele): a maior potência
     de dois, até 256, que divide o período. O Detune só processa blocos do tamanho com que foi montado.
-  - Falta: o JCM800 Preamp (`jcm800pre`) precisa da biblioteca Eigen, que não está instalada (baixar pede a sua
-    aprovação); as outras internas do Guitarix (detune, looper, convolver com arquivo...).
+  - Falta do Guitarix:
+    - o conversor com arquivo de IR (`jconv`, mono e estéreo): a escolha e o ajuste da IR são o editor dele
+      (`iredit`: forma de onda, linha de ganho, offset, comprimento), uma janela própria a portar;
+    - os amps neurais (NAM, RTNeural) e o JCM800 Preamp (`jcm800pre`): precisam do Eigen (e do NAM Core e do
+      RTNeural), que não estão instalados; baixar pede a sua aprovação;
+    - não vêm, por serem ferramentas do programa Guitarix e não efeitos do rack (o LinuxMusic tem as suas): afinador,
+      osciloscópio, looper, gravador, sequenciador de bateria, metrônomo e o medidor de VU como unidade.
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
   - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.
