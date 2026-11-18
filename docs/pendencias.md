@@ -117,6 +117,11 @@ Motor e estabilidade:
 - [x] **Arte própria** do logo e do splash: um anel de gravar em volta das barras de uma forma de onda, no verde do
   tema (`tools/artwork`: os SVGs e o gerador de todos os ícones, do splash e das artes dos instaladores)
 
+## Refatoração do núcleo (17–18/11): concluída
+
+- [x] As fases 0 a 10 de `docs/plano-refatoracao.md` (andamento e commits no fim dele). O núcleo, como ficou:
+  `docs/estado-atual.md`.
+
 ## Pedidos de 17/11 (depois da refatoração do núcleo)
 
 O usuário pediu que cada item seja feito com muita atenção. Vêm depois do `docs/plano-refatoracao.md`. A exceção é a

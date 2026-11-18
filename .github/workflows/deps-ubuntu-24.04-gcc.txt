@@ -10,6 +10,7 @@ gpg
 g++
 libasound2-dev
 libc6-dev
+libebur128-dev
 libfftw3-dev
 libfluidsynth-dev
 libgig-dev

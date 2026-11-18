@@ -808,10 +808,14 @@ desenho para todos os drivers e do teste no Linux.
 - [x] 5.2 `AudioThreadAllocationTest` cobre todos os efeitos internos e também o Sf2Player e o AVL Drums.
   - O Sf2Player alocava na thread de áudio: os dados de cada nota com `new`, e a lista de notas crescia. Agora
     usa o espaço da nota (`makePluginData`) e uma lista com espaço reservado.
-- [ ] Ainda com trava na thread de áudio: as `QMutex` do Sf2Player (síntese e lista de notas) e do envelope/LFO.
-  Vão na fase 7 (render sem trava).
+- [x] Ainda com trava na thread de áudio: as `QMutex` do Sf2Player (síntese e lista de notas) e do envelope/LFO.
+  - Envelope/LFO: sem trava nenhuma desde 916ff1e08 (os valores são publicados, a forma do LFO calculada no
+    `trigger`/`reset`).
+  - Sf2Player: a interface só pega a trava por instantes desde 482a8320d (a fonte nova é preparada fora dela). A que
+    resta serializa as threads de áudio entre si no FluidSynth, que não é seguro entre threads: é a regra da
+    biblioteca, não espera pela interface (ver 7.6).
 
-### Fase 6: plugins de terceiros e IPC (em andamento)
+### Fase 6: plugins de terceiros e IPC: concluída
 - [x] 6.1 `RemotePluginBase`:
   - Tamanhos vindos do outro processo limitados nos dois caminhos: socket no Linux e no Mac, fila em memória
     compartilhada no Windows. Textos e partes de mensagem acima do máximo, ou negativos, quebram a conexão em vez de
@@ -908,3 +912,27 @@ desenho para todos os drivers e do teste no Linux.
     - **Estado de antes num projeto novo ou numa exportação:** o drive, o transformador, o compressor de
       barramento e as linhas de atraso guardavam o que tocou antes. Um projeto novo e uma exportação agora começam
       do repouso (`Mixer::discardProcessingState()`, feito por cada canal na thread de áudio).
+
+### Fase 7: estado de render sem trava: concluída
+- [x] 7.1 faixa e canal do mixer feitos fora da trava de mudança (ea77009fb).
+- [x] 7.2 apagar faixas e clipes tocando; corridas achadas no caminho (2934a97be).
+- [x] 7.3 clipes entram inteiros na faixa; o canal do mixer morre fora da trava (1ddf9a350).
+- [x] 7.4 a thread de áudio lê a automação sem mutex (1c17f51cf).
+- [x] 7.5 instrumentos e arquivos carregam tocando, sem o áudio esperar (482a8320d).
+- [x] 7.6 o que ainda pega a trava, e por quê (a5c1057dd). Detalhes e medidas na seção da fase 7.
+
+### Fase 8: ciclo de vida explícito: concluída
+- [x] O motor feito e desfeito com um projeto tocando, em ordem de dependência (aa17da4dc).
+- [x] O Peak Controller é dono do seu controlador; controladores entram inteiros na lista do áudio (8412cd560).
+- [x] Envelopes e LFOs sem mutex na thread de áudio (916ff1e08).
+- [x] O arpejo em Sync/Sort igual qualquer que seja a thread (2ced2ecd7).
+- [x] Uma play handle entra no seu barramento quando a thread de áudio a adota (a09d66858).
+
+### Fase 9: revisão final: concluída
+- [x] Bateria completa (testes, A/B, ASan/UBSan, TSan, determinismo) e os achados consertados (651dc0f99).
+- [x] Botões girados tocando: 147 corridas do TSan a 0 (ebafe3840).
+- [x] Plano conferido e marcado; `docs/estado-atual.md` e `docs/pendencias.md` atualizados.
+
+### Fase 10: bibliotecas confirmadas: concluída
+- [x] 10.1 libebur128 mede as exportações (pico real, faixa de loudness) (826cf882f).
+- [x] 10.2 libremidi não adotada; o driver MIDI do macOS reescrito (6540f6bce).
