@@ -42,6 +42,18 @@
 #include "Song.h"
 #include "Track.h"
 
+// (built with ThreadSanitizer: see noEditMakesThePlayingSkipAPeriod())
+#if defined(__has_feature)
+#	if __has_feature(thread_sanitizer)
+#		define LMMS_TEST_TSAN 1
+#	endif
+#endif
+#if defined(__SANITIZE_THREAD__) || defined(LMMS_TEST_TSAN)
+constexpr bool ThreadSanitized = true;
+#else
+constexpr bool ThreadSanitized = false;
+#endif
+
 using namespace lmms;
 using namespace std::chrono_literals;
 
@@ -261,6 +273,14 @@ private slots:
 			}
 		}
 		song->stop();
+		// Under ThreadSanitizer (some 30 times slower) the times say nothing (a lock held 0.12 ms is 4 ms there, and
+		// a period goes now and then): there the test is for the races, the times only reported
+		if (ThreadSanitized)
+		{
+			qInfo("(ThreadSanitizer: %lld periods skipped, a period rendered in %.1f ms at most, not judged)",
+				static_cast<long long>(skippedInAll), static_cast<double>(longestRender) / 1000.0);
+			return;
+		}
 		QCOMPARE(skippedInAll, std::int64_t{0});
 		// Reading a 20 to 30 MB soundfont takes far longer: the audio thread did not wait for it
 		QVERIFY2(longestRender < 100'000, qPrintable(QString{"a period took %1 ms"}.arg(longestRender / 1000.0)));
