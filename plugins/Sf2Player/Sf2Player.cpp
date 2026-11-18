@@ -26,13 +26,19 @@
 #include "Sf2Player.h"
 #include "Mixer.h"
 
+#include <array>
 #include <optional>
 #include <utility>
 
 #include <fluidsynth.h>
 #include <QDebug>
 #include <QDomElement>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QFileInfo>
 #include <QLabel>
+#include <QMimeData>
+#include <QUrl>
 
 #include "ArrayVector.h"
 #include "AudioEngine.h"
@@ -46,6 +52,8 @@
 #include "PathUtil.h"
 #include "PixmapButton.h"
 #include "Song.h"
+#include "StringPairDrag.h"
+#include "Clipboard.h"
 
 #include "PatchesDialog.h"
 #include "LcdSpinBox.h"
@@ -792,6 +800,14 @@ void Sf2Instrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 }
 
 
+bool Sf2Instrument::appliesVolumeEnvelope() const
+{
+	return true;
+}
+
+
+
+
 void Sf2Instrument::noteOn( Sf2PluginData * n )
 {
 	m_synthMutex.lock();
@@ -837,6 +853,31 @@ void Sf2Instrument::noteOn( Sf2PluginData * n )
 		if (voice.isValid()) {
 			fluid_voice_gen_set(voice.get(), GEN_CUSTOM_BALANCE, balance);
 			fluid_voice_update_param(voice.get(), GEN_CUSTOM_BALANCE);
+		}
+	}
+
+	// The track's volume envelope (the ENV tab), when it is on, as the voices' own (#3233): the soundfont's times
+	// and sustain give way to it. Its start level is FluidSynth's (silence), its sustain the one it leads to
+	const auto& envelope = instrumentTrack()->soundShaping().getVolumeParameters();
+	if (const auto shape = envelope.shape(); shape.amount > 0.f)
+	{
+		const auto timecents = [](float seconds) {
+			return seconds <= 0.001f ? -12000.f : std::max(-12000.f, 1200.f * std::log2(seconds));
+		};
+		const auto level = std::clamp(1.f - shape.amount + shape.amount * shape.sustain, 0.f, 1.f);
+		const auto sustain = level <= 0.f ? 1440.f : std::clamp(-200.f * std::log10(level), 0.f, 1440.f);
+		const auto settings = std::array<std::pair<fluid_gen_type, float>, 6>{{
+			{GEN_VOLENVDELAY, timecents(shape.predelay)}, {GEN_VOLENVATTACK, timecents(shape.attack)},
+			{GEN_VOLENVHOLD, timecents(shape.hold)}, {GEN_VOLENVDECAY, timecents(shape.decay)},
+			{GEN_VOLENVSUSTAIN, sustain}, {GEN_VOLENVRELEASE, timecents(shape.release)}}};
+		for (const auto& voice : n->fluidVoices)
+		{
+			if (!voice.isValid()) { continue; }
+			for (const auto& [generator, value] : settings)
+			{
+				fluid_voice_gen_set(voice.get(), generator, value);
+				fluid_voice_update_param(voice.get(), generator);
+			}
 		}
 	}
 
@@ -1036,6 +1077,8 @@ Sf2InstrumentView::Sf2InstrumentView( Instrument * _instrument, QWidget * _paren
 //	QVBoxLayout * vl = new QVBoxLayout( this );
 //	QHBoxLayout * hl = new QHBoxLayout();
 
+	setAcceptDrops(true);
+
 	auto k = castModel<Sf2Instrument>();
 
 	connect(&k->m_bankNum, SIGNAL(dataChanged()), this, SLOT(updatePatchName()));
@@ -1213,14 +1256,61 @@ void Sf2InstrumentView::modelChanged()
 
 
 
+auto Sf2InstrumentView::soundfontIn(const QMimeData* data) -> QString
+{
+	const auto isSoundfont = [](const QString& file) {
+		return file.endsWith(".sf2", Qt::CaseInsensitive) || file.endsWith(".sf3", Qt::CaseInsensitive);
+	};
+	// From the file browser: a "soundfontfile" (or a sample file that is one)
+	if (data->hasFormat(Clipboard::mimeType(Clipboard::MimeType::StringPair)))
+	{
+		const auto text = QString{data->data(Clipboard::mimeType(Clipboard::MimeType::StringPair))};
+		const auto type = text.section(':', 0, 0);
+		const auto value = text.section(':', 1);
+		if (type == "soundfontfile" || ((type == "samplefile" || type == "importedproject") && isSoundfont(value)))
+		{
+			return value;
+		}
+		return {};
+	}
+	// From a file manager
+	if (data->hasUrls() && data->urls().size() == 1 && data->urls().front().isLocalFile())
+	{
+		const auto file = data->urls().front().toLocalFile();
+		if (isSoundfont(file)) { return file; }
+	}
+	return {};
+}
+
+
+void Sf2InstrumentView::dragEnterEvent(QDragEnterEvent* event)
+{
+	if (!soundfontIn(event->mimeData()).isEmpty()) { event->acceptProposedAction(); }
+	else { event->ignore(); }
+}
+
+
+void Sf2InstrumentView::dropEvent(QDropEvent* event)
+{
+	const auto file = soundfontIn(event->mimeData());
+	if (file.isEmpty()) { event->ignore(); return; }
+	// (as the file dialog: the track takes its name)
+	castModel<Sf2Instrument>()->openFile(file);
+	event->acceptProposedAction();
+}
+
+
+
+
 void Sf2InstrumentView::updateFilename()
 {
 	auto i = castModel<Sf2Instrument>();
 	QFontMetrics fm( m_filenameLabel->font() );
-	QString file = i->m_filename.endsWith( ".sf2", Qt::CaseInsensitive ) ?
-			i->m_filename.left( i->m_filename.length() - 4 ) :
-			i->m_filename;
-	m_filenameLabel->setText( fm.elidedText( file, Qt::ElideLeft, m_filenameLabel->width() ) );
+	// The file's name, its end cut if it does not fit (the whole path in the tooltip: the field is small, #7482)
+	const auto file = QFileInfo{i->m_filename}.completeBaseName();
+	m_filenameLabel->setText(fm.elidedText(file, Qt::ElideRight, m_filenameLabel->width()));
+	m_filenameLabel->setToolTip(i->m_filename.isEmpty() ? tr("No soundfont: open one, or drag it here")
+		: PathUtil::toAbsolute(i->m_filename));
 			//		i->m_filename + "\nPatch: TODO" );
 
 	m_patchDialogButton->setEnabled( !i->m_filename.isEmpty() );
@@ -1238,7 +1328,9 @@ void Sf2InstrumentView::updatePatchName()
 	auto i = castModel<Sf2Instrument>();
 	QFontMetrics fm( font() );
 	QString patch = i->getCurrentPatchName();
-	m_patchLabel->setText( fm.elidedText( patch, Qt::ElideLeft, m_patchLabel->width() ) );
+	m_patchLabel->setText(fm.elidedText(patch, Qt::ElideRight, m_patchLabel->width()));
+	m_patchLabel->setToolTip(patch.isEmpty() ? QString{}
+		: tr("Bank %1, patch %2: %3").arg(i->m_bankNum.value()).arg(i->m_patchNum.value()).arg(patch));
 
 
 	update();

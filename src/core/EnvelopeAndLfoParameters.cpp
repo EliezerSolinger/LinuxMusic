@@ -403,6 +403,24 @@ void EnvelopeAndLfoParameters::setUserWave(std::shared_ptr<const SampleBuffer> w
 
 
 
+auto EnvelopeAndLfoParameters::shape() const -> Shape
+{
+	// (as updateSampleVars() works the frames out)
+	const auto seconds = [](float knob) { return SECS_PER_ENV_SEGMENT * expKnobVal(knob); };
+	auto result = Shape{};
+	result.predelay = seconds(m_predelayModel.value());
+	result.attack = seconds(m_attackModel.value());
+	result.hold = seconds(m_holdModel.value());
+	result.decay = seconds(m_decayModel.value() * (1 - m_sustainModel.value()));
+	result.sustain = m_sustainModel.value();
+	result.release = seconds(m_releaseModel.value());
+	result.amount = m_amountModel.value();
+	return result;
+}
+
+
+
+
 void EnvelopeAndLfoParameters::updateSampleVars()
 {
 	// Worked out without any lock, then put where the audio thread reads it (fillLevel(), on the workers, which take

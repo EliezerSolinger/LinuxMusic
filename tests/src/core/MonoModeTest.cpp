@@ -23,6 +23,12 @@
 #include <cmath>
 #include <vector>
 
+#include <QDataStream>
+#include <QDir>
+#include <QFile>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QTemporaryDir>
 #include <QtTest>
 
 #include "AudioDummy.h"
@@ -289,6 +295,56 @@ private slots:
 		QVERIFY2(near(pitch(second.samples), DefaultKey - 5), qPrintable(QString::number(pitch(second.samples))));
 		const auto back = renderUntil(2 * Beat + Beat / 2);
 		QVERIFY2(near(pitch(back.samples), DefaultKey - 12), qPrintable(QString::number(pitch(back.samples))));
+	}
+
+	//! The GIG player follows a voice's legato and glide too: its sample, on the key it started at, retuned (the file
+	//! made here has a 440 Hz tone on A4 alone)
+	void gigFollows()
+	{
+		const auto wav2gig = QStandardPaths::findExecutable("wav2gig");
+		if (wav2gig.isEmpty()) { QSKIP("no wav2gig here to make a GIG file"); }
+		const auto dir = QTemporaryDir{};
+		QDir{dir.path()}.mkpath("wav");
+		{
+			auto file = QFile{dir.filePath("wav/Tone - Sine - 127 - 69 - A4.wav")};
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			auto stream = QDataStream{&file};
+			stream.setByteOrder(QDataStream::LittleEndian);
+			const auto frames = quint32{44100 * 3};
+			stream.writeRawData("RIFF", 4);
+			stream << quint32{36 + frames * 4};
+			stream.writeRawData("WAVEfmt ", 8);
+			stream << quint32{16} << quint16{1} << quint16{2} << quint32{44100} << quint32{44100 * 4} << quint16{4}
+				<< quint16{16};
+			stream.writeRawData("data", 4);
+			stream << frames * 4;
+			for (quint32 i = 0; i < frames; ++i)
+			{
+				const auto value = static_cast<qint16>(16000 * std::sin(2 * M_PI * 440 * i / 44100.0));
+				stream << value << value;
+			}
+		}
+		const auto gig = dir.filePath("tone.gig");
+		QProcess::execute(wav2gig, {"-f", gig, dir.filePath("wav")});
+		QVERIFY(QFileInfo::exists(gig));
+
+		makeTrack(1, 0);
+		QVERIFY(m_track->loadInstrument("gigplayer"));
+		{
+			auto state = DataFile{DataFile::Type::InstrumentTrackSettings};
+			m_track->saveState(state, state.content());
+			auto settings = state.content().firstChildElement();
+			settings.elementsByTagName("instrument").item(0).firstChildElement().setAttribute("src", gig);
+			m_track->restoreState(settings);
+		}
+		addNotes({{DefaultKey, 0, 4 * Beat}, {DefaultKey + 5, Beat, Beat}});
+		play();
+		const auto first = renderUntil(Beat / 2);
+		QVERIFY2(near(pitch(first.samples), DefaultKey), qPrintable(QString::number(pitch(first.samples))));
+		const auto second = renderUntil(Beat + Beat / 2);
+		QVERIFY2(near(pitch(second.samples), DefaultKey + 5), qPrintable(QString::number(pitch(second.samples))));
+		const auto back = renderUntil(2 * Beat + Beat / 2);
+		QVERIFY2(near(pitch(back.samples), DefaultKey), qPrintable(QString::number(pitch(back.samples))));
 	}
 
 	//! Keys from a device or the piano: the last one held plays; let go, the voice goes back to one still held

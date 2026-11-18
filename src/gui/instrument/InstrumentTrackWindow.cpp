@@ -498,7 +498,7 @@ void InstrumentTrackWindow::updateInstrumentView()
 		m_midiView->setMaximumSize(maxSize);
 		m_tuningView->setMaximumSize(maxSize);
 
-		m_ssView->setFunctionsHidden(instrument->isSingleStreamed());
+		m_ssView->setSingleStreamed(instrument->isSingleStreamed(), instrument->appliesVolumeEnvelope());
 
 		modelChanged(); 		// Get the instrument window to refresh
 		m_track->dataChanged(); // Get the text on the trackButton to change

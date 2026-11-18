@@ -7982,7 +7982,7 @@ Pressione &lt;Shift&gt; para divisão destrutiva.</translation>
         <location filename="../../src/gui/instrument/EnvelopeAndLfoView.cpp" line="95"/>
         <location filename="../../src/gui/instrument/EnvelopeAndLfoView.cpp" line="165"/>
         <source>DEL</source>
-        <translation>ATRASO</translation>
+        <translation>PRÉ</translation>
     </message>
     <message>
         <location filename="../../src/gui/instrument/EnvelopeAndLfoView.cpp" line="95"/>
@@ -9394,6 +9394,10 @@ Por favor certifique que você tem permissão para gravar o aquivo e o diretóri
         <location filename="../../src/gui/instrument/InstrumentSoundShapingView.cpp" line="84"/>
         <source>Envelopes, LFOs and filters are not supported by the current instrument.</source>
         <translation>Envelopes, LFOs e filtros não são suportados pelo instrumento atual.</translation>
+    </message>
+    <message>
+        <source>This instrument gives each of its voices the volume envelope as its own; the LFOs, the cutoff and resonance envelopes and the filter do not apply to it.</source>
+        <translation>Este instrumento dá a cada uma das suas vozes o envelope de volume como envelope próprio; os LFOs, os envelopes de corte e ressonância e o filtro não se aplicam a ele.</translation>
     </message>
 </context>
 <context>
@@ -15375,6 +15379,14 @@ A interface usada é a que está salva nestas configurações.</translation>
         <location filename="../../plugins/Sf2Player/Sf2Player.cpp" line="1156"/>
         <source>SoundFont Files (*.sf2 *.sf3)</source>
         <translation>Ficheiros SoundFont (*.sf2 *.sf3)</translation>
+    </message>
+    <message>
+        <source>No soundfont: open one, or drag it here</source>
+        <translation>Nenhum soundfont: abra um, ou arraste-o para cá</translation>
+    </message>
+    <message>
+        <source>Bank %1, patch %2: %3</source>
+        <translation>Banco %1, patch %2: %3</translation>
     </message>
 </context>
 <context>

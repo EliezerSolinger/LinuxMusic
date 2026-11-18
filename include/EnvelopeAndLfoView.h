@@ -27,6 +27,7 @@
 #define LMMS_GUI_ENVELOPE_AND_LFO_VIEW_H
 
 #include <QWidget>
+#include <vector>
 
 #include "ModelView.h"
 
@@ -55,6 +56,13 @@ public:
 	EnvelopeAndLfoView( QWidget * _parent );
 	~EnvelopeAndLfoView() override;
 
+	//! The LFO's controls usable or greyed out (an instrument that takes only the envelope: see
+	//! Instrument::appliesVolumeEnvelope())
+	void setLfoEnabled(bool enabled);
+
+
+private:
+	std::vector<QWidget*> m_lfoWidgets; //!< see setLfoEnabled()
 
 protected:
 	void modelChanged() override;

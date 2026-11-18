@@ -385,9 +385,9 @@ GuiApplication::GuiApplication()
 			});
 		}
 		// =pins opens the pin connector of the first instrument instead, =effects its effects tab, =functions its
-		// functions tab (chords, arpeggio, mono)
+		// functions tab (chords, arpeggio, mono), =envelopes its envelopes tab
 		if (screenshotAction == "instrument" || screenshotAction == "pins" || screenshotAction == "effects"
-			|| screenshotAction == "functions")
+			|| screenshotAction == "functions" || screenshotAction == "envelopes")
 		{
 			QTimer::singleShot(2500, m_mainWindow, [this, screenshotAction] {
 				const auto views = m_mainWindow->findChildren<InstrumentTrackView*>();
@@ -401,6 +401,10 @@ GuiApplication::GuiApplication()
 				if (screenshotAction == "functions")
 				{
 					views.first()->getInstrumentTrackWindow()->tabWidgetParent()->setActiveTab(2);
+				}
+				if (screenshotAction == "envelopes")
+				{
+					views.first()->getInstrumentTrackWindow()->tabWidgetParent()->setActiveTab(1);
 				}
 			});
 		}

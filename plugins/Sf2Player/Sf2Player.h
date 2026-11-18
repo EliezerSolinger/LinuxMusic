@@ -42,7 +42,10 @@
 #include "LcdSpinBox.h"
 #include "SampleFrame.h"
 
+class QDragEnterEvent;
+class QDropEvent;
 class QLabel;
+class QMimeData;
 
 namespace lmms
 {
@@ -92,6 +95,8 @@ public:
 
 public slots:
 	void openFile( const QString & _sf2File, bool updateTrackName = true );
+	//! The ENV tab's volume envelope shapes its voices (see Instrument::appliesVolumeEnvelope())
+	bool appliesVolumeEnvelope() const override;
 	void updatePatch();
 	void reloadSynth();
 	
@@ -202,6 +207,11 @@ public:
 
 private:
 	void modelChanged() override;
+	//! A soundfont dragged from the file browser (or a file manager) takes the place of the one loaded (#7480)
+	void dragEnterEvent(QDragEnterEvent* event) override;
+	void dropEvent(QDropEvent* event) override;
+	//! The file a drag carries, if it is a soundfont; empty otherwise
+	static auto soundfontIn(const QMimeData* data) -> QString;
 
 	PixmapButton * m_fileDialogButton;
 	PixmapButton * m_patchDialogButton;

@@ -107,6 +107,20 @@ public:
 		return m_used;
 	}
 
+	//! The envelope as times and levels, the way its knobs make it (for an instrument that shapes its voices with an
+	//! envelope of its own: see Instrument::appliesVolumeEnvelope())
+	struct Shape
+	{
+		float predelay = 0.f; //!< seconds
+		float attack = 0.f;
+		float hold = 0.f;
+		float decay = 0.f;
+		float sustain = 1.f; //!< the level held, after the decay (0 to 1)
+		float release = 0.f;
+		float amount = 0.f; //!< how much of it is applied (none: the envelope is off)
+	};
+	auto shape() const -> Shape;
+
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;

@@ -50,7 +50,11 @@ public:
 	InstrumentSoundShapingView( QWidget * _parent );
 	~InstrumentSoundShapingView() override;
 
-	void setFunctionsHidden( bool hidden );
+	/**
+	 * For a single-streamed instrument (one sound for all its notes) the envelopes, LFOs and filter cannot apply;
+	 * one that gives its voices the volume envelope itself (@p ownVolumeEnvelope) keeps that, the rest greyed out
+	 */
+	void setSingleStreamed(bool singleStreamed, bool ownVolumeEnvelope);
 
 
 private:

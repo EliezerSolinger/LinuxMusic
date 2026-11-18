@@ -29,6 +29,8 @@
 #include <QDataStream>
 #include <QDirIterator>
 #include <QFile>
+#include <QProcess>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -75,6 +77,17 @@ class InstrumentFixesTest : public QObject
 	static auto play(const QString& instrument, const std::function<void(QDomElement&)>& change, int periods = 150,
 		int key = DefaultKey) -> Played
 	{
+		const auto changeInstrument = [&change](QDomElement& track) {
+			auto element = track.elementsByTagName("instrument").item(0).firstChildElement();
+			change(element);
+		};
+		return playTrack(instrument, change ? changeInstrument : std::function<void(QDomElement&)>{}, periods, key);
+	}
+
+	//! As play(), @p change given the whole track's settings
+	static auto playTrack(const QString& instrument, const std::function<void(QDomElement&)>& change,
+		int periods = 150, int key = DefaultKey) -> Played
+	{
 		auto* song = Engine::getSong();
 		song->createNewProject();
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
@@ -83,8 +96,7 @@ class InstrumentFixesTest : public QObject
 		{
 			auto state = DataFile{DataFile::Type::InstrumentTrackSettings};
 			track->saveState(state, state.content());
-			auto element = state.content().firstChildElement().elementsByTagName("instrument").item(0)
-				.firstChildElement();
+			auto element = state.content().firstChildElement();
 			change(element);
 			track->restoreState(state.content().firstChildElement());
 		}
@@ -173,6 +185,25 @@ class InstrumentFixesTest : public QObject
 			add(at, 0.04, [&](double t) { return 0.2 * random() * std::exp(-t * 120); });
 		}
 		return frames;
+	}
+
+	//! A GIG file in @p dir of a 440 Hz tone on A4 (pitch-tracked over the keyboard; its own envelope: none), made
+	//! with libgig's wav2gig; empty without it
+	static auto makeGig(const QTemporaryDir& dir) -> QString
+	{
+		const auto wav2gig = QStandardPaths::findExecutable("wav2gig");
+		if (wav2gig.isEmpty()) { return {}; }
+		auto tone = std::vector<std::array<float, 2>>(44100 * 3);
+		for (std::size_t i = 0; i < tone.size(); ++i)
+		{
+			const auto value = static_cast<float>(0.5 * std::sin(2 * M_PI * 440 * i / 44100.0));
+			tone[i] = {value, value};
+		}
+		QDir{dir.path()}.mkpath("wav");
+		writeWav(dir.filePath("wav/Tone - Sine - 127 - 69 - A4.wav"), tone, 44100);
+		const auto gig = dir.filePath("tone.gig");
+		QProcess::execute(wav2gig, {"-f", gig, dir.filePath("wav")});
+		return QFileInfo::exists(gig) ? gig : QString{};
 	}
 
 	//! Loads @p file into a new SlicerT; @returns its saved settings
@@ -794,6 +825,92 @@ private slots:
 			const auto folded = tests::aliasing(played.samples, 4096, frequency, Engine::audioEngine()->outputSampleRate(), 2);
 			QVERIFY2(folded < -60, qPrintable(QString{"%1 Hz: %2 dB folded"}.arg(frequency).arg(folded)));
 			QVERIFY2(played.loudest > 0.9f && played.loudest < 1.2f, qPrintable(QString::number(played.loudest)));
+		}
+	}
+
+	/**
+	 * #3233: the soundfont and GIG players play one stream, which the track's envelopes cannot shape: the ENV tab
+	 * did nothing. They give their voices its volume envelope now, as their own: a slow attack starts quiet; with the
+	 * envelope off (its amount at 0, as in a new track) they sound as the file says
+	 */
+	void samplersTakeTheVolumeEnvelope()
+	{
+		const auto dir = QTemporaryDir{};
+		QVERIFY(dir.isValid());
+		const auto gig = makeGig(dir);
+
+		for (const auto* instrument : {"sf2player", "gigplayer"})
+		{
+			if (QString{instrument} == "gigplayer" && gig.isEmpty()) { qInfo("no wav2gig here: GIG not tried"); continue; }
+			auto starts = std::array<float, 2>{};
+			for (const auto amount : {0, 1})
+			{
+				const auto played = playTrack(instrument, [&](QDomElement& track) {
+					if (QString{instrument} == "gigplayer")
+					{
+						auto plugin = track.elementsByTagName("instrument").item(0).firstChildElement();
+						plugin.setAttribute("src", gig);
+					}
+					auto volume = track.elementsByTagName("elvol").item(0).toElement();
+					QVERIFY(!volume.isNull());
+					volume.setAttribute("amt", amount);
+					volume.setAttribute("pdel", 0);
+					volume.setAttribute("att", 0.4); // 0.8 s
+					volume.setAttribute("hold", 0);
+					volume.setAttribute("dec", 0);
+					volume.setAttribute("sustain", 1);
+				}, 400);
+				QVERIFY(played.finite);
+				const auto loudest = [&](double from, double to) {
+					auto result = 0.f;
+					for (auto i = static_cast<std::size_t>(from * 44100) * 2; i < std::min(played.samples.size(), static_cast<std::size_t>(to * 44100) * 2); ++i)
+					{
+						result = std::max(result, std::abs(played.samples[i]));
+					}
+					return result;
+				};
+				starts[amount] = loudest(0.0, 0.05);
+				QVERIFY2(loudest(0.8, 1.2) > 0.005f, qPrintable(QString{"%1, amount %2: silent"}.arg(instrument).arg(amount)));
+			}
+			// (a 0.8 s attack: 50 ms in, about a sixteenth as loud as the note from the file)
+			QVERIFY2(starts[1] < starts[0] * 0.2f, qPrintable(QString{"%1: %2 at the start with the envelope, %3 without"}
+				.arg(instrument).arg(starts[1]).arg(starts[0])));
+		}
+	}
+
+	//! #3825: the GIG player read its samples from the file on the audio thread; it plays them from memory now,
+	//! each voice made in advance. Still at the right pitch (the file made here has one key: MonoModeTest follows a
+	//! voice away from it)
+	void gigPlaysItsSamples()
+	{
+		const auto dir = QTemporaryDir{};
+		const auto gig = makeGig(dir);
+		if (gig.isEmpty()) { QSKIP("no wav2gig here to make a GIG file"); }
+		for (const auto key : {DefaultKey})
+		{
+			const auto played = play("gigplayer", [&gig](QDomElement& plugin) { plugin.setAttribute("src", gig); }, 150, key);
+			QVERIFY(played.finite);
+			QVERIFY2(played.loudest > 0.1f, qPrintable(QString{"key %1: %2"}.arg(key).arg(played.loudest)));
+			// Upward zero crossings of the left channel over the second half
+			auto crossings = 0;
+			auto first = -1.0;
+			auto last = -1.0;
+			const auto half = played.samples.size() / 4 * 2;
+			for (auto i = half + 2; i < played.samples.size(); i += 2)
+			{
+				const auto a = played.samples[i - 2];
+				const auto b = played.samples[i];
+				if (a < 0 && b >= 0)
+				{
+					const auto at = (i - 2) / 2 + a / (a - b);
+					if (first < 0) { first = at; } else { ++crossings; }
+					last = at;
+				}
+			}
+			const auto frequency = crossings / (last - first) * 44100.0;
+			const auto expected = 440.0 * std::exp2((key - DefaultKey) / 12.0);
+			QVERIFY2(std::abs(frequency - expected) < expected * 0.01,
+				qPrintable(QString{"key %1: %2 Hz, %3 expected"}.arg(key).arg(frequency).arg(expected)));
 		}
 	}
 

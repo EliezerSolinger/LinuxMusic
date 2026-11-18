@@ -98,6 +98,8 @@ public:
 	void silenceAllNotes( bool removeIPH = false );
 
 	auto monoMode() -> MonoMode& { return m_monoMode; }
+	//! The ENV tab: envelopes, LFOs and the filter
+	auto soundShaping() const -> const InstrumentSoundShaping& { return m_soundShaping; }
 
 	bool isSustainPedalPressed() const
 	{

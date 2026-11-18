@@ -187,7 +187,16 @@ EnvelopeAndLfoView::EnvelopeAndLfoView(QWidget * parent) :
 	m_controlEnvAmountCb->setToolTip(tr("Control envelope amount by this LFO"));
 	checkBoxesLayout->addWidget(m_controlEnvAmountCb);
 
+	m_lfoWidgets = {m_lfoGraph, sin_lfo_btn, triangle_lfo_btn, saw_lfo_btn, sqr_lfo_btn, random_lfo_btn, m_userLfoBtn,
+		m_lfoPredelayKnob, m_lfoAttackKnob, m_lfoSpeedKnob, m_lfoAmountKnob, m_x100Cb, m_controlEnvAmountCb};
+
 	setAcceptDrops(true);
+}
+
+
+void EnvelopeAndLfoView::setLfoEnabled(bool enabled)
+{
+	for (auto* widget : m_lfoWidgets) { widget->setEnabled(enabled); }
 }
 
 

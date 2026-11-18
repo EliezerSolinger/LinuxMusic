@@ -186,6 +186,12 @@ public:
 
 	sample_rate_t getSampleRate() const;
 
+	/**
+	 * A single-streamed instrument with voices of its own (the soundfont and GIG players) that gives them the track's
+	 * volume envelope (the ENV tab: upstream's #3233), as their own envelope. The track cannot apply it to a stream
+	 */
+	virtual bool appliesVolumeEnvelope() const { return false; }
+
 	bool isSingleStreamed() const
 	{
 		return m_flags.testFlag(Instrument::Flag::IsSingleStreamed);

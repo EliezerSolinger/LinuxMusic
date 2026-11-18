@@ -99,11 +99,20 @@ InstrumentSoundShapingView::~InstrumentSoundShapingView()
 
 
 
-void InstrumentSoundShapingView::setFunctionsHidden( bool hidden )
+void InstrumentSoundShapingView::setSingleStreamed(bool singleStreamed, bool ownVolumeEnvelope)
 {
-	m_targetsTabWidget->setHidden( hidden );
-	m_filterGroupBox->setHidden( hidden );
-	m_singleStreamInfoLabel->setHidden( !hidden );
+	const auto hidden = singleStreamed && !ownVolumeEnvelope;
+	m_targetsTabWidget->setHidden(hidden);
+	m_filterGroupBox->setHidden(singleStreamed);
+	m_singleStreamInfoLabel->setHidden(!singleStreamed);
+	m_singleStreamInfoLabel->setText(ownVolumeEnvelope
+		? tr("This instrument gives each of its voices the volume envelope as its own; the LFOs, the cutoff and "
+			"resonance envelopes and the filter do not apply to it.")
+		: tr("Envelopes, LFOs and filters are not supported by the current instrument."));
+	const auto partial = singleStreamed && ownVolumeEnvelope;
+	m_volumeView->setLfoEnabled(!partial);
+	m_cutoffView->setEnabled(!partial);
+	m_resonanceView->setEnabled(!partial);
 }
 
 

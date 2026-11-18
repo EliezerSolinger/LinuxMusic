@@ -34,6 +34,9 @@
 #include <QDomDocument>
 #include <QObject>
 #include <QTemporaryDir>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QFileInfo>
 #include <QtTest>
 #include <sndfile.h>
 
@@ -489,7 +492,7 @@ private slots:
 		QTest::addColumn<QString>("instrument");
 		for (const auto* name : {"tripleoscillator", "bitinvader", "kicker", "lb302", "monstro", "nes", "organic",
 			"sfxr", "sid", "vibedstrings", "watsyn", "xpressive", "freeboy", "malletsstk", "opulenz",
-			"audiofileprocessor", "slicert", "zynaddsubfx", "sf2player", "avldrums",
+			"audiofileprocessor", "slicert", "zynaddsubfx", "sf2player", "avldrums", "gigplayer",
 			// (one note at a time, legato with a glide: the voice moves and goes back on the audio thread)
 			"tripleoscillator+mono", "sf2player+mono"})
 		{
@@ -516,6 +519,25 @@ private slots:
 		}
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
 		if (!track->loadInstrument(instrument)) { QSKIP("not built here"); }
+		if (instrument == "gigplayer")
+		{
+			// A GIG file made from a tone (the program has none of its own)
+			const auto wav2gig = QStandardPaths::findExecutable("wav2gig");
+			if (wav2gig.isEmpty()) { QSKIP("no wav2gig here to make a GIG file"); }
+			QDir{m_directory.path()}.mkpath("gigwav");
+			writeWav(m_directory.filePath("gigwav/Tone - Sine - 127 - 69 - A4.wav"),
+				static_cast<int>(Engine::audioEngine()->outputSampleRate()));
+			const auto gig = m_directory.filePath("tone.gig");
+			QProcess::execute(wav2gig, {"-f", gig, m_directory.filePath("gigwav")});
+			QVERIFY(QFileInfo::exists(gig));
+			auto document = QDomDocument{};
+			auto saved = document.createElement("saved");
+			track->saveState(document, saved);
+			auto settings = saved.firstChildElement();
+			auto plugin = settings.elementsByTagName("instrument").item(0).firstChildElement();
+			plugin.setAttribute("src", gig);
+			track->restoreState(settings);
+		}
 		if (instrument == "audiofileprocessor" || instrument == "slicert")
 		{
 			// A sample to play

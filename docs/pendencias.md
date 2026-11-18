@@ -208,7 +208,23 @@ queda do Mallets, que é queda e entra antes.
       salvo na faixa; projetos de antes ficam com ele desligado. Segurança entre threads: as notas dos clipes são
       tratadas na parte da música do período, as teclas sob a trava de mudanças do motor, e a voz se tira do modo
       mono como primeira coisa ao ser destruída. `MonoModeTest` (frequência e vozes contadas a cada momento) e o
-      `AudioThreadAllocationTest` com mono. O GIG ainda não segue a altura no meio da nota (fica com os itens dele).
+      `AudioThreadAllocationTest` com mono.
+    - [x] Sf2Player e GIG Player:
+      - ADSR próprio (#3233): os dois tocam um fluxo só, que os envelopes da faixa não alcançam, e a aba ENV não fazia
+        nada. Agora o envelope de volume da aba ENV vira o envelope de cada voz (no Sf2, os geradores de envelope do
+        FluidSynth; no GIG, o envelope dele no lugar do do arquivo), quando a quantidade não é 0. A aba mostra o
+        envelope de volume e acinzenta o LFO, os outros alvos e o filtro, com uma explicação;
+      - arrastar um `.sf2`/`.sf3` (do navegador ou do gerenciador de arquivos) para cima do Sf2Player troca o
+        soundfont (#7480); os campos de arquivo e patch mostram o nome do arquivo e o caminho inteiro e o
+        banco/patch na dica (#7482);
+      - GIG (#3825): lia os samples do arquivo na thread de áudio, um bloco por período para cada sample tocando (o
+        processador inteiro com kits grandes), e alocava a cada nota (31 alocações num teste curto). Agora os samples
+        do instrumento ficam na memória ao escolhê-lo (como o FluidSynth faz com o soundfont), as vozes são feitas
+        antes com os seus reamostradores, e nada é alocado na thread de áudio (`AudioThreadAllocationTest` com um
+        `.gig` feito pelo `wav2gig`). No caminho: uma voz que acabava apagava o que as outras já tinham mixado no
+        período, e a iteração das regiões guardava estado no instrumento (compartilhado entre threads);
+      - GIG: a dimensão do pedal de sustain (#4517) escolhe os samples gravados com o pedal abaixado; e a altura
+        segue a nota no meio dela (legato e deslize do modo mono).
     - [x] FreeBoy (#6556, #8043): medido, não há offset DC com o padrão (o filtro "Bass" do emulador o tira); os
       botões de saída diziam o lado errado (o de "SO2 (Esquerda)" saía à direita: o comportamento era o do Game Boy,
       SO1 = direita) e os dois volumes de saída agiam como um só (o emulador tem um volume): rótulos corrigidos e

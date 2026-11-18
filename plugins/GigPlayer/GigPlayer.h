@@ -27,6 +27,11 @@
 #ifndef GIG_PLAYER_H
 #define GIG_PLAYER_H
 
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <vector>
+
 #include <QList>
 #include <QMutex>
 #include <QMutexLocker>
@@ -34,6 +39,7 @@
 
 #include "AudioEngine.h"
 #include "AudioResampler.h"
+#include "EnvelopeAndLfoParameters.h"
 #include "Instrument.h"
 #include "PixmapButton.h"
 #include "InstrumentView.h"
@@ -64,6 +70,7 @@ class GigInstrumentView;
 struct GIGPluginData
 {
 	int midiNote;
+	float frequency; //!< the note's, now (it may move: a mono voice's legato and glide)
 } ;
 
 
@@ -135,6 +142,9 @@ class ADSR
 public:
 	ADSR();
 	ADSR( gig::DimensionRegion * region, int sampleRate );
+	//! The track's volume envelope (the ENV tab) instead of the file's, @p sampleRate the rate it counts at: its
+	//! pre-delay joins the attack and its hold the decay (this envelope has neither)
+	void useEnvelope(const EnvelopeAndLfoParameters::Shape& shape, int sampleRate);
 	void keyup(); // We will begin releasing starting now
 	bool done(); // Is this sample done playing?
 	float value(); // What's the current amplitude
@@ -149,13 +159,19 @@ public:
 class GigSample
 {
 public:
-	GigSample(gig::Sample* pSample, gig::DimensionRegion* pDimRegion, float attenuation,
-		AudioResampler::Mode interpolation, float desiredFreq);
+	//! A voice made in advance, with its resampler (see GigInstrument::m_voices): start() gives it a sample to play
+	GigSample();
 	~GigSample() = default;
+	GigSample(const GigSample&) = delete;
+	GigSample& operator=(const GigSample&) = delete;
 
-	// Needed when initially creating in QList
-	GigSample( const GigSample& g );
-	GigSample& operator=( const GigSample& g );
+	//! Plays @p pSample of @p pDimRegion from its start at @p desiredFreq (allocates nothing)
+	void start(gig::Sample* pSample, gig::DimensionRegion* pDimRegion, float attenuation, float desiredFreq);
+	//! Follows the note to @p frequency (a pitch-tracked sample)
+	void setFrequency(float frequency);
+
+	//! See ADSR::useEnvelope() (at the rate the sample plays at)
+	void useEnvelope(const EnvelopeAndLfoParameters::Shape& shape);
 
 	gig::Sample * sample;
 	gig::DimensionRegion * region;
@@ -207,20 +223,24 @@ enum class GigState
 class GigNote
 {
 public:
-	int midiNote;
-	int velocity;
-	bool release; // Whether to trigger a release sample on key up
-	bool isRelease; // Whether this is a release sample, changes when we delete it
-	GigState state;
-	float frequency;
-	std::vector<GigSample> samples;
+	int midiNote = 0;
+	int velocity = 0;
+	bool release = false; // Whether to trigger a release sample on key up
+	bool isRelease = false; // Whether this is a release sample, changes when we delete it
+	GigState state = GigState::Completed;
+	float frequency = 0.f;
+	//! The voices playing its samples (see GigInstrument::m_voices), by index
+	static constexpr std::size_t MostSamples = 16;
+	std::array<std::uint16_t, MostSamples> voices = {};
+	std::size_t voiceCount = 0;
 
 	// Used to determine which note should be released on key up
 	//
 	// Note: if accessing the data, be careful not to access it after the key
 	// has been released since that's when it is deleted
-	GIGPluginData * handle;
+	GIGPluginData * handle = nullptr;
 
+	GigNote() = default;
 	GigNote( int midiNote, int velocity, float frequency, GIGPluginData * handle )
 		: midiNote( midiNote ), velocity( velocity ),
 		  release( false ), isRelease( false ), state( GigState::KeyDown ),
@@ -253,6 +273,8 @@ public:
 	AutomatableModel* childModel(std::string_view modelName) override;
 
 	QString nodeName() const override;
+	//! The ENV tab's volume envelope shapes its samples (see Instrument::appliesVolumeEnvelope())
+	bool appliesVolumeEnvelope() const override { return true; }
 
 	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
@@ -296,7 +318,22 @@ private:
 	QMutex m_notesMutex;
 
 	// List of all the currently playing notes
-	QList<GigNote> m_notes;
+	//! The notes sounding (their room reserved: the audio thread adds them without allocating)
+	std::vector<GigNote> m_notes;
+	static constexpr std::size_t MostNotes = 128;
+	//! The voices, made with their resamplers on the main thread; the ones free are in m_freeVoices
+	static constexpr std::size_t MostVoices = 256;
+	std::unique_ptr<GigSample[]> m_voices;
+	std::array<std::uint16_t, MostVoices> m_freeVoices = {};
+	std::size_t m_freeVoiceCount = 0;
+	//! A free voice's index, or MostVoices when all are playing [audio thread, notes mutex]
+	auto takeVoice() -> std::size_t;
+	//! Gives back the voices of @p note [notes mutex]
+	void releaseVoices(GigNote& note);
+	//! Ends every note, its voices given back [notes mutex]
+	void clearNotes();
+	//! A period of a sample's frames as the file has them (16 or 24 bit, interleaved), read from memory
+	std::array<std::int8_t, DEFAULT_BUFFER_SIZE * 2 * 3> m_readBuffer = {};
 
 	// Used when determining which samples to use
 	uint32_t m_RandomSeed;
