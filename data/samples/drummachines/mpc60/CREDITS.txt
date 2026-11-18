@@ -1,0 +1,6 @@
+The Drum Machines instrument's MPC60 style kit
+
+LinuxMusic's own drum samples (data/samples/drums, recorded by Sebastian Tilsch for LMMS; GPL-2.0 or later, as the
+program), given the character of the Akai MPC60: 40 kHz, 16 bits, a soft saturation and a gentle low pass, its output
+stage, by tools/drummachines/character.py (make-kits.sh there lists
+which sample each piece is made from). They are not the machine's sounds: it is a sampler, with no sounds of its own.

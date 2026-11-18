@@ -1,0 +1,6 @@
+The Drum Machines instrument's SP-1200 style kit
+
+LinuxMusic's own drum samples (data/samples/drums, recorded by Sebastian Tilsch for LMMS; GPL-2.0 or later, as the
+program), given the character of the E-mu SP-1200: 26.04 kHz, 12 bits, played back held with no reconstruction filter,
+some pitched down, as was done on it, by tools/drummachines/character.py (make-kits.sh there lists
+which sample each piece is made from). They are not the machine's sounds: it is a sampler, with no sounds of its own.

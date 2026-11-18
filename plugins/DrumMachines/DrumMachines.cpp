@@ -85,7 +85,8 @@ enum Note : int
 	BassDrum2 = 35, BassDrum = 36, SideStick = 37, Snare = 38, HandClap = 39, Snare2 = 40, LowFloorTom = 41,
 	ClosedHat = 42, HighFloorTom = 43, PedalHat = 44, LowTom = 45, OpenHat = 46, LowMidTom = 47, HighMidTom = 48,
 	Crash = 49, HighTom = 50, Ride = 51, Tambourine = 54, Cowbell = 56, HighBongo = 60, LowBongo = 61,
-	MuteHighConga = 62, OpenHighConga = 63, LowConga = 64, Cabasa = 69, Maracas = 70, Claves = 75, MuteCuica = 78,
+	MuteHighConga = 62, OpenHighConga = 63, LowConga = 64, Cabasa = 69, Maracas = 70, Claves = 75, HighWoodBlock = 76,
+	MuteCuica = 78,
 	OpenCuica = 79,
 	//! The first note after the map's: the variations it has no note for
 	Extra = 82
@@ -166,7 +167,23 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 				{"clapfilt.ds", Extra + 2, "CPF"}, {"s_pitch.ds", Extra + 3, "SDP"}, {"s_spit.ds", Extra + 4, "SDS"},
 				{"snare&hat.ds", Extra + 5, "S+H"}, {"x_backwd.ds", Extra + 6, "REV"},
 				{"hat_rattle.ds", Extra + 7, "HR", HiHats}},
+			"photo_mpc2000xl.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Akai MPC2000XL. Photo: withe, public domain")},
+		{"SP-1200 style", "drummachines/sp1200", L{{0x5a, 0x5d, 0x62}, {0x46, 0x49, 0x4e}, {0xd0, 0x30, 0x30}, {0xec, 0xec, 0xec},
+			{QColor{0x2b, 0x2b, 0x2b}, QColor{0xe9, 0xe7, 0xe1}, QColor{0x2b, 0x2b, 0x2b}, QColor{0xd0, 0x30, 0x30}}},
+			{{"kick.flac", BassDrum, "BD"}, {"kick2.flac", BassDrum2, "BD2"}, {"rim.flac", SideStick, "RS"},
+				{"snare.flac", Snare, "SD"}, {"clap.flac", HandClap, "CP"}, {"snare2.flac", Snare2, "SD2"},
+				{"hihat_closed.flac", ClosedHat, "CH", HiHats}, {"hihat_pedal.flac", PedalHat, "PH", HiHats},
+				{"hihat_open.flac", OpenHat, "OH", HiHats}, {"shaker.flac", Maracas, "SH"},
+				{"wood.flac", HighWoodBlock, "WB"}, {"kick_low.flac", Extra, "BDL"}, {"snare_low.flac", Extra + 1, "SDL"}},
 			"photo_sp1200.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "E-mu SP-1200. Photo: 2xUeL, public domain")},
+		{"MPC60 style", "drummachines/mpc60", L{{0xc9, 0xc9, 0xc4}, {0x8e, 0x8e, 0x8a}, {0xc8, 0x2b, 0x25}, {0x22, 0x22, 0x22},
+			{QColor{0x9b, 0x9d, 0x9f}, QColor{0xb3, 0xb5, 0xb7}, QColor{0x9b, 0x9d, 0x9f}, QColor{0x7f, 0x81, 0x83}}},
+			{{"kick.flac", BassDrum, "BD"}, {"kick2.flac", BassDrum2, "BD2"}, {"rim.flac", SideStick, "RS"},
+				{"snare.flac", Snare, "SD"}, {"clap.flac", HandClap, "CP"}, {"snare2.flac", Snare2, "SD2"},
+				{"hihat_closed.flac", ClosedHat, "CH", HiHats}, {"hihat_pedal.flac", PedalHat, "PH", HiHats},
+				{"hihat_open.flac", OpenHat, "OH", HiHats}, {"cabasa.flac", Cabasa, "CA"}, {"shaker.flac", Maracas, "SH"},
+				{"snare3.flac", Extra, "SD3"}, {"kick3.flac", Extra + 1, "BD3"}},
+			"photo_mpc60.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Akai MPC60. Photo: Kimi95, CC BY 3.0")},
 	};
 	return s_kits;
 }
@@ -617,6 +634,10 @@ void DrumMachinesView::paintEvent(QPaintEvent*)
 	{
 		m_photoKit = kitIndex;
 		m_photo = kit.photo ? PLUGIN_NAME::getIconPixmap(kit.photo) : QPixmap{};
+		// (its backdrop when small: shrunk and enlarged again, a blur)
+		m_backdrop = m_photo.isNull() ? QImage{} : m_photo.toImage()
+			.scaled(24, 24, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation)
+			.scaled(240, 240, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
 	}
 	if (hasPhoto())
 	{
@@ -632,7 +653,21 @@ void DrumMachinesView::paintEvent(QPaintEvent*)
 		p.save();
 		p.setClipPath(frame);
 		p.setRenderHint(QPainter::SmoothPixmapTransform);
-		p.drawPixmap(QRectF(photo), m_photo, from);
+		if (scale <= 1.5) { p.drawPixmap(QRectF(photo), m_photo, from); }
+		else
+		{
+			// A small photo is not enlarged past half again its size (it would blur): the area filled with it
+			// blurred and darkened, the photo itself in the middle
+			p.drawImage(QRectF(photo), m_backdrop, QRectF(m_backdrop.rect()));
+			p.fillRect(QRectF(photo), QColor{0, 0, 0, 90});
+			auto fitted = QSizeF(source);
+			fitted.scale(QSizeF(photo.size()) * 0.92, Qt::KeepAspectRatio);
+			fitted = fitted.boundedTo(source * 1.5);
+			const auto top = photo.top() + std::max(4.0, (padsRect(static_cast<int>(kit.pieces.size())).top() - photo.top()
+				- fitted.height()) / 2);
+			p.drawPixmap(QRectF(QPointF(photo.center().x() - fitted.width() / 2, top), fitted), m_photo,
+				QRectF(QPointF(0, 0), source));
+		}
 		// The band the pads are on: dark, fading in from above
 		const auto band = QRectF(padsRect(static_cast<int>(kit.pieces.size())));
 		auto shade = QLinearGradient{band.topLeft() - QPointF(0, 24), band.topLeft() + QPointF(0, 12)};

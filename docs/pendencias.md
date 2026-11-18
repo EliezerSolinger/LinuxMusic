@@ -356,6 +356,13 @@ queda do Mallets, que é queda e entra antes.
       Bjornmossa; as prévias públicas em alta qualidade, sem login, convertidas para FLAC), em
       `data/samples/drummachines/cr78`. O plugin toca também gravações, convertidas para a taxa do motor ao
       carregar.
+    - SP-1200 e MPC60 (samplers, sem sons próprios): kits "SP-1200 style" e "MPC60 style", feitos dos sons de
+      bateria do próprio programa (`data/samples/drums`, GPL) com o caráter de cada uma, por
+      `tools/drummachines/character.py` (`make-kits.sh` refaz os dois e diz de que som vem cada peça): SP-1200 a
+      26,04 kHz e 12 bits, tocada em degraus sem filtro de reconstrução, alguns sons abaixados como se fazia nela;
+      MPC60 a 40 kHz e 16 bits, com saturação suave e o passa-baixa da saída. Com a foto de cada uma (a da MPC60 é
+      a única livre, pequena: numa janela grande, o fundo é ela desfocada e ela fica no meio, sem ampliar demais).
+      O kit R&B passou a mostrar uma Akai MPC2000XL (domínio público).
   - Corrigido (pedido do usuário): o plugin não se redesenhava ao trocar de máquina. Causa: `Plugin::createView`
     chamava `setModel` de novo numa tela que já tinha o modelo, e o `ModelView::setModel` desconecta os sinais do
     modelo para a tela: o que o construtor da tela ligara ao instrumento se perdia (o mesmo acontecia com o
