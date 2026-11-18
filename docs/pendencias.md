@@ -441,15 +441,19 @@ queda do Mallets, que é queda e entra antes.
     na thread principal (o Guitarix verifica a cada 200 ms na thread da interface), só quando um parâmetro mudou e
     com a trava de mudanças. Os parâmetros são aplicados antes de iniciar a unidade, e o tamanho do período
     reinicia a unidade. O teste dos seletores troca as 17 caixas e as 10 respostas de preamp.
-  - A cabeça do amp ("Amp"): a cadeia fixa que o motor do Guitarix põe em volta do rack, como uma unidade: noise
+  - O cabeçote do amp ("Amp"): a cadeia fixa que o motor do Guitarix põe em volta do rack, como uma unidade: noise
     gate, noise shaper, os 19 amps do seletor `tube.select` (o `ampstack`), soft clip, bass booster, saída do amp,
     presença (o `ContrastConvolver` dele, por convolução), o reverb de feedback, o master, o balanço, o anti-fizz,
     os medidores de saída (o `MaxLevel`: pico desde a última leitura) e o limitador; os liga/desliga começam como no
     preset de fábrica dele. A interface é a dele: o `ampbox.glade` e a faixa de detalhes do `mainpanel.glade`,
-    pintadas como ele pinta (faixa escura no meio da cabeça), e, sem amp ("---"), só o knob de ganho, como na
+    pintadas como ele pinta (faixa escura no meio do cabeçote), e, sem amp ("---"), só o knob de ganho, como na
     janela dele. 95 unidades. Os amps compilam num arquivo só, como no Guitarix (as tabelas das válvulas são
     definidas no `valve.h`). (No caminho: duas classes nossas derivadas do `PluginDef` não o iniciavam, e o efeito
     chamava um ponteiro de função com lixo; varridas as quatro.)
+  - No navegador de efeitos e no diálogo de escolha, as unidades ficam em subcategorias dentro de "Guitarix", as
+    categorias do próprio Guitarix (controle de tom, distorção, diversos, eco/delay, efeitos de guitarra, fuzz,
+    modulação, reverb). As sub-plugins de um plugin ganharam um grupo (`Key::group()`), que esses dois mostram como
+    um nível próprio ("Guitarix › Distorção" no diálogo).
   - Falta: o JCM800 Preamp (`jcm800pre`) precisa da biblioteca Eigen, que não está instalada (baixar pede a sua
     aprovação); as outras internas do Guitarix (detune, looper, convolver com arquivo...).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.

@@ -5,7 +5,7 @@ Escrito em 17/11/2026. Fonte principal: o repositório oficial
 declarada no `wscript`: 0.47.0), lido numa cópia temporária fora do projeto. O projeto também está no
 [SourceForge](https://sourceforge.net/projects/guitarix/). Os caminhos abaixo são relativos a `trunk/` no repositório.
 
-Objetivo do pedido: trazer as cabeças, os amplificadores, as caixas, os pedais e os efeitos do Guitarix como efeitos
+Objetivo do pedido: trazer os cabeçotes, os amplificadores, as caixas, os pedais e os efeitos do Guitarix como efeitos
 nativos compilados dentro do LinuxMusic (no caminho de renderização, no mesmo processo), sem hospedar o programa
 Guitarix nem os seus pacotes LV2.
 

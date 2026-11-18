@@ -80,6 +80,8 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 		{
 			name = it->displayName();
 			type = it->desc->displayName;
+			// (its group among the plugin's sub plugins, if they are in groups: "Guitarix › Distortion")
+			if (const auto group = it->group(); !group.isEmpty()) { type += QString::fromUtf8(" › ") + group; }
 		}
 		else
 		{

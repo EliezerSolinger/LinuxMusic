@@ -152,6 +152,14 @@ const PixmapLoader* Plugin::Descriptor::SubPluginFeatures::Key::logo() const
 
 
 
+QString Plugin::Descriptor::SubPluginFeatures::Key::group() const
+{
+	return isValid() && desc->subPluginFeatures ? desc->subPluginFeatures->group(*this) : QString{};
+}
+
+
+
+
 QString Plugin::Descriptor::SubPluginFeatures::Key::description() const
 {
 	Q_ASSERT(isValid());

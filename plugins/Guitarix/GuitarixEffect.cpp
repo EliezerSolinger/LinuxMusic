@@ -25,6 +25,7 @@
 #include <QCoreApplication>
 #include <QTimer>
 #include <QDomElement>
+#include <QHash>
 #include <QLabel>
 #include <algorithm>
 #include <cmath>
@@ -76,22 +77,41 @@ public:
 	//! The unit's category, as Guitarix gives it (distortion, fuzz, modulation...), translated
 	static auto categoryOf(const guitarix::Unit& unit) -> QString
 	{
-		auto* def = unit.make();
-		const auto category = QCoreApplication::translate("GuitarixEffect", def->category);
-		def->delete_instance(def);
-		return category;
+		return QCoreApplication::translate("GuitarixEffect", described(unit).category.constData());
 	}
 
 	//! The unit's name, as Guitarix gives it
 	static auto nameOf(const guitarix::Unit& unit) -> QString
 	{
-		auto* def = unit.make();
-		const auto name = QString::fromUtf8(def->name);
-		def->delete_instance(def);
-		return name;
+		return QString::fromUtf8(described(unit).name);
 	}
 
 private:
+	struct Description
+	{
+		QByteArray name;
+		QByteArray category;
+	};
+
+	//! What a unit says of itself (made once, to ask it: some are many modules) [main thread]
+	static auto described(const guitarix::Unit& unit) -> const Description&
+	{
+		static auto s_descriptions = QHash<QString, Description>{};
+		const auto id = QString::fromUtf8(unit.id);
+		if (const auto found = s_descriptions.constFind(id); found != s_descriptions.constEnd()) { return *found; }
+		auto* def = unit.make();
+		auto description = Description{def->name, def->category ? def->category : ""};
+		def->delete_instance(def);
+		return *s_descriptions.insert(id, description);
+	}
+
+	//! Its group among Guitarix's units in the browsers: its category
+	auto group(const Key& key) const -> QString override
+	{
+		const auto* unit = guitarix::unit(key.attributes.value("unit").toUtf8().constData());
+		return unit ? categoryOf(*unit) : QString{};
+	}
+
 	auto displayName(const Key& key) const -> QString override
 	{
 		if (const auto* unit = guitarix::unit(key.attributes.value("unit").toUtf8().constData())) { return nameOf(*unit); }

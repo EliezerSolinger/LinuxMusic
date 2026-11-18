@@ -137,22 +137,25 @@ void EffectBrowser::focusSearch()
 
 void EffectBrowser::fill()
 {
-	// By category for LinuxMusic's own effects, by host for the others (LADSPA, LV2...)
+	// By category for LinuxMusic's own effects, by host for the others (LADSPA, LV2...); a plugin whose sub plugins
+	// are in groups (Guitarix's units, by their category) has a level for each group
 	struct Entry
 	{
 		QString name;
 		QString data;
 		QPixmap logo;
 	};
-	auto groups = std::map<QString, std::vector<Entry>>{};
+	auto groups = std::map<QString, std::map<QString, std::vector<Entry>>>{};
 	for (const auto& key : EffectSelectDialog::availableEffects())
 	{
 		if (!key.isValid()) { continue; }
 		QString group;
+		QString subgroup;
 		QString name;
 		if (key.desc->subPluginFeatures)
 		{
 			group = key.desc->displayName;
+			subgroup = key.group();
 			name = key.displayName();
 		}
 		else
@@ -162,25 +165,39 @@ void EffectBrowser::fill()
 			name = key.desc->displayName;
 		}
 		const auto* logo = key.logo();
-		groups[group].push_back({name, EffectSelectDialog::dragData(key), logo ? logo->pixmap() : QPixmap{}});
+		groups[group][subgroup].push_back(
+			{name, EffectSelectDialog::dragData(key), logo ? logo->pixmap() : QPixmap{}});
 	}
 
-	for (auto& [group, effects] : groups)
+	for (auto& [group, subgroups] : groups)
 	{
-		std::sort(effects.begin(), effects.end(), [](const auto& a, const auto& b) {
-			return QString::localeAwareCompare(a.name, b.name) < 0;
-		});
 		// Coloured by category (EQ blue, dynamics yellow...): its icon on the group, each effect its own logo framed
 		// in that colour, or the category's icon
 		const auto style = PluginCategories::styleOf(group);
 		auto groupItem = new QTreeWidgetItem(m_tree, QStringList{group});
 		groupItem->setIcon(0, categoryIcon(style));
-		for (const auto& effect : effects)
+		// (the effects in no group first, then the groups, in alphabetical order)
+		for (auto& [subgroup, effects] : subgroups)
 		{
-			auto item = new QTreeWidgetItem(groupItem, QStringList{effect.name});
-			item->setIcon(0, pluginIcon(effect.logo, style));
-			item->setData(0, DragDataRole, effect.data);
-			item->setToolTip(0, effect.name);
+			std::sort(effects.begin(), effects.end(), [](const auto& a, const auto& b) {
+				return QString::localeAwareCompare(a.name, b.name) < 0;
+			});
+			auto* parent = groupItem;
+			if (!subgroup.isEmpty())
+			{
+				parent = new QTreeWidgetItem(groupItem, QStringList{subgroup});
+				auto font = parent->font(0);
+				font.setPointSizeF(font.pointSizeF() * 0.9);
+				parent->setFont(0, font);
+				parent->setForeground(0, QColor{140, 150, 163});
+			}
+			for (const auto& effect : effects)
+			{
+				auto item = new QTreeWidgetItem(parent, QStringList{effect.name});
+				item->setIcon(0, pluginIcon(effect.logo, style));
+				item->setData(0, DragDataRole, effect.data);
+				item->setToolTip(0, effect.name);
+			}
 		}
 	}
 }
@@ -190,19 +207,21 @@ void EffectBrowser::fill()
 
 void EffectBrowser::filter(const QString& text)
 {
-	for (int g = 0; g < m_tree->topLevelItemCount(); ++g)
-	{
-		auto groupItem = m_tree->topLevelItem(g);
-		int shown = 0;
-		for (int i = 0; i < groupItem->childCount(); ++i)
+	// (an effect shows when its name has the text; a group or subgroup, while one of its effects shows)
+	const auto filterItem = [&text](auto& self, QTreeWidgetItem* item) -> bool {
+		if (item->data(0, DragDataRole).isValid())
 		{
-			const bool matches = text.isEmpty() || groupItem->child(i)->text(0).contains(text, Qt::CaseInsensitive);
-			groupItem->child(i)->setHidden(!matches);
-			shown += matches ? 1 : 0;
+			const bool matches = text.isEmpty() || item->text(0).contains(text, Qt::CaseInsensitive);
+			item->setHidden(!matches);
+			return matches;
 		}
-		groupItem->setHidden(shown == 0);
-		groupItem->setExpanded(!text.isEmpty());
-	}
+		auto shown = false;
+		for (int i = 0; i < item->childCount(); ++i) { shown = self(self, item->child(i)) || shown; }
+		item->setHidden(!shown);
+		item->setExpanded(!text.isEmpty());
+		return shown;
+	};
+	for (int g = 0; g < m_tree->topLevelItemCount(); ++g) { filterItem(filterItem, m_tree->topLevelItem(g)); }
 }
 
 } // namespace lmms::gui

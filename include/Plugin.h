@@ -186,6 +186,9 @@ public:
 				QString displayName() const;
 				QString description() const;
 				const PixmapLoader* logo() const;
+				//! The group of the plugin's sub plugins it is in (its category among them, as Guitarix's units have
+				//! theirs: distortion, fuzz...), shown as a level of its own in the browsers; none if empty
+				QString group() const;
 			} ;
 
 			using KeyList = QList<Key>;
@@ -233,6 +236,11 @@ public:
 			{
 				Q_ASSERT(k.desc);
 				return k.desc->logo;
+			}
+
+			virtual QString group(const Key&) const
+			{
+				return QString();
 			}
 
 		protected:
