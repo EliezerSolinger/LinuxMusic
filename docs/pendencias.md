@@ -320,6 +320,17 @@ queda do Mallets, que é queda e entra antes.
       (um A1 a 96 kHz, 85 cents). A fração passa para o período seguinte; a mesma nota a 44,1 e a 96 kHz dá a mesma
       altura (`InstrumentFixesTest`, falha sem). Varredura: nenhum outro conta quadros assim (o SID deixa a conversão
       ao reSID, que guarda a sua fração).
+    - [x] A prévia de presets "vazava" (#6074, #1644): um preset prévio deixava na faixa de prévia o que tinha e o
+      seguinte não (o arpejo, num preset antigo sem ele; e as configurações do instrumento, que era reaproveitado
+      entre presets do mesmo instrumento, cada modelo carregando só o que o preset tem). Agora cada prévia parte da
+      faixa como ela é criada, e o instrumento é feito de novo para cada preset (o reaproveitamento era só para
+      ganhar tempo); no carregamento pelo plugin (.xiz, .sf2...) também. `InstrumentFixesTest` (cada metade da
+      correção falha sem a outra).
+    - Medidos e não reproduzidos (18/11): ligar e desligar o FM do OpulenZ com notas tocando (#3754) dá um estalo
+      no instante da troca (o chip muda a ligação dos operadores no meio da onda, como o de verdade) e um pico de
+      3 dB ao desligar, mas nenhuma distorção que fique: depois, o som é igual ao de uma nota começada no modo
+      novo. E o estalo no canal direito com notas sobrepostas no AudioFileProcessor (#7073): os dois canais saltam
+      igual (bumbo, caixa e chimbal, com e sem microfades, notas a 3, 6 e 12 ticks).
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.

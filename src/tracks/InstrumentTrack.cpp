@@ -1103,11 +1103,10 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 
 void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement )
 {
-	// don't delete instrument in preview mode if it's the same
-	// we can't do this for other situations due to some issues with linked models
-	bool reuseInstrument = m_previewMode && m_instrument && m_instrument->plugin()->nodeName() == getSavedInstrumentName(thisElement);
-	// remove the InstrumentPlayHandle if and only if we need to delete the instrument
-	silenceAllNotes(!reuseInstrument);
+	// An instrument is made anew for the settings loaded, also previewing presets (it was kept in preview mode when
+	// the same: it kept the settings of the preset previewed before that the next one has not, #6074); its
+	// InstrumentPlayHandle goes with it
+	silenceAllNotes(true);
 
 	lock();
 
@@ -1176,15 +1175,6 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 				using PluginKey = Plugin::Descriptor::SubPluginFeatures::Key;
 				PluginKey key(node.toElement().elementsByTagName("key").item(0).toElement());
 
-				if (reuseInstrument)
-				{
-					{
-						const auto running = PluginGuard::Running{m_instrument->identity()};
-						m_instrument->plugin()->restoreState(node.firstChildElement());
-					}
-					m_instrument->loadPins(node.firstChildElement());
-				}
-				else
 				{
 					// Made and restored whole before it is the track's (see swapInstrument()); the old one goes
 					// after, without the audio engine's lock

@@ -52,6 +52,7 @@
 #include "Mixer.h"
 #include "Note.h"
 #include "PathUtil.h"
+#include "PresetPreviewPlayHandle.h"
 #include "SampleFrame.h"
 #include "SampleBuffer.h"
 #include "Sample.h"
@@ -1217,6 +1218,51 @@ private slots:
 		}
 		engine->reopenAudioDevice(44100);
 		engine->stopProcessing();
+	}
+
+	/**
+	 * #1644, #6074: previewing presets, one kept what the one before had and it has not: the arpeggio (an older
+	 * preset has none), an instrument's settings (it was kept between presets of the same instrument). Each preview
+	 * starts from the track as made, with an instrument of its own.
+	 */
+	void presetPreviewsDoNotLeak()
+	{
+		// A preset with the arpeggio on and the first oscillator quiet, and an older one with neither saved
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track && track->loadInstrument("tripleoscillator"));
+		// (saved as the program saves a preset)
+		auto state = DataFile{DataFile::Type::InstrumentTrackSettings};
+		track->savePreset(state, state.content());
+		auto settings = state.content();
+		auto arpeggio = settings.elementsByTagName("arpeggiator").item(0).toElement();
+		QVERIFY(!arpeggio.isNull());
+		arpeggio.setAttribute("arp-enabled", 1);
+		auto oscillators = settings.elementsByTagName("tripleoscillator").item(0).toElement();
+		QVERIFY(!oscillators.isNull());
+		oscillators.setAttribute("vol0", 3);
+		const auto dir = QTemporaryDir{};
+		const auto first = dir.filePath("first.xpf");
+		QVERIFY(state.writeFile(first));
+		arpeggio.parentNode().removeChild(arpeggio);
+		oscillators.removeAttribute("vol0");
+		const auto second = dir.filePath("second.xpf");
+		QVERIFY(state.writeFile(second));
+
+		const auto oscillatorVolume = [] {
+			for (auto* model : PresetPreviewPlayHandle::previewTrack()->instrument()->findChildren<FloatModel*>())
+			{
+				if (model->displayName() == "Osc 1 volume") { return model->value(); }
+			}
+			return -1.f;
+		};
+		delete new PresetPreviewPlayHandle(first, false);
+		QVERIFY(PresetPreviewPlayHandle::previewTrack()->isArpeggioEnabled());
+		QCOMPARE(oscillatorVolume(), 3.f);
+		delete new PresetPreviewPlayHandle(second, false);
+		QVERIFY(!PresetPreviewPlayHandle::previewTrack()->isArpeggioEnabled());
+		QVERIFY2(oscillatorVolume() != 3.f, qPrintable(QString::number(oscillatorVolume())));
 	}
 };
 

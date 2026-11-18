@@ -28,6 +28,7 @@
 
 #include <memory>
 #include "AudioEngine.h"
+#include "DataFile.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -53,6 +54,19 @@ public:
 		m_previewInstrumentTrack = dynamic_cast<InstrumentTrack *>( Track::create( Track::Type::Instrument, this ) );
 		m_previewInstrumentTrack->setJournalling( false );
 		m_previewInstrumentTrack->setPreviewMode( true );
+		// The track as it is made (no instrument): what each preview starts from (see resetTrack())
+		auto element = m_defaultState.createElement("track");
+		m_defaultState.content().appendChild(element);
+		m_previewInstrumentTrack->saveTrackSpecificSettings(m_defaultState, element, true);
+	}
+
+	/**
+	 * The track back as it was made, before a preset is previewed: a preset loads what it has, and kept what the one
+	 * previewed before had and it has not (its arpeggio, its envelopes, #1644; an instrument's settings, #6074)
+	 */
+	void resetTrack()
+	{
+		m_previewInstrumentTrack->loadTrackSpecificSettings(m_defaultState.content().firstChildElement("track"));
 	}
 
 	~PreviewTrackContainer() override = default;
@@ -105,6 +119,7 @@ public:
 
 private:
 	InstrumentTrack* m_previewInstrumentTrack;
+	DataFile m_defaultState{DataFile::Type::InstrumentTrackSettings};
 	std::atomic<NotePlayHandle*> m_previewNote;
 	QMutex m_dataMutex;
 
@@ -133,18 +148,16 @@ PresetPreviewPlayHandle::PresetPreviewPlayHandle( const QString & _preset_file, 
 	const bool j = Engine::projectJournal()->isJournalling();
 	Engine::projectJournal()->setJournalling( false );
 
+	// Each preset previewed from the track as made, and an instrument of its own (see resetTrack())
+	s_previewTC->resetTrack();
+
 	if( _load_by_plugin )
 	{
-		Instrument * i = s_previewTC->previewInstrumentTrack()->instrument();
 		const QString ext = QFileInfo( _preset_file ).
 							suffix().toLower();
-		if( i == nullptr || !i->descriptor()->supportsFileType( ext ) )
-		{
-			const PluginFactory::PluginInfoAndKey& infoAndKey =
-				getPluginFactory()->pluginSupportingExtension(ext);
-			i = s_previewTC->previewInstrumentTrack()->
-				loadInstrument(infoAndKey.info.name(), &infoAndKey.key);
-		}
+		const PluginFactory::PluginInfoAndKey& infoAndKey = getPluginFactory()->pluginSupportingExtension(ext);
+		Instrument* i = infoAndKey.isNull() ? nullptr
+			: s_previewTC->previewInstrumentTrack()->loadInstrument(infoAndKey.info.name(), &infoAndKey.key);
 		if( i != nullptr )
 		{
 			i->loadFile( _preset_file );
@@ -256,6 +269,14 @@ void PresetPreviewPlayHandle::nphsOfInstrumentTrack(const InstrumentTrack* _it, 
 	{
 		cnphv.push_back( s_previewTC->previewNote() );
 	}
+}
+
+
+
+
+auto PresetPreviewPlayHandle::previewTrack() -> InstrumentTrack*
+{
+	return s_previewTC ? s_previewTC->previewInstrumentTrack() : nullptr;
 }
 
 

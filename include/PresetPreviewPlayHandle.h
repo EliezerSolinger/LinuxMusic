@@ -58,6 +58,8 @@ public:
 	static void nphsOfInstrumentTrack(const InstrumentTrack* instrumentTrack, FixedNotePlayHandleList& list);
 
 	static bool isPreviewing();
+	//! The track the previews play on (none before init())
+	static auto previewTrack() -> InstrumentTrack*;
 
 
 private:
