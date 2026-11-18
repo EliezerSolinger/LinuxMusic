@@ -48,6 +48,7 @@ class AutomatableButton;
 class EffectRackView;
 class MixerChannelLcdSpinBox;
 class InstrumentFunctionArpeggioView;
+class InstrumentFunctionMonoView;
 class InstrumentFunctionNoteStackingView;
 class InstrumentMidiIOView;
 class InstrumentTuningView;
@@ -164,6 +165,7 @@ private:
 	InstrumentSoundShapingView * m_ssView = nullptr;
 	InstrumentFunctionNoteStackingView* m_noteStackingView = nullptr;
 	InstrumentFunctionArpeggioView* m_arpeggioView = nullptr;
+	InstrumentFunctionMonoView* m_monoView = nullptr;
 	QWidget* m_instrumentFunctionsView = nullptr; // container of note stacking and arpeggio
 	InstrumentMidiIOView * m_midiView = nullptr;
 	EffectRackView * m_effectView = nullptr;

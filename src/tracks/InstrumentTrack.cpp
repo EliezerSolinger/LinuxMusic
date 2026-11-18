@@ -72,6 +72,7 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	m_soundShaping(this),
 	m_arpeggio(this),
 	m_noteStacking(this),
+	m_monoMode(this),
 	m_piano(this),
 	m_microtuner()
 {
@@ -349,6 +350,29 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 		case MidiNoteOn:
 			if( event.velocity() > 0 )
 			{
+				// Mono: the key held goes to the voice (see MonoMode)
+				if (m_monoMode.enabled())
+				{
+					if (!m_monoMode.isHeld(event.key()) && event.key() >= firstKey() && event.key() <= lastKey())
+					{
+						if (m_recordingMidi)
+						{
+							const auto key = event.key();
+							const auto volume = event.volume(midiPort()->baseVelocity());
+							const auto tick = Engine::getSong()->heardTick();
+							QMetaObject::invokeMethod(Engine::getSong(), [this, key, volume, tick] {
+								Engine::getSong()->midiRecorder().noteOn(this, key, volume, tick);
+							}, Qt::QueuedConnection);
+						}
+						m_monoSustained[event.key()] = false;
+						Engine::audioEngine()->requestChangeInModel();
+						m_monoMode.noteOn(Note{TimePos{}, TimePos{}, event.key(), event.volume(midiPort()->baseVelocity())},
+							offset, 0, NotePlayHandle::Origin::MidiInput, event.channel());
+						Engine::audioEngine()->doneChangeInModel();
+					}
+					eventHandled = true;
+					break;
+				}
 				// play a note only if it is not already playing and if it is within configured bounds
 				if (m_notes[event.key()] == nullptr && event.key() >= firstKey() && event.key() <= lastKey())
 				{
@@ -389,6 +413,17 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 				QMetaObject::invokeMethod(Engine::getSong(), [this, key, tick] {
 					Engine::getSong()->midiRecorder().noteOff(this, key, tick);
 				}, Qt::QueuedConnection);
+			}
+			// Mono: let go of the key held (with the sustain pedal down, when it rises)
+			if (m_monoMode.isHeld(event.key()))
+			{
+				if (isSustainPedalPressed()) { m_monoSustained[event.key()] = true; }
+				else
+				{
+					Engine::audioEngine()->requestChangeInModel();
+					m_monoMode.noteOff(event.key(), offset);
+					Engine::audioEngine()->doneChangeInModel();
+				}
 			}
 			if( m_notes[event.key()] != nullptr )
 			{
@@ -450,6 +485,15 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 					}
 					m_sustainedNotes.clear();
 					m_sustainPedalPressed = false;
+					// (mono: the keys let go while it was down)
+					for (int key = 0; key < NumKeys; ++key)
+					{
+						if (!m_monoSustained[key]) { continue; }
+						m_monoSustained[key] = false;
+						Engine::audioEngine()->requestChangeInModel();
+						m_monoMode.noteOff(key, offset);
+						Engine::audioEngine()->doneChangeInModel();
+					}
 				}
 			}
 			if( event.controllerNumber() == MidiControllerAllSoundOff ||
@@ -583,6 +627,9 @@ void InstrumentTrack::silenceAllNotes( bool removeIPH )
 	m_midiNotesMutex.unlock();
 
 	Engine::audioEngine()->requestChangeInModel();
+	// (mono: nothing held, no voice)
+	m_monoMode.reset();
+	m_monoSustained = {};
 	// invalidate all NotePlayHandles and PresetPreviewHandles linked to this track
 	m_processHandles.clear();
 
@@ -899,6 +946,16 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 				? 0
 				: std::max(0.f, (currentNote->endPos() - cur_start - noteOverlap) * frames_per_tick);
 
+			// Mono: the note goes to the voice (a step note, of no length, plays as it is)
+			if (m_monoMode.enabled() && noteFrames > 0)
+			{
+				m_monoMode.noteOn(*currentNote, _offset, static_cast<f_cnt_t>(noteFrames),
+					NotePlayHandle::Origin::MidiClip, -1);
+				played_a_note = true;
+				++nit;
+				continue;
+			}
+
 			NotePlayHandle* notePlayHandle = NotePlayHandleManager::acquire(this, _offset, noteFrames, *currentNote);
 			notePlayHandle->setPatternTrack(pattern_track);
 			// are we playing global song?
@@ -918,6 +975,10 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	// The clips playing now, without collecting them (the audio thread allocates nothing)
 	if (_clip_num >= 0) { playClip(getClip(_clip_num)); }
 	else { forEachClipInRange(_start, _start + static_cast<int>(_frames / frames_per_tick), playClip); }
+
+	// Mono: the clips' notes that end here end the voice, or take it back to one still held (after the notes that
+	// start here: a note that ends where the next starts slides into it)
+	if (m_monoMode.enabled()) { m_monoMode.advance(_offset); }
 
 	unlock();
 	return played_a_note;
@@ -983,6 +1044,7 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	m_soundShaping.saveState( doc, thisElement );
 	m_noteStacking.saveState( doc, thisElement );
 	m_arpeggio.saveState( doc, thisElement );
+	m_monoMode.saveState(doc, thisElement);
 
 	// Save the midi port info if we are not in song saving mode, e.g. in
 	// track cloning mode or if we are in song saving mode and the user
@@ -1050,6 +1112,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 	// they are being loaded. After all knobs are loaded we load the right value of m_midiCCEnable.
 	m_midiCCEnable->setValue(false);
 
+	auto monoLoaded = false;
 	QDomNode node = thisElement.firstChild();
 	while( !node.isNull() )
 	{
@@ -1066,6 +1129,11 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 			else if( m_arpeggio.nodeName() == node.nodeName() )
 			{
 				m_arpeggio.restoreState( node.toElement() );
+			}
+			else if (m_monoMode.nodeName() == node.nodeName())
+			{
+				m_monoMode.restoreState(node.toElement());
+				monoLoaded = true;
 			}
 			else if( m_midiPort.nodeName() == node.nodeName() )
 			{
@@ -1145,6 +1213,8 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 		}
 		node = node.nextSibling();
 	}
+	// (settings from before it, or without it: one note at a time off)
+	if (!monoLoaded) { m_monoMode.loadDefaults(); }
 
 	// Load the right value of m_midiCCEnable
 	m_midiCCEnable->loadSettings(thisElement, "enablecc");

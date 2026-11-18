@@ -779,7 +779,8 @@ void Sf2Instrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 	// locked API, and they queue events for its render, which takes one writer at a time (notes play on several
 	// threads, the render and the controls on others: unguarded, the queue broke and the render called a null pointer)
 	if (const auto data = static_cast<Sf2PluginData*>(_n->m_pluginData); data && !data->fluidVoices.empty()) {
-		const auto detuning = _n->currentDetuning();
+		// (and a mono voice's legato: the keys it moved from the one it started at, and its glide; see MonoMode)
+		const auto detuning = _n->currentDetuning() + static_cast<float>(midiNote - data->midiNote) + _n->glideOffset();
 		const auto lock = std::lock_guard{m_synthMutex};
 		for (const auto& voice : data->fluidVoices) {
 			if (voice.isValid()) {

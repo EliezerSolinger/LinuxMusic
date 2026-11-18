@@ -30,6 +30,8 @@
 #include "InstrumentFunctionViews.h"
 #include "ComboBox.h"
 #include "GroupBox.h"
+#include "LedCheckBox.h"
+#include "MonoMode.h"
 #include "FontHelper.h"
 #include "Knob.h"
 #include "TempoSyncKnob.h"
@@ -53,7 +55,8 @@ InstrumentFunctionNoteStackingView::InstrumentFunctionNoteStackingView( Instrume
 	auto mainLayout = new QGridLayout(m_chordsGroupBox);
 	mainLayout->setContentsMargins( 8, 18, 8, 8 );
 	mainLayout->setColumnStretch( 0, 1 );
-	mainLayout->setHorizontalSpacing( 20 );
+	// (half the tab's width: the mono group is beside it)
+	mainLayout->setHorizontalSpacing(6);
 	mainLayout->setVerticalSpacing( 1 );
 
 	auto chordLabel = new QLabel(tr("Chord:"));
@@ -87,6 +90,52 @@ void InstrumentFunctionNoteStackingView::modelChanged()
 
 
 
+
+
+
+
+InstrumentFunctionMonoView::InstrumentFunctionMonoView(MonoMode* mono, QWidget* parent) :
+	QWidget(parent),
+	ModelView(nullptr, this),
+	m_mono(mono),
+	m_groupBox(new GroupBox(tr("MONO"))),
+	m_legatoToggle(new LedCheckBox(tr("Legato"), nullptr, tr("Legato"), LedCheckBox::LedColor::Green)),
+	m_glideKnob(new Knob(KnobType::Bright26, tr("GLIDE"), this, Knob::LabelRendering::LegacyFixedFontSize))
+{
+	auto topLayout = new QHBoxLayout(this);
+	topLayout->setContentsMargins(0, 0, 0, 0);
+	topLayout->addWidget(m_groupBox);
+
+	auto mainLayout = new QGridLayout(m_groupBox);
+	mainLayout->setContentsMargins(8, 18, 8, 8);
+	mainLayout->setColumnStretch(0, 1);
+	mainLayout->setHorizontalSpacing(6);
+	mainLayout->setVerticalSpacing(1);
+
+	m_groupBox->setToolTip(tr("One note at a time: a new note takes the voice of the one playing, and when it ends "
+		"the voice goes back to a note still held"));
+	m_legatoToggle->setToolTip(tr("On: the voice moves to the new note without starting again. Off: it starts again"));
+	m_glideKnob->setHintText(tr("Glide:"), " " + tr("ms"));
+	m_glideKnob->setToolTip(tr("How long the pitch takes to slide from one note to the next (when they overlap)"));
+
+	mainLayout->addWidget(m_legatoToggle, 0, 0, 2, 1, Qt::AlignVCenter);
+	mainLayout->addWidget(m_glideKnob, 0, 1, 2, 1, Qt::AlignHCenter);
+}
+
+
+InstrumentFunctionMonoView::~InstrumentFunctionMonoView()
+{
+	delete m_groupBox;
+}
+
+
+void InstrumentFunctionMonoView::modelChanged()
+{
+	m_mono = castModel<MonoMode>();
+	m_groupBox->setModel(&m_mono->m_enabledModel);
+	m_legatoToggle->setModel(&m_mono->m_legatoModel);
+	m_glideKnob->setModel(&m_mono->m_glideModel);
+}
 
 
 

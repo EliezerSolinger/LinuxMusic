@@ -36,12 +36,14 @@ namespace lmms
 
 class InstrumentFunctionArpeggio;
 class InstrumentFunctionNoteStacking;
+class MonoMode;
 
 namespace gui
 {
 
 class ComboBox;
 class GroupBox;
+class LedCheckBox;
 class Knob;
 class TempoSyncKnob;
 
@@ -94,6 +96,25 @@ private:
 	ComboBox * m_arpModeComboBox;
 
 } ;
+
+
+
+//! One note at a time (see MonoMode): on or off, legato or starting again, and the glide
+class InstrumentFunctionMonoView : public QWidget, public ModelView
+{
+	Q_OBJECT
+public:
+	InstrumentFunctionMonoView(MonoMode* mono, QWidget* parent = nullptr);
+	~InstrumentFunctionMonoView() override;
+
+private:
+	void modelChanged() override;
+
+	MonoMode* m_mono;
+	GroupBox* m_groupBox;
+	LedCheckBox* m_legatoToggle;
+	Knob* m_glideKnob;
+};
 
 } // namespace gui
 

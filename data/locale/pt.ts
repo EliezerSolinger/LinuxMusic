@@ -18707,4 +18707,54 @@ A interface usada é a que está salva nestas configurações.</translation>
         <translation>Clique a cada batida; para dois segundos depois do último clique</translation>
     </message>
 </context>
+<context>
+    <name>lmms::MonoMode</name>
+    <message>
+        <source>Mono</source>
+        <translation>Mono</translation>
+    </message>
+    <message>
+        <source>Glide</source>
+        <translation>Deslize</translation>
+    </message>
+    <message>
+        <source>Legato</source>
+        <translation>Legato</translation>
+    </message>
+</context>
+<context>
+    <name>lmms::gui::InstrumentFunctionMonoView</name>
+    <message>
+        <source>MONO</source>
+        <translation>MONO</translation>
+    </message>
+    <message>
+        <source>GLIDE</source>
+        <translation>DESLIZE</translation>
+    </message>
+    <message>
+        <source>One note at a time: a new note takes the voice of the one playing, and when it ends the voice goes back to a note still held</source>
+        <translation>Uma nota de cada vez: uma nota nova toma a voz da que está tocando e, quando ela acaba, a voz volta para uma nota ainda segurada</translation>
+    </message>
+    <message>
+        <source>Glide:</source>
+        <translation>Deslize:</translation>
+    </message>
+    <message>
+        <source>ms</source>
+        <translation>ms</translation>
+    </message>
+    <message>
+        <source>How long the pitch takes to slide from one note to the next (when they overlap)</source>
+        <translation>Quanto tempo a altura leva para deslizar de uma nota para a próxima (quando elas se sobrepõem)</translation>
+    </message>
+    <message>
+        <source>Legato</source>
+        <translation>Legato</translation>
+    </message>
+    <message>
+        <source>On: the voice moves to the new note without starting again. Off: it starts again</source>
+        <translation>Ligado: a voz passa para a nota nova sem recomeçar. Desligado: ela recomeça</translation>
+    </message>
+</context>
 </TS>

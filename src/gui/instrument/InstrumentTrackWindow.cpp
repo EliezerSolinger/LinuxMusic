@@ -247,8 +247,15 @@ InstrumentTrackWindow::InstrumentTrackWindow( InstrumentTrackView * _itv ) :
 	instrumentFunctionsLayout->setContentsMargins(5, 5, 5, 5);
 	m_noteStackingView = new InstrumentFunctionNoteStackingView( &m_track->m_noteStacking );
 	m_arpeggioView = new InstrumentFunctionArpeggioView( &m_track->m_arpeggio );
+	m_monoView = new InstrumentFunctionMonoView(&m_track->m_monoMode);
 
-	instrumentFunctionsLayout->addWidget( m_noteStackingView );
+	// Stacking and mono side by side (the tab fits the instrument's own view, 250 high: taller, the window grew and
+	// every instrument's artwork repeated below it)
+	auto stackingAndMono = new QHBoxLayout();
+	stackingAndMono->setSpacing(5);
+	stackingAndMono->addWidget(m_noteStackingView, 1);
+	stackingAndMono->addWidget(m_monoView, 1);
+	instrumentFunctionsLayout->addLayout(stackingAndMono);
 	instrumentFunctionsLayout->addWidget( m_arpeggioView );
 	instrumentFunctionsLayout->addStretch();
 
@@ -388,6 +395,7 @@ void InstrumentTrackWindow::modelChanged()
 	m_ssView->setModel(&m_track->m_soundShaping);
 	m_noteStackingView->setModel(&m_track->m_noteStacking);
 	m_arpeggioView->setModel(&m_track->m_arpeggio);
+	m_monoView->setModel(&m_track->m_monoMode);
 	m_midiView->setModel(&m_track->m_midiPort);
 	m_effectView->setModel(m_track->m_audioBusHandle.effects());
 	m_channelControls = TrackChannelControls::replace(m_channelControls, m_track, this, {.volume = m_volumeKnob,

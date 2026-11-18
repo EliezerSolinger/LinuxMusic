@@ -384,8 +384,10 @@ GuiApplication::GuiApplication()
 				QMetaObject::invokeMethod(m_mainWindow, "togglePatternEditorWin", Q_ARG(bool, true));
 			});
 		}
-		// =pins opens the pin connector of the first instrument instead, =effects its effects tab
-		if (screenshotAction == "instrument" || screenshotAction == "pins" || screenshotAction == "effects")
+		// =pins opens the pin connector of the first instrument instead, =effects its effects tab, =functions its
+		// functions tab (chords, arpeggio, mono)
+		if (screenshotAction == "instrument" || screenshotAction == "pins" || screenshotAction == "effects"
+			|| screenshotAction == "functions")
 		{
 			QTimer::singleShot(2500, m_mainWindow, [this, screenshotAction] {
 				const auto views = m_mainWindow->findChildren<InstrumentTrackView*>();
@@ -395,6 +397,10 @@ GuiApplication::GuiApplication()
 				if (screenshotAction == "effects")
 				{
 					views.first()->getInstrumentTrackWindow()->tabWidgetParent()->setActiveTab(3);
+				}
+				if (screenshotAction == "functions")
+				{
+					views.first()->getInstrumentTrackWindow()->tabWidgetParent()->setActiveTab(2);
 				}
 			});
 		}

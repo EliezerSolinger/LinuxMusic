@@ -132,6 +132,8 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 
 NotePlayHandle::~NotePlayHandle()
 {
+	// First: no longer the track's mono voice, so nothing is done to it as it goes (see MonoMode)
+	if (!hasParent()) { m_instrumentTrack->monoMode().forget(this); }
 	lock();
 	noteOff( 0 );
 
@@ -266,6 +268,20 @@ void NotePlayHandle::play(std::span<SampleFrame> buffer)
 			MidiEvent( MidiNoteOn, midiChannel(), midiKey(), midiVelocity( baseVelocity ) ),
 			TimePos::fromFrames( offset(), Engine::framesPerTick() ),
 			offset() );
+	}
+
+	// A glide: where it is in this period (a straight line in pitch, from the start of the period)
+	if (m_glideFramesLeft > 0)
+	{
+		m_glideOffset = m_glideStart * static_cast<float>(m_glideFramesLeft) / static_cast<float>(m_glideFrames);
+		const auto period = static_cast<f_cnt_t>(Engine::audioEngine()->framesPerPeriod());
+		m_glideFramesLeft = m_glideFramesLeft > period ? m_glideFramesLeft - period : 0;
+		m_frequencyNeedsUpdate = true;
+	}
+	else if (m_glideOffset != 0.f)
+	{
+		m_glideOffset = 0.f;
+		m_frequencyNeedsUpdate = true;
 	}
 
 	if( m_frequencyNeedsUpdate )
@@ -602,8 +618,8 @@ void NotePlayHandle::updateFrequency()
 		if (m_instrumentTrack->isKeyMapped(transposedKey))
 		{
 			const auto frequency = m_instrumentTrack->m_microtuner.keyToFreq(transposedKey, baseNote);
-			m_frequency = frequency * std::exp2((detune + instrumentPitch / 100) / 12.f);
-			m_unpitchedFrequency = frequency * std::exp2(detune / 12.f);
+			m_frequency = frequency * std::exp2((detune + m_glideOffset + instrumentPitch / 100) / 12.f);
+			m_unpitchedFrequency = frequency * std::exp2((detune + m_glideOffset) / 12.f);
 		}
 		else
 		{
@@ -613,7 +629,7 @@ void NotePlayHandle::updateFrequency()
 	else
 	{
 		// default key mapping and 12-TET frequency computation with default 440 Hz base note frequency
-		const float pitch = (key() - baseNote + masterPitch + detune) / 12.0f;
+		const float pitch = (key() - baseNote + masterPitch + detune + m_glideOffset) / 12.0f;
 		m_frequency = DefaultBaseFreq * std::exp2(pitch + instrumentPitch / (100 * 12.0f));
 		m_unpitchedFrequency = DefaultBaseFreq * std::exp2(pitch);
 	}
@@ -626,6 +642,48 @@ void NotePlayHandle::updateFrequency()
 	}
 }
 
+
+
+
+void NotePlayHandle::glideFrom(float semitones, f_cnt_t frames)
+{
+	if (frames <= 0 || semitones == 0.f) { return; }
+	m_glideStart = semitones;
+	m_glideFrames = m_glideFramesLeft = frames;
+	m_glideOffset = semitones;
+	m_frequencyNeedsUpdate = true;
+}
+
+
+
+
+void NotePlayHandle::slideTo(int newKey, f_cnt_t glideFrames, f_cnt_t offset)
+{
+	if (newKey == key()) { return; }
+	const auto from = currentPitch();
+	const auto oldKey = key();
+
+	// An instrument that takes MIDI: the new key on, then the old one off (its own legato, if it has one)
+	if (m_hasMidiNote)
+	{
+		const auto baseVelocity = m_instrumentTrack->midiPort()->baseVelocity();
+		const auto oldMidiKey = midiKey();
+		setKey(newKey);
+		m_instrumentTrack->processOutEvent(MidiEvent(MidiNoteOn, midiChannel(), midiKey(), midiVelocity(baseVelocity)),
+			TimePos::fromFrames(offset, Engine::framesPerTick()), offset);
+		m_instrumentTrack->processOutEvent(MidiEvent(MidiNoteOff, midiChannel(), oldMidiKey, 0),
+			TimePos::fromFrames(offset, Engine::framesPerTick()), offset);
+	}
+	else { setKey(newKey); }
+
+	m_glideFramesLeft = 0;
+	m_glideOffset = 0.f;
+	glideFrom(from - static_cast<float>(newKey), glideFrames);
+	m_frequencyNeedsUpdate = true;
+
+	// Its chord notes move with it (an arpeggio's next notes come from its new key)
+	for (auto* note : m_subNotes) { note->slideTo(note->key() + newKey - oldKey, glideFrames, offset); }
+}
 
 
 

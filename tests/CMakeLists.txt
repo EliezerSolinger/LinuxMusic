@@ -44,6 +44,7 @@ set(LMMS_TESTS
 	src/core/MidiClientChangeTest.cpp
 	src/core/MidiTempoMapTest.cpp
 	src/core/MixerTest.cpp
+	src/core/MonoModeTest.cpp
 	src/core/PluginEventTest.cpp
 	src/core/PluginGuardTest.cpp
 	src/core/ProjectMediaTest.cpp

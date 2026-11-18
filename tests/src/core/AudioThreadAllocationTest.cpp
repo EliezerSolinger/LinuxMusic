@@ -489,7 +489,9 @@ private slots:
 		QTest::addColumn<QString>("instrument");
 		for (const auto* name : {"tripleoscillator", "bitinvader", "kicker", "lb302", "monstro", "nes", "organic",
 			"sfxr", "sid", "vibedstrings", "watsyn", "xpressive", "freeboy", "malletsstk", "opulenz",
-			"audiofileprocessor", "slicert", "zynaddsubfx", "sf2player", "avldrums"})
+			"audiofileprocessor", "slicert", "zynaddsubfx", "sf2player", "avldrums",
+			// (one note at a time, legato with a glide: the voice moves and goes back on the audio thread)
+			"tripleoscillator+mono", "sf2player+mono"})
 		{
 			QTest::newRow(name) << QString{name};
 		}
@@ -498,6 +500,8 @@ private slots:
 	void instrumentsAllocateNothing()
 	{
 		QFETCH(QString, instrument);
+		const auto mono = instrument.endsWith("+mono");
+		if (mono) { instrument.chop(5); }
 		auto* song = Engine::getSong();
 		song->createNewProject();
 		if (instrument == "malletsstk")
@@ -530,6 +534,20 @@ private slots:
 			// (SlicerT's slices go back and forth while held, and fade out after: the looped path and its release)
 			if (instrument == "slicert") { plugin.setAttribute("loopMode", 2); }
 			track->restoreState(settings);
+		}
+		if (mono)
+		{
+			auto document = QDomDocument{};
+			auto saved = document.createElement("saved");
+			track->saveState(document, saved);
+			auto settings = saved.firstChildElement();
+			auto monoMode = settings.elementsByTagName("monomode").item(0).toElement();
+			QVERIFY(!monoMode.isNull());
+			monoMode.setAttribute("enabled", 1);
+			monoMode.setAttribute("legato", 1);
+			monoMode.setAttribute("glide", 30);
+			track->restoreState(settings);
+			QVERIFY(track->monoMode().enabled());
 		}
 		Engine::mixer()->setUpTrackChannels();
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));

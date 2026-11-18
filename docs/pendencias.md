@@ -197,6 +197,18 @@ queda do Mallets, que é queda e entra antes.
       - Os outros instrumentos citados ficam como estão: o LB302 já tem as suas ondas com banda limitada (as
         variantes "BL"), o Kicker são senoides graves, SID, Nescaline e Sfxr imitam chips cujo caráter é a onda
         crua, e o AFP já tem a interpolação sinc na escolha de interpolação.
+    - [x] modo mono, legato e portamento em qualquer instrumento (#6516): grupo "MONO" na aba de funções do
+      instrumento, ao lado do empilhamento (ligado ou não, "Legato" ou recomeçar, e o deslize em ms; a aba cabe na
+      altura de antes: mais alta, a janela crescia e a arte de cada instrumento se repetia embaixo). As notas seguradas (teclas
+      de um dispositivo ou do piano, notas dos clipes) ficam na ordem em que vieram; uma voz toca a última. Legato: a
+      voz vai para a nova tecla sem recomeçar; reiniciar: a voz acaba e outra começa. Quando a nota tocando acaba e
+      outra ainda está segurada, a voz volta para ela. Notas que se encostam no piano roll (uma começa onde a outra
+      acaba) também deslizam. O deslize vale quando as notas se sobrepõem. Instrumentos que recebem MIDI (Zyn, VST)
+      recebem nota nova ligada e a velha desligada; o Sf2Player segue o legato e o deslize afinando as vozes. Fica
+      salvo na faixa; projetos de antes ficam com ele desligado. Segurança entre threads: as notas dos clipes são
+      tratadas na parte da música do período, as teclas sob a trava de mudanças do motor, e a voz se tira do modo
+      mono como primeira coisa ao ser destruída. `MonoModeTest` (frequência e vozes contadas a cada momento) e o
+      `AudioThreadAllocationTest` com mono. O GIG ainda não segue a altura no meio da nota (fica com os itens dele).
     - [x] FreeBoy (#6556, #8043): medido, não há offset DC com o padrão (o filtro "Bass" do emulador o tira); os
       botões de saída diziam o lado errado (o de "SO2 (Esquerda)" saía à direita: o comportamento era o do Game Boy,
       SO1 = direita) e os dois volumes de saída agiam como um só (o emulador tem um volume): rótulos corrigidos e

@@ -34,6 +34,7 @@
 
 #include "AudioBusHandle.h"
 #include "InstrumentFunctions.h"
+#include "MonoMode.h"
 #include "InstrumentSoundShaping.h"
 #include "Microtuner.h"
 #include "Midi.h"
@@ -95,6 +96,8 @@ public:
 	void processOutEvent( const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0 ) override;
 	// silence all running notes played by this track
 	void silenceAllNotes( bool removeIPH = false );
+
+	auto monoMode() -> MonoMode& { return m_monoMode; }
 
 	bool isSustainPedalPressed() const
 	{
@@ -402,6 +405,10 @@ private:
 
 	InstrumentSoundShaping m_soundShaping;
 	InstrumentFunctionArpeggio m_arpeggio;
+	//! One note at a time, legato and with glide (#6516): see MonoMode
+	MonoMode m_monoMode;
+	//! The keys let go (from a device or the piano) while the sustain pedal is down, in mono: let go when it rises
+	std::array<bool, NumKeys> m_monoSustained = {};
 	InstrumentFunctionNoteStacking m_noteStacking;
 
 	Piano m_piano;

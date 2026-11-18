@@ -338,6 +338,20 @@ public:
 		m_frequencyNeedsUpdate = true;
 	}
 
+	/**
+	 * Legato (see MonoMode): the note moves to @p key without starting again, its pitch gliding there over
+	 * @p glideFrames frames from where it is (none: at once), @p offset frames into the period. Its chord notes move
+	 * with it; an instrument that takes MIDI gets a note on for the new key and a note off for the old one. [audio
+	 * thread before the notes play, or under the audio engine's change lock]
+	 */
+	void slideTo(int key, f_cnt_t glideFrames, f_cnt_t offset);
+	//! Starts @p semitones away from its key, gliding to it over @p frames frames (a mono voice after another)
+	void glideFrom(float semitones, f_cnt_t frames);
+	//! The pitch it plays now, in keys: its key, and where a glide has it
+	auto currentPitch() const -> float { return static_cast<float>(key()) + m_glideOffset; }
+	//! Where a glide has its pitch now, in keys from its key (see glideFrom())
+	auto glideOffset() const -> float { return m_glideOffset; }
+
 private:
 	class BaseDetuning
 	{
@@ -404,6 +418,13 @@ private:
 	Origin m_origin;
 
 	std::atomic<bool> m_frequencyNeedsUpdate;	// used to update pitch (set from other threads)
+
+	//! A glide (see glideFrom(), slideTo()): the semitones from the key it started at, the frames it takes, the frames
+	//! left, and where it is now
+	float m_glideStart = 0.f;
+	f_cnt_t m_glideFrames = 0;
+	f_cnt_t m_glideFramesLeft = 0;
+	float m_glideOffset = 0.f;
 
 	//! See mixOrder(): the root note's serial in the high 32 bits, then the child's index at each level (8 bits each)
 	std::uint64_t m_mixOrder = 0;
