@@ -24,18 +24,23 @@
 #include <functional>
 #include <vector>
 
+#include <QDirIterator>
 #include <QtTest>
 
 #include "AudioDummy.h"
+#include "AutomationClip.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "Engine.h"
+#include "EffectChain.h"
+#include "PluginInstance.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "Mixer.h"
 #include "Note.h"
+#include "PathUtil.h"
 #include "SampleFrame.h"
 #include "SampleBuffer.h"
 #include "Sample.h"
@@ -301,6 +306,172 @@ private slots:
 		// With them: no jump bigger than a few steps of the ramp
 		QVERIFY2(largestJump(true, Sample::Loop::On, out) < 0.01f, qPrintable(QString::number(largestJump(true, Sample::Loop::On, out))));
 		QVERIFY2(largestJump(true, Sample::Loop::Off, out) < 0.01f, qPrintable(QString::number(largestJump(true, Sample::Loop::Off, out))));
+	}
+
+	//! #7980: LB302's resonance goes to 1.25, and its automation stopped at 1
+	void lb302ResonanceAutomationReachesItsTop()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track->loadInstrument("lb302"));
+		AutomatableModel* resonance = nullptr;
+		for (auto* model : track->instrument()->findChildren<AutomatableModel*>())
+		{
+			if (model->displayName() == "VCF Resonance") { resonance = model; }
+		}
+		QVERIFY(resonance);
+		auto* automationTrack = Track::create(Track::Type::Automation, song);
+		auto* clip = dynamic_cast<AutomationClip*>(automationTrack->createClip(TimePos{0}));
+		clip->addObject(resonance);
+		clip->putValue(TimePos{0}, 1.25f, false);
+		clip->putValue(TimePos{TimePos::ticksPerBar()}, 1.25f, false);
+		QCOMPARE(clip->valueAt(TimePos{TimePos::ticksPerBar() / 2}), 1.25f);
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		for (int period = 0; period < 20; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		qInfo("resonance while playing: %g", resonance->value<float>());
+		QVERIFY(resonance->value<float>() > 1.2f);
+		song->stop();
+	}
+
+	//! #3046: Monstro's pulse at its narrowest was shorter than a sample at high notes: missed, or not, as the phase
+	//! fell (silent or wrong notes); and a modulated width could not go under 25%
+	void monstroNarrowestPulseSounds()
+	{
+		for (const int key : {DefaultKey, DefaultKey + 12, DefaultKey + 24, DefaultKey + 31})
+		{
+			const auto played = play("monstro", [](QDomElement& monstro) {
+				monstro.setAttribute("o1pw", 0.25);
+				monstro.setAttribute("o1vol", 100);
+				monstro.setAttribute("o2vol", 0);
+				monstro.setAttribute("o3vol", 0);
+			}, 60, key);
+			// What it plays, its mean (a constant) taken out
+			auto mean = 0.0;
+			for (const auto sample : played.samples) { mean += sample; }
+			mean /= static_cast<double>(played.samples.size());
+			auto sum = 0.0;
+			for (const auto sample : played.samples) { sum += (sample - mean) * (sample - mean); }
+			const auto rms = std::sqrt(sum / static_cast<double>(played.samples.size()));
+			QVERIFY2(rms > 1e-3, qPrintable(QString{"key %1: %2"}.arg(key).arg(rms)));
+		}
+		// Modulated (a touch of LFO), at its narrowest: the pulse is high a small part of the time, not a quarter
+		const auto played = play("monstro", [](QDomElement& monstro) {
+			monstro.setAttribute("o1pw", 0.25);
+			monstro.setAttribute("o1vol", 100);
+			monstro.setAttribute("o2vol", 0);
+			monstro.setAttribute("o3vol", 0);
+			monstro.setAttribute("w1l1", 0.001);
+		}, 60, DefaultKey - 24);
+		auto highest = 0.f;
+		for (const auto sample : played.samples) { highest = std::max(highest, sample); }
+		auto high = 0;
+		for (const auto sample : played.samples) { high += sample > highest * 0.5f; }
+		const auto duty = static_cast<double>(high) / static_cast<double>(played.samples.size());
+		QVERIFY2(duty < 0.05, qPrintable(QString{"high %1% of the time"}.arg(duty * 100)));
+	}
+
+	//! #8163: a patch Patman could not load was only printed to the console; the user is told now
+	void patmanSaysWhenAPatchDoesNotLoad()
+	{
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		if (!track->loadInstrument("patman")) { QSKIP("not built here"); }
+		song->errorSummary(); // (what was collected before goes)
+		track->instrument()->loadFile("/nowhere/missing.pat");
+		QVERIFY(song->hasErrors());
+		QVERIFY(song->errorSummary().contains("missing.pat"));
+	}
+
+	/**
+	 * #7839: a factory preset (Organ_leslie, with a LADSPA effect) warned when loaded. Every factory preset loads
+	 * with no error, its instrument and its effects there.
+	 */
+	void factoryPresetsLoadCleanly()
+	{
+		auto* song = Engine::getSong();
+		auto presets = QStringList{};
+		QDirIterator it{QT_TESTCASE_SOURCEDIR "/../data/presets", {"*.xpf"}, QDir::Files, QDirIterator::Subdirectories};
+		// (the Sf2 Player's all read the same 14 MB soundfont: three of them are enough)
+		auto sf2Presets = 0;
+		while (it.hasNext())
+		{
+			const auto preset = it.next();
+			if (preset.contains("/Sf2Player/") && ++sf2Presets > 3) { continue; }
+			presets << preset;
+		}
+		QVERIFY(presets.size() > 50);
+		for (const auto& preset : presets)
+		{
+			song->createNewProject();
+			const auto before = song->errorSummary();
+			auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+			auto dataFile = DataFile{preset};
+			track->loadPreset(dataFile.content().toElement());
+			const auto errors = song->errorSummary().mid(before.size());
+			QVERIFY2(errors.isEmpty(), qPrintable(preset + ": " + errors));
+			QVERIFY2(track->instrument(), qPrintable(preset));
+			for (const auto& effect : track->audioBusHandle()->effects()->effects())
+			{
+				QVERIFY2(effect->plugin(), qPrintable(preset + ": an effect did not load"));
+			}
+		}
+	}
+
+	/**
+	 * #7573: the banded waveguide presets (uniform bar, tuned bar, glass, Tibetan bowl) gave only a quiet buzz: the
+	 * voice's frequency was set each period (which clears its delays), and bowed they were silent (about -80 dB:
+	 * the bow's controls were outside the range where the bars sing). Every preset rings, tonal and audible; bowed,
+	 * it goes on while the note is held; plucked (an old project's "strike") too
+	 */
+	void malletsPresetsRing()
+	{
+		struct Case { int preset; bool bowed; };
+		auto cases = std::vector<Case>{};
+		for (int preset = 0; preset < 14; ++preset) { cases.push_back({preset, true}); }
+		for (int preset = 10; preset < 14; ++preset) { cases.push_back({preset, false}); }
+		for (const auto& [preset, bowed] : cases)
+		{
+			const auto name = QString{"preset %1%2"}.arg(preset).arg(bowed ? "" : " plucked");
+			const auto played = play("malletsstk", [preset, bowed](QDomElement& mallets) {
+				mallets.setAttribute("preset", preset);
+				mallets.setAttribute("strike", bowed ? 1 : 0);
+			}, 400);
+			QVERIFY2(played.finite, qPrintable(name));
+			QVERIFY2(played.loudest > 0.1f && played.loudest < 4.f,
+				qPrintable(QString{"%1: loudest %2"}.arg(name).arg(played.loudest)));
+
+			// Tonal: the best normalized autocorrelation of the left channel, over lags of 20 to 400 frames
+			auto left = std::vector<float>{};
+			for (auto i = std::size_t{4000}; i < std::min(played.samples.size(), std::size_t{4000 + 2 * 8192}); i += 2)
+			{
+				left.push_back(played.samples[i]);
+			}
+			auto energy = 0.0;
+			for (const auto sample : left) { energy += sample * sample; }
+			auto periodicity = 0.0;
+			for (std::size_t lag = 20; lag < 400; ++lag)
+			{
+				auto correlation = 0.0;
+				for (std::size_t i = 0; i + lag < left.size(); ++i) { correlation += left[i] * left[i + lag]; }
+				periodicity = std::max(periodicity, correlation / energy);
+			}
+			QVERIFY2(periodicity > 0.6, qPrintable(QString{"%1: periodicity %2"}.arg(name).arg(periodicity)));
+
+			// Bowed bars sing on (the last quarter of a held note as loud as a third of the loudest)
+			if (bowed && preset >= 10)
+			{
+				auto lastQuarter = 0.f;
+				for (auto i = played.samples.size() * 3 / 4; i < played.samples.size(); ++i)
+				{
+					lastQuarter = std::max(lastQuarter, std::abs(played.samples[i]));
+				}
+				QVERIFY2(lastQuarter > played.loudest / 3,
+					qPrintable(QString{"%1: %2 at the end, %3 at most"}.arg(name).arg(lastQuarter).arg(played.loudest)));
+			}
+		}
 	}
 
 	//! #5877: a phase past an int's range was converted to an int (undefined; it crashed)

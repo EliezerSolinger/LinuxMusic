@@ -244,7 +244,9 @@ void LfoController::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	m_phaseModel.saveSettings( _doc, _this, "phase" );
 	m_waveModel.saveSettings( _doc, _this, "wave" );
 	m_multiplierModel.saveSettings( _doc, _this, "multiplier" );
-	_this.setAttribute("userwavefile", m_userDefSampleBuffer->audioFile());
+	// (the shortest way to it, as the envelopes save theirs: not this computer's path)
+	_this.setAttribute("userwavefile", m_userDefSampleBuffer->audioFile().isEmpty() ? QString{}
+		: PathUtil::toShortestRelative(m_userDefSampleBuffer->audioFile()));
 }
 
 

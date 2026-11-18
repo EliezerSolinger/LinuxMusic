@@ -86,16 +86,14 @@ public:
 			const StkFloat _control128,
 			const uint8_t _delay );
 
-	// BandedWG
-	MalletsSynth( Instrmnt* voice, const StkFloat _pitch,
+	//! BandedWG: @p pressure and @p speed are the instrument's knobs (0 to 128), @p velocity the note's (STK's 0 to 1)
+	MalletsSynth(Instrmnt* voice, const StkFloat _pitch,
 			const StkFloat _velocity,
-			const StkFloat _control2,
-			const StkFloat _control4,
-			const StkFloat _control11,
+			const StkFloat pressure,
+			const StkFloat speed,
 			const int _control16,
-			const StkFloat _control64,
-			const StkFloat _control128,
-			const uint8_t _delay );
+			const bool bowed,
+			const uint8_t _delay);
 
 	//! The voice is the instrument's, which deletes it on the main thread (see MalletsInstrument::m_modalBars)
 	inline ~MalletsSynth()
@@ -113,7 +111,7 @@ public:
 		}
 		else
 		{
-			StkFloat s = m_voice->tick();
+			StkFloat s = m_voice->tick() * m_gain;
 			m_delay[m_delayWrite] = s;
 			m_delayWrite++;
 			return( s );
@@ -127,9 +125,16 @@ public:
 		return( s );
 	}
 
+	//! Only when it changes: STK's BandedWG clears its delay lines and filters on every setFrequency(), and it was
+	//! called each period (upstream's #7573: Uniform bar, Tuned bar, Glass and Tibetan bowl buzzed quietly at the
+	//! period's rate instead of ringing)
 	inline void setFrequency(const StkFloat _pitch)
 	{
-		if (m_voice) { m_voice->setFrequency(_pitch); }
+		if (m_voice && _pitch != m_frequency)
+		{
+			m_voice->setFrequency(_pitch);
+			m_frequency = _pitch;
+		}
 	}
 
 	// ModalBar updates
@@ -175,6 +180,8 @@ public:
 protected:
 	int m_presetIndex;
 	Instrmnt * m_voice;
+	StkFloat m_frequency = 0; //!< the voice's, last set (see setFrequency())
+	StkFloat m_gain = 1; //!< of the voice's output (the bowed bars': see the BandedWG constructor)
 
 	std::array<StkFloat, 256> m_delay = {}; //!< read and written with wrapping 8 bit indices
 	uint8_t m_delayRead;
@@ -236,8 +243,6 @@ private:
 	FloatModel m_adsrModel;
 
 	FloatModel m_pressureModel;
-	FloatModel m_motionModel;
-	FloatModel m_vibratoModel;
 	FloatModel m_velocityModel;
 
 	BoolModel m_strikeModel;
@@ -296,8 +301,6 @@ private:
 
 	QWidget * m_bandedWGWidget;
 	Knob * m_pressureKnob;
-//	Knob * m_motionKnob;
-//	Knob * m_vibratoKnob;
 	Knob * m_velocityKnob;
 //	LedCheckBox * m_strikeLED;
 

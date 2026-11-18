@@ -1638,8 +1638,9 @@ float AutomationEditor::getLevel(int y )
 			( m_maxLevel - m_minLevel ) * ( level_line_y - y )
 					/ (float)( level_line_y - ( TOP_MARGIN + 2 ) ) :
 			( level_line_y - y ) / (float)m_y_delta ) ) / m_step ) * m_step;
-	// some range-checking-stuff
-	level = qBound(std::roundf(m_bottomLevel), level, std::roundf(m_topLevel));
+	// Within what is shown: its exact bounds (rounded, a range of 0 to 1.25 stopped at 1: upstream's #7980, the LB302's
+	// resonance; any model whose bounds are not whole numbers)
+	level = std::clamp(level, m_bottomLevel, m_topLevel);
 
 	return level;
 }

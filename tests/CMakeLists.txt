@@ -91,7 +91,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan.supp")
 	endif()
-	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins"
+		LMMS_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/data/")
 
 	# TODO CMake 3.12: Propagate usage requirements by linking to lmmsobjs
 	target_include_directories(${LMMS_TEST_NAME} PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)

@@ -187,6 +187,23 @@ queda do Mallets, que é queda e entra antes.
     - [x] AudioFileProcessor: microfades (#5855, botão novo, ligado nos novos: fade de 2 ms no começo e no fim e
       crossfade onde o loop volta, a partir do que vem antes do início do loop), o diálogo de abrir aceita o preset
       .xpf que ele salva (#7492), e o botão do ponto de loop some com o loop desligado (#7819).
+    - [x] itens menores: a automação do RES do LB302 chega a 1,25 (o editor arredondava os níveis e prendia em 1,
+      #7980); a largura de pulso mínima do Monstro tocava a 25% (os limites misturavam unidades) e agora vai até um
+      quadro de largura (#3046); o Patman diz por que um patch não carregou (#8163) e aceita o `.pat` arrastado do
+      navegador (#8065); os presets do Xpressive com onda própria apontavam para um caminho que só existia na máquina
+      de quem os fez, e o caminho "data:/" das amostras de fábrica não chegava ao FluidSynth e ao STK (que abrem o
+      arquivo direto): o novo Sf2Player nem carregava o soundfont padrão (`PathUtil::toAbsolute` resolve os prefixos
+      de busca do Qt). Todos os presets de fábrica carregam sem erro (`InstrumentFixesTest`);
+    - [x] Mallets (#7573): os presets de guia de onda (barra uniforme, barra afinada, vidro, tigela tibetana) davam um
+      zumbido baixo: a frequência da voz era posta a cada período, e o STK limpa as linhas de atraso nisso. E com
+      arco eram mudos (-80 dB): a integração do arco era 0 (um modelo nunca feito), o controle de "movimento" passava
+      a voz a seguir um arco movido por controlador, e a velocidade era sobrescrita. Medido no STK sozinho (55 Hz a
+      3,5 kHz, 15 s por nota): com integração 0,75, a pressão no trecho em que as barras pegam e a velocidade da nota
+      vezes a do botão, todos cantam firmes e no nível dos outros presets. Um teste exige som tonal e audível em
+      cada preset, sustentado com arco. Achado pelo TSan: o `BandedWG` do STK não inicializa a velocidade integrada
+      do arco (com integração 0 ela era zerada a cada amostra; agora ficava o lixo da memória, e a voz dava infinito
+      desde a primeira amostra); a voz nasce em repouso. O `ModalBar` e o `TubeBell` não dependem da memória
+      (testados com ela cheia de lixo).
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.

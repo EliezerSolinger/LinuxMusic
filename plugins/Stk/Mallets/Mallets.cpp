@@ -26,6 +26,8 @@
 
 #include "Mallets.h"
 
+#include <algorithm>
+
 #include <QDir>
 #include <QLabel>
 #include <QDomElement>
@@ -82,8 +84,6 @@ MalletsInstrument::MalletsInstrument( InstrumentTrack * _instrument_track ):
 	m_lfoDepthModel(64.0f, 0.0f, 128.0f, 0.1f, this, tr( "LFO depth" )),
 	m_adsrModel(64.0f, 0.0f, 128.0f, 0.1f, this, tr( "ADSR" )),
 	m_pressureModel(64.0f, 0.1f, 128.0f, 0.1f, this, tr( "Pressure" )),
-	m_motionModel(64.0f, 0.0f, 128.0f, 0.1f, this, tr( "Motion" )),
-//	TODO: m_vibratoModel
 	m_velocityModel(64.0f, 0.1f, 128.0f, 0.1f, this, tr( "Speed" )),
 	m_strikeModel( true, this, tr( "Bowed" ) ),
 	m_presetsModel(this, tr("Instrument")),
@@ -156,8 +156,6 @@ void MalletsInstrument::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	
 	// BandedWG
 	m_pressureModel.saveSettings( _doc, _this, "pressure" );
-//	m_motionModel.saveSettings( _doc, _this, "motion" );
-//	m_vibratoModel.saveSettings( _doc, _this, "vibrato" );
 	m_velocityModel.saveSettings( _doc, _this, "velocity" );
 	m_strikeModel.saveSettings( _doc, _this, "strike" );
 
@@ -191,8 +189,6 @@ void MalletsInstrument::loadSettings( const QDomElement & _this )
 	
 	// BandedWG
 	m_pressureModel.loadSettings( _this, "pressure" );
-//	m_motionModel.loadSettings( _this, "motion" );
-//	m_vibratoModel.loadSettings( _this, "vibrato" );
 	m_velocityModel.loadSettings( _this, "velocity" );
 	m_strikeModel.loadSettings( _this, "strike" );
 
@@ -364,15 +360,8 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 		}
 		else
 		{
-			_n->makePluginData<MalletsSynth>( voice, freq,
-						vel,
-						pressure,
-						m_motionModel.value(),
-						m_vibratoModel.value(),
-						p - 10,
-						m_strikeModel.value() * 128.0,
-						speed,
-						(uint8_t) m_spreadModel.value() );
+			_n->makePluginData<MalletsSynth>(voice, freq, vel, pressure, speed, p - 10, m_strikeModel.value(),
+				static_cast<uint8_t>(m_spreadModel.value()));
 		}
 		static_cast<MalletsSynth *>(_n->m_pluginData)->setPresetIndex(p);
 	}
@@ -423,13 +412,31 @@ void MalletsInstrument::deleteNotePluginData( NotePlayHandle * _n )
 }
 
 
+namespace {
+/**
+ * STK's BandedWG leaves the bow's integrated velocity (and its top speed) as the memory had it. Played with no
+ * integration it is cleared on every sample; with it (see the BandedWG MalletsSynth) whatever was there stays in:
+ * a voice made where a freed one had been played infinity from its first sample (and the engine, silence)
+ */
+class BandedWGAtRest : public BandedWG
+{
+public:
+	BandedWGAtRest()
+	{
+		velocityInput_ = 0;
+		maxVelocity_ = 0;
+	}
+};
+} // namespace
+
+
 auto MalletsInstrument::makeVoice(int preset) -> Instrmnt*
 {
 	try
 	{
 		if (preset < 9) { return new ModalBar(); }
 		if (preset == 9) { return new TubeBell(); }
-		return new BandedWG();
+		return new BandedWGAtRest();
 	}
 	catch (...)
 	{
@@ -462,7 +469,10 @@ auto MalletsInstrument::activate(double sampleRate, f_cnt_t maxFrameCount) -> bo
 	(void)maxFrameCount;
 	// STK's settings are global: the rate the voices are built at, the folder of their wave files
 	Stk::setSampleRate(sampleRate);
-	Stk::setRawwavePath(QDir(ConfigManager::inst()->stkDir()).absolutePath().toLocal8Bit().constData());
+	// (the folder on disk: STK opens the files itself, and a Qt search path ("data:/stk/rawwaves/", where the program
+	// keeps its own copy) means nothing to it)
+	Stk::setRawwavePath(QFileInfo{QDir{ConfigManager::inst()->stkDir()}.filePath("sinewave.raw")}.absolutePath()
+		.toLocal8Bit().constData());
 #ifndef LMMS_DEBUG
 	Stk::showWarnings(false);
 #endif
@@ -619,17 +629,9 @@ QWidget * MalletsInstrumentView::setupBandedWGControls( QWidget * _parent )
 	m_pressureKnob->move( 30, 90 );
 	m_pressureKnob->setHintText( tr( "Pressure:" ), "" );
 
-/*	m_motionKnob = new Knob(KnobType::Vintage32, tr("Motion"), SMALL_FONT_SIZE, widget);
-	m_motionKnob->move( 110, 90 );
-	m_motionKnob->setHintText( tr( "Motion:" ), "" );*/
-
 	m_velocityKnob = new Knob(KnobType::Vintage32, tr("Speed"), SMALL_FONT_SIZE, widget);
 	m_velocityKnob->move( 30, 140 );
 	m_velocityKnob->setHintText( tr( "Speed:" ), "" );
-	
-/*	m_vibratoKnob = new Knob(KnobType::Vintage32, tr("Vibrato"), SMALL_FONT_SIZE, widget);
-	m_vibratoKnob->move( 110, 140 );
-	m_vibratoKnob->setHintText( tr( "Vibrato:" ), "" );*/
 	
 	return( widget );
 }
@@ -651,8 +653,6 @@ void MalletsInstrumentView::modelChanged()
 	m_lfoDepthKnob->setModel( &inst->m_lfoDepthModel );
 	m_adsrKnob->setModel( &inst->m_adsrModel );
 	m_pressureKnob->setModel( &inst->m_pressureModel );
-//	m_motionKnob->setModel( &inst->m_motionModel );
-//	m_vibratoKnob->setModel( &inst->m_vibratoModel );
 	m_velocityKnob->setModel( &inst->m_velocityModel );
 //	m_strikeLED->setModel( &inst->m_strikeModel );
 	m_presetsCombo->setModel( &inst->m_presetsModel );
@@ -722,6 +722,7 @@ MalletsSynth::MalletsSynth( Instrmnt* voice, const StkFloat _pitch,
 		m_voice->controlChange( 128, 128.0f );
 		
 		m_voice->noteOn( _pitch, _velocity );
+		m_frequency = _pitch; // (set by the note on: see setFrequency())
 	}
 	catch( ... )
 	{
@@ -760,6 +761,7 @@ MalletsSynth::MalletsSynth( Instrmnt* voice, const StkFloat _pitch,
 		m_voice->controlChange( 128, _control128 );
 	
 		m_voice->noteOn( _pitch, _velocity );
+		m_frequency = _pitch; // (set by the note on: see setFrequency())
 	}
 	catch( ... )
 	{
@@ -771,15 +773,27 @@ MalletsSynth::MalletsSynth( Instrmnt* voice, const StkFloat _pitch,
 
 
 // BandedWG
-MalletsSynth::MalletsSynth( Instrmnt* voice, const StkFloat _pitch,
+/*
+ * Bowed, STK's banded waveguide sings only in part of its controls' range (upstream's #7573: the bowed bars were
+ * silent, about -80 dB). What was sent, and why it changed:
+ * - control 11, the bow's velocity integration (STK calls it "vibrato frequency"): it was 0 (a model never made),
+ *   which leaves the bars almost still; at 1 the integrator is undamped and the output grows without bound. Near
+ *   0.75 every preset sings at every pitch, steadily (measured from 55 Hz to 3.5 kHz, 15 s per note);
+ * - control 4, the bow's motion (no knob): it switches the voice to follow a bow moved by a controller, a push
+ *   that dies in a few milliseconds when nothing moves it. Not sent;
+ * - control 128 set the envelope's top to the speed knob (halving the bow at 64), and the note's velocity was then
+ *   overwritten by the note on. Not sent: the bow's speed is the note's velocity scaled by the speed knob (64:
+ *   the note's), up to the fastest that still sings on the uniform bar (which stalls above it, high up);
+ * - control 2, the bow's pressure: the bars catch from 1 to about 48 (0 means plucked); the knob spans that.
+ * Plucked (an old project's "strike"), the voice gets only what plucking reads.
+ */
+MalletsSynth::MalletsSynth(Instrmnt* voice, const StkFloat _pitch,
 				const StkFloat _velocity,
-				const StkFloat _control2,
-				const StkFloat _control4,
-				const StkFloat _control11,
+				const StkFloat pressure,
+				const StkFloat speed,
 				const int _control16,
-				const StkFloat _control64,
-				const StkFloat _control128,
-				const uint8_t _delay ) :
+				const bool bowed,
+				const uint8_t _delay) :
 	m_presetIndex(0),
 	m_voice(voice)
 {
@@ -788,18 +802,32 @@ MalletsSynth::MalletsSynth( Instrmnt* voice, const StkFloat _pitch,
 
 	// The voice was built (with STK's sample rate and wave files set) by the instrument; none when it could not be
 	if (!m_voice) { return; }
+
+	constexpr StkFloat BowIntegration = 96;
+	constexpr StkFloat LightestPressure = 1;
+	constexpr StkFloat HeaviestPressure = 48;
+	constexpr StkFloat FastestBow = 0.55;
+	//! Uniform bar, tuned bar, glass, Tibetan bowl: bowed, at the instrument's scalers, about as loud as plucked
+	constexpr auto BowedGains = std::array<StkFloat, 4>{1.0, 2.0, 1.0, 2.4};
 	try
 	{
-	
-		m_voice->controlChange( 1, 128.0 );
-		m_voice->controlChange( 2, _control2 );
-		m_voice->controlChange( 4, _control4 );
-		m_voice->controlChange( 11, _control11 );
-		m_voice->controlChange( 16, _control16 );
-		m_voice->controlChange( 64, _control64 );
-		m_voice->controlChange( 128, _control128 );
-	
-		m_voice->noteOn( _pitch, _velocity );
+		m_voice->controlChange(1, 128.0);
+		m_voice->controlChange(16, _control16);
+		if (bowed)
+		{
+			m_voice->controlChange(2, LightestPressure
+				+ std::clamp(pressure, 0.0, 128.0) / 128.0 * (HeaviestPressure - LightestPressure));
+			m_voice->controlChange(11, BowIntegration);
+			m_voice->controlChange(64, 128.0);
+			m_voice->noteOn(_pitch, std::clamp(_velocity * speed / 64.0, 0.0, 1.0) * FastestBow);
+			m_gain = BowedGains[std::clamp(_control16, 0, 3)];
+		}
+		else
+		{
+			m_voice->controlChange(64, 0.0);
+			m_voice->noteOn(_pitch, _velocity);
+		}
+		m_frequency = _pitch; // (set by the note on: see setFrequency())
 	}
 	catch( ... )
 	{

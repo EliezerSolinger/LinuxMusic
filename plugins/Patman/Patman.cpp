@@ -202,7 +202,20 @@ void PatmanInstrument::setFile( const QString & _patch_file, bool _rename )
 	LoadError error = loadPatch( PathUtil::toAbsolute( _patch_file ) );
 	if( error != LoadError::OK )
 	{
-		printf("Load error\n");
+		// Said to the user, as the other instruments do (it only went to the console: upstream's #8163)
+		const auto why = [error] {
+			switch (error)
+			{
+			case LoadError::Open: return PatmanInstrument::tr("it could not be opened");
+			case LoadError::NotGUS: return PatmanInstrument::tr("it is not a Gravis Ultrasound patch");
+			case LoadError::Instruments: return PatmanInstrument::tr("it has more than one instrument");
+			case LoadError::Layers: return PatmanInstrument::tr("it has more than one layer");
+			case LoadError::IO: return PatmanInstrument::tr("it ended before its data did");
+			case LoadError::OK: break;
+			}
+			return QString{};
+		}();
+		collectErrorForUI(tr("The patch %1 could not be loaded: %2.").arg(QFileInfo{_patch_file}.fileName(), why));
 	}
 
 	emit fileChanged();
@@ -585,7 +598,9 @@ void PatmanView::dragEnterEvent( QDragEnterEvent * _dee )
 	{
 		QString txt = _dee->mimeData()->data(
 						mimeType( MimeType::StringPair ) );
-		if( txt.section( ':', 0, 0 ) == "samplefile" )
+		// A patch from the file browser comes as a "patchfile" (only "samplefile" was taken: upstream's #8065)
+		const auto type = txt.section(':', 0, 0);
+		if (type == "patchfile" || (type == "samplefile" && txt.section(':', 1).endsWith(".pat", Qt::CaseInsensitive)))
 		{
 			_dee->acceptProposedAction();
 		}
@@ -607,7 +622,7 @@ void PatmanView::dropEvent( QDropEvent * _de )
 {
 	QString type = StringPairDrag::decodeKey( _de );
 	QString value = StringPairDrag::decodeValue( _de );
-	if( type == "samplefile" )
+	if (type == "patchfile" || type == "samplefile")
 	{
 		m_pi->setFile( value );
 		_de->accept();

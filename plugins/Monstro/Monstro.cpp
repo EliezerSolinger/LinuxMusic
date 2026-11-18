@@ -371,7 +371,15 @@ void MonstroSynth::renderOutput( f_cnt_t _frames, SampleFrame* _buf  )
 		if( o1pw_mod )
 		{
 			modulateabs( o1_pw, o1pw )
-			o1_pw = qBound( PW_MIN, o1_pw, PW_MAX );
+		}
+		// Within its range (a fraction: PW_MIN and PW_MAX are percents, and the modulated width was held at 25% or
+		// more), and never under a sample high or low: a pulse narrower than a sample was missed, or not, as the
+		// phase fell, and some notes were silent or wrong (upstream's #3046)
+		{
+			const auto oneSample = std::max(o1l_f, o1r_f) / static_cast<float>(m_parent->m_samplerate);
+			const auto lowest = std::max(PW_MIN * 0.01f, oneSample);
+			const auto highest = std::min(PW_MAX * 0.01f, 1.f - oneSample);
+			o1_pw = lowest < highest ? std::clamp(o1_pw, lowest, highest) : 0.5f;
 		}
 
 		// calc and modulate phase

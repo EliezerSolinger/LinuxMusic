@@ -45,6 +45,9 @@ struct IsolatedConfiguration
 		qputenv("LINUXMUSIC_CACHE_DIR", (directory.path() + "/cache").toLocal8Bit());
 		// The plugins just built (not next to the test programs, where the program looks for them)
 		if (!qEnvironmentVariableIsSet("LMMS_PLUGIN_DIR")) { qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR); }
+		// The program's data (factory samples, soundfonts, presets) from the sources, as an installed program has
+		// it: what projects and presets name "factorysample:..." is found
+		if (!qEnvironmentVariableIsSet("LMMS_DATA_DIR")) { qputenv("LMMS_DATA_DIR", LMMS_TEST_DATA_DIR); }
 	}
 
 	QTemporaryDir directory;

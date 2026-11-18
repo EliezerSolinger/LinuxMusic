@@ -204,6 +204,17 @@ namespace lmms::PathUtil
 		if (input.isEmpty()) { return input; }
 
 		QString path = serializePath(input);
+		// A path on one of Qt's search paths ("data:/samples/..."): the file it names on disk. Qt reads those, but a
+		// library opening it itself (FluidSynth's fopen) does not: the default soundfont, "data:/samples/soundfonts/
+		// FluidR3Mono_GM.sf3", never loaded in a new Sf2 Player
+		if (const auto colon = path.indexOf(':'); colon > 1 && !QDir::searchPaths(path.left(colon)).isEmpty())
+		{
+			if (const auto found = QFileInfo{path}; found.exists())
+			{
+				if (error) { *error = false; }
+				return found.absoluteFilePath();
+			}
+		}
 		//First, do no harm to absolute paths
 		// Note: Paths starting with a colon (:) are always considered absolute, as they denote a QResource.
 		QFileInfo inputFileInfo = QFileInfo(path);

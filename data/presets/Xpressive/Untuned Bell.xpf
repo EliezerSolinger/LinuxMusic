@@ -10,7 +10,7 @@
         </xpressive>
       </instrument>
       <eldata fcut="14000" fres="0.5" ftype="0" fwet="1">
-        <elvol amt="1" att="0.01" ctlenvamt="0" dec="0.803409" hold="0.203666" lamt="0" latt="0.0333333" lpdel="0" lshp="4" lspd="0.139294" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.600836" sustain="0.212332" userwavefile="/home/orr/workspace/lmms/data/samples/waveforms/10tri.flac" x100="0"/>
+        <elvol amt="1" att="0.01" ctlenvamt="0" dec="0.803409" hold="0.203666" lamt="0" latt="0.0333333" lpdel="0" lshp="4" lspd="0.139294" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.600836" sustain="0.212332" userwavefile="factorysample:waveforms/10tri.flac" x100="0"/>
         <elcut amt="0" att="0" ctlenvamt="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.1" sustain="0.5" userwavefile="" x100="0"/>
         <elres amt="0" att="0" ctlenvamt="0" dec="0.5" hold="0.5" lamt="0" latt="0" lpdel="0" lshp="0" lspd="0.1" lspd_denominator="4" lspd_numerator="4" lspd_syncmode="0" pdel="0" rel="0.1" sustain="0.5" userwavefile="" x100="0"/>
       </eldata>

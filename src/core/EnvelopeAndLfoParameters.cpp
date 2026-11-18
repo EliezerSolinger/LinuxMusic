@@ -339,7 +339,10 @@ void EnvelopeAndLfoParameters::saveSettings( QDomDocument & _doc,
 	m_lfoAmountModel.saveSettings( _doc, _parent, "lamt" );
 	m_x100Model.saveSettings( _doc, _parent, "x100" );
 	m_controlEnvAmountModel.saveSettings( _doc, _parent, "ctlenvamt" );
-	_parent.setAttribute("userwavefile", m_userWave->audioFile());
+	// (the shortest way to it: a factory or user sample by its place there, not by this computer's path; three
+	// factory presets kept their author's /home path and asked for a file that was not there: upstream's #7839)
+	_parent.setAttribute("userwavefile", m_userWave->audioFile().isEmpty() ? QString{}
+		: PathUtil::toShortestRelative(m_userWave->audioFile()));
 }
 
 

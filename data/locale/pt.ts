@@ -12736,11 +12736,38 @@ Aviso: Esta operação não pode ser desfeita.</translation>
     </message>
 </context>
 <context>
+    <name>lmms::PatmanInstrument</name>
+    <message>
+        <source>The patch %1 could not be loaded: %2.</source>
+        <translation>Não foi possível carregar o patch %1: %2.</translation>
+    </message>
+    <message>
+        <source>it could not be opened</source>
+        <translation>não foi possível abri-lo</translation>
+    </message>
+    <message>
+        <source>it is not a Gravis Ultrasound patch</source>
+        <translation>não é um patch do Gravis Ultrasound</translation>
+    </message>
+    <message>
+        <source>it has more than one instrument</source>
+        <translation>ele tem mais de um instrumento</translation>
+    </message>
+    <message>
+        <source>it has more than one layer</source>
+        <translation>ele tem mais de uma camada</translation>
+    </message>
+    <message>
+        <source>it ended before its data did</source>
+        <translation>ele terminou antes dos dados</translation>
+    </message>
+</context>
+<context>
     <name>lmms::gui::PatmanView</name>
     <message>
         <location filename="../../plugins/Patman/Patman.cpp" line="453"/>
         <source>Open patch</source>
-        <translation type="unfinished"/>
+        <translation>Abrir patch</translation>
     </message>
     <message>
         <location filename="../../plugins/Patman/Patman.cpp" line="455"/>

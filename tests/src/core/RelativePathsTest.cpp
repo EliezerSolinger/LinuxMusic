@@ -23,6 +23,7 @@
  */
 
 #include <QObject>
+#include <QFileInfo>
 #include <QtTest>
 
 #include "ConfigManager.h"
@@ -107,6 +108,18 @@ private slots:
 
 		const auto actualComparable = QString::fromStdString(actual);
 		QCOMPARE(actualComparable, expected);
+	}
+
+	//! A path on Qt's "data" search path ("data:/samples/...", the default soundfont's) is the file on disk: a
+	//! library that opens it itself (FluidSynth) could not open "data:/..."
+	void searchPathsBecomeFiles()
+	{
+		using namespace lmms;
+		const auto absolute = PathUtil::toAbsolute("data:/samples/soundfonts/FluidR3Mono_GM.sf3");
+		QVERIFY2(!absolute.startsWith("data:"), qPrintable(absolute));
+		QVERIFY2(QFileInfo{absolute}.isAbsolute() && QFileInfo::exists(absolute), qPrintable(absolute));
+		// (and the same file by its factory name)
+		QCOMPARE(PathUtil::toAbsolute("factorysample:soundfonts/FluidR3Mono_GM.sf3"), absolute);
 	}
 };
 
