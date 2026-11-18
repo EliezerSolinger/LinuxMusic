@@ -76,6 +76,7 @@ public:
 	BoolModel & reverseModel() { return m_reverseModel; }
 	IntModel & loopModel() { return m_loopModel; }
 	BoolModel & stutterModel() { return m_stutterModel; }
+	BoolModel& declickModel() { return m_declickModel; }
 	ComboBoxModel & interpolationModel() { return m_interpolationModel; }
 
 
@@ -115,6 +116,8 @@ private:
 	BoolModel m_reverseModel;
 	IntModel m_loopModel;
 	BoolModel m_stutterModel;
+	//! Microfades (see Sample::setDeclick()): on for new instruments, off for projects from before it
+	BoolModel m_declickModel;
 	ComboBoxModel m_interpolationModel;
 
 	//! Where the next note starts and in which direction, with stutter (set by the notes, on the audio threads)

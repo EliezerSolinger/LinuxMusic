@@ -76,6 +76,7 @@ private:
 	PixmapButton* m_reverseButton;
 	AutomatableButtonGroup* m_loopGroup;
 	PixmapButton* m_stutterButton;
+	PixmapButton* m_declickButton;
 	ComboBox* m_interpBox;
 } ;
 

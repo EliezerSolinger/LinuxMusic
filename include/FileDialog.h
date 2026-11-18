@@ -50,7 +50,8 @@ public:
 									const QString &directory = QString(),
 									const QString &filter = QString(),
 									QString *selectedFilter = 0);
-	static QString openAudioFile(const QString& previousFile = "");
+	//! @param presets also the instrument presets (.xpf) a sample player saves (upstream's #7492)
+	static QString openAudioFile(const QString& previousFile = "", bool presets = false);
 	static QString openWaveformFile(const QString& previousFile = "");
 	void clearSelection();
 };

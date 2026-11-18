@@ -144,7 +144,7 @@ void FileDialog::clearSelection()
 	view->clearSelection();
 }
 
-QString FileDialog::openAudioFile(const QString& previousFile)
+QString FileDialog::openAudioFile(const QString& previousFile, bool presets)
 {
 	auto openFileDialog = FileDialog(nullptr, tr("Open audio file"));
 	auto dir = !previousFile.isEmpty() ? QFileInfo(PathUtil::toAbsolute(previousFile)).absolutePath() : ConfigManager::inst()->userSamplesDir();
@@ -168,7 +168,13 @@ QString FileDialog::openAudioFile(const QString& previousFile)
 		allFileTypes.append(displayExtension);
 	}
 
-	nameFilters.append(QString{"%1 (%2)"}.arg(tr("All audio files"), allFileTypes.join(" ")));
+	if (presets)
+	{
+		fileTypes.append(QString{"%1 (*.xpf)"}.arg(tr("Instrument presets")));
+		allFileTypes.append("*.xpf");
+	}
+	nameFilters.append(QString{"%1 (%2)"}.arg(presets ? tr("All audio files and presets") : tr("All audio files"),
+		allFileTypes.join(" ")));
 	nameFilters.append(fileTypes);
 	nameFilters.append(QString("%1 (*)").arg(tr("Other files")));
 

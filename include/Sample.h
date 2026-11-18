@@ -67,6 +67,7 @@ public:
 			m_frameIndex = frameIndex;
 			m_backwards = false;
 			m_direct = false;
+			m_wrapped = false;
 		}
 
 	private:
@@ -76,6 +77,7 @@ public:
 		int m_frameIndex = 0;
 		bool m_backwards = false;
 		bool m_direct = false; //!< played without the resampler (at a ratio of exactly 1) the last time
+		bool m_wrapped = false; //!< it went round the loop (no fade in at the start again: see Sample::setDeclick())
 		friend class Sample;
 	};
 
@@ -127,6 +129,13 @@ public:
 	void setAmplification(float amplification) { m_amplification.store(amplification, std::memory_order_relaxed); }
 	void setFrequency(float frequency) { m_frequency.store(frequency, std::memory_order_relaxed); }
 	void setReversed(bool reversed) { m_reversed.store(reversed, std::memory_order_relaxed); }
+	/**
+	 * Microfades (upstream's #5855): a short fade in at the start, a crossfade into the loop where it wraps (from
+	 * the frames before the loop's start, so that the wrap is continuous), a fade out at the end. Off by default
+	 * (a sample played as it is); 2 ms of the sample.
+	 */
+	void setDeclick(bool declick) { m_declick.store(declick, std::memory_order_relaxed); }
+	auto declick() const -> bool { return m_declick.load(std::memory_order_relaxed); }
 
 private:
 	f_cnt_t render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loop loop) const;
@@ -139,6 +148,7 @@ private:
 	std::atomic<float> m_amplification = 1.0f;
 	std::atomic<float> m_frequency = DefaultBaseFreq;
 	std::atomic<bool> m_reversed = false;
+	std::atomic<bool> m_declick = false;
 };
 } // namespace lmms
 #endif

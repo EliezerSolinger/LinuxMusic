@@ -1278,6 +1278,10 @@ Este chip foi utilizado no computador Commodore 64.</translation>
         <source>Sample not found</source>
         <translation>Amostra não encontrada</translation>
     </message>
+    <message>
+        <source>Declick</source>
+        <translation>Sem cliques</translation>
+    </message>
 </context>
 <context>
     <name>lmms::AudioJack</name>
@@ -6284,6 +6288,10 @@ Por favor certifique-se que você tem permissões de leitura para o arquivo e pa
         <source>Loopback point:</source>
         <translation>Ponto de retorno:</translation>
     </message>
+    <message>
+        <source>Declick: short fades at the start and the end, a crossfade where the loop wraps</source>
+        <translation>Sem cliques: fades curtos no começo e no fim, e um crossfade onde o loop volta</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::AudioFileProcessorWaveView</name>
@@ -8557,6 +8565,14 @@ Por favor certifique que você tem permissão para gravar o aquivo e o diretóri
         <location filename="../../src/gui/modals/FileDialog.cpp" line="173"/>
         <source>Other files</source>
         <translation>Outros arquivos</translation>
+    </message>
+    <message>
+        <source>Instrument presets</source>
+        <translation>Presets de instrumento</translation>
+    </message>
+    <message>
+        <source>All audio files and presets</source>
+        <translation>Todos os arquivos de áudio e presets</translation>
     </message>
 </context>
 <context>

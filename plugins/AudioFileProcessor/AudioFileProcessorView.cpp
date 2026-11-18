@@ -34,6 +34,8 @@
 #include "DataFile.h"
 #include "FileDialog.h"
 #include "FontHelper.h"
+#include "InstrumentTrack.h"
+#include "PathUtil.h"
 #include "PixmapButton.h"
 #include "Song.h"
 #include "StringPairDrag.h"
@@ -115,6 +117,14 @@ AudioFileProcessorView::AudioFileProcessorView(Instrument* instrument,
 								"stutter_off"));
 	m_stutterButton->setToolTip(
 		tr("Continue sample playback across notes"));
+
+	// Microfades at the start, the loop and the end (upstream's #5855)
+	m_declickButton = new PixmapButton(this);
+	m_declickButton->setCheckable(true);
+	m_declickButton->move(216, 105);
+	m_declickButton->setActiveGraphic(PLUGIN_NAME::getIconPixmap("declick_on"));
+	m_declickButton->setInactiveGraphic(PLUGIN_NAME::getIconPixmap("declick_off"));
+	m_declickButton->setToolTip(tr("Declick: short fades at the start and the end, a crossfade where the loop wraps"));
 
 	m_ampKnob = new VolumeKnob(KnobType::Bright26, this);
 	m_ampKnob->move(5, 108);
@@ -268,8 +278,17 @@ void AudioFileProcessorView::sampleUpdated()
 
 void AudioFileProcessorView::openAudioFile()
 {
-	QString af = FileDialog::openAudioFile();
+	QString af = FileDialog::openAudioFile(QString{}, true);
 	if (af.isEmpty()) { return; }
+
+	// A preset (the one it saves, upstream's #7492): the track takes it, as when one is dropped on it
+	if (af.endsWith(".xpf", Qt::CaseInsensitive))
+	{
+		auto dataFile = DataFile{PathUtil::toAbsolute(af)};
+		castModel<AudioFileProcessor>()->instrumentTrack()->loadPreset(dataFile.content().toElement());
+		Engine::getSong()->setModified();
+		return;
+	}
 
 	castModel<AudioFileProcessor>()->setAudioFile(af);
 	Engine::getSong()->setModified();
@@ -287,6 +306,13 @@ void AudioFileProcessorView::modelChanged()
 	m_reverseButton->setModel(&a->reverseModel());
 	m_loopGroup->setModel(&a->loopModel());
 	m_stutterButton->setModel(&a->stutterModel());
+	m_declickButton->setModel(&a->declickModel());
+	// The loop point means something only while it loops (upstream's #7819)
+	const auto showLoopPoint = [this, a] {
+		m_loopKnob->setVisible(static_cast<Sample::Loop>(a->loopModel().value()) != Sample::Loop::Off);
+	};
+	connect(&a->loopModel(), &Model::dataChanged, this, showLoopPoint);
+	showLoopPoint();
 	m_interpBox->setModel(&a->interpolationModel());
 	sampleUpdated();
 }

@@ -79,6 +79,7 @@ AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 	m_reverseModel( false, this, tr( "Reverse sample" ) ),
 	m_loopModel( 0, 0, 2, this, tr( "Loop mode" ) ),
 	m_stutterModel( false, this, tr( "Stutter" ) ),
+	m_declickModel(true, this, tr("Declick")),
 	m_interpolationModel( this, tr( "Interpolation mode" ) ),
 	m_nextPlayStartPoint( 0 ),
 	m_nextPlayBackwards( false )
@@ -93,6 +94,9 @@ AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 				this, SLOT( endPointChanged() ), Qt::DirectConnection );
 	connect( &m_loopPointModel, SIGNAL( dataChanged() ),
 				this, SLOT( loopPointChanged() ), Qt::DirectConnection );
+	connect(&m_declickModel, &BoolModel::dataChanged, this, [this] { m_sample.setDeclick(m_declickModel.value()); },
+		Qt::DirectConnection);
+	m_sample.setDeclick(m_declickModel.value());
 	connect( &m_stutterModel, SIGNAL( dataChanged() ),
 				this, SLOT( stutterModelChanged() ), Qt::DirectConnection );
 
@@ -218,6 +222,7 @@ void AudioFileProcessor::saveSettings(QDomDocument& doc, QDomElement& elem)
 	m_endPointModel.saveSettings(doc, elem, "eframe");
 	m_loopPointModel.saveSettings(doc, elem, "lframe");
 	m_stutterModel.saveSettings(doc, elem, "stutter");
+	m_declickModel.saveSettings(doc, elem, "declick");
 	m_interpolationModel.saveSettings(doc, elem, "interp");
 }
 
@@ -258,6 +263,12 @@ void AudioFileProcessor::loadSettings(const QDomElement& elem)
 	m_reverseModel.loadSettings(elem, "reversed");
 
 	m_stutterModel.loadSettings(elem, "stutter");
+	if (elem.hasAttribute("declick") || !elem.firstChildElement("declick").isNull())
+	{
+		m_declickModel.loadSettings(elem, "declick");
+	}
+	else { m_declickModel.setValue(false); } // (made before the microfades: as it sounded)
+	m_sample.setDeclick(m_declickModel.value());
 	if (elem.hasAttribute("interp") || !elem.firstChildElement("interp").isNull())
 	{
 		m_interpolationModel.loadSettings(elem, "interp");
@@ -327,6 +338,7 @@ void AudioFileProcessor::setSample(Sample sample)
 		const auto guard = AudioEngine::changesGuard();
 		std::swap(m_sample, sample);
 	}
+	m_sample.setDeclick(m_declickModel.value());
 	// (the old one goes here, without the lock)
 }
 

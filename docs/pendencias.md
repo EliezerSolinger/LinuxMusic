@@ -180,7 +180,13 @@ queda do Mallets, que é queda e entra antes.
       trocam (0,00 ms medidos);
     - o host LV2 não abre a interface nativa dos plugins;
     - aliasing em vários osciladores;
-    - FreeBoy com offset DC.
+    - [x] FreeBoy (#6556, #8043): medido, não há offset DC com o padrão (o filtro "Bass" do emulador o tira); os
+      botões de saída diziam o lado errado (o de "SO2 (Esquerda)" saía à direita: o comportamento era o do Game Boy,
+      SO1 = direita) e os dois volumes de saída agiam como um só (o emulador tem um volume): rótulos corrigidos e
+      cada lado no seu volume. O ruído ao trocar de nota (#3824) e a CPU alta (#6144) não se reproduziram aqui;
+    - [x] AudioFileProcessor: microfades (#5855, botão novo, ligado nos novos: fade de 2 ms no começo e no fim e
+      crossfade onde o loop volta, a partir do que vem antes do início do loop), o diálogo de abrir aceita o preset
+      .xpf que ele salva (#7492), e o botão do ponto de loop some com o loop desligado (#7819).
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.

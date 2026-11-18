@@ -63,6 +63,7 @@ Sample::Sample(const Sample& other)
 	, m_amplification(other.amplification())
 	, m_frequency(other.frequency())
 	, m_reversed(other.reversed())
+	, m_declick(other.declick())
 {
 }
 
@@ -76,6 +77,7 @@ Sample::Sample(Sample&& other) noexcept
 	, m_amplification(other.amplification())
 	, m_frequency(other.frequency())
 	, m_reversed(other.reversed())
+	, m_declick(other.declick())
 {
 }
 
@@ -90,6 +92,7 @@ auto Sample::operator=(const Sample& other) -> Sample&
 	m_amplification = other.amplification();
 	m_frequency = other.frequency();
 	m_reversed = other.reversed();
+	m_declick = other.declick();
 
 	return *this;
 }
@@ -105,6 +108,7 @@ auto Sample::operator=(Sample&& other) noexcept -> Sample&
 	m_amplification = other.amplification();
 	m_frequency = other.frequency();
 	m_reversed = other.reversed();
+	m_declick = other.declick();
 
 	return *this;
 }
@@ -206,6 +210,12 @@ f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loo
 		return block ? block[index - blockFirst] : SampleFrame{};
 	};
 
+	// (the microfades, see setDeclick(): 2 ms of the sample, one frame at least)
+	const auto declickFrames = m_declick ? std::max<f_cnt_t>(1, static_cast<f_cnt_t>(sampleRate() / 500)) : f_cnt_t{0};
+	const auto startFrame = static_cast<f_cnt_t>(m_startFrame);
+	const auto endFrame = static_cast<f_cnt_t>(m_endFrame);
+	const auto loopStart = static_cast<f_cnt_t>(m_loopStartFrame);
+	const auto loopEnd = static_cast<f_cnt_t>(m_loopEndFrame);
 	for (f_cnt_t frame = 0; frame < size; ++frame)
 	{
 		switch (loop)
@@ -217,8 +227,13 @@ f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loo
 			if (state->m_frameIndex < m_loopStartFrame && state->m_backwards)
 			{
 				state->m_frameIndex = m_loopEndFrame - 1;
+				state->m_wrapped = true;
 			}
-			else if (state->m_frameIndex >= m_loopEndFrame) { state->m_frameIndex = m_loopStartFrame; }
+			else if (state->m_frameIndex >= m_loopEndFrame)
+			{
+				state->m_frameIndex = m_loopStartFrame;
+				state->m_wrapped = true;
+			}
 			break;
 		case Loop::PingPong:
 			if (state->m_frameIndex < m_loopStartFrame && state->m_backwards)
@@ -236,8 +251,28 @@ f_cnt_t Sample::render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loo
 			break;
 		}
 
-		const auto value
-			= frameAt(m_reversed ? total - state->m_frameIndex - 1 : state->m_frameIndex) * m_amplification;
+		const auto at = [&](f_cnt_t index) { return frameAt(m_reversed ? total - index - 1 : index); };
+		auto value = at(state->m_frameIndex) * m_amplification;
+		if (declickFrames > 0)
+		{
+			const auto index = state->m_frameIndex;
+			if (loop == Loop::On && !state->m_backwards && index >= loopEnd - declickFrames && index < loopEnd
+				&& loopStart - (loopEnd - index) >= 0)
+			{
+				// Into the loop's start: towards the frames just before it, which lead into it without a jump
+				const auto t = static_cast<float>(index - (loopEnd - declickFrames) + 1) / declickFrames;
+				value = (at(index) * (1.f - t) + at(loopStart - (loopEnd - index)) * t) * m_amplification;
+			}
+			else if (loop == Loop::Off && index >= endFrame - declickFrames)
+			{
+				value = value * (static_cast<float>(endFrame - index) / declickFrames);
+			}
+			if (!state->m_wrapped && index - startFrame < declickFrames && index >= startFrame)
+			{
+				// (the first time from the start only: a loop that starts there crossfades instead)
+				value = value * (static_cast<float>(index - startFrame + 1) / (declickFrames + 1));
+			}
+		}
 		dst[frame] = value;
 		state->m_backwards ? --state->m_frameIndex : ++state->m_frameIndex;
 	}

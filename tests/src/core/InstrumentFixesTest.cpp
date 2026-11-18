@@ -37,6 +37,8 @@
 #include "Mixer.h"
 #include "Note.h"
 #include "SampleFrame.h"
+#include "SampleBuffer.h"
+#include "Sample.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -231,6 +233,74 @@ private slots:
 			QVERIFY2(db > -18 && db < -8, qPrintable(QString{"%1 at %2 dB"}.arg(name).arg(db, 0, 'f', 1)));
 		}
 		QVERIFY2(highest - lowest < 8, qPrintable(QString{"%1 dB between them"}.arg(highest - lowest, 0, 'f', 1)));
+	}
+
+	/**
+	 * #8043: FreeBoy's outputs did not go where they said: the channel buttons were labelled the other way round
+	 * (each saying SO2 (Left) went right), and the two output levels acted as one (the emulator has one volume).
+	 */
+	void freeboyOutputsGoWhereTheySay()
+	{
+		const auto sides = [&](const std::function<void(QDomElement&)>& change) {
+			const auto played = play("freeboy", change, 150);
+			auto left = 0.0, right = 0.0;
+			for (std::size_t i = 0; i + 1 < played.samples.size(); i += 2)
+			{
+				left += played.samples[i] * played.samples[i];
+				right += played.samples[i + 1] * played.samples[i + 1];
+			}
+			return std::pair{std::sqrt(left), std::sqrt(right)};
+		};
+		// The right output's level only (SO1): nothing on the left
+		const auto [l1, r1] = sides([](QDomElement& e) { e.setAttribute("so1vol", 7); e.setAttribute("so2vol", 0); });
+		QVERIFY(r1 > 0 && l1 < r1 * 1e-3);
+		// And the left's only (SO2)
+		const auto [l2, r2] = sides([](QDomElement& e) { e.setAttribute("so1vol", 0); e.setAttribute("so2vol", 7); });
+		QVERIFY(l2 > 0 && r2 < l2 * 1e-3);
+		// Channel 1 alone, to SO1 (Right) (its model saved as "ch1so2"): mostly right
+		const auto [l3, r3] = sides([](QDomElement& e) {
+			for (const auto* attribute : {"ch1so1", "ch2so1", "ch3so1", "ch4so1", "ch2so2", "ch3so2", "ch4so2"})
+			{
+				e.setAttribute(attribute, 0);
+			}
+			e.setAttribute("ch1so2", 1);
+		});
+		QVERIFY2(r3 > 5 * l3, qPrintable(QString{"left %1, right %2"}.arg(l3).arg(r3)));
+	}
+
+	/**
+	 * #5855: a sample's start, end and loop point clicked (a jump from silence, to silence, or from the loop's end to
+	 * its start). With the microfades (Sample::setDeclick(), on in new AudioFileProcessors) a sample that is all at
+	 * full level starts from near silence, ends near it, and wraps its loop without a jump.
+	 */
+	void sampleMicrofades()
+	{
+		const auto rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		// A ramp: every frame differs from the next by little, but the loop's end and start are far apart
+		auto data = std::vector<SampleFrame>(static_cast<std::size_t>(rate));
+		for (std::size_t i = 0; i < data.size(); ++i)
+		{
+			const auto value = 0.2f + 0.6f * static_cast<float>(i) / static_cast<float>(data.size());
+			data[i] = SampleFrame{value, value};
+		}
+		auto sample = Sample{std::make_shared<const SampleBuffer>(std::move(data), rate)};
+		const auto loopStart = rate / 4, loopEnd = rate * 3 / 4;
+		sample.setAllPointFrames(0, rate, loopStart, loopEnd);
+		const auto largestJump = [&](bool declick, Sample::Loop loop, std::vector<SampleFrame>& out) {
+			sample.setDeclick(declick);
+			auto state = Sample::PlaybackState{};
+			out.assign(static_cast<std::size_t>(rate * 2), SampleFrame{});
+			sample.play(out.data(), &state, out.size(), loop, 1.0);
+			auto jump = std::abs(out[0][0]); // (from the silence before)
+			for (std::size_t i = 1; i < out.size(); ++i) { jump = std::max(jump, std::abs(out[i][0] - out[i - 1][0])); }
+			return jump;
+		};
+		auto out = std::vector<SampleFrame>{};
+		// Without them: the start (0.2) and the wrap (0.6) are jumps
+		QVERIFY(largestJump(false, Sample::Loop::On, out) > 0.1f);
+		// With them: no jump bigger than a few steps of the ramp
+		QVERIFY2(largestJump(true, Sample::Loop::On, out) < 0.01f, qPrintable(QString::number(largestJump(true, Sample::Loop::On, out))));
+		QVERIFY2(largestJump(true, Sample::Loop::Off, out) < 0.01f, qPrintable(QString::number(largestJump(true, Sample::Loop::Off, out))));
 	}
 
 	//! #5877: a phase past an int's range was converted to an int (undefined; it crashed)
