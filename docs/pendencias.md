@@ -432,9 +432,19 @@ queda do Mallets, que é queda e entra antes.
     `GuitarixTest::selectorsChooseTheirModules` passa por cada módulo de cada um.
   - Corrigido: um parâmetro com lista de valores (seletor) tem a faixa da lista, como no Guitarix (inteiro: 0 a
     n-1; float: do mínimo, um por valor); antes ficava com a faixa registrada (0 a 0 nos seletores do motor).
+  - As caixas e os preamps por convolução: Cabinet (17 caixas) e Amp Impulse (10 preamps), com as respostas ao
+    impulso do Guitarix (`gx_cabinet_data.cc`, `gx_preamp_data.cc`) e o zita-convolver que ele usa: 94 unidades.
+    Fazem o que o `CabinetConvolver`/`PreampConvolver` dele faz (sobe a ~96 kHz, convolui, desce, filtro de graves,
+    agudos e nível). O conversor sobre o zita-convolver é nosso (o `GxSimpleConvolver` dele depende do motor dele
+    inteiro): um nível só de partição, do tamanho do bloco, que o zita-convolver faz todo na thread que chama, sem
+    threads próprias para esperar (a exportação sai igual em qualquer velocidade). Trocar a caixa refaz a resposta
+    na thread principal (o Guitarix verifica a cada 200 ms na thread da interface), só quando um parâmetro mudou e
+    com a trava de mudanças. Os parâmetros são aplicados antes de iniciar a unidade, e o tamanho do período
+    reinicia a unidade. O teste dos seletores troca as 17 caixas e as 10 respostas de preamp.
   - Falta: o JCM800 Preamp (`jcm800pre`) precisa da biblioteca Eigen, que não está instalada (baixar pede a sua
-    aprovação); as outras internas do Guitarix (detune, convolvers, caixas e preamps por convolução, looper...);
-    os amps (o seletor `ampstack` dele).
+    aprovação); as outras internas do Guitarix (detune, looper, convolver com arquivo...); a cabeça do amp (o
+    `ampbox`: os 19 modelos de válvula do seletor `tube.select` com a cadeia fixa dele, inclusive a presença por
+    convolução).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
   - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.

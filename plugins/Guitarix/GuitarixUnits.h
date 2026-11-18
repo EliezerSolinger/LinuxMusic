@@ -56,6 +56,9 @@ struct Unit
 	const char* id;
 	PluginDef* (*make)();
 	const FileState* fileState = nullptr;
+	//! What the unit does on the main thread when its parameters changed (Guitarix calls its convolvers'
+	//! check_update every 200 ms on its UI's thread: a new impulse response), with no period rendered meanwhile
+	void (*update)(PluginDef*) = nullptr;
 };
 
 //! Guitarix's units that are a choice among others (GuitarixSelectors.cpp)
@@ -63,6 +66,12 @@ auto makeCrybaby() -> PluginDef*;
 auto makeWah() -> PluginDef*;
 auto makeTonestack() -> PluginDef*;
 auto makePoweramp() -> PluginDef*;
+
+//! Guitarix's convolving units (GuitarixConvolution.cpp), and their updates
+auto makeCabinet() -> PluginDef*;
+auto makePreamp() -> PluginDef*;
+void updateCabinet(PluginDef* plugin);
+void updatePreamp(PluginDef* plugin);
 
 //! The Vibe (GuitarixVibe.cpp), mono and stereo, each made on zeroed memory (see there)
 auto makeVibeMono() -> PluginDef*;

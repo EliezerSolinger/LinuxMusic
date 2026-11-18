@@ -287,10 +287,13 @@ private slots:
 		QTest::newRow("wah") << "wah" << 10;
 		QTest::newRow("amp.tonestack") << "amp.tonestack" << 27;
 		QTest::newRow("poweramp") << "poweramp" << 6;
+		// (the convolvers: their impulse response changes on the main thread, as their update runs)
+		QTest::newRow("cab") << "cab" << 17;
+		QTest::newRow("pre") << "pre" << 10;
 	}
 
-	//! A unit that is a choice among others (Guitarix's ModuleSelectorFromList): each of its modules, chosen, sounds
-	//! (finite), and not all the same
+	//! A unit that is a choice among others (Guitarix's ModuleSelectorFromList; a convolver's impulse responses):
+	//! each of its modules, chosen, sounds (finite), and not all the same
 	void selectorsChooseTheirModules()
 	{
 		if (getPluginFactory()->pluginInfo("guitarix").isNull()) { QSKIP("not built here"); }
@@ -306,6 +309,8 @@ private slots:
 		for (int module = 0; module < modules; ++module)
 		{
 			selector->setValue(static_cast<float>(module));
+			// (a convolver's update: queued, then on its timer, 200 ms)
+			QTest::qWait(450);
 			renderPeriods(4);
 			auto sound = renderPeriods(8);
 			for (const auto sample : sound) { QVERIFY2(std::isfinite(sample), qPrintable(QString::number(module))); }

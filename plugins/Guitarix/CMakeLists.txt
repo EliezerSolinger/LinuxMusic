@@ -161,7 +161,7 @@ SET(GUITARIX_SUPPORT
 
 # Its look: Guitarix's default style's images (gx/rcstyles) and its font (gx/fonts: Roboto Condensed, Apache 2.0)
 BUILD_PLUGIN(guitarix
-	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp GuitarixLayout.cpp GuitarixWidgets.cpp GuitarixVibe.cpp GuitarixSelectors.cpp
+	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp GuitarixLayout.cpp GuitarixWidgets.cpp GuitarixVibe.cpp GuitarixSelectors.cpp GuitarixConvolution.cpp gx/zita-convolver/zita-convolver.cc
 	${GUITARIX_UNITS} ${GUITARIX_FAUST_SOURCES} ${GUITARIX_SUPPORT}
 	MOCFILES GuitarixEffect.h GuitarixControlDialog.h GuitarixWidgets.h
 	EMBEDDED_RESOURCES gx/rcstyles/*.png gx/fonts/RobotoCondensed-Regular.ttf gx/builder/*.glade
@@ -171,6 +171,9 @@ TARGET_INCLUDE_DIRECTORIES(guitarix PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}/gx/plugins"
 	"${CMAKE_CURRENT_SOURCE_DIR}/gx/zita-resampler"
 	"${CMAKE_CURRENT_SOURCE_DIR}/gx/engine"
+	"${CMAKE_CURRENT_SOURCE_DIR}/gx/faust"
+	"${CMAKE_CURRENT_SOURCE_DIR}/gx/zita-convolver"
 )
 # (Guitarix's code as it is: its own warnings are not ours to fix)
-SET_SOURCE_FILES_PROPERTIES(${GUITARIX_UNITS} ${GUITARIX_FAUST_SOURCES} ${GUITARIX_SUPPORT} GuitarixVibe.cpp PROPERTIES COMPILE_OPTIONS "-w")
+SET_SOURCE_FILES_PROPERTIES(${GUITARIX_UNITS} ${GUITARIX_FAUST_SOURCES} ${GUITARIX_SUPPORT} GuitarixVibe.cpp
+	GuitarixConvolution.cpp gx/zita-convolver/zita-convolver.cc PROPERTIES COMPILE_OPTIONS "-w")

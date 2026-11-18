@@ -29,6 +29,8 @@
 #include <memory>
 #include <vector>
 
+#include <QTimer>
+
 #include "AutomatableModel.h"
 #include "Effect.h"
 #include "EffectControls.h"
@@ -131,6 +133,8 @@ private:
 	//! The unit's instances made (anew), their parameters bound to the models [main thread]
 	void makeInstances();
 	void deleteInstances();
+	//! The unit's update, if a parameter changed since (see guitarix::Unit::update) [main thread]
+	void update();
 	//! The models' values to the instances' parameters [audio thread]
 	void applyParameters();
 	//! The instances' outputs to the parameters' (for the view) [audio thread]
@@ -140,6 +144,9 @@ private:
 	std::array<PluginDef*, 2> m_instances = {};
 	bool m_stereo = false;
 	unsigned int m_sampleRate = 0;
+	f_cnt_t m_framesPerPeriod = 0;
+	QTimer m_updateTimer;
+	bool m_updatePending = false;
 
 	//! A chunk of each channel, its input and output (Guitarix processes channels apart)
 	static constexpr f_cnt_t Chunk = 256;

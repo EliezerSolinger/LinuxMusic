@@ -23,6 +23,7 @@
 #include "GuitarixEffect.h"
 
 #include <QCoreApplication>
+#include <QTimer>
 #include <QDomElement>
 #include <QLabel>
 #include <algorithm>
@@ -329,7 +330,35 @@ GuitarixEffect::GuitarixEffect(Model* parent, const Descriptor::SubPluginFeature
 		initialize(m_sampleRate);
 	});
 
+	// A unit with an update (a convolver: a new impulse response): done on this thread, when a parameter changed
+	// (models change on the audio thread too: queued to this one), every 200 ms at most, as Guitarix checks
+	if (m_unit->update)
+	{
+		for (auto& parameter : m_controls.m_parameters)
+		{
+			if (!parameter.model) { continue; }
+			QObject::connect(parameter.model.get(), &Model::dataChanged, &m_controls,
+				[this] { m_updatePending = true; }, Qt::QueuedConnection);
+		}
+		m_updateTimer.setInterval(200);
+		QObject::connect(&m_updateTimer, &QTimer::timeout, &m_controls, [this] { update(); });
+		m_updateTimer.start();
+	}
+
 	initialize(Engine::audioEngine()->outputSampleRate());
+}
+
+
+void GuitarixEffect::update()
+{
+	if (!m_updatePending || !m_unit || !m_unit->update) { return; }
+	m_updatePending = false;
+	const auto guard = AudioEngine::changesGuard();
+	applyParameters();
+	for (auto* instance : m_instances)
+	{
+		if (instance) { m_unit->update(instance); }
+	}
 }
 
 
@@ -395,7 +424,8 @@ auto GuitarixEffect::activate(double sampleRate, f_cnt_t maxFrameCount) -> bool
 {
 	(void)maxFrameCount;
 	const auto rate = static_cast<unsigned int>(sampleRate);
-	if (rate != m_sampleRate) { initialize(rate); }
+	// (the period too: a convolver's block is a part of it)
+	if (rate != m_sampleRate || Engine::audioEngine()->framesPerPeriod() != m_framesPerPeriod) { initialize(rate); }
 	return true;
 }
 
@@ -406,6 +436,9 @@ void GuitarixEffect::initialize(unsigned int sampleRate)
 	// other effects are reading as they process; the same values, but not while they read)
 	const auto guard = AudioEngine::changesGuard();
 	m_sampleRate = sampleRate;
+	m_framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
+	// (the parameters' values first: a unit starts with what is chosen, its impulse response, say)
+	applyParameters();
 	for (auto* instance : m_instances)
 	{
 		if (!instance) { continue; }

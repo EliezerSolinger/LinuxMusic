@@ -69,6 +69,8 @@ const auto s_units = std::array{
 	Unit{"eq", &gx_engine::gx_effects::peak_eq::plugin},
 	Unit{"dide", &gx_engine::gx_effects::digital_delay::plugin},
 	Unit{"amp.tonestack", &makeTonestack},
+	Unit{"cab", &makeCabinet, nullptr, &updateCabinet},
+	Unit{"pre", &makePreamp, nullptr, &updatePreamp},
 	Unit{"abgate", &pluginlib::abgate::plugin},
 	Unit{"ring_modulator", &gx_engine::gx_effects::ring_modulator::plugin},
 	Unit{"graphiceq", &gx_engine::gx_effects::graphiceq::plugin},
