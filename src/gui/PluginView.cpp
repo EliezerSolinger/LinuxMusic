@@ -31,7 +31,9 @@ namespace lmms
 gui::PluginView* Plugin::createView(QWidget* parent)
 {
 	gui::PluginView* pv = instantiateView(parent);
-	if (pv != nullptr)
+	// (a view made on this plugin has it already: setting it again would disconnect what the view's constructor
+	// connected to the plugin's signals, see ModelView::setModel)
+	if (pv != nullptr && pv->model() != this)
 	{
 		pv->setModel(this);
 	}

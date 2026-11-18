@@ -155,7 +155,7 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 				{"H_open", OpenHat, "OH", HiHats}, {"Syntom_2", LowTom, "LT"}, {"Syntom_1", HighTom, "HT"},
 				{"K_reverb", Extra, "BDR"}, {"S_reverb", Extra + 1, "SDR"}, {"s_eq", Extra + 2, "SEQ"},
 				{"Hi-q", Extra + 3, "HQ"}, {"Hi-q_2", Extra + 4, "HQ2"}},
-			"photo_dmx.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Oberheim DMX. Photo: Matt Mechtley, Shoulder-synth, CC BY-SA 2.0")},
+			"photo_dmx.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Oberheim DMX. Photo: Alison, CC BY-SA 4.0")},
 		{"R&B", "r_n_b", L{{0x2b, 0x21, 0x35}, {0x1a, 0x14, 0x20}, {0xd6, 0x5d, 0xb1}, {0xf0, 0xe0, 0xec},
 			{QColor{0xd6, 0x5d, 0xb1}, QColor{0xe8, 0xc5, 0x6a}, QColor{0xd6, 0x5d, 0xb1}, QColor{0xb9, 0xa8, 0xd8}}},
 			{{"k_hard", BassDrum, "BD"}, {"k_soft", BassDrum2, "BD2"}, {"popsnare", Snare, "SD"},
@@ -164,7 +164,7 @@ auto DrumMachinesInstrument::kits() -> const std::vector<Kit>&
 				{"clapfilt", Extra + 2, "CPF"}, {"s_pitch", Extra + 3, "SDP"}, {"s_spit", Extra + 4, "SDS"},
 				{"snare&hat", Extra + 5, "S+H"}, {"x_backwd", Extra + 6, "REV"},
 				{"hat_rattle", Extra + 7, "HR", HiHats}},
-			"photo_mpc60.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "Akai MPC60. Photo: Kimi95, CC BY 3.0")},
+			"photo_sp1200.jpg", QT_TRANSLATE_NOOP("lmms::gui::DrumMachinesView", "E-mu SP-1200. Photo: 2xUeL, public domain")},
 	};
 	return s_kits;
 }
@@ -430,7 +430,6 @@ DrumMachinesView::DrumMachinesView(DrumMachinesInstrument* instrument, QWidget* 
 	m_kitBox->setGeometry(8, 6, 230, ComboBox::DEFAULT_HEIGHT);
 	setToolTip(tr("Click a pad to play it"));
 
-	connect(instrument, &DrumMachinesInstrument::kitChanged, this, qOverload<>(&QWidget::update));
 	startTimer(33);
 	modelChanged();
 }
@@ -440,7 +439,11 @@ DrumMachinesView::DrumMachinesView(DrumMachinesInstrument* instrument, QWidget* 
 
 void DrumMachinesView::modelChanged()
 {
-	m_kitBox->setModel(&castModel<DrumMachinesInstrument>()->kitModel());
+	auto* instrument = castModel<DrumMachinesInstrument>();
+	m_kitBox->setModel(&instrument->kitModel());
+	// (here, not in the constructor: setting the model again disconnects the model's signals from this view)
+	connect(instrument, &DrumMachinesInstrument::kitChanged, this, qOverload<>(&QWidget::update),
+		Qt::UniqueConnection);
 	update();
 }
 
@@ -465,15 +468,21 @@ auto DrumMachinesView::hasPhoto() const -> bool
 
 auto DrumMachinesView::photoRect() const -> QRect
 {
-	// The photo's room, the upper three fifths of the machine; the photo in it, as large as fits, centered
+	// The whole machine's area: the photo fills it (cropped to its proportions), the pads over its lower part
+	return machineRect();
+}
+
+
+
+
+auto DrumMachinesView::padsRect(int count) const -> QRect
+{
+	// Over the photo: a band along its bottom, as high as the rows of pads need (a fifth of the width each, at most)
 	const auto machine = machineRect();
-	const auto room = QRect{machine.left() + 14, machine.top() + 14, machine.width() - 28,
-		machine.height() * 3 / 5 - 14};
-	if (m_photo.isNull()) { return room; }
-	auto size = embed::logicalSize(m_photo);
-	size.scale(room.size(), Qt::KeepAspectRatio);
-	return {room.left() + (room.width() - size.width()) / 2, room.top() + (room.height() - size.height()) / 2,
-		size.width(), size.height()};
+	const auto rows = (count + PadsPerRow - 1) / PadsPerRow;
+	const auto padHeight = std::min(56, machine.width() / (PadsPerRow + 2));
+	const auto height = rows * padHeight + (rows - 1) * 8 + 24;
+	return {machine.left(), machine.bottom() - height, machine.width(), height + 1};
 }
 
 
@@ -485,8 +494,7 @@ auto DrumMachinesView::padRect(int index, int count) const -> QRect
 	const auto machine = machineRect();
 	const auto rows = (count + PadsPerRow - 1) / PadsPerRow;
 	const auto columns = std::min(count, PadsPerRow);
-	const auto area = hasPhoto() ? QRect{machine.left() + 18, photoRect().bottom() + 14, machine.width() - 36,
-		machine.bottom() - photoRect().bottom() - 30} : machine.adjusted(18, 64, -18, -22);
+	const auto area = hasPhoto() ? padsRect(count).adjusted(14, 12, -14, -12) : machine.adjusted(18, 64, -18, -22);
 	const auto gap = 8;
 	const auto width = (area.width() - gap * (columns - 1)) / std::max(columns, 1);
 	const auto height = std::min(width, (area.height() - gap * (rows - 1)) / std::max(rows, 1));
@@ -592,26 +600,38 @@ void DrumMachinesView::paintEvent(QPaintEvent*)
 	}
 	if (hasPhoto())
 	{
+		// The photo filling the machine's area (its middle, cropped to the area's proportions)
 		const auto photo = photoRect();
 		auto frame = QPainterPath{};
-		frame.addRoundedRect(QRectF(photo), 6, 6);
+		frame.addRoundedRect(QRectF(photo), 10, 10);
+		const auto source = QSizeF(m_photo.size());
+		const auto scale = std::max(photo.width() / source.width(), photo.height() / source.height());
+		const auto cropped = QSizeF(photo.width() / scale, photo.height() / scale);
+		const auto from = QRectF(QPointF((source.width() - cropped.width()) / 2, (source.height() - cropped.height()) / 2),
+			cropped);
 		p.save();
 		p.setClipPath(frame);
 		p.setRenderHint(QPainter::SmoothPixmapTransform);
-		p.drawPixmap(photo, m_photo);
+		p.drawPixmap(QRectF(photo), m_photo, from);
+		// The band the pads are on: dark, fading in from above
+		const auto band = QRectF(padsRect(static_cast<int>(kit.pieces.size())));
+		auto shade = QLinearGradient{band.topLeft() - QPointF(0, 24), band.topLeft() + QPointF(0, 12)};
+		shade.setColorAt(0, QColor{0, 0, 0, 0});
+		shade.setColorAt(1, QColor{0, 0, 0, 170});
+		p.fillRect(band.adjusted(0, -24, 0, 0), shade);
 		p.restore();
-		p.setPen(QPen{look.body.darker(170), 1.5});
+		p.setPen(QPen{QColor{0, 0, 0, 160}, 1.5});
 		p.drawPath(frame);
+		// Its credit (its license asks for it), on its upper right corner
 		auto credit = adjustedToPixelSize(font(), 9);
 		p.setFont(credit);
 		const auto text = tr(kit.credit);
 		const auto metrics = QFontMetrics{credit};
-		// (on the photo's corner; under it, centered, when wider than the photo)
-		const auto width = metrics.horizontalAdvance(text) + 8.0;
-		const auto box = width + 8 <= photo.width()
-			? QRectF(photo.right() - width - 4, photo.bottom() - metrics.height() - 4, width, metrics.height() + 2)
-			: QRectF(photo.center().x() - width / 2, photo.bottom() + 1, width, metrics.height() + 2);
-		p.fillRect(box, QColor{0, 0, 0, 150});
+		const auto width = metrics.horizontalAdvance(text) + 10.0;
+		const auto box = QRectF(photo.right() - width - 8, photo.top() + 8, width, metrics.height() + 4);
+		auto pill = QPainterPath{};
+		pill.addRoundedRect(box, 4, 4);
+		p.fillPath(pill, QColor{0, 0, 0, 140});
 		p.setPen(QColor{0xee, 0xee, 0xee});
 		p.drawText(box, Qt::AlignCenter, text);
 	}

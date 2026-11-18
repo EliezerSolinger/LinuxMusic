@@ -32,6 +32,7 @@
 #include "ExportWizard.h"
 
 #include <QFileInfo>
+#include <QScreen>
 
 #include "lmmsversion.h"
 
@@ -40,9 +41,11 @@
 
 #include "AutomationEditor.h"
 #include "BrowserPanel.h"
+#include "ComboBoxModel.h"
 #include "ConfigManager.h"
 #include "embed.h"
 #include "ControllerRackView.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "InstrumentTrackView.h"
 #include "EffectControlDialog.h"
@@ -402,6 +405,19 @@ GuiApplication::GuiApplication()
 				{
 					views.first()->getInstrumentTrackWindow()->tabWidgetParent()->setActiveTab(3);
 				}
+				// LINUXMUSIC_INSTRUMENT_COMBO=<n>: the instrument's first combo box set to n a second later, its window
+				// open (an instrument's view following its model)
+				if (const auto combo = qEnvironmentVariable("LINUXMUSIC_INSTRUMENT_COMBO"); !combo.isEmpty())
+				{
+					auto* track = views.first()->castModel<InstrumentTrack>();
+					QTimer::singleShot(1000, m_mainWindow, [track, value = combo.toInt()] {
+						if (auto* model = track->instrument() ? track->instrument()->findChild<ComboBoxModel*>()
+							: nullptr)
+						{
+							model->setValue(static_cast<float>(value));
+						}
+					});
+				}
 				if (screenshotAction == "effect-controls")
 				{
 					for (auto* view : views.first()->getInstrumentTrackWindow()->findChildren<EffectView*>())
@@ -591,6 +607,12 @@ GuiApplication::GuiApplication()
 				if (screenshotAction == "mixer-channel") { m_mixerView->setCurrentMixerChannel(1); }
 				m_mixerView->resize(1100, m_mixerView->minimumSizeHint().height());
 				m_mixerView->grab().save(screenshotPath);
+			}
+			// LINUXMUSIC_SCREENSHOT_SCREEN=1: what the screen shows (the window's backing store), not repainted for the
+			// screenshot: a view that does not repaint when its model changes shows there
+			else if (qEnvironmentVariableIntValue("LINUXMUSIC_SCREENSHOT_SCREEN") && m_mainWindow->screen())
+			{
+				m_mainWindow->screen()->grabWindow(m_mainWindow->winId()).save(screenshotPath);
 			}
 			else { m_mainWindow->grab().save(screenshotPath); }
 			if (screenshotAction == "effect-controls")

@@ -162,7 +162,8 @@ namespace gui
 class ComboBox;
 
 /**
- * The kit's machine: its photo (the CR-78 has none with a free license: its panel drawn), and, under it, a pad for
+ * The kit's machine: its photo, filling the view (the CR-78 has none with a free license: its panel drawn), and, over
+ * its lower part, a pad for
  * each of its pieces, which lights up when the piece is hit and plays it when clicked.
  */
 class DrumMachinesView : public InstrumentView
@@ -184,6 +185,8 @@ private:
 	//! The machine's area, and each pad's in it; its photo's above the pads, when it has one
 	auto machineRect() const -> QRect;
 	auto photoRect() const -> QRect;
+	//! The band the pads are on, over the photo
+	auto padsRect(int count) const -> QRect;
 	auto hasPhoto() const -> bool;
 	auto padRect(int index, int count) const -> QRect;
 	//! The pad at @p pos, or -1

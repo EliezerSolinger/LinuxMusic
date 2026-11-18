@@ -18874,12 +18874,12 @@ A interface usada é a que está salva nestas configurações.</translation>
         <translation>Foto: Linn Electronics / Forat Electronics, CC BY-SA 3.0</translation>
     </message>
     <message>
-        <source>Oberheim DMX. Photo: Matt Mechtley, Shoulder-synth, CC BY-SA 2.0</source>
-        <translation>Oberheim DMX. Foto: Matt Mechtley, Shoulder-synth, CC BY-SA 2.0</translation>
+        <source>Oberheim DMX. Photo: Alison, CC BY-SA 4.0</source>
+        <translation>Oberheim DMX. Foto: Alison, CC BY-SA 4.0</translation>
     </message>
     <message>
-        <source>Akai MPC60. Photo: Kimi95, CC BY 3.0</source>
-        <translation>Akai MPC60. Foto: Kimi95, CC BY 3.0</translation>
+        <source>E-mu SP-1200. Photo: 2xUeL, public domain</source>
+        <translation>E-mu SP-1200. Foto: 2xUeL, domínio público</translation>
     </message>
 </context>
 </TS>

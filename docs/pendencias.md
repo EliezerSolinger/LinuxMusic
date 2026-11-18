@@ -346,8 +346,13 @@ queda do Mallets, que é queda e entra antes.
     tocam, e o abafamento (o teste falha sem ele).
   - Cada kit mostra a foto real da máquina (a pedido do usuário, 18/11), do Wikimedia Commons com licença livre
     e crédito na própria foto e em `plugins/DrumMachines/photos/CREDITS.md` e `doc/AUTHORS`: TR-808, TR-909,
-    TR-606, CR-8000, TR-77, LinnDrum; o kit Electro, a Oberheim DMX, e o R&B, a Akai MPC60. A CR-78 não tem foto
-    com licença livre no Commons: o painel dela continua desenhado. Os pads ficam sob a foto.
+    TR-606, CR-8000, TR-77, LinnDrum; o kit Electro, a Oberheim DMX, e o R&B, a E-mu SP-1200. A CR-78 não tem foto
+    com licença livre no Commons: o painel dela continua desenhado. A foto preenche o plugin (em alta resolução,
+    até 1920 px), os pads numa faixa sobre a parte de baixo dela.
+  - Corrigido (pedido do usuário): o plugin não se redesenhava ao trocar de máquina. Causa: `Plugin::createView`
+    chamava `setModel` de novo numa tela que já tinha o modelo, e o `ModelView::setModel` desconecta os sinais do
+    modelo para a tela: o que o construtor da tela ligara ao instrumento se perdia (o mesmo acontecia com o
+    `uiClosed` do Carla). Agora não reatribui o mesmo modelo, e a tela liga o sinal no `modelChanged()`.
 - [ ] **Guitarix integrado de verdade:** as peças dele viram efeitos nativos do LinuxMusic, compilados aqui
   dentro: cabeçotes, amplificadores, gabinetes, pedais e efeitos. Não é hospedar o programa nem os LV2 dele.
   - Cada peça é um efeito interno, no processo e no caminho do render, como os outros nativos
