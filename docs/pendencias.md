@@ -623,6 +623,11 @@ queda do Mallets, que é queda e entra antes.
 
 ## Observado (18/11)
 
+- [x] Validação completa de 18/11: cinco unidades do Guitarix (ampstack, compressor, expander, graphiceq, mbc)
+  alocavam na thread de áudio: a cada período, `kind.mid(1)` criava um texto para saber se a saída é um pico. Agora
+  isso é decidido ao registrar o parâmetro. Só o ctest pegava: ele carrega o observador que vê também o `malloc` do
+  sistema (o do Qt); a validação rápida passa a rodar esse teste pelo ctest.
+
 - [x] Validação completa de 18/11 (checkP): o A/B ganhou uma diferença, `fx-bitcrush` (pico -14,5 dB, RMS -50,7 dB),
   contra as 33 de antes. Provado que vem só da fase em double dos osciladores (#2047): com ela voltada para float, o
   `fx-bitcrush` sai idêntico à referência e a lista volta às 33. A fase agora evolui certa, a forma de onda se afasta

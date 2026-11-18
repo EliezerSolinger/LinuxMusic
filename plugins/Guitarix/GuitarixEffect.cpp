@@ -187,6 +187,7 @@ auto newParameter(const char* id, const char* name, const char* kind, float valu
 	parameter.name = name && *name ? QString::fromUtf8(name) : parameter.id.section('.', -1);
 	if (!(name && *name) && !parameter.name.isEmpty()) { parameter.name[0] = parameter.name[0].toUpper(); }
 	parameter.kind = QString::fromUtf8(kind ? kind : "");
+	parameter.peak = parameter.kind.mid(1).contains('M');
 	parameter.lower = low;
 	parameter.upper = up;
 	parameter.step = step;
@@ -545,7 +546,7 @@ void GuitarixEffect::collectOutputs()
 		if (!parameter.output || parameter.vars.empty()) { continue; }
 		auto highest = *parameter.vars.front();
 		for (auto* var : parameter.vars) { highest = std::max(highest, *var); }
-		if (!parameter.kind.mid(1).contains('M'))
+		if (!parameter.peak)
 		{
 			parameter.output->store(highest, std::memory_order_relaxed);
 			continue;

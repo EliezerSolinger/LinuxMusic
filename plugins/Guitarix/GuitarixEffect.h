@@ -58,6 +58,9 @@ struct GuitarixParameter
 	QString id; //!< Guitarix's (it names the attribute it is saved in)
 	QString name;
 	QString kind; //!< Guitarix's "tp": S slider, SL log slider, B switch, O output (a meter's level), ...
+	//! An output that is a peak ("M" in its kind): the highest until the view takes it (read on the audio thread,
+	//! where the kind's text is not looked at: that allocated)
+	bool peak = false;
 	//! What the user sets (none for an output: the unit writes it)
 	std::unique_ptr<FloatModel> model;
 	//! An output's value, as the unit last wrote it (its instances' highest), for the view to show
