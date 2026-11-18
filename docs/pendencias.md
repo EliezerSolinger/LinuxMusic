@@ -579,6 +579,9 @@ queda do Mallets, que é queda e entra antes.
       RTNeural), que não estão instalados; baixar pede a sua aprovação;
     - não vêm, por serem ferramentas do programa Guitarix e não efeitos do rack (o LinuxMusic tem as suas): afinador,
       osciloscópio, looper, gravador, sequenciador de bateria, metrônomo e o medidor de VU como unidade.
+- [ ] **Janela do instrumento nova (design aprovado em 18/11):** `docs/design-sugestoes/05-janela-do-instrumento.png`:
+  painel encaixado (embaixo ou no inspetor), abas com texto, cabeçalho com o nome, o instrumento, os presets e salvar,
+  rodapé fixo com volume, pan, altura, faixa de notas, canal do mixer e o teclado. Implementar.
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
   - **Design aprovado (18/11):** `docs/design-sugestoes/02-cabecalho-de-faixa.png`, refeito no TCP do REAPER: número na
     cor da faixa, gravar, nome num campo, M e S; knobs de volume e pan (sem régua), FX e I/O; o medidor na borda;
