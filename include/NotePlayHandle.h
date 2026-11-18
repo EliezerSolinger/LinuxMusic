@@ -232,6 +232,12 @@ public:
 		return m_totalFramesPlayed;
 	}
 
+	/**
+	 * The frames it had played when this period began, for a sibling note on another thread (the arpeggio of a chord
+	 * follows the first note): the same whether this note was played this period before the sibling or not
+	 */
+	f_cnt_t framesPlayedAtPeriodStart() const;
+
 	/*! Returns volume level at given frame (envelope/LFO) */
 	float volumeLevel( const f_cnt_t frame );
 
@@ -360,6 +366,8 @@ private:
 	InstrumentTrack* m_instrumentTrack;		// needed for calling
 											// InstrumentTrack::playNote
 	f_cnt_t m_frames;						// total frames to play
+	std::atomic<f_cnt_t> m_framesBeforePeriod = 0; //!< (see framesPlayedAtPeriodStart())
+	std::atomic<std::int64_t> m_playedInPeriod = -1;
 	std::atomic<f_cnt_t> m_totalFramesPlayed;	// total frame-counter (read by sibling notes on other threads) - used for
 											// figuring out whether a whole note
 											// has been played

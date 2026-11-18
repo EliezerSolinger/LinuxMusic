@@ -393,8 +393,9 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 	// used for calculating remaining frames for arp-note, we have to add
 	// arp_frames-1, otherwise the first arp-note will not be setup
 	// correctly... -> arp_frames frames silence at the start of every note!
+	// (the first note's frames as this period began: it may be played on another thread before or after this one)
 	int cur_frame = (arpMode != ArpMode::Free ?
-						cnphv.front()->totalFramesPlayed() :
+						cnphv.front()->framesPlayedAtPeriodStart() :
 						_n->totalFramesPlayed()) + arp_frames - 1;
 	// used for loop
 	f_cnt_t frames_processed = arpMode != ArpMode::Free ? cnphv.front()->noteOffset() : _n->noteOffset();

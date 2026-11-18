@@ -197,8 +197,28 @@ int NotePlayHandle::midiKey() const
 
 
 
+f_cnt_t NotePlayHandle::framesPlayedAtPeriodStart() const
+{
+	// The total first, then the period it was last played in: if it was played this period, what it had before; if
+	// not, the total read first is still what it had (it adds this period's frames only after it says so, see play())
+	const auto total = m_totalFramesPlayed.load(std::memory_order_acquire);
+	if (m_playedInPeriod.load(std::memory_order_acquire) == Engine::audioEngine()->periodsRendered())
+	{
+		return m_framesBeforePeriod.load(std::memory_order_relaxed);
+	}
+	return total;
+}
+
+
+
+
 void NotePlayHandle::play(std::span<SampleFrame> buffer)
 {
+	// What it played before this period, for the sibling notes that read it this period (framesPlayedAtPeriodStart()):
+	// the frames first, then the period (the frames played this period are added at the end)
+	m_framesBeforePeriod.store(m_totalFramesPlayed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+	m_playedInPeriod.store(Engine::audioEngine()->periodsRendered(), std::memory_order_release);
+
 	if (m_muted)
 	{
 		return;

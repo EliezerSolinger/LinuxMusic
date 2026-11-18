@@ -5,6 +5,7 @@ set(CMAKE_AUTOMOC ON)
 
 set(LMMS_TESTS
 	src/core/AmpModelTest.cpp
+	src/core/ArpeggioSyncTest.cpp
 	src/core/AtomicPeakTest.cpp
 	src/core/ArrayVectorTest.cpp
 	src/core/ConvolverTest.cpp
