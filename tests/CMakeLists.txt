@@ -12,6 +12,7 @@ set(LMMS_TESTS
 	src/core/DrumSynthTest.cpp
 	src/core/EditWhilePlayingTest.cpp
 	src/core/PeakControllerTest.cpp
+	src/core/PluginCategoriesTest.cpp
 	src/core/EngineLifecycleTest.cpp
 	src/core/ErrorLogTest.cpp
 	src/core/DeviceWaitTest.cpp

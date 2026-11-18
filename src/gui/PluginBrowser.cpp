@@ -113,24 +113,27 @@ void PluginBrowser::updateRootVisibilities()
 
 void PluginBrowser::onFilterChanged( const QString & filter )
 {
-	int rootCount = m_descTree->topLevelItemCount();
-	for (int rootIndex = 0; rootIndex < rootCount; ++rootIndex)
-	{
-		QTreeWidgetItem * root = m_descTree->topLevelItem( rootIndex );
-
-		int itemCount = root->childCount();
-		for (int itemIndex = 0; itemIndex < itemCount; ++itemIndex)
+	// A plugin shows when its name has the text; a subcategory, while one of its plugins shows
+	const auto filterItem = [&](auto&& self, QTreeWidgetItem* item) -> bool {
+		if (auto* desc = static_cast<PluginDescWidget*>(m_descTree->itemWidget(item, 0)))
 		{
-			QTreeWidgetItem * item = root->child( itemIndex );
-			auto descWidget = static_cast<PluginDescWidget*>(m_descTree->itemWidget(item, 0));
-			if (descWidget->name().contains(filter, Qt::CaseInsensitive))
-			{
-				item->setHidden( false );
-			}
-			else
-			{
-				item->setHidden( true );
-			}
+			const bool shown = desc->name().contains(filter, Qt::CaseInsensitive);
+			item->setHidden(!shown);
+			return shown;
+		}
+		auto anyShown = false;
+		for (int child = 0; child < item->childCount(); ++child) { anyShown = self(self, item->child(child)) || anyShown; }
+		return anyShown;
+	};
+	for (int rootIndex = 0; rootIndex < m_descTree->topLevelItemCount(); ++rootIndex)
+	{
+		auto* root = m_descTree->topLevelItem(rootIndex);
+		for (int child = 0; child < root->childCount(); ++child)
+		{
+			auto* item = root->child(child);
+			const bool shown = filterItem(filterItem, item);
+			// (a subcategory with nothing found goes; a plugin was set by filterItem)
+			if (!m_descTree->itemWidget(item, 0)) { item->setHidden(!shown); }
 		}
 	}
 }
@@ -169,17 +172,36 @@ void PluginBrowser::addPlugins()
 		}
 	);
 
-	// Add a root node per category for the native plugins; plugins without a category go last
+	// Add a root node per category for the native plugins (with a node per subcategory inside it, when it has
+	// them); plugins without a category go last
 	auto categoryRoots = std::map<QString, QTreeWidgetItem*>{};
+	auto subcategoryRoots = std::map<std::pair<QString, QString>, QTreeWidgetItem*>{};
 	for (const auto& category : PluginCategories::categories(Plugin::Type::Instrument))
 	{
 		const auto root = addRoot(category);
 		root->setExpanded(true);
 		categoryRoots[category] = root;
+		for (const auto& subcategory : PluginCategories::subcategories(category))
+		{
+			auto* item = new QTreeWidgetItem(root, {subcategory});
+			item->setFlags(Qt::ItemIsEnabled);
+			auto font = item->font(0);
+			font.setPointSizeF(font.pointSizeF() * 0.9);
+			item->setFont(0, font);
+			item->setForeground(0, QColor{140, 150, 163});
+			item->setExpanded(true);
+			subcategoryRoots[{category, subcategory}] = item;
+		}
 	}
 	QTreeWidgetItem* otherRoot = nullptr;
 	const auto rootFor = [&](const Plugin::Descriptor* desc) {
-		if (const auto it = categoryRoots.find(PluginCategories::categoryOf(desc)); it != categoryRoots.end())
+		const auto category = PluginCategories::categoryOf(desc);
+		if (const auto it = subcategoryRoots.find({category, PluginCategories::subcategoryOf(desc)});
+			it != subcategoryRoots.end())
+		{
+			return it->second;
+		}
+		if (const auto it = categoryRoots.find(category); it != categoryRoots.end())
 		{
 			return it->second;
 		}
@@ -211,6 +233,8 @@ void PluginBrowser::addPlugins()
 			addPlugin(Plugin::Descriptor::SubPluginFeatures::Key(desc, desc->name), rootFor(desc));
 		}
 	}
+	// (a subcategory none of whose plugins was built here goes)
+	for (auto& [key, item] : subcategoryRoots) { item->setHidden(item->childCount() == 0); }
 }
 
 

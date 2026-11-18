@@ -44,11 +44,12 @@ struct Category
 // Categories are listed in display order
 const auto s_instrumentCategories = std::array{
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Synthesizers"),
-		{"tripleoscillator", "monstro", "watsyn", "organic", "bitinvader", "xpressive", "zynaddsubfx", "lb302"}, "#4afd85", "SY"},
+		{"tripleoscillator", "monstro", "watsyn", "organic", "bitinvader", "xpressive", "zynaddsubfx", "lb302",
+			"vibedstrings"}, "#4afd85", "SY"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Samplers"),
 		{"audiofileprocessor", "sf2player", "gigplayer", "patman", "slicert"}, "#f0913a", "SA"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Drums"), {"kicker", "avldrums"}, "#e85a4f", "DR"},
-	Category{QT_TRANSLATE_NOOP("PluginCategories", "Physical modeling"), {"vibedstrings", "malletsstk"}, "#c8a06b", "PM"},
+	Category{QT_TRANSLATE_NOOP("PluginCategories", "Physical modeling"), {"malletsstk"}, "#c8a06b", "PM"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Chiptune"), {"freeboy", "nes", "sid", "opulenz", "sfxr"}, "#9b6be8", "CH"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Plugin hosts"), {"vestige", "carlarack", "carlapatchbay"}, "#9aa3ad", "PH"},
 };
@@ -66,6 +67,24 @@ const auto s_effectCategories = std::array{
 		{"stereoenhancer", "dispersion"}, "#9aa3ad", "ST"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Analysis"), {"analyzer", "oscilloscope", "vectorscope"}, "#3dc8d8", "AN"},
 	Category{QT_TRANSLATE_NOOP("PluginCategories", "Control"), {"peakcontrollereffect"}, "#d36bb8", "CT"},
+};
+
+//! A second level inside a category, when it has many plugins (the synthesizers, by how they make sound)
+struct Subcategory
+{
+	const char* category; //!< the category's untranslated name
+	const char* name; //!< untranslated, in the "PluginCategories" translation context
+	QStringList plugins;
+};
+
+// In display order inside their category
+const auto s_subcategories = std::array{
+	Subcategory{"Synthesizers", QT_TRANSLATE_NOOP("PluginCategories", "Subtractive"),
+		{"tripleoscillator", "lb302", "monstro"}},
+	Subcategory{"Synthesizers", QT_TRANSLATE_NOOP("PluginCategories", "Wavetable"), {"watsyn", "bitinvader"}},
+	Subcategory{"Synthesizers", QT_TRANSLATE_NOOP("PluginCategories", "Additive"), {"organic", "zynaddsubfx"}},
+	Subcategory{"Synthesizers", QT_TRANSLATE_NOOP("PluginCategories", "Strings"), {"vibedstrings"}},
+	Subcategory{"Synthesizers", QT_TRANSLATE_NOOP("PluginCategories", "Formulas"), {"xpressive"}},
 };
 
 QString translated(const char* name)
@@ -101,6 +120,32 @@ QStringList categories(Plugin::Type type)
 		? std::span<const Category>{s_instrumentCategories}
 		: std::span<const Category>{s_effectCategories};
 	for (const auto& category : list) { result << translated(category.name); }
+	return result;
+}
+
+
+
+
+QString subcategoryOf(const Plugin::Descriptor* desc)
+{
+	const auto name = QString::fromUtf8(desc->name);
+	for (const auto& subcategory : s_subcategories)
+	{
+		if (subcategory.plugins.contains(name)) { return translated(subcategory.name); }
+	}
+	return {};
+}
+
+
+
+
+QStringList subcategories(const QString& category)
+{
+	auto result = QStringList{};
+	for (const auto& subcategory : s_subcategories)
+	{
+		if (translated(subcategory.category) == category) { result << translated(subcategory.name); }
+	}
 	return result;
 }
 

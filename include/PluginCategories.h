@@ -45,6 +45,13 @@ LMMS_EXPORT QString categoryOf(const Plugin::Descriptor* desc);
 //! @returns the translated categories for plugins of type @p type, in display order
 LMMS_EXPORT QStringList categories(Plugin::Type type);
 
+//! @returns the translated subcategory (the second level inside a category that has many plugins, as the
+//! synthesizers by how they make sound) of the plugin with descriptor @p desc, or an empty string
+LMMS_EXPORT QString subcategoryOf(const Plugin::Descriptor* desc);
+
+//! @returns the translated subcategories of the (translated) category @p category, in display order
+LMMS_EXPORT QStringList subcategories(const QString& category);
+
 //! How a category shows: its colour (EQ blue, dynamics yellow...) and the two letters on its generic icon
 struct Style
 {

@@ -203,9 +203,13 @@ queda do Mallets, que é queda e entra antes.
   - O que precisar reiniciar avisa e oferece reiniciar.
   - Levantar a lista de opções e o que cada uma precisa.
   - Levantamento do código: `docs/pesquisas/levantamentos-codigo.md`.
-- [ ] **Categorias dos instrumentos:**
+- [x] **Categorias dos instrumentos:**
   - o Vibed sai de "modelagem física" e vai para "sintetizador";
   - subcategorias de sintetizador, porque são muitos.
+  - Feito: os sintetizadores em Subtrativos (TripleOscillator, LB302, Monstro), Tabela de ondas (Watsyn,
+    BitInvader), Aditivos (Organic, ZynAddSubFX), Cordas (Vibed) e Fórmulas (Xpressive). O navegador mostra a
+    subcategoria como um segundo nível dentro da categoria (a busca também a esconde quando nada dela é achado).
+    O mesmo segundo nível serve às categorias de efeitos (o Guitarix). `PluginCategoriesTest`.
 - [ ] **Plugin de baterias eletrônicas:** um instrumento visual como o AVL Drums, que:
   - usa as amostras de baterias eletrônicas que já temos;
   - mapeia cada peça numa nota MIDI;

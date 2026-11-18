@@ -17726,6 +17726,26 @@ A interface usada é a que está salva nestas configurações.</translation>
         <source>Control</source>
         <translation>Controle</translation>
     </message>
+    <message>
+        <source>Subtractive</source>
+        <translation>Subtrativos</translation>
+    </message>
+    <message>
+        <source>Wavetable</source>
+        <translation>Tabela de ondas</translation>
+    </message>
+    <message>
+        <source>Additive</source>
+        <translation>Aditivos</translation>
+    </message>
+    <message>
+        <source>Strings</source>
+        <translation>Cordas</translation>
+    </message>
+    <message>
+        <source>Formulas</source>
+        <translation>Fórmulas</translation>
+    </message>
 </context>
 <context>
     <name>lmms::gui::TransportBar</name>
