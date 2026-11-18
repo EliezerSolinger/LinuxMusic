@@ -28,6 +28,7 @@
 #include <mutex>
 #include <random>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "AudioEngine.h"
@@ -183,42 +184,53 @@ private slots:
 		auto stop = std::atomic<bool>{false};
 		auto queued = std::atomic<int>{0};
 
-		// (as a driver: the port taken and its event queued under the routing's lock)
+		// (as a driver: the port taken and its event queued under the routing's lock, held only for that)
 		auto receiver = std::thread{[&] {
 			auto random = std::minstd_rand{7};
 			while (!stop.load())
 			{
-				const auto lock = std::lock_guard{routing};
-				if (ports.empty()) { continue; }
-				client()->queueInEvent(&ports[random() % ports.size()]->port, noteOn(36 + random() % 48));
+				{
+					const auto lock = std::lock_guard{routing};
+					client()->queueInEvent(&ports[random() % ports.size()]->port, noteOn(36 + random() % 48));
+				}
 				queued.fetch_add(1);
+				std::this_thread::sleep_for(std::chrono::microseconds{50});
 			}
 		}};
+		// (as a device: a period now and then, not one after another)
 		auto renderer = std::thread{[&] {
-			while (!stop.load()) { renderPeriod(); }
+			while (!stop.load())
+			{
+				renderPeriod();
+				std::this_thread::sleep_for(std::chrono::milliseconds{1});
+			}
 		}};
 
 		auto random = std::minstd_rand{11};
 		auto elsewhere = 0;
+		auto replaced = 0;
 		const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds{600};
-		while (std::chrono::steady_clock::now() < end)
+		while (std::chrono::steady_clock::now() < end || replaced < 20)
 		{
-			// (out of the routing under its lock, then deleted: as a track's port)
+			// (made first; then in place of another in the routing, under its lock; the other deleted after: as a
+			// track's port)
+			auto coming = std::make_unique<Recorder>();
 			auto leaving = std::unique_ptr<Recorder>{};
 			{
 				const auto lock = std::lock_guard{routing};
 				const auto index = random() % ports.size();
-				leaving = std::move(ports[index]);
-				ports[index] = std::make_unique<Recorder>();
+				leaving = std::exchange(ports[index], std::move(coming));
 			}
 			elsewhere += leaving->elsewhere.load();
 			leaving.reset();
+			++replaced;
 		}
 		stop = true;
 		receiver.join();
 		renderer.join();
 		for (const auto& recorder : ports) { elsewhere += recorder->elsewhere.load(); }
 		QVERIFY(queued.load() > 0);
+		QVERIFY(replaced >= 20);
 		QCOMPARE(elsewhere, 0);
 	}
 };
