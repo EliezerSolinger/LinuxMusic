@@ -378,6 +378,31 @@ Passos feitos:
 | Trocar o instrumento por Sf2 Player | 0,01 ms | 0,22 ms |
 | Mover um efeito LV2 ou LADSPA para um processo próprio | 0,00 ms (antes 21 a 25) | |
 
+### 7.6 O que ainda pega a trava, e por quê (17/11)
+
+Toda edição medida segura a trava por menos de 0,1 ms (a carga de um soundfont, 0,55 ms, é o FluidSynth liberando o
+velho): bem abaixo do meio período (2,9 ms) que o render espera antes de desistir. O que sobra pega a trava só no
+instante de pôr ou tirar algo do que o render percorre, com o trabalho pesado fora dela:
+
+| Grupo | Funções | O que dura sob a trava |
+|---|---|---|
+| Faixas e clipes | `Track::publish`, `addClip`, `removeClip`, `swapPositionOfClips`, `TrackContainer::addTrack`, `removeTrack`, `moveTrack(s)`, `PatternTrack` (números), `PatternStore::takePattern`, `Clip::movePosition`, `ClipView::remove`, `moveToTrackUnder` | pôr/tirar um ponteiro numa lista, renumerar |
+| Mixer | `createChannel`, `deleteChannel`, `createRoute`, `deleteChannelSend`, `moveChannelLeft`, `setChannelCount`, `add/removeLatencySource` | pôr/tirar um canal ou envio, renumerar |
+| Efeitos | `EffectChain::append/insert/remove/replace/move…/clear/prependEffects` | pôr/tirar o efeito na lista (feito antes, destruído depois) |
+| Plugins | `PluginInstance::reactivate` (só desativar), `convertToDummyEffect`, `InstrumentTrack::swapInstrument`, `updateTrackChannelCount`, `setSample`/`setFont`/`swapInstance`/`setSlicePoints`/`loadPatch` dos instrumentos, `SampleClip::setSample*`, `AudioItem::load` | trocar um ponteiro (o novo feito antes, o velho destruído depois) |
+| Automação e controles | `AutomationClip::Change` (todo ponto ou controle mudado), `addObject`, `objectDestroyed`, `forgetObjectsIf`, `AutomatableModel::setControllerConnection`, `Controller` (criar/destruir), `ControllerConnection::attach` | mudar o mapa de pontos ou a lista de controles |
+| Notas e play handles | `AudioEngine::removePlayHandle(s…)`, `removeAudioBusHandle`, `clearNewPlayHandles`, `InstrumentTrack::silenceAllNotes`, `processInEvent` (nota desligada vinda do MIDI), `updateBaseNote`, `PresetPreviewPlayHandle` | tirar notas da lista |
+| Andamento e afinação | `Song::setTempo`, `TempoMap::*`, `Song::setScale`, `setKeymap`, `TempoRenderController::revert` | trocar o mapa de andamentos ou a escala |
+| Mudanças estruturais raras (ficam assim) | `Song::clearProject`, `Song::loadProject`, `Song::stop`, `stopRecording`, `AudioEngine::openMidiClient`/`closeMidiClient`, a troca de dispositivo de áudio, `Lv2ControlBase::reload` (o botão "recarregar" do plugin) | o projeto inteiro, o dispositivo, um plugin recriado; o tocar está parado, ou o usuário pediu |
+
+Tiradas da lista nesta fase (seguravam a trava pelo trabalho todo): criar e apagar faixas e canais, carregar
+arquivos pelo navegador, `TrackView::dropEvent` (soltar uma faixa sobre outra) e `Track::loadTrack` (apagar os
+clipes sob uma trava de fora), o Vestige abrindo um plugin, mover um plugin para um processo próprio.
+
+**Fase 7 pronta** pelo critério do plano: tocar e editar ao mesmo tempo não pula período nenhum
+(`EditWhilePlayingTest`, 16 tipos de edição), nenhum período demora por esperar a interface (o teste mede), e o
+TSan sai limpo. Os retratos imutáveis (7.2 a 7.5 do plano original) não foram necessários: a medida não pediu.
+
 ## Fase 8: ciclo de vida explícito
 
 - **8.1** Documentar e testar a ordem de criação e destruição do `Engine`. `EngineLifecycleTest` faz

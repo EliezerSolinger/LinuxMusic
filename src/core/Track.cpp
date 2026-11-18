@@ -300,10 +300,8 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		return;
 	}
 
-	{
-		auto guard = AudioEngine::changesGuard();
-		deleteClips();
-	}
+	// (each clip leaves the track in a moment under the audio engine's lock and is deleted without it, see deleteClip())
+	deleteClips();
 
 	QDomNode node = element.firstChild();
 	while( !node.isNull() )

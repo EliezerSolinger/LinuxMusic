@@ -210,9 +210,9 @@ void TrackView::dropEvent( QDropEvent * de )
 		// value contains our XML-data so simply create a
 		// DataFile which does the rest for us...
 		DataFile dataFile( value.toUtf8() );
-		Engine::audioEngine()->requestChangeInModel();
+		// Without the audio engine's change lock: each piece the track restores takes it for its own moment (its
+		// clips, its instrument, see Track::loadTrack() and InstrumentTrack::swapInstrument())
 		m_track->restoreState( dataFile.content().firstChild().toElement() );
-		Engine::audioEngine()->doneChangeInModel();
 		de->accept();
 	}
 }
