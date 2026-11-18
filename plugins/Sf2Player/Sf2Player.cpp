@@ -398,7 +398,8 @@ QString Sf2Instrument::nodeName() const
 
 void Sf2Instrument::freeFont()
 {
-	setFont(nullptr);
+	// (the synth deletes its soundfont with it)
+	m_font = nullptr;
 }
 
 
@@ -425,24 +426,13 @@ auto Sf2Instrument::readFont(const std::string& path) -> fluid_sfont_t*
 
 void Sf2Instrument::setFont(fluid_sfont_t* font)
 {
-	// A moment under the audio engine's change lock and the synth's mutex: the audio thread plays the synth (it does
-	// not wait for the main thread then, which holds them only for this)
-	const auto guard = AudioEngine::changesGuard();
-	const auto lock = std::lock_guard{m_synthMutex};
-	if (m_font != nullptr)
-	{
-		// (FluidSynth keeps it until its last voice is done). Without resetting the channels' presets here (it walks
-		// every channel and logs for those it finds nothing for, under the locks): the patch is selected right
-		// after, without the audio engine's lock (see openFile())
-		// (with no font in its place, the channels let go of its presets now)
-		fluid_synth_sfunload(m_synth, m_fontId, font == nullptr);
-		m_font = nullptr;
-	}
-	if (font != nullptr)
-	{
-		m_fontId = fluid_synth_add_sfont(m_synth, font);
-		m_font = font;
-	}
+	// A new synth with the soundfont and every setting, made without any lock, put in place in a moment (only the
+	// pointers change under the locks: a main thread that loses the processor meanwhile holds nothing); the old one
+	// is deleted after, its soundfont with it
+	auto* made = newSynth();
+	const auto fontId = font ? fluid_synth_add_sfont(made, font) : -1;
+	applySettings(made, fontId);
+	installSynth(made, font, fontId, false);
 }
 
 
@@ -581,6 +571,14 @@ void Sf2Instrument::updateChorus()
 void Sf2Instrument::updateTuning()
 {
 	const auto lock = std::lock_guard{m_synthMutex};
+	applyTuning(m_synth);
+}
+
+
+
+
+void Sf2Instrument::applyTuning(fluid_synth_t* synth)
+{
 	if (instrumentTrack()->microtuner()->enabledModel()->value())
 	{
 		auto centArray = std::array<double, 128>{};
@@ -593,80 +591,104 @@ void Sf2Instrument::updateTuning()
 			centArray[i] = noteHz == 0. ? 0. : 1200. * log2(noteHz / lowestHz);
 		}
 
-		fluid_synth_activate_key_tuning(m_synth, 0, 0, "", centArray.data(), true);
+		fluid_synth_activate_key_tuning(synth, 0, 0, "", centArray.data(), true);
 		for (int chan = 0; chan < 16; chan++)
 		{
-		    fluid_synth_activate_tuning(m_synth, chan, 0, 0, true);
+			fluid_synth_activate_tuning(synth, chan, 0, 0, true);
 		}
 	}
 	else
 	{
-		fluid_synth_activate_key_tuning(m_synth, 0, 0, "", nullptr, true);
+		fluid_synth_activate_key_tuning(synth, 0, 0, "", nullptr, true);
 		for (int chan = 0; chan < 16; chan++)
 		{
-		    fluid_synth_activate_tuning(m_synth, chan, 0, 0, true);
+			fluid_synth_activate_tuning(synth, chan, 0, 0, true);
 		}
 	}
 }
 
 
 
-void Sf2Instrument::reloadSynth()
+auto Sf2Instrument::newSynth() -> fluid_synth_t*
 {
-	double tempRate;
-
 	// Set & get, returns the true sample rate
-	fluid_settings_setnum( m_settings, (char *) "synth.sample-rate", Engine::audioEngine()->outputSampleRate() );
-	fluid_settings_getnum( m_settings, (char *) "synth.sample-rate", &tempRate );
+	fluid_settings_setnum(m_settings, "synth.sample-rate", Engine::audioEngine()->outputSampleRate());
+	return new_fluid_synth(m_settings);
+}
 
-	// A new synth, made without any lock, takes the old one's place (and its soundfont) in a moment under the audio
-	// engine's change lock and the synth's mutex; the old one is deleted after, without them
-	auto* made = new_fluid_synth( m_settings );
+
+
+
+void Sf2Instrument::applySettings(fluid_synth_t* synth, int fontId)
+{
+	// (on a synth not playing yet: no lock)
+	auto rate = 0.0;
+	fluid_settings_getnum(m_settings, "synth.sample-rate", &rate);
+	if (static_cast<int>(rate) != static_cast<int>(Engine::audioEngine()->outputSampleRate()))
+	{
+		// LMMS supports a sample rate of 192 kHz, while FluidSynth only supports up to 96 kHz: the instrument is
+		// resampled with linear interpolation, so FluidSynth interpolates linearly too
+		fluid_synth_set_interp_method(synth, -1, FLUID_INTERP_LINEAR);
+	}
+	if (fontId >= 0 && m_bankNum.value() >= 0 && m_patchNum.value() >= 0)
+	{
+		fluid_synth_program_select(synth, m_channel, fontId, m_bankNum.value(), m_patchNum.value());
+	}
+	fluid_synth_set_gain(synth, m_gain.value());
+	fluid_synth_reverb_on(synth, -1, m_reverbOn.value() ? 1 : 0);
+	fluid_synth_set_reverb_group_roomsize(synth, -1, m_reverbRoomSize.value());
+	fluid_synth_set_reverb_group_damp(synth, -1, m_reverbDamping.value());
+	fluid_synth_set_reverb_group_width(synth, -1, m_reverbWidth.value());
+	fluid_synth_set_reverb_group_level(synth, -1, m_reverbLevel.value());
+	fluid_synth_chorus_on(synth, -1, m_chorusOn.value() ? 1 : 0);
+	fluid_synth_set_chorus_group_nr(synth, -1, static_cast<int>(m_chorusNum.value()));
+	fluid_synth_set_chorus_group_level(synth, -1, m_chorusLevel.value());
+	fluid_synth_set_chorus_group_speed(synth, -1, m_chorusSpeed.value());
+	fluid_synth_set_chorus_group_depth(synth, -1, m_chorusDepth.value());
+	fluid_synth_set_chorus_group_type(synth, -1, FLUID_CHORUS_MOD_SINE);
+	applyTuning(synth);
+}
+
+
+
+
+void Sf2Instrument::installSynth(fluid_synth_t* made, fluid_sfont_t* font, int fontId, bool fontMoves)
+{
+	auto rate = 0.0;
+	fluid_settings_getnum(m_settings, "synth.sample-rate", &rate);
 	auto* old = static_cast<fluid_synth_t*>(nullptr);
 	{
 		const auto guard = AudioEngine::changesGuard();
 		const auto lock = std::lock_guard{m_synthMutex};
-		if (m_font && m_synth)
-		{
-			fluid_synth_remove_sfont( m_synth, m_font );
-			m_fontId = fluid_synth_add_sfont( made, m_font );
-		}
+		// (a soundfont moving to the new synth leaves the old one, which would delete it)
+		if (fontMoves && m_font && m_synth) { fluid_synth_remove_sfont(m_synth, m_font); }
 		old = std::exchange(m_synth, made);
+		m_font = font;
+		m_fontId = fontId;
 		m_framesRendered = 0;
+		m_bufferView = {};
 		// (what the render reads, changed with the synth)
-		m_internalSampleRate = static_cast<int>( tempRate );
+		m_internalSampleRate = static_cast<int>(rate);
 		m_resampler.setRatio(m_internalSampleRate, Engine::audioEngine()->outputSampleRate());
+		m_resampler.reset();
 	}
 	if (old != nullptr) { delete_fluid_synth(old); }
-
-	// synth program change (set bank and patch)
-	if (m_font) { updatePatch(); }
-
-	m_synthMutex.lock();
-
-	if (m_internalSampleRate != Engine::audioEngine()->outputSampleRate())
-	{
-		// LMMS supports a sample rate of 192 kHZ, while FluidSynth only supports up to 96 kHZ.
-		// Because of this, the instrument is resampled using libsamplerate when necessary.
-		// This uses linear interpolation, so the instrument's interpolation is set to FLUID_INTERP_LINEAR
-		// to match. A better option might be to make the interpolation option modifiable by the user, as well as only
-		// supporting only up to 96 kHZ (though that may be a problem if theres a strong need for 192 kHZ).
-		fluid_synth_set_interp_method(m_synth, -1, FLUID_INTERP_LINEAR);
-	}
-
-	m_synthMutex.unlock();
-
-	updateReverb();
-	updateChorus();
-	updateReverbOn();
-	updateChorusOn();
-	updateGain();
-	updateTuning();
-
-	// Reset last MIDI pitch properties, which will be set to the correct values
-	// upon playing the next note
+	// (the pitch bend and its range are sent again with the next period)
 	m_lastMidiPitch = -1;
 	m_lastMidiPitchRange = -1;
+}
+
+
+
+
+void Sf2Instrument::reloadSynth()
+{
+	// A new synth (at the engine's rate now, or anew for an export), the soundfont moved into it and every setting
+	// applied, all without any lock; then put in place in a moment
+	auto* made = newSynth();
+	const auto fontId = m_font ? fluid_synth_add_sfont(made, m_font) : -1;
+	applySettings(made, fontId);
+	installSynth(made, m_font, fontId, true);
 }
 
 
@@ -849,7 +871,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 	{
 		m_lastMidiPitch = currentMidiPitch;
 		m_synthMutex.lock();
-		fluid_synth_pitch_bend( m_synth, m_channel, m_lastMidiPitch );
+		fluid_synth_pitch_bend( m_synth, m_channel, currentMidiPitch );
 		m_synthMutex.unlock();
 	}
 
@@ -858,7 +880,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 	{
 		m_lastMidiPitchRange = currentMidiPitchRange;
 		m_synthMutex.lock();
-		fluid_synth_pitch_wheel_sens( m_synth, m_channel, m_lastMidiPitchRange );
+		fluid_synth_pitch_wheel_sens( m_synth, m_channel, currentMidiPitchRange );
 		m_synthMutex.unlock();
 	}
 	// if we have no new noteons/noteoffs, just render a period and call it a day

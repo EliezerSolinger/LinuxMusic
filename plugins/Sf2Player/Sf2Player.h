@@ -28,6 +28,7 @@
 #define SF2_PLAYER_H
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <vector>
 #include <fluidsynth/types.h>
@@ -125,6 +126,14 @@ private:
 	auto readFont(const std::string& path) -> fluid_sfont_t*;
 	//! Puts @p font in the synth in place of the one there (deleted), in a moment for the audio thread
 	void setFont(fluid_sfont_t* font);
+	//! A synth at the engine's rate (with m_settings), not playing yet
+	auto newSynth() -> fluid_synth_t*;
+	//! Every setting (patch, gain, reverb, chorus, tuning, interpolation) on @p synth, not playing yet
+	void applySettings(fluid_synth_t* synth, int fontId);
+	void applyTuning(fluid_synth_t* synth);
+	//! Puts @p made (with @p font, @p fontId) in place of the synth playing, in a moment; deletes the old one after.
+	//! @p fontMoves: the soundfont was the old synth's too (it leaves it)
+	void installSynth(fluid_synth_t* made, fluid_sfont_t* font, int fontId, bool fontMoves);
 
 	int m_fontId;
 	QString m_filename;
@@ -138,8 +147,8 @@ private:
 
 	std::array<int, 128> m_notesRunning = {};
 	sample_rate_t m_internalSampleRate;
-	int m_lastMidiPitch;
-	int m_lastMidiPitchRange;
+	std::atomic<int> m_lastMidiPitch = -1; //!< (-1: sent again; set by the main thread when the synth is replaced)
+	std::atomic<int> m_lastMidiPitchRange = -1;
 	int m_channel;
 
 	gui::LcdSpinBoxModel m_bankNum;
