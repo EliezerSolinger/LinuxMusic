@@ -55,6 +55,7 @@ Com o gabinete INT, que é o padrão:
 |---|---|---|---|---|---|
 | Clean | ±0,02 dB | -51 dB | -45 dB | -29 a -30 dB | **-37 dB** |
 | Rhythm | ±0,02 dB | -41 dB | -36 dB | -24 dB | **-29 dB** |
+| Lead | ±0,07 dB | -33 dB | -21 dB | -21 a -22 dB | **-23 dB** |
 
 Com o gabinete desligado (mais exigente, porque os agudos ficam expostos):
 
@@ -64,19 +65,21 @@ Os números são o ESR do nulo da forma de onda, medido pelo `compare.py` do est
 |---|---|---|---|---|---|
 | Clean | ±0,03 dB | -46,6 dB | -41 dB | -21 dB | **-30 dB** |
 | Rhythm | ±0,03 dB | -35,5 dB | -26,7 dB | -15 dB | **-21 dB** |
-| Lead | exato | — | — | — | **provisório** |
+| Lead | ±0,07 dB | -27 dB | -19 dB | -15 dB | **-18 dB** |
 
 - **Rhythm:** graves e médios ficam em -24 a -27 dB. O erro se concentra em 8–16 kHz, onde o nível bate
   (±1 dB) mas a forma de onda não.
-- **Lead:** usa as curvas do Rhythm com os filtros lineares exatos do Lead, então só o pequeno sinal é exato.
+- **Lead:** 3 estágios (o 1º e o 2º sem filtro relevante entre eles; o passa-altas do acoplamento foi fixado
+  em 15 Hz, porque o ajuste periódico não enxerga DC). Ajuste: -26 dB nos harmônicos medidos.
 
 ## Pendências
 
-1. **Lead:** medir e ajustar os 3 estágios dele (2 antes do TS e 1 depois).
+1. **Lead:** chegar perto do ajuste (-26 dB) também no C++. Hoje o C++ fica ~3–6 dB abaixo em níveis
+   médios, provavelmente pela decimação entre os estágios.
 2. **Rhythm:** acertar os agudos dos sinais densos.
 3. **INT:** o IR (`CabinetIr` em `AmpLiteData.h`) é o gabinete da Kuassa, medido pela razão gabinete ligado /
-   desligado. Erro ≤ 0,15 dB de 20 Hz a 18 kHz, e é igual em qualquer ajuste. **Confirmar com o Arie a
-   permissão para distribuí-lo**, junto com a das imagens.
+   desligado. Erro ≤ 0,15 dB de 20 Hz a 18 kHz, e é igual em qualquer ajuste. Permissão para distribuí-lo
+   confirmada pelo usuário em 18/11, assim como a das imagens.
 4. **Abaixo de 60 Hz:** o FIR do power amp erra ~1 dB em 30 Hz. Dá para trocar por um IIR mais uma linha
    de atraso, que também tiraria ~5 ms de latência.
 
