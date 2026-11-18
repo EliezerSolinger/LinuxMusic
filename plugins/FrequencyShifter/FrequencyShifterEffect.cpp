@@ -62,6 +62,21 @@ FrequencyShifterEffect::FrequencyShifterEffect(Model* parent, const Descriptor::
 	updateSampleRate();
 }
 
+void FrequencyShifterEffect::reset()
+{
+	std::fill(m_ringBuf.begin(), m_ringBuf.end(), std::array<float, 2>{0.f, 0.f});
+	m_writeIndex = 0;
+	m_hilbert1 = HilbertIIRFloat<2>(m_sampleRate, 2.0f);
+	m_hilbert2 = HilbertIIRFloat<2>(m_sampleRate, 2.0f);
+	m_phase = {0.f, 0.f};
+	m_lfoPhase = 0.f;
+	m_dampState = {0.f, 0.f};
+	m_toneState = {0.f, 0.f};
+}
+
+
+
+
 auto FrequencyShifterEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();

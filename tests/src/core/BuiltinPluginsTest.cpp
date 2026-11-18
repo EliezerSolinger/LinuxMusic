@@ -281,6 +281,40 @@ class BuiltinPluginsTest : public QObject
 		for (const auto& name : names) { QTest::newRow(qPrintable(name)) << name; }
 	}
 
+	/**
+	 * An export (or a new project) starts from rest: what a plugin holds from what played before (voices, a
+	 * reverb's tail, a delay's echoes, an oscillator's phase) is let go (AudioProcessor::reset(), on the audio
+	 * thread). Played loud, stopped and brought to rest, the next periods are silent: the same export whatever
+	 * played before it (upstream's #7234: the LB302 exported differently each time).
+	 */
+	void fromRest(const QString& name, bool instrument)
+	{
+		auto setup = setUp(name, instrument);
+		if (!setup.plugin) { QSKIP("not built here"); }
+		// Loud first
+		for (auto* model : parametersOf(setup.plugin))
+		{
+			if (model->displayName().contains("volume", Qt::CaseInsensitive) || model->displayName().contains("gain",
+				Qt::CaseInsensitive) || model->displayName().contains("Wet", Qt::CaseInsensitive))
+			{
+				model->setValue(model->maxValue<float>());
+			}
+		}
+		auto why = QString{};
+		QVERIFY2(playsFinite(120, why), qPrintable(why));
+		auto* engine = Engine::audioEngine();
+		Engine::mixer()->discardProcessingState();
+		auto loudest = 0.f;
+		for (int period = 0; period < 4; ++period)
+		{
+			for (const auto& frame : engine->renderNextPeriod())
+			{
+				loudest = std::max({loudest, std::abs(frame[0]), std::abs(frame[1])});
+			}
+		}
+		QVERIFY2(loudest < 1e-6f, qPrintable(QString{"after being brought to rest it still sounds: %1"}.arg(loudest)));
+	}
+
 private slots:
 	void initTestCase()
 	{
@@ -339,6 +373,66 @@ private slots:
 		const auto jump = std::max(std::abs(out[start]), std::abs(out[start + 1])) / peak;
 		qInfo("%s: in two frames, %.3f of the peak", qPrintable(plugin), jump);
 		QVERIFY2(jump < 0.25f, qPrintable(QString{"the note jumps from silence to %1 of its peak"}.arg(jump)));
+	}
+
+	/**
+	 * No note stays on after the song stops (upstream's #2529: OpulenZ kept a tone after stopping in a loop; #1762:
+	 * ZynAddSubFX with its arpeggio): notes crossing the end of the cycle play a few rounds, the song stops in the
+	 * middle of one, and some seconds later all is quiet.
+	 */
+	void noNoteStaysOnAfterStopping_data() { addRows(Plugin::Type::Instrument); }
+	void noNoteStaysOnAfterStopping()
+	{
+		QFETCH(QString, plugin);
+		auto setup = setUp(plugin, true, false);
+		if (!setup.plugin) { QSKIP("not built here"); }
+		auto* clip = dynamic_cast<MidiClip*>(setup.track->createClip(TimePos{0}));
+		// Chords across the cycle's end (one bar), short notes on it too
+		for (const auto key : {DefaultKey - 12, DefaultKey, DefaultKey + 4, DefaultKey + 7})
+		{
+			clip->addNote(Note{TimePos{TimePos::ticksPerBar() * 2}, TimePos{TimePos::ticksPerBar() / 2}, key});
+			clip->addNote(Note{TimePos{TimePos::ticksPerBar() / 8}, TimePos{TimePos::ticksPerBar() - 6}, key + 12});
+		}
+		auto* song = Engine::getSong();
+		auto& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.setLoopPoints(TimePos{0}, TimePos{TimePos::ticksPerBar()});
+		timeline.setLoopEnabled(true);
+		auto* engine = Engine::audioEngine();
+		const auto rate = static_cast<int>(engine->outputSampleRate());
+		const auto periodsFor = [&](double seconds) {
+			return static_cast<int>(seconds * rate / engine->framesPerPeriod()) + 1;
+		};
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		// Three rounds and a half (two seconds a bar at 120 BPM)
+		for (int period = 0; period < periodsFor(7.3); ++period) { engine->renderNextPeriod(); }
+		song->stop();
+		timeline.setLoopEnabled(false);
+		// Released: the longest release or tail of a default sound is a few seconds
+		for (int period = 0; period < periodsFor(6); ++period) { engine->renderNextPeriod(); }
+		auto loudest = 0.f;
+		for (int period = 0; period < periodsFor(0.5); ++period)
+		{
+			for (const auto& frame : engine->renderNextPeriod())
+			{
+				loudest = std::max({loudest, std::abs(frame[0]), std::abs(frame[1])});
+			}
+		}
+		QVERIFY2(loudest < 1e-4f, qPrintable(QString{"still sounding six seconds after stopping: %1"}.arg(loudest)));
+	}
+
+	void instrumentsFromRest_data() { addRows(Plugin::Type::Instrument); }
+	void instrumentsFromRest()
+	{
+		QFETCH(QString, plugin);
+		fromRest(plugin, true);
+	}
+
+	void effectsFromRest_data() { addRows(Plugin::Type::Effect); }
+	void effectsFromRest()
+	{
+		QFETCH(QString, plugin);
+		fromRest(plugin, false);
 	}
 
 	void effects_data() { addRows(Plugin::Type::Effect); }

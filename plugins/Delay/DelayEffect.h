@@ -47,6 +47,8 @@ public:
 	void changeSampleRate();
 
 private:
+	//! Back to rest (an export, a new project): nothing of the audio before [audio thread]
+	void reset() override;
 	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	DelayControls m_delayControls;

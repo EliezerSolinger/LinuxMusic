@@ -25,6 +25,7 @@
 #ifndef MONODELAY_H
 #define MONODELAY_H
 
+#include <algorithm>
 #include <vector>
 
 #include "LmmsTypes.h"
@@ -52,6 +53,12 @@ public:
 	}
 
 	void tick( sample_t* sample );
+	//! The echoes let go
+	void clear()
+	{
+		std::fill(m_buffer.begin(), m_buffer.end(), 0.f);
+		m_writeIndex = 0;
+	}
 	void setSampleRate( int sampleRate );
 
 private:

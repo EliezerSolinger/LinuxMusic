@@ -175,6 +175,9 @@ VestigeInstrument::VestigeInstrument( InstrumentTrack * _instrument_track ) :
 
 VestigeInstrument::~VestigeInstrument()
 {
+	// Its own play handle only, first: nothing of it is used by the audio thread after this
+	Engine::audioEngine()->removePlayHandlesOf(this);
+
 	if (p_subWindow != nullptr) {
 		delete p_subWindow;
 		p_subWindow = nullptr;
@@ -185,9 +188,6 @@ VestigeInstrument::~VestigeInstrument()
 		knobFModel = nullptr;
 	}
 
-	// Its own play handle only: the track's notes are the track's, and the instrument taking its place may be
-	// there already (see AudioEngine::removePlayHandlesOf())
-	Engine::audioEngine()->removePlayHandlesOf(this);
 	closePlugin();
 }
 

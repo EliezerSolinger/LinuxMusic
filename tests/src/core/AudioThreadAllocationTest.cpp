@@ -271,7 +271,13 @@ private:
 		s_siteCount = 0;
 		s_unrecorded = 0;
 		s_counting = true;
-		for (int period = 0; period < periods; ++period) { engine->renderNextPeriod(); }
+		for (int period = 0; period < periods; ++period)
+		{
+			// Half-way, everything brought to rest (as an export starts): what the plugins and the mixer let go on
+			// the audio thread (AudioProcessor::reset()) allocates nothing either
+			if (period == periods / 2) { Engine::mixer()->discardProcessingState(); }
+			engine->renderNextPeriod();
+		}
 		s_counting = false;
 		song->stop();
 		return s_events.load();

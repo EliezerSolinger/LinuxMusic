@@ -25,6 +25,8 @@
 
 #include "AvlDrums.h"
 
+#include <utility>
+
 #include <algorithm>
 
 #include <QDomElement>
@@ -133,6 +135,9 @@ AvlDrumsInstrument::AvlDrumsInstrument(InstrumentTrack* track) :
 	// Loading a kit takes a while, and the models may change from other threads (automation), so the kit is
 	// loaded in the main thread afterwards
 	connect(&m_kitModel, &ComboBoxModel::dataChanged, this, &AvlDrumsInstrument::loadKit, Qt::QueuedConnection);
+	// An export (or a new project) starts from rest: a new synth, the same each time (FluidSynth's voices keep some
+	// of what they played: a reset synth is not quite a new one)
+	connect(Engine::mixer(), &Mixer::processingStateDiscarding, this, &AvlDrumsInstrument::renewSynth);
 	connect(&m_multiOutputModel, &BoolModel::dataChanged, this, &AvlDrumsInstrument::loadKit,
 		Qt::QueuedConnection);
 
@@ -177,6 +182,33 @@ auto AvlDrumsInstrument::multiOutputActive() const -> bool
 
 
 
+void AvlDrumsInstrument::renewSynth()
+{
+	// (made without the lock: the main thread is the one that replaces the synth and its settings)
+	if (!m_synth || !m_settings || !m_loaded.load(std::memory_order_relaxed)) { return; }
+	auto* made = new_fluid_synth(m_settings);
+	if (!made) { return; }
+	fluid_synth_set_gain(made, 1.f);
+	auto* old = static_cast<fluid_synth_t*>(nullptr);
+	{
+		// A moment under the mutex the audio thread plays under: the soundfont moves, nothing is loaded
+		const auto lock = QMutexLocker{&m_synthMutex};
+		if (auto* font = fluid_synth_get_sfont_by_id(m_synth, m_fontId))
+		{
+			fluid_synth_remove_sfont(m_synth, font);
+			m_fontId = fluid_synth_add_sfont(made, font);
+			setUpChannels(made, m_fontId, m_synthMultiOutput);
+			old = std::exchange(m_synth, made);
+			m_framesRendered = 0;
+		}
+		else { old = made; } // (nothing to move: the one there stays)
+	}
+	delete_fluid_synth(old);
+}
+
+
+
+
 void AvlDrumsInstrument::loadKit()
 {
 	const auto index = std::clamp(m_kitModel.value(), 0, static_cast<int>(Kits.size()) - 1);
@@ -202,39 +234,18 @@ void AvlDrumsInstrument::loadKit()
 
 	auto synth = new_fluid_synth(settings);
 	bool loaded = false;
+	int fontId = -1;
 	if (synth && path.exists())
 	{
 		fluid_synth_set_gain(synth, 1.f);
-		const auto id = fluid_synth_sfload(synth, path.absoluteFilePath().toUtf8().constData(), 1);
-		auto font = id != FLUID_FAILED ? fluid_synth_get_sfont_by_id(synth, id) : nullptr;
+		fontId = fluid_synth_sfload(synth, path.absoluteFilePath().toUtf8().constData(), 1);
+		auto font = fontId != FLUID_FAILED ? fluid_synth_get_sfont_by_id(synth, fontId) : nullptr;
 		if (font)
 		{
-			// Every MIDI channel plays the kit's preset
 			fluid_sfont_iteration_start(font);
-			if (auto preset = fluid_sfont_iteration_next(font))
-			{
-				for (int channel = 0; channel < 16; ++channel)
-				{
-					fluid_synth_program_select(synth, channel, id,
-						fluid_preset_get_banknum(preset), fluid_preset_get_num(preset));
-				}
-				loaded = true;
-			}
+			loaded = fluid_sfont_iteration_next(font) != nullptr;
 		}
-
-		if (multiOutput)
-		{
-			// The mono pieces are panned hard left, so that the left channel of their group has all of them
-			for (int channel = 0; channel < MonoGroups; ++channel)
-			{
-				fluid_synth_cc(synth, channel, 10, 0);
-				fluid_synth_cc(synth, channel, 42, 0);
-			}
-		}
-		for (int channel = 0; channel < Percussion; ++channel)
-		{
-			fluid_synth_set_channel_type(synth, channel, CHANNEL_TYPE_DRUM);
-		}
+		if (loaded) { setUpChannels(synth, fontId, multiOutput); }
 	}
 
 	if (!loaded)
@@ -254,6 +265,8 @@ void AvlDrumsInstrument::loadKit()
 		std::swap(synth, m_synth);
 		std::swap(settings, m_settings);
 		m_synthMultiOutput = multiOutput;
+		m_fontId = fontId;
+		m_framesRendered = 0;
 		m_loaded = loaded;
 		m_loadedKit = index;
 		m_loadedSampleRate = m_sampleRate;
@@ -382,6 +395,7 @@ void AvlDrumsInstrument::applyEvent(const PluginEvent& event)
 void AvlDrumsInstrument::render(AudioBuffer& out, f_cnt_t offset, f_cnt_t frames)
 {
 	if (frames <= 0) { return; }
+	m_framesRendered += frames;
 
 	if (!m_synthMultiOutput)
 	{
@@ -400,6 +414,67 @@ void AvlDrumsInstrument::render(AudioBuffer& out, f_cnt_t offset, f_cnt_t frames
 		if (buffer) { std::fill_n(buffer, frames, 0.f); }
 	}
 	fluid_synth_process(m_synth, frames, 0, nullptr, static_cast<int>(buffers.size()), buffers.data());
+}
+
+
+
+
+void AvlDrumsInstrument::setUpChannels(_fluid_synth_t* synth, int fontId, bool multiOutput)
+{
+	// Every MIDI channel plays the kit's preset
+	if (auto font = fluid_synth_get_sfont_by_id(synth, fontId))
+	{
+		fluid_sfont_iteration_start(font);
+		if (auto preset = fluid_sfont_iteration_next(font))
+		{
+			for (int channel = 0; channel < 16; ++channel)
+			{
+				fluid_synth_program_select(synth, channel, fontId,
+					fluid_preset_get_banknum(preset), fluid_preset_get_num(preset));
+			}
+		}
+	}
+	if (multiOutput)
+	{
+		// The mono pieces are panned hard left, so that the left channel of their group has all of them
+		for (int channel = 0; channel < MonoGroups; ++channel)
+		{
+			fluid_synth_cc(synth, channel, 10, 0);
+			fluid_synth_cc(synth, channel, 42, 0);
+		}
+	}
+	for (int channel = 0; channel < Percussion; ++channel)
+	{
+		fluid_synth_set_channel_type(synth, channel, CHANNEL_TYPE_DRUM);
+	}
+}
+
+
+
+
+void AvlDrumsInstrument::reset()
+{
+	// The synth was made anew on the main thread just before (see Mixer::processingStateDiscarding and
+	// renewSynth()); the kit has no reverb or chorus: here, every voice off at once, channel by channel ("all
+	// channels" (-1) left a voice that was releasing playing on), and nothing kept of what was rendered before
+	const auto lock = QMutexLocker{&m_synthMutex};
+	if (!m_synth) { return; }
+	for (int channel = 0; channel < fluid_synth_count_midi_channels(m_synth); ++channel)
+	{
+		fluid_synth_all_sounds_off(m_synth, channel);
+	}
+	// FluidSynth renders in blocks and hands out what is left of the last one first: that rest, from before the
+	// reset, is rendered and dropped, so that the next render starts on a block of its own
+	const auto block = fluid_synth_get_internal_bufsize(m_synth);
+	auto rest = static_cast<int>((block - m_framesRendered % block) % block);
+	auto scratch = std::array<float, 2 * 64>{};
+	while (rest > 0)
+	{
+		const auto frames = std::min(rest, 64);
+		fluid_synth_write_float(m_synth, frames, scratch.data(), 0, 2, scratch.data(), 1, 2);
+		rest -= frames;
+	}
+	m_framesRendered = 0;
 }
 
 

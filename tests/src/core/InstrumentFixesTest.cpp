@@ -34,6 +34,7 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "Mixer.h"
 #include "Note.h"
 #include "SampleFrame.h"
 #include "Song.h"
@@ -117,6 +118,76 @@ private slots:
 			QVERIFY2(played.finite, qPrintable(QString::number(rate)));
 			QVERIFY2(played.loudest > 1e-3f, qPrintable(QString{"silent at %1 Hz"}.arg(rate)));
 		}
+	}
+
+	/**
+	 * #7234: the same song exported twice in a row came out different (the LB302 went on from the phase and the
+	 * filter it had). An export starts from rest (Mixer::discardProcessingState(), each plugin's reset()): brought
+	 * to rest and played from the start, again after playing something else, it is the same to the bit.
+	 */
+	void theSameEachTimeFromRest_data()
+	{
+		QTest::addColumn<QString>("instrument");
+		for (const auto* name : {"lb302", "opulenz", "kicker", "tripleoscillator", "monstro", "sid", "zynaddsubfx",
+			"avldrums", "sf2player"})
+		{
+			QTest::newRow(name) << QString{name};
+		}
+	}
+
+	void theSameEachTimeFromRest()
+	{
+		QFETCH(QString, instrument);
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		if (!track || !track->loadInstrument(instrument)) { QSKIP("not built here"); }
+		if (instrument == "sf2player")
+		{
+			// (a soundfont: an AVL drum kit)
+			track->instrument()->loadFile(QT_TESTCASE_SOURCEDIR "/../data/avldrums/Black_Pearl_4_LV2.sf2");
+		}
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos{0}));
+		for (int note = 0; note < 8; ++note)
+		{
+			clip->addNote(Note{TimePos{12}, TimePos{note * 12}, DefaultKey - 12 + note * 3});
+		}
+		const auto render = [&] {
+			Engine::mixer()->discardProcessingState();
+			song->setPlayPos(0, Song::PlayMode::Song);
+			song->playSong();
+			auto out = std::vector<float>{};
+			for (int period = 0; period < 200; ++period)
+			{
+				for (const auto& frame : Engine::audioEngine()->renderNextPeriod())
+				{
+					out.push_back(frame.left());
+					out.push_back(frame.right());
+				}
+			}
+			song->stop();
+			return out;
+		};
+		// As the program runs: the instrument has played before the first export too (an instrument that never
+		// played needs no reset)
+		const auto playSome = [&](int periods) {
+			song->setPlayPos(0, Song::PlayMode::Song);
+			song->playSong();
+			for (int period = 0; period < periods; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+			song->stop();
+		};
+		playSome(61);
+		const auto first = render();
+		auto loudest = 0.f;
+		for (const auto sample : first) { loudest = std::max(loudest, std::abs(sample)); }
+		QVERIFY2(loudest > 1e-4f, "silent");
+		// (some more played in between)
+		playSome(37);
+		const auto again = render();
+		QCOMPARE(again.size(), first.size());
+		auto at = std::size_t{0};
+		while (at < first.size() && first[at] == again[at]) { ++at; }
+		QVERIFY2(at == first.size(), qPrintable(QString{"differs at frame %1"}.arg(at / 2)));
 	}
 
 	//! #5877: a phase past an int's range was converted to an int (undefined; it crashed)

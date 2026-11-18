@@ -74,6 +74,8 @@ public:
 	virtual void envRecalc();
 	virtual void playNote();
 	virtual sample_t process(sample_t samp) = 0;
+	//! Back to rest: the decay and what the filter holds of the sound before (its coefficients stay)
+	virtual void reset() { m_vcf.c0 = 0.f; }
 
 protected:
 	Lb302FilterKnobState *fs;
@@ -96,6 +98,12 @@ public:
 	void recalc() override;
 	void envRecalc() override;
 	sample_t process(sample_t samp) override;
+	void reset() override
+	{
+		Lb302Filter::reset();
+		m_iir2.d = {0.f, 0.f};
+		envRecalc();
+	}
 
 protected:
 	struct
@@ -123,6 +131,13 @@ public:
 	void envRecalc() override;
 	void recalc() override;
 	sample_t process(sample_t samp) override;
+	void reset() override
+	{
+		Lb302Filter::reset();
+		m_ay = {0.f, 0.f, 0.f};
+		m_lastin = 0.f;
+		envRecalc();
+	}
 
 protected:
 	float m_kfcn;
@@ -146,6 +161,9 @@ public:
 protected:
 	void playImpl(std::span<SampleFrame> out) override;
 	void preparePeriod() override;
+	//! Back to rest (an export, a new project): the oscillator, the filters, the envelope and the slide as when it
+	//! was made, so that the same notes render the same (upstream's #7234) [audio thread]
+	void reset() override;
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
 public:

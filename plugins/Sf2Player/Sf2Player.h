@@ -28,6 +28,7 @@
 #define SF2_PLAYER_H
 
 #include <array>
+#include <cstdint>
 #include <vector>
 #include <fluidsynth/types.h>
 #include <QMutex>
@@ -104,9 +105,14 @@ public slots:
 
 private:
 	void playImpl(std::span<SampleFrame> out) override;
+	//! Back to rest (an export, a new project): no voice, no reverb or chorus tail, the settings applied again
+	//! [audio thread]
+	void reset() override;
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
 	AudioResampler m_resampler;
+	//! Frames rendered by the synth since it was made or reset (FluidSynth renders in blocks: see reset())
+	std::int64_t m_framesRendered = 0;
 	std::array<SampleFrame, DEFAULT_BUFFER_SIZE> m_buffer;
 	std::span<SampleFrame> m_bufferView;
 

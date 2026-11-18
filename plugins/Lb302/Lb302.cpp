@@ -283,6 +283,26 @@ void Lb302Synth::loadSettings(const QDomElement& el)
 }
 
 
+void Lb302Synth::reset()
+{
+	m_vcoInc = 0.f;
+	m_vcoK = 0.f;
+	m_vcoC = 0.f;
+	m_newFreq = false;
+	m_trueFreq = 0.f;
+	m_slide = 0.f;
+	m_slideInc = 0.f;
+	m_slideBase = 0.f;
+	m_vca = 0.f;
+	m_vcaMode = VcaMode::NeverPlayed;
+	m_vcfEnvPos = s_envInc;
+	m_releaseFrame = 0;
+	for (auto& filter : m_vcfs) { filter->reset(); }
+}
+
+
+
+
 void Lb302Synth::preparePeriod()
 {
 	// (every flag taken: | rather than ||)

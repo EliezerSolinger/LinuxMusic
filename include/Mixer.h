@@ -332,7 +332,12 @@ public:
 	 * delay lines, the master section) is let go, so that what plays next starts from rest: a new project, an export
 	 * (the same each time, whatever played before). Each channel does it on the audio thread, at its next period.
 	 */
-	void discardProcessingState() { m_stateEpoch.fetch_add(1, std::memory_order_relaxed); }
+	void discardProcessingState()
+	{
+		// (what needs the main thread to come to rest, a plugin making itself anew, does it first)
+		emit processingStateDiscarding();
+		m_stateEpoch.fetch_add(1, std::memory_order_relaxed);
+	}
 	auto stateEpoch() const -> unsigned { return m_stateEpoch.load(std::memory_order_relaxed); }
 
 	//! For undo/redo, the saved state also records which channel each track sends to: changing the
@@ -528,6 +533,12 @@ public:
 	std::vector<std::unique_ptr<MixerRoute>> m_mixerRoutes;
 
 signals:
+	/**
+	 * About to bring what plays to rest (see discardProcessingState()) [main thread]: what can only come to rest
+	 * on the main thread does it now (a FluidSynth synth, whose voices keep some of their past, is made anew);
+	 * the rest does in AudioProcessor::reset(), on the audio thread
+	 */
+	void processingStateDiscarding();
 	void channelCreated(int index);
 	void channelCountChanged(int index);
 	void channelDeleted(int index);

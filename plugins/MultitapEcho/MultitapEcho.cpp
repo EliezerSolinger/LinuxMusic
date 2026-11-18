@@ -95,6 +95,18 @@ void MultitapEchoEffect::runFilter( SampleFrame* dst, SampleFrame* src, StereoOn
 }
 
 
+void MultitapEchoEffect::reset()
+{
+	m_buffer.reset();
+	for (auto& stage : m_filter)
+	{
+		for (auto& filter : stage) { filter.clearHistory(); }
+	}
+}
+
+
+
+
 auto MultitapEchoEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();

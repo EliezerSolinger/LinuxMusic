@@ -96,6 +96,8 @@ public:
 	// AudioProcessor implementation
 	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
 	auto process(ProcessContext& context) -> ProcessStatus override;
+	//! Back to rest (an export, a new project): every note and effect tail let go [audio thread]
+	void reset() override;
 	auto wantsEvents() const -> bool override { return true; }
 	auto channelCount(bool isInput) const -> ch_cnt_t override { return isInput ? 0 : 2; }
 	auto channelGroupCount(bool isInput) const -> group_cnt_t override { return isInput ? 0 : 1; }

@@ -89,6 +89,14 @@ void CrossoverEQEffect::sampleRateChanged()
 }
 
 
+void CrossoverEQEffect::reset()
+{
+	for (auto* filter : {&m_lp1, &m_lp2, &m_lp3, &m_hp2, &m_hp3, &m_hp4}) { filter->clearHistory(); }
+}
+
+
+
+
 auto CrossoverEQEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();

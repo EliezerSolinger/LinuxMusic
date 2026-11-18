@@ -22,6 +22,7 @@
  *
  */
 
+#include <algorithm>
 #include "LOMM.h"
 
 #include "lmms_math.h"
@@ -102,6 +103,28 @@ void LOMMEffect::changeSampleRate()
 	m_crestPeakVal[0] = m_crestPeakVal[1] = LOMM_MIN_FLOOR;
 	m_crestRmsVal = m_crestFactorVal = m_crestPeakVal;
 }
+
+
+void LOMMEffect::reset()
+{
+	for (auto* filter : {&m_lp1, &m_lp2, &m_hp1, &m_hp2}) { filter->clearHistory(); }
+	m_ap.clearHistory();
+	for (int i = 0; i < 2; ++i)
+	{
+		for (int j = 0; j < 3; ++j)
+		{
+			std::fill(m_inLookBuf[j][i].begin(), m_inLookBuf[j][i].end(), 0.f);
+			std::fill(m_scLookBuf[j][i].begin(), m_scLookBuf[j][i].end(), LOMM_MIN_FLOOR);
+		}
+	}
+	m_lookWrite = 0;
+	std::fill(m_yL.begin(), m_yL.end(), std::array<float, 2>{LOMM_MIN_FLOOR, LOMM_MIN_FLOOR});
+	m_rms = m_gainResult = m_displayIn = m_displayOut = m_prevOut = m_yL;
+	m_crestPeakVal[0] = m_crestPeakVal[1] = LOMM_MIN_FLOOR;
+	m_crestRmsVal = m_crestFactorVal = m_crestPeakVal;
+}
+
+
 
 
 auto LOMMEffect::process(ProcessContext& context) -> ProcessStatus

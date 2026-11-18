@@ -37,6 +37,7 @@
 #include "DummyEffect.h"
 #include "Effect.h"
 #include "Engine.h"
+#include "Mixer.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 
@@ -392,11 +393,21 @@ auto PluginInstance::process(AudioBuffer& trackChannels, NotePlayHandle* nph) ->
 	PluginChecks::require(ThreadCheck::isAudioThread(), "process() must be called on the audio thread");
 	const auto running = PluginGuard::Running{m_identity.constData()};
 
+	const auto stateEpoch = Engine::mixer() ? Engine::mixer()->stateEpoch() : 0u;
 	if (!hasState(State::Processing))
 	{
-		// The first period after activating, on the audio thread
+		// The first period after activating, on the audio thread (from rest: nothing to let go)
 		if (!m_processor->startProcessing()) { return false; }
 		setState(State::Processing, true);
+		m_seenStateEpoch = stateEpoch;
+	}
+	else if (stateEpoch != m_seenStateEpoch)
+	{
+		// An export or a new project: what the plugin holds from the audio before (voices, tails, phases, filters) is
+		// let go, so that what plays next starts from rest, the same each time (on the audio thread, as the mixer's
+		// channels do)
+		m_seenStateEpoch = stateEpoch;
+		m_processor->reset();
 	}
 
 	auto effect = isInstrument() ? nullptr : static_cast<Effect*>(m_plugin.get());

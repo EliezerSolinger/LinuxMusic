@@ -229,6 +229,8 @@ private:
 	std::unique_ptr<Plugin> m_plugin;
 	AudioProcessor* m_processor = nullptr;
 	QByteArray m_identity; //!< the plugin's (PluginGuard::identity()), for the threads running its code
+	//! The mixer's state epoch the plugin was last brought to rest for (see Mixer::discardProcessingState())
+	unsigned m_seenStateEpoch = 0;
 
 	//! How the track channels are connected to the plugin
 	std::unique_ptr<AudioPortsModel> m_audioPorts;

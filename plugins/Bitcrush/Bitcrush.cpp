@@ -101,6 +101,19 @@ inline float BitcrushEffect::noise( float amt )
 	return fastRandInc(-amt, +amt);
 }
 
+void BitcrushEffect::reset()
+{
+	m_filter.clearHistory();
+	m_bitCounterL = 0.0f;
+	m_bitCounterR = 0.0f;
+	m_left = 0.0f;
+	m_right = 0.0f;
+	m_silenceCounter = 0;
+}
+
+
+
+
 auto BitcrushEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();

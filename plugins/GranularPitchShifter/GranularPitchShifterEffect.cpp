@@ -22,6 +22,7 @@
  *
  */
 
+#include <algorithm>
 #include "GranularPitchShifterEffect.h"
 
 #include <cmath>
@@ -59,6 +60,22 @@ GranularPitchShifterEffect::GranularPitchShifterEffect(Model* parent, const Desc
 	
 	changeSampleRate();
 }
+
+
+void GranularPitchShifterEffect::reset()
+{
+	std::fill(m_ringBuf.begin(), m_ringBuf.end(), std::array<float, 2>{0.f, 0.f});
+	m_writePoint = 0;
+	// (clear() keeps the room: nothing freed or allocated)
+	m_grains.clear();
+	m_grainCount = 0;
+	m_timeSinceLastGrain = 999999999;
+	m_nextWaitRandomization = 1;
+	for (auto& filter : m_prefilter) { filter.clearHistory(); }
+	m_dcVal = {0.f, 0.f};
+}
+
+
 
 
 auto GranularPitchShifterEffect::process(ProcessContext& context) -> ProcessStatus

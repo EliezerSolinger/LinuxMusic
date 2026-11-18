@@ -192,6 +192,8 @@ public:
 	bool addPlayHandle( PlayHandle* handle );
 
 	void removePlayHandle( PlayHandle* handle );
+	//! Lets go of @p handle, and of every mention of it in the handles to remove (see the .cpp)
+	void disposePlayHandle(PlayHandle* handle);
 
 	inline PlayHandleList& playHandles()
 	{

@@ -56,6 +56,9 @@ public:
 
 
 
+	//! From the start of its wave
+	inline void restart() { m_phase = 0; }
+
 	inline void setSampleRate ( int samplerate )
 	{
 		m_samplerate = samplerate;

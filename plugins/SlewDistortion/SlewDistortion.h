@@ -43,6 +43,8 @@ class SlewDistortion : public LegacyEffect
 public:
 	SlewDistortion(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~SlewDistortion() override = default;
+	//! Back to rest (an export, a new project): nothing of the audio before [audio thread]
+	void reset() override;
 	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	EffectControls* controls() override

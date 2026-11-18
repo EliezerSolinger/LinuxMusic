@@ -343,6 +343,17 @@ auto ZynAddSubFxInstrument::activate(double sampleRate, f_cnt_t maxFrameCount) -
 
 
 
+void ZynAddSubFxInstrument::reset()
+{
+	const auto lock = QMutexLocker{&m_pluginMutex};
+	// (in its process: before the next period's, in order)
+	if (m_remotePlugin) { m_remotePlugin->sendMessage(RemotePlugin::message(IdZasfShutUp)); }
+	else if (m_localPlugin) { m_localPlugin->shutUp(); }
+}
+
+
+
+
 auto ZynAddSubFxInstrument::process(ProcessContext& context) -> ProcessStatus
 {
 	auto& out = context.out();

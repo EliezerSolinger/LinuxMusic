@@ -51,6 +51,8 @@ public:
 	}
 
 	void tick( SampleFrame& frame );
+	//! The echoes let go
+	void clear();
 	void setSampleRate( int sampleRate );
 
 private:

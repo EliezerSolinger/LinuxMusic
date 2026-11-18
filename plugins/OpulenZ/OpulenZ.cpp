@@ -34,6 +34,11 @@
 //     - Pre-bend/post-bend in poly mode could use portamento speed?
 
 #include "OpulenZ.h"
+
+#include <algorithm>
+#include <iterator>
+#include <utility>
+
 #include "Instrument.h"
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -220,25 +225,50 @@ OpulenzInstrument::OpulenzInstrument( InstrumentTrack * _instrument_track ) :
 }
 
 OpulenzInstrument::~OpulenzInstrument() {
-	delete theEmulator;
 	// Its own play handle only: the track's notes are the track's, and the instrument taking its place may be
-	// there already (see AudioEngine::removePlayHandlesOf())
+	// there already (see AudioEngine::removePlayHandlesOf()). First: the audio thread renders with the emulator
+	// until then (it was deleted before, under a period that could still be rendering)
 	Engine::audioEngine()->removePlayHandlesOf(this);
+	delete theEmulator;
 	delete [] renderbuffer;
 }
 
 // Samplerate changes when choosing oversampling, so this is more or less mandatory
 void OpulenzInstrument::reloadEmulator() {
-	delete theEmulator;
-	emulatorMutex.lock();
-	theEmulator = new CTemuopl(Engine::audioEngine()->outputSampleRate(), true, false);
-	theEmulator->init();
-	theEmulator->write(0x01,0x20);
-	emulatorMutex.unlock();
-	for(int i=0; i<OPL2_VOICES; ++i) {
-		voiceNote[i] = OPL2_VOICE_FREE;
-		voiceLRU[i] = i;
+	// The new one made first, put in place under the mutex the audio thread renders under, the old one deleted
+	// after (it was deleted before taking the mutex, while the audio thread could be rendering with it)
+	auto* made = new CTemuopl(Engine::audioEngine()->outputSampleRate(), true, false);
+	made->init();
+	made->write(0x01,0x20);
+	Copl* old = nullptr;
+	{
+		const QMutexLocker lock(&emulatorMutex);
+		old = std::exchange(theEmulator, made);
+		for(int i=0; i<OPL2_VOICES; ++i) {
+			voiceNote[i] = OPL2_VOICE_FREE;
+			voiceLRU[i] = i;
+		}
 	}
+	delete old;
+	updatePatch();
+}
+
+
+void OpulenzInstrument::reset()
+{
+	{
+		// The chip from rest (every voice silent, its registers cleared), no voice taken, no note held
+		const QMutexLocker lock(&emulatorMutex);
+		theEmulator->init();
+		theEmulator->write(0x01,0x20);
+		for (int i = 0; i < OPL2_VOICES; ++i)
+		{
+			voiceNote[i] = OPL2_VOICE_FREE;
+			voiceLRU[i] = i;
+		}
+		std::fill(std::begin(velocities), std::end(velocities), 0);
+	}
+	// The patch's registers again (each write under the mutex)
 	updatePatch();
 }
 

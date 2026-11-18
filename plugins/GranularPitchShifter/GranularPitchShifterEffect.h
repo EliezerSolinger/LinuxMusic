@@ -110,12 +110,16 @@ public:
 	void changeSampleRate();
 
 private:
+	//! Back to rest (an export, a new project): nothing of the audio before [audio thread]
+	void reset() override;
 	auto process(ProcessContext& context) -> ProcessStatus override;
 
 	struct PrefilterLowpass
 	{
 		float m_v0z = 0.f, m_v1 = 0.f, m_v2 = 0.f;
 		float m_g1, m_g2, m_g3, m_g4;
+
+		void clearHistory() { m_v0z = m_v1 = m_v2 = 0.f; }
 
 		void setCoefs(float sampleRate, float cutoff)
 		{

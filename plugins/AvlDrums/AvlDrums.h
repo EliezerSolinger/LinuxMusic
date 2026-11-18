@@ -85,6 +85,8 @@ public:
 	// AudioProcessor implementation
 	auto wantsEvents() const -> bool override { return true; }
 	auto activate(double sampleRate, f_cnt_t maxFrameCount) -> bool override;
+	//! Back to rest (an export, a new project): every piece silent at once [audio thread]
+	void reset() override;
 	auto process(ProcessContext& context) -> ProcessStatus override;
 	auto channelCount(bool isInput) const -> ch_cnt_t override;
 	auto channelGroupCount(bool isInput) const -> group_cnt_t override;
@@ -112,6 +114,8 @@ private slots:
 
 private:
 	void destroySynth();
+	//! A new synth for the kit (its soundfont moved into it), in place of the one that played [main thread]
+	void renewSynth();
 	void applyEvent(const PluginEvent& event);
 	void render(AudioBuffer& out, f_cnt_t offset, f_cnt_t frames);
 	auto multiOutputActive() const -> bool;
@@ -123,6 +127,12 @@ private:
 	_fluid_hashtable_t* m_settings = nullptr;
 	_fluid_synth_t* m_synth = nullptr;
 	bool m_synthMultiOutput = false;
+	int m_fontId = -1; //!< the kit's soundfont in m_synth
+	//! Frames rendered since the synth was made or reset (FluidSynth renders in blocks: see reset())
+	std::int64_t m_framesRendered = 0;
+	//! The channels as the kit plays them: its preset on each, the mono pieces panned hard left in their groups
+	//! (@p multiOutput), the drum channels
+	static void setUpChannels(_fluid_synth_t* synth, int fontId, bool multiOutput);
 	sample_rate_t m_sampleRate = 0;
 	int m_loadedKit = -1;
 	sample_rate_t m_loadedSampleRate = 0;

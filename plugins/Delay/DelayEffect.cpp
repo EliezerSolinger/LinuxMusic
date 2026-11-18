@@ -81,6 +81,15 @@ DelayEffect::~DelayEffect()
 
 
 
+void DelayEffect::reset()
+{
+	m_delay->clear();
+	m_lfo->restart();
+}
+
+
+
+
 auto DelayEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();

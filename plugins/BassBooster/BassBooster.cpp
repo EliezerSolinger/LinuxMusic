@@ -69,6 +69,15 @@ BassBoosterEffect::BassBoosterEffect( Model* parent, const Descriptor::SubPlugin
 
 
 
+void BassBoosterEffect::reset()
+{
+	m_bbFX.leftFX().clearState();
+	m_bbFX.rightFX().clearState();
+}
+
+
+
+
 auto BassBoosterEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();

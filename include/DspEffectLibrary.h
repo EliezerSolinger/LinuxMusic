@@ -225,6 +225,9 @@ namespace lmms::DspEffectLibrary
 			return( ( _in + m_cap*m_ratio ) * m_gain2 );
 		}
 
+		//! What it holds of the sound before, let go
+		void clearState() { m_cap = 0; }
+
 		void setFrequency( const sample_t _frequency )
 		{
 			m_frequency = _frequency;

@@ -81,6 +81,19 @@ int sp_revsc_init(sp_data *sp, sp_revsc *p)
 }
 
 
+int sp_revsc_reset(sp_data *sp, sp_revsc *p)
+{
+    int i;
+    (void) sp;
+    p->dampFact = 1.0;
+    p->prv_LPFreq = 0.0;
+    for (i = 0; i < 8; i++) {
+        init_delay_line(p, &p->delayLines[i], i);
+    }
+    return SP_OK;
+}
+
+
 int sp_revsc_destroy(sp_revsc **p)
 {
     sp_revsc *pp = *p;

@@ -201,6 +201,12 @@ public:
 	}
 	virtual ~OnePole() = default;
 	
+	//! What it holds of the sound before, let go
+	inline void clearHistory()
+	{
+		for (auto& z : m_z1) { z = 0.0f; }
+	}
+
 	inline void setCoeffs( float a0, float b1 )
 	{
 		m_a0 = a0;

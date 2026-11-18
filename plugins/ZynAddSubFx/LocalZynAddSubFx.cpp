@@ -122,6 +122,9 @@ void LocalZynAddSubFx::setBufferSize( int bufferSize )
 {
 	synth->buffersize = bufferSize;
 	synth->alias();
+	// (room for shutUp() to take a block, made here and not on the audio thread)
+	m_flushLeft.assign(static_cast<std::size_t>(bufferSize), 0.f);
+	m_flushRight.assign(static_cast<std::size_t>(bufferSize), 0.f);
 }
 
 
@@ -260,6 +263,27 @@ void LocalZynAddSubFx::processMidiEvent( const MidiEvent& event )
 		default:
 			break;
 	}
+}
+
+
+
+
+void LocalZynAddSubFx::shutUp()
+{
+	{
+		const auto lock = std::lock_guard{m_master->mutex};
+		m_master->ShutUp();
+		// Its random numbers (the notes' phases, detune...) from where they start, as when the program starts: the
+		// same notes render the same again
+		sprng(0x1234);
+	}
+	// It hands out the block it rendered the time before (its output is a block behind): that one, from before the
+	// shut up, is taken and dropped, so that the next is from rest
+	if (static_cast<int>(m_flushLeft.size()) >= synth->buffersize)
+	{
+		m_master->GetAudioOutSamples(synth->buffersize, synth->samplerate, m_flushLeft.data(), m_flushRight.data());
+	}
+	m_runningNotes = {};
 }
 
 

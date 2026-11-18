@@ -35,7 +35,8 @@ enum ZasfRemoteMessageIDs
 {
 	IdZasfPresetDirectory = RemoteMessageIDs::IdUserBase,
 	IdZasfLmmsWorkingDirectory,
-	IdZasfSetPitchWheelBendRange
+	IdZasfSetPitchWheelBendRange,
+	IdZasfShutUp //!< every note and effect tail let go (back to rest)
 } ;
 
 

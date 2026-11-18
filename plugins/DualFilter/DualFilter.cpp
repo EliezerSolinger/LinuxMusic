@@ -77,6 +77,15 @@ DualFilterEffect::~DualFilterEffect()
 
 
 
+void DualFilterEffect::reset()
+{
+	m_filter1->clearHistory();
+	m_filter2->clearHistory();
+}
+
+
+
+
 auto DualFilterEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();

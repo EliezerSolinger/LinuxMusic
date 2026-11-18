@@ -145,12 +145,30 @@ queda do Mallets, que é queda e entra antes.
   fontes; depois os consertos.
   - Pesquisa feita: `docs/pesquisas/sintetizadores-reclamacoes.md` (22 instrumentos, com as issues do LMMS).
   - Os primeiros da lista:
-    - queda ao abrir a janela do AudioFileProcessor (#8647): não se repetiu aqui (o teste da interface abriu a
-      janela do `inst-afp` sem cair em 17/11). Testar ainda com um arquivo carregado e mudando o loop;
-    - Vibed a 192 kHz (divisão inteira que dá zero);
-    - Xpressive trava por overflow;
-    - notas presas (OpulenZ, Zyn com arpejador, troca de canal);
-    - LB302 não reseta entre exportações;
+    - [x] queda ao abrir a janela do AudioFileProcessor (#8647): o desenho da onda agora aceita qualquer pedido
+      (faixa fora do sample, vazia, sem número, sample sem quadros, miniatura vazia) e desenha o que está dentro,
+      ou nada; o AudioFileProcessor sem sample não divide por zero. `SampleThumbnailRendererTest`;
+    - [x] Vibed a 192 kHz (divisão inteira que dava zero; numa taxa menor que a base, divisão por zero);
+    - [x] Xpressive trava por overflow (fração por `absFraction`, sem converter para `int`);
+    - [x] notas presas (OpulenZ, Zyn com arpejador): o `BuiltinPluginsTest` toca, em cada instrumento, notas que
+      atravessam o fim do ciclo, para no meio, e exige silêncio seis segundos depois: nenhum ficou preso;
+    - [x] LB302 não reseta entre exportações (#7234), e o mesmo em todos: uma exportação (ou um projeto novo) começa
+      do repouso. O mixer já fazia isso nos canais; agora cada plugin faz no seu `reset()`, na thread de áudio, quando
+      a época do mixer muda (`PluginInstance::process`). O teste: tocar alto, pedir o repouso, e o período seguinte
+      sai em silêncio absoluto — falhavam 5 instrumentos e 12 efeitos (LB302, OpulenZ, Sf2, AVL, Zyn; BassBooster,
+      Bitcrush, CrossoverEQ, Delay, DualFilter, Flanger, FrequencyShifter, GranularPitchShifter, LOMM,
+      MultitapEcho, ReverbSC, SlewDistortion). E exportar duas vezes dá o mesmo bit a bit (`InstrumentFixesTest`).
+      Achados no caminho: o OpulenZ apagava o emulador antes de tirar a play handle do motor (e o trocava fora da
+      trava); o reset do chip OPL não zerava LFOs, realimentação e fase (commit local no submódulo adplug); o
+      FluidSynth guarda parte do passado nas vozes, então o Sf2Player e o AVL trocam o sintetizador por um novo na
+      thread principal (`Mixer::processingStateDiscarding`); o Zyn entrega o bloco calculado na vez anterior; o
+      `StereoDelay` escrevia fora do buffer numa taxa menor que a de criação. Nenhum `reset()` aloca na thread de
+      áudio (o `AudioThreadAllocationTest` pede o repouso no meio);
+    - [x] notas que não tocavam: o motor descarta notas novas quando a carga medida passa de 99%, e isso valia também
+      renderizando fora de tempo real (só a exportação era exceção): depois de um período lento, as primeiras notas
+      do projeto seguinte sumiam. Agora só com o dispositivo tocando em tempo real. E uma handle descartada por
+      outro caminho (projeto novo, notas silenciadas) ficava na lista "a remover": agora todo descarte passa por
+      `AudioEngine::disposePlayHandle()`, que a tira de lá (senão uma handle nova no mesmo endereço seria removida);
     - volumes padrão muito desiguais;
     - o host LV2 não abre a interface nativa dos plugins;
     - aliasing em vários osciladores;

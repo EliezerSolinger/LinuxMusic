@@ -22,6 +22,7 @@
  *
  */
 
+#include <algorithm>
 #include "StereoDelay.h"
 
 #include "SampleFrame.h"
@@ -81,13 +82,24 @@ void StereoDelay::setSampleRate( int sampleRate )
 		delete[] m_buffer;
 	}
 
-	int bufferSize = ( int )( sampleRate * m_maxTime );
+	// The longest delay at this rate: the buffer's length is the length tick() wraps at (it kept the length of
+	// the rate it was made at, and at a lower rate it wrote past the end of the buffer)
+	const int bufferSize = std::max(1, static_cast<int>(sampleRate * m_maxTime));
 	m_buffer = new SampleFrame[bufferSize];
-	for( int i = 0 ; i < bufferSize ; i++)
+	m_maxLength = bufferSize;
+	m_length = std::min(m_length, static_cast<float>(m_maxLength));
+	clear();
+}
+
+
+void StereoDelay::clear()
+{
+	for (int i = 0; i < m_maxLength; ++i)
 	{
-		m_buffer[i][0] = 0.0;
-		m_buffer[i][1] = 0.0;
+		m_buffer[i][0] = 0.0f;
+		m_buffer[i][1] = 0.0f;
 	}
+	m_writeIndex = 0;
 }
 
 

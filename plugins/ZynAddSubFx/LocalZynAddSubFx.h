@@ -26,6 +26,7 @@
 #define LOCAL_ZYNADDSUBFX_H
 
 #include <array>
+#include <vector>
 
 #include "AudioBufferView.h"
 #include "Note.h"
@@ -65,6 +66,8 @@ public:
 
 	//! Renders one period of @p frames frames, which must be the buffer size
 	void process(float* left, float* right, f_cnt_t frames);
+	//! Every note and every effect's tail let go, at once (ZynAddSubFX's panic)
+	void shutUp();
 
 	inline Master * master()
 	{
@@ -78,6 +81,7 @@ protected:
 	std::string m_presetsDir;
 
 	std::array<int, NumKeys> m_runningNotes = {};
+	std::vector<float> m_flushLeft, m_flushRight; //!< (see shutUp())
 	Master * m_master;
 	NulEngine* m_ioEngine;
 

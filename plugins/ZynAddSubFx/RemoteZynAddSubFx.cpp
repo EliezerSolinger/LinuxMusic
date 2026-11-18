@@ -128,6 +128,10 @@ public:
 				LocalZynAddSubFx::setPitchWheelBendRange( _m.getInt() );
 				break;
 
+			case IdZasfShutUp:
+				LocalZynAddSubFx::shutUp();
+				break;
+
 			default:
 				return RemotePluginClient::processMessage( _m );
 		}

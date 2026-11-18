@@ -209,7 +209,9 @@ void AudioEngine::initDevices()
 
 bool AudioEngine::criticalXRuns() const
 {
-	return cpuLoad() >= 99 && Engine::getSong()->isExporting() == false;
+	// Only when it plays in time on a device: rendered otherwise (an export, periods rendered one after another), a
+	// slow period drops no note (a period at 192 kHz rendered slowly made the next project's first notes go)
+	return cpuLoad() >= 99 && Engine::getSong()->isExporting() == false && m_audioDev && m_audioDev->isRunning();
 }
 
 
@@ -232,21 +234,18 @@ void AudioEngine::renderStageNoteSetup()
 	while( it_rem != m_playHandlesToRemove.end() )
 	{
 		PlayHandleList::Iterator it = std::find( m_playHandles.begin(), m_playHandles.end(), *it_rem );
-		bool removedFromPlayHandles = false;
 		if( it != m_playHandles.end() )
 		{
-			if ((*it)->audioBusHandle()) { (*it)->audioBusHandle()->removePlayHandle(*it); }
-			(*it)->dispose();
-			it = m_playHandles.erase(it);
-			removedFromPlayHandles = true;
-		}
-		
-		if (removedFromPlayHandles)
-		{
-			it_rem = m_playHandlesToRemove.erase(it_rem); 
+			auto* handle = *it;
+			if (handle->audioBusHandle()) { handle->audioBusHandle()->removePlayHandle(handle); }
+			m_playHandles.erase(it);
+			// (every entry for it goes: it may have been listed twice, by two stops in a row)
+			disposePlayHandle(handle);
+			it_rem = m_playHandlesToRemove.begin();
 		}
 		else
 		{
+			// (one not adopted yet: removed once it is)
 			++it_rem;
 		}
 	}
@@ -335,7 +334,7 @@ void AudioEngine::renderStageEffects()
 		if( ( *it )->isFinished() )
 		{
 			if ((*it)->audioBusHandle()) { (*it)->audioBusHandle()->removePlayHandle(*it); }
-			(*it)->dispose();
+			disposePlayHandle(*it);
 			it = m_playHandles.erase(it);
 		}
 		else
@@ -776,6 +775,18 @@ void AudioEngine::removeAudioBusHandle(AudioBusHandle* busHandle)
 }
 
 
+void AudioEngine::disposePlayHandle(PlayHandle* handle)
+{
+	// Never left behind in the list of those to remove: a handle let go another way (a track's notes silenced, the
+	// project cleared) stayed there, and a new handle made later at the same address (from the pool) was removed as
+	// soon as it was adopted, a note that never sounded
+	m_playHandlesToRemove.removeAll(handle);
+	handle->dispose();
+}
+
+
+
+
 bool AudioEngine::addPlayHandle( PlayHandle* handle )
 {
 	// Only add play handles if we have the CPU capacity to process them.
@@ -836,7 +847,7 @@ void AudioEngine::removePlayHandle(PlayHandle * ph)
 		// (See tobydox's 2008 commit 4583e48)
 		if ( removedFromList )
 		{
-			ph->dispose();
+			disposePlayHandle(ph);
 		}
 	}
 	else
@@ -859,7 +870,7 @@ void AudioEngine::removePlayHandlesOf(const Instrument* instrument)
 		if ((*it)->isFromInstrument(instrument))
 		{
 			if ((*it)->audioBusHandle()) { (*it)->audioBusHandle()->removePlayHandle(*it); }
-			(*it)->dispose();
+			disposePlayHandle(*it);
 			it = m_playHandles.erase(it);
 		}
 		else { ++it; }
@@ -883,7 +894,7 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 		if ((*it)->isFromTrack(track) && ((*it)->type() & types))
 		{
 			if ((*it)->audioBusHandle()) { (*it)->audioBusHandle()->removePlayHandle(*it); }
-			(*it)->dispose();
+			disposePlayHandle(*it);
 			it = m_playHandles.erase(it);
 		}
 		else

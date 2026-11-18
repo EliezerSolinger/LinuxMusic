@@ -24,6 +24,7 @@
  */
 
 #include "Sf2Player.h"
+#include "Mixer.h"
 
 #include <optional>
 #include <utility>
@@ -204,6 +205,9 @@ Sf2Instrument::Sf2Instrument( InstrumentTrack * _instrument_track ) :
 	connect( &m_patchNum, SIGNAL( dataChanged() ), this, SLOT( updatePatch() ) );
 
 	connect(Engine::audioEngine(), SIGNAL(sampleRateChanged()), this, SLOT(reloadSynth()));
+	// An export (or a new project) starts from rest: a new synth, the same each time (FluidSynth's voices keep some
+	// of what they played: a reset synth is not quite a new one)
+	connect(Engine::mixer(), &Mixer::processingStateDiscarding, this, &Sf2Instrument::reloadSynth);
 
 	// Gain
 	connect( &m_gain, SIGNAL( dataChanged() ), this, SLOT( updateGain() ) );
@@ -427,8 +431,11 @@ void Sf2Instrument::setFont(fluid_sfont_t* font)
 	const auto lock = std::lock_guard{m_synthMutex};
 	if (m_font != nullptr)
 	{
-		// (FluidSynth keeps it until its last voice is done)
-		fluid_synth_sfunload(m_synth, m_fontId, true);
+		// (FluidSynth keeps it until its last voice is done). Without resetting the channels' presets here (it walks
+		// every channel and logs for those it finds nothing for, under the locks): the patch is selected right
+		// after, without the audio engine's lock (see openFile())
+		// (with no font in its place, the channels let go of its presets now)
+		fluid_synth_sfunload(m_synth, m_fontId, font == nullptr);
 		m_font = nullptr;
 	}
 	if (font != nullptr)
@@ -625,6 +632,7 @@ void Sf2Instrument::reloadSynth()
 			m_fontId = fluid_synth_add_sfont( made, m_font );
 		}
 		old = std::exchange(m_synth, made);
+		m_framesRendered = 0;
 		// (what the render reads, changed with the synth)
 		m_internalSampleRate = static_cast<int>( tempRate );
 		m_resampler.setRatio(m_internalSampleRate, Engine::audioEngine()->outputSampleRate());
@@ -657,6 +665,40 @@ void Sf2Instrument::reloadSynth()
 
 	// Reset last MIDI pitch properties, which will be set to the correct values
 	// upon playing the next note
+	m_lastMidiPitch = -1;
+	m_lastMidiPitchRange = -1;
+}
+
+
+
+
+void Sf2Instrument::reset()
+{
+	// The synth was made anew on the main thread just before (see Mixer::processingStateDiscarding and
+	// reloadSynth()): here, every voice off at once, channel by channel ("all channels" (-1) left a voice that was
+	// releasing playing on), and nothing kept of what was rendered before. (No fluid_synth_system_reset(): it logs
+	// a warning for each channel whose default preset the soundfont lacks, which allocates on the audio thread.)
+	const auto lock = std::lock_guard{m_synthMutex};
+	for (int channel = 0; channel < fluid_synth_count_midi_channels(m_synth); ++channel)
+	{
+		fluid_synth_all_sounds_off(m_synth, channel);
+	}
+	// (what was rendered at the synth's rate and not handed out yet)
+	m_bufferView = {};
+	m_resampler.reset();
+	// FluidSynth renders in blocks and hands out what is left of the last one first: that rest, from before the
+	// reset, is rendered and dropped, so that the next render starts on a block of its own
+	const auto block = fluid_synth_get_internal_bufsize(m_synth);
+	auto rest = static_cast<int>((block - m_framesRendered % block) % block);
+	auto scratch = std::array<float, 2 * 64>{};
+	while (rest > 0)
+	{
+		const auto frames = std::min(rest, 64);
+		fluid_synth_write_float(m_synth, frames, scratch.data(), 0, 2, scratch.data(), 1, 2);
+		rest -= frames;
+	}
+	m_framesRendered = 0;
+	// (the pitch bend and its range are sent again with the next period)
 	m_lastMidiPitch = -1;
 	m_lastMidiPitchRange = -1;
 }
@@ -891,6 +933,7 @@ void Sf2Instrument::renderFrames( f_cnt_t frames, SampleFrame* buf )
 
 	if (m_internalSampleRate == Engine::audioEngine()->outputSampleRate()) {
 		fluid_synth_write_float(m_synth, frames, buf, 0, 2, buf, 1, 2);
+		m_framesRendered += frames;
 		return;
 	}
 
@@ -901,6 +944,7 @@ void Sf2Instrument::renderFrames( f_cnt_t frames, SampleFrame* buf )
 		if (m_bufferView.empty())
 		{
 			fluid_synth_write_float(m_synth, m_buffer.size(), m_buffer.data(), 0, 2, m_buffer.data(), 1, 2);
+			m_framesRendered += static_cast<std::int64_t>(m_buffer.size());
 			m_bufferView = m_buffer;
 		}
 

@@ -73,6 +73,17 @@ ReverbSCEffect::~ReverbSCEffect()
 	sp_destroy(&sp);
 }
 
+void ReverbSCEffect::reset()
+{
+	const auto lock = QMutexLocker{&mutex};
+	sp_revsc_reset(sp, revsc);
+	sp_dcblock_init(sp, dcblk[0], 1);
+	sp_dcblock_init(sp, dcblk[1], 1);
+}
+
+
+
+
 auto ReverbSCEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();

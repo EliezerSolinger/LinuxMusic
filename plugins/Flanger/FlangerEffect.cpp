@@ -88,6 +88,16 @@ FlangerEffect::~FlangerEffect()
 
 
 
+void FlangerEffect::reset()
+{
+	m_lDelay->clear();
+	m_rDelay->clear();
+	m_lfo->restart();
+}
+
+
+
+
 auto FlangerEffect::process(ProcessContext& context) -> ProcessStatus
 {
 	auto inOut = context.inOut().interleavedBuffer();

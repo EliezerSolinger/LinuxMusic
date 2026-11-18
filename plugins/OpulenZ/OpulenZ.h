@@ -71,6 +71,8 @@ public:
 	auto wantsEvents() const -> bool override { return true; }
 
 	void preparePeriod() override;
+	//! Back to rest (an export, a new project): the chip as new, with the patch [audio thread]
+	void reset() override;
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _this ) override;
 	void loadSettings( const QDomElement & _this ) override;

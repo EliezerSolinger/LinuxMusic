@@ -59,6 +59,22 @@ SlewDistortion::SlewDistortion(Model* parent, const Descriptor::SubPluginFeature
 }
 
 
+void SlewDistortion::reset()
+{
+	m_slewOut = {};
+	m_dcOffset = {};
+	m_inEnv = {};
+	m_outEnv = {};
+	m_overOuts = {};
+	for (auto& upsampler : m_upsampler) { upsampler.reset(); }
+	for (auto& downsampler : m_downsampler) { downsampler.reset(); }
+	m_lp.clearHistory();
+	m_hp.clearHistory();
+}
+
+
+
+
 #ifdef __SSE2__
 auto SlewDistortion::process(ProcessContext& context) -> ProcessStatus
 {
