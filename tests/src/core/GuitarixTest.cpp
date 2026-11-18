@@ -34,6 +34,7 @@
 #include "DataFile.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "EffectControls.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
@@ -276,6 +277,52 @@ private slots:
 		auto difference = 0.f;
 		for (std::size_t i = 0; i < first.size(); ++i) { difference = std::max(difference, std::abs(first[i] - second[i])); }
 		QVERIFY2(difference < 1e-6f, qPrintable(QString{"after a rest it depends on what played before: %1"}.arg(difference)));
+	}
+
+	//! What a unit measures (its meters' levels: Guitarix's output parameters) is not a control: no knob, no
+	//! automation, not saved; what it is set by is
+	void outputsAreNotControls()
+	{
+		if (getPluginFactory()->pluginInfo("guitarix").isNull()) { QSKIP("not built here"); }
+		const auto models = setUpUnit("mbc");
+		QVERIFY2(!models.isEmpty(), "not made");
+		auto names = QStringList{};
+		for (const auto* model : models) { names << model->displayName(); }
+		QVERIFY2(names.contains("Ratio1") && !names.contains("V1"), qPrintable(names.join(", ")));
+
+		// (the unit's effect: on the channel it was put on, wherever setting up the tracks' channels left it)
+		auto* mixer = Engine::mixer();
+		auto* effect = static_cast<Effect*>(nullptr);
+		for (mix_ch_t channel = 0; channel < mixer->numChannels() && !effect; ++channel)
+		{
+			for (const auto& instance : mixer->mixerChannel(channel)->m_fxChain.effects())
+			{
+				if (auto* candidate = dynamic_cast<Effect*>(instance->plugin());
+					candidate && candidate->descriptor()->name == QStringLiteral("guitarix"))
+				{
+					effect = candidate;
+				}
+			}
+		}
+		QVERIFY(effect && effect->controls());
+		auto document = QDomDocument{};
+		auto parent = document.createElement("effect");
+		const auto element = effect->controls()->saveState(document, parent);
+		QVERIFY(element.hasAttribute("mbc.Ratio1"));
+		QVERIFY(!element.hasAttribute("mbc.v1"));
+		QVERIFY(effect->controls()->controlCount() > 0);
+		// (each control saved by its id, an attribute or, logarithmic, an element; the rest is the object's own)
+		auto saved = 0;
+		for (int i = 0; i < element.attributes().count(); ++i)
+		{
+			if (element.attributes().item(i).nodeName().startsWith("mbc.")) { ++saved; }
+		}
+		for (auto child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
+		{
+			if (child.tagName().startsWith("mbc.")) { ++saved; }
+		}
+		QVERIFY(element.firstChildElement("mbc.v1").isNull());
+		QCOMPARE(saved, effect->controls()->controlCount());
 	}
 
 	//! The Tube Screamer (Guitarix's ts9sim, run at 96 kHz as there): a sine comes out with harmonics, more with

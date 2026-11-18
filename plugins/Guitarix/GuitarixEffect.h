@@ -24,6 +24,7 @@
 #define LMMS_GUITARIX_EFFECT_H
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -53,8 +54,11 @@ struct GuitarixParameter
 {
 	QString id; //!< Guitarix's (it names the attribute it is saved in)
 	QString name;
-	QString kind; //!< Guitarix's "tp": S slider, SL log slider, B switch, ...
+	QString kind; //!< Guitarix's "tp": S slider, SL log slider, B switch, O output (a meter's level), ...
+	//! What the user sets (none for an output: the unit writes it)
 	std::unique_ptr<FloatModel> model;
+	//! An output's value, as the unit last wrote it (its instances' highest), for the view to show
+	std::unique_ptr<std::atomic<float>> output;
 	//! Where the instances of the unit read it (a unit may register an id more than once, for more variables)
 	std::vector<float*> vars;
 	std::vector<int*> intVars; //!< (an integer parameter, a selector)
@@ -73,9 +77,13 @@ public:
 	void loadSettings(const QDomElement& parent) override;
 	QString nodeName() const override { return "GuitarixControls"; }
 	gui::EffectControlDialog* createView() override;
-	int controlCount() override { return static_cast<int>(m_parameters.size()); }
+	int controlCount() override;
 
 	auto parameters() -> std::vector<GuitarixParameter>& { return m_parameters; }
+	//! The one registered as @p id (none if there is none)
+	auto parameter(const QString& id) -> GuitarixParameter*;
+	//! The unit (its UI: Guitarix's own layout for it)
+	auto effect() const -> GuitarixEffect* { return m_effect; }
 
 private:
 	GuitarixEffect* m_effect;
@@ -109,6 +117,8 @@ public:
 	auto unit() const -> const guitarix::Unit* { return m_unit; }
 	//! Its name, as Guitarix gives it
 	auto unitName() const -> QString;
+	//! Its first instance, as Guitarix made it (its UI is asked of it) [main thread]
+	auto definition() const -> PluginDef* { return m_instances[0]; }
 
 private:
 	auto process(ProcessContext& context) -> ProcessStatus override;
@@ -116,6 +126,8 @@ private:
 	void initialize(unsigned int sampleRate);
 	//! The models' values to the instances' parameters [audio thread]
 	void applyParameters();
+	//! The instances' outputs to the parameters' (for the view) [audio thread]
+	void collectOutputs();
 
 	const guitarix::Unit* m_unit = nullptr;
 	std::array<PluginDef*, 2> m_instances = {};

@@ -141,8 +141,18 @@ auto newParameter(const char* id, const char* name, const char* kind, float valu
 {
 	auto parameter = GuitarixParameter{};
 	parameter.id = QString::fromUtf8(id);
+	// (as Guitarix names one registered without a name: the id's last part, its first letter upper case)
 	parameter.name = name && *name ? QString::fromUtf8(name) : parameter.id.section('.', -1);
+	if (!(name && *name) && !parameter.name.isEmpty()) { parameter.name[0] = parameter.name[0].toUpper(); }
 	parameter.kind = QString::fromUtf8(kind ? kind : "");
+	// (its options after the first letter: O output, not saved; o output, saved; s not saved; L log; N no MIDI)
+	if (parameter.kind.mid(1).contains('O') || parameter.kind.mid(1).contains('o'))
+	{
+		// (an output: what the unit measures, not something to set, automate or save)
+		// (at the bottom of its range until the unit writes it: a meter that has measured nothing)
+		parameter.output = std::make_unique<std::atomic<float>>(std::min(low, up));
+		return s_registering->parameters().emplace_back(std::move(parameter));
+	}
 	// (a log slider's step is a factor, not a step: steps of a hundredth of the range)
 	const auto linearStep = parameter.kind.contains('L') || step <= 0 ? (up - low) / 100.f : step;
 	parameter.model = std::make_unique<FloatModel>(value, low, up, linearStep, parent, parameter.name);
@@ -204,9 +214,31 @@ GuitarixControls::GuitarixControls(GuitarixEffect* effect) :
 }
 
 
+auto GuitarixControls::controlCount() -> int
+{
+	return static_cast<int>(std::count_if(m_parameters.begin(), m_parameters.end(),
+		[](const auto& parameter) { return parameter.model != nullptr; }));
+}
+
+
+auto GuitarixControls::parameter(const QString& id) -> GuitarixParameter*
+{
+	const auto found = std::find_if(m_parameters.begin(), m_parameters.end(),
+		[&id](const auto& parameter) { return parameter.id == id; });
+	return found == m_parameters.end() ? nullptr : &*found;
+}
+
+
 void GuitarixControls::saveSettings(QDomDocument& doc, QDomElement& parent)
 {
-	for (auto& parameter : m_parameters) { parameter.model->saveSettings(doc, parent, parameter.id); }
+	for (auto& parameter : m_parameters)
+	{
+		// (not those Guitarix does not save)
+		if (parameter.model && !parameter.kind.mid(1).contains('s'))
+		{
+			parameter.model->saveSettings(doc, parent, parameter.id);
+		}
+	}
 }
 
 
@@ -214,6 +246,7 @@ void GuitarixControls::loadSettings(const QDomElement& parent)
 {
 	for (auto& parameter : m_parameters)
 	{
+		if (!parameter.model) { continue; }
 		// (one not saved keeps Guitarix's default)
 		if (parent.hasAttribute(parameter.id) || !parent.firstChildElement(parameter.id).isNull())
 		{
@@ -312,6 +345,7 @@ void GuitarixEffect::applyParameters()
 {
 	for (auto& parameter : m_controls.m_parameters)
 	{
+		if (!parameter.model) { continue; }
 		const auto value = parameter.model->value();
 		for (auto* var : parameter.vars) { *var = value; }
 		for (auto* var : parameter.intVars) { *var = static_cast<int>(std::lround(value)); }
@@ -357,7 +391,20 @@ auto GuitarixEffect::process(ProcessContext& context) -> ProcessStatus
 			frame = frame * dry + SampleFrame{m_output[0][f], m_output[1][f]} * wet;
 		}
 	}
+	collectOutputs();
 	return ProcessStatus::ContinueIfNotQuiet;
+}
+
+
+void GuitarixEffect::collectOutputs()
+{
+	for (auto& parameter : m_controls.m_parameters)
+	{
+		if (!parameter.output || parameter.vars.empty()) { continue; }
+		auto highest = *parameter.vars.front();
+		for (auto* var : parameter.vars) { highest = std::max(highest, *var); }
+		parameter.output->store(highest, std::memory_order_relaxed);
+	}
 }
 
 

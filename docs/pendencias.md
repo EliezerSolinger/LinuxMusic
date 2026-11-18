@@ -386,9 +386,23 @@ queda do Mallets, que é queda e entra antes.
     o mesmo som (falha em 41 delas se o repouso não refaz a unidade). Zero alocações em cada uma. Algumas (as de
     tabelas de diodo assimétricas) dão uma constante pequena no silêncio, como no Guitarix, que só bloqueia o DC no
     começo da cadeia dele.
-  - Falta: as unidades do `gx_effects` (compressor, delays, chorus, phaser, EQs...), os amps, tonestacks, estágios
-    de potência e caixas (montados pelos seletores do motor dele), e a aparência do Guitarix na interface (hoje uma
-    janela genérica de knobs).
+  - A aparência do Guitarix: cada unidade é desenhada como no rack dele, com o estilo padrão dele ("Guitarix"): o
+    painel (as imagens `background1`/`background2` dele, o bisel e a sombra), os puxadores dos lados, os parafusos
+    nos cantos, o título, e os controles dele desenhados como a libgxw desenha (GxKnob: a imagem do knob, o anel
+    tracejado com o arco do valor em laranja e o indicador; GxSelector; GxFastMeter com o `log_meter` dele;
+    GxValueDisplay; GxHSlider), na fonte dele (Roboto Condensed). A disposição é a dele: o glade de cada unidade (a
+    parte "rackbox", a unidade aberta) é lido e montado com widgets Qt, com as regras de caixa do GTK (expand, fill,
+    pack end, padding, grids homogêneas, frames, alinhamentos, abas `tab_rack`), e os rótulos ligados a um knob
+    recebem o nome do parâmetro, como o GxRegler faz. Os 321 `var_id` dos layouts das 41 unidades batem com os
+    parâmetros delas. Os knobs funcionam como os do LinuxMusic (arrastar, roda, automação, valor ao passar o mouse).
+  - Os medidores das unidades (parâmetros de saída do Guitarix, "O") agora são saídas: a unidade escreve, a tela
+    lê; não viram knob, automação nem são salvos no projeto (antes eram knobs e o processamento sobrescrevia o que
+    a unidade media). Os parâmetros que o Guitarix não salva ("s") também não são salvos; um parâmetro sem nome leva
+    o fim do id com inicial maiúscula, como no Guitarix. `GuitarixTest::outputsAreNotControls` confere.
+  - Falta: as unidades do `gx_effects` (compressor, delays, chorus, phaser, EQs...) e o construtor em pilha do
+    Guitarix (`StackBoxBuilder`: openHorizontalBox, create_small_rackknob...) que as unidades sem glade usam para a
+    disposição, com as chaves (switches) e sliders que elas usam; os amps, tonestacks, estágios de potência e caixas
+    (montados pelos seletores do motor dele).
 - [ ] **Controle das faixas:** redesenhar no estilo do REAPER. O desenho atual ainda está ruim.
 - [x] **Transporte novo (design aprovado em 17/11):** `docs/design-sugestoes/03-transporte.png`.
   - Botões: para o começo, parar, tocar, gravar (o menu dele grava MIDI no clipe do Piano Roll), ciclo.

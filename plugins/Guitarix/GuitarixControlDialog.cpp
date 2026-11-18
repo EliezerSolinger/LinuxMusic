@@ -22,11 +22,11 @@
 
 #include "GuitarixControlDialog.h"
 
-#include <QGridLayout>
+#include <QVBoxLayout>
 
 #include "GuitarixEffect.h"
-#include "Knob.h"
-#include "LedCheckBox.h"
+#include "GuitarixLayout.h"
+#include "GuitarixWidgets.h"
 
 namespace lmms::gui
 {
@@ -34,22 +34,11 @@ namespace lmms::gui
 GuitarixControlDialog::GuitarixControlDialog(GuitarixControls* controls) :
 	EffectControlDialog(controls)
 {
-	auto layout = new QGridLayout(this);
-	auto column = 0;
-	for (auto& parameter : controls->parameters())
-	{
-		if (parameter.kind.startsWith('B'))
-		{
-			auto led = new LedCheckBox(parameter.name, this);
-			led->setModel(parameter.model.get());
-			layout->addWidget(led, 0, column++, Qt::AlignCenter);
-			continue;
-		}
-		auto knob = new Knob(KnobType::Bright26, parameter.name.toUpper(), this);
-		knob->setModel(parameter.model.get());
-		knob->setHintText(parameter.name + ":", "");
-		layout->addWidget(knob, 0, column++, Qt::AlignHCenter);
-	}
+	auto layout = new QVBoxLayout(this);
+	layout->setContentsMargins(0, 0, 0, 0);
+	auto* effect = controls->effect();
+	auto unit = new guitarix::RackUnit(effect->unitName(), guitarix::buildControls(controls, nullptr), this);
+	layout->addWidget(unit);
 	layout->setSizeConstraint(QLayout::SetFixedSize);
 }
 

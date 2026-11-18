@@ -94,7 +94,12 @@ Built in from Guitarix (https://guitarix.org, GPL-2.0 or later), its own
 code, in plugins/Guitarix/gx:
 Hermann Meyer, James Warden, Andreas Degert, Pete Shorthose
   and the other Guitarix authors
-  Guitarix's pedals, amps and cabinets
+  Guitarix's pedals, amps and cabinets, and their look (its style's images,
+  in plugins/Guitarix/gx/rcstyles)
+
+Christian Robertson (Google)
+  Roboto Condensed (Apache License 2.0, plugins/Guitarix/gx/fonts), the
+  font Guitarix's look is in
 
 Fons Adriaensen
   zita-resampler (GPL-3.0 or later), as Guitarix runs its units with it

@@ -51,10 +51,12 @@ SET(GUITARIX_SUPPORT
 	gx/zita-resampler/resampler-table.cc
 )
 
+# Its look: Guitarix's default style's images (gx/rcstyles) and its font (gx/fonts: Roboto Condensed, Apache 2.0)
 BUILD_PLUGIN(guitarix
-	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp
+	GuitarixEffect.cpp GuitarixUnits.cpp GuitarixControlDialog.cpp GuitarixLayout.cpp GuitarixWidgets.cpp
 	${GUITARIX_UNITS} ${GUITARIX_SUPPORT}
-	MOCFILES GuitarixEffect.h GuitarixControlDialog.h
+	MOCFILES GuitarixEffect.h GuitarixControlDialog.h GuitarixWidgets.h
+	EMBEDDED_RESOURCES gx/rcstyles/*.png gx/fonts/RobotoCondensed-Regular.ttf
 )
 TARGET_INCLUDE_DIRECTORIES(guitarix PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}/gx/headers"

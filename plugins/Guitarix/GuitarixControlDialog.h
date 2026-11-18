@@ -33,7 +33,7 @@ class GuitarixControls;
 namespace gui
 {
 
-//! A unit's controls, as Guitarix lists them: a knob for each value, a switch for each on/off
+//! A unit as Guitarix's rack shows it: its panel, its title, its controls laid out as Guitarix lays them out
 class GuitarixControlDialog : public EffectControlDialog
 {
 	Q_OBJECT

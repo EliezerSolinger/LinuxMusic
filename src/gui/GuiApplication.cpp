@@ -45,6 +45,8 @@
 #include "ControllerRackView.h"
 #include "InstrumentTrack.h"
 #include "InstrumentTrackView.h"
+#include "EffectControlDialog.h"
+#include "EffectView.h"
 #include "InstrumentTrackWindow.h"
 #include "MixerView.h"
 #include "MainWindow.h"
@@ -385,18 +387,27 @@ GuiApplication::GuiApplication()
 			});
 		}
 		// =pins opens the pin connector of the first instrument instead, =effects its effects tab, =functions its
-		// functions tab (chords, arpeggio, mono), =envelopes its envelopes tab
+		// functions tab (chords, arpeggio, mono), =envelopes its envelopes tab, =effect-controls its effects' controls
+		// (each saved beside the screenshot: <name>-<n>.png)
 		if (screenshotAction == "instrument" || screenshotAction == "pins" || screenshotAction == "effects"
-			|| screenshotAction == "functions" || screenshotAction == "envelopes")
+			|| screenshotAction == "functions" || screenshotAction == "envelopes"
+			|| screenshotAction == "effect-controls")
 		{
 			QTimer::singleShot(2500, m_mainWindow, [this, screenshotAction] {
 				const auto views = m_mainWindow->findChildren<InstrumentTrackView*>();
 				if (views.isEmpty()) { return; }
 				if (screenshotAction == "pins") { QMetaObject::invokeMethod(views.first(), "togglePinConnector"); }
 				else { QMetaObject::invokeMethod(views.first(), "toggleInstrumentWindow", Q_ARG(bool, true)); }
-				if (screenshotAction == "effects")
+				if (screenshotAction == "effects" || screenshotAction == "effect-controls")
 				{
 					views.first()->getInstrumentTrackWindow()->tabWidgetParent()->setActiveTab(3);
+				}
+				if (screenshotAction == "effect-controls")
+				{
+					for (auto* view : views.first()->getInstrumentTrackWindow()->findChildren<EffectView*>())
+					{
+						QMetaObject::invokeMethod(view, "editControls");
+					}
 				}
 				if (screenshotAction == "functions")
 				{
@@ -582,6 +593,19 @@ GuiApplication::GuiApplication()
 				m_mixerView->grab().save(screenshotPath);
 			}
 			else { m_mainWindow->grab().save(screenshotPath); }
+			if (screenshotAction == "effect-controls")
+			{
+				const auto info = QFileInfo{screenshotPath};
+				auto n = 0;
+				// (EffectControlDialog has no Q_OBJECT: findChildren cannot look for it)
+				for (auto* widget : m_mainWindow->findChildren<QWidget*>())
+				{
+					auto* dialog = dynamic_cast<EffectControlDialog*>(widget);
+					if (!dialog || !dialog->isVisible()) { continue; }
+					dialog->grab().save(QString{"%1/%2-%3.png"}.arg(info.absolutePath(), info.completeBaseName())
+						.arg(++n));
+				}
+			}
 
 			quitWhenTheMainLoopRuns();
 		});
