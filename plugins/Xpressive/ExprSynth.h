@@ -27,6 +27,8 @@
 
 #include <array>
 #include <cmath>
+
+#include "lmms_math.h"
 #include <cstddef>
 #include <limits>
 #include "Graph.h"
@@ -126,15 +128,13 @@ private:
 
 
 
+//! The fraction of @p x in [0, 1) (-0.25 gives 0.75); any finite value (a value past an int's range was converted to
+//! one, which is undefined: upstream's #5877 crashed there)
 inline float positiveFraction(float x)
 {
 	if (std::isnan(x) || std::isinf(x))
 		return 0;
-	if (x<0)
-	{
-		x+=static_cast<int>(1-x);
-	}
-	return x-static_cast<int>(x);
+	return absFraction(x);
 }
 
 template <typename T>

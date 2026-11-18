@@ -26,7 +26,9 @@
 #include "SampleThumbnailRenderer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <numeric>
 
 #include <QFileInfo>
 #include <QPainter>
@@ -37,11 +39,16 @@ namespace lmms::gui {
 
 void SampleThumbnailRenderer::visualize(VisualizeParameters parameters, QPainter& painter)
 {
-	assert(0 <= parameters.sampleStart && parameters.sampleStart < parameters.sampleEnd && parameters.sampleEnd <= 1
-		&& "invalid sample range");
+	// Whatever it is asked: a range outside the sample (a view's points from the sample before the one it now has),
+	// an empty one (start and end together) or not a number (points over a sample of no frames) draws what is
+	// inside the sample, or nothing (upstream's #8647 crashed in here, opening the AudioFileProcessor)
+	if (!std::isfinite(parameters.sampleStart) || !std::isfinite(parameters.sampleEnd)) { return; }
+	parameters.sampleStart = std::clamp(parameters.sampleStart, 0.0, 1.0);
+	parameters.sampleEnd = std::clamp(parameters.sampleEnd, 0.0, 1.0);
+	if (parameters.sampleEnd <= parameters.sampleStart) { return; }
 
 	// (no peaks yet: those of a file streamed from disk are built in the background)
-	if (parameters.rect.width() == 0 || !parameters.cache || parameters.cache->sampleCount() == 0) { return; }
+	if (!(parameters.rect.width() >= 1) || !parameters.cache || parameters.cache->sampleCount() == 0) { return; }
 
 	// Get the number of samples that will be drawn in this rectangle
 	const auto numSamples = (parameters.sampleEnd - parameters.sampleStart) * parameters.cache->sampleCount();
@@ -51,8 +58,11 @@ void SampleThumbnailRenderer::visualize(VisualizeParameters parameters, QPainter
 
 	// We want a thumbnail that has the same SPP as our own rectangle
 	// However, it needs to cover the full sample
-	const auto nearestThumbnail
-		= parameters.cache->nearestThumbnailForWidth(std::round(parameters.cache->sampleCount() / samplesPerPixel));
+	// (a width between one peak and one per frame: zoomed in further than a frame a pixel, the finest)
+	const auto wanted = std::clamp(std::round(parameters.cache->sampleCount() / samplesPerPixel), 1.0,
+		static_cast<double>(parameters.cache->sampleCount()));
+	const auto& nearestThumbnail = parameters.cache->nearestThumbnailForWidth(static_cast<f_cnt_t>(wanted));
+	if (nearestThumbnail.width() == 0) { return; }
 
 	const auto yScale = parameters.rect.height() / 2 * parameters.amplification;
 	const auto yCenter = parameters.rect.center().y();

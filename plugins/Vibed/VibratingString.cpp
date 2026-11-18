@@ -36,7 +36,10 @@ namespace lmms
 
 VibratingString::VibratingString(float pitch, float pick, float pickup, const float* impulse, int len,
 	sample_rate_t sampleRate, int oversample, float randomize, float stringLoss, float detune, bool state) :
-	m_oversample{2 * oversample / static_cast<int>(sampleRate / Engine::audioEngine()->baseSampleRate())},
+	// Twice the length's oversampling at the base rate, less at the higher ones; never none (at 192 kHz with a length
+	// of 1 the division gave 0, upstream's #7221) and never a division by zero (a rate under the base one)
+	m_oversample{std::max(1, 2 * oversample / std::max(1,
+		static_cast<int>(sampleRate / Engine::audioEngine()->baseSampleRate())))},
 	m_randomize{randomize},
 	m_stringLoss{1.0f - stringLoss},
 	m_choice(fastRand(m_oversample)),

@@ -353,6 +353,8 @@ void AudioFileProcessorWaveView::updateGraph()
 	m_last_amp = m_sample->amplification();
 
 	m_graph.fill(Qt::transparent);
+	// (no sample: nothing to draw, and no frames to divide by)
+	if (m_sample->sampleSize() == 0) { return; }
 	QPainter p(&m_graph);
 	p.setPen(QColor(255, 255, 255));
 

@@ -13,6 +13,7 @@ set(LMMS_TESTS
 	src/core/EditWhilePlayingTest.cpp
 	src/core/PeakControllerTest.cpp
 	src/core/PluginCategoriesTest.cpp
+	src/core/InstrumentFixesTest.cpp
 	src/core/EngineLifecycleTest.cpp
 	src/core/ErrorLogTest.cpp
 	src/core/DeviceWaitTest.cpp
@@ -65,6 +66,7 @@ set(LMMS_TESTS
 	src/core/TripleBufferTest.cpp
 	src/core/UndoCommandTest.cpp
 	src/core/UserNoticeTest.cpp
+	src/gui/SampleThumbnailRendererTest.cpp
 	src/gui/SetupDialogTest.cpp
 	src/gui/ShortcutsTest.cpp
 	src/gui/ThemeImagesTest.cpp
