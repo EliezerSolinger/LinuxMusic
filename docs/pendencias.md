@@ -335,6 +335,13 @@ queda do Mallets, que é queda e entra antes.
       instrumentos sobem o alcance certo, o Sf2Player também. O que pesa é o alcance padrão de 1 semitom: o General
       MIDI, os teclados e os arquivos MIDI esperam 2 (a importação MIDI já punha 2). As faixas novas vêm com 2;
       projetos e presets guardam o seu, e um salvo sem alcance fica com o 1 de então (`InstrumentFixesTest`).
+    - [x] Osciladores que "saem de sincronia" (#2047, reproduzido): sem detune nenhum, os osciladores de uma nota
+      longa se afastavam e o som mudava devagar (três serras num C6: o pico de 1,09 a 0,95 num minuto). A fase era
+      somada amostra a amostra num float, o arredondamento se acumulando do jeito de cada frequência; e a razão de
+      cada oscilador sobre a taxa (no Organic, os parciais 3, 5, 7... pelo log2 e exp2 em float) também ficava um
+      pouco errada. Agora a fase e a razão são double até o fim (o `Oscillator`, o TripleOscillator e o Organic, que
+      usa as razões exatas dos parciais). Varredura: Monstro, Watsyn medidos estáveis; Kicker e LFO têm um oscilador
+      só. `InstrumentFixesTest`: um C6 segurado 40 s mantém o pico (falha sem a correção nos dois).
 - [ ] **Bibliotecas de sons para os players:**
   - GIG player: uma biblioteca de arquivos `.gig` dentro dele, para escolher, mais o botão de carregar um próprio;
   - o mesmo para `.sf2` (Sf2Player) e `.pat` (Patman). Hoje não há nem uma biblioteca mínima.

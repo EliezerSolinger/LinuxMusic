@@ -55,7 +55,7 @@ void Oscillator::waveTableInit()
 Oscillator::Oscillator(const IntModel *wave_shape_model,
 			const IntModel *mod_algo_model,
 			const float &freq,
-			const float &detuning_div_samplerate,
+			const double &detuning_div_samplerate,
 			const float &phase_offset,
 			const float &volume,
 			Oscillator *sub_osc) :
@@ -89,7 +89,7 @@ void Oscillator::update(SampleFrame* ab, const f_cnt_t frames, const ch_cnt_t ch
 	// wavetables, since they contain ringing that would lead to unexpected results.
 	m_isModulator = modulator;
 	// The table of the wave's pitch (once a period: the phase and frequency modulations take theirs every sample)
-	setBandForStep(m_freq * m_detuning_div_samplerate);
+	setBandForStep(static_cast<float>(m_freq * m_detuning_div_samplerate));
 	if (m_subOsc != nullptr)
 	{
 		switch (static_cast<ModulationAlgo>(m_modulationAlgoModel->value()))
@@ -559,18 +559,18 @@ inline void Oscillator::recalcPhase()
 
 
 
-inline bool Oscillator::syncOk( float _osc_coeff )
+inline bool Oscillator::syncOk( double _osc_coeff )
 {
-	const float v1 = m_phase;
+	const double v1 = m_phase;
 	m_phase += _osc_coeff;
 	// check whether m_phase is in next period
-	return( floorf( m_phase ) > floorf( v1 ) );
+	return std::floor(m_phase) > std::floor(v1);
 }
 
 
 
 
-float Oscillator::syncInit( SampleFrame* _ab, const f_cnt_t _frames,
+double Oscillator::syncInit( SampleFrame* _ab, const f_cnt_t _frames,
 						const ch_cnt_t _chnl )
 {
 	if( m_subOsc != nullptr )
@@ -590,7 +590,7 @@ void Oscillator::updateNoSub( SampleFrame* _ab, const f_cnt_t _frames,
 							const ch_cnt_t _chnl )
 {
 	recalcPhase();
-	const float osc_coeff = m_freq * m_detuning_div_samplerate;
+	const double osc_coeff = m_freq * m_detuning_div_samplerate;
 
 	for( f_cnt_t frame = 0; frame < _frames; ++frame )
 	{
@@ -609,7 +609,7 @@ void Oscillator::updatePM( SampleFrame* _ab, const f_cnt_t _frames,
 {
 	m_subOsc->update( _ab, _frames, _chnl, true );
 	recalcPhase();
-	const float osc_coeff = m_freq * m_detuning_div_samplerate;
+	const double osc_coeff = m_freq * m_detuning_div_samplerate;
 
 	if (m_useWaveTable)
 	{
@@ -623,7 +623,7 @@ void Oscillator::updatePM( SampleFrame* _ab, const f_cnt_t _frames,
 			last = _ab[frame][_chnl];
 		}
 		// (and the modulation's sidebands reach a modulator's pitch past it: Carson's rule)
-		setBandForStep(fastest + std::abs(m_subOsc->m_freq * m_subOsc->m_detuning_div_samplerate));
+		setBandForStep(static_cast<float>(fastest + std::abs(m_subOsc->m_freq * m_subOsc->m_detuning_div_samplerate)));
 	}
 	if (_frames > 0) { m_lastModulation = _ab[_frames - 1][_chnl]; }
 	for( f_cnt_t frame = 0; frame < _frames; ++frame )
@@ -645,7 +645,7 @@ void Oscillator::updateAM( SampleFrame* _ab, const f_cnt_t _frames,
 {
 	m_subOsc->update( _ab, _frames, _chnl, false );
 	recalcPhase();
-	const float osc_coeff = m_freq * m_detuning_div_samplerate;
+	const double osc_coeff = m_freq * m_detuning_div_samplerate;
 
 	for( f_cnt_t frame = 0; frame < _frames; ++frame )
 	{
@@ -664,7 +664,7 @@ void Oscillator::updateMix( SampleFrame* _ab, const f_cnt_t _frames,
 {
 	m_subOsc->update( _ab, _frames, _chnl, false );
 	recalcPhase();
-	const float osc_coeff = m_freq * m_detuning_div_samplerate;
+	const double osc_coeff = m_freq * m_detuning_div_samplerate;
 
 	for( f_cnt_t frame = 0; frame < _frames; ++frame )
 	{
@@ -682,9 +682,9 @@ template<Oscillator::WaveShape W>
 void Oscillator::updateSync( SampleFrame* _ab, const f_cnt_t _frames,
 							const ch_cnt_t _chnl )
 {
-	const float sub_osc_coeff = m_subOsc->syncInit( _ab, _frames, _chnl );
+	const double sub_osc_coeff = m_subOsc->syncInit( _ab, _frames, _chnl );
 	recalcPhase();
-	const float osc_coeff = m_freq * m_detuning_div_samplerate;
+	const double osc_coeff = m_freq * m_detuning_div_samplerate;
 
 	for( f_cnt_t frame = 0; frame < _frames ; ++frame )
 	{
@@ -707,7 +707,7 @@ void Oscillator::updateFM( SampleFrame* _ab, const f_cnt_t _frames,
 {
 	m_subOsc->update( _ab, _frames, _chnl, true );
 	recalcPhase();
-	const float osc_coeff = m_freq * m_detuning_div_samplerate;
+	const double osc_coeff = m_freq * m_detuning_div_samplerate;
 	const float sampleRateCorrection = 44100.0f / Engine::audioEngine()->outputSampleRate();
 
 	if (m_useWaveTable)
@@ -719,7 +719,7 @@ void Oscillator::updateFM( SampleFrame* _ab, const f_cnt_t _frames,
 			fastest = std::max(fastest, std::abs(osc_coeff + _ab[frame][_chnl] * sampleRateCorrection));
 		}
 		// (and the modulation's sidebands reach a modulator's pitch past it: Carson's rule)
-		setBandForStep(fastest + std::abs(m_subOsc->m_freq * m_subOsc->m_detuning_div_samplerate));
+		setBandForStep(static_cast<float>(fastest + std::abs(m_subOsc->m_freq * m_subOsc->m_detuning_div_samplerate)));
 	}
 	for( f_cnt_t frame = 0; frame < _frames; ++frame )
 	{

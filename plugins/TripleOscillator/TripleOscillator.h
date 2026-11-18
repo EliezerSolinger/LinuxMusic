@@ -81,8 +81,8 @@ private:
 	float m_volumeRight;
 
 	// normalized detuning -> x/sampleRate
-	float m_detuningLeft;
-	float m_detuningRight;
+	double m_detuningLeft; //!< (in double: see Oscillator::m_detuning_div_samplerate)
+	double m_detuningRight;
 	// normalized offset -> x/360
 	float m_phaseOffsetLeft;
 	float m_phaseOffsetRight;

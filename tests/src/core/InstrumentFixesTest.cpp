@@ -1282,6 +1282,51 @@ private slots:
 		track->loadTrackSpecificSettings(settings);
 		QCOMPARE(track->pitchRangeModel()->value(), 1);
 	}
+
+	/**
+	 * #2047: the oscillators of a long note drifted apart (the sound changing, a slow sweep), with no detuning at all:
+	 * the phase was summed sample by sample in a float, its rounding piling up each frequency's own way (and the
+	 * Organic's partial ratios were each a little off). A C6 held for 40 s keeps its peak.
+	 */
+	void longNotesKeepTheirSound_data()
+	{
+		QTest::addColumn<QString>("instrument");
+		QTest::newRow("tripleoscillator, three saws") << QString{"tripleoscillator"};
+		QTest::newRow("organic") << QString{"organic"};
+	}
+
+	void longNotesKeepTheirSound()
+	{
+		QFETCH(QString, instrument);
+		auto* song = Engine::getSong();
+		song->createNewProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track && track->loadInstrument(instrument));
+		for (auto* model : track->instrument()->findChildren<IntModel*>())
+		{
+			if (model->displayName().contains("wave shape")) { model->setValue(2); } // (a saw)
+		}
+		Engine::audioEngine()->midiClient()->queueInEvent(track->midiPort(), MidiEvent{MidiNoteOn, 0, 84, 100});
+		const auto rate = Engine::audioEngine()->outputSampleRate();
+		auto peaks = std::vector<float>{};
+		auto peak = 0.f;
+		auto count = std::size_t{0};
+		while (peaks.size() < 80)
+		{
+			for (const auto& frame : Engine::audioEngine()->renderNextPeriod())
+			{
+				peak = std::max(peak, std::abs(frame.left()));
+				if (++count == rate / 2)
+				{
+					peaks.push_back(peak);
+					peak = 0.f;
+					count = 0;
+				}
+			}
+		}
+		const auto [low, high] = std::minmax_element(peaks.begin() + 1, peaks.end());
+		QVERIFY2(*high - *low < 0.005f * *high, qPrintable(QString{"the peak went from %1 to %2"}.arg(*low).arg(*high)));
+	}
 };
 
 QTEST_GUILESS_MAIN(InstrumentFixesTest)

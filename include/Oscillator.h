@@ -80,7 +80,7 @@ public:
 	Oscillator( const IntModel *wave_shape_model,
 			const IntModel *mod_algo_model,
 			const float &freq,
-			const float &detuning_div_samplerate,
+			const double &detuning_div_samplerate,
 			const float &phase_offset,
 			const float &volume,
 			Oscillator *m_subOsc = nullptr);
@@ -241,12 +241,16 @@ private:
 	const IntModel * m_waveShapeModel;
 	const IntModel * m_modulationAlgoModel;
 	const float & m_freq;
-	const float & m_detuning_div_samplerate;
+	//! (in double, as the phase: a ratio such as 3 / 44100 in a float is a little off, each its own way, and the
+	//! oscillators of a note drift apart)
+	const double & m_detuning_div_samplerate;
 	const float & m_volume;
 	const float & m_ext_phaseOffset;
 	Oscillator * m_subOsc;
 	float m_phaseOffset;
-	float m_phase;
+	//! (in double: summed sample by sample, a float's rounding piled up, each frequency's its own way, and the
+	//! oscillators of a long note drifted apart, the sound changing, #2047; the waves read it as a float)
+	double m_phase;
 	std::shared_ptr<const SampleBuffer> m_userWave = SampleBuffer::emptyBuffer();
 	std::shared_ptr<const OscillatorConstants::waveform_t> m_userAntiAliasWaveTable;
 	bool m_useWaveTable;
@@ -294,9 +298,9 @@ private:
 	void updateFM( SampleFrame* _ab, const f_cnt_t _frames,
 							const ch_cnt_t _chnl );
 
-	float syncInit( SampleFrame* _ab, const f_cnt_t _frames,
+	double syncInit( SampleFrame* _ab, const f_cnt_t _frames,
 							const ch_cnt_t _chnl );
-	inline bool syncOk( float _osc_coeff );
+	inline bool syncOk( double _osc_coeff );
 
 	template<WaveShape W>
 	void updateNoSub( SampleFrame* _ab, const f_cnt_t _frames,

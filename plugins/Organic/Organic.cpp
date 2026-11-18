@@ -24,6 +24,10 @@
 
 #include "Organic.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+
 #include <QDomElement>
 
 #include "Engine.h"
@@ -564,11 +568,16 @@ void OscillatorObject::updateVolume()
 
 void OscillatorObject::updateDetuning()
 {
-	const auto harmonic = OrganicInstrument::s_harmonics[static_cast<int>(m_harmModel.value())];
-	const auto sr = Engine::audioEngine()->outputSampleRate();
+	// The harmonic's exact ratio (its log2 in s_harmonics, taken back by exp2 in floats, made each ratio a little off,
+	// each its own way: the partials of a long note drifted apart, the sound changing), in double to the end
+	static constexpr auto Ratios = std::array<double, NUM_HARMONICS>{0.5, 0.75, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+		13, 14, 15, 16};
+	const auto ratio = Ratios[std::clamp(static_cast<int>(m_harmModel.value()), 0, NUM_HARMONICS - 1)];
+	const auto sr = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+	const auto detune = static_cast<double>(m_detuneModel.value()) * CENT;
 
-	m_detuningLeft = std::exp2(harmonic + m_detuneModel.value() * CENT) / sr;
-	m_detuningRight = std::exp2(harmonic - m_detuneModel.value() * CENT) / sr;
+	m_detuningLeft = ratio * std::exp2(detune) / sr;
+	m_detuningRight = ratio * std::exp2(-detune) / sr;
 }
 
 
