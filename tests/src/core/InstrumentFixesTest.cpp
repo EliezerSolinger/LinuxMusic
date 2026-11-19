@@ -59,6 +59,7 @@
 #include "Song.h"
 #include "Track.h"
 #include "base64.h"
+#include "../helpers/GusPatch.h"
 #include "../helpers/Spectrum.h"
 
 using namespace lmms;
@@ -1326,6 +1327,32 @@ private slots:
 		}
 		const auto [low, high] = std::minmax_element(peaks.begin() + 1, peaks.end());
 		QVERIFY2(*high - *low < 0.005f * *high, qPrintable(QString{"the peak went from %1 to %2"}.arg(*low).arg(*high)));
+	}
+
+	/**
+	 * A patch without a usable pitch (a damaged one: its root 0) chose no sample for its notes, and the note played
+	 * a null sample (a crash); untuned, it would play at an infinite ratio. Each note takes the first sample when no
+	 * other is nearer, and one without a pitch plays at the note's. Tuned and untuned, it sounds.
+	 */
+	void patmanPlaysAPatchWithoutAPitch_data()
+	{
+		QTest::addColumn<bool>("tuned");
+		QTest::newRow("tuned") << true;
+		QTest::newRow("untuned") << false;
+	}
+
+	void patmanPlaysAPatchWithoutAPitch()
+	{
+		QFETCH(bool, tuned);
+		const auto dir = QTemporaryDir{};
+		const auto patch = dir.filePath("nopitch.pat");
+		QVERIFY(tests::writeGusPatch(patch, static_cast<int>(Engine::audioEngine()->outputSampleRate()), 0));
+		const auto played = play("patman", [&](QDomElement& element) {
+			element.setAttribute("src", patch);
+			element.setAttribute("tuned", tuned ? 1 : 0);
+		});
+		QVERIFY(played.finite);
+		QVERIFY2(played.loudest > 0.01f, qPrintable(QString::number(played.loudest)));
 	}
 };
 

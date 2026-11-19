@@ -25,6 +25,8 @@
 
 #include "Patman.h"
 
+#include <cmath>
+
 #include <QScopeGuard>
 
 #include "AudioEngine.h"
@@ -151,10 +153,11 @@ void PatmanInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 	}
 	auto hdata = (handle_data*)_n->m_pluginData;
 
-	float play_freq = hdata->tuned ? _n->frequency() :
-						hdata->sample->frequency();
+	// (untuned, at the sample's own pitch: one with none usable, as a damaged patch's, plays at the note's)
+	const auto own = hdata->sample->frequency();
+	const float play_freq = hdata->tuned || !std::isfinite(own) || own <= 0.f ? _n->frequency() : own;
 
-	if (hdata->sample->play(out.data() + offset, hdata->state, frames,
+	if (hdata->sample->play(out.data() + offset, &hdata->state, frames,
 			m_loopedModel.value() ? Sample::Loop::On : Sample::Loop::Off, DefaultBaseFreq / play_freq))
 	{
 		applyRelease(out.data(), _n);
@@ -170,9 +173,7 @@ void PatmanInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 
 void PatmanInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	auto hdata = (handle_data*)_n->m_pluginData;
-	delete hdata->state;
-	delete hdata;
+	_n->destroyPluginData<handle_data>();
 }
 
 
@@ -410,8 +411,10 @@ void PatmanInstrument::selectSample( NotePlayHandle * _n )
 {
 	const float freq = _n->frequency();
 
+	// (the first, if no other is nearer: a sample without a usable pitch, as a damaged patch's, is not near anything,
+	// and the note must have one)
 	float min_dist = HUGE_VALF;
-	std::shared_ptr<Sample> sample = nullptr;
+	std::shared_ptr<Sample> sample = m_patchSamples.front();
 
 	for (const auto& patchSample : m_patchSamples)
 	{
@@ -426,12 +429,9 @@ void PatmanInstrument::selectSample( NotePlayHandle * _n )
 		}
 	}
 
-	auto hdata = new handle_data;
-	hdata->tuned = m_tunedModel.value();
-	hdata->sample = sample ? sample : std::make_shared<Sample>();
-	hdata->state = new Sample::PlaybackState(AudioResampler::Mode::Linear);
-
-	_n->m_pluginData = hdata;
+	// (in the note's room, the sample shared: nothing allocated on the audio thread; playNoteImpl() plays nothing
+	// without samples, so there is one)
+	_n->makePluginData<handle_data>(m_tunedModel.value(), sample);
 }
 
 

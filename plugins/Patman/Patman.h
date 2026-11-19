@@ -82,9 +82,12 @@ public slots:
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
+	//! A note's: in its room (NotePlayHandle::makePluginData()), nothing allocated on the audio thread
 	struct handle_data
 	{
-		Sample::PlaybackState* state;
+		handle_data(bool tuned, std::shared_ptr<Sample> sample) :
+			state(AudioResampler::Mode::Linear), tuned(tuned), sample(std::move(sample)) {}
+		Sample::PlaybackState state;
 		bool tuned;
 		std::shared_ptr<Sample> sample;
 	};
