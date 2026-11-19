@@ -23,6 +23,7 @@
 //! The effects of the validation plugins:
 //! - [`compressor`]: the Compressor;
 //! - [`delay`]: the Delay;
+//! - [`eq`]: the Eq;
 //! - [`reverb_sc`]: the ReverbSC (Csound's reverbsc).
 
 // The ports keep the legacy program's index loops and its literal constants, so that a reader can set the two side by
@@ -33,6 +34,7 @@ pub mod channel_strip;
 pub mod compressor;
 pub mod delay;
 pub mod dynamics;
+pub mod eq;
 pub mod filters;
 pub mod gain_stage;
 pub mod master;

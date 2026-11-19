@@ -277,6 +277,52 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return mono.into_iter().map(|x| [x, x]).collect();
     }
+    if case["unit"] == "plugin-effect" && case["plugin"] == "eq" {
+        use lm_dsp::eq::{Eq, EqBand, EqSettings, Slope};
+        // The knobs by the legacy plugin's names
+        let apply = |s: &Value, e: &mut EqSettings| {
+            let on = |key: &str, default: bool| s[key].as_f64().map_or(default, |v| v != 0.0);
+            let band = |b: &mut EqBand, name: &str, q: &str| {
+                b.active = on(&format!("{name} active"), b.active);
+                b.freq = f(s, &format!("{name} freq"), b.freq);
+                b.q = f(s, &format!("{name} {q}"), b.q);
+                b.gain = f(s, &format!("{name} gain"), b.gain);
+            };
+            e.in_gain = f(s, "Input gain", e.in_gain);
+            e.out_gain = f(s, "Output gain", e.out_gain);
+            band(&mut e.high_pass, "HP", "res");
+            band(&mut e.low_shelf, "Low-shelf", "res");
+            for (i, peak) in e.peaks.iter_mut().enumerate() {
+                band(peak, &format!("Peak {}", i + 1), "BW");
+            }
+            band(&mut e.high_shelf, "High-shelf", "res");
+            band(&mut e.low_pass, "LP", "res");
+            let slope = |prefix: &str, current: Slope| {
+                if on(&format!("{prefix} 48"), current == Slope::Db48) {
+                    Slope::Db48
+                } else if on(&format!("{prefix} 24"), current == Slope::Db24) {
+                    Slope::Db24
+                } else {
+                    Slope::Db12
+                }
+            };
+            e.high_pass_slope = slope("HP", e.high_pass_slope);
+            e.low_pass_slope = slope("LP", e.low_pass_slope);
+        };
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let mut settings = EqSettings::default();
+        apply(&case["settings"], &mut settings);
+        let mut eq = Eq::new(rate);
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        for start in (0..frames as usize).step_by(block as usize) {
+            if start == at {
+                apply(&case["then"]["settings"], &mut settings);
+            }
+            let end = (start + block as usize).min(frames as usize);
+            eq.process(&mut out[start..end], &settings);
+        }
+        return out;
+    }
     if case["unit"] == "plugin-effect" && case["plugin"] == "compressor" {
         use lm_dsp::compressor::{CompressorPlugin, CompressorPluginSettings, StereoLink};
         // The knobs by the legacy plugin's names

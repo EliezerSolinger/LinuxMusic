@@ -51,7 +51,7 @@ sh -c "$link"
 # directory of their own: their discrete logic (an attack or a hold that starts or not) turns one rounding into an
 # audible difference
 mkdir -p "$work/plugins"
-for plugin in compressor; do
+for plugin in compressor eq; do
 	for object in $(ninja -t query "plugins/lib$plugin.so" | sed -n '/input:/,/outputs:/p' | grep '\.o$'); do
 		objectcompile=$(ninja -t commands "$object" | tail -1 \
 			| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/$(basename "$object")#" \

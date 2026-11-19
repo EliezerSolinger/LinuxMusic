@@ -2641,6 +2641,110 @@
         "Hold": 20.0,
         "Auto Makeup Gain": 1.0
       }
+    },
+    {
+      "name": "eq-every-band",
+      "unit": "plugin-effect",
+      "plugin": "eq",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 60,
+        "amp": 0.4,
+        "right": {
+          "kind": "noise",
+          "seed": 61,
+          "amp": 0.4
+        }
+      },
+      "settings": {
+        "HP active": 1,
+        "HP freq": 60.0,
+        "HP res": 0.9,
+        "Low-shelf active": 1,
+        "Low-shelf gain": 4.0,
+        "Low-shelf freq": 120.0,
+        "Peak 1 active": 1,
+        "Peak 1 gain": -6.0,
+        "Peak 1 freq": 300.0,
+        "Peak 1 BW": 0.5,
+        "Peak 2 active": 1,
+        "Peak 2 gain": 5.0,
+        "Peak 2 freq": 900.0,
+        "Peak 3 active": 1,
+        "Peak 3 gain": -3.0,
+        "Peak 3 freq": 2500.0,
+        "Peak 3 BW": 1.2,
+        "Peak 4 active": 1,
+        "Peak 4 gain": 8.0,
+        "Peak 4 freq": 6000.0,
+        "High-shelf active": 1,
+        "High-shelf gain": -4.0,
+        "High-shelf freq": 10000.0,
+        "LP active": 1,
+        "LP freq": 15000.0,
+        "Input gain": -3.0,
+        "Output gain": 2.0
+      }
+    },
+    {
+      "name": "eq-steep-passes",
+      "unit": "plugin-effect",
+      "plugin": "eq",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 60,
+        "amp": 0.4,
+        "right": {
+          "kind": "noise",
+          "seed": 61,
+          "amp": 0.4
+        }
+      },
+      "settings": {
+        "HP active": 1,
+        "HP 48": 1,
+        "HP freq": 200.0,
+        "LP active": 1,
+        "LP 24": 1,
+        "LP freq": 3000.0,
+        "LP res": 2.0
+      }
+    },
+    {
+      "name": "eq-sweep",
+      "unit": "plugin-effect",
+      "plugin": "eq",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 440,
+        "amp": 0.5
+      },
+      "settings": {
+        "Peak 2 active": 1,
+        "Peak 2 gain": 12.0,
+        "Peak 2 freq": 400.0,
+        "Peak 2 BW": 0.3
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Peak 2 gain": -12.0,
+          "Peak 2 freq": 500.0,
+          "Peak 2 BW": 2.0,
+          "HP active": 1,
+          "HP 24": 1,
+          "HP freq": 300.0
+        }
+      }
     }
   ]
 }
