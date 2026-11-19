@@ -393,7 +393,7 @@ pub enum MidiTiming {
 /// The persistent transport settings of the tree (I-7.2), in samples
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TransportSettings {
-    /// `from..to`; playing past `to` jumps to `from` at the exact sample
+    /// `from..to`, at least 50 ms long; playing past `to` jumps to `from` at the exact sample
     pub loop_range: Option<(i64, i64)>,
     /// Recording happens only inside `from..to` (U4: the handles outside are the recorder's business)
     pub punch: Option<(i64, i64)>,
@@ -1007,7 +1007,8 @@ impl ProgramBuilder {
         };
 
         // Transport
-        let min_loop = (max_block / 16).max(1) as i64;
+        // At least 50 ms: the record spans of a block and the lossless transport ring are sized on it (C4)
+        let min_loop = (self.spec.sample_rate / 20).max(1) as i64;
         if let Some((a, b)) = self.transport.loop_range
             && b - a < min_loop
         {
