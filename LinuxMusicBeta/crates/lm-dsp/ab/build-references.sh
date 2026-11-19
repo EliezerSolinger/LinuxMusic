@@ -4,7 +4,8 @@
 # Usage: crates/lm-dsp/ab/build-references.sh [legacy build directory]
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-root=$(cd "$here/../../../.." && pwd)
+# (the legacy tree and its build: this tree, or LEGACY_ROOT when this is a worktree without them)
+root=${LEGACY_ROOT:-$(cd "$here/../../../.." && pwd)}
 build=$(cd "${1:-$root/build}" && pwd)
 work=$(mktemp -d)
 [ -n "${KEEP:-}" ] || trap 'rm -rf "$work"' EXIT; echo "$work" >&2

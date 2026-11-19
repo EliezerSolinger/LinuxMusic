@@ -11,9 +11,12 @@ The rule (interfaces.md, U34): every case nulls below -90 dBFS against the legac
 To write the references (needs the legacy build, `cmake -S legado -B build && cmake --build build`):
 
 ```sh
-CONTRACT_OFF="TubeStage GainStage AnalogChannelStrip DeskFilters DeskDynamics DeskTolerance MonoBass MasterSection" \
-    crates/lm-dsp/ab/build-references.sh
+CONTRACT_OFF="TubeStage GainStage AnalogChannelStrip DeskFilters DeskDynamics DeskTolerance MonoBass MasterSection \
+    Oscillator Sample EnvelopeAndLfoParameters" crates/lm-dsp/ab/build-references.sh
 ```
+
+From a worktree that checks out only `LinuxMusicBeta/`, point `LEGACY_ROOT` at the tree that has `legado/` and its
+`build/` (read only): `LEGACY_ROOT=/Users/castrot1/Desktop/LinuxMusic CONTRACT_OFF=... crates/lm-dsp/ab/build-references.sh`.
 
 `CONTRACT_OFF` rebuilds those legacy files without fused multiply-adds: the legacy build lets clang fuse `a * b + c`
 into one rounding on arm64, and Rust never does, so with them fused the tubes' light model (whose blocking
