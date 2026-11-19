@@ -65,6 +65,7 @@ lm-sys-alsa = { path = "crates/lm-sys-alsa" }
 lm-sys-linux = { path = "crates/lm-sys-linux" }
 lm-sys-rubberband = { path = "crates/lm-sys-rubberband" }
 lm-sys-lilv = { path = "crates/lm-sys-lilv" }
+lm-io = { path = "crates/lm-io" }
 
 [profile.dev]
 # Audio code is unusable without some optimisation. Disk is limited on the development machine: line tables are

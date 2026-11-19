@@ -300,6 +300,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-io"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+]
+
+[[package]]
 name = "lm-render"
 version = "0.1.0"
 dependencies = [
