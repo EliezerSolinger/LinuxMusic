@@ -22,7 +22,7 @@ quando passa no critério de "pronto quando" de `interfaces.md` (Parte 4). As de
 | 10 | a primeira fatia | — | a fazer |
 | 10b | revisão final de coerência | — | a fazer |
 | 11 | protótipo de interface em GPUI (`prototypes/`) e a `gui` | agentes A (casca, composição, mixagem, roteamento, medidas), B, C, D | **em andamento** (19/11): GPUI escolhida pelo usuário; esqueleto com todas as telas registradas, composição e mixagem funcionando, 120 quadros/s; relatório em `docs/prototipo-interface.md` |
-| — | CI no GitHub (Linux x86-64 principal; Linux aarch64 e macOS) | agente de CI | em andamento (19/11): `.github/workflows/beta.yml`, `deny.toml`, `ci/` |
+| — | CI no GitHub (Linux x86-64 principal; Linux aarch64 e macOS) | agente de CI | **montado** (19/11): `.github/workflows/beta.yml` (política, rustfmt, clippy+doc, cargo-deny, testes debug/release em Linux x86-64, Linux aarch64 e macOS, loom, miri, ASan/TSan/LSan), `deny.toml`, `ci/`. Pacotes de sistema em `ci/system-deps/`; loom pega quem tem `cfg(loom)`; miri pela lista `ci/miri-crates.txt`. Vermelho por causa dos pacotes (não do CI): `cargo fmt` em lm-base, lm-doc e lm-render; teste `no_thread_is_created` do lm-sys-fluidsynth no Linux; `cost_of_sixty_four_tracks` do lm-render sob TSan |
 
 ## Como os agentes trabalham
 

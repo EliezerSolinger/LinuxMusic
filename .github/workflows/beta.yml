@@ -121,7 +121,7 @@ jobs:
         with:
           tool: cargo-deny@0.21.0
       - name: cargo deny check
-        run: ci/run.sh cargo deny --locked check --config deny.toml
+        run: ci/run.sh cargo deny --locked check
 
   test:
     name: test (${{ matrix.platform }}, ${{ matrix.profile }})
