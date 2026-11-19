@@ -1,6 +1,6 @@
 //! FTZ/DAZ really flush, on this machine's processor (H6)
 
-use lm_sys_fpu::{enable_on_this_thread, state, FlushDenormals};
+use lm_sys_fpu::{FlushDenormals, enable_on_this_thread, state};
 use std::hint::black_box;
 
 /// A result that would be subnormal (FTZ)
