@@ -21,3 +21,5 @@ Loop = Loop
 Punch = Punch
 Metronome = Metrônomo
 Tempo = Andamento
+Count-in {0} = Contagem {0}
+Count-in {0}… = CONTAGEM {0}…

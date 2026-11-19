@@ -138,6 +138,8 @@ pub enum Field {
     PunchOn,
     Metronome,
     Tempo,
+    CountIn,
+    PreRoll,
 }
 
 /// The document's root: the song-wide fields live on it
@@ -229,6 +231,8 @@ impl Edit<'_> {
             (b'r', Field::PunchOn, Value::Bool(b)) => self.doc.song.punch.on = b,
             (b'r', Field::Metronome, Value::Bool(b)) => self.doc.song.metronome = b,
             (b'r', Field::Tempo, Value::Real(x)) => self.doc.song.tempo[0].bpm = x.clamp(20.0, 400.0),
+            (b'r', Field::CountIn, Value::Real(x)) => self.doc.song.count_in_bars = x.clamp(0.0, 4.0) as u8,
+            (b'r', Field::PreRoll, Value::Real(x)) => self.doc.song.pre_roll_bars = x.clamp(0.0, 4.0) as u8,
             (b'm', Field::Volume, Value::Real(x)) => self.channel(id)?.volume_db = x,
             (b'm', Field::Pan, Value::Real(x)) => self.channel(id)?.pan = x.clamp(-1.0, 1.0),
             (b'm', Field::Mute, Value::Bool(b)) => self.channel(id)?.mute = b,
@@ -264,6 +268,8 @@ impl Edit<'_> {
             (b'r', Field::PunchOn) => Value::Bool(self.doc.song.punch.on),
             (b'r', Field::Metronome) => Value::Bool(self.doc.song.metronome),
             (b'r', Field::Tempo) => Value::Real(self.doc.song.tempo[0].bpm),
+            (b'r', Field::CountIn) => Value::Real(self.doc.song.count_in_bars as f64),
+            (b'r', Field::PreRoll) => Value::Real(self.doc.song.pre_roll_bars as f64),
             (b'm', Field::Volume) => Value::Real(self.channel(id)?.volume_db),
             (b'm', Field::Pan) => Value::Real(self.channel(id)?.pan),
             (b'm', Field::Mute) => Value::Bool(self.channel(id)?.mute),

@@ -51,6 +51,8 @@ pub struct Workspace {
     pub composition: Entity<CompositionPage>,
     pub mixing: Entity<MixingPage>,
     open: Vec<(Screen, AnyView)>,
+    pub display_format: transport::DisplayFormat,
+    pub tempo_drag: Option<transport::TempoDrag>,
     _observe: Subscription,
 }
 
@@ -69,6 +71,8 @@ impl Workspace {
             composition,
             mixing,
             open: Vec::new(),
+            display_format: Default::default(),
+            tempo_drag: None,
             _observe: observe,
         };
         // LM_OPEN=Settings,PianoRoll... opens screens at start (screenshots, and each author's own testing)
@@ -143,6 +147,12 @@ impl Render for Workspace {
             .text_color(c(THEME.text))
             .font_family(".SystemUIFont")
             .key_context("Workspace")
+            .on_mouse_move(cx.listener(|ws, ev: &gpui::MouseMoveEvent, _, cx| {
+                if ws.tempo_drag.is_some() {
+                    transport::drag_tempo(ws, ev.position.y.as_f32(), ev.modifiers.shift, cx);
+                }
+            }))
+            .on_mouse_up(gpui::MouseButton::Left, cx.listener(|ws, _: &gpui::MouseUpEvent, _, cx| transport::end_tempo(ws, cx)))
             .on_action(cx.listener(|ws, _: &ShowComposition, _, cx| {
                 ws.page = Page::Composition;
                 cx.notify();
