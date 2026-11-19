@@ -17,7 +17,7 @@ text = open(path, encoding="utf-8", errors="replace").read()
 text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
 lines = [line for line in text.splitlines() if line.strip()]
 # The compiler's and the tests' errors first, then the last lines
-errors = [l for l in lines if re.match(r"\s*(error|warning: unused|thread '.*' panicked|---- |FAILED|failures:|  - )", l)]
+errors = [l for l in lines if re.match(r"\s*(error|thread '.*' panicked|---- |FAILED|failures:|  - )", l)]
 body = "\n".join((errors[:40] + ["...", "(last lines)"] if errors else []) + lines[-40:])
 def esc(s, prop=False):
     s = s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
