@@ -281,6 +281,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-compile"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-doc",
+ "lm-render",
+ "lm-state",
+ "lm-time",
+]
+
+[[package]]
 name = "lm-doc"
 version = "0.1.0"
 dependencies = [
