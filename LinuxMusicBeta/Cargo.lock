@@ -275,29 +275,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "lm-doc"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "imbl",
- "lm-base",
- "lm-state",
-]
-
-[[package]]
 name = "lm-dsp"
 version = "0.1.0"
 dependencies = [
  "libm",
  "serde_json",
-]
-
-[[package]]
-name = "lm-render"
-version = "0.1.0"
-dependencies = [
- "lm-base",
- "lm-time",
 ]
 
 [[package]]
