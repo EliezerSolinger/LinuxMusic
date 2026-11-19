@@ -5,7 +5,7 @@ dependência nova do workspace é pedida à sessão de design"; interfaces.md, I
 The list of external crates the program may use is then one list, in the workspace Cargo.toml, where cargo-deny and
 the reviewers see it. Each dependency of a crate (normal, dev, build, and their per-target forms) must be written
 `name.workspace = true` or `name = { workspace = true, ... }`; the crate may add `features` and `optional`, nothing
-that picks another version or source.
+that picks another version or source. A crate of this workspace may also be named by `path`.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import sys
 import tomllib
 from pathlib import Path
 
+sys.stdout.reconfigure(line_buffering=True)  # keep stdout and stderr in order in the CI log
 sys.dont_write_bytecode = True  # no __pycache__ in the source tree
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import workspace  # noqa: E402
@@ -32,6 +33,16 @@ def dependency_tables(manifest: dict):
                 yield f"target.{target}.{kind}", table[kind]
 
 
+def is_workspace_path(root: Path, spec) -> bool:
+    """A dependency on another crate of this workspace written by path (`{ path = "../lm-x" }`)"""
+    if not (isinstance(spec, dict) and set(spec) <= {"path", "features", "optional", "default-features"}):
+        return False
+    if "path" not in spec:
+        return False
+    target = (root / spec["path"]).resolve()
+    return target.is_relative_to(workspace.WORKSPACE.resolve()) and (target / "Cargo.toml").is_file()
+
+
 def main() -> int:
     problems = []
     for crate in workspace.members():
@@ -39,6 +50,8 @@ def main() -> int:
         where = crate.manifest.relative_to(workspace.WORKSPACE)
         for table_name, table in dependency_tables(manifest):
             for name, spec in table.items():
+                if is_workspace_path(crate.root, spec):
+                    continue  # another crate of this workspace, by path: not an external crate
                 if not (isinstance(spec, dict) and spec.get("workspace") is True):
                     problems.append(f"{where} [{table_name}] {name}: write `{name}.workspace = true` and add {name} "
                                     f"to [workspace.dependencies] in the workspace Cargo.toml")
