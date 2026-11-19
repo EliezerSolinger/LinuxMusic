@@ -1,0 +1,3 @@
+# The composition page: timeline, track headers, lanes
+Track = Faixa
+Volume = Volume

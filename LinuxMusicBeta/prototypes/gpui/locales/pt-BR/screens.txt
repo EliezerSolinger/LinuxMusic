@@ -1,0 +1,20 @@
+# Screen titles (each screen's own texts go in its own file)
+Piano Roll = Piano Roll
+Automation = Automação
+Step editor = Editor de passos
+Instrument = Instrumento
+Effect = Efeito
+Browser = Navegador
+Settings = Configurações
+Export = Exportar
+Project = Projeto
+Notices = Avisos
+Command palette = Paleta de comandos
+New project = Projeto novo
+About = Sobre
+Routing = Roteamento
+Not built yet: {0} = Ainda não feito: {0}
+Projects folder = Pasta dos projetos
+Audio block size = Tamanho do bloco do áudio
+{0} samples · applies when the device reopens = {0} amostras · vale ao reabrir o dispositivo
+Follow the cursor while playing = Seguir o cursor ao tocar

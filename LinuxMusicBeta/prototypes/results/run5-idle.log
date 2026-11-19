@@ -1,0 +1,1 @@
+bench: {"lib":"gpui","mode":"idle","frames":0,"seconds":20.00,"fps":0.0,"interval_ms":{"median":0.00,"p95":0.00,"p99":0.00,"max":0.00,"mean":0.00},"missed_over_1_5_periods":0,"work_ms":{"median":0.00,"p99":0.00,"max":0.00}}

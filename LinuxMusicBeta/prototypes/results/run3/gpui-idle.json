@@ -1,0 +1,1 @@
+{"lib":"gpui","mode":"idle","frames":3,"seconds":20.00,"fps":0.1,"interval_ms":{"median":450.00,"p95":450.00,"p99":450.00,"max":450.00,"mean":437.50},"missed_over_1_5_periods":2,"work_ms":{"median":0.78,"p99":0.78,"max":0.78}}

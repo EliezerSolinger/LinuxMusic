@@ -20,7 +20,7 @@ quando passa no critério de "pronto quando" de `interfaces.md` (Parte 4). As de
 | 9 | `lm-session` + `lm-headless` | — | a fazer |
 | 10 | a primeira fatia | — | a fazer |
 | 10b | revisão final de coerência | — | a fazer |
-| 11 | protótipo de interface (GPUI, Slint, Qt) e a `gui` | — | a fazer, em paralelo com o núcleo |
+| 11 | protótipo de interface em GPUI (`prototypes/`) e a `gui` | agentes A (casca, composição, mixagem, roteamento, medidas), B, C, D | **em andamento** (19/11): GPUI escolhida pelo usuário; esqueleto com todas as telas registradas, composição e mixagem funcionando, 120 quadros/s; relatório em `docs/prototipo-interface.md` |
 | — | CI no GitHub (Linux x86-64 principal; Linux aarch64 e macOS) | agente de CI | em andamento (19/11): `.github/workflows/beta.yml`, `deny.toml`, `ci/` |
 
 ## Como os agentes trabalham

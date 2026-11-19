@@ -106,7 +106,7 @@ impl Bench {
 
     /// A probe for the CPU-side time of one frame: call it with the frame's start from the last thing the library
     /// paints (build, layout, prepaint and paint on the CPU; not the GPU)
-    pub fn work_probe(&self) -> impl Fn(Instant) + 'static {
+    pub fn work_probe(&self) -> impl Fn(Instant) + 'static + use<> {
         let sink = self.work.clone();
         let (on, start, warmup) = (self.mode != Mode::Off, self.start, self.warmup);
         move |started: Instant| {

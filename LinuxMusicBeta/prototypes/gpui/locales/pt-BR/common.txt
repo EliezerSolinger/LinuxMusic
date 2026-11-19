@@ -1,0 +1,23 @@
+# Shared pieces: the shell, the transport, the loading component
+Composition = Composição
+Mixing = Mixagem
+Stopped = PARADO
+Playing = TOCANDO
+Recording = GRAVANDO
+Count-in = CONTAGEM
+Cancel = Cancelar
+Close = Fechar
+OK = OK
+Reload take = Recarregar take
+Pre-roll {0} = Pré-roll {0}
+Generating peaks = Gerando picos
+{0}… {1}% = {0}… {1}%
+Screens = Telas
+Rewind = Voltar ao início
+Stop = Parar
+Play = Tocar
+Record = Gravar
+Loop = Loop
+Punch = Punch
+Metronome = Metrônomo
+Tempo = Andamento

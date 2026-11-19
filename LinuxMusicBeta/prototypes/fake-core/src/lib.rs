@@ -10,8 +10,16 @@
 //! The document is a plain struct, not the `Value` tree: the prototype measures the GUI, not the document.
 
 pub mod bench;
+pub mod mixer;
 pub mod peaks;
 pub mod view;
+// ONE LINE PER AREA MODULE: the other screens' fake data (owners in docs/prototipo-interface.md)
+pub mod actions;
+pub mod browser;
+pub mod notes;
+pub mod notices;
+pub mod plugins;
+pub mod project;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -71,7 +79,18 @@ pub struct Track {
 pub struct Channel {
     pub id: NodeId,
     pub name: String,
+    pub kind: mixer::ChannelKind,
     pub volume_db: f64,
+    /// -1 (left) .. +1 (right)
+    pub pan: f64,
+    pub mute: bool,
+    pub solo: bool,
+    /// None: the master (the master itself has None and goes to the device)
+    pub output: Option<NodeId>,
+    pub inserts: Vec<mixer::Insert>,
+    pub sends: Vec<mixer::SendInfo>,
+    /// the rack's parameters by permanent key (`rack.eq.low`...), and `rack.<section>.on` as 0/1
+    pub params: std::collections::BTreeMap<&'static str, f64>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -86,6 +105,11 @@ pub enum Field {
     Mute,
     Solo,
     Armed,
+    Pan,
+    /// a parameter by permanent key (the rack's, a plugin's)
+    Param(&'static str),
+    /// a send's level, by the send's id
+    SendLevel(NodeId),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -149,6 +173,17 @@ impl Edit<'_> {
             (b't', Field::Solo, Value::Bool(b)) => self.track(id)?.solo = b,
             (b't', Field::Armed, Value::Bool(b)) => self.track(id)?.armed = b,
             (b'm', Field::Volume, Value::Real(x)) => self.channel(id)?.volume_db = x,
+            (b'm', Field::Pan, Value::Real(x)) => self.channel(id)?.pan = x.clamp(-1.0, 1.0),
+            (b'm', Field::Mute, Value::Bool(b)) => self.channel(id)?.mute = b,
+            (b'm', Field::Solo, Value::Bool(b)) => self.channel(id)?.solo = b,
+            (b'm', Field::Param(k), Value::Real(x)) => {
+                let x = mixer::spec(k).map_or(x, |p| x.clamp(p.min, p.max));
+                self.channel(id)?.params.insert(k, x);
+            }
+            (b'm', Field::SendLevel(s), Value::Real(x)) => {
+                let ch = self.channel(id)?;
+                ch.sends.iter_mut().find(|x| x.id == s).ok_or(Error::NoSuchNode(s))?.level_db = x;
+            }
             _ => return Err(Error::WrongType),
         }
         self.diff.changed.push((id, Some(field)));
@@ -161,6 +196,14 @@ impl Edit<'_> {
             (b't', Field::Solo) => Value::Bool(self.track(id)?.solo),
             (b't', Field::Armed) => Value::Bool(self.track(id)?.armed),
             (b'm', Field::Volume) => Value::Real(self.channel(id)?.volume_db),
+            (b'm', Field::Pan) => Value::Real(self.channel(id)?.pan),
+            (b'm', Field::Mute) => Value::Bool(self.channel(id)?.mute),
+            (b'm', Field::Solo) => Value::Bool(self.channel(id)?.solo),
+            (b'm', Field::Param(k)) => Value::Real(*self.channel(id)?.params.get(k).ok_or(Error::WrongType)?),
+            (b'm', Field::SendLevel(s)) => {
+                let ch = self.channel(id)?;
+                Value::Real(ch.sends.iter().find(|x| x.id == s).ok_or(Error::NoSuchNode(s))?.level_db)
+            }
             _ => return Err(Error::WrongType),
         })
     }
@@ -288,7 +331,9 @@ impl<T> OperationHandle<T> {
 // ---------------------------------------------------------------------------------------------------------------
 // Telemetry from the fake engine (I-8)
 
-pub const MAX_METERS: usize = 128;
+/// Meters by index: tracks 0..64, then the channels in the document's order (normal, returns, master)
+pub const MAX_METERS: usize = 192;
+pub const CHANNEL_METERS: usize = 64;
 
 #[derive(Clone, Copy, Debug)]
 pub struct TelemetryFrame {
@@ -365,13 +410,26 @@ fn engine_thread(
         let span = (SAMPLE_RATE / 60) as u64;
         let mut meters = [0f32; MAX_METERS];
         let n = sources.len().min(MAX_METERS / 2);
+        let mut returns = [0f32; mixer::RETURNS.len()];
+        let mut master = 0f32;
         for (i, (peaks, start)) in sources.iter().enumerate().take(n) {
             let a = if playing { peaks.amplitude_at(pos - start, span) } else { 0.0 };
             let a = a * (0.85 + 0.15 * noise.unit() as f32);
             let track = a * f32::from_bits(shared.slots.gain[i].load(Ordering::Relaxed));
-            let channel = track * f32::from_bits(shared.slots.gain[64 + i].load(Ordering::Relaxed));
+            let channel = track * f32::from_bits(shared.slots.gain[CHANNEL_METERS + i].load(Ordering::Relaxed));
             meters[i] = track;
-            meters[64 + i] = channel;
+            meters[CHANNEL_METERS + i] = channel;
+            returns[i % returns.len()] = returns[i % returns.len()].max(channel * 0.35);
+            master = master.max(channel * 0.9);
+        }
+        for (r, v) in returns.iter().enumerate() {
+            let k = CHANNEL_METERS + n + r;
+            meters[k] = v * f32::from_bits(shared.slots.gain[k].load(Ordering::Relaxed));
+            master = master.max(meters[k]);
+        }
+        let k = CHANNEL_METERS + n + returns.len();
+        if k < MAX_METERS {
+            meters[k] = master.min(1.0) * f32::from_bits(shared.slots.gain[k].load(Ordering::Relaxed));
         }
         for (h, m) in held.iter_mut().zip(meters.iter()) {
             *h = m.max(*h * 0.8); // the engine accumulates peaks per block; a short hold
@@ -469,13 +527,64 @@ impl Session {
             });
             sources.push((resources[&resource].clone(), start));
         }
+        // channels: the normal ones, then the returns, then the master (the last channel)
+        let master = NodeId { kind: b'm', number: 999 };
+        let returns: Vec<NodeId> =
+            (0..mixer::RETURNS.len()).map(|r| NodeId { kind: b'm', number: 900 + r as u64 }).collect();
+        let mut next_sub = 5000u64;
+        let mut sub = || {
+            next_sub += 1;
+            NodeId { kind: b'x', number: next_sub }
+        };
         for i in 0..config.channels {
+            let inserts = (0..(i % 3))
+                .map(|k| mixer::Insert { id: sub(), plugin: mixer::PLUGINS[(i + k) % mixer::PLUGINS.len()], bypass: k == 1 && i % 5 == 0 })
+                .collect();
+            let sends = (0..(i % 2 + 1))
+                .map(|k| mixer::SendInfo { id: sub(), to: returns[(i + k) % returns.len()], level_db: -12.0 - (i % 7) as f64, pre_fader: k == 1 })
+                .collect();
             doc.channels.push(Channel {
                 id: NodeId { kind: b'm', number: i as u64 + 1 },
-                name: format!("{}", i + 1),
+                name: format!("{} {}", NAMES[i % 8], i / 8 + 1),
+                kind: mixer::ChannelKind::Normal,
                 volume_db: 0.0,
+                pan: [0.0, -0.3, 0.3, -0.6, 0.6][i % 5],
+                mute: false,
+                solo: false,
+                output: Some(master),
+                inserts,
+                sends,
+                params: mixer::default_params(i as u64),
             });
         }
+        for (r, name) in mixer::RETURNS.iter().enumerate() {
+            doc.channels.push(Channel {
+                id: returns[r],
+                name: name.to_string(),
+                kind: mixer::ChannelKind::Return,
+                volume_db: -3.0,
+                pan: 0.0,
+                mute: false,
+                solo: false,
+                output: Some(master),
+                inserts: vec![mixer::Insert { id: sub(), plugin: name, bypass: false }],
+                sends: Vec::new(),
+                params: mixer::default_params(100 + r as u64),
+            });
+        }
+        doc.channels.push(Channel {
+            id: master,
+            name: "Master".into(),
+            kind: mixer::ChannelKind::Master,
+            volume_db: 0.0,
+            pan: 0.0,
+            mute: false,
+            solo: false,
+            output: None,
+            inserts: vec![mixer::Insert { id: sub(), plugin: "Limiter", bypass: false }],
+            sends: Vec::new(),
+            params: mixer::default_params(999),
+        });
         let initial = TelemetryFrame {
             position: 0,
             host_time: Instant::now(),
@@ -517,6 +626,12 @@ impl Session {
             _main: Main { _not_send: PhantomData },
         };
         // the slow take: its peaks are "generated" again, with the injected delay
+        let all = Diff {
+            changed: s.doc.tracks.iter().map(|t| (t.id, Some(Field::Volume)))
+                .chain(s.doc.channels.iter().map(|c| (c.id, Some(Field::Volume)))).collect(),
+        };
+        s.after_change(&all);
+        s.pending = Diff::default();
         let slow = s.config.slow_track;
         s.reload_take(slow);
         s
@@ -617,6 +732,10 @@ impl Session {
     /// The latest telemetry meters, linear peak, by meter index (tracks, then channels)
     pub fn meters(&self) -> &[f32; MAX_METERS] {
         &self.last_frame.meters
+    }
+    /// The meter index of the channel at `i` in `channels()`
+    pub fn channel_meter(&self, i: usize) -> usize {
+        (CHANNEL_METERS + i).min(MAX_METERS - 1)
     }
     pub fn position(&self) -> Position {
         Position {
@@ -753,7 +872,8 @@ impl Session {
                     self.engine.slots.gain[i].store(g.to_bits(), Ordering::Relaxed);
                 }
                 if let Some((i, c)) = self.doc.channels.iter().enumerate().find(|(_, c)| c.id == *id) {
-                    self.engine.slots.gain[64 + i].store(db_gain(c.volume_db).to_bits(), Ordering::Relaxed);
+                    let g = if c.mute { 0.0 } else { db_gain(c.volume_db) };
+                    self.engine.slots.gain[CHANNEL_METERS + i].store(g.to_bits(), Ordering::Relaxed);
                 }
             }
         }
@@ -820,7 +940,7 @@ impl Session {
         }
         let delay = self.config.slow_delay;
         let seconds = self.config.item_seconds;
-        let h = self.start("Gerando picos", Target::Resource(res), true, move |cancel, progress| {
+        let h = self.start("Generating peaks", Target::Resource(res), true, move |cancel, progress| {
             let steps = 50;
             for i in 0..steps {
                 if cancel.is_cancelled() {
