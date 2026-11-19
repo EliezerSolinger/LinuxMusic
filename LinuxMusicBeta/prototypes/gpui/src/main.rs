@@ -9,6 +9,8 @@
 //! - while the transport plays, `request_animation_frame` keeps one frame per display refresh for the cursor, which
 //!   is interpolated from the last telemetry frame and its host time (I-7.2).
 
+mod tiles;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -48,9 +50,11 @@ struct KnobDrag {
     gesture: GestureId,
 }
 
-/// Waveforms as one quad per pixel column (default) or as one filled path per item (`LM_WAVE=path`)
+/// How waveforms are drawn: cached image tiles of the pyramid (default), one quad per pixel column
+/// (`LM_WAVE=quads`), or one filled path per item (`LM_WAVE=path`). The three are measured in the report.
 #[derive(Clone, Copy, PartialEq)]
 enum WaveMode {
+    Tiles,
     Quads,
     Path,
 }
@@ -70,6 +74,7 @@ struct Daw {
     /// the timeline's bounds from the last paint, for zooming around the pointer
     timeline_bounds: Rc<RefCell<Bounds<Pixels>>>,
     wave_mode: WaveMode,
+    tiles: Rc<RefCell<tiles::TileCache>>,
     /// the settings panel (design 08), made of gpui-component pieces
     settings_open: bool,
     project_dir: gpui::Entity<InputState>,
@@ -127,7 +132,12 @@ impl Daw {
             track_db,
             channel_db,
             timeline_bounds: Rc::new(RefCell::new(Bounds::default())),
-            wave_mode: if std::env::var("LM_WAVE").as_deref() == Ok("path") { WaveMode::Path } else { WaveMode::Quads },
+            wave_mode: match std::env::var("LM_WAVE").as_deref() {
+                Ok("path") => WaveMode::Path,
+                Ok("quads") => WaveMode::Quads,
+                _ => WaveMode::Tiles,
+            },
+            tiles: Rc::new(RefCell::new(tiles::TileCache::default())),
             settings_open: std::env::var("LM_SETTINGS").is_ok(), // open at start, for the screenshot
             project_dir,
             block,
@@ -653,6 +663,7 @@ impl Daw {
                                     .child(
                                         div()
                                             .id(("tknob", i))
+                                            .debug_selector(move || format!("tknob-{i}"))
                                             .cursor_ns_resize()
                                             .child(knob_face(kv, 22.0))
                                             .on_mouse_down(
@@ -687,6 +698,7 @@ impl Daw {
             item_w: f32,
             item_start: i64,
             color: u32,
+            resource: u32,
             peaks: Option<Arc<Peaks>>,
         }
         let mut rows = Vec::with_capacity(n);
@@ -702,6 +714,7 @@ impl Daw {
                 item_w,
                 item_start: t.item.start,
                 color: t.color,
+                resource: t.item.resource.0,
                 peaks: self.session.peaks(t.item.resource).cloned(),
             });
             let target = Target::Node(t.item.id);
@@ -750,6 +763,7 @@ impl Daw {
         }
         let bounds_cell = self.timeline_bounds.clone();
         let mode = self.wave_mode;
+        let tile_cache = self.tiles.clone();
         let playing_x = v.sample_to_x(cursor) as f32;
         div()
             .id("timeline")
@@ -793,6 +807,24 @@ impl Daw {
                                 Default::default(),
                             ));
                             let Some(peaks) = &r.peaks else { continue };
+                            if mode == WaveMode::Tiles {
+                                use tiles::{TILE_H, TILE_PAIRS, TileCache};
+                                let level = TileCache::level_for(peaks, v.samples_per_px);
+                                let tile_samples = Peaks::samples_per_pair(level) as f64 * TILE_PAIRS as f64;
+                                let tile_w = (tile_samples / v.samples_per_px) as f32;
+                                let s0 = (v.scroll_samples + x0 as f64 * v.samples_per_px - r.item_start as f64).max(0.0);
+                                let s1 = v.scroll_samples + x1 as f64 * v.samples_per_px - r.item_start as f64;
+                                let clip = Bounds::new(point(o.x + px(x0), o.y + px(iy)), size(px(x1 - x0), px(ih)));
+                                let ty = iy + (ih - TILE_H as f32) / 2.0;
+                                let mut cache = tile_cache.borrow_mut();
+                                for t in (s0 / tile_samples) as usize..(s1 / tile_samples).ceil() as usize {
+                                    let img = cache.get(window, peaks, r.resource, level, t, r.color);
+                                    let tx = r.item_x + t as f32 * tile_w;
+                                    let tb = Bounds::new(point(o.x + px(tx), o.y + px(ty)), size(px(tile_w), px(TILE_H as f32)));
+                                    let _ = window.paint_image(clip, tb, Default::default(), img, 0, false);
+                                }
+                                continue;
+                            }
                             // the right pyramid level for the zoom, one (min, max) per pixel column
                             let first_col = x0.floor() as usize;
                             let ncol = (x1.ceil() - x0.floor()) as usize;
@@ -815,6 +847,7 @@ impl Daw {
                                         ));
                                     }
                                 }
+                                WaveMode::Tiles => {}
                                 WaveMode::Path => {
                                     let mut pts = Vec::with_capacity(cols.len() * 2);
                                     for (k, col) in cols.iter().enumerate() {
@@ -934,4 +967,37 @@ fn main() {
         cx.on_window_closed(|cx, _| cx.quit()).detach();
         cx.activate(true);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{Modifiers, TestAppContext};
+
+    /// A real drag on a header knob, in GPUI's headless test window: begin, updates and commit of one gesture
+    /// (I-3.7), one undo step, and the feed's diff rebuilding the label in the next frame.
+    #[gpui::test]
+    fn knob_drag_is_one_gesture(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (daw, cx) = cx.add_window_view(|window, cx| Daw::new(window, cx));
+        let b = cx.debug_bounds("tknob-0").expect("the first track's knob is drawn");
+        let p = b.center();
+        cx.simulate_mouse_down(p, MouseButton::Left, Modifiers::none());
+        for dy in 1..=50 {
+            cx.simulate_mouse_move(point(p.x, p.y - px(dy as f32)), MouseButton::Left, Modifiers::none());
+        }
+        cx.simulate_mouse_up(point(p.x, p.y - px(50.)), MouseButton::Left, Modifiers::none());
+        daw.update(cx, |d, _| {
+            // 50 px up from 0 dB (75 % of travel) is 25 % more: +6 dB
+            assert!((d.session.tracks()[0].volume_db - 6.0).abs() < 1e-9);
+            assert!(d.drag.is_none());
+            d.session.pump();
+        });
+        cx.run_until_parked();
+        daw.update(cx, |d, _| {
+            assert_eq!(d.track_db[0].as_ref(), "+6.0 dB", "the feed rebuilt the label");
+            d.session.undo().unwrap();
+            assert_eq!(d.session.tracks()[0].volume_db, 0.0, "the whole drag is one undo step");
+        });
+    }
 }

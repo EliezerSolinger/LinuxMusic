@@ -22,3 +22,9 @@ gpui = { package = "gpui-pre", version = "=0.3.12" }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", features = ["runtime_shaders", "font-kit"] }
 # Styled components (inputs, switches, sliders...): used for the settings panel, to see whether it serves
 gpui-component = "=0.10.0"
+# The waveform tiles are RenderImages, built from image::Frame (the same image crate GPUI uses)
+image = { version = "0.25", default-features = false }
+
+[dev-dependencies]
+# GPUI's headless test platform: simulated mouse input on a real view tree
+gpui = { package = "gpui-pre", version = "=0.3.12", features = ["test-support"] }

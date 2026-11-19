@@ -375,6 +375,9 @@ fn engine_thread(
         }
         for (h, m) in held.iter_mut().zip(meters.iter()) {
             *h = m.max(*h * 0.8); // the engine accumulates peaks per block; a short hold
+            if *h < 1e-4 {
+                *h = 0.0; // below -80 dB is silence: no endless tail of changing frames
+            }
         }
         serial += 1;
         input.write(TelemetryFrame {
@@ -527,8 +530,12 @@ impl Session {
         self.pumps += 1;
         let mut changed = false;
         // telemetry
+        // a new frame counts as a change only if what it shows changed (no redraws while stopped and silent)
         let f = *self.telemetry.read();
-        if f.serial != self.last_frame.serial {
+        if f.serial != self.last_frame.serial
+            && (f.playing || f.playing != self.last_frame.playing || f.position != self.last_frame.position
+                || f.meters != self.last_frame.meters)
+        {
             changed = true;
         }
         self.last_frame = f;
