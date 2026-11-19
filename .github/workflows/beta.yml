@@ -28,8 +28,11 @@ name: beta
     - cron: '23 5 * * 1'
   workflow_dispatch:
 concurrency:
+  # On master a run is never cancelled by the next push (the agents push often, and a run that never finishes
+  # verifies nothing): one run goes to the end, and only the newest waiting push runs after it. Pull requests do
+  # cancel their older runs.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 env:
