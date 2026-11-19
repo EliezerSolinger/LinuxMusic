@@ -4097,6 +4097,132 @@
         "Rate enabled": 0,
         "Levels": 5.0
       }
+    },
+    {
+      "name": "multitapecho",
+      "unit": "plugin-effect",
+      "plugin": "multitapecho",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Steps": 8,
+        "Step length": 30.0,
+        "Dry gain": -6.0,
+        "Lowpass stages": 2.0
+      },
+      "graphs": [
+        [
+          -3.0,
+          -6.0,
+          -1.5,
+          -12.0,
+          0.0,
+          -20.0,
+          -9.5,
+          -30.0
+        ],
+        [
+          3.0,
+          2.2,
+          1.5,
+          2.8,
+          0.7,
+          2.0,
+          1.1,
+          2.5
+        ]
+      ],
+      "then": {
+        "at": 12032,
+        "settings": {
+          "Swap inputs": 1,
+          "Step length": 45.5,
+          "Lowpass stages": 3.0,
+          "Dry gain": 2.0
+        }
+      }
+    },
+    {
+      "name": "multitapecho-defaults",
+      "unit": "plugin-effect",
+      "plugin": "multitapecho",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {}
+    },
+    {
+      "name": "flanger",
+      "unit": "plugin-effect",
+      "plugin": "flanger",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Delay samples": 0.003,
+        "LFO frequency": 0.5,
+        "Amount": 0.002,
+        "Stereo phase": 120.0,
+        "Feedback": 0.6
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Invert": 1,
+          "Feedback": -0.4,
+          "Delay samples": 0.0072
+        }
+      }
+    },
+    {
+      "name": "flanger-defaults",
+      "unit": "plugin-effect",
+      "plugin": "flanger",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {}
     }
   ]
 }

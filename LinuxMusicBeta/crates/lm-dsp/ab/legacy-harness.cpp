@@ -29,6 +29,7 @@
 #include "EffectChain.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "Engine.h"
+#include "Graph.h"
 #include "PluginInstance.h"
 #include "DeskTolerance.h"
 #include "GainStage.h"
@@ -310,6 +311,15 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 		chain.appendEffect(std::make_unique<PluginInstance>(Plugin::Type::Effect, c["plugin"].toString(), &chain, nullptr));
 		auto* plugin = chain.effects().back()->plugin();
 		settingsOf(c["settings"].toObject(), plugin);
+		// The plugin's graphs (the Multitap Echo's taps), in the order it makes them, after the knobs that size them
+		const auto graphs = plugin->findChildren<graphModel*>();
+		const auto shapes = c["graphs"].toArray();
+		for (qsizetype g = 0; g < std::min(shapes.size(), graphs.size()); ++g)
+		{
+			auto values = std::vector<float>{};
+			for (const auto& v : shapes[g].toArray()) { values.push_back(static_cast<float>(v.toDouble())); }
+			graphs[g]->setSamples(std::span<const float>{values});
+		}
 		auto buffer = AudioBuffer{static_cast<f_cnt_t>(block), 2, 2, true};
 		buffer.setGroups(1, [](group_cnt_t, AudioBuffer::ChannelGroup&) { return ch_cnt_t{2}; });
 		const auto then = c["then"].toObject();

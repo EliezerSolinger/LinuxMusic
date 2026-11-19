@@ -28,6 +28,7 @@
 //! - [`delay`]: the Delay;
 //! - [`distortion_effects`]: the Dispersion, the Wave Shaper and the Bitcrush;
 //! - [`eq`]: the Eq;
+//! - [`modulation_effects`]: the Multitap Echo and the Flanger;
 //! - [`small_effects`]: the Amplifier, the Stereo Matrix, the Stereo Enhancer and the Bass Booster;
 //! - [`reverb_sc`]: the ReverbSC (Csound's reverbsc).
 
@@ -47,6 +48,7 @@ pub mod filters;
 pub mod gain_stage;
 pub mod master;
 pub mod math;
+pub mod modulation_effects;
 pub mod mono_bass;
 pub mod oscillator;
 pub mod oversampling;

@@ -390,6 +390,54 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "plugin-effect" && ["multitapecho", "flanger"].contains(&case["plugin"].as_str().unwrap()) {
+        use lm_dsp::modulation_effects::*;
+        let first = &case["settings"];
+        let then = &case["then"]["settings"];
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        let value = |key: &str, default: f32, start: usize| {
+            let before = f(first, key, default);
+            if start < at { before } else { f(then, key, before) }
+        };
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let block = block as usize;
+        let mut taps = MultitapSettings::default();
+        if let Some(graphs) = case["graphs"].as_array() {
+            for (g, target) in graphs.iter().zip([&mut taps.amp, &mut taps.lp]) {
+                for (i, v) in g.as_array().unwrap().iter().enumerate() {
+                    target[i] = v.as_f64().unwrap() as f32;
+                }
+            }
+        }
+        let mut echo = MultitapEcho::new(rate, block);
+        let mut flanger = Flanger::new(rate, 0);
+        for start in (0..frames as usize).step_by(block) {
+            let span = &mut out[start..(start + block).min(frames as usize)];
+            if case["plugin"] == "multitapecho" {
+                let settings = MultitapSettings {
+                    steps: value("Steps", 16.0, start) as usize,
+                    step_length: value("Step length", 100.0, start),
+                    dry_gain: value("Dry gain", 0.0, start),
+                    swap_inputs: value("Swap inputs", 0.0, start) != 0.0,
+                    stages: value("Lowpass stages", 1.0, start) as usize,
+                    ..taps
+                };
+                echo.process(span, &settings);
+            } else {
+                let settings = FlangerSettings {
+                    delay: value("Delay samples", 0.001, start),
+                    lfo_period: value("LFO frequency", 0.25, start),
+                    lfo_amount: value("Amount", 0.0, start),
+                    stereo_phase: value("Stereo phase", 90.0, start),
+                    feedback: value("Feedback", 0.0, start),
+                    noise: 0.0,
+                    invert_feedback: value("Invert", 0.0, start) != 0.0,
+                };
+                flanger.process(span, &settings);
+            }
+        }
+        return out;
+    }
     if case["unit"] == "plugin-effect" && case["plugin"] == "eq" {
         use lm_dsp::eq::{Eq, EqBand, EqSettings, Slope};
         // The knobs by the legacy plugin's names
