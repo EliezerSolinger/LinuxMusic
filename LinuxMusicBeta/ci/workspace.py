@@ -29,8 +29,10 @@ from pathlib import Path
 WORKSPACE = Path(__file__).resolve().parent.parent
 CI = WORKSPACE / "ci"
 
-# `cfg(loom)`, `cfg(all(test, loom))`, `cfg(not(loom))`, `cfg!(loom)`, `[target.'cfg(loom)'.dependencies]`...
+# In the code: `cfg(loom)`, `cfg(all(test, loom))`, `cfg(not(loom))`, `cfg!(loom)`...
 LOOM_CFG = re.compile(r"\bcfg!?\s*\([^\n]*\bloom\b")
+# In Cargo.toml: `[target.'cfg(loom)'.dependencies]` (and not the `check-cfg` that only declares the name)
+LOOM_TARGET = re.compile(r"^\s*\[target\.['\"]cfg\([^\n]*\bloom\b", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -91,9 +93,9 @@ def is_core(name: str) -> bool:
 def loom_crates() -> list[Crate]:
     found = []
     for crate in members():
-        texts = [crate.manifest.read_text(encoding="utf-8")]
-        texts += [f.read_text(encoding="utf-8", errors="replace") for f in crate.rust_files()]
-        if any(LOOM_CFG.search(text) for text in texts):
+        manifest = crate.manifest.read_text(encoding="utf-8")
+        sources = [f.read_text(encoding="utf-8", errors="replace") for f in crate.rust_files()]
+        if LOOM_TARGET.search(manifest) or any(LOOM_CFG.search(text) for text in sources):
             found.append(crate)
     return found
 
