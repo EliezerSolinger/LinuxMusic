@@ -6,7 +6,9 @@
 //! It also has what the other screens of agent D share: running an action by id (`run_action`, also used by the
 //! notices and the settings) and writing its keys for the platform (`keys_label`).
 
+use fake_core::Value;
 use fake_core::actions::{self, ActionSpec, Run};
+use fake_core::port::Pending;
 use gpui::{
     App, Context, Entity, FontWeight, HighlightStyle, KeyDownEvent, Render, ScrollHandle, StyledText, Subscription,
     Window, div, prelude::*, px,
@@ -54,16 +56,16 @@ impl Palette {
 
     fn hits(&self, cx: &App) -> Vec<Hit> {
         let q = self.query.read(cx).value().to_string();
-        let session = &self.scx.core.read(cx).session;
+        let port = self.scx.core.read(cx).port();
         let usable = |a: &&'static ActionSpec| a.palette;
         let mut scored: Vec<(i32, Hit)> = Vec::new();
         if q.trim().is_empty() {
             // the recent ones first, then everything in the registry's order
-            let recent = &session.services.prefs.recent_actions;
+            let recent = &port.services().prefs.recent_actions;
             let mut order: Vec<&'static ActionSpec> = recent.iter().filter_map(|id| actions::find(id)).collect();
             order.extend(actions::REGISTRY.iter().filter(|a| !recent.contains(&a.id)));
             for (i, a) in order.into_iter().filter(usable).enumerate() {
-                scored.push((-(i as i32), Hit { spec: a, label: tr(a.label), matched: vec![], enabled: (a.enabled)(session) }));
+                scored.push((-(i as i32), Hit { spec: a, label: tr(a.label), matched: vec![], enabled: (a.enabled)(port) }));
             }
         } else {
             for a in actions::REGISTRY.iter().filter(usable) {
@@ -73,7 +75,7 @@ impl Palette {
                     .or_else(|| actions::fuzzy(&q, tr(a.group)).map(|(s, _)| (s - 30, vec![])))
                     .or_else(|| actions::fuzzy(&q, a.id).map(|(s, _)| (s - 40, vec![])));
                 if let Some((score, matched)) = hit {
-                    scored.push((score, Hit { spec: a, label, matched, enabled: (a.enabled)(session) }));
+                    scored.push((score, Hit { spec: a, label, matched, enabled: (a.enabled)(port) }));
                 }
             }
             scored.sort_by(|a, b| b.0.cmp(&a.0));
@@ -117,7 +119,7 @@ impl Render for Palette {
         let hits = self.hits(cx);
         let empty = hits.is_empty();
         let typed = !self.query.read(cx).value().trim().is_empty();
-        let prefs = &self.scx.core.read(cx).session.services.prefs;
+        let prefs = &self.scx.core.read(cx).port().services().prefs;
         let rows: Vec<_> = hits
             .into_iter()
             .enumerate()
@@ -302,26 +304,41 @@ pub fn screen_by_name(name: &str) -> Option<Screen> {
     Screen::ALL.iter().copied().find(|s| format!("{s:?}") == name)
 }
 
-/// Runs an action of the registry by id, with the argument a notice gives. A disabled action does nothing.
-pub fn run_action(scx: &ScreenCx, id: &str, arg: &str, window: &mut Window, cx: &mut App) {
-    let Some(a) = actions::find(id) else { return };
-    if !(a.enabled)(&scx.core.read(cx).session) {
-        return;
-    }
+/// The part of a screen an action asked for ("save_as", "keys"): interface state, taken by the screen as it opens
+pub struct ScreenArg(pub Option<&'static str>);
+impl gpui::Global for ScreenArg {}
+
+/// Takes the part asked for the screen opening now
+pub fn take_screen_arg(cx: &mut App) -> Option<&'static str> {
+    cx.try_global::<ScreenArg>()?;
+    cx.update_global::<ScreenArg, _>(|a, _| a.0.take())
+}
+
+/// Sends a core action through the port (I-15: by id, with data). A result that is not there yet (`Waiting`, over
+/// the network) shows up in a later pump, as the services' state or a notice.
+pub fn port_action(scx: &ScreenCx, id: &str, params: Value, cx: &mut App) {
     scx.core.update(cx, |core, cx| {
-        if a.palette {
-            core.session.services.prefs.used_action(a.id);
-        }
-        match a.run {
-            Run::Core(f) => f(&mut core.session),
-            Run::CoreWith(f) => f(&mut core.session, arg),
-            Run::Screen(_, part) => core.session.services.screen_arg = part,
-            _ => {}
+        match core.port_mut().run_action(id, params) {
+            Pending::Ready(Ok(())) | Pending::Waiting(_) => {}
+            Pending::Ready(Err(e)) => eprintln!("debug: action {id} refused: {e:?}"),
         }
         cx.notify();
     });
+}
+
+/// Runs an action of the registry by id, with the argument a notice gives. A disabled action does nothing.
+pub fn run_action(scx: &ScreenCx, id: &str, arg: &str, window: &mut Window, cx: &mut App) {
+    let Some(a) = actions::find(id) else { return };
+    if !(a.enabled)(scx.core.read(cx).port()) {
+        return;
+    }
+    if a.palette {
+        port_action(scx, "palette.used", Value::Text(a.id.to_string()), cx);
+    }
     match a.run {
-        Run::Screen(name, _) => {
+        Run::Core(_) | Run::CoreWith(..) => port_action(scx, a.id, Value::Text(arg.to_string()), cx),
+        Run::Screen(name, part) => {
+            cx.set_global(ScreenArg(part));
             if let Some(s) = screen_by_name(name) {
                 scx.open(s, window, cx);
             }
@@ -339,7 +356,6 @@ pub fn run_action(scx: &ScreenCx, id: &str, arg: &str, window: &mut Window, cx: 
                 cx.reveal_path(std::path::Path::new(&path));
             }
         }
-        Run::Core(_) | Run::CoreWith(..) => {}
     }
 }
 

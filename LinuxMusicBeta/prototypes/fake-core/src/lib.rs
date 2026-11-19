@@ -168,6 +168,8 @@ pub enum Value {
     Id(NodeId),
     Notes(Arc<notes::NoteMap>),
     Points(Arc<notes::PointMap>),
+    /// Text: names, paths, and the parameters of an action given as `key=value` lines (owner: agent D)
+    Text(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

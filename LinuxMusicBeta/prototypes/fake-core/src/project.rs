@@ -358,6 +358,9 @@ pub struct Prefs {
     pub sanitize: bool,
     /// The settings changed that wait for a restart (design 08's band), by English label
     pub pending_restart: Vec<&'static str>,
+    /// The theme and the language this run started with
+    pub started_theme: String,
+    pub started_language: &'static str,
     /// Most recent first: the palette shows them before typing
     pub recent_actions: Vec<&'static str>,
 }
@@ -398,7 +401,7 @@ impl Default for Prefs {
             default_soundfont: "/usr/share/sounds/sf2/FluidR3_GM.sf2".into(),
             plugin_dirs: vec!["~/.vst3".into(), "~/.lv2".into(), "/usr/lib/ladspa".into()],
             allowed: vec!["/usr/share/sounds/sf2".into(), "~/SoundFonts".into()],
-            theme: "dark".into(),
+            theme: running_theme(),
             language: "pt-BR",
             tooltips: true,
             compact_headers: false,
@@ -414,9 +417,19 @@ impl Default for Prefs {
             backup_on_save: true,
             sanitize: true,
             pending_restart: Vec::new(),
+            started_theme: running_theme(),
+            started_language: "pt-BR",
             recent_actions: vec!["file.export", "view.mixing", "file.save"],
         }
     }
+}
+
+/// The theme this run uses: `LM_THEME`'s file name, or the built-in dark
+fn running_theme() -> String {
+    std::env::var("LM_THEME")
+        .ok()
+        .and_then(|p| std::path::Path::new(&p).file_stem().map(|s| s.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "dark".into())
 }
 
 impl Prefs {
@@ -743,6 +756,34 @@ pub fn export_files(req: &ExportRequest, names: &[String]) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Client of a remote core (I-15, I-20): the interface here, the core (and the sound) on the server's machine
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Link {
+    /// The core in this process (`LocalPort`)
+    Local,
+    Connecting { address: String },
+    Connected { address: String, server: String, round_trip_ms: f64, since: Instant },
+    /// The connection fell; what the server was doing (a recording) goes on there (I-20)
+    Lost { address: String, at: Instant },
+}
+
+impl Link {
+    pub fn address(&self) -> Option<&str> {
+        match self {
+            Link::Local => None,
+            Link::Connecting { address } | Link::Connected { address, .. } | Link::Lost { address, .. } => Some(address),
+        }
+    }
+}
+
+/// A server address: a local socket path, or `host:port` (always TLS over the network)
+pub fn valid_address(a: &str) -> bool {
+    let a = a.trim();
+    a.starts_with('/') || a.rsplit_once(':').is_some_and(|(h, p)| !h.is_empty() && p.parse::<u16>().is_ok())
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // The services
 
 /// An operation of this module waiting for its result (applied in `Services::pump`)
@@ -756,6 +797,7 @@ pub enum Pending {
     Reopen(OperationHandle<Opened>),
     Scan(OperationHandle<(Vec<AudioDevice>, Vec<MidiPort>)>),
     Recreate(OperationHandle<()>, String),
+    Connect(OperationHandle<(String, f64)>, String),
 }
 
 /// What "try again" repeats
@@ -773,6 +815,10 @@ pub struct Services {
     pub prefs: Prefs,
     pub devices: Devices,
     pub notices: Queue,
+    /// Where the core is: here, or on a server (I-15)
+    pub link: Link,
+    /// Servers connected to before, most recent first
+    pub servers: Vec<String>,
     /// The fake renderer's speed, in times real time (the export's estimate)
     pub render_speed: f64,
     pub plugins: Vec<PluginUse>,
@@ -781,8 +827,6 @@ pub struct Services {
     /// The export running: (its id, as in `Target::Export`, and its operation's id)
     pub exporting: Option<(u64, u64)>,
     export_seq: u64,
-    /// A screen asked to open on one of its parts ("save_as", "keys"): taken by the screen when it opens
-    pub screen_arg: Option<&'static str>,
     /// Operation durations (the prototype's injected delays, I-2.4)
     pub delays: Delays,
     pending: Vec<Pending>,
@@ -834,6 +878,8 @@ impl Default for Services {
                 scanned: now,
             },
             notices: Queue::with_examples(),
+            link: Link::Local,
+            servers: vec!["/run/user/1000/linuxmusic.sock".into(), "estudio-b.local:7420".into()],
             render_speed: 38.0,
             plugins: vec![
                 PluginUse { name: "TripleOscillator".into(), track: "Teclado 1".into(), third_party: false },
@@ -845,7 +891,6 @@ impl Default for Services {
             last_export: None,
             exporting: None,
             export_seq: 0,
-            screen_arg: None,
             delays: Delays::default(),
             pending: Vec::new(),
             retries: BTreeMap::new(),
@@ -858,6 +903,21 @@ impl Services {
     /// Applies the results of the finished operations; true when something shown changed. From the session's pump.
     pub fn pump(&mut self) -> bool {
         let mut changed = false;
+        // the prototype's unstable server ("instavel" in the address) drops the connection after 8 s
+        if let Link::Connected { address, since, .. } = &self.link {
+            if address.contains("instavel") && since.elapsed() > Duration::from_secs(8) {
+                let address = address.clone();
+                self.notices.push(
+                    "The connection to {0} was lost; what the server was doing, a recording too, goes on there",
+                    vec![address.clone()],
+                    Severity::Error,
+                    None,
+                    vec![NoticeAction::new("remote.reconnect", address.clone())],
+                );
+                self.link = Link::Lost { address, at: Instant::now() };
+                changed = true;
+            }
+        }
         let mut i = 0;
         while i < self.pending.len() {
             if let Some(done) = self.poll(i) {
@@ -890,6 +950,7 @@ impl Services {
             Pending::Reopen(h) => Done::Reopen(h.poll()?),
             Pending::Scan(h) => Done::Scan(h.poll()?),
             Pending::Recreate(h, p) => Done::Recreate(h.poll()?, p.clone()),
+            Pending::Connect(h, a) => Done::Connect(h.poll()?, a.clone()),
         })
     }
 
@@ -1067,6 +1128,16 @@ impl Services {
                 self.notices.push("{0} was recreated from the project", vec![plugin], Severity::Info, None, vec![]);
             }
             Done::Recreate(Err(_), _) => {}
+            Done::Connect(Ok((server, rtt)), address) => {
+                self.servers.retain(|a| *a != address);
+                self.servers.insert(0, address.clone());
+                self.link = Link::Connected { address, server, round_trip_ms: rtt, since: Instant::now() };
+            }
+            Done::Connect(Err(e), _) if cancelled(&e) => self.link = Link::Local,
+            Done::Connect(Err(e), address) => {
+                self.link = Link::Local;
+                self.notices.push(fail_key(&e), vec![address], Severity::Error, None, vec![]);
+            }
         }
     }
 
@@ -1090,6 +1161,7 @@ enum Done {
     Reopen(Result<Opened, String>),
     Scan(Result<(Vec<AudioDevice>, Vec<MidiPort>), String>),
     Recreate(Result<(), String>, String),
+    Connect(Result<(String, f64), String>, String),
 }
 
 // Why an operation failed: whole sentences as English keys (the worker's `Err` carries one of them; the notice
@@ -1101,7 +1173,9 @@ pub const F_CHOOSE: &str = "The audio device did not open: choose an input devic
 pub const F_BUSY: &str = "The audio device did not open: PipeWire did not release it";
 pub const F_CARDS: &str =
     "The audio device did not open: the input and the output are on different cards; turn on correcting the drift between cards, or choose one card";
-const FAILS: &[&str] = &[F_MISSING, F_DISK, F_JACK, F_CHOOSE, F_BUSY, F_CARDS];
+pub const F_TOKEN: &str = "{0} refused the pairing token";
+pub const F_UNREACHABLE: &str = "{0} did not answer";
+const FAILS: &[&str] = &[F_MISSING, F_DISK, F_JACK, F_CHOOSE, F_BUSY, F_CARDS, F_TOKEN, F_UNREACHABLE];
 
 fn fail_key(e: &str) -> &'static str {
     FAILS.iter().copied().find(|k| *k == e).unwrap_or("The operation failed")
@@ -1458,9 +1532,352 @@ mod tests {
     }
 
     #[test]
+    fn an_export_request_goes_through_the_port_as_data() {
+        let req = ExportRequest {
+            scope: Scope::Range { start: 5, end: 13, mode: RangeMode::Fast { warmup: 10.0 } },
+            formats: vec![Format::Wav, Format::Mp3],
+            rate: 48_000,
+            depth: Depth::F32,
+            dither: false,
+            mp3_kbps: 256,
+            mp3_mode: Mp3Mode::Mono,
+            ogg_quality: 6,
+            flac_level: 5,
+            normalize: Normalize::Lufs(-14.0),
+            fade_in: 0.5,
+            fade_out: 3.0,
+            tail: true,
+            repeats: 4,
+            only_track: Some(NodeId { kind: b't', number: 3 }),
+            stems: Stems::Channels(vec![NodeId { kind: b'm', number: 2 }, NodeId { kind: b'm', number: 9 }]),
+            folder: "~/Música/x=y".into(),
+            name: "Mix final".into(),
+        };
+        let crate::Value::Text(t) = req.to_params() else { panic!() };
+        assert_eq!(ExportRequest::from_params(&t), Some(req));
+    }
+
+    #[test]
     fn allowed_folders_are_prefixes_of_whole_names() {
         let p = Prefs::default();
         assert!(p.allows("/usr/share/sounds/sf2/FluidR3.sf2"));
         assert!(!p.allows("/usr/share/sounds/sf2-other/x.sf2"));
     }
+}
+
+/// Connects to a server's core (I-15 `RemotePort`): the token pairs this machine once
+pub fn connect(s: &mut Session, address: &str, token: &str) {
+    let address = address.trim().to_string();
+    if !valid_address(&address) {
+        return;
+    }
+    s.services.link = Link::Connecting { address: address.clone() };
+    let token_ok = token.trim().len() >= 6;
+    let unreachable = address.contains("offline");
+    let delay = s.services.delays.reopen * 2;
+    let a = address.clone();
+    let h = s.start("Connecting to the server", Target::Project, true, move |cancel, progress| {
+        wait(delay, cancel, progress)?;
+        if unreachable {
+            return Err(F_UNREACHABLE.into());
+        }
+        if !token_ok {
+            return Err(F_TOKEN.into());
+        }
+        let server = if a.starts_with('/') { "lm-headless (this machine)".to_string() } else { format!("lm-headless on {}", a.split(':').next().unwrap_or("")) };
+        Ok((server, if a.starts_with('/') { 0.2 } else { 3.8 }))
+    });
+    s.services.pending.push(Pending::Connect(h, address));
+}
+
+/// Back to the core in this process
+pub fn disconnect(s: &mut Session) {
+    s.services.link = Link::Local;
+    s.services.serial += 1;
+}
+
+/// "Reconnect" of a lost connection (the notice's argument is the address)
+pub fn reconnect(s: &mut Session, address: &str) {
+    let a = if address.is_empty() { s.services.link.address().unwrap_or("").to_string() } else { address.to_string() };
+    s.services.notices.dismiss_matching(|n| n.actions.iter().any(|x| x.action == "remote.reconnect"));
+    connect(s, &a, "paired");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The actions' bodies: what the screens send through the port as data (`key=value` lines, `actions::params`)
+
+fn id_text(id: NodeId) -> String {
+    format!("{}:{}", id.kind as char, id.number)
+}
+
+fn parse_id(t: &str) -> Option<NodeId> {
+    let (k, n) = t.split_once(':')?;
+    Some(NodeId { kind: *k.as_bytes().first()?, number: n.parse().ok()? })
+}
+
+fn yes(v: &str) -> bool {
+    v == "true"
+}
+
+impl ExportRequest {
+    /// The request as an action's parameters
+    pub fn to_params(&self) -> crate::Value {
+        let scope = match self.scope {
+            Scope::Song => "song".to_string(),
+            Scope::Range { start, end, mode: RangeMode::Exact } => format!("range:{start}:{end}:exact"),
+            Scope::Range { start, end, mode: RangeMode::Fast { warmup } } => format!("range:{start}:{end}:fast:{warmup}"),
+        };
+        let ids = |v: &[NodeId]| v.iter().map(|i| id_text(*i)).collect::<Vec<_>>().join(",");
+        let stems = match &self.stems {
+            Stems::None => "none".to_string(),
+            Stems::Tracks(v) => format!("tracks/{}", ids(v)),
+            Stems::Channels(v) => format!("channels/{}", ids(v)),
+        };
+        let normalize = match self.normalize {
+            Normalize::None => "none".to_string(),
+            Normalize::Peak(x) => format!("peak:{x}"),
+            Normalize::Lufs(x) => format!("lufs:{x}"),
+        };
+        crate::actions::param_lines(&[
+            ("scope", scope),
+            ("formats", self.formats.iter().map(|f| f.ext()).collect::<Vec<_>>().join(",")),
+            ("rate", self.rate.to_string()),
+            ("depth", match self.depth { Depth::I16 => "16", Depth::I24 => "24", Depth::F32 => "32f" }.into()),
+            ("dither", self.dither.to_string()),
+            ("mp3_kbps", self.mp3_kbps.to_string()),
+            ("mp3_mode", match self.mp3_mode { Mp3Mode::Stereo => "stereo", Mp3Mode::Joint => "joint", Mp3Mode::Mono => "mono" }.into()),
+            ("ogg_quality", self.ogg_quality.to_string()),
+            ("flac_level", self.flac_level.to_string()),
+            ("normalize", normalize),
+            ("fade_in", self.fade_in.to_string()),
+            ("fade_out", self.fade_out.to_string()),
+            ("tail", self.tail.to_string()),
+            ("repeats", self.repeats.to_string()),
+            ("only_track", self.only_track.map(id_text).unwrap_or_default()),
+            ("stems", stems),
+            ("folder", self.folder.clone()),
+            ("name", self.name.clone()),
+        ])
+    }
+
+    /// The request back from an action's parameters; None when it does not parse
+    pub fn from_params(text: &str) -> Option<ExportRequest> {
+        let p = crate::actions::params(text);
+        let num = |k: &str| p.get(k).and_then(|v| v.parse::<f64>().ok());
+        let scope = {
+            let s: Vec<&str> = p.get("scope")?.split(':').collect();
+            match s.as_slice() {
+                ["song"] => Scope::Song,
+                ["range", a, b, "exact"] => Scope::Range { start: a.parse().ok()?, end: b.parse().ok()?, mode: RangeMode::Exact },
+                ["range", a, b, "fast", w] => {
+                    Scope::Range { start: a.parse().ok()?, end: b.parse().ok()?, mode: RangeMode::Fast { warmup: w.parse().ok()? } }
+                }
+                _ => return None,
+            }
+        };
+        let formats = p
+            .get("formats")?
+            .split(',')
+            .filter_map(|e| Format::ALL.iter().copied().find(|f| f.ext() == e))
+            .collect();
+        let ids = |s: &str| s.split(',').filter_map(parse_id).collect::<Vec<_>>();
+        let stems = match p.get("stems").copied().unwrap_or("none").split_once('/') {
+            Some(("tracks", v)) => Stems::Tracks(ids(v)),
+            Some(("channels", v)) => Stems::Channels(ids(v)),
+            _ => Stems::None,
+        };
+        let normalize = match p.get("normalize").copied().unwrap_or("none").split_once(':') {
+            Some(("peak", x)) => Normalize::Peak(x.parse().ok()?),
+            Some(("lufs", x)) => Normalize::Lufs(x.parse().ok()?),
+            _ => Normalize::None,
+        };
+        Some(ExportRequest {
+            scope,
+            formats,
+            rate: num("rate")? as u32,
+            depth: match *p.get("depth")? { "16" => Depth::I16, "32f" => Depth::F32, _ => Depth::I24 },
+            dither: yes(p.get("dither")?),
+            mp3_kbps: num("mp3_kbps")? as u32,
+            mp3_mode: match *p.get("mp3_mode")? { "stereo" => Mp3Mode::Stereo, "mono" => Mp3Mode::Mono, _ => Mp3Mode::Joint },
+            ogg_quality: num("ogg_quality")? as u32,
+            flac_level: num("flac_level")? as u32,
+            normalize,
+            fade_in: num("fade_in")?,
+            fade_out: num("fade_out")?,
+            tail: yes(p.get("tail")?),
+            repeats: num("repeats")? as u32,
+            only_track: p.get("only_track").and_then(|v| parse_id(v)),
+            stems,
+            folder: p.get("folder")?.to_string(),
+            name: p.get("name")?.to_string(),
+        })
+    }
+}
+
+/// "prefs.set": one setting, `key=value` (the preferences tree's path and its value). The core knows when each
+/// applies: a restart-only one goes to the band's list; a device one is reopened by the "device.reopen" action the
+/// interface sends after the last change (F-REC-120).
+pub fn prefs_set(s: &mut Session, text: &str) {
+    let Some((key, v)) = text.split_once('=') else { return };
+    let num = v.parse::<f64>().ok();
+    let n = |lo: f64, hi: f64| num.map(|x| x.clamp(lo, hi));
+    let sv = &mut s.services;
+    let p = &mut sv.prefs;
+    match key {
+        "general.reopen_last" => p.reopen_last = yes(v),
+        "general.ask_track" => p.ask_delete_track = yes(v),
+        "general.ask_channel" => p.ask_delete_channel = yes(v),
+        "general.long_audio" => p.long_audio_seconds = n(1.0, 3600.0).unwrap_or(30.0) as u32,
+        "general.previews_to_end" => p.previews_to_end = yes(v),
+        "general.analog_desk" => p.analog_desk = yes(v),
+        "general.new_rate" => p.new_project_rate = num.map_or(48_000, |x| x as u32),
+        "general.portable" => {
+            p.portable = yes(v);
+            p.needs_restart("Portable mode");
+        }
+        "audio.system" => p.audio_system = match v { "jack" => AudioSystem::Jack, "dummy" => AudioSystem::Dummy, _ => AudioSystem::Alsa },
+        "audio.input" => p.input_device = (!v.is_empty()).then(|| v.to_string()),
+        "audio.output" => p.output_device = (!v.is_empty()).then(|| v.to_string()),
+        "audio.drift" => p.drift_correction = yes(v),
+        "audio.rate" => p.device_rate = num.map(|x| x as u32),
+        "audio.block" => p.block = n(32.0, 4096.0).unwrap_or(256.0) as u32,
+        "audio.offset" => p.latency_offset = n(-48_000.0, 48_000.0).unwrap_or(0.0) as i32,
+        "midi.backend" => p.midi_backend = if v == "raw" { MidiBackend::Raw } else { MidiBackend::Seq },
+        "midi.quantize" => p.quantize_midi = yes(v),
+        "rec.metronome_when" => {
+            p.metronome_when = match v { "off" => MetronomeWhen::Off, "recording" => MetronomeWhen::Recording, _ => MetronomeWhen::PlayingAndRecording }
+        }
+        "rec.metronome_db" => p.metronome_db = n(-60.0, 0.0).unwrap_or(-6.0),
+        "rec.accent" => p.metronome_accent = yes(v),
+        "rec.click_preroll" => p.click_in_preroll = yes(v),
+        "rec.lanes" => p.takes_in_lanes = yes(v),
+        "rec.take_format" => p.take_format = match v { "flac" => TakeFormat::Flac, "int24" => TakeFormat::Int24, _ => TakeFormat::KeepFloat },
+        "plugins.on_top" => p.plugin_windows_on_top = yes(v),
+        "plugins.one_window" => p.one_instrument_window = yes(v),
+        "plugins.load_again" => p.not_loaded.retain(|x| x != v),
+        "folders.projects" => {
+            if p.projects_dir != v {
+                p.projects_dir = v.to_string();
+                p.needs_restart("Working folder");
+            }
+        }
+        "folders.soundfont" => p.default_soundfont = v.to_string(),
+        "folders.plugin_add" => {
+            if !v.is_empty() && !p.plugin_dirs.iter().any(|x| x == v) {
+                p.plugin_dirs.push(v.to_string())
+            }
+        }
+        "folders.plugin_remove" => p.plugin_dirs.retain(|x| x != v),
+        "folders.allow" => {
+            allow_folder(s, v);
+            return;
+        }
+        "folders.disallow" => p.allowed.retain(|x| x != v),
+        "look.theme" => {
+            p.theme = v.to_string();
+            if p.theme != p.started_theme { p.needs_restart("Theme") } else { p.pending_restart.retain(|x| *x != "Theme") }
+        }
+        "look.language" => {
+            p.language = if v == "en" { "en" } else { "pt-BR" };
+            if p.language != p.started_language { p.needs_restart("Language") } else { p.pending_restart.retain(|x| *x != "Language") }
+        }
+        "look.tooltips" => p.tooltips = yes(v),
+        "look.compact" => p.compact_headers = yes(v),
+        "look.browser_right" => p.browser_right = yes(v),
+        "look.follow" => p.follow = match v { "off" => Follow::Off, "continuous" => Follow::Continuous, _ => Follow::Page },
+        "look.smooth" => p.smooth_scroll = yes(v),
+        "look.note_names" => p.note_names = yes(v),
+        "look.fader_ticks" => p.fader_ticks = yes(v),
+        "look.detached" => p.detached = match v { "hide" => Detached::DockAndHide, "always" => Detached::Always, _ => Detached::DockAndShow },
+        "backup.autosave" => p.autosave_minutes = n(0.0, 30.0).unwrap_or(2.0) as u32,
+        "backup.kept" => p.backups_kept = n(1.0, 100.0).unwrap_or(10.0) as u32,
+        "backup.on_save" => p.backup_on_save = yes(v),
+        "adv.sanitize" => p.sanitize = yes(v),
+        k if k.starts_with("keys.") => {
+            // keys.<action id>: the keys, "" for none, "default" for the registry's
+            if let Some(a) = crate::actions::find(&k[5..]) {
+                if v == "default" {
+                    p.keys.remove(a.id);
+                } else {
+                    p.keys.insert(a.id, v.to_string());
+                }
+            }
+        }
+        k if k.starts_with("midi.port.") => {
+            // midi.port.<index>.<field>
+            let mut it = k[10..].splitn(2, '.');
+            let (Some(i), Some(f)) = (it.next().and_then(|i| i.parse::<usize>().ok()), it.next()) else { return };
+            let Some(port) = sv.devices.midi.get_mut(i) else { return };
+            match f {
+                "enabled" => port.enabled = yes(v),
+                "mode" => port.mode = if v == "controllers" { MidiMode::Controllers } else { MidiMode::SelectedTrack },
+                "channel" => port.channel = n(0.0, 16.0).unwrap_or(0.0) as u8,
+                "latency" => port.latency_ms = n(0.0, 100.0).unwrap_or(0.0),
+                _ => return,
+            }
+        }
+        _ => return,
+    }
+    s.services.serial += 1;
+}
+
+/// "palette.used": the command palette's recent list
+pub fn used_action(s: &mut Session, id: &str) {
+    if let Some(a) = crate::actions::find(id) {
+        s.services.prefs.used_action(a.id);
+    }
+}
+
+pub fn dismiss_notice(s: &mut Session, id: &str) {
+    if let Ok(id) = id.parse() {
+        s.services.notices.dismiss(id);
+    }
+}
+
+pub fn open_recent_action(s: &mut Session, index: &str) {
+    if let Ok(i) = index.parse() {
+        open_recent(s, i);
+    }
+}
+
+/// "project.create": name, folder, rate, template
+pub fn create_action(s: &mut Session, text: &str) {
+    let p = crate::actions::params(text);
+    let (Some(name), Some(folder)) = (p.get("name"), p.get("folder")) else { return };
+    let rate = p.get("rate").and_then(|r| r.parse().ok()).unwrap_or(48_000);
+    let template = TEMPLATES.iter().find(|t| Some(&t.name) == p.get("template")).map_or("Empty", |t| t.name);
+    create(s, name.to_string(), folder.to_string(), rate, template);
+}
+
+/// "project.save_to": name, folder (Save as; a read-only project is saved this way, H10/H11)
+pub fn save_as_action(s: &mut Session, text: &str) {
+    let p = crate::actions::params(text);
+    if let (Some(name), Some(folder)) = (p.get("name"), p.get("folder")) {
+        save_as(s, name.to_string(), folder.to_string());
+    }
+}
+
+pub fn decide_take_action(s: &mut Session, text: &str) {
+    let p = crate::actions::params(text);
+    if let Some(i) = p.get("index").and_then(|i| i.parse().ok()) {
+        decide_take(s, i, p.get("recover").is_some_and(|v| yes(v)));
+    }
+}
+
+pub fn safe_plugin_action(s: &mut Session, text: &str) {
+    let p = crate::actions::params(text);
+    if let Some(i) = p.get("index").and_then(|i| i.parse().ok()) {
+        enable_safe_mode_plugin(s, i, p.get("on").is_some_and(|v| yes(v)));
+    }
+}
+
+pub fn export_action(s: &mut Session, text: &str) {
+    if let Some(req) = ExportRequest::from_params(text) {
+        export(s, req);
+    }
+}
+
+pub fn connect_action(s: &mut Session, text: &str) {
+    let p = crate::actions::params(text);
+    connect(s, p.get("address").copied().unwrap_or(""), p.get("token").copied().unwrap_or(""));
 }

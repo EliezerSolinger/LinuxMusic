@@ -5,6 +5,7 @@
 //!
 //! Keys are written platform-neutral: `primary` is Cmd on macOS and Ctrl elsewhere (`primary-shift-s`, `space`).
 
+use crate::port::CorePort;
 use crate::{Field, Session, Value, project};
 
 /// What an action does
@@ -31,19 +32,20 @@ pub struct ActionSpec {
     pub group: &'static str,
     pub keys: Option<&'static str>,
     pub run: Run,
-    pub enabled: fn(&Session) -> bool,
+    /// Read through the port, so the interface asks it the same way in-process and over the network
+    pub enabled: fn(&dyn CorePort) -> bool,
     /// Offered in the palette (the ones that need an argument come only from notices)
     pub palette: bool,
 }
 
-fn always(_: &Session) -> bool {
+fn always(_: &dyn CorePort) -> bool {
     true
 }
-fn writable(s: &Session) -> bool {
-    !s.services.project.read_only()
+fn writable(p: &dyn CorePort) -> bool {
+    !p.services().project.read_only()
 }
-fn not_recording(s: &Session) -> bool {
-    !s.position().recording
+fn not_recording(p: &dyn CorePort) -> bool {
+    !p.telemetry().position.recording
 }
 
 const fn a(id: &'static str, label: &'static str, group: &'static str, keys: Option<&'static str>, run: Run) -> ActionSpec {
@@ -116,7 +118,45 @@ pub static REGISTRY: &[ActionSpec] = &[
     ActionSpec { palette: false, ..a("settings.realtime", "What to configure", HELP, None, Run::Screen("Settings", Some("audio"))) },
     ActionSpec { palette: false, ..a("export.reveal", "Show the files", HELP, None, Run::Reveal) },
     ActionSpec { palette: false, ..a("device.reconnect", "Reconnect", HELP, None, Run::Core(project::reopen_device)) },
+    ActionSpec { palette: false, ..a("remote.reconnect", "Reconnect to the server", HELP, None, Run::CoreWith(project::reconnect)) },
+    a("remote.connect", "Connect to a server", FILE, None, Run::Screen("Project", Some("connect"))),
+    a("remote.disconnect", "Disconnect from the server", FILE, None, Run::Core(project::disconnect)),
+    // what the screens change, as data (the parameters are `key=value` lines, `param_lines`)
+    ActionSpec { palette: false, ..a("prefs.set", "Change a setting", HELP, None, Run::CoreWith(project::prefs_set)) },
+    ActionSpec { palette: false, ..a("palette.used", "Remember a command", HELP, None, Run::CoreWith(project::used_action)) },
+    ActionSpec { palette: false, ..a("notices.dismiss", "Dismiss the notice", HELP, None, Run::CoreWith(project::dismiss_notice)) },
+    ActionSpec { palette: false, ..a("notices.read", "Mark the notices read", HELP, None, Run::Core(|s| s.services.notices.mark_read())) },
+    ActionSpec { palette: false, ..a("project.open_recent", "Open a recent project", FILE, None, Run::CoreWith(project::open_recent_action)) },
+    ActionSpec { palette: false, ..a("project.create", "Create the project", FILE, None, Run::CoreWith(project::create_action)) },
+    ActionSpec { palette: false, ..a("project.save_to", "Save in another folder", FILE, None, Run::CoreWith(project::save_as_action)) },
+    ActionSpec { palette: false, ..a("project.decide_take", "Recover or leave a take", FILE, None, Run::CoreWith(project::decide_take_action)) },
+    ActionSpec { palette: false, ..a("project.safe_plugin", "Turn a plugin back on", FILE, None, Run::CoreWith(project::safe_plugin_action)) },
+    ActionSpec { palette: false, ..a("export.start", "Start the export", FILE, None, Run::CoreWith(project::export_action)) },
+    ActionSpec { palette: false, ..a("remote.connect_to", "Connect", FILE, None, Run::CoreWith(project::connect_action)) },
 ];
+
+/// An action's parameters as the text the fake's actions read: a `Value::Text` as it is (`key=value` lines), a number
+/// without a trailing `.0`, an id as `t:17`
+pub fn param_text(v: &Value) -> String {
+    match v {
+        Value::Text(t) => t.clone(),
+        Value::Real(x) if x.fract() == 0.0 => format!("{}", *x as i64),
+        Value::Real(x) => format!("{x}"),
+        Value::Bool(b) => b.to_string(),
+        Value::Id(id) => format!("{id:?}"),
+        _ => String::new(),
+    }
+}
+
+/// `key=value` lines into pairs (a value may hold `=`)
+pub fn params(text: &str) -> std::collections::BTreeMap<&str, &str> {
+    text.lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.trim(), v)).collect()
+}
+
+/// Pairs into `key=value` lines (the inverse of `params`)
+pub fn param_lines(pairs: &[(&str, String)]) -> Value {
+    Value::Text(pairs.iter().map(|(k, v)| format!("{k}={}", v.replace('\n', " "))).collect::<Vec<_>>().join("\n"))
+}
 
 pub fn find(id: &str) -> Option<&'static ActionSpec> {
     REGISTRY.iter().find(|a| a.id == id)

@@ -254,7 +254,7 @@ impl CorePort for Session {
             }
             other => match crate::actions::find(other).map(|a| a.run) {
                 Some(crate::actions::Run::Core(f)) => Ok(f(self)),
-                Some(crate::actions::Run::CoreWith(f)) => Ok(f(self, &format!("{params:?}"))),
+                Some(crate::actions::Run::CoreWith(f)) => Ok(f(self, &crate::actions::param_text(&params))),
                 _ => Err(Error::WrongType), // the screen and page actions are the interface's own
             },
         };

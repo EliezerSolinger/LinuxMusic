@@ -8,14 +8,14 @@
 
 use std::time::Duration;
 
-use fake_core::Loading;
+use fake_core::{Loading, Value};
 use fake_core::Target;
 use fake_core::actions;
 use fake_core::notices::Severity;
 use gpui::{Context, FontWeight, Render, Window, div, prelude::*, px};
 
 use super::ScreenCx;
-use super::palette::run_action;
+use super::palette::{port_action, run_action};
 use crate::ui::{THEME, button, c, caption, loading_component, tab, tr, trf};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -32,7 +32,7 @@ pub struct Notices {
 
 impl Notices {
     pub fn new(scx: ScreenCx, _window: &mut Window, cx: &mut Context<Self>) -> Self {
-        scx.core.update(cx, |core, _| core.session.services.notices.mark_read());
+        port_action(&scx, "notices.read", Value::Text(String::new()), cx);
         Notices { scx, filter: Filter::All }
     }
 }
@@ -73,9 +73,9 @@ pub fn severity_color(s: Severity) -> u32 {
 
 impl Render for Notices {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let session = &self.scx.core.read(cx).session;
-        let activity = session.activity();
-        let queue = &session.services.notices;
+        let port = self.scx.core.read(cx).port();
+        let activity = port.activity();
+        let queue = &port.services().notices;
         let filter = self.filter;
         let shown: Vec<_> = queue
             .iter()
@@ -109,7 +109,7 @@ impl Render for Notices {
                 .child(caption(target_label(&a.target)))
                 .child(div().h(px(28.)).children(loading_component(("activity", i), &loading, move |_, cx| {
                     core.update(cx, |core, cx| {
-                        core.session.cancel(op);
+                        core.port_mut().cancel(op);
                         cx.notify();
                     });
                 })))
@@ -155,8 +155,7 @@ impl Render for Notices {
                                     button(("dismiss", id as usize), "×", false, 0)
                                         .debug_selector(move || format!("dismiss-{id}"))
                                         .on_click(cx.listener(move |s, _, _, cx| {
-                                            s.scx.core.update(cx, |core, _| core.session.services.notices.dismiss(id));
-                                            cx.notify();
+                                            port_action(&s.scx, "notices.dismiss", Value::Text(id.to_string()), cx);
                                         })),
                                 ),
                         )
@@ -189,8 +188,7 @@ impl Render for Notices {
                     .child(div().flex_1().text_size(px(14.)).font_weight(FontWeight::BOLD).child(tr("Notices")))
                     .when(total > 0, |d| {
                         d.child(button("clear-notices", tr("Clear"), false, 0).on_click(cx.listener(|s, _, _, cx| {
-                            s.scx.core.update(cx, |core, _| core.session.services.notices.clear());
-                            cx.notify();
+                            port_action(&s.scx, "notices.clear", Value::Text(String::new()), cx);
                         })))
                     })
                     .child(button("close-notices", tr("Close"), false, 0).on_click(cx.listener(|s, _, _, cx| s.scx.close(cx)))),
@@ -242,21 +240,21 @@ mod tests {
         open_screen(&ws, cx, Screen::Notices);
         let core = ws.read_with(cx, |ws, _| ws.core.clone());
         let (id, k) = core.read_with(cx, |core, _| {
-            let n = core.session.services.notices.iter().find(|n| n.actions.iter().any(|a| a.action == "folder.allow")).unwrap();
+            let n = core.port().services().notices.iter().find(|n| n.actions.iter().any(|a| a.action == "folder.allow")).unwrap();
             (n.id, n.actions.iter().position(|a| a.action == "folder.allow").unwrap())
         });
         let sel: &'static str = Box::leak(format!("notice-{id}-action-{k}").into_boxed_str());
         click(cx, sel);
         core.read_with(cx, |core, _| {
-            let s = &core.session.services;
+            let s = &core.port().services();
             assert!(s.prefs.allowed.iter().any(|f| f == "/media/externo/SoundFonts"));
             assert!(s.notices.get(id).is_none());
             assert_eq!(s.notices.unread(), 0, "opening the dock read them");
         });
-        let before = core.read_with(cx, |c, _| c.session.services.notices.len());
-        let first = core.read_with(cx, |c, _| c.session.services.notices.iter().next().unwrap().id);
+        let before = core.read_with(cx, |c, _| c.port().services().notices.len());
+        let first = core.read_with(cx, |c, _| c.port().services().notices.iter().next().unwrap().id);
         let sel: &'static str = Box::leak(format!("dismiss-{first}").into_boxed_str());
         click(cx, sel);
-        core.read_with(cx, |c, _| assert_eq!(c.session.services.notices.len(), before - 1));
+        core.read_with(cx, |c, _| assert_eq!(c.port().services().notices.len(), before - 1));
     }
 }
