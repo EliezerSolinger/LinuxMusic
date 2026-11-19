@@ -52,11 +52,11 @@ jobs:
       - name: Set up Rust
         run: ci/setup-rust.sh msrv
       - name: unsafe only in lm-sys-* crates
-        run: python3 ci/check-unsafe.py
+        run: ci/run.sh python3 ci/check-unsafe.py
       - name: Every dependency from [workspace.dependencies]
-        run: python3 ci/check-workspace-deps.py
+        run: ci/run.sh python3 ci/check-workspace-deps.py
       - name: The core never depends on a GUI crate
-        run: python3 ci/check-core-no-gui.py
+        run: ci/run.sh python3 ci/check-core-no-gui.py
       - name: Lint the CI files (yamllint, shellcheck, actionlint)
         working-directory: .
         run: |
@@ -74,7 +74,7 @@ jobs:
       - name: Set up Rust
         run: ci/setup-rust.sh msrv rustfmt
       - name: cargo fmt --check
-        run: cargo fmt --all --check
+        run: ci/run.sh cargo fmt --all --check
 
   clippy:
     name: clippy and docs
@@ -94,13 +94,13 @@ jobs:
           key: clippy
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: cargo clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: ci/run.sh cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: cargo clippy (loom configuration)
         env:
           RUSTFLAGS: --cfg loom -D warnings
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: ci/run.sh cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: cargo doc
-        run: cargo doc --locked --workspace --all-features --no-deps --document-private-items
+        run: ci/run.sh cargo doc --locked --workspace --all-features --no-deps --document-private-items
 
   deny:
     name: cargo-deny (licences, bans, sources, advisories)
@@ -116,7 +116,7 @@ jobs:
         with:
           tool: cargo-deny@0.21.0
       - name: cargo deny check
-        run: cargo deny --locked check --config deny.toml
+        run: ci/run.sh cargo deny --locked check --config deny.toml
 
   test:
     name: test (${{ matrix.platform }}, ${{ matrix.profile }})
@@ -156,14 +156,14 @@ jobs:
         # PROFILE_FLAG is empty or one word: left unquoted on purpose
         run: |
           # shellcheck disable=SC2086
-          cargo build --locked --workspace --all-targets $PROFILE_FLAG
+          ci/run.sh cargo build --locked --workspace --all-targets $PROFILE_FLAG
       - name: cargo test
         env:
           LM_TEST_OUTPUT_DIR: ${{ runner.temp }}/lm-test-output
         run: |
           mkdir -p "$LM_TEST_OUTPUT_DIR"
           # shellcheck disable=SC2086
-          cargo test --locked --workspace $PROFILE_FLAG
+          ci/run.sh cargo test --locked --workspace $PROFILE_FLAG
       - name: Upload the tests' output
         if: always()
         uses: actions/upload-artifact@v7
@@ -191,7 +191,7 @@ jobs:
           key: loom
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: loom model checks (every crate with cfg(loom))
-        run: ci/run-loom.sh
+        run: ci/run.sh ci/run-loom.sh
 
   miri:
     name: miri
@@ -214,7 +214,7 @@ jobs:
           cache-directories: ~/.cache/miri
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: cargo miri test (the miri crates that exist)
-        run: ci/run-miri.sh
+        run: ci/run.sh ci/run-miri.sh
 
   sanitizers:
     name: sanitizer (${{ matrix.sanitizer }})
@@ -243,7 +243,7 @@ jobs:
           key: sanitizer-${{ matrix.sanitizer }}
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: cargo test under the sanitizer
-        run: ci/run-sanitizer.sh ${{ matrix.sanitizer }}
+        run: ci/run.sh ci/run-sanitizer.sh ${{ matrix.sanitizer }}
 
   stable:
     # The newest stable Rust, ahead of the workspace's rust-version: new lints and warnings show up here first, as a
@@ -266,9 +266,9 @@ jobs:
           key: stable
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: cargo clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: ci/run.sh cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: cargo test
-        run: cargo test --locked --workspace
+        run: ci/run.sh cargo test --locked --workspace
 
   prototype-gpui:
     # LinuxMusicBeta/prototypes/ is a separate workspace (the GUI prototype). Optional: a `cargo check` of
@@ -306,7 +306,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: cargo check
         if: steps.find.outputs.present == 'true'
-        run: cargo check --manifest-path prototypes/gpui/Cargo.toml --all-targets
+        run: ci/run.sh cargo check --manifest-path prototypes/gpui/Cargo.toml --all-targets
 
   beta-ok:
     # One status for branch protection: green only when every required job is green
