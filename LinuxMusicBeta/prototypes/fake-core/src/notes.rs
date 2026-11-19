@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{Doc, Edit, Error, Field, NodeId, Result, SAMPLE_RATE, Value};
 
@@ -158,6 +159,19 @@ pub const AVL_KIT: &[KitPiece] = &[
     KitPiece { key: 51, name: "Ride" },
     KitPiece { key: 53, name: "Ride bell" },
     KitPiece { key: 56, name: "Cowbell" },
+];
+
+/// A pads instrument of samples (P-23: beats with samples are an instrument played by the step editor); the names
+/// are the samples' files
+pub const PADS_KIT: &[KitPiece] = &[
+    KitPiece { key: 60, name: "kick-909.wav" },
+    KitPiece { key: 61, name: "snare-909.wav" },
+    KitPiece { key: 62, name: "clap-808.wav" },
+    KitPiece { key: 63, name: "hat-closed.wav" },
+    KitPiece { key: 64, name: "hat-open.wav" },
+    KitPiece { key: 65, name: "rim.wav" },
+    KitPiece { key: 66, name: "shaker.wav" },
+    KitPiece { key: 67, name: "vox-chop.wav" },
 ];
 
 /// The content of a MIDI item, by the item's id (the arrangement's item: same id, start and length)
@@ -601,6 +615,8 @@ pub struct AutoLane {
     pub tension: f64,
     /// recording armed: a touched parameter writes points while the transport records (I-6.4)
     pub armed: bool,
+    /// a shared control (P-33): the other parameters this curve moves too, as "owner · parameter"
+    pub also: Vec<String>,
 }
 
 impl AutoLane {
@@ -836,6 +852,43 @@ impl Edit<'_> {
     }
 }
 
+/// The global counter of note numbers (S12: an undo never gives a number back). In the real core, the session's
+static NEXT_N: AtomicU64 = AtomicU64::new(1 << 41);
+
+/// The CorePort's note edits (I-15): `AddNote` (a new number from the counter; the note is `Value::Note`),
+/// `SetNote` (`Field::Note`, the whole note) and `RemoveNote`. A note added earlier in the same list is named by
+/// its temp number. The new note's number is reported as a created node of kind `n`.
+pub(crate) fn apply_op(e: &mut Edit, op: &crate::port::EditOp, created: &[(u32, NodeId)]) -> Option<Result<Option<(u32, NodeId)>>> {
+    use crate::port::{EditOp, NoteRef, Ref};
+    let item = |r: &Ref| match r {
+        Ref::Id(id) => Ok(*id),
+        Ref::Temp(t) => created.iter().find(|(k, _)| k == t).map(|(_, id)| *id).ok_or(Error::WrongType),
+    };
+    let number = |r: &NoteRef| match r {
+        NoteRef::N(n) => Ok(*n),
+        NoteRef::Temp(t) => created.iter().find(|(k, id)| k == t && id.kind == b'n').map(|(_, id)| id.number).ok_or(Error::WrongType),
+    };
+    match op {
+        EditOp::AddNote { temp, item: it, note: Value::Note(x) } => Some((|| {
+            let id = item(it)?;
+            let n = NEXT_N.fetch_add(1, Ordering::Relaxed);
+            e.put_notes(id, [(n, Some(x.clone()))])?;
+            Ok(Some((*temp, NodeId { kind: b'n', number: n })))
+        })()),
+        EditOp::SetNote { item: it, n, field: Field::Note, value: Value::Note(x) } => Some((|| {
+            let (id, n) = (item(it)?, number(n)?);
+            e.put_notes(id, [(n, Some(x.clone()))])?;
+            Ok(None)
+        })()),
+        EditOp::RemoveNote { item: it, n } => Some((|| {
+            let (id, n) = (item(it)?, number(n)?);
+            e.put_notes(id, [(n, None)])?;
+            Ok(None)
+        })()),
+        _ => None,
+    }
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // The fake content
 
@@ -974,6 +1027,7 @@ fn lane(id: u64, owner: NodeId, owner_name: &str, color: u32, param: ParamInfo, 
         ),
         tension: 0.5,
         armed: false,
+        also: Vec::new(),
     }
 }
 
@@ -1007,7 +1061,27 @@ impl Music {
         clip(7003, 4, "Bass line", 0, 16, 4, bass_notes(4), false, &mut n);
         clip(7004, 5, "Keys", 0, 8, 8, keys_notes(8, 7), false, &mut n);
         clip(7005, 13, "Arpeggio (10 000 notes)", 0, 160, 160, arpeggio_notes(160), false, &mut n);
-        clip(7006, 7, "Shaker", 0, 8, 1, (0..8).map(|i| Note::new(70, i * BEAT / 2, BEAT / 4, if i % 2 == 0 { 0.5 } else { 0.8 })).collect(), true, &mut n);
+        let pads: Vec<Note> = (0..16)
+            .flat_map(|i| {
+                let t = i * BEAT / 4;
+                let mut v = vec![Note::new(63, t, BEAT / 4, if i % 4 == 2 { 0.9 } else { 0.5 })];
+                if i % 4 == 0 {
+                    v.push(Note::new(60, t, BEAT / 4, 1.0));
+                }
+                if i == 4 || i == 12 {
+                    v.push(Note::new(62, t, BEAT / 4, 0.85));
+                }
+                if i == 14 {
+                    v.push(Note::new(67, t, BEAT / 2, 0.7));
+                }
+                v
+            })
+            .collect();
+        clip(7006, 7, "Pads (samples)", 0, 8, 1, pads, true, &mut n);
+        if let Some(c) = m.clips.last_mut() {
+            c.kit = Some(PADS_KIT);
+            c.swing = 0.0;
+        }
 
         let t = |i: usize| track(i).map(|t| (t.id, t.name.clone(), t.color));
         let ch = |i: usize| doc.channels.get(i).map(|c| (c.id, c.name.clone()));
@@ -1030,7 +1104,9 @@ impl Music {
                 Point { curve: -0.7, ..Point::new(7 * BAR, 1200.0, Shape::Curve) },
                 Point::new(8 * BAR, 500.0, Shape::Step),
             ];
-            m.lanes.push(lane(9002, id, &name, color, PARAM_CUTOFF, pts, &mut n));
+            let mut l = lane(9002, id, &name, color, PARAM_CUTOFF, pts, &mut n);
+            l.also = vec![format!("{name} · Filter 2 cutoff"), "Bass line · Filter cutoff".to_string()];
+            m.lanes.push(l);
             let pts = vec![Point::new(0, 2.0, Shape::Step), Point::new(4 * BAR, 3.0, Shape::Step), Point::new(6 * BAR, 0.0, Shape::Step)];
             m.lanes.push(lane(9003, id, &name, color, PARAM_WAVE, pts, &mut n));
             let pts = vec![Point::new(0, 0.0, Shape::Step), Point::new(2 * BAR, 7.0, Shape::Step), Point::new(3 * BAR, 12.0, Shape::Step), Point::new(4 * BAR, 0.0, Shape::Step)];

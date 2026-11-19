@@ -212,8 +212,85 @@ A fazer: escolher a saída, adicionar e remover inserts e envios, abrir a janela
 A fazer: a saída de cada faixa para um canal, e a ação "criar canais para as saídas".
 
 ### 9.6 Piano Roll (B)
+Feito (`screens/piano_roll.rs`, dados em `fake-core/src/notes.rs`): as notas de um item MIDI, num mapa por número
+`n` (C1), em tiques de 960 PPQ, com velocidade, pan e **curva de afinação por nota** (P-24). Layout repensado: uma
+barra só (item, ferramentas, grade, tamanho, tom/escala/acorde, quantizar, ferramentas de nota, fantasma, tocar o
+item, gravar); teclado, régua com **loop e cursor próprios do item** (P-26) e as marcas de fim do item e da parte
+que repete, a grade de notas (as repetições do padrão aparecem apagadas), a lane de velocidade ou pan embaixo, e à
+direita um **inspetor** da seleção (tecla, início, tamanho, velocidade, pan, afinação: arrastar muda todas as
+selecionadas, duplo clique digita). Cobre F-NOT-001 a 019, 021, 023 e F-PAS-001: lápis (clique desenha, arrastar dá
+o tamanho; o corpo move, a borda redimensiona, Shift no começo copia, Alt sem grade, Shift na borda estica a seleção
+em proporção, botão direito apaga arrastando), seleção (retângulo, Shift alterna, Ctrl/Cmd seguro seleciona em
+qualquer ferramenta), borracha, afinação (desenha a curva; botão direito deixa o primeiro ponto), **faca ao longo
+de uma linha diagonal** (Shift ao soltar tira os pedaços curtos, Esc cancela), **strum em escada**; grade Snap
+(início ou fim, o mais perto) e Nudge; tamanho "última nota" ou fixo; tom e escala destacam as linhas e o teclado,
+e prendem as notas na escala; acorde insere o acorde, Shift+clique como arpejo; menu da tecla (marcar semitom,
+oitavas, escala, acorde, desmarcar, selecionar as notas da tecla); quantizar (inícios, tamanhos, ambos, 50 %);
+colar notas encostadas, preencher, cortar sobreposições, mínimo e máximo = o último, inverter, duplicar, transpor;
+lane: pintar nas notas perto (ou só nas selecionadas; Alt só a de baixo), botão do meio volta ao padrão, roda ±1 %,
+duplo clique digita; teclas do legado (Shift+↑↓ semitom, Ctrl+↑↓ oitava, Shift+←→ passo, Ctrl+←→ compasso, Home,
+Ctrl+0–9 tamanho, Alt+0–9 grade, Ctrl+A, Esc, Delete, Ctrl+X/C/V/D/Z); roda, Shift+roda, Ctrl+roda (zoom no
+mouse), Alt+roda (altura das teclas), pinça; Ctrl+arrasto na régua seleciona o trecho; o teclado do computador toca
+(Z..M, Q..U, - e = mudam a oitava) e grava ao vivo (somar ou substituir, quantizar a entrada) ou **por passos**
+(acorde com as teclas juntas, ←→ e Backspace movem o cursor); Espaço toca só o item, em loop. Um arrasto é um gesto
+(um passo de desfazer), aberto no primeiro movimento real (um clique não deixa passo vazio); o mouse fica preso
+durante o arrasto. Tudo pelo `CorePort`: `AddNote`, `SetNote` (`Field::Note`) e `RemoveNote`; os números novos vêm
+do núcleo (o contador global, S12) e a tela os lê da raiz.
+
+Fica para o `lm-gui`: som de verdade ao clicar nas teclas e ao mover notas (o núcleo de mentira não toca MIDI);
+gravação MIDI com camadas por volta do loop e CC/pitch bend/aftertouch (P-15); o "pegajoso" (Shift+Ctrl
+empurrando as seguintes) e os mapas do microafinador (F-NOT-015); copiar e colar entre projetos como JSON (P-25);
+abrir o item escolhido na Composição (hoje o item vem de um menu da barra); alça para redimensionar a altura da
+lane. Dificuldades da GPUI: o desenho é por primitiva, então só as notas visíveis são pintadas (o caso de 10 mil
+notas, "Arpeggio", corta pela janela antes de pintar) e os nomes das notas só aparecem quando cabem; texto dentro
+de um `canvas` exige moldar a linha à mão (`shape_line` + `paint`); `on_mouse_move` só chega com o mouse em cima do
+elemento, então o arrasto registra ouvintes da janela (`window.on_mouse_event`) enquanto dura; não há "secondary"
+nas teclas (Cmd/Ctrl decidido por nós); o Espaço do item precisou de uma ação no contexto `PianoRoll`, que vence o
+`Pages` da casca.
+
 ### 9.7 Editor de automação (B)
+Feito (`screens/automation.rs`): a curva de uma lane (a lane é do dono do parâmetro e cobre a música inteira),
+escolhida na barra por dono e parâmetro; eixo de valores **nas unidades do parâmetro** (dB, Hz em escala log, %,
+semitons em degraus, os nomes de uma escolha); cada ponto tem forma até o próximo: **Degrau, Curva** (`curve` de −1
+a 1, com uma alça no meio do trecho para curvar) **ou Suave** (spline com a tensão da lane); **valor de saída
+diferente do de entrada** (P-27: Alt+arrasto no ponto, botão direito desfaz); parâmetros discretos só desenham e
+editam degraus e nunca interpolam. Cobre F-AUT-001 a 009 e 011 e F-CLP-081/082: lápis (clique cria e arrasta,
+Shift+clique traça uma reta de pontos desde o último, um por passo da grade), lápis livre (o traço vira o menor
+número de pontos que o segue), seleção, borracha (e botão direito arrastando), duplo clique digita o valor,
+espelhar no tempo e no valor (seleção ou lane), **escalar os valores** da seleção (arrastar no inspetor),
+ajustar a altura aos pontos ou Alt+roda no valor, grade com tercinas, Ctrl+roda zoom, pinça, ←→ e Home movem o
+cursor, copiar/colar/apagar, notas fantasmas de um item MIDI, leitura do tempo e do valor sob o mouse, o valor
+atual tocando, o botão de gravar a automação da lane. Uma lane que move vários parâmetros (o **controle
+compartilhado**, P-33) lista os outros alvos. Pelo `CorePort`, um ponto é um nó (`Insert` na lista `points` da
+lane, `Set` com `Field::Point`, `Remove`).
+
+Fica para o `lm-gui`: a gravação de automação de verdade (mexer no botão tocando; o fake só guarda o "armado");
+criar o controle compartilhado arrastando um botão para outro (P-04/P-33, gesto das telas de mesa e instrumento);
+a lane dentro da Composição (dono A) reaproveitando este desenho. Dificuldades da GPUI: a curva é um traço e um
+preenchimento com amostras a cada 3 px; o `PathBuilder` triangula na CPU (`lyon`), então o número de vértices tem
+de ficar na largura da tela, não no número de pontos.
+
 ### 9.8 Editor de passos (B)
+Feito (`screens/steps.rs`): substitui o Beat+Bassline (F-PAD-001 obsoleto): mostra vários itens MIDI que se repetem,
+um grupo por item (escolhidos num menu), com **uma linha por peça do kit** (AVL Drums) ou de um **instrumento de
+pads de amostras** (P-23), ou uma linha de passos com altura para um item melódico (o baixo). Cobre F-PAD-002: clique
+liga e desliga, arrastar pinta (ou apaga, conforme o primeiro passo), botão direito apaga, a roda muda a
+velocidade ±5 %, passos mais fortes mais claros (e uma barrinha da velocidade), acrescentar e tirar um compasso,
+**clonar os passos** (dobra copiando), o tamanho do passo (1/8, 1/16, 1/32, 1/16T), o **swing** do item (arrastar), o
+passo tocando aceso; embaixo, a lane da linha escolhida: velocidade, pan, altura (a nota de um passo melódico, a
+afinação de uma peça de bateria) e duração; Alt+arrasto num passo melódico muda a nota; "todas as linhas" mostra as
+peças sem notas. Tudo pelo `CorePort` (notas por `AddNote`/`SetNote`/`RemoveNote`, os números do item por
+`Field::Clip`). Um arrasto é um gesto; o desfazer é Ctrl+Z.
+
+Fica para o `lm-gui`: o swing aplicado na compilação do item (o fake só guarda o valor e o mostra); tocar o padrão
+sozinho; arrastar um item da Composição para a vista; os passos editáveis na própria linha do tempo com zoom alto
+(F-PAD-002, dono A). Dificuldades da GPUI: nenhuma nova; cada grupo é um `canvas`, uma primitiva por célula.
+
+Testes destas três telas (`cargo test -p proto-gpui`): desenhar e mover uma nota é um passo de desfazer cada;
+pintar a lane de velocidade; Ctrl+A e Shift+↑ pelo teclado e a faca; o menu do item; criar e arrastar um ponto de
+automação; um ponto numa lane de escolha é degrau; espelhar duas vezes volta ao início; ligar, desligar e pintar
+passos (um passo de desfazer); acrescentar, tirar e clonar passos. Em `fake-core`: quantizar, colar, faca,
+inverter, strum, escalas e acordes, as formas das curvas, a escala log, o afinamento do traço.
 ### 9.9 Janela do instrumento e editor genérico de plugin (C, design 05)
 ### 9.10 Janela de efeito e cadeia de inserts (C)
 ### 9.11 Navegador (C)

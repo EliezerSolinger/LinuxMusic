@@ -23,6 +23,7 @@ use fake_core::notes::{
     self, BAR, BEAT, CHORDS, Clip, GRIDS, KEY_NAMES, Note, NoteChange, NoteMap, QuantizeWhat, SCALES, format_bbt,
     format_len, key_name,
 };
+use fake_core::port::{EditOp, NoteRef, Ref};
 use fake_core::{Feed, Field, GestureId, NodeId, Topic, Value};
 use gpui::{
     Bounds, Context, CursorStyle, FocusHandle, KeyBinding, KeyDownEvent, KeyUpEvent, MouseButton,
@@ -198,6 +199,25 @@ fn piano_key(k: &str) -> Option<i32> {
 
 static BIND: Once = Once::new();
 
+/// Note numbers from here up are temp numbers of notes to create (`EditOp::AddNote`)
+const NEW: u64 = 1 << 63;
+
+/// Note changes as the port's edits
+fn note_ops(item: NodeId, changes: Vec<NoteChange>) -> Vec<EditOp> {
+    changes
+        .into_iter()
+        .filter_map(|(n, x)| {
+            let item = Ref::Id(item);
+            Some(match x {
+                Some(x) if n >= NEW => EditOp::AddNote { temp: (n - NEW) as u32, item, note: Value::Note(x) },
+                Some(x) => EditOp::SetNote { item, n: NoteRef::N(n), field: Field::Note, value: Value::Note(x) },
+                None if n >= NEW => return None,
+                None => EditOp::RemoveNote { item, n: NoteRef::N(n) },
+            })
+        })
+        .collect()
+}
+
 pub struct PianoRoll {
     scx: ScreenCx,
     focus: FocusHandle,
@@ -249,8 +269,8 @@ impl PianoRoll {
     pub fn new(scx: ScreenCx, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         BIND.call_once(|| cx.bind_keys([KeyBinding::new("space", PlayItem, Some("PianoRoll"))]));
         let (feed, clip) = scx.core.update(cx, |core, _| {
-            let clip = core.session.doc().music.clips.first().map(|c| c.id);
-            (core.session.feed(Topic::All), clip)
+            let clip = core.port().root().music.clips.first().map(|c| c.id);
+            (core.port_mut().feed(Topic::All), clip)
         });
         let mut pr = PianoRoll {
             focus: cx.focus_handle(),
@@ -301,7 +321,7 @@ impl PianoRoll {
     // --- reading -----------------------------------------------------------------------------------------------
 
     fn clip<'a>(&self, cx: &'a gpui::App) -> Option<&'a Clip> {
-        self.clip.and_then(|id| self.scx.core.read(cx).session.doc().music.clip(id))
+        self.clip.and_then(|id| self.scx.core.read(cx).port().root().music.clip(id))
     }
 
     fn notes(&self, cx: &gpui::App) -> Arc<NoteMap> {
@@ -358,28 +378,41 @@ impl PianoRoll {
 
     // --- changing ----------------------------------------------------------------------------------------------
 
-    fn transact(&mut self, label: &'static str, changes: Vec<NoteChange>, cx: &mut Context<Self>) {
-        let Some(id) = self.clip else { return };
+    /// One transaction of note edits through the port (AddNote, SetNote, RemoveNote). Returns the numbers the
+    /// core gave the new notes, in the order of their temp numbers (empty while the result is `Waiting`)
+    fn transact(&mut self, label: &'static str, changes: Vec<NoteChange>, cx: &mut Context<Self>) -> Vec<u64> {
+        let Some(id) = self.clip else { return Vec::new() };
         if changes.is_empty() {
-            return;
+            return Vec::new();
         }
+        let before = changes.iter().any(|(n, _)| *n >= NEW).then(|| self.notes(cx));
         self.scx.core.update(cx, |core, _| {
-            let _ = core.session.transact(label, |e| e.put_notes(id, changes));
+            let _ = core.port_mut().apply(label, note_ops(id, changes));
         });
         cx.notify();
+        before.map(|b| self.added_since(&b, cx)).unwrap_or_default()
     }
 
-    /// Updates a drag's gesture, opening it at the first change
-    fn gesture(&self, g: &mut Option<GestureId>, label: &'static str, changes: Vec<NoteChange>, cx: &mut Context<Self>) {
-        let Some(id) = self.clip else { return };
+    /// Updates a drag's gesture, opening it at the first change; returns the new notes' numbers like `transact`
+    fn gesture(&self, g: &mut Option<GestureId>, label: &'static str, changes: Vec<NoteChange>, cx: &mut Context<Self>) -> Vec<u64> {
+        let Some(id) = self.clip else { return Vec::new() };
+        let before = changes.iter().any(|(n, _)| *n >= NEW).then(|| self.notes(cx));
         self.scx.core.update(cx, |core, _| {
-            let g = g.get_or_insert_with(|| core.session.begin_gesture(label));
-            let _ = core.session.gesture_update(g, |e| e.put_notes(id, changes));
+            let port = core.port_mut();
+            let g = g.get_or_insert_with(|| port.begin_gesture(label));
+            port.gesture_apply(g, note_ops(id, changes));
         });
+        before.map(|b| self.added_since(&b, cx)).unwrap_or_default()
     }
 
-    fn numbers(&self, k: usize, cx: &mut Context<Self>) -> Vec<u64> {
-        self.scx.core.update(cx, |core, _| (0..k).map(|_| core.session.next_number()).collect())
+    /// Temp numbers for notes to create (the core gives the real ones)
+    fn numbers(&self, k: usize, _cx: &mut Context<Self>) -> Vec<u64> {
+        (0..k as u64).map(|i| NEW + i).collect()
+    }
+
+    /// The notes that appeared since `before` (the core's counter grows, so in creation order)
+    fn added_since(&self, before: &NoteMap, cx: &gpui::App) -> Vec<u64> {
+        self.notes(cx).keys().filter(|n| !before.contains_key(n)).copied().collect()
     }
 
     fn set_sel(&mut self, s: BTreeSet<u64>) {
@@ -435,7 +468,7 @@ impl PianoRoll {
             return (Some(self.play.at(now) as f64), true);
         }
         let Some(c) = self.clip(cx) else { return (None, false) };
-        let pos = self.scx.core.read(cx).session.position();
+        let pos = self.scx.core.read(cx).port().telemetry().position;
         let t = notes::sample_to_tick(pos.at(now)) - c.start as f64;
         if t < 0.0 || t >= c.length as f64 {
             return (None, false);
@@ -566,9 +599,9 @@ impl PianoRoll {
                         Note { key: *k, start: s, length: len, velocity: self.last.velocity, pan: self.last.pan, bend: Vec::new() }
                     })
                     .collect();
-                let ns = self.numbers(base.len(), cx);
+                let temps = self.numbers(base.len(), cx);
                 let mut g = None;
-                self.gesture(&mut g, "Draw notes", ns.iter().copied().zip(base.iter().cloned().map(Some)).collect(), cx);
+                let ns = self.gesture(&mut g, "Draw notes", temps.iter().copied().zip(base.iter().cloned().map(Some)).collect(), cx);
                 self.set_sel(ns.iter().copied().collect());
                 self.drag = Some(Drag::Draw { g, ns, start, base, from_x: x });
                 self.pressed = keys.into_iter().collect();
@@ -620,7 +653,6 @@ impl PianoRoll {
                     if copies.as_ref().is_some_and(|c| c.is_empty()) {
                         // Shift at the start of the drag: the copies move, the originals stay
                         *copies = Some(self.numbers(origin.len(), cx));
-                        self.set_sel(copies.as_ref().unwrap().iter().copied().collect());
                     }
                     let ids: Vec<u64> = copies.clone().unwrap_or_else(|| origin.iter().map(|(n, _)| *n).collect());
                     let changes = ids
@@ -631,7 +663,11 @@ impl PianoRoll {
                     if dk != 0 {
                         self.pressed = [(anchor.key as i32 + dk) as u8].into_iter().collect();
                     }
-                    self.gesture(g, "Move notes", changes, cx);
+                    let new = self.gesture(g, "Move notes", changes, cx);
+                    if !new.is_empty() {
+                        *copies = Some(new.clone());
+                        self.set_sel(new.into_iter().collect());
+                    }
                 }
             }
             Drag::Resize { g, origin, anchor, from, left, stretch } => {
@@ -718,7 +754,7 @@ impl PianoRoll {
         let commit = |s: &Self, g: Option<GestureId>, cx: &mut Context<Self>| {
             if let Some(g) = g {
                 s.scx.core.update(cx, |core, _| {
-                    let _ = core.session.gesture_commit(g);
+                    core.port_mut().gesture_commit(g);
                 });
             }
         };
@@ -914,7 +950,9 @@ impl PianoRoll {
             }
             self.step_cursor = t;
             let s = notes::tick_to_sample((c.start + t) as f64) as i64;
-            self.scx.core.update(cx, |core, _| core.session.locate(s));
+            self.scx.core.update(cx, |core, _| {
+                let _ = core.port_mut().run_action("transport.locate", Value::Real(s as f64));
+            });
         }
         cx.notify();
     }
@@ -961,8 +999,9 @@ impl PianoRoll {
                         let Some(id) = self.clip else { return };
                         let key = if *which == Marker::Length { "length" } else { "loop" };
                         self.scx.core.update(cx, |core, _| {
-                            let g = g.get_or_insert_with(|| core.session.begin_gesture("Item length"));
-                            let _ = core.session.gesture_update(g, |e| e.set(id, Field::Clip(key), Value::Real(t as f64)));
+                            let port = core.port_mut();
+                            let g = g.get_or_insert_with(|| port.begin_gesture("Item length"));
+                            port.gesture_apply(g, vec![EditOp::set(id, Field::Clip(key), Value::Real(t as f64))]);
                         });
                     }
                     Marker::LoopA => self.play.loop_a = (t - self.grid_ticks()).min(self.play.loop_b - self.grid_ticks()).max(0),
@@ -1070,7 +1109,7 @@ impl PianoRoll {
 
     fn menu_items(&self, m: Menu, cx: &gpui::App) -> Vec<MenuItem> {
         let core = self.scx.core.read(cx);
-        let music = &core.session.doc().music;
+        let music = &core.port().root().music;
         match m {
             Menu::Clip | Menu::Ghost => {
                 let mut v = Vec::new();
@@ -1147,12 +1186,12 @@ impl PianoRoll {
         let notes = self.notes(cx);
         match m {
             Menu::Clip => {
-                if let Some(id) = self.scx.core.read(cx).session.doc().music.clips.get(i).map(|c| c.id) {
+                if let Some(id) = self.scx.core.read(cx).port().root().music.clips.get(i).map(|c| c.id) {
                     self.open_clip(id, cx);
                 }
             }
             Menu::Ghost => {
-                self.ghost = if i == 0 { None } else { self.scx.core.read(cx).session.doc().music.clips.get(i - 1).map(|c| c.id) };
+                self.ghost = if i == 0 { None } else { self.scx.core.read(cx).port().root().music.clips.get(i - 1).map(|c| c.id) };
             }
             Menu::Grid => self.grid = i,
             Menu::Snap => self.snap = if i == 0 { SnapMode::Snap } else { SnapMode::Nudge },
@@ -1207,12 +1246,12 @@ impl PianoRoll {
         let which = self.targets(&notes);
         let end = self.clip(cx).map_or(BAR, |c| c.loop_len);
         match i {
-            0 => self.transact("Glue", notes::glue(&notes, &which), cx),
-            1 => self.transact("Fill", notes::fill(&notes, &which, end), cx),
-            2 => self.transact("Cut overlaps", notes::cut_overlaps(&notes, &which), cx),
-            3 => self.transact("Min length", notes::constrain_lengths(&notes, &which, self.last.length, true), cx),
-            4 => self.transact("Max length", notes::constrain_lengths(&notes, &which, self.last.length, false), cx),
-            5 => self.transact("Reverse", notes::reverse(&notes, &which), cx),
+            0 => { self.transact("Glue", notes::glue(&notes, &which), cx); }
+            1 => { self.transact("Fill", notes::fill(&notes, &which, end), cx); }
+            2 => { self.transact("Cut overlaps", notes::cut_overlaps(&notes, &which), cx); }
+            3 => { self.transact("Min length", notes::constrain_lengths(&notes, &which, self.last.length, true), cx); }
+            4 => { self.transact("Max length", notes::constrain_lengths(&notes, &which, self.last.length, false), cx); }
+            5 => { self.transact("Reverse", notes::reverse(&notes, &which), cx); }
             6 => self.duplicate(cx),
             7 => self.transpose(12, cx),
             8 => self.transpose(-12, cx),
@@ -1249,8 +1288,8 @@ impl PianoRoll {
         let span = ((b - a) + g - 1) / g * g;
         let ns = self.numbers(sel.len(), cx);
         let ch: Vec<NoteChange> = ns.iter().zip(sel.iter()).map(|(n, (_, x))| (*n, Some(Note { start: x.start + span, ..x.clone() }))).collect();
-        self.transact("Duplicate", ch, cx);
-        self.set_sel(ns.into_iter().collect());
+        let new = self.transact("Duplicate", ch, cx);
+        self.set_sel(new.into_iter().collect());
     }
 
     fn copy(&mut self, cut: bool, cx: &mut Context<Self>) {
@@ -1272,14 +1311,14 @@ impl PianoRoll {
         let at = notes::snap_floor(self.play.at(Instant::now()) as f64, self.grid_ticks());
         let ns = self.numbers(self.clipboard.len(), cx);
         let ch = ns.iter().zip(self.clipboard.iter()).map(|(n, x)| (*n, Some(Note { start: x.start + at, ..x.clone() }))).collect();
-        self.transact("Paste", ch, cx);
-        self.set_sel(ns.into_iter().collect());
+        let new = self.transact("Paste", ch, cx);
+        self.set_sel(new.into_iter().collect());
     }
 
     fn undo(&mut self, cx: &mut Context<Self>) {
         self.drag = None;
         self.scx.core.update(cx, |core, _| {
-            let _ = core.session.undo();
+            let _ = core.port_mut().undo();
         });
         cx.notify();
     }
@@ -1446,8 +1485,8 @@ impl PianoRoll {
                 // the note lands at the step cursor; keys held together make a chord
                 let n = self.numbers(1, cx)[0];
                 let x = Note { key, start: self.step_cursor, length: self.new_len(), velocity: vel, pan: self.last.pan, bend: Vec::new() };
-                self.transact("Step record", vec![(n, Some(x))], cx);
-                self.step_chord.push(n);
+                let new = self.transact("Step record", vec![(n, Some(x))], cx);
+                self.step_chord.extend(new);
                 self.held.insert(k.to_string(), (key, None, self.step_cursor));
             }
             Rec::Live => {
@@ -1724,10 +1763,10 @@ impl Render for PianoRoll {
         // I-3.6: the feed tells when the item changed under us (an undo): selected numbers that are gone are dropped
         {
             let core = self.scx.core.read(cx);
-            if let Some(diff) = self.feed.drain(&core.session) {
+            if let Some(diff) = core.port().drain(&mut self.feed) {
                 if let Some(id) = self.clip {
                     if diff.touches(id) {
-                        if let Some(c) = core.session.doc().music.clip(id) {
+                        if let Some(c) = core.port().root().music.clip(id) {
                             if self.sel.iter().any(|n| !c.notes.contains_key(n)) {
                                 let keep: BTreeSet<u64> = self.sel.iter().copied().filter(|n| c.notes.contains_key(n)).collect();
                                 self.sel = Rc::new(keep);
@@ -1737,7 +1776,7 @@ impl Render for PianoRoll {
                 }
             }
         }
-        if self.clip.is_some_and(|id| self.scx.core.read(cx).session.doc().music.clip(id).is_none()) {
+        if self.clip.is_some_and(|id| self.scx.core.read(cx).port().root().music.clip(id).is_none()) {
             self.clip = None;
         }
         if !self.fitted && self.clip.is_some() {
@@ -1824,7 +1863,7 @@ impl Render for PianoRoll {
 impl PianoRoll {
     fn render_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {
         let clip = self.clip(cx);
-        let ghost = self.ghost.and_then(|g| self.scx.core.read(cx).session.doc().music.clip(g)).map(|c| c.name.clone());
+        let ghost = self.ghost.and_then(|g| self.scx.core.read(cx).port().root().music.clip(g)).map(|c| c.name.clone());
         let open = |m: Menu| cx.listener(move |pr: &mut PianoRoll, ev: &MouseDownEvent, _, cx| {
             pr.menu = if pr.menu.is_some_and(|x| x.0 == m) { None } else { Some((m, ev.position + point(px(0.), px(10.)))) };
             cx.notify();
@@ -2006,7 +2045,7 @@ impl PianoRoll {
     fn render_center(&self, play: Option<f64>, cx: &Context<Self>) -> impl IntoElement {
         let clip = self.clip(cx).cloned();
         let Some(clip) = clip else { return div() };
-        let ghost = self.ghost.and_then(|g| self.scx.core.read(cx).session.doc().music.clip(g)).map(|c| c.notes.clone());
+        let ghost = self.ghost.and_then(|g| self.scx.core.read(cx).port().root().music.clip(g)).map(|c| c.notes.clone());
         let hover_key = self.hover.map(|h| h.1);
         let grid_paint = GridPaint {
             notes: clip.notes.clone(),
@@ -2541,7 +2580,7 @@ mod tests {
     }
 
     fn count(core: &Entity<Core>, id: NodeId, cx: &mut VisualTestContext) -> usize {
-        core.read_with(cx, |core, _| core.session.doc().music.clip(id).unwrap().notes.len())
+        core.read_with(cx, |core, _| core.port().root().music.clip(id).unwrap().notes.len())
     }
 
     /// Where a tick and key are on the screen
@@ -2562,7 +2601,7 @@ mod tests {
         cx.run_until_parked();
         assert_eq!(count(&core, id, cx), before + 1, "a click draws one note");
         let (n, note) = core.read_with(cx, |core, _| {
-            let c = core.session.doc().music.clip(id).unwrap();
+            let c = core.port().root().music.clip(id).unwrap();
             c.notes.iter().find(|(_, x)| x.key == 40).map(|(n, x)| (*n, x.clone())).unwrap()
         });
         assert_eq!(note.start, BEAT * 2, "on the grid");
@@ -2570,13 +2609,13 @@ mod tests {
         let from = at(&pr, note.start as f64 + 30.0, 40, cx);
         let to = at(&pr, note.start as f64 + 30.0 + BEAT as f64, 43, cx);
         drag(cx, from, to, Modifiers::none());
-        let moved = core.read_with(cx, |core, _| core.session.doc().music.clip(id).unwrap().notes[&n].clone());
+        let moved = core.read_with(cx, |core, _| core.port().root().music.clip(id).unwrap().notes[&n].clone());
         assert_eq!((moved.key, moved.start), (43, BEAT * 3));
         cx.executor().advance_clock(Duration::from_millis(20));
-        core.update(cx, |core, _| core.session.undo().unwrap());
-        let back = core.read_with(cx, |core, _| core.session.doc().music.clip(id).unwrap().notes[&n].clone());
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        let back = core.read_with(cx, |core, _| core.port().root().music.clip(id).unwrap().notes[&n].clone());
         assert_eq!((back.key, back.start), (40, BEAT * 2), "the whole drag is one undo step");
-        core.update(cx, |core, _| core.session.undo().unwrap());
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
         assert_eq!(count(&core, id, cx), before, "and the drawing another");
     }
 
@@ -2589,13 +2628,13 @@ mod tests {
         let y = lane.origin.y + lane.size.height * 0.75;
         drag(cx, point(lane.origin.x + px(1.), y), point(lane.origin.x + lane.size.width - px(2.), y), Modifiers::none());
         let (n_low, total) = core.read_with(cx, |core, _| {
-            let c = core.session.doc().music.clip(id).unwrap();
+            let c = core.port().root().music.clip(id).unwrap();
             (c.notes.values().filter(|x| (x.velocity - 0.25).abs() < 0.06).count(), c.notes.len())
         });
         let visible = pr.read_with(cx, |pr, cx| pr.notes(cx).values().filter(|x| pr.tick_to_x(x.start as f64) < lane.size.width.as_f32() - 6.0).count());
         assert!(n_low >= visible.min(total) * 9 / 10, "{n_low} of {visible} visible notes painted");
-        core.update(cx, |core, _| core.session.undo().unwrap());
-        let n_low = core.read_with(cx, |core, _| core.session.doc().music.clip(id).unwrap().notes.values().filter(|x| (x.velocity - 0.25).abs() < 0.06).count());
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        let n_low = core.read_with(cx, |core, _| core.port().root().music.clip(id).unwrap().notes.values().filter(|x| (x.velocity - 0.25).abs() < 0.06).count());
         assert_eq!(n_low, 0, "the sweep is one undo step");
     }
 
@@ -2603,13 +2642,13 @@ mod tests {
     fn keyboard_select_transpose_quantize(cx: &mut TestAppContext) {
         let (pr, core, cx) = open(cx, PianoRoll::new, Screen::PianoRoll);
         let id = pr.read_with(cx, |pr, _| pr.clip.unwrap());
-        let keys_before: Vec<u8> = core.read_with(cx, |core, _| core.session.doc().music.clip(id).unwrap().notes.values().map(|x| x.key).collect());
+        let keys_before: Vec<u8> = core.read_with(cx, |core, _| core.port().root().music.clip(id).unwrap().notes.values().map(|x| x.key).collect());
         let grid = cx.debug_bounds("pr-grid").unwrap();
         cx.simulate_mouse_down(grid.center(), MouseButton::Right, Modifiers::none()); // focus (erases nothing on empty)
         cx.simulate_mouse_up(grid.center(), MouseButton::Right, Modifiers::none());
         cx.simulate_keystrokes(if cfg!(target_os = "macos") { "cmd-a shift-up" } else { "ctrl-a shift-up" });
         cx.run_until_parked();
-        let keys_after: Vec<u8> = core.read_with(cx, |core, _| core.session.doc().music.clip(id).unwrap().notes.values().map(|x| x.key).collect());
+        let keys_after: Vec<u8> = core.read_with(cx, |core, _| core.port().root().music.clip(id).unwrap().notes.values().map(|x| x.key).collect());
         assert_eq!(keys_before.iter().map(|k| k + 1).collect::<Vec<_>>(), keys_after, "Ctrl+A, Shift+Up: everything a semitone up");
         // the knife: a vertical line through the middle of a beat cuts the notes crossing it
         pr.update(cx, |pr, cx| {

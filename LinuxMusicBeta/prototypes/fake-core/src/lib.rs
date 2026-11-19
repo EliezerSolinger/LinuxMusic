@@ -164,6 +164,8 @@ pub enum Field {
     Notes,
     Points,
     Clip(&'static str),
+    /// one note, whole (EditOp::SetNote)
+    Note,
 }
 
 /// The document's root: the song-wide fields live on it
@@ -178,6 +180,7 @@ pub enum Value {
     Points(Arc<notes::PointMap>),
     /// Text: names, paths, and the parameters of an action given as `key=value` lines (owner: agent D)
     Text(String),
+    Note(notes::Note),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -906,11 +909,6 @@ impl Session {
     }
     pub fn pumps(&self) -> u64 {
         self.pumps
-    }
-    /// A new number from the global counter, for a note or a point (S12: never given back by an undo)
-    pub fn next_number(&mut self) -> u64 {
-        self.next_id += 1;
-        self.next_id - 1
     }
 
     /// Every long operation running past the 200 ms rule, oldest first (I-2.2): the activity list
