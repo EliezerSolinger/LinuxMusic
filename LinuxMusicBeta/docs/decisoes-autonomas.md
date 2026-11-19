@@ -207,3 +207,13 @@ de forma diz pelo que é substituído.
 - **O protocolo de rede é a `RemotePort`**: completo para a interface remota (mesma versão exigida) e um subconjunto
   estável para ferramentas externas.
 
+
+## Do Rubber Band e do lilv (19/11)
+
+- **Time-stretch com o motor R3 ("finer") do Rubber Band**, offline, numa `Operation`, com o tamanho de saída exato
+  vindo do mapa de andamentos; o R2 oscila 1–2% de afinação em notas longas.
+- **lilv ≥ 0.24.10.** O host não oferece o recurso `log:log` aos plugins LV2 (o Rust estável não define funções C
+  variádicas); um plugin que o exige é recusado com `lilv.missing_feature`, e um que o tem como opcional funciona.
+- **A ordem de destruição de um plugin LV2** é: encerrar o worker (join), entregar as últimas respostas, desativar e
+  só então liberar. Um teste prova que a ordem do legado dá segfault.
+- **Para exportar, o worker do LV2 é síncrono** (determinismo); ao vivo, roda numa thread própria.
