@@ -340,6 +340,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-sys-sndfile"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+]
+
+[[package]]
 name = "lm-time"
 version = "0.1.0"
 dependencies = [
