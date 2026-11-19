@@ -1,0 +1,1254 @@
+{
+  "about": "The A/B cases of lm-dsp against the legacy program (interfaces.md, U34). ab/legacy-harness.cpp runs them on the legacy code and writes ab/reference/<name>.f32 (interleaved stereo, little-endian); tests/ab.rs runs them on lm-dsp and compares. Signals are made with + and * only, so both sides get the same input bit for bit. All at 48 kHz.",
+  "cases": [
+    {
+      "name": "strip-flat-neutral",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 997,
+        "amp": 0.5
+      },
+      "settings": {
+        "drive": "flat"
+      }
+    },
+    {
+      "name": "strip-4558-neutral",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 997,
+        "amp": 0.5
+      },
+      "settings": {}
+    },
+    {
+      "name": "strip-gain-pot",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 1,
+        "amp": 0.25
+      },
+      "settings": {
+        "drive": "flat",
+        "gain": 0.4
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "drive": "flat",
+          "gain": 0.1
+        }
+      }
+    },
+    {
+      "name": "strip-eq-boosts",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 2,
+        "amp": 0.2
+      },
+      "settings": {
+        "drive": "flat",
+        "eq": [
+          6.0,
+          4.5,
+          9.0,
+          3.0
+        ]
+      }
+    },
+    {
+      "name": "strip-eq-cuts-and-boosts",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 3,
+        "amp": 0.2
+      },
+      "settings": {
+        "drive": "flat",
+        "eq": [
+          -9.0,
+          6.0,
+          -12.0,
+          -3.0
+        ]
+      }
+    },
+    {
+      "name": "strip-eq-switches-sides",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 4,
+        "amp": 0.2
+      },
+      "settings": {
+        "drive": "flat",
+        "eq": [
+          9.0,
+          9.0,
+          9.0,
+          9.0
+        ]
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "drive": "flat",
+          "eq": [
+            -9.0,
+            -15.0,
+            -6.0,
+            -9.0
+          ]
+        }
+      }
+    },
+    {
+      "name": "strip-filters",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 5,
+        "amp": 0.3
+      },
+      "settings": {
+        "drive": "flat",
+        "lowCut": true,
+        "highPass": 180.0,
+        "lowPass": 6000.0
+      }
+    },
+    {
+      "name": "strip-filters-sweep",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 128,
+      "signal": {
+        "kind": "noise",
+        "seed": 6,
+        "amp": 0.3
+      },
+      "settings": {
+        "drive": "flat",
+        "highPass": 60.0,
+        "lowPass": 15000.0
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "drive": "flat",
+          "highPass": 400.0,
+          "lowPass": 2500.0
+        }
+      }
+    },
+    {
+      "name": "strip-mono-bass",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 80,
+        "amp": 0.4,
+        "right": {
+          "kind": "sine",
+          "hz": 113,
+          "amp": 0.3
+        }
+      },
+      "settings": {
+        "drive": "flat",
+        "monoBass": 75.0,
+        "monoBassFrequency": 150.0
+      }
+    },
+    {
+      "name": "strip-tolerance-ch3",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 7,
+        "amp": 0.2
+      },
+      "settings": {
+        "drive": "4558",
+        "channel": 3,
+        "eq": [
+          3.0,
+          -3.0,
+          2.0,
+          1.0
+        ],
+        "lowCut": true
+      }
+    },
+    {
+      "name": "strip-4558-driven",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 220,
+        "amp": 0.9
+      },
+      "settings": {
+        "drive": "4558",
+        "gain": 0.62
+      }
+    },
+    {
+      "name": "strip-tl072-driven",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 220,
+        "amp": 0.9
+      },
+      "settings": {
+        "drive": "tl072",
+        "gain": 0.66
+      }
+    },
+    {
+      "name": "strip-5532-driven",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 3000,
+        "amp": 0.9
+      },
+      "settings": {
+        "drive": "5532",
+        "gain": 0.65
+      }
+    },
+    {
+      "name": "strip-5534-driven",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 8,
+        "amp": 0.9
+      },
+      "settings": {
+        "drive": "5534",
+        "gain": 0.66
+      }
+    },
+    {
+      "name": "strip-12ax7-light",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 220,
+        "amp": 0.6
+      },
+      "settings": {
+        "drive": "12ax7",
+        "gain": 0.3
+      }
+    },
+    {
+      "name": "strip-12ax7-circuit",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 220,
+        "amp": 0.6
+      },
+      "settings": {
+        "drive": "12ax7",
+        "gain": 0.3,
+        "realistic": true
+      }
+    },
+    {
+      "name": "strip-12ax7-vintage",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 440,
+        "amp": 0.8
+      },
+      "settings": {
+        "drive": "12ax7-vintage",
+        "gain": 0.35
+      }
+    },
+    {
+      "name": "strip-12ax7-hot-circuit",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 9,
+        "amp": 0.5
+      },
+      "settings": {
+        "drive": "12ax7-hot",
+        "gain": 0.35,
+        "realistic": true
+      }
+    },
+    {
+      "name": "strip-12at7",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 330,
+        "amp": 0.9
+      },
+      "settings": {
+        "drive": "12at7",
+        "gain": 0.4
+      }
+    },
+    {
+      "name": "strip-12at7-exact-gain",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 330,
+        "amp": 0.9
+      },
+      "settings": {
+        "drive": "12at7",
+        "gain": 0.45
+      }
+    },
+    {
+      "name": "strip-12au7-circuit",
+      "unit": "strip",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 330,
+        "amp": 0.9
+      },
+      "settings": {
+        "drive": "12au7",
+        "gain": 0.45,
+        "realistic": true
+      }
+    },
+    {
+      "name": "strip-gate",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 10,
+        "amp": 0.5,
+        "steps": [
+          [
+            0,
+            0.01
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            12000,
+            0.003
+          ],
+          [
+            18000,
+            0.4
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "gate": {
+          "threshold": -10.0,
+          "range": 30.0,
+          "mode": "std"
+        }
+      }
+    },
+    {
+      "name": "strip-gate-kick",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 60,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            1.0
+          ],
+          [
+            3000,
+            0.02
+          ],
+          [
+            9000,
+            1.0
+          ],
+          [
+            10000,
+            0.0
+          ],
+          [
+            16000,
+            1.0
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "gate": {
+          "threshold": -5.0,
+          "range": 40.0,
+          "mode": "kick"
+        }
+      }
+    },
+    {
+      "name": "strip-gate-expander",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 11,
+        "amp": 0.4,
+        "steps": [
+          [
+            0,
+            0.05
+          ],
+          [
+            8000,
+            1.0
+          ],
+          [
+            16000,
+            0.05
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "gate": {
+          "threshold": 0.0,
+          "range": 20.0,
+          "mode": "expander"
+        }
+      }
+    },
+    {
+      "name": "comp-ssl",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 440,
+        "amp": 0.7,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "ssl",
+          "amount": 0.6,
+          "ratio": 0.6,
+          "speed": "norm",
+          "release": 0.4
+        }
+      }
+    },
+    {
+      "name": "comp-ssl-fast",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 12,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.2
+          ],
+          [
+            4000,
+            1.0
+          ],
+          [
+            14000,
+            0.2
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "ssl",
+          "amount": 0.8,
+          "ratio": 1.0,
+          "speed": "fast",
+          "release": 0.1
+        }
+      }
+    },
+    {
+      "name": "comp-api2500",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 150,
+        "amp": 0.7,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "api2500",
+          "amount": 0.7,
+          "ratio": 0.6,
+          "speed": "norm",
+          "release": 0.5
+        }
+      }
+    },
+    {
+      "name": "comp-dbx160",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 13,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "dbx160",
+          "amount": 0.7,
+          "ratio": 0.7,
+          "speed": "slow",
+          "release": 0.5
+        }
+      }
+    },
+    {
+      "name": "comp-1176",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 1000,
+        "amp": 0.7,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "urei1176",
+          "amount": 0.6,
+          "ratio": 0.3,
+          "speed": "fast",
+          "release": 0.5
+        }
+      }
+    },
+    {
+      "name": "comp-1176-all",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 14,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.2
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.2
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "urei1176",
+          "amount": 0.7,
+          "ratio": 1.0,
+          "speed": "norm",
+          "release": 0.3
+        }
+      }
+    },
+    {
+      "name": "comp-la2a",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 300,
+        "amp": 0.7,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "la2a",
+          "amount": 0.7,
+          "ratio": 0.2,
+          "speed": "norm",
+          "release": 0.5
+        }
+      }
+    },
+    {
+      "name": "comp-la2a-limit",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 15,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "la2a",
+          "amount": 0.8,
+          "ratio": 0.8,
+          "speed": "fast",
+          "release": 0.7
+        }
+      }
+    },
+    {
+      "name": "comp-fairchild",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 200,
+        "amp": 0.7,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "fairchild670",
+          "amount": 0.6,
+          "ratio": 0.4,
+          "speed": "norm",
+          "release": 0.9
+        }
+      }
+    },
+    {
+      "name": "comp-gates",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 16,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "gates-sta-level",
+          "amount": 0.6,
+          "ratio": 0.5,
+          "speed": "fast",
+          "release": 0.5
+        }
+      }
+    },
+    {
+      "name": "comp-altec",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 500,
+        "amp": 0.7,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "altec436",
+          "amount": 0.7,
+          "ratio": 0.5,
+          "speed": "slow",
+          "release": 0.5
+        }
+      }
+    },
+    {
+      "name": "comp-rca-dual",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 17,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "rca-ba6a",
+          "amount": 0.6,
+          "ratio": 0.5,
+          "speed": "norm",
+          "release": 0.5
+        }
+      }
+    },
+    {
+      "name": "comp-model-change",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 440,
+        "amp": 0.8
+      },
+      "settings": {
+        "drive": "flat",
+        "compressor": {
+          "model": "ssl",
+          "amount": 0.7,
+          "ratio": 0.7,
+          "speed": "norm",
+          "release": 0.5
+        }
+      },
+      "then": {
+        "at": 12032,
+        "settings": {
+          "drive": "flat",
+          "compressor": {
+            "model": "fairchild670",
+            "amount": 0.7,
+            "ratio": 0.7,
+            "speed": "norm",
+            "release": 0.5
+          }
+        }
+      }
+    },
+    {
+      "name": "strip-everything",
+      "unit": "strip",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 18,
+        "amp": 0.5,
+        "steps": [
+          [
+            0,
+            0.3
+          ],
+          [
+            8000,
+            1.0
+          ],
+          [
+            16000,
+            0.05
+          ]
+        ],
+        "right": {
+          "kind": "sine",
+          "hz": 97,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "drive": "12ax7",
+        "gain": 0.35,
+        "lowCut": true,
+        "highPass": 40.0,
+        "lowPass": 16000.0,
+        "monoBass": 50.0,
+        "monoBassFrequency": 100.0,
+        "gate": {
+          "threshold": -20.0,
+          "range": 20.0,
+          "mode": "noise"
+        },
+        "compressor": {
+          "model": "ssl",
+          "amount": 0.5,
+          "ratio": 0.5,
+          "speed": "norm",
+          "release": 0.5
+        },
+        "eq": [
+          3.0,
+          -2.0,
+          4.0,
+          2.0
+        ],
+        "channel": 8
+      }
+    },
+    {
+      "name": "master-stereo",
+      "unit": "master",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 20,
+        "amp": 0.4,
+        "right": {
+          "kind": "sine",
+          "hz": 61,
+          "amp": 0.4
+        }
+      },
+      "settings": {
+        "stereo": {
+          "width": 140.0,
+          "monoBass": 80.0,
+          "bassFrequency": 120.0,
+          "air": 4.0
+        }
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "stereo": {
+            "width": 60.0,
+            "monoBass": 0.0,
+            "bassFrequency": 120.0,
+            "air": 0.0
+          }
+        }
+      }
+    },
+    {
+      "name": "master-pre-and-drive",
+      "unit": "master",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 440,
+        "amp": 0.8
+      },
+      "settings": {
+        "pre": [
+          1.2,
+          0.9
+        ],
+        "drive": "12ax7"
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "pre": [
+            0.7,
+            0.7
+          ],
+          "drive": "5532"
+        }
+      }
+    },
+    {
+      "name": "master-bus-compressor",
+      "unit": "master",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 21,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.2
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.2
+          ]
+        ]
+      },
+      "settings": {
+        "bus": {
+          "on": true,
+          "threshold": -8.0,
+          "ratio": 1,
+          "attack": 2,
+          "release": 4,
+          "makeup": 3.0
+        }
+      }
+    },
+    {
+      "name": "master-bus-compressor-10",
+      "unit": "master",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 330,
+        "amp": 0.8,
+        "steps": [
+          [
+            0,
+            0.3
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.3
+          ]
+        ]
+      },
+      "settings": {
+        "bus": {
+          "on": true,
+          "threshold": -12.0,
+          "ratio": 2,
+          "attack": 0,
+          "release": 1,
+          "makeup": 0.0
+        }
+      }
+    },
+    {
+      "name": "master-transformer",
+      "unit": "master",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 30,
+        "amp": 0.8
+      },
+      "settings": {
+        "transformer": true
+      }
+    },
+    {
+      "name": "master-monitoring",
+      "unit": "master",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 22,
+        "amp": 0.4,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.4
+        }
+      },
+      "settings": {
+        "monitor": {
+          "level": -3.0,
+          "dim": false,
+          "cut": false,
+          "mono": true,
+          "side": false
+        }
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "monitor": {
+            "level": 0.0,
+            "dim": true,
+            "cut": false,
+            "mono": false,
+            "side": true
+          }
+        }
+      }
+    },
+    {
+      "name": "tube-curve-12ax7",
+      "unit": "tube-curve",
+      "frames": 4096,
+      "block": 4096,
+      "signal": {
+        "kind": "sine",
+        "hz": 12,
+        "amp": 3.0
+      },
+      "settings": {
+        "drive": "12ax7"
+      }
+    },
+    {
+      "name": "tube-curve-12ax7-vintage",
+      "unit": "tube-curve",
+      "frames": 4096,
+      "block": 4096,
+      "signal": {
+        "kind": "sine",
+        "hz": 12,
+        "amp": 3.0
+      },
+      "settings": {
+        "drive": "12ax7-vintage"
+      }
+    },
+    {
+      "name": "tube-curve-12ax7-hot",
+      "unit": "tube-curve",
+      "frames": 4096,
+      "block": 4096,
+      "signal": {
+        "kind": "sine",
+        "hz": 12,
+        "amp": 3.0
+      },
+      "settings": {
+        "drive": "12ax7-hot"
+      }
+    },
+    {
+      "name": "tube-curve-12at7",
+      "unit": "tube-curve",
+      "frames": 4096,
+      "block": 4096,
+      "signal": {
+        "kind": "sine",
+        "hz": 12,
+        "amp": 3.0
+      },
+      "settings": {
+        "drive": "12at7"
+      }
+    },
+    {
+      "name": "tube-curve-12au7",
+      "unit": "tube-curve",
+      "frames": 4096,
+      "block": 4096,
+      "signal": {
+        "kind": "sine",
+        "hz": 12,
+        "amp": 3.0
+      },
+      "settings": {
+        "drive": "12au7"
+      }
+    }
+  ]
+}

@@ -185,12 +185,13 @@ pub struct BusCompressorSettings {
 }
 
 impl Default for BusCompressorSettings {
+    /// The panel's defaults
     fn default() -> Self {
         Self {
             on: false,
-            threshold: 0.0,
+            threshold: 5.0,
             ratio: BusRatio::Four,
-            attack: 2,
+            attack: 4,
             release: BusCompressor::AUTO_RELEASE,
             makeup: 0.0,
         }
