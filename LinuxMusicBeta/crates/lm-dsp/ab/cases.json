@@ -3858,6 +3858,127 @@
         "LFO wave shape": 1,
         "release": 3000
       }
+    },
+    {
+      "name": "amplifier",
+      "unit": "plugin-effect",
+      "plugin": "amplifier",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 90,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 330,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "Volume": 150.0,
+        "Panning": -40.0,
+        "Left gain": 80.0,
+        "Right gain": 120.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Volume": 60.0,
+          "Panning": 70.0,
+          "Left gain": 190.0,
+          "Right gain": 10.0
+        }
+      }
+    },
+    {
+      "name": "stereomatrix",
+      "unit": "plugin-effect",
+      "plugin": "stereomatrix",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 90,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 330,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "Left to Left": 0.5,
+        "Left to Right": -0.3,
+        "Right to Left": 0.8,
+        "Right to Right": -1.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Left to Left": -0.2
+        }
+      }
+    },
+    {
+      "name": "stereoenhancer",
+      "unit": "plugin-effect",
+      "plugin": "stereoenhancer",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 90,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 330,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "Width": 90.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Width": 17.0
+        }
+      }
+    },
+    {
+      "name": "bassbooster",
+      "unit": "plugin-effect",
+      "plugin": "bassbooster",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 70,
+        "amp": 0.3,
+        "right": {
+          "kind": "noise",
+          "seed": 91,
+          "amp": 0.3
+        }
+      },
+      "settings": {
+        "Frequency": 120.0,
+        "Gain": 2.5,
+        "Ratio": 4.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Frequency": 60.0,
+          "Gain": 0.8,
+          "Ratio": 8.0
+        }
+      }
     }
   ]
 }

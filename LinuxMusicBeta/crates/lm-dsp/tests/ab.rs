@@ -278,6 +278,66 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return mono.into_iter().map(|x| [x, x]).collect();
     }
+    if case["unit"] == "plugin-effect"
+        && ["amplifier", "stereomatrix", "stereoenhancer", "bassbooster"].contains(&case["plugin"].as_str().unwrap())
+    {
+        use lm_dsp::small_effects::*;
+        let first = &case["settings"];
+        let then = &case["then"]["settings"];
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        let block = block as usize;
+        // A knob's value in a block, and its ramp (the legacy value buffer: in the block where it changed; the first
+        // block too, from the knob's default, as the harness turns the knobs before the first period)
+        let value = |key: &str, default: f32, start: usize| {
+            let before = f(first, key, default);
+            if start < at { before } else { f(then, key, before) }
+        };
+        let ramp = |key: &str, default: f32, start: usize| {
+            if start == 0 {
+                Ramp { from: default, to: value(key, default, 0) }
+            } else if start == at {
+                Ramp { from: value(key, default, 0), to: value(key, default, start) }
+            } else {
+                Ramp::constant(value(key, default, start))
+            }
+        };
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let mut enhancer = StereoEnhancer::default();
+        let mut booster = BassBooster::new(rate);
+        for start in (0..frames as usize).step_by(block) {
+            let span = &mut out[start..(start + block).min(frames as usize)];
+            match case["plugin"].as_str().unwrap() {
+                "amplifier" => amplifier(
+                    span,
+                    &AmplifierSettings {
+                        volume: ramp("Volume", 100.0, start),
+                        pan: ramp("Panning", 0.0, start),
+                        left: ramp("Left gain", 100.0, start),
+                        right: ramp("Right gain", 100.0, start),
+                    },
+                ),
+                "stereomatrix" => stereo_matrix(
+                    span,
+                    &StereoMatrixSettings {
+                        left_to_left: value("Left to Left", 1.0, start),
+                        left_to_right: value("Left to Right", 0.0, start),
+                        right_to_left: value("Right to Left", 0.0, start),
+                        right_to_right: value("Right to Right", 1.0, start),
+                    },
+                ),
+                "stereoenhancer" => enhancer.process(span, value("Width", 0.0, start)),
+                _ => booster.process(
+                    span,
+                    &BassBoosterSettings {
+                        frequency: value("Frequency", 100.0, start),
+                        gain: ramp("Gain", 1.0, start),
+                        ratio: value("Ratio", 2.0, start),
+                    },
+                ),
+            }
+        }
+        return out;
+    }
     if case["unit"] == "plugin-effect" && case["plugin"] == "eq" {
         use lm_dsp::eq::{Eq, EqBand, EqSettings, Slope};
         // The knobs by the legacy plugin's names

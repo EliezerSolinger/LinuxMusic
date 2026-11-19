@@ -27,6 +27,7 @@
 //! - [`compressor`]: the Compressor;
 //! - [`delay`]: the Delay;
 //! - [`eq`]: the Eq;
+//! - [`small_effects`]: the Amplifier, the Stereo Matrix, the Stereo Enhancer and the Bass Booster;
 //! - [`reverb_sc`]: the ReverbSC (Csound's reverbsc).
 
 // The ports keep the legacy program's index loops and its literal constants, so that a reader can set the two side by
@@ -50,6 +51,7 @@ pub mod oversampling;
 pub mod rbj;
 pub mod reverb_sc;
 pub mod sample_player;
+pub mod small_effects;
 pub mod sound_shaping;
 pub mod tolerance;
 pub mod tube;
