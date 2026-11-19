@@ -713,8 +713,8 @@ impl Pcm {
                     unsafe { ffi::snd_pcm_writei(pcm, base.cast(), n as _) }
                 }
                 _ => {
-                    for ch in 0..channels {
-                        let lane = Lane { ptr: setup.planes[ch].cast(), stride: bytes };
+                    for (ch, plane) in setup.planes.iter().enumerate() {
+                        let lane = Lane { ptr: plane.cast(), stride: bytes };
                         encode_lane(format, lane, n, |i| src.sample(channels, ch, done + i));
                     }
                     // SAFETY: one plane per channel, each holding at least n samples
@@ -784,8 +784,8 @@ impl Pcm {
                     // SAFETY: one plane per channel with room for n samples
                     let r = unsafe { ffi::snd_pcm_readn(pcm, setup.planes.as_mut_ptr(), n as _) };
                     if r > 0 {
-                        for ch in 0..channels {
-                            let lane = Lane { ptr: setup.planes[ch].cast(), stride: bytes };
+                        for (ch, plane) in setup.planes.iter().enumerate() {
+                            let lane = Lane { ptr: plane.cast(), stride: bytes };
                             decode_lane(format, lane, r as usize, |i, x| dst.put(channels, ch, done + i, x));
                         }
                     }
