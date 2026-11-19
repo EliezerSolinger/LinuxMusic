@@ -60,8 +60,11 @@ lm-sys-alsa = { path = "crates/lm-sys-alsa" }
 lm-sys-linux = { path = "crates/lm-sys-linux" }
 
 [profile.dev]
-# Audio code is unusable without some optimisation; debug info stays
+# Audio code is unusable without some optimisation. Disk is limited on the development machine: line tables are
+# enough for backtraces, and incremental caches grow without bound with many agents building (decisoes-autonomas.md)
 opt-level = 1
+debug = "line-tables-only"
+incremental = false
 
 [profile.release]
 debug = 1

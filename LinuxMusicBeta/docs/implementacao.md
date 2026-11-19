@@ -25,13 +25,30 @@ quando passa no critério de "pronto quando" de `interfaces.md` (Parte 4). As de
 
 ## Como os agentes trabalham
 
-- Cada agente é dono de uma pasta `crates/<nome>` e só escreve nela (e nas linhas da sua linha nesta tabela).
-- **Nunca deixe uma pasta em `crates/` sem `Cargo.toml` válido**, nem por um instante: o workspace inclui `crates/*`, e
-  uma pasta pela metade quebra o `cargo` de todos. Crie o pacote de uma vez (o `Cargo.toml` e o `src/lib.rs` mínimo
-  que compila) antes de qualquer outro arquivo, ou monte-o fora de `crates/` e mova-o pronto.
-- O workspace (`Cargo.toml`) inclui toda pasta em `crates/*`; uma dependência nova do workspace é pedida à sessão de
-  design.
+**Cada agente trabalha no seu próprio git worktree** (decisão de 19/11, depois de um `pull --autostash` misturar o
+trabalho pela metade de vários agentes na árvore compartilhada). Ninguém mais edita a árvore principal
+(`/Users/castrot1/Desktop/LinuxMusic`), exceto a sessão de design, para os documentos de coordenação.
+
+Para criar o seu (só a pasta `LinuxMusicBeta`, para gastar pouco disco):
+
+```sh
+cd /Users/castrot1/Desktop/LinuxMusic && git fetch origin
+git worktree add --no-checkout --detach /private/tmp/claude-501/wt/<nome> origin/master
+cd /private/tmp/claude-501/wt/<nome>
+git sparse-checkout set --cone LinuxMusicBeta && git checkout
+```
+
+- Compile e teste no seu worktree com `CARGO_TARGET_DIR=/Users/castrot1/Desktop/LinuxMusic/LinuxMusicBeta/target`
+  (o `target` é um só, compartilhado).
+- Commit no seu worktree e `git push origin HEAD:master`. Se for recusado: `git fetch origin && git rebase origin/master`
+  e push de novo. Nunca force, nunca `--autostash`.
+- Antes de começar uma etapa nova: `git fetch origin && git rebase origin/master`.
+- Cada agente só escreve na sua pasta (`crates/<nome>`, ou os seus arquivos em `prototypes/`). Em arquivo
+  compartilhado (o `Cargo.toml` do workspace, o `lib.rs` do fake-core, o `mod.rs` das telas, este quadro), só
+  pedaços pequenos e separados.
+- **Nunca deixe uma pasta em `crates/` sem `Cargo.toml` válido**, nem um manifesto que cite arquivos que ainda não
+  existem: o workspace inclui `crates/*`.
 - Todos leem, antes de começar: `arquitetura-nova.md`, `interfaces.md` (a seção do seu pacote, a Parte 2, a Parte 3 e
-  as partes 5 a 7), `decisoes-autonomas.md` e o código dos pacotes de que dependem.
-- Um `target` só (`LinuxMusicBeta/target`); localmente, só debug e release.
-- Commit só dos próprios arquivos, por caminho, e push para o `origin/master` a cada etapa.
+  as partes 5 a 7), `decisoes-autonomas.md`, `funcionalidades-legado.md` (as funcionalidades da sua área) e o código
+  dos pacotes de que dependem.
+- Disco limitado: só debug e release localmente, nada de `cargo clean` no workspace inteiro.

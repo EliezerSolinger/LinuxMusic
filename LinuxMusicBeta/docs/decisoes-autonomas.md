@@ -168,3 +168,12 @@ de forma diz pelo que é substituído.
 - **P-39:** importar MIDI cria um canal da mesa por faixa importada; CC7 vira automação de volume da faixa, e CC10 vira
   automação de pan desse canal.
 - **P-40:** a exportação de stems tem as duas opções: por faixa ou por canal da mesa.
+
+## Coordenação e disco (19/11)
+
+- **Cada agente num git worktree próprio**, com checkout só de `LinuxMusicBeta`, e push direto para o `master`
+  (`implementacao.md`). Motivo: com muitos agentes na mesma árvore, um `pull --autostash` misturou trabalho pela metade
+  de vários e um commit "por caminho" levava pedaços dos outros.
+- **Perfil de desenvolvimento enxuto:** `debug = "line-tables-only"` e `incremental = false` no workspace. O `target`
+  chegou a 11 GB com o disco em 12 GB livres; as linhas bastam para os backtraces.
+
