@@ -41,6 +41,12 @@ git sparse-checkout set --cone LinuxMusicBeta && git checkout
 
 - Compile e teste no seu worktree com `CARGO_TARGET_DIR=/Users/castrot1/Desktop/LinuxMusic/LinuxMusicBeta/target`
   (o `target` é um só, compartilhado).
+- **Antes de cada `cargo build`/`test`/`clippy`, toque os fontes dos pacotes locais do seu worktree:**
+  `find LinuxMusicBeta/crates LinuxMusicBeta/prototypes -name target -prune -o -name '*.rs' -exec touch {} +`
+  Motivo: o Cargo dá o mesmo nome de artefato a um pacote local (por caminho) em qualquer worktree, então, sem isso, um
+  build pode usar sem perceber o pacote compilado a partir do worktree de outro agente. As dependências de fora
+  continuam compartilhadas; só os nossos pacotes recompilam. O Cargo trava o `target` durante cada build, então dois
+  builds não se misturam.
 - Commit no seu worktree e `git push origin HEAD:master`. Se for recusado: `git fetch origin && git rebase origin/master`
   e push de novo. Nunca force, nunca `--autostash`.
 - Antes de começar uma etapa nova: `git fetch origin && git rebase origin/master`.
