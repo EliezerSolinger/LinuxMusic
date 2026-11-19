@@ -11,7 +11,7 @@ quando passa no critério de "pronto quando" de `interfaces.md` (Parte 4). As de
 | 3 | `lm-time` | agente | **feito** (19/11): `Bpm` racional exato (texto decimal, 1–1000, 6 casas), `Ppq`, `TimeSignature`, `TempoMap` com saltos e **rampas lineares no tempo** (exatas, inteiros de 256 bits próprios), `tick_at` = último tique iniciado (inverso exato de `sample_at`, meio-par), `segments_in`, `ticks_in`, compasso:tempo:tique com mudanças de fórmula, `relocate` (H9); sem dependências além do `lm-base`; 43 testes (mapas sorteados, referência independente, 24 h de blocos) |
 | 4 | `lm-doc` | agente | a fazer (depende do 2) |
 | 5 | `lm-render` | agente | a fazer |
-| — | `lm-dsp` (códigos de efeito do legado, com A/B) | sessão de implementação | em andamento |
+| — | `lm-dsp` (códigos de efeito do legado, com A/B) | sessão de implementação | em andamento (19/11): **o rack da mesa analógica feito**: filtros casados e EQ da mesa, tolerâncias congeladas, transformador, sobreamostragem (HIIR), válvulas (curva e circuito), estágio de ganho (4 op-amps, 5 válvulas), 9 compressores e o gate, mono bass, faixa de canal e seção do master; 24 testes de unidade e **A/B de 49 casos contra o legado** (`ab/`), todos abaixo de -90 dBFS ou bit a bit, com uma diferença intencional escrita (libm, V2). A seguir: os osciladores e os efeitos dos plugins de validação |
 | — | `lm-sys-fpu`, `lm-sys-sndfile`, `lm-sys-samplerate`, `lm-sys-fluidsynth` | agente | em andamento (19/11): `lm-sys-fpu` feito (FTZ/DAZ no `MXCSR`, `FZ` no `FPCR`, guarda que restaura; 4 testes) |
 | 6 | `lm-plugin` + plugin de teste | — | a fazer |
 | 7 | `lm-compile` | — | a fazer |
