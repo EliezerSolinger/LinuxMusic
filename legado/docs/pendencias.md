@@ -580,7 +580,7 @@ queda do Mallets, que é queda e entra antes.
     - não vêm, por serem ferramentas do programa Guitarix e não efeitos do rack (o LinuxMusic tem as suas): afinador,
       osciloscópio, looper, gravador, sequenciador de bateria, metrônomo e o medidor de VU como unidade.
 - [ ] **Ciclo de vida e memória: a mudança geral primeiro (decisão do usuário, 19/11).** O plano está em
-  `docs/plano-ciclo-de-vida.md` (o desenho é da sessão linuxmusic-2a; a implementação é desta), na ordem dele:
+  `LinuxMusicBeta/docs/plano-ciclo-de-vida.md` (o desenho é da sessão linuxmusic-2a; a implementação é desta), na ordem dele:
   1. redes de proteção: o `AudioThreadAllocationTest` estendido (parâmetros mexidos enquanto toca, troca de preset,
      mais notas que as vagas, Patman, os cenários do documento), o teste de ciclo de vida do motor, as regras de
      busca e o clang-tidy;
@@ -641,7 +641,7 @@ queda do Mallets, que é queda e entra antes.
   - A latência real ao lado do buffer.
   - Faixa "Reiniciar agora" para o que pede reinício.
   - Junta-se ao item "Configurações que só valem depois de reiniciar".
-- As outras sete telas de `docs/design-sugestoes` esperam a revisão do usuário: não implementar antes.
+- As outras sete telas de `LinuxMusicBeta/docs/design-sugestoes` esperam a revisão do usuário: não implementar antes.
 
 ## Feito recentemente (13/11)
 

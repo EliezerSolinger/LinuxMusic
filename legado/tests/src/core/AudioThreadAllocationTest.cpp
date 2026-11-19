@@ -524,7 +524,7 @@ private slots:
 			"patman", "patman+nopatch",
 			// (one note at a time, legato with a glide: the voice moves and goes back on the audio thread)
 			"tripleoscillator+mono", "sf2player+mono",
-			// (every control turned while it plays: docs/plano-ciclo-de-vida.md, gap 9)
+			// (every control turned while it plays: LinuxMusicBeta/docs/plano-ciclo-de-vida.md, gap 9)
 			"tripleoscillator+controls", "bitinvader+controls", "kicker+controls", "lb302+controls",
 			"monstro+controls", "nes+controls", "organic+controls", "sfxr+controls", "sid+controls",
 			"vibedstrings+controls", "watsyn+controls", "xpressive+controls", "freeboy+controls",
@@ -664,7 +664,7 @@ private slots:
 			qInfo("realtime pool: %zu KB at most in use, %ld frees of the system's memory handed over",
 				stats.peakBytes / 1024, s_handedOver.load());
 		}
-		// Known, until these instruments are rewritten for the new plugin contract (docs/arquitetura-nova.md: the
+		// Known, until these instruments are rewritten for the new plugin contract (LinuxMusicBeta/docs/arquitetura-nova.md: the
 		// host's voice policy, voices made beforehand and one taken when they run out): more notes than their voices
 		QEXPECT_FAIL("freeboy+chords", "its voices beyond those made beforehand: the new contract's voice policy", Continue);
 		QEXPECT_FAIL("malletsstk+chords", "its voices beyond those made beforehand: the new contract's voice policy",
@@ -688,7 +688,7 @@ private slots:
 		for (const auto& name : names)
 		{
 			QTest::newRow(qPrintable(name)) << name;
-			// (every control turned while it plays: docs/plano-ciclo-de-vida.md, gap 9)
+			// (every control turned while it plays: LinuxMusicBeta/docs/plano-ciclo-de-vida.md, gap 9)
 			QTest::newRow(qPrintable(name + "+controls")) << name + "+controls";
 		}
 		// Guitarix: each of its units (sub-plugins), "guitarix:unit"
@@ -744,7 +744,7 @@ private slots:
 		};
 		const auto events = playCounting(40, 600, turn);
 		report(events);
-		// Known, until these effects are rewritten for the new plugin contract (docs/arquitetura-nova.md: what a
+		// Known, until these effects are rewritten for the new plugin contract (LinuxMusicBeta/docs/arquitetura-nova.md: what a
 		// control changes made off the audio thread and handed to it)
 		QEXPECT_FAIL("granularpitchshifter+controls", "its ring made on the audio thread when the range changes",
 			Continue);

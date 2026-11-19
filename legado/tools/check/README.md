@@ -12,7 +12,7 @@ Scripts that check a build against the one before a change. Every step of a refa
 | `sanitize-all.sh <build> <out>` | Renders the A/B and the bundled projects with an ASan/UBSan or TSan build (`-DWANT_DEBUG_ASAN=ON` / `-DWANT_DEBUG_TSAN=ON`) and reports any sanitizer finding, failure or hang. |
 | `corrupt-projects.py <out> <projects>` | Writes damaged copies of projects, always the same ones. |
 | `gui-smoke.sh <build> <out> [projects]` | Opens the GUI headless with each project (the A/B and shorties projects by default), shows the Piano Roll and the Arrangement, saves a screenshot and quits. Reports crashes, hangs and sanitizer findings. |
-| `qt-free.sh [root]` | Checks that the directories in `qt-free-dirs.txt` (the new core: docs/arquitetura-nova.md) use no Qt at all: no Qt header, type or macro. ctest runs it as QtFreeCore. |
+| `qt-free.sh [root]` | Checks that the directories in `qt-free-dirs.txt` (the new core: LinuxMusicBeta/docs/arquitetura-nova.md) use no Qt at all: no Qt header, type or macro. ctest runs it as QtFreeCore. |
 | `corrupt-all.sh <build> <out>` | Renders damaged copies of the A/B projects: refusing them is fine, crashing or hanging is not. Best with a sanitizer build. |
 
 Typical use:
