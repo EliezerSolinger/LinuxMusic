@@ -1,0 +1,79 @@
+{
+  "channel": {
+    "defaults": {
+      "output": "m:0",
+      "pan": 0.0,
+      "sends": []
+    },
+    "version": 1
+  },
+  "item.midi": {
+    "defaults": {
+      "kind": "midi",
+      "length": 3840,
+      "notes": {},
+      "start": 0
+    },
+    "version": 1
+  },
+  "lane": {
+    "defaults": {
+      "sourceOffset": 0
+    },
+    "version": 1
+  },
+  "note": {
+    "defaults": {
+      "key": 60,
+      "length": 480,
+      "start": 0,
+      "velocity": 0.8
+    },
+    "version": 1
+  },
+  "output": {
+    "defaults": {
+      "channels": 2,
+      "port": "main"
+    },
+    "version": 1
+  },
+  "plugin:tripleoscillator": {
+    "defaults": {
+      "params": {
+        "cutoff": 1000.0,
+        "octave": 0.0,
+        "vol1": 1.0
+      },
+      "wave": "sine"
+    },
+    "version": 3
+  },
+  "project": {
+    "defaults": {
+      "ppq": 960,
+      "sampleRate": 48000,
+      "seed": 271828
+    },
+    "version": 1
+  },
+  "send": {
+    "defaults": {
+      "amount": 0.0,
+      "pre": false
+    },
+    "version": 1
+  },
+  "track": {
+    "defaults": {
+      "items": [],
+      "mute": false,
+      "name": "",
+      "outputs": [],
+      "parent": null,
+      "solo": false,
+      "volume": 1.0
+    },
+    "version": 1
+  }
+}

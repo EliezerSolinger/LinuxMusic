@@ -1,0 +1,18 @@
+[package]
+name = "lm-state"
+description = "LinuxMusic: the immutable value tree, node ids, resources, schemas and the stable JSON"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lm-base.workspace = true
+imbl.workspace = true
+ryu.workspace = true
+blake3.workspace = true
+

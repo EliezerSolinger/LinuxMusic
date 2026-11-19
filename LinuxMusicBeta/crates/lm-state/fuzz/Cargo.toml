@@ -1,0 +1,26 @@
+# cargo-fuzz targets for lm-state (interfaces.md, Parte 4: "fuzzing de from_json + validação por 1 h sem queda").
+# Run on the CI with nightly: `cd crates/lm-state/fuzz && cargo +nightly fuzz run from_json -- -max_total_time=3600`.
+# A workspace of its own, so the main workspace never builds it.
+[package]
+name = "lm-state-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+lm-state = { path = ".." }
+lm-base = { path = "../../lm-base" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "from_json"
+path = "fuzz_targets/from_json.rs"
+test = false
+doc = false
+bench = false

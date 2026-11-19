@@ -7,7 +7,7 @@ quando passa no critério de "pronto quando" de `interfaces.md` (Parte 4). As de
 | # | Pacote | Quem | Estado |
 |---|---|---|---|
 | 1 | `lm-base` | sessão de design | **feito** (19/11): `Main`, `Role`, `Error`/`Label`, `Cancel`/`Progress`/`Phase`/`OperationHandle`/`Workers`, anéis, `HostTime`/`Clock`; 16 testes; `loom` do par terminar/consultar no CI |
-| 2 | `lm-state` | agente | a fazer |
+| 2 | `lm-state` | agente | **feito** (19/11): `Value` (imbl, O(1) clone e `same_node`, chaves ordenadas, igualdade bit a bit), `PathStep` com `Note(n)`, `NodeId`, `Resource` (chave BLAKE3 hex validada, C9), JSON próprio (leitura estrita e escrita estável com `ryu`, ida e volta bit a bit), `SchemaRegistry` (validação com caminho e campo, `upgrade` em cadeia, apelidos de parâmetro, `defaults`, `refs`/`ids`/`resources` para o `lm-doc`) e o teste dos padrões congelados (U29); 47 testes e alvo `cargo-fuzz` em `fuzz/`. **Medida das 10 mil notas: o `imbl` passa** — 4,4 µs por edição em média (release; pior 74 µs), histórico de mil raízes = 5,8 MB (~5,8 KB por edição, 0,05% de uma cópia do item de 11 MB), crescimento linear (1,44 MB a cada 250 edições), exatamente uma nota nova por edição |
 | 3 | `lm-time` | agente | **feito** (19/11): `Bpm` racional exato (texto decimal, 1–1000, 6 casas), `Ppq`, `TimeSignature`, `TempoMap` com saltos e **rampas lineares no tempo** (exatas, inteiros de 256 bits próprios), `tick_at` = último tique iniciado (inverso exato de `sample_at`, meio-par), `segments_in`, `ticks_in`, compasso:tempo:tique com mudanças de fórmula, `relocate` (H9); sem dependências além do `lm-base`; 43 testes (mapas sorteados, referência independente, 24 h de blocos) |
 | 4 | `lm-doc` | agente | a fazer (depende do 2) |
 | 5 | `lm-render` | agente | a fazer |
