@@ -1,0 +1,17 @@
+[package]
+name = "lm-doc"
+description = "LinuxMusic: the project document — schemas, transactions, history, gestures, feeds, journal patches"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lm-base.workspace = true
+lm-state.workspace = true
+imbl.workspace = true
+blake3.workspace = true

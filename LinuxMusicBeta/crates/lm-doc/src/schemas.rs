@@ -1,0 +1,339 @@
+//! The schemas of the project's node types (interfaces.md, I-3.3, I-3.9; arquitetura-nova.md, piece 2 and the base
+//! spec, items 2 and 3).
+//!
+//! The root of a project is a `"project"`: its `meta` (the id counter and the project's uuid), the settings, the
+//! transport, the tempo map, the **tracks** (the timeline: items, automation, the instrument and the outputs; volume,
+//! mute and solo, no pan) and the **mixing desk** (channels with their fixed rack, inserts, sends, pan; the master).
+//! A track's outputs route freely to the desk's channels (`"to": "m:3"`).
+//!
+//! Every type is at version 1. Their defaults are frozen by the reference file `tests/data/defaults.json` (U29).
+//!
+//! The kind letters of the ids: `t` track, `o` track output, `c` item, `l` item lane, `a` automation lane, `p` plugin
+//! (instrument or insert), `m` mixer channel (the master is always `m:0`), `s` send. The root is `r:0`.
+
+use lm_base::Result;
+use lm_state::{FieldKind, FieldSpec, MAX_SAFE_INT, NodeId, NodeSchema, OnRemove, SchemaRegistry, Value};
+
+/// The master channel: always `m:0`, never removed
+pub const MASTER: NodeId = NodeId { kind: b'm', number: 0 };
+
+/// The type of the project's root
+pub const PROJECT: &str = "project";
+
+pub const KIND_TRACK: u8 = b't';
+pub const KIND_OUTPUT: u8 = b'o';
+pub const KIND_ITEM: u8 = b'c';
+pub const KIND_LANE: u8 = b'l';
+pub const KIND_AUTOMATION: u8 = b'a';
+pub const KIND_PLUGIN: u8 = b'p';
+pub const KIND_CHANNEL: u8 = b'm';
+pub const KIND_SEND: u8 = b's';
+
+/// The type names, for code that reads the tree
+pub mod types {
+    pub const META: &str = "meta";
+    pub const SETTINGS: &str = "project.settings";
+    pub const TRANSPORT: &str = "transport";
+    pub const RANGE: &str = "transport.range";
+    pub const PREROLL: &str = "transport.preroll";
+    pub const METRONOME: &str = "transport.metronome";
+    pub const TEMPO_POINT: &str = "tempo.point";
+    pub const TRACK: &str = "track";
+    pub const TRACK_INPUT: &str = "track.input";
+    pub const OUTPUT: &str = "track.output";
+    pub const ITEM: &str = "item";
+    pub const LANE: &str = "item.lane";
+    pub const COMP: &str = "item.comp";
+    pub const NOTE: &str = "note";
+    pub const AUTOMATION: &str = "automation";
+    pub const AUTOMATION_TARGET: &str = "automation.target";
+    pub const AUTOMATION_POINT: &str = "automation.point";
+    pub const PLUGIN: &str = "plugin";
+    pub const SEND: &str = "send";
+    pub const MIXER: &str = "mixer";
+    pub const MASTER: &str = "mixer.master";
+    pub const CHANNEL: &str = "mixer.channel";
+    pub const DEVICE_OUTPUT: &str = "mixer.device_output";
+    pub const RACK: &str = "rack";
+    pub const RACK_MASTER: &str = "rack.master";
+    pub const TUBE: &str = "rack.tube";
+    pub const EQ: &str = "rack.eq";
+    pub const DYNAMICS: &str = "rack.dynamics";
+    pub const TRANSFORMER: &str = "rack.transformer";
+    pub const TOLERANCE: &str = "rack.tolerance";
+    pub const STEREO: &str = "rack.stereo";
+    pub const BUS_COMPRESSOR: &str = "rack.bus_compressor";
+}
+
+/// The gain stage models of the rack, by their permanent keys (`lm-dsp`, `GainModel::key`)
+pub const GAIN_MODELS: &[&str] =
+    &["flat", "4558", "tl072", "5532", "5534", "12ax7", "12ax7-vintage", "12ax7-hot", "12at7", "12au7"];
+/// The channel compressor's models (`lm-dsp`, `CompressorModel::key`)
+pub const COMPRESSOR_MODELS: &[&str] =
+    &["ssl", "api2500", "dbx160", "urei1176", "la2a", "fairchild670", "gates-sta-level", "altec436", "rca-ba6a"];
+pub const COMPRESSOR_SPEEDS: &[&str] = &["fast", "norm", "slow"];
+/// The gate's modes (`lm-dsp`, `GateMode::key`)
+pub const GATE_MODES: &[&str] = &["std", "kick", "snare", "toms", "vox", "guitar", "bass", "noise", "expander"];
+pub const BUS_RATIOS: &[&str] = &["2", "4", "10"];
+pub const ITEM_KINDS: &[&str] = &["midi", "audio"];
+pub const TIMEBASES: &[&str] = &["musical", "audio"];
+pub const MONITOR_MODES: &[&str] = &["auto", "on", "off"];
+
+const MAX: i64 = MAX_SAFE_INT;
+
+fn object(key: &'static str, type_name: &'static str) -> FieldSpec {
+    FieldSpec::new(key, FieldKind::Object(type_name))
+}
+
+fn list_of(key: &'static str, type_name: &'static str) -> FieldSpec {
+    FieldSpec::new(key, FieldKind::List(Box::new(FieldKind::Object(type_name))))
+}
+
+fn reference(key: &'static str, to: &'static [u8], on_remove: OnRemove) -> FieldSpec {
+    FieldSpec::new(key, FieldKind::Ref { to, on_remove })
+}
+
+fn ints(key: &'static str, min: i64, max: i64, default: &[i64]) -> FieldSpec {
+    FieldSpec::new(key, FieldKind::List(Box::new(FieldKind::Int { min, max })))
+        .default(Value::list(default.iter().map(|v| Value::int(*v))))
+}
+
+/// Every type of the project, at version 1
+pub fn project_schemas() -> Vec<NodeSchema> {
+    use types as ty;
+    vec![
+        NodeSchema::new(PROJECT, 1)
+            .field(object("meta", ty::META))
+            .field(object("project", ty::SETTINGS))
+            .field(object("transport", ty::TRANSPORT))
+            .field(list_of("tempoMap", ty::TEMPO_POINT).default(Value::list([Value::object([
+                ("tick", Value::int(0)),
+                ("bpm", Value::text("120")),
+                ("timeSig", Value::list([Value::int(4), Value::int(4)])),
+                ("ramp", Value::bool(false)),
+            ])])))
+            .field(list_of("tracks", ty::TRACK))
+            .field(object("mixer", ty::MIXER)),
+        // The part of the root that undo never restores (R7)
+        NodeSchema::new(ty::META, 1)
+            .field(FieldSpec::int("issued", 0, MAX, 0))
+            .field(FieldSpec::text("uuid", "")),
+        NodeSchema::new(ty::SETTINGS, 1)
+            .field(FieldSpec::int("sampleRate", 8000, 768_000, 48000))
+            .field(FieldSpec::int("ppq", 1, 100_000, 960))
+            .field(FieldSpec::int("seed", 0, MAX, 0)),
+        NodeSchema::new(ty::TRANSPORT, 1)
+            .field(object("loop", ty::RANGE))
+            .field(object("punch", ty::RANGE))
+            .field(object("preRoll", ty::PREROLL))
+            .field(object("metronome", ty::METRONOME)),
+        NodeSchema::new(ty::RANGE, 1)
+            .field(FieldSpec::bool("on", false))
+            .field(FieldSpec::int("from", 0, MAX, 0))
+            .field(FieldSpec::int("to", 0, MAX, 0)),
+        NodeSchema::new(ty::PREROLL, 1).field(FieldSpec::int("bars", 0, 16, 1)),
+        NodeSchema::new(ty::METRONOME, 1)
+            .field(FieldSpec::bool("on", false))
+            .field(FieldSpec::int("countIn", 0, 8, 0))
+            .field(FieldSpec::real("volume", 0.0, 1.0, 0.8)),
+        // bpm: an exact decimal in text, 1 to 1000 with up to 6 decimals (lm-time, I-18)
+        NodeSchema::new(ty::TEMPO_POINT, 1)
+            .field(FieldSpec::int("tick", 0, MAX, 0))
+            .field(FieldSpec::text("bpm", "120"))
+            .field(ints("timeSig", 1, 64, &[4, 4]))
+            .field(FieldSpec::bool("ramp", false)),
+        // The timeline: items, automation, the instrument and the outputs. No pan (decision of 19/11)
+        NodeSchema::new(ty::TRACK, 1)
+            .field(FieldSpec::id(KIND_TRACK))
+            .field(FieldSpec::text("name", ""))
+            .field(FieldSpec::bool("folder", false))
+            .field(FieldSpec::bool("collapsed", false))
+            .field(reference("parent", &[KIND_TRACK], OnRemove::Clear).nullable().default(Value::NULL))
+            .field(FieldSpec::real("volume", 0.0, 4.0, 1.0))
+            .field(FieldSpec::bool("mute", false))
+            .field(FieldSpec::bool("solo", false))
+            .field(FieldSpec::int("channels", 1, 64, 2))
+            .field(object("instrument", ty::PLUGIN).nullable().default(Value::NULL))
+            .field(object("input", ty::TRACK_INPUT).nullable().default(Value::NULL))
+            .field(FieldSpec::bool("armed", false))
+            .field(FieldSpec::choice("monitor", MONITOR_MODES, "auto"))
+            .field(list_of("outputs", ty::OUTPUT))
+            .field(list_of("items", ty::ITEM))
+            .field(list_of("automation", ty::AUTOMATION)),
+        NodeSchema::new(ty::TRACK_INPUT, 1)
+            .field(FieldSpec::text("device", "in"))
+            .field(ints("channels", 1, 256, &[1])),
+        // An output: a port of the instrument (or a split of an audio track's channels) to a desk channel. Removing
+        // the channel sends it to the master (I-3.9)
+        NodeSchema::new(ty::OUTPUT, 1)
+            .field(FieldSpec::id(KIND_OUTPUT))
+            .field(FieldSpec::text("port", "main"))
+            .field(FieldSpec::int("channels", 1, 64, 2))
+            .field(reference("to", &[KIND_CHANNEL], OnRemove::Redirect(MASTER)).default(Value::text("m:0"))),
+        // One type for both kinds; the fields of the other kind stay empty (a domain rule)
+        NodeSchema::new(ty::ITEM, 1)
+            .field(FieldSpec::id(KIND_ITEM))
+            .field(FieldSpec::choice("kind", ITEM_KINDS, "midi"))
+            .field(FieldSpec::text("name", ""))
+            .field(FieldSpec::int("start", 0, MAX, 0))
+            .field(FieldSpec::int("length", 1, MAX, 3840))
+            .field(FieldSpec::bool("mute", false))
+            .field(FieldSpec::choice("timebase", TIMEBASES, "musical"))
+            .field(FieldSpec::new("notes", FieldKind::NoteMap(ty::NOTE)))
+            .field(list_of("lanes", ty::LANE))
+            .field(list_of("comp", ty::COMP))
+            .field(FieldSpec::int("fadeIn", 0, MAX, 0))
+            .field(FieldSpec::int("fadeOut", 0, MAX, 0))
+            .field(FieldSpec::real("gain", 0.0, 4.0, 1.0)),
+        NodeSchema::new(ty::LANE, 1)
+            .field(FieldSpec::id(KIND_LANE))
+            .field(FieldSpec::new("source", FieldKind::Resource("audio")))
+            .field(FieldSpec::int("sourceOffset", 0, MAX, 0))
+            .field(FieldSpec::text("name", "")),
+        // A comp segment: from/to in the item's ticks; its lane by id (U2). A removed lane leaves silence
+        NodeSchema::new(ty::COMP, 1)
+            .field(FieldSpec::int("from", 0, MAX, 0))
+            .field(FieldSpec::int("to", 0, MAX, 0))
+            .field(reference("lane", &[KIND_LANE], OnRemove::Clear).nullable().default(Value::NULL))
+            .field(FieldSpec::int("fade", 0, MAX, 240)),
+        // A note, in an item's note map by its number (C1); start is from the item's start
+        NodeSchema::new(ty::NOTE, 1)
+            .field(FieldSpec::int("key", 0, 127, 60))
+            .field(FieldSpec::int("start", 0, MAX, 0))
+            .field(FieldSpec::int("length", 1, MAX, 240))
+            .field(FieldSpec::real("velocity", 0.0, 1.0, 0.8)),
+        // Automation lives with the owner of the parameter (base spec, item 2)
+        NodeSchema::new(ty::AUTOMATION, 1)
+            .field(FieldSpec::id(KIND_AUTOMATION))
+            .field(object("target", ty::AUTOMATION_TARGET))
+            .field(FieldSpec::bool("on", true))
+            .field(list_of("points", ty::AUTOMATION_POINT)),
+        NodeSchema::new(ty::AUTOMATION_TARGET, 1)
+            .field(reference("node", &[KIND_TRACK, KIND_CHANNEL, KIND_PLUGIN], OnRemove::RemoveOwner))
+            .field(FieldSpec::new("param", FieldKind::Text)),
+        NodeSchema::new(ty::AUTOMATION_POINT, 1)
+            .field(FieldSpec::int("tick", 0, MAX, 0))
+            .field(FieldSpec::new("value", FieldKind::Real { min: -1.0e12, max: 1.0e12 }))
+            .field(FieldSpec::real("curve", -1.0, 1.0, 0.0).optional()),
+        // An instrument or an insert. `state` is the plugin's own tree, validated by the schema "plugin:<plugin>" at
+        // `version`
+        NodeSchema::new(ty::PLUGIN, 1)
+            .field(FieldSpec::id(KIND_PLUGIN))
+            .field(FieldSpec::new("plugin", FieldKind::Text))
+            .field(FieldSpec::int("version", 1, MAX, 1))
+            .field(FieldSpec::new("state", FieldKind::Any).default(Value::empty_object()))
+            .field(FieldSpec::bool("bypass", false)),
+        // A send to another channel, or to an insert's sidechain port (`port`, then required)
+        NodeSchema::new(ty::SEND, 1)
+            .field(FieldSpec::id(KIND_SEND))
+            .field(reference("to", &[KIND_CHANNEL, KIND_PLUGIN], OnRemove::RemoveOwner))
+            .field(FieldSpec::new("port", FieldKind::Text).optional())
+            .field(FieldSpec::real("amount", 0.0, 4.0, 1.0))
+            .field(FieldSpec::bool("pre", false)),
+        NodeSchema::new(ty::MIXER, 1).field(object("master", ty::MASTER)).field(list_of("channels", ty::CHANNEL)),
+        NodeSchema::new(ty::MASTER, 1)
+            .field(FieldSpec::id(KIND_CHANNEL))
+            .field(FieldSpec::text("name", "Master"))
+            .field(FieldSpec::int("channels", 1, 64, 2))
+            .field(FieldSpec::real("volume", 0.0, 4.0, 1.0))
+            .field(FieldSpec::bool("mute", false))
+            .field(object("rack", ty::RACK_MASTER))
+            .field(list_of("inserts", ty::PLUGIN))
+            .field(list_of("automation", ty::AUTOMATION))
+            .field(object("output", ty::DEVICE_OUTPUT)),
+        NodeSchema::new(ty::DEVICE_OUTPUT, 1)
+            .field(FieldSpec::text("device", "out"))
+            .field(ints("channels", 1, 256, &[1, 2])),
+        NodeSchema::new(ty::CHANNEL, 1)
+            .field(FieldSpec::id(KIND_CHANNEL))
+            .field(FieldSpec::text("name", ""))
+            .field(FieldSpec::int("channels", 1, 64, 2))
+            .field(FieldSpec::real("volume", 0.0, 4.0, 1.0))
+            .field(FieldSpec::real("pan", -1.0, 1.0, 0.0))
+            .field(FieldSpec::bool("mute", false))
+            .field(FieldSpec::bool("solo", false))
+            .field(object("rack", ty::RACK))
+            .field(list_of("inserts", ty::PLUGIN))
+            .field(list_of("sends", ty::SEND))
+            .field(list_of("automation", ty::AUTOMATION))
+            .field(reference("output", &[KIND_CHANNEL], OnRemove::Redirect(MASTER)).default(Value::text("m:0"))),
+        // The rack of a channel: fixed sections, no ids; parameters addressed as "rack.tube.drive" (M5)
+        NodeSchema::new(ty::RACK, 1)
+            .field(object("tube", ty::TUBE))
+            .field(object("eq", ty::EQ))
+            .field(object("dynamics", ty::DYNAMICS))
+            .field(object("transformer", ty::TRANSFORMER))
+            .field(object("tolerance", ty::TOLERANCE)),
+        NodeSchema::new(ty::RACK_MASTER, 1)
+            .field(object("tube", ty::TUBE))
+            .field(object("stereo", ty::STEREO))
+            .field(object("dynamics", ty::BUS_COMPRESSOR))
+            .field(object("transformer", ty::TRANSFORMER)),
+        // The gain stage: the GAIN pot (`drive`, unity at 0.25) into an op-amp or a tube
+        NodeSchema::new(ty::TUBE, 1)
+            .field(FieldSpec::bool("on", true))
+            .field(FieldSpec::choice("model", GAIN_MODELS, "4558"))
+            .field(FieldSpec::real("drive", 0.0, 1.0, 0.25))
+            .field(FieldSpec::bool("realistic", false))
+            .field(FieldSpec::bool("lowCut", false)),
+        // Filters, mono bass and the 4-band desk EQ (dB)
+        NodeSchema::new(ty::EQ, 1)
+            .field(FieldSpec::bool("on", true))
+            .field(FieldSpec::real("highPass", 20.0, 20000.0, 20.0))
+            .field(FieldSpec::real("lowPass", 20.0, 20000.0, 20000.0))
+            .field(FieldSpec::real("monoBass", 0.0, 100.0, 0.0))
+            .field(FieldSpec::real("monoBassFrequency", 20.0, 500.0, 120.0))
+            .field(FieldSpec::real("low", -15.0, 15.0, 0.0))
+            .field(FieldSpec::real("lowMid", -15.0, 15.0, 0.0))
+            .field(FieldSpec::real("highMid", -15.0, 15.0, 0.0))
+            .field(FieldSpec::real("high", -15.0, 15.0, 0.0)),
+        // The channel's gate and compressor (SSL E series and the other models)
+        NodeSchema::new(ty::DYNAMICS, 1)
+            .field(FieldSpec::bool("on", true))
+            .field(FieldSpec::choice("compModel", COMPRESSOR_MODELS, "ssl"))
+            .field(FieldSpec::real("compAmount", 0.0, 1.0, 0.0))
+            .field(FieldSpec::real("compRatio", 0.0, 1.0, 0.0))
+            .field(FieldSpec::choice("compSpeed", COMPRESSOR_SPEEDS, "norm"))
+            .field(FieldSpec::real("compRelease", 0.0, 1.0, 0.5))
+            .field(FieldSpec::real("gateThreshold", -60.0, 20.0, -10.0))
+            .field(FieldSpec::real("gateRange", 0.0, 80.0, 0.0))
+            .field(FieldSpec::choice("gateMode", GATE_MODES, "std")),
+        NodeSchema::new(ty::TRANSFORMER, 1).field(FieldSpec::bool("on", false)),
+        // The channel's component tolerances, drawn from its number (lm-dsp, ChannelTolerance)
+        NodeSchema::new(ty::TOLERANCE, 1).field(FieldSpec::bool("on", true)),
+        NodeSchema::new(ty::STEREO, 1)
+            .field(FieldSpec::real("width", 0.0, 200.0, 100.0))
+            .field(FieldSpec::real("monoBass", 0.0, 100.0, 0.0))
+            .field(FieldSpec::real("bassFrequency", 20.0, 500.0, 120.0))
+            .field(FieldSpec::real("air", -12.0, 12.0, 0.0)),
+        // The SSL G bus compressor: attack and release are indexes of the panel's steps (release 4 is AUTO)
+        NodeSchema::new(ty::BUS_COMPRESSOR, 1)
+            .field(FieldSpec::bool("on", false))
+            .field(FieldSpec::real("threshold", -15.0, 15.0, 5.0))
+            .field(FieldSpec::choice("ratio", BUS_RATIOS, "4"))
+            .field(FieldSpec::int("attack", 0, 5, 4))
+            .field(FieldSpec::int("release", 0, 4, 4))
+            .field(FieldSpec::real("makeup", -5.0, 15.0, 0.0)),
+    ]
+}
+
+/// Adds every project type to a registry (the plugins add theirs, `"plugin:<id>"`, before or after)
+pub fn register_project_schemas(registry: &mut SchemaRegistry) -> Result<()> {
+    for schema in project_schemas() {
+        registry.add(schema)?;
+    }
+    Ok(())
+}
+
+/// A registry with only the project's types (the plugins' are added by the plugin layer)
+pub fn project_registry() -> Result<SchemaRegistry> {
+    let mut registry = SchemaRegistry::new();
+    register_project_schemas(&mut registry)?;
+    registry.check_complete()?;
+    Ok(registry)
+}
+
+/// The schema type of a plugin's state
+pub fn plugin_type(plugin: &str) -> String {
+    format!("plugin:{plugin}")
+}
