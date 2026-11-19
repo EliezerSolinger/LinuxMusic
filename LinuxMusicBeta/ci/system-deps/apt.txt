@@ -1,0 +1,13 @@
+# Ubuntu packages every Linux job installs before building the workspace (ci/install-system-deps.sh).
+# One package per line; `#` starts a comment. Add here what a new crate links to, with the crate's name beside it.
+#
+# ---- core and lm-sys-* crates ------------------------------------------------------------------------------------
+pkg-config
+libasound2-dev        # lm-sys-alsa: ALSA PCM and sequencer
+# libsndfile1-dev     # lm-sys-sndfile        (uncomment when the crate exists)
+# libfluidsynth-dev   # lm-sys-fluidsynth
+# libsamplerate0-dev  # lm-sys-samplerate
+# librubberband-dev   # lm-sys-rubberband
+# libjack-jackd2-dev  # lm-sys-jack
+# liblilv-dev         # lm-sys-lilv
+# libdbus-1-dev is NOT needed: zbus is pure Rust (decisoes-autonomas.md)

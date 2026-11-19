@@ -1,0 +1,4 @@
+# The crates whose tests run under miri (interfaces.md, I-17 and Parte 4). A name that is not (yet) a workspace crate
+# is skipped. A crate can also opt in from its own Cargo.toml with `[package.metadata.lm-ci] miri = true`.
+lm-base
+lm-state

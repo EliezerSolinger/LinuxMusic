@@ -1,9 +1,27 @@
 ---
 name: build
-'on': [push, pull_request]
+'on':
+  # The old program lives in legado/ (the new one, LinuxMusicBeta/, has its own workflow: beta.yml)
+  push:
+    paths:
+      - 'legado/**'
+      - '.gitmodules'
+      - '.github/workflows/build.yml'
+      - '.github/workflows/deps-*.txt'
+      - '.github/workflows/setup-mingw-packages.sh'
+  pull_request:
+    paths:
+      - 'legado/**'
+      - '.gitmodules'
+      - '.github/workflows/build.yml'
+      - '.github/workflows/deps-*.txt'
+      - '.github/workflows/setup-mingw-packages.sh'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+defaults:
+  run:
+    working-directory: legado
 jobs:
   linux-x86_64:
     name: linux-x86_64
@@ -47,10 +65,10 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
-            $(xargs < .github/workflows/deps-ubuntu-24.04-gcc.txt)
+            $(xargs < ../.github/workflows/deps-ubuntu-24.04-gcc.txt)
           sudo apt-get install -y --install-recommends g++-multilib gcc-multilib winehq-devel wine-devel-dev
           sudo apt-get install -y --install-recommends \
-            $(xargs < .github/workflows/deps-ubuntu-24.04-fltk.txt)
+            $(xargs < ../.github/workflows/deps-ubuntu-24.04-fltk.txt)
       - name: Cache ccache data
         uses: actions/cache@v6
         with:
@@ -61,12 +79,12 @@ jobs:
           path: ~/.cache/ccache
       - name: Configure fltk
         run: |
-          cmake -S fltk -B fltk/build -DFLTK_BUILD_SHARED_LIBS=ON -DFLTK_BACKEND_WAYLAND=ON \
+          cmake -S ../fltk -B ../fltk/build -DFLTK_BUILD_SHARED_LIBS=ON -DFLTK_BACKEND_WAYLAND=ON \
             -DFLTK_USE_LIBDECOR_GTK=OFF -DFLTK_BUILD_TEST=OFF -DFLTK_BUILD_GL=OFF
       - name: Install fltk
         run: |
-          cmake --build fltk/build
-          sudo cmake --install fltk/build --prefix /usr
+          cmake --build ../fltk/build
+          sudo cmake --install ../fltk/build --prefix /usr
       - name: Configure
         run: |
           ccache --zero-stats
@@ -86,7 +104,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           archive: false
-          path: build/lmms-*.AppImage
+          path: legado/build/lmms-*.AppImage
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -131,9 +149,9 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
-            $(xargs < .github/workflows/deps-ubuntu-24.04-gcc.txt)
+            $(xargs < ../.github/workflows/deps-ubuntu-24.04-gcc.txt)
           sudo apt-get install -y --install-recommends \
-            $(xargs < .github/workflows/deps-ubuntu-24.04-fltk.txt)
+            $(xargs < ../.github/workflows/deps-ubuntu-24.04-fltk.txt)
       - name: Cache ccache data
         uses: actions/cache@v6
         with:
@@ -144,12 +162,12 @@ jobs:
           path: ~/.cache/ccache
       - name: Configure fltk
         run: |
-          cmake -S fltk -B fltk/build -DFLTK_BUILD_SHARED_LIBS=ON -DFLTK_BACKEND_WAYLAND=ON \
+          cmake -S ../fltk -B ../fltk/build -DFLTK_BUILD_SHARED_LIBS=ON -DFLTK_BACKEND_WAYLAND=ON \
             -DFLTK_USE_LIBDECOR_GTK=OFF -DFLTK_BUILD_TEST=OFF -DFLTK_BUILD_GL=OFF
       - name: Install fltk
         run: |
-          cmake --build fltk/build
-          sudo cmake --install fltk/build --prefix /usr
+          cmake --build ../fltk/build
+          sudo cmake --install ../fltk/build --prefix /usr
       - name: Configure
         run: |
           ccache --zero-stats
@@ -169,7 +187,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           archive: false
-          path: build/lmms-*.AppImage
+          path: legado/build/lmms-*.AppImage
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -264,7 +282,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           archive: false
-          path: build/lmms-*.dmg
+          path: legado/build/lmms-*.dmg
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -282,7 +300,7 @@ jobs:
           path: ~/Library/Caches/Homebrew/downloads
         env:
           key: "homebrew-${{ matrix.arch }}\
-            -${{ hashFiles('Brewfile.lock.json') }}"
+            -${{ hashFiles('legado/Brewfile.lock.json') }}"
   mingw:
     name: mingw64
     runs-on: ubuntu-latest
@@ -310,10 +328,10 @@ jobs:
         id: cache-deps
         uses: actions/cache@v6
         with:
-          key: vcpkg-mingw${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-mingw${{ matrix.arch }}-${{ hashFiles('legado/vcpkg.json') }}
           restore-keys: |
             vcpkg-mingw${{ matrix.arch }}-
-          path: build/vcpkg_installed
+          path: legado/build/vcpkg_installed
       - name: Cache ccache data
         uses: actions/cache@v6
         with:
@@ -325,9 +343,9 @@ jobs:
           path: ~/.cache/ccache
       - name: Install dependencies
         run: |
-          sudo .github/workflows/setup-mingw-packages.sh
+          sudo ../.github/workflows/setup-mingw-packages.sh
           sudo apt-get install -y --no-install-recommends \
-            $(xargs < .github/workflows/deps-ubuntu-24.04-mingw.txt)
+            $(xargs < ../.github/workflows/deps-ubuntu-24.04-mingw.txt)
       - name: Configure
         run: |
           export VCPKG_ROOT=${VCPKG_INSTALLATION_ROOT}
@@ -349,7 +367,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           archive: false
-          path: build/lmms-*.exe
+          path: legado/build/lmms-*.exe
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -376,10 +394,10 @@ jobs:
         id: cache-deps
         uses: actions/cache@v6
         with:
-          key: vcpkg-msvc-x86_64-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-x86_64-${{ hashFiles('legado/vcpkg.json') }}
           restore-keys: |
             vcpkg-msvc-x86_64-
-          path: build\vcpkg_installed
+          path: legado\build\vcpkg_installed
       - name: Cache ccache data
         uses: actions/cache@v6
         with:
@@ -435,7 +453,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           archive: false
-          path: build\lmms-*.exe
+          path: legado\build\lmms-*.exe
       - name: Trim ccache and print statistics
         run: |
           ccache --cleanup
@@ -451,6 +469,7 @@ jobs:
     defaults:
       run:
         shell: msys2 {0}
+        working-directory: legado
     env:
       CMAKE_OPTS: >-
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -480,7 +499,7 @@ jobs:
           msystem: CLANGARM64
           update: true
       - name: Install dependencies
-        run: pacman --needed --noconfirm -S - < .github/workflows/deps-msys2-clangarm64.txt
+        run: pacman --needed --noconfirm -S - < ../.github/workflows/deps-msys2-clangarm64.txt
       - name: Cache ccache data
         uses: actions/cache@v6
         with:
@@ -501,7 +520,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           archive: false
-          path: build\lmms-*.exe
+          path: legado\build\lmms-*.exe
       - name: Trim ccache and print statistics
         run: |
           /clang64/bin/ccache.exe --cleanup

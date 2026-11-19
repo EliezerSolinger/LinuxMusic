@@ -19,7 +19,7 @@ quando passa no critério de "pronto quando" de `interfaces.md` (Parte 4). As de
 | 10 | a primeira fatia | — | a fazer |
 | 10b | revisão final de coerência | — | a fazer |
 | 11 | protótipo de interface (GPUI, Slint, Qt) e a `gui` | — | a fazer, em paralelo com o núcleo |
-| — | CI no GitHub (Linux x86-64 principal; Linux aarch64 e macOS) | — | a fazer |
+| — | CI no GitHub (Linux x86-64 principal; Linux aarch64 e macOS) | agente de CI | em andamento (19/11): `.github/workflows/beta.yml`, `deny.toml`, `ci/` |
 
 ## Como os agentes trabalham
 

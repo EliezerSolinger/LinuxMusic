@@ -1,0 +1,2 @@
+# Homebrew packages for the GUI (GPUI) on macOS, installed only when an lm-gui or lm-gui-* crate exists.
+# (none yet: GPUI uses Metal from the system and the Xcode toolchain of the runner)

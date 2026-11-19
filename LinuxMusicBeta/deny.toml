@@ -1,0 +1,131 @@
+# cargo-deny for LinuxMusicBeta (run by the `deny` job of .github/workflows/beta.yml; locally:
+# `cargo deny check` in this folder). It checks the licences, the banned and the allowed crates, the sources and the
+# security advisories of every crate the workspace pulls in.
+#
+# The other rules of the CI that cargo-deny cannot express live in ci/:
+#   - ci/check-core-no-gui.py: no core crate (lm-*, not lm-gui-*) has a GUI crate anywhere in its tree;
+#   - ci/check-unsafe.py: `unsafe` only in lm-sys-* crates;
+#   - ci/check-workspace-deps.py: every dependency comes from [workspace.dependencies], the one list of allowed
+#     crates (interfaces.md, I-17).
+
+[graph]
+# The platforms the program is built for (interfaces.md, Parte 4: Linux x86-64 and aarch64, macOS aarch64).
+# Dependencies only for other platforms (Windows...) are left out of every check. `cfg(loom)` dependencies are left
+# out too: no target sets that cfg, and loom never goes into the program.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+]
+# Optional dependencies count: a feature must not be a way around the rules
+all-features = true
+
+[output]
+feature-depth = 1
+
+[advisories]
+# Every vulnerability and unsound advisory is an error (cargo-deny's fixed behaviour). A crate that is no longer
+# maintained is an error when we depend on it directly, and a warning further down the tree.
+unmaintained = "workspace"
+unsound = "all"
+yanked = "deny"
+# An ignored advisory needs its reason and, when possible, an expiry date
+ignore = []
+
+[licenses]
+# The program is GPL-2.0-or-later. A dependency's licence must let the whole be distributed under the GPL version 2
+# (and later): permissive licences, the weak copylefts that allow it, and the GPL 2 or later itself.
+#
+# Not allowed:
+#   - Apache-2.0 alone: compatible with the GPL version 3 only, so it would take away the "version 2" of the program's
+#     licence. Most Rust crates are "MIT OR Apache-2.0" and pass through the MIT side.
+#   - GPL-3.0-only, GPL-3.0-or-later, LGPL-3.0-*, AGPL-*: the same reason, stronger.
+# A crate that needs one of them is a decision for the user (write it in docs/decisoes-autonomas.md) and then an entry
+# in `exceptions` below, for that crate only.
+#
+# NOTE for the GUI: GPUI (and gpui-component) are Apache-2.0. When the first lm-gui crate lands, cargo-deny fails here
+# until the decision above is made: either the program is distributed under the GPL version 3 (GPL-2.0-or-later
+# allows it; then add "Apache-2.0" to `allow`), or each GPUI crate gets an exception.
+allow = [
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "LGPL-2.1-or-later",
+    "GPL-2.0-or-later",
+]
+confidence-threshold = 0.9
+exceptions = []
+# Unused entries in `allow` are expected (the list is the policy, not the current tree)
+unused-allowed-license = "allow"
+
+[licenses.private]
+# The workspace crates are ours (GPL-2.0-or-later, publish = false)
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# The workspace crates refer to each other by path, without a version: that is not a wildcard on crates.io
+allow-wildcard-paths = true
+highlight = "all"
+
+deny = [
+    # ---- The GUI is GPUI, and only GPUI (decision of the user, 19/11) ----------------------------------------------
+    # Qt and Slint are not used anywhere in the new program.
+    { crate = "cxx-qt", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "cxx-qt-lib", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "cxx-qt-build", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "cxx-qt-gen", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "qmetaobject", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "qttypes", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "qt_core", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "qt_gui", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "qt_widgets", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "slint", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "slint-build", reason = "the GUI is GPUI only (decision of 19/11)" },
+    { crate = "i-slint-core", reason = "the GUI is GPUI only (decision of 19/11)" },
+    # GPUI itself only as a direct dependency of the GUI crates. Add each new lm-gui-* crate that uses GPUI to the
+    # wrappers. (A core crate that reaches GPUI through another crate is caught by ci/check-core-no-gui.py.)
+    { crate = "gpui", wrappers = ["lm-gui", "gpui-component"], reason = "GPUI only in the lm-gui crates" },
+    { crate = "gpui-component", wrappers = ["lm-gui"], reason = "GPUI only in the lm-gui crates" },
+
+    # ---- Lock-free structures: only the allowed crates (interfaces.md, I-17) ---------------------------------------
+    # Allowed: rtrb, triple_buffer, assert_no_alloc, crossbeam-utils (CachePadded only) and std's atomics. A crate
+    # below needs a written decision in interfaces.md, I-17 before it leaves this list.
+    { crate = "crossbeam", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "crossbeam-channel", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "crossbeam-queue", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "crossbeam-deque", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "crossbeam-epoch", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "crossbeam-skiplist", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "lockfree", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "ringbuf", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "bbqueue", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "heapless", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "arc-swap", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "left-right", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "basedrop", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "seize", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "haphazard", reason = "lock-free crate outside the allowed list (I-17)" },
+    { crate = "atomic_float", reason = "lock-free crate outside the allowed list (I-17)" },
+]
+
+[sources]
+# Only crates.io, plus the git repositories of GPUI (Zed) and gpui-component, which are not all on crates.io
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = ["zed-industries", "longbridge"]

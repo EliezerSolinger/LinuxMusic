@@ -1,0 +1,18 @@
+# Ubuntu packages for the GUI (GPUI), installed by ci/install-system-deps.sh only when the workspace has an lm-gui or
+# lm-gui-* crate (the core jobs stay small). GPUI's Linux requirements (zed: script/linux, the GPUI part).
+libxkbcommon-dev
+libxkbcommon-x11-dev
+libwayland-dev
+libvulkan-dev
+libx11-dev
+libx11-xcb-dev
+libxcb1-dev
+libxcb-randr0-dev
+libxcb-xfixes0-dev
+libxcb-xkb-dev
+libfontconfig-dev
+libfreetype-dev
+libzstd-dev
+libssl-dev
+libgit2-dev
+libsqlite3-dev

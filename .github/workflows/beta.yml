@@ -1,0 +1,325 @@
+---
+# CI of LinuxMusicBeta, the new program (a Cargo workspace in LinuxMusicBeta/, members = crates/*).
+#
+# Every job is generic over the workspace: the scripts in LinuxMusicBeta/ci/ ask `cargo metadata` which crates exist,
+# so a crate that does not exist yet never breaks the CI and a new crate is picked up without editing this file.
+#   - system packages: LinuxMusicBeta/ci/system-deps/{apt,brew}.txt (and *-gui.txt once an lm-gui crate exists)
+#   - loom: every crate with `cfg(loom)` code runs `RUSTFLAGS="--cfg loom" cargo test --release`
+#   - miri: the crates in LinuxMusicBeta/ci/miri-crates.txt, or with `[package.metadata.lm-ci] miri = true`
+#   - sanitizers (ASan, TSan, LSan): the whole workspace
+#   - the toolchain is the workspace's `rust-version`; nightly only for miri and the sanitizers
+# Platforms (interfaces.md, Parte 4): Linux x86-64 is the main one (everything); Linux aarch64 and macOS aarch64 build
+# and run the tests. Tests that write output (render references, H6) put it in $LM_TEST_OUTPUT_DIR, which is
+# uploaded as an artifact named after the platform.
+name: beta
+'on':
+  push:
+    paths:
+      - 'LinuxMusicBeta/**'
+      - '.github/workflows/beta.yml'
+  pull_request:
+    paths:
+      - 'LinuxMusicBeta/**'
+      - '.github/workflows/beta.yml'
+  schedule:
+    # Weekly, for new security advisories and for nightly changes that break miri or the sanitizers
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+defaults:
+  run:
+    shell: bash
+    working-directory: LinuxMusicBeta
+jobs:
+  policy:
+    name: policy (unsafe, core without GUI, dependencies, CI files)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up Rust
+        run: ci/setup-rust.sh msrv
+      - name: unsafe only in lm-sys-* crates
+        run: python3 ci/check-unsafe.py
+      - name: Every dependency from [workspace.dependencies]
+        run: python3 ci/check-workspace-deps.py
+      - name: The core never depends on a GUI crate
+        run: python3 ci/check-core-no-gui.py
+      - name: Lint the CI files (yamllint, shellcheck, actionlint)
+        working-directory: .
+        run: |
+          yamllint .github/workflows/beta.yml
+          shellcheck LinuxMusicBeta/ci/*.sh
+          docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color .github/workflows/beta.yml
+
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up Rust
+        run: ci/setup-rust.sh msrv rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+  clippy:
+    name: clippy and docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up Rust
+        run: ci/setup-rust.sh msrv clippy
+      - name: Install system packages
+        run: ci/install-system-deps.sh
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: LinuxMusicBeta -> target
+          key: clippy
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: cargo clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: cargo clippy (loom configuration)
+        env:
+          RUSTFLAGS: --cfg loom -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: cargo doc
+        run: cargo doc --locked --workspace --all-features --no-deps --document-private-items
+
+  deny:
+    name: cargo-deny (licences, bans, sources, advisories)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up Rust
+        run: ci/setup-rust.sh msrv
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.21.0
+      - name: cargo deny check
+        run: cargo deny --locked check --config deny.toml
+
+  test:
+    name: test (${{ matrix.platform }}, ${{ matrix.profile }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux-x86_64, linux-aarch64, macos-aarch64]
+        profile: [debug, release]
+        include:
+          - platform: linux-x86_64
+            os: ubuntu-24.04
+          - platform: linux-aarch64
+            os: ubuntu-24.04-arm
+          - platform: macos-aarch64
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      PROFILE_FLAG: ${{ matrix.profile == 'release' && '--release' || '' }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up Rust
+        run: ci/setup-rust.sh msrv
+      - name: Install system packages
+        run: ci/install-system-deps.sh
+      - name: Set up ALSA (null PCM, snd-aloop when the runner allows it)
+        if: runner.os == 'Linux'
+        run: ci/setup-alsa.sh
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: LinuxMusicBeta -> target
+          key: test-${{ matrix.platform }}-${{ matrix.profile }}
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: cargo build
+        # PROFILE_FLAG is empty or one word: left unquoted on purpose
+        run: |
+          # shellcheck disable=SC2086
+          cargo build --locked --workspace --all-targets $PROFILE_FLAG
+      - name: cargo test
+        env:
+          LM_TEST_OUTPUT_DIR: ${{ runner.temp }}/lm-test-output
+        run: |
+          mkdir -p "$LM_TEST_OUTPUT_DIR"
+          # shellcheck disable=SC2086
+          cargo test --locked --workspace $PROFILE_FLAG
+      - name: Upload the tests' output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-output-${{ matrix.platform }}-${{ matrix.profile }}
+          path: ${{ runner.temp }}/lm-test-output
+          if-no-files-found: ignore
+          retention-days: 14
+
+  loom:
+    name: loom
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up Rust
+        run: ci/setup-rust.sh msrv
+      - name: Install system packages
+        run: ci/install-system-deps.sh
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: LinuxMusicBeta -> target
+          key: loom
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: loom model checks (every crate with cfg(loom))
+        run: ci/run-loom.sh
+
+  miri:
+    name: miri
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # Nightly adds lints before stable: warnings do not fail the nightly jobs
+      RUSTFLAGS: ''
+      RUSTDOCFLAGS: ''
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up Rust (nightly with miri)
+        run: ci/setup-rust.sh nightly miri rust-src
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: LinuxMusicBeta -> target
+          key: miri
+          cache-directories: ~/.cache/miri
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: cargo miri test (the miri crates that exist)
+        run: ci/run-miri.sh
+
+  sanitizers:
+    name: sanitizer (${{ matrix.sanitizer }})
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, thread, leak]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RUSTFLAGS: ''
+      RUSTDOCFLAGS: ''
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up Rust (nightly with the standard library's source)
+        run: ci/setup-rust.sh nightly rust-src
+      - name: Install system packages
+        run: ci/install-system-deps.sh
+      - name: Set up ALSA (null PCM, snd-aloop when the runner allows it)
+        run: ci/setup-alsa.sh
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: LinuxMusicBeta -> target
+          key: sanitizer-${{ matrix.sanitizer }}
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: cargo test under the sanitizer
+        run: ci/run-sanitizer.sh ${{ matrix.sanitizer }}
+
+  stable:
+    # The newest stable Rust, ahead of the workspace's rust-version: new lints and warnings show up here first, as a
+    # warning, before anyone moves the rust-version. It does not fail the CI.
+    name: newest stable (advisory)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up Rust
+        run: ci/setup-rust.sh stable clippy
+      - name: Install system packages
+        run: ci/install-system-deps.sh
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: LinuxMusicBeta -> target
+          key: stable
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: cargo clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: cargo test
+        run: cargo test --locked --workspace
+
+  prototype-gpui:
+    # LinuxMusicBeta/prototypes/ is a separate workspace (the GUI prototype). Optional: a `cargo check` of
+    # prototypes/gpui when it exists, with GPUI's system packages. It does not fail the CI.
+    name: prototype GPUI (optional cargo check)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    continue-on-error: true
+    env:
+      RUSTFLAGS: ''
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Look for the prototype
+        id: find
+        run: |
+          if [ -f prototypes/gpui/Cargo.toml ]; then
+            echo "present=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "present=false" >>"$GITHUB_OUTPUT"
+            echo "::notice::prototypes/gpui does not exist yet: nothing to check"
+          fi
+      - name: Set up Rust
+        if: steps.find.outputs.present == 'true'
+        run: ci/setup-rust.sh stable
+      - name: Install system packages (with GPUI's)
+        if: steps.find.outputs.present == 'true'
+        run: ci/install-system-deps.sh --gui
+      - name: Cache
+        if: steps.find.outputs.present == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: LinuxMusicBeta/prototypes -> target
+          key: prototype-gpui
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: cargo check
+        if: steps.find.outputs.present == 'true'
+        run: cargo check --manifest-path prototypes/gpui/Cargo.toml --all-targets
+
+  beta-ok:
+    # One status for branch protection: green only when every required job is green
+    name: beta ok
+    if: always()
+    needs: [policy, fmt, clippy, deny, test, loom, miri, sanitizers]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every required job passed
+        working-directory: .
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")' >/dev/null

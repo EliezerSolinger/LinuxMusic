@@ -1,0 +1,79 @@
+# Crates that make a program a GUI program. No core crate (lm-* that is not lm-gui or lm-gui-*) may depend on any of
+# them, directly or through other crates (arquitetura-nova.md: the core runs headless; interfaces.md, I-15).
+#
+# A line is a crate name; a line ending in `*` is a prefix (`slint*` matches slint, slint-build, i-slint is separate).
+# Used by ci/check-core-no-gui.py.
+
+# Qt
+qt*
+cxx-qt*
+qmetaobject*
+qttypes
+ritual*
+# GPUI, Slint and the other Rust toolkits
+gpui*
+slint*
+i-slint*
+egui*
+eframe
+iced*
+druid*
+xilem*
+masonry*
+vizia*
+floem*
+makepad*
+relm4*
+dioxus*
+tauri*
+wry
+tao
+fltk*
+imgui*
+nannou*
+bevy*
+ggez*
+nwg
+native-windows-gui
+# GTK and its drawing stack
+gtk*
+gtk4*
+gdk*
+gdk4*
+libadwaita*
+cairo-rs
+pango*
+# Windows, surfaces and GPU drawing
+winit*
+raw-window-handle
+softbuffer
+baseview
+glutin*
+glium*
+glow
+wgpu*
+vello*
+femtovg*
+skia-safe
+skia-bindings
+tiny-skia*
+cosmic-text
+glyphon
+sdl2*
+sdl3*
+minifb
+pixels
+# Display servers and native window systems
+x11
+x11-dl
+x11rb*
+xcb*
+wayland-client
+wayland-cursor
+wayland-egl
+wayland-protocols*
+smithay-client-toolkit
+sctk-adwaita
+cocoa*
+objc2-app-kit
+core-graphics*

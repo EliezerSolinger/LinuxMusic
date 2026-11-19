@@ -1,12 +1,28 @@
 ---
 name: checks
-'on': [push, pull_request]
+'on':
+  # The old program lives in legado/ (the new one, LinuxMusicBeta/, has its own workflow: beta.yml)
+  push:
+    paths:
+      - 'legado/**'
+      - '.gitmodules'
+      - '.yamllint'
+      - '.github/workflows/checks.yml'
+  pull_request:
+    paths:
+      - 'legado/**'
+      - '.gitmodules'
+      - '.yamllint'
+      - '.github/workflows/checks.yml'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   scripted-checks:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legado
     steps:
       - uses: actions/checkout@v2
       - name: Install python-tinycss2
@@ -24,6 +40,9 @@ jobs:
   shellcheck:
     runs-on: ubuntu-latest
     container: koalaman/shellcheck-alpine:v0.9.0
+    defaults:
+      run:
+        working-directory: legado
     steps:
       - name: Check out
         uses: actions/checkout@v3

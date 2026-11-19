@@ -1,0 +1,2 @@
+# Homebrew packages the macOS jobs install (ci/install-system-deps.sh). One per line; `#` starts a comment.
+# (none yet: CoreAudio and CoreMIDI come with the system)

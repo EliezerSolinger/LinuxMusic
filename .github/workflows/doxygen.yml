@@ -6,6 +6,9 @@ on:
     branches: # only auto-run on pushing to main|master branch
       - main
       - master
+    paths: # the old program lives in legado/
+      - 'legado/**'
+      - '.github/workflows/doxygen.yml'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -17,6 +20,9 @@ jobs:
   deploy:
     name: Deploy Doxygen docs to Github Pages
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legado
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -43,7 +49,7 @@ jobs:
         if: ${{ steps.setup_pages.outcome == 'success' }}
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'build/doc/html'
+          path: 'legado/build/doc/html'
       - name: Deploy to GitHub Pages
         if: ${{ steps.setup_pages.outcome == 'success' }}
         uses: actions/deploy-pages@v5
