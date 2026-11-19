@@ -26,6 +26,7 @@
 //! The effects of the validation plugins:
 //! - [`compressor`]: the Compressor;
 //! - [`delay`]: the Delay;
+//! - [`distortion_effects`]: the Dispersion, the Wave Shaper and the Bitcrush;
 //! - [`eq`]: the Eq;
 //! - [`small_effects`]: the Amplifier, the Stereo Matrix, the Stereo Enhancer and the Bass Booster;
 //! - [`reverb_sc`]: the ReverbSC (Csound's reverbsc).
@@ -38,6 +39,7 @@ pub mod basic_filters;
 pub mod channel_strip;
 pub mod compressor;
 pub mod delay;
+pub mod distortion_effects;
 pub mod dynamics;
 pub mod envelope;
 pub mod eq;

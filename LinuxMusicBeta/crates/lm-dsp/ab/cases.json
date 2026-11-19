@@ -3979,6 +3979,124 @@
           "Ratio": 8.0
         }
       }
+    },
+    {
+      "name": "dispersion",
+      "unit": "plugin-effect",
+      "plugin": "dispersion",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Amount": 40,
+        "Frequency": 800.0,
+        "Resonance": 2.0,
+        "Feedback": 0.4,
+        "DC Offset Removal": 1
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Amount": 12,
+          "Frequency": 3000.0,
+          "Feedback": -0.6
+        }
+      }
+    },
+    {
+      "name": "waveshaper",
+      "unit": "plugin-effect",
+      "plugin": "waveshaper",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Input gain": 2.5,
+        "Output gain": 0.7
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Input gain": 0.6,
+          "Output gain": 1.8
+        }
+      }
+    },
+    {
+      "name": "bitcrush",
+      "unit": "plugin-effect",
+      "plugin": "bitcrush",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Sample rate": 8000.0,
+        "Stereo difference": 20.0,
+        "Levels": 12.0,
+        "Input gain": 3.0,
+        "Output gain": -2.0,
+        "Output clip": -1.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Sample rate": 22050.0,
+          "Levels": 64.0,
+          "Depth enabled": 0
+        }
+      }
+    },
+    {
+      "name": "bitcrush-no-rate",
+      "unit": "plugin-effect",
+      "plugin": "bitcrush",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Rate enabled": 0,
+        "Levels": 5.0
+      }
     }
   ]
 }

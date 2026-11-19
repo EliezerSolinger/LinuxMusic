@@ -319,6 +319,10 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			// A period starts, as the engine counts them (the models' value buffers are per period)
 			AutomatableModel::incrementPeriodCounter();
 			if (start == at) { settingsOf(then["settings"].toObject(), plugin); }
+			// Each knob's value buffer worked out once at the period's start: a knob that changed reads as changed
+			// in this period only (left to the effect, isValueChanged() worked it out a period late, and a change
+			// counted in two periods: a quirk of the legacy plumbing, not of the DSP)
+			for (auto* model : plugin->findChildren<AutomatableModel*>()) { model->valueBuffer(); }
 			auto interleaved = buffer.interleavedBuffer().asSampleFrames();
 			std::copy_n(out.data() + start, block, interleaved.data());
 			buffer.interleavedToMainPair();

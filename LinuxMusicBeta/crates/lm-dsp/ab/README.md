@@ -29,3 +29,7 @@ reads as changed in every period (the Compressor's hold was reset each block).
 
 The legacy oscillator's moog saw, exponential and users' tables come from FFTW planned with `FFTW_MEASURE`, which
 may pick another algorithm on another run: regenerating the references can change those files in their last bits.
+
+The harness also works out each knob's value buffer at the start of each period. Left to the effect, a knob that
+changed read as changed in that period (its change flag) and again in the next (its value buffer, worked out then):
+the Bitcrush reset its rate counters twice. In the new program a change arrives once, as an event.

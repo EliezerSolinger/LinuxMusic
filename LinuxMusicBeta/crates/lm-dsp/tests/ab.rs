@@ -279,7 +279,8 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         return mono.into_iter().map(|x| [x, x]).collect();
     }
     if case["unit"] == "plugin-effect"
-        && ["amplifier", "stereomatrix", "stereoenhancer", "bassbooster"].contains(&case["plugin"].as_str().unwrap())
+        && ["amplifier", "stereomatrix", "stereoenhancer", "bassbooster", "dispersion", "waveshaper", "bitcrush"]
+            .contains(&case["plugin"].as_str().unwrap())
     {
         use lm_dsp::small_effects::*;
         let first = &case["settings"];
@@ -302,7 +303,12 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
             }
         };
         let rate = case["rate"].as_f64().unwrap() as f32;
+        use lm_dsp::distortion_effects::*;
+        let on = |key: &str, default: bool, start: usize| value(key, if default { 1.0 } else { 0.0 }, start) != 0.0;
         let mut enhancer = StereoEnhancer::default();
+        let mut dispersion = Dispersion::new(rate);
+        let mut bitcrush = Bitcrush::new(rate, block, 0);
+        let shape = default_wave_shape();
         let mut booster = BassBooster::new(rate);
         for start in (0..frames as usize).step_by(block) {
             let span = &mut out[start..(start + block).min(frames as usize)];
@@ -326,6 +332,52 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
                     },
                 ),
                 "stereoenhancer" => enhancer.process(span, value("Width", 0.0, start)),
+                "dispersion" => dispersion.process(
+                    span,
+                    &DispersionSettings {
+                        amount: value("Amount", 0.0, start) as usize,
+                        frequency: value("Frequency", 200.0, start),
+                        resonance: value("Resonance", 0.707, start),
+                        feedback: value("Feedback", 0.0, start),
+                        dc: on("DC Offset Removal", false, start),
+                    },
+                ),
+                "waveshaper" => wave_shaper(
+                    span,
+                    &shape,
+                    ramp("Input gain", 1.0, start),
+                    ramp("Output gain", 1.0, start),
+                    on("Clip input", false, start),
+                ),
+                "bitcrush" => {
+                    // The legacy Bitcrush asks `needsUpdate || rate changed || difference changed`: the first period
+                    // recalculates for its first reason, leaving the knobs' change flags to the next periods, which
+                    // reset the rate counters again, one period for each flag left (rate first, then the difference;
+                    // a change of both later does the same). The legacy plumbing, not the DSP: done here by hand
+                    let set = |s: &Value| {
+                        ["Sample rate", "Stereo difference"].iter().filter(|k| s.get(**k).is_some()).count()
+                    };
+                    let extra_after = |from: usize, count: usize| (1..=count).any(|n| start == from + n * block);
+                    if extra_after(0, set(first))
+                        || (at < frames as usize && extra_after(at, set(then).saturating_sub(1)))
+                    {
+                        bitcrush.reset_counters();
+                    }
+                    bitcrush.process(
+                        span,
+                        &BitcrushSettings {
+                            in_gain: value("Input gain", 0.0, start),
+                            in_noise: value("Input noise", 0.0, start),
+                            out_gain: value("Output gain", 0.0, start),
+                            out_clip: value("Output clip", 0.0, start),
+                            rate: value("Sample rate", 44100.0, start),
+                            stereo_diff: value("Stereo difference", 0.0, start),
+                            levels: value("Levels", 256.0, start),
+                            rate_enabled: on("Rate enabled", true, start),
+                            depth_enabled: on("Depth enabled", true, start),
+                        },
+                    )
+                }
                 _ => booster.process(
                     span,
                     &BassBoosterSettings {
