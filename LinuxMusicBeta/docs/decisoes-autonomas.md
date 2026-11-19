@@ -100,4 +100,7 @@ Formato: **decisão** — motivo. Data entre parênteses.
 - **A tela de mixagem é separada da tela de composição** (decisão do usuário): duas páginas, com abas no topo e um
   atalho. A Composição tem a linha do tempo e a gravação (decisão de 12/11: a gravação mora na Composição); a
   Mixagem tem a mesa inteira. A barra de transporte fica visível nas duas.
+- **O programa novo não é um clone do legado** (decisão do usuário): todas as funcionalidades do legado existem na
+  1.0, mas as telas são repensadas. Para as áreas sem design aprovado, o legado é a referência do que o programa faz,
+  e não de como a tela é. O inventário das funcionalidades está em `funcionalidades-legado.md`.
 
