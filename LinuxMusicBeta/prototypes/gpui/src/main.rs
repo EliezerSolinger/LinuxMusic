@@ -96,13 +96,15 @@ impl Daw {
         // H2: the pump on a 10 ms timer of the main loop, with a fixed cadence (no drift), independent of drawing
         let pump = cx.spawn(async move |this, cx| {
             let period = Duration::from_millis(10);
-            let mut next = Instant::now() + period;
+            // GPUI's clock, not Instant: the same code runs under the test scheduler's fake clock
+            let clock = cx.background_executor().clone();
+            let mut next = clock.now() + period;
             loop {
-                let wait = next.saturating_duration_since(Instant::now());
-                cx.background_executor().timer(wait).await;
+                let wait = next.saturating_duration_since(clock.now());
+                clock.timer(wait).await;
                 next += period;
-                if next < Instant::now() {
-                    next = Instant::now() + period;
+                if next < clock.now() {
+                    next = clock.now() + period;
                 }
                 if this.update(cx, |d, cx| d.on_pump(cx)).is_err() {
                     break;
@@ -991,13 +993,26 @@ mod tests {
             // 50 px up from 0 dB (75 % of travel) is 25 % more: +6 dB
             assert!((d.session.tracks()[0].volume_db - 6.0).abs() < 1e-9);
             assert!(d.drag.is_none());
-            d.session.pump();
         });
+        // the 10 ms pump timer delivers the diff to the feed and asks for a frame; render drains the feed
+        cx.executor().advance_clock(Duration::from_millis(20));
         cx.run_until_parked();
         daw.update(cx, |d, _| {
             assert_eq!(d.track_db[0].as_ref(), "+6.0 dB", "the feed rebuilt the label");
             d.session.undo().unwrap();
             assert_eq!(d.session.tracks()[0].volume_db, 0.0, "the whole drag is one undo step");
         });
+    }
+
+    /// H2: the pump runs every 10 ms on GPUI's timer whether or not anything is drawn (fake clock)
+    #[gpui::test]
+    fn pump_runs_without_frames(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (daw, cx) = cx.add_window_view(|window, cx| Daw::new(window, cx));
+        let before = daw.update(cx, |d, _| d.session.pumps());
+        cx.executor().advance_clock(Duration::from_millis(1000));
+        cx.run_until_parked();
+        let after = daw.update(cx, |d, _| d.session.pumps());
+        assert!((95..=105).contains(&(after - before)), "{} pumps in 1 s", after - before);
     }
 }
