@@ -13,6 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # no __pycache__ in the source tree
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import workspace  # noqa: E402
 
