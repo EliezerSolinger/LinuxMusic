@@ -12,6 +12,7 @@ quando passa no critério de "pronto quando" de `interfaces.md` (Parte 4). As de
 | 4 | `lm-doc` | agente | a fazer (depende do 2) |
 | 5 | `lm-render` | agente | a fazer |
 | — | `lm-dsp` (códigos de efeito do legado, com A/B) | sessão de implementação | em andamento |
+| — | `lm-sys-fpu`, `lm-sys-sndfile`, `lm-sys-samplerate`, `lm-sys-fluidsynth` | agente | em andamento (19/11): `lm-sys-fpu` feito (FTZ/DAZ no `MXCSR`, `FZ` no `FPCR`, guarda que restaura; 4 testes) |
 | 6 | `lm-plugin` + plugin de teste | — | a fazer |
 | 7 | `lm-compile` | — | a fazer |
 | 8 | `lm-io` (Dummy, ALSA, ALSA seq, DiskWriter, ResourceStore) | — | a fazer |

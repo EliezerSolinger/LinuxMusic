@@ -1,0 +1,29 @@
+[package]
+name = "lm-sys-fpu"
+description = "LinuxMusic: flush-to-zero and denormals-are-zero on the calling thread (MXCSR on x86-64, FPCR on aarch64)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The workspace lints, copied (an lm-sys-* crate may not inherit `unsafe_code = "forbid"`, interfaces.md I-17),
+# with the unsafe code held to written reasons instead
+[lints.rust]
+unsafe_code = "allow"
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+unused_must_use = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)"] }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+print_stdout = "warn"
+print_stderr = "warn"
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
+
+[dependencies]
