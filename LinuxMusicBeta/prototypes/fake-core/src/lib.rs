@@ -357,6 +357,10 @@ pub enum Target {
     Resource(ResourceId),
     /// opening or switching the audio device, calibrating latency (I-2 list)
     Device,
+    /// an export, by its number (`project::export`)
+    Export(u64),
+    /// listing the audio devices and the MIDI ports (U17)
+    Scan,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -588,6 +592,8 @@ pub struct Session {
     config: Config,
     pumps: u64,
     rec: Option<RecState>,
+    /// The project folder, preferences, devices, export, notices (owner: agent D, `project.rs`)
+    pub services: project::Services,
     _main: Main,
 }
 
@@ -710,6 +716,7 @@ impl Session {
             config,
             pumps: 0,
             rec: None,
+            services: project::Services::default(),
             _main: Main { _not_send: PhantomData },
         };
         // the slow take: its peaks are "generated" again, with the injected delay
@@ -783,6 +790,8 @@ impl Session {
             eprintln!("debug: gesture {id} dropped without commit; committed");
             self.commit_gesture_id(id);
         }
+        // the services' operations: their results are applied here, never by the workers (I-2.2)
+        changed |= self.services.pump();
         // dropped feeds are forgotten; the diffs go to the live ones
         self.feeds.retain(|f| Rc::strong_count(f) > 1);
         if !self.pending.changed.is_empty() {
@@ -847,6 +856,25 @@ impl Session {
     }
     pub fn pumps(&self) -> u64 {
         self.pumps
+    }
+
+    /// Every long operation running past the 200 ms rule, oldest first (I-2.2): the activity list
+    pub fn activity(&self) -> Vec<notices::Activity> {
+        let mut v: Vec<notices::Activity> = self
+            .ops
+            .iter()
+            .filter(|(_, o)| !o.finished.load(Ordering::Acquire) && o.started.elapsed() >= LOADING_THRESHOLD)
+            .map(|(id, o)| notices::Activity {
+                op: *id,
+                stage: o.stage,
+                target: o.target,
+                progress: Some(o.progress.get()),
+                cancellable: o.cancellable && o.started.elapsed() >= CANCEL_AFTER,
+                since: o.started.elapsed(),
+            })
+            .collect();
+        v.sort_by(|a, b| b.since.cmp(&a.since));
+        v
     }
 
     pub fn loading(&self, target: &Target) -> Loading {
