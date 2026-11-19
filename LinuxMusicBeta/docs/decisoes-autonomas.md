@@ -81,3 +81,13 @@ Formato: **decisão** — motivo. Data entre parênteses.
   iguais vira segmento constante; o último ponto não pode ser rampa.
 - **Inteiro de 256 bits próprio** (`lm-time/src/wide.rs`), em vez de uma crate, pela política de dependências do CI.
 
+## Das ligações de mídia (19/11)
+
+- **Sem crates `-sys` de terceiros:** as declarações `extern "C"` do libsndfile, do libsamplerate e do FluidSynth são
+  próprias, com um `build.rs` que chama o `pkg-config` e exige versões mínimas (libsndfile ≥ 1.1.0 por causa do MP3,
+  FluidSynth ≥ 2.2.0, libsamplerate ≥ 0.1.9). As crates `-sys` existentes eram velhas ou sem manutenção. O CI usa o
+  Ubuntu 24.04.
+- **FluidSynth só aceita de 8 a 96 kHz.** Um projeto acima de 96 kHz com o AvlDrums precisa que o plugin renderize a
+  96 kHz e converta para a taxa do projeto com o `lm-sys-samplerate` (decisão para o autor do plugin, no porte).
+- **O kit do FluidSynth é seco:** reverb e chorus internos desligados; o reverb é da mesa.
+
