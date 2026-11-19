@@ -78,9 +78,10 @@ fn messages_cross_the_kernel_unchanged_and_on_the_host_clock() {
         assert_eq!(e.port, input.addr());
         let expected = if input.stamps_on_arrival() { Stamp::Arrival } else { Stamp::Queue };
         assert_eq!(e.stamp, expected);
-        // C6: the stamp is on CLOCK_MONOTONIC, between the send and the read (2 ms of slack for the conversion)
+        // C6: the stamp is on CLOCK_MONOTONIC, between the send and the read (5 ms of slack: the offset is
+        // measured, and the queue timer has its own resolution)
         assert!(
-            e.time.0 + 2_000_000 >= before.0 && e.time.0 <= after.0 + 2_000_000,
+            e.time.0 + 5_000_000 >= before.0 && e.time.0 <= after.0 + 5_000_000,
             "{} not in [{before}, {after}]",
             e.time
         );
