@@ -18,7 +18,8 @@
 //! - [`master`]: the master section.
 //!
 //! The instruments' sources:
-//! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables.
+//! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
+//! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
 //!
 //! The effects of the validation plugins:
 //! - [`compressor`]: the Compressor;
@@ -44,5 +45,6 @@ pub mod oscillator;
 pub mod oversampling;
 pub mod rbj;
 pub mod reverb_sc;
+pub mod sample_player;
 pub mod tolerance;
 pub mod tube;

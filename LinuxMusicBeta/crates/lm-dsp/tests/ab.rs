@@ -379,6 +379,54 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "sample" {
+        // The sample player, with libsamplerate as the interpolator (as the AudioFileProcessor gives it)
+        use lm_dsp::sample_player::{Bounds, Interpolator, Loop, PlaybackState, Sample};
+        use lm_sys_samplerate::{Quality, Resampler};
+        struct Src(Resampler);
+        impl Interpolator for Src {
+            fn process(&mut self, input: &[[f32; 2]], output: &mut [[f32; 2]], ratio: f64) -> (usize, usize) {
+                self.0.set_ratio(ratio).unwrap();
+                let done = self.0.process(input.as_flattened(), output.as_flattened_mut()).unwrap();
+                (done.input_frames, done.output_frames)
+            }
+            fn reset(&mut self) {
+                self.0.reset().unwrap();
+            }
+        }
+        let s = &case["settings"];
+        let bounds = s["bounds"].as_array().unwrap();
+        let b = |i: usize| bounds[i].as_i64().unwrap() as i32;
+        let sample = Sample {
+            frames: &out,
+            sample_rate: f(s, "rate", 44100.0),
+            bounds: Bounds { start: b(0), end: b(1), loop_start: b(2), loop_end: b(3) },
+            amplification: f(s, "amp", 1.0),
+            frequency: f(s, "frequency", 440.0),
+            reversed: s["reversed"].as_bool().unwrap(),
+            declick: s["declick"].as_bool().unwrap(),
+        };
+        let quality = match s["interpolation"].as_str().unwrap() {
+            "zoh" => Quality::ZeroOrderHold,
+            "sinc-fastest" => Quality::Fastest,
+            "sinc-medium" => Quality::Medium,
+            "sinc-best" => Quality::Best,
+            _ => Quality::Linear,
+        };
+        let looping = match s["loop"].as_str().unwrap() {
+            "on" => Loop::On,
+            "ping-pong" => Loop::PingPong,
+            _ => Loop::Off,
+        };
+        let mut state = PlaybackState::new(Src(Resampler::new(quality, 2, 1.0).unwrap()), 0);
+        let length = s["frames"].as_i64().unwrap() as usize;
+        let mut played = vec![[0.0f32; 2]; length];
+        for start in (0..length).step_by(block as usize) {
+            let end = (start + block as usize).min(length);
+            sample.play(&mut played[start..end], &mut state, looping, s["ratio"].as_f64().unwrap(), 44100.0, 256);
+        }
+        return played;
+    }
     if case["unit"] == "delay" || case["unit"] == "reverbsc" {
         // The effects, wet only
         let then = &case["then"];

@@ -295,6 +295,7 @@ name = "lm-dsp"
 version = "0.1.0"
 dependencies = [
  "libm",
+ "lm-sys-samplerate",
  "serde_json",
 ]
 
@@ -342,12 +343,26 @@ name = "lm-sys-fpu"
 version = "0.1.0"
 
 [[package]]
+name = "lm-sys-lilv"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+]
+
+[[package]]
 name = "lm-sys-linux"
 version = "0.1.0"
 dependencies = [
  "libc",
  "lm-base",
  "zbus",
+]
+
+[[package]]
+name = "lm-sys-rubberband"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
 ]
 
 [[package]]

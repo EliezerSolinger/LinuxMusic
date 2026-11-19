@@ -32,6 +32,7 @@
 #include "GainStage.h"
 #include "MasterSection.h"
 #include "Oscillator.h"
+#include "Sample.h"
 
 // The plugins' DSP (built from their sources by build-references.sh)
 #include "Lfo.h"
@@ -325,6 +326,33 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			std::copy_n(buffer.interleavedBuffer().asSampleFrames().data(), block, out.data() + start);
 		}
 		return out;
+	}
+	if (unit == "sample")
+	{
+		// Sample::play, as a note of the AudioFileProcessor plays it: the sample is the signal
+		const auto s = c["settings"].toObject();
+		auto data = std::vector<SampleFrame>(out.begin(), out.end());
+		auto buffer = std::make_shared<const SampleBuffer>(std::move(data), static_cast<int>(s["rate"].toDouble()));
+		auto sample = Sample{buffer};
+		const auto bounds = s["bounds"].toArray();
+		sample.setAllPointFrames(bounds[0].toInt(), bounds[1].toInt(), bounds[2].toInt(), bounds[3].toInt());
+		sample.setAmplification(static_cast<float>(s["amp"].toDouble()));
+		sample.setFrequency(static_cast<float>(s["frequency"].toDouble()));
+		sample.setReversed(s["reversed"].toBool());
+		sample.setDeclick(s["declick"].toBool());
+		const auto modes = QStringList{"zoh", "linear", "sinc-fastest", "sinc-medium", "sinc-best"};
+		auto state = Sample::PlaybackState{static_cast<AudioResampler::Mode>(modes.indexOf(s["interpolation"].toString()))};
+		const auto loops = QStringList{"off", "on", "ping-pong"};
+		const auto loop = static_cast<Sample::Loop>(loops.indexOf(s["loop"].toString()));
+		const auto ratio = s["ratio"].toDouble();
+		const auto length = static_cast<std::int64_t>(s["frames"].toDouble());
+		auto played = std::vector<SampleFrame>(static_cast<std::size_t>(length));
+		for (std::int64_t start = 0; start < length; start += block)
+		{
+			const auto n = std::min(block, length - start);
+			sample.play(played.data() + start, &state, static_cast<std::size_t>(n), loop, ratio);
+		}
+		return played;
 	}
 	if (unit == "delay")
 	{

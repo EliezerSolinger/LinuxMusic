@@ -2745,6 +2745,303 @@
           "HP freq": 300.0
         }
       }
+    },
+    {
+      "name": "sample-direct",
+      "unit": "sample",
+      "frames": 3000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 70,
+        "amp": 0.7,
+        "right": {
+          "kind": "sine",
+          "hz": 3000,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "rate": 44100,
+        "bounds": [
+          0,
+          3000,
+          0,
+          3000
+        ],
+        "amp": 1.0,
+        "frequency": 440.0,
+        "reversed": false,
+        "declick": false,
+        "interpolation": "linear",
+        "loop": "off",
+        "ratio": 1.0,
+        "frames": 8192
+      }
+    },
+    {
+      "name": "sample-linear-up",
+      "unit": "sample",
+      "frames": 3000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 70,
+        "amp": 0.7,
+        "right": {
+          "kind": "sine",
+          "hz": 3000,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "rate": 44100,
+        "bounds": [
+          0,
+          3000,
+          0,
+          3000
+        ],
+        "amp": 1.0,
+        "frequency": 440.0,
+        "reversed": false,
+        "declick": false,
+        "interpolation": "linear",
+        "loop": "off",
+        "ratio": 1.5,
+        "frames": 8192
+      }
+    },
+    {
+      "name": "sample-linear-down-rate",
+      "unit": "sample",
+      "frames": 3000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 70,
+        "amp": 0.7,
+        "right": {
+          "kind": "sine",
+          "hz": 3000,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "rate": 22050,
+        "bounds": [
+          0,
+          3000,
+          0,
+          3000
+        ],
+        "amp": 1.0,
+        "frequency": 440.0,
+        "reversed": false,
+        "declick": false,
+        "interpolation": "linear",
+        "loop": "off",
+        "ratio": 0.9,
+        "frames": 8192
+      }
+    },
+    {
+      "name": "sample-zoh",
+      "unit": "sample",
+      "frames": 3000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 70,
+        "amp": 0.7,
+        "right": {
+          "kind": "sine",
+          "hz": 3000,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "rate": 44100,
+        "bounds": [
+          0,
+          3000,
+          0,
+          3000
+        ],
+        "amp": 1.0,
+        "frequency": 440.0,
+        "reversed": false,
+        "declick": false,
+        "interpolation": "zoh",
+        "loop": "off",
+        "ratio": 0.75,
+        "frames": 8192
+      }
+    },
+    {
+      "name": "sample-sinc-medium",
+      "unit": "sample",
+      "frames": 3000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 70,
+        "amp": 0.7,
+        "right": {
+          "kind": "sine",
+          "hz": 3000,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "rate": 44100,
+        "bounds": [
+          0,
+          3000,
+          0,
+          3000
+        ],
+        "amp": 1.0,
+        "frequency": 523.25,
+        "reversed": false,
+        "declick": false,
+        "interpolation": "sinc-medium",
+        "loop": "off",
+        "ratio": 1.3,
+        "frames": 8192
+      }
+    },
+    {
+      "name": "sample-loop-declick",
+      "unit": "sample",
+      "frames": 3000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 70,
+        "amp": 0.7,
+        "right": {
+          "kind": "sine",
+          "hz": 3000,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "rate": 44100,
+        "bounds": [
+          100,
+          2900,
+          1000,
+          2000
+        ],
+        "amp": 1.0,
+        "frequency": 440.0,
+        "reversed": false,
+        "declick": true,
+        "interpolation": "linear",
+        "loop": "on",
+        "ratio": 1.0,
+        "frames": 8192
+      }
+    },
+    {
+      "name": "sample-loop-declick-pitched",
+      "unit": "sample",
+      "frames": 3000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 70,
+        "amp": 0.7,
+        "right": {
+          "kind": "sine",
+          "hz": 3000,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "rate": 44100,
+        "bounds": [
+          100,
+          2900,
+          1000,
+          2000
+        ],
+        "amp": 1.0,
+        "frequency": 440.0,
+        "reversed": false,
+        "declick": true,
+        "interpolation": "linear",
+        "loop": "on",
+        "ratio": 1.2,
+        "frames": 8192
+      }
+    },
+    {
+      "name": "sample-pingpong-reversed",
+      "unit": "sample",
+      "frames": 3000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 70,
+        "amp": 0.7,
+        "right": {
+          "kind": "sine",
+          "hz": 3000,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "rate": 44100,
+        "bounds": [
+          0,
+          3000,
+          500,
+          2500
+        ],
+        "amp": 0.8,
+        "frequency": 440.0,
+        "reversed": true,
+        "declick": false,
+        "interpolation": "linear",
+        "loop": "ping-pong",
+        "ratio": 0.8,
+        "frames": 8192
+      }
+    },
+    {
+      "name": "sample-end-declick",
+      "unit": "sample",
+      "frames": 3000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 70,
+        "amp": 0.7,
+        "right": {
+          "kind": "sine",
+          "hz": 3000,
+          "amp": 0.5
+        }
+      },
+      "settings": {
+        "rate": 44100,
+        "bounds": [
+          200,
+          2200,
+          0,
+          0
+        ],
+        "amp": 1.0,
+        "frequency": 440.0,
+        "reversed": false,
+        "declick": true,
+        "interpolation": "linear",
+        "loop": "off",
+        "ratio": 1.0,
+        "frames": 8192
+      }
     }
   ]
 }
