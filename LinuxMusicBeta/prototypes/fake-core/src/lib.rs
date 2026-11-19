@@ -13,6 +13,7 @@ pub mod arrange;
 pub mod bench;
 pub mod mixer;
 pub mod peaks;
+pub mod port;
 pub mod view;
 // ONE LINE PER AREA MODULE: the other screens' fake data (owners in docs/prototipo-interface.md)
 pub mod actions;
@@ -483,6 +484,8 @@ struct EngineShared {
     loop_start: AtomicI64,
     loop_end: AtomicI64,
     loop_on: AtomicBool,
+    /// late ticks of the fake engine, counted as xruns (P-14)
+    xruns: AtomicU32,
     locate: AtomicI64, // i64::MIN = none
     quit: AtomicBool,
     slots: Slots,
@@ -507,6 +510,9 @@ fn engine_thread(
         if let Some(d) = next.checked_duration_since(now) {
             std::thread::sleep(d);
         } else {
+            if now.duration_since(next) > tick / 2 {
+                shared.xruns.fetch_add(1, Ordering::Relaxed); // a block that came late: an xrun in a real engine
+            }
             next = now;
         }
         let now = Instant::now();
@@ -659,6 +665,7 @@ impl Session {
             loop_start: AtomicI64::new(doc.song.loop_range.start),
             loop_end: AtomicI64::new(doc.song.loop_range.end),
             loop_on: AtomicBool::new(doc.song.loop_range.on),
+            xruns: AtomicU32::new(0),
             locate: AtomicI64::new(i64::MIN),
             quit: AtomicBool::new(false),
             slots: Slots { gain: (0..MAX_METERS).map(|_| AtomicU32::new(1f32.to_bits())).collect() },
@@ -809,6 +816,26 @@ impl Session {
     pub fn meters(&self) -> &[f32; MAX_METERS] {
         &self.last_frame.meters
     }
+    /// The xruns so far (P-14: always visible in the transport)
+    pub fn xruns(&self) -> u32 {
+        self.engine.xruns.load(Ordering::Relaxed)
+    }
+
+    /// `CorePort::param_write`: a value straight into the audio's slot, without an edit (while dragging)
+    pub(crate) fn write_slot(&mut self, node: NodeId, param: &str, value: f32) {
+        let idx = self
+            .doc
+            .tracks
+            .iter()
+            .position(|t| t.id == node)
+            .or_else(|| self.doc.channels.iter().position(|c| c.id == node).map(|i| CHANNEL_METERS + i));
+        if let (Some(i), "volume") = (idx, param) {
+            if i < MAX_METERS {
+                self.engine.slots.gain[i].store(db_gain(value as f64).to_bits(), Ordering::Relaxed);
+            }
+        }
+    }
+
     /// The meter index of the channel at `i` in `channels()`
     pub fn channel_meter(&self, i: usize) -> usize {
         (CHANNEL_METERS + i).min(MAX_METERS - 1)

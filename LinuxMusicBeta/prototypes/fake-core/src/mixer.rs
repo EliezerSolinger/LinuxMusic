@@ -386,3 +386,51 @@ impl Session {
         Ok(())
     }
 }
+
+/// The desk's structural edits (port.rs routes them here): remove a channel (not the master) or an insert, move an
+/// insert inside its channel's chain. A channel's removal sends what came to it to the master (`OnRemove::Redirect`).
+pub(crate) fn apply_op(e: &mut Edit, op: &crate::port::EditOp, _created: &[(u32, NodeId)]) -> Option<Result<Option<(u32, NodeId)>>> {
+    use crate::port::{EditOp, Ref};
+    match op {
+        EditOp::Remove { id: Ref::Id(id) } if id.kind == b'm' => Some((|| {
+            let i = e.doc.channels.iter().position(|c| c.id == *id).ok_or(Error::NoSuchNode(*id))?;
+            if e.doc.channels[i].kind == ChannelKind::Master {
+                return Err(Error::WrongType);
+            }
+            let master = e.doc.channels.iter().find(|c| c.kind == ChannelKind::Master).map(|c| c.id);
+            e.doc.channels.remove(i);
+            for c in e.doc.channels.iter_mut() {
+                if c.output == Some(*id) {
+                    c.output = master;
+                }
+                c.sends.retain(|s| s.to != *id);
+            }
+            for t in e.doc.tracks.iter_mut() {
+                for o in t.outputs.iter_mut() {
+                    if o.to == *id {
+                        o.to = master.unwrap_or(o.to);
+                    }
+                }
+            }
+            e.diff.changed.push((*id, None));
+            Ok(None)
+        })()),
+        EditOp::Remove { id: Ref::Id(id) } if e.doc.channels.iter().any(|c| c.inserts.iter().any(|x| x.id == *id)) => {
+            let c = e.doc.channels.iter_mut().find(|c| c.inserts.iter().any(|x| x.id == *id)).unwrap();
+            c.inserts.retain(|x| x.id != *id);
+            let cid = c.id;
+            e.diff.changed.push((cid, None));
+            Some(Ok(None))
+        }
+        EditOp::Move { id: Ref::Id(id), parent: Ref::Id(ch), list: "inserts", index } => Some((|| {
+            let c = e.doc.channels.iter_mut().find(|c| c.id == *ch).ok_or(Error::NoSuchNode(*ch))?;
+            let from = c.inserts.iter().position(|x| x.id == *id).ok_or(Error::NoSuchNode(*id))?;
+            let ins = c.inserts.remove(from);
+            let to = (*index).min(c.inserts.len());
+            c.inserts.insert(to, ins);
+            e.diff.changed.push((*ch, None));
+            Ok(None)
+        })()),
+        _ => None,
+    }
+}

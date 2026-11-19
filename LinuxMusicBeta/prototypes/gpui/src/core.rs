@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use fake_core::bench::Bench;
 use fake_core::view;
+use fake_core::port::CorePort;
 use fake_core::{Config, MAX_METERS, Session};
 use gpui::{Context, Task};
 
@@ -58,6 +59,15 @@ impl Core {
         if changed || self.shown.iter().any(|&m| m > 0.0) {
             cx.notify();
         }
+    }
+
+    /// The core as the interface may use it (I-15): data in, data out, no closures. Every screen goes through
+    /// this; `session` stays public only until the screens move to the port, then it becomes private.
+    pub fn port(&self) -> &dyn CorePort {
+        &self.session
+    }
+    pub fn port_mut(&mut self) -> &mut dyn CorePort {
+        &mut self.session
     }
 
     /// Once per frame, from the workspace's render
