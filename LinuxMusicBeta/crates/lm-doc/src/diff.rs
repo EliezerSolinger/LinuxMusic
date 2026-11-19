@@ -191,10 +191,6 @@ impl DiffAcc {
         self.notices.push(label);
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty() && self.params.is_empty() && self.notices.is_empty()
-    }
-
     /// Adds what happened after everything already here
     pub fn absorb(&mut self, later: &DiffAcc) {
         for (id, o) in &later.nodes {

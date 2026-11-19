@@ -133,7 +133,8 @@ impl Feed {
         let mut feeds = doc.feeds.borrow_mut();
         let slot = feeds.get_mut(&self.key)?;
         let acc = std::mem::take(&mut slot.acc);
-        if acc.is_empty() { None } else { Some(acc.finish(Origin::User)) }
+        let diff = acc.finish(Origin::User);
+        if diff.is_empty() && diff.notices.is_empty() { None } else { Some(diff) }
     }
 }
 

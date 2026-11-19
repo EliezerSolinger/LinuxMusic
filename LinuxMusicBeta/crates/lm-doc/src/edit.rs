@@ -774,8 +774,10 @@ impl Edit<'_> {
                 }
                 Ok(())
             })?;
-            let outside = refs.into_iter().find(|(target, ..)| {
-                !inside.contains(target) && !(same_project && self.w.state.index.contains(*target))
+            let outside = refs.into_iter().find(|(target, _, _, rule, _)| {
+                let exists = self.w.state.index.contains(*target);
+                let redirected = matches!(rule, OnRemove::Redirect(to) if to == target);
+                !inside.contains(target) && !(exists && (same_project || redirected))
             });
             let Some((target, abs, owner_abs, rule, in_list)) = outside else { break };
             node = match rule {
@@ -792,7 +794,10 @@ impl Edit<'_> {
                 }
                 OnRemove::Clear if in_list => node.without_path(&abs)?,
                 OnRemove::Clear => node.with_path(&abs, Value::NULL)?,
-                OnRemove::Redirect(to) => node.with_path(&abs, Value::text(to.to_string()))?,
+                OnRemove::Redirect(to) if self.w.state.index.contains(to) => node.with_path(&abs, Value::text(to.to_string()))?,
+                OnRemove::Redirect(to) => {
+                    return Err(Error::new("doc.remove.redirect_gone").arg("to", to.to_string()));
+                }
             };
         }
         // New ids, and the references inside follow them
