@@ -23,6 +23,7 @@
 #include <QJsonObject>
 
 #include "AnalogChannelStrip.h"
+#include "BasicFilters.h"
 #include "AutomatableModel.h"
 #include "AudioEngine.h"
 #include "EffectChain.h"
@@ -353,6 +354,26 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			sample.play(played.data() + start, &state, static_cast<std::size_t>(n), loop, ratio);
 		}
 		return played;
+	}
+	if (unit == "basic-filter")
+	{
+		// BasicFilters, as an instrument's sound shaping drives it: the type, then the frequency and the resonance
+		// once a period
+		const auto s = c["settings"].toObject();
+		auto filter = BasicFilters<2>{Rate};
+		filter.setFilterType(static_cast<BasicFilters<2>::FilterType>(s["type"].toInt()));
+		const auto then = c["then"].toObject();
+		const auto at = then.isEmpty() ? frames : static_cast<std::int64_t>(then["at"].toDouble());
+		for (std::int64_t start = 0; start < frames; start += block)
+		{
+			const auto& now = start < at ? s : then["settings"].toObject();
+			filter.calcFilterCoeffs(static_cast<float>(now["freq"].toDouble()), static_cast<float>(now["q"].toDouble()));
+			for (auto f = start; f < std::min(start + block, frames); ++f)
+			{
+				out[f] = SampleFrame{filter.update(out[f][0], 0), filter.update(out[f][1], 1)};
+			}
+		}
+		return out;
 	}
 	if (unit == "delay")
 	{

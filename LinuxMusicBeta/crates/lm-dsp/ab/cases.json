@@ -3042,6 +3042,688 @@
         "ratio": 1.0,
         "frames": 8192
       }
+    },
+    {
+      "name": "filter-low-pass",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 0,
+        "key": "low-pass",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 0,
+          "key": "low-pass",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-high-pass",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 1,
+        "key": "high-pass",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 1,
+          "key": "high-pass",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-band-pass-csg",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 2,
+        "key": "band-pass-csg",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 2,
+          "key": "band-pass-csg",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-band-pass-czpg",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 3,
+        "key": "band-pass-czpg",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 3,
+          "key": "band-pass-czpg",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-notch",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 4,
+        "key": "notch",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 4,
+          "key": "notch",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-all-pass",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 5,
+        "key": "all-pass",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 5,
+          "key": "all-pass",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-moog",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 6,
+        "key": "moog",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 6,
+          "key": "moog",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-double-low-pass",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 7,
+        "key": "double-low-pass",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 7,
+          "key": "double-low-pass",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-rc-low-pass-12",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 8,
+        "key": "rc-low-pass-12",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 8,
+          "key": "rc-low-pass-12",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-rc-band-pass-12",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 9,
+        "key": "rc-band-pass-12",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 9,
+          "key": "rc-band-pass-12",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-rc-high-pass-12",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 10,
+        "key": "rc-high-pass-12",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 10,
+          "key": "rc-high-pass-12",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-rc-low-pass-24",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 11,
+        "key": "rc-low-pass-24",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 11,
+          "key": "rc-low-pass-24",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-rc-band-pass-24",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 12,
+        "key": "rc-band-pass-24",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 12,
+          "key": "rc-band-pass-24",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-rc-high-pass-24",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 13,
+        "key": "rc-high-pass-24",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 13,
+          "key": "rc-high-pass-24",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-formant",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 14,
+        "key": "formant",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 14,
+          "key": "formant",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-double-moog",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 15,
+        "key": "double-moog",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 15,
+          "key": "double-moog",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-sv-low-pass",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 16,
+        "key": "sv-low-pass",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 16,
+          "key": "sv-low-pass",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-sv-band-pass",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 17,
+        "key": "sv-band-pass",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 17,
+          "key": "sv-band-pass",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-sv-high-pass",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 18,
+        "key": "sv-high-pass",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 18,
+          "key": "sv-high-pass",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-sv-notch",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 19,
+        "key": "sv-notch",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 19,
+          "key": "sv-notch",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-fast-formant",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 20,
+        "key": "fast-formant",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 20,
+          "key": "fast-formant",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
+    },
+    {
+      "name": "filter-tripole",
+      "unit": "basic-filter",
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 80,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 220,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "type": 21,
+        "key": "tripole",
+        "freq": 900.0,
+        "q": 2.5
+      },
+      "then": {
+        "at": 4096,
+        "settings": {
+          "type": 21,
+          "key": "tripole",
+          "freq": 4500.0,
+          "q": 0.7
+        }
+      }
     }
   ]
 }

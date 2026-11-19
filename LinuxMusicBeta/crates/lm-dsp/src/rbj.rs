@@ -29,6 +29,11 @@ impl StereoBiquad {
         self.z2 = [0.0; 2];
     }
 
+    /// Takes @p other's coefficients, keeping its own history
+    pub fn copy_coefficients(&mut self, other: &StereoBiquad) {
+        self.set_coefficients(other.a1, other.a2, other.b0, other.b1, other.b2);
+    }
+
     #[inline]
     pub fn process(&mut self, input: f32, channel: usize) -> f32 {
         let out = self.z1[channel] + self.b0 * input;

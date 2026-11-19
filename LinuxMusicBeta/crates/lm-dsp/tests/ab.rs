@@ -1,8 +1,9 @@
 //! The A/B of lm-dsp against the legacy program (interfaces.md, U34): every case of `ab/cases.json` is run here and
 //! compared with what the legacy code gave (`ab/reference/`, written by `ab/build-references.sh`).
 //!
-//! The rule: the difference stays below -90 dBFS at every sample (a null test), unless the case is listed in
-//! `INTENTIONAL` with the reason the port differs on purpose.
+//! The rule: the difference stays below -90 dBFS at every sample (a null test), or, when the legacy output goes
+//! above full scale (a self-oscillating filter, a hard driven stage), 90 dB below its peak: a null at the signal's
+//! own scale. Unless the case is listed in `INTENTIONAL` with the reason the port differs on purpose.
 
 // The report goes to stderr; and `!(d <= worst)` on purpose, so that a NaN counts as the worst difference
 #![allow(clippy::print_stderr, clippy::neg_cmp_op_on_partial_ord)]
@@ -427,6 +428,21 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return played;
     }
+    if case["unit"] == "basic-filter" {
+        use lm_dsp::basic_filters::{BasicFilter, FilterType};
+        let s = &case["settings"];
+        let mut filter = BasicFilter::new(RATE);
+        filter.set_filter_type(FilterType::from_key(s["key"].as_str().unwrap()).unwrap());
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        for start in (0..frames as usize).step_by(block as usize) {
+            let now = if start < at { s } else { &case["then"]["settings"] };
+            filter.calc_filter_coeffs(f(now, "freq", 0.0), f(now, "q", 0.0));
+            for frame in &mut out[start..(start + block as usize).min(frames as usize)] {
+                *frame = [filter.update(frame[0], 0), filter.update(frame[1], 1)];
+            }
+        }
+        return out;
+    }
     if case["unit"] == "delay" || case["unit"] == "reverbsc" {
         // The effects, wet only
         let then = &case["then"];
@@ -538,7 +554,9 @@ fn every_case_nulls_against_the_legacy_program() {
                 eprintln!("{name} frame {n}: ours {a:?} legacy {b:?}");
             }
         }
-        let allowed = INTENTIONAL.iter().find(|(n, _, _)| *n == name).map_or(NULL, |(_, limit, _)| *limit);
+        let peak = theirs.iter().fold(0.0f32, |p, f| p.max(f[0].abs()).max(f[1].abs()));
+        let allowed =
+            INTENTIONAL.iter().find(|(n, _, _)| *n == name).map_or(NULL * peak.max(1.0), |(_, limit, _)| *limit);
         report.push_str(&format!("{name:32} worst {:7.1} dBFS at frame {at}\n", db(worst)));
         if !(worst <= allowed) {
             failures.push(format!(

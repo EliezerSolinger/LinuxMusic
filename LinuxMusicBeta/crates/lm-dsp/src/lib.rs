@@ -17,7 +17,8 @@
 //! - [`mono_bass`], [`channel_strip`]: the channel's whole strip;
 //! - [`master`]: the master section.
 //!
-//! The instruments' sources:
+//! The instruments' sources and shaping:
+//! - [`basic_filters`]: the general filters (every instrument's filter, the DualFilter's);
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
 //!
@@ -31,6 +32,7 @@
 // side line by line (the A/B is against that code)
 #![allow(clippy::needless_range_loop, clippy::excessive_precision)]
 
+pub mod basic_filters;
 pub mod channel_strip;
 pub mod compressor;
 pub mod delay;
