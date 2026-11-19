@@ -233,3 +233,13 @@ de forma diz pelo que é substituído.
   bloco.
 - **Workers sem trava:** o processador e o bloco de buffers de um nó vão e voltam por anéis por worker; só nós acima
   de 3 µs vão para um worker; somas, atrasos e strips rodam em série, na ordem do programa (determinismo).
+
+## O protocolo adiantado para depurar no ThinkPad (19/11)
+
+- **Uma versão mínima do protocolo (`lm-remote` e a `RemotePort`) vem logo depois da `lm-session`**, antes do resto da
+  primeira fatia: transporte, telemetria, avisos e atividades, a árvore espelhada, as ações e as edições, por socket
+  local ou TCP na rede local. Motivo (conversa com o usuário): o núcleo roda no ThinkPad, a máquina Linux do projeto,
+  como `lm-headless serve`, e a interface GPUI roda no Mac como cliente. Assim o ALSA é depurado onde roda, sem
+  compilar a GPUI no ThinkPad, que tem pouco disco.
+- Papéis completos, TLS para fora da rede local e o subconjunto estável para ferramentas externas continuam para a fase
+  2.
