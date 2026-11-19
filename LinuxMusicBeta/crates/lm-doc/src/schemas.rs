@@ -78,6 +78,11 @@ pub const BUS_RATIOS: &[&str] = &["2", "4", "10"];
 pub const ITEM_KINDS: &[&str] = &["midi", "audio"];
 pub const TIMEBASES: &[&str] = &["musical", "audio"];
 pub const MONITOR_MODES: &[&str] = &["auto", "on", "off"];
+/// Where an insert sits in its channel's signal path, against the rack's sections (P-20; `lm-dsp`,
+/// `InsertPoint::key`). An insert without `point` is at `"post-eq"`, the end of the rack
+pub const INSERT_POINTS: &[&str] = &["pre-gain", "post-gain", "post-filter", "post-dynamics", "post-eq", "pre-pan"];
+/// The desk's mode (P-17): in `"digital"` the rack is clean, without the analog modelling
+pub const DESK_MODES: &[&str] = &["analog", "digital"];
 
 const MAX: i64 = MAX_SAFE_INT;
 
@@ -126,7 +131,9 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(object("loop", ty::RANGE))
             .field(object("punch", ty::RANGE))
             .field(object("preRoll", ty::PREROLL))
-            .field(object("metronome", ty::METRONOME)),
+            .field(object("metronome", ty::METRONOME))
+            // The project's transposition in semitones (P-37), for the tracks that follow it; absent: 0
+            .field(FieldSpec::new("transpose", FieldKind::Int { min: -12, max: 12 }).optional()),
         NodeSchema::new(ty::RANGE, 1)
             .field(FieldSpec::bool("on", false))
             .field(FieldSpec::int("from", 0, MAX, 0))
@@ -153,6 +160,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::bool("mute", false))
             .field(FieldSpec::bool("solo", false))
             .field(FieldSpec::int("channels", 1, 64, 2))
+            // Whether the instrument follows the project's transposition (P-37); absent: true
+            .field(FieldSpec::new("transpose", FieldKind::Bool).optional())
             .field(object("instrument", ty::PLUGIN).nullable().default(Value::NULL))
             .field(object("input", ty::TRACK_INPUT).nullable().default(Value::NULL))
             .field(FieldSpec::bool("armed", false))
@@ -222,7 +231,9 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("plugin", FieldKind::Text))
             .field(FieldSpec::int("version", 1, MAX, 1))
             .field(FieldSpec::new("state", FieldKind::Any).default(Value::empty_object()))
-            .field(FieldSpec::bool("bypass", false)),
+            .field(FieldSpec::bool("bypass", false))
+            // Only for an insert of a channel (P-20); absent: "post-eq"
+            .field(FieldSpec::new("point", FieldKind::Choice(INSERT_POINTS)).optional()),
         // A send to another channel, or to an insert's sidechain port (`port`, then required)
         NodeSchema::new(ty::SEND, 1)
             .field(FieldSpec::id(KIND_SEND))
@@ -230,7 +241,11 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("port", FieldKind::Text).optional())
             .field(FieldSpec::real("amount", 0.0, 4.0, 1.0))
             .field(FieldSpec::bool("pre", false)),
-        NodeSchema::new(ty::MIXER, 1).field(object("master", ty::MASTER)).field(list_of("channels", ty::CHANNEL)),
+        NodeSchema::new(ty::MIXER, 1)
+            // Absent: "analog"
+            .field(FieldSpec::new("mode", FieldKind::Choice(DESK_MODES)).optional())
+            .field(object("master", ty::MASTER))
+            .field(list_of("channels", ty::CHANNEL)),
         NodeSchema::new(ty::MASTER, 1)
             .field(FieldSpec::id(KIND_CHANNEL))
             .field(FieldSpec::text("name", "Master"))
