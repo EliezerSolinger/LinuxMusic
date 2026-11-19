@@ -803,8 +803,7 @@ void NotePlayHandleManager::addSlots(int count)
 	auto* memory = static_cast<NotePlayHandle*>(std::malloc(sizeof(NotePlayHandle) * count));
 	for (int index = 0; index < count; ++index)
 	{
-		auto* filter = new BasicFilters<>(44100); // set to the engine's when a note uses it
-		filter->reserveSubFilter();
+		auto* filter = new BasicFilters<>(44100); // set to the engine's when a note uses it (its second stage made with it)
 		s_available[++s_availableIndex] = Slot{memory + index, filter};
 	}
 }

@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <memory>
 #include <numbers>
 
 #include "lmms_constants.h"
@@ -279,40 +280,28 @@ public:
 		m_type = _idx == FilterType::DoubleLowPass 
 			? FilterType::LowPass
 			: FilterType::Moog;
-		if( m_subFilter == nullptr )
-		{
-			m_subFilter = new BasicFilters<CHANNELS>(
-						static_cast<sample_rate_t>(
-							m_sampleRate ) );
-		}
-		m_subFilter->m_type = m_type;
+		// (a second stage has no stage of its own: it is never set to a double type)
+		if (m_subFilter) { m_subFilter->m_type = m_type; }
 	}
 
-	inline BasicFilters( const sample_rate_t _sample_rate ) :
+	//! A filter with its second stage (for the double types) made with it: choosing any type later, on the audio
+	//! thread, allocates nothing
+	explicit BasicFilters(const sample_rate_t _sample_rate) :
 		m_doubleFilter( false ),
 		m_sampleRate( (float) _sample_rate ),
 		m_sampleRatio( 1.0f / m_sampleRate ),
-		m_subFilter( nullptr )
+		m_subFilter(std::unique_ptr<BasicFilters>(new BasicFilters(_sample_rate, SecondStage{})))
 	{
 		clearHistory();
 	}
 
-	inline ~BasicFilters()
-	{
-		delete m_subFilter;
-	}
-
-	//! Makes the second stage of the double filters now, so that choosing one later allocates nothing (on the audio
-	//! thread)
-	void reserveSubFilter()
-	{
-		if (m_subFilter == nullptr) { m_subFilter = new BasicFilters<CHANNELS>(static_cast<sample_rate_t>(m_sampleRate)); }
-	}
+	BasicFilters(const BasicFilters&) = delete;
+	auto operator=(const BasicFilters&) -> BasicFilters& = delete;
 
 	inline void clearHistory()
 	{
 		// The second stage's too: a filter used again starts as a new one would
-		if (m_subFilter != nullptr) { m_subFilter->clearHistory(); }
+		if (m_subFilter) { m_subFilter->clearHistory(); }
 
 		// reset in/out history for biquads
 		m_biQuad.clearHistory();
@@ -347,10 +336,7 @@ public:
 	{
 		m_sampleRate = sampleRate;
 		m_sampleRatio = 1.f / m_sampleRate;
-		if (m_subFilter != nullptr)
-		{
-			m_subFilter->setSampleRate(m_sampleRate);
-		}
+		if (m_subFilter) { m_subFilter->setSampleRate(m_sampleRate); }
 	}
 
 	inline sample_t update( sample_t _in0, ch_cnt_t _chnl )
@@ -924,7 +910,18 @@ private:
 
 	float m_sampleRate;
 	float m_sampleRatio;
-	BasicFilters<CHANNELS> * m_subFilter;
+	//! The second stage of a double filter: made with the filter (see the constructor); none in a second stage
+	std::unique_ptr<BasicFilters<CHANNELS>> m_subFilter;
+
+	//! (the second stage's constructor: no stage of its own)
+	struct SecondStage {};
+	BasicFilters(const sample_rate_t sampleRate, SecondStage) :
+		m_doubleFilter(false),
+		m_sampleRate(static_cast<float>(sampleRate)),
+		m_sampleRatio(1.0f / m_sampleRate)
+	{
+		clearHistory();
+	}
 
 } ;
 
