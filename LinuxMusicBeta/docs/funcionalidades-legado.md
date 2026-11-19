@@ -237,7 +237,195 @@ Regras gerais do legado que valem para quase todo plugin:
 - **O usuário pode:** sortear volumes, desafinações e formas com um botão "Randomise".
 - **Comportamento:** polifônico, estéreo, fase inicial aleatória por nota; fade-in curto; sem release.
 
-<!-- 7.1 continua com os instrumentos de Patman a ZynAddSubFx, e os hospedeiros (Vestige, Carla, LV2). -->
+#### F-INS-013 PatMan (patches GUS .pat) — 1.0
+
+- **O que faz:** toca patches `.pat` do Gravis Ultrasound (multiamostra, um instrumento, uma camada).
+- **Onde:** `plugins/Patman/`.
+- **Parâmetros:** Loop (usa os pontos de loop do patch), ligado · Tune (afina a amostra pela nota; desligado toca na
+  altura original), ligado · arquivo.
+- **O usuário pode:** abrir um `.pat` (começa em `/usr/share/midi/freepats` se existir); soltar um `.pat` do
+  navegador; abrir um `.pat` em qualquer lugar escolhe o PatMan.
+- **Comportamento:** escolhe a amostra cuja nota raiz está mais perto da nota (ignora faixas de tecla, envelopes,
+  pan, tremolo do patch); mono duplicado; release da faixa. Erros claros (não é GUS, mais de uma camada, truncado).
+
+#### F-INS-014 Sf2 Player (SoundFont) — 1.0
+
+- **O que faz:** toca SoundFonts `.sf2`/`.sf3` num FluidSynth por instrumento.
+- **Onde:** `plugins/Sf2Player/` (`PatchesDialog`).
+- **Parâmetros:** Banco 0–999, 0 · Patch 0–127, 0 · Ganho 0–5, 1 · Reverb liga (desligado), Tamanho da sala 0–1,
+  Amortecimento 0–1, Largura 0–1, Nível 0–1 · Chorus liga (desligado), Vozes 0–10, Nível 0–10, Velocidade 0,29–5 Hz,
+  Profundidade 0–46 ms. Os padrões do reverb e do chorus são os do FluidSynth.
+- **O usuário pode:** abrir um SoundFont (começa na pasta de SF2 das configurações; renomeia a faixa); escolher o
+  patch numa lista de bancos e patches **com busca**, ouvindo ao navegar, Cancelar volta ao anterior; soltar um
+  SoundFont do navegador ou do gerenciador de arquivos; um instrumento novo já abre o **SoundFont padrão das
+  configurações** no primeiro preset.
+- **Comportamento:** fluxo único; uma nota fora de 0–127 é descartada; detune, glide e pan por nota aplicados por
+  voz; **com o envelope de volume da faixa ligado (aba ENV), ele substitui o envelope do SoundFont**; respeita o pedal
+  de sustain; pitch bend e faixa de bend; **segue o microafinador** (tabela de 128 teclas); acima de 96 kHz renderiza
+  a 96 e converte. Exportação determinística.
+
+#### F-INS-015 sfxr (efeitos sonoros retrô) — 1.0
+
+- **O que faz:** gerador de efeitos de jogo do sfxr; cada nota toca um efeito inteiro (a nota termina sozinha).
+- **Onde:** `plugins/Sfxr/`.
+- **Parâmetros (0–1 ou −1–1):** Attack 0 · Sustain Time 0,3 · Sustain Punch 0 · Decay 0,4 · Start Frequency 0,3 · Min
+  Frequency 0 · Slide 0 · Delta Slide 0 · Vibrato Depth 0 · Vibrato Speed 0 · Change Amount 0 · Change Speed 0 · Square
+  Duty 0 · Duty Sweep 0 · Repeat Speed 0 · Phaser Offset 0 · Phaser Sweep 0 · LP Cutoff 1 · LP Cutoff Sweep 0 · LP
+  Resonance 0 · HP Cutoff 0 · HP Cutoff Sweep 0 · Onda: quadrada (padrão), serra, senoide, ruído.
+- **O usuário pode:** gerar um efeito pronto por categoria (moeda, laser, explosão, power-up, dano, pulo, blip), um
+  aleatório, ou "mutar" o atual (±0,05 em metade dos parâmetros); tudo isso desfazível.
+- **Comportamento:** roda a 44,1 kHz por dentro; a nota base toca o efeito na altura desenhada, outras teclas
+  transpõem; mono duplicado.
+
+#### F-INS-016 SID (Commodore 64) — 1.0
+
+- **Onde:** `plugins/Sid/` (reSID).
+- **Por voz (3):** Largura de pulso 0–4095, 2048 · Ataque 0–15, 8 · Decay 0–15, 8 · Sustain 0–15, 15 · Release 0–15,
+  8 (as dicas mostram os tempos reais) · Grosso −24–24 · Forma: pulso, triângulo (padrão), serra, ruído · Sync · Ring
+  mod · Filtrada · Test.
+- **Global:** Corte 0–2047, 1024 (mostra Hz) · Ressonância 0–15, 8 · Filtro passa-alta / passa-banda / passa-baixa
+  (padrão) · Desligar voz 3 · Volume 0–15, 15 · Chip MOS6581 ou MOS8580 (padrão).
+- **Comportamento:** um chip por nota (polifônico), as 3 vozes tocam a nota; release pelo envelope do SID; mono
+  duplicado. Quirk: um modo de filtro por vez (o chip real combina).
+
+#### F-INS-017 SlicerT (fatiador de loops) — 1.0
+
+- **O que faz:** carrega uma amostra, acha as fatias pelos ataques e põe cada fatia numa tecla: a nota base toca a
+  amostra inteira, as seguintes as fatias 1, 2…
+- **Onde:** `plugins/SlicerT/`.
+- **Parâmetros:** Limiar 0–2, 0,6 · Fade out 0–100 ms, 10 · BPM original 1–999 (detectado ao carregar) · Grade das
+  fatias: desligada, 1/1…1/32 · Sincronizar com o andamento, desligado · Loop: desligado / loop / pingue-pongue ·
+  lista de fatias.
+- **O usuário pode:** carregar a amostra (clique, botão, ou arrastar uma amostra ou clipe de amostra); ver o andamento
+  detectado (60–200 BPM); refazer a detecção; arrastar os marcadores, criar com duplo clique, apagar com o botão
+  direito; navegar (barra de visão geral com alças, zoom vertical na roda, clique do meio volta); apagar todas as
+  fatias; **copiar um padrão MIDI com uma nota por fatia para colar no editor de notas**.
+- **Comportamento:** com sync, a velocidade é BPM original / andamento (muda a altura); sem loop, a fatia toca uma vez
+  com fade; teclas além das fatias ficam mudas. Precisa de FFTW.
+
+#### F-INS-018 Mallets (STK: marimba, vibrafone, sinos…) — 1.0
+
+- **Onde:** `plugins/Stk/Mallets/`; precisa das rawwaves do STK (pasta STK das configurações), senão avisa e não toca.
+- **Parâmetros:** Instrumento: Marimba (padrão), Vibraphone, Agogo, Wood 1, Reso, Wood 2, Beats, Two fixed, Clump,
+  Tubular bells, Uniform bar, Tuned bar, Glass, Tibetan bowl · ModalBar: Hardness 0–128, 64; Position 0–64, 64;
+  Vibrato gain 0–128, 0; Vibrato freq 0–128, 0; Stick mix 0–128, 0 · TubeBell: Modulator, Crossfade, LFO speed, LFO
+  depth, ADSR (0–128, 64) · BandedWG: Pressure 0,1–128, 64; Speed 0,1–128, 64; Bowed (salvo, sem tela) · Spread
+  (atraso estéreo) 0–255, 0 · Aleatoriedade 0–1, 0.
+- **O usuário pode:** a escolha do instrumento troca a página de botões (três modelos).
+- **Comportamento:** a aleatoriedade varia alguns parâmetros por nota; a altura segue a nota ao vivo; volume nivelado
+  por preset.
+
+#### F-INS-019 TripleOscillator — core (primeira fatia)
+
+- **O que faz:** três osciladores estéreo, com modulação do 1 pelo 2 e do 2 pelo 3.
+- **Onde:** `plugins/TripleOscillator/`, oscilador em `src/core/Oscillator.cpp`. O oscilador já foi portado para o
+  `lm-dsp` com A/B (`implementacao.md`).
+- **Por oscilador:** Volume 0–200 %, 20 · Pan −100–100, 0 · Grosso −24–24 semitons (osc 1: 0, osc 2: −12, osc 3:
+  −24) · Fino esquerdo e direito −100–100 cents · Fase inicial 0–360° · Desafinação de fase estéreo 0–360° · Forma:
+  senoide, triângulo, serra, quadrada, serra Moog, exponencial, ruído branco, **onda do usuário** · Tabela sem
+  aliasing (ligado).
+- **Modulação** (1←2 e 2←3): PM, AM, Mistura (padrão), Sync, FM.
+- **O usuário pode:** escolher a forma de cada oscilador; carregar um arquivo como onda do usuário (gera a tabela sem
+  aliasing; arquivo ausente só avisa se for usado).
+- **Comportamento:** polifônico; fade-in e release da faixa.
+
+#### F-INS-020 Vibed (cordas vibrantes) — 1.0
+
+- **O que faz:** modelo de corda tipo Karplus-Strong, 9 cordas independentes por nota, cada uma com o próprio impulso
+  desenhado.
+- **Onde:** `plugins/Vibed/`.
+- **Por corda (9):** Liga (só a 1 nasce ligada) · Volume 0–200 %, 100 · Rigidez 0–0,05 · Posição da palheta 0–0,05,
+  0 · Posição do captador 0–0,05, 0,05 · Pan −1–1 · Desafinação −0,1–0,1 · Fuzz 0–0,75 · Comprimento 1–16, 1 ·
+  Impulso (usa a forma como velocidade inicial), desligado · Oitava: −2, −1, F (padrão), 2…7 · Forma (128 pontos,
+  desenhada).
+- **O usuário pode:** escolher qual corda editar; desenhar a forma; aplicar senoide, triângulo, serra, quadrada,
+  ruído, arquivo; suavizar; normalizar.
+- **Comportamento:** **sem pitch bend**; sem release (as cordas decaem sozinhas).
+
+#### F-INS-021 Watsyn (4 osciladores de onda desenhada) — 1.0
+
+- **O que faz:** dois pares A (A1←A2) e B (B1←B2) misturados por um crossfader A-B com envelope próprio.
+- **Onde:** `plugins/Watsyn/`.
+- **Por oscilador (A1, A2, B1, B2):** Volume 0–200 %, 32 · Pan −100–100 · Multiplicador de frequência 1–24 (/8), 8 ·
+  Desafinação esquerda e direita −600–600 cents · Onda desenhada (220 pontos).
+- **Global:** Mistura A-B −100–100, 0 · Quantidade do envelope −200–200 · Ataque, Hold, Decay do envelope 0–2000 ms,
+  sync · Crosstalk A1→B2 0–100 · Modulação A2→A1 e B2→B1: Mistura, AM, Ring, PM · Anti-aliasing (ligado).
+- **O usuário pode:** escolher qual onda editar e desenhá-la; carregar de arquivo; deslocar a fase ±15°; normalizar;
+  inverter; suavizar; formas prontas.
+
+#### F-INS-022 Xpressive (síntese por expressões) — 1.0
+
+- **O que faz:** o usuário escreve expressões matemáticas para 2 saídas (O1, O2) e 3 tabelas de onda (W1–W3).
+- **Onde:** `plugins/Xpressive/` (exprtk).
+- **Parâmetros:** A1, A2, A3 −1–1, 1 (uso livre nas expressões) · Suavização de W1–W3 0–70 · Interpolar W1–W3 · Pan
+  O1 −1–1, 1 · Pan O2 −1–1, −1 · Transição de release 0–500 ms, 50 · textos das expressões e as ondas desenhadas.
+- **O usuário pode:** editar cada expressão com reavaliação ao vivo e o gráfico do resultado (LED vermelho se inválida,
+  saída muda); desenhar W1–W3 quando a expressão está vazia; formas prontas; abrir uma ajuda completa com as
+  variáveis (t, f, key, bnote, srate, tempo, v, rel, trel, seed, A1–A3) e funções (W1–W3, cent, semitone, last,
+  integrate, rand, randv, formas de onda, e a matemática do exprtk).
+- **Comportamento:** sem release próprio; a cauda é o que a expressão faz com `rel`/`trel`.
+
+#### F-INS-023 ZynAddSubFX — 1.0
+
+- **O que faz:** o ZynAddSubFX 2.x embutido.
+- **Onde:** `plugins/ZynAddSubFx/` (`LocalZynAddSubFx`, `RemoteZynAddSubFx` com a interface FLTK).
+- **Parâmetros do host (0–127, mandados como CC):** Portamento 0 (0 = desligado) · Corte do filtro 64 · Ressonância
+  64 · Bandwidth 64 · Ganho de FM 127 · Centro da ressonância 64 · Largura da ressonância 64 · Repassar CCs da faixa
+  (ligado).
+- **O usuário pode:** abrir e soltar presets `.xiz` (banco de fábrica em `<factoryPresetsDir>/ZynAddSubFX`; renomeia a
+  faixa); abrir a interface completa do Zyn.
+- **Comportamento:** fluxo único; MIDI aplicado no início do período (não preciso na amostra); o estado inteiro do Zyn
+  vai no projeto. Quirk: mostrar ou esconder a interface recria o sintetizador (com a interface ele roda num processo
+  separado; sem ela, dentro). **Aberto:** no programa novo é plugin interno (dentro do processo) ou de terceiros (fora)?
+  E a interface FLTK? (pergunta P-05.)
+
+#### F-INS-024 Janela de "plugin não encontrado" e instrumento fantasma — 1.0
+
+- **O que faz:** um plugin que falta vira um instrumento/efeito mudo que guarda o estado e o salva de volta.
+- **Onde:** `src/core/Plugin.cpp` (DummyInstrument/DummyEffect).
+- **Status:** 1.0, já previsto (`arquitetura-nova.md`, peça 7: "plugin não disponível", a árvore é guardada).
+
+### 7.1b Hospedeiros de instrumentos de terceiros
+
+#### F-HOST-001 VeSTige (instrumentos VST2) — aberto
+
+- **O que faz:** hospeda instrumentos VST2 sempre em processo separado: `.dll` do Windows pelo wine (32 ou 64 bits),
+  `.so` nativos no Linux.
+- **Onde:** `plugins/Vestige/`, `plugins/VstBase/` (`RemoteVstPlugin`).
+- **O usuário pode:** abrir o plugin (começa na pasta de VST das configurações; aviso de carregamento); mostrar ou
+  esconder a interface do plugin (embutida ou em janela própria, conforme a configuração); trocar de programa (anterior,
+  próximo, menu com todos); abrir e salvar presets `.fxp`/`.fxb`; abrir uma janela genérica com um botão por parâmetro
+  (filtro "automatizados/todos", "VST Sync" puxa os valores do plugin); desligar todas as notas; soltar um arquivo VST
+  na faixa.
+- **Parâmetros:** um botão 0–1 por parâmetro do plugin, com o texto que o plugin mostra; salvos só se automatizados ou
+  ligados a controlador; o resto vai no "chunk" do plugin.
+- **Comportamento:** MIDI com posição no bloco; canais conforme o plugin; **latência informada**; andamento e posição
+  passados ao plugin.
+- **Status:** **aberto** — o desenho novo fala de LV2, CLAP e depois VST3; VST2 não é citado (pergunta P-01).
+
+#### F-HOST-002 Carla Rack e Carla Patchbay — aberto
+
+- **O que faz:** embute o Carla (rack em série ou patchbay com roteamento livre) como instrumento; o Carla hospeda
+  LV2, LADSPA, DSSI, VST2, VST3, SF2, SFZ.
+- **Onde:** `plugins/CarlaBase/`, `plugins/CarlaRack/`, `plugins/CarlaPatchbay/`.
+- **O usuário pode:** abrir a interface do Carla; ver os parâmetros que o Carla expõe numa janela com busca, filtro
+  por grupo e "só os ligados"; automatizar os de entrada; ver os de saída.
+- **Comportamento:** estado inteiro do Carla no projeto; MIDI preciso; andamento e compasso passados; latência
+  informada (soma no rack, máximo no patchbay).
+- **Status:** **aberto** (pergunta P-02): com LV2, CLAP e VST3 próprios, o Carla ainda é preciso?
+
+#### F-HOST-003 Instrumentos LV2 — 1.0
+
+- **O que faz:** hospeda qualquer plugin LV2 classificado como instrumento (sem entrada de áudio principal).
+- **Onde:** `plugins/Lv2Instrument/`, `src/core/lv2/`, `src/gui/Lv2ViewBase.cpp`.
+- **O usuário pode:** ver uma grade genérica de controles (liga/desliga para `toggled`, lista para `enumeration`, número
+  para inteiros, botão para o resto, escala log quando o plugin pede); ler a descrição do plugin; recarregar o plugin.
+  Plugins mono rodam em duas cópias (L e R) com os controles ligados, e cada controle pode ser desligado da ligação.
+- **Recusados com motivo:** recurso obrigatório não suportado, sem canais de áudio, mais de uma porta MIDI, faixas
+  inválidas, e uma lista de bloqueio de plugins instáveis (desligável nas configurações).
+- **Faltas do legado (não são funcionalidade a manter):** a interface própria do plugin está desligada; o estado do
+  plugin (extensão state) não é salvo, só os controles; presets não carregam; roda dentro do processo.
+- **Status:** 1.0, fase 2, fora do processo (`decisoes-autonomas.md`), com o "chunk" de estado salvo.
 
 ### 7.2 Efeitos
 
@@ -440,4 +628,170 @@ Regras gerais do legado que valem para quase todo plugin:
 - **Status:** 1.0 (como 97 efeitos internos; a forma de mostrá-los no navegador do programa novo é de quem desenhar o
   navegador).
 
-<!-- 7.2 continua com os efeitos de LOMM a WaveShaper; 7.3 com os hospedeiros de terceiros. -->
+#### F-FX-020 LOMM (compressor multibanda para cima e para baixo, estilo OTT) — 1.0
+
+- **Onde:** `plugins/LOMM/`.
+- **Global:** Profundidade 0–1, 0,4 · Tempo 0–10, 1 (escala ataque e release) · Volume de entrada −48–48 dB, 0 ·
+  Volume de saída −48–48 dB, 8 · Profundidade para cima 0–2, 1 · para baixo 0–2, 1 · Mix 0–1, 1 · Tempo automático
+  0–1, 0 · RMS 0–500 ms, 10 (0 = pico) · Knee 0–36 dB, 6 · Range 0–96 dB, 36 · Balanço −18–18 dB · Escalar a saída
+  pela profundidade (ligado) · Stereo Link · Feedback · Mid/Side · Lookahead (liga) e duração 0–20 ms · Suprimir a
+  compressão para cima no lado (só em M/S).
+- **Cruzamentos:** Alto/Médio 20–20000 Hz, 2500 · Médio/Grave 20–20000 Hz, 88,3; cada um pode ser desligado.
+- **Por banda (alta, média, baixa):** liga · Volume de entrada e de saída −48–48 dB (saída 4,6 / 0 / 4,6) · Limiar
+  acima −72–0 dB (−30,3 / −25 / −28,6) e Razão acima 1–99,99 (99,99 / 66,7 / 66,7) · Limiar abaixo (−35,6 / −36,6 /
+  −35,6) e Razão abaixo (4,17) · Ataque 0–1000 ms (13,5 / 22,4 / 47,8) · Release 0–1000 ms (132 / 282 / 282).
+- **O usuário pode:** ver os níveis de entrada e saída por banda; **arrastar os limiares direto no visor** (à
+  esquerda move o de baixo, à direita o de cima, no meio os dois); clique do meio volta o limiar; "Init" zera tudo
+  para um ponto neutro (pergunta antes, desfazível).
+
+#### F-FX-021 MultitapEcho — 1.0
+
+- **Onde:** `plugins/MultitapEcho/`.
+- **Parâmetros:** Passos (ecos) 4–32, 16 · Duração do passo 1–500 ms, 100, sync · Ganho seco no buffer −80–20 dB, 0 ·
+  Trocar entradas (pingue-pongue), desligado · Estágios do passa-baixa 1–4, 1 · Gráfico de amplitude por eco (−60–0
+  dB, desenhado) · Gráfico de corte por eco (20 Hz–20 kHz, desenhado).
+- **O usuário pode:** desenhar os dois gráficos em barras. Quirk: só os ecos 0–19 têm o filtro certo ao abrir.
+
+#### F-FX-022 Oscilloscope — 1.0
+
+- **Onde:** `plugins/Oscilloscope/`. Só mostra; o áudio passa intacto.
+- **Parâmetros:** Escala 0–1000 %, 100 · Janela 1–5000 ms, 500 · Deslocamento no histórico 0–1, 1 · Pausa · Estéreo
+  (L e R em cores) ou mono.
+- **O usuário pode:** dar zoom com a roda em torno do cursor; arrastar para voltar até 5 s no histórico; ver linhas de
+  clipe.
+
+#### F-FX-023 Peak Controller (seguidor de envelope que vira controlador) — 1.0
+
+- **O que faz:** mede o nível do sinal e cria um **controlador** que qualquer botão pode seguir (seção 8).
+- **Onde:** `plugins/PeakControllerEffect/`, `src/core/PeakController.cpp`.
+- **Parâmetros:** Base 0–1, 0,5 · Quantidade −1–1, 1 · Multiplicador 0–32, 1 · Ataque 0–0,999, 0 · Release 0–0,999,
+  0 · Limiar 0–1, 0 · Silenciar a saída (para usar como sidechain), desligado · Valor absoluto, ligado.
+- **Comportamento:** um valor por período (resolução do período de áudio).
+
+#### F-FX-024 ReverbSC — core (plugin de validação, ou o Delay)
+
+- **Onde:** `plugins/ReverbSC/` (Soundpipe). Já portado para o `lm-dsp`.
+- **Parâmetros:** Ganho de entrada −60–15 dB, 0 · Tamanho 0–1, 0,89 · Cor 100–15000 Hz, 10000 · Ganho de saída
+  −60–15 dB, 0. Todos com precisão de amostra.
+
+#### F-FX-025 SlewDistortion (distorção de 2 bandas e limitador de slew) — 1.0
+
+- **Onde:** `plugins/SlewDistortion/`.
+- **Por unidade (2):** Tipo (Hard Clip, Tanh, Soft Clip 1, Soft Clip 2, Senoidal, Foldback, Retificação completa,
+  meia, suave, Bitcrush) · Drive −24–24 dB, 0 · Slew Up e Slew Down −96–6, 6, e Ligar os dois (ligado) · Bias −2–2 ·
+  Warp 0–0,99 · Crush 0–24 · Volume de saída −24–24 dB · Ataque 0,01–200 ms, 2 · Release 0,01–800 ms, 20 · Dinâmica
+  0–1 · Slew dinâmico −8–8 · Mix 0–1, 1.
+- **Global:** Remover DC (ligado) · Multibanda, desligado · Divisão 100–20000 Hz, 200 · Sobreamostragem 1×, 2×, 4×,
+  8×, 16×, 32×.
+- **O usuário pode:** arrastar Drive, Bias e Saída como alças; ver as curvas de transferência e os medidores; abrir a
+  ajuda.
+
+#### F-FX-026 Spectrum Analyzer — 1.0
+
+- **Onde:** `plugins/SpectrumAnalyzer/`. Só mostra; analisa só com a janela aberta.
+- **Controles:** Pausa · Congelar referência · Cascata (espectrograma) · Média · Estéreo · Retenção de pico · Frequência
+  log (ligado) · Amplitude log (ligado) · Faixa de frequência: completa (padrão), audível, graves, médios, agudos ·
+  Faixa de amplitude: estendida, audível (padrão), alta, baixa · Tamanho da FFT 256–16384 (2048) · Janela:
+  retangular, Blackman-Harris (padrão), Hamming, Hanning.
+- **Avançado:** Resolução do envelope 0,1–3, 0,25 · Resolução do espectro 0,1–3, 1,5 · Queda do pico 0,95–0,999,
+  0,992 · Peso da média 0,01–0,5, 0,15 · Linhas da cascata 50–1000, 300 · Gama da cascata 0,1–1, 0,3 · Sobreposição
+  1–4, 2 · Zero padding 0–4, 2.
+- **O usuário pode:** ler frequência e dB (ou tempo, na cascata) sob o cursor.
+
+#### F-FX-027 StereoEnhancer — 1.0
+
+- **Onde:** `plugins/StereoEnhancer/`. **Parâmetro:** Largura 0–180, 0. Quirk: o mesmo valor é atraso em amostras e
+  ângulo em graus.
+
+#### F-FX-028 StereoMatrix — obsoleto
+
+- **O que fazia:** matriz 2×2 (L→L 1, L→R 0, R→L 0, R→R 1, cada um −1–1): trocar lados, somar em mono, inverter
+  polaridade. Já aposentado no fork.
+- **Status:** obsoleto — substituído pela fase, troca e mono do canal da mesa (F-MIX).
+
+#### F-FX-029 Vectorscope — 1.0
+
+- **Onde:** `plugins/Vectorscope/`. Só mostra.
+- **Parâmetros:** Escala log, desligado · Linhas (ou pontos), ligado.
+- **O usuário pode:** zoom 20–1000 % na roda; escolher a cor do traço com duplo clique.
+
+#### F-FX-030 WaveShaper (curva de transferência desenhada) — 1.0
+
+- **Onde:** `plugins/WaveShaper/`.
+- **Parâmetros:** Entrada 0–5, 1 · Saída 0–5, 1 · Cortar a entrada em 0 dB, desligado · Curva (200 pontos, 0–1),
+  linear.
+- **O usuário pode:** desenhar a curva (Shift+clique traça reta); voltar à linear; suavizar; +1 dB / −1 dB.
+
+#### F-FX-031 Efeitos LADSPA — aberto
+
+- **O que faz:** hospeda efeitos (e "instrumentos" geradores) LADSPA. Conjuntos embutidos compilados das fontes:
+  calf (veal), caps, cmt, swh, tap.
+- **Onde:** `src/core/LadspaManager.cpp`, `Ladspa2LMMS.cpp`, `LadspaControl.cpp`, `plugins/LadspaEffect/`.
+- **Busca:** `LADSPA_PATH`, a pasta das configurações, a pasta embutida, `/usr/lib/ladspa`, `/usr/lib64/ladspa`,
+  `/usr/local/lib…`, `/Library/Audio/Plug-Ins/LADSPA`; tudo carregado na partida.
+- **Parâmetros:** um controle por porta: liga/desliga, inteiro, tempo (portas "(s)" viram ms e podem seguir o
+  andamento), contínuo (escala log quando pedido); faixa ausente vira 0–1 (ou 0–10 para "GAIN"); uma porta de saída
+  chamada "latency" informa a latência. Plugins mono rodam em dois (L e R) com "ligar canais" por controle.
+- **O usuário pode:** editar numa grade com barras por parâmetro e por canal. Sem presets.
+- **Status:** **aberto** (pergunta P-03): o desenho novo lista LV2, CLAP e VST3; LADSPA não é citado. Os conjuntos
+  embutidos (calf, caps, swh, tap) cobrem efeitos que muita gente usa.
+
+#### F-FX-032 Efeitos LV2 — 1.0
+
+- **O que faz e onde:** o mesmo hospedeiro de F-HOST-003, para plugins com entrada de áudio. Busca padrão do lilv;
+  plugins com problema não aparecem; lista de bloqueio (desligável). Sem interface própria, sem estado salvo, sem
+  presets no legado.
+- **Status:** 1.0 (fase 2, fora do processo, com estado e presets).
+
+#### F-FX-033 Efeitos VST2 — aberto
+
+- **O que faz:** como F-HOST-001, para efeitos; procura `*.dll`/`*.so` na pasta de VST das configurações. Janela com
+  mostrar/esconder a interface, gerenciar parâmetros, presets `.fxp`/`.fxb`, programa anterior/próximo e menu.
+- **Status:** **aberto** (P-01).
+
+#### F-FX-034 Conector de pinos — obsoleto
+
+- **O que faz:** por plugin, uma grade que liga os canais da faixa às entradas do plugin e as saídas do plugin aos
+  canais da faixa (clicar na célula liga/desliga); por padrão as saídas extras (peças da bateria) vão ao par
+  principal e a entrada de sidechain aos canais 3/4.
+- **Onde:** `src/gui/PinConnector.cpp`, `src/core/AudioPortsModel.cpp`.
+- **Status:** obsoleto — substituído pelas **saídas da faixa** (uma por porta declarada do instrumento, cada uma para
+  um canal da mesa), pelas conversões explícitas de canais do compilador e pelos envios de sidechain para a porta do
+  insert (`arquitetura-nova.md`, especificação itens 2 e 3).
+
+#### F-FX-035 Proteção contra plugins que derrubam o programa — obsoleto (em parte)
+
+- **O que faz:** o relatório de queda diz qual plugin rodava; ele entra numa lista de suspeitos. Da próxima vez: um
+  LADSPA ou LV2 suspeito roda num processo próprio, com aviso; os outros viram fantasma ao abrir o projeto (com aviso)
+  ou o programa pergunta "carregar mesmo assim?". Processo separado travado por mais de 2 s é morto e o plugin fica
+  mudo. Nas configurações, "Não carregados desde uma queda" com o botão "Carregar de novo".
+- **Onde:** `src/core/PluginGuard.cpp`, `src/core/RemotePlugin.cpp`, `src/core/CrashHandler.cpp`,
+  `plugins/LadspaEffect/RemoteLadspaHost.cpp`, `plugins/Lv2Effect/RemoteLv2Host.cpp`.
+- **Status:** obsoleto — substituído por: **terceiros sempre fora do processo**; se o processo cair, a faixa fica muda
+  com aviso e o plugin é recriado da árvore (`arquitetura-nova.md`, item 7). Fica como 1.0 só o aviso ao usuário e
+  um jeito de recriar o plugin (a ação "recriar o plugin" do aviso, I-14).
+
+#### F-FX-036 Categorias de plugins — 1.0
+
+- **O que faz:** cada plugin interno tem categoria, cor e sigla. Instrumentos: Sintetizadores (subtrativo, wavetable,
+  aditivo, cordas, fórmulas), Samplers, Baterias, Modelagem física, Chiptune, Hospedeiros. Efeitos: ver F-FX-003.
+  Plugins de terceiros agrupados por hospedeiro.
+- **Onde:** `src/core/PluginCategories.cpp`. Quirk: o Spectrum Analyzer cai em "Outros" por um nome trocado.
+
+### 7.3 Ferramentas e filtros de arquivo que são plugins no legado
+
+#### F-FX-037 Tap Tempo — 1.0
+
+- **O que faz:** bater o andamento num botão grande (ou na barra de espaço); toca um clique a cada batida (o primeiro
+  tempo do compasso com outro som), a menos que "Mudo" esteja marcado; mostra o BPM, o período em ms e a frequência
+  em Hz (com uma casa decimal se "Precisão"); "Reset" zera; "Sync" põe o andamento da música no valor medido.
+  Batidas com mais de 2 s de intervalo recomeçam; depois de 3 batidas usa a mediana das últimas 3, suavizada.
+- **Onde:** `plugins/TapTempo/` (menu Ferramentas).
+
+#### F-FX-038 Importar MIDI — 1.0
+
+- Descrito em F-PRJ (seção 9), onde a funcionalidade mora. Código em `plugins/MidiImport/`.
+
+#### F-FX-039 Exportar MIDI — 1.0
+
+- Descrito em F-PRJ (seção 9). Código em `plugins/MidiExport/`.
