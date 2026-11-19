@@ -242,6 +242,17 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         use lm_dsp::oscillator::{ModulationAlgo, OscParams, Oscillator, WaveShape};
         let rate = case["rate"].as_f64().unwrap();
         let oscs = case["settings"]["oscs"].as_array().unwrap();
+        // A user's wave: one period of the test's noise
+        let users: Vec<Option<lm_dsp::oscillator::UserWave>> = oscs
+            .iter()
+            .map(|o| {
+                o.get("user").map(|u| {
+                    let mut noise = Signal::new(&serde_json::json!({"kind": "noise", "seed": u["seed"], "amp": 1.0}));
+                    let period = (0..u["frames"].as_i64().unwrap()).map(|f| noise.at(f)).collect();
+                    lm_dsp::oscillator::UserWave::new(period)
+                })
+            })
+            .collect();
         let params: Vec<OscParams<'_>> = oscs
             .iter()
             .map(|o| OscParams {
@@ -254,6 +265,8 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
                 use_wave_table: o["tables"].as_bool().unwrap(),
                 user_wave: None,
             })
+            .zip(&users)
+            .map(|(p, u)| OscParams { user_wave: u.as_ref(), ..p })
             .collect();
         let mut chain: Vec<Oscillator> =
             params.iter().map(|p| Oscillator::new(p.phase_offset, rate as f32, 0)).collect();

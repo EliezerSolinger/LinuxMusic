@@ -252,6 +252,21 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			chain[i] = std::make_unique<Oscillator>(shapeModels.back().get(), algoModels.back().get(), freqs[i],
 				detunings[i], phases[i], volumes[i], i + 1 < count ? chain[i + 1].get() : nullptr);
 			chain[i]->setUseWaveTable(o["tables"].toBool());
+			if (o.contains("user"))
+			{
+				// A user's wave: one period of the harness's noise
+				const auto user = o["user"].toObject();
+				auto noise = Signal{QJsonObject{{"kind", "noise"}, {"seed", user["seed"]}, {"amp", 1.0}}};
+				auto data = std::vector<SampleFrame>(static_cast<std::size_t>(user["frames"].toDouble()));
+				for (std::size_t f = 0; f < data.size(); ++f)
+				{
+					const float x = noise.at(static_cast<std::int64_t>(f));
+					data[f] = SampleFrame{x, x};
+				}
+				auto buffer = std::make_shared<const SampleBuffer>(std::move(data), static_cast<int>(rate));
+				chain[i]->setUserWave(buffer);
+				chain[i]->setUserAntiAliasWaveTable(Oscillator::generateAntiAliasUserWaveTable(buffer.get()));
+			}
 		}
 		for (std::int64_t start = 0; start < frames; start += block)
 		{

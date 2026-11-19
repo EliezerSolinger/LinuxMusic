@@ -2050,6 +2050,122 @@
           }
         ]
       }
+    },
+    {
+      "name": "osc-user",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "user",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false,
+            "user": {
+              "frames": 613,
+              "seed": 31
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-user-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "user",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true,
+            "user": {
+              "frames": 613,
+              "seed": 31
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-user-tables-high",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "user",
+            "algo": "mix",
+            "freq": 3520.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true,
+            "user": {
+              "frames": 2000,
+              "seed": 32
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-user-short-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "user",
+            "algo": "mix",
+            "freq": 110.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true,
+            "user": {
+              "frames": 37,
+              "seed": 33
+            }
+          }
+        ]
+      }
     }
   ]
 }
