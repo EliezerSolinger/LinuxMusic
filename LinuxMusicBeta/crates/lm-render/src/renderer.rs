@@ -1,0 +1,1922 @@
+//! The audio side of the engine (interfaces.md, I-5 to I-9; Parte 2, rules 1, 3, 5).
+//!
+//! The [`Renderer`] belongs to the device callback. Each [`Renderer::render`]:
+//! 1. applies every install that arrived, in order (S5);
+//! 2. takes the commands (transport at once, MIDI by time stamp with one block of fixed latency, R14);
+//! 3. cuts the block into passes at `max_block` (C7), the loop end, the punch edges and the tempo segments, so each
+//!    of them happens at its exact sample;
+//! 4. renders each pass through the graph, level by level, the levels' processors in parallel;
+//! 5. publishes telemetry at ~60 Hz and counts the period.
+//!
+//! Nothing here allocates or frees (rule 5): every buffer, list and ring was sized when the engine or the program
+//! was made, and whatever leaves the audio side goes back through a ring that has room for it
+
+use std::any::Any;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+
+use lm_base::HostTime;
+use lm_base::ring::{Producer, PushError};
+
+use crate::command::{Command, CommandReceiver, PreviewCommand};
+use crate::event::{EventKind, EventList};
+use crate::exec::{Job, Watch, Workers, run_job};
+use crate::handoff::HandoffReceiver;
+use crate::ids::{NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProgramGen};
+use crate::install::{Install, NodeCore, Retired};
+use crate::notes::{ActiveNotes, NoteSource};
+use crate::panic::RenderThreadGuard;
+use crate::params::ParamSlots;
+use crate::processor::{Adopted, BufferLayout, Buffers, HostOutbox, ProcessContext, TransportInfo};
+use crate::program::{
+    AUTOMATION_GRID, ChannelMix, DelayLine, MidiTiming, NONE, NodeKind, PFeed, PHostParam, PNode, Program, Rate,
+    Target,
+};
+use crate::rng::Rng;
+use crate::sample::SampleData;
+use crate::spec::{Limits, ProcessSpec};
+use crate::telemetry::{
+    METER_CHANNELS, PanicReport, PreviewEnded, PreviewReturn, Telemetry, TelemetryFrame, TelemetryKind, Touched,
+    TransportEvent,
+};
+
+/// Host-side smoothing of a slot written by hand, for the host's gains (samples)
+const SMOOTH: u32 = 64;
+/// Fade of a mute and of the master protection (samples)
+const MUTE_FADE: f32 = 64.0;
+const PROTECTION_FADE: usize = 32;
+/// +24 dBFS (U20)
+pub const PROTECTION_THRESHOLD: f32 = 15.848_932;
+/// A tail node lives at most this long (U32)
+const TAIL_SECONDS: u64 = 2;
+/// Below this peak a tail or a preset preview counts as silent (−120 dBFS)
+const SILENT: f32 = 1e-6;
+
+/// The device's block, as the backend gives it to [`Renderer::render`]
+#[derive(Debug)]
+pub struct DeviceBlock<'a, 'b> {
+    pub frames: usize,
+    /// The host time of the block's first sample (C6)
+    pub host_time: HostTime,
+    /// Captured channels (each at least `frames` long)
+    pub inputs: &'a [&'b [f32]],
+    /// Playback channels (each at least `frames` long); the renderer writes all of them
+    pub outputs: &'a mut [&'b mut [f32]],
+    /// Capture frames lost in an xrun right before this block (C2)
+    pub capture_lost: u32,
+    /// Playback xrun: how late this block is, in frames (0: on time)
+    pub late_by: u32,
+}
+
+/// Part of the device block that was recorded
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RecordSpan {
+    /// First frame of the span in the device block
+    pub offset: usize,
+    pub frames: usize,
+    /// Timeline sample of the span's first frame
+    pub sample: i64,
+}
+
+/// What a block did that the capture side needs at once (the recorder runs in the same callback)
+#[derive(Debug)]
+pub struct BlockReport {
+    spans: Vec<RecordSpan>,
+    /// Capture frames lost before this block, and the timeline sample where the gap goes (C2)
+    pub capture_gap: Option<(i64, u32)>,
+}
+
+impl BlockReport {
+    /// The recorded parts of the block, in order (punch edges and loop wraps cut them at the exact sample)
+    pub fn recorded(&self) -> &[RecordSpan] {
+        &self.spans
+    }
+}
+
+#[derive(Debug)]
+struct Slot {
+    generation: u32,
+    core: Option<Box<NodeCore>>,
+    dead: bool,
+    peak: [f32; METER_CHANNELS],
+    channels: u8,
+    mute_gain: f32,
+    tail_since: Option<u64>,
+    tail_quiet: u64,
+    tail_done: bool,
+}
+
+impl Slot {
+    fn empty() -> Self {
+        Self {
+            generation: 0,
+            core: None,
+            dead: false,
+            peak: [0.0; METER_CHANNELS],
+            channels: 0,
+            mute_gain: 1.0,
+            tail_since: None,
+            tail_quiet: 0,
+            tail_done: false,
+        }
+    }
+
+    fn reset_for(&mut self, generation: u32) {
+        let core = self.core.take();
+        *self = Slot::empty();
+        self.core = core;
+        self.generation = generation;
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SlotState {
+    current: f32,
+    target: f32,
+    step: f32,
+    left: u32,
+    emitted: f32,
+    resume: bool,
+    touch_overflow: bool,
+}
+
+impl SlotState {
+    fn new(value: f32) -> Self {
+        Self {
+            current: value,
+            target: value,
+            step: 0.0,
+            left: 0,
+            emitted: f32::NAN,
+            resume: true,
+            touch_overflow: false,
+        }
+    }
+
+    fn set_target(&mut self, value: f32, discrete: bool) {
+        self.target = value;
+        if discrete {
+            self.current = value;
+            self.left = 0;
+        } else {
+            self.left = SMOOTH;
+            self.step = (value - self.current) / SMOOTH as f32;
+        }
+    }
+
+    fn next(&mut self) -> f32 {
+        if self.left > 0 {
+            self.left -= 1;
+            self.current = if self.left == 0 { self.target } else { self.current + self.step };
+        }
+        self.current
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LiveMidi {
+    offset: u32,
+    port: PortIndex,
+    bytes: [u8; 3],
+}
+
+#[derive(Debug, Default)]
+struct Transport {
+    playing: bool,
+    armed: bool,
+    recording: bool,
+    position: i64,
+    take_frames: u64,
+}
+
+#[derive(Debug, Default)]
+struct Protection {
+    engaged: bool,
+    gain: f32,
+    quiet: u64,
+}
+
+enum PreviewPlay {
+    Sample { data: Arc<SampleData>, gain: f32, pos: usize },
+    Preset { processor: Box<dyn Processor>, key: u8, started: bool, off: bool, released_at: Option<u64>, quiet: u64 },
+}
+
+use crate::processor::Processor;
+
+struct PreviewSlot {
+    id: PreviewId,
+    play: Option<PreviewPlay>,
+    stopping: Option<u32>,
+    ending: Option<PreviewEnded>,
+    panic: Option<Box<dyn Any + Send>>,
+    buffer: Box<[f32]>,
+    events: EventList,
+    rng: Rng,
+    outbox: HostOutbox,
+    started_at: u64,
+}
+
+impl std::fmt::Debug for PreviewSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreviewSlot").field("id", &self.id).field("playing", &self.play.is_some()).finish()
+    }
+}
+
+#[derive(Debug, Default)]
+struct MetronomeState {
+    click: Option<(bool, usize)>,
+}
+
+/// The rings from the audio side to the main thread
+pub(crate) struct Outbound {
+    pub(crate) frame: triple_buffer::Input<TelemetryFrame>,
+    pub(crate) events: Producer<Telemetry>,
+    pub(crate) transport: Producer<TransportEvent>,
+    pub(crate) touched: Producer<Touched>,
+    pub(crate) previews: Producer<PreviewEnded>,
+    pub(crate) panics: Producer<PanicReport>,
+}
+
+/// The audio half of the engine. Owned by the device callback (rule 1); only it calls [`Renderer::render`]
+pub struct Renderer {
+    spec: ProcessSpec,
+    limits: Limits,
+    program: Box<Program>,
+    slots: Box<[Slot]>,
+    installs: HandoffReceiver<Install>,
+    receivers: Box<[Option<CommandReceiver>]>,
+    params: ParamSlots,
+    slot_state: Box<[SlotState]>,
+    notes: ActiveNotes,
+    pending: Vec<(NodeIndex, EventKind)>,
+    live: Vec<LiveMidi>,
+    transport: Transport,
+    out: Outbound,
+    dropped: [u32; 5],
+    previews: Box<[PreviewSlot]>,
+    preview_mix: Box<[f32]>,
+    metronome: MetronomeState,
+    workers: Workers,
+    gain: Box<[f32]>,
+    pan: Box<[f32]>,
+    curve: Box<[f32]>,
+    protection: Protection,
+    watch: Arc<Watch>,
+    frame: u64,
+    since_publish: u64,
+    load: f32,
+    xruns: u64,
+    jump: bool,
+    report: BlockReport,
+}
+
+impl std::fmt::Debug for Renderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Renderer")
+            .field("generation", &self.program.generation)
+            .field("frame", &self.frame)
+            .field("workers", &self.workers.count())
+            .finish()
+    }
+}
+
+/// The spans a block can hold: the loop is at least 50 ms long (program rule), so a block wraps at most
+/// `max_block / min_loop + 1` times, each wrap cutting at most three spans (wrap, punch in, punch out)
+pub(crate) fn span_capacity(spec: &ProcessSpec) -> usize {
+    let min_loop = (spec.sample_rate as usize / 20).max(1);
+    4 * (spec.max_block / min_loop + 2) + 8
+}
+
+impl Renderer {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        spec: ProcessSpec,
+        limits: Limits,
+        installs: HandoffReceiver<Install>,
+        main: CommandReceiver,
+        params: ParamSlots,
+        out: Outbound,
+        workers: Workers,
+        watch: Arc<Watch>,
+    ) -> Self {
+        let mut receivers: Vec<Option<CommandReceiver>> = (0..limits.max_command_producers).map(|_| None).collect();
+        receivers[0] = Some(main);
+        let previews = (0..limits.max_previews)
+            .map(|i| PreviewSlot {
+                id: PreviewId(0),
+                play: None,
+                stopping: None,
+                ending: None,
+                panic: None,
+                buffer: vec![0.0; 2 * spec.max_block].into_boxed_slice(),
+                events: EventList::with_capacity(16),
+                rng: Rng::new(i as u64),
+                outbox: HostOutbox::default(),
+                started_at: 0,
+            })
+            .collect();
+        Self {
+            spec,
+            limits,
+            program: Program::empty(spec, &limits),
+            slots: (0..limits.max_nodes).map(|_| Slot::empty()).collect(),
+            installs,
+            receivers: receivers.into_boxed_slice(),
+            params,
+            slot_state: vec![SlotState::new(0.0); limits.max_params].into_boxed_slice(),
+            notes: ActiveNotes::new(limits.max_active_notes),
+            pending: Vec::with_capacity(limits.max_active_notes + 2 * limits.max_nodes),
+            live: Vec::with_capacity(limits.max_live_midi_per_block),
+            transport: Transport::default(),
+            out,
+            dropped: [0; 5],
+            previews,
+            preview_mix: vec![0.0; 2 * spec.max_block].into_boxed_slice(),
+            metronome: MetronomeState::default(),
+            workers,
+            gain: vec![0.0; spec.max_block].into_boxed_slice(),
+            pan: vec![0.0; spec.max_block].into_boxed_slice(),
+            curve: vec![0.0; spec.max_block].into_boxed_slice(),
+            protection: Protection { engaged: false, gain: 1.0, quiet: 0 },
+            watch,
+            frame: 0,
+            since_publish: 0,
+            load: 0.0,
+            xruns: 0,
+            jump: true,
+            report: BlockReport { spans: Vec::with_capacity(span_capacity(&spec)), capture_gap: None },
+        }
+    }
+
+    pub fn spec(&self) -> ProcessSpec {
+        self.spec
+    }
+
+    pub fn limits(&self) -> Limits {
+        self.limits
+    }
+
+    /// Notes sounding now, from ports and items (the active-notes table, U25)
+    pub fn active_notes(&self) -> usize {
+        self.notes.len()
+    }
+
+    /// The generation of the installed program
+    pub fn generation(&self) -> ProgramGen {
+        self.program.generation
+    }
+
+    /// The playhead
+    pub fn position(&self) -> i64 {
+        self.transport.position
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.transport.playing
+    }
+
+    /// Renders one device block (any size; larger than `max_block` is split, C7)
+    pub fn render(&mut self, block: DeviceBlock<'_, '_>) -> &BlockReport {
+        let _render = RenderThreadGuard::enter();
+        let started = HostTime::now();
+        let DeviceBlock { frames, host_time, inputs, outputs, capture_lost, late_by } = block;
+        for out in outputs.iter_mut() {
+            let n = frames.min(out.len());
+            out[..n].fill(0.0);
+        }
+        self.report.spans.clear();
+        self.report.capture_gap = None;
+        if late_by > 0 {
+            self.xruns += 1;
+            self.telemetry(Telemetry::Xrun { late_by });
+        }
+
+        while let Some(install) = self.installs.receive() {
+            self.apply(install);
+        }
+        self.take_commands(host_time, frames);
+
+        if capture_lost > 0 {
+            let at = self.transport.position;
+            self.report.capture_gap = Some((at, capture_lost));
+            if self.transport.recording {
+                self.transport_event(TransportEvent::CaptureGap { sample: at, frames: capture_lost });
+            }
+            if self.transport.playing {
+                // The device says that much time passed: the playhead keeps with it, so the take stays on the grid
+                self.transport.position += i64::from(capture_lost);
+                self.release_item_notes();
+                self.jump = true;
+            }
+        }
+
+        let mut off = 0usize;
+        let mut first = true;
+        let mut live_next = 0usize;
+        while off < frames {
+            let n = self.next_pass_len(frames - off);
+            self.update_recording();
+            self.pass(off, n, first, inputs, &mut live_next);
+            if self.transport.recording && self.report.spans.len() < self.report.spans.capacity() {
+                let sample = self.transport.position;
+                match self.report.spans.last_mut() {
+                    Some(s) if s.offset + s.frames == off && s.sample + s.frames as i64 == sample => s.frames += n,
+                    _ => self.report.spans.push(RecordSpan { offset: off, frames: n, sample }),
+                }
+                self.transport.take_frames += n as u64;
+            }
+            self.write_outputs(outputs, off, n);
+            first = false;
+            off += n;
+            self.frame += n as u64;
+            if self.transport.playing {
+                self.transport.position += n as i64;
+                if let Some((a, b)) = self.program.transport.loop_range
+                    && self.transport.position == b
+                {
+                    if self.transport.recording {
+                        let take = self.transport.take_frames;
+                        self.transport_event(TransportEvent::LoopWrapped { from: b, to: a, sample_in_take: take });
+                    }
+                    self.transport.position = a;
+                    self.release_item_notes();
+                    self.jump = true;
+                }
+            }
+        }
+        // MIDI not consumed (its time is ahead) stays in its ring; what was taken is all played
+        self.live.clear();
+
+        self.watch.periods.fetch_add(1, Ordering::Relaxed);
+        let elapsed = HostTime::now().since(started) as f64;
+        let budget = frames.max(1) as f64 * 1e9 / f64::from(self.spec.sample_rate);
+        self.load = self.load.max((elapsed / budget) as f32);
+        self.since_publish += frames as u64;
+        if self.since_publish * 60 >= u64::from(self.spec.sample_rate) {
+            self.publish(host_time);
+        }
+        self.flush_dropped();
+        &self.report
+    }
+
+    // ------------------------------------------------------------------------------------------------------------
+    // Installs
+
+    fn apply(&mut self, mut install: Box<Install>) {
+        let mut skipped = 0u32;
+        let max = self.slots.len();
+        // 1. add
+        for (node, core) in install.add.drain(..) {
+            if node.slot() >= max {
+                skipped += 1;
+                install.returned.processors.push(Retired { node, core });
+                continue;
+            }
+            let slot = &mut self.slots[node.slot()];
+            if let Some(old) = slot.core.take() {
+                let old_node = NodeIndex::new(node.index, slot.generation);
+                install.returned.processors.push(Retired { node: old_node, core: old });
+            }
+            slot.reset_for(node.generation);
+            slot.core = Some(core);
+            self.notes.take_where(|a| a.node.index == node.index, |_| {});
+        }
+        // 2. replace
+        for r in install.replace.drain(..) {
+            let crate::install::Replacement { node, mut core, tail } = r;
+            if node.slot() >= max || tail.is_some_and(|t| t.slot() >= max || t.slot() == node.slot()) {
+                skipped += 1;
+                install.returned.processors.push(Retired { node, core });
+                continue;
+            }
+            let (old, was_dead, old_generation) = {
+                let slot = &mut self.slots[node.slot()];
+                (slot.core.take(), slot.dead, slot.generation)
+            };
+            let mut adopted = Adopted::No;
+            let mut adopt_panic = None;
+            let mut old = old;
+            if let Some(o) = old.as_mut()
+                && !was_dead
+            {
+                let new = &mut core.processor;
+                match catch_unwind(AssertUnwindSafe(|| new.adopt(o.processor.as_mut()))) {
+                    Ok(a) => adopted = a,
+                    Err(p) => adopt_panic = Some(p),
+                }
+            }
+            {
+                let slot = &mut self.slots[node.slot()];
+                slot.reset_for(node.generation);
+                slot.core = Some(core);
+                slot.dead = adopt_panic.is_some();
+            }
+            if let Some(payload) = adopt_panic {
+                self.report_panic(Some(node), None, payload);
+            }
+            let old_node = NodeIndex::new(node.index, old_generation);
+            match (old, adopted, tail) {
+                (Some(o), Adopted::No, Some(t)) if !was_dead => {
+                    let tslot = &mut self.slots[t.slot()];
+                    if let Some(prev) = tslot.core.take() {
+                        install
+                            .returned
+                            .processors
+                            .push(Retired { node: NodeIndex::new(t.index, tslot.generation), core: prev });
+                    }
+                    tslot.reset_for(t.generation);
+                    tslot.core = Some(o);
+                    tslot.tail_since = Some(self.frame);
+                    // Its notes are all released now; the new processor never got them
+                    self.notes.take_where(|a| a.node.index == node.index, |_| {});
+                    self.pending.push((t, EventKind::AllNotesRelease));
+                }
+                (Some(o), Adopted::Yes, _) => {
+                    // The notes carry on in the new processor: their entries stay as they are
+                    install.returned.processors.push(Retired { node: old_node, core: o });
+                }
+                (Some(o), _, _) => {
+                    install.returned.processors.push(Retired { node: old_node, core: o });
+                    self.notes.take_where(|a| a.node.index == node.index, |_| {});
+                }
+                (None, _, _) => {
+                    self.notes.take_where(|a| a.node.index == node.index, |_| {});
+                }
+            }
+        }
+        // 3. remove
+        for node in install.remove.drain(..) {
+            if node.slot() >= max {
+                skipped += 1;
+                continue;
+            }
+            let slot = &mut self.slots[node.slot()];
+            if let Some(core) = slot.core.take() {
+                install.returned.processors.push(Retired { node, core });
+            }
+            *slot = Slot::empty();
+            install.returned.freed.push(node);
+            // A node that leaves takes its notes with it: there is nothing left to end them in
+            self.notes.take_where(|a| a.node.index == node.index, |_| {});
+        }
+        // 4. command rings
+        for p in install.remove_producers.drain(..) {
+            match self.receivers.get_mut(usize::from(p.0)) {
+                Some(r) if p.0 != 0 => {
+                    if let Some(rx) = r.take() {
+                        install.returned.receivers.push(rx);
+                    }
+                }
+                _ => skipped += 1,
+            }
+        }
+        for rx in install.producers.drain(..) {
+            let p = usize::from(rx.producer().0);
+            match self.receivers.get_mut(p) {
+                Some(r) if p != 0 => {
+                    if let Some(old) = r.replace(rx) {
+                        install.returned.receivers.push(old);
+                    }
+                }
+                _ => {
+                    skipped += 1;
+                    install.returned.receivers.push(rx);
+                }
+            }
+        }
+        // 5. the program
+        if let Some(mut program) = install.program.take() {
+            if program.node_map.len() != self.slots.len()
+                || program.slot_map.len() != self.slot_state.len()
+                || program.spec != self.spec
+            {
+                // Built for other limits: refused whole (the main side checks this before sending)
+                skipped += 1;
+                install.returned.program = Some(program);
+            } else {
+                self.swap_program(&mut program, install.relocate.is_some());
+                install.returned.program = Some(program);
+            }
+        }
+        install.returned.skipped = skipped;
+        if skipped > 0 {
+            self.telemetry(Telemetry::InstallInvalid { generation: install.generation });
+        }
+        self.installs.give_back(install);
+    }
+
+    /// Swaps `incoming` in; on return `incoming` holds the old program
+    fn swap_program(&mut self, incoming: &mut Box<Program>, relocate: bool) {
+        // Delay lines keep their history across programs (sorted by key in both)
+        {
+            let old = &self.program.delays;
+            for d in incoming.delays.iter_mut() {
+                let i = old.partition_point(|o| o.key < d.key);
+                if let Some(o) = old.get(i)
+                    && o.key == d.key
+                {
+                    d.inherit(o);
+                }
+            }
+        }
+        // New slots start from the slot's value (the main thread wrote the initial one, S20)
+        for b in incoming.bindings.iter() {
+            let s = b.slot as usize;
+            if self.program.slot_map[s] == NONE {
+                self.slot_state[s] = SlotState::new(self.params.value_at(s));
+            } else {
+                self.slot_state[s].resume = true;
+            }
+        }
+        std::mem::swap(&mut self.program, incoming);
+        let old = &**incoming;
+
+        if relocate && self.program.tempo != old.tempo {
+            let from = self.transport.position;
+            let to = lm_time::relocate(&old.tempo, &self.program.tempo, from);
+            if to != from {
+                self.transport.position = to;
+                self.transport_event(TransportEvent::Relocated { from, to });
+            }
+        }
+        self.jump = true;
+
+        // U25: notes whose node or item note is gone (or now ended) get their note-off now
+        let tick = self.program.tempo.tick_at(self.transport.position);
+        let program = &self.program;
+        let pending = &mut self.pending;
+        let slots = &self.slots;
+        self.notes.take_where(
+            |a| {
+                let Some(ni) = program.node_of(a.node) else { return true };
+                match a.source {
+                    NoteSource::Port(p) => !program.ports.iter().any(|r| r.port == p && r.node == a.node),
+                    NoteSource::Item { item, n } => !program.midi.iter().any(|src| {
+                        src.node == ni
+                            && src.items.iter().any(|it| it.key() == item && it.note_end(n).is_some_and(|e| e > tick))
+                    }),
+                }
+            },
+            |a| {
+                if slots[a.node.slot()].core.is_some() && pending.len() < pending.capacity() {
+                    pending.push((a.node, EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 }));
+                }
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------------------------------------------------
+    // Commands
+
+    fn take_commands(&mut self, host_time: HostTime, frames: usize) {
+        let rate = self.spec.sample_rate;
+        let latency = match self.program.transport.midi {
+            MidiTiming::FixedBlock => self.spec.max_block as i64,
+            MidiTiming::Immediate => 0,
+        };
+        enum Next {
+            Midi(i64),
+            Preview,
+            Other,
+        }
+        for p in 0..self.receivers.len() {
+            loop {
+                let next = {
+                    let Some(rx) = self.receivers[p].as_mut() else { break };
+                    let Ok(head) = rx.rx.peek() else { break };
+                    match head {
+                        Command::Midi { at, .. } => Next::Midi(match self.program.transport.midi {
+                            MidiTiming::Immediate => 0,
+                            MidiTiming::FixedBlock => {
+                                let dt = i128::from(at.0) - i128::from(host_time.0);
+                                let samples = (dt * i128::from(rate)).div_euclid(1_000_000_000) as i64;
+                                (samples + latency).max(0)
+                            }
+                        }),
+                        Command::Preview(PreviewCommand::Sample { .. } | PreviewCommand::Preset { .. }) => {
+                            Next::Preview
+                        }
+                        _ => Next::Other,
+                    }
+                };
+                match next {
+                    Next::Midi(offset) => {
+                        if offset >= frames as i64 {
+                            break; // ahead of this block: it waits in the ring
+                        }
+                        if self.live.len() == self.live.capacity() {
+                            self.dropped[3] = self.dropped[3].saturating_add(1);
+                            break; // the rest waits for the next block
+                        }
+                        let Some(rx) = self.receivers[p].as_mut() else { break };
+                        let Ok(Command::Midi { port, bytes, .. }) = rx.rx.pop() else { break };
+                        self.live.push(LiveMidi { offset: offset as u32, port, bytes });
+                    }
+                    Next::Preview => {
+                        let Some(i) = self.free_preview() else { break };
+                        let Some(rx) = self.receivers[p].as_mut() else { break };
+                        let Ok(Command::Preview(cmd)) = rx.rx.pop() else { break };
+                        self.start_preview(i, cmd);
+                    }
+                    Next::Other => {
+                        let Some(rx) = self.receivers[p].as_mut() else { break };
+                        let Ok(cmd) = rx.rx.pop() else { break };
+                        self.command(cmd);
+                    }
+                }
+            }
+        }
+        // Stable by offset (arrival order kept among equal offsets; producers in index order)
+        self.live.sort_by_key(|m| m.offset);
+    }
+
+    fn command(&mut self, cmd: Command) {
+        match cmd {
+            Command::Play => {
+                if !self.transport.playing {
+                    self.transport.playing = true;
+                    self.jump = true;
+                }
+            }
+            Command::Stop => {
+                if self.transport.playing {
+                    self.transport.playing = false;
+                    self.release_item_notes();
+                    self.jump = true;
+                }
+            }
+            Command::Locate { sample } => {
+                if self.transport.recording {
+                    self.telemetry(Telemetry::LocateRefused);
+                } else {
+                    self.transport.position = sample;
+                    self.release_item_notes();
+                    self.jump = true;
+                }
+            }
+            Command::Record { on } => self.transport.armed = on,
+            Command::Panic => self.panic_all(),
+            Command::Midi { .. } => {}
+            Command::Preview(PreviewCommand::NoteOff { id }) => {
+                for s in self.previews.iter_mut() {
+                    if s.id == id
+                        && let Some(PreviewPlay::Preset { off, .. }) = s.play.as_mut()
+                    {
+                        *off = true;
+                    }
+                }
+            }
+            Command::Preview(PreviewCommand::Stop { id }) => {
+                for s in self.previews.iter_mut() {
+                    if s.id == id && s.play.is_some() && s.stopping.is_none() {
+                        s.stopping = Some(MUTE_FADE as u32);
+                    }
+                }
+            }
+            Command::Preview(_) => {}
+        }
+    }
+
+    fn panic_all(&mut self) {
+        let pending = &mut self.pending;
+        self.notes.take_where(
+            |_| true,
+            |a| {
+                if pending.len() < pending.capacity() {
+                    pending.push((a.node, EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 }));
+                }
+            },
+        );
+        for i in 0..self.program.nodes.len() {
+            let node = self.program.nodes[i].desc.node;
+            if self.program.nodes[i].desc.kind == NodeKind::Processor && self.pending.len() < self.pending.capacity() {
+                self.pending.push((node, EventKind::AllSoundOff));
+            }
+        }
+        for i in 0..self.slots.len() {
+            let dead = self.slots[i].dead;
+            if let Some(core) = self.slots[i].core.as_mut()
+                && !dead
+            {
+                let p = &mut core.processor;
+                if let Err(payload) = catch_unwind(AssertUnwindSafe(|| p.reset())) {
+                    self.slots[i].dead = true;
+                    let node = NodeIndex::new(i as u32, self.slots[i].generation);
+                    self.report_panic(Some(node), None, payload);
+                }
+            }
+        }
+        for d in self.program.delays.iter_mut() {
+            d.memory.fill(0.0);
+        }
+        for s in self.previews.iter_mut() {
+            if s.play.is_some() && s.stopping.is_none() {
+                s.stopping = Some(MUTE_FADE as u32);
+            }
+        }
+        self.metronome.click = None;
+    }
+
+    fn release_item_notes(&mut self) {
+        let pending = &mut self.pending;
+        self.notes.take_where(
+            |a| matches!(a.source, NoteSource::Item { .. }),
+            |a| {
+                if pending.len() < pending.capacity() {
+                    pending.push((a.node, EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 }));
+                }
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------------------------------------------------
+    // Transport
+
+    fn next_pass_len(&self, left: usize) -> usize {
+        let mut n = left.min(self.spec.max_block) as i64;
+        if self.transport.playing {
+            let pos = self.transport.position;
+            if let Some((_, b)) = self.program.transport.loop_range
+                && pos < b
+            {
+                n = n.min(b - pos);
+            }
+            if self.transport.armed
+                && let Some((a, b)) = self.program.transport.punch
+            {
+                if pos < a {
+                    n = n.min(a - pos);
+                } else if pos < b {
+                    n = n.min(b - pos);
+                }
+            }
+            let seg_end = self.program.tempo.segment_at_sample(pos).end_sample();
+            if seg_end > pos {
+                n = n.min(seg_end - pos);
+            }
+        }
+        n.max(1) as usize
+    }
+
+    fn update_recording(&mut self) {
+        let t = &self.transport;
+        let inside = match self.program.transport.punch {
+            Some((a, b)) => (a..b).contains(&t.position),
+            None => true,
+        };
+        let should = t.playing && t.armed && inside;
+        if should != t.recording {
+            let (sample, frame) = (t.position, self.frame);
+            self.transport.recording = should;
+            if should {
+                self.transport.take_frames = 0;
+                self.transport_event(TransportEvent::RecordStarted { sample, frame });
+            } else {
+                self.transport_event(TransportEvent::RecordStopped { sample, frame });
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------------------
+    // A pass through the graph
+
+    fn transport_info(&self) -> TransportInfo {
+        let tempo = &self.program.tempo;
+        let pos = self.transport.position;
+        let tick = tempo.tick_at(pos);
+        TransportInfo {
+            sample_rate: self.spec.sample_rate,
+            playing: self.transport.playing,
+            recording: self.transport.recording,
+            position: pos,
+            tick,
+            ppq: tempo.ppq().get(),
+            bpm: tempo.bpm_at_sample(pos),
+            time_signature: tempo.time_signature_at(tick),
+            frame: self.frame,
+        }
+    }
+
+    fn push_event(&mut self, node: u32, offset: u32, kind: EventKind) {
+        if let Some(io) = self.program.nodes[node as usize].io.as_mut()
+            && !io.events.push(offset, kind)
+        {
+            self.dropped[1] = self.dropped[1].saturating_add(1);
+        }
+    }
+
+    fn pass(&mut self, off: usize, n: usize, first: bool, inputs: &[&[f32]], live_next: &mut usize) {
+        let info = self.transport_info();
+        for node in self.program.nodes.iter_mut() {
+            if let Some(io) = node.io.as_mut() {
+                io.events.clear();
+            }
+        }
+        // Note-offs and releases owed from installs, stops, locates and wraps
+        for k in 0..self.pending.len() {
+            let (node, kind) = self.pending[k];
+            if let Some(i) = self.program.node_of(node) {
+                self.push_event(i, 0, kind);
+            }
+        }
+        self.pending.clear();
+        if first {
+            self.take_dirty_params();
+        }
+        self.automation_events(n);
+        if self.transport.playing {
+            self.item_events(n);
+        }
+        self.live_events(off, n, live_next);
+        for node in self.program.nodes.iter_mut() {
+            if let Some(io) = node.io.as_mut() {
+                io.events.finish();
+            }
+        }
+        self.render_previews(n, &info);
+
+        for level in 0..self.program.levels.len() {
+            let count = self.program.levels[level].len();
+            for k in 0..count {
+                let i = self.program.levels[level][k];
+                self.prepare(i, off, n, inputs);
+            }
+            self.run_level(level, n, &info);
+            for k in 0..count {
+                let i = self.program.levels[level][k];
+                self.post(i, n);
+            }
+        }
+        self.jump = false;
+    }
+
+    fn take_dirty_params(&mut self) {
+        let playing = self.transport.playing;
+        let position = self.transport.position;
+        for w in 0..self.params.words() {
+            let mut bits = self.params.take_dirty(w);
+            while bits != 0 {
+                let b = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                let s = w * 64 + b;
+                let value = self.params.value_at(s);
+                let touched = self.params.touched_at(s);
+                if !touched {
+                    self.slot_state[s].touch_overflow = false;
+                } else if playing && !self.slot_state[s].touch_overflow {
+                    let t = Touched { slot: ParamSlot(s as u32), value, sample: position };
+                    if self.out.touched.push(t).is_err() {
+                        self.slot_state[s].touch_overflow = true;
+                        self.telemetry(Telemetry::TouchedOverflow { slot: ParamSlot(s as u32) });
+                    }
+                }
+                let bi = self.program.slot_map[s];
+                if bi == NONE {
+                    self.slot_state[s] = SlotState::new(value);
+                    continue;
+                }
+                let (automated, target, discrete) = {
+                    let b = &self.program.bindings[bi as usize];
+                    (b.curve.is_some(), b.target, b.discrete)
+                };
+                if automated && !touched {
+                    // The automation has the parameter (again): emit its value at the next chance
+                    self.slot_state[s].resume = true;
+                    continue;
+                }
+                match target {
+                    Target::Processor { node, index } => {
+                        self.slot_state[s].emitted = value;
+                        self.slot_state[s].current = value;
+                        self.push_event(node, 0, EventKind::Param { index, value });
+                    }
+                    Target::Host(_) => self.slot_state[s].set_target(value, discrete),
+                }
+            }
+        }
+    }
+
+    fn automation_events(&mut self, n: usize) {
+        let pos0 = self.transport.position;
+        let frame0 = self.frame;
+        let jump = self.jump;
+        let Program { automated, bindings, nodes, .. } = &mut *self.program;
+        let dropped = &mut self.dropped[1];
+        for &bi in automated.iter() {
+            let b = &bindings[bi as usize];
+            let Target::Processor { node, index } = b.target else { continue };
+            let Some(curve) = b.curve.as_ref() else { continue };
+            let slot = b.slot as usize;
+            if self.params.touched_at(slot) {
+                continue;
+            }
+            let st = &mut self.slot_state[slot];
+            let resume = jump || st.resume || st.emitted.is_nan();
+            st.resume = false;
+            let Some(io) = nodes[node as usize].io.as_mut() else { continue };
+            let mut emit = |offset: usize, v: f32, force: bool| {
+                if force || v.to_bits() != st.emitted.to_bits() {
+                    st.emitted = v;
+                    st.current = v;
+                    if !io.events.push(offset as u32, EventKind::Param { index, value: v }) {
+                        *dropped = dropped.saturating_add(1);
+                    }
+                }
+            };
+            if b.discrete {
+                let from = if resume {
+                    emit(0, curve.step_at(pos0), false);
+                    pos0 + 1
+                } else {
+                    pos0
+                };
+                for p in curve.points_in(from, pos0 + n as i64) {
+                    emit((p.sample - pos0) as usize, p.value, true);
+                }
+                continue;
+            }
+            match b.rate {
+                Rate::Block => {
+                    if resume {
+                        emit(0, curve.value_at(pos0), false);
+                    }
+                    let mut f = frame0.div_ceil(AUTOMATION_GRID) * AUTOMATION_GRID;
+                    while f < frame0 + n as u64 {
+                        let off = (f - frame0) as usize;
+                        if !(resume && off == 0) {
+                            emit(off, curve.value_at(pos0 + off as i64), false);
+                        }
+                        f += AUTOMATION_GRID;
+                    }
+                }
+                Rate::Sample => {
+                    let buf = &mut self.curve[..n];
+                    curve.fill(pos0, buf);
+                    for (i, &v) in buf.iter().enumerate() {
+                        emit(i, v, false);
+                    }
+                }
+            }
+        }
+    }
+
+    fn item_events(&mut self, n: usize) {
+        let pos0 = self.transport.position;
+        let ticks = self.program.tempo.ticks_in(pos0, pos0 + n as i64);
+        for s in 0..self.program.midi.len() {
+            let node = self.program.midi[s].node;
+            let node_index = self.program.nodes[node as usize].desc.node;
+            for it in 0..self.program.midi[s].items.len() {
+                let item = self.program.midi[s].items[it].key();
+                let count = self.program.midi[s].items[it].events_in(ticks.clone()).len();
+                for e in 0..count {
+                    let ev = self.program.midi[s].items[it].events_in(ticks.clone())[e];
+                    let offset = (self.program.tempo.sample_at(ev.tick) - pos0).clamp(0, n as i64 - 1) as u32;
+                    match ev.kind {
+                        crate::program::ItemEventKind::NoteOn { n: num, channel, key, velocity } => {
+                            match self.notes.start(NoteSource::Item { item, n: num }, channel, key, node_index) {
+                                Some(note) => {
+                                    self.push_event(node, offset, EventKind::NoteOn { note, channel, key, velocity })
+                                }
+                                None => self.dropped[2] = self.dropped[2].saturating_add(1),
+                            }
+                        }
+                        crate::program::ItemEventKind::NoteOff { n: num } => {
+                            if let Some(a) = self.notes.take_item_note(item, num)
+                                && let Some(target) = self.program.node_of(a.node)
+                            {
+                                let kind =
+                                    EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 };
+                                self.push_event(target, offset, kind);
+                            }
+                        }
+                        crate::program::ItemEventKind::Midi { bytes } => {
+                            self.push_event(node, offset, EventKind::Midi { bytes });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn live_events(&mut self, off: usize, n: usize, next: &mut usize) {
+        while *next < self.live.len() {
+            let m = self.live[*next];
+            let at = m.offset as usize;
+            if at >= off + n {
+                break;
+            }
+            *next += 1;
+            let offset = (at.saturating_sub(off)) as u32;
+            let status = m.bytes[0] & 0xF0;
+            let channel = m.bytes[0] & 0x0F;
+            let (key, vel) = (m.bytes[1] & 0x7F, m.bytes[2] & 0x7F);
+            let first = self.program.ports.partition_point(|r| r.port < m.port);
+            let routes = first..self.program.ports.partition_point(|r| r.port <= m.port);
+            let note_off = status == 0x80 || (status == 0x90 && vel == 0);
+            if note_off {
+                self.port_note_off(m.port, channel, key, offset);
+                continue;
+            }
+            if status == 0xB0 && (key == 120 || key == 123) {
+                // All sound off / all notes off on this channel: end the port's notes here, at this offset
+                while let Some(a) =
+                    self.notes.take_one(|a| a.source == NoteSource::Port(m.port) && a.channel == channel)
+                {
+                    if let Some(i) = self.program.node_of(a.node) {
+                        let kind = EventKind::NoteOff { note: a.note, channel, key: a.key, velocity: 0.0 };
+                        self.push_event(i, offset, kind);
+                    }
+                }
+            }
+            for r in routes {
+                let route = self.program.ports[r];
+                if route.channel.is_some_and(|c| c != channel) {
+                    continue;
+                }
+                let Some(target) = self.program.node_of(route.node) else { continue };
+                if status == 0x90 {
+                    // A second note-on of a held key on the same node ends the first (no stranded voice)
+                    let mut prev = None;
+                    self.notes.take_where(
+                        |a| {
+                            a.source == NoteSource::Port(m.port)
+                                && a.channel == channel
+                                && a.key == key
+                                && a.node == route.node
+                        },
+                        |a| prev = Some(a.note),
+                    );
+                    if let Some(note) = prev {
+                        self.push_event(target, offset, EventKind::NoteOff { note, channel, key, velocity: 0.0 });
+                    }
+                    match self.notes.start(NoteSource::Port(m.port), channel, key, route.node) {
+                        Some(note) => {
+                            let velocity = f32::from(vel) / 127.0;
+                            self.push_event(target, offset, EventKind::NoteOn { note, channel, key, velocity });
+                        }
+                        None => self.dropped[2] = self.dropped[2].saturating_add(1),
+                    }
+                } else {
+                    self.push_event(target, offset, EventKind::Midi { bytes: m.bytes });
+                }
+            }
+        }
+    }
+
+    fn port_note_off(&mut self, port: PortIndex, channel: u8, key: u8, offset: u32) {
+        while let Some(a) = self.notes.take_one(|a| {
+            a.source == NoteSource::Port(port) && a.channel == channel && a.key == key
+        }) {
+            if let Some(i) = self.program.node_of(a.node) {
+                self.push_event(i, offset, EventKind::NoteOff { note: a.note, channel, key, velocity: 0.0 });
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------------------
+    // Nodes
+
+    fn prepare(&mut self, i: u32, off: usize, n: usize, inputs: &[&[f32]]) {
+        let Some(mut io) = self.program.nodes[i as usize].io.take() else { return };
+        let layout = io.layout;
+        let in_channels = layout.inputs;
+        for ch in 0..in_channels {
+            let o = layout.input_offset(ch);
+            io.buffer[o..o + n].fill(0.0);
+        }
+        for ch in 0..layout.sidechain {
+            let o = layout.sidechain_offset(ch);
+            io.buffer[o..o + n].fill(0.0);
+        }
+        let playing = self.transport.playing;
+        let pos0 = self.transport.position;
+        {
+            let node = &self.program.nodes[i as usize];
+            // Device input (monitoring)
+            for (ch, &dc) in node.input.iter().enumerate() {
+                if let Some(src) = inputs.get(usize::from(dc)) {
+                    let o = layout.input_offset(ch);
+                    let end = (off + n).min(src.len());
+                    if end > off {
+                        io.buffer[o..o + (end - off)].copy_from_slice(&src[off..end]);
+                    }
+                }
+            }
+            if playing && !node.audio.is_empty() {
+                play_audio(node, &mut io.buffer, &layout, pos0, n);
+            }
+        }
+        if playing
+            && let Some((mi, _)) = &self.program.metronome
+            && *mi == i
+        {
+            self.metronome_into(&mut io.buffer, &layout, n);
+        }
+        if self.program.preview == Some(i) {
+            for ch in 0..in_channels {
+                let src = &self.preview_mix[(ch % 2) * self.spec.max_block..][..n];
+                let o = layout.input_offset(ch);
+                for (d, s) in io.buffer[o..o + n].iter_mut().zip(src) {
+                    *d += *s;
+                }
+            }
+        }
+        // Feeds, in the program's order
+        let range = self.program.nodes[i as usize].feeds.clone();
+        for f in range {
+            let feed_gain = self.program.feeds[f as usize].gain;
+            match feed_gain {
+                Some(h) => {
+                    let mut g = std::mem::take(&mut self.gain);
+                    self.host_values(h, &mut g[..n]);
+                    self.gain = g;
+                }
+                None => self.gain[..n].fill(1.0),
+            }
+            let Program { nodes, feeds, delays, .. } = &mut *self.program;
+            let pf = &feeds[f as usize];
+            let Some(src) = nodes[pf.from as usize].io.as_ref() else { continue };
+            let delay = pf.delay.map(|d| &mut delays[d as usize]);
+            mix_feed(pf, src, &mut io, delay, &self.gain[..n], n);
+        }
+        self.program.nodes[i as usize].io = Some(io);
+    }
+
+    fn run_level(&mut self, level: usize, n: usize, info: &TransportInfo) {
+        let count = self.program.levels[level].len();
+        let mut next = 0usize;
+        loop {
+            while let Some(job) = self.workers.take_done() {
+                self.finish(job);
+            }
+            // Next node that needs a processor call
+            while next < count {
+                let i = self.program.levels[level][next];
+                if self.runnable(i) {
+                    break;
+                }
+                self.silence_if_needed(i, n);
+                next += 1;
+            }
+            if next < count {
+                let i = self.program.levels[level][next];
+                next += 1;
+                let mut job = self.job(i, n, info);
+                match self.workers.idle() {
+                    Some(w) if count > 1 => self.workers.give(w, job),
+                    _ => {
+                        run_job(&mut job, &self.watch.current[0]);
+                        self.finish(job);
+                    }
+                }
+                continue;
+            }
+            if !self.workers.any_busy() {
+                break;
+            }
+            std::hint::spin_loop();
+        }
+    }
+
+    fn runnable(&self, i: u32) -> bool {
+        let node = &self.program.nodes[i as usize];
+        if node.desc.kind != NodeKind::Processor {
+            return false;
+        }
+        let slot = &self.slots[node.desc.node.slot()];
+        slot.core.is_some() && !slot.dead && !slot.tail_done && slot.generation == node.desc.node.generation
+    }
+
+    /// A processor node that is not called (waiting, dead, a finished tail) outputs silence
+    fn silence_if_needed(&mut self, i: u32, n: usize) {
+        let node = &mut self.program.nodes[i as usize];
+        if node.desc.kind != NodeKind::Processor {
+            return;
+        }
+        if let Some(io) = node.io.as_mut() {
+            let layout = io.layout;
+            for ch in 0..layout.outputs {
+                let o = layout.output_offset(ch);
+                io.buffer[o..o + n].fill(0.0);
+            }
+        }
+    }
+
+    fn job(&mut self, i: u32, n: usize, info: &TransportInfo) -> Job {
+        let slot = self.program.nodes[i as usize].desc.node.slot();
+        let core = self.slots[slot].core.take().expect("runnable node has a processor");
+        let io = self.program.nodes[i as usize].io.take().expect("node memory is home between calls");
+        Job { node: i, slot: slot as u32, core, io, frames: n, transport: *info, panic: None, non_finite: false }
+    }
+
+    fn finish(&mut self, mut job: Job) {
+        let node = self.program.nodes[job.node as usize].desc.node;
+        let generation = self.program.generation;
+        for request in job.core.outbox.drain() {
+            if self.out.events.push(Telemetry::PluginRequest { generation, node, request }).is_err() {
+                self.dropped[0] = self.dropped[0].saturating_add(1);
+            }
+        }
+        let lost = job.core.outbox.take_dropped();
+        self.dropped[4] = self.dropped[4].saturating_add(lost);
+        let slot = job.slot as usize;
+        self.slots[slot].core = Some(job.core);
+        self.program.nodes[job.node as usize].io = Some(job.io);
+        if let Some(payload) = job.panic.take() {
+            self.slots[slot].dead = true;
+            self.report_panic(Some(node), None, payload);
+        } else if job.non_finite {
+            self.slots[slot].dead = true;
+            self.telemetry(Telemetry::NodeNonFinite { generation, node });
+        }
+    }
+
+    fn post(&mut self, i: u32, n: usize) {
+        let (gain, pan, muted, node, kind, tail) = {
+            let d = &self.program.nodes[i as usize];
+            (d.gain, d.pan, d.desc.muted, d.desc.node, d.desc.kind, d.desc.tail)
+        };
+        if let Some(h) = gain {
+            let mut g = std::mem::take(&mut self.gain);
+            self.host_values(h, &mut g[..n]);
+            self.gain = g;
+        }
+        if let Some(h) = pan {
+            let mut p = std::mem::take(&mut self.pan);
+            self.host_values(h, &mut p[..n]);
+            self.pan = p;
+        }
+        let Some(mut io) = self.program.nodes[i as usize].io.take() else { return };
+        let layout = io.layout;
+        let slot = &mut self.slots[node.slot()];
+        let outputs = layout.outputs;
+
+        // Sources and sums can carry NaN too (a broken file): the node is silenced and marked like a processor
+        if kind == NodeKind::Sum && !slot.dead {
+            let mut acc = 0.0f32;
+            for ch in 0..outputs {
+                let o = layout.output_offset(ch);
+                acc += io.buffer[o..o + n].iter().fold(0.0f32, |a, &x| a + x * 0.0);
+            }
+            if acc.is_nan() {
+                slot.dead = true;
+                if self.out.events.push(Telemetry::NodeNonFinite { generation: self.program.generation, node }).is_err() {
+                    self.dropped[0] = self.dropped[0].saturating_add(1);
+                }
+            }
+        }
+        if slot.dead || slot.tail_done {
+            for ch in 0..outputs {
+                let o = layout.output_offset(ch);
+                io.buffer[o..o + n].fill(0.0);
+            }
+        }
+
+        // Strip: gain, balance, mute (ramped)
+        let target_mute = if muted { 0.0 } else { 1.0 };
+        let needs_mute = slot.mute_gain != target_mute || muted;
+        if gain.is_some() || pan.is_some() || needs_mute {
+            let start_mute = slot.mute_gain;
+            let mut m = start_mute;
+            for ch in 0..outputs {
+                let o = layout.output_offset(ch);
+                let buf = &mut io.buffer[o..o + n];
+                m = start_mute;
+                for (k, x) in buf.iter_mut().enumerate() {
+                    let mut g = if gain.is_some() { self.gain[k] } else { 1.0 };
+                    if pan.is_some() && outputs == 2 {
+                        let p = self.pan[k].clamp(-1.0, 1.0);
+                        g *= if ch == 0 { (1.0 - p).min(1.0) } else { (1.0 + p).min(1.0) };
+                    }
+                    if m != target_mute {
+                        m = if target_mute > m { (m + 1.0 / MUTE_FADE).min(1.0) } else { (m - 1.0 / MUTE_FADE).max(0.0) };
+                    }
+                    *x *= g * m;
+                }
+            }
+            slot.mute_gain = m;
+        }
+
+        // Master protection (U20)
+        if self.program.master == Some(i) {
+            let mut peak = 0.0f32;
+            for ch in 0..outputs {
+                let o = layout.output_offset(ch);
+                peak = io.buffer[o..o + n].iter().fold(peak, |p, x| p.max(x.abs()));
+            }
+            let p = &mut self.protection;
+            if peak > PROTECTION_THRESHOLD {
+                p.quiet = 0;
+                if !p.engaged {
+                    p.engaged = true;
+                    if self.out.events.push(Telemetry::MasterProtection { generation: self.program.generation, peak }).is_err() {
+                        self.dropped[0] = self.dropped[0].saturating_add(1);
+                    }
+                }
+            } else if p.engaged {
+                p.quiet += n as u64;
+                if p.quiet >= u64::from(self.spec.sample_rate) {
+                    p.engaged = false;
+                }
+            }
+            let target = if p.engaged { 0.0 } else { 1.0 };
+            if p.gain != target || p.engaged {
+                let step = 1.0 / PROTECTION_FADE as f32;
+                let start = p.gain;
+                let mut g = start;
+                for ch in 0..outputs {
+                    let o = layout.output_offset(ch);
+                    g = start;
+                    for x in io.buffer[o..o + n].iter_mut() {
+                        g = if target > g { (g + step).min(1.0) } else { (g - step).max(0.0) };
+                        *x *= g;
+                    }
+                }
+                p.gain = g;
+            }
+        }
+
+        // Meter and tail
+        let mut node_peak = 0.0f32;
+        let metered = outputs.min(METER_CHANNELS);
+        for ch in 0..outputs {
+            let o = layout.output_offset(ch);
+            let peak = io.buffer[o..o + n].iter().fold(0.0f32, |p, x| p.max(x.abs()));
+            node_peak = node_peak.max(peak);
+            if ch < metered {
+                slot.peak[ch] = slot.peak[ch].max(peak);
+            }
+        }
+        slot.channels = metered as u8;
+        if tail && !slot.tail_done {
+            let since = *slot.tail_since.get_or_insert(self.frame);
+            slot.tail_quiet = if node_peak < SILENT { slot.tail_quiet + n as u64 } else { 0 };
+            let rate = u64::from(self.spec.sample_rate);
+            let age = self.frame + n as u64 - since;
+            if age >= TAIL_SECONDS * rate || (age >= rate / 20 && slot.tail_quiet >= rate / 20) {
+                slot.tail_done = true;
+                if self.out.events.push(Telemetry::TailEnded { generation: self.program.generation, node }).is_err() {
+                    self.dropped[0] = self.dropped[0].saturating_add(1);
+                }
+            }
+        }
+        self.program.nodes[i as usize].io = Some(io);
+    }
+
+    /// Fills `out` with a host parameter's per-sample values
+    fn host_values(&mut self, h: u32, out: &mut [f32]) {
+        let PHostParam { value, binding } = self.program.host_params[h as usize];
+        let Some(bi) = binding else {
+            out.fill(value);
+            return;
+        };
+        let b = &self.program.bindings[bi as usize];
+        let s = b.slot as usize;
+        let state = &mut self.slot_state[s];
+        if let Some(curve) = &b.curve
+            && !self.params.touched_at(s)
+        {
+            curve.fill(self.transport.position, out);
+            let last = out[out.len() - 1];
+            state.current = last;
+            state.target = last;
+            state.left = 0;
+            state.emitted = last;
+            return;
+        }
+        for o in out.iter_mut() {
+            *o = state.next();
+        }
+    }
+
+    fn write_outputs(&mut self, outputs: &mut [&mut [f32]], off: usize, n: usize) {
+        for r in self.program.outputs.iter() {
+            let Some(dst) = outputs.get_mut(usize::from(r.device_channel)) else { continue };
+            let Some(i) = self.program.node_of(r.node) else { continue };
+            let Some(io) = self.program.nodes[i as usize].io.as_ref() else { continue };
+            let o = io.layout.output_offset(usize::from(r.channel));
+            let end = (off + n).min(dst.len());
+            if end <= off {
+                continue;
+            }
+            for (d, s) in dst[off..end].iter_mut().zip(&io.buffer[o..o + (end - off)]) {
+                *d += *s;
+            }
+        }
+    }
+
+    fn metronome_into(&mut self, buffer: &mut [f32], layout: &BufferLayout, n: usize) {
+        let Some((_, m)) = &self.program.metronome else { return };
+        if !m.enabled {
+            return;
+        }
+        let tempo = &self.program.tempo;
+        let pos0 = self.transport.position;
+        let ticks = tempo.ticks_in(pos0, pos0 + n as i64);
+        let ppq = i64::from(tempo.ppq().get());
+        let mut cursor = 0usize;
+        let mut t = ticks.start;
+        while t < ticks.end {
+            let bbt = tempo.bar_beat_tick(t);
+            let beat_ticks = tempo.time_signature_at(t).beat_ticks(tempo.ppq()).unwrap_or(ppq).max(1);
+            if bbt.tick == 0 {
+                let at = (tempo.sample_at(t) - pos0).clamp(0, n as i64) as usize;
+                click(&mut self.metronome.click, m, buffer, layout, cursor, at);
+                self.metronome.click = Some((bbt.beat == 1, 0));
+                cursor = at;
+            }
+            let mut next = t + beat_ticks - i64::from(bbt.tick);
+            if let Ok(bar_end) = tempo.bar_start(bbt.bar + 1) {
+                next = next.min(bar_end);
+            }
+            t = next.max(t + 1);
+        }
+        click(&mut self.metronome.click, m, buffer, layout, cursor, n);
+    }
+
+    // ------------------------------------------------------------------------------------------------------------
+    // Previews
+
+    fn free_preview(&mut self) -> Option<usize> {
+        self.retry_preview_returns();
+        if let Some(i) = self.previews.iter().position(|s| s.play.is_none() && s.ending.is_none()) {
+            return Some(i);
+        }
+        // None free: the oldest playing one fades out, and the command waits for the next block
+        if let Some(i) = (0..self.previews.len())
+            .filter(|&i| self.previews[i].play.is_some() && self.previews[i].stopping.is_none())
+            .min_by_key(|&i| self.previews[i].started_at)
+        {
+            self.previews[i].stopping = Some(MUTE_FADE as u32);
+        }
+        None
+    }
+
+    fn start_preview(&mut self, i: usize, cmd: PreviewCommand) {
+        let s = &mut self.previews[i];
+        s.stopping = None;
+        s.started_at = self.frame;
+        match cmd {
+            PreviewCommand::Sample { id, data, gain } => {
+                s.id = id;
+                s.play = Some(PreviewPlay::Sample { data, gain, pos: 0 });
+            }
+            PreviewCommand::Preset { id, processor, key } => {
+                s.id = id;
+                s.play = Some(PreviewPlay::Preset {
+                    processor,
+                    key,
+                    started: false,
+                    off: false,
+                    released_at: None,
+                    quiet: 0,
+                });
+            }
+            PreviewCommand::NoteOff { .. } | PreviewCommand::Stop { .. } => {}
+        }
+    }
+
+    fn retry_preview_returns(&mut self) {
+        for s in self.previews.iter_mut() {
+            if let Some(ended) = s.ending.take()
+                && let Err(PushError::Full(e)) = self.out.previews.push(ended)
+            {
+                s.ending = Some(e);
+            }
+        }
+    }
+
+    fn render_previews(&mut self, n: usize, info: &TransportInfo) {
+        let max = self.spec.max_block;
+        self.preview_mix.fill(0.0);
+        let rate = u64::from(self.spec.sample_rate);
+        for p in 0..self.previews.len() {
+            let s = &mut self.previews[p];
+            let Some(play) = s.play.as_mut() else { continue };
+            let mut finished = false;
+            let (left, right) = s.buffer.split_at_mut(max);
+            left[..n].fill(0.0);
+            right[..n].fill(0.0);
+            match play {
+                PreviewPlay::Sample { data, gain, pos } => {
+                    let frames = data.frames();
+                    let k = n.min(frames.saturating_sub(*pos));
+                    for ch in 0..2 {
+                        let src = data.channel(ch % data.channels());
+                        let dst = if ch == 0 { &mut left[..k] } else { &mut right[..k] };
+                        for (d, x) in dst.iter_mut().zip(&src[*pos..*pos + k]) {
+                            *d = x * *gain;
+                        }
+                    }
+                    *pos += k;
+                    finished = *pos >= frames;
+                }
+                PreviewPlay::Preset { processor, key, started, off, released_at, quiet } => {
+                    s.events.clear();
+                    if !*started {
+                        *started = true;
+                        let on = EventKind::NoteOn { note: NoteId(1), channel: 0, key: *key, velocity: 0.8 };
+                        s.events.push(0, on);
+                    }
+                    if *off && released_at.is_none() {
+                        *released_at = Some(self.frame);
+                        s.events.push(0, EventKind::NoteOff { note: NoteId(1), channel: 0, key: *key, velocity: 0.0 });
+                    }
+                    let events = s.events.finish();
+                    let layout = BufferLayout { inputs: 0, outputs: 2, sidechain: 0, in_place: false, stride: max };
+                    let rng = &mut s.rng;
+                    let outbox = &mut s.outbox;
+                    let buffer = &mut s.buffer;
+                    let result = catch_unwind(AssertUnwindSafe(|| {
+                        let mut cx = ProcessContext {
+                            frames: n,
+                            buffers: Buffers::new(buffer, layout, n),
+                            events,
+                            transport: info,
+                            rng,
+                            host: outbox,
+                            display: None,
+                        };
+                        processor.process(&mut cx);
+                    }));
+                    for _ in s.outbox.drain() {}
+                    let _ = s.outbox.take_dropped();
+                    match result {
+                        Err(payload) => {
+                            s.panic = Some(payload);
+                            s.buffer.fill(0.0);
+                            finished = true;
+                        }
+                        Ok(()) => {
+                            let peak = s.buffer[..n]
+                                .iter()
+                                .chain(&s.buffer[max..max + n])
+                                .fold(0.0f32, |p, x| if x.is_finite() { p.max(x.abs()) } else { f32::INFINITY });
+                            if !peak.is_finite() {
+                                s.buffer.fill(0.0);
+                                finished = true;
+                            }
+                            if let Some(at) = *released_at {
+                                *quiet = if peak < SILENT { *quiet + n as u64 } else { 0 };
+                                if *quiet >= rate / 10 || self.frame - at >= 5 * rate {
+                                    finished = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(left) = s.stopping.as_mut() {
+                let mut g = *left as f32 / MUTE_FADE;
+                for k in 0..n {
+                    g = (g - 1.0 / MUTE_FADE).max(0.0);
+                    s.buffer[k] *= g;
+                    s.buffer[max + k] *= g;
+                }
+                *left = left.saturating_sub(n as u32);
+                if *left == 0 {
+                    finished = true;
+                }
+            }
+            for k in 0..n {
+                self.preview_mix[k] += s.buffer[k];
+                self.preview_mix[max + k] += s.buffer[max + k];
+            }
+            if finished {
+                self.end_preview(p);
+            }
+        }
+    }
+
+    fn end_preview(&mut self, p: usize) {
+        let s = &mut self.previews[p];
+        let Some(play) = s.play.take() else { return };
+        s.stopping = None;
+        let returned = match play {
+            PreviewPlay::Sample { data, .. } => PreviewReturn::Sample(data),
+            PreviewPlay::Preset { processor, .. } => PreviewReturn::Processor(processor),
+        };
+        let id = s.id;
+        if let Some(payload) = s.panic.take() {
+            self.report_panic(None, Some(id), payload);
+        }
+        let s = &mut self.previews[p];
+        if let Err(PushError::Full(e)) = self.out.previews.push(PreviewEnded { id, returned }) {
+            s.ending = Some(e);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------------------
+    // Telemetry
+
+    fn telemetry(&mut self, t: Telemetry) {
+        if self.out.events.push(t).is_err() {
+            self.dropped[0] = self.dropped[0].saturating_add(1);
+        }
+    }
+
+    fn transport_event(&mut self, e: TransportEvent) {
+        if self.out.transport.push(e).is_err() {
+            // Lossless by sizing (C4); if it ever fills, recording stops explicitly instead of losing a cut (U1)
+            self.transport.armed = false;
+            self.transport.recording = false;
+            self.telemetry(Telemetry::TransportEventsOverflow);
+        }
+    }
+
+    fn report_panic(&mut self, node: Option<NodeIndex>, preview: Option<PreviewId>, payload: Box<dyn Any + Send>) {
+        let generation = self.program.generation;
+        if let Some(node) = node {
+            self.telemetry(Telemetry::NodePanicked { generation, node });
+        }
+        if let Err(PushError::Full(r)) = self.out.panics.push(PanicReport { generation, node, preview, payload }) {
+            // Sized for every node that can panic between two collects; never free on the audio thread
+            std::mem::forget(r);
+        }
+    }
+
+    fn flush_dropped(&mut self) {
+        const KINDS: [TelemetryKind; 5] = [
+            TelemetryKind::Telemetry,
+            TelemetryKind::NodeEvents,
+            TelemetryKind::ActiveNotes,
+            TelemetryKind::LiveMidi,
+            TelemetryKind::PluginRequests,
+        ];
+        for (k, kind) in KINDS.iter().enumerate() {
+            let count = self.dropped[k];
+            if count > 0 && self.out.events.push(Telemetry::Dropped { kind: *kind, count }).is_ok() {
+                self.dropped[k] = 0;
+            }
+        }
+    }
+
+    fn publish(&mut self, host_time: HostTime) {
+        let tick = self.program.tempo.tick_at(self.transport.position);
+        let f = self.out.frame.input_buffer_mut();
+        f.generation = self.program.generation;
+        f.position = self.transport.position;
+        f.tick = tick;
+        f.host_time = host_time;
+        f.playing = self.transport.playing;
+        f.recording = self.transport.recording;
+        f.periods = self.watch.periods.load(Ordering::Relaxed);
+        f.xruns = self.xruns;
+        f.load = self.load;
+        f.flushing_denormals = crate::spec::flushing_denormals();
+        f.protection = self.protection.engaged;
+        for (m, s) in f.meters.iter_mut().zip(self.slots.iter_mut()) {
+            m.generation = s.generation;
+            m.channels = s.channels;
+            m.peak = s.peak;
+            m.dead = s.dead;
+            s.peak = [0.0; METER_CHANNELS];
+        }
+        for &bi in self.program.automated.iter() {
+            let s = self.program.bindings[bi as usize].slot as usize;
+            f.params[s] = self.slot_state[s].current;
+        }
+        self.out.frame.publish();
+        self.since_publish = 0;
+        self.load = 0.0;
+    }
+}
+
+fn click(
+    state: &mut Option<(bool, usize)>,
+    m: &crate::program::Metronome,
+    buffer: &mut [f32],
+    layout: &BufferLayout,
+    from: usize,
+    to: usize,
+) {
+    let Some((accent, pos)) = state.as_mut() else { return };
+    let data = if *accent { &m.accent } else { &m.beat };
+    let frames = data.frames();
+    let k = (to - from).min(frames.saturating_sub(*pos));
+    for ch in 0..layout.inputs {
+        let src = &data.channel(ch % data.channels())[*pos..*pos + k];
+        let o = layout.input_offset(ch) + from;
+        for (d, s) in buffer[o..o + k].iter_mut().zip(src) {
+            *d += s * m.gain;
+        }
+    }
+    *pos += k;
+    if *pos >= frames {
+        *state = None;
+    }
+}
+
+/// Audio items into a node's inputs, with the explicit channel conversions (mono to N at equal power, N to mono
+/// averaged, otherwise channel to channel)
+fn play_audio(node: &PNode, buffer: &mut [f32], layout: &BufferLayout, pos0: i64, n: usize) {
+    let end = pos0 + n as i64;
+    let first = node.audio.partition_point(|it| it.start + node.audio_max_len <= pos0);
+    for it in &node.audio[first..] {
+        if it.start >= end {
+            break;
+        }
+        let a = pos0.max(it.start);
+        let b = end.min(it.start + it.length);
+        if b <= a {
+            continue;
+        }
+        let src_ch = it.data.channels();
+        let dst_ch = layout.inputs;
+        for k in a..b {
+            let in_item = k - it.start;
+            let frame = it.offset + in_item;
+            if frame < 0 || frame as usize >= it.data.frames() {
+                continue;
+            }
+            let mut g = it.gain;
+            if it.fade_in > 0 && in_item < i64::from(it.fade_in) {
+                g *= in_item as f32 / it.fade_in as f32;
+            }
+            let to_end = it.length - in_item;
+            if it.fade_out > 0 && to_end <= i64::from(it.fade_out) {
+                g *= (to_end - 1).max(0) as f32 / it.fade_out as f32;
+            }
+            let at = (k - pos0) as usize;
+            let frame = frame as usize;
+            if src_ch == dst_ch {
+                for ch in 0..dst_ch {
+                    buffer[layout.input_offset(ch) + at] += it.data.channel(ch)[frame] * g;
+                }
+            } else if src_ch == 1 {
+                let x = it.data.channel(0)[frame] * g / (dst_ch as f32).sqrt();
+                for ch in 0..dst_ch {
+                    buffer[layout.input_offset(ch) + at] += x;
+                }
+            } else if dst_ch == 1 {
+                let mut x = 0.0;
+                for ch in 0..src_ch {
+                    x += it.data.channel(ch)[frame];
+                }
+                buffer[layout.input_offset(0) + at] += x * g / src_ch as f32;
+            } else {
+                for ch in 0..dst_ch.min(src_ch) {
+                    buffer[layout.input_offset(ch) + at] += it.data.channel(ch)[frame] * g;
+                }
+            }
+        }
+    }
+}
+
+/// One feed into a node's inputs: gain, then the PDC delay, then the channel conversion, summed
+fn mix_feed(
+    pf: &PFeed,
+    src: &crate::program::NodeIo,
+    dst: &mut crate::program::NodeIo,
+    mut delay: Option<&mut DelayLine>,
+    gain: &[f32],
+    n: usize,
+) {
+    let f = &pf.feed;
+    let channels = usize::from(f.channels);
+    let to_base = |ch: usize| {
+        let c = usize::from(f.to_channel) + ch;
+        if f.sidechain { dst.layout.sidechain_offset(c) } else { dst.layout.input_offset(c) }
+    };
+    let scale = match f.mix {
+        ChannelMix::Direct => 1.0,
+        ChannelMix::UpMix { to } => 1.0 / f32::from(to).sqrt(),
+        ChannelMix::DownMix => 1.0 / channels as f32,
+    };
+    for c in 0..channels {
+        let so = src.layout.output_offset(usize::from(f.from_channel) + c);
+        let s = &src.buffer[so..so + n];
+        let targets: (usize, usize) = match f.mix {
+            ChannelMix::Direct => (c, c + 1),
+            ChannelMix::UpMix { to } => (0, usize::from(to)),
+            ChannelMix::DownMix => (0, 1),
+        };
+        match delay.as_deref_mut() {
+            None => {
+                for t in targets.0..targets.1 {
+                    let o = to_base(t);
+                    for k in 0..n {
+                        dst.buffer[o + k] += s[k] * gain[k] * scale;
+                    }
+                }
+            }
+            Some(d) => {
+                let len = d.length;
+                let base = c * len;
+                for k in 0..n {
+                    let idx = base + (d.pos + k) % len;
+                    let y = d.memory[idx];
+                    d.memory[idx] = s[k] * gain[k] * scale;
+                    for t in targets.0..targets.1 {
+                        dst.buffer[to_base(t) + k] += y;
+                    }
+                }
+            }
+        }
+    }
+    if let Some(d) = delay {
+        d.pos = (d.pos + n) % d.length;
+    }
+}
