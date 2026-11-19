@@ -1,0 +1,64 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "GPL-2.0-or-later"
+repository = "https://github.com/EliezerSolinger/LinuxMusic"
+publish = false
+
+# Rules for every crate of the core (interfaces.md, Parte 2). The lm-sys-* crates opt out of `unsafe_code` and declare
+# their safety sheet instead (I-17).
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+unused_must_use = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)"] }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+print_stdout = "warn"
+print_stderr = "warn"
+
+[workspace.dependencies]
+# Allowed lock-free crates (interfaces.md, I-17). Adding one needs a written decision there.
+rtrb = "0.4"
+triple_buffer = "8"
+assert_no_alloc = "1"
+# Data
+imbl = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ryu = "1"
+blake3 = "1"
+# System
+rustix = { version = "1", default-features = false, features = ["std", "time"] }
+# DSP math (deterministic across distributions, V2)
+libm = "0.2"
+# Verification
+loom = "0.7"
+
+# Workspace crates
+lm-base = { path = "crates/lm-base" }
+lm-state = { path = "crates/lm-state" }
+lm-time = { path = "crates/lm-time" }
+lm-doc = { path = "crates/lm-doc" }
+lm-render = { path = "crates/lm-render" }
+
+[profile.dev]
+# Audio code is unusable without some optimisation; debug info stays
+opt-level = 1
+
+[profile.release]
+debug = 1
+panic = "unwind"   # needed to contain a plugin's panic (I-9.3)
+lto = "thin"
+
+[profile.dev.package."*"]
+opt-level = 2
