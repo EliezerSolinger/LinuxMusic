@@ -12,10 +12,13 @@ path = "src/main.rs"
 
 [dependencies]
 fake-core.workspace = true
-# GPUI pinned exactly: gpui-pre is a weekly snapshot of Zed's main published to crates.io (this one: zed@125ca86,
-# 2026-11-16); the official `gpui` crate on crates.io is 0.2.2 from October 2025. See docs/prototipo-interface.md.
-gpui = { package = "gpui-pre", version = "=0.3.13" }
+# GPUI pinned exactly. `gpui-pre` is a weekly snapshot of Zed's main published to crates.io by the gpui-component
+# maintainers (Longbridge); the official `gpui` crate on crates.io is 0.2.2 from October 2025. The pin follows the one
+# gpui-component pins (it requires `=0.3.12`), so there is one GPUI in the build. See docs/prototipo-interface.md.
+gpui = { package = "gpui-pre", version = "=0.3.12" }
 # runtime_shaders: this Mac has only the Command Line Tools, without the `metal` compiler (Xcode); the shaders are
 # compiled when the app starts. A release build for macOS would be made with Xcode and without this feature.
 # font-kit: without it the macOS backend has no text system and draws no text at all (a log warning only).
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", features = ["runtime_shaders", "font-kit"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", features = ["runtime_shaders", "font-kit"] }
+# Styled components (inputs, switches, sliders...): used for the settings panel, to see whether it serves
+gpui-component = "=0.10.0"

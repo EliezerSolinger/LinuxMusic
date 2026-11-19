@@ -24,6 +24,11 @@ use gpui::{
     PinchEvent, Pixels, Rgba, ScrollDelta, ScrollEvent, SharedString, Task, Window, WindowBounds, WindowOptions,
     canvas, div, fill, point, prelude::*, px, rgb, size,
 };
+use gpui_component::button::Button;
+use gpui_component::input::{Input, InputState};
+use gpui_component::slider::{Slider, SliderEvent, SliderState, SliderValue};
+use gpui_component::switch::Switch;
+use gpui_component::{Root, Theme, ThemeMode};
 use gpui_platform::application;
 
 fn c(hex: u32) -> Rgba {
@@ -65,11 +70,18 @@ struct Daw {
     /// the timeline's bounds from the last paint, for zooming around the pointer
     timeline_bounds: Rc<RefCell<Bounds<Pixels>>>,
     wave_mode: WaveMode,
+    /// the settings panel (design 08), made of gpui-component pieces
+    settings_open: bool,
+    project_dir: gpui::Entity<InputState>,
+    block: gpui::Entity<SliderState>,
+    block_size: f32,
+    follow_cursor: bool,
+    _subscriptions: Vec<gpui::Subscription>,
     _pump: Task<()>,
 }
 
 impl Daw {
-    fn new(cx: &mut Context<Self>) -> Daw {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Daw {
         let mut session = Session::create(Config::default());
         let bench = Bench::from_env("gpui");
         if bench.wants_play() {
@@ -92,6 +104,15 @@ impl Daw {
                 }
             }
         });
+        let project_dir = cx.new(|cx| InputState::new(window, cx).default_value("~/Música/LinuxMusic"));
+        let block = cx.new(|_| SliderState::new().min(64.0).max(2048.0).step(64.0).default_value(256.0));
+        // settings apply at once (design 08): the slider's events reach the view
+        let block_sub = cx.subscribe(&block, |d: &mut Daw, _, ev: &SliderEvent, cx| {
+            if let SliderEvent::Change(SliderValue::Single(v)) = ev {
+                d.block_size = *v;
+                cx.notify();
+            }
+        });
         let track_db = session.tracks().iter().map(|t| view::format_db(t.volume_db).into()).collect();
         let channel_db = session.channels().iter().map(|c| view::format_db(c.volume_db).into()).collect();
         Daw {
@@ -107,6 +128,12 @@ impl Daw {
             channel_db,
             timeline_bounds: Rc::new(RefCell::new(Bounds::default())),
             wave_mode: if std::env::var("LM_WAVE").as_deref() == Ok("path") { WaveMode::Path } else { WaveMode::Quads },
+            settings_open: std::env::var("LM_SETTINGS").is_ok(), // open at start, for the screenshot
+            project_dir,
+            block,
+            block_size: 256.0,
+            follow_cursor: false,
+            _subscriptions: vec![block_sub],
             _pump: pump,
         }
     }
@@ -323,7 +350,7 @@ fn loading_component(
                         div()
                             .text_size(px(11.))
                             .text_color(c(THEME.text2))
-                            .child(format!("{} {}… {:.0}%", view::tr("Loading"), stage, p * 100.0)),
+                            .child(format!("{}… {:.0}%", stage, p * 100.0)),
                     )
                     .when(*cancellable, |d| {
                         d.child(button("cancel", "Cancelar", false, 0).on_click(move |_, w, cx| on_cancel(w, cx)))
@@ -372,12 +399,20 @@ impl Render for Daw {
         }
         let pos = self.session.position();
         let cursor = pos.at(now);
+        if self.follow_cursor && pos.playing && !self.bench.active() {
+            let w = window.viewport_size().width.as_f32() as f64 - view::HEADER_W as f64;
+            let x = self.view.sample_to_x(cursor);
+            if x < 0.0 || x > w * 0.9 {
+                self.view.scroll_samples = (cursor - w * 0.1 * self.view.samples_per_px).max(0.0);
+            }
+        }
         if pos.playing || self.bench.view(now).is_some() {
             window.request_animation_frame();
         }
 
         div()
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .bg(c(THEME.window))
@@ -396,6 +431,7 @@ impl Render for Daw {
                     .child(self.render_timeline(cursor, view_h, cx)),
             )
             .child(self.render_mixer(window, cx))
+            .when(self.settings_open, |d| d.child(self.render_settings(cx)))
             // painted last: the CPU time of the frame, from the start of render to the end of paint
             .children(probe.map(|probe| {
                 canvas(|_, _, _| {}, move |_, _, _, _| probe(started)).absolute().size(px(0.))
@@ -474,6 +510,60 @@ impl Daw {
                 d.session.reload_take(2);
                 cx.notify();
             })))
+            .child(tbutton("settings", "Configurações", self.settings_open, THEME.green).on_click(cx.listener(
+                |d, _, _, cx| {
+                    d.settings_open = !d.settings_open;
+                    cx.notify();
+                },
+            )))
+    }
+
+    /// Design 08 in miniature: applies at once, says what needs a restart. Built from gpui-component
+    fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let row = |label: &'static str| {
+            div().flex().flex_col().gap(px(6.)).child(div().text_size(px(12.)).text_color(c(THEME.text2)).child(label))
+        };
+        div()
+            .absolute()
+            .top(px(view::TRANSPORT_H + 8.0))
+            .right(px(8.))
+            .w(px(380.))
+            .p(px(16.))
+            .flex()
+            .flex_col()
+            .gap(px(16.))
+            .rounded(px(10.))
+            .bg(c(THEME.bg2))
+            .border_1()
+            .border_color(c(THEME.line2))
+            .shadow_lg()
+            .child(div().text_size(px(16.)).font_weight(FontWeight::BOLD).child("Configurações"))
+            .child(row("Pasta dos projetos").child(Input::new(&self.project_dir)))
+            .child(
+                row("Tamanho do bloco do áudio")
+                    .child(Slider::new(&self.block))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(c(THEME.orange))
+                            .child(format!("{} amostras · vale ao reabrir o dispositivo", self.block_size as u32)),
+                    ),
+            )
+            .child(
+                Switch::new("follow")
+                    .checked(self.follow_cursor)
+                    .label("Seguir o cursor ao tocar")
+                    .on_click(cx.listener(|d, on: &bool, _, cx| {
+                        d.follow_cursor = *on;
+                        cx.notify();
+                    })),
+            )
+            .child(div().flex().justify_end().child(Button::new("close-settings").label("Fechar").on_click(
+                cx.listener(|d, _, _, cx| {
+                    d.settings_open = false;
+                    cx.notify();
+                }),
+            )))
     }
 
     fn render_headers(&self, view_h: f64, cx: &mut Context<Self>) -> impl IntoElement {
@@ -636,6 +726,28 @@ impl Daw {
                 );
             }
         }
+        // bar numbers on the ruler: text as elements (a canvas would shape its own text with the text system)
+        let bar = 2.0 * SAMPLE_RATE as f64;
+        let bars_per_label = ((80.0 * v.samples_per_px / bar).max(1.0)).ceil();
+        let step = bar * bars_per_label;
+        let mut labels = Vec::new();
+        let mut s = (v.scroll_samples / step).floor() * step;
+        let width = 1600.0; // labels past the edge are clipped
+        while v.sample_to_x(s) < width {
+            let x = v.sample_to_x(s) as f32;
+            if x >= -40.0 {
+                labels.push(
+                    div()
+                        .absolute()
+                        .top(px(2.))
+                        .left(px(x + 3.0))
+                        .text_size(px(10.))
+                        .text_color(c(THEME.text2))
+                        .child(format!("{}", (s / bar).round() as i64 + 1)),
+                );
+            }
+            s += step;
+        }
         let bounds_cell = self.timeline_bounds.clone();
         let mode = self.wave_mode;
         let playing_x = v.sample_to_x(cursor) as f32;
@@ -749,6 +861,7 @@ impl Daw {
                 )
                 .size_full(),
             )
+            .children(labels)
             .children(overlays)
     }
 
@@ -807,10 +920,15 @@ impl Daw {
 
 fn main() {
     application().run(|cx: &mut App| {
+        gpui_component::init(cx);
+        Theme::change(ThemeMode::Dark, None, cx);
         let bounds = Bounds::new(point(px(0.), px(0.)), size(px(view::WINDOW_W), px(view::WINDOW_H)));
         cx.open_window(
             WindowOptions { window_bounds: Some(WindowBounds::Windowed(bounds)), ..Default::default() },
-            |_, cx| cx.new(Daw::new),
+            |window, cx| {
+                let daw = cx.new(|cx| Daw::new(window, cx));
+                cx.new(|cx| Root::new(daw, window, cx))
+            },
         )
         .expect("open window");
         cx.on_window_closed(|cx, _| cx.quit()).detach();
