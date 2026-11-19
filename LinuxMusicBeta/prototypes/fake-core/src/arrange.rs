@@ -132,6 +132,8 @@ pub struct Song {
     pub metronome: bool,
     pub count_in_bars: u8,
     pub pre_roll_bars: u8,
+    /// the desk's mode (P-17): analog (the rack models) or digital (the rack clean)
+    pub desk_analog: bool,
 }
 
 impl Default for Song {
@@ -155,6 +157,7 @@ impl Default for Song {
             metronome: true,
             count_in_bars: 1,
             pre_roll_bars: 1,
+            desk_analog: true,
         }
     }
 }

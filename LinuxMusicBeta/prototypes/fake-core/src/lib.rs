@@ -105,6 +105,8 @@ pub struct Channel {
     pub sends: Vec<mixer::SendInfo>,
     /// the rack's parameters by permanent key (`rack.eq.low`...), and `rack.<section>.on` as 0/1
     pub params: std::collections::BTreeMap<&'static str, f64>,
+    /// in the linked faders' relative group (P-18)
+    pub linked: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -142,6 +144,11 @@ pub enum Field {
     Tempo,
     CountIn,
     PreRoll,
+    // the desk (mixer.rs): an insert's point among the rack's sections and its bypass, the fader link, the mode
+    InsertPoint(NodeId),
+    Bypass(NodeId),
+    FaderLink,
+    DeskAnalog,
 }
 
 /// The document's root: the song-wide fields live on it
@@ -235,6 +242,8 @@ impl Edit<'_> {
             (b'r', Field::Tempo, Value::Real(x)) => self.doc.song.tempo[0].bpm = x.clamp(20.0, 400.0),
             // a plugin parameter: the instrument functions (on the track), an instrument, an insert (plugins.rs)
             (b't' | b'p' | b'x', Field::Param(k), Value::Real(x)) => plugins::set_param(self.doc, id, k, x)?,
+            (b'm', f @ (Field::InsertPoint(_) | Field::Bypass(_) | Field::FaderLink), v) => mixer::set(self.doc, id, f, v)?,
+            (b'r', Field::DeskAnalog, Value::Bool(b)) => self.doc.song.desk_analog = b,
             (b'r', Field::CountIn, Value::Real(x)) => self.doc.song.count_in_bars = x.clamp(0.0, 4.0) as u8,
             (b'r', Field::PreRoll, Value::Real(x)) => self.doc.song.pre_roll_bars = x.clamp(0.0, 4.0) as u8,
             (b'm', Field::Volume, Value::Real(x)) => self.channel(id)?.volume_db = x,
@@ -273,6 +282,8 @@ impl Edit<'_> {
             (b'r', Field::Metronome) => Value::Bool(self.doc.song.metronome),
             (b'r', Field::Tempo) => Value::Real(self.doc.song.tempo[0].bpm),
             (b't' | b'p' | b'x', Field::Param(k)) => Value::Real(plugins::get_param(self.doc, id, k)?),
+            (b'm', f @ (Field::InsertPoint(_) | Field::Bypass(_) | Field::FaderLink)) => mixer::get(self.doc, id, f)?,
+            (b'r', Field::DeskAnalog) => Value::Bool(self.doc.song.desk_analog),
             (b'r', Field::CountIn) => Value::Real(self.doc.song.count_in_bars as f64),
             (b'r', Field::PreRoll) => Value::Real(self.doc.song.pre_roll_bars as f64),
             (b'm', Field::Volume) => Value::Real(self.channel(id)?.volume_db),
@@ -471,6 +482,7 @@ fn engine_thread(
     shared: Arc<EngineShared>,
     mut input: triple_buffer::Input<TelemetryFrame>,
     sources: Vec<(Arc<Peaks>, i64)>,
+    routes: mixer::Routes,
 ) {
     let tick = Duration::from_secs_f64(1.0 / 60.0);
     let mut next = Instant::now();
@@ -504,26 +516,28 @@ fn engine_thread(
         let span = (SAMPLE_RATE / 60) as u64;
         let mut meters = [0f32; MAX_METERS];
         let n = sources.len().min(MAX_METERS / 2);
-        let mut returns = [0f32; mixer::RETURNS.len()];
-        let mut master = 0f32;
         for (i, (peaks, start)) in sources.iter().enumerate().take(n) {
             let a = if playing { peaks.amplitude_at(pos - start, span) } else { 0.0 };
             let a = a * (0.85 + 0.15 * noise.unit() as f32);
             let track = a * f32::from_bits(shared.slots.gain[i].load(Ordering::Relaxed));
-            let channel = track * f32::from_bits(shared.slots.gain[CHANNEL_METERS + i].load(Ordering::Relaxed));
             meters[i] = track;
-            meters[CHANNEL_METERS + i] = channel;
-            returns[i % returns.len()] = returns[i % returns.len()].max(channel * 0.35);
-            master = master.max(channel * 0.9);
+            meters[CHANNEL_METERS + i] = track;
         }
-        for (r, v) in returns.iter().enumerate() {
-            let k = CHANNEL_METERS + n + r;
-            meters[k] = v * f32::from_bits(shared.slots.gain[k].load(Ordering::Relaxed));
-            master = master.max(meters[k]);
-        }
-        let k = CHANNEL_METERS + n + returns.len();
-        if k < MAX_METERS {
-            meters[k] = master.min(1.0) * f32::from_bits(shared.slots.gain[k].load(Ordering::Relaxed));
+        // through the desk: each channel's fader, then into where it sends and outputs (sources first)
+        if let Ok(routes) = routes.try_lock() {
+            let mut done = [false; MAX_METERS];
+            for &(from, to, g) in routes.iter() {
+                if !done[from] {
+                    meters[from] = (meters[from] * f32::from_bits(shared.slots.gain[from].load(Ordering::Relaxed))).min(1.5);
+                    done[from] = true;
+                }
+                meters[to] = meters[to].max(meters[from] * g);
+            }
+            for (k, d) in done.iter().enumerate().skip(CHANNEL_METERS) {
+                if !d {
+                    meters[k] = (meters[k] * f32::from_bits(shared.slots.gain[k].load(Ordering::Relaxed))).min(1.5);
+                }
+            }
         }
         for (h, m) in held.iter_mut().zip(meters.iter()) {
             *h = m.max(*h * 0.8); // the engine accumulates peaks per block; a short hold
@@ -586,6 +600,7 @@ pub struct Session {
     resources: HashMap<ResourceId, Arc<Peaks>>,
     pending_resources: Vec<(ResourceId, OperationHandle<Arc<Peaks>>)>,
     engine: Arc<EngineShared>,
+    routes: mixer::Routes,
     telemetry: triple_buffer::Output<TelemetryFrame>,
     last_frame: TelemetryFrame,
     engine_thread: Option<JoinHandle<()>>,
@@ -615,64 +630,8 @@ impl Session {
         let (tracks, srcs) = arrange_tracks(&config, &resources);
         doc.tracks = tracks;
         sources.extend(srcs);
-        // channels: the normal ones, then the returns, then the master (the last channel)
-        let master = NodeId { kind: b'm', number: 999 };
-        let returns: Vec<NodeId> =
-            (0..mixer::RETURNS.len()).map(|r| NodeId { kind: b'm', number: 900 + r as u64 }).collect();
-        let mut next_sub = 5000u64;
-        let mut sub = || {
-            next_sub += 1;
-            NodeId { kind: b'x', number: next_sub }
-        };
-        for i in 0..config.channels {
-            let inserts = (0..(i % 3))
-                .map(|k| mixer::Insert { id: sub(), plugin: mixer::PLUGINS[(i + k) % mixer::PLUGINS.len()], bypass: k == 1 && i % 5 == 0 })
-                .collect();
-            let sends = (0..(i % 2 + 1))
-                .map(|k| mixer::SendInfo { id: sub(), to: returns[(i + k) % returns.len()], level_db: -12.0 - (i % 7) as f64, pre_fader: k == 1 })
-                .collect();
-            doc.channels.push(Channel {
-                id: NodeId { kind: b'm', number: i as u64 + 1 },
-                name: format!("{} {}", NAMES[i % 8], i / 8 + 1),
-                kind: mixer::ChannelKind::Normal,
-                volume_db: 0.0,
-                pan: [0.0, -0.3, 0.3, -0.6, 0.6][i % 5],
-                mute: false,
-                solo: false,
-                output: Some(master),
-                inserts,
-                sends,
-                params: mixer::default_params(i as u64),
-            });
-        }
-        for (r, name) in mixer::RETURNS.iter().enumerate() {
-            doc.channels.push(Channel {
-                id: returns[r],
-                name: name.to_string(),
-                kind: mixer::ChannelKind::Return,
-                volume_db: -3.0,
-                pan: 0.0,
-                mute: false,
-                solo: false,
-                output: Some(master),
-                inserts: vec![mixer::Insert { id: sub(), plugin: name, bypass: false }],
-                sends: Vec::new(),
-                params: mixer::default_params(100 + r as u64),
-            });
-        }
-        doc.channels.push(Channel {
-            id: master,
-            name: "Master".into(),
-            kind: mixer::ChannelKind::Master,
-            volume_db: 0.0,
-            pan: 0.0,
-            mute: false,
-            solo: false,
-            output: None,
-            inserts: vec![mixer::Insert { id: sub(), plugin: "Limiter", bypass: false }],
-            sends: Vec::new(),
-            params: mixer::default_params(999),
-        });
+        // the desk: groups and normal channels, the returns, the master (mixer.rs)
+        doc.channels = mixer::make_channels(&config, &doc.tracks);
         plugins::populate(&mut doc);
         let initial = TelemetryFrame {
             position: 0,
@@ -694,9 +653,11 @@ impl Session {
             slots: Slots { gain: (0..MAX_METERS).map(|_| AtomicU32::new(1f32.to_bits())).collect() },
         });
         let e = engine.clone();
+        let routes: mixer::Routes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let engine_routes = routes.clone();
         let engine_thread = std::thread::Builder::new()
             .name("fake-engine".into())
-            .spawn(move || engine_thread(e, input, sources))
+            .spawn(move || engine_thread(e, input, sources, engine_routes))
             .expect("spawn engine");
         let mut s = Session {
             doc,
@@ -710,6 +671,7 @@ impl Session {
             resources,
             pending_resources: Vec::new(),
             engine,
+            routes,
             telemetry: output,
             last_frame: initial,
             engine_thread: Some(engine_thread),
@@ -725,6 +687,7 @@ impl Session {
                 .chain(s.doc.channels.iter().map(|c| (c.id, Some(Field::Volume)))).collect(),
         };
         s.after_change(&all);
+        *s.routes.lock().unwrap() = mixer::routes(&s.doc, |i| (CHANNEL_METERS + i).min(MAX_METERS - 1));
         s.pending = Diff::default();
         let slow = s.config.slow_track;
         s.reload_take(slow);
@@ -985,6 +948,13 @@ impl Session {
     }
 
     fn after_change(&mut self, diff: &Diff) {
+        // the fake engine's routes follow the desk (outputs, sends, channels added)
+        if diff.changed.iter().any(|(id, f)| {
+            id.kind == b'm' && matches!(f, None | Some(Field::ChannelOutput) | Some(Field::SendLevel(_)))
+        }) {
+            let r = mixer::routes(&self.doc, |i| (CHANNEL_METERS + i).min(MAX_METERS - 1));
+            *self.routes.lock().unwrap() = r;
+        }
         // parameter slots: the fake engine sees the new gains at once (I-6)
         for (id, f) in &diff.changed {
             if *f == Some(Field::Volume) || *f == Some(Field::Mute) {

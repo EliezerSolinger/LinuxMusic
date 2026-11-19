@@ -184,6 +184,7 @@ impl MixingPage {
         let color = match ch.kind {
             ChannelKind::Normal => track_color(i),
             ChannelKind::Return => THEME.cyan,
+            ChannelKind::Group => THEME.purple,
             ChannelKind::Master => THEME.green,
         };
         let out_name: SharedString = match ch.output {

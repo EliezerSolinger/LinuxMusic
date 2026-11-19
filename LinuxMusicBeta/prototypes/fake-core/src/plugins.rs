@@ -852,12 +852,12 @@ pub fn populate(doc: &mut Doc) {
             let mut n = PluginNode::new(id, "Old Tape (LV2)", cid);
             n.reals.insert("saturation", 0.42);
             n.reals.insert("wow", 0.1);
-            doc.channels[ci].inserts.push(crate::mixer::Insert { id, plugin: "Old Tape (LV2)", bypass: false });
+            doc.channels[ci].inserts.push(crate::mixer::Insert { id, plugin: "Old Tape (LV2)", bypass: false, point: 1 });
             doc.plugins.nodes.insert(id, n);
         }
         if ci == 6 {
             let id = next(b'x');
-            doc.channels[ci].inserts.push(crate::mixer::Insert { id, plugin: "Calf Vintage Delay (LV2)", bypass: false });
+            doc.channels[ci].inserts.push(crate::mixer::Insert { id, plugin: "Calf Vintage Delay (LV2)", bypass: false, point: 1 });
             doc.plugins.nodes.insert(id, PluginNode::new(id, "Calf Vintage Delay (LV2)", cid));
         }
     }
@@ -1071,7 +1071,7 @@ impl Edit<'_> {
         let id = next(b'x');
         let c = self.channel_mut(ch)?;
         let at = index.min(c.inserts.len());
-        c.inserts.insert(at, crate::mixer::Insert { id, plugin: d.id, bypass: false });
+        c.inserts.insert(at, crate::mixer::Insert { id, plugin: d.id, bypass: false, point: 1 });
         self.doc.plugins.nodes.insert(id, PluginNode::new(id, d.id, ch));
         self.touched_node(id, ch);
         Ok(id)
