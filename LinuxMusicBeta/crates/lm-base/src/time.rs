@@ -2,8 +2,8 @@
 //! same clock on macOS), the same one ALSA is configured to stamp its PCM status with. Never the wall clock.
 
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A point of the monotonic host clock, in nanoseconds
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]

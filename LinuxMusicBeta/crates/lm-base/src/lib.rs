@@ -17,6 +17,6 @@ mod sync;
 mod time;
 
 pub use error::{Arg, Error, Label, Result};
-pub use main_thread::{role, set_role, Main, Role};
+pub use main_thread::{Main, Role, role, set_role};
 pub use operation::{Cancel, OperationHandle, OperationId, Phase, Progress, Workers};
 pub use time::{Clock, HostTime, ManualClock, SystemClock};

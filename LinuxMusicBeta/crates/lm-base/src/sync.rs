@@ -3,12 +3,12 @@
 
 #[cfg(loom)]
 pub(crate) use loom::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 #[cfg(not(loom))]
 pub(crate) use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };

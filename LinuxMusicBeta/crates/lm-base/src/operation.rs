@@ -7,7 +7,7 @@ use std::fmt;
 use std::thread::JoinHandle;
 
 use crate::error::{Error, Label, Result};
-use crate::main_thread::{set_role, Role};
+use crate::main_thread::{Role, set_role};
 use crate::sync::{Arc, AtomicBool, AtomicU32, Mutex, Ordering};
 
 /// Asks an operation to stop. Cheap to clone and to check; the work checks it at its own steps
@@ -66,10 +66,7 @@ impl Progress {
 
     /// The fraction, if the work measured one
     pub fn fraction(&self) -> Option<f32> {
-        self.0
-            .measured
-            .load(Ordering::Acquire)
-            .then(|| f32::from_bits(self.0.fraction.load(Ordering::Relaxed)))
+        self.0.measured.load(Ordering::Acquire).then(|| f32::from_bits(self.0.fraction.load(Ordering::Relaxed)))
     }
 
     pub fn current_stage(&self) -> Option<Label> {
@@ -231,7 +228,11 @@ impl Workers {
     {
         let cancel = Cancel::new();
         let progress = Progress::new();
-        let shared = Arc::new(Shared { started: AtomicBool::new(false), finished: AtomicBool::new(false), result: Mutex::new(None) });
+        let shared = Arc::new(Shared {
+            started: AtomicBool::new(false),
+            finished: AtomicBool::new(false),
+            result: Mutex::new(None),
+        });
         let job_cancel = cancel.clone();
         let job_progress = progress.clone();
         let job_shared = shared.clone();

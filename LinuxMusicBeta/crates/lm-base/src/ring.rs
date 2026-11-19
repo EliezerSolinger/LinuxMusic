@@ -6,7 +6,7 @@
 //! it as dropped (and reports it) or stops the operation with an explicit error. Rings that carry ownership must never
 //! be allowed to fill (T9): size them for the maximum that can be in flight.
 
-pub use rtrb::{chunks, Consumer, PopError, Producer, PushError};
+pub use rtrb::{Consumer, PopError, Producer, PushError, chunks};
 
 /// A ring of `capacity` slots
 pub fn ring<T>(capacity: usize) -> (Producer<T>, Consumer<T>) {
