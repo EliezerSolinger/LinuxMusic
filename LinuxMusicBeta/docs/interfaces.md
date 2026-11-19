@@ -74,7 +74,7 @@ O desenho de F2 está aqui para a base nascer com a forma certa, mas ninguém im
 | 25 | Plugin → a própria janela (osciloscópio, espectro) | F2 | I-9.5 |
 | 26 | Plugins de terceiros fora do processo | F2 | I-9.6 |
 | 27 | Gravação de automação | F2 | I-6.4 |
-| 28 | **Controle e gerência remotos** (outro programa, outro computador, o `lm-headless` como serviço): um protocolo próprio, separado da interface Rust | F2 | I-20 |
+| 28 | **Modo cliente e controle remoto**: a mesma interface sobre a `RemotePort`; ferramentas externas num subconjunto estável | F2 (a porta é F1) | I-15, I-20 |
 
 ---
 
@@ -954,29 +954,83 @@ pub struct Notice {
 
 Fila da `Session`. A interface mostra; o `lm-headless` imprime. O núcleo nunca escreve texto pronto.
 
-## I-15. A fronteira com a interface gráfica (F1) (S3, D6)
+## I-15. A fronteira com a interface gráfica: o `CorePort` (F1) (S3, D6)
 
-- **A interface é dona da `Session`.** Ela a guarda no estado do aplicativo, numa entidade da GPUI, e chama os métodos dela nos
-  próprios eventos.
-- A cada quadro:
-  1. `session.pump()`;
-  2. cada vista drena os seus `Feed`s e redesenha o que mudou;
-  3. lê o `loading(target)` dos seus alvos;
-  4. lê a telemetria (`session.meters()`, `session.position()`).
-- **A interface só usa:** `transact`, os gestos, `run_action`, `param_write`, `feed`, `find` e os `Refs`,
-  `loading`/`activity`/`cancel`, os avisos, os picos e a leitura dos dados ao vivo do plugin (F2). Ela não guarda
-  ponteiro para nada do núcleo: só ids, `Feed`s, `GestureId`s e `OperationHandle`s.
-- **A biblioteca é a GPUI** (decisão do usuário, 19/11). A `Session` vive numa entidade da GPUI, e o `pump` roda num
-  timer do laço de eventos dela.
-- **A interface gráfica fala Rust com o núcleo** (decisão do usuário, 19/11): fechamentos, referências emprestadas e
-  chamadas diretas, no mesmo processo. **Ela não é um protocolo** e não precisa ser serializável. O protocolo de
-  gerência e de rede (I-20) é outro contrato, separado.
-- **O protótipo da GPUI** (antes, "de escolha da biblioteca"; agora só valida a GPUI com o núcleo) é escrito contra um núcleo de mentira com essa mesma superfície:
-  - 64 faixas com formas de onda;
-  - rolagem e zoom;
-  - 64 medidores;
-  - botões giratórios com gestos;
-  - **o componente de carregamento**, num recurso com atraso injetado.
+**Decisão do usuário (19/11): o LinuxMusicBeta funciona como servidor e como cliente de rede.** No modo local, a
+interface e o núcleo estão no mesmo processo e conversam direto. No modo cliente, a interface roda num computador e
+o núcleo noutro (o `lm-headless serve`, I-20.7), que é quem toca e grava; a interface conversa com ele pela rede. O
+som sai sempre na máquina do núcleo (não há áudio pela rede).
+
+**Uma interface só, uma porta com duas implementações:**
+
+```rust
+/// Everything the GUI may do with the core. Arguments and results are DATA (no closures, no references into the
+/// core), so the same calls work in-process and over the network
+pub trait CorePort {
+    fn pump(&mut self);                                        // each frame and on the 10 ms timer (H2)
+    // Reading: from the port's mirror of the tree (in-process: the document's own root)
+    fn root(&self) -> &Value;
+    fn find(&self, id: NodeId) -> Option<Value>;
+    fn feed(&mut self, topic: Topic) -> Feed;                  // pulled each frame (I-3.6)
+    // Changing: edits as data (EditOp, below), actions by id, gestures by id
+    fn apply(&mut self, label: Label, ops: Vec<EditOp>) -> Pending<Applied>;
+    fn run_action(&mut self, action: ActionId, params: Value) -> Pending<()>;
+    fn undo(&mut self) -> Pending<()>;
+    fn redo(&mut self) -> Pending<()>;
+    fn begin_gesture(&mut self, label: Label) -> GestureId;
+    fn gesture_apply(&mut self, g: &GestureId, ops: Vec<EditOp>);
+    fn gesture_commit(&mut self, g: GestureId);
+    fn gesture_cancel(&mut self, g: GestureId);
+    fn param_write(&mut self, node: NodeId, param: &str, value: f32);   // live, while dragging
+    // Long operations, notices, telemetry, heavy data
+    fn loading(&self, target: &Target) -> Loading;
+    fn activity(&self) -> Vec<OperationInfo>;
+    fn cancel(&mut self, op: OperationId);
+    fn notices(&mut self) -> Vec<Notice>;
+    fn telemetry(&self) -> &TelemetryView;                     // meters and position, interpolated
+    fn peaks(&mut self, resource: &Resource, level: u8, from: i64, to: i64) -> Pending<PeakBlock>;
+    fn display(&self, node: NodeId) -> Option<DisplayView>;   // a plugin's live data (F2)
+}
+
+/// A result that may not be there yet: in-process it is ready at once; over the network it arrives in a later pump
+pub enum Pending<T> { Ready(Result<T>), Waiting(RequestId) }
+```
+
+- **`LocalPort`** (F1): dona da `Session`, no mesmo processo. Cada método é uma chamada Rust direta com os valores
+  Rust, **sem serializar nada**: a eficiência de "conversar por código" fica toda. Por dentro, ela transforma uma
+  `EditOp` numa `transact` com fechamento; o código do núcleo (as ações, as edições pesadas, os testes) continua
+  usando fechamentos.
+- **`RemotePort`** (F2): os mesmos dados, serializados pelo protocolo (I-20). Ela mantém um **espelho da árvore**,
+  atualizado pelas diferenças que o servidor manda, então ler (`root`, `find`, os `Refs`, os `Feed`s) é local e
+  imediato também no modo cliente. Só as mudanças esperam a resposta do servidor (`Pending`); o arrasto de um botão
+  vai pela `param_write` e pelo gesto sem esperar ninguém.
+- **A interface só conhece o `CorePort`.** Ela não guarda ponteiro para nada do núcleo: só ids, `Feed`s,
+  `GestureId`s, `OperationId`s e `Pending`s. **Nenhum método da porta recebe fechamento**: é isso que permite a
+  mesma interface nos dois modos (este ponto substitui a regra anterior de "a interface fala por fechamentos").
+
+```rust
+/// One edit as data (the port's and the protocol's form; the core turns a list into one transact)
+pub enum EditOp {
+    Set { id: Ref, path: Vec<PathStep>, value: Value },
+    Insert { temp: u32, parent: Ref, list: String, index: usize, node: Value },
+    Remove { id: Ref },
+    Move { id: Ref, parent: Ref, list: String, index: usize },
+    AddNote { temp: u32, item: Ref, note: Value },
+    SetNote { item: Ref, n: NoteRef, path: Vec<PathStep>, value: Value },
+    RemoveNote { item: Ref, n: NoteRef },
+}
+pub enum Ref { Id(NodeId), Temp(u32) }          // Temp: a node created earlier in the same list
+pub enum NoteRef { N(u64), Temp(u32) }
+pub struct Applied { pub diff: Diff, pub created: Vec<(u32, NodeId)>, pub notes: Vec<(u32, u64)> }
+```
+
+- Edições pesadas (quantizar, colar) são ações com parâmetros (`"notes.quantize" { item, grid }`), que rodam no
+  núcleo (I-19, H7).
+- **A biblioteca é a GPUI.** A porta vive numa entidade da GPUI, e o `pump` roda num timer do laço de eventos dela.
+- **Testes:** o mesmo roteiro de interface roda contra a `LocalPort` e contra a `RemotePort` ligada a um servidor no
+  mesmo processo (por um socket local), e tem que dar a mesma árvore e os mesmos `Diff`s.
+- **O protótipo** é escrito contra um núcleo de mentira que já tem a forma do `CorePort` (dados nos argumentos, sem
+  fechamentos), para a interface de verdade nascer sobre ele.
 
 ## I-16. A sessão (F1) (R6, S15, S16)
 
@@ -1086,20 +1140,17 @@ pub struct ActionContext<'s> { /* transact, undo/redo, commands (transport), sta
 
 ## I-20. Controle e gerência remotos (F2)
 
-**Decisão do usuário (19/11): o protocolo externo não é a interface Rust.** Dentro do programa, a interface gráfica
-conversa com o núcleo por código (I-15), que é o mais eficiente. Para fora (outro programa, outro computador, um
-script, um painel de administração, uma superfície de controle, um agente de IA), há **um protocolo próprio**,
-desenhado para quem está fora:
-- **só dados**: mensagens serializáveis, versionadas, sem nada que dependa da forma interna do código;
-- **estável**: a interface Rust pode mudar à vontade entre versões; o protocolo só muda com versão nova e
-  compatibilidade escrita;
-- **menor e mais grosso**: expõe o que faz sentido de fora (ações, operações de edição, gerência, assinaturas,
-  telemetria em taxa reduzida), e não cada detalhe que a interface gráfica usa;
-- **com papéis e limites** (I-20.6), que a interface local não precisa.
+**O protocolo de rede é a `RemotePort` do I-15** (decisão do usuário, 19/11): a interface gráfica remota usa
+exatamente a superfície do `CorePort`. Ele tem dois públicos:
+- **a interface gráfica remota**, que usa a porta inteira e exige a **mesma versão** do programa no cliente e no
+  servidor (o aperto de mão confere; versões diferentes recusam com mensagem clara);
+- **ferramentas externas** (scripts, painéis, superfícies de controle, agentes de IA), que usam um **subconjunto
+  estável e versionado** (ações, edições, gerência, assinaturas e telemetria em taxa reduzida), com compatibilidade
+  escrita entre versões.
 
-O `lm-remote` é um **tradutor**: cada mensagem do protocolo vira chamadas internas (uma `EditOp` vira um
-`transact` com fechamento; um pedido de ação vira `run_action`), e cada resposta é montada a partir do que o núcleo
-devolveu.
+O `lm-remote` traduz cada mensagem para chamadas da `LocalPort` do servidor, e é por isso que o comportamento é o
+mesmo nos dois modos. Papéis e limites (I-20.6) valem para os dois públicos; a interface gráfica remota pede o papel
+"administrar".
 
 ### I-20.1 O pacote e a thread
 
@@ -1135,29 +1186,7 @@ lm-remote    o servidor do protocolo                                            
 | Dados grandes | picos de um recurso por intervalo; enviar um arquivo para importar (vira uma `Operation` de importação) |
 | Gerência | listar, abrir, criar, salvar e fechar projetos; estado da sessão (tocando, gravando, xruns, carga do render, espaço em disco); dispositivos e preferências; a sequência de saída (U13); registro de eventos; um `health` para monitoramento |
 
-**As edições no protocolo** (revisão R-a, agora só aqui):
-
-```rust
-/// One serializable edit, addressed by id and path (protocol only; lm-remote turns a list into one transact)
-pub enum EditOp {
-    Set { id: Ref, path: Vec<PathStep>, value: Value },
-    Insert { temp: u32, parent: Ref, list: String, index: usize, node: Value },
-    Remove { id: Ref },
-    Move { id: Ref, parent: Ref, list: String, index: usize },
-    AddNote { temp: u32, item: Ref, note: Value },
-    SetNote { item: Ref, n: NoteRef, path: Vec<PathStep>, value: Value },
-    RemoveNote { item: Ref, n: NoteRef },
-}
-/// A node that exists, or one created earlier in the same list (so a later op can point at it)
-pub enum Ref { Id(NodeId), Temp(u32) }
-pub enum NoteRef { N(u64), Temp(u32) }
-/// The answer to `apply`: the diff, and the ids given to what was created (temp → NodeId, temp → note number)
-pub struct Applied { pub diff: Diff, pub created: Vec<(u32, NodeId)>, pub notes: Vec<(u32, u64)> }
-```
-
-- Uma lista de `EditOp` vira **uma** transação, aplicada em ordem e recusada inteira em qualquer erro.
-- Edições pesadas (quantizar, colar) são ações nomeadas com parâmetros (`"notes.quantize" { item, grid }`), que rodam
-  dentro do núcleo.
+**As edições no protocolo** são as `EditOp` do I-15.
 
 ### I-20.4 Dados pesados: formas de onda, medidores, displays de plugin
 

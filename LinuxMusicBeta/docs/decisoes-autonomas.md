@@ -195,3 +195,15 @@ de forma diz pelo que é substituído.
   automação de parâmetros que deixaram de existir, com aviso.
 - **Campos acrescentados ao esquema:** `track.folder`, `track.collapsed`, `track.channels`, `transport.metronome`,
   `item.timebase` e `item.mute`.
+
+## Servidor e cliente (decisão do usuário, 19/11)
+
+- **O LinuxMusicBeta funciona como servidor e como cliente de rede.** Local: a interface fala direto com o núcleo no
+  mesmo processo. Cliente: a mesma interface fala com um núcleo remoto pela rede; o som sai na máquina do núcleo.
+- **Por isso a interface fala com o núcleo por uma porta (`CorePort`) cujos métodos recebem dados**, não
+  fechamentos: a `LocalPort` chama direto, sem serializar (a eficiência fica), e a `RemotePort` manda os mesmos dados
+  pela rede, com um espelho local da árvore para as leituras. Isso substitui a regra anterior de "a interface fala por
+  fechamentos"; os fechamentos continuam dentro do núcleo.
+- **O protocolo de rede é a `RemotePort`**: completo para a interface remota (mesma versão exigida) e um subconjunto
+  estável para ferramentas externas.
+
