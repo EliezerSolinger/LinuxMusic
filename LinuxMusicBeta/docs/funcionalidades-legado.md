@@ -1417,9 +1417,10 @@ linhas só de registro (a paleta de comandos e a exportação rápida/exata), qu
 | 12. Outros (F-GER) | 15 | 5 | 5 | 3 | 2 |
 | **Total** | **448** | **202** | **172** | **42** | **30** |
 
-Na seção 7, cada plugin conta como uma linha, mas carrega dezenas de parâmetros: são **24 instrumentos internos, 3
-hospedeiros de instrumento, 30 efeitos internos (97 unidades do Guitarix contadas como um) e 4 hospedeiros/infraestrutura
-de efeito**.
+Na seção 7, cada plugin conta como uma linha, mas carrega dezenas de parâmetros: são **23 instrumentos internos (mais o
+instrumento fantasma), 3 hospedeiros de instrumento, 27 efeitos internos (2 já aposentados; o Guitarix conta como um,
+com 97 unidades), a ferramenta Tap Tempo, os hospedeiros LADSPA, LV2 e VST2 e a infraestrutura comum** (cadeia,
+navegador, categorias, conector de pinos, proteção contra quedas).
 
 ## Perguntas em aberto
 
