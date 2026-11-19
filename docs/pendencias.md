@@ -579,6 +579,21 @@ queda do Mallets, que é queda e entra antes.
       RTNeural), que não estão instalados; baixar pede a sua aprovação;
     - não vêm, por serem ferramentas do programa Guitarix e não efeitos do rack (o LinuxMusic tem as suas): afinador,
       osciloscópio, looper, gravador, sequenciador de bateria, metrônomo e o medidor de VU como unidade.
+- [ ] **Ciclo de vida e memória: a mudança geral primeiro (decisão do usuário, 19/11).** O plano está em
+  `docs/plano-ciclo-de-vida.md` (o desenho é da sessão linuxmusic-2a; a implementação é desta), na ordem dele:
+  1. redes de proteção: o `AudioThreadAllocationTest` estendido (parâmetros mexidos enquanto toca, troca de preset,
+     mais notas que as vagas, Patman, os cenários do documento), o teste de ciclo de vida do motor, as regras de
+     busca e o clang-tidy;
+  2. ciclo de vida em fases (criado → publicado → retirado → destruído) e `retire()`: a retirada feita pela base
+     antes de qualquer destrutor; Track e Clip primeiro (o crash do Piano Roll ao apagar a faixa com o clipe aberto
+     sai daqui), depois Plugin, PlayHandle, Controller, AudioBusHandle e o canal do mixer;
+  3. referências com geração aos play handles (`PlayHandleRef`);
+  4. a ligação vista ↔ modelo tipada (`ModelView<T>`);
+  5. a caixa de correio do áudio para a interface, as asserções de thread e as ações adiadas da trava;
+  6. menos globais (contínuo);
+  7. o contrato de tempo real dos plugins.
+  Cada fase com testes e a validação completa; os bugs concretos do fim do documento caem com as fases (marcados lá
+  com o commit).
 - [ ] **Estados de carregamento em todo o sistema (pedido do usuário, 18/11):** o programa mostra estados inválidos nos
   intermediários (algo pela metade enquanto carrega); onde houver espera, mostrar que está carregando (um spinner etc.)
   em vez do estado intermediário. Primeiro levantar todos os lugares (abrir projeto, trocar instrumento, carregar
