@@ -8,7 +8,7 @@ quando passa no critério de "pronto quando" de `interfaces.md` (Parte 4). As de
 |---|---|---|---|
 | 1 | `lm-base` | sessão de design | **feito** (19/11): `Main`, `Role`, `Error`/`Label`, `Cancel`/`Progress`/`Phase`/`OperationHandle`/`Workers`, anéis, `HostTime`/`Clock`; 16 testes; `loom` do par terminar/consultar no CI |
 | 2 | `lm-state` | agente | a fazer |
-| 3 | `lm-time` | agente | a fazer |
+| 3 | `lm-time` | agente | **feito** (19/11): `Bpm` racional exato (texto decimal, 1–1000, 6 casas), `Ppq`, `TimeSignature`, `TempoMap` com saltos e **rampas lineares no tempo** (exatas, inteiros de 256 bits próprios), `tick_at` = último tique iniciado (inverso exato de `sample_at`, meio-par), `segments_in`, `ticks_in`, compasso:tempo:tique com mudanças de fórmula, `relocate` (H9); sem dependências além do `lm-base`; 43 testes (mapas sorteados, referência independente, 24 h de blocos) |
 | 4 | `lm-doc` | agente | a fazer (depende do 2) |
 | 5 | `lm-render` | agente | a fazer |
 | — | `lm-dsp` (códigos de efeito do legado, com A/B) | sessão de implementação | em andamento |
