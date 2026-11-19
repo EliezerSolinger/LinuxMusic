@@ -39,6 +39,12 @@ ryu = "1"
 blake3 = "1"
 # System
 rustix = { version = "1", default-features = false, features = ["std", "time"] }
+# lm-sys-alsa and lm-sys-linux (Linux only): the C types and calls of the system (poll, eventfd, sched, mlock, rlimit)
+libc = "0.2"
+# lm-sys-linux (Linux only): D-Bus for rtkit, logind and ReserveDevice1, pure Rust (decisoes-autonomas.md). zbus 6 has
+# no `blocking` module any more: the crate drives it with `zbus::block_on` on its own thread, which is the blocking
+# mode of the decision. `service` serves the ReserveDevice1 object; no proxies (the calls are written by hand).
+zbus = { version = "6", default-features = false, features = ["default-rt", "service"] }
 # DSP math (deterministic across distributions, V2)
 libm = "0.2"
 # Verification
@@ -50,6 +56,8 @@ lm-state = { path = "crates/lm-state" }
 lm-time = { path = "crates/lm-time" }
 lm-doc = { path = "crates/lm-doc" }
 lm-render = { path = "crates/lm-render" }
+lm-sys-alsa = { path = "crates/lm-sys-alsa" }
+lm-sys-linux = { path = "crates/lm-sys-linux" }
 
 [profile.dev]
 # Audio code is unusable without some optimisation; debug info stays
