@@ -1,6 +1,6 @@
 # Funcionalidades do legado (LinuxMusic, fork do LMMS)
 
-Estado: **em escrita** (19/11). Este documento é o inventário de tudo o que o programa antigo (`legado/`) faz. Ele
+Estado: **completo** (19/11), lido no código do legado por áreas. Este documento é o inventário de tudo o que o programa antigo (`legado/`) faz. Ele
 serve a duas coisas:
 
 1. **Referência para quem prototipa as telas** do programa novo (`LinuxMusicBeta`, Rust + GPUI).
@@ -33,7 +33,7 @@ Tudo aqui foi lido no código do legado (`legado/src`, `legado/plugins`, `legado
 
 | Prefixo | Seção |
 |---|---|
-| F-JAN | 1. Janelas, páginas e painéis (a casca do programa) |
+| F-JAN, F-IJN | 1. A casca do programa (páginas, menus, transporte) e a janela do instrumento |
 | F-NOT, F-ARR, F-REG, F-PAD, F-AUT, F-PAS | 2. Edição: notas, arranjo, régua e marcadores, padrões, curvas, gravação por passos |
 | F-TRK | 3. Faixas |
 | F-CLP | 4. Clipes e itens |
@@ -48,7 +48,87 @@ Tudo aqui foi lido no código do legado (`legado/src`, `legado/plugins`, `legado
 
 ---
 
-<!-- A seção 1 entra acima da 2 quando o levantamento terminar. -->
+## 1. A casca do programa: páginas, menus, transporte, janela do instrumento
+
+No legado há uma janela só, com uma barra no topo (Salvar, o transporte no centro, e a troca de página
+Composição | Mixagem | engrenagem), três páginas e janelas flutuantes por cima. Não há barra de status. O programa
+novo decidiu: **Composição e Mixagem são páginas separadas**, com abas no topo e um atalho, e a barra de transporte
+aparece nas duas (`decisoes-autonomas.md`). O resto da disposição é repensado.
+
+### 1.1 Páginas, painéis e janelas (hoje: `src/gui/MainWindow.cpp`, `DockPanel.cpp`, `SubWindow.cpp`, `SideBarWidget.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-JAN-001 | Página Composição | Arranjo e editor de padrões em abas em cima; editor de notas e de automação em abas embaixo; rack de controladores e notas do projeto em abas à direita (começa recolhida) | core (a página; a disposição é repensada) |
+| F-JAN-002 | Página Mixagem | A mesa inteira; Ctrl+5 alterna Composição ↔ Mixagem | core |
+| F-JAN-003 | Página Configurações | As configurações como página (engrenagem, Ctrl+,); sair dela aplica; abre sozinha na primeira execução e quando o dispositivo de áudio falha | core (design 8 aprovado) |
+| F-JAN-004 | Dois navegadores | O da Composição (instrumentos, favoritos, projetos, amostras, presets, arquivos do projeto) e o da Mixagem (efeitos), cada um só na sua página; à esquerda ou à direita (configuração, ao vivo); Ctrl+8 mostra/esconde | core |
+| F-JAN-005 | Recolher uma área | Um botão recolhe a área de abas de cima ou de baixo até a barra de abas, lembrando a altura; abrir de novo um editor já aberto recolhe a área dele | 1.0 |
+| F-JAN-006 | Janelas flutuantes | Janelas de instrumento e de efeito flutuam sobre as páginas; arrastar o fundo move todas; cada uma pode **sair para uma janela própria do sistema** (destacar) e voltar; "Destacar todas" (Ctrl+Shift+D) e "Encaixar todas" (Ctrl+Alt+Shift+D); comportamento ao fechar uma destacada (configuração); posição, tamanho e visibilidade salvos no projeto | 1.0 (a posição vai para `interface.json`) |
+| F-JAN-007 | Título da janela | "<projeto>[*] - LinuxMusic <versão>", "Sem título", e "Sessão recuperada. Salve o seu trabalho!" | core |
+| F-JAN-008 | Botão Salvar pisca no autosave | Duas piscadas lentas quando o autosave escreve | 1.0 |
+| F-JAN-009 | Perguntar antes de perder mudanças | Novo/Abrir/Sair: Salvar / Descartar / Cancelar; texto próprio para sessão recuperada | core |
+| F-JAN-010 | Ao fechar | Fecha as configurações, manda para a lixeira as mídias geradas que o projeto não usa, termina o autosave, apaga o arquivo de recuperação | core (sem a lixeira: P-13) |
+| F-JAN-011 | Dicas (tooltips) | Em quase todo controle; podem ser desligadas (ao vivo) | 1.0 |
+| F-JAN-012 | Teclas globais | Espaço toca/para o último editor tocado; Shift+Espaço pausa; com uma janela de instrumento na frente, o teclado do computador toca notas; senão R grava e C liga o loop | core |
+| F-JAN-013 | Mensagens flutuantes | Avisos curtos que somem (projeto salvo, carregando amostra, dicas) | core (avisos, I-14) |
+| F-JAN-014 | Fundo com imagem | Imagem de fundo da área das janelas (sem opção na tela) | obsoleto — sem tela no legado; o tema novo é dado |
+
+### 1.2 Menus e atalhos (hoje: `MainWindow.cpp`, `src/gui/Shortcuts.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-JAN-020 | Arquivo | Novo (Ctrl+N) · Novo a partir de modelo ▸ · Abrir (Ctrl+O) · Recentes ▸ · Salvar (Ctrl+S; sem nome vira Salvar como) · Salvar como (Ctrl+Shift+S) · Salvar como nova versão (Ctrl+Alt+S) · Salvar como modelo padrão · Importar (MIDI) · Importar arquivos de áudio (cada um numa faixa, no compasso do cursor) · Exportar (Ctrl+E) · Exportar faixas (Ctrl+Shift+E) · Exportar MIDI (Ctrl+M) · Sair (Ctrl+Q) | core (as ações; detalhes na seção 9) |
+| F-JAN-021 | Editar | Desfazer (Ctrl+Z) · Refazer (Ctrl+Shift+Z / Ctrl+Y) · Escalas e mapas de teclas · Configurações (Ctrl+,) | core |
+| F-JAN-022 | Ver | Arranjo Ctrl+1 · Padrões Ctrl+2 · Notas Ctrl+3 · Automação Ctrl+4 · Mixagem Ctrl+5 · Controladores Ctrl+6 · Notas do projeto Ctrl+7 · Navegador Ctrl+8 · Tela cheia F11 · Destacar/Encaixar todas · Rolagem suave · Nomes das notas no editor de notas | core (os atalhos de página); o resto 1.0 |
+| F-JAN-023 | Ferramentas | Uma entrada por plugin de ferramenta (hoje só o Tap Tempo) | 1.0 |
+| F-JAN-024 | Ajuda | Ajuda online (abre a documentação do LMMS) · Sobre | aberto (P-34): ajuda de quem? |
+| F-JAN-025 | Atalhos configuráveis | 9 ações com tecla mudável nas configurações: Gravar R · Loop C · Dividir no cursor S · Marcador M · Região sobre o loop Shift+R · Copiar · Cortar · Colar no cursor · Duplicar Ctrl+D. Os outros atalhos são fixos | core — no novo **todo** atalho é configurável (ações como dado, item 6) |
+| F-JAN-026 | Paleta de comandos | Não existe no legado | (novo, Ctrl+K; só para registro) |
+
+### 1.3 Barra de transporte (hoje: `src/gui/TransportBar.cpp`; o design 3 aprovado vale)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-JAN-040 | Ao início | Leva o cursor ao 0 (tocando, continua do início) | core |
+| F-JAN-041 | Parar, Tocar/Pausar | Tocar/pausar a **música** (Espaço) | core |
+| F-JAN-042 | Gravar | Ver F-REC-020 a F-REC-029; com o menu da seta | core |
+| F-JAN-043 | Loop | Liga/desliga o loop da régua (C), sincronizado com a régua | core |
+| F-JAN-044 | Relógio de posição e relógio de tempo | Um grande e um pequeno; clicar escolhe o formato de cada um (lembrado): compassos e tempos "BBB.b.ttt" (segue as fórmulas do mapa), minutos e segundos, amostras (exato tocando), timecode SMPTE 30 fps; a borda do grande tem a cor do estado | core |
+| F-JAN-045 | Estado em palavra | Ver F-REC-026 | core |
+| F-JAN-046 | Andamento | Arrastar para cima/baixo (1 BPM a cada 3 px), roda ±1 (Shift ±10), duplo clique digita; clique abre o menu: digitar, **bater o andamento** (média das últimas 8, recomeça depois de 2 s), "mudar o andamento a partir do cursor (mapa)" | core |
+| F-JAN-047 | Fórmula de compasso | Botão "N/D" que abre o editor de numerador e denominador | core |
+| F-JAN-048 | Metrônomo, pré-roll, contagem | Ver F-REC-023 a F-REC-025 | core |
+| F-JAN-049 | Mudo do master | Ver F-MIX-015 | 1.0 |
+| F-JAN-050 | Medidores CPU e OUT | Duas barras: carga do áudio e nível RMS do master; vermelho acima de 95 % | core |
+| F-JAN-051 | Volume e transposição geral do projeto | O projeto ainda salva volume (0–200) e transposição (−12–12) sem nenhum controle na tela; a transposição vale para as faixas com "usar a transposição geral" | aberto (P-37) |
+
+### 1.4 Janela do instrumento (hoje: `src/gui/instrument/`; o design 5 aprovado vale)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-IJN-001 | Cabeçalho | Nome da faixa (renomeia ao vivo); setas para ir ao instrumento anterior/seguinte na mesma janela; mudo, solo | core |
+| F-IJN-002 | VOL, PAN, PITCH, RANGE, CHAN | Volume 0–400 %, 100 · Pan −100–100 · Afinação ±100 cents, 0 · Faixa de pitch bend 1–60 semitons, 2 · Canal do mixer (escolher ou novo) | core (volume, afinação, faixa de bend, destino) · obsoleto: pan |
+| F-IJN-003 | Salvar preset da faixa | Grava a faixa (instrumento e ajustes, sem mudo/solo) num `.xpf` em `<presets>/<instrumento>/` | 1.0 (no novo, um preset é uma árvore num arquivo; `.xpf` velhos: P-09) |
+| F-IJN-004 | Soltar na janela | Um instrumento do navegador troca o instrumento; um `.xpf` carrega; um arquivo de plugin (SoundFont, `.xiz`) carrega com o plugin certo, trocando se precisar | core |
+| F-IJN-005 | A janela lembra a aba, o tamanho e a posição; o teclado do computador toca | | 1.0 |
+| F-IJN-006 | Aba do plugin | A tela própria de cada instrumento (seção 7) | core |
+| F-IJN-010 | Envelopes e LFOs | Três alvos: VOLUME, CORTE, RESSONÂNCIA. Envelope: Pré-atraso 0–2, 0 · Ataque 0–2, 0 · Hold 0–2, 0,5 · Decay 0–2, 0,5 · Sustain 0–1, 0,5 · Release 0–2, 0,1 · Quantidade −1–1, 0 (os tempos seguem uma curva exponencial até 5 s por segmento). LFO: Pré-atraso 0–1 · Ataque 0–1 · Velocidade 0,001–1, 0,1, sync · Quantidade −1–1, 0 · Forma: senoide, triângulo, serra, quadrada, aleatória, **do usuário** (soltar uma amostra) · "FREQ × 100" · "o LFO controla a quantidade do envelope". Clicar no gráfico alterna a quantidade 0 ↔ 1; o gráfico do envelope tem a escala Dinâmica / Absoluta / Relativa | 1.0 |
+| F-IJN-011 | Filtro | Liga · Tipo (os 22 do DualFilter, F-FX-013) · Corte 1–14000 Hz, 14000 · Ressonância mín–10, 0,5 | 1.0 |
+| F-IJN-012 | Aviso de instrumento que não aceita | "Envelopes, LFOs e filtros não valem para este instrumento" (fluxo único), ou parcial | 1.0 |
+| F-IJN-013 | Empilhar acordes | Liga · Acorde (tabela abaixo) · Extensão 1–9 oitavas, 1 | 1.0 |
+| F-IJN-014 | Mono, legato e glide | Liga · Legato (ligado: a voz vai para a nota nova sem recomeçar) · Glide 0–2000 ms, 0 | 1.0 (o `VoicePool` tem poly, mono e legato) |
+| F-IJN-015 | Arpejo | Liga · Acorde · Extensão 1–9 oitavas · Repetições 1–8 · Ciclo 0–6 notas · Pular 0–100 % · Faltar 0–100 % · Tempo 25–2000 ms, 200, sync · Gate 1–200 %, 100 · Direção: sobe, desce, sobe e desce, desce e sobe, aleatória · Modo: livre, ordenado, sincronizado | 1.0 |
+| F-IJN-016 | Tabela de acordes e escalas | 95 entradas: oitava, maior, menor, sus, aum, dim, 6, 7, 9, 11, 13 e variantes; e as escalas maior, menores harmônica e melódica, tons inteiros, diminuta, pentatônicas, bebop, blues, árabe, enigmática, napolitanas, húngara, os modos gregos, cromática, persa etc. Usada também no editor de notas | 1.0 |
+| F-IJN-017 | MIDI | Entrada: liga, canal 0–16 (0 = todos), velocidade fixa −1–127 (−1 = não). Saída: liga, canal, velocidade fixa, programa 1–128, nota fixa. Dispositivos de entrada e saída (clientes tipo sequenciador). Velocidade base 1–127, 63 (essa velocidade = 100 %) | 1.0 (saída MIDI de faixa: P-38) |
+| F-IJN-018 | Transposição geral | Liga (padrão): a faixa segue a transposição do projeto | aberto (P-37) |
+| F-IJN-019 | Microafinador | Liga · Escala ativa (10 posições por projeto) · Mapa de teclas ativo (10) · "Importar as faixas de nota do mapa" (ligado). Não vale para instrumentos MIDI | 1.0 |
+| F-IJN-020 | Editor de escalas e mapas | Por escala: descrição, carregar/salvar `.scl` (Scala), intervalos em texto (cents com ponto, ou razão), aplicar com validação. Por mapa: descrição, carregar/salvar `.kbm`, graus por tecla (x = sem som), primeira e última tecla, tecla do meio (C4), nota base (A4), frequência base 0,1–9999,999 Hz (440) | 1.0 |
+| F-IJN-021 | Teclado na janela | Clique toca (velocidade pela altura do clique), arrasto desliza; marcadores de nota base (A4), primeira e última nota, que se arrastam e se automatizam; teclas fora da faixa apagadas | core (tocar) · 1.0 (marcadores) |
+| F-IJN-022 | Teclado do computador como piano | Fileira de baixo Z S X D C V G B H N J M , L . ; / e fileira de cima Q 2 W 3 E R 5 T 6 Y 7 U I 9 O 0 P [ = ] (duas oitavas e pouco), pela posição da tecla; perder o foco solta todas | core |
+| F-IJN-023 | Aba de efeitos da faixa | A cadeia de efeitos da faixa | obsoleto — os efeitos moram no canal da mesa (F-FX-002) |
+| F-IJN-024 | Janela da faixa de amostra | Nome, mudo, solo, volume, pan, canal, efeitos | obsoleto — faixa única |
+| F-IJN-025 | Rack de CC MIDI | Por faixa: liga (desligado) e 128 botões CC 0–127 que mandam CC ao instrumento; automatizáveis | 1.0 |
 
 ## 2. Edição
 
@@ -252,7 +332,6 @@ tipo do legado faz e para onde vai.
 | F-CLP-082 | Abrir, limpar, nome, espelhar | Duplo clique abre o editor; Limpar; nome padrão = o do controle; espelhar vertical/horizontal | core (abrir) · 1.0 (o resto) |
 | F-CLP-083 | Tamanho | No mínimo 1 compasso | obsoleto — a lane do parâmetro cobre a música inteira |
 
-<!-- (A seção 4.6 "Itens que seguem o andamento" está em F-REC-090.) -->
 
 ## 5. Gravação
 
@@ -968,7 +1047,7 @@ Regras gerais do legado que valem para quase todo plugin:
   passa-banda czpg, notch, all-pass, Moog, 2× passa-baixa, RC passa-baixa/banda/alta 12 dB, RC passa-baixa/banda/alta
   24 dB, formante vocal, 2× Moog, SV passa-baixa/banda/alta/notch, formante rápido, Tripole) · Corte 1–20000 Hz,
   7000 · Ressonância mín–10, 0,5 · Ganho 0–200 %, 100. Mix −1 (só o 1) a +1 (só o 2), 0.
-- Os mesmos 22 tipos são os do filtro da janela do instrumento (F-INS, seção 1).
+- Os mesmos 22 tipos são os do filtro da janela do instrumento (F-IJN-011).
 
 #### F-FX-014 DynamicsProcessor (curva de dinâmica desenhada) — 1.0
 
@@ -1211,3 +1290,181 @@ Regras gerais do legado que valem para quase todo plugin:
 #### F-FX-039 Exportar MIDI — 1.0
 
 - Descrito em F-PRJ (seção 9). Código em `plugins/MidiExport/`.
+
+## 8. Automação e controladores
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-CTL-001 | Rack de controladores | Lista dos controladores do projeto; "Adicionar" cria um LFO (único tipo que se adiciona ali); os Peak Controllers aparecem quando o efeito é criado; cada um: abrir os controles, renomear (duplo clique), mover acima/abaixo (Alt+↑/↓), remover (avisa se tem ligações, "não dá para desfazer") | `src/gui/ControllerRackView.cpp` | 1.0 |
+| F-CTL-002 | LFO controlador | Base 0–1, 0,5 · Velocidade 0,01–20, 2, sync · Quantidade −1–1, 1 · Fase 0–360°, 0 · Forma: senoide, triângulo, serra, quadrada, serra Moog, exponencial, ruído branco, do usuário (duplo clique escolhe o arquivo) · Multiplicador ×1 / ×100 / ÷100 | `src/core/LfoController.cpp` | 1.0 |
+| F-CTL-003 | Peak controller | Ver F-FX-023 | `src/core/PeakController.cpp` | 1.0 |
+| F-CTL-004 | Ligar um controle a um controlador ou ao MIDI (MIDI learn) | Janela de conexão: controlador MIDI (canal, número do CC, "**detectar automaticamente**": o próximo CC que chegar define os dois, dispositivos de entrada) ou um controlador do projeto; função de mapeamento (só um texto, não implementada); recusa laços | `src/gui/modals/ControllerConnectionDialog.cpp` | 1.0 |
+| F-CTL-005 | Menu de todo controle | Voltar ao padrão (mostra o valor), copiar o valor, colar o valor, tirar as ligações com outros controles, conectar a um controlador / editar ou tirar a conexão; nos botões: escala linear ou logarítmica; nos botões com sync: as notas (Sem sync, 8 tempos, inteira, meia, semínima, colcheia, semicolcheia, fusa, personalizada) | `src/gui/AutomatableModelView.cpp`, `TempoSyncKnob.cpp` | core (padrão, copiar, colar) · 1.0 (o resto; linear/log por botão: P-06) |
+| F-CTL-006 | Gestos em todo controle | Botão do meio volta ao padrão; arrastar na vertical (Shift = 4× mais devagar); Shift+clique arrasta o **valor** para outro botão; Ctrl+arrasto (Alt no Mac) arrasta o **controle**: soltar noutro controle **liga os dois**, soltar numa faixa/clipe de automação automatiza; roda: 100 passos o curso todo (Shift 10, Ctrl 1000, Alt 2000); duplo clique pede o valor (volume em dBFS); passar o mouse mostra o valor depois de 700 ms; um desfazer por arrasto | `FloatModelEditorBase.cpp`, `Knob.cpp`, `LcdSpinBox.cpp` | core (arrastar, roda, duplo clique, padrão, um desfazer) · 1.0 (arrastar valor) · aberto (ligar dois controles: P-04) |
+| F-CTL-007 | Automação em clipes na linha do tempo | Ver F-CLP-080 a F-CLP-083 e F-AUT | — | core (curvas no dono do parâmetro) |
+| F-CTL-008 | Gravar automação | Ver F-CLP-081 | — | 1.0 |
+| F-CTL-009 | A mão vence a automação | (No novo: com a vaga "tocada", a mão vence; I-6) | — | core |
+
+## 9. Projeto e arquivos
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-PRJ-001 | Novo projeto | Abre o modelo padrão do usuário, senão o de fábrica, senão um projeto vazio (andamento padrão, compasso 4/4) | `Song::createNewProject` | core |
+| F-PRJ-002 | Modelos | "Novo a partir de modelo" (do usuário e de fábrica: CR8000, ClubMix, Empty, TR808, default); abrir um modelo deixa o projeto sem nome; "Salvar como modelo padrão" | `TemplatesMenu.cpp` | 1.0 |
+| F-PRJ-003 | Abrir projeto | Pergunta antes de perder mudanças; cursor de espera; carregamento cancelável (vira projeto novo); erros juntados num relatório ("repetido N vezes"); aviso quando a versão é outra | `Song`, `DataFile.cpp` | core (abrir a pasta com `projeto.json`, com estado de carregamento, I-2) |
+| F-PRJ-004 | Abrir `.mmp`/`.mmpz` | O formato do LMMS em XML (compactado ou não); projetos do LMMS antigo abrem "como estão", sem conversão | `DataFile.cpp` | obsoleto — o programa novo não abre `.mmp` (decisão de 19/11) |
+| F-PRJ-005 | Recusar projeto perigoso | Recusa projetos com caminhos `local:` de plugin ("poderia rodar código malicioso") | `Song` | core (C9: um projeto de fora não lê arquivos quaisquer) |
+| F-PRJ-006 | Guardar o que não entende | Elementos desconhecidos do projeto são guardados e salvos de volta | `Song` | core (o mesmo vale para a árvore de um plugin ausente) |
+| F-PRJ-007 | Salvar e Salvar como | Salvar sem nome vira Salvar como; sobrescrever pergunta; mensagem "Projeto salvo" / "Projeto NÃO salvo"; atualiza os recentes | `MainWindow`, `VersionedSaveDialog.cpp` | core (salvar atômico) |
+| F-PRJ-008 | Salvar como nova versão | Ctrl+Alt+S: aumenta o número da versão no nome até um livre; botões +/− de versão no diálogo | `VersionedSaveDialog.cpp` | 1.0 |
+| F-PRJ-009 | Compactar o arquivo | `.mmpz` (padrão) ou `.mmp` | configuração | obsoleto — o projeto é uma pasta com JSON legível |
+| F-PRJ-010 | Cópia de segurança ao salvar | A versão anterior fica ao lado (ligado) | configuração | core (cópias em `backup/`) |
+| F-PRJ-011 | Pacote do projeto | "Salvar como pacote (com os recursos)": pasta com o projeto e `resources/` | `ProjectMedia` | obsoleto — substituído por "exportar como arquivo único" (`.zip` da pasta), 1.0 |
+| F-PRJ-012 | Descartar as conexões MIDI ao salvar | Opção do Salvar como | `VersionedSaveDialog.cpp` | aberto (P-36) |
+| F-PRJ-013 | Juntar as mídias ao salvar | Arquivos fora da pasta são copiados para `<projeto>_media/` (o mesmo nome e conteúdo é reaproveitado), os de dentro ficam relativos, os de fábrica ficam onde estão | `ProjectMedia::gather` | core (no novo: importar copia para `audio/` pelo hash) |
+| F-PRJ-014 | Prefixos de caminho | `userprojects:`, `factorysample:`, `usersoundfont:` etc. no projeto | `src/core/PathUtil.cpp` | obsoleto — recursos por hash; kits e SoundFonts grandes do sistema por caminho + hash |
+| F-PRJ-015 | Recentes | Lista de 50, mostra os 15 mais recentes que existem (sem modelos e sem a recuperação) | `RecentProjectsMenu.cpp` | core |
+| F-PRJ-016 | Reabrir o último projeto na partida | Configuração (desligada) | configurações | 1.0 |
+| F-PRJ-017 | Autosave e recuperação | Ver F-REC-069; o arquivo de recuperação também marca "instância rodando"; na partida: Recuperar / Descartar | `Autosave.cpp`, `main.cpp` | core (diário; H10 para o projeto aberto duas vezes) |
+| F-PRJ-018 | Notas do projeto | Texto rico salvo no projeto: desfazer/refazer, copiar/cortar/colar, fonte, tamanho, negrito (Ctrl+B), itálico (Ctrl+I), sublinhado (Ctrl+U), alinhamento (Ctrl+L/E/R/J), cor | `src/gui/ProjectNotes.cpp` | 1.0 |
+| F-PRJ-019 | Importar MIDI | SMF e RIFF RMID; uma faixa por (faixa do SMF × canal), com o Sf2 Player e o SoundFont padrão (PatMan se não houver; avisa se não há SoundFont padrão); canal 10 → banco 128; mudanças de andamento e de compasso vão para o mapa; CC7 → volume, CC10 → pan, pitch bend → afinação, os outros CC → rack de CC; program change → patch; as notas viram clipes separados onde há silêncio de mais de um compasso; progresso | `plugins/MidiImport/` | 1.0 (no novo: CC10 vai para onde, sem pan na faixa? P-39) |
+| F-PRJ-020 | Importar arquivos de áudio | Vários de uma vez; cada um numa faixa nova no compasso do cursor ("stems") | `MainWindow` | core |
+| F-PRJ-021 | Exportar MIDI | SMF tipo 1, 128 tiques por semínima; o mapa de andamentos em toda faixa (rampa = um evento por semínima); uma faixa MIDI por faixa de instrumento e por linha de padrão; canais em ordem pulando o 10 (banco 128 vai para o 10); banco e programa do instrumento; velocidade escalada pelo volume da faixa. Não exporta automação, CC, pan, mudo. Sem opções. Também "Exportar a faixa como MIDI" | `plugins/MidiExport/` | 1.0 |
+| F-PRJ-022 | Exportar áudio (assistente) | **O quê:** a música inteira ou o trecho do loop; "como loop" (sem a cauda); repetir 1–64 vezes. **Formatos, vários de uma vez:** WAV 16/24 (padrão)/32 float; FLAC 16/24; OGG qualidade 0–10 (6); MP3 128/192/256/320 kbps (320); taxa 44,1/48 (padrão)/88,2/96 kHz. **Processamento:** normalizar nenhum / pico (dBFS, −1) / loudness (LUFS, ITU-R BS.1770, −14), alvo −60–0; fade in e fade out 0–30 s; dither TPDF para 16 e 24 bits (ligado). **Onde:** pasta (padrão `<projeto>/exports`) e nome. Renderiza uma vez e escreve os formatos; cancelável; mostra os arquivos e abre a pasta | `src/gui/modals/ExportWizard.cpp`, `src/core/ExportProcessor.cpp` | core (WAV, a música inteira, determinístico, I-13) · 1.0 (o resto) |
+| F-PRJ-023 | Exportar uma faixa, um clipe, uma região | O mesmo assistente limitado à faixa (as outras mudas), ao trecho do clipe, ou à região (com o nome dela) | menus da faixa, do clipe e da região | 1.0 |
+| F-PRJ-024 | Exportar as faixas (stems) | Escolher a pasta; formato WAV/FLAC/OGG/MP3 com taxa (44,1–192 kHz), profundidade (16/24/32 float), compressão do FLAC 0–8, bitrate 64–320 (160), modo do MP3 (mono/estéreo/joint); "como loop (sem o compasso extra)", "entre os marcadores do loop", "renderizar o loop N vezes"; um arquivo por faixa não muda (`<n>_<faixa>.<ext>`), respeitando o solo | `ExportProjectDialog.cpp`, `RenderManager.cpp` | 1.0 (no novo: exportar por faixa ou por canal da mesa? P-40) |
+| F-PRJ-025 | Exportar o trecho: rápido ou exato | (Novo: "Rápido" com 10 s de aquecimento, ou "Exato"; a música inteira é sempre exata) | — | (novo; só para registro) |
+| F-PRJ-026 | Exportar a amostra de um clipe | Escreve o buffer como FLAC, fora da thread principal | `ThreadedExportManager.cpp` | 1.0 |
+| F-PRJ-027 | Preset de efeito e de faixa | `.xfx` (um efeito), `.xpf` (faixa de instrumento) | `DataFile` | 1.0 (no formato novo; P-09 para os de fábrica) |
+
+## 10. Configurações
+
+O legado tem as configurações como página, com busca, que aplicam na hora (o design 8 aprovado). Cada linha diz se
+"aplica na hora" ou "pede reinício"; uma faixa no alto oferece "Mais tarde" / "Reiniciar agora" (reinicia e reabre o
+projeto). O arquivo de configuração é gravado 500 ms depois da última mudança. Onde: `src/gui/modals/SetupDialog.cpp`,
+`src/core/ConfigManager.cpp`.
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-CFG-001 | Busca nas configurações | Procura nos títulos das seções, nos rótulos e nas dicas, sem acento; mostra só as linhas que batem | core |
+| F-CFG-002 | Aplicar na hora e reinício | Sem OK/Cancelar; o que pede reinício avisa, com "Reiniciar agora" | core |
+| F-CFG-010 | Geral | Reabrir o último projeto (desligado) · Compactar os projetos (ligado; obsoleto) · Guardar cópia ao salvar (ligado) · Autosave (ligado) · Projetos novos usam a mesa analógica (desligado; P-17) · Arquivos de áudio longos viram faixa de áudio (1–3600 s) · Prévias tocam até o fim (desligado) · Perguntar antes de apagar faixa (ligado) · Perguntar antes de apagar canal em uso (ligado) · Idioma (reinicia; padrão o do sistema) | core (autosave, idioma) · 1.0 (o resto) |
+| F-CFG-011 | Áudio | Sistema de áudio (JACK, ALSA, PulseAudio, CoreAudio, PortAudio, SDL, sndio, Dummy); o bloco do driver (F-REC-123 a F-REC-128); taxa para projetos novos; tamanho do bloco com a latência medida e avisos (não potência de 2, ≤ 32 quadros); linha de estado com o que o motor informou | core (ALSA, nulo) · 1.0 (JACK, CoreAudio) |
+| F-CFG-012 | MIDI | Sistema MIDI (ALSA seq, ALSA raw, JACK MIDI, sndio, WinMM, Apple MIDI, Dummy); dispositivo para os do tipo raw; controlador para a faixa selecionada; quantizar o que se grava no editor de notas | core (ALSA seq) · 1.0 |
+| F-CFG-013 | Gravação | Calibração (F-REC-081, F-REC-082) · Pré-roll · Contagem · Takes em camadas (P-11) · Metrônomo: quando, volume, acento | core |
+| F-CFG-014 | Plugins | Janelas VST: sem embutir / Qt / Win32 / XEmbed · Janelas de plugin por cima (desligado) · "Não carregados desde uma queda" com "Carregar de novo" | aberto (P-01 para VST) · obsoleto: a lista de suspeitos (F-FX-035) |
+| F-CFG-015 | Pastas | Pasta de trabalho (reinicia) · Plugins VST · Plugins LADSPA (lista) · SoundFonts · **SoundFont padrão** · Arquivos GIG | 1.0 (VST e LADSPA: P-01, P-03) |
+| F-CFG-016 | Aparência | Dicas (ligadas) · Cabeçalhos de faixa compactos · Navegador à direita · Uma janela de instrumento por vez · Nomes das notas no editor · Marcas no fader a cada 6 dB · Rolagem suave no arranjo · Posição tocando no AudioFileProcessor (ligada) · Janelas destacadas: encaixar e mostrar / encaixar e esconder / sempre destacadas · Modo de editar o loop (F-REG-007) · Seguir o cursor: não / por página (padrão) / contínuo · Pasta do tema (reinicia) | 1.0 (o tema: P-08) |
+| F-CFG-017 | Teclado e atalhos | Tabela ação → tecla, com "padrão", para as 9 ações | core (todas as ações) |
+| F-CFG-018 | Avançado | Limpar áudio corrompido (ligado) · Efeitos continuam rodando sem entrada (ligado; P-07) · Memória de tempo real (64 MB) | core (limpar) · aberto (o resto) |
+| F-CFG-019 | Primeira execução e pasta de trabalho | Pergunta se cria a pasta de trabalho; cria `projects/`, `templates/`, `samples/`, `presets/`, `samples/gig/`, `samples/soundfonts/`, `vst/`, `plugins/ladspa/`, `logs/` quando precisa; modo portátil com um arquivo ao lado do programa | 1.0 (modo portátil: P-35) |
+
+## 11. Navegador, presets e amostras (hoje: `src/gui/BrowserPanel.cpp`, `FileBrowser.cpp`, `PluginBrowser.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-BRW-001 | Páginas do navegador | Instrumentos, Favoritos, Projetos, Amostras, Presets, Arquivos do projeto (a pasta do projeto atual); Efeitos na Mixagem. Lembra a página e se está visível. Não há "Home" nem "Raiz" | core (instrumentos, amostras, efeitos) · 1.0 (o resto) |
+| F-BRW-002 | Pastas do usuário e de fábrica juntas | As duas numa árvore só (subpastas iguais se juntam), os de fábrica depois de uma linha "Arquivos de fábrica"; ordem: pastas primeiro, nome sem caixa; F5 atualiza; as pastas abertas ficam abertas | 1.0 |
+| F-BRW-003 | Tipos reconhecidos | Projetos, presets (`xpf`, `xml`, `xiz`, `lv2`), SoundFonts (`sf2`, `sf3`), patches (`pat`), MIDI (`mid`, `midi`, `rmi`), VST (`dll`, `so`), áudio (wav ogg ds flac spx voc aif aiff au raw, mp3), modelos NAM (`.nam`); o resto pelo tipo MIME ou pelo plugin que diz aceitar | core (áudio) · 1.0 |
+| F-BRW-004 | Busca | Ctrl+F; em segundo plano, recursiva; palavras separadas por espaço, "frases entre aspas"; todas as palavras no nome; pastas e arquivos; barra de progresso; uma busca nova cancela a anterior | 1.0 |
+| F-BRW-005 | Prévia | Clique num arquivo toca: amostra (com aviso de carregando); SoundFont, `.xiz`, `.gig`, `.pat`, presets e faixas: uma nota longa na tecla padrão. Para ao soltar o botão, a menos que seja amostra e "prévias até o fim" esteja ligado; para ao perder o foco ou trocar de página. ↑/↓ andam e tocam as amostras; Espaço segurado toca o selecionado | 1.0 (I-7.3, com estado de carregamento) |
+| F-BRW-006 | Enter e duplo clique | Enter = para o arranjo (faixa de instrumento nova, ou sampler para amostras); Ctrl+Enter = para o editor de padrões; Shift+Enter = faixa de amostra nova. Duplo clique: projeto abre, MIDI importa, áudio longo vira faixa, o resto vira instrumento | 1.0 (sem o editor de padrões) |
+| F-BRW-007 | Arrastar do navegador | Presets, amostras, SoundFonts, patches, VST, MIDI, projetos (os destinos estão em F-ARR-011, F-TRK-032, F-IJN-004) | core |
+| F-BRW-008 | Menu do arquivo | Caminho; mostrar no gerenciador de arquivos (selecionando o arquivo, conforme o sistema); favoritar/desfavoritar arquivo ou pasta; mandar para a faixa de instrumento ativa; mandar para uma faixa de instrumento nova; para um sampler novo; para uma faixa de amostra nova; para um SlicerT novo; pasta: abrir no gerenciador | 1.0 |
+| F-BRW-009 | Instrumentos | Busca; árvore por categoria (cor, sigla, subcategorias dos sintetizadores), "Outros" no fim; plugins com subplugins ganham a própria raiz; ícone e nome, descrição na dica; arrastar para uma faixa; "mandar para uma faixa de instrumento nova" (carrega em segundo plano) | core |
+| F-BRW-010 | Efeitos | Ver F-FX-003 | core |
+| F-BRW-011 | Miniaturas de onda | Picos em várias resoluções, em segundo plano | core (os picos do I-12) |
+| F-BRW-012 | Conteúdo de fábrica | **Projetos:** 4 demos ("shorties"), 5 modelos, 1 tutorial. **Presets:** AudioFileProcessor 6, BitInvader 14, Kicker 10, LB302 6, Monstro 4, Nescaline 5, OpulenZ 15, Organic 10, SID 6, Sf2Player 58, TripleOscillator 72, Vibed 2, Watsyn 3, Xpressive 22, ZynAddSubFX 962. **Amostras** (~23 MB): baixos, loops de baixo, batidas, baterias eletrônicas, baterias, 746 patches DrumSynth, efeitos, 11 IRs, diversos, formas, o SoundFont padrão (FluidR3Mono_GM.sf3), cordas e pads, formas de onda. **Kits AVL** (151 MB). Tabelas de onda | 1.0 (os projetos e os presets precisam ser refeitos no formato novo: P-09) |
+
+## 12. Outros
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-GER-001 | Renderizar pela linha de comando | `render <projeto>` e `rendertracks <projeto>`, com formato (wav/flac/ogg/mp3), float 32, bitrate, modo do MP3, loop, saída, taxa, perfil do motor; progresso no console | `src/main.cpp` | core (`lm-headless render`) |
+| F-GER-002 | Outras ações da linha de comando | `dump`, `compress`, `upgrade` (XML do formato velho), `makebundle`; `--import <midi> [-e]`; `--geometry`; `--config`; `--allowroot` (recusa rodar como root); `--version` com plataforma e opções | `src/main.cpp` | obsoleto: dump, compress, upgrade (formato velho) · aberto (P-35): import, geometry, config, root |
+| F-GER-003 | Variáveis de ambiente | Pasta de dados extra; pasta de configuração isolada (testes); captura de tela automática para desenvolvimento; lixeira de teste; excluir plugins por expressão; ligar plugins bloqueados; checagens de API de plugin | `main.cpp`, `PluginFactory.cpp` | aberto (P-35) |
+| F-GER-004 | Relatório de queda | Um manipulador de sinal escreve o backtrace em `crash-report.txt`; na partida seguinte avisa "o programa fechou de repente" e diz o plugin suspeito | `src/core/CrashHandler.cpp` | 1.0 |
+| F-GER-005 | Registro de erros | `logs/errors.log` e stderr; sem trava, usável do áudio; repetidos juntados "(×N)"; aviso/erro com hora e lugar | `src/core/ErrorLog.cpp` | core |
+| F-GER-006 | Avisos ao usuário | Dica flutuante, informação, aviso, erro, pergunta sim/não, progresso com Cancelar; sem tela só registram | `src/core/UserNotice.cpp` | core (I-14) |
+| F-GER-007 | Temas | "default" (ícones e imagens completos) e "linuxmusic" (cinzas planos e acento verde-azulado); escolhido pela pasta | `data/themes`, `LmmsPalette.cpp` | obsoleto — substituído por temas como dado (`arquitetura-nova.md`, item 12); P-08 |
+| F-GER-008 | Traduções | 37 idiomas herdados do LMMS (os textos novos do fork quase sem tradução); as do Qt também | `data/locale` | core (português e inglês desde o começo) · aberto (P-08: os outros 35) |
+| F-GER-009 | Sobre | Versão e ambiente (selecionável), autores, colaboradores, tradutores, licença | `AboutDialog.cpp` | 1.0 |
+| F-GER-010 | Escolher cor | Paleta de 48 cores (padrão, paleta de faixa 8 matizes × 6 tons, paleta da mesa) | `ColorChooser.cpp` | 1.0 |
+| F-GER-011 | Diálogo de arquivo | Atalhos para Mesa, Downloads, Música, a pasta de trabalho, volumes montados; lembra a última pasta | `FileDialog.cpp` | 1.0 |
+| F-GER-012 | Partida | Tela de abertura com o progresso; pasta de trabalho; tema; recuperação; abrir o arquivo da linha de comando (ou o evento de abrir do macOS); senão o último projeto; senão um novo | `GuiApplication.cpp`, `main.cpp` | core (sem tela de abertura se for rápido; estados de carregamento, I-2) |
+| F-GER-013 | Reiniciar pelo programa | Salva (ou pergunta), relança e reabre o projeto | `GuiApplication::restartAfterQuit` | 1.0 |
+| F-GER-014 | Upgrade da configuração de versões antigas do LMMS | | `ConfigManager.cpp` | obsoleto — preferências novas |
+| F-GER-015 | Ajuda sobre o que cada coisa faz | Só dicas; nenhum modo "o que é isto"; ajuda online do LMMS | — | aberto (P-34) |
+
+## Resumo por área
+
+A contagem usa o primeiro status de cada linha (uma linha "core (x) · 1.0 (y)" conta como core). "Novo" são duas
+linhas só de registro (a paleta de comandos e a exportação rápida/exata), que não são do legado.
+
+| Área | Funcionalidades | core | 1.0 | obsoleto | aberto |
+|---|---|---|---|---|---|
+| 1. Casca e janela do instrumento (F-JAN, F-IJN) | 55 | 29 | 19 | 3 | 3 (+1 novo) |
+| 2. Edição (F-NOT, F-PAS, F-ARR, F-REG, F-PAD, F-AUT) | 67 | 35 | 22 | 7 | 3 |
+| 3. Faixas (F-TRK) | 25 | 18 | 2 | 4 | 1 |
+| 4. Clipes e itens (F-CLP) | 37 | 22 | 6 | 5 | 4 |
+| 5. Gravação (F-REC) | 64 | 37 | 12 | 9 | 6 |
+| 6. Mixer e mesa analógica (F-MIX) | 59 | 18 | 33 | 3 | 5 |
+| 7. Instrumentos, efeitos, terceiros (F-INS, F-FX, F-HOST) | 66 | 9 | 49 | 4 | 4 |
+| 8. Automação e controladores (F-CTL) | 9 | 4 | 5 | 0 | 0 |
+| 9. Projeto e arquivos (F-PRJ) | 27 | 11 | 10 | 4 | 1 (+1 novo) |
+| 10. Configurações (F-CFG) | 12 | 8 | 3 | 0 | 1 |
+| 11. Navegador (F-BRW) | 12 | 6 | 6 | 0 | 0 |
+| 12. Outros (F-GER) | 15 | 5 | 5 | 3 | 2 |
+| **Total** | **448** | **202** | **172** | **42** | **30** |
+
+Na seção 7, cada plugin conta como uma linha, mas carrega dezenas de parâmetros: são **24 instrumentos internos, 3
+hospedeiros de instrumento, 30 efeitos internos (97 unidades do Guitarix contadas como um) e 4 hospedeiros/infraestrutura
+de efeito**.
+
+## Perguntas em aberto
+
+O desenho novo (`arquitetura-nova.md`, `interfaces.md`, `decisoes-autonomas.md`) ainda não diz o que acontece com estas
+funcionalidades do legado. Cada uma é citada pelo número nas tabelas.
+
+| # | Pergunta | Funcionalidades |
+|---|---|---|
+| P-01 | **VST2**: o desenho lista LV2, CLAP e depois VST3. O legado hospeda VST2 (Windows pelo wine e Linux nativo), com presets `.fxp`/`.fxb` e janelas embutidas. Fica, sai, ou entra depois da 1.0? | F-HOST-001, F-FX-033, F-CFG-014, F-CFG-015 |
+| P-02 | **Carla** (rack e patchbay): com hospedeiros próprios, ainda é preciso? | F-HOST-002 |
+| P-03 | **LADSPA**: não é citado. O legado traz conjuntos embutidos (calf, caps, cmt, swh, tap) que muitos projetos usam | F-FX-031, F-CFG-015 |
+| P-04 | **Ligar dois controles** (Ctrl+arrastar um botão sobre outro faz os dois andarem juntos): como fica no modelo de ids? | F-CTL-006 |
+| P-05 | **ZynAddSubFX**: plugin interno (no processo) ou de terceiros (fora)? E a interface FLTK dele? | F-INS-023 |
+| P-06 | **Escala linear/logarítmica por botão** (escolha do usuário no menu de cada botão): fica no esquema do parâmetro ou na interface? | F-CTL-005 |
+| P-07 | **"Decay" / auto-quit dos efeitos** e a configuração "efeitos continuam rodando sem entrada"; a memória de tempo real configurável | F-FX-001, F-CFG-018 |
+| P-08 | **Temas e traduções**: os dois temas do legado viram temas-dado? E os 35 idiomas além de português e inglês? | F-GER-007, F-GER-008, F-CFG-016 |
+| P-09 | **Conteúdo de fábrica**: os ~1200 presets (962 do Zyn), os modelos e as 4 demos precisam ser refeitos no formato novo. Um conversor de `.xpf`/`.xiz`? Os `.xiz` do Zyn continuam válidos se o Zyn for o mesmo | F-BRW-012, F-IJN-003, F-PRJ-027 |
+| P-10 | **Gravação além do básico**: desligar os plugins com latência na faixa armada; efeitos de entrada gravados; gravar a saída; entradas com mais de 2 canais | F-REC-010, F-REC-011 |
+| P-11 | **Modo "gravador simples"** (takes em camadas desligado: o take novo substitui o que cobre): continua como opção? | F-REC-042, F-CFG-013 |
+| P-12 | **Formato da gravação**: o novo grava RF64 float; escolher FLAC ou 24 bits? | F-REC-060 |
+| P-13 | **Mídias geradas e não usadas** vão para a lixeira ao fechar (legado). O novo só diz que nada é apagado enquanto o histórico cita. Quem limpa `audio/`, e quando? | F-REC-063, F-JAN-010 |
+| P-14 | **Contador de xruns** visível fora da gravação | F-REC-086 |
+| P-15 | **Gravação MIDI**: CC, pitch bend, aftertouch, program change; um take por passada de loop; compensar a latência MIDI | F-REC-104 |
+| P-16 | **ALSA raw MIDI** (além do ALSA seq) | F-REC-130 |
+| P-17 | **Mesa analógica ou digital**: no legado a mesa inteira troca; no novo todo canal tem o rack, com seções que ligam. Há um "modo digital"? E a configuração para projetos novos? | F-MIX-001, F-CFG-010 |
+| P-18 | **Agrupar canais na mesa**: sem canal de grupo automático da pasta, como recolher e organizar os canais? | F-MIX-011 |
+| P-19 | **Retornos de efeito**: o legado tem FX 1 e FX 2 fixos e dois botões de envio em todo canal. No novo um retorno é um canal comum: os botões rápidos ficam? | F-MIX-023 |
+| P-20 | **Onde os inserts entram em relação ao rack** (o legado tem 6 pontos de inserção) e se o width do canal some | F-MIX-032, F-MIX-034 |
+| P-21 | **Tolerância por canal**: tirada do número (posição) do canal no legado; no novo, do número ou do id? (Mover o canal muda o som no legado.) | F-MIX-055 |
+| P-22 | **Tipos de medidor** (VU, PPM, K) e balística escolhível | F-MIX-070 |
+| P-23 | **Batidas com amostras**: no legado, faixa de amostra dentro do editor de padrões. No novo, um instrumento de bateria (AFP, DrumMachines, AvlDrums) tocado pela vista de passos basta? | F-PAD-004, F-TRK-003 |
+| P-24 | **Curva de afinação por nota** (pitch bend desenhado em cada nota): existe no novo? | F-NOT-004 |
+| P-25 | **Arquivo de clipe** (`.xpt`, exportar/importar as notas de um clipe) | F-NOT-020 |
+| P-26 | **Loop e cursor próprios por editor** (a música, o padrão e o clipe têm cada um o seu): o novo tem um transporte só | F-REG-002 |
+| P-27 | **Degrau num ponto de automação** (valor de entrada e de saída): dois pontos no mesmo tique? | F-AUT-003 |
+| P-28 | **Botão FX do cabeçalho da faixa**: abre os inserts do canal da saída principal? | F-TRK-023 |
+| P-29 | **Item de áudio vazio** criado com um clique na linha | F-TRK-033 |
+| P-30 | **Curvas de fade e crossfade ajustáveis** (tensão nos clipes de amostra; planejado nos itens) | F-CLP-041, F-CLP-066 |
+| P-31 | **Tocar um item de áudio ao contrário** (existe nos clipes de amostra) | F-CLP-042 |
+| P-32 | **Ler do disco ou carregar na RAM** (automático acima de 20 s no legado); o `ResourceStore` do novo carrega tudo? | F-CLP-044, F-CLP-064 |
+| P-33 | **Uma curva para vários controles** (um clipe de automação ligado a vários) | F-CLP-080 |
+| P-34 | **Ajuda**: o legado só aponta para a documentação online do LMMS | F-JAN-024, F-GER-015 |
+| P-35 | **Linha de comando e ambiente**: `--import`, `--geometry`, `--config`, recusar root, modo portátil, variáveis de ambiente | F-GER-002, F-GER-003, F-CFG-019 |
+| P-36 | **"Descartar as conexões MIDI ao salvar"** (para levar um projeto a outra máquina) | F-PRJ-012 |
+| P-37 | **Volume e transposição gerais do projeto** (salvos sem tela no legado) e "usar a transposição geral" por faixa | F-JAN-051, F-IJN-018 |
+| P-38 | **Saída MIDI da faixa** para dispositivos externos (canal, programa, nota e velocidade fixos). A decisão de 19/11 tira só "MIDI de uma faixa tocando o instrumento de outra" | F-IJN-017 |
+| P-39 | **Importar MIDI sem pan na faixa**: para onde vai o CC10? E o CC7, volume da faixa ou do canal? | F-PRJ-019 |
+| P-40 | **Exportar stems**: por faixa (legado) ou por canal da mesa, ou os dois? | F-PRJ-024 |
