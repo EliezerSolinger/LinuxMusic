@@ -319,6 +319,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-sys-fluidsynth"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "lm-base",
+]
+
+[[package]]
 name = "lm-sys-fpu"
 version = "0.1.0"
 
