@@ -5,7 +5,7 @@ nenhum código em `LinuxMusicBeta/` até o usuário autorizar explicitamente. Su
 C++, só histórico).
 
 Decisões que este documento segue:
-- **O núcleo é em Rust.** A biblioteca de interface sai de um protótipo comparando GPUI, Slint e Qt (I-15).
+- **O núcleo é em Rust.** **A interface é GPUI**, e só GPUI (decisão do usuário, 19/11; I-15).
 - **Interfaces novas, desenhadas do zero** para o modelo seguro. Do legado vem só lógica (drivers, DSP), nunca a
   forma de uma interface.
 - **Toda operação que possa passar de 200 ms tem tempo e estado de carregamento** (decisão do usuário, 19/11; I-2).
@@ -956,8 +956,8 @@ Fila da `Session`. A interface mostra; o `lm-headless` imprime. O núcleo nunca 
 
 ## I-15. A fronteira com a interface gráfica (F1) (S3, D6)
 
-- **A interface é dona da `Session`.** Ela a guarda no estado do aplicativo (na GPUI, numa entidade; no Slint, no
-  modelo; no Qt, num objeto da ponte) e chama os métodos dela nos próprios eventos.
+- **A interface é dona da `Session`.** Ela a guarda no estado do aplicativo, numa entidade da GPUI, e chama os métodos dela nos
+  próprios eventos.
 - A cada quadro:
   1. `session.pump()`;
   2. cada vista drena os seus `Feed`s e redesenha o que mudou;
@@ -966,11 +966,12 @@ Fila da `Session`. A interface mostra; o `lm-headless` imprime. O núcleo nunca 
 - **A interface só usa:** `transact`, os gestos, `run_action`, `param_write`, `feed`, `find` e os `Refs`,
   `loading`/`activity`/`cancel`, os avisos, os picos e a leitura dos dados ao vivo do plugin (F2). Ela não guarda
   ponteiro para nada do núcleo: só ids, `Feed`s, `GestureId`s e `OperationHandle`s.
-- Com Qt, uma ponte `cxx-qt` expõe exatamente esses métodos.
+- **A biblioteca é a GPUI** (decisão do usuário, 19/11). A `Session` vive numa entidade da GPUI, e o `pump` roda num
+  timer do laço de eventos dela.
 - **A interface gráfica fala Rust com o núcleo** (decisão do usuário, 19/11): fechamentos, referências emprestadas e
   chamadas diretas, no mesmo processo. **Ela não é um protocolo** e não precisa ser serializável. O protocolo de
   gerência e de rede (I-20) é outro contrato, separado.
-- **O protótipo de escolha da biblioteca** é escrito contra um núcleo de mentira com essa mesma superfície:
+- **O protótipo da GPUI** (antes, "de escolha da biblioteca"; agora só valida a GPUI com o núcleo) é escrito contra um núcleo de mentira com essa mesma superfície:
   - 64 faixas com formas de onda;
   - rolagem e zoom;
   - 64 medidores;

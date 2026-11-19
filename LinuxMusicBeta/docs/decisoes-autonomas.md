@@ -56,5 +56,5 @@ Formato: **decisão** — motivo. Data entre parênteses.
   teste numa placa de verdade fica marcado como pendente para o usuário.
 - **Disco (34 GB livres):** um `target` só, em `LinuxMusicBeta/target`; localmente só debug e release; ASan, TSan,
   `miri` e `loom` no CI (19/11).
-- **A biblioteca de interface sai do protótipo** (`interfaces.md`, I-15). O protótipo é feito em paralelo com o núcleo,
-  não no fim (revisão V14).
+- ~~A biblioteca de interface sai do protótipo~~ — **decisão do usuário (19/11): a interface é GPUI, e só GPUI.** O
+  protótipo deixou de comparar bibliotecas e virou a validação da GPUI com o núcleo (`prototipo-interface.md`).

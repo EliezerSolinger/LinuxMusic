@@ -29,6 +29,7 @@ Decisões do usuário (19/11):
   é reaproveitado por quem precisar (19/11).
 - **Plataforma: Linux com ALSA primeiro, macOS depois** (19/11). Configurações que juntam dispositivos são sempre
   explícitas.
+- **A interface é GPUI**, e só GPUI (decisão do usuário, 19/11). Não há Qt em lugar nenhum do programa novo.
 - **O núcleo é escrito em Rust.** O compilador impede use-after-free, ponteiro nulo e corrida entre threads, os
   bugs que as auditorias acharam. A interface sai de um protótipo comparando GPUI, Slint e Qt. As bibliotecas em C
   (libsndfile, FluidSynth, lilv, libsamplerate) são ligadas por FFI, em pacotes `lm-sys-*` com ficha de segurança. A
@@ -868,7 +869,7 @@ compartilhada de nada que a interface também segure.
 - **Vozes por slot map** (índice + geração): ficou, no `VoicePool` (`interfaces.md`, I-9.2). As referências P0661 e
   EnTT não foram verificadas na fonte; o desenho não depende delas.
 
-### Regras do Qt que a pesquisa confirmou (valem só se o protótipo escolher o Qt para a interface)
+### Regras do Qt que a pesquisa confirmou (histórico: a interface é GPUI, então não se aplicam)
 
 - `QPointer` só fica nulo dentro do `~QObject`, **depois** dos destrutores derivados: ele protege contra ponteiro
   solto, mas não serve de aviso de ciclo de vida. Com ids (peça 2), a interface quase não precisa dele.
