@@ -1,0 +1,30 @@
+# The GUI prototype in GPUI (interfaces.md, I-15; revision V14; GPUI chosen by the user). Its own workspace, so the heavy GUI dependencies
+# never enter the main one. Build with CARGO_TARGET_DIR=../target to share the target dir. Throwaway code: the
+# measurements in docs/prototipo-interface.md are what matters.
+[workspace]
+resolver = "3"
+members = ["fake-core", "gpui"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "GPL-2.0-or-later"
+publish = false
+
+[workspace.dependencies]
+fake-core = { path = "fake-core" }
+triple_buffer = "9"
+
+# One release profile for the three, so the binary sizes compare: thin LTO, no debug info, stripped.
+[profile.release]
+opt-level = 3
+lto = "thin"
+debug = 0
+strip = true
+panic = "unwind"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

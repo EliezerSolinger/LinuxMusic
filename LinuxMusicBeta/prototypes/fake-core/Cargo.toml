@@ -1,0 +1,10 @@
+[package]
+name = "fake-core"
+description = "A fake of lm-session's GUI surface (I-15) for the GUI-library prototype"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+triple_buffer.workspace = true

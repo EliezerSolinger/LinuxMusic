@@ -1,0 +1,21 @@
+[package]
+name = "proto-gpui"
+description = "The GUI prototype in GPUI against fake-core (interfaces.md, I-15)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "proto-gpui"
+path = "src/main.rs"
+
+[dependencies]
+fake-core.workspace = true
+# GPUI pinned exactly: gpui-pre is a weekly snapshot of Zed's main published to crates.io (this one: zed@125ca86,
+# 2026-11-16); the official `gpui` crate on crates.io is 0.2.2 from October 2025. See docs/prototipo-interface.md.
+gpui = { package = "gpui-pre", version = "=0.3.13" }
+# runtime_shaders: this Mac has only the Command Line Tools, without the `metal` compiler (Xcode); the shaders are
+# compiled when the app starts. A release build for macOS would be made with Xcode and without this feature.
+# font-kit: without it the macOS backend has no text system and draws no text at all (a log warning only).
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.13", features = ["runtime_shaders", "font-kit"] }
