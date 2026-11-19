@@ -902,3 +902,108 @@ fn subnormals_flushed_on_every_render_thread() {
     assert_eq!(inline, render_decay(3));
     assert!(!flushing_denormals(), "the flush leaked out of the render call");
 }
+
+/// Copies its sidechain into its output, plus its input
+struct SidechainProbe;
+
+impl Processor for SidechainProbe {
+    fn process(&mut self, cx: &mut ProcessContext<'_>) {
+        let (ins, mut outs, side) = cx.buffers.split();
+        for ch in 0..outs.len() {
+            let o = outs.get_mut(ch);
+            for (k, x) in o.iter_mut().enumerate() {
+                *x = ins.get(ch)[k] + if side.is_empty() { 0.0 } else { side.get(0)[k] * 10.0 };
+            }
+        }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// H5 and base item 3: a device input reaches its node (monitoring, no delay) and a feed reaches a sidechain
+#[test]
+fn monitoring_input_and_sidechain() {
+    let (mut control, mut dummy) = make(0);
+    let mut b = ProgramBuilder::new(ProgramGen(1), spec(), &limits(0), tempo(120));
+    let m = master(&mut b);
+    let input = n(1);
+    let key = n(2);
+    let fx = n(3);
+    b.node(NodeDesc::sum(input, 1));
+    b.input(input, vec![1]);
+    b.node(NodeDesc::processor(key, 0, 1));
+    b.node(NodeDesc::processor(fx, 1, 1).with_sidechain(1));
+    b.feed(Feed::new(input, fx, 1));
+    b.feed(Feed::new(key, fx, 1).to_sidechain());
+    b.feed(Feed::new(fx, m, 1).mix(ChannelMix::UpMix { to: 2 }));
+    let mut i = Install::new(b.build().expect("program"));
+    i.add(key, core(Constant(0.01)));
+    i.add(fx, core(SidechainProbe));
+    install(&mut control, i);
+    for (k, v) in dummy.inputs_mut()[1].iter_mut().enumerate() {
+        *v = k as f32 * 1e-4;
+    }
+    block(&mut dummy, 512);
+    let s = 1.0 / 2f32.sqrt();
+    for k in [0usize, 1, 300, 511] {
+        let expected = (k as f32 * 1e-4 + 0.1) * s;
+        assert!((dummy.outputs()[0][k] - expected).abs() < 1e-6, "sample {k}");
+    }
+}
+
+/// Records each parameter event it gets: (engine frame, value)
+struct ParamLog(Arc<std::sync::Mutex<Vec<(u64, f32)>>>, Vec<(u64, f32)>);
+
+impl Processor for ParamLog {
+    fn process(&mut self, cx: &mut ProcessContext<'_>) {
+        for e in cx.events {
+            if let EventKind::Param { value, .. } = e.kind
+                && self.1.len() < self.1.capacity()
+            {
+                self.1.push((cx.transport.frame + u64::from(e.offset), value));
+            }
+        }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+impl Drop for ParamLog {
+    fn drop(&mut self) {
+        if let Ok(mut v) = self.0.lock() {
+            v.extend_from_slice(&self.1);
+        }
+    }
+}
+
+/// Base item 1: a discrete parameter is never interpolated and changes at the exact sample of each point
+#[test]
+fn discrete_automation_at_exact_samples() {
+    for size in [64usize, 1000] {
+        let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+        {
+            let (mut control, mut dummy) = make(0);
+            let mut b = ProgramBuilder::new(ProgramGen(1), spec(), &limits(0), tempo(120));
+            master(&mut b);
+            b.node(NodeDesc::processor(n(1), 0, 1));
+            let curve = Curve::new(vec![
+                CurvePoint { sample: 0, value: 0.0, shape: 0.0 },
+                CurvePoint { sample: 1234, value: 2.0, shape: 0.0 },
+                CurvePoint { sample: 3001, value: 1.0, shape: 0.0 },
+            ])
+            .expect("curve");
+            b.param(ParamSlot(1), n(1), 0, ParamInfo { rate: Rate::Block, discrete: true, initial: 0.0 }, Some(curve));
+            let mut i = Install::new(b.build().expect("program"));
+            i.add(n(1), core(ParamLog(log.clone(), Vec::with_capacity(64))));
+            install(&mut control, i);
+            control.commands().send(Command::Play).expect("play");
+            render(&mut dummy, 4000, size);
+        }
+        let got = log.lock().expect("log").clone();
+        assert_eq!(got, vec![(0, 0.0), (1234, 2.0), (3001, 1.0)], "block {size}");
+    }
+}
