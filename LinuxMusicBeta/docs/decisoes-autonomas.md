@@ -46,8 +46,18 @@ Formato: **decisão** — motivo. Data entre parênteses.
   baixar outra.
 - **A árvore (`Value`) usa a crate `imbl`**, sujeita à medida das 10 mil notas (19/11). Se a medida falhar, troca por
   nós próprios, sem mudar a interface.
-- **JSON:** `serde_json` para ler (com `preserve_order` desligado, já que as chaves são ordenadas) e uma escrita
-  própria pequena com `ryu` para garantir o formato estável (19/11).
+- **JSON: leitor e escritor próprios** no `lm-state` (19/11, revisto pelo agente do `lm-state`): o `serde_json` aceita
+  em silêncio um inteiro maior que `u64` (vira real), não garante ida e volta exata dos reais sem uma opção que
+  mudaria o workspace inteiro, e deixa uma chave repetida vencer sem aviso. O escritor usa `ryu`.
+- **Inteiros no JSON: até ±(2^53 − 1)**, o maior valor exato em JSON; `to_json` devolve `Result` (19/11).
+- **Um recurso no JSON é um objeto com exatamente `key` e `kind`, ambos válidos**; um objeto comum com essa forma
+  exata é recusado na escrita (`state.json.ambiguous_resource`), para a ida e volta ser exata (19/11).
+- **Esquemas ganharam** `FieldKind::Id`, `NoteMap` (C1) e `Any` (estado opaco, até 64 KB), e `required`/`nullable`;
+  campos desconhecidos são recusados (19/11).
+- **A árvore fica no `imbl`**: a medida das 10 mil notas deu 4,35 µs por edição (critério: 1 ms) e ~5,8 KB de
+  histórico por edição, linear (19/11).
+- **Sem dependências de teste fora da lista do workspace** (a política do CI): o `lm-state` usa um gerador
+  semeado próprio em vez do `proptest` (19/11).
 - **D-Bus no Linux (rtkit, logind, ReserveDevice1):** `zbus` no modo bloqueante, numa thread própria (19/11) — Rust
   puro, sem `unsafe` nosso; a thread não é de tempo real.
 - **`libm` em Rust puro** no DSP (`lm-dsp`) e no render (19/11) — revisão V2, determinismo entre distribuições.

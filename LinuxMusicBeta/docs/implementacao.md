@@ -25,6 +25,9 @@ quando passa no critério de "pronto quando" de `interfaces.md` (Parte 4). As de
 ## Como os agentes trabalham
 
 - Cada agente é dono de uma pasta `crates/<nome>` e só escreve nela (e nas linhas da sua linha nesta tabela).
+- **Nunca deixe uma pasta em `crates/` sem `Cargo.toml` válido**, nem por um instante: o workspace inclui `crates/*`, e
+  uma pasta pela metade quebra o `cargo` de todos. Crie o pacote de uma vez (o `Cargo.toml` e o `src/lib.rs` mínimo
+  que compila) antes de qualquer outro arquivo, ou monte-o fora de `crates/` e mova-o pronto.
 - O workspace (`Cargo.toml`) inclui toda pasta em `crates/*`; uma dependência nova do workspace é pedida à sessão de
   design.
 - Todos leem, antes de começar: `arquitetura-nova.md`, `interfaces.md` (a seção do seu pacote, a Parte 2, a Parte 3 e
