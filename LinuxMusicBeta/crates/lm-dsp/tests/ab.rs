@@ -399,6 +399,36 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "plugin-effect" && case["plugin"] == "dynamicsprocessor" {
+        use lm_dsp::dynamics_processor::*;
+        let first = &case["settings"];
+        let then = &case["then"]["settings"];
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        let value = |key: &str, default: f32, start: usize| {
+            let before = f(first, key, default);
+            if start < at { before } else { f(then, key, before) }
+        };
+        let mut curve = default_curve();
+        if let Some(graph) = case["graphs"][0].as_array() {
+            for (point, v) in curve.iter_mut().zip(graph) {
+                *point = v.as_f64().unwrap() as f32;
+            }
+        }
+        let mut processor = DynamicsProcessor::new(case["rate"].as_f64().unwrap() as f32);
+        for start in (0..frames as usize).step_by(block as usize) {
+            let span = &mut out[start..(start + block as usize).min(frames as usize)];
+            let settings = DynamicsProcessorSettings {
+                input_gain: value("Input gain", 1.0, start),
+                output_gain: value("Output gain", 1.0, start),
+                attack: value("Attack time", 10.0, start),
+                release: value("Release time", 100.0, start),
+                stereo_mode: StereoMode::ALL[value("Stereo mode", 0.0, start) as usize],
+                curve,
+            };
+            processor.process(span, &settings);
+        }
+        return out;
+    }
     if case["unit"] == "plugin-effect" && ["dualfilter", "crossovereq"].contains(&case["plugin"].as_str().unwrap()) {
         use lm_dsp::basic_filters::FilterType;
         use lm_dsp::filter_effects::*;

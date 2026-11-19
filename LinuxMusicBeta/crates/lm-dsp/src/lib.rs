@@ -27,6 +27,7 @@
 //! - [`compressor`]: the Compressor;
 //! - [`delay`]: the Delay;
 //! - [`distortion_effects`]: the Dispersion, the Wave Shaper and the Bitcrush;
+//! - [`dynamics_processor`]: the Dynamics Processor;
 //! - [`eq`]: the Eq;
 //! - [`filter_effects`]: the Dual Filter and the Crossover EQ;
 //! - [`modulation_effects`]: the Multitap Echo and the Flanger;
@@ -43,6 +44,7 @@ pub mod compressor;
 pub mod delay;
 pub mod distortion_effects;
 pub mod dynamics;
+pub mod dynamics_processor;
 pub mod envelope;
 pub mod eq;
 pub mod filter_effects;
