@@ -104,3 +104,67 @@ Formato: **decisão** — motivo. Data entre parênteses.
   1.0, mas as telas são repensadas. Para as áreas sem design aprovado, o legado é a referência do que o programa faz,
   e não de como a tela é. O inventário das funcionalidades está em `funcionalidades-legado.md`.
 
+
+## Respostas às perguntas do levantamento do legado (P-01 a P-40, `funcionalidades-legado.md`) (19/11)
+
+Critério: a 1.0 tem todas as funcionalidades do legado, cada uma na forma certa para a arquitetura nova; o que muda
+de forma diz pelo que é substituído.
+
+- **P-01 VST2:** entra na 1.0, **fora do processo** (o processo auxiliar do I-9.6), com declarações próprias da
+  interface VST2 (como o VeSTige do legado, compatível com a GPL). VST2 nativo do Linux primeiro; plugins de Windows
+  pelo wine, depois, ainda antes da 1.0. CLAP e VST3 também, como na especificação.
+- **P-02 Carla:** obsoleta, substituída pelo nosso processo auxiliar, que hospeda LV2, CLAP, VST2, VST3 e LADSPA.
+- **P-03 LADSPA:** entra na 1.0, fora do processo, como terceiros. Os conjuntos que o legado distribui (calf, caps,
+  cmt, swh, tap) continuam distribuídos e carregados pelo auxiliar.
+- **P-04 e P-33 (ligar dois botões, uma curva para vários controles):** viram um **controle compartilhado**: um nó de
+  automação ou de controlador com vários alvos. Arrastar com Ctrl de um botão a outro cria esse vínculo.
+- **P-05 ZynAddSubFX:** fora do processo (tem threads próprias e janela FLTK), com a janela dele aberta como janela
+  externa, presa à faixa.
+- **P-06 (alternar linear/log por botão):** fica, como opção de exibição, guardada no documento da interface.
+- **P-07:** o "dormir no silêncio" dos efeitos vira contrato do processador: ele declara a cauda, e o host não o
+  chama depois de a entrada ficar em silêncio por mais que a cauda. O ajuste do pool de memória de tempo real é
+  obsoleto (o áudio não aloca).
+- **P-08 Temas e idiomas:** os temas são dado (escuro padrão e claro). A 1.0 sai em português e inglês; as traduções
+  do legado para os outros idiomas são convertidas onde o texto equivale, e o resto fica para colaboradores.
+- **P-09 Presets, modelos e demos:** um **conversor à parte** (fora do programa e do núcleo) transforma os presets do
+  legado dos plugins reescritos para o formato novo; os presets do Zyn (`.xiz`) são lidos pelo próprio Zyn. Modelos e
+  demos são refeitos no formato novo.
+- **P-10 Gravação:** "monitoramento de baixa latência" desliga, na faixa armada, os plugins com latência; "gravar com
+  os efeitos" é uma opção por faixa (o padrão continua sendo seco, como decidido em 12/11); gravar a saída de uma
+  faixa (reamostrar) entra; entradas com mais de 2 canais entram (as faixas têm N canais).
+- **P-11 Modo de gravador simples** (sem camadas: a passada nova substitui): entra como opção.
+- **P-12 Formato de gravação:** grava sempre em RF64 `f32` (sobrevive a quedas); ao fechar o take, uma opção converte
+  para FLAC ou 24 bits.
+- **P-13 Arquivos sem uso:** a ação explícita do H4 manda os arquivos para a **lixeira do sistema**, como o legado.
+- **P-14:** o contador de xruns fica sempre visível no transporte.
+- **P-15 Gravação MIDI:** grava CC, pitch bend e aftertouch; uma camada por volta do loop, como no áudio; um ajuste de
+  latência de entrada por porta MIDI.
+- **P-16:** o ALSA raw MIDI entra como segundo backend de MIDI do ALSA, depois do seq.
+- **P-17 Modo analógico/digital da mesa:** fica (no digital, o rack fica limpo, sem modelagem).
+- **P-18 Grupos:** um grupo é um canal para onde outros mandam (roteamento livre), e "vincular faders selecionados"
+  dá o grupo relativo.
+- **P-19:** um projeto novo nasce com dois canais de retorno, e cada canal mostra os botões de envio para os retornos
+  que existem.
+- **P-20 Pontos de insert:** cada insert tem um ponto em relação às seções do rack (os 6 pontos do legado), e a largura
+  do canal fica.
+- **P-21:** a tolerância é semeada pelo **id do canal**, então reordenar não muda o som.
+- **P-22 Medidores:** pico, RMS, VU, K-meters e LUFS no master, escolhíveis.
+- **P-23 Batidas com amostras:** um instrumento de pads de amostras (feito do DSP do AudioFileProcessor), tocado pelo
+  editor de passos.
+- **P-24:** curvas de pitch bend por nota entram (expressão por nota, como no CLAP).
+- **P-25 `.xpt`:** obsoleto; um clipe é exportado como um pedaço de JSON, o mesmo formato de copiar e colar.
+- **P-26:** o piano roll tem loop e cursor próprios do item.
+- **P-27:** um ponto de automação pode ter valor de entrada e de saída diferentes (um degrau).
+- **P-28:** o botão FX do cabeçalho da faixa abre os inserts do canal da mesa para onde vai a saída principal.
+- **P-29, P-30, P-31:** criar um item de áudio vazio com um clique, curvas de fade ajustáveis e inverter um item de
+  áudio (renderizado como recurso novo) entram.
+- **P-32:** itens acima de 30 s tocam do disco (como o `DiskReader` do legado); os curtos ficam na memória.
+- **P-34 Ajuda:** um manual próprio, em português e inglês, distribuído com o programa.
+- **P-35:** o `lm-headless` cobre a linha de comando; variáveis de ambiente e o modo portátil (configuração ao lado do
+  executável) entram.
+- **P-36:** obsoleto; as ligações MIDI ficam nas preferências da máquina, não no projeto.
+- **P-37:** a transposição global do projeto ganha um controle no transporte; o volume global é o do master.
+- **P-38:** a saída MIDI de uma faixa para aparelhos externos entra (o MIDI entre faixas continua fora da 1.0).
+- **P-39:** importar MIDI cria um canal da mesa por faixa importada; CC7 vira automação de volume da faixa, e CC10 vira
+  automação de pan desse canal.
+- **P-40:** a exportação de stems tem as duas opções: por faixa ou por canal da mesa.
