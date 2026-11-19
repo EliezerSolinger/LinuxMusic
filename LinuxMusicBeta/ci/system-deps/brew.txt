@@ -1,2 +1,6 @@
 # Homebrew packages the macOS jobs install (ci/install-system-deps.sh). One per line; `#` starts a comment.
-# (none yet: CoreAudio and CoreMIDI come with the system)
+# Add here what a new crate links to, with the crate's name beside it. CoreAudio and CoreMIDI come with the system.
+pkgconf               # the build scripts of the lm-sys-* crates find the C libraries with pkg-config
+libsndfile            # lm-sys-sndfile
+libsamplerate         # lm-sys-samplerate
+fluid-synth           # lm-sys-fluidsynth
