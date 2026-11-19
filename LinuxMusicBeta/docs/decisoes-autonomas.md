@@ -68,3 +68,16 @@ Formato: **decisão** — motivo. Data entre parênteses.
   `miri` e `loom` no CI (19/11).
 - ~~A biblioteca de interface sai do protótipo~~ — **decisão do usuário (19/11): a interface é GPUI, e só GPUI.** O
   protótipo deixou de comparar bibliotecas e virou a validação da GPUI com o núcleo (`prototipo-interface.md`).
+
+## Do `lm-time` (19/11)
+
+- **O BPM é guardado em milionésimos inteiros** (de 1 a 1000 BPM, até 6 casas decimais); o texto "119.88" vira a
+  fração exata 2997/25. Esses limites são o que mantém a aritmética exata.
+- **`tick_at(s)` é o último tique já começado** (`max{t : sample_at(t) <= s}`), e não o `floor` simples escrito no
+  I-18: com o `floor`, um evento cairia no bloco errado sempre que `sample_at` arredondasse para baixo. Assim, tique →
+  amostra → tique é exato sempre que os tiques não são mais finos que as amostras (na prática, sempre a 960 PPQ).
+- **As rampas de andamento já existem e são exatas:** o andamento varia linearmente no tempo (BPM por segundo), a
+  única lei cuja integral continua racional; as conversões são inteiras, em 256 bits. A rampa entre dois andamentos
+  iguais vira segmento constante; o último ponto não pode ser rampa.
+- **Inteiro de 256 bits próprio** (`lm-time/src/wide.rs`), em vez de uma crate, pela política de dependências do CI.
+
