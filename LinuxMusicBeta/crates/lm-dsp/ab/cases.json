@@ -4223,6 +4223,163 @@
         }
       },
       "settings": {}
+    },
+    {
+      "name": "dualfilter",
+      "unit": "plugin-effect",
+      "plugin": "dualfilter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Filter 1 type": 6,
+        "Cutoff frequency 1": 1200.0,
+        "Q/Resonance 1": 2.5,
+        "Gain 1": 140.0,
+        "Filter 2 type": 17,
+        "Cutoff frequency 2": 3000.0,
+        "Q/Resonance 2": 4.0,
+        "Mix": -0.3
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Cutoff frequency 1": 400.0,
+          "Mix": 0.6,
+          "Filter 2 type": 21,
+          "Gain 2": 60.0
+        }
+      }
+    },
+    {
+      "name": "dualfilter-exact-moog",
+      "unit": "plugin-effect",
+      "plugin": "dualfilter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Filter 1 type": 6,
+        "Cutoff frequency 1": 7000.0,
+        "Q/Resonance 1": 2.5,
+        "Gain 1": 140.0,
+        "Filter 2 type": 17,
+        "Cutoff frequency 2": 3000.0,
+        "Q/Resonance 2": 4.0,
+        "Mix": -0.3
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Mix": 0.6,
+          "Filter 2 type": 21,
+          "Gain 2": 60.0
+        }
+      }
+    },
+    {
+      "name": "dualfilter-formant-one",
+      "unit": "plugin-effect",
+      "plugin": "dualfilter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Filter 1 type": 14,
+        "Cutoff frequency 1": 5000.0,
+        "Filter 2 enabled": 0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Filter 1 type": 20,
+          "Q/Resonance 1": 6.0
+        }
+      }
+    },
+    {
+      "name": "crossovereq",
+      "unit": "plugin-effect",
+      "plugin": "crossovereq",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Band 1/2 Crossover": 200.0,
+        "Band 2/3 Crossover": 900.0,
+        "Band 3/4 Crossover": 4000.0,
+        "Band 1 Gain": 6.0,
+        "Band 2 Gain": -12.0,
+        "Band 3 Gain": 3.5,
+        "Band 4 Gain": -30.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Band 2/3 Crossover": 2500.0,
+          "Mute Band 3": 0,
+          "Band 1 Gain": -3.0
+        }
+      }
+    },
+    {
+      "name": "crossovereq-defaults",
+      "unit": "plugin-effect",
+      "plugin": "crossovereq",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {}
     }
   ]
 }

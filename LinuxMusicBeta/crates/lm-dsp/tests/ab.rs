@@ -25,13 +25,22 @@ const RATE: f32 = 48000.0;
 const NULL: f32 = 3.162_277_7e-5;
 
 /// Cases where the port differs from the legacy program on purpose, with the largest difference allowed and why
-const INTENTIONAL: &[(&str, f32, &str)] = &[(
-    "strip-12at7",
-    0.0316, // -30 dBFS
-    "The pot's gain at 0.4 is dbfs_to_amp(12 dB): the libm crate's expf gives one ulp less than Apple's (V2 chose \
+const INTENTIONAL: &[(&str, f32, &str)] = &[
+    (
+        "strip-12at7",
+        0.0316, // -30 dBFS
+        "The pot's gain at 0.4 is dbfs_to_amp(12 dB): the libm crate's expf gives one ulp less than Apple's (V2 chose \
      libm, for the same samples on every system), and the 12AT7's light model, this hard driven, amplifies that ulp \
      into a difference of about -37 dBFS. strip-12at7-exact-gain, at 0.45 where the two exp agree, nulls bit for bit",
-)];
+    ),
+    (
+        "dualfilter",
+        0.001, // -60 dBFS
+        "The Moog's coefficients follow the cutoff knob's ramp frame by frame, through expf: on 40 of the first period's \
+     256 cutoffs the libm crate's expf and Apple's differ by one ulp (V2: libm), and the Moog, this resonant, \
+     amplifies that into about -66 dBFS. dualfilter-exact-moog, the same without the Moog's ramp, stays near -100 dBFS",
+    ),
+];
 
 fn ab_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("ab")
@@ -386,6 +395,58 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
                         ratio: value("Ratio", 2.0, start),
                     },
                 ),
+            }
+        }
+        return out;
+    }
+    if case["unit"] == "plugin-effect" && ["dualfilter", "crossovereq"].contains(&case["plugin"].as_str().unwrap()) {
+        use lm_dsp::basic_filters::FilterType;
+        use lm_dsp::filter_effects::*;
+        use lm_dsp::small_effects::Ramp;
+        let first = &case["settings"];
+        let then = &case["then"]["settings"];
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        let block = block as usize;
+        let value = |key: &str, default: f32, start: usize| {
+            let before = f(first, key, default);
+            if start < at { before } else { f(then, key, before) }
+        };
+        // (sample-exact knobs: the legacy value buffer ramps in the period a knob changed, the first one from its
+        // default)
+        let ramp = |key: &str, default: f32, start: usize| {
+            if start == 0 {
+                Ramp { from: default, to: value(key, default, 0) }
+            } else if start == at {
+                Ramp { from: value(key, default, 0), to: value(key, default, start) }
+            } else {
+                Ramp::constant(value(key, default, start))
+            }
+        };
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let mut dual = DualFilter::new(rate);
+        let mut crossover = CrossoverEq::new(rate, block);
+        for start in (0..frames as usize).step_by(block) {
+            let span = &mut out[start..(start + block).min(frames as usize)];
+            if case["plugin"] == "dualfilter" {
+                let side = |n: usize| DualFilterSide {
+                    enabled: value(&format!("Filter {n} enabled"), 1.0, start) != 0.0,
+                    filter: FilterType::ALL[value(&format!("Filter {n} type"), 0.0, start) as usize],
+                    cutoff: ramp(&format!("Cutoff frequency {n}"), 7000.0, start),
+                    resonance: ramp(&format!("Q/Resonance {n}"), 0.5, start),
+                    gain: ramp(&format!("Gain {n}"), 100.0, start),
+                };
+                dual.process(span, &DualFilterSettings { sides: [side(1), side(2)], mix: ramp("Mix", 0.0, start) });
+            } else {
+                let settings = CrossoverSettings {
+                    crossovers: [
+                        value("Band 1/2 Crossover", 125.0, start),
+                        value("Band 2/3 Crossover", 1250.0, start),
+                        value("Band 3/4 Crossover", 5000.0, start),
+                    ],
+                    gains: core::array::from_fn(|b| value(&format!("Band {} Gain", b + 1), 0.0, start)),
+                    enabled: core::array::from_fn(|b| value(&format!("Mute Band {}", b + 1), 1.0, start) != 0.0),
+                };
+                crossover.process(span, &settings);
             }
         }
         return out;

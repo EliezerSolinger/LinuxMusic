@@ -16,4 +16,4 @@ libm.workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 # The interpolator the plugins give the sample player (libsamplerate, as the legacy program): for the A/B
-lm-sys-samplerate = { path = "../lm-sys-samplerate" }
+lm-sys-samplerate.workspace = true
