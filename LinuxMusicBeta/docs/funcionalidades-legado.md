@@ -48,7 +48,211 @@ Tudo aqui foi lido no código do legado (`legado/src`, `legado/plugins`, `legado
 
 ---
 
-<!-- As seções 1 a 4 entram acima da 5 conforme o levantamento termina. -->
+<!-- A seção 1 entra acima da 2 quando o levantamento terminar. -->
+
+## 2. Edição
+
+### 2.1 Notas (hoje: Piano Roll, `src/gui/editors/PianoRoll.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-NOT-001 | Desenhar notas | Clique no vazio cria uma nota com o tamanho escolhido, na grade (arredonda para o mais perto), com a última velocidade e pan usados; a nota nova fica selecionada e é tocada. Arrastar o corpo move; arrastar a cauda redimensiona. Botão direito apaga (arrastando, apaga várias). Clicar numa nota torna a velocidade, o pan e o tamanho dela os "últimos". Atalho Shift+D | core |
+| F-NOT-002 | Apagar notas | Ferramenta borracha: clique ou arrasto apaga (Shift+E) | core |
+| F-NOT-003 | Selecionar | Retângulo de seleção (Shift+S); Shift+arrasto alterna as notas do retângulo; segurar Ctrl em qualquer ferramenta vira seleção temporária; Ctrl+A tudo; Ctrl+Shift+A e Esc nada | core |
+| F-NOT-004 | Curva de pitch bend por nota | Ferramenta "detune" (Shift+T): desenhar uma curva de afinação sobre a nota, nas notas selecionadas; botão direito apaga pontos; o primeiro ponto é fixo; Shift+clique abre a curva no editor de automação | 1.0 (aberto, P-24: o novo tem automação por nota?) |
+| F-NOT-005 | Faca | Shift+K: arrastar uma **linha** (pode ser diagonal) corta as notas selecionadas (ou todas) ao longo dela; Ctrl = sem grade; Shift ao soltar tira os pedaços curtos; Esc/botão direito cancela | 1.0 |
+| F-NOT-006 | Strum | Shift+J: arrastar uma nota de um acorde desloca os inícios das notas do acorde em escada; Shift curva a escada | 1.0 |
+| F-NOT-007 | Mover notas | Modo de grade "Nudge" (move pelo passo, mantém o deslocamento) ou "Snap" (o início ou o fim cola na grade, o que estiver mais perto). Alt = sem grade. Shift no começo do arrasto = duplica. Mudar de tecla arrastando toca a nota | core |
+| F-NOT-008 | Redimensionar notas | Muda todas as selecionadas na grade; Alt sem grade (mín. 1 tique); Shift = estica a seleção proporcionalmente; Shift+Ctrl = "pegajoso": empurra as notas seguintes. Uma nota só movida deixa de ficar selecionada depois | core |
+| F-NOT-009 | Teclado | ↑/↓ rola; Shift+↑/↓ transpõe ±1 semitom; Ctrl+↑/↓ ±1 oitava (tamanho da oitava do microafinador se ligado); Shift+←/→ move pelo passo (Shift+Alt 1 tique); Ctrl+←/→ um compasso; Alt+←/→ vai ao clipe anterior/seguinte da faixa; Delete apaga; Home leva o cursor ao 0; Ctrl+0–9 escolhe o tamanho de nota; Alt+0–9 a quantização | core |
+| F-NOT-010 | Velocidade e pan das notas | Uma faixa abaixo das notas com Velocidade (0–200 %, 100) ou Pan (−100–100); pintar com o mouse nas notas perto ou nas selecionadas (Alt = só a de baixo do cursor); botão do meio volta ao padrão; roda ±1; duplo clique pede o valor; a opacidade da nota mostra a velocidade; altura da faixa ajustável | core |
+| F-NOT-011 | Ferramentas de notas | Colar (Shift+G: junta notas encostadas da mesma tecla); Preencher (Shift+F: estende até a próxima); Cortar sobreposições (Shift+C); Tamanho mínimo = o último; Tamanho máximo = o último; Inverter no tempo (Shift+R); Quantizar posições e/ou tamanhos (seleção ou tudo) | 1.0 (quantizar: core) |
+| F-NOT-012 | Quantização e tamanho de nota | Quantização: "travar na nota" (= tamanho da nota) e 1/1–1/64 mais tercinas 1/3–1/192; tamanho de nota: "última nota", 1/1–1/64, tercinas; salvos entre sessões | core |
+| F-NOT-013 | Zoom e rolagem | Zoom horizontal 12,5–800 %, vertical 25–400 %; roda rola na vertical; Shift ou roda horizontal rola na horizontal; Ctrl+roda zoom no ponto do mouse; Ctrl+Alt+roda muda a quantização; Ctrl+Shift+roda muda o tamanho de nota. A grade usa a fórmula de compasso do lugar do clipe na música | core |
+| F-NOT-014 | Tom, escala e acorde | Escolher tom (C–B) e escala (todas da lista de acordes/escalas) marca as notas da escala no teclado inteiro; escolher um acorde faz o clique inserir o acorde inteiro (Shift+clique insere como arpejo); marcar/desmarcar semitons, oitavas, a escala ou o acorde atual pelo menu da tecla; "selecionar todas as notas desta tecla" | 1.0 |
+| F-NOT-015 | Teclado do piano | Clique toca (velocidade pela posição horizontal na tecla), arrasto faz glissando; teclas desligadas pelo mapa do microafinador aparecem diferentes; nomes das notas opcionais nas notas | core |
+| F-NOT-016 | Notas fantasmas | Mostrar as notas de outro clipe por baixo (escolhido no menu do clipe), com botão para limpar | 1.0 |
+| F-NOT-017 | Tocar o clipe | Espaço toca só este clipe em loop | 1.0 |
+| F-NOT-018 | Gravar no editor de notas | Gravar do teclado MIDI com o clipe tocando; gravar com a música (ou o padrão) tocando ("acompanhar"); quantizar automático (configuração) | 1.0 |
+| F-NOT-019 | Copiar, cortar, colar | Ctrl+X/C/V; colar no cursor, na grade; o colado fica selecionado; funciona entre projetos | core |
+| F-NOT-020 | Importar e exportar clipe | Arquivo `.xpt`/`.xptz`, com a opção "só as notas selecionadas"; importar avisa que substitui | obsoleto — substituído por copiar/colar entre projetos (o formato XML não existe no novo); aberto (P-25) se quiser um arquivo de clipe |
+| F-NOT-021 | Selecionar por região da régua | Ctrl+arrasto na régua seleciona as notas daquele trecho | 1.0 |
+| F-NOT-022 | Abrir o editor sem clipe | Num projeto vazio, cria e abre o primeiro clipe da primeira faixa de instrumento | 1.0 |
+| F-NOT-023 | Teclado do computador como piano | As teclas sem modificador tocam o instrumento da faixa | 1.0 |
+
+### 2.2 Gravação por passos (hoje: barra do Piano Roll, `src/gui/editors/StepRecorder.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-PAS-001 | Gravar um passo de cada vez | Liga/desliga; começa no cursor (ou no 0 se a música toca); o passo tem o tamanho de nota; apertar notas (teclado MIDI ou do computador) avança um passo; notas seguras juntas formam um acorde (70 ms de tolerância); → estende o passo, ← encurta; o passo atual aparece desenhado | 1.0 |
+
+### 2.3 Arranjo (hoje: Song Editor, `src/gui/editors/SongEditor.cpp`, `TrackContainerView.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-ARR-001 | Ferramentas | Desenhar (padrão: clicar no vazio cria um clipe do tipo da faixa; arrastar move e redimensiona); Faca (clicar num clipe corta no ponto); Seleção (retângulo sobre faixas × tempo, que acompanha a rolagem e o zoom); Ctrl no modo desenhar = seleção temporária | core |
+| F-ARR-002 | Inserir e remover compasso | Shift+Insert/Shift+Enter insere um compasso no cursor (empurra tudo depois); Shift+Delete/Shift+Backspace remove | 1.0 |
+| F-ARR-003 | Cursor por compasso | ←/→ volta/avança um compasso (pelo mapa de andamentos); Home vai ao 0 | core |
+| F-ARR-004 | Apagar e selecionar | Delete apaga os selecionados; Ctrl+A, Ctrl+Shift+A, Esc | core |
+| F-ARR-005 | Dividir no cursor | S divide os clipes selecionados que cruzam o cursor (nenhum selecionado: todos), num desfazer | core |
+| F-ARR-006 | Copiar, cortar, colar, duplicar | Ctrl+C/X mantêm a forma relativa; Ctrl+V cola **no cursor**, na faixa do primeiro selecionado (ou a do mouse, ou a primeira); Ctrl+D duplica logo depois, arredondado a compassos inteiros. Botão direito no vazio: Colar. Colar respeita tipos de faixa compatíveis | core |
+| F-ARR-007 | Roda estilo REAPER | Roda = zoom horizontal no mouse; Ctrl+roda = altura de todas as faixas; Alt+roda ou roda horizontal = rolar na horizontal; Shift+roda ou roda sobre os cabeçalhos = rolar na vertical; Ctrl+0 volta o zoom | core |
+| F-ARR-008 | Zoom | 4–400 px por compasso (padrão 128), lembrado | core |
+| F-ARR-009 | Grade | 8, 4, 2, 1 compassos, 1/2, 1/4 (padrão), 1/8, 1/16 de compasso; "grade proporcional" que acompanha o zoom (64 compassos a 1/64); a grade conta compassos pelo mapa de andamentos (respeita as mudanças de fórmula) | core |
+| F-ARR-010 | Criar faixas | Botões para faixa de padrão, de amostra, de áudio, de automação, pasta; faixa de instrumento nasce ao soltar um instrumento ou preset | core (no novo: tipo único; ver seção 3) |
+| F-ARR-011 | Soltar arquivos no arranjo | Do gerenciador de arquivos: projeto abre (pergunta se salva); áudio **mais longo que um limite** vira faixa de áudio nova com o item no compasso do ponto (ou do cursor); áudio curto vira faixa de instrumento com o sampler carregado. Do navegador interno: amostra, instrumento (carrega em segundo plano), preset, SoundFont, VST, patch, projeto importado (MIDI), faixa arrastada (cria a cópia). Um desfazer | core (áudio) · 1.0 (o resto) |
+| F-ARR-012 | Faixa selecionada | Clicar em qualquer lugar de uma faixa (cabeçalho, linha ou clipe) a torna a faixa selecionada (destacada) | core |
+| F-ARR-013 | Depois de abrir um projeto | O arranjo vem para frente e rola para o início | 1.0 |
+| F-ARR-014 | Grade de fundo | Faixas alternadas a cada 4 compassos (ou seguindo as fórmulas), linhas de compasso e de grade, a grade fina engrossa para manter ≥ 4 px | core |
+
+### 2.4 Régua, loop, marcadores, regiões e andamento (hoje: régua de todo editor e a faixa de tempo do Song Editor, `TimeLineWidget.cpp`, `TempoLaneWidget.cpp`, `src/core/SongMarkers.cpp`, `TempoMap.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-REG-001 | Transporte em cada editor | Tocar/parar (Espaço), pausar/continuar (Shift+Espaço), gravar, gravar acompanhando, gravação por passos; maximizar o editor (Shift+F11). O fork esconde esses botões quando a barra principal os tem | obsoleto em parte — a barra de transporte fica visível nas duas páginas (decisão de 19/11); os atalhos ficam (core) |
+| F-REG-002 | Linha do tempo própria por editor | Cada editor (música, padrão, clipe) tem cursor, início e fim do loop, loop ligado e comportamento ao parar | aberto (P-26): o novo tem um transporte só |
+| F-REG-003 | Rolagem automática | 3 estados: por página, contínua, desligada | core |
+| F-REG-004 | Ao parar | Volta ao início / **volta para onde começou** (padrão) / fica onde parou | core |
+| F-REG-005 | Mover o cursor | Clicar/arrastar na régua | core |
+| F-REG-006 | Desenhar o loop na régua | Arrastar na metade de cima da régua desenha o trecho do loop e o liga (na grade; Ctrl = tique); C liga/desliga o loop | core |
+| F-REG-007 | Editar o loop com Shift | Três modos (configuração e menu da régua): dois botões (Shift+esquerdo = início, Shift+direito = fim), pegar o mais perto, alças (arrastar as pontas ou o corpo). Pontos magnéticos na grade (Ctrl desliga); passar um do outro troca; nunca tamanho zero. Menu: "início do loop aqui", "fim do loop aqui" | core |
+| F-REG-008 | Selecionar uma região pela régua | Ctrl+arrasto seleciona os clipes de todas as faixas naquele trecho | 1.0 |
+| F-REG-009 | Números dos compassos | Pela fórmula de compasso do mapa (rótulo em cada mudança); rareiam quando o zoom diminui | core |
+| F-REG-010 | Cursor | Linha que acompanha; fica **vermelha gravando** | core |
+| F-REG-011 | Marcadores com nome | M cria no cursor ("Marcador N"); duplo clique na linha de marcadores ou menu "Adicionar um marcador aqui" (pede o nome); um por tique; arrastar move; duplo clique renomeia; menu: Renomear, Cor, "Marca uma mudança de andamento" (cria/tira um ponto de andamento no mesmo lugar), Tocar daqui, Remover. **Teclas 1–9 pulam para os marcadores 1–9** (como no REAPER). Desfazível | 1.0 |
+| F-REG-012 | Regiões | Arrastar na linha de regiões desenha; Shift+R cria uma sobre o loop; duplo clique cria sobre o loop ou de um compasso; arrastar move, as pontas redimensionam (mín. 1/16 de compasso); **um clique numa região a torna o loop**; sobrepostas permitidas. Menu: Renomear, Cor, Loop sobre a região, Tocar do início, **Exportar a região como áudio**, Remover | 1.0 |
+| F-REG-013 | Mapa de andamentos | Pontos de andamento com BPM; duplo clique ou menu "mudança de andamento aqui" (pede o BPM); editar; **rampa até o próximo ponto**; fórmula de compasso por ponto ("Batidas no compasso" 1–máx, "Valor da batida" 1/2/4/8/16/32, "Tirar a mudança"); mudar a fórmula cola no início do compasso; arrastar move (menos o do 0), um desfazer por arrasto; mostra o BPM quando não há mudanças. Automação antiga de andamento vira pontos | core (pontos e fórmulas) · 1.0 (rampas, decididas antes da 1.0) |
+| F-REG-014 | Mudar o andamento no cursor | Uma ação da janela principal | 1.0 |
+
+### 2.5 Padrões (Beat+Bassline) (hoje: Pattern Editor, `src/gui/editors/PatternEditor.cpp`, `src/core/PatternStore.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-PAD-001 | Editor de padrões | Uma lista de padrões; cada faixa do editor tem um clipe por padrão; escolher o padrão (combo, +/−); novo padrão; clonar padrão; acrescentar faixa de amostra ou de automação ao editor; tocar o padrão | obsoleto — substituído por itens MIDI que se repetem, editados numa vista de passos (`arquitetura-nova.md`, item 2) |
+| F-PAD-002 | Passos | Clique liga/desliga o passo; roda muda a velocidade ±5 (0–100); passos mais altos mais claros; acrescentar passos (+1 compasso), remover, clonar (dobra copiando). No arranjo, os passos se editam quando o zoom passa de 96 px/compasso | 1.0 (como a vista de passos de um item MIDI) |
+| F-PAD-003 | Faixa de padrão e clipe de padrão | Uma faixa por padrão; o clipe toca o padrão em loop, pode começar no meio; duplo clique abre o editor; renomear | obsoleto — substituído por itens MIDI que se repetem |
+| F-PAD-004 | Amostras na grade do padrão | Faixa de amostra dentro do editor de padrões, para batidas com amostras curtas | aberto (P-23): no novo, uma bateria com amostras é um instrumento (AudioFileProcessor, AvlDrums, DrumMachines) tocado pela vista de passos? |
+
+### 2.6 Curvas de automação (hoje: Automation Editor, `src/gui/editors/AutomationEditor.cpp`, `src/core/AutomationClip.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-AUT-001 | Desenhar pontos | Clique cria um ponto (valor pela altura, no passo do parâmetro); arrastar o ponto move tempo e valor; Ctrl sem grade; Shift+clique traça uma reta de pontos desde o último (um por passo); botão direito apaga pontos arrastando. Shift+D | core |
+| F-AUT-002 | Apagar pontos | Borracha (Shift+E) | core |
+| F-AUT-003 | Valor de saída (salto no ponto) | Shift+C: cada ponto tem valor de entrada e de saída (degrau no ponto); botão direito volta a saída à entrada | aberto (P-27): o novo tem pontos com `curve`; o degrau é dois pontos no mesmo tique? |
+| F-AUT-004 | Tangentes | Shift+T: arrastar as tangentes do ponto (trava as dele); botão direito destrava | obsoleto — substituído pela forma `curve` (−1 a 1) de cada ponto |
+| F-AUT-005 | Editar o valor | Duplo clique num ponto pede o valor | core |
+| F-AUT-006 | Espelhar | Vertical e horizontal, do clipe ou do trecho selecionado | 1.0 |
+| F-AUT-007 | Interpolação | Discreta, linear, cúbica (Hermite) com tensão 0–1, por clipe | obsoleto — substituído pela `curve` por ponto; parâmetros discretos nunca interpolam (`arquitetura-nova.md`, item 1) |
+| F-AUT-008 | Zoom, grade e rolagem | Horizontal 12,5–800 %; vertical automático (ajusta ao mín./máx.) ou 25–1600 %; quantização 1/1–1/192 com tercinas; a mesma roda do editor de notas; ↑/↓ rola, ←/→ move o cursor, Home vai ao 0 | core |
+| F-AUT-009 | Fantasmas | Mostrar por baixo as notas de um clipe MIDI ou a onda de uma amostra | 1.0 |
+| F-AUT-010 | Ligar um controle soltando-o | Ctrl+arrastar um botão qualquer e soltar no editor liga o controle à curva (avisa se já estava) | obsoleto — substituído por: a lane pertence ao parâmetro (a automação mora no dono, `arquitetura-nova.md`); o gesto de "mostrar a automação deste botão" é de quem desenhar |
+| F-AUT-011 | Tocar a curva | Espaço, com régua e loop | 1.0 |
+
+## 3. Faixas
+
+No programa novo há **um tipo de faixa**, que pode ter itens de áudio e de MIDI, um instrumento, volume, mudo e solo,
+**sem pan**, e uma lista de saídas para canais da mesa (`arquitetura-nova.md`, item 2). A lista abaixo diz o que cada
+tipo do legado faz e para onde vai.
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-TRK-001 | Propriedades comuns | Nome, cor (opcional), mudo, solo, altura (≥ 32, padrão 56), profundidade na pasta, camada ouvida | `src/core/Track.cpp` | core |
+| F-TRK-002 | Faixa de instrumento | Um instrumento; volume, pan, afinação em cents, faixa de pitch bend (1–60, 2), usar a transposição geral, nota base, primeira e última nota, canal do mixer, porta MIDI, rack de CC MIDI, armar, modo de gravação MIDI e quantização | `src/tracks/InstrumentTrack.cpp` | core (sem pan; detalhes na seção 1, janela do instrumento) |
+| F-TRK-003 | Faixa de amostra | Amostras curtas na grade; volume, pan, canal; funciona no editor de padrões | `src/tracks/SampleTrack.cpp` | obsoleto — substituído pela faixa única com itens de áudio (e P-23 para as batidas) |
+| F-TRK-004 | Faixa de áudio | Gravações e arquivos como itens, com camadas e fades; só na música; volume, pan, armar, monitorar, entrada, canal | `src/tracks/AudioTrack.cpp` | core (sem pan) |
+| F-TRK-005 | Faixa de padrão | Uma por padrão | `src/tracks/PatternTrack.cpp` | obsoleto — substituído por itens MIDI que se repetem |
+| F-TRK-006 | Faixa de automação | Guarda clipes de automação ligados a qualquer controle; soltar um controle nela cria um clipe ligado; "ligar/desligar a gravação de todos" | `src/tracks/AutomationTrack.cpp` | obsoleto — substituído pelas lanes de automação no dono do parâmetro (faixa ou canal da mesa) |
+| F-TRK-007 | Pasta | Agrupa as faixas seguintes (aninhável); recolher/expandir; mudo e solo da pasta valem para dentro; volume e pan do canal de grupo; mover a pasta move o conteúdo; regra: só um nível mais fundo que a de cima, e só se ela for pasta | `src/tracks/FolderTrack.cpp` | core (organizar, recolher, mudo/solo do grupo) · obsoleto: o canal de grupo (a pasta não soma) |
+| F-TRK-008 | Camadas da faixa | Todo clipe tem camada; a faixa cresce uma altura por camada; a ouvida em destaque, as outras apagadas | `Track` (lanes) | core |
+| F-TRK-009 | Canal automático por faixa nova; clone ganha canal novo | | `Track` | obsoleto — ver F-MIX-002 |
+| F-TRK-010 | Tamanho da faixa | Termina no fim do último clipe | `Track` | core |
+
+### 3.1 Cabeçalho da faixa (o design 02 aprovado, sem o knob de pan)
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-TRK-020 | Número e cor | Coluna com o número da faixa sobre a cor dela (escurece quando muda); é a alça de mover | `TrackGrip.cpp` | core |
+| F-TRK-021 | Armar, nome, M, S | Linha 1 do cabeçalho; o nome com ícone, cortado quando não cabe | `TrackView::buildHeader` | core |
+| F-TRK-022 | Knobs de volume e pan | Knobs pequenos como no REAPER, sem régua; agem no volume e pan **da faixa** (antes do canal); numa pasta, no canal de grupo | `TrackChannelControls.cpp` | core (volume) · obsoleto: pan (decisão de 19/11) |
+| F-TRK-023 | Botão FX | "FX" ou "FX n", aceso quando há efeitos; abre a cadeia da faixa (ou a do canal compartilhado) | `TrackView.cpp` | aberto (P-28): no novo os efeitos são do canal; o botão abre os inserts do canal da saída principal? |
+| F-TRK-024 | Botão I/O | Canal do mixer (novo canal ou lista), entrada MIDI, menu MIDI (dispositivos de entrada e saída, rack de CC), entrada de áudio e monitoramento | `TrackView.cpp` | core (no novo: destino das saídas, entrada, monitor) |
+| F-TRK-025 | Terceira linha (faixa alta) | Entrada MIDI ("Omni"/canal/"-") ou de áudio ("-"/"Entrada: N"/"N e N+1") e o número do canal; some quando o cabeçalho é estreito | `TrackView.cpp` | core |
+| F-TRK-026 | Medidor do canal na borda | 6 px, RMS, −60–0 dB | `TrackLevelMeter` | core (a saída principal) |
+| F-TRK-027 | Clique no nome | Abre/fecha a janela do instrumento (opção "uma janela de instrumento por vez" fecha as outras), a de efeitos, ou o editor de padrões; duplo clique ou botão direito renomeia no lugar (Esc cancela); soltar preset/plugin no nome troca o instrumento | `TrackLabelButton.cpp` | core |
+| F-TRK-028 | Indicador de atividade | Pisca com as notas; fica vermelho com "áudio corrompido"; clicar toca a nota padrão | `FadeButton.cpp` | 1.0 |
+| F-TRK-029 | Mover e copiar faixas | Arrastar a alça move (um desfazer); arrastar para o lado entra/sai da pasta de cima; Ctrl (Alt no Mac) arrasta uma cópia, que pode ir a outro editor ou outra instância | `TrackView.cpp` | core (mover, pastas) · 1.0 (copiar arrastando) |
+| F-TRK-030 | Altura e largura | Arrastar a borda de baixo (ou Shift+arrasto) muda a altura; Shift+clique volta ao padrão; arrastar a borda direita do cabeçalho muda a largura de todos; Ctrl+Alt+roda ±1 px, Shift+Alt+roda ±5 px. O design 02 tem três alturas | `TrackView.cpp` | core |
+| F-TRK-031 | Menu da faixa | Clonar (logo abaixo); Remover (pergunta, com "não perguntar de novo"); Limpar (apaga os clipes); Exportar a faixa como áudio; Exportar a faixa como MIDI; canal do mixer; Entrar na pasta de cima / Sair da pasta; MIDI; conector de pinos; "um canal do mixer por saída"; ligar/desligar a gravação da automação; Cor ▸ mudar (paleta) / padrão / sortear (48 cores) / zerar as cores dos clipes | `TrackOperationsWidget.cpp` | core (clonar, remover, limpar, cor, pastas) · 1.0 (exportar áudio/MIDI, canais por saída) · obsoleto: conector de pinos |
+| F-TRK-032 | Soltar coisas numa faixa | Uma faixa do mesmo tipo solta substitui os ajustes; amostra numa faixa de áudio cria um item no ponto; preset/plugin numa faixa de instrumento carrega; controle numa faixa de automação cria a curva | `TrackContentWidget.cpp` | core (amostra, instrumento) · 1.0 (o resto) |
+| F-TRK-033 | Clique na linha vazia | Cria um clipe do tipo da faixa no ponto (MIDI de 1 compasso, automação, amostra vazia, item de áudio vazio, padrão); Ctrl+clique vira seleção | `TrackContentWidget.cpp` | core (item MIDI) · aberto (P-29: item de áudio vazio faz sentido?) |
+| F-TRK-034 | Menu do botão armar (instrumento) | Overdub / Substituir / Take numa camada; quantizar ao gravar | ver F-REC-101 | 1.0 |
+
+## 4. Clipes e itens
+
+### 4.1 Comum a todo clipe (`src/core/Clip.cpp`, `src/gui/clips/ClipView.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-CLP-001 | Propriedades | Início, tamanho, deslocamento do conteúdo (aparar à esquerda mantém o conteúdo no lugar), nome, cor (opcional: senão a da faixa), mudo, tamanho automático (segue o conteúdo), camada | core |
+| F-CLP-002 | Mover | Arrastar o corpo; com seleção, move a seleção inteira; por padrão a **distância** anda em passos da grade (mantém o fora-da-grade); Shift = o início ou o fim cola na grade; Alt/Ctrl depois de começar = livre. Mostra a posição (compasso:tique) | core |
+| F-CLP-003 | Redimensionar e aparar | Borda direita = fim; borda esquerda = aparar o início (o conteúdo fica; MIDI e automação não estendem antes do conteúdo); passos da grade, Shift = absoluto, Alt/Ctrl = livre (mín. 1 tique); mostra o tamanho | core |
+| F-CLP-004 | Mover para outra faixa | Arrastar para cima/baixo leva para outra faixa do mesmo tipo (toda a seleção ou nada), um desfazer | core |
+| F-CLP-005 | Selecionar e copiar com o mouse | Ctrl+clique (Alt no Mac) alterna a seleção; Ctrl+arrasto num selecionado arrasta uma **cópia** (pode ir para outra faixa ou instância); soltar um clipe sobre outro do mesmo tipo copia o conteúdo para ele | core (seleção, cópia) · 1.0 (soltar sobre outro) |
+| F-CLP-006 | Mudo e apagar com o mouse | Ctrl+botão direito ou Ctrl+meio = mudo; Shift+botão direito ou botão do meio = apagar | core |
+| F-CLP-007 | Faca | Um marcador segue o mouse (na grade a partir da borda esquerda, direita ou global; Ctrl/Alt livre); soltar divide em dois. MIDI: Shift ao soltar = **divisão destrutiva** (as notas são cortadas de verdade). Botão direito cancela | core (divisão) · 1.0 (destrutiva) |
+| F-CLP-008 | Menu comum | Apagar · Cortar · Copiar · Colar · Mudo · Exportar o clipe como áudio · Cor ▸ mudar/padrão/sortear · Tamanho automático liga/desliga · Ouvir esta camada · Comp. Os textos viram "…seleção" com vários | core (o básico) · 1.0 (exportar, tamanho automático) |
+| F-CLP-009 | Aparência | Mudo fica dessaturado; selecionado mais escuro; camada não ouvida apagada | core |
+| F-CLP-010 | Área de transferência | Clipes e notas vão como texto para a área de transferência do sistema e colam em outro projeto ou instância | core (no novo: a árvore como JSON, H13) |
+| F-CLP-011 | Desfazer | Um passo por arrasto, por colar, por mudança de camada, por edição de item | core (gesto = um passo, I-3.7) |
+
+### 4.2 Itens MIDI (`src/tracks/MidiClip.cpp`, `src/gui/clips/MidiClipView.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-CLP-020 | Abrir no editor de notas | Duplo clique; menu "Abrir no piano roll" | core |
+| F-CLP-021 | Fantasma | "Usar como fantasma no piano roll" / "no editor de automação" | 1.0 |
+| F-CLP-022 | Limpar notas, juntar, cortar o que sobra | Limpar todas as notas; **Juntar a seleção** (≥ 2 clipes da mesma faixa viram um com todas as notas); tirar as notas fora dos limites visíveis | 1.0 |
+| F-CLP-023 | Transpor | Pede os semitons, limitado para todas as notas ficarem em 0–127; na seleção | 1.0 |
+| F-CLP-024 | Nome | Voltar ao nome padrão; mudar o nome | core |
+| F-CLP-025 | Tamanho automático | O clipe na música termina no compasso inteiro depois da última nota (mín. 1 compasso) | core |
+| F-CLP-026 | Desenho | Mini piano roll das notas, linhas de compasso, nome, ícone de mudo | core |
+
+### 4.3 Clipes de amostra (`src/core/SampleClip.cpp`, `src/gui/clips/SampleClipView.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-CLP-040 | Carregar a amostra | Duplo clique abre o arquivo; soltar uma amostra no clipe troca | obsoleto — substituído pelo item de áudio (F-CLP-060); soltar um arquivo cria o item |
+| F-CLP-041 | Crossfades com tensão | Comprimento do fade em cada ponta e a tensão da curva, com alças; Ctrl/Alt na grade | aberto (P-30): o item de áudio tem fades automáticos; curvas ajustáveis eram planejadas |
+| F-CLP-042 | Inverter a amostra | Toca ao contrário | aberto (P-31): não existe no item de áudio |
+| F-CLP-043 | Exportar a amostra | Grava o buffer como FLAC | 1.0 (exportar o item) |
+| F-CLP-044 | Memória | Automático (arquivos longos do disco) / carregar na RAM / ler do disco | aberto (P-32) |
+| F-CLP-045 | Takes | Ver F-REC-045 | obsoleto |
+| F-CLP-046 | Tempo | Amostras comuns ficam em segundos (o tamanho em tiques muda com o BPM); gravações ficam em tiques | core (o `timebase` de cada item) |
+
+### 4.4 Itens de áudio (`src/core/AudioItem.cpp`, `src/gui/clips/AudioItemView.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-CLP-060 | Propriedades | Arquivo, ganho −60 (mudo)–+24 dB, fade de entrada e de saída (5 ms cada), memória, camada, original + andamento (gravação), versão renderizada, lista de xruns | core |
+| F-CLP-061 | Alças no item | Faixa de 7 px no alto: arrastar o canto esquerdo = fade de entrada, o direito = fade de saída (em ms), o meio = **ganho** (0,5 dB por px, Shift 0,05); um desfazer ao soltar; texto "Fade in: N ms", "Ganho: x dB" | core |
+| F-CLP-062 | Crossfade automático | Itens sobrepostos na camada ouvida se cruzam com potência igual na sobreposição; fades ≤ metade do item; em quadros | core |
+| F-CLP-063 | Desenho | Forma de onda do trecho, **marcas vermelhas nos xruns**, curvas de fade como se ouve, linha de ganho, nome e ganho se ≠ 0 dB, apagado fora da camada ouvida | core |
+| F-CLP-064 | Menu | Memória ▸ automático (≥ 20 s do disco) / RAM / disco; "Zerar ganho e fades" | core (zerar) · aberto (memória, P-32) |
+| F-CLP-065 | Normalizar | Só planejado | 1.0 |
+| F-CLP-066 | Curvas de fade ajustáveis | Só planejado | aberto (P-30) |
+| F-CLP-067 | Um cursor por voz | Até 32 itens soando ao mesmo tempo por faixa | obsoleto — limite do motor velho |
+
+### 4.5 Clipes de automação (`src/core/AutomationClip.cpp`, `src/gui/clips/AutomationClipView.cpp`)
+
+| Id | Funcionalidade | O que faz | Status |
+|---|---|---|---|
+| F-CLP-080 | Vários controles numa curva | Um clipe liga a vários controles; o menu "N conexões" desliga cada um; soltar um controle no clipe acrescenta (reescalando os pontos) | obsoleto — substituído por uma lane por parâmetro (P-33 se quiser "uma curva para vários") |
+| F-CLP-081 | Gravar a automação | Ligar a gravação no clipe: mexer no controle tocando grava os pontos (só as mudanças); ícone vermelho | 1.0 (gravação de automação, I-6.4) |
+| F-CLP-082 | Abrir, limpar, nome, espelhar | Duplo clique abre o editor; Limpar; nome padrão = o do controle; espelhar vertical/horizontal | core (abrir) · 1.0 (o resto) |
+| F-CLP-083 | Tamanho | No mínimo 1 compasso | obsoleto — a lane do parâmetro cobre a música inteira |
+
+<!-- (A seção 4.6 "Itens que seguem o andamento" está em F-REC-090.) -->
 
 ## 5. Gravação
 
