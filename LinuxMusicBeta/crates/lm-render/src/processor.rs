@@ -114,6 +114,24 @@ impl<'b> Buffers<'b> {
         }
     }
 
+    /// A block for a host other than the renderer (a plugin's test bench, an offline render of one plugin): `data`
+    /// holds the input channels (none when `in_place`), then the output channels, then the sidechain channels, each
+    /// `stride` samples apart, as the renderer lays a node's block out. On an in-place block the outputs must already
+    /// hold the input; every output must be zeroed by the caller otherwise (U23)
+    pub fn from_block(data: &'b mut [f32], stride: usize, frames: usize, shape: BlockShape) -> Self {
+        let layout = BufferLayout {
+            inputs: shape.inputs,
+            outputs: shape.outputs,
+            sidechain: shape.sidechain,
+            in_place: shape.in_place,
+            stride,
+        };
+        assert!(frames <= stride, "{frames} frames in a stride of {stride}");
+        assert!(data.len() >= layout.len(), "a block of {} samples for {} needed", data.len(), layout.len());
+        assert!(!shape.in_place || shape.inputs == shape.outputs, "an in-place block has as many inputs as outputs");
+        Self::new(data, layout, frames)
+    }
+
     pub fn frames(&self) -> usize {
         self.frames
     }
@@ -238,6 +256,42 @@ impl ChannelsMut<'_> {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut [f32]> {
         let frames = self.frames;
         self.data.chunks_mut(self.stride).take(self.count).map(move |c| &mut c[..frames])
+    }
+}
+
+/// The channels of a block made with [`Buffers::from_block`]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BlockShape {
+    pub inputs: usize,
+    pub outputs: usize,
+    pub sidechain: usize,
+    /// Inputs and outputs are the same channels (an insert): `inputs == outputs`
+    pub in_place: bool,
+}
+
+impl BlockShape {
+    fn separate_inputs(&self) -> usize {
+        if self.in_place { 0 } else { self.inputs }
+    }
+
+    /// The samples a block of this shape needs with `stride` samples per channel
+    pub fn len(&self, stride: usize) -> usize {
+        (self.separate_inputs() + self.outputs + self.sidechain) * stride
+    }
+
+    /// Where input channel `ch` starts (on an in-place block, the output channel that holds it)
+    pub fn input_offset(&self, ch: usize, stride: usize) -> usize {
+        ch * stride
+    }
+
+    /// Where output channel `ch` starts
+    pub fn output_offset(&self, ch: usize, stride: usize) -> usize {
+        (self.separate_inputs() + ch) * stride
+    }
+
+    /// Where sidechain channel `ch` starts
+    pub fn sidechain_offset(&self, ch: usize, stride: usize) -> usize {
+        (self.separate_inputs() + self.outputs + ch) * stride
     }
 }
 
@@ -411,6 +465,25 @@ mod tests {
         }
         assert_eq!(b.output(1)[0], 2.0);
         assert_eq!(b.output(0)[2], 3.0);
+    }
+
+    #[test]
+    fn a_block_from_outside_the_renderer() {
+        let shape = BlockShape { inputs: 1, outputs: 2, sidechain: 1, in_place: false };
+        let mut data = vec![0.0f32; shape.len(8)];
+        data[shape.input_offset(0, 8)] = 1.0;
+        data[shape.sidechain_offset(0, 8) + 2] = 5.0;
+        let mut b = Buffers::from_block(&mut data, 8, 4, shape);
+        assert_eq!(b.input(0)[0], 1.0);
+        assert_eq!(b.sidechain(0).map(|s| s[2]), Some(5.0));
+        b.output(1)[3] = 2.0;
+        assert_eq!(b.output(1).len(), 4);
+        assert_eq!(data[shape.output_offset(1, 8) + 3], 2.0);
+        let insert = BlockShape { inputs: 2, outputs: 2, sidechain: 0, in_place: true };
+        let mut data = vec![0.5f32; insert.len(4)];
+        let mut b = Buffers::from_block(&mut data, 4, 4, insert);
+        assert_eq!(b.inputs(), 0);
+        assert_eq!(b.in_out(1)[0], 0.5);
     }
 
     #[test]

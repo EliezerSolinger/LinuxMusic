@@ -318,6 +318,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugin"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "libm",
+ "lm-base",
+ "lm-doc",
+ "lm-dsp",
+ "lm-render",
+ "lm-state",
+ "lm-time",
+]
+
+[[package]]
 name = "lm-render"
 version = "0.1.0"
 dependencies = [

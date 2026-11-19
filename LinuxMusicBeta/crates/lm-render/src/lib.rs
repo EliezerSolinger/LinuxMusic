@@ -46,8 +46,8 @@ pub use install::{Install, NodeCore, Relocate, Retired, Returned};
 pub use panic::{install_panic_hook, is_render_thread};
 pub use params::ParamSlots;
 pub use processor::{
-    Adopted, Buffers, Channels, ChannelsMut, DisplayReader, DisplayWriter, HostOutbox, PluginErrorKey, PluginRequest,
-    ProcessContext, Processor, TransportInfo, display_channel,
+    Adopted, BlockShape, Buffers, Channels, ChannelsMut, DisplayReader, DisplayWriter, HostOutbox, PluginErrorKey,
+    PluginRequest, ProcessContext, Processor, TransportInfo, display_channel,
 };
 pub use program::{
     AUTOMATION_GRID, AudioItem, ChannelMix, Feed, HostParam, ItemEvent, ItemEventKind, Metronome, MidiItem,
