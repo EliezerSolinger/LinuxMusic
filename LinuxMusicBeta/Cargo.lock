@@ -109,12 +109,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-utils"
-version = "0.8.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
-
-[[package]]
 name = "endi"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -281,35 +275,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "lm-doc"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "imbl",
- "lm-base",
- "lm-state",
-]
-
-[[package]]
 name = "lm-dsp"
 version = "0.1.0"
 dependencies = [
  "libm",
  "lm-sys-samplerate",
  "serde_json",
-]
-
-[[package]]
-name = "lm-render"
-version = "0.1.0"
-dependencies = [
- "assert_no_alloc",
- "libm",
- "lm-base",
- "lm-time",
- "loom",
- "rtrb",
- "triple_buffer",
 ]
 
 [[package]]
@@ -343,26 +314,12 @@ name = "lm-sys-fpu"
 version = "0.1.0"
 
 [[package]]
-name = "lm-sys-lilv"
-version = "0.1.0"
-dependencies = [
- "lm-base",
-]
-
-[[package]]
 name = "lm-sys-linux"
 version = "0.1.0"
 dependencies = [
  "libc",
  "lm-base",
  "zbus",
-]
-
-[[package]]
-name = "lm-sys-rubberband"
-version = "0.1.0"
-dependencies = [
- "lm-base",
 ]
 
 [[package]]
@@ -745,15 +702,6 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
-]
-
-[[package]]
-name = "triple_buffer"
-version = "8.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "420466259f9fa5decc654c490b9ab538400e5420df8237f84ecbe20368bcf72b"
-dependencies = [
- "crossbeam-utils",
 ]
 
 [[package]]

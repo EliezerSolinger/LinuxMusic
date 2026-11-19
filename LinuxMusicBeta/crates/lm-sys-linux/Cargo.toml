@@ -32,3 +32,7 @@ lm-base.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
 zbus.workspace = true
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# The ReserveDevice1 test plays the part of PipeWire with its own connection
+zbus.workspace = true
