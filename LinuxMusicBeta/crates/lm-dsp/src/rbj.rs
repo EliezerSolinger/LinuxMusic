@@ -45,6 +45,8 @@ pub enum Shape {
     LowPass,
     LowShelf,
     HighShelf,
+    /// A peak: its "q" is its bandwidth, in octaves
+    Peak,
 }
 
 /// The legacy `EqFilter`: a cookbook filter of a shape, whose coefficients are recomputed when its parameters
@@ -126,6 +128,16 @@ impl CrossfadedBiquad {
                     -2.0 * ((a - 1.0) + (a + 1.0) * c),
                     (a + 1.0) + (a - 1.0) * c - beta * s,
                 )
+            }
+            Shape::Peak => {
+                // The gain times a double: the legacy computed this power in double precision; and the bandwidth's
+                // term too (ln 2 is a double there)
+                let a = exp(LN_10 * (f64::from(self.gain) * 0.025)) as f32;
+                let bw = self.q;
+                let alpha = (f64::from(s)
+                    * libm::sinh(core::f64::consts::LN_2 / 2.0 * f64::from(bw) * f64::from(w0) / f64::from(sinf(w0))))
+                    as f32;
+                (1.0 + alpha * a, -2.0 * c, 1.0 - alpha * a, 1.0 + alpha / a, -2.0 * c, 1.0 - alpha / a)
             }
             Shape::HighShelf => {
                 // The gain times a double: the legacy computed this power in double precision

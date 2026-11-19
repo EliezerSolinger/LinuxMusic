@@ -2290,6 +2290,357 @@
           "outputGain": 0.0
         }
       }
+    },
+    {
+      "name": "compressor-default",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 50,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {}
+    },
+    {
+      "name": "compressor-peak-hard",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 330,
+        "amp": 0.8,
+        "steps": [
+          [
+            0,
+            0.2
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.2
+          ]
+        ]
+      },
+      "settings": {
+        "Threshold": -24.0,
+        "Ratio": 8.0,
+        "Attack": 1.0,
+        "Release": 50.0,
+        "Knee": 0.0,
+        "Peak Mode": 1.0,
+        "Output Gain": 6.0
+      }
+    },
+    {
+      "name": "compressor-limiter-lookahead-hold",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 50,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "Threshold": -12.0,
+        "Limiter": 1.0,
+        "Lookahead": 1.0,
+        "Lookahead Length": 5.0,
+        "Hold": 20.0,
+        "Auto Makeup Gain": 1.0
+      }
+    },
+    {
+      "name": "compressor-auto-crest-tilt",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 51,
+        "amp": 0.5,
+        "steps": [
+          [
+            0,
+            0.05
+          ],
+          [
+            4000,
+            1.0
+          ],
+          [
+            8000,
+            0.05
+          ],
+          [
+            12000,
+            1.0
+          ],
+          [
+            16000,
+            0.05
+          ]
+        ],
+        "right": {
+          "kind": "sine",
+          "hz": 80,
+          "amp": 0.6
+        }
+      },
+      "settings": {
+        "Threshold": -20.0,
+        "Ratio": 4.0,
+        "Auto Attack": 60.0,
+        "Auto Release": 40.0,
+        "Tilt": 4.0,
+        "Tilt Frequency": 400.0,
+        "RMS Size": 10.0,
+        "Stereo Link": 0.0
+      }
+    },
+    {
+      "name": "compressor-midside-blend-range",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 52,
+        "amp": 0.6,
+        "right": {
+          "kind": "sine",
+          "hz": 200,
+          "amp": 0.3
+        }
+      },
+      "settings": {
+        "Threshold": -30.0,
+        "Ratio": 20.0,
+        "Mid/Side": 1.0,
+        "Stereo Link": 4.0,
+        "Blend": 2.5,
+        "Range": -12.0,
+        "Input Balance": 0.3,
+        "Output Balance": -0.2,
+        "Stereo Balance": 0.4,
+        "Mix": 70.0
+      },
+      "then": {
+        "at": 12032,
+        "settings": {
+          "Blend": 0.5,
+          "Stereo Link": 2.0,
+          "Input Gain": 6.0
+        }
+      }
+    },
+    {
+      "name": "compressor-feedback-audition",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 50,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "Threshold": -18.0,
+        "Ratio": 3.0,
+        "Feedback": 1.0,
+        "Audition": 1.0,
+        "Stereo Link": 3.0
+      }
+    },
+    {
+      "name": "compressor-limiter-lookahead",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 50,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "Threshold": -12.0,
+        "Limiter": 1.0,
+        "Lookahead": 1.0,
+        "Lookahead Length": 5.0,
+        "Auto Makeup Gain": 1.0
+      }
+    },
+    {
+      "name": "compressor-limiter-hold",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 50,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "Threshold": -12.0,
+        "Limiter": 1.0,
+        "Hold": 20.0,
+        "Auto Makeup Gain": 1.0
+      }
+    },
+    {
+      "name": "compressor-hold",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 50,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "Threshold": -12.0,
+        "Hold": 20.0
+      }
+    },
+    {
+      "name": "compressor-hold-makeup",
+      "unit": "plugin-effect",
+      "plugin": "compressor",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 50,
+        "amp": 0.6,
+        "steps": [
+          [
+            0,
+            0.1
+          ],
+          [
+            6000,
+            1.0
+          ],
+          [
+            18000,
+            0.1
+          ]
+        ]
+      },
+      "settings": {
+        "Threshold": -12.0,
+        "Hold": 20.0,
+        "Auto Makeup Gain": 1.0
+      }
     }
   ]
 }

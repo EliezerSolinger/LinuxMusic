@@ -25,7 +25,9 @@
 #include "AnalogChannelStrip.h"
 #include "AutomatableModel.h"
 #include "AudioEngine.h"
+#include "EffectChain.h"
 #include "Engine.h"
+#include "PluginInstance.h"
 #include "DeskTolerance.h"
 #include "GainStage.h"
 #include "MasterSection.h"
@@ -283,6 +285,44 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			const auto n = std::min(block, frames - start);
 			chain[0]->update(out.data() + start, n, 0);
 			for (std::int64_t f = start; f < start + n; ++f) { out[f][1] = out[f][0]; }
+		}
+		return out;
+	}
+	if (unit == "plugin-effect")
+	{
+		// A legacy effect plugin, loaded and run as the mixer runs it (wet only), its knobs set by their names
+		const auto settingsOf = [&](const QJsonObject& s, Plugin* plugin) {
+			for (auto* model : plugin->findChildren<AutomatableModel*>())
+			{
+				const auto key = model->displayName();
+				if (s.contains(key)) { model->setValue(static_cast<float>(s[key].toDouble())); }
+			}
+		};
+		if (static_cast<std::int64_t>(Engine::audioEngine()->framesPerPeriod()) != block)
+		{
+			std::fprintf(stderr, "the engine's period is %d\n", static_cast<int>(Engine::audioEngine()->framesPerPeriod()));
+			std::exit(1);
+		}
+		auto chain = EffectChain{nullptr};
+		chain.appendEffect(std::make_unique<PluginInstance>(Plugin::Type::Effect, c["plugin"].toString(), &chain, nullptr));
+		auto* plugin = chain.effects().back()->plugin();
+		settingsOf(c["settings"].toObject(), plugin);
+		auto buffer = AudioBuffer{static_cast<f_cnt_t>(block), 2, 2, true};
+		buffer.setGroups(1, [](group_cnt_t, AudioBuffer::ChannelGroup&) { return ch_cnt_t{2}; });
+		const auto then = c["then"].toObject();
+		const auto at = then.isEmpty() ? frames : static_cast<std::int64_t>(then["at"].toDouble());
+		for (std::int64_t start = 0; start < frames; start += block)
+		{
+			// A period starts, as the engine counts them (the models' value buffers are per period)
+			AutomatableModel::incrementPeriodCounter();
+			if (start == at) { settingsOf(then["settings"].toObject(), plugin); }
+			auto interleaved = buffer.interleavedBuffer().asSampleFrames();
+			std::copy_n(out.data() + start, block, interleaved.data());
+			buffer.interleavedToMainPair();
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+			chain.effects().back()->process(buffer); // as EffectChain::processAudioBuffer does, enabled
+			std::copy_n(buffer.interleavedBuffer().asSampleFrames().data(), block, out.data() + start);
 		}
 		return out;
 	}

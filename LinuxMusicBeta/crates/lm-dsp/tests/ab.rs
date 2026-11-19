@@ -277,6 +277,62 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return mono.into_iter().map(|x| [x, x]).collect();
     }
+    if case["unit"] == "plugin-effect" && case["plugin"] == "compressor" {
+        use lm_dsp::compressor::{CompressorPlugin, CompressorPluginSettings, StereoLink};
+        // The knobs by the legacy plugin's names
+        let apply = |s: &Value, c: &mut CompressorPluginSettings| {
+            let on = |key: &str, default: bool| s[key].as_f64().map_or(default, |v| v != 0.0);
+            c.threshold = f(s, "Threshold", c.threshold);
+            c.ratio = f(s, "Ratio", c.ratio);
+            c.attack = f(s, "Attack", c.attack);
+            c.release = f(s, "Release", c.release);
+            c.knee = f(s, "Knee", c.knee);
+            c.hold = f(s, "Hold", c.hold);
+            c.range = f(s, "Range", c.range);
+            c.rms = f(s, "RMS Size", c.rms);
+            c.mid_side = on("Mid/Side", c.mid_side);
+            c.peak_mode = on("Peak Mode", c.peak_mode);
+            c.lookahead_length = f(s, "Lookahead Length", c.lookahead_length);
+            c.in_balance = f(s, "Input Balance", c.in_balance);
+            c.out_balance = f(s, "Output Balance", c.out_balance);
+            c.limiter = on("Limiter", c.limiter);
+            c.out_gain = f(s, "Output Gain", c.out_gain);
+            c.in_gain = f(s, "Input Gain", c.in_gain);
+            c.blend = f(s, "Blend", c.blend);
+            c.stereo_balance = f(s, "Stereo Balance", c.stereo_balance);
+            c.auto_makeup = on("Auto Makeup Gain", c.auto_makeup);
+            c.audition = on("Audition", c.audition);
+            c.feedback = on("Feedback", c.feedback);
+            c.auto_attack = f(s, "Auto Attack", c.auto_attack);
+            c.auto_release = f(s, "Auto Release", c.auto_release);
+            c.lookahead = on("Lookahead", c.lookahead);
+            c.tilt = f(s, "Tilt", c.tilt);
+            c.tilt_freq = f(s, "Tilt Frequency", c.tilt_freq);
+            if let Some(link) = s["Stereo Link"].as_f64() {
+                c.stereo_link = [
+                    StereoLink::Unlinked,
+                    StereoLink::Maximum,
+                    StereoLink::Average,
+                    StereoLink::Minimum,
+                    StereoLink::Blend,
+                ][link as usize];
+            }
+            c.mix = f(s, "Mix", c.mix);
+        };
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let mut settings = CompressorPluginSettings::default();
+        apply(&case["settings"], &mut settings);
+        let mut compressor = CompressorPlugin::new(rate);
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        for start in (0..frames as usize).step_by(block as usize) {
+            if start == at {
+                apply(&case["then"]["settings"], &mut settings);
+            }
+            let end = (start + block as usize).min(frames as usize);
+            compressor.process(&mut out[start..end], &settings);
+        }
+        return out;
+    }
     if case["unit"] == "delay" || case["unit"] == "reverbsc" {
         // The effects, wet only
         let then = &case["then"];
@@ -381,6 +437,9 @@ fn every_case_nulls_against_the_legacy_program() {
         }
         // AB_TRACE=<case> prints where it first parts from the legacy program, to find the cause
         if std::env::var("AB_TRACE").is_ok_and(|t| t == name) {
+            let above: Vec<usize> =
+                (0..ours.len()).filter(|&n| (0..2).any(|ch| (ours[n][ch] - theirs[n][ch]).abs() > NULL)).collect();
+            eprintln!("{name}: {} frames above -90 dBFS, from {:?} to {:?}", above.len(), above.first(), above.last());
             for (n, (a, b)) in ours.iter().zip(&theirs).enumerate().filter(|(_, (a, b))| a != b).take(8) {
                 eprintln!("{name} frame {n}: ours {a:?} legacy {b:?}");
             }

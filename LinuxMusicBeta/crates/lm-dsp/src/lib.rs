@@ -21,6 +21,7 @@
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables.
 //!
 //! The effects of the validation plugins:
+//! - [`compressor`]: the Compressor;
 //! - [`delay`]: the Delay;
 //! - [`reverb_sc`]: the ReverbSC (Csound's reverbsc).
 
@@ -29,6 +30,7 @@
 #![allow(clippy::needless_range_loop, clippy::excessive_precision)]
 
 pub mod channel_strip;
+pub mod compressor;
 pub mod delay;
 pub mod dynamics;
 pub mod filters;

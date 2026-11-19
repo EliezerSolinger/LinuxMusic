@@ -47,5 +47,23 @@ link=$(printf '%s\n' "$commands" | tail -1 | sed -e 's#^: && ##' -e 's# && :$##'
 	-e "s# -o tests/MixerTest# -o $work/legacy-harness#" $objects)
 sh -c "$link"
 
+# The effect plugins the harness loads (plugin-effect cases), rebuilt without fused multiply-adds into a plugin
+# directory of their own: their discrete logic (an attack or a hold that starts or not) turns one rounding into an
+# audible difference
+mkdir -p "$work/plugins"
+for plugin in compressor; do
+	for object in $(ninja -t query "plugins/lib$plugin.so" | sed -n '/input:/,/outputs:/p' | grep '\.o$'); do
+		objectcompile=$(ninja -t commands "$object" | tail -1 \
+			| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/$(basename "$object")#" \
+				-e "s# -c # -ffp-contract=off -c #")
+		sh -c "$objectcompile"
+	done
+	pluginlink=$(ninja -t commands "plugins/lib$plugin.so" | tail -1 | sed -e 's#^: && ##' -e 's# && :$##' \
+		-e "s# [^ ]*CMakeFiles/$plugin.dir/[^ ]*/\([^/ ]*\.o\)# $work/\1#g" \
+		-e "s# [^ ]*CMakeFiles/$plugin.dir/\([^/ ]*\.o\)# $work/\1#g" \
+		-e "s# -o plugins/lib$plugin.so# -o $work/plugins/lib$plugin.so#")
+	sh -c "$pluginlink"
+done
+
 mkdir -p "$here/reference"
-"$work/legacy-harness" "$here/cases.json" "$here/reference"
+LMMS_PLUGIN_DIR="$work/plugins" "$work/legacy-harness" "$here/cases.json" "$here/reference"

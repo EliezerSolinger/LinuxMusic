@@ -20,3 +20,12 @@ into one rounding on arm64, and Rust never does, so with them fused the tubes' l
 capacitor integrates) drifts apart by rounding alone. Without them, the cases null bit for bit or to rounding.
 
 `AB_TRACE=<case> cargo test -p lm-dsp --test ab` prints where a case first parts from the legacy code.
+
+The effect plugins (`plugin-effect` cases) are the legacy plugins themselves, loaded and run as the mixer runs them,
+from a plugin directory the script rebuilds without fused multiply-adds (their discrete logic, an attack or a hold
+that starts or not, turns one rounding into an audible difference). The harness advances the models' period counter
+before each block, as the engine does: without it, a model's value buffer of the first period is kept, and its knob
+reads as changed in every period (the Compressor's hold was reset each block).
+
+The legacy oscillator's moog saw, exponential and users' tables come from FFTW planned with `FFTW_MEASURE`, which
+may pick another algorithm on another run: regenerating the references can change those files in their last bits.
