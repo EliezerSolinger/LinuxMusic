@@ -16,10 +16,12 @@ name: beta
   push:
     paths:
       - 'LinuxMusicBeta/**'
+      - '!LinuxMusicBeta/docs/**'
       - '.github/workflows/beta.yml'
   pull_request:
     paths:
       - 'LinuxMusicBeta/**'
+      - '!LinuxMusicBeta/docs/**'
       - '.github/workflows/beta.yml'
   schedule:
     # Weekly, for new security advisories and for nightly changes that break miri or the sanitizers
