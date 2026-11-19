@@ -79,3 +79,34 @@ fn rasterize(peaks: &Peaks, level: usize, tile: usize, color: u32) -> RenderImag
     }
     RenderImage::new(vec![image::Frame::new(buf)])
 }
+
+/// Paints the waveform of `peaks` with tiles: `origin_x` is where the audio's sample 0 is on screen; only what falls
+/// inside `clip` is drawn (an item, a comp segment, a take row); the tiles stretch to `y`..`y + h`.
+#[allow(clippy::too_many_arguments)]
+pub fn paint_wave(
+    window: &mut Window,
+    cache: &mut TileCache,
+    peaks: &Peaks,
+    resource: u32,
+    color: u32,
+    samples_per_px: f64,
+    origin_x: gpui::Pixels,
+    clip: gpui::Bounds<gpui::Pixels>,
+    y: gpui::Pixels,
+    h: gpui::Pixels,
+) {
+    use gpui::{Bounds, point, px, size};
+    let level = TileCache::level_for(peaks, samples_per_px);
+    let tile_samples = Peaks::samples_per_pair(level) as f64 * TILE_PAIRS as f64;
+    let tile_w = (tile_samples / samples_per_px) as f32;
+    let s0 = ((clip.origin.x - origin_x).as_f32() as f64 * samples_per_px).max(0.0);
+    let s1 = ((clip.origin.x + clip.size.width - origin_x).as_f32() as f64 * samples_per_px).min(peaks.length as f64);
+    if s1 <= s0 {
+        return;
+    }
+    for t in (s0 / tile_samples) as usize..(s1 / tile_samples).ceil() as usize {
+        let img = cache.get(window, peaks, resource, level, t, color);
+        let tb = Bounds::new(point(origin_x + px(t as f32 * tile_w), y), size(px(tile_w), h));
+        let _ = window.paint_image(clip, tb, Default::default(), img, 0, false);
+    }
+}

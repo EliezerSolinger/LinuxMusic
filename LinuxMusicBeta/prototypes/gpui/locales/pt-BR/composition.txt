@@ -1,3 +1,8 @@
 # The composition page: timeline, track headers, lanes
 Track = Faixa
 Volume = Volume
+Takes = Takes
+Take {0} = Take {0}
+used in {0} parts = usado em {0} trechos
+I/O ×{0} = E/S ×{0}
+Filter cutoff = Corte do filtro

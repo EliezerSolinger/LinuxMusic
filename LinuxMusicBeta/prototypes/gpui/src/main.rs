@@ -73,20 +73,20 @@ mod tests {
         cx.simulate_mouse_up(point(p.x, p.y + px(dy)), MouseButton::Left, Modifiers::none());
     }
 
-    /// A real drag on a header knob: begin, updates and commit of one gesture (I-3.7), one undo step, and the
+    /// A real drag on a header knob (track 1: track 0 is a folder, without a knob): begin, updates and commit of one gesture (I-3.7), one undo step, and the
     /// pump timer's diff rebuilding the label through the feed in the next frame.
     #[gpui::test]
     fn knob_drag_is_one_gesture(cx: &mut TestAppContext) {
         let (ws, cx) = open(cx);
-        drag(cx, "tknob-0", -50.0);
+        drag(cx, "tknob-1", -50.0);
         let core = ws.read_with(cx, |ws, _| ws.core.clone());
         // 50 px up from 0 dB (75 % of travel) is 25 % more: +6 dB
-        core.read_with(cx, |core, _| assert!((core.session.tracks()[0].volume_db - 6.0).abs() < 1e-9));
+        core.read_with(cx, |core, _| assert!((core.session.tracks()[1].volume_db - 6.0).abs() < 1e-9));
         cx.executor().advance_clock(Duration::from_millis(20));
         cx.run_until_parked();
         core.update(cx, |core, _| {
             core.session.undo().unwrap();
-            assert_eq!(core.session.tracks()[0].volume_db, 0.0, "the whole drag is one undo step");
+            assert_eq!(core.session.tracks()[1].volume_db, 0.0, "the whole drag is one undo step");
         });
     }
 

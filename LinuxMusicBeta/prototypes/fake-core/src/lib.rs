@@ -9,6 +9,7 @@
 //!
 //! The document is a plain struct, not the `Value` tree: the prototype measures the GUI, not the document.
 
+pub mod arrange;
 pub mod bench;
 pub mod mixer;
 pub mod peaks;
@@ -55,24 +56,37 @@ impl fmt::Debug for NodeId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ResourceId(pub u32);
 
-#[derive(Clone, Debug)]
-pub struct Item {
-    pub id: NodeId,
-    pub start: i64,
-    pub length: i64,
-    pub resource: ResourceId,
-}
+pub use arrange::{Item, ItemKind};
 
 #[derive(Clone, Debug)]
 pub struct Track {
     pub id: NodeId,
     pub name: String,
     pub color: u32,
+    pub kind: arrange::TrackKind,
+    /// the folder it is in (spec item 2: folders organize, they do not sum audio)
+    pub parent: Option<NodeId>,
+    /// a folder's tracks hidden
+    pub collapsed: bool,
     pub volume_db: f64,
     pub mute: bool,
     pub solo: bool,
     pub armed: bool,
-    pub item: Item,
+    pub monitor: bool,
+    /// the input, as the user named it ("Entrada 1 (mono)")
+    pub input: String,
+    pub outputs: Vec<arrange::Output>,
+    pub items: Vec<Item>,
+    pub lanes: Vec<arrange::Lane>,
+    pub show_lanes: bool,
+    pub show_takes: bool,
+}
+
+impl Track {
+    /// The first audio item's resource (what the fake engine meters)
+    pub fn main_resource(&self) -> Option<ResourceId> {
+        self.items.iter().find_map(|i| i.resource())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -97,6 +111,7 @@ pub struct Channel {
 pub struct Doc {
     pub tracks: Vec<Track>,
     pub channels: Vec<Channel>,
+    pub song: arrange::Song,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -110,12 +125,29 @@ pub enum Field {
     Param(&'static str),
     /// a send's level, by the send's id
     SendLevel(NodeId),
+    Monitor,
+    Collapsed,
+    ShowLanes,
+    ShowTakes,
+    /// a track output's destination channel, by the output's id (Value::Id)
+    OutputTo(NodeId),
+    /// a channel's output (Value::Id; the master has none)
+    ChannelOutput,
+    // the song (on ROOT)
+    LoopOn,
+    PunchOn,
+    Metronome,
+    Tempo,
 }
+
+/// The document's root: the song-wide fields live on it
+pub const ROOT: NodeId = NodeId { kind: b'r', number: 0 };
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Real(f64),
     Bool(bool),
+    Id(NodeId),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -172,6 +204,31 @@ impl Edit<'_> {
             (b't', Field::Mute, Value::Bool(b)) => self.track(id)?.mute = b,
             (b't', Field::Solo, Value::Bool(b)) => self.track(id)?.solo = b,
             (b't', Field::Armed, Value::Bool(b)) => self.track(id)?.armed = b,
+            (b't', Field::Monitor, Value::Bool(b)) => self.track(id)?.monitor = b,
+            (b't', Field::Collapsed, Value::Bool(b)) => self.track(id)?.collapsed = b,
+            (b't', Field::ShowLanes, Value::Bool(b)) => self.track(id)?.show_lanes = b,
+            (b't', Field::ShowTakes, Value::Bool(b)) => self.track(id)?.show_takes = b,
+            (b't', Field::OutputTo(o), Value::Id(ch)) => {
+                if !self.doc.channels.iter().any(|c| c.id == ch) {
+                    return Err(Error::NoSuchNode(ch));
+                }
+                self.track(id)?.outputs.iter_mut().find(|x| x.id == o).ok_or(Error::NoSuchNode(o))?.to = ch;
+            }
+            (b'm', Field::ChannelOutput, Value::Id(to)) => {
+                // no cycles in the routing: refused whole (I-3.5)
+                let mut at = Some(to);
+                while let Some(n) = at {
+                    if n == id {
+                        return Err(Error::WrongType);
+                    }
+                    at = self.doc.channels.iter().find(|c| c.id == n).and_then(|c| c.output);
+                }
+                self.channel(id)?.output = Some(to);
+            }
+            (b'r', Field::LoopOn, Value::Bool(b)) => self.doc.song.loop_range.on = b,
+            (b'r', Field::PunchOn, Value::Bool(b)) => self.doc.song.punch.on = b,
+            (b'r', Field::Metronome, Value::Bool(b)) => self.doc.song.metronome = b,
+            (b'r', Field::Tempo, Value::Real(x)) => self.doc.song.tempo[0].bpm = x.clamp(20.0, 400.0),
             (b'm', Field::Volume, Value::Real(x)) => self.channel(id)?.volume_db = x,
             (b'm', Field::Pan, Value::Real(x)) => self.channel(id)?.pan = x.clamp(-1.0, 1.0),
             (b'm', Field::Mute, Value::Bool(b)) => self.channel(id)?.mute = b,
@@ -195,6 +252,18 @@ impl Edit<'_> {
             (b't', Field::Mute) => Value::Bool(self.track(id)?.mute),
             (b't', Field::Solo) => Value::Bool(self.track(id)?.solo),
             (b't', Field::Armed) => Value::Bool(self.track(id)?.armed),
+            (b't', Field::Monitor) => Value::Bool(self.track(id)?.monitor),
+            (b't', Field::Collapsed) => Value::Bool(self.track(id)?.collapsed),
+            (b't', Field::ShowLanes) => Value::Bool(self.track(id)?.show_lanes),
+            (b't', Field::ShowTakes) => Value::Bool(self.track(id)?.show_takes),
+            (b't', Field::OutputTo(o)) => {
+                Value::Id(self.track(id)?.outputs.iter().find(|x| x.id == o).ok_or(Error::NoSuchNode(o))?.to)
+            }
+            (b'm', Field::ChannelOutput) => Value::Id(self.channel(id)?.output.unwrap_or(ROOT)),
+            (b'r', Field::LoopOn) => Value::Bool(self.doc.song.loop_range.on),
+            (b'r', Field::PunchOn) => Value::Bool(self.doc.song.punch.on),
+            (b'r', Field::Metronome) => Value::Bool(self.doc.song.metronome),
+            (b'r', Field::Tempo) => Value::Real(self.doc.song.tempo[0].bpm),
             (b'm', Field::Volume) => Value::Real(self.channel(id)?.volume_db),
             (b'm', Field::Pan) => Value::Real(self.channel(id)?.pan),
             (b'm', Field::Mute) => Value::Bool(self.channel(id)?.mute),
@@ -275,6 +344,8 @@ pub enum Target {
     Project,
     Node(NodeId),
     Resource(ResourceId),
+    /// opening or switching the audio device, calibrating latency (I-2 list)
+    Device,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -372,6 +443,10 @@ struct Slots {
 struct EngineShared {
     playing: AtomicBool,
     recording: AtomicBool,
+    /// loop: start, end (samples), on
+    loop_start: AtomicI64,
+    loop_end: AtomicI64,
+    loop_on: AtomicBool,
     locate: AtomicI64, // i64::MIN = none
     quit: AtomicBool,
     slots: Slots,
@@ -405,6 +480,10 @@ fn engine_thread(
         let playing = shared.playing.load(Ordering::Relaxed);
         if playing {
             pos += (now.duration_since(last).as_secs_f64() * SAMPLE_RATE as f64) as i64;
+            let (ls, le) = (shared.loop_start.load(Ordering::Relaxed), shared.loop_end.load(Ordering::Relaxed));
+            if shared.loop_on.load(Ordering::Relaxed) && le > ls && pos >= le {
+                pos = ls + (pos - le) % (le - ls);
+            }
         }
         last = now;
         let span = (SAMPLE_RATE / 60) as u64;
@@ -452,6 +531,14 @@ fn engine_thread(
 // ---------------------------------------------------------------------------------------------------------------
 // The session
 
+struct RecState {
+    /// where the take begins
+    start: i64,
+    /// where the pre-roll began (the handle before the take, U4)
+    pre_roll_from: i64,
+    tracks: Vec<usize>,
+}
+
 /// Proof of the main thread; makes the session `!Send` (I-1)
 struct Main {
     _not_send: PhantomData<*const ()>,
@@ -489,6 +576,7 @@ pub struct Session {
     engine_thread: Option<JoinHandle<()>>,
     config: Config,
     pumps: u64,
+    rec: Option<RecState>,
     _main: Main,
 }
 
@@ -507,26 +595,9 @@ impl Session {
             .collect();
         let mut doc = Doc::default();
         let mut sources = Vec::new();
-        for i in 0..config.tracks {
-            let resource = ResourceId((i % 8) as u32);
-            let start = ((i % 5) as i64) * SAMPLE_RATE as i64 * 2;
-            doc.tracks.push(Track {
-                id: NodeId { kind: b't', number: i as u64 + 1 },
-                name: format!("{} {}", NAMES[i % 8], i / 8 + 1),
-                color: view::TRACK_COLORS[i % 8],
-                volume_db: 0.0,
-                mute: false,
-                solo: false,
-                armed: i == 1,
-                item: Item {
-                    id: NodeId { kind: b'i', number: 1000 + i as u64 },
-                    start,
-                    length: (config.item_seconds * SAMPLE_RATE as f64) as i64,
-                    resource,
-                },
-            });
-            sources.push((resources[&resource].clone(), start));
-        }
+        let (tracks, srcs) = arrange_tracks(&config, &resources);
+        doc.tracks = tracks;
+        sources.extend(srcs);
         // channels: the normal ones, then the returns, then the master (the last channel)
         let master = NodeId { kind: b'm', number: 999 };
         let returns: Vec<NodeId> =
@@ -597,6 +668,9 @@ impl Session {
         let engine = Arc::new(EngineShared {
             playing: AtomicBool::new(false),
             recording: AtomicBool::new(false),
+            loop_start: AtomicI64::new(doc.song.loop_range.start),
+            loop_end: AtomicI64::new(doc.song.loop_range.end),
+            loop_on: AtomicBool::new(doc.song.loop_range.on),
             locate: AtomicI64::new(i64::MIN),
             quit: AtomicBool::new(false),
             slots: Slots { gain: (0..MAX_METERS).map(|_| AtomicU32::new(1f32.to_bits())).collect() },
@@ -623,6 +697,7 @@ impl Session {
             engine_thread: Some(engine_thread),
             config,
             pumps: 0,
+            rec: None,
             _main: Main { _not_send: PhantomData },
         };
         // the slow take: its peaks are "generated" again, with the injected delay
@@ -672,8 +747,14 @@ impl Session {
                 if let Ok(peaks) = r {
                     self.resources.insert(res, peaks);
                 }
-                let items: Vec<NodeId> =
-                    self.doc.tracks.iter().filter(|t| t.item.resource == res).map(|t| t.item.id).collect();
+                let items: Vec<NodeId> = self
+                    .doc
+                    .tracks
+                    .iter()
+                    .flat_map(|t| t.items.iter())
+                    .filter(|i| i.resource() == Some(res))
+                    .map(|i| i.id)
+                    .collect();
                 for it in items {
                     self.pending.changed.push((it, None));
                 }
@@ -763,7 +844,7 @@ impl Session {
                 || match (target, op.target) {
                     // aggregation (T10): an item is loading while its resource is
                     (Target::Node(n), Target::Resource(r)) => {
-                        self.doc.tracks.iter().any(|t| t.item.id == *n && t.item.resource == r)
+                        self.doc.tracks.iter().flat_map(|t| t.items.iter()).any(|i| i.id == *n && i.resource() == Some(r))
                     }
                     _ => false,
                 };
@@ -877,6 +958,12 @@ impl Session {
                 }
             }
         }
+        if diff.changed.iter().any(|(_, f)| *f == Some(Field::LoopOn)) {
+            let l = self.doc.song.loop_range;
+            self.engine.loop_start.store(l.start, Ordering::Relaxed);
+            self.engine.loop_end.store(l.end, Ordering::Relaxed);
+            self.engine.loop_on.store(l.on, Ordering::Relaxed);
+        }
         self.pending.merge(diff);
     }
 
@@ -921,7 +1008,9 @@ impl Session {
     /// Cancels every operation the loading of `target` is waiting on (the loading component's "Cancel")
     pub fn cancel_target(&mut self, target: &Target) {
         let item_res: Option<ResourceId> = match target {
-            Target::Node(n) => self.doc.tracks.iter().find(|t| t.item.id == *n).map(|t| t.item.resource),
+            Target::Node(n) => {
+                self.doc.tracks.iter().flat_map(|t| t.items.iter()).find(|i| i.id == *n).and_then(|i| i.resource())
+            }
             _ => None,
         };
         for o in self.ops.values() {
@@ -934,7 +1023,7 @@ impl Session {
     /// Regenerates a track's take peaks with the injected delay: the loading component's test case
     pub fn reload_take(&mut self, track: usize) {
         let Some(t) = self.doc.tracks.get(track) else { return };
-        let res = t.item.resource;
+        let Some(res) = t.main_resource() else { return };
         if self.pending_resources.iter().any(|(r, _)| *r == res) {
             return;
         }
@@ -963,14 +1052,67 @@ impl Session {
         if !self.engine.playing.swap(false, Ordering::Relaxed) {
             self.engine.locate.store(0, Ordering::Relaxed); // stop twice: back to the start
         }
-        self.engine.recording.store(false, Ordering::Relaxed);
+        self.finish_recording();
     }
+    /// Recording starts at the cursor, after the count-in (pre-roll bars played before it, U4): the cursor goes
+    /// back that much and the take begins at the old position. Pressed again: the takes become items.
     pub fn toggle_record(&mut self) {
-        let r = !self.engine.recording.load(Ordering::Relaxed);
-        self.engine.recording.store(r, Ordering::Relaxed);
-        if r {
-            self.play();
+        if self.rec.is_some() {
+            self.finish_recording();
+            return;
         }
+        let at = self.last_frame.position;
+        let pre = self.doc.song.pre_roll_bars as i64 * arrange::BAR;
+        let tracks: Vec<usize> = (0..self.doc.tracks.len()).filter(|&i| self.doc.tracks[i].armed).collect();
+        self.rec = Some(RecState { start: at, pre_roll_from: (at - pre).max(0), tracks });
+        self.engine.locate.store((at - pre).max(0), Ordering::Relaxed);
+        self.engine.recording.store(true, Ordering::Relaxed);
+        self.play();
+    }
+    /// The takes being recorded, for the waveform that grows (U3): (track index, start, recorded length, peaks).
+    /// The peaks are the fake DiskWriter's, published as they are computed.
+    pub fn recording_takes(&self) -> Vec<(usize, i64, i64, Arc<Peaks>)> {
+        let Some(r) = &self.rec else { return Vec::new() };
+        let len = (self.last_frame.position - r.start).max(0);
+        r.tracks
+            .iter()
+            .filter_map(|&t| {
+                let res = self.doc.tracks[t].main_resource().unwrap_or(ResourceId(0));
+                self.resources.get(&res).map(|p| (t, r.start, len, p.clone()))
+            })
+            .collect()
+    }
+    /// The count-in is running: recording armed, cursor still before the take's start
+    pub fn counting_in(&self) -> bool {
+        self.rec.as_ref().is_some_and(|r| self.last_frame.position < r.start)
+    }
+    fn finish_recording(&mut self) {
+        self.engine.recording.store(false, Ordering::Relaxed);
+        let Some(r) = self.rec.take() else { return };
+        let len = self.last_frame.position - r.start;
+        if len <= 0 {
+            return;
+        }
+        let handle = r.start - r.pre_roll_from;
+        let mut next = self.next_id;
+        let _ = self.transact("Record", |e| {
+            for &t in &r.tracks {
+                let res = e.doc.tracks[t].main_resource().unwrap_or(ResourceId(0));
+                next += 1;
+                let id = NodeId { kind: b'i', number: 100_000 + next };
+                e.doc.tracks[t].items.push(Item {
+                    id,
+                    name: "Take".into(),
+                    start: r.start,
+                    length: len,
+                    kind: ItemKind::Audio { resource: res, takes: Vec::new(), comp: Vec::new(), handle_before: handle, handle_after: 0 },
+                });
+                e.diff.changed.push((id, None));
+                e.diff.changed.push((e.doc.tracks[t].id, None));
+            }
+            Ok(())
+        });
+        self.next_id = next + 1;
     }
     pub fn locate(&mut self, sample: i64) {
         self.engine.locate.store(sample.max(0), Ordering::Relaxed);
@@ -992,6 +1134,140 @@ impl Drop for Session {
     }
 }
 
+/// The fake arrangement: folders, a multi-output drum instrument, audio tracks with two items (one with three
+/// takes and a comp, one with pre-roll and punch handles), instrument tracks with MIDI items and patterns, and
+/// automation lanes. Returns the tracks and, per track, what the fake engine meters.
+fn arrange_tracks(config: &Config, resources: &HashMap<ResourceId, Arc<Peaks>>) -> (Vec<Track>, Vec<(Arc<Peaks>, i64)>) {
+    use arrange::*;
+    let ch = |n: usize| NodeId { kind: b'm', number: (n % config.channels.max(1)) as u64 + 1 };
+    let mut tracks = Vec::new();
+    let mut sources = Vec::new();
+    let mut folder: Option<(NodeId, usize)> = None;
+    let mut sub = 20_000u64;
+    let mut next = || {
+        sub += 1;
+        sub
+    };
+    let item_len = (config.item_seconds / 3.0 * SAMPLE_RATE as f64) as i64;
+    for i in 0..config.tracks {
+        let id = NodeId { kind: b't', number: i as u64 + 1 };
+        let resource = ResourceId((i % 8) as u32);
+        let start = ((i % 5) as i64) * BAR / 2;
+        let kind = if i % 10 == 0 { TrackKind::Folder } else if i % 3 == 0 || i == 1 { TrackKind::Instrument } else { TrackKind::Audio };
+        let parent = match folder {
+            Some((f, left)) if left > 0 && kind != TrackKind::Folder => {
+                folder = Some((f, left - 1));
+                Some(f)
+            }
+            _ => None,
+        };
+        let name = match (i, kind) {
+            (0, _) => "Bateria".to_string(),
+            (1, _) => "Bateria AVL".to_string(),
+            (2, _) => "Voz principal".to_string(),
+            (_, TrackKind::Folder) => format!("Grupo {}", i / 10 + 1),
+            _ => format!("{} {}", NAMES[i % 8], i / 8 + 1),
+        };
+        let mut outputs = vec![Output { id: NodeId { kind: b'o', number: next() }, port: "main", channels: 2, to: ch(i) }];
+        if i == 1 {
+            // the drum kit's ports, each to its channel (I-3.9)
+            outputs = [("kick", 1u8), ("snare", 1), ("oh", 2), ("room", 2)]
+                .iter()
+                .enumerate()
+                .map(|(k, (port, n))| Output { id: NodeId { kind: b'o', number: next() }, port, channels: *n, to: ch(1 + k) })
+                .collect();
+        }
+        let mut items = Vec::new();
+        match kind {
+            TrackKind::Folder => {}
+            TrackKind::Audio => {
+                let (takes, comp) = if i == 2 {
+                    let takes: Vec<Take> = [1u32, 4, 6]
+                        .iter()
+                        .map(|r| Take { id: NodeId { kind: b'x', number: next() }, resource: ResourceId(*r) })
+                        .collect();
+                    let comp = vec![
+                        CompSegment { start: 0, take: takes[0].id, crossfade_ms: 5.0 },
+                        CompSegment { start: 6 * BAR, take: takes[1].id, crossfade_ms: 5.0 },
+                        CompSegment { start: 14 * BAR, take: takes[2].id, crossfade_ms: 12.0 },
+                    ];
+                    (takes, comp)
+                } else {
+                    (Vec::new(), Vec::new())
+                };
+                items.push(Item {
+                    id: NodeId { kind: b'i', number: 1000 + i as u64 },
+                    name: if i == 2 { "Voz (3 takes)".into() } else { format!("Take {}", i) },
+                    start,
+                    length: item_len,
+                    kind: ItemKind::Audio {
+                        resource,
+                        takes,
+                        comp,
+                        handle_before: if i % 4 == 2 { BAR } else { 0 },
+                        handle_after: if i % 4 == 2 { BAR / 2 } else { 0 },
+                    },
+                });
+                items.push(Item {
+                    id: NodeId { kind: b'i', number: 3000 + i as u64 },
+                    name: format!("Take {}b", i),
+                    start: start + item_len + 2 * BAR,
+                    length: item_len,
+                    kind: ItemKind::Audio { resource, takes: Vec::new(), comp: Vec::new(), handle_before: 0, handle_after: 0 },
+                });
+            }
+            TrackKind::Instrument => {
+                for k in 0..3 {
+                    let len = 4 * BAR;
+                    items.push(Item {
+                        id: NodeId { kind: b'i', number: 5000 + (i * 3 + k) as u64 },
+                        name: if k == 0 { "Padrão A".into() } else { format!("Frase {}", k) },
+                        start: start + k as i64 * 12 * BAR,
+                        length: len,
+                        kind: ItemKind::Midi { notes: fake_notes(i as u64 + k as u64, len), repeats: if k == 0 { 2 } else { 0 } },
+                    });
+                }
+            }
+        }
+        let lanes = if i == 2 || i == 4 {
+            vec![Lane {
+                id: NodeId { kind: b'a', number: next() },
+                param: if i == 2 { "Volume" } else { "Filter cutoff" },
+                min: 0.0,
+                max: 1.0,
+                points: (0..24).map(|k| (k as i64 * BAR, 0.5 + 0.4 * ((k as f64) * 0.7).sin(), if k % 3 == 0 { 0.6 } else { 0.0 })).collect(),
+            }]
+        } else {
+            Vec::new()
+        };
+        if kind == TrackKind::Folder {
+            folder = Some((id, 3));
+        }
+        let meter_res = items.iter().find_map(|it| it.resource()).unwrap_or(resource);
+        sources.push((resources[&meter_res].clone(), if kind == TrackKind::Folder { i64::MAX / 2 } else { start }));
+        tracks.push(Track {
+            id,
+            name,
+            color: view::TRACK_COLORS[i % 8],
+            kind,
+            parent,
+            collapsed: false,
+            volume_db: 0.0,
+            mute: false,
+            solo: false,
+            armed: i == 2,
+            monitor: i == 2,
+            input: if kind == TrackKind::Audio { format!("Entrada {} (mono)", i % 8 + 1) } else { "MIDI: todas".into() },
+            outputs,
+            items,
+            lanes,
+            show_lanes: i == 2,
+            show_takes: i == 2,
+        });
+    }
+    (tracks, sources)
+}
+
 pub fn db_gain(db: f64) -> f32 {
     if db.is_infinite() || db <= -60.0 { 0.0 } else { 10f64.powf(db / 20.0) as f32 }
 }
@@ -1001,14 +1277,14 @@ mod tests {
     use super::*;
 
     fn small() -> Config {
-        Config { tracks: 4, channels: 4, slow_delay: Duration::from_millis(400), slow_track: 0, item_seconds: 5.0 }
+        Config { tracks: 4, channels: 4, slow_delay: Duration::from_millis(400), slow_track: 2, item_seconds: 5.0 }
     }
 
     #[test]
     fn loading_follows_the_200_ms_rule() {
         let mut s = Session::create(small());
-        let item = s.tracks()[0].item.id;
-        let res = s.tracks()[0].item.resource;
+        let t = &s.tracks()[2]; // an audio track: track 0 is a folder, 1 and 3 instruments
+        let (item, res) = (t.items[0].id, t.items[0].resource().unwrap());
         assert_eq!(s.loading(&Target::Node(item)), Loading::Pending);
         assert!(s.peaks(res).is_none());
         std::thread::sleep(Duration::from_millis(250));
