@@ -343,6 +343,15 @@ name = "lm-sys-fpu"
 version = "0.1.0"
 
 [[package]]
+name = "lm-sys-lilv"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "lm-base",
+ "rtrb",
+]
+
+[[package]]
 name = "lm-sys-linux"
 version = "0.1.0"
 dependencies = [
