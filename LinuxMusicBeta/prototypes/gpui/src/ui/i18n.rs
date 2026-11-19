@@ -11,6 +11,7 @@ const FILES: &[&str] = &[
     include_str!("../../locales/pt-BR/composition.txt"),
     include_str!("../../locales/pt-BR/mixing.txt"),
     include_str!("../../locales/pt-BR/screens.txt"),
+    include_str!("../../locales/pt-BR/editors.txt"),
 ];
 
 static TABLE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {

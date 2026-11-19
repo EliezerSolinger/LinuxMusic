@@ -116,6 +116,8 @@ pub struct Doc {
     pub song: arrange::Song,
     /// the instruments, their functions and the inserts' states (owner: agent C, `plugins.rs`)
     pub plugins: plugins::Plugins,
+    /// the note editors' part: MIDI items' notes, automation lanes (owner: agent B, `notes.rs`)
+    pub music: notes::Music,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -149,6 +151,10 @@ pub enum Field {
     Bypass(NodeId),
     FaderLink,
     DeskAnalog,
+    // the note editors (notes.rs): a MIDI item's notes, a lane's points, an item's or lane's own number by key
+    Notes,
+    Points,
+    Clip(&'static str),
 }
 
 /// The document's root: the song-wide fields live on it
@@ -159,6 +165,8 @@ pub enum Value {
     Real(f64),
     Bool(bool),
     Id(NodeId),
+    Notes(Arc<notes::NoteMap>),
+    Points(Arc<notes::PointMap>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -258,6 +266,7 @@ impl Edit<'_> {
                 let ch = self.channel(id)?;
                 ch.sends.iter_mut().find(|x| x.id == s).ok_or(Error::NoSuchNode(s))?.level_db = x;
             }
+            (_, Field::Notes | Field::Points | Field::Clip(_), v) => notes::set(&mut self.doc.music, id, field, v)?,
             _ => return Err(Error::WrongType),
         }
         self.diff.changed.push((id, Some(field)));
@@ -295,6 +304,7 @@ impl Edit<'_> {
                 let ch = self.channel(id)?;
                 Value::Real(ch.sends.iter().find(|x| x.id == s).ok_or(Error::NoSuchNode(s))?.level_db)
             }
+            (_, Field::Notes | Field::Points | Field::Clip(_)) => notes::get(&self.doc.music, id, field)?,
             _ => return Err(Error::WrongType),
         })
     }
@@ -633,6 +643,7 @@ impl Session {
         // the desk: groups and normal channels, the returns, the master (mixer.rs)
         doc.channels = mixer::make_channels(&config, &doc.tracks);
         plugins::populate(&mut doc);
+        doc.music = notes::Music::demo(&doc);
         let initial = TelemetryFrame {
             position: 0,
             host_time: Instant::now(),
@@ -820,6 +831,11 @@ impl Session {
     pub fn pumps(&self) -> u64 {
         self.pumps
     }
+    /// A new number from the global counter, for a note or a point (S12: never given back by an undo)
+    pub fn next_number(&mut self) -> u64 {
+        self.next_id += 1;
+        self.next_id - 1
+    }
 
     /// Every long operation running past the 200 ms rule, oldest first (I-2.2): the activity list
     pub fn activity(&self) -> Vec<notices::Activity> {
@@ -941,7 +957,8 @@ impl Session {
         let Some(prev) = self.undo.pop() else { return Ok(Diff::default()) };
         self.doc = prev;
         let diff = Diff {
-            changed: self.doc.tracks.iter().map(|t| (t.id, None)).chain(self.doc.channels.iter().map(|c| (c.id, None))).collect(),
+            changed: self.doc.tracks.iter().map(|t| (t.id, None)).chain(self.doc.channels.iter().map(|c| (c.id, None)))
+                .chain(self.doc.music.ids().map(|n| (n, None))).collect(),
         };
         self.after_change(&diff);
         Ok(diff)
