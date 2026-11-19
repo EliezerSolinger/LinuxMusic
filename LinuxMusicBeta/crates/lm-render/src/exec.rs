@@ -33,6 +33,30 @@ pub(crate) struct Job {
     pub(crate) transport: TransportInfo,
     pub(crate) panic: Option<Box<dyn Any + Send>>,
     pub(crate) non_finite: bool,
+    /// How long the call took, in nanoseconds (to decide whether the node is worth a worker)
+    pub(crate) cost_ns: f32,
+}
+
+/// The peak absolute value of a block and whether every sample is finite, eight lanes at a time (one sequential
+/// reduction would not vectorize: this scan runs on every node's output every block, U20)
+pub(crate) fn scan(x: &[f32]) -> (f32, bool) {
+    let mut peak = [0.0f32; 8];
+    let mut zero = [0.0f32; 8];
+    let (chunks, rest) = x.as_chunks::<8>();
+    for c in chunks {
+        for i in 0..8 {
+            peak[i] = peak[i].max(c[i].abs());
+            // A finite sample times zero is zero; NaN and infinity give NaN
+            zero[i] += c[i] * 0.0;
+        }
+    }
+    let mut p = peak.iter().fold(0.0f32, |a, b| a.max(*b));
+    let mut z: f32 = zero.iter().sum();
+    for v in rest {
+        p = p.max(v.abs());
+        z += v * 0.0;
+    }
+    (p, z == 0.0)
 }
 
 /// What a watchdog reads (U21): the node each render thread is in (slot + 1, 0 for none), and the blocks rendered
@@ -69,6 +93,7 @@ pub(crate) fn run_job(job: &mut Job, watch: &AtomicU32) {
             job.io.buffer[o..o + frames].fill(0.0);
         }
     }
+    let started = std::time::Instant::now();
     watch.store(job.slot + 1, Ordering::Relaxed);
     let NodeIo { buffer, events, .. } = &mut *job.io;
     let core = &mut *job.core;
@@ -85,15 +110,13 @@ pub(crate) fn run_job(job: &mut Job, watch: &AtomicU32) {
         core.processor.process(&mut cx);
     }));
     watch.store(0, Ordering::Relaxed);
+    job.cost_ns = started.elapsed().as_nanos() as f32;
     let silence = match result {
         Ok(()) => {
-            let mut acc = 0.0f32;
-            for ch in 0..layout.outputs {
+            job.non_finite = (0..layout.outputs).any(|ch| {
                 let o = layout.output_offset(ch);
-                // Inf * 0 and NaN * 0 are NaN; any finite sample adds 0: one branch-free pass
-                acc += job.io.buffer[o..o + frames].iter().fold(0.0f32, |a, &x| a + x * 0.0);
-            }
-            job.non_finite = acc.is_nan();
+                !scan(&job.io.buffer[o..o + frames]).1
+            });
             job.non_finite
         }
         Err(payload) => {

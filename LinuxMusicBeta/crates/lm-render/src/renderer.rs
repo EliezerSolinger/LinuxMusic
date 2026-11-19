@@ -21,7 +21,7 @@ use lm_base::ring::{Producer, PushError};
 
 use crate::command::{Command, CommandReceiver, PreviewCommand};
 use crate::event::{EventKind, EventList};
-use crate::exec::{Job, Watch, Workers, run_job};
+use crate::exec::{Job, Watch, Workers, run_job, scan};
 use crate::handoff::HandoffReceiver;
 use crate::ids::{NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProgramGen};
 use crate::install::{Install, NodeCore, Retired};
@@ -52,6 +52,12 @@ pub const PROTECTION_THRESHOLD: f32 = 15.848_932;
 const TAIL_SECONDS: u64 = 2;
 /// Below this peak a tail or a preset preview counts as silent (−120 dBFS)
 const SILENT: f32 = 1e-6;
+/// A node goes to a worker only if its calls take longer than this (moving it costs a few hundred nanoseconds and,
+/// for a parked worker, a wake-up); cheaper ones run on the audio thread. Which thread runs a node never changes
+/// its output
+const DISPATCH_MIN_NS: f32 = 3000.0;
+/// The cost a node is assumed to have before it was measured (so it is tried on a worker first)
+const UNMEASURED_NS: f32 = 1.0e6;
 
 /// The device's block, as the backend gives it to [`Renderer::render`]
 #[derive(Debug)]
@@ -105,6 +111,8 @@ struct Slot {
     tail_since: Option<u64>,
     tail_quiet: u64,
     tail_done: bool,
+    /// Moving average of the processor's call time
+    cost_ns: f32,
 }
 
 impl Slot {
@@ -119,6 +127,7 @@ impl Slot {
             tail_since: None,
             tail_quiet: 0,
             tail_done: false,
+            cost_ns: UNMEASURED_NS,
         }
     }
 
@@ -1263,9 +1272,11 @@ impl Renderer {
             if next < count {
                 let i = self.program.levels[level][next];
                 next += 1;
+                let slot = self.program.nodes[i as usize].desc.node.slot();
+                let worth = count > 1 && self.slots[slot].cost_ns >= DISPATCH_MIN_NS;
                 let mut job = self.job(i, n, info);
                 match self.workers.idle() {
-                    Some(w) if count > 1 => self.workers.give(w, job),
+                    Some(w) if worth => self.workers.give(w, job),
                     _ => {
                         run_job(&mut job, &self.watch.current[0]);
                         self.finish(job);
@@ -1308,7 +1319,17 @@ impl Renderer {
         let slot = self.program.nodes[i as usize].desc.node.slot();
         let core = self.slots[slot].core.take().expect("runnable node has a processor");
         let io = self.program.nodes[i as usize].io.take().expect("node memory is home between calls");
-        Job { node: i, slot: slot as u32, core, io, frames: n, transport: *info, panic: None, non_finite: false }
+        Job {
+            node: i,
+            slot: slot as u32,
+            core,
+            io,
+            frames: n,
+            transport: *info,
+            panic: None,
+            non_finite: false,
+            cost_ns: 0.0,
+        }
     }
 
     fn finish(&mut self, mut job: Job) {
@@ -1322,6 +1343,9 @@ impl Renderer {
         let lost = job.core.outbox.take_dropped();
         self.dropped[4] = self.dropped[4].saturating_add(lost);
         let slot = job.slot as usize;
+        let measured = job.cost_ns;
+        let cost = &mut self.slots[slot].cost_ns;
+        *cost = if *cost >= UNMEASURED_NS { measured } else { 0.9 * *cost + 0.1 * measured };
         self.slots[slot].core = Some(job.core);
         self.program.nodes[job.node as usize].io = Some(job.io);
         if let Some(payload) = job.panic.take() {
@@ -1355,12 +1379,11 @@ impl Renderer {
 
         // Sources and sums can carry NaN too (a broken file): the node is silenced and marked like a processor
         if kind == NodeKind::Sum && !slot.dead {
-            let mut acc = 0.0f32;
-            for ch in 0..outputs {
+            let bad = (0..outputs).any(|ch| {
                 let o = layout.output_offset(ch);
-                acc += io.buffer[o..o + n].iter().fold(0.0f32, |a, &x| a + x * 0.0);
-            }
-            if acc.is_nan() {
+                !scan(&io.buffer[o..o + n]).1
+            });
+            if bad {
                 slot.dead = true;
                 if self.out.events.push(Telemetry::NodeNonFinite { generation: self.program.generation, node }).is_err() {
                     self.dropped[0] = self.dropped[0].saturating_add(1);
@@ -1374,29 +1397,45 @@ impl Renderer {
             }
         }
 
-        // Strip: gain, balance, mute (ramped)
+        // Strip: gain, balance, mute (ramped). The per-sample gain is built once, then each channel is one
+        // multiplication per sample
         let target_mute = if muted { 0.0 } else { 1.0 };
-        let needs_mute = slot.mute_gain != target_mute || muted;
-        if gain.is_some() || pan.is_some() || needs_mute {
-            let start_mute = slot.mute_gain;
-            let mut m = start_mute;
-            for ch in 0..outputs {
-                let o = layout.output_offset(ch);
-                let buf = &mut io.buffer[o..o + n];
-                m = start_mute;
-                for (k, x) in buf.iter_mut().enumerate() {
-                    let mut g = if gain.is_some() { self.gain[k] } else { 1.0 };
-                    if pan.is_some() && outputs == 2 {
-                        let p = self.pan[k].clamp(-1.0, 1.0);
-                        g *= if ch == 0 { (1.0 - p).min(1.0) } else { (1.0 + p).min(1.0) };
-                    }
+        let ramping = slot.mute_gain != target_mute;
+        if gain.is_some() || pan.is_some() || ramping || muted {
+            let g = &mut self.gain[..n];
+            if gain.is_none() {
+                g.fill(1.0);
+            }
+            if ramping {
+                let mut m = slot.mute_gain;
+                for x in g.iter_mut() {
                     if m != target_mute {
                         m = if target_mute > m { (m + 1.0 / MUTE_FADE).min(1.0) } else { (m - 1.0 / MUTE_FADE).max(0.0) };
                     }
-                    *x *= g * m;
+                    *x *= m;
+                }
+                slot.mute_gain = m;
+            } else if muted {
+                g.fill(0.0);
+            }
+            let g = &self.gain[..n];
+            if pan.is_some() && outputs == 2 {
+                let p = &self.pan[..n];
+                for ch in 0..2 {
+                    let o = layout.output_offset(ch);
+                    let side = if ch == 0 { -1.0 } else { 1.0 };
+                    for ((x, g), p) in io.buffer[o..o + n].iter_mut().zip(g).zip(p) {
+                        *x *= g * (1.0 + side * p.clamp(-1.0, 1.0)).min(1.0);
+                    }
+                }
+            } else {
+                for ch in 0..outputs {
+                    let o = layout.output_offset(ch);
+                    for (x, g) in io.buffer[o..o + n].iter_mut().zip(g) {
+                        *x *= g;
+                    }
                 }
             }
-            slot.mute_gain = m;
         }
 
         // Master protection (U20)
@@ -1404,7 +1443,7 @@ impl Renderer {
             let mut peak = 0.0f32;
             for ch in 0..outputs {
                 let o = layout.output_offset(ch);
-                peak = io.buffer[o..o + n].iter().fold(peak, |p, x| p.max(x.abs()));
+                peak = peak.max(scan(&io.buffer[o..o + n]).0);
             }
             let p = &mut self.protection;
             if peak > PROTECTION_THRESHOLD {
@@ -1443,7 +1482,7 @@ impl Renderer {
         let metered = outputs.min(METER_CHANNELS);
         for ch in 0..outputs {
             let o = layout.output_offset(ch);
-            let peak = io.buffer[o..o + n].iter().fold(0.0f32, |p, x| p.max(x.abs()));
+            let peak = scan(&io.buffer[o..o + n]).0;
             node_peak = node_peak.max(peak);
             if ch < metered {
                 slot.peak[ch] = slot.peak[ch].max(peak);
@@ -1897,8 +1936,8 @@ fn mix_feed(
             None => {
                 for t in targets.0..targets.1 {
                     let o = to_base(t);
-                    for k in 0..n {
-                        dst.buffer[o + k] += s[k] * gain[k] * scale;
+                    for ((d, s), g) in dst.buffer[o..o + n].iter_mut().zip(s).zip(gain) {
+                        *d += s * g * scale;
                     }
                 }
             }
