@@ -200,10 +200,10 @@ fn piano_key(k: &str) -> Option<i32> {
 static BIND: Once = Once::new();
 
 /// Note numbers from here up are temp numbers of notes to create (`EditOp::AddNote`)
-const NEW: u64 = 1 << 63;
+pub(crate) const NEW: u64 = 1 << 63;
 
 /// Note changes as the port's edits
-fn note_ops(item: NodeId, changes: Vec<NoteChange>) -> Vec<EditOp> {
+pub(crate) fn note_ops(item: NodeId, changes: Vec<NoteChange>) -> Vec<EditOp> {
     changes
         .into_iter()
         .filter_map(|(n, x)| {
@@ -2281,7 +2281,7 @@ impl PianoRoll {
                         .child(button("pr-oct-up", tr("Oct +"), false, 0).on_click(cx.listener(|pr, _, _, cx| pr.transpose(12, cx))))
                         .child(button("pr-oct-down", tr("Oct −"), false, 0).on_click(cx.listener(|pr, _, _, cx| pr.transpose(-12, cx))))
                         .child(button("pr-dup", tr("Duplicate"), false, 0).on_click(cx.listener(|pr, _, _, cx| pr.duplicate(cx))))
-                        .child(button("pr-del", tr("Delete"), false, THEME.red).on_click(cx.listener(|pr, _, _, cx| {
+                        .child(button("pr-del", tr("Delete notes"), false, THEME.red).on_click(cx.listener(|pr, _, _, cx| {
                             let notes = pr.notes(cx);
                             let sel = pr.selected(&notes);
                             pr.transact("Delete notes", sel.into_iter().map(|(n, _)| (n, None)).collect(), cx);
@@ -2528,7 +2528,7 @@ pub mod kit {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::time::Duration;
 
     use gpui::{Entity, Modifiers, MouseButton, TestAppContext, VisualTestContext, WeakEntity, point, px};

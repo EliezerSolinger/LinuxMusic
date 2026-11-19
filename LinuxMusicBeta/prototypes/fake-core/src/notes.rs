@@ -760,6 +760,13 @@ impl Music {
 
 /// `Edit::set` for the fields of this module
 pub(crate) fn set(m: &mut Music, id: NodeId, field: Field, v: Value) -> Result<()> {
+    if let (b'p', Field::Point, Value::Point(p)) = (id.kind, field, &v) {
+        let l = m.lanes.iter_mut().find(|l| l.points.contains_key(&id.number)).ok_or(Error::NoSuchNode(id))?;
+        let mut map = (*l.points).clone();
+        map.insert(id.number, normalize_point(*p, &l.param));
+        l.points = Arc::new(map);
+        return Ok(());
+    }
     if let Some(c) = m.clips.iter_mut().find(|c| c.id == id) {
         match (field, v) {
             (Field::Notes, Value::Notes(n)) => c.notes = n,
@@ -785,6 +792,9 @@ pub(crate) fn set(m: &mut Music, id: NodeId, field: Field, v: Value) -> Result<(
 
 /// `Edit::get` for the fields of this module
 pub(crate) fn get(m: &Music, id: NodeId, field: Field) -> Result<Value> {
+    if id.kind == b'p' && field == Field::Point {
+        return m.lanes.iter().find_map(|l| l.points.get(&id.number)).map(|p| Value::Point(*p)).ok_or(Error::NoSuchNode(id));
+    }
     if let Some(c) = m.clip(id) {
         return Ok(match field {
             Field::Notes => Value::Notes(c.notes.clone()),
@@ -836,12 +846,8 @@ impl Edit<'_> {
         let mut map = (*cur).clone();
         for (n, p) in changes {
             match p {
-                Some(mut p) => {
-                    p.tick = p.tick.max(0);
-                    p.value = param.quantize(p.value);
-                    p.jump = p.jump.map(|j| param.quantize(j));
-                    p.curve = p.curve.clamp(-1.0, 1.0);
-                    map.insert(n, p);
+                Some(p) => {
+                    map.insert(n, normalize_point(p, &param));
                 }
                 None => {
                     map.remove(&n);
@@ -883,6 +889,41 @@ pub(crate) fn apply_op(e: &mut Edit, op: &crate::port::EditOp, created: &[(u32, 
         EditOp::RemoveNote { item: it, n } => Some((|| {
             let (id, n) = (item(it)?, number(n)?);
             e.put_notes(id, [(n, None)])?;
+            Ok(None)
+        })()),
+        _ => None,
+    }
+}
+
+fn normalize_point(mut p: Point, param: &ParamInfo) -> Point {
+    p.tick = p.tick.max(0);
+    p.value = param.quantize(p.value);
+    p.jump = p.jump.map(|j| param.quantize(j));
+    p.curve = p.curve.clamp(-1.0, 1.0);
+    if param.discrete() {
+        p.shape = Shape::Step;
+    }
+    p
+}
+
+/// The CorePort's point edits: a point is a node of kind `p` (its number from the same counter as the notes).
+/// `Insert` into a lane's `points` (the node is `Value::Point`), `Set` with `Field::Point` (in `Edit::set`),
+/// `Remove` by the point's id.
+pub(crate) fn apply_point_op(e: &mut Edit, op: &crate::port::EditOp, created: &[(u32, NodeId)]) -> Option<Result<Option<(u32, NodeId)>>> {
+    use crate::port::{EditOp, Ref};
+    match op {
+        EditOp::Insert { temp, parent, list: "points", node: Value::Point(p), .. } => Some((|| {
+            let lane = match parent {
+                Ref::Id(id) => *id,
+                Ref::Temp(t) => created.iter().find(|(k, _)| k == t).map(|(_, id)| *id).ok_or(Error::WrongType)?,
+            };
+            let n = NEXT_N.fetch_add(1, Ordering::Relaxed);
+            e.put_points(lane, [(n, Some(*p))])?;
+            Ok(Some((*temp, NodeId { kind: b'p', number: n })))
+        })()),
+        EditOp::Remove { id: Ref::Id(id) } if id.kind == b'p' => Some((|| {
+            let lane = e.doc.music.lanes.iter().find(|l| l.points.contains_key(&id.number)).map(|l| l.id).ok_or(Error::NoSuchNode(*id))?;
+            e.put_points(lane, [(id.number, None)])?;
             Ok(None)
         })()),
         _ => None,

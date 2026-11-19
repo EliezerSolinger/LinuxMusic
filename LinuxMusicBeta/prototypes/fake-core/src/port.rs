@@ -170,7 +170,7 @@ pub trait CorePort {
 /// Edits that another module of the fake handles (notes, plugins...): ONE LINE PER MODULE. A handler returns None
 /// when the edit is not its own.
 type OpHandler = fn(&mut crate::Edit, &EditOp, &[(u32, NodeId)]) -> Option<Result<Option<(u32, NodeId)>>>;
-const OP_HANDLERS: &[OpHandler] = &[crate::mixer::apply_op, crate::arrange::apply_op, crate::notes::apply_op];
+const OP_HANDLERS: &[OpHandler] = &[crate::mixer::apply_op, crate::arrange::apply_op, crate::notes::apply_op, crate::notes::apply_point_op];
 
 fn resolve(r: Ref, created: &[(u32, NodeId)]) -> Result<NodeId> {
     match r {

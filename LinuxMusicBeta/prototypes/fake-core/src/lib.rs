@@ -166,6 +166,8 @@ pub enum Field {
     Clip(&'static str),
     /// one note, whole (EditOp::SetNote)
     Note,
+    /// one automation point, whole, on the point's id (kind `p`)
+    Point,
 }
 
 /// The document's root: the song-wide fields live on it
@@ -181,6 +183,7 @@ pub enum Value {
     /// Text: names, paths, and the parameters of an action given as `key=value` lines (owner: agent D)
     Text(String),
     Note(notes::Note),
+    Point(notes::Point),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -287,7 +290,7 @@ impl Edit<'_> {
                 let ch = self.channel(id)?;
                 ch.sends.iter_mut().find(|x| x.id == s).ok_or(Error::NoSuchNode(s))?.level_db = x;
             }
-            (_, Field::Notes | Field::Points | Field::Clip(_), v) => notes::set(&mut self.doc.music, id, field, v)?,
+            (_, Field::Notes | Field::Points | Field::Point | Field::Clip(_), v) => notes::set(&mut self.doc.music, id, field, v)?,
             _ => return Err(Error::WrongType),
         }
         self.diff.changed.push((id, Some(field)));
@@ -332,7 +335,7 @@ impl Edit<'_> {
                 let ch = self.channel(id)?;
                 Value::Real(ch.sends.iter().find(|x| x.id == s).ok_or(Error::NoSuchNode(s))?.level_db)
             }
-            (_, Field::Notes | Field::Points | Field::Clip(_)) => notes::get(&self.doc.music, id, field)?,
+            (_, Field::Notes | Field::Points | Field::Point | Field::Clip(_)) => notes::get(&self.doc.music, id, field)?,
             _ => return Err(Error::WrongType),
         })
     }
