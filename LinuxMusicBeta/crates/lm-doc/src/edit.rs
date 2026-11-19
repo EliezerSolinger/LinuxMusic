@@ -470,6 +470,10 @@ pub fn param_path(owner_type: &str, key: &str) -> Vec<PathStep> {
     key.split('.').map(PathStep::key).collect()
 }
 
+fn container_keys(list: &str) -> Vec<Arc<str>> {
+    list.split('.').map(Arc::from).collect()
+}
+
 fn not_a_node_list(parent: NodeId, list: &str) -> Error {
     Error::new("doc.insert.not_a_node_list").arg("node", parent.to_string()).arg("list", list)
 }
@@ -556,6 +560,7 @@ impl Edit<'_> {
         }
         let mut v = v;
         if let Slot::Kind(kind) = &r.slot {
+            v = ctx.with_defaults(kind, v)?;
             if ctx.is_deep(kind) && !v.is_null() {
                 let mut abs = self.w.path_of(r.owner)?;
                 abs.extend_from_slice(&r.rel);
@@ -605,10 +610,7 @@ impl Edit<'_> {
         if node.get("id").is_some() {
             return Err(Error::new("doc.insert.has_id"));
         }
-        let mut full = ctx.registry.defaults(type_name)?;
-        for (k, v) in node.shared_entries() {
-            full = full.with_key(Arc::clone(k), v.clone());
-        }
+        let full = ctx.with_defaults(&item, node)?;
         let w = &mut *self.w;
         let full = ctx.assign_ids(&item, full, &mut || w.issue(), &|_| false)?;
         let full = ctx.renumber_notes(&item, full, &mut || w.issue())?;
@@ -618,25 +620,37 @@ impl Edit<'_> {
         Ok(id)
     }
 
-    /// The item kind and type of a list of nodes
+    /// The item kind and type of a list of nodes. `list` is a field of `parent`, or a dotted path of fields through
+    /// objects without ids (`"mixer.channels"` of the root)
     fn node_list(&self, parent: NodeId, list: &str) -> Result<(FieldKind, &'static str)> {
-        let t = self.type_of(parent)?;
-        let field = self.registry().find(t).and_then(|s| s.find_field(list)).ok_or_else(|| not_a_node_list(parent, list))?;
-        match &field.kind {
-            FieldKind::List(inner) => match &**inner {
-                FieldKind::Object(it) if self.ctx().id_kind(it).is_some() => Ok(((**inner).clone(), it)),
-                _ => Err(not_a_node_list(parent, list)),
-            },
-            _ => Err(not_a_node_list(parent, list)),
+        let mut t = self.type_of(parent)?;
+        let keys: Vec<&str> = list.split('.').collect();
+        for (i, key) in keys.iter().enumerate() {
+            let field =
+                self.registry().find(t).and_then(|s| s.find_field(key)).ok_or_else(|| not_a_node_list(parent, list))?;
+            match (&field.kind, i + 1 == keys.len()) {
+                (FieldKind::Object(next), false) if self.ctx().id_kind(next).is_none() => t = next,
+                (FieldKind::List(inner), true) => match &**inner {
+                    FieldKind::Object(it) if self.ctx().id_kind(it).is_some() => return Ok(((**inner).clone(), it)),
+                    _ => return Err(not_a_node_list(parent, list)),
+                },
+                _ => return Err(not_a_node_list(parent, list)),
+            }
         }
+        Err(not_a_node_list(parent, list))
+    }
+
+    fn list_len(&self, parent: NodeId, list: &str) -> usize {
+        let path: Vec<PathStep> = list.split('.').map(PathStep::key).collect();
+        self.find(parent).and_then(|p| p.at_path(&path)).map_or(0, Value::len)
     }
 
     fn insert_ready(&mut self, parent: NodeId, list: &str, index: usize, item: &FieldKind, node: Value) -> Result<()> {
-        let len = self.find(parent).and_then(|p| p.get(list)).map_or(0, Value::len);
+        let len = self.list_len(parent, list);
         if index > len {
             return Err(Error::new("doc.insert.index").arg("index", index as i64).arg("len", len as i64));
         }
-        self.w.list_insert(parent, &[Arc::from(list)], item, index, node, false)
+        self.w.list_insert(parent, &container_keys(list), item, index, node, false)
     }
 
     /// Removes a node and everything in it, applying the rules of every reference to what left (R10): an output
@@ -666,7 +680,7 @@ impl Edit<'_> {
         }
         let list_now = self.find(loc.parent).and_then(|p| p.at_path(&loc.container_path())).cloned();
         let pos = list_now.as_ref().and_then(|l| Ctx::position(l, id)).ok_or_else(|| not_found(id))?;
-        let same_list = loc.parent == parent && loc.container.len() == 1 && &*loc.container[0] == list;
+        let same_list = loc.parent == parent && *loc.container == *container_keys(list);
         if same_list && pos == index {
             return Ok(());
         }
@@ -678,11 +692,11 @@ impl Edit<'_> {
             g.targets.insert(id);
         }
         let node = self.w.list_remove(loc.parent, &loc.container, &item, pos, true)?;
-        let len = self.find(parent).and_then(|p| p.get(list)).map_or(0, Value::len);
+        let len = self.list_len(parent, list);
         if index > len {
             return Err(Error::new("doc.move.index").arg("index", index as i64).arg("len", len as i64));
         }
-        self.w.list_insert(parent, &[Arc::from(list)], &item, index, node, true)
+        self.w.list_insert(parent, &container_keys(list), &item, index, node, true)
     }
 
     /// Adds a note to an item (C1); missing fields take their defaults. Gives back its number, from the global
@@ -698,10 +712,7 @@ impl Edit<'_> {
         if !note.is_object() {
             return Err(Error::new("doc.note.not_object"));
         }
-        let mut full = ctx.registry.defaults(t)?;
-        for (k, v) in note.shared_entries() {
-            full = full.with_key(Arc::clone(k), v.clone());
-        }
+        let full = ctx.with_defaults(&FieldKind::Object(t), note)?;
         ctx.registry.validate(t, &full)?;
         let n = self.w.issue()?;
         let rel = [PathStep::key("notes"), PathStep::Note(n)];
@@ -849,13 +860,14 @@ impl Edit<'_> {
         }
         for id in record.move_order.iter().rev() {
             let Some((parent, container, index)) = record.moves.get(id) else { continue };
-            if !self.exists(*id) || !self.exists(*parent) || container.len() != 1 {
+            if !self.exists(*id) || !self.exists(*parent) {
                 continue;
             }
-            let len = self.find(*parent).and_then(|p| p.get(&container[0])).map_or(0, Value::len);
+            let list = container.iter().map(|k| &**k).collect::<Vec<_>>().join(".");
+            let len = self.list_len(*parent, &list);
             let here = self.loc(*id).is_some_and(|l| l.parent == *parent && l.container == *container);
             let max = if here { len.saturating_sub(1) } else { len };
-            self.move_to(*id, *parent, &container[0], (*index).min(max))?;
+            self.move_to(*id, *parent, &list, (*index).min(max))?;
         }
         Ok(())
     }

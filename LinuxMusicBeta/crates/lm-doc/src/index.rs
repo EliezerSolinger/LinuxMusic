@@ -775,6 +775,65 @@ impl Ctx {
         }
     }
 
+    /// `v` with every missing field of every object in it (by its schema) at its default. A plugin node gets its
+    /// plugin's version and the defaults of its plugin's state (parameters included) under what it gives
+    pub fn with_defaults(&self, kind: &FieldKind, v: Value) -> Result<Value> {
+        if v.is_null() {
+            return Ok(v);
+        }
+        match kind {
+            FieldKind::List(inner) if v.is_list() => {
+                let mut items = Vec::with_capacity(v.len());
+                for item in v.items() {
+                    items.push(self.with_defaults(inner, item.clone())?);
+                }
+                Ok(Value::list(items))
+            }
+            FieldKind::NoteMap(t) if v.is_object() => {
+                let inner = FieldKind::Object(t);
+                let mut out = v.clone();
+                for (key, note) in v.shared_entries() {
+                    out = out.with_key(Arc::clone(key), self.with_defaults(&inner, note.clone())?);
+                }
+                Ok(out)
+            }
+            FieldKind::Object(t) if v.is_object() => {
+                let Some(schema) = self.registry.find(t) else { return Ok(v) };
+                let mut node = overlay(self.registry.defaults(t)?, &v);
+                if schema.type_name == crate::schemas::types::PLUGIN {
+                    node = self.plugin_defaults(node, &v)?;
+                }
+                for field in &schema.fields {
+                    if let (Some(child), true) = (v.get(field.key), matches!(field.kind, FieldKind::List(_) | FieldKind::Object(_) | FieldKind::NoteMap(_))) {
+                        node = node.with(field.key, self.with_defaults(&field.kind, child.clone())?);
+                    }
+                }
+                Ok(node)
+            }
+            _ => Ok(v),
+        }
+    }
+
+    fn plugin_defaults(&self, node: Value, given: &Value) -> Result<Value> {
+        let name = node.get("plugin").and_then(Value::as_text).unwrap_or("");
+        let Some(schema) = self.registry.find(&crate::schemas::plugin_type(name)) else { return Ok(node) };
+        let mut node = node;
+        if given.get("version").is_none() {
+            node = node.with("version", Value::int(i64::from(schema.version)));
+        }
+        let given_state = given.get("state").cloned().unwrap_or_else(Value::empty_object);
+        if !given_state.is_object() {
+            return Ok(node);
+        }
+        let mut state = overlay(self.registry.defaults(schema.type_name)?, &given_state);
+        if let (Some(def), Some(params)) = (self.registry.defaults(schema.type_name)?.get(PARAMS_KEY), given_state.get(PARAMS_KEY))
+            && params.is_object()
+        {
+            state = state.with(PARAMS_KEY, overlay(def.clone(), params));
+        }
+        Ok(node.with("state", state))
+    }
+
     /// The largest note number in `v`
     pub fn max_note(&self, kind: &FieldKind, v: &Value) -> Option<u64> {
         if !self.has_notes(kind) || v.is_null() {
@@ -790,6 +849,15 @@ impl Ctx {
             _ => None,
         }
     }
+}
+
+/// `base` with every entry of `top` over it
+fn overlay(base: Value, top: &Value) -> Value {
+    let mut out = base;
+    for (k, v) in top.shared_entries() {
+        out = out.with_key(Arc::clone(k), v.clone());
+    }
+    out
 }
 
 fn check_any(v: &Value, path: &[PathStep]) -> Result<()> {

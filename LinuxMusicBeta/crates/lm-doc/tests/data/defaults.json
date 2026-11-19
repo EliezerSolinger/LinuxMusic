@@ -1,0 +1,569 @@
+{
+  "automation": {
+    "defaults": {
+      "on": true,
+      "points": [],
+      "target": {}
+    },
+    "version": 1
+  },
+  "automation.point": {
+    "defaults": {
+      "curve": 0.0,
+      "tick": 0
+    },
+    "version": 1
+  },
+  "automation.target": {
+    "defaults": {},
+    "version": 1
+  },
+  "item": {
+    "defaults": {
+      "comp": [],
+      "fadeIn": 0,
+      "fadeOut": 0,
+      "gain": 1.0,
+      "kind": "midi",
+      "lanes": [],
+      "length": 3840,
+      "mute": false,
+      "name": "",
+      "notes": {},
+      "start": 0,
+      "timebase": "musical"
+    },
+    "version": 1
+  },
+  "item.comp": {
+    "defaults": {
+      "fade": 240,
+      "from": 0,
+      "lane": null,
+      "to": 0
+    },
+    "version": 1
+  },
+  "item.lane": {
+    "defaults": {
+      "name": "",
+      "sourceOffset": 0
+    },
+    "version": 1
+  },
+  "meta": {
+    "defaults": {
+      "issued": 0,
+      "uuid": ""
+    },
+    "version": 1
+  },
+  "mixer": {
+    "defaults": {
+      "channels": [],
+      "master": {
+        "automation": [],
+        "channels": 2,
+        "inserts": [],
+        "mute": false,
+        "name": "Master",
+        "output": {
+          "channels": [
+            1,
+            2
+          ],
+          "device": "out"
+        },
+        "rack": {
+          "dynamics": {
+            "attack": 4,
+            "makeup": 0.0,
+            "on": false,
+            "ratio": "4",
+            "release": 4,
+            "threshold": 5.0
+          },
+          "stereo": {
+            "air": 0.0,
+            "bassFrequency": 120.0,
+            "monoBass": 0.0,
+            "width": 100.0
+          },
+          "transformer": {
+            "on": false
+          },
+          "tube": {
+            "drive": 0.25,
+            "lowCut": false,
+            "model": "4558",
+            "on": true,
+            "realistic": false
+          }
+        },
+        "volume": 1.0
+      }
+    },
+    "version": 1
+  },
+  "mixer.channel": {
+    "defaults": {
+      "automation": [],
+      "channels": 2,
+      "inserts": [],
+      "mute": false,
+      "name": "",
+      "output": "m:0",
+      "pan": 0.0,
+      "rack": {
+        "dynamics": {
+          "compAmount": 0.0,
+          "compModel": "ssl",
+          "compRatio": 0.0,
+          "compRelease": 0.5,
+          "compSpeed": "norm",
+          "gateMode": "std",
+          "gateRange": 0.0,
+          "gateThreshold": -10.0,
+          "on": true
+        },
+        "eq": {
+          "high": 0.0,
+          "highMid": 0.0,
+          "highPass": 20.0,
+          "low": 0.0,
+          "lowMid": 0.0,
+          "lowPass": 20000.0,
+          "monoBass": 0.0,
+          "monoBassFrequency": 120.0,
+          "on": true
+        },
+        "tolerance": {
+          "on": true
+        },
+        "transformer": {
+          "on": false
+        },
+        "tube": {
+          "drive": 0.25,
+          "lowCut": false,
+          "model": "4558",
+          "on": true,
+          "realistic": false
+        }
+      },
+      "sends": [],
+      "solo": false,
+      "volume": 1.0
+    },
+    "version": 1
+  },
+  "mixer.device_output": {
+    "defaults": {
+      "channels": [
+        1,
+        2
+      ],
+      "device": "out"
+    },
+    "version": 1
+  },
+  "mixer.master": {
+    "defaults": {
+      "automation": [],
+      "channels": 2,
+      "inserts": [],
+      "mute": false,
+      "name": "Master",
+      "output": {
+        "channels": [
+          1,
+          2
+        ],
+        "device": "out"
+      },
+      "rack": {
+        "dynamics": {
+          "attack": 4,
+          "makeup": 0.0,
+          "on": false,
+          "ratio": "4",
+          "release": 4,
+          "threshold": 5.0
+        },
+        "stereo": {
+          "air": 0.0,
+          "bassFrequency": 120.0,
+          "monoBass": 0.0,
+          "width": 100.0
+        },
+        "transformer": {
+          "on": false
+        },
+        "tube": {
+          "drive": 0.25,
+          "lowCut": false,
+          "model": "4558",
+          "on": true,
+          "realistic": false
+        }
+      },
+      "volume": 1.0
+    },
+    "version": 1
+  },
+  "note": {
+    "defaults": {
+      "key": 60,
+      "length": 240,
+      "start": 0,
+      "velocity": 0.8
+    },
+    "version": 1
+  },
+  "plugin": {
+    "defaults": {
+      "bypass": false,
+      "state": {},
+      "version": 1
+    },
+    "version": 1
+  },
+  "project": {
+    "defaults": {
+      "meta": {
+        "issued": 0,
+        "uuid": ""
+      },
+      "mixer": {
+        "channels": [],
+        "master": {
+          "automation": [],
+          "channels": 2,
+          "inserts": [],
+          "mute": false,
+          "name": "Master",
+          "output": {
+            "channels": [
+              1,
+              2
+            ],
+            "device": "out"
+          },
+          "rack": {
+            "dynamics": {
+              "attack": 4,
+              "makeup": 0.0,
+              "on": false,
+              "ratio": "4",
+              "release": 4,
+              "threshold": 5.0
+            },
+            "stereo": {
+              "air": 0.0,
+              "bassFrequency": 120.0,
+              "monoBass": 0.0,
+              "width": 100.0
+            },
+            "transformer": {
+              "on": false
+            },
+            "tube": {
+              "drive": 0.25,
+              "lowCut": false,
+              "model": "4558",
+              "on": true,
+              "realistic": false
+            }
+          },
+          "volume": 1.0
+        }
+      },
+      "project": {
+        "ppq": 960,
+        "sampleRate": 48000,
+        "seed": 0
+      },
+      "tempoMap": [
+        {
+          "bpm": "120",
+          "ramp": false,
+          "tick": 0,
+          "timeSig": [
+            4,
+            4
+          ]
+        }
+      ],
+      "tracks": [],
+      "transport": {
+        "loop": {
+          "from": 0,
+          "on": false,
+          "to": 0
+        },
+        "metronome": {
+          "countIn": 0,
+          "on": false,
+          "volume": 0.8
+        },
+        "preRoll": {
+          "bars": 1
+        },
+        "punch": {
+          "from": 0,
+          "on": false,
+          "to": 0
+        }
+      }
+    },
+    "version": 1
+  },
+  "project.settings": {
+    "defaults": {
+      "ppq": 960,
+      "sampleRate": 48000,
+      "seed": 0
+    },
+    "version": 1
+  },
+  "rack": {
+    "defaults": {
+      "dynamics": {
+        "compAmount": 0.0,
+        "compModel": "ssl",
+        "compRatio": 0.0,
+        "compRelease": 0.5,
+        "compSpeed": "norm",
+        "gateMode": "std",
+        "gateRange": 0.0,
+        "gateThreshold": -10.0,
+        "on": true
+      },
+      "eq": {
+        "high": 0.0,
+        "highMid": 0.0,
+        "highPass": 20.0,
+        "low": 0.0,
+        "lowMid": 0.0,
+        "lowPass": 20000.0,
+        "monoBass": 0.0,
+        "monoBassFrequency": 120.0,
+        "on": true
+      },
+      "tolerance": {
+        "on": true
+      },
+      "transformer": {
+        "on": false
+      },
+      "tube": {
+        "drive": 0.25,
+        "lowCut": false,
+        "model": "4558",
+        "on": true,
+        "realistic": false
+      }
+    },
+    "version": 1
+  },
+  "rack.bus_compressor": {
+    "defaults": {
+      "attack": 4,
+      "makeup": 0.0,
+      "on": false,
+      "ratio": "4",
+      "release": 4,
+      "threshold": 5.0
+    },
+    "version": 1
+  },
+  "rack.dynamics": {
+    "defaults": {
+      "compAmount": 0.0,
+      "compModel": "ssl",
+      "compRatio": 0.0,
+      "compRelease": 0.5,
+      "compSpeed": "norm",
+      "gateMode": "std",
+      "gateRange": 0.0,
+      "gateThreshold": -10.0,
+      "on": true
+    },
+    "version": 1
+  },
+  "rack.eq": {
+    "defaults": {
+      "high": 0.0,
+      "highMid": 0.0,
+      "highPass": 20.0,
+      "low": 0.0,
+      "lowMid": 0.0,
+      "lowPass": 20000.0,
+      "monoBass": 0.0,
+      "monoBassFrequency": 120.0,
+      "on": true
+    },
+    "version": 1
+  },
+  "rack.master": {
+    "defaults": {
+      "dynamics": {
+        "attack": 4,
+        "makeup": 0.0,
+        "on": false,
+        "ratio": "4",
+        "release": 4,
+        "threshold": 5.0
+      },
+      "stereo": {
+        "air": 0.0,
+        "bassFrequency": 120.0,
+        "monoBass": 0.0,
+        "width": 100.0
+      },
+      "transformer": {
+        "on": false
+      },
+      "tube": {
+        "drive": 0.25,
+        "lowCut": false,
+        "model": "4558",
+        "on": true,
+        "realistic": false
+      }
+    },
+    "version": 1
+  },
+  "rack.stereo": {
+    "defaults": {
+      "air": 0.0,
+      "bassFrequency": 120.0,
+      "monoBass": 0.0,
+      "width": 100.0
+    },
+    "version": 1
+  },
+  "rack.tolerance": {
+    "defaults": {
+      "on": true
+    },
+    "version": 1
+  },
+  "rack.transformer": {
+    "defaults": {
+      "on": false
+    },
+    "version": 1
+  },
+  "rack.tube": {
+    "defaults": {
+      "drive": 0.25,
+      "lowCut": false,
+      "model": "4558",
+      "on": true,
+      "realistic": false
+    },
+    "version": 1
+  },
+  "send": {
+    "defaults": {
+      "amount": 1.0,
+      "pre": false
+    },
+    "version": 1
+  },
+  "tempo.point": {
+    "defaults": {
+      "bpm": "120",
+      "ramp": false,
+      "tick": 0,
+      "timeSig": [
+        4,
+        4
+      ]
+    },
+    "version": 1
+  },
+  "track": {
+    "defaults": {
+      "armed": false,
+      "automation": [],
+      "channels": 2,
+      "collapsed": false,
+      "folder": false,
+      "input": null,
+      "instrument": null,
+      "items": [],
+      "monitor": "auto",
+      "mute": false,
+      "name": "",
+      "outputs": [],
+      "parent": null,
+      "solo": false,
+      "volume": 1.0
+    },
+    "version": 1
+  },
+  "track.input": {
+    "defaults": {
+      "channels": [
+        1
+      ],
+      "device": "in"
+    },
+    "version": 1
+  },
+  "track.output": {
+    "defaults": {
+      "channels": 2,
+      "port": "main",
+      "to": "m:0"
+    },
+    "version": 1
+  },
+  "transport": {
+    "defaults": {
+      "loop": {
+        "from": 0,
+        "on": false,
+        "to": 0
+      },
+      "metronome": {
+        "countIn": 0,
+        "on": false,
+        "volume": 0.8
+      },
+      "preRoll": {
+        "bars": 1
+      },
+      "punch": {
+        "from": 0,
+        "on": false,
+        "to": 0
+      }
+    },
+    "version": 1
+  },
+  "transport.metronome": {
+    "defaults": {
+      "countIn": 0,
+      "on": false,
+      "volume": 0.8
+    },
+    "version": 1
+  },
+  "transport.preroll": {
+    "defaults": {
+      "bars": 1
+    },
+    "version": 1
+  },
+  "transport.range": {
+    "defaults": {
+      "from": 0,
+      "on": false,
+      "to": 0
+    },
+    "version": 1
+  }
+}
