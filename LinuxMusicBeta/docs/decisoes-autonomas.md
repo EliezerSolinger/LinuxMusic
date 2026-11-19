@@ -97,4 +97,7 @@ Formato: **decisão** — motivo. Data entre parênteses.
 - **Na mesa de mixagem, cada canal tem um fader deslizante junto da barra do medidor**, como numa mesa de verdade,
   com gesto, valor em dB e duplo clique para 0 dB. O cabeçalho da faixa continua com o knob de volume (design 02,
   sem pan).
+- **A tela de mixagem é separada da tela de composição** (decisão do usuário): duas páginas, com abas no topo e um
+  atalho. A Composição tem a linha do tempo e a gravação (decisão de 12/11: a gravação mora na Composição); a
+  Mixagem tem a mesa inteira. A barra de transporte fica visível nas duas.
 
