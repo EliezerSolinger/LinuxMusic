@@ -22,6 +22,14 @@ pub fn log1pf(x: f32) -> f32 {
     libm::log1pf(x)
 }
 #[inline]
+pub fn log2f(x: f32) -> f32 {
+    libm::log2f(x)
+}
+#[inline]
+pub fn exp2f(x: f32) -> f32 {
+    libm::exp2f(x)
+}
+#[inline]
 pub fn powf(x: f32, y: f32) -> f32 {
     libm::powf(x, y)
 }

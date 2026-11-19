@@ -1249,6 +1249,807 @@
       "settings": {
         "drive": "12au7"
       }
+    },
+    {
+      "name": "osc-sine",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-sine-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-triangle",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "triangle",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-triangle-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "triangle",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-saw",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "mix",
+            "freq": 1975.5,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-saw-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "mix",
+            "freq": 1975.5,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-square",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "square",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-square-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "square",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-moog-saw",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "moog-saw",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-moog-saw-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "moog-saw",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-exponential",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "exponential",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-exponential-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "exponential",
+            "algo": "mix",
+            "freq": 261.63,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-saw-tables-high",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "mix",
+            "freq": 7040.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-detuned-phase",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "triangle",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 1.5,
+            "phase": 0.25,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-pm",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "pm",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-pm-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "pm",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-am",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "am",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-am-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "am",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-mix",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-mix-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-sync",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "sync",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-sync-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "sync",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-fm",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "fm",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": false
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-fm-tables",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "saw",
+            "algo": "fm",
+            "freq": 220.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 220.0,
+            "ratio": 2.0,
+            "phase": 0.0,
+            "volume": 0.5,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-chain-of-three",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "square",
+            "algo": "pm",
+            "freq": 110.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          },
+          {
+            "shape": "triangle",
+            "algo": "sync",
+            "freq": 110.0,
+            "ratio": 3.0,
+            "phase": 0.0,
+            "volume": 0.4,
+            "tables": true
+          },
+          {
+            "shape": "moog-saw",
+            "algo": "mix",
+            "freq": 110.0,
+            "ratio": 0.5,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-chain-fm-am",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "exponential",
+            "algo": "fm",
+            "freq": 330.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          },
+          {
+            "shape": "saw",
+            "algo": "am",
+            "freq": 330.0,
+            "ratio": 1.5,
+            "phase": 0.0,
+            "volume": 0.7,
+            "tables": true
+          },
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 330.0,
+            "ratio": 0.25,
+            "phase": 0.0,
+            "volume": 0.9,
+            "tables": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "osc-above-nyquist",
+      "unit": "osc",
+      "rate": 44100,
+      "frames": 8192,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "oscs": [
+          {
+            "shape": "sine",
+            "algo": "mix",
+            "freq": 30000.0,
+            "ratio": 1.0,
+            "phase": 0.0,
+            "volume": 0.6,
+            "tables": true
+          }
+        ]
+      }
     }
   ]
 }

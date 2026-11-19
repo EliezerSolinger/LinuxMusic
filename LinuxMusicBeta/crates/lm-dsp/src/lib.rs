@@ -16,6 +16,9 @@
 //! - [`dynamics`]: the compressors of nine units, and the gate;
 //! - [`mono_bass`], [`channel_strip`]: the channel's whole strip;
 //! - [`master`]: the master section.
+//!
+//! The instruments' sources:
+//! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables.
 
 // The ports keep the legacy program's index loops and its literal constants, so that a reader can set the two side by
 // side line by line (the A/B is against that code)
@@ -28,6 +31,7 @@ pub mod gain_stage;
 pub mod master;
 pub mod math;
 pub mod mono_bass;
+pub mod oscillator;
 pub mod oversampling;
 pub mod rbj;
 pub mod tolerance;

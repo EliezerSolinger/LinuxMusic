@@ -237,6 +237,33 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         })
         .collect();
 
+    if case["unit"] == "osc" {
+        // A chain of oscillators, as the TripleOscillator makes them
+        use lm_dsp::oscillator::{ModulationAlgo, OscParams, Oscillator, WaveShape};
+        let rate = case["rate"].as_f64().unwrap();
+        let oscs = case["settings"]["oscs"].as_array().unwrap();
+        let params: Vec<OscParams<'_>> = oscs
+            .iter()
+            .map(|o| OscParams {
+                shape: WaveShape::from_key(o["shape"].as_str().unwrap()).unwrap(),
+                algo: ModulationAlgo::from_key(o["algo"].as_str().unwrap()).unwrap(),
+                freq: o["freq"].as_f64().unwrap() as f32,
+                detuning: o["ratio"].as_f64().unwrap() / rate,
+                phase_offset: o["phase"].as_f64().unwrap() as f32,
+                volume: o["volume"].as_f64().unwrap() as f32,
+                use_wave_table: o["tables"].as_bool().unwrap(),
+                user_wave: None,
+            })
+            .collect();
+        let mut chain: Vec<Oscillator> =
+            params.iter().map(|p| Oscillator::new(p.phase_offset, rate as f32, 0)).collect();
+        let mut mono = vec![0.0f32; frames as usize];
+        for block_start in (0..frames as usize).step_by(block as usize) {
+            let end = (block_start + block as usize).min(frames as usize);
+            lm_dsp::oscillator::update(&mut chain, &params, &mut mono[block_start..end], false);
+        }
+        return mono.into_iter().map(|x| [x, x]).collect();
+    }
     if case["unit"] == "tube-curve" {
         // The static curve alone: the tube's transfer function and where it clips
         let model = GainModel::from_key(case["settings"]["drive"].as_str().unwrap()).unwrap();

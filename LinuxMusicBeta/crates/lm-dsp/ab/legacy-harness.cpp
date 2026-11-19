@@ -23,11 +23,13 @@
 #include <QJsonObject>
 
 #include "AnalogChannelStrip.h"
+#include "AutomatableModel.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "DeskTolerance.h"
 #include "GainStage.h"
 #include "MasterSection.h"
+#include "Oscillator.h"
 #include "SampleFrame.h"
 
 using namespace lmms;
@@ -225,6 +227,40 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 	}
 
 	const auto unit = c["unit"].toString();
+	if (unit == "osc")
+	{
+		// A chain of oscillators, as the TripleOscillator makes them, at the engine's rate
+		const auto rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		if (rate != c["rate"].toDouble()) { std::fprintf(stderr, "the engine runs at %g\n", rate); std::exit(1); }
+		const auto oscs = c["settings"].toObject()["oscs"].toArray();
+		const auto count = static_cast<std::size_t>(oscs.size());
+		const auto shapes = QStringList{"sine", "triangle", "saw", "square", "moog-saw", "exponential", "white-noise", "user"};
+		const auto algos = QStringList{"pm", "am", "mix", "sync", "fm"};
+		std::vector<std::unique_ptr<IntModel>> shapeModels, algoModels;
+		std::vector<float> freqs(count), phases(count), volumes(count);
+		std::vector<double> detunings(count);
+		std::vector<std::unique_ptr<Oscillator>> chain(count);
+		for (auto i = count; i-- > 0;)
+		{
+			const auto o = oscs[static_cast<int>(i)].toObject();
+			shapeModels.push_back(std::make_unique<IntModel>(static_cast<int>(shapes.indexOf(o["shape"].toString())), 0, 7));
+			algoModels.push_back(std::make_unique<IntModel>(static_cast<int>(algos.indexOf(o["algo"].toString())), 0, 4));
+			freqs[i] = static_cast<float>(o["freq"].toDouble());
+			detunings[i] = o["ratio"].toDouble() / rate;
+			phases[i] = static_cast<float>(o["phase"].toDouble());
+			volumes[i] = static_cast<float>(o["volume"].toDouble());
+			chain[i] = std::make_unique<Oscillator>(shapeModels.back().get(), algoModels.back().get(), freqs[i],
+				detunings[i], phases[i], volumes[i], i + 1 < count ? chain[i + 1].get() : nullptr);
+			chain[i]->setUseWaveTable(o["tables"].toBool());
+		}
+		for (std::int64_t start = 0; start < frames; start += block)
+		{
+			const auto n = std::min(block, frames - start);
+			chain[0]->update(out.data() + start, n, 0);
+			for (std::int64_t f = start; f < start + n; ++f) { out[f][1] = out[f][0]; }
+		}
+		return out;
+	}
 	if (unit == "tube-curve")
 	{
 		// The static curve alone: the tube's transfer function and where it clips
