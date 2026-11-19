@@ -851,3 +851,54 @@ fn cost_of_sixty_four_tracks() {
         assert!(per_block.as_secs_f64() < 256.0 / f64::from(RATE), "slower than real time");
     }
 }
+
+/// Decays into the subnormal range: each sample is half the previous one, from 2^-120
+struct Decay;
+
+impl Processor for Decay {
+    fn process(&mut self, cx: &mut ProcessContext<'_>) {
+        for ch in 0..cx.buffers.outputs() {
+            let mut x = std::hint::black_box(f32::from_bits(0x0380_0000)); // 2^-120, normal
+            for v in cx.buffers.output(ch).iter_mut() {
+                *v = x;
+                x = std::hint::black_box(x) * std::hint::black_box(0.5);
+            }
+        }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+fn render_decay(workers: usize) -> Vec<Vec<f32>> {
+    let (mut control, mut dummy) = make(workers);
+    let mut b = ProgramBuilder::new(ProgramGen(1), spec(), &limits(workers), tempo(120));
+    // Straight to the device, two equal nodes in one level (so a worker takes one when there are workers)
+    for k in 1..=2u32 {
+        b.node(NodeDesc::processor(n(k), 0, 1));
+        b.output(OutputRoute { node: n(k), channel: 0, device_channel: (k - 1) as u16 });
+    }
+    let mut i = Install::new(b.build().expect("program"));
+    i.add(n(1), core(Decay));
+    i.add(n(2), core(Decay));
+    install(&mut control, i);
+    let out = render(&mut dummy, 2048, 256);
+    assert!(control.frame().flushing_denormals, "the audio thread does not flush");
+    out
+}
+
+/// H6: subnormals are flushed on every render thread, so the audio thread, the workers and an export (another
+/// renderer, without a device) give the same bits
+#[test]
+fn subnormals_flushed_on_every_render_thread() {
+    let inline = render_decay(0);
+    for ch in &inline {
+        // 2^-120 halved six times is 2^-126, the smallest normal; the next one would be subnormal
+        assert_eq!(ch[6], f32::MIN_POSITIVE);
+        assert!(ch[7..256].iter().all(|v| *v == 0.0), "a subnormal reached the output");
+    }
+    // The first block's nodes are unmeasured, so they go to the workers: block 0 is the worker path
+    assert_eq!(inline, render_decay(3));
+    assert!(!flushing_denormals(), "the flush leaked out of the render call");
+}

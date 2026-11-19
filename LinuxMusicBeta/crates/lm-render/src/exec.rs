@@ -172,6 +172,8 @@ impl Workers {
                 .spawn(move || {
                     lm_base::set_role(lm_base::Role::Audio);
                     let _render = RenderThreadGuard::enter();
+                    // H6: for the worker's whole life
+                    let _flush = lm_sys_fpu::FlushDenormals::enable();
                     threads.run(ThreadKind::Worker(i), &mut || {
                         let slot = &watch.current[i + 1];
                         let mut idle = 0u32;

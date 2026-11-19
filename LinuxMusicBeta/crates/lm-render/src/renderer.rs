@@ -8,6 +8,9 @@
 //! 4. renders each pass through the graph, level by level, the levels' processors in parallel;
 //! 5. publishes telemetry at ~60 Hz and counts the period.
 //!
+//! Every render call and every worker runs with subnormals flushed (H6, `lm-sys-fpu`), so the device and an export
+//! give the same bits.
+//!
 //! Nothing here allocates or frees (rule 5): every buffer, list and ring was sized when the engine or the program
 //! was made, and whatever leaves the audio side goes back through a ring that has room for it
 
@@ -388,6 +391,9 @@ impl Renderer {
     /// Renders one device block (any size; larger than `max_block` is split, C7)
     pub fn render(&mut self, block: DeviceBlock<'_, '_>) -> &BlockReport {
         let _render = RenderThreadGuard::enter();
+        // H6: subnormals flushed for the whole call (a few register instructions; restored when the call returns,
+        // so a thread lent to rendering gets its state back)
+        let _flush = lm_sys_fpu::FlushDenormals::enable();
         let started = HostTime::now();
         let DeviceBlock { frames, host_time, inputs, outputs, capture_lost, late_by } = block;
         for out in outputs.iter_mut() {

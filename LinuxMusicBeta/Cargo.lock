@@ -306,6 +306,7 @@ dependencies = [
  "assert_no_alloc",
  "libm",
  "lm-base",
+ "lm-sys-fpu",
  "lm-time",
  "loom",
  "rtrb",

@@ -13,6 +13,8 @@ workspace = true
 [dependencies]
 lm-base.workspace = true
 lm-time.workspace = true
+# H6: flush-to-zero and denormals-are-zero on every render thread
+lm-sys-fpu.workspace = true
 rtrb.workspace = true
 triple_buffer.workspace = true
 libm.workspace = true

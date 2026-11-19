@@ -65,10 +65,9 @@ pub enum ThreadKind {
 
 /// The hooks of the render threads. The default runs the body as is.
 ///
-/// **The FTZ hook (H6):** the session passes a hook that calls `lm_sys_fpu::enable_on_this_thread()` (and joins the
-/// real-time group, H1) before `body()`. `lm-render` cannot call `lm-sys-fpu` itself while that crate is not in
-/// `[workspace.dependencies]`; [`crate::TelemetryFrame::flushing_denormals`] reports, from the audio thread, whether
-/// the flush is really on, so a missing hook is visible
+/// The flush of subnormals (H6) is the renderer's own: every render call and every worker turn it on through
+/// `lm-sys-fpu`, so no hook is needed for it. The session's hook joins the real-time group (H1) of each worker;
+/// [`crate::TelemetryFrame::flushing_denormals`] reports, from the audio thread, that the flush is really on
 #[derive(Clone, Default)]
 pub struct RenderThreads {
     pub hook: Option<ThreadHook>,
