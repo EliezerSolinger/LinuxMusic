@@ -4861,6 +4861,94 @@
         }
       },
       "settings": {}
+    },
+    {
+      "name": "freqshift",
+      "unit": "plugin-effect",
+      "plugin": "frequencyshifter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Mix": 0.8,
+        "Frequency Shift": 300.0,
+        "Spread Shift": 10.0,
+        "Tone": 8000.0,
+        "Phase": 0.25
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Frequency Shift": -150.0,
+          "Ring": 0.4,
+          "Harmonics": 0.3
+        }
+      }
+    },
+    {
+      "name": "freqshift-barberpole",
+      "unit": "plugin-effect",
+      "plugin": "frequencyshifter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Feedback": 0.7,
+        "Fine Delay Length": 5.0,
+        "LFO Amount": 200.0,
+        "LFO Rate": 1.5,
+        "LFO StereoPhase": 0.25,
+        "Antireflect": 1,
+        "Route Mode": 2,
+        "Delay Damping": 6000.0,
+        "Frequency Shift": 40.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Route Mode": 1,
+          "Delay Length": 30.0
+        }
+      }
+    },
+    {
+      "name": "freqshift-defaults",
+      "unit": "plugin-effect",
+      "plugin": "frequencyshifter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {}
     }
   ]
 }

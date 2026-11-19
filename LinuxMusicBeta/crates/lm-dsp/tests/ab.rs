@@ -399,6 +399,43 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "plugin-effect" && case["plugin"] == "frequencyshifter" {
+        use lm_dsp::frequency_shifter::*;
+        let first = &case["settings"];
+        let then = &case["then"]["settings"];
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        let value = |key: &str, default: f32, start: usize| {
+            let before = f(first, key, default);
+            if start < at { before } else { f(then, key, before) }
+        };
+        let mut shifter = FrequencyShifter::new(case["rate"].as_f64().unwrap() as f32);
+        for start in (0..frames as usize).step_by(block as usize) {
+            let span = &mut out[start..(start + block as usize).min(frames as usize)];
+            let d = FrequencyShifterSettings::default();
+            let settings = FrequencyShifterSettings {
+                mix: value("Mix", d.mix, start),
+                shift: value("Frequency Shift", d.shift, start),
+                spread: value("Spread Shift", d.spread, start),
+                ring: value("Ring", d.ring, start),
+                feedback: value("Feedback", d.feedback, start),
+                delay: value("Delay Length", d.delay, start),
+                fine_delay: value("Fine Delay Length", d.fine_delay, start),
+                delay_damp: value("Delay Damping", d.delay_damp, start),
+                delay_glide: value("Delay Glide", d.delay_glide, start),
+                lfo_amount: value("LFO Amount", d.lfo_amount, start),
+                lfo_rate: value("LFO Rate", d.lfo_rate, start),
+                lfo_stereo_phase: value("LFO StereoPhase", d.lfo_stereo_phase, start),
+                glide: value("Glide", d.glide, start),
+                tone: value("Tone", d.tone, start),
+                phase: value("Phase", d.phase, start),
+                antireflect: value("Antireflect", 0.0, start) != 0.0,
+                route: RouteMode::ALL[value("Route Mode", 0.0, start) as usize],
+                harmonics: value("Harmonics", d.harmonics, start),
+            };
+            shifter.process(span, &settings);
+        }
+        return out;
+    }
     if case["unit"] == "plugin-effect" && case["plugin"] == "dynamicsprocessor" {
         use lm_dsp::dynamics_processor::*;
         let first = &case["settings"];

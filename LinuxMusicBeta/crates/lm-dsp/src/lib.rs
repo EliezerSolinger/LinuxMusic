@@ -29,6 +29,7 @@
 //! - [`distortion_effects`]: the Dispersion, the Wave Shaper and the Bitcrush;
 //! - [`dynamics_processor`]: the Dynamics Processor;
 //! - [`eq`]: the Eq;
+//! - [`frequency_shifter`]: the Frequency Shifter;
 //! - [`filter_effects`]: the Dual Filter and the Crossover EQ;
 //! - [`modulation_effects`]: the Multitap Echo and the Flanger;
 //! - [`small_effects`]: the Amplifier, the Stereo Matrix, the Stereo Enhancer and the Bass Booster;
@@ -49,6 +50,7 @@ pub mod envelope;
 pub mod eq;
 pub mod filter_effects;
 pub mod filters;
+pub mod frequency_shifter;
 pub mod gain_stage;
 pub mod master;
 pub mod math;
