@@ -95,39 +95,80 @@ pub enum TelemetryKind {
 /// Events from the audio side; the ring counts what it drops ([`Telemetry::Dropped`])
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Telemetry {
-    PluginRequest { generation: ProgramGen, node: NodeIndex, request: PluginRequest },
-    Xrun { late_by: u32 },
-    NodePanicked { generation: ProgramGen, node: NodeIndex },
+    PluginRequest {
+        generation: ProgramGen,
+        node: NodeIndex,
+        request: PluginRequest,
+    },
+    Xrun {
+        late_by: u32,
+    },
+    NodePanicked {
+        generation: ProgramGen,
+        node: NodeIndex,
+    },
     /// NaN or infinity in a node's output: the node is silenced and marked (U20)
-    NodeNonFinite { generation: ProgramGen, node: NodeIndex },
+    NodeNonFinite {
+        generation: ProgramGen,
+        node: NodeIndex,
+    },
     /// The master went above +24 dBFS: the output is cut (U20)
-    MasterProtection { generation: ProgramGen, peak: f32 },
+    MasterProtection {
+        generation: ProgramGen,
+        peak: f32,
+    },
     /// A tail node (U32) went quiet or reached 2 s; the compiler may remove it
-    TailEnded { generation: ProgramGen, node: NodeIndex },
+    TailEnded {
+        generation: ProgramGen,
+        node: NodeIndex,
+    },
     /// `Locate` while recording is refused (I-7.2)
     LocateRefused,
     /// A touched value could not be kept (its ring was full): automation recording of that slot stopped (C3)
-    TouchedOverflow { slot: ParamSlot },
+    TouchedOverflow {
+        slot: ParamSlot,
+    },
     /// The transport events ring was full: recording stopped (U1)
     TransportEventsOverflow,
     /// An install named a node outside the table or a producer outside the limits; that part was skipped
-    InstallInvalid { generation: ProgramGen },
-    Dropped { kind: TelemetryKind, count: u32 },
+    InstallInvalid {
+        generation: ProgramGen,
+    },
+    Dropped {
+        kind: TelemetryKind,
+        count: u32,
+    },
 }
 
 /// What the recorder and the session must never miss (U1, U4, C2). Lossless ring
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportEvent {
     /// Recording started at this timeline sample (`frame` is the engine frame, for the capture side)
-    RecordStarted { sample: i64, frame: u64 },
-    RecordStopped { sample: i64, frame: u64 },
+    RecordStarted {
+        sample: i64,
+        frame: u64,
+    },
+    RecordStopped {
+        sample: i64,
+        frame: u64,
+    },
     /// The loop wrapped while recording: `sample_in_take` frames of the take had been recorded (U1)
-    LoopWrapped { from: i64, to: i64, sample_in_take: u64 },
+    LoopWrapped {
+        from: i64,
+        to: i64,
+        sample_in_take: u64,
+    },
     /// Capture lost `frames` frames at this timeline sample (an xrun); the recorder writes exactly that much
     /// silence, marked, so the take stays on the grid (C2)
-    CaptureGap { sample: i64, frames: u32 },
+    CaptureGap {
+        sample: i64,
+        frames: u32,
+    },
     /// The tempo map changed while playing and the playhead moved to keep the musical position (H9)
-    Relocated { from: i64, to: i64 },
+    Relocated {
+        from: i64,
+        to: i64,
+    },
 }
 
 /// A touched slot's value while playing, for automation recording (F2, I-6.4, C3). Lossless ring

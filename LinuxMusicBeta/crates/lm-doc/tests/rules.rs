@@ -84,7 +84,9 @@ fn routing_cycles_are_refused() {
     assert_eq!(e.key(), "doc.routing.cycle");
     let e = doc.transact(label("x"), |e| e.set(a, &[k("output")], id_text(a))).unwrap_err();
     assert_eq!(e.key(), "doc.routing.cycle");
-    let e = doc.transact(label("x"), |e| e.insert(c, "sends", 0, Value::object([("to", id_text(a))])).map(|_| ())).unwrap_err();
+    let e = doc
+        .transact(label("x"), |e| e.insert(c, "sends", 0, Value::object([("to", id_text(a))])).map(|_| ()))
+        .unwrap_err();
     assert_eq!(e.key(), "doc.routing.cycle");
     // Through a sidechain: c feeds an insert of a, which goes to b, then c
     let e = doc
@@ -159,7 +161,10 @@ fn tempo_map_rules() {
     let point = |tick: i64, bpm: &str, ramp: bool| {
         Value::object([("tick", Value::int(tick)), ("bpm", text(bpm)), ("ramp", Value::bool(ramp))])
     };
-    doc.transact(label("x"), |e| e.set(ROOT, &[k("tempoMap")], Value::list([point(0, "120", true), point(3840, "140.5", false)]))).unwrap();
+    doc.transact(label("x"), |e| {
+        e.set(ROOT, &[k("tempoMap")], Value::list([point(0, "120", true), point(3840, "140.5", false)]))
+    })
+    .unwrap();
     for (map, problem) in [
         (Value::list([point(10, "120", false)]), "first_not_at_zero"),
         (Value::list([point(0, "120", false), point(0, "90", false)]), "ticks_not_increasing"),
@@ -248,9 +253,12 @@ fn paste_from_another_project_rules_outside_references() {
             e.set(src, &[k("output")], id_text(rev))?;
             e.set(t, &[k("outputs"), PathStep::Index(0), k("to")], id_text(rev))?;
             let p = lm_doc::TrackRef(t).instrument_in(e);
-            e.insert(t, "automation", 0, Value::object([
-                ("target", Value::object([("node", id_text(p)), ("param", text("vol1"))])),
-            ]))?;
+            e.insert(
+                t,
+                "automation",
+                0,
+                Value::object([("target", Value::object([("node", id_text(p)), ("param", text("vol1"))]))]),
+            )?;
             for key in 0..5 {
                 e.add_note(c, Value::object([("key", Value::int(60 + key))]))?;
             }
@@ -283,7 +291,8 @@ fn paste_from_another_project_rules_outside_references() {
     assert_eq!(outputs(&doc, t2.id())[0].2, "m:0");
     let item = t2.items(&doc)[0];
     assert_eq!(item.note_count(&doc), 5);
-    let numbers: Vec<u64> = item.value(&doc).unwrap().get("notes").unwrap().keys().map(|k| k.parse().unwrap()).collect();
+    let numbers: Vec<u64> =
+        item.value(&doc).unwrap().get("notes").unwrap().keys().map(|k| k.parse().unwrap()).collect();
     assert!(numbers.iter().all(|n| *n < doc.issued()));
     doc.verify_index().unwrap();
     // Pasting twice never repeats an id
@@ -301,7 +310,9 @@ fn heavy_edits_apply_unless_their_base_changed_h7() {
     let compute = move |root: &Value| {
         let path = [k("tracks"), PathStep::Index(0), k("items"), PathStep::Index(0)];
         let item = root.at_path(&path).unwrap().clone();
-        let ops = (0..100).map(|i| PatchOp::AddNote { item: c, note: Value::object([("key", Value::int(i % 128))]) }).collect();
+        let ops = (0..100)
+            .map(|i| PatchOp::AddNote { item: c, note: Value::object([("key", Value::int(i % 128))]) })
+            .collect();
         Patch { ops, based_on: vec![(c, item)] }
     };
     let patch = std::thread::spawn(move || compute(&snapshot)).join().unwrap();
@@ -363,7 +374,8 @@ trait InstrumentIn {
 
 impl InstrumentIn for lm_doc::TrackRef {
     fn instrument_in(self, e: &lm_doc::Edit<'_>) -> NodeId {
-        NodeId::parse(e.find(self.id()).unwrap().get("instrument").unwrap().get("id").unwrap().as_text().unwrap()).unwrap()
+        NodeId::parse(e.find(self.id()).unwrap().get("instrument").unwrap().get("id").unwrap().as_text().unwrap())
+            .unwrap()
     }
 }
 
@@ -371,7 +383,11 @@ impl InstrumentIn for lm_doc::TrackRef {
 fn an_unavailable_plugin_is_kept_intact_with_a_notice() {
     let mut doc = new_doc();
     let t = add_track(&mut doc, "a", Some(synth()));
-    let ghost = Value::object([("plugin", text("ghost")), ("version", Value::int(3)), ("state", Value::object([("chunk", text("opaque"))]))]);
+    let ghost = Value::object([
+        ("plugin", text("ghost")),
+        ("version", Value::int(3)),
+        ("state", Value::object([("chunk", text("opaque"))])),
+    ]);
     let d = doc.transact(label("x"), |e| e.set(t, &[k("instrument")], ghost.clone())).unwrap();
     assert!(d.notices.iter().any(|n| n.key == "doc.plugin.unavailable"));
     // Its outputs stay as they were (no ports known)

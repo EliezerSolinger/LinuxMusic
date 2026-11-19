@@ -11,7 +11,12 @@ use lm_state::{NodeId, PathStep, ROOT, Value, from_json, to_json};
 fn ids_of(doc_root: &Value, path: &[PathStep]) -> Vec<NodeId> {
     doc_root
         .at_path(path)
-        .map(|l| l.items().filter_map(|i| i.get("id").and_then(Value::as_text)).filter_map(|t| NodeId::parse(t).ok()).collect())
+        .map(|l| {
+            l.items()
+                .filter_map(|i| i.get("id").and_then(Value::as_text))
+                .filter_map(|t| NodeId::parse(t).ok())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -31,8 +36,10 @@ fn items(e: &Edit<'_>) -> Vec<NodeId> {
 fn random_op(e: &mut Edit<'_>, rng: &mut Rng) -> lm_base::Result<()> {
     let ts = tracks(e);
     let cs = channels(e);
-    let midi: Vec<NodeId> =
-        items(e).into_iter().filter(|c| e.find(*c).and_then(|i| i.get("kind")).and_then(Value::as_text) == Some("midi")).collect();
+    let midi: Vec<NodeId> = items(e)
+        .into_iter()
+        .filter(|c| e.find(*c).and_then(|i| i.get("kind")).and_then(Value::as_text) == Some("midi"))
+        .collect();
     match rng.below(16) {
         0 => {
             let instrument = match rng.below(3) {
@@ -40,7 +47,12 @@ fn random_op(e: &mut Edit<'_>, rng: &mut Rng) -> lm_base::Result<()> {
                 1 => synth(),
                 _ => drums(KITS[rng.below(2)]),
             };
-            e.insert(ROOT, "tracks", rng.below(ts.len() + 1), Value::object([("name", text("t")), ("instrument", instrument)]))?;
+            e.insert(
+                ROOT,
+                "tracks",
+                rng.below(ts.len() + 1),
+                Value::object([("name", text("t")), ("instrument", instrument)]),
+            )?;
         }
         1 => {
             if let Some(t) = rng.pick(&ts) {
@@ -77,19 +89,31 @@ fn random_op(e: &mut Edit<'_>, rng: &mut Rng) -> lm_base::Result<()> {
         }
         8 => {
             if let Some(t) = rng.pick(&ts) {
-                e.insert(*t, "items", 0, Value::object([("kind", text("midi")), ("start", Value::int(rng.below(10_000) as i64))]))?;
+                e.insert(
+                    *t,
+                    "items",
+                    0,
+                    Value::object([("kind", text("midi")), ("start", Value::int(rng.below(10_000) as i64))]),
+                )?;
             }
         }
         9 => {
             if let Some(c) = rng.pick(&midi) {
                 for _ in 0..1 + rng.below(4) {
-                    e.add_note(*c, Value::object([("key", Value::int(rng.below(128) as i64)), ("start", Value::int(rng.below(3840) as i64))]))?;
+                    e.add_note(
+                        *c,
+                        Value::object([
+                            ("key", Value::int(rng.below(128) as i64)),
+                            ("start", Value::int(rng.below(3840) as i64)),
+                        ]),
+                    )?;
                 }
             }
         }
         10 => {
             if let Some(c) = rng.pick(&midi) {
-                let notes: Vec<u64> = e.find(*c).unwrap().get("notes").unwrap().keys().filter_map(|k| k.parse().ok()).collect();
+                let notes: Vec<u64> =
+                    e.find(*c).unwrap().get("notes").unwrap().keys().filter_map(|k| k.parse().ok()).collect();
                 if let Some(n) = rng.pick(&notes) {
                     if rng.chance(2) {
                         e.remove_note(*c, *n)?;
@@ -115,7 +139,9 @@ fn random_op(e: &mut Edit<'_>, rng: &mut Rng) -> lm_base::Result<()> {
         13 => {
             // A kit change: the outputs follow the ports
             for t in &ts {
-                let has_drums = e.find(*t).and_then(|t| t.get("instrument")).and_then(|i| i.get("plugin")).and_then(Value::as_text) == Some("drums");
+                let has_drums =
+                    e.find(*t).and_then(|t| t.get("instrument")).and_then(|i| i.get("plugin")).and_then(Value::as_text)
+                        == Some("drums");
                 if has_drums {
                     e.set(*t, &[k("instrument"), k("state"), k("kit")], text(KITS[rng.below(2)]))?;
                     break;

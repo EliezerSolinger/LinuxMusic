@@ -57,8 +57,12 @@ pub fn registry_with(version_of_synth: u32) -> SchemaRegistry {
         synth = synth.field(FieldSpec::text("wave", "saw")).upgrade(1, |v| Ok(v.with("wave", Value::text("square"))));
     }
     r.add(synth).unwrap();
-    r.add(NodeSchema::new("plugin:drums", 1).field(FieldSpec::choice("kit", KITS, "small")).param(ParamSpec::new("level", 0.0, 1.0, 1.0)))
-        .unwrap();
+    r.add(
+        NodeSchema::new("plugin:drums", 1)
+            .field(FieldSpec::choice("kit", KITS, "small"))
+            .param(ParamSpec::new("level", 0.0, 1.0, 1.0)),
+    )
+    .unwrap();
     r.add(NodeSchema::new("plugin:comp", 1).param(ParamSpec::new("threshold", -60.0, 0.0, -20.0))).unwrap();
     r.check_complete().unwrap();
     r
@@ -75,7 +79,13 @@ pub fn fake_ports(plugin: &str, state: &Value) -> Option<Ports> {
         "drums" => {
             let kit = state.get("kit").and_then(Value::as_text).unwrap_or("small");
             let outputs = match kit {
-                "big" => vec![Port::new("kick", 1), Port::new("snare", 1), Port::new("tom", 1), Port::new("oh", 1), Port::new("room", 2)],
+                "big" => vec![
+                    Port::new("kick", 1),
+                    Port::new("snare", 1),
+                    Port::new("tom", 1),
+                    Port::new("oh", 1),
+                    Port::new("room", 2),
+                ],
                 _ => vec![Port::new("kick", 1), Port::new("snare", 1), Port::new("oh", 2)],
             };
             Some(Ports { outputs, sidechains: vec![] })

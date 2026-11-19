@@ -9,8 +9,10 @@ use crate::document::Document;
 use crate::schemas::{MASTER, types};
 
 fn ids_in(list: Option<&Value>) -> Vec<NodeId> {
-    list.map(|l| l.items().filter_map(|i| i.get("id").and_then(Value::as_text)).filter_map(|t| NodeId::parse(t).ok()).collect())
-        .unwrap_or_default()
+    list.map(|l| {
+        l.items().filter_map(|i| i.get("id").and_then(Value::as_text)).filter_map(|t| NodeId::parse(t).ok()).collect()
+    })
+    .unwrap_or_default()
 }
 
 fn text(v: Option<Value>, key: &str) -> Option<Arc<str>> {

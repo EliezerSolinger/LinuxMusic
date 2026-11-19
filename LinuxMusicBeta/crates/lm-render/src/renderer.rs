@@ -33,8 +33,7 @@ use crate::panic::RenderThreadGuard;
 use crate::params::ParamSlots;
 use crate::processor::{Adopted, BufferLayout, Buffers, HostOutbox, ProcessContext, TransportInfo};
 use crate::program::{
-    AUTOMATION_GRID, ChannelMix, DelayLine, MidiTiming, NONE, NodeKind, PFeed, PHostParam, PNode, Program, Rate,
-    Target,
+    AUTOMATION_GRID, ChannelMix, DelayLine, MidiTiming, NONE, NodeKind, PFeed, PHostParam, PNode, Program, Rate, Target,
 };
 use crate::rng::Rng;
 use crate::sample::SampleData;
@@ -675,7 +674,10 @@ impl Renderer {
             },
             |a| {
                 if slots[a.node.slot()].core.is_some() && pending.len() < pending.capacity() {
-                    pending.push((a.node, EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 }));
+                    pending.push((
+                        a.node,
+                        EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 },
+                    ));
                 }
             },
         );
@@ -799,7 +801,10 @@ impl Renderer {
             |_| true,
             |a| {
                 if pending.len() < pending.capacity() {
-                    pending.push((a.node, EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 }));
+                    pending.push((
+                        a.node,
+                        EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 },
+                    ));
                 }
             },
         );
@@ -839,7 +844,10 @@ impl Renderer {
             |a| matches!(a.source, NoteSource::Item { .. }),
             |a| {
                 if pending.len() < pending.capacity() {
-                    pending.push((a.node, EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 }));
+                    pending.push((
+                        a.node,
+                        EventKind::NoteOff { note: a.note, channel: a.channel, key: a.key, velocity: 0.0 },
+                    ));
                 }
             },
         );
@@ -1181,9 +1189,9 @@ impl Renderer {
     }
 
     fn port_note_off(&mut self, port: PortIndex, channel: u8, key: u8, offset: u32) {
-        while let Some(a) = self.notes.take_one(|a| {
-            a.source == NoteSource::Port(port) && a.channel == channel && a.key == key
-        }) {
+        while let Some(a) =
+            self.notes.take_one(|a| a.source == NoteSource::Port(port) && a.channel == channel && a.key == key)
+        {
             if let Some(i) = self.program.node_of(a.node) {
                 self.push_event(i, offset, EventKind::NoteOff { note: a.note, channel, key, velocity: 0.0 });
             }
@@ -1391,7 +1399,8 @@ impl Renderer {
             });
             if bad {
                 slot.dead = true;
-                if self.out.events.push(Telemetry::NodeNonFinite { generation: self.program.generation, node }).is_err() {
+                if self.out.events.push(Telemetry::NodeNonFinite { generation: self.program.generation, node }).is_err()
+                {
                     self.dropped[0] = self.dropped[0].saturating_add(1);
                 }
             }
@@ -1416,7 +1425,11 @@ impl Renderer {
                 let mut m = slot.mute_gain;
                 for x in g.iter_mut() {
                     if m != target_mute {
-                        m = if target_mute > m { (m + 1.0 / MUTE_FADE).min(1.0) } else { (m - 1.0 / MUTE_FADE).max(0.0) };
+                        m = if target_mute > m {
+                            (m + 1.0 / MUTE_FADE).min(1.0)
+                        } else {
+                            (m - 1.0 / MUTE_FADE).max(0.0)
+                        };
                     }
                     *x *= m;
                 }
@@ -1456,7 +1469,12 @@ impl Renderer {
                 p.quiet = 0;
                 if !p.engaged {
                     p.engaged = true;
-                    if self.out.events.push(Telemetry::MasterProtection { generation: self.program.generation, peak }).is_err() {
+                    if self
+                        .out
+                        .events
+                        .push(Telemetry::MasterProtection { generation: self.program.generation, peak })
+                        .is_err()
+                    {
                         self.dropped[0] = self.dropped[0].saturating_add(1);
                     }
                 }

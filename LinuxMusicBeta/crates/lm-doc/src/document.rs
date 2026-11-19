@@ -298,7 +298,10 @@ impl Document {
             .with_path(&[PathStep::key("meta"), PathStep::key("issued")], Value::int(1))?
             .with_path(&[PathStep::key("meta"), PathStep::key("uuid")], Value::text(uuid))?
             .with_path(&[PathStep::key("project"), PathStep::key("seed")], Value::int(seed))?
-            .with_path(&[PathStep::key("mixer"), PathStep::key("master"), PathStep::key("id")], Value::text(MASTER.to_string()))?;
+            .with_path(
+                &[PathStep::key("mixer"), PathStep::key("master"), PathStep::key("id")],
+                Value::text(MASTER.to_string()),
+            )?;
         Ok(Self::from_root(registry, PROJECT, root, options)?.document)
     }
 
@@ -307,13 +310,20 @@ impl Document {
     /// reference across nodes, every plugin's state, the domain rules), and opens read-only when a node is of a
     /// newer version than this program's (H11)
     pub fn open(registry: Arc<SchemaRegistry>, saved: Value, options: Options) -> Result<Opened> {
-        let versions = saved.get("versions").filter(|v| v.is_object()).cloned().ok_or_else(|| Error::new("doc.load.no_versions"))?;
+        let versions = saved
+            .get("versions")
+            .filter(|v| v.is_object())
+            .cloned()
+            .ok_or_else(|| Error::new("doc.load.no_versions"))?;
         let root = saved.without("versions");
         let mut notices = Vec::new();
         let mut read_only = false;
         let mut from: BTreeMap<String, u32> = BTreeMap::new();
         for (t, v) in versions.entries() {
-            let v = v.as_int().and_then(|v| u32::try_from(v).ok()).ok_or_else(|| Error::new("doc.load.bad_version").arg("type", t))?;
+            let v = v
+                .as_int()
+                .and_then(|v| u32::try_from(v).ok())
+                .ok_or_else(|| Error::new("doc.load.bad_version").arg("type", t))?;
             match registry.find(t) {
                 Some(schema) if v <= schema.version => {
                     from.insert(t.to_owned(), v);
@@ -324,7 +334,14 @@ impl Document {
                 }
             }
         }
-        let mut up = Upgrader { registry: &registry, from: &from, outdated: false, upgraded: false, read_only, notices: Vec::new() };
+        let mut up = Upgrader {
+            registry: &registry,
+            from: &from,
+            outdated: false,
+            upgraded: false,
+            read_only,
+            notices: Vec::new(),
+        };
         up.outdated = from.iter().any(|(t, v)| registry.find(t).is_some_and(|s| s.version > *v));
         let ctx = Ctx::new(Arc::clone(&registry), PROJECT)?;
         let root = up.value(&ctx, &FieldKind::Object(PROJECT), root, 0)?;
@@ -344,7 +361,13 @@ impl Document {
         Self::open_root(registry, root_type, root, options, false)
     }
 
-    fn open_root(registry: Arc<SchemaRegistry>, root_type: &str, root: Value, options: Options, read_only: bool) -> Result<Opened> {
+    fn open_root(
+        registry: Arc<SchemaRegistry>,
+        root_type: &str,
+        root: Value,
+        options: Options,
+        read_only: bool,
+    ) -> Result<Opened> {
         let ctx = Ctx::new(registry, root_type)?;
         let mut notices = Vec::new();
         let tolerate = |e: Error, notices: &mut Vec<Label>| -> Result<()> {
@@ -362,12 +385,16 @@ impl Document {
         for (target, from) in index.refs.iter() {
             if !index.contains(*target) {
                 let by = from.iter().next().map(|r| r.owner.to_string()).unwrap_or_default();
-                tolerate(Error::new("doc.load.dangling_ref").arg("target", target.to_string()).arg("by", by), &mut notices)?;
+                tolerate(
+                    Error::new("doc.load.dangling_ref").arg("target", target.to_string()).arg("by", by),
+                    &mut notices,
+                )?;
             }
         }
         for (id, loc) in index.ids.iter() {
             if loc.type_name == types::PLUGIN {
-                let node = ctx.path_of(&index, &root, *id).ok().and_then(|p| root.at_path(&p).cloned()).unwrap_or_default();
+                let node =
+                    ctx.path_of(&index, &root, *id).ok().and_then(|p| root.at_path(&p).cloned()).unwrap_or_default();
                 match check_plugin(&ctx, *id, &node) {
                     Ok(Some(label)) => notices.push(label),
                     Ok(None) => {}
@@ -382,7 +409,12 @@ impl Document {
         let needed = max_id.max(max_note) + 1;
         let mut issued = needed;
         if ctx.has_meta {
-            let saved = root.get("meta").and_then(|m| m.get("issued")).and_then(Value::as_int).and_then(|v| u64::try_from(v).ok()).unwrap_or(0);
+            let saved = root
+                .get("meta")
+                .and_then(|m| m.get("issued"))
+                .and_then(Value::as_int)
+                .and_then(|v| u64::try_from(v).ok())
+                .unwrap_or(0);
             if saved < needed {
                 notices.push(Label::new("doc.load.issued_repaired").arg("from", saved as i64).arg("to", needed as i64));
                 root = root.with_path(&[PathStep::key("meta"), PathStep::key("issued")], Value::int(needed as i64))?;
@@ -390,7 +422,13 @@ impl Document {
                 issued = saved;
             }
         }
-        let env = Arc::new(Env { ctx, ports: options.ports, limits: options.limits, usage: options.usage, rules: options.rules });
+        let env = Arc::new(Env {
+            ctx,
+            ports: options.ports,
+            limits: options.limits,
+            usage: options.usage,
+            rules: options.rules,
+        });
         // The checking rules, over everything
         let state = State { root, index };
         let mut w = Work::new(Arc::clone(&env), state.clone(), issued);
@@ -533,7 +571,12 @@ impl Document {
     }
 
     /// [`Document::transact`] with another origin (`Plugin`, `Recording`)
-    pub fn transact_as(&mut self, label: Label, origin: Origin, edit: impl FnOnce(&mut Edit<'_>) -> Result<()>) -> Result<Diff> {
+    pub fn transact_as(
+        &mut self,
+        label: Label,
+        origin: Origin,
+        edit: impl FnOnce(&mut Edit<'_>) -> Result<()>,
+    ) -> Result<Diff> {
         let (diff, _) = self.run(origin, None, false, edit)?;
         self.push_step(label);
         Ok(diff)
@@ -718,7 +761,8 @@ impl Document {
     pub fn begin_gesture(&mut self, label: Label) -> GestureId {
         let raw = self.next_gesture;
         self.next_gesture += 1;
-        self.gestures.insert(raw, Gesture { label, record: GestureRecord::default(), steps_at_begin: self.steps_pushed });
+        self.gestures
+            .insert(raw, Gesture { label, record: GestureRecord::default(), steps_at_begin: self.steps_pushed });
         GestureId { raw, dropped: Some(Rc::clone(&self.gestures_dropped)) }
     }
 
@@ -917,7 +961,8 @@ impl Upgrader<'_> {
         let version = node.get("version").and_then(Value::as_int).and_then(|v| u32::try_from(v).ok()).unwrap_or(0);
         if version > schema.version {
             self.read_only = true;
-            self.notices.push(Label::new("doc.load.newer").arg("type", schema.type_name).arg("version", i64::from(version)));
+            self.notices
+                .push(Label::new("doc.load.newer").arg("type", schema.type_name).arg("version", i64::from(version)));
             return Ok(node);
         }
         if version == schema.version {

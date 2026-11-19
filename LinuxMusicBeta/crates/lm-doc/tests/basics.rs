@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use common::*;
 use lm_doc::{Document, MASTER, Options, PROJECT, schemas};
-use lm_state::{FieldKind, FieldSpec, NodeId, NodeSchema, OnRemove, PathStep, ROOT, SchemaRegistry, Value, from_json, to_json};
+use lm_state::{
+    FieldKind, FieldSpec, NodeId, NodeSchema, OnRemove, PathStep, ROOT, SchemaRegistry, Value, from_json, to_json,
+};
 
 #[test]
 fn frozen_defaults() {
@@ -89,7 +91,10 @@ fn set_goes_through_nested_nodes_and_reports_params() {
     assert_eq!(bad(&mut doc, &|e| e.set(m, &[k("nope")], real(3.0))), "doc.path.unknown_field");
     assert_eq!(bad(&mut doc, &|e| e.set(m, &[k("id")], text("m:99"))), "doc.set.id");
     assert_eq!(bad(&mut doc, &|e| e.set(ROOT, &[k("meta"), k("issued")], Value::int(0))), "doc.meta.read_only");
-    assert_eq!(bad(&mut doc, &|e| e.set(p, &[k("state"), k("params"), k("vol1")], real(7.0))), "state.schema.param_out_of_range");
+    assert_eq!(
+        bad(&mut doc, &|e| e.set(p, &[k("state"), k("params"), k("vol1")], real(7.0))),
+        "state.schema.param_out_of_range"
+    );
     assert_eq!(bad(&mut doc, &|e| e.set(m, &[k("output")], text("m:999"))), "doc.ref.dangling");
     doc.verify_index().unwrap();
 }

@@ -188,7 +188,15 @@ pub(crate) enum Event<'a> {
     Node { id: NodeId, type_name: &'static str, parent: NodeId, rel: &'a [PathStep], abs: &'a [PathStep] },
     /// A non-null reference. `owner` is the nearest enclosing node with an id; `rel` the path from it; `abs` the path
     /// from where the walk started, `owner_abs` the length of the owner's part of it
-    Ref { target: NodeId, owner: NodeId, rel: &'a [PathStep], abs: &'a [PathStep], owner_abs: usize, on_remove: OnRemove, in_list: bool },
+    Ref {
+        target: NodeId,
+        owner: NodeId,
+        rel: &'a [PathStep],
+        abs: &'a [PathStep],
+        owner_abs: usize,
+        on_remove: OnRemove,
+        in_list: bool,
+    },
 }
 
 /// What a path in a node leads to
@@ -359,7 +367,8 @@ impl Ctx {
             FieldKind::NoteMap(t) => {
                 let inner = FieldKind::Object(t);
                 for (key, note) in v.entries() {
-                    let n = parse_note_key(key).ok_or_else(|| Error::new("doc.note.key").arg("path", path_text(path)))?;
+                    let n =
+                        parse_note_key(key).ok_or_else(|| Error::new("doc.note.key").arg("path", path_text(path)))?;
                     path.push(PathStep::Note(n));
                     self.walk_inner(&inner, note, path, owners, false, visit)?;
                     path.pop();
@@ -643,7 +652,9 @@ impl Ctx {
                 if to.contains(&id.kind) {
                     Ok(())
                 } else {
-                    Err(Error::new("doc.value.wrong_ref_kind").arg("path", path_text(path)).arg("value", id.to_string()))
+                    Err(Error::new("doc.value.wrong_ref_kind")
+                        .arg("path", path_text(path))
+                        .arg("value", id.to_string()))
                 }
             }
             FieldKind::Id(_) => Err(Error::new("doc.set.id").arg("path", path_text(path))),
@@ -804,7 +815,10 @@ impl Ctx {
                     node = self.plugin_defaults(node, &v)?;
                 }
                 for field in &schema.fields {
-                    if let (Some(child), true) = (v.get(field.key), matches!(field.kind, FieldKind::List(_) | FieldKind::Object(_) | FieldKind::NoteMap(_))) {
+                    if let (Some(child), true) = (
+                        v.get(field.key),
+                        matches!(field.kind, FieldKind::List(_) | FieldKind::Object(_) | FieldKind::NoteMap(_)),
+                    ) {
                         node = node.with(field.key, self.with_defaults(&field.kind, child.clone())?);
                     }
                 }
@@ -826,7 +840,8 @@ impl Ctx {
             return Ok(node);
         }
         let mut state = overlay(self.registry.defaults(schema.type_name)?, &given_state);
-        if let (Some(def), Some(params)) = (self.registry.defaults(schema.type_name)?.get(PARAMS_KEY), given_state.get(PARAMS_KEY))
+        if let (Some(def), Some(params)) =
+            (self.registry.defaults(schema.type_name)?.get(PARAMS_KEY), given_state.get(PARAMS_KEY))
             && params.is_object()
         {
             state = state.with(PARAMS_KEY, overlay(def.clone(), params));

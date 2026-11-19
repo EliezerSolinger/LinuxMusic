@@ -82,7 +82,8 @@ impl JournalOp {
             Some("set") => Ok(JournalOp::Set { path: path(v.get("path"))?, value: value()? }),
             Some("remove") => Ok(JournalOp::Remove { path: path(v.get("path"))? }),
             Some("insert") => {
-                let index = v.get("index").and_then(Value::as_int).and_then(|i| usize::try_from(i).ok()).ok_or_else(bad)?;
+                let index =
+                    v.get("index").and_then(Value::as_int).and_then(|i| usize::try_from(i).ok()).ok_or_else(bad)?;
                 Ok(JournalOp::Insert { path: path(v.get("path"))?, index, value: value()? })
             }
             _ => Err(bad()),

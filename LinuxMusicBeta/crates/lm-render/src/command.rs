@@ -17,13 +17,21 @@ pub enum Command {
     Play,
     Stop,
     /// Refused while recording (I-7.2), with [`crate::Telemetry::LocateRefused`]
-    Locate { sample: i64 },
+    Locate {
+        sample: i64,
+    },
     /// Arms (or disarms) recording; it records while playing, inside the punch range if there is one
-    Record { on: bool },
+    Record {
+        on: bool,
+    },
     /// Every note off and every processor reset
     Panic,
     /// A MIDI message stamped with the host clock (C6); routed by the program's port table
-    Midi { port: PortIndex, at: HostTime, bytes: [u8; 3] },
+    Midi {
+        port: PortIndex,
+        at: HostTime,
+        bytes: [u8; 3],
+    },
     /// F2 (I-7.3)
     Preview(PreviewCommand),
 }
@@ -45,12 +53,24 @@ impl fmt::Debug for Command {
 /// The preview bus (I-7.3). It does not go through the compiler: the command brings the data or the built processor,
 /// and everything comes back in a [`crate::PreviewEnded`]
 pub enum PreviewCommand {
-    Sample { id: PreviewId, data: Arc<SampleData>, gain: f32 },
+    Sample {
+        id: PreviewId,
+        data: Arc<SampleData>,
+        gain: f32,
+    },
     /// A built instrument plays `key` until `NoteOff` (built before, in an `Operation`). It must declare stereo or
     /// mono output; it gets two output channels
-    Preset { id: PreviewId, processor: Box<dyn Processor>, key: u8 },
-    NoteOff { id: PreviewId },
-    Stop { id: PreviewId },
+    Preset {
+        id: PreviewId,
+        processor: Box<dyn Processor>,
+        key: u8,
+    },
+    NoteOff {
+        id: PreviewId,
+    },
+    Stop {
+        id: PreviewId,
+    },
 }
 
 impl fmt::Debug for PreviewCommand {

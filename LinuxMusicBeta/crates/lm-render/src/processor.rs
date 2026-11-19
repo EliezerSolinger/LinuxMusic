@@ -360,7 +360,10 @@ pub struct PluginErrorKey(pub &'static str);
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PluginRequest {
     LatencyChanged,
-    ParamChanged { index: u32, value: f32 },
+    ParamChanged {
+        index: u32,
+        value: f32,
+    },
     Error(PluginErrorKey),
     /// Third-party plugins only (S18)
     StateChanged,

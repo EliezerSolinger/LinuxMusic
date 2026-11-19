@@ -137,7 +137,12 @@ pub fn project_rules() -> Vec<Rule> {
         Rule::new("automation_targets", RuleKind::Reconcile, &[types::PLUGIN], drop_orphan_automation),
         Rule::new("master", RuleKind::Check, &[], check_master),
         Rule::new("folders", RuleKind::Check, &[types::TRACK], check_folders),
-        Rule::new("routing", RuleKind::Check, &[types::CHANNEL, types::MASTER, types::SEND, types::PLUGIN, types::MIXER], check_routing),
+        Rule::new(
+            "routing",
+            RuleKind::Check,
+            &[types::CHANNEL, types::MASTER, types::SEND, types::PLUGIN, types::MIXER],
+            check_routing,
+        ),
         Rule::new("items", RuleKind::Check, &[types::ITEM], check_items),
         Rule::new("tempo", RuleKind::Check, &[PROJECT], check_tempo),
         Rule::new("automation", RuleKind::Check, &[types::AUTOMATION], check_automation),
@@ -165,7 +170,8 @@ fn reconcile_ports(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
         let changed_state = touched.is_created(p)
             || touched.changed_paths(p).is_some_and(|paths| {
                 paths.iter().any(|path| {
-                    path.is_empty() || matches!(path.first(), Some(PathStep::Key(k)) if matches!(&**k, "plugin" | "state"))
+                    path.is_empty()
+                        || matches!(path.first(), Some(PathStep::Key(k)) if matches!(&**k, "plugin" | "state"))
                 })
             });
         if let Some(loc) = e.loc(p)
@@ -177,7 +183,11 @@ fn reconcile_ports(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
         }
     }
     for t in touched.alive_of(types::TRACK) {
-        if touched.is_created(t) || touched.changed_paths(t).is_some_and(|ps| ps.iter().any(|p| p.first() == Some(&PathStep::key("instrument")))) {
+        if touched.is_created(t)
+            || touched
+                .changed_paths(t)
+                .is_some_and(|ps| ps.iter().any(|p| p.first() == Some(&PathStep::key("instrument"))))
+        {
             tracks.insert(t);
         }
     }
@@ -200,7 +210,11 @@ fn reconcile_track(e: &mut Edit<'_>, track: NodeId) -> Result<()> {
                 track,
                 "outputs",
                 0,
-                Value::object([("port", Value::text("main")), ("channels", channels), ("to", Value::text(MASTER.to_string()))]),
+                Value::object([
+                    ("port", Value::text("main")),
+                    ("channels", channels),
+                    ("to", Value::text(MASTER.to_string())),
+                ]),
             )?;
         }
         return Ok(());
@@ -230,7 +244,8 @@ fn reconcile_track(e: &mut Edit<'_>, track: NodeId) -> Result<()> {
     }
     // Staying and new ports, in the plugin's order
     for (i, port) in ports.outputs.iter().enumerate() {
-        let current: Vec<Value> = e.find(track).and_then(|t| t.get("outputs")).map(|o| o.items().cloned().collect()).unwrap_or_default();
+        let current: Vec<Value> =
+            e.find(track).and_then(|t| t.get("outputs")).map(|o| o.items().cloned().collect()).unwrap_or_default();
         let found = current.iter().find(|o| o.get("port").and_then(Value::as_text) == Some(&*port.key));
         let channels = Value::int(i64::from(port.channels));
         match found.and_then(id_of) {
@@ -276,7 +291,9 @@ fn param_exists(e: &Edit<'_>, target: NodeId, param: &str) -> Option<bool> {
 /// A plugin replaced by another: the automation lanes of parameters it no longer has leave, with a notice
 fn drop_orphan_automation(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
     for p in touched.alive_of(types::PLUGIN).collect::<Vec<_>>() {
-        let swapped = touched.changed_paths(p).is_some_and(|ps| ps.iter().any(|path| path.first() == Some(&PathStep::key("plugin"))));
+        let swapped = touched
+            .changed_paths(p)
+            .is_some_and(|ps| ps.iter().any(|path| path.first() == Some(&PathStep::key("plugin"))));
         if !swapped {
             continue;
         }
@@ -284,7 +301,12 @@ fn drop_orphan_automation(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
             if e.type_of(r.owner).ok() != Some(types::AUTOMATION) {
                 continue;
             }
-            let param = e.find(r.owner).and_then(|a| a.get("target")).and_then(|t| t.get("param")).and_then(Value::as_text).map(str::to_owned);
+            let param = e
+                .find(r.owner)
+                .and_then(|a| a.get("target"))
+                .and_then(|t| t.get("param"))
+                .and_then(Value::as_text)
+                .map(str::to_owned);
             if let Some(param) = param
                 && param_exists(e, p, &param) == Some(false)
             {
@@ -306,7 +328,10 @@ fn check_automation(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
         {
             return Err(Error::new("doc.automation.no_such_param").arg("lane", a.to_string()).arg("param", param));
         }
-        let ticks: Vec<i64> = lane.get("points").map(|p| p.items().filter_map(|p| p.get("tick").and_then(Value::as_int)).collect()).unwrap_or_default();
+        let ticks: Vec<i64> = lane
+            .get("points")
+            .map(|p| p.items().filter_map(|p| p.get("tick").and_then(Value::as_int)).collect())
+            .unwrap_or_default();
         if ticks.windows(2).any(|w| w[0] > w[1]) {
             return Err(Error::new("doc.automation.unsorted").arg("lane", a.to_string()));
         }
@@ -329,7 +354,11 @@ fn check_folders(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
     let relevant = touched.created.iter().any(|(_, t)| *t == types::TRACK)
         || touched.changed.iter().any(|(_, t, paths)| {
             *t == types::TRACK
-                && paths.iter().any(|p| p.is_empty() || p.first() == Some(&PathStep::key("parent")) || p.first() == Some(&PathStep::key("folder")))
+                && paths.iter().any(|p| {
+                    p.is_empty()
+                        || p.first() == Some(&PathStep::key("parent"))
+                        || p.first() == Some(&PathStep::key("folder"))
+                })
         });
     if !relevant {
         return Ok(());
@@ -346,7 +375,9 @@ fn check_folders(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
     }
     for (child, p) in &parent {
         if folder.get(p) != Some(&true) {
-            return Err(Error::new("doc.track.parent_not_folder").arg("track", child.to_string()).arg("parent", p.to_string()));
+            return Err(Error::new("doc.track.parent_not_folder")
+                .arg("track", child.to_string())
+                .arg("parent", p.to_string()));
         }
         let mut at = *p;
         let mut steps = 0;
@@ -385,12 +416,14 @@ fn check_routing(e: &mut Edit<'_>, _: &Touched) -> Result<()> {
             let port = send.get("port").and_then(Value::as_text);
             if to.kind == KIND_CHANNEL {
                 if port.is_some() {
-                    return Err(Error::new("doc.send.port_on_channel").arg("send", id_of(&send).map(|s| s.to_string()).unwrap_or_default()));
+                    return Err(Error::new("doc.send.port_on_channel")
+                        .arg("send", id_of(&send).map(|s| s.to_string()).unwrap_or_default()));
                 }
                 edges.entry(id).or_default().push(to);
             } else if to.kind == KIND_PLUGIN {
                 let Some(loc) = e.loc(to) else { continue };
-                let is_insert = loc.parent.kind == KIND_CHANNEL && loc.container.len() == 1 && &*loc.container[0] == "inserts";
+                let is_insert =
+                    loc.parent.kind == KIND_CHANNEL && loc.container.len() == 1 && &*loc.container[0] == "inserts";
                 if !is_insert {
                     return Err(Error::new("doc.send.not_an_insert").arg("to", to.to_string()));
                 }
@@ -474,7 +507,9 @@ fn check_items(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
 /// The tempo map: a first point at tick 0, ticks increasing, exact BPMs, time signatures with a power-of-two
 /// denominator, and the last point not a ramp
 fn check_tempo(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
-    let relevant = touched.changed.iter().any(|(id, _, paths)| *id == ROOT && paths.iter().any(|p| p.is_empty() || p.first() == Some(&PathStep::key("tempoMap"))));
+    let relevant = touched.changed.iter().any(|(id, _, paths)| {
+        *id == ROOT && paths.iter().any(|p| p.is_empty() || p.first() == Some(&PathStep::key("tempoMap")))
+    });
     if !relevant || e.type_of(ROOT)? != PROJECT {
         return Ok(());
     }
@@ -512,7 +547,11 @@ pub(crate) fn check_tempo_map(map: &Value) -> Result<()> {
 /// The BPM text `lm-time` reads: a plain decimal, 1 to 1000, up to 6 decimals
 pub fn valid_bpm(text: &str) -> bool {
     let (int, frac) = text.split_once('.').unwrap_or((text, ""));
-    if int.is_empty() || int.len() > 4 || !int.bytes().all(|b| b.is_ascii_digit()) || (int.len() > 1 && int.starts_with('0')) {
+    if int.is_empty()
+        || int.len() > 4
+        || !int.bytes().all(|b| b.is_ascii_digit())
+        || (int.len() > 1 && int.starts_with('0'))
+    {
         return false;
     }
     if text.contains('.') && (frac.is_empty() || frac.len() > 6 || !frac.bytes().all(|b| b.is_ascii_digit())) {
@@ -544,7 +583,9 @@ pub fn default_usage(registry: &SchemaRegistry, root: &Value) -> Usage {
         registry.find(&plugin_type(name)).map_or(0, |s| s.params.len())
     };
     let rack_params = |rack: Option<&Value>| {
-        rack.map_or(0, |r| r.entries().map(|(_, section)| section.entries().filter(|(_, v)| v.as_real().is_some()).count()).sum())
+        rack.map_or(0, |r| {
+            r.entries().map(|(_, section)| section.entries().filter(|(_, v)| v.as_real().is_some()).count()).sum()
+        })
     };
     for t in root.get("tracks").map(|t| t.items().collect::<Vec<_>>()).unwrap_or_default() {
         usage.nodes += 1;
@@ -583,10 +624,14 @@ impl Edit<'_> {
 
 pub(crate) fn limits_error(limits: &Limits, usage: &Usage) -> Option<Error> {
     if usage.nodes > limits.max_nodes {
-        return Some(Error::new("doc.limits.nodes").arg("used", usage.nodes as i64).arg("max", limits.max_nodes as i64));
+        return Some(
+            Error::new("doc.limits.nodes").arg("used", usage.nodes as i64).arg("max", limits.max_nodes as i64),
+        );
     }
     if usage.params > limits.max_params {
-        return Some(Error::new("doc.limits.params").arg("used", usage.params as i64).arg("max", limits.max_params as i64));
+        return Some(
+            Error::new("doc.limits.params").arg("used", usage.params as i64).arg("max", limits.max_params as i64),
+        );
     }
     None
 }

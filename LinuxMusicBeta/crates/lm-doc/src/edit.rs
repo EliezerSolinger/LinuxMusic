@@ -457,7 +457,9 @@ pub fn param_key(owner_type: &str, rel: &[PathStep]) -> Option<Arc<str>> {
         (types::TRACK, ["volume"]) | (types::CHANNEL, ["volume" | "pan"]) | (types::MASTER, ["volume"]) => {
             Some(Arc::from(keys[0]))
         }
-        (types::CHANNEL | types::MASTER, ["rack", section, field]) => Some(Arc::from(format!("rack.{section}.{field}"))),
+        (types::CHANNEL | types::MASTER, ["rack", section, field]) => {
+            Some(Arc::from(format!("rack.{section}.{field}")))
+        }
         _ => None,
     }
 }
@@ -571,7 +573,8 @@ impl Edit<'_> {
                     _ => BTreeSet::new(),
                 };
                 let w = &mut *self.w;
-                v = ctx.assign_ids(kind, v, &mut || w.issue(), &|id| old_ids.contains(&id))
+                v = ctx
+                    .assign_ids(kind, v, &mut || w.issue(), &|id| old_ids.contains(&id))
                     .map_err(|e| if e.key() == "doc.insert.has_id" { Error::new("doc.set.foreign_id") } else { e })?;
             }
             if ctx.max_note(kind, &v).is_some_and(|n| n >= self.w.issued) {
@@ -794,7 +797,9 @@ impl Edit<'_> {
                 }
                 OnRemove::Clear if in_list => node.without_path(&abs)?,
                 OnRemove::Clear => node.with_path(&abs, Value::NULL)?,
-                OnRemove::Redirect(to) if self.w.state.index.contains(to) => node.with_path(&abs, Value::text(to.to_string()))?,
+                OnRemove::Redirect(to) if self.w.state.index.contains(to) => {
+                    node.with_path(&abs, Value::text(to.to_string()))?
+                }
                 OnRemove::Redirect(to) => {
                     return Err(Error::new("doc.remove.redirect_gone").arg("to", to.to_string()));
                 }
@@ -835,7 +840,9 @@ impl Edit<'_> {
     pub fn apply(&mut self, op: &PatchOp) -> Result<()> {
         match op {
             PatchOp::Set { node, path, value } => self.set(*node, path, value.clone()),
-            PatchOp::Insert { parent, list, index, node } => self.insert(*parent, list, *index, node.clone()).map(|_| ()),
+            PatchOp::Insert { parent, list, index, node } => {
+                self.insert(*parent, list, *index, node.clone()).map(|_| ())
+            }
             PatchOp::Remove { node } => self.remove(*node),
             PatchOp::Move { node, parent, list, index } => self.move_to(*node, *parent, list, *index),
             PatchOp::AddNote { item, note } => self.add_note(*item, note.clone()).map(|_| ()),

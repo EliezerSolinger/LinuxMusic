@@ -132,13 +132,18 @@ impl EngineControl {
             return Err(Error::new("render.install.program_limits"));
         }
         let max = self.limits.max_nodes;
-        let bad_node = install.add.iter().map(|(n, _)| *n).chain(install.remove.iter().copied()).any(|n| n.slot() >= max)
-            || install.replace.iter().any(|r| r.node.slot() >= max || r.tail.is_some_and(|t| t.slot() >= max));
+        let bad_node =
+            install.add.iter().map(|(n, _)| *n).chain(install.remove.iter().copied()).any(|n| n.slot() >= max)
+                || install.replace.iter().any(|r| r.node.slot() >= max || r.tail.is_some_and(|t| t.slot() >= max));
         if bad_node {
             return Err(Error::new("render.install.node_out_of_range"));
         }
         let producers = self.limits.max_command_producers;
-        let bad_producer = install.producers.iter().map(|r| r.producer()).chain(install.remove_producers.iter().copied())
+        let bad_producer = install
+            .producers
+            .iter()
+            .map(|r| r.producer())
+            .chain(install.remove_producers.iter().copied())
             .any(|p| p.0 == 0 || usize::from(p.0) >= producers);
         if bad_producer {
             return Err(Error::new("render.install.producer_invalid"));

@@ -120,9 +120,7 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(list_of("tracks", ty::TRACK))
             .field(object("mixer", ty::MIXER)),
         // The part of the root that undo never restores (R7)
-        NodeSchema::new(ty::META, 1)
-            .field(FieldSpec::int("issued", 0, MAX, 0))
-            .field(FieldSpec::text("uuid", "")),
+        NodeSchema::new(ty::META, 1).field(FieldSpec::int("issued", 0, MAX, 0)).field(FieldSpec::text("uuid", "")),
         NodeSchema::new(ty::SETTINGS, 1)
             .field(FieldSpec::int("sampleRate", 8000, 768_000, 48000))
             .field(FieldSpec::int("ppq", 1, 100_000, 960))
@@ -169,9 +167,12 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(list_of("outputs", ty::OUTPUT))
             .field(list_of("items", ty::ITEM))
             .field(list_of("automation", ty::AUTOMATION)),
-        NodeSchema::new(ty::TRACK_INPUT, 1)
-            .field(FieldSpec::text("device", "in"))
-            .field(ints("channels", 1, 256, &[1])),
+        NodeSchema::new(ty::TRACK_INPUT, 1).field(FieldSpec::text("device", "in")).field(ints(
+            "channels",
+            1,
+            256,
+            &[1],
+        )),
         // An output: a port of the instrument (or a split of an audio track's channels) to a desk channel. Removing
         // the channel sends it to the master (I-3.9)
         NodeSchema::new(ty::OUTPUT, 1)
@@ -256,9 +257,12 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(list_of("inserts", ty::PLUGIN))
             .field(list_of("automation", ty::AUTOMATION))
             .field(object("output", ty::DEVICE_OUTPUT)),
-        NodeSchema::new(ty::DEVICE_OUTPUT, 1)
-            .field(FieldSpec::text("device", "out"))
-            .field(ints("channels", 1, 256, &[1, 2])),
+        NodeSchema::new(ty::DEVICE_OUTPUT, 1).field(FieldSpec::text("device", "out")).field(ints(
+            "channels",
+            1,
+            256,
+            &[1, 2],
+        )),
         NodeSchema::new(ty::CHANNEL, 1)
             .field(FieldSpec::id(KIND_CHANNEL))
             .field(FieldSpec::text("name", ""))

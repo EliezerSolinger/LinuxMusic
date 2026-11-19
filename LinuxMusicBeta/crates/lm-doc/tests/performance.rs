@@ -44,7 +44,12 @@ fn edits_in_64_tracks_of_10000_notes() {
         let mut item = None;
         doc.transact(label("test.build"), |e| {
             let track = e.insert(ROOT, "tracks", t, Value::object([("instrument", synth())]))?;
-            item = Some(e.insert(track, "items", 0, Value::object([("kind", text("midi")), ("length", Value::int(1_200_000)), ("notes", notes)]))?);
+            item = Some(e.insert(
+                track,
+                "items",
+                0,
+                Value::object([("kind", text("midi")), ("length", Value::int(1_200_000)), ("notes", notes)]),
+            )?);
             Ok(())
         })
         .unwrap();
@@ -105,7 +110,10 @@ fn edits_in_64_tracks_of_10000_notes() {
     // Paste 10,000 notes into an existing item (a heavy edit's patch), then undo and redo it
     let base = doc.find(items[1]).unwrap();
     let ops = (0..NOTES)
-        .map(|i| lm_doc::PatchOp::AddNote { item: items[1], note: Value::object([("key", Value::int((i % 128) as i64)), ("start", Value::int(i as i64))]) })
+        .map(|i| lm_doc::PatchOp::AddNote {
+            item: items[1],
+            note: Value::object([("key", Value::int((i % 128) as i64)), ("start", Value::int(i as i64))]),
+        })
         .collect();
     let patch = lm_doc::Patch { ops, based_on: vec![(items[1], base)] };
     let t0 = Instant::now();

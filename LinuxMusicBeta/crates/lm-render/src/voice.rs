@@ -66,7 +66,9 @@ enum State {
     Playing,
     Released,
     /// Stolen: fading out, `left` samples to go
-    Fading { left: u32 },
+    Fading {
+        left: u32,
+    },
 }
 
 #[derive(Debug)]
@@ -97,9 +99,8 @@ impl<V: Voice> VoicePool<V> {
     pub fn new(policy: Policy, polyphony: usize, fade: u32, mut make: impl FnMut() -> V) -> Self {
         let polyphony = if policy == Policy::Poly { polyphony.max(1) } else { 1 };
         let spare = (polyphony / 4).max(2);
-        let slots = (0..polyphony + spare)
-            .map(|_| Slot { voice: make(), state: State::Free, note: None, age: 0 })
-            .collect();
+        let slots =
+            (0..polyphony + spare).map(|_| Slot { voice: make(), state: State::Free, note: None, age: 0 }).collect();
         Self { slots, policy, polyphony, fade: fade.max(1), held: [None; HELD], held_len: 0, clock: 0 }
     }
 
@@ -155,8 +156,7 @@ impl<V: Voice> VoicePool<V> {
     }
 
     fn start_new(&mut self, note: VoiceNote) {
-        let sounding =
-            self.slots.iter().filter(|s| matches!(s.state, State::Playing | State::Released)).count();
+        let sounding = self.slots.iter().filter(|s| matches!(s.state, State::Playing | State::Released)).count();
         if sounding >= self.polyphony
             && let Some(v) = self.victim()
         {

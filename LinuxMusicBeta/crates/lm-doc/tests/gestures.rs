@@ -144,7 +144,9 @@ fn a_removed_target_ends_the_gesture_without_a_step_g3() {
 fn gestures_change_values_not_structure() {
     let (mut doc, a, _) = setup();
     let g = doc.begin_gesture(label("test.drag"));
-    let e = doc.gesture_update(&g, |e| e.insert(a, "sends", 0, Value::object([("to", id_text(lm_doc::MASTER))])).map(|_| ())).unwrap_err();
+    let e = doc
+        .gesture_update(&g, |e| e.insert(a, "sends", 0, Value::object([("to", id_text(lm_doc::MASTER))])).map(|_| ()))
+        .unwrap_err();
     assert_eq!(e.key(), "doc.gesture.structural");
     let e = doc.gesture_update(&g, |e| e.remove(a)).unwrap_err();
     assert_eq!(e.key(), "doc.gesture.structural");

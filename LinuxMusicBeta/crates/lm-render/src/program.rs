@@ -926,7 +926,15 @@ impl ProgramBuilder {
             if pnodes[i as usize].desc.kind != NodeKind::Processor {
                 return Err(node_arg(invalid("render.program.param_on_sum"), node));
             }
-            bind(slot, Target::Processor { node: i, index }, info.rate, info.discrete, info.initial, curve, &mut bindings)?;
+            bind(
+                slot,
+                Target::Processor { node: i, index },
+                info.rate,
+                info.discrete,
+                info.initial,
+                curve,
+                &mut bindings,
+            )?;
             event_room[i as usize] += match info.rate {
                 Rate::Block => max_block / AUTOMATION_GRID as usize + 2,
                 Rate::Sample => max_block + 1,

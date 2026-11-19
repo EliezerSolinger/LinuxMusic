@@ -411,7 +411,11 @@ pub fn master(b: &mut ProgramBuilder) -> NodeIndex {
 
 /// `tracks` stereo sources into their own desk channel each, every eighth with a send to a shared bus; returns
 /// the processors to add (index, core)
-pub fn big_program(generation: u64, tracks: usize, seed_noise: bool) -> (Box<Program>, Vec<(NodeIndex, Box<NodeCore>)>) {
+pub fn big_program(
+    generation: u64,
+    tracks: usize,
+    seed_noise: bool,
+) -> (Box<Program>, Vec<(NodeIndex, Box<NodeCore>)>) {
     let mut b = ProgramBuilder::new(ProgramGen(generation), spec(), &limits(0), tempo(120));
     let m = master(&mut b);
     let bus = n(1);

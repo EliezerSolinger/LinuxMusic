@@ -226,11 +226,8 @@ fn block_size_independence() {
         assert!(peak(&reference[0]) > 0.2);
         for size in [32, 64, 256, 1000] {
             let other = render_automation(rate, size);
-            let worst = reference
-                .iter()
-                .flatten()
-                .zip(other.iter().flatten())
-                .fold(0.0f32, |w, (a, b)| w.max((a - b).abs()));
+            let worst =
+                reference.iter().flatten().zip(other.iter().flatten()).fold(0.0f32, |w, (a, b)| w.max((a - b).abs()));
             assert!(worst < 1e-6, "{rate:?}, block {size}: {worst}");
             assert_eq!(reference, other, "{rate:?}, block {size}");
         }
@@ -247,7 +244,10 @@ fn no_stuck_notes_over_a_thousand_swaps() {
         let mut ev = Vec::new();
         for k in 0..count {
             let t = i64::from(k) * 240;
-            ev.push(ItemEvent { tick: t, kind: ItemEventKind::NoteOn { n: k, channel: 0, key: 40 + (k % 40) as u8, velocity: 0.8 } });
+            ev.push(ItemEvent {
+                tick: t,
+                kind: ItemEventKind::NoteOn { n: k, channel: 0, key: 40 + (k % 40) as u8, velocity: 0.8 },
+            });
             ev.push(ItemEvent { tick: t + len, kind: ItemEventKind::NoteOff { n: k } });
         }
         Arc::new(MidiItem::new(key, ev).expect("item"))
@@ -796,7 +796,10 @@ fn audio_items_play_in_place() {
     b.node(NodeDesc::sum(track, 2));
     b.feed(Feed::new(track, m, 2));
     let data = Arc::new(SampleData::from_channels(RATE, vec![vec![1.0; 1000]]).expect("sample"));
-    b.audio_items(track, vec![AudioItem { start: 700, length: 500, data, offset: 100, gain: 1.0, fade_in: 10, fade_out: 0 }]);
+    b.audio_items(
+        track,
+        vec![AudioItem { start: 700, length: 500, data, offset: 100, gain: 1.0, fade_in: 10, fade_out: 0 }],
+    );
     install(&mut control, Install::new(b.build().expect("program")));
     control.commands().send(Command::Play).expect("play");
     let out = render(&mut dummy, 2048, 300);
@@ -833,6 +836,10 @@ fn builder_refuses_bad_programs() {
 #[test]
 #[allow(clippy::print_stderr)]
 fn cost_of_sixty_four_tracks() {
+    // A timing budget means nothing under a sanitizer (TSan alone multiplies the cost several times)
+    if std::env::var_os("LM_TEST_SANITIZER").is_some() {
+        return;
+    }
     for workers in [0usize, 2, 4] {
         let (mut control, mut dummy) = make(workers);
         let (program, cores) = big_program(1, 64, true);
