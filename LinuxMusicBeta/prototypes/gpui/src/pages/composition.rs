@@ -8,12 +8,12 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Instant;
 
 use fake_core::arrange::{self, BAR, ItemKind, TrackKind};
 use fake_core::view::{self, TimelineView};
-use fake_core::{Feed, Field, GestureId, Peaks, SAMPLE_RATE, Session, Target, Topic, Value};
+use fake_core::port::EditOp;
+use fake_core::{Doc, Feed, Field, GestureId, ResourceId, SAMPLE_RATE, Target, Topic, Value};
 use gpui::{
     AnyElement, Bounds, Context, Entity, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     PathBuilder, PinchEvent, Pixels, Render, ScrollDelta, ScrollEvent, SharedString, Window, canvas, div, fill, point,
@@ -21,7 +21,7 @@ use gpui::{
 };
 
 use crate::core::Core;
-use crate::tiles::{TileCache, paint_wave};
+use crate::tiles::{TileCache, level_for, paint_wave, tile_range};
 use crate::ui::{THEME, button, c, knob_face, loading_component, meter, tr, trf, track_color};
 
 pub const TEMPO_H: f32 = 34.0;
@@ -29,15 +29,6 @@ const FOLDER_H: f32 = 30.0;
 const TAKE_H: f32 = 34.0;
 const LANE_H: f32 = 48.0;
 const INDENT: f32 = 12.0;
-
-/// How waveforms are drawn: cached image tiles of the pyramid (default), one quad per pixel column
-/// (`LM_WAVE=quads`), or one filled path per item (`LM_WAVE=path`). The three are measured in the report.
-#[derive(Clone, Copy, PartialEq)]
-pub enum WaveMode {
-    Tiles,
-    Quads,
-    Path,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum RowKind {
@@ -57,8 +48,8 @@ struct Row {
 }
 
 /// The rows of the arrangement: tracks not hidden by a collapsed folder, then each track's take rows and lanes
-fn layout(s: &Session) -> Vec<Row> {
-    let tracks = s.tracks();
+fn layout(d: &Doc) -> Vec<Row> {
+    let tracks = &d.tracks;
     let mut rows = Vec::with_capacity(tracks.len() + 8);
     let mut top = 0.0;
     for (i, t) in tracks.iter().enumerate() {
@@ -106,15 +97,14 @@ pub struct CompositionPage {
     track_db: Vec<SharedString>,
     /// the timeline's bounds from the last paint, for zooming around the pointer and clicks on the ruler
     timeline_bounds: Rc<RefCell<Bounds<Pixels>>>,
-    wave_mode: WaveMode,
     tiles: Rc<RefCell<TileCache>>,
     pub follow_cursor: bool,
 }
 
 impl CompositionPage {
     pub fn new(core: Entity<Core>, cx: &mut Context<Self>) -> Self {
-        let feed = core.update(cx, |core, _| core.session.feed(Topic::All));
-        let track_db = core.read(cx).session.tracks().iter().map(|t| view::format_db(t.volume_db).into()).collect();
+        let feed = core.update(cx, |core, _| core.port_mut().feed(Topic::All));
+        let track_db = core.read(cx).port().root().tracks.iter().map(|t| view::format_db(t.volume_db).into()).collect();
         CompositionPage {
             core,
             view: TimelineView::default(),
@@ -122,11 +112,6 @@ impl CompositionPage {
             drag: None,
             track_db,
             timeline_bounds: Rc::new(RefCell::new(Bounds::default())),
-            wave_mode: match std::env::var("LM_WAVE").as_deref() {
-                Ok("path") => WaveMode::Path,
-                Ok("quads") => WaveMode::Quads,
-                _ => WaveMode::Tiles,
-            },
             tiles: Rc::new(RefCell::new(TileCache::default())),
             follow_cursor: false,
         }
@@ -137,19 +122,19 @@ impl CompositionPage {
     fn begin_knob(&mut self, track: usize, ev: &MouseDownEvent, cx: &mut Context<Self>) {
         if ev.click_count == 2 {
             self.core.update(cx, |core, _| {
-                let id = core.session.tracks()[track].id;
-                let _ = core.session.transact("Volume", |e| e.set(id, Field::Volume, Value::Real(0.0)));
+                let id = core.port().root().tracks[track].id;
+                let _ = core.port_mut().apply("Volume", vec![EditOp::set(id, Field::Volume, Value::Real(0.0))]);
             });
             cx.stop_propagation();
             return;
         }
-        let start_t = view::db_to_knob(self.core.read(cx).session.tracks()[track].volume_db);
+        let start_t = view::db_to_knob(self.core.read(cx).port().root().tracks[track].volume_db);
         let prev = self.drag.take();
         let gesture = self.core.update(cx, |core, _| {
             if let Some(d) = prev {
-                let _ = core.session.gesture_commit(d.gesture);
+                core.port_mut().gesture_commit(d.gesture);
             }
-            core.session.begin_gesture("Volume")
+            core.port_mut().begin_gesture("Volume")
         });
         self.drag = Some(KnobDrag { track, start_y: ev.position.y.as_f32(), start_t, gesture });
         cx.stop_propagation();
@@ -160,29 +145,24 @@ impl CompositionPage {
         let t = view::knob_drag(d.start_t, (ev.position.y.as_f32() - d.start_y) as f64, ev.modifiers.shift);
         let db = view::knob_to_db(t).max(-60.0);
         let track = d.track;
-        let ok = self.core.update(cx, |core, _| {
-            let id = core.session.tracks()[track].id;
+        self.core.update(cx, |core, _| {
+            let id = core.port().root().tracks[track].id;
             let g = &self.drag.as_ref().unwrap().gesture;
-            core.session.gesture_update(g, |e| e.set(id, Field::Volume, Value::Real(db))).is_ok()
+            core.port_mut().gesture_apply(g, vec![EditOp::set(id, Field::Volume, Value::Real(db))]);
         });
-        if !ok {
-            self.drag = None; // G2/G3: the gesture closed under us; let go of the knob
-        }
         cx.notify();
     }
 
     fn end_knob(&mut self, cx: &mut Context<Self>) {
         if let Some(d) = self.drag.take() {
-            self.core.update(cx, |core, _| {
-                let _ = core.session.gesture_commit(d.gesture);
-            });
+            self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
             cx.notify();
         }
     }
 
     fn toggle(&mut self, i: usize, f: Field, cx: &mut Context<Self>) {
         self.core.update(cx, |core, _| {
-            let t = &core.session.tracks()[i];
+            let t = &core.port().root().tracks[i];
             let v = match f {
                 Field::Mute => t.mute,
                 Field::Solo => t.solo,
@@ -194,7 +174,7 @@ impl CompositionPage {
                 _ => return,
             };
             let id = t.id;
-            let _ = core.session.transact("Toggle", |e| e.set(id, f, Value::Bool(!v)));
+            let _ = core.port_mut().apply("Toggle", vec![EditOp::set(id, f, Value::Bool(!v))]);
         });
         cx.notify();
     }
@@ -206,7 +186,7 @@ impl CompositionPage {
     }
 
     fn content_h(&self, cx: &Context<Self>) -> f64 {
-        layout(&self.core.read(cx).session).last().map_or(0.0, |r| (r.top + r.h) as f64)
+        layout(self.core.read(cx).port().root()).last().map_or(0.0, |r| (r.top + r.h) as f64)
     }
 
     fn on_scroll(&mut self, ev: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -235,7 +215,9 @@ impl CompositionPage {
     fn on_ruler(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) {
         let b = *self.timeline_bounds.borrow();
         let s = self.view.scroll_samples + (ev.position.x - b.origin.x).as_f32() as f64 * self.view.samples_per_px;
-        self.core.update(cx, |core, _| core.session.locate(s as i64));
+        self.core.update(cx, |core, _| {
+            let _ = core.port_mut().run_action("transport.locate", Value::Real(s));
+        });
         cx.notify();
     }
 }
@@ -248,10 +230,12 @@ impl Render for CompositionPage {
         // I-3.6: drain the feed; only the labels that changed are rebuilt
         {
             let core = self.core.read(cx);
-            if let Some(diff) = self.feed.drain(&core.session) {
+            let port = core.port();
+            if let Some(diff) = port.drain(&mut self.feed) {
+                let tracks = &port.root().tracks;
                 for (id, _) in &diff.changed {
-                    if let Some(i) = core.session.tracks().iter().position(|t| t.id == *id) {
-                        self.track_db[i] = view::format_db(core.session.tracks()[i].volume_db).into();
+                    if let Some(i) = tracks.iter().position(|t| t.id == *id) {
+                        self.track_db[i] = view::format_db(tracks[i].volume_db).into();
                     }
                 }
             }
@@ -262,7 +246,7 @@ impl Render for CompositionPage {
             }
         }
         self.view.scroll_y = self.view.scroll_y.clamp(0.0, (content_h - view_h).max(0.0));
-        let pos = self.core.read(cx).session.position();
+        let pos = self.core.read(cx).port().telemetry().position;
         let cursor = pos.at(now);
         if self.follow_cursor && pos.playing {
             let w = window.viewport_size().width.as_f32() as f64 - view::HEADER_W as f64;
@@ -271,10 +255,22 @@ impl Render for CompositionPage {
                 self.view.scroll_samples = (cursor - w * 0.1 * self.view.samples_per_px).max(0.0);
             }
         }
-        let rows = layout(&self.core.read(cx).session);
+        let rows = layout(self.core.read(cx).port().root());
         let y0 = self.view.scroll_y as f32;
         let visible: Vec<Row> =
             rows.into_iter().filter(|r| r.top + r.h >= y0 && r.top <= y0 + view_h as f32).collect();
+        let headers = self.render_headers(&visible, cursor, cx).into_any_element();
+        let timeline = self.render_timeline(&visible, cursor, cx);
+        // the waveform blocks this frame wants, asked of the port before paint (a Waiting one: asked next frame)
+        let tiles = self.tiles.clone();
+        let waiting = self.core.update(cx, |core, _| {
+            let mut t = tiles.borrow_mut();
+            t.fetch(core.port_mut());
+            t.waiting()
+        });
+        if waiting {
+            window.request_animation_frame();
+        }
         div()
             .size_full()
             .flex()
@@ -282,8 +278,8 @@ impl Render for CompositionPage {
             .overflow_hidden()
             .on_mouse_move(cx.listener(|p, ev: &MouseMoveEvent, _, cx| p.drag_knob(ev, cx)))
             .on_mouse_up(MouseButton::Left, cx.listener(|p, _: &MouseUpEvent, _, cx| p.end_knob(cx)))
-            .child(self.render_headers(&visible, cursor, cx))
-            .child(self.render_timeline(&visible, cursor, cx))
+            .child(headers)
+            .child(timeline)
     }
 }
 
@@ -293,8 +289,8 @@ impl Render for CompositionPage {
 impl CompositionPage {
     fn render_headers(&self, rows: &[Row], cursor: f64, cx: &Context<Self>) -> impl IntoElement {
         let core = self.core.read(cx);
-        let s = &core.session;
-        let bpm = arrange::tempo_at(&s.doc().song.tempo, cursor / BAR as f64);
+        let d = core.port().root();
+        let bpm = arrange::tempo_at(&d.song.tempo, cursor / BAR as f64);
         let top0 = view::RULER_H + TEMPO_H;
         div()
             .w(px(view::HEADER_W))
@@ -319,21 +315,21 @@ impl CompositionPage {
                     .child(div().text_size(px(11.)).font_weight(FontWeight::BOLD).child(tr("Tempo")))
                     .child(div().text_size(px(11.)).text_color(c(THEME.text2)).child(format!("♩ {bpm:.2}")))
                     .child(div().flex_1())
-                    .child(div().text_size(px(10.)).text_color(c(THEME.text3)).child(format!("{}/{}", s.doc().song.signature.0, s.doc().song.signature.1))),
+                    .child(div().text_size(px(10.)).text_color(c(THEME.text3)).child(format!("{}/{}", d.song.signature.0, d.song.signature.1))),
             )
             .children(rows.iter().map(|r| {
                 let top = top0 + r.top - self.view.scroll_y as f32;
                 let el: AnyElement = match r.kind {
-                    RowKind::Track(i) => self.track_header(i, r, s, core, cx),
-                    RowKind::Take(i, k, tk) => self.take_header(i, k, tk, r, s),
-                    RowKind::Lane(i, l) => self.lane_header(i, l, r, s, cursor),
+                    RowKind::Track(i) => self.track_header(i, r, d, core, cx),
+                    RowKind::Take(i, k, tk) => self.take_header(i, k, tk, r, d),
+                    RowKind::Lane(i, l) => self.lane_header(i, l, r, d, cursor),
                 };
                 div().absolute().top(px(top)).left(px(0.)).w(px(view::HEADER_W)).h(px(r.h)).child(el)
             }))
     }
 
-    fn track_header(&self, i: usize, r: &Row, s: &Session, core: &Core, cx: &Context<Self>) -> AnyElement {
-        let t = &s.tracks()[i];
+    fn track_header(&self, i: usize, r: &Row, d: &Doc, core: &Core, cx: &Context<Self>) -> AnyElement {
+        let t = &d.tracks[i];
         let indent = r.depth as f32 * INDENT;
         let number = div()
             .w(px(22.))
@@ -447,8 +443,8 @@ impl CompositionPage {
         .into_any_element()
     }
 
-    fn take_header(&self, i: usize, k: usize, tk: usize, r: &Row, s: &Session) -> AnyElement {
-        let it = &s.tracks()[i].items[k];
+    fn take_header(&self, i: usize, k: usize, tk: usize, r: &Row, d: &Doc) -> AnyElement {
+        let it = &d.tracks[i].items[k];
         let ItemKind::Audio { takes, comp, .. } = &it.kind else { return div().into_any_element() };
         let uses = comp.iter().filter(|seg| seg.take == takes[tk].id).count();
         div()
@@ -465,8 +461,8 @@ impl CompositionPage {
             .into_any_element()
     }
 
-    fn lane_header(&self, i: usize, l: usize, r: &Row, s: &Session, cursor: f64) -> AnyElement {
-        let lane = &s.tracks()[i].lanes[l];
+    fn lane_header(&self, i: usize, l: usize, r: &Row, d: &Doc, cursor: f64) -> AnyElement {
+        let lane = &d.tracks[i].lanes[l];
         let v = lane_value(&lane.points, cursor as i64);
         div()
             .size_full()
@@ -508,32 +504,35 @@ enum Paint {
 }
 
 enum Body {
-    /// audio: (peaks, resource, x of the audio's sample 0, x0..x1 to show)
-    Wave(Vec<(Arc<Peaks>, u32, f32, f32, f32)>),
+    /// audio: (resource, x of the audio's sample 0, x0..x1 to show)
+    Wave(Vec<(ResourceId, f32, f32, f32)>),
     /// MIDI: notes as (x, w, key 0..1, velocity), and ghost copies for the repeats
     Notes(Vec<(f32, f32, f32, f32)>, Vec<(f32, f32)>),
-    Recording(Arc<Peaks>, f32),
-    Dim(Arc<Peaks>, u32, f32, Vec<(f32, f32)>),
-    Empty,
+    Recording(ResourceId, f32),
+    Dim(ResourceId, f32, Vec<(f32, f32)>),
 }
 
 impl CompositionPage {
-    fn render_timeline(&self, rows: &[Row], cursor: f64, cx: &Context<Self>) -> impl IntoElement {
+    fn render_timeline(&self, rows: &[Row], cursor: f64, cx: &Context<Self>) -> AnyElement {
         let core = self.core.read(cx);
-        let s = &core.session;
+        let port = core.port();
+        let d = port.root();
         let v = self.view;
         let top0 = view::RULER_H + TEMPO_H;
         let sy = v.scroll_y as f32;
         let xs = |sample: f64| v.sample_to_x(sample) as f32;
         let mut paint = Vec::new();
         let mut overlays: Vec<AnyElement> = Vec::new();
-        let rec = s.recording_takes();
+        let tele = port.telemetry();
+        let rec = &tele.recording;
+        // the tiles each waveform needs: asked of the port after render, drawn in paint (tiles.rs)
+        let mut wants: Vec<(ResourceId, f32, f32, f32)> = Vec::new();
         for r in rows {
             let y = top0 + r.top - sy;
             paint.push(Paint::Lane { y, h: r.h });
             match r.kind {
                 RowKind::Track(i) => {
-                    let t = &s.tracks()[i];
+                    let t = &d.tracks[i];
                     let color = track_color(i);
                     for it in &t.items {
                         let x = xs(it.start as f64);
@@ -552,10 +551,8 @@ impl CompositionPage {
                                     paint.push(Paint::Handle { y, h: r.h, x: x + w, w: hw });
                                 }
                                 if comp.is_empty() {
-                                    match s.peaks(*resource) {
-                                        Some(p) => Body::Wave(vec![(p.clone(), resource.0, x, x, x + w)]),
-                                        None => Body::Empty,
-                                    }
+                                    wants.push((*resource, x, x, x + w));
+                                    Body::Wave(vec![(*resource, x, x, x + w)])
                                 } else {
                                     // the comp: each segment plays its take, with a crossfade at each boundary (U2)
                                     let mut parts = Vec::new();
@@ -563,9 +560,8 @@ impl CompositionPage {
                                         let a = x + (seg.start as f64 / v.samples_per_px) as f32;
                                         let b = comp.get(k + 1).map_or(x + w, |n| x + (n.start as f64 / v.samples_per_px) as f32);
                                         if let Some(tk) = takes.iter().find(|t| t.id == seg.take) {
-                                            if let Some(p) = s.peaks(tk.resource) {
-                                                parts.push((p.clone(), tk.resource.0, x, a, b));
-                                            }
+                                            wants.push((tk.resource, x, a, b));
+                                            parts.push((tk.resource, x, a, b));
                                         }
                                         if k > 0 {
                                             let fade = (seg.crossfade_ms / 1000.0 * SAMPLE_RATE as f64 / v.samples_per_px) as f32;
@@ -591,11 +587,13 @@ impl CompositionPage {
                         paint.push(Paint::Item { y, h: r.h, x, w, color, body });
                         // the item's name, and the loading component in place of the waveform (I-2)
                         let target = Target::Node(it.id);
-                        let loading = s.loading(&target);
+                        let loading = port.loading(&target);
                         let core_handle = self.core.clone();
                         if let Some(el) = loading_component(SharedString::from(format!("load{}", it.id.number)), &loading, move |_, cx| {
                             core_handle.update(cx, |core, cx| {
-                                core.session.cancel_target(&target);
+                                for a in core.port().activity().into_iter().filter(|a| a.target == target || matches!(a.target, Target::Resource(_))) {
+                                    core.port_mut().cancel(a.op);
+                                }
                                 cx.notify();
                             });
                         }) {
@@ -617,17 +615,17 @@ impl CompositionPage {
                         }
                     }
                     // the take growing while recording (U3), with its pre-roll handle (U4)
-                    for (ti, start, len, peaks) in rec.iter().filter(|(ti, ..)| *ti == i) {
-                        let _ = ti;
-                        let x = xs(*start as f64);
-                        let w = (*len as f64 / v.samples_per_px) as f32;
-                        let pre = (s.doc().song.pre_roll_bars as i64 * BAR) as f64 / v.samples_per_px;
+                    for take in rec.iter().filter(|rt| rt.track == t.id) {
+                        let x = xs(take.start as f64);
+                        let w = (take.length as f64 / v.samples_per_px) as f32;
+                        let pre = (d.song.pre_roll_bars as i64 * BAR) as f64 / v.samples_per_px;
                         paint.push(Paint::Handle { y, h: r.h, x: x - pre as f32, w: pre as f32 });
-                        paint.push(Paint::Item { y, h: r.h, x, w, color: THEME.red, body: Body::Recording(peaks.clone(), x) });
+                        wants.push((take.resource, x, x, x + w));
+                        paint.push(Paint::Item { y, h: r.h, x, w, color: THEME.red, body: Body::Recording(take.resource, x) });
                     }
                 }
                 RowKind::Take(i, k, tk) => {
-                    let it = &s.tracks()[i].items[k];
+                    let it = &d.tracks[i].items[k];
                     if let ItemKind::Audio { takes, comp, .. } = &it.kind {
                         let x = xs(it.start as f64);
                         let w = (it.length as f64 / v.samples_per_px) as f32;
@@ -641,20 +639,26 @@ impl CompositionPage {
                                 (a, b)
                             })
                             .collect();
-                        if let Some(p) = s.peaks(takes[tk].resource) {
-                            paint.push(Paint::Item { y, h: r.h, x, w, color: track_color(i), body: Body::Dim(p.clone(), takes[tk].resource.0, x, used) });
-                        }
+                        wants.push((takes[tk].resource, x, x, x + w));
+                        paint.push(Paint::Item { y, h: r.h, x, w, color: track_color(i), body: Body::Dim(takes[tk].resource, x, used) });
                     }
                 }
                 RowKind::Lane(i, l) => {
-                    let lane = &s.tracks()[i].lanes[l];
+                    let lane = &d.tracks[i].lanes[l];
                     let pts = lane.points.iter().map(|p| (xs(p.0 as f64), (1.0 - p.1 as f32))).collect();
                     paint.push(Paint::Curve { y, h: r.h, pts });
                 }
             }
         }
         // the ruler: bars, loop, punch, markers (texts as elements)
-        let song = s.doc().song.clone();
+        let song = d.song.clone();
+        {
+            let mut tiles = self.tiles.borrow_mut();
+            let level = level_for(v.samples_per_px);
+            for (res, ox, a, z) in wants {
+                tiles.want(res, level, tile_range(level, v.samples_per_px, ox, a.max(0.0), z.min(2400.0)));
+            }
+        }
         let bar = BAR as f64;
         let step = bar * ((80.0 * v.samples_per_px / bar).max(1.0)).ceil();
         let mut sample = (v.scroll_samples / step).floor() * step;
@@ -708,7 +712,6 @@ impl CompositionPage {
             pts
         };
         let bounds_cell = self.timeline_bounds.clone();
-        let mode = self.wave_mode;
         let tile_cache = self.tiles.clone();
         let playing_x = xs(cursor);
         let loop_x = (xs(song.loop_range.start as f64), xs(song.loop_range.end as f64), song.loop_range.on);
@@ -734,7 +737,6 @@ impl CompositionPage {
                         let full_h = b.size.height.as_f32();
                         let at = |x: f32, y: f32| point(o.x + px(x), o.y + px(y));
                         let mut cache = tile_cache.borrow_mut();
-                        let mut cols = Vec::new();
                         // loop and punch ranges behind everything
                         for (a, z, on, col) in [(loop_x.0, loop_x.1, loop_x.2, THEME.loop_range), (punch_x.0, punch_x.1, punch_x.2, THEME.punch_range)] {
                             if on && z > 0.0 && a < w {
@@ -790,16 +792,12 @@ impl CompositionPage {
                                     let clip_of = |a: f32, z: f32| Bounds::new(at(a.max(x0), iy), size(px((z.min(x1) - a.max(x0)).max(0.0)), px(ih)));
                                     match body {
                                         Body::Wave(parts) => {
-                                            for (peaks, res, ox, a, z) in parts {
+                                            for (res, ox, a, z) in parts {
                                                 let clip = clip_of(*a, *z);
                                                 if clip.size.width <= px(0.0) {
                                                     continue;
                                                 }
-                                                if mode == WaveMode::Tiles {
-                                                    paint_wave(window, &mut cache, peaks, *res, *color, spp, o.x + px(*ox), clip, o.y + px(iy + 12.0), px(ih - 12.0));
-                                                } else {
-                                                    paint_columns(window, peaks, *color, spp, o.x + px(*ox), clip, iy + 12.0 + (ih - 12.0) / 2.0 + o.y.as_f32(), (ih - 16.0) / 2.0, mode, &mut cols);
-                                                }
+                                                paint_wave(window, &mut cache, *res, *color, spp, o.x + px(*ox), clip, o.y + px(iy + 12.0), px(ih - 12.0));
                                             }
                                         }
                                         Body::Notes(notes, ghosts) => {
@@ -823,20 +821,19 @@ impl CompositionPage {
                                                 }
                                             }
                                         }
-                                        Body::Recording(peaks, ox) => {
-                                            paint_wave(window, &mut cache, peaks, 999, THEME.red, spp, o.x + px(*ox), clip_of(x0, x1), o.y + px(iy + 12.0), px(ih - 12.0));
+                                        Body::Recording(res, ox) => {
+                                            paint_wave(window, &mut cache, *res, THEME.red, spp, o.x + px(*ox), clip_of(x0, x1), o.y + px(iy + 12.0), px(ih - 12.0));
                                         }
-                                        Body::Dim(peaks, res, ox, used) => {
-                                            paint_wave(window, &mut cache, peaks, *res + 500, THEME.text3, spp, o.x + px(*ox), clip_of(x0, x1), o.y + px(iy), px(ih));
+                                        Body::Dim(res, ox, used) => {
+                                            paint_wave(window, &mut cache, *res, THEME.text3, spp, o.x + px(*ox), clip_of(x0, x1), o.y + px(iy), px(ih));
                                             for (a, z) in used {
                                                 let cl = clip_of(*a, *z);
                                                 if cl.size.width > px(0.0) {
-                                                    paint_wave(window, &mut cache, peaks, *res, *color, spp, o.x + px(*ox), cl, o.y + px(iy), px(ih));
+                                                    paint_wave(window, &mut cache, *res, *color, spp, o.x + px(*ox), cl, o.y + px(iy), px(ih));
                                                     window.paint_quad(gpui::outline(cl, c(THEME.green), gpui::BorderStyle::Solid));
                                                 }
                                             }
                                         }
-                                        Body::Empty => {}
                                     }
                                 }
                             }
@@ -888,53 +885,6 @@ impl CompositionPage {
                     .on_mouse_down(MouseButton::Left, cx.listener(|p, ev: &MouseDownEvent, _, cx| p.on_ruler(ev, cx))),
             )
             .children(overlays)
-    }
-}
-
-/// The two measured alternatives to the tiles: one quad per pixel column, or one filled path
-#[allow(clippy::too_many_arguments)]
-fn paint_columns(
-    window: &mut Window,
-    peaks: &Peaks,
-    color: u32,
-    spp: f64,
-    origin_x: Pixels,
-    clip: Bounds<Pixels>,
-    mid: f32,
-    half: f32,
-    mode: WaveMode,
-    cols: &mut Vec<Option<(i16, i16)>>,
-) {
-    let first = clip.origin.x.as_f32().floor();
-    let n = clip.size.width.as_f32().ceil() as usize;
-    let start = (first - origin_x.as_f32()) as f64 * spp;
-    peaks.columns(start, spp, n, cols);
-    let scale = half / i16::MAX as f32;
-    if mode == WaveMode::Quads {
-        for (k, col) in cols.iter().enumerate() {
-            let Some((lo, hi)) = col else { continue };
-            let top = mid - *hi as f32 * scale;
-            let bot = mid - *lo as f32 * scale;
-            window.paint_quad(fill(Bounds::new(point(px(first + k as f32), px(top)), size(px(1.0), px((bot - top).max(1.0)))), c(color)));
-        }
-    } else {
-        let mut pts = Vec::with_capacity(n * 2);
-        for (k, col) in cols.iter().enumerate() {
-            if let Some((_, hi)) = col {
-                pts.push(point(px(first + k as f32 + 0.5), px(mid - *hi as f32 * scale)));
-            }
-        }
-        for (k, col) in cols.iter().enumerate().rev() {
-            if let Some((lo, _)) = col {
-                pts.push(point(px(first + k as f32 + 0.5), px(mid - *lo as f32 * scale)));
-            }
-        }
-        if pts.len() >= 3 {
-            let mut pb = PathBuilder::fill();
-            pb.add_polygon(&pts, true);
-            if let Ok(p) = pb.build() {
-                window.paint_path(p, c(color));
-            }
-        }
+            .into_any_element()
     }
 }

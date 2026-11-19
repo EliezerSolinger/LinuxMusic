@@ -4,6 +4,7 @@
 //! over both pages.
 
 use fake_core::view;
+use fake_core::port::EditOp;
 use fake_core::{Field, GestureId, ROOT, SAMPLE_RATE, Value};
 use gpui::{Context, FontWeight, IntoElement, MouseButton, MouseDownEvent, ScrollEvent, div, prelude::*, px};
 
@@ -53,7 +54,7 @@ pub struct TempoDrag {
 
 fn set_song(ws: &mut Workspace, f: Field, v: Value, cx: &mut Context<Workspace>) {
     ws.core.update(cx, |core, _| {
-        let _ = core.session.transact("Transport", |e| e.set(ROOT, f, v));
+        let _ = core.port_mut().apply("Transport", vec![EditOp::set(ROOT, f, v)]);
     });
     cx.notify();
 }
@@ -63,36 +64,32 @@ pub fn begin_tempo(ws: &mut Workspace, ev: &MouseDownEvent, cx: &mut Context<Wor
         set_song(ws, Field::Tempo, Value::Real(120.0), cx);
         return;
     }
-    let start_bpm = ws.core.read(cx).session.doc().song.tempo[0].bpm;
-    let gesture = ws.core.update(cx, |core, _| core.session.begin_gesture("Tempo"));
+    let start_bpm = ws.core.read(cx).port().root().song.tempo[0].bpm;
+    let gesture = ws.core.update(cx, |core, _| core.port_mut().begin_gesture("Tempo"));
     ws.tempo_drag = Some(TempoDrag { start_y: ev.position.y.as_f32(), start_bpm, gesture });
 }
 
 pub fn drag_tempo(ws: &mut Workspace, y: f32, fine: bool, cx: &mut Context<Workspace>) {
     let Some(d) = &ws.tempo_drag else { return };
     let bpm = ((d.start_bpm - (y - d.start_y) as f64 * if fine { 0.05 } else { 0.5 }) * 100.0).round() / 100.0;
-    let ok = ws.core.update(cx, |core, _| {
-        core.session.gesture_update(&ws.tempo_drag.as_ref().unwrap().gesture, |e| e.set(ROOT, Field::Tempo, Value::Real(bpm))).is_ok()
+    ws.core.update(cx, |core, _| {
+        core.port_mut().gesture_apply(&ws.tempo_drag.as_ref().unwrap().gesture, vec![EditOp::set(ROOT, Field::Tempo, Value::Real(bpm))])
     });
-    if !ok {
-        ws.tempo_drag = None;
-    }
     cx.notify();
 }
 
 pub fn end_tempo(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     if let Some(d) = ws.tempo_drag.take() {
-        ws.core.update(cx, |core, _| {
-            let _ = core.session.gesture_commit(d.gesture);
-        });
+        ws.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
     }
 }
 
 pub fn render(ws: &Workspace, cursor: f64, cx: &Context<Workspace>) -> impl IntoElement {
-    let s = &ws.core.read(cx).session;
-    let pos = s.position();
-    let song = &s.doc().song;
-    let counting = s.counting_in();
+    let port = ws.core.read(cx).port();
+    let tele = port.telemetry();
+    let pos = tele.position;
+    let song = &port.root().song;
+    let counting = tele.counting_in;
     let (word, word_color, border) = if counting {
         (trf("Count-in {0}…", &[&(((cursor.max(0.0) / fake_core::arrange::BAR as f64) as i64) % 4 + 1)]), THEME.yellow, THEME.yellow)
     } else if pos.recording {
@@ -117,19 +114,19 @@ pub fn render(ws: &Workspace, cursor: f64, cx: &Context<Workspace>) -> impl Into
         .border_b_1()
         .border_color(c(THEME.line))
         .child(tbutton("rew", "⏮", false, 0).on_click(cx.listener(|ws, _, _, cx| {
-            ws.core.update(cx, |core, _| core.session.locate(0));
+            ws.core.update(cx, |core, _| { let _ = core.port_mut().run_action("transport.locate", Value::Real(0.0)); });
             cx.notify();
         })))
         .child(tbutton("stop", "■", false, 0).on_click(cx.listener(|ws, _, _, cx| {
-            ws.core.update(cx, |core, _| core.session.stop());
+            ws.core.update(cx, |core, _| { let _ = core.port_mut().run_action("transport.stop", Value::Bool(true)); });
             cx.notify();
         })))
         .child(tbutton("play", "▶", pos.playing && !pos.recording, THEME.green).on_click(cx.listener(|ws, _, _, cx| {
-            ws.core.update(cx, |core, _| core.session.play());
+            ws.core.update(cx, |core, _| { let _ = core.port_mut().run_action("transport.play", Value::Bool(true)); });
             cx.notify();
         })))
         .child(tbutton("rec", "●", pos.recording, THEME.red).on_click(cx.listener(|ws, _, _, cx| {
-            ws.core.update(cx, |core, _| core.session.toggle_record());
+            ws.core.update(cx, |core, _| { let _ = core.port_mut().run_action("transport.record", Value::Bool(true)); });
             cx.notify();
         })))
         .child(tbutton("loop", "⟲", loop_on, THEME.green).on_click(cx.listener(move |ws, _, _, cx| set_song(ws, Field::LoopOn, Value::Bool(!loop_on), cx))))
@@ -175,7 +172,7 @@ pub fn render(ws: &Workspace, cursor: f64, cx: &Context<Workspace>) -> impl Into
                 .on_mouse_down(MouseButton::Left, cx.listener(|ws, ev: &MouseDownEvent, _, cx| begin_tempo(ws, ev, cx)))
                 .on_scroll(cx.listener(|ws, ev: &ScrollEvent, _, cx| {
                     let d = ev.delta.pixel_delta(px(16.0)).y.as_f32();
-                    let bpm = ws.core.read(cx).session.doc().song.tempo[0].bpm + if d > 0.0 { 1.0 } else if d < 0.0 { -1.0 } else { 0.0 };
+                    let bpm = ws.core.read(cx).port().root().song.tempo[0].bpm + if d > 0.0 { 1.0 } else if d < 0.0 { -1.0 } else { 0.0 };
                     set_song(ws, Field::Tempo, Value::Real(bpm), cx);
                 })),
         )
@@ -191,7 +188,7 @@ pub fn render(ws: &Workspace, cursor: f64, cx: &Context<Workspace>) -> impl Into
         )
         .child(div().flex_1())
         .child(tbutton("reload", tr("Reload take"), false, 0).on_click(cx.listener(|ws, _, _, cx| {
-            ws.core.update(cx, |core, _| core.session.reload_take(2));
+            ws.core.update(cx, |core, _| { let _ = core.port_mut().run_action("take.reload", Value::Real(2.0)); });
             cx.notify();
         })))
 }

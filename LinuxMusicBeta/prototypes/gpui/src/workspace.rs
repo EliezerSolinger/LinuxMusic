@@ -14,7 +14,7 @@ use gpui::{
 
 use crate::core::Core;
 use crate::pages::composition::CompositionPage;
-use crate::pages::mixing::MixingPage;
+use crate::pages::mixing::{self, MixingPage};
 use crate::pages::{Page, transport};
 use crate::screens::{self, Placement, Screen, ScreenCx};
 use crate::ui::{THEME, button, c, tab, tr};
@@ -41,6 +41,16 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new(primary("k"), OpenPalette, None),
         KeyBinding::new(primary(","), OpenSettings, None),
         KeyBinding::new("escape", CloseModal, None),
+        // the desk (F-MIX-013)
+        KeyBinding::new("left", mixing::SelectLeft, Some("Mixing")),
+        KeyBinding::new("right", mixing::SelectRight, Some("Mixing")),
+        KeyBinding::new("up", mixing::FaderUp, Some("Mixing")),
+        KeyBinding::new("down", mixing::FaderDown, Some("Mixing")),
+        KeyBinding::new("shift-up", mixing::FaderUpCoarse, Some("Mixing")),
+        KeyBinding::new("shift-down", mixing::FaderDownCoarse, Some("Mixing")),
+        KeyBinding::new("alt-up", mixing::FaderUpFine, Some("Mixing")),
+        KeyBinding::new("alt-down", mixing::FaderDownFine, Some("Mixing")),
+        KeyBinding::new("shift-insert", mixing::AddChannel, Some("Mixing")),
     ]);
 }
 
@@ -60,7 +70,8 @@ impl Workspace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let core = cx.new(Core::new);
         let composition = cx.new(|cx| CompositionPage::new(core.clone(), cx));
-        let mixing = cx.new(|cx| MixingPage::new(core.clone(), cx));
+        let weak = cx.weak_entity();
+        let mixing = cx.new(|cx| MixingPage::new(core.clone(), weak, cx));
         let observe = cx.observe(&core, |_, _, cx| cx.notify());
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
@@ -124,7 +135,7 @@ impl Render for Workspace {
             let quit = core.bench.frame();
             let probe = core.bench.active().then(|| core.bench.work_probe());
             core.advance_meters(started);
-            let pos = core.session.position();
+            let pos = core.port().telemetry().position;
             (quit, probe, pos.playing || core.bench.view(started).is_some(), pos.at(started))
         });
         if quit {
@@ -183,7 +194,7 @@ impl Render for Workspace {
                     .track_focus(&self.focus)
                     .on_action(cx.listener(|ws, _: &TogglePlay, _, cx| {
                         ws.core.update(cx, |core, _| {
-                            if core.session.position().playing { core.session.stop() } else { core.session.play() }
+                            let _ = core.port_mut().run_action("transport.toggle", fake_core::Value::Bool(true));
                         });
                         cx.notify();
                     }))

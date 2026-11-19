@@ -1,22 +1,26 @@
-//! Waveform tiles: the peak pyramid rasterized once into small images, one per (resource, level, tile, color), and
-//! drawn as images. Scrolling only moves tiles; zooming between two levels only stretches them on the GPU; a new
-//! level rasterizes the tiles it shows, once.
+//! Waveform tiles: blocks of the peak pyramid, asked of the core through the port (`CorePort::peaks`, I-20.4) and
+//! kept forever (a resource's peaks never change), rasterized once into small images, one per (resource, level,
+//! tile, color), and drawn as images. Scrolling only moves tiles; zooming between two levels only stretches them on
+//! the GPU; a new level asks and rasterizes the tiles it shows, once. A block that is not there yet (`Waiting`: the
+//! peaks are being made, or, in the client, still on the network) is simply not drawn, and asked again next frame.
 //!
-//! Why: GPUI inserts every primitive into the scene's bounds tree (for the draw order). One quad per pixel column is
-//! ~13,000 inserts a frame here, the main cost of the frame; one filled path per item moves the cost to the CPU
-//! tessellation (lyon). A few dozen images a frame cost almost nothing.
+//! Why images: GPUI inserts every primitive into the scene's bounds tree (for the draw order). One quad per pixel
+//! column was ~13,000 inserts a frame here, the main cost of the frame; one filled path per item moved the cost to
+//! the CPU tessellation (lyon). A few dozen images a frame cost almost nothing (docs/prototipo-interface.md, 2.2).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 use std::sync::Arc;
 
-use fake_core::Peaks;
-use gpui::{RenderImage, Window};
+use fake_core::port::{CorePort, PeakBlock, Pending};
+use fake_core::{ResourceId, peaks};
+use gpui::{Bounds, Pixels, RenderImage, Window, point, px, size};
 
 /// Pairs per tile = pixels per tile at the tile's own level
 pub const TILE_PAIRS: usize = 256;
 /// Tile height in device pixels (the item's waveform area; 1x display here)
 pub const TILE_H: usize = 64;
-const MAX_TILES: usize = 512; // 64 KB each: 32 MB at most
+const MAX_IMAGES: usize = 512; // 64 KB each: 32 MB at most
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Key {
@@ -28,48 +32,97 @@ struct Key {
 
 #[derive(Default)]
 pub struct TileCache {
-    tiles: HashMap<Key, Arc<RenderImage>>,
+    blocks: HashMap<(u32, u8, u32), Arc<PeakBlock>>,
+    images: HashMap<Key, Arc<RenderImage>>,
+    wanted: HashSet<(u32, u8, u32)>,
+    retry: Vec<(u32, u8, u32)>,
     pub rasterized: u64,
 }
 
+/// The level whose pairs are at least one pixel wide: tiles are only ever stretched, never shrunk, so no peak is
+/// lost to the GPU's filtering
+pub fn level_for(samples_per_px: f64) -> u8 {
+    let mut level = 0u8;
+    while level < 11 && ((peaks::LEVEL0 * peaks::FACTOR.pow(level as u32)) as f64) < samples_per_px {
+        level += 1;
+    }
+    level
+}
+
+fn samples_per_tile(level: u8) -> f64 {
+    (peaks::LEVEL0 * peaks::FACTOR.pow(level as u32)) as f64 * TILE_PAIRS as f64
+}
+
+/// The tiles under `a..z` (pixels) for audio whose sample 0 is at `origin_x`
+pub fn tile_range(level: u8, samples_per_px: f64, origin_x: f32, a: f32, z: f32) -> Range<usize> {
+    let st = samples_per_tile(level);
+    let s0 = ((a - origin_x) as f64 * samples_per_px).max(0.0);
+    let s1 = (z - origin_x) as f64 * samples_per_px;
+    if s1 <= s0 {
+        return 0..0;
+    }
+    (s0 / st) as usize..(s1 / st).ceil() as usize
+}
+
 impl TileCache {
-    /// The level whose pairs are at least one pixel wide (tiles are only ever stretched, never shrunk, so no peak
-    /// is lost to the GPU's filtering)
-    pub fn level_for(peaks: &Peaks, samples_per_px: f64) -> usize {
-        let mut level = 0;
-        while level + 1 < peaks.levels.len() && (Peaks::samples_per_pair(level) as f64) < samples_per_px {
-            level += 1;
+    /// Notes the tiles a frame will draw (from render, which knows the geometry)
+    pub fn want(&mut self, resource: ResourceId, level: u8, tiles: Range<usize>) {
+        for t in tiles {
+            let k = (resource.0, level, t as u32);
+            if !self.blocks.contains_key(&k) {
+                self.wanted.insert(k);
+            }
         }
-        level
     }
 
-    pub fn get(&mut self, window: &mut Window, peaks: &Peaks, resource: u32, level: usize, tile: usize, color: u32)
-    -> Arc<RenderImage> {
-        let key = Key { resource, level: level as u8, tile: tile as u32, color };
-        if let Some(t) = self.tiles.get(&key) {
-            return t.clone();
+    /// Some wanted block is not there yet (asked again on the next frame)
+    pub fn waiting(&self) -> bool {
+        !self.wanted.is_empty()
+    }
+
+    /// Asks the port for the wanted blocks (once per frame, with the port borrowed mutably); the ones still
+    /// `Waiting` stay wanted
+    pub fn fetch(&mut self, port: &mut dyn CorePort) {
+        for (res, level, tile) in std::mem::take(&mut self.wanted) {
+            let from = tile as u64 * TILE_PAIRS as u64;
+            match port.peaks(ResourceId(res), level, from, from + TILE_PAIRS as u64) {
+                Pending::Ready(Ok(b)) => {
+                    self.blocks.insert((res, level, tile), Arc::new(b));
+                }
+                Pending::Waiting(_) => {
+                    self.retry.push((res, level, tile));
+                }
+                Pending::Ready(Err(_)) => {}
+            }
         }
-        if self.tiles.len() >= MAX_TILES {
-            // simple eviction: drop everything and free the atlas space
-            for (_, t) in self.tiles.drain() {
+        self.wanted.extend(self.retry.drain(..));
+    }
+
+    fn image(&mut self, window: &mut Window, resource: u32, level: u8, tile: usize, color: u32) -> Option<Arc<RenderImage>> {
+        let key = Key { resource, level, tile: tile as u32, color };
+        if let Some(t) = self.images.get(&key) {
+            return Some(t.clone());
+        }
+        let block = self.blocks.get(&(resource, level, tile as u32))?.clone();
+        if self.images.len() >= MAX_IMAGES {
+            // simple eviction: drop every image and free the atlas space (the blocks stay)
+            for (_, t) in self.images.drain() {
                 let _ = window.drop_image(t);
             }
         }
-        let img = Arc::new(rasterize(peaks, level, tile, color));
+        let img = Arc::new(rasterize(&block, color));
         self.rasterized += 1;
-        self.tiles.insert(key, img.clone());
-        img
+        self.images.insert(key, img.clone());
+        Some(img)
     }
 }
 
-fn rasterize(peaks: &Peaks, level: usize, tile: usize, color: u32) -> RenderImage {
-    let pairs = &peaks.levels[level];
+fn rasterize(block: &PeakBlock, color: u32) -> RenderImage {
     let (r, g, b) = ((color >> 16) as u8, (color >> 8) as u8, color as u8);
     let mut buf = image::RgbaImage::new(TILE_PAIRS as u32, TILE_H as u32);
     let half = (TILE_H as f32 - 4.0) / 2.0;
     let mid = TILE_H as f32 / 2.0;
-    for x in 0..TILE_PAIRS {
-        let Some(&(lo, hi)) = pairs.get(tile * TILE_PAIRS + x) else { break };
+    for (x, &(lo, hi)) in block.pairs.iter().take(TILE_PAIRS).enumerate() {
         let top = (mid - hi as f32 / i16::MAX as f32 * half).floor().max(0.0) as u32;
         let bot = (mid - lo as f32 / i16::MAX as f32 * half).ceil().min(TILE_H as f32 - 1.0) as u32;
         for y in top..=bot.max(top) {
@@ -80,33 +133,27 @@ fn rasterize(peaks: &Peaks, level: usize, tile: usize, color: u32) -> RenderImag
     RenderImage::new(vec![image::Frame::new(buf)])
 }
 
-/// Paints the waveform of `peaks` with tiles: `origin_x` is where the audio's sample 0 is on screen; only what falls
-/// inside `clip` is drawn (an item, a comp segment, a take row); the tiles stretch to `y`..`y + h`.
+/// Paints a waveform with tiles: `origin_x` is where the audio's sample 0 is on screen; only what falls inside
+/// `clip` is drawn (an item, a comp segment, a take row); the tiles stretch to `y`..`y + h`
 #[allow(clippy::too_many_arguments)]
 pub fn paint_wave(
     window: &mut Window,
     cache: &mut TileCache,
-    peaks: &Peaks,
-    resource: u32,
+    resource: ResourceId,
     color: u32,
     samples_per_px: f64,
-    origin_x: gpui::Pixels,
-    clip: gpui::Bounds<gpui::Pixels>,
-    y: gpui::Pixels,
-    h: gpui::Pixels,
+    origin_x: Pixels,
+    clip: Bounds<Pixels>,
+    y: Pixels,
+    h: Pixels,
 ) {
-    use gpui::{Bounds, point, px, size};
-    let level = TileCache::level_for(peaks, samples_per_px);
-    let tile_samples = Peaks::samples_per_pair(level) as f64 * TILE_PAIRS as f64;
-    let tile_w = (tile_samples / samples_per_px) as f32;
-    let s0 = ((clip.origin.x - origin_x).as_f32() as f64 * samples_per_px).max(0.0);
-    let s1 = ((clip.origin.x + clip.size.width - origin_x).as_f32() as f64 * samples_per_px).min(peaks.length as f64);
-    if s1 <= s0 {
-        return;
-    }
-    for t in (s0 / tile_samples) as usize..(s1 / tile_samples).ceil() as usize {
-        let img = cache.get(window, peaks, resource, level, t, color);
-        let tb = Bounds::new(point(origin_x + px(t as f32 * tile_w), y), size(px(tile_w), h));
-        let _ = window.paint_image(clip, tb, Default::default(), img, 0, false);
+    let level = level_for(samples_per_px);
+    let tile_w = (samples_per_tile(level) / samples_per_px) as f32;
+    let range = tile_range(level, samples_per_px, origin_x.as_f32(), clip.origin.x.as_f32(), (clip.origin.x + clip.size.width).as_f32());
+    for t in range {
+        if let Some(img) = cache.image(window, resource.0, level, t, color) {
+            let tb = Bounds::new(point(origin_x + px(t as f32 * tile_w), y), size(px(tile_w), h));
+            let _ = window.paint_image(clip, tb, Default::default(), img, 0, false);
+        }
     }
 }

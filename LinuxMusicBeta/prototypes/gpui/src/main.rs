@@ -81,12 +81,12 @@ mod tests {
         drag(cx, "tknob-1", -50.0);
         let core = ws.read_with(cx, |ws, _| ws.core.clone());
         // 50 px up from 0 dB (75 % of travel) is 25 % more: +6 dB
-        core.read_with(cx, |core, _| assert!((core.session.tracks()[1].volume_db - 6.0).abs() < 1e-9));
+        core.read_with(cx, |core, _| assert!((core.port().root().tracks[1].volume_db - 6.0).abs() < 1e-9));
         cx.executor().advance_clock(Duration::from_millis(20));
         cx.run_until_parked();
         core.update(cx, |core, _| {
-            core.session.undo().unwrap();
-            assert_eq!(core.session.tracks()[1].volume_db, 0.0, "the whole drag is one undo step");
+            assert!(core.port_mut().undo().ok().is_some());
+            assert_eq!(core.port().root().tracks[1].volume_db, 0.0, "the whole drag is one undo step");
         });
     }
 
@@ -96,14 +96,14 @@ mod tests {
         let (ws, cx) = open(cx);
         cx.dispatch_action(workspace::ShowMixing);
         cx.run_until_parked();
-        drag(cx, "fader-0", 60.0);
+        drag(cx, "fader-1", 60.0);
         let core = ws.read_with(cx, |ws, _| ws.core.clone());
-        let after = core.read_with(cx, |core, _| core.session.channels()[0].volume_db);
+        let after = core.read_with(cx, |core, _| core.port().root().channels[1].volume_db);
         assert!(after < -10.0, "the fader went down: {after}");
-        let p = cx.debug_bounds("fader-0").unwrap().center();
+        let p = cx.debug_bounds("fader-1").unwrap().center();
         cx.simulate_event(gpui::MouseDownEvent { position: p, modifiers: Modifiers::none(), button: MouseButton::Left, click_count: 2, first_mouse: false });
         cx.simulate_mouse_up(p, MouseButton::Left, Modifiers::none());
-        core.read_with(cx, |core, _| assert_eq!(core.session.channels()[0].volume_db, 0.0, "double click: 0 dB"));
+        core.read_with(cx, |core, _| assert_eq!(core.port().root().channels[1].volume_db, 0.0, "double click: 0 dB"));
     }
 
     /// H2: the pump runs every 10 ms on GPUI's timer whether or not anything is drawn (fake clock)
@@ -111,10 +111,10 @@ mod tests {
     fn pump_runs_without_frames(cx: &mut TestAppContext) {
         let (ws, cx) = open(cx);
         let core = ws.read_with(cx, |ws, _| ws.core.clone());
-        let before = core.read_with(cx, |core, _| core.session.pumps());
+        let before = core.read_with(cx, |core, _| core.port().pumps());
         cx.executor().advance_clock(Duration::from_millis(1000));
         cx.run_until_parked();
-        let after = core.read_with(cx, |core, _| core.session.pumps());
+        let after = core.read_with(cx, |core, _| core.port().pumps());
         assert!((95..=105).contains(&(after - before)), "{} pumps in 1 s", after - before);
     }
 

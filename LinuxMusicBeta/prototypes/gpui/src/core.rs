@@ -15,6 +15,8 @@ use fake_core::{Config, MAX_METERS, Session};
 use gpui::{Context, Task};
 
 pub struct Core {
+    /// The LocalPort (in the fake, the Session is it). Screens use `port()`; this field goes private when the
+    /// screens of agents B, C and D have moved to the port
     pub session: Session,
     pub bench: Bench,
     /// The meters as drawn: the latest telemetry with the fall smoothed per frame (H16)
@@ -74,7 +76,7 @@ impl Core {
     pub fn advance_meters(&mut self, now: Instant) {
         let dt = now.duration_since(self.last_meters).as_secs_f32().min(0.1);
         self.last_meters = now;
-        let meters = *self.session.meters();
+        let meters = self.port().telemetry().meters;
         for (s, m) in self.shown.iter_mut().zip(meters.iter()) {
             *s = view::meter_ballistics(*s, view::meter_fill(*m), dt);
         }
