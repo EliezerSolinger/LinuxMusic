@@ -236,3 +236,43 @@ fn feed_of_notes_merges_by_number() {
     assert_eq!(notes.created, [m]);
     assert!(notes.changed.is_empty() && notes.removed.is_empty());
 }
+
+#[test]
+fn the_journal_carries_gestures_cancels_and_undo() {
+    let (mut doc, a, b) = setup();
+    let _ = doc.take_journal();
+    let base = doc.root().clone();
+    let mut patches = Vec::new();
+    for round in 0..20 {
+        let v = f64::from(round) / 40.0;
+        let g = doc.begin_gesture(label("test.drag"));
+        doc.gesture_update(&g, |e| e.set_param(a, "volume", v)).unwrap();
+        patches.extend(doc.take_journal());
+        if round % 3 == 0 {
+            doc.transact(label("test.foreign"), |e| e.set_param(b, "pan", v - 0.25)).unwrap();
+        }
+        doc.gesture_update(&g, |e| e.set_param(a, "volume", v + 0.1)).unwrap();
+        match round % 4 {
+            0 => {
+                doc.gesture_cancel(g).unwrap();
+            }
+            1 => {
+                doc.gesture_commit(g).unwrap();
+            }
+            2 => {
+                doc.undo().unwrap();
+                drop(g);
+            }
+            _ => {
+                let h = doc.begin_gesture(label("test.other"));
+                doc.gesture_update(&h, |e| e.set_param(b, "volume", v)).unwrap();
+                doc.gesture_cancel(g).unwrap();
+                doc.gesture_commit(h).unwrap();
+            }
+        }
+        doc.deliver();
+        doc.verify_index().unwrap();
+        patches.extend(doc.take_journal());
+    }
+    assert_eq!(lm_doc::replay(&base, &patches).unwrap(), *doc.root());
+}

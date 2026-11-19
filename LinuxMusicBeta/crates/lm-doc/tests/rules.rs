@@ -366,3 +366,20 @@ impl InstrumentIn for lm_doc::TrackRef {
         NodeId::parse(e.find(self.id()).unwrap().get("instrument").unwrap().get("id").unwrap().as_text().unwrap()).unwrap()
     }
 }
+
+#[test]
+fn an_unavailable_plugin_is_kept_intact_with_a_notice() {
+    let mut doc = new_doc();
+    let t = add_track(&mut doc, "a", Some(synth()));
+    let ghost = Value::object([("plugin", text("ghost")), ("version", Value::int(3)), ("state", Value::object([("chunk", text("opaque"))]))]);
+    let d = doc.transact(label("x"), |e| e.set(t, &[k("instrument")], ghost.clone())).unwrap();
+    assert!(d.notices.iter().any(|n| n.key == "doc.plugin.unavailable"));
+    // Its outputs stay as they were (no ports known)
+    assert_eq!(outputs(&doc, t).len(), 1);
+    let json = to_json(&doc.saved()).unwrap();
+    let opened = Document::open(registry(), from_json(&json).unwrap(), options()).unwrap();
+    assert!(opened.notices.iter().any(|n| n.key == "doc.plugin.unavailable"));
+    let p = lm_doc::TrackRef(t).instrument(&opened.document).unwrap();
+    assert_eq!(p.state(&opened.document).unwrap().get("chunk"), Some(&text("opaque")));
+    assert_eq!(to_json(&opened.document.saved()).unwrap(), json, "saved back intact");
+}

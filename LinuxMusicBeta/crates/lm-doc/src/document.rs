@@ -377,16 +377,17 @@ impl Document {
         }
         // The counter is above every id and every note number
         let mut root = root;
-        let mut issued = 0;
+        let max_id = index.ids.keys().map(|id| id.number).max().unwrap_or(0);
+        let max_note = ctx.max_note(&FieldKind::Object(ctx.root_type), &root).unwrap_or(0);
+        let needed = max_id.max(max_note) + 1;
+        let mut issued = needed;
         if ctx.has_meta {
-            issued = root.get("meta").and_then(|m| m.get("issued")).and_then(Value::as_int).and_then(|v| u64::try_from(v).ok()).unwrap_or(0);
-            let max_id = index.ids.keys().map(|id| id.number).max().unwrap_or(0);
-            let max_note = ctx.max_note(&FieldKind::Object(ctx.root_type), &root).unwrap_or(0);
-            let needed = max_id.max(max_note) + 1;
-            if issued < needed {
-                notices.push(Label::new("doc.load.issued_repaired").arg("from", issued as i64).arg("to", needed as i64));
-                issued = needed;
-                root = root.with_path(&[PathStep::key("meta"), PathStep::key("issued")], Value::int(issued as i64))?;
+            let saved = root.get("meta").and_then(|m| m.get("issued")).and_then(Value::as_int).and_then(|v| u64::try_from(v).ok()).unwrap_or(0);
+            if saved < needed {
+                notices.push(Label::new("doc.load.issued_repaired").arg("from", saved as i64).arg("to", needed as i64));
+                root = root.with_path(&[PathStep::key("meta"), PathStep::key("issued")], Value::int(needed as i64))?;
+            } else {
+                issued = saved;
             }
         }
         let env = Arc::new(Env { ctx, ports: options.ports, limits: options.limits, usage: options.usage, rules: options.rules });
@@ -753,12 +754,15 @@ impl Document {
         Ok(diff)
     }
 
+    /// G2: every open gesture is committed (its id becomes invalid); anything else still pending becomes a step,
+    /// so that undo always starts from a state that existed
     fn commit_all_gestures(&mut self) {
         let open: Vec<u64> = self.gestures.keys().copied().collect();
         for raw in open {
             // A commit cannot fail once the gesture is open
             let _ = self.commit_raw(raw);
         }
+        self.push_step(Label::new("doc.history.pending"));
     }
 
     /// Cancels a gesture (G1): only the paths it touched go back to their values before it, over the current root;

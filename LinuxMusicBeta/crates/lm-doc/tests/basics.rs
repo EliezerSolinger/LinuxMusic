@@ -336,3 +336,28 @@ fn save_and_open_give_the_same_tree() {
 fn the_root_type_is_the_project() {
     assert_eq!(new_doc().type_of(ROOT), Some(PROJECT));
 }
+
+#[test]
+fn the_interface_document_has_no_history_but_has_feeds() {
+    let root = Value::object([("things", Value::empty_list()), ("holders", Value::empty_list())]);
+    let mut doc = Document::from_root(ref_registry(), "test.root", root, Options::interface()).unwrap().document;
+    let mut feed = doc.feed(lm_doc::Topic::All);
+    let mut id = None;
+    doc.transact(label("x"), |e| {
+        id = Some(e.insert(ROOT, "things", 0, Value::empty_object())?);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(feed.drain(&doc).unwrap().created, [id.unwrap()]);
+    assert_eq!(doc.undo().unwrap_err().key(), "doc.history.nothing_to_undo");
+    assert_eq!(doc.history_len(), 0);
+    assert!(doc.take_journal().is_none());
+    // Its own counter, without meta: ids still never repeat
+    let mut id2 = None;
+    doc.transact(label("x"), |e| {
+        id2 = Some(e.insert(ROOT, "things", 0, Value::empty_object())?);
+        Ok(())
+    })
+    .unwrap();
+    assert_ne!(id, id2);
+}
