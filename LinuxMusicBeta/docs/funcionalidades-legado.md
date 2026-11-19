@@ -48,7 +48,219 @@ Tudo aqui foi lido no código do legado (`legado/src`, `legado/plugins`, `legado
 
 ---
 
-<!-- As seções 1 a 6 entram acima da 7 conforme o levantamento termina. -->
+<!-- As seções 1 a 4 entram acima da 5 conforme o levantamento termina. -->
+
+## 5. Gravação
+
+A gravação é o objetivo do fork. Fontes: `legado/docs/gravacao-como-usar.md` (o guia do usuário), `plano-gravacao.md`,
+`gravacao-levantamento.md` (as decisões de 12/11), `pendencias.md`, e o código. Onde o legado só planejou e não fez,
+a linha diz "só planejado".
+
+### 5.1 Faixas, entradas, armar e monitorar
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-REC-001 | Faixa que grava áudio | A faixa de áudio é a faixa que grava. A faixa de instrumento grava notas. Pasta, padrão e automação não gravam. A faixa de amostra deixou de gravar (13/11); projetos antigos com gravações em faixa de amostra viram faixa de áudio ao abrir | `src/tracks/AudioTrack.cpp`, `AudioInputTrack.cpp`, `Transport::canRecord` | core — no programa novo há um tipo só de faixa, com itens de áudio e de MIDI |
+| F-REC-002 | Escolher a entrada da faixa | Nenhuma; uma entrada mono (qualquer canal do dispositivo, com o nome que o driver dá); ou um par estéreo **só ímpar-par** (1/2, 3/4…). Mostra "o dispositivo não tem entradas" quando não há. O botão mostra "-", "1", "3" ou "1/2" | menu de entrada no cabeçalho, `src/gui/tracks/SampleTrackView.cpp` | core (pares quaisquer ou só ímpar-par: decidir no desenho) |
+| F-REC-003 | Uma entrada em várias faixas | A mesma entrada alimenta várias faixas ao mesmo tempo | `AudioInput` | core |
+| F-REC-004 | Erros ao gravar sem entrada | "X está armada mas não tem entrada"; "X grava da entrada N, que o dispositivo não tem" | `Song::record` | core (como aviso, I-14) |
+| F-REC-005 | Armar | Botão ● por faixa (áudio e instrumento), vermelho quando armada; várias faixas armadas juntas | `m_recordArmModel` | core |
+| F-REC-006 | Gravar sem nada armado | Arma a faixa selecionada se ela grava; senão explica como armar | `TransportBar::record`, `Transport::record` | core (decisão de 12/11 mantida) |
+| F-REC-007 | Monitoramento por faixa | Desligado / Ligado / **Auto** (padrão: armada e parada ou gravando; não quando só tocando). Mudo e solo da faixa calam o monitor. O sinal monitorado passa pelos efeitos e pelo canal do mixer | `src/core/InputMonitorHandle.cpp` | core |
+| F-REC-008 | Gravar seco | O arquivo é a entrada sem efeitos; efeitos só no monitor e na reprodução | `AudioRecorder` | core |
+| F-REC-009 | Medidor de entrada no cabeçalho | −60–0 dBFS, verde, amarelo de −12, vermelho de −3, retenção do pico; mostra a entrada mesmo sem monitorar (para ajustar o nível antes de gravar) | `InputLevelMeter`, `SampleTrackView.cpp` | core |
+| F-REC-010 | Desligar plugins com latência na faixa armada | Só planejado | `plano-gravacao.md` §6 | aberto (P-10) |
+| F-REC-011 | Efeitos de entrada gravados, gravar a saída, entrada com mais de 2 canais | Só planejado (lista do REAPER) | `gravacao-levantamento.md` §3 | aberto (P-10) |
+
+### 5.2 Transporte de gravação
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-REC-020 | Gravar parado | Toca do cursor menos o pré-roll e grava as faixas armadas; os takes começam no cursor; ao parar, o cursor volta para onde estava | `Song::record`, `src/core/Transport.cpp` | core |
+| F-REC-021 | Punch-in e punch-out manuais | Gravar **tocando** começa a gravar no ponto ouvido; apertar Gravar de novo para de gravar e a música continua; Parar encerra tudo | `Song::stopRecording` | core |
+| F-REC-022 | Auto-punch (por região de tempo) | Só planejado: gravar a passada toda e recortar o item à região de punch | `plano-gravacao.md` §6 | 1.0 (o desenho novo já tem `transport.punch`) |
+| F-REC-023 | Pré-roll | 0, 1, 2 ou 4 compassos (até 16 no código), contados pelo mapa de andamentos; escolhido nas configurações e num menu do botão de pré-roll | `recording/prerollbars` | core |
+| F-REC-024 | Contagem | O metrônomo toca durante o pré-roll, mesmo desligado (padrão: desligada) | `recording/countin` | core |
+| F-REC-025 | Metrônomo | Liga/desliga no transporte; toca "tocando e gravando" ou "só gravando"; volume −60–+12 dB (0); acento no primeiro tempo (ligado), com dois sons; segue as mudanças de compasso; não entra na exportação nem no mixer | `src/core/Metronome.cpp` | core (som próprio e saída própria do dispositivo: I-5.5) |
+| F-REC-026 | Estado do transporte em palavra e cor | PARADO / PAUSADO / TOCANDO / GRAVANDO / "PRÉ-ROLL n…" / "CONTAGEM n…"; o relógio muda de cor (verde, vermelho, amarelo) | `TransportBar.cpp` | core (design 3 aprovado) |
+| F-REC-027 | Um desfazer tira a gravação inteira | Áudio e MIDI de todas as faixas armadas; ao parar, a gravação sempre fica | `Song::record` (grupo do diário) | core |
+| F-REC-028 | Trocar de dispositivo durante a gravação é recusado | "muda quando a gravação acabar" | `AudioEngine` | core |
+| F-REC-029 | Gravar MIDI no clipe aberto no editor de notas com a música tocando | Uma opção no menu do botão Gravar | `TransportBar.cpp` | 1.0 (ver F-NOT, gravação no editor de notas) |
+
+### 5.3 Loop, takes, camadas e comp
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-REC-040 | Gravar em loop | Cada passada completa vira um take numa camada; uma passada com menos de 90% da mais longa (parada no meio) é descartada | `Song::landOnLanes` | core |
+| F-REC-041 | "Takes em camadas" (padrão) | As passadas novas entram **por cima**; a última toca; as antigas ficam abaixo, apagadas | `recording/lanes`, `Track::insertLanesOnTop` | core |
+| F-REC-042 | Modo "gravador simples" | Com "takes em camadas" desligado, o take novo substitui o que cobre (os arquivos ficam), em loop só fica a última passada, e as camadas somem da tela | `Track::clearSpan` | aberto (P-11) |
+| F-REC-043 | Ouvir uma camada | "Ouvir esta camada" escolhe qual camada toca | menu do clipe, `ClipView.cpp` | 1.0 |
+| F-REC-044 | Comp por menu | Dividir o item numa camada de baixo e "Comp: usar este clipe na camada ouvida" (substitui o que cobre, um desfazer). Comp arrastando pelas camadas: só planejado | `ClipView.cpp` | obsoleto — substituído pela lista `comp` do item (trecho → camada, crossfade de 5 ms editável por fronteira, `decisoes-autonomas.md`); o gesto de comp é de quem desenhar |
+| F-REC-045 | Takes de clipe de amostra (mecanismo antigo) | Menu "Takes": escolher o take N, remover o ativo; o nome mostra "(take 2/3)" | `SampleClipView.cpp` | obsoleto — substituído pelas camadas |
+| F-REC-046 | Takes presos ao andamento | O take guarda o andamento em que foi gravado e segue as mudanças (ver F-REC-090) | `Song::tempoKeyTicks` | 1.0 (itens gravados nascem `musical`) |
+
+### 5.4 Arquivos e motor de gravação
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-REC-060 | Formato do arquivo | WAV 32 bits float, intercalado, um arquivo por faixa e por passada. FLAC/24 bits: só planejado | `src/core/AudioRecorder.cpp` | obsoleto — substituído por RF64, um arquivo contínuo por entrada com os cortes de loop marcados (`decisoes-autonomas.md`); escolher formato fica aberto (P-12) |
+| F-REC-061 | Nome e lugar dos arquivos | `<faixa>_<n>.wav` em `<projeto>_media/`; projeto não salvo grava em `recordings/unsaved-<data>/` (limpa ao fechar sem salvar; pastas órfãs limpas na partida) | `src/core/ProjectMedia.cpp` | obsoleto — substituído por `audio/` dentro da pasta do projeto, nome provisório e depois o hash (C10) |
+| F-REC-062 | Copiar os arquivos usados ao salvar | Todo arquivo usado (fora os de fábrica) é copiado para a pasta de mídia; "Salvar como" leva os arquivos | `ProjectMedia` | core (no novo: importar copia para `audio/`) |
+| F-REC-063 | Lixo dos arquivos gerados | Arquivos gerados que o projeto salvo não usa vão para a **lixeira do sistema** ao fechar; nunca toca em arquivo do usuário | `.linuxmusic-generated` | aberto (P-13): o novo diz só que nada em `audio/` é apagado enquanto o histórico o cita (H4) |
+| F-REC-064 | Escrita contínua e segura | Anel de 10 s até uma thread de disco; o cabeçalho é atualizado a cada 1 s, então uma queda perde no máximo um segundo | `AudioRecorder` | core |
+| F-REC-065 | Disco lento | No legado, o que falta vira silêncio no lugar certo e uma mensagem com os ms perdidos | `AudioRecorder` | obsoleto — substituído por: anel cheio é erro explícito, aquela entrada para e o arquivo fecha no último bloco bom (I-11) |
+| F-REC-066 | Falha de escrita | O take para e guarda o que foi escrito, com mensagem | `AudioRecorder` | core |
+| F-REC-067 | Faixa apagada durante a gravação | Os arquivos ficam, com mensagem | `Song` | core (vira "Take recuperado" numa faixa nova, H8) |
+| F-REC-068 | Onda ao vivo | O take cresce em vermelho do início ao cursor, com a forma de onda ao vivo (20 por segundo); ao parar, o item já aparece desenhado | `src/gui/tracks/LiveTakeOverlay.cpp` | core |
+| F-REC-069 | Recuperar takes depois de uma queda | Autosave 2 s depois de cada mudança (no máximo a cada 30 s), também tocando e gravando; na partida seguinte oferece recuperar; os takes em andamento são consertados e entram nas camadas | `src/core/Autosave.cpp`, `src/core/WavRepair.cpp` | core (diário + takes órfãos de `audio/`) |
+| F-REC-070 | Mudar o andamento no meio da gravação | Não corta o take | `AudioRecorder` | core |
+
+### 5.5 Latência e xruns
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-REC-080 | Alinhar o take | Cada quadro capturado volta ao período que foi ouvido (latência de entrada + saída + calibração); o take cai na grade com precisão de amostra. A latência do mixer (PDC) **não** entra | `Song::recordingLatency` | core (a do caminho até o master entra no novo) |
+| F-REC-081 | Calibração por loopback | "Medir…": ligar a saída na entrada com um cabo; toca um pulso MLS de 127 amostras, ouve 1,5 s em todas as entradas, acha a correlação; mensagens de sucesso e de "o pulso não voltou, confira o cabo" | `src/core/LatencyCalibration.cpp`, configurações | core |
+| F-REC-082 | Ajuste manual | −48000–+48000 quadros. Em ms: só planejado. Entrada e saída separadas: não | configurações → Gravação | core (por dispositivo; unidade a decidir) |
+| F-REC-083 | Latência real mostrada | Ao lado do tamanho do bloco | configurações → Áudio | core |
+| F-REC-084 | Xruns marcados no take | O arquivo continua (silêncio no buraco); os pontos ficam salvos e aparecem em vermelho no take; mensagem no fim "o áudio falhou N vezes". ALSA, CoreAudio e PortAudio contam; JACK não | `AudioDevice::reportXrun` | core |
+| F-REC-085 | Falha por trava do motor | Se a interface segura a trava mais de meio período, o período sai mudo e conta como falha | `AudioEngine` | obsoleto — o motor novo não tem trava (`arquitetura-nova.md`) |
+| F-REC-086 | Contador global de xruns fora da gravação | Só planejado | — | aberto (P-14) |
+
+### 5.6 Gravação MIDI
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-REC-100 | Gravar notas na linha do tempo | Faixas de instrumento armadas gravam o que chega pela entrada MIDI delas, com o mesmo punch e pré-roll; teclas seguras terminam no Parar; grava a velocidade | `src/core/MidiRecorder.cpp` | 1.0 (logo depois da primeira fatia) |
+| F-REC-101 | Modos de gravação MIDI | Overdub (padrão: as notas vão para o clipe que cobre o lugar ou para um novo no compasso); Substituir (as notas do trecho somem); Take numa camada | menu do ● da faixa de instrumento | 1.0 |
+| F-REC-102 | Quantizar ao gravar | Grade desligada (padrão) / 1/4 / 1/8 / 1/16 / 1/32 / 1/64; força 50 / 75 / 100 %; só o início da nota | mesmo menu | 1.0 |
+| F-REC-103 | Entrada MIDI da faixa | Receber liga/desliga, dispositivos, canal (todos, padrão) | botão MIDI no cabeçalho | 1.0 |
+| F-REC-104 | CC, pitch bend, aftertouch, program change na gravação; um take MIDI por passada de loop; compensar a latência MIDI | Não feitos | — | aberto (P-15) |
+
+### 5.7 Andamento e itens gravados
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-REC-090 | Re-renderizar takes quando o andamento muda | Mudar o BPM ou o mapa de andamentos avisa "vai renderizar N itens, ~X s", com progresso; Cancelar desfaz a mudança. Rubber Band R3 a partir do **original**; sem Rubber Band, reamostra (muda a altura) e avisa. Aprende a velocidade da máquina para a estimativa | `src/gui/TempoRenderController.cpp`, `src/core/TimeStretcher.cpp` | 1.0 (time-stretch antes da 1.0; operação de fundo, I-2) |
+
+### 5.8 Dispositivos de áudio e MIDI
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-REC-120 | Trocar de dispositivo sem reiniciar | As mudanças valem na hora (reabre 0,4 s depois da última); avisa quando não abre e qual foi usado; avisa quando a taxa do dispositivo é outra ("o áudio é convertido") | `AudioEngine::reopenAudioDevice` | core |
+| F-REC-121 | Taxa de amostragem | 44,1 / 48 / 88,2 / 96 / 176,4 / 192 kHz para projetos novos; **o projeto abre na própria taxa** | configurações → Áudio | core (taxa fixa por projeto; trocar a do projeto é uma operação) |
+| F-REC-122 | Tamanho do bloco | 32–4096 quadros (de 32 em 32 até 256, depois de 256 em 256), padrão 256, botão de voltar ao padrão | configurações → Áudio | core |
+| F-REC-123 | ALSA | Dispositivo de saída e de entrada ("nenhum", "o mesmo da saída", ou outro); prefere `hw:` exclusivo e reserva a placa do PipeWire/PulseAudio pelo ReserveDevice1; `default`/`pipewire`/`pulse` compartilhados; formatos nativos float/S32/S24/S16; captura abre todos os canais (até 64); `snd_pcm_link` com aviso se não liga. Nunca rodou numa máquina Linux | `src/core/audio/AudioAlsa.cpp` | core |
+| F-REC-124 | Dois dispositivos ALSA diferentes | Só desligados um do outro, sem compensar deriva | `AudioAlsa.cpp` | obsoleto — substituído por: combinações sempre explícitas (U7) |
+| F-REC-125 | JACK | Nome do cliente; número de entradas 0–32 (2), cada uma com a conexão; 2 saídas com conexão; liga às portas físicas por padrão; latência do JACK; mensagens de servidor caído/reiniciado; JACK MIDI no mesmo cliente. Sem contagem de xruns | `AudioJack.cpp` | 1.0 (depois do ALSA) |
+| F-REC-126 | CoreAudio (macOS) | Saída e entrada; dispositivos diferentes viram um agregado privado com compensação de deriva; a entrada só abre quando precisa (pede permissão do microfone na hora) | `AudioCoreAudio.cpp` | 1.0 (macOS depois; o agregado implícito fica obsoleto — substituído por combinação explícita) |
+| F-REC-127 | PortAudio, PulseAudio, sndio, SDL | Outros backends; Pulse, sndio e SDL só tocam (sem entrada) | `src/core/audio/` | obsoleto — substituído por ALSA direto e JACK/PipeWire (`arquitetura-nova.md`, item 14) |
+| F-REC-128 | Dispositivo falso | Sem placa; 2 entradas silenciosas opcionais (ou um tom) para testar | `AudioDummy` | core (dispositivo nulo do `lm-headless` e dos testes) |
+| F-REC-129 | Saída só estéreo | Todo driver toca 2 canais; sem saídas multicanal | `DEFAULT_CHANNELS` | obsoleto — o novo escolhe os canais de saída do master no dispositivo |
+| F-REC-130 | MIDI | ALSA seq, ALSA raw, JACK MIDI, CoreMIDI (hotplug, portas virtuais), sndio, WinMM; reabre ao vivo e religa as faixas aos mesmos dispositivos, avisando os que sumiram | `src/core/midi/` | core: ALSA seq · 1.0: JACK MIDI, CoreMIDI, ALSA raw (aberto, P-16) · obsoleto: sndio, WinMM (sem Windows) |
+| F-REC-131 | "Controlador para a faixa selecionada" | O teclado MIDI toca sempre a faixa selecionada | configurações → MIDI | 1.0 |
+
+## 6. Mixer e mesa analógica
+
+No legado, o mixer (página "Mixagem", Ctrl+5 alterna com a Composição) é o FX Mixer do LMMS transformado numa mesa
+analógica. No programa novo, **faixa e mesa são separadas**, com roteamento livre (`arquitetura-nova.md`, item 2), e
+**o rack da mesa analógica é portado** para o `lm-dsp` (já em andamento, com A/B). Fontes: `legado/docs/multicanal.md`,
+`preparacao-mixer.md`, `plano-compressores.md`, `pesquisa-compressores.md`, e o código (`src/core/Mixer.cpp`,
+`AnalogChannelStrip.cpp`, `DeskDynamics.cpp`, `DeskFilters.cpp`, `DeskTolerance.cpp`, `GainStage.cpp`,
+`TubeStage.cpp`, `MasterSection.cpp`, `MonoBass.cpp`; `src/gui/MixerView.cpp`, `MixerChannelView.cpp`,
+`MasterSectionView.cpp`).
+
+### 6.1 Canais
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-MIX-001 | Modo analógico ou digital da mesa inteira | Analógico: todo canal (fora o master) tem o rack; os efeitos aparecem como LEDs. Digital: sem processamento embutido, os efeitos aparecem com nome (5 visíveis, "+N"). Os ajustes do rack ficam guardados no digital. Configuração "projetos novos usam a mesa analógica" (padrão: não) | `Mixer::m_analogModel` | aberto (P-17): no novo todo canal tem o rack, com seções que se ligam |
+| F-MIX-002 | Canal automático por faixa | Cada faixa de instrumento, amostra ou áudio ganha um canal com o nome e a cor dela, que segue a faixa; pasta ganha um canal de grupo | `Mixer`, `Track` | obsoleto — substituído por: faixa nova manda para o master; a ação "criar canais para as saídas" faz isso quando o usuário pede; a pasta não soma |
+| F-MIX-003 | Várias faixas num canal | Cada uma com o próprio volume | `Mixer` | core |
+| F-MIX-004 | Criar canal | Um "canal fantasma" tracejado depois do último (clique cria), Shift+Insert; numerados sem buracos | `MixerView.cpp` | core |
+| F-MIX-005 | Apagar canal | Delete, menu "Remover canal" (pergunta se está em uso, com "não perguntar de novo" e a configuração correspondente), "Remover canais sem uso". Master e retornos não se apagam. Desfazível | `MixerView.cpp` | core (no novo: as saídas que mandavam para ele vão ao master, com aviso) |
+| F-MIX-006 | Renomear canal | Duplo clique, Enter/F2, menu; renomear o canal de uma faixa renomeia a faixa | `MixerChannelView.cpp` | core (a ligação com o nome da faixa fica obsoleta) |
+| F-MIX-007 | Cor do canal | Mudar, voltar ao padrão, sortear | menu do canal | 1.0 |
+| F-MIX-008 | Reordenar | Alt+←/→, menu mover; "Organizar os canais como as faixas" (ação, nunca automático, um desfazer) | `MixerView.cpp` | 1.0 |
+| F-MIX-009 | Selecionar canal | Clique; ←/→; Shift/Ctrl+duplo clique no número do canal da faixa abre a Mixagem nele | `MixerView.cpp` | 1.0 |
+| F-MIX-010 | Escolher o canal da faixa | Número no cabeçalho: digitar, ou menu "Mandar para: novo canal / lista" | `MixerChannelLcdSpinBox` | core (no novo: o destino de cada saída da faixa) |
+| F-MIX-011 | Recolher os canais de uma pasta | Triângulo no canal de grupo esconde os filhos (só vista); os filhos têm uma linha da cor do grupo | `MixerView.cpp` | aberto (P-18): sem canal de grupo automático, como agrupar na mesa? |
+| F-MIX-012 | Um canal por saída / por peça | Cria um canal de grupo "<faixa> (peças)" e um canal por saída do instrumento, roteados | menu da faixa, AvlDrums | core (a ação "criar canais para as saídas") |
+| F-MIX-013 | Teclado na mesa | Delete, ←/→ seleciona, Alt+←/→ move, ↑/+ e ↓/− mudam o fader do canal selecionado (1 dB; Shift 3 dB; Ctrl 0,1 dB), Shift+Insert cria, Enter/F2 renomeia | `MixerView::keyPressEvent` | 1.0 |
+| F-MIX-014 | Mudo e solo do canal | Solo como no REAPER: os canais solados, o caminho até o master e as fontes deles tocam; vários solos; o solo não mexe nos botões de mudo; fontes de sidechain continuam alimentando. Canal mudo continua processando (medidores em zero, sem salto) | `Mixer::applySolo` | core (as regras dos dois solos: `arquitetura-nova.md`, item 2) |
+| F-MIX-015 | Mudo do master no transporte | Botão de alto-falante | `TransportBar.cpp` | 1.0 |
+| F-MIX-016 | "Canais da faixa" (pares 2–16) | Quantos pares o canal tem; o par 1/2 passa pela mesa, os outros só pelos efeitos | menu do canal | obsoleto — substituído pelo número de canais de cada canal da mesa e as conversões explícitas |
+
+### 6.2 Roteamento, envios e latência
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-MIX-020 | Envios | Cada canal manda para outros com quantidade 0–1 e pré ou pós fader (pré: depois dos efeitos e antes da seção estéreo). Interface estilo FL: com um canal selecionado, cada outro mostra um botão de envio, a quantidade e uma seta de retorno. **O botão de pré-fader não existe** (só o modelo) | `MixerRoute`, `SendButtonIndicator.cpp` | core (pré/pós com botão) |
+| F-MIX-021 | Recusar laços | Um envio que criaria laço é recusado | `Mixer` | core |
+| F-MIX-022 | Roteamento que segue as pastas | O canal da faixa vai para o canal de grupo da pasta | `updateFolderRouting` | obsoleto — a pasta não soma; roteamento livre |
+| F-MIX-023 | Dois retornos de efeito fixos (FX 1, FX 2) | Sempre presentes, depois dos canais; cada canal tem dois botões FX1/FX2 que são os envios pós-fader (padrão 0) | `FxReturnCount` | aberto (P-19): no novo um retorno é um canal comum; ter botões rápidos de envio em todo canal é questão de desenho |
+| F-MIX-024 | Sidechain | "Entrada de sidechain de ▸" e "Mandar como sidechain para ▸" no canal; "Fonte de sidechain" no efeito com mais de 2 entradas | menu do canal e do efeito | 1.0 (envio de sidechain para a porta do insert, item 3) |
+| F-MIX-025 | Compensação de latência (PDC) | Cada canal = a entrada mais atrasada + os efeitos; cada entrada e envio é atrasado para alinhar; o seco dos efeitos com latência também | `Mixer::compensateLatency` | core |
+| F-MIX-026 | Limpar áudio corrompido | Canal que solta NaN/inf é silenciado (LED vermelho no efeito); configuração "Mix sanitization" | `Mixer` | core |
+
+### 6.3 Caminho do sinal num canal
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-MIX-030 | Trim | −60–+24 dB, 0 (−60 = desligado); limpo | `m_trimModel` | core |
+| F-MIX-031 | Mono do canal | (L+R)/2 dos dois lados, depois do trim, com crossfade de um período | `m_monoModel` | 1.0 |
+| F-MIX-032 | Ponto de inserção dos efeitos | Pré-ganho / **Pós-ganho** (padrão) / Pós-filtro / Pós-dinâmica / Pós-EQ / Pré-pan (pós-fader). No digital, todos antes do fader menos o último | `m_fxInsertModel` | aberto (P-20): onde os inserts entram em relação ao rack no novo |
+| F-MIX-033 | Inverter fase e trocar L/R | Botões Ø e ⇄ | `m_phaseInvertModel`, `m_swapChannelsModel` | 1.0 |
+| F-MIX-034 | Largura (width) | 0–200 %, 100, mid/side; tirada da tela (o modelo ainda processa) | `m_widthModel` | aberto (P-20): some ou não |
+| F-MIX-035 | Fader | Linear 0–4 (+12 dB), 1 = 0 dB; mapa cúbico em dB; abaixo de −120 dB = −inf; clicar no botão pega sem pular, clicar fora pula; roda ±1 dB (Shift 3, Ctrl 0,1); duplo clique pede o valor em dB; marcas a cada 6 dB opcionais | `m_volumeModel`, `src/gui/widgets/Fader.cpp` | core (no novo: duplo clique volta a 0 dB, decisão de 19/11) |
+| F-MIX-036 | Pan | −100–+100, 0, lei linear com unidade no centro | `m_panModel` | core |
+
+### 6.4 O rack analógico do canal (todos os parâmetros)
+
+Status de toda a seção: **1.0** (o DSP já está sendo portado para o `lm-dsp` com A/B). Seções neutras são
+transparentes bit a bit (menos o cruzamento do 4558); toda mudança é suave, sem estalo.
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-MIX-040 | GAIN | Posição 0–1, padrão 0,25 (0 dB a um quarto do curso); 0 = mudo; até 0,25 cúbico (−18 dB em 0,125); acima, linear em dB até **+60 dB**; mostra dB e "-inf". Subir o ganho satura o estágio; o fader devolve o nível | `AnalogChannelStrip`, `GainKnob` | 1.0 |
+| F-MIX-041 | Modelo do estágio de ganho | FLAT, 4558 (padrão), TL072, 5532, 5534, 12AX7, 12AX7 V (frio), 12AX7 H (quente), 12AT7, 12AU7. Clique = próximo, botão direito = lista com descrição. Op-amps com joelho, trilho, slew, corrente e (4558) cruzamento sempre ligado; válvulas pelo modelo de Koren com corrente de grade | `src/core/GainStage.cpp`, `TubeStage.cpp` | 1.0 |
+| F-MIX-042 | Válvulas leve ou realista | Lâmpada do filamento: amarela "LT" (leve, tabelas, ~0,6 % de um núcleo) ou vermelha "RL" (realista, solução nodal com Newton e sobreamostragem 4×, ~10 %); clique alterna | `m_realisticModel` | 1.0 |
+| F-MIX-043 | LEDs SAT e CLIP | SAT acende com a saturação (some devagar); CLIP vermelho 3 dB antes do limite; nas válvulas a lâmpada brilha com a saturação | `SaturationLeds` | 1.0 |
+| F-MIX-044 | LCUT | 100 Hz, Butterworth de 3ª ordem (18 dB/oit), antes do estágio de ganho | `m_lowCutModel` | 1.0 |
+| F-MIX-045 | HPF e LPF | HPF 20–1000 Hz (20 = desligado), LPF 1000–20000 Hz (20000 = desligado), 12 dB/oit, casados com o analógico até Nyquist | `DeskFilters` | 1.0 |
+| F-MIX-046 | Mono bass | BASS 0–100 % (0 = desligado, 100 = graves todos em mono), FREQ 20–300 Hz, 120; cruzamento LR24 | `src/core/MonoBass.cpp` | 1.0 (a pendência do usuário sobre o sentido do botão já está resolvida: 0 = desligado) |
+| F-MIX-047 | Compressor: 9 modelos | SSL (padrão), API 2500, dbx 160, 1176, LA-2A, 670 (Fairchild), Gates Sta-Level, Altec 436, RCA BA6A, cada um com cor, filtros e transformadores próprios | `src/core/DeskDynamics.cpp` | 1.0 |
+| F-MIX-048 | COMP | 0–1, 0: limiar (SSL +4…−26 dBu; API +10…−20; dbx +12…−38), "PR n" no LA-2A, ou ganho de entrada 0–40 dB nos de limiar fixo | `m_compressorAmountModel` | 1.0 |
+| F-MIX-049 | RATIO | 0–1, 0 = desligado (bit a bit): SSL/dbx 20^pos (∞ no fim); API 1,5/2/3/4/6/10/∞; 1176 4/8/12/20/ALL; LA-2A COMP/LIMIT; Gates 1,6+4,4·pos; Altec, Fairchild com leitura própria | `m_compressorRatioModel` | 1.0 |
+| F-MIX-050 | ATK | FAST / NORM (padrão) / SLOW: o ataque mais rápido, o usual e o mais lento que o modelo permite | `m_compressorSpeedModel` | 1.0 |
+| F-MIX-051 | REL | 0–1, 0,5 (valor de fábrica), na unidade de cada modelo (SSL 0,1–0,3–4 s; API 0,05–0,3–3; 1176 0,05–0,25–1,1; LA-2A fator; 670 TC1–6; dbx automático) | `m_compressorReleaseModel` | 1.0 |
+| F-MIX-052 | Compensação automática e link | Ganho de compensação automático em todos (0 VU = −18 dBFS RMS sai onde entrou); estéreo ligado | `DeskDynamics` | 1.0 |
+| F-MIX-053 | Gate | Limiar −30–+10 dBu, −10; RANGE 0–40 dB, 0 (= fora); modos STD (padrão), KICK, SNARE, TOMS, VOX, GTR, BASS, NOISE, EXP, cada um com hold, release e filtro de chave próprios; histerese do SSL | `m_gateModel`, `m_gateModeModel` | 1.0 |
+| F-MIX-054 | EQ de 4 bandas (Soundcraft/Mackie) | HI shelf 12 kHz, HMF pico 2,5 kHz, LMF pico 400 Hz, LO shelf 80 Hz; cada um ±15 dB, 0; frequências **fixas**; Q proporcional | `DeskEq` | 1.0 |
+| F-MIX-055 | Tolerância dos componentes | Sempre ligada: desvios fixos por canal (ganho ±0,1 dB; frequências ±1 %; ganhos do EQ ±2 %; ponto de saturação ±3 %), tirados do **número** do canal, iguais em toda plataforma; mover o canal muda o caráter | `src/core/DeskTolerance.cpp` | 1.0 (aberto, P-21: semente pelo número ou pelo id do canal) |
+
+### 6.5 Master
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-MIX-060 | Ordem do master | PRE → DRIVE (analógico) → efeitos do master → ESTÉREO → BUS COMP → POST → XFMR (analógico) → monitoração. Sem pan, sem rack de canal, sem envios | `src/core/MasterSection.cpp` | 1.0 |
+| F-MIX-061 | Faders PRE L e PRE R | 0–2 (+6 dB), 1, com medidores próprios; LINK (ligado: andam juntos) | `m_preLeftModel`, `m_preLinkModel` | 1.0 |
+| F-MIX-062 | POST | O volume do master, até +12 dB | `m_volumeModel` | core |
+| F-MIX-063 | DRIVE do master | Mesmo seletor de estágio de ganho, LEDs e lâmpada do canal | `MasterSection` | 1.0 |
+| F-MIX-064 | XFMR | Transformador de saída estilo Neve depois do fader (desligado) | `m_transformerModel` | 1.0 |
+| F-MIX-065 | ESTÉREO | WIDTH 0–200 %; BASS mono 0–100 %, 0, e FREQ 20–300 Hz, 120; AIR (shelf só no lado, 12 kHz) −6–+6 dB, 0 | `MasterSection` | 1.0 |
+| F-MIX-066 | BUS COMP (SSL G) | IN (desligado); THR −15–+15, 5; RATIO 2/4/10 (4); ATK 0,1/0,3/1/3/10/30 ms (10); REL 0,1/0,3/0,6/1,2 s/Auto (Auto); MAKE −5–+15 dB, 0; ponteiro de redução de ganho 0–20 dB. HPF de sidechain: só planejado | `MasterSection` | 1.0 |
+| F-MIX-067 | Monitoração | LEVEL −60–+6 dB, DIM (−20 dB), CUT, MONO, SIDE (exclusivos). **Não salva, não desfaz, não vai para a exportação** | `m_monitorLevelModel` | 1.0 |
+| F-MIX-068 | Medidores do master | Dois VU de ponteiro (−20–+3 VU, 0 VU = −18 dBFS RMS, 300 ms), correlação (+1 a −1), goniômetro | `MasterSectionView.cpp` | 1.0 |
+
+### 6.6 Medidores, botões e efeitos na mesa
+
+| Id | Funcionalidade | O que faz | Onde (hoje) | Status |
+|---|---|---|---|---|
+| F-MIX-070 | Medidor do canal | Pós-fader, −42–+9 dBFS, faixas verde/amarela/vermelha, marca de 0 dBFS; pico sobe na hora e cai; linha de pico segura 1,5 s; indicador numérico do pico acima do fader (clique zera). Escolher tipo de medidor (VU, PPM, K): só planejado | `src/core/ChannelMeter.cpp`, `Fader.cpp`, `PeakIndicator.cpp` | core (tipos: aberto, P-22) |
+| F-MIX-071 | Medidor no cabeçalho da faixa | O RMS do canal da faixa na borda direita do cabeçalho | `TrackLevelMeter` | core (no novo: a saída principal da faixa, com indicação de outras) |
+| F-MIX-072 | Botões da mesa | Tampa colorida (cores SSL/Soundcraft), arco a partir do centro, texto na unidade do modelo; botões de escolha (clique = próximo, direito = lista com descrição) | `DeskKnob.cpp`, `ChoiceButton` | 1.0 (o visual é de quem desenhar) |
+| F-MIX-073 | Efeitos no canal | Ver, ligar/desligar, abrir, reordenar, trocar, remover, presets; arrastar um efeito do navegador para um canal o acrescenta; o painel do canal selecionado mostra a cadeia inteira | `MixerChannelView.cpp`, `EffectRackView.cpp` | core (ver F-FX-002) |
 
 ## 7. Instrumentos, efeitos e plugins de terceiros
 
