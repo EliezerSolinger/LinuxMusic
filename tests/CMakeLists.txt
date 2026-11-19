@@ -194,3 +194,6 @@ find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
 	add_test(NAME check-core-gui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripted/check-core-gui)
 endif()
+
+# The new core uses no Qt at all (docs/arquitetura-nova.md, piece 0): the directories in tools/check/qt-free-dirs.txt
+add_test(NAME QtFreeCore COMMAND bash ${CMAKE_SOURCE_DIR}/tools/check/qt-free.sh ${CMAKE_SOURCE_DIR})

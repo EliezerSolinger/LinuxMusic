@@ -1,0 +1,4 @@
+# The directories that must not use Qt: the new core (docs/arquitetura-nova.md, piece 0: state, document, render,
+# io, session and the plugins' schemas and processors are plain C++; Qt is the GUI's only). One per line, from the
+# repository's root; checked by tools/check/qt-free.sh (and ctest's QtFreeCore). Empty until the core's directories
+# exist.
