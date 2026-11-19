@@ -443,6 +443,41 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "envelope" {
+        use lm_dsp::envelope::{EnvelopeAndLfo, EnvelopeSettings, LfoShape};
+        let s = &case["settings"];
+        let d = EnvelopeSettings::default();
+        let settings = EnvelopeSettings {
+            predelay: f(s, "Env pre-delay", d.predelay),
+            attack: f(s, "Env attack", d.attack),
+            hold: f(s, "Env hold", d.hold),
+            decay: f(s, "Env decay", d.decay),
+            sustain: f(s, "Env sustain", d.sustain),
+            release: f(s, "Env release", d.release),
+            amount: f(s, "Env mod amount", d.amount),
+            lfo_predelay: f(s, "LFO pre-delay", d.lfo_predelay),
+            lfo_attack: f(s, "LFO attack", d.lfo_attack),
+            lfo_speed: f(s, "LFO frequency", d.lfo_speed),
+            lfo_amount: f(s, "LFO mod amount", d.lfo_amount),
+            lfo_shape: LfoShape::ALL[s["LFO wave shape"].as_i64().unwrap_or(0) as usize],
+            x100: s["LFO frequency x 100"].as_i64().unwrap_or(0) != 0,
+            control_env_amount: s["Modulate env amount"].as_i64().unwrap_or(0) != 0,
+        };
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let block = block as usize;
+        let mut envelope = EnvelopeAndLfo::new(f(s, "zero", 0.0), rate, block, 0);
+        envelope.set(&settings, None, block);
+        let release = s["release"].as_i64().unwrap() as i32;
+        let mut level = vec![0.0f32; block];
+        for start in (0..frames as usize).step_by(block) {
+            envelope.fill_level(&mut level, start as i32, release);
+            for (n, l) in level.iter().enumerate() {
+                out[start + n] = [*l, *l];
+            }
+            envelope.next_period(block, None, block);
+        }
+        return out;
+    }
     if case["unit"] == "delay" || case["unit"] == "reverbsc" {
         // The effects, wet only
         let then = &case["then"];

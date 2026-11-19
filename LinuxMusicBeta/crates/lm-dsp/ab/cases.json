@@ -3724,6 +3724,140 @@
           "q": 0.7
         }
       }
+    },
+    {
+      "name": "envelope-volume",
+      "unit": "envelope",
+      "rate": 44100,
+      "frames": 44032,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "zero": 1.0,
+        "Env attack": 0.2,
+        "Env hold": 0.1,
+        "Env decay": 0.3,
+        "Env sustain": 0.4,
+        "Env release": 0.25,
+        "Env mod amount": 0.8,
+        "release": 22050
+      }
+    },
+    {
+      "name": "envelope-predelay-negative",
+      "unit": "envelope",
+      "rate": 44100,
+      "frames": 44032,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "zero": 0.0,
+        "Env pre-delay": 0.1,
+        "Env attack": 0.15,
+        "Env hold": 0.05,
+        "Env decay": 0.4,
+        "Env sustain": 0.7,
+        "Env release": 0.3,
+        "Env mod amount": -0.6,
+        "release": 8000
+      }
+    },
+    {
+      "name": "envelope-lfo-sine",
+      "unit": "envelope",
+      "rate": 44100,
+      "frames": 44032,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "zero": 0.0,
+        "LFO pre-delay": 0.05,
+        "LFO attack": 0.1,
+        "LFO frequency": 0.02,
+        "LFO mod amount": 0.9,
+        "release": 30000
+      }
+    },
+    {
+      "name": "envelope-lfo-saw-x100-env",
+      "unit": "envelope",
+      "rate": 44100,
+      "frames": 44032,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "zero": 1.0,
+        "Env attack": 0.1,
+        "Env mod amount": 0.5,
+        "Env sustain": 0.6,
+        "LFO frequency": 0.3,
+        "LFO mod amount": -0.7,
+        "LFO wave shape": 2,
+        "LFO frequency x 100": 1,
+        "release": 40000
+      }
+    },
+    {
+      "name": "envelope-lfo-square-modulates",
+      "unit": "envelope",
+      "rate": 44100,
+      "frames": 44032,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "zero": 1.0,
+        "Env attack": 0.1,
+        "Env decay": 0.2,
+        "Env sustain": 0.3,
+        "Env mod amount": 1.0,
+        "LFO frequency": 0.01,
+        "LFO mod amount": 0.5,
+        "LFO wave shape": 3,
+        "Modulate env amount": 1,
+        "release": 20000
+      }
+    },
+    {
+      "name": "envelope-lfo-triangle-release-early",
+      "unit": "envelope",
+      "rate": 44100,
+      "frames": 44032,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0.0
+      },
+      "settings": {
+        "zero": 0.0,
+        "Env attack": 0.4,
+        "Env mod amount": 1.0,
+        "Env release": 0.5,
+        "LFO frequency": 0.005,
+        "LFO mod amount": 0.3,
+        "LFO wave shape": 1,
+        "release": 3000
+      }
     }
   ]
 }

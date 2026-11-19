@@ -27,6 +27,7 @@
 #include "AutomatableModel.h"
 #include "AudioEngine.h"
 #include "EffectChain.h"
+#include "EnvelopeAndLfoParameters.h"
 #include "Engine.h"
 #include "PluginInstance.h"
 #include "DeskTolerance.h"
@@ -372,6 +373,28 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			{
 				out[f] = SampleFrame{filter.update(out[f][0], 0), filter.update(out[f][1], 1)};
 			}
+		}
+		return out;
+	}
+	if (unit == "envelope")
+	{
+		// An instrument's envelope and LFO: its level for a note from its start, released at "release", the LFO
+		// moving on after each period as the engine moves it
+		const auto s = c["settings"].toObject();
+		auto envelope = EnvelopeAndLfoParameters{static_cast<float>(s["zero"].toDouble()), nullptr};
+		for (auto* model : envelope.findChildren<AutomatableModel*>())
+		{
+			const auto key = model->displayName();
+			if (s.contains(key)) { model->setValue(static_cast<float>(s[key].toDouble())); }
+		}
+		envelope.updateSampleVars();
+		const auto release = static_cast<f_cnt_t>(s["release"].toDouble());
+		auto level = std::vector<float>(static_cast<std::size_t>(block));
+		for (std::int64_t start = 0; start < frames; start += block)
+		{
+			envelope.fillLevel(level.data(), static_cast<f_cnt_t>(start), release, static_cast<f_cnt_t>(block));
+			for (std::int64_t f = 0; f < block; ++f) { out[start + f] = SampleFrame{level[f], level[f]}; }
+			EnvelopeAndLfoParameters::instances()->trigger();
 		}
 		return out;
 	}
