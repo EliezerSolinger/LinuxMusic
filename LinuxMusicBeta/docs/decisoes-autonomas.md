@@ -217,3 +217,19 @@ de forma diz pelo que é substituído.
 - **A ordem de destruição de um plugin LV2** é: encerrar o worker (join), entregar as últimas respostas, desativar e
   só então liberar. Um teste prova que a ordem do legado dá segfault.
 - **Para exportar, o worker do LV2 é síncrono** (determinismo); ao vivo, roda numa thread própria.
+
+## Do `lm-render` (19/11)
+
+- **`gen` virou `generation`** (palavra reservada na edição 2024 do Rust).
+- **`add` e `replace` levam um `NodeCore`** (processador + semente do `Rng` + escritor de dados ao vivo), montado na
+  thread principal; `replace` leva o índice opcional de um nó de cauda (U32).
+- **Todo nó tem `NodeIndex`**, inclusive somas e strips, para cada saída de faixa e cada canal da mesa terem medidor.
+- **O pan é balanço em nós estéreo** (`esq = min(1, 1 − pan)`, `dir = min(1, 1 + pan)`); em outros números de canais é
+  ignorado.
+- **A proteção de ouvido do master se recupera sozinha** depois de 1 s abaixo de +24 dBFS.
+- **Os comandos de prévia usam o anel de produtor**; com todas as vagas ocupadas, a prévia mais velha some com fade.
+- **Curvas de automação:** `(e^{kt}−1)/(e^k−1)` com `k = 6·forma`; a forma é do segmento que termina no ponto.
+- **Automação por bloco numa grade de 32 amostras** do relógio do motor, o que a deixa igual para qualquer tamanho de
+  bloco.
+- **Workers sem trava:** o processador e o bloco de buffers de um nó vão e voltam por anéis por worker; só nós acima
+  de 3 µs vão para um worker; somas, atrasos e strips rodam em série, na ordem do programa (determinismo).
