@@ -91,3 +91,10 @@ Formato: **decisão** — motivo. Data entre parênteses.
   96 kHz e converta para a taxa do projeto com o `lm-sys-samplerate` (decisão para o autor do plugin, no porte).
 - **O kit do FluidSynth é seco:** reverb e chorus internos desligados; o reverb é da mesa.
 
+## Decisões do usuário sobre a interface (19/11)
+
+- **O protótipo em GPUI cobre o sistema inteiro**, todas as telas do aplicativo completo, e vira a base do `lm-gui`.
+- **Na mesa de mixagem, cada canal tem um fader deslizante junto da barra do medidor**, como numa mesa de verdade,
+  com gesto, valor em dB e duplo clique para 0 dB. O cabeçalho da faixa continua com o knob de volume (design 02,
+  sem pan).
+
