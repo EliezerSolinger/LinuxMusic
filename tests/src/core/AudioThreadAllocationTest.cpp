@@ -23,11 +23,14 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
+#include <functional>
 #include <cstdlib>
 #include <dlfcn.h>
 #include <execinfo.h>
 #include <new>
 #include <numeric>
+#include <random>
 #include <vector>
 
 #include <QDir>
@@ -47,8 +50,11 @@
 #include "BufferManager.h"
 #include "ConfigManager.h"
 #include "Engine.h"
+#include "../helpers/GusPatch.h"
 #include "ErrorLog.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "PluginInstance.h"
 #include "MidiClip.h"
 #include "Mixer.h"
 #include "Note.h"
@@ -262,8 +268,29 @@ private:
 		sf_close(file);
 	}
 
-	//! Plays the song for @p periods periods, counting what the audio thread allocates
-	auto playCounting(int warmUp, int periods) -> long
+	/**
+	 * Every knob, selector and switch of @p root set somewhere in its range (as a user turning them while it plays,
+	 * from the main thread): what the plugin does about it on the audio thread is counted
+	 */
+	static void moveEveryControl(QObject* root, std::minstd_rand& random)
+	{
+		const auto fraction = [&random] { return static_cast<float>(random() % 1001) / 1000.f; };
+		for (auto* model : root->findChildren<FloatModel*>())
+		{
+			if (model->controllerConnection()) { continue; }
+			model->setValue(model->minValue() + fraction() * (model->maxValue() - model->minValue()));
+		}
+		for (auto* model : root->findChildren<IntModel*>())
+		{
+			const auto span = model->maxValue() - model->minValue();
+			model->setValue(model->minValue() + static_cast<int>(random() % static_cast<unsigned>(span + 1)));
+		}
+		for (auto* model : root->findChildren<BoolModel*>()) { model->setValue(random() % 2 == 0); }
+	}
+
+	//! Plays the song for @p periods periods, counting what the audio thread allocates; @p between runs between
+	//! periods (on this thread, as the main thread would)
+	auto playCounting(int warmUp, int periods, const std::function<void(int)>& between = {}) -> long
 	{
 		auto* song = Engine::getSong();
 		auto* engine = Engine::audioEngine();
@@ -279,6 +306,7 @@ private:
 			// Half-way, everything brought to rest (as an export starts): what the plugins and the mixer let go on
 			// the audio thread (AudioProcessor::reset()) allocates nothing either
 			if (period == periods / 2) { Engine::mixer()->discardProcessingState(); }
+			if (between) { between(period); }
 			engine->renderNextPeriod();
 		}
 		s_counting = false;
@@ -493,8 +521,18 @@ private slots:
 		for (const auto* name : {"tripleoscillator", "bitinvader", "kicker", "lb302", "monstro", "nes", "organic",
 			"sfxr", "sid", "vibedstrings", "watsyn", "xpressive", "freeboy", "malletsstk", "opulenz",
 			"audiofileprocessor", "slicert", "zynaddsubfx", "sf2player", "avldrums", "drummachines", "gigplayer",
+			"patman", "patman+nopatch",
 			// (one note at a time, legato with a glide: the voice moves and goes back on the audio thread)
-			"tripleoscillator+mono", "sf2player+mono"})
+			"tripleoscillator+mono", "sf2player+mono",
+			// (every control turned while it plays: docs/plano-ciclo-de-vida.md, gap 9)
+			"tripleoscillator+controls", "bitinvader+controls", "kicker+controls", "lb302+controls",
+			"monstro+controls", "nes+controls", "organic+controls", "sfxr+controls", "sid+controls",
+			"vibedstrings+controls", "watsyn+controls", "xpressive+controls", "freeboy+controls",
+			"malletsstk+controls", "opulenz+controls", "audiofileprocessor+controls", "patman+controls",
+			"sf2player+controls", "drummachines+controls",
+			// (more notes at once than the voices and note slots made beforehand)
+			"tripleoscillator+chords", "freeboy+chords", "malletsstk+chords", "vibedstrings+chords",
+			"sf2player+chords", "xpressive+chords", "patman+chords"})
 		{
 			QTest::newRow(name) << QString{name};
 		}
@@ -505,6 +543,12 @@ private slots:
 		QFETCH(QString, instrument);
 		const auto mono = instrument.endsWith("+mono");
 		if (mono) { instrument.chop(5); }
+		const auto controls = instrument.endsWith("+controls");
+		if (controls) { instrument.chop(9); }
+		const auto chords = instrument.endsWith("+chords");
+		if (chords) { instrument.chop(7); }
+		const auto noPatch = instrument.endsWith("+nopatch");
+		if (noPatch) { instrument.chop(8); }
 		auto* song = Engine::getSong();
 		song->createNewProject();
 		if (instrument == "malletsstk")
@@ -536,6 +580,19 @@ private slots:
 			auto settings = saved.firstChildElement();
 			auto plugin = settings.elementsByTagName("instrument").item(0).firstChildElement();
 			plugin.setAttribute("src", gig);
+			track->restoreState(settings);
+		}
+		if (instrument == "patman" && !noPatch)
+		{
+			// A patch made here (the program comes with none)
+			const auto patch = m_directory.filePath("tone.pat");
+			QVERIFY(tests::writeGusPatch(patch, static_cast<int>(Engine::audioEngine()->outputSampleRate())));
+			auto document = QDomDocument{};
+			auto saved = document.createElement("saved");
+			track->saveState(document, saved);
+			auto settings = saved.firstChildElement();
+			auto plugin = settings.elementsByTagName("instrument").item(0).firstChildElement();
+			plugin.setAttribute("src", patch);
 			track->restoreState(settings);
 		}
 		if (instrument == "audiofileprocessor" || instrument == "slicert")
@@ -579,6 +636,18 @@ private slots:
 		{
 			clip->addNote(Note{TimePos{36}, TimePos{note * 24}, (drums ? 35 : DefaultKey) + note % 12});
 		}
+		if (chords)
+		{
+			// 48 notes at once, twice: more than the voices and the note slots made beforehand
+			for (const auto start : {0, 192})
+			{
+				for (int key = 0; key < 48; ++key) { clip->addNote(Note{TimePos{96}, TimePos{start}, 36 + key}); }
+			}
+		}
+		auto random = std::minstd_rand{static_cast<std::minstd_rand::result_type>(qHash(instrument))};
+		const auto turn = [&](int period) {
+			if (controls && period % 20 == 5) { moveEveryControl(track->instrument(), random); }
+		};
 
 		// These make each note's voice on the audio thread as a library builds it, with new (Xpressive's compiled
 		// expressions, ZynAddSubFX's notes, Vibed's strings as long as the note's pitch asks): from the realtime pool,
@@ -586,7 +655,7 @@ private slots:
 		const bool library = instrument == "xpressive" || instrument == "zynaddsubfx" || instrument == "vibedstrings";
 		s_usePool = library;
 		s_handedOver = 0;
-		const auto events = playCounting(40, 600);
+		const auto events = playCounting(40, 600, turn);
 		s_usePool = false;
 		report(events);
 		if (library)
@@ -595,6 +664,11 @@ private slots:
 			qInfo("realtime pool: %zu KB at most in use, %ld frees of the system's memory handed over",
 				stats.peakBytes / 1024, s_handedOver.load());
 		}
+		// Known, until these instruments are rewritten for the new plugin contract (docs/arquitetura-nova.md: the
+		// host's voice policy, voices made beforehand and one taken when they run out): more notes than their voices
+		QEXPECT_FAIL("freeboy+chords", "its voices beyond those made beforehand: the new contract's voice policy", Continue);
+		QEXPECT_FAIL("malletsstk+chords", "its voices beyond those made beforehand: the new contract's voice policy",
+			Continue);
 		QVERIFY2(events == 0, qPrintable(QString{"%1 allocations or frees on the audio thread"}.arg(events)));
 	}
 
@@ -611,7 +685,12 @@ private slots:
 			names << name;
 		}
 		names.sort();
-		for (const auto& name : names) { QTest::newRow(qPrintable(name)) << name; }
+		for (const auto& name : names)
+		{
+			QTest::newRow(qPrintable(name)) << name;
+			// (every control turned while it plays: docs/plano-ciclo-de-vida.md, gap 9)
+			QTest::newRow(qPrintable(name + "+controls")) << name + "+controls";
+		}
 		// Guitarix: each of its units (sub-plugins), "guitarix:unit"
 		if (const auto info = getPluginFactory()->pluginInfo("guitarix"); !info.isNull())
 		{
@@ -628,6 +707,8 @@ private slots:
 	void effectsAllocateNothing()
 	{
 		QFETCH(QString, effect);
+		const auto controls = effect.endsWith("+controls");
+		if (controls) { effect.chop(9); }
 		// (a sub-plugin: "plugin:unit")
 		auto key = Plugin::Descriptor::SubPluginFeatures::Key{};
 		if (effect.contains(':'))
@@ -655,8 +736,19 @@ private slots:
 			clip->addNote(Note{TimePos{36}, TimePos{note * 24}, DefaultKey + note % 12});
 		}
 
-		const auto events = playCounting(40, 600);
+		auto random = std::minstd_rand{static_cast<std::minstd_rand::result_type>(qHash(effect))};
+		// (its controls are the plugin's models)
+		auto* instance = chain->effects().back()->plugin();
+		const auto turn = [&](int period) {
+			if (controls && period % 20 == 5) { moveEveryControl(instance, random); }
+		};
+		const auto events = playCounting(40, 600, turn);
 		report(events);
+		// Known, until these effects are rewritten for the new plugin contract (docs/arquitetura-nova.md: what a
+		// control changes made off the audio thread and handed to it)
+		QEXPECT_FAIL("granularpitchshifter+controls", "its ring made on the audio thread when the range changes",
+			Continue);
+		QEXPECT_FAIL("amplifikationlite+controls", "what its controls change made on the audio thread", Continue);
 		QVERIFY2(events == 0, qPrintable(QString{"%1 allocations or frees on the audio thread"}.arg(events)));
 	}
 };
