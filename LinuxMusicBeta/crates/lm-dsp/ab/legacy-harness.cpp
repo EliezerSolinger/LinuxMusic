@@ -30,6 +30,16 @@
 #include "GainStage.h"
 #include "MasterSection.h"
 #include "Oscillator.h"
+
+// The plugins' DSP (built from their sources by build-references.sh)
+#include "Lfo.h"
+#include "StereoDelay.h"
+extern "C"
+{
+#include "base.h"
+#include "dcblock.h"
+#include "revsc.h"
+}
 #include "SampleFrame.h"
 
 using namespace lmms;
@@ -274,6 +284,70 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			chain[0]->update(out.data() + start, n, 0);
 			for (std::int64_t f = start; f < start + n; ++f) { out[f][1] = out[f][0]; }
 		}
+		return out;
+	}
+	if (unit == "delay")
+	{
+		// DelayEffect::process, wet only, on the plugin's StereoDelay and Lfo
+		const auto rate = static_cast<float>(Rate);
+		auto delay = StereoDelay{20, static_cast<int>(Rate)};
+		auto lfo = Lfo{static_cast<int>(Rate)};
+		lfo.restart();
+		auto apply = [&](std::int64_t from, std::int64_t to, const QJsonObject& s) {
+			const float length = static_cast<float>(s["time"].toDouble());
+			const float amplitude = static_cast<float>(s["lfoAmount"].toDouble()) * rate;
+			const float lfoTime = 1.0 / static_cast<float>(s["lfoTime"].toDouble());
+			const float feedback = static_cast<float>(s["feedback"].toDouble());
+			const float outGain = dbfsToAmp(static_cast<float>(s["outGain"].toDouble()));
+			for (auto f = from; f < to; ++f)
+			{
+				delay.setFeedback(feedback);
+				lfo.setFrequency(lfoTime);
+				const int currentLength = static_cast<int>(length * rate);
+				delay.setLength(currentLength + (amplitude * static_cast<float>(lfo.tick())));
+				delay.tick(out[f]);
+				out[f] *= outGain;
+			}
+		};
+		const auto then = c["then"].toObject();
+		const auto at = then.isEmpty() ? frames : static_cast<std::int64_t>(then["at"].toDouble());
+		apply(0, at, c["settings"].toObject());
+		if (at < frames) { apply(at, frames, then["settings"].toObject()); }
+		return out;
+	}
+	if (unit == "reverbsc")
+	{
+		// ReverbSCEffect::process, wet only, on Soundpipe's revsc and dcblock
+		sp_data* sp = nullptr;
+		sp_create(&sp);
+		sp->sr = static_cast<int>(Rate);
+		sp_revsc* revsc = nullptr;
+		sp_revsc_create(&revsc);
+		sp_revsc_init(sp, revsc);
+		std::array<sp_dcblock*, 2> dcblk{};
+		for (auto& d : dcblk) { sp_dcblock_create(&d); sp_dcblock_init(sp, d, 1); }
+		auto apply = [&](std::int64_t from, std::int64_t to, const QJsonObject& s) {
+			const auto inGain = fastPow10f<SPFLOAT>(static_cast<float>(s["inputGain"].toDouble()) / 20.f);
+			const auto outGain = fastPow10f<SPFLOAT>(static_cast<float>(s["outputGain"].toDouble()) / 20.f);
+			for (auto f = from; f < to; ++f)
+			{
+				auto in = std::array{out[f][0] * inGain, out[f][1] * inGain};
+				revsc->feedback = static_cast<SPFLOAT>(s["size"].toDouble());
+				revsc->lpfreq = static_cast<SPFLOAT>(s["color"].toDouble());
+				SPFLOAT l, r, dl, dr;
+				sp_revsc_compute(sp, revsc, &in[0], &in[1], &l, &r);
+				sp_dcblock_compute(sp, dcblk[0], &l, &dl);
+				sp_dcblock_compute(sp, dcblk[1], &r, &dr);
+				out[f] = SampleFrame{dl * outGain, dr * outGain};
+			}
+		};
+		const auto then = c["then"].toObject();
+		const auto at = then.isEmpty() ? frames : static_cast<std::int64_t>(then["at"].toDouble());
+		apply(0, at, c["settings"].toObject());
+		if (at < frames) { apply(at, frames, then["settings"].toObject()); }
+		sp_revsc_destroy(&revsc);
+		for (auto& d : dcblk) { sp_dcblock_destroy(&d); }
+		sp_destroy(&sp);
 		return out;
 	}
 	if (unit == "tube-curve")

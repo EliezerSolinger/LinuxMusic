@@ -2166,6 +2166,130 @@
           }
         ]
       }
+    },
+    {
+      "name": "delay-plain",
+      "unit": "delay",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 40,
+        "amp": 0.5,
+        "steps": [
+          [
+            0,
+            1.0
+          ],
+          [
+            2000,
+            0.0
+          ]
+        ]
+      },
+      "settings": {
+        "time": 0.1,
+        "feedback": 0.5,
+        "lfoTime": 2.0,
+        "lfoAmount": 0.0,
+        "outGain": 0.0
+      }
+    },
+    {
+      "name": "delay-lfo",
+      "unit": "delay",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 440,
+        "amp": 0.5
+      },
+      "settings": {
+        "time": 0.05,
+        "feedback": 0.3,
+        "lfoTime": 0.25,
+        "lfoAmount": 0.003,
+        "outGain": -3.0
+      },
+      "then": {
+        "at": 12000,
+        "settings": {
+          "time": 0.08,
+          "feedback": 0.7,
+          "lfoTime": 1.0,
+          "lfoAmount": 0.01,
+          "outGain": 2.0
+        }
+      }
+    },
+    {
+      "name": "reverbsc-default",
+      "unit": "reverbsc",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 40,
+        "amp": 0.5,
+        "steps": [
+          [
+            0,
+            1.0
+          ],
+          [
+            2000,
+            0.0
+          ]
+        ]
+      },
+      "settings": {
+        "inputGain": 0.0,
+        "size": 0.89,
+        "color": 10000.0,
+        "outputGain": 0.0
+      }
+    },
+    {
+      "name": "reverbsc-dark-small",
+      "unit": "reverbsc",
+      "frames": 24000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 220,
+        "amp": 0.4,
+        "steps": [
+          [
+            0,
+            1.0
+          ],
+          [
+            6000,
+            0.0
+          ]
+        ],
+        "right": {
+          "kind": "noise",
+          "seed": 41,
+          "amp": 0.3
+        }
+      },
+      "settings": {
+        "inputGain": -3.0,
+        "size": 0.6,
+        "color": 2500.0,
+        "outputGain": 3.0
+      },
+      "then": {
+        "at": 12032,
+        "settings": {
+          "inputGain": 0.0,
+          "size": 0.95,
+          "color": 12000.0,
+          "outputGain": 0.0
+        }
+      }
     }
   ]
 }

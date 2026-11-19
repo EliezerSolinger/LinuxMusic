@@ -277,6 +277,35 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return mono.into_iter().map(|x| [x, x]).collect();
     }
+    if case["unit"] == "delay" || case["unit"] == "reverbsc" {
+        // The effects, wet only
+        let then = &case["then"];
+        let at = then["at"].as_i64().map_or(frames as usize, |a| a as usize);
+        let delay_settings = |s: &Value| lm_dsp::delay::DelaySettings {
+            time: f(s, "time", 0.5),
+            feedback: f(s, "feedback", 0.0),
+            lfo_time: f(s, "lfoTime", 2.0),
+            lfo_amount: f(s, "lfoAmount", 0.0),
+            out_gain: f(s, "outGain", 0.0),
+        };
+        let reverb_settings = |s: &Value| lm_dsp::reverb_sc::ReverbScSettings {
+            input_gain: f(s, "inputGain", 0.0),
+            size: f(s, "size", 0.89),
+            color: f(s, "color", 10000.0),
+            output_gain: f(s, "outputGain", 0.0),
+        };
+        let (first, second) = out.split_at_mut(at);
+        if case["unit"] == "delay" {
+            let mut delay = lm_dsp::delay::Delay::new(RATE);
+            delay.process(first, &delay_settings(&case["settings"]));
+            delay.process(second, &delay_settings(&then["settings"]));
+        } else {
+            let mut reverb = lm_dsp::reverb_sc::ReverbSc::new(RATE);
+            reverb.process(first, &reverb_settings(&case["settings"]));
+            reverb.process(second, &reverb_settings(&then["settings"]));
+        }
+        return out;
+    }
     if case["unit"] == "tube-curve" {
         // The static curve alone: the tube's transfer function and where it clips
         let model = GainModel::from_key(case["settings"]["drive"].as_str().unwrap()).unwrap();

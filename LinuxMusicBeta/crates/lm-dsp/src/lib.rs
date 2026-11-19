@@ -19,12 +19,17 @@
 //!
 //! The instruments' sources:
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables.
+//!
+//! The effects of the validation plugins:
+//! - [`delay`]: the Delay;
+//! - [`reverb_sc`]: the ReverbSC (Csound's reverbsc).
 
 // The ports keep the legacy program's index loops and its literal constants, so that a reader can set the two side by
 // side line by line (the A/B is against that code)
 #![allow(clippy::needless_range_loop, clippy::excessive_precision)]
 
 pub mod channel_strip;
+pub mod delay;
 pub mod dynamics;
 pub mod filters;
 pub mod gain_stage;
@@ -34,5 +39,6 @@ pub mod mono_bass;
 pub mod oscillator;
 pub mod oversampling;
 pub mod rbj;
+pub mod reverb_sc;
 pub mod tolerance;
 pub mod tube;

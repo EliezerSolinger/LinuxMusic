@@ -16,7 +16,7 @@ commands=$(ninja -t commands tests/MixerTest)
 # be the same bit for bit as the ones tests/ab.rs makes)
 compile=$(printf '%s\n' "$commands" | grep 'MixerTest.cpp.o -c' \
 	| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/harness.o#" \
-		-e "s# -c [^ ]*MixerTest.cpp# -ffp-contract=off -c $here/legacy-harness.cpp#")
+		-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -ffp-contract=off -c $here/legacy-harness.cpp#")
 sh -c "$compile"
 
 # The legacy objects to rebuild without fused multiply-adds (CONTRACT_OFF="TubeStage GainStage ..."), to tell
@@ -29,10 +29,21 @@ for unit in ${CONTRACT_OFF:-}; do
 	objects="$objects -e s#src/CMakeFiles/lmmsobjs.dir/core/$unit.cpp.o#$work/$unit.o#"
 done
 
+# The plugins' DSP the harness uses, from the plugins' own objects' commands, without fused multiply-adds
+for target in plugins/Delay/CMakeFiles/delay.dir/Lfo.cpp.o plugins/Delay/CMakeFiles/delay.dir/StereoDelay.cpp.o \
+	plugins/ReverbSC/CMakeFiles/reverbsc.dir/base.c.o plugins/ReverbSC/CMakeFiles/reverbsc.dir/revsc.c.o \
+	plugins/ReverbSC/CMakeFiles/reverbsc.dir/dcblock.c.o; do
+	name=$(basename "$target" .o)
+	plugincompile=$(ninja -t commands "$target" | tail -1 \
+		| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/$name.o#" -e "s# -c # -ffp-contract=off -c #")
+	sh -c "$plugincompile"
+	plugins="${plugins:-} $work/$name.o"
+done
+
 # Link it as MixerTest is linked, with the harness in place of the test's own objects
 link=$(printf '%s\n' "$commands" | tail -1 | sed -e 's#^: && ##' -e 's# && :$##' \
 	-e "s# tests/CMakeFiles/MixerTest.dir/MixerTest_autogen/mocs_compilation.cpp.o##" \
-	-e "s# tests/CMakeFiles/MixerTest.dir/src/core/MixerTest.cpp.o# $work/harness.o#" \
+	-e "s# tests/CMakeFiles/MixerTest.dir/src/core/MixerTest.cpp.o# $work/harness.o $plugins#" \
 	-e "s# -o tests/MixerTest# -o $work/legacy-harness#" $objects)
 sh -c "$link"
 
