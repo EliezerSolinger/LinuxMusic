@@ -9,5 +9,7 @@ libsamplerate0-dev    # lm-sys-samplerate (>= 0.1.9; 24.04 has 0.2.2)
 libfluidsynth-dev     # lm-sys-fluidsynth (>= 2.2.0; 24.04 has 2.3.4)
 librubberband-dev     # lm-sys-rubberband (>= 3.0.0; 24.04 has 3.3.0)
 # libjack-jackd2-dev  # lm-sys-jack
-# liblilv-dev         # lm-sys-lilv
+liblilv-dev           # lm-sys-lilv
+lv2-dev               # lm-sys-lilv: the LV2 headers of its test bundle
+gcc                   # lm-sys-lilv: its tests compile a test LV2 bundle (the runners have it; listed to be explicit)
 # lm-sys-linux needs nothing here: libc, and zbus is pure Rust (no libdbus-1-dev; decisoes-autonomas.md)

@@ -5,3 +5,4 @@ libsndfile            # lm-sys-sndfile
 libsamplerate         # lm-sys-samplerate
 fluid-synth           # lm-sys-fluidsynth
 rubberband            # lm-sys-rubberband
+lilv                  # lm-sys-lilv (pulls lv2, serd, sord, sratom)
