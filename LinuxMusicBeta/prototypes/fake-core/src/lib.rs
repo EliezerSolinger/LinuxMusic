@@ -112,6 +112,8 @@ pub struct Doc {
     pub tracks: Vec<Track>,
     pub channels: Vec<Channel>,
     pub song: arrange::Song,
+    /// the instruments, their functions and the inserts' states (owner: agent C, `plugins.rs`)
+    pub plugins: plugins::Plugins,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -231,6 +233,8 @@ impl Edit<'_> {
             (b'r', Field::PunchOn, Value::Bool(b)) => self.doc.song.punch.on = b,
             (b'r', Field::Metronome, Value::Bool(b)) => self.doc.song.metronome = b,
             (b'r', Field::Tempo, Value::Real(x)) => self.doc.song.tempo[0].bpm = x.clamp(20.0, 400.0),
+            // a plugin parameter: the instrument functions (on the track), an instrument, an insert (plugins.rs)
+            (b't' | b'p' | b'x', Field::Param(k), Value::Real(x)) => plugins::set_param(self.doc, id, k, x)?,
             (b'r', Field::CountIn, Value::Real(x)) => self.doc.song.count_in_bars = x.clamp(0.0, 4.0) as u8,
             (b'r', Field::PreRoll, Value::Real(x)) => self.doc.song.pre_roll_bars = x.clamp(0.0, 4.0) as u8,
             (b'm', Field::Volume, Value::Real(x)) => self.channel(id)?.volume_db = x,
@@ -268,6 +272,7 @@ impl Edit<'_> {
             (b'r', Field::PunchOn) => Value::Bool(self.doc.song.punch.on),
             (b'r', Field::Metronome) => Value::Bool(self.doc.song.metronome),
             (b'r', Field::Tempo) => Value::Real(self.doc.song.tempo[0].bpm),
+            (b't' | b'p' | b'x', Field::Param(k)) => Value::Real(plugins::get_param(self.doc, id, k)?),
             (b'r', Field::CountIn) => Value::Real(self.doc.song.count_in_bars as f64),
             (b'r', Field::PreRoll) => Value::Real(self.doc.song.pre_roll_bars as f64),
             (b'm', Field::Volume) => Value::Real(self.channel(id)?.volume_db),
@@ -662,6 +667,7 @@ impl Session {
             sends: Vec::new(),
             params: mixer::default_params(999),
         });
+        plugins::populate(&mut doc);
         let initial = TelemetryFrame {
             position: 0,
             host_time: Instant::now(),
