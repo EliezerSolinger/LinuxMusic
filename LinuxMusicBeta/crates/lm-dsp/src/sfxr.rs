@@ -124,84 +124,84 @@ pub struct SfxrSynth {
 impl Clone for SfxrSynth {
     fn clone(&self) -> Self {
         Self {
-            s: self.s.clone(),
-            rand: self.rand.clone(),
-            playing: self.playing.clone(),
-            phase: self.phase.clone(),
-            fperiod: self.fperiod.clone(),
-            fmaxperiod: self.fmaxperiod.clone(),
-            fslide: self.fslide.clone(),
-            fdslide: self.fdslide.clone(),
-            period: self.period.clone(),
-            square_duty: self.square_duty.clone(),
-            square_slide: self.square_slide.clone(),
-            env_stage: self.env_stage.clone(),
-            env_time: self.env_time.clone(),
-            env_length: self.env_length.clone(),
-            env_vol: self.env_vol.clone(),
-            fphase: self.fphase.clone(),
-            fdphase: self.fdphase.clone(),
-            iphase: self.iphase.clone(),
+            s: self.s,
+            rand: self.rand,
+            playing: self.playing,
+            phase: self.phase,
+            fperiod: self.fperiod,
+            fmaxperiod: self.fmaxperiod,
+            fslide: self.fslide,
+            fdslide: self.fdslide,
+            period: self.period,
+            square_duty: self.square_duty,
+            square_slide: self.square_slide,
+            env_stage: self.env_stage,
+            env_time: self.env_time,
+            env_length: self.env_length,
+            env_vol: self.env_vol,
+            fphase: self.fphase,
+            fdphase: self.fdphase,
+            iphase: self.iphase,
             phaser: self.phaser.clone(),
-            ipp: self.ipp.clone(),
-            noise: self.noise.clone(),
-            fltp: self.fltp.clone(),
-            fltdp: self.fltdp.clone(),
-            fltw: self.fltw.clone(),
-            fltw_d: self.fltw_d.clone(),
-            fltdmp: self.fltdmp.clone(),
-            fltphp: self.fltphp.clone(),
-            flthp: self.flthp.clone(),
-            flthp_d: self.flthp_d.clone(),
-            vib_phase: self.vib_phase.clone(),
-            vib_speed: self.vib_speed.clone(),
-            vib_amp: self.vib_amp.clone(),
-            rep_time: self.rep_time.clone(),
-            rep_limit: self.rep_limit.clone(),
-            arp_time: self.arp_time.clone(),
-            arp_limit: self.arp_limit.clone(),
-            arp_mod: self.arp_mod.clone(),
+            ipp: self.ipp,
+            noise: self.noise,
+            fltp: self.fltp,
+            fltdp: self.fltdp,
+            fltw: self.fltw,
+            fltw_d: self.fltw_d,
+            fltdmp: self.fltdmp,
+            fltphp: self.fltphp,
+            flthp: self.flthp,
+            flthp_d: self.flthp_d,
+            vib_phase: self.vib_phase,
+            vib_speed: self.vib_speed,
+            vib_amp: self.vib_amp,
+            rep_time: self.rep_time,
+            rep_limit: self.rep_limit,
+            arp_time: self.arp_time,
+            arp_limit: self.arp_limit,
+            arp_mod: self.arp_mod,
         }
     }
 
     fn clone_from(&mut self, source: &Self) {
-        self.s.clone_from(&source.s);
-        self.rand.clone_from(&source.rand);
-        self.playing.clone_from(&source.playing);
-        self.phase.clone_from(&source.phase);
-        self.fperiod.clone_from(&source.fperiod);
-        self.fmaxperiod.clone_from(&source.fmaxperiod);
-        self.fslide.clone_from(&source.fslide);
-        self.fdslide.clone_from(&source.fdslide);
-        self.period.clone_from(&source.period);
-        self.square_duty.clone_from(&source.square_duty);
-        self.square_slide.clone_from(&source.square_slide);
-        self.env_stage.clone_from(&source.env_stage);
-        self.env_time.clone_from(&source.env_time);
-        self.env_length.clone_from(&source.env_length);
-        self.env_vol.clone_from(&source.env_vol);
-        self.fphase.clone_from(&source.fphase);
-        self.fdphase.clone_from(&source.fdphase);
-        self.iphase.clone_from(&source.iphase);
+        self.s = source.s;
+        self.rand = source.rand;
+        self.playing = source.playing;
+        self.phase = source.phase;
+        self.fperiod = source.fperiod;
+        self.fmaxperiod = source.fmaxperiod;
+        self.fslide = source.fslide;
+        self.fdslide = source.fdslide;
+        self.period = source.period;
+        self.square_duty = source.square_duty;
+        self.square_slide = source.square_slide;
+        self.env_stage = source.env_stage;
+        self.env_time = source.env_time;
+        self.env_length = source.env_length;
+        self.env_vol = source.env_vol;
+        self.fphase = source.fphase;
+        self.fdphase = source.fdphase;
+        self.iphase = source.iphase;
         self.phaser.clone_from(&source.phaser);
-        self.ipp.clone_from(&source.ipp);
-        self.noise.clone_from(&source.noise);
-        self.fltp.clone_from(&source.fltp);
-        self.fltdp.clone_from(&source.fltdp);
-        self.fltw.clone_from(&source.fltw);
-        self.fltw_d.clone_from(&source.fltw_d);
-        self.fltdmp.clone_from(&source.fltdmp);
-        self.fltphp.clone_from(&source.fltphp);
-        self.flthp.clone_from(&source.flthp);
-        self.flthp_d.clone_from(&source.flthp_d);
-        self.vib_phase.clone_from(&source.vib_phase);
-        self.vib_speed.clone_from(&source.vib_speed);
-        self.vib_amp.clone_from(&source.vib_amp);
-        self.rep_time.clone_from(&source.rep_time);
-        self.rep_limit.clone_from(&source.rep_limit);
-        self.arp_time.clone_from(&source.arp_time);
-        self.arp_limit.clone_from(&source.arp_limit);
-        self.arp_mod.clone_from(&source.arp_mod);
+        self.ipp = source.ipp;
+        self.noise = source.noise;
+        self.fltp = source.fltp;
+        self.fltdp = source.fltdp;
+        self.fltw = source.fltw;
+        self.fltw_d = source.fltw_d;
+        self.fltdmp = source.fltdmp;
+        self.fltphp = source.fltphp;
+        self.flthp = source.flthp;
+        self.flthp_d = source.flthp_d;
+        self.vib_phase = source.vib_phase;
+        self.vib_speed = source.vib_speed;
+        self.vib_amp = source.vib_amp;
+        self.rep_time = source.rep_time;
+        self.rep_limit = source.rep_limit;
+        self.arp_time = source.arp_time;
+        self.arp_limit = source.arp_limit;
+        self.arp_mod = source.arp_mod;
     }
 }
 
