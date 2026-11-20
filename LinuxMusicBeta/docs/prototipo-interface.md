@@ -171,7 +171,7 @@ direto na GPUI.
 | Desenho denso fica caro (custo por primitiva) | ladrilhos em cache para formas de onda; juntar primitivas; medir cada tela nova com `LM_BENCH` |
 | Linux sem teste real | CI compilando e testando; teste manual em X11 e Wayland no ThinkPad |
 | Sem tradução embutida | tradução como dado, nossa (`ui/i18n.rs`, um arquivo por área, teste de chaves repetidas) |
-| Acessibilidade dos controles próprios | a GPUI tem `role`, `aria_label`, `aria_numeric_value`: cada knob e fader declara papel e valor (a fazer no `lm-gui`) |
+| Acessibilidade dos controles próprios | a GPUI tem `role`, `aria_label`, `aria_numeric_value`: os knobs e faders da composição e da mesa já se declaram sliders com valor; falta o resto dos controles próprios |
 | HiDPI não visto aqui (tela 1x) | ladrilhos rasterizados no fator de escala da janela (a fazer) |
 | Vários agentes no mesmo `target` | os pacotes locais de dois worktrees ganham o mesmo hash e um reaproveita o artefato velho do outro: cada worktree com `--config profile.dev.package.<pacote>.codegen-units=N` próprio, ou o próprio `target` |
 

@@ -384,8 +384,15 @@ impl MixingPage {
     fn knob(&self, id: SharedString, t: Target, d: f32, cx: &Context<Self>) -> impl IntoElement {
         let travel = self.travel_of(t, cx);
         let learning = self.learning == Some(t);
+        let name = self.target_name(t, cx);
         div()
             .id(id)
+            // assistive technology sees a slider with its value (AccessKit)
+            .role(gpui::Role::Slider)
+            .aria_label(SharedString::from(name))
+            .aria_numeric_value(travel)
+            .aria_min_numeric_value(0.0)
+            .aria_max_numeric_value(1.0)
             .cursor_ns_resize()
             .rounded(px(d))
             .when(learning, |d| d.border_2().border_color(c(THEME.yellow)))
@@ -573,6 +580,11 @@ impl MixingPage {
                 div()
                     .id(("fader", i))
                     .debug_selector(move || format!("fader-{i}"))
+                    .role(gpui::Role::Slider)
+                    .aria_label(SharedString::from(format!("{} {}", tr("Volume"), ch.name)))
+                    .aria_numeric_value(ch.volume_db)
+                    .aria_min_numeric_value(-60.0)
+                    .aria_max_numeric_value(6.0)
                     .mx_auto()
                     .cursor_ns_resize()
                     .child(fader_over_meter(fader_t, vec![level, (level * 0.92).min(1.0)], 44.0, FADER_H))

@@ -602,6 +602,12 @@ impl CompositionPage {
                             div()
                                 .id(("tknob", i))
                                 .debug_selector(move || format!("tknob-{i}"))
+                                // assistive technology sees a slider with its value (AccessKit)
+                                .role(gpui::Role::Slider)
+                                .aria_label(SharedString::from(format!("{} {}", tr("Volume"), t.name)))
+                                .aria_numeric_value(t.volume_db)
+                                .aria_min_numeric_value(-60.0)
+                                .aria_max_numeric_value(6.0)
                                 .cursor_ns_resize()
                                 .child(knob_face(kv, 22.0))
                                 .on_mouse_down(MouseButton::Left, cx.listener(move |p, ev: &MouseDownEvent, _, cx| p.begin_knob(i, ev, cx))),
