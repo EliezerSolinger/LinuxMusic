@@ -65,6 +65,7 @@ mod linux {
             Some("reserve") if args.len() == 3 => reserve(args[2].parse().unwrap_or(0)),
             Some("midi") => midi(),
             Some("list") => list(),
+            Some("mididev") => mididev(),
             Some("drift") if args.len() == 4 => drift(args[2].parse().unwrap_or(60), Path::new(&args[3])),
             Some("aloop") if args.len() == 4 => aloop(args[2].parse().unwrap_or(20), Path::new(&args[3])),
             _ => {
@@ -709,6 +710,142 @@ mod linux {
         check_continuity(&samples[settle..], ch, &[], "drift");
         let _ = std::fs::remove_file(&take.path);
         let _ = std::fs::remove_file(&take.record);
+        Ok(())
+    }
+
+    /// I-21.1 against virtual sequencer ports: identity by name, the latency subtracted, a port unplugged and plugged
+    /// back reconnects by itself with the same index, and the output leaves at its time (under 1 ms)
+    fn mididev() -> lm_base::Result<()> {
+        use lm_sys_alsa::{MidiClient, ReadOutcome, SeqEvent};
+        // A "keyboard" (a source) and a "synth" (a destination), each its own client
+        let mut keyboard = lm_sys_alsa::Seq::open("hw_check keyboard")?;
+        let mut keys = keyboard.create_output_port("keys")?;
+        let mut synth = MidiClient::open("hw_check synth", false)?;
+        let synth_in = synth.create_input_port("in")?;
+        let settings = vec![
+            PortSettings {
+                index: PortIndex(1),
+                id: PortId::new("hw_check keyboard", "keys"),
+                backend: MidiBackendKind::Seq,
+                alias: "Teclado".into(),
+                role: PortRole::Instrument,
+                input: true,
+                output: false,
+                input_latency_ns: 2_000_000,
+                output_latency_ns: 0,
+            },
+            PortSettings {
+                index: PortIndex(2),
+                id: PortId::new("hw_check synth", "in"),
+                backend: MidiBackendKind::Seq,
+                alias: "Synth".into(),
+                role: PortRole::Instrument,
+                input: false,
+                output: true,
+                input_latency_ns: 0,
+                output_latency_ns: 0,
+            },
+        ];
+        let (mut devices, _receiver) = MidiDevices::start(settings, ProducerIndex(1), vec![ProducerIndex(2)])?;
+        let mut connected = Vec::new();
+        wait(3.0, || {
+            devices.poll(|e| {
+                if let MidiDeviceEvent::Connected { index, .. } = e {
+                    connected.push(index);
+                }
+            });
+            connected.contains(&PortIndex(1))
+        });
+        check("mididev.connected", connected.contains(&PortIndex(1)), format!("{connected:?}"));
+        // Input: stamps on the host clock minus the 2 ms latency
+        let mut send_times = Vec::new();
+        for k in 0..50u8 {
+            send_times.push(HostTime::now());
+            keyboard.send(keys, None, &lm_sys_alsa::MidiMessage::new3(0x90, k, 100))?;
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let mut got = Vec::new();
+        wait(2.0, || {
+            devices.activity(|a| got.push(a));
+            got.len() >= 50
+        });
+        let worst = got
+            .iter()
+            .zip(&send_times)
+            .map(|(a, t)| (t.0 as i64 - 2_000_000 - a.at.0 as i64).unsigned_abs())
+            .max()
+            .unwrap_or(u64::MAX);
+        check(
+            "mididev.input",
+            got.len() == 50 && got.iter().all(|a| a.port == PortIndex(1)),
+            format!("{} messages", got.len()),
+        );
+        check(
+            "mididev.input_latency",
+            worst < 1_000_000,
+            format!("worst |stamp − (send − 2 ms)| {:.3} ms", worst as f64 / 1e6),
+        );
+        // Unplug: the port goes away; plug: a port with the same names comes back, with another address
+        keyboard.delete_port(keys)?;
+        let mut disconnected = false;
+        wait(3.0, || {
+            devices.poll(|e| disconnected |= matches!(e, MidiDeviceEvent::Disconnected { index: PortIndex(1), .. }));
+            disconnected
+        });
+        check("mididev.disconnected", disconnected, "the port went away");
+        drop(keyboard);
+        let mut keyboard = lm_sys_alsa::Seq::open("hw_check keyboard")?;
+        keys = keyboard.create_output_port("keys")?;
+        let mut back = false;
+        wait(3.0, || {
+            devices.poll(|e| back |= matches!(e, MidiDeviceEvent::Connected { index: PortIndex(1), .. }));
+            back
+        });
+        check("mididev.reconnected", back, format!("same index, new address {keys:?}"));
+        keyboard.send(keys, None, &lm_sys_alsa::MidiMessage::new3(0x90, 99, 1))?;
+        let mut again = false;
+        wait(2.0, || {
+            devices.activity(|a| again |= a.port == PortIndex(1) && a.bytes[1] == 99);
+            again
+        });
+        check("mididev.flows_again", again, "messages flow after the reconnection");
+        // Output: events 20 ms ahead, scheduled on the queue; the synth's queue stamps say when they arrived
+        let (mut tx, rx) = rtrb::RingBuffer::<MidiOutEvent>::new(1024);
+        devices.add_output_source(rx)?;
+        let waker = devices.waker();
+        let mut planned = Vec::new();
+        for k in 0..100u8 {
+            let at = HostTime(HostTime::now().0 + 20_000_000);
+            planned.push(at);
+            let _ = tx.push(MidiOutEvent { port: PortIndex(2), at, len: 3, bytes: [0x90, k, 64] });
+            waker.wake();
+            std::thread::sleep(Duration::from_millis(3));
+        }
+        let mut arrived = Vec::new();
+        let end = Instant::now() + Duration::from_secs(3);
+        while arrived.len() < 100 && Instant::now() < end {
+            let _ = synth.read(Some(Duration::from_millis(50)), &mut |item| {
+                if let SeqEvent::Midi(ev) = item {
+                    arrived.push((ev.message.bytes[1], ev.time));
+                }
+            });
+        }
+        let _ = (ReadOutcome::TimedOut, synth_in);
+        let errors: Vec<i64> = arrived.iter().map(|(k, t)| t.0 as i64 - planned[usize::from(*k)].0 as i64).collect();
+        let worst = errors.iter().map(|e| e.unsigned_abs()).max().unwrap_or(u64::MAX);
+        check("mididev.output_count", arrived.len() == 100, format!("{} of 100", arrived.len()));
+        check(
+            "mididev.output_timing",
+            worst < 1_000_000,
+            format!("worst |arrival − planned| {:.3} ms", worst as f64 / 1e6),
+        );
+        let mut dropped = 0;
+        devices.poll(|e| {
+            if let MidiDeviceEvent::OutputDropped { count, .. } = e {
+                dropped += count;
+            }
+        });
+        check("mididev.nothing_dropped", dropped == 0, format!("{dropped}"));
         Ok(())
     }
 
