@@ -43,6 +43,11 @@ impl ParamRange {
 
     /// Normalized → the parameter's unit
     pub fn to_units(&self, y: f32) -> f32 {
+        let (lo, hi) = (self.min.min(self.max), self.min.max(self.max));
+        self.units_unclamped(y).clamp(lo, hi)
+    }
+
+    fn units_unclamped(&self, y: f32) -> f32 {
         let y = y.clamp(0.0, 1.0);
         match self.scale {
             RangeScale::Linear => self.min + (self.max - self.min) * y,

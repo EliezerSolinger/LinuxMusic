@@ -92,6 +92,8 @@ pub(crate) struct MidiCore {
     pub(crate) hand_won: BTreeSet<(NodeId, Arc<str>)>,
     /// The banks of the control surfaces (tracks, channels)
     pub(crate) bank: (u32, u32),
+    /// "Test the control": the actions a control would run are listed instead of run
+    dry_run: Option<Vec<Arc<str>>>,
 }
 
 impl std::fmt::Debug for MidiCore {
@@ -129,6 +131,7 @@ impl MidiCore {
             automation: automation::Recorder::default(),
             hand_won: BTreeSet::new(),
             bank: (0, 0),
+            dry_run: None,
         }
     }
 
@@ -166,6 +169,12 @@ fn read_selection(ui: &Value) -> (Option<NodeId>, Option<NodeId>, Option<NodeId>
     let s = ui.get("selection");
     let id = |k: &str| s.and_then(|s| s.get(k)).and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
     (id("track"), id("channel"), id("plugin"))
+}
+
+/// An `f32` from the engine as the `f64` the document keeps: its shortest decimal (0.05f32 is 0.05, not
+/// 0.0500000007), so a value at the top of a range is not refused as above it
+pub(crate) fn doc_real(v: f32) -> f64 {
+    v.to_string().parse::<f64>().unwrap_or(f64::from(v))
 }
 
 /// A normalized value of a document field (bool, choice, int, real by their schema ranges)
@@ -407,12 +416,22 @@ impl Session {
         }
         let ty = self.document.type_of(g.node).unwrap_or("");
         let path = lm_doc::param_path(ty, &g.key);
-        let v = match Value::real(f64::from(value)) {
+        let mut x = doc_real(value);
+        if let Some(lm_state::FieldKind::Real { min, max }) = self.field_kind(g.node, &path) {
+            x = x.clamp(min, max);
+        } else if ty == lm_doc::schemas::types::PLUGIN {
+            let r = self.param_range(g.node, &g.key);
+            x = x.clamp(f64::from(r.min.min(r.max)), f64::from(r.min.max(r.max)));
+        }
+        let v = match Value::real(x) {
             Ok(v) => v,
             Err(_) => return,
         };
-        if self.document.find(g.node).and_then(|n| n.at_path(&path).cloned()).is_some_and(|old| old == v) {
-            return;
+        match self.document.find(g.node).and_then(|n| n.at_path(&path).cloned()) {
+            // The same value, or a parameter the document does not keep (the monitor's level): nothing to write
+            Some(old) if old == v => return,
+            None if !lm_doc::param_key(ty, &path).is_some_and(|_| ty == lm_doc::schemas::types::PLUGIN) => return,
+            _ => {}
         }
         let label = Label::new("midi.gesture").arg("target", format!("{} {}", g.node, g.key));
         let r = self.document.transact_as(label, Origin::Gesture, |e| e.set(g.node, &path, v));
@@ -446,7 +465,7 @@ impl Session {
                             range.to_units(y)
                         };
                         let label = Label::new("midi.gesture").arg("target", format!("{n} {key}"));
-                        Value::real(f64::from(v)).and_then(|v| {
+                        Value::real(doc_real(v)).and_then(|v| {
                             self.document.transact_as(label, Origin::Gesture, |e| e.set(n, &path, v)).map(|_| ())
                         })
                     }
@@ -455,6 +474,10 @@ impl Session {
                 MapTarget::Action { id, params, value_into } => {
                     // Buttons act on the press; knobs on every value
                     if press == Some(false) {
+                        continue;
+                    }
+                    if let Some(list) = self.midi.dry_run.as_mut() {
+                        list.push(id.clone());
                         continue;
                     }
                     let mut p = params.clone();
@@ -856,6 +879,17 @@ impl Session {
     /// follow lives there (`selection: {track, channel, plugin}`)
     pub fn set_ui(&mut self, path: &[PathStep], value: Value) -> Result<()> {
         self.ui_document.transact(Label::new("ui.set"), |e| e.set(ROOT, path, value)).map(|_| ())
+    }
+
+    /// "Test the control" (the binding window): while on, the actions mapped controls would run are only listed
+    /// (`midi_dispatched`); parameters and fields still move
+    pub fn midi_dry_run(&mut self, on: bool) {
+        self.midi.dry_run = on.then(Vec::new);
+    }
+
+    /// The actions listed while testing controls
+    pub fn midi_dispatched(&mut self) -> Vec<Arc<str>> {
+        self.midi.dry_run.as_mut().map(std::mem::take).unwrap_or_default()
     }
 
     /// The hand overrode these automation lanes (shown until re-armed, I-21.5)

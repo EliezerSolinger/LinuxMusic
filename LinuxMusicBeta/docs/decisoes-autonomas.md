@@ -1018,3 +1018,46 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 - **O target compartilhado não é seguro mesmo com o `touch`:** dois worktrees compilando o mesmo pacote ao mesmo
   tempo trocam o artefato um do outro (um teste do `lm-compile` falhou com o `lm-doc` de outro worktree). Este
   worktree passou a usar um target próprio, apagado no fim.
+
+## Da implementação de MIDI e automação (I-21, 20/11)
+
+- **A lógica do mapa num pacote próprio, `lm-midimap`, sem o `lm-state`** (a forma no documento atrás da feature
+  `doc`) — o `lm-render` usa a tabela compilada e não pode depender da árvore (R1).
+- **O mapa vai ao áudio numa `Install`**, sozinho (`Install::map_only`) ou com o programa, e o estado de cada mapa
+  (pickup, toggle, metades de 14 bits, NRPN) passa para a tabela nova por uma fusão por id, em O(n), sem alocar —
+  seguir a seleção e trocar de banco recompilam só o mapa. **O `compile_map` roda na thread principal** (é barato: não
+  monta programa) sobre a tabela da última instalação; o compilador continua o único que dá vagas.
+- **O retorno é feito na `Session`**, a partir do quadro de telemetria (que agora traz o valor de toda vaga ligada,
+  não só das automatizadas) e do documento, com o limite de 10 ms e a janela de 50 ms em nanossegundos — assim um só
+  caminho serve parâmetros, campos, a mão, a automação e o desfazer. O anel de saída do `Renderer` fica para a saída
+  MIDI das faixas (P-38).
+- **Campos e ações aplicam os botões contra o valor do documento** (toggle, momentâneo, gatilho, passos de encoder);
+  no áudio, esses mapas são `Jump`. Um botão numa escolha anda pelas opções; um knob escolhe pela posição.
+- **Uma ação que o registro do núcleo não conhece é da interface** e vai ao `MidiUiAction`.
+- **Parâmetro sem campo no documento** (o nível do monitor) é movido pelo MIDI, mas o fim do gesto não escreve nada.
+- **Um `f32` do motor vira o `f64` do documento pelo decimal mais curto** (0,05f32 é 0,05), e é limitado à faixa do
+  esquema: sem isso, o topo de uma faixa era recusado como acima dela.
+- **Escala de fader para ganhos** (volume, envio): 0 é silêncio, depois de −60 dB até o máximo em dB (0 dB em ~83 %),
+  porque um fader de controlador linear em ganho é inutilizável. Panorâmica linear; parâmetros log em escala log.
+- **A quantidade de um envio tem vaga** (é parâmetro no `param_key`), para a mão e o MIDI a moverem sem compilar.
+- **Bancos:** `follow` ganhou `trackBank` e `channelBank` (a superfície trabalha num banco que só os botões de banco
+  movem); `track`/`channel`/`plugin` seguem a seleção do documento da interface (`selection: {track, channel,
+  plugin}`, campo novo do esquema da interface).
+- **Perfis:** um JSON com mapas, um molde de faixa repetido por faixa do banco (`stripNumber`, `stripChannel`,
+  `stripTouch`, `stripParam`) e o tamanho do banco; os embutidos são `generic` (editável: uma cópia na pasta das
+  preferências vence) e `mcu`. O módulo MCU só faz visor, medidores e o mostrador de banco.
+- **Aprender recusa** alvos que são ações `midi.*` (o controle mexeria na própria fonte).
+- **Gravação de automação:** a tolerância é medida na curva como ela toca (reta na unidade do parâmetro), em dB para
+  ganhos (0,1 dB), cents para log (1 cent), 0,5 % da faixa no resto, degraus exatos nos discretos; a passada substitui o
+  trecho com saltos nas pontas, para a curva fora dela não mudar. Sem pista e com o botão global em Ler/por pista, nada
+  é gravado; o botão global em Toque/Trava/Escrever cria a pista.
+- **"A mão venceu"** é marcado quando um controle move um parâmetro com pista em Ler ou Toque, e fica até o rearme.
+- **`automation.scale`** trabalha no espaço normalizado do parâmetro (o que o editor manda).
+- **Gravação MIDI:** as mensagens vão às faixas armadas com instrumento cujo `midiInput` aceita a porta e o canal
+  (sem portas = todas); `followSelection` grava só na faixa selecionada. Em camadas, cada passada é um item e as
+  anteriores ficam mudas; em substituir, as notas que começam sob o take saem. O `midilog` é texto de uma linha por
+  mensagem (resiste a um corte no meio da linha) e é apagado quando o take entra na árvore.
+- **As faixas de controle do item** (`item.controls`) são um campo opcional novo: o item continua na versão 2.
+- **Testes da `Session` com todos os plugins em depuração esperam por condição, não por tempo:** o render em
+  depuração com todos os plugins é mais lento que o tempo real, então o relógio do dispositivo atrasa e uma mensagem
+  carimbada com o relógio do sistema espera a sua hora (a regra do atraso fixo funcionando).

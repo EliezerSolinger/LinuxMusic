@@ -304,3 +304,55 @@ fn a_later_stamp_does_not_hold_back_the_ring() {
     let late = frames.iter().find(|e| (e.1 - 64.0 / 127.0 * 100.0).abs() < 1e-3).expect("the late one played").0;
     assert!(late.abs_diff(256 + 3000 + MAX_BLOCK as u64) <= 1, "{frames:?}");
 }
+
+/// I-21.6: recording and playing at once on 64 tracks (64 automated parameters playing their curves, 64 MIDI
+/// controls moving others and their touched values going to the session), without allocating on the audio thread
+#[test]
+fn sixty_four_tracks_play_and_record_at_once_without_allocating() {
+    let (mut control, dummy) = make(2);
+    let mut dummy = dummy;
+    let mut b = ProgramBuilder::new(ProgramGen(1), spec(), &limits(2), tempo(120));
+    let m = master(&mut b);
+    let mut entries = Vec::new();
+    let mut cores = Vec::new();
+    for i in 0..64u32 {
+        let node = n(10 + i);
+        b.node(NodeDesc::insert(node, 2));
+        b.feed(Feed::new(node, m, 2));
+        let curve = Curve::new(vec![
+            CurvePoint { sample: 0, value: 0.0, shape: 0.0 },
+            CurvePoint { sample: 48_000, value: 1.0, shape: 0.3 },
+        ])
+        .unwrap();
+        let automated = ParamSlot(100 + 2 * i);
+        let mapped = ParamSlot(101 + 2 * i);
+        let info = ParamInfo { rate: Rate::Block, discrete: false, initial: 0.0 };
+        b.param(automated, node, 0, info, Some(curve));
+        b.param(mapped, node, 1, info, None);
+        cores.push((node, core(Probe { seen: Record::new(1 << 12) })));
+        let mut e = cc_entry(u64::from(i), (i % 120) as u8, MapTarget::Param { slot: mapped, range: RANGE });
+        e.source.channel = Some((i / 120) as u8);
+        entries.push(e);
+    }
+    let mut install_msg = Install::new(b.build().expect("program"));
+    for (node, c) in cores {
+        install_msg.add(node, c);
+    }
+    install_msg.set_map(MidiMap::new(entries, 4, spec()));
+    install(&mut control, install_msg);
+    control.commands().send(Command::Record { on: true }).expect("record");
+    control.commands().send(Command::Play).expect("play");
+    let mut touched = 0usize;
+    for round in 0..40u8 {
+        for i in 0..64u8 {
+            send(&mut control, host_at(&dummy, 0), [0xB0, i, round.wrapping_mul(3) & 0x7F]);
+        }
+        for _ in 0..4 {
+            block(&mut dummy, 256);
+        }
+        control.touched(|_| touched += 1);
+        control.map_events(|_| {});
+    }
+    assert!(touched >= 64 * 30, "touched values reached the session: {touched}");
+    assert!(control.frame().playing);
+}
