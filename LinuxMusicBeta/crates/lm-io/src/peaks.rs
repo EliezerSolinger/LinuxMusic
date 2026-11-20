@@ -110,7 +110,8 @@ impl Peaks {
 
     /// Writes the file: to `<path>.tmp`, synced, then renamed (an interrupted write never leaves a half file)
     pub fn write(&self, path: &Path) -> Result<()> {
-        let tmp = path.with_extension("peaks.tmp");
+        // A name of its own: two identical takes finalised at once write the same peaks file
+        let tmp = path.with_extension(format!("peaks.{}.tmp", crate::take::new_uuid()));
         let io = |e: std::io::Error| {
             Error::new("io.peaks.write_failed").arg("path", path.display().to_string()).arg("message", e.to_string())
         };

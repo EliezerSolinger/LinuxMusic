@@ -271,7 +271,7 @@ pub fn clean_import_leftovers(project: &Path) -> Result<usize> {
         let Some(name) = name.to_str() else { continue };
         if (name.starts_with(".import-") && name.ends_with(".tmp"))
             || name.ends_with(".convert.tmp")
-            || name.ends_with(".peaks.tmp")
+            || (name.contains(".peaks.") && name.ends_with(".tmp"))
         {
             std::fs::remove_file(e.path()).map_err(|err| io_error("io.resource.remove_failed", &e.path(), &err))?;
             n += 1;

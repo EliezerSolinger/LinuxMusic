@@ -7,7 +7,7 @@
 //! `audio/rec-<uuid>.recording.json`, beside `audio/rec-<uuid>.wav`, one JSON object per line: the header first
 //! (written and synced before the first block), then one line per event as it happens (spans, loop cuts, gaps,
 //! stops, the end). A crash can cut the last line; the reader stops at the first line it cannot parse. After the
-//! finalisation it is renamed `audio/<hash>.recording.json`, and the session removes it ([`forget_record`]) once
+//! finalisation it is renamed `audio/<hash>.<uuid>.recording.json` (the uuid keeps two takes of identical content apart), and the session removes it ([`forget_record`]) once
 //! the take is in its journal.
 
 use std::fs::{File, OpenOptions};
@@ -355,7 +355,7 @@ pub struct FinalizedTake {
 const CHUNK_FRAMES: usize = 65_536;
 
 /// Finalises a take (I-11, C10, P-12) inside an `Operation` on the take: converts it if asked, hashes the file,
-/// writes `<hash>.peaks`, renames the file to `<hash>.<ext>` and the record to `<hash>.recording.json`. Not
+/// writes `<hash>.peaks`, renames the file to `<hash>.<ext>` and the record to `<hash>.<uuid>.recording.json`. Not
 /// cancellable in effect (the take must close): a cancel is honoured only before anything was renamed
 pub fn finalize_take(take: &Take, format: TakeFormat, cancel: &Cancel, progress: &Progress) -> Result<FinalizedTake> {
     let folder = take.path.parent().map(Path::to_path_buf).unwrap_or_default();
@@ -383,7 +383,16 @@ pub fn finalize_take(take: &Take, format: TakeFormat, cancel: &Cancel, progress:
     if source != take.path && take.path.exists() {
         std::fs::remove_file(&take.path).map_err(|e| io_error("io.take.rename_failed", &take.path, &e))?;
     }
-    let record = folder.join(format!("{key}.recording.json"));
+    // The record keeps the take's uuid: two takes of identical content (two silent inputs) share the audio file and
+    // the peaks but not their records (tracks, latency)
+    let uuid = take
+        .record
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_prefix("rec-"))
+        .and_then(|n| n.strip_suffix(".recording.json"))
+        .map_or_else(new_uuid, str::to_owned);
+    let record = folder.join(format!("{key}.{uuid}.recording.json"));
     if take.record.exists() {
         let mut f = OpenOptions::new()
             .append(true)

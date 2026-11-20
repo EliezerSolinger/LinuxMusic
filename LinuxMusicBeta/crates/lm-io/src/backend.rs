@@ -106,6 +106,12 @@ impl DeviceInfo {
     pub fn reported_round_trip(&self) -> u32 {
         self.input_latency + self.output_latency
     }
+
+    /// U12: the device channels of an input that this device does not have (the track shows "entrada ausente"; the
+    /// input is never remapped in silence)
+    pub fn missing_inputs(&self, channels: &[u16]) -> Vec<u16> {
+        channels.iter().copied().filter(|c| usize::from(*c) >= self.inputs).collect()
+    }
 }
 
 /// What the device thread tells the main thread. A lossy ring that counts what it drops ([`DeviceEvent::Dropped`])

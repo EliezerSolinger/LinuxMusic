@@ -64,6 +64,8 @@ mod linux {
             Some("calibrate") if args.len() == 3 => calibrate_mode(&args[2]),
             Some("reserve") if args.len() == 3 => reserve(args[2].parse().unwrap_or(0)),
             Some("midi") => midi(),
+            Some("list") => list(),
+            Some("drift") if args.len() == 4 => drift(args[2].parse().unwrap_or(60), Path::new(&args[3])),
             Some("aloop") if args.len() == 4 => aloop(args[2].parse().unwrap_or(20), Path::new(&args[3])),
             _ => {
                 eprintln!("usage: see the top of examples/hw_check.rs");
@@ -149,6 +151,7 @@ mod linux {
     }
 
     fn open_with(config: &DeviceConfig, level: f32) -> lm_base::Result<Session> {
+        let two_cards = config.drift_correction;
         let bus = Arc::new(lm_sys_linux::SystemBus::start()?);
         let report = Arc::new(RtReport::default());
         let period = Duration::from_nanos(u64::from(period()) * 1_000_000_000 / u64::from(RATE));
@@ -625,6 +628,88 @@ mod linux {
         }
         // The first periods are the prefill's silence coming back through the loop
         check("aloop.no_holes", worst <= (period() as usize) * 4, format!("longest zero run outside gaps {worst}"));
+    }
+
+    /// U17: the devices, probed
+    fn list() -> lm_base::Result<()> {
+        let t0 = Instant::now();
+        let devices = list_devices(&Cancel::new(), &Progress::new())?;
+        for d in &devices {
+            println!(
+                "INFO {} — {} playback {:?} capture {:?} busy {} denied {}",
+                d.name, d.description, d.playback, d.capture, d.busy, d.denied
+            );
+        }
+        check("list", !devices.is_empty(), format!("{} devices in {:?}", devices.len(), t0.elapsed()));
+        check(
+            "present",
+            device_present("hw:CARD=PCH,DEV=0") && !device_present("hw:CARD=Nope,DEV=0"),
+            "the scan of U11",
+        );
+        Ok(())
+    }
+
+    /// U7: capture and playback on two cards with their own clocks (the Loopback's timer and the HDA crystal), with
+    /// the explicit drift correction. The microphone's take (a fan in front of it) must be
+    /// continuous for the whole run, with no xrun
+    fn drift(seconds: u64, dir: &Path) -> lm_base::Result<()> {
+        std::fs::create_dir_all(dir).map_err(|e| lm_base::Error::new("io").arg("m", e.to_string()))?;
+        // Playback on the Loopback's clock (substream 2: the audio server may hold 0), capture from the HDA card's
+        // microphone (the fan) on its own crystal
+        let mut cfg = DeviceConfig::duplex("hw:CARD=PCH,DEV=0", RATE, period());
+        cfg.playback = Some("hw:Loopback,0,2".into());
+        cfg.playback_channels = Some(2);
+        cfg.drift_correction = false;
+        let mut refused = Device::new(Box::new(AlsaBackend::new(None)), RenderThreads::default());
+        let r = refused.open(&cfg).map(|_| ()).map_err(|e| e.key());
+        check("drift.two_cards_refused", r == Err("io.device.two_cards"), format!("{r:?}"));
+        drop(refused);
+        cfg.drift_correction = true;
+        let mut s = open_with(&cfg, 0.0)?;
+        check("drift.on", s.info.drift_correction && !s.info.linked, format!("{:?}", s.info));
+        let mut disk = DiskWriter::start()?;
+        let plan = RecordPlan::new(
+            dir.to_path_buf(),
+            vec![RecordInput { input: InputIndex(0), channels: vec![0], tracks: vec![] }],
+            RATE,
+        );
+        let (sender, receiver) = recording_channel(plan)?;
+        disk.record(receiver)?;
+        s.device.arm(sender).map_err(|_| lm_base::Error::new("arm"))?;
+        wait(2.0, || s.device.is_armed());
+        s.engine.commands().send(Command::Record { on: true }).map_err(|_| lm_base::Error::new("cmd"))?;
+        s.engine.commands().send(Command::Play).map_err(|_| lm_base::Error::new("cmd"))?;
+        let mut xruns = Vec::new();
+        let end = Instant::now() + Duration::from_secs(seconds);
+        while Instant::now() < end {
+            let _ = s.device.poll(|e| match e {
+                DeviceEvent::Xrun { capture_lost, late_by } => xruns.push((capture_lost, late_by)),
+                other => println!("INFO device event {other:?}"),
+            });
+            disk.poll(|e| println!("INFO disk {e:?}"));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let f = s.engine.frame();
+        println!("INFO position {} playing {} recording {} periods {}", f.position, f.playing, f.recording, f.periods);
+        s.engine.commands().send(Command::Stop).map_err(|_| lm_base::Error::new("cmd"))?;
+        let mut takes = Vec::new();
+        wait(10.0, || {
+            disk.poll(|e| match e {
+                DiskEvent::TakeClosed(t) => takes.push(t),
+                other => println!("INFO disk {other:?}"),
+            });
+            !takes.is_empty()
+        });
+        drop(s.device.stop().map_err(|t| t.to_error())?);
+        let take = takes.into_iter().next().ok_or_else(|| lm_base::Error::new("no take"))?;
+        check("drift.no_xruns", xruns.is_empty(), format!("{xruns:?}"));
+        let (samples, ch) = read_take(&take.path)?;
+        // Two seconds for the controller to settle, then the fan's noise must be continuous to the end
+        let settle = (2 * RATE as usize * ch).min(samples.len());
+        check_continuity(&samples[settle..], ch, &[], "drift");
+        let _ = std::fs::remove_file(&take.path);
+        let _ = std::fs::remove_file(&take.record);
+        Ok(())
     }
 
     struct Collect(std::sync::mpsc::Sender<(HostTime, [u8; 3])>);

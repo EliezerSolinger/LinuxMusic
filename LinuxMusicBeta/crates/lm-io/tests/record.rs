@@ -327,7 +327,8 @@ fn finalize_names_by_hash_and_writes_peaks() {
     assert!(!t[0].path.exists(), "the rec- name is gone");
     assert_eq!(Peaks::read(&a.peaks_path).expect("peaks"), *a.peaks);
     assert_eq!(a.peaks.frames() as i64, t[0].frames);
-    assert!(a.take.record.ends_with(format!("{}.recording.json", a.key)));
+    let record_name = a.take.record.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned();
+    assert!(record_name.starts_with(&a.key) && record_name.ends_with(".recording.json"), "{record_name}");
     let (_, lines) = read_record(&a.take.record).expect("record");
     assert!(lines.iter().any(|l| matches!(l, RecordLine::Final { .. })));
     forget_record(&a.take.record).expect("forget");
@@ -402,4 +403,42 @@ fn disk_space_rules() {
     assert!(matches!(space_for(bps * 29, 2, 48_000), SpaceCheck::Refused { .. }));
     let here = check_record_space(&std::env::temp_dir(), 2, 48_000).expect("statvfs");
     assert!(!matches!(here, SpaceCheck::Refused { seconds } if seconds < 0.0));
+}
+
+/// Two takes of identical content (two silent inputs) finalised at the same time: one audio file and one peaks file
+/// for both, and each keeps its own record
+#[test]
+fn identical_takes_finalise_concurrently() {
+    let dir = TempDir::new("twins");
+    let rate = 48_000;
+    let options = DummyOptions { pace: Pace::Free { speed: Some(50.0) }, ..DummyOptions::default() };
+    let (mut device, mut engine, _control, _) =
+        dummy_device_with(DummyBackend::new(options), &DeviceConfig::duplex("dummy", rate, 256));
+    let mut disk = DiskWriter::start().expect("disk");
+    let (sender, receiver) = recording_channel(plan(&dir.0, rate, &[&[0], &[1]])).expect("channel");
+    disk.record(receiver).expect("record");
+    device.arm(sender).expect("arm");
+    wait_for(5, "armed", || device.is_armed());
+    engine.commands().send(Command::Record { on: true }).expect("record");
+    engine.commands().send(Command::Play).expect("play");
+    wait_for(20, "half a second", || engine.frame().position > i64::from(rate) / 2);
+    engine.commands().send(Command::Stop).expect("stop");
+    let (t, _) = takes(&mut disk, 2, 20);
+    let handles: Vec<_> = t
+        .into_iter()
+        .map(|take| {
+            std::thread::spawn(move || finalize_take(&take, TakeFormat::Float32, &Cancel::new(), &Progress::new()))
+        })
+        .collect();
+    let done: Vec<FinalizedTake> = handles.into_iter().map(|h| h.join().expect("thread").expect("finalize")).collect();
+    assert_eq!(done[0].key, done[1].key, "identical content, one key");
+    assert_ne!(done[0].take.record, done[1].take.record, "each take keeps its own record");
+    for d in &done {
+        let (header, _) = read_record(&d.take.record).expect("record");
+        assert_eq!(header.tracks, vec![format!("t:{}", d.take.input.0)]);
+        assert!(d.take.path.exists() && d.peaks_path.exists());
+    }
+    forget_record(&done[0].take.record).expect("forget");
+    assert!(done[1].take.record.exists(), "forgetting one does not touch the other");
+    device.stop().expect("stop");
 }
