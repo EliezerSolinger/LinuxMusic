@@ -38,8 +38,6 @@ Change… = Trocar…
 Its own window runs outside the program, held to this track. = A janela dele roda fora do programa, presa a esta faixa.
 Hide its window = Esconder a janela dele
 Show its window = Mostrar a janela dele
-mono = mono
-stereo = estéreo
 Outputs = Saídas
 {0} · click a piece to hear it = {0} · clique numa peça para ouvir
 Envelopes, LFOs and the filter do not apply to this instrument: it plays its own voices. = Envelopes, LFOs e o filtro não valem para este instrumento: ele toca as próprias vozes.
@@ -74,7 +72,6 @@ Cutoff = Corte
 Resonance = Ressonância
 
 # --- the effect window
-Turn on = Ligar
 Move up = Mover para cima
 Move down = Mover para baixo
 Replace with… = Trocar por…
@@ -127,7 +124,6 @@ third-party, runs outside the program = de terceiros, roda fora do programa
 Add to {0} = Acrescentar em {0}
 Use on {0} = Usar em {0}
 To the end = Até o fim
-Open = Abrir
 To the sampler = Para o sampler
 To the instrument = Para o instrumento
 Show in the file manager = Mostrar no gerenciador de arquivos
