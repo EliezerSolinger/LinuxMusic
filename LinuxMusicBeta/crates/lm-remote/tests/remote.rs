@@ -572,36 +572,175 @@ fn mutate(rng: &mut Rng, base: &[u8]) -> Vec<u8> {
     b
 }
 
+/// A random value built from the protocol's own words, so the decoders get past their first checks
+fn random_value(rng: &mut Rng, depth: usize) -> Value {
+    const KEYS: &[&str] = &[
+        "t",
+        "id",
+        "op",
+        "path",
+        "value",
+        "node",
+        "ops",
+        "label",
+        "key",
+        "args",
+        "diff",
+        "created",
+        "removed",
+        "changed",
+        "paths",
+        "notes",
+        "n",
+        "temp",
+        "parent",
+        "list",
+        "index",
+        "item",
+        "note",
+        "kind",
+        "target",
+        "state",
+        "progress",
+        "stage",
+        "since",
+        "error",
+        "resource",
+        "severity",
+        "actions",
+        "repeats",
+        "read",
+        "origin",
+        "structural",
+        "params",
+        "items",
+        "keep",
+        "entry",
+        "length",
+        "rate",
+        "name",
+        "factory",
+        "hidden",
+        "favorite",
+        "info",
+        "ok",
+        "err",
+        "cancellable",
+        "scan",
+        "level",
+        "from",
+        "to",
+        "g",
+        "hz",
+        "nodes",
+        "on",
+    ];
+    const TEXTS: &[&str] = &[
+        "set",
+        "insert",
+        "remove",
+        "move",
+        "add_note",
+        "set_note",
+        "remove_note",
+        "list",
+        "t:1",
+        "m:0",
+        "p:3",
+        "user",
+        "undo",
+        "ready",
+        "visible",
+        "failed",
+        "missing",
+        "node",
+        "project",
+        "scan",
+        "library",
+        "info",
+        "warning",
+        "audio",
+        "folder",
+        "",
+        "x",
+    ];
+    match if depth > 4 { rng.below(5) } else { rng.below(8) } {
+        0 => Value::NULL,
+        1 => Value::bool(rng.below(2) == 0),
+        2 => Value::int([0, 1, -1, 7, 1 << 40, i64::MAX >> 11, -(1 << 52)][rng.below(7)]),
+        3 => Value::real([0.0, -0.5, 1.5, 1e300, -1e-300][rng.below(5)]).unwrap(),
+        4 => Value::text(TEXTS[rng.below(TEXTS.len())]),
+        5 | 6 => Value::object((0..rng.below(6)).map(|_| (KEYS[rng.below(KEYS.len())], random_value(rng, depth + 1)))),
+        _ => Value::list((0..rng.below(5)).map(|_| random_value(rng, depth + 1))),
+    }
+}
+
 #[test]
 fn the_decoders_never_panic() {
-    let mut rng = Rng(std::env::var("LM_FUZZ_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(42));
-    let rounds: usize = std::env::var("LM_FUZZ_ROUNDS").ok().and_then(|s| s.parse().ok()).unwrap_or(20_000);
+    let seed = std::env::var("LM_FUZZ_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(42u64);
+    let rounds: u64 = std::env::var("LM_FUZZ_ROUNDS").ok().and_then(|s| s.parse().ok()).unwrap_or(20_000);
+    // Run for a duration instead (the nightly hour, I-20.8)
+    let seconds: Option<u64> = std::env::var("LM_FUZZ_SECONDS").ok().and_then(|s| s.parse().ok());
+    eprintln!("decoder fuzz: seed {seed}, {}", seconds.map_or(format!("{rounds} rounds"), |s| format!("{s} s")));
+    let mut rng = Rng(seed);
     let samples = samples();
-    let mut telemetry =
-        lm_port_fake::FakePort::new(Config { tracks: 3, slow_delay: None, slow_track: 0 }).unwrap().telemetry().clone();
-    for _ in 0..rounds {
-        let base = &samples[rng.below(samples.len())];
-        let bytes = mutate(&mut rng, base);
-        // Every decoder of the protocol, on whatever comes
-        if let Ok(v) = wire::parse_json(&bytes) {
-            let _ = lm_remote::codec::ops_from(&v);
-            let _ = lm_remote::codec::diff_from(&v);
-            let _ = lm_remote::codec::label_from(&v);
-            let _ = lm_remote::codec::target_from(&v);
-            let _ = lm_remote::codec::loading_from(&v);
-            let _ = lm_remote::codec::notice_from(&v);
-            let _ = lm_remote::codec::applied_from(&v);
-            let _ = lm_remote::codec::entries_from(&v);
-            let _ = lm_remote::codec::preview_from(&v);
-            if let Ok(ops) = lm_remote::delta::from_value(&v) {
-                let _ = lm_remote::delta::apply(&v, &ops);
+    let core = lm_port_fake::FakePort::new(Config { tracks: 3, slow_delay: None, slow_track: 0 }).unwrap();
+    let mut telemetry = core.telemetry().clone();
+    let tree = core.root().clone();
+    let start = Instant::now();
+    let mut round = 0u64;
+    loop {
+        match seconds {
+            Some(s) if start.elapsed() >= Duration::from_secs(s) => break,
+            None if round >= rounds => break,
+            _ => {}
+        }
+        round += 1;
+        let bytes = match rng.below(4) {
+            0 => (0..rng.below(64)).map(|_| rng.next() as u8).collect(),
+            1 => wire::json(&random_value(&mut rng, 0)).unwrap_or_default(),
+            _ => {
+                let base = &samples[rng.below(samples.len())];
+                mutate(&mut rng, base)
+            }
+        };
+        let result = std::panic::catch_unwind(|| {
+            // Every decoder of the protocol, on whatever comes
+            if let Ok(v) = wire::parse_json(&bytes) {
+                let _ = lm_remote::codec::ops_from(&v);
+                let _ = lm_remote::codec::diff_from(&v);
+                let _ = lm_remote::codec::label_from(&v);
+                let _ = lm_remote::codec::error_from(&v);
+                let _ = lm_remote::codec::target_from(&v);
+                let _ = lm_remote::codec::loading_from(&v);
+                let _ = lm_remote::codec::operation_from(&v);
+                let _ = lm_remote::codec::notice_from(&v);
+                let _ = lm_remote::codec::applied_from(&v);
+                let _ = lm_remote::codec::entries_from(&v);
+                let _ = lm_remote::codec::device_from(&v);
+                let _ = lm_remote::codec::preview_from(&v);
+                let _ = lm_remote::codec::path_from(&v);
+                if let Ok(ops) = lm_remote::delta::from_value(&v) {
+                    let _ = lm_remote::delta::apply(&v, &ops);
+                    let _ = lm_remote::delta::apply(&tree, &ops);
+                }
+            }
+            let mut t = telemetry.clone();
+            let _ = wire::read_frame(&mut bytes.as_slice(), 1 << 16);
+            let _ = wire::telemetry_from(&bytes, &mut t);
+            let _ = wire::peaks_from(&bytes);
+            let _ = wire::display_from(&bytes);
+            t
+        });
+        match result {
+            Ok(t) => telemetry = t,
+            Err(p) => {
+                eprintln!("decoder fuzz: panic at round {round} (seed {seed}) on {bytes:?}");
+                std::panic::resume_unwind(p);
             }
         }
-        let _ = wire::read_frame(&mut bytes.as_slice(), 1 << 16);
-        let _ = wire::telemetry_from(&bytes, &mut telemetry);
-        let _ = wire::peaks_from(&bytes);
-        let _ = wire::display_from(&bytes);
     }
+    eprintln!("decoder fuzz: {round} rounds in {:?}, no panic", start.elapsed());
 }
 
 #[test]
