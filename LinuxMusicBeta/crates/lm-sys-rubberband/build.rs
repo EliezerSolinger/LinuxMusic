@@ -33,6 +33,23 @@ fn pkg_config(args: &[&str]) -> Result<String, String> {
     String::from_utf8(output.stdout).map_err(|e| format!("`{program}` printed something that is not UTF-8: {e}"))
 }
 
+/// "2.6.1" → [2, 6, 1]; anything after a number's digits (a "-rc1") is ignored
+fn numbers(version: &str) -> Vec<u64> {
+    version
+        .trim()
+        .split('.')
+        .map(|part| part.chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0))
+        .collect()
+}
+
+fn at_least(version: &str, min: &str) -> bool {
+    let (mut v, mut m) = (numbers(version), numbers(min));
+    let len = v.len().max(m.len());
+    v.resize(len, 0);
+    m.resize(len, 0);
+    v >= m
+}
+
 fn main() {
     for var in ["PKG_CONFIG", "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR"] {
         println!("cargo:rerun-if-env-changed={var}");
@@ -43,11 +60,20 @@ fn main() {
         Ok(version) => version.trim().to_owned(),
         Err(e) => panic!("{MODULE} was not found: {e}; {INSTALL_HINT}"),
     };
-    if pkg_config(&["--atleast-version", MIN_VERSION, MODULE]).is_err() {
+    // (compared here: pkgconf refuses `--atleast-version`, and `--libs`, when a `.pc` the library's own
+    // `Requires.private` names is missing, as on a macOS runner, although the library is there)
+    if !at_least(&version, MIN_VERSION) {
         panic!("{MODULE} {version} is too old: at least {MIN_VERSION} is needed; {INSTALL_HINT}");
     }
 
-    let libs = pkg_config(&["--libs", MODULE]).unwrap_or_else(|e| panic!("{e}"));
+    let libs = match pkg_config(&["--libs", MODULE]) {
+        Ok(libs) => libs,
+        Err(e) => {
+            println!("cargo:warning={MODULE}: `--libs` failed ({e}); linking -lrubberband from its libdir");
+            let libdir = pkg_config(&["--variable=libdir", MODULE]).unwrap_or_else(|e| panic!("{e}"));
+            format!("-L{} -lrubberband", libdir.trim())
+        }
+    };
     let mut linked = false;
     let mut flags = libs.split_whitespace();
     while let Some(flag) = flags.next() {

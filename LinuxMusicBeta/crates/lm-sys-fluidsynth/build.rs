@@ -4,6 +4,10 @@
 //!
 //! Only the `pkg-config` program is used (the `pkg-config` crate would be one more dependency of the workspace for a
 //! dozen lines). `PKG_CONFIG` names another program, as the `pkg-config` crate allows too.
+//!
+//! Nothing here needs the library's own dependencies' `.pc` files (its `Requires.private`: a macOS runner may lack
+//! some, and pkgconf then refuses `--atleast-version` and `--libs` although the library is there): the version is
+//! read with `--modversion` and compared here, and when `--libs` fails the library is linked from its `libdir`.
 
 // A build script talks to Cargo by printing to stdout
 #![allow(clippy::print_stdout)]
@@ -12,6 +16,8 @@ use std::env;
 use std::process::Command;
 
 const MODULE: &str = "fluidsynth";
+/// The library to link when `--libs` cannot be used
+const LIB: &str = "fluidsynth";
 const MIN_VERSION: &str = "2.2.0";
 const INSTALL_HINT: &str =
     "install it with `apt install libfluidsynth-dev` (Debian, Ubuntu) or `brew install fluid-synth` (macOS)";
@@ -32,6 +38,23 @@ fn pkg_config(args: &[&str]) -> Result<String, String> {
     String::from_utf8(output.stdout).map_err(|e| format!("`{program}` printed something that is not UTF-8: {e}"))
 }
 
+/// "2.6.1" → [2, 6, 1]; anything after a number's digits (a "-rc1") is ignored
+fn numbers(version: &str) -> Vec<u64> {
+    version
+        .trim()
+        .split('.')
+        .map(|part| part.chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0))
+        .collect()
+}
+
+fn at_least(version: &str, min: &str) -> bool {
+    let (mut v, mut m) = (numbers(version), numbers(min));
+    let len = v.len().max(m.len());
+    v.resize(len, 0);
+    m.resize(len, 0);
+    v >= m
+}
+
 fn main() {
     for var in ["PKG_CONFIG", "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR"] {
         println!("cargo:rerun-if-env-changed={var}");
@@ -42,22 +65,31 @@ fn main() {
         Ok(version) => version.trim().to_owned(),
         Err(e) => panic!("{MODULE} was not found: {e}; {INSTALL_HINT}"),
     };
-    if pkg_config(&["--atleast-version", MIN_VERSION, MODULE]).is_err() {
+    if !at_least(&version, MIN_VERSION) {
         panic!("{MODULE} {version} is too old: at least {MIN_VERSION} is needed; {INSTALL_HINT}");
     }
 
-    let libs = pkg_config(&["--libs", MODULE]).unwrap_or_else(|e| panic!("{e}"));
     let mut linked = false;
-    for flag in libs.split_whitespace() {
-        if let Some(dir) = flag.strip_prefix("-L") {
-            println!("cargo:rustc-link-search=native={dir}");
-        } else if let Some(lib) = flag.strip_prefix("-l") {
-            println!("cargo:rustc-link-lib={lib}");
-            linked = true;
+    match pkg_config(&["--libs", MODULE]) {
+        Ok(libs) => {
+            for flag in libs.split_whitespace() {
+                if let Some(dir) = flag.strip_prefix("-L") {
+                    println!("cargo:rustc-link-search=native={dir}");
+                } else if let Some(lib) = flag.strip_prefix("-l") {
+                    println!("cargo:rustc-link-lib={lib}");
+                    linked = true;
+                }
+            }
         }
+        Err(e) => println!("cargo:warning={MODULE}: `--libs` failed ({e}); linking -l{LIB} from its libdir"),
     }
     if !linked {
-        panic!("`pkg-config --libs {MODULE}` named no library to link ({libs:?})");
+        let libdir = pkg_config(&["--variable=libdir", MODULE]).unwrap_or_else(|e| panic!("{e}"));
+        let libdir = libdir.trim();
+        if !libdir.is_empty() {
+            println!("cargo:rustc-link-search=native={libdir}");
+        }
+        println!("cargo:rustc-link-lib={LIB}");
     }
     println!("cargo:rustc-env=LM_SYS_LINKED_VERSION={version}");
 }
