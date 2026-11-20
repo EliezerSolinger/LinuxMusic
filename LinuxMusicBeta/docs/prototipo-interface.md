@@ -292,8 +292,134 @@ automação; um ponto numa lane de escolha é degrau; espelhar duas vezes volta 
 passos (um passo de desfazer); acrescentar, tirar e clonar passos. Em `fake-core`: quantizar, colar, faca,
 inverter, strum, escalas e acordes, as formas das curvas, a escala log, o afinamento do traço.
 ### 9.9 Janela do instrumento e editor genérico de plugin (C, design 05)
+Feito (`screens/instrument.rs`, dados em `fake-core/src/plugins.rs`): o **design 05** como especificação, na doca
+da direita. Cabeçalho: a cor e o nome da faixa (clique lista as faixas de instrumento; ‹ › vão à anterior e à
+seguinte, F-IJN-001), M e S, ⇱ solta numa janela própria (e ⇲ encaixa de novo), ×; o chip do plugin (sigla e cor
+da categoria, roxo para terceiros, F-FX-036) e "Trocar ▾" (por categoria: troca o instrumento **sem apagar a
+faixa**); os presets no topo (◀ nome ▶, a lista de fábrica e do usuário, "*" quando mudou, Salvar preset,
+F-IJN-003). Abas com texto: **Instrumento**, **Envelopes e filtro**, **Acordes e arpejo**, **Efeitos (n)**,
+**MIDI**, **Afinação**. Rodapé fixo: volume da faixa, afinação em cents e faixa do pitch bend (knobs), a faixa de
+notas (leva à Afinação), para onde vão as saídas e o botão Teclado, que mostra o teclado de teste (C2–C7: clique
+toca com a velocidade pela altura, arrasto desliza, as teclas fora da faixa apagadas, a nota base marcada,
+F-IJN-021). Sem pan: o pan é do canal da mesa (decisão de 19/11, como no design 02).
+- **O editor genérico** (a primeira metade do arquivo, usado também pela janela de efeito): um controle por
+  `ParamSpec` do esquema: knob (linear ou log) para reais, **stepper** para `Stepped`, chave para `Bool`, lista para
+  `Choice` (a escolha vai **por chave de texto**, U30); unidade e formato (Hz/kHz, ms/s, dB, cents, semitons);
+  marca laranja de automação e o CC do MIDI learn; agrupado em cartões pelos grupos do esquema. Os gestos de
+  F-CTL-005/006: arrastar na vertical (200 px o curso; Shift 4× mais devagar), **um arrasto = um gesto = um passo
+  de desfazer**; botão do meio volta ao padrão; duplo clique digita o valor (aceita "1,2 kHz", "350 ms"); roda com
+  100 passos (Shift 10, Ctrl/Cmd 1000); Shift+arrastar leva o valor a outro controle; botão direito: voltar ao
+  padrão (mostra o valor), copiar e colar o valor, automatizar/tirar a lane, MIDI learn/esquecer, e "escala
+  logarítmica" por controle (P-06: opção de exibição, guardada na interface, não no esquema).
+- **Instrumento**: o carregamento no lugar dos controles quando o plugin é construído (SoundFont e kit AVL passam de
+  200 ms; Cancelar depois de 2 s; I-2.3); o arquivo carregado com "Trocar…" (abre o navegador nas amostras); o
+  estado **ausente** (H17) com "localizar arquivo" (conferir o arquivo é uma operação) e "localizar pasta" (resolve
+  todos os ausentes de uma vez); o plugin **não instalado** (F-INS-024: muda, estado guardado); a foto do kit AVL
+  desenhada, **clicar numa peça toca e acende** (F-INS-002); os de terceiros com "mostrar a janela dele" (fora do
+  processo, P-05); o editor genérico de todos os grupos; as **saídas** (uma por porta, I-3.9, cada uma para um canal
+  da mesa). Trocar o kit ou ligar "uma saída por peça" refaz as saídas na mesma transação (a porta que fica mantém o
+  destino).
+- **Envelopes e filtro** (F-IJN-010..012): alvo Volume / Corte / Ressonância; o gráfico DAHDSR (um caminho só;
+  clique alterna a quantidade 0 ↔ 100 %), os knobs do envelope e do LFO, o gráfico do LFO pela forma, ×100 e "o LFO
+  controla a quantidade"; o filtro com os 22 tipos. Instrumento de fluxo único: aviso e controles apagados.
+- **Acordes e arpejo** (F-IJN-013..016): empilhar acordes (a tabela de acordes e escalas), arpejo com todos os
+  parâmetros e o tempo que segue o andamento (o knob mostra a nota quando sincronizado); vozes: uma nota por vez,
+  legato e glide (só com mono), limite de vozes.
+- **Efeitos (n)**: os inserts do canal para onde vai a saída principal (os efeitos moram na mesa, F-IJN-023), com
+  liga/desliga, e "Abrir na janela de efeitos".
+- **MIDI** (F-IJN-017): entrada (liga, canal, velocidade fixa), saída (canal, velocidade, programa, nota fixa), os
+  dispositivos de entrada e de saída, velocidade base.
+- **Afinação** (F-IJN-018..020): afinação, faixa do bend, transposição geral; microafinador (vaga da escala e do
+  mapa, 10 de cada no projeto, "faixa de notas do mapa"; apagado para instrumentos MIDI); o **editor de escalas e
+  mapas**: as 10 vagas, descrição, intervalos em cents ou razões (validados: a linha errada é dita e nada se
+  aplica), e no mapa os graus por tecla (x = sem som), primeira, última, do meio, nota base e frequência base;
+  primeira, última e tecla base com nome da nota.
+- **Soltar na janela** (F-IJN-004): um instrumento troca; um preset aplica (trocando para o instrumento dele se
+  preciso); uma amostra vai para o sampler e um SoundFont para o player, trocando se preciso: **numa lista só de
+  `EditOp`s** (o instrumento novo é `Ref::Temp(1)`), então funciona igual pela rede.
+- **Tudo pelo `CorePort`** (I-15): parâmetros por `Set { Field::Param(chave), Real }`, escolhas com `Value::Text`
+  (a chave), o resto do estado por `Field::Plugin("preset" | "resource" | "automated/…" | "learned/…" |
+  "device.in/…" | "scale.N.…" …)`, instrumento novo e insert novo por `Insert { list: "instrument" | "inserts" }`
+  (tratados em `plugins.rs`, uma linha em `OP_HANDLERS`); o arrasto por `begin_gesture`/`gesture_apply`/
+  `gesture_commit`. A janela só guarda ids e um `Feed` da faixa, e **fecha quando a faixa some** (U38, com teste).
+  A construção do plugin começa no próximo `pump` (o nó já está no lugar, mudo).
+
+Fica para o `lm-gui`: o desenho próprio de cada plugin (aqui todos usam o editor genérico, que é o que o legado
+chama de janela genérica e o que os de terceiros sem interface terão); som no teclado de teste e na peça do kit
+(o núcleo de mentira não toca); o teclado do computador como piano (F-IJN-022) e o rack de CC MIDI (F-IJN-025);
+abrir e salvar `.scl`/`.kbm` em arquivo; arrastar os marcadores de nota base e faixa no teclado; ligar dois
+controles com Ctrl+arrasto (P-04, o controle compartilhado ainda não existe no núcleo) e automatizar soltando
+numa lane; o MIDI learn de verdade (aqui pega o próximo CC livre); a janela lembrar o tamanho e a posição; os
+presets do usuário estão num "disco" de mentira no `fake-core`, não atrás da porta (no modo cliente, a biblioteca
+de presets é do servidor: falta um serviço de arquivos na porta).
+
 ### 9.10 Janela de efeito e cadeia de inserts (C)
+Feito (`screens/effect.rs`): o caminho inteiro de um canal da mesa, **encaixado embaixo** (a largura serve à
+cadeia e ao editor lado a lado). Barra: ‹ canal ▾ ›, o tipo do canal, a **latência da cadeia** em amostras e ms
+("compensada": a mesa faz a PDC), "Desligar todos"/"Ligar todos", ×. À esquerda a cadeia **em ordem de sinal**:
+Entrada, Estágio de ganho, Filtros, Dinâmica, EQ, Transformador, Tolerância, Fader, Pan e saída, com os inserts
+**no ponto de cada um entre as seções** (P-20: antes do ganho, depois do ganho, dos filtros, da dinâmica, do EQ,
+antes do pan) e um "+ efeito · ponto" em cada ponto; o master mostra a seção própria dele. Cada insert: alça,
+luz de liga/desliga (vermelha quando o efeito soltou NaN, F-FX-001), sigla, nome, "carregando…" enquanto é
+construído, latência, "ext" para terceiros, ⋯. À direita o editor do selecionado: uma seção do rack com os
+controles do editor genérico (as escolhas do rack viram stepper com o nome; liga/desliga da seção na linha), ou o
+insert: nome, onde roda, latência, ponto, preset, "Mais ▾"; o carregamento no lugar dos controles; a faixa vermelha
+do efeito com NaN e "Reiniciar o efeito"; o efeito **não instalado** (deixa o som passar, ajustes guardados e
+mostrados); "Comuns" (molhado/seco, e a fonte de sidechain quando o efeito tem a porta), e os grupos do plugin.
+Cobre F-FX-001 (liga/desliga, molhado/seco; o "Decay" é P-07, contrato do processador), F-FX-002 (acrescentar pela
+lista por categoria ou **soltando do navegador onde cai**, inclusive um preset de efeito; reordenar **arrastando**
+— para outro ponto também — ou mover acima/abaixo; trocar no lugar; remover; presets carregar e salvar; fonte de
+sidechain, com os canais que fariam laço apagados e recusados pelo núcleo; latência), F-FX-003 (categorias, internos
+antes dos de terceiros), F-MIX-073. Tudo pelo `CorePort`: `Insert`/`Remove`/`Move` em `"inserts"`,
+`Field::Bypass`, `Field::InsertPoint`, `Field::Param` para o rack e os plugins; "trocar por" é `Remove` + `Insert`
+numa lista só. Segue o canal pelo `Feed`; se o canal some, vai para o master; se o insert some, a seleção cai (U38).
+
+Fica para o `lm-gui`: a busca dentro da lista de "+ efeito" (hoje a busca é a do navegador, de onde se arrasta);
+o conector de pinos é obsoleto (I-3.9); medidores de entrada e saída por insert (`DisplayReader`, F2); desfazer
+"desligar todos" lembrando quem já estava desligado (hoje liga ou desliga todos); a janela própria de efeitos de
+terceiros.
+
 ### 9.11 Navegador (C)
+Feito (`screens/browser.rs`, dados em `fake-core/src/browser.rs`): o design 06 não está aprovado, então o layout
+saiu das funcionalidades (F-BRW-001..012). Doca da esquerda: **uma busca só** no topo (palavras e "frases entre
+aspas", em segundo plano, uma busca nova cancela a anterior; nada antes de 200 ms, depois o componente de
+carregamento; os resultados agrupados em Plugins, Amostras, Presets, Projetos, Arquivos do projeto); as páginas
+como abas de texto (Instrumentos, Efeitos, Amostras, Presets, Projetos, Arquivos do projeto, Favoritos; a página
+fica lembrada); as pastas do usuário e as de fábrica **numa árvore só**, as de fábrica depois de uma linha
+"Arquivos de fábrica", pastas primeiro, nome sem caixa, as abertas ficam abertas, arquivos ocultos sob um botão;
+plugins por categoria (sigla e cor; terceiros marcados "fora"), "Varrer os plugins de novo" com carregamento e o
+grupo dos **bloqueados** que derrubaram a varredura, com "Tentar de novo" (H15). Painel de detalhe embaixo: nome,
+tipo, formato (duração, taxa, bits, mono/estéreo, BPM), o caminho, **a forma de onda da prévia** (um caminho só;
+o componente de carregamento no lugar dela enquanto a prévia é preparada, I-7.3 e I-2; o cursor da prévia
+andando), ▶/■, "Até o fim", ★ favorito, as ações: para o sampler / para o instrumento (a faixa da janela do
+instrumento, ou a primeira de instrumento), acrescentar o efeito no canal da janela de efeitos, abrir projeto,
+mostrar no gerenciador de arquivos; um áudio longo avisa que vai para a linha do tempo como faixa de áudio
+(F-ARR-011). Teclas: Cmd/Ctrl+F vai à busca, ↑/↓ andam **e tocam as amostras**, Espaço segurado toca, Enter manda,
+→/← abrem e fecham a pasta, F5 refaz. Toda linha **arrasta** um `Dragged` (arquivo ou plugin) que a janela do
+instrumento, a cadeia de efeitos e (do lado do A) a linha do tempo aceitam. Clique toca a prévia (F-BRW-005);
+duplo clique manda (F-BRW-006).
+
+Fica para o `lm-gui`: a prévia, a busca e a varredura rodam no executor de fundo da GPUI sobre os dados de
+mentira; no programa de verdade são do núcleo (I-7.3: a prévia é um comando do motor; a varredura é H15; no modo
+cliente os arquivos são do servidor): **falta um serviço de navegador na porta** (listar, buscar, preparar a
+prévia e devolver os picos). Som da prévia; mandar para uma faixa nova, para um SlicerT novo e para uma faixa de
+áudio nova (precisam das ações de criar faixa); acrescentar e tirar pastas favoritas do sistema de arquivos real;
+F5 relendo o disco; miniaturas de onda na lista (F-BRW-011); o modelo `.nam` indo para o Amp and IR.
+
+**Dificuldades da GPUI nas três telas:** durante o `render` a vista está "emprestada", então um componente que
+precisa do estado da vista (o editor genérico) recebe a vista por parâmetro em vez de ler `cx.entity()` (o pânico
+"already being updated" aparece só em tempo de execução); um `canvas` não diz onde foi pintado ao tratador do
+clique, então a vista guarda os limites num `Rc<Cell<Bounds>>` escrito na pintura (teclado, foto do kit); o menu
+suspenso é `deferred(anchored())` com `on_mouse_down_out` para fechar, sem componente pronto; arrastar e soltar
+entre vistas funciona com o tipo do valor (`on_drag`/`on_drop::<T>`/`drag_over::<T>`), mas um elemento só aceita um
+`on_drag`; o `Input` do `gpui-component` precisa do traço `Sizable` em escopo para `.small()`, e o multilinha é
+outro tipo (`TextareaState`/`Textarea`); nos testes a tela só se redesenha quando alguém notifica, então um
+carregamento que aparece aos 200 ms precisa de um `notify` aos 200 ms (o temporizador do executor faz isso, e
+funciona com o relógio falso). Testes: arrasto de knob genérico = um passo de desfazer; lista de escolha por chave
+e troca de instrumento com o carregamento depois de 200 ms; todas as abas, o editor de escalas e a janela fechando
+quando a faixa some; a cadeia (acrescentar pela lista, desligar pela luz, remover pelo menu, latência); o navegador
+(abrir pasta, prévia com carregamento, favorito, mandar para o sampler) e a busca com frase (nada antes de 200 ms,
+carregamento, resultado, a frase inteira).
 ### 9.12 Configurações (D, design 08)
 ### 9.13 Exportação (D)
 ### 9.14 Projeto: abrir, salvar, somente leitura, recuperação, modo seguro (D)
