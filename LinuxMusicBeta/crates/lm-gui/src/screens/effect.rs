@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, AnyView, Context, Entity, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Render,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, AnyView, Context, Entity, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Render, Subscription, Window, div, prelude::*, px,
 };
 use lm_port::{BrowsePage, EditOp, Feed, Loading, NodeId, Pending, PluginInfo, Ref, Target, Topic, Value};
 
