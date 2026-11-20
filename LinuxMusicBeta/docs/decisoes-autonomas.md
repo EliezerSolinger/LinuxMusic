@@ -283,8 +283,21 @@ de forma diz pelo que é substituído.
   tocam da memória até o renderer ler do disco.
 - **Um envio que repete a rota de outro** (mesmo nó de origem e destino) passa por um nó de soma próprio, para cada um
   ter a sua linha de atraso.
-- **Pendente no `lm-render`:** a contagem (pré-roll com o metrônomo, I-5.5) precisa de uma região de contagem no
-  `Renderer`; o compilador já põe o metrônomo, o volume e o liga/desliga.
+- **Contagem (I-5.5):** `TransportSettings::count_in { bars, on_play }`. Um `Play` parado conta `bars` compassos no
+  metrônomo (mesmo com o metrônomo desligado), na fórmula e no andamento de onde a música começa, com os cliques onde
+  caem os tempos que vêm depois do início; a música começa na amostra seguinte. Por padrão só ao gravar (gravação
+  armada); a preferência `Environment::count_in_on_play` conta também ao tocar. `Stop` cancela.
+- **Itens longos do disco (P-32), combinado com o agente do `lm-io`:** o recurso acima de 30 s vem do store como
+  `ResourceState::OnDisk { rate, channels, frames }`; o compilador faz um `lm_render::stream` por segmento tocado (o
+  mesmo enquanto o item não muda) e entrega `Compiled::streams` (recurso + `StreamFeeder`); a `Session` passa cada um
+  ao `DiskReader` do `lm-io` (`serve(path, rate, feeder)`, thread própria `lm-stream`, separada da de gravação pelo
+  U6). O anel: pedaços de 8192 quadros em duas regiões mapeadas por número (≈3 s à frente do playhead, ≈1 s do início
+  do loop), cada vaga um seqlock sobre atômicos; o áudio nunca espera, o que falta toca como silêncio exato e vira
+  `Telemetry::StreamUnderrun`. O renderer publica a cada bloco onde cada item precisa de dados e onde o loop volta. A
+  exportação espera `streams_pending()` ficar falso (T8). Mudar um item longo refaz o stream e relê o começo.
+- **Monitoramento de baixa latência (P-10):** com a preferência `Environment::low_latency_monitoring`, os inserts com
+  latência no caminho da saída principal de cada faixa armada até o master ficam construídos mas fora da cadeia (o
+  caminho perde a latência deles e a PDC que causavam); o rack não é desligado (não é plugin). Voltar não espera build.
 ## Da interface: `lm-port` e `lm-gui` (20/11)
 
 - **O `CorePort` mora no pacote `lm-port`**, sem GPUI e sem fechamentos; ele reexporta os tipos que já existem
