@@ -1,5 +1,7 @@
 //! Streaming from the disk (P-32): a 10-minute item plays bit for bit as from memory; seeking and looping work; a
-//! slow disk gives reported underruns of exact silence, with nothing allocated on the audio thread.
+//! slow disk gives reported underruns of exact silence, with nothing allocated on the audio thread. Not under loom
+//! (real threads and the disk; the engine's loom models are in the library).
+#![cfg(not(loom))]
 
 #[global_allocator]
 static ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;

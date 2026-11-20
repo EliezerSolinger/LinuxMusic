@@ -93,38 +93,14 @@ deny = [
     { crate = "slint", reason = "the GUI is GPUI only (decision of 19/11)" },
     { crate = "slint-build", reason = "the GUI is GPUI only (decision of 19/11)" },
     { crate = "i-slint-core", reason = "the GUI is GPUI only (decision of 19/11)" },
-    # GPUI itself only as a direct dependency of the GUI crates. Add each new lm-gui-* crate that uses GPUI to the
-    # wrappers. (A core crate that reaches GPUI through another crate is caught by ci/check-core-no-gui.py.)
-    { crate = "gpui", wrappers = ["lm-gui", "gpui-component"], reason = "GPUI only in the lm-gui crates" },
-    { crate = "gpui-component", wrappers = ["lm-gui"], reason = "GPUI only in the lm-gui crates" },
-
-    # ---- Lock-free structures: only the allowed crates (interfaces.md, I-17) ---------------------------------------
-    # Allowed: rtrb, triple_buffer, assert_no_alloc, crossbeam-utils (CachePadded only) and std's atomics. A crate
-    # below needs a written decision in interfaces.md, I-17 before it leaves this list.
-    { crate = "crossbeam", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "crossbeam-channel", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "crossbeam-queue", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "crossbeam-deque", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "crossbeam-epoch", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "crossbeam-skiplist", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "lockfree", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "ringbuf", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "bbqueue", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "heapless", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "arc-swap", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "left-right", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "basedrop", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "seize", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "haphazard", reason = "lock-free crate outside the allowed list (I-17)" },
-    { crate = "atomic_float", reason = "lock-free crate outside the allowed list (I-17)" },
+    # GPUI is allowed only in the lm-gui crates, and the lock-free crates outside I-17 only outside the core: both
+    # are about where in the tree a crate is, which cargo-deny cannot say, so ci/check-core-no-gui.py checks them
+    # (lists in ci/gui-crates.txt and ci/core-banned-crates.txt). GPUI's own tree (lm-gui) uses some of them.
 ]
 
 [sources]
-# Only crates.io, plus the git repositories of GPUI (Zed) and gpui-component, which are not all on crates.io
+# Only crates.io (GPUI comes from crates.io too). A git dependency needs an entry in allow-git or [sources.allow-org].
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
-
-[sources.allow-org]
-github = ["zed-industries", "longbridge"]

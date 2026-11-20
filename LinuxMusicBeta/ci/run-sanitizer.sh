@@ -29,6 +29,9 @@ target="$(rustc -vV | sed -n 's/^host: //p')"
 export RUSTFLAGS="-Zsanitizer=$kind -Cforce-frame-pointers=yes ${RUSTFLAGS:-}"
 export RUSTDOCFLAGS="-Zsanitizer=$kind ${RUSTDOCFLAGS:-}"
 export LM_TEST_SANITIZER="$kind"
+# lm-session: create and destroy the session 1000 times while playing, under ASan and LSan (interfaces.md, Parte 4,
+# step 9: "criar e destruir a sessão mil vezes tocando, sob ASan e LSan")
+export LM_SESSION_CYCLES="${LM_SESSION_CYCLES:-1000}"
 
 echo "sanitizer: $kind on $target"
 cargo test -Zbuild-std --target "$target" --workspace --lib --bins --tests

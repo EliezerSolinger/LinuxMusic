@@ -1,0 +1,22 @@
+# Crates no core crate (lm-*, not lm-gui or lm-gui-*) may have anywhere in its tree, besides the GUI crates
+# (ci/gui-crates.txt). Same format; used by ci/check-core-no-gui.py.
+#
+# Lock-free structures outside the allowed list (interfaces.md, I-17). Allowed: rtrb, triple_buffer, assert_no_alloc,
+# crossbeam-utils (CachePadded only) and std's atomics. A crate below needs a written decision in I-17 before it
+# leaves this list. (GPUI's tree in lm-gui uses some of them; that is outside the core.)
+crossbeam
+crossbeam-channel
+crossbeam-queue
+crossbeam-deque
+crossbeam-epoch
+crossbeam-skiplist
+lockfree
+ringbuf
+bbqueue
+heapless
+arc-swap
+left-right
+basedrop
+seize
+haphazard
+atomic_float

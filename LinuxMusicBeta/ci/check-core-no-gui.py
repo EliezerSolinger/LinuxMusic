@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""The core never depends on a GUI toolkit (arquitetura-nova.md; interfaces.md, I-15).
+"""The core never depends on a GUI toolkit (arquitetura-nova.md; interfaces.md, I-15), nor on a lock-free crate
+outside the allowed list (I-17).
 
 For every workspace crate named lm-* that is not lm-gui or lm-gui-*, runs `cargo tree` over every target platform,
 every feature and every kind of dependency (normal, build, dev), and fails if any crate in the tree is in
-ci/gui-crates.txt. For each hit it prints the path by which the GUI crate came in (`cargo tree -i`).
+ci/gui-crates.txt or ci/core-banned-crates.txt. For each hit it prints the path by which the crate came in
+(`cargo tree -i`).
 """
 
 from __future__ import annotations
@@ -33,7 +35,9 @@ def cargo(*args: str) -> str:
 
 
 def main() -> int:
-    patterns = workspace.read_list(workspace.CI / "gui-crates.txt")
+    patterns = workspace.read_list(workspace.CI / "gui-crates.txt") + workspace.read_list(
+        workspace.CI / "core-banned-crates.txt"
+    )
 
     def is_gui_crate(name: str) -> bool:
         return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
@@ -58,10 +62,10 @@ def main() -> int:
             sys.stderr.write(cargo("tree", "-p", crate.name, *TREE, "--invert", hit))
 
     if failed:
-        print("\nA core crate (lm-*, not lm-gui-*) depends on a GUI crate. Move the GUI code into an lm-gui-* crate.",
-              file=sys.stderr)
+        print("\nA core crate (lm-*, not lm-gui-*) depends on a GUI crate (move the GUI code into an lm-gui-* crate) or "
+              "on a lock-free crate outside interfaces.md, I-17 (ci/core-banned-crates.txt).", file=sys.stderr)
         return 1
-    print(f"core without GUI: ok ({checked} core crates)")
+    print(f"core without GUI and banned crates: ok ({checked} core crates)")
     return 0
 
 
