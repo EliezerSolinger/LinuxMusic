@@ -58,11 +58,32 @@ fn guards_nest() {
 
 #[test]
 fn the_state_is_per_thread() {
+    // Whether a new thread starts with the creator's FPU control word is the platform's choice (Linux x86-64 copies
+    // MXCSR on clone, macOS arm64 does not), so nothing may rely on inheritance: every render thread enables the
+    // flushing itself (H6). What the crate promises is that a change on one thread never reaches another
     let found = enable_on_this_thread();
     assert!(!found.flushing());
     assert!(state().flushing());
-    let other = std::thread::spawn(|| (state(), tiny_result().0.is_subnormal())).join().unwrap();
-    assert!(!other.0.flushing(), "a new thread does not inherit the flushing");
-    assert!(other.1);
-    assert!(tiny_result().0 == 0.0);
+    let other = std::thread::spawn(|| {
+        enable_on_this_thread();
+        (state().flushing(), tiny_result().0)
+    })
+    .join()
+    .unwrap();
+    assert!(other.0, "enabling on another thread works there");
+    assert_eq!(other.1, 0.0);
+    let off = std::thread::spawn(|| {
+        let initial = state();
+        if initial.flushing() {
+            // Inherited (Linux x86-64): nothing more to check about inheritance
+            return None;
+        }
+        Some(tiny_result().0.is_subnormal())
+    })
+    .join()
+    .unwrap();
+    if let Some(subnormal) = off {
+        assert!(subnormal, "a thread that does not flush keeps subnormals");
+    }
+    assert_eq!(tiny_result().0, 0.0, "this thread still flushes whatever other threads did");
 }
