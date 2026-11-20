@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod demo;
+mod desk;
 mod library;
 mod midi;
 pub use midi::Outside;
@@ -955,6 +956,9 @@ impl CorePort for FakePort {
             "arrange.duplicate" => self.duplicate(&params),
             "mixer.create_channels_for_outputs" => self.create_channels_for_outputs(&params),
             "automation.rearm" => self.rearm(&params),
+            "mixer.group" => self.mixer_group(&params),
+            // the fake's loudness follows its meter: nothing to start again
+            "loudness.reset" => Ok(()),
             "items.move" => self.move_items(&params),
             "automation.thin" => self.thin(&params),
             "items.rerender" => {

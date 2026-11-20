@@ -725,3 +725,35 @@ pub fn group_marker(collapsed: bool) -> impl IntoElement {
 pub fn member_line(color: Rgba) -> Div {
     div().absolute().left(px(1.)).top(px(1.)).w(px(3.)).h_full().bg(Rgba { a: 0.55, ..color })
 }
+
+/// The legacy's colour palette for the mixer (ColorChooser::nicePalette(140)): 8 hues in 6 shades, by column
+pub fn mixer_palette() -> [u32; 48] {
+    let mut out = [0u32; 48];
+    for x in 0..8 {
+        for y in 0..6 {
+            // QColor::setHsl: hue in degrees, saturation and lightness 0..255
+            let h = (44 * x as i32 - 1).max(0) as f32;
+            let s = (150 - 20 * y) as f32 / 255.0;
+            let l = (140 - 10 * y) as f32 / 255.0;
+            out[6 * x + y] = hsl(h, s, l);
+        }
+    }
+    out
+}
+
+fn hsl(h: f32, s: f32, l: f32) -> u32 {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let hp = h / 60.0;
+    let x = c * (1.0 - ((hp % 2.0) - 1.0).abs());
+    let (r, g, b) = match hp as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = l - c / 2.0;
+    let to = |v: f32| (((v + m) * 255.0).round().clamp(0.0, 255.0)) as u32;
+    (to(r) << 16) | (to(g) << 8) | to(b)
+}
