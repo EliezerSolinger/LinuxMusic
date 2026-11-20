@@ -118,3 +118,24 @@ pub mod preferences {
     pub const CONTROLLERS: &str = "controllers";
     pub const MONITOR: &str = "monitor";
 }
+
+/// The desk's live readings, `CorePort::display(channel)` with `kind` "rack" (the session's `lm_session::rack::display`,
+/// the same layout): a value the node does not measure is NaN; `None` when the channel has no rack node
+pub mod rack_display {
+    pub const KIND: &str = "rack";
+    /// The gain stage's saturation in the last block, 0 to 1 (the SAT LED)
+    pub const SAT: usize = 0;
+    /// How many blocks clipped so far (the CLIP LED lights when it changes)
+    pub const CLIP: usize = 1;
+    /// The channel's gate and compressor gain reductions, dB (≥ 0)
+    pub const GATE_GR: usize = 2;
+    pub const COMP_GR: usize = 3;
+    /// The master's bus compressor gain reduction, dB (≥ 0)
+    pub const BUS_GR: usize = 4;
+    /// The master's correlation over ~300 ms, -1 to 1
+    pub const CORRELATION: usize = 5;
+    /// The goniometer: `POINTS` (left, right) pairs of the master's output
+    pub const GONIO: usize = 6;
+    pub const POINTS: usize = 64;
+    pub const FLOATS: usize = GONIO + 2 * POINTS;
+}

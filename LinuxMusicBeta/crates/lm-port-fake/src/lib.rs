@@ -111,6 +111,8 @@ pub struct FakePort {
     /// The interface document (I-3.8)
     ui: Value,
     outside: midi::Outside,
+    /// Blocks each desk channel clipped so far (the rack display's CLIP)
+    clipped: HashMap<NodeId, u64>,
 }
 
 /// A real plugin's schema for the fake (lm-gui-plugins' tests: the panels move the real parameters). The fake
@@ -167,6 +169,7 @@ impl FakePort {
             midi: Default::default(),
             ui: Value::empty_object(),
             outside: Default::default(),
+            clipped: HashMap::new(),
             doc,
             resources: HashMap::new(),
             loading_resources: Vec::new(),
@@ -859,6 +862,11 @@ impl CorePort for FakePort {
             .collect();
         let had = self.telemetry.meters.values().any(|m| m.peak[0] > 0.0);
         let has = meters.values().any(|m| m.peak[0] > 0.0);
+        for (id, m) in &meters {
+            if m.peak.iter().any(|p| *p >= 1.0) {
+                *self.clipped.entry(*id).or_insert(0) += 1;
+            }
+        }
         self.telemetry.meters = meters;
         if self.transport.playing || pos != before || had || has {
             changed = true;
@@ -1115,8 +1123,8 @@ impl CorePort for FakePort {
         }))
     }
 
-    fn display(&self, _node: NodeId) -> Option<DisplayView> {
-        None
+    fn display(&self, node: NodeId) -> Option<DisplayView> {
+        self.rack_display(node)
     }
 
     fn preferences(&self) -> &Value {

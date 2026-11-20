@@ -382,3 +382,47 @@ impl FakePort {
         any
     }
 }
+
+impl FakePort {
+    /// The desk's live readings (`lm_port::trees::rack_display`), made from the fake's meters: the saturation and
+    /// the clipped blocks follow the peak, the master's bus compressor reduces above -6 dBFS when it is in, the
+    /// goniometer draws a slightly wide signal at the master's level
+    pub(crate) fn rack_display(&self, node: NodeId) -> Option<lm_port::DisplayView> {
+        use lm_port::trees::rack_display as d;
+        if node.kind != b'm' || self.doc.find(node).is_none() {
+            return None;
+        }
+        let analog =
+            self.doc.root().get("mixer").and_then(|m| m.get("mode")).and_then(Value::as_text) != Some("digital");
+        if !analog {
+            return None;
+        }
+        let peak = self.telemetry.peak(node);
+        let db = if peak > 0.0 { 20.0 * peak.log10() } else { -100.0 };
+        let master = node == lm_doc::MASTER;
+        let mut frame = vec![f32::NAN; d::FLOATS];
+        frame[d::SAT] = ((db + 12.0) / 12.0).clamp(0.0, 1.0);
+        frame[d::CLIP] = self.clipped.get(&node).copied().unwrap_or(0) as f32;
+        if master {
+            let bus_in = self
+                .doc
+                .find(node)
+                .and_then(|m| {
+                    m.get("rack").and_then(|r| r.get("dynamics")).and_then(|d| d.get("on")).and_then(Value::as_bool)
+                })
+                .unwrap_or(false);
+            frame[d::BUS_GR] = if bus_in { (db + 6.0).max(0.0) * 0.5 } else { 0.0 };
+            frame[d::CORRELATION] = if peak > 0.0 { 0.85 } else { 0.0 };
+            let t = self.pumps as f32 * 0.37;
+            for i in 0..d::POINTS {
+                let a = t + i as f32 * 0.29;
+                frame[d::GONIO + 2 * i] = a.sin() * peak;
+                frame[d::GONIO + 2 * i + 1] = (a + 0.35).sin() * peak * 0.9;
+            }
+        } else {
+            frame[d::GATE_GR] = 0.0;
+            frame[d::COMP_GR] = 0.0;
+        }
+        Some(lm_port::DisplayView { kind: std::sync::Arc::from(d::KIND), frame: frame.into() })
+    }
+}

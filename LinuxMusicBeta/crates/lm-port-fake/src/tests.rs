@@ -429,3 +429,43 @@ fn sidechains_tuning_files_reveal_and_open() {
     assert!(port.run_action("project.open_entry".into(), Value::int(p.0 as i64)).ok().is_some());
     assert_ne!(port.loading(&lm_port::Target::Project), Loading::Ready, "the opening runs on the project");
 }
+
+/// The desk's live readings (`trees::rack_display`): the rack layout for every channel in the analog desk, the bus
+/// compressor and the scope on the master only, nothing in the digital desk
+#[test]
+fn the_rack_display() {
+    use lm_port::trees::rack_display as d;
+    let mut p = small();
+    let master = lm_doc::MASTER;
+    let ch = NodeId::parse(
+        p.root()
+            .get("mixer")
+            .unwrap()
+            .get("channels")
+            .unwrap()
+            .items()
+            .next()
+            .unwrap()
+            .get("id")
+            .unwrap()
+            .as_text()
+            .unwrap(),
+    )
+    .unwrap();
+    let m = p.display(master).expect("the master has its readings");
+    assert_eq!((&*m.kind, m.frame.len()), (d::KIND, d::FLOATS));
+    assert!(m.frame[d::CORRELATION].is_finite() && m.frame[d::GATE_GR].is_nan());
+    let c = p.display(ch).expect("a channel has its readings");
+    assert!(c.frame[d::BUS_GR].is_nan() && c.frame[d::COMP_GR].is_finite());
+    p.apply(
+        Label::new("digital"),
+        vec![EditOp::Set {
+            id: Ref::Id(ROOT),
+            path: vec![PathStep::key("mixer"), PathStep::key("mode")],
+            value: Value::text("digital"),
+        }],
+    )
+    .ok()
+    .unwrap();
+    assert!(p.display(ch).is_none(), "the digital desk has no rack");
+}

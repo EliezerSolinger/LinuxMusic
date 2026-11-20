@@ -260,6 +260,23 @@ fn value_text(k: &Knob, v: &Value) -> String {
 
 // --- the page ---------------------------------------------------------------------------------------------------
 
+/// A channel's live readings from the engine (`CorePort::display`, `trees::rack_display`), this frame
+#[derive(Clone, Debug, Default)]
+struct Reading {
+    /// the gain stage's saturation, 0..1
+    sat: f32,
+    /// the CLIP LED (lit for a moment after a block clipped)
+    clip: bool,
+    /// the master's bus compressor gain reduction, dB
+    bus_gr: f32,
+    correlation: f32,
+    /// (side, mid) points of the master's output
+    gonio: Vec<(f32, f32)>,
+}
+
+/// How long the CLIP LED stays lit after a clipped block (SaturationLeds::ClipHold: 10 GUI updates)
+const CLIP_HOLD: std::time::Duration = std::time::Duration::from_millis(400);
+
 pub struct MixingPage {
     core: Entity<Core>,
     workspace: WeakEntity<Workspace>,
@@ -281,6 +298,9 @@ pub struct MixingPage {
     /// the hint of the value being dragged (SimpleTextFloat)
     hint: Option<(String, Point<Pixels>)>,
     area: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
+    /// The engine's readings this frame, and each channel's clip count with when its LED goes off
+    readings: HashMap<NodeId, Reading>,
+    clips: HashMap<NodeId, (f32, std::time::Instant)>,
     /// the page's bounds in the window: the menus and the hint are placed in its coordinates
     page: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
     fader_h: f32,
@@ -314,6 +334,8 @@ impl MixingPage {
             renaming: None,
             hint: None,
             area: Default::default(),
+            readings: HashMap::new(),
+            clips: HashMap::new(),
             page: Default::default(),
             fader_h: 300.0,
         }
@@ -1082,6 +1104,41 @@ impl MixingPage {
         ))
     }
 
+    /// The engine's readings of every channel this frame (`CorePort::display`, the rack layout); none in the
+    /// digital desk. The CLIP LED lights when the clip count moves and stays lit a moment
+    fn read_engine(&mut self, chs: &[ChannelView], cx: &Context<Self>) {
+        use lm_port::trees::rack_display as d;
+        let now = std::time::Instant::now();
+        let port = self.core.read(cx).port();
+        let num = |f: &[f32], i: usize| f.get(i).copied().filter(|v| v.is_finite()).unwrap_or(0.0);
+        self.readings.clear();
+        for c in chs {
+            let Some(view) = port.display(c.id).filter(|v| &*v.kind == d::KIND) else { continue };
+            let f = &view.frame;
+            let count = num(f, d::CLIP);
+            let (last, until) = self.clips.get(&c.id).copied().unwrap_or((count, now));
+            let until = if count != last { now + CLIP_HOLD } else { until };
+            self.clips.insert(c.id, (count, until));
+            let gonio = (0..d::POINTS)
+                .filter_map(|i| {
+                    let (l, r) = (f.get(d::GONIO + 2 * i)?, f.get(d::GONIO + 2 * i + 1)?);
+                    (l.is_finite() && r.is_finite())
+                        .then(|| ((l - r) * std::f32::consts::FRAC_1_SQRT_2, (l + r) * std::f32::consts::FRAC_1_SQRT_2))
+                })
+                .collect();
+            self.readings.insert(
+                c.id,
+                Reading {
+                    sat: num(f, d::SAT).clamp(0.0, 1.0),
+                    clip: now < until,
+                    bus_gr: num(f, d::BUS_GR),
+                    correlation: num(f, d::CORRELATION),
+                    gonio,
+                },
+            );
+        }
+    }
+
     /// The upper area of a channel's strip: send button or receive arrow, send knob, number, the analog section or
     /// the effect list, the FX sends
     fn upper(
@@ -1094,10 +1151,8 @@ impl MixingPage {
     ) -> Div {
         let id = ch.id;
         let selected = self.selected.and_then(|s| chs.iter().find(|c| c.id == s)).filter(|s| s.id != id);
-        let (sat, clip) = {
-            let db = peak_db(self.core.read(cx), id);
-            (((db + 12.0) / 12.0).clamp(0.0, 1.0), db > -3.0)
-        };
+        let r = self.readings.get(&id).cloned().unwrap_or_default();
+        let (sat, clip) = (r.sat, r.clip);
         // the selected channel's routes to and from this one (MixerView::updateMixerChannel)
         let send_from_selected = selected.and_then(|s| s.sends.iter().find(|x| x.to == id));
         let receives = selected.is_some_and(|s| ch.output == Some(s.id) || ch.sends.iter().any(|x| x.to == s.id));
@@ -1594,24 +1649,16 @@ impl MixingPage {
         let gain_model = model::at(rack, &["tube", "model"]).and_then(Value::as_text).unwrap_or("4558").to_string();
         let tube = gain_model.starts_with("12a");
         let (xfmr, comp_in, realistic) = (flag("transformer", "on"), flag("dynamics", "on"), flag("tube", "realistic"));
-        let db = peak_db(core, id);
         let w = desk::MASTER_SECTION_W - 8.0;
         // the meter's fill as dBFS, against a reference of -18 dBFS = 0 VU
         let vu = |level: f32| if level <= 0.0 { 0.0 } else { desk::vu_position(-60.0 + 60.0 * level + 18.0).min(1.08) };
-        let level = l.max(r);
         let master_button = |key: &'static str, text: &'static str, on: bool| {
             desk::desk_button(SharedString::from(format!("master-{key}")), tr(text), on, Light::Amber, 26.0, 13.0, 7.0)
                 .debug_selector(move || format!("master-{key}"))
         };
         let knob = |k: Knob| self.desk_knob(id, id, k, true, cx);
         let title = |t: &'static str| desk::section_title(tr(t), w);
-        // the goniometer and the correlation from the master's level until the telemetry carries the scope's points
-        let gonio: Vec<(f32, f32)> = (0..48)
-            .map(|i| {
-                let a = i as f32 / 48.0 * std::f32::consts::TAU;
-                (a.sin() * 0.08 * level, a.cos() * level)
-            })
-            .collect();
+        let reading = self.readings.get(&id).cloned().unwrap_or_default();
         let monitor_t = self.travel_of(&Target::Monitor, cx);
         div()
             .w(px(desk::MASTER_SECTION_W))
@@ -1627,8 +1674,8 @@ impl MixingPage {
             .border_color(rgb(col::STROKE_INNER))
             .child(title("METERS"))
             .child(div().flex().gap(px(4.)).child(desk::vu_meter("L", vu(l))).child(desk::vu_meter("R", vu(r))))
-            .child(desk::goniometer(gonio, w))
-            .child(desk::correlation(if level > 0.0 { 0.9 } else { 0.0 }, w))
+            .child(desk::goniometer(reading.gonio.clone(), w))
+            .child(desk::correlation(reading.correlation, w))
             .when(analog, |d| {
                 d.child(title("DRIVE"))
                     .child(
@@ -1648,12 +1695,7 @@ impl MixingPage {
                             .child(
                                 div()
                                     .id("master-sat")
-                                    .child(desk::saturation_leds(
-                                        ((db + 12.0) / 12.0).clamp(0.0, 1.0),
-                                        db > -3.0,
-                                        tube,
-                                        realistic,
-                                    ))
+                                    .child(desk::saturation_leds(reading.sat, reading.clip, tube, realistic))
                                     .when(tube, |d| {
                                         d.cursor_pointer().on_click(cx.listener(move |p, _, _, cx| {
                                             p.toggle(id, &["rack", "tube", "realistic"], realistic, cx)
@@ -1684,7 +1726,7 @@ impl MixingPage {
                             .child(master_button("comp-in", "IN", comp_in).on_click(
                                 cx.listener(move |p, _, _, cx| p.toggle(id, &["rack", "dynamics", "on"], comp_in, cx)),
                             ))
-                            .child(desk::gain_reduction_meter(0.0, w - 40.0)),
+                            .child(desk::gain_reduction_meter(reading.bus_gr, w - 40.0)),
                     )
                     .child(div().flex().child(knob(THR)).child(knob(B_RATIO)).child(knob(MAKE)))
                     .child(div().flex().child(knob(B_ATK)).child(knob(B_REL))),
@@ -2295,6 +2337,7 @@ impl Render for MixingPage {
                 *e = e.max(db);
             }
         }
+        self.read_engine(&chs, cx);
         // the fader's height: what is left under the upper area, the pan, the peak and the name
         let page_h = viewport.height.as_f32() - crate::workspace::CHROME_H - 4.0;
         let pan_h = if analog { desk::KNOB_D + desk::KNOB_LABEL_H + 4.0 } else { 21.0 };
