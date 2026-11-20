@@ -83,74 +83,6 @@ pub fn song_end(root: &Value) -> Result<i64> {
     Ok(map.sample_at(end_tick))
 }
 
-/// The integrated loudness of a stereo signal (ITU-R BS.1770-4: K-weighting, 400 ms blocks with 75 % overlap, the
-/// absolute gate at -70 LUFS and the relative gate at -10 LU), `None` when it is all gated out
-pub fn integrated_loudness(left: &[f32], right: &[f32], rate: u32) -> Option<f64> {
-    let rate = f64::from(rate);
-    // The two stages of the K filter, by the bilinear transform of the standard's analog prototypes
-    let shelf = {
-        let (f0, g, q) = (1_681.974_450_955_533, 3.999_843_853_973_347, 0.707_175_236_955_419_6);
-        let k = (std::f64::consts::PI * f0 / rate).tan();
-        let vh = 10f64.powf(g / 20.0);
-        let vb = vh.powf(0.499_666_774_154_541_6);
-        let a0 = 1.0 + k / q + k * k;
-        [
-            (vh + vb * k / q + k * k) / a0,
-            2.0 * (k * k - vh) / a0,
-            (vh - vb * k / q + k * k) / a0,
-            2.0 * (k * k - 1.0) / a0,
-            (1.0 - k / q + k * k) / a0,
-        ]
-    };
-    let high_pass = {
-        let (f0, q) = (38.135_470_876_024_44, 0.500_327_037_323_877_3);
-        let k = (std::f64::consts::PI * f0 / rate).tan();
-        let a0 = 1.0 + k / q + k * k;
-        [1.0, -2.0, 1.0, 2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0]
-    };
-    let filter = |x: &[f32]| -> Vec<f64> {
-        let mut out = Vec::with_capacity(x.len());
-        let mut s = [[0.0f64; 2]; 2];
-        for &v in x {
-            let mut y = f64::from(v);
-            for (stage, c) in [shelf, high_pass].iter().enumerate() {
-                let o = c[0] * y + s[stage][0];
-                s[stage][0] = c[1] * y - c[3] * o + s[stage][1];
-                s[stage][1] = c[2] * y - c[4] * o;
-                y = o;
-            }
-            out.push(y);
-        }
-        out
-    };
-    let (l, r) = (filter(left), filter(right));
-    let block = (0.4 * rate) as usize;
-    let hop = (0.1 * rate) as usize;
-    if l.len() < block || hop == 0 {
-        return None;
-    }
-    let mut powers = Vec::new();
-    let mut at = 0;
-    while at + block <= l.len() {
-        let p = (at..at + block).map(|i| l[i] * l[i] + r[i] * r[i]).sum::<f64>() / block as f64;
-        powers.push(p);
-        at += hop;
-    }
-    let lufs = |p: f64| -0.691 + 10.0 * p.log10();
-    let above: Vec<f64> = powers.iter().copied().filter(|p| lufs(*p) > -70.0).collect();
-    if above.is_empty() {
-        return None;
-    }
-    let relative = lufs(above.iter().sum::<f64>() / above.len() as f64) - 10.0;
-    let gated: Vec<f64> = above.into_iter().filter(|p| lufs(*p) > relative).collect();
-    if gated.is_empty() {
-        return None;
-    }
-    Some(lufs(gated.iter().sum::<f64>() / gated.len() as f64))
-}
-
-/// Renders the tree into the target's file, deterministically. Runs in an operation: progress, cancel. The report
-/// is the status tree's `lastExport` (`file`, `seconds`, `peakDb`, `lufs`, `ok`)
 /// What an export renders: a copy of the tree, the project's folder (its `audio/`), the plugins and the schemas, and
 /// the engine's capacities
 #[derive(Clone, Debug)]
@@ -162,9 +94,29 @@ pub struct ExportJob {
     pub limits: Limits,
 }
 
-pub fn export(job: ExportJob, target: &ExportTarget, cancel: &Cancel, progress: &Progress) -> Result<Value> {
-    let ExportJob { root, project, plugins, schemas, limits } = job;
-    let project: &Path = &project;
+/// One pass of the renderer: where the transport starts, how much of the start is rendered and dropped (the
+/// warm-up of a range), and how much is kept
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Run {
+    locate: i64,
+    discard: usize,
+    count: usize,
+}
+
+/// Renders `root` (a copy of the project's tree, maybe changed for a stem) and hands the kept samples, interleaved
+/// stereo, to `sink` block by block. Waits for every resource and every build first (T8): the same tree and run
+/// give the same samples, bit for bit (T19)
+fn render(
+    job: &ExportJob,
+    root: &Value,
+    run: Run,
+    cancel: &Cancel,
+    progress: &Progress,
+    sink: &mut dyn FnMut(&[f32]) -> Result<()>,
+) -> Result<()> {
+    let ExportJob { project, plugins, schemas, limits, .. } = job;
+    let limits = *limits;
+    let project: &Path = project;
     progress.stage(Label::new("session.export.preparing"));
     let rate = project_rate(&root);
     let spec = ProcessSpec { sample_rate: rate, max_block: EXPORT_BLOCK };
@@ -222,19 +174,13 @@ pub fn export(job: ExportJob, target: &ExportTarget, cancel: &Cancel, progress: 
             return Err(Error::new("session.export.not_ready"));
         }
     }
-    // The range, then the transport, then the blocks
-    let (from, to) = match target.range {
-        Some(r) => r,
-        None => (0, song_end(&root)? + (target.tail * f64::from(rate)) as i64),
-    };
-    let total = usize::try_from((to - from).max(0)).unwrap_or(0);
+    let total = run.discard + run.count;
     let mut dummy = lm_render::Dummy::new(renderer, 0, 2);
-    control.commands().send(Command::Locate { sample: from }).map_err(|_| Error::new("session.export.commands"))?;
+    control
+        .commands()
+        .send(Command::Locate { sample: run.locate })
+        .map_err(|_| Error::new("session.export.commands"))?;
     control.commands().send(Command::Play).map_err(|_| Error::new("session.export.commands"))?;
-    let mut writer =
-        Writer::create(&target.path, WriteSpec { format: target.format, rate, channels: 2 }, Existing::Replace)?;
-    let mut left = Vec::with_capacity(total);
-    let mut right = Vec::with_capacity(total);
     let mut interleaved = vec![0.0f32; EXPORT_BLOCK * 2];
     let mut done = 0;
     progress.stage(Label::new("session.export.rendering"));
@@ -243,26 +189,95 @@ pub fn export(job: ExportJob, target: &ExportTarget, cancel: &Cancel, progress: 
         let n = EXPORT_BLOCK.min(total - done);
         dummy.block(n);
         let outs = dummy.outputs();
-        for k in 0..n {
-            interleaved[2 * k] = outs[0][k];
-            interleaved[2 * k + 1] = outs[1][k];
+        // The warm-up is rendered and dropped
+        let skip = run.discard.saturating_sub(done).min(n);
+        let mut m = 0;
+        for k in skip..n {
+            interleaved[2 * m] = outs[0][k];
+            interleaved[2 * m + 1] = outs[1][k];
+            m += 1;
         }
-        left.extend_from_slice(&outs[0][..n]);
-        right.extend_from_slice(&outs[1][..n]);
-        writer.write_f32(&interleaved[..2 * n])?;
+        if m > 0 {
+            sink(&interleaved[..2 * m])?;
+        }
         control.collect(|r| core.returned(&r));
         done += n;
         progress.set(done as f32 / total.max(1) as f32);
     }
+    Ok(())
+}
+
+/// The tree an export renders: the loop of the transport off (an export plays the song through), or on over
+/// `looped` (the repeats of a loop export)
+fn export_root(root: &Value, looped: Option<(i64, i64)>) -> Value {
+    let transport = root.get("transport").cloned().unwrap_or_else(Value::empty_object);
+    let lp = match looped {
+        Some((a, b)) => Value::object([("on", Value::bool(true)), ("from", Value::int(a)), ("to", Value::int(b))]),
+        None => transport.get("loop").cloned().unwrap_or_else(Value::empty_object).with("on", Value::bool(false)),
+    };
+    root.with("transport", transport.with("loop", lp).with("punch", Value::empty_object()))
+}
+
+/// Peak and loudness of what an export wrote
+struct Meter {
+    peak: f32,
+    loudness: lm_dsp::loudness::Loudness,
+    frames: usize,
+    l: Vec<f32>,
+    r: Vec<f32>,
+}
+
+impl Meter {
+    fn new(rate: u32) -> Self {
+        Self { peak: 0.0, loudness: lm_dsp::loudness::Loudness::new(rate), frames: 0, l: Vec::new(), r: Vec::new() }
+    }
+
+    fn add(&mut self, interleaved: &[f32]) {
+        self.l.clear();
+        self.r.clear();
+        for f in interleaved.chunks_exact(2) {
+            self.peak = self.peak.max(f[0].abs()).max(f[1].abs());
+            self.l.push(f[0]);
+            self.r.push(f[1]);
+        }
+        self.loudness.process(&self.l, &self.r);
+        self.frames += interleaved.len() / 2;
+    }
+
+    fn peak_db(&self) -> f64 {
+        if self.peak > 0.0 { 20.0 * f64::from(self.peak).log10() } else { -200.0 }
+    }
+
+    fn lufs(&self) -> f64 {
+        let i = self.loudness.integrated();
+        if i.is_finite() { i } else { -200.0 }
+    }
+}
+
+/// Renders the tree into the target's file, deterministically: the song (or the target's range of timeline
+/// samples) with the loop of the transport off. Runs in an operation: progress, cancel. The report is the status
+/// tree's `lastExport` (`file`, `seconds`, `peakDb`, `lufs`, `ok`, `block`)
+pub fn export(job: ExportJob, target: &ExportTarget, cancel: &Cancel, progress: &Progress) -> Result<Value> {
+    let rate = project_rate(&job.root);
+    let (from, to) = match target.range {
+        Some(r) => r,
+        None => (0, song_end(&job.root)? + (target.tail * f64::from(rate)) as i64),
+    };
+    let run = Run { locate: from, discard: 0, count: usize::try_from((to - from).max(0)).unwrap_or(0) };
+    let root = export_root(&job.root, None);
+    let mut writer =
+        Writer::create(&target.path, WriteSpec { format: target.format, rate, channels: 2 }, Existing::Replace)?;
+    let mut meter = Meter::new(rate);
+    render(&job, &root, run, cancel, progress, &mut |x| {
+        meter.add(x);
+        writer.write_f32(x)
+    })?;
     writer.close()?;
-    let peak = left.iter().chain(right.iter()).fold(0.0f32, |p, x| p.max(x.abs()));
-    let peak_db = if peak > 0.0 { 20.0 * f64::from(peak).log10() } else { -200.0 };
-    let lufs = integrated_loudness(&left, &right, rate).unwrap_or(-200.0);
     Ok(Value::object([
         ("file", Value::text(target.path.display().to_string())),
-        ("seconds", Value::real(total as f64 / f64::from(rate))?),
-        ("peakDb", Value::real(peak_db)?),
-        ("lufs", Value::real(lufs)?),
+        ("seconds", Value::real(meter.frames as f64 / f64::from(rate))?),
+        ("peakDb", Value::real(meter.peak_db())?),
+        ("lufs", Value::real(meter.lufs())?),
         ("ok", Value::bool(true)),
         ("error", Value::text("")),
         ("block", Value::int(EXPORT_BLOCK as i64)),
