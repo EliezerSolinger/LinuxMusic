@@ -236,8 +236,51 @@ pub static DUCK: Descriptor = Descriptor {
     tests: TestHints::new(),
 };
 
+/// What `probe` heard: (timeline sample, event), notes and their expressions
+pub static PROBE: std::sync::Mutex<Vec<(i64, EventKind)>> = std::sync::Mutex::new(Vec::new());
+
+/// `probe`: an instrument that writes down the notes and expressions it gets, at their timeline sample
+struct Probe;
+
+impl Processor for Probe {
+    fn process(&mut self, cx: &mut ProcessContext<'_>) {
+        let at = cx.transport.position;
+        let mut seen = PROBE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        for e in cx.events {
+            if matches!(e.kind, EventKind::NoteOn { .. } | EventKind::NoteOff { .. } | EventKind::NoteExpression { .. })
+            {
+                seen.push((at + i64::from(e.offset), e.kind));
+            }
+        }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+fn probe_schemas() -> Vec<NodeSchema> {
+    vec![NodeSchema::new("plugin:probe", 1)]
+}
+
+fn probe_build(_: &Value, _: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
+    Ok(Box::new(Probe))
+}
+
+pub static PROBE_PLUGIN: Descriptor = Descriptor {
+    id: "probe",
+    name: "test.probe",
+    kind: PluginKind::Instrument,
+    schemas: probe_schemas,
+    ports: dc_ports,
+    velocity: Velocity::Ignored,
+    display: None,
+    build: probe_build,
+    tests: TestHints::new(),
+};
+
 pub fn plugins() -> Arc<Registry> {
-    Registry::new(&[&DC, &KIT, &DELAY, &DUCK]).expect("registry")
+    Registry::new(&[&DC, &KIT, &DELAY, &DUCK, &PROBE_PLUGIN]).expect("registry")
 }
 
 pub fn schemas(plugins: &Registry) -> Arc<SchemaRegistry> {

@@ -67,6 +67,11 @@ impl ActiveNotes {
         Some(self.notes.remove(i))
     }
 
+    /// An item's note still sounding (for its expressions)
+    pub(crate) fn item_note(&self, item: u64, n: u32) -> Option<&ActiveNote> {
+        self.notes.iter().find(|a| a.source == NoteSource::Item { item, n })
+    }
+
     /// An item's note (its note-off)
     pub(crate) fn take_item_note(&mut self, item: u64, n: u32) -> Option<ActiveNote> {
         let i = self.notes.iter().position(|a| a.source == NoteSource::Item { item, n })?;

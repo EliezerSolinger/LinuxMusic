@@ -585,3 +585,25 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
   fixa hoje. Volta quando a doca for redimensionável.
 - **B-PR-9 Teclas:** as do legado, pelo registro de ações no contexto `PianoRoll`; Esc também desmarca (o legado só
   tinha Ctrl+Shift+A), porque Esc já fecha e cancela no resto do programa.
+
+## Expressões de nota, loop e swing do item MIDI (20/11)
+
+- **A forma do evento** (combinada com o autor das funções de instrumento do `lm-plugin`):
+  `EventKind::NoteExpression { note, expression: Pan | Tuning, value, ramp }`. O valor vai linear do atual até `value`
+  em `ramp` amostras a partir do offset (0: na hora); um evento novo substitui uma rampa em andamento a partir de onde
+  ela chegou; toda nota começa com pan 0 e afinação 0; a ordem no mesmo offset é depois do note-on. No item MIDI ela é
+  `ItemEventKind::Expression { n, expression, value, until }` em tiques, e o renderer converte a rampa em amostras
+  pelo mapa de andamentos: uma curva de bend é um evento por segmento, exata na amostra, e não um por amostra.
+- **Pan da nota** (F-NOT-010): um evento no início da nota, se o pan não for 0; a lei é a do `InstrumentTrack` do
+  legado (balanço: esquerda = 1 se p ≤ 0, senão 1 − p; direita = 1 se p ≥ 0, senão 1 + p).
+- **Bend da nota** (P-24): pontos `{at, semitones}` em tiques desde o início da nota, lineares entre si; antes do
+  primeiro ponto vale o valor dele; o que passa do fim da nota não é enviado. A afinação soma à altura antes do
+  bend range e do glide do instrumento, e vale para todas as notas que a nota base toca (acordes, arpejo).
+- **Loop do item** (`loop`, tiques): as notas que começam antes de `loop` se repetem a cada `loop` até o fim do item;
+  as notas são cortadas no fim do item; cada repetição tem números de nota próprios (U25).
+- **Swing** (`swing` 0..1, `step` em tiques, padrão 240): as notas que começam na segunda metade de cada par de
+  passos (a posição no item, módulo `2·step`, a partir de `step`) atrasam `swing · step / 2` tiques (a 1, o
+  contratempo cai em 3/4 do par, como o swing de 75% das baterias eletrônicas). O legado não tinha swing: a regra é
+  esta, nova.
+- **Campos ausentes mantêm o sentido antigo**: sem `pan`, sem `bend`, `loop` igual ao comprimento, `swing` 0.
+

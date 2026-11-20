@@ -41,7 +41,7 @@ pub use automation::{CURVE_STEEPNESS, Curve, CurvePoint, shape};
 pub use command::{COMMAND_RING_CAPACITY, Command, CommandReceiver, CommandSender, PreviewCommand, command_ring};
 pub use dummy::Dummy;
 pub use engine::{EngineControl, engine, engine_with};
-pub use event::{Event, EventKind};
+pub use event::{Event, EventKind, Expression};
 pub use exec::Watch;
 pub use ids::{NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProducerIndex, ProgramGen};
 pub use install::{Install, NodeCore, Relocate, Retired, Returned};

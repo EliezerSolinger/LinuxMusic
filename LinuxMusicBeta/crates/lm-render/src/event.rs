@@ -11,6 +11,15 @@ pub struct Event {
     pub kind: EventKind,
 }
 
+/// What a note expression changes (F-NOT-010, P-24)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Expression {
+    /// −1 (left) to 1 (right), 0 the note's own place; applied as a balance (the legacy instrument track's law)
+    Pan,
+    /// Semitones added to the note's pitch (its bend curve), before the instrument's own bend range and glide
+    Tuning,
+}
+
 /// What happened. Closed: no generic message (rule 10)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EventKind {
@@ -22,6 +31,10 @@ pub enum EventKind {
     Param { index: u32, value: f32 },
     /// A channel message other than a note (control change, pitch bend, pressure, program change), as received
     Midi { bytes: [u8; 3] },
+    /// One sounding note's expression goes linearly from its current value to `value` over `ramp` samples from this
+    /// offset (0: at once). A note starts at pan 0 and tuning 0; a new event replaces a ramp in progress from where
+    /// it got to. Its expressions come after its note-on at the same offset
+    NoteExpression { note: NoteId, expression: Expression, value: f32, ramp: u32 },
     /// Every sounding note goes to its release: stop, locate, loop wrap, a processor that leaves for a tail node (U32)
     AllNotesRelease,
     /// Silence now, no release (the panic command)
@@ -40,6 +53,7 @@ impl EventKind {
             EventKind::Param { .. } => 3,
             EventKind::Midi { .. } => 4,
             EventKind::NoteOn { .. } => 5,
+            EventKind::NoteExpression { .. } => 6,
         }
     }
 

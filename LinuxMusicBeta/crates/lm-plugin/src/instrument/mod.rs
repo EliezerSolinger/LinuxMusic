@@ -826,6 +826,8 @@ impl<S: Synth> Instrument<S> {
             },
             EventKind::AllNotesRelease => self.release_all(),
             EventKind::AllSoundOff => self.sound_off(),
+            // Note expressions (pan, tuning): applied per voice by the instrument functions' author (agreed 20/11)
+            EventKind::NoteExpression { .. } => {}
         }
     }
 

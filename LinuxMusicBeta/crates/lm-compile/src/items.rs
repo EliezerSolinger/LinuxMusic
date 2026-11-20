@@ -16,7 +16,8 @@ use std::sync::Arc;
 
 use lm_base::Result;
 use lm_render::{
-    AudioItem, AudioSource, Curve, CurvePoint, ItemEvent, ItemEventKind, MidiItem, SampleData, StreamFeeder, StreamSpec,
+    AudioItem, AudioSource, Curve, CurvePoint, Expression, ItemEvent, ItemEventKind, MidiItem, SampleData,
+    StreamFeeder, StreamSpec,
 };
 use lm_state::{NodeId, Value};
 use lm_time::TempoMap;
@@ -266,31 +267,83 @@ pub(crate) fn midi_events(id: NodeId, item: &Value, transpose: i32, audio_time: 
             (s, s.saturating_add(int(item, "length", 1)))
         }
     };
+    // A pattern repeats its first `loop` ticks until the item ends; swing delays every second `step` (absent: no
+    // repeat, no swing)
+    let looped = item.get("loop").and_then(Value::as_int).filter(|l| *l >= 1);
+    let span = end.saturating_sub(start).max(0);
+    let reps = looped.map_or(1, |l| ((span + l - 1) / l).max(1));
+    let swing = item.get("swing").and_then(Value::as_real).unwrap_or(0.0).clamp(0.0, 1.0);
+    let step = item.get("step").and_then(Value::as_int).filter(|s| *s >= 1).unwrap_or(240);
+    let swung = |rel: i64| -> i64 {
+        if swing > 0.0 && rel.rem_euclid(2 * step) >= step {
+            rel + (swing * step as f64 / 2.0).round() as i64
+        } else {
+            rel
+        }
+    };
     let mut events = Vec::new();
     let mut taken = std::collections::HashSet::new();
     if let Some(notes) = item.get("notes") {
-        events.reserve(notes.len() * 2);
-        for (k, note) in notes.entries() {
-            let Some(n) = lm_state::parse_note_key(k) else { continue };
-            let on = start.saturating_add(int(note, "start", 0));
-            if on >= end {
-                continue;
+        events.reserve(notes.len() * 2 * reps.min(64) as usize);
+        for rep in 0..reps {
+            for (k, note) in notes.entries() {
+                let Some(n) = lm_state::parse_note_key(k) else { continue };
+                let s = int(note, "start", 0);
+                if looped.is_some_and(|l| s >= l) {
+                    continue;
+                }
+                let on = start.saturating_add(swung(looped.map_or(0, |l| rep * l) + s));
+                if on >= end {
+                    continue;
+                }
+                let key = int(note, "key", 60) + i64::from(transpose);
+                if !(0..=127).contains(&key) {
+                    continue;
+                }
+                let off = on.saturating_add(int(note, "length", 1).max(1)).min(end);
+                let num = note_number(n ^ ((rep as u64) << 44), &mut taken);
+                let velocity = real(note, "velocity", 0.8).clamp(0.0, 1.0) as f32;
+                events.push(ItemEvent {
+                    tick: on,
+                    kind: ItemEventKind::NoteOn { n: num, channel: 0, key: key as u8, velocity },
+                });
+                events.push(ItemEvent { tick: off, kind: ItemEventKind::NoteOff { n: num } });
+                note_expressions(note, num, on, off, &mut events);
             }
-            let key = int(note, "key", 60) + i64::from(transpose);
-            if !(0..=127).contains(&key) {
-                continue;
-            }
-            let off = on.saturating_add(int(note, "length", 1).max(1)).min(end);
-            let num = note_number(n, &mut taken);
-            let velocity = real(note, "velocity", 0.8).clamp(0.0, 1.0) as f32;
-            events.push(ItemEvent {
-                tick: on,
-                kind: ItemEventKind::NoteOn { n: num, channel: 0, key: key as u8, velocity },
-            });
-            events.push(ItemEvent { tick: off, kind: ItemEventKind::NoteOff { n: num } });
         }
     }
     MidiItem::new(crate::read::id_number(id), events)
+}
+
+/// A note's expressions (F-NOT-010, P-24): its pan at its start, and its bend curve as one ramp per segment
+/// (linear between points, the first point's value before it), cut at the note's end
+fn note_expressions(note: &Value, n: u32, on: i64, off: i64, events: &mut Vec<ItemEvent>) {
+    let pan = real(note, "pan", 0.0).clamp(-1.0, 1.0) as f32;
+    if pan != 0.0 {
+        events.push(ItemEvent {
+            tick: on,
+            kind: ItemEventKind::Expression { n, expression: Expression::Pan, value: pan, until: on },
+        });
+    }
+    let mut points: Vec<(i64, f32)> = items(note, "bend")
+        .map(|p| (int(p, "at", 0).max(0), real(p, "semitones", 0.0).clamp(-24.0, 24.0) as f32))
+        .collect();
+    if points.is_empty() {
+        return;
+    }
+    points.sort_by_key(|p| p.0);
+    let tuning = |tick: i64, value: f32, until: i64| ItemEvent {
+        tick,
+        kind: ItemEventKind::Expression { n, expression: Expression::Tuning, value, until },
+    };
+    events.push(tuning(on, points[0].1, on));
+    for w in points.windows(2) {
+        let (a, b) = (on.saturating_add(w[0].0), on.saturating_add(w[1].0));
+        if a >= off {
+            break;
+        }
+        events.push(tuning(a, w[1].1, b));
+    }
 }
 
 /// The played segments of an audio item (comping flattened), and a stream for each segment of a long source

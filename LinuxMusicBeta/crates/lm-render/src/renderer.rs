@@ -1191,6 +1191,22 @@ impl Renderer {
                         crate::program::ItemEventKind::Midi { bytes } => {
                             self.push_event(node, offset, EventKind::Midi { bytes });
                         }
+                        crate::program::ItemEventKind::Expression { n: num, expression, value, until } => {
+                            // Only to a note that sounds, on the node that has it
+                            if let Some(a) = self.notes.item_note(item, num)
+                                && let Some(target) = self.program.node_of(a.node)
+                            {
+                                let tempo = &self.program.tempo;
+                                let ramp = (tempo.sample_at(until.max(ev.tick)) - tempo.sample_at(ev.tick)).max(0);
+                                let kind = EventKind::NoteExpression {
+                                    note: a.note,
+                                    expression,
+                                    value,
+                                    ramp: u32::try_from(ramp).unwrap_or(u32::MAX),
+                                };
+                                self.push_event(target, offset, kind);
+                            }
+                        }
                     }
                 }
             }

@@ -309,9 +309,26 @@ pub struct ItemEvent {
 /// The events of a MIDI item. Notes are numbered by the item's note map (`n`, C1)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ItemEventKind {
-    NoteOn { n: u32, channel: u8, key: u8, velocity: f32 },
-    NoteOff { n: u32 },
-    Midi { bytes: [u8; 3] },
+    NoteOn {
+        n: u32,
+        channel: u8,
+        key: u8,
+        velocity: f32,
+    },
+    NoteOff {
+        n: u32,
+    },
+    Midi {
+        bytes: [u8; 3],
+    },
+    /// Note `n`'s expression goes to `value`, arriving at tick `until` (`until == tick`: at once); the renderer turns
+    /// the ticks into a ramp in samples through the tempo map
+    Expression {
+        n: u32,
+        expression: crate::event::Expression,
+        value: f32,
+        until: i64,
+    },
 }
 
 /// A MIDI item's events in time order, with a table of its notes by number (to find, after a program change, whether
@@ -331,6 +348,7 @@ impl MidiItem {
             ItemEventKind::NoteOff { .. } => 0,
             ItemEventKind::Midi { .. } => 1,
             ItemEventKind::NoteOn { .. } => 2,
+            ItemEventKind::Expression { .. } => 3,
         };
         events.sort_by(|a, b| a.tick.cmp(&b.tick).then(rank(&a.kind).cmp(&rank(&b.kind))));
         // Linear in the events (V8: one item of 10,000 notes is made again when one note moves)
@@ -352,7 +370,7 @@ impl MidiItem {
                     };
                     notes[i].1 = e.tick;
                 }
-                ItemEventKind::Midi { .. } => {}
+                ItemEventKind::Midi { .. } | ItemEventKind::Expression { .. } => {}
             }
         }
         notes.sort_unstable_by_key(|(n, _)| *n);
