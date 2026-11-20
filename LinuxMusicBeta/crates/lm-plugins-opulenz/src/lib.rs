@@ -30,6 +30,7 @@
 #![forbid(unsafe_code)]
 
 pub mod opl;
+pub mod sbi;
 
 use std::any::Any;
 

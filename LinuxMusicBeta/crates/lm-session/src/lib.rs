@@ -10,6 +10,7 @@ pub mod folder;
 pub mod journal;
 pub mod lock;
 pub mod notices;
+mod plugin_actions;
 mod port;
 pub mod prefs;
 pub mod rack;

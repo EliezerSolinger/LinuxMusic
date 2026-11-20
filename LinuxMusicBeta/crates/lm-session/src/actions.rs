@@ -210,6 +210,9 @@ pub fn all() -> impl Iterator<Item = &'static ActionSpec> {
         .chain(crate::arrange::ACTIONS.iter())
         .chain(crate::session::midi::actions::ACTIONS.iter())
         .chain(crate::session::external::ACTIONS.iter())
+        .chain(crate::session::midi::actions::ACTIONS.iter())
+        .chain(crate::session::external::ACTIONS.iter())
+        .chain(crate::plugin_actions::ACTIONS.iter())
 }
 
 /// The action with this id

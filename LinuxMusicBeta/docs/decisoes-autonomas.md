@@ -1055,6 +1055,12 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 - **Target próprio do worktree** (`/private/tmp/claude-501/wt/chips-amps-target`, apagado no fim): o compartilhado
   misturava artefatos do `lm-plugin` e do `lm-render` de outros worktrees mesmo com o `touch` (erros de campos e
   tipos que não existem na árvore deste), como a seção do `lm-session` já registrou.
+- **Importar `.sbi` no OpulenZ é uma ação do núcleo** (`opulenz.import_sbi {node, path | bytes}`, em
+  `lm-session/src/plugin_actions.rs`; a leitura em `lm_plugins_opulenz::sbi`, como o `loadFile` do legado): um passo
+  de desfazer, roda igual do painel, da paleta e de um cliente remoto. `path` é do computador da sessão (o servidor);
+  `bytes` leva o próprio arquivo, para o cliente que o leu onde roda. O legado não exportava `.sbi`: sem exportação.
+  O legado renomeava a faixa com o nome do patch; aqui o nome vai no rótulo do desfazer e a faixa fica como está (o
+  nome da faixa é do usuário). Sid, FreeBoy e OpulenZ entraram no `internal_plugins` da sessão.
 
 ## Do `lm-session`, continuação (20/11)
 
