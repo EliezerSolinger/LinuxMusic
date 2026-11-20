@@ -35,7 +35,7 @@ use crate::actions::{
 use crate::core::Core;
 use crate::model::{self, ChannelKind, ChannelView};
 use crate::screens::Screen;
-use crate::ui::{THEME, c, tr, track_color, trf};
+use crate::ui::{THEME, c, midi, tr, track_color, trf};
 use crate::view;
 use crate::workspace::Workspace;
 
@@ -173,9 +173,28 @@ struct Drag {
 
 enum Menu {
     Knob(Target),
+    /// a switch's menu: only the MIDI items (its node and field path)
+    Switch(NodeId, &'static [&'static str]),
     Strip(NodeId),
-    Choice { id: NodeId, sec: &'static str, key: &'static str, choices: &'static [&'static str] },
+    Choice {
+        id: NodeId,
+        sec: &'static str,
+        key: &'static str,
+        choices: &'static [&'static str],
+    },
     Effect(NodeId, NodeId),
+}
+
+/// What a mapping to this control points at (I-21.2): a parameter for the continuous controls, a field for the
+/// stepped ones; the monitoring is the machine's and is not mapped here
+fn map_target(t: &Target) -> Option<lm_port::MapTarget> {
+    Some(match t {
+        Target::Knob(id, k) if matches!(k.scale, Scale::Choice(_)) => midi::field(*id, &path_of(k)),
+        Target::Knob(id, k) => midi::param(*id, &path_of(k).join(".")),
+        Target::Fader(id, key) => midi::param(*id, key),
+        Target::Send(sid) => midi::param(*sid, "amount"),
+        Target::Monitor => return None,
+    })
 }
 
 fn path_of(k: &Knob) -> Vec<&'static str> {
@@ -778,6 +797,20 @@ fn peak_db(core: &Core, id: NodeId) -> f32 {
 }
 
 impl MixingPage {
+    /// A switch's right button: its menu, with the MIDI items
+    fn switch_menu(
+        &self,
+        id: NodeId,
+        path: &'static [&'static str],
+        cx: &Context<Self>,
+    ) -> impl Fn(&MouseDownEvent, &mut Window, &mut gpui::App) + 'static {
+        cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
+            cx.stop_propagation();
+            p.menu = Some((Menu::Switch(id, path), ev.position));
+            cx.notify();
+        })
+    }
+
     /// A desk knob of `k` on node `id`, interactive
     fn desk_knob(&self, id: NodeId, channel: NodeId, k: Knob, enabled: bool, cx: &Context<Self>) -> Stateful<Div> {
         let t = Target::Knob(id, k);
@@ -928,6 +961,7 @@ impl MixingPage {
                             7.0,
                         )
                         .debug_selector(move || format!("mono-{}", id.number))
+                        .on_mouse_down(MouseButton::Right, self.switch_menu(id, &["mono"], cx))
                         .on_click(cx.listener(move |p, _, _, cx| p.toggle(id, &["mono"], mono, cx))),
                     )
                     .child(
@@ -941,6 +975,7 @@ impl MixingPage {
                             7.0,
                         )
                         .debug_selector(move || format!("lcut-{}", id.number))
+                        .on_mouse_down(MouseButton::Right, self.switch_menu(id, &["rack", "tube", "lowCut"], cx))
                         .on_click(
                             cx.listener(move |p, _, _, cx| p.toggle(id, &["rack", "tube", "lowCut"], low_cut, cx)),
                         ),
@@ -1196,8 +1231,15 @@ impl MixingPage {
             .child(fader)
             .when(master, |d| d.child(fader_label("POST")));
         let letter = |key: &'static str, text: &'static str, on: bool, l: Light| {
+            let field: &'static [&'static str] = match key {
+                "mute" => &["mute"],
+                "solo" => &["solo"],
+                "phase" => &["phaseInvert"],
+                _ => &["swap"],
+            };
             desk::desk_button(SharedString::from(format!("{key}-{}", id.number)), text, on, l, 13.0, 13.0, 9.0)
                 .debug_selector(move || format!("{key}-{}", id.number))
+                .on_mouse_down(MouseButton::Right, self.switch_menu(id, field, cx))
                 .on_click(cx.listener(move |p, _, _, cx| {
                     let path: &[&str] = match key {
                         "mute" => &["mute"],
@@ -2007,6 +2049,9 @@ impl MixingPage {
                         }))
                         .into_any_element(),
                 );
+                if let Some(mt) = map_target(t) {
+                    items.extend(self.midi_items(mt, cx));
+                }
             }
             Menu::Choice { id, sec, key, choices } => {
                 let (id, sec, key) = (*id, *sec, *key);
@@ -2020,7 +2065,9 @@ impl MixingPage {
                             .into_any_element(),
                     );
                 }
+                items.extend(self.midi_items(midi::field(id, &["rack", sec, key]), cx));
             }
+            Menu::Switch(id, path) => items.extend(self.midi_items(midi::field(*id, path), cx)),
             Menu::Effect(channel, insert) => {
                 let (ch, ins) = (*channel, *insert);
                 items.push(
@@ -2051,6 +2098,18 @@ impl MixingPage {
             Menu::Strip(id) => self.strip_menu(*id, chs, &mut items, cx),
         }
         items
+    }
+
+    /// The MIDI items of a control's menu (I-21.2): learn, remove the mapping, the binding window
+    fn midi_items(&self, target: lm_port::MapTarget, cx: &Context<Self>) -> Vec<AnyElement> {
+        let me = cx.weak_entity();
+        let close = move |cx: &mut gpui::App| {
+            let _ = me.update(cx, |p, cx| {
+                p.menu = None;
+                cx.notify();
+            });
+        };
+        midi::menu_items(&self.core, &self.workspace, target, close, cx)
     }
 
     /// The strip's menu (MixerChannelView::contextMenuEvent), with the output (free routing) in place of the

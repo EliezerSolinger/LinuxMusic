@@ -20,6 +20,7 @@ pub mod browser;
 pub mod effect;
 pub mod export;
 pub mod instrument;
+pub mod midi_binding;
 pub mod new_project;
 pub mod notices;
 pub mod palette;
@@ -45,6 +46,7 @@ pub enum Screen {
     Palette,
     NewProject,
     About,
+    MidiBinding,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,6 +67,8 @@ pub struct ScreenCx {
     pub workspace: WeakEntity<Workspace>,
     pub screen: Screen,
     pub target: Option<NodeId>,
+    /// The control the MIDI binding window shows (I-21.2); none for the other screens
+    pub binding: Option<lm_port::MapTarget>,
 }
 
 impl ScreenCx {
@@ -78,7 +82,7 @@ impl ScreenCx {
 }
 
 impl Screen {
-    pub const ALL: [Screen; 14] = [
+    pub const ALL: [Screen; 15] = [
         Screen::PianoRoll,
         Screen::Automation,
         Screen::Steps,
@@ -93,6 +97,7 @@ impl Screen {
         Screen::Palette,
         Screen::NewProject,
         Screen::About,
+        Screen::MidiBinding,
     ];
 
     /// The English key of the title (translated by `ui::tr`)
@@ -112,6 +117,7 @@ impl Screen {
             Screen::Palette => "Command palette",
             Screen::NewProject => "New project",
             Screen::About => "About",
+            Screen::MidiBinding => "MIDI binding",
         }
     }
 
@@ -127,7 +133,8 @@ impl Screen {
             | Screen::Project
             | Screen::Palette
             | Screen::NewProject
-            | Screen::About => Placement::Modal,
+            | Screen::About
+            | Screen::MidiBinding => Placement::Modal,
         }
     }
 }
@@ -149,5 +156,6 @@ pub fn open(scx: ScreenCx, window: &mut Window, cx: &mut App) -> AnyView {
         Screen::Palette => cx.new(|cx| palette::Palette::new(scx, window, cx)).into(),
         Screen::NewProject => cx.new(|cx| new_project::NewProject::new(scx, window, cx)).into(),
         Screen::About => cx.new(|cx| about::About::new(scx, window, cx)).into(),
+        Screen::MidiBinding => cx.new(|cx| midi_binding::MidiBinding::new(scx, window, cx)).into(),
     }
 }

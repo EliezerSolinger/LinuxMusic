@@ -16,6 +16,7 @@ actions!(
     [
         ShowComposition,
         ShowMixing,
+        ShowMidiMaps,
         NextPage,
         TogglePlay,
         Stop,
@@ -126,6 +127,7 @@ const fn a(
 pub const REGISTRY: &[ActionDef] = &[
     a("view.composition", "lm::ShowComposition", "Composition", "View", &["secondary-1"], None),
     a("view.mixing", "lm::ShowMixing", "Mixing", "View", &["secondary-2"], None),
+    a("view.midi_maps", "lm::ShowMidiMaps", "MIDI maps", "View", &["secondary-3"], None),
     a("view.next_page", "lm::NextPage", "Next page", "View", &["ctrl-tab"], None),
     a("view.palette", "lm::OpenPalette", "Command palette", "View", &["secondary-k"], None),
     a("view.settings", "lm::OpenSettings", "Settings", "View", &["secondary-,"], None),
@@ -322,7 +324,6 @@ pub fn bind_keys(cx: &mut App, preferences: &Value) -> Vec<&'static str> {
 }
 
 /// The registry's entry of an id
-#[cfg_attr(not(test), expect(dead_code, reason = "the settings' shortcuts page (agent C's) uses it"))]
 pub fn find(id: &str) -> Option<&'static ActionDef> {
     REGISTRY.iter().find(|d| d.id == id)
 }

@@ -23,7 +23,7 @@ use crate::core::Core;
 use crate::model::{self, ItemView, TrackView};
 use crate::screens::Screen;
 use crate::tiles::{TileCache, level_for, paint_wave, tile_range};
-use crate::ui::{THEME, button, c, knob_face, loading_component, meter, tr, track_color, trf};
+use crate::ui::{THEME, button, c, knob_face, loading_component, meter, midi, tr, track_color, trf};
 use crate::view::{self, TimelineView};
 use crate::workspace::Workspace;
 
@@ -74,6 +74,9 @@ struct ItemDrag {
 }
 
 /// What was drawn where in the last frame, relative to the timeline: (x, y, w, h, item, fade in px, fade out px)
+/// A lane drawn in the last frame, relative to the timeline: (y, h, lane, track)
+type LaneHit = (f32, f32, NodeId, NodeId);
+
 type Hit = (f32, f32, f32, f32, NodeId, f32, f32);
 
 pub struct CompositionPage {
@@ -90,6 +93,16 @@ pub struct CompositionPage {
     show_automation: HashSet<NodeId>,
     pub track_h: f32,
     pub follow_cursor: bool,
+    /// The volume knob's menu (F-CTL-006, I-21.2): the track and where it opened, in window coordinates
+    knob_menu: Option<(NodeId, gpui::Point<Pixels>)>,
+    /// An automation lane's menu: the lane, its track, the tick under the pointer, where it opened
+    lane_menu: Option<(NodeId, NodeId, i64, gpui::Point<Pixels>)>,
+    /// Items move with the automation under them (I-21.5, on by default): the interface's option
+    pub move_automation: bool,
+    /// The lanes drawn in the last frame, relative to the timeline: (y, h, lane, track)
+    lane_hits: Rc<RefCell<Vec<LaneHit>>>,
+    /// The page's bounds, for placing the menu
+    page_bounds: Rc<RefCell<Bounds<Pixels>>>,
     timeline_bounds: Rc<RefCell<Bounds<Pixels>>>,
     tiles: Rc<RefCell<TileCache>>,
     hits: Rc<RefCell<Vec<Hit>>>,
@@ -144,6 +157,11 @@ impl CompositionPage {
             show_automation: HashSet::new(),
             track_h: view::TRACK_H,
             follow_cursor: false,
+            knob_menu: None,
+            lane_menu: None,
+            move_automation: true,
+            lane_hits: Default::default(),
+            page_bounds: Default::default(),
             timeline_bounds: Rc::new(RefCell::new(Bounds::default())),
             tiles: Rc::new(RefCell::new(TileCache::default())),
             hits: Default::default(),
@@ -204,7 +222,22 @@ impl CompositionPage {
             self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
         }
         if let Some(d) = self.item_drag.take() {
-            self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+            let now = self.selected(cx).map(|(_, it)| it.start);
+            let delta = now.map_or(0, |n| n - d.start_value as i64);
+            if d.zone == ItemZone::Move && self.move_automation && delta != 0 {
+                // the move again as `items.move`, which takes the automation under the item along: one undo step
+                let params = Value::object([
+                    ("items", Value::list([Value::text(d.item.to_string())])),
+                    ("delta", Value::int(delta)),
+                    ("automation", Value::bool(true)),
+                ]);
+                self.core.update(cx, |core, _| {
+                    core.port_mut().gesture_cancel(d.gesture);
+                    let _ = core.port_mut().run_action("items.move".into(), params);
+                });
+            } else {
+                self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+            }
         }
         cx.notify();
     }
@@ -367,6 +400,14 @@ impl CompositionPage {
         if my < view::RULER_H + TEMPO_H {
             return;
         }
+        // an automation lane: a double click opens it in the automation editor (agent B's)
+        let lane = self.lane_hits.borrow().iter().find(|(y, h, ..)| my >= *y && my <= y + h).copied();
+        if let Some((_, _, lane, _)) = lane {
+            if ev.click_count == 2 {
+                let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::Automation, Some(lane), window, cx));
+            }
+            return;
+        }
         let hit = self
             .hits
             .borrow()
@@ -523,8 +564,163 @@ impl Render for CompositionPage {
                 p.drag_item(ev, cx);
             }))
             .on_mouse_up(MouseButton::Left, cx.listener(|p, _: &MouseUpEvent, _, cx| p.release(cx)))
+            .relative()
+            .child({
+                let pb = self.page_bounds.clone();
+                canvas(move |b, _, _| *pb.borrow_mut() = b, |_, _, _, _| {}).absolute().size_full()
+            })
             .child(headers)
             .child(timeline)
+            .children(self.render_knob_menu(cx))
+            .children(self.render_lane_menu(cx))
+    }
+}
+
+impl CompositionPage {
+    /// The right button on a lane: its menu
+    fn on_timeline_right(&mut self, ev: &MouseDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        let b = *self.timeline_bounds.borrow();
+        let (mx, my) = ((ev.position.x - b.origin.x).as_f32(), (ev.position.y - b.origin.y).as_f32());
+        let lane = self.lane_hits.borrow().iter().find(|(y, h, ..)| my >= *y && my <= y + h).copied();
+        if let Some((_, _, lane, track)) = lane {
+            cx.stop_propagation();
+            let tick = self.view.tick_at(mx).max(0.0) as i64;
+            self.lane_menu = Some((lane, track, tick, ev.position));
+            cx.notify();
+        }
+    }
+
+    /// An automation lane's menu: open it in the editor, thin it, convert it into the MIDI item's CC lane under the
+    /// pointer, and the option of moving the automation with the items (I-21.5)
+    fn render_lane_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let (lane, track, tick, pos) = self.lane_menu?;
+        let origin = self.page_bounds.borrow().origin;
+        let item = |id: &'static str, label: String| {
+            div()
+                .id(id)
+                .debug_selector(move || id.into())
+                .px(px(10.))
+                .py(px(3.))
+                .text_size(px(12.))
+                .cursor_pointer()
+                .hover(|d| d.bg(c(THEME.bg4)))
+                .child(label)
+        };
+        let midi_item = self
+            .tracks(cx)
+            .into_iter()
+            .find(|t| t.id == track)
+            .and_then(|t| t.items.into_iter().find(|i| !i.audio && tick >= i.start && tick < i.start + i.length))
+            .map(|i| i.id);
+        let l1 = Value::text(lane.to_string());
+        let l2 = l1.clone();
+        let moving = self.move_automation;
+        Some(
+            div()
+                .id("lane-menu")
+                .absolute()
+                .left(pos.x - origin.x)
+                .top(pos.y - origin.y)
+                .w(px(260.))
+                .occlude()
+                .py(px(4.))
+                .rounded(px(6.))
+                .bg(c(THEME.bg3))
+                .border_1()
+                .border_color(c(THEME.line2))
+                .shadow_lg()
+                .text_color(c(THEME.text))
+                .on_mouse_down_out(cx.listener(|p, _, _, cx| {
+                    p.lane_menu = None;
+                    cx.notify();
+                }))
+                .child(item("lane-menu-open", tr("Open in the automation editor").into()).on_click(cx.listener(
+                    move |p, _, window, cx| {
+                        p.lane_menu = None;
+                        let _ = p.workspace.update(cx, |ws, cx| ws.open(Screen::Automation, Some(lane), window, cx));
+                    },
+                )))
+                .child(item("lane-menu-thin", tr("Thin (remove redundant points)").into()).on_click(cx.listener(
+                    move |p, _, _, cx| {
+                        p.lane_menu = None;
+                        p.action("automation.thin", Value::object([("lane", l1.clone())]), cx);
+                    },
+                )))
+                .children(midi_item.map(|it| {
+                    item("lane-menu-to-item", tr("Convert to the MIDI item's CC lane").into()).on_click(cx.listener(
+                        move |p, _, _, cx| {
+                            p.lane_menu = None;
+                            let params = Value::object([("lane", l2.clone()), ("item", Value::text(it.to_string()))]);
+                            p.action("automation.to_item", params, cx);
+                        },
+                    ))
+                }))
+                .child(div().my(px(3.)).h(px(1.)).bg(c(THEME.line)))
+                .child(
+                    item(
+                        "lane-menu-move-with-items",
+                        format!("{}{}", if moving { "✓ " } else { "" }, tr("Move automation with items")),
+                    )
+                    .on_click(cx.listener(|p, _, _, cx| {
+                        p.lane_menu = None;
+                        p.move_automation = !p.move_automation;
+                        cx.notify();
+                    })),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// The volume knob's menu: back to 0 dB, and the MIDI items (learn, remove the mapping, the binding window)
+    fn render_knob_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let (track, pos) = self.knob_menu?;
+        let origin = self.page_bounds.borrow().origin;
+        let me = cx.weak_entity();
+        let close = move |cx: &mut gpui::App| {
+            let _ = me.update(cx, |p, cx| {
+                p.knob_menu = None;
+                cx.notify();
+            });
+        };
+        let mut items = vec![
+            div()
+                .id("knob-menu-reset")
+                .debug_selector(|| "knob-menu-reset".into())
+                .px(px(10.))
+                .py(px(3.))
+                .text_size(px(12.))
+                .cursor_pointer()
+                .hover(|d| d.bg(c(THEME.bg4)))
+                .child(tr("Reset"))
+                .on_click(cx.listener(move |p, _, _, cx| {
+                    p.knob_menu = None;
+                    p.apply("Volume", vec![EditOp::set(track, &["volume"], Value::real(1.0).unwrap_or_default())], cx);
+                }))
+                .into_any_element(),
+        ];
+        items.extend(midi::menu_items(&self.core, &self.workspace, midi::param(track, "volume"), close, cx));
+        Some(
+            div()
+                .id("knob-menu")
+                .absolute()
+                .left(pos.x - origin.x)
+                .top(pos.y - origin.y)
+                .w(px(220.))
+                .occlude()
+                .py(px(4.))
+                .rounded(px(6.))
+                .bg(c(THEME.bg3))
+                .border_1()
+                .border_color(c(THEME.line2))
+                .shadow_lg()
+                .text_color(c(THEME.text))
+                .on_mouse_down_out(cx.listener(|p, _, _, cx| {
+                    p.knob_menu = None;
+                    cx.notify();
+                }))
+                .children(items)
+                .into_any_element(),
+        )
     }
 }
 
@@ -574,7 +770,7 @@ impl CompositionPage {
                 let el: AnyElement = match r.kind {
                     RowKind::Track(i) => self.track_header(&tracks[i], r, core, &inputs, cx),
                     RowKind::Take(i, k, l) => self.take_header(&tracks[i].items[k], l, r),
-                    RowKind::Automation(i, a) => self.lane_header(&tracks[i].automation[a], r),
+                    RowKind::Automation(i, a) => self.lane_header(&tracks[i].automation[a], r, core, cx),
                 };
                 div().absolute().top(px(top)).left(px(0.)).w(px(view::HEADER_W)).h(px(r.h)).child(el)
             }))
@@ -704,6 +900,14 @@ impl CompositionPage {
                                         }),
                                     )
                                     .on_mouse_down(
+                                        MouseButton::Right,
+                                        cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
+                                            cx.stop_propagation();
+                                            p.knob_menu = Some((id, ev.position));
+                                            cx.notify();
+                                        }),
+                                    )
+                                    .on_mouse_down(
                                         MouseButton::Middle,
                                         cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
                                             p.begin_knob(id, volume, ev, cx)
@@ -744,14 +948,14 @@ impl CompositionPage {
                             })
                             .when(!t.automation.is_empty(), |d| {
                                 d.child(
-                                    button(SharedString::from(format!("ln{i}")), "A", auto_on, THEME.blue).on_click(
-                                        cx.listener(move |p, _, _, cx| {
+                                    button(SharedString::from(format!("ln{i}")), "A", auto_on, THEME.blue)
+                                        .debug_selector(move || format!("lanes-{i}"))
+                                        .on_click(cx.listener(move |p, _, _, cx| {
                                             if !p.show_automation.remove(&id) {
                                                 p.show_automation.insert(id);
                                             }
                                             cx.notify();
-                                        }),
-                                    ),
+                                        })),
                                 )
                             })
                             .child(
@@ -814,18 +1018,61 @@ impl CompositionPage {
             .into_any_element()
     }
 
-    fn lane_header(&self, a: &model::AutomationView, r: &Row) -> AnyElement {
+    /// An automation lane's header: its parameter, its mode (Off, Read, Touch, Latch, Write: a click goes to the next,
+    /// I-21.5), and "the hand won" with its re-arm while the hand overrides the curve
+    fn lane_header(&self, a: &model::AutomationView, r: &Row, core: &Core, cx: &Context<Self>) -> AnyElement {
+        let lane = a.id;
+        let mode = a.mode.to_string();
+        let won =
+            a.node.is_some_and(|n| core.port().telemetry().hand_won.iter().any(|(o, k)| *o == n && **k == *a.param));
+        let (label, color) = match mode.as_str() {
+            "off" => ("Off", THEME.text3),
+            "touch" => ("Touch", THEME.yellow),
+            "latch" => ("Latch", THEME.orange),
+            "write" => ("Write", THEME.red),
+            _ => ("Read", THEME.green),
+        };
         div()
             .size_full()
             .flex()
             .items_center()
             .gap(px(6.))
             .pl(px(30. + r.depth as f32 * INDENT))
+            .pr(px(6.))
             .bg(c(THEME.bg1))
             .border_b_1()
             .border_color(c(THEME.line))
-            .child(div().text_size(px(11.)).child(tr(Box::leak(capitalize(&a.param).into_boxed_str()))))
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .text_size(px(11.))
+                    .child(tr(Box::leak(capitalize(&a.param).into_boxed_str()))),
+            )
             .child(div().text_size(px(10.)).text_color(c(THEME.text3)).child(if a.on { "" } else { "(off)" }))
+            .when(won, |d| {
+                d.child(
+                    button(SharedString::from(format!("rearm-{}", lane.number)), tr("Hand won ↺"), true, THEME.yellow)
+                        .debug_selector(move || format!("rearm-{}", lane.number))
+                        .on_click(cx.listener(move |p, _, _, cx| {
+                            p.action("automation.rearm", Value::object([("lane", Value::text(lane.to_string()))]), cx)
+                        })),
+                )
+            })
+            .child(
+                button(SharedString::from(format!("lmode-{}", lane.number)), tr(label), mode != "read", color)
+                    .debug_selector(move || format!("lane-mode-{}", lane.number))
+                    .on_click(cx.listener(move |p, _, _, cx| {
+                        let next = match mode.as_str() {
+                            "off" => "read",
+                            "read" => "touch",
+                            "touch" => "latch",
+                            "latch" => "write",
+                            _ => "off",
+                        };
+                        p.apply("Automation mode", vec![EditOp::set(lane, &["mode"], Value::text(next))], cx);
+                    })),
+            )
             .into_any_element()
     }
 }
@@ -872,6 +1119,7 @@ impl CompositionPage {
         let mut overlays: Vec<AnyElement> = Vec::new();
         let mut wants: Vec<(Resource, f32, f64, f32, f32)> = Vec::new();
         self.hits.borrow_mut().clear();
+        self.lane_hits.borrow_mut().clear();
         let tele = port.telemetry();
         // the samples per pixel of audio at a tick (the tempo there)
         let spp_at = |map: &TempoMap, tick: i64| {
@@ -1055,6 +1303,7 @@ impl CompositionPage {
                     let pts =
                         lane.points.iter().map(|p| (v.x(p.0 as f64), (1.0 - ((p.1 - lo) / span) as f32))).collect();
                     paint.push(Paint::Curve { y, h: r.h, pts });
+                    self.lane_hits.borrow_mut().push((y, r.h, lane.id, tracks[i].id));
                 }
             }
         }
@@ -1143,6 +1392,7 @@ impl CompositionPage {
             .on_scroll(cx.listener(Self::on_scroll))
             .on_pinch(cx.listener(Self::on_pinch))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_timeline_down))
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::on_timeline_right))
             .child(
                 canvas(
                     move |b, _, _| {

@@ -940,7 +940,7 @@ mod notes_editors {
             let core = cx.new(|cx| Core::new(p.take().unwrap(), cx));
             let t = target(core.read(cx).port().root());
             *s2.borrow_mut() = Some(core.clone());
-            make(ScreenCx { core, workspace: WeakEntity::new_invalid(), screen, target: t }, window, cx)
+            make(ScreenCx { core, workspace: WeakEntity::new_invalid(), screen, target: t, binding: None }, window, cx)
         });
         vcx.run_until_parked();
         v.update(vcx, |_, cx| cx.notify());
@@ -1708,4 +1708,217 @@ fn notices_dismiss(cx: &mut TestAppContext) {
     click(cx, &format!("dismiss-{first}"));
     let left = core.update(cx, |c, _| c.port_mut().notices().iter().any(|n| n.id == first));
     assert!(!left);
+}
+
+// --- MIDI mapping and automation modes (I-21, agent A) ------------------------------------------------------------
+
+/// The workspace on a fake whose outside world (MIDI, the engine's reports) the test plays
+fn open_outside(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext, lm_port_fake::Outside) {
+    let fake =
+        FakePort::new(Config { tracks: 12, slow_delay: None, slow_track: usize::MAX }).expect("the demo project");
+    let outside = fake.outside();
+    let prefs = fake.preferences().clone();
+    cx.update(|cx| workspace::start(cx, &prefs));
+    let mut p: Option<Box<dyn CorePort>> = Some(Box::new(fake));
+    let (ws, vcx) = cx.add_window_view(move |window, cx| Workspace::new(p.take().unwrap(), window, cx));
+    vcx.run_until_parked();
+    (ws, vcx, outside)
+}
+
+fn mappings(ws: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<lm_port::Mapping> {
+    let core = core(ws, cx);
+    core.read_with(cx, |c, _| crate::ui::midi::mappings(c.port(), lm_port::MapScope::Project))
+}
+
+const CC7: lm_port::MidiMessage = lm_port::MidiMessage::Cc { number: 7 };
+
+/// "MIDI learn" in a knob's menu: the banner asks for a control, the first one moved makes the mapping (to the
+/// knob's parameter); "Remove MIDI mapping" takes it away
+#[gpui::test]
+fn learning_from_a_knobs_menu(cx: &mut TestAppContext) {
+    let (ws, cx, outside) = open_outside(cx);
+    show(&ws, cx, Page::Mixing);
+    let id = some_channel(&ws, cx);
+    select_strip(&ws, cx, id);
+    let knob = center(cx, &format!("rk-{}-eq-high", id.number));
+    button_at(cx, knob, MouseButton::Right, 1);
+    click(cx, "menu-midi-learn");
+    settle(cx);
+    assert!(drawn(cx, "learning"), "the banner asks for a control");
+    outside.midi("Controlador 1", 0, CC7, 64);
+    settle(cx);
+    assert!(!drawn(cx, "learning"), "learned");
+    let maps = mappings(&ws, cx);
+    assert_eq!(maps.len(), 1);
+    assert_eq!(maps[0].target, crate::ui::midi::param(id, "rack.eq.high"));
+    button_at(cx, knob, MouseButton::Right, 1);
+    click(cx, "menu-midi-unmap");
+    assert!(mappings(&ws, cx).is_empty(), "unmapped");
+    // a switch maps its field; Cancel ends a learn with nothing made
+    let mute = center(cx, &format!("mute-{}", id.number));
+    button_at(cx, mute, MouseButton::Right, 1);
+    click(cx, "menu-midi-learn");
+    settle(cx);
+    click(cx, "learning-cancel");
+    settle(cx);
+    assert!(!drawn(cx, "learning"));
+    button_at(cx, mute, MouseButton::Right, 1);
+    click(cx, "menu-midi-learn");
+    outside.midi("Controlador 1", 0, lm_port::MidiMessage::Note { key: 40 }, 127);
+    settle(cx);
+    assert_eq!(mappings(&ws, cx)[0].target, crate::ui::midi::field(id, &["mute"]));
+}
+
+/// The binding window: learn for this project, change the mode, remove
+#[gpui::test]
+fn the_binding_window(cx: &mut TestAppContext) {
+    let (ws, cx, outside) = open_outside(cx);
+    show(&ws, cx, Page::Mixing);
+    let id = some_channel(&ws, cx);
+    select_strip(&ws, cx, id);
+    let fader = center(cx, &format!("fader-{}", id.number));
+    button_at(cx, fader, MouseButton::Right, 1);
+    click(cx, "menu-midi-binding");
+    assert!(ws.read_with(cx, |ws, _| ws.is_open(Screen::MidiBinding)));
+    click(cx, "binding-learn");
+    outside.midi("Controlador 1", 2, CC7, 10);
+    settle(cx);
+    assert_eq!(mappings(&ws, cx)[0].target, crate::ui::midi::param(id, "volume"));
+    click(cx, "binding-0-mode");
+    assert_eq!(map_text(&ws, cx, &["transform", "mode"]), "twos", "absolute → twos");
+    click(cx, "binding-0-remove");
+    assert!(mappings(&ws, cx).is_empty());
+}
+
+/// A text of the project's first mapping, by key path
+fn map_text(ws: &Entity<Workspace>, cx: &mut VisualTestContext, path: &[&str]) -> String {
+    let r = root(ws, cx);
+    let m = r.get("midiMap").and_then(|l| l.items().next().cloned()).unwrap_or_default();
+    model::at(&m, path).and_then(Value::as_text).unwrap_or("").to_string()
+}
+
+/// The arrangement's volume knob has the same menu: reset, and the MIDI items
+#[gpui::test]
+fn the_track_knob_menu(cx: &mut TestAppContext) {
+    let (ws, cx, outside) = open_outside(cx);
+    let t = model::tracks(&root(&ws, cx))[1].id;
+    drag(cx, "tknob-1", 0.0, -30.0);
+    let p = center(cx, "tknob-1");
+    button_at(cx, p, MouseButton::Right, 1);
+    click(cx, "knob-menu-reset");
+    assert_eq!(track_volume(&ws, cx, 1), 1.0);
+    button_at(cx, p, MouseButton::Right, 1);
+    click(cx, "menu-midi-learn");
+    outside.midi("Controlador 1", 0, CC7, 1);
+    settle(cx);
+    assert_eq!(mappings(&ws, cx)[0].target, crate::ui::midi::param(t, "volume"));
+}
+
+/// The MIDI maps page lists the mappings (search, in-place edits, remove) and shows the activity
+#[gpui::test]
+fn the_midi_maps_page(cx: &mut TestAppContext) {
+    let (ws, cx, outside) = open_outside(cx);
+    let t = model::tracks(&root(&ws, cx))[1].id;
+    let core = core(&ws, cx);
+    core.update(cx, |c, _| {
+        c.port_mut().midi_learn(crate::ui::midi::param(t, "volume"), lm_port::MapScope::Project).ok()
+    });
+    outside.midi("Controlador 1", 0, CC7, 5);
+    outside.midi("Teclado", 0, lm_port::MidiMessage::Note { key: 60 }, 100);
+    settle(cx);
+    keys(cx, "secondary-3");
+    assert_eq!(ws.read_with(cx, |ws, _| ws.page), Page::MidiMaps);
+    assert!(drawn(cx, "map-0"), "the mapping is listed");
+    assert!(!drawn(cx, "map-1"));
+    let fb = mappings(&ws, cx)[0].feedback;
+    click(cx, "map-0-feedback");
+    assert_ne!(mappings(&ws, cx)[0].feedback, fb, "feedback toggled in place");
+    click(cx, "map-0-takeover");
+    assert_eq!(map_text(&ws, cx, &["transform", "takeover"]), "scale", "pickup → scale");
+    click(cx, "map-0-remove");
+    assert!(!drawn(cx, "map-0"), "removed");
+    assert!(drawn(cx, "midi-activity"));
+}
+
+/// A mapped interface action arrives through the port's feed and runs as if its key was pressed
+#[gpui::test]
+fn a_mapped_interface_action_runs(cx: &mut TestAppContext) {
+    let (ws, cx, outside) = open_outside(cx);
+    let core = core(&ws, cx);
+    let target = lm_port::MapTarget::Action { id: "view.mixing".into(), params: Value::NULL, value_into: None };
+    core.update(cx, |c, _| c.port_mut().midi_learn(target, lm_port::MapScope::Machine).ok());
+    outside.midi("Controlador 1", 0, lm_port::MidiMessage::Note { key: 36 }, 127);
+    settle(cx);
+    assert_eq!(ws.read_with(cx, |ws, _| ws.page), Page::Composition, "learning took the first one");
+    outside.midi("Controlador 1", 0, lm_port::MidiMessage::Note { key: 36 }, 127);
+    settle(cx);
+    settle(cx);
+    assert_eq!(ws.read_with(cx, |ws, _| ws.page), Page::Mixing, "the mapped note shows the mixing page");
+}
+
+/// The selection goes to the interface document, which the selection-following MIDI targets read (I-21.2)
+#[gpui::test]
+fn the_selection_is_in_the_interface_document(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    show(&ws, cx, Page::Mixing);
+    let id = some_channel(&ws, cx);
+    select_strip(&ws, cx, id);
+    settle(cx);
+    let core = core(&ws, cx);
+    let sel = |cx: &mut VisualTestContext, k: &str| {
+        core.read_with(cx, |c, _| c.port().ui().get("selection").and_then(|s| s.get(k)).cloned())
+    };
+    assert_eq!(sel(cx, "channel"), Some(Value::text(id.to_string())));
+    show(&ws, cx, Page::Composition);
+    let (item, _) = pick_item(&ws, cx, 2);
+    let _ = item;
+    settle(cx);
+    let t = model::tracks(&root(&ws, cx))[2].id;
+    assert_eq!(sel(cx, "track"), Some(Value::text(t.to_string())));
+}
+
+/// Lanes: the mode button cycles the lane's mode; "the hand won" shows until re-armed, per lane and globally; the
+/// global automation button; a double click opens the lane in the automation editor; the lane's menu thins it
+#[gpui::test]
+fn lane_modes_hand_won_and_rearm(cx: &mut TestAppContext) {
+    let (ws, cx, outside) = open_outside(cx);
+    let tr2 = model::tracks(&root(&ws, cx))[2].clone();
+    let lane = tr2.automation[0].id;
+    click(cx, "lanes-2");
+    let sel = format!("lane-mode-{}", lane.number);
+    click(cx, &sel);
+    assert_eq!(&*model::tracks(&root(&ws, cx))[2].automation[0].mode, "touch");
+    outside.hand_wins(tr2.id, "volume");
+    settle(cx);
+    assert!(drawn(cx, &format!("rearm-{}", lane.number)), "the hand won, on the lane");
+    assert!(drawn(cx, "rearm-all"), "and in the transport");
+    click(cx, &format!("rearm-{}", lane.number));
+    settle(cx);
+    assert!(!drawn(cx, "rearm-all"), "re-armed");
+    click(cx, "automation-mode");
+    assert_eq!(model::at(&root(&ws, cx), &["transport", "automationMode"]).and_then(Value::as_text), Some("off"));
+    // the lane's menu thins it; a double click opens the editor on it
+    let n = model::tracks(&root(&ws, cx))[2].automation[0].points.len();
+    let p = point(center(cx, "timeline").x, center(cx, &sel).y);
+    button_at(cx, p, MouseButton::Right, 1);
+    click(cx, "lane-menu-thin");
+    assert!(model::tracks(&root(&ws, cx))[2].automation[0].points.len() <= n);
+    button_at(cx, p, MouseButton::Left, 2);
+    assert!(ws.read_with(cx, |ws, _| ws.is_open(Screen::Automation)), "the automation editor on the lane");
+}
+
+/// Moving an item moves the automation under it, in one undo step (I-21.5)
+#[gpui::test]
+fn moving_an_item_takes_its_automation(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    // the first point under the item
+    let start = model::tracks(&root(&ws, cx))[2].items[0].start;
+    let i = model::tracks(&root(&ws, cx))[2].automation[0].points.iter().position(|p| p.0 >= start).unwrap();
+    let first_point = |cx: &mut VisualTestContext| model::tracks(&root(&ws, cx))[2].automation[0].points[i].0;
+    let before = first_point(cx);
+    let (_, p) = pick_item(&ws, cx, 2);
+    drag_at(cx, p, 120.0, 0.0, Modifiers::none());
+    assert!(first_point(cx) > before, "the automation moved with the item");
+    undo(cx);
+    assert_eq!(first_point(cx), before, "one undo step");
 }

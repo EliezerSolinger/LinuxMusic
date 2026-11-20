@@ -12,6 +12,7 @@
 pub mod demo;
 mod library;
 mod midi;
+pub use midi::Outside;
 pub mod peaks;
 mod services;
 
@@ -107,6 +108,9 @@ pub struct FakePort {
     real_plugins: Vec<(Arc<str>, bool)>,
     /// The last `param_write` (not cleared at the gesture's end, for the plugin panels' tests)
     last_write: Option<(NodeId, String, f32)>,
+    /// The interface document (I-3.8)
+    ui: Value,
+    outside: midi::Outside,
 }
 
 /// A real plugin's schema for the fake (lm-gui-plugins' tests: the panels move the real parameters). The fake
@@ -121,6 +125,11 @@ impl std::fmt::Debug for FakePort {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FakePort").field("pumps", &self.pumps).finish_non_exhaustive()
     }
+}
+
+/// A node's id, read from its `id` field
+fn lm_id(v: &Value) -> Option<NodeId> {
+    v.get("id").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok())
 }
 
 fn err(key: &'static str) -> Error {
@@ -156,6 +165,8 @@ impl FakePort {
         let mut port = FakePort {
             own_feed,
             midi: Default::default(),
+            ui: Value::empty_object(),
+            outside: Default::default(),
             doc,
             resources: HashMap::new(),
             loading_resources: Vec::new(),
@@ -767,6 +778,7 @@ impl Drop for FakePort {
 impl CorePort for FakePort {
     fn pump(&mut self) -> bool {
         self.pumps += 1;
+        let outside = self.pump_outside();
         let now = Instant::now();
         // a pump far too late: an xrun in a real engine's terms (P-14)
         if self.transport.playing && now.duration_since(self.last_pump) > Duration::from_millis(250) {
@@ -775,7 +787,7 @@ impl CorePort for FakePort {
             self.telemetry.xrun_marks.push(p);
         }
         self.last_pump = now;
-        let mut changed = false;
+        let mut changed = outside;
         // operations that ended: their effect, applied here (an operation never touches the session, I-2.2)
         let mut i = 0;
         while i < self.ops.len() {
@@ -935,6 +947,8 @@ impl CorePort for FakePort {
             "arrange.duplicate" => self.duplicate(&params),
             "mixer.create_channels_for_outputs" => self.create_channels_for_outputs(&params),
             "automation.rearm" => self.rearm(&params),
+            "items.move" => self.move_items(&params),
+            "automation.thin" => self.thin(&params),
             "items.rerender" => {
                 self.start(
                     Label::new("Re-rendering the recorded items"),
@@ -1174,6 +1188,14 @@ impl CorePort for FakePort {
 
     fn plugin_schema(&self, plugin: &str) -> Option<lm_port::NodeSchema> {
         self.doc.registry().find(&format!("plugin:{plugin}")).cloned()
+    }
+
+    fn ui(&self) -> &Value {
+        &self.ui
+    }
+
+    fn set_ui(&mut self, path: Vec<PathStep>, value: Value) -> Pending<()> {
+        Pending::Ready(self.ui.with_path(&path, value).map(|u| self.ui = u))
     }
 
     fn midi_learn(&mut self, target: lm_port::MapTarget, scope: lm_port::MapScope) -> Pending<lm_port::LearnId> {

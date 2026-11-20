@@ -9,7 +9,8 @@ use gpui::{
     AnyView, App, Context, Entity, FocusHandle, FontWeight, Render, SharedString, Subscription, Window, canvas, div,
     prelude::*, px,
 };
-use lm_port::{CorePort, NodeId, Value};
+use lm_port::trees::ui;
+use lm_port::{CorePort, NodeId, PathStep, Value};
 
 use crate::actions::*;
 use crate::core::Core;
@@ -38,12 +39,19 @@ pub struct Workspace {
     pub page: Page,
     pub composition: Entity<CompositionPage>,
     pub mixing: Entity<MixingPage>,
+    pub midi_maps: Entity<crate::pages::midi_maps::MidiMapsPage>,
     open: Vec<(Screen, AnyView)>,
+    /// The plugin whose window is open (the instrument's or an effect's): the selection's `plugin` (I-21.2)
+    focused_plugin: Option<NodeId>,
     pub display_format: transport::DisplayFormat,
     pub tempo_drag: Option<transport::TempoDrag>,
     /// Asking before losing changes
     pub confirm: Option<Pending>,
+    /// The control the MIDI binding window shows (I-21.2)
+    pub binding: Option<lm_port::MapTarget>,
     _observe: Subscription,
+    /// The pages' changes: the selection goes to the interface document when it changes
+    _pages: [Subscription; 2],
 }
 
 impl Workspace {
@@ -52,7 +60,12 @@ impl Workspace {
         let weak = cx.weak_entity();
         let composition = cx.new(|cx| CompositionPage::new(core.clone(), weak.clone(), cx));
         let mixing = cx.new(|cx| MixingPage::new(core.clone(), weak.clone(), cx));
+        let midi_maps = cx.new(|cx| crate::pages::midi_maps::MidiMapsPage::new(core.clone(), weak.clone(), window, cx));
         let observe = cx.observe(&core, |_, _, cx| cx.notify());
+        let pages = [
+            cx.observe(&composition, |ws, _, cx| ws.write_selection(cx)),
+            cx.observe(&mixing, |ws, _, cx| ws.write_selection(cx)),
+        ];
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         let mut ws = Workspace {
@@ -61,11 +74,15 @@ impl Workspace {
             page: if std::env::var("LM_PAGE").as_deref() == Ok("mixing") { Page::Mixing } else { Page::Composition },
             composition,
             mixing,
+            midi_maps,
             open: Vec::new(),
+            focused_plugin: None,
             display_format: Default::default(),
             tempo_drag: None,
             confirm: None,
+            binding: None,
             _observe: observe,
+            _pages: pages,
         };
         // LM_OPEN=Settings,PianoRoll... opens screens at start (screenshots, and each author's own testing)
         if let Ok(list) = std::env::var("LM_OPEN") {
@@ -89,13 +106,27 @@ impl Workspace {
         }
         // one modal at a time, one screen per dock
         self.open.retain(|(o, _)| o.placement() != place);
-        let scx = ScreenCx { core: self.core.clone(), workspace: cx.weak_entity(), screen: s, target };
+        if matches!(s, Screen::Effect | Screen::Instrument) {
+            self.focused_plugin = target;
+            // after the current update: the page that opened the window may be the one being updated
+            let me = cx.weak_entity();
+            cx.defer(move |cx| {
+                let _ = me.update(cx, |ws, cx| ws.write_selection(cx));
+            });
+        }
+        let binding = if s == Screen::MidiBinding { self.binding.clone() } else { None };
+        let scx = ScreenCx { core: self.core.clone(), workspace: cx.weak_entity(), screen: s, target, binding };
         let view = screens::open(scx, window, cx);
         self.open.push((s, view));
         cx.notify();
     }
 
     pub fn close(&mut self, s: Screen, cx: &mut Context<Self>) {
+        if matches!(s, Screen::Effect | Screen::Instrument)
+            && !self.open.iter().any(|(o, _)| *o != s && matches!(o, Screen::Effect | Screen::Instrument))
+        {
+            self.focused_plugin = None;
+        }
         self.open.retain(|(o, _)| *o != s);
         cx.notify();
     }
@@ -130,6 +161,74 @@ impl Workspace {
             cx.notify();
         } else {
             self.finish(what, window, cx);
+        }
+    }
+
+    /// The selection, written to the interface document when it changed (I-3.8): the focused track, the selected
+    /// desk channel and the focused plugin, which the selection-following MIDI targets follow (I-21.2)
+    fn write_selection(&mut self, cx: &mut Context<Self>) {
+        let root = self.core.read(cx).port().root().clone();
+        let track = self.composition.read(cx).selected_track(&root);
+        let channel = self.mixing.read(cx).selected;
+        let plugin = self.focused_plugin;
+        let text = |id: Option<NodeId>| id.map_or(Value::NULL, |id| Value::text(id.to_string()));
+        let mut selection =
+            self.core.read(cx).port().ui().get(ui::SELECTION).cloned().unwrap_or_else(Value::empty_object);
+        let before = selection.clone();
+        for (key, id) in [(ui::TRACK, track), (ui::CHANNEL, channel), (ui::PLUGIN, plugin)] {
+            selection = selection.with(key, text(id));
+        }
+        if selection != before {
+            self.core.update(cx, |core, _| {
+                let _ = core.port_mut().set_ui(vec![PathStep::key(ui::SELECTION)], selection);
+            });
+        }
+    }
+
+    /// While a MIDI learn waits for a control: say so, with Cancel (I-21.2)
+    fn learning_banner(&self, cx: &Context<Self>) -> Option<impl IntoElement + use<>> {
+        let id = self.core.read(cx).port().learning()?;
+        let core = self.core.clone();
+        Some(
+            div().absolute().bottom(px(16.)).left(px(0.)).w_full().flex().justify_center().child(
+                div()
+                    .id("learning")
+                    .debug_selector(|| "learning".into())
+                    .occlude()
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .px(px(14.))
+                    .py(px(8.))
+                    .rounded(px(8.))
+                    .bg(c(THEME.bg3))
+                    .border_1()
+                    .border_color(c(THEME.yellow))
+                    .shadow_lg()
+                    .child(div().text_size(px(13.)).child(tr("Move a MIDI control…")))
+                    .child(
+                        button("learning-cancel", tr("Cancel"), false, 0)
+                            .debug_selector(|| "learning-cancel".into())
+                            .on_click(move |_, _, cx| {
+                                core.update(cx, |core, cx| {
+                                    core.port_mut().cancel_learn(id);
+                                    cx.notify();
+                                })
+                            }),
+                    ),
+            ),
+        )
+    }
+
+    /// The interface's actions that mapped MIDI controls reached (the `MidiUiAction` feed, I-21.2): run as if their
+    /// keys were pressed, through the registry
+    fn run_midi_actions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let actions = self.core.update(cx, |core, _| std::mem::take(&mut core.midi_ui));
+        for a in actions {
+            let Some(def) = crate::actions::find(a.action.as_str()) else { continue };
+            if let Ok(action) = cx.build_action(def.gpui, None) {
+                window.dispatch_action(action, cx);
+            }
         }
     }
 
@@ -174,12 +273,14 @@ impl Render for Workspace {
         if quit {
             cx.quit();
         }
+        self.run_midi_actions(window, cx);
         if animate {
             window.request_animation_frame();
         }
         let page_view: AnyView = match self.page {
             Page::Composition => self.composition.clone().into(),
             Page::Mixing => self.mixing.clone().into(),
+            Page::MidiMaps => self.midi_maps.clone().into(),
         };
         let modal = self.docked(Placement::Modal);
         let confirm = self.confirm;
@@ -205,12 +306,20 @@ impl Render for Workspace {
                 ws.page = Page::Composition;
                 cx.notify();
             }))
+            .on_action(cx.listener(|ws, _: &ShowMidiMaps, _, cx| {
+                ws.page = Page::MidiMaps;
+                cx.notify();
+            }))
             .on_action(cx.listener(|ws, _: &ShowMixing, _, cx| {
                 ws.page = Page::Mixing;
                 cx.notify();
             }))
             .on_action(cx.listener(|ws, _: &NextPage, _, cx| {
-                ws.page = if ws.page == Page::Composition { Page::Mixing } else { Page::Composition };
+                ws.page = match ws.page {
+                    Page::Composition => Page::Mixing,
+                    Page::Mixing => Page::MidiMaps,
+                    Page::MidiMaps => Page::Composition,
+                };
                 cx.notify();
             }))
             .on_action(cx.listener(|ws, _: &OpenPalette, window, cx| ws.toggle_screen(Screen::Palette, window, cx)))
@@ -280,6 +389,7 @@ impl Render for Workspace {
             )
             .children(modal.map(|v| scrim("modal-scrim").child(v)))
             .children(confirm.map(|what| self.render_confirm(what, cx)))
+            .children(self.learning_banner(cx))
             // painted last: the CPU time of the frame, from the start of render to the end of paint
             .children(probe.map(|probe| canvas(|_, _, _| {}, move |_, _, _, _| probe(started)).absolute().size(px(0.))))
     }
@@ -321,7 +431,7 @@ impl Workspace {
             .bg(c(THEME.bg2))
             .border_b_1()
             .border_color(c(THEME.line))
-            .children([Page::Composition, Page::Mixing].into_iter().map(|p| {
+            .children([Page::Composition, Page::Mixing, Page::MidiMaps].into_iter().map(|p| {
                 tab(p.title(), tr(p.title()), self.page == p).on_click(cx.listener(move |ws, _, _, cx| {
                     ws.page = p;
                     cx.notify();

@@ -232,6 +232,45 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
                 })),
         )
         .child(tbutton("sig", format!("{}/{}", sig.numerator(), sig.denominator()), false, 0))
+        // the global automation button (I-21.5): "Lanes" lets each lane use its own mode
+        .child({
+            let now = model::at(root, &["transport", "automationMode"])
+                .and_then(Value::as_text)
+                .unwrap_or("lanes")
+                .to_string();
+            let (label, color) = match now.as_str() {
+                "off" => ("Auto: Off", THEME.text3),
+                "read" => ("Auto: Read", THEME.green),
+                "touch" => ("Auto: Touch", THEME.yellow),
+                "latch" => ("Auto: Latch", THEME.orange),
+                "write" => ("Auto: Write", THEME.red),
+                _ => ("Auto: Lanes", THEME.blue),
+            };
+            tbutton("automation", tr(label), now != "lanes", color)
+                .debug_selector(|| "automation-mode".into())
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    let next = match now.as_str() {
+                        "lanes" => "off",
+                        "off" => "read",
+                        "read" => "touch",
+                        "touch" => "latch",
+                        "latch" => "write",
+                        _ => "lanes",
+                    };
+                    set_song(ws, &["transport", "automationMode"], Value::text(next), cx)
+                }))
+        })
+        // the hand won somewhere: re-arm every lane back to its curve
+        .when(!tele.hand_won.is_empty(), |d| {
+            d.child(tbutton("rearm", tr("Re-arm"), true, THEME.yellow).debug_selector(|| "rearm-all".into()).on_click(
+                cx.listener(|ws, _, _, cx| {
+                    ws.core.update(cx, |core, _| {
+                        let _ = core.port_mut().run_action("automation.rearm".into(), Value::empty_object());
+                    });
+                    cx.notify();
+                }),
+            ))
+        })
         .child(tbutton("metro", "◷", metro, THEME.green).on_click(
             cx.listener(move |ws, _, _, cx| set_song(ws, &["transport", "metronome", "on"], Value::bool(!metro), cx)),
         ))

@@ -326,6 +326,20 @@ de forma diz pelo que é substituído.
   `TelemetryView::hand_won`. Os métodos têm corpo padrão só na transição, para o `lm-session` e o `lm-remote`
   seguirem compilando; o falso já responde, e as portas de verdade passam a responder (a `LocalPort` pelo agente da
   I-21). A `RemotePort` precisa levar `hand_won` na telemetria do fio.
+- **O documento da interface no `CorePort`** (`ui`/`set_ui`, agente A, pedido pelo agente da I-21 e pelo B): a
+  seleção (`selection: { track, channel, plugin }`) e o estado da interface (as docas do B) vivem nele, como a I-3.8
+  manda. A `Workspace` escreve a seleção quando uma página muda (observando as páginas), e só se ela mudou.
+- **A interface da I-21 no `lm-gui` (agente A):**
+  - "Aprender MIDI", "Tirar o mapa MIDI" e "Ligação MIDI…" ficam no menu de todo controle da mesa (botões,
+    faders, envios, interruptores e seletores) e no botão de volume da faixa;
+  - a janela de ligação é uma tela modal sobre um `MapTarget`;
+  - "Mapas MIDI" é uma terceira página (Cmd/Ctrl+3), com busca, edição no lugar e o monitor de atividade;
+  - o aviso "mova um controle" aparece com Cancelar enquanto se aprende;
+  - as ações da interface mapeadas chegam pelo `drain_midi_ui` e rodam pelo registro.
+  - Nas pistas do arranjo: o modo da pista, "a mão venceu" com Rearmar, o botão global no transporte, um menu da
+    pista (abrir no editor, afinar, converter para a faixa de CC do item) e os itens movidos com `items.move`,
+    levando a automação (ligado por padrão).
+  - A edição de pontos (lápis livre, linha, seleção, escalar e deslocar) fica no editor de automação, do agente B.
 
 
 ### Janela de efeito e navegador no `lm-gui`: o que difere do legado e por quê (agente C, 20/11)

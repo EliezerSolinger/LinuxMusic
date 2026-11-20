@@ -1,6 +1,7 @@
 //! The shared interface kit: the theme as data, the translation, and the widgets every screen uses.
 
 pub mod i18n;
+pub mod midi;
 pub mod theme;
 pub mod widgets;
 

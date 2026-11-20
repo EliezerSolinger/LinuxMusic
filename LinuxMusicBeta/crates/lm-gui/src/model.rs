@@ -124,10 +124,13 @@ impl ItemView {
 
 #[derive(Clone, Debug)]
 pub struct AutomationView {
-    #[expect(dead_code, reason = "the lane's mode and editing (I-21.5) come next")]
     pub id: NodeId,
+    /// The parameter's node (the track, a channel or a plugin) and key
+    pub node: Option<NodeId>,
     pub param: Arc<str>,
     pub on: bool,
+    /// Off, Read, Touch, Latch or Write (I-21.5); absent is Read
+    pub mode: Arc<str>,
     /// (tick, value, curve)
     pub points: Vec<(i64, f64, f64)>,
 }
@@ -237,8 +240,14 @@ pub fn tracks(root: &Value) -> Vec<TrackView> {
                     .filter_map(|a| {
                         Some(AutomationView {
                             id: id_of(a)?,
+                            node: a.get("target").and_then(|tg| ref_of(tg, "node")),
                             param: a.get("target").map(|tg| text(tg, "param")).unwrap_or_else(|| Arc::from("")),
                             on: a.get("on").and_then(Value::as_bool).unwrap_or(true),
+                            mode: a
+                                .get("mode")
+                                .and_then(Value::as_shared_text)
+                                .cloned()
+                                .unwrap_or_else(|| Arc::from("read")),
                             points: list(a, "points")
                                 .map(|p| (int(p, "tick", 0), real(p, "value", 0.0), real(p, "curve", 0.0)))
                                 .collect(),

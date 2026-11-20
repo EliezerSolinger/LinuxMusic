@@ -1058,7 +1058,11 @@ pub struct Applied { pub diff: Diff, pub created: Vec<(u32, NodeId)>, pub notes:
     `midi_activity(since) -> (u64, Vec<MidiActivity>)` (a atividade crua, com perda, as últimas 256); os tipos do
     mapa (`MapTarget`, `NodeRef`, `MapScope`, `Mapping`, `DocSource`, `Message`) vêm do `lm-midimap` e o `lm-port` os
     reexporta. `TelemetryView::hand_won` lista as pistas em que a mão venceu (o dono e a chave do parâmetro), até o
-    `automation.rearm`. As implementações padrão são só da transição: toda porta de verdade responde.
+    `automation.rearm`. As implementações padrão são só da transição: toda porta de verdade responde;
+  - **o documento da interface (I-3.8)**: `ui()` e `set_ui(path, value)`, sem desfazer e fora do diário. A interface
+    escreve ali a seleção, `selection: { track, channel, plugin }` (a faixa em foco, o canal selecionado na mesa, o
+    plugin com a janela aberta), que os alvos MIDI que seguem a seleção leem (I-21.2); a forma está em
+    `lm-port/src/trees.rs`.
 - **Testes:** o mesmo roteiro de interface roda contra a `LocalPort` e contra a `RemotePort` ligada a um servidor no
   mesmo processo (por um socket local), e tem que dar a mesma árvore e os mesmos `Diff`s.
 - **O protótipo** é escrito contra um núcleo de mentira que já tem a forma do `CorePort` (dados nos argumentos, sem

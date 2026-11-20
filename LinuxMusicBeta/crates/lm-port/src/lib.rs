@@ -18,7 +18,9 @@
 //!   builds its controls from;
 //! - MIDI mapping (I-21.2): `midi_learn`, `cancel_learn`, `learning`, `unmap`, the `MidiUiAction` feed
 //!   (`drain_midi_ui`) and the raw MIDI activity (`midi_activity`); the mappings' types come from `lm-midimap`;
-//!   `TelemetryView::hand_won`, the automation lanes the hand overrode (I-21.5).
+//!   `TelemetryView::hand_won`, the automation lanes the hand overrode (I-21.5);
+//! - the interface document (I-3.8): `ui` and `set_ui`, no undo, not journaled; the GUI writes the selection there
+//!   (`selection: { track, channel, plugin }`), which the selection-following MIDI targets read (I-21.2).
 
 #![forbid(unsafe_code)]
 
@@ -417,6 +419,19 @@ pub trait CorePort {
     /// (choices by key, U30). The default is for the transition only, as for `plugins`
     fn plugin_schema(&self, _plugin: &str) -> Option<NodeSchema> {
         None
+    }
+
+    // --- the interface document (I-3.8, addition of 20/11): windows, zoom, scroll, selection; no undo, out of the
+    // journal, saved in interface.json. The defaults are for the transition only
+    /// The interface document's root
+    fn ui(&self) -> &Value {
+        static NONE: Value = Value::NULL;
+        &NONE
+    }
+    /// Sets a key path of the interface document (made when absent)
+    fn set_ui(&mut self, path: Vec<PathStep>, value: Value) -> Pending<()> {
+        let _ = (path, value);
+        Pending::Ready(Err(Error::new("port.ui.unsupported")))
     }
 
     // --- MIDI mapping (I-21.2, addition of 20/11). The defaults are for the transition only: every real port

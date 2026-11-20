@@ -24,6 +24,14 @@
 //!                       readable: bool, writable: bool } ]                         (I-21.1: hotplug state)
 //! ```
 //!
+//! `ui()`, the interface document (I-3.8; changed by `set_ui(path, value)`, no undo):
+//! ```text
+//! selection: { track: text (NodeId) | null, channel: text (NodeId, the master "m:0") | null,
+//!              plugin: text (NodeId) | null, tracks: [text] }
+//!            the focused track, the selected desk channel, the focused plugin (its window or rack slot); the
+//!            selection-following MIDI targets read the first three (I-21.2)
+//! ```
+//!
 //! `preferences()` (I-16; changed by `set_preference(path, value)`):
 //! ```text
 //! language:          text ("pt-BR", "en")                 applies at the restart
@@ -83,6 +91,15 @@ pub mod status {
     pub const DEVICE: &str = "device";
     pub const REALTIME: &str = "realtime";
     pub const MIDI_PORTS: &str = "midiPorts";
+}
+
+/// The keys of `ui()`
+pub mod ui {
+    pub const SELECTION: &str = "selection";
+    pub const TRACK: &str = "track";
+    pub const CHANNEL: &str = "channel";
+    pub const PLUGIN: &str = "plugin";
+    pub const TRACKS: &str = "tracks";
 }
 
 /// The keys of `preferences()`

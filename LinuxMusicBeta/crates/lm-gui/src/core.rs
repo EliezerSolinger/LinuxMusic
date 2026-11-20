@@ -22,6 +22,10 @@ pub struct Core {
     pub shown: HashMap<NodeId, f32>,
     /// How many times the pump ran (the tests check H2 with it)
     pub pumps: u64,
+    /// The interface's actions mapped MIDI controls reached (I-21.2), for the workspace to run
+    pub midi_ui: Vec<lm_port::MidiUiAction>,
+    /// The MIDI activity's counter and the learn, last seen: a change redraws
+    midi_seen: (u64, Option<lm_port::LearnId>),
     last_meters: Instant,
     _pump: Task<()>,
 }
@@ -46,7 +50,16 @@ impl Core {
                 }
             }
         });
-        let mut core = Core { port, bench, shown: HashMap::new(), pumps: 0, last_meters: Instant::now(), _pump: pump };
+        let mut core = Core {
+            port,
+            bench,
+            shown: HashMap::new(),
+            pumps: 0,
+            midi_ui: Vec::new(),
+            midi_seen: (0, None),
+            last_meters: Instant::now(),
+            _pump: pump,
+        };
         if core.bench.wants_play() {
             let _ = core.port.run_action("transport.play".into(), lm_port::Value::NULL);
         }
@@ -69,7 +82,11 @@ impl Core {
             cx.quit();
             return;
         }
-        if changed || self.shown.values().any(|m| *m > 0.0) {
+        self.port.drain_midi_ui(&mut self.midi_ui);
+        let midi = (self.port.midi_activity(u64::MAX).0, self.port.learning());
+        let midi_changed = midi != self.midi_seen || !self.midi_ui.is_empty();
+        self.midi_seen = midi;
+        if changed || midi_changed || self.shown.values().any(|m| *m > 0.0) {
             cx.notify();
         }
     }

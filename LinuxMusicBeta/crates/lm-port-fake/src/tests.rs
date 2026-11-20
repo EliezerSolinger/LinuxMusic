@@ -355,3 +355,49 @@ fn the_hand_won_until_rearmed() {
     p.run_action("automation.rearm".into(), Value::empty_object()).ok().unwrap();
     assert!(p.telemetry().hand_won.is_empty());
 }
+
+/// `items.move` takes the automation under the items along (I-21.5), in one undo step; `automation.thin` drops
+/// the points a line already gives
+#[test]
+fn moving_items_moves_their_automation_and_thinning() {
+    let mut p = small();
+    let t = track(&p, 2);
+    let item = p.find(t).unwrap().get("items").unwrap().items().next().unwrap().clone();
+    let item_id = NodeId::parse(item.get("id").unwrap().as_text().unwrap()).unwrap();
+    let start = item.get("start").unwrap().as_int().unwrap();
+    let pt = |tick: i64, v: f64| Value::object([("tick", Value::int(tick)), ("value", Value::real(v).unwrap())]);
+    let lane = Value::object([
+        ("target", Value::object([("node", Value::text(t.to_string())), ("param", Value::text("volume"))])),
+        ("points", Value::list([pt(start, 0.5), pt(start + 100, 0.6), pt(start + 200, 0.7), pt(start + 300, 0.2)])),
+    ]);
+    let n = p.find(t).unwrap().get("automation").map_or(0, Value::len);
+    let made = p
+        .apply(
+            Label::new("lane"),
+            vec![EditOp::Insert { temp: 1, parent: Ref::Id(t), list: "automation".into(), index: n, node: lane }],
+        )
+        .ok()
+        .unwrap();
+    let lane_id = made.created[0].1;
+    p.run_action(
+        "items.move".into(),
+        Value::object([("items", Value::list([Value::text(item_id.to_string())])), ("delta", Value::int(960))]),
+    )
+    .ok()
+    .unwrap();
+    let ticks = |p: &FakePort| -> Vec<i64> {
+        p.find(lane_id)
+            .unwrap()
+            .get("points")
+            .unwrap()
+            .items()
+            .map(|v| v.get("tick").unwrap().as_int().unwrap())
+            .collect()
+    };
+    assert_eq!(p.find(item_id).unwrap().get("start").unwrap().as_int(), Some(start + 960));
+    assert_eq!(ticks(&p)[0], start + 960, "the points under the item moved");
+    p.undo().ok().unwrap();
+    assert_eq!(ticks(&p)[0], start, "one undo step");
+    p.run_action("automation.thin".into(), Value::object([("lane", Value::text(lane_id.to_string()))])).ok().unwrap();
+    assert_eq!(ticks(&p).len(), 3, "the middle point of the straight part went: {:?}", ticks(&p));
+}
