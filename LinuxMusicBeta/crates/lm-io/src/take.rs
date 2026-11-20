@@ -237,7 +237,12 @@ pub(crate) fn take_from_record(record: &Path, header: &RecordHeader, events: &[R
             RecordLine::Span(s) if s.file_frame < frames => {
                 let mut s = s;
                 s.frames = s.frames.min(frames - s.file_frame);
-                take.spans.push(s);
+                match take.spans.last_mut() {
+                    Some(last) if last.file_frame + last.frames == s.file_frame && last.sample + last.frames as i64 == s.sample => {
+                        last.frames += s.frames;
+                    }
+                    _ => take.spans.push(s),
+                }
             }
             RecordLine::Cut(c) if c.file_frame <= frames => take.cuts.push(c),
             RecordLine::Gap(g) if g.file_frame < frames => {

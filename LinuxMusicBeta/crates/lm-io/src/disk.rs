@@ -364,7 +364,13 @@ impl Worker {
                     }
                 }
                 let span = TakeSpan { file_frame, sample, frames };
-                t.spans.push(span);
+                // A span sent in pieces (one a second) is one span
+                match t.spans.last_mut() {
+                    Some(last) if last.file_frame + last.frames == file_frame && last.sample + last.frames as i64 == sample => {
+                        last.frames += frames;
+                    }
+                    _ => t.spans.push(span),
+                }
                 t.span_end = Some((file_frame + frames, sample + frames as i64));
                 for i in t.inputs.iter_mut() {
                     append(i, &RecordLine::Span(span));

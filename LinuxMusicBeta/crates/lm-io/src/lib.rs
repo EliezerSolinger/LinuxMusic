@@ -11,6 +11,7 @@ mod dummy;
 mod edge;
 mod midi;
 pub mod peaks;
+mod reader;
 mod record;
 mod resources;
 mod rt;
@@ -45,3 +46,4 @@ pub use resources::{
     resource_path, verify_located,
 };
 pub use calibrate::{BURST, Calibration, CalibrationKey, CalibrationOptions, burst, calibrate, find_lag};
+pub use reader::{DiskReader, StreamEvent};

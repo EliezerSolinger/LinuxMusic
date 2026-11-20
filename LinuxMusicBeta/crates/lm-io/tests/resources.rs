@@ -195,3 +195,38 @@ fn long_resources_play_from_disk() {
     assert_eq!(view.on_disk(&key).map(|o| o.frames), Some(24_000));
     assert!(view.is_ready(&key));
 }
+
+/// P-32: the disk streamer fills a stream from the file, nearest the playhead first, and drops it when the program
+/// side is gone
+#[test]
+fn disk_reader_streams_a_file() {
+    let dir = TempDir::new("stream");
+    let path = dir.0.join("long.wav");
+    let frames = 48_000 * 10;
+    write_wav(&path, 48_000, 2, frames);
+    let (stream, feeder) = lm_render::stream(lm_render::StreamSpec::new(48_000, 2, frames as u64)).expect("stream");
+    stream.set_playhead(Some(100_000));
+    let mut reader = DiskReader::start().expect("reader");
+    reader.serve(path.clone(), feeder).expect("serve");
+    wait_for(10, "the window around the playhead", || !stream.pending());
+    let mut out = vec![0.0f32; 2 * 1000];
+    assert_eq!(stream.read(100_000, 1000, &mut out), 0, "nothing missing");
+    let (c, p) = ops();
+    let data = load_file(&path, &c, &p).expect("load");
+    assert_eq!(&out[..1000], &data.channel(0)[100_000..101_000]);
+    assert_eq!(&out[1000..], &data.channel(1)[100_000..101_000]);
+    // A wrong rate is refused, not played out of tune
+    let (s2, f2) = lm_render::stream(lm_render::StreamSpec::new(44_100, 2, frames as u64)).expect("stream");
+    s2.set_playhead(Some(0));
+    reader.serve(path, f2).expect("serve");
+    let mut failed = None;
+    wait_for(5, "the refusal", || {
+        reader.poll(|e| {
+            let StreamEvent::Failed { error, .. } = e;
+            failed = Some(error.key());
+        });
+        failed.is_some()
+    });
+    assert_eq!(failed, Some("io.stream.rate_mismatch"));
+    drop(stream);
+}

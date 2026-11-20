@@ -96,6 +96,8 @@ pub struct RecordSender {
     file_pos: u64,
     pending: Option<(u64, i64, u64)>,
     max_channel: usize,
+    /// A span longer than this is sent in pieces, so `recording.json` knows the take proper even after a crash (U5)
+    span_flush: u64,
 }
 
 struct SenderInput {
@@ -170,6 +172,7 @@ pub fn recording_channel(plan: RecordPlan) -> Result<(RecordSender, RecordReceiv
         file_pos: 0,
         pending: None,
         max_channel,
+        span_flush: u64::from(plan.rate),
     };
     Ok((sender, RecordReceiver { plan, data, markers: mrx, failed }))
 }
@@ -246,6 +249,9 @@ impl RecordSender {
                     self.pending = Some((file_frame, s.sample, frames));
                 }
             }
+        }
+        if self.pending.is_some_and(|(_, _, n)| n >= self.span_flush) {
+            self.flush_span();
         }
         for (k, input) in self.inputs.iter_mut().enumerate() {
             if !input.enabled {

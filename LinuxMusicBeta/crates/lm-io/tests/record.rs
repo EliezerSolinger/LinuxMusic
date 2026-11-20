@@ -365,6 +365,10 @@ fn interrupted_take_is_recovered() {
     // At least the last sync (every 2 s) before 5 s
     assert!(take.frames >= 4 * i64::from(rate) - 256, "{} frames", take.frames);
     assert_eq!(take.start_sample, 0);
+    // U5: the span is in the record in pieces of a second, so the crash keeps where the take proper is
+    assert_eq!(take.spans.len(), 1, "{:?}", take.spans);
+    assert_eq!((take.spans[0].file_frame, take.spans[0].sample), (0, 0));
+    assert!(take.spans[0].frames >= 3 * u64::from(rate), "{:?}", take.spans);
     let (samples, ch) = read_all(&take.path);
     check_ramp(&samples, ch, &[]);
     assert!(find_interrupted(&copy.0).expect("scan").is_empty(), "recovered takes are not offered again");
