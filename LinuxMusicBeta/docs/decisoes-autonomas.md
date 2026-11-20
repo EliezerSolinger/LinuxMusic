@@ -518,6 +518,9 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
   `Diff`s nos dois modos.
 - **Os resultados `Waiting`** são coletados por `CorePort::finished()` (acréscimo ao `lm-port`). A resposta de uma
   mudança sempre chega depois da atualização do espelho que ela causou.
+- **Orçamentos de tempo nos testes** (V8 do `lm-compile`): o orçamento real (5 ms) vale onde é medido; com `CI`
+  definido (runners compartilhados, o macOS do GitHub deu 5,3 ms), vale um teto de 3× o orçamento, ainda bem abaixo de
+  uma regressão de verdade (o caso quadrático que o teste pegou dava 17 ms), e a medida é impressa no log.
 - **Conectar é em segundo plano** (`RemotePort::start` → `Connecting::poll`), pela regra dos 200 ms.
 - **Chaves de tradução recebidas** (`Label`, `Notice`) viram `&'static str` por uma tabela limitada (16 mil chaves de
   até 160 bytes); o excesso vira `remote.unknown_key`.

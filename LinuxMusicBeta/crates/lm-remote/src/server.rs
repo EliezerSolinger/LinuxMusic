@@ -25,6 +25,7 @@ use lm_state::{NodeId, Value};
 
 use crate::codec::{self as c, bad, get, int, real, text, uint};
 use crate::delta;
+use crate::files;
 use crate::proto::{self, Mode, PROGRAM, PROTOCOL, Role, Stream, TOOL_APIS};
 use crate::wire::{self, Frame, KIND_DISPLAY, KIND_JSON, KIND_PEAKS, KIND_TELEMETRY};
 
@@ -40,6 +41,8 @@ pub struct ServerConfig {
     /// The server's name, shown by the clients
     pub name: String,
     pub limits: ClientLimits,
+    /// Where uploads land before they are imported (I-20.3)
+    pub uploads: PathBuf,
 }
 
 /// Limits per client (I-20.6)
@@ -51,17 +54,34 @@ pub struct ClientLimits {
     pub messages_per_second: u32,
     /// Loading watches and display subscriptions
     pub max_watches: usize,
+    /// The largest file a client may upload
+    pub max_upload: u64,
+    /// Uploads open at once
+    pub max_uploads: usize,
 }
 
 impl Default for ClientLimits {
     fn default() -> Self {
-        Self { max_frame: wire::MAX_FRAME_FROM_CLIENT, messages_per_second: 4000, max_watches: 4096 }
+        Self {
+            max_frame: wire::MAX_FRAME_FROM_CLIENT,
+            messages_per_second: 4000,
+            max_watches: 4096,
+            max_upload: 16 << 30,
+            max_uploads: 8,
+        }
     }
 }
 
 impl ServerConfig {
     pub fn new(name: &str) -> Self {
-        Self { socket: None, tcp: None, tokens: Vec::new(), name: name.to_owned(), limits: ClientLimits::default() }
+        Self {
+            socket: None,
+            tcp: None,
+            tokens: Vec::new(),
+            name: name.to_owned(),
+            limits: ClientLimits::default(),
+            uploads: std::env::temp_dir().join("linuxmusic-uploads"),
+        }
     }
 }
 
@@ -101,6 +121,7 @@ struct Conn {
     busy: Arc<AtomicBool>,
     window: (Instant, u32),
     closing: bool,
+    uploads: HashMap<u64, crate::files::Upload>,
 }
 
 impl Conn {
@@ -138,7 +159,12 @@ impl Conn {
 struct Forward {
     conn: u64,
     id: u64,
+    /// An imported upload, removed once the import answered
+    cleanup: Option<PathBuf>,
 }
+
+/// A project listing being made: (connection, request, the recent projects, the folder's)
+type Listing = (u64, u64, Value, Receiver<Result<Vec<String>>>);
 
 /// The protocol's server
 pub struct Server {
@@ -158,6 +184,10 @@ pub struct Server {
     forwards: HashMap<RequestId, Forward>,
     params: Vec<(NodeId, String, f32)>,
     local_addr: Option<SocketAddr>,
+    /// Uploads whose hash is being checked: (connection, request, the path to import)
+    verifying: Vec<(u64, u64, Receiver<Result<PathBuf>>)>,
+    /// Project listings being made: (connection, request, the recent projects, the folder's)
+    listing: Vec<Listing>,
 }
 
 impl std::fmt::Debug for Server {
@@ -287,6 +317,8 @@ impl Server {
             forwards: HashMap::new(),
             params: Vec::new(),
             local_addr,
+            verifying: Vec::new(),
+            listing: Vec::new(),
         })
     }
 
@@ -316,6 +348,7 @@ impl Server {
         for (node, param, value) in std::mem::take(&mut self.params) {
             port.param_write(node, &param, value);
         }
+        self.files(port);
         // Results of requests the port answered later
         for (rid, fin) in port.finished() {
             if let Some(f) = self.forwards.remove(&rid) {
@@ -352,6 +385,7 @@ impl Server {
                         busy,
                         window: (now, 0),
                         closing: false,
+                        uploads: HashMap::new(),
                     },
                 );
             }
@@ -364,6 +398,12 @@ impl Server {
                     c.stream.shutdown();
                     self.forwards.retain(|_, f| f.conn != conn);
                     self.sync(port);
+                }
+            }
+            Event::Frame { conn, frame } if frame.kind == wire::KIND_UPLOAD => {
+                let r = self.upload_chunk(conn, &frame.payload);
+                if let (Err(e), Some(c)) = (r, self.conns.get(&conn)) {
+                    c.send_raw_error(&e);
                 }
             }
             Event::Frame { conn, frame } => {
@@ -643,6 +683,9 @@ impl Server {
     }
 
     fn forward(&mut self, f: Forward, fin: Finished) {
+        if let Some(p) = &f.cleanup {
+            let _ = std::fs::remove_file(p);
+        }
         let Some(c) = self.conns.get(&f.conn) else { return };
         match fin {
             Finished::Peaks(Ok(p)) => {
@@ -711,7 +754,20 @@ impl Server {
             "run_action" => {
                 let action = text(msg, "action")?;
                 Self::need(role, if proto::admin_action(action) { Role::Admin } else { Role::Control })?;
-                let p = port.run_action(ActionId::from(action), get(msg, "params")?.clone());
+                let params = get(msg, "params")?.clone();
+                // A path in an action's parameters must be a project inside the projects folder (I-20.6)
+                let projects = projects_folder(port);
+                if let Some(folder) = params.get("folder").and_then(Value::as_text)
+                    && !files::inside_projects(&projects, folder)
+                {
+                    return Err(Error::new("remote.project.outside").arg("path", folder));
+                }
+                if let Some(file) = params.get("file").and_then(Value::as_text)
+                    && !files::inside_tree(&projects, file)
+                {
+                    return Err(Error::new("remote.project.outside").arg("path", file));
+                }
+                let p = port.run_action(ActionId::from(action), params);
                 self.pending(port, conn, rid()?, p, |()| Ok(Value::NULL))
             }
             "undo" | "redo" => {
@@ -770,7 +826,7 @@ impl Server {
                     }
                     Pending::Ready(Err(e)) => self.conns[&conn].reply(request, Err(e)),
                     Pending::Waiting(w) => {
-                        self.forwards.insert(w, Forward { conn, id: request });
+                        self.forwards.insert(w, Forward { conn, id: request, cleanup: None });
                     }
                 }
                 Ok(())
@@ -894,6 +950,69 @@ impl Server {
                 c.telemetry = (hz > 0.0).then(|| (Duration::from_secs_f64(1.0 / hz.min(max)), only));
                 Ok(())
             }
+            // Files: uploads for importing, projects by name (I-20.3)
+            "upload_begin" => {
+                Self::need(role, Role::Control)?;
+                let upload = uint(msg, "upload")?;
+                let size = uint(msg, "size")?;
+                let limits = self.config.limits;
+                if size > limits.max_upload {
+                    return Err(Error::new("remote.upload.too_big").arg("max", limits.max_upload as i64));
+                }
+                let dir = self.config.uploads.clone();
+                let c = self.conns.get_mut(&conn).expect("present");
+                if !c.uploads.contains_key(&upload) && c.uploads.len() >= limits.max_uploads {
+                    return Err(Error::new("remote.limit.uploads"));
+                }
+                let u = files::Upload::begin(&dir, text(msg, "hash")?, size, text(msg, "ext")?)?;
+                let have = u.have;
+                c.uploads.insert(upload, u);
+                c.send_json(&Value::object([
+                    ("t", Value::text("upload_have")),
+                    ("upload", c::int_value(upload)?),
+                    ("have", c::int_value(have)?),
+                ]));
+                Ok(())
+            }
+            "upload_end" => {
+                Self::need(role, Role::Control)?;
+                let upload = uint(msg, "upload")?;
+                let request = rid()?;
+                let u = self
+                    .conns
+                    .get_mut(&conn)
+                    .expect("present")
+                    .uploads
+                    .remove(&upload)
+                    .ok_or_else(|| Error::new("remote.upload.unknown"))?;
+                let rx = u.finish()?;
+                self.verifying.push((conn, request, rx));
+                Ok(())
+            }
+            "project_list" => {
+                let projects = projects_folder(port);
+                let recent = port.status().get("recent").cloned().unwrap_or_else(Value::empty_list);
+                self.listing.push((conn, rid()?, recent, files::list_projects(&projects)));
+                Ok(())
+            }
+            "project_open" | "project_new" | "project_save_as" => {
+                Self::need(role, Role::Admin)?;
+                let folder = files::project_folder(&projects_folder(port), text(msg, "name")?)?;
+                let action = match t {
+                    "project_open" => "project.open",
+                    "project_new" => "project.new",
+                    _ => "project.save_as",
+                };
+                let params = Value::object([("folder", Value::text(folder.display().to_string()))]);
+                let p = port.run_action(ActionId::from(action), params);
+                self.pending(port, conn, rid()?, p, |()| Ok(Value::NULL))
+            }
+            "project_save" | "project_close" => {
+                Self::need(role, Role::Admin)?;
+                let action = if t == "project_save" { "project.save" } else { "project.close" };
+                let p = port.run_action(ActionId::from(action), Value::NULL);
+                self.pending(port, conn, rid()?, p, |()| Ok(Value::NULL))
+            }
             // The stable subset's reading (tools have no mirror)
             "find" => {
                 let node = c::id_from(get(msg, "node")?)?;
@@ -920,6 +1039,86 @@ impl Server {
                 self.answer(conn, rid()?, Ok(v))
             }
             _ => Err(Error::new("remote.unknown_message").arg("t", t)),
+        }
+    }
+
+    fn upload_chunk(&mut self, conn: u64, payload: &[u8]) -> Result<()> {
+        let (upload, offset, data) = wire::upload_from(payload)?;
+        let c = self.conns.get_mut(&conn).ok_or_else(|| Error::new("remote.upload.unknown"))?;
+        if c.role < Role::Control {
+            return Err(Error::new("remote.forbidden"));
+        }
+        let u = c.uploads.get_mut(&upload).ok_or_else(|| Error::new("remote.upload.unknown"))?;
+        if let Err(e) = u.write(offset, data) {
+            // A broken upload starts over from what the file has
+            c.uploads.remove(&upload);
+            return Err(e);
+        }
+        let have = u.have;
+        c.send_json(&Value::object([
+            ("t", Value::text("upload_ack")),
+            ("upload", c::int_value(upload)?),
+            ("have", c::int_value(have)?),
+        ]));
+        Ok(())
+    }
+
+    /// Uploads checked (then imported) and project listings made, off the main thread
+    fn files(&mut self, port: &mut dyn CorePort) {
+        let mut checked = Vec::new();
+        self.verifying.retain(|(conn, request, rx)| match rx.try_recv() {
+            Ok(r) => {
+                checked.push((*conn, *request, r));
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                checked.push((*conn, *request, Err(Error::new("remote.upload.lost"))));
+                false
+            }
+        });
+        for (conn, request, r) in checked {
+            match r {
+                Err(e) => {
+                    if let Some(c) = self.conns.get(&conn) {
+                        c.reply(request, Err(e));
+                    }
+                }
+                Ok(path) => match port.import(path.clone()) {
+                    Pending::Ready(r) => {
+                        let _ = std::fs::remove_file(&path);
+                        self.sync(port);
+                        if let Some(c) = self.conns.get(&conn) {
+                            c.reply(request, r.map(|res| c::resource_to(&res)));
+                        }
+                    }
+                    Pending::Waiting(w) => {
+                        self.forwards.insert(w, Forward { conn, id: request, cleanup: Some(path) });
+                    }
+                },
+            }
+        }
+        let mut listed = Vec::new();
+        self.listing.retain(|(conn, request, recent, rx)| match rx.try_recv() {
+            Ok(r) => {
+                listed.push((*conn, *request, recent.clone(), r));
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => false,
+        });
+        for (conn, request, recent, r) in listed {
+            if let Some(c) = self.conns.get(&conn) {
+                c.reply(
+                    request,
+                    r.map(|names| {
+                        Value::object([
+                            ("projects", Value::list(names.into_iter().map(Value::text))),
+                            ("recent", recent),
+                        ])
+                    }),
+                );
+            }
         }
     }
 
@@ -950,11 +1149,16 @@ impl Server {
                 self.conns[&conn].reply(id, v);
             }
             Pending::Waiting(w) => {
-                self.forwards.insert(w, Forward { conn, id });
+                self.forwards.insert(w, Forward { conn, id, cleanup: None });
             }
         }
         Ok(())
     }
+}
+
+/// The projects folder, from the preferences (I-16)
+fn projects_folder(port: &dyn CorePort) -> String {
+    port.preferences().get("projectsFolder").and_then(Value::as_text).unwrap_or("").to_owned()
 }
 
 fn label(msg: &Value) -> Result<Label> {

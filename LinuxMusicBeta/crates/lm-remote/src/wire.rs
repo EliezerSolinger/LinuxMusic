@@ -14,6 +14,8 @@ pub const KIND_JSON: u8 = 0;
 pub const KIND_TELEMETRY: u8 = 1;
 pub const KIND_PEAKS: u8 = 2;
 pub const KIND_DISPLAY: u8 = 3;
+/// Client to server: a piece of an upload (`u64` upload, `u64` offset, the bytes)
+pub const KIND_UPLOAD: u8 = 4;
 
 /// The largest frame a client accepts (a whole project's snapshot is the biggest)
 pub const MAX_FRAME_FROM_SERVER: usize = 512 << 20;
@@ -287,6 +289,22 @@ pub fn peaks_from(b: &[u8]) -> Result<(u64, PeakBlock)> {
     }
     i.end()?;
     Ok((request, PeakBlock { level, from, samples_per_pair, pairs: Arc::from(pairs), length }))
+}
+
+/// An upload's chunk frame
+pub fn upload_to(upload: u64, offset: u64, data: &[u8]) -> Vec<u8> {
+    let mut o = Out::default();
+    o.u64(upload);
+    o.u64(offset);
+    o.0.extend_from_slice(data);
+    o.0
+}
+
+pub fn upload_from(b: &[u8]) -> Result<(u64, u64, &[u8])> {
+    let mut i = In::new(b);
+    let upload = i.u64()?;
+    let offset = i.u64()?;
+    Ok((upload, offset, &b[16..]))
 }
 
 pub fn display_to(node: NodeId, d: &lm_port::DisplayView) -> Vec<u8> {

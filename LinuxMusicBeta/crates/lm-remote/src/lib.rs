@@ -17,6 +17,7 @@
 mod client;
 pub mod codec;
 pub mod delta;
+mod files;
 mod proto;
 mod server;
 pub mod wire;

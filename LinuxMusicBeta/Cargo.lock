@@ -3689,6 +3689,7 @@ dependencies = [
 name = "lm-remote"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "lm-base",
  "lm-doc",
  "lm-port",

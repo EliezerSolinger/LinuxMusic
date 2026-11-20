@@ -9,12 +9,15 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use lm_base::{Error, Label, OperationId, Result};
@@ -143,6 +146,124 @@ enum Kind {
     Entries,
     Preview,
     Ping,
+    Imported,
+    /// A plain value (the project list): collected by `values`
+    Value,
+}
+
+/// An upload for an import (I-20.3): its thread reads the file, sends it in chunks within a window of what the
+/// server acknowledged, and asks for the import at the end. A reconnection starts a new thread from what the
+/// server already has
+struct UploadJob {
+    path: PathBuf,
+    ext: String,
+    /// The file's BLAKE3 (hex) and size, worked out once
+    hash: Mutex<Option<(String, u64)>>,
+    acked: AtomicU64,
+    known: AtomicBool,
+    stop: AtomicBool,
+    error: Mutex<Option<Error>>,
+}
+
+/// Bytes of an upload in flight beyond what the server acknowledged
+const UPLOAD_WINDOW: u64 = 8 << 20;
+const UPLOAD_CHUNK: usize = 256 << 10;
+
+fn upload_thread(id: u64, job: Arc<UploadJob>, out: Sender<(u8, Vec<u8>)>) {
+    let fail = |e: Error| {
+        *job.error.lock().unwrap_or_else(PoisonError::into_inner) = Some(e);
+    };
+    let io = |e: std::io::Error| Error::new("remote.upload.read").arg("error", e.to_string());
+    // The hash first (once)
+    let known = job.hash.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    let (hash, size) = match known {
+        Some(h) => h,
+        None => {
+            let r = (|| -> Result<(String, u64)> {
+                let mut f = File::open(&job.path).map_err(io)?;
+                let mut h = blake3::Hasher::new();
+                let mut buf = vec![0u8; 1 << 20];
+                let mut size = 0u64;
+                loop {
+                    if job.stop.load(Ordering::Relaxed) {
+                        return Err(Error::new("remote.disconnected"));
+                    }
+                    let n = f.read(&mut buf).map_err(io)?;
+                    if n == 0 {
+                        break;
+                    }
+                    size += n as u64;
+                    h.update(&buf[..n]);
+                }
+                Ok((h.finalize().to_hex().to_string(), size))
+            })();
+            match r {
+                Ok(h) => {
+                    *job.hash.lock().unwrap_or_else(PoisonError::into_inner) = Some(h.clone());
+                    h
+                }
+                Err(e) if e.key() == "remote.disconnected" => return,
+                Err(e) => return fail(e),
+            }
+        }
+    };
+    let begin = Value::object([
+        ("t", Value::text("upload_begin")),
+        ("upload", Value::int(id as i64)),
+        ("hash", Value::text(hash.as_str())),
+        ("size", Value::int(i64::try_from(size).unwrap_or(i64::MAX))),
+        ("ext", Value::text(job.ext.as_str())),
+    ]);
+    let Ok(p) = wire::json(&begin) else { return };
+    if out.send((KIND_JSON, p)).is_err() {
+        return;
+    }
+    while !job.known.load(Ordering::Acquire) {
+        if job.stop.load(Ordering::Relaxed) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let mut f = match File::open(&job.path) {
+        Ok(f) => f,
+        Err(e) => return fail(io(e)),
+    };
+    let mut offset = job.acked.load(Ordering::Acquire);
+    if let Err(e) = f.seek(SeekFrom::Start(offset)) {
+        return fail(io(e));
+    }
+    let mut buf = vec![0u8; UPLOAD_CHUNK];
+    while offset < size {
+        if job.stop.load(Ordering::Relaxed) {
+            return;
+        }
+        if offset - job.acked.load(Ordering::Acquire).min(offset) >= UPLOAD_WINDOW {
+            std::thread::sleep(Duration::from_millis(1));
+            continue;
+        }
+        let want = UPLOAD_CHUNK.min((size - offset) as usize);
+        if let Err(e) = f.read_exact(&mut buf[..want]) {
+            return fail(io(e));
+        }
+        if out.send((wire::KIND_UPLOAD, wire::upload_to(id, offset, &buf[..want]))).is_err() {
+            return;
+        }
+        offset += want as u64;
+    }
+    while job.acked.load(Ordering::Acquire) < size {
+        if job.stop.load(Ordering::Relaxed) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let end = Value::object([
+        ("t", Value::text("upload_end")),
+        ("id", Value::int(id as i64)),
+        ("upload", Value::int(id as i64)),
+    ]);
+    if let Ok(p) = wire::json(&end) {
+        let _ = out.send((KIND_JSON, p));
+    }
 }
 
 fn open(endpoint: &Endpoint, timeout: Duration) -> Result<Stream> {
@@ -275,6 +396,8 @@ pub struct RemotePort {
     requests: HashMap<RequestId, Kind>,
     finished: Vec<(RequestId, Finished)>,
     next_gesture: u64,
+    uploads: HashMap<RequestId, Arc<UploadJob>>,
+    values: Vec<(RequestId, Result<Value>)>,
     peaks: HashMap<(String, u8, u64, u64), PeakBlock>,
     peaks_asked: HashMap<RequestId, (String, u8, u64, u64)>,
     /// Updates applied since connecting (for tests and the indicator)
@@ -387,6 +510,8 @@ impl RemotePort {
             requests: HashMap::new(),
             finished: Vec::new(),
             next_gesture: 1,
+            uploads: HashMap::new(),
+            values: Vec::new(),
             peaks: HashMap::new(),
             peaks_asked: HashMap::new(),
             updates: 0,
@@ -469,8 +594,23 @@ impl RemotePort {
 
     fn on_disconnect(&mut self, e: Error) {
         self.live = None;
+        let final_now = final_error(&e);
         for (id, kind) in std::mem::take(&mut self.requests) {
-            self.finished.push((id, failed(kind, Error::new("remote.disconnected"))));
+            // An upload goes on after the reconnection, from what the server has (unless it never will)
+            if let Some(job) = self.uploads.get(&id) {
+                job.stop.store(true, Ordering::Relaxed);
+                job.known.store(false, Ordering::Release);
+                if !final_now {
+                    self.requests.insert(id, kind);
+                    continue;
+                }
+                self.uploads.remove(&id);
+            }
+            if matches!(kind, Kind::Value) {
+                self.values.push((id, Err(Error::new("remote.disconnected"))));
+            } else {
+                self.finished.push((id, failed(kind, Error::new("remote.disconnected"))));
+            }
         }
         self.peaks_asked.clear();
         if final_error(&e) {
@@ -540,7 +680,81 @@ impl RemotePort {
         self.live = Some(w.live);
         self.subscribe_all();
         self.updates += 1;
+        let ids: Vec<RequestId> = self.uploads.keys().copied().collect();
+        for id in ids {
+            self.start_upload(id);
+        }
         Ok(())
+    }
+
+    fn start_upload(&mut self, id: RequestId) {
+        let (Some(job), Some(live)) = (self.uploads.get(&id), &self.live) else { return };
+        job.stop.store(false, Ordering::Relaxed);
+        let (job, out) = (Arc::clone(job), live.out.clone());
+        let spawned =
+            std::thread::Builder::new().name("lm-remote-upload".into()).spawn(move || upload_thread(id, job, out));
+        if let Err(e) = spawned {
+            self.uploads.remove(&id);
+            self.requests.remove(&id);
+            self.finished.push((id, Finished::Imported(Err(Error::new("remote.io").arg("error", e.to_string())))));
+        }
+    }
+
+    /// The uploads whose thread failed (the file could not be read)
+    fn upload_errors(&mut self) {
+        let failed: Vec<(RequestId, Error)> = self
+            .uploads
+            .iter()
+            .filter_map(|(id, j)| j.error.lock().unwrap_or_else(PoisonError::into_inner).take().map(|e| (*id, e)))
+            .collect();
+        for (id, e) in failed {
+            self.uploads.remove(&id);
+            self.requests.remove(&id);
+            self.finished.push((id, Finished::Imported(Err(e))));
+        }
+    }
+
+    // ---- the projects (I-20.3: the server's projects folder, by name; each one an operation of the session) ----
+
+    /// Opens the project `name` of the server's projects folder
+    pub fn open_project(&mut self, name: &str) -> Pending<()> {
+        self.request(Kind::Done, Self::message("project_open", [("name", Value::text(name))]))
+    }
+
+    /// Makes a new project `name` there and goes on in it
+    pub fn new_project(&mut self, name: &str) -> Pending<()> {
+        self.request(Kind::Done, Self::message("project_new", [("name", Value::text(name))]))
+    }
+
+    pub fn save_project(&mut self) -> Pending<()> {
+        self.request(Kind::Done, Self::message("project_save", []))
+    }
+
+    pub fn save_project_as(&mut self, name: &str) -> Pending<()> {
+        self.request(Kind::Done, Self::message("project_save_as", [("name", Value::text(name))]))
+    }
+
+    /// Closes the project (the server goes on with a new untitled one)
+    pub fn close_project(&mut self) -> Pending<()> {
+        self.request(Kind::Done, Self::message("project_close", []))
+    }
+
+    /// The projects of the server's folder and the recent ones: `{projects: [name], recent: [...]}`, collected by
+    /// `values`
+    pub fn list_projects(&mut self) -> Pending<Value> {
+        self.request(Kind::Value, Self::message("project_list", []))
+    }
+
+    /// The answers of `list_projects`
+    pub fn values(&mut self) -> Vec<(RequestId, Result<Value>)> {
+        std::mem::take(&mut self.values)
+    }
+
+    /// The bytes of an upload the server has acknowledged (for a progress bar), and the file's size once known
+    pub fn upload_progress(&self, id: RequestId) -> Option<(u64, Option<u64>)> {
+        let j = self.uploads.get(&id)?;
+        let size = j.hash.lock().unwrap_or_else(PoisonError::into_inner).as_ref().map(|(_, s)| *s);
+        Some((j.acked.load(Ordering::Acquire), size))
     }
 
     fn incoming(&mut self, f: Frame) -> Result<()> {
@@ -612,9 +826,23 @@ impl RemotePort {
                     Some(e) => Err(c::error_from(e)?),
                     None => Ok(get(m, "ok")?.clone()),
                 };
-                if let Some(kind) = self.requests.remove(&id) {
+                if let Some(Kind::Value) = self.requests.get(&id) {
+                    self.requests.remove(&id);
+                    self.values.push((id, r));
+                } else if let Some(kind) = self.requests.remove(&id) {
                     self.peaks_asked.remove(&id);
+                    if let Some(job) = self.uploads.remove(&id) {
+                        job.stop.store(true, Ordering::Relaxed);
+                    }
                     self.finished.push((id, finish(kind, r)));
+                }
+            }
+            "upload_have" | "upload_ack" => {
+                let id = c::uint(m, "upload")?;
+                let have = c::uint(m, "have")?;
+                if let Some(job) = self.uploads.get(&id) {
+                    job.acked.store(have, Ordering::Release);
+                    job.known.store(true, Ordering::Release);
                 }
             }
             "error" => {
@@ -666,6 +894,8 @@ fn failed(kind: Kind, e: Error) -> Finished {
         Kind::Devices => Finished::Devices(Err(e)),
         Kind::Entries => Finished::Entries(Err(e)),
         Kind::Preview => Finished::Preview(Err(e)),
+        Kind::Imported => Finished::Imported(Err(e)),
+        Kind::Value => Finished::Done(Err(e)),
     }
 }
 
@@ -679,12 +909,15 @@ fn finish(kind: Kind, r: Result<Value>) -> Finished {
         ),
         Kind::Entries => Finished::Entries(r.and_then(|v| c::entries_from(&v))),
         Kind::Preview => Finished::Preview(r.and_then(|v| c::preview_from(&v))),
+        Kind::Imported => Finished::Imported(r.and_then(|v| c::resource_from(&v))),
+        Kind::Value => Finished::Done(r.map(|_| ())),
     }
 }
 
 impl CorePort for RemotePort {
     fn pump(&mut self) -> bool {
         let mut changed = self.poll_retry();
+        self.upload_errors();
         // Everything that arrived
         let mut closed = None;
         if let Some(l) = &self.live {
@@ -922,6 +1155,33 @@ impl CorePort for RemotePort {
 
     fn preview_stop(&mut self) {
         self.send(&Self::message("preview_stop", []));
+    }
+
+    fn import(&mut self, path: PathBuf) -> Pending<Resource> {
+        let id = self.next_request;
+        self.next_request += 1;
+        if self.live.is_none() {
+            return Pending::Ready(Err(Error::new("remote.disconnected")));
+        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .filter(|e| (1..=8).contains(&e.len()) && e.bytes().all(|b| b.is_ascii_alphanumeric()))
+            .unwrap_or_else(|| "audio".to_owned());
+        let job = Arc::new(UploadJob {
+            path,
+            ext,
+            hash: Mutex::new(None),
+            acked: AtomicU64::new(0),
+            known: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+            error: Mutex::new(None),
+        });
+        self.uploads.insert(id, job);
+        self.requests.insert(id, Kind::Imported);
+        self.start_upload(id);
+        Pending::Waiting(id)
     }
 
     fn set_favorite(&mut self, entry: EntryId, on: bool) -> Pending<()> {

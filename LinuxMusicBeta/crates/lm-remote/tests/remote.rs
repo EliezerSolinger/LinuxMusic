@@ -2,6 +2,10 @@
 //! socket) gives the same tree and the same diffs; a dropped connection reconnects and resyncs; a version mismatch is
 //! a clear error; roles; the decoders and the server survive garbage.
 
+// The decoder fuzz reports its seed and rounds on the standard error: the nightly job's log needs them to reproduce a
+// failure (I-20.8)
+#![allow(clippy::print_stderr)]
+
 use std::io::Write;
 use std::net::TcpStream;
 use std::path::PathBuf;
