@@ -5,14 +5,23 @@
 //! `status()`:
 //! ```text
 //! project:          { name: text, folder: text, readOnly: bool,
-//!                     lockedBy: null | { host: text, pid: int, since: text } }        (H10)
+//!                     lockedBy: null | { host: text, pid: int, since: text },         (H10)
+//!                     newerVersion: null | { version: text, format: int },           (H11)
+//!                     migratedFrom: null | int,                                       (H11: the .bak kept)
+//!                     unused: { files: int, mb: real } }                              (H4: files no root cites)
 //! recent:           [ { name: text, folder: text, opened: text } ]                    (most recent first)
 //! templates:        [ { name: text, folder: text, factory: bool } ]
-//! interruptedTakes: [ { track: text (NodeId), file: text, seconds: real } ]           (U5)
+//! interruptedTakes: [ { track: text, input: text, bar: int, file: text, seconds: real } ]   (U5)
 //! safeMode:         bool                                                              (U21)
 //! safeModePlugins:  [ { node: text (NodeId), plugin: text, reason: text } ]           (U21)
-//! lastExport:       null | { file: text, seconds: real, peakDb: real, lufs: real, ok: bool, error: text }
+//! lastExport:       null | { file: text, files: int, seconds: real, peakDb: real, lufs: real, ok: bool,
+//!                            error: text, identical: bool (false: a fast range, U37) }
 //! autosave:         null | { at: text, file: text }
+//! device:           null | { input: text, output: text, rate: int, block: int (agreed, C7),
+//!                            latencyIn: int, latencyOut: int (frames), edgeConverter: bool }   (I-10)
+//! realtime:         { rtkit: bool, rtprio: int, memlockKb: int (-1 unlimited), audioGroup: bool, user: text }  (H1)
+//! midiPorts:        [ { client: text, port: text, backend: "seq"|"raw", alias: text, connected: bool,
+//!                       readable: bool, writable: bool } ]                         (I-21.1: hotplug state)
 //! ```
 //!
 //! `preferences()` (I-16; changed by `set_preference(path, value)`):
@@ -22,12 +31,33 @@
 //! projectsFolder:    text
 //! askBeforeClosing:  bool
 //! audio:     { system: text ("alsa", "jack", "coreaudio"), input: text (device id), output: text (device id),
-//!              rate: int, block: int, driftCorrection: bool, latencyFrames: int }
-//! midi:      { inputs: [text], clock: bool }
+//!              rate: int, block: int, driftCorrection: bool, latencyFrames: int,
+//!              calibrations: [ { devices: "<input>|<output>", rate: int, edgeConverter: bool, residual: int,
+//!                                spread: int, measured: text } ] }                    (H19)
+//! midi:      { inputs: [text], clock: bool,
+//!              ports: [ { client: text, port: text, backend: "seq"|"raw", alias: text,
+//!                         role: "instrument"|"controller"|"both", input: bool, output: bool,
+//!                         inputLatencyMs: real, outputLatencyMs: real } ] }            (I-21.1)
+//! midiMap:   [ midi.mapping ]                         the machine's mappings (I-21.2)
+//! controllers: [ { profile: "generic"|"mcu"|<controllers/<x>.json stem>, port: <alias>, bank: int } ]  (I-21.3)
 //! interface: { followCursor: bool, scale: real }
 //! metronome: { when: text ("always", "recording", "never"), countInBars: int }
 //! recording: { format: text ("rf64-24", "rf64-32f"), folder: text }
 //! shortcuts: { <action id>: text (keys, "secondary-s") }       only the ones the user changed
+//! ```
+//!
+//! The parameters of the session's actions the settings, export and project screens run (agent D's):
+//! ```text
+//! project.open, project.new, project.save_as: { folder: text }   (new also: template: text, rate: int)
+//! project.export:  { folder: text, name: text, formats: [text "wav"|"flac"|"ogg"|"mp3"], rate: int,
+//!                    depth: int (16, 24, 32 = float), dither: bool, oggQuality: int, mp3Kbps: int,
+//!                    normalize: { kind: "none"|"peak"|"lufs", target: real }, fadeIn: real, fadeOut: real,
+//!                    range: null | { start: int, end: int (bars, 1-based, end exclusive), fast: bool,
+//!                                    warmup: real }, asLoop: bool, repeats: int,
+//!                    stems: null | { by: "tracks"|"channels", nodes: [text] } }    (I-13, U37, P-40)
+//! takes.recover, takes.discard: { index: int } (absent: all)       safe_mode.enable: { node: text }
+//! device.reopen, device.calibrate, devices.scan, project.export_zip, project.clean_unused,
+//! project.save_template: no parameters        midi.assign_alias: { alias, client, port }
 //! ```
 
 /// The keys of `status()`
@@ -40,6 +70,9 @@ pub mod status {
     pub const SAFE_MODE_PLUGINS: &str = "safeModePlugins";
     pub const LAST_EXPORT: &str = "lastExport";
     pub const AUTOSAVE: &str = "autosave";
+    pub const DEVICE: &str = "device";
+    pub const REALTIME: &str = "realtime";
+    pub const MIDI_PORTS: &str = "midiPorts";
 }
 
 /// The keys of `preferences()`
@@ -54,4 +87,6 @@ pub mod preferences {
     pub const METRONOME: &str = "metronome";
     pub const RECORDING: &str = "recording";
     pub const SHORTCUTS: &str = "shortcuts";
+    pub const MIDI_MAP: &str = "midiMap";
+    pub const CONTROLLERS: &str = "controllers";
 }

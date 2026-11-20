@@ -12,6 +12,7 @@
 pub mod demo;
 mod library;
 pub mod peaks;
+mod services;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -919,6 +920,7 @@ impl CorePort for FakePort {
                 );
                 Ok(())
             }
+            other if let Some(r) = services::run(self, other, &params) => r,
             other => {
                 self.push_notice(
                     "Not in the fake core: {0}",
