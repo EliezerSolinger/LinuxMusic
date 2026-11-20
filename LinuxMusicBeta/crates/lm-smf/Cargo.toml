@@ -1,0 +1,15 @@
+[package]
+name = "lm-smf"
+description = "LinuxMusic: Standard MIDI Files (SMF 0 and 1, RIFF RMID) read and written, in pure Rust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# No dependencies: the format is small, and our own reader refuses what it does not understand with a key
+# (decisoes-autonomas.md, 20/11: own code, as lm-state's JSON)
+[dependencies]
