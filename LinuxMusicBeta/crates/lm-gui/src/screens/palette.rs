@@ -15,7 +15,8 @@ use lm_port::Value;
 
 use super::{Screen, ScreenCx};
 use crate::actions::{
-    ActionDef, OpenAbout, OpenExport, OpenNewProject, OpenNotices, OpenProject, REGISTRY, SaveAs, keys_of,
+    ActionDef, ExportMidi, ImportFiles, OpenAbout, OpenExport, OpenNewProject, OpenNotices, OpenProject, REGISTRY,
+    SaveAs, keys_of,
 };
 use crate::ui::{THEME, c, caption, tr, trf};
 use crate::workspace::Workspace;
@@ -55,6 +56,51 @@ pub fn screen_actions(d: Div, cx: &mut Context<Workspace>) -> Div {
         .on_action(cx.listener(|ws, _: &OpenNewProject, window, cx| open(ws, Screen::NewProject, None, window, cx)))
         .on_action(cx.listener(|ws, _: &OpenAbout, window, cx| open(ws, Screen::About, None, window, cx)))
         .on_action(cx.listener(|ws, _: &OpenNotices, window, cx| open(ws, Screen::Notices, None, window, cx)))
+        // Import (F-PRJ-019, F-PRJ-020): the system's dialog when the files are local, at the cursor
+        .on_action(cx.listener(|ws, _: &ImportFiles, window, cx| {
+            let core = ws.core.clone();
+            if super::files::local(&core, cx) {
+                super::files::choose(cx, "Import (MIDI, audio)", false, true, move |paths, cx| {
+                    let tick = {
+                        let p = core.read(cx).port();
+                        crate::model::tempo_map(p.root()).tick_at(p.telemetry().position.samples)
+                    };
+                    super::files::import_paths(&core, &paths, tick, cx);
+                });
+            } else {
+                open(ws, Screen::Project, Some("import"), window, cx);
+            }
+        }))
+        // Export MIDI (F-PRJ-021)
+        .on_action(cx.listener(|ws, _: &ExportMidi, window, cx| {
+            let core = ws.core.clone();
+            if super::files::local(&core, cx) {
+                let (folder, name) = {
+                    let st = core.read(cx).port().status();
+                    let p = st.get("project");
+                    let t = |k: &str| p.and_then(|p| p.get(k)).and_then(Value::as_text).unwrap_or("").to_string();
+                    (t("folder"), t("name"))
+                };
+                let folder = std::path::PathBuf::from(super::palette::expand_home(&folder));
+                super::files::choose_new(cx, &folder, &format!("{name}.mid"), move |path, cx| {
+                    core.update(cx, |c, cx| {
+                        let params = Value::object([("path", Value::text(path.display().to_string()))]);
+                        let _ = c.port_mut().run_action("midi.export".into(), params);
+                        cx.notify();
+                    });
+                });
+            } else {
+                open(ws, Screen::Project, Some("export_midi"), window, cx);
+            }
+        }))
+}
+
+/// `~/x` to the home folder (a path the dialogs open in)
+pub fn expand_home(p: &str) -> String {
+    match (p.strip_prefix("~/"), std::env::var("HOME")) {
+        (Some(rest), Ok(home)) => format!("{home}/{rest}"),
+        _ => p.to_string(),
+    }
 }
 
 /// Lower case without accents ("Configurações" is found by "configuracoes", F-CFG-001)

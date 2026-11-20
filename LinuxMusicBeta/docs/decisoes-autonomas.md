@@ -1465,3 +1465,21 @@ sanitizers. As causas, e as correções na raiz:
 - **As anotações do CI não mostravam os pânicos:** desde o Rust 1.92 a linha é `thread 'x' (1234) panicked at`, e a
   expressão do `ci/run.sh` não casava. Corrigida, e os blocos "Direct leak of" do LSan entram na anotação com os
   quadros do nosso código.
+## Marcadores, regiões e arquivos MIDI (agente D, 20/11)
+
+- **Marcadores e regiões no `lm-doc`:** o esquema do projeto ganhou `markers` (`g:N`: nome, tique, cor) e `regions`
+  (`q:N`: nome, de, até, cor), opcionais, com o passo de versão e o `LM_BLESS_DEFAULTS`. Regras: um marcador por
+  tique; uma região de pelo menos 1/16 de compasso 4/4. Cor 0 ou ausente = a do tema.
+- **As duas linhas da régua** (`pages/marks.rs`): os gestos do legado (F-REG-011/012). Um clique num marcador leva o
+  cursor até ele (o legado só fazia isso pelo menu). A faixa da exportação passou a ser em tiques.
+- **MIDI, leitor e escritor próprios** (`lm-smf`, Rust puro, sem dependências): pelo mesmo motivo do JSON próprio. O
+  formato é pequeno, e o leitor recusa o que não entende com uma chave. Não entra nada novo no cargo-deny.
+- **Importar MIDI** (`midi.import`, uma operação; o plano entra numa transação só). Uma faixa por (faixa do arquivo ×
+  canal) e um canal da mesa para cada uma (P-39). CC7 vira a automação de volume da faixa (ganho = (v/127)², a curva
+  GM), CC10 a de pan do canal. O andamento e as fórmulas de compasso vão para o mapa (só ao importar no início). O
+  legado punha o Sf2 Player com o SoundFont padrão; até o Sf2 Player ser portado, o instrumento é o TripleOscillator,
+  e o canal 10 ganha "(bateria)" no nome.
+- **Exportar MIDI** (`midi.export`): SMF tipo 1 na resolução do projeto (960, não os 128 do legado: assim não se perde
+  nada), com a velocidade escalada pelo volume da faixa, como no legado.
+- **Os arquivos de teste MIDI do legado:** o legado não traz nenhum arquivo `.mid`. Os testes usam arquivos escritos à
+  mão byte a byte (status corrente, nota com velocidade 0, RMID) e as voltas de exportar e importar.

@@ -9,6 +9,7 @@ pub mod export;
 pub mod folder;
 pub mod journal;
 pub mod lock;
+pub mod midifile;
 pub mod notices;
 mod plugin_actions;
 mod port;

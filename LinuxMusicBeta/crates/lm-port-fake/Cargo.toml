@@ -15,4 +15,6 @@ lm-base.workspace = true
 lm-state.workspace = true
 lm-doc.workspace = true
 lm-port.workspace = true
+# MIDI files for midi.import and midi.export (services.rs)
+lm-smf.workspace = true
 blake3.workspace = true

@@ -27,6 +27,8 @@ gpui-component.workspace = true
 image.workspace = true
 
 [dev-dependencies]
+# MIDI files written by the tests of importing and exporting
+lm-smf.workspace = true
 # Only the tests and the demo example: the interface never depends on the fake core
 lm-port-fake.workspace = true
 gpui = { workspace = true, features = ["test-support"] }

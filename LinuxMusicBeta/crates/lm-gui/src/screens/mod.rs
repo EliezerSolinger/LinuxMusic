@@ -19,6 +19,7 @@ pub mod automation;
 pub mod browser;
 pub mod effect;
 pub mod export;
+pub mod files;
 pub mod instrument;
 pub mod midi_binding;
 pub mod new_project;

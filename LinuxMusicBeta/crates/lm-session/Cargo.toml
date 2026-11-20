@@ -37,8 +37,11 @@ lm-plugin-proxy.workspace = true
 lm-sys-sndfile.workspace = true
 # The native-crash note of the safe mode (U21)
 lm-sys-linux.workspace = true
+# Standard MIDI files: importing and exporting MIDI (midifile.rs)
+lm-smf.workspace = true
 blake3.workspace = true
 rustix = { workspace = true, features = ["system"] }
 
 [dev-dependencies]
+lm-smf.workspace = true
 assert_no_alloc.workspace = true

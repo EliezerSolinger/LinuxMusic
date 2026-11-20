@@ -1436,6 +1436,7 @@ impl Session {
                 }
             }
             ("plugins.state" | "plugins.state.save", r) => self.states_finished(kind, r),
+            ("midi_import", Ok(result)) => self.midi_import_finished(result),
             ("paste", Ok(list)) => {
                 for r in list.items().filter_map(Value::as_resource).cloned().collect::<Vec<_>>() {
                     self.request(&r);

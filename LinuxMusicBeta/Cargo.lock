@@ -3571,6 +3571,7 @@ dependencies = [
  "lm-port",
  "lm-port-fake",
  "lm-session",
+ "lm-smf",
  "lm-time",
 ]
 
@@ -3854,6 +3855,7 @@ dependencies = [
  "lm-base",
  "lm-doc",
  "lm-port",
+ "lm-smf",
  "lm-state",
 ]
 
@@ -3910,6 +3912,7 @@ dependencies = [
  "lm-plugins-tripleoscillator",
  "lm-port",
  "lm-render",
+ "lm-smf",
  "lm-state",
  "lm-sys-linux",
  "lm-sys-sndfile",

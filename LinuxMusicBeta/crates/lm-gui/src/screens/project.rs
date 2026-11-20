@@ -25,6 +25,10 @@ enum Part {
     Open,
     SaveAs,
     State,
+    /// Import a MIDI or audio file by its path (a remote core: the server's files, I-15)
+    Import,
+    /// Export MIDI to a path (the same)
+    ExportMidi,
 }
 
 pub struct ProjectDialog {
@@ -57,6 +61,8 @@ impl ProjectDialog {
         let part = match take_screen_arg(cx) {
             Some("open") => Part::Open,
             Some("save_as") => Part::SaveAs,
+            Some("import") => Part::Import,
+            Some("export_midi") => Part::ExportMidi,
             _ => Part::State,
         };
         let status = scx.core.read(cx).port().status().clone();
@@ -133,7 +139,14 @@ impl ProjectDialog {
             .gap(px(6.))
             .child(caption(tr("Recent projects")))
             .child(div().flex().flex_col().border_1().border_color(c(THEME.line)).children(rows))
-            .child(form_row(tr("Folder or .zip"), Input::new(&self.path)))
+            .child(form_row(
+                tr("Folder or .zip"),
+                div()
+                    .flex()
+                    .gap(px(4.))
+                    .child(div().flex_1().child(Input::new(&self.path)))
+                    .children(self.choose_button("choose-open", true, cx)),
+            ))
             .child(caption(tr("Projects of the old program (.mmp, .mmpz) do not open here")))
             .child(div().flex().justify_end().gap(px(8.)).child(
                 tbutton("open-recent", tr("Open"), true, THEME.green).debug_selector(|| "open-recent".into()).on_click(
@@ -143,6 +156,82 @@ impl ProjectDialog {
                     }),
                 ),
             ))
+            .into_any_element()
+    }
+
+    /// "Choose…": the system's dialog, when the files are this machine's (a remote core keeps the path field)
+    fn choose_button(&self, id: &'static str, open: bool, cx: &mut Context<Self>) -> Option<gpui::Stateful<gpui::Div>> {
+        if !super::files::local(&self.scx.core, cx) {
+            return None;
+        }
+        Some(button(id, tr("Choose..."), false, 0).h(px(24.)).flex_none().on_click(cx.listener(move |d, _, _, cx| {
+            let me = cx.entity().downgrade();
+            if open {
+                super::files::choose(cx, "Open project", true, false, move |paths, cx| {
+                    if let Some(p) = paths.first() {
+                        let _ = me.update(cx, |d, cx| d.open_folder(p.display().to_string(), cx));
+                    }
+                });
+            } else {
+                let current = std::path::PathBuf::from(super::palette::expand_home(&d.folder.read(cx).value()));
+                let parent = current.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+                let name = current.file_name().map_or_else(String::new, |n| n.to_string_lossy().to_string());
+                super::files::choose_new(cx, &parent, &name, move |path, cx| {
+                    let _ = me.update(cx, |d, cx| {
+                        port_action(
+                            &d.scx,
+                            "project.save_as",
+                            obj(vec![("folder", Value::text(path.display().to_string()))]),
+                            cx,
+                        );
+                        d.part = Part::State;
+                        cx.notify();
+                    });
+                });
+            }
+        })))
+    }
+
+    /// Import or Export MIDI by a path typed (the server's files, with a remote core)
+    fn part_path(&mut self, import: bool, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(form_row(tr("File"), Input::new(&self.path)))
+            .child(caption(if import {
+                tr("A MIDI file (.mid) or an audio file; it enters at the cursor")
+            } else {
+                tr("The project's notes as a MIDI file (type 1)")
+            }))
+            .child(
+                div().flex().justify_end().child(
+                    tbutton("path-go", if import { tr("Import") } else { tr("Export") }, true, THEME.green)
+                        .debug_selector(|| "path-go".into())
+                        .on_click(cx.listener(move |d, _, _, cx| {
+                            let path = std::path::PathBuf::from(d.path.read(cx).value().trim().to_string());
+                            if path.as_os_str().is_empty() {
+                                return;
+                            }
+                            let core = d.scx.core.clone();
+                            if import {
+                                let tick = {
+                                    let p = core.read(cx).port();
+                                    crate::model::tempo_map(p.root()).tick_at(p.telemetry().position.samples)
+                                };
+                                super::files::import_paths(&core, &[path], tick, cx);
+                            } else {
+                                port_action(
+                                    &d.scx,
+                                    "midi.export",
+                                    obj(vec![("path", Value::text(path.display().to_string()))]),
+                                    cx,
+                                );
+                            }
+                            d.scx.close(cx);
+                        })),
+                ),
+            )
             .into_any_element()
     }
 
@@ -158,6 +247,7 @@ impl ProjectDialog {
                     .flex()
                     .gap(px(4.))
                     .child(div().flex_1().child(Input::new(&self.folder)))
+                    .children(self.choose_button("choose-save", false, cx))
                     .child(button("version-down", "−", false, 0).h(px(24.)).w(px(24.)).on_click(cx.listener(
                         |d, _, window, cx| {
                             let v = versioned(&d.folder.read(cx).value(), -1);
@@ -374,6 +464,8 @@ impl Render for ProjectDialog {
             Part::Open => (tr("Open project"), self.part_open(cx)),
             Part::SaveAs => (tr("Save as"), self.part_save_as(cx)),
             Part::State => (tr("Project"), self.part_state(cx)),
+            Part::Import => (tr("Import (MIDI, audio)"), self.part_path(true, cx)),
+            Part::ExportMidi => (tr("Export MIDI"), self.part_path(false, cx)),
         };
         div()
             .id("project-dialog")

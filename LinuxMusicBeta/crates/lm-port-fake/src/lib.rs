@@ -1152,6 +1152,10 @@ impl CorePort for FakePort {
         Pending::Ready(Ok(library::devices()))
     }
 
+    fn import(&mut self, path: std::path::PathBuf) -> Pending<Resource> {
+        services::import(self, &path)
+    }
+
     fn browse(&mut self, page: BrowsePage, parent: Option<EntryId>, show_hidden: bool) -> Pending<Vec<BrowseEntry>> {
         Pending::Ready(Ok(self.library.children(page, parent, show_hidden)))
     }

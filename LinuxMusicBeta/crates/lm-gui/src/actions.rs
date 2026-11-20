@@ -37,6 +37,8 @@ actions!(
         OpenNewProject,
         OpenAbout,
         OpenNotices,
+        ImportFiles,
+        ExportMidi,
     ]
 );
 
@@ -150,6 +152,8 @@ pub const REGISTRY: &[ActionDef] = &[
     a("file.save_as", "lm::SaveAs", "Save as", "Project", &["secondary-shift-s"], None),
     a("file.new", "lm::OpenNewProject", "New project", "Project", &["secondary-n"], None),
     a("file.export", "lm::OpenExport", "Export audio", "Project", &["secondary-e"], None),
+    a("file.import", "lm::ImportFiles", "Import (MIDI, audio)", "Project", &["secondary-i"], None),
+    a("file.export_midi", "lm::ExportMidi", "Export MIDI", "Project", &[], None),
     a("view.notices", "lm::OpenNotices", "Notices and activities", "View", &[], None),
     a("help.about", "lm::OpenAbout", "About LinuxMusic", "Help", &["f1"], None),
     a("arrange.split", "composition::Split", "Split at the cursor", "Arrange", &["s"], Some("Composition")),
