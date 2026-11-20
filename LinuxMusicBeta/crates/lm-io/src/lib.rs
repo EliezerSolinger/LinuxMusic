@@ -36,6 +36,8 @@ pub use mididev::{
     ACTIVITY_RING, CLIENT_NAME, INPUT_RING, MidiActivity, MidiBackendKind, MidiDeviceEvent, OWN_INPUT, OWN_OUTPUT,
     PortId, PortInfo, PortRole, PortSettings, SYSEX_IN_MAX, SYSEX_OUT_MAX, SysexIn, SysexOut, message_len,
 };
+#[cfg(target_os = "linux")]
+pub use mididev::{MidiDevices, raw_devices};
 pub use peaks::{Peaks, PeaksBuilder};
 pub use reader::{DiskReader, StreamEvent};
 pub use record::{
