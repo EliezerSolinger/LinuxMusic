@@ -357,6 +357,15 @@ impl Journal {
         }
     }
 
+    /// A flag that turns true once everything sent before it is on the disk (without waiting: polled by the pump)
+    pub fn marker(&mut self) -> Option<Arc<AtomicBool>> {
+        let done = Arc::new(AtomicBool::new(!self.enabled));
+        if !self.enabled {
+            return Some(done);
+        }
+        self.send(Job::Sync { done: done.clone() }).then_some(done)
+    }
+
     /// Waits until everything sent is on the disk (closing; the tests of a crash), at most `timeout`
     pub fn sync(&mut self, timeout: Duration) -> bool {
         let done = Arc::new(AtomicBool::new(false));

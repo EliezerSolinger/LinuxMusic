@@ -1,6 +1,7 @@
 //! LinuxMusic: the session (interfaces.md, I-16; Parte 4, step 9).
 #![forbid(unsafe_code)]
 
+pub mod actions;
 pub mod activity;
 pub mod export;
 pub mod folder;

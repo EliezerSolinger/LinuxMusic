@@ -15,9 +15,9 @@ use lm_port::{
     TelemetryView,
 };
 use lm_render::{Command, PreviewCommand, PreviewId, SampleData};
-use lm_state::{NodeId, PathStep, ROOT, Resource, Value};
+use lm_state::{NodeId, PathStep, Resource, Value};
 
-use crate::session::{Clipboard, Session};
+use crate::session::Session;
 
 fn err(key: &'static str) -> Error {
     Error::new(key)
@@ -53,7 +53,6 @@ pub struct LocalPort {
     preview_handles: Vec<(RequestId, EntryId, OperationHandle<PreparedFile>)>,
     playing_preview: Option<PreviewId>,
     next_preview: u64,
-    clipboard: Option<Clipboard>,
     done: Vec<(RequestId, Finished)>,
 }
 
@@ -149,7 +148,6 @@ impl LocalPort {
             preview_handles: Vec::new(),
             playing_preview: None,
             next_preview: 1,
-            clipboard: None,
             done: Vec::new(),
         }
     }
@@ -338,67 +336,6 @@ impl LocalPort {
             self.known.insert(e.id, Known { page, path: p.clone() });
         }
     }
-
-    fn run(&mut self, action: &str, params: &Value) -> Result<()> {
-        let s = &mut self.session;
-        let text = |k: &str| params.get(k).and_then(Value::as_text).map(str::to_owned);
-        let node = || params.as_text().and_then(|t| NodeId::parse(t).ok());
-        match action {
-            "transport.play" => s.play(),
-            "transport.stop" => s.stop(),
-            "transport.toggle" => {
-                if s.telemetry().position.playing {
-                    s.stop();
-                } else {
-                    s.play();
-                }
-            }
-            "transport.record" => s.record(node())?,
-            "transport.locate" => {
-                let ticks = params.as_int().ok_or_else(|| err("port.params"))?;
-                let map = crate::session::tempo_map(s.document().root())?;
-                s.locate(map.sample_at(ticks.max(0)));
-            }
-            "transport.panic" => s.panic(),
-            "project.save" => s.save()?,
-            "project.save_as" => s.save_as(PathBuf::from(text("folder").ok_or_else(|| err("port.params"))?))?,
-            "project.open" => {
-                let _ = s.open(PathBuf::from(text("folder").ok_or_else(|| err("port.params"))?));
-            }
-            "project.new" => s.create(PathBuf::from(text("folder").ok_or_else(|| err("port.params"))?))?,
-            "project.export" => {
-                let file = PathBuf::from(text("file").ok_or_else(|| err("port.params"))?);
-                let _ = s.export(crate::export::ExportTarget::wav(file));
-            }
-            "takes.recover" => s.recover_takes()?,
-            "resources.import" => {
-                let _ = s.import(PathBuf::from(text("path").ok_or_else(|| err("port.params"))?));
-            }
-            "take.reload" | "items.rerender" => {
-                // Every resource the project cites is asked for again (a file replaced on the disk)
-                s.reload_resources();
-            }
-            "plugins.rescan" => {}
-            "edit.copy" => {
-                let id = node().ok_or_else(|| err("port.params"))?;
-                self.clipboard = Some(self.session.copy(id)?);
-            }
-            "edit.paste" => {
-                let clip = self.clipboard.clone().ok_or_else(|| err("port.clipboard.empty"))?;
-                let parent = text("parent").and_then(|t| NodeId::parse(&t).ok()).unwrap_or(ROOT);
-                let list = text("list").unwrap_or_else(|| "tracks".to_owned());
-                let index = params.get("index").and_then(Value::as_int).map_or(usize::MAX, |i| i.max(0) as usize);
-                let len = self.session.document().find(parent).and_then(|p| p.get(&list).map(Value::len)).unwrap_or(0);
-                self.session.paste(&clip, parent, &list, index.min(len))?;
-            }
-            other => {
-                let other: String = other.to_owned();
-                self.session.notices().warn("port.action.unknown", vec![("action", Value::text(other))]);
-                return Err(err("port.action.unknown"));
-            }
-        }
-        Ok(())
-    }
 }
 
 fn peak_block(peaks: &lm_io::Peaks, level: u8, from: u64, to: u64) -> PeakBlock {
@@ -507,7 +444,7 @@ impl CorePort for LocalPort {
     }
 
     fn run_action(&mut self, action: ActionId, params: Value) -> Pending<()> {
-        let r = self.run(action.as_str(), &params);
+        let r = self.session.run_action(action.as_str(), &params);
         if let Err(e) = &r {
             let retry = Some((action.clone(), params));
             self.session.notices().error(e, None, retry);

@@ -212,6 +212,21 @@ pub struct Clipboard {
     pub project: PathBuf,
 }
 
+/// A take to close: one just recorded, or an interrupted one to recover first
+#[derive(Debug)]
+enum TakeJob {
+    Recorded(Take),
+    Interrupted(PathBuf),
+}
+
+/// The takes of one recording, gathered until every input's is closed
+#[derive(Debug, Default)]
+struct PendingRecording {
+    inputs: usize,
+    takes: Vec<FinalizedTake>,
+    failed: usize,
+}
+
 /// A request for a recording that waits for the device to arm (lm-io: arm first, then record)
 #[derive(Debug)]
 struct RecordStart {
@@ -234,7 +249,8 @@ pub struct Session {
     build_ops: Ops<Box<dyn Processor>, BuildData>,
     load_ops: Ops<lm_io::Loaded, String>,
     import_ops: Ops<lm_io::ImportedFile, ()>,
-    take_ops: Ops<FinalizedTake, ()>,
+    /// Takes being closed, by the recording they belong to (0: a recovered take, alone)
+    take_ops: Ops<FinalizedTake, u64>,
     generic_ops: Ops<Value, &'static str>,
     pub(crate) activity: Activity,
     pub(crate) notices: Notices,
@@ -274,7 +290,17 @@ pub struct Session {
     autosave_warned: bool,
     record_start: Option<RecordStart>,
     recording_tracks: Vec<NodeId>,
+    /// The recordings whose takes are being closed: all of one recording enter the tree in one transaction
+    recordings: std::collections::BTreeMap<u64, PendingRecording>,
+    recording_serial: u64,
+    /// Takes waiting to be closed: one at a time (two takes of the same content share their files' names)
+    take_queue: std::collections::VecDeque<(TakeJob, u64)>,
+    next_take_after: bool,
+    /// Records forgotten once the journal line that holds their take is on the disk (U5)
+    forget_after: Vec<(Arc<AtomicBool>, PathBuf)>,
     xruns: u32,
+    /// What `edit.copy` copied (H13)
+    pub(crate) clipboard: Option<Clipboard>,
     /// The finished operations the headless printer has not shown
     pub(crate) finished: Vec<Finished>,
     main: Main,
@@ -489,7 +515,13 @@ impl Session {
             autosave_warned: false,
             record_start: None,
             recording_tracks: Vec::new(),
+            recordings: std::collections::BTreeMap::new(),
+            recording_serial: 0,
+            forget_after: Vec::new(),
+            take_queue: std::collections::VecDeque::new(),
+            next_take_after: false,
             xruns: 0,
+            clipboard: None,
             finished: Vec::new(),
             main,
         };
@@ -584,6 +616,18 @@ impl Session {
 
     /// Whether a document node's processor is still being built (new nodes are silent meanwhile, I-2.3)
     pub fn is_waiting(&self, id: NodeId) -> bool {
+        // A plugin of the document the installed program does not have yet: the compiler has not answered
+        if self.document.type_of(id) == Some(lm_doc::schemas::types::PLUGIN)
+            && self
+                .document
+                .find(id)
+                .and_then(|n| n.get("plugin").and_then(Value::as_text).map(str::to_owned))
+                .is_some_and(|p| self.plugins.get(&p).is_some())
+            && self.table.node(NodeKey::Instrument(id)).is_none()
+            && self.table.node(NodeKey::Insert(id)).is_none()
+        {
+            return true;
+        }
         self.waiting_nodes.iter().any(|k| k.owner() == Some(id))
             || self.builds_waiting.iter().any(|b| b.node.owner() == Some(id))
             || self.build_ops.list.iter().any(|op| op.data.node.owner() == Some(id))
@@ -602,6 +646,7 @@ impl Session {
             && self.engine.installs_queued() == 0
             && self.open_ops.is_empty()
             && self.saving.is_none()
+            && !self.document.index().ids().any(|(id, _)| self.is_waiting(*id))
     }
 
     // ---- operations (I-2) ----
@@ -668,8 +713,7 @@ impl Session {
                 }
             }
             // A node silent until built counts as loading from when the compiler asked for it
-            let waiting = self.waiting_nodes.iter().any(|k| k.owner() == Some(*id))
-                || self.builds_waiting.iter().any(|b| b.node.owner() == Some(*id));
+            let waiting = self.is_waiting(*id);
             if mine.is_empty() && waiting {
                 return Loading::Pending;
             }
@@ -756,6 +800,11 @@ impl Session {
         changed |= self.poll_compiler();
         // 10. the journal and the autosave
         self.journal_turn();
+        self.forget_records();
+        let finished_recordings: Vec<u64> = self.recordings.keys().copied().collect();
+        for r in finished_recordings {
+            self.commit_recording_if_whole(r);
+        }
         self.refresh_status();
         changed
     }
@@ -1044,15 +1093,26 @@ impl Session {
                 }
             }
         }
-        for (op, result) in self.take_ops.finished(now, &mut done) {
+        let takes_done = self.take_ops.finished(now, &mut done);
+        if !takes_done.is_empty() {
+            self.next_take_after = true;
+        }
+        for (op, result) in takes_done {
             changed = true;
             match result {
-                Ok(take) => self.take_finalized(take),
+                Ok(take) => self.take_finalized(op.data, take),
                 Err(e) => {
                     self.notices.error(&e, Some(op.target.clone()), None);
                     self.activity.fail(op.target, e);
+                    if let Some(r) = self.recordings.get_mut(&op.data) {
+                        r.failed += 1;
+                    }
+                    self.commit_recording_if_whole(op.data);
                 }
             }
+        }
+        if std::mem::take(&mut self.next_take_after) {
+            self.next_take();
         }
         for (op, result) in self.generic_ops.finished(now, &mut done) {
             changed = true;
@@ -1745,6 +1805,9 @@ impl Session {
         if device.arm(sender).is_err() {
             return Err(err("session.record.busy"));
         }
+        self.recording_serial += 1;
+        let inputs = tracks.len();
+        self.recordings.insert(self.recording_serial, PendingRecording { inputs, ..PendingRecording::default() });
         self.recording_tracks = tracks.into_iter().map(|(id, _)| id).collect();
         self.record_start = Some(RecordStart { since: self.clock.now() });
         Ok(())
@@ -1758,7 +1821,11 @@ impl Session {
         for e in events {
             changed = true;
             match e {
-                DiskEvent::TakeClosed(take) => self.finalize(take),
+                DiskEvent::TakeClosed(take) => {
+                    // Takes close in the order their recordings started: the oldest recording still gathering
+                    let recording = self.recordings.keys().next().copied().unwrap_or(0);
+                    self.finalize(take, recording);
+                }
                 DiskEvent::InputStopped { reason, seconds, error, .. } => {
                     let key = match reason {
                         lm_io::StopReason::DiskFull => "session.record.disk_full",
@@ -1782,111 +1849,171 @@ impl Session {
         changed
     }
 
-    /// Finishes a take in an operation on the project (I-11)
-    fn finalize(&mut self, take: Take) {
+    /// Closes a take in an operation on the project (I-11), after the ones before it
+    fn finalize(&mut self, take: Take, recording: u64) {
+        self.take_queue.push_back((TakeJob::Recorded(take), recording));
+        self.next_take();
+    }
+
+    fn next_take(&mut self) {
+        if !self.take_ops.is_empty() {
+            return;
+        }
+        let Some((job, recording)) = self.take_queue.pop_front() else { return };
         let format = match self.preferences.text(&["recording", "format"]) {
             Some("rf64-32f") => TakeFormat::Float32,
             _ => TakeFormat::Int24,
         };
-        let handle = self.workers.start(move |cancel, progress| lm_io::finalize_take(&take, format, cancel, progress));
+        let (label, cancellable) = match &job {
+            TakeJob::Recorded(_) => ("session.closing_take", false),
+            TakeJob::Interrupted(_) => ("session.recovering_take", true),
+        };
+        let handle = self.workers.start(move |cancel, progress| {
+            let take = match job {
+                TakeJob::Recorded(t) => t,
+                TakeJob::Interrupted(record) => lm_io::recover_take(&record, cancel, progress)?,
+            };
+            lm_io::finalize_take(&take, format, cancel, progress)
+        });
         let started = self.clock.now();
         self.take_ops.push(Op {
             handle,
-            label: Label::new("session.closing_take"),
+            label: Label::new(label),
             target: Target::Project,
-            cancellable: false,
+            cancellable,
             started,
-            data: (),
+            data: recording,
         });
     }
 
-    /// Recovers the interrupted takes of the project (U5): an operation; each take goes back to its track, or to a
+    /// Recovers the interrupted takes of the project (U5): operations; each take goes back to its track, or to a
     /// new "Take recuperado" track when its track is gone (H8)
     pub fn recover_takes(&mut self) -> Result<()> {
-        let records = lm_io::find_interrupted(&self.project.folder.audio())?;
-        for record in records {
-            let format = TakeFormat::Int24;
-            let handle = self.workers.start(move |cancel, progress| {
-                let take = lm_io::recover_take(&record, cancel, progress)?;
-                lm_io::finalize_take(&take, format, cancel, progress)
-            });
-            let started = self.clock.now();
-            self.take_ops.push(Op {
-                handle,
-                label: Label::new("session.recovering_take"),
-                target: Target::Project,
-                cancellable: true,
-                started,
-                data: (),
-            });
+        for record in lm_io::find_interrupted(&self.project.folder.audio())? {
+            self.take_queue.push_back((TakeJob::Interrupted(record), 0));
         }
+        self.next_take();
         Ok(())
     }
 
-    /// A take on the disk: it enters the tree in one transaction (`Origin::Recording`), with the latency taken off,
-    /// on its track or a recovered one (H8); then its record is forgotten
-    fn take_finalized(&mut self, f: FinalizedTake) {
-        let FinalizedTake { take, key, peaks, .. } = f;
-        let resource = match Resource::new("audio", &key) {
-            Ok(r) => r,
-            Err(e) => return self.notices.error(&e, None, None),
-        };
-        if let Ok(data) = lm_io::load_file(&take.path, &Cancel::new(), &Progress::new()) {
-            self.resources.loaded(key.clone(), data, peaks);
+    /// A take on the disk: it waits for the other takes of its recording (a recovered one goes alone)
+    fn take_finalized(&mut self, recording: u64, f: FinalizedTake) {
+        if let Ok(data) = lm_io::load_file(&f.take.path, &Cancel::new(), &Progress::new()) {
+            self.resources.loaded(f.key.clone(), data, f.peaks.clone());
         }
-        let start = (take.start_sample - take.latency - take.pdc).max(0);
+        if recording == 0 {
+            self.commit_recording(vec![f]);
+            return;
+        }
+        self.recordings.entry(recording).or_default().takes.push(f);
+        self.commit_recording_if_whole(recording);
+    }
+
+    fn commit_recording_if_whole(&mut self, recording: u64) {
+        let whole = self.recordings.get(&recording).is_some_and(|r| r.takes.len() + r.failed >= r.inputs);
+        if whole && let Some(r) = self.recordings.remove(&recording) {
+            self.commit_recording(r.takes);
+        }
+    }
+
+    /// The takes of one recording enter the tree in ONE transaction (`Origin::Recording`: one undo removes the whole
+    /// recording), each on its track with the latency and the PDC taken off (H5), or on a new "Take recuperado"
+    /// track when its track is gone (H8: a take is never thrown away). Their records are forgotten once the journal
+    /// line is on the disk (U5)
+    fn commit_recording(&mut self, takes: Vec<FinalizedTake>) {
+        if takes.is_empty() {
+            return;
+        }
         let map = tempo_map(self.document.root());
-        let (start_tick, length) = match &map {
-            Ok(m) => {
-                let a = m.tick_at(start);
-                (a, (m.tick_at(start + take.frames) - a).max(1))
-            }
-            Err(_) => (0, 1),
-        };
-        let track = take.tracks.first().and_then(|t| NodeId::parse(t).ok()).filter(|t| self.document.exists(*t));
-        let item = Value::object([
-            ("kind", Value::text("audio")),
-            ("name", Value::text("")),
-            ("start", Value::int(start_tick)),
-            ("length", Value::int(length)),
-            (
-                "lanes",
-                Value::list([Value::object([("source", Value::resource(resource)), ("sourceOffset", Value::int(0))])]),
-            ),
-        ]);
-        let result = self.document.transact_as(Label::new("session.take"), Origin::Recording, |e| {
-            let t = match track {
-                Some(t) => t,
-                None => {
-                    // H8: the track is gone; the take is never thrown away
-                    let tracks = e.root().get("tracks").map_or(0, Value::len);
-                    e.insert(
-                        lm_state::ROOT,
-                        "tracks",
-                        tracks,
-                        Value::object([("name", Value::text("Take recuperado"))]),
-                    )?
+        let mut placed = Vec::new();
+        for f in &takes {
+            let resource = match Resource::new("audio", &f.key) {
+                Ok(r) => r,
+                Err(e) => {
+                    self.notices.error(&e, None, None);
+                    continue;
                 }
             };
-            let items = e.find(t).and_then(|n| n.get("items").map(Value::len)).unwrap_or(0);
-            e.insert(t, "items", items, item)?;
+            let take = &f.take;
+            let start = (take.start_sample - take.latency - take.pdc).max(0);
+            let (start_tick, length) = match &map {
+                Ok(m) => {
+                    let a = m.tick_at(start);
+                    (a, (m.tick_at(start + take.frames) - a).max(1))
+                }
+                Err(_) => (0, 1),
+            };
+            let track = take.tracks.first().and_then(|t| NodeId::parse(t).ok()).filter(|t| self.document.exists(*t));
+            let item = Value::object([
+                ("kind", Value::text("audio")),
+                ("name", Value::text("")),
+                ("start", Value::int(start_tick)),
+                ("length", Value::int(length)),
+                (
+                    "lanes",
+                    Value::list([Value::object([
+                        ("source", Value::resource(resource)),
+                        ("sourceOffset", Value::int(0)),
+                    ])]),
+                ),
+            ]);
+            placed.push((track, item));
+        }
+        let mut recovered_track = false;
+        let result = self.document.transact_as(Label::new("session.take"), Origin::Recording, |e| {
+            let mut recovered: Option<NodeId> = None;
+            for (track, item) in &placed {
+                let t = match track {
+                    Some(t) => *t,
+                    None => match recovered {
+                        Some(r) => r,
+                        None => {
+                            let tracks = e.root().get("tracks").map_or(0, Value::len);
+                            let new = Value::object([("name", Value::text("Take recuperado"))]);
+                            let r = e.insert(lm_state::ROOT, "tracks", tracks, new)?;
+                            recovered = Some(r);
+                            r
+                        }
+                    },
+                };
+                let items = e.find(t).and_then(|n| n.get("items").map(Value::len)).unwrap_or(0);
+                e.insert(t, "items", items, item.clone())?;
+            }
+            recovered_track = recovered.is_some();
+            // I-21: the MIDI take joins here
             Ok(())
         });
         match result {
             Ok(_) => {
-                if track.is_none() {
+                if recovered_track {
                     self.notices.warn("session.take.recovered_track", Vec::new());
                 }
-                // Journaled before the record is forgotten
                 if let Some(patch) = self.document.take_journal() {
                     self.write_journal(&patch);
                 }
-                let _ = self.journal.sync(Duration::from_secs(2));
-                if let Err(e) = lm_io::forget_record(&take.record) {
-                    self.notices.error(&e, None, None);
+                if let Some(marker) = self.journal.marker() {
+                    for f in takes {
+                        self.forget_after.push((marker.clone(), f.take.record.clone()));
+                    }
                 }
             }
             Err(e) => self.notices.error(&e, None, None),
+        }
+    }
+
+    /// The records of takes whose journal line is on the disk are forgotten (never before: a crash in between still
+    /// finds the take, U5)
+    fn forget_records(&mut self) {
+        let mut i = 0;
+        while i < self.forget_after.len() {
+            if self.forget_after[i].0.load(Ordering::Acquire) {
+                let (_, record) = self.forget_after.swap_remove(i);
+                if let Err(e) = lm_io::forget_record(&record) {
+                    self.notices.error(&e, None, None);
+                }
+            } else {
+                i += 1;
+            }
         }
     }
 
