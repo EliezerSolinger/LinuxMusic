@@ -3568,6 +3568,7 @@ dependencies = [
  "lm-gui-plugins",
  "lm-port",
  "lm-port-fake",
+ "lm-smf",
  "lm-time",
 ]
 
@@ -3762,6 +3763,7 @@ dependencies = [
  "lm-base",
  "lm-doc",
  "lm-port",
+ "lm-smf",
  "lm-state",
 ]
 

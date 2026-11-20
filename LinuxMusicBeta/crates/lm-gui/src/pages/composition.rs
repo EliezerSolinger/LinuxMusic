@@ -179,6 +179,16 @@ impl CompositionPage {
         self.view
     }
 
+    /// Files dropped on the arrangement (F-ARR-011): at the bar under the pointer; audio as new audio tracks, MIDI
+    /// as imported tracks, a project folder opens
+    pub(crate) fn drop_files(&mut self, paths: &[std::path::PathBuf], window: &mut Window, cx: &mut Context<Self>) {
+        let b = *self.timeline_bounds.borrow();
+        let tick = self.view.tick_at((window.mouse_position().x - b.origin.x).as_f32()).max(0.0) as i64;
+        let map = model::tempo_map(self.core.read(cx).port().root());
+        let bar = map.bar_start(map.bar_beat_tick(tick).bar).unwrap_or(0);
+        crate::screens::files::import_paths(&self.core, paths, bar, cx);
+    }
+
     /// A window position in the marks' lanes (x from the timeline's left, y from the lanes' top)
     pub(crate) fn marks_local(&self, at: gpui::Point<Pixels>) -> (f32, f32) {
         let b = *self.timeline_bounds.borrow();
@@ -1520,6 +1530,8 @@ impl CompositionPage {
                         }),
                     ),
             )
+            // files dropped from the file manager (F-ARR-011, agent D's files.rs)
+            .on_drop(cx.listener(|p, paths: &gpui::ExternalPaths, window, cx| p.drop_files(paths.paths(), window, cx)))
             // the ruler's markers and regions (agent D, marks.rs)
             .child(self.marks.render(v, root, self.timeline_bounds.borrow().size.width.as_f32(), cx))
             .children(self.marks.render_menu(root, cx))

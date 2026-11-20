@@ -621,3 +621,17 @@ Add a region = Adicionar uma região
 Move the marker = Mover o marcador
 Move the region = Mover a região
 Rename = Renomear
+
+# MIDI files (F-PRJ-019, F-PRJ-021)
+session.midi.imported = {tracks} faixas importadas do arquivo MIDI
+session.midi.read = Não deu para ler o arquivo MIDI ({problem}, byte {at})
+session.midi.write = Não deu para escrever {file}: {problem}
+session.midi.importing = Importando o MIDI
+session.midi.exporting = Exportando o MIDI
+Import (MIDI, audio) = Importar (MIDI, áudio)
+Export MIDI = Exportar MIDI
+A MIDI file (.mid) or an audio file; it enters at the cursor = Um arquivo MIDI (.mid) ou de áudio; entra no cursor
+The project's notes as a MIDI file (type 1) = As notas do projeto num arquivo MIDI (tipo 1)
+Import audio = Importar áudio
+Choose... = Escolher...
+Import = Importar

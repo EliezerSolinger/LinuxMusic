@@ -406,6 +406,118 @@ pub(crate) fn run(p: &mut FakePort, action: &str, params: &Value) -> Option<Resu
             p.set_pref(&["midi", "ports"], Value::list(ports));
             Ok(())
         }
+        "midi.import" => {
+            let Some(path) = text(params, "path") else { return Some(Err(err("port.params"))) };
+            let at = params.get("at").and_then(Value::as_int).unwrap_or(0);
+            midi_import(p, &path, at)
+        }
+        "midi.export" => {
+            let Some(path) = text(params, "path") else { return Some(Err(err("port.params"))) };
+            let root = p.doc.root().clone();
+            p.start(
+                Label::new("session.midi.exporting"),
+                Target::Project,
+                false,
+                Duration::from_millis(300),
+                move |_| {
+                    let _ = std::fs::write(&path, midi_bytes(&root));
+                },
+            );
+            Ok(())
+        }
         _ => return None,
     })
+}
+
+/// An audio file into the fake's store: its resource at once (the peaks are synthesized)
+pub(crate) fn import(_: &mut FakePort, path: &std::path::Path) -> lm_port::Pending<lm_state::Resource> {
+    if !path.exists() {
+        return lm_port::Pending::Ready(Err(err("port.import.missing")));
+    }
+    lm_port::Pending::Ready(Ok(crate::demo::audio(&path.display().to_string())))
+}
+
+/// The fake's MIDI import: one track per file track with notes, each note as the file has it (the session's plan,
+/// channels and automation are lm-session's)
+fn midi_import(p: &mut FakePort, path: &str, at: i64) -> Result<()> {
+    let bytes = std::fs::read(path).map_err(|_| err("session.midi.read"))?;
+    let smf = lm_smf::read(&bytes).map_err(|_| err("session.midi.read"))?;
+    let ppq = i64::from(smf.ppq.max(1));
+    let tracks = p.doc.root().get("tracks").map_or(0, Value::len);
+    p.doc.transact(Label::new("session.midi.import"), |e| {
+        let mut n = tracks;
+        for (i, t) in smf.tracks.iter().enumerate() {
+            let mut notes = Vec::new();
+            let mut open: Vec<(u8, i64, u8)> = Vec::new();
+            for ev in &t.events {
+                let tick = ev.tick as i64 * 960 / ppq;
+                match ev.event {
+                    lm_smf::Event::NoteOn { key, velocity, .. } => open.push((key, tick, velocity)),
+                    lm_smf::Event::NoteOff { key, .. } => {
+                        if let Some(k) = open.iter().position(|o| o.0 == key) {
+                            let (key, start, vel) = open.remove(k);
+                            notes.push((key, start, (tick - start).max(1), vel));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if notes.is_empty() {
+                continue;
+            }
+            let end = notes.iter().map(|n| n.1 + n.2).max().unwrap_or(960);
+            let name = t.name().map_or_else(|| format!("MIDI {}", i + 1), str::to_string);
+            let track = e.insert(
+                lm_state::ROOT,
+                "tracks",
+                n,
+                o(vec![("name", Value::text(name)), ("instrument", crate::demo::plugin("tripleoscillator"))]),
+            )?;
+            n += 1;
+            let item = e.insert(
+                track,
+                "items",
+                0,
+                o(vec![("kind", Value::text("midi")), ("start", Value::int(at)), ("length", Value::int(end))]),
+            )?;
+            for (key, start, len, vel) in notes {
+                e.add_note(
+                    item,
+                    o(vec![
+                        ("key", Value::int(i64::from(key))),
+                        ("start", Value::int(start)),
+                        ("length", Value::int(len)),
+                        ("velocity", real(f64::from(vel) / 127.0)),
+                    ]),
+                )?;
+            }
+        }
+        Ok(())
+    })?;
+    Ok(())
+}
+
+fn midi_bytes(root: &Value) -> Vec<u8> {
+    let mut tracks = Vec::new();
+    for t in root.get("tracks").into_iter().flat_map(Value::items) {
+        let mut tr = lm_smf::Track::default();
+        for item in t.get("items").into_iter().flat_map(Value::items) {
+            let start = item.get("start").and_then(Value::as_int).unwrap_or(0);
+            for (_, n) in item.get("notes").map(|v| v.entries().collect::<Vec<_>>()).unwrap_or_default() {
+                let g = |k: &str| n.get(k).and_then(Value::as_int).unwrap_or(0);
+                let on = (start + g("start")).max(0) as u64;
+                let key = g("key").clamp(0, 127) as u8;
+                tr.events
+                    .push(lm_smf::Timed { tick: on, event: lm_smf::Event::NoteOn { channel: 0, key, velocity: 100 } });
+                tr.events.push(lm_smf::Timed {
+                    tick: on + g("length").max(1) as u64,
+                    event: lm_smf::Event::NoteOff { channel: 0, key, velocity: 64 },
+                });
+            }
+        }
+        if !tr.events.is_empty() {
+            tracks.push(tr);
+        }
+    }
+    lm_smf::write(&lm_smf::Smf { format: 1, ppq: 960, tracks })
 }

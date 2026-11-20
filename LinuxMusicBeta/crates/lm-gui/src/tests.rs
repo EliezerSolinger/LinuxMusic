@@ -1990,3 +1990,73 @@ fn export_between_markers(cx: &mut TestAppContext) {
     click(cx, "marker-span-1");
     assert!(cx.debug_bounds("marker-span-0").is_some());
 }
+
+// --- agent D: files in and out (F-ARR-011, F-PRJ-019/020/021) --------------------------------------------------
+
+fn temp_file(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("lm-gui-files-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join(name);
+    std::fs::write(&p, bytes).unwrap();
+    p
+}
+
+fn a_midi_file() -> Vec<u8> {
+    use lm_smf::{Event, Smf, Timed, Track};
+    let t = |tick, event| Timed { tick, event };
+    lm_smf::write(&Smf {
+        format: 1,
+        ppq: 480,
+        tracks: vec![Track {
+            events: vec![
+                t(0, Event::TrackName("Melodia".into())),
+                t(0, Event::NoteOn { channel: 0, key: 72, velocity: 100 }),
+                t(480, Event::NoteOff { channel: 0, key: 72, velocity: 0 }),
+            ],
+        }],
+    })
+}
+
+/// A file dropped on the arrangement (F-ARR-011): an audio file becomes a new audio track at the bar under the pointer
+#[gpui::test]
+fn dropping_an_audio_file_makes_a_track(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let n = model::tracks(&root(&ws, cx)).len();
+    let file = temp_file("voz.wav", b"RIFF....WAVE");
+    let r = bounds(cx, "ruler");
+    let at = point(r.origin.x + px(200.), r.origin.y + px(300.));
+    cx.simulate_event(gpui::FileDropEvent::Entered { position: at, paths: gpui::ExternalPaths(vec![file].into()) });
+    cx.simulate_event(gpui::FileDropEvent::Submit { position: at });
+    for _ in 0..20 {
+        settle(cx);
+    }
+    let tracks = model::tracks(&root(&ws, cx));
+    assert_eq!(tracks.len(), n + 1);
+    let t = tracks.last().unwrap();
+    assert_eq!(&*t.name, "voz");
+    assert!(t.items[0].audio);
+}
+
+/// Import and Export MIDI by a path (the dialog of a remote core; locally the system's dialog is used)
+#[gpui::test]
+fn importing_and_exporting_midi(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let n = model::tracks(&root(&ws, cx)).len();
+    let file = temp_file("melodia.mid", &a_midi_file());
+    open_part(&ws, cx, Screen::Project, Some("import"));
+    cx.simulate_input(&file.display().to_string());
+    click(cx, "path-go");
+    settle(cx);
+    let tracks = model::tracks(&root(&ws, cx));
+    assert_eq!(tracks.len(), n + 1);
+    assert_eq!(&*tracks.last().unwrap().name, "Melodia");
+    let out = file.with_file_name("saida.mid");
+    open_part(&ws, cx, Screen::Project, Some("export_midi"));
+    cx.simulate_input(&out.display().to_string());
+    click(cx, "path-go");
+    for _ in 0..40 {
+        std::thread::sleep(Duration::from_millis(20));
+        settle(cx);
+    }
+    assert!(lm_smf::read(&std::fs::read(&out).unwrap()).is_ok());
+}
