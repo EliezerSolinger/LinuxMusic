@@ -223,7 +223,7 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("tuning", FieldKind::Object(ty::TUNING)).optional())
             .upgrade(1, unchanged)
             .upgrade(2, unchanged),
-        // A named point of the ruler (F-REG-011): one per tick; color as 0xRRGGBB, absent = the theme's
+        // A named point of the ruler (F-REG-011): one per tick; color as 0xRRGGBB, absent or 0 = the theme's
         NodeSchema::new(ty::MARKER, 1)
             .field(FieldSpec::id(KIND_MARKER))
             .field(FieldSpec::text("name", ""))

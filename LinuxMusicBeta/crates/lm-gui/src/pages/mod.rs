@@ -3,6 +3,7 @@
 
 pub mod composition;
 pub mod desk;
+pub mod marks;
 pub mod midi_maps;
 pub mod mixing;
 pub mod transport;

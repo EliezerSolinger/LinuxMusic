@@ -25,6 +25,8 @@ use crate::screens::Screen;
 use crate::tiles::{TileCache, level_for, paint_wave, tile_range};
 use crate::ui::{THEME, button, c, knob_face, loading_component, meter, midi, tr, track_color, trf};
 use crate::view::{self, TimelineView};
+
+use super::marks::{self, MarksState};
 use crate::workspace::Workspace;
 
 pub const TEMPO_H: f32 = 34.0;
@@ -106,6 +108,8 @@ pub struct CompositionPage {
     timeline_bounds: Rc<RefCell<Bounds<Pixels>>>,
     tiles: Rc<RefCell<TileCache>>,
     hits: Rc<RefCell<Vec<Hit>>>,
+    /// The ruler's markers and regions (agent D, marks.rs)
+    pub(crate) marks: MarksState,
 }
 
 /// The rows: tracks not hidden by a collapsed folder, then each track's take lanes and automation lanes
@@ -144,6 +148,7 @@ fn layout(tracks: &[TrackView], track_h: f32, takes: &HashSet<NodeId>, automatio
 impl CompositionPage {
     pub fn new(core: Entity<Core>, workspace: WeakEntity<Workspace>, cx: &mut Context<Self>) -> Self {
         let feed = core.update(cx, |core, _| core.port_mut().feed(Topic::All));
+        let core_for_marks = core.clone();
         CompositionPage {
             core,
             workspace,
@@ -165,7 +170,25 @@ impl CompositionPage {
             timeline_bounds: Rc::new(RefCell::new(Bounds::default())),
             tiles: Rc::new(RefCell::new(TileCache::default())),
             hits: Default::default(),
+            marks: MarksState::new(core_for_marks),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn view_for_tests(&self) -> TimelineView {
+        self.view
+    }
+
+    /// A window position in the marks' lanes (x from the timeline's left, y from the lanes' top)
+    pub(crate) fn marks_local(&self, at: gpui::Point<Pixels>) -> (f32, f32) {
+        let b = *self.timeline_bounds.borrow();
+        ((at.x - b.origin.x).as_f32(), (at.y - b.origin.y).as_f32() - view::RULER_H)
+    }
+
+    /// "Export the region as audio" (F-REG-012): the export window on that range
+    pub(crate) fn export_region(&mut self, from: i64, to: i64, window: &mut Window, cx: &mut Context<Self>) {
+        cx.set_global(crate::screens::export::ExportRange(Some((from, to))));
+        let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::Export, None, window, cx));
     }
 
     fn tracks(&self, cx: &Context<Self>) -> Vec<TrackView> {
@@ -270,7 +293,8 @@ impl CompositionPage {
     // --- scroll, zoom, the ruler ---------------------------------------------------------------------------
 
     fn view_h(window: &Window) -> f64 {
-        (window.viewport_size().height.as_f32() - crate::workspace::CHROME_H - view::RULER_H - TEMPO_H) as f64
+        (window.viewport_size().height.as_f32() - crate::workspace::CHROME_H - view::RULER_H - marks::MARKS_H - TEMPO_H)
+            as f64
     }
 
     fn content_h(&self, cx: &Context<Self>) -> f64 {
@@ -397,7 +421,7 @@ impl CompositionPage {
         window.focus(&self.focus, cx); // the arrangement's keys go to the page
         let b = *self.timeline_bounds.borrow();
         let (mx, my) = ((ev.position.x - b.origin.x).as_f32(), (ev.position.y - b.origin.y).as_f32());
-        if my < view::RULER_H + TEMPO_H {
+        if my < view::RULER_H + marks::MARKS_H + TEMPO_H {
             return;
         }
         // an automation lane: a double click opens it in the automation editor (agent B's)
@@ -559,6 +583,7 @@ impl Render for CompositionPage {
             .on_action(cx.listener(|p, _: &OpenItem, window, cx| p.open_item(window, cx)))
             .on_action(cx.listener(|p, _: &ZoomIn, _, cx| p.zoom(-40.0, cx)))
             .on_action(cx.listener(|p, _: &ZoomOut, _, cx| p.zoom(40.0, cx)))
+            .map(|d| marks::actions(d, cx))
             .on_mouse_move(cx.listener(|p, ev: &MouseMoveEvent, _, cx| {
                 p.drag_knob(ev, cx);
                 p.drag_item(ev, cx);
@@ -736,7 +761,7 @@ impl CompositionPage {
         let bpm = map.bpm_at_sample(map.sample_at(tick));
         let sig = map.time_signature_at(tick);
         let inputs = core.port().telemetry().inputs.clone();
-        let top0 = view::RULER_H + TEMPO_H;
+        let top0 = view::RULER_H + marks::MARKS_H + TEMPO_H;
         div()
             .w(px(view::HEADER_W))
             .h_full()
@@ -746,6 +771,7 @@ impl CompositionPage {
             .border_r_1()
             .border_color(c(THEME.line))
             .child(div().h(px(view::RULER_H)).bg(c(THEME.bg3)))
+            .child(marks::MarksState::header())
             .child(
                 div()
                     .h(px(TEMPO_H))
@@ -1113,7 +1139,7 @@ impl CompositionPage {
         let map = model::tempo_map(root);
         let song = model::song(root);
         let v = self.view;
-        let top0 = view::RULER_H + TEMPO_H;
+        let top0 = view::RULER_H + marks::MARKS_H + TEMPO_H;
         let sy = v.scroll_y as f32;
         let mut paint = Vec::new();
         let mut overlays: Vec<AnyElement> = Vec::new();
@@ -1352,7 +1378,7 @@ impl CompositionPage {
                 overlays.push(
                     div()
                         .absolute()
-                        .top(px(view::RULER_H + TEMPO_H - 13.0))
+                        .top(px(view::RULER_H + marks::MARKS_H + TEMPO_H - 13.0))
                         .left(px(x + 3.0))
                         .text_size(px(9.))
                         .text_color(c(THEME.text3))
@@ -1421,7 +1447,7 @@ impl CompositionPage {
                         // the ruler and the tempo lane on top (they do not scroll vertically)
                         window.paint_quad(fill(Bounds::new(o, size(b.size.width, px(view::RULER_H))), c(THEME.bg3)));
                         window.paint_quad(fill(
-                            Bounds::new(at(0.0, view::RULER_H), size(b.size.width, px(TEMPO_H))),
+                            Bounds::new(at(0.0, view::RULER_H + marks::MARKS_H), size(b.size.width, px(TEMPO_H))),
                             c(THEME.bg2),
                         ));
                         // loop and punch in the ruler's upper half (F-REG-006)
@@ -1445,7 +1471,7 @@ impl CompositionPage {
                         }
                         let mut pb = PathBuilder::stroke(px(1.5));
                         for (k, (x, yv)) in tempo_pts.iter().enumerate() {
-                            let pt = at(*x, view::RULER_H + 4.0 + yv * (TEMPO_H - 8.0));
+                            let pt = at(*x, view::RULER_H + marks::MARKS_H + 4.0 + yv * (TEMPO_H - 8.0));
                             if k == 0 { pb.move_to(pt) } else { pb.line_to(pt) }
                         }
                         if let Ok(path) = pb.build() {
@@ -1494,6 +1520,9 @@ impl CompositionPage {
                         }),
                     ),
             )
+            // the ruler's markers and regions (agent D, marks.rs)
+            .child(self.marks.render(v, root, self.timeline_bounds.borrow().size.width.as_f32(), cx))
+            .children(self.marks.render_menu(root, cx))
             .children(overlays)
             .into_any_element()
     }

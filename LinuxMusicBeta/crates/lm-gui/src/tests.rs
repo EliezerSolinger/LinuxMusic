@@ -1930,3 +1930,63 @@ fn moving_an_item_takes_its_automation(cx: &mut TestAppContext) {
     undo(cx);
     assert_eq!(first_point(cx), before, "one undo step");
 }
+
+// --- agent D: the ruler's markers and regions (F-REG-011, F-REG-012) ---------------------------------------------
+
+fn marks_point(cx: &mut VisualTestContext, ws: &Entity<Workspace>, tick: i64, lane: usize) -> Point<Pixels> {
+    let b = bounds(cx, "marks");
+    let v = ws.read_with(cx, |ws, cx| ws.composition.read(cx).view_for_tests());
+    point(b.origin.x + px(v.x(tick as f64)), b.origin.y + px(crate::pages::marks::LANE_H * (lane as f32 + 0.5)))
+}
+
+#[gpui::test]
+fn markers_keys_and_jumps(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let before = model::markers(&root(&ws, cx)).len();
+    click(cx, "ruler");
+    settle(cx);
+    // the page's keys: a click in the arrangement gives it the focus
+    let r = bounds(cx, "ruler");
+    cx.simulate_click(point(r.origin.x + px(40.), r.origin.y + px(400.)), Modifiers::none());
+    cx.run_until_parked();
+    keys(cx, "m");
+    assert_eq!(model::markers(&root(&ws, cx)).len(), before + 1, "M adds a marker at the cursor");
+    keys(cx, "2");
+    settle(cx);
+    let second = model::markers(&root(&ws, cx))[1].tick;
+    let core = core(&ws, cx);
+    let at = core.read_with(cx, |c, _| {
+        let p = c.port();
+        model::tempo_map(p.root()).tick_at(p.telemetry().position.samples)
+    });
+    assert_eq!(at, second, "2 goes to the second marker");
+}
+
+#[gpui::test]
+fn a_click_on_a_region_sets_the_loop_and_a_drag_moves_a_marker(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let r = model::regions(&root(&ws, cx))[0].clone();
+    let p = marks_point(cx, &ws, r.from + 480, 1);
+    cx.simulate_click(p, Modifiers::none());
+    cx.run_until_parked();
+    let song = model::song(&root(&ws, cx));
+    assert!(song.loop_on);
+    assert_eq!(song.loop_range, (r.from, r.to));
+    let m = model::markers(&root(&ws, cx))[1].clone();
+    let p = marks_point(cx, &ws, m.tick, 0);
+    drag_at(cx, p, 60.0, 0.0, Modifiers::none());
+    let moved = model::markers(&root(&ws, cx)).into_iter().find(|x| x.id == m.id).unwrap().tick;
+    assert!(moved > m.tick, "the marker moved: {moved}");
+    undo(cx);
+    let back = model::markers(&root(&ws, cx)).into_iter().find(|x| x.id == m.id).unwrap().tick;
+    assert_eq!(back, m.tick, "the drag is one undo step");
+}
+
+#[gpui::test]
+fn export_between_markers(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::Export, None);
+    click(cx, "what-2");
+    click(cx, "marker-span-1");
+    assert!(cx.debug_bounds("marker-span-0").is_some());
+}

@@ -70,7 +70,7 @@
 //! project.export:  { folder: text, name: text, formats: [text "wav"|"flac"|"ogg"|"mp3"], rate: int,
 //!                    depth: int (16, 24, 32 = float), dither: bool, oggQuality: int, mp3Kbps: int,
 //!                    normalize: { kind: "none"|"peak"|"lufs", target: real }, fadeIn: real, fadeOut: real,
-//!                    range: null | { start: int, end: int (bars, 1-based, end exclusive), fast: bool,
+//!                    range: null | { from: int, to: int (ticks, to exclusive), fast: bool,
 //!                                    warmup: real }, asLoop: bool, repeats: int,
 //!                    stems: null | { by: "tracks"|"channels", nodes: [text] } }    (I-13, U37, P-40)
 //! takes.recover, takes.discard: { index: int } (absent: all)       safe_mode.enable: { node: text }

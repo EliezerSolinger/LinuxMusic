@@ -429,3 +429,55 @@ pub fn song(root: &Value) -> Song {
         analog: at(root, &["mixer", "mode"]).and_then(Value::as_text) != Some("digital"),
     }
 }
+
+/// A marker of the ruler (F-REG-011)
+#[derive(Clone, Debug, PartialEq)]
+pub struct MarkerView {
+    pub id: NodeId,
+    pub name: Arc<str>,
+    pub tick: i64,
+    pub color: Option<u32>,
+}
+
+/// A region of the ruler (F-REG-012)
+#[derive(Clone, Debug, PartialEq)]
+pub struct RegionView {
+    pub id: NodeId,
+    pub name: Arc<str>,
+    pub from: i64,
+    pub to: i64,
+    pub color: Option<u32>,
+}
+
+/// The markers, in time order
+pub fn markers(root: &Value) -> Vec<MarkerView> {
+    let mut v: Vec<MarkerView> = list(root, "markers")
+        .filter_map(|m| {
+            Some(MarkerView {
+                id: id_of(m)?,
+                name: text(m, "name"),
+                tick: int(m, "tick", 0),
+                color: m.get("color").and_then(Value::as_int).filter(|c| *c != 0).map(|c| c as u32),
+            })
+        })
+        .collect();
+    v.sort_by_key(|m| m.tick);
+    v
+}
+
+/// The regions, in time order of their starts
+pub fn regions(root: &Value) -> Vec<RegionView> {
+    let mut v: Vec<RegionView> = list(root, "regions")
+        .filter_map(|r| {
+            Some(RegionView {
+                id: id_of(r)?,
+                name: text(r, "name"),
+                from: int(r, "from", 0),
+                to: int(r, "to", 0),
+                color: r.get("color").and_then(Value::as_int).filter(|c| *c != 0).map(|c| c as u32),
+            })
+        })
+        .collect();
+    v.sort_by_key(|r| r.from);
+    v
+}

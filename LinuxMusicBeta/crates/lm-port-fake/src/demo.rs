@@ -500,5 +500,20 @@ pub fn project(doc: &mut Document, tracks: usize) -> Result<()> {
         )?;
         Ok(())
     })?;
+    // the ruler's markers and regions (F-REG-011, F-REG-012)
+    doc.transact(l("demo.marks"), |e| {
+        for (i, (name, bar)) in [("Intro", 0), ("Verso", 8), ("Refrão", 24), ("Ponte", 40)].iter().enumerate() {
+            e.insert(ROOT, "markers", i, Value::object([("name", Value::text(*name)), ("tick", int(bar * BAR))]))?;
+        }
+        for (i, (name, from, to)) in [("Verso 1", 8, 16), ("Refrão 1", 24, 32)].iter().enumerate() {
+            e.insert(
+                ROOT,
+                "regions",
+                i,
+                Value::object([("name", Value::text(*name)), ("from", int(from * BAR)), ("to", int(to * BAR))]),
+            )?;
+        }
+        Ok(())
+    })?;
     Ok(())
 }

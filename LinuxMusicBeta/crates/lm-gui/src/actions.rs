@@ -40,8 +40,13 @@ actions!(
     ]
 );
 
-// Markers and regions (M, Shift+R, 1-9) wait for their place in the document's schemas (lm-doc)
-actions!(composition, [Split, Duplicate, DeleteItem, EmptyItem, OpenItem, ZoomIn, ZoomOut]);
+actions!(
+    composition,
+    [
+        Split, Duplicate, DeleteItem, EmptyItem, OpenItem, ZoomIn, ZoomOut, AddMarker, AddRegion, Marker1, Marker2,
+        Marker3, Marker4, Marker5, Marker6, Marker7, Marker8, Marker9
+    ]
+);
 
 actions!(
     mixing,
@@ -161,6 +166,31 @@ pub const REGISTRY: &[ActionDef] = &[
     ),
     a("arrange.zoom_in", "composition::ZoomIn", "Zoom in", "Arrange", &["="], Some("Composition")),
     a("arrange.zoom_out", "composition::ZoomOut", "Zoom out", "Arrange", &["-"], Some("Composition")),
+    a(
+        "marks.add_marker",
+        "composition::AddMarker",
+        "Add a marker at the cursor",
+        "Arrange",
+        &["m"],
+        Some("Composition"),
+    ),
+    a(
+        "marks.add_region",
+        "composition::AddRegion",
+        "Add a region over the loop",
+        "Arrange",
+        &["shift-r"],
+        Some("Composition"),
+    ),
+    a("marks.jump_1", "composition::Marker1", "Go to marker 1", "Arrange", &["1"], Some("Composition")),
+    a("marks.jump_2", "composition::Marker2", "Go to marker 2", "Arrange", &["2"], Some("Composition")),
+    a("marks.jump_3", "composition::Marker3", "Go to marker 3", "Arrange", &["3"], Some("Composition")),
+    a("marks.jump_4", "composition::Marker4", "Go to marker 4", "Arrange", &["4"], Some("Composition")),
+    a("marks.jump_5", "composition::Marker5", "Go to marker 5", "Arrange", &["5"], Some("Composition")),
+    a("marks.jump_6", "composition::Marker6", "Go to marker 6", "Arrange", &["6"], Some("Composition")),
+    a("marks.jump_7", "composition::Marker7", "Go to marker 7", "Arrange", &["7"], Some("Composition")),
+    a("marks.jump_8", "composition::Marker8", "Go to marker 8", "Arrange", &["8"], Some("Composition")),
+    a("marks.jump_9", "composition::Marker9", "Go to marker 9", "Arrange", &["9"], Some("Composition")),
     a("desk.select_left", "mixing::SelectLeft", "Previous channel", "Desk", &["left"], Some("Mixing")),
     a("desk.select_right", "mixing::SelectRight", "Next channel", "Desk", &["right"], Some("Mixing")),
     a("desk.fader_up", "mixing::FaderUp", "Fader up 1 dB", "Desk", &["up"], Some("Mixing")),

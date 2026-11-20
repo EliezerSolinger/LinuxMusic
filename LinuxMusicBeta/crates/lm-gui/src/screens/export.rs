@@ -19,15 +19,23 @@ use super::settings::{
     form_row, khz, modal_size, note, obj, port_action, real, segmented, stepper, switch, target_loading,
 };
 use crate::model;
+use crate::pages::marks::MarksState;
 use crate::ui::{THEME, button, c, caption, tbutton, tr, trf};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum What {
     Song,
     Loop,
+    Markers,
     Bars,
     Track,
+    /// a range given by the ruler ("Export the region as audio"), in ticks
+    Ticks(i64, i64),
 }
+
+/// A range the ruler asks the export window to open on (a region's ticks), taken as the window opens
+pub struct ExportRange(pub Option<(i64, i64)>);
+impl gpui::Global for ExportRange {}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Stems {
@@ -52,6 +60,8 @@ pub struct Export {
     as_loop: bool,
     repeats: i64,
     track: usize,
+    /// "Between markers": the span chosen (marker i to the next)
+    marker: usize,
     stems: Stems,
     chosen: Vec<NodeId>,
     wav: Option<i64>,
@@ -97,13 +107,17 @@ impl Export {
         Export {
             scx,
             page: 0,
-            what: What::Song,
+            what: match take_range(cx) {
+                Some((a, z)) => What::Ticks(a, z),
+                None => What::Song,
+            },
             bars: (lb, le),
             fast: true,
             warmup: 10.0,
             as_loop: false,
             repeats: 1,
             track: 0,
+            marker: 0,
             stems: Stems::None,
             chosen: Vec::new(),
             wav: Some(24),
@@ -136,12 +150,19 @@ impl Export {
         .collect()
     }
 
-    /// The range in bars (start inclusive, end exclusive), or None for the whole song
+    /// The range in ticks (start inclusive, end exclusive), or None for the whole song
     fn range(&self, root: &Value) -> Option<(i64, i64)> {
+        let map = model::tempo_map(root);
+        let bar = |b: i64| map.bar_start(b).unwrap_or(0);
         match self.what {
             What::Song | What::Track => None,
-            What::Loop => Some(loop_bars(root)),
-            What::Bars => Some(self.bars),
+            What::Loop => Some(model::song(root).loop_range).filter(|(a, z)| z > a),
+            What::Bars => Some((bar(self.bars.0), bar(self.bars.1))),
+            What::Markers => {
+                let end = map.bar_start(song_end(root).0).unwrap_or(0);
+                MarksState::between_markers(root, end).get(self.marker).map(|(_, a, z)| (*a, *z))
+            }
+            What::Ticks(a, z) => Some((a, z)),
         }
     }
 
@@ -152,8 +173,8 @@ impl Export {
         let range = match self.range(&root) {
             None => Value::NULL,
             Some((a, b)) => obj(vec![
-                ("start", Value::int(a)),
-                ("end", Value::int(b)),
+                ("from", Value::int(a)),
+                ("to", Value::int(b)),
                 ("fast", Value::bool(self.fast)),
                 ("warmup", real(self.warmup)),
             ]),
@@ -197,6 +218,12 @@ impl Export {
     }
 }
 
+/// The range the ruler asked for, taken once
+fn take_range(cx: &mut gpui::App) -> Option<(i64, i64)> {
+    cx.try_global::<ExportRange>()?;
+    cx.update_global::<ExportRange, _>(|r, _| r.0.take())
+}
+
 /// The loop's bars (start inclusive, end exclusive), from the tree's transport
 fn loop_bars(root: &Value) -> (i64, i64) {
     let map = model::tempo_map(root);
@@ -215,9 +242,9 @@ fn song_end(root: &Value) -> (i64, f64) {
     (bar, secs)
 }
 
-fn bar_seconds(root: &Value, bar: i64) -> f64 {
+fn tick_seconds(root: &Value, tick: i64) -> f64 {
     let map = model::tempo_map(root);
-    map.bar_start(bar).map(|t| map.sample_at(t) as f64 / model::sample_rate(root) as f64).unwrap_or(0.0)
+    map.sample_at(tick) as f64 / model::sample_rate(root) as f64
 }
 
 /// A plugin's name: its translation key, shown as the key when the table has no line for it
@@ -237,6 +264,7 @@ impl Export {
         let items = [
             (What::Song, "The whole song"),
             (What::Loop, "The loop range"),
+            (What::Markers, "Between markers"),
             (What::Bars, "Bars"),
             (What::Track, "One track"),
         ];
@@ -256,6 +284,32 @@ impl Export {
             What::Loop => {
                 let (a, b) = loop_bars(root);
                 col = col.child(caption(trf("Bars {0} to {1} (the loop on the ruler)", &[&a, &(b - 1)])));
+            }
+            What::Markers => {
+                let map = model::tempo_map(root);
+                let end = map.bar_start(end_bar).unwrap_or(0);
+                let spans = MarksState::between_markers(root, end);
+                if spans.is_empty() {
+                    col = col.child(caption(tr("The project has no markers")));
+                }
+                col = col.child(div().flex().flex_wrap().gap(px(3.)).children(spans.into_iter().enumerate().map(
+                    |(i, (name, a, z))| {
+                        let label = format!("{name} ({}–{})", map.bar_beat_tick(a).bar, map.bar_beat_tick(z).bar - 1);
+                        button(("marker-span", i), label, i == self.marker, THEME.green)
+                            .debug_selector(move || format!("marker-span-{i}"))
+                            .on_click(cx.listener(move |e, _, _, cx| {
+                                e.marker = i;
+                                cx.notify();
+                            }))
+                    },
+                )));
+            }
+            What::Ticks(a, z) => {
+                let map = model::tempo_map(root);
+                col = col.child(caption(trf(
+                    "The region: bars {0} to {1}",
+                    &[&map.bar_beat_tick(a).bar, &map.bar_beat_tick(z).bar],
+                )));
             }
             What::Bars => {
                 let (a, b) = self.bars;
@@ -292,10 +346,10 @@ impl Export {
         }
         // a range: Fast or Exact, each with what it renders and costs (U37)
         if let Some((a, b)) = self.range(root) {
-            let len = bar_seconds(root, b) - bar_seconds(root, a);
-            let before = bar_seconds(root, a);
+            let len = tick_seconds(root, b) - tick_seconds(root, a);
+            let before = tick_seconds(root, a);
             let fast_s = len + self.warmup.min(before);
-            let exact_s = bar_seconds(root, b);
+            let exact_s = tick_seconds(root, b);
             let warm = self.warmup;
             col = col
                 .child(
