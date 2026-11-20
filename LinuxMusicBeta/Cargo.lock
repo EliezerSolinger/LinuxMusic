@@ -3704,6 +3704,7 @@ dependencies = [
  "assert_no_alloc",
  "libm",
  "lm-base",
+ "lm-midimap",
  "lm-sys-fpu",
  "lm-time",
  "loom",

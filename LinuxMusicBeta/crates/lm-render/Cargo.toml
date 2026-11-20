@@ -18,6 +18,8 @@ lm-sys-fpu.workspace = true
 rtrb.workspace = true
 triple_buffer.workspace = true
 libm.workspace = true
+# The MIDI mapping table (I-21.2), without its document form (R1: no lm-state here)
+lm-midimap.workspace = true
 
 [dev-dependencies]
 assert_no_alloc.workspace = true

@@ -22,6 +22,7 @@ fn feeding_and_feedback_do_not_allocate() {
         };
         let mode = if i % 5 == 0 { Mode::Relative(Encoding::SignMagnitude) } else { Mode::Absolute };
         entries.push(Entry {
+            id: u64::from(i),
             source: Source { port: if i % 7 == 0 { ANY_PORT } else { u16::from(i % 3) }, channel: None, message },
             transform: Transform { mode, takeover: Takeover::Scale, button: Button::Toggle, ..Transform::default() },
             switch: message.is_note() || message == Message::ProgramChange,

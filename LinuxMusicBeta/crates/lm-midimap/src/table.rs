@@ -27,6 +27,9 @@ impl Source {
 /// One compiled mapping
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry<T> {
+    /// A stable id (the mapping's node number; one mapping may make several entries with the same id), to carry
+    /// the running state from one table to the next
+    pub id: u64,
     pub source: Source,
     pub transform: Transform,
     /// The control is a button (a key; an on/off controller on a switch or an action): presses, not positions
@@ -126,7 +129,8 @@ impl Timing {
 impl<T> MapTable<T> {
     /// Builds the table (allocates). `ports` is how many port indices exist (each gets 16 channels of 14-bit and
     /// NRPN state); a message from a port at or above it still matches, without 14-bit pairing or NRPN
-    pub fn new(entries: Vec<Entry<T>>, ports: u16, timing: Timing) -> MapTable<T> {
+    pub fn new(mut entries: Vec<Entry<T>>, ports: u16, timing: Timing) -> MapTable<T> {
+        entries.sort_by_key(|e| e.id); // stable: the order inside one id is kept
         let mut order: Vec<(u32, u32)> =
             entries.iter().enumerate().map(|(i, e)| (e.source.message.key(), i as u32)).collect();
         order.sort_unstable();
@@ -167,13 +171,32 @@ impl<T> MapTable<T> {
         &self.states[entry]
     }
 
-    /// Carries the running state (pickup, toggles, 14-bit halves, feedback) of the entries that are the same mapping
-    /// from an older table: `same(old, new)` says whether two targets are the same mapping
-    pub fn inherit(&mut self, old: &MapTable<T>, mut same: impl FnMut(&Entry<T>, &Entry<T>) -> bool) {
-        for (i, e) in self.entries.iter().enumerate() {
-            if let Some(j) = old.entries.iter().position(|o| o.source == e.source && same(o, e)) {
-                self.states[i] = old.states[j];
-                self.limiters[i] = old.limiters[j];
+    /// Carries the running state (pickup, toggles, feedback) of the entries that are the same mapping (same id,
+    /// same source, the `k`-th entry of that id in both) from an older table, and the 14-bit and NRPN state of the
+    /// ports. One merge over both tables sorted by id: O(n + m), no allocation (it runs on the audio thread)
+    pub fn inherit(&mut self, old: &MapTable<T>) {
+        let (mut i, mut j) = (0usize, 0usize);
+        while i < self.entries.len() && j < old.entries.len() {
+            let (a, b) = (self.entries[i].id, old.entries[j].id);
+            if a < b {
+                i += 1;
+            } else if b < a {
+                j += 1;
+            } else {
+                // The runs of this id, entry by entry
+                let (si, sj) = (i, j);
+                while i < self.entries.len() && self.entries[i].id == a {
+                    i += 1;
+                }
+                while j < old.entries.len() && old.entries[j].id == a {
+                    j += 1;
+                }
+                for k in 0..(i - si).min(j - sj) {
+                    if self.entries[si + k].source == old.entries[sj + k].source {
+                        self.states[si + k] = old.states[sj + k];
+                        self.limiters[si + k] = old.limiters[sj + k];
+                    }
+                }
             }
         }
         let n = self.channels.len().min(old.channels.len());
@@ -390,6 +413,7 @@ mod tests {
 
     fn entry(message: Message, target: u32) -> Entry<u32> {
         Entry {
+            id: u64::from(target),
             source: Source { port: 0, channel: Some(0), message },
             transform: Transform { takeover: Takeover::Jump, ..Transform::default() },
             switch: message.is_note(),
@@ -550,6 +574,28 @@ mod tests {
         t.resend(None);
         t.poll_feedback(170, |p, b, n| sent.push((p, b, n)));
         assert_eq!(sent.len(), 2);
+    }
+
+    #[test]
+    fn state_carries_to_the_next_table() {
+        let mut e = entry(Message::Note { key: 1 }, 7);
+        e.transform.button = Button::Toggle;
+        let mut t = MapTable::new(vec![e.clone(), entry(Message::Cc14 { msb: 3 }, 9)], 1, Timing::nanos());
+        t.feed(0, &[0x90, 1, 127], 0, |_| 0.0, |_, _| {});
+        t.feed(0, &[0xB0, 3, 9], 0, |_| 0.0, |_, _| {});
+        assert!(t.state(0).pressed, "entries are kept by id: the key (7) is first");
+        let mut u = MapTable::new(
+            vec![entry(Message::Cc14 { msb: 3 }, 9), entry(Message::Cc { number: 2 }, 8), e],
+            1,
+            Timing::nanos(),
+        );
+        u.inherit(&t);
+        let k = u.entries().iter().position(|x| x.id == 7).unwrap();
+        assert!(u.state(k).pressed, "the key is still held in the new table");
+        // The 14-bit MSB seen before the swap pairs with an LSB after it
+        let mut v = Vec::new();
+        u.feed(0, &[0xB0, 35, 1], 0, |_| 0.0, |e, tg| v.push((*tg, e)));
+        assert_eq!(values(&v), vec![(9, (9 << 7) | 1)]);
     }
 
     #[test]

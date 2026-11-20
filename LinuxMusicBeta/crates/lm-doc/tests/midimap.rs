@@ -85,7 +85,7 @@ fn a_mapping_goes_with_its_target_and_comes_back_with_undo() {
             e.insert(ROOT, "midiMap", 0, bad).map(|_| ())
         })
         .unwrap_err();
-    assert!(err.key().starts_with("state.schema"), "{err}");
+    assert!(err.key().starts_with("state.schema") || err.key().starts_with("doc.value"), "{err}");
 }
 
 #[test]
@@ -122,5 +122,5 @@ fn automation_modes_and_recording_fields() {
     })
     .unwrap();
     let err = doc.transact(label("x"), |e| e.set(ROOT, &[k("transport"), k("automationMode")], text("x"))).unwrap_err();
-    assert!(err.key().starts_with("state.schema"), "{err}");
+    assert_eq!(err.key(), "doc.value.not_a_choice", "{err}");
 }

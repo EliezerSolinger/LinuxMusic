@@ -251,7 +251,16 @@ impl Work {
         let parent_type = self.type_of(parent)?;
         let mut abs = self.path_of(parent)?;
         abs.extend(container.iter().map(|k| PathStep::Key(Arc::clone(k))));
-        let list = self.state.root.at_path(&abs).ok_or_else(|| Error::new("doc.path.not_found"))?;
+        // An optional list that is absent (`project.midiMap`, a note's `bend`) is an empty list: its owner must exist
+        let empty = Value::empty_list();
+        let list = match self.state.root.at_path(&abs) {
+            Some(l) => l,
+            None if abs.len() > 1 && self.state.root.at_path(&abs[..abs.len() - 1]).is_some_and(Value::is_object) => {
+                &empty
+            }
+            None if abs.len() == 1 => &empty,
+            None => return Err(Error::new("doc.path.not_found")),
+        };
         let new_list = list.with_inserted(index, node.clone())?;
         let mut rel: Vec<PathStep> = container.iter().map(|k| PathStep::Key(Arc::clone(k))).collect();
         let list_rel = rel.clone();

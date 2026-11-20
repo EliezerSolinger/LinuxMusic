@@ -105,7 +105,7 @@ pub const MIDI_MESSAGES: &[&str] =
     &["cc", "cc14", "nrpn", "rpn", "note", "pitchBend", "channelPressure", "polyPressure", "programChange"];
 pub const MIDI_TARGET_KINDS: &[&str] = &["param", "field", "action"];
 /// A selection-following target (lm-midimap, `SelRole`); `"none"` = the fixed `node`
-pub const MIDI_FOLLOW: &[&str] = &["none", "track", "channel", "plugin"];
+pub const MIDI_FOLLOW: &[&str] = &["none", "track", "channel", "plugin", "trackBank", "channelBank"];
 pub const MIDI_MODES: &[&str] = &["absolute", "twos", "signMagnitude", "offset64"];
 pub const MIDI_TAKEOVERS: &[&str] = &["jump", "pickup", "scale"];
 pub const MIDI_BUTTONS: &[&str] = &["momentary", "toggle", "trigger"];

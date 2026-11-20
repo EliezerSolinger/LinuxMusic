@@ -22,6 +22,7 @@ mod exec;
 mod handoff;
 mod ids;
 mod install;
+pub mod midimap;
 mod notes;
 mod panic;
 mod params;
@@ -44,6 +45,7 @@ pub use event::{Event, EventKind};
 pub use exec::Watch;
 pub use ids::{NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProducerIndex, ProgramGen};
 pub use install::{Install, NodeCore, Relocate, Retired, Returned};
+pub use midimap::{MapEvent, MapTarget, MidiMap, MidiOutEvent, ParamRange, RangeScale, RecordedMidi};
 pub use panic::{install_panic_hook, is_render_thread};
 pub use params::ParamSlots;
 pub use processor::{

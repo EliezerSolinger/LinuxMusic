@@ -13,10 +13,17 @@ use crate::transform::{Button, Mode, Takeover, Transform};
 /// What a selection-following target follows
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SelRole {
+    /// The selected track, plus `offset` tracks
     Track,
+    /// The selected desk channel, plus `offset`
     Channel,
     /// The focused plugin
     Plugin,
+    /// The track at the controller's bank start plus `offset` (a control surface's strips; the bank moves with
+    /// `midi.bank`)
+    TrackBank,
+    /// The same for desk channels
+    ChannelBank,
 }
 
 impl SelRole {
@@ -25,6 +32,8 @@ impl SelRole {
             SelRole::Track => "track",
             SelRole::Channel => "channel",
             SelRole::Plugin => "plugin",
+            SelRole::TrackBank => "trackBank",
+            SelRole::ChannelBank => "channelBank",
         }
     }
 
@@ -33,6 +42,8 @@ impl SelRole {
             "track" => SelRole::Track,
             "channel" => SelRole::Channel,
             "plugin" => SelRole::Plugin,
+            "trackBank" => SelRole::TrackBank,
+            "channelBank" => SelRole::ChannelBank,
             _ => return None,
         })
     }
