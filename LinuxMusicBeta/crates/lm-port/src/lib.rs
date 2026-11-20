@@ -13,7 +13,9 @@
 //! - `preferences`/`set_preference` and `status` (the session's side that is not the project: the project's file
 //!   and access, recent projects, interrupted takes, safe mode, the last export), and `devices`;
 //! - the browser service (`browse`, `search`, `prepare_preview`, `preview_play`, `preview_stop`,
-//!   `set_favorite`), because in the client the files are the server's (module `browse`).
+//!   `set_favorite`), because in the client the files are the server's (module `browse`);
+//! - `plugins` and `plugin_schema`: the plugins the core has and their schemas, which the generic plugin editor
+//!   builds its controls from.
 
 #![forbid(unsafe_code)]
 
@@ -27,9 +29,9 @@ use std::time::Duration;
 pub use lm_base::{Error, HostTime, Label, OperationId, Result};
 pub use lm_doc::{Diff, Feed, GestureId, Topic};
 pub use lm_render::{METER_CHANNELS, Meter};
-pub use lm_state::{NodeId, PathStep, ROOT, Resource, Value};
+pub use lm_state::{FieldKind, FieldSpec, NodeId, NodeSchema, ParamSpec, PathStep, ROOT, Resource, Scale, Value};
 
-pub use browse::{BrowseEntry, BrowsePage, EntryId, EntryKind, Preview};
+pub use browse::{BrowseEntry, BrowsePage, EntryId, EntryKind, PluginInfo, Preview};
 
 /// The number of a request whose answer has not arrived (the RemotePort's; the LocalPort never waits)
 pub type RequestId = u64;
@@ -370,6 +372,18 @@ pub trait CorePort {
     fn import(&mut self, path: std::path::PathBuf) -> Pending<Resource> {
         let _ = path;
         Pending::Ready(Err(Error::new("port.import.unsupported")))
+    }
+
+    // --- the plugins (addition of 20/11): what the generic editor, "Swap" and "add effect" read
+    /// The plugins the core has. The default is for the transition only: every real port answers (the fake from
+    /// its registry, the LocalPort from `internal_plugins()`, the RemotePort from what it fetched at connect)
+    fn plugins(&self) -> Vec<PluginInfo> {
+        Vec::new()
+    }
+    /// A plugin's main schema (`plugin:<id>`): its parameters (range, scale, unit, automatable) and its fields
+    /// (choices by key, U30). The default is for the transition only, as for `plugins`
+    fn plugin_schema(&self, _plugin: &str) -> Option<NodeSchema> {
+        None
     }
 }
 

@@ -52,7 +52,7 @@ impl Library {
                 false,
                 info(&[
                     ("plugin", Value::text(*id)),
-                    ("category", Value::text(if *instrument { "synth" } else { "dynamics" })),
+                    ("category", Value::text(demo::category(id))),
                     ("third_party", Value::bool(false)),
                 ]),
             );

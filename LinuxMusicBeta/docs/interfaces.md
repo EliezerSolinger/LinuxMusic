@@ -1045,7 +1045,11 @@ pub struct Applied { pub diff: Diff, pub created: Vec<(u32, NodeId)>, pub notes:
     `TelemetryView` é por nó (`NodeId`), com a posição e o carimbo de tempo, as entradas, os takes que crescem, a
     contagem e os xruns com as suas posições;
   - `GestureId::from_raw(n)` no `lm-doc`: a `RemotePort` nomeia um gesto aberto no servidor pelo número; um número que
-    o documento não deu é recusado com erro, nunca com pânico.
+    o documento não deu é recusado com erro, nunca com pânico;
+  - `plugins()` (`PluginInfo`: id, nome, instrumento ou efeito, categoria, terceiros, latência; os mesmos ids das
+    páginas de plugins do navegador) e `plugin_schema(id)` (o esquema principal, de que o editor genérico de plugin
+    monta os controles); toda porta de verdade responde (o falso pelo registro dele, a `LocalPort` pelos plugins
+    internos, a `RemotePort` pelo que buscou ao conectar).
 - **Testes:** o mesmo roteiro de interface roda contra a `LocalPort` e contra a `RemotePort` ligada a um servidor no
   mesmo processo (por um socket local), e tem que dar a mesma árvore e os mesmos `Diff`s.
 - **O protótipo** é escrito contra um núcleo de mentira que já tem a forma do `CorePort` (dados nos argumentos, sem

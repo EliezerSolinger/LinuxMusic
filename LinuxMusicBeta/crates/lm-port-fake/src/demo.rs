@@ -45,6 +45,28 @@ pub const PLUGINS: &[(&str, bool, &[Param])] = &[
 
 pub const KITS: &[&str] = &["acoustic", "big"];
 
+/// A fake plugin's category (F-FX-036), as the browser's entries carry it
+pub fn category(id: &str) -> &'static str {
+    match id {
+        "tripleoscillator" => "synth",
+        "avldrums" => "drums",
+        "sampler" => "sampler",
+        "compressor" | "limiter" => "dynamics",
+        "eq8" => "eq",
+        "reverb" | "delay" => "delay-reverb",
+        _ => "other",
+    }
+}
+
+/// A fake plugin's latency in samples (the look-ahead of the dynamics)
+pub fn latency(id: &str) -> u32 {
+    match id {
+        "compressor" => 64,
+        "limiter" => 240,
+        _ => 0,
+    }
+}
+
 /// The registry: the project's types and the fake plugins
 pub fn registry() -> Result<SchemaRegistry> {
     let mut r = SchemaRegistry::new();

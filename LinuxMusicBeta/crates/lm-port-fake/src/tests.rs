@@ -259,3 +259,21 @@ fn creating_channels_for_the_outputs_is_one_step() {
     assert!(p.undo().ok().is_some());
     assert_eq!(p.root().get("mixer").unwrap().get("channels").unwrap().len(), before);
 }
+
+#[test]
+fn every_plugin_has_its_schema_and_its_browser_entry() {
+    let mut port = FakePort::new(Config::default()).unwrap();
+    let plugins = port.plugins();
+    assert!(!plugins.is_empty());
+    let mut listed = Vec::new();
+    for page in [BrowsePage::Instruments, BrowsePage::Effects] {
+        let Pending::Ready(Ok(entries)) = port.browse(page, None, false) else { panic!("the fake answers at once") };
+        listed.extend(entries.iter().filter_map(|e| e.info.get("plugin").and_then(Value::as_text).map(str::to_string)));
+    }
+    for p in &plugins {
+        let schema = port.plugin_schema(&p.id).unwrap_or_else(|| panic!("{} has a schema", p.id));
+        assert!(!schema.params.is_empty() || !schema.fields.is_empty());
+        assert!(listed.iter().any(|l| **l == *p.id), "{} is on the browser's plugin pages", p.id);
+    }
+    assert!(port.plugin_schema("nonexistent").is_none());
+}

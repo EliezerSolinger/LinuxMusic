@@ -1109,6 +1109,24 @@ impl CorePort for FakePort {
     fn set_favorite(&mut self, entry: EntryId, on: bool) -> Pending<()> {
         Pending::Ready(self.library.set_favorite(entry, on))
     }
+
+    fn plugins(&self) -> Vec<lm_port::PluginInfo> {
+        demo::PLUGINS
+            .iter()
+            .map(|(id, instrument, _)| lm_port::PluginInfo {
+                id: Arc::from(*id),
+                name: Arc::from(*id),
+                instrument: *instrument,
+                category: Arc::from(demo::category(id)),
+                third_party: false,
+                latency: demo::latency(id),
+            })
+            .collect()
+    }
+
+    fn plugin_schema(&self, plugin: &str) -> Option<lm_port::NodeSchema> {
+        self.doc.registry().find(&format!("plugin:{plugin}")).cloned()
+    }
 }
 
 /// The preview playing now, if any (the fake has no sound; the browser shows its cursor)

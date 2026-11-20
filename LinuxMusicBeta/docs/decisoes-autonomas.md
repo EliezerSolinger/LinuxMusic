@@ -316,6 +316,9 @@ de forma diz pelo que é substituído.
   motor (telemetria, picos, carregamentos, avisos, navegador, dispositivos) é de mentira. A interface nunca depende
   dele (só `dev-dependency`).
 - **`GestureId::from_raw`** no `lm-doc`, para a `RemotePort`, com teste de que um número não dado é recusado com erro.
+- **`CorePort::plugins()` e `plugin_schema(id)`** (agente C, combinado com o A): o editor genérico de plugin, o
+  "Trocar" do instrumento e o "acrescentar efeito" precisam dos plugins e dos esquemas, e no modo cliente eles são do
+  servidor; corpo padrão vazio só na transição.
 
 
 ## Do `lm-plugin` (19/11)
