@@ -359,14 +359,20 @@ mod tests {
         let workers = Workers::new("test", 1, Role::Worker);
         let seen = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let seen_in_work = seen.clone();
+        let started = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started_in_work = started.clone();
         let op = workers.start(move |cancel, _| {
+            started_in_work.store(true, std::sync::atomic::Ordering::SeqCst);
             while !cancel.is_cancelled() {
                 std::thread::sleep(Duration::from_millis(1));
             }
             seen_in_work.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(())
         });
-        std::thread::sleep(Duration::from_millis(5));
+        // Drop only once the work runs: a work cancelled before it starts never runs at all (a slow machine, ASan)
+        while !started.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
         drop(op);
         drop(workers); // joins: the work saw the cancel and returned
         assert!(seen.load(std::sync::atomic::Ordering::SeqCst));

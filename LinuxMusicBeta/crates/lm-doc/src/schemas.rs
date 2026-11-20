@@ -280,7 +280,7 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::int("channels", 1, 64, 2))
             .field(reference("to", &[KIND_CHANNEL], OnRemove::Redirect(MASTER)).default(Value::text("m:0"))),
         // One type for both kinds; the fields of the other kind stay empty (a domain rule)
-        NodeSchema::new(ty::ITEM, 1)
+        NodeSchema::new(ty::ITEM, 2)
             .field(FieldSpec::id(KIND_ITEM))
             .field(FieldSpec::choice("kind", ITEM_KINDS, "midi"))
             .field(FieldSpec::text("name", ""))
@@ -298,7 +298,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             // the repeating part of a pattern [no repeat], the swing [0] and the step editor's resolution [240]
             .field(FieldSpec::int("loop", 1, MAX, 3840).optional())
             .field(FieldSpec::real("swing", 0.0, 1.0, 0.0).optional())
-            .field(FieldSpec::int("step", 1, MAX, 240).optional()),
+            .field(FieldSpec::int("step", 1, MAX, 240).optional())
+            .upgrade(1, unchanged),
         NodeSchema::new(ty::LANE, 1)
             .field(FieldSpec::id(KIND_LANE))
             .field(FieldSpec::new("source", FieldKind::Resource("audio")))
@@ -311,14 +312,15 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(reference("lane", &[KIND_LANE], OnRemove::Clear).nullable().default(Value::NULL))
             .field(FieldSpec::int("fade", 0, MAX, 240)),
         // A note, in an item's note map by its number (C1); start is from the item's start
-        NodeSchema::new(ty::NOTE, 1)
+        NodeSchema::new(ty::NOTE, 2)
             .field(FieldSpec::int("key", 0, 127, 60))
             .field(FieldSpec::int("start", 0, MAX, 0))
             .field(FieldSpec::int("length", 1, MAX, 240))
             .field(FieldSpec::real("velocity", 0.0, 1.0, 0.8))
             // Per-note pan (F-NOT-010) [0] and pitch-bend curve (P-24) [none]
             .field(FieldSpec::real("pan", -1.0, 1.0, 0.0).optional())
-            .field(list_of("bend", ty::NOTE_BEND).optional()),
+            .field(list_of("bend", ty::NOTE_BEND).optional())
+            .upgrade(1, unchanged),
         // A point of a note's bend: ticks from the note's start, and semitones; linear between points
         NodeSchema::new(ty::NOTE_BEND, 1).field(FieldSpec::int("at", 0, MAX, 0)).field(FieldSpec::real(
             "semitones",
@@ -477,4 +479,9 @@ pub fn project_registry() -> Result<SchemaRegistry> {
 /// The schema type of a plugin's state
 pub fn plugin_type(plugin: &str) -> String {
     format!("plugin:{plugin}")
+}
+
+/// Version 2 of `item` and `note` only added optional fields whose absence keeps the version-1 meaning
+fn unchanged(node: Value) -> Result<Value> {
+    Ok(node)
 }

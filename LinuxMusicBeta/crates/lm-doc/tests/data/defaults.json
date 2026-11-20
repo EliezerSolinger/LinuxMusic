@@ -27,13 +27,16 @@
       "kind": "midi",
       "lanes": [],
       "length": 3840,
+      "loop": 3840,
       "mute": false,
       "name": "",
       "notes": {},
       "start": 0,
+      "step": 240,
+      "swing": 0.0,
       "timebase": "musical"
     },
-    "version": 1
+    "version": 2
   },
   "item.comp": {
     "defaults": {
@@ -286,8 +289,16 @@
     "defaults": {
       "key": 60,
       "length": 240,
+      "pan": 0.0,
       "start": 0,
       "velocity": 0.8
+    },
+    "version": 2
+  },
+  "note.bend": {
+    "defaults": {
+      "at": 0,
+      "semitones": 0.0
     },
     "version": 1
   },
