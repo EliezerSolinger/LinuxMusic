@@ -673,3 +673,19 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
   esta, nova.
 - **Campos ausentes mantêm o sentido antigo**: sem `pan`, sem `bend`, `loop` igual ao comprimento, `swing` 0.
 
+
+## Os instrumentos do legado como plugins (20/11)
+
+- **Um pacote, `lm-plugins-instruments`, um módulo e um `static Descriptor` por instrumento**, como os efeitos: cada um
+  um `Synth` dentro das funções de instrumento do `lm-plugin`, com o seu id, esquema e fixtures. O A/B é por composição,
+  como o do TripleOscillator: o `lm-dsp` compara o DSP com o legado; o pacote confere que o plugin o conduz como o
+  `playNoteImpl` do legado.
+- **Expressões de nota no `Instrument`** (o autor do `lm-plugin` pediu que eu as fizesse): guardadas por nota-base, lidas
+  por cada voz a cada peça; um passo de arpejo começado depois de uma afinação já soa afinado; uma nota solta guarda os
+  últimos valores. A afinação vale por peça (como o glide), o pan por amostra.
+- **`Synth::finished`**: um synth diz que a voz acabou sozinha (o Kicker depois do comprimento, uma amostra tocada até o
+  fim), e a voz é liberada sem esperar o note-off.
+- **Kicker:** a nota se solta na amostra em que o comprimento acaba (o legado: no período seguinte); a fase da varredura
+  volta a cada período (o legado a deixava crescer em precisão simples e a afinação mudava com a taxa: 2 cents a 96 kHz);
+  os três casos `kicker-*` do A/B do `lm-dsp` ficam em `INTENTIONAL` com esse motivo (−64 dBFS meio segundo depois).
+  Sem sonda de afinação no contrato (uma nota dura no máximo 5 s); a afinação em 44,1/48/96/192 kHz tem teste próprio.

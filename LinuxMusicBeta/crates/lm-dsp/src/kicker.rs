@@ -187,7 +187,10 @@ impl KickerVoice {
                 frame[0] *= rise;
                 frame[1] *= rise;
             }
-            self.phase = (f64::from(self.phase) + self.freq / f64::from(sample_rate)) as f32;
+            // (wrapped into one period: the legacy phase grew without end in single precision, and its pitch drifted
+            // with the rate and the length, by 2 cents at 96 kHz after a second; the sine is the same)
+            let next = f64::from(self.phase) + self.freq / f64::from(sample_rate);
+            self.phase = (next - next.floor()) as f32;
             let change = if within {
                 f64::from(self.start_freq - self.end_freq)
                     * (1.0 - fast_pow(f64::from(position), f64::from(self.slope)))

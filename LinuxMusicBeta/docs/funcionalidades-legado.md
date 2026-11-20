@@ -664,6 +664,7 @@ Regras gerais do legado que valem para quase todo plugin:
   (frequência inicial = nota), ligado · Terminar na nota, desligado.
 - **Comportamento:** polifônico, sem pitch bend; a nota termina sozinha depois da Duração, seja qual for o tamanho da
   nota, com release de 12 ms; mono → estéreo.
+- **Na beta:** plugin `kicker`, em `lm-plugins-instruments`: os 13 botões do legado em camelCase e as funções de instrumento; a nota se solta sozinha depois do comprimento (na amostra exata, não no período seguinte); a fase da varredura volta a cada período (o legado acumulava em precisão simples e desafinava com a taxa); contrato e A/B por composição contra o `playNoteImpl` do legado.
 
 #### F-INS-008 Lb302 (imitação monofônica da TB-303) — 1.0
 

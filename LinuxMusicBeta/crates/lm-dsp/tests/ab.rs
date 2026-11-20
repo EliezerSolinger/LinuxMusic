@@ -27,6 +27,21 @@ const NULL: f32 = 3.162_277_7e-5;
 /// Cases where the port differs from the legacy program on purpose, with the largest difference allowed and why
 const INTENTIONAL: &[(&str, f32, &str)] = &[
     (
+        "kicker-default",
+        0.001,
+        "The legacy SweepOsc kept its phase growing in single precision: its pitch drifts with the rate and the note's length (2 cents at 96 kHz after a second, so the tuning differs between rates, U36). The port wraps the phase into one period, the same sine; the two part by the legacy's rounding, about -64 dBFS half a second into the note",
+    ),
+    (
+        "kicker-dist-sweep",
+        0.001,
+        "The legacy SweepOsc kept its phase growing in single precision: its pitch drifts with the rate and the note's length (2 cents at 96 kHz after a second, so the tuning differs between rates, U36). The port wraps the phase into one period, the same sine; the two part by the legacy's rounding, about -64 dBFS half a second into the note",
+    ),
+    (
+        "kicker-slow",
+        0.001,
+        "The legacy SweepOsc kept its phase growing in single precision: its pitch drifts with the rate and the note's length (2 cents at 96 kHz after a second, so the tuning differs between rates, U36). The port wraps the phase into one period, the same sine; the two part by the legacy's rounding, about -64 dBFS half a second into the note",
+    ),
+    (
         "strip-12at7",
         0.0316, // -30 dBFS
         "The pot's gain at 0.4 is dbfs_to_amp(12 dB): the libm crate's expf gives one ulp less than Apple's (V2 chose \

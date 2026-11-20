@@ -72,6 +72,7 @@ lm-plugin = { path = "crates/lm-plugin" }
 lm-plugins-testsine = { path = "crates/lm-plugins-testsine" }
 lm-plugins-tripleoscillator = { path = "crates/lm-plugins-tripleoscillator" }
 lm-plugins-effects = { path = "crates/lm-plugins-effects" }
+lm-plugins-instruments = { path = "crates/lm-plugins-instruments" }
 lm-sys-fpu = { path = "crates/lm-sys-fpu" }
 lm-sys-samplerate = { path = "crates/lm-sys-samplerate" }
 lm-sys-sndfile = { path = "crates/lm-sys-sndfile" }
