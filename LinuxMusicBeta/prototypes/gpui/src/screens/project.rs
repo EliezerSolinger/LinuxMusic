@@ -192,7 +192,7 @@ impl ProjectDialog {
                     .child(
                         div().flex_1().flex().flex_col().child(div().text_size(px(13.)).child(t.track.clone())).child(caption(trf(
                             "{0} · from bar {1} · {2} s{3}",
-                            &[&t.input, &t.start_bar, &format!("{:.1}", t.seconds), &if t.loop_cuts > 0 { trf(" · {0} loop passes, one lane each", &[&(t.loop_cuts + 1)]) } else { String::new() }],
+                            &[&t.input, &t.start_bar, &format!("{:.1}", t.seconds), &if t.loop_cuts > 0 { format!(" · {}", trf("{0} loop passes, one lane each", &[&(t.loop_cuts + 1)])) } else { String::new() }],
                         ))),
                     )
                     .child(state)
