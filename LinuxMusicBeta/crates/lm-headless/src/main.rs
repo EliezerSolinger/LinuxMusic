@@ -4,7 +4,13 @@
 //! lm-headless render <project folder> <out.wav> [--from SAMPLE] [--to SAMPLE] [--tail SECONDS]
 //! lm-headless info <project folder>
 //! lm-headless serve [<project folder>] [--device NAME] [--socket PATH] [--tcp ADDR] [--token TOKEN:ROLE]...
+//! lm-headless slice <new project folder> [--device NAME] [--seconds S] [--input N] [--block FRAMES]
 //! ```
+//!
+//! `slice` runs the first slice (step 10) on a device, the Dummy with a noise like a fan's when none is named:
+//! record with monitoring while a synth plays through an effect, the analog rack and the master, save, close,
+//! reopen, export before and after. It prints the report (latencies, xruns, the take's length and RMS, whether the
+//! export after reopening is the same bit for bit) as JSON on the standard output, and fails when it is not.
 //!
 //! `render` is the export's path exactly (T19): the reference of the deterministic render. It renders the saved
 //! file (not the journal), waits for every resource and plugin (T8), and prints the operation and its progress
@@ -30,7 +36,8 @@ use lm_state::{Value, from_json, to_json};
 fn usage() -> ! {
     eprintln!(
         "usage:\n  lm-headless render <project> <out.wav> [--from S] [--to S] [--tail SECONDS]\n  lm-headless info \
-         <project>\n  lm-headless serve [<project>] [--device NAME] [--socket PATH] [--tcp ADDR] [--token TOKEN:ROLE]"
+         <project>\n  lm-headless serve [<project>] [--device NAME] [--socket PATH] [--tcp ADDR] [--token TOKEN:ROLE]\n  \
+         lm-headless slice <new project> [--device NAME] [--seconds S] [--input N] [--block FRAMES]"
     );
     std::process::exit(2)
 }
@@ -205,6 +212,35 @@ fn serve(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn slice(args: &[String]) -> Result<()> {
+    let pos = positional(args);
+    let Some(folder) = pos.first() else { usage() };
+    let mut config = SessionConfig::headless(std::env::temp_dir().join("linuxmusic-headless-slice"))?;
+    match flag(args, "--device") {
+        Some(device) => config.device = DeviceSetup::Alsa { device },
+        None => config.dummy_source = Some(|| Box::new(lm_session::FanNoise::default())),
+    }
+    if let Some(block) = flag(args, "--block") {
+        config.block = block.parse().map_err(|_| Error::new("headless.block").arg("value", block.as_str()))?;
+    }
+    let mut o = lm_session::slice::SliceOptions::new(PathBuf::from(folder));
+    if let Some(r) = number(args, "--seconds") {
+        o.record_seconds = r?;
+    }
+    if let Some(r) = number(args, "--input") {
+        o.input = r? as i64;
+    }
+    let mut session = Session::new(config)?;
+    let report = lm_session::slice::run_slice(&mut session, &o)?;
+    session.close();
+    println!("{}", to_json(&report)?);
+    let yes = |k: &str| report.get(k).and_then(Value::as_bool) == Some(true);
+    if !yes("identicalAfterReopen") || !yes("sameTreeAfterReopen") {
+        return Err(Error::new("headless.slice.not_identical"));
+    }
+    Ok(())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = args.first() else { usage() };
@@ -217,6 +253,7 @@ fn main() {
         }
         // The session takes the proof itself
         "serve" => serve(rest),
+        "slice" => slice(rest),
         _ => usage(),
     };
     if let Err(e) = result {

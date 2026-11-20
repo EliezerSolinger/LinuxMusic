@@ -1014,7 +1014,9 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   `LocalPort::display(m:N)` (tipo `"rack"`, layout em `lm_session::rack::display`).
 - **Wet/dry do insert:** campo opcional `wet` do nó de plugin (sem padrão, então os padrões congelados não mudam e a
   versão fica), parâmetro de chave `insert.wet`; o compilador soma a saída do insert com o sinal seco por `1 − wet`
-  (`HostParam::complement`, numa segunda instância da vaga), e a PDC atrasa o seco pela latência do insert.
+  (`HostParam::complement`, numa segunda instância da vaga), e a PDC atrasa o seco pela latência do insert (teste de
+  impulso com um insert de latência 100: um só impulso somado). Pela U29 o nó de plugin foi à **versão 2** (o `wet`
+  muda o significado; a versão 1 não tem o campo e sobe sem mudança) e os padrões foram reabençoados.
 - **O target compartilhado não é seguro mesmo com o `touch`:** dois worktrees compilando o mesmo pacote ao mesmo
   tempo trocam o artefato um do outro (um teste do `lm-compile` falhou com o `lm-doc` de outro worktree). Este
   worktree passou a usar um target próprio, apagado no fim.
@@ -1114,3 +1116,24 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   - Janela do plugin pelo helper (I-22): o protocolo tem `gui`; o LV2 precisa do suil/GTK.
   - Prioridade de tempo real na thread de áudio do helper (pelo `lm-sys-linux`).
   - Os formatos CLAP, VST3, LADSPA e VST2-wine.
+
+## Do `lm-session`, continuação 2 (20/11)
+
+- **A exportação que diferia 1 em 6 não era corrida de render:** em 50 rodadas da fatia com target privado, 2
+  falharam, e nas duas as amostras eram idênticas bit a bit; só os bytes do arquivo diferiam. O libsndfile grava no
+  chunk PEAK dos WAV/AIFF de ponto flutuante a hora do relógio (`time(NULL)`), então duas exportações que cruzam um
+  segundo diferem em 4 bytes do cabeçalho. Correção no `lm-sys-sndfile`: `SFC_SET_ADD_PEAK_CHUNK` desligado (WAV,
+  AIFF); o RF64 ignora esse pedido, então o carimbo é zerado no `close`. Teste: as mesmas amostras dão os mesmos
+  bytes 1,1 s depois, em WAV, RF64 e AIFF. Depois da correção: 60 rodadas sem falha, e a fatia também roda com o
+  dispositivo em blocos de 32, 64, 128 e 1024 (a exportação não depende do bloco ao vivo).
+- **Modo seguro para quedas nativas:** `lm_sys_linux::crash` (em todo Unix; o macOS serve para desenvolver). Os
+  tratadores de `SIGSEGV`, `SIGBUS`, `SIGILL` e `SIGABRT` são instalados uma vez; o arquivo (`backup/.suspeito.json.crash`)
+  é aberto antes, e a sessão formata antes uma nota por nó de plugin a cada instalação. No tratador: átomos,
+  `pthread_self`, `write`, `fsync`, `rename` para `suspeito.json`, e depois o tratador anterior (sanitizadores, o do
+  Rust para estouro de pilha) ou a ação padrão, com o sinal levantado de novo: o processo morre como morreria. Só se
+  acusa um nó quando a thread que caiu é de render (marcada pelo gancho de threads da sessão, índice do `Watch`):
+  uma queda da thread principal não acusa o plugin que por acaso estava tocando. Testes: processo filho com plugin
+  que lê o endereço 8 (nulo + deslocamento); o projeto reabre em modo seguro com ele em `bypass`.
+- **`lm-headless slice <pasta nova> [--device NOME] [--seconds S] [--input N] [--block N]`:** roda a fatia (no Dummy
+  com ruído de ventoinha quando não há `--device`), imprime o relatório em JSON e falha se a exportação depois de
+  reabrir não for idêntica.
