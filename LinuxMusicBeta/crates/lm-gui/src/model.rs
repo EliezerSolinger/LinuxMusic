@@ -1,0 +1,394 @@
+//! Typed readings of the project tree (the port's `root()`, a `Value`), by the schemas' keys (lm-doc's project
+//! schemas). The views are cheap copies (a `Value` clone is O(1)) made when a page renders; nothing here keeps a
+//! reference into the core. Writing is never here: the pages send `EditOp`s through the port.
+
+use std::sync::Arc;
+
+use lm_port::{NodeId, Resource, Value};
+use lm_time::{Bpm, Ppq, TempoMap, TempoPoint, TimeSignature};
+
+pub fn id_of(v: &Value) -> Option<NodeId> {
+    v.get("id").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok())
+}
+
+pub fn ref_of(v: &Value, key: &str) -> Option<NodeId> {
+    v.get(key).and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok())
+}
+
+pub fn text(v: &Value, key: &str) -> Arc<str> {
+    v.get(key).and_then(Value::as_shared_text).cloned().unwrap_or_else(|| Arc::from(""))
+}
+
+pub fn real(v: &Value, key: &str, default: f64) -> f64 {
+    v.get(key).and_then(Value::as_real).unwrap_or(default)
+}
+
+pub fn int(v: &Value, key: &str, default: i64) -> i64 {
+    v.get(key).and_then(Value::as_int).unwrap_or(default)
+}
+
+pub fn flag(v: &Value, key: &str) -> bool {
+    v.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+pub fn list<'a>(v: &'a Value, key: &str) -> impl Iterator<Item = &'a Value> + 'a {
+    v.get(key).into_iter().flat_map(Value::items)
+}
+
+pub fn at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    let mut cur = v;
+    for k in path {
+        cur = cur.get(k)?;
+    }
+    Some(cur)
+}
+
+/// The project's sample rate and ppq
+pub fn sample_rate(root: &Value) -> u32 {
+    at(root, &["project", "sampleRate"]).and_then(Value::as_int).unwrap_or(48_000) as u32
+}
+
+pub fn ppq(root: &Value) -> u32 {
+    at(root, &["project", "ppq"]).and_then(Value::as_int).unwrap_or(960) as u32
+}
+
+/// The tempo map of the tree (lm-time): positions in samples <-> ticks, bars and beats
+pub fn tempo_map(root: &Value) -> TempoMap {
+    let rate = sample_rate(root);
+    let ppq = Ppq::new(ppq(root)).unwrap_or_else(|_| Ppq::new(960).expect("960 is a valid ppq"));
+    let points: Vec<TempoPoint> = list(root, "tempoMap")
+        .filter_map(|p| {
+            let bpm = Bpm::parse(p.get("bpm").and_then(Value::as_text).unwrap_or("120")).ok()?;
+            let sig = p
+                .get("timeSig")
+                .map(|s| (s.at(0).and_then(Value::as_int).unwrap_or(4), s.at(1).and_then(Value::as_int).unwrap_or(4)));
+            let (n, d) = sig.unwrap_or((4, 4));
+            let ts = TimeSignature::new(n as u8, d as u8).ok()?;
+            let point = TempoPoint::new(int(p, "tick", 0), bpm, ts);
+            Some(if flag(p, "ramp") { point.linear() } else { point })
+        })
+        .collect();
+    TempoMap::new(rate, ppq, &points).unwrap_or_else(|_| {
+        TempoMap::constant(rate, ppq, Bpm::from_integer(120).expect("120 bpm"), TimeSignature::new(4, 4).expect("4/4"))
+            .expect("a constant map")
+    })
+}
+
+#[derive(Clone, Debug)]
+pub struct OutputView {
+    pub id: NodeId,
+    pub port: Arc<str>,
+    pub channels: i64,
+    pub to: NodeId,
+}
+
+#[derive(Clone, Debug)]
+pub struct LaneView {
+    pub id: NodeId,
+    pub name: Arc<str>,
+    pub source: Option<Resource>,
+    #[expect(dead_code, reason = "read by the screens B, C and D port onto lm-gui next")]
+    pub offset: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompView {
+    pub from: i64,
+    pub to: i64,
+    pub lane: Option<NodeId>,
+    pub fade: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ItemView {
+    pub id: NodeId,
+    pub audio: bool,
+    pub name: Arc<str>,
+    pub start: i64,
+    pub length: i64,
+    pub mute: bool,
+    pub fade_in: i64,
+    pub fade_out: i64,
+    pub gain: f64,
+    pub lanes: Vec<LaneView>,
+    pub comp: Vec<CompView>,
+    /// (key, start, length, velocity) of the MIDI notes
+    pub notes: Vec<(i64, i64, i64, f64)>,
+}
+
+impl ItemView {
+    pub fn lane(&self, id: NodeId) -> Option<&LaneView> {
+        self.lanes.iter().find(|l| l.id == id)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AutomationView {
+    #[expect(dead_code, reason = "the lane's mode and editing (I-21.5) come next")]
+    pub id: NodeId,
+    pub param: Arc<str>,
+    pub on: bool,
+    /// (tick, value, curve)
+    pub points: Vec<(i64, f64, f64)>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TrackView {
+    pub index: usize,
+    pub id: NodeId,
+    pub name: Arc<str>,
+    pub folder: bool,
+    pub collapsed: bool,
+    pub parent: Option<NodeId>,
+    pub volume: f64,
+    pub mute: bool,
+    pub solo: bool,
+    pub armed: bool,
+    pub monitor: Arc<str>,
+    /// the input's first channel (1-based), for the input meter
+    pub input: Option<i64>,
+    pub instrument: Option<(NodeId, Arc<str>)>,
+    pub outputs: Vec<OutputView>,
+    pub items: Vec<ItemView>,
+    pub automation: Vec<AutomationView>,
+}
+
+fn item_view(v: &Value) -> Option<ItemView> {
+    let lanes = list(v, "lanes")
+        .filter_map(|l| {
+            Some(LaneView {
+                id: id_of(l)?,
+                name: text(l, "name"),
+                source: l.get("source").and_then(Value::as_resource).cloned(),
+                offset: int(l, "sourceOffset", 0),
+            })
+        })
+        .collect();
+    let comp = list(v, "comp")
+        .map(|c| CompView {
+            from: int(c, "from", 0),
+            to: int(c, "to", 0),
+            lane: ref_of(c, "lane"),
+            fade: int(c, "fade", 240),
+        })
+        .collect();
+    let notes = v
+        .get("notes")
+        .map(|m| {
+            m.entries()
+                .map(|(_, n)| (int(n, "key", 60), int(n, "start", 0), int(n, "length", 240), real(n, "velocity", 0.8)))
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(ItemView {
+        id: id_of(v)?,
+        audio: v.get("kind").and_then(Value::as_text) == Some("audio"),
+        name: text(v, "name"),
+        start: int(v, "start", 0),
+        length: int(v, "length", 3840),
+        mute: flag(v, "mute"),
+        fade_in: int(v, "fadeIn", 0),
+        fade_out: int(v, "fadeOut", 0),
+        gain: real(v, "gain", 1.0),
+        lanes,
+        comp,
+        notes,
+    })
+}
+
+pub fn tracks(root: &Value) -> Vec<TrackView> {
+    list(root, "tracks")
+        .enumerate()
+        .filter_map(|(index, t)| {
+            Some(TrackView {
+                index,
+                id: id_of(t)?,
+                name: text(t, "name"),
+                folder: flag(t, "folder"),
+                collapsed: flag(t, "collapsed"),
+                parent: ref_of(t, "parent"),
+                volume: real(t, "volume", 1.0),
+                mute: flag(t, "mute"),
+                solo: flag(t, "solo"),
+                armed: flag(t, "armed"),
+                monitor: t.get("monitor").and_then(Value::as_shared_text).cloned().unwrap_or_else(|| Arc::from("auto")),
+                input: t
+                    .get("input")
+                    .filter(|i| !i.is_null())
+                    .and_then(|i| i.get("channels"))
+                    .and_then(|c| c.at(0))
+                    .and_then(Value::as_int),
+                instrument: t
+                    .get("instrument")
+                    .filter(|i| !i.is_null())
+                    .and_then(|i| Some((id_of(i)?, text(i, "plugin")))),
+                outputs: list(t, "outputs")
+                    .filter_map(|o| {
+                        Some(OutputView {
+                            id: id_of(o)?,
+                            port: text(o, "port"),
+                            channels: int(o, "channels", 2),
+                            to: ref_of(o, "to")?,
+                        })
+                    })
+                    .collect(),
+                items: list(t, "items").filter_map(item_view).collect(),
+                automation: list(t, "automation")
+                    .filter_map(|a| {
+                        Some(AutomationView {
+                            id: id_of(a)?,
+                            param: a.get("target").map(|tg| text(tg, "param")).unwrap_or_else(|| Arc::from("")),
+                            on: a.get("on").and_then(Value::as_bool).unwrap_or(true),
+                            points: list(a, "points")
+                                .map(|p| (int(p, "tick", 0), real(p, "value", 0.0), real(p, "curve", 0.0)))
+                                .collect(),
+                        })
+                    })
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChannelKind {
+    /// A channel only other channels output to: a group (P-18)
+    Group,
+    /// A channel others send to: a return (P-19)
+    Return,
+    Normal,
+    Master,
+}
+
+#[derive(Clone, Debug)]
+pub struct PluginView {
+    pub id: NodeId,
+    pub plugin: Arc<str>,
+    pub bypass: bool,
+    pub point: Arc<str>,
+    #[expect(dead_code, reason = "read by the screens B, C and D port onto lm-gui next")]
+    pub state: Value,
+}
+
+#[derive(Clone, Debug)]
+pub struct SendView {
+    pub id: NodeId,
+    pub to: NodeId,
+    pub amount: f64,
+    pub pre: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ChannelView {
+    pub id: NodeId,
+    pub name: Arc<str>,
+    pub kind: ChannelKind,
+    pub volume: f64,
+    pub pan: f64,
+    pub mute: bool,
+    pub solo: bool,
+    pub output: Option<NodeId>,
+    pub inserts: Vec<PluginView>,
+    pub sends: Vec<SendView>,
+    /// the rack: the node itself, read by key paths (`tube.drive`)
+    pub rack: Value,
+}
+
+fn plugin_view(p: &Value) -> Option<PluginView> {
+    Some(PluginView {
+        id: id_of(p)?,
+        plugin: text(p, "plugin"),
+        bypass: flag(p, "bypass"),
+        point: p.get("point").and_then(Value::as_shared_text).cloned().unwrap_or_else(|| Arc::from("post-eq")),
+        state: p.get("state").cloned().unwrap_or_default(),
+    })
+}
+
+/// The desk: the channels in order, then the master. Groups and returns are read from the routing: a channel others
+/// output to is a group, one others send to is a return
+pub fn channels(root: &Value) -> Vec<ChannelView> {
+    let list_v: Vec<Value> = at(root, &["mixer", "channels"]).map(|l| l.items().cloned().collect()).unwrap_or_default();
+    let outputs_to: Vec<NodeId> = list_v.iter().filter_map(|c| ref_of(c, "output")).collect();
+    let sends_to: Vec<NodeId> =
+        list_v.iter().flat_map(|c| list(c, "sends").filter_map(|s| ref_of(s, "to")).collect::<Vec<_>>()).collect();
+    let mut out: Vec<ChannelView> = list_v
+        .iter()
+        .filter_map(|c| {
+            let id = id_of(c)?;
+            let kind = if sends_to.contains(&id) {
+                ChannelKind::Return
+            } else if outputs_to.contains(&id) {
+                ChannelKind::Group
+            } else {
+                ChannelKind::Normal
+            };
+            Some(ChannelView {
+                id,
+                name: text(c, "name"),
+                kind,
+                volume: real(c, "volume", 1.0),
+                pan: real(c, "pan", 0.0),
+                mute: flag(c, "mute"),
+                solo: flag(c, "solo"),
+                output: ref_of(c, "output"),
+                inserts: list(c, "inserts").filter_map(plugin_view).collect(),
+                sends: list(c, "sends")
+                    .filter_map(|s| {
+                        Some(SendView {
+                            id: id_of(s)?,
+                            to: ref_of(s, "to")?,
+                            amount: real(s, "amount", 1.0),
+                            pre: flag(s, "pre"),
+                        })
+                    })
+                    .collect(),
+                rack: c.get("rack").cloned().unwrap_or_default(),
+            })
+        })
+        .collect();
+    if let Some(m) = at(root, &["mixer", "master"]) {
+        out.push(ChannelView {
+            id: id_of(m).unwrap_or(NodeId { kind: b'm', number: 0 }),
+            name: text(m, "name"),
+            kind: ChannelKind::Master,
+            volume: real(m, "volume", 1.0),
+            pan: 0.0,
+            mute: flag(m, "mute"),
+            solo: false,
+            output: None,
+            inserts: list(m, "inserts").filter_map(plugin_view).collect(),
+            sends: Vec::new(),
+            rack: m.get("rack").cloned().unwrap_or_default(),
+        });
+    }
+    out
+}
+
+/// The song's switches and ranges, by key path from the root
+#[derive(Clone, Debug)]
+pub struct Song {
+    pub loop_on: bool,
+    pub loop_range: (i64, i64),
+    pub punch_on: bool,
+    pub punch_range: (i64, i64),
+    pub pre_roll: i64,
+    pub metronome: bool,
+    pub count_in: i64,
+    pub transpose: i64,
+    pub analog: bool,
+}
+
+pub fn song(root: &Value) -> Song {
+    let tr = |p: &[&str]| at(root, &[&["transport"], p].concat()).cloned().unwrap_or_default();
+    Song {
+        loop_on: tr(&["loop", "on"]).as_bool().unwrap_or(false),
+        loop_range: (tr(&["loop", "from"]).as_int().unwrap_or(0), tr(&["loop", "to"]).as_int().unwrap_or(0)),
+        punch_on: tr(&["punch", "on"]).as_bool().unwrap_or(false),
+        punch_range: (tr(&["punch", "from"]).as_int().unwrap_or(0), tr(&["punch", "to"]).as_int().unwrap_or(0)),
+        pre_roll: tr(&["preRoll", "bars"]).as_int().unwrap_or(1),
+        metronome: tr(&["metronome", "on"]).as_bool().unwrap_or(false),
+        count_in: tr(&["metronome", "countIn"]).as_int().unwrap_or(0),
+        transpose: tr(&["transpose"]).as_int().unwrap_or(0),
+        analog: at(root, &["mixer", "mode"]).and_then(Value::as_text) != Some("digital"),
+    }
+}

@@ -1,0 +1,37 @@
+# Shared pieces: the shell, the transport, the loading component
+Composition = Composição
+Mixing = Mixagem
+Stopped = PARADO
+Playing = TOCANDO
+Recording = GRAVANDO
+Count-in = CONTAGEM
+Cancel = Cancelar
+Close = Fechar
+OK = OK
+Reload take = Recarregar take
+Pre-roll {0} = Pré-roll {0}
+Generating peaks = Gerando picos
+{0}… {1}% = {0}… {1}%
+Screens = Telas
+Rewind = Voltar ao início
+Stop = Parar
+Play = Tocar
+Record = Gravar
+Loop = Loop
+Punch = Punch
+Metronome = Metrônomo
+Tempo = Andamento
+Count-in {0} = Contagem {0}
+Count-in {0}… = CONTAGEM {0}…
+Transpose {0} = Transpor {0}
+xruns {0} = xruns {0}
+# The shell: asking before losing changes, the registry's groups and commands
+The project has changes that were not saved. = O projeto tem alterações que não foram salvas.
+Don't save = Não salvar
+Quit = Sair
+Redo = Refazer
+Next page = Próxima página
+Missing file: locate it = Arquivo ausente: localizar
+Arrange = Arranjo
+Desk = Mesa
+Delete = Apagar

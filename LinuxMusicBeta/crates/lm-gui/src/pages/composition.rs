@@ -1,0 +1,1405 @@
+//! The composition page: the timeline with the track headers (design 02, no pan), folders, several outputs per
+//! track, audio items with their take lanes and comp (U2), MIDI items with their notes, the take that grows while
+//! recording (U3), the tempo lane, automation lanes, the ruler with bars, loop and punch, xrun marks; and editing:
+//! items selected, moved, faded and gained by gesture, split, duplicated, deleted, created empty, opened in their
+//! editor. Everything is read from the project tree (`model`) and changed through the port (`EditOp`s, gestures,
+//! actions). Positions are in ticks; the tempo map (lm-time) converts the cursor's samples.
+
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::rc::Rc;
+use std::time::Instant;
+
+use gpui::{
+    AnyElement, Bounds, Context, Entity, FocusHandle, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PathBuilder, PinchEvent, Pixels, Render, ScrollDelta, ScrollEvent, SharedString, WeakEntity, Window,
+    canvas, div, fill, point, prelude::*, px, size,
+};
+use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, Ref, Resource, Target, Topic, Value};
+use lm_time::TempoMap;
+
+use crate::actions::{DeleteItem, Duplicate, EmptyItem, OpenItem, Split, ZoomIn, ZoomOut};
+use crate::core::Core;
+use crate::model::{self, ItemView, TrackView};
+use crate::screens::Screen;
+use crate::tiles::{TileCache, level_for, paint_wave, tile_range};
+use crate::ui::{THEME, button, c, knob_face, loading_component, meter, tr, track_color, trf};
+use crate::view::{self, TimelineView};
+use crate::workspace::Workspace;
+
+pub const TEMPO_H: f32 = 34.0;
+const FOLDER_H: f32 = 30.0;
+const TAKE_H: f32 = 34.0;
+const LANE_H: f32 = 48.0;
+const INDENT: f32 = 12.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RowKind {
+    Track(usize),
+    /// a take lane of a track's item: (track, item, lane)
+    Take(usize, usize, usize),
+    Automation(usize, usize),
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Row {
+    kind: RowKind,
+    /// in content coordinates (0 = the first row, under the tempo lane)
+    top: f32,
+    h: f32,
+    depth: u8,
+}
+
+struct KnobDrag {
+    track: NodeId,
+    start_y: f32,
+    start_t: f64,
+    gesture: GestureId,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ItemZone {
+    Move,
+    FadeIn,
+    FadeOut,
+    Gain,
+}
+
+struct ItemDrag {
+    item: NodeId,
+    zone: ItemZone,
+    start: (f32, f32),
+    start_value: f64,
+    gesture: GestureId,
+}
+
+/// What was drawn where in the last frame, relative to the timeline: (x, y, w, h, item, fade in px, fade out px)
+type Hit = (f32, f32, f32, f32, NodeId, f32, f32);
+
+pub struct CompositionPage {
+    core: Entity<Core>,
+    workspace: WeakEntity<Workspace>,
+    focus: FocusHandle,
+    pub view: TimelineView,
+    feed: Feed,
+    drag: Option<KnobDrag>,
+    item_drag: Option<ItemDrag>,
+    pub selected_item: Option<NodeId>,
+    /// The interface's state (I-3.8): which tracks show their take lanes and their automation, the track height
+    show_takes: HashSet<NodeId>,
+    show_automation: HashSet<NodeId>,
+    pub track_h: f32,
+    pub follow_cursor: bool,
+    timeline_bounds: Rc<RefCell<Bounds<Pixels>>>,
+    tiles: Rc<RefCell<TileCache>>,
+    hits: Rc<RefCell<Vec<Hit>>>,
+}
+
+/// The rows: tracks not hidden by a collapsed folder, then each track's take lanes and automation lanes
+fn layout(tracks: &[TrackView], track_h: f32, takes: &HashSet<NodeId>, automation: &HashSet<NodeId>) -> Vec<Row> {
+    let mut rows = Vec::with_capacity(tracks.len() + 8);
+    let mut top = 0.0;
+    for (i, t) in tracks.iter().enumerate() {
+        let parent = t.parent.and_then(|p| tracks.iter().find(|x| x.id == p));
+        if parent.is_some_and(|p| p.collapsed) {
+            continue;
+        }
+        let depth = parent.is_some() as u8;
+        let h = if t.folder { FOLDER_H.min(track_h) } else { track_h };
+        rows.push(Row { kind: RowKind::Track(i), top, h, depth });
+        top += h;
+        if takes.contains(&t.id) {
+            for (k, it) in t.items.iter().enumerate() {
+                if it.lanes.len() > 1 {
+                    for l in 0..it.lanes.len() {
+                        rows.push(Row { kind: RowKind::Take(i, k, l), top, h: TAKE_H, depth });
+                        top += TAKE_H;
+                    }
+                }
+            }
+        }
+        if automation.contains(&t.id) {
+            for a in 0..t.automation.len() {
+                rows.push(Row { kind: RowKind::Automation(i, a), top, h: LANE_H, depth });
+                top += LANE_H;
+            }
+        }
+    }
+    rows
+}
+
+impl CompositionPage {
+    pub fn new(core: Entity<Core>, workspace: WeakEntity<Workspace>, cx: &mut Context<Self>) -> Self {
+        let feed = core.update(cx, |core, _| core.port_mut().feed(Topic::All));
+        CompositionPage {
+            core,
+            workspace,
+            focus: cx.focus_handle(),
+            view: TimelineView::default(),
+            feed,
+            drag: None,
+            item_drag: None,
+            selected_item: None,
+            show_takes: HashSet::new(),
+            show_automation: HashSet::new(),
+            track_h: view::TRACK_H,
+            follow_cursor: false,
+            timeline_bounds: Rc::new(RefCell::new(Bounds::default())),
+            tiles: Rc::new(RefCell::new(TileCache::default())),
+            hits: Default::default(),
+        }
+    }
+
+    fn tracks(&self, cx: &Context<Self>) -> Vec<TrackView> {
+        model::tracks(self.core.read(cx).port().root())
+    }
+
+    fn apply(&mut self, label: &'static str, ops: Vec<EditOp>, cx: &mut Context<Self>) {
+        self.core.update(cx, |core, _| {
+            // Pending: in-process at once; in the client the feed brings the change in a later pump
+            let _ = core.port_mut().apply(Label::new(label), ops);
+        });
+        cx.notify();
+    }
+
+    fn action(&mut self, id: &str, params: Value, cx: &mut Context<Self>) {
+        self.core.update(cx, |core, _| {
+            let _ = core.port_mut().run_action(id.into(), params);
+        });
+        cx.notify();
+    }
+
+    // --- the volume knob's gesture (I-3.7) -----------------------------------------------------------------
+
+    fn begin_knob(&mut self, track: NodeId, volume: f64, ev: &MouseDownEvent, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        if ev.click_count == 2 || ev.button == MouseButton::Middle {
+            return self.apply(
+                "Volume",
+                vec![EditOp::set(track, &["volume"], Value::real(1.0).unwrap_or_default())],
+                cx,
+            );
+        }
+        let prev = self.drag.take();
+        let gesture = self.core.update(cx, |core, _| {
+            if let Some(d) = prev {
+                core.port_mut().gesture_commit(d.gesture);
+            }
+            core.port_mut().begin_gesture(Label::new("Volume"))
+        });
+        self.drag =
+            Some(KnobDrag { track, start_y: ev.position.y.as_f32(), start_t: view::gain_to_travel(volume), gesture });
+    }
+
+    fn drag_knob(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some(d) = &self.drag else { return };
+        let t = view::knob_drag(d.start_t, (ev.position.y.as_f32() - d.start_y) as f64, ev.modifiers.shift);
+        let op = EditOp::set(d.track, &["volume"], Value::real(view::travel_to_gain(t)).unwrap_or_default());
+        self.core.update(cx, |core, _| core.port_mut().gesture_apply(&self.drag.as_ref().unwrap().gesture, vec![op]));
+        cx.notify();
+    }
+
+    fn release(&mut self, cx: &mut Context<Self>) {
+        if let Some(d) = self.drag.take() {
+            self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+        }
+        if let Some(d) = self.item_drag.take() {
+            self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+        }
+        cx.notify();
+    }
+
+    fn toggle(&mut self, track: NodeId, key: &str, now: bool, cx: &mut Context<Self>) {
+        self.apply("Toggle", vec![EditOp::set(track, &[key], Value::bool(!now))], cx);
+    }
+
+    /// Monitor: auto → on → off → auto
+    fn cycle_monitor(&mut self, track: NodeId, now: &str, cx: &mut Context<Self>) {
+        let next = match now {
+            "auto" => "on",
+            "on" => "off",
+            _ => "auto",
+        };
+        self.apply("Monitor", vec![EditOp::set(track, &["monitor"], Value::text(next))], cx);
+    }
+
+    /// FX on a header: the inserts of the channel its main output goes to (P-28), on the mixing page
+    fn open_fx(&mut self, to: Option<NodeId>, cx: &mut Context<Self>) {
+        if let Some(ch) = to {
+            let _ = self.workspace.update(cx, |ws, cx| {
+                ws.page = crate::pages::Page::Mixing;
+                ws.mixing.update(cx, |m, cx| m.select_channel(ch, cx));
+                cx.notify();
+            });
+        }
+    }
+
+    // --- scroll, zoom, the ruler ---------------------------------------------------------------------------
+
+    fn view_h(window: &Window) -> f64 {
+        (window.viewport_size().height.as_f32() - crate::workspace::CHROME_H - view::RULER_H - TEMPO_H) as f64
+    }
+
+    fn content_h(&self, cx: &Context<Self>) -> f64 {
+        layout(&self.tracks(cx), self.track_h, &self.show_takes, &self.show_automation)
+            .last()
+            .map_or(0.0, |r| (r.top + r.h) as f64)
+    }
+
+    /// REAPER's wheel (F-ARR-007): a mouse wheel zooms; Ctrl+wheel changes every track's height; Alt (or Shift)
+    /// +wheel scrolls sideways. A trackpad pans both ways; with Cmd/Ctrl it zooms
+    fn on_scroll(&mut self, ev: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let d = ev.delta.pixel_delta(px(16.0));
+        let b = *self.timeline_bounds.borrow();
+        let x = (ev.position.x - b.origin.x).as_f32() as f64;
+        let (dx, dy) = (d.x.as_f32() as f64, d.y.as_f32() as f64);
+        let wheel = matches!(ev.delta, ScrollDelta::Lines(_));
+        if ev.modifiers.control && wheel {
+            self.track_h = (self.track_h * (1.0 + dy as f32 * 0.004)).clamp(24.0, 160.0);
+            cx.notify();
+            return;
+        }
+        let sideways = ev.modifiers.alt || ev.modifiers.shift;
+        let zoom = if wheel { !sideways } else { ev.modifiers.platform || ev.modifiers.control };
+        let (dx, dy) = if wheel && sideways { (dy, 0.0) } else { (dx, dy) };
+        let content = self.content_h(cx);
+        self.view.wheel(dx, if zoom { -dy } else { dy }, zoom, x, content, Self::view_h(window));
+        cx.notify();
+    }
+
+    fn on_pinch(&mut self, ev: &PinchEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let b = *self.timeline_bounds.borrow();
+        let x = (ev.position.x - b.origin.x).as_f32() as f64;
+        let content = self.content_h(cx);
+        let dy = -(1.0 + ev.delta as f64).ln() * 100.0;
+        self.view.wheel(0.0, dy, true, x, content, Self::view_h(window));
+        cx.notify();
+    }
+
+    fn zoom(&mut self, factor: f64, cx: &mut Context<Self>) {
+        let w = self.timeline_bounds.borrow().size.width.as_f32() as f64 / 2.0;
+        self.view.wheel(0.0, factor, true, w, 0.0, 0.0);
+        cx.notify();
+    }
+
+    /// A click on the ruler moves the cursor there
+    fn on_ruler(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) {
+        let b = *self.timeline_bounds.borrow();
+        let tick = self.view.tick_at((ev.position.x - b.origin.x).as_f32()).max(0.0);
+        self.action("transport.locate", Value::int(tick as i64), cx);
+    }
+
+    // --- items: select, move, fades, gain, the keys (F-CLP-061, F-ARR-005..007) --------------------------------
+
+    /// The track of the selected item: what Record arms when nothing is armed (F-REC-021)
+    pub fn selected_track(&self, root: &Value) -> Option<NodeId> {
+        let it = self.selected_item?;
+        model::tracks(root).into_iter().find(|t| t.items.iter().any(|i| i.id == it)).map(|t| t.id)
+    }
+
+    fn selected(&self, cx: &Context<Self>) -> Option<(TrackView, ItemView)> {
+        let it = self.selected_item?;
+        self.tracks(cx).into_iter().find_map(|t| t.items.iter().find(|i| i.id == it).cloned().map(|i| (t, i)))
+    }
+
+    fn cursor_tick(&self, cx: &Context<Self>) -> i64 {
+        let port = self.core.read(cx).port();
+        let map = model::tempo_map(port.root());
+        map.tick_at(port.telemetry().position.at(HostTime::now()) as i64)
+    }
+
+    fn split(&mut self, cx: &mut Context<Self>) {
+        let Some(item) = self.selected_item else { return };
+        let tick = self.cursor_tick(cx);
+        self.action(
+            "arrange.split",
+            Value::object([("item", Value::text(item.to_string())), ("tick", Value::int(tick))]),
+            cx,
+        );
+    }
+
+    fn duplicate(&mut self, cx: &mut Context<Self>) {
+        if let Some(item) = self.selected_item {
+            self.action("arrange.duplicate", Value::object([("item", Value::text(item.to_string()))]), cx);
+        }
+    }
+
+    fn delete_item(&mut self, cx: &mut Context<Self>) {
+        if let Some(item) = self.selected_item.take() {
+            self.apply("Delete", vec![EditOp::Remove { id: Ref::Id(item) }], cx);
+        }
+    }
+
+    /// An empty audio item a bar long at the cursor, on the selected item's track or the first armed one (P-29)
+    fn empty_item(&mut self, cx: &mut Context<Self>) {
+        let root = self.core.read(cx).port().root().clone();
+        let tracks = model::tracks(&root);
+        let track = self.selected_track(&root).or_else(|| tracks.iter().find(|t| t.armed).map(|t| t.id));
+        let Some(track) = track else { return };
+        let n = tracks.iter().find(|t| t.id == track).map_or(0, |t| t.items.len());
+        let bar = 4 * model::ppq(&root) as i64;
+        let node = Value::object([
+            ("kind", Value::text("audio")),
+            ("name", Value::text(tr("Empty"))),
+            ("start", Value::int(self.cursor_tick(cx))),
+            ("length", Value::int(bar)),
+        ]);
+        self.apply(
+            "Empty item",
+            vec![EditOp::Insert { temp: 0, parent: Ref::Id(track), list: "items".into(), index: n, node }],
+            cx,
+        );
+    }
+
+    /// Enter or a double click: the item's editor (the Piano Roll for MIDI)
+    fn open_item(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((_, item)) = self.selected(cx) else { return };
+        if !item.audio {
+            let id = item.id;
+            let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::PianoRoll, Some(id), window, cx));
+        }
+    }
+
+    fn on_timeline_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus, cx); // the arrangement's keys go to the page
+        let b = *self.timeline_bounds.borrow();
+        let (mx, my) = ((ev.position.x - b.origin.x).as_f32(), (ev.position.y - b.origin.y).as_f32());
+        if my < view::RULER_H + TEMPO_H {
+            return;
+        }
+        let hit = self
+            .hits
+            .borrow()
+            .iter()
+            .rev()
+            .find(|(x, y, w, h, ..)| mx >= *x && mx <= x + w && my >= *y && my <= y + h)
+            .copied();
+        let Some((x, y, w, _, item, fi, fo)) = hit else {
+            self.selected_item = None;
+            cx.notify();
+            return;
+        };
+        self.selected_item = Some(item);
+        if ev.click_count == 2 {
+            return self.open_item(window, cx);
+        }
+        // the top 7 px: the fade handles at the corners, the gain handle between; the rest moves the item
+        let zone = if my - y <= 7.0 {
+            if mx <= x + fi.max(10.0) {
+                ItemZone::FadeIn
+            } else if mx >= x + w - fo.max(10.0) {
+                ItemZone::FadeOut
+            } else {
+                ItemZone::Gain
+            }
+        } else {
+            ItemZone::Move
+        };
+        let Some((_, it)) = self.selected(cx) else { return };
+        let start_value = match zone {
+            ItemZone::Move => it.start as f64,
+            ItemZone::FadeIn => it.fade_in as f64,
+            ItemZone::FadeOut => it.fade_out as f64,
+            ItemZone::Gain => it.gain,
+        };
+        let gesture = self.core.update(cx, |core, _| core.port_mut().begin_gesture(Label::new("Item")));
+        self.item_drag = Some(ItemDrag {
+            item,
+            zone,
+            start: (ev.position.x.as_f32(), ev.position.y.as_f32()),
+            start_value,
+            gesture,
+        });
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    /// Where an item is drawn, in window coordinates: a point in its body (the tests click there)
+    #[cfg(test)]
+    pub fn item_point(&self, item: NodeId) -> Option<gpui::Point<Pixels>> {
+        let b = *self.timeline_bounds.borrow();
+        let (x, y, w, h, ..) = self.hits.borrow().iter().find(|h| h.4 == item).copied()?;
+        Some(gpui::point(b.origin.x + px(x + w.min(40.0) / 2.0), b.origin.y + px(y + h * 0.6)))
+    }
+
+    fn drag_item(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some(d) = &self.item_drag else { return };
+        let dx = (ev.position.x.as_f32() - d.start.0) as f64 * self.view.ticks_per_px;
+        let dy = (ev.position.y.as_f32() - d.start.1) as f64;
+        let beat = model::ppq(self.core.read(cx).port().root()) as f64;
+        let (key, value) = match d.zone {
+            ItemZone::Move => {
+                // snapped to the beat, unless Shift
+                let s = (d.start_value + dx).max(0.0);
+                ("start", Value::int(if ev.modifiers.shift { s } else { (s / beat).round() * beat } as i64))
+            }
+            ItemZone::FadeIn => ("fadeIn", Value::int((d.start_value + dx).max(0.0) as i64)),
+            ItemZone::FadeOut => ("fadeOut", Value::int((d.start_value - dx).max(0.0) as i64)),
+            ItemZone::Gain => (
+                "gain",
+                Value::real(
+                    view::db_to_gain((view::gain_to_db(d.start_value).max(-60.0) - dy * 0.3).clamp(-60.0, 12.0))
+                        .min(4.0),
+                )
+                .unwrap_or_default(),
+            ),
+        };
+        let op = EditOp::set(d.item, &[key], value);
+        self.core
+            .update(cx, |core, _| core.port_mut().gesture_apply(&self.item_drag.as_ref().unwrap().gesture, vec![op]));
+        cx.notify();
+    }
+}
+
+impl Render for CompositionPage {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let now = Instant::now();
+        let view_h = Self::view_h(window);
+        // I-3.6: the feed is drained each frame; a removed item stops being selected
+        let diff = {
+            let core = self.core.read(cx);
+            let port = core.port();
+            port.drain(&mut self.feed)
+        };
+        if let (Some(diff), Some(sel)) = (&diff, self.selected_item)
+            && diff.removed.contains(&sel)
+        {
+            self.selected_item = None;
+        }
+        let tracks = self.tracks(cx);
+        let rows = layout(&tracks, self.track_h, &self.show_takes, &self.show_automation);
+        let content_h = rows.last().map_or(0.0, |r| (r.top + r.h) as f64);
+        if let Some(v) = self.core.read(cx).bench.view(now) {
+            // the measurement's script: its samples read as ticks at 120 BPM (25 samples a tick)
+            self.view.scroll_ticks = v.scroll_samples / 25.0;
+            self.view.ticks_per_px = v.samples_per_px / 25.0;
+            self.view.scroll_y = v.scroll_y * (content_h - view_h).max(0.0);
+        }
+        self.view.scroll_y = self.view.scroll_y.clamp(0.0, (content_h - view_h).max(0.0));
+        let (cursor, playing) = {
+            let port = self.core.read(cx).port();
+            let map = model::tempo_map(port.root());
+            let pos = port.telemetry().position;
+            (map.tick_at(pos.at(HostTime::now()) as i64) as f64, pos.playing)
+        };
+        if self.follow_cursor && playing {
+            let w = window.viewport_size().width.as_f32() - view::HEADER_W;
+            let x = self.view.x(cursor);
+            if x < 0.0 || x > w * 0.9 {
+                self.view.scroll_ticks = (cursor - (w * 0.1) as f64 * self.view.ticks_per_px).max(0.0);
+            }
+        }
+        let y0 = self.view.scroll_y as f32;
+        let visible: Vec<Row> = rows.into_iter().filter(|r| r.top + r.h >= y0 && r.top <= y0 + view_h as f32).collect();
+        let headers = self.render_headers(&tracks, &visible, cx).into_any_element();
+        let timeline = self.render_timeline(&tracks, &visible, cursor, cx);
+        // the waveform blocks this frame wants, asked of the port before paint (a Waiting one: asked next frame)
+        let tiles = self.tiles.clone();
+        let waiting = self.core.update(cx, |core, _| {
+            let mut t = tiles.borrow_mut();
+            t.fetch(core.port_mut());
+            t.waiting()
+        });
+        if waiting {
+            window.request_animation_frame();
+        }
+        div()
+            .size_full()
+            .flex()
+            .flex_row()
+            .overflow_hidden()
+            .key_context("Composition")
+            .track_focus(&self.focus)
+            .on_mouse_down(MouseButton::Left, cx.listener(|p, _, window, cx| window.focus(&p.focus, cx)))
+            .on_action(cx.listener(|p, _: &Split, _, cx| p.split(cx)))
+            .on_action(cx.listener(|p, _: &Duplicate, _, cx| p.duplicate(cx)))
+            .on_action(cx.listener(|p, _: &DeleteItem, _, cx| p.delete_item(cx)))
+            .on_action(cx.listener(|p, _: &EmptyItem, _, cx| p.empty_item(cx)))
+            .on_action(cx.listener(|p, _: &OpenItem, window, cx| p.open_item(window, cx)))
+            .on_action(cx.listener(|p, _: &ZoomIn, _, cx| p.zoom(-40.0, cx)))
+            .on_action(cx.listener(|p, _: &ZoomOut, _, cx| p.zoom(40.0, cx)))
+            .on_mouse_move(cx.listener(|p, ev: &MouseMoveEvent, _, cx| {
+                p.drag_knob(ev, cx);
+                p.drag_item(ev, cx);
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|p, _: &MouseUpEvent, _, cx| p.release(cx)))
+            .child(headers)
+            .child(timeline)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------------------------
+// Headers
+
+impl CompositionPage {
+    fn render_headers(&self, tracks: &[TrackView], rows: &[Row], cx: &Context<Self>) -> impl IntoElement {
+        let core = self.core.read(cx);
+        let root = core.port().root();
+        let map = model::tempo_map(root);
+        let tick = map.tick_at(core.port().telemetry().position.samples);
+        let bpm = map.bpm_at_sample(map.sample_at(tick));
+        let sig = map.time_signature_at(tick);
+        let inputs = core.port().telemetry().inputs.clone();
+        let top0 = view::RULER_H + TEMPO_H;
+        div()
+            .w(px(view::HEADER_W))
+            .h_full()
+            .relative()
+            .overflow_hidden()
+            .bg(c(THEME.bg1))
+            .border_r_1()
+            .border_color(c(THEME.line))
+            .child(div().h(px(view::RULER_H)).bg(c(THEME.bg3)))
+            .child(
+                div()
+                    .h(px(TEMPO_H))
+                    .px(px(8.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .bg(c(THEME.bg2))
+                    .border_b_1()
+                    .border_color(c(THEME.line))
+                    .child(div().text_size(px(11.)).font_weight(FontWeight::BOLD).child(tr("Tempo")))
+                    .child(div().text_size(px(11.)).text_color(c(THEME.text2)).child(format!("♩ {bpm:.2}")))
+                    .child(div().flex_1())
+                    .child(div().text_size(px(10.)).text_color(c(THEME.text3)).child(format!(
+                        "{}/{}",
+                        sig.numerator(),
+                        sig.denominator()
+                    ))),
+            )
+            .children(rows.iter().map(|r| {
+                let top = top0 + r.top - self.view.scroll_y as f32;
+                let el: AnyElement = match r.kind {
+                    RowKind::Track(i) => self.track_header(&tracks[i], r, core, &inputs, cx),
+                    RowKind::Take(i, k, l) => self.take_header(&tracks[i].items[k], l, r),
+                    RowKind::Automation(i, a) => self.lane_header(&tracks[i].automation[a], r),
+                };
+                div().absolute().top(px(top)).left(px(0.)).w(px(view::HEADER_W)).h(px(r.h)).child(el)
+            }))
+    }
+
+    fn track_header(&self, t: &TrackView, r: &Row, core: &Core, inputs: &[f32], cx: &Context<Self>) -> AnyElement {
+        let (i, id) = (t.index, t.id);
+        let number = div()
+            .w(px(22.))
+            .h_full()
+            .bg(c(track_color(i)))
+            .text_size(px(10.))
+            .font_weight(FontWeight::BOLD)
+            .text_color(c(THEME.on_accent))
+            .pt(px(4.))
+            .flex()
+            .justify_center()
+            .child(format!("{}", i + 1));
+        let base = div()
+            .size_full()
+            .flex()
+            .flex_row()
+            .bg(c(THEME.bg2))
+            .border_b_1()
+            .border_color(c(THEME.line))
+            .pl(px(r.depth as f32 * INDENT))
+            .child(number);
+        let (mute, solo, collapsed, armed) = (t.mute, t.solo, t.collapsed, t.armed);
+        let mute_b = button(SharedString::from(format!("m{i}")), "M", mute, THEME.orange)
+            .on_click(cx.listener(move |p, _, _, cx| p.toggle(id, "mute", mute, cx)));
+        let solo_b = button(SharedString::from(format!("s{i}")), "S", solo, THEME.yellow)
+            .on_click(cx.listener(move |p, _, _, cx| p.toggle(id, "solo", solo, cx)));
+        if t.folder {
+            // a folder: collapse, name, M and S (it organizes and mutes or solos the group; it does not sum audio)
+            return base
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .px(px(6.))
+                        .child(
+                            button(SharedString::from(format!("fold{i}")), if collapsed { "▸" } else { "▾" }, false, 0)
+                                .debug_selector(move || format!("fold-{i}"))
+                                .on_click(cx.listener(move |p, _, _, cx| p.toggle(id, "collapsed", collapsed, cx))),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .font_weight(FontWeight::BOLD)
+                                .flex_1()
+                                .child(format!("📁 {}", t.name)),
+                        )
+                        .child(mute_b)
+                        .child(solo_b),
+                )
+                .into_any_element();
+        }
+        let icon = if t.instrument.is_some() { "🎹" } else { "🎤" };
+        let volume = t.volume;
+        let kv = view::gain_to_travel(volume);
+        let has_takes = t.items.iter().any(|it| it.lanes.len() > 1);
+        let outs = t.outputs.len();
+        let main_to = t.outputs.first().map(|o| o.to);
+        let main_out = t.outputs.first().map(|o| o.id);
+        let takes_on = self.show_takes.contains(&id);
+        let auto_on = self.show_automation.contains(&id);
+        let monitor = t.monitor.clone();
+        let compact = r.h < 50.0;
+        let name = div()
+            .flex_1()
+            .h(px(18.))
+            .px(px(6.))
+            .rounded(px(3.))
+            .bg(c(THEME.bg1))
+            .text_size(px(12.))
+            .font_weight(FontWeight::BOLD)
+            .overflow_hidden()
+            .child(format!("{icon} {}", t.name));
+        let first_row = div()
+            .flex()
+            .flex_row()
+            .gap(px(4.))
+            .items_center()
+            .child(
+                button(SharedString::from(format!("r{i}")), "●", armed, THEME.red)
+                    .debug_selector(move || format!("arm-{i}"))
+                    .on_click(cx.listener(move |p, _, _, cx| p.toggle(id, "armed", armed, cx))),
+            )
+            .child(name)
+            .child(mute_b)
+            .child(solo_b);
+        let meter_h = r.h - if outs > 1 { 14.0 } else { 6.0 };
+        let input_level = t.input.and_then(|ch| inputs.get((ch - 1).max(0) as usize).copied()).unwrap_or(0.0);
+        base.child(
+            div()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .p(px(if compact { 3. } else { 6. }))
+                .child(first_row)
+                // 4: the volume knob (no pan: I-3.9), its value, monitoring, takes, lanes, FX, I/O
+                .when(!compact, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(4.))
+                            .items_center()
+                            .child(
+                                div()
+                                    .id(("tknob", i))
+                                    .debug_selector(move || format!("tknob-{i}"))
+                                    .role(gpui::Role::Slider)
+                                    .aria_label(SharedString::from(format!("{} {}", tr("Volume"), t.name)))
+                                    .aria_numeric_value(view::gain_to_db(volume).max(-60.0))
+                                    .aria_min_numeric_value(-60.0)
+                                    .aria_max_numeric_value(12.0)
+                                    .cursor_ns_resize()
+                                    .child(knob_face(kv, 22.0))
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
+                                            p.begin_knob(id, volume, ev, cx)
+                                        }),
+                                    )
+                                    .on_mouse_down(
+                                        MouseButton::Middle,
+                                        cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
+                                            p.begin_knob(id, volume, ev, cx)
+                                        }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .w(px(46.))
+                                    .text_size(px(9.5))
+                                    .text_color(c(THEME.text2))
+                                    .child(view::format_gain(volume)),
+                            )
+                            .child(
+                                button(
+                                    SharedString::from(format!("mon{i}")),
+                                    match &*monitor {
+                                        "on" => "◉",
+                                        "off" => "○",
+                                        _ => "◐",
+                                    },
+                                    &*monitor == "on",
+                                    THEME.blue,
+                                )
+                                .on_click(cx.listener(move |p, _, _, cx| p.cycle_monitor(id, &monitor, cx))),
+                            )
+                            .child(div().flex_1())
+                            .when(has_takes, |d| {
+                                d.child(
+                                    button(SharedString::from(format!("tk{i}")), tr("Takes"), takes_on, THEME.blue)
+                                        .on_click(cx.listener(move |p, _, _, cx| {
+                                            if !p.show_takes.remove(&id) {
+                                                p.show_takes.insert(id);
+                                            }
+                                            cx.notify();
+                                        })),
+                                )
+                            })
+                            .when(!t.automation.is_empty(), |d| {
+                                d.child(
+                                    button(SharedString::from(format!("ln{i}")), "A", auto_on, THEME.blue).on_click(
+                                        cx.listener(move |p, _, _, cx| {
+                                            if !p.show_automation.remove(&id) {
+                                                p.show_automation.insert(id);
+                                            }
+                                            cx.notify();
+                                        }),
+                                    ),
+                                )
+                            })
+                            .child(
+                                button(SharedString::from(format!("fx{i}")), "FX", false, 0)
+                                    .debug_selector(move || format!("fx-{i}"))
+                                    .on_click(cx.listener(move |p, _, _, cx| p.open_fx(main_to, cx))),
+                            )
+                            .child(button(
+                                SharedString::from(format!("io{i}")),
+                                if outs > 1 { trf("I/O ×{0}", &[&outs]) } else { "I/O".into() },
+                                outs > 1,
+                                THEME.green,
+                            )),
+                    )
+                }),
+        )
+        // the meters on the right border: the input when armed (F-REC-009), the main output; a dot says there are more
+        .child(
+            div()
+                .p(px(3.))
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap(px(2.))
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(2.))
+                        .when(armed, |d| d.child(meter(view::meter_fill(input_level), 4.0, meter_h)))
+                        .child(meter(main_out.map_or(0.0, |o| core.meter(o)), 6.0, meter_h)),
+                )
+                .when(outs > 1, |d| d.child(div().size(px(5.)).rounded(px(3.)).bg(c(THEME.green)))),
+        )
+        .into_any_element()
+    }
+
+    fn take_header(&self, it: &ItemView, l: usize, r: &Row) -> AnyElement {
+        let lane = &it.lanes[l];
+        let uses = it.comp.iter().filter(|s| s.lane == Some(lane.id)).count();
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .pl(px(30. + r.depth as f32 * INDENT))
+            .bg(c(THEME.bg1))
+            .border_b_1()
+            .border_color(c(THEME.line))
+            .child(div().text_size(px(11.)).child(if lane.name.is_empty() {
+                trf("Take {0}", &[&(l + 1)])
+            } else {
+                lane.name.to_string()
+            }))
+            .child(
+                div()
+                    .text_size(px(10.))
+                    .text_color(c(if uses > 0 { THEME.green } else { THEME.text3 }))
+                    .child(trf("used in {0} parts", &[&uses])),
+            )
+            .into_any_element()
+    }
+
+    fn lane_header(&self, a: &model::AutomationView, r: &Row) -> AnyElement {
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .pl(px(30. + r.depth as f32 * INDENT))
+            .bg(c(THEME.bg1))
+            .border_b_1()
+            .border_color(c(THEME.line))
+            .child(div().text_size(px(11.)).child(tr(Box::leak(capitalize(&a.param).into_boxed_str()))))
+            .child(div().text_size(px(10.)).text_color(c(THEME.text3)).child(if a.on { "" } else { "(off)" }))
+            .into_any_element()
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+}
+
+// -----------------------------------------------------------------------------------------------------------------
+// Timeline
+
+/// What the paint closure needs, gathered in render (the closure is 'static and cannot borrow the port)
+enum Paint {
+    Lane { y: f32, h: f32 },
+    Item { y: f32, h: f32, x: f32, w: f32, color: u32, body: Body },
+    Edges { y: f32, h: f32, x: f32, w: f32, fade_in: f32, fade_out: f32, gain: f64, selected: bool },
+    Boundary { y: f32, h: f32, x: f32, fade_px: f32 },
+    Overlap { y: f32, h: f32, x: f32, w: f32 },
+    Curve { y: f32, h: f32, pts: Vec<(f32, f32)> },
+}
+
+enum Body {
+    /// audio: (resource, x of the source's sample 0, samples per pixel, x0..x1 shown)
+    Wave(Vec<(Resource, f32, f64, f32, f32)>),
+    /// MIDI: notes as (x, w, key 0..1, velocity)
+    Notes(Vec<(f32, f32, f32, f32)>),
+    /// a take lane: the lane's waveform dim, its used parts bright
+    Dim(Resource, f32, f64, Vec<(f32, f32)>),
+    Empty,
+}
+
+impl CompositionPage {
+    fn render_timeline(&self, tracks: &[TrackView], rows: &[Row], cursor: f64, cx: &Context<Self>) -> AnyElement {
+        let core = self.core.read(cx);
+        let port = core.port();
+        let root = port.root();
+        let map = model::tempo_map(root);
+        let song = model::song(root);
+        let v = self.view;
+        let top0 = view::RULER_H + TEMPO_H;
+        let sy = v.scroll_y as f32;
+        let mut paint = Vec::new();
+        let mut overlays: Vec<AnyElement> = Vec::new();
+        let mut wants: Vec<(Resource, f32, f64, f32, f32)> = Vec::new();
+        self.hits.borrow_mut().clear();
+        let tele = port.telemetry();
+        // the samples per pixel of audio at a tick (the tempo there)
+        let spp_at = |map: &TempoMap, tick: i64| {
+            let a = map.sample_at(tick);
+            let b = map.sample_at(tick + 960);
+            (b - a) as f64 / 960.0 * v.ticks_per_px
+        };
+        for r in rows {
+            let y = top0 + r.top - sy;
+            paint.push(Paint::Lane { y, h: r.h });
+            match r.kind {
+                RowKind::Track(i) => {
+                    let t = &tracks[i];
+                    let color = track_color(i);
+                    for it in &t.items {
+                        let x = v.x(it.start as f64);
+                        let w = (it.length as f64 / v.ticks_per_px) as f32;
+                        if x > 4000.0 || x + w < 0.0 {
+                            continue;
+                        }
+                        let spp = spp_at(&map, it.start);
+                        let body = if it.audio {
+                            // the comp: each segment plays its lane, with a crossfade at each boundary (U2)
+                            let mut parts = Vec::new();
+                            for (k, seg) in it.comp.iter().enumerate() {
+                                let a = x + (seg.from as f64 / v.ticks_per_px) as f32;
+                                let b = x + (seg.to as f64 / v.ticks_per_px) as f32;
+                                if let Some(src) = seg.lane.and_then(|l| it.lane(l)).and_then(|l| l.source.clone()) {
+                                    wants.push((src.clone(), x, spp, a, b));
+                                    parts.push((src, x, spp, a, b));
+                                }
+                                if k > 0 {
+                                    let fade = (seg.fade as f64 / v.ticks_per_px) as f32;
+                                    paint.push(Paint::Boundary { y, h: r.h, x: a, fade_px: fade.max(3.0) });
+                                }
+                            }
+                            if parts.is_empty() { Body::Empty } else { Body::Wave(parts) }
+                        } else {
+                            Body::Notes(
+                                it.notes
+                                    .iter()
+                                    .map(|(key, s, l, vel)| {
+                                        (
+                                            x + (*s as f64 / v.ticks_per_px) as f32,
+                                            ((*l as f64 / v.ticks_per_px) as f32).max(1.0),
+                                            (*key as f32 - 30.0) / 60.0,
+                                            *vel as f32,
+                                        )
+                                    })
+                                    .collect(),
+                            )
+                        };
+                        paint.push(Paint::Item {
+                            y,
+                            h: r.h,
+                            x,
+                            w,
+                            color: if it.mute { THEME.text3 } else { color },
+                            body,
+                        });
+                        let fi = (it.fade_in as f64 / v.ticks_per_px) as f32;
+                        let fo = (it.fade_out as f64 / v.ticks_per_px) as f32;
+                        paint.push(Paint::Edges {
+                            y,
+                            h: r.h,
+                            x,
+                            w,
+                            fade_in: fi,
+                            fade_out: fo,
+                            gain: it.gain,
+                            selected: self.selected_item == Some(it.id),
+                        });
+                        self.hits.borrow_mut().push((x, y + 3.0, w, r.h - 6.0, it.id, fi, fo));
+                        // the item's name, or the loading component in place of the waveform (I-2)
+                        let target = Target::Node(it.id);
+                        let loading = port.loading(&target);
+                        let core_handle = self.core.clone();
+                        if let Some(el) = loading_component(
+                            SharedString::from(format!("load{}", it.id.number)),
+                            &loading,
+                            move |_, cx| {
+                                core_handle.update(cx, |core, cx| {
+                                    let ops: Vec<_> = core
+                                        .port()
+                                        .activity()
+                                        .into_iter()
+                                        .filter(|a| a.target == target || matches!(a.target, Target::Resource(_)))
+                                        .map(|a| a.id)
+                                        .collect();
+                                    for op in ops {
+                                        core.port_mut().cancel(op);
+                                    }
+                                    cx.notify();
+                                });
+                            },
+                        ) {
+                            let x0 = x.max(0.0);
+                            overlays.push(
+                                div()
+                                    .absolute()
+                                    .top(px(y + 3.0))
+                                    .left(px(x0))
+                                    .w(px((x + w - x0).clamp(0.0, 4000.0)))
+                                    .h(px(r.h - 6.0))
+                                    .child(el)
+                                    .into_any_element(),
+                            );
+                        } else if w > 40.0 && r.h >= 40.0 {
+                            overlays.push(
+                                div()
+                                    .absolute()
+                                    .top(px(y + 4.0))
+                                    .left(px(x.max(0.0) + 4.0))
+                                    .max_w(px(w.min(400.0)))
+                                    .text_size(px(10.))
+                                    .text_color(c(THEME.text))
+                                    .overflow_hidden()
+                                    .child(it.name.to_string())
+                                    .into_any_element(),
+                            );
+                        }
+                    }
+                    // overlapping items cross-fade by themselves (F-CLP-062): the overlap is marked
+                    let mut spans: Vec<(i64, i64)> =
+                        t.items.iter().map(|it| (it.start, it.start + it.length)).collect();
+                    spans.sort_unstable();
+                    for w2 in spans.windows(2) {
+                        if w2[1].0 < w2[0].1 {
+                            let (a, z) = (v.x(w2[1].0 as f64), v.x(w2[0].1.min(w2[1].1) as f64));
+                            paint.push(Paint::Overlap { y, h: r.h, x: a, w: z - a });
+                        }
+                    }
+                    // the take growing while recording (U3), with its pre-roll handle (U4)
+                    for take in tele.recording.iter().filter(|rt| rt.track == t.id) {
+                        let start = map.tick_at(take.start);
+                        let x = v.x(start as f64);
+                        let w = ((map.tick_at(take.start + take.length) - start) as f64 / v.ticks_per_px) as f32;
+                        let spp = spp_at(&map, start);
+                        wants.push((take.resource.clone(), x, spp, x, x + w));
+                        paint.push(Paint::Item {
+                            y,
+                            h: r.h,
+                            x,
+                            w,
+                            color: THEME.red,
+                            body: Body::Wave(vec![(take.resource.clone(), x, spp, x, x + w)]),
+                        });
+                    }
+                }
+                RowKind::Take(i, k, l) => {
+                    let it = &tracks[i].items[k];
+                    let lane = &it.lanes[l];
+                    let x = v.x(it.start as f64);
+                    let w = (it.length as f64 / v.ticks_per_px) as f32;
+                    let used: Vec<(f32, f32)> = it
+                        .comp
+                        .iter()
+                        .filter(|s| s.lane == Some(lane.id))
+                        .map(|s| {
+                            (x + (s.from as f64 / v.ticks_per_px) as f32, x + (s.to as f64 / v.ticks_per_px) as f32)
+                        })
+                        .collect();
+                    if let Some(src) = lane.source.clone() {
+                        let spp = spp_at(&map, it.start);
+                        wants.push((src.clone(), x, spp, x, x + w));
+                        paint.push(Paint::Item {
+                            y,
+                            h: r.h,
+                            x,
+                            w,
+                            color: track_color(i),
+                            body: Body::Dim(src, x, spp, used),
+                        });
+                    }
+                }
+                RowKind::Automation(i, a) => {
+                    let lane = &tracks[i].automation[a];
+                    let (lo, hi) =
+                        lane.points.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| (lo.min(p.1), hi.max(p.1)));
+                    let span = (hi - lo).max(1e-9);
+                    let pts =
+                        lane.points.iter().map(|p| (v.x(p.0 as f64), (1.0 - ((p.1 - lo) / span) as f32))).collect();
+                    paint.push(Paint::Curve { y, h: r.h, pts });
+                }
+            }
+        }
+        {
+            let mut tiles = self.tiles.borrow_mut();
+            for (res, ox, spp, a, z) in &wants {
+                let level = level_for(*spp);
+                tiles.want(res, level, tile_range(level, *spp, *ox, a.max(0.0), z.min(2400.0)));
+            }
+        }
+        // the ruler: a bar number at each bar line that fits (texts as elements)
+        let bar_ticks = |bar: i64| map.bar_start(bar).unwrap_or(0) as f64;
+        let first_bar = map.bar_beat_tick(v.scroll_ticks.max(0.0) as i64).bar;
+        let px_per_bar = ((bar_ticks(first_bar + 1) - bar_ticks(first_bar)) / v.ticks_per_px).max(1.0);
+        let every = (80.0 / px_per_bar).ceil().max(1.0) as i64;
+        let mut ticks_lines = Vec::new();
+        let mut bar = first_bar;
+        while bar < first_bar + 400 {
+            let x = v.x(bar_ticks(bar));
+            if x > 2400.0 {
+                break;
+            }
+            if (bar - 1) % every == 0 {
+                ticks_lines.push(x);
+                overlays.push(
+                    div()
+                        .absolute()
+                        .top(px(2.))
+                        .left(px(x + 3.0))
+                        .text_size(px(10.))
+                        .text_color(c(THEME.text2))
+                        .child(format!("{bar}"))
+                        .into_any_element(),
+                );
+            }
+            bar += 1;
+        }
+        // tempo labels at each tempo point, and the lane's line (steps and ramps)
+        let points: Vec<(f32, f64, bool)> = map
+            .points()
+            .iter()
+            .map(|p| (v.x(p.tick as f64), p.bpm.to_f64(), matches!(p.shape, lm_time::TempoShape::Linear)))
+            .collect();
+        for (x, bpm, ramp) in &points {
+            if (-60.0..2400.0).contains(x) {
+                overlays.push(
+                    div()
+                        .absolute()
+                        .top(px(view::RULER_H + TEMPO_H - 13.0))
+                        .left(px(x + 3.0))
+                        .text_size(px(9.))
+                        .text_color(c(THEME.text3))
+                        .child(format!("{bpm:.0}{}", if *ramp { " ↗" } else { "" }))
+                        .into_any_element(),
+                );
+            }
+        }
+        let tempo_pts: Vec<(f32, f32)> = {
+            let yv = |bpm: f64| 1.0 - ((bpm - 60.0) / 120.0).clamp(0.0, 1.0) as f32;
+            let mut pts = Vec::new();
+            for (k, (x, bpm, _)) in points.iter().enumerate() {
+                if k > 0 && !points[k - 1].2 {
+                    pts.push((*x, yv(points[k - 1].1)));
+                }
+                pts.push((*x, yv(*bpm)));
+            }
+            if let Some(last) = points.last() {
+                pts.push((4000.0, yv(last.1)));
+            }
+            pts
+        };
+        let bounds_cell = self.timeline_bounds.clone();
+        let tile_cache = self.tiles.clone();
+        let playing_x = v.x(cursor);
+        let loop_x = (v.x(song.loop_range.0 as f64), v.x(song.loop_range.1 as f64), song.loop_on);
+        let punch_x = (v.x(song.punch_range.0 as f64), v.x(song.punch_range.1 as f64), song.punch_on);
+        let xrun_xs: Vec<f32> = tele.xrun_marks.iter().map(|m| v.x(map.tick_at(*m) as f64)).collect();
+        div()
+            .id("timeline")
+            .debug_selector(|| "timeline".into())
+            .flex_1()
+            .h_full()
+            .relative()
+            .overflow_hidden()
+            .bg(c(THEME.bg1))
+            .on_scroll(cx.listener(Self::on_scroll))
+            .on_pinch(cx.listener(Self::on_pinch))
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_timeline_down))
+            .child(
+                canvas(
+                    move |b, _, _| {
+                        *bounds_cell.borrow_mut() = b;
+                    },
+                    move |b, _, window, _| {
+                        let o = b.origin;
+                        let w = b.size.width.as_f32();
+                        let full_h = b.size.height.as_f32();
+                        let at = |x: f32, y: f32| point(o.x + px(x), o.y + px(y));
+                        let mut cache = tile_cache.borrow_mut();
+                        for (a, z, on, col) in [
+                            (loop_x.0, loop_x.1, loop_x.2, THEME.loop_range),
+                            (punch_x.0, punch_x.1, punch_x.2, THEME.punch_range),
+                        ] {
+                            if on && z > 0.0 && a < w {
+                                window.paint_quad(fill(
+                                    Bounds::new(at(a.max(0.0), 0.0), size(px(z.min(w) - a.max(0.0)), px(full_h))),
+                                    gpui::rgba(col),
+                                ));
+                            }
+                        }
+                        for p in &paint {
+                            paint_one(window, &mut cache, p, o, w);
+                        }
+                        // the ruler and the tempo lane on top (they do not scroll vertically)
+                        window.paint_quad(fill(Bounds::new(o, size(b.size.width, px(view::RULER_H))), c(THEME.bg3)));
+                        window.paint_quad(fill(
+                            Bounds::new(at(0.0, view::RULER_H), size(b.size.width, px(TEMPO_H))),
+                            c(THEME.bg2),
+                        ));
+                        // loop and punch in the ruler's upper half (F-REG-006)
+                        for (a, z, on, col) in
+                            [(loop_x.0, loop_x.1, loop_x.2, THEME.green), (punch_x.0, punch_x.1, punch_x.2, THEME.red)]
+                        {
+                            if z > 0.0 && a < w {
+                                let mut cc = c(col);
+                                cc.a = if on { 0.9 } else { 0.25 };
+                                window.paint_quad(fill(
+                                    Bounds::new(at(a.max(0.0), 1.0), size(px(z.min(w) - a.max(0.0)), px(5.0))),
+                                    cc,
+                                ));
+                            }
+                        }
+                        for x in &ticks_lines {
+                            window.paint_quad(fill(
+                                Bounds::new(at(*x, 8.0), size(px(1.0), px(view::RULER_H - 8.0))),
+                                c(THEME.text3),
+                            ));
+                        }
+                        let mut pb = PathBuilder::stroke(px(1.5));
+                        for (k, (x, yv)) in tempo_pts.iter().enumerate() {
+                            let pt = at(*x, view::RULER_H + 4.0 + yv * (TEMPO_H - 8.0));
+                            if k == 0 { pb.move_to(pt) } else { pb.line_to(pt) }
+                        }
+                        if let Ok(path) = pb.build() {
+                            window.paint_path(path, c(THEME.orange));
+                        }
+                        // the xruns, as red marks (F-CLP-063)
+                        for x in &xrun_xs {
+                            if (0.0..w).contains(x) {
+                                window.paint_quad(fill(
+                                    Bounds::new(at(*x, 0.0), size(px(2.0), b.size.height)),
+                                    gpui::rgba(THEME.punch_range),
+                                ));
+                                window.paint_quad(fill(
+                                    Bounds::new(at(*x - 2.0, 0.0), size(px(6.0), px(6.0))),
+                                    c(THEME.red),
+                                ));
+                            }
+                        }
+                        // the play cursor, interpolated between telemetry frames
+                        if playing_x >= 0.0 && playing_x < w {
+                            window.paint_quad(fill(
+                                Bounds::new(at(playing_x, 0.0), size(px(1.0), b.size.height)),
+                                c(THEME.cursor),
+                            ));
+                        }
+                    },
+                )
+                .size_full(),
+            )
+            .child(
+                // the ruler's hit area: a click moves the cursor
+                div()
+                    .id("ruler")
+                    .debug_selector(|| "ruler".into())
+                    .absolute()
+                    .top(px(0.))
+                    .left(px(0.))
+                    .w_full()
+                    .h(px(view::RULER_H))
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|p, ev: &MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            p.on_ruler(ev, cx)
+                        }),
+                    ),
+            )
+            .children(overlays)
+            .into_any_element()
+    }
+}
+
+fn paint_one(window: &mut Window, cache: &mut TileCache, p: &Paint, o: gpui::Point<Pixels>, w: f32) {
+    let at = |x: f32, y: f32| point(o.x + px(x), o.y + px(y));
+    match p {
+        Paint::Lane { y, h } => {
+            window.paint_quad(fill(Bounds::new(at(0.0, y + h - 1.0), size(px(w), px(1.0))), c(THEME.line)));
+        }
+        Paint::Boundary { y, h, x, fade_px } => {
+            let mut pb = PathBuilder::stroke(px(1.5));
+            pb.move_to(at(x - fade_px, y + 4.0));
+            pb.line_to(at(x + fade_px, y + h - 4.0));
+            pb.move_to(at(x - fade_px, y + h - 4.0));
+            pb.line_to(at(x + fade_px, y + 4.0));
+            if let Ok(path) = pb.build() {
+                window.paint_path(path, c(THEME.yellow));
+            }
+        }
+        Paint::Overlap { y, h, x, w: ow } => {
+            let mut pb = PathBuilder::stroke(px(1.5));
+            pb.move_to(at(*x, y + 3.0));
+            pb.line_to(at(x + ow, y + h - 3.0));
+            pb.move_to(at(*x, y + h - 3.0));
+            pb.line_to(at(x + ow, y + 3.0));
+            if let Ok(path) = pb.build() {
+                window.paint_path(path, c(THEME.cyan));
+            }
+        }
+        Paint::Curve { y, h, pts } => {
+            let mut pb = PathBuilder::stroke(px(1.5));
+            for (k, (x, yv)) in pts.iter().enumerate() {
+                let pt = at(*x, y + 4.0 + yv * (h - 8.0));
+                if k == 0 { pb.move_to(pt) } else { pb.line_to(pt) }
+            }
+            if let Ok(path) = pb.build() {
+                window.paint_path(path, c(THEME.blue));
+            }
+            for (x, yv) in pts {
+                if (0.0..w).contains(x) {
+                    window.paint_quad(fill(
+                        Bounds::new(at(x - 2.5, y + 4.0 + yv * (h - 8.0) - 2.5), size(px(5.0), px(5.0))),
+                        c(THEME.blue),
+                    ));
+                }
+            }
+        }
+        Paint::Edges { y, h, x, w: iw, fade_in, fade_out, gain, selected } => {
+            let (iy, ih) = (y + 3.0, h - 6.0);
+            // fades: a shaded corner triangle each; the handles are in the top 7 px
+            for (fx, fw, left) in [(*x, *fade_in, true), (x + iw - fade_out, *fade_out, false)] {
+                if fw > 0.5 {
+                    let mut pb = PathBuilder::fill();
+                    pb.move_to(at(fx, iy));
+                    pb.line_to(at(fx + fw, iy));
+                    pb.line_to(if left { at(fx, iy + ih) } else { at(fx + fw, iy + ih) });
+                    pb.close();
+                    if let Ok(path) = pb.build() {
+                        window.paint_path(path, gpui::rgba(THEME.scrim));
+                    }
+                }
+            }
+            // the gain: a line, lower when quieter (unity at the top)
+            if *gain < 0.999 {
+                let db = view::gain_to_db(*gain).max(-60.0);
+                let gy = iy + ((-db / 60.0) as f32).min(1.0) * ih;
+                window.paint_quad(fill(
+                    Bounds::new(at(x.max(0.0), gy), size(px(((x + iw).min(w) - x.max(0.0)).max(0.0)), px(1.0))),
+                    c(THEME.yellow),
+                ));
+            }
+            if *selected {
+                window.paint_quad(gpui::outline(
+                    Bounds::new(at(x.max(0.0), iy), size(px(((x + iw).min(w) - x.max(0.0)).max(0.0)), px(ih))),
+                    c(THEME.cursor),
+                    gpui::BorderStyle::Solid,
+                ));
+            }
+        }
+        Paint::Item { y, h, x, w: iw, color, body } => {
+            let x0 = x.max(0.0);
+            let x1 = (x + iw).min(w);
+            if x1 <= x0 {
+                return;
+            }
+            let (iy, ih) = (y + 3.0, h - 6.0);
+            let mut bg = c(*color);
+            bg.a = 0.18;
+            window.paint_quad(gpui::quad(
+                Bounds::new(at(x0, iy), size(px(x1 - x0), px(ih))),
+                px(3.0),
+                bg,
+                px(1.0),
+                c(*color),
+                Default::default(),
+            ));
+            let clip_of =
+                |a: f32, z: f32| Bounds::new(at(a.max(x0), iy), size(px((z.min(x1) - a.max(x0)).max(0.0)), px(ih)));
+            let top = if ih >= 40.0 { 12.0 } else { 0.0 };
+            match body {
+                Body::Wave(parts) => {
+                    for (res, ox, spp, a, z) in parts {
+                        let clip = clip_of(*a, *z);
+                        if clip.size.width > px(0.0) {
+                            paint_wave(
+                                window,
+                                cache,
+                                res,
+                                *color,
+                                *spp,
+                                o.x + px(*ox),
+                                clip,
+                                o.y + px(iy + top),
+                                px(ih - top),
+                            );
+                        }
+                    }
+                }
+                Body::Notes(notes) => {
+                    for (nx, nw, key, vel) in notes {
+                        if *nx + *nw < x0 || *nx > x1 {
+                            continue;
+                        }
+                        let ny = iy + top + (1.0 - key.clamp(0.0, 1.0)) * (ih - top - 4.0);
+                        let mut col = c(*color);
+                        col.a = 0.5 + 0.5 * vel;
+                        window.paint_quad(fill(
+                            Bounds::new(at(nx.max(x0), ny), size(px((nx + nw).min(x1) - nx.max(x0)), px(3.0))),
+                            col,
+                        ));
+                    }
+                }
+                Body::Dim(res, ox, spp, used) => {
+                    paint_wave(
+                        window,
+                        cache,
+                        res,
+                        THEME.text3,
+                        *spp,
+                        o.x + px(*ox),
+                        clip_of(x0, x1),
+                        o.y + px(iy),
+                        px(ih),
+                    );
+                    for (a, z) in used {
+                        let cl = clip_of(*a, *z);
+                        if cl.size.width > px(0.0) {
+                            paint_wave(window, cache, res, *color, *spp, o.x + px(*ox), cl, o.y + px(iy), px(ih));
+                            window.paint_quad(gpui::outline(cl, c(THEME.green), gpui::BorderStyle::Solid));
+                        }
+                    }
+                }
+                Body::Empty => {}
+            }
+        }
+    }
+}

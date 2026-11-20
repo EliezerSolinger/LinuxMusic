@@ -243,3 +243,19 @@ fn right_count(p: &FakePort, track: NodeId) -> usize {
     // after two undos the MIDI split stays (it was the first step): its right part's notes
     p.find(track).unwrap().get("items").unwrap().at(1).unwrap().get("notes").unwrap().len()
 }
+
+#[test]
+fn creating_channels_for_the_outputs_is_one_step() {
+    let mut p = small();
+    let drums = track(&p, 1);
+    let outs = p.find(drums).unwrap().get("outputs").unwrap().len();
+    let before = p.root().get("mixer").unwrap().get("channels").unwrap().len();
+    let r = p.run_action(
+        ActionId::from("mixer.create_channels_for_outputs"),
+        Value::object([("track", Value::text(drums.to_string()))]),
+    );
+    assert!(r.ok().is_some());
+    assert_eq!(p.root().get("mixer").unwrap().get("channels").unwrap().len(), before + 1 + outs);
+    assert!(p.undo().ok().is_some());
+    assert_eq!(p.root().get("mixer").unwrap().get("channels").unwrap().len(), before);
+}

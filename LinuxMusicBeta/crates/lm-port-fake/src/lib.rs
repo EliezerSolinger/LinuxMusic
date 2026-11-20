@@ -650,6 +650,55 @@ impl FakePort {
             .map(|_| ())
     }
 
+    /// "Create channels for the outputs" (I-3.9, F-MIX-012): a group channel, one channel per output of the track
+    /// sending to it, each output routed to its channel; one transaction
+    fn create_channels_for_outputs(&mut self, params: &Value) -> Result<()> {
+        let track = params
+            .get("track")
+            .and_then(Value::as_text)
+            .and_then(|t| NodeId::parse(t).ok())
+            .ok_or_else(|| err("port.params"))?;
+        let t = self.doc.find(track).ok_or_else(|| err("port.no_such_node"))?;
+        let name = t.get("name").and_then(Value::as_text).unwrap_or("").to_string();
+        let outputs: Vec<(NodeId, String, i64)> = t
+            .get("outputs")
+            .map(|l| {
+                l.items()
+                    .filter_map(|o| {
+                        let id = NodeId::parse(o.get("id")?.as_text()?).ok()?;
+                        Some((id, o.get("port")?.as_text()?.to_string(), o.get("channels")?.as_int()?))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.doc
+            .transact(Label::new("Create channels for the outputs"), |e| {
+                let k = PathStep::key;
+                let n = e.root().get("mixer").and_then(|m| m.get("channels")).map_or(0, Value::len);
+                let group = e.insert(
+                    lm_state::ROOT,
+                    "mixer.channels",
+                    n,
+                    Value::object([("name", Value::text(format!("{name} (peças)")))]),
+                )?;
+                for (i, (out, port, channels)) in outputs.iter().enumerate() {
+                    let ch = e.insert(
+                        lm_state::ROOT,
+                        "mixer.channels",
+                        n + 1 + i,
+                        Value::object([
+                            ("name", Value::text(format!("{name} {port}"))),
+                            ("channels", Value::int(*channels)),
+                        ]),
+                    )?;
+                    e.set(ch, &[k("output")], Value::text(group.to_string()))?;
+                    e.set(*out, &[k("to")], Value::text(ch.to_string()))?;
+                }
+                Ok(())
+            })
+            .map(|_| ())
+    }
+
     /// Ctrl+D: a copy right after the item, on the next bar line (F-ARR-007)
     fn duplicate(&mut self, params: &Value) -> Result<()> {
         let item = Self::item_param(params)?;
@@ -849,6 +898,7 @@ impl CorePort for FakePort {
             // the arrangement's domain edits: copy and paste keep the lanes, the comp and the notes coherent
             "arrange.split" => self.split(&params),
             "arrange.duplicate" => self.duplicate(&params),
+            "mixer.create_channels_for_outputs" => self.create_channels_for_outputs(&params),
             "items.rerender" => {
                 self.start(
                     Label::new("Re-rendering the recorded items"),

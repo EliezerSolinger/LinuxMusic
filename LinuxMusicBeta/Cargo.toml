@@ -49,6 +49,14 @@ zbus = { version = "6", default-features = false, features = ["default-rt", "ser
 libm = "0.2"
 # Verification
 loom = "0.7"
+# The interface (lm-gui only; ci/check-core-no-gui.py keeps them out of the core). GPUI pinned exactly: gpui-pre is
+# a weekly snapshot of Zed's main (this one: zed@d2a4fb6), the version gpui-component 0.10 requires; the official
+# `gpui` crate on crates.io is a year old (docs/prototipo-interface.md, section 4)
+gpui = { package = "gpui-pre", version = "=0.3.12" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", features = ["font-kit"] }
+gpui-component = "=0.10.0"
+# The waveform tiles are RenderImages, built from image::Frame (the image crate GPUI uses)
+image = { version = "0.25", default-features = false }
 
 # Workspace crates
 lm-base = { path = "crates/lm-base" }
@@ -73,6 +81,7 @@ lm-io = { path = "crates/lm-io" }
 lm-compile = { path = "crates/lm-compile" }
 lm-port = { path = "crates/lm-port" }
 lm-port-fake = { path = "crates/lm-port-fake" }
+lm-gui = { path = "crates/lm-gui" }
 lm-session = { path = "crates/lm-session" }
 lm-remote = { path = "crates/lm-remote" }
 
