@@ -1,7 +1,7 @@
 //! The legacy program's Frequency Shifter (Lost Robot's): a frequency shifter and barber-pole phaser, with a delay
 //! in its feedback loop. Unlike the other effects it mixes its own dry signal (its Mix knob, times the host's wet).
 
-use crate::math::{cosf, expf, f32c::PI, sinf};
+use crate::math::{cosf, expf, f32c::PI, hermite, sinf};
 use crate::oscillator::lerp;
 
 /// The Hilbert transform's order
@@ -143,17 +143,6 @@ impl HilbertIir {
         }
         [xr * self.direct + sum_r, xi * self.direct + sum_i]
     }
-}
-
-/// 4-point Hermite interpolation between @p x1 and @p x2 (the legacy `hermiteInterpolate`)
-#[inline]
-pub fn hermite(x0: f32, x1: f32, x2: f32, x3: f32, frac: f32) -> f32 {
-    let frsq = frac * frac;
-    let frsq2 = 2.0 * frsq;
-    ((x2 - x0) * 0.5) * (frac * (frsq + 1.0) - frsq2)
-        + (frsq2 * frac - 3.0 * frsq) * (x1 - x2)
-        + frsq2 * (frac - 1.0) * ((x3 - x1) * 0.25)
-        + x1
 }
 
 /// Where the shifter's input comes from and where its output goes

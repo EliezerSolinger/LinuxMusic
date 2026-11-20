@@ -5220,6 +5220,104 @@
         "Attack Low": 5.0,
         "Release High": 40.0
       }
+    },
+    {
+      "name": "granular-fifth",
+      "unit": "plugin-effect",
+      "plugin": "granularpitchshifter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Spray": 0.0,
+        "Pitch": 7.0,
+        "Grain Size": 25.0,
+        "Shape": 1.4,
+        "Fade Length": 0.6
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Pitch": -5.0,
+          "Pitch Stereo Spread": 3.0
+        }
+      }
+    },
+    {
+      "name": "granular-dense-feedback",
+      "unit": "plugin-effect",
+      "plugin": "granularpitchshifter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Spray": 0.0,
+        "Pitch": 12.0,
+        "Density": 4.0,
+        "Feedback": 0.5,
+        "Glide": 0.1,
+        "Prefilter": 0,
+        "Minimum Allowed Latency": 0.002
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Pitch": -12.0,
+          "Density": 2.5,
+          "Grain Size": 60.0
+        }
+      }
+    },
+    {
+      "name": "granular-range",
+      "unit": "plugin-effect",
+      "plugin": "granularpitchshifter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Spray": 0.0,
+        "Ring Buffer Length": 2,
+        "Pitch": 20.0,
+        "Glide": 0.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Pitch": 30.0,
+          "Shape": 1.0
+        }
+      }
     }
   ]
 }

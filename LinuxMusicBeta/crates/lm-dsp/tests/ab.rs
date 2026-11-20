@@ -399,6 +399,54 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "plugin-effect" && case["plugin"] == "granularpitchshifter" {
+        use lm_dsp::granular_pitch_shifter::*;
+        use lm_dsp::small_effects::Ramp;
+        let first = &case["settings"];
+        let then = &case["then"]["settings"];
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        let block = block as usize;
+        let value = |key: &str, default: f32, start: usize| {
+            let before = f(first, key, default);
+            if start < at { before } else { f(then, key, before) }
+        };
+        // (the pitch knobs are sample-exact: the legacy value buffer ramps in the period they change, the first one
+        // from the default)
+        let ramp = |key: &str, default: f32, start: usize| {
+            if start == 0 {
+                Ramp { from: default, to: value(key, default, 0) }
+            } else if start == at {
+                Ramp { from: value(key, default, 0), to: value(key, default, start) }
+            } else {
+                Ramp::constant(value(key, default, start))
+            }
+        };
+        let d = GranularSettings::default();
+        // As the legacy plugin starts: the shortest ring, the default pitch (the case's range follows a period late)
+        let mut shifter = GranularPitchShifter::new(case["rate"].as_f64().unwrap() as f32, 0, 1.0, 0.0, 0);
+        for start in (0..frames as usize).step_by(block) {
+            let span = &mut out[start..(start + block).min(frames as usize)];
+            let settings = GranularSettings {
+                pitch: ramp("Pitch", 1.0, start),
+                pitch_spread: ramp("Pitch Stereo Spread", 0.0, start),
+                size: value("Grain Size", d.size, start),
+                spray: value("Spray", d.spray, start),
+                jitter: value("Jitter", d.jitter, start),
+                twitch: value("Twitch", d.twitch, start),
+                spray_spread: value("Spray Stereo", d.spray_spread, start),
+                shape: value("Shape", d.shape, start),
+                fade_length: value("Fade Length", d.fade_length, start),
+                feedback: value("Feedback", d.feedback, start),
+                min_latency: value("Minimum Allowed Latency", d.min_latency, start),
+                prefilter: value("Prefilter", 1.0, start) != 0.0,
+                density: value("Density", d.density, start),
+                glide: value("Glide", d.glide, start),
+                range: value("Ring Buffer Length", 0.0, start) as usize,
+            };
+            shifter.process(span, &settings);
+        }
+        return out;
+    }
     if case["unit"] == "plugin-effect" && case["plugin"] == "lomm" {
         use lm_dsp::lomm::*;
         let first = &case["settings"];

@@ -56,6 +56,10 @@ pub fn exp(x: f64) -> f64 {
     libm::exp(x)
 }
 #[inline]
+pub fn exp2(x: f64) -> f64 {
+    libm::exp2(x)
+}
+#[inline]
 pub fn log(x: f64) -> f64 {
     libm::log(x)
 }
@@ -170,6 +174,17 @@ impl core::ops::Div for Complex {
         let d = o.re * o.re + o.im * o.im;
         Complex::new((self.re * o.re + self.im * o.im) / d, (self.im * o.re - self.re * o.im) / d)
     }
+}
+
+/// 4-point Hermite interpolation between @p x1 and @p x2 (the legacy `hermiteInterpolate`)
+#[inline]
+pub fn hermite(x0: f32, x1: f32, x2: f32, x3: f32, frac: f32) -> f32 {
+    let frsq = frac * frac;
+    let frsq2 = 2.0 * frsq;
+    ((x2 - x0) * 0.5) * (frac * (frsq + 1.0) - frsq2)
+        + (frsq2 * frac - 3.0 * frsq) * (x1 - x2)
+        + frsq2 * (frac - 1.0) * ((x3 - x1) * 0.25)
+        + x1
 }
 
 #[cfg(test)]
