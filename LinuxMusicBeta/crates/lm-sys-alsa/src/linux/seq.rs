@@ -1,13 +1,15 @@
-//! The ALSA sequencer: MIDI ports, their connections, and the input reader of the MIDI thread.
+//! The ALSA sequencer: MIDI ports, their connections, and the client of the MIDI thread.
 //!
 //! Two kinds of client:
-//! - [`Seq`]: a plain client for the control work (list ports, connect and disconnect, send messages). Runs on a
-//!   worker or on a MIDI output thread.
-//! - [`MidiInput`]: the reading client, owned by the dedicated MIDI thread (I-10.2). Its input port stamps every event
-//!   it receives with the time of its own queue, running on real time; the reader turns that time into
-//!   `CLOCK_MONOTONIC` host time with an offset measured at the start and again every second (C6). If the queue cannot
-//!   be made, events are stamped when the reader takes them, and [`MidiInput::stamps_on_arrival`] says so (more
-//!   jitter). The reader blocks in `poll` and is woken to stop by its [`MidiStopper`], never killed.
+//! - [`Seq`]: a plain client for the control work (list ports, connect and disconnect, send at once).
+//! - [`MidiClient`]: the program's client (I-21.1), owned by the one MIDI thread, which reads and sends. Its input
+//!   ports stamp every event with the time of its own queue, running on real time; its output is scheduled on that
+//!   same queue (`send_at`, `send_sysex_at`), so the message leaves at its exact time. One offset, measured at the
+//!   start and again every second, converts between the queue's time and `CLOCK_MONOTONIC` host time both ways (C6).
+//!   If the queue cannot be made, input is stamped on arrival and output leaves at once, and
+//!   [`MidiClient::stamps_on_arrival`] says so (more jitter). The thread blocks in `poll`; its [`MidiWaker`] wakes it
+//!   to send, its [`MidiStopper`] to leave; it is never killed.
+//! - [`MidiInput`]: the input-only reader of the first version, a thin layer over [`MidiClient`].
 //!
 //! Connections can be made by any client (the control `Seq` connects a keyboard to the `MidiInput`'s port): the port
 //! stamps whatever reaches it, whoever made the connection.
@@ -347,7 +349,46 @@ pub struct MidiInputEvent {
     pub message: MidiMessage,
 }
 
-/// What the reader hands over
+/// One complete SysEx message received (`F0 ... F7`, reassembled when the sender cut it in pieces)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SysexEvent<'a> {
+    pub port: Addr,
+    pub source: Addr,
+    /// The time of its first byte
+    pub time: HostTime,
+    pub stamp: Stamp,
+    /// `F0 ... F7`, at most [`SYSEX_MAX`] bytes. Valid only during the sink call: copy what you keep
+    pub data: &'a [u8],
+}
+
+/// The largest SysEx message the client sends or delivers (I-21.1). Longer incoming ones are counted in
+/// [`InputStats::sysex_dropped`]
+pub const SYSEX_MAX: usize = 4096;
+
+/// What changed in the sequencer's graph (the system's announcements). The ALSA numbers only: the stable identity
+/// (client and port names) comes from [`Seq::ports`], and after an exit the names are already gone, so keep a map
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PortChange {
+    ClientStart(u8),
+    ClientExit(u8),
+    ClientChange(u8),
+    PortStart(Addr),
+    PortExit(Addr),
+    PortChange(Addr),
+    Subscribed { sender: Addr, dest: Addr },
+    Unsubscribed { sender: Addr, dest: Addr },
+}
+
+/// What [`MidiClient::read`] hands over
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SeqEvent<'a> {
+    Midi(MidiInputEvent),
+    Sysex(SysexEvent<'a>),
+    /// Only when the client watches ports
+    PortsChanged(PortChange),
+}
+
+/// What [`MidiInput::read`] hands over (the input-only reader; [`MidiClient`] is the full one)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SeqInput {
     Midi(MidiInputEvent),
@@ -355,34 +396,43 @@ pub enum SeqInput {
     PortsChanged,
 }
 
-/// Why [`MidiInput::read`] returned
+/// Why a read returned
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReadOutcome {
-    /// This many items went to the sink
+    /// This many events went to the sink
     Delivered(usize),
+    /// The [`MidiWaker`] was used: the thread has output to send (only [`MidiClient`])
+    Woken,
     /// The stopper was used: the thread should leave
     Stopped,
     TimedOut,
 }
 
-/// Counters of what the reader could not deliver (losses are counted and reported, never silent: Parte 2, rule 4)
+/// Counters of what the client could not deliver or schedule (losses are counted and reported, never silent:
+/// Parte 2, rule 4)
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct InputStats {
     /// Times the kernel's input buffer overflowed (`ENOSPC`): events were lost
     pub overruns: u64,
-    /// Events that are not short MIDI messages (sysex in F1, T14; queue events)
+    /// Events that are neither MIDI messages nor announcements (queue and echo events, and, for [`MidiInput`],
+    /// SysEx)
     pub dropped: u64,
+    /// SysEx messages longer than [`SYSEX_MAX`], or cut off by another message, not delivered
+    pub sysex_dropped: u64,
+    /// Messages sent at once instead of at their time, because there is no queue
+    pub unscheduled: u64,
 }
 
-struct StopSignal {
+struct Signal {
     stopped: AtomicBool,
+    woken: AtomicBool,
     waker: Waker,
 }
 
-/// Stops a [`MidiInput`] blocked in [`read`](MidiInput::read) on another thread: the read returns
-/// [`ReadOutcome::Stopped`], now and every time after. `Send + Sync + Clone`; real-time safe
+/// Stops a client blocked in `read` on another thread: the read returns [`ReadOutcome::Stopped`], now and every time
+/// after. `Send + Sync + Clone`; real-time safe (one `write` to an eventfd)
 #[derive(Clone)]
-pub struct MidiStopper(Arc<StopSignal>);
+pub struct MidiStopper(Arc<Signal>);
 
 impl fmt::Debug for MidiStopper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -393,6 +443,25 @@ impl fmt::Debug for MidiStopper {
 impl MidiStopper {
     pub fn stop(&self) {
         self.0.stopped.store(true, Ordering::Release);
+        self.0.waker.wake();
+    }
+}
+
+/// Wakes a [`MidiClient`] blocked in `read`, which returns [`ReadOutcome::Woken`] (once per wake, after delivering
+/// what had arrived): the audio side has pushed output into its ring. `Send + Sync + Clone`; real-time safe (one
+/// `write` to an eventfd, never blocks)
+#[derive(Clone)]
+pub struct MidiWaker(Arc<Signal>);
+
+impl fmt::Debug for MidiWaker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MidiWaker")
+    }
+}
+
+impl MidiWaker {
+    pub fn wake(&self) {
+        self.0.woken.store(true, Ordering::Release);
         self.0.waker.wake();
     }
 }
@@ -416,48 +485,72 @@ impl Drop for QueueStatusObj {
     }
 }
 
-/// The MIDI input of the program: a sequencer client with one input port, owned by the MIDI thread. `Send`, not
-/// `Sync`. Not real-time: it runs on its own thread and hands events to the engine through a ring (I-7.1)
-pub struct MidiInput {
-    seq: Seq,
-    port: Addr,
-    /// Our queue, or None when stamping on arrival
-    queue: Option<(c_int, QueueStatusObj, QueueClock)>,
-    fds: Vec<libc::pollfd>,
-    signal: Arc<StopSignal>,
-    stats: InputStats,
+struct Queue {
+    id: c_int,
+    status: QueueStatusObj,
+    clock: QueueClock,
 }
 
-// SAFETY: the queue status object is used only through &mut self, by the one thread that owns the MidiInput; the
-// Seq inside is Send for the same reason (one thread at a time). The StopSignal is Sync on its own
-unsafe impl Send for MidiInput {}
+/// A SysEx message being reassembled
+struct Assembly {
+    port: Addr,
+    source: Addr,
+    time: HostTime,
+    stamp: Stamp,
+    /// Longer than SYSEX_MAX: the rest is skipped until its F7
+    overflow: bool,
+}
 
-impl fmt::Debug for MidiInput {
+/// The program's sequencer client (I-21.1): one handle with its input and output ports, its real-time queue, and the
+/// reader. Input ports stamp every event with the queue's time; output is scheduled on the same queue, so input and
+/// output share one clock, converted to host time by one offset measured at the start and every second (C6).
+///
+/// Owned by the one MIDI thread, which both reads and sends (alsa-lib's sequencer handle is not thread-safe: every
+/// call takes `&mut self`, and the type is `Send`, not `Sync`). Other threads reach it only through its
+/// [`MidiStopper`] and [`MidiWaker`]. Nothing here is real-time: the audio side hands output over by a ring and wakes
+/// the thread.
+pub struct MidiClient {
+    seq: Seq,
+    queue: Option<Queue>,
+    fds: Vec<libc::pollfd>,
+    signal: Arc<Signal>,
+    stats: InputStats,
+    /// Preallocated to SYSEX_MAX: reassembly never allocates
+    sysex: Vec<u8>,
+    assembly: Option<Assembly>,
+    announce_port: Option<u8>,
+}
+
+// SAFETY: the queue status object is used only through &mut self, by the one thread that owns the client; the Seq
+// inside is Send for the same reason (one thread at a time). The Signal is Sync on its own
+unsafe impl Send for MidiClient {}
+
+impl fmt::Debug for MidiClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MidiInput")
-            .field("port", &self.port)
-            .field("queue", &self.queue.as_ref().map(|q| q.0))
+        f.debug_struct("MidiClient")
+            .field("client", &self.seq.client_id())
+            .field("queue", &self.queue.as_ref().map(|q| q.id))
             .field("stats", &self.stats)
             .finish()
     }
 }
 
-impl MidiInput {
-    /// Opens the client `client_name` with one input port `port_name`, any client can connect to. With
-    /// `watch_ports`, the system's announcements (ports and clients coming and going) arrive as
-    /// [`SeqInput::PortsChanged`]. Not real-time safe
-    pub fn open(client_name: &str, port_name: &str, watch_ports: bool) -> Result<MidiInput> {
+impl MidiClient {
+    /// Opens the client `client_name` with its queue (and no ports yet). With `watch_ports`, the system's
+    /// announcements arrive as [`SeqEvent::PortsChanged`] (through a hidden port of their own). Not real-time safe
+    pub fn open(client_name: &str, watch_ports: bool) -> Result<MidiClient> {
         let mut seq = Seq::open(client_name)?;
-        let queue = Self::make_queue(&mut seq);
-        let port = seq.create_port(
-            port_name,
-            ffi::SND_SEQ_PORT_CAP_WRITE | ffi::SND_SEQ_PORT_CAP_SUBS_WRITE,
-            queue.as_ref().map(|q| q.0),
-        )?;
-        if watch_ports {
+        let queue = make_queue(&mut seq);
+        let announce_port = if watch_ports {
+            let port =
+                seq.create_port("announcements", ffi::SND_SEQ_PORT_CAP_WRITE | ffi::SND_SEQ_PORT_CAP_NO_EXPORT, None)?;
             seq.connect(Addr::new(ffi::SND_SEQ_CLIENT_SYSTEM, ffi::SND_SEQ_PORT_SYSTEM_ANNOUNCE), port)?;
-        }
-        let signal = Arc::new(StopSignal { stopped: AtomicBool::new(false), waker: Waker::new()? });
+            Some(port.port)
+        } else {
+            None
+        };
+        let signal =
+            Arc::new(Signal { stopped: AtomicBool::new(false), woken: AtomicBool::new(false), waker: Waker::new()? });
         let raw = seq.raw();
         // SAFETY: our handle
         let count = unsafe { ffi::snd_seq_poll_descriptors_count(raw, libc::POLLIN as c_short) };
@@ -468,81 +561,45 @@ impl MidiInput {
             unsafe { ffi::snd_seq_poll_descriptors(raw, fds.as_mut_ptr(), count as c_uint, libc::POLLIN as c_short) };
         fds.truncate(check(got, "snd_seq_poll_descriptors", "", Phase::Open)? as usize);
         fds.push(signal.waker.pollfd());
-        let mut input = MidiInput { seq, port, queue, fds, signal, stats: InputStats::default() };
-        input.remeasure();
-        Ok(input)
-    }
-
-    /// A queue on real time, started; None when the sequencer will not make one (then: stamps on arrival)
-    fn make_queue(seq: &mut Seq) -> Option<(c_int, QueueStatusObj, QueueClock)> {
-        let raw = seq.raw();
-        // SAFETY: our handle; a queue made here is freed when the client closes
-        let q = unsafe { ffi::snd_seq_alloc_named_queue(raw, c"LinuxMusic MIDI input clock".as_ptr()) };
-        if q < 0 {
-            return None;
-        }
-        let mut status = ptr::null_mut();
-        // SAFETY: valid out pointer
-        if unsafe { ffi::snd_seq_queue_status_malloc(&mut status) } < 0 {
-            return None;
-        }
-        let status = QueueStatusObj(NonNull::new(status)?);
-        // SAFETY: our handle and our queue; a null event means "make one"
-        let started = unsafe {
-            ffi::snd_seq_control_queue(raw, q, ffi::SND_SEQ_EVENT_START, 0, ptr::null_mut()) >= 0
-                && ffi::snd_seq_drain_output(raw) >= 0
+        let mut client = MidiClient {
+            seq,
+            queue,
+            fds,
+            signal,
+            stats: InputStats::default(),
+            sysex: Vec::with_capacity(SYSEX_MAX),
+            assembly: None,
+            announce_port,
         };
-        if !started {
-            // SAFETY: our queue
-            unsafe { ffi::snd_seq_free_queue(raw, q) };
-            return None;
-        }
-        Some((q, status, QueueClock { offset: 0, measured: Instant::now() - REMEASURE * 2 }))
+        client.remeasure();
+        Ok(client)
     }
 
-    /// Measures the queue-to-host offset: the narrowest of three brackets around a queue status query
-    fn remeasure(&mut self) {
-        let raw = self.seq.raw();
-        let Some((q, status, clock)) = &mut self.queue else { return };
-        let mut best: Option<(u64, i128)> = None;
-        for _ in 0..3 {
-            let t0 = HostTime::now();
-            // SAFETY: our handle, queue and status object
-            let r = unsafe { ffi::snd_seq_get_queue_status(raw, *q, status.0.as_ptr()) };
-            let t1 = HostTime::now();
-            if r < 0 {
-                continue;
-            }
-            // SAFETY: the status was just filled; the pointer is into it
-            let rt = unsafe { *ffi::snd_seq_queue_status_get_real_time(status.0.as_ptr()) };
-            let queue_ns = i128::from(rt.tv_sec) * 1_000_000_000 + i128::from(rt.tv_nsec);
-            let width = t1.since(t0);
-            let mid = i128::from(t0.0) + i128::from(width / 2);
-            if best.is_none_or(|(w, _)| width < w) {
-                best = Some((width, mid - queue_ns));
-            }
-        }
-        if let Some((_, offset)) = best {
-            *clock = QueueClock { offset, measured: Instant::now() };
-        }
+    /// An input port anyone can connect to; every event reaching it is stamped with the queue's time
+    pub fn create_input_port(&mut self, name: &str) -> Result<Addr> {
+        let q = self.queue.as_ref().map(|q| q.id);
+        self.seq.create_port(name, ffi::SND_SEQ_PORT_CAP_WRITE | ffi::SND_SEQ_PORT_CAP_SUBS_WRITE, q)
     }
 
-    /// The input port's address (what others connect to)
-    pub fn addr(&self) -> Addr {
-        self.port
+    /// An output port anyone can connect to
+    pub fn create_output_port(&mut self, name: &str) -> Result<Addr> {
+        self.seq.create_output_port(name)
     }
 
-    /// The client, for connections made by this same thread (`connect` from a source to [`addr`](MidiInput::addr))
+    /// The client, for connections and port listings made from this same thread
     pub fn seq(&mut self) -> &mut Seq {
         &mut self.seq
     }
 
-    /// The stopper, for the thread that will stop this reader
     pub fn stopper(&self) -> MidiStopper {
         MidiStopper(self.signal.clone())
     }
 
-    /// True when events are stamped on arrival (no queue: more jitter, C6)
+    pub fn waker(&self) -> MidiWaker {
+        MidiWaker(self.signal.clone())
+    }
+
+    /// True when there is no queue: input is stamped on arrival and output leaves at once (more jitter, C6)
     pub fn stamps_on_arrival(&self) -> bool {
         self.queue.is_none()
     }
@@ -551,34 +608,68 @@ impl MidiInput {
         self.stats
     }
 
-    /// Hands every pending event to `sink`; if there is none, blocks until there is one, the stopper is used, or
-    /// `timeout` passes (`None`: forever). Returns as soon as at least one item was delivered. No allocation per
-    /// event. For the MIDI thread only (it blocks)
-    pub fn read(&mut self, timeout: Option<Duration>, sink: &mut dyn FnMut(SeqInput)) -> Result<ReadOutcome> {
+    /// Measures the queue-to-host offset: the narrowest of three brackets around a queue status query
+    fn remeasure(&mut self) {
+        let raw = self.seq.raw();
+        let Some(queue) = &mut self.queue else { return };
+        let mut best: Option<(u64, i128)> = None;
+        for _ in 0..3 {
+            let t0 = HostTime::now();
+            // SAFETY: our handle, queue and status object
+            let r = unsafe { ffi::snd_seq_get_queue_status(raw, queue.id, queue.status.0.as_ptr()) };
+            let t1 = HostTime::now();
+            if r < 0 {
+                continue;
+            }
+            // SAFETY: the status was just filled; the pointer is into it
+            let rt = unsafe { *ffi::snd_seq_queue_status_get_real_time(queue.status.0.as_ptr()) };
+            let queue_ns = i128::from(rt.tv_sec) * 1_000_000_000 + i128::from(rt.tv_nsec);
+            let width = t1.since(t0);
+            let mid = i128::from(t0.0) + i128::from(width / 2);
+            if best.is_none_or(|(w, _)| width < w) {
+                best = Some((width, mid - queue_ns));
+            }
+        }
+        if let Some((_, offset)) = best {
+            queue.clock = QueueClock { offset, measured: Instant::now() };
+        }
+    }
+
+    fn remeasure_if_old(&mut self) {
+        if self.queue.as_ref().is_some_and(|q| q.clock.measured.elapsed() >= REMEASURE) {
+            self.remeasure();
+        }
+    }
+
+    /// Hands every pending event to `sink`; if there is none, blocks until there is one, the waker or the stopper is
+    /// used, or `timeout` passes (`None`: forever). Returns as soon as at least one event was delivered. No allocation
+    /// per event. For the MIDI thread only (it blocks)
+    pub fn read(&mut self, timeout: Option<Duration>, sink: &mut dyn FnMut(SeqEvent<'_>)) -> Result<ReadOutcome> {
         let deadline = timeout.map(|t| Instant::now() + t);
         loop {
             if self.signal.stopped.load(Ordering::Acquire) {
                 return Ok(ReadOutcome::Stopped);
             }
-            if self.queue.as_ref().is_some_and(|q| q.2.measured.elapsed() >= REMEASURE) {
-                self.remeasure();
-            }
+            self.remeasure_if_old();
             let delivered = self.drain(sink)?;
             if delivered > 0 {
                 return Ok(ReadOutcome::Delivered(delivered));
             }
-            let ms = match deadline {
-                None => -1,
+            if self.signal.woken.swap(false, Ordering::AcqRel) {
+                return Ok(ReadOutcome::Woken);
+            }
+            let wait = match deadline {
+                None => REMEASURE,
                 Some(d) => {
                     let left = d.saturating_duration_since(Instant::now());
                     if left.is_zero() {
                         return Ok(ReadOutcome::TimedOut);
                     }
                     // Wake at least every REMEASURE, to keep the clock fresh
-                    i32::try_from(left.min(REMEASURE).as_millis().max(1)).unwrap_or(i32::MAX)
+                    left.min(REMEASURE)
                 }
             };
-            let ms = if ms < 0 { REMEASURE.as_millis() as i32 } else { ms };
+            let ms = i32::try_from(wait.as_millis().max(1)).unwrap_or(i32::MAX);
             for fd in &mut self.fds {
                 fd.revents = 0;
             }
@@ -598,12 +689,13 @@ impl MidiInput {
     }
 
     /// Reads every event already available, without blocking
-    fn drain(&mut self, sink: &mut dyn FnMut(SeqInput)) -> Result<usize> {
+    fn drain(&mut self, sink: &mut dyn FnMut(SeqEvent<'_>)) -> Result<usize> {
         let raw = self.seq.raw();
         let mut delivered = 0;
         loop {
             let mut ev: *mut ffi::snd_seq_event_t = ptr::null_mut();
-            // SAFETY: our handle; the event stays valid until the next input call, and is copied before it
+            // SAFETY: our handle; the event (and a variable-length payload) stays valid until the next input call,
+            // and is used before it
             let r = unsafe { ffi::snd_seq_event_input(raw, &mut ev) };
             if r == -errno::EAGAIN {
                 return Ok(delivered);
@@ -618,55 +710,350 @@ impl MidiInput {
             if ev.is_null() {
                 continue;
             }
-            // SAFETY: a valid event from snd_seq_event_input (see above)
-            let ev = unsafe { *ev };
-            if self.deliver(&ev, sink) {
+            // SAFETY: as above
+            let ev = unsafe { &*ev };
+            if self.deliver(ev, sink) {
                 delivered += 1;
             }
         }
     }
 
-    fn deliver(&mut self, ev: &ffi::snd_seq_event_t, sink: &mut dyn FnMut(SeqInput)) -> bool {
+    fn stamp(&self, ev: &ffi::snd_seq_event_t) -> (HostTime, Stamp) {
+        match &self.queue {
+            Some(q)
+                if ev.flags & ffi::SND_SEQ_TIME_STAMP_MASK == ffi::SND_SEQ_TIME_STAMP_REAL
+                    && c_int::from(ev.queue) == q.id =>
+            {
+                let queue_ns = i128::from(ev.time.tv_sec) * 1_000_000_000 + i128::from(ev.time.tv_nsec);
+                let host = (queue_ns + q.clock.offset).clamp(0, i128::from(u64::MAX)) as u64;
+                (HostTime(host), Stamp::Queue)
+            }
+            _ => (HostTime::now(), Stamp::Arrival),
+        }
+    }
+
+    fn deliver(&mut self, ev: &ffi::snd_seq_event_t, sink: &mut dyn FnMut(SeqEvent<'_>)) -> bool {
         use crate::midi::ev as t;
-        if matches!(
-            ev.type_,
-            t::CLIENT_START
-                | t::CLIENT_EXIT
-                | t::CLIENT_CHANGE
-                | t::PORT_START
-                | t::PORT_EXIT
-                | t::PORT_CHANGE
-                | t::PORT_SUBSCRIBED
-                | t::PORT_UNSUBSCRIBED
-        ) {
-            if ev.source.client == ffi::SND_SEQ_CLIENT_SYSTEM {
-                sink(SeqInput::PortsChanged);
+        let bytes = event_bytes(ev);
+        let addr = |b: &[u8]| Addr::new(b[0], b[1]);
+        let change = match ev.type_ {
+            t::CLIENT_START => Some(PortChange::ClientStart(bytes[0])),
+            t::CLIENT_EXIT => Some(PortChange::ClientExit(bytes[0])),
+            t::CLIENT_CHANGE => Some(PortChange::ClientChange(bytes[0])),
+            t::PORT_START => Some(PortChange::PortStart(addr(&bytes[0..2]))),
+            t::PORT_EXIT => Some(PortChange::PortExit(addr(&bytes[0..2]))),
+            t::PORT_CHANGE => Some(PortChange::PortChange(addr(&bytes[0..2]))),
+            t::PORT_SUBSCRIBED => Some(PortChange::Subscribed { sender: addr(&bytes[0..2]), dest: addr(&bytes[2..4]) }),
+            t::PORT_UNSUBSCRIBED => {
+                Some(PortChange::Unsubscribed { sender: addr(&bytes[0..2]), dest: addr(&bytes[2..4]) })
+            }
+            _ => None,
+        };
+        if let Some(change) = change {
+            if ev.source.client == ffi::SND_SEQ_CLIENT_SYSTEM && Some(ev.dest.port) == self.announce_port {
+                sink(SeqEvent::PortsChanged(change));
                 return true;
             }
             self.stats.dropped += 1;
             return false;
+        }
+        let port = Addr::new(ev.dest.client, ev.dest.port);
+        let source = Addr::new(ev.source.client, ev.source.port);
+        if ev.type_ == ffi::SND_SEQ_EVENT_SYSEX {
+            // SAFETY: a variable-length event: data.ext gives the payload's length and address, valid until the
+            // next input call
+            let chunk = unsafe { sysex_payload(ev) };
+            return self.sysex_chunk(ev, port, source, chunk, sink);
         }
         let messages = seq_to_midi(fields_from_event(ev));
         if messages.is_empty() {
             self.stats.dropped += 1;
             return false;
         }
-        let (time, stamp) = match &self.queue {
-            Some((q, _, clock))
-                if ev.flags & ffi::SND_SEQ_TIME_STAMP_MASK == ffi::SND_SEQ_TIME_STAMP_REAL
-                    && c_int::from(ev.queue) == *q =>
-            {
-                let queue_ns = i128::from(ev.time.tv_sec) * 1_000_000_000 + i128::from(ev.time.tv_nsec);
-                let host = (queue_ns + clock.offset).clamp(0, i128::from(u64::MAX)) as u64;
-                (HostTime(host), Stamp::Queue)
-            }
-            _ => (HostTime::now(), Stamp::Arrival),
-        };
-        let port = Addr::new(ev.dest.client, ev.dest.port);
-        let source = Addr::new(ev.source.client, ev.source.port);
+        let (time, stamp) = self.stamp(ev);
         for message in messages.iter() {
-            sink(SeqInput::Midi(MidiInputEvent { port, source, time, stamp, message }));
+            sink(SeqEvent::Midi(MidiInputEvent { port, source, time, stamp, message }));
         }
         true
+    }
+
+    /// One piece of a SysEx message: a hardware port's driver cuts long ones into pieces, the first starting with F0
+    /// and the last ending with F7
+    fn sysex_chunk(
+        &mut self,
+        ev: &ffi::snd_seq_event_t,
+        port: Addr,
+        source: Addr,
+        chunk: &[u8],
+        sink: &mut dyn FnMut(SeqEvent<'_>),
+    ) -> bool {
+        if chunk.first() == Some(&0xf0) {
+            if self.assembly.take().is_some() {
+                // The previous one never ended
+                self.stats.sysex_dropped += 1;
+            }
+            let (time, stamp) = self.stamp(ev);
+            self.sysex.clear();
+            self.assembly = Some(Assembly { port, source, time, stamp, overflow: false });
+        }
+        let Some(assembly) = &mut self.assembly else {
+            // A continuation without a start
+            self.stats.dropped += 1;
+            return false;
+        };
+        if assembly.source != source {
+            // Another sender's piece in the middle: the message in progress is lost
+            self.assembly = None;
+            self.stats.sysex_dropped += 1;
+            return false;
+        }
+        if !assembly.overflow {
+            if self.sysex.len() + chunk.len() > SYSEX_MAX {
+                assembly.overflow = true;
+            } else {
+                self.sysex.extend_from_slice(chunk);
+            }
+        }
+        if chunk.last() != Some(&0xf7) {
+            return false;
+        }
+        let Some(done) = self.assembly.take() else { return false };
+        if done.overflow {
+            self.stats.sysex_dropped += 1;
+            return false;
+        }
+        sink(SeqEvent::Sysex(SysexEvent {
+            port: done.port,
+            source: done.source,
+            time: done.time,
+            stamp: done.stamp,
+            data: &self.sysex,
+        }));
+        true
+    }
+
+    /// The queue time for host time `at` (never before the queue started)
+    fn queue_time(&self, q: &Queue, at: HostTime) -> ffi::snd_seq_real_time_t {
+        let ns = (i128::from(at.0) - q.clock.offset).max(0);
+        ffi::snd_seq_real_time_t {
+            tv_sec: (ns / 1_000_000_000).min(i128::from(u32::MAX)) as c_uint,
+            tv_nsec: (ns % 1_000_000_000) as c_uint,
+        }
+    }
+
+    /// Fills the routing and timing of an event: scheduled on our queue at `at`, or direct (now) when `at` is None or
+    /// there is no queue
+    fn address(&mut self, ev: &mut ffi::snd_seq_event_t, from: Addr, dest: Option<Addr>, at: Option<HostTime>) {
+        ev.source = ffi::snd_seq_addr_t { client: self.seq.client_id(), port: from.port };
+        ev.dest = match dest {
+            Some(d) => ffi::snd_seq_addr_t { client: d.client, port: d.port },
+            None => {
+                ffi::snd_seq_addr_t { client: ffi::SND_SEQ_ADDRESS_SUBSCRIBERS, port: ffi::SND_SEQ_ADDRESS_UNKNOWN }
+            }
+        };
+        let length = ev.flags & ffi::SND_SEQ_EVENT_LENGTH_MASK;
+        match (at, &self.queue) {
+            (Some(at), Some(q)) => {
+                ev.flags = ffi::SND_SEQ_TIME_STAMP_REAL | ffi::SND_SEQ_TIME_MODE_ABS | length;
+                ev.queue = q.id as u8;
+                ev.time = self.queue_time(q, at);
+            }
+            (at, _) => {
+                if at.is_some() {
+                    self.stats.unscheduled += 1;
+                }
+                ev.flags = ffi::SND_SEQ_TIME_STAMP_REAL | ffi::SND_SEQ_TIME_MODE_ABS | length;
+                ev.queue = ffi::SND_SEQ_QUEUE_DIRECT;
+            }
+        }
+    }
+
+    fn output(&mut self, ev: &mut ffi::snd_seq_event_t) -> Result<()> {
+        // SAFETY: our handle and a complete event (with its payload alive for a variable-length one)
+        let r = unsafe { ffi::snd_seq_event_output_direct(self.seq.raw(), ev) };
+        if r == -errno::EAGAIN || r == -errno::ENOMEM {
+            return Err(keyed("alsa.seq_output_full", "snd_seq_event_output_direct", r, ""));
+        }
+        check(r, "snd_seq_event_output_direct", "", Phase::Running).map(drop)
+    }
+
+    fn short_event(message: &MidiMessage) -> Result<ffi::snd_seq_event_t> {
+        let fields = midi_to_seq(message).ok_or_else(|| {
+            Error::new("alsa.invalid_argument")
+                .arg("argument", "message")
+                .arg("bytes", format!("{:02x?}", message.as_slice()))
+        })?;
+        Ok(event_from_fields(fields))
+    }
+
+    /// Schedules `message` from our port `from` to `dest` (every subscriber of `from` when `None`) at host time `at`,
+    /// on the queue: it leaves at that exact time, not when this call runs. A time already past leaves at once.
+    /// Never blocks: a full kernel pool is `alsa.seq_output_full`. Without a queue the message leaves at once and is
+    /// counted in [`InputStats::unscheduled`]
+    pub fn send_at(&mut self, from: Addr, dest: Option<Addr>, message: &MidiMessage, at: HostTime) -> Result<()> {
+        self.remeasure_if_old();
+        let mut ev = Self::short_event(message)?;
+        self.address(&mut ev, from, dest, Some(at));
+        self.output(&mut ev)
+    }
+
+    /// Sends `message` at once (not queued)
+    pub fn send_now(&mut self, from: Addr, dest: Option<Addr>, message: &MidiMessage) -> Result<()> {
+        let mut ev = Self::short_event(message)?;
+        self.address(&mut ev, from, dest, None);
+        self.output(&mut ev)
+    }
+
+    /// Schedules a whole SysEx message (`F0 ... F7`, at most [`SYSEX_MAX`] bytes) like [`send_at`](Self::send_at).
+    /// `alsa.invalid_argument` for anything else
+    pub fn send_sysex_at(&mut self, from: Addr, dest: Option<Addr>, data: &[u8], at: HostTime) -> Result<()> {
+        if data.len() < 2 || data.len() > SYSEX_MAX || data[0] != 0xf0 || data[data.len() - 1] != 0xf7 {
+            return Err(Error::new("alsa.invalid_argument").arg("argument", "sysex").arg("len", data.len() as i64));
+        }
+        self.remeasure_if_old();
+        let mut ev = ffi::snd_seq_event_t { type_: ffi::SND_SEQ_EVENT_SYSEX, ..Default::default() };
+        ev.flags = ffi::SND_SEQ_EVENT_LENGTH_VARIABLE;
+        set_sysex_payload(&mut ev, data);
+        self.address(&mut ev, from, dest, Some(at));
+        // The kernel copies the payload during the call: `data` only has to live until it returns
+        self.output(&mut ev)
+    }
+}
+
+/// The 12-byte image of an event's data union
+fn event_bytes(ev: &ffi::snd_seq_event_t) -> [u8; 12] {
+    let mut b = [0u8; 12];
+    for (i, w) in ev.data.iter().enumerate() {
+        b[i * 4..i * 4 + 4].copy_from_slice(&w.to_ne_bytes());
+    }
+    b
+}
+
+/// The payload of a variable-length event (`data.ext`: a 4-byte length, then a pointer, packed).
+///
+/// # Safety
+/// `ev` must be a variable-length event whose payload is still valid (until the next input call)
+unsafe fn sysex_payload(ev: &ffi::snd_seq_event_t) -> &[u8] {
+    let b = event_bytes(ev);
+    let len = u32::from_ne_bytes([b[0], b[1], b[2], b[3]]) as usize;
+    let mut p = [0u8; size_of::<usize>()];
+    p.copy_from_slice(&b[4..4 + size_of::<usize>()]);
+    let ptr = usize::from_ne_bytes(p) as *const u8;
+    if ptr.is_null() || len == 0 {
+        return &[];
+    }
+    // SAFETY: the caller's contract; alsa-lib points ext.ptr at `len` bytes after the event in its input buffer
+    unsafe { std::slice::from_raw_parts(ptr, len) }
+}
+
+fn set_sysex_payload(ev: &mut ffi::snd_seq_event_t, data: &[u8]) {
+    let mut b = [0u8; 12];
+    b[0..4].copy_from_slice(&(data.len() as u32).to_ne_bytes());
+    b[4..4 + size_of::<usize>()].copy_from_slice(&(data.as_ptr() as usize).to_ne_bytes());
+    for (i, w) in ev.data.iter_mut().enumerate() {
+        *w = u32::from_ne_bytes([b[i * 4], b[i * 4 + 1], b[i * 4 + 2], b[i * 4 + 3]]);
+    }
+}
+
+/// The queue's tick rate. The sequencer dispatches scheduled events on its ticks, 1 kHz by default, which made output
+/// up to 1 ms late (measured on the ThinkPad). At 4 kHz an event leaves within 250 us of its time; the cost is 4000
+/// high-resolution timer wake-ups a second while the client is open, a few microseconds of kernel work each
+pub const QUEUE_TICK_HZ: u32 = 4000;
+
+/// Asks for [`QUEUE_TICK_HZ`] on the queue's timer, before the queue starts. A kernel that refuses keeps its default
+/// (the output is then coarser, never wrong)
+fn set_queue_tick(raw: *mut ffi::snd_seq_t, q: c_int) {
+    let mut timer = ptr::null_mut();
+    // SAFETY: valid out pointer; the object is freed below
+    if unsafe { ffi::snd_seq_queue_timer_malloc(&mut timer) } < 0 || timer.is_null() {
+        return;
+    }
+    // SAFETY: our handle, our stopped queue and the live timer object
+    unsafe {
+        if ffi::snd_seq_get_queue_timer(raw, q, timer) >= 0 {
+            ffi::snd_seq_queue_timer_set_resolution(timer, QUEUE_TICK_HZ);
+            ffi::snd_seq_set_queue_timer(raw, q, timer);
+        }
+        ffi::snd_seq_queue_timer_free(timer);
+    }
+}
+
+/// A queue on real time, started; None when the sequencer will not make one (then: stamps on arrival)
+fn make_queue(seq: &mut Seq) -> Option<Queue> {
+    let raw = seq.raw();
+    // SAFETY: our handle; a queue made here is freed when the client closes
+    let q = unsafe { ffi::snd_seq_alloc_named_queue(raw, c"LinuxMusic MIDI clock".as_ptr()) };
+    if q < 0 {
+        return None;
+    }
+    let mut status = ptr::null_mut();
+    // SAFETY: valid out pointer
+    if unsafe { ffi::snd_seq_queue_status_malloc(&mut status) } < 0 {
+        return None;
+    }
+    let status = QueueStatusObj(NonNull::new(status)?);
+    set_queue_tick(raw, q);
+    // SAFETY: our handle and our queue; a null event means "make one"
+    let started = unsafe {
+        ffi::snd_seq_control_queue(raw, q, ffi::SND_SEQ_EVENT_START, 0, ptr::null_mut()) >= 0
+            && ffi::snd_seq_drain_output(raw) >= 0
+    };
+    if !started {
+        // SAFETY: our queue
+        unsafe { ffi::snd_seq_free_queue(raw, q) };
+        return None;
+    }
+    Some(Queue { id: q, status, clock: QueueClock { offset: 0, measured: Instant::now() - REMEASURE * 2 } })
+}
+
+/// The input-only reader of the first F1 version: a [`MidiClient`] with one input port, delivering short messages
+/// and announcements ([`SeqInput`]). SysEx is counted in `dropped`. New code uses [`MidiClient`]
+#[derive(Debug)]
+pub struct MidiInput {
+    client: MidiClient,
+    port: Addr,
+}
+
+impl MidiInput {
+    /// Opens the client `client_name` with one input port `port_name`, any client can connect to. With
+    /// `watch_ports`, the system's announcements arrive as [`SeqInput::PortsChanged`]. Not real-time safe
+    pub fn open(client_name: &str, port_name: &str, watch_ports: bool) -> Result<MidiInput> {
+        let mut client = MidiClient::open(client_name, watch_ports)?;
+        let port = client.create_input_port(port_name)?;
+        Ok(MidiInput { client, port })
+    }
+
+    /// The input port's address (what others connect to)
+    pub fn addr(&self) -> Addr {
+        self.port
+    }
+
+    /// The client, for connections made by this same thread
+    pub fn seq(&mut self) -> &mut Seq {
+        self.client.seq()
+    }
+
+    pub fn stopper(&self) -> MidiStopper {
+        self.client.stopper()
+    }
+
+    pub fn stamps_on_arrival(&self) -> bool {
+        self.client.stamps_on_arrival()
+    }
+
+    pub fn stats(&self) -> InputStats {
+        self.client.stats()
+    }
+
+    /// As [`MidiClient::read`], with the short messages and announcements only
+    pub fn read(&mut self, timeout: Option<Duration>, sink: &mut dyn FnMut(SeqInput)) -> Result<ReadOutcome> {
+        let mut sysex = 0;
+        let outcome = self.client.read(timeout, &mut |event| match event {
+            SeqEvent::Midi(e) => sink(SeqInput::Midi(e)),
+            SeqEvent::Sysex(_) => sysex += 1,
+            SeqEvent::PortsChanged(_) => sink(SeqInput::PortsChanged),
+        });
+        self.client.stats.dropped += sysex;
+        outcome
     }
 }

@@ -30,6 +30,7 @@ opaque!(
     snd_seq_port_info_t,
     snd_seq_port_subscribe_t,
     snd_seq_queue_status_t,
+    snd_seq_queue_timer_t,
 );
 
 pub type snd_pcm_uframes_t = c_ulong;
@@ -313,6 +314,11 @@ unsafe extern "C" {
     pub fn snd_seq_queue_status_free(obj: *mut snd_seq_queue_status_t);
     pub fn snd_seq_get_queue_status(handle: *mut snd_seq_t, q: c_int, status: *mut snd_seq_queue_status_t) -> c_int;
     pub fn snd_seq_queue_status_get_real_time(info: *const snd_seq_queue_status_t) -> *const snd_seq_real_time_t;
+    pub fn snd_seq_queue_timer_malloc(ptr: *mut *mut snd_seq_queue_timer_t) -> c_int;
+    pub fn snd_seq_queue_timer_free(obj: *mut snd_seq_queue_timer_t);
+    pub fn snd_seq_get_queue_timer(handle: *mut snd_seq_t, q: c_int, timer: *mut snd_seq_queue_timer_t) -> c_int;
+    pub fn snd_seq_set_queue_timer(handle: *mut snd_seq_t, q: c_int, timer: *mut snd_seq_queue_timer_t) -> c_int;
+    pub fn snd_seq_queue_timer_set_resolution(info: *mut snd_seq_queue_timer_t, resolution: c_uint);
     pub fn snd_seq_create_port(handle: *mut snd_seq_t, info: *mut snd_seq_port_info_t) -> c_int;
     pub fn snd_seq_delete_port(handle: *mut snd_seq_t, port: c_int) -> c_int;
 
@@ -385,6 +391,10 @@ pub const SND_SEQ_TIME_MODE_MASK: u8 = 1 << 1;
 pub const SND_SEQ_TIME_MODE_ABS: u8 = 0;
 pub const SND_SEQ_EVENT_LENGTH_MASK: u8 = 3 << 2;
 pub const SND_SEQ_EVENT_LENGTH_FIXED: u8 = 0;
+pub const SND_SEQ_EVENT_LENGTH_VARIABLE: u8 = 1 << 2;
+
+// event types used outside the short-message translation
+pub const SND_SEQ_EVENT_SYSEX: u8 = 130;
 
 // queue control event
 pub const SND_SEQ_EVENT_START: c_int = 30;
