@@ -1,0 +1,1252 @@
+//! The instrument functions every per-note instrument gets (the legacy `InstrumentTrack`, `NotePlayHandle`,
+//! `InstrumentSoundShaping`, `InstrumentFunctions` and `MonoMode`, rewritten as one processor around the plugin's
+//! voices): pitch and pitch bend (F-IJN-002), the envelopes and LFOs of the volume, the cutoff and the resonance with
+//! the filter (F-IJN-010, F-IJN-011), chords (F-IJN-013), mono, legato and glide (F-IJN-014), the arpeggio
+//! (F-IJN-015), the note's fade-in and the instrument's release, and the velocity as level (U28).
+//!
+//! A plugin implements [`Synth`] (its parameters and how one voice sounds) and builds an [`Instrument`] around it.
+//! The instrument functions' fields and parameters are added to its schema by [`add_instrument_functions`].
+//!
+//! # How a block is played
+//!
+//! The block is cut into pieces at every event, at every arpeggio step and gated end, and on a grid of
+//! [`GRID`] samples of the engine's frame count. Each piece starts with its events and steps; the LFOs move on by
+//! piece. The grid makes the pieces — and so the audio — the same for any block size that is a multiple of it
+//! (V3: 32, 64, 256, 1024...).
+//!
+//! # Notes
+//!
+//! A note from the host is a *base* note. It sounds as one or more *sounding* notes, each a voice of the pool
+//! (lm-render's [`VoicePool`], in `Poly`, with its stealing): its chord (when chords are on), the arpeggio's steps
+//! (when the arpeggio is on: the base note itself is silent, as the legacy master note), and, in mono and legato,
+//! only the last base note held sounds. Sounding notes get numbers of their own, above `0x8000_0000`.
+
+mod chords;
+mod schema;
+
+use std::any::Any;
+use std::fmt;
+use std::sync::Arc;
+
+use lm_base::{Error, Result};
+use lm_dsp::basic_filters::{BasicFilter, FilterType};
+use lm_dsp::envelope::{EnvelopeSettings, LfoShape};
+use lm_dsp::sound_shaping::{NotePosition, SoundShaping, SoundShapingSettings};
+use lm_render::{
+    Adopted, Event, EventKind, NoteId, Policy, ProcessContext, ProcessSpec, Processor, Rng, SampleData,
+    TransportInfo, Voice, VoiceNote, VoicePool,
+};
+use lm_state::ParamSpec;
+
+pub use chords::{CHORD_INTERVALS, CHORD_KEYS, chord, chord_index, is_scale};
+pub use schema::{
+    ARP_DIRECTIONS, ARP_MODES, FILTER_KEYS, LFO_SHAPE_FIELDS, LFO_SHAPE_KEYS, LFO_SYNC_FIELDS, LFO_WAVE_FIELDS,
+    SYNC_KEYS, TARGETS, VOICE_MODES, add_instrument_functions, instrument_fields, instrument_params, p, sync_beats,
+};
+
+use crate::resources::ResourceView;
+use crate::state::StateView;
+
+/// The pieces of a block fall on this grid of the engine's frame count (the same as lm-render's automation grid)
+pub const GRID: usize = 32;
+/// Base notes held at once (more are ignored, as the held stack of U27)
+pub const MAX_BASES: usize = 128;
+/// Sounding notes followed at once (chords, arpeggio steps)
+pub const MAX_SOUNDING: usize = 1024;
+/// The fade of a stolen voice, ms
+const STEAL_FADE_MS: f32 = 5.0;
+/// The first number of a sounding note
+const SOUNDING_IDS: u32 = 0x8000_0000;
+
+/// What a voice is started with
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NoteStart {
+    pub key: u8,
+    /// 0 to 1, linear (U28)
+    pub velocity: f32,
+    /// Hz, the pitch at the start (with pitch, bend and glide)
+    pub freq: f32,
+}
+
+/// A per-note instrument's own sound, around which [`Instrument`] does the rest
+pub trait Synth: Send + 'static {
+    /// One note's state (allocated in the build, for every voice of the pool)
+    type Voice: Send + 'static;
+    /// The synth's own parameters: indices `0..PARAMS` of the plugin's parameters; the instrument functions' follow
+    const PARAMS: usize;
+    /// Whether the velocity is the note's level (the instrument multiplies by it; [`crate::Velocity::Level`]).
+    /// `false`: the synth uses it itself ([`crate::Velocity::Timbre`] or [`crate::Velocity::Ignored`])
+    const VELOCITY_IS_LEVEL: bool = true;
+
+    /// A voice, in the build
+    fn voice(&self) -> Self::Voice;
+    /// A parameter changed (audio thread: no allocation)
+    fn set_param(&mut self, index: usize, value: f32);
+    /// A note starts on `voice`; `rng` is the node's (seed the voice's noise from it)
+    fn start(&self, voice: &mut Self::Voice, note: &NoteStart, rng: &mut Rng);
+    /// Writes the voice's next `left.len()` samples (both slices have that length), at `freq` Hz
+    fn render(&self, voice: &mut Self::Voice, freq: f32, left: &mut [f32], right: &mut [f32]);
+    /// The release the synth wants even without a volume envelope, ms (legacy `desiredReleaseTimeMs`)
+    fn release_ms(&self) -> f32 {
+        0.0
+    }
+    /// Takes over what the old synth keeps across notes (most keep nothing: their voices carry the sound)
+    fn adopt(&mut self, old: &mut Self) {
+        let _ = old;
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VoiceMode {
+    Poly,
+    Mono,
+    Legato,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArpDirection {
+    Up,
+    Down,
+    UpDown,
+    DownUp,
+    Random,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArpMode {
+    Free,
+    Sort,
+    Sync,
+}
+
+/// The instrument functions' settings: the parameters' current values and the choices of the build
+#[derive(Clone, Debug)]
+struct Kit {
+    params: [f32; p::COUNT],
+    lfo_shape: [LfoShape; 3],
+    lfo_sync: [Option<f64>; 3],
+    filter: FilterType,
+    chord: &'static [u8],
+    arp_chord: &'static [u8],
+    arp_direction: ArpDirection,
+    arp_mode: ArpMode,
+    arp_sync: Option<f64>,
+    mode: VoiceMode,
+}
+
+fn on(v: f32) -> bool {
+    v >= 0.5
+}
+
+impl Kit {
+    fn read(state: &StateView<'_>) -> Result<Self> {
+        let mut params = [0.0f32; p::COUNT];
+        for (i, spec) in instrument_params().iter().enumerate() {
+            params[i] = state.param_f32(spec.key)?;
+        }
+        let shape = |k: &str| state.choice(k, LfoShape::from_key);
+        let sync = |k: &str| state.choice(k, |s| SYNC_KEYS.contains(&s).then(|| sync_beats(s)));
+        let table = |k: &str| state.choice(k, chord);
+        Ok(Self {
+            params,
+            lfo_shape: [shape(LFO_SHAPE_FIELDS[0])?, shape(LFO_SHAPE_FIELDS[1])?, shape(LFO_SHAPE_FIELDS[2])?],
+            lfo_sync: [sync(LFO_SYNC_FIELDS[0])?, sync(LFO_SYNC_FIELDS[1])?, sync(LFO_SYNC_FIELDS[2])?],
+            filter: state.choice("filterType", FilterType::from_key)?,
+            chord: table("chord")?,
+            arp_chord: table("arpChord")?,
+            arp_direction: state.choice("arpDirection", |s| {
+                Some(match s {
+                    "up" => ArpDirection::Up,
+                    "down" => ArpDirection::Down,
+                    "up-down" => ArpDirection::UpDown,
+                    "down-up" => ArpDirection::DownUp,
+                    "random" => ArpDirection::Random,
+                    _ => return None,
+                })
+            })?,
+            arp_mode: state.choice("arpMode", |s| {
+                Some(match s {
+                    "free" => ArpMode::Free,
+                    "sort" => ArpMode::Sort,
+                    "sync" => ArpMode::Sync,
+                    _ => return None,
+                })
+            })?,
+            arp_sync: sync("arpSync")?,
+            mode: state.choice("voiceMode", |s| {
+                Some(match s {
+                    "poly" => VoiceMode::Poly,
+                    "mono" => VoiceMode::Mono,
+                    "legato" => VoiceMode::Legato,
+                    _ => return None,
+                })
+            })?,
+        })
+    }
+
+    fn envelope(&self, t: usize, bpm: f64) -> EnvelopeSettings {
+        let e = |k: usize| self.params[p::env(t) + k];
+        let lfo_speed = match self.lfo_sync[t] {
+            // The period of the synced length at this tempo, over the 20 s of the knob's end
+            Some(beats) if bpm > 0.0 => (beats * 60.0 / bpm / 20.0) as f32,
+            _ => e(p::LFO_SPEED),
+        };
+        EnvelopeSettings {
+            predelay: e(p::PREDELAY),
+            attack: e(p::ATTACK),
+            hold: e(p::HOLD),
+            decay: e(p::DECAY),
+            sustain: e(p::SUSTAIN),
+            release: e(p::RELEASE),
+            amount: e(p::AMOUNT),
+            lfo_predelay: e(p::LFO_PREDELAY),
+            lfo_attack: e(p::LFO_ATTACK),
+            lfo_speed,
+            lfo_amount: e(p::LFO_AMOUNT),
+            lfo_shape: self.lfo_shape[t],
+            x100: on(e(p::LFO_X100)),
+            control_env_amount: on(e(p::LFO_ENV_AMOUNT)),
+        }
+    }
+
+    fn shaping(&self, bpm: f64) -> SoundShapingSettings {
+        SoundShapingSettings {
+            filter_enabled: on(self.params[p::FILTER_ON]),
+            filter: self.filter,
+            cutoff: self.params[p::CUTOFF],
+            resonance: self.params[p::RESONANCE],
+            volume: self.envelope(0, bpm),
+            cutoff_envelope: self.envelope(1, bpm),
+            resonance_envelope: self.envelope(2, bpm),
+        }
+    }
+
+    fn synced(&self) -> bool {
+        self.lfo_sync.iter().any(Option::is_some) || self.arp_sync.is_some()
+    }
+}
+
+/// A voice of the pool: the synth's voice and what the instrument functions keep per note
+pub struct KitVoice<V> {
+    inner: V,
+    note: NoteId,
+    key: u8,
+    velocity: f32,
+    /// Frames played since the note started
+    frame: i32,
+    started: bool,
+    release_pending: bool,
+    released: bool,
+    release_begin: i32,
+    release_end: i32,
+    finished: bool,
+    /// The fade-in's length, frames (legacy `m_fadeInLength`); 0 before the first piece
+    fade_in: f32,
+    /// Glide: semitones from the key at the start, the frames it takes, the frames left, the offset now
+    glide_from: f32,
+    glide_frames: i32,
+    glide_left: i32,
+    glide_offset: f32,
+    filter: BasicFilter,
+    level: f32,
+}
+
+impl<V> fmt::Debug for KitVoice<V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KitVoice").field("key", &self.key).field("frame", &self.frame).finish_non_exhaustive()
+    }
+}
+
+impl<V> KitVoice<V> {
+    fn new(inner: V, rate: f32) -> Self {
+        Self {
+            inner,
+            note: NoteId(0),
+            key: 0,
+            velocity: 0.0,
+            frame: 0,
+            started: false,
+            release_pending: false,
+            released: false,
+            release_begin: 0,
+            release_end: 0,
+            finished: true,
+            fade_in: 0.0,
+            glide_from: 0.0,
+            glide_frames: 0,
+            glide_left: 0,
+            glide_offset: 0.0,
+            filter: BasicFilter::new(rate),
+            level: 0.0,
+        }
+    }
+
+    /// The pitch it sounds now, in keys
+    fn pitch(&self) -> f32 {
+        f32::from(self.key) + self.glide_offset
+    }
+
+    /// Glides from `from_pitch` (keys) to its key over `frames`
+    fn glide_from_pitch(&mut self, from_pitch: f32, frames: i32) {
+        if frames <= 0 {
+            self.glide_left = 0;
+            self.glide_offset = 0.0;
+            return;
+        }
+        self.glide_from = from_pitch - f32::from(self.key);
+        self.glide_frames = frames;
+        self.glide_left = frames;
+        self.glide_offset = self.glide_from;
+    }
+}
+
+impl<V: Send> Voice for KitVoice<V> {
+    fn start(&mut self, note: VoiceNote) {
+        self.note = note.note;
+        self.key = note.key;
+        self.velocity = note.velocity;
+        self.frame = 0;
+        self.started = false;
+        self.release_pending = false;
+        self.released = false;
+        self.release_begin = 0;
+        self.release_end = 0;
+        self.finished = false;
+        self.fade_in = 0.0;
+        self.glide_left = 0;
+        self.glide_offset = 0.0;
+        self.filter.clear_history();
+        self.level = note.velocity;
+    }
+
+    fn glide(&mut self, note: VoiceNote) {
+        // (the pool is always Poly here: legato is the instrument's, by base note)
+        let from = self.pitch();
+        self.note = note.note;
+        self.key = note.key;
+        self.glide_from_pitch(from, 0);
+    }
+
+    fn release(&mut self) {
+        if !self.released {
+            self.release_pending = true;
+        }
+    }
+
+    fn level(&self) -> f32 {
+        self.level
+    }
+
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    fn kill(&mut self) {
+        self.finished = true;
+        self.started = false;
+        self.release_pending = false;
+        self.released = false;
+        self.level = 0.0;
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Base {
+    id: NoteId,
+    channel: u8,
+    key: u8,
+    velocity: f32,
+    /// The instrument frame it started at
+    start: u64,
+    /// The next arpeggio step (free mode)
+    step: u64,
+    /// Let go while the sustain pedal was down: released when the pedal goes up
+    sustained: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Sounding {
+    id: NoteId,
+    base: NoteId,
+    key: u8,
+    /// The instrument frame it ends at (an arpeggio step's gate); `u64::MAX` while its base is held
+    end: u64,
+}
+
+/// What the instrument keeps across blocks, besides the voices; taken over whole in `adopt`
+#[derive(Debug)]
+struct Run {
+    frame: u64,
+    bases: Vec<Base>,
+    sounding: Vec<Sounding>,
+    /// Mono and legato: the bases held, in order; the last one sounds
+    held: Vec<NoteId>,
+    current: Option<NoteId>,
+    next_id: u32,
+    /// Pitch bend, −1 to 1
+    bend: f32,
+    sustain: bool,
+    /// Note-offs that came before their note-on in a block (a note of no length): the note-on releases at once
+    early_offs: Vec<NoteId>,
+    /// Sounding notes refused for lack of room
+    dropped: u64,
+}
+
+impl Run {
+    fn new() -> Self {
+        Self {
+            frame: 0,
+            bases: Vec::with_capacity(MAX_BASES),
+            sounding: Vec::with_capacity(MAX_SOUNDING),
+            held: Vec::with_capacity(MAX_BASES),
+            current: None,
+            next_id: SOUNDING_IDS,
+            bend: 0.0,
+            sustain: false,
+            early_offs: Vec::with_capacity(32),
+            dropped: 0,
+        }
+    }
+
+    fn clear_notes(&mut self) {
+        self.bases.clear();
+        self.sounding.clear();
+        self.held.clear();
+        self.current = None;
+        self.sustain = false;
+        self.early_offs.clear();
+    }
+
+    fn base(&self, id: NoteId) -> Option<usize> {
+        self.bases.iter().position(|b| b.id == id)
+    }
+
+    fn new_id(&mut self) -> NoteId {
+        let id = NoteId(self.next_id);
+        self.next_id = self.next_id.checked_add(1).unwrap_or(SOUNDING_IDS);
+        id
+    }
+}
+
+/// The scratch of one piece
+struct Scratch {
+    left: Box<[f32]>,
+    right: Box<[f32]>,
+    frames: Box<[[f32; 2]]>,
+}
+
+/// A per-note instrument: the plugin's [`Synth`] with the instrument functions around it
+pub struct Instrument<S: Synth> {
+    synth: S,
+    kit: Kit,
+    /// Every parameter's value now (the synth's, then the instrument functions'), and its range
+    values: Box<[f32]>,
+    ranges: Box<[(f32, f32)]>,
+    rate: f32,
+    sample_rate: u32,
+    lfo_waves: [Option<Arc<SampleData>>; 3],
+    shaping: SoundShaping,
+    settings: SoundShapingSettings,
+    dirty: bool,
+    bpm: f64,
+    pool: VoicePool<KitVoice<S::Voice>>,
+    run: Run,
+    scratch: Scratch,
+    previous_piece: usize,
+}
+
+impl<S: Synth> fmt::Debug for Instrument<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Instrument").field("rate", &self.sample_rate).field("voices", &self.pool.active()).finish()
+    }
+}
+
+impl<S: Synth> Instrument<S> {
+    /// The instrument for a complete `state` whose schema is `params` (all of the plugin's parameters: the synth's
+    /// `S::PARAMS` first, then the instrument functions'), with `voices` voices. Allocates everything (U31)
+    pub fn new(
+        synth: S,
+        state: &StateView<'_>,
+        params: &[ParamSpec],
+        spec: &ProcessSpec,
+        resources: &ResourceView,
+        voices: usize,
+    ) -> Result<Self> {
+        if params.len() != S::PARAMS + p::COUNT {
+            return Err(Error::new("plugin.instrument.params").arg("found", params.len() as i64));
+        }
+        let kit = Kit::read(state)?;
+        let mut values = Vec::with_capacity(params.len());
+        for spec in params {
+            values.push(state.param_f32(spec.key)?);
+        }
+        let ranges: Box<[(f32, f32)]> = params.iter().map(|p| (p.min as f32, p.max as f32)).collect();
+        let mut lfo_waves: [Option<Arc<SampleData>>; 3] = [None, None, None];
+        for (t, key) in LFO_WAVE_FIELDS.iter().enumerate() {
+            if let Some(r) = state.resource(key)? {
+                // (a missing wave matters only if the LFO plays it, as the legacy program)
+                match resources.audio(r) {
+                    Ok(a) if a.frames() > 0 => lfo_waves[t] = Some(a),
+                    Ok(_) => {}
+                    Err(e) if kit.lfo_shape[t] == LfoShape::UserDefined => return Err(e),
+                    Err(_) => {}
+                }
+            }
+        }
+        let rate = spec.sample_rate as f32;
+        let mut synth = synth;
+        for (i, v) in values.iter().take(S::PARAMS).enumerate() {
+            synth.set_param(i, *v);
+        }
+        let fade = ((STEAL_FADE_MS / 1000.0) * rate) as u32;
+        let pool = VoicePool::new(Policy::Poly, voices.max(1), fade, || KitVoice::new(synth.voice(), rate));
+        let settings = kit.shaping(120.0);
+        let mut shaping = SoundShaping::new(rate, GRID, 0x5eed_1f05);
+        shaping.set(&settings, GRID);
+        Ok(Self {
+            synth,
+            kit,
+            values: values.into_boxed_slice(),
+            ranges,
+            rate,
+            sample_rate: spec.sample_rate,
+            lfo_waves,
+            shaping,
+            settings,
+            dirty: true,
+            bpm: 0.0,
+            pool,
+            run: Run::new(),
+            scratch: Scratch {
+                left: vec![0.0; GRID].into_boxed_slice(),
+                right: vec![0.0; GRID].into_boxed_slice(),
+                frames: vec![[0.0; 2]; GRID].into_boxed_slice(),
+            },
+            previous_piece: 0,
+        })
+    }
+
+    /// Voices sounding (fading ones included)
+    pub fn active_voices(&self) -> usize {
+        self.pool.active()
+    }
+
+    fn glide_frames(&self) -> i32 {
+        (self.kit.params[p::GLIDE] / 1000.0 * self.rate) as i32
+    }
+
+    fn set_param(&mut self, index: u32, value: f32) {
+        let i = index as usize;
+        let Some(&(lo, hi)) = self.ranges.get(i) else { return };
+        if !value.is_finite() {
+            return;
+        }
+        let v = value.clamp(lo, hi);
+        self.values[i] = v;
+        if i < S::PARAMS {
+            self.synth.set_param(i, v);
+            return;
+        }
+        let k = i - S::PARAMS;
+        self.kit.params[k] = v;
+        if (p::env(0)..p::CHORD_ON).contains(&k) {
+            self.dirty = true;
+        }
+    }
+
+    // ---- notes ----
+
+    /// Starts the sounding notes of a base: its chord (or its key), from `key`
+    fn sound(&mut self, base: NoteId, channel: u8, key: i32, velocity: f32, end: u64, glide_from: Option<f32>) {
+        let (intervals, octaves): (&[u8], i32) = if on(self.kit.params[p::CHORD_ON]) {
+            (self.kit.chord, self.kit.params[p::CHORD_RANGE] as i32)
+        } else {
+            (&[0], 1)
+        };
+        let glide = self.glide_frames();
+        for octave in 0..octaves.max(1) {
+            for &i in intervals {
+                let k = key + octave * 12 + i32::from(i);
+                if k > 127 {
+                    break;
+                }
+                if k < 0 {
+                    continue;
+                }
+                if self.run.sounding.len() == self.run.sounding.capacity() {
+                    self.run.dropped += 1;
+                    return;
+                }
+                let id = self.run.new_id();
+                let k = k as u8;
+                self.run.sounding.push(Sounding { id, base, key: k, end });
+                self.pool.note_on(VoiceNote { note: id, channel, key: k, velocity });
+                if let Some(from) = glide_from
+                    && glide > 0
+                {
+                    let shift = (k as i32 - key) as f32;
+                    for (v, _) in self.pool.voices_mut() {
+                        if v.note == id {
+                            v.glide_from_pitch(from + shift, glide);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Releases every sounding note of a base
+    fn release_sounding(&mut self, base: NoteId) {
+        let mut i = 0;
+        while i < self.run.sounding.len() {
+            if self.run.sounding[i].base == base {
+                let s = self.run.sounding.swap_remove(i);
+                self.pool.note_off(s.id);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    /// The pitch the base's root sounds at now (keys), if it sounds
+    fn root_pitch(&mut self, base: NoteId, key: u8) -> Option<f32> {
+        let root = self.run.sounding.iter().find(|s| s.base == base && s.key == key).map(|s| s.id)?;
+        self.pool.voices_mut().find(|(v, _)| v.note == root).map(|(v, _)| v.pitch())
+    }
+
+    /// Legato: the sounding notes of `from` move by `delta` keys and now belong to `to`, gliding
+    fn retarget(&mut self, from: NoteId, to: NoteId, delta: i32) {
+        let glide = self.glide_frames();
+        for s in self.run.sounding.iter_mut().filter(|s| s.base == from) {
+            let k = (i32::from(s.key) + delta).clamp(0, 127) as u8;
+            s.base = to;
+            s.key = k;
+            let id = s.id;
+            for (v, _) in self.pool.voices_mut() {
+                if v.note == id {
+                    let pitch = v.pitch();
+                    v.key = k;
+                    v.glide_from_pitch(pitch, glide);
+                }
+            }
+        }
+    }
+
+    fn arp_on(&self) -> bool {
+        on(self.kit.params[p::ARP_ON])
+    }
+
+    fn note_on(&mut self, id: NoteId, channel: u8, key: u8, velocity: f32) {
+        if self.run.base(id).is_some() {
+            return;
+        }
+        if self.run.bases.len() == self.run.bases.capacity() {
+            self.run.dropped += 1;
+            return;
+        }
+        let base = Base { id, channel, key, velocity, start: self.run.frame, step: 0, sustained: false };
+        self.run.bases.push(base);
+        let arp = self.arp_on();
+        match self.kit.mode {
+            VoiceMode::Poly => {
+                if !arp {
+                    self.sound(id, channel, i32::from(key), velocity, u64::MAX, None);
+                }
+            }
+            VoiceMode::Mono | VoiceMode::Legato => {
+                if self.run.held.len() == self.run.held.capacity() {
+                    self.run.held.remove(0);
+                }
+                self.run.held.push(id);
+                self.take_over(id);
+            }
+        }
+        if let Some(pos) = self.run.early_offs.iter().position(|n| *n == id) {
+            self.run.early_offs.swap_remove(pos);
+            self.note_off(id);
+        }
+    }
+
+    /// Mono and legato: the base `to` becomes the one that sounds
+    fn take_over(&mut self, to: NoteId) {
+        let Some(b) = self.run.base(to).map(|i| self.run.bases[i]) else { return };
+        let arp = self.arp_on();
+        match self.run.current.and_then(|c| self.run.base(c).map(|i| self.run.bases[i])) {
+            Some(cur) if cur.id != to => {
+                if self.kit.mode == VoiceMode::Legato {
+                    self.retarget(cur.id, to, i32::from(b.key) - i32::from(cur.key));
+                } else {
+                    let from = self.root_pitch(cur.id, cur.key);
+                    self.release_sounding(cur.id);
+                    if !arp {
+                        self.sound(to, b.channel, i32::from(b.key), b.velocity, u64::MAX, from);
+                    }
+                }
+            }
+            Some(_) => {}
+            None => {
+                if !arp {
+                    self.sound(to, b.channel, i32::from(b.key), b.velocity, u64::MAX, None);
+                }
+            }
+        }
+        self.run.current = Some(to);
+    }
+
+    fn note_off(&mut self, id: NoteId) {
+        let Some(i) = self.run.base(id) else {
+            if self.run.early_offs.len() < self.run.early_offs.capacity() {
+                self.run.early_offs.push(id);
+            }
+            return;
+        };
+        if self.run.sustain {
+            self.run.bases[i].sustained = true;
+            return;
+        }
+        self.end_base(i);
+    }
+
+    fn end_base(&mut self, i: usize) {
+        let base = self.run.bases.swap_remove(i);
+        match self.kit.mode {
+            VoiceMode::Poly => self.release_sounding(base.id),
+            VoiceMode::Mono | VoiceMode::Legato => {
+                if let Some(pos) = self.run.held.iter().position(|n| *n == base.id) {
+                    self.run.held.remove(pos);
+                }
+                if self.run.current != Some(base.id) {
+                    self.release_sounding(base.id);
+                    return;
+                }
+                match self.run.held.last().copied() {
+                    Some(prev) => {
+                        // Back to the one held before: its key, as a new note (mono) or moving the voice (legato)
+                        if self.kit.mode == VoiceMode::Legato {
+                            if let Some(p) = self.run.base(prev).map(|j| self.run.bases[j]) {
+                                self.retarget(base.id, prev, i32::from(p.key) - i32::from(base.key));
+                                self.run.current = Some(prev);
+                            }
+                        } else {
+                            let from = self.root_pitch(base.id, base.key);
+                            self.release_sounding(base.id);
+                            self.run.current = None;
+                            if let Some(p) = self.run.base(prev).map(|j| self.run.bases[j]) {
+                                if !self.arp_on() {
+                                    self.sound(prev, p.channel, i32::from(p.key), p.velocity, u64::MAX, from);
+                                }
+                                self.run.current = Some(prev);
+                            }
+                        }
+                    }
+                    None => {
+                        self.release_sounding(base.id);
+                        self.run.current = None;
+                    }
+                }
+            }
+        }
+    }
+
+    fn release_all(&mut self) {
+        self.pool.release_all();
+        self.run.clear_notes();
+    }
+
+    fn sound_off(&mut self) {
+        self.pool.kill_all();
+        self.run.clear_notes();
+    }
+
+    fn pedal(&mut self, down: bool) {
+        self.run.sustain = down;
+        if down {
+            return;
+        }
+        while let Some(i) = self.run.bases.iter().position(|b| b.sustained) {
+            self.end_base(i);
+        }
+    }
+
+    fn event(&mut self, kind: EventKind) {
+        match kind {
+            EventKind::NoteOn { note, channel, key, velocity } => {
+                self.note_on(note, channel, key.min(127), velocity.clamp(0.0, 1.0));
+            }
+            EventKind::NoteOff { note, .. } => self.note_off(note),
+            EventKind::Param { index, value } => self.set_param(index, value),
+            EventKind::Midi { bytes } => match bytes[0] & 0xF0 {
+                0xE0 => {
+                    let v = (i32::from(bytes[2] & 0x7F) << 7) | i32::from(bytes[1] & 0x7F);
+                    self.run.bend = ((v - 8192) as f32 / 8192.0).clamp(-1.0, 1.0);
+                }
+                0xB0 => match bytes[1] {
+                    64 => self.pedal(bytes[2] >= 64),
+                    120 => self.sound_off(),
+                    123 => self.release_all(),
+                    _ => {}
+                },
+                _ => {}
+            },
+            EventKind::AllNotesRelease => self.release_all(),
+            EventKind::AllSoundOff => self.sound_off(),
+        }
+    }
+
+    // ---- the arpeggio ----
+
+    fn arp_frames(&self) -> u64 {
+        let ms = match self.kit.arp_sync {
+            Some(beats) if self.bpm > 0.0 => beats * 60.0 / self.bpm * 1000.0,
+            _ => f64::from(self.kit.params[p::ARP_TIME]),
+        };
+        ((ms / 1000.0 * f64::from(self.rate)) as u64).max(1)
+    }
+
+    /// The bases whose arpeggio plays: all held (poly) or the one that sounds (mono, legato); in sort mode only the
+    /// lowest generates, for all
+    fn generates(&self, b: &Base) -> bool {
+        match self.kit.mode {
+            VoiceMode::Poly => true,
+            _ => self.run.current == Some(b.id),
+        }
+    }
+
+    /// The first frame at which every arpeggio of sync and sort mode is aligned: the oldest base that generates
+    fn anchor(&self) -> Option<u64> {
+        self.run.bases.iter().filter(|b| self.generates(b)).map(|b| b.start).min()
+    }
+
+    /// The steps and gate ends at frame `now` (a piece starts there)
+    fn timed(&mut self, now: u64, rng: &mut Rng) {
+        // Gated ends
+        let mut i = 0;
+        while i < self.run.sounding.len() {
+            if self.run.sounding[i].end <= now {
+                let s = self.run.sounding.swap_remove(i);
+                self.pool.note_off(s.id);
+            } else {
+                i += 1;
+            }
+        }
+        if !self.arp_on() || self.run.bases.is_empty() {
+            return;
+        }
+        let af = self.arp_frames();
+        match self.kit.arp_mode {
+            ArpMode::Free => {
+                for j in 0..self.run.bases.len() {
+                    let b = self.run.bases[j];
+                    if !self.generates(&b) {
+                        continue;
+                    }
+                    let mut step = b.step;
+                    while b.start + step * af <= now {
+                        if b.start + step * af == now {
+                            self.arp_step(&b, step, af, rng);
+                        }
+                        step += 1;
+                    }
+                    if let Some(k) = self.run.base(b.id) {
+                        self.run.bases[k].step = step;
+                    }
+                }
+            }
+            ArpMode::Sync | ArpMode::Sort => {
+                let Some(anchor) = self.anchor() else { return };
+                if !(now - anchor).is_multiple_of(af) {
+                    return;
+                }
+                let n = (now - anchor) / af;
+                if self.kit.arp_mode == ArpMode::Sync {
+                    for j in 0..self.run.bases.len() {
+                        let b = self.run.bases[j];
+                        if self.generates(&b) {
+                            self.arp_step(&b, n, af, rng);
+                        }
+                    }
+                } else if let Some(lowest) =
+                    self.run.bases.iter().filter(|b| self.generates(b)).min_by_key(|b| (b.key, b.start)).copied()
+                {
+                    self.arp_step(&lowest, n, af, rng);
+                }
+            }
+        }
+    }
+
+    /// The next frame after `now` at which a step or a gate end falls
+    fn next_timed(&self, now: u64) -> u64 {
+        let mut next = self.run.sounding.iter().map(|s| s.end).filter(|e| *e > now).min().unwrap_or(u64::MAX);
+        if self.arp_on() && !self.run.bases.is_empty() {
+            let af = self.arp_frames();
+            match self.kit.arp_mode {
+                ArpMode::Free => {
+                    for b in self.run.bases.iter().filter(|b| self.generates(b)) {
+                        let mut t = b.start + b.step * af;
+                        if t <= now {
+                            t = b.start + ((now - b.start) / af + 1) * af;
+                        }
+                        next = next.min(t);
+                    }
+                }
+                ArpMode::Sync | ArpMode::Sort => {
+                    if let Some(anchor) = self.anchor() {
+                        next = next.min(anchor + ((now - anchor) / af + 1) * af);
+                    }
+                }
+            }
+        }
+        next
+    }
+
+    /// Plays step `n` of a base's arpeggio (legacy `InstrumentFunctionArpeggio::processNote`, one step)
+    fn arp_step(&mut self, base: &Base, n: u64, af: u64, rng: &mut Rng) {
+        let k = &self.kit;
+        let chord = k.arp_chord;
+        let cs = chord.len() as i64;
+        let repeats = (k.params[p::ARP_REPEATS] as i64).max(1);
+        let single = cs * (k.params[p::ARP_RANGE] as i64).max(1) * repeats;
+        let sort = k.arp_mode == ArpMode::Sort;
+        let mut keys = [0u8; MAX_BASES];
+        let mut count = 0usize;
+        if sort {
+            for b in self.run.bases.iter().filter(|b| self.generates(b) || self.kit.mode == VoiceMode::Poly) {
+                keys[count] = b.key;
+                count += 1;
+            }
+            keys[..count].sort_unstable();
+        }
+        let range = if sort { single * count.max(1) as i64 } else { single };
+        let skip = k.params[p::ARP_SKIP];
+        if skip > 0.0 && rng.next_f32() * 100.0 <= skip {
+            return;
+        }
+        let mut dir = k.arp_direction;
+        let miss = k.params[p::ARP_MISS];
+        if miss > 0.0 && rng.next_f32() * 100.0 <= miss {
+            dir = ArpDirection::Random;
+        }
+        let n = n as i64;
+        let mut idx = match dir {
+            ArpDirection::Up | ArpDirection::Down => n % range,
+            ArpDirection::UpDown | ArpDirection::DownUp if range > 1 => {
+                let period = (range * 2 - 2 * repeats).max(1);
+                let mut i = n % period;
+                if i >= range {
+                    i = range - i % (range - 1) - repeats;
+                }
+                i
+            }
+            ArpDirection::UpDown | ArpDirection::DownUp => 0,
+            ArpDirection::Random => rng.below(range.max(1) as u64) as i64,
+        };
+        idx /= repeats;
+        let cycle = k.params[p::ARP_CYCLE] as i64;
+        let per = (range / repeats).max(1);
+        if cycle > 0 && dir != ArpDirection::Random {
+            idx = (idx * (cycle + 1)) % per;
+        }
+        if matches!(dir, ArpDirection::Down | ArpDirection::DownUp) {
+            idx = per - idx - 1;
+        }
+        let idx = idx.max(0);
+        let key = if sort {
+            let count = count.max(1) as i64;
+            let total = cs * count;
+            let octave = idx / total;
+            let rem = idx % total;
+            let arp_index = (rem % count) as usize;
+            let chord_index = (rem / count) as usize;
+            i64::from(keys[arp_index]) + i64::from(chord[chord_index.min(chord.len() - 1)]) + octave * 12
+        } else {
+            i64::from(base.key) + (idx / cs) * 12 + i64::from(chord[(idx % cs) as usize])
+        };
+        if !(0..128).contains(&key) {
+            return;
+        }
+        let gated = ((f64::from(k.params[p::ARP_GATE]) * af as f64 / 100.0) as u64).max(1);
+        let end = self.run.frame + gated;
+        self.sound(base.id, base.channel, key as i32, base.velocity, end, None);
+    }
+
+    // ---- playing ----
+
+    /// The LFOs move on to the piece of `n` frames at offset `at` (by the tempo while playing, when synced: U37)
+    fn lfos(&mut self, n: usize, at: usize, transport: &TransportInfo) {
+        let bpm = transport.bpm;
+        if self.kit.synced() && bpm != self.bpm {
+            self.bpm = bpm;
+            self.dirty = true;
+        }
+        if self.dirty {
+            self.settings = self.kit.shaping(self.bpm);
+        }
+        let previous = self.previous_piece;
+        for t in 0..3 {
+            let wave = self.lfo_waves[t].as_deref().map(|w| w.channel(0));
+            let settings = match t {
+                0 => self.settings.volume,
+                1 => self.settings.cutoff_envelope,
+                _ => self.settings.resonance_envelope,
+            };
+            let env = match t {
+                0 => &mut self.shaping.volume,
+                1 => &mut self.shaping.cutoff,
+                _ => &mut self.shaping.resonance,
+            };
+            match self.kit.lfo_sync[t] {
+                Some(beats) if transport.playing && bpm > 0.0 => {
+                    // The phase from the musical position: the same at a locate or a loop (U37)
+                    let ppq = f64::from(transport.ppq.max(1));
+                    let per_cycle = beats * ppq;
+                    let tick = transport.tick as f64 + at as f64 * bpm * ppq / (60.0 * f64::from(self.rate));
+                    let phase = tick.rem_euclid(per_cycle) / per_cycle;
+                    let mut frames = (lm_dsp::envelope::SECS_PER_LFO_OSCILLATION * self.rate * settings.lfo_speed) as i32;
+                    if settings.x100 {
+                        frames /= 100;
+                    }
+                    let target = (phase * f64::from(frames.max(1))) as usize;
+                    if self.dirty {
+                        env.set(&settings, wave, n);
+                    }
+                    env.reset_lfo(wave, n);
+                    env.next_period(target, wave, n);
+                }
+                _ => {
+                    env.next_period(previous, wave, n);
+                    if self.dirty {
+                        env.set(&settings, wave, n);
+                    }
+                }
+            }
+        }
+        self.dirty = false;
+        self.previous_piece = n;
+    }
+
+    /// Plays every voice for `n` frames into `left`/`right` from `at`
+    fn piece(&mut self, at: usize, n: usize, left: &mut [f32], right: &mut [f32], rng: &mut Rng) {
+        let rate = self.rate;
+        let pitch = self.kit.params[p::PITCH] / 100.0 + self.run.bend * self.kit.params[p::BEND_RANGE];
+        let desired = (self.synth.release_ms() * rate / 1000.0).ceil() as i32;
+        let Self { synth, pool, shaping, settings, scratch, .. } = self;
+        for (v, gain) in pool.voices_mut() {
+            if v.finished {
+                continue;
+            }
+            if v.release_pending && !v.released {
+                v.released = true;
+                v.release_pending = false;
+                v.release_begin = v.frame;
+                let frames = shaping.release_frames(desired, false).max(desired).max(1);
+                v.release_end = v.release_begin.saturating_add(frames);
+            }
+            let m = if v.released { n.min((v.release_end - v.frame).max(0) as usize) } else { n };
+            if m == 0 {
+                v.finished = true;
+                continue;
+            }
+            if v.glide_left > 0 {
+                v.glide_offset = v.glide_from * v.glide_left as f32 / v.glide_frames as f32;
+                v.glide_left = v.glide_left.saturating_sub(n as i32).max(0);
+            } else {
+                v.glide_offset = 0.0;
+            }
+            let keys = f32::from(v.key) - 69.0 + v.glide_offset + pitch;
+            let freq = 440.0 * libm::exp2f(keys / 12.0);
+            if !v.started {
+                v.started = true;
+                synth.start(&mut v.inner, &NoteStart { key: v.key, velocity: v.velocity, freq }, rng);
+            }
+            let (l, r) = (&mut scratch.left[..m], &mut scratch.right[..m]);
+            l.fill(0.0);
+            r.fill(0.0);
+            synth.render(&mut v.inner, freq, l, r);
+            let buf = &mut scratch.frames[..m];
+            for (i, f) in buf.iter_mut().enumerate() {
+                *f = [l[i], r[i]];
+            }
+            fade_in(v, buf, rate);
+            if v.released && desired > 0 {
+                for (i, f) in buf.iter_mut().enumerate() {
+                    let left_frames = v.release_end - (v.frame + i as i32);
+                    if left_frames <= desired {
+                        let fac = left_frames as f32 / desired as f32;
+                        f[0] *= fac;
+                        f[1] *= fac;
+                    }
+                }
+            }
+            let release_begin = if v.released { v.release_begin } else { i32::MAX };
+            shaping.process(buf, &mut v.filter, NotePosition { frame: v.frame, release_begin }, settings);
+            let velocity = if S::VELOCITY_IS_LEVEL { v.velocity } else { 1.0 };
+            let mut level = 0.0f32;
+            for (i, f) in buf.iter().enumerate() {
+                let g = velocity * gain.at(i);
+                let (a, b) = (f[0] * g, f[1] * g);
+                left[at + i] += a;
+                right[at + i] += b;
+                level = level.max(a.abs()).max(b.abs());
+            }
+            v.level = level;
+            v.frame = v.frame.saturating_add(m as i32);
+            if v.released && v.frame >= v.release_end {
+                v.finished = true;
+            }
+        }
+        self.pool.advance(n);
+        self.run.frame += n as u64;
+    }
+}
+
+/// The legacy `Instrument::applyFadeIn`: at most 85 frames at 44.1 kHz (about 2 ms), shorter the more often the note
+/// crosses zero (counted per 128 frames at 44.1 kHz)
+fn fade_in<V>(v: &mut KitVoice<V>, buf: &mut [[f32; 2]], rate: f32) {
+    let rate_factor = rate / 44100.0;
+    let max_length = 85.0 * rate_factor;
+    let block = 128.0 * rate_factor;
+    let frames = buf.len();
+    let crossings = |buf: &[[f32; 2]]| -> i32 {
+        let mut counts = [0i32; 2];
+        let mut most = 0;
+        for f in 1..buf.len() {
+            for ch in 0..2 {
+                let (a, b) = (buf[f - 1][ch], buf[f][ch]);
+                if (a <= 0.0 && b > 0.0) || (a >= 0.0 && b < 0.0) {
+                    counts[ch] += 1;
+                    most = most.max(counts[ch]);
+                }
+            }
+        }
+        most
+    };
+    let length_for = |zc: i32| -> f32 { (max_length / (zc as f32 / (frames as f32 / block) + 1.0)).trunc() };
+    let pi = std::f32::consts::PI;
+    let total = v.frame;
+    if total == 0 {
+        let length = length_for(crossings(buf));
+        v.fade_in = length;
+        let n = (length as usize).min(frames);
+        for (f, frame) in buf.iter_mut().enumerate().take(n) {
+            let g = 0.5 - 0.5 * libm::cosf(pi * f as f32 / length);
+            frame[0] *= g;
+            frame[1] *= g;
+        }
+    } else if (total as f32) < v.fade_in {
+        let new_length = length_for(crossings(buf));
+        for (f, frame) in buf.iter_mut().enumerate() {
+            let x = f as f32 / frames as f32;
+            let current = v.fade_in * (1.0 - x) + new_length * x;
+            if (total + f as i32) as f32 >= current {
+                v.fade_in = current.trunc();
+                return;
+            }
+            let g = 0.5 - 0.5 * libm::cosf(pi * (total + f as i32) as f32 / current);
+            frame[0] *= g;
+            frame[1] *= g;
+        }
+        v.fade_in = new_length;
+    }
+}
+
+impl<S: Synth> Processor for Instrument<S> {
+    fn process(&mut self, cx: &mut ProcessContext<'_>) {
+        let frames = cx.frames;
+        let events: &[Event] = cx.events;
+        let transport = cx.transport;
+        let rng = &mut *cx.rng;
+        let outputs = cx.buffers.outputs();
+        if outputs == 0 {
+            for e in events {
+                self.event(e.kind);
+            }
+            return;
+        }
+        let (_, mut outs, _) = cx.buffers.split();
+        let (left, right): (&mut [f32], &mut [f32]) = if outputs >= 2 {
+            outs.pair_mut(0, 1)
+        } else {
+            // (a mono output: both sides summed into it below)
+            let l = outs.get_mut(0);
+            (l, &mut [])
+        };
+        let mono = outputs < 2;
+        let mut e = 0;
+        let mut at = 0;
+        let grid_origin = transport.frame;
+        while at < frames {
+            while e < events.len() && (events[e].offset as usize) <= at {
+                self.event(events[e].kind);
+                e += 1;
+            }
+            let now = self.run.frame;
+            self.timed(now, rng);
+            let mut end = frames;
+            if e < events.len() {
+                end = end.min(events[e].offset as usize);
+            }
+            let grid = GRID - ((grid_origin + at as u64) % GRID as u64) as usize;
+            end = end.min(at + grid);
+            let next = self.next_timed(now);
+            if next != u64::MAX {
+                end = end.min(at + (next - now).min(frames as u64) as usize);
+            }
+            let n = end.saturating_sub(at).max(1).min(frames - at);
+            self.lfos(n, at, transport);
+            if mono {
+                // Render into the scratch of a second side: the left output gets the average
+                let mut tmp_l = [0.0f32; GRID];
+                let mut tmp_r = [0.0f32; GRID];
+                self.piece(0, n, &mut tmp_l, &mut tmp_r, rng);
+                for i in 0..n {
+                    left[at + i] += 0.5 * (tmp_l[i] + tmp_r[i]);
+                }
+            } else {
+                self.piece(at, n, left, right, rng);
+            }
+            at += n;
+        }
+        for ev in &events[e..] {
+            self.event(ev.kind);
+        }
+    }
+
+    fn reset(&mut self) {
+        self.sound_off();
+        for env in [&mut self.shaping.volume, &mut self.shaping.cutoff, &mut self.shaping.resonance] {
+            env.reset_lfo(None, GRID);
+        }
+        self.dirty = true;
+        self.previous_piece = 0;
+    }
+
+    /// Takes over the voices, the notes, the LFOs and the current parameter values of the processor it replaces, when
+    /// that is the same instrument at the same rate (R18)
+    fn adopt(&mut self, old: &mut dyn Processor) -> Adopted {
+        let Some(old) = old.as_any_mut().downcast_mut::<Self>() else { return Adopted::No };
+        if old.sample_rate != self.sample_rate || old.values.len() != self.values.len() {
+            return Adopted::No;
+        }
+        std::mem::swap(&mut self.pool, &mut old.pool);
+        std::mem::swap(&mut self.run, &mut old.run);
+        std::mem::swap(&mut self.shaping, &mut old.shaping);
+        self.previous_piece = old.previous_piece;
+        self.bpm = old.bpm;
+        // The values the old one heard last (automation and gestures since the tree was read)
+        for i in 0..self.values.len() {
+            let v = old.values[i];
+            self.set_param(i as u32, v);
+        }
+        self.synth.adopt(&mut old.synth);
+        // Mono and poly follow different rules: a change of mode lets every note go to its release
+        if old.kit.mode != self.kit.mode {
+            self.release_all();
+        }
+        self.dirty = true;
+        Adopted::Yes
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}

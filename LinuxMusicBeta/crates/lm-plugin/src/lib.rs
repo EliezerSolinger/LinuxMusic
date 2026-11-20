@@ -26,3 +26,4 @@ pub use lm_doc::{Port, Ports};
 pub use registry::{Registry, check_ports};
 pub use resources::{Loaded, ResourceView};
 pub use state::StateView;
+pub mod instrument;
