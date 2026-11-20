@@ -36,6 +36,17 @@ pub fn defaults() -> Value {
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
         ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text(""))])),
         ("shortcuts", Value::empty_object()),
+        // The speakers' monitoring (never in the project, the undo or an export)
+        (
+            "monitor",
+            o(vec![
+                ("level", real(0.0)),
+                ("dim", Value::bool(false)),
+                ("cut", Value::bool(false)),
+                ("mono", Value::bool(false)),
+                ("side", Value::bool(false)),
+            ]),
+        ),
         // Not shown on the settings screen
         ("recent", Value::empty_list()),
         ("allowedFolders", Value::empty_list()),

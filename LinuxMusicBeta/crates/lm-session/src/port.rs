@@ -536,8 +536,8 @@ impl CorePort for LocalPort {
         }
     }
 
-    fn display(&self, _node: NodeId) -> Option<DisplayView> {
-        None
+    fn display(&self, node: NodeId) -> Option<DisplayView> {
+        self.session.rack_display(node).map(|frame| DisplayView { kind: Arc::from("rack"), frame: Arc::from(frame) })
     }
 
     fn preferences(&self) -> &Value {

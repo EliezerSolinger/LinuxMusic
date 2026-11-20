@@ -226,11 +226,18 @@ impl Resources for ResourceSnapshot {
 }
 
 /// A plugin or rack build waiting for its resources, or running
-#[derive(Debug)]
 pub(crate) struct BuildData {
     ticket: Ticket,
     node: NodeKey,
     seed: u64,
+    /// The live display of a rack node (its reader is kept by the session, I-9.5)
+    display: Option<(lm_render::DisplayWriter, lm_render::DisplayReader)>,
+}
+
+impl std::fmt::Debug for BuildData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BuildData").field("ticket", &self.ticket).field("node", &self.node).finish()
+    }
 }
 
 /// What was copied: the tree and the project it came from (its uuid is in the clip, its folder holds its audio)
@@ -335,6 +342,8 @@ pub struct Session {
     xruns: u32,
     /// The imports that ended, by their operation, for the port to answer (`take_imported`)
     imported: Vec<(lm_base::OperationId, Result<Resource>)>,
+    /// The live displays of the rack nodes, by node (read through `&self`: the reader's read needs `&mut`)
+    displays: std::cell::RefCell<std::collections::BTreeMap<NodeKey, lm_render::DisplayReader>>,
     /// The project opened in safe mode (U21)
     safe_mode_on: bool,
     /// What `edit.copy` copied (H13)
@@ -578,6 +587,7 @@ impl Session {
             xruns: 0,
             clipboard: None,
             safe_mode_on: false,
+            displays: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             imported: Vec::new(),
             finished: Vec::new(),
             main,
@@ -711,6 +721,27 @@ impl Session {
         for (id, _) in self.document.index().ids() {
             if self.is_waiting(*id) {
                 out.push(format!("waiting {id}"));
+            }
+        }
+        out
+    }
+
+    /// What the desk shows of a channel or the master (I-9.5): its rack segments' display frames merged (each
+    /// segment fills what it measures; `rack::display` gives the layout); `None` for a node with no rack display
+    pub fn rack_display(&self, id: NodeId) -> Option<Vec<f32>> {
+        let mut displays = self.displays.borrow_mut();
+        // The readers of nodes the installed program no longer has are dropped
+        let table = self.table.clone();
+        displays.retain(|k, _| table.node(*k).is_some());
+        let mut out: Option<Vec<f32>> = None;
+        for (_, reader) in displays.iter_mut().filter(|(k, _)| matches!(k, NodeKey::Rack(c, _) if *c == id)) {
+            let bytes = reader.read();
+            let merged = out.get_or_insert_with(|| vec![f32::NAN; crate::rack::display::FLOATS]);
+            for (i, chunk) in bytes.as_chunks::<4>().0.iter().enumerate().take(merged.len()) {
+                let v = f32::from_le_bytes(*chunk);
+                if !v.is_nan() {
+                    merged[i] = v;
+                }
             }
         }
         out
@@ -947,6 +978,7 @@ impl Session {
         Environment {
             playhead: self.telemetry.position.samples,
             low_latency_monitoring: self.preferences.bool(&["lowLatencyMonitoring"]).unwrap_or(false),
+            monitor: self.preferences.get(&["monitor"]).cloned(),
             ..Environment::default()
         }
     }
@@ -1112,6 +1144,8 @@ impl Session {
         let schemas = self.schemas.clone();
         let delay = self.delay;
         let BuildRequest { ticket, node, build, seed, spec, .. } = b;
+        let display = matches!(build, lm_compile::Build::Rack { .. })
+            .then(|| lm_render::display_channel(crate::rack::display::BYTES));
         let target = match node.owner() {
             Some(id) => Target::Node(id),
             None => Target::Project,
@@ -1127,7 +1161,7 @@ impl Session {
             target,
             cancellable: false,
             started,
-            data: BuildData { ticket, node, seed },
+            data: BuildData { ticket, node, seed, display },
         });
     }
 
@@ -1138,7 +1172,14 @@ impl Session {
         for (op, result) in self.build_ops.finished(now, &mut done) {
             changed = true;
             match result {
-                Ok(p) => self.compiler.ready(op.data.ticket, NodeCore::new(p, op.data.seed, None)),
+                Ok(p) => {
+                    let BuildData { ticket, node, seed, display } = op.data;
+                    let writer = display.map(|(w, r)| {
+                        self.displays.borrow_mut().insert(node, r);
+                        w
+                    });
+                    self.compiler.ready(ticket, NodeCore::new(p, seed, writer));
+                }
                 Err(e) if e.is_cancelled() => {}
                 Err(e) => {
                     self.notices.error(&e, Some(op.target.clone()), None);
@@ -1949,7 +1990,13 @@ impl Session {
     // ---- preferences ----
 
     pub fn set_preference(&mut self, path: &[PathStep], value: Value) -> Result<()> {
-        self.preferences.set(path, value)?;
+        self.preferences.set(path, value.clone())?;
+        // The monitor's LEVEL moves live through its slot; the other monitor switches recompile
+        if path == [PathStep::key("monitor"), PathStep::key("level")]
+            && let Some(v) = value.as_real()
+        {
+            self.param_write(lm_doc::MASTER, "monitor.level", v as f32);
+        }
         let file = self.preferences.file().cloned();
         if let Some(file) = file {
             let tree = self.preferences.tree().clone();
