@@ -1087,7 +1087,8 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   - Nada aloca e nada trava do lado do núcleo; o teste roda sob a armadilha do `assert_no_alloc`.
 - **Prazo:**
   - Ao vivo, 60% da duração do bloco. O resto fica para o grafo do núcleo.
-  - Um bloco perdido é silêncio só naquele nó, com o aviso `Error("plugin_host.late")` contado.
+  - Um bloco perdido é silêncio só naquele nó e é contado (`Hosted::missed`, para a telemetria). Não há aviso por
+    bloco, para não inundar a fila; o aviso vem quando ele trava.
   - Se o helper ainda está ocupado com o bloco anterior, o bloco seguinte também é perdido, sem esperar. Assim um
     plugin lento nunca atrasa o callback mais de um prazo.
   - Na exportação não há prazo (`Deadline::Wait`, S19): ela espera o plugin, para sair igual bit a bit.
