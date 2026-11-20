@@ -1971,9 +1971,18 @@ impl Renderer {
         self.program.nodes[i as usize].io = Some(io);
     }
 
-    /// Fills `out` with a host parameter's per-sample values
+    /// Fills `out` with a host parameter's per-sample values (`1 − value` for a complement)
     fn host_values(&mut self, h: u32, out: &mut [f32]) {
-        let PHostParam { value, binding } = self.program.host_params[h as usize];
+        self.host_values_of(h, out);
+        if self.program.host_params[h as usize].complement {
+            for o in out.iter_mut() {
+                *o = 1.0 - *o;
+            }
+        }
+    }
+
+    fn host_values_of(&mut self, h: u32, out: &mut [f32]) {
+        let PHostParam { value, binding, .. } = self.program.host_params[h as usize];
         let Some(bi) = binding else {
             out.fill(value);
             return;

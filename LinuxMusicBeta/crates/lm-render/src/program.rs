@@ -121,15 +121,25 @@ pub struct HostParam {
     pub value: f32,
     pub slot: Option<ParamSlot>,
     pub automation: Option<Curve>,
+    /// The gain is `1 − value` (the dry side of an insert's wet/dry mix, driven by its own slot that gets the same
+    /// writes and the same automation as the wet side's)
+    pub complement: bool,
 }
 
 impl HostParam {
     pub fn fixed(value: f32) -> Self {
-        Self { value, slot: None, automation: None }
+        Self { value, slot: None, automation: None, complement: false }
     }
 
     pub fn slot(slot: ParamSlot, initial: f32) -> Self {
-        Self { value: initial, slot: Some(slot), automation: None }
+        Self { value: initial, slot: Some(slot), automation: None, complement: false }
+    }
+
+    /// The same parameter, applied as `1 − value`
+    #[must_use]
+    pub fn complement(mut self) -> Self {
+        self.complement = true;
+        self
     }
 
     #[must_use]
@@ -562,6 +572,7 @@ pub(crate) struct Binding {
 pub(crate) struct PHostParam {
     pub(crate) value: f32,
     pub(crate) binding: Option<u32>,
+    pub(crate) complement: bool,
 }
 
 #[derive(Debug)]
@@ -853,7 +864,7 @@ impl ProgramBuilder {
                 None if p.automation.is_some() => return Err(invalid("render.program.automation_without_slot")),
                 None => None,
             };
-            host_params.push(PHostParam { value: p.value, binding });
+            host_params.push(PHostParam { value: p.value, binding, complement: p.complement });
             Ok(index)
         };
 
