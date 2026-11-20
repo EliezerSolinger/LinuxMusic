@@ -355,6 +355,18 @@ impl Lb302 {
         }
     }
 
+    /// The playing note's pitch moves to @p frequency (a bend, a tuning) without starting it again: the legacy
+    /// synth read its note's frequency each period
+    pub fn set_frequency(&mut self, frequency: f32) {
+        self.true_freq = frequency;
+        let inc = frequency / self.sample_rate;
+        if self.knobs.slide {
+            self.slide_base = inc;
+        } else {
+            self.vco_inc = inc;
+        }
+    }
+
     /// A period into @p out: the note held until frame @p release_frame (decaying from there; while @p playing is
     /// false it decays from the start, unless a note starts), at the side gains @p volume
     pub fn render(&mut self, out: &mut [[f32; 2]], release_frame: usize, playing: bool, volume: [f32; 2]) {

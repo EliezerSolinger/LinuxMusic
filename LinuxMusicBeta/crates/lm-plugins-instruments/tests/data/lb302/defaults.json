@@ -1,0 +1,19 @@
+{
+  "plugin:lb302": {
+    "defaults": {
+      "params": {
+        "db24": 0.0,
+        "dead": 0.0,
+        "distortion": 0.0,
+        "slide": 0.0,
+        "slideDecay": 0.6,
+        "vcfCutoffFrequency": 0.75,
+        "vcfEnvelopeDecay": 0.1,
+        "vcfEnvelopeMod": 0.1,
+        "vcfResonance": 0.75
+      },
+      "waveform": "bl-saw"
+    },
+    "version": 1
+  }
+}

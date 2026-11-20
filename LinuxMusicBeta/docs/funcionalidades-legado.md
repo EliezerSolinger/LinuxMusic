@@ -677,6 +677,7 @@ Regras gerais do legado que valem para quase todo plugin:
   desligado. "Accent" existe no código, sem efeito, sem tela, não salvo.
 - **Comportamento:** **monofônico**; quando várias notas começam juntas, **a mais grave vence**; com Slide, a próxima
   nota desliza a partir desta. Segue pitch bend. Quirk: o botão "exponencial" diz "White noise wave".
+- **Na beta:** plugin `lb302`, em `lm-plugins-instruments`: os 9 botões e o campo `waveform`; um fluxo só (a nota mais nova soa, com slide e dead), velocidade e expressões de pan e afinação da nota; sem as funções de instrumento (o legado não dava envelope nem filtro a um instrumento de fluxo único; acordes e arpejo de um fluxo monofônico soariam só a nota mais nova). Contrato e A/B por composição, bit a bit.
 
 #### F-INS-009 Monstro (3 osciladores com matriz de modulação) — 1.0
 

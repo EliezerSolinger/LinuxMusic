@@ -867,3 +867,8 @@ conservadora; só entra o que o modelo novo pede.
 - **A/B contra o `.so` original** (`lm-plugins-ampandir/ab`: o `libampandir.so` do legado, sem recompilar, com o IR
   e o modelo carregados pelas configurações dele, a 44,1 kHz em períodos de 256): ganhos, amp na taxa do motor, amp
   reamostrado — iguais bit a bit; IR mono, estéreo, reamostrado e amp + IR — de −128,9 a −138,5 dBFS (a FFT).
+- **LB302 é um processador próprio, não um `Synth`:** a TB-303 é um fluxo só (o slide e o dead dependem da nota
+  anterior), o que as vozes do `Instrument` não guardam; o autor do `lm-plugin` aceitou um processador próprio para
+  ela. Não tem as funções de instrumento, como o legado não dava envelope e filtro a instrumentos de fluxo único;
+  acordes e arpejo ficam de fora (de um fluxo monofônico só soaria a nota mais nova). `Lb302::set_frequency` no
+  `lm-dsp` move a afinação da nota sem recomeçá-la (o legado lia a frequência da nota a cada período).
