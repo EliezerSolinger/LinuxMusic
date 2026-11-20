@@ -8,10 +8,11 @@
 //!
 //! Opened on a channel or on one of its inserts (that insert's controls open). Through the port only.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, Context, Entity, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Render,
+    AnyElement, AnyView, Context, Entity, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Render,
     Subscription, Window, div, prelude::*, px,
 };
 use lm_port::{BrowsePage, EditOp, Feed, Loading, NodeId, Pending, PluginInfo, Ref, Target, Topic, Value};
@@ -68,6 +69,8 @@ pub struct EffectWindow {
     card_drag: Option<CardDrag>,
     presets: Vec<PresetEntry>,
     editor: EditorState<EfPopup>,
+    /// The open inserts' own panels (I-22, lm-gui-plugins), by insert, for the plugin they were made for
+    panels: HashMap<NodeId, (Arc<str>, AnyView, Subscription)>,
     _subs: Vec<Subscription>,
 }
 
@@ -90,6 +93,7 @@ impl EffectWindow {
             card_drag: None,
             presets: Vec::new(),
             editor: EditorState::default(),
+            panels: HashMap::new(),
             _subs: vec![observe],
         };
         w.set_channel(channel, cx);
@@ -350,8 +354,37 @@ impl EffectWindow {
         let Some(schema) = schema_of(&core, &x.plugin, cx) else { return Vec::new() };
         let port = core.read(cx).port();
         let Some(node) = port.find(x.id) else { return Vec::new() };
+        // the plugin's own look, faithful to the legacy (I-22)
+        if let Some((p, view, _)) = self.panels.get(&x.id)
+            && *p == x.plugin
+        {
+            let (w, h) = lm_gui_plugins::panel_size(&x.plugin).unwrap_or((250.0, 250.0));
+            return vec![div().flex_none().w(px(w)).h(px(h)).child(view.clone()).into_any_element()];
+        }
         let ctls = controls_of(x.id, &node, &schema, port.root());
         grouped(self, ctls, &plugin_name(plugins, &x.plugin), cx)
+    }
+
+    /// Keeps a panel for each open insert whose plugin has one, remade when the plugin changes (I-22)
+    fn update_panels(&mut self, inserts: &[PluginView], window: &mut Window, cx: &mut Context<Self>) {
+        let want: Vec<(NodeId, Arc<str>)> = inserts
+            .iter()
+            .filter(|x| self.open.contains(&x.id) && lm_gui_plugins::has_panel(&x.plugin))
+            .map(|x| (x.id, x.plugin.clone()))
+            .collect();
+        self.panels.retain(|id, (p, ..)| want.iter().any(|(w, wp)| w == id && wp == p));
+        for (id, plugin) in want {
+            if self.panels.contains_key(&id) {
+                continue;
+            }
+            let Some(entity) = lm_gui_plugins::open_entity(&plugin, id, self.scx.core.clone(), cx) else { continue };
+            let workspace = self.scx.workspace.clone();
+            let sub = cx.subscribe_in(&entity, window, move |_, _, e: &lm_gui_plugins::PanelEvent, window, cx| {
+                let lm_gui_plugins::PanelEvent::OpenBinding(target) = e;
+                crate::ui::midi::open_binding(&workspace, target.clone(), window, cx);
+            });
+            self.panels.insert(id, (plugin, entity.into(), sub));
+        }
     }
 }
 
@@ -502,7 +535,7 @@ impl ParamHost<EfPopup> for EffectWindow {
 }
 
 impl Render for EffectWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // U38: follow the channel by its feed; a removed channel goes to the master; removed inserts close
         if let Some(feed) = self.feed.as_mut() {
             let _ = self.scx.core.read(cx).port().drain(feed);
@@ -519,6 +552,7 @@ impl Render for EffectWindow {
             return div().id("effect-window").size_full().bg(c(THEME.bg1)).p(px(10.)).child(caption(tr("No channel.")));
         };
         self.open.retain(|x| ch.inserts.iter().any(|i| i.id == *x));
+        self.update_panels(&ch.inserts, window, cx);
         let plugins = self.scx.core.read(cx).port().plugins();
         let analog = model::song(self.scx.core.read(cx).port().root()).analog;
         let latency: u32 =

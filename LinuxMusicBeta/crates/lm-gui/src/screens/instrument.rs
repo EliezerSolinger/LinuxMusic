@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, FontWeight, Global, MouseButton, MouseDownEvent, MouseMoveEvent,
+    AnyElement, AnyView, App, Bounds, Context, Entity, FontWeight, Global, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, PathBuilder, Pixels, Point, Render, ScrollEvent, SharedString, Subscription, Window, anchored,
     canvas, deferred, div, fill, point, prelude::*, px, size,
 };
@@ -1160,6 +1160,8 @@ pub struct InstrumentWindow {
     /// the presets of the current plugin (the browser service's Presets page), refreshed when the list opens
     presets: Vec<PresetEntry>,
     editor: EditorState<IwPopup>,
+    /// The plugin's own panel (I-22, lm-gui-plugins), for the instrument it was made for
+    panel: Option<(NodeId, Arc<str>, AnyView, Subscription)>,
     _subs: Vec<Subscription>,
 }
 
@@ -1279,10 +1281,28 @@ impl InstrumentWindow {
             lit: None,
             presets: Vec::new(),
             editor: EditorState::default(),
+            panel: None,
             _subs: vec![observe],
         };
         w.set_track(first, cx);
         w
+    }
+
+    /// Keeps the panel of the instrument shown, remade when the node or the plugin changes (I-22)
+    fn update_panel(&mut self, instrument: Option<(NodeId, Arc<str>)>, window: &mut Window, cx: &mut Context<Self>) {
+        let want = instrument.filter(|(_, p)| lm_gui_plugins::has_panel(p));
+        if self.panel.as_ref().map(|(n, p, ..)| (*n, p.clone())) == want {
+            return;
+        }
+        self.panel = want.and_then(|(node, plugin)| {
+            let entity = lm_gui_plugins::open_entity(&plugin, node, self.scx.core.clone(), cx)?;
+            let workspace = self.scx.workspace.clone();
+            let sub = cx.subscribe_in(&entity, window, move |_, _, e: &lm_gui_plugins::PanelEvent, window, cx| {
+                let lm_gui_plugins::PanelEvent::OpenBinding(target) = e;
+                crate::ui::midi::open_binding(&workspace, target.clone(), window, cx);
+            });
+            Some((node, plugin, entity.into(), sub))
+        });
     }
 
     fn set_track(&mut self, track: Option<NodeId>, cx: &mut Context<Self>) {
@@ -1703,7 +1723,14 @@ impl InstrumentWindow {
             out.push(self.kit_view(t, cx));
         }
         let own: Vec<Ctl> = ctls.iter().filter(|k| !is_function_key(k.key())).cloned().collect();
-        out.extend(grouped(self, own, &plugin_name(plugins, &plugin), cx));
+        match &self.panel {
+            // the plugin's own look, faithful to the legacy (I-22); the instrument functions stay in their tabs
+            Some((n, p, view, _)) if *n == node && *p == plugin => {
+                let (w, h) = lm_gui_plugins::panel_size(&plugin).unwrap_or((250.0, 250.0));
+                out.push(div().flex_none().w(px(w)).h(px(h)).child(view.clone()).into_any_element());
+            }
+            _ => out.extend(grouped(self, own, &plugin_name(plugins, &plugin), cx)),
+        }
         // the outputs (I-3.9): one per port of the instrument, each to a desk channel
         let channels = model::channels(port.root());
         let rows: Vec<AnyElement> = t
@@ -2192,6 +2219,7 @@ impl Render for InstrumentWindow {
             }
             None => Vec::new(),
         };
+        self.update_panel(t.instrument.clone(), window, cx);
         let body: Vec<AnyElement> = match self.tab {
             Tab::Instrument => self.instrument_tab(&t, &ctls, &plugins, cx),
             Tab::Envelopes => self.envelopes_tab(&ctls, cx),
