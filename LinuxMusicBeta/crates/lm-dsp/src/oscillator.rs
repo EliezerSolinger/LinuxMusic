@@ -277,7 +277,9 @@ impl Waveform {
     fn sample(&self, band: usize, sample: f32) -> f32 {
         let table = self.table(band);
         let frame = abs_fraction(sample) * WAVETABLE_LENGTH as f32;
-        let f1 = frame as usize;
+        // A phase a hair below a whole period rounds up to the table's length in single precision (the fraction of
+        // -1e-9 is 1.0): that is the period's start, not one past the table's end
+        let f1 = frame as usize % WAVETABLE_LENGTH;
         let f2 = if f1 < WAVETABLE_LENGTH - 1 { f1 + 1 } else { 0 };
         lerp(table[f1], table[f2], fraction(frame))
     }
@@ -680,6 +682,17 @@ mod tests {
             assert!((-1.0..=1.0).contains(&x));
             assert_eq!(x, b.sample());
         }
+    }
+
+    #[test]
+    fn a_phase_just_below_a_period_reads_the_table_start() {
+        let tables = wave_tables();
+        let saw = &tables[WaveShape::Saw.table().unwrap()];
+        for x in [-1.0e-9f32, 0.999_999_97, -0.000_000_01] {
+            let v = saw.sample(40, x);
+            assert!(v.is_finite());
+        }
+        assert_eq!(saw.sample(40, -1.0e-9).to_bits(), saw.sample(40, 0.0).to_bits());
     }
 
     #[test]
