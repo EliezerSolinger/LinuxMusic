@@ -26,6 +26,7 @@
 //! - [`bit_invader`]: the BitInvader's voice;
 //! - [`drawn_wave`]: a drawn wave's band-limited tables (the BitInvader's, the Watsyn's);
 //! - [`envelope`], [`sound_shaping`]: every instrument's envelopes and LFOs, and its filter;
+//! - [`nes`]: the Nescaline;
 //! - [`organic`]: the Organic's voice;
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
 //! - [`vibed`]: the Vibed's plucked strings;
@@ -76,6 +77,7 @@ pub mod master;
 pub mod math;
 pub mod modulation_effects;
 pub mod mono_bass;
+pub mod nes;
 pub mod organic;
 pub mod oscillator;
 pub mod oversampling;

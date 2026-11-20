@@ -909,6 +909,53 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "nes" {
+        use lm_dsp::nes::*;
+        let st = &case["settings"];
+        let d = NesSettings::default();
+        let v = |key: &str, default: f32| f(st, key, default);
+        let on = |key: &str, default: bool| v(key, if default { 1.0 } else { 0.0 }) != 0.0;
+        let pulse = |n: usize| {
+            let p = d.pulses[n - 1];
+            NesPulse {
+                enabled: on(&format!("Channel {n} enable"), p.enabled),
+                coarse: v(&format!("Channel {n} coarse detune"), p.coarse),
+                volume: v(&format!("Channel {n} volume"), p.volume),
+                env_enabled: on(&format!("Channel {n} envelope enable"), p.env_enabled),
+                env_looped: on(&format!("Channel {n} envelope loop"), p.env_looped),
+                env_length: v(&format!("Channel {n} envelope length"), p.env_length),
+                duty: v(&format!("Channel {n} duty cycle"), p.duty as f32) as usize,
+                sweep_enabled: on(&format!("Channel {n} sweep enable"), p.sweep_enabled),
+                sweep_amount: v(&format!("Channel {n} sweep amount"), p.sweep_amount),
+                sweep_rate: v(&format!("Channel {n} sweep rate"), p.sweep_rate),
+            }
+        };
+        let settings = NesSettings {
+            pulses: [pulse(1), pulse(2)],
+            triangle_enabled: on("Channel 3 enable", d.triangle_enabled),
+            triangle_coarse: v("Channel 3 coarse detune", d.triangle_coarse),
+            triangle_volume: v("Channel 3 volume", d.triangle_volume),
+            noise_enabled: on("Channel 4 enable", d.noise_enabled),
+            noise_volume: v("Channel 4 volume", d.noise_volume),
+            noise_env_enabled: on("Channel 4 envelope enable", d.noise_env_enabled),
+            noise_env_looped: on("Channel 4 envelope loop", d.noise_env_looped),
+            noise_env_length: v("Channel 4 envelope length", d.noise_env_length),
+            noise_mode: on("Channel 4 noise mode", d.noise_mode),
+            noise_freq_mode: on("Channel 4 frequency mode", d.noise_freq_mode),
+            noise_freq: v("Channel 4 noise frequency", d.noise_freq),
+            noise_sweep: v("Channel 4 noise frequency sweep", d.noise_sweep),
+            noise_quantize: on("Channel 4 quantize", d.noise_quantize),
+            master: v("Master volume", d.master),
+            vibrato: v("Vibrato", d.vibrato),
+        };
+        let freq = case["freq"].as_f64().unwrap() as f32;
+        let mut voice =
+            NesVoice::new(&settings, freq, case["rate"].as_f64().unwrap() as u32, case["seed"].as_u64().unwrap());
+        for start in (0..frames as usize).step_by(block as usize) {
+            voice.render(&mut out[start..(start + block as usize).min(frames as usize)], &settings, freq);
+        }
+        return out;
+    }
     if case["unit"] == "sfxr" {
         use lm_dsp::sfxr::*;
         let st = &case["settings"];

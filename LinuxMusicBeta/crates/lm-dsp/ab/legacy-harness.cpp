@@ -66,6 +66,7 @@ extern "C"
 #define protected public
 #include "Lb302.h"
 #include "Sfxr.h"
+#include "Nes.h"
 #undef protected
 #undef private
 
@@ -311,6 +312,32 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			chain[0]->update(out.data() + start, n, 0);
 			for (std::int64_t f = start; f < start + n; ++f) { out[f][1] = out[f][0]; }
 		}
+		return out;
+	}
+	if (unit == "nes")
+	{
+		// The Nescaline's note (NesObject compiled in from the plugin) on a note of a track of the song, its frequency
+		// set to the case's, the legacy fastRand seeded for the dither
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto instrument = std::make_unique<NesInstrument>(track);
+		const auto s = c["settings"].toObject();
+		for (auto* model : instrument->findChildren<AutomatableModel*>())
+		{
+			if (s.contains(model->displayName())) { model->setValue(static_cast<float>(s[model->displayName()].toDouble())); }
+		}
+		// (the knobs' changes reach what the notes read once a period, before they render)
+		AutomatableModel::incrementPeriodCounter();
+		for (auto* model : instrument->findChildren<AutomatableModel*>()) { model->valueBuffer(); }
+		static_cast<Instrument*>(instrument.get())->preparePeriod();
+		auto* note = NotePlayHandleManager::acquire(track, 0, static_cast<f_cnt_t>(frames), Note{});
+		const_cast<float&>(note->frequency()) = static_cast<float>(c["freq"].toDouble());
+		fastRandState() = static_cast<unsigned long>(c["seed"].toDouble());
+		auto nes = NesObject{instrument.get(), static_cast<sample_rate_t>(c["rate"].toDouble()), note};
+		for (std::int64_t start = 0; start < frames; start += block)
+		{
+			nes.renderOutput(out.data() + start, static_cast<f_cnt_t>(std::min(block, frames - start)));
+		}
+		NotePlayHandleManager::release(note);
 		return out;
 	}
 	if (unit == "sfxr")

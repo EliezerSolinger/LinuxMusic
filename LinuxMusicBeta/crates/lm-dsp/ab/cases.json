@@ -7509,6 +7509,99 @@
         "Delta Slide": -0.5,
         "Repeat Speed": 0.7
       }
+    },
+    {
+      "name": "nes-default",
+      "unit": "nes",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "seed": 1,
+      "freq": 220.0,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {}
+    },
+    {
+      "name": "nes-envelopes-sweeps",
+      "unit": "nes",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "seed": 5,
+      "freq": 330.0,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Channel 1 envelope enable": 1,
+        "Channel 1 envelope length": 6,
+        "Channel 1 sweep enable": 1,
+        "Channel 1 sweep amount": 3,
+        "Channel 1 sweep rate": 2,
+        "Channel 1 duty cycle": 1,
+        "Channel 2 envelope enable": 1,
+        "Channel 2 envelope loop": 1,
+        "Channel 2 envelope length": 2,
+        "Channel 2 sweep enable": 1,
+        "Channel 2 sweep amount": -4,
+        "Channel 2 sweep rate": 5,
+        "Channel 2 coarse detune": 7,
+        "Channel 3 coarse detune": -12,
+        "Channel 3 volume": 9,
+        "Master volume": 1.4
+      }
+    },
+    {
+      "name": "nes-noise",
+      "unit": "nes",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "seed": 9,
+      "freq": 110.0,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Channel 4 enable": 1,
+        "Channel 4 envelope enable": 1,
+        "Channel 4 envelope loop": 1,
+        "Channel 4 envelope length": 3,
+        "Channel 4 noise frequency": 9,
+        "Channel 4 noise frequency sweep": 2,
+        "Channel 1 enable": 0,
+        "Channel 3 enable": 0
+      }
+    },
+    {
+      "name": "nes-noise-note-vibrato",
+      "unit": "nes",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "seed": 21,
+      "freq": 440.0,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Channel 4 enable": 1,
+        "Channel 4 noise mode": 1,
+        "Channel 4 frequency mode": 1,
+        "Channel 4 noise frequency sweep": -3,
+        "Vibrato": 9,
+        "Channel 2 duty cycle": 3
+      }
     }
   ]
 }
