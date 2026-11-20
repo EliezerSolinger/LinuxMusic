@@ -32,8 +32,15 @@ pub enum Stage {
     MasterDrive,
     /// Master: stereo section and bus compressor (`stereo`, `dynamics`)
     MasterBus,
-    /// Master: the output transformer, after the fader (`transformer`)
+    /// Master: the output transformer, after the fader (`transformer`), then the monitoring (LEVEL, DIM, CUT, MONO,
+    /// SIDE: the machine's, `Environment::monitor`, never in an export)
     MasterTransformer,
+    /// Channel: the legacy strip's input, TRIM and MONO, before the rack and every insert. Built in both desk modes,
+    /// when the channel has a `trim` or `mono` is on
+    Input,
+    /// Channel: phase invert and swap, after the effects and before the fader (after the pre-fader tap). Built in both
+    /// desk modes, when `phaseInvert` or `swap` is on
+    Polarity,
 }
 
 impl Stage {
@@ -49,6 +56,8 @@ impl Stage {
             Stage::MasterDrive => "master-drive",
             Stage::MasterBus => "master-bus",
             Stage::MasterTransformer => "master-transformer",
+            Stage::Input => "input",
+            Stage::Polarity => "polarity",
         }
     }
 }
@@ -133,8 +142,32 @@ fn stage_of(master: bool, section: &str, field: &str) -> Stage {
     }
 }
 
+/// The channel-level reals the rack's stages run, after the sections' (keys are the document's: `"trim"`, not
+/// `"rack.…"`), and the monitor's level on the master
+fn extra_params(master: bool) -> Vec<RackParam> {
+    let p = |key: &str, section: &'static str, field: &'static str, stage, min, max, default| RackParam {
+        key: key.to_owned(),
+        section,
+        field,
+        stage,
+        min,
+        max,
+        default,
+    };
+    if master {
+        vec![
+            p("preLeft", "channel", "preLeft", Stage::MasterDrive, 0.0, 4.0, 1.0),
+            p("preRight", "channel", "preRight", Stage::MasterDrive, 0.0, 4.0, 1.0),
+            p("monitor.level", "monitor", "level", Stage::MasterTransformer, -60.0, 6.0, 0.0),
+        ]
+    } else {
+        vec![p("trim", "channel", "trim", Stage::Input, -60.0, 24.0, 0.0)]
+    }
+}
+
 /// The parameters of a channel's rack (`master: false`) or of the master's, in their index order: the real fields
-/// of each section, sections and fields in the schema's order. The rack processor uses the same table
+/// of each section, sections and fields in the schema's order, then the channel-level ones ([`extra_params`]). The
+/// rack processor uses the same table
 pub fn rack_params(registry: &SchemaRegistry, master: bool) -> Vec<RackParam> {
     let sections: &[(&str, &str)] = if master { &MASTER_SECTIONS } else { &CHANNEL_SECTIONS };
     let mut out = Vec::new();
@@ -155,5 +188,6 @@ pub fn rack_params(registry: &SchemaRegistry, master: bool) -> Vec<RackParam> {
             }
         }
     }
+    out.extend(extra_params(master));
     out
 }

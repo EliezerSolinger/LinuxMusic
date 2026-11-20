@@ -489,15 +489,45 @@ fn inserts_sit_at_their_points() {
     let _ = rack;
     assert_eq!(InsertPoint::parse(Some("post-gain")), InsertPoint::PostGain);
     // The slots of the rack: one per real field
-    for p in rack_params(&schemas(&plugins), false) {
+    for p in rack_params(&schemas(&plugins), false).iter().filter(|p| p.section != "channel") {
         assert_eq!(c.table.slots_of(ch, &p.key).len(), 1, "{}", p.key);
     }
+    // No channel-level controls: no input nor polarity node
+    assert!(
+        c.table.node(NodeKey::Rack(ch, Stage::Input)).is_none()
+            && c.table.node(NodeKey::Rack(ch, Stage::Polarity)).is_none()
+    );
     // Digital: no rack nodes and no rack slots (P-17)
     digital(&mut doc);
     let c = core.compile(doc.root(), &lm_compile::NoResources, &Environment::default()).unwrap();
     assert!(c.table.nodes.keys().all(|k| !matches!(k, NodeKey::Rack(..))));
     assert!(c.table.slots_of(ch, "rack.tube.drive").is_empty());
     assert!(route(&c, NodeKey::ChannelIn(ch), NodeKey::Insert(a)).is_some());
+    // The legacy strip's TRIM and MONO before everything, phase and swap before the fader: in the digital desk too
+    doc.transact(lm_base::Label::new("test"), |e| {
+        e.set(ch, &[lm_state::PathStep::key("trim")], Value::real(-6.0)?)?;
+        e.set(ch, &[lm_state::PathStep::key("swap")], Value::bool(true))
+    })
+    .unwrap();
+    let c = core.compile(doc.root(), &lm_compile::NoResources, &Environment::default()).unwrap();
+    let chain = [
+        NodeKey::ChannelIn(ch),
+        NodeKey::Rack(ch, Stage::Input),
+        NodeKey::Insert(a),
+        NodeKey::Insert(b),
+        NodeKey::Insert(d),
+        NodeKey::Rack(ch, Stage::Polarity),
+        NodeKey::Fader(ch),
+    ];
+    for w in chain.windows(2) {
+        assert!(route(&c, w[0], w[1]).is_some(), "{:?} → {:?}", w[0], w[1]);
+    }
+    assert_eq!(c.table.slots_of(ch, "trim").len(), 1, "TRIM has its slot");
+    // The monitoring: only when the Environment has it (the session's live program, never an export)
+    let env = Environment { monitor: Some(Value::object([("dim", Value::bool(true))])), ..Environment::default() };
+    let c = core.compile(doc.root(), &lm_compile::NoResources, &env).unwrap();
+    assert!(c.table.node(NodeKey::Rack(master(), Stage::MasterTransformer)).is_some());
+    assert_eq!(c.table.slots_of(master(), "monitor.level").len(), 1);
 }
 
 #[test]

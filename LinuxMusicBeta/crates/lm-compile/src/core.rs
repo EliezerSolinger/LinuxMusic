@@ -1375,6 +1375,20 @@ impl CompilerCore {
             let input = channel_in(&plan, c.id);
             let w = c.width;
             let rack = c.value.get("rack").cloned().unwrap_or_default();
+            // The legacy strip's channel-level controls (optional fields) for the stages that run them, and the
+            // machine's monitoring for the master's last segment
+            let mut channel_controls = Value::empty_object();
+            for k in ["trim", "mono", "phaseInvert", "swap", "preLeft", "preRight"] {
+                if let Some(v) = c.value.get(k) {
+                    channel_controls = channel_controls.with(k, v.clone());
+                }
+            }
+            let has = |k: &str| channel_controls.get(k).is_some();
+            let on = |k: &str| channel_controls.get(k).and_then(Value::as_bool) == Some(true);
+            let wants_input = !c.master && (has("trim") || on("mono"));
+            let wants_polarity = !c.master && (on("phaseInvert") || on("swap"));
+            let wants_pre = c.master && (has("preLeft") || has("preRight"));
+            let monitor = if c.master { env.monitor.clone() } else { None };
             let seed = Rng::seed_for(s.seed, id_number(c.id));
             let inserts: Vec<(&Value, InsertPoint)> = items(c.value, "inserts")
                 .map(|p| (p, InsertPoint::parse(p.get("point").and_then(Value::as_text))))
@@ -1383,15 +1397,34 @@ impl CompilerCore {
             // The chain before the fader: (node, input width, output width)
             let mut prev = (input, w);
             let add_rack = |this: &Self, plan: &mut Plan, stages: Vec<Stage>, prev: &mut (usize, u16)| {
-                if stages.is_empty() || !analog {
+                // The digital desk has no rack, but the channel-level controls and the monitoring still run
+                let digital_ok = stages.iter().all(|st| match st {
+                    Stage::Input | Stage::Polarity => true,
+                    Stage::MasterDrive => wants_pre,
+                    Stage::MasterTransformer => monitor.is_some(),
+                    _ => false,
+                });
+                if stages.is_empty() || (!analog && !digital_ok) {
                     return;
                 }
                 let k = NodeKey::Rack(c.id, stages[0]);
+                let mut seg = rack.clone();
+                if stages.iter().any(|st| matches!(st, Stage::Input | Stage::Polarity | Stage::MasterDrive)) {
+                    seg = seg.with("channel", channel_controls.clone());
+                }
+                if stages.contains(&Stage::MasterTransformer)
+                    && let Some(m) = &monitor
+                {
+                    seg = seg.with("monitor", m.clone());
+                }
+                if !analog {
+                    seg = seg.with("digital", Value::bool(true));
+                }
                 let build = Build::Rack {
                     channel: c.id,
                     master: c.master,
                     stages: stages.clone(),
-                    rack: rack.clone(),
+                    rack: seg.clone(),
                     channels: w,
                 };
                 let shape = PluginShape::effect(w);
@@ -1400,7 +1433,7 @@ impl CompilerCore {
                 let table = if c.master { &this.rack_master } else { &this.rack_channel };
                 for (i, p) in table.iter().enumerate() {
                     if stages.contains(&p.stage) {
-                        let v = rack
+                        let v = seg
                             .get(p.section)
                             .and_then(|sec| sec.get(p.field))
                             .and_then(Value::as_real)
@@ -1445,6 +1478,9 @@ impl CompilerCore {
                 }
                 Ok(())
             };
+            if wants_input {
+                add_rack(self, &mut plan, vec![Stage::Input], &mut prev);
+            }
             if c.master {
                 add_rack(self, &mut plan, vec![Stage::MasterDrive], &mut prev);
                 for (p, _) in &inserts {
@@ -1473,6 +1509,9 @@ impl CompilerCore {
                 }
             }
             let pre_tap = prev;
+            if wants_polarity {
+                add_rack(self, &mut plan, vec![Stage::Polarity], &mut prev);
+            }
             let volume = HPlan::Param {
                 owner: c.id,
                 key: key("volume"),

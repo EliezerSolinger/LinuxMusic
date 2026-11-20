@@ -149,6 +149,9 @@ pub struct Environment {
     /// Low-latency monitoring (P-10, a preference): on the output path of an armed track, the inserts that have
     /// latency are bypassed
     pub low_latency_monitoring: bool,
+    /// The monitoring of the speakers (`preferences().monitor`: `level` dB, `dim`, `cut`, `mono`, `side`), run by
+    /// the master's last segment; never in an export (whose Environment has none)
+    pub monitor: Option<Value>,
 }
 
 /// A processor in the renderer's table, as the compiler knows it
