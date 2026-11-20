@@ -3741,6 +3741,7 @@ dependencies = [
 name = "lm-plugins-stk"
 version = "0.1.0"
 dependencies = [
+ "libm",
  "lm-base",
  "lm-dsp",
  "lm-plugin",

@@ -1,0 +1,39 @@
+# The A/B cases of lm-plugins-stk (U34): one note per line, read by legacy-harness.cpp and by tests/ab.rs.
+# `name` then `key=value` pairs; what is not given is the plugin's default. Rate 44100 Hz, the note at frame 0,
+# played in periods of 32 frames (the plugin's pieces). `volume` is the legacy note volume (0 to 200; the plugin's
+# velocity is volume / 200). `seed` is fastRand's state at the note on: the plugin's is the first draw of the node's
+# Rng, 8103657047149143059 in tests/ab.rs's bench (seed 77; the test checks it). `change=<frame>:<knob>:<value>`
+# turns a knob (or `pitch`, cents) at that frame (a multiple of 32).
+marimba preset=marimba key=57 volume=100 frames=22050
+marimba-hard preset=marimba key=81 volume=200 hardness=110 position=20 stickMix=30 frames=22050
+marimba-soft preset=marimba key=45 volume=30 hardness=10 position=50 frames=22050
+marimba-high preset=marimba key=108 volume=120 frames=11025
+vibraphone preset=vibraphone key=64 volume=150 vibratoGain=64 vibratoFreq=64 frames=44100 change=11008:vibratoGain:100 change=22016:vibratoFreq:20
+agogo preset=agogo key=72 volume=100 frames=22050
+wood1 preset=wood1 key=60 volume=80 frames=11025
+reso preset=reso key=55 volume=100 position=10 frames=44100
+wood2 preset=wood2 key=67 volume=100 frames=11025
+beats preset=beats key=50 volume=100 frames=44100
+two-fixed preset=two-fixed key=69 volume=100 frames=22050
+clump preset=clump key=62 volume=170 hardness=128 position=0 frames=22050
+marimba-random preset=marimba key=60 volume=100 randomness=1 seed=8103657047149143059 frames=22050
+marimba-spread preset=marimba key=57 volume=100 spread=255 frames=22050
+marimba-pitch preset=marimba key=57 volume=100 frames=22050 change=8192:pitch:50
+marimba-old preset=marimba key=57 volume=100 oldVersion=1 levelled=0 frames=22050
+bells preset=tubular-bells key=60 volume=100 frames=44100
+bells-knobs preset=tubular-bells key=72 volume=150 modulator=100 crossfade=20 lfoSpeed=10 lfoDepth=100 adsr=100 frames=44100 change=11008:adsr:30 change=22016:lfoDepth:5 change=33024:lfoSpeed:120
+bells-adsr-zero preset=tubular-bells key=48 volume=100 adsr=0 frames=22050
+bells-random preset=tubular-bells key=67 volume=100 randomness=0.7 seed=8103657047149143059 spread=37 frames=22050
+uniform-bar preset=uniform-bar key=57 volume=100 frames=44100
+uniform-bar-plucked preset=uniform-bar key=57 volume=100 bowed=0 frames=22050
+uniform-bar-old preset=uniform-bar key=57 volume=100 oldVersion=1 levelled=0 frames=22050
+tuned-bar preset=tuned-bar key=62 volume=200 frames=88200
+tuned-bar-pressure preset=tuned-bar key=74 volume=100 pressure=10 speed=120 frames=44100
+tuned-bar-pitch preset=tuned-bar key=62 volume=100 frames=44100 change=22016:pitch:-30
+glass preset=glass key=76 volume=100 frames=44100
+glass-plucked preset=glass key=76 volume=60 bowed=0 frames=22050
+tibetan-bowl preset=tibetan-bowl key=50 volume=100 frames=44100
+tibetan-bowl-plucked preset=tibetan-bowl key=50 volume=100 bowed=0 frames=22050
+bowl-random preset=tibetan-bowl key=60 volume=100 randomness=1 seed=8103657047149143059 frames=44100
+uniform-bar-low preset=uniform-bar key=24 volume=100 frames=22050
+glass-high preset=glass key=100 volume=100 frames=22050
