@@ -19,6 +19,8 @@ runtime-shaders = ["gpui_platform/runtime_shaders"]
 [dependencies]
 lm-port.workspace = true
 lm-time.workspace = true
+# The legacy plugins' own panels (I-22), hosted in the instrument and effect windows
+lm-gui-plugins.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 gpui-component.workspace = true

@@ -3565,6 +3565,7 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-platform",
  "image",
+ "lm-gui-plugins",
  "lm-port",
  "lm-port-fake",
  "lm-time",

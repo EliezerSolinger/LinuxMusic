@@ -497,6 +497,7 @@ impl Workspace {
 /// The app's start: language, theme and keys from the preferences, then the window
 pub fn start(cx: &mut App, preferences: &Value) {
     crate::ui::i18n::set_language(preferences.get("language").and_then(Value::as_text));
+    lm_gui_plugins::set_language(crate::ui::i18n::language());
     crate::ui::theme::set_theme(preferences.get("theme").and_then(Value::as_text));
     gpui_component::init(cx);
     let mode = if crate::ui::theme::theme_name() == "light" {

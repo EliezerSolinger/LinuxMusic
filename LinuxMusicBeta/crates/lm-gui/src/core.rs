@@ -26,6 +26,8 @@ pub struct Core {
     pub midi_ui: Vec<lm_port::MidiUiAction>,
     /// The MIDI activity's counter and the learn, last seen: a change redraws
     midi_seen: (u64, Option<lm_port::LearnId>),
+    /// The answers of imports that waited (the RemotePort's), until a plugin panel takes them by request
+    imported: HashMap<lm_port::RequestId, lm_port::Result<lm_port::Resource>>,
     last_meters: Instant,
     _pump: Task<()>,
 }
@@ -57,6 +59,7 @@ impl Core {
             pumps: 0,
             midi_ui: Vec::new(),
             midi_seen: (0, None),
+            imported: HashMap::new(),
             last_meters: Instant::now(),
             _pump: pump,
         };
@@ -83,6 +86,11 @@ impl Core {
             return;
         }
         self.port.drain_midi_ui(&mut self.midi_ui);
+        for (id, answer) in self.port.finished() {
+            if let lm_port::Finished::Imported(r) = answer {
+                self.imported.insert(id, r);
+            }
+        }
         let midi = (self.port.midi_activity(u64::MAX).0, self.port.learning());
         let midi_changed = midi != self.midi_seen || !self.midi_ui.is_empty();
         self.midi_seen = midi;
@@ -111,5 +119,20 @@ impl Core {
     /// A node's meter as drawn (0..1 of the bar)
     pub fn meter(&self, id: NodeId) -> f32 {
         self.shown.get(&id).copied().unwrap_or(0.0)
+    }
+}
+
+/// The plugin panels (lm-gui-plugins, I-22) work on the core through this entity: the port, and the imports' answers
+impl lm_gui_plugins::PortHost for Core {
+    fn port(&self) -> &dyn CorePort {
+        &*self.port
+    }
+
+    fn port_mut(&mut self) -> &mut dyn CorePort {
+        &mut *self.port
+    }
+
+    fn take_imported(&mut self, id: lm_port::RequestId) -> Option<lm_port::Result<lm_port::Resource>> {
+        self.imported.remove(&id)
     }
 }
