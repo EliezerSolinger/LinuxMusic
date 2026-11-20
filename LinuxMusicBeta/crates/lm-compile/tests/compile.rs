@@ -375,7 +375,12 @@ fn live_midi_reaches_an_armed_instrument() {
     edit(&mut doc, |e| e.set(t, &[k("armed")], Value::bool(true)));
     let env = Environment { midi_ports: vec![PortIndex(0)], ..Environment::default() };
     let mut core = CompilerCore::new(config(&plugins));
-    core.compile(doc.root(), &lm_compile::NoResources, &env).unwrap();
+    let c = core.compile(doc.root(), &lm_compile::NoResources, &env).unwrap();
+    assert_eq!(c.ports.len(), 1);
+    assert!(matches!(c.ports[0], (PortIndex(0), NodeKey::Instrument(_))));
+    edit(&mut doc, |e| e.set(t, &[k("armed")], Value::bool(false)));
+    let c = core.compile(doc.root(), &lm_compile::NoResources, &env).unwrap();
+    assert!(c.ports.is_empty());
 }
 
 #[test]

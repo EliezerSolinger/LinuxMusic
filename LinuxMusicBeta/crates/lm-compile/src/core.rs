@@ -811,6 +811,7 @@ impl CompilerCore {
                 delay: f.delay,
             })
             .collect();
+        let ports = plan.ports.iter().map(|(p, n)| (*p, plan.nodes[*n].key)).collect();
         let nodes = plan
             .nodes
             .iter()
@@ -827,6 +828,7 @@ impl CompilerCore {
             waiting_items: plan.waiting_items,
             routes,
             nodes,
+            ports,
             streamed: plan.streamed,
             made,
             elapsed: started.elapsed(),

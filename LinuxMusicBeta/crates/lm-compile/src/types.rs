@@ -243,6 +243,8 @@ pub struct Compiled {
     pub routes: Vec<Route>,
     /// The nodes silenced by a mute or a solo, and the latency each node counts in the PDC
     pub nodes: Vec<NodeInfo>,
+    /// The live MIDI routes (I-7.1): each input port to the armed instruments
+    pub ports: Vec<(PortIndex, NodeKey)>,
 }
 
 /// One route of a compiled program
