@@ -23,7 +23,7 @@
 //! | Allocates, locks, does I/O? | `Offline` allocates throughout (it is for an `Operation`). `Realtime::new` allocates (the whole state, sized for `max_block`) and takes the crate lock. On `Realtime`, `process`, `retrieve`, `available`, `samples_required` and `start_delay` neither allocate nor lock nor do I/O (checked by `tests/no_alloc.rs` with the C heap trap, R2 and R3, both formant modes, pitch 1 and 1.25) and may run on the audio thread. `set_time_ratio` is real-time safe **on R3 only** (a ratio gliding every block, checked by the same test); on R2 the next `process` after a ratio change recomputes the stretch profile on the heap. **`set_pitch_scale` and `reset` are not real-time safe**: R3 reallocates its resampler on a pitch change and on reset (measured by the same test); call them off the audio thread, or make a new `Realtime` with the new pitch. `Drop` frees and locks: never on the audio thread. No I/O anywhere; the library writes its error messages (debug level 0) to stderr. |
 //! | Creates threads? | No: every stretcher is made with `OptionThreadingNever` (R2 would otherwise start one thread per channel in offline mode). Parallelism is per item, by the caller's `Workers`. |
 //! | Calls back into our code? | No. A C++ exception escaping the library (only `std::bad_alloc` is possible) cannot unwind through `extern "C"`: the process aborts, as on any out-of-memory. |
-//! | Tests | `tests/offline.rs` (a stretched sine keeps its pitch within 0.5 % and gets exactly the length asked for, R3 and R2, mono and stereo; a pitch shift moves the frequency by the scale; formant preservation runs; cancel before and during; progress reaches 1; chunked feeding equals one call; bad arguments are keyed errors), `tests/realtime.rs` (stream keeps the pitch, the start delay is reported), `tests/no_alloc.rs` (the real-time calls under `assert_no_alloc` and the C heap trap). ASan in CI. |
+//! | Tests | `tests/offline.rs` (a stretched sine keeps its pitch within 0.5 % and gets exactly the length asked for, R3 and R2, mono and stereo; a pitch shift moves the frequency by the scale; formant preservation runs; cancel before and during; progress reaches 1; key frames put each click where the map says; chunked feeding equals one call; bad arguments are keyed errors), `tests/realtime.rs` (stream keeps the pitch, the start delay is reported), `tests/no_alloc.rs` (the real-time calls under `assert_no_alloc` and the C heap trap). ASan in CI. |
 
 use lm_base::{Cancel, Error, Progress, Result};
 use std::ffi::{c_double, c_float, c_int, c_uint};
@@ -75,6 +75,12 @@ mod ffi {
         pub fn rubberband_set_expected_input_duration(state: *mut RubberBandState, samples: c_uint);
         pub fn rubberband_get_samples_required(state: *const RubberBandState) -> c_uint;
         pub fn rubberband_set_max_process_size(state: *mut RubberBandState, samples: c_uint);
+        pub fn rubberband_set_key_frame_map(
+            state: *mut RubberBandState,
+            keyframecount: c_uint,
+            from: *mut c_uint,
+            to: *mut c_uint,
+        );
         pub fn rubberband_study(
             state: *mut RubberBandState,
             input: *const *const c_float,
@@ -475,6 +481,35 @@ impl Offline {
         if self.studied == self.input_frames {
             self.pass = Pass::Process;
         }
+        Ok(())
+    }
+
+    /// Key frames: each `(input frame, output frame)` lands exactly there, the stretch between two of them even (a
+    /// tempo map with several tempos: the frames where the tempo changes). Between the study pass and the processing
+    /// pass, both coordinates strictly increasing and inside the input and the output. The overall ratio still comes
+    /// from [`Offline::new`]. Errors: `rubberband.out_of_order` (not between the passes), `rubberband.bad_key_frames`
+    pub fn set_key_frames(&mut self, frames: &[(usize, usize)]) -> Result<()> {
+        if self.pass != Pass::Process || self.processed != 0 {
+            return Err(Error::new("rubberband.out_of_order"));
+        }
+        let mut last = (0usize, 0usize);
+        for (i, &(from, to)) in frames.iter().enumerate() {
+            let increasing = i == 0 || (from > last.0 && to > last.1);
+            if !increasing || from >= self.input_frames || to >= self.output_frames {
+                return Err(Error::new("rubberband.bad_key_frames").arg("index", i as i64));
+            }
+            last = (from, to);
+        }
+        let (Ok(count), Ok(mut from), Ok(mut to)) = (
+            c_uint::try_from(frames.len()),
+            frames.iter().map(|f| c_uint::try_from(f.0)).collect::<std::result::Result<Vec<_>, _>>(),
+            frames.iter().map(|f| c_uint::try_from(f.1)).collect::<std::result::Result<Vec<_>, _>>(),
+        ) else {
+            return Err(Error::new("rubberband.too_long"));
+        };
+        // SAFETY: the state is ours (&mut self); `from` and `to` hold `count` values each and live until the call
+        // returns (the library copies them into its own map)
+        unsafe { ffi::rubberband_set_key_frame_map(self.handle.ptr(), count, from.as_mut_ptr(), to.as_mut_ptr()) };
         Ok(())
     }
 

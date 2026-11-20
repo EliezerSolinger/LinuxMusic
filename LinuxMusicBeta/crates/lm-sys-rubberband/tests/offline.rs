@@ -211,3 +211,33 @@ fn bad_arguments_are_errors_with_keys() {
     assert_eq!(frames_for_ratio(0, 2.0), 0);
     assert!(TIME_RATIO_RANGE.0 < 1.0 && TIME_RATIO_RANGE.1 > 1.0);
 }
+
+/// Where the loudest sample of `x[from..to]` is
+fn peak(x: &[f32], from: usize, to: usize) -> usize {
+    (from..to).max_by(|a, b| x[*a].abs().total_cmp(&x[*b].abs())).unwrap()
+}
+
+#[test]
+fn key_frames_put_each_frame_where_the_map_says() {
+    // Clicks every 100 ms; the first half squeezed to a quarter of the output, the second half stretched over the rest
+    let frames = 48_000;
+    let input: Vec<f32> = (0..frames).map(|n| if n % 4_800 == 2_400 { 1.0 } else { 0.0 }).collect();
+    let map_in = |n: usize| if n <= 24_000 { n / 2 } else { 12_000 + (n - 24_000) * 3 / 2 };
+    let mut s = Offline::new(Format::new(RATE, 1), frames, frames, 1.0, &Settings::default()).unwrap();
+    assert_eq!(s.set_key_frames(&[(24_000, 12_000)]).unwrap_err().key(), "rubberband.out_of_order", "before the study");
+    s.study(&input).unwrap();
+    assert_eq!(s.set_key_frames(&[(24_000, 12_000), (20_000, 30_000)]).unwrap_err().key(), "rubberband.bad_key_frames");
+    assert_eq!(s.set_key_frames(&[(48_000, 12_000)]).unwrap_err().key(), "rubberband.bad_key_frames");
+    s.set_key_frames(&[(12_000, 6_000), (24_000, 12_000), (36_000, 30_000)]).unwrap();
+    let mut out = Vec::new();
+    s.process(&input, &mut out).unwrap();
+    s.finish(&mut out).unwrap();
+    assert_eq!(out.len(), frames);
+    // Each click lands within 3 ms of where the map puts it
+    for click in [2_400usize, 16_800, 26_400, 40_800] {
+        let at = map_in(click);
+        let found = peak(&out, at.saturating_sub(1_000), (at + 1_000).min(frames));
+        assert!(found.abs_diff(at) <= 144, "the click at {click} should be at {at}, found at {found}");
+    }
+    assert_eq!(s.set_key_frames(&[(1, 1)]).unwrap_err().key(), "rubberband.out_of_order", "after the processing");
+}
