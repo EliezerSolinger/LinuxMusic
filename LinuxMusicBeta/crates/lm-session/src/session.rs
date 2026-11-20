@@ -7,7 +7,7 @@
 //! operations (their handles cancel), the documents, the resources, and the workers last (they join every operation
 //! still running, T18).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -243,6 +243,7 @@ pub struct Session {
     telemetry: TelemetryView,
     status: Value,
     save_serial: u64,
+    export_serial: u64,
     saving: Option<(u64, Value, HostTime)>,
     last_autosave: HostTime,
     last_gesture_journal: HostTime,
@@ -324,7 +325,8 @@ fn project_options(plugins: &Arc<Registry>, schemas: &Arc<SchemaRegistry>, limit
 }
 
 /// The interface's document (I-3.8): a free tree, no history, no journal
-fn interface_document(schemas: &Arc<SchemaRegistry>, tree: Option<Value>) -> Result<Document> {
+fn interface_document(tree: Option<Value>) -> Result<Document> {
+    let schemas = interface_schemas()?;
     let root = match tree {
         Some(t) if t.get("state").is_some() => t,
         _ => schemas.defaults(INTERFACE_TYPE)?,
@@ -335,16 +337,16 @@ fn interface_document(schemas: &Arc<SchemaRegistry>, tree: Option<Value>) -> Res
 /// The interface document's type: an object of anything (zoom, scroll, windows), kept as it is
 pub const INTERFACE_TYPE: &str = "interface";
 
-fn schemas_with_interface(plugins: &Registry) -> Result<SchemaRegistry> {
+/// The interface document's own registry: never mixed with the project's, so the saved project's `versions` lists
+/// only the project's types
+fn interface_schemas() -> Result<Arc<SchemaRegistry>> {
     let mut registry = SchemaRegistry::new();
-    lm_doc::register_project_schemas(&mut registry)?;
-    plugins.register_schemas(&mut registry)?;
     registry.add(
         lm_state::NodeSchema::new(INTERFACE_TYPE, 1)
             .field(lm_state::FieldSpec::new("state", lm_state::FieldKind::Any).default(Value::empty_object())),
     )?;
     registry.check_complete()?;
-    Ok(registry)
+    Ok(Arc::new(registry))
 }
 
 fn open_device(setup: &DeviceSetup, rate: u32, block: u32) -> Result<(Device, lm_io::DeviceInfo)> {
@@ -369,11 +371,11 @@ impl Session {
     pub fn new(config: SessionConfig) -> Result<Session> {
         let main = Main::acquire().ok_or_else(|| err("session.main.taken"))?;
         let plugins = config.registry.clone();
-        let schemas = Arc::new(schemas_with_interface(&plugins)?);
+        let schemas = Arc::new(plugins.project_schemas()?);
         let mut notices = Notices::default();
         let options = project_options(&plugins, &schemas, config.limits);
         let document = Document::new_project(schemas.clone(), options)?;
-        let ui_document = interface_document(&schemas, None)?;
+        let ui_document = interface_document(None)?;
         let folder = ProjectFolder::new(config.untitled.join(format!("untitled-{}", lm_io::new_uuid())));
         folder.create(&config.faults)?;
         let rate = project_rate(document.root());
@@ -455,6 +457,7 @@ impl Session {
             telemetry: empty_telemetry(rate),
             status: Value::NULL,
             save_serial: 0,
+            export_serial: 0,
             saving: None,
             last_autosave: now,
             last_gesture_journal: now,
@@ -1271,6 +1274,11 @@ impl Session {
         }
     }
 
+    /// The operations that finished since the last call (the headless printer; the duration profile, I-2.3)
+    pub fn take_finished(&mut self) -> Vec<Finished> {
+        std::mem::take(&mut self.finished)
+    }
+
     /// Waits until the journal is on the disk (closing; the crash tests)
     pub fn sync_journal(&mut self, timeout: Duration) -> bool {
         if let Some(patch) = self.document.take_journal() {
@@ -1388,7 +1396,7 @@ impl Session {
         let _ = self.engine.commands().send(Command::Stop);
         self.feed = document.feed(Topic::All);
         self.document = document;
-        self.ui_document = interface_document(&self.schemas, ui)?;
+        self.ui_document = interface_document(ui)?;
         self.project.saved_root = self.document.root().clone();
         let rate = project_rate(self.document.root());
         if rate != self.spec.sample_rate {
@@ -1853,6 +1861,28 @@ impl Session {
         id
     }
 
+    /// Exports the project as it is now into `target` (I-13): an operation on `Target::Export`; the report goes to
+    /// the status tree's `lastExport`. It does not touch the transport: exporting while recording is safe
+    pub fn export(&mut self, target: crate::export::ExportTarget) -> lm_base::OperationId {
+        let job = self.export_job();
+        self.export_serial += 1;
+        let target_id = Target::Export(self.export_serial);
+        self.start(Label::new("session.exporting"), target_id, true, "export", move |cancel, progress| {
+            crate::export::export(job, &target, cancel, progress)
+        })
+    }
+
+    /// The project as it is now, for an export
+    pub fn export_job(&self) -> crate::export::ExportJob {
+        crate::export::ExportJob {
+            root: self.document.snapshot(),
+            project: self.project.folder.root().to_path_buf(),
+            plugins: self.plugins.clone(),
+            schemas: self.schemas.clone(),
+            limits: self.limits,
+        }
+    }
+
     /// The imported resources so far (by key), and whether each is loaded
     pub fn resource_state(&self, key: &str) -> lm_io::ResourceState {
         self.resources.state(key)
@@ -1952,6 +1982,3 @@ pub fn read_project(
 pub fn project_file(folder: &Path) -> PathBuf {
     ProjectFolder::new(folder).project()
 }
-
-/// What the compiler made for a root, built and complete (the export's preparation, T8), synchronously
-pub fn ready_map(_: &BTreeMap<String, ()>) {}

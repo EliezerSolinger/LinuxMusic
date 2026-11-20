@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod activity;
+pub mod export;
 pub mod folder;
 pub mod journal;
 pub mod lock;

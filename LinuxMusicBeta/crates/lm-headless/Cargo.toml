@@ -18,3 +18,10 @@ path = "src/main.rs"
 lm-base.workspace = true
 lm-state.workspace = true
 lm-session.workspace = true
+lm-doc.workspace = true
+lm-plugin.workspace = true
+lm-render.workspace = true
+
+[dev-dependencies]
+lm-io.workspace = true
+lm-sys-sndfile.workspace = true

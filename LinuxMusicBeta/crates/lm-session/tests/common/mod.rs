@@ -69,3 +69,36 @@ pub fn open(s: &mut Session, folder: PathBuf) {
     let _ = s.open(folder);
     settle(s);
 }
+
+/// A MIDI item on a track with a few notes (ticks at 960 PPQ)
+pub fn add_notes(s: &mut Session, track: NodeId, notes: &[(i64, i64, i64)]) -> NodeId {
+    let mut id = None;
+    s.document_mut()
+        .transact(Label::new("test.item"), |e| {
+            let n = e.find(track).and_then(|t| t.get("items").map(Value::len)).unwrap_or(0);
+            let end = notes.iter().map(|(_, st, len)| st + len).max().unwrap_or(960);
+            let item =
+                Value::object([("kind", Value::text("midi")), ("start", Value::int(0)), ("length", Value::int(end))]);
+            let it = e.insert(track, "items", n, item)?;
+            for (key, start, length) in notes {
+                let note = Value::object([
+                    ("key", Value::int(*key)),
+                    ("start", Value::int(*start)),
+                    ("length", Value::int(*length)),
+                    ("velocity", Value::real(0.8)?),
+                ]);
+                e.add_note(it, note)?;
+            }
+            id = Some(it);
+            Ok(())
+        })
+        .expect("notes");
+    id.expect("item")
+}
+
+/// A short song: a TripleOscillator playing a chord
+pub fn song(s: &mut Session) -> NodeId {
+    let t = add_synth_track(s, "Synth");
+    add_notes(s, t, &[(60, 0, 960), (64, 480, 960), (67, 960, 960), (48, 0, 1920)]);
+    t
+}

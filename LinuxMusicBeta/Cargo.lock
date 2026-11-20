@@ -317,8 +317,13 @@ name = "lm-headless"
 version = "0.1.0"
 dependencies = [
  "lm-base",
+ "lm-doc",
+ "lm-io",
+ "lm-plugin",
+ "lm-render",
  "lm-session",
  "lm-state",
+ "lm-sys-sndfile",
 ]
 
 [[package]]
