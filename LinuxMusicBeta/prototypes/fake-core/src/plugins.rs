@@ -8,7 +8,7 @@
 //! struct in `Doc`), so undo, presets and copying are the same operation. Building a plugin is an operation with the
 //! loading rule (I-2): `build` starts it on the node's target.
 //!
-//! Ids: instruments are `p:`, inserts are `x:` (the desk's own numbering, `mixer.rs`), outputs `o:`, all from one
+//! Ids: instruments are `u:`, inserts are `x:` (the desk's own numbering, `mixer.rs`), outputs `o:`, all from one
 //! counter that never repeats in a session.
 
 use std::cell::RefCell;
@@ -332,13 +332,6 @@ pub const EQ_SHAPES: &[(&str, &str)] = &[("bell", "Bell"), ("low_shelf", "Low sh
 pub const SYNC_NOTES: &[(&str, &str)] =
     &[("free", "Free (ms)"), ("1_1", "1/1"), ("1_2", "1/2"), ("1_4", "1/4"), ("1_8", "1/8"), ("1_16", "1/16"), ("1_8d", "1/8 dotted"), ("1_4t", "1/4 triplet")];
 
-/// Where an insert sits relative to the analog rack's sections (legacy `AnalogChannelStrip::InsertPoint`; P-20: each
-/// insert has its own point)
-pub const INSERT_POINTS: &[(&str, &str)] = &[
-    ("pre_tube", "Before the tube"), ("post_tube", "After the tube"), ("post_eq", "After the EQ"),
-    ("post_dynamics", "After the dynamics"), ("post_rack", "At the end of the rack"), ("post_fader", "After the fader"),
-];
-pub const DEFAULT_INSERT_POINT: &str = "post_tube";
 
 /// The MIDI devices the fake knows (the real list comes from the device scan, I-10.2)
 pub const MIDI_DEVICES: &[&str] = &["Teclado USB (MIDI 1)", "Controlador de pads", "Porta virtual"];
@@ -689,8 +682,6 @@ pub struct PluginNode {
     pub devices_out: BTreeSet<&'static str>,
     /// an insert's sidechain source (a desk channel)
     pub sidechain: Option<NodeId>,
-    /// an insert's point relative to the rack's sections (P-20; `INSERT_POINTS`)
-    pub point: &'static str,
 }
 
 impl PluginNode {
@@ -699,7 +690,6 @@ impl PluginNode {
             id, plugin, owner, reals: BTreeMap::new(), choices: BTreeMap::new(), preset: None, modified: false,
             resource: None, missing: false, automated: BTreeSet::new(), learned: BTreeMap::new(), fault: None,
             devices_in: BTreeSet::new(), devices_out: BTreeSet::new(), sidechain: None,
-            point: DEFAULT_INSERT_POINT,
         };
         n.reset_to_defaults();
         n
@@ -789,7 +779,7 @@ pub fn populate(doc: &mut Doc) {
         }
         let avl = name.contains("AVL");
         let plugin = if avl { "AVL Drums" } else { INSTRUMENT_ROTATION[r % INSTRUMENT_ROTATION.len()] };
-        let id = next(b'p');
+        let id = next(b'u');
         let mut n = PluginNode::new(id, plugin, tid);
         match plugin {
             "AVL Drums" => {
@@ -861,10 +851,6 @@ pub fn populate(doc: &mut Doc) {
             doc.plugins.nodes.insert(id, PluginNode::new(id, "Calf Vintage Delay (LV2)", cid));
         }
     }
-    // variety: some inserts after the EQ, one after the fader
-    for (k, n) in doc.plugins.nodes.values_mut().filter(|n| n.id.kind == b'x').enumerate() {
-        n.point = match k % 7 { 2 => "post_eq", 5 => "post_fader", _ => DEFAULT_INSERT_POINT };
-    }
     doc.plugins.scales = default_scales();
     doc.plugins.keymaps = default_keymaps();
 }
@@ -903,9 +889,84 @@ fn reconcile(doc: &mut Doc, track: NodeId) -> Vec<&'static str> {
     removed
 }
 
-// --- reading and writing parameters (the `Edit::set` arm for `Field::Param` on tracks, instruments, inserts) ------
+// --- the document's side: values, state, and the edits that create nodes ---------------------------------------
+//
+// The interface changes plugins only through the `CorePort` (I-15), with data:
+// - a parameter: `Set { field: Field::Param(key), value: Real }`; a choice: the same with `Value::Text(key)` (U30);
+// - the rest of a node's state: `Set { field: Field::Plugin(key) }` (keys below, `STATE_KEYS`);
+// - a new instrument (swap) or a new insert: `Insert { list: "instrument" | "inserts", node: Text(plugin id) }`;
+// - removing and moving inserts, bypass and the insert point: the desk's own (mixer.rs).
+// New plugins are built in an operation started from the next pump (I-2: in place, silent, loading past 200 ms).
 
-pub(crate) fn set_param(doc: &mut Doc, id: NodeId, key: &'static str, v: f64) -> Result<()> {
+thread_local! {
+    /// Builds and checks asked by edits, started by the session's next pump: (node, plugin or "" for a file check)
+    static QUEUED: RefCell<Vec<(NodeId, &'static str)>> = const { RefCell::new(Vec::new()) };
+}
+
+fn queue(node: NodeId, plugin: &'static str) {
+    QUEUED.with(|q| q.borrow_mut().push((node, plugin)));
+}
+
+/// From `Session::pump`: starts the operations the edits asked for
+pub(crate) fn start_queued(s: &mut Session) {
+    let q: Vec<(NodeId, &'static str)> = QUEUED.with(|q| q.borrow_mut().drain(..).collect());
+    for (node, plugin) in q {
+        if s.doc().plugins.node(node).is_none() && node.kind != b't' {
+            continue; // undone before it was built
+        }
+        if plugin.is_empty() {
+            check_file(s, node);
+        } else {
+            build(s, node, plugin);
+        }
+    }
+}
+
+/// An interned `&'static str` (the fake's `Field` carries static keys; the real path is a `Vec<PathStep>`)
+pub fn key(text: &str) -> &'static str {
+    thread_local! {
+        static KEYS: RefCell<std::collections::HashSet<&'static str>> = RefCell::new(std::collections::HashSet::new());
+    }
+    KEYS.with(|k| {
+        let mut k = k.borrow_mut();
+        if let Some(x) = k.get(text) {
+            return *x;
+        }
+        let x: &'static str = Box::leak(text.to_string().into_boxed_str());
+        k.insert(x);
+        x
+    })
+}
+
+/// The state keys of `Field::Plugin`, besides the parameters:
+/// - on a plugin node: `"preset"` (Text: apply it), `"preset.save"` (Text: save the state as a user preset with this
+///   name, then it is the current preset), `"resource"` (Text: load that file; checking it is an operation),
+///   `"fault"` (Bool false: reset an effect that wrote NaN), `"automated/<param>"` and `"learned/<param>"` (Bool),
+///   `"sidechain"` (Id of a desk channel, or ROOT for none);
+/// - on a track (its instrument functions): `"device.in/<device>"`, `"device.out/<device>"` (Bool);
+/// - on ROOT: `"scale.<slot>.description"`, `"scale.<slot>.intervals"` (Text), `"keymap.<slot>.description"`,
+///   `"keymap.<slot>.degrees"` (Text), `"keymap.<slot>.first|last|middle|base_key|base_freq"` (Real).
+pub const STATE_KEYS: &str = "see the doc comment";
+
+pub(crate) fn set_value(doc: &mut Doc, id: NodeId, k: &'static str, v: crate::Value) -> Result<()> {
+    use crate::Value;
+    match v {
+        Value::Real(x) => set_param(doc, id, k, x),
+        Value::Text(t) => set_choice(doc, id, k, &t),
+        _ => Err(Error::WrongType),
+    }
+}
+
+pub(crate) fn get_value(doc: &Doc, id: NodeId, k: &'static str) -> Result<crate::Value> {
+    use crate::Value;
+    let n = doc.plugins.any(id).ok_or(Error::NoSuchNode(id))?;
+    if let Some(c) = n.choices.get(k) {
+        return Ok(Value::Text(c.to_string()));
+    }
+    n.reals.get(k).map(|x| Value::Real(*x)).ok_or(Error::WrongType)
+}
+
+fn set_param(doc: &mut Doc, id: NodeId, key: &'static str, v: f64) -> Result<()> {
     let n = doc.plugins.any_mut(id).ok_or(Error::NoSuchNode(id))?;
     let s = spec(n.plugin, key).ok_or(Error::WrongType)?;
     if matches!(s.kind, Kind::Choice { .. }) {
@@ -920,41 +981,264 @@ pub(crate) fn set_param(doc: &mut Doc, id: NodeId, key: &'static str, v: f64) ->
     Ok(())
 }
 
-pub(crate) fn get_param(doc: &Doc, id: NodeId, key: &'static str) -> Result<f64> {
-    let n = doc.plugins.any(id).ok_or(Error::NoSuchNode(id))?;
-    n.reals.get(key).copied().ok_or(Error::WrongType)
+/// A choice by its key (U30). On a track id: the instrument functions'
+fn set_choice(doc: &mut Doc, id: NodeId, key: &'static str, value: &str) -> Result<()> {
+    let n = doc.plugins.any_mut(id).ok_or(Error::NoSuchNode(id))?;
+    let s = spec(n.plugin, key).ok_or(Error::WrongType)?;
+    let Kind::Choice { options, .. } = s.kind else { return Err(Error::WrongType) };
+    let value = options.iter().find(|(k, _)| *k == value).ok_or(Error::WrongType)?.0;
+    n.choices.insert(s.key, value);
+    n.modified = true;
+    let owner = n.owner;
+    if n.plugin == "AVL Drums" && key == "kit" {
+        n.resource = Some(format!("{value}.sf2"));
+        reconcile(doc, owner);
+    }
+    Ok(())
 }
 
-/// The edits on plugins that are not one value: choices, swapping, the insert chain. Each pushes the node and its
-/// owner into the diff (the windows' feeds are on the owner).
+fn text(v: &crate::Value) -> Result<&str> {
+    match v {
+        crate::Value::Text(t) => Ok(t),
+        _ => Err(Error::WrongType),
+    }
+}
+fn flag(v: &crate::Value) -> Result<bool> {
+    match v {
+        crate::Value::Bool(b) => Ok(*b),
+        _ => Err(Error::WrongType),
+    }
+}
+fn real_of(v: &crate::Value) -> Result<f64> {
+    match v {
+        crate::Value::Real(x) => Ok(*x),
+        _ => Err(Error::WrongType),
+    }
+}
+
+/// `Field::Plugin(key)`: the state of a node that is not a parameter (see `STATE_KEYS`)
+pub(crate) fn set_state(doc: &mut Doc, id: NodeId, k: &'static str, v: crate::Value) -> Result<()> {
+    if id == crate::ROOT {
+        return set_tuning(doc, k, &v);
+    }
+    if let Some(dev) = k.strip_prefix("device.in/").or_else(|| k.strip_prefix("device.out/")) {
+        let device = MIDI_DEVICES.iter().find(|d| **d == dev).ok_or(Error::WrongType)?;
+        let n = doc.plugins.functions.get_mut(&id).ok_or(Error::NoSuchNode(id))?;
+        let set = if k.starts_with("device.out/") { &mut n.devices_out } else { &mut n.devices_in };
+        if flag(&v)? { set.insert(device) } else { set.remove(device) };
+        return Ok(());
+    }
+    if k == "sidechain" {
+        let crate::Value::Id(src) = v else { return Err(Error::WrongType) };
+        let ch = doc.plugins.node(id).ok_or(Error::NoSuchNode(id))?.owner;
+        if src != crate::ROOT {
+            // the source must not be fed by this channel: it would be a cycle
+            let mut at = Some(ch);
+            while let Some(n) = at {
+                if n == src {
+                    return Err(Error::WrongType);
+                }
+                at = doc.channels.iter().find(|c| c.id == n).and_then(|c| c.output);
+            }
+        }
+        doc.plugins.nodes.get_mut(&id).ok_or(Error::NoSuchNode(id))?.sidechain = (src != crate::ROOT).then_some(src);
+        return Ok(());
+    }
+    let n = doc.plugins.any_mut(id).ok_or(Error::NoSuchNode(id))?;
+    match k {
+        "preset" => {
+            let name = text(&v)?.to_string();
+            if !(apply_values(n, &name) || apply_user_preset(n, &name)) {
+                return Err(Error::WrongType);
+            }
+            n.preset = Some(name);
+            n.modified = false;
+            let owner = n.owner;
+            reconcile(doc, owner);
+        }
+        "preset.save" => {
+            let name = text(&v)?.to_string();
+            save_user_preset(n, &name);
+            n.preset = Some(name);
+            n.modified = false;
+        }
+        "resource" => {
+            n.resource = Some(text(&v)?.to_string());
+            let was_missing = n.missing;
+            n.missing = false;
+            n.modified = true;
+            if was_missing {
+                queue(id, "");
+            } else {
+                queue(id, n.plugin);
+            }
+        }
+        "fault" => {
+            if flag(&v)? {
+                return Err(Error::WrongType);
+            }
+            n.fault = None;
+        }
+        _ => {
+            let (what, param) = k.split_once('/').ok_or(Error::WrongType)?;
+            let s = spec(n.plugin, param).ok_or(Error::WrongType)?;
+            let on = flag(&v)?;
+            match what {
+                "automated" if s.automatable => {
+                    if on { n.automated.insert(s.key) } else { n.automated.remove(s.key) };
+                }
+                "learned" => {
+                    if on {
+                        let cc = (20u8..120).find(|c| !n.learned.values().any(|x| x == c)).unwrap_or(1);
+                        n.learned.insert(s.key, cc);
+                    } else {
+                        n.learned.remove(s.key);
+                    }
+                }
+                _ => return Err(Error::WrongType),
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn get_state(doc: &Doc, id: NodeId, k: &'static str) -> Result<crate::Value> {
+    use crate::Value;
+    if id == crate::ROOT {
+        let (what, rest) = k.split_once('.').ok_or(Error::WrongType)?;
+        let (slot, field) = rest.split_once('.').ok_or(Error::WrongType)?;
+        let slot: usize = slot.parse().map_err(|_| Error::WrongType)?;
+        return Ok(match (what, field) {
+            ("scale", "description") => Value::Text(doc.plugins.scales.get(slot).ok_or(Error::WrongType)?.description.clone()),
+            ("scale", "intervals") => Value::Text(doc.plugins.scales.get(slot).ok_or(Error::WrongType)?.intervals.clone()),
+            ("keymap", f) => {
+                let m = doc.plugins.keymaps.get(slot).ok_or(Error::WrongType)?;
+                match f {
+                    "description" => Value::Text(m.description.clone()),
+                    "degrees" => Value::Text(m.degrees.clone()),
+                    "first" => Value::Real(f64::from(m.first)),
+                    "last" => Value::Real(f64::from(m.last)),
+                    "middle" => Value::Real(f64::from(m.middle)),
+                    "base_key" => Value::Real(f64::from(m.base_key)),
+                    "base_freq" => Value::Real(m.base_freq),
+                    _ => return Err(Error::WrongType),
+                }
+            }
+            _ => return Err(Error::WrongType),
+        });
+    }
+    let n = doc.plugins.any(id).ok_or(Error::NoSuchNode(id))?;
+    Ok(match k {
+        "preset" | "preset.save" => Value::Text(n.preset.clone().unwrap_or_default()),
+        "resource" => Value::Text(n.resource.clone().unwrap_or_default()),
+        "fault" => Value::Bool(n.fault.is_some()),
+        "sidechain" => Value::Id(n.sidechain.unwrap_or(crate::ROOT)),
+        _ => {
+            if let Some(dev) = k.strip_prefix("device.in/") {
+                Value::Bool(n.devices_in.contains(dev))
+            } else if let Some(dev) = k.strip_prefix("device.out/") {
+                Value::Bool(n.devices_out.contains(dev))
+            } else {
+                let (what, param) = k.split_once('/').ok_or(Error::WrongType)?;
+                match what {
+                    "automated" => Value::Bool(n.automated.contains(param)),
+                    "learned" => Value::Bool(n.learned.contains_key(param)),
+                    _ => return Err(Error::WrongType),
+                }
+            }
+        }
+    })
+}
+
+/// The project's scales and keymaps (F-IJN-020): a scale whose intervals do not parse is refused whole
+fn set_tuning(doc: &mut Doc, k: &str, v: &crate::Value) -> Result<()> {
+    let (what, rest) = k.split_once('.').ok_or(Error::WrongType)?;
+    let (slot, field) = rest.split_once('.').ok_or(Error::WrongType)?;
+    let slot: usize = slot.parse().map_err(|_| Error::WrongType)?;
+    match (what, field) {
+        ("scale", "description") => doc.plugins.scales.get_mut(slot).ok_or(Error::WrongType)?.description = text(v)?.to_string(),
+        ("scale", "intervals") => {
+            let t = text(v)?;
+            parse_intervals(t).map_err(|_| Error::WrongType)?;
+            doc.plugins.scales.get_mut(slot).ok_or(Error::WrongType)?.intervals = t.to_string();
+        }
+        ("keymap", f) => {
+            let m = doc.plugins.keymaps.get_mut(slot).ok_or(Error::WrongType)?;
+            let key = |v: &crate::Value| -> Result<u8> {
+                let x = real_of(v)?;
+                if (0.0..=127.0).contains(&x) { Ok(x as u8) } else { Err(Error::WrongType) }
+            };
+            match f {
+                "description" => m.description = text(v)?.to_string(),
+                "degrees" => {
+                    let t = text(v)?;
+                    if t.split_whitespace().any(|d| d != "x" && d.parse::<u32>().is_err()) {
+                        return Err(Error::WrongType);
+                    }
+                    m.degrees = t.to_string();
+                }
+                "first" => m.first = key(v)?,
+                "last" => m.last = key(v)?,
+                "middle" => m.middle = key(v)?,
+                "base_key" => m.base_key = key(v)?,
+                "base_freq" => {
+                    let x = real_of(v)?;
+                    if !(0.1..=9999.999).contains(&x) {
+                        return Err(Error::WrongType);
+                    }
+                    m.base_freq = x;
+                }
+                _ => return Err(Error::WrongType),
+            }
+            if m.first > m.last {
+                return Err(Error::WrongType);
+            }
+        }
+        _ => return Err(Error::WrongType),
+    }
+    Ok(())
+}
+
+/// The plugins' `EditOp`s that create nodes: a new instrument on a track (it replaces the old one: the instrument
+/// is swapped without removing the track, design 05) and a new insert in a desk channel's chain. Registered in
+/// `port.rs`'s `OP_HANDLERS`.
+pub(crate) fn apply_op(e: &mut Edit, op: &crate::port::EditOp, created: &[(u32, NodeId)]) -> Option<Result<Option<(u32, NodeId)>>> {
+    use crate::port::{EditOp, Ref};
+    // removing a track takes its instrument and its functions with it (the arrangement's handler, before this one,
+    // owns the track's own removal when it has one; until then the plugins' module does it whole)
+    if let EditOp::Remove { id: Ref::Id(track) } = op {
+        if track.kind != b't' {
+            return None;
+        }
+        let track = *track;
+        let i = e.doc.tracks.iter().position(|t| t.id == track)?;
+        e.doc.tracks.remove(i);
+        if let Some(p) = e.doc.plugins.instrument.remove(&track) {
+            e.doc.plugins.nodes.remove(&p);
+            e.diff.changed.push((p, None));
+        }
+        e.doc.plugins.functions.remove(&track);
+        e.diff.changed.push((track, None));
+        return Some(Ok(None));
+    }
+    let EditOp::Insert { temp, parent, list, index, node } = op else { return None };
+    if *list != "instrument" && *list != "inserts" {
+        return None;
+    }
+    let parent = match parent {
+        Ref::Id(id) => *id,
+        Ref::Temp(t) => match created.iter().find(|(k, _)| k == t) {
+            Some((_, id)) => *id,
+            None => return Some(Err(Error::WrongType)),
+        },
+    };
+    let crate::Value::Text(plugin) = node else { return Some(Err(Error::WrongType)) };
+    let r = if *list == "instrument" { e.swap_instrument(parent, plugin) } else { e.add_insert(parent, *index, plugin) };
+    Some(r.map(|id| Some((*temp, id))))
+}
+
 impl Edit<'_> {
-    fn touched_node(&mut self, id: NodeId, owner: NodeId) {
-        self.diff.changed.push((id, None));
-        self.diff.changed.push((owner, None));
-    }
-
-    /// A choice by its key (U30). On a track id: the instrument functions'
-    pub fn set_choice(&mut self, id: NodeId, key: &'static str, value: &'static str) -> Result<()> {
-        let n = self.doc.plugins.any_mut(id).ok_or(Error::NoSuchNode(id))?;
-        let s = spec(n.plugin, key).ok_or(Error::WrongType)?;
-        let Kind::Choice { options, .. } = s.kind else { return Err(Error::WrongType) };
-        if !options.iter().any(|(k, _)| *k == value) {
-            return Err(Error::WrongType);
-        }
-        n.choices.insert(s.key, value);
-        n.modified = true;
-        let owner = n.owner;
-        if n.plugin == "AVL Drums" && key == "kit" {
-            n.resource = Some(format!("{value}.sf2"));
-            reconcile(self.doc, owner);
-        }
-        self.touched_node(id, owner);
-        Ok(())
-    }
-
-    /// Swaps a track's instrument without removing the track (design 05): a new node, built in an operation; the
-    /// functions stay; the outputs follow the new ports (I-3.9)
-    pub fn swap_instrument(&mut self, track: NodeId, plugin: &'static str) -> Result<NodeId> {
+    fn swap_instrument(&mut self, track: NodeId, plugin: &str) -> Result<NodeId> {
         let d = descriptor(plugin).filter(|d| d.role == Role::Instrument && d.id != FUNCTIONS).ok_or(Error::WrongType)?;
         if !self.doc.tracks.iter().any(|t| t.id == track) {
             return Err(Error::NoSuchNode(track));
@@ -963,209 +1247,35 @@ impl Edit<'_> {
             self.doc.plugins.nodes.remove(&old);
             self.diff.changed.push((old, None));
         }
-        let id = next(b'p');
+        let id = next(b'u');
         let mut n = PluginNode::new(id, d.id, track);
-        if let Some(r) = d.resource {
-            n.resource = Some(match r {
-                "Kit" => "black_pearl.sf2".into(),
-                "SoundFont" => "FluidR3_GM.sf2".into(),
-                _ => String::new(),
-            })
-            .filter(|s| !s.is_empty());
-        }
+        n.resource = match d.resource {
+            Some("Kit") => Some("black_pearl.sf2".into()),
+            Some("SoundFont") => Some("FluidR3Mono_GM.sf3".into()),
+            _ => None,
+        };
         self.doc.plugins.nodes.insert(id, n);
         self.doc.plugins.instrument.insert(track, id);
         self.doc.plugins.functions.entry(track).or_insert_with(|| PluginNode::new(track, FUNCTIONS, track));
         reconcile(self.doc, track);
-        self.touched_node(id, track);
+        self.diff.changed.push((id, None));
+        self.diff.changed.push((track, None));
+        queue(id, d.id);
         Ok(id)
     }
 
-    /// Applies a preset: the whole state at once, one undo step
-    pub fn apply_preset(&mut self, id: NodeId, preset: &str) -> Result<()> {
-        let n = self.doc.plugins.any_mut(id).ok_or(Error::NoSuchNode(id))?;
-        let found = apply_values(n, preset) || apply_user_preset(n, preset);
-        if !found {
-            return Err(Error::WrongType);
-        }
-        n.preset = Some(preset.to_string());
-        n.modified = false;
-        let owner = n.owner;
-        reconcile(self.doc, owner);
-        self.touched_node(id, owner);
-        Ok(())
-    }
-
-    /// Loads a file into the node (a sample into the sampler, a SoundFont); clears the missing state
-    pub fn set_resource(&mut self, id: NodeId, file: &str) -> Result<()> {
-        let n = self.doc.plugins.any_mut(id).ok_or(Error::NoSuchNode(id))?;
-        n.resource = Some(file.to_string());
-        n.missing = false;
-        n.modified = true;
-        let owner = n.owner;
-        self.touched_node(id, owner);
-        Ok(())
-    }
-
-    pub fn set_automated(&mut self, id: NodeId, key: &'static str, on: bool) -> Result<()> {
-        let n = self.doc.plugins.any_mut(id).ok_or(Error::NoSuchNode(id))?;
-        let s = spec(n.plugin, key).ok_or(Error::WrongType)?;
-        if !s.automatable {
-            return Err(Error::WrongType);
-        }
-        if on { n.automated.insert(s.key) } else { n.automated.remove(s.key) };
-        let owner = n.owner;
-        self.touched_node(id, owner);
-        Ok(())
-    }
-
-    /// Binds a parameter to the next free MIDI CC (the fake's "learn": the real one waits for a moved control)
-    pub fn set_learned(&mut self, id: NodeId, key: &'static str, on: bool) -> Result<()> {
-        let n = self.doc.plugins.any_mut(id).ok_or(Error::NoSuchNode(id))?;
-        let s = spec(n.plugin, key).ok_or(Error::WrongType)?;
-        if on {
-            let cc = (20u8..120).find(|c| !n.learned.values().any(|x| x == c)).unwrap_or(1);
-            n.learned.insert(s.key, cc);
-        } else {
-            n.learned.remove(s.key);
-        }
-        let owner = n.owner;
-        self.touched_node(id, owner);
-        Ok(())
-    }
-
-    pub fn set_device(&mut self, track: NodeId, output: bool, device: &'static str, on: bool) -> Result<()> {
-        let n = self.doc.plugins.functions.get_mut(&track).ok_or(Error::NoSuchNode(track))?;
-        let set = if output { &mut n.devices_out } else { &mut n.devices_in };
-        if on { set.insert(device) } else { set.remove(device) };
-        self.touched_node(track, track);
-        Ok(())
-    }
-
-    /// Resets a faulted effect (it wrote inf/NaN): it plays again
-    pub fn clear_fault(&mut self, id: NodeId) -> Result<()> {
-        let n = self.doc.plugins.nodes.get_mut(&id).ok_or(Error::NoSuchNode(id))?;
-        n.fault = None;
-        let owner = n.owner;
-        self.touched_node(id, owner);
-        Ok(())
-    }
-
-    // --- the insert chain of a desk channel (F-FX-002) -----------------------------------------------------------
-
-    fn channel_mut(&mut self, ch: NodeId) -> Result<&mut crate::Channel> {
-        self.doc.channels.iter_mut().find(|c| c.id == ch).ok_or(Error::NoSuchNode(ch))
-    }
-    fn chain_of(&self, insert: NodeId) -> Result<(usize, usize)> {
-        for (ci, c) in self.doc.channels.iter().enumerate() {
-            if let Some(k) = c.inserts.iter().position(|x| x.id == insert) {
-                return Ok((ci, k));
-            }
-        }
-        Err(Error::NoSuchNode(insert))
-    }
-
-    /// Adds an effect at `index` (clamped) of the channel's chain
-    pub fn add_insert(&mut self, ch: NodeId, index: usize, plugin: &'static str) -> Result<NodeId> {
+    /// Adds an effect at `index` (clamped) of the channel's chain (F-FX-002)
+    fn add_insert(&mut self, ch: NodeId, index: usize, plugin: &str) -> Result<NodeId> {
         let d = descriptor(plugin).filter(|d| d.role == Role::Effect).ok_or(Error::WrongType)?;
         let id = next(b'x');
-        let c = self.channel_mut(ch)?;
+        let c = self.doc.channels.iter_mut().find(|c| c.id == ch).ok_or(Error::NoSuchNode(ch))?;
         let at = index.min(c.inserts.len());
         c.inserts.insert(at, crate::mixer::Insert { id, plugin: d.id, bypass: false, point: 1 });
         self.doc.plugins.nodes.insert(id, PluginNode::new(id, d.id, ch));
-        self.touched_node(id, ch);
+        self.diff.changed.push((id, None));
+        self.diff.changed.push((ch, None));
+        queue(id, d.id);
         Ok(id)
-    }
-
-    /// Removes an insert; a sidechain that pointed at it goes with it (`OnRemove::RemoveOwner`)
-    pub fn remove_insert(&mut self, insert: NodeId) -> Result<()> {
-        let (ci, k) = self.chain_of(insert)?;
-        let ch = self.doc.channels[ci].id;
-        self.doc.channels[ci].inserts.remove(k);
-        self.doc.plugins.nodes.remove(&insert);
-        self.touched_node(insert, ch);
-        Ok(())
-    }
-
-    /// Moves an insert to `to` within its chain
-    pub fn move_insert(&mut self, insert: NodeId, to: usize) -> Result<()> {
-        let (ci, k) = self.chain_of(insert)?;
-        let c = &mut self.doc.channels[ci];
-        let x = c.inserts.remove(k);
-        let to = to.min(c.inserts.len());
-        c.inserts.insert(to, x);
-        let ch = c.id;
-        self.touched_node(insert, ch);
-        Ok(())
-    }
-
-    /// "Replace with…": another effect in the same place, a new node
-    pub fn replace_insert(&mut self, insert: NodeId, plugin: &'static str) -> Result<NodeId> {
-        let (ci, k) = self.chain_of(insert)?;
-        let ch = self.doc.channels[ci].id;
-        self.remove_insert(insert)?;
-        let _ = k;
-        self.add_insert(ch, k, plugin)
-    }
-
-    pub fn set_bypass(&mut self, insert: NodeId, bypass: bool) -> Result<()> {
-        let (ci, k) = self.chain_of(insert)?;
-        self.doc.channels[ci].inserts[k].bypass = bypass;
-        let ch = self.doc.channels[ci].id;
-        self.touched_node(insert, ch);
-        Ok(())
-    }
-
-    /// The source of an insert's sidechain input: another channel, never one that would make a cycle
-    pub fn set_sidechain(&mut self, insert: NodeId, source: Option<NodeId>) -> Result<()> {
-        let (ci, _) = self.chain_of(insert)?;
-        let ch = self.doc.channels[ci].id;
-        if let Some(src) = source {
-            // the source must not be fed by this channel (it would be a cycle)
-            let mut at = Some(ch);
-            while let Some(n) = at {
-                if n == src {
-                    return Err(Error::WrongType);
-                }
-                at = self.doc.channels.iter().find(|c| c.id == n).and_then(|c| c.output);
-            }
-        }
-        let n = self.doc.plugins.nodes.get_mut(&insert).ok_or(Error::NoSuchNode(insert))?;
-        n.sidechain = source;
-        self.touched_node(insert, ch);
-        Ok(())
-    }
-
-    /// An insert's point relative to the rack (P-20)
-    pub fn set_insert_point(&mut self, insert: NodeId, point: &'static str) -> Result<()> {
-        let key = INSERT_POINTS.iter().find(|(k, _)| *k == point).ok_or(Error::WrongType)?.0;
-        let (ci, _) = self.chain_of(insert)?;
-        let ch = self.doc.channels[ci].id;
-        self.doc.plugins.nodes.get_mut(&insert).ok_or(Error::NoSuchNode(insert))?.point = key;
-        self.touched_node(insert, ch);
-        Ok(())
-    }
-
-    /// Replaces a scale slot; refused whole when a line is not an interval (F-IJN-020)
-    pub fn set_scale(&mut self, slot: usize, def: ScaleDef) -> Result<()> {
-        parse_intervals(&def.intervals).map_err(|_| Error::WrongType)?;
-        *self.doc.plugins.scales.get_mut(slot).ok_or(Error::WrongType)? = def;
-        self.diff.changed.push((crate::ROOT, None));
-        Ok(())
-    }
-
-    pub fn set_keymap(&mut self, slot: usize, def: KeymapDef) -> Result<()> {
-        if def.first > def.last || !(0.1..=9999.999).contains(&def.base_freq) {
-            return Err(Error::WrongType);
-        }
-        for d in def.degrees.split_whitespace() {
-            if d != "x" && d.parse::<u32>().is_err() {
-                return Err(Error::WrongType);
-            }
-        }
-        *self.doc.plugins.keymaps.get_mut(slot).ok_or(Error::WrongType)? = def;
-        self.diff.changed.push((crate::ROOT, None));
-        Ok(())
     }
 }
 
@@ -1183,15 +1293,20 @@ thread_local! {
     static USER_PRESETS: RefCell<Vec<UserPreset>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Saves the node's state as a user preset (a file in the user's presets folder); returns its name
-pub fn save_user_preset(n: &PluginNode) -> String {
+fn save_user_preset(n: &PluginNode, name: &str) {
     USER_PRESETS.with(|u| {
         let mut u = u.borrow_mut();
-        let count = u.iter().filter(|p| p.plugin == n.plugin).count();
-        let name = format!("{} {}", n.preset.as_deref().unwrap_or("Preset"), count + 1);
-        u.push(UserPreset { plugin: n.plugin, name: name.clone(), reals: n.reals.clone(), choices: n.choices.clone() });
-        name
+        u.retain(|p| !(p.plugin == n.plugin && p.name == name));
+        u.push(UserPreset { plugin: n.plugin, name: name.to_string(), reals: n.reals.clone(), choices: n.choices.clone() });
     })
+}
+
+/// A free name for a new user preset of this node ("Fat Bass 2")
+pub fn new_preset_name(n: &PluginNode) -> String {
+    let base = n.preset.clone().unwrap_or_else(|| "Preset".to_string());
+    let base = base.trim_end_matches(|c: char| c.is_ascii_digit() || c == ' ').to_string();
+    let taken = presets_of(n.plugin);
+    (1..).map(|k| format!("{base} {k}")).find(|x| !taken.contains(x)).unwrap()
 }
 
 pub fn user_presets(plugin: &str) -> Vec<String> {
@@ -1219,7 +1334,7 @@ pub fn presets_of(plugin: &str) -> Vec<String> {
 
 /// Builds a plugin's processor on a worker (I-9.1 `build`): the node is already in its place; past 200 ms the
 /// window shows the loading in place of the controls (I-2.3)
-pub fn build(s: &mut Session, node: NodeId, plugin: &str) {
+fn build(s: &mut Session, node: NodeId, plugin: &str) {
     let ms = descriptor(plugin).map_or(10, |d| d.build_ms);
     let stage = if descriptor(plugin).is_some_and(|d| d.resource.is_some()) { "Loading the file" } else { "Building the plugin" };
     let _ = s.start(stage, Target::Node(node), true, move |cancel, progress| {
@@ -1236,7 +1351,7 @@ pub fn build(s: &mut Session, node: NodeId, plugin: &str) {
 }
 
 /// Checks a file the user located for a missing resource (H17: comparing the hash is an operation)
-pub fn locate(s: &mut Session, node: NodeId, file: String) {
+fn check_file(s: &mut Session, node: NodeId) {
     let _ = s.start("Checking the file", Target::Node(node), true, move |_, progress| {
         for i in 0..10 {
             std::thread::sleep(Duration::from_millis(30));
@@ -1244,33 +1359,12 @@ pub fn locate(s: &mut Session, node: NodeId, file: String) {
         }
         Ok(())
     });
-    let _ = s.transact("Locate the file", |e| e.set_resource(node, &file));
-}
-
-/// "Locate folder" (H17): resolves every missing resource of a library that moved, at once
-pub fn locate_folder(s: &mut Session, folder: &str) -> usize {
-    let missing: Vec<(NodeId, String)> = s
-        .doc()
-        .plugins
-        .nodes
-        .values()
-        .filter(|n| n.missing)
-        .map(|n| (n.id, n.resource.clone().unwrap_or_default()))
-        .collect();
-    let count = missing.len();
-    let _ = s.transact("Locate the folder", |e| {
-        for (id, file) in &missing {
-            let name = file.rsplit('/').next().unwrap_or(file);
-            e.set_resource(*id, &format!("{folder}/{name}"))?;
-        }
-        Ok(())
-    });
-    count
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::port::{Applied, CorePort, EditOp, Ref};
     use crate::{Config, Field, Value};
 
     fn session() -> Session {
@@ -1316,20 +1410,35 @@ mod tests {
         assert_eq!(s.from_travel(0.52), 1.0, "stepped values land on whole numbers");
     }
 
+    fn apply(s: &mut Session, ops: Vec<EditOp>) -> Option<Applied> {
+        CorePort::apply(s, "Test", ops).ok()
+    }
+
     #[test]
-    fn params_edit_and_undo_through_the_document() {
+    fn params_edit_and_undo_through_the_port() {
         let mut s = session();
         let track = s.tracks().iter().find(|t| s.doc().plugins.instrument_of(t.id).is_some_and(|n| n.plugin == "TripleOscillator")).unwrap().id;
         let p = s.doc().plugins.instrument.get(&track).copied().unwrap();
-        s.transact("Knob", |e| e.set(p, Field::Param("osc1.vol"), Value::Real(150.0))).unwrap();
+        apply(&mut s, vec![EditOp::set(p, Field::Param("osc1.vol"), Value::Real(150.0))]).unwrap();
         assert_eq!(s.doc().plugins.node(p).unwrap().real("osc1.vol"), 150.0);
-        s.transact("Choice", |e| e.set_choice(p, "osc1.wave", "square")).unwrap();
-        s.undo().unwrap();
-        s.undo().unwrap();
+        apply(&mut s, vec![EditOp::set(p, Field::Param("osc1.wave"), Value::Text("square".into()))]).unwrap();
+        assert_eq!(s.doc().plugins.node(p).unwrap().choice("osc1.wave"), "square");
+        assert!(apply(&mut s, vec![EditOp::set(p, Field::Param("osc1.wave"), Value::Text("nonsense".into()))]).is_none(), "a choice by a key it lacks is refused");
+        let _ = CorePort::undo(&mut s);
+        let _ = CorePort::undo(&mut s);
         assert_eq!(s.doc().plugins.node(p).unwrap().real("osc1.vol"), 60.0, "back to the preset's value");
         // the functions are on the track id
-        s.transact("Filter", |e| e.set(track, Field::Param("filter.cutoff"), Value::Real(99_999.0))).unwrap();
+        apply(&mut s, vec![EditOp::set(track, Field::Param("filter.cutoff"), Value::Real(99_999.0))]).unwrap();
         assert_eq!(s.doc().plugins.functions_of(track).unwrap().real("filter.cutoff"), 14000.0, "clamped");
+        // the rest of the state
+        apply(&mut s, vec![
+            EditOp::set(p, Field::Plugin("automated/osc2.vol"), Value::Bool(true)),
+            EditOp::set(p, Field::Plugin("preset"), Value::Text("Soft Pad".into())),
+            EditOp::set(track, Field::Plugin("device.out/Porta virtual"), Value::Bool(true)),
+        ]).unwrap();
+        let n = s.doc().plugins.node(p).unwrap();
+        assert!(n.automated.contains("osc2.vol") && n.preset.as_deref() == Some("Soft Pad") && !n.modified);
+        assert!(s.doc().plugins.functions_of(track).unwrap().devices_out.contains("Porta virtual"));
     }
 
     #[test]
@@ -1340,33 +1449,53 @@ mod tests {
         let outs = |s: &Session| s.tracks().iter().find(|t| t.id == track).unwrap().outputs.iter().map(|o| o.port).collect::<Vec<_>>();
         assert_eq!(outs(&s), ["kick", "snare", "hihat", "tom", "floor", "oh", "perc"]);
         let kick = s.tracks().iter().find(|t| t.id == track).unwrap().outputs[0].clone();
-        s.transact("Kit", |e| e.set_choice(p, "kit", "blonde_bop")).unwrap();
+        apply(&mut s, vec![EditOp::set(p, Field::Param("kit"), Value::Text("blonde_bop".into()))]).unwrap();
         assert_eq!(outs(&s), ["kick", "snare", "hihat", "tom", "oh"]);
         let kick2 = s.tracks().iter().find(|t| t.id == track).unwrap().outputs[0].clone();
         assert_eq!((kick.id, kick.to), (kick2.id, kick2.to), "a port that stays keeps its output");
-        s.transact("Swap", |e| e.swap_instrument(track, "TripleOscillator").map(|_| ())).unwrap();
+        let a = apply(&mut s, vec![EditOp::Insert { temp: 1, parent: Ref::Id(track), list: "instrument", index: 0, node: Value::Text("TripleOscillator".into()) }]).unwrap();
         assert_eq!(outs(&s), ["main"]);
+        assert_eq!(s.doc().plugins.instrument.get(&track), Some(&a.created[0].1));
         assert!(s.doc().plugins.functions_of(track).is_some(), "the functions stay");
+        // the build starts on the next pump (I-2)
+        CorePort::pump(&mut s);
+        assert_ne!(s.loading(&Target::Node(a.created[0].1)), crate::Loading::Ready);
     }
 
     #[test]
     fn the_insert_chain() {
         let mut s = session();
         let ch = s.channels()[0].id;
-        let a = { let mut id = None; s.transact("Add", |e| { id = Some(e.add_insert(ch, 99, "Compressor")?); Ok(()) }).unwrap(); id.unwrap() };
-        let b = { let mut id = None; s.transact("Add", |e| { id = Some(e.add_insert(ch, 0, "EQ 8")?); Ok(()) }).unwrap(); id.unwrap() };
+        let ins = |plugin: &str, index| EditOp::Insert { temp: 1, parent: Ref::Id(ch), list: "inserts", index, node: Value::Text(plugin.into()) };
+        let n0 = s.channels()[0].inserts.len();
+        let a = apply(&mut s, vec![ins("Compressor", 99)]).unwrap().created[0].1;
+        let b = apply(&mut s, vec![ins("EQ 8", 0)]).unwrap().created[0].1;
         let order = |s: &Session| s.channels()[0].inserts.iter().map(|x| x.id).collect::<Vec<_>>();
-        assert_eq!(order(&s), [b, a]);
-        s.transact("Move", |e| e.move_insert(b, 1)).unwrap();
-        assert_eq!(order(&s), [a, b]);
-        s.transact("Bypass", |e| e.set_bypass(a, true)).unwrap();
-        assert!(s.channels()[0].inserts[0].bypass);
-        s.transact("Remove", |e| e.remove_insert(a)).unwrap();
-        assert_eq!(order(&s), [b]);
-        assert!(s.doc().plugins.node(a).is_none());
-        s.undo().unwrap();
-        assert_eq!(order(&s), [a, b]);
-        assert!(s.transact("Instrument as insert", |e| e.add_insert(ch, 0, "TripleOscillator").map(|_| ())).is_err());
+        assert_eq!(order(&s)[0], b);
+        assert_eq!(*order(&s).last().unwrap(), a);
+        apply(&mut s, vec![EditOp::Move { id: Ref::Id(b), parent: Ref::Id(ch), list: "inserts", index: 99 }]).unwrap();
+        assert_eq!(*order(&s).last().unwrap(), b);
+        // replace: remove and insert in the same place, one undo step
+        let at = order(&s).iter().position(|x| *x == a).unwrap();
+        apply(&mut s, vec![EditOp::Remove { id: Ref::Id(a) }, ins("Gate", at)]).unwrap();
+        assert_eq!(s.channels()[0].inserts[at].plugin, "Gate");
+        assert_eq!(order(&s).len(), n0 + 2);
+        let _ = CorePort::undo(&mut s);
+        assert_eq!(s.channels()[0].inserts[at].id, a);
+        assert!(apply(&mut s, vec![ins("TripleOscillator", 0)]).is_none(), "an instrument is not an insert");
+    }
+
+    #[test]
+    fn scales_are_refused_whole_when_a_line_is_bad() {
+        let mut s = session();
+        let r = crate::ROOT;
+        assert!(apply(&mut s, vec![
+            EditOp::set(r, Field::Plugin("scale.4.description"), Value::Text("Mine".into())),
+            EditOp::set(r, Field::Plugin("scale.4.intervals"), Value::Text("100.0\nabc".into())),
+        ]).is_none());
+        assert_eq!(s.doc().plugins.scales[4].description, "");
+        apply(&mut s, vec![EditOp::set(r, Field::Plugin("scale.4.intervals"), Value::Text("3/2\n2/1".into()))]).unwrap();
+        assert_eq!(s.doc().plugins.scales[4].intervals, "3/2\n2/1");
     }
 }
 

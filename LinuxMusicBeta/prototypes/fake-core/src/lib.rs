@@ -168,6 +168,8 @@ pub enum Field {
     Note,
     /// one automation point, whole, on the point's id (kind `p`)
     Point,
+    /// a plugin node's state that is not a parameter ("preset", "resource"...; plugins.rs `STATE_KEYS`)
+    Plugin(&'static str),
 }
 
 /// The document's root: the song-wide fields live on it
@@ -265,8 +267,9 @@ impl Edit<'_> {
             (b'r', Field::PunchOn, Value::Bool(b)) => self.doc.song.punch.on = b,
             (b'r', Field::Metronome, Value::Bool(b)) => self.doc.song.metronome = b,
             (b'r', Field::Tempo, Value::Real(x)) => self.doc.song.tempo[0].bpm = x.clamp(20.0, 400.0),
-            // a plugin parameter: the instrument functions (on the track), an instrument, an insert (plugins.rs)
-            (b't' | b'p' | b'x', Field::Param(k), Value::Real(x)) => plugins::set_param(self.doc, id, k, x)?,
+            // a plugin parameter: the instrument functions (on the track), an instrument (`u:`), an insert (plugins.rs)
+            (b't' | b'u' | b'x', Field::Param(k), v) => plugins::set_value(self.doc, id, k, v)?,
+            (_, Field::Plugin(k), v) => plugins::set_state(self.doc, id, k, v)?,
             (b'm', f @ (Field::InsertPoint(_) | Field::Bypass(_) | Field::FaderLink), v) => mixer::set(self.doc, id, f, v)?,
             (b'r', Field::DeskAnalog, Value::Bool(b)) => self.doc.song.desk_analog = b,
             (b'r', Field::Transpose, Value::Real(x)) => self.doc.song.transpose = x.clamp(-24.0, 24.0) as i32,
@@ -314,7 +317,8 @@ impl Edit<'_> {
             (b'r', Field::PunchOn) => Value::Bool(self.doc.song.punch.on),
             (b'r', Field::Metronome) => Value::Bool(self.doc.song.metronome),
             (b'r', Field::Tempo) => Value::Real(self.doc.song.tempo[0].bpm),
-            (b't' | b'p' | b'x', Field::Param(k)) => Value::Real(plugins::get_param(self.doc, id, k)?),
+            (b't' | b'u' | b'x', Field::Param(k)) => plugins::get_value(self.doc, id, k)?,
+            (_, Field::Plugin(k)) => plugins::get_state(self.doc, id, k)?,
             (b'm', f @ (Field::InsertPoint(_) | Field::Bypass(_) | Field::FaderLink)) => mixer::get(self.doc, id, f)?,
             (b'r', Field::DeskAnalog) => Value::Bool(self.doc.song.desk_analog),
             (b'r', Field::Transpose) => Value::Real(self.doc.song.transpose as f64),
@@ -758,6 +762,7 @@ impl Session {
     /// Returns true when anything the UI shows may have changed (a new telemetry frame, a diff, a loading state).
     pub fn pump(&mut self) -> bool {
         self.pumps += 1;
+        plugins::start_queued(self);
         let mut changed = false;
         // telemetry
         // loop recording: a pass ends when the cursor jumps back to the loop's start

@@ -1,14 +1,13 @@
 //! Owner: agent C. Fake data for the browser: the user's and the factory folders (samples, presets, projects, the
 //! current project's files) merged in one tree each (F-BRW-002), the search with words and "quoted phrases"
-//! (F-BRW-004), and the preview's preparation as an operation with the loading rule (I-7.3, I-2).
+//! (F-BRW-004), and the fake costs of searching, preparing a preview (I-7.3) and rescanning (H15).
 //! The plugins (instruments and effects) come from `plugins.rs`; the presets of each plugin too, so the browser and the
 //! instrument window show the same lists.
 
 use std::sync::{Arc, LazyLock};
-use std::time::Duration;
 
 use crate::peaks::Peaks;
-use crate::{OperationHandle, ResourceId, SAMPLE_RATE, Session, Target, plugins};
+use crate::{SAMPLE_RATE, plugins};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Page {
@@ -287,70 +286,29 @@ pub fn matches(name: &str, terms: &[String]) -> bool {
     !terms.is_empty() && terms.iter().all(|t| n.contains(t.as_str()))
 }
 
-/// The loading targets: the search (a list), an entry's preview, the plugin scan
-pub const SEARCH_TARGET: Target = Target::Resource(ResourceId(90_000));
-pub const RESCAN_TARGET: Target = Target::Resource(ResourceId(90_001));
-pub fn preview_target(entry: u32) -> Target {
-    Target::Resource(ResourceId(100_000 + entry))
+/// The search over the library (F-BRW-004): the ids of the entries whose names have every term, files and folders
+/// (the plugins are searched by the browser from `plugins::all()`). The browser runs it in the background and a new
+/// query cancels the old one.
+pub fn search(terms: &[String]) -> Vec<u32> {
+    LIBRARY.iter().filter(|e| !e.hidden && matches(&e.name, terms)).map(|e| e.id).collect()
 }
 
-/// The search, recursive, on a worker (F-BRW-004): the browser cancels the previous one when the query changes.
-/// Returns the matching entries' ids (files and folders); the plugins are searched by the browser itself.
-pub fn start_search(s: &mut Session, query: &str) -> OperationHandle<Vec<u32>> {
-    let terms = terms(query);
-    s.start("Searching", SEARCH_TARGET, true, move |cancel, progress| {
-        let n = LIBRARY.len();
-        let mut found = Vec::new();
-        for (i, e) in LIBRARY.iter().enumerate() {
-            if cancel.is_cancelled() {
-                return Err("cancelled".into());
-            }
-            if i % 8 == 0 {
-                // the fake walks a slow disk
-                std::thread::sleep(Duration::from_millis(3));
-                progress.set(i as f32 / n as f32);
-            }
-            if !e.hidden && matches(&e.name, &terms) {
-                found.push(e.id);
-            }
-        }
-        Ok(found)
-    })
+/// How long the fake takes to search (a slow disk), to prepare an entry's preview (decode the sample, or build the
+/// preset's processor, I-7.3), and to rescan the plugins (H15): big files pass 200 ms, so the loading shows.
+pub const SEARCH_MS: u64 = 350;
+pub const RESCAN_MS: u64 = 1600;
+pub fn preview_ms(id: u32) -> u64 {
+    entry(id).map_or(20, |e| (u64::from(e.size_kb) / 20).clamp(20, 1500))
 }
 
-/// Prepares an entry's preview (I-7.3): decodes the sample (or builds the preset's processor) on a worker. Big
-/// files pass 200 ms, so the loading shows in place of the waveform.
-pub fn prepare_preview(s: &mut Session, id: u32) -> OperationHandle<Arc<Peaks>> {
-    let e = entry(id).cloned();
-    let stage = if e.as_ref().is_some_and(|e| e.kind == Kind::Audio) { "Loading the sample" } else { "Preparing the preview" };
-    s.start(stage, preview_target(id), true, move |cancel, progress| {
-        let e = e.ok_or_else(|| "no such file".to_string())?;
-        let ms = (u64::from(e.size_kb) / 20).clamp(20, 1500);
-        for i in 0..10 {
-            if cancel.is_cancelled() {
-                return Err("cancelled".into());
-            }
-            std::thread::sleep(Duration::from_millis(ms / 10));
-            progress.set((i + 1) as f32 / 10.0);
-        }
-        let seconds = if e.kind == Kind::Audio { e.seconds.max(0.2) } else { 2.0 };
-        Ok(Arc::new(Peaks::synthesize(u64::from(id) + 3, seconds, SAMPLE_RATE)))
-    })
+/// The preview's peaks (the fake decodes nothing: it draws a deterministic waveform)
+pub fn preview_peaks(id: u32) -> Arc<Peaks> {
+    let seconds = entry(id).map_or(2.0, |e| if e.kind == Kind::Audio { e.seconds.max(0.2) } else { 2.0 });
+    Arc::new(Peaks::synthesize(u64::from(id) + 3, seconds, SAMPLE_RATE))
 }
 
-/// "Rescan the plugins" (H15): on a worker; a third-party plugin that crashes the scan is blocked
-pub fn start_rescan(s: &mut Session) -> OperationHandle<Vec<&'static str>> {
-    s.start("Scanning the plugins", RESCAN_TARGET, true, move |cancel, progress| {
-        for i in 0..30 {
-            if cancel.is_cancelled() {
-                return Err("cancelled".into());
-            }
-            std::thread::sleep(Duration::from_millis(40));
-            progress.set((i + 1) as f32 / 30.0);
-        }
-        Ok(vec!["Broken Synth (LV2)"])
-    })
-}
+/// What a rescan finds: a third-party plugin that crashes the scan is blocked until the user asks again (H15)
+pub const BLOCKED_BY_SCAN: &[&str] = &["Broken Synth (LV2)"];
 
 #[cfg(test)]
 mod tests {
@@ -362,6 +320,7 @@ mod tests {
         assert!(matches("tr808 kick.ds", &terms(r#""tr808 kick""#)));
         assert!(!matches("tr909 kick.ds", &terms(r#""tr808 kick""#)));
         assert!(!matches("anything", &[]));
+        assert!(search(&terms("kick")).iter().all(|id| entry(*id).unwrap().name.to_lowercase().contains("kick")));
     }
 
     #[test]

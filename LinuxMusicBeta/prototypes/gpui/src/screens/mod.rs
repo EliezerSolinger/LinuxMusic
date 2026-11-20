@@ -114,8 +114,10 @@ impl Screen {
     pub fn placement(self) -> Placement {
         match self {
             Screen::PianoRoll | Screen::Automation | Screen::Steps => Placement::Bottom,
+            // the effect window is a channel's whole path, left to right: it wants the width of the bottom dock
+            Screen::Effect => Placement::Bottom,
             Screen::Browser => Placement::Left,
-            Screen::Instrument | Screen::Effect | Screen::Notices => Placement::Right,
+            Screen::Instrument | Screen::Notices => Placement::Right,
             Screen::Routing
             | Screen::Settings
             | Screen::Export
