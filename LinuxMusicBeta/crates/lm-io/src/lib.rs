@@ -8,8 +8,10 @@ mod device;
 mod disk;
 mod dummy;
 mod edge;
+mod midi;
 pub mod peaks;
 mod record;
+mod resources;
 mod rt;
 mod system;
 mod take;
@@ -33,3 +35,11 @@ pub use rt::{
     SystemRealtime, lock_memory, realtime_hook,
 };
 pub use system::{SleepGuard, device_error};
+#[cfg(target_os = "linux")]
+pub use midi::list_midi_ports;
+pub use midi::{MidiInput, MidiPortInfo, MidiSink, MidiSource, MidiStats, Parsed, RawParser, midi_ring};
+pub use resources::{
+    AUDIO_EXTENSIONS, EVICT_AFTER, ImportedFile, IoFaults, KEY_LEN, LoadJob, Loaded, OnDisk, ResourceState, ResourceStore,
+    ResourceView, STREAM_ABOVE, audio_folder, clean_import_leftovers, import_file, is_valid_key, load_file, resolve_external,
+    resource_path, verify_located,
+};
