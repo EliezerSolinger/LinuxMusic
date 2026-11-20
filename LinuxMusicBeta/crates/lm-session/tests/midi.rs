@@ -87,11 +87,12 @@ fn a_mapped_cc_moves_the_parameter_and_its_gesture_is_one_undo_step() {
         send(&mut s, port, [0xB0, 7, v]);
         run_for(&mut s, Duration::from_millis(20));
     }
-    // The slot moved at once; the document only when the gesture ends (500 ms after the last message)
-    assert_eq!(volume(&s, t), 1.0);
-    wait_until(&mut s, "the gesture's end", |s| volume(s, t) > 3.9);
+    // The tree follows the control at each pump (a document gesture: no undo step yet); the step comes when the
+    // gesture ends, 500 ms after the last message
+    wait_until(&mut s, "the tree follows", |s| volume(s, t) > 3.9);
     assert!((volume(&s, t) - 4.0).abs() < 1e-3, "full scale is the fader's maximum: {}", volume(&s, t));
-    assert_eq!(s.document().history_len(), undo_before + 1, "one undo step for the whole gesture");
+    assert_eq!(s.document().history_len(), undo_before, "no step while the gesture is open");
+    wait_until(&mut s, "the gesture's end", |s| s.document().history_len() == undo_before + 1);
     s.document_mut().undo().expect("undo");
     assert_eq!(volume(&s, t), 1.0);
 }
@@ -336,4 +337,59 @@ fn automation_touch_records_one_pass_per_undo_step() {
     s.run_action("automation.rearm", &Value::empty_object()).expect("rearm");
     assert!(s.hand_won().is_empty());
     let _ = ROOT;
+}
+
+/// S20: a control moved while its plugin is rebuilt (a wave shape changed in the middle of the gesture) keeps its
+/// value — the tree follows the gesture at each pump, so the new program and the new processor start from it; the
+/// gesture is still one undo step
+#[test]
+fn a_control_moved_during_a_rebuild_keeps_its_value() {
+    let dir = TempDir::new("midi-s20");
+    let (mut s, t, port) = ready(&dir);
+    let synth = s
+        .document()
+        .find(t)
+        .and_then(|v| v.get("instrument").and_then(|i| i.get("id")).and_then(Value::as_text).map(str::to_owned))
+        .and_then(|x| NodeId::parse(&x).ok())
+        .expect("the instrument");
+    let target = MapTarget::Param { node: NodeRef::Id(synth), key: "vol1".into() };
+    s.midi_add_mapping(&cc("Ctl", 7, target), MapScope::Project, Label::new("test")).expect("map");
+    settle(&mut s);
+    let undo_before = s.document().history_len();
+    let vol = |s: &Session| {
+        s.document()
+            .find(synth)
+            .and_then(|p| p.at_path(&[PathStep::key("state"), PathStep::key("params"), PathStep::key("vol1")]).cloned())
+            .and_then(|v| v.as_real())
+            .unwrap_or(-1.0)
+    };
+    send(&mut s, port, [0xB0, 7, 20]);
+    run_for(&mut s, Duration::from_millis(60));
+    // The tree follows the control while the gesture is open
+    wait_until(&mut s, "the tree follows", |s| (vol(s) - 200.0 * 20.0 / 127.0).abs() < 0.01);
+    // A rebuild in the middle: another wave shape (a new processor, built from the tree)
+    s.document_mut()
+        .transact(Label::new("test.wave"), |e| {
+            e.set(synth, &[PathStep::key("state"), PathStep::key("wave1")], Value::text("saw"))
+        })
+        .expect("wave");
+    for v in [40u8, 80, 100] {
+        send(&mut s, port, [0xB0, 7, v]);
+        run_for(&mut s, Duration::from_millis(30));
+    }
+    settle(&mut s); // the new processor is built and installed while the gesture is still open
+    let want = 200.0 * 100.0 / 127.0;
+    let slot = s.table().slots_of(synth, "vol1")[0];
+    assert!((f64::from(s.engine().params().read(slot)) - want).abs() < 0.01, "the slot kept the moved value");
+    // The gesture ends: the final value in the tree, one undo step for it
+    wait_until(&mut s, "the gesture's end", |s| s.document().history_len() == undo_before + 2);
+    assert!((vol(&s) - want).abs() < 0.01, "the tree has the moved value: {}", vol(&s));
+    assert!((f64::from(s.engine().params().read(slot)) - want).abs() < 0.01);
+    assert_eq!(s.document().undo_label().map(|l| l.key), Some("midi.gesture"));
+    // T4: the wave change entered as its own step with the gesture's value at that moment; undo walks back through
+    // states that existed
+    s.document_mut().undo().expect("undo");
+    assert!((vol(&s) - 200.0 * 20.0 / 127.0).abs() < 0.01, "back to the value when the wave changed: {}", vol(&s));
+    s.document_mut().undo().expect("undo");
+    assert!((vol(&s) - 20.0).abs() < 0.01, "and to before the gesture: {}", vol(&s));
 }

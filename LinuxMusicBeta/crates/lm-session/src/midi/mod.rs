@@ -46,10 +46,17 @@ struct Learning {
 }
 
 /// A MIDI gesture running on a parameter (its end writes the document)
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct Gesture {
     node: NodeId,
     key: Arc<str>,
+    /// The document's gesture (I-3.7, T4: a controller's gesture beside the mouse's): the tree follows the control
+    /// at each pump, so a program compiled meanwhile (a rebuild, a new node) starts from the moved value (S20), and
+    /// the commit is the one undo step. `None`: a parameter the document does not keep
+    doc: Option<lm_doc::GestureId>,
+    /// The last value (the parameter's unit), and whether the tree has it yet
+    value: f32,
+    dirty: bool,
 }
 
 /// One feedback destination
@@ -217,8 +224,9 @@ impl Session {
         kind
     }
 
-    /// A parameter's range, for a parameter target without a slot (the document is written instead)
-    fn param_range(&self, node: NodeId, key: &str) -> ParamRange {
+    /// A parameter's range: the compiled one when it has a slot, else its schema's (the one value law the core and the
+    /// interface share for MIDI, automation and the editors)
+    pub fn param_range(&self, node: NodeId, key: &str) -> ParamRange {
         if let Some(r) = self.table.ranges.get(&(node, Arc::from(key))) {
             return *r;
         }
@@ -324,6 +332,7 @@ impl Session {
             self.midi_event(e, now);
         }
         self.midi_apply_pending();
+        self.midi_gestures_update();
         let mut touched = Vec::new();
         self.engine.touched(|t| touched.push(t));
         changed |= !touched.is_empty();
@@ -369,9 +378,22 @@ impl Session {
                 if let Some((m, r)) = self.midi.mapping_of(mapping)
                     && let (MapTarget::Param { key, .. }, Some(node)) = (&m.target, r.node)
                 {
-                    let g = Gesture { node, key: Arc::from(key.as_str()) };
-                    self.automation_hand(node, &g.key);
-                    self.midi.gestures.insert(slot.0, g);
+                    let key: Arc<str> = Arc::from(key.as_str());
+                    self.automation_hand(node, &key);
+                    let value = match e {
+                        MapEvent::Param { value, .. } => value,
+                        _ => 0.0,
+                    };
+                    if let Some(g) = self.midi.gestures.get_mut(&slot.0) {
+                        g.value = value;
+                        g.dirty = true;
+                    } else {
+                        let doc = self.midi_doc_path(node, &key).map(|_| {
+                            let label = Label::new("midi.gesture").arg("target", format!("{node} {key}"));
+                            self.document.begin_gesture(label)
+                        });
+                        self.midi.gestures.insert(slot.0, Gesture { node, key, doc, value, dirty: true });
+                    }
                 }
                 self.midi_echo(mapping, normalized, now);
                 self.midi_activity_mapped(port, mapping);
@@ -408,34 +430,71 @@ impl Session {
         }
     }
 
-    /// The end of a MIDI gesture: the final value into the document, one undo step "MIDI: <target>" (I-21.2)
-    fn midi_gesture_end(&mut self, slot: ParamSlot, value: f32) {
-        let Some(g) = self.midi.gestures.remove(&slot.0) else { return };
-        if !self.document.exists(g.node) {
-            return; // the target went away during the gesture (G3)
-        }
-        let ty = self.document.type_of(g.node).unwrap_or("");
-        let path = lm_doc::param_path(ty, &g.key);
+    /// Where a parameter lives in the tree, if the tree keeps it (the monitor's level is only in its slot)
+    fn midi_doc_path(&self, node: NodeId, key: &str) -> Option<Vec<PathStep>> {
+        let ty = self.document.type_of(node)?;
+        let path = lm_doc::param_path(ty, key);
+        let kept = self.document.find(node).is_some_and(|n| n.at_path(&path).is_some());
+        (kept || ty == lm_doc::schemas::types::PLUGIN).then_some(path)
+    }
+
+    /// A value for the tree: the shortest decimal, inside the schema's range
+    fn midi_doc_value(&self, node: NodeId, key: &str, path: &[PathStep], value: f32) -> Option<Value> {
         let mut x = doc_real(value);
-        if let Some(lm_state::FieldKind::Real { min, max }) = self.field_kind(g.node, &path) {
+        if let Some(FieldKind::Real { min, max }) = self.field_kind(node, path) {
             x = x.clamp(min, max);
-        } else if ty == lm_doc::schemas::types::PLUGIN {
-            let r = self.param_range(g.node, &g.key);
+        } else if self.document.type_of(node) == Some(lm_doc::schemas::types::PLUGIN) {
+            let r = self.param_range(node, key);
             x = x.clamp(f64::from(r.min.min(r.max)), f64::from(r.min.max(r.max)));
         }
-        let v = match Value::real(x) {
-            Ok(v) => v,
-            Err(_) => return,
-        };
-        match self.document.find(g.node).and_then(|n| n.at_path(&path).cloned()) {
-            // The same value, or a parameter the document does not keep (the monitor's level): nothing to write
-            Some(old) if old == v => return,
-            None if !lm_doc::param_key(ty, &path).is_some_and(|_| ty == lm_doc::schemas::types::PLUGIN) => return,
-            _ => {}
+        Value::real(x).ok()
+    }
+
+    /// The tree follows each open MIDI gesture (once per pump, the last value)
+    fn midi_gestures_update(&mut self) {
+        let slots: Vec<u32> = self.midi.gestures.iter().filter(|(_, g)| g.dirty).map(|(s, _)| *s).collect();
+        for s in slots {
+            self.midi_gesture_write(s);
         }
-        let label = Label::new("midi.gesture").arg("target", format!("{} {}", g.node, g.key));
-        let r = self.document.transact_as(label, Origin::Gesture, |e| e.set(g.node, &path, v));
-        if let Err(e) = r {
+    }
+
+    fn midi_gesture_write(&mut self, slot: u32) {
+        let Some(g) = self.midi.gestures.get_mut(&slot) else { return };
+        g.dirty = false;
+        let (node, key, value) = (g.node, g.key.clone(), g.value);
+        let Some(path) = self.midi_doc_path(node, &key) else { return };
+        let Some(v) = self.midi_doc_value(node, &key, &path, value) else { return };
+        let Some(g) = self.midi.gestures.get_mut(&slot) else { return };
+        let Some(id) = g.doc.as_ref() else { return };
+        if let Err(e) = self.document.gesture_update(id, |e| e.set(node, &path, v)) {
+            // The target went away (G3), or an undo closed the gesture (G2): the control lets go of the tree
+            if let Some(g) = self.midi.gestures.get_mut(&slot)
+                && let Some(id) = g.doc.take()
+            {
+                let _ = self.document.gesture_cancel(id);
+            }
+            if e.key() != "doc.gesture.target_gone" && e.key() != "doc.gesture.closed" {
+                self.notices.error(&e, None, None);
+            }
+        }
+    }
+
+    /// Whether a slot is held by a MIDI gesture (the session does not write it from the tree meanwhile: the renderer
+    /// has newer values than the tree)
+    pub(crate) fn midi_holds(&self, slot: ParamSlot) -> bool {
+        self.midi.gestures.contains_key(&slot.0)
+    }
+
+    /// The end of a MIDI gesture (I-21.2): the final value into the tree, and the commit is one undo step
+    fn midi_gesture_end(&mut self, slot: ParamSlot, value: f32) {
+        let Some(g) = self.midi.gestures.get_mut(&slot.0) else { return };
+        g.value = value;
+        self.midi_gesture_write(slot.0);
+        let Some(g) = self.midi.gestures.remove(&slot.0) else { return };
+        if let Some(id) = g.doc
+            && let Err(e) = self.document.gesture_commit(id)
+            && e.key() != "doc.gesture.closed"
+        {
             self.notices.error(&e, None, None);
         }
     }

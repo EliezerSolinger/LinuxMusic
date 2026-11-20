@@ -975,7 +975,10 @@ impl Session {
     fn apply_params(&mut self, diff: &Diff) {
         for (node, key, value) in &diff.params {
             for slot in self.table.slots_of(*node, key) {
-                self.engine.param_write(*slot, *value as f32);
+                // A slot a MIDI control holds has a newer value than the tree (I-21.2)
+                if !self.midi_holds(*slot) {
+                    self.engine.param_write(*slot, *value as f32);
+                }
             }
         }
     }

@@ -1063,6 +1063,14 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 - **Testes da `Session` com todos os plugins em depuração esperam por condição, não por tempo:** o render em
   depuração com todos os plugins é mais lento que o tempo real, então o relógio do dispositivo atrasa e uma mensagem
   carimbada com o relógio do sistema espera a sua hora (a regra do atraso fixo funcionando).
+- **O gesto MIDI é um gesto do documento** (I-3.7; o T4 já cita "um controlador MIDI noutro"), e não uma transação no
+  fim (20/11, a lacuna do S20): a árvore segue o controle a cada `pump` (um `gesture_update` com o último valor, sem
+  passo no histórico), então um programa compilado no meio — um processador reconstruído, um nó novo — nasce do valor
+  movido; o `commit` no fim do gesto é o único passo de desfazer, e o diário o recebe a cada 1 s (T11). Enquanto o MIDI
+  segura uma vaga, a `Session` não a reescreve a partir da árvore (o áudio tem valores mais novos que ela). Uma
+  transação alheia no meio entra como passo próprio com o valor do gesto naquele instante, como manda o T4. A outra
+  saída — levar o valor vivo da vaga para os valores iniciais do programa novo — deixaria a árvore errada até o fim do
+  gesto (um processador construído do estado leria o valor velho) e foi descartada.
 
 ## O host de plugins de terceiros fora do processo (I-9.6, 20/11)
 
