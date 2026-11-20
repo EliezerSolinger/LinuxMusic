@@ -391,7 +391,8 @@ impl HostOutbox {
         true
     }
 
-    pub(crate) fn drain(&mut self) -> impl Iterator<Item = PluginRequest> + '_ {
+    /// Takes the requests made (the renderer after each call; a host outside it, a bench, the same)
+    pub fn drain(&mut self) -> impl Iterator<Item = PluginRequest> + '_ {
         let len = std::mem::take(&mut self.len);
         self.requests[..len].iter_mut().filter_map(Option::take)
     }

@@ -1,0 +1,28 @@
+[package]
+name = "lm-plugin-host"
+description = "LinuxMusic: the helper process that hosts third-party plugins out of the core (I-9.6): LV2, the test plugins, and the formats to come"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "lm-plugin-host"
+path = "src/main.rs"
+
+[dependencies]
+lm-base.workspace = true
+lm-state.workspace = true
+lm-render.workspace = true
+lm-sys-ipc.workspace = true
+lm-sys-lilv.workspace = true
+lm-plugin-proxy.workspace = true
+
+[dev-dependencies]
+assert_no_alloc.workspace = true
+lm-plugin = { workspace = true, features = ["testing"] }
+lm-time.workspace = true

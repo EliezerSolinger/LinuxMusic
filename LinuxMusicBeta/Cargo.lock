@@ -3645,6 +3645,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugin-host"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "lm-base",
+ "lm-plugin",
+ "lm-plugin-proxy",
+ "lm-render",
+ "lm-state",
+ "lm-sys-ipc",
+ "lm-sys-lilv",
+ "lm-time",
+]
+
+[[package]]
+name = "lm-plugin-proxy"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "blake3",
+ "lm-base",
+ "lm-doc",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+ "lm-sys-ipc",
+]
+
+[[package]]
 name = "lm-plugins-ampandir"
 version = "0.1.0"
 dependencies = [

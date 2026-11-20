@@ -88,6 +88,8 @@ lm-sys-lilv = { path = "crates/lm-sys-lilv" }
 lm-sys-ipc = { path = "crates/lm-sys-ipc" }
 lm-sys-nam = { path = "crates/lm-sys-nam" }
 lm-sys-resid = { path = "crates/lm-sys-resid" }
+lm-plugin-proxy = { path = "crates/lm-plugin-proxy" }
+lm-plugin-host = { path = "crates/lm-plugin-host" }
 lm-io = { path = "crates/lm-io" }
 lm-compile = { path = "crates/lm-compile" }
 lm-port = { path = "crates/lm-port" }
