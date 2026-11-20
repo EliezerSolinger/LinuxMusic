@@ -23,6 +23,8 @@
 
 mod chords;
 mod schema;
+#[cfg(test)]
+mod tests;
 
 use std::any::Any;
 use std::fmt;
@@ -1298,9 +1300,19 @@ impl<S: Synth> Processor for Instrument<S> {
             }
             self.fade_left = self.fade_len;
         }
-        // Mono and poly follow different rules: a change of mode lets every note go to its release
+        // A change between poly, mono and legato: the notes go on sounding; in mono and legato the last base held is
+        // the one that sounds from now on (the others end at their note-off)
         if old.kit.mode != self.kit.mode {
-            self.release_all();
+            self.run.held.clear();
+            self.run.current = None;
+            if self.kit.mode != VoiceMode::Poly {
+                // (in place, without allocating: the held stack goes oldest first)
+                self.run.bases.sort_unstable_by_key(|b| (b.start, b.id));
+                for b in &self.run.bases {
+                    self.run.held.push(b.id);
+                }
+                self.run.current = self.run.bases.iter().max_by_key(|b| b.start).map(|b| b.id);
+            }
         }
         self.dirty = true;
         Adopted::Yes

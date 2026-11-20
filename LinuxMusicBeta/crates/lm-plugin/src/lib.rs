@@ -29,3 +29,8 @@ pub use state::StateView;
 pub mod instrument;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+
+// The unit tests run under the allocation trap's allocator (the instrument functions' tests check the audio path)
+#[cfg(all(test, debug_assertions))]
+#[global_allocator]
+static TEST_ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
