@@ -285,4 +285,19 @@ de forma diz pelo que é substituído.
   ter a sua linha de atraso.
 - **Pendente no `lm-render`:** a contagem (pré-roll com o metrônomo, I-5.5) precisa de uma região de contagem no
   `Renderer`; o compilador já põe o metrônomo, o volume e o liga/desliga.
+## Da interface: `lm-port` e `lm-gui` (20/11)
+
+- **O `CorePort` mora no pacote `lm-port`**, sem GPUI e sem fechamentos; ele reexporta os tipos que já existem
+  (`Label`, `Error`, `OperationId`, `HostTime` do `lm-base`; `NodeId`, `Value`, `PathStep`, `Resource` do `lm-state`;
+  `Diff`, `Feed`, `GestureId`, `Topic` do `lm-doc`; `Meter` do `lm-render`) e define só o que faltava — porque o
+  `lm-session` (a `LocalPort`) e o cliente de rede (a `RemotePort`) implementam a mesma porta, e a interface não pode
+  depender da sessão.
+- **Acréscimos ao I-15** (escritos lá): `drain`, `modified`/`can_undo`/`can_redo`, `dismiss_notice`, `preferences`/
+  `set_preference`, `status`, `devices` e o serviço do navegador — o protótipo mostrou que as telas precisam deles e
+  que, no modo cliente, nada disso pode ser lido direto da máquina da interface.
+- **O núcleo de mentira da interface é um `Document` de verdade** (`lm-port-fake`, só para testes e para rodar a
+  interface antes do `lm-session`): desfazer, refazer, gestos, feeds e as regras dos esquemas são os do `lm-doc`; só o
+  motor (telemetria, picos, carregamentos, avisos, navegador, dispositivos) é de mentira. A interface nunca depende
+  dele (só `dev-dependency`).
+- **`GestureId::from_raw`** no `lm-doc`, para a `RemotePort`, com teste de que um número não dado é recusado com erro.
 

@@ -70,6 +70,7 @@ lm-sys-rubberband = { path = "crates/lm-sys-rubberband" }
 lm-sys-lilv = { path = "crates/lm-sys-lilv" }
 lm-io = { path = "crates/lm-io" }
 lm-compile = { path = "crates/lm-compile" }
+lm-port = { path = "crates/lm-port" }
 
 [profile.dev]
 # Audio code is unusable without some optimisation. Disk is limited on the development machine: line tables are

@@ -1,0 +1,17 @@
+[package]
+name = "lm-port"
+description = "LinuxMusic: the CorePort, the interface's only door to the core (interfaces.md, I-15): data in, data out"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lm-base.workspace = true
+lm-state.workspace = true
+lm-doc.workspace = true
+lm-render.workspace = true

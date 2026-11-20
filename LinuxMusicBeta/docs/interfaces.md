@@ -1027,6 +1027,22 @@ pub struct Applied { pub diff: Diff, pub created: Vec<(u32, NodeId)>, pub notes:
 - Edições pesadas (quantizar, colar) são ações com parâmetros (`"notes.quantize" { item, grid }`), que rodam no
   núcleo (I-19, H7).
 - **A biblioteca é a GPUI.** A porta vive numa entidade da GPUI, e o `pump` roda num timer do laço de eventos dela.
+- **Acréscimos de 20/11 (pacote `lm-port`, decididos no protótipo):**
+  - `drain(&self, &mut Feed) -> Option<Diff>`: um `Feed` drena contra o documento, que a interface nunca tem na mão;
+  - `modified()`, `can_undo()`, `can_redo()`: para perguntar antes de perder mudanças e acender desfazer e refazer;
+  - `dismiss_notice(id)`;
+  - o lado da sessão que não é o documento do projeto: `preferences()` e `set_preference(path, value)` (I-16),
+    `status()` (o arquivo do projeto e o acesso H10, os projetos recentes, os modelos, os takes interrompidos U5, o
+    modo seguro U21, o relatório da última exportação, como uma árvore de `Value`) e `devices()` (`Pending`);
+  - **o serviço do navegador**: `browse(page, parent, show_hidden)`, `search(query)` (em segundo plano; uma busca nova
+    substitui a anterior; o carregamento aparece em `Target::Scan(Library)`), `prepare_preview(entry)` (a forma de onda
+    da prévia vem por `peaks` no recurso da prévia, I-7.3), `preview_play`, `preview_stop` e `set_favorite`. No modo
+    cliente os arquivos são do servidor, então o navegador também passa pela porta;
+  - o `Notice` da porta leva o seu número, as ações com o parâmetro de cada uma, as repetições e se foi lido; a
+    `TelemetryView` é por nó (`NodeId`), com a posição e o carimbo de tempo, as entradas, os takes que crescem, a
+    contagem e os xruns com as suas posições;
+  - `GestureId::from_raw(n)` no `lm-doc`: a `RemotePort` nomeia um gesto aberto no servidor pelo número; um número que
+    o documento não deu é recusado com erro, nunca com pânico.
 - **Testes:** o mesmo roteiro de interface roda contra a `LocalPort` e contra a `RemotePort` ligada a um servidor no
   mesmo processo (por um socket local), e tem que dar a mesma árvore e os mesmos `Diff`s.
 - **O protótipo** é escrito contra um núcleo de mentira que já tem a forma do `CorePort` (dados nos argumentos, sem

@@ -368,6 +368,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-port"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-doc",
+ "lm-render",
+ "lm-state",
+]
+
+[[package]]
 name = "lm-render"
 version = "0.1.0"
 dependencies = [
