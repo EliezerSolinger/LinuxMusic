@@ -448,6 +448,10 @@ fn param_sweep_of(p: &Plugin) {
 /// A state with every switch (a stepped parameter of 0 to 1) on, so every function of the plugin plays
 fn all_on(p: &Plugin, state: &Value) -> Value {
     let schema = p.schema.clone();
+    if schema.params.is_empty() {
+        // (a plugin without parameters has no `params` in its state)
+        return state.clone();
+    }
     let mut params = state.get(PARAMS_KEY).cloned().unwrap_or_else(Value::empty_object);
     for spec in &schema.params {
         if spec.scale == Scale::Stepped && spec.min == 0.0 && spec.max == 1.0 {

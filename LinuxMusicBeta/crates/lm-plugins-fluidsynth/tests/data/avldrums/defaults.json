@@ -1,0 +1,9 @@
+{
+  "plugin:avldrums": {
+    "defaults": {
+      "kit": "black-pearl",
+      "multiOutput": false
+    },
+    "version": 1
+  }
+}

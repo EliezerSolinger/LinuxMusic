@@ -600,6 +600,9 @@ pub enum Generator {
     /// Centibels of attenuation
     VolEnvSustain,
     VolEnvRelease,
+    /// FluidSynth's own balance (centibels of attenuation of one side: negative attenuates the right, positive the
+    /// left; 1440 silences it)
+    CustomBalance,
 }
 
 impl Generator {
@@ -613,6 +616,7 @@ impl Generator {
             Generator::VolEnvSustain => 37,
             Generator::VolEnvRelease => 38,
             Generator::CoarseTune => 51,
+            Generator::CustomBalance => 60,
         }
     }
 }
