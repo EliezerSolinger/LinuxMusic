@@ -1,0 +1,13 @@
+{
+  "plugin:gx-crybaby": {
+    "defaults": {
+      "crybaby_autowah": "manual",
+      "params": {
+        "crybaby_level": 0.10000000149011612,
+        "crybaby_wah": 0.0,
+        "crybaby_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

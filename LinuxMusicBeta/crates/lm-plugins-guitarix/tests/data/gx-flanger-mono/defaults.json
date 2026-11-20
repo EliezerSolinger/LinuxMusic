@@ -1,0 +1,12 @@
+{
+  "plugin:gx-flanger-mono": {
+    "defaults": {
+      "params": {
+        "flanger_mono_level": 0.0,
+        "flanger_mono_lfobpm": 24.0,
+        "flanger_mono_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

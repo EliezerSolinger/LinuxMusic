@@ -1,0 +1,14 @@
+{
+  "plugin:gx-stereoverb": {
+    "defaults": {
+      "params": {
+        "stereoverb_LFO_freq": 0.20000000298023224,
+        "stereoverb_RoomSize": 0.5,
+        "stereoverb_damp": 0.5,
+        "stereoverb_wet_dry": 50.0
+      },
+      "stereoverb_invert": "linear"
+    },
+    "version": 1
+  }
+}

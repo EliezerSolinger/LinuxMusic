@@ -1,0 +1,13 @@
+{
+  "plugin:gx-cab": {
+    "defaults": {
+      "cab_select": "4x12",
+      "params": {
+        "cab_Level": 1.0,
+        "cab_bass": 0.0,
+        "cab_treble": 0.0
+      }
+    },
+    "version": 1
+  }
+}

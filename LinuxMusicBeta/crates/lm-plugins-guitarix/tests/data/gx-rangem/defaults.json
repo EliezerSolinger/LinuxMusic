@@ -1,0 +1,11 @@
+{
+  "plugin:gx-rangem": {
+    "defaults": {
+      "params": {
+        "rangem_Boost": 0.5,
+        "rangem_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

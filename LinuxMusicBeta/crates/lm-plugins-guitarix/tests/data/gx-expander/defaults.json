@@ -1,0 +1,14 @@
+{
+  "plugin:gx-expander": {
+    "defaults": {
+      "params": {
+        "expander_attack": 0.0010000000474974513,
+        "expander_knee": 3.0,
+        "expander_ratio": 2.0,
+        "expander_release": 0.10000000149011612,
+        "expander_threshold": -40.0
+      }
+    },
+    "version": 1
+  }
+}

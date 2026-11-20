@@ -1,0 +1,14 @@
+{
+  "plugin:gx-distortion2": {
+    "defaults": {
+      "params": {
+        "distortion2_Hfreq": 30.0,
+        "distortion2_drive": 50.0,
+        "distortion2_freq": 10000.0,
+        "distortion2_gain": 0.0,
+        "distortion2_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

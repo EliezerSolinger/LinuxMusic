@@ -1,0 +1,13 @@
+{
+  "plugin:gx-reversedelay": {
+    "defaults": {
+      "params": {
+        "reversedelay_drywet": 0.5,
+        "reversedelay_feedback": 0.0,
+        "reversedelay_time": 500.0,
+        "reversedelay_window": 50.0
+      }
+    },
+    "version": 1
+  }
+}

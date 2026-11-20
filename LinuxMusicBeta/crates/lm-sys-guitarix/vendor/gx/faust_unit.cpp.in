@@ -1,0 +1,17 @@
+// Generated from faust_unit.cpp.in: Guitarix's @UNIT_NAME@, compiled as Guitarix's gx_faust_plugins.cpp compiles it
+#include <cstdlib>
+#include <cmath>
+#include <mutex>
+#include "gx_faust_plugins.h"
+#include "gx_faust_support.h"
+
+// (glibmm/i18n.h's, without translations: Guitarix's own catalog is not here)
+#ifndef _
+#define _(String) (String)
+#endif
+
+namespace gx_engine {
+@UNIT_OPEN@
+@WRAPPED_INCLUDES@
+@UNIT_CLOSE@
+}

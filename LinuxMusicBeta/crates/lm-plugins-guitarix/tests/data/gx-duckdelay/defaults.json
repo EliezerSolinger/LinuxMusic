@@ -1,0 +1,14 @@
+{
+  "plugin:gx-duckdelay": {
+    "defaults": {
+      "params": {
+        "duckDelay_amount": 0.5,
+        "duckDelay_attack": 0.10000000149011612,
+        "duckDelay_feedback": 0.0,
+        "duckDelay_relese": 0.10000000149011612,
+        "duckDelay_time": 500.0
+      }
+    },
+    "version": 1
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "plugin:gx-didest": {
+    "defaults": {
+      "didest_mode": "plain",
+      "didest_notes": "1/4 note",
+      "params": {
+        "didest_Freeze": 0.0,
+        "didest_bpm": 120.0,
+        "didest_feedback": 50.0,
+        "didest_gain": 100.0,
+        "didest_highpass": 120.0,
+        "didest_howpass": 12000.0,
+        "didest_level": 50.0
+      }
+    },
+    "version": 1
+  }
+}

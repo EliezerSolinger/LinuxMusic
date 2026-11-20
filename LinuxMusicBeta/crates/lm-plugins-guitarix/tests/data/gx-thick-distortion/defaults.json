@@ -1,0 +1,12 @@
+{
+  "plugin:gx-thick-distortion": {
+    "defaults": {
+      "params": {
+        "thick_distortion_input_gain": 0.0,
+        "thick_distortion_thickness": 0.800000011920929,
+        "thick_distortion_volume": 0.0
+      }
+    },
+    "version": 1
+  }
+}

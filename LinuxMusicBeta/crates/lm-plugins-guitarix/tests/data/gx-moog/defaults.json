@@ -1,0 +1,11 @@
+{
+  "plugin:gx-moog": {
+    "defaults": {
+      "params": {
+        "moog_Q": 1.0,
+        "moog_fr": 3000.0
+      }
+    },
+    "version": 1
+  }
+}

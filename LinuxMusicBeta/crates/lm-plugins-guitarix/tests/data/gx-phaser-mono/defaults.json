@@ -1,0 +1,12 @@
+{
+  "plugin:gx-phaser-mono": {
+    "defaults": {
+      "params": {
+        "phaser_mono_level": 0.0,
+        "phaser_mono_lfobpm": 30.0,
+        "phaser_mono_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

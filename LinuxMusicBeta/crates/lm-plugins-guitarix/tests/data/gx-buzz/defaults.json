@@ -1,0 +1,11 @@
+{
+  "plugin:gx-buzz": {
+    "defaults": {
+      "params": {
+        "buzz_Level": 0.5,
+        "buzz_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

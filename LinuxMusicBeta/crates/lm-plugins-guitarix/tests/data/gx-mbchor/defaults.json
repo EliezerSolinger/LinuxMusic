@@ -1,0 +1,33 @@
+{
+  "plugin:gx-mbchor": {
+    "defaults": {
+      "params": {
+        "mbchor_crossover_b1_b2": 80.0,
+        "mbchor_crossover_b2_b3": 210.0,
+        "mbchor_crossover_b3_b4": 1700.0,
+        "mbchor_crossover_b4_b5": 5000.0,
+        "mbchor_delay1": 0.019999999552965164,
+        "mbchor_delay2": 0.03999999910593033,
+        "mbchor_delay3": 0.05999999865889549,
+        "mbchor_delay4": 0.07999999821186066,
+        "mbchor_delay5": 0.10000000149011612,
+        "mbchor_depth1": 0.019999999552965164,
+        "mbchor_depth2": 0.03999999910593033,
+        "mbchor_depth3": 0.05999999865889549,
+        "mbchor_depth4": 0.07999999821186066,
+        "mbchor_depth5": 0.10000000149011612,
+        "mbchor_freq1": 30.0,
+        "mbchor_freq2": 60.0,
+        "mbchor_freq3": 90.0,
+        "mbchor_freq4": 120.0,
+        "mbchor_freq5": 150.0,
+        "mbchor_level1": 0.5,
+        "mbchor_level2": 0.5,
+        "mbchor_level3": 0.5,
+        "mbchor_level4": 0.5,
+        "mbchor_level5": 0.5
+      }
+    },
+    "version": 1
+  }
+}

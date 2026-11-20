@@ -1,0 +1,12 @@
+{
+  "plugin:gx-aclipper": {
+    "defaults": {
+      "params": {
+        "aclipper_drive": 0.5,
+        "aclipper_level": -2.0,
+        "aclipper_tone": 0.5
+      }
+    },
+    "version": 1
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "plugin:gx-pre": {
+    "defaults": {
+      "params": {
+        "pre_Level": 1.0,
+        "pre_bass": 0.0,
+        "pre_treble": 0.0
+      },
+      "pre_select": "AC30"
+    },
+    "version": 1
+  }
+}

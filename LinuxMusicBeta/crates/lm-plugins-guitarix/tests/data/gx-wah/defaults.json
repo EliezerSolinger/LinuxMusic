@@ -1,0 +1,14 @@
+{
+  "plugin:gx-wah": {
+    "defaults": {
+      "params": {
+        "wah_Wah": 0.0,
+        "wah_freq": 24.0,
+        "wah_wet_dry": 100.0
+      },
+      "wah_mode": "manual",
+      "wah_select": "colwah"
+    },
+    "version": 1
+  }
+}

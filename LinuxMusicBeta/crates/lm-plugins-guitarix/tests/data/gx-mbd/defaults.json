@@ -1,0 +1,29 @@
+{
+  "plugin:gx-mbd": {
+    "defaults": {
+      "params": {
+        "mbd_Drive1": 0.0,
+        "mbd_Drive2": 0.0,
+        "mbd_Drive3": 0.0,
+        "mbd_Drive4": 0.0,
+        "mbd_Drive5": 0.0,
+        "mbd_Gain": 0.0,
+        "mbd_Gain1": 0.0,
+        "mbd_Gain2": 0.0,
+        "mbd_Gain3": 0.0,
+        "mbd_Gain4": 0.0,
+        "mbd_Gain5": 0.0,
+        "mbd_Offset1": 0.0,
+        "mbd_Offset2": 0.0,
+        "mbd_Offset3": 0.0,
+        "mbd_Offset4": 0.0,
+        "mbd_Offset5": 0.0,
+        "mbd_crossover_b1_b2": 80.0,
+        "mbd_crossover_b2_b3": 210.0,
+        "mbd_crossover_b3_b4": 1700.0,
+        "mbd_crossover_b4_b5": 5000.0
+      }
+    },
+    "version": 1
+  }
+}

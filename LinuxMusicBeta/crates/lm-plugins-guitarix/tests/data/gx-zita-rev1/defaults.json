@@ -1,0 +1,20 @@
+{
+  "plugin:gx-zita-rev1": {
+    "defaults": {
+      "params": {
+        "zita_rev1_decay_times_hf_damping": 6000.0,
+        "zita_rev1_decay_times_lf_x": 200.0,
+        "zita_rev1_decay_times_low_rt60": 3.0,
+        "zita_rev1_decay_times_mid_rt60": 2.0,
+        "zita_rev1_equalizer1_eq1_freq": 315.0,
+        "zita_rev1_equalizer1_eq1_level": 0.0,
+        "zita_rev1_equalizer2_eq2_freq": 1500.0,
+        "zita_rev1_equalizer2_eq2_level": 0.0,
+        "zita_rev1_input_in_delay": 60.0,
+        "zita_rev1_output_dry_wet_mix": 0.0,
+        "zita_rev1_output_level": 0.0
+      }
+    },
+    "version": 1
+  }
+}

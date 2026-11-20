@@ -1,0 +1,14 @@
+{
+  "plugin:gx-compressor": {
+    "defaults": {
+      "params": {
+        "compressor_attack": 0.0020000000949949026,
+        "compressor_knee": 3.0,
+        "compressor_ratio": 2.0,
+        "compressor_release": 0.5,
+        "compressor_threshold": -20.0
+      }
+    },
+    "version": 1
+  }
+}

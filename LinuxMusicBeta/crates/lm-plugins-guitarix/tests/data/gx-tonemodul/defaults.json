@@ -1,0 +1,14 @@
+{
+  "plugin:gx-tonemodul": {
+    "defaults": {
+      "params": {
+        "tonemodul_Bass": 0.0,
+        "tonemodul_Middle": 0.0,
+        "tonemodul_ON": 0.0,
+        "tonemodul_Treble": 0.0,
+        "tonemodul_sharper": -2.0
+      }
+    },
+    "version": 1
+  }
+}

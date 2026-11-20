@@ -1,0 +1,12 @@
+{
+  "plugin:gx-bmp": {
+    "defaults": {
+      "params": {
+        "bmp_Sustain": 0.5,
+        "bmp_Tone": 0.5,
+        "bmp_Volume": 0.5
+      }
+    },
+    "version": 1
+  }
+}

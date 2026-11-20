@@ -1,0 +1,11 @@
+{
+  "plugin:gx-overdrive": {
+    "defaults": {
+      "params": {
+        "overdrive_drive": 1.0,
+        "overdrive_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

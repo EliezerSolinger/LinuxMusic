@@ -1,0 +1,10 @@
+{
+  "plugin:gx-eldist": {
+    "defaults": {
+      "params": {
+        "eldist_Drive": 0.5
+      }
+    },
+    "version": 1
+  }
+}

@@ -3715,6 +3715,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-guitarix"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "lm-base",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+ "lm-sys-guitarix",
+ "lm-sys-samplerate",
+ "serde_json",
+]
+
+[[package]]
 name = "lm-plugins-instruments"
 version = "0.1.0"
 dependencies = [
@@ -3885,6 +3899,15 @@ dependencies = [
 [[package]]
 name = "lm-sys-fpu"
 version = "0.1.0"
+
+[[package]]
+name = "lm-sys-guitarix"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "cc",
+ "lm-base",
+]
 
 [[package]]
 name = "lm-sys-ipc"

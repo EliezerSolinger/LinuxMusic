@@ -1,0 +1,12 @@
+{
+  "plugin:gx-poweramp": {
+    "defaults": {
+      "params": {
+        "poweramp_Gain": 0.0,
+        "poweramp_Pregain": 0.0
+      },
+      "poweramp_mode": "camp"
+    },
+    "version": 1
+  }
+}

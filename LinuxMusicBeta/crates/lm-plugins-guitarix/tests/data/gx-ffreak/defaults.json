@@ -1,0 +1,14 @@
+{
+  "plugin:gx-ffreak": {
+    "defaults": {
+      "params": {
+        "ffreak_Fuzz": 0.5,
+        "ffreak_Gate": 0.5,
+        "ffreak_Level": 0.5,
+        "ffreak_Tone": 0.5,
+        "ffreak_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

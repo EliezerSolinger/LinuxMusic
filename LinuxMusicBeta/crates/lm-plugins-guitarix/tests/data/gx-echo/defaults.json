@@ -1,0 +1,11 @@
+{
+  "plugin:gx-echo": {
+    "defaults": {
+      "params": {
+        "echo_bpm": 120.0,
+        "echo_percent": 0.0
+      }
+    },
+    "version": 1
+  }
+}

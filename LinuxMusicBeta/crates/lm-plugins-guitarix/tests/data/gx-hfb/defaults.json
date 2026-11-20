@@ -1,0 +1,11 @@
+{
+  "plugin:gx-hfb": {
+    "defaults": {
+      "params": {
+        "hfb_Intensity": 0.5,
+        "hfb_Volume": 0.5
+      }
+    },
+    "version": 1
+  }
+}

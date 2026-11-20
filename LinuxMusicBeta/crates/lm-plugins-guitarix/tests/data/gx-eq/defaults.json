@@ -1,0 +1,21 @@
+{
+  "plugin:gx-eq": {
+    "defaults": {
+      "params": {
+        "eq_bandwidth1": 41.0,
+        "eq_bandwidth2": 220.0,
+        "eq_bandwidth3": 880.0,
+        "eq_bandwidth4": 1760.0,
+        "eq_level1": 0.0,
+        "eq_level2": 0.0,
+        "eq_level3": 0.0,
+        "eq_level4": 0.0,
+        "eq_peak1": 110.0,
+        "eq_peak2": 440.0,
+        "eq_peak3": 1760.0,
+        "eq_peak4": 3520.0
+      }
+    },
+    "version": 1
+  }
+}

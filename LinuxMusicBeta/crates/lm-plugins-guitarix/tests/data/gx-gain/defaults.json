@@ -1,0 +1,10 @@
+{
+  "plugin:gx-gain": {
+    "defaults": {
+      "params": {
+        "gain_gain": 0.0
+      }
+    },
+    "version": 1
+  }
+}

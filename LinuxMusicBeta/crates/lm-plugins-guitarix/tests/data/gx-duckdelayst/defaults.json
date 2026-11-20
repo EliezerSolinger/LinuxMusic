@@ -1,0 +1,17 @@
+{
+  "plugin:gx-duckdelayst": {
+    "defaults": {
+      "params": {
+        "duckDelaySt_amount": 0.5,
+        "duckDelaySt_attack": 0.10000000149011612,
+        "duckDelaySt_coloration": 0.0,
+        "duckDelaySt_effect": 0.0,
+        "duckDelaySt_feedback": 0.0,
+        "duckDelaySt_pingpong": 0.0,
+        "duckDelaySt_release": 0.10000000149011612,
+        "duckDelaySt_time": 500.0
+      }
+    },
+    "version": 1
+  }
+}

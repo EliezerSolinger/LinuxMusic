@@ -1,0 +1,11 @@
+{
+  "plugin:gx-gcb-95": {
+    "defaults": {
+      "params": {
+        "GCB_95_Volume": 0.0,
+        "GCB_95_hotpotz": 0.5
+      }
+    },
+    "version": 1
+  }
+}

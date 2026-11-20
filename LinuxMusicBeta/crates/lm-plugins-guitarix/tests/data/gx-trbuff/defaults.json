@@ -1,0 +1,10 @@
+{
+  "plugin:gx-trbuff": {
+    "defaults": {
+      "params": {
+        "trbuff_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

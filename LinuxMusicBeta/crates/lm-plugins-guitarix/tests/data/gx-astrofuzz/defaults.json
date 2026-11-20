@@ -1,0 +1,12 @@
+{
+  "plugin:gx-astrofuzz": {
+    "defaults": {
+      "params": {
+        "astrofuzz_Attack": 0.5,
+        "astrofuzz_Tone": 0.5,
+        "astrofuzz_Volume": 0.5
+      }
+    },
+    "version": 1
+  }
+}

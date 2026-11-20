@@ -1,0 +1,11 @@
+{
+  "plugin:gx-bboom": {
+    "defaults": {
+      "params": {
+        "bboom_Drive": 0.33000001311302185,
+        "bboom_Gain": 0.0
+      }
+    },
+    "version": 1
+  }
+}

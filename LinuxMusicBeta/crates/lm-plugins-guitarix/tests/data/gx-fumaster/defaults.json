@@ -1,0 +1,12 @@
+{
+  "plugin:gx-fumaster": {
+    "defaults": {
+      "params": {
+        "fumaster_Level": 0.5,
+        "fumaster_Tone": 0.5,
+        "fumaster_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "plugin:gx-bassenhancer": {
+    "defaults": {
+      "params": {
+        "bassEnhancer_Frequency": 100.0,
+        "bassEnhancer_HarmonicsdB": 0.0
+      }
+    },
+    "version": 1
+  }
+}

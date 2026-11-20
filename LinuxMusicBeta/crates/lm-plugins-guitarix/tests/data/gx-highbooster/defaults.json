@@ -1,0 +1,10 @@
+{
+  "plugin:gx-highbooster": {
+    "defaults": {
+      "params": {
+        "highbooster_Level": 0.5
+      }
+    },
+    "version": 1
+  }
+}

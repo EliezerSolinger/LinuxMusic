@@ -1,0 +1,13 @@
+{
+  "plugin:gx-fuzzfacefm": {
+    "defaults": {
+      "params": {
+        "fuzzfacefm_Drive": 0.5,
+        "fuzzfacefm_Fuzz": 0.5,
+        "fuzzfacefm_Input": 0.5,
+        "fuzzfacefm_Level": 0.5
+      }
+    },
+    "version": 1
+  }
+}

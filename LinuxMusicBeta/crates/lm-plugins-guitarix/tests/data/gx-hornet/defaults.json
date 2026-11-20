@@ -1,0 +1,12 @@
+{
+  "plugin:gx-hornet": {
+    "defaults": {
+      "params": {
+        "hornet_Fuzz": 0.5,
+        "hornet_Level": 0.5,
+        "hornet_Sustain": 0.5
+      }
+    },
+    "version": 1
+  }
+}

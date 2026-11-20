@@ -1,0 +1,15 @@
+{
+  "plugin:gx-stereoecho": {
+    "defaults": {
+      "params": {
+        "stereoecho_lbpm": 120.0,
+        "stereoecho_lfobpm": 24.0,
+        "stereoecho_percent_l": 0.0,
+        "stereoecho_percent_r": 0.0,
+        "stereoecho_rbpm": 120.0
+      },
+      "stereoecho_invert": "linear"
+    },
+    "version": 1
+  }
+}
