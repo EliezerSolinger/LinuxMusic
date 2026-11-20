@@ -1,0 +1,185 @@
+//! The preferences of the machine (I-16; the shape is lm-port's `trees::preferences`): never in the project. Read
+//! once at start-up (after the first frame, U19), changed by path, written back whole in an operation.
+//!
+//! Where: `$LINUXMUSIC_CONFIG/preferences.json` when set; beside the executable when a file `portable` is there
+//! (P-35); otherwise `$XDG_CONFIG_HOME/linuxmusic` (or `~/.config/linuxmusic`) on Linux and
+//! `~/Library/Application Support/LinuxMusic` on macOS.
+
+use std::path::PathBuf;
+
+use lm_base::{Error, Result};
+use lm_state::{PathStep, Value, from_json, path_text};
+
+/// The preferences a new installation starts with
+pub fn defaults() -> Value {
+    let o = |pairs: Vec<(&str, Value)>| Value::object(pairs);
+    let real = |x: f64| Value::real(x).unwrap_or(Value::NULL);
+    o(vec![
+        ("language", Value::text("pt-BR")),
+        ("theme", Value::text("dark")),
+        ("projectsFolder", Value::text(default_projects_folder())),
+        ("askBeforeClosing", Value::bool(true)),
+        (
+            "audio",
+            o(vec![
+                ("system", Value::text(if cfg!(target_os = "macos") { "coreaudio" } else { "alsa" })),
+                ("input", Value::text("")),
+                ("output", Value::text("")),
+                ("rate", Value::int(48_000)),
+                ("block", Value::int(256)),
+                ("driftCorrection", Value::bool(false)),
+                ("latencyFrames", Value::int(0)),
+            ]),
+        ),
+        ("midi", o(vec![("inputs", Value::empty_list()), ("clock", Value::bool(false))])),
+        ("interface", o(vec![("followCursor", Value::bool(false)), ("scale", real(1.0))])),
+        ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
+        ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text(""))])),
+        ("shortcuts", Value::empty_object()),
+        // Not shown on the settings screen
+        ("recent", Value::empty_list()),
+        ("allowedFolders", Value::empty_list()),
+        ("autosaveSeconds", Value::int(60)),
+        ("lowLatencyMonitoring", Value::bool(false)),
+    ])
+}
+
+fn home() -> PathBuf {
+    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn default_projects_folder() -> String {
+    home().join("LinuxMusic").display().to_string()
+}
+
+/// The file the preferences live in
+pub fn location() -> PathBuf {
+    if let Some(dir) = std::env::var_os("LINUXMUSIC_CONFIG") {
+        return PathBuf::from(dir).join("preferences.json");
+    }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+        && dir.join("portable").exists()
+    {
+        return dir.join("preferences.json");
+    }
+    let base = if cfg!(target_os = "macos") {
+        home().join("Library/Application Support/LinuxMusic")
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home().join(".config"))
+            .join("linuxmusic")
+    };
+    base.join("preferences.json")
+}
+
+/// The preferences, as a tree with every key of [`defaults`]
+#[derive(Clone, Debug)]
+pub struct Preferences {
+    tree: Value,
+    file: Option<PathBuf>,
+}
+
+/// Every key of the defaults kept, with the file's value where it has one of the same kind
+fn merge(defaults: &Value, read: &Value) -> Value {
+    if !defaults.is_object() {
+        return if read.kind() == defaults.kind() { read.clone() } else { defaults.clone() };
+    }
+    let mut out = defaults.clone();
+    for (key, d) in defaults.entries() {
+        if let Some(r) = read.get(key) {
+            out = out.with(
+                key,
+                if d.is_object() && !d.is_empty() {
+                    merge(d, r)
+                } else if r.kind() == d.kind() {
+                    r.clone()
+                } else {
+                    d.clone()
+                },
+            );
+        }
+    }
+    // Free maps (the shortcuts) keep the file's keys
+    if defaults.is_empty() && read.is_object() {
+        return read.clone();
+    }
+    out
+}
+
+impl Preferences {
+    /// The defaults, kept nowhere (tests, the headless renderer)
+    pub fn in_memory() -> Self {
+        Self { tree: defaults(), file: None }
+    }
+
+    /// Read from `file` (the defaults where it is absent or unreadable: a broken file never stops the program)
+    pub fn load(file: PathBuf) -> (Self, Option<Error>) {
+        let base = defaults();
+        let (tree, error) = match std::fs::read_to_string(&file) {
+            Ok(text) => match from_json(&text) {
+                Ok(v) => (merge(&base, &v), None),
+                Err(e) => (base, Some(e.arg("path", file.display().to_string()))),
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (base, None),
+            Err(e) => (base, Some(crate::folder::io_error("session.preferences.read", &file, &e))),
+        };
+        (Self { tree, file: Some(file) }, error)
+    }
+
+    pub fn tree(&self) -> &Value {
+        &self.tree
+    }
+
+    pub fn file(&self) -> Option<&PathBuf> {
+        self.file.as_ref()
+    }
+
+    pub fn get(&self, path: &[&str]) -> Option<&Value> {
+        let steps: Vec<PathStep> = path.iter().map(|k| PathStep::key(k)).collect();
+        self.tree.at_path(&steps)
+    }
+
+    pub fn int(&self, path: &[&str]) -> Option<i64> {
+        self.get(path).and_then(Value::as_int)
+    }
+
+    pub fn text(&self, path: &[&str]) -> Option<&str> {
+        self.get(path).and_then(Value::as_text)
+    }
+
+    pub fn bool(&self, path: &[&str]) -> Option<bool> {
+        self.get(path).and_then(Value::as_bool)
+    }
+
+    /// Changes one preference: the path must exist in the defaults (or be inside a free map, the shortcuts), and the
+    /// value must be of the same kind. Keys `session.preferences.unknown`, `session.preferences.kind`
+    pub fn set(&mut self, path: &[PathStep], value: Value) -> Result<()> {
+        let d = defaults();
+        let free_map = path.len() >= 2 && matches!(&path[0], PathStep::Key(k) if &**k == "shortcuts");
+        if !free_map {
+            let Some(default) = d.at_path(path) else {
+                return Err(Error::new("session.preferences.unknown").arg("path", path_text(path)));
+            };
+            if default.kind() != value.kind() {
+                return Err(Error::new("session.preferences.kind").arg("path", path_text(path)));
+            }
+        }
+        self.tree = self.tree.with_path(path, value)?;
+        Ok(())
+    }
+
+    /// Puts a project first in the recent list (at most 10)
+    pub fn add_recent(&mut self, name: &str, folder: &str) {
+        let now = crate::lock::now_seconds().to_string();
+        let entry =
+            Value::object([("name", Value::text(name)), ("folder", Value::text(folder)), ("opened", Value::text(now))]);
+        let mut list = vec![entry];
+        if let Some(old) = self.tree.get("recent") {
+            list.extend(old.items().filter(|e| e.get("folder").and_then(Value::as_text) != Some(folder)).cloned());
+        }
+        list.truncate(10);
+        self.tree = self.tree.with("recent", Value::list(list));
+    }
+}

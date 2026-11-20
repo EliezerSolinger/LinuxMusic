@@ -1,0 +1,20 @@
+[package]
+name = "lm-headless"
+description = "LinuxMusic without an interface: render and export a project, and serve it (I-20.7)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "lm-headless"
+path = "src/main.rs"
+
+[dependencies]
+lm-base.workspace = true
+lm-state.workspace = true
+lm-session.workspace = true

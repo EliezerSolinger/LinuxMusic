@@ -1,0 +1,31 @@
+[package]
+name = "lm-session"
+description = "LinuxMusic: the session — the document, the compiler, the engine and the device together, the project folder, the journal, the operations, and the LocalPort"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lm-base.workspace = true
+lm-state.workspace = true
+lm-doc.workspace = true
+lm-time.workspace = true
+lm-render.workspace = true
+lm-dsp.workspace = true
+lm-plugin.workspace = true
+lm-plugins-testsine.workspace = true
+lm-plugins-tripleoscillator.workspace = true
+lm-compile.workspace = true
+lm-io.workspace = true
+lm-port.workspace = true
+lm-sys-sndfile.workspace = true
+blake3.workspace = true
+rustix = { workspace = true, features = ["system"] }
+
+[dev-dependencies]
+assert_no_alloc.workspace = true

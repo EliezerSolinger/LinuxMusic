@@ -313,6 +313,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-headless"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-session",
+ "lm-state",
+]
+
+[[package]]
 name = "lm-io"
 version = "0.1.0"
 dependencies = [
@@ -402,6 +411,28 @@ dependencies = [
  "loom",
  "rtrb",
  "triple_buffer",
+]
+
+[[package]]
+name = "lm-session"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "blake3",
+ "lm-base",
+ "lm-compile",
+ "lm-doc",
+ "lm-dsp",
+ "lm-io",
+ "lm-plugin",
+ "lm-plugins-testsine",
+ "lm-plugins-tripleoscillator",
+ "lm-port",
+ "lm-render",
+ "lm-state",
+ "lm-sys-sndfile",
+ "lm-time",
+ "rustix",
 ]
 
 [[package]]
