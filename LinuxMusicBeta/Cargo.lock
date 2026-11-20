@@ -3766,6 +3766,15 @@ name = "lm-sys-fpu"
 version = "0.1.0"
 
 [[package]]
+name = "lm-sys-ipc"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "libc",
+ "lm-base",
+]
+
+[[package]]
 name = "lm-sys-lilv"
 version = "0.1.0"
 dependencies = [

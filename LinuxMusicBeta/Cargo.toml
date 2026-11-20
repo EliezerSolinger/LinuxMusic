@@ -80,6 +80,7 @@ lm-sys-alsa = { path = "crates/lm-sys-alsa" }
 lm-sys-linux = { path = "crates/lm-sys-linux" }
 lm-sys-rubberband = { path = "crates/lm-sys-rubberband" }
 lm-sys-lilv = { path = "crates/lm-sys-lilv" }
+lm-sys-ipc = { path = "crates/lm-sys-ipc" }
 lm-io = { path = "crates/lm-io" }
 lm-compile = { path = "crates/lm-compile" }
 lm-port = { path = "crates/lm-port" }
