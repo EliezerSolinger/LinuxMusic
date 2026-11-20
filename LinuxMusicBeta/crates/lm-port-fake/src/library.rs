@@ -252,6 +252,25 @@ impl Library {
             .collect()
     }
 
+    /// A user preset saved from a plugin (`plugin.save_preset`): on the Presets page, the user's (not factory)
+    pub fn add_preset(&mut self, plugin: &str, name: &str) -> EntryId {
+        let id = EntryId(self.entries.iter().map(|(_, e)| e.id.0).max().unwrap_or(0) + 1);
+        self.entries.push((
+            BrowsePage::Presets,
+            BrowseEntry {
+                id,
+                parent: None,
+                name: std::sync::Arc::from(name),
+                kind: EntryKind::Preset,
+                factory: false,
+                hidden: false,
+                favorite: false,
+                info: info(&[("plugin", Value::text(plugin))]),
+            },
+        ));
+        id
+    }
+
     pub fn set_favorite(&mut self, id: EntryId, on: bool) -> Result<()> {
         if !self.entries.iter().any(|(_, e)| e.id == id) {
             return Err(lm_base::Error::new("port.browse.unknown_entry"));

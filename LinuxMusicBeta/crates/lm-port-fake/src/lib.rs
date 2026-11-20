@@ -910,6 +910,9 @@ impl CorePort for FakePort {
                 );
                 Ok(())
             }
+            // a preset is a plugin's state in a file (piece 7a): loading it is one transaction, saving it a file
+            "plugin.load_preset" => self.load_preset(&params),
+            "plugin.save_preset" => self.save_preset(&params),
             "plugins.rescan" => {
                 self.start(
                     Label::new("Scanning plugins"),
@@ -1128,6 +1131,49 @@ impl CorePort for FakePort {
 
     fn plugin_schema(&self, plugin: &str) -> Option<lm_port::NodeSchema> {
         self.doc.registry().find(&format!("plugin:{plugin}")).cloned()
+    }
+}
+
+impl FakePort {
+    /// `{node, entry}`: the preset entry's state on the plugin node (the fake's presets are deterministic variations
+    /// of the defaults, by the entry's number)
+    fn load_preset(&mut self, params: &Value) -> Result<()> {
+        let node = params.get("node").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
+        let entry = params.get("entry").and_then(Value::as_int);
+        let (Some(node), Some(entry)) = (node, entry) else { return Err(err("port.params")) };
+        let preset = self.library.entry(EntryId(entry as u64)).ok_or_else(|| err("port.browse.unknown_entry"))?;
+        let plugin_node = CorePort::find(self, node).ok_or_else(|| err("port.params"))?;
+        let plugin = plugin_node.get("plugin").and_then(Value::as_text).unwrap_or("").to_string();
+        if preset.info.get("plugin").and_then(Value::as_text) != Some(plugin.as_str()) {
+            return Err(err("plugin.preset.other_plugin"));
+        }
+        let schema = self.plugin_schema(&plugin).ok_or_else(|| err("port.params"))?;
+        let ops: Vec<EditOp> = schema
+            .params
+            .iter()
+            .enumerate()
+            .map(|(k, p)| {
+                let f = ((entry as usize * 7 + k * 13) % 10) as f64 / 10.0;
+                let v = p.min + (p.max - p.min) * f;
+                let v = if p.scale == lm_state::Scale::Stepped { v.round() } else { v };
+                EditOp::set(node, &["state", "params", p.key], Value::real(v).unwrap_or_default())
+            })
+            .collect();
+        match CorePort::apply(self, Label::new("Load a preset"), ops) {
+            Pending::Ready(r) => r.map(|_| ()),
+            Pending::Waiting(_) => Ok(()),
+        }
+    }
+
+    /// `{node, name}`: a new user preset of the node's plugin, on the Presets page
+    fn save_preset(&mut self, params: &Value) -> Result<()> {
+        let node = params.get("node").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
+        let name = params.get("name").and_then(Value::as_text).filter(|n| !n.trim().is_empty());
+        let (Some(node), Some(name)) = (node, name) else { return Err(err("port.params")) };
+        let plugin_node = CorePort::find(self, node).ok_or_else(|| err("port.params"))?;
+        let plugin = plugin_node.get("plugin").and_then(Value::as_text).unwrap_or("").to_string();
+        self.library.add_preset(&plugin, name);
+        Ok(())
     }
 }
 

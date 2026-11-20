@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use lm_base::{Label, Result};
 use lm_doc::{Document, Options, Port, Ports, register_project_schemas};
-use lm_state::{FieldSpec, NodeId, NodeSchema, ParamSpec, PathStep, ROOT, Resource, SchemaRegistry, Value};
+use lm_state::{FieldSpec, NodeId, NodeSchema, ParamSpec, PathStep, ROOT, Resource, Scale, SchemaRegistry, Value};
 
 /// A plugin parameter: key, min, max, default
 pub type Param = (&'static str, f64, f64, f64);
@@ -19,9 +19,9 @@ pub const PLUGINS: &[(&str, bool, &[Param])] = &[
             ("vol1", 0.0, 1.0, 0.8),
             ("vol2", 0.0, 1.0, 0.5),
             ("vol3", 0.0, 1.0, 0.0),
-            ("cutoff", 20.0, 20000.0, 8000.0),
-            ("attack", 0.0, 2.0, 0.01),
-            ("release", 0.0, 4.0, 0.3),
+            // the filter and the envelopes are the instrument functions' (add_instrument_functions)
+            ("coarse2", -24.0, 24.0, -12.0),
+            ("fine2", -100.0, 100.0, 0.0),
         ],
     ),
     ("avldrums", true, &[("level", 0.0, 1.0, 1.0)]),
@@ -44,6 +44,70 @@ pub const PLUGINS: &[(&str, bool, &[Param])] = &[
 ];
 
 pub const KITS: &[&str] = &["acoustic", "big"];
+
+/// The instrument functions every per-note instrument gets, with the keys of lm-plugin's `instrument::schema`
+/// (F-IJN-002, 010, 011, 013, 014, 015): the fake cannot depend on lm-plugin, so it writes the same keys
+pub fn add_instrument_functions(mut s: NodeSchema) -> NodeSchema {
+    const LFO_SHAPES: &[&str] = &["sine", "triangle", "saw", "square", "random", "user"];
+    const SYNC: &[&str] = &["off", "2/1", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32"];
+    const FILTERS: &[&str] = &["low-pass", "high-pass", "band-pass-csg", "band-pass-czpg", "notch", "all-pass", "moog"];
+    const CHORDS: &[&str] = &["octave", "major", "minor", "sus4", "maj7", "m7", "7", "major-scale", "minor-scale"];
+    let switch = |k: &'static str| ParamSpec::new(k, 0.0, 1.0, 0.0).scale(Scale::Stepped);
+    s = s.param(ParamSpec::new("pitch", -100.0, 100.0, 0.0).unit("cents"));
+    s = s.param(ParamSpec::new("bendRange", 1.0, 60.0, 2.0).scale(Scale::Stepped).unit("st").not_automatable());
+    for t in ["vol", "cut", "res"] {
+        let k = |n: &str| -> &'static str { Box::leak(format!("{t}{n}").into_boxed_str()) };
+        for (n, min, max, d) in [
+            ("Predelay", 0.0, 2.0, 0.0),
+            ("Attack", 0.0, 2.0, 0.0),
+            ("Hold", 0.0, 2.0, 0.5),
+            ("Decay", 0.0, 2.0, 0.5),
+            ("Sustain", 0.0, 1.0, 0.5),
+            ("Release", 0.0, 2.0, 0.1),
+            ("Amount", -1.0, 1.0, 0.0),
+            ("LfoPredelay", 0.0, 1.0, 0.0),
+            ("LfoAttack", 0.0, 1.0, 0.0),
+        ] {
+            s = s.param(ParamSpec::new(k(n), min, max, d));
+        }
+        s = s.param(ParamSpec::new(k("LfoSpeed"), 0.001, 1.0, 0.1).scale(Scale::Log));
+        s = s.param(ParamSpec::new(k("LfoAmount"), -1.0, 1.0, 0.0));
+        s = s.param(switch(k("LfoX100")));
+        s = s.param(switch(k("LfoEnvAmount")));
+        s = s.field(FieldSpec::choice(k("LfoShape"), LFO_SHAPES, "sine"));
+        s = s.field(FieldSpec::choice(k("LfoSync"), SYNC, "off"));
+    }
+    for p in [
+        switch("filterOn"),
+        ParamSpec::new("cutoff", 1.0, 14000.0, 14000.0).scale(Scale::Log).unit("Hz"),
+        ParamSpec::new("resonance", 0.01, 10.0, 0.5),
+        switch("chordOn"),
+        ParamSpec::new("chordRange", 1.0, 9.0, 1.0).scale(Scale::Stepped),
+        switch("arpOn"),
+        ParamSpec::new("arpRange", 1.0, 9.0, 1.0).scale(Scale::Stepped),
+        ParamSpec::new("arpRepeats", 1.0, 8.0, 1.0).scale(Scale::Stepped),
+        ParamSpec::new("arpCycle", 0.0, 6.0, 0.0).scale(Scale::Stepped),
+        ParamSpec::new("arpSkip", 0.0, 100.0, 0.0).unit("%"),
+        ParamSpec::new("arpMiss", 0.0, 100.0, 0.0).unit("%"),
+        ParamSpec::new("arpTime", 25.0, 2000.0, 200.0).unit("ms"),
+        ParamSpec::new("arpGate", 1.0, 200.0, 100.0).unit("%"),
+        ParamSpec::new("glide", 0.0, 2000.0, 0.0).unit("ms"),
+    ] {
+        s = s.param(p);
+    }
+    for (k, c, d) in [
+        ("filterType", FILTERS, "low-pass"),
+        ("chord", CHORDS, "octave"),
+        ("arpChord", CHORDS, "octave"),
+        ("arpDirection", &["up", "down", "up-down", "down-up", "random"][..], "up"),
+        ("arpMode", &["free", "sort", "sync"][..], "free"),
+        ("arpSync", SYNC, "off"),
+        ("voiceMode", &["poly", "mono", "legato"][..], "poly"),
+    ] {
+        s = s.field(FieldSpec::choice(k, c, d));
+    }
+    s
+}
 
 /// A fake plugin's category (F-FX-036), as the browser's entries carry it
 pub fn category(id: &str) -> &'static str {
@@ -78,6 +142,9 @@ pub fn registry() -> Result<SchemaRegistry> {
         }
         if *id == "avldrums" {
             s = s.field(FieldSpec::choice("kit", KITS, "acoustic"));
+        }
+        if *id == "tripleoscillator" || *id == "sampler" {
+            s = add_instrument_functions(s);
         }
         r.add(s)?;
     }

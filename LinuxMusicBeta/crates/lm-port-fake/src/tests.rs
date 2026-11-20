@@ -277,3 +277,25 @@ fn every_plugin_has_its_schema_and_its_browser_entry() {
     }
     assert!(port.plugin_schema("nonexistent").is_none());
 }
+
+#[test]
+fn presets_load_as_one_step_and_save_to_the_library() {
+    let mut port = FakePort::new(Config::default()).unwrap();
+    let root = port.root().clone();
+    let inst = root.get("tracks").unwrap().items().find_map(|t| {
+        let i = t.get("instrument").filter(|i| !i.is_null())?;
+        (i.get("plugin").and_then(Value::as_text) == Some("tripleoscillator"))
+            .then(|| i.get("id").unwrap().as_text().unwrap().to_string())
+    });
+    let inst = inst.expect("a tripleoscillator");
+    let Pending::Ready(Ok(presets)) = port.browse(BrowsePage::Presets, None, false) else { panic!() };
+    let fat =
+        presets.iter().find(|e| e.info.get("plugin").and_then(Value::as_text) == Some("tripleoscillator")).unwrap();
+    let params = Value::object([("node", Value::text(inst.as_str())), ("entry", Value::int(fat.id.0 as i64))]);
+    assert!(port.run_action("plugin.load_preset".into(), params).ok().is_some());
+    assert!(port.can_undo());
+    let save = Value::object([("node", Value::text(inst.as_str())), ("name", Value::text("Meu baixo"))]);
+    assert!(port.run_action("plugin.save_preset".into(), save).ok().is_some());
+    let Pending::Ready(Ok(after)) = port.browse(BrowsePage::Presets, None, false) else { panic!() };
+    assert!(after.iter().any(|e| &*e.name == "Meu baixo" && !e.factory));
+}
