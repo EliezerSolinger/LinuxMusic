@@ -509,3 +509,13 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
 - **Chaves de tradução recebidas** (`Label`, `Notice`) viram `&'static str` por uma tabela limitada (16 mil chaves de
   até 160 bytes); o excesso vira `remote.unknown_key`.
 
+
+## O visual próprio dos plugins (decisão do usuário, 20/11; `interfaces.md`, I-22)
+
+- **Do usuário:** os plugins nativos do legado com identidade visual própria (instrumentos e efeitos como o Guitarix
+  e o AmplifikationLite) são portados no próprio estilo. Os sem visual ou com botões soltos usam o editor genérico.
+- **Minhas:**
+  - **Os painéis moram num crate de interface, `lm-gui-plugins`**, nunca no crate do plugin, que continua sem
+    GPUI, e falam só pelo `CorePort`, para funcionar também no modo cliente.
+  - **A arte é copiada do legado.**
+  - **As imagens de terceiros só entram com a permissão registrada.**

@@ -1542,6 +1542,36 @@ pub struct Transform {
   - A mão vence e volta em 50 ms.
   - Gravar e tocar ao mesmo tempo, em 64 pistas, sem alocar no áudio.
 
+## I-22. O visual próprio dos plugins (decisão do usuário, 20/11)
+
+**O que o usuário disse:** os plugins nativos do legado que tinham **identidade visual própria** mantêm essa
+identidade. São os instrumentos e os efeitos, como o Guitarix e o AmplifikationLite, com o fundo, os botões, as
+luzes e os gráficos de cada um. Eles são portados **no próprio estilo**, fiéis ao legado. Os que não tinham visual, ou
+eram só botões soltos, usam o editor genérico (I-9), sem portar visual nenhum.
+
+- **Onde mora:** o painel visual é interface, então **nunca entra no crate do plugin**, que continua sem GPUI.
+  - Ele mora num crate de painéis, `lm-gui-plugins`, com um registro `id do plugin → painel`.
+  - A janela do instrumento (design 05) e a janela de efeitos mostram o painel registrado. Sem registro, mostram o
+    editor genérico.
+- **Só pelo `CorePort`:** o painel lê o estado na árvore, mexe nos parâmetros por gestos e `param_write`, e desenha
+  os dados vivos do plugin (a curva do EQ, o osciloscópio, a forma de onda) pelo `display(node)` (F2).
+  - Não tem nenhum ponteiro para o processador.
+  - Funciona igual no modo cliente.
+- **Fidelidade:**
+  - o painel reproduz o do legado na posição, no tamanho e na aparência: as mesmas imagens, os mesmos tipos de botão
+    (os knobs do LMMS em cada estilo, os LEDs, os seletores de onda, os visores);
+  - as mesmas interações, de F-CTL-005 e F-CTL-006;
+  - todo controle do painel é o mesmo parâmetro mapeável por MIDI e automatizável (I-21).
+- **As imagens:**
+  - Os arquivos de arte do legado (`artwork.png`/`.svg`, `background.png` e os demais) são copiados para
+    `lm-gui-plugins/assets/<plugin>/`. Eles são GPL como o resto.
+  - As imagens de terceiros só entram com a permissão registrada. Por exemplo, as do AmplifikationLite foram
+    liberadas pelo autor em 18/11 (memória do projeto, `amplifikation-blackbox`).
+- **Escala:** o painel é desenhado na escala da tela, com as imagens em 1x e 2x quando o legado tiver, sem borrar.
+- **Inventário:** `docs/plugins-visual.md` lista cada plugin nativo do legado, se tinha visual próprio ou não, com o
+  arquivo de onde vem e o estado do port. É o "pronto quando" desta seção, junto com um teste sem janela por painel:
+  abre, mexe em cada controle e confere o parâmetro.
+
 ---
 
 ## Parte 5: o programa no mundo real (H1–H19)
