@@ -787,3 +787,124 @@ fn the_server_survives_garbage() {
     r.unit(p).expect("still served");
     assert!(matches!(r.client.connection(), Connection::Connected { .. }));
 }
+
+fn client_named(server: &mut Server, core: &mut FakePort, endpoint: Endpoint, name: &str) -> RemotePort {
+    let mut cfg = ClientConfig::new(endpoint, schemas());
+    cfg.name = name.into();
+    let mut connecting = RemotePort::start(cfg);
+    loop {
+        core.pump();
+        server.pump(core);
+        if let Some(r) = connecting.poll() {
+            return r.expect("connect");
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn two_clients_editing_at_once_keep_one_coherent_history() {
+    let path = socket_path();
+    let mut cfg = ServerConfig::new("shared");
+    cfg.socket = Some(path.clone());
+    let mut core = fake();
+    let mut server = Server::start(cfg).unwrap();
+    let mut alice = client_named(&mut server, &mut core, Endpoint::Unix(path.clone()), "alice");
+    let mut bob = client_named(&mut server, &mut core, Endpoint::Unix(path), "bob");
+    let original = core.root().clone();
+    let steps_before = core.document().history_len();
+    let ids: Vec<NodeId> = original
+        .get("tracks")
+        .unwrap()
+        .items()
+        .map(|t| NodeId::parse(t.get("id").unwrap().as_text().unwrap()).unwrap())
+        .collect();
+    // Both send their edits at once, before the server sees any
+    let mut waiting = Vec::new();
+    for round in 0..5 {
+        for (who, port, track) in [("alice", &mut alice, ids[0]), ("bob", &mut bob, ids[1])] {
+            let name = format!("{who}-{round}");
+            let p = port.apply(label("test.rename"), vec![EditOp::set(track, &["name"], Value::text(name.as_str()))]);
+            let Pending::Waiting(id) = p else { panic!("remote") };
+            waiting.push((who, id));
+        }
+    }
+    // An open gesture of alice's, and bob's edit in the middle of it
+    let g = alice.begin_gesture(label("test.drag"));
+    alice.gesture_apply(&g, vec![EditOp::set(ids[0], &["volume"], Value::real(0.25).unwrap())]);
+    let Pending::Waiting(bob_last) =
+        bob.apply(label("test.solo"), vec![EditOp::set(ids[1], &["solo"], Value::bool(true))])
+    else {
+        panic!()
+    };
+    // Everything answered
+    let mut done: Vec<(&str, RequestId)> = Vec::new();
+    let end = Instant::now() + Duration::from_secs(10);
+    let mut bob_done = false;
+    while done.len() < waiting.len() || !bob_done {
+        core.pump();
+        server.pump(&mut core);
+        for (who, port) in [("alice", &mut alice), ("bob", &mut bob)] {
+            port.pump();
+            for (id, f) in port.finished() {
+                if let Finished::Applied(r) = f {
+                    r.expect("each edit applies");
+                }
+                if who == "bob" && id == bob_last {
+                    bob_done = true;
+                } else {
+                    done.push((who, id));
+                }
+            }
+        }
+        assert!(Instant::now() < end);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // Alice drops in the middle of her gesture: only her gesture goes back (I-20.5, G1)
+    drop(alice);
+    let end = Instant::now() + Duration::from_secs(5);
+    while server.clients() > 1 {
+        core.pump();
+        server.pump(&mut core);
+        assert!(Instant::now() < end);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    core.pump();
+    server.pump(&mut core);
+    let p = bob.ping();
+    let Pending::Waiting(ping) = p else { panic!() };
+    while !bob.finished().iter().any(|(id, _)| *id == ping) {
+        core.pump();
+        server.pump(&mut core);
+        bob.pump();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let root = core.root().clone();
+    let track = |i: usize| root.get("tracks").unwrap().at(i).unwrap().clone();
+    assert_eq!(
+        track(0).get("volume"),
+        original.get("tracks").unwrap().at(0).unwrap().get("volume"),
+        "the cancelled gesture went back"
+    );
+    assert_eq!(track(1).get("solo").and_then(Value::as_bool), Some(true), "bob's edit stays");
+    assert_eq!(track(0).get("name").unwrap().as_text(), Some("alice-4"));
+    assert_eq!(track(1).get("name").unwrap().as_text(), Some("bob-4"));
+    // The mirror that stayed sees the same tree
+    assert_eq!(bob.root(), &root);
+    // One history: eleven steps, each with its client's name, each client's in its own order
+    // One history: eleven steps, each with its client's name. When bob's edit landed inside alice's gesture, the
+    // gesture's cancel is a step of its own (G1: only the gesture's paths go back, bob's edit stays)
+    let mut labels = Vec::new();
+    while core.document().history_len() > steps_before && core.document().can_undo() {
+        labels.push(core.document().undo_label().cloned().expect("a label"));
+        assert!(matches!(core.undo(), Pending::Ready(Ok(()))));
+    }
+    let named: Vec<&Label> = labels.iter().filter(|l| l.key != "doc.gesture.cancel").collect();
+    assert!(labels.len() - named.len() <= 1, "{labels:?}");
+    let client = |l: &Label| l.args.iter().find(|(k, _)| *k == "client").map(|(_, v)| format!("{v:?}")).expect("named");
+    let alice_steps = named.iter().filter(|l| client(l).contains("alice")).count();
+    let bob_steps = named.iter().filter(|l| client(l).contains("bob")).count();
+    assert_eq!((alice_steps, bob_steps), (5, 6), "{labels:?}");
+    // Undoing all of them gives the tree from before (no step lost or doubled)
+    assert_eq!(core.root().without("meta"), original.without("meta"));
+}

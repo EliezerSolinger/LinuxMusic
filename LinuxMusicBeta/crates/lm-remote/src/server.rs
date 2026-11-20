@@ -455,7 +455,7 @@ impl Server {
                 c.stage = Stage::Ready;
                 c.mode = mode;
                 c.role = role;
-                c.name = name;
+                c.name = if name.is_empty() { format!("client {conn}") } else { name };
                 c.send_json(&Value::object([
                     ("t", Value::text("welcome")),
                     ("protocol", Value::int(PROTOCOL)),
@@ -703,7 +703,7 @@ impl Server {
             "ping" => self.answer(conn, rid()?, Ok(Value::NULL)),
             "apply" => {
                 Self::need(role, Role::Control)?;
-                let label = label(msg)?;
+                let label = self.named(conn, label(msg)?);
                 let ops = c::ops_from(get(msg, "ops")?)?;
                 let p = port.apply(label, ops);
                 self.pending(port, conn, rid()?, p, |a| c::applied_to(&a))
@@ -778,7 +778,7 @@ impl Server {
             "gesture_begin" => {
                 Self::need(role, Role::Control)?;
                 let g = uint(msg, "g")?;
-                let gid = port.begin_gesture(label(msg)?);
+                let gid = port.begin_gesture(self.named(conn, label(msg)?));
                 let c = self.conns.get_mut(&conn).expect("present");
                 if let Some(old) = c.gestures.insert(g, gid) {
                     port.gesture_cancel(old);
@@ -921,6 +921,12 @@ impl Server {
             }
             _ => Err(Error::new("remote.unknown_message").arg("t", t)),
         }
+    }
+
+    /// A step's label with the name of the client that made it (I-20.5: one history, each step named)
+    fn named(&self, conn: u64, label: Label) -> Label {
+        let name = self.conns.get(&conn).map(|c| c.name.clone()).unwrap_or_default();
+        label.arg("client", name)
     }
 
     fn answer(&mut self, conn: u64, id: u64, r: Result<Value>) -> Result<()> {
