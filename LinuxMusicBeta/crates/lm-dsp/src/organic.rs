@@ -69,6 +69,20 @@ fn side_values(o: &OrganicOsc, sample_rate: f32) -> [(f32, f64); 2] {
     [(left_volume, ratio * crate::math::exp2(detune) / sr), (right_volume, ratio * crate::math::exp2(-detune) / sr)]
 }
 
+impl Clone for OrganicVoice {
+    fn clone(&self) -> Self {
+        Self { sides: self.sides.clone(), phase_offsets: self.phase_offsets, scratch: self.scratch.clone() }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        for (a, b) in self.sides.iter_mut().zip(&source.sides) {
+            a.clone_from(b);
+        }
+        self.phase_offsets = source.phase_offsets;
+        self.scratch.clone_from(&source.scratch);
+    }
+}
+
 /// The legacy Organic's soft waveshaper
 #[inline]
 pub fn waveshape(x: f32, amount: f32) -> f32 {
@@ -76,8 +90,9 @@ pub fn waveshape(x: f32, amount: f32) -> f32 {
     (1.0 + k) * x / (1.0 + k * x.abs())
 }
 
-/// One note of the Organic
-#[derive(Clone, Debug)]
+/// One note of the Organic. Made once with its room; a note's start ([`OrganicVoice::restart`]), a render and
+/// `clone_from` never allocate (for the audio thread)
+#[derive(Debug)]
 pub struct OrganicVoice {
     sides: [Vec<Oscillator>; 2],
     phase_offsets: [[f32; OSCILLATORS]; 2],
@@ -88,6 +103,10 @@ impl OrganicVoice {
     /// A note at @p sample_rate, for periods of up to @p max_period frames; the oscillators start at random phases
     /// from @p seed
     pub fn new(sample_rate: f32, max_period: usize, seed: u64) -> Self {
+        Self::with_phases(sample_rate, max_period, Self::random_phases(seed))
+    }
+
+    fn random_phases(seed: u64) -> [[f32; OSCILLATORS]; 2] {
         let mut rng = NoiseRng::new(seed);
         let mut phase_offsets = [[0.0f32; OSCILLATORS]; 2];
         // (the last one first, as the legacy program drew them)
@@ -95,7 +114,17 @@ impl OrganicVoice {
             phase_offsets[0][i] = rng.unit() as f32;
             phase_offsets[1][i] = rng.unit() as f32;
         }
-        Self::with_phases(sample_rate, max_period, phase_offsets)
+        phase_offsets
+    }
+
+    /// A new note in this voice, as [`OrganicVoice::new`] makes one, without allocating
+    pub fn restart(&mut self, sample_rate: f32, seed: u64) {
+        self.phase_offsets = Self::random_phases(seed);
+        for side in 0..2 {
+            for (i, osc) in self.sides[side].iter_mut().enumerate() {
+                *osc = Oscillator::new(self.phase_offsets[side][i], sample_rate, 0);
+            }
+        }
     }
 
     /// A note whose oscillators start at @p phase_offsets (left, right)
@@ -111,18 +140,17 @@ impl OrganicVoice {
         let values = s.oscillators.map(|o| side_values(&o, sample_rate));
         let n = out.len();
         for side in 0..2 {
-            let params: Vec<OscParams<'_>> = (0..OSCILLATORS)
-                .map(|i| OscParams {
-                    shape: s.oscillators[i].shape,
-                    algo: ModulationAlgo::SignalMix,
-                    freq: frequency,
-                    detuning: values[i][side].1,
-                    phase_offset: self.phase_offsets[side][i],
-                    volume: values[i][side].0,
-                    use_wave_table: true,
-                    user_wave: None,
-                })
-                .collect();
+            // (an array: a render never allocates)
+            let params: [OscParams<'_>; OSCILLATORS] = core::array::from_fn(|i| OscParams {
+                shape: s.oscillators[i].shape,
+                algo: ModulationAlgo::SignalMix,
+                freq: frequency,
+                detuning: values[i][side].1,
+                phase_offset: self.phase_offsets[side][i],
+                volume: values[i][side].0,
+                use_wave_table: true,
+                user_wave: None,
+            });
             let mono = &mut self.scratch[..n];
             update(&mut self.sides[side], &params, mono, false);
             for (frame, v) in out.iter_mut().zip(mono.iter()) {

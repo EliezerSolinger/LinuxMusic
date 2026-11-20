@@ -9,6 +9,20 @@ pub const WAVETABLE_SIZE: usize = 200;
 /// The release, ms
 pub const RELEASE_MS: f32 = 1.5;
 
+impl Clone for BitInvaderVoice {
+    fn clone(&self) -> Self {
+        let mut shape = Vec::with_capacity(WAVETABLE_SIZE);
+        shape.extend_from_slice(&self.shape);
+        Self { shape, factor: self.factor, real_index: self.real_index }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.shape.clone_from(&source.shape);
+        self.factor = source.factor;
+        self.real_index = source.real_index;
+    }
+}
+
 /// The wave the notes play, made from the graph when it or its switches change (away from the audio thread)
 #[derive(Clone, Debug)]
 pub struct BitInvaderWave {
@@ -39,8 +53,9 @@ impl BitInvaderWave {
     }
 }
 
-/// One note of the BitInvader
-#[derive(Clone, Debug)]
+/// One note of the BitInvader. Its shape always has room for [`WAVETABLE_SIZE`] points, and `clone_from` copies
+/// into that room: a note started or copied on the audio thread never allocates
+#[derive(Debug)]
 pub struct BitInvaderVoice {
     shape: Vec<f32>,
     factor: f32,
@@ -51,7 +66,7 @@ impl BitInvaderVoice {
     /// A note of @p wave, normalized or not
     pub fn new(wave: &BitInvaderWave, normalize: bool) -> Self {
         let factor = if normalize { wave.normalize_factor } else { 1.0 };
-        let shape = wave
+        let shape: Vec<f32> = wave
             .points
             .iter()
             .map(|p| {
@@ -60,7 +75,22 @@ impl BitInvaderVoice {
                 if factor != 1.0 && v.abs() > 1.0 { if v < 0.0 { -1.0 } else { 1.0 } } else { v }
             })
             .collect();
-        Self { shape, factor, real_index: 0.0 }
+        let mut room = Vec::with_capacity(WAVETABLE_SIZE);
+        room.extend_from_slice(&shape);
+        Self { shape: room, factor, real_index: 0.0 }
+    }
+
+    /// A new note of @p wave in this voice, without allocating when the voice was made for a wave as long (its shape
+    /// reuses its room: for the audio thread)
+    pub fn restart(&mut self, wave: &BitInvaderWave, normalize: bool) {
+        let factor = if normalize { wave.normalize_factor } else { 1.0 };
+        self.shape.clear();
+        self.shape.extend(wave.points.iter().map(|p| {
+            let v = p * factor;
+            if factor != 1.0 && v.abs() > 1.0 { if v < 0.0 { -1.0 } else { 1.0 } } else { v }
+        }));
+        self.factor = factor;
+        self.real_index = 0.0;
     }
 
     /// The next @p out frames of the note at @p frequency (it may bend from one call to the next)

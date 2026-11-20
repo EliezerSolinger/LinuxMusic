@@ -755,3 +755,6 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
   volta a cada período (o legado a deixava crescer em precisão simples e a afinação mudava com a taxa: 2 cents a 96 kHz);
   os três casos `kicker-*` do A/B do `lm-dsp` ficam em `INTENTIONAL` com esse motivo (−64 dBFS meio segundo depois).
   Sem sonda de afinação no contrato (uma nota dura no máximo 5 s); a afinação em 44,1/48/96/192 kHz tem teste próprio.
+- **Vozes que não alocam:** as vozes do BitInvader e do Organic no `lm-dsp` ganharam `restart` (uma nota começa na
+  voz já feita) e um `Clone` cujo `clone_from` copia para o espaço que a voz já tem (o crossfade de uma troca copia vozes
+  no áudio). O `render` do Organic montava um `Vec` de parâmetros a cada chamada: agora um array.

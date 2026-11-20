@@ -610,6 +610,7 @@ Regras gerais do legado que valem para quase todo plugin:
   formas prontas (senoide, triângulo, serra, quadrada, ruído branco); carregar um arquivo de áudio como onda; suavizar.
 - **Comportamento:** polifônico, mono duplicado em L/R, release 1,5 ms. Com anti-aliasing, gera tabelas de banda
   limitada e segue o pitch bend. Quirk: soltar uma amostra no gráfico é aceito e não faz nada.
+- **Na beta:** plugin `bitinvader`: `normalize` e os campos `sampleLength`, `wave`, `interpolation`, `antiAliasing` (os dois interruptores refaziam as tabelas: são campos, a mudança se constrói fora do áudio e as notas fazem crossfade), em `lm-plugins-instruments` (contrato e A/B por composição contra o `playNoteImpl` do legado).
 
 #### F-INS-004 DrumMachines (baterias eletrônicas clássicas, do fork) — 1.0
 
@@ -732,6 +733,7 @@ Regras gerais do legado que valem para quase todo plugin:
   Desafinação estéreo −1200–1200 cents, 0.
 - **O usuário pode:** sortear volumes, desafinações e formas com um botão "Randomise".
 - **Comportamento:** polifônico, estéreo, fase inicial aleatória por nota; fade-in curto; sem release.
+- **Na beta:** plugin `organic`: por oscilador `harmonic`, `volume`, `panning`, `detune` e o campo `shape` (a escolha de seis formas), mais `distortion` e `volume`, em `lm-plugins-instruments` (contrato e A/B por composição contra o `playNoteImpl` do legado).
 
 #### F-INS-013 PatMan (patches GUS .pat) — 1.0
 
