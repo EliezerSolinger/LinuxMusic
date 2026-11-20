@@ -19,3 +19,4 @@ blake3.workspace = true
 
 [dev-dependencies]
 lm-port-fake.workspace = true
+lm-session.workspace = true

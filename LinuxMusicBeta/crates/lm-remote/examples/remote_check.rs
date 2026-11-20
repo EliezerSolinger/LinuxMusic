@@ -29,6 +29,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut endpoint = None;
     let mut token = None;
+    let mut fake = false;
     let mut i = 0;
     while i < args.len() {
         let v = args.get(i + 1).cloned().unwrap_or_default();
@@ -36,11 +37,21 @@ fn main() {
             "--socket" => endpoint = Some(Endpoint::Unix(v.into())),
             "--tcp" => endpoint = Some(Endpoint::Tcp(v)),
             "--token" => token = Some(v),
+            // The schemas of the fake core (serve_fake) instead of the session's (lm-headless serve)
+            "--fake" => {
+                fake = true;
+                i += 1;
+                continue;
+            }
             other => panic!("unknown argument {other}"),
         }
         i += 2;
     }
-    let schemas = Arc::new(lm_port_fake::demo::registry().expect("registry"));
+    let schemas = if fake {
+        Arc::new(lm_port_fake::demo::registry().expect("registry"))
+    } else {
+        Arc::new(lm_session::internal_plugins().and_then(|p| p.project_schemas()).expect("the session's schemas"))
+    };
     let mut cfg = ClientConfig::new(endpoint.expect("--socket or --tcp"), schemas);
     cfg.token = token;
     let t0 = Instant::now();

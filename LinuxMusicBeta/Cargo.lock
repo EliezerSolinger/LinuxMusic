@@ -3694,6 +3694,7 @@ dependencies = [
  "lm-doc",
  "lm-port",
  "lm-port-fake",
+ "lm-session",
  "lm-state",
 ]
 
