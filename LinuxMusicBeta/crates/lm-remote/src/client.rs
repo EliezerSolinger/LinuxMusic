@@ -269,10 +269,62 @@ fn mirror_options() -> Options {
     Options { history_limit: 0, journal: false, rules: Vec::new(), ..Options::default() }
 }
 
+/// A connection being made in the background (the interface never waits on the network: I-2.1); the port is built
+/// on the thread that finishes it
+pub struct Connecting {
+    cfg: ClientConfig,
+    rx: Receiver<Result<Welcome>>,
+}
+
+impl std::fmt::Debug for Connecting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Connecting").field("endpoint", &self.cfg.endpoint).finish()
+    }
+}
+
+impl Connecting {
+    /// The port, once the handshake ended (well or not)
+    pub fn poll(&mut self) -> Option<Result<RemotePort>> {
+        match self.rx.try_recv() {
+            Ok(r) => Some(r.and_then(|w| RemotePort::from_welcome(self.cfg.clone(), w))),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => Some(Err(Error::new("remote.connect"))),
+        }
+    }
+
+    /// Waits for it (tests, tools)
+    pub fn wait(mut self) -> Result<RemotePort> {
+        loop {
+            if let Some(r) = self.poll() {
+                return r;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+}
+
 impl RemotePort {
+    /// Starts connecting in the background
+    pub fn start(cfg: ClientConfig) -> Connecting {
+        let (tx, rx) = channel();
+        let c = cfg.clone();
+        let spawned = std::thread::Builder::new().name("lm-remote-connect".into()).spawn(move || {
+            let _ = tx.send(handshake(&c));
+        });
+        if let Err(e) = spawned {
+            let (tx, rx2) = channel();
+            let _ = tx.send(Err(Error::new("remote.io").arg("error", e.to_string())));
+            return Connecting { cfg, rx: rx2 };
+        }
+        Connecting { cfg, rx }
+    }
+
     /// Connects, shakes hands and loads the snapshot (blocking, bounded by the timeout)
     pub fn connect(cfg: ClientConfig) -> Result<RemotePort> {
-        let w = handshake(&cfg)?;
+        Self::start(cfg).wait()
+    }
+
+    fn from_welcome(cfg: ClientConfig, w: Welcome) -> Result<RemotePort> {
         let root = get(&w.snapshot, "root")?.clone();
         let doc = Document::from_root(Arc::clone(&cfg.schemas), lm_doc::PROJECT, root, mirror_options())?.document;
         let telemetry = TelemetryView {

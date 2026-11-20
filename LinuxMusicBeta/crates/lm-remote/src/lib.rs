@@ -21,6 +21,6 @@ mod proto;
 mod server;
 pub mod wire;
 
-pub use client::{ClientConfig, Connection, Endpoint, RemotePort};
+pub use client::{ClientConfig, Connecting, Connection, Endpoint, RemotePort};
 pub use proto::{Mode, PROGRAM, PROTOCOL, Role, TOOL_APIS, admin_action};
 pub use server::{ClientLimits, Server, ServerConfig};

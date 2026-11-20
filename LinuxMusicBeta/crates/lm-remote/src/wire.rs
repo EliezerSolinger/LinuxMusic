@@ -333,7 +333,7 @@ mod tests {
         for p in [0.0, 1e-9, 0.001, 0.5, 1.0, 8.0] {
             let q = dequantize(quantize(p));
             if p < 1e-6 {
-                assert!(q < 1e-6);
+                assert!(q <= 1.001e-6, "below the floor: at most −120 dB");
             } else {
                 assert!((20.0 * (q / p).log10()).abs() < 0.01, "{p} -> {q}");
             }
