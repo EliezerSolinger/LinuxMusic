@@ -29,6 +29,7 @@
 #include "EffectChain.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "Engine.h"
+#include "DrawnWave.h"
 #include "Graph.h"
 #include "KickerOsc.h"
 #include "PluginInstance.h"
@@ -388,6 +389,29 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			{
 				out[f] = SampleFrame{filter.update(out[f][0], 0), filter.update(out[f][1], 1)};
 			}
+		}
+		return out;
+	}
+	if (unit == "drawn-wave")
+	{
+		// A drawn wave's band-limited tables, played as a note gliding from one frequency to another: each frame its
+		// table for the frequency, at the phase
+		const auto s = c["settings"].toObject();
+		auto points = std::vector<float>{};
+		for (const auto& p : s["points"].toArray()) { points.push_back(static_cast<float>(p.toDouble())); }
+		const auto wave = DrawnWave{points, s["hold"].toString() == "step" ? DrawnWave::Hold::Step : DrawnWave::Hold::Linear};
+		const auto rate = static_cast<float>(c["rate"].toDouble());
+		const auto from = static_cast<float>(s["from"].toDouble());
+		const auto to = static_cast<float>(s["to"].toDouble());
+		auto phase = 0.f;
+		for (std::int64_t f = 0; f < frames; ++f)
+		{
+			const auto freq = from + (to - from) * (static_cast<float>(f) / static_cast<float>(frames));
+			const auto* table = wave.tableFor(freq, rate);
+			const auto v = table ? DrawnWave::at(*table, phase) : 0.f;
+			out[f] = SampleFrame{v, v};
+			phase += freq / rate;
+			if (phase >= 1.f) { phase -= 1.f; }
 		}
 		return out;
 	}

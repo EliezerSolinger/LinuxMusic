@@ -20,6 +20,7 @@
 //! The instruments' sources and shaping:
 //! - [`basic_filters`]: the general filters (every instrument's filter, the DualFilter's);
 //! - [`kicker`]: the Kicker's swept sine;
+//! - [`drawn_wave`]: a drawn wave's band-limited tables (the BitInvader's, the Watsyn's);
 //! - [`envelope`], [`sound_shaping`]: every instrument's envelopes and LFOs, and its filter;
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
@@ -48,6 +49,7 @@ pub mod channel_strip;
 pub mod compressor;
 pub mod delay;
 pub mod distortion_effects;
+pub mod drawn_wave;
 pub mod dynamics;
 pub mod dynamics_processor;
 pub mod envelope;

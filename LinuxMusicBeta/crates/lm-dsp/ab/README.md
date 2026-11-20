@@ -12,7 +12,7 @@ To write the references (needs the legacy build, `cmake -S legado -B build && cm
 
 ```sh
 CONTRACT_OFF="TubeStage GainStage AnalogChannelStrip DeskFilters DeskDynamics DeskTolerance MonoBass MasterSection \
-    Oscillator Sample EnvelopeAndLfoParameters" crates/lm-dsp/ab/build-references.sh
+    Oscillator Sample EnvelopeAndLfoParameters DrawnWave" crates/lm-dsp/ab/build-references.sh
 ```
 
 From a worktree that checks out only `LinuxMusicBeta/`, point `LEGACY_ROOT` at the tree that has `legado/` and its

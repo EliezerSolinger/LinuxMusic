@@ -877,6 +877,26 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "drawn-wave" {
+        use lm_dsp::drawn_wave::{DrawnWave, Hold, MOST_HARMONICS};
+        let s = &case["settings"];
+        let points: Vec<f32> = s["points"].as_array().unwrap().iter().map(|p| p.as_f64().unwrap() as f32).collect();
+        let hold = if s["hold"] == "step" { Hold::Step } else { Hold::Linear };
+        let wave = DrawnWave::new(&points, hold, MOST_HARMONICS);
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let (from, to) = (s["from"].as_f64().unwrap() as f32, s["to"].as_f64().unwrap() as f32);
+        let mut phase = 0.0f32;
+        for (n, frame) in out.iter_mut().enumerate() {
+            let freq = from + (to - from) * (n as f32 / frames as f32);
+            let v = wave.table_for(freq, rate).map_or(0.0, |t| DrawnWave::at(t, phase));
+            *frame = [v, v];
+            phase += freq / rate;
+            if phase >= 1.0 {
+                phase -= 1.0;
+            }
+        }
+        return out;
+    }
     if case["unit"] == "kicker-osc" {
         let s = &case["settings"];
         let v = |key: &str| s[key].as_f64().unwrap() as f32;
