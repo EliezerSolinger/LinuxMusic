@@ -47,6 +47,9 @@ libc = "0.2"
 zbus = { version = "6", default-features = false, features = ["default-rt", "service"] }
 # DSP math (deterministic across distributions, V2)
 libm = "0.2"
+# Build scripts of the lm-sys-* crates that compile vendored C/C++ (reSID, Guitarix, Neural Amp Modeler): the
+# compiler, its flags and the static archive (decisoes-autonomas.md, "Chips e amplificadores")
+cc = { version = "1", features = ["parallel"] }
 # Verification
 loom = "0.7"
 # The interface (lm-gui only; ci/check-core-no-gui.py keeps them out of the core). GPUI pinned exactly: gpui-pre is
