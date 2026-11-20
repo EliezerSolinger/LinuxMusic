@@ -92,12 +92,23 @@ impl std::fmt::Debug for SessionConfig {
 
 /// Every internal plugin of this build
 pub fn internal_plugins() -> Result<Arc<Registry>> {
-    let mut all: Vec<&'static lm_plugin::Descriptor> =
-        vec![&lm_plugins_testsine::DESCRIPTOR, &lm_plugins_tripleoscillator::DESCRIPTOR];
-    // The chip instruments
-    all.extend([&lm_plugins_sid::DESCRIPTOR, &lm_plugins_freeboy::DESCRIPTOR, &lm_plugins_opulenz::DESCRIPTOR]);
+    Registry::new(&internal_descriptors())
+}
+
+/// Every plugin crate of the program (a test fails when a `crates/lm-plugins-*` is missing here)
+pub fn internal_descriptors() -> Vec<&'static lm_plugin::Descriptor> {
+    let mut all: Vec<&'static lm_plugin::Descriptor> = vec![
+        &lm_plugins_testsine::DESCRIPTOR,
+        &lm_plugins_tripleoscillator::DESCRIPTOR,
+        &lm_plugins_ampandir::DESCRIPTOR,
+        &lm_plugins_sid::DESCRIPTOR,
+        &lm_plugins_freeboy::DESCRIPTOR,
+        &lm_plugins_opulenz::DESCRIPTOR,
+        &lm_plugins_stk::DESCRIPTOR,
+    ];
     all.extend(lm_plugins_effects::ALL.iter().copied());
-    Registry::new(&all)
+    all.extend(lm_plugins_instruments::ALL.iter().copied());
+    all
 }
 
 impl SessionConfig {
