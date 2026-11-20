@@ -263,6 +263,7 @@ struct Plan {
     new_tails: Vec<(u64, NodeKey, PluginShape, bool, u32)>,
     waiting_items: Vec<WaitingItem>,
     streams: Vec<StreamRegistration>,
+    stretches: Vec<crate::stretch::StretchPlan>,
     low_latency_bypassed: Vec<NodeKey>,
 }
 
@@ -911,6 +912,7 @@ impl CompilerCore {
             ports,
             low_latency_bypassed: plan.low_latency_bypassed,
             streams: plan.streams,
+            stretches: plan.stretches,
             made,
             elapsed: started.elapsed(),
         })
@@ -1331,11 +1333,16 @@ impl CompilerCore {
                 let mut list = Vec::new();
                 for item in &audio_items {
                     let Some(iid) = id_of(item) else { continue };
-                    let (segments, waiting, streams) =
+                    let (segments, waiting, streams, stretches) =
                         self.caches.audio(iid, item, &tempo, resources, s.sample_rate)?;
                     list.extend(segments.iter().cloned());
                     plan.waiting_items.extend(waiting);
                     plan.streams.extend(streams);
+                    for st in stretches {
+                        if !plan.stretches.contains(&st) {
+                            plan.stretches.push(st);
+                        }
+                    }
                 }
                 if !list.is_empty() {
                     plan.audio.push((a, list));

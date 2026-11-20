@@ -3528,6 +3528,7 @@ dependencies = [
 name = "lm-compile"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "lm-base",
  "lm-doc",
  "lm-midimap",
@@ -3624,6 +3625,7 @@ dependencies = [
  "lm-render",
  "lm-sys-alsa",
  "lm-sys-linux",
+ "lm-sys-rubberband",
  "lm-sys-samplerate",
  "lm-sys-sndfile",
  "lm-time",

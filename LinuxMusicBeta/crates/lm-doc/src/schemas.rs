@@ -47,6 +47,7 @@ pub mod types {
     pub const OUTPUT: &str = "track.output";
     pub const ITEM: &str = "item";
     pub const LANE: &str = "item.lane";
+    pub const LANE_TIMING_POINT: &str = "item.lane.timing";
     pub const COMP: &str = "item.comp";
     pub const NOTE: &str = "note";
     pub const NOTE_BEND: &str = "note.bend";
@@ -403,7 +404,14 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::id(KIND_LANE))
             .field(FieldSpec::new("source", FieldKind::Resource("audio")))
             .field(FieldSpec::int("sourceOffset", 0, MAX, 0))
-            .field(FieldSpec::text("name", "")),
+            .field(FieldSpec::text("name", ""))
+            // The tempo the take was played at (F-REC-046, F-REC-090) [none: the source plays as it is]: the source
+            // frame (from `sourceOffset`) at each tick from the item's start; the lane of a musical item follows the
+            // tempo map by a stretch rendered from the original
+            .field(list_of("timing", ty::LANE_TIMING_POINT).optional()),
+        NodeSchema::new(ty::LANE_TIMING_POINT, 1)
+            .field(FieldSpec::int("tick", -MAX, MAX, 0))
+            .field(FieldSpec::real("frame", -1.0e15, 1.0e15, 0.0)),
         // A comp segment: from/to in the item's ticks; its lane by id (U2). A removed lane leaves silence
         NodeSchema::new(ty::COMP, 1)
             .field(FieldSpec::int("from", 0, MAX, 0))
