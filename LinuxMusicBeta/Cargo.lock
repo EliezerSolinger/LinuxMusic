@@ -345,6 +345,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-testsine"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "lm-base",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+]
+
+[[package]]
 name = "lm-render"
 version = "0.1.0"
 dependencies = [

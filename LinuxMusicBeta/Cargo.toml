@@ -58,6 +58,7 @@ lm-doc = { path = "crates/lm-doc" }
 lm-render = { path = "crates/lm-render" }
 lm-dsp = { path = "crates/lm-dsp" }
 lm-plugin = { path = "crates/lm-plugin" }
+lm-plugins-testsine = { path = "crates/lm-plugins-testsine" }
 lm-sys-fpu = { path = "crates/lm-sys-fpu" }
 lm-sys-samplerate = { path = "crates/lm-sys-samplerate" }
 lm-sys-sndfile = { path = "crates/lm-sys-sndfile" }

@@ -33,8 +33,8 @@ use lm_dsp::basic_filters::{BasicFilter, FilterType};
 use lm_dsp::envelope::{EnvelopeSettings, LfoShape};
 use lm_dsp::sound_shaping::{NotePosition, SoundShaping, SoundShapingSettings};
 use lm_render::{
-    Adopted, Event, EventKind, NoteId, Policy, ProcessContext, ProcessSpec, Processor, Rng, SampleData,
-    TransportInfo, Voice, VoiceNote, VoicePool,
+    Adopted, Event, EventKind, NoteId, Policy, ProcessContext, ProcessSpec, Processor, Rng, SampleData, TransportInfo,
+    Voice, VoiceNote, VoicePool,
 };
 use lm_state::ParamSpec;
 
@@ -1001,7 +1001,8 @@ impl<S: Synth> Instrument<S> {
                     let per_cycle = beats * ppq;
                     let tick = transport.tick as f64 + at as f64 * bpm * ppq / (60.0 * f64::from(self.rate));
                     let phase = tick.rem_euclid(per_cycle) / per_cycle;
-                    let mut frames = (lm_dsp::envelope::SECS_PER_LFO_OSCILLATION * self.rate * settings.lfo_speed) as i32;
+                    let mut frames =
+                        (lm_dsp::envelope::SECS_PER_LFO_OSCILLATION * self.rate * settings.lfo_speed) as i32;
                     if settings.x100 {
                         frames /= 100;
                     }

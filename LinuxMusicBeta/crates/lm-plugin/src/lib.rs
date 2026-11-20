@@ -27,3 +27,5 @@ pub use registry::{Registry, check_ports};
 pub use resources::{Loaded, ResourceView};
 pub use state::StateView;
 pub mod instrument;
+#[cfg(feature = "testing")]
+pub mod testing;

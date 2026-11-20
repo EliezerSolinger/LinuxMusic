@@ -1,0 +1,14 @@
+{
+  "plugin:testsine": {
+    "defaults": {
+      "aux": false,
+      "octave": "same",
+      "params": {
+        "detune": 0.0,
+        "gain": 0.5,
+        "release": 10.0
+      }
+    },
+    "version": 2
+  }
+}
