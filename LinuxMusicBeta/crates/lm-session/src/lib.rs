@@ -3,6 +3,7 @@
 
 pub mod actions;
 pub mod activity;
+pub mod arrange;
 mod crashnote;
 pub mod export;
 pub mod folder;

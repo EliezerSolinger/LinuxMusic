@@ -205,7 +205,11 @@ pub static ACTIONS: &[ActionSpec] = &[
 
 /// Every action: the session's, then the ones other modules add (I-21's, when they exist)
 pub fn all() -> impl Iterator<Item = &'static ActionSpec> {
-    ACTIONS.iter().chain(crate::session::midi::actions::ACTIONS.iter()).chain(crate::session::external::ACTIONS.iter())
+    ACTIONS
+        .iter()
+        .chain(crate::arrange::ACTIONS.iter())
+        .chain(crate::session::midi::actions::ACTIONS.iter())
+        .chain(crate::session::external::ACTIONS.iter())
 }
 
 /// The action with this id
