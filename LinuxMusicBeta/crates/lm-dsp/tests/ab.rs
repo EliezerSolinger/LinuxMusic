@@ -894,6 +894,43 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "lb302" {
+        use lm_dsp::lb302::*;
+        let first = &case["settings"];
+        let then = &case["then"]["settings"];
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        let value = |key: &str, default: f32, start: usize| {
+            let before = f(first, key, default);
+            if start < at { before } else { f(then, key, before) }
+        };
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let release = case["release"].as_u64().unwrap() as usize;
+        let notes = case["notes"].as_array().unwrap();
+        let mut synth = Lb302::new(rate, 0);
+        let d = Lb302Settings::default();
+        for start in (0..frames as usize).step_by(block as usize) {
+            let settings = Lb302Settings {
+                cutoff: value("VCF Cutoff Frequency", d.cutoff, start),
+                resonance: value("VCF Resonance", d.resonance, start),
+                env_mod: value("VCF Envelope Mod", d.env_mod, start),
+                decay: value("VCF Envelope Decay", d.decay, start),
+                distortion: value("Distortion", d.distortion, start),
+                shape: VcoShape::ALL[value("Waveform", 8.0, start) as usize],
+                slide_decay: value("Slide Decay", d.slide_decay, start),
+                slide: value("Slide", 0.0, start) != 0.0,
+                dead: value("Dead", 0.0, start) != 0.0,
+                db24: value("24dB/oct Filter", 0.0, start) != 0.0,
+            };
+            synth.prepare_period(&settings);
+            for n in notes {
+                if n["at"].as_u64().unwrap() as usize == start {
+                    synth.note_on(n["freq"].as_f64().unwrap() as f32);
+                }
+            }
+            synth.render(&mut out[start..(start + block as usize).min(frames as usize)], release, false, [1.0, 1.0]);
+        }
+        return out;
+    }
     if case["unit"] == "vibed" {
         use lm_dsp::vibed::*;
         let s = &case["settings"];

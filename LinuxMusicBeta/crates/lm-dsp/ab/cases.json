@@ -7149,6 +7149,203 @@
         "freq": 330.0,
         "seed": 12345
       }
+    },
+    {
+      "name": "lb302-default",
+      "unit": "lb302",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {},
+      "notes": [
+        {
+          "at": 0,
+          "freq": 110.0
+        },
+        {
+          "at": 2560,
+          "freq": 146.83
+        },
+        {
+          "at": 5120,
+          "freq": 98.0
+        },
+        {
+          "at": 7680,
+          "freq": 220.0
+        },
+        {
+          "at": 12800,
+          "freq": 82.41
+        },
+        {
+          "at": 17920,
+          "freq": 164.81
+        }
+      ],
+      "release": 100000
+    },
+    {
+      "name": "lb302-slide-db24",
+      "unit": "lb302",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Slide": 1,
+        "24dB/oct Filter": 1,
+        "VCF Resonance": 1.1,
+        "VCF Cutoff Frequency": 0.4,
+        "VCF Envelope Mod": 0.8,
+        "Distortion": 0.3,
+        "Waveform": 0
+      },
+      "notes": [
+        {
+          "at": 0,
+          "freq": 110.0
+        },
+        {
+          "at": 2560,
+          "freq": 146.83
+        },
+        {
+          "at": 5120,
+          "freq": 98.0
+        },
+        {
+          "at": 7680,
+          "freq": 220.0
+        },
+        {
+          "at": 12800,
+          "freq": 82.41
+        },
+        {
+          "at": 17920,
+          "freq": 164.81
+        }
+      ],
+      "release": 100000,
+      "then": {
+        "at": 12032,
+        "settings": {
+          "Waveform": 4,
+          "Slide Decay": 0.2
+        }
+      }
+    },
+    {
+      "name": "lb302-shapes",
+      "unit": "lb302",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Waveform": 3,
+        "VCF Envelope Decay": 0.7,
+        "Distortion": 0.5,
+        "Dead": 1
+      },
+      "notes": [
+        {
+          "at": 0,
+          "freq": 110.0
+        },
+        {
+          "at": 2560,
+          "freq": 146.83
+        },
+        {
+          "at": 5120,
+          "freq": 98.0
+        },
+        {
+          "at": 7680,
+          "freq": 220.0
+        },
+        {
+          "at": 12800,
+          "freq": 82.41
+        },
+        {
+          "at": 17920,
+          "freq": 164.81
+        }
+      ],
+      "release": 100000,
+      "then": {
+        "at": 12032,
+        "settings": {
+          "Waveform": 10,
+          "VCF Cutoff Frequency": 1.3,
+          "24dB/oct Filter": 1
+        }
+      }
+    },
+    {
+      "name": "lb302-bl-moog",
+      "unit": "lb302",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Waveform": 11,
+        "VCF Resonance": 0.2
+      },
+      "notes": [
+        {
+          "at": 0,
+          "freq": 110.0
+        },
+        {
+          "at": 2560,
+          "freq": 146.83
+        },
+        {
+          "at": 5120,
+          "freq": 98.0
+        },
+        {
+          "at": 7680,
+          "freq": 220.0
+        },
+        {
+          "at": 12800,
+          "freq": 82.41
+        },
+        {
+          "at": 17920,
+          "freq": 164.81
+        }
+      ],
+      "release": 200,
+      "then": {
+        "at": 8192,
+        "settings": {
+          "Waveform": 9
+        }
+      }
     }
   ]
 }

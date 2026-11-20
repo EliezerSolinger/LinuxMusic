@@ -52,6 +52,22 @@ extern "C"
 }
 #include "SampleFrame.h"
 
+// The LB302's synth, driven as its notes drive it: its state opened to the harness (its own header only, after every
+// header it includes)
+#include <QScopeGuard>
+#include "InstrumentTrack.h"
+#include "Song.h"
+#include "Track.h"
+#include "Hardware.h"
+#include "Instrument.h"
+#include "InstrumentView.h"
+#include "NotePlayHandle.h"
+#define private public
+#define protected public
+#include "Lb302.h"
+#undef protected
+#undef private
+
 using namespace lmms;
 
 namespace
@@ -293,6 +309,49 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			const auto n = std::min(block, frames - start);
 			chain[0]->update(out.data() + start, n, 0);
 			for (std::int64_t f = start; f < start + n; ++f) { out[f][1] = out[f][0]; }
+		}
+		return out;
+	}
+	if (unit == "lb302")
+	{
+		// The LB302 with no track (its knobs set by their names, its notes started as processNote starts them, the
+		// held note's end given), a period at a time: preparePeriod(), the notes, render()
+		// (a track of the song for its play handle, which the stopped engine never plays: the handle removed with the
+		// synth, the track left to the song)
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto synth = std::make_unique<Lb302Synth>(track);
+		const auto cleanup = qScopeGuard([&] {
+			Engine::audioEngine()->removePlayHandlesOfTypes(track, PlayHandle::Type::InstrumentPlayHandle);
+			synth.reset();
+		});
+		const auto settingsOf = [&](const QJsonObject& s) {
+			for (auto* model : synth->findChildren<AutomatableModel*>())
+			{
+				if (s.contains(model->displayName())) { model->setValue(static_cast<float>(s[model->displayName()].toDouble())); }
+			}
+		};
+		settingsOf(c["settings"].toObject());
+		const auto then = c["then"].toObject();
+		const auto at = then.isEmpty() ? frames : static_cast<std::int64_t>(then["at"].toDouble());
+		const auto notes = c["notes"].toArray();
+		const auto rate = static_cast<float>(Engine::audioEngine()->outputSampleRate());
+		for (std::int64_t start = 0; start < frames; start += block)
+		{
+			AutomatableModel::incrementPeriodCounter();
+			if (start == at) { settingsOf(then["settings"].toObject()); }
+			for (auto* model : synth->findChildren<AutomatableModel*>()) { model->valueBuffer(); }
+			synth->preparePeriod();
+			for (const auto& value : notes)
+			{
+				const auto n = value.toObject();
+				if (static_cast<std::int64_t>(n["at"].toDouble()) != start) { continue; }
+				synth->m_newFreq = true;
+				synth->m_trueFreq = static_cast<float>(n["freq"].toDouble());
+				const auto inc = synth->m_trueFreq / rate;
+				if (synth->m_slideToggle.value()) { synth->m_slideBase = inc; } else { synth->m_vcoInc = inc; }
+			}
+			synth->m_releaseFrame = static_cast<f_cnt_t>(c["release"].toDouble());
+			synth->render(out.data() + start, static_cast<f_cnt_t>(std::min(block, frames - start)));
 		}
 		return out;
 	}

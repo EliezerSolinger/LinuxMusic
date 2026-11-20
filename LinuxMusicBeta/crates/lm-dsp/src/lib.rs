@@ -20,6 +20,8 @@
 //! The instruments' sources and shaping:
 //! - [`basic_filters`]: the general filters (every instrument's filter, the DualFilter's);
 //! - [`instrument`]: what every legacy instrument's notes get (the fade-in, the release fade);
+//! - [`band_limited_wave`]: the legacy band-limited saw, square, triangle and Moog tables;
+//! - [`lb302`]: the LB302;
 //! - [`kicker`]: the Kicker's swept sine;
 //! - [`bit_invader`]: the BitInvader's voice;
 //! - [`drawn_wave`]: a drawn wave's band-limited tables (the BitInvader's, the Watsyn's);
@@ -48,6 +50,7 @@
 // side line by line (the A/B is against that code)
 #![allow(clippy::needless_range_loop, clippy::excessive_precision)]
 
+pub mod band_limited_wave;
 pub mod basic_filters;
 pub mod bit_invader;
 pub mod channel_strip;
@@ -66,6 +69,7 @@ pub mod gain_stage;
 pub mod granular_pitch_shifter;
 pub mod instrument;
 pub mod kicker;
+pub mod lb302;
 pub mod lomm;
 pub mod master;
 pub mod math;
