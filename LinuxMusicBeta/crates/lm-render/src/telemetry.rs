@@ -134,6 +134,13 @@ pub enum Telemetry {
     TouchedOverflow {
         slot: ParamSlot,
     },
+    /// The MIDI map events ring was full: mapped fields and actions were lost (it is sized for 10 s of 16 busy
+    /// ports, C4, so the session's pump stopped longer than that)
+    MapEventsOverflow {
+        count: u32,
+    },
+    /// The recorded MIDI ring was full: MIDI recording stopped (an explicit error, never a silent loss)
+    MidiRecordOverflow,
     /// The transport events ring was full: recording stopped (U1)
     TransportEventsOverflow,
     /// An install named a node outside the table or a producer outside the limits; that part was skipped
@@ -183,6 +190,8 @@ pub struct Touched {
     pub slot: ParamSlot,
     pub value: f32,
     pub sample: i64,
+    /// `false`: the hand let go here (a release ends a Touch pass, I-21.5)
+    pub touching: bool,
 }
 
 /// A finished preview gives back what it played (I-7.3, S7). Lossless ring

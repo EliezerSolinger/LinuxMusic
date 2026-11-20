@@ -57,6 +57,14 @@ impl ParamSlots {
         self.inner.dirty[i / 64].fetch_or(1 << (i % 64), Ordering::Release);
     }
 
+    /// Renderer: the value a mapped MIDI control wrote (I-21.2), kept in the slot without the dirty bit (the
+    /// renderer already sent it to the processor at the message's sample). The main thread reads it at the end of
+    /// the gesture
+    pub(crate) fn store_quiet(&self, slot: ParamSlot, value: f32) {
+        let i = self.index(slot);
+        self.inner.values[i].store(value.to_bits(), Ordering::Relaxed);
+    }
+
     /// Main thread: a gesture started (`true`) or ended on this parameter
     pub fn touch(&self, slot: ParamSlot, touching: bool) {
         let i = self.index(slot);

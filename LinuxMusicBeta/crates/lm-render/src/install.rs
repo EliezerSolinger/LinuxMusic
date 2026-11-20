@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::command::CommandReceiver;
 use crate::ids::{NodeIndex, ProducerIndex, ProgramGen};
+use crate::midimap::MidiMap;
 use crate::processor::{DisplayWriter, HostOutbox, Processor};
 use crate::program::Program;
 use crate::rng::Rng;
@@ -73,6 +74,8 @@ pub struct Returned {
     pub freed: Vec<NodeIndex>,
     /// Parts of the install that named something outside the limits and were skipped (a compiler bug)
     pub skipped: u32,
+    /// The MIDI map that was replaced (I-21.2)
+    pub map: Option<Box<MidiMap>>,
 }
 
 /// A difference to the installed state (S5): the renderer applies every install, in order, at the start of a
@@ -89,6 +92,7 @@ pub struct Install {
     pub(crate) producers: Vec<CommandReceiver>,
     pub(crate) remove_producers: Vec<ProducerIndex>,
     pub(crate) relocate: Option<Relocate>,
+    pub(crate) map: Option<Box<MidiMap>>,
     pub(crate) returned: Returned,
 }
 
@@ -104,8 +108,37 @@ impl Install {
             producers: Vec::new(),
             remove_producers: Vec::new(),
             relocate: None,
+            map: None,
             returned: Returned::default(),
         }
+    }
+
+    /// An install with only a new MIDI map (following the selection, a bank change, a mapping edited: I-21.2).
+    /// `generation` is the generation of the last program sent (the map refers to its slots)
+    pub fn map_only(generation: ProgramGen, map: Box<MidiMap>) -> Self {
+        Self {
+            generation,
+            program: None,
+            add: Vec::new(),
+            replace: Vec::new(),
+            remove: Vec::new(),
+            producers: Vec::new(),
+            remove_producers: Vec::new(),
+            relocate: None,
+            map: Some(map),
+            returned: Returned::default(),
+        }
+    }
+
+    /// A new MIDI map with this install (the old one comes back in [`Returned::map`])
+    pub fn set_map(&mut self, map: Box<MidiMap>) -> &mut Self {
+        self.map = Some(map);
+        self
+    }
+
+    /// Whether this install carries a program (a map-only install does not)
+    pub fn has_program(&self) -> bool {
+        self.program.is_some()
     }
 
     /// A new processor at a free index

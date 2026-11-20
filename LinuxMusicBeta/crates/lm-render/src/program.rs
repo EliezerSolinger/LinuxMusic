@@ -526,6 +526,20 @@ impl DelayLine {
     }
 }
 
+/// How a parameter's automation plays (I-21.5). `Off` is not here: an automation lane that is off is not compiled
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AutomationMode {
+    /// The curve plays; a touch wins while it lasts, then back to the curve in 50 ms
+    #[default]
+    Read,
+    /// As `Read`; the session records while touched
+    Touch,
+    /// From the first touch while playing, the curve stops and the last value holds until the transport stops
+    Latch,
+    /// While playing, the curve never plays: the control's value is what plays (and is recorded)
+    Write,
+}
+
 /// What a parameter slot drives
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Target {
@@ -541,6 +555,7 @@ pub(crate) struct Binding {
     pub(crate) discrete: bool,
     pub(crate) initial: f32,
     pub(crate) curve: Option<Curve>,
+    pub(crate) mode: AutomationMode,
 }
 
 #[derive(Debug)]
@@ -648,6 +663,7 @@ pub struct ProgramBuilder {
     master: Option<NodeIndex>,
     preview: Option<NodeIndex>,
     metronome: Option<(NodeIndex, Metronome)>,
+    modes: Vec<(ParamSlot, AutomationMode)>,
 }
 
 fn invalid(key: &'static str) -> Error {
@@ -677,7 +693,14 @@ impl ProgramBuilder {
             master: None,
             preview: None,
             metronome: None,
+            modes: Vec::new(),
         }
+    }
+
+    /// The automation mode of a slot's curve (default `Read`)
+    pub fn automation_mode(&mut self, slot: ParamSlot, mode: AutomationMode) -> &mut Self {
+        self.modes.push((slot, mode));
+        self
     }
 
     pub fn node(&mut self, desc: NodeDesc) -> &mut Self {
@@ -815,7 +838,7 @@ impl ProgramBuilder {
                 return Err(invalid("render.program.initial_not_finite").arg("slot", i64::from(slot.0)));
             }
             slot_map[s] = bindings.len() as u32;
-            bindings.push(Binding { slot: slot.0, target, rate, discrete, initial, curve });
+            bindings.push(Binding { slot: slot.0, target, rate, discrete, initial, curve, mode: AutomationMode::Read });
             Ok(bindings.len() as u32 - 1)
         };
         let mut host = |p: &HostParam, bindings: &mut Vec<Binding>, host_params: &mut Vec<PHostParam>| -> Result<u32> {
@@ -996,6 +1019,13 @@ impl ProgramBuilder {
                 Rate::Block => max_block / AUTOMATION_GRID as usize + 2,
                 Rate::Sample => max_block + 1,
             } + 2;
+        }
+        for (slot, mode) in &self.modes {
+            if let Some(&bi) = slot_map.get(slot.0 as usize)
+                && bi != NONE
+            {
+                bindings[bi as usize].mode = *mode;
+            }
         }
         let automated: Vec<u32> =
             bindings.iter().enumerate().filter(|(_, b)| b.curve.is_some()).map(|(i, _)| i as u32).collect();

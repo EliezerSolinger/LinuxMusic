@@ -11,6 +11,7 @@ use crate::exec::{Watch, Workers};
 use crate::handoff::{HandoffSender, handoff};
 use crate::ids::{ParamSlot, ProducerIndex};
 use crate::install::{Install, Returned};
+use crate::midimap::{MapEvent, RecordedMidi};
 use crate::params::ParamSlots;
 use crate::renderer::{Outbound, Renderer};
 use crate::spec::{Limits, ProcessSpec, RenderThreads};
@@ -27,6 +28,8 @@ pub struct EngineControl {
     events: Consumer<Telemetry>,
     transport: Consumer<TransportEvent>,
     touched: Consumer<Touched>,
+    map_events: Consumer<MapEvent>,
+    recorded_midi: Consumer<RecordedMidi>,
     previews: Consumer<PreviewEnded>,
     panics: Consumer<PanicReport>,
     watch: Arc<Watch>,
@@ -44,6 +47,9 @@ impl std::fmt::Debug for EngineControl {
     }
 }
 
+/// The worst case of live MIDI the rings are sized for: 16 ports at 1000 messages a second (C4)
+const MIDI_RATE: f64 = 16_000.0;
+
 /// Makes an engine whose render threads run without a hook (tests, export without real time)
 pub fn engine(spec: ProcessSpec, limits: Limits) -> (EngineControl, Renderer) {
     engine_with(spec, limits, RenderThreads::default())
@@ -60,6 +66,9 @@ pub fn engine(spec: ProcessSpec, limits: Limits) -> (EngineControl, Renderer) {
 ///   plus starts and stops;
 /// - **touched values** (lossless, an explicit stop when full, C3): `10 · b · 8`, at least 4096: one value per
 ///   touched slot per block, for 8 gestures at once (more at once is the explicit error);
+/// - **MIDI map events** (lossless, an explicit error when full, I-21.2) and **recorded MIDI** (lossless, recording
+///   stops explicitly when full, I-21.4): `10 · 16 000`: 16 ports at 1000 messages a second (C4);
+/// - **touched values** also carry the mapped MIDI writes: `+ 10 · 16 000`;
 /// - **finished previews** (lossless): `max_previews`; a preview slot holds its return until there is room;
 /// - **panic reports** (lossless): `max_nodes · (installs_in_flight + 1) + max_previews`: a dead node is never
 ///   called again, so only processors installed since the last collect can panic;
@@ -75,7 +84,9 @@ pub fn engine_with(spec: ProcessSpec, limits: Limits, threads: RenderThreads) ->
     let (frame_in, frame_out) = triple_buffer::triple_buffer(&TelemetryFrame::new(limits.max_nodes, limits.max_params));
     let (events_tx, events_rx) = ring(4096);
     let (transport_tx, transport_rx) = ring(capacity_for(blocks_per_second + 70.0, 10.0, 1024));
-    let (touched_tx, touched_rx) = ring(capacity_for(blocks_per_second * 8.0, 10.0, 4096));
+    let (touched_tx, touched_rx) = ring(capacity_for(blocks_per_second * 8.0 + MIDI_RATE, 10.0, 4096));
+    let (map_tx, map_rx) = ring(capacity_for(MIDI_RATE, 10.0, 4096));
+    let (recorded_tx, recorded_rx) = ring(capacity_for(MIDI_RATE, 10.0, 4096));
     let (previews_tx, previews_rx) = ring(limits.max_previews.max(1));
     let (panics_tx, panics_rx) = ring(limits.max_nodes * (limits.installs_in_flight + 1) + limits.max_previews);
     let watch = Arc::new(Watch::new(limits.workers + 1));
@@ -86,6 +97,8 @@ pub fn engine_with(spec: ProcessSpec, limits: Limits, threads: RenderThreads) ->
         events: events_tx,
         transport: transport_tx,
         touched: touched_tx,
+        map_events: map_tx,
+        recorded_midi: recorded_tx,
         previews: previews_tx,
         panics: panics_tx,
     };
@@ -100,6 +113,8 @@ pub fn engine_with(spec: ProcessSpec, limits: Limits, threads: RenderThreads) ->
         events: events_rx,
         transport: transport_rx,
         touched: touched_rx,
+        map_events: map_rx,
+        recorded_midi: recorded_rx,
         previews: previews_rx,
         panics: panics_rx,
         watch,
@@ -218,6 +233,20 @@ impl EngineControl {
     /// Drains the touched values (lossless, C3)
     pub fn touched(&mut self, mut f: impl FnMut(Touched)) {
         while let Ok(e) = self.touched.pop() {
+            f(e);
+        }
+    }
+
+    /// Drains the MIDI map events (lossless, I-21.2): fields and actions to apply, MIDI gestures and their ends
+    pub fn map_events(&mut self, mut f: impl FnMut(MapEvent)) {
+        while let Ok(e) = self.map_events.pop() {
+            f(e);
+        }
+    }
+
+    /// Drains the MIDI played while recording (lossless, I-21.4)
+    pub fn recorded_midi(&mut self, mut f: impl FnMut(RecordedMidi)) {
+        while let Ok(e) = self.recorded_midi.pop() {
             f(e);
         }
     }

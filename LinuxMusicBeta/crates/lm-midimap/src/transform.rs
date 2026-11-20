@@ -273,7 +273,7 @@ impl MapState {
                     // An absolute value on a relative mapping: a 7-bit encoder value
                     Mode::Relative(enc) => {
                         let steps = enc.delta((value & 0x7F) as u8);
-                        return self.relative(t, steps, current, i32::from(value));
+                        return self.relative(t, steps, current, steps); // raw: the steps
                     }
                     Mode::Absolute => self.absolute(t, x, tol, current),
                 };

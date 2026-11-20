@@ -28,12 +28,14 @@ use crate::exec::{Job, Watch, Workers, run_job, scan};
 use crate::handoff::HandoffReceiver;
 use crate::ids::{NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProgramGen};
 use crate::install::{Install, NodeCore, Retired};
+use crate::midimap::{MapEvent, MapTarget, MidiMap, RETURN_DIV, RecordedMidi};
 use crate::notes::{ActiveNotes, NoteSource};
 use crate::panic::RenderThreadGuard;
 use crate::params::ParamSlots;
 use crate::processor::{Adopted, BufferLayout, Buffers, HostOutbox, ProcessContext, TransportInfo};
 use crate::program::{
-    AUTOMATION_GRID, ChannelMix, DelayLine, MidiTiming, NONE, NodeKind, PFeed, PHostParam, PNode, Program, Rate, Target,
+    AUTOMATION_GRID, AutomationMode, ChannelMix, DelayLine, MidiTiming, NONE, NodeKind, PFeed, PHostParam, PNode,
+    Program, Rate, Target,
 };
 use crate::program::{AudioItem, AudioSource};
 use crate::rng::Rng;
@@ -43,6 +45,9 @@ use crate::telemetry::{
     METER_CHANNELS, PanicReport, PreviewEnded, PreviewReturn, Telemetry, TelemetryFrame, TelemetryKind, Touched,
     TransportEvent,
 };
+
+/// What one MIDI message may do to the map at most (several mappings on one control, a 14-bit pair, a touch)
+const MAP_HITS: usize = 256;
 
 /// Host-side smoothing of a slot written by hand, for the host's gains (samples)
 const SMOOTH: u32 = 64;
@@ -151,6 +156,18 @@ struct SlotState {
     emitted: f32,
     resume: bool,
     touch_overflow: bool,
+    /// A MIDI touch source holds the slot (I-21.3)
+    midi_hold: bool,
+    /// The MIDI gesture holds the slot until this engine frame (500 ms after its last message, I-21.2)
+    midi_until: u64,
+    /// In the renderer's list of slots with a MIDI gesture
+    midi_listed: bool,
+    /// Latch mode: touched while playing, the curve stays off until the transport stops (I-21.5)
+    latched: bool,
+    /// Touched by a gesture at the last look (to tell a release from a write)
+    was_touched: bool,
+    /// Back to the curve after a release: (start frame, value it starts from), over 50 ms (I-21.5)
+    ret: Option<(u64, f32)>,
 }
 
 impl SlotState {
@@ -163,6 +180,12 @@ impl SlotState {
             emitted: f32::NAN,
             resume: true,
             touch_overflow: false,
+            midi_hold: false,
+            midi_until: 0,
+            midi_listed: false,
+            latched: false,
+            was_touched: false,
+            ret: None,
         }
     }
 
@@ -174,6 +197,27 @@ impl SlotState {
         } else {
             self.left = SMOOTH;
             self.step = (value - self.current) / SMOOTH as f32;
+        }
+    }
+
+    /// A hand holds the slot: a gesture (the touched bit) or MIDI
+    fn hand(&self, touched: bool, frame: u64) -> bool {
+        touched || self.midi_hold || frame < self.midi_until
+    }
+
+    /// A value of the curve during the return after a release (the plain curve value when not returning)
+    fn returning(&mut self, v: f32, at: u64, len: u64) -> f32 {
+        match self.ret {
+            Some((start, from)) => {
+                let elapsed = at.saturating_sub(start);
+                if elapsed >= len {
+                    self.ret = None;
+                    v
+                } else {
+                    from + (v - from) * (elapsed as f32 / len as f32)
+                }
+            }
+            None => v,
         }
     }
 
@@ -261,6 +305,8 @@ pub(crate) struct Outbound {
     pub(crate) events: Producer<Telemetry>,
     pub(crate) transport: Producer<TransportEvent>,
     pub(crate) touched: Producer<Touched>,
+    pub(crate) map_events: Producer<MapEvent>,
+    pub(crate) recorded_midi: Producer<RecordedMidi>,
     pub(crate) previews: Producer<PreviewEnded>,
     pub(crate) panics: Producer<PanicReport>,
 }
@@ -299,6 +345,15 @@ pub struct Renderer {
     xruns: u64,
     jump: bool,
     report: BlockReport,
+    /// The MIDI map (I-21.2) and what one message did to it
+    map: Box<MidiMap>,
+    map_hits: Vec<(lm_midimap::Event, MapTarget)>,
+    /// Slots with a MIDI gesture running
+    midi_active: Vec<u32>,
+    /// Live MIDI stamped after this block, kept for the next one (so a later stamp never holds back the ring)
+    held: Vec<(PortIndex, HostTime, [u8; 3])>,
+    map_lost: u32,
+    midi_record_stopped: bool,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -378,6 +433,12 @@ impl Renderer {
             xruns: 0,
             jump: true,
             report: BlockReport { spans: Vec::with_capacity(span_capacity(&spec)), capture_gap: None },
+            map: MidiMap::empty(),
+            map_hits: Vec::with_capacity(MAP_HITS),
+            midi_active: Vec::with_capacity(limits.max_params),
+            held: Vec::with_capacity(limits.max_live_midi_per_block),
+            map_lost: 0,
+            midi_record_stopped: false,
         }
     }
 
@@ -644,6 +705,12 @@ impl Renderer {
                 install.returned.program = Some(program);
             }
         }
+        // 6. the MIDI map: its running state carries over (pickup, toggles, 14-bit halves)
+        if let Some(mut map) = install.map.take() {
+            map.table.inherit(&self.map.table);
+            std::mem::swap(&mut self.map, &mut map);
+            install.returned.map = Some(map);
+        }
         install.returned.skipped = skipped;
         if skipped > 0 {
             self.telemetry(Telemetry::InstallInvalid { generation: install.generation });
@@ -723,6 +790,34 @@ impl Renderer {
             MidiTiming::FixedBlock => self.spec.max_block as i64,
             MidiTiming::Immediate => 0,
         };
+        let rate_i = i128::from(rate);
+        let offset_of = |at: HostTime, timing: MidiTiming| -> i64 {
+            match timing {
+                MidiTiming::Immediate => 0,
+                MidiTiming::FixedBlock => {
+                    let dt = i128::from(at.0) - i128::from(host_time.0);
+                    let samples = (dt * rate_i).div_euclid(1_000_000_000) as i64;
+                    (samples + latency).max(0)
+                }
+            }
+        };
+        let timing = self.program.transport.midi;
+        // What waited from the last block first (in its order)
+        let mut keep = 0;
+        for k in 0..self.held.len() {
+            let (port, at, bytes) = self.held[k];
+            let offset = offset_of(at, timing);
+            if offset < frames as i64 && self.live.len() < self.live.capacity() {
+                self.live.push(LiveMidi { offset: offset as u32, port, bytes });
+            } else {
+                if offset < frames as i64 {
+                    self.dropped[3] = self.dropped[3].saturating_add(1);
+                }
+                self.held[keep] = self.held[k];
+                keep += 1;
+            }
+        }
+        self.held.truncate(keep);
         enum Next {
             Midi(i64),
             Preview,
@@ -734,14 +829,7 @@ impl Renderer {
                     let Some(rx) = self.receivers[p].as_mut() else { break };
                     let Ok(head) = rx.rx.peek() else { break };
                     match head {
-                        Command::Midi { at, .. } => Next::Midi(match self.program.transport.midi {
-                            MidiTiming::Immediate => 0,
-                            MidiTiming::FixedBlock => {
-                                let dt = i128::from(at.0) - i128::from(host_time.0);
-                                let samples = (dt * i128::from(rate)).div_euclid(1_000_000_000) as i64;
-                                (samples + latency).max(0)
-                            }
-                        }),
+                        Command::Midi { at, .. } => Next::Midi(offset_of(*at, timing)),
                         Command::Preview(PreviewCommand::Sample { .. } | PreviewCommand::Preset { .. }) => {
                             Next::Preview
                         }
@@ -751,7 +839,15 @@ impl Renderer {
                 match next {
                     Next::Midi(offset) => {
                         if offset >= frames as i64 {
-                            break; // ahead of this block: it waits in the ring
+                            // Ahead of this block: kept for the next one, so what is behind it in the ring (another
+                            // port with another latency) is not held back
+                            if self.held.len() == self.held.capacity() {
+                                break; // it waits in the ring
+                            }
+                            let Some(rx) = self.receivers[p].as_mut() else { break };
+                            let Ok(Command::Midi { port, at, bytes }) = rx.rx.pop() else { break };
+                            self.held.push((port, at, bytes));
+                            continue;
                         }
                         if self.live.len() == self.live.capacity() {
                             self.dropped[3] = self.dropped[3].saturating_add(1);
@@ -794,6 +890,7 @@ impl Renderer {
             }
             Command::Stop => {
                 self.counting = None;
+                self.unlatch();
                 if self.transport.playing {
                     self.transport.playing = false;
                     self.release_item_notes();
@@ -806,6 +903,7 @@ impl Renderer {
                 } else {
                     self.transport.position = sample;
                     self.release_item_notes();
+                    self.unlatch();
                     self.jump = true;
                 }
             }
@@ -968,6 +1066,7 @@ impl Renderer {
             self.transport.recording = should;
             if should {
                 self.transport.take_frames = 0;
+                self.midi_record_stopped = false;
                 self.transport_event(TransportEvent::RecordStarted { sample, frame });
             } else {
                 self.transport_event(TransportEvent::RecordStopped { sample, frame });
@@ -995,6 +1094,217 @@ impl Renderer {
         }
     }
 
+    // ------------------------------------------------------------------------------------------------------------
+    // MIDI mapping (I-21.2), touch and release (I-21.3, I-21.5), recording (I-21.4)
+
+    /// A touched slot's value for automation recording (lossless; when full, that slot's recording stops, C3)
+    fn touched_value(&mut self, s: usize, value: f32, sample: i64, touching: bool) {
+        if self.slot_state[s].touch_overflow {
+            return;
+        }
+        let t = Touched { slot: ParamSlot(s as u32), value, sample, touching };
+        if self.out.touched.push(t).is_err() {
+            self.slot_state[s].touch_overflow = true;
+            self.telemetry(Telemetry::TouchedOverflow { slot: ParamSlot(s as u32) });
+        }
+    }
+
+    fn map_event(&mut self, e: MapEvent) {
+        if self.out.map_events.push(e).is_err() {
+            self.map_lost = self.map_lost.saturating_add(1);
+        }
+    }
+
+    /// The transport stopped or jumped: Latch lets go of every slot
+    fn unlatch(&mut self) {
+        for st in self.slot_state.iter_mut() {
+            st.latched = false;
+            st.ret = None;
+        }
+    }
+
+    /// One live message through the MIDI map, at `offset` in the current pass. Returns whether a mapping consumed it
+    fn map_message(&mut self, m: LiveMidi, offset: u32) -> bool {
+        if self.map.table.is_empty() {
+            return false;
+        }
+        let len = usize::from(lm_midimap::message::channel_message_len(m.bytes[0]));
+        if len == 0 {
+            return false;
+        }
+        let now = self.frame + u64::from(offset);
+        let mut hits = std::mem::take(&mut self.map_hits);
+        hits.clear();
+        let slot_state = &self.slot_state;
+        let consumed = self.map.table.feed(
+            m.port.0,
+            &m.bytes[..len],
+            now,
+            |t| match t {
+                MapTarget::Param { slot, range } => {
+                    slot_state.get(slot.0 as usize).map_or(0.0, |st| range.normalize(st.current))
+                }
+                MapTarget::Session => 0.0,
+            },
+            |ev, t| {
+                if hits.len() < hits.capacity() {
+                    hits.push((ev, *t));
+                }
+            },
+        );
+        for &(ev, target) in hits.iter() {
+            match ev {
+                lm_midimap::Event::Value { entry, out } => {
+                    let mapping = self.map.table.entries()[entry].id;
+                    match target {
+                        MapTarget::Param { slot, range } => {
+                            self.map_param(mapping, m.port, slot, range, out.value, offset, now)
+                        }
+                        MapTarget::Session => self.map_event(MapEvent::Session {
+                            mapping,
+                            port: m.port,
+                            value: out.value,
+                            raw: out.raw,
+                            press: out.press,
+                            frame: now,
+                        }),
+                    }
+                }
+                lm_midimap::Event::Touch { entry, on } => {
+                    let mapping = self.map.table.entries()[entry].id;
+                    let slot = match target {
+                        MapTarget::Param { slot, .. } if (slot.0 as usize) < self.slot_state.len() => {
+                            let s = slot.0 as usize;
+                            let st = &mut self.slot_state[s];
+                            st.midi_hold = on;
+                            if !on {
+                                st.midi_until = now; // released: the gesture ends at the next look
+                            }
+                            if on && !st.midi_listed && self.midi_active.len() < self.midi_active.capacity() {
+                                st.midi_listed = true;
+                                self.midi_active.push(s as u32);
+                            }
+                            Some(slot)
+                        }
+                        _ => None,
+                    };
+                    self.map_event(MapEvent::Touch { mapping, port: m.port, slot, on, frame: now });
+                }
+            }
+        }
+        self.map_hits = hits;
+        consumed
+    }
+
+    /// A mapped parameter written at `offset`: the event at that sample, the slot's value, the gesture
+    #[allow(clippy::too_many_arguments)]
+    fn map_param(
+        &mut self,
+        mapping: u64,
+        port: PortIndex,
+        slot: ParamSlot,
+        range: crate::midimap::ParamRange,
+        normalized: f32,
+        offset: u32,
+        now: u64,
+    ) {
+        let s = slot.0 as usize;
+        if s >= self.slot_state.len() {
+            return;
+        }
+        let value = range.to_units(normalized);
+        self.params.store_quiet(slot, value);
+        let gesture = u64::from(self.spec.sample_rate) / crate::midimap::GESTURE_SECONDS_DIV;
+        {
+            let st = &mut self.slot_state[s];
+            st.midi_until = st.midi_until.max(now + gesture);
+            st.ret = None;
+            if !st.midi_listed && self.midi_active.len() < self.midi_active.capacity() {
+                st.midi_listed = true;
+                self.midi_active.push(s as u32);
+            }
+        }
+        let bi = self.program.slot_map[s];
+        if bi == NONE {
+            self.slot_state[s].current = value;
+        } else {
+            let (target, discrete) = {
+                let b = &self.program.bindings[bi as usize];
+                (b.target, b.discrete)
+            };
+            match target {
+                Target::Processor { node, index } => {
+                    self.slot_state[s].emitted = value;
+                    self.slot_state[s].current = value;
+                    self.push_event(node, offset, EventKind::Param { index, value });
+                }
+                Target::Host(_) => self.slot_state[s].set_target(value, discrete),
+            }
+        }
+        let sample = self.transport.position + i64::from(offset);
+        if self.transport.playing {
+            self.touched_value(s, value, sample, true);
+        }
+        self.map_event(MapEvent::Param { mapping, port, slot, value, normalized, sample, frame: now });
+    }
+
+    /// Ends the MIDI gestures whose time is up (500 ms after the last message, or the touch source released):
+    /// the curve comes back in 50 ms, the session writes the value into the document
+    fn expire_midi(&mut self) {
+        let now = self.frame;
+        let playing = self.transport.playing;
+        let position = self.transport.position;
+        let mut k = 0;
+        while k < self.midi_active.len() {
+            let s = self.midi_active[k] as usize;
+            let st = &mut self.slot_state[s];
+            if st.midi_hold || now < st.midi_until {
+                k += 1;
+                continue;
+            }
+            st.midi_listed = false;
+            self.midi_active.swap_remove(k);
+            let value = self.params.value_at(s);
+            let bi = self.program.slot_map[s];
+            let automated_continuous = bi != NONE
+                && self.program.bindings[bi as usize].curve.is_some()
+                && !self.program.bindings[bi as usize].discrete;
+            if !self.params.touched_at(s) {
+                let st = &mut self.slot_state[s];
+                st.resume = true;
+                if automated_continuous {
+                    st.ret = Some((now, st.current));
+                }
+                if playing {
+                    self.touched_value(s, value, position, false);
+                }
+            }
+            self.map_event(MapEvent::Released { slot: ParamSlot(s as u32), value, frame: now });
+        }
+    }
+
+    /// A live message that reached the instruments while recording (I-21.4)
+    fn record_midi(&mut self, m: LiveMidi, offset: u32) {
+        if self.midi_record_stopped {
+            return;
+        }
+        let len = lm_midimap::message::channel_message_len(m.bytes[0]);
+        if len == 0 {
+            return;
+        }
+        let r = RecordedMidi {
+            port: m.port,
+            bytes: m.bytes,
+            len,
+            sample: self.transport.position + i64::from(offset),
+            frame: self.frame + u64::from(offset),
+        };
+        if self.out.recorded_midi.push(r).is_err() {
+            self.midi_record_stopped = true;
+            self.telemetry(Telemetry::MidiRecordOverflow);
+        }
+    }
+
     fn push_event(&mut self, node: u32, offset: u32, kind: EventKind) {
         if let Some(io) = self.program.nodes[node as usize].io.as_mut()
             && !io.events.push(offset, kind)
@@ -1018,6 +1328,7 @@ impl Renderer {
             }
         }
         self.pending.clear();
+        self.expire_midi();
         if first {
             self.take_dirty_params();
         }
@@ -1058,15 +1369,16 @@ impl Renderer {
                 bits &= bits - 1;
                 let s = w * 64 + b;
                 let value = self.params.value_at(s);
-                let touched = self.params.touched_at(s);
+                let gesture = self.params.touched_at(s);
+                let was = std::mem::replace(&mut self.slot_state[s].was_touched, gesture);
+                let touched = self.slot_state[s].hand(gesture, self.frame);
                 if !touched {
-                    self.slot_state[s].touch_overflow = false;
-                } else if playing && !self.slot_state[s].touch_overflow {
-                    let t = Touched { slot: ParamSlot(s as u32), value, sample: position };
-                    if self.out.touched.push(t).is_err() {
-                        self.slot_state[s].touch_overflow = true;
-                        self.telemetry(Telemetry::TouchedOverflow { slot: ParamSlot(s as u32) });
+                    if was && playing {
+                        self.touched_value(s, value, position, false);
                     }
+                    self.slot_state[s].touch_overflow = false;
+                } else if playing {
+                    self.touched_value(s, value, position, true);
                 }
                 let bi = self.program.slot_map[s];
                 if bi == NONE {
@@ -1078,8 +1390,13 @@ impl Renderer {
                     (b.curve.is_some(), b.target, b.discrete)
                 };
                 if automated && !touched {
-                    // The automation has the parameter (again): emit its value at the next chance
-                    self.slot_state[s].resume = true;
+                    // The automation has the parameter (again): emit its value at the next chance; after a release,
+                    // back to the curve in 50 ms (I-21.5)
+                    let st = &mut self.slot_state[s];
+                    st.resume = true;
+                    if was && !discrete {
+                        st.ret = Some((self.frame, st.current));
+                    }
                     continue;
                 }
                 match target {
@@ -1098,6 +1415,8 @@ impl Renderer {
         let pos0 = self.transport.position;
         let frame0 = self.frame;
         let jump = self.jump;
+        let playing = self.transport.playing;
+        let ret_len = u64::from(self.spec.sample_rate) / RETURN_DIV;
         let Program { automated, bindings, nodes, .. } = &mut *self.program;
         let dropped = &mut self.dropped[1];
         for &bi in automated.iter() {
@@ -1105,14 +1424,30 @@ impl Renderer {
             let Target::Processor { node, index } = b.target else { continue };
             let Some(curve) = b.curve.as_ref() else { continue };
             let slot = b.slot as usize;
-            if self.params.touched_at(slot) {
+            let st = &mut self.slot_state[slot];
+            let hand = st.hand(self.params.touched_at(slot), frame0);
+            if playing && hand && b.mode == AutomationMode::Latch {
+                st.latched = true;
+            }
+            let write = playing && b.mode == AutomationMode::Write;
+            if hand || (playing && st.latched) || write {
+                if write && jump && !hand && !st.touch_overflow {
+                    // A Write pass starts: its first value (I-21.5)
+                    let t = Touched { slot: ParamSlot(slot as u32), value: st.current, sample: pos0, touching: true };
+                    if self.out.touched.push(t).is_err() {
+                        st.touch_overflow = true;
+                    }
+                }
                 continue;
             }
-            let st = &mut self.slot_state[slot];
+            if jump {
+                st.ret = None;
+            }
             let resume = jump || st.resume || st.emitted.is_nan();
             st.resume = false;
             let Some(io) = nodes[node as usize].io.as_mut() else { continue };
             let mut emit = |offset: usize, v: f32, force: bool| {
+                let v = st.returning(v, frame0 + offset as u64, ret_len);
                 if force || v.to_bits() != st.emitted.to_bits() {
                     st.emitted = v;
                     st.current = v;
@@ -1228,9 +1563,16 @@ impl Renderer {
             let first = self.program.ports.partition_point(|r| r.port < m.port);
             let routes = first..self.program.ports.partition_point(|r| r.port <= m.port);
             let note_off = status == 0x80 || (status == 0x90 && vel == 0);
+            let consumed = self.map_message(m, offset);
+            if !consumed && self.transport.recording {
+                self.record_midi(m, offset);
+            }
             if note_off {
                 self.port_note_off(m.port, channel, key, offset);
                 continue;
+            }
+            if consumed {
+                continue; // a mapped control does not also play the instruments (I-21.2, `consume`)
             }
             if status == 0xB0 && (key == 120 || key == 123) {
                 // All sound off / all notes off on this channel: end the port's notes here, at this offset
@@ -1639,10 +1981,26 @@ impl Renderer {
         let b = &self.program.bindings[bi as usize];
         let s = b.slot as usize;
         let state = &mut self.slot_state[s];
+        let playing = self.transport.playing;
+        let frame = self.frame;
+        let hand = state.hand(self.params.touched_at(s), frame);
+        if playing && hand && b.mode == AutomationMode::Latch {
+            state.latched = true;
+        }
+        let hold = hand || (playing && (state.latched || b.mode == AutomationMode::Write));
         if let Some(curve) = &b.curve
-            && !self.params.touched_at(s)
+            && !hold
         {
             curve.fill(self.transport.position, out);
+            if self.jump {
+                state.ret = None;
+            }
+            if state.ret.is_some() {
+                let len = u64::from(self.spec.sample_rate) / RETURN_DIV;
+                for (i, o) in out.iter_mut().enumerate() {
+                    *o = state.returning(*o, frame + i as u64, len);
+                }
+            }
             let last = out[out.len() - 1];
             state.current = last;
             state.target = last;
@@ -1924,6 +2282,9 @@ impl Renderer {
     }
 
     fn flush_dropped(&mut self) {
+        if self.map_lost > 0 && self.out.events.push(Telemetry::MapEventsOverflow { count: self.map_lost }).is_ok() {
+            self.map_lost = 0;
+        }
         const KINDS: [TelemetryKind; 5] = [
             TelemetryKind::Telemetry,
             TelemetryKind::NodeEvents,
