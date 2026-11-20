@@ -958,6 +958,16 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   pelo `SidSynth::registers` do plugin, a sequência do `sid_fillbuffer`) e dá bit a bit em todas as notas inteiras,
   as filtradas também: as únicas diferenças do plugin são as de cima. O harness serve aos três instrumentos de chip
   (`build-references.sh <pasta ab do crate>`).
+- **FreeBoy: o `Gb_Apu` e o `Blip_Buffer` do game-music-emu portados para Rust** (`crates/lm-plugins-freeboy/src/apu.rs`
+  e `blip.rs`, ~1 mil linhas, LGPL-2.1 ou posterior, aritmética inteira com estouro que dá a volta como no C), com
+  o `Stereo_Buffer` e o laço do `GbApuWrapper`: quadros de 70224 ciclos feitos quando o anterior acaba, relógio de
+  CPU falso de 4 ciclos por escrita. O núcleo do kernel (seno janelado) com o `libm`; o A/B mostra que dá o mesmo.
+  As escritas que o legado fazia a cada período vêm a cada 256 quadros da nota e quando mudam (como no Sid). O
+  envelope dos canais 1, 2 e 4 só é escrito no começo da nota, como no legado. **A/B bit a bit** em 9 casos
+  (quadrados, sweep, onda desenhada, ruído de 7 bits, saídas separadas com treble e bass, acorde, mudança de botões,
+  nota fora da faixa tonal), em blocos de 256, 32 e 1024, do quadro 128 até o fim das notas. As chaves SO1/SO2
+  trocadas na gravação do legado viram `ch<n>ToSo1`/`ch<n>ToSo2` pelo que fazem. A sonda de afinação do contrato
+  usa o padrão sem o sweep do canal 1 (que sobe a nota) e a frequência que o registrador dá (A4 = 131072/297 Hz).
 
 ## Do `lm-session`, continuação (20/11)
 
@@ -980,13 +990,3 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 - **O target compartilhado não é seguro mesmo com o `touch`:** dois worktrees compilando o mesmo pacote ao mesmo
   tempo trocam o artefato um do outro (um teste do `lm-compile` falhou com o `lm-doc` de outro worktree). Este
   worktree passou a usar um target próprio, apagado no fim.
-- **FreeBoy: o `Gb_Apu` e o `Blip_Buffer` do game-music-emu portados para Rust** (`crates/lm-plugins-freeboy/src/apu.rs`
-  e `blip.rs`, ~1 mil linhas, LGPL-2.1 ou posterior, aritmética inteira com estouro que dá a volta como no C), com
-  o `Stereo_Buffer` e o laço do `GbApuWrapper`: quadros de 70224 ciclos feitos quando o anterior acaba, relógio de
-  CPU falso de 4 ciclos por escrita. O núcleo do kernel (seno janelado) com o `libm`; o A/B mostra que dá o mesmo.
-  As escritas que o legado fazia a cada período vêm a cada 256 quadros da nota e quando mudam (como no Sid). O
-  envelope dos canais 1, 2 e 4 só é escrito no começo da nota, como no legado. **A/B bit a bit** em 9 casos
-  (quadrados, sweep, onda desenhada, ruído de 7 bits, saídas separadas com treble e bass, acorde, mudança de botões,
-  nota fora da faixa tonal), em blocos de 256, 32 e 1024, do quadro 128 até o fim das notas. As chaves SO1/SO2
-  trocadas na gravação do legado viram `ch<n>ToSo1`/`ch<n>ToSo2` pelo que fazem. A sonda de afinação do contrato
-  usa o padrão sem o sweep do canal 1 (que sobe a nota) e a frequência que o registrador dá (A4 = 131072/297 Hz).
