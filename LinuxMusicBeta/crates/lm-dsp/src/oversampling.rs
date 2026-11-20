@@ -178,21 +178,152 @@ impl<const N: usize> Stages<N> {
 /// The passband kept by default, Hz
 pub const DEFAULT_PASSBAND: f32 = 19600.0;
 
-/// The transition bandwidths of each stage: the first, the tightest, from the passband; each next one halfway to 1/2
-fn transitions(sample_rate: f32, passband: f32) -> [f32; 3] {
-    let first = 0.5 - passband / sample_rate;
-    let second = (first + 0.5) * 0.5;
-    let rest = (second + 0.5) * 0.5;
-    [first, second, rest]
-}
+/// The most stages: 32 times
+pub const MAX_STAGES: usize = 5;
+/// The samples of the most stages
+pub const MAX_FACTOR: usize = 1 << MAX_STAGES;
 
-/// Oversampling by 2^@p STAGES (1 to 3: 2, 4 or 8 times), one sample in, 2^STAGES out: the first stage with 8
-/// coefficients, the second with 4, the third with 2 (the legacy `Upsampler<MaxStages, 8>`)
+/// The half-band filters of each stage: the first with 8 coefficients, the second with 4, the others with 2; each
+/// stage's transition bandwidth halfway from the last one's to 1/2 (the first, the tightest, from the passband)
 #[derive(Clone, Debug)]
-pub struct Upsampler<const STAGES: usize> {
+struct Chain {
+    stages: usize,
     first: Stages<8>,
     second: Stages<4>,
-    rest: Stages<2>,
+    rest: [Stages<2>; MAX_STAGES - 2],
+}
+
+impl Chain {
+    fn new(stages: usize, sample_rate: f32, passband: f32) -> Self {
+        assert!(stages <= MAX_STAGES, "at most {MAX_STAGES} oversampling stages");
+        let mut c = Self { stages, first: Stages::default(), second: Stages::default(), rest: Default::default() };
+        let mut transition = 0.5 - passband / sample_rate;
+        let mut c8 = [0.0; 8];
+        half_band_coefficients(&mut c8, f64::from(transition));
+        c.first.set_coefficients(&c8);
+        transition = (transition + 0.5) * 0.5;
+        let mut c4 = [0.0; 4];
+        half_band_coefficients(&mut c4, f64::from(transition));
+        c.second.set_coefficients(&c4);
+        transition = (transition + 0.5) * 0.5;
+        for rest in c.rest.iter_mut().take(stages.saturating_sub(2)) {
+            let mut c2 = [0.0; 2];
+            half_band_coefficients(&mut c2, f64::from(transition));
+            rest.set_coefficients(&c2);
+            transition = (transition + 0.5) * 0.5;
+        }
+        c
+    }
+
+    fn clear(&mut self) {
+        self.first.clear();
+        self.second.clear();
+        for rest in &mut self.rest {
+            rest.clear();
+        }
+    }
+
+    /// One sample in, 2^stages out (into the first 2^stages of @p out)
+    #[inline]
+    fn up(&mut self, out: &mut [f32], input: f32) {
+        let total = 1 << self.stages;
+        out[0] = input;
+        let gap1 = total / 2;
+        if self.stages >= 1 {
+            (out[0], out[gap1]) = self.first.up(out[0]);
+        }
+        if self.stages >= 2 {
+            let gap2 = gap1 / 2;
+            (out[0], out[gap2]) = self.second.up(out[0]);
+            (out[gap1], out[gap1 + gap2]) = self.second.up(out[gap1]);
+        }
+        for i in 2..self.stages {
+            let count = 1 << i;
+            let gap = total / count;
+            for j in 0..count {
+                let at = j * gap;
+                (out[at], out[at + gap / 2]) = self.rest[i - 2].up(out[at]);
+            }
+        }
+    }
+
+    /// 2^stages samples in (@p input, used as scratch), one out
+    #[inline]
+    fn down(&mut self, input: &mut [f32]) -> f32 {
+        for i in (2..self.stages).rev() {
+            for j in 0..1 << i {
+                input[j] = self.rest[i - 2].down([input[j * 2], input[j * 2 + 1]]);
+            }
+        }
+        if self.stages >= 2 {
+            for j in 0..2 {
+                input[j] = self.second.down([input[j * 2], input[j * 2 + 1]]);
+            }
+        }
+        if self.stages >= 1 {
+            input[0] = self.first.down([input[0], input[1]]);
+        }
+        input[0]
+    }
+}
+
+/// Oversampling by 2^stages (0 to 5 stages: 1 to 32 times), one sample in, 2^stages out (the legacy
+/// `Upsampler<MaxStages, 8>`)
+#[derive(Clone, Debug)]
+pub struct VariableUpsampler {
+    chain: Chain,
+}
+
+impl VariableUpsampler {
+    pub fn new(stages: usize, sample_rate: f32) -> Self {
+        Self { chain: Chain::new(stages, sample_rate, DEFAULT_PASSBAND) }
+    }
+
+    pub fn stages(&self) -> usize {
+        self.chain.stages
+    }
+
+    pub fn reset(&mut self) {
+        self.chain.clear();
+    }
+
+    /// One sample in, 2^stages out (only the first 2^stages of @p out are written)
+    #[inline]
+    pub fn process(&mut self, out: &mut [f32], input: f32) {
+        self.chain.up(out, input);
+    }
+}
+
+/// The inverse of [`VariableUpsampler`]: 2^stages samples in, one out
+#[derive(Clone, Debug)]
+pub struct VariableDownsampler {
+    chain: Chain,
+}
+
+impl VariableDownsampler {
+    pub fn new(stages: usize, sample_rate: f32) -> Self {
+        Self { chain: Chain::new(stages, sample_rate, DEFAULT_PASSBAND) }
+    }
+
+    pub fn stages(&self) -> usize {
+        self.chain.stages
+    }
+
+    pub fn reset(&mut self) {
+        self.chain.clear();
+    }
+
+    /// 2^stages samples in (@p input, used as scratch), one out
+    #[inline]
+    pub fn process(&mut self, input: &mut [f32]) -> f32 {
+        self.chain.down(input)
+    }
+}
+
+/// Oversampling by 2^@p STAGES (1 to 3: 2, 4 or 8 times), fixed when it is built: [`VariableUpsampler`]'s
+#[derive(Clone, Debug)]
+pub struct Upsampler<const STAGES: usize> {
+    chain: Chain,
 }
 
 impl<const STAGES: usize> Upsampler<STAGES> {
@@ -204,62 +335,24 @@ impl<const STAGES: usize> Upsampler<STAGES> {
 
     pub fn with_passband(sample_rate: f32, passband: f32) -> Self {
         const { assert!(STAGES >= 1 && STAGES <= 3) };
-        let t = transitions(sample_rate, passband);
-        let mut s = Self { first: Stages::default(), second: Stages::default(), rest: Stages::default() };
-        let mut c8 = [0.0; 8];
-        half_band_coefficients(&mut c8, f64::from(t[0]));
-        s.first.set_coefficients(&c8);
-        let mut c4 = [0.0; 4];
-        half_band_coefficients(&mut c4, f64::from(t[1]));
-        s.second.set_coefficients(&c4);
-        let mut c2 = [0.0; 2];
-        half_band_coefficients(&mut c2, f64::from(t[2]));
-        s.rest.set_coefficients(&c2);
-        s
+        Self { chain: Chain::new(STAGES, sample_rate, passband) }
     }
 
     pub fn reset(&mut self) {
-        self.first.clear();
-        self.second.clear();
-        self.rest.clear();
+        self.chain.clear();
     }
 
     /// One sample in, `FACTOR` out (only the first `FACTOR` of @p out are written)
     #[inline]
     pub fn process(&mut self, out: &mut [f32; 8], input: f32) {
-        let total = Self::FACTOR;
-        let gap1 = total / 2;
-        let (a, b) = self.first.up(input);
-        out[0] = a;
-        out[gap1] = b;
-        if STAGES >= 2 {
-            let gap2 = gap1 / 2;
-            let (a, b) = self.second.up(out[0]);
-            out[0] = a;
-            out[gap2] = b;
-            let (a, b) = self.second.up(out[gap1]);
-            out[gap1] = a;
-            out[gap1 + gap2] = b;
-        }
-        if STAGES >= 3 {
-            let count = 4;
-            let gap = total / count;
-            for j in 0..count {
-                let at = j * gap;
-                let (a, b) = self.rest.up(out[at]);
-                out[at] = a;
-                out[at + gap / 2] = b;
-            }
-        }
+        self.chain.up(out, input);
     }
 }
 
 /// The inverse of [`Upsampler`]: 2^@p STAGES samples in, one out
 #[derive(Clone, Debug)]
 pub struct Downsampler<const STAGES: usize> {
-    first: Stages<8>,
-    second: Stages<4>,
-    rest: Stages<2>,
+    chain: Chain,
 }
 
 impl<const STAGES: usize> Downsampler<STAGES> {
@@ -271,41 +364,17 @@ impl<const STAGES: usize> Downsampler<STAGES> {
 
     pub fn with_passband(sample_rate: f32, passband: f32) -> Self {
         const { assert!(STAGES >= 1 && STAGES <= 3) };
-        let t = transitions(sample_rate, passband);
-        let mut s = Self { first: Stages::default(), second: Stages::default(), rest: Stages::default() };
-        let mut c8 = [0.0; 8];
-        half_band_coefficients(&mut c8, f64::from(t[0]));
-        s.first.set_coefficients(&c8);
-        let mut c4 = [0.0; 4];
-        half_band_coefficients(&mut c4, f64::from(t[1]));
-        s.second.set_coefficients(&c4);
-        let mut c2 = [0.0; 2];
-        half_band_coefficients(&mut c2, f64::from(t[2]));
-        s.rest.set_coefficients(&c2);
-        s
+        Self { chain: Chain::new(STAGES, sample_rate, passband) }
     }
 
     pub fn reset(&mut self) {
-        self.first.clear();
-        self.second.clear();
-        self.rest.clear();
+        self.chain.clear();
     }
 
     /// `FACTOR` samples in (@p input, which is used as scratch), one out
     #[inline]
     pub fn process(&mut self, input: &mut [f32; 8]) -> f32 {
-        if STAGES >= 3 {
-            for j in 0..4 {
-                input[j] = self.rest.down([input[j * 2], input[j * 2 + 1]]);
-            }
-        }
-        if STAGES >= 2 {
-            for j in 0..2 {
-                input[j] = self.second.down([input[j * 2], input[j * 2 + 1]]);
-            }
-        }
-        input[0] = self.first.down([input[0], input[1]]);
-        input[0]
+        self.chain.down(input)
     }
 }
 

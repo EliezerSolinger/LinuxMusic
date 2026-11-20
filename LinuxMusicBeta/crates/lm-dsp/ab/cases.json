@@ -4949,6 +4949,160 @@
         }
       },
       "settings": {}
+    },
+    {
+      "name": "slew-tanh",
+      "unit": "plugin-effect",
+      "plugin": "slewdistortion",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Type 1": 1,
+        "Drive 1": 9.0,
+        "Slew Up 1": -30.0,
+        "Slew Down 1": -20.0,
+        "Slew Link 1": 0,
+        "Bias 1": 0.2,
+        "Warp 1": 0.3,
+        "Crush 1": 6.0,
+        "Dynamics 1": 0.5,
+        "Dynamic Slew 1": 1.5,
+        "Mix 1": 0.8
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Type 1": 5,
+          "Drive 1": 14.0,
+          "Bias 1": -0.4
+        }
+      }
+    },
+    {
+      "name": "slew-multiband-oversampled",
+      "unit": "plugin-effect",
+      "plugin": "slewdistortion",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Multiband": 1,
+        "Oversample": 2,
+        "Split": 800.0,
+        "Type 1": 4,
+        "Drive 1": 4.0,
+        "Type 2": 9,
+        "Drive 2": 6.0,
+        "Out Vol 2": -3.0,
+        "Slew Up 2": -12.0,
+        "Release 2": 150.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Oversample": 3,
+          "Type 1": 8,
+          "Split": 2500.0,
+          "Type 2": 7
+        }
+      }
+    },
+    {
+      "name": "slew-32x",
+      "unit": "plugin-effect",
+      "plugin": "slewdistortion",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Oversample": 5,
+        "Type 1": 2,
+        "Drive 1": 12.0,
+        "Slew Up 1": -6.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Type 1": 3,
+          "DC Offset Remover": 0,
+          "Warp 1": 0.6
+        }
+      }
+    },
+    {
+      "name": "slew-full-rectify",
+      "unit": "plugin-effect",
+      "plugin": "slewdistortion",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Type 1": 6,
+        "Drive 1": 3.0,
+        "Dynamics 1": 1.0,
+        "Attack 1": 0.5,
+        "Release 1": 400.0
+      }
+    },
+    {
+      "name": "slew-defaults",
+      "unit": "plugin-effect",
+      "plugin": "slewdistortion",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {}
     }
   ]
 }

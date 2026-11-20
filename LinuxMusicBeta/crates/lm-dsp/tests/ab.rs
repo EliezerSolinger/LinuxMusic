@@ -399,6 +399,46 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "plugin-effect" && case["plugin"] == "slewdistortion" {
+        use lm_dsp::slew_distortion::*;
+        let first = &case["settings"];
+        let then = &case["then"]["settings"];
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        let value = |key: &str, default: f32, start: usize| {
+            let before = f(first, key, default);
+            if start < at { before } else { f(then, key, before) }
+        };
+        let mut slew = SlewDistortion::new(case["rate"].as_f64().unwrap() as f32);
+        for start in (0..frames as usize).step_by(block as usize) {
+            let span = &mut out[start..(start + block as usize).min(frames as usize)];
+            let d = SlewBand::default();
+            let band = |n: usize| SlewBand {
+                shape: SlewShape::ALL[value(&format!("Type {n}"), 0.0, start) as usize],
+                drive: value(&format!("Drive {n}"), d.drive, start),
+                slew_up: value(&format!("Slew Up {n}"), d.slew_up, start),
+                slew_down: value(&format!("Slew Down {n}"), d.slew_down, start),
+                bias: value(&format!("Bias {n}"), d.bias, start),
+                warp: value(&format!("Warp {n}"), d.warp, start),
+                crush: value(&format!("Crush {n}"), d.crush, start),
+                out_volume: value(&format!("Out Vol {n}"), d.out_volume, start),
+                attack: value(&format!("Attack {n}"), d.attack, start),
+                release: value(&format!("Release {n}"), d.release, start),
+                dynamics: value(&format!("Dynamics {n}"), d.dynamics, start),
+                dynamic_slew: value(&format!("Dynamic Slew {n}"), d.dynamic_slew, start),
+                mix: value(&format!("Mix {n}"), d.mix, start),
+                slew_link: value(&format!("Slew Link {n}"), 1.0, start) != 0.0,
+            };
+            let settings = SlewDistortionSettings {
+                bands: [band(1), band(2)],
+                dc_remove: value("DC Offset Remover", 1.0, start) != 0.0,
+                multiband: value("Multiband", 0.0, start) != 0.0,
+                oversampling: value("Oversample", 0.0, start) as usize,
+                split: value("Split", 200.0, start),
+            };
+            slew.process(span, &settings);
+        }
+        return out;
+    }
     if case["unit"] == "plugin-effect" && case["plugin"] == "frequencyshifter" {
         use lm_dsp::frequency_shifter::*;
         let first = &case["settings"];

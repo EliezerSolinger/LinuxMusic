@@ -32,6 +32,7 @@
 //! - [`frequency_shifter`]: the Frequency Shifter;
 //! - [`filter_effects`]: the Dual Filter and the Crossover EQ;
 //! - [`modulation_effects`]: the Multitap Echo and the Flanger;
+//! - [`slew_distortion`]: the Slew Distortion;
 //! - [`small_effects`]: the Amplifier, the Stereo Matrix, the Stereo Enhancer and the Bass Booster;
 //! - [`reverb_sc`]: the ReverbSC (Csound's reverbsc).
 
@@ -61,6 +62,7 @@ pub mod oversampling;
 pub mod rbj;
 pub mod reverb_sc;
 pub mod sample_player;
+pub mod slew_distortion;
 pub mod small_effects;
 pub mod sound_shaping;
 pub mod tolerance;
