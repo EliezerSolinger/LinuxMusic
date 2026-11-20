@@ -31,6 +31,9 @@
 //! In [`error`]: `alsa.device_busy` and `alsa.permission_denied` are distinct (U8); `alsa.device_disconnected`
 //! after open (U11); the configuration failures carry the device's ranges.
 
+// The sheet above links to the Linux-only types; on other systems (the docs built on the Mac) they do not exist
+#![cfg_attr(not(target_os = "linux"), allow(rustdoc::broken_intra_doc_links))]
+
 pub mod error;
 mod format;
 mod midi;

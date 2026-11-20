@@ -1,6 +1,6 @@
 //! LinuxMusic: the real-time audio engine (interfaces.md, I-5 to I-9; arquitetura-nova.md, pieces 3 to 6).
 //!
-//! Two halves, made together by [`engine`]:
+//! Two halves, made together by [`engine()`]:
 //! - [`EngineControl`], on the main thread: sends [`Install`]s (never blocking), collects what comes back, writes
 //!   [`ParamSlots`], sends [`Command`]s, reads the [`TelemetryFrame`] and the event rings;
 //! - [`Renderer`], owned by the device callback: applies installs in order, runs the [`Program`] over its worker
