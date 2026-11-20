@@ -215,7 +215,7 @@ jobs:
   miri:
     name: miri
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       # Nightly adds lints before stable: warnings do not fail the nightly jobs
       RUSTFLAGS: ''
