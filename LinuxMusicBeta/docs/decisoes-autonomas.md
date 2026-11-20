@@ -1137,3 +1137,60 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 - **`lm-headless slice <pasta nova> [--device NOME] [--seconds S] [--input N] [--block N]`:** roda a fatia (no Dummy
   com ruído de ventoinha quando não há `--device`), imprime o relatório em JSON e falha se a exportação depois de
   reabrir não for idêntica.
+
+## Do Mallets (STK) (20/11)
+
+- **O STK portado para Rust, não ligado** (`lm-plugins-stk`, um `static Descriptor`, id `mallets`): as classes que o
+  Mallets toca (`ModalBar` sobre `Modal`, `TubeBell` sobre `FM`, `BandedWG`, e `Envelope`, `ADSR`, `SineWave`,
+  `FileWvIn`, `FileLoop`, `BiQuad`, `OnePole`, `TwoZero`, `DelayL`, `BowTable`), na mesma ordem de contas e em precisão
+  dupla. Motivo: o STK guarda a taxa numa estática global (`Stk::sampleRate`), o que quebra duas instâncias em taxas
+  diferentes e pede trava para mudar, e lê as rawwaves de uma pasta quando uma voz é feita (no áudio, no legado,
+  quando as vozes prontas acabavam). Sem `lm-sys-stk`, sem pacote de sistema novo, sem configuração "pasta do STK".
+- **As rawwaves dentro do pacote** (`rawwaves/`: `marmstk1.raw`, `sinewave.raw`, `fwavblnk.raw`, 3 KB, com a licença do
+  STK, de estilo MIT, que permite redistribuir) por `include_bytes!`, decodificadas uma vez no build.
+- **Três modelos, três tipos de `Synth`:** a voz de uma nota é feita para o seu modelo (barra, sino, guia de onda), e o
+  instrumento toca um modelo por vez. Trocar o preset dentro do modelo é adotado (as notas guardam o seu preset, como
+  no legado); trocar de modelo não é (U32: as notas velhas vão para a cauda). Motivo: as guias de onda curvadas precisam
+  de linhas de até 4096 amostras por modo, e toda voz de todo modelo com elas custaria dezenas de MB por instância. O
+  teste gerado do adopt troca `marimba` por `vibraphone` (mesmo modelo), por isso `preset` não está em `no_adopt`.
+- **Velocidade (U28):** `Timbre`; a velocidade `v` é o volume de nota do legado `200 v` (MIDI 127 é a batida mais dura,
+  como o legado mapeava), e a saída é a do legado (a do plugin vezes o `volume / 100` da faixa) vezes ½: a regra que faz
+  todo instrumento de nível do programa novo, em `v`, soar como o do legado em `200 v`, 6 dB abaixo.
+- **Esquema:** os 15 botões do legado como parâmetros com as faixas e padrões dele (`hardness`, `position`,
+  `vibratoGain`, `vibratoFreq`, `stickMix`, `modulator`, `crossfade`, `lfoSpeed`, `lfoDepth`, `adsr`, `pressure`,
+  `speed`, `bowed` — o "strike" salvo sem botão —, `spread`, `randomness`); `preset` é `Choice` com chaves de texto;
+  `levelled` (padrão ligado, como os instrumentos novos do legado) e `oldVersion` (projetos de antes da versão dos
+  presets) são campos. O importador de projetos do legado escreve `levelled` desligado quando o atributo falta e
+  `oldVersion` com os ajustes que o `loadSettings` fazia sem atributo `version` (não é deste pacote).
+- **Aleatoriedade determinística:** cada nota semeia o `fastRand` do legado (`lm_dsp::math::LegacyRand`) com um sorteio
+  do `Rng` do nó. Nada mais é aleatório: as classes do STK usadas não chamam `rand()` (o `Noise` não entra).
+- **O mesmo som em qualquer taxa (U36)**, sem mudar nada a 44,1 kHz (a taxa padrão do legado, onde a porta é a conta da
+  biblioteca): os raios dos polos das barras viram `r^(44100/taxa)`; o golpe (a onda, o envelope, o passa-baixa e o
+  ganho da baqueta) é feito a 44,1 kHz e levado à taxa por interpolação de banda limitada (sinc janelado, 32 pontos; o
+  STK toca a onda com interpolação linear, cujas imagens se dobram diferente em cada taxa: 3 dB no vibrafone a 96 kHz);
+  o ganho dos ressonadores (dois polos sem zeros: o `setResonance` sem normalizar apaga os zeros do construtor) é
+  escalado pelo espectro e por `sin(2πf/taxa)`; a divisão de modos acima de Nyquist é a de 44,1 kHz; o diferenciador da
+  realimentação do sino e o ataque e o integrador do arco são escalados; as linhas das guias de onda têm, em segundos, o
+  comprimento inteiro que o STK lhes dá a 44,1 kHz (uma linha inteira mais um passa-tudo de primeira ordem exato na
+  frequência do modo: a interpolação linear amortecia os modos agudos a cada volta). Medido (`tests/rates.rs`): barras
+  e sinos a 0,06 dB e 0,16 cent de 44,1 kHz em 48/96/192 kHz; guias dedilhadas a 0,2 dB; arco a 0,3 dB a 48 kHz e até
+  3 dB numa nota aguda (A5) a 192 kHz (o atrito do arco é não linear e as harmônicas dele se dobram a 44,1 kHz, no
+  próprio legado), sempre a 0,4 cent.
+- **Diferenças intencionais do legado:** (1) as atualizações de cada período (vibrato, ADSR e LFO do sino, a altura)
+  valem por peça de até 32 amostras; o A/B toca o legado em períodos de 32; (2) a espera do lado direito (`spread`) é em
+  amostras a 44,1 kHz, igual em tempo em qualquer taxa; (3) uma guia de onda abaixo da nota mais grave que a primeira
+  linha do STK guarda a 44,1 kHz (10,8 Hz) toca nessa nota (o legado não conseguia pôr a linha e tocava no comprimento
+  anterior); (4) tudo o que está no item anterior, fora de 44,1 kHz.
+- **A/B (U34):** `ab/legacy-harness.cpp` liga o objeto do plugin do legado (o `MalletsSynth` de `Mallets.cpp`) às fontes
+  do STK 5.0.1 compiladas sem FMA, como o `MixerTest` é ligado, e reproduz o que o `playNoteImpl` faz em volta dele
+  (aleatoriedade, voz, nível, controles por período); 33 casos (os 14 presets, dedilhado e arco, aleatoriedade, spread,
+  versão velha, sem nivelamento, botões e altura mudando no meio da nota, notas extremas). Pela nota (a porta do
+  `playNoteImpl`, 28 casos bit a bit) e pelo plugin (com as funções de instrumento, depois do fade-in, 25 bit a bit); os
+  outros abaixo de −150 dBFS (o `pow` do arco, e volumes de nota que não são exatos em `v = volume / 200`). Contra o `libstk.a` instalado como está
+  (com as FMAs do build do Homebrew, `LIBRARY_STK=1`), o pior caso fica em −168 dBFS.
+- **Sonda de afinação do contrato:** o arco na barra afinada em Ré♯5. O teste gerado mede um período, e nenhum som do
+  instrumento tem um exato (barras e sinos são inarmônicos e decaem; os modos das guias de onda também são inarmônicos
+  e, com as linhas inteiras do STK, saem da razão pelo truncamento, o que puxa o período medido até ~2 cents); o arco
+  dura, a barra afinada é quase harmônica, e em Ré♯5 os truncamentos se cancelam (0,02 cent nas quatro taxas). A
+  afinação de cada preset em cada taxa e 30 min de arco (0,0002 cent) são testados pela frequência do modo fundamental
+  em `tests/rates.rs`.
