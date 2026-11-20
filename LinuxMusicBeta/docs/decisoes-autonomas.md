@@ -820,3 +820,50 @@ conservadora; só entra o que o modelo novo pede.
   paleta com busca, grupo e teclas.
 - **Foco:** fechar um modal (Esc) devolve as teclas às páginas, e o workspace retoma o foco quando o campo de texto que
   o tinha some (sem isso, as teclas globais paravam depois de fechar a paleta).
+## Do Amp & IR (20/11)
+
+- **Dois pacotes:** `lm-plugins-ampandir` (o plugin, o convolver e a FFT em Rust seguro) e `lm-sys-nam` (o Neural
+  Amp Modeler embrulhado). Motivo: o convolver é código do próprio legado e pequeno, então foi portado; o NAM é de
+  terceiros (MIT), grande e apoiado no Eigen, então fica em C++ atrás de uma ficha I-17.
+- **A FFT é escrita no pacote** (radix-2 de meia largura e a separação real, fatores em dupla precisão), sem crate
+  nova: o convolver só precisa de 512 pontos, e o A/B contra a FFTW do legado fica entre −130 e −138 dBFS.
+- **O NAM, o Eigen e o nlohmann/json vêm copiados em `lm-sys-nam/vendor`** (o NAM na revisão do legado, 0b3d3c9;
+  do Eigen só os 230 cabeçalhos que o NAM inclui em arm64 e x86-64, ~4 MB, MPL-2.0; o json.hpp 3.12.0, MIT), e não
+  dos pacotes do sistema, contra a preferência pelo sistema. Motivos: o NAM fixa um Eigen (3.5 de desenvolvimento)
+  diferente do Ubuntu 24.04 (3.4.0) e do Homebrew (5.0.1) — três Eigens são três núcleos de multiplicação de
+  matrizes, e o mesmo modelo soaria um pouco diferente em cada máquina; com a cópia, o código é o que o legado
+  rodava, e o A/B dos amps dá igual bit a bit; o ThinkPad não tem os pacotes nem `sudo`. Nada novo em
+  `ci/system-deps` por isso. Compilado sempre com `-O2 -DNDEBUG` (como o legado) e o arquivo estático inteiro
+  (`+whole-archive`): as arquiteturas do NAM se registram por objetos estáticos que nada cita pelo nome.
+- **Exceções do C++ nunca atravessam:** o calço pega todas; carregar ou preparar um modelo que lança vira o erro
+  `nam.load`/`nam.reset` com a mensagem do NAM; um `process` que lançasse daria silêncio.
+- **O modelo é um recurso de tipo `nam`, carregado como bytes** (o JSON do `.nam` inteiro), não um caminho: o
+  projeto leva o modelo com ele e o plugin não lê arquivos (C9). O IR é um recurso `audio`, decodificado na taxa
+  do projeto pelo `lm-io` (`Quality::Best`, o mesmo conversor que o legado usava no IR: o caso `ir-resampled` do
+  A/B dá −131,7 dBFS). **Pendente fora daqui:** a sessão hoje só pede recursos `audio` (`request_all_resources`);
+  os de tipo `nam` precisam ser carregados como `Loaded::Bytes` pelo `lm-io`/`lm-session`.
+- **Um modelo de teste para a suíte do contrato:** o `test_loaded` do `lm-plugin` dava 4 bytes a todo recurso que não
+  fosse áudio, e um `.nam` de 4 bytes não constrói. Mudança pequena no `lm-plugin/src/testing/material.rs`: um
+  pacote pode guardar o conteúdo de teste de um tipo em `tests/data/resources/<tipo>` (aqui, o LSTM de exemplo do
+  NAM, 2 KB); sem o arquivo, nada muda para os outros plugins.
+- **A reamostragem do amp é a do legado:** `lm-sys-samplerate` em qualidade média, a mesma conversão em laço, a
+  mesma almofada de 256 quadros e a latência medida do mesmo jeito (um impulso por conversores iguais, pico refinado
+  por parábola). O modelo é preparado para 4096 quadros como no legado (o aquecimento do NAM depende disso), e
+  recebe peças de até 32.
+- **Peças na grade de 32 do relógio do motor, cortadas nos eventos dos ganhos:** o áudio é o mesmo para qualquer
+  bloco (V3), com o amp reamostrado e o IR ligados (`tests/behaviour.rs`). O legado aplicava os ganhos por período;
+  aqui no quadro do evento (no A/B a mudança cai num começo de período e dá igual).
+- **Só o sinal molhado:** o W/D do legado é o seco/molhado do host, que atrasa o seco pela latência informada (o
+  bloco do IR, 256, mais a reamostragem do amp quando o modelo roda noutra taxa).
+- **Canais:** um amp e um par de convolvers por par de canais do canal (um último canal ímpar é par de si mesmo); o
+  legado era sempre estéreo.
+- **Trocar o IR ou o modelo tocando:** o processador novo assume o som do velho; com os mesmos recursos segue bit a
+  bit, com outros a cadeia velha toca por 10 ms em crossfade com a nova (sem estalo). A cadeia velha fica guardada
+  até o processador voltar à thread principal: nada é liberado no áudio.
+- **Pânico (`AllSoundOff`):** zera os convolvers e a FIFO da reamostragem; a memória interna do modelo NAM não tem
+  como ser zerada sem alocar e some sozinha em milissegundos.
+- **IR vazio ou mudo é erro do build** (`plugin.ampandir.ir_empty`, `plugin.ampandir.ir_silent`), como o legado
+  recusava o arquivo.
+- **A/B contra o `.so` original** (`lm-plugins-ampandir/ab`: o `libampandir.so` do legado, sem recompilar, com o IR
+  e o modelo carregados pelas configurações dele, a 44,1 kHz em períodos de 256): ganhos, amp na taxa do motor, amp
+  reamostrado — iguais bit a bit; IR mono, estéreo, reamostrado e amp + IR — de −128,9 a −138,5 dBFS (a FFT).

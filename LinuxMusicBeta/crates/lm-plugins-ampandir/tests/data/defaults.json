@@ -1,0 +1,13 @@
+{
+  "plugin:ampandir": {
+    "defaults": {
+      "ir": null,
+      "nam": null,
+      "params": {
+        "input": 0.0,
+        "output": 0.0
+      }
+    },
+    "version": 1
+  }
+}

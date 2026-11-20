@@ -71,6 +71,7 @@ lm-dsp = { path = "crates/lm-dsp" }
 lm-plugin = { path = "crates/lm-plugin" }
 lm-plugins-testsine = { path = "crates/lm-plugins-testsine" }
 lm-plugins-tripleoscillator = { path = "crates/lm-plugins-tripleoscillator" }
+lm-plugins-ampandir = { path = "crates/lm-plugins-ampandir" }
 lm-plugins-effects = { path = "crates/lm-plugins-effects" }
 lm-plugins-instruments = { path = "crates/lm-plugins-instruments" }
 lm-sys-fpu = { path = "crates/lm-sys-fpu" }
@@ -82,6 +83,7 @@ lm-sys-linux = { path = "crates/lm-sys-linux" }
 lm-sys-rubberband = { path = "crates/lm-sys-rubberband" }
 lm-sys-lilv = { path = "crates/lm-sys-lilv" }
 lm-sys-ipc = { path = "crates/lm-sys-ipc" }
+lm-sys-nam = { path = "crates/lm-sys-nam" }
 lm-io = { path = "crates/lm-io" }
 lm-compile = { path = "crates/lm-compile" }
 lm-port = { path = "crates/lm-port" }

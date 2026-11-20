@@ -3643,6 +3643,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-ampandir"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-dsp",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+ "lm-sys-nam",
+ "lm-sys-samplerate",
+ "lm-sys-sndfile",
+ "serde_json",
+]
+
+[[package]]
 name = "lm-plugins-effects"
 version = "0.1.0"
 dependencies = [
@@ -3818,6 +3833,15 @@ dependencies = [
  "libc",
  "lm-base",
  "zbus 6.3.0",
+]
+
+[[package]]
+name = "lm-sys-nam"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "cc",
+ "lm-base",
 ]
 
 [[package]]
