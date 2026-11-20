@@ -30,7 +30,7 @@ print_stderr = "warn"
 # Allowed lock-free crates (interfaces.md, I-17). Adding one needs a written decision there.
 rtrb = "0.4"
 triple_buffer = "8"
-assert_no_alloc = "1"
+assert_no_alloc = { version = "1", default-features = false }   # the trap exists in release too (default `disable_release` removes it)
 # Data
 imbl = "7"
 serde = { version = "1", features = ["derive"] }

@@ -77,6 +77,10 @@ fn notes_of(root: &Value) -> &Value {
 #[test]
 #[allow(clippy::print_stdout, clippy::cast_precision_loss)]
 fn ten_thousand_notes_edited_one_at_a_time() {
+    // A timing and memory budget means nothing under a sanitizer (its allocator and checks change both)
+    if std::env::var_os("LM_TEST_SANITIZER").is_some() {
+        return;
+    }
     // ---- the item ----
     let before = live_bytes();
     let root = project();
