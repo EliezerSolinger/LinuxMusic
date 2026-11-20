@@ -26,6 +26,8 @@ name: beta
   schedule:
     # Weekly, for new security advisories and for nightly changes that break miri or the sanitizers
     - cron: '23 5 * * 1'
+    # Nightly: the long fuzzing jobs (and the whole CI against the newest master)
+    - cron: '17 3 * * *'
   workflow_dispatch:
 concurrency:
   # On master a run is never cancelled by the next push (the agents push often, and a run that never finishes
@@ -316,6 +318,46 @@ jobs:
       - name: cargo check
         if: steps.find.outputs.present == 'true'
         run: ci/run.sh cargo check --manifest-path prototypes/gpui/Cargo.toml --all-targets
+
+  fuzz-remote:
+    # lm-remote's protocol decoders fuzzed for one hour (interfaces.md, I-20.8): nightly and by hand only. A new seed
+    # each night (the run number), printed, so a failure can be reproduced with LM_FUZZ_SEED.
+    name: fuzz lm-remote decoders (1 h)
+    if: github.event.schedule == '17 3 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    env:
+      LM_FUZZ_SECONDS: 3600
+      LM_FUZZ_SEED: ${{ github.run_number }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Look for the crate
+        id: find
+        run: |
+          if python3 ci/workspace.py members | grep -qx lm-remote; then
+            echo "present=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "present=false" >>"$GITHUB_OUTPUT"
+            echo "::notice::lm-remote does not exist yet: nothing to fuzz"
+          fi
+      - name: Set up Rust
+        if: steps.find.outputs.present == 'true'
+        run: ci/setup-rust.sh msrv
+      - name: Install system packages
+        if: steps.find.outputs.present == 'true'
+        run: ci/install-system-deps.sh
+      - name: Cache
+        if: steps.find.outputs.present == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: LinuxMusicBeta -> target
+          key: fuzz-remote
+      - name: Fuzz the decoders
+        if: steps.find.outputs.present == 'true'
+        run: |
+          echo "LM_FUZZ_SEED=$LM_FUZZ_SEED LM_FUZZ_SECONDS=$LM_FUZZ_SECONDS"
+          ci/run.sh cargo test --release -p lm-remote --test remote the_decoders_never_panic -- --nocapture
 
   beta-ok:
     # One status for branch protection: green only when every required job is green
