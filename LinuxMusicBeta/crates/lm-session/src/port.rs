@@ -674,6 +674,13 @@ impl CorePort for LocalPort {
                 category: Arc::from(if d.kind == lm_plugin::PluginKind::Instrument { "synth" } else { "effect" }),
                 third_party: false,
                 latency: 0,
+                sidechain: self
+                    .session
+                    .registry()
+                    .defaults(d.id)
+                    .ok()
+                    .and_then(|s| self.session.registry().ports(d.id, &s))
+                    .is_some_and(|p| !p.sidechains.is_empty()),
             })
             .collect()
     }

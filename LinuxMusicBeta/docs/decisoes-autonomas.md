@@ -379,6 +379,14 @@ que o modelo novo obriga. A janela do instrumento segue o design 05, aprovado.
   documento (o esquema da faixa ainda não tem); a afinação tem a afinação, a faixa do bend e "seguir a transposição
   geral" (P-37); o microafinador e as teclas (primeira, última, base) esperam os seus campos no esquema. O nome do
   último preset carregado é estado da interface (o documento não guarda nome de preset: um preset é um estado, 7a).
+- **Campos novos da faixa e do projeto (agente C, autorizado, 21/11)**, todos opcionais, com o ausente mantendo o
+  sentido antigo (U29: versões novas com `upgrade` sem mudança, padrões abençoados): na faixa (v2) `midiOutput`
+  (porta por apelido, I-21.1; canal; programa, velocidade e nota fixos), `baseVelocity` (63), `microtuner` (liga,
+  vaga da escala, vaga do mapa, "importar as faixas do mapa") e `keys` (primeira, última, base); na entrada MIDI da
+  faixa (v2) `fixedVelocity`; no projeto (v2) `tuning` com 10 escalas e 10 mapas (F-IJN-019/020). Os arquivos Scala
+  (`.scl`, `.kbm`) são lidos por `lm_doc::tuning` nas ações do núcleo `tuning.import_scale` e
+  `tuning.import_keymap { slot, path }`, um passo de desfazer. `PluginInfo.sidechain` diz quem tem a porta de
+  sidechain (pelas `Ports` do estado padrão).
 - **Presets pelo núcleo**: `plugin.load_preset { node, entry }` (um passo de desfazer) e `plugin.save_preset
   { node, name }` (um arquivo nos presets do usuário), ações do núcleo; a lista vem da página Presets do navegador.
 

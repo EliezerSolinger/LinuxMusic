@@ -73,10 +73,19 @@ pub mod types {
     pub const MIDI_TARGET: &str = "midi.target";
     pub const MIDI_TRANSFORM: &str = "midi.transform";
     pub const TRACK_MIDI_INPUT: &str = "track.midi_input";
+    pub const TRACK_MIDI_OUTPUT: &str = "track.midi_output";
+    pub const TRACK_MICROTUNER: &str = "track.microtuner";
+    pub const TRACK_KEYS: &str = "track.keys";
+    pub const TUNING: &str = "tuning";
+    pub const SCALE: &str = "tuning.scale";
+    pub const KEYMAP: &str = "tuning.keymap";
     pub const RECORD_QUANTIZE: &str = "transport.record_quantize";
     pub const MARKER: &str = "marker";
     pub const REGION: &str = "region";
 }
+
+/// The project's scale and keymap slots (F-IJN-019: ten of each); a track's microtuner picks one of each by index
+pub const TUNING_SLOTS: i64 = 10;
 
 /// The gain stage models of the rack, by their permanent keys (`lm-dsp`, `GainModel::key`)
 pub const GAIN_MODELS: &[&str] =
@@ -189,7 +198,7 @@ fn ints(key: &'static str, min: i64, max: i64, default: &[i64]) -> FieldSpec {
 pub fn project_schemas() -> Vec<NodeSchema> {
     use types as ty;
     vec![
-        NodeSchema::new(PROJECT, 2)
+        NodeSchema::new(PROJECT, 3)
             .field(object("meta", ty::META))
             .field(object("project", ty::SETTINGS))
             .field(object("transport", ty::TRANSPORT))
@@ -206,7 +215,10 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             // The ruler's named markers and regions (F-REG-011, F-REG-012); absent = none. Version 2 only added them
             .field(list_of("markers", ty::MARKER).optional())
             .field(list_of("regions", ty::REGION).optional())
-            .upgrade(1, unchanged),
+            // Version 3: the project's scales and keymaps for the tracks' microtuners (F-IJN-019/020); absent = none
+            .field(FieldSpec::new("tuning", FieldKind::Object(ty::TUNING)).optional())
+            .upgrade(1, unchanged)
+            .upgrade(2, unchanged),
         // A named point of the ruler (F-REG-011): one per tick; color as 0xRRGGBB, absent = the theme's
         NodeSchema::new(ty::MARKER, 1)
             .field(FieldSpec::id(KIND_MARKER))
@@ -220,6 +232,23 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::int("from", 0, MAX, 0))
             .field(FieldSpec::int("to", 0, MAX, 960))
             .field(FieldSpec::int("color", 0, 0xFF_FFFF, 0).optional()),
+        // Ten slots of each; a slot without intervals or degrees is empty
+        NodeSchema::new(ty::TUNING, 1).field(list_of("scales", ty::SCALE)).field(list_of("keymaps", ty::KEYMAP)),
+        // A scale (Scala .scl): the intervals above the base, each a cents value with a point ("701.955") or a
+        // ratio ("3/2"); the last is the period (usually "2/1"). Checked by `tuning::parse_intervals`
+        NodeSchema::new(ty::SCALE, 1).field(FieldSpec::text("description", "")).field(
+            FieldSpec::new("intervals", FieldKind::List(Box::new(FieldKind::Text))).default(Value::empty_list()),
+        ),
+        // A keymap (Scala .kbm): the scale degree of each key from `middle` on, −1 = silent ("x"); the keys it
+        // plays; the reference key and its frequency
+        NodeSchema::new(ty::KEYMAP, 1)
+            .field(FieldSpec::text("description", ""))
+            .field(ints("degrees", -1, 1023, &[]))
+            .field(FieldSpec::int("first", 0, 127, 0))
+            .field(FieldSpec::int("last", 0, 127, 127))
+            .field(FieldSpec::int("middle", 0, 127, 60))
+            .field(FieldSpec::int("baseKey", 0, 127, 69))
+            .field(FieldSpec::real("baseFrequency", 0.1, 9999.999, 440.0)),
         // The part of the root that undo never restores (R7)
         NodeSchema::new(ty::META, 1).field(FieldSpec::int("issued", 0, MAX, 0)).field(FieldSpec::text("uuid", "")),
         NodeSchema::new(ty::SETTINGS, 1)
@@ -260,7 +289,7 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(ints("timeSig", 1, 64, &[4, 4]))
             .field(FieldSpec::bool("ramp", false)),
         // The timeline: items, automation, the instrument and the outputs. No pan (decision of 19/11)
-        NodeSchema::new(ty::TRACK, 1)
+        NodeSchema::new(ty::TRACK, 2)
             .field(FieldSpec::id(KIND_TRACK))
             .field(FieldSpec::text("name", ""))
             .field(FieldSpec::bool("folder", false))
@@ -276,17 +305,47 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(object("input", ty::TRACK_INPUT).nullable().default(Value::NULL))
             // The live MIDI input (I-21.1; F-REC-103, F-REC-131); absent = every instrument port, every channel
             .field(FieldSpec::new("midiInput", FieldKind::Object(ty::TRACK_MIDI_INPUT)).optional())
+            // The track's MIDI output to an external device (F-IJN-017, P-38); absent = none
+            .field(FieldSpec::new("midiOutput", FieldKind::Object(ty::TRACK_MIDI_OUTPUT)).optional())
+            // The velocity that plays at 100 % (F-IJN-017); absent: 63
+            .field(FieldSpec::new("baseVelocity", FieldKind::Int { min: 1, max: 127 }).optional())
+            // The microtuner (F-IJN-019); absent = off (12-TET)
+            .field(FieldSpec::new("microtuner", FieldKind::Object(ty::TRACK_MICROTUNER)).optional())
+            // The keys the instrument plays and its base key (F-IJN-021); absent = every key, base A4 (69)
+            .field(FieldSpec::new("keys", FieldKind::Object(ty::TRACK_KEYS)).optional())
             .field(FieldSpec::bool("armed", false))
             .field(FieldSpec::choice("monitor", MONITOR_MODES, "auto"))
             .field(list_of("outputs", ty::OUTPUT))
             .field(list_of("items", ty::ITEM))
-            .field(list_of("automation", ty::AUTOMATION)),
+            .field(list_of("automation", ty::AUTOMATION))
+            .upgrade(1, unchanged),
         // ports: aliases (empty = every port whose role is instrument); channel −1 = all; followSelection: the
         // keyboard plays the selected track
-        NodeSchema::new(ty::TRACK_MIDI_INPUT, 1)
+        NodeSchema::new(ty::TRACK_MIDI_INPUT, 2)
             .field(FieldSpec::new("ports", FieldKind::List(Box::new(FieldKind::Text))).default(Value::empty_list()))
             .field(FieldSpec::int("channel", -1, 15, -1))
-            .field(FieldSpec::bool("followSelection", false)),
+            .field(FieldSpec::bool("followSelection", false))
+            // Every note at this velocity (F-IJN-017); absent = as played
+            .field(FieldSpec::new("fixedVelocity", FieldKind::Int { min: 1, max: 127 }).optional())
+            .upgrade(1, unchanged),
+        // port: an alias of the machine's preferences (I-21.1); program and the fixed ones: absent = as played
+        NodeSchema::new(ty::TRACK_MIDI_OUTPUT, 1)
+            .field(FieldSpec::text("port", ""))
+            .field(FieldSpec::int("channel", 0, 15, 0))
+            .field(FieldSpec::new("program", FieldKind::Int { min: 0, max: 127 }).optional())
+            .field(FieldSpec::new("fixedVelocity", FieldKind::Int { min: 1, max: 127 }).optional())
+            .field(FieldSpec::new("fixedNote", FieldKind::Int { min: 0, max: 127 }).optional()),
+        // scale and keymap: slots of the project's `tuning` (0-based); importRanges: the keymap's first and last key
+        // replace the track's keys
+        NodeSchema::new(ty::TRACK_MICROTUNER, 1)
+            .field(FieldSpec::bool("on", false))
+            .field(FieldSpec::int("scale", 0, TUNING_SLOTS - 1, 0))
+            .field(FieldSpec::int("keymap", 0, TUNING_SLOTS - 1, 0))
+            .field(FieldSpec::bool("importRanges", true)),
+        NodeSchema::new(ty::TRACK_KEYS, 1)
+            .field(FieldSpec::int("first", 0, 127, 0))
+            .field(FieldSpec::int("last", 0, 127, 127))
+            .field(FieldSpec::int("base", 0, 127, 69)),
         NodeSchema::new(ty::TRACK_INPUT, 1).field(FieldSpec::text("device", "in")).field(ints(
             "channels",
             1,

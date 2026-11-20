@@ -400,4 +400,31 @@ fn moving_items_moves_their_automation_and_thinning() {
     assert_eq!(ticks(&p)[0], start, "one undo step");
     p.run_action("automation.thin".into(), Value::object([("lane", Value::text(lane_id.to_string()))])).ok().unwrap();
     assert_eq!(ticks(&p).len(), 3, "the middle point of the straight part went: {:?}", ticks(&p));
+
+#[test]
+fn sidechains_tuning_files_reveal_and_open() {
+    let mut port = FakePort::new(Config::default()).unwrap();
+    let plugins = port.plugins();
+    assert!(plugins.iter().any(|p| &*p.id == "compressor" && p.sidechain));
+    assert!(plugins.iter().any(|p| &*p.id == "reverb" && !p.sidechain));
+    let dir = std::env::temp_dir().join(format!("lm-fake-tuning-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let scl = dir.join("meantone.scl");
+    std::fs::write(&scl, "! x\nMeantone\n2\n193.157\n2/1\n").unwrap();
+    let params = Value::object([("slot", Value::int(3)), ("path", Value::text(scl.to_str().unwrap()))]);
+    assert!(port.run_action("tuning.import_scale".into(), params).ok().is_some());
+    let scales = port.root().get("tuning").and_then(|t| t.get("scales")).unwrap().clone();
+    assert_eq!(scales.items().count(), 10);
+    assert_eq!(scales.at(3).and_then(|s| s.get("description")).and_then(Value::as_text), Some("Meantone"));
+    let bad = dir.join("bad.scl");
+    std::fs::write(&bad, "x\n2\n100.0\nnope\n").unwrap();
+    let params = Value::object([("slot", Value::int(4)), ("path", Value::text(bad.to_str().unwrap()))]);
+    assert!(port.run_action("tuning.import_scale".into(), params).ok().is_none(), "refused whole");
+    let _ = std::fs::remove_dir_all(&dir);
+    let Pending::Ready(Ok(projects)) = port.browse(BrowsePage::Projects, None, false) else { panic!() };
+    let p = projects.iter().find(|e| e.kind == lm_port::EntryKind::Project).unwrap().id;
+    assert!(port.run_action("browser.reveal".into(), Value::int(p.0 as i64)).ok().is_some());
+    assert!(port.notices().iter().any(|n| n.key.starts_with("Shown in the file manager")));
+    assert!(port.run_action("project.open_entry".into(), Value::int(p.0 as i64)).ok().is_some());
+    assert_ne!(port.loading(&lm_port::Target::Project), Loading::Ready, "the opening runs on the project");
 }

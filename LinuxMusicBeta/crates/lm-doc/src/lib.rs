@@ -22,6 +22,7 @@ mod ops;
 mod refs;
 mod rules;
 pub mod schemas;
+pub mod tuning;
 
 pub use diff::{Changed, Diff, NoteChanges, Origin};
 pub use document::{Delivered, Document, Feed, GestureId, Opened, Options, Topic, new_uuid};

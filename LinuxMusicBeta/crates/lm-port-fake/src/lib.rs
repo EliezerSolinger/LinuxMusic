@@ -25,11 +25,11 @@ use std::time::{Duration, Instant};
 use lm_base::{Error, HostTime, Label, OperationId, Result};
 use lm_doc::{Document, Feed, GestureId, Topic};
 use lm_port::{
-    ActionId, Applied, BrowseEntry, BrowsePage, CorePort, DeviceInfo, DisplayView, EditOp, EntryId, LOADING_THRESHOLD,
-    Loading, Meter, NoteRef, Notice, OperationInfo, PeakBlock, Pending, Position, Preview, RecordingTake, Ref,
-    ScanKind, Severity, Target, TelemetryView,
+    ActionId, Applied, BrowseEntry, BrowsePage, CorePort, DeviceInfo, DisplayView, EditOp, EntryId, EntryKind,
+    LOADING_THRESHOLD, Loading, Meter, NoteRef, Notice, OperationInfo, PeakBlock, Pending, Position, Preview,
+    RecordingTake, Ref, ScanKind, Severity, Target, TelemetryView,
 };
-use lm_state::{NodeId, NodeSchema, PathStep, Resource, Value};
+use lm_state::{NodeId, NodeSchema, PathStep, ROOT, Resource, Value};
 
 use crate::demo::BAR;
 use crate::peaks::Peaks;
@@ -962,6 +962,12 @@ impl CorePort for FakePort {
             // a preset is a plugin's state in a file (piece 7a): loading it is one transaction, saving it a file
             "plugin.load_preset" => self.load_preset(&params),
             "plugin.save_preset" => self.save_preset(&params),
+            // the microtuner's files (F-IJN-020): a Scala scale or keymap read into a slot of the project, one edit
+            "tuning.import_scale" | "tuning.import_keymap" => self.import_tuning(action.as_str(), &params),
+            // the entry's file shown in the system's file manager (F-BRW-008): the fake says where it is
+            "browser.reveal" => self.reveal(&params),
+            // a project of the browser opened (F-BRW-006): an operation on the project
+            "project.open_entry" => self.open_entry(&params),
             "plugins.rescan" => {
                 self.start(
                     Label::new("Scanning plugins"),
@@ -1174,6 +1180,7 @@ impl CorePort for FakePort {
             category: Arc::from(demo::category(id)),
             third_party: false,
             latency: demo::latency(id),
+            sidechain: demo::ports(id, &Value::empty_object()).is_some_and(|p| !p.sidechains.is_empty()),
         })
         .chain(self.real_plugins.iter().map(|(id, instrument)| lm_port::PluginInfo {
             id: Arc::clone(id),
@@ -1182,6 +1189,8 @@ impl CorePort for FakePort {
             category: Arc::from(demo::category(id)),
             third_party: false,
             latency: 0,
+            // the real plugins' ports are the core's (the LocalPort answers them); the fake does not run them
+            sidechain: false,
         }))
         .collect()
     }
@@ -1252,6 +1261,79 @@ impl FakePort {
             Pending::Ready(r) => r.map(|_| ()),
             Pending::Waiting(_) => Ok(()),
         }
+    }
+
+    /// `{slot, path}`: reads a `.scl` or `.kbm` and puts it in the project's tuning slot (one undo step)
+    fn import_tuning(&mut self, action: &str, params: &Value) -> Result<()> {
+        let slot =
+            params.get("slot").and_then(Value::as_int).filter(|s| (0..lm_doc::schemas::TUNING_SLOTS).contains(s));
+        let path = params.get("path").and_then(Value::as_text);
+        let (Some(slot), Some(path)) = (slot, path) else { return Err(err("port.params")) };
+        let text = std::fs::read_to_string(path).map_err(|_| err("tuning.file.unreadable"))?;
+        let keymap = action == "tuning.import_keymap";
+        let name = std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let node = if keymap { lm_doc::tuning::parse_kbm(&text, name)? } else { lm_doc::tuning::parse_scl(&text)? };
+        let ops = self.tuning_ops(if keymap { "keymaps" } else { "scales" }, slot as usize, node);
+        match CorePort::apply(self, Label::new(if keymap { "Import a keymap" } else { "Import a scale" }), ops) {
+            Pending::Ready(r) => r.map(|_| ()),
+            Pending::Waiting(_) => Ok(()),
+        }
+    }
+
+    /// The edits that put `node` in a tuning slot, making the project's `tuning` (ten empty slots each) when absent
+    fn tuning_ops(&self, list: &str, slot: usize, node: Value) -> Vec<EditOp> {
+        let has = self.doc.root().get("tuning").is_some_and(|t| !t.is_null());
+        if has {
+            return vec![EditOp::Set {
+                id: Ref::Id(ROOT),
+                path: vec![PathStep::key("tuning"), PathStep::key(list), PathStep::Index(slot)],
+                value: node,
+            }];
+        }
+        let empty = |n: &Value, k: &str| -> Value {
+            let _ = n;
+            Value::list(
+                (0..lm_doc::schemas::TUNING_SLOTS)
+                    .map(|_| Value::object([("description", Value::text(""))]).with(k, Value::empty_list())),
+            )
+        };
+        let mut scales = empty(&node, "intervals");
+        let mut keymaps = empty(&node, "degrees");
+        let target = if list == "keymaps" { &mut keymaps } else { &mut scales };
+        if let Ok(v) = target.with_at(slot, node) {
+            *target = v;
+        }
+        vec![EditOp::set(ROOT, &["tuning"], Value::object([("scales", scales), ("keymaps", keymaps)]))]
+    }
+
+    /// `entry`: a notice with the file's place (the fake has no file manager to open)
+    fn reveal(&mut self, params: &Value) -> Result<()> {
+        let entry = params
+            .as_int()
+            .and_then(|e| self.library.entry(EntryId(e as u64)))
+            .ok_or_else(|| err("port.browse.unknown_entry"))?;
+        let path = entry.info.get("path").and_then(Value::as_text).unwrap_or(&entry.name).to_string();
+        self.push_notice(
+            "Shown in the file manager: {0}",
+            vec![("path", Value::text(path.as_str()))],
+            Severity::Info,
+            None,
+            Vec::new(),
+        );
+        Ok(())
+    }
+
+    /// `entry`: opens a project of the browser (the fake runs the opening's operation on the project)
+    fn open_entry(&mut self, params: &Value) -> Result<()> {
+        let entry = params
+            .as_int()
+            .and_then(|e| self.library.entry(EntryId(e as u64)))
+            .ok_or_else(|| err("port.browse.unknown_entry"))?;
+        if entry.kind != EntryKind::Project {
+            return Err(err("port.params"));
+        }
+        self.start(Label::new("Opening the project"), Target::Project, true, Duration::from_millis(800), |_| {});
+        Ok(())
     }
 
     /// `{node, name}`: a new user preset of the node's plugin, on the Presets page

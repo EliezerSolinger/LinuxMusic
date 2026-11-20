@@ -63,6 +63,9 @@ pub struct PluginInfo {
     pub third_party: bool,
     /// Its latency in samples at the project's rate, as the PDC counts it
     pub latency: u32,
+    /// It has a sidechain input port (with its default state): a send from another channel can feed it, with
+    /// `port: "sidechain"` (arquitetura-nova.md item 3)
+    pub sidechain: bool,
 }
 
 /// A prepared preview: its sound is the engine's (I-7.3); its waveform comes by `CorePort::peaks` on `resource`
