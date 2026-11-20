@@ -212,7 +212,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
     }
 });
 
-/// The panel's names are built once and live as long as the program (the spec is a static)
+/// The panel's names are built once, as interned symbols owned by the symbol table (lm_base::intern)
 fn leak(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
+    lm_port::intern(&s)
 }

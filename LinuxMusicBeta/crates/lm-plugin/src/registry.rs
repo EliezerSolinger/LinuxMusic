@@ -381,7 +381,7 @@ mod external_tests {
     }
 
     fn external(id: &str) -> External {
-        let type_name: &'static str = Box::leak(plugin_type(id).into_boxed_str());
+        let type_name: &'static str = lm_base::intern(&plugin_type(id));
         External {
             id: id.to_owned(),
             name: "Some Gain (LV2)".into(),

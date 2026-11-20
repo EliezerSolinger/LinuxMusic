@@ -50,16 +50,19 @@ fn config_with_hang(dir: &TempDir) -> lm_session::SessionConfig {
     c
 }
 
+const HANG_CHILD: &str = "LM_SESSION_HANG_CHILD";
+
+#[cfg(unix)]
 #[test]
 fn a_hanging_plugin_opens_the_project_in_safe_mode() {
-    let dir = TempDir::new("safe");
-    let folder = dir.join("song");
-    let config = config_with_hang(&dir);
-    let f2 = folder.clone();
-    // The first session: the plugin hangs; the process is "killed" (the session is leaked, its lock removed)
-    std::thread::spawn(move || {
-        let mut s = Session::new(config).expect("session");
-        s.create(f2.clone()).expect("create");
+    if let Some(dir) = std::env::var_os(HANG_CHILD) {
+        // The first session, in a child process: the plugin hangs, the watchdog names it, then the process is killed
+        // (it crashes: no save, nothing dropped, the lock stays)
+        // (the parent's folder: the child never removes it, the parent does)
+        let dir = std::mem::ManuallyDrop::new(TempDir(dir.into()));
+        let folder = dir.join("song");
+        let mut s = Session::new(config_with_hang(&dir)).expect("session");
+        s.create(folder.clone()).expect("create");
         s.document_mut()
             .transact(Label::new("test"), |e| {
                 let inst = Value::object([
@@ -73,16 +76,17 @@ fn a_hanging_plugin_opens_the_project_in_safe_mode() {
             .expect("track");
         s.save().expect("save");
         let start = std::time::Instant::now();
-        while !lm_session::watchdog::suspect_path(&f2).exists() {
+        while !lm_session::watchdog::suspect_path(&folder).exists() {
             assert!(start.elapsed() < Duration::from_secs(20), "the watchdog never saw it");
             s.pump();
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(s.sync_journal(Duration::from_secs(5)));
-        std::mem::forget(s);
-    })
-    .join()
-    .expect("first");
+        std::process::abort();
+    }
+    let dir = TempDir::new("safe");
+    let folder = dir.join("song");
+    run_crashing_child("a_hanging_plugin_opens_the_project_in_safe_mode", HANG_CHILD, dir.0.as_os_str());
     let _ = std::fs::remove_file(lm_session::folder::ProjectFolder::new(folder.clone()).lock());
     let config = config_with_hang(&dir);
     std::thread::spawn(move || {

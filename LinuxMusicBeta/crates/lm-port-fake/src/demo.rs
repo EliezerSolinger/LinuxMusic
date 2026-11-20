@@ -56,7 +56,7 @@ pub fn add_instrument_functions(mut s: NodeSchema) -> NodeSchema {
     s = s.param(ParamSpec::new("pitch", -100.0, 100.0, 0.0).unit("cents"));
     s = s.param(ParamSpec::new("bendRange", 1.0, 60.0, 2.0).scale(Scale::Stepped).unit("st").not_automatable());
     for t in ["vol", "cut", "res"] {
-        let k = |n: &str| -> &'static str { Box::leak(format!("{t}{n}").into_boxed_str()) };
+        let k = |n: &str| -> &'static str { lm_base::intern(&format!("{t}{n}")) };
         for (n, min, max, d) in [
             ("Predelay", 0.0, 2.0, 0.0),
             ("Attack", 0.0, 2.0, 0.0),
@@ -144,7 +144,7 @@ pub fn registry_with(real: Vec<NodeSchema>) -> Result<SchemaRegistry> {
         if real.iter().any(|s| s.type_name.strip_prefix("plugin:") == Some(*id)) {
             continue;
         }
-        let mut s = NodeSchema::new(Box::leak(format!("plugin:{id}").into_boxed_str()), 1);
+        let mut s = NodeSchema::new(lm_base::intern(&format!("plugin:{id}")), 1);
         for (k, min, max, d) in params.iter() {
             s = s.param(ParamSpec::new(k, *min, *max, *d));
         }

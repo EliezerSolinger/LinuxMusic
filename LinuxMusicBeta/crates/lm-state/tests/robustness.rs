@@ -70,7 +70,7 @@ fn garbage_never_panics() {
     let registry = common::registry();
     let seed = Rng::seed(0x5eed_0003);
     let mut rng = Rng::new(seed);
-    for _ in 0..20_000 {
+    for _ in 0..Rng::cases(20_000) {
         let bytes = rng.bytes(512);
         exercise(&registry, &bytes);
     }
@@ -82,7 +82,8 @@ fn mutated_documents_never_panic() {
     let seed = Rng::seed(0x5eed_0004);
     let mut rng = Rng::new(seed);
     let mut read = 0usize;
-    for _ in 0..50_000 {
+    let cases = Rng::cases(50_000);
+    for _ in 0..cases {
         let mut doc = SEED_DOCUMENTS[rng.below(SEED_DOCUMENTS.len())].as_bytes().to_vec();
         for _ in 0..1 + rng.below(5) {
             mutate(&mut rng, &mut doc);
@@ -93,7 +94,7 @@ fn mutated_documents_never_panic() {
         exercise(&registry, &doc);
     }
     // The mutations must also reach the validation, not only the reader's errors
-    assert!(read > 1_000, "only {read} mutated documents were still JSON");
+    assert!(read > cases / 50, "only {read} of {cases} mutated documents were still JSON");
 }
 
 #[test]
@@ -102,7 +103,7 @@ fn random_trees_never_panic_the_validation() {
     let seed = Rng::seed(0x5eed_0005);
     let mut rng = Rng::new(seed);
     let base = common::track();
-    for _ in 0..20_000 {
+    for _ in 0..Rng::cases(20_000) {
         // A valid track with one random subtree grafted somewhere
         let mut paths = Vec::new();
         base.walk(&mut |p, _| paths.push(p.to_vec()));

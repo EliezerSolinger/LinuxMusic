@@ -86,7 +86,7 @@ fn open<'a>(cx: &'a mut TestAppContext, plugins: &[(&Descriptor, bool)], plugin:
 }
 
 fn leak(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
+    lm_port::intern(&s)
 }
 
 impl Opened<'_> {

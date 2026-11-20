@@ -4,7 +4,22 @@ mod common;
 use common::bundle::{self, GAIN, port, report};
 
 use lm_sys_lilv::{Instance, InstanceConfig, WorkerMode};
+use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, Instant};
+
+/// The test that counts the process's `lv2-worker` threads runs alone: the other tests here (which the harness runs
+/// in parallel) start and join worker threads of their own, which a count of the whole process would see
+static WORKER_THREADS: RwLock<()> = RwLock::new(());
+
+/// Taken by every test that may start a worker thread
+fn shared() -> RwLockReadGuard<'static, ()> {
+    WORKER_THREADS.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Taken by the test that counts the worker threads
+fn alone() -> RwLockWriteGuard<'static, ()> {
+    WORKER_THREADS.write().unwrap_or_else(PoisonError::into_inner)
+}
 
 fn gain(config: &InstanceConfig) -> Instance {
     let mut i = bundle::world().instantiate(GAIN, config).unwrap();
@@ -50,6 +65,7 @@ fn threads_named(name: &str) -> usize {
 
 #[test]
 fn threaded_work_comes_back_after_a_later_run() {
+    let _threads = shared();
     let mut i = gain(&bundle::config());
     assert_eq!(i.control(port::SEED), Some(0.0));
     trigger(&mut i);
@@ -63,6 +79,7 @@ fn threaded_work_comes_back_after_a_later_run() {
 
 #[test]
 fn synchronous_work_comes_back_after_the_same_run() {
+    let _threads = shared();
     let mut config = bundle::config();
     config.worker = WorkerMode::Synchronous;
     let mut i = gain(&config);
@@ -76,6 +93,7 @@ fn synchronous_work_comes_back_after_the_same_run() {
 
 #[test]
 fn the_worker_is_joined_before_the_instance_is_freed() {
+    let _threads = shared();
     // The work takes 300 ms; the instance is dropped right after scheduling it. The plugin logs when its work
     // begins and ends and when its cleanup runs: the cleanup must come after the work ended
     let id = 4242;
@@ -97,6 +115,7 @@ fn the_worker_is_joined_before_the_instance_is_freed() {
 
 #[test]
 fn work_still_queued_is_worked_before_the_instance_is_freed() {
+    let _threads = shared();
     // Two requests, each 100 ms: when the instance is dropped the second has not started yet. Both run (the plugin
     // may have handed over memory in them), and only then the cleanup
     let id = 4343;
@@ -111,6 +130,7 @@ fn work_still_queued_is_worked_before_the_instance_is_freed() {
 
 #[test]
 fn an_inactive_instance_with_a_worker_drops_cleanly() {
+    let _threads = shared();
     let id = 4444;
     let mut i = bundle::world().instantiate(GAIN, &bundle::config()).unwrap();
     i.set_control(port::REPORT, id as f32).unwrap();
@@ -121,6 +141,7 @@ fn an_inactive_instance_with_a_worker_drops_cleanly() {
 
 #[test]
 fn each_instance_has_one_worker_thread_and_it_ends() {
+    let _threads = alone();
     let before = threads_named("lv2-worker");
     let instances: Vec<Instance> = (0..3).map(|_| gain(&bundle::config())).collect();
     if cfg!(target_os = "linux") {
@@ -141,6 +162,7 @@ fn each_instance_has_one_worker_thread_and_it_ends() {
 
 #[test]
 fn a_full_response_ring_refuses_the_response() {
+    let _threads = shared();
     // Rings of 1100 bytes: a response of the test plugin (1008 bytes and its 4-byte header) fits once. Three works
     // finish while no run drains the ring: the first response is kept, the next two are refused (the plugin's
     // `respond` returns "no space") and never delivered

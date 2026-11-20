@@ -34,7 +34,7 @@ fn knobs() -> Vec<(&'static str, Knob)> {
     ];
     for band in 1..=2 {
         for (legacy, key) in names {
-            let leak = |s: String| -> &'static str { Box::leak(s.into_boxed_str()) };
+            let leak = |s: String| -> &'static str { lm_base::intern(&s) };
             k.push((leak(format!("{legacy} {band}")), Knob::Param(leak(format!("{key}{band}")))));
         }
     }

@@ -17,7 +17,7 @@
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -187,17 +187,10 @@ impl Ctl {
     }
 }
 
-/// An interned `&'static str` (labels made from a plugin's id and a key: few, for the life of the program)
+/// An interned `&'static str` (labels made from a plugin's id and a key: few, owned by the symbol table for the
+/// life of the program, lm_base::intern)
 pub fn intern(text: &str) -> &'static str {
-    static KEYS: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
-    let mut g = KEYS.lock().unwrap_or_else(|e| e.into_inner());
-    let set = g.get_or_insert_with(HashSet::new);
-    if let Some(x) = set.get(text) {
-        return x;
-    }
-    let x: &'static str = Box::leak(text.to_string().into_boxed_str());
-    set.insert(x);
-    x
+    lm_port::intern(text)
 }
 
 /// A translation with fallbacks: the first key that has one, else the fallback as it is

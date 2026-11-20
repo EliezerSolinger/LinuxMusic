@@ -5,6 +5,23 @@ use common::{TempDir, signal};
 use lm_sys_sndfile::{Container, Existing, Reader, Sample, WriteFormat, WriteSpec, Writer};
 use std::os::unix::fs::MetadataExt;
 
+/// Set in the child process that writes a file and then crashes (this same test binary, one test)
+const CHILD: &str = "LM_SNDFILE_CRASH_CHILD";
+
+/// Runs `test` again in a child process with the file to write in [`CHILD`], and expects it to die by `abort`: the
+/// writer is never closed nor dropped, as when the program is killed, but its handle and its memory go with the
+/// process (a `Writer` kept alive with `mem::forget` would leak libsndfile's handle instead)
+fn crash_writing(test: &str, path: &std::path::Path) {
+    use std::os::unix::process::ExitStatusExt;
+    const SIGABRT: i32 = 6;
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test, "--nocapture"])
+        .env(CHILD, path)
+        .status()
+        .unwrap();
+    assert_eq!(status.signal(), Some(SIGABRT), "the child must reach its crash (abort): {status:?}");
+}
+
 fn rf64(path: &std::path::Path) -> Writer {
     let spec = WriteSpec { format: WriteFormat::Rf64(Sample::Float32), rate: 48_000, channels: 2 };
     Writer::create(path, spec, Existing::Fail).unwrap()
@@ -12,25 +29,28 @@ fn rf64(path: &std::path::Path) -> Writer {
 
 #[test]
 fn an_rf64_left_without_closing_reads_up_to_the_last_sync() {
+    let data = signal(48_000 * 5, 2);
+    let synced = 192_000_u64;
+    if let Some(path) = std::env::var_os(CHILD) {
+        let mut w = rf64(path.as_ref());
+        // Two seconds, a checkpoint, two more, a checkpoint, then half a second more and the crash
+        for (i, block) in data.chunks(512 * 2).enumerate() {
+            w.write_f32(block).unwrap();
+            let written = (i + 1) * 512;
+            if written == 96_256 || written == 192_000 {
+                w.sync().unwrap();
+            }
+            if written >= 216_000 {
+                break;
+            }
+        }
+        assert!(w.frames() > synced);
+        // The process dies: no sf_close, no final header, the descriptor never closed
+        std::process::abort();
+    }
     let dir = TempDir::new("crash");
     let path = dir.path("rec-0001.rf64");
-    let data = signal(48_000 * 5, 2);
-    let mut w = rf64(&path);
-    // Two seconds, a checkpoint, two more, a checkpoint, then half a second more and the "crash"
-    for (i, block) in data.chunks(512 * 2).enumerate() {
-        w.write_f32(block).unwrap();
-        let written = (i + 1) * 512;
-        if written == 96_256 || written == 192_000 {
-            w.sync().unwrap();
-        }
-        if written >= 216_000 {
-            break;
-        }
-    }
-    let synced = 192_000_u64;
-    assert!(w.frames() > synced);
-    // The process dies: no sf_close, no final header, the descriptor never closed
-    std::mem::forget(w);
+    crash_writing("an_rf64_left_without_closing_reads_up_to_the_last_sync", &path);
 
     let mut r = Reader::open(&path).unwrap();
     assert_eq!(r.info().container, Container::Rf64);
@@ -53,11 +73,14 @@ fn a_file_dropped_without_close_is_still_finished() {
 #[test]
 fn a_crash_before_any_sync_leaves_a_file_that_opens() {
     // The recorder syncs after its first block; before that, the file must still not be garbage
+    if let Some(path) = std::env::var_os(CHILD) {
+        let mut w = rf64(path.as_ref());
+        w.write_f32(&signal(1_000, 2)).unwrap();
+        std::process::abort();
+    }
     let dir = TempDir::new("early");
     let path = dir.path("e.rf64");
-    let mut w = rf64(&path);
-    w.write_f32(&signal(1_000, 2)).unwrap();
-    std::mem::forget(w);
+    crash_writing("a_crash_before_any_sync_leaves_a_file_that_opens", &path);
     let r = Reader::open(&path);
     match r {
         Ok(r) => assert!(r.info().frames <= 1_000),

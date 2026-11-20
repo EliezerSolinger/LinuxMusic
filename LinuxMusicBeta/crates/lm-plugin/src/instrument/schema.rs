@@ -94,8 +94,8 @@ fn switch(key: &'static str) -> ParamSpec {
 }
 
 fn env_params(t: &str) -> Vec<ParamSpec> {
-    // The keys are permanent (C5); they are leaked once into 'static (39 short strings, for the life of the program)
-    let key = |name: &str| -> &'static str { Box::leak(format!("{t}{name}").into_boxed_str()) };
+    // The keys are permanent (C5): interned symbols, made once for the life of the program (lm_base::intern)
+    let key = |name: &str| -> &'static str { lm_base::intern(&format!("{t}{name}")) };
     vec![
         ParamSpec::new(key("Predelay"), 0.0, 2.0, 0.0),
         ParamSpec::new(key("Attack"), 0.0, 2.0, 0.0),

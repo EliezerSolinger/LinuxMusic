@@ -75,6 +75,9 @@ fn notes_of(root: &Value) -> &Value {
 }
 
 #[test]
+// A measurement of time and resident memory (read from the system through `ps` or /proc): neither means anything
+// under miri, which also cannot start a process; the random trees of json_roundtrip and robustness cover `imbl` there
+#[cfg_attr(miri, ignore)]
 #[allow(clippy::print_stdout, clippy::cast_precision_loss)]
 fn ten_thousand_notes_edited_one_at_a_time() {
     // A timing and memory budget means nothing under a sanitizer (its allocator and checks change both)
