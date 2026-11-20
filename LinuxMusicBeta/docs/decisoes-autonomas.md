@@ -1299,3 +1299,11 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   publicar o resultado) não havia atividade e a sessão se dizia assentada; o `Compiler` ganhou `pending()` (número da
   submissão contra o da última respondida). (2) um build que falha (um plugin que recusa recurso ausente) deixava o
   nó em substituição para sempre; agora fica em `failed_builds` até o documento pedir outro build dele.
+
+## A lei de ganho dos faders (20/11)
+
+- **A decisão:** os faders de volume e de envio usam a lei do fader do legado (`Fader::computeScaledRatio`: um cubo
+  sobre −120 dB até o topo, com 0 dB em cerca de 75 % do curso). O núcleo é o dono dessa lei, no `ParamRange`; a
+  interface e o mapeamento MIDI a leem de lá.
+- **O motivo:** a regra do usuário de ser conservador com o legado. A curva por partes do protótipo era invenção, e
+  abaixo de cerca de −12 dB a mesa não bateria com o fader do legado.
