@@ -54,8 +54,15 @@ git sparse-checkout set --cone LinuxMusicBeta && git checkout
   `find LinuxMusicBeta/crates LinuxMusicBeta/prototypes -name target -prune -o -name '*.rs' -exec touch {} +`
   Motivo: o Cargo dá o mesmo nome de artefato a um pacote local (por caminho) em qualquer worktree, então, sem isso, um
   build pode usar sem perceber o pacote compilado a partir do worktree de outro agente. As dependências de fora
-  continuam compartilhadas; só os nossos pacotes recompilam. O Cargo trava o `target` durante cada build, então dois
-  builds não se misturam.
+  continuam compartilhadas; só os nossos pacotes recompilam.
+- **O `target` compartilhado não é confiável para o resultado final (20/11).** Dois worktrees compilando o mesmo pacote
+  ao mesmo tempo sobrescrevem o artefato um do outro, e o toque não impede isso. Então:
+  - para iterar, use o compartilhado;
+  - **a rodada de testes que decide um commit ou um relatório roda num `target` privado**
+    (`CARGO_TARGET_DIR=/private/tmp/claude-501/tgt/<seu-nome>`), e você o apaga logo depois;
+  - antes, veja o espaço com `df -h /System/Volumes/Data`. Abaixo de 10 GB livres, rode primeiro
+    `find LinuxMusicBeta/target/{debug,release}/{deps,build,examples} -type f -mmin +90 -delete`;
+  - uma falha que só aparece no compartilhado e some no privado não conta como bug; uma falha no privado conta sempre.
 - Commit no seu worktree e `git push origin HEAD:master`. Se for recusado: `git fetch origin && git rebase origin/master`
   e push de novo. Nunca force, nunca `--autostash`.
 - Antes de começar uma etapa nova: `git fetch origin && git rebase origin/master`.
