@@ -1989,6 +1989,7 @@ fn export_between_markers(cx: &mut TestAppContext) {
     click(cx, "what-2");
     click(cx, "marker-span-1");
     assert!(cx.debug_bounds("marker-span-0").is_some());
+}
 
 /// The docks' splitters (agent B): dragging resizes the editors' dock, and the size is kept in the interface document
 #[gpui::test]
