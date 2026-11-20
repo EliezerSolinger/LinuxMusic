@@ -53,7 +53,7 @@ Darwin)
 	pkg-config --version
 	for module in sndfile samplerate fluidsynth rubberband lilv-0; do
 		printf '%s %s: ' "$module" "$(pkg-config --modversion "$module" 2>/dev/null || echo missing)"
-		pkg-config --print-errors --exists "$module" && echo ok || true
+		if pkg-config --print-errors --exists "$module"; then echo ok; fi
 	done
 	;;
 *)
