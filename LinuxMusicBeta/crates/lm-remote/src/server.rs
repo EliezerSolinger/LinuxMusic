@@ -178,6 +178,12 @@ pub struct Server {
     state: (bool, bool, bool),
     prefs: Value,
     status: Value,
+    /// The interface document (I-3.8), the learn under way and the lanes the hand won (I-21), as last sent
+    ui: Value,
+    learning: Option<lm_port::LearnId>,
+    hand_won: Vec<(NodeId, std::sync::Arc<str>)>,
+    /// The MIDI activity's counter, as far as sent
+    midi_since: u64,
     notices: Vec<Notice>,
     activity: (Vec<OperationInfo>, Instant),
     recording: Vec<lm_port::RecordingTake>,
@@ -311,6 +317,10 @@ impl Server {
             state: (false, false, false),
             prefs: Value::NULL,
             status: Value::NULL,
+            ui: Value::NULL,
+            learning: None,
+            hand_won: Vec::new(),
+            midi_since: 0,
             notices: Vec::new(),
             activity: (Vec::new(), Instant::now()),
             recording: Vec::new(),
@@ -518,6 +528,9 @@ impl Server {
             ("root", self.root.clone()),
             ("prefs", port.preferences().clone()),
             ("status", port.status().clone()),
+            ("ui", port.ui().clone()),
+            ("learning", port.learning().map_or(Value::NULL, |l| Value::int(l as i64))),
+            ("hand_won", c::hand_won_to(&port.telemetry().hand_won)),
             ("modified", Value::bool(port.modified())),
             ("can_undo", Value::bool(port.can_undo())),
             ("can_redo", Value::bool(port.can_redo())),
@@ -587,6 +600,46 @@ impl Server {
         if !(status.same_node(&self.status) || *status == self.status) {
             self.status = status.clone();
             let v = Value::object([("t", Value::text("status")), ("value", self.status.clone())]);
+            self.gui().for_each(|c| c.send_json(&v));
+        }
+        let ui = port.ui();
+        if !(ui.same_node(&self.ui) || *ui == self.ui) {
+            self.ui = ui.clone();
+            let v = Value::object([("t", Value::text("ui")), ("value", self.ui.clone())]);
+            self.gui().for_each(|c| c.send_json(&v));
+        }
+        let learning = port.learning();
+        if learning != self.learning {
+            self.learning = learning;
+            let v = Value::object([
+                ("t", Value::text("learning")),
+                ("value", learning.map_or(Value::NULL, |l| Value::int(l as i64))),
+            ]);
+            self.gui().for_each(|c| c.send_json(&v));
+        }
+        let hand_won = &port.telemetry().hand_won;
+        if *hand_won != self.hand_won {
+            self.hand_won = hand_won.clone();
+            let v = Value::object([("t", Value::text("hand_won")), ("value", c::hand_won_to(&self.hand_won))]);
+            self.gui().for_each(|c| c.send_json(&v));
+        }
+        // the interface's mapped actions, and the raw MIDI activity (lossy: only what arrived since the last pump)
+        let mut actions = Vec::new();
+        port.drain_midi_ui(&mut actions);
+        if !actions.is_empty() {
+            let v = Value::object([
+                ("t", Value::text("midi_ui")),
+                ("value", Value::list(actions.iter().map(c::ui_action_to))),
+            ]);
+            self.gui().for_each(|c| c.send_json(&v));
+        }
+        let (counter, activity) = port.midi_activity(self.midi_since);
+        self.midi_since = counter;
+        if !activity.is_empty() {
+            let v = Value::object([
+                ("t", Value::text("midi_activity")),
+                ("value", Value::list(activity.iter().map(c::activity_to))),
+            ]);
             self.gui().for_each(|c| c.send_json(&v));
         }
         let notices = port.notices();
@@ -884,6 +937,30 @@ impl Server {
                 port.cancel(OperationId(uint(msg, "op")?));
                 Ok(())
             }
+            "set_ui" => {
+                Self::need(role, Role::Control)?;
+                gui_only(mode)?;
+                let p = port.set_ui(c::path_from(get(msg, "path")?)?, get(msg, "value")?.clone());
+                self.pending(port, conn, rid()?, p, |()| Ok(Value::NULL))
+            }
+            "midi_learn" => {
+                Self::need(role, Role::Control)?;
+                gui_only(mode)?;
+                let p = port.midi_learn(c::map_target_from(get(msg, "target")?)?, c::scope_from(get(msg, "scope")?)?);
+                self.pending(port, conn, rid()?, p, |id| Ok(Value::int(id as i64)))
+            }
+            "cancel_learn" => {
+                Self::need(role, Role::Control)?;
+                gui_only(mode)?;
+                port.cancel_learn(uint(msg, "learn")?);
+                Ok(())
+            }
+            "unmap" => {
+                Self::need(role, Role::Control)?;
+                gui_only(mode)?;
+                let p = port.unmap(&c::map_target_from(get(msg, "target")?)?, c::scope_from(get(msg, "scope")?)?);
+                self.pending(port, conn, rid()?, p, |()| Ok(Value::NULL))
+            }
             "dismiss" => {
                 gui_only(mode)?;
                 port.dismiss_notice(uint(msg, "notice")?);
@@ -1174,6 +1251,7 @@ fn finished_value(f: Finished) -> Result<Value> {
         Finished::Entries(r) => r.and_then(|e| c::entries_to(&e)),
         Finished::Preview(r) => r.and_then(|p| c::preview_to(&p)),
         Finished::Imported(r) => r.map(|res| c::resource_to(&res)),
+        Finished::Learned(r) => r.map(|id| Value::int(id as i64)),
     }
 }
 

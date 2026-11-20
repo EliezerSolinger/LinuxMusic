@@ -72,7 +72,13 @@ fn main() {
     let made_track = port.root().get("tracks").is_none_or(|t| t.is_empty());
     if made_track {
         let track = Value::object([("name", Value::text("remote_check"))]);
-        let insert = EditOp::Insert { temp: 1, parent: lm_port::Ref::Id(lm_port::ROOT), list: "tracks".into(), index: 0, node: track };
+        let insert = EditOp::Insert {
+            temp: 1,
+            parent: lm_port::Ref::Id(lm_port::ROOT),
+            list: "tracks".into(),
+            index: 0,
+            node: track,
+        };
         let Pending::Waiting(id) = port.apply(Label::new("check.track"), vec![insert]) else { panic!("apply") };
         let Finished::Applied(r) = wait(&mut port, id) else { panic!("applied") };
         r.expect("track");

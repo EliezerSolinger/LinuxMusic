@@ -770,3 +770,101 @@ pub fn preview_from(v: &Value) -> Result<Preview> {
         sample_rate: u32_of(v, "rate")?,
     })
 }
+
+// --- MIDI mapping and the interface document (I-21.2, I-3.8; additions of 20/11) -----------------------------------
+
+/// A mapping's target, in the document's form (`midi.target`, the same as in a mapping node)
+pub fn map_target_to(t: &lm_port::MapTarget) -> Value {
+    let m = lm_port::Mapping {
+        id: None,
+        source: lm_port::DocSource {
+            port: Arc::from(""),
+            channel: None,
+            message: lm_port::MidiMessage::Cc { number: 0 },
+        },
+        touch: None,
+        target: t.clone(),
+        transform: Default::default(),
+        feedback: true,
+        consume: true,
+        feedback_to: None,
+    };
+    m.to_value().get("target").cloned().unwrap_or(Value::NULL)
+}
+
+pub fn map_target_from(v: &Value) -> Result<lm_port::MapTarget> {
+    let source =
+        lm_port::DocSource { port: Arc::from(""), channel: None, message: lm_port::MidiMessage::Cc { number: 0 } };
+    let m = Value::object([("source", source.to_value()), ("target", v.clone())]);
+    lm_port::Mapping::from_value(&m).map(|m| m.target)
+}
+
+pub fn scope_to(s: lm_port::MapScope) -> Value {
+    Value::text(match s {
+        lm_port::MapScope::Project => "project",
+        lm_port::MapScope::Machine => "machine",
+    })
+}
+
+pub fn scope_from(v: &Value) -> Result<lm_port::MapScope> {
+    match v.as_text() {
+        Some("project") => Ok(lm_port::MapScope::Project),
+        Some("machine") => Ok(lm_port::MapScope::Machine),
+        _ => Err(Error::new("remote.bad_message").arg("field", "scope")),
+    }
+}
+
+pub fn ui_action_to(a: &lm_port::MidiUiAction) -> Value {
+    Value::object([
+        ("action", Value::text(a.action.as_str())),
+        ("params", a.params.clone()),
+        ("value", Value::real(f64::from(a.value)).unwrap_or(Value::int(0))),
+    ])
+}
+
+pub fn ui_action_from(v: &Value) -> Result<lm_port::MidiUiAction> {
+    let bad = |f: &'static str| Error::new("remote.bad_message").arg("field", f);
+    Ok(lm_port::MidiUiAction {
+        action: lm_port::ActionId::from(v.get("action").and_then(Value::as_text).ok_or_else(|| bad("action"))?),
+        params: v.get("params").cloned().unwrap_or(Value::NULL),
+        value: v.get("value").and_then(Value::as_real).unwrap_or(0.0) as f32,
+    })
+}
+
+pub fn activity_to(a: &lm_port::MidiActivity) -> Value {
+    let s = lm_port::DocSource { port: a.port.clone(), channel: Some(a.channel), message: a.message };
+    Value::object([
+        ("source", s.to_value()),
+        ("value", Value::int(i64::from(a.value))),
+        ("mapped", Value::bool(a.mapped)),
+        ("time", Value::int(a.time.0 as i64)),
+    ])
+}
+
+pub fn activity_from(v: &Value) -> Result<lm_port::MidiActivity> {
+    let bad = |f: &'static str| Error::new("remote.bad_message").arg("field", f);
+    let s = lm_port::DocSource::from_value(v.get("source").ok_or_else(|| bad("source"))?)?;
+    Ok(lm_port::MidiActivity {
+        port: s.port,
+        channel: s.channel.unwrap_or(0),
+        message: s.message,
+        value: u16::try_from(v.get("value").and_then(Value::as_int).unwrap_or(0)).map_err(|_| bad("value"))?,
+        mapped: v.get("mapped").and_then(Value::as_bool).unwrap_or(false),
+        time: lm_base::HostTime(v.get("time").and_then(Value::as_int).unwrap_or(0) as u64),
+    })
+}
+
+pub fn hand_won_to(h: &[(NodeId, Arc<str>)]) -> Value {
+    Value::list(h.iter().map(|(n, k)| Value::list([Value::text(n.to_string()), Value::text(k.clone())])))
+}
+
+pub fn hand_won_from(v: &Value) -> Result<Vec<(NodeId, Arc<str>)>> {
+    let bad = || Error::new("remote.bad_message").arg("field", "hand_won");
+    v.items()
+        .map(|p| {
+            let n = p.at(0).and_then(Value::as_text).ok_or_else(bad)?;
+            let k = p.at(1).and_then(Value::as_shared_text).ok_or_else(bad)?;
+            Ok((NodeId::parse(n)?, k.clone()))
+        })
+        .collect()
+}

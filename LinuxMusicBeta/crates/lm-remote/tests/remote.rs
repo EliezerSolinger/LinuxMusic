@@ -91,6 +91,9 @@ impl Remote {
 /// What the script needs besides the port: waiting for results, and a point where everything sent has been seen
 trait Drive {
     fn port(&mut self) -> &mut dyn CorePort;
+    /// The core's outside world (MIDI, the engine's reports), as the fake has it
+    fn outside(&self) -> lm_port_fake::Outside;
+    fn learned(&mut self, p: Pending<lm_port::LearnId>) -> Result<lm_port::LearnId>;
     fn applied(&mut self, p: Pending<Applied>) -> Result<Applied>;
     fn unit(&mut self, p: Pending<()>) -> Result<()>;
     fn barrier(&mut self);
@@ -101,6 +104,15 @@ struct Local(FakePort);
 impl Drive for Local {
     fn port(&mut self) -> &mut dyn CorePort {
         &mut self.0
+    }
+    fn outside(&self) -> lm_port_fake::Outside {
+        self.0.outside()
+    }
+    fn learned(&mut self, p: Pending<lm_port::LearnId>) -> Result<lm_port::LearnId> {
+        match p {
+            Pending::Ready(r) => r,
+            Pending::Waiting(_) => panic!("the LocalPort never waits"),
+        }
     }
     fn applied(&mut self, p: Pending<Applied>) -> Result<Applied> {
         match p {
@@ -122,6 +134,18 @@ impl Drive for Local {
 impl Drive for Remote {
     fn port(&mut self) -> &mut dyn CorePort {
         &mut self.client
+    }
+    fn outside(&self) -> lm_port_fake::Outside {
+        self.core.outside()
+    }
+    fn learned(&mut self, p: Pending<lm_port::LearnId>) -> Result<lm_port::LearnId> {
+        match p {
+            Pending::Ready(r) => r,
+            Pending::Waiting(id) => match self.wait(id) {
+                Finished::Learned(r) => r,
+                other => panic!("{other:?}"),
+            },
+        }
     }
     fn applied(&mut self, p: Pending<Applied>) -> Result<Applied> {
         match p {
@@ -154,6 +178,8 @@ struct Seen {
     results: Vec<String>,
     root: Value,
     flags: (bool, bool, bool),
+    /// the interface document (I-3.8)
+    ui: Value,
 }
 
 fn label(k: &'static str) -> Label {
@@ -164,7 +190,13 @@ fn label(k: &'static str) -> Label {
 fn script(d: &mut dyn Drive) -> Seen {
     let mut all = d.port().feed(Topic::All);
     let mut tracks = d.port().feed(Topic::Type("track"));
-    let mut seen = Seen { diffs: Vec::new(), results: Vec::new(), root: Value::NULL, flags: (false, false, false) };
+    let mut seen = Seen {
+        diffs: Vec::new(),
+        results: Vec::new(),
+        root: Value::NULL,
+        flags: (false, false, false),
+        ui: Value::NULL,
+    };
     let mut look = |d: &mut dyn Drive, step: &'static str, seen: &mut Seen| {
         d.barrier();
         let a = d.port().drain(&mut all);
@@ -258,6 +290,59 @@ fn script(d: &mut dyn Drive) -> Seen {
     seen.results.push(format!("{:?}", d.unit(p).map_err(|e| e.key())));
     look(d, "action", &mut seen);
 
+    // The interface document (I-3.8): the selection
+    let sel =
+        Value::object([("track", Value::text(first.to_string())), ("channel", Value::NULL), ("plugin", Value::NULL)]);
+    let p = d.port().set_ui(vec![PathStep::key("selection")], sel);
+    d.unit(p).expect("set_ui");
+    d.barrier();
+    seen.ui = d.port().ui().clone();
+
+    // MIDI learn (I-21.2): the first control moved makes the mapping; the activity shows it
+    let out = d.outside();
+    let volume = lm_port::MapTarget::Param { node: lm_port::NodeRef::Id(first), key: "volume".into() };
+    let p = d.port().midi_learn(volume.clone(), lm_port::MapScope::Project);
+    let learn = d.learned(p).expect("learn");
+    d.barrier();
+    seen.results.push(format!("learning {:?}", d.port().learning() == Some(learn)));
+    out.midi("Controlador 1", 0, lm_port::MidiMessage::Cc { number: 7 }, 64);
+    d.barrier();
+    d.barrier();
+    seen.results.push(format!("learned {:?}", d.port().learning()));
+    let (_, act) = d.port().midi_activity(0);
+    seen.results.push(format!("activity {:?}", act.iter().map(|a| (a.channel, a.value, a.mapped)).collect::<Vec<_>>()));
+    look(d, "learned", &mut seen);
+
+    // A mapped interface action (machine scope) reaches the interface's feed
+    let zoom = lm_port::MapTarget::Action { id: "arrange.zoom_in".into(), params: Value::NULL, value_into: None };
+    let p = d.port().midi_learn(zoom, lm_port::MapScope::Machine);
+    d.learned(p).expect("learn");
+    d.barrier();
+    for _ in 0..2 {
+        out.midi("Controlador 1", 0, lm_port::MidiMessage::Note { key: 36 }, 127);
+        d.barrier();
+        d.barrier();
+    }
+    let mut ui = Vec::new();
+    d.port().drain_midi_ui(&mut ui);
+    seen.results.push(format!("ui {:?}", ui.iter().map(|a| a.action.as_str().to_owned()).collect::<Vec<_>>()));
+
+    // The hand won on a lane (I-21.5), until re-armed
+    out.hand_wins(first, "volume");
+    d.barrier();
+    d.barrier();
+    seen.results.push(format!("hand {:?}", d.port().telemetry().hand_won));
+    let p = d.port().run_action(ActionId::from("automation.rearm"), Value::empty_object());
+    d.unit(p).expect("rearm");
+    d.barrier();
+    d.barrier();
+    seen.results.push(format!("rearmed {:?}", d.port().telemetry().hand_won));
+
+    // Unmapping
+    let p = d.port().unmap(&volume, lm_port::MapScope::Project);
+    d.unit(p).expect("unmap");
+    look(d, "unmapped", &mut seen);
+
     seen.root = d.port().root().without("meta");
     seen.flags = (d.port().modified(), d.port().can_undo(), d.port().can_redo());
     seen
@@ -307,6 +392,15 @@ fn the_same_script_gives_the_same_tree_and_diffs() {
     let no_seed = |v: &Value| v.with("project", v.get("project").unwrap().without("seed"));
     assert_eq!(first_difference(&no_seed(&a.root), &no_seed(&b.root), String::new()), None);
     assert_eq!(a.flags, b.flags);
+    assert_eq!(a.ui, b.ui, "the interface document");
+    assert!(a.ui.get("selection").is_some());
+    // the I-21 steps did something on both sides
+    assert!(a.results.iter().any(|r| r.contains("arrange.zoom_in")), "{:?}", a.results);
+    assert!(
+        a.results.iter().any(|r| r.starts_with("hand [")) && !a.results.iter().any(|r| r == "hand []"),
+        "{:?}",
+        a.results
+    );
     // The server's core has the same tree as the mirror
     assert_eq!(remote.core.root().without("meta"), b.root);
 }

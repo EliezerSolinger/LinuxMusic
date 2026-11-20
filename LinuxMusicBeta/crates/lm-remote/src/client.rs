@@ -147,6 +147,8 @@ enum Kind {
     Preview,
     Ping,
     Imported,
+    /// `midi_learn`: the learn's number
+    Learned,
     /// A plain value (the project list): collected by `values`
     Value,
 }
@@ -385,6 +387,13 @@ pub struct RemotePort {
     can_redo: bool,
     prefs: Value,
     status: Value,
+    /// The interface document (I-3.8) and the learn under way (I-21.2), as the server last sent them
+    ui: Value,
+    learning: Option<lm_port::LearnId>,
+    /// The interface's mapped actions not yet drained, and the raw MIDI activity with its own counter
+    midi_ui: Vec<lm_port::MidiUiAction>,
+    midi_activity: std::collections::VecDeque<(u64, lm_port::MidiActivity)>,
+    midi_counter: u64,
     notices: Vec<Notice>,
     activity: Vec<OperationInfo>,
     telemetry: TelemetryView,
@@ -500,6 +509,11 @@ impl RemotePort {
             can_redo: false,
             prefs: Value::NULL,
             status: Value::NULL,
+            ui: Value::NULL,
+            learning: None,
+            midi_ui: Vec::new(),
+            midi_activity: std::collections::VecDeque::new(),
+            midi_counter: 0,
             notices: Vec::new(),
             activity: Vec::new(),
             telemetry,
@@ -548,6 +562,10 @@ impl RemotePort {
     fn session_state(&mut self, s: &Value) -> Result<()> {
         self.prefs = get(s, "prefs")?.clone();
         self.status = get(s, "status")?.clone();
+        // the additions of 20/11 (absent from an older server)
+        self.ui = s.get("ui").cloned().unwrap_or(Value::NULL);
+        self.learning = s.get("learning").and_then(Value::as_int).map(|l| l as u64);
+        self.telemetry.hand_won = s.get("hand_won").map(c::hand_won_from).transpose()?.unwrap_or_default();
         self.flags(s)?;
         self.notices = c::list(s, "notices")?.map(c::notice_from).collect::<Result<_>>()?;
         self.activity = c::list(s, "activity")?.map(c::operation_from).collect::<Result<_>>()?;
@@ -802,6 +820,23 @@ impl RemotePort {
             "state" => self.flags(m)?,
             "prefs" => self.prefs = get(m, "value")?.clone(),
             "status" => self.status = get(m, "value")?.clone(),
+            "ui" => self.ui = get(m, "value")?.clone(),
+            "learning" => self.learning = get(m, "value")?.as_int().map(|l| l as u64),
+            "hand_won" => self.telemetry.hand_won = c::hand_won_from(get(m, "value")?)?,
+            "midi_ui" => {
+                for a in c::list(m, "value")? {
+                    self.midi_ui.push(c::ui_action_from(a)?);
+                }
+            }
+            "midi_activity" => {
+                for a in c::list(m, "value")? {
+                    self.midi_counter += 1;
+                    self.midi_activity.push_back((self.midi_counter, c::activity_from(a)?));
+                }
+                while self.midi_activity.len() > 256 {
+                    self.midi_activity.pop_front();
+                }
+            }
             "notices" => self.notices = c::list(m, "value")?.map(c::notice_from).collect::<Result<_>>()?,
             "activity" => self.activity = c::list(m, "value")?.map(c::operation_from).collect::<Result<_>>()?,
             "loading" => {
@@ -896,6 +931,7 @@ fn failed(kind: Kind, e: Error) -> Finished {
         Kind::Entries => Finished::Entries(Err(e)),
         Kind::Preview => Finished::Preview(Err(e)),
         Kind::Imported => Finished::Imported(Err(e)),
+        Kind::Learned => Finished::Learned(Err(e)),
         Kind::Value => Finished::Done(Err(e)),
     }
 }
@@ -911,6 +947,9 @@ fn finish(kind: Kind, r: Result<Value>) -> Finished {
         Kind::Entries => Finished::Entries(r.and_then(|v| c::entries_from(&v))),
         Kind::Preview => Finished::Preview(r.and_then(|v| c::preview_from(&v))),
         Kind::Imported => Finished::Imported(r.and_then(|v| c::resource_from(&v))),
+        Kind::Learned => Finished::Learned(r.and_then(|v| {
+            v.as_int().map(|i| i as u64).ok_or_else(|| Error::new("remote.bad_message").arg("field", "learn"))
+        })),
         Kind::Value => Finished::Done(r.map(|_| ())),
     }
 }
@@ -1125,6 +1164,50 @@ impl CorePort for RemotePort {
 
     fn status(&self) -> &Value {
         &self.status
+    }
+
+    fn ui(&self) -> &Value {
+        &self.ui
+    }
+
+    fn set_ui(&mut self, path: Vec<PathStep>, value: Value) -> Pending<()> {
+        // shown at once (the server's answer confirms it, or its next `ui` corrects it)
+        if let Ok(v) = self.ui.with_path(&path, value.clone()) {
+            self.ui = v;
+        }
+        match c::path_to(&path) {
+            Ok(p) => self.request(Kind::Done, Self::message("set_ui", [("path", p), ("value", value)])),
+            Err(e) => Pending::Ready(Err(e)),
+        }
+    }
+
+    fn midi_learn(&mut self, target: lm_port::MapTarget, scope: lm_port::MapScope) -> Pending<lm_port::LearnId> {
+        let msg = Self::message("midi_learn", [("target", c::map_target_to(&target)), ("scope", c::scope_to(scope))]);
+        self.request(Kind::Learned, msg)
+    }
+
+    fn cancel_learn(&mut self, id: lm_port::LearnId) {
+        if self.learning == Some(id) {
+            self.learning = None;
+        }
+        self.send(&Self::message("cancel_learn", [("learn", Value::int(id as i64))]));
+    }
+
+    fn learning(&self) -> Option<lm_port::LearnId> {
+        self.learning
+    }
+
+    fn unmap(&mut self, target: &lm_port::MapTarget, scope: lm_port::MapScope) -> Pending<()> {
+        let msg = Self::message("unmap", [("target", c::map_target_to(target)), ("scope", c::scope_to(scope))]);
+        self.request(Kind::Done, msg)
+    }
+
+    fn drain_midi_ui(&mut self, out: &mut Vec<lm_port::MidiUiAction>) {
+        out.append(&mut self.midi_ui);
+    }
+
+    fn midi_activity(&self, since: u64) -> (u64, Vec<lm_port::MidiActivity>) {
+        (self.midi_counter, self.midi_activity.iter().filter(|(n, _)| *n > since).map(|(_, a)| a.clone()).collect())
     }
 
     fn devices(&mut self) -> Pending<Vec<DeviceInfo>> {

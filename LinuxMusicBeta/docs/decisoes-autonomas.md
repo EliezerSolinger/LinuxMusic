@@ -326,6 +326,13 @@ de forma diz pelo que é substituído.
   `TelemetryView::hand_won`. Os métodos têm corpo padrão só na transição, para o `lm-session` e o `lm-remote`
   seguirem compilando; o falso já responde, e as portas de verdade passam a responder (a `LocalPort` pelo agente da
   I-21). A `RemotePort` precisa levar `hand_won` na telemetria do fio.
+- **O `lm-remote` leva as chamadas novas (agente A, 20/11):**
+  - `ui`, o aprendizado em curso, `hand_won` e a atividade MIDI vão do servidor ao espelho como `prefs` e `status`:
+    no retrato inicial e quando mudam;
+  - as ações da interface mapeadas vão como `midi_ui`;
+  - `set_ui`, `midi_learn`, `unmap` e `cancel_learn` são pedidos (o aprendizado responde com `Finished::Learned`);
+  - o alvo de um mapa viaja na forma do documento (`midi.target`);
+  - o roteiro único (LocalPort contra RemotePort) passou a cobrir tudo isso.
 - **O documento da interface no `CorePort`** (`ui`/`set_ui`, agente A, pedido pelo agente da I-21 e pelo B): a
   seleção (`selection: { track, channel, plugin }`) e o estado da interface (as docas do B) vivem nele, como a I-3.8
   manda. A `Workspace` escreve a seleção quando uma página muda (observando as páginas), e só se ela mudou.

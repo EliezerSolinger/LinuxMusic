@@ -111,6 +111,8 @@ pub enum Finished {
     Preview(Result<Preview>),
     /// `import`: the resource the file became in the project's store
     Imported(Result<Resource>),
+    /// `midi_learn`: the learn's number (addition of 20/11, I-21.2)
+    Learned(Result<LearnId>),
 }
 
 /// An action of the registry (I-19), by id: `"transport.play"`, `"notes.quantize"`
