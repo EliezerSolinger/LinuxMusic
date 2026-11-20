@@ -14,6 +14,7 @@ mod library;
 mod midi;
 pub use midi::Outside;
 pub mod peaks;
+mod ranges;
 mod services;
 
 use std::collections::HashMap;
@@ -1121,6 +1122,10 @@ impl CorePort for FakePort {
             pairs: pairs[a..z].into(),
             length: p.length,
         }))
+    }
+
+    fn param_range(&self, node: NodeId, key: &str) -> Option<lm_port::ParamRange> {
+        ranges::param_range(self.doc.find(node).as_ref(), node, key)
     }
 
     fn display(&self, node: NodeId) -> Option<DisplayView> {

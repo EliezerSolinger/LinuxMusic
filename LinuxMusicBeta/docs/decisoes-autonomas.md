@@ -817,6 +817,11 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
 - **B-LK-3 As docas se redimensionam** arrastando a divisória (a de baixo, dos editores, e as dos lados), e o
   tamanho fica no documento da interface (`docks: {bottom, left, right}`, I-3.8), salvo com o projeto; no legado as
   janelas eram livres (MDI), e o tamanho do editor ficava no arquivo do projeto.
+- **B-LK-4 Uma lei de valores:** `ParamRange`/`RangeScale` saíram do `lm-render` para o `lm-base` (o `lm-port` não
+  pode ser dono deles: ele já depende do `lm-render`), e o `CorePort` ganhou `param_range` (I-15). O editor de
+  automação desenha com a lei do núcleo e manda escalar e afinar ao núcleo, sem conta própria; o lápis livre grava os
+  pontos crus e pede `automation.thin` no trecho. Em aberto: o fader da interface põe 0 dB a 75 % do curso (o do
+  legado) e a lei `Gain` do núcleo a ~83 %; a escolha é do agente da I-21 com o agente A.
 
 ## Expressões de nota, loop e swing do item MIDI (20/11)
 

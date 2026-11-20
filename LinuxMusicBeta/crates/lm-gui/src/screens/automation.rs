@@ -22,7 +22,7 @@ use gpui::{
     PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString, Window, canvas, div, fill, point,
     prelude::*, px, size,
 };
-use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, Topic, Value};
+use lm_port::{CorePort, EditOp, Feed, GestureId, HostTime, Label, NodeId, ParamRange, RangeScale, Topic, Value};
 
 use super::ScreenCx;
 use super::piano_roll::kit::{
@@ -31,7 +31,7 @@ use super::piano_roll::kit::{
 };
 use super::piano_roll::music::{self, BAR, BEAT, Clip, GRIDS, NoteMap};
 use crate::model;
-use crate::ui::{THEME, button, c, tr, track_color};
+use crate::ui::{THEME, button, c, tr, track_color, trf};
 use crate::view;
 
 const ROW_H: f32 = 26.0;
@@ -117,31 +117,23 @@ impl Pt {
     }
 }
 
-/// How the values sit on the height: the volume by its fader's travel, the rest linear in a range
+/// How the values sit on the height: the parameter's own law, as the core serves it (`CorePort::param_range`):
+/// the same law the compiler uses for mapped MIDI and automation, so the curve drawn is the curve played
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Range {
-    Gain,
-    Linear(f64, f64),
-}
+pub struct Range(pub ParamRange);
 
 impl Range {
     pub fn norm(self, v: f64) -> f64 {
-        match self {
-            Range::Gain => view::gain_to_travel(v.max(0.0)),
-            Range::Linear(a, b) => (v - a) / (b - a).max(1e-9),
-        }
+        self.0.normalize(v as f32) as f64
     }
     pub fn denorm(self, t: f64) -> f64 {
-        let t = t.clamp(0.0, 1.0);
-        match self {
-            Range::Gain => view::travel_to_gain(t),
-            Range::Linear(a, b) => a + t * (b - a),
-        }
+        self.0.to_units(t.clamp(0.0, 1.0) as f32) as f64
     }
     fn format(self, v: f64) -> String {
-        match self {
-            Range::Gain => view::format_gain(v),
-            Range::Linear(..) => format!("{v:.2}"),
+        match self.0.scale {
+            RangeScale::Gain => view::format_gain(v),
+            RangeScale::Stepped => format!("{v:.0}"),
+            _ => format!("{v:.2}"),
         }
     }
 }
@@ -156,12 +148,14 @@ pub struct Lane {
     pub color: u32,
     pub mode: String,
     pub points: Arc<Vec<Pt>>,
-    pub range: Range,
+    /// the parameter's law; `None` when the core has none for it (the editor says so and does not edit)
+    pub range: Option<Range>,
 }
 
 impl Lane {
-    /// Every lane of the project: the tracks', the desk channels' and the master's
-    pub fn all(root: &Value) -> Vec<Lane> {
+    /// Every lane of the project: the tracks', the desk channels' and the master's, each with its parameter's law
+    pub fn all(port: &dyn CorePort) -> Vec<Lane> {
+        let root = port.root();
         let mut out = Vec::new();
         let mut owners: Vec<(&Value, u32)> =
             model::list(root, "tracks").enumerate().map(|(i, t)| (t, track_color(i))).collect();
@@ -175,19 +169,12 @@ impl Lane {
                 let param = a.get("target").map(|t| model::text(t, "param").to_string()).unwrap_or_default();
                 let mut points: Vec<Pt> = model::list(a, "points").map(Pt::read).collect();
                 points.sort_by_key(|p| p.tick);
-                let range = match param.as_str() {
-                    "volume" => Range::Gain,
-                    "pan" => Range::Linear(-1.0, 1.0),
-                    _ => {
-                        let lo = points.iter().map(|p| p.value.min(p.leaving())).fold(0.0, f64::min);
-                        let hi = points.iter().map(|p| p.value.max(p.leaving())).fold(1.0, f64::max);
-                        Range::Linear(lo, hi)
-                    }
-                };
+                let target = a.get("target").and_then(|t| model::ref_of(t, "node"));
+                let range = target.and_then(|n| port.param_range(n, &param)).map(Range);
                 out.push(Lane {
                     id,
                     owner: model::text(o, "name").to_string(),
-                    target: a.get("target").and_then(|t| model::ref_of(t, "node")),
+                    target,
                     param,
                     color,
                     mode: a.get("mode").and_then(Value::as_text).unwrap_or("read").to_string(),
@@ -199,13 +186,31 @@ impl Lane {
         out
     }
 
-    pub fn read(root: &Value, id: NodeId) -> Option<Lane> {
-        Lane::all(root).into_iter().find(|l| l.id == id)
+    pub fn read(port: &dyn CorePort, id: NodeId) -> Option<Lane> {
+        Lane::all(port).into_iter().find(|l| l.id == id)
+    }
+
+    /// The ids of the lanes (no laws needed): the first one opens when no lane is asked for
+    pub fn ids(root: &Value) -> Vec<NodeId> {
+        let tracks = model::list(root, "tracks");
+        let channels = model::at(root, &["mixer", "channels"]).into_iter().flat_map(Value::items);
+        let master = model::at(root, &["mixer", "master"]).into_iter();
+        tracks
+            .chain(channels)
+            .chain(master)
+            .flat_map(|o| model::list(o, "automation"))
+            .filter_map(model::id_of)
+            .collect()
+    }
+
+    /// The law to draw and edit with (a lane without one is not drawn: see `range`)
+    pub fn law(&self) -> Range {
+        self.range.unwrap_or(Range(ParamRange::linear(0.0, 1.0)))
     }
 
     /// The value at `tick` (the compiler's rule: a segment's shape is the one of the point it ends at)
     pub fn value_at(&self, tick: f64) -> f64 {
-        value_at(&self.points, tick, self.range)
+        value_at(&self.points, tick, self.law())
     }
 }
 
@@ -249,29 +254,6 @@ pub fn value_at(pts: &[Pt], tick: f64, range: Range) -> f64 {
         }
     }
     pts[pts.len() - 1].leaving()
-}
-
-/// Keep a point only where the line from the last kept one stops explaining the stroke (the pencil, on release)
-pub fn thin(stroke: &[(i64, f64)], tolerance: f64) -> Vec<(i64, f64)> {
-    if stroke.len() <= 2 {
-        return stroke.to_vec();
-    }
-    let mut out = vec![stroke[0]];
-    let mut last = 0;
-    for i in 2..stroke.len() {
-        let (t0, v0) = stroke[last];
-        let (t1, v1) = stroke[i];
-        let bad = stroke[last + 1..i].iter().any(|(t, v)| {
-            let f = (*t - t0) as f64 / (t1 - t0).max(1) as f64;
-            (v0 + (v1 - v0) * f - v).abs() > tolerance
-        });
-        if bad {
-            last = i - 1;
-            out.push(stroke[last]);
-        }
-    }
-    out.push(stroke[stroke.len() - 1]);
-    out
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -361,6 +343,8 @@ pub struct AutomationEditor {
     clipboard: Vec<Pt>,
     cursor: i64,
     last_added: Option<i64>,
+    /// the last lane edit the core refused (shown in the toolbar until the next one)
+    error: Option<String>,
     playing: Option<(HostTime, i64)>,
     ticks_per_sec: f64,
     curve_bounds: Rc<Cell<Bounds<Pixels>>>,
@@ -371,7 +355,7 @@ impl AutomationEditor {
     pub fn new(scx: ScreenCx, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (feed, lane, tps) = scx.core.update(cx, |core, _| {
             let root = core.port().root();
-            let lane = scx.target.filter(|t| t.kind == b'a').or_else(|| Lane::all(root).first().map(|l| l.id));
+            let lane = scx.target.filter(|t| t.kind == b'a').or_else(|| Lane::ids(root).first().copied());
             let map = model::tempo_map(root);
             let tps = map.tick_at(map.sample_rate() as i64) as f64;
             (core.port_mut().feed(Topic::All), lane, tps.max(1.0))
@@ -396,6 +380,7 @@ impl AutomationEditor {
             clipboard: Vec::new(),
             cursor: 0,
             last_added: None,
+            error: None,
             playing: None,
             ticks_per_sec: tps,
             curve_bounds: Rc::new(Cell::new(Bounds::default())),
@@ -405,7 +390,7 @@ impl AutomationEditor {
     }
 
     pub fn lane(&self, cx: &gpui::App) -> Option<Lane> {
-        self.lane.and_then(|id| Lane::read(self.scx.core.read(cx).port().root(), id))
+        self.lane.and_then(|id| Lane::read(self.scx.core.read(cx).port(), id))
     }
 
     fn grid_ticks(&self) -> i64 {
@@ -416,7 +401,7 @@ impl AutomationEditor {
     fn v_range(&self, lane: &Lane) -> (f64, f64) {
         if self.zoom_y == 0 {
             let vals: Vec<f64> =
-                lane.points.iter().flat_map(|p| [lane.range.norm(p.value), lane.range.norm(p.leaving())]).collect();
+                lane.points.iter().flat_map(|p| [lane.law().norm(p.value), lane.law().norm(p.leaving())]).collect();
             if vals.is_empty() {
                 return (0.0, 1.0);
             }
@@ -464,7 +449,7 @@ impl AutomationEditor {
                 if out && p.out.is_none() {
                     continue;
                 }
-                let d = (self.norm_to_y(lane.range.norm(v), vr) - y).abs() + (px_ - x).abs();
+                let d = (self.norm_to_y(lane.law().norm(v), vr) - y).abs() + (px_ - x).abs();
                 if d < 10.0 && best.is_none_or(|b| d < b.2) {
                     best = Some((i, out, d));
                 }
@@ -482,7 +467,7 @@ impl AutomationEditor {
                 continue;
             }
             let mid = (a.tick + b.tick) as f64 / 2.0;
-            let (hx, hy) = (self.tick_to_x(mid), self.norm_to_y(lane.range.norm(lane.value_at(mid)), vr));
+            let (hx, hy) = (self.tick_to_x(mid), self.norm_to_y(lane.law().norm(lane.value_at(mid)), vr));
             if (hx - x).abs() < 6.0 && (hy - y).abs() < 6.0 {
                 return Some((i, b.value >= a.leaving()));
             }
@@ -614,7 +599,7 @@ impl AutomationEditor {
                     self.drag = Some(Drag::Rect { from: p, to: p });
                 } else {
                     let t = self.snap_tick(tick, primary(&ev.modifiers) || ev.modifiers.alt);
-                    let v = lane.range.denorm(self.y_to_norm(y, vr));
+                    let v = lane.law().denorm(self.y_to_norm(y, vr));
                     let mut p = Pt::new(t, v, self.shape);
                     p.tension = self.tension;
                     match (
@@ -632,8 +617,8 @@ impl AutomationEditor {
                                 let f = (k - t0) as f64 / (t1 - t0).max(1) as f64;
                                 pts.push(Pt::new(
                                     k,
-                                    lane.range
-                                        .denorm(lane.range.norm(va) + (lane.range.norm(vb) - lane.range.norm(va)) * f),
+                                    lane.law()
+                                        .denorm(lane.law().norm(va) + (lane.law().norm(vb) - lane.law().norm(va)) * f),
                                     Shape::Curve,
                                 ));
                                 k += step;
@@ -651,7 +636,7 @@ impl AutomationEditor {
                             self.transact("Add a point", pts, cx);
                             self.last_added = Some(t);
                             let origin = self.lane(cx).map(|l| l.points).unwrap_or_default();
-                            self.drag = Some(Drag::Move { g: None, origin, from: (t as f64, lane.range.norm(v)) });
+                            self.drag = Some(Drag::Move { g: None, origin, from: (t as f64, lane.law().norm(v)) });
                         }
                     }
                 }
@@ -666,7 +651,7 @@ impl AutomationEditor {
         let vr = self.v_range(&lane);
         let (x, y) = Self::local(&self.curve_bounds, ev.position);
         let tick = self.x_to_tick(x);
-        let r = lane.range;
+        let r = lane.law();
         match &mut drag {
             Drag::Move { g, origin, from } => {
                 let sel = self.sel.clone();
@@ -751,7 +736,7 @@ impl AutomationEditor {
                     let (x0, x1) = (from.x.as_f32().min(to.x.as_f32()), from.x.as_f32().max(to.x.as_f32()));
                     let (y0, y1) = (from.y.as_f32().min(to.y.as_f32()), from.y.as_f32().max(to.y.as_f32()));
                     for (i, p) in lane.points.iter().enumerate() {
-                        let (x, y) = (self.tick_to_x(p.tick as f64), self.norm_to_y(lane.range.norm(p.value), vr));
+                        let (x, y) = (self.tick_to_x(p.tick as f64), self.norm_to_y(lane.law().norm(p.value), vr));
                         if x >= x0 && x <= x1 && y >= y0 && y <= y1 {
                             self.sel.insert(i);
                         }
@@ -767,15 +752,20 @@ impl AutomationEditor {
                 }
             }
             Drag::Pencil { stroke } => {
-                // the stroke becomes the fewest points that follow it, replacing the points under it (I-21.5)
+                // the stroke's raw points replace the points under it, then the core thins them with the
+                // parameter's own tolerance (I-21.5)
                 if let (Some(lane), true) = (self.lane(cx), stroke.len() >= 2) {
                     let (t0, t1) = (stroke[0].0, stroke[stroke.len() - 1].0);
                     let mut pts: Vec<Pt> = lane.points.iter().filter(|p| p.tick < t0 || p.tick > t1).copied().collect();
-                    pts.extend(
-                        thin(&stroke, 0.01).into_iter().map(|(t, v)| Pt::new(t, lane.range.denorm(v), Shape::Curve)),
-                    );
+                    pts.extend(stroke.iter().map(|(t, v)| Pt::new(*t, lane.law().denorm(*v), Shape::Curve)));
                     self.sel.clear();
                     self.transact("Draw freehand", pts, cx);
+                    let params = Value::object([
+                        ("lane", Value::text(lane.id.to_string())),
+                        ("from", Value::int(t0)),
+                        ("to", Value::int(t1)),
+                    ]);
+                    self.lane_action("automation.thin", params, cx);
                 }
             }
         }
@@ -828,7 +818,7 @@ impl AutomationEditor {
             |lane, pts| {
                 let (a, b) =
                     (pts.iter().map(|p| p.tick).min().unwrap_or(0), pts.iter().map(|p| p.tick).max().unwrap_or(0));
-                let r = lane.range;
+                let r = lane.law();
                 pts.iter()
                     .map(|p| {
                         if in_time {
@@ -857,49 +847,44 @@ impl AutomationEditor {
         cx.notify();
     }
 
-    /// Scale and offset the selection's values (I-21.5): the core's action, or here when it has none
+    /// Runs a lane edit of the core (I-21.5); a failure is shown, never redone here with a law of the editor's own
+    fn lane_action(&mut self, action: &'static str, params: Value, cx: &mut Context<Self>) {
+        let r = self.scx.core.update(cx, |core, _| core.port_mut().run_action(action.into(), params));
+        self.error = match r {
+            lm_port::Pending::Ready(Err(e)) => Some(e.label.key.to_string()),
+            _ => None,
+        };
+        cx.notify();
+    }
+
+    /// The lane's span the edit applies to: the selection's ticks, or the whole lane
+    fn span(&self, cx: &gpui::App, params: &mut Vec<(&'static str, Value)>) {
+        let Some(lane) = self.lane(cx) else { return };
+        let ticks: Vec<i64> = self.sel.iter().filter_map(|i| lane.points.get(*i)).map(|p| p.tick).collect();
+        if let (Some(a), Some(z)) = (ticks.iter().min(), ticks.iter().max()) {
+            params.push(("from", Value::int(*a)));
+            params.push(("to", Value::int(*z)));
+        }
+    }
+
+    /// Scale and offset the values (I-21.5), in the parameter's normalized law: the core's `automation.scale`
     fn scale_values(&mut self, factor: f64, offset: f64, cx: &mut Context<Self>) {
         let Some(id) = self.lane else { return };
-        let params = Value::object([
+        let mut params = vec![
             ("lane", Value::text(id.to_string())),
             ("scale", Value::real(factor).unwrap_or(Value::NULL)),
             ("offset", Value::real(offset).unwrap_or(Value::NULL)),
-        ]);
-        if self.sel.is_empty() {
-            let ok = self
-                .scx
-                .core
-                .update(cx, |core, _| core.port_mut().run_action("automation.scale".into(), params).ok().is_some());
-            if ok {
-                return;
-            }
-        }
-        self.change_selected(
-            "Scale values",
-            |lane, pts| {
-                let r = lane.range;
-                let f = |v: f64| r.denorm(r.norm(v) * factor + offset);
-                pts.iter().map(|p| Pt { value: f(p.value), out: p.out.map(f), ..*p }).collect()
-            },
-            cx,
-        );
+        ];
+        self.span(cx, &mut params);
+        self.lane_action("automation.scale", Value::object(params), cx);
     }
 
-    /// Thin the lane (I-21.5): the core's action, or here when it has none
+    /// Thin the lane with the parameter's own tolerance (I-21.5): the core's `automation.thin`
     fn thin_lane(&mut self, cx: &mut Context<Self>) {
-        let Some(lane) = self.lane(cx) else { return };
-        let params = Value::object([("lane", Value::text(lane.id.to_string()))]);
-        let ok = self
-            .scx
-            .core
-            .update(cx, |core, _| core.port_mut().run_action("automation.thin".into(), params).ok().is_some());
-        if !ok {
-            let stroke: Vec<(i64, f64)> = lane.points.iter().map(|p| (p.tick, lane.range.norm(p.value))).collect();
-            let kept: BTreeSet<i64> = thin(&stroke, 0.005).into_iter().map(|(t, _)| t).collect();
-            let pts = lane.points.iter().filter(|p| kept.contains(&p.tick) || p.out.is_some()).copied().collect();
-            self.sel.clear();
-            self.transact("Thin", pts, cx);
-        }
+        let Some(id) = self.lane else { return };
+        let mut params = vec![("lane", Value::text(id.to_string()))];
+        self.span(cx, &mut params);
+        self.lane_action("automation.thin", Value::object(params), cx);
     }
 
     fn set_mode(&mut self, mode: &'static str, cx: &mut Context<Self>) {
@@ -936,7 +921,7 @@ impl AutomationEditor {
         let root = self.scx.core.read(cx).port().root();
         let mode = self.lane(cx).map(|l| l.mode).unwrap_or_default();
         match m {
-            Menu::Lane => Lane::all(root)
+            Menu::Lane => Lane::all(self.scx.core.read(cx).port())
                 .into_iter()
                 .map(|l| MenuItem::new(format!("{} · {}", l.owner, l.param), self.lane == Some(l.id)).color(l.color))
                 .collect(),
@@ -981,7 +966,7 @@ impl AutomationEditor {
         let root = self.scx.core.read(cx).port().root();
         match m {
             Menu::Lane => {
-                if let Some(id) = Lane::all(root).get(i).map(|l| l.id) {
+                if let Some(id) = Lane::ids(root).get(i).copied() {
                     self.open_lane(id, cx);
                 }
             }
@@ -1207,7 +1192,7 @@ impl CurvePaint {
         // the curve: one stroke and one fill, a sample every 3 px, exact at each point (an out value is a jump)
         let pts: Vec<Pt> =
             self.lane.points.iter().enumerate().filter(|(i, _)| !self.gone.contains(i)).map(|(_, p)| *p).collect();
-        let range = self.lane.range;
+        let range = self.lane.law();
         let at = |t: f64| range.norm(value_at(&pts, t, range));
         let mut line: Vec<Point<Pixels>> = Vec::new();
         let mut k = pts.partition_point(|p| (p.tick as f64) < self.t(-3.0));
@@ -1320,7 +1305,7 @@ impl Render for AutomationEditor {
             // I-3.6: after an undo the selection may point past the list: dropped
             let port = self.scx.core.read(cx).port();
             if port.drain(&mut self.feed).is_some() {
-                let n = self.lane.and_then(|id| Lane::read(port.root(), id)).map(|l| l.points.len());
+                let n = self.lane.and_then(|id| Lane::read(port, id)).map(|l| l.points.len());
                 match n {
                     None => self.lane = None,
                     Some(n) => self.sel.retain(|i| *i < n),
@@ -1358,6 +1343,15 @@ impl Render for AutomationEditor {
                     .justify_center()
                     .text_color(c(THEME.text2))
                     .child(tr("Double-click on an automation lane to open it here"))
+                    .into_any_element(),
+                // a parameter the core gives no law for is not drawn nor edited (one law: the core's)
+                Some(lane) if lane.range.is_none() => div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(c(THEME.red))
+                    .child(tr("The core gives no range for this parameter: the lane cannot be drawn"))
                     .into_any_element(),
                 Some(lane) => div()
                     .flex_1()
@@ -1552,6 +1546,11 @@ impl AutomationEditor {
             ))
             .child(combo("ae-tools", Some("tool"), Menu::Tools, "".into(), "Scale, thin, copy and paste the points"))
             .child(div().flex_1())
+            .children(
+                self.error.clone().map(|e| {
+                    div().text_size(px(11.)).text_color(c(THEME.red)).child(trf("The core refused: {0}", &[&e]))
+                }),
+            )
             .children(lane.map(|l| {
                 div().text_size(px(11.)).text_color(c(THEME.text2)).child(format!("{} · {}", l.owner, l.param))
             }))
@@ -1585,7 +1584,7 @@ impl AutomationEditor {
                     .right(px(6.))
                     .text_size(px(9.5))
                     .text_color(c(THEME.text2))
-                    .child(lane.range.format(lane.range.denorm(v))),
+                    .child(lane.law().format(lane.law().denorm(v))),
             );
         }
         div()
@@ -1715,14 +1714,13 @@ mod tests {
 
     #[test]
     fn segments_end_at_their_point() {
-        let r = Range::Linear(0.0, 1.0);
+        let r = Range(ParamRange::linear(0.0, 1.0));
         let pts = vec![Pt::new(0, 0.0, Shape::Curve), Pt::new(960, 1.0, Shape::Step)];
         assert_eq!(value_at(&pts, 480.0, r), 0.0, "a step segment holds the previous value");
         let pts = vec![Pt::new(0, 0.0, Shape::Curve), Pt::new(960, 1.0, Shape::Curve)];
-        assert!((value_at(&pts, 480.0, r) - 0.5).abs() < 1e-9, "a straight curve");
+        assert!((value_at(&pts, 480.0, r) - 0.5).abs() < 1e-6, "a straight curve");
         let pts = vec![Pt { out: Some(0.8), ..Pt::new(0, 0.0, Shape::Curve) }, Pt::new(960, 0.8, Shape::Curve)];
-        assert!((value_at(&pts, 10.0, r) - 0.8).abs() < 1e-9, "the out value leaves the point");
-        assert_eq!(thin(&(0..50).map(|i| (i * 10, 0.5)).collect::<Vec<_>>(), 0.01).len(), 2);
+        assert!((value_at(&pts, 10.0, r) - 0.8).abs() < 1e-6, "the out value leaves the point");
     }
 
     #[test]

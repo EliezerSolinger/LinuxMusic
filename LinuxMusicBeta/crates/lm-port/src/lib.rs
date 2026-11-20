@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub use lm_base::{Error, HostTime, Label, OperationId, Result};
+pub use lm_base::{Error, HostTime, Label, OperationId, ParamRange, RangeScale, Result};
 pub use lm_doc::{Diff, Feed, GestureId, Topic};
 pub use lm_render::{METER_CHANNELS, Meter};
 pub use lm_state::{FieldKind, FieldSpec, NodeId, NodeSchema, ParamSpec, PathStep, ROOT, Resource, Scale, Value};
@@ -383,6 +383,13 @@ pub trait CorePort {
     fn peaks(&mut self, resource: &Resource, level: u8, from: u64, to: u64) -> Pending<PeakBlock>;
     /// A plugin's live data (F2)
     fn display(&self, node: NodeId) -> Option<DisplayView>;
+    /// A parameter's value law (its range and curve: linear, log, stepped, gain), the one the core uses for mapped
+    /// MIDI, automation and its edits; the interface draws and edits with it, never with a law of its own. `None`:
+    /// no such parameter (or a port that cannot say yet)
+    fn param_range(&self, node: NodeId, key: &str) -> Option<ParamRange> {
+        let _ = (node, key);
+        None
+    }
 
     // --- the session's side that is not the project document (additions of 20/11)
     /// The preferences tree (I-16), and changing one by its path

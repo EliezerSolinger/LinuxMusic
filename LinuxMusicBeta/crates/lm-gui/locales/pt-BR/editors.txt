@@ -332,3 +332,5 @@ Swing = Swing
 The MIDI items shown here = Os itens MIDI mostrados aqui
 Hand won ↺ = A mão venceu ↺
 This lane back to its curve = Esta lane de volta à curva
+The core gives no range for this parameter: the lane cannot be drawn = O núcleo não dá a faixa deste parâmetro: a lane não pode ser desenhada
+The core refused: {0} = O núcleo recusou: {0}

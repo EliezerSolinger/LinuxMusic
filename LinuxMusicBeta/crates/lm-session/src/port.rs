@@ -536,6 +536,11 @@ impl CorePort for LocalPort {
         }
     }
 
+    fn param_range(&self, node: NodeId, key: &str) -> Option<lm_port::ParamRange> {
+        // the one value law: the compiled range when the parameter has a slot, else its schema's
+        Some(self.session.param_range(node, key))
+    }
+
     fn display(&self, node: NodeId) -> Option<DisplayView> {
         self.session.rack_display(node).map(|frame| DisplayView { kind: Arc::from("rack"), frame: Arc::from(frame) })
     }

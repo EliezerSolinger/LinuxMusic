@@ -1068,6 +1068,12 @@ pub struct Applied { pub diff: Diff, pub created: Vec<(u32, NodeId)>, pub notes:
 - **O protótipo** é escrito contra um núcleo de mentira que já tem a forma do `CorePort` (dados nos argumentos, sem
   fechamentos), para a interface de verdade nascer sobre ele.
 
+- **A lei dos valores (20/11):** `CorePort::param_range(nó, chave) -> Option<ParamRange>` devolve a faixa e a curva de
+  um parâmetro (linear, log, em degraus, ganho), a mesma que o compilador usa para o MIDI mapeado e a automação e que a
+  `Session` usa nas edições de automação. `ParamRange` e `RangeScale` moram no `lm-base` (puro) e são reexportados pelo
+  `lm-render` e pelo `lm-port`. A interface desenha e edita só com ela; sem resposta, a lane não é desenhada, e uma
+  ação recusada (`automation.scale`, `automation.thin`) aparece como erro, sem conta feita na interface.
+
 ## I-16. A sessão (F1) (R6, S15, S16)
 
 ```rust

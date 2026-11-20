@@ -1112,7 +1112,7 @@ mod notes_editors {
     use crate::screens::automation::{AutomationEditor, Lane};
 
     fn auto(cx: &mut TestAppContext) -> (Entity<AutomationEditor>, Entity<Core>, &mut VisualTestContext) {
-        open_screen(cx, Screen::Automation, |root| Lane::all(root).first().map(|l| l.id), AutomationEditor::new)
+        open_screen(cx, Screen::Automation, |root| Lane::ids(root).first().copied(), AutomationEditor::new)
     }
 
     fn lane(ae: &Entity<AutomationEditor>, cx: &mut VisualTestContext) -> Lane {
@@ -1174,7 +1174,7 @@ mod notes_editors {
         assert_eq!(after.len(), before.len());
         for (a, b) in after.iter().zip(before.iter()) {
             assert_eq!(a.0, b.0);
-            assert!((a.1 - b.1).abs() < 1e-9, "flipping twice is the identity");
+            assert!((a.1 - b.1).abs() < 1e-5, "flipping twice is the identity");
         }
         // the lane's mode (I-21.5)
         click(cx, "ae-lane-mode");
@@ -1480,7 +1480,7 @@ fn browser_search(cx: &mut TestAppContext) {
     fn automation_hand_won_and_rearm(cx: &mut TestAppContext) {
         let mut fake =
             FakePort::new(Config { tracks: 12, slow_delay: None, slow_track: usize::MAX }).expect("the demo");
-        let l = crate::screens::automation::Lane::all(fake.root()).into_iter().next().expect("a lane");
+        let l = crate::screens::automation::Lane::all(&fake).into_iter().next().expect("a lane");
         fake.hand_wins(l.target.expect("the lane's node"), &l.param);
         let (_ae, core, cx) = notes_editors::open_screen_on(
             cx,

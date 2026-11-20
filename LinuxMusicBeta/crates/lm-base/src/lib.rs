@@ -12,6 +12,7 @@
 mod error;
 mod main_thread;
 mod operation;
+pub mod range;
 pub mod ring;
 mod sync;
 mod time;
@@ -19,4 +20,5 @@ mod time;
 pub use error::{Arg, Error, Label, Result};
 pub use main_thread::{Main, Role, role, set_role};
 pub use operation::{Cancel, OperationHandle, OperationId, Phase, Progress, Workers};
+pub use range::{ParamRange, RangeScale};
 pub use time::{Clock, HostTime, ManualClock, SystemClock};
