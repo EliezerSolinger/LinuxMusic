@@ -140,3 +140,32 @@ fn the_master_rack_shows_its_meters() {
     let d = seen.expect("the master's display");
     assert!(d[lm_session::rack::display::SAT].is_finite() && d[lm_session::rack::display::BUS_GR].is_finite());
 }
+
+#[test]
+fn an_inserts_wet_dry_mix() {
+    let dir = TempDir::new("wetdry");
+    let mut s = session(&dir);
+    let c = setup(&mut s, &dir);
+    let (l0, _) = render(&s, &dir, "dry.wav");
+    // An amplifier at 200 % on the channel
+    let mut insert = None;
+    s.document_mut()
+        .transact(Label::new("test.insert"), |e| {
+            let state = Value::object([("params", Value::object([("volume", Value::real(200.0)?)]))]);
+            let p = Value::object([("plugin", Value::text("amplifier")), ("version", Value::int(1)), ("state", state)]);
+            insert = Some(e.insert(c, "inserts", 0, p)?);
+            Ok(())
+        })
+        .expect("insert");
+    settle(&mut s);
+    let p = insert.expect("p");
+    let ratio = |s: &Session, name: &str| {
+        let (l, _) = render(s, &dir, name);
+        peak(&l) / peak(&l0)
+    };
+    assert!((ratio(&s, "wet-absent.wav") - 2.0).abs() < 0.01, "no mix: all wet");
+    set(&mut s, p, "wet", Value::real(0.0).expect("r"));
+    assert!((ratio(&s, "wet0.wav") - 1.0).abs() < 0.01, "all dry");
+    set(&mut s, p, "wet", Value::real(0.5).expect("r"));
+    assert!((ratio(&s, "wet05.wav") - 1.5).abs() < 0.01, "half: 0.5·2 + 0.5·1");
+}
