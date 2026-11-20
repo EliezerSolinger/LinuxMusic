@@ -48,6 +48,13 @@ Darwin)
 	fi
 	echo "brew packages: ${packages[*]}"
 	HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install "${packages[@]}"
+	# What the lm-sys-* build scripts will ask pkg-config (a module whose own dependencies are missing fails
+	# `--atleast-version` even though `--modversion` works): printed so a failure shows its reason in the log
+	pkg-config --version
+	for module in sndfile samplerate fluidsynth rubberband lilv-0; do
+		printf '%s %s: ' "$module" "$(pkg-config --modversion "$module" 2>/dev/null || echo missing)"
+		pkg-config --print-errors --exists "$module" && echo ok || true
+	done
 	;;
 *)
 	echo "unsupported system: $(uname -s)" >&2
