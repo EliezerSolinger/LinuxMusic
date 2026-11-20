@@ -400,6 +400,7 @@ fn moving_items_moves_their_automation_and_thinning() {
     assert_eq!(ticks(&p)[0], start, "one undo step");
     p.run_action("automation.thin".into(), Value::object([("lane", Value::text(lane_id.to_string()))])).ok().unwrap();
     assert_eq!(ticks(&p).len(), 3, "the middle point of the straight part went: {:?}", ticks(&p));
+}
 
 #[test]
 fn sidechains_tuning_files_reveal_and_open() {
