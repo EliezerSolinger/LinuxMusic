@@ -12,4 +12,5 @@ librubberband-dev     # lm-sys-rubberband (>= 3.0.0; 24.04 has 3.3.0)
 liblilv-dev           # lm-sys-lilv
 lv2-dev               # lm-sys-lilv: the LV2 headers of its test bundle
 gcc                   # lm-sys-lilv: its tests compile a test LV2 bundle (the runners have it; listed to be explicit)
-# lm-sys-linux needs nothing here: libc, and zbus is pure Rust (no libdbus-1-dev; decisoes-autonomas.md)
+dbus                  # lm-sys-linux tests: dbus-daemon for the ReserveDevice1 test
+# lm-sys-linux builds with nothing here: libc, and zbus is pure Rust (no libdbus-1-dev; decisoes-autonomas.md)

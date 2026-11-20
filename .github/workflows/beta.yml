@@ -29,10 +29,10 @@ name: beta
   workflow_dispatch:
 concurrency:
   # On master a run is never cancelled by the next push (the agents push often, and a run that never finishes
-  # verifies nothing): one run goes to the end, and only the newest waiting push runs after it. Pull requests do
-  # cancel their older runs.
+  # verifies nothing): one run goes to the end, and only the newest waiting push runs after it. Pull requests and
+  # other branches do cancel their older runs.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 permissions:
   contents: read
 env:
@@ -56,6 +56,10 @@ jobs:
         uses: actions/checkout@v7
       - name: Set up Rust
         run: ci/setup-rust.sh msrv
+      - name: Cargo.lock matches the committed crates
+        # The other jobs build without --locked, so that a Cargo.lock committed ahead of its crates (an agent that
+        # commits the lock before the crate) does not stop every job; this step is where a stale lock shows.
+        run: ci/run.sh bash -c 'cargo metadata --locked --format-version 1 >/dev/null'
       - name: unsafe only in lm-sys-* crates
         run: ci/run.sh python3 ci/check-unsafe.py
       - name: Every dependency from [workspace.dependencies]
@@ -99,13 +103,13 @@ jobs:
           key: clippy
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: cargo clippy
-        run: ci/run.sh cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: ci/run.sh cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: cargo clippy (loom configuration)
         env:
           RUSTFLAGS: --cfg loom -D warnings
-        run: ci/run.sh cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: ci/run.sh cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: cargo doc
-        run: ci/run.sh cargo doc --locked --workspace --all-features --no-deps --document-private-items
+        run: ci/run.sh cargo doc --workspace --all-features --no-deps --document-private-items
 
   deny:
     name: cargo-deny (licences, bans, sources, advisories)
@@ -121,7 +125,7 @@ jobs:
         with:
           tool: cargo-deny@0.21.0
       - name: cargo deny check
-        run: ci/run.sh cargo deny --locked check
+        run: ci/run.sh cargo deny check
 
   test:
     name: test (${{ matrix.platform }}, ${{ matrix.profile }})
@@ -161,14 +165,14 @@ jobs:
         # PROFILE_FLAG is empty or one word: left unquoted on purpose
         run: |
           # shellcheck disable=SC2086
-          ci/run.sh cargo build --locked --workspace --all-targets $PROFILE_FLAG
+          ci/run.sh cargo build --workspace --all-targets $PROFILE_FLAG
       - name: cargo test
         env:
           LM_TEST_OUTPUT_DIR: ${{ runner.temp }}/lm-test-output
         run: |
           mkdir -p "$LM_TEST_OUTPUT_DIR"
           # shellcheck disable=SC2086
-          ci/run.sh cargo test --locked --workspace $PROFILE_FLAG
+          ci/run.sh cargo test --workspace $PROFILE_FLAG
       - name: Upload the tests' output
         if: always()
         uses: actions/upload-artifact@v7
@@ -271,9 +275,9 @@ jobs:
           key: stable
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: cargo clippy
-        run: ci/run.sh cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: ci/run.sh cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: cargo test
-        run: ci/run.sh cargo test --locked --workspace
+        run: ci/run.sh cargo test --workspace
 
   prototype-gpui:
     # LinuxMusicBeta/prototypes/ is a separate workspace (the GUI prototype). Optional: a `cargo check` of

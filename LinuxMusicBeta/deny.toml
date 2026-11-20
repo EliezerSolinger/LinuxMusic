@@ -33,22 +33,20 @@ yanked = "deny"
 ignore = []
 
 [licenses]
-# The program is GPL-2.0-or-later. A dependency's licence must let the whole be distributed under the GPL version 2
-# (and later): permissive licences, the weak copylefts that allow it, and the GPL 2 or later itself.
+# The sources are GPL-2.0-or-later. A dependency's licence must let the program be distributed under the GPL:
+# permissive licences, the weak copylefts that allow it, and the GPL 2 or later itself.
 #
-# Not allowed:
-#   - Apache-2.0 alone: compatible with the GPL version 3 only, so it would take away the "version 2" of the program's
-#     licence. Most Rust crates are "MIT OR Apache-2.0" and pass through the MIT side.
-#   - GPL-3.0-only, GPL-3.0-or-later, LGPL-3.0-*, AGPL-*: the same reason, stronger.
-# A crate that needs one of them is a decision for the user (write it in docs/decisoes-autonomas.md) and then an entry
-# in `exceptions` below, for that crate only.
+# Apache-2.0 is allowed (decision of 19/11, docs/decisoes-autonomas.md): it is compatible with the GPL version 3 only,
+# so a binary that contains an Apache-2.0-only crate (GPUI and gpui-component) is distributed under the GPLv3, which
+# GPL-2.0-or-later allows; our own crates stay GPL-2.0-or-later.
 #
-# NOTE for the GUI: GPUI (and gpui-component) are Apache-2.0. When the first lm-gui crate lands, cargo-deny fails here
-# until the decision above is made: either the program is distributed under the GPL version 3 (GPL-2.0-or-later
-# allows it; then add "Apache-2.0" to `allow`), or each GPUI crate gets an exception.
+# Not allowed: GPL-3.0-only, LGPL-3.0-*, AGPL-* and anything not listed. A crate that needs one is a decision for the
+# user (written in docs/decisoes-autonomas.md) and then an entry in `exceptions` below, for that crate only.
 allow = [
     "MIT",
     "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",

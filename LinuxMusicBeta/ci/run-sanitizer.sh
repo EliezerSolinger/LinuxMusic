@@ -31,4 +31,4 @@ export RUSTDOCFLAGS="-Zsanitizer=$kind ${RUSTDOCFLAGS:-}"
 export LM_TEST_SANITIZER="$kind"
 
 echo "sanitizer: $kind on $target"
-cargo test --locked -Zbuild-std --target "$target" --workspace --lib --bins --tests
+cargo test -Zbuild-std --target "$target" --workspace --lib --bins --tests

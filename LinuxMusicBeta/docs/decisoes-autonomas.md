@@ -243,3 +243,14 @@ de forma diz pelo que é substituído.
   compilar a GPUI no ThinkPad, que tem pouco disco.
 - Papéis completos, TLS para fora da rede local e o subconjunto estável para ferramentas externas continuam para a fase
   2.
+
+## Do CI (19/11)
+
+- **Licenças das dependências: Apache-2.0 é permitida** (decisão do coordenador) — a GPUI e o gpui-component são
+  Apache-2.0, compatível só com a GPL versão 3; o binário que os contém é distribuído sob a GPLv3, o que a
+  GPL-2.0-ou-posterior permite. As crates nossas continuam GPL-2.0-ou-posterior. GPL-3.0-only, LGPL-3.0 e AGPL seguem
+  proibidas (`LinuxMusicBeta/deny.toml`).
+- **O `--locked` sai dos jobs de build e teste**; um passo do job `policy` confere sozinho que o `Cargo.lock` bate com
+  as crates do commit — um lock adiantado (commitado antes da crate) deixa só esse passo vermelho, não o CI inteiro.
+- **No master, uma execução do CI nunca é cancelada pelo próximo push** (os agentes fazem push a cada poucos minutos);
+  em PRs e outros ramos a execução antiga é cancelada.

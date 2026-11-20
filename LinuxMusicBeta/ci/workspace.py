@@ -58,7 +58,7 @@ class Crate:
 
 def cargo_metadata() -> dict:
     result = subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--no-deps", "--locked",
+        ["cargo", "metadata", "--format-version", "1", "--no-deps",
          "--manifest-path", str(WORKSPACE / "Cargo.toml")],
         check=True, capture_output=True, text=True,
     )

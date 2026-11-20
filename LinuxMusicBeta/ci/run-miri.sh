@@ -20,4 +20,4 @@ packages=()
 for crate in "${crates[@]}"; do packages+=(-p "$crate"); done
 
 cargo miri setup
-cargo miri test --locked "${packages[@]}"
+cargo miri test "${packages[@]}"

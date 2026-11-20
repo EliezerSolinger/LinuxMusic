@@ -21,4 +21,4 @@ packages=()
 for crate in "${crates[@]}"; do packages+=(-p "$crate"); done
 
 export RUSTFLAGS="--cfg loom ${RUSTFLAGS:-}"
-cargo test --locked --release "${packages[@]}" --lib --tests -- --nocapture
+cargo test --release "${packages[@]}" --lib --tests -- --nocapture

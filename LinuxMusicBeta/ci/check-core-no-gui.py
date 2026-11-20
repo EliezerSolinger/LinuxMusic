@@ -18,7 +18,7 @@ sys.dont_write_bytecode = True  # no __pycache__ in the source tree
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import workspace  # noqa: E402
 
-TREE = ["--locked", "--target", "all", "--all-features", "--edges", "normal,build,dev"]
+TREE = ["--target", "all", "--all-features", "--edges", "normal,build,dev"]
 
 
 def cargo(*args: str) -> str:
