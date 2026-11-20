@@ -31,11 +31,11 @@ use crate::install::{Install, NodeCore, Retired};
 use crate::notes::{ActiveNotes, NoteSource};
 use crate::panic::RenderThreadGuard;
 use crate::params::ParamSlots;
-use crate::program::{AudioItem, AudioSource};
 use crate::processor::{Adopted, BufferLayout, Buffers, HostOutbox, ProcessContext, TransportInfo};
 use crate::program::{
     AUTOMATION_GRID, ChannelMix, DelayLine, MidiTiming, NONE, NodeKind, PFeed, PHostParam, PNode, Program, Rate, Target,
 };
+use crate::program::{AudioItem, AudioSource};
 use crate::rng::Rng;
 use crate::sample::SampleData;
 use crate::spec::{Limits, ProcessSpec};
@@ -1591,8 +1591,10 @@ impl Renderer {
             let o = layout.output_offset(ch);
             let peak = scan(&io.buffer[o..o + n]).0;
             node_peak = node_peak.max(peak);
-            if ch < metered {
-                slot.peak[ch] = slot.peak[ch].max(peak);
+            if ch < metered
+                && let Some(held) = slot.peak.get_mut(ch)
+            {
+                *held = held.max(peak);
             }
         }
         slot.channels = metered as u8;
@@ -1980,7 +1982,14 @@ fn click(
 /// Audio items into a node's inputs, with the explicit channel conversions (mono to N at equal power, N to mono
 /// averaged, otherwise channel to channel). A streamed item is read into `scratch` first (P-32); its frames not
 /// loaded play as silence and are returned as missing
-fn play_audio(node: &PNode, buffer: &mut [f32], layout: &BufferLayout, pos0: i64, n: usize, scratch: &mut [f32]) -> u64 {
+fn play_audio(
+    node: &PNode,
+    buffer: &mut [f32],
+    layout: &BufferLayout,
+    pos0: i64,
+    n: usize,
+    scratch: &mut [f32],
+) -> u64 {
     let end = pos0 + n as i64;
     let first = node.audio.partition_point(|it| it.start + node.audio_max_len <= pos0);
     let mut missing = 0u64;

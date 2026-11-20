@@ -799,7 +799,15 @@ fn audio_items_play_in_place() {
     let data = Arc::new(SampleData::from_channels(RATE, vec![vec![1.0; 1000]]).expect("sample"));
     b.audio_items(
         track,
-        vec![AudioItem { start: 700, length: 500, source: AudioSource::Memory(data), offset: 100, gain: 1.0, fade_in: 10, fade_out: 0 }],
+        vec![AudioItem {
+            start: 700,
+            length: 500,
+            source: AudioSource::Memory(data),
+            offset: 100,
+            gain: 1.0,
+            fade_in: 10,
+            fade_out: 0,
+        }],
     );
     install(&mut control, Install::new(b.build().expect("program")));
     control.commands().send(Command::Play).expect("play");
