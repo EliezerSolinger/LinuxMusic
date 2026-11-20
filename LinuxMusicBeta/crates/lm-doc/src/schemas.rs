@@ -68,6 +68,8 @@ pub mod types {
     pub const TOLERANCE: &str = "rack.tolerance";
     pub const STEREO: &str = "rack.stereo";
     pub const BUS_COMPRESSOR: &str = "rack.bus_compressor";
+    pub const ITEM_CONTROL: &str = "item.control";
+    pub const ITEM_CONTROL_POINT: &str = "item.control.point";
     pub const MAPPING: &str = "midi.mapping";
     pub const MIDI_SOURCE: &str = "midi.source";
     pub const MIDI_TARGET: &str = "midi.target";
@@ -111,6 +113,8 @@ pub const AUTOMATION_MODES: &[&str] = &["off", "read", "touch", "latch", "write"
 pub const GLOBAL_AUTOMATION_MODES: &[&str] = &["lanes", "off", "read", "touch", "latch", "write"];
 /// The shape of the segment that ends at an automation point; absent = `"curve"` (I-21.5)
 pub const POINT_SHAPES: &[&str] = &["curve", "step", "smooth"];
+/// The kinds of an item's control lanes (I-21.4)
+pub const CONTROL_KINDS: &[&str] = &["cc", "pitchBend", "channelPressure", "polyPressure", "programChange"];
 /// How MIDI recording treats what is under it (I-21.4, F-REC-101); absent = `"overdub"`
 pub const RECORD_MODES: &[&str] = &["overdub", "replace", "layers"];
 /// The message kinds of a mapping's source (lm-midimap, `Message::kind_name`)
@@ -379,7 +383,22 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::int("loop", 1, MAX, 3840).optional())
             .field(FieldSpec::real("swing", 0.0, 1.0, 0.0).optional())
             .field(FieldSpec::int("step", 1, MAX, 240).optional())
+            // The control lanes of a MIDI item (I-21.4): controllers, pitch bend, aftertouch and program changes
+            // recorded or drawn, played back with the notes [none]
+            .field(
+                FieldSpec::new("controls", FieldKind::List(Box::new(FieldKind::Object(ty::ITEM_CONTROL)))).optional(),
+            )
             .upgrade(1, unchanged),
+        // kind and number (the controller, the key of a poly aftertouch; 0 otherwise), the channel; points: ticks from
+        // the item's start, values 0..127 (pitch bend 0..16383, centre 8192)
+        NodeSchema::new(ty::ITEM_CONTROL, 1)
+            .field(FieldSpec::choice("kind", CONTROL_KINDS, "cc"))
+            .field(FieldSpec::int("number", 0, 127, 0))
+            .field(FieldSpec::int("channel", 0, 15, 0))
+            .field(list_of("points", ty::ITEM_CONTROL_POINT)),
+        NodeSchema::new(ty::ITEM_CONTROL_POINT, 1)
+            .field(FieldSpec::int("tick", 0, MAX, 0))
+            .field(FieldSpec::int("value", 0, 16383, 0)),
         NodeSchema::new(ty::LANE, 1)
             .field(FieldSpec::id(KIND_LANE))
             .field(FieldSpec::new("source", FieldKind::Resource("audio")))

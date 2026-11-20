@@ -689,6 +689,38 @@ impl CorePort for LocalPort {
         self.session.registry().get(plugin).map(|d| d.schema())
     }
 
+    fn ui(&self) -> &Value {
+        self.session.ui_document().root()
+    }
+
+    fn set_ui(&mut self, path: Vec<PathStep>, value: Value) -> Pending<()> {
+        Pending::Ready(self.session.set_ui(&path, value))
+    }
+
+    fn midi_learn(&mut self, target: lm_port::MapTarget, scope: lm_port::MapScope) -> Pending<lm_port::LearnId> {
+        Pending::Ready(Ok(self.session.midi_learn(target, scope)))
+    }
+
+    fn cancel_learn(&mut self, id: lm_port::LearnId) {
+        self.session.cancel_learn(id);
+    }
+
+    fn learning(&self) -> Option<lm_port::LearnId> {
+        self.session.learning()
+    }
+
+    fn unmap(&mut self, target: &lm_port::MapTarget, scope: lm_port::MapScope) -> Pending<()> {
+        Pending::Ready(self.session.midi_unmap(target, scope))
+    }
+
+    fn drain_midi_ui(&mut self, out: &mut Vec<lm_port::MidiUiAction>) {
+        self.session.drain_midi_ui(out);
+    }
+
+    fn midi_activity(&self, since: u64) -> (u64, Vec<lm_port::MidiActivity>) {
+        self.session.midi_activity(since)
+    }
+
     fn set_favorite(&mut self, entry: EntryId, on: bool) -> Pending<()> {
         let Some(path) = self.known.get(&entry).and_then(|k| k.path.clone()) else {
             return Pending::Ready(Err(err("port.browse.unknown_entry")));

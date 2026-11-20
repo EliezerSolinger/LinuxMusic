@@ -312,6 +312,34 @@ pub(crate) fn midi_events(id: NodeId, item: &Value, transpose: i32, audio_time: 
             }
         }
     }
+    // The control lanes (I-21.4): each point at its tick, inside the item (looped like the notes)
+    for lane in items(item, "controls") {
+        let channel = (int(lane, "channel", 0).clamp(0, 15)) as u8;
+        let number = (int(lane, "number", 0).clamp(0, 127)) as u8;
+        let kind = text(lane, "kind", "cc");
+        for rep in 0..reps {
+            for p in items(lane, "points") {
+                let t = int(p, "tick", 0);
+                if looped.is_some_and(|l| t >= l) {
+                    continue;
+                }
+                let at = start.saturating_add(looped.map_or(0, |l| rep * l) + t);
+                if at >= end {
+                    continue;
+                }
+                let v = int(p, "value", 0).clamp(0, 16383);
+                let v7 = v.min(127) as u8;
+                let bytes = match kind {
+                    "pitchBend" => [0xE0 | channel, (v & 0x7F) as u8, ((v >> 7) & 0x7F) as u8],
+                    "channelPressure" => [0xD0 | channel, v7, 0],
+                    "polyPressure" => [0xA0 | channel, number, v7],
+                    "programChange" => [0xC0 | channel, v7, 0],
+                    _ => [0xB0 | channel, number, v7],
+                };
+                events.push(ItemEvent { tick: at, kind: ItemEventKind::Midi { bytes } });
+            }
+        }
+    }
     MidiItem::new(crate::read::id_number(id), events)
 }
 

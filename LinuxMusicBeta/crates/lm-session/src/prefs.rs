@@ -31,7 +31,14 @@ pub fn defaults() -> Value {
                 ("latencyFrames", Value::int(0)),
             ]),
         ),
-        ("midi", o(vec![("inputs", Value::empty_list()), ("clock", Value::bool(false))])),
+        (
+            "midi",
+            o(vec![("inputs", Value::empty_list()), ("clock", Value::bool(false)), ("ports", Value::empty_list())]),
+        ),
+        // The machine's MIDI mappings (I-21.2, the same nodes as `project.midiMap`) and the controller profiles in
+        // use (`{profile, port, bank}`, I-21.3)
+        ("midiMap", Value::empty_list()),
+        ("controllers", Value::empty_list()),
         ("interface", o(vec![("followCursor", Value::bool(false)), ("scale", real(1.0))])),
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
         ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text(""))])),

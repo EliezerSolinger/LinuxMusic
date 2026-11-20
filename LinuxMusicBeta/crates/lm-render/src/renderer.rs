@@ -2330,8 +2330,10 @@ impl Renderer {
             m.dead = s.dead;
             s.peak = [0.0; METER_CHANNELS];
         }
-        for &bi in self.program.automated.iter() {
-            let s = self.program.bindings[bi as usize].slot as usize;
+        // Every bound parameter's value as it plays (automation, the hand, MIDI): the session's MIDI feedback reads
+        // them (I-21.3), the interface shows automated values
+        for b in self.program.bindings.iter() {
+            let s = b.slot as usize;
             f.params[s] = self.slot_state[s].current;
         }
         self.out.frame.publish();

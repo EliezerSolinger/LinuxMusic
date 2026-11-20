@@ -47,6 +47,22 @@
     },
     "version": 1
   },
+  "item.control": {
+    "defaults": {
+      "channel": 0,
+      "kind": "cc",
+      "number": 0,
+      "points": []
+    },
+    "version": 1
+  },
+  "item.control.point": {
+    "defaults": {
+      "tick": 0,
+      "value": 0
+    },
+    "version": 1
+  },
   "item.lane": {
     "defaults": {
       "name": "",

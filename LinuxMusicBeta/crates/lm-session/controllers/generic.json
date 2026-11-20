@@ -1,0 +1,26 @@
+{
+  "name": "Genérico",
+  "kind": "generic",
+  "bank": 8,
+  "strips": 8,
+  "strip": [
+    {"stripNumber": true, "source": {"message": "cc", "number": 70},
+     "target": {"kind": "param", "follow": "trackBank", "offset": 0, "param": "volume"}},
+    {"stripNumber": true, "source": {"message": "cc", "number": 80},
+     "target": {"kind": "param", "follow": "channelBank", "offset": 0, "param": "pan"}}
+  ],
+  "mappings": [
+    {"source": {"message": "cc", "number": 7}, "target": {"kind": "param", "follow": "track", "offset": 0, "param": "volume"}},
+    {"source": {"message": "cc", "number": 10}, "target": {"kind": "param", "follow": "channel", "offset": 0, "param": "pan"}},
+    {"source": {"message": "cc", "number": 115}, "feedback": false,
+     "target": {"kind": "action", "action": "transport.play", "params": {}}, "transform": {"button": "trigger"}},
+    {"source": {"message": "cc", "number": 116}, "feedback": false,
+     "target": {"kind": "action", "action": "transport.stop", "params": {}}, "transform": {"button": "trigger"}},
+    {"source": {"message": "cc", "number": 117}, "feedback": false,
+     "target": {"kind": "action", "action": "transport.record", "params": {}}, "transform": {"button": "trigger"}},
+    {"source": {"message": "cc", "number": 118}, "feedback": false,
+     "target": {"kind": "action", "action": "midi.bank", "params": {"role": "track", "delta": -8}}, "transform": {"button": "trigger"}},
+    {"source": {"message": "cc", "number": 119}, "feedback": false,
+     "target": {"kind": "action", "action": "midi.bank", "params": {"role": "track", "delta": 8}}, "transform": {"button": "trigger"}}
+  ]
+}

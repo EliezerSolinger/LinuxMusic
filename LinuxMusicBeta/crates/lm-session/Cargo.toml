@@ -24,6 +24,8 @@ lm-plugins-effects.workspace = true
 lm-compile.workspace = true
 lm-io.workspace = true
 lm-port.workspace = true
+# MIDI mapping, learning, feedback and the Mackie Control protocol (I-21)
+lm-midimap = { workspace = true, features = ["doc"] }
 lm-sys-sndfile.workspace = true
 blake3.workspace = true
 rustix = { workspace = true, features = ["system"] }

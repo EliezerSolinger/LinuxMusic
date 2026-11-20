@@ -39,6 +39,10 @@ use crate::notices::Notices;
 use crate::prefs::Preferences;
 use crate::rack::RackProcessor;
 
+/// MIDI and automation (I-21): a child module, so it works on the session's own fields
+#[path = "midi/mod.rs"]
+pub(crate) mod midi;
+
 /// How often the clock thread wakes the main thread (H2)
 pub const PUMP_PERIOD: Duration = Duration::from_millis(10);
 /// While a gesture is open, its changes reach the journal at least this often (T11)
@@ -346,6 +350,8 @@ pub struct Session {
     displays: std::cell::RefCell<std::collections::BTreeMap<NodeKey, lm_render::DisplayReader>>,
     /// The project opened in safe mode (U21)
     safe_mode_on: bool,
+    /// MIDI mapping, feedback, control surfaces, MIDI and automation recording (I-21)
+    pub(crate) midi: midi::MidiCore,
     /// What `edit.copy` copied (H13)
     pub(crate) clipboard: Option<Clipboard>,
     /// The finished operations the headless printer has not shown
@@ -440,7 +446,9 @@ fn interface_schemas() -> Result<Arc<SchemaRegistry>> {
     let mut registry = SchemaRegistry::new();
     registry.add(
         lm_state::NodeSchema::new(INTERFACE_TYPE, 1)
-            .field(lm_state::FieldSpec::new("state", lm_state::FieldKind::Any).default(Value::empty_object())),
+            .field(lm_state::FieldSpec::new("state", lm_state::FieldKind::Any).default(Value::empty_object()))
+            // What the MIDI targets follow (I-21.2): `{track, channel, plugin}`, ids as text
+            .field(lm_state::FieldSpec::new("selection", lm_state::FieldKind::Any).default(Value::empty_object())),
     )?;
     registry.check_complete()?;
     Ok(Arc::new(registry))
@@ -588,6 +596,7 @@ impl Session {
             clipboard: None,
             safe_mode_on: false,
             displays: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            midi: midi::MidiCore::new(),
             imported: Vec::new(),
             finished: Vec::new(),
             main,
@@ -901,6 +910,8 @@ impl Session {
         changed |= returned > 0;
         // 2. telemetry: the frame and the event rings
         changed |= self.read_telemetry();
+        // 2b. MIDI (I-21): mapped fields and actions, gesture ends, learning, the map, feedback, the recordings
+        changed |= self.midi_pump();
         self.poll_device();
         // 3. plugin requests (in the telemetry), and the takes
         changed |= self.poll_disk();
@@ -919,6 +930,7 @@ impl Session {
         if let Some(diff) = self.feed.drain(&self.document) {
             changed = true;
             self.apply_params(&diff);
+            self.midi_diff(&diff);
             if diff.structural {
                 self.needs_compile = true;
             }
@@ -1031,6 +1043,8 @@ impl Session {
             return;
         }
         self.table = table;
+        // The map's parameter slots are this install's
+        self.midi.mark_dirty();
         if let Ok(mut t) = self.watchdog.shared.table.lock() {
             *t = self.table.clone();
         }
@@ -1354,6 +1368,7 @@ impl Session {
         let mut transport = Vec::new();
         self.engine.transport_events(|t| transport.push(t));
         for t in transport {
+            self.midi_transport(&t);
             if let TransportEvent::RecordStopped { .. } = t {
                 self.recording_tracks.clear();
             }
@@ -2183,6 +2198,7 @@ impl Session {
         for record in lm_io::find_interrupted(&self.project.folder.audio())? {
             self.take_queue.push_back((TakeJob::Interrupted(record), 0));
         }
+        self.recover_midi()?;
         self.next_take();
         Ok(())
     }
@@ -2251,6 +2267,7 @@ impl Session {
             placed.push((track, item));
         }
         let mut recovered_track = false;
+        let midi_take = self.midi_take_for_commit();
         let result = self.document.transact_as(Label::new("session.take"), Origin::Recording, |e| {
             let mut recovered: Option<NodeId> = None;
             for (track, item) in &placed {
@@ -2271,13 +2288,19 @@ impl Session {
                 e.insert(t, "items", items, item.clone())?;
             }
             recovered_track = recovered.is_some();
-            // I-21: the MIDI take joins here
+            // I-21: the MIDI take joins here (one undo removes the whole recording)
+            if let Some((take, map)) = &midi_take {
+                midi::record::apply(take, map, e)?;
+            }
             Ok(())
         });
         match result {
             Ok(_) => {
                 if recovered_track {
                     self.notices.warn("session.take.recovered_track", Vec::new());
+                }
+                if let Some((take, _)) = &midi_take {
+                    let _ = std::fs::remove_file(&take.path);
                 }
                 if let Some(patch) = self.document.take_journal() {
                     self.write_journal(&patch);
