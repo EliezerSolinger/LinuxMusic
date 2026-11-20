@@ -477,3 +477,32 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
   não DSP).
 - **Amplifier e Stereo Matrix** existem para abrir projetos antigos (F-FX-005 e F-FX-028 continuam obsoletos no
   navegador).
+
+
+## Do `lm-remote` (20/11)
+
+- **Transporte: socket Unix (0600) na máquina e TCP só em 127.0.0.1, alcançado de outra máquina por túnel SSH**
+  (`ssh -N -L 7400:127.0.0.1:7400 host`), **em vez de TLS no programa**. Motivo: o SSH já autentica (chaves) e
+  cifra, e é o caminho que existe hoje até o ThinkPad (Cloudflare + chave do Mac); TLS exigiria uma pilha de
+  criptografia nova na lista do `cargo-deny`, certificados e pareamento próprios, sem ganho para o caso do usuário. Um
+  `--tcp` em outro endereço funciona (para uma rede local confiável), mas não é o padrão. TLS pode entrar depois sem
+  mudar o protocolo (é só o `Stream`).
+- **Autenticação:** no socket Unix, só o próprio usuário conecta (permissão 0600) e ele é `admin`. No TCP, um token
+  dado no aperto de mão (`--token TOKEN:papel`), comparado inteiro; o papel pedido nunca passa do do token.
+- **Versões:** a interface (`mode: "gui"`) exige o mesmo `PROTOCOL` e o mesmo programa (`CARGO_PKG_VERSION`); a recusa
+  é `remote.version_mismatch` com as duas versões. Ferramentas (`mode: "tool"`) falam o subconjunto estável
+  (`find`, `get`, `apply`, `run_action`, `undo`, `redo`, `telemetry` até 10 Hz, `health`) com `tool_api` 1.
+- **Reconexão:** a `RemotePort` tenta de novo em segundo plano, com pausa crescente de 100 ms a 2 s, sem limite de
+  tentativas (o indicador mostra `Reconnecting`); versão ou token errados são finais (`Failed`). Ao voltar, o espelho
+  é ressincronizado pelo snapshot e os `Feed`s recebem a diferença como um `Diff` (por id). Pedidos em voo falham com
+  `remote.disconnected`; os gestos abertos foram cancelados pelo servidor (I-20.5).
+- **O espelho é um `Document` do `lm-doc`** atualizado por `Document::mirror(raiz, diff)`: o servidor manda as
+  diferenças da árvore (achadas por `same_node`: listas reconstruídas pelo `id`, mover uma nota manda uma nota) e o
+  `Diff` que o núcleo publicou, que chega aos `Feed`s do cliente como está — por isso a interface vê os mesmos
+  `Diff`s nos dois modos.
+- **Os resultados `Waiting`** são coletados por `CorePort::finished()` (acréscimo ao `lm-port`). A resposta de uma
+  mudança sempre chega depois da atualização do espelho que ela causou.
+- **Conectar é em segundo plano** (`RemotePort::start` → `Connecting::poll`), pela regra dos 200 ms.
+- **Chaves de tradução recebidas** (`Label`, `Notice`) viram `&'static str` por uma tabela limitada (16 mil chaves de
+  até 160 bytes); o excesso vira `remote.unknown_key`.
+

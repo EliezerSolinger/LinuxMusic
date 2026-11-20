@@ -1188,6 +1188,8 @@ lm-remote    o servidor do protocolo                                            
 - **Socket de domínio Unix**, local, ligado por padrão no `lm-headless serve` e desligado por padrão no programa com
   interface. Permissão `0600`: só o mesmo usuário conecta.
 - **TCP com TLS**, desligado por padrão; ligar é uma escolha explícita nas preferências, com pareamento por token.
+  (Decidido em 20/11, `decisoes-autonomas.md`: o TCP escuta em 127.0.0.1 e outra máquina chega por túnel SSH, que
+  autentica e cifra; TLS no programa fica para depois, sem mudar o protocolo.)
 - Quadros com tamanho na frente. **Mensagens em JSON** (legíveis, fáceis de depurar e de usar por script); a
   telemetria pode pedir uma codificação binária (CBOR) para economizar banda.
 - **Aperto de mão com versão do protocolo.** Cliente e servidor de versões incompatíveis recusam com mensagem clara.
