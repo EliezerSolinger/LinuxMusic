@@ -104,3 +104,104 @@ fn a_hanging_plugin_opens_the_project_in_safe_mode() {
     .join()
     .expect("second");
 }
+
+/// An instrument with a null-pointer bug that fires after half a second of audio (the notes of the program are set
+/// by then: they follow its install on the main thread)
+struct Crash(u64);
+
+impl Processor for Crash {
+    fn process(&mut self, cx: &mut ProcessContext<'_>) {
+        self.0 += cx.buffers.frames() as u64;
+        if self.0 > 24_000 {
+            std::hint::black_box(lm_sys_linux::crash::dereference_null());
+        }
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+static CRASH: Descriptor = Descriptor {
+    id: "crash",
+    name: "plugin.crash.name",
+    kind: PluginKind::Instrument,
+    schemas: || vec![NodeSchema::new("plugin:crash", 1)],
+    ports: |_| Ports { outputs: vec![Port::new("main", 2)], sidechains: Vec::new() },
+    velocity: Velocity::Ignored,
+    display: None,
+    build: |_, _| Ok(Box::new(Crash(0))),
+    tests: TestHints::new(),
+};
+
+const CRASH_CHILD: &str = "LM_SESSION_NATIVE_CRASH_CHILD";
+
+#[cfg(unix)]
+#[test]
+fn a_native_crash_in_a_plugin_opens_the_project_in_safe_mode() {
+    let registry = || Registry::new(&[&lm_plugins_tripleoscillator::DESCRIPTOR, &CRASH]).expect("registry");
+    if let Some(folder) = std::env::var_os(CRASH_CHILD) {
+        // The child: the plugin dereferences null inside the callback; the process dies of it
+        let dir = TempDir::new("native-crash-child");
+        let mut c = config(&dir);
+        c.registry = registry();
+        let mut s = Session::new(c).expect("session");
+        open(&mut s, folder.into());
+        s.document_mut()
+            .transact(Label::new("test"), |e| {
+                let inst = Value::object([("plugin", Value::text("crash")), ("version", Value::int(1))]);
+                e.insert(ROOT, "tracks", 0, Value::object([("instrument", inst)]))?;
+                Ok(())
+            })
+            .expect("track");
+        s.save().expect("save");
+        loop {
+            s.pump();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+    let dir = TempDir::new("native-crash");
+    let folder = dir.join("song");
+    {
+        let mut s = session(&dir);
+        s.create(folder.clone()).expect("create");
+        settle(&mut s);
+    }
+    let status = std::process::Command::new(std::env::current_exe().expect("exe"))
+        .args(["--exact", "a_native_crash_in_a_plugin_opens_the_project_in_safe_mode", "--nocapture"])
+        .env(CRASH_CHILD, &folder)
+        .stderr(std::process::Stdio::null())
+        .status()
+        .expect("child");
+    assert!(!status.success(), "the child crashed: {status:?}");
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = status.signal() {
+            assert!(sig == libc_sigsegv() || sig == libc_sigbus(), "{status:?}");
+        }
+    }
+    let suspect = lm_session::watchdog::read_suspect(&folder).expect("the handler wrote the suspect");
+    assert_eq!(suspect.reason, "crash");
+    let mut c = config(&dir);
+    c.registry = registry();
+    let mut s = Session::new(c).expect("session");
+    open(&mut s, folder.clone());
+    assert_eq!(s.status().get("safeMode").and_then(Value::as_bool), Some(true));
+    let plugins = s.status().get("safeModePlugins").expect("list").clone();
+    assert_eq!(plugins.at(0).and_then(|p| p.get("plugin")).and_then(Value::as_text), Some("crash"));
+    let node = s.document().find(suspect.node).expect("the suspect is a node of the document");
+    assert_eq!(node.get("plugin").and_then(Value::as_text), Some("crash"));
+    assert_eq!(node.get("bypass").and_then(Value::as_bool), Some(true));
+    assert!(s.notices_keys().contains(&"session.safe_mode"));
+    // Bypassed: it plays on without crashing this process
+    settle(&mut s);
+    std::thread::sleep(Duration::from_millis(800));
+    s.pump();
+}
+
+// SIGSEGV and SIGBUS, without libc in this crate's dependencies
+fn libc_sigsegv() -> i32 {
+    11
+}
+fn libc_sigbus() -> i32 {
+    if cfg!(target_os = "linux") { 7 } else { 10 }
+}

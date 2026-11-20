@@ -1,6 +1,6 @@
 [package]
 name = "lm-sys-linux"
-description = "LinuxMusic: Linux system services: real-time scheduling (rtkit), memory locking, the logind sleep inhibitor and ReserveDevice1"
+description = "LinuxMusic: Linux system services: real-time scheduling (rtkit), memory locking, the logind sleep inhibitor, ReserveDevice1, and the native-crash note of the safe mode"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -29,8 +29,10 @@ multiple_unsafe_ops_per_block = "allow"
 [dependencies]
 lm-base.workspace = true
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(unix)'.dependencies]
 libc.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
 zbus.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]

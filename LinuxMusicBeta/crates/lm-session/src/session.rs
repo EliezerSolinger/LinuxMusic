@@ -26,9 +26,7 @@ use lm_io::{
 };
 use lm_plugin::Registry;
 use lm_port::{Loading, OperationInfo, Position, Severity, Target, TelemetryView};
-use lm_render::{
-    Command, EngineControl, Limits, NodeCore, ProcessSpec, Processor, RenderThreads, Telemetry, TransportEvent,
-};
+use lm_render::{Command, EngineControl, Limits, NodeCore, ProcessSpec, Processor, Telemetry, TransportEvent};
 use lm_state::{NodeId, PathStep, Resource, SchemaRegistry, Value, from_json};
 
 use crate::activity::{Activity, Finished, Op, OpList, Ops, loading_of};
@@ -278,6 +276,8 @@ pub struct Session {
     _ticker: Option<Ticker>,
     /// The watchdog of the callback (U21)
     watchdog: crate::watchdog::Watchdog,
+    /// The native-crash note (U21), armed while a project is open
+    crash: crate::crashnote::CrashNote,
     device: Option<Device>,
     disk: Option<DiskWriter>,
     journal: Journal,
@@ -474,7 +474,7 @@ fn open_device(
         DeviceSetup::Dummy(_) => "dummy".to_owned(),
         DeviceSetup::Alsa { device } => device.clone(),
     };
-    let mut device = Device::new(backend, RenderThreads::default());
+    let mut device = Device::new(backend, crate::crashnote::render_threads());
     let info = device.open(&DeviceConfig::duplex(&name, rate, block))?;
     Ok((device, info))
 }
@@ -500,7 +500,7 @@ impl Session {
             }
         };
         let spec = info.spec();
-        let (engine, renderer) = lm_render::engine_with(spec, config.limits, RenderThreads::default());
+        let (engine, renderer) = lm_render::engine_with(spec, config.limits, crate::crashnote::render_threads());
         let mut device = device;
         device.start(renderer).map_err(|(e, _)| e)?;
         let compiler = Compiler::new(CompilerConfig {
@@ -530,6 +530,7 @@ impl Session {
                 watch: Mutex::new(engine.watch()),
             })),
             _ticker: config.waker.clone().map(Ticker::start),
+            crash: crate::crashnote::CrashNote::default(),
             device: Some(device),
             disk,
             journal,
@@ -1048,6 +1049,7 @@ impl Session {
         if let Ok(mut t) = self.watchdog.shared.table.lock() {
             *t = self.table.clone();
         }
+        self.crash.update(&self.table, &self.engine.watch());
         self.waiting_nodes = waiting.into_iter().collect();
         self.replacing_nodes = replacing.into_iter().collect();
         for t in cancelled {
@@ -1803,7 +1805,7 @@ impl Session {
                 open_device(&DeviceSetup::Dummy(DummyOptions::default()), rate, self.block, self.dummy_source)
             })?;
         let spec = info.spec();
-        let (engine, renderer) = lm_render::engine_with(spec, self.limits, RenderThreads::default());
+        let (engine, renderer) = lm_render::engine_with(spec, self.limits, crate::crashnote::render_threads());
         device.start(renderer).map_err(|(e, _)| e)?;
         self.engine = engine;
         self.compiler = Compiler::new(CompilerConfig {
@@ -1819,6 +1821,7 @@ impl Session {
         if let Ok(mut w) = self.watchdog.shared.watch.lock() {
             *w = self.engine.watch();
         }
+        self.crash.update(&self.table, &self.engine.watch());
         self.watchdog.shared.running.store(true, Ordering::Release);
         Ok(())
     }
@@ -1963,6 +1966,12 @@ impl Session {
             && *f != self.project.folder.root()
         {
             *f = self.project.folder.root().to_path_buf();
+        }
+        // A read-only project is not ours to write into
+        if self.project.read_only {
+            self.crash.disarm();
+        } else if self.crash.arm(self.project.folder.root()) {
+            self.crash.update(&self.table, &self.engine.watch());
         }
         let p = &self.project;
         let interrupted: Vec<Value> = lm_io::find_interrupted(&p.folder.audio())

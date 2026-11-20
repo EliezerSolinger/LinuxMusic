@@ -8,7 +8,8 @@
 //!   [`LockedBuffer`]s and [`lock_current_stack`]; [`prefault_stack`] (H1);
 //! - the systemd-logind sleep inhibitor ([`SystemBus::inhibit_sleep`], a [`SleepInhibitor`] guard) (H2);
 //! - ReserveDevice1, to ask PipeWire or PulseAudio to release an ALSA card ([`SystemBus::reserve_audio_device`], a
-//!   [`Reservation`] guard) (U8).
+//!   [`Reservation`] guard) (U8);
+//! - the native-crash note of the safe mode ([`crash`], U21): on every Unix, macOS included, for development.
 //!
 //! D-Bus is `zbus` (pure Rust) on a thread of its own (decisoes-autonomas.md). On other platforms the crate is empty.
 //!
@@ -20,6 +21,7 @@
 //! | **Which thread may call what?** | By the types. `RealtimeGuard` and `StackLock` are not `Send`: made and dropped on the thread they act on. `SystemBus` is `Send + Sync`; its requests return a [`Reply`] at once, which the main thread only polls ([`Reply::try_take`]) and other threads may wait on. [`make_current_thread_realtime`] blocks for the rtkit round trip: called once by an audio thread as it starts, never by the main thread. |
 //! | **Allocates, locks, does I/O?** | Nothing here is real-time safe, and nothing here is called by an audio processor: all of it prepares a thread or the process before the real-time loop, or releases after it. The only calls an audio thread makes are at its start and end (`make_current_thread_realtime`, `lock_current_stack`, and the guards' drops: one `sched_setscheduler` or `munlock`). Reading and writing a `LockedBuffer` is plain memory. |
 //! | **Creates threads?** | **"lm-dbus"** ([`SystemBus::start`]): owns both bus connections, runs one request at a time inside `zbus::block_on`, and ends when its handle and every `Reservation` are dropped or on [`SystemBus::shutdown`]; it releases every reservation and closes the connections before ending, and it owns everything it uses, so it never outlives anything it touches. **zbus's helper thread** (from `zbus::block_on`, zbus 6): drives the connections between our requests, so the ReserveDevice1 object answers other programs; it ends when the connections are dropped by "lm-dbus". |
+//! | **Signal handlers?** | [`crash`]: `SIGSEGV`, `SIGBUS`, `SIGILL` and `SIGABRT`, installed once per process by the first [`crash::arm`] and never removed; they chain to the previous handler or the default action. Inside: atomics, `pthread_self`, `write`, `fsync`, `rename`, `sigaction`, `raise` (all async-signal-safe), on memory made beforehand and freed only after eight later replacements. |
 //! | **Calls our code back?** | No C callbacks. zbus calls `ReserveDevice::request_release` and its property getters (plain Rust, on its helper thread): they only read fields and bump an atomic counter, and cannot panic. |
 //! | **Tests** | On Linux, in CI: limits and groups; memory locking within the limit (a buffer, a stack) and the clear error beyond it; scheduling (a direct `SCHED_FIFO` or rtkit's `SCHED_RR` where allowed, otherwise the `linux.realtime.denied` error with its arguments, and the guard restoring the policy); the D-Bus requests against the real buses when present, and their errors when absent (CI containers have no system bus: those tests say so on stderr and pass). On a real machine the rtkit and logind tests must run in the user's session, e.g. `systemd-run --user --wait --pipe <test binary>`: over plain SSH polkit refuses both. Under ASan, LSan and TSan with the rest of the workspace. |
 //!
@@ -27,12 +29,15 @@
 //!
 //! `linux.realtime.denied`, `linux.rtkit.unavailable`, `linux.rtkit.refused`, `linux.rtkit.not_applied`,
 //! `linux.memlock.limited`, `linux.memlock.denied`, `linux.stack_unknown`, `linux.rlimit_failed`,
-//! `linux.groups_failed`, `linux.out_of_memory`, `linux.dbus.unavailable` (with `bus`), `linux.dbus.timeout`,
+//! `linux.groups_failed`, `linux.out_of_memory`, `linux.crash.open_failed`, `linux.crash.install_failed`, `linux.dbus.unavailable` (with `bus`), `linux.dbus.timeout`,
 //! `linux.dbus.thread_gone`, `linux.logind.unavailable`, `linux.reserve.refused` (with `owner` when known),
 //! `linux.reserve.failed`, `linux.reserve.already_held`, `linux.thread_failed`, `linux.invalid_argument`.
 
 #[cfg(target_os = "linux")]
 mod linux;
+
+#[cfg(unix)]
+pub mod crash;
 
 #[cfg(target_os = "linux")]
 pub use linux::{

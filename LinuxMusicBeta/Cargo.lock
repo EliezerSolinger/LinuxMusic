@@ -3841,6 +3841,7 @@ dependencies = [
  "lm-port",
  "lm-render",
  "lm-state",
+ "lm-sys-linux",
  "lm-sys-sndfile",
  "lm-time",
  "rustix",
