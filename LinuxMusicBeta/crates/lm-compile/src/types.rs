@@ -106,7 +106,13 @@ impl Build {
             (
                 Build::Plugin { node: a, plugin: pa, version: va, state: sa, channels: ca },
                 Build::Plugin { node: b, plugin: pb, version: vb, state: sb, channels: cb },
-            ) => a == b && pa == pb && va == vb && ca == cb && same_except(sa, sb, lm_state::PARAMS_KEY),
+            ) => {
+                a == b
+                    && pa == pb
+                    && va == vb
+                    && ca == cb
+                    && same_except(sa, sb, &[lm_state::PARAMS_KEY, lm_plugin::CHUNK_KEY])
+            }
             (
                 Build::Rack { channel: a, master: ma, stages: sa, rack: ra, channels: ca },
                 Build::Rack { channel: b, master: mb, stages: sb, rack: rb, channels: cb },

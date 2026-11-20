@@ -114,6 +114,9 @@ struct Proc {
     installed: Option<InstalledProcessor>,
     requested: Option<(u64, Build, PluginShape)>,
     ready: Option<ReadyCore>,
+    /// The installed processor must be built again though its state did not change (a third-party plugin whose
+    /// helper crashed or hung: "recreate"); it plays until the new one is ready
+    renew: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -397,7 +400,7 @@ impl CompilerCore {
         c.slot_keys = table.slot_keys.clone();
         c.ranges = table.ranges.clone();
         for p in &table.processors {
-            c.procs.insert(p.node, Proc { installed: Some(p.clone()), requested: None, ready: None });
+            c.procs.insert(p.node, Proc { installed: Some(p.clone()), requested: None, ready: None, renew: false });
         }
         let now = Instant::now();
         c.tails = table
@@ -469,6 +472,28 @@ impl CompilerCore {
             }
             None => false,
         }
+    }
+
+    /// Builds the node's processor again at the next compilation, with the same state ("recreate" after a
+    /// third-party plugin crashed or hung); the old one stays until the new one is ready. `false` if the node has no
+    /// processor
+    pub fn renew(&mut self, node: NodeKey) -> bool {
+        match self.procs.get_mut(&node) {
+            Some(p) if p.installed.is_some() => {
+                p.renew = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The plugins and schemas grew (a plugin scan, I-9.6): what compiled before compiles the same. Only additions:
+    /// a plugin of the project never leaves the catalog while the session runs
+    pub fn set_catalog(&mut self, plugins: Arc<dyn PluginCatalog>, schemas: Arc<SchemaRegistry>) {
+        self.rack_channel = rack_params(&schemas, false);
+        self.rack_master = rack_params(&schemas, true);
+        self.config.plugins = plugins;
+        self.config.schemas = schemas;
     }
 
     /// The renderer reported the end of a tail (`Telemetry::TailEnded`): the next compilation removes it
@@ -753,6 +778,7 @@ impl CompilerCore {
             }
             if pp.use_ready {
                 let r = proc.ready.take().expect("planned with a ready core");
+                proc.renew = false;
                 let installed = InstalledProcessor { node: pp.key, build: r.build, shape: r.shape, latency: r.latency };
                 match proc.installed.replace(installed) {
                     Some(old) => {
@@ -954,6 +980,7 @@ impl CompilerCore {
         let installed = proc.and_then(|p| p.installed.as_ref());
         let ready = proc.and_then(|p| p.ready.as_ref());
         let requested = proc.and_then(|p| p.requested.as_ref());
+        let renew = proc.is_some_and(|p| p.renew);
         let mut pp = ProcPlan {
             key,
             wanted: None,
@@ -978,7 +1005,7 @@ impl CompilerCore {
                         plan.new_tails.push((serial, key, old.shape.clone(), in_place, old.latency));
                     }
                     (r.shape.clone(), r.latency)
-                } else if let Some(i) = installed.filter(|i| i.build.same_processor(build)) {
+                } else if let Some(i) = installed.filter(|i| !renew && i.build.same_processor(build)) {
                     (i.shape.clone(), i.latency)
                 } else {
                     pp.request = !requested.is_some_and(|(_, b, _)| b.same_processor(build));

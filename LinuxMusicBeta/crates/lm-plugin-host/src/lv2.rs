@@ -118,6 +118,10 @@ impl Plugin for Lv2 {
         self.instance.latency().unwrap_or(0)
     }
 
+    fn param(&self, index: u32) -> f32 {
+        self.ports.get(index as usize).and_then(|p| self.instance.control(*p)).unwrap_or(0.0)
+    }
+
     fn set_param(&mut self, index: u32, value: f32) {
         if let Some(port) = self.ports.get(index as usize) {
             let _ = self.instance.set_control(*port, value);

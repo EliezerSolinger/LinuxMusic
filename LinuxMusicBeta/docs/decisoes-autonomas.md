@@ -1134,6 +1134,29 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 - **Varredura como `Operation`:** a lista vem só dos metadados (`list`). Cada plugin é sondado (`probe`) num helper
   próprio, com prazo. O que cai ou estoura o prazo entra na lista de bloqueados com o motivo, e os bloqueados não são
   sondados de novo (`skipped`). Um plugin bloqueado não derruba a varredura nem o núcleo.
+- **Na sessão** (`lm-session/src/external.rs`, combinado com o agente do `lm-session`):
+  - **A varredura é uma `Operation`.** O que ela acha e a lista de bloqueados ficam nas preferências
+    (`plugins.scanned`, `plugins.blocked`, `plugins.paths`). Ao abrir, a sessão põe no catálogo os plugins da última
+    varredura.
+  - **O catálogo só cresce enquanto a sessão roda.** Um plugin que o projeto usa nunca sai: o documento, o compilador
+    e o histórico continuam citando o nome dele. O documento segue com o registro maior (`Document::widen`, que
+    recusa um registro sem algum tipo ou com versão diferente) e o compilador com o catálogo maior
+    (`Compiler::set_catalog`). Nada é reaberto e o histórico fica. Fechar e reabrir o projeto era a alternativa e
+    perderia o desfazer.
+  - **O helper de cada nó:** a sessão guarda um `Weak<Hosted>` tirado do proxy construído (`Proxy::hosted`). Assim o
+    helper vive exatamente enquanto o processador vive.
+  - **O `"chunk"` não reconstrói o processador** (`lm_plugin::CHUNK_KEY`, ignorado pelo `same_processor`, como os
+    params). Ele chega ao documento numa transação `Origin::Plugin`:
+    - quando o plugin avisa (`StateChanged`) ou antes de cada salvar, pedido ao helper numa operação;
+    - junto vêm os valores dos parâmetros que o estado carrega.
+    Quando o chunk do documento difere do que o plugin tem (desfazer, preset), a sessão o entrega ao plugin rodando
+    (`restore`), sem construir de novo.
+  - **Parâmetros mudados na janela do plugin** (`ParamChanged`) viram um gesto, fechado 300 ms depois da última
+    mudança (I-9.4).
+  - **Caiu ou travou:** aviso com a ação `plugin.recreate`. Ela reconstrói o nó (`Compiler::renew`) a partir do
+    estado do documento (o último guardado). O antigo, já em silêncio, toca até o novo ficar pronto.
+  - **Na exportação** o proxy espera cada bloco (`Deadline::Wait`).
+  - Um estado acima de 64 KB como recurso (U24) ainda não foi feito: o chunk vai inteiro na árvore.
 - **Pendente:**
   - Plugin mono numa faixa estéreo processa só o canal 0. Falta rodar duas instâncias em dual mono.
   - Janela do plugin pelo helper (I-22): o protocolo tem `gui`; o LV2 precisa do suil/GTK.

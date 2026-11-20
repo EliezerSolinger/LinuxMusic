@@ -46,6 +46,8 @@ pub mod w {
     pub const RATE: usize = 21;
     /// Asked by the core: the helper ends its audio loop
     pub const QUIT: usize = 22;
+    /// Set by the helper when the plugin says its own state changed (its window, a preset); the core clears it
+    pub const STATE: usize = 23;
     pub const HEADER: usize = 32;
 }
 

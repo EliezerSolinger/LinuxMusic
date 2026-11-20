@@ -18,7 +18,9 @@ fn a_scanned_plugin_in_the_registry() {
         load_timeout: Duration::from_secs(20),
         paths: Vec::new(),
     });
-    let report = scan(&config, "test", &[], &[], Duration::from_secs(2), &Cancel::new(), &Progress::new()).unwrap();
+    let report =
+        scan(&config, "test", &[], &["stall".to_owned()], Duration::from_secs(10), &Cancel::new(), &Progress::new())
+            .unwrap();
     let started = Arc::new(Mutex::new(0usize));
     let counter = Arc::clone(&started);
     let on_start: lm_plugin_proxy::OnStart = Arc::new(move |_, _| *counter.lock().unwrap() += 1);

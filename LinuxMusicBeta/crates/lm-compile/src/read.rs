@@ -105,15 +105,15 @@ pub(crate) fn key(k: &str) -> Arc<str> {
 
 /// Deep equality of two objects ignoring one key (a plugin's `params`, which only reach the processor through
 /// slots), comparing by identity first
-pub(crate) fn same_except(a: &Value, b: &Value, ignore: &str) -> bool {
+pub(crate) fn same_except(a: &Value, b: &Value, ignore: &[&str]) -> bool {
     if a.same_node(b) {
         return true;
     }
     if !a.is_object() || !b.is_object() {
         return a == b;
     }
-    let mut ea = a.entries().filter(|(k, _)| *k != ignore);
-    let mut eb = b.entries().filter(|(k, _)| *k != ignore);
+    let mut ea = a.entries().filter(|(k, _)| !ignore.contains(k));
+    let mut eb = b.entries().filter(|(k, _)| !ignore.contains(k));
     loop {
         match (ea.next(), eb.next()) {
             (None, None) => return true,

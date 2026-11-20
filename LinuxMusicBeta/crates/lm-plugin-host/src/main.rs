@@ -124,6 +124,9 @@ fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn 
             p.process(frames, &i, &mut o, &events);
             latency = p.latency();
             p.changes(&mut changes);
+            if p.state_changed() {
+                words[w::STATE].store(1, Ordering::Release);
+            }
         }
         for (ch, b) in outs.iter().enumerate() {
             put(words, layout.output(ch), &b[..frames]);
@@ -140,6 +143,16 @@ fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn 
         lm_sys_ipc::wake(&words[w::DONE], 1);
         last = req;
     }
+}
+
+/// The parameters' values now, by key (with the state: a state carries its parameters too)
+fn param_values(p: &dyn Plugin) -> Value {
+    Value::object(
+        p.params()
+            .iter()
+            .enumerate()
+            .map(|(i, x)| (x.key.as_str(), Value::real(f64::from(p.param(i as u32))).unwrap_or(Value::NULL))),
+    )
 }
 
 fn run(paths: &[PathBuf]) -> Result<()> {
@@ -188,13 +201,29 @@ fn run(paths: &[PathBuf]) -> Result<()> {
     // The control channel, until `quit` or the end of the input
     while let Ok(Some(m)) = read_message(&mut input) {
         let reply = match m.get("t").and_then(Value::as_text) {
-            Some("save") => match plugin.lock().unwrap_or_else(PoisonError::into_inner).save() {
-                Ok(c) => Value::object([
-                    ("t", Value::text("state")),
-                    ("chunk", c.map_or(Value::NULL, |c| Value::text(hex(&c)))),
-                ]),
-                Err(e) => error(&e),
-            },
+            Some("save") => {
+                let mut p = plugin.lock().unwrap_or_else(PoisonError::into_inner);
+                match p.save() {
+                    Ok(c) => Value::object([
+                        ("t", Value::text("state")),
+                        ("chunk", c.map_or(Value::NULL, |c| Value::text(hex(&c)))),
+                        ("params", param_values(p.as_ref())),
+                    ]),
+                    Err(e) => error(&e),
+                }
+            }
+            Some("restore") => {
+                let r = m
+                    .get("chunk")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| Error::new("plugin_host.message"))
+                    .and_then(unhex)
+                    .and_then(|c| plugin.lock().unwrap_or_else(PoisonError::into_inner).restore(&c));
+                match r {
+                    Ok(()) => Value::object([("t", Value::text("restored"))]),
+                    Err(e) => error(&e),
+                }
+            }
             Some("gui") => {
                 let on = m.get("on").and_then(Value::as_bool).unwrap_or(false);
                 match plugin.lock().unwrap_or_else(PoisonError::into_inner).window(on) {

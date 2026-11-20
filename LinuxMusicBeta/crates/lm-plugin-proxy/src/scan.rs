@@ -73,6 +73,38 @@ fn get_t(v: &Value, k: &str) -> String {
     v.get(k).and_then(Value::as_text).unwrap_or("").to_owned()
 }
 
+impl Scanned {
+    /// As the helper lists it (and the session keeps it in the preferences); [`scanned_from`] reads it back
+    pub fn to_value(&self) -> Value {
+        let r = |x: f64| Value::real(x).unwrap_or(Value::NULL);
+        let params = self.params.iter().map(|p| {
+            Value::object([
+                ("key", Value::text(p.key.as_str())),
+                ("name", Value::text(p.name.as_str())),
+                ("min", r(p.min)),
+                ("max", r(p.max)),
+                ("default", r(p.default)),
+                ("integer", Value::bool(p.integer)),
+                ("toggled", Value::bool(p.toggled)),
+                ("logarithmic", Value::bool(p.logarithmic)),
+            ])
+        });
+        Value::object([
+            ("t", Value::text("plugin")),
+            ("format", Value::text(self.format.as_str())),
+            ("uri", Value::text(self.uri.as_str())),
+            ("name", Value::text(self.name.as_str())),
+            ("instrument", Value::bool(self.instrument)),
+            ("inputs", Value::int(self.inputs as i64)),
+            ("outputs", Value::int(self.outputs as i64)),
+            ("midi_in", Value::bool(self.midi_in)),
+            ("params", Value::list(params)),
+            ("latency", Value::bool(self.latency)),
+            ("has_window", Value::bool(self.has_window)),
+        ])
+    }
+}
+
 /// A plugin from the helper's listing
 pub fn scanned_from(v: &Value) -> Option<Scanned> {
     Some(Scanned {

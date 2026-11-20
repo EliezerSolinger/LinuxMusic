@@ -75,6 +75,14 @@ pub struct Ready {
     pub info: Value,
 }
 
+/// A plugin's state as the helper gave it
+#[derive(Clone, Debug, PartialEq)]
+pub struct Saved {
+    pub chunk: Option<Vec<u8>>,
+    /// The parameters' values, by key
+    pub params: Vec<(String, f32)>,
+}
+
 /// A running helper
 pub struct Hosted {
     child: Mutex<Child>,
@@ -239,11 +247,29 @@ impl Hosted {
 
     /// The plugin's own state (`None`: it has none). Blocking up to `timeout`: an `Operation`
     pub fn save_state(&self, timeout: Duration) -> Result<Option<Vec<u8>>> {
+        self.saved(timeout).map(|s| s.chunk)
+    }
+
+    /// The plugin's own state and its parameters' values with it (a state the plugin took by itself changes them
+    /// too). Blocking up to `timeout`: an `Operation`
+    pub fn saved(&self, timeout: Duration) -> Result<Saved> {
         let r = self.request(&Value::object([("t", Value::text("save"))]), &["state"], timeout)?;
-        match r.get("chunk").and_then(Value::as_text) {
-            Some(h) => Ok(Some(unhex(h)?)),
-            None => Ok(None),
-        }
+        let chunk = match r.get("chunk").and_then(Value::as_text) {
+            Some(h) => Some(unhex(h)?),
+            None => None,
+        };
+        let params = r
+            .get("params")
+            .map(|p| p.entries().filter_map(|(k, v)| Some((k.to_owned(), v.as_real()? as f32))).collect())
+            .unwrap_or_default();
+        Ok(Saved { chunk, params })
+    }
+
+    /// Gives the plugin a state (an undo, a preset), without building it again. Blocking up to `timeout`: an
+    /// `Operation`. A state it cannot take is an error, and it keeps the one it had
+    pub fn load_state(&self, chunk: &[u8], timeout: Duration) -> Result<()> {
+        let msg = Value::object([("t", Value::text("restore")), ("chunk", Value::text(hex(chunk)))]);
+        self.request(&msg, &["restored"], timeout).map(|_| ())
     }
 
     /// Opens or closes the plugin's own window, made by the helper (I-22: third-party plugins open their own)

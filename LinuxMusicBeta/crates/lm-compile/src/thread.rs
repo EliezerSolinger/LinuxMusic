@@ -16,9 +16,10 @@ use lm_base::{Error, Result, Role};
 use lm_render::{NodeCore, NodeIndex, ProgramGen, Returned};
 use lm_state::Value;
 
-use crate::catalog::Resources;
+use crate::catalog::{PluginCatalog, Resources};
 use crate::core::{CompilerConfig, CompilerCore};
 use crate::types::{Compiled, Environment, InstalledTable, NodeKey, Ticket};
+use lm_state::SchemaRegistry;
 
 /// What a compilation running for long shows on the project (T10: past 200 ms the session shows "applying")
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,6 +33,8 @@ enum Message {
     TailEnded(NodeIndex),
     Latency(NodeKey, u32),
     Rebuild(Box<InstalledTable>),
+    Renew(NodeKey),
+    Catalog(Arc<dyn PluginCatalog>, Arc<SchemaRegistry>),
 }
 
 struct Job {
@@ -147,6 +150,17 @@ impl Compiler {
         self.send(Message::Latency(node, latency));
     }
 
+    /// Builds a node's processor again with the same state ([`CompilerCore::renew`]); the next submitted root
+    /// requests it
+    pub fn renew(&mut self, node: NodeKey) {
+        self.send(Message::Renew(node));
+    }
+
+    /// The catalog grew ([`CompilerCore::set_catalog`]); applies before the next compilation
+    pub fn set_catalog(&mut self, plugins: Arc<dyn PluginCatalog>, schemas: Arc<SchemaRegistry>) {
+        self.send(Message::Catalog(plugins, schemas));
+    }
+
     /// Starts over from a table (H14)
     pub fn rebuild(&mut self, table: InstalledTable) {
         self.send(Message::Rebuild(Box::new(table)));
@@ -170,7 +184,7 @@ impl Drop for Compiler {
 
 fn run(mut core: CompilerCore, shared: &Shared) {
     lm_base::set_role(Role::Compile);
-    let config = core.config().clone();
+    let mut config = core.config().clone();
     // The last root compiled (a processor arriving or a tail ending recompiles it) and the last good table
     let mut last: Option<Job> = None;
     let mut good = core.table();
@@ -211,6 +225,12 @@ fn run(mut core: CompilerCore, shared: &Shared) {
                 Message::Ready { ticket, core: c } => news |= core.ready(ticket, c),
                 Message::TailEnded(n) => news |= core.tail_ended(n),
                 Message::Latency(k, l) => news |= core.latency_changed(k, l),
+                Message::Renew(k) => news |= core.renew(k),
+                Message::Catalog(plugins, schemas) => {
+                    config.plugins = Arc::clone(&plugins);
+                    config.schemas = Arc::clone(&schemas);
+                    core.set_catalog(plugins, schemas);
+                }
                 Message::Rebuild(table) => {
                     core = CompilerCore::from_table(config.clone(), &table);
                     good = *table;

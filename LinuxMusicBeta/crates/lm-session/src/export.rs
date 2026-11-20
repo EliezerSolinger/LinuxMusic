@@ -194,7 +194,11 @@ pub fn export(job: ExportJob, target: &ExportTarget, cancel: &Cancel, progress: 
         }
         for b in builds {
             cancel.check()?;
-            let p = build_processor(&plugins, &schemas, &b.build, b.spec, &plugin_view, b.seed)?;
+            let mut p = build_processor(&plugins, &schemas, &b.build, b.spec, &plugin_view, b.seed)?;
+            // A third-party plugin is waited for at every block: the file is the same bit for bit (S19)
+            if let Some(proxy) = p.as_any_mut().downcast_mut::<lm_plugin_proxy::Proxy>() {
+                proxy.set_deadline(lm_plugin_proxy::Deadline::Wait);
+            }
             core.ready(b.ticket, NodeCore::new(p, b.seed, None));
         }
         rounds += 1;

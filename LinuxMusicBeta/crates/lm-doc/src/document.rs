@@ -506,6 +506,28 @@ impl Document {
         &self.env.ctx.registry
     }
 
+    /// Goes on with a registry that has every type of the current one, at the same version, and more (the plugins a
+    /// scan found, I-9.6): the tree, the history and the gestures stay as they are. `doc.registry.narrower` when a
+    /// type is missing or at another version
+    pub fn widen(&mut self, registry: Arc<SchemaRegistry>, ports: Option<PortsFn>) -> Result<()> {
+        for old in self.env.ctx.registry.schemas() {
+            match registry.find(old.type_name) {
+                Some(new) if new.version == old.version => {}
+                _ => return Err(Error::new("doc.registry.narrower").arg("type", old.type_name)),
+            }
+        }
+        let ctx = Ctx::new(registry, self.env.ctx.root_type)?;
+        let env = Env {
+            ctx,
+            ports: ports.or_else(|| self.env.ports.clone()),
+            limits: self.env.limits,
+            usage: Arc::clone(&self.env.usage),
+            rules: self.env.rules.clone(),
+        };
+        self.env = Arc::new(env);
+        Ok(())
+    }
+
     /// A node, as a clone (never a pointer into a root, R8)
     pub fn find(&self, id: NodeId) -> Option<Value> {
         self.path_of(id).ok().and_then(|p| self.current.root.at_path(&p).cloned())

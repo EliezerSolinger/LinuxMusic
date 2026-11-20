@@ -61,6 +61,12 @@ pub fn defaults() -> Value {
         ("favorites", Value::empty_list()),
         ("autosaveSeconds", Value::int(60)),
         ("lowLatencyMonitoring", Value::bool(false)),
+        // Third-party plugins (I-9.6): search folders added by the user, the last scans, the plugins blocked (they
+        // crashed or hung their probe)
+        (
+            "plugins",
+            o(vec![("paths", Value::empty_list()), ("scanned", Value::empty_list()), ("blocked", Value::empty_list())]),
+        ),
     ])
 }
 

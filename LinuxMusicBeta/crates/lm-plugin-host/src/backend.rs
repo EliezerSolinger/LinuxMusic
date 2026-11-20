@@ -70,6 +70,8 @@ pub trait Plugin: Send {
     fn params(&self) -> &[Param];
     fn latency(&self) -> u32;
     fn set_param(&mut self, index: u32, value: f32);
+    /// A parameter's value now (after a state was restored, the core reads them back)
+    fn param(&self, index: u32) -> f32;
     /// One block: `events` with their offsets, in order
     fn process(&mut self, frames: usize, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[(u32, EventKind)]);
     fn save(&mut self) -> Result<Option<Vec<u8>>>;
@@ -78,6 +80,10 @@ pub trait Plugin: Send {
     fn window(&mut self, on: bool) -> Result<bool> {
         let _ = on;
         Ok(false)
+    }
+    /// Whether the plugin said its own state changed since the last call (the core then asks for it)
+    fn state_changed(&mut self) -> bool {
+        false
     }
     /// The plugin's own parameter changes since the last call (its window, a preset): (index, value)
     fn changes(&mut self, out: &mut Vec<(u32, f32)>) {

@@ -16,11 +16,17 @@ use crate::descriptor::{BuildContext, Descriptor, PluginKind, is_valid_plugin_id
 
 /// How an external plugin is built: the state (complete and valid) and the context, to a processor (for a
 /// third-party plugin, a proxy of a helper process, I-9.6)
+/// The field of a third-party plugin's own opaque state (arquitetura-nova.md 7a). The plugin changes it by itself
+/// (`PluginRequest::StateChanged`), so a change of it alone never builds the processor again: the session gives the
+/// running plugin the new value (an undo, a preset)
+pub const CHUNK_KEY: &str = "chunk";
+
 pub type ExternalBuild = Arc<dyn Fn(&Value, &BuildContext<'_>) -> Result<Box<dyn Processor>> + Send + Sync>;
 
 /// A plugin known only at run time: a third-party plugin the scan found (I-9.6). Its id, schema and ports are made
 /// from what the scan saw; its build starts the helper process. The `&'static` names of its schema are leaked once
 /// per plugin per start (bounded by the scan)
+#[derive(Clone)]
 pub struct External {
     /// `"lv2-<16 hex>"`, `"clap-…"`, `"vst3-…"`, `"ladspa-…"`: a valid plugin id
     pub id: String,

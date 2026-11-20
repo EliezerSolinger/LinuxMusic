@@ -84,6 +84,16 @@ impl Proxy {
         &self.state
     }
 
+    /// The helper this proxy runs (the session keeps it per node, for the state and the window)
+    pub fn hosted(&self) -> Option<Arc<crate::hosted::Hosted>> {
+        Arc::clone(&self._owner).downcast::<crate::hosted::Hosted>().ok()
+    }
+
+    /// The export waits for every block (S19); a live proxy has a deadline
+    pub fn set_deadline(&mut self, deadline: Deadline) {
+        self.deadline = deadline;
+    }
+
     fn silence(cx: &mut ProcessContext<'_>) {
         let n = cx.frames;
         for ch in 0..cx.buffers.outputs() {
@@ -221,6 +231,10 @@ impl Processor for Proxy {
             let index = words[at + k * OUT_WORDS].load(Ordering::Relaxed);
             let value = f32::from_bits(words[at + k * OUT_WORDS + 1].load(Ordering::Relaxed));
             cx.host.request(PluginRequest::ParamChanged { index, value });
+        }
+        // Its own state changed: the session asks the helper for it, outside the audio (I-9.4)
+        if words[w::STATE].swap(0, Ordering::AcqRel) != 0 {
+            cx.host.request(PluginRequest::StateChanged);
         }
     }
 

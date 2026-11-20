@@ -41,6 +41,10 @@ use crate::rack::RackProcessor;
 #[path = "midi/mod.rs"]
 pub(crate) mod midi;
 
+/// Third-party plugins (I-9.6): the scan, the catalog growing, the helpers, their state and notices
+#[path = "external.rs"]
+pub(crate) mod external;
+
 /// How often the clock thread wakes the main thread (H2)
 pub const PUMP_PERIOD: Duration = Duration::from_millis(10);
 /// While a gesture is open, its changes reach the journal at least this often (T11)
@@ -352,6 +356,7 @@ pub struct Session {
     safe_mode_on: bool,
     /// MIDI mapping, feedback, control surfaces, MIDI and automation recording (I-21)
     pub(crate) midi: midi::MidiCore,
+    pub(crate) external: external::ExternalCore,
     /// What `edit.copy` copied (H13)
     pub(crate) clipboard: Option<Clipboard>,
     /// The finished operations the headless printer has not shown
@@ -601,10 +606,12 @@ impl Session {
             safe_mode_on: false,
             displays: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             midi: midi::MidiCore::new(),
+            external: external::ExternalCore::default(),
             imported: Vec::new(),
             finished: Vec::new(),
             main,
         };
+        s.external_start();
         s.refresh_status();
         s.submit();
         Ok(s)
@@ -793,6 +800,7 @@ impl Session {
             && self.engine.installs_queued() == 0
             && self.open_ops.is_empty()
             && self.saving.is_none()
+            && !self.external.save_waiting
             && !self.document.index().ids().any(|(id, _)| self.is_waiting(*id))
     }
 
@@ -916,6 +924,7 @@ impl Session {
         changed |= self.read_telemetry();
         // 2b. MIDI (I-21): mapped fields and actions, gesture ends, learning, the map, feedback, the recordings
         changed |= self.midi_pump();
+        changed |= self.external_pump();
         self.poll_device();
         // 3. plugin requests (in the telemetry), and the takes
         changed |= self.poll_disk();
@@ -1200,6 +1209,8 @@ impl Session {
                         self.displays.borrow_mut().insert(node, r);
                         w
                     });
+                    let mut p = p;
+                    self.external_built(node, &mut p);
                     self.compiler.ready(ticket, NodeCore::new(p, seed, writer));
                 }
                 Err(e) if e.is_cancelled() => {}
@@ -1315,6 +1326,12 @@ impl Session {
                     self.notices.error(&e, Some(Target::Project), None);
                 }
             }
+            ("plugins.scan", Ok(report)) => {
+                if let Err(e) = self.scan_finished(&report) {
+                    self.notices.error(&e, None, None);
+                }
+            }
+            ("plugins.state" | "plugins.state.save", r) => self.states_finished(kind, r),
             ("paste", Ok(list)) => {
                 for r in list.items().filter_map(Value::as_resource).cloned().collect::<Vec<_>>() {
                     self.request(&r);
@@ -1430,6 +1447,11 @@ impl Session {
                 );
             }
             Telemetry::LocateRefused => self.notices.warn("session.transport.locate_refused", Vec::new()),
+            Telemetry::PluginRequest { node, request, .. } => {
+                if let Some(key) = table.key_of(node) {
+                    self.external_request(key, request);
+                }
+            }
             _ => {}
         }
     }
@@ -1599,6 +1621,10 @@ impl Session {
     }
 
     fn save_here(&mut self) -> Result<()> {
+        // Third-party plugins' own states first (an operation); the save goes on when they arrive
+        if self.external_before_save() {
+            return Ok(());
+        }
         // Everything before the save goes into the file, not the journal
         if let Some(patch) = self.document.take_journal() {
             self.write_journal(&patch);

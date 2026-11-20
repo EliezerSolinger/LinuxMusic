@@ -8,8 +8,8 @@
 //!   missed; a hung plugin is killed); no allocation, no lock;
 //! - [`hosted`]: starting a helper, its control channel (state, window), and the supervisor;
 //! - [`protocol`]: the control channel's messages (versioned);
-//! - [`external`]: a scanned plugin as an external plugin of the registry (its id, schema, ports and build);
-//! - [`scan`]: the scan, each plugin probed in a helper of its own with a deadline, the ones that crash or hang it
+//! - [`mod@external`]: a scanned plugin as an external plugin of the registry (its id, schema, ports and build);
+//! - [`mod@scan`]: the scan, each plugin probed in a helper of its own with a deadline, the ones that crash or hang it
 //!   listed as blocked (H15).
 
 #![forbid(unsafe_code)]
@@ -22,6 +22,6 @@ pub mod proxy;
 pub mod scan;
 
 pub use external::{OnStart, external, plugin_id};
-pub use hosted::{HostConfig, Hosted, LoadRequest, Ready, start};
+pub use hosted::{HostConfig, Hosted, LoadRequest, Ready, Saved, start};
 pub use proxy::{Deadline, HANG_BLOCKS, Proxy, ProxyState};
-pub use scan::{Blocked, ScanReport, Scanned, ScannedParam, scan};
+pub use scan::{Blocked, ScanReport, Scanned, ScannedParam, scan, scanned_from};

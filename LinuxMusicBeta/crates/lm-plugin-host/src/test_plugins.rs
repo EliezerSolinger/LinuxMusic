@@ -47,6 +47,8 @@ pub struct Test {
     line: Vec<Vec<f32>>,
     pos: usize,
     held: u32,
+    /// synth: a note arrived (its "state" is the last velocity-free note count, a test of `StateChanged`)
+    dirty: bool,
 }
 
 impl Test {
@@ -64,7 +66,15 @@ impl Test {
         }
         let values = l.params.iter().map(|p| p.default as f32).collect();
         let _ = max_block;
-        Ok(Test { kind: uri.into(), params: l.params, values, line: vec![vec![0.0; 4096 + 1]; 2], pos: 0, held: 0 })
+        Ok(Test {
+            kind: uri.into(),
+            params: l.params,
+            values,
+            line: vec![vec![0.0; 4096 + 1]; 2],
+            pos: 0,
+            held: 0,
+            dirty: false,
+        })
     }
 }
 
@@ -77,6 +87,10 @@ impl Plugin for Test {
         if self.kind == "gain" { self.values[1] as u32 } else { 0 }
     }
 
+    fn param(&self, index: u32) -> f32 {
+        self.values.get(index as usize).copied().unwrap_or(0.0)
+    }
+
     fn set_param(&mut self, index: u32, value: f32) {
         if let Some(v) = self.values.get_mut(index as usize) {
             *v = value;
@@ -87,7 +101,10 @@ impl Plugin for Test {
         for (_, e) in events {
             match *e {
                 EventKind::Param { index, value } => self.set_param(index, value),
-                EventKind::NoteOn { .. } => self.held += 1,
+                EventKind::NoteOn { .. } => {
+                    self.held += 1;
+                    self.dirty = self.kind == "synth";
+                }
                 EventKind::NoteOff { .. } => self.held = self.held.saturating_sub(1),
                 EventKind::AllNotesRelease | EventKind::AllSoundOff => self.held = 0,
                 _ => {}
@@ -130,6 +147,10 @@ impl Plugin for Test {
                 }
             }
         }
+    }
+
+    fn state_changed(&mut self) -> bool {
+        std::mem::take(&mut self.dirty)
     }
 
     fn save(&mut self) -> Result<Option<Vec<u8>>> {
