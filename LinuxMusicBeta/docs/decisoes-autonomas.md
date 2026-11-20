@@ -372,3 +372,17 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
 - **Sem mudança (já corretos, agora testados no limite):** Delay e linha mono (comprimento entre 0 e o da linha),
   Wave Shaper e Dynamics Processor (200 pontos, ramos para < 1 e ≥ 200), tabela do usuário (`% frames`), válvula
   (posição limitada antes do índice), formantes (vogal limitada a 4).
+
+## A faixa do canal em segmentos (20/11)
+
+- **`ChannelStrip::process_stages(frames, settings, had_input, tolerance, stages: Range<usize>)`**, com
+  `STRIP_STAGES = 4` (0 ganho: pot, low cut, estágio de ganho; 1 filtros: HPF, LPF, mono bass; 2 dinâmica: gate,
+  compressor; 3 EQ) e `stage_after(InsertPoint) -> usize` (o `k` do segmento `0..k` antes de um insert). Para o
+  rack que o `lm-compile` parte quando um insert fica entre seções.
+- **Bit a bit igual ao `process`** em toda divisão `0..k` + `k..4`, medidores e cauda incluídos
+  (`tests/strip_stages.rs`, sob a armadilha de alocação). Para isso o `process` passou a ser os quatro estágios
+  em sequência, cada seção com o seu começo, processamento e fim dentro do próprio estágio (antes, todos os começos
+  vinham no início do bloco e todos os fins no final: a mesma conta, já que nenhuma seção lê o estado de outra; o A/B
+  dá os mesmos números em todos os 166 casos). O único dado do bloco que cruza estágios, se algum filtro soa depois
+  da entrada (a cauda), é acumulado estágio a estágio e fechado pelo estágio 3; por isso `had_input` tem de ser o
+  mesmo em todos os segmentos de um bloco, e todo bloco passa por todos os estágios, em ordem.

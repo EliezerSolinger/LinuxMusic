@@ -6,6 +6,7 @@ use crate::gain_stage::{GainModel, GainStage};
 use crate::math::dbfs_to_amp;
 use crate::mono_bass::MonoBass;
 use crate::tolerance::ChannelTolerance;
+use core::ops::Range;
 
 const LOW_CUT_FREQUENCY: f64 = 100.0;
 const BUTTERWORTH_Q: f64 = core::f64::consts::FRAC_1_SQRT_2;
@@ -62,6 +63,26 @@ impl InsertPoint {
             InsertPoint::PostEq => "post-eq",
             InsertPoint::PrePan => "pre-pan",
         }
+    }
+}
+
+/// The strip's stages, for [`ChannelStrip::process_stages`]: 0 the gain (pot, low cut, gain stage), 1 the filters
+/// (high-pass, low-pass, mono bass), 2 the dynamics (gate, compressor), 3 the EQ
+pub const STRIP_STAGES: usize = 4;
+
+/// The insert point at the end of each stage
+const STAGE_ENDS: [InsertPoint; STRIP_STAGES] =
+    [InsertPoint::PostGain, InsertPoint::PostFilter, InsertPoint::PostDynamics, InsertPoint::PostEq];
+
+/// The stages to run before an insert at @p point, as `0..k` (the rest is `k..STRIP_STAGES`): `PreGain` 0, `PostGain`
+/// 1, `PostFilter` 2, `PostDynamics` 3, `PostEq` and `PrePan` 4
+pub fn stage_after(point: InsertPoint) -> usize {
+    match point {
+        InsertPoint::PreGain => 0,
+        InsertPoint::PostGain => 1,
+        InsertPoint::PostFilter => 2,
+        InsertPoint::PostDynamics => 3,
+        InsertPoint::PostEq | InsertPoint::PrePan => STRIP_STAGES,
     }
 }
 
@@ -136,6 +157,8 @@ pub struct ChannelStrip {
     mono_bass: MonoBass,
     /// Frames the filters may still ring for after the input fell silent
     tail_frames: u64,
+    /// Whether a section run so far in this block rings after its input (settled by the EQ stage, the last)
+    block_rings: bool,
     compressor: ChannelCompressor,
     gate: ChannelGate,
 }
@@ -154,6 +177,7 @@ impl ChannelStrip {
             eq: DeskEq::default(),
             mono_bass: MonoBass::default(),
             tail_frames: 0,
+            block_rings: false,
             compressor: ChannelCompressor::new(sample_rate),
             gate: ChannelGate::new(sample_rate),
         }
@@ -188,42 +212,114 @@ impl ChannelStrip {
             }
         };
         insert_at(InsertPoint::PreGain, frames);
+        for stage in 0..STRIP_STAGES {
+            self.run_stage(stage, frames, settings, had_input, tolerance);
+            insert_at(STAGE_ENDS[stage], frames);
+        }
+    }
 
-        let rate = self.sample_rate;
-        let rate64 = f64::from(rate);
-        // Sections left at their neutral setting are skipped
+    /// Runs only the strip's stages in @p stages (of [`STRIP_STAGES`]: 0 gain, 1 filters, 2 dynamics, 3 EQ; see
+    /// [`stage_after`]), for a rack whose inserts sit between sections and that runs the strip in segments.
+    ///
+    /// Each block must go through every stage once, in order: running `0..k` and then `k..4` on the same frames
+    /// (whatever is done to them between) is bit for bit [`process`](Self::process) with its hook at that point,
+    /// for every `k`, the meters and [`holds_signal`](Self::holds_signal) included. Each section's state lives in
+    /// its own stage; the only thing a block shares between stages, whether a filter is on (for the tail), is
+    /// gathered stage by stage and settled by stage 3, so @p had_input must be the same for every segment of a
+    /// block. A range past the strip's end is cut at it. Neither allocates nor locks
+    pub fn process_stages(
+        &mut self,
+        frames: &mut [[f32; 2]],
+        settings: &StripSettings,
+        had_input: bool,
+        tolerance: &ChannelTolerance,
+        stages: Range<usize>,
+    ) {
+        for stage in stages.start.min(STRIP_STAGES)..stages.end.min(STRIP_STAGES) {
+            self.run_stage(stage, frames, settings, had_input, tolerance);
+        }
+    }
+
+    fn run_stage(
+        &mut self,
+        stage: usize,
+        frames: &mut [[f32; 2]],
+        settings: &StripSettings,
+        had_input: bool,
+        tolerance: &ChannelTolerance,
+    ) {
+        match stage {
+            0 => self.gain_section(frames, settings, tolerance),
+            1 => self.filter_section(frames, settings, tolerance),
+            2 => self.dynamics_section(frames, settings),
+            _ => self.eq_section(frames, settings, had_input, tolerance),
+        }
+    }
+
+    /// How far through a stretch of @p count frames frame @p f is (1 at the last), for the ramps
+    #[inline]
+    fn progress(f: usize, count: usize) -> f32 {
+        if count > 1 { f as f32 / (count - 1) as f32 } else { 1.0 }
+    }
+
+    /// Stage 0: the GAIN pot, the low cut and the gain stage
+    fn gain_section(&mut self, frames: &mut [[f32; 2]], settings: &StripSettings, tolerance: &ChannelTolerance) {
+        let rate64 = f64::from(self.sample_rate);
         let low_cut = settings.low_cut;
-        let high_pass_on = settings.high_pass > HIGH_PASS_OFF;
-        let low_pass_on = settings.low_pass < LOW_PASS_OFF;
-        let mono_bass_on =
-            self.mono_bass.begin(settings.mono_bass_frequency, (100.0 - settings.mono_bass) / 100.0, rate);
-        self.gate.begin(settings.gate);
-        self.compressor.begin(settings.compressor);
-        let gate_on = self.gate.is_active();
-        let compressor_on = self.compressor.is_active();
-        self.eq.begin(settings.eq, rate64, tolerance.eq_frequency, tolerance.eq_gain);
-        let eq_on = self.eq.is_active();
-
         // A section switched off starts afresh when switched on again
         if !low_cut {
             self.low_cut2.reset();
             self.low_cut1.reset();
         }
+        let low_cut_frequency = LOW_CUT_FREQUENCY * f64::from(tolerance.low_cut);
+        self.low_cut2.set_target(Biquad::high_pass(low_cut_frequency, 1.0, rate64));
+        self.low_cut1.set_target(Biquad::high_pass1(low_cut_frequency, rate64));
+
+        let count = frames.len();
+        // The GAIN pot, ramped so that turning it does not click
+        let gain = pot_gain(settings.gain) * if tolerance.gain != 0.0 { dbfs_to_amp(tolerance.gain) } else { 1.0 };
+        if gain != 1.0 || self.gain != 1.0 {
+            for (f, frame) in frames.iter_mut().enumerate() {
+                let g = self.gain + (gain - self.gain) * Self::progress(f, count);
+                frame[0] *= g;
+                frame[1] *= g;
+            }
+        }
+        self.gain = gain;
+
+        // The low cut comes before the gain stage, so that the op-amp or the tube gets no rumble to saturate on
+        if low_cut {
+            for (f, frame) in frames.iter_mut().enumerate() {
+                let progress = f64::from(Self::progress(f, count));
+                for ch in 0..2 {
+                    let x = self.low_cut2.process(f64::from(frame[ch]), ch, progress);
+                    frame[ch] = self.low_cut1.process(x, ch, progress) as f32;
+                }
+            }
+        }
+
+        let drive = settings.drive;
+        self.gain_stage.process(frames, drive, settings.realistic, tolerance.drive);
+        self.low_cut2.finish();
+        self.low_cut1.finish();
+        // (the tube's coupling rings too)
+        self.block_rings |= low_cut || drive.is_tube();
+    }
+
+    /// Stage 1: the high-pass, the low-pass and the mono bass
+    fn filter_section(&mut self, frames: &mut [[f32; 2]], settings: &StripSettings, tolerance: &ChannelTolerance) {
+        let rate = self.sample_rate;
+        let rate64 = f64::from(rate);
+        let high_pass_on = settings.high_pass > HIGH_PASS_OFF;
+        let low_pass_on = settings.low_pass < LOW_PASS_OFF;
+        let mono_bass_on =
+            self.mono_bass.begin(settings.mono_bass_frequency, (100.0 - settings.mono_bass) / 100.0, rate);
         if !high_pass_on {
             self.high_pass.reset();
         }
         if !low_pass_on {
             self.low_pass.reset();
         }
-        if !gate_on {
-            self.gate.reset();
-        }
-        if !compressor_on {
-            self.compressor.reset();
-        }
-        let low_cut_frequency = LOW_CUT_FREQUENCY * f64::from(tolerance.low_cut);
-        self.low_cut2.set_target(Biquad::high_pass(low_cut_frequency, 1.0, rate64));
-        self.low_cut1.set_target(Biquad::high_pass1(low_cut_frequency, rate64));
         self.high_pass.set_target(Biquad::high_pass(
             f64::from(settings.high_pass * tolerance.high_pass),
             BUTTERWORTH_Q,
@@ -236,49 +332,9 @@ impl ChannelStrip {
         ));
 
         let count = frames.len();
-        let progress_at = |f: usize| if count > 1 { f as f32 / (count - 1) as f32 } else { 1.0 };
-
-        // The GAIN pot, ramped so that turning it does not click
-        let gain = pot_gain(settings.gain) * if tolerance.gain != 0.0 { dbfs_to_amp(tolerance.gain) } else { 1.0 };
-        if gain != 1.0 || self.gain != 1.0 {
-            for (f, frame) in frames.iter_mut().enumerate() {
-                let g = self.gain + (gain - self.gain) * progress_at(f);
-                frame[0] *= g;
-                frame[1] *= g;
-            }
-        }
-        self.gain = gain;
-
-        // The low cut comes before the gain stage, so that the op-amp or the tube gets no rumble to saturate on
-        if low_cut {
-            for (f, frame) in frames.iter_mut().enumerate() {
-                let progress = f64::from(progress_at(f));
-                for ch in 0..2 {
-                    let x = self.low_cut2.process(f64::from(frame[ch]), ch, progress);
-                    frame[ch] = self.low_cut1.process(x, ch, progress) as f32;
-                }
-            }
-        }
-
-        let drive = settings.drive;
-        self.gain_stage.process(frames, drive, settings.realistic, tolerance.drive);
-        insert_at(InsertPoint::PostGain, frames);
-
-        // After the input falls silent, the filters ring out for a while
-        let any_filter = low_cut || high_pass_on || low_pass_on || mono_bass_on || eq_on || drive.is_tube(); // the tube's coupling
-        if !any_filter {
-            self.tail_frames = 0;
-        } else if had_input {
-            self.tail_frames = (FILTER_TAIL * rate) as u64;
-        } else {
-            self.tail_frames = self.tail_frames.saturating_sub(count as u64);
-        }
-
-        // The filters, the dynamics and the EQ, each over the frames in turn (each works sample by sample, so this
-        // is the same as one pass), so that the effects can go between them
         if high_pass_on || low_pass_on || mono_bass_on {
             for (f, frame) in frames.iter_mut().enumerate() {
-                let progress = progress_at(f);
+                let progress = Self::progress(f, count);
                 for ch in 0..2 {
                     let mut x = frame[ch];
                     if high_pass_on {
@@ -298,9 +354,26 @@ impl ChannelStrip {
                 }
             }
         }
-        insert_at(InsertPoint::PostFilter, frames);
+        if mono_bass_on {
+            self.mono_bass.end();
+        }
+        self.high_pass.finish();
+        self.low_pass.finish();
+        self.block_rings |= high_pass_on || low_pass_on || mono_bass_on;
+    }
 
-        // Stereo-linked dynamics, the gate first
+    /// Stage 2: stereo-linked dynamics, the gate first
+    fn dynamics_section(&mut self, frames: &mut [[f32; 2]], settings: &StripSettings) {
+        self.gate.begin(settings.gate);
+        self.compressor.begin(settings.compressor);
+        let gate_on = self.gate.is_active();
+        let compressor_on = self.compressor.is_active();
+        if !gate_on {
+            self.gate.reset();
+        }
+        if !compressor_on {
+            self.compressor.reset();
+        }
         if gate_on || compressor_on {
             for frame in frames.iter_mut() {
                 let gain = if gate_on { self.gate.gain(frame[0], frame[1]) } else { 1.0 };
@@ -315,25 +388,38 @@ impl ChannelStrip {
                 }
             }
         }
-        insert_at(InsertPoint::PostDynamics, frames);
+    }
 
+    /// Stage 3: the EQ; and the end of the block: how long the filters may ring on
+    fn eq_section(
+        &mut self,
+        frames: &mut [[f32; 2]],
+        settings: &StripSettings,
+        had_input: bool,
+        tolerance: &ChannelTolerance,
+    ) {
+        self.eq.begin(settings.eq, f64::from(self.sample_rate), tolerance.eq_frequency, tolerance.eq_gain);
+        let eq_on = self.eq.is_active();
+        let count = frames.len();
         if eq_on {
             for (f, frame) in frames.iter_mut().enumerate() {
-                let progress = f64::from(progress_at(f));
+                let progress = f64::from(Self::progress(f, count));
                 for ch in 0..2 {
                     frame[ch] = self.eq.process(f64::from(frame[ch]), ch, progress) as f32;
                 }
             }
         }
-        insert_at(InsertPoint::PostEq, frames);
-
-        if mono_bass_on {
-            self.mono_bass.end();
-        }
-        for filter in [&mut self.low_cut2, &mut self.low_cut1, &mut self.high_pass, &mut self.low_pass] {
-            filter.finish();
-        }
         self.eq.finish();
+
+        // After the input falls silent, the filters ring out for a while
+        let any_filter = std::mem::take(&mut self.block_rings) || eq_on;
+        if !any_filter {
+            self.tail_frames = 0;
+        } else if had_input {
+            self.tail_frames = (FILTER_TAIL * self.sample_rate) as u64;
+        } else {
+            self.tail_frames = self.tail_frames.saturating_sub(count as u64);
+        }
     }
 
     /// Whether the filters may still ring after the input fell silent, so the channel must be processed
@@ -348,6 +434,7 @@ impl ChannelStrip {
         }
         self.eq.reset();
         self.tail_frames = 0;
+        self.block_rings = false;
         self.mono_bass.reset();
         self.gain_stage.reset();
         self.gate.reset();

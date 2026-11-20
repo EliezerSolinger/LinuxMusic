@@ -306,6 +306,7 @@ dependencies = [
 name = "lm-dsp"
 version = "0.1.0"
 dependencies = [
+ "assert_no_alloc",
  "libm",
  "lm-sys-samplerate",
  "serde_json",

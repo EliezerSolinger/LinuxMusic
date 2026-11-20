@@ -15,5 +15,7 @@ libm.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+# The allocation trap, for the strip run in segments
+assert_no_alloc.workspace = true
 # The interpolator the plugins give the sample player (libsamplerate, as the legacy program): for the A/B
 lm-sys-samplerate.workspace = true
