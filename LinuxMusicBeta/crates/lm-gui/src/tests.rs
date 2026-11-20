@@ -642,6 +642,14 @@ fn effects(cx: &mut TestAppContext) {
     let insert = ch.inserts[0].id;
     click(cx, &format!("rack-led-{}", insert.number));
     assert!(channel(&ws, cx, id).inserts[0].bypass);
+    let wet = |cx: &mut VisualTestContext| {
+        let core = core(&ws, cx);
+        core.read_with(cx, |c, _| {
+            c.port().find(insert).and_then(|n| n.get("wet").and_then(Value::as_real)).unwrap_or(1.0)
+        })
+    };
+    drag(cx, &format!("wet-{}", insert.number), 0.0, 40.0);
+    assert!(wet(cx) < 1.0, "W/D down: {}", wet(cx));
     click(cx, &format!("point-{}", insert.number));
     assert_eq!(&*channel(&ws, cx, id).inserts[0].point, "pre-pan", "post-eq → pre-pan");
     click(cx, "add-effect");

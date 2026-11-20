@@ -567,8 +567,9 @@ modos e a chave ANALOG / DIGITAL. Só muda o que segue:
 - **Botões e menus:**
   - Um duplo clique num botão volta ao padrão (F-CTL-005); no legado, ele abria a caixa de valor. A roda do mouse nos
     botões ainda falta.
-  - No rack, cada efeito tem LED, nome, ponto e "Controles". Os botões W/D, DECAY e GATE do `EffectView` esperam um
-    campo de mistura no insert.
+  - No rack, cada efeito tem LED, nome, ponto, W/D (o `wet` do insert, parâmetro `insert.wet`) e "Controles". Os
+    botões DECAY e GATE do `EffectView` do legado não voltam: eram do mecanismo de dormir do LMMS, que o motor novo
+    não tem.
   - "Cor > Mudar" mostra as 8 cores das faixas, no lugar do seletor de cores.
   - O renomear acontece no próprio canal: Enter ou F2 começa, e Enter termina, como no legado.
 - **Abaixo da altura mínima do legado** (a faixa mais alta), a página rola em vez de espremer os faders.

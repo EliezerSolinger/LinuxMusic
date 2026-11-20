@@ -115,6 +115,8 @@ pub const HMF: Knob = knob("eq", "highMid", "HMF", "EQ high mid (2.5 kHz)", GREE
 pub const LMF: Knob = knob("eq", "lowMid", "LMF", "EQ low mid (400 Hz)", BLUE, Scale::Lin(-15.0, 15.0), 0.0, "dB");
 pub const LO: Knob = knob("eq", "low", "LO", "EQ low (80 Hz)", BROWN, Scale::Lin(-15.0, 15.0), 0.0, "dB");
 pub const PAN: Knob = knob("", "pan", "PAN", "Panning", desk::col::PAN, Scale::Pan, 0.0, "%");
+/// An insert's wet/dry mix (EffectView's W/D): absent is all wet
+pub const WET: Knob = knob("", "wet", "W/D", "Wet/dry", desk::col::GREY, Scale::Lin(0.0, 1.0), 1.0, "");
 
 pub const WIDTH: Knob = knob("stereo", "width", "WIDTH", "Stereo width", GREY, Scale::Lin(0.0, 200.0), 100.0, "%");
 pub const M_BASS: Knob = knob("stereo", "monoBass", "BASS", "Mono bass", GREY, Scale::Lin(0.0, 100.0), 0.0, "%");
@@ -190,6 +192,8 @@ enum Menu {
 fn map_target(t: &Target) -> Option<lm_port::MapTarget> {
     Some(match t {
         Target::Knob(id, k) if matches!(k.scale, Scale::Choice(_)) => midi::field(*id, &path_of(k)),
+        // the insert's mix is the parameter "insert.wet" (lm-doc's param key)
+        Target::Knob(id, k) if k.key == "wet" => midi::param(*id, "insert.wet"),
         Target::Knob(id, k) => midi::param(*id, &path_of(k).join(".")),
         Target::Fader(id, key) => midi::param(*id, key),
         Target::Send(sid) => midi::param(*sid, "amount"),
@@ -1955,6 +1959,33 @@ impl MixingPage {
                                     );
                                 })),
                         )
+                    })
+                    .child({
+                        // W/D: the insert's wet/dry mix
+                        let t = Target::Knob(iid, WET);
+                        let travel = self.travel_of(&t, cx);
+                        let (t1, t2, t3) = (t.clone(), t.clone(), t);
+                        div()
+                            .id(SharedString::from(format!("wet-{}", iid.number)))
+                            .debug_selector(move || format!("wet-{}", iid.number))
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .cursor_ns_resize()
+                            .child(desk::plain_knob(travel, 17.0))
+                            .child(div().text_size(px(7.)).text_color(c(THEME.text3)).child(tr("W/D")))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |p, ev, w, cx| p.press(t1.clone(), 160.0, id, ev, w, cx)),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(move |p, ev, w, cx| p.press(t2.clone(), 160.0, id, ev, w, cx)),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Middle,
+                                cx.listener(move |p, ev, w, cx| p.press(t3.clone(), 160.0, id, ev, w, cx)),
+                            )
                     })
                     .child(
                         div()
