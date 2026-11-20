@@ -14,16 +14,66 @@ use lm_state::{NodeSchema, PARAMS_KEY, ParamSpec, SchemaRegistry, Value};
 
 use crate::descriptor::{BuildContext, Descriptor, PluginKind, is_valid_plugin_id, plugin_type};
 
+/// How an external plugin is built: the state (complete and valid) and the context, to a processor (for a
+/// third-party plugin, a proxy of a helper process, I-9.6)
+pub type ExternalBuild = Arc<dyn Fn(&Value, &BuildContext<'_>) -> Result<Box<dyn Processor>> + Send + Sync>;
+
+/// A plugin known only at run time: a third-party plugin the scan found (I-9.6). Its id, schema and ports are made
+/// from what the scan saw; its build starts the helper process. The `&'static` names of its schema are leaked once
+/// per plugin per start (bounded by the scan)
+pub struct External {
+    /// `"lv2-<16 hex>"`, `"clap-…"`, `"vst3-…"`, `"ladspa-…"`: a valid plugin id
+    pub id: String,
+    /// Shown as is: a third-party plugin's name is not translated
+    pub name: String,
+    pub kind: PluginKind,
+    /// `"plugin:<id>"`, with the plugin's parameters
+    pub schema: NodeSchema,
+    /// Fixed for the plugin: an external plugin's ports do not depend on its state
+    pub ports: Ports,
+    pub build: ExternalBuild,
+}
+
+impl fmt::Debug for External {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("External").field("id", &self.id).field("name", &self.name).field("kind", &self.kind).finish()
+    }
+}
+
+enum Source {
+    Static(&'static Descriptor),
+    External(Arc<External>),
+}
+
 struct Entry {
-    descriptor: &'static Descriptor,
+    source: Source,
     type_name: String,
     /// The main schema (its parameters, by index: the index a processor's `Param` events carry)
     schema: NodeSchema,
 }
 
+impl Entry {
+    fn kind(&self) -> PluginKind {
+        match &self.source {
+            Source::Static(d) => d.kind,
+            Source::External(e) => e.kind,
+        }
+    }
+}
+
+/// One plugin of the registry, as the lists show it
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EntryInfo<'a> {
+    pub id: &'a str,
+    /// A translation key for a plugin of the program; the plugin's own name for a third-party one
+    pub name: &'a str,
+    pub kind: PluginKind,
+    pub third_party: bool,
+}
+
 /// Every plugin of the program, immutable once made
 pub struct Registry {
-    plugins: BTreeMap<&'static str, Entry>,
+    plugins: BTreeMap<String, Entry>,
     /// The plugins' types only (and the types they nest)
     schemas: SchemaRegistry,
 }
@@ -68,7 +118,13 @@ impl Registry {
     /// A registry of these plugins. Every descriptor is checked: its id, its schemas (names, definitions, nested types,
     /// defaults), and the ports of its default state. Keys `plugin.definition` (with `problem`) and the schema keys
     pub fn new(descriptors: &[&'static Descriptor]) -> Result<Arc<Self>> {
-        let mut plugins = BTreeMap::new();
+        Self::with_external(descriptors, Vec::new())
+    }
+
+    /// The program's plugins and the external ones the scan found. Each external one is checked like a descriptor
+    /// (id, schema name and definition, ports)
+    pub fn with_external(descriptors: &[&'static Descriptor], external: Vec<External>) -> Result<Arc<Self>> {
+        let mut plugins: BTreeMap<String, Entry> = BTreeMap::new();
         let mut schemas = SchemaRegistry::new();
         for &d in descriptors {
             if !is_valid_plugin_id(d.id) {
@@ -92,25 +148,73 @@ impl Registry {
             for s in all {
                 schemas.add(s)?;
             }
-            plugins.insert(d.id, Entry { descriptor: d, type_name, schema: main });
+            plugins.insert(d.id.to_owned(), Entry { source: Source::Static(d), type_name, schema: main });
+        }
+        for e in external {
+            if !is_valid_plugin_id(&e.id) {
+                return Err(definition(&e.id, "id"));
+            }
+            if plugins.contains_key(&e.id) {
+                return Err(definition(&e.id, "duplicate_id"));
+            }
+            let type_name = plugin_type(&e.id);
+            if e.schema.type_name != type_name {
+                return Err(definition(&e.id, "schema_name").arg("type", e.schema.type_name));
+            }
+            check_ports(&e.id, e.kind, &e.ports)?;
+            schemas.add(e.schema.clone())?;
+            let schema = e.schema.clone();
+            plugins.insert(e.id.clone(), Entry { source: Source::External(Arc::new(e)), type_name, schema });
         }
         schemas.check_complete()?;
         let registry = Self { plugins, schemas };
-        for entry in registry.plugins.values() {
-            let defaults = registry.defaults(entry.descriptor.id)?;
-            let ports = (entry.descriptor.ports)(&defaults);
-            check_ports(entry.descriptor.id, entry.descriptor.kind, &ports)?;
+        for (id, entry) in &registry.plugins {
+            if let Source::Static(d) = &entry.source {
+                let defaults = registry.defaults(id)?;
+                let ports = (d.ports)(&defaults);
+                check_ports(id, d.kind, &ports)?;
+            }
         }
         Ok(Arc::new(registry))
     }
 
+    /// A plugin of the program (an external one has no descriptor: see [`Registry::kind`], [`Registry::entries`])
     pub fn get(&self, id: &str) -> Option<&'static Descriptor> {
-        self.plugins.get(id).map(|e| e.descriptor)
+        match &self.plugins.get(id)?.source {
+            Source::Static(d) => Some(*d),
+            Source::External(_) => None,
+        }
     }
 
-    /// Every descriptor, by id
+    /// Every descriptor of the program's plugins, by id
     pub fn descriptors(&self) -> impl Iterator<Item = &'static Descriptor> + '_ {
-        self.plugins.values().map(|e| e.descriptor)
+        self.plugins.values().filter_map(|e| match &e.source {
+            Source::Static(d) => Some(*d),
+            Source::External(_) => None,
+        })
+    }
+
+    /// Every plugin, the program's and the external ones, by id
+    pub fn entries(&self) -> impl Iterator<Item = EntryInfo<'_>> + '_ {
+        self.plugins.iter().map(|(id, e)| match &e.source {
+            Source::Static(d) => EntryInfo { id, name: d.name, kind: d.kind, third_party: false },
+            Source::External(x) => EntryInfo { id, name: &x.name, kind: x.kind, third_party: true },
+        })
+    }
+
+    /// What a plugin is, for both kinds of entry
+    pub fn kind(&self, id: &str) -> Option<PluginKind> {
+        self.plugins.get(id).map(Entry::kind)
+    }
+
+    /// A plugin's main schema
+    pub fn schema(&self, id: &str) -> Option<&NodeSchema> {
+        self.plugins.get(id).map(|e| &e.schema)
+    }
+
+    /// Whether a plugin is a third-party one (out of process)
+    pub fn is_external(&self, id: &str) -> bool {
+        self.plugins.get(id).is_some_and(|e| matches!(e.source, Source::External(_)))
     }
 
     /// The plugins' schemas alone (their types and the types they nest)
@@ -121,8 +225,13 @@ impl Registry {
     /// Adds every plugin's schemas to a registry (the project's, `lm_doc::register_project_schemas`)
     pub fn register_schemas(&self, registry: &mut SchemaRegistry) -> Result<()> {
         for entry in self.plugins.values() {
-            for schema in (entry.descriptor.schemas)() {
-                registry.add(schema)?;
+            match &entry.source {
+                Source::Static(d) => {
+                    for schema in (d.schemas)() {
+                        registry.add(schema)?;
+                    }
+                }
+                Source::External(e) => registry.add(e.schema.clone())?,
             }
         }
         Ok(())
@@ -149,7 +258,10 @@ impl Registry {
         let entry = self.plugins.get(id)?;
         let complete = self.complete(id, state).ok()?;
         self.schemas.validate(&entry.type_name, &complete).ok()?;
-        Some((entry.descriptor.ports)(&complete))
+        Some(match &entry.source {
+            Source::Static(d) => (d.ports)(&complete),
+            Source::External(e) => e.ports.clone(),
+        })
     }
 
     /// The parameters of a plugin, in index order: the index of a parameter is its position here, the index the
@@ -213,11 +325,20 @@ impl Registry {
         if cx.spec.sample_rate == 0 || cx.spec.max_block == 0 {
             return Err(Error::new("plugin.build.spec").arg("plugin", id));
         }
-        if entry.descriptor.kind == PluginKind::Effect && cx.channels == 0 {
+        if entry.kind() == PluginKind::Effect && cx.channels == 0 {
             return Err(Error::new("plugin.build.channels").arg("plugin", id));
         }
-        let build = entry.descriptor.build;
-        match catch_unwind(AssertUnwindSafe(|| build(&complete, cx))) {
+        let built = match &entry.source {
+            Source::Static(d) => {
+                let build = d.build;
+                catch_unwind(AssertUnwindSafe(|| build(&complete, cx)))
+            }
+            Source::External(e) => {
+                let build = Arc::clone(&e.build);
+                catch_unwind(AssertUnwindSafe(|| build(&complete, cx)))
+            }
+        };
+        match built {
             Ok(result) => result.map_err(|e| e.arg("plugin", id)),
             Err(_) => Err(Error::new("plugin.build.panicked").arg("plugin", id)),
         }
@@ -226,4 +347,77 @@ impl Registry {
 
 fn unknown(id: &str) -> Error {
     Error::new("plugin.unknown").arg("plugin", id)
+}
+
+#[cfg(test)]
+mod external_tests {
+    use super::*;
+    use lm_doc::Port;
+    use lm_render::{Adopted, EventKind, ProcessContext, ProcessSpec};
+    use lm_state::ParamSpec;
+
+    /// A gain effect, as a scanned plugin would be: in place, one parameter
+    struct Gain(f32);
+
+    impl Processor for Gain {
+        fn process(&mut self, cx: &mut ProcessContext<'_>) {
+            for e in cx.events {
+                if let EventKind::Param { index: 0, value } = e.kind {
+                    self.0 = value;
+                }
+            }
+            for ch in 0..cx.buffers.outputs() {
+                for x in cx.buffers.in_out(ch).iter_mut() {
+                    *x *= self.0;
+                }
+            }
+        }
+        fn adopt(&mut self, _: &mut dyn Processor) -> Adopted {
+            Adopted::Yes
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    fn external(id: &str) -> External {
+        let type_name: &'static str = Box::leak(plugin_type(id).into_boxed_str());
+        External {
+            id: id.to_owned(),
+            name: "Some Gain (LV2)".into(),
+            kind: PluginKind::Effect,
+            schema: NodeSchema::new(type_name, 1).param(ParamSpec::new("gain", 0.0, 2.0, 1.0)),
+            ports: Ports { outputs: vec![Port::new("main", 2)], sidechains: vec![] },
+            build: Arc::new(|state: &Value, _cx: &BuildContext<'_>| {
+                let g = state.get(PARAMS_KEY).and_then(|p| p.get("gain")).and_then(Value::as_real).unwrap_or(1.0);
+                Ok(Box::new(Gain(g as f32)) as Box<dyn Processor>)
+            }),
+        }
+    }
+
+    #[test]
+    fn external_plugins_live_beside_the_program_s() {
+        let registry = Registry::with_external(&[], vec![external("lv2-0123456789abcdef")]).unwrap();
+        let id = "lv2-0123456789abcdef";
+        assert_eq!(registry.kind(id), Some(PluginKind::Effect));
+        assert!(registry.get(id).is_none() && registry.is_external(id));
+        let entries: Vec<_> = registry.entries().collect();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].third_party && entries[0].name == "Some Gain (LV2)");
+        assert_eq!(registry.params(id).unwrap()[0].key, "gain");
+        assert_eq!(registry.ports(id, &Value::empty_object()).unwrap().outputs.len(), 1);
+        let schemas = registry.project_schemas().unwrap();
+        assert!(schemas.find(&plugin_type(id)).is_some());
+        let view = crate::ResourceView::new();
+        let cx =
+            BuildContext { spec: ProcessSpec { sample_rate: 48_000, max_block: 256 }, resources: &view, channels: 2 };
+        assert!(registry.build(id, &Value::empty_object(), &cx).is_ok());
+        // The generated checks that apply to a third-party plugin
+        crate::testing::external_contract(&registry, id, true);
+        // A bad id or a schema of another name is refused
+        assert!(Registry::with_external(&[], vec![external("Not Valid")]).is_err());
+        let mut wrong = external("lv2-1");
+        wrong.schema = NodeSchema::new("plugin:other", 1);
+        assert!(Registry::with_external(&[], vec![wrong]).is_err());
+    }
 }

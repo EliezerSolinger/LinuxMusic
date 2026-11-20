@@ -7,7 +7,7 @@ use std::sync::Arc;
 use lm_render::{Adopted, EventKind, ProcessSpec, Processor, Rng};
 use lm_state::{FieldKind, PARAMS_KEY, Scale, Value, from_json, to_json};
 
-use crate::descriptor::{BuildContext, Descriptor, PluginKind, Velocity};
+use crate::descriptor::{BuildContext, Descriptor, PluginKind, TestHints, Velocity};
 use crate::registry::{Registry, check_ports};
 use crate::testing::bench::{Bench, Timed};
 use crate::testing::material::*;
@@ -19,9 +19,13 @@ pub const BLOCKS: [usize; 4] = [32, 64, 256, 1024];
 const MAX_BLOCK: usize = 1024;
 const SEED: u64 = 0x5eed;
 
-/// A plugin under test
+/// A plugin under test: a descriptor, or an entry of a registry (an external plugin)
 struct Plugin {
-    d: &'static Descriptor,
+    id: String,
+    kind: PluginKind,
+    tests: TestHints,
+    velocity: Velocity,
+    schema: lm_state::NodeSchema,
     registry: Arc<Registry>,
     type_name: String,
 }
@@ -33,22 +37,45 @@ fn spec(rate: u32) -> ProcessSpec {
 impl Plugin {
     fn new(d: &'static Descriptor) -> Self {
         let registry = Registry::new(&[d]).unwrap_or_else(|e| panic!("{}: the descriptor is refused: {e}", d.id));
-        Self { d, registry, type_name: d.type_name() }
+        Self {
+            id: d.id.to_owned(),
+            kind: d.kind,
+            tests: d.tests,
+            velocity: d.velocity,
+            schema: d.schema(),
+            registry,
+            type_name: d.type_name(),
+        }
+    }
+
+    /// An entry of a registry: an external plugin is tested with the default hints (velocity unchecked)
+    fn of(registry: &Arc<Registry>, id: &str) -> Self {
+        let kind = registry.kind(id).unwrap_or_else(|| panic!("{id}: not in the registry"));
+        let schema = registry.schema(id).unwrap_or_else(|| panic!("{id}: no schema")).clone();
+        Self {
+            id: id.to_owned(),
+            kind,
+            tests: TestHints::new(),
+            velocity: Velocity::Timbre,
+            schema,
+            registry: Arc::clone(registry),
+            type_name: crate::plugin_type(id),
+        }
     }
 
     fn defaults(&self) -> Value {
-        self.registry.defaults(self.d.id).unwrap_or_else(|e| panic!("defaults: {e}"))
+        self.registry.defaults(&self.id).unwrap_or_else(|e| panic!("defaults: {e}"))
     }
 
     fn complete(&self, state: &Value) -> Value {
-        self.registry.complete(self.d.id, state).unwrap_or_else(|e| panic!("complete: {e}"))
+        self.registry.complete(&self.id, state).unwrap_or_else(|e| panic!("complete: {e}"))
     }
 
     fn channels(&self, state: &Value) -> usize {
-        match self.d.kind {
+        match self.kind {
             PluginKind::Effect => 2,
             PluginKind::Instrument => {
-                let ports = self.registry.ports(self.d.id, state).unwrap_or_else(|| panic!("no ports for {state:?}"));
+                let ports = self.registry.ports(&self.id, state).unwrap_or_else(|| panic!("no ports for {state:?}"));
                 ports.outputs.iter().map(|p| p.channels as usize).sum()
             }
         }
@@ -59,20 +86,20 @@ impl Plugin {
         let resources = test_resources(self.registry.schemas(), &self.type_name, &complete, rate);
         let cx = BuildContext { spec: spec(rate), resources: &resources, channels: 2 };
         self.registry
-            .build(self.d.id, state, &cx)
-            .unwrap_or_else(|e| panic!("{}: the build of {} fails: {e}", self.d.id, to_json(state).unwrap_or_default()))
+            .build(&self.id, state, &cx)
+            .unwrap_or_else(|e| panic!("{}: the build of {} fails: {e}", self.id, to_json(state).unwrap_or_default()))
     }
 
     fn bench(&self, state: &Value, rate: u32) -> Bench {
         let p = self.build(state, rate);
-        match self.d.kind {
+        match self.kind {
             PluginKind::Instrument => Bench::instrument(p, spec(rate), self.channels(state), SEED),
             PluginKind::Effect => Bench::effect(p, spec(rate), 2, SEED, test_input),
         }
     }
 
     fn voices(&self) -> usize {
-        self.d.tests.voices.max(1)
+        self.tests.voices.max(1)
     }
 }
 
@@ -119,7 +146,7 @@ fn script(p: &Plugin, rate: u32, seconds: f64) -> Vec<Timed> {
 
 /// Parameter changes at odd times through a script (each parameter, a random value)
 fn param_changes(p: &Plugin, rate: u32, seconds: f64, rng: &mut Rng) -> Vec<Timed> {
-    let schema = p.d.schema();
+    let schema = p.schema.clone();
     let total = (seconds * f64::from(rate)) as u64;
     let mut v = Vec::new();
     for (i, spec) in schema.params.iter().enumerate() {
@@ -137,7 +164,10 @@ fn param_changes(p: &Plugin, rate: u32, seconds: f64, rng: &mut Rng) -> Vec<Time
 
 /// Defaults → build → save → open: the tree is the same, bit for bit (7a, test 1)
 pub fn defaults_round_trip(d: &'static Descriptor) {
-    let p = Plugin::new(d);
+    defaults_round_trip_of(&Plugin::new(d));
+}
+
+fn defaults_round_trip_of(p: &Plugin) {
     let defaults = p.defaults();
     p.registry.schemas().validate(&p.type_name, &defaults).unwrap_or_else(|e| panic!("defaults invalid: {e}"));
     drop(p.build(&defaults, 48_000));
@@ -145,14 +175,17 @@ pub fn defaults_round_trip(d: &'static Descriptor) {
     let back = from_json(&json).unwrap_or_else(|e| panic!("open: {e}"));
     assert_eq!(back, defaults, "the defaults after save and open");
     assert_eq!(to_json(&back).ok().as_deref(), Some(json.as_str()), "saving again gives the same bytes");
-    let version = p.registry.version(d.id).unwrap_or(1);
-    let loaded = p.registry.load(d.id, version, back).unwrap_or_else(|e| panic!("load: {e}"));
+    let version = p.registry.version(&p.id).unwrap_or(1);
+    let loaded = p.registry.load(&p.id, version, back).unwrap_or_else(|e| panic!("load: {e}"));
     assert_eq!(loaded, defaults, "loading at the current version changes nothing");
 }
 
 /// Random valid trees: valid, built, saved and opened bit for bit, with valid ports (7a, test 2)
 pub fn random_states_round_trip(d: &'static Descriptor) {
-    let p = Plugin::new(d);
+    random_states_round_trip_of(&Plugin::new(d));
+}
+
+fn random_states_round_trip_of(p: &Plugin) {
     let mut rng = Rng::new(SEED);
     for n in 0..200 {
         let state = random_state(p.registry.schemas(), &p.type_name, &mut rng);
@@ -165,8 +198,8 @@ pub fn random_states_round_trip(d: &'static Descriptor) {
         let back = from_json(&json).unwrap_or_else(|e| panic!("open: {e}"));
         assert_eq!(back, state, "state {n} after save and open");
         assert_eq!(to_json(&back).ok().as_deref(), Some(json.as_str()), "state {n}: the same bytes");
-        let ports = p.registry.ports(d.id, &state).unwrap_or_else(|| panic!("state {n}: no ports"));
-        check_ports(d.id, d.kind, &ports).unwrap_or_else(|e| panic!("state {n}: {e}"));
+        let ports = p.registry.ports(&p.id, &state).unwrap_or_else(|| panic!("state {n}: no ports"));
+        check_ports(&p.id, p.kind, &ports).unwrap_or_else(|e| panic!("state {n}: {e}"));
         if n % 10 == 0 {
             drop(p.build(&state, 48_000));
         }
@@ -178,18 +211,21 @@ pub fn random_states_round_trip(d: &'static Descriptor) {
 
 /// The same state built twice and played the same notes gives the same audio, bit for bit (7a, test 3)
 pub fn no_hidden_state(d: &'static Descriptor) {
-    let p = Plugin::new(d);
+    no_hidden_state_of(&Plugin::new(d));
+}
+
+fn no_hidden_state_of(p: &Plugin) {
     let mut rng = Rng::new(SEED + 3);
     let mut states = vec![p.defaults()];
     for _ in 0..4 {
         states.push(random_state(p.registry.schemas(), &p.type_name, &mut rng));
     }
     for (n, state) in states.iter().enumerate() {
-        let mut events = script(&p, 48_000, 1.5);
-        events.extend(param_changes(&p, 48_000, 1.5, &mut rng));
+        let mut events = script(p, 48_000, 1.5);
+        events.extend(param_changes(p, 48_000, 1.5, &mut rng));
         let a = p.bench(state, 48_000).render(72_000, 256, &events, false);
         let b = p.bench(state, 48_000).render(72_000, 256, &events, false);
-        finite(&a, p.d.tests.max_level, "a random state");
+        finite(&a, p.tests.max_level, "a random state");
         same(&a, &b, &format!("state {n} built twice"));
     }
 }
@@ -243,7 +279,7 @@ pub fn adopt_while_playing(d: &'static Descriptor) {
     same(&whole, &joined, "the same tree rebuilt and adopted");
 
     // Every field that is not a parameter
-    let schema = d.schema();
+    let schema = p.schema.clone();
     for field in &schema.fields {
         let Some(value) = other_value(&field.kind, defaults.get(field.key)) else { continue };
         let changed = defaults.with(field.key, value.clone());
@@ -255,13 +291,13 @@ pub fn adopt_while_playing(d: &'static Descriptor) {
         let new = p.build(&changed, rate);
         let (adopted, old) = bench.replace(new, true);
         drop(old);
-        let expected = if d.tests.no_adopt.contains(&field.key) { Adopted::No } else { Adopted::Yes };
-        assert_eq!(adopted, expected, "{}: adopting a change of {}", d.id, field.key);
+        let expected = if p.tests.no_adopt.contains(&field.key) { Adopted::No } else { Adopted::Yes };
+        assert_eq!(adopted, expected, "{}: adopting a change of {}", p.id, field.key);
         if adopted == Adopted::No {
             continue;
         }
         let b = bench.render(after, 256, &events, true);
-        finite(&b, p.d.tests.max_level, field.key);
+        finite(&b, p.tests.max_level, field.key);
         if bench.outputs() != a.len() {
             continue;
         }
@@ -274,7 +310,7 @@ pub fn adopt_while_playing(d: &'static Descriptor) {
             boundary <= 2.0 * old_step.max(new_step) + 1.0e-3,
             "{}: a click when {} changes to {:?}: a step of {boundary} at the change, {old_step} before, {new_step} \
              after",
-            d.id,
+            p.id,
             field.key,
             value
         );
@@ -288,7 +324,7 @@ pub fn adopt_while_playing(d: &'static Descriptor) {
 /// the current version, validates and builds; every version the schema still opens has at least one (7a, test 5)
 pub fn fixtures_upgrade(d: &'static Descriptor, dir: &str) {
     let p = Plugin::new(d);
-    let schema = d.schema();
+    let schema = p.schema.clone();
     let mut seen = std::collections::BTreeSet::new();
     if let Ok(entries) = std::fs::read_dir(Path::new(dir)) {
         let mut files: Vec<_> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
@@ -302,13 +338,13 @@ pub fn fixtures_upgrade(d: &'static Descriptor, dir: &str) {
             };
             let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
             let state = from_json(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
-            let loaded = p.registry.load(d.id, version, state).unwrap_or_else(|e| panic!("{name}: upgrade: {e}"));
+            let loaded = p.registry.load(&p.id, version, state).unwrap_or_else(|e| panic!("{name}: upgrade: {e}"));
             drop(p.build(&loaded, 48_000));
             seen.insert(version);
         }
     }
     for v in schema.oldest_version()..schema.version {
-        assert!(seen.contains(&v), "{}: no fixture of version {v} in {dir}", d.id);
+        assert!(seen.contains(&v), "{}: no fixture of version {v} in {dir}", p.id);
     }
 }
 
@@ -318,35 +354,35 @@ pub fn fixtures_upgrade(d: &'static Descriptor, dir: &str) {
 /// Measures a probe note: its period (samples) and its level, from 0.3 s to 1.3 s
 fn probe(p: &Plugin, state: &Value, key: u8, rate: u32) -> (Option<f64>, f64) {
     let total = (1.4 * f64::from(rate)) as usize;
-    let events = match p.d.kind {
+    let events = match p.kind {
         PluginKind::Instrument => vec![note_on(0, 1, key, 1.0)],
         PluginKind::Effect => Vec::new(),
     };
     let out = p.bench(state, rate).render(total, 256, &events, false);
-    finite(&out, p.d.tests.max_level, "a probe");
+    finite(&out, p.tests.max_level, "a probe");
     let x = mono(&out[..out.len().min(2)]);
     let window = &x[(0.3 * f64::from(rate)) as usize..(1.3 * f64::from(rate)) as usize];
-    let period = p.d.tests.tuning.map(|t| period(window, f64::from(rate) / t.hz));
+    let period = p.tests.tuning.map(|t| period(window, f64::from(rate) / t.hz));
     (period, rms(window))
 }
 
 /// Rebuilt at 44.1, 48, 96 and 192 kHz, a plugin keeps its tuning (within a cent) and its level (within 0.5 dB)
 pub fn sample_rates(d: &'static Descriptor) {
     let p = Plugin::new(d);
-    let (state, key, hz) = match d.tests.tuning {
+    let (state, key, hz) = match p.tests.tuning {
         Some(t) => ((t.state)(), t.key, Some(t.hz)),
         None => (p.defaults(), 69, None),
     };
     let reference = probe(&p, &state, key, 48_000).1;
-    assert!(reference > 1.0e-4, "{}: the probe is silent", d.id);
+    assert!(reference > 1.0e-4, "{}: the probe is silent", p.id);
     for rate in RATES {
         let (period, level) = probe(&p, &state, key, rate);
         if let (Some(period), Some(hz)) = (period, hz) {
             let off = cents(f64::from(rate) / period, hz);
-            assert!(off.abs() < 1.0, "{}: at {rate} Hz the probe is {off:.3} cents off", d.id);
+            assert!(off.abs() < 1.0, "{}: at {rate} Hz the probe is {off:.3} cents off", p.id);
         }
         let diff = db(level / reference);
-        assert!(diff.abs() < 0.5, "{}: at {rate} Hz the level is {diff:.3} dB off the level at 48 kHz", d.id);
+        assert!(diff.abs() < 0.5, "{}: at {rate} Hz the level is {diff:.3} dB off the level at 48 kHz", p.id);
     }
 }
 
@@ -356,12 +392,15 @@ pub fn sample_rates(d: &'static Descriptor) {
 /// Every parameter swept end to end and back while a chord of more notes than voices plays, with notes coming and
 /// going, all under the allocation trap; then all of them at once, at random (U31)
 pub fn param_sweep(d: &'static Descriptor) {
-    let p = Plugin::new(d);
+    param_sweep_of(&Plugin::new(d));
+}
+
+fn param_sweep_of(p: &Plugin) {
     let rate = 48_000;
-    let schema = d.schema();
+    let schema = p.schema.clone();
     let seconds = 0.4;
     let total = (seconds * f64::from(rate)) as usize;
-    let notes = script(&p, rate, seconds + 0.6);
+    let notes = script(p, rate, seconds + 0.6);
     let mut bench = p.bench(&p.defaults(), rate);
     for (i, spec) in schema.params.iter().enumerate() {
         let mut events = notes.iter().map(|t| Timed::new(t.at + bench.frame(), t.kind)).collect::<Vec<_>>();
@@ -374,7 +413,7 @@ pub fn param_sweep(d: &'static Descriptor) {
             events.push(Timed::new(start + (s * 16) as u64, EventKind::Param { index: i as u32, value }));
         }
         let out = bench.render(total, 256, &events, true);
-        finite(&out, p.d.tests.max_level, spec.key);
+        finite(&out, p.tests.max_level, spec.key);
         // Back to the default before the next
         let reset = [Timed::new(bench.frame(), EventKind::Param { index: i as u32, value: spec.def as f32 })];
         bench.render(64, 64, &reset, true);
@@ -392,14 +431,14 @@ pub fn param_sweep(d: &'static Descriptor) {
         }
     }
     let start = bench.frame();
-    events.extend(script(&p, rate, 0.5).into_iter().map(|t| Timed::new(t.at + start, t.kind)));
+    events.extend(script(p, rate, 0.5).into_iter().map(|t| Timed::new(t.at + start, t.kind)));
     let out = bench.render(24_000, 128, &events, true);
-    finite(&out, p.d.tests.max_level, "every parameter at random");
+    finite(&out, p.tests.max_level, "every parameter at random");
 }
 
 /// A state with every switch (a stepped parameter of 0 to 1) on, so every function of the plugin plays
 fn all_on(p: &Plugin, state: &Value) -> Value {
-    let schema = p.d.schema();
+    let schema = p.schema.clone();
     let mut params = state.get(PARAMS_KEY).cloned().unwrap_or_else(Value::empty_object);
     for spec in &schema.params {
         if spec.scale == Scale::Stepped && spec.min == 0.0 && spec.max == 1.0 {
@@ -414,7 +453,7 @@ fn all_on(p: &Plugin, state: &Value) -> Value {
 pub fn every_choice(d: &'static Descriptor) {
     let p = Plugin::new(d);
     let rate = 48_000;
-    let schema = d.schema();
+    let schema = p.schema.clone();
     let defaults = p.defaults();
     let notes = chord(0, 1, p.voices() + 4, 29, Some(9_000));
     for base in [defaults.clone(), all_on(&p, &defaults)] {
@@ -427,7 +466,7 @@ pub fn every_choice(d: &'static Descriptor) {
                     None => {
                         let mut b = p.bench(&state, rate);
                         let out = b.render(12_000, 256, &notes, true);
-                        finite(&out, p.d.tests.max_level, key);
+                        finite(&out, p.tests.max_level, key);
                         bench = Some(b);
                     }
                     Some(b) => {
@@ -437,7 +476,7 @@ pub fn every_choice(d: &'static Descriptor) {
                         let start = b.frame();
                         let more: Vec<Timed> = notes.iter().map(|t| Timed::new(t.at + start, t.kind)).collect();
                         let out = b.render(12_000, 256, &more, true);
-                        finite(&out, p.d.tests.max_level, key);
+                        finite(&out, p.tests.max_level, key);
                     }
                 }
             }
@@ -474,11 +513,11 @@ pub fn short_notes(d: &'static Descriptor) {
     events.extend(chord(14_000, 100, 3 * p.voices(), 0, Some(16_000)));
     let total = 4 * rate as usize;
     let out = p.bench(&p.defaults(), rate).render(total, 256, &events, true);
-    finite(&out, p.d.tests.max_level, "short notes");
+    finite(&out, p.tests.max_level, "short notes");
     let x = mono(&out);
-    assert!(peak(&x[9_200..9_800]) > 1.0e-4, "{}: the retriggered note does not sound", d.id);
+    assert!(peak(&x[9_200..9_800]) > 1.0e-4, "{}: the retriggered note does not sound", p.id);
     let tail = peak(&x[total - rate as usize / 10..]);
-    assert!(tail < 1.0e-5, "{}: something still sounds 3.5 s after the last note-off: {tail}", d.id);
+    assert!(tail < 1.0e-5, "{}: something still sounds 3.5 s after the last note-off: {tail}", p.id);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -514,9 +553,9 @@ pub fn long_tuning(d: &'static Descriptor, seconds: u64) {
     let a = period(&windows[0], expected);
     let b = period(&windows[1], expected);
     let drift = cents(a, b);
-    assert!(drift.abs() < 0.1, "{}: after {seconds} s the pitch moved {drift:.4} cents", d.id);
+    assert!(drift.abs() < 0.1, "{}: after {seconds} s the pitch moved {drift:.4} cents", p.id);
     let off = cents(f64::from(rate) / b, t.hz);
-    assert!(off.abs() < 1.0, "{}: after {seconds} s the probe is {off:.3} cents off", d.id);
+    assert!(off.abs() < 1.0, "{}: after {seconds} s the probe is {off:.3} cents off", p.id);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -533,7 +572,7 @@ pub fn block_sizes(d: &'static Descriptor) {
         let reference = p.bench(&state, rate).render(48_000, BLOCKS[0], &events, false);
         for block in &BLOCKS[1..] {
             let out = p.bench(&state, rate).render(48_000, *block, &events, false);
-            let what = format!("{}: blocks of {block} against blocks of {}, state {}", d.id, BLOCKS[0], short(&state));
+            let what = format!("{}: blocks of {block} against blocks of {}, state {}", p.id, BLOCKS[0], short(&state));
             same(&reference, &out, &what);
         }
     }
@@ -549,8 +588,8 @@ pub fn velocity(d: &'static Descriptor) {
     }
     let p = Plugin::new(d);
     let rate = 48_000;
-    let key = d.tests.tuning.map_or(60, |t| t.key);
-    let state = d.tests.tuning.map_or_else(|| p.defaults(), |t| (t.state)());
+    let key = p.tests.tuning.map_or(60, |t| t.key);
+    let state = p.tests.tuning.map_or_else(|| p.defaults(), |t| (t.state)());
     let level = |v: f32| {
         let out = p.bench(&state, rate).render(36_000, 256, &[note_on(0, 1, key, v)], false);
         let x = mono(&out);
@@ -559,17 +598,17 @@ pub fn velocity(d: &'static Descriptor) {
     let (full, a) = level(1.0);
     let (half, b) = level(0.5);
     let (quiet, _) = level(0.1);
-    match d.velocity {
+    match p.velocity {
         Velocity::Ignored => same(&a, &b, "velocity is declared ignored"),
         Velocity::Level => {
             let r = db(half / full);
-            assert!((r + 6.0206).abs() < 0.2, "{}: velocity 0.5 is {r:.3} dB from 1 (linear: -6.02)", d.id);
+            assert!((r + 6.0206).abs() < 0.2, "{}: velocity 0.5 is {r:.3} dB from 1 (linear: -6.02)", p.id);
             let q = db(quiet / full);
-            assert!((q + 20.0).abs() < 0.2, "{}: velocity 0.1 is {q:.3} dB from 1 (linear: -20)", d.id);
+            assert!((q + 20.0).abs() < 0.2, "{}: velocity 0.1 is {q:.3} dB from 1 (linear: -20)", p.id);
         }
         Velocity::Timbre => {
-            assert!(a != b, "{}: velocity is declared to shape the sound, which does not change", d.id);
-            assert!(full >= half * 0.944 && half >= quiet * 0.944, "{}: the level falls as velocity grows", d.id);
+            assert!(a != b, "{}: velocity is declared to shape the sound, which does not change", p.id);
+            assert!(full >= half * 0.944 && half >= quiet * 0.944, "{}: the level falls as velocity grows", p.id);
         }
     }
 }
@@ -581,7 +620,7 @@ pub fn velocity(d: &'static Descriptor) {
 pub fn frozen_defaults(d: &'static Descriptor, reference: &str) {
     let p = Plugin::new(d);
     if let Err(m) = lm_state::frozen::check_frozen_defaults(p.registry.schemas(), Path::new(reference)) {
-        panic!("{}: {m}", d.id);
+        panic!("{}: {m}", p.id);
     }
 }
 
@@ -594,6 +633,24 @@ pub fn ports_follow_the_state(d: &'static Descriptor) {
         let channels = p.channels(&state);
         let out = p.bench(&state, 48_000).render(2048, 256, &chord(0, 1, 3, 0, None), true);
         assert_eq!(out.len(), channels);
-        finite(&out, p.d.tests.max_level, "ports");
+        finite(&out, p.tests.max_level, "ports");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// External plugins (I-9.6)
+
+/// The checks that apply to an external plugin (a third-party plugin, out of process) of a registry: the defaults
+/// and random states round trip, every parameter swept under the allocation trap (of the core's side: the proxy),
+/// and, when `deterministic` (an instrument or effect the test controls), the same state twice gives the same audio.
+/// The frozen defaults, the upgrades and the tuning probe are the program's own plugins' business, not a third
+/// party's
+pub fn external_contract(registry: &Arc<Registry>, id: &str, deterministic: bool) {
+    let p = Plugin::of(registry, id);
+    defaults_round_trip_of(&p);
+    random_states_round_trip_of(&p);
+    param_sweep_of(&p);
+    if deterministic {
+        no_hidden_state_of(&p);
     }
 }

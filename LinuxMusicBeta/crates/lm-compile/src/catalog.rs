@@ -95,9 +95,9 @@ pub trait PluginCatalog: Send + Sync {
 
 impl PluginCatalog for lm_plugin::Registry {
     fn shape(&self, plugin: &str, _version: u32, state: &Value, channels: u16) -> Option<PluginShape> {
-        let descriptor = self.get(plugin)?;
+        let kind = self.kind(plugin)?;
         let ports = self.ports(plugin, state)?;
-        let mut shape = match descriptor.kind {
+        let mut shape = match kind {
             lm_plugin::PluginKind::Instrument => PluginShape::instrument(ports.outputs),
             // An effect works in place on all the channels of the channel it is inserted in
             lm_plugin::PluginKind::Effect => PluginShape::effect(channels),
@@ -111,7 +111,7 @@ impl PluginCatalog for lm_plugin::Registry {
     }
 
     fn is_effect(&self, plugin: &str) -> bool {
-        self.get(plugin).is_some_and(|d| d.kind == lm_plugin::PluginKind::Effect)
+        self.kind(plugin) == Some(lm_plugin::PluginKind::Effect)
     }
 }
 

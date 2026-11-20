@@ -23,7 +23,7 @@ pub use descriptor::{
     is_valid_plugin_id, plugin_type,
 };
 pub use lm_doc::{Port, Ports};
-pub use registry::{Registry, check_ports};
+pub use registry::{EntryInfo, External, ExternalBuild, Registry, check_ports};
 pub use resources::{Loaded, ResourceView};
 pub use state::StateView;
 pub mod instrument;
