@@ -115,9 +115,9 @@ fn the_plugin_plays_the_legacy_note() {
                 }
             }
             let mut state = Value::empty_object().with("params", params);
-            for i in 0..3 {
+            for (i, shape) in shapes.iter().enumerate() {
                 state = state
-                    .with(&format!("wave{}", i + 1), Value::text(shapes[i].key()))
+                    .with(&format!("wave{}", i + 1), Value::text(shape.key()))
                     .with(&format!("userWave{}", i + 1), Value::resource(resource.clone()));
             }
             state =
