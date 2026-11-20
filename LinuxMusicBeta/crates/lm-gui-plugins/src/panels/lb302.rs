@@ -97,5 +97,6 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         fill: 0x000000,
         controls,
         labels: Vec::new(),
+        file_drop: None,
     }
 });

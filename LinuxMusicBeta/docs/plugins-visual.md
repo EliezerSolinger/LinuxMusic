@@ -4995,7 +4995,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | AmpAndIr | efeito | genérico / botões soltos | `AmpAndIrControls.cpp` | plugin existe (lm-plugins-ampandir); genérico (sem painel; o editor genérico precisa escolher os arquivos `ir` e `nam`) |
 | Amplifier | efeito | visual próprio (`artwork.svg`); obsoleto no navegador (F-FX-005), existe para abrir projetos antigos | `AmplifierControlDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `amplifier`) |
 | AmplifikationLite | efeito | visual próprio (arte da Kuassa, permitida em 18/11) | `AmplifikationLiteControls.cpp`, `background.png`, `silverknob.png`, `silverswitch.png`, `irload.png`, `logo.png`, `about.png` | falta o plugin |
-| AudioFileProcessor | instrumento | visual próprio | `AudioFileProcessorView.cpp`, `AudioFileProcessorWaveView.cpp`, `artwork.png` | falta o plugin |
+| AudioFileProcessor | instrumento | visual próprio | `AudioFileProcessorView.cpp`, `AudioFileProcessorWaveView.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
 | AvlDrums | instrumento | visual próprio (foto e mapa de peças) | `AvlDrums.cpp`, `data/avldrums/images/*.png` | falta o plugin |
 | BassBooster | efeito | visual próprio (`artwork.svg`) | `BassBoosterControlDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `bassbooster`) |
 | BitInvader | instrumento | visual próprio | `BitInvader.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-instruments): painel a fazer |
@@ -5012,7 +5012,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | DynamicsProcessor | efeito | visual próprio | `DynamicsProcessorControlDialog.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Eq | efeito | visual próprio | `EqControlsDialog.cpp`, `EqCurve.cpp`, `EqSpectrumView.cpp`, `EqParameterWidget.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Flanger | efeito | visual próprio (`artwork.svg`) | `FlangerControlsDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `flanger`) |
-| FreeBoy | instrumento | visual próprio | `FreeBoy.cpp`, `artwork.png` | plugin existe (lm-plugins-freeboy): painel a fazer |
+| FreeBoy | instrumento | visual próprio | `FreeBoy.cpp`, `artwork.png` | **painel feito** (`panels/freeboy.rs`, teste `freeboy`) |
 | FrequencyShifter | efeito | visual próprio | `FrequencyShifterControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | GigPlayer | instrumento | visual próprio | `GigPlayer.cpp`, `artwork.png` | falta o plugin |
 | GranularPitchShifter | efeito | visual próprio | `GranularPitchShifterControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
@@ -5025,18 +5025,18 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | Lv2Instrument | instrumento (hospedeiro) | terceiros fora do processo | `Lv2Instrument.cpp` | fora (terceiros) |
 | MidiExport | ferramenta (filtro de exportação) | sem janela (filtro de arquivo) | `MidiExport.cpp` | genérico (sem painel) |
 | MidiImport | ferramenta (filtro de importação) | sem janela (filtro de arquivo) | `MidiImport.cpp` | genérico (sem painel) |
-| Monstro | instrumento | visual próprio (vistas operador e matriz) | `Monstro.cpp`, `artwork_op.png`, `artwork_mat.png` | falta o plugin |
+| Monstro | instrumento | visual próprio (vistas operador e matriz) | `Monstro.cpp`, `artwork_op.png`, `artwork_mat.png` | plugin existe (lm-plugins-instruments): painel a fazer |
 | MultitapEcho | efeito | visual próprio | `MultitapEchoControlDialog.cpp`, `artwork.png`, `graph_bg.png` | plugin existe (lm-plugins-effects): painel a fazer |
-| Nes | instrumento | visual próprio | `Nes.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
-| OpulenZ | instrumento | visual próprio | `OpulenZ.cpp`, `artwork.png` | falta o plugin |
-| Organic | instrumento | visual próprio | `Organic.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
+| Nes | instrumento | visual próprio | `Nes.cpp`, `artwork.png` | **painel feito** (`panels/nes.rs`, teste `nes`) |
+| OpulenZ | instrumento | visual próprio | `OpulenZ.cpp`, `artwork.png` | **painel feito** (`panels/opulenz.rs`, teste `opulenz`) |
+| Organic | instrumento | visual próprio | `Organic.cpp`, `artwork.png` | **painel feito** (`panels/organic.rs`, teste `organic`) |
 | Oscilloscope | efeito (visualizador) | visual próprio (visor desenhado) | `OscilloscopeControlDialog.cpp`, `OscilloscopeGraph.cpp` | falta o plugin |
-| Patman | instrumento | visual próprio | `Patman.cpp`, `artwork.png` | falta o plugin |
+| Patman | instrumento | visual próprio | `Patman.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
 | PeakControllerEffect | efeito (gera controlador) | visual próprio (`artwork.svg`) | `PeakControllerEffectControlDialog.cpp`, `artwork.svg` | falta o plugin |
 | ReverbSC | efeito | visual próprio (`artwork.svg`) | `ReverbSCControlDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `reverbsc`) |
 | Sf2Player | instrumento | visual próprio | `Sf2Player.cpp`, `artwork.png` | falta o plugin |
-| Sfxr | instrumento | visual próprio | `Sfxr.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
-| Sid | instrumento | visual próprio | `SidInstrument.cpp`, `artwork.png` | plugin existe (lm-plugins-sid): painel a fazer |
+| Sfxr | instrumento | visual próprio | `Sfxr.cpp`, `artwork.png` | **painel feito** (`panels/sfxr.rs`, teste `sfxr`) |
+| Sid | instrumento | visual próprio | `SidInstrument.cpp`, `artwork.png` | **painel feito** (`panels/sid.rs`, teste `sid`) |
 | SlewDistortion | efeito | visual próprio | `SlewDistortionControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | SlicerT | instrumento | visual próprio (janela redimensionável) | `SlicerTView.cpp`, `SlicerTWaveform.cpp`, `toolbox.png` | falta o plugin |
 | SpectrumAnalyzer | efeito (visualizador) | visual próprio (espectro e cascata desenhados) | `SaControlsDialog.cpp`, `SaSpectrumView.cpp`, `SaWaterfallView.cpp`, ícones `.svg` | falta o plugin |
@@ -5050,7 +5050,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | Vibed | instrumento | visual próprio | `Vibed.cpp`, `NineButtonSelector.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
 | VstBase | biblioteca do hospedeiro | terceiros fora do processo (P-01), sem janela | `VstPlugin.cpp`, `RemoteVstPlugin.cpp` | fora (terceiros) |
 | VstEffect | efeito (hospedeiro) | terceiros fora do processo (P-01) | `VstEffectControlDialog.cpp` | fora (terceiros) |
-| Watsyn | instrumento | visual próprio | `Watsyn.cpp`, `artwork.png`, `wavegraph.png` | falta o plugin |
+| Watsyn | instrumento | visual próprio | `Watsyn.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-instruments): painel a fazer |
 | WaveShaper | efeito | visual próprio | `WaveShaperControlDialog.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Xpressive | instrumento | visual próprio | `Xpressive.cpp`, `artwork.png`, `wavegraph.png` | falta o plugin |
 | ZynAddSubFx | instrumento (hospedeiro) | terceiros fora do processo (P-05) | `ZynAddSubFx.cpp`, `RemoteZynAddSubFx.cpp` | fora (terceiros) |

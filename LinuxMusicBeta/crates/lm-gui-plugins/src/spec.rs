@@ -2,6 +2,8 @@
 //! parameter or field it moves. Each `panels/<plugin>.rs` writes one, read off the legacy `*View.cpp` /
 //! `*ControlDialog.cpp` (docs/plugins-visual.md lists where each number comes from).
 
+use lm_port::Value;
+
 use crate::assets::Asset;
 use crate::widgets::{KnobStyle, LcdSheet, LedColor};
 
@@ -52,8 +54,26 @@ impl Target {
     }
 }
 
+/// What a push button sees: the parameters' present values and defaults, and random numbers in [0, 1)
+pub struct PressCx<'a> {
+    pub value: &'a dyn Fn(&str) -> f64,
+    /// A field's value (a graph's samples, a choice)
+    pub field: &'a dyn Fn(&str) -> Value,
+    pub default: &'a dyn Fn(&str) -> f64,
+    pub rand: &'a mut dyn FnMut() -> f64,
+}
+
+impl std::fmt::Debug for PressCx<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PressCx")
+    }
+}
+
+/// What a pressed button changes (one undo step)
+pub type PressFn = fn(&mut PressCx<'_>) -> Vec<(Target, Value)>;
+
 /// What a button does
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub enum Bind {
     /// One button of a group (`AutomatableButtonGroup`): on when the choice field holds `key`; a click selects it
     Choice { field: &'static str, key: &'static str },
@@ -61,6 +81,8 @@ pub enum Bind {
     Switch { param: &'static str },
     /// A switch on a boolean field (not automatable in the legacy either)
     Flag { field: &'static str },
+    /// A push button without a model that changes several things at once (Organic's "Randomise")
+    Press(PressFn),
 }
 
 impl Bind {
@@ -68,12 +90,13 @@ impl Bind {
         match *self {
             Bind::Choice { field, .. } | Bind::Flag { field } => Target::Field(field),
             Bind::Switch { param } => Target::Param(param),
+            Bind::Press(_) => Target::Field(""),
         }
     }
 }
 
 /// A knob (`Knob`, `VolumeKnob`, `TempoSyncKnob`)
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct KnobSpec {
     pub style: KnobStyle,
     pub param: &'static str,
@@ -88,15 +111,21 @@ pub struct KnobSpec {
     pub volume: bool,
     /// The value that is 0 dBFS (`setZeroDbfsPoint`, 100 by default)
     pub zero_dbfs: f64,
+    /// A unit worked out from the value (the legacy views that call `setHintText` again on every change: Sid's
+    /// times and cutoff in Hz)
+    pub unit_of: Option<fn(f64) -> String>,
     /// The label under the pixmap (`setLabel`), drawn at `SMALL_FONT_SIZE`
     pub label: Option<Text>,
+    /// A knob that turns a choice field (`param` is then the field): the knob's value is the index of the field's
+    /// key in this list (Organic's waveform knobs; the legacy had a number, the new state a key, U30)
+    pub choices: Option<&'static [&'static str]>,
     /// The legacy model's `setScaleLogarithmic(true)` (the knob's travel; the schema's `Scale::Log` is only how the
     /// generic editor shows it)
     pub log: bool,
 }
 
 /// An LED check box (`LedCheckBox`), with its text to the right
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct LedSpec {
     pub color: LedColor,
     pub text: Text,
@@ -104,7 +133,7 @@ pub struct LedSpec {
 }
 
 /// A pixmap button (`PixmapButton`): its two images; `checkable` false shows the active image while pressed
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ButtonSpec {
     pub active: &'static Asset,
     pub inactive: &'static Asset,
@@ -116,7 +145,7 @@ pub struct ButtonSpec {
 }
 
 /// An LCD spin box (`LcdSpinBox`) on a stepped parameter
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct LcdSpec {
     pub sheet: LcdSheet,
     pub digits: usize,
@@ -126,7 +155,7 @@ pub struct LcdSpec {
 }
 
 /// One entry of a combo box: the choice's key, its text and its icon
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ComboItem {
     pub key: &'static str,
     pub text: Text,
@@ -134,24 +163,56 @@ pub struct ComboItem {
 }
 
 /// A combo box (`ComboBox`) on a choice field, `w` wide (its height is `ComboBox::DEFAULT_HEIGHT`, 22)
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ComboSpec {
     pub field: &'static str,
     pub w: f32,
     pub items: Vec<ComboItem>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+/// How a graph draws its samples (`Graph::Style`)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GraphStyle {
+    /// steps, not antialiased
+    Nearest,
+    /// lines, antialiased, the last back to the first
+    Linear,
+    /// lines, antialiased
+    LinearNonCyclic,
+    /// filled bars with a line on top
+    Bar,
+}
+
+/// A drawable graph (`Graph`) on a list field of reals: the user draws the samples with the mouse
+#[derive(Clone, Debug)]
+pub struct GraphSpec {
+    pub field: &'static str,
+    pub w: f32,
+    pub h: f32,
+    pub min: f64,
+    pub max: f64,
+    pub length: usize,
+    pub style: GraphStyle,
+    /// `setGraphColor`
+    pub color: crate::raster::Rgba,
+    /// `setForeground`: a pixmap over the curve (the plugin's grid)
+    pub foreground: Option<&'static Asset>,
+    /// The samples' step (`graphModel`'s; 0: any value)
+    pub step: f64,
+}
+
+#[derive(Clone, Debug)]
 pub enum Kind {
     Knob(KnobSpec),
     Led(LedSpec),
     Button(ButtonSpec),
     Lcd(LcdSpec),
     Combo(ComboSpec),
+    Graph(GraphSpec),
 }
 
 /// A fixed text of the view (a `QLabel`): its top-left corner, its size in pixels
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct StaticText {
     pub x: f32,
     pub y: f32,
@@ -161,7 +222,7 @@ pub struct StaticText {
 }
 
 /// One control at its place
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Control {
     /// The test name (`debug_selector`) and the stable name of the control in the panel
     pub id: &'static str,
@@ -177,11 +238,13 @@ pub struct Control {
 impl Control {
     pub fn target(&self) -> Target {
         match &self.kind {
+            Kind::Knob(k) if k.choices.is_some() => Target::Field(k.param),
             Kind::Knob(k) => Target::Param(k.param),
             Kind::Lcd(l) => Target::Param(l.param),
             Kind::Led(l) => l.bind.target(),
             Kind::Button(b) => b.bind.target(),
             Kind::Combo(c) => Target::Field(c.field),
+            Kind::Graph(g) => Target::Field(g.field),
         }
     }
 
@@ -200,6 +263,7 @@ impl Control {
             }
             Kind::Lcd(l) => crate::widgets::lcd_size(l.sheet, l.digits),
             Kind::Combo(c) => (c.w, crate::widgets::COMBO_HEIGHT),
+            Kind::Graph(g) => (g.w, g.h),
         }
     }
 }
@@ -217,6 +281,15 @@ pub struct PanelSpec {
     pub controls: Vec<Control>,
     /// The view's fixed texts
     pub labels: Vec<StaticText>,
+    /// What a file dropped on the panel does (the legacy views' `dropEvent`)
+    pub file_drop: Option<FileDrop>,
+}
+
+/// A file dropped on a panel
+#[derive(Clone, Copy, Debug)]
+pub enum FileDrop {
+    /// An action of the core that reads the file (`{node, path}`), as OpulenZ's `.sbi` import
+    Action { action: &'static str, extensions: &'static [&'static str] },
 }
 
 impl PanelSpec {
@@ -261,7 +334,9 @@ pub fn knob(
             unit,
             volume: false,
             zero_dbfs: 100.0,
+            unit_of: None,
             label: None,
+            choices: None,
             log: false,
         }),
         name: Text::new(name),
@@ -345,6 +420,24 @@ impl Control {
         self
     }
 
+    /// A knob over a choice field (see [`KnobSpec::choices`])
+    #[must_use]
+    pub fn choices(mut self, keys: &'static [&'static str]) -> Self {
+        if let Some(k) = self.knob_mut() {
+            k.choices = Some(keys);
+        }
+        self
+    }
+
+    /// A unit worked out from the value
+    #[must_use]
+    pub fn unit_of(mut self, f: fn(f64) -> String) -> Self {
+        if let Some(k) = self.knob_mut() {
+            k.unit_of = Some(f);
+        }
+        self
+    }
+
     /// `setCenterValue`
     #[must_use]
     pub fn center(mut self, v: f64) -> Self {
@@ -397,4 +490,9 @@ pub fn combo(field: &'static str, x: f32, y: f32, w: f32, name: &'static str, it
 /// A fixed text (`QLabel`) at its top-left corner, white, `DEFAULT_FONT_SIZE`
 pub fn label(x: f32, y: f32, text: &'static str) -> StaticText {
     StaticText { x, y, px: crate::widgets::theme::DEFAULT_FONT_PX, text: Text::new(text), color: 0xd1d8e4 }
+}
+
+/// A graph at `x`, `y`
+pub fn graph(spec: GraphSpec, x: f32, y: f32, name: &'static str) -> Control {
+    Control { id: spec.field, x, y, kind: Kind::Graph(spec), name: Text::new(name), tip: Text::EMPTY }
 }

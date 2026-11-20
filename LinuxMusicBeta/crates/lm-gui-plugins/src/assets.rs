@@ -41,7 +41,7 @@ impl Asset {
 /// An embedded asset: `asset!("tripleoscillator/artwork.png")`
 #[macro_export]
 macro_rules! asset {
-    ($path:literal) => {
+    ($path:expr) => {
         $crate::assets::Asset::new($path, include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/", $path)))
     };
 }

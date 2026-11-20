@@ -81,5 +81,8 @@ pub fn plugins_with_panels() -> Vec<&'static str> {
     panels::ALL.iter().map(|(id, _)| *id).collect()
 }
 
-#[cfg(test)]
+// the views' tests find controls by `debug_selector`, which GPUI records only with debug assertions
+#[cfg(all(test, debug_assertions))]
 mod tests;
+#[cfg(test)]
+mod tests_data;

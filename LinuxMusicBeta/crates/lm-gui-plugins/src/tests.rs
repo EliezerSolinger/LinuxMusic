@@ -190,6 +190,17 @@ fn exercise(o: &mut Opened<'_>) {
 
     for (i, c) in spec.controls.iter().enumerate() {
         let id = c.id;
+        if let Kind::Button(b) = &c.kind
+            && let Bind::Press(_) = b.bind
+        {
+            // a push button changes several things in one step, with no model of its own
+            let before = o.state();
+            o.click(id, MouseButton::Left);
+            assert_ne!(o.state(), before, "{id}: the press changes the state");
+            o.undo();
+            assert_eq!(o.state(), before, "{id}: in one undo step");
+            continue;
+        }
         // the control is a mapping target and the schema has its key (I-21: every control is mappable)
         match c.target() {
             Target::Param(k) => {
@@ -198,24 +209,26 @@ fn exercise(o: &mut Opened<'_>) {
             }
             Target::Field(k) => assert!(schema.find_field(k).is_some(), "{id}: {k} is a field of the schema"),
         }
-        // MIDI learn from the control's menu, a controller moves: the project has the mapping to this control
-        o.click(id, MouseButton::Right);
-        o.click("menu-midi-learn", MouseButton::Left);
-        let target = o.panel.read_with(o.cx, |p, _| p.map_target(i));
-        o.host.update(o.cx, |h, _| h.port.midi_in("", 0, lm_port::MidiMessage::Cc { number: (i % 120) as u8 }, 64));
-        o.settle();
-        let learned = o.host.read_with(o.cx, |h, _| {
-            h.port.mappings(lm_port::MapScope::Project).into_iter().filter(|m| m.target == target).count()
-        });
-        assert_eq!(learned, 1, "{id}: MIDI learn maps it");
-        o.click(id, MouseButton::Right);
-        o.click("menu-midi-forget", MouseButton::Left);
-        let left = o.host.read_with(o.cx, |h, _| {
-            h.port.mappings(lm_port::MapScope::Project).into_iter().filter(|m| m.target == target).count()
-        });
-        assert_eq!(left, 0, "{id}: the mapping is removed");
+        if let Kind::Graph(_) = &c.kind {
+            // a graph is drawn, not set to a value: no menu in the legacy, nothing a controller could move
+        } else {
+            learn_and_forget(o, i, id);
+        }
 
         match &c.kind {
+            Kind::Knob(k) if k.choices.is_some() => {
+                // a knob over a choice field: dragging up walks the keys, the wheel steps one
+                let keys = k.choices.unwrap();
+                let key = k.param;
+                o.click(id, MouseButton::Middle);
+                let def = o.field(key);
+                o.drag(id, -400.0, Modifiers::none());
+                assert_eq!(o.field(key).as_text(), keys.last().copied(), "{id}: dragged to the last key");
+                o.wheel(id, false, Modifiers::none());
+                assert_eq!(o.field(key).as_text(), Some(keys[keys.len() - 2]), "{id}: wheel");
+                o.click(id, MouseButton::Middle);
+                assert_eq!(o.field(key), def, "{id}: middle click resets");
+            }
             Kind::Knob(k) => {
                 let key = k.param;
                 let p = schema.find_param(key).unwrap().clone();
@@ -223,13 +236,14 @@ fn exercise(o: &mut Opened<'_>) {
                 // from the middle, so a drag both ways moves it
                 set_param(o, key, r.fit(r.min + r.span() / 2.0));
                 let before = o.param(key);
-                // drag up 40 px: 16 % of the range (0.4 % a pixel), one undo step
+                // drag up 100 px: 40 % of the range (0.4 % a pixel), one undo step
                 let mut left = 0.0;
                 let mut expect = before;
                 for _ in 0..10 {
-                    expect = r.drag(expect, -4.0, false, &mut left);
+                    expect = r.drag(expect, -10.0, false, &mut left);
                 }
-                o.drag(id, -40.0, Modifiers::none());
+                assert_ne!(expect, before, "{id}: the drag moves it");
+                o.drag(id, -100.0, Modifiers::none());
                 assert_eq!(o.stored_param(key), Some(expect), "{id}: drag up");
                 let written =
                     o.host.read_with(o.cx, |h, _| h.port.last_param_write().map(|(n, k, v)| (n, k.to_owned(), v)));
@@ -283,6 +297,32 @@ fn exercise(o: &mut Opened<'_>) {
             }
             Kind::Button(b) => check_bind(o, id, b.bind),
             Kind::Led(l) => check_bind(o, id, l.bind),
+            Kind::Graph(g) => {
+                // draw a line across the graph: one gesture, one undo step
+                let before = o.field(g.field);
+                let b = o.cx.debug_bounds(id).expect("the graph is drawn");
+                let (x0, y0) = (b.origin.x + px(4.0), b.origin.y + px(4.0));
+                let (x1, y1) = (b.origin.x + b.size.width - px(4.0), b.origin.y + b.size.height - px(4.0));
+                o.cx.simulate_mouse_move(point(x0, y0), None, Modifiers::none());
+                o.cx.simulate_mouse_down(point(x0, y0), MouseButton::Left, Modifiers::none());
+                for k in 1..=10 {
+                    let f = k as f32 / 10.0;
+                    o.cx.simulate_mouse_move(
+                        point(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f),
+                        MouseButton::Left,
+                        Modifiers::none(),
+                    );
+                }
+                o.cx.simulate_mouse_up(point(x1, y1), MouseButton::Left, Modifiers::none());
+                o.settle();
+                let after = o.field(g.field);
+                assert_ne!(after, before, "{id}: drawing changes the samples");
+                let first = after.at(0).and_then(Value::as_real).unwrap();
+                let last = after.at(g.length - 1).and_then(Value::as_real).unwrap();
+                assert!(first > last, "{id}: the line goes down, {first} to {last}");
+                o.undo();
+                assert_eq!(o.field(g.field), before, "{id}: one undo step");
+            }
             Kind::Combo(cb) => {
                 // the list opens under the box; a click on the last choice selects it
                 o.click(id, MouseButton::Left);
@@ -306,6 +346,26 @@ fn exercise(o: &mut Opened<'_>) {
             }
         }
     }
+}
+
+/// MIDI learn from the control's menu, a controller moves: the project has the mapping to this control; then the
+/// menu forgets it
+fn learn_and_forget(o: &mut Opened<'_>, i: usize, id: &'static str) {
+    o.click(id, MouseButton::Right);
+    o.click("menu-midi-learn", MouseButton::Left);
+    let target = o.panel.read_with(o.cx, |p, _| p.map_target(i));
+    o.host.update(o.cx, |h, _| h.port.midi_in("", 0, lm_port::MidiMessage::Cc { number: (i % 120) as u8 }, 64));
+    o.settle();
+    let learned = o.host.read_with(o.cx, |h, _| {
+        h.port.mappings(lm_port::MapScope::Project).into_iter().filter(|m| m.target == target).count()
+    });
+    assert_eq!(learned, 1, "{id}: MIDI learn maps it");
+    o.click(id, MouseButton::Right);
+    o.click("menu-midi-forget", MouseButton::Left);
+    let left = o.host.read_with(o.cx, |h, _| {
+        h.port.mappings(lm_port::MapScope::Project).into_iter().filter(|m| m.target == target).count()
+    });
+    assert_eq!(left, 0, "{id}: the mapping is removed");
 }
 
 fn set_param(o: &mut Opened<'_>, key: &str, v: f64) {
@@ -339,6 +399,7 @@ fn check_bind(o: &mut Opened<'_>, id: &'static str, bind: Bind) {
             o.click(id, MouseButton::Left);
             assert_eq!(o.field(field).as_bool(), Some(!before), "{id}: toggles");
         }
+        Bind::Press(_) => {}
     }
 }
 
@@ -362,6 +423,42 @@ fn effect(cx: &mut TestAppContext, d: &'static Descriptor) {
 #[gpui::test]
 fn lb302(cx: &mut TestAppContext) {
     let mut o = open(cx, &[(&lm_plugins_instruments::lb302::DESCRIPTOR, true)], "lb302");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn sid(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_sid::DESCRIPTOR, true)], "sid");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn organic(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::organic::DESCRIPTOR, true)], "organic");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn sfxr(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::sfxr::DESCRIPTOR, true)], "sfxr");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn nes(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::nes::DESCRIPTOR, true)], "nes");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn freeboy(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_freeboy::DESCRIPTOR, true)], "freeboy");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn opulenz(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_opulenz::DESCRIPTOR, true)], "opulenz");
     exercise(&mut o);
 }
 
@@ -469,126 +566,4 @@ fn the_panel_follows_the_tree(cx: &mut TestAppContext) {
     assert_eq!(o.param("coarse3"), 7.0);
     o.undo();
     assert_eq!(o.param("coarse3"), -24.0);
-}
-
-#[test]
-fn every_asset_decodes() {
-    for a in crate::assets::lmms::ALL.iter().chain(panels::ASSETS.iter().flat_map(|a| a.iter())) {
-        if !a.is_svg() {
-            let img = crate::assets::image(a);
-            assert!(img.width() > 1 && img.height() > 1, "{} decodes", a.path);
-        }
-    }
-}
-
-#[test]
-fn every_text_has_its_translation() {
-    let table: std::collections::HashSet<&str> = crate::i18n::FILE
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .filter_map(|l| l.split_once(" = ").map(|(k, _)| k.trim()))
-        .collect();
-    let mut missing: Vec<&str> = Vec::new();
-    let mut want = |k: &'static str| {
-        if !k.is_empty() && !table.contains(k) && !missing.contains(&k) {
-            missing.push(k);
-        }
-    };
-    for (_, spec) in panels::ALL {
-        for l in &spec().labels {
-            want(l.text.key);
-        }
-        for c in &spec().controls {
-            want(c.name.key);
-            want(c.tip.key);
-            if let Kind::Combo(cb) = &c.kind {
-                for i in &cb.items {
-                    want(i.text.key);
-                }
-            }
-            if let Kind::Knob(k) = &c.kind {
-                want(k.hint.key);
-                if let Some(l) = &k.label {
-                    want(l.key);
-                }
-                if k.unit.trim().chars().any(char::is_alphabetic) {
-                    want(k.unit.trim());
-                }
-            }
-        }
-    }
-    for k in crate::panel::TEXTS {
-        want(k);
-    }
-    assert!(missing.is_empty(), "missing in locales/pt-BR/panels.txt: {missing:#?}");
-}
-
-/// Writes each panel at its defaults as a PNG (`LM_PANEL_SNAPSHOTS=<folder>`), to compare by eye with a screenshot of
-/// the legacy; the backgrounds in SVG are left out (GPUI draws them)
-#[test]
-fn snapshots() {
-    let Ok(dir) = std::env::var("LM_PANEL_SNAPSHOTS") else { return };
-    let schemas: Vec<_> = [&lm_plugins_tripleoscillator::DESCRIPTOR]
-        .into_iter()
-        .chain(lm_plugins_instruments::ALL.iter().copied())
-        .chain(lm_plugins_effects::ALL.iter().copied())
-        .map(|d| d.schema())
-        .collect();
-    for (id, spec) in panels::ALL {
-        let spec = spec();
-        let Some(schema) = schemas.iter().find(|s| s.type_name == format!("plugin:{id}")) else { continue };
-        for scale in [1.0f32, 2.0] {
-            let mut c = crate::raster::Canvas::new(spec.size.0, spec.size.1, scale);
-            c.fill_rect(0.0, 0.0, spec.size.0, spec.size.1, crate::raster::Rgba::hex(spec.fill));
-            if let Some(bg) = spec.background.filter(|b| !b.is_svg()) {
-                c.pixmap(crate::assets::image(bg), 0.0, 0.0, false);
-            }
-            for ctl in &spec.controls {
-                let (w, h) = ctl.size();
-                let mut one = crate::raster::Canvas::new(w, h, scale);
-                match &ctl.kind {
-                    Kind::Knob(k) => {
-                        let p = schema.find_param(k.param).unwrap();
-                        let r = Range {
-                            min: p.min,
-                            max: p.max,
-                            step: k.step,
-                            center: k.center.unwrap_or(p.min),
-                            log: false,
-                        };
-                        crate::widgets::draw_knob(&mut one, &k.style, r.angle(p.def), r.angle(r.center), true);
-                    }
-                    Kind::Button(b) => {
-                        let on = match b.bind {
-                            Bind::Choice { field, key } => {
-                                schema
-                                    .find_field(field)
-                                    .and_then(|f| f.default.clone())
-                                    .and_then(|d| d.as_text().map(|t| t == key))
-                                    == Some(true)
-                            }
-                            Bind::Switch { param } => schema.find_param(param).is_some_and(|p| p.def >= 0.5),
-                            Bind::Flag { .. } => false,
-                        };
-                        one.pixmap(crate::assets::image(if on { b.active } else { b.inactive }), 0.0, 0.0, false);
-                    }
-                    Kind::Led(l) => one.pixmap(crate::assets::image(l.color.asset()), 0.0, 0.0, false),
-                    Kind::Lcd(l) => crate::widgets::draw_lcd(&mut one, l.sheet, l.digits, "0", true),
-                    Kind::Combo(cb) => {
-                        let def = schema.find_field(cb.field).and_then(|f| f.default.clone());
-                        let icon = cb
-                            .items
-                            .iter()
-                            .find(|i| def.as_ref().and_then(|d| d.as_text()) == Some(i.key))
-                            .and_then(|i| i.icon);
-                        let _ = crate::widgets::draw_combo(&mut one, cb.w, icon.map(crate::assets::image), false);
-                    }
-                }
-                c.composite(&one, ctl.x, ctl.y);
-            }
-            let path = format!("{dir}/{id}@{scale}x.png");
-            c.save_png(&path);
-        }
-    }
 }

@@ -68,6 +68,7 @@ pub static BITCRUSH_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| PanelSpec {
         b26("levels", 92.0, 32.0, 0.01, "Levels", "Levels:", "").label("QUANT"),
     ],
     labels: vec![label(24.0, 15.0, "IN"), label(139.0, 15.0, "OUT")],
+    file_drop: None,
 });
 
 pub static BASSBOOSTER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
@@ -83,6 +84,7 @@ pub static BASSBOOSTER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             b26("ratio", cell(2, 3, w), y, 0.1, "Ratio", "Ratio:", "").label("RATIO"),
         ],
         labels: Vec::new(),
+        file_drop: None,
     }
 });
 
@@ -100,6 +102,7 @@ pub static REVERBSC_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             b26("outputGain", cell(3, 4, w), MARGIN, 0.1, "Output gain", "Output gain:", "dB").label("Output"),
         ],
         labels: Vec::new(),
+        file_drop: None,
     }
 });
 
@@ -124,6 +127,7 @@ pub static FLANGER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             led(Bind::Switch { param: "invert" }, "invert", MARGIN, 57.0, LedColor::Yellow, "Invert", "Invert"),
         ],
         labels: Vec::new(),
+        file_drop: None,
     }
 });
 
@@ -143,6 +147,7 @@ pub static AMPLIFIER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             b26("rightGain", x1.round(), y1, 0.1, "Right gain", "Right gain:", "%").label("RIGHT").volume(),
         ],
         labels: Vec::new(),
+        file_drop: None,
     }
 });
 
@@ -162,6 +167,7 @@ pub static STEREOMATRIX_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             b26("rightToRight", at(135.8), y, 0.01, "Right to Right", "Right to Right Vol:", "").center(0.0),
         ],
         labels: Vec::new(),
+        file_drop: None,
     }
 });
 
@@ -219,5 +225,6 @@ pub static DUALFILTER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         fill: FILL,
         controls,
         labels: Vec::new(),
+        file_drop: None,
     }
 });
