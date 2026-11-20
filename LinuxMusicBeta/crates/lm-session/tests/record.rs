@@ -95,3 +95,30 @@ fn a_take_of_a_removed_track_is_recovered() {
     });
     assert!(s.notices().keys().contains(&"session.take.recovered_track"));
 }
+
+#[test]
+fn a_pump_stopped_for_ten_seconds_loses_nothing_of_a_recording() {
+    let dir = TempDir::new("record-h2");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    let a = audio_track(&mut s, "Long", 1);
+    settle(&mut s);
+    s.record(None).expect("record");
+    run_for(&mut s, Duration::from_millis(300));
+    let started = Instant::now();
+    // The interface is frozen (a window minimised): nobody pumps for 10 s (H2)
+    std::thread::sleep(Duration::from_secs(10));
+    run_for(&mut s, Duration::from_millis(300));
+    let wall = started.elapsed().as_secs_f64() + 0.3;
+    s.stop();
+    wait_until(&mut s, "the take", |s| items(s, a) == 1);
+    let item = s.document().find(a).and_then(|t| t.get("items").and_then(|l| l.at(0).cloned())).expect("item");
+    let resource = item
+        .at_path(&[PathStep::key("lanes"), PathStep::Index(0), PathStep::key("source")])
+        .and_then(Value::as_resource)
+        .cloned()
+        .expect("resource");
+    let path = lm_io::resource_path(s.project().folder.root(), resource.key()).expect("path").expect("file");
+    let frames = lm_sys_sndfile::Reader::open(&path).expect("open").info().frames as f64;
+    assert!(frames >= wall * 48_000.0 * 0.95, "{frames} frames for {wall} s");
+}

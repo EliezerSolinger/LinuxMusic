@@ -532,3 +532,25 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
     GPUI, e falam só pelo `CorePort`, para funcionar também no modo cliente.
   - **A arte é copiada do legado.**
   - **As imagens de terceiros só entram com a permissão registrada.**
+
+## Do `lm-session` (20/11)
+
+- **Salvar roda na thread `Disk`, em ordem com o diário**: as linhas mandadas antes do salvamento ficam no arquivo, as
+  depois vão para o diário novo; uma falha (disco cheio) deixa o arquivo velho intacto e o diário continua nele. O
+  número das linhas nunca volta a zero na sessão.
+- **Recuperação:** o autosave guarda a base e o número até onde vai; ele vence quando o diário não tem tudo o que
+  ele tem (uma linha recusada pelo disco ou marcada incompleta), e só as linhas depois dele são repetidas. Um diário
+  de outra base é posto de lado (`.orphan`), nunca aplicado nem apagado.
+- **A trava (H10)** compara a hora de início do processo dada pelo `ps` (`lstart`), igual no Linux e no Mac, sem
+  `unsafe`; o mesmo processo abrindo o projeto duas vezes abre a segunda só para leitura.
+- **O documento da interface tem um registro de esquemas só dele**, para o `versions` do projeto salvo listar só os
+  tipos do projeto.
+- **Projeto sem título** numa pasta temporária própria, apagada ao fechar a sessão se não tiver áudio.
+- **Os takes de uma gravação entram numa transação `Origin::Recording` só** (um desfazer tira a gravação inteira) e
+  são finalizados um de cada vez enquanto o `lm-io` não corrigir a colisão de nomes de takes idênticos.
+- **Um plugin do documento que o programa instalado ainda não tem conta como carregando**: nenhum alvo fica
+  "pronto" antes de soar (T10).
+- **Rack:** o processador do rack mora no `lm-session` (o compilador pede, a sessão constrói), sobre o
+  `ChannelStrip::process_stages` do `lm-dsp` para os trechos entre inserts; o DRIVE do master entra como o ganho do
+  potenciômetro antes do estágio.
+- **`lm-headless render` renderiza o arquivo salvo, não o diário**, para ser a referência determinística.
