@@ -920,10 +920,24 @@ impl Document {
                     if !new.index.contains(*id) {
                         d.removed.push(*id);
                     } else {
-                        let before = self.env.ctx.path_of(&old.index, &old.root, *id).ok().and_then(|p| old.root.at_path(&p).cloned());
-                        let now = self.env.ctx.path_of(&new.index, &new.root, *id).ok().and_then(|p| new.root.at_path(&p).cloned());
+                        let before = self
+                            .env
+                            .ctx
+                            .path_of(&old.index, &old.root, *id)
+                            .ok()
+                            .and_then(|p| old.root.at_path(&p).cloned());
+                        let now = self
+                            .env
+                            .ctx
+                            .path_of(&new.index, &new.root, *id)
+                            .ok()
+                            .and_then(|p| new.root.at_path(&p).cloned());
                         if !matches!((&before, &now), (Some(a), Some(b)) if a.same_node(b) || a == b) {
-                            d.changed.push(crate::Changed { node: *id, paths: vec![Vec::new()], notes: Default::default() });
+                            d.changed.push(crate::Changed {
+                                node: *id,
+                                paths: vec![Vec::new()],
+                                notes: Default::default(),
+                            });
                         }
                     }
                 }

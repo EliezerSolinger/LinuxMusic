@@ -243,7 +243,8 @@ impl DiffAcc {
                 }
             }
             let n = &c.notes;
-            for (list, before, now) in [(&n.created, false, true), (&n.removed, true, false), (&n.changed, true, true)] {
+            for (list, before, now) in [(&n.created, false, true), (&n.removed, true, false), (&n.changed, true, true)]
+            {
                 for k in list {
                     e.notes.insert(*k, Presence { before, now });
                 }
