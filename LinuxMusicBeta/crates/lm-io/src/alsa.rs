@@ -356,7 +356,8 @@ struct Buffers {
 enum Exit {
     Stopped,
     Disconnected,
-    Failed(i32),
+    /// The errno, and where it happened
+    Failed(i32, &'static str),
 }
 
 fn io_errno(e: PcmIoError) -> i32 {
@@ -376,30 +377,35 @@ fn run(o: &mut Opened, handle: &mut CallbackHandle) {
     match exit {
         Exit::Stopped => {}
         Exit::Disconnected => handle.report(DeviceEvent::Disconnected),
-        Exit::Failed(errno) => handle.report(DeviceEvent::Failed { errno }),
+        Exit::Failed(errno, call) => handle.report(DeviceEvent::Failed { errno, call }),
     }
 }
 
 /// Prefills the playback with a full buffer of silence and starts (linked: both streams)
 fn start_streams(o: &mut Opened) -> std::result::Result<(), PcmIoError> {
+    start_streams_at(o).map_err(|(e, _)| e)
+}
+
+/// The same, saying which step failed
+fn start_streams_at(o: &mut Opened) -> std::result::Result<(), (PcmIoError, &'static str)> {
     if let Some(p) = o.playback.as_mut() {
         let buffer = o.play_config.map_or(0, |c| c.buffer_frames as usize);
         let mut left = buffer;
         while left > 0 {
-            let n = p.write_silence(left)?;
+            let n = p.write_silence(left).map_err(|e| (e, "playback prefill"))?;
             if n == 0 {
                 break;
             }
             left -= n;
         }
-        p.start()?;
+        p.start().map_err(|e| (e, "playback start"))?;
         if !o.linked
             && let Some(c) = o.capture.as_mut()
         {
-            c.start()?;
+            c.start().map_err(|e| (e, "capture start"))?;
         }
     } else if let Some(c) = o.capture.as_mut() {
-        c.start()?;
+        c.start().map_err(|e| (e, "capture start"))?;
     }
     Ok(())
 }
@@ -421,23 +427,54 @@ fn recover(o: &mut Opened, err: PcmIoError) -> std::result::Result<(u32, u32), P
         }
         _ => 0,
     };
-    if let Some(p) = o.playback.as_mut() {
-        match p.recover(err) {
-            Ok(()) | Err(PcmIoError::BadState) => {}
-            Err(e) => return Err(e),
-        }
-        let _ = p.prepare();
-    }
-    if let Some(c) = o.capture.as_mut() {
-        if !o.linked {
-            match c.recover(err) {
+    if !o.linked && o.playback.is_some() && o.capture.is_some() {
+        // Two cards (the drift correction): each stream is recovered alone, and only the one that stopped. Preparing
+        // a running stream fails (EBUSY)
+        if let Some(p) = o.playback.as_mut()
+            && p.state() == PcmState::Xrun
+        {
+            match p.recover(PcmIoError::Xrun) {
                 Ok(()) | Err(PcmIoError::BadState) => {}
                 Err(e) => return Err(e),
             }
+            let mut left = o.play_config.map_or(0, |c| c.buffer_frames as usize);
+            while left > 0 {
+                let n = p.write_silence(left)?;
+                if n == 0 {
+                    break;
+                }
+                left -= n;
+            }
+            p.start()?;
         }
-        let _ = c.prepare();
+        if let Some(c) = o.capture.as_mut()
+            && c.state() == PcmState::Xrun
+        {
+            match c.recover(PcmIoError::Xrun) {
+                Ok(()) | Err(PcmIoError::BadState) => {}
+                Err(e) => return Err(e),
+            }
+            c.start()?;
+        }
+    } else {
+        if let Some(p) = o.playback.as_mut() {
+            match p.recover(err) {
+                Ok(()) | Err(PcmIoError::BadState) => {}
+                Err(e) => return Err(e),
+            }
+            let _ = p.prepare();
+        }
+        if let Some(c) = o.capture.as_mut() {
+            if !o.linked {
+                match c.recover(err) {
+                    Ok(()) | Err(PcmIoError::BadState) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            let _ = c.prepare();
+        }
+        start_streams(o)?;
     }
-    start_streams(o)?;
     let lost = match (xrun, o.capture.as_mut()) {
         (Some(x), Some(c)) => {
             let restarted = c.trigger_time().unwrap_or_else(|_| HostTime::now());
@@ -471,8 +508,8 @@ fn run_locked(o: &mut Opened, handle: &mut CallbackHandle) -> Exit {
     };
     let period_time = Duration::from_nanos(period as u64 * 1_000_000_000 / u64::from(rate));
     let timeout = period_time * 4 + Duration::from_millis(100);
-    if let Err(e) = start_streams(o) {
-        return if e == PcmIoError::Disconnected { Exit::Disconnected } else { Exit::Failed(io_errno(e)) };
+    if let Err((e, call)) = start_streams_at(o) {
+        return if e == PcmIoError::Disconnected { Exit::Disconnected } else { Exit::Failed(io_errno(e), call) };
     }
     let mut lost: u32 = 0;
     let mut late: u32 = 0;
@@ -504,7 +541,7 @@ fn run_locked(o: &mut Opened, handle: &mut CallbackHandle) -> Exit {
                 let state = o.playback.as_ref().and_then(classify).or_else(|| o.capture.as_ref().and_then(classify));
                 if state.is_none() && timeouts * timeout.as_millis() as u32 > 2_000 {
                     // Two seconds without a period: the device stalled
-                    return Exit::Failed(110);
+                    return Exit::Failed(110, "poll: no period for 2 s");
                 }
                 state
             }
@@ -688,11 +725,11 @@ fn handle_problem(
                 Ok(())
             }
             Err(PcmIoError::Disconnected) => Err(Exit::Disconnected),
-            Err(e) => Err(Exit::Failed(io_errno(e))),
+            Err(e) => Err(Exit::Failed(io_errno(e), "recover after an xrun")),
         },
         PcmIoError::Other(n) => {
             // ENODEV can come as a plain errno from a call that does not map it
-            if n == 19 || n == 108 { Err(Exit::Disconnected) } else { Err(Exit::Failed(n)) }
+            if n == 19 || n == 108 { Err(Exit::Disconnected) } else { Err(Exit::Failed(n, "transfer")) }
         }
     }
 }
@@ -709,8 +746,8 @@ fn run_drift(o: &mut Opened, handle: &mut CallbackHandle) -> Exit {
     let mut inputs: Vec<RtBuffer> = (0..ch_in).map(|_| RtBuffer::zeroed(chunk)).collect();
     let mut outputs: Vec<RtBuffer> = (0..ch_out).map(|_| RtBuffer::zeroed(period)).collect();
     let timeout = Duration::from_nanos(period as u64 * 4_000_000_000 / u64::from(rate)) + Duration::from_millis(100);
-    if let Err(e) = start_streams(o) {
-        return if e == PcmIoError::Disconnected { Exit::Disconnected } else { Exit::Failed(io_errno(e)) };
+    if let Err((e, call)) = start_streams_at(o) {
+        return if e == PcmIoError::Disconnected { Exit::Disconnected } else { Exit::Failed(io_errno(e), call) };
     }
     let mut lost = 0u32;
     let mut late = 0u32;
@@ -720,7 +757,7 @@ fn run_drift(o: &mut Opened, handle: &mut CallbackHandle) -> Exit {
         }
         let outcome = match (o.playback.as_ref(), o.capture.as_ref()) {
             (Some(p), Some(c)) => o.poll.wait(&[p, c], Some(timeout)),
-            _ => return Exit::Failed(22),
+            _ => return Exit::Failed(22, "drift: needs both streams"),
         };
         if handle.should_stop() {
             return Exit::Stopped;

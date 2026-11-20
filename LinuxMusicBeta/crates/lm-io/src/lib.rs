@@ -23,7 +23,9 @@ pub use alsa::{AlsaBackend, ChoiceCaps, DeviceChoice, card_index, device_present
 pub use backend::{Backend, CallbackGuard, CallbackHandle, DeviceCallback, DeviceConfig, DeviceEvent, DeviceInfo};
 pub use calibrate::{BURST, Calibration, CalibrationKey, CalibrationOptions, burst, calibrate, find_lag};
 pub use device::{Device, STOP_TIMEOUT, StopTimedOut, SwitchFailed, abandoned_devices, switch_device};
-pub use disk::{DiskEvent, DiskWriter, LIVE_PEAK_CHANNELS, LivePeak, RESERVE_SECONDS, SYNC_SECONDS, ring_frames};
+pub use disk::{
+    DiskEvent, DiskFaults, DiskWriter, LIVE_PEAK_CHANNELS, LivePeak, RESERVE_SECONDS, SYNC_SECONDS, ring_frames,
+};
 pub use dummy::{DummyBackend, DummyControl, DummyOptions, DummySource, Pace, Silence};
 pub use edge::{Edge, EdgeStats, MAX_CHANNELS};
 #[cfg(target_os = "linux")]

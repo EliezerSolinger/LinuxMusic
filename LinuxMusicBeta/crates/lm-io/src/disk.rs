@@ -108,6 +108,11 @@ const COMMAND_RING: usize = 64;
 impl DiskWriter {
     /// Starts the disk thread
     pub fn start() -> Result<DiskWriter> {
+        Self::start_with(DiskFaults::default())
+    }
+
+    /// The disk thread over a simulated disk (tests: a disk that fills during a recording, H3)
+    pub fn start_with(faults: DiskFaults) -> Result<DiskWriter> {
         let (commands, cmd_rx) = ring(COMMAND_RING);
         let (ev_tx, events) = ring(EVENT_RING);
         let (live_tx, live) = ring(LIVE_RING);
@@ -123,6 +128,7 @@ impl DiskWriter {
             stop: stop.clone(),
             zeros: vec![0.0; 4096],
             scratch: Vec::new(),
+            faults,
         };
         let thread = std::thread::Builder::new()
             .name("lm-disk".to_owned())
@@ -183,6 +189,33 @@ struct Worker {
     stop: Arc<AtomicBool>,
     zeros: Vec<f32>,
     scratch: Vec<f32>,
+    faults: DiskFaults,
+}
+
+/// A simulated disk for tests (H3, I-2.4): `free_bytes` is the room left on it, shared by every file. The reservation
+/// ahead takes from it, writes beyond the reservation too; a reservation or a write that does not fit fails as a full
+/// disk does (`sndfile.disk_full`, a short write), so the take stops at its last good block
+#[derive(Clone, Debug, Default)]
+pub struct DiskFaults {
+    pub free_bytes: Option<Arc<AtomicU64>>,
+}
+
+impl DiskFaults {
+    /// A disk with `bytes` free
+    pub fn full_after(bytes: u64) -> Self {
+        Self { free_bytes: Some(Arc::new(AtomicU64::new(bytes))) }
+    }
+
+    /// Takes `bytes` from the simulated room; false (and nothing taken) when they do not fit
+    fn take(&self, bytes: u64) -> bool {
+        let Some(free) = &self.free_bytes else { return true };
+        free.try_update(Ordering::AcqRel, Ordering::Acquire, |f| f.checked_sub(bytes)).is_ok()
+    }
+
+    /// Frames of `frame_bytes` that still fit
+    fn frames_left(&self, frame_bytes: u64) -> u64 {
+        self.free_bytes.as_ref().map_or(u64::MAX, |f| f.load(Ordering::Acquire) / frame_bytes.max(1))
+    }
 }
 
 /// A recording being served
@@ -496,6 +529,14 @@ impl Worker {
         }
         let total = 4096 + (i.written * frame_bytes) + (RESERVE_SECONDS * bps as f64) as u64;
         let writer = i.writer.as_mut()?;
+        if self.faults.free_bytes.is_some() {
+            let extra = total.saturating_sub(i.reserved.max(i.written * frame_bytes));
+            if !self.faults.take(extra) {
+                return Some(Error::new("sndfile.disk_full").arg("bytes", total as i64));
+            }
+            i.reserved = total;
+            return None;
+        }
         if i.reserve_supported {
             match writer.reserve(total) {
                 Ok(()) => {
@@ -546,7 +587,17 @@ impl Worker {
             // A stopped input: its data is read and dropped (the file ended at the last good block)
             None
         } else {
-            let result = input.writer.as_mut().map(|w| w.write_f32(&self.scratch)).unwrap_or(Ok(()));
+            let fits = Self::fits(&self.faults, input, n as u64);
+            let result = if fits < n as u64 {
+                // The simulated disk is full: a short write, as the file system gives
+                let part = &self.scratch[..fits as usize * channels];
+                match input.writer.as_mut().map(|w| w.write_f32(part)) {
+                    Some(Err(e)) => Err(e),
+                    _ => Err(Error::new("sndfile.write_failed").arg("written", fits as i64).arg("asked", n as i64)),
+                }
+            } else {
+                input.writer.as_mut().map(|w| w.write_f32(&self.scratch)).unwrap_or(Ok(()))
+            };
             match result {
                 Ok(()) => {
                     input.written += n as u64;
@@ -567,6 +618,20 @@ impl Worker {
             self.stop_input(a, k, reason, at, Some(e));
         }
         n as u64
+    }
+
+    /// With a simulated disk: how many of `frames` fit (those beyond the reservation take room); the room is taken
+    fn fits(faults: &DiskFaults, i: &OpenInput, frames: u64) -> u64 {
+        if faults.free_bytes.is_none() {
+            return frames;
+        }
+        let frame_bytes = i.channels as u64 * 4;
+        let reserved_frames = i.reserved.saturating_sub(4096) / frame_bytes.max(1);
+        let inside = reserved_frames.saturating_sub(i.written).min(frames);
+        let beyond = frames - inside;
+        let ok = beyond.min(faults.frames_left(frame_bytes));
+        faults.take(ok * frame_bytes);
+        inside + ok
     }
 
     /// Sync every ~2 s, reserve ahead; a failure stops the input
@@ -638,12 +703,18 @@ impl Worker {
         let mut stop = None;
         while left > 0 {
             let n = (left as usize).min(per);
-            let zeros = &self.zeros[..n * ch];
+            let fits = Self::fits(&self.faults, input, n as u64) as usize;
+            let zeros = &self.zeros[..fits * ch];
             if let Some(w) = input.writer.as_mut()
                 && let Err(e) = w.write_f32(zeros)
             {
                 input.written = w.frames();
                 stop = Some((StopReason::DiskFull, e));
+                break;
+            }
+            if fits < n {
+                input.written += fits as u64;
+                stop = Some((StopReason::DiskFull, Error::new("sndfile.write_failed").arg("written", fits as i64)));
                 break;
             }
             input.written += n as u64;

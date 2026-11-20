@@ -442,3 +442,45 @@ fn identical_takes_finalise_concurrently() {
     assert!(done[1].take.record.exists(), "forgetting one does not touch the other");
     device.stop().expect("stop");
 }
+
+/// H3: the disk fills during a recording. The reservation 30 s ahead fails first; the input stops with `DiskFull`,
+/// and the file holds every block up to the last good one
+#[test]
+fn full_disk_stops_cleanly() {
+    let dir = TempDir::new("diskfull");
+    let rate = 8_000;
+    let options =
+        DummyOptions { inputs: 1, outputs: 1, pace: Pace::Free { speed: Some(100.0) }, ..DummyOptions::default() };
+    let mut cfg = DeviceConfig::duplex("dummy", rate, 256);
+    cfg.playback_channels = Some(1);
+    cfg.capture_channels = Some(1);
+    let (mut device, mut engine, _control, _) =
+        dummy_device_with(DummyBackend::new(options).with_source(Box::new(Ramp)), &cfg);
+    // Room for 35 s of mono float at 8 kHz: the first reservation takes 30 s, the refill at 10 s (10 s more) cannot fit
+    let bps = record_bytes_per_second(1, rate);
+    let mut disk = DiskWriter::start_with(DiskFaults::full_after(35 * bps)).expect("disk");
+    let (sender, receiver) = recording_channel(plan(&dir.0, rate, &[&[0]])).expect("channel");
+    disk.record(receiver).expect("record");
+    device.arm(sender).expect("arm");
+    wait_for(5, "armed", || device.is_armed());
+    engine.commands().send(Command::Record { on: true }).expect("record");
+    engine.commands().send(Command::Play).expect("play");
+    wait_for(30, "20 s", || engine.frame().position > 20 * i64::from(rate));
+    engine.commands().send(Command::Stop).expect("stop");
+    let (t, events) = takes(&mut disk, 1, 20);
+    let stop = events
+        .iter()
+        .find_map(|e| match e {
+            DiskEvent::InputStopped { reason, file_frame, seconds, .. } => Some((*reason, *file_frame, *seconds)),
+            _ => None,
+        })
+        .expect("an explicit stop");
+    assert_eq!(stop.0, StopReason::DiskFull);
+    assert!(stop.2 > 9.0 && stop.2 < 16.0, "stopped at {} s", stop.2);
+    let take = &t[0];
+    assert_eq!(take.stopped.map(|s| (s.reason, s.file_frame)), Some((StopReason::DiskFull, stop.1)));
+    let (samples, ch) = read_all(&take.path);
+    assert_eq!(samples.len() as u64, stop.1, "the file ends at the last good block");
+    check_ramp(&samples, ch, &[]);
+    device.stop().expect("stop");
+}

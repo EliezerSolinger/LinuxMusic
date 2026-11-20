@@ -128,7 +128,7 @@ pub enum DeviceEvent {
     /// renderer to the Dummy and offer to reconnect
     Disconnected,
     /// The thread stopped on an error it cannot recover from (the errno ALSA gave)
-    Failed { errno: i32 },
+    Failed { errno: i32, call: &'static str },
     /// The thread panicked outside the renderer (a bug): it has left, like `Failed`
     Panicked,
     /// Events lost because the ring was full
