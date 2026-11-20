@@ -2,10 +2,10 @@
 # Prepares ALSA on a Linux runner for the tests (decisoes-autonomas.md: "Linux sem máquina Linux").
 #
 # The runners have no sound card. What works is announced to the tests by environment variables (in $GITHUB_ENV),
-# each set to 1 only when that part works on this runner:
-#   LM_TEST_ALSA_NULL=1       the ALSA `null` PCM (accepts and produces silence, any format; device name "null")
-#   LM_TEST_ALSA_SEQ=1        the ALSA sequencer (/dev/snd/seq, module snd-seq), open to the runner's user
-#   LM_TEST_ALSA_LOOPBACK=1   the snd-aloop card (device "hw:Loopback"): its playback comes back on its capture side
+# each set only when that part works on this runner (lm-sys-alsa's tests use the names as device names):
+#   LM_TEST_ALSA_NULL=null              the ALSA `null` PCM (accepts and produces silence, any format)
+#   LM_TEST_ALSA_SEQ=1                  the ALSA sequencer (/dev/snd/seq, module snd-seq), open to the runner's user
+#   LM_TEST_ALSA_LOOPBACK=hw:Loopback   the snd-aloop card: its playback comes back on its capture side
 # A test that needs one of them must skip (and say so) when its variable is not set. This script never fails because
 # a device is unavailable. It also installs `dbus` (dbus-daemon, for the ReserveDevice1 test of lm-sys-linux).
 set -uo pipefail
@@ -19,7 +19,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommen
 
 # The `null` PCM comes with alsa-lib's configuration
 if head -c 19200 /dev/zero | aplay -q -D null -f S16_LE -r 48000 -c 2 -t raw - 2>/dev/null; then
-	export_var LM_TEST_ALSA_NULL 1
+	export_var LM_TEST_ALSA_NULL null
 else
 	echo "::warning::the ALSA null PCM does not work on this runner"
 fi
@@ -43,7 +43,7 @@ fi
 if [ -d /proc/asound/Loopback ]; then
 	# The runner user is not in the audio group, and a new group needs a new login: open the devices instead
 	sudo chmod a+rw /dev/snd/* || true
-	export_var LM_TEST_ALSA_LOOPBACK 1
+	export_var LM_TEST_ALSA_LOOPBACK hw:Loopback
 	aplay -l || true
 else
 	echo "::notice::snd-aloop could not be loaded on this runner; ALSA loopback tests will skip"

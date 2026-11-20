@@ -33,5 +33,10 @@ export LM_TEST_SANITIZER="$kind"
 # step 9: "criar e destruir a sessão mil vezes tocando, sob ASan e LSan")
 export LM_SESSION_CYCLES="${LM_SESSION_CYCLES:-1000}"
 
-echo "sanitizer: $kind on $target"
-cargo test -Zbuild-std --target "$target" --workspace --lib --bins --tests
+# The sanitizers cover the core and the lm-sys-* crates (interfaces.md, Parte 4 and I-17), not the GUI: GPUI's own
+# allocations (caches kept for the process's life) are not ours to fix
+excludes=()
+while IFS= read -r crate; do excludes+=(--exclude "$crate"); done < <(python3 "$here/workspace.py" members | grep -E '^lm-gui(-|$)' || true)
+
+echo "sanitizer: $kind on $target${excludes[*]:+ (${excludes[*]})}"
+cargo test -Zbuild-std --target "$target" --workspace "${excludes[@]}" --no-fail-fast --lib --bins --tests

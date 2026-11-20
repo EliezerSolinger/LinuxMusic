@@ -71,9 +71,10 @@ jobs:
       - name: Lint the CI files (yamllint, shellcheck, actionlint)
         working-directory: .
         run: |
-          yamllint .github/workflows/beta.yml
-          shellcheck LinuxMusicBeta/ci/*.sh
-          docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color .github/workflows/beta.yml
+          LinuxMusicBeta/ci/run.sh yamllint .github/workflows/beta.yml
+          LinuxMusicBeta/ci/run.sh shellcheck LinuxMusicBeta/ci/*.sh
+          LinuxMusicBeta/ci/run.sh docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.12 \
+            -color .github/workflows/beta.yml
 
   fmt:
     name: rustfmt
@@ -106,10 +107,17 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: cargo clippy
         run: ci/run.sh cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - name: cargo clippy (loom configuration)
+      - name: cargo clippy (loom configuration, the crates with cfg(loom) code)
+        # Only those crates: `--cfg loom` reaches every dependency, and some (event-listener, under zbus) have their
+        # own loom code that does not build without loom
         env:
           RUSTFLAGS: --cfg loom -D warnings
-        run: ci/run.sh cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: |
+          mapfile -t crates < <(python3 ci/workspace.py loom)
+          if [ "${#crates[@]}" -eq 0 ]; then echo "no crate has cfg(loom) code"; exit 0; fi
+          packages=()
+          for crate in "${crates[@]}"; do packages+=(-p "$crate"); done
+          ci/run.sh cargo clippy "${packages[@]}" --all-targets --all-features -- -D warnings
       - name: cargo doc
         run: ci/run.sh cargo doc --workspace --all-features --no-deps --document-private-items
 
@@ -174,7 +182,7 @@ jobs:
         run: |
           mkdir -p "$LM_TEST_OUTPUT_DIR"
           # shellcheck disable=SC2086
-          ci/run.sh cargo test --workspace $PROFILE_FLAG
+          ci/run.sh cargo test --workspace --no-fail-fast $PROFILE_FLAG
       - name: Upload the tests' output
         if: always()
         uses: actions/upload-artifact@v7
@@ -279,7 +287,7 @@ jobs:
       - name: cargo clippy
         run: ci/run.sh cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: cargo test
-        run: ci/run.sh cargo test --workspace
+        run: ci/run.sh cargo test --workspace --no-fail-fast
 
   prototype-gpui:
     # LinuxMusicBeta/prototypes/ is a separate workspace (the GUI prototype). Optional: a `cargo check` of
