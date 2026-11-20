@@ -76,6 +76,7 @@ lm-plugins-sid = { path = "crates/lm-plugins-sid" }
 lm-plugins-freeboy = { path = "crates/lm-plugins-freeboy" }
 lm-plugins-effects = { path = "crates/lm-plugins-effects" }
 lm-plugins-instruments = { path = "crates/lm-plugins-instruments" }
+lm-plugins-stk = { path = "crates/lm-plugins-stk" }
 lm-sys-fpu = { path = "crates/lm-sys-fpu" }
 lm-sys-samplerate = { path = "crates/lm-sys-samplerate" }
 lm-sys-sndfile = { path = "crates/lm-sys-sndfile" }

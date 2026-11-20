@@ -1,0 +1,21 @@
+[package]
+name = "lm-plugins-stk"
+description = "LinuxMusic: Mallets (F-INS-018), the Synthesis ToolKit's bars, bells and banded waveguides ported to Rust, on the instrument functions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lm-base.workspace = true
+lm-state.workspace = true
+lm-render.workspace = true
+lm-plugin.workspace = true
+lm-dsp.workspace = true
+
+[dev-dependencies]
+lm-plugin = { workspace = true, features = ["testing"] }

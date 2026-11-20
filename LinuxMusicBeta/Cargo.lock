@@ -3709,6 +3709,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-stk"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-dsp",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+]
+
+[[package]]
 name = "lm-plugins-testsine"
 version = "0.1.0"
 dependencies = [
