@@ -775,6 +775,7 @@ Regras gerais do legado que valem para quase todo plugin:
   aleatório, ou "mutar" o atual (±0,05 em metade dos parâmetros); tudo isso desfazível.
 - **Comportamento:** roda a 44,1 kHz por dentro; a nota base toca o efeito na altura desenhada, outras teclas
   transpõem; mono duplicado.
+- **Na beta:** plugin `sfxr`, em `lm-plugins-instruments`: os 22 botões do legado em camelCase e o campo `wave`; o som a 44,1 kHz esticado à altura da nota sobre o A4, a nota acaba com o som (`Synth::finished`). Contrato e A/B por composição.
 
 #### F-INS-016 SID (Commodore 64) — 1.0
 

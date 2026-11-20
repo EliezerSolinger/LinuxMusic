@@ -78,8 +78,9 @@ impl Default for SfxrSettings {
 /// The frames rendered at once at the synth's own pitch
 const BLOCK: usize = 512;
 
-/// The sfxr's synth, at its own rate
-#[derive(Clone, Debug)]
+/// The sfxr's synth, at its own rate. A note restarts it in place ([`SfxrSynth::restart`]) and `clone_from` copies
+/// into it: neither allocates (for the audio thread)
+#[derive(Debug)]
 pub struct SfxrSynth {
     s: SfxrSettings,
     rand: LegacyRand,
@@ -118,6 +119,90 @@ pub struct SfxrSynth {
     arp_time: i32,
     arp_limit: i32,
     arp_mod: f64,
+}
+
+impl Clone for SfxrSynth {
+    fn clone(&self) -> Self {
+        Self {
+            s: self.s.clone(),
+            rand: self.rand.clone(),
+            playing: self.playing.clone(),
+            phase: self.phase.clone(),
+            fperiod: self.fperiod.clone(),
+            fmaxperiod: self.fmaxperiod.clone(),
+            fslide: self.fslide.clone(),
+            fdslide: self.fdslide.clone(),
+            period: self.period.clone(),
+            square_duty: self.square_duty.clone(),
+            square_slide: self.square_slide.clone(),
+            env_stage: self.env_stage.clone(),
+            env_time: self.env_time.clone(),
+            env_length: self.env_length.clone(),
+            env_vol: self.env_vol.clone(),
+            fphase: self.fphase.clone(),
+            fdphase: self.fdphase.clone(),
+            iphase: self.iphase.clone(),
+            phaser: self.phaser.clone(),
+            ipp: self.ipp.clone(),
+            noise: self.noise.clone(),
+            fltp: self.fltp.clone(),
+            fltdp: self.fltdp.clone(),
+            fltw: self.fltw.clone(),
+            fltw_d: self.fltw_d.clone(),
+            fltdmp: self.fltdmp.clone(),
+            fltphp: self.fltphp.clone(),
+            flthp: self.flthp.clone(),
+            flthp_d: self.flthp_d.clone(),
+            vib_phase: self.vib_phase.clone(),
+            vib_speed: self.vib_speed.clone(),
+            vib_amp: self.vib_amp.clone(),
+            rep_time: self.rep_time.clone(),
+            rep_limit: self.rep_limit.clone(),
+            arp_time: self.arp_time.clone(),
+            arp_limit: self.arp_limit.clone(),
+            arp_mod: self.arp_mod.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.s.clone_from(&source.s);
+        self.rand.clone_from(&source.rand);
+        self.playing.clone_from(&source.playing);
+        self.phase.clone_from(&source.phase);
+        self.fperiod.clone_from(&source.fperiod);
+        self.fmaxperiod.clone_from(&source.fmaxperiod);
+        self.fslide.clone_from(&source.fslide);
+        self.fdslide.clone_from(&source.fdslide);
+        self.period.clone_from(&source.period);
+        self.square_duty.clone_from(&source.square_duty);
+        self.square_slide.clone_from(&source.square_slide);
+        self.env_stage.clone_from(&source.env_stage);
+        self.env_time.clone_from(&source.env_time);
+        self.env_length.clone_from(&source.env_length);
+        self.env_vol.clone_from(&source.env_vol);
+        self.fphase.clone_from(&source.fphase);
+        self.fdphase.clone_from(&source.fdphase);
+        self.iphase.clone_from(&source.iphase);
+        self.phaser.clone_from(&source.phaser);
+        self.ipp.clone_from(&source.ipp);
+        self.noise.clone_from(&source.noise);
+        self.fltp.clone_from(&source.fltp);
+        self.fltdp.clone_from(&source.fltdp);
+        self.fltw.clone_from(&source.fltw);
+        self.fltw_d.clone_from(&source.fltw_d);
+        self.fltdmp.clone_from(&source.fltdmp);
+        self.fltphp.clone_from(&source.fltphp);
+        self.flthp.clone_from(&source.flthp);
+        self.flthp_d.clone_from(&source.flthp_d);
+        self.vib_phase.clone_from(&source.vib_phase);
+        self.vib_speed.clone_from(&source.vib_speed);
+        self.vib_amp.clone_from(&source.vib_amp);
+        self.rep_time.clone_from(&source.rep_time);
+        self.rep_limit.clone_from(&source.rep_limit);
+        self.arp_time.clone_from(&source.arp_time);
+        self.arp_limit.clone_from(&source.arp_limit);
+        self.arp_mod.clone_from(&source.arp_mod);
+    }
 }
 
 impl SfxrSynth {
@@ -164,6 +249,14 @@ impl SfxrSynth {
         };
         v.reset_sample(false);
         v
+    }
+
+    /// A new note of the sound @p s, as [`SfxrSynth::new`] makes one, without allocating
+    pub fn restart(&mut self, s: &SfxrSettings, seed: u64) {
+        self.s = *s;
+        self.rand = LegacyRand::new(seed);
+        self.playing = true;
+        self.reset_sample(false);
     }
 
     fn noise_draw(&mut self) -> f32 {
@@ -349,18 +442,37 @@ impl SfxrSynth {
     }
 }
 
-/// One note of the sfxr: its synth, played at the note's pitch
-#[derive(Clone, Debug)]
+/// One note of the sfxr: its synth, played at the note's pitch. Restarted in place and copied into its own room
+/// (`clone_from`), without allocating
+#[derive(Debug)]
 pub struct SfxrVoice {
     pub synth: SfxrSynth,
     fraction_due: f64,
     block: Box<[[f32; 2]; BLOCK]>,
 }
 
+impl Clone for SfxrVoice {
+    fn clone(&self) -> Self {
+        Self { synth: self.synth.clone(), fraction_due: self.fraction_due, block: self.block.clone() }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.synth.clone_from(&source.synth);
+        self.fraction_due = source.fraction_due;
+        self.block.clone_from(&source.block);
+    }
+}
+
 impl SfxrVoice {
     /// A note of the sound @p s; its noise from @p seed
     pub fn new(s: &SfxrSettings, seed: u64) -> Self {
         Self { synth: SfxrSynth::new(s, seed), fraction_due: 0.0, block: Box::new([[0.0; 2]; BLOCK]) }
+    }
+
+    /// A new note of the sound @p s in this voice, without allocating
+    pub fn restart(&mut self, s: &SfxrSettings, seed: u64) {
+        self.synth.restart(s, seed);
+        self.fraction_due = 0.0;
     }
 
     /// A period of the note into @p out: the synth's frames at the note's pitch (@p pitch: the note's frequency
