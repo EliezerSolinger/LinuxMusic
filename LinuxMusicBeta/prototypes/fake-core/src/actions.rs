@@ -132,6 +132,14 @@ pub static REGISTRY: &[ActionSpec] = &[
     ActionSpec { palette: false, ..a("project.decide_take", "Recover or leave a take", FILE, None, Run::CoreWith(project::decide_take_action)) },
     ActionSpec { palette: false, ..a("project.safe_plugin", "Turn a plugin back on", FILE, None, Run::CoreWith(project::safe_plugin_action)) },
     ActionSpec { palette: false, ..a("export.start", "Start the export", FILE, None, Run::CoreWith(project::export_action)) },
+    ActionSpec { palette: false, ..a("project.notes", "Change the project's notes", FILE, None, Run::CoreWith(project::set_notes)) },
+    ActionSpec { palette: false, ..a("project.open_path", "Open a folder or a .zip", FILE, None, Run::CoreWith(project::open_path)) },
+    a("file.save_version", "Save as a new version", FILE, Some("primary-alt-s"), Run::Screen("Project", Some("version"))),
+    ActionSpec { enabled: writable, ..a("file.save_template", "Save as a template", FILE, None, Run::Core(project::save_template)) },
+    a("file.clean_unused", "Clean the unused files", FILE, None, Run::Screen("Project", Some("project"))),
+    ActionSpec { palette: false, ..a("project.clean_unused", "Move the unused files to the trash", FILE, None, Run::Core(project::clean_unused)) },
+    a("file.notes", "Project notes", FILE, None, Run::Screen("Project", Some("notes"))),
+    a("help.manual", "The manual", HELP, Some("f1"), Run::Screen("About", Some("manual"))),
     ActionSpec { palette: false, ..a("remote.connect_to", "Connect", FILE, None, Run::CoreWith(project::connect_action)) },
 ];
 

@@ -152,7 +152,7 @@ impl Render for Notices {
                                 .gap(px(6.))
                                 .child(div().flex_1().min_w_0().text_size(px(12.)).child(text))
                                 .child(
-                                    button(("dismiss", id as usize), "×", false, 0)
+                                    button(("dismiss", id as usize), "×", false, 0).flex_none()
                                         .debug_selector(move || format!("dismiss-{id}"))
                                         .on_click(cx.listener(move |s, _, _, cx| {
                                             port_action(&s.scx, "notices.dismiss", Value::Text(id.to_string()), cx);

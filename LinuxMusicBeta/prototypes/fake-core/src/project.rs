@@ -75,20 +75,15 @@ pub struct ProjectInfo {
     pub audio_mb: f64,
     /// Opened from an older schema: the original is kept as `projeto.json.v<N>.bak` before the first save (H11)
     pub migrated_from: Option<u32>,
+    /// The project's notes (F-PRJ-018), text kept in the project
+    pub notes: String,
+    /// Files in `audio/` that neither the project nor its history cite: (count, MB) (H4, P-13)
+    pub unused: (u32, f64),
 }
 
 impl ProjectInfo {
     pub fn read_only(&self) -> bool {
         matches!(self.access, Access::ReadOnly(_))
-    }
-    /// The folder's entries, as the save dialog previews them
-    pub fn layout(&self) -> Vec<(&'static str, String)> {
-        vec![
-            ("projeto.json", "the project's tree".into()),
-            ("interface.json", "windows, zoom, scrolling".into()),
-            ("audio/", format!("{} | {:.0}", self.audio_files, self.audio_mb)),
-            ("backup/", "autosaves and the journal".into()),
-        ]
     }
 }
 
@@ -107,6 +102,8 @@ fn demo_project() -> ProjectInfo {
         audio_files: 64,
         audio_mb: 2110.0,
         migrated_from: None,
+        notes: "Voz: refazer o refrão 2.\nGuitarra: dobrar a ponte.".into(),
+        unused: (9, 412.0),
     }
 }
 
@@ -1266,6 +1263,8 @@ pub fn create(s: &mut Session, name: String, folder: String, rate: u32, template
             audio_files: 0,
             audio_mb: 0.0,
             migrated_from: None,
+            notes: String::new(),
+            unused: (0, 0.0),
         })
     });
     s.services.pending.push(Pending::Create(h));
@@ -1880,4 +1879,62 @@ pub fn export_action(s: &mut Session, text: &str) {
 pub fn connect_action(s: &mut Session, text: &str) {
     let p = crate::actions::params(text);
     connect(s, p.get("address").copied().unwrap_or(""), p.get("token").copied().unwrap_or(""));
+}
+
+/// "project.notes": the project's notes (a change to the project, so it marks it modified)
+pub fn set_notes(s: &mut Session, text: &str) {
+    if s.services.project.notes != text {
+        s.services.project.notes = text.to_string();
+        s.services.project.modified = true;
+        s.services.serial += 1;
+    }
+}
+
+/// "project.clean_unused" (H4, P-13): the files no root of the history cites go to the system's trash, and the undo
+/// history is cleared (the screen says so before)
+pub fn clean_unused(s: &mut Session) {
+    let (n, mb) = s.services.project.unused;
+    if n == 0 {
+        return;
+    }
+    s.services.project.unused = (0, 0.0);
+    s.services.project.audio_files = s.services.project.audio_files.saturating_sub(n);
+    s.services.project.audio_mb = (s.services.project.audio_mb - mb).max(0.0);
+    s.services.notices.push(
+        "Moved {0} unused files ({1} MB) to the trash; the undo history was cleared",
+        vec![n.to_string(), format!("{mb:.0}")],
+        Severity::Info,
+        Some(Target::Project),
+        vec![],
+    );
+    s.services.serial += 1;
+}
+
+/// "project.save_template" (F-PRJ-002): the project, without its audio, as a template of new projects
+pub fn save_template(s: &mut Session) {
+    let name = s.services.project.name.clone();
+    s.services.notices.push("Saved {0} as a template for new projects", vec![name], Severity::Info, None, vec![]);
+}
+
+/// "project.open_path": a project folder or a `.zip` (extracted into a folder first) by its path
+pub fn open_path(s: &mut Session, path: &str) {
+    let path = path.trim().trim_end_matches('/');
+    let name = path.rsplit('/').next().unwrap_or(path).trim_end_matches(".zip").to_string();
+    if let Some(i) = s.services.recent.iter().position(|r| r.name == name) {
+        open_recent(s, i);
+        return;
+    }
+    s.services.recent.insert(
+        0,
+        RecentProject {
+            name: name.clone(),
+            folder: path.trim_end_matches(".zip").to_string(),
+            rate: 48_000,
+            tracks: 8,
+            minutes: 3.0,
+            modified_ago: Duration::from_secs(600),
+            scenario: if path.contains("sumiu") { Scenario::Missing } else { Scenario::Normal },
+        },
+    );
+    open_recent(s, 0);
 }

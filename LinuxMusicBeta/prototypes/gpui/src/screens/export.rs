@@ -548,7 +548,7 @@ impl Render for Export {
                             },
                             THEME.green,
                         ))
-                        .child(button("reveal", tr("Show the files"), false, 0).on_click(move |_, window, cx| run_action(&scx, "export.reveal", &folder, window, cx))),
+                        .child(button("reveal", tr("Show the files"), false, 0).flex_none().on_click(move |_, window, cx| run_action(&scx, "export.reveal", &folder, window, cx))),
                 )
             })
             .child(
@@ -559,9 +559,9 @@ impl Render for Export {
                     .child(div().flex_1().min_w_0().children(progress).when(exporting.is_none(), |d| {
                         d.child(caption(trf("{0} files, about {1} of work: {2}", &[&files.len(), &mmss(cost), &files.iter().take(4).cloned().collect::<Vec<_>>().join(", ")])))
                     }))
-                    .child(button("close-export", tr("Close"), false, 0).on_click(cx.listener(|e, _, _, cx| e.scx.close(cx))))
+                    .child(button("close-export", tr("Close"), false, 0).flex_none().on_click(cx.listener(|e, _, _, cx| e.scx.close(cx))))
                     .child(
-                        tbutton("start-export", tr("Export"), can_start, THEME.green)
+                        tbutton("start-export", tr("Export"), can_start, THEME.green).flex_none()
                             .debug_selector(|| "start-export".into())
                             .when(!can_start, |b| b.opacity(0.5))
                             .when(can_start, |b| b.on_click(cx.listener(|e, _, _, cx| e.start(cx)))),

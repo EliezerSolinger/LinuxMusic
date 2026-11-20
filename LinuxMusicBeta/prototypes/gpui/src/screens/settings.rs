@@ -1314,14 +1314,14 @@ pub fn connect_panel<V: 'static>(
                 .child(div().w(px(300.)).child(Input::new(address)))
                 .child(div().w(px(180.)).child(Input::new(token)))
                 .child(if connected {
-                    button("disconnect", tr("Disconnect"), false, 0)
+                    button("disconnect", tr("Disconnect"), false, 0).flex_none()
                         .on_click(cx.listener(move |v, _, _, cx| {
                             let (scx, _) = parts(v);
                             port_action(&scx, "remote.disconnect", Value::Text(String::new()), cx);
                         }))
                         .into_any_element()
                 } else {
-                    tbutton("connect", tr("Connect"), true, THEME.green)
+                    tbutton("connect", tr("Connect"), true, THEME.green).flex_none()
                         .debug_selector(|| "connect".into())
                         .on_click(cx.listener(move |v, _, _, cx| {
                             let (scx, addr) = parts(v);
@@ -1452,11 +1452,11 @@ impl Render for Settings {
                 .bg(c(THEME.bg3))
                 .child(div().text_color(c(THEME.yellow)).child("⟳"))
                 .child(div().flex_1().text_size(px(13.)).child(trf("{0}: changes after the program restarts.", &[&names])))
-                .child(button("later", tr("Later"), false, 0).on_click(cx.listener(|s, _, _, cx| {
+                .child(button("later", tr("Later"), false, 0).flex_none().on_click(cx.listener(|s, _, _, cx| {
                     s.band_hidden = true;
                     cx.notify();
                 })))
-                .child(tbutton("restart-now", tr("Restart now"), true, THEME.green).on_click(cx.listener(|s, _, _, cx| s.restart(cx))))
+                .child(tbutton("restart-now", tr("Restart now"), true, THEME.green).flex_none().on_click(cx.listener(|s, _, _, cx| s.restart(cx))))
         });
 
         let nav = div()
