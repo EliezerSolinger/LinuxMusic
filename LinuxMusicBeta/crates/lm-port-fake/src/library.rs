@@ -376,6 +376,16 @@ pub fn preferences() -> Value {
         ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text("audio"))])),
         ("shortcuts", Value::empty_object()),
         ("askBeforeClosing", Value::bool(true)),
+        (
+            "monitor",
+            o(vec![
+                ("level", Value::real(0.0).unwrap_or_default()),
+                ("dim", Value::bool(false)),
+                ("cut", Value::bool(false)),
+                ("mono", Value::bool(false)),
+                ("side", Value::bool(false)),
+            ]),
+        ),
     ])
 }
 

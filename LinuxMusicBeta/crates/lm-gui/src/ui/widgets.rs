@@ -105,44 +105,6 @@ pub fn knob_face(t: f64, d: f32) -> impl IntoElement {
     .size(px(d))
 }
 
-/// The mixing desk's fader over its meter (user's decision, 19/11): the meter bar runs the whole travel and the
-/// fader cap slides over it. `t` is the fader's travel 0..1 (`view::db_to_knob`), `levels` the meter fills (one
-/// per channel of the strip). The caller makes it interactive (gesture on drag, 0 dB on double click).
-pub fn fader_over_meter(t: f64, levels: Vec<f32>, w: f32, h: f32) -> impl IntoElement {
-    canvas(
-        move |_, _, _| {},
-        move |b, _, window, _| {
-            let o = b.origin;
-            let hh = b.size.height.as_f32();
-            // the meters, side by side, in the middle of the strip
-            let n = levels.len().max(1) as f32;
-            let mw = 5.0;
-            let total = n * mw + (n - 1.0) * 2.0;
-            let x0 = (w - total) / 2.0;
-            for (k, l) in levels.iter().enumerate() {
-                let mb = Bounds::new(
-                    point(o.x + px(x0 + k as f32 * (mw + 2.0)), o.y + px(6.0)),
-                    size(px(mw), px(hh - 12.0)),
-                );
-                paint_meter(mb, *l, window);
-            }
-            // the travel's scale: 0 dB line
-            let y0 = o.y + px(6.0 + (1.0 - 0.75) * (hh - 12.0));
-            window.paint_quad(fill(Bounds::new(point(o.x + px(4.0), y0), size(px(w - 8.0), px(1.0))), c(THEME.text3)));
-            // the cap
-            let cy = 6.0 + (1.0 - t as f32) * (hh - 12.0);
-            let cap = Bounds::new(point(o.x + px(2.0), o.y + px(cy - 7.0)), size(px(w - 4.0), px(14.0)));
-            window.paint_quad(gpui::quad(cap, px(3.0), c(THEME.fader_cap), px(1.0), c(THEME.line), Default::default()));
-            window.paint_quad(fill(
-                Bounds::new(point(cap.origin.x + px(3.0), o.y + px(cy)), size(px(w - 10.0), px(1.0))),
-                c(THEME.text),
-            ));
-        },
-    )
-    .w(px(w))
-    .h(px(h))
-}
-
 /// A modal's frame: title, body, and a close button. The workspace centers it over a dimmed window
 #[expect(dead_code, reason = "read by the screens B, C and D port onto lm-gui next")]
 pub fn modal_frame(

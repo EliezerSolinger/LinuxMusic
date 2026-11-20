@@ -284,7 +284,6 @@ pub struct ChannelView {
     pub name: Arc<str>,
     pub kind: ChannelKind,
     pub volume: f64,
-    pub pan: f64,
     pub mute: bool,
     pub solo: bool,
     pub output: Option<NodeId>,
@@ -292,6 +291,21 @@ pub struct ChannelView {
     pub sends: Vec<SendView>,
     /// the rack: the node itself, read by key paths (`tube.drive`)
     pub rack: Value,
+    /// The legacy strip's input controls (optional in the schema: absent is off)
+    pub mono: bool,
+    pub phase_invert: bool,
+    pub swap: bool,
+    /// "#rrggbb", or none
+    pub color: Option<u32>,
+    /// how many audio channels the strip carries (2 is a stereo pair)
+    pub channels: i64,
+    /// The master's PRE faders and their LINK (1, 1, on for the other channels)
+    pub pre: (f64, f64, bool),
+}
+
+fn color_of(v: &Value) -> Option<u32> {
+    let t = v.get("color").and_then(Value::as_text)?;
+    u32::from_str_radix(t.trim_start_matches('#'), 16).ok().filter(|_| t.len() == 7)
 }
 
 fn plugin_view(p: &Value) -> Option<PluginView> {
@@ -327,7 +341,6 @@ pub fn channels(root: &Value) -> Vec<ChannelView> {
                 name: text(c, "name"),
                 kind,
                 volume: real(c, "volume", 1.0),
-                pan: real(c, "pan", 0.0),
                 mute: flag(c, "mute"),
                 solo: flag(c, "solo"),
                 output: ref_of(c, "output"),
@@ -343,6 +356,12 @@ pub fn channels(root: &Value) -> Vec<ChannelView> {
                     })
                     .collect(),
                 rack: c.get("rack").cloned().unwrap_or_default(),
+                mono: flag(c, "mono"),
+                phase_invert: flag(c, "phaseInvert"),
+                swap: flag(c, "swap"),
+                color: color_of(c),
+                channels: int(c, "channels", 2),
+                pre: (1.0, 1.0, true),
             })
         })
         .collect();
@@ -352,13 +371,22 @@ pub fn channels(root: &Value) -> Vec<ChannelView> {
             name: text(m, "name"),
             kind: ChannelKind::Master,
             volume: real(m, "volume", 1.0),
-            pan: 0.0,
             mute: flag(m, "mute"),
             solo: false,
             output: None,
             inserts: list(m, "inserts").filter_map(plugin_view).collect(),
             sends: Vec::new(),
             rack: m.get("rack").cloned().unwrap_or_default(),
+            mono: false,
+            phase_invert: false,
+            swap: false,
+            color: color_of(m),
+            channels: int(m, "channels", 2),
+            pre: (
+                real(m, "preLeft", 1.0),
+                real(m, "preRight", 1.0),
+                m.get("preLink").and_then(Value::as_bool).unwrap_or(true),
+            ),
         });
     }
     out

@@ -460,6 +460,52 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
     inteira troca de desenho.
   - Só muda o que o modelo novo exige: roteamento livre, várias saídas por faixa, os inserts nos pontos do rack, a
     faixa sem pan, os faders sobre os medidores e a página separada. Cada diferença fica registrada com o motivo.
+### A mesa nova e a do legado: o que muda e por quê (20/11, agente A)
+
+A página Mixagem do `lm-gui` reproduz `MixerView`, `MixerChannelView` e `MasterSectionView` do legado: as mesmas
+medidas em pixels, as mesmas cores, a ordem das seções (ENTRADA, FILTRO, DYN, EQ), os botões e as posições, os dois
+modos e a chave ANALOG / DIGITAL. Só muda o que segue:
+
+- **Roteamento livre.** O botão de envio e o botão do envio do canal selecionado ficaram como no legado, agora sobre
+  os `sends` do modelo: o botão cria ou apaga o envio do canal selecionado para aquele canal. A saída de um canal é
+  exclusiva no modelo novo, então ela é escolhida no menu do canal ("Saída") e na tela de roteamento. Os menus de
+  sidechain do legado saem da mesa: um envio para a entrada de sidechain de um insert (`send.port`) vem com os plugins
+  que têm essa entrada.
+- **Várias saídas por faixa:** ficam na tela de roteamento, não na mesa.
+- **Inserts nos pontos do rack (P-20):** no legado havia um ponto por canal, num seletor nos ajustes do canal. No
+  modelo, cada insert tem o seu ponto, então ele fica na linha de cada efeito do rack. No modo digital o seletor some,
+  porque lá todos os pontos viram a cadeia simples.
+- **Os faders sobre os medidores:** o fader do legado já desenhava os medidores atrás da alça, e isso fica igual. A
+  Mixagem é uma página própria, e não uma janela.
+- **Transformador e tolerâncias por canal:** o modelo tem `rack.transformer.on` e `rack.tolerance.on` em cada canal, e
+  o legado não os mostrava na faixa. Eles viram dois interruptores com LED nos ajustes do canal (modo analógico).
+  - Os `on` do tubo, da EQ e da dinâmica não aparecem, como no legado.
+  - RATIO e RANGE no zero desligam o compressor e o gate.
+- **O master só tem M:** o master do modelo não tem solo, inversão de fase nem troca de lados.
+- **Retornos e grupos:**
+  - Um retorno é um canal que recebe envios (P-19). Os botões FX1 e FX2 apontam para os dois primeiros retornos.
+  - Um grupo é um canal para onde outros saem (P-18). Ele tem o triângulo do legado para esconder os seus canais.
+  - A vinculação de faders (P-18) entra como um LED "Link" nos ajustes, junto com Ctrl ou Cmd+clique.
+- **A monitoração** (LEVEL, DIM, CUT, MONO, SIDE) vai para `preferences().monitor`. É da máquina, e não entra no
+  documento, no desfazer nem na exportação.
+- **As cores da mesa** são as do legado nos dois temas, como num aparelho.
+- **Campos novos e opcionais no `lm-doc`, que o legado tinha e o modelo não:**
+  - no canal: `trim`, `mono`, `phaseInvert`, `swap` e `color` (este pode ser nulo);
+  - no master: `preLeft`, `preRight` e `preLink`, os faders PRE e o LINK.
+  - Eles ainda precisam chegar ao motor, pelo `lm-compile` e pelo `lm-dsp`.
+- **Indicadores aproximados até a telemetria os trazer:**
+  - SAT e CLIP leem o pico do canal, e não o estágio de ganho;
+  - o goniômetro e a correlação vêm do nível;
+  - o medidor de redução de ganho do compressor de barramento fica em 0.
+- **Botões e menus:**
+  - Um duplo clique num botão volta ao padrão (F-CTL-005); no legado, ele abria a caixa de valor. A roda do mouse nos
+    botões ainda falta.
+  - No rack, cada efeito tem LED, nome, ponto e "Controles". Os botões W/D, DECAY e GATE do `EffectView` esperam um
+    campo de mistura no insert.
+  - "Cor > Mudar" mostra as 8 cores das faixas, no lugar do seletor de cores.
+  - O renomear acontece no próprio canal: Enter ou F2 começa, e Enter termina, como no legado.
+- **Abaixo da altura mínima do legado** (a faixa mais alta), a página rola em vez de espremer os faders.
+
 ## Os efeitos do legado como plugins (20/11)
 
 - **Um pacote, `lm-plugins-effects`, com um módulo e um `static Descriptor` por efeito** (cada um com o seu id, o seu

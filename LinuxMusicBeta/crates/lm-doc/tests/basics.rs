@@ -366,3 +366,36 @@ fn the_interface_document_has_no_history_but_has_feeds() {
     .unwrap();
     assert_ne!(id, id2);
 }
+
+/// The legacy strip's input controls and the master's PRE faders: optional fields, absent in a new project, set like
+/// any other and checked against their ranges
+#[test]
+fn the_legacy_strip_fields_are_optional_and_checked() {
+    let mut doc = new_doc();
+    let k = PathStep::key;
+    let mut ch = MASTER;
+    doc.transact(label("c"), |e| {
+        ch = e.insert(ROOT, "mixer.channels", 0, Value::object([("name", Value::text("a"))]))?;
+        Ok(())
+    })
+    .unwrap();
+    let node = doc.find(ch).unwrap();
+    for key in ["trim", "mono", "phaseInvert", "swap", "color"] {
+        assert!(node.get(key).is_none(), "{key} is absent in a new channel");
+    }
+    doc.transact(label("set"), |e| {
+        e.set(ch, &[k("trim")], Value::real(6.0)?)?;
+        e.set(ch, &[k("mono")], Value::bool(true))?;
+        e.set(ch, &[k("phaseInvert")], Value::bool(true))?;
+        e.set(ch, &[k("swap")], Value::bool(true))?;
+        e.set(ch, &[k("color")], Value::text("#3366cc"))?;
+        e.set(MASTER, &[k("preLeft")], Value::real(0.5)?)?;
+        e.set(MASTER, &[k("preLink")], Value::bool(false))?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(doc.find(ch).unwrap().get("trim"), Some(&Value::real(6.0).unwrap()));
+    assert_eq!(doc.find(MASTER).unwrap().get("preLink"), Some(&Value::bool(false)));
+    let too_much = doc.transact(label("set"), |e| e.set(ch, &[k("trim")], Value::real(30.0)?));
+    assert!(too_much.is_err(), "trim is at most +24 dB");
+}

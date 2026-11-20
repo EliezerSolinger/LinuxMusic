@@ -2,6 +2,7 @@
 //! Ctrl+Tab), with the transport bar over both (user's decision, 19/11).
 
 pub mod composition;
+pub mod desk;
 pub mod mixing;
 pub mod transport;
 

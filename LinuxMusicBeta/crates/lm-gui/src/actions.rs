@@ -46,7 +46,11 @@ actions!(
         FaderDownCoarse,
         FaderUpFine,
         FaderDownFine,
-        AddChannel
+        AddChannel,
+        MoveChannelLeft,
+        MoveChannelRight,
+        RemoveChannel,
+        RenameChannel,
     ]
 );
 
@@ -236,6 +240,10 @@ pub const REGISTRY: &[ActionDef] = &[
         &["secondary-right"],
         Some("PianoRoll"),
     ),
+    a("desk.move_left", "mixing::MoveChannelLeft", "Move the channel left", "Desk", &["alt-left"], Some("Mixing")),
+    a("desk.move_right", "mixing::MoveChannelRight", "Move the channel right", "Desk", &["alt-right"], Some("Mixing")),
+    a("desk.remove_channel", "mixing::RemoveChannel", "Remove the channel", "Desk", &["delete"], Some("Mixing")),
+    a("desk.rename_channel", "mixing::RenameChannel", "Rename the channel", "Desk", &["enter", "f2"], Some("Mixing")),
 ];
 
 /// `secondary` written out for this platform: Cmd on macOS, Ctrl elsewhere

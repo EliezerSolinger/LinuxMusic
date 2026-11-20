@@ -44,6 +44,8 @@
 //! metronome: { when: text ("always", "recording", "never"), countInBars: int }
 //! recording: { format: text ("rf64-24", "rf64-32f"), folder: text }
 //! shortcuts: { <action id>: text (keys, "secondary-s") }       only the ones the user changed
+//! monitor:   { level: real (dB, -60..+12), dim: bool, cut: bool, mono: bool, side: bool }
+//!            the master section's monitoring (the legacy MONITOR): what is heard, never mixed, exported or undone
 //! ```
 //!
 //! The parameters of the session's actions the settings, export and project screens run (agent D's):
@@ -89,4 +91,5 @@ pub mod preferences {
     pub const SHORTCUTS: &str = "shortcuts";
     pub const MIDI_MAP: &str = "midiMap";
     pub const CONTROLLERS: &str = "controllers";
+    pub const MONITOR: &str = "monitor";
 }

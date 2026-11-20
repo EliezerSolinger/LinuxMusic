@@ -377,6 +377,12 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::int("channels", 1, 64, 2))
             .field(FieldSpec::real("volume", 0.0, 4.0, 1.0))
             .field(FieldSpec::bool("mute", false))
+            // The legacy master's PRE faders, one per side, into its gain stage (linear gain; absent is 1), and LINK,
+            // which moves them together (absent is on)
+            .field(FieldSpec::new("preLeft", FieldKind::Real { min: 0.0, max: 4.0 }).optional())
+            .field(FieldSpec::new("preRight", FieldKind::Real { min: 0.0, max: 4.0 }).optional())
+            .field(FieldSpec::new("preLink", FieldKind::Bool).optional())
+            .field(FieldSpec::new("color", FieldKind::Text).optional().nullable())
             .field(object("rack", ty::RACK_MASTER))
             .field(list_of("inserts", ty::PLUGIN))
             .field(list_of("automation", ty::AUTOMATION))
@@ -395,6 +401,14 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::real("pan", -1.0, 1.0, 0.0))
             .field(FieldSpec::bool("mute", false))
             .field(FieldSpec::bool("solo", false))
+            // The legacy strip's input controls (optional: absent is off, 0 dB, no color). `trim` is clean gain in dB
+            // before the rack (-60 is off); `mono` sums to mono before the processing so that the pan places it;
+            // `phaseInvert` inverts both sides; `swap` trades left and right; `color` is "#rrggbb" (null: none)
+            .field(FieldSpec::new("trim", FieldKind::Real { min: -60.0, max: 24.0 }).optional())
+            .field(FieldSpec::new("mono", FieldKind::Bool).optional())
+            .field(FieldSpec::new("phaseInvert", FieldKind::Bool).optional())
+            .field(FieldSpec::new("swap", FieldKind::Bool).optional())
+            .field(FieldSpec::new("color", FieldKind::Text).optional().nullable())
             .field(object("rack", ty::RACK))
             .field(list_of("inserts", ty::PLUGIN))
             .field(list_of("sends", ty::SEND))

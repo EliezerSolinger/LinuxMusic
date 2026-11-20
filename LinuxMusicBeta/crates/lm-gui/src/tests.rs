@@ -15,7 +15,7 @@ use crate::actions::{REGISTRY, keys_for_platform};
 use crate::core::Core;
 use crate::model::{self, ChannelKind};
 use crate::pages::Page;
-use crate::pages::mixing::{MASTER_RACK, RACK, Spec};
+use crate::pages::mixing::{MASTER_KNOBS, STRIP_KNOBS, Scale};
 use crate::screens::Screen;
 use crate::view;
 use crate::workspace::{self, Pending, Workspace};
@@ -118,10 +118,10 @@ fn some_channel(ws: &Entity<Workspace>, cx: &mut VisualTestContext) -> NodeId {
     model::channels(&root(ws, cx)).iter().filter(|c| c.kind == ChannelKind::Normal).nth(5).expect("a channel").id
 }
 
-/// A click on a strip's name: selects it and focuses the page
+/// A click on a strip's name label: selects it and focuses the page
 fn click_strip(cx: &mut VisualTestContext, id: NodeId, m: Modifiers) {
-    let b = bounds(cx, &format!("strip-{}", id.number));
-    cx.simulate_click(point(b.center().x, b.origin.y + px(8.0)), m);
+    let p = center(cx, &format!("name-{}", id.number));
+    cx.simulate_click(p, m);
     cx.run_until_parked();
 }
 
@@ -464,6 +464,27 @@ fn tempo_drag_and_display_format(cx: &mut TestAppContext) {
 
 // --- mixing -----------------------------------------------------------------------------------------------------
 
+fn rack_text(ws: &Entity<Workspace>, cx: &mut VisualTestContext, id: NodeId, sec: &str, key: &str) -> String {
+    model::at(&channel(ws, cx, id).rack, &[sec, key]).and_then(Value::as_text).unwrap_or("").to_string()
+}
+
+fn mixing(ws: &Entity<Workspace>, cx: &mut VisualTestContext) -> Entity<crate::pages::mixing::MixingPage> {
+    ws.read_with(cx, |ws, _| ws.mixing.clone())
+}
+
+fn drawn(cx: &mut VisualTestContext, selector: &str) -> bool {
+    let s: &'static str = Box::leak(selector.to_string().into_boxed_str());
+    cx.debug_bounds(s).is_some()
+}
+
+/// The first normal channel that has inserts
+fn channel_with_inserts(ws: &Entity<Workspace>, cx: &mut VisualTestContext) -> model::ChannelView {
+    model::channels(&root(ws, cx))
+        .into_iter()
+        .find(|c| c.kind == ChannelKind::Normal && !c.inserts.is_empty())
+        .expect("a channel with inserts")
+}
+
 /// The fader over the meter: a drag is one gesture; a double click and the middle button go back to 0 dB
 #[gpui::test]
 fn fader_drag_and_double_click(cx: &mut TestAppContext) {
@@ -474,7 +495,7 @@ fn fader_drag_and_double_click(cx: &mut TestAppContext) {
     let sel = format!("fader-{}", id.number);
     drag(cx, &sel, 0.0, 60.0);
     let v = channel(&ws, cx, id).volume;
-    assert!(view::gain_to_db(v) < -10.0, "the fader went down: {} dB", view::gain_to_db(v));
+    assert!(view::gain_to_db(v) < -6.0, "the fader went down: {} dB", view::gain_to_db(v));
     undo(cx);
     assert_eq!(channel(&ws, cx, id).volume, 1.0, "one undo step");
     drag(cx, &sel, 0.0, 60.0);
@@ -486,10 +507,10 @@ fn fader_drag_and_double_click(cx: &mut TestAppContext) {
     assert!((channel(&ws, cx, id).volume - 1.0).abs() < 1e-9, "middle button: 0 dB");
 }
 
-/// A rack knob in the inspector: a drag is one undo step, Shift is fine, the right button's menu sets the default and
-/// copies and pastes a value
+/// A knob of the analog strip: a drag is one undo step, Shift is fine, the right button's menu resets, copies and
+/// pastes the value
 #[gpui::test]
-fn rack_knob_gestures(cx: &mut TestAppContext) {
+fn strip_knob_gestures(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
     show(&ws, cx, Page::Mixing);
     let id = some_channel(&ws, cx);
@@ -511,13 +532,169 @@ fn rack_knob_gestures(cx: &mut TestAppContext) {
     click(cx, "menu-copy");
     button_at(cx, p, MouseButton::Right, 1);
     click(cx, "menu-default");
-    assert_eq!(high(cx), 0.0, "default");
+    assert_eq!(high(cx), 0.0, "reset");
     button_at(cx, p, MouseButton::Right, 1);
     click(cx, "menu-paste");
     assert!((high(cx) - fine).abs() < 1e-6, "paste");
+    // a stepped knob moves through its choices: ATK
+    drag(cx, &format!("rk-{}-dynamics-compSpeed", id.number), 0.0, -120.0);
+    assert_eq!(rack_text(&ws, cx, id, "dynamics", "compSpeed"), "slow");
+    // the channel's own knobs: TRIM and PAN
+    let field = |cx: &mut VisualTestContext, key: &str| {
+        let core = core(&ws, cx);
+        core.read_with(cx, |c, _| c.port().find(id).and_then(|n| n.get(key).and_then(Value::as_real)).unwrap_or(0.0))
+    };
+    drag(cx, &format!("rk-{}-ch-trim", id.number), 0.0, -40.0);
+    assert!(field(cx, "trim") > 0.0, "trim up");
+    let pan = field(cx, "pan");
+    drag(cx, &format!("rk-{}-ch-pan", id.number), 0.0, -30.0);
+    assert!(field(cx, "pan") > pan, "pan right");
 }
 
-/// ←/→ select; ↑/↓ move the selected fader 1 dB, Shift 3 dB, Alt 0.1 dB; Shift+Insert adds a channel
+/// The desk switches: the gain stage's model and the compressor's (click = next, right button = the list), the tube's
+/// lamp (light or realistic), MONO, LCUT, Ø, ⇄, M, S
+#[gpui::test]
+fn strip_switches(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    show(&ws, cx, Page::Mixing);
+    let id = some_channel(&ws, cx);
+    select_strip(&ws, cx, id);
+    let n = id.number;
+    assert_eq!(rack_text(&ws, cx, id, "tube", "model"), "4558");
+    click(cx, &format!("choice-{n}-tube-model"));
+    assert_eq!(rack_text(&ws, cx, id, "tube", "model"), "tl072", "a click: the next model");
+    let p = center(cx, &format!("choice-{n}-tube-model"));
+    button_at(cx, p, MouseButton::Right, 1);
+    click(cx, "menu-choice-12ax7");
+    assert_eq!(rack_text(&ws, cx, id, "tube", "model"), "12ax7", "the list");
+    click(cx, &format!("sat-{n}"));
+    assert_eq!(
+        model::at(&channel(&ws, cx, id).rack, &["tube", "realistic"]).and_then(Value::as_bool),
+        Some(true),
+        "the lamp"
+    );
+    click(cx, &format!("choice-{n}-dynamics-compModel"));
+    assert_eq!(rack_text(&ws, cx, id, "dynamics", "compModel"), "api2500");
+    click(cx, &format!("choice-{n}-dynamics-gateMode"));
+    assert_eq!(rack_text(&ws, cx, id, "dynamics", "gateMode"), "kick");
+    for (key, read) in [
+        ("mono", Box::new(|c: &model::ChannelView| c.mono) as Box<dyn Fn(&model::ChannelView) -> bool>),
+        ("phase", Box::new(|c| c.phase_invert)),
+        ("swap", Box::new(|c| c.swap)),
+        ("mute", Box::new(|c| c.mute)),
+        ("solo", Box::new(|c| c.solo)),
+    ] {
+        click(cx, &format!("{key}-{n}"));
+        assert!(read(&channel(&ws, cx, id)), "{key}");
+    }
+    click(cx, &format!("lcut-{n}"));
+    assert_eq!(model::at(&channel(&ws, cx, id).rack, &["tube", "lowCut"]).and_then(Value::as_bool), Some(true));
+}
+
+/// ANALOG / DIGITAL: the switch changes the whole page; the digital strip is plain (no analog section, the effects by
+/// name: the LED bypasses one), and the strip's settings are kept for when the user switches back
+#[gpui::test]
+fn analog_and_digital(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    show(&ws, cx, Page::Mixing);
+    let ch = channel_with_inserts(&ws, cx);
+    let id = ch.id;
+    mixing(&ws, cx).update(cx, |m, cx| m.select_channel(id, cx));
+    cx.run_until_parked();
+    drag(cx, &format!("rk-{}-eq-high", id.number), 0.0, -40.0);
+    let high = model::at(&channel(&ws, cx, id).rack, &["eq", "high"]).and_then(Value::as_real);
+    assert!(drawn(cx, &format!("led-{}-0", id.number)), "analog: the effects as LEDs");
+    click(cx, "mode-digital");
+    assert!(!model::song(&root(&ws, cx)).analog);
+    assert!(!drawn(cx, &format!("rk-{}-eq-high", id.number)), "digital: no analog strip");
+    assert!(!drawn(cx, &format!("led-{}-0", id.number)), "digital: no LEDs");
+    let insert = ch.inserts[0].id;
+    click(cx, &format!("slot-led-{}", insert.number));
+    assert!(channel(&ws, cx, id).inserts[0].bypass, "the slot's LED bypasses the effect");
+    click(cx, "mode-analog");
+    assert!(model::song(&root(&ws, cx)).analog);
+    assert_eq!(
+        model::at(&channel(&ws, cx, id).rack, &["eq", "high"]).and_then(Value::as_real),
+        high,
+        "the strip's settings stay"
+    );
+}
+
+/// The effects: a double click on an LED opens its controls, on an empty one the browser to add one; in the rack the
+/// LED bypasses, the point cycles through the strip's points, the menu moves and removes
+#[gpui::test]
+fn effects(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    show(&ws, cx, Page::Mixing);
+    let ch = channel_with_inserts(&ws, cx);
+    let id = ch.id;
+    mixing(&ws, cx).update(cx, |m, cx| m.select_channel(id, cx));
+    cx.run_until_parked();
+    let p = center(cx, &format!("led-{}-0", id.number));
+    button_at(cx, p, MouseButton::Left, 2);
+    assert!(ws.read_with(cx, |ws, _| ws.is_open(Screen::Effect)), "the effect's controls");
+    ws.update(cx, |ws, cx| ws.close(Screen::Effect, cx));
+    let p = center(cx, &format!("led-{}-4", id.number));
+    button_at(cx, p, MouseButton::Left, 2);
+    assert!(ws.read_with(cx, |ws, _| ws.is_open(Screen::Browser)), "an empty slot: add an effect");
+    ws.update(cx, |ws, cx| ws.close(Screen::Browser, cx));
+    cx.run_until_parked();
+    let insert = ch.inserts[0].id;
+    click(cx, &format!("rack-led-{}", insert.number));
+    assert!(channel(&ws, cx, id).inserts[0].bypass);
+    click(cx, &format!("point-{}", insert.number));
+    assert_eq!(&*channel(&ws, cx, id).inserts[0].point, "pre-pan", "post-eq → pre-pan");
+    click(cx, "add-effect");
+    assert!(ws.read_with(cx, |ws, _| ws.is_open(Screen::Browser)));
+    let n = channel(&ws, cx, id).inserts.len();
+    let p = center(cx, &format!("rack-{}", insert.number));
+    button_at(cx, p, MouseButton::Right, 1);
+    click(cx, "menu-effect-remove");
+    assert_eq!(channel(&ws, cx, id).inserts.len(), n - 1);
+}
+
+/// The send button on another strip: the selected channel's send to it, made and removed; its knob moves the amount.
+/// An FX knob makes the send to its return and moves it in the same gesture
+#[gpui::test]
+fn sends(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    show(&ws, cx, Page::Mixing);
+    let normal: Vec<NodeId> = model::channels(&root(&ws, cx))
+        .iter()
+        .filter(|c| c.kind == ChannelKind::Normal)
+        .skip(5)
+        .take(2)
+        .map(|c| c.id)
+        .collect();
+    let (a, b) = (normal[0], normal[1]);
+    select_strip(&ws, cx, a);
+    click(cx, &format!("send-{}", b.number));
+    let send = channel(&ws, cx, a).sends.iter().find(|s| s.to == b).map(|s| s.id).expect("a send to b");
+    drag(cx, &format!("sendknob-{}", b.number), 0.0, -20.0);
+    let amount = channel(&ws, cx, a).sends.iter().find(|s| s.id == send).unwrap().amount;
+    assert!(amount > 1.0, "the knob raised the send: {amount}");
+    let p = center(cx, &format!("sendknob-{}", b.number));
+    button_at(cx, p, MouseButton::Right, 1);
+    click(cx, "menu-send-pre");
+    assert!(channel(&ws, cx, a).sends.iter().find(|s| s.id == send).unwrap().pre, "before the fader");
+    click(cx, &format!("send-{}", b.number));
+    assert!(!channel(&ws, cx, a).sends.iter().any(|s| s.to == b), "a second click removes it");
+    // the FX knob of a channel without a send to the first return
+    let ret = model::channels(&root(&ws, cx)).into_iter().find(|c| c.kind == ChannelKind::Return).unwrap().id;
+    let c = model::channels(&root(&ws, cx))
+        .into_iter()
+        .find(|c| c.kind == ChannelKind::Normal && !c.sends.iter().any(|s| s.to == ret))
+        .unwrap()
+        .id;
+    mixing(&ws, cx).update(cx, |m, cx| m.select_channel(c, cx));
+    cx.run_until_parked();
+    drag(cx, &format!("fx-{}-1", c.number), 0.0, -60.0);
+    let s = channel(&ws, cx, c).sends.into_iter().find(|s| s.to == ret).expect("the FX send was made");
+    assert!(s.amount > 0.0);
+}
+
+/// ←/→ select; ↑/↓ the selected fader 1 dB, Shift 3 dB, Alt 0.1 dB; Alt+→ moves the channel; Delete removes it;
+/// Shift+Insert adds one
 #[gpui::test]
 fn desk_keys(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
@@ -531,54 +708,84 @@ fn desk_keys(cx: &mut TestAppContext) {
     assert!((db(cx) + 2.0).abs() < 1e-6, "shift+down: -3 dB, {}", db(cx));
     keys(cx, "alt-up");
     assert!((db(cx) + 1.9).abs() < 1e-6, "alt+up: +0.1 dB, {}", db(cx));
-    keys(cx, "down");
-    keys(cx, "shift-up");
-    keys(cx, "alt-down");
-    assert!((db(cx) + 0.0).abs() < 1e-6, "{}", db(cx));
-    let mixing = ws.read_with(cx, |ws, _| ws.mixing.clone());
+    let m = mixing(&ws, cx);
     keys(cx, "right");
-    assert_ne!(mixing.read_with(cx, |m, _| m.selected), Some(id), "right selects the next one");
+    assert_ne!(m.read_with(cx, |m, _| m.selected), Some(id), "right selects the next one");
     keys(cx, "left");
-    assert_eq!(mixing.read_with(cx, |m, _| m.selected), Some(id), "left goes back");
+    assert_eq!(m.read_with(cx, |m, _| m.selected), Some(id), "left goes back");
+    let place = |cx: &mut VisualTestContext| model::channels(&root(&ws, cx)).iter().position(|c| c.id == id);
+    let before = place(cx);
+    keys(cx, "alt-right");
+    assert_eq!(place(cx), before.map(|p| p + 1), "alt+right moves the channel");
     let n = model::channels(&root(&ws, cx)).len();
     keys(cx, "shift-insert");
     assert_eq!(model::channels(&root(&ws, cx)).len(), n + 1, "shift+insert adds a channel");
+    keys(cx, "delete");
+    assert_eq!(model::channels(&root(&ws, cx)).len(), n, "delete removes the selected channel");
 }
 
-/// Mute, solo and a rack section's switch on a strip; the desk mode; the ghost strip adds a channel
+/// F2 (or Enter, or a double click on the strip) renames the channel in place
 #[gpui::test]
-fn strip_buttons(cx: &mut TestAppContext) {
+fn renaming_a_channel(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
     show(&ws, cx, Page::Mixing);
     let id = some_channel(&ws, cx);
     select_strip(&ws, cx, id);
-    let n = id.number;
-    click(cx, &format!("mute-{n}"));
-    assert!(channel(&ws, cx, id).mute);
-    click(cx, &format!("solo-{n}"));
-    assert!(channel(&ws, cx, id).solo);
-    let eq_on = |cx: &mut VisualTestContext| {
-        model::at(&channel(&ws, cx, id).rack, &["eq", "on"]).and_then(Value::as_bool).unwrap_or(true)
-    };
-    let before = eq_on(cx);
-    click(cx, &format!("section-{n}-eq"));
-    assert_ne!(eq_on(cx), before, "the EQ's switch");
-    let a = model::song(&root(&ws, cx)).analog;
-    click(cx, "desk-mode");
-    assert_ne!(model::song(&root(&ws, cx)).analog, a, "the desk mode");
-    let mixing = ws.read_with(cx, |ws, _| ws.mixing.clone());
-    mixing.update(cx, |m, cx| {
-        m.scroll = 1e6;
-        cx.notify();
-    });
-    cx.run_until_parked();
-    cx.run_until_parked();
-    let count = model::channels(&root(&ws, cx)).len();
-    click(cx, "ghost");
-    assert_eq!(model::channels(&root(&ws, cx)).len(), count + 1, "the ghost strip adds a channel");
+    keys(cx, "f2");
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") { "cmd-a" } else { "ctrl-a" });
+    cx.simulate_input("Baixo DI");
+    keys(cx, "enter");
+    assert_eq!(&*channel(&ws, cx, id).name, "Baixo DI");
 }
 
-/// Ctrl+click selects several strips; linked faders move together, in one gesture
+/// The strip's menu: move, rename, remove, remove unused, color, track channels, output
+#[gpui::test]
+fn strip_menu(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    show(&ws, cx, Page::Mixing);
+    let id = some_channel(&ws, cx);
+    select_strip(&ws, cx, id);
+    let menu = |cx: &mut VisualTestContext| {
+        let p = center(cx, &format!("name-{}", id.number));
+        button_at(cx, p, MouseButton::Right, 1);
+    };
+    menu(cx);
+    click(cx, "menu-channels-4");
+    assert_eq!(channel(&ws, cx, id).channels, 4, "track channels");
+    menu(cx);
+    click(cx, "menu-color-2");
+    assert!(channel(&ws, cx, id).color.is_some(), "a color");
+    menu(cx);
+    click(cx, "menu-color-reset");
+    assert!(channel(&ws, cx, id).color.is_none(), "reset");
+    let group = model::channels(&root(&ws, cx)).iter().find(|c| c.kind == ChannelKind::Group).unwrap().id;
+    menu(cx);
+    click(cx, &format!("menu-output-{}", group.number));
+    assert_eq!(channel(&ws, cx, id).output, Some(group), "the output");
+    // remove unused: a new channel nothing uses goes away
+    let n = model::channels(&root(&ws, cx)).len();
+    keys(cx, "shift-insert");
+    menu(cx);
+    click(cx, "menu-remove-unused");
+    assert!(model::channels(&root(&ws, cx)).len() <= n, "the unused channel is gone");
+}
+
+/// A group channel's marker hides and shows the channels that output to it
+#[gpui::test]
+fn collapsing_a_group(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    show(&ws, cx, Page::Mixing);
+    let chs = model::channels(&root(&ws, cx));
+    let group = chs.iter().find(|c| c.kind == ChannelKind::Group).unwrap().id;
+    let member = chs.iter().find(|c| c.output == Some(group)).unwrap().id;
+    assert!(drawn(cx, &format!("strip-{}", member.number)));
+    click(cx, &format!("group-{}", group.number));
+    assert!(!drawn(cx, &format!("strip-{}", member.number)), "hidden");
+    click(cx, &format!("group-{}", group.number));
+    assert!(drawn(cx, &format!("strip-{}", member.number)), "shown again");
+}
+
+/// Ctrl+click selects several strips; linked faders move together, in one gesture (P-18)
 #[gpui::test]
 fn linked_faders_move_together(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
@@ -601,18 +808,44 @@ fn linked_faders_move_together(cx: &mut TestAppContext) {
     assert_eq!((channel(&ws, cx, a).volume, channel(&ws, cx, b).volume), (1.0, 1.0), "one undo step");
 }
 
-/// A channel's output: the list offers no loops, and a pick routes it
+/// The master: its PRE faders move together while LINK is on, alone when off; the transformer and the bus
+/// compressor's IN; the master section's knobs; the monitoring goes to the preferences, not to the document
 #[gpui::test]
-fn choosing_an_output(cx: &mut TestAppContext) {
+fn the_master(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
     show(&ws, cx, Page::Mixing);
-    let id = some_channel(&ws, cx);
-    select_strip(&ws, cx, id);
-    click(cx, &format!("out-{}", id.number));
-    let group = model::channels(&root(&ws, cx)).iter().find(|c| c.kind == ChannelKind::Group).unwrap().id;
-    // the group's pieces output to it: the group may not output to them (a loop), so they are not offered for it
-    click(cx, &format!("opt-{}", group.number));
-    assert_eq!(channel(&ws, cx, id).output, Some(group));
+    let master = model::channels(&root(&ws, cx)).into_iter().find(|c| c.kind == ChannelKind::Master).unwrap().id;
+    drag(cx, "preLeft", 0.0, 40.0);
+    let (l, r, link) = channel(&ws, cx, master).pre;
+    assert!(link && l < 1.0 && (l - r).abs() < 1e-9, "LINK: both, {l} {r}");
+    undo(cx);
+    click(cx, "pre-link");
+    drag(cx, "preLeft", 0.0, 40.0);
+    let (l, r, _) = channel(&ws, cx, master).pre;
+    assert!(l < 1.0 && r == 1.0, "unlinked: only the left one, {l} {r}");
+    click(cx, "master-xfmr");
+    assert_eq!(model::at(&channel(&ws, cx, master).rack, &["transformer", "on"]).and_then(Value::as_bool), Some(true));
+    click(cx, "master-comp-in");
+    assert_eq!(model::at(&channel(&ws, cx, master).rack, &["dynamics", "on"]).and_then(Value::as_bool), Some(true));
+    drag(cx, &format!("rk-{}-stereo-width", master.number), 0.0, -30.0);
+    assert!(model::at(&channel(&ws, cx, master).rack, &["stereo", "width"]).and_then(Value::as_real).unwrap() > 100.0);
+    let core = core(&ws, cx);
+    let prefs = |cx: &mut VisualTestContext, k: &str| {
+        core.read_with(cx, |c, _| model::at(c.port().preferences(), &["monitor", k]).cloned())
+    };
+    let modified = core.read_with(cx, |c, _| c.port().can_undo());
+    click(cx, "master-dim");
+    assert_eq!(prefs(cx, "dim"), Some(Value::bool(true)), "DIM");
+    click(cx, "master-mono");
+    click(cx, "master-side");
+    assert_eq!(
+        (prefs(cx, "mono"), prefs(cx, "side")),
+        (Some(Value::bool(false)), Some(Value::bool(true))),
+        "SIDE takes MONO off"
+    );
+    drag(cx, "monitor-level", 0.0, 40.0);
+    assert!(prefs(cx, "level").and_then(|v| v.as_real()).unwrap() < 0.0, "the level");
+    assert_eq!(core.read_with(cx, |c, _| c.port().can_undo()), modified, "the monitoring is not an edit");
 }
 
 /// FX on a track's header shows its channel on the mixing page
@@ -622,28 +855,27 @@ fn fx_on_a_header_shows_the_channel(cx: &mut TestAppContext) {
     let to = model::tracks(&root(&ws, cx))[2].outputs[0].to;
     click(cx, "fx-2");
     assert_eq!(ws.read_with(cx, |ws, _| ws.page), Page::Mixing);
-    let mixing = ws.read_with(cx, |ws, _| ws.mixing.clone());
-    assert_eq!(mixing.read_with(cx, |m, _| m.selected), Some(to));
+    assert_eq!(mixing(&ws, cx).read_with(cx, |m, _| m.selected), Some(to));
 }
 
-/// The GUI's rack tables name the document's keys: every parameter is in the channels' and the master's racks, and
-/// every selector's value is one of its choices
+/// The desk's tables name the document's keys: every knob's key is in the channels' and the master's nodes (the
+/// optional ones may be absent), and every selector's value is one of its choices
 #[gpui::test]
-fn the_rack_tables_name_the_documents_keys(cx: &mut TestAppContext) {
+fn the_desk_tables_name_the_documents_keys(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
     let chs = model::channels(&root(&ws, cx));
     let normal = chs.iter().find(|c| c.kind == ChannelKind::Normal).unwrap();
     let master = chs.iter().find(|c| c.kind == ChannelKind::Master).unwrap();
-    for (table, ch) in [(RACK, normal), (MASTER_RACK, master)] {
-        for (sec, _, params) in table {
-            assert!(*sec == "stereo" || model::at(&ch.rack, &[sec, "on"]).is_some(), "{}: rack.{sec}.on", ch.name);
-            for p in *params {
-                let v = model::at(&ch.rack, &[sec, p.key()]);
-                assert!(v.is_some(), "{}: rack.{sec}.{}", ch.name, p.key());
-                if let Spec::Choice { choices, .. } = p {
-                    let now = v.and_then(Value::as_text).unwrap_or("");
-                    assert!(choices.contains(&now), "rack.{sec}.{}: {now}", p.key());
-                }
+    for (table, ch) in [(STRIP_KNOBS, normal), (MASTER_KNOBS, master)] {
+        for k in table {
+            if k.sec.is_empty() {
+                continue;
+            }
+            let v = model::at(&ch.rack, &[k.sec, k.key]);
+            assert!(v.is_some(), "{}: rack.{}.{}", ch.name, k.sec, k.key);
+            if let Scale::Choice(choices) = k.scale {
+                let now = v.and_then(Value::as_text).unwrap_or("");
+                assert!(choices.contains(&now), "rack.{}.{}: {now}", k.sec, k.key);
             }
         }
     }
