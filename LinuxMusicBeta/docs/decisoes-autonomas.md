@@ -337,3 +337,25 @@ de forma diz pelo que é substituído.
 - **Duas correções fora da pasta:** `Buffers::from_block`/`BlockShape` no `lm-render` (um host fora do renderer: a
   bancada de testes, um render isolado de plugin) e, no `lm-dsp`, a leitura da tabela de banda limitada numa fase a
   um fio de um período inteiro, que indexava além da tabela (achada pelos testes do TripleOscillator).
+
+## Varredura de índices do `lm-dsp` (20/11)
+
+Depois da correção da tabela do oscilador, todo índice que o `lm-dsp` calcula a partir de um `float` foi revisto
+(`tests/edges.rs` leva cada um ao limite; o A/B continua passando contra as referências do legado). Cada correção
+mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em vez de ler fora do buffer:
+
+- **Frequency Shifter:** com um atraso um fio acima de um número inteiro de quadros, a leitura um fio abaixo de 0
+  arredondava, em precisão simples, exatamente para o tamanho do anel, e o índice passava do fim (o mesmo erro do
+  oscilador). Agora volta à posição 0 do anel, o mesmo ponto da curva de Hermite.
+- **Stereo Enhancer:** o índice de leitura dá a volta no anel com `rem_euclid` (o legado somava o tamanho uma vez só,
+  o que bastava apenas para larguras de 0 a 180).
+- **Compressor:** um lookahead maior que o buffer feito para os 20 ms do botão é limitado ao buffer (antes, a
+  subtração de `usize` estourava).
+- **Multitap Echo:** o deslocamento dá a volta no anel antes da soma, e um bloco menor que o período não lê além dele.
+- **ReverbSC:** a posição de leitura volta ao anel com `rem_euclid` (igual à subtração única do legado sempre que
+  esta bastava).
+- **Sample:** `render` põe os pontos dentro da amostra (`Bounds::within`), como `play` já fazia, e um cursor de loop
+  antes da amostra começa no primeiro quadro.
+- **Sem mudança (já corretos, agora testados no limite):** Delay e linha mono (comprimento entre 0 e o da linha),
+  Wave Shaper e Dynamics Processor (200 pontos, ramos para < 1 e ≥ 200), tabela do usuário (`% frames`), válvula
+  (posição limitada antes do índice), formantes (vogal limitada a 4).

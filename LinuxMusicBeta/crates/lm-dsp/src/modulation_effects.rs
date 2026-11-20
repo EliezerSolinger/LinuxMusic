@@ -89,8 +89,9 @@ impl MultitapEcho {
 
     fn write_adding(&mut self, offset: usize, level: f32, swapped: bool, from_work: bool, input: &[[f32; 2]]) {
         let size = self.ring.len();
-        let mut pos = (self.position + offset) % size;
-        for i in 0..self.period {
+        // (offset % size first: a huge offset, from an infinite step length, would overflow the sum)
+        let mut pos = (self.position + offset % size) % size;
+        for i in 0..self.period.min(input.len()) {
             let src = if from_work { self.work[i] } else { input[i] };
             let (l, r) = if swapped { (src[1], src[0]) } else { (src[0], src[1]) };
             self.ring[pos][0] += l * level;

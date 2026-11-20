@@ -175,9 +175,9 @@ impl RevSc {
                 lp.read_pos += lp.read_pos_frac >> DELAYPOS_SHIFT;
                 lp.read_pos_frac &= DELAYPOS_MASK;
             }
-            if lp.read_pos >= buffer_size {
-                lp.read_pos -= buffer_size;
-            }
+            // (rem_euclid: back into the line for any advance; the advance is one frame or two, so this is the
+            // legacy program's single subtraction whenever that one was enough)
+            lp.read_pos = lp.read_pos.rem_euclid(buffer_size);
             let mut read_pos = lp.read_pos;
             let frac = (f64::from(lp.read_pos_frac as f32) * (1.0 / f64::from(DELAYPOS_SCALE as f32))) as f32;
 

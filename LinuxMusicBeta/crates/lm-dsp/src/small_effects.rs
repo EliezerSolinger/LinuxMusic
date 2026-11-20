@@ -117,10 +117,9 @@ impl StereoEnhancer {
         let to_rad = PI / 180.0;
         for frame in frames.iter_mut() {
             self.delay[self.current] = *frame;
-            let mut index = (self.current as f32 - self.width) as i32;
-            if index < 0 {
-                index += ENHANCER_BUFFER as i32;
-            }
+            // (truncated toward zero, as the legacy program did; then wrapped around the ring, for a width outside
+            // 0 to 180 too: the legacy program added the ring's length once, enough only within its range)
+            let index = ((self.current as f32 - self.width) as i32).rem_euclid(ENHANCER_BUFFER as i32);
             let (mut l, mut r) = (frame[0], self.delay[index as usize][1]);
             let tmp = l;
             l += r * sinf(self.width * to_rad * 0.5);

@@ -250,7 +250,10 @@ impl CompressorPlugin {
             self.rms_time_const = if s.rms > 0.0 { expf(-1.0 / (s.rms * 0.001 * sr)) } else { 0.0 };
         }
         if changed(|s| s.lookahead_length) {
-            self.lookahead_length = ((s.lookahead_length / 1000.0) * sr).ceil() as usize;
+            // (the knob's top, 20 ms, fits the buffer made for it; a longer one is held to the buffer's, the most it
+            // can delay)
+            self.lookahead_length =
+                (((s.lookahead_length / 1000.0) * sr).ceil() as usize).min(self.look_buf_length - 1);
         }
         if changed(|s| s.out_gain) {
             // 0.999 keeps the values from crossing the threshold all the time (limiters most), in every mode

@@ -367,8 +367,14 @@ impl FrequencyShifter {
             if read < 0.0 {
                 read += size as f32;
             }
-            let floor = read as usize;
+            let mut floor = read as usize;
             let frac = read - floor as f32;
+            // A read a hair below 0 (a delay just above a whole number of frames) wraps to exactly the ring's length
+            // in single precision: that is the position 0 of the ring (frac 0), not one past its end. The Hermite
+            // read there is the same point either way (the curve passes through its samples)
+            if floor >= size {
+                floor -= size;
+            }
             let dly = self.hermite_sample(floor, frac);
             self.write_index += 1;
             if self.write_index == size {

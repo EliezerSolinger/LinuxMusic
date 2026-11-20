@@ -41,6 +41,17 @@ pub struct Bounds {
     pub loop_end: i32,
 }
 
+impl Bounds {
+    /// The points moved inside a sample of @p frames: each in 0..=frames, the end not before the start, the loop's
+    /// end not before its start
+    pub fn within(&self, frames: usize) -> Self {
+        let size = i32::try_from(frames).unwrap_or(i32::MAX);
+        let start = self.start.clamp(0, size);
+        let loop_start = self.loop_start.clamp(0, size);
+        Self { start, end: self.end.clamp(start, size), loop_start, loop_end: self.loop_end.clamp(loop_start, size) }
+    }
+}
+
 /// A sample in memory and how it plays
 #[derive(Clone, Copy, Debug)]
 pub struct Sample<'a> {
@@ -132,12 +143,7 @@ impl Sample<'_> {
         if self.frames.is_empty() {
             return false;
         }
-        let size = self.frames.len() as i32;
-        let mut b = self.bounds;
-        b.start = b.start.clamp(0, size);
-        b.end = b.end.clamp(b.start, size);
-        b.loop_start = b.loop_start.clamp(0, size);
-        b.loop_end = b.loop_end.clamp(b.loop_start, size);
+        let b = self.bounds.within(self.frames.len());
         // A loop with nothing in it plays as no loop (it would not move)
         if b.loop_end <= b.loop_start {
             looping = Loop::Off;
@@ -195,7 +201,18 @@ impl Sample<'_> {
     }
 
     /// Renders up to @p dst.len() frames from where @p state is, at the sample's own rate; returns how many
-    pub fn render(&self, dst: &mut [[f32; 2]], state: &mut Cursor, looping: Loop, b: &Bounds) -> usize {
+    pub fn render(&self, dst: &mut [[f32; 2]], state: &mut Cursor, mut looping: Loop, b: &Bounds) -> usize {
+        // (play() gives bounds already within the sample; a caller of render() may not: every index below stays in
+        // the sample only with them inside it)
+        let b = &b.within(self.frames.len());
+        if b.loop_end <= b.loop_start {
+            looping = Loop::Off;
+        }
+        // A looping cursor before the sample (set by hand) starts at its first frame; a cursor that is not looping
+        // ends there instead (below)
+        if looping != Loop::Off {
+            state.frame_index = state.frame_index.max(0);
+        }
         let total = self.frames.len() as i32;
         // The microfades: 2 ms of the sample, one frame at least
         let declick_frames = if self.declick { 1.max((self.sample_rate as i32) / 500) } else { 0 };
