@@ -353,6 +353,7 @@ dependencies = [
  "lm-plugin",
  "lm-render",
  "lm-state",
+ "lm-time",
 ]
 
 [[package]]

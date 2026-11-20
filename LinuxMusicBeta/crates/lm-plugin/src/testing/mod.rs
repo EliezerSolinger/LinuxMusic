@@ -73,12 +73,7 @@ macro_rules! contract_tests {
                 t::short_notes(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
-            fn tuning_two_minutes() {
-                t::long_tuning(super::LM_PLUGIN_UNDER_TEST, 120);
-            }
-            #[test]
-            #[ignore = "30 minutes of render (U35); run with --ignored"]
-            fn tuning_thirty_minutes() {
+            fn tuning_after_thirty_minutes() {
                 t::long_tuning(super::LM_PLUGIN_UNDER_TEST, 1800);
             }
             #[test]

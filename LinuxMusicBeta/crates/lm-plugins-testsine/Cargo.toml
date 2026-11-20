@@ -19,3 +19,4 @@ libm.workspace = true
 
 [dev-dependencies]
 lm-plugin = { workspace = true, features = ["testing"] }
+lm-time.workspace = true
