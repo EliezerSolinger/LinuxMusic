@@ -29,9 +29,11 @@
 #include "EffectChain.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "Engine.h"
+#include "lmms_math.h"
 #include "DrawnWave.h"
 #include "Graph.h"
 #include "KickerOsc.h"
+#include "VibratingString.h"
 #include "PluginInstance.h"
 #include "DeskTolerance.h"
 #include "GainStage.h"
@@ -291,6 +293,40 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			const auto n = std::min(block, frames - start);
 			chain[0]->update(out.data() + start, n, 0);
 			for (std::int64_t f = start; f < start + n; ++f) { out[f][1] = out[f][0]; }
+		}
+		return out;
+	}
+	if (unit == "vibed")
+	{
+		// The Vibed's note: its strings as its StringContainer makes them (VibratingString compiled in from the
+		// plugin), the legacy fastRand seeded so that their randomness is drawn the same, mixed as playNote mixes them
+		const auto s = c["settings"].toObject();
+		fastRandState() = static_cast<unsigned long>(s["seed"].toDouble());
+		constexpr auto octave = std::array{0.25f, 0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f};
+		const auto freq = static_cast<float>(s["freq"].toDouble());
+		const auto rate = static_cast<sample_rate_t>(c["rate"].toDouble());
+		struct Voice { std::unique_ptr<VibratingString> string; float pan; float volume; };
+		auto voices = std::vector<Voice>{};
+		for (const auto& value : s["strings"].toArray())
+		{
+			const auto o = value.toObject();
+			auto shape = std::vector<float>{};
+			for (const auto& p : o["shape"].toArray()) { shape.push_back(static_cast<float>(p.toDouble())); }
+			const auto f = [&](const char* key) { return static_cast<float>(o[key].toDouble()); };
+			voices.push_back(Voice{std::make_unique<VibratingString>(freq * octave[o["harmonic"].toInt()], f("pick"),
+				f("pickup"), shape.data(), static_cast<int>(shape.size()), rate, o["length"].toInt(), f("fuzziness"),
+				f("stiffness"), f("detune"), o["impulse"].toBool()), f("pan"), f("volume")});
+		}
+		for (std::int64_t i = 0; i < frames; ++i)
+		{
+			out[i] = SampleFrame{0.f, 0.f};
+			for (auto& v : voices)
+			{
+				const float pan = (v.pan + 1) / 2.0f;
+				const sample_t sample = v.string->nextSample() * v.volume / 100.0f;
+				out[i][0] += (1.0f - pan) * sample;
+				out[i][1] += pan * sample;
+			}
 		}
 		return out;
 	}

@@ -187,6 +187,42 @@ pub fn hermite(x0: f32, x1: f32, x2: f32, x3: f32, frac: f32) -> f32 {
         + x1
 }
 
+/// The legacy program's `fastRand` generator (its linear congruence, a per-thread state there): for the ports whose
+/// randomness the A/B follows draw for draw, seeded by their host
+#[derive(Clone, Copy, Debug)]
+pub struct LegacyRand(u64);
+
+impl LegacyRand {
+    pub fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    /// 0 to 32767
+    #[inline]
+    pub fn draw(&mut self) -> i32 {
+        self.0 = self.0.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        ((self.0 / 65_536) % 32_768) as i32
+    }
+
+    /// [0, @p upper) (`fastRand(float)`)
+    #[inline]
+    pub fn below(&mut self, upper: f32) -> f32 {
+        self.draw() as f32 * upper * (1.0f64 / 32_768.0) as f32
+    }
+
+    /// [0, @p upper) (`fastRand(int)`)
+    #[inline]
+    pub fn below_int(&mut self, upper: i32) -> i32 {
+        (self.draw() as f32 * upper as f32 * (1.0f32 / 32_768.0)) as i32
+    }
+
+    /// [0, @p upper] (`fastRandInc(float)`)
+    #[inline]
+    pub fn inclusive(&mut self, upper: f32) -> f32 {
+        self.draw() as f32 * upper * (1.0f64 / 32_767.0) as f32
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

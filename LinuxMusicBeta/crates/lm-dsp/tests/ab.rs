@@ -894,6 +894,44 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "vibed" {
+        use lm_dsp::vibed::*;
+        let s = &case["settings"];
+        let strings: Vec<VibedString> = s["strings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| {
+                let v = |key: &str| o[key].as_f64().unwrap() as f32;
+                let mut shape = [0.0f32; IMPULSE_LENGTH];
+                for (p, x) in shape.iter_mut().zip(o["shape"].as_array().unwrap()) {
+                    *p = x.as_f64().unwrap() as f32;
+                }
+                VibedString {
+                    enabled: true,
+                    harmonic: o["harmonic"].as_u64().unwrap() as usize,
+                    pick: v("pick"),
+                    pickup: v("pickup"),
+                    stiffness: v("stiffness"),
+                    volume: v("volume"),
+                    pan: v("pan"),
+                    detune: v("detune"),
+                    fuzziness: v("fuzziness"),
+                    length: o["length"].as_i64().unwrap() as i32,
+                    impulse: o["impulse"].as_bool().unwrap(),
+                    shape,
+                }
+            })
+            .collect();
+        let mut voice = VibedVoice::new(
+            &strings,
+            s["freq"].as_f64().unwrap() as f32,
+            case["rate"].as_f64().unwrap() as u32,
+            s["seed"].as_u64().unwrap(),
+        );
+        voice.render(&mut out, &strings);
+        return out;
+    }
     if case["unit"] == "organic" {
         use lm_dsp::organic::*;
         let s = &case["settings"];

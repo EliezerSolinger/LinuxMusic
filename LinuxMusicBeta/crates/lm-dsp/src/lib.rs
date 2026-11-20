@@ -26,6 +26,7 @@
 //! - [`envelope`], [`sound_shaping`]: every instrument's envelopes and LFOs, and its filter;
 //! - [`organic`]: the Organic's voice;
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
+//! - [`vibed`]: the Vibed's plucked strings;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
 //!
 //! The effects of the validation plugins:
@@ -81,3 +82,4 @@ pub mod small_effects;
 pub mod sound_shaping;
 pub mod tolerance;
 pub mod tube;
+pub mod vibed;

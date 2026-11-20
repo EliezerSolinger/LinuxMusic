@@ -17,7 +17,7 @@ commands=$(ninja -t commands tests/MixerTest)
 # be the same bit for bit as the ones tests/ab.rs makes)
 compile=$(printf '%s\n' "$commands" | grep 'MixerTest.cpp.o -c' \
 	| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/harness.o#" \
-		-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -I$root/legado/plugins/Kicker -ffp-contract=off -c $here/legacy-harness.cpp#")
+		-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -I$root/legado/plugins/Kicker -I$root/legado/plugins/Vibed -ffp-contract=off -c $here/legacy-harness.cpp#")
 sh -c "$compile"
 
 # The legacy objects to rebuild without fused multiply-adds (CONTRACT_OFF="TubeStage GainStage ..."), to tell
@@ -33,7 +33,8 @@ done
 # The plugins' DSP the harness uses, from the plugins' own objects' commands, without fused multiply-adds
 for target in plugins/Delay/CMakeFiles/delay.dir/Lfo.cpp.o plugins/Delay/CMakeFiles/delay.dir/StereoDelay.cpp.o \
 	plugins/ReverbSC/CMakeFiles/reverbsc.dir/base.c.o plugins/ReverbSC/CMakeFiles/reverbsc.dir/revsc.c.o \
-	plugins/ReverbSC/CMakeFiles/reverbsc.dir/dcblock.c.o; do
+	plugins/ReverbSC/CMakeFiles/reverbsc.dir/dcblock.c.o \
+	plugins/Vibed/CMakeFiles/vibedstrings.dir/VibratingString.cpp.o; do
 	name=$(basename "$target" .o)
 	plugincompile=$(ninja -t commands "$target" | tail -1 \
 		| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/$name.o#" -e "s# -c # -ffp-contract=off -c #")
