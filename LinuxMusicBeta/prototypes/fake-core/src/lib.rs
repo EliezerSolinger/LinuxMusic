@@ -1482,9 +1482,13 @@ mod tests {
         std::thread::sleep(Duration::from_millis(250));
         s.pump();
         assert!(matches!(s.loading(&Target::Node(item)), Loading::Visible { .. }));
-        std::thread::sleep(Duration::from_millis(300));
-        s.pump();
-        assert_eq!(s.loading(&Target::Node(item)), Loading::Ready);
+        // then Ready: waited for, not slept for (a loaded machine overshoots the 50 small sleeps of the delay)
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while s.loading(&Target::Node(item)) != Loading::Ready {
+            assert!(std::time::Instant::now() < deadline, "never ready");
+            std::thread::sleep(Duration::from_millis(10));
+            s.pump();
+        }
         assert!(s.peaks(res).is_some());
     }
 

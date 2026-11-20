@@ -15,9 +15,8 @@ use fake_core::{Config, MAX_METERS, Session};
 use gpui::{Context, Task};
 
 pub struct Core {
-    /// The LocalPort (in the fake, the Session is it). Screens use `port()`; this field goes private when the
-    /// screens of agents B, C and D have moved to the port
-    pub session: Session,
+    /// The LocalPort (in the fake, the Session is it). Private: every screen goes through `port()` (I-15)
+    session: Session,
     pub bench: Bench,
     /// The meters as drawn: the latest telemetry with the fall smoothed per frame (H16)
     pub shown: [f32; MAX_METERS],
@@ -63,8 +62,7 @@ impl Core {
         }
     }
 
-    /// The core as the interface may use it (I-15): data in, data out, no closures. Every screen goes through
-    /// this; `session` stays public only until the screens move to the port, then it becomes private.
+    /// The core as the interface may use it (I-15): data in, data out, no closures. Every screen goes through it
     pub fn port(&self) -> &dyn CorePort {
         &self.session
     }
