@@ -3738,6 +3738,7 @@ dependencies = [
  "lm-dsp",
  "lm-io",
  "lm-plugin",
+ "lm-plugins-effects",
  "lm-plugins-testsine",
  "lm-plugins-tripleoscillator",
  "lm-port",

@@ -12,6 +12,7 @@ mod port;
 pub mod prefs;
 pub mod rack;
 mod session;
+pub mod slice;
 pub mod watchdog;
 
 pub use port::LocalPort;

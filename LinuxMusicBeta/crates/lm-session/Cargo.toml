@@ -20,6 +20,7 @@ lm-dsp.workspace = true
 lm-plugin.workspace = true
 lm-plugins-testsine.workspace = true
 lm-plugins-tripleoscillator.workspace = true
+lm-plugins-effects.workspace = true
 lm-compile.workspace = true
 lm-io.workspace = true
 lm-port.workspace = true

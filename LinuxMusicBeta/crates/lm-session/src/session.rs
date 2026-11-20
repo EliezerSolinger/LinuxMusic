@@ -74,6 +74,8 @@ pub struct SessionConfig {
     pub untitled: PathBuf,
     /// The recording's disk, made to fill up on purpose (the tests of H3)
     pub record_faults: lm_io::DiskFaults,
+    /// What the Dummy device's inputs hear (silence when `None`)
+    pub dummy_source: Option<fn() -> Box<dyn lm_io::DummySource>>,
 }
 
 impl std::fmt::Debug for SessionConfig {
@@ -84,7 +86,10 @@ impl std::fmt::Debug for SessionConfig {
 
 /// Every internal plugin of this build
 pub fn internal_plugins() -> Result<Arc<Registry>> {
-    Registry::new(&[&lm_plugins_testsine::DESCRIPTOR, &lm_plugins_tripleoscillator::DESCRIPTOR])
+    let mut all: Vec<&'static lm_plugin::Descriptor> =
+        vec![&lm_plugins_testsine::DESCRIPTOR, &lm_plugins_tripleoscillator::DESCRIPTOR];
+    all.extend(lm_plugins_effects::ALL.iter().copied());
+    Registry::new(&all)
 }
 
 impl SessionConfig {
@@ -104,7 +109,27 @@ impl SessionConfig {
             delay: Duration::ZERO,
             untitled,
             record_faults: lm_io::DiskFaults::default(),
+            dummy_source: None,
         })
+    }
+}
+
+/// A steady noise for the Dummy's inputs, like the fan the ThinkPad's microphone hears: about -20 dBFS,
+/// deterministic
+#[derive(Debug, Default)]
+pub struct FanNoise(u64);
+
+impl lm_io::DummySource for FanNoise {
+    fn fill(&mut self, _: u64, _: HostTime, inputs: &mut [Vec<f32>], frames: usize) {
+        for c in inputs.iter_mut() {
+            for x in &mut c[..frames] {
+                self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = self.0;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                *x = ((z >> 40) as f32 / (1u64 << 24) as f32 * 2.0 - 1.0) * 0.17;
+            }
+        }
     }
 }
 
@@ -276,6 +301,7 @@ pub struct Session {
     faults: Arc<DiskFaults>,
     delay: Duration,
     device_setup: DeviceSetup,
+    dummy_source: Option<fn() -> Box<dyn lm_io::DummySource>>,
     untitled: PathBuf,
     /// A "save as" copying the audio: where the project goes, with the lock already taken
     pending_save_as: Option<(lm_base::OperationId, ProjectFolder, ProjectLock)>,
@@ -411,9 +437,17 @@ fn interface_schemas() -> Result<Arc<SchemaRegistry>> {
     Ok(Arc::new(registry))
 }
 
-fn open_device(setup: &DeviceSetup, rate: u32, block: u32) -> Result<(Device, lm_io::DeviceInfo)> {
+fn open_device(
+    setup: &DeviceSetup,
+    rate: u32,
+    block: u32,
+    source: Option<fn() -> Box<dyn lm_io::DummySource>>,
+) -> Result<(Device, lm_io::DeviceInfo)> {
     let backend: Box<dyn lm_io::Backend> = match setup {
-        DeviceSetup::Dummy(o) => Box::new(DummyBackend::new(*o)),
+        DeviceSetup::Dummy(o) => match source {
+            Some(make) => Box::new(DummyBackend::new(*o).with_source(make())),
+            None => Box::new(DummyBackend::new(*o)),
+        },
         #[cfg(target_os = "linux")]
         DeviceSetup::Alsa { .. } => Box::new(lm_io::AlsaBackend::new(None)),
         #[cfg(not(target_os = "linux"))]
@@ -441,11 +475,11 @@ impl Session {
         let folder = ProjectFolder::new(config.untitled.join(format!("untitled-{}", lm_io::new_uuid())));
         folder.create(&config.faults)?;
         let rate = project_rate(document.root());
-        let (device, info) = match open_device(&config.device, rate, config.block) {
+        let (device, info) = match open_device(&config.device, rate, config.block, config.dummy_source) {
             Ok(d) => d,
             Err(e) => {
                 notices.error(&e, Some(Target::Device), None);
-                open_device(&DeviceSetup::Dummy(DummyOptions::default()), rate, config.block)?
+                open_device(&DeviceSetup::Dummy(DummyOptions::default()), rate, config.block, config.dummy_source)?
             }
         };
         let spec = info.spec();
@@ -517,6 +551,7 @@ impl Session {
             faults: config.faults.clone(),
             delay: config.delay,
             device_setup: config.device.clone(),
+            dummy_source: config.dummy_source,
             untitled: config.untitled.clone(),
             pending_save_as: None,
             block: config.block,
@@ -635,6 +670,11 @@ impl Session {
     /// Whether the project changed since it was saved
     pub fn modified(&self) -> bool {
         !self.document.root().same_node(&self.project.saved_root)
+    }
+
+    /// The device open now, as it was negotiated (latencies, period, rate)
+    pub fn device_info(&self) -> Option<&lm_io::DeviceInfo> {
+        self.device.as_ref().and_then(Device::info)
     }
 
     pub fn engine(&mut self) -> &mut EngineControl {
@@ -1369,7 +1409,12 @@ impl Session {
         let Some(mut device) = self.device.take() else { return };
         match device.stop() {
             Ok(renderer) => {
-                match open_device(&DeviceSetup::Dummy(DummyOptions::default()), self.spec.sample_rate, self.block) {
+                match open_device(
+                    &DeviceSetup::Dummy(DummyOptions::default()),
+                    self.spec.sample_rate,
+                    self.block,
+                    self.dummy_source,
+                ) {
                     Ok((mut dummy, _)) => match dummy.start(renderer) {
                         Ok(()) => self.device = Some(dummy),
                         Err((e, _)) => self.notices.error(&e, Some(Target::Device), None),
@@ -1697,8 +1742,10 @@ impl Session {
             let _ = d.stop();
             d.close();
         }
-        let (mut device, info) = open_device(&self.device_setup, rate, self.block)
-            .or_else(|_| open_device(&DeviceSetup::Dummy(DummyOptions::default()), rate, self.block))?;
+        let (mut device, info) =
+            open_device(&self.device_setup, rate, self.block, self.dummy_source).or_else(|_| {
+                open_device(&DeviceSetup::Dummy(DummyOptions::default()), rate, self.block, self.dummy_source)
+            })?;
         let spec = info.spec();
         let (engine, renderer) = lm_render::engine_with(spec, self.limits, RenderThreads::default());
         device.start(renderer).map_err(|(e, _)| e)?;
