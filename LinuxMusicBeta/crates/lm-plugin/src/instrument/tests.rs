@@ -223,3 +223,105 @@ fn the_registry() {
     let project = registry.project_schemas().expect("project schemas");
     assert!(project.find("plugin:probe").is_some() && project.find("project").is_some());
 }
+
+fn expression(at: u64, note: u32, expression: lm_render::Expression, value: f32, ramp: u32) -> Timed {
+    Timed::new(at, EventKind::NoteExpression { note: NoteId(note), expression, value, ramp })
+}
+
+fn both(events: &[Timed], frames: usize, b: &mut Bench) -> (Vec<f32>, Vec<f32>) {
+    let mut out = b.render(frames, 256, events, true);
+    let right = out.swap_remove(1);
+    (out.swap_remove(0), right)
+}
+
+#[test]
+fn a_tuning_expression_moves_every_note_of_its_base_and_ramps() {
+    use lm_render::Expression::Tuning;
+    let mut b = bench(&[("chordOn", 1.0)], &[("chord", "major")]);
+    let ev = [note_on(0, 1, 60, 1.0), note_on(0, 2, 72, 1.0), expression(1000, 1, Tuning, 2.0, 0)];
+    let x = left(&ev, 2000, &mut b);
+    let chord = |root: f64| -> f32 { [0.0, 4.0, 7.0].iter().map(|i| hz(root + i)).sum() };
+    assert!(close(x[900], chord(60.0) + chord(72.0)));
+    assert!(close(x[1500], chord(62.0) + chord(72.0)), "the base's chord moves, the other note stays");
+    // A ramp of 3200 frames: half way at 1600 (by piece: the value at the piece's start)
+    let mut b = bench(&[], &[]);
+    let ev = [note_on(0, 1, 69, 1.0), expression(1024, 1, Tuning, 12.0, 3200)];
+    let x = left(&ev, 6000, &mut b);
+    assert!(close(x[1024 + 1600], hz(75.0)), "{} {}", x[1024 + 1600], hz(75.0));
+    assert!(close(x[5000], hz(81.0)), "arrived");
+    // A note started later by the same base (an arpeggio step) has the base's tuning
+    let step = (0.025 * RATE as f64) as usize;
+    let mut b = bench(&[("arpOn", 1.0), ("arpTime", 25.0)], &[("arpChord", "major")]);
+    let ev = [note_on(0, 1, 60, 1.0), expression(10, 1, Tuning, 1.0, 0)];
+    let x = left(&ev, 3 * step, &mut b);
+    assert!(close(x[step + step / 2], hz(65.0)), "the second step, a semitone up");
+}
+
+#[test]
+fn a_pan_expression_is_a_balance_after_the_velocity() {
+    use lm_render::Expression::Pan;
+    let mut b = bench(&[], &[]);
+    let ev = [note_on(0, 1, 69, 0.5), expression(1024, 1, Pan, 0.5, 0), expression(2048, 1, Pan, -1.0, 0)];
+    let (l, r) = both(&ev, 3000, &mut b);
+    let full = 0.5 * hz(69.0);
+    assert!(close(l[900], full) && close(r[900], full));
+    assert!(close(l[1500], 0.5 * full) && close(r[1500], full), "right: the left at 1 - p");
+    assert!(close(l[2500], full) && r[2500].abs() < 1.0e-7, "hard left: the right silent");
+    // A ramp moves sample by sample: never a step
+    let mut b = bench(&[], &[]);
+    let ev = [note_on(0, 1, 69, 1.0), expression(1024, 1, Pan, 1.0, 1000)];
+    let (l, _) = both(&ev, 3000, &mut b);
+    let steps = (1025..2024).map(|i| (l[i] - l[i - 1]).abs()).fold(0.0f32, f32::max);
+    assert!(steps < 2.0 * hz(69.0) / 1000.0, "the largest step {steps}");
+    assert!(close(l[1524], 0.5 * hz(69.0)) && l[2500].abs() < 1.0e-7);
+}
+
+#[test]
+fn expressions_do_not_depend_on_the_block_size() {
+    use lm_render::Expression::{Pan, Tuning};
+    let ev = [note_on(0, 1, 60, 1.0), expression(333, 1, Pan, 0.7, 777), expression(1111, 1, Tuning, -3.5, 1234)];
+    let a = bench(&[], &[]).render(4096, 32, &ev, true);
+    let b = bench(&[], &[]).render(4096, 1024, &ev, true);
+    assert_eq!(a, b);
+}
+
+/// A synth whose voice ends by itself after 100 frames
+#[derive(Clone, Debug)]
+struct Short;
+
+impl Synth for Short {
+    type Voice = u32;
+    const PARAMS: usize = 0;
+    fn voice(&self) -> u32 {
+        0
+    }
+    fn set_param(&mut self, _: usize, _: f32) {}
+    fn start(&self, v: &mut u32, _: &NoteStart, _: &mut Rng) {
+        *v = 0;
+    }
+    fn render(&self, v: &mut u32, _: f32, left: &mut [f32], right: &mut [f32]) {
+        for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+            let x = if *v < 100 { 0.5 } else { 0.0 };
+            *l = x;
+            *r = x;
+            *v += 1;
+        }
+    }
+    fn finished(&self, v: &u32) -> bool {
+        *v >= 100
+    }
+}
+
+#[test]
+fn a_voice_the_synth_ends_is_freed_without_a_note_off() {
+    let registry = Registry::new(&[&PROBE]).expect("registry");
+    let complete = registry.complete("probe", &Value::empty_object()).expect("complete");
+    let params = schemas().remove(0).params;
+    let spec = ProcessSpec { sample_rate: RATE, max_block: 1024 };
+    let inst = Instrument::new(Short, &StateView::new(&complete), &params, &spec, &ResourceView::new(), 4).expect("ok");
+    let mut b = Bench::instrument(Box::new(inst), spec, 2, 1);
+    let x = b.render(256, 256, &[note_on(0, 1, 60, 1.0)], true).swap_remove(0);
+    assert!(x[50] > 0.0 && x[200] == 0.0);
+    let inst = b.processor_mut().as_any_mut().downcast_mut::<Instrument<Short>>().expect("instrument");
+    assert_eq!(inst.active_voices(), 0, "its only voice ended at 100 frames although the note is held");
+}

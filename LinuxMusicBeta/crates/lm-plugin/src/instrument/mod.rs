@@ -20,6 +20,15 @@
 //! (lm-render's [`VoicePool`], in `Poly`, with its stealing): its chord (when chords are on), the arpeggio's steps
 //! (when the arpeggio is on: the base note itself is silent, as the legacy master note), and, in mono and legato,
 //! only the last base note held sounds. Sounding notes get numbers of their own, above `0x8000_0000`.
+//!
+//! # Note expressions
+//!
+//! A `NoteExpression` names a base note and moves every note it sounds (its chord, its arpeggio's steps, the mono or
+//! legato voice): `Tuning` adds semitones to their pitch before the bend range and glide, `Pan` is a balance (the
+//! legacy instrument track's law: the left at 1 − p for p > 0, the right at 1 + p for p < 0), after the velocity's
+//! gain. Each goes linearly from where it is to the new value over the event's `ramp` frames (a new event replaces
+//! a ramp under way); the pan moves sample by sample, the tuning by piece, as the glide (the synth renders a piece at
+//! one frequency). A base starts at 0 and 0; a note released keeps the values it had.
 
 mod chords;
 mod schema;
@@ -35,8 +44,8 @@ use lm_dsp::basic_filters::{BasicFilter, FilterType};
 use lm_dsp::envelope::{EnvelopeSettings, LfoShape};
 use lm_dsp::sound_shaping::{NotePosition, SoundShaping, SoundShapingSettings};
 use lm_render::{
-    Adopted, Event, EventKind, NoteId, Policy, ProcessContext, ProcessSpec, Processor, Rng, SampleData, TransportInfo,
-    Voice, VoiceNote, VoicePool,
+    Adopted, Event, EventKind, Expression, NoteId, Policy, ProcessContext, ProcessSpec, Processor, Rng, SampleData,
+    TransportInfo, Voice, VoiceNote, VoicePool,
 };
 use lm_state::ParamSpec;
 
@@ -99,6 +108,12 @@ pub trait Synth: Clone + Send + 'static {
     fn start(&self, voice: &mut Self::Voice, note: &NoteStart, rng: &mut Rng);
     /// Writes the voice's next `left.len()` samples (both slices have that length), at `freq` Hz
     fn render(&self, voice: &mut Self::Voice, freq: f32, left: &mut [f32], right: &mut [f32]);
+    /// Whether the voice has ended on its own (a one-shot sample played to its end, a drum's decay past): checked
+    /// after each piece, the voice is then freed without waiting for its note-off. Most synths sound until released
+    fn finished(&self, voice: &Self::Voice) -> bool {
+        let _ = voice;
+        false
+    }
     /// The release the synth wants even without a volume envelope, ms (legacy `desiredReleaseTimeMs`)
     fn release_ms(&self) -> f32 {
         0.0
@@ -265,6 +280,9 @@ pub struct KitVoice<V> {
     glide_offset: f32,
     filter: BasicFilter,
     level: f32,
+    /// The note expressions it sounds with, as its base had them at the last piece (kept once the base lets go)
+    tuning: f32,
+    pan: f32,
 }
 
 impl<V> fmt::Debug for KitVoice<V> {
@@ -296,6 +314,8 @@ impl<V> KitVoice<V> {
             glide_offset: 0.0,
             filter: BasicFilter::new(rate),
             level: 0.0,
+            tuning: 0.0,
+            pan: 0.0,
         }
     }
 
@@ -336,6 +356,8 @@ impl<V: Send> Voice for KitVoice<V> {
         self.filter.clear_history();
         self.level = note.velocity;
         self.ghost_on = false;
+        self.tuning = 0.0;
+        self.pan = 0.0;
     }
 
     fn glide(&mut self, note: VoiceNote) {
@@ -381,6 +403,39 @@ struct Base {
     step: u64,
     /// Let go while the sustain pedal was down: released when the pedal goes up
     sustained: bool,
+    /// Its note expressions
+    tuning: ExpressionRamp,
+    pan: ExpressionRamp,
+}
+
+/// A note expression's value, going linearly to a target
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ExpressionRamp {
+    value: f32,
+    target: f32,
+    /// Frames left to the target
+    left: u32,
+}
+
+impl ExpressionRamp {
+    /// To `target` over `frames` from where it is now (at once with 0)
+    fn go(&mut self, target: f32, frames: u32) {
+        self.target = target;
+        self.left = frames;
+        if frames == 0 {
+            self.value = target;
+        }
+    }
+
+    /// Its value `f` frames from now
+    fn at(&self, f: u32) -> f32 {
+        if f >= self.left { self.target } else { self.value + (self.target - self.value) * f as f32 / self.left as f32 }
+    }
+
+    fn advance(&mut self, frames: u32) {
+        self.value = self.at(frames);
+        self.left = self.left.saturating_sub(frames);
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -680,7 +735,17 @@ impl<S: Synth> Instrument<S> {
             self.run.dropped += 1;
             return;
         }
-        let base = Base { id, channel, key, velocity, start: self.run.frame, step: 0, sustained: false };
+        let base = Base {
+            id,
+            channel,
+            key,
+            velocity,
+            start: self.run.frame,
+            step: 0,
+            sustained: false,
+            tuning: ExpressionRamp::default(),
+            pan: ExpressionRamp::default(),
+        };
         self.run.bases.push(base);
         let arp = self.arp_on();
         match self.kit.mode {
@@ -826,8 +891,15 @@ impl<S: Synth> Instrument<S> {
             },
             EventKind::AllNotesRelease => self.release_all(),
             EventKind::AllSoundOff => self.sound_off(),
-            // Note expressions (pan, tuning): applied per voice by the instrument functions' author (agreed 20/11)
-            EventKind::NoteExpression { .. } => {}
+            EventKind::NoteExpression { note, expression, value, ramp } => {
+                if let Some(i) = self.run.base(note) {
+                    let b = &mut self.run.bases[i];
+                    match expression {
+                        Expression::Tuning => b.tuning.go(value, ramp),
+                        Expression::Pan => b.pan.go(value.clamp(-1.0, 1.0), ramp),
+                    }
+                }
+            }
         }
     }
 
@@ -1070,10 +1142,18 @@ impl<S: Synth> Instrument<S> {
         let pitch = self.kit.params[p::PITCH] / 100.0 + self.run.bend * self.kit.params[p::BEND_RANGE];
         let desired = (self.synth.release_ms() * rate / 1000.0).ceil() as i32;
         let (fade_left, fade_len) = (self.fade_left, self.fade_len.max(1));
-        let Self { synth, pool, shaping, settings, scratch, fading, .. } = self;
+        let Self { synth, pool, shaping, settings, scratch, fading, run, .. } = self;
         for (v, gain) in pool.voices_mut() {
             if v.finished {
                 continue;
+            }
+            // The note expressions of its base, while it has one (a released note keeps the last ones)
+            let mut pan_ramp = ExpressionRamp { value: v.pan, target: v.pan, left: 0 };
+            if let Some(base) = run.sounding.iter().find(|s| s.id == v.note).map(|s| s.base)
+                && let Some(b) = run.bases.iter().find(|b| b.id == base)
+            {
+                v.tuning = b.tuning.value;
+                pan_ramp = b.pan;
             }
             if v.release_pending && !v.released {
                 v.released = true;
@@ -1093,7 +1173,7 @@ impl<S: Synth> Instrument<S> {
             } else {
                 v.glide_offset = 0.0;
             }
-            let keys = f32::from(v.key) - 69.0 + v.glide_offset + pitch;
+            let keys = f32::from(v.key) - 69.0 + v.glide_offset + pitch + v.tuning;
             let freq = 440.0 * libm::exp2f(keys / 12.0);
             if !v.started {
                 v.started = true;
@@ -1133,18 +1213,29 @@ impl<S: Synth> Instrument<S> {
             shaping.process(buf, &mut v.filter, NotePosition { frame: v.frame, release_begin }, settings);
             let velocity = if S::VELOCITY_IS_LEVEL { v.velocity } else { 1.0 };
             let mut level = 0.0f32;
+            let panned = pan_ramp.value != 0.0 || pan_ramp.target != 0.0;
             for (i, f) in buf.iter().enumerate() {
                 let g = velocity * gain.at(i);
-                let (a, b) = (f[0] * g, f[1] * g);
+                let (mut a, mut b) = (f[0] * g, f[1] * g);
+                if panned {
+                    let p = pan_ramp.at(i as u32);
+                    a *= if p > 0.0 { 1.0 - p } else { 1.0 };
+                    b *= if p < 0.0 { 1.0 + p } else { 1.0 };
+                }
                 left[at + i] += a;
                 right[at + i] += b;
                 level = level.max(a.abs()).max(b.abs());
             }
             v.level = level;
+            v.pan = pan_ramp.at(m as u32);
             v.frame = v.frame.saturating_add(m as i32);
-            if v.released && v.frame >= v.release_end {
+            if (v.released && v.frame >= v.release_end) || synth.finished(&v.inner) {
                 v.finished = true;
             }
+        }
+        for b in &mut self.run.bases {
+            b.tuning.advance(n as u32);
+            b.pan.advance(n as u32);
         }
         self.pool.advance(n);
         self.run.frame += n as u64;
