@@ -57,6 +57,16 @@ pub const MAX_SOUNDING: usize = 1024;
 const STEAL_FADE_MS: f32 = 5.0;
 /// The first number of a sounding note
 const SOUNDING_IDS: u32 = 0x8000_0000;
+/// The crossfade from the old synth to the new one when a field changes while notes sound, ms
+pub const CROSSFADE_MS: f32 = 10.0;
+
+/// A fingerprint of a state (its stable JSON hashed)
+fn fingerprint(state: &lm_state::Value) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    lm_state::to_json(state).unwrap_or_default().hash(&mut h);
+    h.finish()
+}
 
 /// What a voice is started with
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -69,9 +79,10 @@ pub struct NoteStart {
 }
 
 /// A per-note instrument's own sound, around which [`Instrument`] does the rest
-pub trait Synth: Send + 'static {
-    /// One note's state (allocated in the build, for every voice of the pool)
-    type Voice: Send + 'static;
+pub trait Synth: Clone + Send + 'static {
+    /// One note's state (allocated in the build, for every voice of the pool). `clone_from` runs on the audio thread
+    /// (the crossfade of a change, see [`Instrument`]'s `adopt`) and must not allocate
+    type Voice: Clone + Send + 'static;
     /// The synth's own parameters: indices `0..PARAMS` of the plugin's parameters; the instrument functions' follow
     const PARAMS: usize;
     /// Whether the velocity is the note's level (the instrument multiplies by it; [`crate::Velocity::Level`]).
@@ -229,6 +240,9 @@ impl Kit {
 /// A voice of the pool: the synth's voice and what the instrument functions keep per note
 pub struct KitVoice<V> {
     inner: V,
+    /// The voice as the old synth plays it, during a crossfade
+    ghost: V,
+    ghost_on: bool,
     note: NoteId,
     key: u8,
     velocity: f32,
@@ -258,9 +272,11 @@ impl<V> fmt::Debug for KitVoice<V> {
 }
 
 impl<V> KitVoice<V> {
-    fn new(inner: V, rate: f32) -> Self {
+    fn new(inner: V, ghost: V, rate: f32) -> Self {
         Self {
             inner,
+            ghost,
+            ghost_on: false,
             note: NoteId(0),
             key: 0,
             velocity: 0.0,
@@ -317,6 +333,7 @@ impl<V: Send> Voice for KitVoice<V> {
         self.glide_offset = 0.0;
         self.filter.clear_history();
         self.level = note.velocity;
+        self.ghost_on = false;
     }
 
     fn glide(&mut self, note: VoiceNote) {
@@ -432,6 +449,8 @@ impl Run {
 struct Scratch {
     left: Box<[f32]>,
     right: Box<[f32]>,
+    ghost_left: Box<[f32]>,
+    ghost_right: Box<[f32]>,
     frames: Box<[[f32; 2]]>,
 }
 
@@ -453,6 +472,13 @@ pub struct Instrument<S: Synth> {
     run: Run,
     scratch: Scratch,
     previous_piece: usize,
+    /// A change that is not a parameter's crossfades from the old synth to the new: the old one plays the copies of
+    /// the voices (`ghost`) for `fade_len` frames. `fading` is a spare synth swapped with the old processor's
+    fading: S,
+    fade_left: u32,
+    fade_len: u32,
+    /// A fingerprint of the state it was built from: the same state adopted needs no crossfade
+    fingerprint: u64,
 }
 
 impl<S: Synth> fmt::Debug for Instrument<S> {
@@ -499,7 +525,9 @@ impl<S: Synth> Instrument<S> {
             synth.set_param(i, *v);
         }
         let fade = ((STEAL_FADE_MS / 1000.0) * rate) as u32;
-        let pool = VoicePool::new(Policy::Poly, voices.max(1), fade, || KitVoice::new(synth.voice(), rate));
+        let pool =
+            VoicePool::new(Policy::Poly, voices.max(1), fade, || KitVoice::new(synth.voice(), synth.voice(), rate));
+        let fading = synth.clone();
         let settings = kit.shaping(120.0);
         let mut shaping = SoundShaping::new(rate, GRID, 0x5eed_1f05);
         shaping.set(&settings, GRID);
@@ -520,9 +548,15 @@ impl<S: Synth> Instrument<S> {
             scratch: Scratch {
                 left: vec![0.0; GRID].into_boxed_slice(),
                 right: vec![0.0; GRID].into_boxed_slice(),
+                ghost_left: vec![0.0; GRID].into_boxed_slice(),
+                ghost_right: vec![0.0; GRID].into_boxed_slice(),
                 frames: vec![[0.0; 2]; GRID].into_boxed_slice(),
             },
             previous_piece: 0,
+            fading,
+            fade_left: 0,
+            fade_len: ((CROSSFADE_MS / 1000.0) * rate) as u32,
+            fingerprint: fingerprint(state.value()),
         })
     }
 
@@ -996,11 +1030,12 @@ impl<S: Synth> Instrument<S> {
             };
             match self.kit.lfo_sync[t] {
                 Some(beats) if transport.playing && bpm > 0.0 => {
-                    // The phase from the musical position: the same at a locate or a loop (U37)
-                    let ppq = f64::from(transport.ppq.max(1));
-                    let per_cycle = beats * ppq;
-                    let tick = transport.tick as f64 + at as f64 * bpm * ppq / (60.0 * f64::from(self.rate));
-                    let phase = tick.rem_euclid(per_cycle) / per_cycle;
+                    // The phase from the position on the time line, not from how long the LFO has run: the same at a
+                    // locate or a loop (U37), and the same for any block size (V3: an integer sample, not a sum of
+                    // fractions). At a constant tempo it is the phase of the bar
+                    let cycle = beats * 60.0 / bpm * f64::from(self.rate);
+                    let sample = transport.position + at as i64;
+                    let phase = (sample as f64).rem_euclid(cycle) / cycle;
                     let mut frames =
                         (lm_dsp::envelope::SECS_PER_LFO_OSCILLATION * self.rate * settings.lfo_speed) as i32;
                     if settings.x100 {
@@ -1030,7 +1065,8 @@ impl<S: Synth> Instrument<S> {
         let rate = self.rate;
         let pitch = self.kit.params[p::PITCH] / 100.0 + self.run.bend * self.kit.params[p::BEND_RANGE];
         let desired = (self.synth.release_ms() * rate / 1000.0).ceil() as i32;
-        let Self { synth, pool, shaping, settings, scratch, .. } = self;
+        let (fade_left, fade_len) = (self.fade_left, self.fade_len.max(1));
+        let Self { synth, pool, shaping, settings, scratch, fading, .. } = self;
         for (v, gain) in pool.voices_mut() {
             if v.finished {
                 continue;
@@ -1063,6 +1099,17 @@ impl<S: Synth> Instrument<S> {
             l.fill(0.0);
             r.fill(0.0);
             synth.render(&mut v.inner, freq, l, r);
+            if v.ghost_on && fade_left > 0 {
+                let (gl, gr) = (&mut scratch.ghost_left[..m], &mut scratch.ghost_right[..m]);
+                gl.fill(0.0);
+                gr.fill(0.0);
+                fading.render(&mut v.ghost, freq, gl, gr);
+                for i in 0..m {
+                    let x = (1.0 - fade_left.saturating_sub(i as u32) as f32 / fade_len as f32).clamp(0.0, 1.0);
+                    l[i] = gl[i] + (l[i] - gl[i]) * x;
+                    r[i] = gr[i] + (r[i] - gr[i]) * x;
+                }
+            }
             let buf = &mut scratch.frames[..m];
             for (i, f) in buf.iter_mut().enumerate() {
                 *f = [l[i], r[i]];
@@ -1097,6 +1144,7 @@ impl<S: Synth> Instrument<S> {
         }
         self.pool.advance(n);
         self.run.frame += n as u64;
+        self.fade_left = self.fade_left.saturating_sub(n as u32);
     }
 }
 
@@ -1239,6 +1287,17 @@ impl<S: Synth> Processor for Instrument<S> {
             self.set_param(i as u32, v);
         }
         self.synth.adopt(&mut old.synth);
+        if old.fingerprint != self.fingerprint {
+            // The old synth plays copies of the voices while the new one fades in
+            std::mem::swap(&mut self.fading, &mut old.synth);
+            for (v, _) in self.pool.voices_mut() {
+                v.ghost_on = v.started && !v.finished;
+                if v.ghost_on {
+                    v.ghost.clone_from(&v.inner);
+                }
+            }
+            self.fade_left = self.fade_len;
+        }
         // Mono and poly follow different rules: a change of mode lets every note go to its release
         if old.kit.mode != self.kit.mode {
             self.release_all();

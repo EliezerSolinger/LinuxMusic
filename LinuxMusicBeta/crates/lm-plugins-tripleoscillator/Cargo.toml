@@ -1,0 +1,22 @@
+[package]
+name = "lm-plugins-tripleoscillator"
+description = "LinuxMusic: TripleOscillator, three oscillators with modulation (F-INS-019), on the instrument functions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lm-base.workspace = true
+lm-state.workspace = true
+lm-render.workspace = true
+lm-plugin.workspace = true
+libm.workspace = true
+lm-dsp.workspace = true
+
+[dev-dependencies]
+lm-plugin = { workspace = true, features = ["testing"] }

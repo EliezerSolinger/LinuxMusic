@@ -76,6 +76,11 @@ impl Plugin {
     }
 }
 
+/// A state in JSON, for a message
+fn short(state: &Value) -> String {
+    to_json(state).unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn finite(chans: &[Vec<f32>], what: &str) {
     for (c, ch) in chans.iter().enumerate() {
         if let Some(i) = ch.iter().position(|x| !x.is_finite() || x.abs() > 1.0e3) {
@@ -527,7 +532,8 @@ pub fn block_sizes(d: &'static Descriptor) {
         let reference = p.bench(&state, rate).render(48_000, BLOCKS[0], &events, false);
         for block in &BLOCKS[1..] {
             let out = p.bench(&state, rate).render(48_000, *block, &events, false);
-            same(&reference, &out, &format!("{}: blocks of {block} against blocks of {}", d.id, BLOCKS[0]));
+            let what = format!("{}: blocks of {block} against blocks of {}, state {}", d.id, BLOCKS[0], short(&state));
+            same(&reference, &out, &what);
         }
     }
 }
