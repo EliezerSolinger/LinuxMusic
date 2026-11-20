@@ -64,6 +64,19 @@ impl<T> Pending<T> {
     }
 }
 
+/// A result that arrived for a request that answered `Pending::Waiting` (collected with `CorePort::finished`)
+#[derive(Debug)]
+pub enum Finished {
+    Applied(Result<Applied>),
+    /// `run_action`, `undo`, `redo`, `set_preference`, `set_favorite`
+    Done(Result<()>),
+    Peaks(Result<PeakBlock>),
+    Devices(Result<Vec<DeviceInfo>>),
+    /// `browse`, `search`
+    Entries(Result<Vec<BrowseEntry>>),
+    Preview(Result<Preview>),
+}
+
 /// An action of the registry (I-19), by id: `"transport.play"`, `"notes.quantize"`
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ActionId(pub Arc<str>);
@@ -289,6 +302,12 @@ pub trait CorePort {
     /// On the 10 ms timer of the interface's event loop (H2), and each frame. True when something shown may have
     /// changed
     fn pump(&mut self) -> bool;
+
+    /// The results of the requests that answered `Waiting`, collected each pump (the LocalPort answers everything
+    /// `Ready`, so it has none)
+    fn finished(&mut self) -> Vec<(RequestId, Finished)> {
+        Vec::new()
+    }
 
     // --- reading: the port's mirror of the tree (in-process: the document's own root)
     fn root(&self) -> &Value;

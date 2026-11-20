@@ -300,6 +300,9 @@ de forma diz pelo que é substituído.
   caminho perde a latência deles e a PDC que causavam); o rack não é desligado (não é plugin). Voltar não espera build.
 ## Da interface: `lm-port` e `lm-gui` (20/11)
 
+- **`CorePort::finished()`** (pedido pela `RemotePort`, 20/11): os resultados dos pedidos que responderam `Waiting`,
+  coletados a cada `pump` como `(RequestId, Finished)`; o corpo padrão devolve vazio (a `LocalPort` e o `FakePort`
+  respondem tudo `Ready`).
 - **O `CorePort` mora no pacote `lm-port`**, sem GPUI e sem fechamentos; ele reexporta os tipos que já existem
   (`Label`, `Error`, `OperationId`, `HostTime` do `lm-base`; `NodeId`, `Value`, `PathStep`, `Resource` do `lm-state`;
   `Diff`, `Feed`, `GestureId`, `Topic` do `lm-doc`; `Meter` do `lm-render`) e define só o que faltava — porque o
