@@ -1,0 +1,16 @@
+{
+  "plugin:flanger": {
+    "defaults": {
+      "params": {
+        "delayTime": 0.001,
+        "feedback": 0.0,
+        "invert": 0.0,
+        "lfoAmount": 0.0,
+        "lfoPeriod": 0.25,
+        "noise": 0.0,
+        "stereoPhase": 90.0
+      }
+    },
+    "version": 1
+  }
+}

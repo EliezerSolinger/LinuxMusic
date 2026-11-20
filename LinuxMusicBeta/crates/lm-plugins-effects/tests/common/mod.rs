@@ -146,12 +146,25 @@ pub fn state_for(settings: &Json, knobs: &[(&str, Knob)]) -> Value {
 /// @p from. With @p follow_then the case's change of settings is sent as parameter events at its frame and the whole
 /// case is compared; without, the comparison stops at the change
 pub fn run(d: &'static Descriptor, name: &str, knobs: &[(&str, Knob)], from: usize, follow_then: bool) -> f32 {
-    compare(d, name, knobs, from, usize::MAX, follow_then)
+    compare(d, name, knobs, from, usize::MAX, follow_then, &|_, s| s)
+}
+
+/// [`run`], with the state built from the case's knobs then completed by @p extend (a graph, a curve: what the
+/// case says outside its `settings`)
+pub fn run_extended(
+    d: &'static Descriptor,
+    name: &str,
+    knobs: &[(&str, Knob)],
+    from: usize,
+    follow_then: bool,
+    extend: &dyn Fn(&Json, Value) -> Value,
+) -> f32 {
+    compare(d, name, knobs, from, usize::MAX, follow_then, extend)
 }
 
 /// [`run`] over the frames @p from to @p to (at most up to the case's change of settings)
 pub fn run_window(d: &'static Descriptor, name: &str, knobs: &[(&str, Knob)], from: usize, to: usize) -> f32 {
-    compare(d, name, knobs, from, to, false)
+    compare(d, name, knobs, from, to, false, &|_, s| s)
 }
 
 fn compare(
@@ -161,6 +174,7 @@ fn compare(
     from: usize,
     until: usize,
     follow_then: bool,
+    extend: &dyn Fn(&Json, Value) -> Value,
 ) -> f32 {
     let c = case(name);
     let frames = c["frames"].as_u64().unwrap() as usize;
@@ -178,7 +192,7 @@ fn compare(
     INPUT.with(|i| *i.borrow_mut() = data);
 
     let registry = Registry::new(&[d]).unwrap();
-    let state = state_for(&c["settings"], knobs);
+    let state = extend(&c, state_for(&c["settings"], knobs));
     let complete = registry.complete(d.id, &state).unwrap();
     let resources = test_resources(registry.schemas(), &d.type_name(), &complete, rate);
     let spec = ProcessSpec { sample_rate: rate, max_block: block.max(32) };

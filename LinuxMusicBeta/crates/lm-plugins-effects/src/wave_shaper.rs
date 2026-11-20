@@ -12,7 +12,7 @@ use lm_plugin::{BuildContext, Descriptor, DisplaySpec, PluginKind, TestHints, Ve
 use lm_render::Processor;
 use lm_state::{FieldKind, FieldSpec, NodeSchema, ParamSpec, Scale, Value};
 
-use crate::effect::{Effect, EffectProcessor, Knobs, no_ports, reals};
+use crate::effect::{Effect, EffectProcessor, Knobs, no_ports, put_f32s, reals};
 
 pub const ID: &str = "waveshaper";
 const KEYS: [&str; 3] = ["inputGain", "outputGain", "clipInput"];
@@ -25,7 +25,8 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
     schemas,
     ports: no_ports,
     velocity: Velocity::Ignored,
-    // The curve's window shows the input's level on the curve: the peak of each side, two f32
+    // The curve's window shows where the input is on the curve: the peak of each side after the input gain since the
+    // last frame, two little-endian f32
     display: Some(DisplaySpec { bytes: 8 }),
     build,
     tests: TestHints::new(),
@@ -63,6 +64,8 @@ pub fn curve(points: &[f64]) -> WaveShape {
 struct Shaper {
     knobs: Knobs<3>,
     shape: WaveShape,
+    /// The input's peaks after the input gain, for the window
+    peaks: [f32; 2],
 }
 
 impl Effect for Shaper {
@@ -72,8 +75,18 @@ impl Effect for Shaper {
 
     fn process(&mut self, frames: &mut [[f32; 2]]) {
         let k = &self.knobs;
+        let (gain, n) = (k.ramp(0), frames.len());
+        for (f, x) in frames.iter().enumerate() {
+            let g = gain.at(f, n);
+            self.peaks = [self.peaks[0].max((x[0] * g).abs()), self.peaks[1].max((x[1] * g).abs())];
+        }
         wave_shaper(frames, &self.shape, k.ramp(0), k.ramp(1), k.on(2));
         self.knobs.settle();
+    }
+
+    fn display(&mut self, frame: &mut [u8]) {
+        put_f32s(frame, &self.peaks);
+        self.peaks = [0.0; 2];
     }
 
     fn reset(&mut self) {}
@@ -87,5 +100,5 @@ impl Effect for Shaper {
 fn build(state: &Value, cx: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
     let knobs = Knobs::from_state(state, &KEYS)?;
     let shape = curve(&reals(state, "shape")?);
-    EffectProcessor::build(cx, || Ok(Shaper { knobs, shape }))
+    EffectProcessor::build(cx, || Ok(Shaper { knobs, shape, peaks: [0.0; 2] }))
 }

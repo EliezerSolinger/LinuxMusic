@@ -1030,6 +1030,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **Onde:** `plugins/CrossoverEQ/`.
 - **Parâmetros:** Cruzamento 1/2 50–10000 Hz, 125 · 2/3 50–20000, 1250 · 3/4 50–20000, 5000 (os cruzamentos se
   mantêm em ordem) · Ganho das bandas 1–4 −60–30 dB, 0 · Banda 1–4 ativa (ligado). Filtros Linkwitz-Riley.
+- **Na beta:** plugin `crossovereq`: `crossover12`, `crossover23`, `crossover34`, `gain1`–`gain4`, `band1Active`–`band4Active`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-011 Delay — core (plugin de validação, ou o ReverbSC)
 
@@ -1037,6 +1038,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **Parâmetros:** Tempo 0,01–5 s, 0,5, sync · Realimentação 0–1, 0 · Taxa do LFO (período) 0,01–5 s, 2, sync ·
   Quantidade do LFO 0–0,5 s, 0, sync · Ganho de saída −60–20 dB, 0 (com medidor L/R).
 - **O usuário pode:** ajustar tempo e realimentação juntos num pad XY.
+- **Na beta:** plugin `delay`: `delayTime`, `feedback`, `lfoTime`, `lfoAmount`, `outGain` (medidores de saída na janela), em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-012 Dispersion (all-pass de ordem alta) — 1.0
 
@@ -1052,6 +1054,7 @@ Regras gerais do legado que valem para quase todo plugin:
   24 dB, formante vocal, 2× Moog, SV passa-baixa/banda/alta/notch, formante rápido, Tripole) · Corte 1–20000 Hz,
   7000 · Ressonância mín–10, 0,5 · Ganho 0–200 %, 100. Mix −1 (só o 1) a +1 (só o 2), 0.
 - Os mesmos 22 tipos são os do filtro da janela do instrumento (F-IJN-011).
+- **Na beta:** plugin `dualfilter`: `filter1Enabled`, `filter1Type`, `cutoff1`, `resonance1`, `gain1`, `mix` e os mesmos do filtro 2, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-014 DynamicsProcessor (curva de dinâmica desenhada) — 1.0
 
@@ -1060,6 +1063,7 @@ Regras gerais do legado que valem para quase todo plugin:
   (padrão) / média / desligado · Curva de transferência (200 pontos, 0–1), padrão linear.
 - **O usuário pode:** desenhar a curva entrada → saída com o mouse; voltar à linear; suavizar; subir ou descer a curva
   inteira 1 dB.
+- **Na beta:** plugin `dynamicsprocessor`: `inputGain`, `outputGain`, `attackTime`, `releaseTime`, `stereoMode`, campo `curve` (o ponto do nível na curva na janela), em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-015 Eq (equalizador de 8 bandas) — core (plugin de validação)
 
@@ -1079,6 +1083,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **Parâmetros:** Atraso 0,0001–0,05 s, 0,001 · Taxa (período) 0,01–60 s, 0,25, sync · Quantidade 0–0,0025, 0 · Fase
   estéreo 0–360°, 90 · Realimentação −1–1, 0 · Ruído 0–0,05, 0 · Inverter realimentação, desligado.
 - **Comportamento:** o LFO reinicia quando a reprodução começa ou para.
+- **Na beta:** plugin `flanger`: `delayTime`, `lfoPeriod`, `lfoAmount`, `stereoPhase`, `feedback`, `noise`, `invert`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-017 FrequencyShifter (deslocador de frequência e phaser "barberpole") — 1.0
 
@@ -1089,6 +1094,7 @@ Regras gerais do legado que valem para quase todo plugin:
   100–22000 Hz, 22000 · Glide do atraso 0–1, 0,05 · Antirreflexo · Roteamento Send / Pass / Mute · Botões
   automatizáveis "zerar o deslocador" e "zerar o LFO".
 - **O usuário pode:** abrir um texto de ajuda que explica cada controle.
+- **Na beta:** plugin `frequencyshifter`: os 19 botões do legado (os dois botões de reinício viram parâmetros que agem ao ir a 1) e `routeMode`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-018 GranularPitchShifter — 1.0
 
@@ -1150,6 +1156,7 @@ Regras gerais do legado que valem para quase todo plugin:
   Trocar entradas (pingue-pongue), desligado · Estágios do passa-baixa 1–4, 1 · Gráfico de amplitude por eco (−60–0
   dB, desenhado) · Gráfico de corte por eco (20 Hz–20 kHz, desenhado).
 - **O usuário pode:** desenhar os dois gráficos em barras. Quirk: só os ecos 0–19 têm o filtro certo ao abrir.
+- **Na beta:** plugin `multitapecho`: `steps`, `stepLength`, `dryGain`, `swapInputs`, `lowpassStages`, campos `amplitude` e `lowpass` (32 valores cada), em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-022 Oscilloscope — 1.0
 
@@ -1172,6 +1179,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **Onde:** `plugins/ReverbSC/` (Soundpipe). Já portado para o `lm-dsp`.
 - **Parâmetros:** Ganho de entrada −60–15 dB, 0 · Tamanho 0–1, 0,89 · Cor 100–15000 Hz, 10000 · Ganho de saída
   −60–15 dB, 0. Todos com precisão de amostra.
+- **Na beta:** plugin `reverbsc`: `inputGain`, `size`, `color`, `outputGain`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-025 SlewDistortion (distorção de 2 bandas e limitador de slew) — 1.0
 

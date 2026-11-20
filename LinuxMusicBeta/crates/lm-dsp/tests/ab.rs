@@ -42,6 +42,23 @@ const INTENTIONAL: &[(&str, f32, &str)] = &[
     ),
 ];
 
+/// Cases compared only up to a frame, because the legacy program is wrong after it on purpose of the port, with why
+const UNTIL: &[(&str, usize, &str)] = &[
+    (
+        "lomm-deep-linked",
+        6144,
+        "At frame 6144 the high/mid split moves: the legacy Linkwitz-Riley's burst, as in crossovereq (below)",
+    ),
+    (
+        "crossovereq",
+        6144,
+        "At frame 6144 the crossovers move. The legacy Linkwitz-Riley was one 4th-order section in direct form II, whose \
+     inner state is about (rate / cutoff)^4 times the signal: changing its cutoff while it plays releases that state \
+     as a burst (here 24 dB above the input; a sweep from 50 Hz to 20 kHz gave 1e37). The port computes the same \
+     filter as two Butterworth sections in transposed form, and nulls with the legacy until the change",
+    ),
+];
+
 fn ab_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("ab")
 }
@@ -1072,8 +1089,9 @@ fn every_case_nulls_against_the_legacy_program() {
         let ours = run(case);
         let theirs = reference(name);
         assert_eq!(ours.len(), theirs.len(), "{name}: length");
+        let until = UNTIL.iter().find(|(n, _, _)| *n == name).map_or(ours.len(), |(_, until, _)| *until);
         let (mut worst, mut at) = (0.0f32, 0usize);
-        for (n, (a, b)) in ours.iter().zip(&theirs).enumerate() {
+        for (n, (a, b)) in ours.iter().zip(&theirs).enumerate().take(until) {
             for ch in 0..2 {
                 let d = (a[ch] - b[ch]).abs();
                 if !(d <= worst) {

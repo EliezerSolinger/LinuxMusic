@@ -1,0 +1,14 @@
+{
+  "plugin:delay": {
+    "defaults": {
+      "params": {
+        "delayTime": 0.5,
+        "feedback": 0.0,
+        "lfoAmount": 0.0,
+        "lfoTime": 2.0,
+        "outGain": 0.0
+      }
+    },
+    "version": 1
+  }
+}

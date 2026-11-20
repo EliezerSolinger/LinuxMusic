@@ -1,0 +1,29 @@
+{
+  "plugin:frequencyshifter": {
+    "defaults": {
+      "params": {
+        "antireflect": 0.0,
+        "delayDamping": 22000.0,
+        "delayGlide": 0.05,
+        "delayLength": 0.0,
+        "feedback": 0.0,
+        "fineDelayLength": 0.0,
+        "frequencyShift": 0.0,
+        "glide": 0.05,
+        "harmonics": 0.0,
+        "lfoAmount": 0.0,
+        "lfoRate": 0.2,
+        "lfoStereoPhase": 0.0,
+        "mix": 1.0,
+        "phase": 0.0,
+        "resetLfo": 0.0,
+        "resetShifter": 0.0,
+        "ring": 0.0,
+        "spreadShift": 0.0,
+        "tone": 22000.0
+      },
+      "routeMode": "series"
+    },
+    "version": 1
+  }
+}

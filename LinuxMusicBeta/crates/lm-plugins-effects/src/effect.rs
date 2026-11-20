@@ -43,6 +43,29 @@ pub trait Effect: Send + 'static {
     fn latency(&self) -> u32 {
         0
     }
+
+    /// Fills the plugin window's live frame (its [`lm_plugin::DisplaySpec`]'s bytes, all of them) with what was
+    /// measured since the last frame, and starts measuring again. Called once per block, on the first pair, when the
+    /// window is open
+    fn display(&mut self, frame: &mut [u8]) {
+        frame.fill(0);
+    }
+}
+
+/// Writes @p values into a display frame as little-endian `f32`s, from the start (the rest of the frame is zeroed)
+pub fn put_f32s(frame: &mut [u8], values: &[f32]) {
+    frame.fill(0);
+    for (chunk, v) in frame.as_chunks_mut::<4>().0.iter_mut().zip(values) {
+        chunk.copy_from_slice(&v.to_le_bytes());
+    }
+}
+
+/// The peak of each side of @p frames, raised into @p peaks
+pub fn raise_peaks(peaks: &mut [f32; 2], frames: &[[f32; 2]]) {
+    for f in frames {
+        peaks[0] = peaks[0].max(f[0].abs());
+        peaks[1] = peaks[1].max(f[1].abs());
+    }
 }
 
 /// The processor of an effect: one algorithm per pair of channels
@@ -145,6 +168,10 @@ impl<E: Effect> Processor for EffectProcessor<E> {
         // Events past the block's end (none, from a well-behaved host) still count
         for ev in &events[e..] {
             self.event(ev.kind);
+        }
+        if let Some(writer) = cx.display.as_mut() {
+            let fx = &mut self.pairs[0];
+            writer.write(|frame| fx.display(frame));
         }
     }
 

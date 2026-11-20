@@ -136,6 +136,11 @@ impl DynamicsProcessor {
         exp((-1.0 / (f64::from(ms) * 0.001)) / f64::from(self.sample_rate as i32))
     }
 
+    /// The level each side's gain was last read at (the followed RMS), for the window's point on the curve
+    pub fn levels(&self) -> [f32; 2] {
+        self.peak
+    }
+
     pub fn process(&mut self, frames: &mut [[f32; 2]], s: &DynamicsProcessorSettings) {
         if self.times != Some((s.attack, s.release)) {
             self.attack = self.coefficient(s.attack);

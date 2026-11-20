@@ -267,6 +267,19 @@ impl Default for DcBlock {
 }
 
 impl DcBlock {
+    /// The blocker for @p sample_rate: the legacy pole (0.99) at 48 kHz, and the same cutoff (about 77 Hz) at any rate
+    /// (U36; Soundpipe's fixed 0.99 put the cutoff at 153 Hz at 96 kHz, and the reverb lost 1.6 dB of its low end)
+    pub fn new(sample_rate: f32) -> Self {
+        let gain = crate::math::pow(0.99, 48_000.0 / f64::from(sample_rate)) as f32;
+        Self { gain, inputs: 0.0, outputs: 0.0 }
+    }
+
+    /// Empties it, keeping its pole
+    pub fn clear(&mut self) {
+        self.inputs = 0.0;
+        self.outputs = 0.0;
+    }
+
     #[inline]
     pub fn compute(&mut self, sample: f32) -> f32 {
         self.outputs = sample - self.inputs + self.gain * self.outputs;
@@ -304,12 +317,14 @@ pub struct ReverbSc {
 
 impl ReverbSc {
     pub fn new(sample_rate: f32) -> Self {
-        Self { reverb: RevSc::new(sample_rate), dc: [DcBlock::default(), DcBlock::default()] }
+        Self { reverb: RevSc::new(sample_rate), dc: [DcBlock::new(sample_rate), DcBlock::new(sample_rate)] }
     }
 
     pub fn reset(&mut self) {
         self.reverb.reset();
-        self.dc = [DcBlock::default(), DcBlock::default()];
+        for dc in &mut self.dc {
+            dc.clear();
+        }
     }
 
     pub fn process(&mut self, frames: &mut [[f32; 2]], settings: &ReverbScSettings) {

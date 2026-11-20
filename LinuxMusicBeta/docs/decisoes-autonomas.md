@@ -478,6 +478,19 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
   perde nada e cresce sem fim com uma entrada na frequência de um polo; qualquer valor até ±0,999 é o do legado); o
   Bitcrush não zera de novo os contadores de taxa nos dois períodos seguintes a uma mudança (encanamento do legado,
   não DSP).
+- **O Linkwitz-Riley do `lm-dsp` virou duas seções Butterworth em forma direta transposta** (o mesmo filtro): a
+  seção única de 4.ª ordem do legado, em forma direta II, guarda um estado interno de (taxa / corte)^4 vezes o sinal, e
+  mudar o corte tocando soltava esse estado num estouro (24 dB no caso `crossovereq` do A/B; 1e37 varrendo de 50 Hz a
+  20 kHz, o que derrubava a suíte do contrato do Crossover EQ). Os casos `crossovereq` e `lomm-deep-linked` do A/B do
+  `lm-dsp` passam a comparar até a mudança (lista `UNTIL`, com o motivo); antes dela, e em todos os outros casos que
+  usam o filtro (Bitcrush, Slew Distortion, LOMM), o A/B continua nulo.
+- **O bloqueador de DC do ReverbSC tem o mesmo corte (~77 Hz) em qualquer taxa** (U36): o polo 0,99 do Soundpipe é
+  o do legado a 48 kHz; fixo, ele dobrava o corte a 96 kHz e o reverb perdia 1,6 dB de graves.
+- **Dual Filter:** os casos com o Moog em ressonância 2,5 (auto-oscilante) não se comparam pelo plugin: a fase do tom
+  depende de como os botões chegaram lá (o harness do legado os gira a partir dos padrões no primeiro período); o A/B
+  do `lm-dsp` os cobre com as rampas do legado.
+- **Botões de ação do legado** (reiniciar o deslocador e o LFO do Frequency Shifter) são parâmetros `Stepped` de 0 a
+  1 que agem ao ir a 1, como o botão.
 - **Amplifier e Stereo Matrix** existem para abrir projetos antigos (F-FX-005 e F-FX-028 continuam obsoletos no
   navegador).
 

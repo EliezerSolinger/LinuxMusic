@@ -7,105 +7,73 @@ use crate::oscillator::lerp;
 /// The values below which a one-pole or a formant filter stops computing (the legacy `F_EPSILON`)
 const F_EPSILON: f32 = 1.0e-10;
 
-/// A 4th-order Linkwitz-Riley filter (low- or high-pass), in double precision, stereo
+/// A 4th-order Linkwitz-Riley filter (low- or high-pass), in double precision, stereo.
+///
+/// The legacy program's response (the bilinear transform with the cutoff prewarped), as two identical 2nd-order
+/// Butterworth sections in transposed direct form II: a Linkwitz-Riley filter is a Butterworth one squared. The
+/// legacy computed it as one 4th-order section in direct form II, whose inner state grows to about (rate / cutoff)^4
+/// times the signal: with a low cutoff, any change of the cutoff while it plays released that state as a burst
+/// (a crossover swept from 50 Hz to 20 kHz gave 1e37). The two forms are the same filter; they differ by rounding
+/// only (the A/B still nulls), and a change of cutoff here never adds more than the signal's own size
 #[derive(Clone, Debug)]
 pub struct LinkwitzRiley {
     sample_rate: f32,
-    wc4: f64,
-    k4: f64,
-    a: f64,
-    a0: f64,
-    a1: f64,
-    a2: f64,
-    b1: f64,
-    b2: f64,
-    b3: f64,
-    b4: f64,
-    z1: [f64; 2],
-    z2: [f64; 2],
-    z3: [f64; 2],
-    z4: [f64; 2],
+    /// b0, b1, b2, a1, a2 of each section (both the same)
+    b: [f64; 3],
+    a: [f64; 2],
+    /// Per section and channel, the two state values of the transposed form
+    s: [[[f64; 2]; 2]; 2],
 }
 
 impl LinkwitzRiley {
     pub fn new(sample_rate: f32) -> Self {
-        Self {
-            sample_rate,
-            wc4: 0.0,
-            k4: 0.0,
-            a: 0.0,
-            a0: 0.0,
-            a1: 0.0,
-            a2: 0.0,
-            b1: 0.0,
-            b2: 0.0,
-            b3: 0.0,
-            b4: 0.0,
-            z1: [0.0; 2],
-            z2: [0.0; 2],
-            z3: [0.0; 2],
-            z4: [0.0; 2],
-        }
+        Self { sample_rate, b: [0.0; 3], a: [0.0; 2], s: [[[0.0; 2]; 2]; 2] }
     }
 
     pub fn clear_history(&mut self) {
-        self.z1 = [0.0; 2];
-        self.z2 = [0.0; 2];
-        self.z3 = [0.0; 2];
-        self.z4 = [0.0; 2];
+        self.s = [[[0.0; 2]; 2]; 2];
     }
 
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
     }
 
-    fn set_coeffs(&mut self, freq: f32) {
+    /// The Butterworth section's denominator and its prewarped constants: (wc, k, 1 / (k² + √2 wc k + wc²))
+    fn section(&mut self, freq: f32) -> (f64, f64, f64) {
         use core::f64::consts::{PI, SQRT_2};
         let wc = 2.0 * PI * f64::from(freq);
-        let wc2 = wc * wc;
-        let wc3 = wc2 * wc;
-        self.wc4 = wc2 * wc2;
         let k = wc / tan(PI * f64::from(freq) / f64::from(self.sample_rate));
-        let k2 = k * k;
-        let k3 = k2 * k;
-        self.k4 = k2 * k2;
-        let sq_tmp1 = SQRT_2 * wc3 * k;
-        let sq_tmp2 = SQRT_2 * wc * k3;
-        self.a = 1.0 / (4.0 * wc2 * k2 + 2.0 * sq_tmp1 + self.k4 + 2.0 * sq_tmp2 + self.wc4);
-        self.b1 = (4.0 * (self.wc4 + sq_tmp1 - self.k4 - sq_tmp2)) * self.a;
-        self.b2 = (6.0 * self.wc4 - 8.0 * wc2 * k2 + 6.0 * self.k4) * self.a;
-        self.b3 = (4.0 * (self.wc4 - sq_tmp1 + sq_tmp2 - self.k4)) * self.a;
-        self.b4 = (self.k4 - 2.0 * sq_tmp1 + self.wc4 - 2.0 * sq_tmp2 + 4.0 * wc2 * k2) * self.a;
+        let (wc2, k2) = (wc * wc, k * k);
+        let norm = 1.0 / (k2 + SQRT_2 * wc * k + wc2);
+        self.a = [2.0 * (wc2 - k2) * norm, (k2 - SQRT_2 * wc * k + wc2) * norm];
+        (wc, k, norm)
     }
 
     pub fn set_lowpass(&mut self, freq: f32) {
-        self.set_coeffs(freq);
-        self.a0 = self.wc4 * self.a;
-        self.a1 = 4.0 * self.a0;
-        self.a2 = 6.0 * self.a0;
+        let (wc, _, norm) = self.section(freq);
+        let b0 = wc * wc * norm;
+        self.b = [b0, 2.0 * b0, b0];
     }
 
     pub fn set_highpass(&mut self, freq: f32) {
-        self.set_coeffs(freq);
-        self.a0 = self.k4 * self.a;
-        self.a1 = -4.0 * self.a0;
-        self.a2 = 6.0 * self.a0;
+        let (_, k, norm) = self.section(freq);
+        let b0 = k * k * norm;
+        self.b = [b0, -2.0 * b0, b0];
     }
 
     #[inline]
     pub fn update(&mut self, input: f32, ch: usize) -> f32 {
-        let x = f64::from(input)
-            - self.z1[ch] * self.b1
-            - self.z2[ch] * self.b2
-            - self.z3[ch] * self.b3
-            - self.z4[ch] * self.b4;
-        let y =
-            self.a0 * x + self.z1[ch] * self.a1 + self.z2[ch] * self.a2 + self.z3[ch] * self.a1 + self.z4[ch] * self.a0;
-        self.z4[ch] = self.z3[ch];
-        self.z3[ch] = self.z2[ch];
-        self.z2[ch] = self.z1[ch];
-        self.z1[ch] = x;
-        y as f32
+        let [b0, b1, b2] = self.b;
+        let [a1, a2] = self.a;
+        let mut x = f64::from(input);
+        for section in &mut self.s {
+            let state = &mut section[ch];
+            let y = b0 * x + state[0];
+            state[0] = b1 * x - a1 * y + state[1];
+            state[1] = b2 * x - a2 * y;
+            x = y;
+        }
+        x as f32
     }
 }
 

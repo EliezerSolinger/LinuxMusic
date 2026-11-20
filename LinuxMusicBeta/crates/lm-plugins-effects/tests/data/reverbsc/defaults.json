@@ -1,0 +1,13 @@
+{
+  "plugin:reverbsc": {
+    "defaults": {
+      "params": {
+        "color": 10000.0,
+        "inputGain": 0.0,
+        "outputGain": 0.0,
+        "size": 0.89
+      }
+    },
+    "version": 1
+  }
+}

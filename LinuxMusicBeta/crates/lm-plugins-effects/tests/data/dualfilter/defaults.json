@@ -1,0 +1,20 @@
+{
+  "plugin:dualfilter": {
+    "defaults": {
+      "filter1Type": "low-pass",
+      "filter2Type": "low-pass",
+      "params": {
+        "cutoff1": 7000.0,
+        "cutoff2": 7000.0,
+        "filter1Enabled": 1.0,
+        "filter2Enabled": 1.0,
+        "gain1": 100.0,
+        "gain2": 100.0,
+        "mix": 0.0,
+        "resonance1": 0.5,
+        "resonance2": 0.5
+      }
+    },
+    "version": 1
+  }
+}
