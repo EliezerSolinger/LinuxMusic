@@ -1098,8 +1098,12 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 - **Parâmetro sem campo no documento** (o nível do monitor) é movido pelo MIDI, mas o fim do gesto não escreve nada.
 - **Um `f32` do motor vira o `f64` do documento pelo decimal mais curto** (0,05f32 é 0,05), e é limitado à faixa do
   esquema: sem isso, o topo de uma faixa era recusado como acima dela.
-- **Escala de fader para ganhos** (volume, envio): 0 é silêncio, depois de −60 dB até o máximo em dB (0 dB em ~83 %),
-  porque um fader de controlador linear em ganho é inutilizável. Panorâmica linear; parâmetros log em escala log.
+- **A lei dos ganhos (volume, envio) é a do fader do legado** (decisão do coordenador, 20/11; `Fader.cpp`,
+  `computeScaledRatio`): curso `((dB + 120) / (topo + 120))³`, abaixo de −120 dB é silêncio; com máximo 4 (+12 dB), 0 dB
+  fica em ~75 % do curso (−6 dB em 64 %, −60 dB em 9 %). Uma lei só, no `ParamRange` do núcleo, serve o MIDI, o MCU, a
+  automação e os faders da interface, que a pedem pela porta (`param_range`): a mesa, os controladores e o legado
+  concordam. Substitui a primeira escolha (−60 dB até o topo em dB, 0 dB em ~83 %). Panorâmica linear; parâmetros log
+  em escala log.
 - **A quantidade de um envio tem vaga** (é parâmetro no `param_key`), para a mão e o MIDI a moverem sem compilar.
 - **Bancos:** `follow` ganhou `trackBank` e `channelBank` (a superfície trabalha num banco que só os botões de banco
   movem); `track`/`channel`/`plugin` seguem a seleção do documento da interface (`selection: {track, channel,

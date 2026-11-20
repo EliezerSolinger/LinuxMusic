@@ -20,8 +20,8 @@ pub enum RangeScale {
     Log,
     /// Whole numbers, from `min` to `max`
     Stepped,
-    /// A linear gain (a fader, a send): normalized 0 is silence, then −60 dB up to the maximum on a dB scale, so
-    /// a fader on a controller moves like a fader (0 dB at about 83 % with a maximum of +12 dB)
+    /// A linear gain (a fader, a send), on the legacy fader's law: normalized `((dB + 120) / (top + 120))³`, 0 is
+    /// silence; 0 dB at about 75 % with a maximum of +12 dB, so a controller's fader, the desk and the legacy agree
     Gain,
 }
 
@@ -34,7 +34,11 @@ pub struct ParamRange {
 }
 
 /// The bottom of the gain scale
-const GAIN_FLOOR_DB: f32 = -60.0;
+/// The legacy fader's law (`legado/src/gui/widgets/Fader.cpp`, `computeScaledRatio`): the travel is
+/// `((dB − floor) / (top − floor))³`, with the floor at −120 dB (`c_faderMinDb`) and the exponent 3
+/// (`c_dBScalingExponent`); below the floor is silence. 0 dB sits at about 75 % for a maximum of +12 dB
+const GAIN_FLOOR_DB: f32 = -120.0;
+const GAIN_EXPONENT: f32 = 3.0;
 
 impl ParamRange {
     pub fn linear(min: f32, max: f32) -> ParamRange {
@@ -59,7 +63,7 @@ impl ParamRange {
                     return self.min.max(0.0);
                 }
                 let top = 20.0 * libm::log10f(self.max);
-                let db = GAIN_FLOOR_DB + (top - GAIN_FLOOR_DB) * y;
+                let db = GAIN_FLOOR_DB + libm::powf(y, 1.0 / GAIN_EXPONENT) * (top - GAIN_FLOOR_DB);
                 libm::powf(10.0, db / 20.0).clamp(self.min.max(0.0), self.max)
             }
         }
@@ -92,7 +96,11 @@ impl ParamRange {
                 }
                 let top = 20.0 * libm::log10f(self.max);
                 let db = 20.0 * libm::log10f(v);
-                if db <= GAIN_FLOOR_DB { 0.0 } else { (db - GAIN_FLOOR_DB) / (top - GAIN_FLOOR_DB) }
+                if db <= GAIN_FLOOR_DB {
+                    0.0
+                } else {
+                    libm::powf((db - GAIN_FLOOR_DB) / (top - GAIN_FLOOR_DB), GAIN_EXPONENT)
+                }
             }
         };
         y.clamp(0.0, 1.0)
@@ -200,8 +208,11 @@ mod tests {
         let gain = r[2];
         assert_eq!(gain.to_units(0.0), 0.0);
         assert!((gain.to_units(1.0) - 4.0).abs() < 1e-4);
-        let unity = gain.normalize(1.0);
-        assert!((unity - 60.0 / 72.04).abs() < 1e-2, "{unity}");
+        // The legacy fader's numbers for a maximum of 4 (+12.04 dB)
+        for (db, travel) in [(0.0f32, 0.751f32), (-6.0, 0.644), (-12.0, 0.547), (-24.0, 0.384), (-60.0, 0.094), (6.0, 0.869)] {
+            let t = gain.normalize(libm::powf(10.0, db / 20.0));
+            assert!((t - travel).abs() < 1.5e-3, "{db} dB at {t}, the legacy says {travel}");
+        }
         assert_eq!(r[1].to_units(0.5).round(), 632.0);
         assert_eq!(r[3].to_units(0.49), 4.0);
     }
