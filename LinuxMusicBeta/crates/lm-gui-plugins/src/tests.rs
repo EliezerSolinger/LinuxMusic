@@ -11,7 +11,7 @@ use gpui::{
     VisualTestContext, point, px,
 };
 use lm_plugin::Descriptor;
-use lm_port::{CorePort, EditOp, Label, NodeId, PathStep, ROOT, Ref, Value};
+use lm_port::{CorePort, EditOp, Label, NodeId, PathStep, Ref, Value};
 use lm_port_fake::{Config, FakePort, RealPlugin};
 
 use crate::panel::PluginPanel;
@@ -198,39 +198,28 @@ fn exercise(o: &mut Opened<'_>) {
             }
             Target::Field(k) => assert!(schema.find_field(k).is_some(), "{id}: {k} is a field of the schema"),
         }
-        let target = o.panel.read_with(o.cx, |p, _| p.map_target(i));
-        let mapping = Value::object([("target", target)]);
-        let op = EditOp::Insert { temp: 1, parent: Ref::Id(ROOT), list: "midiMap".into(), index: 0, node: mapping };
-        let mapped = o.host.update(o.cx, |h, _| {
-            // the list is optional in the project: the first mapping creates it
-            let mut ops = Vec::new();
-            if h.port.root().get("midiMap").is_none() {
-                ops.push(EditOp::set(ROOT, &["midiMap"], Value::empty_list()));
-            }
-            ops.push(op);
-            h.port.apply(Label::new("test"), ops)
-        });
-        let mapped = match mapped {
-            lm_port::Pending::Ready(r) => r.map(|_| ()),
-            lm_port::Pending::Waiting(_) => Ok(()),
-        };
-        assert!(mapped.is_ok(), "{id}: the project takes a MIDI mapping to it: {mapped:?}");
-        o.settle();
+        // MIDI learn from the control's menu, a controller moves: the project has the mapping to this control
         o.click(id, MouseButton::Right);
-        assert!(o.cx.debug_bounds("menu-midi-forget").is_some(), "{id}: the menu sees its mapping");
+        o.click("menu-midi-learn", MouseButton::Left);
+        let target = o.panel.read_with(o.cx, |p, _| p.map_target(i));
+        o.host.update(o.cx, |h, _| h.port.midi_in("", 0, lm_port::MidiMessage::Cc { number: (i % 120) as u8 }, 64));
+        o.settle();
+        let learned = o.host.read_with(o.cx, |h, _| {
+            h.port.mappings(lm_port::MapScope::Project).into_iter().filter(|m| m.target == target).count()
+        });
+        assert_eq!(learned, 1, "{id}: MIDI learn maps it");
+        o.click(id, MouseButton::Right);
         o.click("menu-midi-forget", MouseButton::Left);
+        let left = o.host.read_with(o.cx, |h, _| {
+            h.port.mappings(lm_port::MapScope::Project).into_iter().filter(|m| m.target == target).count()
+        });
+        assert_eq!(left, 0, "{id}: the mapping is removed");
 
         match &c.kind {
             Kind::Knob(k) => {
                 let key = k.param;
                 let p = schema.find_param(key).unwrap().clone();
-                let r = Range {
-                    min: p.min,
-                    max: p.max,
-                    step: k.step,
-                    center: k.center.unwrap_or(p.min),
-                    log: p.scale == lm_port::Scale::Log,
-                };
+                let r = Range { min: p.min, max: p.max, step: k.step, center: k.center.unwrap_or(p.min), log: k.log };
                 // from the middle, so a drag both ways moves it
                 set_param(o, key, r.fit(r.min + r.span() / 2.0));
                 let before = o.param(key);
@@ -345,6 +334,12 @@ fn tripleoscillator(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn kicker(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::kicker::DESCRIPTOR, true)], "kicker");
+    exercise(&mut o);
+}
+
+#[gpui::test]
 fn the_value_float_shows_after_700_ms(cx: &mut TestAppContext) {
     let mut o = open(cx, &[(&lm_plugins_tripleoscillator::DESCRIPTOR, true)], "tripleoscillator");
     let p = o.center("vol1");
@@ -442,7 +437,12 @@ fn every_text_has_its_translation() {
 #[test]
 fn snapshots() {
     let Ok(dir) = std::env::var("LM_PANEL_SNAPSHOTS") else { return };
-    let schemas = [lm_plugins_tripleoscillator::DESCRIPTOR.schema()];
+    let schemas: Vec<_> = [&lm_plugins_tripleoscillator::DESCRIPTOR]
+        .into_iter()
+        .chain(lm_plugins_instruments::ALL.iter().copied())
+        .chain(lm_plugins_effects::ALL.iter().copied())
+        .map(|d| d.schema())
+        .collect();
     for (id, spec) in panels::ALL {
         let spec = spec();
         let Some(schema) = schemas.iter().find(|s| s.type_name == format!("plugin:{id}")) else { continue };
@@ -458,13 +458,22 @@ fn snapshots() {
                 match &ctl.kind {
                     Kind::Knob(k) => {
                         let p = schema.find_param(k.param).unwrap();
-                        let r = Range { min: p.min, max: p.max, step: k.step, center: k.center.unwrap_or(p.min), log: false };
+                        let r = Range {
+                            min: p.min,
+                            max: p.max,
+                            step: k.step,
+                            center: k.center.unwrap_or(p.min),
+                            log: false,
+                        };
                         crate::widgets::draw_knob(&mut one, &k.style, r.angle(p.def), r.angle(r.center), true);
                     }
                     Kind::Button(b) => {
                         let on = match b.bind {
                             Bind::Choice { field, key } => {
-                                schema.find_field(field).and_then(|f| f.default.clone()).and_then(|d| d.as_text().map(|t| t == key))
+                                schema
+                                    .find_field(field)
+                                    .and_then(|f| f.default.clone())
+                                    .and_then(|d| d.as_text().map(|t| t == key))
                                     == Some(true)
                             }
                             Bind::Switch { param } => schema.find_param(param).is_some_and(|p| p.def >= 0.5),

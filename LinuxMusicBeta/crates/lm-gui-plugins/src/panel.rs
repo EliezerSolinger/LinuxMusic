@@ -26,7 +26,10 @@ use gpui::{
     ScrollDelta, ScrollEvent, SharedString, Subscription, Task, TextAlign, TextRun, WeakEntity, Window, canvas, div,
     img, point, prelude::*, px, rgb, size,
 };
-use lm_port::{CorePort, EditOp, GestureId, Label, NodeId, NodeSchema, PathStep, Pending, Ref, Scale, Value};
+use lm_port::{
+    CorePort, EditOp, GestureId, Label, MapScope, MapTarget, Mapping, NodeId, NodeRef, NodeSchema, PathStep, Pending,
+    Ref, Value,
+};
 
 use crate::raster::Canvas;
 use crate::spec::{Bind, Kind, PanelSpec, Target, Text};
@@ -179,14 +182,14 @@ impl<H: PortHost> PluginPanel<H> {
 
     fn range(&self, ctrl: usize) -> Range {
         let c = &self.spec.controls[ctrl];
-        let (key, step, center) = match &c.kind {
-            Kind::Knob(k) => (k.param, k.step, k.center),
-            Kind::Lcd(l) => (l.param, 1.0, None),
-            Kind::Led(_) | Kind::Button(_) => (c.target().key(), 1.0, None),
+        let (key, step, center, log) = match &c.kind {
+            Kind::Knob(k) => (k.param, k.step, k.center, k.log),
+            Kind::Lcd(l) => (l.param, 1.0, None, false),
+            Kind::Led(_) | Kind::Button(_) => (c.target().key(), 1.0, None, false),
         };
         let p = self.schema.as_ref().and_then(|s| s.find_param(key));
         let (min, max) = p.map_or((0.0, 1.0), |p| (p.min, p.max));
-        let log = p.is_some_and(|p| p.scale == Scale::Log) != self.toggled_log.contains(&c.target());
+        let log = log != self.toggled_log.contains(&c.target());
         Range { min, max, step, center: center.unwrap_or(min), log }
     }
 
@@ -644,7 +647,7 @@ impl<H: PortHost> PluginPanel<H> {
             items.push((MenuItem::Paste, clipboard().is_some()));
         }
         items.push((MenuItem::MidiLearn, true));
-        items.push((MenuItem::MidiForget, !self.mappings(ctrl, cx).is_empty()));
+        items.push((MenuItem::MidiForget, self.mappings(ctrl, cx) > 0));
         if param {
             if self.lane(ctrl, cx).is_some() {
                 items.push((MenuItem::RemoveLane, true));
@@ -706,17 +709,16 @@ impl<H: PortHost> PluginPanel<H> {
                 }
             }
             MenuItem::MidiLearn => {
-                let params = Value::object([("target", self.map_target(ctrl))]);
+                // the next controller moved becomes the source (I-21.2); the session shows the learning and its end
+                let target = self.map_target(ctrl);
                 self.host.update(cx, |h, _| {
-                    let _ = h.port_mut().run_action(MIDI_LEARN.into(), params);
+                    let _ = h.port_mut().midi_learn(target, MapScope::Project);
                 });
             }
             MenuItem::MidiForget => {
-                let ops: Vec<EditOp> =
-                    self.mappings(ctrl, cx).into_iter().map(|id| EditOp::Remove { id: Ref::Id(id) }).collect();
-                let label = Label::new("Remove MIDI mapping");
+                let target = self.map_target(ctrl);
                 self.host.update(cx, |h, _| {
-                    let _ = h.port_mut().apply(label, ops);
+                    let _ = h.port_mut().unmap(&target, MapScope::Project);
                 });
             }
             MenuItem::AddLane => {
@@ -770,37 +772,21 @@ impl<H: PortHost> PluginPanel<H> {
         }
     }
 
-    /// The control as a MIDI mapping's target (the `midi.target` schema of lm-doc; I-21.2)
-    pub fn map_target(&self, ctrl: usize) -> Value {
-        let node = Value::text(self.node.to_string());
+    /// The control as a MIDI mapping's target (I-21.2): its parameter, or its field by path
+    pub fn map_target(&self, ctrl: usize) -> MapTarget {
+        let node = NodeRef::Id(self.node);
         match self.spec.controls[ctrl].target() {
-            Target::Param(k) => {
-                Value::object([("kind", Value::text("param")), ("node", node), ("param", Value::text(k))])
-            }
-            Target::Field(k) => Value::object([
-                ("kind", Value::text("field")),
-                ("node", node),
-                ("path", Value::list([Value::text("state"), Value::text(k)])),
-            ]),
+            Target::Param(k) => MapTarget::Param { node, key: k.to_owned() },
+            Target::Field(k) => MapTarget::Field { node, path: vec![PathStep::key("state"), PathStep::key(k)] },
         }
     }
 
     /// The project's mappings that move this control
-    fn mappings(&self, ctrl: usize, cx: &App) -> Vec<NodeId> {
+    fn mappings(&self, ctrl: usize, cx: &App) -> usize {
         let want = self.map_target(ctrl);
         let root = self.host.read(cx).port().root().clone();
-        let Some(list) = root.get("midiMap") else { return Vec::new() };
-        list.items()
-            .filter(|m| {
-                m.get("target").is_some_and(|t| {
-                    t.get("node") == want.get("node")
-                        && t.get("kind") == want.get("kind")
-                        && (t.get("param") == want.get("param") || want.get("param").is_none())
-                        && (t.get("path") == want.get("path") || want.get("path").is_none())
-                })
-            })
-            .filter_map(|m| m.get("id").and_then(Value::as_text).and_then(|s| NodeId::parse(s).ok()))
-            .collect()
+        let Some(list) = root.get("midiMap") else { return 0 };
+        list.items().filter_map(|m| Mapping::from_value(m).ok()).filter(|m| m.target == want).count()
     }
 
     /// The track, channel or master whose subtree holds this plugin: where its automation lanes live (I-21.5)
@@ -960,9 +946,6 @@ pub const TEXTS: &[&str] = &[
     "OK",
     "Open audio file",
 ];
-
-/// The action of "MIDI learn" (I-21.2), with `{ target }` in the `midi.target` form; the session answers it
-pub const MIDI_LEARN: &str = "midi.learn";
 
 /// `FloatModelEditorBase::wheelEvent`: the notches of a whole sweep for the modifiers held
 pub fn wheel_steps(m: Modifiers) -> f64 {

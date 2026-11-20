@@ -4992,35 +4992,35 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 
 | Plugin | Categoria | Classificação | Arquivo(s) principal(is) | Estado do port |
 |---|---|---|---|---|
-| AmpAndIr | efeito | genérico / botões soltos | `AmpAndIrControls.cpp` | genérico (sem painel) |
+| AmpAndIr | efeito | genérico / botões soltos | `AmpAndIrControls.cpp` | plugin existe (lm-plugins-ampandir); genérico (sem painel; o editor genérico precisa escolher os arquivos `ir` e `nam`) |
 | Amplifier | efeito | visual próprio (`artwork.svg`); obsoleto no navegador (F-FX-005), existe para abrir projetos antigos | `AmplifierControlDialog.cpp`, `artwork.svg` | plugin existe (lm-plugins-effects): painel a fazer |
 | AmplifikationLite | efeito | visual próprio (arte da Kuassa, permitida em 18/11) | `AmplifikationLiteControls.cpp`, `background.png`, `silverknob.png`, `silverswitch.png`, `irload.png`, `logo.png`, `about.png` | falta o plugin |
 | AudioFileProcessor | instrumento | visual próprio | `AudioFileProcessorView.cpp`, `AudioFileProcessorWaveView.cpp`, `artwork.png` | falta o plugin |
 | AvlDrums | instrumento | visual próprio (foto e mapa de peças) | `AvlDrums.cpp`, `data/avldrums/images/*.png` | falta o plugin |
 | BassBooster | efeito | visual próprio (`artwork.svg`) | `BassBoosterControlDialog.cpp`, `artwork.svg` | plugin existe (lm-plugins-effects): painel a fazer |
-| BitInvader | instrumento | visual próprio | `BitInvader.cpp`, `artwork.png`, `wavegraph.png` | falta o plugin |
+| BitInvader | instrumento | visual próprio | `BitInvader.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-instruments): painel a fazer |
 | Bitcrush | efeito | visual próprio (`artwork.svg`) | `BitcrushControlDialog.cpp`, `artwork.svg` | plugin existe (lm-plugins-effects): painel a fazer |
 | CarlaBase | instrumento (hospedeiro) | terceiros fora do processo; obsoleto (P-02) | `Carla.cpp` | obsoleto |
 | CarlaPatchbay | instrumento (hospedeiro) | terceiros fora do processo; obsoleto (P-02) | `CarlaPatchbay.cpp` | obsoleto |
 | CarlaRack | instrumento (hospedeiro) | terceiros fora do processo; obsoleto (P-02) | `CarlaRack.cpp` | obsoleto |
-| Compressor | efeito | visual próprio | `CompressorControlDialog.cpp`, `controlsBox.png` e botões | falta o plugin |
+| Compressor | efeito | visual próprio | `CompressorControlDialog.cpp`, `controlsBox.png` e botões | plugin existe (lm-plugins-effects): painel a fazer |
 | CrossoverEQ | efeito | visual próprio (`artwork.svg`) | `CrossoverEQControlDialog.cpp`, `artwork.svg` | plugin existe (lm-plugins-effects): painel a fazer |
 | Delay | efeito | visual próprio | `DelayControlsDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Dispersion | efeito | genérico / botões soltos | `DispersionControlDialog.cpp` | plugin existe (lm-plugins-effects); genérico (sem painel) |
 | DrumMachines | instrumento | visual próprio (fotos ou painel desenhado e pads) | `DrumMachines.cpp`, `photos/*.jpg` | falta o plugin |
 | DualFilter | efeito | visual próprio (`artwork.svg`) | `DualFilterControlDialog.cpp`, `artwork.svg` | plugin existe (lm-plugins-effects): painel a fazer |
 | DynamicsProcessor | efeito | visual próprio | `DynamicsProcessorControlDialog.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-effects): painel a fazer |
-| Eq | efeito | visual próprio | `EqControlsDialog.cpp`, `EqCurve.cpp`, `EqSpectrumView.cpp`, `EqParameterWidget.cpp`, `artwork.png` | falta o plugin |
+| Eq | efeito | visual próprio | `EqControlsDialog.cpp`, `EqCurve.cpp`, `EqSpectrumView.cpp`, `EqParameterWidget.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Flanger | efeito | visual próprio (`artwork.svg`) | `FlangerControlsDialog.cpp`, `artwork.svg` | plugin existe (lm-plugins-effects): painel a fazer |
 | FreeBoy | instrumento | visual próprio | `FreeBoy.cpp`, `artwork.png` | falta o plugin |
 | FrequencyShifter | efeito | visual próprio | `FrequencyShifterControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | GigPlayer | instrumento | visual próprio | `GigPlayer.cpp`, `artwork.png` | falta o plugin |
-| GranularPitchShifter | efeito | visual próprio | `GranularPitchShifterControlDialog.cpp`, `artwork.png` | falta o plugin |
+| GranularPitchShifter | efeito | visual próprio | `GranularPitchShifterControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Guitarix | efeito | visual próprio (97 unidades em rack) | `GuitarixControlDialog.cpp`, `GuitarixLayout.cpp`, `GuitarixWidgets.cpp`, `GuitarixUnits.cpp`, `gx/rcstyles/*.png` | falta o plugin |
-| Kicker | instrumento | visual próprio | `Kicker.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
-| LOMM | efeito | visual próprio | `LOMMControlDialog.cpp`, `artwork.png` | falta o plugin |
+| Kicker | instrumento | visual próprio | `Kicker.cpp`, `artwork.png` | **painel feito** (`panels/kicker.rs`, teste `kicker`; o knob de duração sem a sincronia de andamento, que o plugin novo não tem) |
+| LOMM | efeito | visual próprio | `LOMMControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | LadspaEffect | efeito (hospedeiro) | terceiros fora do processo (P-03) | `LadspaControlDialog.cpp` | fora (terceiros) |
-| Lb302 | instrumento | visual próprio | `Lb302.cpp`, `artwork.png` | falta o plugin |
+| Lb302 | instrumento | visual próprio | `Lb302.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
 | Lv2Effect | efeito (hospedeiro) | terceiros fora do processo | `Lv2FxControlDialog.cpp` | fora (terceiros) |
 | Lv2Instrument | instrumento (hospedeiro) | terceiros fora do processo | `Lv2Instrument.cpp` | fora (terceiros) |
 | MidiExport | ferramenta (filtro de exportação) | sem janela (filtro de arquivo) | `MidiExport.cpp` | genérico (sem painel) |
@@ -5029,15 +5029,15 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | MultitapEcho | efeito | visual próprio | `MultitapEchoControlDialog.cpp`, `artwork.png`, `graph_bg.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Nes | instrumento | visual próprio | `Nes.cpp`, `artwork.png` | falta o plugin |
 | OpulenZ | instrumento | visual próprio | `OpulenZ.cpp`, `artwork.png` | falta o plugin |
-| Organic | instrumento | visual próprio | `Organic.cpp`, `artwork.png` | falta o plugin |
+| Organic | instrumento | visual próprio | `Organic.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
 | Oscilloscope | efeito (visualizador) | visual próprio (visor desenhado) | `OscilloscopeControlDialog.cpp`, `OscilloscopeGraph.cpp` | falta o plugin |
 | Patman | instrumento | visual próprio | `Patman.cpp`, `artwork.png` | falta o plugin |
 | PeakControllerEffect | efeito (gera controlador) | visual próprio (`artwork.svg`) | `PeakControllerEffectControlDialog.cpp`, `artwork.svg` | falta o plugin |
 | ReverbSC | efeito | visual próprio (`artwork.svg`) | `ReverbSCControlDialog.cpp`, `artwork.svg` | plugin existe (lm-plugins-effects): painel a fazer |
 | Sf2Player | instrumento | visual próprio | `Sf2Player.cpp`, `artwork.png` | falta o plugin |
 | Sfxr | instrumento | visual próprio | `Sfxr.cpp`, `artwork.png` | falta o plugin |
-| Sid | instrumento | visual próprio | `SidInstrument.cpp`, `artwork.png` | falta o plugin |
-| SlewDistortion | efeito | visual próprio | `SlewDistortionControlDialog.cpp`, `artwork.png` | falta o plugin |
+| Sid | instrumento | visual próprio | `SidInstrument.cpp`, `artwork.png` | plugin existe (lm-plugins-sid): painel a fazer |
+| SlewDistortion | efeito | visual próprio | `SlewDistortionControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | SlicerT | instrumento | visual próprio (janela redimensionável) | `SlicerTView.cpp`, `SlicerTWaveform.cpp`, `toolbox.png` | falta o plugin |
 | SpectrumAnalyzer | efeito (visualizador) | visual próprio (espectro e cascata desenhados) | `SaControlsDialog.cpp`, `SaSpectrumView.cpp`, `SaWaterfallView.cpp`, ícones `.svg` | falta o plugin |
 | StereoEnhancer | efeito | genérico / botões soltos | `StereoEnhancerControlDialog.cpp` | plugin existe (lm-plugins-effects); genérico (sem painel) |

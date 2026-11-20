@@ -21,5 +21,6 @@ image = { workspace = true, features = ["png"] }
 lm-port-fake.workspace = true
 lm-plugin.workspace = true
 lm-plugins-tripleoscillator.workspace = true
+lm-plugins-instruments.workspace = true
 lm-plugins-effects.workspace = true
 gpui = { workspace = true, features = ["test-support"] }

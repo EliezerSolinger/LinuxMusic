@@ -3578,6 +3578,7 @@ dependencies = [
  "image",
  "lm-plugin",
  "lm-plugins-effects",
+ "lm-plugins-instruments",
  "lm-plugins-tripleoscillator",
  "lm-port",
  "lm-port-fake",

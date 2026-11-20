@@ -162,6 +162,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                     unit,
                     volume,
                     label: None,
+                    log: false,
                 }),
                 name: Text::n(name, n),
                 tip: Text::EMPTY,

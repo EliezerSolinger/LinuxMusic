@@ -660,14 +660,16 @@ modos e a chave ANALOG / DIGITAL. Só muda o que segue:
     `ParamSpec` não tem passo; a escala "logarítmica" é a curva de potência `e` do legado (`linearToLogScale`).
     Shift no clique carrega o valor (F-CTL-006); por isso o Shift lento vale quando apertado durante o arrasto, como
     no legado.
-  - **O alvo de cada controle é o mesmo de um mapa MIDI** (`map_target`: `{kind: param, node, param}` ou
-    `{kind: field, node, path: [state, <campo>]}`, o esquema `midi.target` do `lm-doc`). Escolhas (forma de onda,
+  - **O alvo de cada controle é o mesmo de um mapa MIDI** (`map_target`: `MapTarget::Param { node, key }` ou
+    `MapTarget::Field { node, path: [state, <campo>] }`). Escolhas (forma de onda,
     modulação) são campos `Choice`, mapeáveis por `MapTarget::Field`; parâmetros são mapeáveis e automatizáveis.
   - **Menu de todo controle:** restaurar, copiar e colar o valor (uma área de cópia para todos os painéis, como o
-    legado), "Aprender MIDI" (a ação `midi.learn` com `{target}`; a sessão ainda não a registra: combinar com quem
-    fizer a I-21.2 na sessão), "Tirar o mapa MIDI" (remove os `midiMap` do projeto que apontam para o controle),
-    criar ou tirar a pista de automação (no dono do plugin: faixa, canal ou master) e linear/logarítmico (P-06, por
-    enquanto só na view: falta o documento da interface na porta).
+    legado), "Aprender MIDI" e "Tirar o mapa MIDI" pela porta (`CorePort::midi_learn` e `unmap`, no escopo do
+    projeto), criar ou tirar a pista de automação (no dono do plugin: faixa, canal ou master) e linear/logarítmico
+    (P-06, por enquanto só na view: falta o documento da interface na porta).
+  - **O "logarítmico" de cada knob é o do modelo do legado** (`KnobSpec::log`, de `setScaleLogarithmic`), não o
+    `Scale::Log` do esquema, que é só a apresentação do editor genérico: o Kicker tem as frequências em `Log` no
+    esquema, mas os knobs do legado eram lineares no curso.
   - **Ligar dois controles com Ctrl+arrasto (P-04) não entra ainda:** o controle compartilhado não existe no núcleo.
   - **O arquivo da onda do usuário (TripleOscillator) é importado pela porta** (`CorePort::import`) e o campo e a
     escolha mudam num passo. No cliente a resposta chega depois: o host entrega por `PortHost::take_imported`, o

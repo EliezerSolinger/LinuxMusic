@@ -88,6 +88,9 @@ pub struct KnobSpec {
     pub volume: bool,
     /// The label under the pixmap (`setLabel`), drawn at `SMALL_FONT_SIZE`
     pub label: Option<Text>,
+    /// The legacy model's `setScaleLogarithmic(true)` (the knob's travel; the schema's `Scale::Log` is only how the
+    /// generic editor shows it)
+    pub log: bool,
 }
 
 /// An LED check box (`LedCheckBox`), with its text to the right
@@ -195,5 +198,142 @@ impl PanelSpec {
     /// The controls of one target (a group's buttons share one)
     pub fn controls_of(&self, t: Target) -> impl Iterator<Item = (usize, &Control)> {
         self.controls.iter().enumerate().filter(move |(_, c)| c.target() == t)
+    }
+}
+
+// --- builders, so a panel reads like the legacy view's constructor
+
+/// A knob on `param` at `x`, `y`: `name` the model's name, `hint` and `unit` its `setHintText`
+#[allow(clippy::too_many_arguments)]
+pub fn knob(
+    param: &'static str,
+    x: f32,
+    y: f32,
+    style: KnobStyle,
+    step: f64,
+    name: &'static str,
+    hint: &'static str,
+    unit: &'static str,
+) -> Control {
+    Control {
+        id: param,
+        x,
+        y,
+        kind: Kind::Knob(KnobSpec {
+            style,
+            param,
+            step,
+            center: None,
+            hint: Text::new(hint),
+            unit,
+            volume: false,
+            label: None,
+            log: false,
+        }),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+    }
+}
+
+/// An LED check box at `x`, `y`
+pub fn led(
+    bind: Bind,
+    id: &'static str,
+    x: f32,
+    y: f32,
+    color: LedColor,
+    text: &'static str,
+    name: &'static str,
+) -> Control {
+    Control {
+        id,
+        x,
+        y,
+        kind: Kind::Led(LedSpec { color, text: Text::new(text), bind }),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+    }
+}
+
+/// A pixmap button at `x`, `y`
+pub fn button(
+    bind: Bind,
+    id: &'static str,
+    x: f32,
+    y: f32,
+    active: &'static Asset,
+    inactive: &'static Asset,
+    name: &'static str,
+) -> Control {
+    Control {
+        id,
+        x,
+        y,
+        kind: Kind::Button(ButtonSpec { active, inactive, bind, file_field: None }),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+    }
+}
+
+impl Control {
+    fn knob_mut(&mut self) -> Option<&mut KnobSpec> {
+        match &mut self.kind {
+            Kind::Knob(k) => Some(k),
+            _ => None,
+        }
+    }
+
+    /// `setLabel`
+    #[must_use]
+    pub fn label(mut self, l: &'static str) -> Self {
+        if let Some(k) = self.knob_mut() {
+            k.label = Some(Text::new(l));
+        }
+        self
+    }
+
+    /// A `VolumeKnob`
+    #[must_use]
+    pub fn volume(mut self) -> Self {
+        if let Some(k) = self.knob_mut() {
+            k.volume = true;
+        }
+        self
+    }
+
+    /// `setCenterValue`
+    #[must_use]
+    pub fn center(mut self, v: f64) -> Self {
+        if let Some(k) = self.knob_mut() {
+            k.center = Some(v);
+        }
+        self
+    }
+
+    /// `setScaleLogarithmic(true)` on the legacy model
+    #[must_use]
+    pub fn log(mut self) -> Self {
+        if let Some(k) = self.knob_mut() {
+            k.log = true;
+        }
+        self
+    }
+
+    /// `setToolTip`
+    #[must_use]
+    pub fn tip(mut self, t: &'static str) -> Self {
+        self.tip = Text::new(t);
+        self
+    }
+
+    /// The number of the `%1` in the name, hint and tooltip
+    #[must_use]
+    pub fn n(mut self, n: u32) -> Self {
+        self.name.arg = Some(n);
+        self.tip.arg = Some(n);
+        if let Some(k) = self.knob_mut() {
+            k.hint.arg = Some(n);
+        }
+        self
     }
 }

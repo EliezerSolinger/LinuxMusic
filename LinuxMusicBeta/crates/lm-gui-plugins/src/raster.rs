@@ -336,7 +336,11 @@ impl Canvas {
         for (i, p) in self.px.iter().enumerate() {
             let a = p[3].clamp(0.0, 1.0);
             let un = |v: f32| if a > 0.0 { ((v / a).clamp(0.0, 1.0) * 255.0 + 0.5) as u8 } else { 0 };
-            buf.put_pixel((i % self.width) as u32, (i / self.width) as u32, image::Rgba([un(p[0]), un(p[1]), un(p[2]), (a * 255.0 + 0.5) as u8]));
+            buf.put_pixel(
+                (i % self.width) as u32,
+                (i / self.width) as u32,
+                image::Rgba([un(p[0]), un(p[1]), un(p[2]), (a * 255.0 + 0.5) as u8]),
+            );
         }
         let _ = buf.save_with_format(path, image::ImageFormat::Png);
     }
