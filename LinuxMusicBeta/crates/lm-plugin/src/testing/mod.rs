@@ -69,33 +69,35 @@ macro_rules! contract_tests {
 
         /// The plugin under test
         static LM_PLUGIN_UNDER_TEST: &$crate::Descriptor = &$d;
+        /// What its tests give the suite
+        const LM_PLUGIN_SETUP: $crate::testing::Setup = $setup;
 
         mod contract {
             use $crate::testing as t;
 
             #[test]
             fn defaults_round_trip() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::defaults_round_trip(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn random_states_round_trip() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::random_states_round_trip(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn no_hidden_state() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::no_hidden_state(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn adopt_while_playing() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::adopt_while_playing(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn fixtures_upgrade() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::fixtures_upgrade(
                     super::LM_PLUGIN_UNDER_TEST,
                     &[env!("CARGO_MANIFEST_DIR"), $data, "/fixtures"].concat(),
@@ -103,42 +105,42 @@ macro_rules! contract_tests {
             }
             #[test]
             fn sample_rates() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::sample_rates(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn param_sweep_without_allocation() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::param_sweep(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn every_choice_without_allocation() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::every_choice(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn short_notes() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::short_notes(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn tuning_after_thirty_minutes() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::long_tuning(super::LM_PLUGIN_UNDER_TEST, 1800);
             }
             #[test]
             fn block_sizes() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::block_sizes(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn velocity() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::velocity(super::LM_PLUGIN_UNDER_TEST);
             }
             #[test]
             fn frozen_defaults() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::frozen_defaults(
                     super::LM_PLUGIN_UNDER_TEST,
                     &[env!("CARGO_MANIFEST_DIR"), $data, "/defaults.json"].concat(),
@@ -146,7 +148,7 @@ macro_rules! contract_tests {
             }
             #[test]
             fn ports_follow_the_state() {
-                t::use_setup($setup);
+                t::use_setup(super::LM_PLUGIN_SETUP);
                 t::ports_follow_the_state(super::LM_PLUGIN_UNDER_TEST);
             }
         }
