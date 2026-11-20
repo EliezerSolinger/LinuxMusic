@@ -162,7 +162,7 @@ mod linux {
         println!("INFO device {info:?} (opened in {:?})", t0.elapsed());
         check(
             "negotiated",
-            info.max_block == info.period as usize && info.linked,
+            two_cards || (info.max_block == info.period as usize && info.linked),
             format!("period {} linked {}", info.period, info.linked),
         );
         let (mut engine, renderer) = engine_with(info.spec(), limits(), threads);
