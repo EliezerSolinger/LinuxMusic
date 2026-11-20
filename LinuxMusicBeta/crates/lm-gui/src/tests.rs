@@ -1089,6 +1089,160 @@ mod notes_editors {
         let grid = BEAT / 4;
         assert!(clip(&pr, cx).notes.values().all(|x| x.start % grid == 0), "every start on the 1/16 grid");
     }
+
+    // --- the automation editor ---------------------------------------------------------------------------------
+
+    use crate::screens::automation::{AutomationEditor, Lane};
+
+    fn auto(cx: &mut TestAppContext) -> (Entity<AutomationEditor>, Entity<Core>, &mut VisualTestContext) {
+        open_screen(cx, Screen::Automation, |root| Lane::all(root).first().map(|l| l.id), AutomationEditor::new)
+    }
+
+    fn lane(ae: &Entity<AutomationEditor>, cx: &mut VisualTestContext) -> Lane {
+        ae.read_with(cx, |ae, cx| ae.lane(cx).expect("a lane is open"))
+    }
+
+    #[gpui::test]
+    fn automation_click_adds_a_point_and_drag_moves_it(cx: &mut TestAppContext) {
+        let (ae, core, cx) = auto(cx);
+        let before = lane(&ae, cx).points.len();
+        let b = bounds(cx, "ae-curve");
+        let x = ae.read_with(cx, |ae, _| ae.tick_to_x((BEAT * 6) as f64 + 10.0));
+        let p = point(b.origin.x + px(x), b.origin.y + b.size.height * 0.5);
+        drag_at(cx, p, 0.0, -15.0, Modifiers::none());
+        let l = lane(&ae, cx);
+        assert_eq!(l.points.len(), before + 1, "a click adds a point");
+        assert!(l.points.iter().any(|q| q.tick == BEAT * 6), "on the grid");
+        settle(cx);
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        assert_eq!(lane(&ae, cx).points.len(), before, "adding, then moving: two steps");
+    }
+
+    #[gpui::test]
+    fn automation_right_drag_erases_in_one_step(cx: &mut TestAppContext) {
+        let (ae, core, cx) = auto(cx);
+        let l = lane(&ae, cx);
+        let before = l.points.len();
+        let b = bounds(cx, "ae-curve");
+        let p0 = l.points[1];
+        let x = ae.read_with(cx, |ae, _| ae.tick_to_x(p0.tick as f64));
+        // the point's height on screen: found by trying down its column
+        let mut hit = None;
+        for k in 0..200 {
+            let py = b.origin.y + px(k as f32 * b.size.height.as_f32() / 200.0);
+            let at = point(b.origin.x + px(x), py);
+            cx.simulate_mouse_down(at, MouseButton::Right, Modifiers::none());
+            cx.simulate_mouse_up(at, MouseButton::Right, Modifiers::none());
+            cx.run_until_parked();
+            if lane(&ae, cx).points.len() < before {
+                hit = Some(k);
+                break;
+            }
+        }
+        assert!(hit.is_some(), "a right click on a point erases it");
+        settle(cx);
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        assert_eq!(lane(&ae, cx).points.len(), before, "one step");
+    }
+
+    #[gpui::test]
+    fn automation_flip_twice_and_mode_and_keys(cx: &mut TestAppContext) {
+        let (ae, _core, cx) = auto(cx);
+        let before: Vec<(i64, f64)> = lane(&ae, cx).points.iter().map(|p| (p.tick, p.value)).collect();
+        click(cx, "ae-flip-x");
+        assert_ne!(lane(&ae, cx).points.iter().map(|p| (p.tick, p.value)).collect::<Vec<_>>(), before);
+        click(cx, "ae-flip-x");
+        let after: Vec<(i64, f64)> = lane(&ae, cx).points.iter().map(|p| (p.tick, p.value)).collect();
+        assert_eq!(after.len(), before.len());
+        for (a, b) in after.iter().zip(before.iter()) {
+            assert_eq!(a.0, b.0);
+            assert!((a.1 - b.1).abs() < 1e-9, "flipping twice is the identity");
+        }
+        // the lane's mode (I-21.5)
+        click(cx, "ae-lane-mode");
+        click(cx, "ae-menu-2");
+        assert_eq!(lane(&ae, cx).mode, "touch");
+        // keys: Shift+E erase mode, Ctrl+A and Delete
+        let b = bounds(cx, "ae-curve");
+        button_at(cx, point(b.origin.x + px(2.), b.origin.y + px(2.)), MouseButton::Right, 1);
+        keys(cx, "shift-e");
+        assert_eq!(ae.read_with(cx, |ae, _| ae.tool), crate::screens::automation::Tool::Erase);
+        keys(cx, "secondary-a delete");
+        assert_eq!(lane(&ae, cx).points.len(), 0, "Ctrl+A, Delete");
+    }
+
+    // --- the step editor ---------------------------------------------------------------------------------------
+
+    use crate::screens::steps::StepEditor;
+
+    fn steps(cx: &mut TestAppContext) -> (Entity<StepEditor>, Entity<Core>, &mut VisualTestContext) {
+        open_screen(cx, Screen::Steps, |_| None, StepEditor::new)
+    }
+
+    fn item_clip(core: &Entity<Core>, id: NodeId, cx: &mut VisualTestContext) -> Clip {
+        core.read_with(cx, |core, _| Clip::read(core.port().root(), id).expect("the item"))
+    }
+
+    /// Where a row's step is on screen
+    fn step_at(st: &Entity<StepEditor>, id: NodeId, row: usize, s: i64, cx: &mut VisualTestContext) -> Point<Pixels> {
+        let b = bounds(cx, &format!("st-cells-{}", id.number));
+        st.read_with(cx, |st, _| {
+            b.origin + point(px(s as f32 * st.step_w - st.scroll_x + st.step_w / 2.0), px(row as f32 * 20.0 + 10.0))
+        })
+    }
+
+    /// A step of the first row that is dark, with the next two dark too
+    fn dark_steps(core: &Entity<Core>, id: NodeId, cx: &mut VisualTestContext) -> (u8, i64) {
+        let c = item_clip(core, id, cx);
+        let key = c.notes.values().map(|x| x.key).min().expect("a note");
+        let lit =
+            |s: i64| c.notes.values().any(|x| x.key == key && x.start >= s * c.step && x.start < (s + 1) * c.step);
+        let s =
+            (0..StepEditor::steps(&c) - 3).find(|s| !lit(*s) && !lit(s + 1) && !lit(s + 2)).expect("three dark steps");
+        (key, s)
+    }
+
+    #[gpui::test]
+    fn steps_click_toggles_and_drag_paints_in_one_step(cx: &mut TestAppContext) {
+        let (st, core, cx) = steps(cx);
+        let id = st.read_with(cx, |st, _| st.items[0]);
+        let before = item_clip(&core, id, cx).notes.len();
+        let (_, s) = dark_steps(&core, id, cx);
+        let p = step_at(&st, id, 0, s, cx);
+        cx.simulate_click(p, Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(item_clip(&core, id, cx).notes.len(), before + 1, "a click lights a step");
+        cx.simulate_click(p, Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(item_clip(&core, id, cx).notes.len(), before, "and darkens it");
+        let (a, z) = (step_at(&st, id, 0, s, cx), step_at(&st, id, 0, s + 2, cx));
+        drag_at(cx, a, (z.x - a.x).as_f32(), 0.0, Modifiers::none());
+        assert_eq!(item_clip(&core, id, cx).notes.len(), before + 3, "three steps painted");
+        settle(cx);
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        assert_eq!(item_clip(&core, id, cx).notes.len(), before, "the painting is one undo step");
+    }
+
+    #[gpui::test]
+    fn steps_add_remove_and_clone(cx: &mut TestAppContext) {
+        let (st, core, cx) = steps(cx);
+        let id = st.read_with(cx, |st, _| st.items[0]);
+        let c0 = item_clip(&core, id, cx);
+        let n0 = StepEditor::steps(&c0);
+        let per_bar = crate::screens::piano_roll::music::BAR / c0.step;
+        click(cx, "st-add-steps");
+        assert_eq!(StepEditor::steps(&item_clip(&core, id, cx)), n0 + per_bar, "a bar more");
+        click(cx, "st-remove-steps");
+        assert_eq!(StepEditor::steps(&item_clip(&core, id, cx)), n0, "a bar less");
+        click(cx, "st-clone-steps");
+        let c1 = item_clip(&core, id, cx);
+        assert_eq!(StepEditor::steps(&c1), n0 * 2, "cloned");
+        let end = c1.loop_len.unwrap_or(c1.length) / 2;
+        let first = c1.notes.values().filter(|x| x.start < end).count();
+        let second = c1.notes.values().filter(|x| x.start >= end && x.start < 2 * end).count();
+        assert_eq!(first, second, "the second half is a copy of the first");
+    }
 }
 
 // --- the instrument window, the effect window and the browser (agent C) -----------------------------------------

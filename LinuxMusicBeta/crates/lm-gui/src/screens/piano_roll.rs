@@ -2431,7 +2431,6 @@ pub mod music {
     /// A MIDI item as the editors see it, by its id in the tree
     #[derive(Clone, Debug)]
     pub struct Clip {
-        #[expect(dead_code, reason = "the step editor reads it, next")]
         pub id: NodeId,
         pub track_name: String,
         pub name: String,
@@ -2442,9 +2441,7 @@ pub mod music {
         pub loop_len: Option<i64>,
         pub notes: Arc<NoteMap>,
         /// the step editor's step (`step`, a 16th when absent) and the swing
-        #[expect(dead_code, reason = "the step editor reads it, next")]
         pub step: i64,
-        #[expect(dead_code, reason = "the step editor reads it, next")]
         pub swing: f64,
     }
 
@@ -2788,7 +2785,6 @@ pub mod kit {
             .child(div().text_size(px(8.)).text_color(c(THEME.text2)).child("▾"))
     }
 
-    #[expect(dead_code, reason = "the automation and step editors use it, next")]
     pub fn label(text: impl Into<SharedString>) -> Div {
         div().flex_none().text_size(px(10.5)).text_color(c(THEME.text3)).child(text.into())
     }

@@ -692,6 +692,33 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
 - **B-PR-9 Teclas:** as do legado, pelo registro de ações no contexto `PianoRoll`; Esc também desmarca (o legado só
   tinha Ctrl+Shift+A), porque Esc já fecha e cancela no resto do programa.
 
+- **B-AE-1 Tangentes viram a `curve` do ponto:** o modo "editar tangentes" (Shift+T) saiu; no lugar, cada trecho
+  "curva" tem uma alça no meio que se arrasta para dobrá-lo (−1 a 1). A progressão (discreta, linear, cúbica com
+  tensão) passa a valer por ponto (o trecho que termina nele), não pelo clipe todo: os botões dão a forma dos pontos
+  novos e mudam a dos selecionados.
+- **B-AE-2 Valores de saída (Shift+C)** continuam, como o campo `out` do ponto (P-27); o botão direito volta a saída à
+  entrada, como no legado.
+- **B-AE-3 Uma lane por parâmetro, de dono a dono:** não há clipe de automação. O editor abre a lane pedida (ou a
+  primeira); o combo "Lane" escolhe outra. Ao lado, o modo da lane (Desligado, Ler, Toque, Trava, Escrever) e
+  "Rearmar" (I-21.5). O indicador "a mão venceu" entra quando o `lm-port` publicar `hand_won`.
+- **B-AE-4 Acréscimos do I-21.5:** lápis livre (Shift+P, afinado ao soltar), seleção por retângulo (Shift+S),
+  recortar, copiar e colar, escalar e deslocar valores e afinar a curva (menu "Ferramentas"; ações do núcleo
+  `automation.scale` e `automation.thin`, com a conta feita na interface quando o núcleo não as tem).
+- **B-AE-5 Cada edição grava a lista `points` inteira** (os pontos não têm id); arrastar é um gesto, e acrescentar um
+  ponto é um passo e arrastá-lo outro.
+- **B-PE-1 Sem padrões:** o legado tinha uma lista de padrões e uma faixa por padrão; no modelo novo um "padrão" é um
+  item MIDI que se repete, então a barra escolhe os itens mostrados (os de bateria e os que se repetem, de início).
+  Acrescentar, tirar e clonar passos valem para todos os itens mostrados, como valiam para o padrão inteiro.
+- **B-PE-2 Bateria é um instrumento só:** no legado cada peça era uma faixa; aqui o item de um kit (AVL Drums,
+  DrumMachines) mostra uma linha por peça que toca (ou todas, "Todas as peças"), pelos nomes do mapa General MIDI.
+  Um item melódico é uma linha de passos com altura (Alt+arrastar muda a nota; um passo novo toma a nota anterior, ou
+  a nota padrão do legado, 57).
+- **B-PE-3 O tamanho do passo e o swing** são campos do item (`step`, `swing`), escolhidos na barra.
+- **B-PE-4 Sem botões de volume e pan por linha:** no legado a linha era a faixa (com os botões dela); aqui as linhas
+  são peças de um item, e o volume e o pan ficam no cabeçalho da faixa e na mesa.
+- **B-PE-5 "Acrescentar faixa de amostra/automação" ao editor** saiu: amostras em batida são o instrumento de pads
+  (P-23) e a automação mora na lane do parâmetro.
+
 ## Expressões de nota, loop e swing do item MIDI (20/11)
 
 - **A forma do evento** (combinada com o autor das funções de instrumento do `lm-plugin`):
