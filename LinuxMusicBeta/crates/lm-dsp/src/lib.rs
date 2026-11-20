@@ -20,6 +20,7 @@
 //! The instruments' sources and shaping:
 //! - [`basic_filters`]: the general filters (every instrument's filter, the DualFilter's);
 //! - [`kicker`]: the Kicker's swept sine;
+//! - [`bit_invader`]: the BitInvader's voice, and the release fade of the legacy instruments;
 //! - [`drawn_wave`]: a drawn wave's band-limited tables (the BitInvader's, the Watsyn's);
 //! - [`envelope`], [`sound_shaping`]: every instrument's envelopes and LFOs, and its filter;
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
@@ -45,6 +46,7 @@
 #![allow(clippy::needless_range_loop, clippy::excessive_precision)]
 
 pub mod basic_filters;
+pub mod bit_invader;
 pub mod channel_strip;
 pub mod compressor;
 pub mod delay;
