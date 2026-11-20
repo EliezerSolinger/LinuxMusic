@@ -10,6 +10,7 @@ mod disk;
 mod dummy;
 mod edge;
 mod midi;
+mod mididev;
 pub mod peaks;
 mod reader;
 mod record;
@@ -31,6 +32,10 @@ pub use edge::{Edge, EdgeStats, MAX_CHANNELS};
 #[cfg(target_os = "linux")]
 pub use midi::list_midi_ports;
 pub use midi::{MidiInput, MidiPortInfo, MidiSink, MidiSource, MidiStats, Parsed, RawParser, midi_ring};
+pub use mididev::{
+    ACTIVITY_RING, CLIENT_NAME, INPUT_RING, MidiActivity, MidiBackendKind, MidiDeviceEvent, OWN_INPUT, OWN_OUTPUT,
+    PortId, PortInfo, PortRole, PortSettings, SYSEX_IN_MAX, SYSEX_OUT_MAX, SysexIn, SysexOut, message_len,
+};
 pub use peaks::{Peaks, PeaksBuilder};
 pub use reader::{DiskReader, StreamEvent};
 pub use record::{
