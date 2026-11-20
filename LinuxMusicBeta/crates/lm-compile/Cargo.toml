@@ -17,5 +17,6 @@ lm-doc.workspace = true
 lm-time.workspace = true
 lm-render.workspace = true
 lm-plugin.workspace = true
+blake3.workspace = true
 # The MIDI map compiled into the install (I-21.2), with its document form
 lm-midimap = { workspace = true, features = ["doc"] }

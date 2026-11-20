@@ -261,6 +261,9 @@ pub struct Compiled {
     /// The streams made by this compilation (P-32): hand each feeder to the disk reader with its resource's file.
     /// Streams of unchanged items are kept from compilation to compilation
     pub streams: Vec<crate::items::StreamRegistration>,
+    /// The renderings of the lanes that follow the tempo (F-REC-090) that are not loaded: each lane plays its
+    /// original until its rendering is (the session renders or loads them)
+    pub stretches: Vec<crate::stretch::StretchPlan>,
     /// How many event lists and curves this compilation made new (V8)
     pub made: Made,
     pub elapsed: Duration,
@@ -302,6 +305,10 @@ pub struct NodeInfo {
 impl Compiled {
     /// Nothing waits: every processor is built and every resource loaded (an export starts only then, T8)
     pub fn complete(&self) -> bool {
-        self.waiting.is_empty() && self.replacing.is_empty() && self.waiting_items.is_empty() && self.builds.is_empty()
+        self.waiting.is_empty()
+            && self.replacing.is_empty()
+            && self.waiting_items.is_empty()
+            && self.builds.is_empty()
+            && self.stretches.is_empty()
     }
 }

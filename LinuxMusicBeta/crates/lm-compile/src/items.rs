@@ -24,6 +24,7 @@ use lm_time::TempoMap;
 
 use crate::catalog::{ResourceState, Resources};
 use crate::read::{flag, id_of, int, items, real, ref_of, text};
+use crate::stretch::{StretchPlan, lane_play};
 
 /// Resources above this many seconds are streamed from the disk (P-32): the store says so with
 /// [`ResourceState::OnDisk`] instead of decoding them
@@ -37,8 +38,9 @@ pub struct StreamRegistration {
     pub feeder: StreamFeeder,
 }
 
-/// An item's played segments, the resources it waits for, and the streams made for it now
-pub(crate) type AudioPlan = (Arc<[AudioItem]>, Vec<WaitingItem>, Vec<StreamRegistration>);
+/// An item's played segments, the resources it waits for, the streams made for it now, and the renderings its lanes
+/// wait for (F-REC-090)
+pub(crate) type AudioPlan = (Arc<[AudioItem]>, Vec<WaitingItem>, Vec<StreamRegistration>, Vec<StretchPlan>);
 
 /// A lane's source, as loaded now
 #[derive(Clone, Debug)]
@@ -87,6 +89,7 @@ struct AudioEntry {
     used: u64,
     out: Arc<[AudioItem]>,
     waiting: Vec<WaitingItem>,
+    stretches: Vec<StretchPlan>,
 }
 
 #[derive(Debug)]
@@ -164,31 +167,87 @@ impl Caches {
         resources: &dyn Resources,
         rate: u32,
     ) -> Result<AudioPlan> {
-        // The resources of the lanes, in lane order
+        // The resources of the lanes, in lane order, and the frame of each at the item's start
         let mut data = Vec::new();
+        let mut offsets = Vec::new();
         let mut waiting = Vec::new();
+        let mut stretches = Vec::new();
+        let musical = text(item, "timebase", "musical") != "audio";
+        let playable = |state: ResourceState, r: &lm_state::Resource| match state {
+            ResourceState::Ready(d) if d.rate() == rate => Some(LaneData::Memory(d)),
+            ResourceState::OnDisk { rate: r_rate, channels, frames }
+                if r_rate == rate && (1..=64).contains(&channels) =>
+            {
+                Some(LaneData::Disk { resource: r.clone(), rate, channels, frames })
+            }
+            _ => None,
+        };
         for lane in items(item, "lanes") {
+            let source_offset = int(lane, "sourceOffset", 0);
             let Some(r) = lane.get("source").and_then(Value::as_resource) else {
                 data.push(LaneData::None);
+                offsets.push(source_offset);
                 continue;
             };
+            let state = resources.audio(r);
             let mut wait = |missing: bool| waiting.push(WaitingItem { item: id, resource: r.clone(), missing });
-            data.push(match resources.audio(r) {
-                ResourceState::Ready(d) if d.rate() == rate => LaneData::Memory(d),
-                ResourceState::OnDisk { rate: r_rate, channels, frames }
-                    if r_rate == rate && (1..=64).contains(&channels) =>
-                {
-                    LaneData::Disk { resource: r.clone(), rate, channels, frames }
-                }
+            let original = match &state {
                 ResourceState::Loading => {
                     wait(false);
-                    LaneData::None
+                    None
                 }
-                _ => {
-                    wait(true);
-                    LaneData::None
+                s => {
+                    let d = playable(s.clone(), r);
+                    if d.is_none() {
+                        wait(true);
+                    }
+                    d
                 }
-            });
+            };
+            let Some(original) = original else {
+                data.push(LaneData::None);
+                offsets.push(source_offset);
+                continue;
+            };
+            // A take that follows the tempo (F-REC-090): its rendering when it is loaded, the original until then
+            let timing = lane_timing(lane);
+            let play = (musical && !timing.is_empty())
+                .then(|| {
+                    let frames = match &original {
+                        LaneData::Memory(d) => d.frames() as u64,
+                        LaneData::Disk { frames, .. } => *frames,
+                        LaneData::None => 0,
+                    };
+                    let (start, length) = (int(item, "start", 0), int(item, "length", 1));
+                    lane_play(start, length, r, source_offset, frames, &timing, tempo)
+                })
+                .flatten();
+            match play {
+                Some(p) => match p.render {
+                    Some(plan) => {
+                        let resource = plan.resource();
+                        match playable(resources.audio(&resource), &resource) {
+                            Some(rendered) => {
+                                data.push(rendered);
+                                offsets.push(0);
+                            }
+                            None => {
+                                stretches.push(plan);
+                                data.push(original);
+                                offsets.push(p.offset);
+                            }
+                        }
+                    }
+                    None => {
+                        data.push(original);
+                        offsets.push(p.offset);
+                    }
+                },
+                None => {
+                    data.push(original);
+                    offsets.push(source_offset);
+                }
+            }
         }
         if let Some(e) = self.audio.get_mut(&id)
             && e.item.same_node(item)
@@ -197,9 +256,9 @@ impl Caches {
             && e.data.iter().zip(&data).all(|(a, b)| a.same(b))
         {
             e.used = self.pass;
-            return Ok((e.out.clone(), e.waiting.clone(), Vec::new()));
+            return Ok((e.out.clone(), e.waiting.clone(), Vec::new(), e.stretches.clone()));
         }
-        let (segments, streams) = audio_segments(item, tempo, &data)?;
+        let (segments, streams) = audio_segments(item, tempo, &data, &offsets)?;
         let out: Arc<[AudioItem]> = segments.into();
         self.made.audio_items += 1;
         self.audio.insert(
@@ -211,9 +270,10 @@ impl Caches {
                 used: self.pass,
                 out: out.clone(),
                 waiting: waiting.clone(),
+                stretches: stretches.clone(),
             },
         );
-        Ok((out, waiting, streams))
+        Ok((out, waiting, streams, stretches))
     }
 
     /// Whether a streamed item of the last compilation still waits for the disk at its playhead (the export
@@ -380,6 +440,7 @@ fn audio_segments(
     item: &Value,
     tempo: &TempoMap,
     data: &[LaneData],
+    offsets: &[i64],
 ) -> Result<(Vec<AudioItem>, Vec<StreamRegistration>)> {
     let audio_time = text(item, "timebase", "musical") == "audio";
     let start = int(item, "start", 0);
@@ -390,8 +451,7 @@ fn audio_segments(
     };
     let item_start = at(0);
     let item_end = at(length);
-    let lanes: Vec<(Option<NodeId>, i64)> =
-        items(item, "lanes").map(|l| (id_of(l), int(l, "sourceOffset", 0))).collect();
+    let lanes: Vec<(Option<NodeId>, i64)> = items(item, "lanes").zip(offsets).map(|(l, o)| (id_of(l), *o)).collect();
     let lane_index = |id: Option<NodeId>| id.and_then(|id| lanes.iter().position(|(l, _)| *l == Some(id)));
 
     // The segments: (from, to) in timeline samples, the lane, the crossfade into it
@@ -431,7 +491,12 @@ fn audio_segments(
         // The crossfade into the next segment: this one goes on for the next one's fade
         let next_fade = if i + 1 < n && segs[i + 1].0 <= to { i64::from(segs[i + 1].3) } else { 0 };
         let end = (to + next_fade).min(item_end);
-        let begin = from.max(item_start);
+        let mut begin = from.max(item_start);
+        // A source that starts after the item does (a take whose first frame falls inside a tick): silence first
+        let before = lanes[lane].1 + (begin - item_start);
+        if before < 0 {
+            begin -= before;
+        }
         if end <= begin {
             continue;
         }
@@ -490,4 +555,9 @@ pub(crate) fn lane_curve(lane: &Value, tempo: &TempoMap) -> Result<Option<Curve>
     points.sort_by_key(|(t, _, _)| *t); // stable: two points at one tick stay in order (a jump, P-27)
     let (pts, segs): (Vec<CurvePoint>, Vec<Segment>) = points.into_iter().map(|(_, p, s)| (p, s)).unzip();
     Ok(Some(Curve::with_segments(pts, segs)?))
+}
+
+/// A lane's timing points (tick, frame), in their order; empty without any
+fn lane_timing(lane: &Value) -> Vec<(i64, f64)> {
+    items(lane, "timing").filter_map(|p| Some((p.get("tick")?.as_int()?, p.get("frame")?.as_real()?))).collect()
 }

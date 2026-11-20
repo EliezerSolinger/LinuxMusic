@@ -16,6 +16,7 @@ mod reader;
 mod record;
 mod resources;
 mod rt;
+pub mod stretch;
 mod system;
 mod take;
 

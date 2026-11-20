@@ -573,7 +573,28 @@ impl Offline {
             _ => return Err(Error::new("rubberband.out_of_order")),
         }
         if self.input_frames > 0 {
-            self.drain(output);
+            // All the input given: what the library still holds comes out as it is processed (it says -1 once it
+            // has nothing more); an empty final call moves it on when it has nothing ready yet
+            loop {
+                self.drain(output);
+                if self.emitted >= self.output_frames {
+                    break;
+                }
+                // SAFETY: the state is ours; available only reads it
+                let available = unsafe { ffi::rubberband_available(self.handle.ptr()) };
+                if available < 0 {
+                    break;
+                }
+                if available == 0 {
+                    let pointers = self.input_pointers();
+                    // SAFETY: as in `process`, with no frame read
+                    unsafe { ffi::rubberband_process(self.handle.ptr(), pointers.as_ptr(), 0, 1) };
+                    // SAFETY: as above
+                    if unsafe { ffi::rubberband_available(self.handle.ptr()) } == 0 {
+                        break;
+                    }
+                }
+            }
         }
         let missing = self.output_frames - self.emitted;
         output.resize(output.len() + missing * self.channels, 0.0);

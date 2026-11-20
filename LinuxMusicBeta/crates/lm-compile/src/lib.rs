@@ -21,6 +21,7 @@ mod items;
 mod map;
 mod rack;
 mod read;
+pub mod stretch;
 mod thread;
 mod types;
 
