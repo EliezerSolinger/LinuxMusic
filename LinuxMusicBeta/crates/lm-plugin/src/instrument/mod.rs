@@ -31,7 +31,11 @@
 //! one frequency). A base starts at 0 and 0; a note released keeps the values it had.
 
 mod chords;
+mod notes;
 mod schema;
+pub mod stream;
+#[cfg(test)]
+mod stream_tests;
 #[cfg(test)]
 mod tests;
 
@@ -44,8 +48,8 @@ use lm_dsp::basic_filters::{BasicFilter, FilterType};
 use lm_dsp::envelope::{EnvelopeSettings, LfoShape};
 use lm_dsp::sound_shaping::{NotePosition, SoundShaping, SoundShapingSettings};
 use lm_render::{
-    Adopted, Event, EventKind, Expression, NoteId, Policy, ProcessContext, ProcessSpec, Processor, Rng, SampleData,
-    TransportInfo, Voice, VoiceNote, VoicePool,
+    Adopted, Event, EventKind, NoteId, Policy, ProcessContext, ProcessSpec, Processor, Rng, SampleData, TransportInfo,
+    Voice, VoiceNote, VoicePool,
 };
 use lm_state::ParamSpec;
 
@@ -57,6 +61,8 @@ pub use schema::{
 
 use crate::resources::ResourceView;
 use crate::state::StateView;
+use notes::{ArpDirection, ArpMode, ExpressionRamp, NoteCx, NoteSettings, Run, Sounder, VoiceMode};
+pub use stream::{Stream, StreamInstrument, add_note_functions, note_fields, note_params};
 
 /// The pieces of a block fall on this grid of the engine's frame count (the same as lm-render's automation grid)
 pub const GRID: usize = 32;
@@ -130,30 +136,6 @@ pub trait Synth: Clone + Send + 'static {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum VoiceMode {
-    Poly,
-    Mono,
-    Legato,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ArpDirection {
-    Up,
-    Down,
-    UpDown,
-    DownUp,
-    Random,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ArpMode {
-    Free,
-    Sort,
-    Sync,
-}
-
-/// The instrument functions' settings: the parameters' current values and the choices of the build
 #[derive(Clone, Debug)]
 struct Kit {
     params: [f32; p::COUNT],
@@ -188,33 +170,10 @@ impl Kit {
             filter: state.choice("filterType", FilterType::from_key)?,
             chord: table("chord")?,
             arp_chord: table("arpChord")?,
-            arp_direction: state.choice("arpDirection", |s| {
-                Some(match s {
-                    "up" => ArpDirection::Up,
-                    "down" => ArpDirection::Down,
-                    "up-down" => ArpDirection::UpDown,
-                    "down-up" => ArpDirection::DownUp,
-                    "random" => ArpDirection::Random,
-                    _ => return None,
-                })
-            })?,
-            arp_mode: state.choice("arpMode", |s| {
-                Some(match s {
-                    "free" => ArpMode::Free,
-                    "sort" => ArpMode::Sort,
-                    "sync" => ArpMode::Sync,
-                    _ => return None,
-                })
-            })?,
+            arp_direction: state.choice("arpDirection", ArpDirection::from_key)?,
+            arp_mode: state.choice("arpMode", ArpMode::from_key)?,
             arp_sync: sync("arpSync")?,
-            mode: state.choice("voiceMode", |s| {
-                Some(match s {
-                    "poly" => VoiceMode::Poly,
-                    "mono" => VoiceMode::Mono,
-                    "legato" => VoiceMode::Legato,
-                    _ => return None,
-                })
-            })?,
+            mode: state.choice("voiceMode", VoiceMode::from_key)?,
         })
     }
 
@@ -252,6 +211,30 @@ impl Kit {
             volume: self.envelope(0, bpm),
             cutoff_envelope: self.envelope(1, bpm),
             resonance_envelope: self.envelope(2, bpm),
+        }
+    }
+
+    /// What the notes read now
+    fn notes(&self) -> NoteSettings {
+        let q = &self.params;
+        NoteSettings {
+            chord_on: q[p::CHORD_ON],
+            chord_range: q[p::CHORD_RANGE],
+            chord: self.chord,
+            arp_on: q[p::ARP_ON],
+            arp_chord: self.arp_chord,
+            arp_range: q[p::ARP_RANGE],
+            arp_repeats: q[p::ARP_REPEATS],
+            arp_cycle: q[p::ARP_CYCLE],
+            arp_skip: q[p::ARP_SKIP],
+            arp_miss: q[p::ARP_MISS],
+            arp_time: q[p::ARP_TIME],
+            arp_gate: q[p::ARP_GATE],
+            arp_direction: self.arp_direction,
+            arp_mode: self.arp_mode,
+            arp_sync: self.arp_sync,
+            glide: q[p::GLIDE],
+            mode: self.mode,
         }
     }
 
@@ -397,114 +380,46 @@ impl<V: Send> Voice for KitVoice<V> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Base {
-    id: NoteId,
-    channel: u8,
-    key: u8,
-    velocity: f32,
-    /// The instrument frame it started at
-    start: u64,
-    /// The next arpeggio step (free mode)
-    step: u64,
-    /// Let go while the sustain pedal was down: released when the pedal goes up
-    sustained: bool,
-    /// Its note expressions
-    tuning: ExpressionRamp,
-    pan: ExpressionRamp,
-}
+/// The voice pool as the notes' [`Sounder`]
+struct Pool<'a, V: Send>(&'a mut VoicePool<KitVoice<V>>);
 
-/// A note expression's value, going linearly to a target
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct ExpressionRamp {
-    value: f32,
-    target: f32,
-    /// Frames left to the target
-    left: u32,
-}
+impl<V: Send> Sounder for Pool<'_, V> {
+    fn on(&mut self, note: VoiceNote) {
+        self.0.note_on(note);
+    }
 
-impl ExpressionRamp {
-    /// To `target` over `frames` from where it is now (at once with 0)
-    fn go(&mut self, target: f32, frames: u32) {
-        self.target = target;
-        self.left = frames;
-        if frames == 0 {
-            self.value = target;
+    fn glide(&mut self, id: NoteId, from: f32, frames: i32) {
+        for (v, _) in self.0.voices_mut() {
+            if v.note == id {
+                v.glide_from_pitch(from, frames);
+            }
         }
     }
 
-    /// Its value `f` frames from now
-    fn at(&self, f: u32) -> f32 {
-        if f >= self.left { self.target } else { self.value + (self.target - self.value) * f as f32 / self.left as f32 }
+    fn off(&mut self, id: NoteId) {
+        self.0.note_off(id);
     }
 
-    fn advance(&mut self, frames: u32) {
-        self.value = self.at(frames);
-        self.left = self.left.saturating_sub(frames);
+    fn pitch(&mut self, id: NoteId) -> Option<f32> {
+        self.0.voices_mut().find(|(v, _)| v.note == id).map(|(v, _)| v.pitch())
     }
-}
 
-#[derive(Clone, Copy, Debug)]
-struct Sounding {
-    id: NoteId,
-    base: NoteId,
-    key: u8,
-    /// The instrument frame it ends at (an arpeggio step's gate); `u64::MAX` while its base is held
-    end: u64,
-}
-
-/// What the instrument keeps across blocks, besides the voices; taken over whole in `adopt`
-#[derive(Debug)]
-struct Run {
-    frame: u64,
-    bases: Vec<Base>,
-    sounding: Vec<Sounding>,
-    /// Mono and legato: the bases held, in order; the last one sounds
-    held: Vec<NoteId>,
-    current: Option<NoteId>,
-    next_id: u32,
-    /// Pitch bend, −1 to 1
-    bend: f32,
-    sustain: bool,
-    /// Note-offs that came before their note-on in a block (a note of no length): the note-on releases at once
-    early_offs: Vec<NoteId>,
-    /// Sounding notes refused for lack of room
-    dropped: u64,
-}
-
-impl Run {
-    fn new() -> Self {
-        Self {
-            frame: 0,
-            bases: Vec::with_capacity(MAX_BASES),
-            sounding: Vec::with_capacity(MAX_SOUNDING),
-            held: Vec::with_capacity(MAX_BASES),
-            current: None,
-            next_id: SOUNDING_IDS,
-            bend: 0.0,
-            sustain: false,
-            early_offs: Vec::with_capacity(32),
-            dropped: 0,
+    fn retarget(&mut self, id: NoteId, key: u8, frames: i32) {
+        for (v, _) in self.0.voices_mut() {
+            if v.note == id {
+                let pitch = v.pitch();
+                v.key = key;
+                v.glide_from_pitch(pitch, frames);
+            }
         }
     }
 
-    fn clear_notes(&mut self) {
-        self.bases.clear();
-        self.sounding.clear();
-        self.held.clear();
-        self.current = None;
-        self.sustain = false;
-        self.early_offs.clear();
+    fn release_all(&mut self) {
+        self.0.release_all();
     }
 
-    fn base(&self, id: NoteId) -> Option<usize> {
-        self.bases.iter().position(|b| b.id == id)
-    }
-
-    fn new_id(&mut self) -> NoteId {
-        let id = NoteId(self.next_id);
-        self.next_id = self.next_id.checked_add(1).unwrap_or(SOUNDING_IDS);
-        id
+    fn kill_all(&mut self) {
+        self.0.kill_all();
     }
 }
 
@@ -628,8 +543,9 @@ impl<S: Synth> Instrument<S> {
         self.pool.active()
     }
 
-    fn glide_frames(&self) -> i32 {
-        (self.kit.params[p::GLIDE] / 1000.0 * self.rate) as i32
+    /// What the notes are played with now
+    fn note_cx(&self) -> NoteCx {
+        NoteCx { ns: self.kit.notes(), rate: self.rate, bpm: self.bpm }
     }
 
     fn set_param(&mut self, index: u32, value: f32) {
@@ -651,438 +567,35 @@ impl<S: Synth> Instrument<S> {
         }
     }
 
-    // ---- notes ----
-
-    /// Starts the sounding notes of a base: its chord (or its key), from `key`
-    fn sound(&mut self, base: NoteId, channel: u8, key: i32, velocity: f32, end: u64, glide_from: Option<f32>) {
-        let (intervals, octaves): (&[u8], i32) = if on(self.kit.params[p::CHORD_ON]) {
-            (self.kit.chord, self.kit.params[p::CHORD_RANGE] as i32)
-        } else {
-            (&[0], 1)
-        };
-        let glide = self.glide_frames();
-        for octave in 0..octaves.max(1) {
-            for &i in intervals {
-                let k = key + octave * 12 + i32::from(i);
-                if k > 127 {
-                    break;
-                }
-                if k < 0 {
-                    continue;
-                }
-                if self.run.sounding.len() == self.run.sounding.capacity() {
-                    self.run.dropped += 1;
-                    return;
-                }
-                let id = self.run.new_id();
-                let k = k as u8;
-                self.run.sounding.push(Sounding { id, base, key: k, end });
-                self.pool.note_on(VoiceNote { note: id, channel, key: k, velocity });
-                if let Some(from) = glide_from
-                    && glide > 0
-                {
-                    let shift = (k as i32 - key) as f32;
-                    for (v, _) in self.pool.voices_mut() {
-                        if v.note == id {
-                            v.glide_from_pitch(from + shift, glide);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Releases every sounding note of a base
-    fn release_sounding(&mut self, base: NoteId) {
-        let mut i = 0;
-        while i < self.run.sounding.len() {
-            if self.run.sounding[i].base == base {
-                let s = self.run.sounding.swap_remove(i);
-                self.pool.note_off(s.id);
-            } else {
-                i += 1;
-            }
-        }
-    }
-
-    /// The pitch the base's root sounds at now (keys), if it sounds
-    fn root_pitch(&mut self, base: NoteId, key: u8) -> Option<f32> {
-        let root = self.run.sounding.iter().find(|s| s.base == base && s.key == key).map(|s| s.id)?;
-        self.pool.voices_mut().find(|(v, _)| v.note == root).map(|(v, _)| v.pitch())
-    }
-
-    /// Legato: the sounding notes of `from` move by `delta` keys and now belong to `to`, gliding
-    fn retarget(&mut self, from: NoteId, to: NoteId, delta: i32) {
-        let glide = self.glide_frames();
-        for s in self.run.sounding.iter_mut().filter(|s| s.base == from) {
-            let k = (i32::from(s.key) + delta).clamp(0, 127) as u8;
-            s.base = to;
-            s.key = k;
-            let id = s.id;
-            for (v, _) in self.pool.voices_mut() {
-                if v.note == id {
-                    let pitch = v.pitch();
-                    v.key = k;
-                    v.glide_from_pitch(pitch, glide);
-                }
-            }
-        }
-    }
-
-    fn arp_on(&self) -> bool {
-        on(self.kit.params[p::ARP_ON])
-    }
-
-    fn note_on(&mut self, id: NoteId, channel: u8, key: u8, velocity: f32) {
-        if self.run.base(id).is_some() {
-            return;
-        }
-        if self.run.bases.len() == self.run.bases.capacity() {
-            self.run.dropped += 1;
-            return;
-        }
-        let base = Base {
-            id,
-            channel,
-            key,
-            velocity,
-            start: self.run.frame,
-            step: 0,
-            sustained: false,
-            tuning: ExpressionRamp::default(),
-            pan: ExpressionRamp::default(),
-        };
-        self.run.bases.push(base);
-        let arp = self.arp_on();
-        match self.kit.mode {
-            VoiceMode::Poly => {
-                if !arp {
-                    self.sound(id, channel, i32::from(key), velocity, u64::MAX, None);
-                }
-            }
-            VoiceMode::Mono | VoiceMode::Legato => {
-                if self.run.held.len() == self.run.held.capacity() {
-                    self.run.held.remove(0);
-                }
-                self.run.held.push(id);
-                self.take_over(id);
-            }
-        }
-        if let Some(pos) = self.run.early_offs.iter().position(|n| *n == id) {
-            self.run.early_offs.swap_remove(pos);
-            self.note_off(id);
-        }
-    }
-
-    /// Mono and legato: the base `to` becomes the one that sounds
-    fn take_over(&mut self, to: NoteId) {
-        let Some(b) = self.run.base(to).map(|i| self.run.bases[i]) else { return };
-        let arp = self.arp_on();
-        match self.run.current.and_then(|c| self.run.base(c).map(|i| self.run.bases[i])) {
-            Some(cur) if cur.id != to => {
-                if self.kit.mode == VoiceMode::Legato {
-                    self.retarget(cur.id, to, i32::from(b.key) - i32::from(cur.key));
-                } else {
-                    let from = self.root_pitch(cur.id, cur.key);
-                    self.release_sounding(cur.id);
-                    if !arp {
-                        self.sound(to, b.channel, i32::from(b.key), b.velocity, u64::MAX, from);
-                    }
-                }
-            }
-            Some(_) => {}
-            None => {
-                if !arp {
-                    self.sound(to, b.channel, i32::from(b.key), b.velocity, u64::MAX, None);
-                }
-            }
-        }
-        self.run.current = Some(to);
-    }
-
-    fn note_off(&mut self, id: NoteId) {
-        let Some(i) = self.run.base(id) else {
-            if self.run.early_offs.len() < self.run.early_offs.capacity() {
-                self.run.early_offs.push(id);
-            }
-            return;
-        };
-        if self.run.sustain {
-            self.run.bases[i].sustained = true;
-            return;
-        }
-        self.end_base(i);
-    }
-
-    fn end_base(&mut self, i: usize) {
-        let base = self.run.bases.swap_remove(i);
-        match self.kit.mode {
-            VoiceMode::Poly => self.release_sounding(base.id),
-            VoiceMode::Mono | VoiceMode::Legato => {
-                if let Some(pos) = self.run.held.iter().position(|n| *n == base.id) {
-                    self.run.held.remove(pos);
-                }
-                if self.run.current != Some(base.id) {
-                    self.release_sounding(base.id);
-                    return;
-                }
-                match self.run.held.last().copied() {
-                    Some(prev) => {
-                        // Back to the one held before: its key, as a new note (mono) or moving the voice (legato)
-                        if self.kit.mode == VoiceMode::Legato {
-                            if let Some(p) = self.run.base(prev).map(|j| self.run.bases[j]) {
-                                self.retarget(base.id, prev, i32::from(p.key) - i32::from(base.key));
-                                self.run.current = Some(prev);
-                            }
-                        } else {
-                            let from = self.root_pitch(base.id, base.key);
-                            self.release_sounding(base.id);
-                            self.run.current = None;
-                            if let Some(p) = self.run.base(prev).map(|j| self.run.bases[j]) {
-                                if !self.arp_on() {
-                                    self.sound(prev, p.channel, i32::from(p.key), p.velocity, u64::MAX, from);
-                                }
-                                self.run.current = Some(prev);
-                            }
-                        }
-                    }
-                    None => {
-                        self.release_sounding(base.id);
-                        self.run.current = None;
-                    }
-                }
-            }
-        }
-    }
-
-    fn release_all(&mut self) {
-        self.pool.release_all();
-        self.run.clear_notes();
-    }
-
     fn sound_off(&mut self) {
-        self.pool.kill_all();
-        self.run.clear_notes();
-    }
-
-    fn pedal(&mut self, down: bool) {
-        self.run.sustain = down;
-        if down {
-            return;
-        }
-        while let Some(i) = self.run.bases.iter().position(|b| b.sustained) {
-            self.end_base(i);
-        }
+        self.run.sound_off(&mut Pool(&mut self.pool));
     }
 
     fn event(&mut self, kind: EventKind) {
+        let cx = self.note_cx();
+        let out = &mut Pool(&mut self.pool);
         match kind {
             EventKind::NoteOn { note, channel, key, velocity } => {
-                self.note_on(note, channel, key.min(127), velocity.clamp(0.0, 1.0));
+                self.run.note_on(&cx, out, note, channel, key.min(127), velocity.clamp(0.0, 1.0));
             }
-            EventKind::NoteOff { note, .. } => self.note_off(note),
+            EventKind::NoteOff { note, .. } => self.run.note_off(&cx, out, note),
             EventKind::Param { index, value } => self.set_param(index, value),
             EventKind::Midi { bytes } => match bytes[0] & 0xF0 {
-                0xE0 => {
-                    let v = (i32::from(bytes[2] & 0x7F) << 7) | i32::from(bytes[1] & 0x7F);
-                    self.run.bend = ((v - 8192) as f32 / 8192.0).clamp(-1.0, 1.0);
-                }
+                0xE0 => self.run.set_bend(bytes),
                 0xB0 => match bytes[1] {
-                    64 => self.pedal(bytes[2] >= 64),
-                    120 => self.sound_off(),
-                    123 => self.release_all(),
+                    64 => self.run.pedal(&cx, out, bytes[2] >= 64),
+                    120 => self.run.sound_off(out),
+                    123 => self.run.release_all(out),
                     _ => {}
                 },
                 _ => {}
             },
-            EventKind::AllNotesRelease => self.release_all(),
-            EventKind::AllSoundOff => self.sound_off(),
+            EventKind::AllNotesRelease => self.run.release_all(out),
+            EventKind::AllSoundOff => self.run.sound_off(out),
             EventKind::NoteExpression { note, expression, value, ramp } => {
-                if let Some(i) = self.run.base(note) {
-                    let b = &mut self.run.bases[i];
-                    match expression {
-                        Expression::Tuning => b.tuning.go(value, ramp),
-                        Expression::Pan => b.pan.go(value.clamp(-1.0, 1.0), ramp),
-                    }
-                }
+                self.run.express(note, expression, value, ramp)
             }
         }
-    }
-
-    // ---- the arpeggio ----
-
-    fn arp_frames(&self) -> u64 {
-        let ms = match self.kit.arp_sync {
-            Some(beats) if self.bpm > 0.0 => beats * 60.0 / self.bpm * 1000.0,
-            _ => f64::from(self.kit.params[p::ARP_TIME]),
-        };
-        ((ms / 1000.0 * f64::from(self.rate)) as u64).max(1)
-    }
-
-    /// The bases whose arpeggio plays: all held (poly) or the one that sounds (mono, legato); in sort mode only the
-    /// lowest generates, for all
-    fn generates(&self, b: &Base) -> bool {
-        match self.kit.mode {
-            VoiceMode::Poly => true,
-            _ => self.run.current == Some(b.id),
-        }
-    }
-
-    /// The first frame at which every arpeggio of sync and sort mode is aligned: the oldest base that generates
-    fn anchor(&self) -> Option<u64> {
-        self.run.bases.iter().filter(|b| self.generates(b)).map(|b| b.start).min()
-    }
-
-    /// The steps and gate ends at frame `now` (a piece starts there)
-    fn timed(&mut self, now: u64, rng: &mut Rng) {
-        // Gated ends
-        let mut i = 0;
-        while i < self.run.sounding.len() {
-            if self.run.sounding[i].end <= now {
-                let s = self.run.sounding.swap_remove(i);
-                self.pool.note_off(s.id);
-            } else {
-                i += 1;
-            }
-        }
-        if !self.arp_on() || self.run.bases.is_empty() {
-            return;
-        }
-        let af = self.arp_frames();
-        match self.kit.arp_mode {
-            ArpMode::Free => {
-                for j in 0..self.run.bases.len() {
-                    let b = self.run.bases[j];
-                    if !self.generates(&b) {
-                        continue;
-                    }
-                    let mut step = b.step;
-                    while b.start + step * af <= now {
-                        if b.start + step * af == now {
-                            self.arp_step(&b, step, af, rng);
-                        }
-                        step += 1;
-                    }
-                    if let Some(k) = self.run.base(b.id) {
-                        self.run.bases[k].step = step;
-                    }
-                }
-            }
-            ArpMode::Sync | ArpMode::Sort => {
-                let Some(anchor) = self.anchor() else { return };
-                if !(now - anchor).is_multiple_of(af) {
-                    return;
-                }
-                let n = (now - anchor) / af;
-                if self.kit.arp_mode == ArpMode::Sync {
-                    for j in 0..self.run.bases.len() {
-                        let b = self.run.bases[j];
-                        if self.generates(&b) {
-                            self.arp_step(&b, n, af, rng);
-                        }
-                    }
-                } else if let Some(lowest) =
-                    self.run.bases.iter().filter(|b| self.generates(b)).min_by_key(|b| (b.key, b.start)).copied()
-                {
-                    self.arp_step(&lowest, n, af, rng);
-                }
-            }
-        }
-    }
-
-    /// The next frame after `now` at which a step or a gate end falls
-    fn next_timed(&self, now: u64) -> u64 {
-        let mut next = self.run.sounding.iter().map(|s| s.end).filter(|e| *e > now).min().unwrap_or(u64::MAX);
-        if self.arp_on() && !self.run.bases.is_empty() {
-            let af = self.arp_frames();
-            match self.kit.arp_mode {
-                ArpMode::Free => {
-                    for b in self.run.bases.iter().filter(|b| self.generates(b)) {
-                        let mut t = b.start + b.step * af;
-                        if t <= now {
-                            t = b.start + ((now - b.start) / af + 1) * af;
-                        }
-                        next = next.min(t);
-                    }
-                }
-                ArpMode::Sync | ArpMode::Sort => {
-                    if let Some(anchor) = self.anchor() {
-                        next = next.min(anchor + ((now - anchor) / af + 1) * af);
-                    }
-                }
-            }
-        }
-        next
-    }
-
-    /// Plays step `n` of a base's arpeggio (legacy `InstrumentFunctionArpeggio::processNote`, one step)
-    fn arp_step(&mut self, base: &Base, n: u64, af: u64, rng: &mut Rng) {
-        let k = &self.kit;
-        let chord = k.arp_chord;
-        let cs = chord.len() as i64;
-        let repeats = (k.params[p::ARP_REPEATS] as i64).max(1);
-        let single = cs * (k.params[p::ARP_RANGE] as i64).max(1) * repeats;
-        let sort = k.arp_mode == ArpMode::Sort;
-        let mut keys = [0u8; MAX_BASES];
-        let mut count = 0usize;
-        if sort {
-            for b in self.run.bases.iter().filter(|b| self.generates(b) || self.kit.mode == VoiceMode::Poly) {
-                keys[count] = b.key;
-                count += 1;
-            }
-            keys[..count].sort_unstable();
-        }
-        let range = if sort { single * count.max(1) as i64 } else { single };
-        let skip = k.params[p::ARP_SKIP];
-        if skip > 0.0 && rng.next_f32() * 100.0 <= skip {
-            return;
-        }
-        let mut dir = k.arp_direction;
-        let miss = k.params[p::ARP_MISS];
-        if miss > 0.0 && rng.next_f32() * 100.0 <= miss {
-            dir = ArpDirection::Random;
-        }
-        let n = n as i64;
-        let mut idx = match dir {
-            ArpDirection::Up | ArpDirection::Down => n % range,
-            ArpDirection::UpDown | ArpDirection::DownUp if range > 1 => {
-                let period = (range * 2 - 2 * repeats).max(1);
-                let mut i = n % period;
-                if i >= range {
-                    i = range - i % (range - 1) - repeats;
-                }
-                i
-            }
-            ArpDirection::UpDown | ArpDirection::DownUp => 0,
-            ArpDirection::Random => rng.below(range.max(1) as u64) as i64,
-        };
-        idx /= repeats;
-        let cycle = k.params[p::ARP_CYCLE] as i64;
-        let per = (range / repeats).max(1);
-        if cycle > 0 && dir != ArpDirection::Random {
-            idx = (idx * (cycle + 1)) % per;
-        }
-        if matches!(dir, ArpDirection::Down | ArpDirection::DownUp) {
-            idx = per - idx - 1;
-        }
-        let idx = idx.max(0);
-        let key = if sort {
-            let count = count.max(1) as i64;
-            let total = cs * count;
-            let octave = idx / total;
-            let rem = idx % total;
-            let arp_index = (rem % count) as usize;
-            let chord_index = (rem / count) as usize;
-            i64::from(keys[arp_index]) + i64::from(chord[chord_index.min(chord.len() - 1)]) + octave * 12
-        } else {
-            i64::from(base.key) + (idx / cs) * 12 + i64::from(chord[(idx % cs) as usize])
-        };
-        if !(0..128).contains(&key) {
-            return;
-        }
-        let gated = ((f64::from(k.params[p::ARP_GATE]) * af as f64 / 100.0) as u64).max(1);
-        let end = self.run.frame + gated;
-        self.sound(base.id, base.channel, key as i32, base.velocity, end, None);
     }
 
     // ---- playing ----
@@ -1338,14 +851,15 @@ impl<S: Synth> Processor for Instrument<S> {
                 e += 1;
             }
             let now = self.run.frame;
-            self.timed(now, rng);
+            let ncx = self.note_cx();
+            self.run.timed(&ncx, &mut Pool(&mut self.pool), now, rng);
             let mut end = frames;
             if e < events.len() {
                 end = end.min(events[e].offset as usize);
             }
             let grid = GRID - ((grid_origin + at as u64) % GRID as u64) as usize;
             end = end.min(at + grid);
-            let next = self.next_timed(now);
+            let next = self.run.next_timed(&ncx, now);
             if next != u64::MAX {
                 end = end.min(at + (next - now).min(frames as u64) as usize);
             }
@@ -1410,16 +924,7 @@ impl<S: Synth> Processor for Instrument<S> {
         // A change between poly, mono and legato: the notes go on sounding; in mono and legato the last base held is
         // the one that sounds from now on (the others end at their note-off)
         if old.kit.mode != self.kit.mode {
-            self.run.held.clear();
-            self.run.current = None;
-            if self.kit.mode != VoiceMode::Poly {
-                // (in place, without allocating: the held stack goes oldest first)
-                self.run.bases.sort_unstable_by_key(|b| (b.start, b.id));
-                for b in &self.run.bases {
-                    self.run.held.push(b.id);
-                }
-                self.run.current = self.run.bases.iter().max_by_key(|b| b.start).map(|b| b.id);
-            }
+            self.run.mode_changed(self.kit.mode);
         }
         self.dirty = true;
         Adopted::Yes

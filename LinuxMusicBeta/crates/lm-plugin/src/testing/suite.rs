@@ -67,6 +67,14 @@ impl Plugin {
         self.registry.defaults(&self.id).unwrap_or_else(|e| panic!("defaults: {e}"))
     }
 
+    /// The state played where the suite plays "the defaults": the test's own (its [`super::Setup`]), else the defaults
+    fn playing(&self) -> Value {
+        match super::current_setup().playing {
+            Some(f) => self.complete(&f()),
+            None => self.defaults(),
+        }
+    }
+
     fn complete(&self, state: &Value) -> Value {
         self.registry.complete(&self.id, state).unwrap_or_else(|e| panic!("complete: {e}"))
     }
@@ -93,7 +101,8 @@ impl Plugin {
     fn bench(&self, state: &Value, rate: u32) -> Bench {
         let p = self.build(state, rate);
         match self.kind {
-            PluginKind::Instrument => Bench::instrument(p, spec(rate), self.channels(state), SEED),
+            PluginKind::Instrument => Bench::instrument(p, spec(rate), self.channels(state), SEED)
+                .with_key_map(super::current_setup().key_map),
             PluginKind::Effect => Bench::effect(p, spec(rate), 2, SEED, test_input),
         }
     }
@@ -216,7 +225,7 @@ pub fn no_hidden_state(d: &'static Descriptor) {
 
 fn no_hidden_state_of(p: &Plugin) {
     let mut rng = Rng::new(SEED + 3);
-    let mut states = vec![p.defaults()];
+    let mut states = vec![p.playing()];
     for _ in 0..4 {
         states.push(random_state(p.registry.schemas(), &p.type_name, &mut rng));
     }
@@ -266,7 +275,7 @@ pub fn adopt_while_playing(d: &'static Descriptor) {
     let events = chord(0, 1, p.voices().min(6), 101, None);
 
     // The same tree: seamless
-    let defaults = p.defaults();
+    let defaults = p.playing();
     let whole = p.bench(&defaults, rate).render(before + after, 256, &events, false);
     let mut bench = p.bench(&defaults, rate);
     let first = bench.render(before, 256, &events, true);
@@ -371,7 +380,7 @@ pub fn sample_rates(d: &'static Descriptor) {
     let p = Plugin::new(d);
     let (state, key, hz) = match p.tests.tuning {
         Some(t) => ((t.state)(), t.key, Some(t.hz)),
-        None => (p.defaults(), 69, None),
+        None => (p.playing(), 69, None),
     };
     let reference = probe(&p, &state, key, 48_000).1;
     assert!(reference > 1.0e-4, "{}: the probe is silent", p.id);
@@ -401,7 +410,7 @@ fn param_sweep_of(p: &Plugin) {
     let seconds = 0.4;
     let total = (seconds * f64::from(rate)) as usize;
     let notes = script(p, rate, seconds + 0.6);
-    let mut bench = p.bench(&p.defaults(), rate);
+    let mut bench = p.bench(&p.playing(), rate);
     for (i, spec) in schema.params.iter().enumerate() {
         let mut events = notes.iter().map(|t| Timed::new(t.at + bench.frame(), t.kind)).collect::<Vec<_>>();
         let start = bench.frame();
@@ -454,7 +463,7 @@ pub fn every_choice(d: &'static Descriptor) {
     let p = Plugin::new(d);
     let rate = 48_000;
     let schema = p.schema.clone();
-    let defaults = p.defaults();
+    let defaults = p.playing();
     let notes = chord(0, 1, p.voices() + 4, 29, Some(9_000));
     for base in [defaults.clone(), all_on(&p, &defaults)] {
         for field in &schema.fields {
@@ -512,7 +521,7 @@ pub fn short_notes(d: &'static Descriptor) {
     // Three times more notes than voices
     events.extend(chord(14_000, 100, 3 * p.voices(), 0, Some(16_000)));
     let total = 4 * rate as usize;
-    let out = p.bench(&p.defaults(), rate).render(total, 256, &events, true);
+    let out = p.bench(&p.playing(), rate).render(total, 256, &events, true);
     finite(&out, p.tests.max_level, "short notes");
     let x = mono(&out);
     assert!(peak(&x[9_200..9_800]) > 1.0e-4, "{}: the retriggered note does not sound", p.id);
@@ -566,7 +575,7 @@ pub fn block_sizes(d: &'static Descriptor) {
     let p = Plugin::new(d);
     let rate = 48_000;
     let mut rng = Rng::new(SEED + 11);
-    for state in [p.defaults(), all_on(&p, &p.defaults()), random_state(p.registry.schemas(), &p.type_name, &mut rng)] {
+    for state in [p.playing(), all_on(&p, &p.playing()), random_state(p.registry.schemas(), &p.type_name, &mut rng)] {
         let mut events = script(&p, rate, 1.0);
         events.extend(param_changes(&p, rate, 1.0, &mut rng));
         let reference = p.bench(&state, rate).render(48_000, BLOCKS[0], &events, false);
@@ -589,7 +598,7 @@ pub fn velocity(d: &'static Descriptor) {
     let p = Plugin::new(d);
     let rate = 48_000;
     let key = p.tests.tuning.map_or(60, |t| t.key);
-    let state = p.tests.tuning.map_or_else(|| p.defaults(), |t| (t.state)());
+    let state = p.tests.tuning.map_or_else(|| p.playing(), |t| (t.state)());
     let level = |v: f32| {
         let out = p.bench(&state, rate).render(36_000, 256, &[note_on(0, 1, key, v)], false);
         let x = mono(&out);

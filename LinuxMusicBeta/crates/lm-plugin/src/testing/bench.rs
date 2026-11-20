@@ -39,6 +39,8 @@ pub struct Bench {
     bpm: f64,
     ppq: u32,
     input: Option<InputFn>,
+    /// The keys of the notes played, mapped (an instrument that sounds on some keys only: a drum kit)
+    key_map: Option<fn(u8) -> u8>,
 }
 
 impl std::fmt::Debug for Bench {
@@ -53,6 +55,13 @@ pub(crate) fn trapped<T>(trap: bool, f: impl FnOnce() -> T) -> T {
 }
 
 impl Bench {
+    /// Every note's key mapped by `f` (see [`super::Setup::key_map`])
+    #[must_use]
+    pub fn with_key_map(mut self, f: Option<fn(u8) -> u8>) -> Self {
+        self.key_map = f;
+        self
+    }
+
     /// An instrument with `outputs` output channels
     pub fn instrument(processor: Box<dyn Processor>, spec: ProcessSpec, outputs: usize, seed: u64) -> Self {
         Self::new(processor, spec, BlockShape { inputs: 0, outputs, sidechain: 0, in_place: false }, seed, None)
@@ -90,6 +99,7 @@ impl Bench {
             bpm: 120.0,
             ppq: 960,
             input,
+            key_map: None,
         }
     }
 
@@ -135,8 +145,17 @@ impl Bench {
             for (i, t) in events.iter().enumerate() {
                 if t.at >= start && t.at < start + n as u64 {
                     let offset = (t.at - start) as u32;
+                    let kind = match (self.key_map, t.kind) {
+                        (Some(f), EventKind::NoteOn { note, channel, key, velocity }) => {
+                            EventKind::NoteOn { note, channel, key: f(key), velocity }
+                        }
+                        (Some(f), EventKind::NoteOff { note, channel, key, velocity }) => {
+                            EventKind::NoteOff { note, channel, key: f(key), velocity }
+                        }
+                        (_, k) => k,
+                    };
                     let key = (u64::from(offset) << 32) | (u64::from(t.kind.rank()) << 28) | (i as u64 & 0x0FFF_FFFF);
-                    self.keyed.push((key, Event { offset, kind: t.kind }));
+                    self.keyed.push((key, Event { offset, kind }));
                 }
             }
             self.keyed.sort_unstable_by_key(|(k, _)| *k);

@@ -50,10 +50,15 @@ pub fn random_resource(kind: &str, rng: &mut Rng) -> Resource {
     Resource::new(kind, &key).unwrap_or_else(|_| unreachable!("a 64-digit hex key is valid"))
 }
 
-/// A test resource's content: audio is a short period of a bright wave (a user wave, an LFO shape); a kind for which
+/// A test resource's content: what the test's [`super::Setup`] gives for it, if anything; otherwise audio is a short period of a bright wave (a user wave, an LFO shape); a kind for which
 /// the crate under test keeps a file `tests/data/resources/<kind>` (a real model, a kit: something a plugin parses)
 /// is that file's bytes; anything else is some bytes
 pub fn test_loaded(resource: &Resource, rate: u32) -> Loaded {
+    if let Some(f) = super::current_setup().resources
+        && let Some(loaded) = f(resource, rate)
+    {
+        return loaded;
+    }
     if resource.kind() != "audio"
         && let Some(bytes) = std::env::var_os("CARGO_MANIFEST_DIR").and_then(|dir| {
             std::fs::read(std::path::Path::new(&dir).join("tests/data/resources").join(resource.kind())).ok()
