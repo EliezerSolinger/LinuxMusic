@@ -176,3 +176,55 @@ fn a_session_made_and_destroyed_while_playing_many_times() {
         drop(s);
     }
 }
+
+fn wav(path: &std::path::Path) {
+    let spec = lm_sys_sndfile::WriteSpec {
+        format: lm_sys_sndfile::WriteFormat::Wav(lm_sys_sndfile::Sample::Float32),
+        rate: 48_000,
+        channels: 1,
+    };
+    let mut w = lm_sys_sndfile::Writer::create(path, spec, lm_sys_sndfile::Existing::Replace).expect("create");
+    let samples: Vec<f32> = (0..4800).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
+    w.write_f32(&samples).expect("write");
+    w.close().expect("close");
+}
+
+#[test]
+fn import_through_the_port_and_a_full_disk_refuses_it_before_copying() {
+    let dir = TempDir::new("import");
+    let mut port = LocalPort::new(session(&dir));
+    let folder = Value::object([("folder", Value::text(dir.join("song").display().to_string()))]);
+    assert!(port.run_action(ActionId::from("project.new"), folder).ok().is_some());
+    let source = dir.join("tone.wav");
+    wav(&source);
+    // A full disk: refused, nothing copied
+    port.session().faults().set_full(true);
+    let Pending::Waiting(id) = port.import(source.clone()) else { panic!("waiting") };
+    let result = wait_for(&mut port, id);
+    let lm_port::Finished::Imported(Err(e)) = result else { panic!("refused: {result:?}") };
+    assert_eq!(e.key(), "session.disk.full");
+    let audio = port.session().project().folder.audio();
+    assert_eq!(std::fs::read_dir(&audio).map(|d| d.count()).unwrap_or(0), 0);
+    // Room again: imported, loaded
+    port.session().faults().set_full(false);
+    let Pending::Waiting(id) = port.import(source) else { panic!("waiting") };
+    let lm_port::Finished::Imported(Ok(resource)) = wait_for(&mut port, id) else { panic!("imported") };
+    assert_eq!(port.session().resource_state(resource.key()), lm_io::ResourceState::Ready);
+    assert!(port.plugins().iter().any(|p| &*p.id == "tripleoscillator"));
+    assert!(port.plugin_schema("tripleoscillator").is_some_and(|s| s.find_param("vol1").is_some()));
+    // Closing leaves an untitled project
+    assert!(port.run_action(ActionId::from("project.close"), Value::NULL).ok().is_some());
+    assert!(port.session().project().untitled);
+}
+
+fn wait_for(port: &mut LocalPort, id: lm_port::RequestId) -> lm_port::Finished {
+    let start = std::time::Instant::now();
+    loop {
+        port.pump();
+        if let Some((_, f)) = port.finished().into_iter().find(|(r, _)| *r == id) {
+            return f;
+        }
+        assert!(start.elapsed() < Duration::from_secs(20));
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}

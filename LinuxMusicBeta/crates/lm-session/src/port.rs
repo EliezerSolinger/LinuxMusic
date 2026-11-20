@@ -50,6 +50,8 @@ pub struct LocalPort {
     /// The prepared preview of each entry, by its resource's key
     preview_of: BTreeMap<EntryId, String>,
     search_request: Option<RequestId>,
+    /// Imports asked through the port: the session's operation, and the request it answers
+    imports: Vec<(OperationId, RequestId)>,
     preview_handles: Vec<(RequestId, EntryId, OperationHandle<PreparedFile>)>,
     playing_preview: Option<PreviewId>,
     next_preview: u64,
@@ -145,6 +147,7 @@ impl LocalPort {
             previews: BTreeMap::new(),
             preview_of: BTreeMap::new(),
             search_request: None,
+            imports: Vec::new(),
             preview_handles: Vec::new(),
             playing_preview: None,
             next_preview: 1,
@@ -365,6 +368,13 @@ fn peak_block(peaks: &lm_io::Peaks, level: u8, from: u64, to: u64) -> PeakBlock 
 impl CorePort for LocalPort {
     fn pump(&mut self) -> bool {
         let mut changed = self.session.pump();
+        for (op, result) in self.session.take_imported() {
+            if let Some(pos) = self.imports.iter().position(|(o, _)| *o == op) {
+                let (_, id) = self.imports.swap_remove(pos);
+                self.done.push((id, Finished::Imported(result)));
+                changed = true;
+            }
+        }
         let mut i = 0;
         while i < self.requests.len() {
             if self.requests[i].1.is_finished() {
@@ -643,6 +653,33 @@ impl CorePort for LocalPort {
         if let Some(id) = self.playing_preview.take() {
             let _ = self.session.engine().commands().send(Command::Preview(PreviewCommand::Stop { id }));
         }
+    }
+
+    fn import(&mut self, path: PathBuf) -> Pending<Resource> {
+        let op = self.session.import(path);
+        let id = self.next_request;
+        self.next_request += 1;
+        self.imports.push((op, id));
+        Pending::Waiting(id)
+    }
+
+    fn plugins(&self) -> Vec<lm_port::PluginInfo> {
+        self.session
+            .registry()
+            .descriptors()
+            .map(|d| lm_port::PluginInfo {
+                id: Arc::from(d.id),
+                name: Arc::from(d.name),
+                instrument: d.kind == lm_plugin::PluginKind::Instrument,
+                category: Arc::from(if d.kind == lm_plugin::PluginKind::Instrument { "synth" } else { "effect" }),
+                third_party: false,
+                latency: 0,
+            })
+            .collect()
+    }
+
+    fn plugin_schema(&self, plugin: &str) -> Option<lm_state::NodeSchema> {
+        self.session.registry().get(plugin).map(|d| d.schema())
     }
 
     fn set_favorite(&mut self, entry: EntryId, on: bool) -> Pending<()> {
