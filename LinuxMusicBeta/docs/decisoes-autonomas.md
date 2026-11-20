@@ -275,8 +275,10 @@ de forma diz pelo que é substituído.
   **antes do fader** (os envios pré também calam). Um canal que só alcança um audível por sidechain é calado **depois**
   do fader e continua alimentando o sidechain (F-MIX-014). O mudo do próprio canal fica depois do pan (os envios pré
   continuam, como numa mesa).
-- **Um insert em bypass continua no programa, desligado da cadeia**: o processador fica vivo e voltar não espera um
-  build.
+- **Um plugin em bypass (insert ou instrumento) não é construído nem chamado**: a cadeia passa por cima dele, e a
+  faixa com o instrumento em bypass só toca os itens de áudio. Revisto em 20/11 a pedido do modo seguro (U21): o
+  plugin que travou o callback não pode continuar no programa nem desligado (o `Renderer` chama todo nó); tirar o
+  bypass pede um build, com o carregamento de sempre.
 - **Itens de áudio:** `start`/`length` e o comping em tiques (ou amostras com `timebase: "audio"`), `sourceOffset`,
   fades e o `fade` do comping em amostras; sem comping toca a última lane; o crossfade do comping é linear, com o
   segmento anterior estendido pelo `fade` do seguinte. Itens acima de 30 s são classificados para o disco (P-32) e

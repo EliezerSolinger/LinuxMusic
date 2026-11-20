@@ -1177,7 +1177,8 @@ impl CompilerCore {
             let muted = flag(t, "mute", false) || !track_audible(tid);
             let volume = real(t, "volume", 1.0) as f32;
             let vol = |instance: u8| HPlan::Param { owner: tid, key: key("volume"), instance, value: volume };
-            let instrument = t.get("instrument").filter(|i| !i.is_null());
+            // A bypassed instrument is not built nor run (safe mode, U21): the track plays its audio items only
+            let instrument = t.get("instrument").filter(|i| !i.is_null() && !flag(i, "bypass", false));
             let audio_items: Vec<&Value> =
                 items(t, "items").filter(|i| text(i, "kind", "midi") == "audio" && !flag(i, "mute", false)).collect();
 
@@ -1373,6 +1374,11 @@ impl CompilerCore {
             };
             let add_insert = |this: &Self, plan: &mut Plan, p: &Value, prev: &mut (usize, u16)| -> Result<()> {
                 let Some(pid) = id_of(p) else { return Ok(()) };
+                // A bypassed insert is not built nor run: the chain goes past it (and safe mode's hung plugin, U21,
+                // is never called again)
+                if flag(p, "bypass", false) {
+                    return Ok(());
+                }
                 let wanted = this.plugin_build(p, w);
                 let k = NodeKey::Insert(pid);
                 let iseed = Rng::seed_for(s.seed, id_number(pid));
@@ -1384,7 +1390,7 @@ impl CompilerCore {
                 if low_latency {
                     plan.low_latency_bypassed.push(k);
                 }
-                if !flag(p, "bypass", false) && !low_latency {
+                if !low_latency {
                     plan.feed(prev.0, 0, prev.1, n, 0, shape.inputs.max(1), false);
                     *prev = (n, shape.output_channels().max(1));
                 }

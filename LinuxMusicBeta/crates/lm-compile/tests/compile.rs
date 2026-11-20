@@ -1094,3 +1094,43 @@ fn a_long_item_streams_from_the_disk() {
     h.pump();
     assert!(feeder.is_abandoned());
 }
+
+#[test]
+fn a_bypassed_plugin_is_neither_built_nor_run() {
+    let plugins = plugins();
+    let mut doc = new_doc(&plugins);
+    digital(&mut doc);
+    let t = add_track(&mut doc, Some(dc()));
+    let item = add_item(&mut doc, t, "midi", 0, 3840);
+    edit(&mut doc, |e| e.add_note(item, note(60, 0, 960, 0.5)).map(|_| ()));
+    let ch = add_channel(&mut doc);
+    let o = outputs(&doc, t)[0];
+    route_output(&mut doc, o, ch);
+    let fx = insert(&mut doc, ch, delay(100));
+    let p =
+        NodeId::parse(doc.find(t).unwrap().get("instrument").unwrap().get("id").unwrap().as_text().unwrap()).unwrap();
+    edit(&mut doc, |e| {
+        e.set(p, &[k("bypass")], Value::bool(true))?;
+        e.set(fx, &[k("bypass")], Value::bool(true))
+    });
+    let mut h = Harness::new(&plugins);
+    let c = h.compile(doc.root());
+    h.pump();
+    assert!(c.builds.is_empty(), "nothing to build");
+    assert!(c.table.node(NodeKey::Instrument(p)).is_none() && c.table.node(NodeKey::Insert(fx)).is_none());
+    assert!(c.table.slots_of(p, "level").is_empty());
+    // The chain goes past the insert; the track's output stays (silent)
+    assert!(route(&c, NodeKey::ChannelIn(ch), NodeKey::Fader(ch)).is_some());
+    assert!(c.table.node(NodeKey::Output(o)).is_some());
+    h.play();
+    assert!(h.render(20).iter().all(|(_, l, r)| *l == 0.0 && *r == 0.0));
+    // Back: built, with the loading of any new node
+    edit(&mut doc, |e| {
+        e.set(p, &[k("bypass")], Value::bool(false))?;
+        e.set(fx, &[k("bypass")], Value::bool(false))
+    });
+    let c = h.compile(doc.root());
+    h.pump();
+    assert_eq!(c.builds.len(), 2);
+    assert!(c.waiting.contains(&NodeKey::Instrument(p)) && c.waiting.contains(&NodeKey::Insert(fx)));
+}
