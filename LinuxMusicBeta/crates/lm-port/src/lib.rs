@@ -146,10 +146,17 @@ pub enum Loading {
     /// Started less than 200 ms ago: draw nothing different (no flicker on fast operations)
     Pending,
     /// Past 200 ms: draw the loading in place of the object
-    Visible { progress: Option<f32>, stage: Option<Label>, cancellable: bool, since: Duration },
+    Visible {
+        progress: Option<f32>,
+        stage: Option<Label>,
+        cancellable: bool,
+        since: Duration,
+    },
     Failed(Error),
     /// A resource the node needs is not where the project says (H17): an action "locate file", not a loading
-    Missing { resource: Resource },
+    Missing {
+        resource: Resource,
+    },
 }
 
 pub const LOADING_THRESHOLD: Duration = Duration::from_millis(200);
@@ -239,7 +246,9 @@ pub struct TelemetryView {
 impl TelemetryView {
     /// A node's meter as one linear peak (the loudest channel); 0 when there is none
     pub fn peak(&self, node: NodeId) -> f32 {
-        self.meters.get(&node).map_or(0.0, |m| m.peak[..(m.channels as usize).clamp(1, METER_CHANNELS)].iter().fold(0.0, |a, b| a.max(*b)))
+        self.meters.get(&node).map_or(0.0, |m| {
+            m.peak[..(m.channels as usize).clamp(1, METER_CHANNELS)].iter().fold(0.0, |a, b| a.max(*b))
+        })
     }
 }
 
@@ -356,7 +365,8 @@ mod tests {
 
     #[test]
     fn position_interpolates_while_playing() {
-        let p = Position { samples: 1000, host_time: HostTime(0), sample_rate: 48_000, playing: true, recording: false };
+        let p =
+            Position { samples: 1000, host_time: HostTime(0), sample_rate: 48_000, playing: true, recording: false };
         assert_eq!(p.at(HostTime(500_000_000)), 1000.0 + 24_000.0);
         let stopped = Position { playing: false, ..p };
         assert_eq!(stopped.at(HostTime(500_000_000)), 1000.0);
@@ -365,13 +375,19 @@ mod tests {
     #[test]
     fn telemetry_peak_is_the_loudest_channel() {
         let mut meters = HashMap::new();
-        let mut m = Meter::default();
-        m.channels = 2;
-        m.peak[0] = 0.25;
-        m.peak[1] = 0.5;
+        let mut peak = [0.0; METER_CHANNELS];
+        peak[0] = 0.25;
+        peak[1] = 0.5;
+        let m = Meter { channels: 2, peak, ..Meter::default() };
         meters.insert(ROOT, m);
         let t = TelemetryView {
-            position: Position { samples: 0, host_time: HostTime(0), sample_rate: 48_000, playing: false, recording: false },
+            position: Position {
+                samples: 0,
+                host_time: HostTime(0),
+                sample_rate: 48_000,
+                playing: false,
+                recording: false,
+            },
             meters,
             inputs: Vec::new(),
             recording: Vec::new(),

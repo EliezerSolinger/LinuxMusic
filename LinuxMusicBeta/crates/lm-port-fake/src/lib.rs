@@ -1,0 +1,987 @@
+//! A `CorePort` over a real lm-doc `Document` with a fake engine: for the interface's tests and for running the
+//! interface before `lm-session` exists. Only `lm-gui`'s dev-dependencies may name this crate.
+//!
+//! Real: the document (the project's schemas, transactions, the domain rules, undo and redo, gestures, feeds) — the
+//! interface meets the same tree and the same refusals it will meet with the session.
+//! Fake: the transport (a clock), the meters (from the fake recordings' peaks at the cursor, through the outputs, the
+//! channels' volumes and the routing), the peaks (synthesized per resource), the long operations (threads with an
+//! injectable delay), the notices, the preferences, the session's status, the devices and the browser's library.
+
+#![forbid(unsafe_code)]
+
+pub mod demo;
+mod library;
+pub mod peaks;
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use lm_base::{Error, HostTime, Label, OperationId, Result};
+use lm_doc::{Document, Feed, GestureId, Topic};
+use lm_port::{
+    ActionId, Applied, BrowseEntry, BrowsePage, CorePort, DeviceInfo, DisplayView, EditOp, EntryId, LOADING_THRESHOLD,
+    Loading, Meter, NoteRef, Notice, OperationInfo, PeakBlock, Pending, Position, Preview, RecordingTake, Ref,
+    ScanKind, Severity, Target, TelemetryView,
+};
+use lm_state::{NodeId, PathStep, Resource, Value};
+
+use crate::demo::BAR;
+use crate::peaks::Peaks;
+
+pub const SAMPLE_RATE: u32 = 48_000;
+
+/// What the fake's tests and the demo choose
+#[derive(Clone, Debug)]
+pub struct Config {
+    pub tracks: usize,
+    /// The injected delay of the resource that loads slowly (I-2.4); `None`: everything is there at once
+    pub slow_delay: Option<Duration>,
+    /// The resource that loads slowly: the first lane of this track's first item
+    pub slow_track: usize,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config { tracks: 64, slow_delay: Some(Duration::from_millis(1500)), slow_track: 2 }
+    }
+}
+
+/// What an operation does when it ends well
+type Then = Box<dyn FnOnce(&mut FakePort)>;
+
+struct Op {
+    id: OperationId,
+    label: Label,
+    target: Target,
+    started: Instant,
+    cancellable: bool,
+    progress: Arc<AtomicU32>,
+    cancel: Arc<AtomicBool>,
+    done: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+    /// What to do when it ends well
+    then: Option<Then>,
+}
+
+/// The transport's fake clock
+#[derive(Clone, Copy, Debug)]
+struct Transport {
+    playing: bool,
+    recording: bool,
+    /// the position at `since`
+    at: i64,
+    since: Instant,
+    /// recording: where the take begins, and the count-in before it
+    take_start: i64,
+}
+
+/// The fake port
+pub struct FakePort {
+    doc: Document,
+    resources: HashMap<Resource, Arc<Peaks>>,
+    loading_resources: Vec<Resource>,
+    ops: Vec<Op>,
+    notices: Vec<Notice>,
+    next_notice: u64,
+    transport: Transport,
+    telemetry: TelemetryView,
+    preferences: Value,
+    status: Value,
+    saved_serial: u64,
+    serial: u64,
+    pumps: u64,
+    last_pump: Instant,
+    library: library::Library,
+    preview: Option<(EntryId, Instant)>,
+    /// Writes that arrived by `param_write` (live values while dragging), by node and key
+    live: HashMap<(NodeId, String), f32>,
+    /// The fake's own feed: any change makes the project modified
+    own_feed: Feed,
+}
+
+impl std::fmt::Debug for FakePort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FakePort").field("pumps", &self.pumps).finish_non_exhaustive()
+    }
+}
+
+fn err(key: &'static str) -> Error {
+    Error::new(key)
+}
+
+impl FakePort {
+    pub fn new(config: Config) -> Result<FakePort> {
+        let registry = Arc::new(demo::registry()?);
+        let mut doc = Document::new_project(registry, demo::options())?;
+        demo::project(&mut doc, config.tracks.max(3))?;
+        // the demo is the opening state: nothing to undo
+        let doc = Document::open(Arc::clone(doc.registry()), doc.saved(), demo::options())?.document;
+        let now = Instant::now();
+        let mut doc = doc;
+        let own_feed = doc.feed(Topic::All);
+        let mut port = FakePort {
+            own_feed,
+            doc,
+            resources: HashMap::new(),
+            loading_resources: Vec::new(),
+            ops: Vec::new(),
+            notices: Vec::new(),
+            next_notice: 1,
+            transport: Transport { playing: false, recording: false, at: 0, since: now, take_start: 0 },
+            telemetry: TelemetryView {
+                position: Position {
+                    samples: 0,
+                    host_time: HostTime::now(),
+                    sample_rate: SAMPLE_RATE,
+                    playing: false,
+                    recording: false,
+                },
+                meters: HashMap::new(),
+                inputs: vec![0.0; 8],
+                recording: Vec::new(),
+                counting_in: false,
+                xruns: 0,
+                xrun_marks: Vec::new(),
+            },
+            preferences: library::preferences(),
+            status: library::status(),
+            saved_serial: 0,
+            serial: 0,
+            pumps: 0,
+            last_pump: now,
+            library: library::Library::new(),
+            preview: None,
+            live: HashMap::new(),
+        };
+        port.push_notice("Autosaved {0}", vec![("time", Value::text("12:04"))], Severity::Info, None, Vec::new());
+        if let Some(delay) = config.slow_delay
+            && let Some(res) = port.first_lane_of_track(config.slow_track)
+        {
+            port.regenerate(res, delay);
+        }
+        Ok(port)
+    }
+
+    /// The document (for the fake's own tests; the interface never sees it)
+    pub fn document(&self) -> &Document {
+        &self.doc
+    }
+
+    fn first_lane_of_track(&self, t: usize) -> Option<Resource> {
+        let track = self.doc.root().get("tracks")?.at(t)?;
+        let item = track.get("items")?.at(0)?;
+        item.get("lanes")?.at(0)?.get("source")?.as_resource().cloned()
+    }
+
+    /// Makes a resource's peaks again, with a delay: the loading component's test case (I-2.4)
+    pub fn regenerate(&mut self, res: Resource, delay: Duration) {
+        if self.loading_resources.contains(&res) {
+            return;
+        }
+        self.loading_resources.push(res.clone());
+        let r2 = res.clone();
+        self.start(Label::new("Generating peaks"), Target::Resource(res.clone()), true, delay, move |port| {
+            port.loading_resources.retain(|x| *x != r2);
+            port.resources.remove(&r2);
+        });
+    }
+
+    fn start(
+        &mut self,
+        label: Label,
+        target: Target,
+        cancellable: bool,
+        delay: Duration,
+        then: impl FnOnce(&mut FakePort) + 'static,
+    ) -> OperationId {
+        let id = OperationId(1_000_000 + self.ops.len() as u64 + self.pumps * 7);
+        let progress = Arc::new(AtomicU32::new(0f32.to_bits()));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let done = Arc::new(AtomicBool::new(false));
+        let (p, c, d) = (Arc::clone(&progress), Arc::clone(&cancel), Arc::clone(&done));
+        let thread = std::thread::Builder::new()
+            .name("fake-op".into())
+            .spawn(move || {
+                let steps = 40u32;
+                for i in 0..steps {
+                    if c.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    std::thread::sleep(delay / steps);
+                    p.store(((i + 1) as f32 / steps as f32).to_bits(), Ordering::Relaxed);
+                }
+                d.store(true, Ordering::Release);
+            })
+            .ok();
+        self.ops.push(Op {
+            id,
+            label,
+            target,
+            started: Instant::now(),
+            cancellable,
+            progress,
+            cancel,
+            done,
+            thread,
+            then: Some(Box::new(then)),
+        });
+        id
+    }
+
+    fn push_notice(
+        &mut self,
+        key: &'static str,
+        args: Vec<(&'static str, Value)>,
+        severity: Severity,
+        target: Option<Target>,
+        actions: Vec<(ActionId, Value)>,
+    ) {
+        if let Some(n) = self.notices.iter_mut().find(|n| n.key == key && n.args == args) {
+            n.repeats += 1;
+            n.read = false;
+            return;
+        }
+        let id = self.next_notice;
+        self.next_notice += 1;
+        self.notices.push(Notice { id, key, args, severity, target, actions, repeats: 0, read: false });
+    }
+
+    fn peaks_of(&mut self, res: &Resource) -> Option<Arc<Peaks>> {
+        if self.loading_resources.contains(res) {
+            return None;
+        }
+        Some(Arc::clone(self.resources.entry(res.clone()).or_insert_with(|| {
+            let seed = u64::from_str_radix(&res.key()[..12], 16).unwrap_or(1);
+            Arc::new(Peaks::synthesize(seed, 60.0, SAMPLE_RATE))
+        })))
+    }
+
+    fn ticks_to_samples(&self, ticks: i64) -> i64 {
+        // the fake engine plays at the first tempo point (the real one follows the map, lm-time)
+        let bpm = self.bpm();
+        (ticks as f64 * 60.0 * SAMPLE_RATE as f64 / (bpm * demo::PPQ as f64)) as i64
+    }
+
+    fn samples_to_ticks(&self, samples: i64) -> i64 {
+        (samples as f64 * self.bpm() * demo::PPQ as f64 / (60.0 * SAMPLE_RATE as f64)) as i64
+    }
+
+    fn bpm(&self) -> f64 {
+        self.doc
+            .root()
+            .get("tempoMap")
+            .and_then(|m| m.at(0))
+            .and_then(|p| p.get("bpm"))
+            .and_then(Value::as_text)
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(120.0)
+    }
+
+    fn position(&self) -> i64 {
+        let t = self.transport;
+        if t.playing { t.at + (t.since.elapsed().as_secs_f64() * SAMPLE_RATE as f64) as i64 } else { t.at }
+    }
+
+    fn locate(&mut self, samples: i64) {
+        self.transport.at = samples.max(0);
+        self.transport.since = Instant::now();
+    }
+
+    fn play(&mut self) {
+        if !self.transport.playing {
+            self.transport.at = self.position();
+            self.transport.since = Instant::now();
+            self.transport.playing = true;
+        }
+    }
+
+    fn stop(&mut self) {
+        if self.transport.recording {
+            self.finish_recording();
+        }
+        if self.transport.playing {
+            self.transport.at = self.position();
+            self.transport.playing = false;
+        } else {
+            self.locate(0); // stop twice: back to the start
+        }
+    }
+
+    fn record(&mut self, fallback: Option<NodeId>) {
+        if self.transport.recording {
+            self.finish_recording();
+            return;
+        }
+        let armed = self.tracks_where(|t| t.get("armed").and_then(Value::as_bool) == Some(true));
+        if armed.is_empty()
+            && let Some(t) = fallback
+        {
+            let _ = self.doc.transact(Label::new("Arm"), |e| e.set(t, &[PathStep::key("armed")], Value::bool(true)));
+        }
+        let at = self.position();
+        self.transport.take_start = at;
+        self.transport.recording = true;
+        if !self.transport.playing {
+            // count-in and pre-roll: the cursor goes back the pre-roll's bars (U4)
+            let bars = self
+                .doc
+                .root()
+                .get("transport")
+                .and_then(|t| t.get("preRoll"))
+                .and_then(|p| p.get("bars"))
+                .and_then(Value::as_int)
+                .unwrap_or(1);
+            let back = self.ticks_to_samples(bars * BAR);
+            self.locate(at - back);
+            self.play();
+        }
+    }
+
+    fn tracks_where(&self, f: impl Fn(&Value) -> bool) -> Vec<NodeId> {
+        self.doc
+            .root()
+            .get("tracks")
+            .map(|l| {
+                l.items()
+                    .filter(|t| f(t))
+                    .filter_map(|t| t.get("id").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The takes become items: one audio item per armed track, its lane on a new recording (U1)
+    fn finish_recording(&mut self) {
+        self.transport.recording = false;
+        let start = self.transport.take_start;
+        let len = self.position() - start;
+        if len <= 0 {
+            return;
+        }
+        let (start_t, len_t) = (self.samples_to_ticks(start), self.samples_to_ticks(len).max(1));
+        let armed = self.tracks_where(|t| t.get("armed").and_then(Value::as_bool) == Some(true));
+        let serial = self.serial;
+        let _ = self.doc.transact(Label::new("Record"), |e| {
+            for (n, t) in armed.iter().enumerate() {
+                let count = e.find(*t).and_then(|v| v.get("items")).map_or(0, Value::len);
+                let it = e.insert(
+                    *t,
+                    "items",
+                    count,
+                    Value::object([
+                        ("kind", Value::text("audio")),
+                        ("name", Value::text("Take")),
+                        ("start", Value::int(start_t)),
+                        ("length", Value::int(len_t)),
+                        ("timebase", Value::text("musical")),
+                    ]),
+                )?;
+                let lane = e.insert(
+                    it,
+                    "lanes",
+                    0,
+                    Value::object([
+                        ("source", Value::resource(demo::audio(&format!("rec-{serial}-{n}")))),
+                        ("name", Value::text("Take 1")),
+                    ]),
+                )?;
+                let seg = Value::object([
+                    ("from", Value::int(0)),
+                    ("to", Value::int(len_t)),
+                    ("lane", Value::text(lane.to_string())),
+                ]);
+                e.set(it, &[PathStep::key("comp")], Value::list([seg]))?;
+            }
+            Ok(())
+        });
+    }
+
+    /// The meters: each track's outputs from its recordings (or its notes) at the cursor, then the channels through
+    /// the routing, with the volumes (M9)
+    fn meters(&mut self, pos: i64) -> HashMap<NodeId, Meter> {
+        let root = self.doc.root().clone();
+        let tick = self.samples_to_ticks(pos);
+        let mut out: HashMap<NodeId, f32> = HashMap::new();
+        let playing = self.transport.playing;
+        let tracks: Vec<Value> = root.get("tracks").map(|l| l.items().cloned().collect()).unwrap_or_default();
+        for t in &tracks {
+            if t.get("mute").and_then(Value::as_bool) == Some(true) || !playing {
+                continue;
+            }
+            let vol = t.get("volume").and_then(Value::as_real).unwrap_or(1.0) as f32;
+            let mut level = 0f32;
+            for it in t.get("items").map(|l| l.items().cloned().collect::<Vec<_>>()).unwrap_or_default() {
+                let start = it.get("start").and_then(Value::as_int).unwrap_or(0);
+                let length = it.get("length").and_then(Value::as_int).unwrap_or(0);
+                if tick < start || tick >= start + length {
+                    continue;
+                }
+                if it.get("kind").and_then(Value::as_text) == Some("audio") {
+                    if let Some(res) = it
+                        .get("lanes")
+                        .and_then(|l| l.at(0))
+                        .and_then(|l| l.get("source"))
+                        .and_then(Value::as_resource)
+                        .cloned()
+                        && let Some(p) = self.peaks_of(&res)
+                    {
+                        level =
+                            level.max(p.amplitude_at(self.ticks_to_samples(tick - start), (SAMPLE_RATE / 60) as u64));
+                    }
+                } else {
+                    level = level.max(0.55);
+                }
+            }
+            for (k, o) in
+                t.get("outputs").map(|l| l.items().cloned().collect::<Vec<_>>()).unwrap_or_default().iter().enumerate()
+            {
+                let Some(id) = o.get("id").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok()) else {
+                    continue;
+                };
+                let v = level * vol * if k == 0 { 1.0 } else { 0.8 };
+                out.insert(id, v);
+                if let Some(to) = o.get("to").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok()) {
+                    let e = out.entry(to).or_insert(0.0);
+                    *e = e.max(v);
+                }
+            }
+        }
+        // the channels: their volume, then where they output and send (sources before, by depth)
+        let channels: Vec<Value> =
+            root.get("mixer").and_then(|m| m.get("channels")).map(|l| l.items().cloned().collect()).unwrap_or_default();
+        let id_of = |c: &Value| c.get("id").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok());
+        let mut order: Vec<(usize, Value)> = channels
+            .iter()
+            .map(|c| {
+                let mut depth = 0;
+                let mut at = c.get("output").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok());
+                while let Some(n) = at {
+                    depth += 1;
+                    if depth > channels.len() {
+                        break;
+                    }
+                    at = channels
+                        .iter()
+                        .find(|x| id_of(x) == Some(n))
+                        .and_then(|x| x.get("output"))
+                        .and_then(Value::as_text)
+                        .and_then(|x| NodeId::parse(x).ok());
+                }
+                (depth, c.clone())
+            })
+            .collect();
+        order.sort_by_key(|(d, _)| std::cmp::Reverse(*d));
+        for (_, c) in &order {
+            let Some(id) = id_of(c) else { continue };
+            let muted = c.get("mute").and_then(Value::as_bool) == Some(true);
+            let vol = self
+                .live
+                .get(&(id, "volume".into()))
+                .copied()
+                .unwrap_or(c.get("volume").and_then(Value::as_real).unwrap_or(1.0) as f32);
+            let v = if muted { 0.0 } else { out.get(&id).copied().unwrap_or(0.0) * vol };
+            out.insert(id, v);
+            if let Some(to) = c.get("output").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok()) {
+                let e = out.entry(to).or_insert(0.0);
+                *e = e.max(v * 0.9);
+            }
+            for s in c.get("sends").map(|l| l.items().cloned().collect::<Vec<_>>()).unwrap_or_default() {
+                if let Some(to) = s.get("to").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok()) {
+                    let amount = s.get("amount").and_then(Value::as_real).unwrap_or(0.0) as f32;
+                    let e = out.entry(to).or_insert(0.0);
+                    *e = e.max(v * amount);
+                }
+            }
+        }
+        let master = lm_doc::schemas::MASTER;
+        let mv = root
+            .get("mixer")
+            .and_then(|m| m.get("master"))
+            .and_then(|m| m.get("volume"))
+            .and_then(Value::as_real)
+            .unwrap_or(1.0) as f32;
+        if let Some(v) = out.get_mut(&master) {
+            *v = (*v * mv).min(1.2);
+        }
+        out.into_iter()
+            .map(|(id, v)| {
+                let mut m = Meter { channels: 2, ..Meter::default() };
+                m.peak[0] = v;
+                m.peak[1] = v * 0.93;
+                (id, m)
+            })
+            .collect()
+    }
+
+    fn apply_ops(e: &mut lm_doc::Edit<'_>, ops: &[EditOp], applied: &mut Applied) -> Result<()> {
+        let id = |r: Ref, created: &[(u32, NodeId)]| -> Result<NodeId> {
+            match r {
+                Ref::Id(id) => Ok(id),
+                Ref::Temp(t) => {
+                    created.iter().find(|(k, _)| *k == t).map(|(_, id)| *id).ok_or_else(|| err("port.ref.unknown_temp"))
+                }
+            }
+        };
+        let note = |n: NoteRef, notes: &[(u32, u64)]| -> Result<u64> {
+            match n {
+                NoteRef::N(n) => Ok(n),
+                NoteRef::Temp(t) => {
+                    notes.iter().find(|(k, _)| *k == t).map(|(_, n)| *n).ok_or_else(|| err("port.ref.unknown_temp"))
+                }
+            }
+        };
+        for op in ops {
+            match op {
+                EditOp::Set { id: r, path, value } => {
+                    let n = id(*r, &applied.created)?;
+                    if path.len() >= 2
+                        && path[0] == PathStep::key("state")
+                        && path.get(1) == Some(&PathStep::key("params"))
+                    {
+                        // a plugin parameter: through set_param, so the slot hears it (S20)
+                        if let (Some(PathStep::Key(key)), Some(v)) = (path.get(2), value.as_real()) {
+                            e.set_param(n, key, v)?;
+                            continue;
+                        }
+                    }
+                    e.set(n, path, value.clone())?;
+                }
+                EditOp::Insert { temp, parent, list, index, node } => {
+                    let p = id(*parent, &applied.created)?;
+                    let new = e.insert(p, list, *index, node.clone())?;
+                    applied.created.push((*temp, new));
+                }
+                EditOp::Remove { id: r } => e.remove(id(*r, &applied.created)?)?,
+                EditOp::Move { id: r, parent, list, index } => {
+                    let (n, p) = (id(*r, &applied.created)?, id(*parent, &applied.created)?);
+                    e.move_to(n, p, list, *index)?;
+                }
+                EditOp::AddNote { temp, item, note: v } => {
+                    let n = e.add_note(id(*item, &applied.created)?, v.clone())?;
+                    applied.notes.push((*temp, n));
+                }
+                EditOp::SetNote { item, n, path, value } => {
+                    let it = id(*item, &applied.created)?;
+                    e.set_note(it, note(*n, &applied.notes)?, path, value.clone())?;
+                }
+                EditOp::RemoveNote { item, n } => {
+                    let it = id(*item, &applied.created)?;
+                    e.remove_note(it, note(*n, &applied.notes)?)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for FakePort {
+    fn drop(&mut self) {
+        for op in &mut self.ops {
+            op.cancel.store(true, Ordering::Relaxed);
+            if let Some(t) = op.thread.take() {
+                let _ = t.join();
+            }
+        }
+    }
+}
+
+impl CorePort for FakePort {
+    fn pump(&mut self) -> bool {
+        self.pumps += 1;
+        let now = Instant::now();
+        // a pump far too late: an xrun in a real engine's terms (P-14)
+        if self.transport.playing && now.duration_since(self.last_pump) > Duration::from_millis(250) {
+            self.telemetry.xruns += 1;
+            let p = self.position();
+            self.telemetry.xrun_marks.push(p);
+        }
+        self.last_pump = now;
+        let mut changed = false;
+        // operations that ended: their effect, applied here (an operation never touches the session, I-2.2)
+        let mut i = 0;
+        while i < self.ops.len() {
+            if self.ops[i].done.load(Ordering::Acquire) {
+                let mut op = self.ops.remove(i);
+                if let Some(t) = op.thread.take() {
+                    let _ = t.join();
+                }
+                let cancelled = op.cancel.load(Ordering::Relaxed);
+                if let Some(then) = op.then.take() {
+                    then(self);
+                }
+                if cancelled {
+                    self.push_notice(
+                        "Cancelled: {0}",
+                        vec![("what", Value::text(op.label.key))],
+                        Severity::Info,
+                        Some(op.target.clone()),
+                        Vec::new(),
+                    );
+                }
+                changed = true;
+            } else {
+                if self.ops[i].started.elapsed() >= LOADING_THRESHOLD {
+                    changed = true;
+                }
+                i += 1;
+            }
+        }
+        // the feeds
+        let _ = self.doc.deliver();
+        if self.own_feed.drain(&self.doc).is_some() {
+            self.serial += 1;
+            changed = true;
+        }
+        // the telemetry
+        let pos = self.position();
+        let before = self.telemetry.position.samples;
+        let host = HostTime::now();
+        let meters = self.meters(pos);
+        let rec = self.transport.recording;
+        let armed = self.tracks_where(|t| t.get("armed").and_then(Value::as_bool) == Some(true));
+        let take_start = self.transport.take_start;
+        self.telemetry.position = Position {
+            samples: pos,
+            host_time: host,
+            sample_rate: SAMPLE_RATE,
+            playing: self.transport.playing,
+            recording: rec,
+        };
+        self.telemetry.counting_in = rec && pos < take_start;
+        self.telemetry.recording = if rec && pos > take_start {
+            armed
+                .iter()
+                .enumerate()
+                .map(|(n, t)| RecordingTake {
+                    track: *t,
+                    resource: demo::audio(&format!("rec-{}-{n}", self.serial)),
+                    start: take_start,
+                    length: pos - take_start,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let t = self.pumps as f32 * 0.01;
+        self.telemetry.inputs = (0..8)
+            .map(|k| (0.35 + 0.3 * (t * (1.3 + k as f32 * 0.4)).sin().abs()) * if k % 3 == 2 { 0.2 } else { 1.0 })
+            .collect();
+        let had = self.telemetry.meters.values().any(|m| m.peak[0] > 0.0);
+        let has = meters.values().any(|m| m.peak[0] > 0.0);
+        self.telemetry.meters = meters;
+        if self.transport.playing || pos != before || had || has {
+            changed = true;
+        }
+        if let Some((_, since)) = self.preview
+            && since.elapsed() > Duration::from_secs(4)
+        {
+            self.preview = None;
+        }
+        changed
+    }
+
+    fn root(&self) -> &Value {
+        self.doc.root()
+    }
+
+    fn find(&self, id: NodeId) -> Option<Value> {
+        self.doc.find(id)
+    }
+
+    fn feed(&mut self, topic: Topic) -> Feed {
+        self.doc.feed(topic)
+    }
+
+    fn drain(&self, feed: &mut Feed) -> Option<lm_doc::Diff> {
+        feed.drain(&self.doc)
+    }
+
+    fn modified(&self) -> bool {
+        self.serial != self.saved_serial
+    }
+
+    fn can_undo(&self) -> bool {
+        self.doc.can_undo()
+    }
+
+    fn can_redo(&self) -> bool {
+        self.doc.can_redo()
+    }
+
+    fn apply(&mut self, label: Label, ops: Vec<EditOp>) -> Pending<Applied> {
+        let mut applied = Applied::default();
+        let r = self.doc.transact(label, |e| Self::apply_ops(e, &ops, &mut applied));
+        Pending::Ready(r.map(|diff| Applied { diff: Some(diff), ..applied }))
+    }
+
+    fn run_action(&mut self, action: ActionId, params: Value) -> Pending<()> {
+        let id_param = || params.as_text().and_then(|t| NodeId::parse(t).ok());
+        let r: Result<()> = match action.as_str() {
+            "transport.play" => {
+                self.play();
+                Ok(())
+            }
+            "transport.stop" => {
+                self.stop();
+                Ok(())
+            }
+            "transport.toggle" => {
+                let _: () = if self.transport.playing { self.stop() } else { self.play() };
+                Ok(())
+            }
+            "transport.record" => {
+                self.record(id_param());
+                Ok(())
+            }
+            "transport.locate" => match params.as_int() {
+                Some(ticks) => {
+                    self.locate(self.ticks_to_samples(ticks));
+                    Ok(())
+                }
+                None => Err(err("port.params")),
+            },
+            "project.save" => {
+                self.saved_serial = self.serial;
+                Ok(())
+            }
+            "take.reload" => match id_param().and(None::<Resource>).or_else(|| self.first_lane_of_track(2)) {
+                Some(res) => {
+                    self.regenerate(res, Duration::from_millis(1500));
+                    Ok(())
+                }
+                None => Err(err("port.params")),
+            },
+            "items.rerender" => {
+                self.start(
+                    Label::new("Re-rendering the recorded items"),
+                    Target::Project,
+                    true,
+                    Duration::from_secs(2),
+                    |_| {},
+                );
+                Ok(())
+            }
+            "plugins.rescan" => {
+                self.start(
+                    Label::new("Scanning plugins"),
+                    Target::Scan(ScanKind::Plugins),
+                    true,
+                    Duration::from_secs(2),
+                    |_| {},
+                );
+                Ok(())
+            }
+            other => {
+                self.push_notice(
+                    "Not in the fake core: {0}",
+                    vec![("action", Value::text(other))],
+                    Severity::Warning,
+                    None,
+                    Vec::new(),
+                );
+                Err(err("port.action.unknown"))
+            }
+        };
+        Pending::Ready(r)
+    }
+
+    fn undo(&mut self) -> Pending<()> {
+        Pending::Ready(self.doc.undo().map(|_| ()))
+    }
+
+    fn redo(&mut self) -> Pending<()> {
+        Pending::Ready(self.doc.redo().map(|_| ()))
+    }
+
+    fn begin_gesture(&mut self, label: Label) -> GestureId {
+        self.doc.begin_gesture(label)
+    }
+
+    fn gesture_apply(&mut self, g: &GestureId, ops: Vec<EditOp>) {
+        let mut applied = Applied::default();
+        if let Err(e) = self.doc.gesture_update(g, |e| Self::apply_ops(e, &ops, &mut applied))
+            && e.label.key != "doc.gesture.closed"
+        {
+            self.push_notice("{0}", vec![("error", Value::text(e.label.key))], Severity::Warning, None, Vec::new());
+        }
+    }
+
+    fn gesture_commit(&mut self, g: GestureId) {
+        let _ = self.doc.gesture_commit(g);
+        self.live.clear();
+    }
+
+    fn gesture_cancel(&mut self, g: GestureId) {
+        let _ = self.doc.gesture_cancel(g);
+        self.live.clear();
+    }
+
+    fn param_write(&mut self, node: NodeId, param: &str, value: f32) {
+        self.live.insert((node, param.to_string()), value);
+    }
+
+    fn loading(&self, target: &Target) -> Loading {
+        // aggregation (T10): an item is loading while one of its lanes' resources is
+        let item_resources = |id: NodeId| -> Vec<Resource> {
+            self.doc
+                .find(id)
+                .and_then(|v| {
+                    v.get("lanes").map(|l| {
+                        l.items().filter_map(|x| x.get("source").and_then(Value::as_resource).cloned()).collect()
+                    })
+                })
+                .unwrap_or_default()
+        };
+        let hit = |op: &Op| match (target, &op.target) {
+            (a, b) if a == b => true,
+            (Target::Node(n), Target::Resource(r)) => item_resources(*n).contains(r),
+            _ => false,
+        };
+        match self.ops.iter().filter(|o| hit(o)).min_by_key(|o| o.started) {
+            None => Loading::Ready,
+            Some(op) => {
+                let since = op.started.elapsed();
+                if since < LOADING_THRESHOLD {
+                    Loading::Pending
+                } else {
+                    Loading::Visible {
+                        progress: Some(f32::from_bits(op.progress.load(Ordering::Relaxed))),
+                        stage: Some(op.label.clone()),
+                        cancellable: op.cancellable && since >= lm_port::CANCEL_AFTER,
+                        since,
+                    }
+                }
+            }
+        }
+    }
+
+    fn activity(&self) -> Vec<OperationInfo> {
+        self.ops
+            .iter()
+            .filter(|o| o.started.elapsed() >= LOADING_THRESHOLD)
+            .map(|o| OperationInfo {
+                id: o.id,
+                label: o.label.clone(),
+                target: o.target.clone(),
+                progress: Some(f32::from_bits(o.progress.load(Ordering::Relaxed))),
+                stage: None,
+                cancellable: o.cancellable && o.started.elapsed() >= lm_port::CANCEL_AFTER,
+                since: o.started.elapsed(),
+            })
+            .collect()
+    }
+
+    fn cancel(&mut self, op: OperationId) {
+        for o in &self.ops {
+            if o.id == op {
+                o.cancel.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn notices(&mut self) -> Vec<Notice> {
+        self.notices.clone()
+    }
+
+    fn dismiss_notice(&mut self, id: u64) {
+        self.notices.retain(|n| n.id != id);
+    }
+
+    fn telemetry(&self) -> &TelemetryView {
+        &self.telemetry
+    }
+
+    fn peaks(&mut self, resource: &Resource, level: u8, from: u64, to: u64) -> Pending<PeakBlock> {
+        let Some(p) = self.peaks_of(resource) else { return Pending::Waiting(from) };
+        let l = (level as usize).min(p.levels.len() - 1);
+        let pairs = &p.levels[l];
+        let a = (from as usize).min(pairs.len());
+        let z = (to as usize).clamp(a, pairs.len());
+        Pending::Ready(Ok(PeakBlock {
+            level: l as u8,
+            from: a as u64,
+            samples_per_pair: Peaks::samples_per_pair(l),
+            pairs: pairs[a..z].into(),
+            length: p.length,
+        }))
+    }
+
+    fn display(&self, _node: NodeId) -> Option<DisplayView> {
+        None
+    }
+
+    fn preferences(&self) -> &Value {
+        &self.preferences
+    }
+
+    fn set_preference(&mut self, path: Vec<PathStep>, value: Value) -> Pending<()> {
+        Pending::Ready(self.preferences.with_path(&path, value).map(|p| self.preferences = p))
+    }
+
+    fn status(&self) -> &Value {
+        &self.status
+    }
+
+    fn devices(&mut self) -> Pending<Vec<DeviceInfo>> {
+        Pending::Ready(Ok(library::devices()))
+    }
+
+    fn browse(&mut self, page: BrowsePage, parent: Option<EntryId>, show_hidden: bool) -> Pending<Vec<BrowseEntry>> {
+        Pending::Ready(Ok(self.library.children(page, parent, show_hidden)))
+    }
+
+    fn search(&mut self, query: &str) -> Pending<Vec<BrowseEntry>> {
+        Pending::Ready(Ok(self.library.search(query)))
+    }
+
+    fn prepare_preview(&mut self, entry: EntryId) -> Pending<Preview> {
+        match self.library.entry(entry) {
+            Some(e) => {
+                let res = demo::audio(&format!("preview-{}", entry.0));
+                let seconds = e.info.get("seconds").and_then(Value::as_real).unwrap_or(2.0);
+                Pending::Ready(Ok(Preview {
+                    entry,
+                    resource: res,
+                    length: (seconds * SAMPLE_RATE as f64) as i64,
+                    sample_rate: SAMPLE_RATE,
+                }))
+            }
+            None => Pending::Ready(Err(err("port.browse.unknown_entry"))),
+        }
+    }
+
+    fn preview_play(&mut self, entry: EntryId, _from: i64) {
+        self.preview = Some((entry, Instant::now()));
+    }
+
+    fn preview_stop(&mut self) {
+        self.preview = None;
+    }
+
+    fn set_favorite(&mut self, entry: EntryId, on: bool) -> Pending<()> {
+        Pending::Ready(self.library.set_favorite(entry, on))
+    }
+}
+
+/// The preview playing now, if any (the fake has no sound; the browser shows its cursor)
+impl FakePort {
+    pub fn previewing(&self) -> Option<(EntryId, Duration)> {
+        self.preview.map(|(e, t)| (e, t.elapsed()))
+    }
+
+    /// The xruns the fake counts: tests make a pump late on purpose
+    pub fn pumps(&self) -> u64 {
+        self.pumps
+    }
+
+    /// Writes the document's saved form (what `project.save` would write)
+    pub fn saved(&self) -> Value {
+        self.doc.saved()
+    }
+}
+
+#[cfg(test)]
+mod tests;

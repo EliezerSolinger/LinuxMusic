@@ -71,6 +71,7 @@ lm-sys-lilv = { path = "crates/lm-sys-lilv" }
 lm-io = { path = "crates/lm-io" }
 lm-compile = { path = "crates/lm-compile" }
 lm-port = { path = "crates/lm-port" }
+lm-port-fake = { path = "crates/lm-port-fake" }
 
 [profile.dev]
 # Audio code is unusable without some optimisation. Disk is limited on the development machine: line tables are

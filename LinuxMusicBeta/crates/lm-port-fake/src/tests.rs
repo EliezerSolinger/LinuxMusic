@@ -1,0 +1,205 @@
+//! The fake as a CorePort: the document is real (transactions, refusals, undo, redo, gestures, feeds), the engine
+//! is made up but coherent
+
+use std::time::Duration;
+
+use super::*;
+
+fn small() -> FakePort {
+    FakePort::new(Config { tracks: 12, slow_delay: None, slow_track: 2 }).expect("the demo builds")
+}
+
+fn track(port: &FakePort, i: usize) -> NodeId {
+    NodeId::parse(port.root().get("tracks").unwrap().at(i).unwrap().get("id").unwrap().as_text().unwrap()).unwrap()
+}
+
+#[test]
+fn the_demo_opens_with_nothing_to_undo_and_unmodified() {
+    let p = small();
+    assert!(!p.can_undo());
+    assert!(!p.modified());
+    assert_eq!(p.root().get("tracks").unwrap().len(), 12);
+    assert!(p.root().get("mixer").unwrap().get("channels").unwrap().len() >= 7);
+}
+
+#[test]
+fn apply_is_one_step_and_redo_works() {
+    let mut p = small();
+    let (a, b) = (track(&p, 1), track(&p, 2));
+    let r = p.apply(
+        Label::new("Two"),
+        vec![EditOp::set(a, &["volume"], Value::real(0.5).unwrap()), EditOp::set(b, &["mute"], Value::bool(true))],
+    );
+    assert!(r.ok().is_some());
+    p.pump();
+    assert!(p.modified());
+    assert_eq!(p.find(a).unwrap().get("volume").unwrap().as_real(), Some(0.5));
+    assert!(p.undo().ok().is_some());
+    assert_eq!(p.find(a).unwrap().get("volume").unwrap().as_real(), Some(1.0));
+    assert_eq!(p.find(b).unwrap().get("mute").unwrap().as_bool(), Some(false));
+    assert!(p.can_redo());
+    assert!(p.redo().ok().is_some());
+    assert_eq!(p.find(b).unwrap().get("mute").unwrap().as_bool(), Some(true));
+    let _ = p.run_action(ActionId::from("project.save"), Value::NULL);
+    assert!(!p.modified());
+}
+
+#[test]
+fn a_bad_list_changes_nothing() {
+    let mut p = small();
+    let a = track(&p, 1);
+    let r = p.apply(
+        Label::new("Bad"),
+        vec![EditOp::set(a, &["volume"], Value::real(0.5).unwrap()), EditOp::set(a, &["volume"], Value::text("loud"))],
+    );
+    assert!(matches!(r, Pending::Ready(Err(_))));
+    assert_eq!(p.find(a).unwrap().get("volume").unwrap().as_real(), Some(1.0));
+}
+
+#[test]
+fn temporary_refs_name_what_the_same_list_created() {
+    let mut p = small();
+    let t = track(&p, 3);
+    let ops = vec![
+        EditOp::Insert {
+            temp: 1,
+            parent: Ref::Id(t),
+            list: "items".into(),
+            index: 0,
+            node: Value::object([("kind", Value::text("midi")), ("length", Value::int(3840))]),
+        },
+        EditOp::Set { id: Ref::Temp(1), path: vec![PathStep::key("name")], value: Value::text("Novo") },
+        EditOp::AddNote { temp: 7, item: Ref::Temp(1), note: Value::object([("key", Value::int(64))]) },
+        EditOp::SetNote {
+            item: Ref::Temp(1),
+            n: NoteRef::Temp(7),
+            path: vec![PathStep::key("velocity")],
+            value: Value::real(0.5).unwrap(),
+        },
+    ];
+    let applied = p.apply(Label::new("New item"), ops).ok().expect("applied");
+    let item = applied.created[0].1;
+    let n = applied.notes[0].1;
+    let v = p.find(item).unwrap();
+    assert_eq!(v.get("name").unwrap().as_text(), Some("Novo"));
+    assert_eq!(v.get("notes").unwrap().note(n).unwrap().get("velocity").unwrap().as_real(), Some(0.5));
+}
+
+#[test]
+fn a_gesture_is_one_undo_step_and_feeds_see_it() {
+    let mut p = small();
+    let a = track(&p, 1);
+    let mut feed = p.feed(Topic::Node(a));
+    let g = p.begin_gesture(Label::new("Volume"));
+    for v in [0.9, 0.8, 0.7] {
+        p.gesture_apply(&g, vec![EditOp::set(a, &["volume"], Value::real(v).unwrap())]);
+    }
+    p.gesture_commit(g);
+    p.pump();
+    assert!(p.drain(&mut feed).is_some());
+    assert!(p.drain(&mut feed).is_none());
+    assert!(p.undo().ok().is_some());
+    assert_eq!(p.find(a).unwrap().get("volume").unwrap().as_real(), Some(1.0));
+}
+
+#[test]
+fn loading_follows_the_200_ms_rule_and_peaks_wait() {
+    let mut p =
+        FakePort::new(Config { tracks: 6, slow_delay: Some(Duration::from_millis(400)), slow_track: 2 }).unwrap();
+    let item = NodeId::parse(
+        p.root()
+            .get("tracks")
+            .unwrap()
+            .at(2)
+            .unwrap()
+            .get("items")
+            .unwrap()
+            .at(0)
+            .unwrap()
+            .get("id")
+            .unwrap()
+            .as_text()
+            .unwrap(),
+    )
+    .unwrap();
+    let res = p.first_lane_of_track(2).unwrap();
+    assert_eq!(p.loading(&Target::Node(item)), Loading::Pending);
+    assert!(p.peaks(&res, 2, 0, 10).is_waiting());
+    std::thread::sleep(Duration::from_millis(250));
+    p.pump();
+    assert!(matches!(p.loading(&Target::Node(item)), Loading::Visible { .. }));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while p.loading(&Target::Node(item)) != Loading::Ready {
+        assert!(Instant::now() < deadline, "never ready");
+        std::thread::sleep(Duration::from_millis(10));
+        p.pump();
+    }
+    assert_eq!(p.peaks(&res, 2, 0, 10).ok().unwrap().pairs.len(), 10);
+}
+
+#[test]
+fn playing_moves_the_cursor_and_the_meters() {
+    let mut p = small();
+    let _ = p.run_action(ActionId::from("transport.locate"), Value::int(demo::BAR));
+    let _ = p.run_action(ActionId::from("transport.play"), Value::NULL);
+    std::thread::sleep(Duration::from_millis(60));
+    p.pump();
+    let t = p.telemetry();
+    assert!(t.position.playing);
+    assert!(t.position.samples > 0);
+    assert!(t.meters.values().any(|m| m.peak[0] > 0.0), "something sounds");
+    let _ = p.run_action(ActionId::from("transport.stop"), Value::NULL);
+    p.pump();
+    assert!(!p.telemetry().position.playing);
+}
+
+#[test]
+fn recording_makes_an_item_on_the_armed_track() {
+    let mut p = small();
+    let armed = track(&p, 2);
+    let before = p.find(armed).unwrap().get("items").unwrap().len();
+    let _ = p.run_action(ActionId::from("transport.locate"), Value::int(8 * demo::BAR));
+    let _ = p.run_action(ActionId::from("transport.play"), Value::NULL);
+    std::thread::sleep(Duration::from_millis(20));
+    p.pump();
+    let _ = p.run_action(ActionId::from("transport.record"), Value::NULL); // playing: a punch-in
+    std::thread::sleep(Duration::from_millis(80));
+    p.pump();
+    assert!(!p.telemetry().recording.is_empty(), "the take grows");
+    let _ = p.run_action(ActionId::from("transport.record"), Value::NULL); // punch-out
+    p.pump();
+    assert_eq!(p.find(armed).unwrap().get("items").unwrap().len(), before + 1);
+}
+
+#[test]
+fn the_browser_lists_searches_and_keeps_favorites() {
+    let mut p = small();
+    let top = p.browse(BrowsePage::Samples, None, false).ok().unwrap();
+    assert_eq!(top[0].name.as_ref(), "Minhas amostras", "the user's before the factory's");
+    assert!(!top.iter().any(|e| e.hidden));
+    let found = p.search("\"loop funk\"").ok().unwrap();
+    assert_eq!(found.len(), 1);
+    assert!(p.search("\"funk loop\"").ok().unwrap().is_empty(), "a phrase is whole");
+    let id = found[0].id;
+    assert!(p.set_favorite(id, true).ok().is_some());
+    assert_eq!(p.browse(BrowsePage::Favorites, None, false).ok().unwrap().len(), 1);
+    assert!(p.prepare_preview(id).ok().is_some());
+}
+
+#[test]
+fn preferences_change_by_path() {
+    let mut p = small();
+    assert!(p.set_preference(vec![PathStep::key("audio"), PathStep::key("block")], Value::int(512)).ok().is_some());
+    assert_eq!(p.preferences().get("audio").unwrap().get("block").unwrap().as_int(), Some(512));
+    assert_eq!(p.status().get("project").unwrap().get("name").unwrap().as_text(), Some("Demo"));
+}
+
+#[test]
+fn removing_a_channel_sends_its_sources_to_the_master() {
+    let mut p = small();
+    let chans = p.root().get("mixer").unwrap().get("channels").unwrap().clone();
+    let group = NodeId::parse(chans.at(0).unwrap().get("id").unwrap().as_text().unwrap()).unwrap();
+    let piece = NodeId::parse(chans.at(1).unwrap().get("id").unwrap().as_text().unwrap()).unwrap();
+    assert!(p.apply(Label::new("Remove"), vec![EditOp::Remove { id: Ref::Id(group) }]).ok().is_some());
+    assert_eq!(p.find(piece).unwrap().get("output").unwrap().as_text(), Some("m:0"));
+}

@@ -379,6 +379,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-port-fake"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "lm-base",
+ "lm-doc",
+ "lm-port",
+ "lm-state",
+]
+
+[[package]]
 name = "lm-render"
 version = "0.1.0"
 dependencies = [
