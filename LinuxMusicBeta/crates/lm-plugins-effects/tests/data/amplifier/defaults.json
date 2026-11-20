@@ -1,0 +1,13 @@
+{
+  "plugin:amplifier": {
+    "defaults": {
+      "params": {
+        "leftGain": 100.0,
+        "panning": 0.0,
+        "rightGain": 100.0,
+        "volume": 100.0
+      }
+    },
+    "version": 1
+  }
+}

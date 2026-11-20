@@ -360,6 +360,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-effects"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-dsp",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+ "serde_json",
+]
+
+[[package]]
 name = "lm-plugins-testsine"
 version = "0.1.0"
 dependencies = [

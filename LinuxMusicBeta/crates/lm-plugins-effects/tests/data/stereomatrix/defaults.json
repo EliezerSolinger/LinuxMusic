@@ -1,0 +1,13 @@
+{
+  "plugin:stereomatrix": {
+    "defaults": {
+      "params": {
+        "leftToLeft": 1.0,
+        "leftToRight": 0.0,
+        "rightToLeft": 0.0,
+        "rightToRight": 1.0
+      }
+    },
+    "version": 1
+  }
+}

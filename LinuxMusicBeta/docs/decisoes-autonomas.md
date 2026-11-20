@@ -455,3 +455,25 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
     inteira troca de desenho.
   - Só muda o que o modelo novo exige: roteamento livre, várias saídas por faixa, os inserts nos pontos do rack, a
     faixa sem pan, os faders sobre os medidores e a página separada. Cada diferença fica registrada com o motivo.
+## Os efeitos do legado como plugins (20/11)
+
+- **Um pacote, `lm-plugins-effects`, com um módulo e um `static Descriptor` por efeito** (cada um com o seu id, o seu
+  esquema e as suas fixtures), em vez de um pacote por efeito: os efeitos dividem o processador (`effect`: um
+  algoritmo por par de canais, peças na grade de 32 amostras cortadas também nos eventos, rampas dos botões na peça em
+  que mudam, `adopt` que leva a memória do som) e a bancada do A/B, e 20 pacotes quase vazios pesariam no disco e na
+  compilação. Para isso o `contract_tests!` do `lm-plugin` ganhou um segundo argumento, a pasta dos dados do plugin
+  (`tests/data/<id>`).
+- **Chaves dos parâmetros:** o nome do botão do legado em camelCase (`leftGain`, `stereoDifference`), com as faixas,
+  os padrões e as unidades do legado. Interruptores automatizáveis são parâmetros `Stepped` de 0 a 1, como decidido no
+  `lm-plugin`. Frequências usam escala logarítmica (só a apresentação: os valores são os do legado).
+- **Só o sinal molhado:** a mistura seco/molhado é do host, como no legado.
+- **O A/B passa pelo plugin:** o estado do plugin montado a partir dos botões de cada caso do `lm-dsp/ab`, a mesma
+  entrada, a bancada do contrato, comparado com a referência que o próprio plugin do legado escreveu. Onde o
+  harness do legado gira um botão antes do primeiro período (a rampa a partir do padrão), a comparação começa no
+  segundo período.
+- **Diferenças intencionais:** a realimentação do Dispersion fica dentro de ±0,999 (em ±1 o laço de passa-tudo não
+  perde nada e cresce sem fim com uma entrada na frequência de um polo; qualquer valor até ±0,999 é o do legado); o
+  Bitcrush não zera de novo os contadores de taxa nos dois períodos seguintes a uma mudança (encanamento do legado,
+  não DSP).
+- **Amplifier e Stereo Matrix** existem para abrir projetos antigos (F-FX-005 e F-FX-028 continuam obsoletos no
+  navegador).

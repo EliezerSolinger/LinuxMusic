@@ -58,6 +58,15 @@ impl Dispersion {
         }
     }
 
+    /// Empties the all-passes, the feedback and the DC integrator (no allocation)
+    pub fn reset(&mut self) {
+        for v in [&mut self.x0, &mut self.x1, &mut self.y0, &mut self.y1] {
+            v.fill(0.0);
+        }
+        self.feedback = [0.0; 2];
+        self.integrator = [0.0; 2];
+    }
+
     pub fn process(&mut self, frames: &mut [[f32; 2]], s: &DispersionSettings) {
         let amount = s.amount.min(MAX_DISPERSION_FILTERS);
         let mut feedback = s.feedback;

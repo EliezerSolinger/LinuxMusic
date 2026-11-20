@@ -1,0 +1,10 @@
+{
+  "plugin:stereoenhancer": {
+    "defaults": {
+      "params": {
+        "width": 0.0
+      }
+    },
+    "version": 1
+  }
+}

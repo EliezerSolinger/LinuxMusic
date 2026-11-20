@@ -7,7 +7,9 @@
 //!
 //! which installs the allocation trap's allocator for the test binary and makes one `#[test]` per check. It reads
 //! `tests/data/defaults.json` (the frozen defaults, U29: written once with `LM_BLESS_DEFAULTS=1`) and
-//! `tests/data/fixtures/v<N>-<name>.json` (states saved by older versions) from the plugin crate.
+//! `tests/data/fixtures/v<N>-<name>.json` (states saved by older versions) from the plugin crate. A crate of several
+//! plugins gives each its own folder under `tests/data`: `lm_plugin::contract_tests!(my_plugins::a::DESCRIPTOR,
+//! "a")` reads `tests/data/a/defaults.json` and `tests/data/a/fixtures`.
 
 mod bench;
 mod material;
@@ -22,7 +24,7 @@ pub use suite::*;
 /// allocation trap's allocator for the test binary (in debug builds: in release the trap does nothing)
 #[macro_export]
 macro_rules! contract_tests {
-    ($d:path) => {
+    (@with $d:path, $data:expr) => {
         #[cfg(debug_assertions)]
         #[global_allocator]
         static LM_PLUGIN_CONTRACT_ALLOCATOR: $crate::testing::AllocDisabler = $crate::testing::AllocDisabler;
@@ -53,7 +55,7 @@ macro_rules! contract_tests {
             fn fixtures_upgrade() {
                 t::fixtures_upgrade(
                     super::LM_PLUGIN_UNDER_TEST,
-                    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/fixtures"),
+                    &[env!("CARGO_MANIFEST_DIR"), $data, "/fixtures"].concat(),
                 );
             }
             #[test]
@@ -88,7 +90,7 @@ macro_rules! contract_tests {
             fn frozen_defaults() {
                 t::frozen_defaults(
                     super::LM_PLUGIN_UNDER_TEST,
-                    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/defaults.json"),
+                    &[env!("CARGO_MANIFEST_DIR"), $data, "/defaults.json"].concat(),
                 );
             }
             #[test]
@@ -96,5 +98,11 @@ macro_rules! contract_tests {
                 t::ports_follow_the_state(super::LM_PLUGIN_UNDER_TEST);
             }
         }
+    };
+    ($d:path) => {
+        $crate::contract_tests!(@with $d, "/tests/data");
+    };
+    ($d:path, $data:literal) => {
+        $crate::contract_tests!(@with $d, concat!("/tests/data/", $data));
     };
 }

@@ -1,0 +1,14 @@
+{
+  "plugin:dispersion": {
+    "defaults": {
+      "params": {
+        "amount": 0.0,
+        "dcOffsetRemoval": 0.0,
+        "feedback": 0.0,
+        "frequency": 200.0,
+        "resonance": 0.707
+      }
+    },
+    "version": 1
+  }
+}

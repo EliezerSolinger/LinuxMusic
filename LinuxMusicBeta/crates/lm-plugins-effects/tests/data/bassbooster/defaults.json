@@ -1,0 +1,12 @@
+{
+  "plugin:bassbooster": {
+    "defaults": {
+      "params": {
+        "frequency": 100.0,
+        "gain": 1.0,
+        "ratio": 2.0
+      }
+    },
+    "version": 1
+  }
+}

@@ -980,6 +980,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **O que fazia:** volume 0–200 %, pan −100–100, ganho esquerdo e direito 0–200 %.
 - **Onde:** `plugins/Amplifier/`. Já aposentado no fork (some dos navegadores, só abre em projeto antigo).
 - **Status:** obsoleto — substituído pelo trim, fader e pan do canal da mesa (F-MIX).
+- **Na beta:** plugin `amplifier` (para abrir projetos antigos): `volume`, `panning`, `leftGain`, `rightGain`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-006 AmplifikationLite (clone do amplificador Kuassa, do fork) — 1.0
 
@@ -997,6 +998,7 @@ Regras gerais do legado que valem para quase todo plugin:
 #### F-FX-007 BassBooster — 1.0
 
 - **Onde:** `plugins/BassBooster/`. **Parâmetros:** Freq 50–200 Hz, 100 · Gain 0,1–5, 1 · Ratio 0,1–10, 2.
+- **Na beta:** plugin `bassbooster`: `frequency`, `gain`, `ratio`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-008 Bitcrush — 1.0
 
@@ -1005,6 +1007,7 @@ Regras gerais do legado que valem para quase todo plugin:
   saída −20–20, 0 · Taxa 20–44100 Hz, 44100 · Diferença estéreo −50–50 %, 0 · Níveis 1–256, 256 · Taxa ligada
   (ligado) · Profundidade ligada (ligado).
 - **Comportamento:** sobreamostragem ×5 com filtro anti-alias.
+- **Na beta:** plugin `bitcrush`: `inputGain`, `inputNoise`, `outputGain`, `outputClip`, `sampleRate`, `stereoDifference`, `levels`, `rateEnabled`, `depthEnabled`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-009 Compressor — core (plugin de validação)
 
@@ -1039,6 +1042,7 @@ Regras gerais do legado que valem para quase todo plugin:
 
 - **Onde:** `plugins/Dispersion/`. **Parâmetros:** Quantidade de all-pass 0–999, 0 · Freq 20–20000 Hz, 200, log ·
   Reso 0,01–8 oitavas, 0,707 · Realimentação −1–1, 0 · Remover DC, desligado.
+- **Na beta:** plugin `dispersion`: `amount`, `frequency`, `resonance`, `feedback`, `dcOffsetRemoval`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-013 DualFilter — 1.0
 
@@ -1197,12 +1201,14 @@ Regras gerais do legado que valem para quase todo plugin:
 
 - **Onde:** `plugins/StereoEnhancer/`. **Parâmetro:** Largura 0–180, 0. Quirk: o mesmo valor é atraso em amostras e
   ângulo em graus.
+- **Na beta:** plugin `stereoenhancer`: `width`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-028 StereoMatrix — obsoleto
 
 - **O que fazia:** matriz 2×2 (L→L 1, L→R 0, R→L 0, R→R 1, cada um −1–1): trocar lados, somar em mono, inverter
   polaridade. Já aposentado no fork.
 - **Status:** obsoleto — substituído pela fase, troca e mono do canal da mesa (F-MIX).
+- **Na beta:** plugin `stereomatrix` (para abrir projetos antigos): `leftToLeft`, `leftToRight`, `rightToLeft`, `rightToRight`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-029 Vectorscope — 1.0
 
@@ -1216,6 +1222,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **Parâmetros:** Entrada 0–5, 1 · Saída 0–5, 1 · Cortar a entrada em 0 dB, desligado · Curva (200 pontos, 0–1),
   linear.
 - **O usuário pode:** desenhar a curva (Shift+clique traça reta); voltar à linear; suavizar; +1 dB / −1 dB.
+- **Na beta:** plugin `waveshaper`: `inputGain`, `outputGain`, `clipInput`; campo `shape` (a curva de 200 pontos), em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-031 Efeitos LADSPA — aberto
 

@@ -1,0 +1,18 @@
+{
+  "plugin:bitcrush": {
+    "defaults": {
+      "params": {
+        "depthEnabled": 1.0,
+        "inputGain": 0.0,
+        "inputNoise": 0.0,
+        "levels": 256.0,
+        "outputClip": 0.0,
+        "outputGain": 0.0,
+        "rateEnabled": 1.0,
+        "sampleRate": 44100.0,
+        "stereoDifference": 0.0
+      }
+    },
+    "version": 1
+  }
+}
