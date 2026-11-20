@@ -286,6 +286,8 @@ pub fn preferences() -> Value {
         ),
         ("midi", o(vec![("inputs", Value::list([Value::text("Teclado USB")])), ("clock", Value::bool(false))])),
         ("interface", o(vec![("followCursor", Value::bool(false)), ("scale", Value::real(1.0).unwrap_or_default())])),
+        ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
+        ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text("audio"))])),
         ("shortcuts", Value::empty_object()),
         ("askBeforeClosing", Value::bool(true)),
     ])
@@ -311,8 +313,18 @@ pub fn status() -> Value {
             })),
         ),
         ("interruptedTakes", Value::empty_list()),
+        (
+            "templates",
+            Value::list([o(vec![
+                ("name", Value::text("Banda")),
+                ("folder", Value::text("templates/banda")),
+                ("factory", Value::bool(true)),
+            ])]),
+        ),
         ("safeMode", Value::bool(false)),
+        ("safeModePlugins", Value::empty_list()),
         ("lastExport", Value::NULL),
+        ("autosave", Value::NULL),
     ])
 }
 

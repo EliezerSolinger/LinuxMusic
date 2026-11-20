@@ -18,6 +18,7 @@
 #![forbid(unsafe_code)]
 
 pub mod browse;
+pub mod trees;
 
 use std::collections::HashMap;
 use std::sync::Arc;
