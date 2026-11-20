@@ -1456,3 +1456,225 @@ fn browser_search(cx: &mut TestAppContext) {
     assert!(!hits.is_empty());
     assert!(cx.debug_bounds(Box::leak(format!("br-entry-{}", hits[0].id.0).into_boxed_str())).is_some());
 }
+
+// --- agent D: settings, export, project, notices, palette, new project, about ----------------------------------
+
+fn prefs(ws: &Entity<Workspace>, cx: &mut VisualTestContext) -> Value {
+    let core = core(ws, cx);
+    core.read_with(cx, |core, _| core.port().preferences().clone())
+}
+
+fn status(ws: &Entity<Workspace>, cx: &mut VisualTestContext) -> Value {
+    let core = core(ws, cx);
+    core.read_with(cx, |core, _| core.port().status().clone())
+}
+
+fn pref_at(ws: &Entity<Workspace>, cx: &mut VisualTestContext, path: &[&str]) -> Option<Value> {
+    let p = prefs(ws, cx);
+    let steps: Vec<lm_port::PathStep> = path.iter().map(|k| lm_port::PathStep::key(k)).collect();
+    p.at_path(&steps).cloned()
+}
+
+/// The fake's operations are threads: real time passes, then the pump applies them
+fn wait_until(ws: &Entity<Workspace>, cx: &mut VisualTestContext, done: impl Fn(&Value) -> bool) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        std::thread::sleep(Duration::from_millis(40));
+        settle(cx);
+        if done(&status(ws, cx)) || std::time::Instant::now() > deadline {
+            break;
+        }
+    }
+}
+
+fn open_part(ws: &Entity<Workspace>, cx: &mut VisualTestContext, s: Screen, part: Option<&'static str>) {
+    cx.update(|_, cx| cx.set_global(crate::screens::palette::ScreenArg(part)));
+    ws.update_in(cx, |ws, window, cx| ws.open(s, None, window, cx));
+    cx.run_until_parked();
+}
+
+/// Design 08: an output chosen applies at once, and the device reopens 0.4 s after the last change
+#[gpui::test]
+fn settings_device_applies_at_once(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::Settings, Some("audio"));
+    click(cx, "output-dev-1");
+    assert_eq!(
+        pref_at(&ws, cx, &["audio", "output"]).and_then(|v| v.as_text().map(str::to_string)).as_deref(),
+        Some("hw:1")
+    );
+    cx.executor().advance_clock(Duration::from_millis(500));
+    cx.run_until_parked();
+    let core = core(&ws, cx);
+    let reopening = core.read_with(cx, |c, _| c.port().loading(&lm_port::Target::Device) != lm_port::Loading::Ready);
+    assert!(reopening, "the reopen started");
+    click(cx, "block-4");
+    assert_eq!(pref_at(&ws, cx, &["audio", "block"]).and_then(|v| v.as_int()), Some(512));
+}
+
+/// A restart-only setting shows the band; back to the running value, it goes
+#[gpui::test]
+fn settings_restart_band(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::Settings, Some("appearance"));
+    click(cx, "theme-1");
+    assert!(cx.debug_bounds("restart-band").is_some());
+    click(cx, "theme-0");
+    assert!(cx.debug_bounds("restart-band").is_none());
+}
+
+/// I-21.1: a MIDI port's role and its switches are the machine's preferences
+#[gpui::test]
+fn settings_midi_port(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::Settings, Some("midi"));
+    click(cx, "midi-role-0-2");
+    let role = pref_at(&ws, cx, &["midi", "ports"])
+        .and_then(|l| l.at(0).and_then(|p| p.get("role")).and_then(|r| r.as_text().map(str::to_string)));
+    assert_eq!(role.as_deref(), Some("both"));
+    click(cx, "midi-add-0");
+    let n = pref_at(&ws, cx, &["midi", "ports"]).map(|l| l.len()).unwrap_or(0);
+    assert_eq!(n, 5, "the port present and unknown was added");
+}
+
+/// A shortcut is changed by pressing it; a conflict waits for a second press, which takes the keys
+#[gpui::test]
+fn settings_change_a_shortcut(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::Settings, Some("keys"));
+    let i = REGISTRY.iter().position(|d| d.id == "transport.loop").unwrap();
+    click(cx, &format!("key-change-{i}"));
+    keys(cx, "alt-x");
+    let k = |ws: &Entity<Workspace>, cx: &mut VisualTestContext, id: &str| {
+        pref_at(ws, cx, &["shortcuts", id]).and_then(|v| v.as_text().map(str::to_string))
+    };
+    assert_eq!(k(&ws, cx, "transport.loop").as_deref(), Some("alt-x"));
+    click(cx, &format!("key-change-{i}"));
+    keys(cx, "r");
+    assert_eq!(k(&ws, cx, "transport.loop").as_deref(), Some("alt-x"), "a conflict waits");
+    keys(cx, "r");
+    assert_eq!(k(&ws, cx, "transport.loop").as_deref(), Some("r"));
+    assert_eq!(k(&ws, cx, "transport.record").as_deref(), Some(""), "taken from Record");
+}
+
+/// The palette: typing finds, Enter runs the action's GPUI action (here, the export window)
+#[gpui::test]
+fn palette_runs_an_action(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    keys(cx, "secondary-k");
+    assert!(ws.read_with(cx, |ws, _| ws.is_open(Screen::Palette)));
+    cx.simulate_input("exportaud");
+    cx.run_until_parked();
+    keys(cx, "enter");
+    ws.read_with(cx, |ws, _| {
+        assert!(ws.is_open(Screen::Export), "the palette ran Export audio");
+        assert!(!ws.is_open(Screen::Palette));
+    });
+}
+
+/// The keys of agent D's screens
+#[gpui::test]
+fn file_keys_open_their_screens(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    for (k, s) in [
+        ("secondary-e", Screen::Export),
+        ("secondary-o", Screen::Project),
+        ("secondary-shift-s", Screen::Project),
+        ("secondary-n", Screen::NewProject),
+        ("f1", Screen::About),
+    ] {
+        keys(cx, k);
+        assert!(ws.read_with(cx, |ws, _| ws.is_open(s)), "{k} opens {s:?}");
+        keys(cx, "escape");
+    }
+}
+
+/// The export wizard: four pages, then the export as an operation and its report
+#[gpui::test]
+fn export_wizard(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::Export, None);
+    click(cx, "what-1");
+    click(cx, "next");
+    click(cx, "fmt-mp3");
+    click(cx, "next");
+    click(cx, "next");
+    click(cx, "start-export");
+    wait_until(&ws, cx, |s| s.get("lastExport").is_some_and(|r| !r.is_null()));
+    let r = status(&ws, cx).get("lastExport").cloned().unwrap();
+    assert_eq!(r.get("ok").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(r.get("identical").and_then(|v| v.as_bool()), Some(false), "a fast range is said not identical");
+}
+
+/// Opening a project another program holds: read-only (H10); Save as frees it
+#[gpui::test]
+fn project_locked_and_save_as(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::Project, Some("open"));
+    click(cx, "recent-2");
+    click(cx, "open-recent");
+    let ro = |s: &Value| s.get("project").and_then(|p| p.get("readOnly")).and_then(|v| v.as_bool()).unwrap_or(false);
+    wait_until(&ws, cx, ro);
+    assert!(ro(&status(&ws, cx)), "locked elsewhere: read-only");
+    click(cx, "ro-save-as");
+    click(cx, "version-up");
+    click(cx, "save-as-go");
+    wait_until(&ws, cx, |s| !ro(s));
+    let folder = status(&ws, cx)
+        .get("project")
+        .and_then(|p| p.get("folder"))
+        .and_then(|v| v.as_text().map(str::to_string))
+        .unwrap();
+    assert!(folder.ends_with("-01"), "{folder}");
+}
+
+/// After a crash while recording, a take is recovered from the dialog (U5)
+#[gpui::test]
+fn project_recovers_a_take(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::Project, Some("open"));
+    click(cx, "recent-0");
+    click(cx, "open-recent");
+    let takes = |s: &Value| s.get("interruptedTakes").map_or(0, |l| l.len());
+    wait_until(&ws, cx, |s| takes(s) == 2);
+    click(cx, "recover-0");
+    assert_eq!(takes(&status(&ws, cx)), 1);
+}
+
+/// A new project: its folder, its rate and the template
+#[gpui::test]
+fn new_project_creates(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::NewProject, None);
+    click(cx, "np-rate-3");
+    click(cx, "create");
+    assert!(!ws.read_with(cx, |ws, _| ws.is_open(Screen::NewProject)));
+    let name = |s: &Value| {
+        s.get("project").and_then(|p| p.get("name")).and_then(|v| v.as_text().map(str::to_string)).unwrap_or_default()
+    };
+    wait_until(&ws, cx, |s| name(s) != "Demo");
+    assert_ne!(name(&status(&ws, cx)), "Demo");
+}
+
+/// About: the environment is copied for a bug report; the manual opens from F1's part
+#[gpui::test]
+fn about_copies_the_environment(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::About, None);
+    click(cx, "copy-env");
+    let text = cx.read_from_clipboard().and_then(|c| c.text()).unwrap_or_default();
+    assert!(text.contains("GPUI"));
+    click(cx, "about-Manual");
+}
+
+/// Notices: dismissing one takes it from the queue
+#[gpui::test]
+fn notices_dismiss(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_part(&ws, cx, Screen::Notices, None);
+    let core = core(&ws, cx);
+    let first = core.update(cx, |c, _| c.port_mut().notices().first().map(|n| n.id)).expect("the fake has a notice");
+    click(cx, &format!("dismiss-{first}"));
+    let left = core.update(cx, |c, _| c.port_mut().notices().iter().any(|n| n.id == first));
+    assert!(!left);
+}

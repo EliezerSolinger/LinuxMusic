@@ -758,3 +758,28 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
 - **Vozes que não alocam:** as vozes do BitInvader e do Organic no `lm-dsp` ganharam `restart` (uma nota começa na
   voz já feita) e um `Clone` cujo `clone_from` copia para o espaço que a voz já tem (o crossfade de uma troca copia vozes
   no áudio). O `render` do Organic montava um `Vec` de parâmetros a cada chamada: agora um array.
+## As telas do agente D no `lm-gui`: o que muda em relação ao legado (20/11)
+
+Regra do usuário (20/11): fora dos designs aprovados (2, 3, 5, 8), as telas seguem os diálogos do legado, de forma
+conservadora; só entra o que o modelo novo pede.
+- **Configurações:** seguem o design 08 (aprovado). A página MIDI segue a I-21.1 (porta por cliente + porta, apelido,
+  papel, entrada e saída, latências, conectada ou não; perfis de controlador da I-21.3), no lugar do "sistema MIDI" e
+  do "dispositivo para os raw" do legado — cada porta diz o próprio backend.
+- **Exportar:** o assistente de 4 páginas do legado (o quê, formatos, processamento, onde), com os mesmos controles.
+  Diferenças: no trecho, "Rápido" (padrão, 10 s de aquecimento) ou "Exato", com o custo (U37, V18); "uma faixa" com as
+  outras mudas (F-PRJ-023) e os stems por faixa ou por canal (P-40) na primeira página, no lugar do diálogo à parte
+  "Exportar as faixas"; o aviso dos plugins de terceiros (H18) na última; o progresso e o relatório na mesma janela.
+  "Entre marcadores" fica para quando os marcadores entrarem nos esquemas do `lm-doc`.
+- **Projeto:** no lugar dos diálogos de arquivo do sistema, um diálogo pequeno com os recentes e o caminho (o projeto é
+  uma pasta, e no modo cliente os arquivos são do servidor, I-15); "Salvar como" com os botões − + de versão do
+  "salvar como nova versão" (F-PRJ-008). O estado do projeto (só leitura H10/H11, takes interrompidos U5 com
+  "Recuperar / Descartar" por take, modo seguro U21) fica no mesmo diálogo, junto de três comandos que não têm outro
+  lugar sem barra de menus: exportar como arquivo único, salvar como modelo, limpar os arquivos sem uso (H4, P-13).
+- **Projeto novo:** um diálogo curto (nome, pasta, taxa, modelo), porque a taxa é fixa por projeto (item 8) e o
+  projeto é uma pasta; o legado só abria o modelo padrão.
+- **Sobre:** o diálogo do legado (versão e ambiente; Sobre, Autores, Envolvidos, Tradução, Licença, com o AUTHORS e o
+  CONTRIBUTORS do legado), mais o botão "Copiar" do ambiente e a aba "Manual" (P-34).
+- **Avisos e paleta:** não existem no legado (I-14, item 6); ficaram enxutos: a doca de avisos com as atividades, a
+  paleta com busca, grupo e teclas.
+- **Foco:** fechar um modal (Esc) devolve as teclas às páginas, e o workspace retoma o foco quando o campo de texto que
+  o tinha some (sem isso, as teclas globais paravam depois de fechar a paleta).

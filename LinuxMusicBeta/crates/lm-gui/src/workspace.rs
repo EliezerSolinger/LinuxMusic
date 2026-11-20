@@ -159,6 +159,10 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // a screen that had the focus (a text field) closed: the keys go back to the pages
+        if window.focused(cx).is_none() {
+            window.focus(&self.focus, cx);
+        }
         let started = Instant::now();
         let (quit, probe, animate, position) = self.core.update(cx, |core, _| {
             let quit = core.bench.frame();
@@ -211,6 +215,7 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|ws, _: &OpenPalette, window, cx| ws.toggle_screen(Screen::Palette, window, cx)))
             .on_action(cx.listener(|ws, _: &OpenSettings, window, cx| ws.toggle_screen(Screen::Settings, window, cx)))
+            .map(|d| screens::palette::screen_actions(d, cx))
             .on_action(cx.listener(|ws, _: &Undo, _, cx| {
                 ws.core.update(cx, |core, _| {
                     let _ = core.port_mut().undo();
@@ -225,10 +230,12 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|ws, _: &Save, _, cx| ws.run("project.save", Value::NULL, cx)))
             .on_action(cx.listener(|ws, _: &Quit, window, cx| ws.request(Pending::Quit, window, cx)))
-            .on_action(cx.listener(|ws, _: &CloseModal, _, cx| {
+            .on_action(cx.listener(|ws, _: &CloseModal, window, cx| {
                 if ws.confirm.take().is_none() {
                     ws.open.retain(|(s, _)| s.placement() != Placement::Modal);
                 }
+                // the closed modal may have had the focus (a text field): the keys go back to the pages
+                window.focus(&ws.focus, cx);
                 cx.notify();
             }))
             .child(transport::render(self, position, cx))

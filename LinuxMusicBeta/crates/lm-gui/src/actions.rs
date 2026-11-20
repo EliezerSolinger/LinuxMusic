@@ -29,6 +29,13 @@ actions!(
         Save,
         Quit,
         ToggleLoop,
+        // agent D's screens
+        OpenExport,
+        OpenProject,
+        SaveAs,
+        OpenNewProject,
+        OpenAbout,
+        OpenNotices,
     ]
 );
 
@@ -98,9 +105,7 @@ pub struct ActionDef {
     /// GPUI's name of the action type (`lm::TogglePlay`)
     pub gpui: &'static str,
     /// English key, translated by `ui::tr`
-    #[expect(dead_code, reason = "the command palette (agent B's) lists them")]
     pub label: &'static str,
-    #[expect(dead_code, reason = "the command palette (agent B's) lists them")]
     pub group: &'static str,
     pub keys: &'static [&'static str],
     /// Where the keys work: `None` everywhere, or a key context ("Pages", "Composition", "Mixing")
@@ -134,6 +139,12 @@ pub const REGISTRY: &[ActionDef] = &[
     a("edit.redo", "lm::Redo", "Redo", "Edit", &["secondary-shift-z", "ctrl-y"], None),
     a("project.save", "lm::Save", "Save", "Project", &["secondary-s"], None),
     a("app.quit", "lm::Quit", "Quit", "Project", &["secondary-q"], None),
+    a("file.open", "lm::OpenProject", "Open project", "Project", &["secondary-o"], None),
+    a("file.save_as", "lm::SaveAs", "Save as", "Project", &["secondary-shift-s"], None),
+    a("file.new", "lm::OpenNewProject", "New project", "Project", &["secondary-n"], None),
+    a("file.export", "lm::OpenExport", "Export audio", "Project", &["secondary-e"], None),
+    a("view.notices", "lm::OpenNotices", "Notices and activities", "View", &[], None),
+    a("help.about", "lm::OpenAbout", "About LinuxMusic", "Help", &["f1"], None),
     a("arrange.split", "composition::Split", "Split at the cursor", "Arrange", &["s"], Some("Composition")),
     a("arrange.duplicate", "composition::Duplicate", "Duplicate", "Arrange", &["secondary-d"], Some("Composition")),
     a("arrange.delete", "composition::DeleteItem", "Delete", "Arrange", &["delete", "backspace"], Some("Composition")),

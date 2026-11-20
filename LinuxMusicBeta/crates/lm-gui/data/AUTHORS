@@ -1,0 +1,122 @@
+Tobias Junghans
+  <tobydox/at/veyon/dot/io>
+  Development Manager
+
+Jonathan Aquilina
+  <eagles051387/at/gmail/dot/com>
+  Project Manager
+
+Paul Giblock
+  <drfaygo/at/gmail/dot/com>
+  Development
+
+Danny McRae
+  <khjklujn/at/yahoo.com>
+  Development
+
+Javier Serrano Polo
+  <javier/at/jasp/dot/net>
+  Development
+
+Lukas Wohlschläger
+  <lukaswhl/at/gmail/dot/com>
+  Development
+
+Andrew Kelley
+  <andrew/at/ziglang/dot/org>
+  Development
+
+Wong Cho Ching
+  <me/at/sadale/dot/net>
+  Development
+
+Andreas Brandmaier
+  <andy/at/brandmaier/dot/de>
+  BitInvader plugin
+
+Juan Fabián Simón
+  <treees/at/gmail/dot/com>
+  Version 0.4 plugin artwork
+
+Sebastian Tilsch
+  <djcompilation/at/gmx/dot/de>
+  Recording of many samples
+
+Gabriel
+  <kryos1/at/shaw/dot/ca>
+  Additional artwork
+
+Vesa Kivimäki
+  <contact/dot/diizy/at/nbl/dot/fi>
+  UI Lead developer
+
+Gurjot Singh
+  <bhattigurjot/at/gmail/dot/com>
+  Developer
+
+grejppi
+  <grejppi/at/gmail/dot/com>
+  Developer
+
+Uroš Maravić (Umcaruje)
+  <uros/dot/maravic/at/gmail/dot/com>
+  UI Developer
+
+Tobiasz Karoń (unfa)
+  <unfa/at/unfamusic/dot/com>
+  UI Developer
+
+Johannes Lorenz
+  <j/dot/git/at/lorenz/hyphen/ho/dot/me>
+  Developer
+
+Rubén Ibarra Pastor
+  <pastorrub/at/msn/dot/com>
+  Developer
+
+LocoMatt
+  <samozelko123/at/gmail/dot/com>
+  TripleOscillator artwork
+
+Chrissy McManus (Mikobuntu)
+  <chrissy/dot/mc/dot/1/at/hotmail/dot/co/dot/uk>
+  UI developer
+
+Oskar Wallgren
+  <oskar/dot/wallgren13/at/gmail/dot/com>
+  Development
+
+Michael Gregorius
+  <michael/dot/gregorius/dot/git/at/arcor/dot/de>
+  Development
+
+Built in from Guitarix (https://guitarix.org, GPL-2.0 or later), its own
+code, in plugins/Guitarix/gx:
+Hermann Meyer, James Warden, Andreas Degert, Pete Shorthose
+  and the other Guitarix authors
+  Guitarix's pedals, amps and cabinets, and their look (its style's images,
+  in plugins/Guitarix/gx/rcstyles)
+
+Photos of the drum machines in Drum Machines (Wikimedia Commons; see
+plugins/DrumMachines/photos/CREDITS.md):
+  Brandon Daniel and Clusternote (TR-808, TR-909, CC BY-SA 2.0), Midas Wouters
+  (TR-606, CC BY-SA 3.0), Blair Rideout (CR-8000, CC BY 2.0), Trouby (TR-77,
+  CC BY-SA 3.0), Linn Electronics / Forat Electronics (LinnDrum, CC BY-SA 3.0),
+  Alison (Oberheim DMX, CC BY-SA 4.0), 2xUeL (E-mu SP-1200, public domain),
+  Kimi95 (Akai MPC60, CC BY 3.0), withe (Akai MPC2000XL, public domain),
+  Ben Franske (Simmons SDS 5, CC BY-SA 2.5), Speculos (TR-707, CC BY-SA 3.0)
+
+Sounds of the Roland CR-78 in Drum Machines (Freesound; see
+data/samples/drummachines/cr78/CREDITS.txt):
+  wikter ("Roland CR78 Sounds", CC0), Bjornmossa (the tambourine, CC BY 4.0)
+
+Stephan M. Bernsee
+  smbPitchShift (Wide Open License), Guitarix's Detune
+
+Christian Robertson (Google)
+  Roboto Condensed (Apache License 2.0, plugins/Guitarix/gx/fonts), the
+  font Guitarix's look is in
+
+Fons Adriaensen
+  zita-resampler (GPL-3.0 or later), as Guitarix runs its units with it, and
+  zita-convolver (GPL-3.0 or later), its cabinets' and preamps' convolution
