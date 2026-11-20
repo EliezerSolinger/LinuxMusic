@@ -1061,3 +1061,55 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 - **Testes da `Session` com todos os plugins em depuração esperam por condição, não por tempo:** o render em
   depuração com todos os plugins é mais lento que o tempo real, então o relógio do dispositivo atrasa e uma mensagem
   carimbada com o relógio do sistema espera a sua hora (a regra do atraso fixo funcionando).
+
+## O host de plugins de terceiros fora do processo (I-9.6, 20/11)
+
+- **Quem fica fora:** só plugins de terceiros (LV2, CLAP, VST3, LADSPA, VST2 pelo wine). Os nossos continuam no
+  caminho de render, no processo do núcleo. O núcleo tem um `Proxy` (um `Processor` comum) e o plugin roda no
+  `lm-plugin-host`, um binário separado. O núcleo não linka nenhuma biblioteca de formato; só o helper linka.
+- **Um helper por instância** (por enquanto, e é o padrão): um plugin que cai ou trava leva junto só ele mesmo, e
+  o "recriar" é só reabrir aquele processo. Agrupar (um helper por fabricante ou por formato, para economizar
+  memória) cabe no mesmo protocolo, porque cada bloco compartilhado é de um plugin. Vai ser uma preferência, com o
+  padrão em um por instância. Ainda não está implementado.
+- **Memória compartilhada POSIX** (`shm_open`, mapeada pelos dois lados e apagada com `unlink` logo depois do
+  `ready`, para não sobrar nada se os dois morrerem). O bloco tem um cabeçalho de palavras atômicas, áudio de
+  entrada, saída e sidechain (f32), até 4096 eventos de 6 palavras na entrada e 256 de parâmetro na saída.
+  `lm-sys-ipc` é o único `unsafe`.
+- **Aperto de mão por bloco sem trava:**
+  - O núcleo escreve a entrada, incrementa `REQUEST` e acorda o helper.
+  - O helper processa, copia `REQUEST` em `DONE` e acorda o núcleo.
+  - O núcleo gira 64 vezes e depois espera pela palavra `DONE` com prazo.
+  - Para acordar: **futex** compartilhado (não `PRIVATE`) no Linux e `__ulock_wait`/`__ulock_wake` com
+    `UL_COMPARE_AND_WAIT_SHARED` no macOS.
+  - Por que não eventfd, pipe ou semáforo: cada um custa um descritor e uma chamada que pode bloquear sem prazo do
+    lado de quem escreve (pipe cheio). O futex e o ulock esperam numa palavra que já está no bloco, com prazo, e não
+    fazem nada quando ninguém espera. O semáforo POSIX com nome não tem espera com prazo no macOS.
+  - Nada aloca e nada trava do lado do núcleo; o teste roda sob a armadilha do `assert_no_alloc`.
+- **Prazo:**
+  - Ao vivo, 60% da duração do bloco. O resto fica para o grafo do núcleo.
+  - Um bloco perdido é silêncio só naquele nó, com o aviso `Error("plugin_host.late")` contado.
+  - Se o helper ainda está ocupado com o bloco anterior, o bloco seguinte também é perdido, sem esperar. Assim um
+    plugin lento nunca atrasa o callback mais de um prazo.
+  - Na exportação não há prazo (`Deadline::Wait`, S19): ela espera o plugin, para sair igual bit a bit.
+- **Travou:** 16 blocos perdidos seguidos = travado. O supervisor mata o processo, o nó fica em silêncio e aparece o
+  aviso `plugin_host.hung`.
+- **Caiu:** o supervisor vê a saída do processo pelo `try_wait`, marca o nó morto e acorda o `DONE`. O nó fica em
+  silêncio e aparece o aviso `plugin_host.crashed`. O estado salvo por último continua no nó do documento, então
+  "recriar" é construir o nó de novo, que sobe outro helper com aquele estado.
+- **Canal de controle:** linhas JSON (o JSON do `lm-state`) no stdin/stdout do helper, versão de protocolo 1. As
+  mensagens são `hello`, `load`/`ready`, `save`/`state`, `gui`, `quit` e `error`. Ficam fora do caminho de áudio,
+  sempre com prazo do lado do núcleo.
+- **Estado no nó:** os parâmetros do plugin são params do esquema `plugin:<id>` (mapeáveis por MIDI e
+  automatizáveis). O que não é parâmetro vai no campo `chunk` (texto hex).
+  - No LV2, o chunk tem os valores das portas de controle seguidos do estado do lilv.
+  - Um chunk que não se lê abre o plugin nos padrões, e o `ready` diz `restored: false`. Não é um erro que impede
+    abrir o projeto.
+  - O id é `<formato>-<16 hex do BLAKE3 da URI>`: estável e sem caracteres que o esquema não aceita.
+- **Varredura como `Operation`:** a lista vem só dos metadados (`list`). Cada plugin é sondado (`probe`) num helper
+  próprio, com prazo. O que cai ou estoura o prazo entra na lista de bloqueados com o motivo, e os bloqueados não são
+  sondados de novo (`skipped`). Um plugin bloqueado não derruba a varredura nem o núcleo.
+- **Pendente:**
+  - Plugin mono numa faixa estéreo processa só o canal 0. Falta rodar duas instâncias em dual mono.
+  - Janela do plugin pelo helper (I-22): o protocolo tem `gui`; o LV2 precisa do suil/GTK.
+  - Prioridade de tempo real na thread de áudio do helper (pelo `lm-sys-linux`).
+  - Os formatos CLAP, VST3, LADSPA e VST2-wine.
