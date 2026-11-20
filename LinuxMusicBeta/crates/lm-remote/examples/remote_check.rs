@@ -68,6 +68,16 @@ fn main() {
     }
     rtt.sort();
     println!("round trip: median {:?}, worst {:?}", rtt[rtt.len() / 2], rtt[rtt.len() - 1]);
+    // A project without tracks gets one (and loses it again by undo at the end)
+    let made_track = port.root().get("tracks").is_none_or(|t| t.is_empty());
+    if made_track {
+        let track = Value::object([("name", Value::text("remote_check"))]);
+        let insert = EditOp::Insert { temp: 1, parent: lm_port::Ref::Id(lm_port::ROOT), list: "tracks".into(), index: 0, node: track };
+        let Pending::Waiting(id) = port.apply(Label::new("check.track"), vec![insert]) else { panic!("apply") };
+        let Finished::Applied(r) = wait(&mut port, id) else { panic!("applied") };
+        r.expect("track");
+        println!("an empty project: a track was added");
+    }
     let first =
         NodeId::parse(port.root().get("tracks").unwrap().at(0).unwrap().get("id").unwrap().as_text().unwrap()).unwrap();
     let t = Instant::now();
@@ -104,5 +114,11 @@ fn main() {
         std::thread::sleep(Duration::from_millis(5));
     }
     println!("telemetry: rate {} Hz, {} meters", port.telemetry().position.sample_rate, port.telemetry().meters.len());
+    if made_track {
+        let Pending::Waiting(id) = port.undo() else { panic!("undo") };
+        let _ = wait(&mut port, id);
+        let Pending::Waiting(id) = port.undo() else { panic!("undo") };
+        let _ = wait(&mut port, id);
+    }
     println!("ok");
 }

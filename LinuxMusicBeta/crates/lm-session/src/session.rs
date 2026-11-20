@@ -72,6 +72,8 @@ pub struct SessionConfig {
     pub delay: Duration,
     /// Where an untitled project lives until it is saved somewhere
     pub untitled: PathBuf,
+    /// The recording's disk, made to fill up on purpose (the tests of H3)
+    pub record_faults: lm_io::DiskFaults,
 }
 
 impl std::fmt::Debug for SessionConfig {
@@ -101,6 +103,7 @@ impl SessionConfig {
             waker: None,
             delay: Duration::ZERO,
             untitled,
+            record_faults: lm_io::DiskFaults::default(),
         })
     }
 }
@@ -237,6 +240,8 @@ struct RecordStart {
 pub struct Session {
     /// Dropped first: the clock stops waking the main thread
     _ticker: Option<Ticker>,
+    /// The watchdog of the callback (U21)
+    watchdog: crate::watchdog::Watchdog,
     device: Option<Device>,
     disk: Option<DiskWriter>,
     journal: Journal,
@@ -296,7 +301,7 @@ pub struct Session {
     /// The recordings whose takes are being closed: all of one recording enter the tree in one transaction
     recordings: std::collections::BTreeMap<u64, PendingRecording>,
     recording_serial: u64,
-    /// Takes waiting to be closed: one at a time (two takes of the same content share their files' names)
+    /// Takes waiting to be closed (started at the next pump)
     take_queue: std::collections::VecDeque<(TakeJob, u64)>,
     next_take_after: bool,
     /// Records forgotten once the journal line that holds their take is on the disk (U5)
@@ -304,6 +309,8 @@ pub struct Session {
     xruns: u32,
     /// The imports that ended, by their operation, for the port to answer (`take_imported`)
     imported: Vec<(lm_base::OperationId, Result<Resource>)>,
+    /// The project opened in safe mode (U21)
+    safe_mode_on: bool,
     /// What `edit.copy` copied (H13)
     pub(crate) clipboard: Option<Clipboard>,
     /// The finished operations the headless printer has not shown
@@ -453,7 +460,7 @@ impl Session {
         });
         let journal = Journal::start(&folder, config.faults.clone(), String::new(), 0, false);
         let resources = ResourceStore::new(folder.root().to_path_buf(), config.clock.clone());
-        let disk = match DiskWriter::start() {
+        let disk = match DiskWriter::start_with(config.record_faults.clone()) {
             Ok(d) => Some(d),
             Err(e) => {
                 notices.error(&e, None, None);
@@ -465,6 +472,12 @@ impl Session {
         let now = config.clock.now();
         let saved_root = document.root().clone();
         let mut s = Session {
+            watchdog: crate::watchdog::Watchdog::start(Arc::new(crate::watchdog::Shared {
+                table: Mutex::new(Arc::new(InstalledTable::default())),
+                folder: Mutex::new(folder.root().to_path_buf()),
+                running: AtomicBool::new(true),
+                watch: Mutex::new(engine.watch()),
+            })),
             _ticker: config.waker.clone().map(Ticker::start),
             device: Some(device),
             disk,
@@ -529,6 +542,7 @@ impl Session {
             next_take_after: false,
             xruns: 0,
             clipboard: None,
+            safe_mode_on: false,
             imported: Vec::new(),
             finished: Vec::new(),
             main,
@@ -586,6 +600,11 @@ impl Session {
 
     pub fn status(&self) -> &Value {
         &self.status
+    }
+
+    /// The keys of the notices kept (tests, the headless tool)
+    pub fn notices_keys(&self) -> Vec<&'static str> {
+        self.notices.keys()
     }
 
     pub fn notices(&mut self) -> &mut Notices {
@@ -666,6 +685,7 @@ impl Session {
                 .find(id)
                 .and_then(|n| n.get("plugin").and_then(Value::as_text).map(str::to_owned))
                 .is_some_and(|p| self.plugins.get(&p).is_some())
+            && self.document.find(id).and_then(|n| n.get("bypass").and_then(Value::as_bool)) != Some(true)
             && self.table.node(NodeKey::Instrument(id)).is_none()
             && self.table.node(NodeKey::Insert(id)).is_none()
         {
@@ -939,6 +959,9 @@ impl Session {
             return;
         }
         self.table = table;
+        if let Ok(mut t) = self.watchdog.shared.table.lock() {
+            *t = self.table.clone();
+        }
         self.waiting_nodes = waiting.into_iter().collect();
         self.replacing_nodes = replacing.into_iter().collect();
         for t in cancelled {
@@ -1554,6 +1577,41 @@ impl Session {
         Ok(())
     }
 
+    /// U21: the project was left with a plugin hanging the callback (the watchdog's file): it opens with that
+    /// plugin bypassed, in one undoable step, with a notice and `status().safeMode`
+    fn safe_mode(&mut self) {
+        let folder = self.project.folder.root().to_path_buf();
+        let Some(suspect) = crate::watchdog::read_suspect(&folder) else { return };
+        let plugin =
+            self.document.find(suspect.node).and_then(|n| n.get("plugin").and_then(Value::as_text).map(str::to_owned));
+        if let Some(plugin) = plugin
+            && !self.project.read_only
+        {
+            let node = suspect.node;
+            let r = self.document.transact(Label::new("session.safe_mode"), |e| {
+                e.set(node, &[PathStep::key("bypass")], Value::bool(true))
+            });
+            if let Err(e) = r {
+                self.notices.error(&e, None, None);
+            }
+            let entry = Value::object([
+                ("node", Value::text(node.to_string())),
+                ("plugin", Value::text(plugin.as_str())),
+                ("reason", Value::text(suspect.reason.as_str())),
+            ]);
+            self.status = self.status.with("safeMode", Value::bool(true)).with("safeModePlugins", Value::list([entry]));
+            self.safe_mode_on = true;
+            self.notices.push(
+                "session.safe_mode",
+                vec![("node", Value::text(node.to_string())), ("plugin", Value::text(plugin))],
+                Severity::Warning,
+                Some(Target::Node(node)),
+                Vec::new(),
+            );
+        }
+        let _ = std::fs::remove_file(crate::watchdog::suspect_path(&folder));
+    }
+
     /// Closes the project: a new untitled one takes its place (its lock released, its journal ended). The caller
     /// asks about saving before
     pub fn close_project(&mut self) -> Result<()> {
@@ -1614,6 +1672,7 @@ impl Session {
     }
 
     fn replace_document(&mut self, mut document: Document, ui: Option<Value>) -> Result<()> {
+        self.safe_mode_on = false;
         let _ = self.engine.commands().send(Command::Stop);
         self.feed = document.feed(Topic::All);
         self.document = document;
@@ -1633,6 +1692,7 @@ impl Session {
 
     /// A project at another rate: the device is opened again at it, with a new engine and compiler
     fn restart_audio(&mut self, rate: u32) -> Result<()> {
+        self.watchdog.shared.running.store(false, Ordering::Release);
         if let Some(mut d) = self.device.take() {
             let _ = d.stop();
             d.close();
@@ -1653,6 +1713,10 @@ impl Session {
         self.spec = spec;
         self.device = Some(device);
         self.telemetry = empty_telemetry(rate);
+        if let Ok(mut w) = self.watchdog.shared.watch.lock() {
+            *w = self.engine.watch();
+        }
+        self.watchdog.shared.running.store(true, Ordering::Release);
         Ok(())
     }
 
@@ -1748,6 +1812,7 @@ impl Session {
             migrated_from,
             saved_root,
         };
+        self.safe_mode();
         if !interrupted.is_empty() {
             self.notices.warn("session.takes.interrupted", vec![("count", Value::int(interrupted.len() as i64))]);
         }
@@ -1791,6 +1856,11 @@ impl Session {
     // ---- the status tree (lm-port `trees::status`) ----
 
     fn refresh_status(&mut self) {
+        if let Ok(mut f) = self.watchdog.shared.folder.lock()
+            && *f != self.project.folder.root()
+        {
+            *f = self.project.folder.root().to_path_buf();
+        }
         let p = &self.project;
         let interrupted: Vec<Value> = lm_io::find_interrupted(&p.folder.audio())
             .unwrap_or_default()
@@ -1817,8 +1887,10 @@ impl Session {
             .with("recent", self.preferences.get(&["recent"]).cloned().unwrap_or_else(Value::empty_list))
             .with("templates", Value::empty_list())
             .with("interruptedTakes", Value::list(interrupted))
-            .with("safeMode", Value::bool(false))
-            .with("safeModePlugins", Value::empty_list());
+            .with("safeMode", Value::bool(self.safe_mode_on));
+        if !self.safe_mode_on {
+            self.status = self.status.with("safeModePlugins", Value::empty_list());
+        }
         if self.status.get("lastExport").is_none() {
             self.status = self.status.with("lastExport", Value::NULL);
         }
@@ -1979,10 +2051,12 @@ impl Session {
     }
 
     fn next_take(&mut self) {
-        if !self.take_ops.is_empty() {
-            return;
+        while let Some((job, recording)) = self.take_queue.pop_front() {
+            self.start_take(job, recording);
         }
-        let Some((job, recording)) = self.take_queue.pop_front() else { return };
+    }
+
+    fn start_take(&mut self, job: TakeJob, recording: u64) {
         let format = match self.preferences.text(&["recording", "format"]) {
             Some("rf64-32f") => TakeFormat::Float32,
             _ => TakeFormat::Int24,
@@ -2253,6 +2327,7 @@ impl Session {
     /// Ends the session the way U13 asks: the recording stops and closes, cancellable operations are cancelled,
     /// the others finish, the journal reaches the disk. The caller asks about saving before
     pub fn close(mut self) {
+        self.watchdog.shared.running.store(false, Ordering::Release);
         self.stop();
         let lists: [&dyn OpList; 3] = [&self.open_ops, &self.load_ops, &self.import_ops];
         for l in lists {

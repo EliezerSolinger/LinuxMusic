@@ -122,3 +122,21 @@ fn a_pump_stopped_for_ten_seconds_loses_nothing_of_a_recording() {
     let frames = lm_sys_sndfile::Reader::open(&path).expect("open").info().frames as f64;
     assert!(frames >= wall * 48_000.0 * 0.95, "{frames} frames for {wall} s");
 }
+
+#[test]
+fn a_full_disk_in_the_middle_of_a_recording_keeps_the_take_up_to_the_last_good_block() {
+    let dir = TempDir::new("record-full");
+    let mut config = config(&dir);
+    // Room for 32 s of one f32 channel at 48 kHz: the 30 s reservation fits, the next refill does not (H3)
+    config.record_faults = lm_io::DiskFaults::full_after(32 * 48_000 * 4);
+    let mut s = Session::new(config).expect("session");
+    s.create(dir.join("song")).expect("create");
+    let a = audio_track(&mut s, "Full", 1);
+    settle(&mut s);
+    s.record(None).expect("record");
+    wait_until(&mut s, "the disk fills", |s| s.notices_keys().contains(&"session.record.disk_full"));
+    s.stop();
+    wait_until(&mut s, "the take", |s| items(s, a) == 1);
+    let item = s.document().find(a).and_then(|t| t.get("items").and_then(|l| l.at(0).cloned())).expect("item");
+    assert!(item.get("length").and_then(Value::as_int).unwrap_or(0) > 0, "the take is in the tree");
+}
