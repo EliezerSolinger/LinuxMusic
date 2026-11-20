@@ -3723,6 +3723,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-fluidsynth"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-dsp",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+ "lm-sys-fluidsynth",
+]
+
+[[package]]
 name = "lm-plugins-freeboy"
 version = "0.1.0"
 dependencies = [
