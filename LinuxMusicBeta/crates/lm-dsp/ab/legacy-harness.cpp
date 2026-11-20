@@ -76,6 +76,8 @@ using namespace lmms;
 auto runMonstro(const QJsonObject& c, std::int64_t frames, std::int64_t block) -> std::vector<SampleFrame>;
 auto runWatsyn(const QJsonObject& c, std::int64_t frames, std::int64_t block) -> std::vector<SampleFrame>;
 auto runPatman(const QJsonObject& c, std::int64_t frames, std::int64_t block) -> std::vector<SampleFrame>;
+auto runSlicerT(const QJsonObject& c, std::int64_t frames, std::int64_t block) -> std::vector<SampleFrame>;
+auto runSlicerTAnalysis(const QJsonObject& c, std::int64_t frames) -> std::vector<SampleFrame>;
 
 namespace
 {
@@ -322,6 +324,8 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 	if (unit == "monstro") { return runMonstro(c, frames, block); }
 	if (unit == "watsyn") { return runWatsyn(c, frames, block); }
 	if (unit == "patman") { return runPatman(c, frames, block); }
+	if (unit == "slicert") { return runSlicerT(c, frames, block); }
+	if (unit == "slicert-analysis") { return runSlicerTAnalysis(c, frames); }
 	if (unit == "nes")
 	{
 		// The Nescaline's note (NesObject compiled in from the plugin) on a note of a track of the song, its frequency

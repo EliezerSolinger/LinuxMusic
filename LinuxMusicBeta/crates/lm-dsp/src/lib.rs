@@ -34,6 +34,7 @@
 //! - [`sfxr`]: the sfxr;
 //! - [`watsyn`]: the Watsyn;
 //! - [`patman`]: the PatMan (Gravis Ultrasound patches);
+//! - [`slicert`]: the SlicerT's slices;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
 //!
 //! The effects of the validation plugins:
@@ -92,6 +93,7 @@ pub mod reverb_sc;
 pub mod sample_player;
 pub mod sfxr;
 pub mod slew_distortion;
+pub mod slicert;
 pub mod small_effects;
 pub mod sound_shaping;
 pub mod tolerance;

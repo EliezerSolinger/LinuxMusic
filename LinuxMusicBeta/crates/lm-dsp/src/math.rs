@@ -60,6 +60,14 @@ pub fn exp2(x: f64) -> f64 {
     libm::exp2(x)
 }
 #[inline]
+pub fn log2(x: f64) -> f64 {
+    libm::log2(x)
+}
+#[inline]
+pub fn hypotf(x: f32, y: f32) -> f32 {
+    libm::hypotf(x, y)
+}
+#[inline]
 pub fn log(x: f64) -> f64 {
     libm::log(x)
 }

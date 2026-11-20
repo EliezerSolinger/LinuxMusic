@@ -10611,6 +10611,212 @@
         "looped": true,
         "tuned": true
       }
+    },
+    {
+      "name": "slicert-whole",
+      "unit": "slicert",
+      "rate": 44100,
+      "frames": 96000,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "sample": "data/drums.wav",
+        "points": [
+          0.0,
+          0.25,
+          0.5,
+          0.625,
+          0.75,
+          0.875,
+          1.0
+        ],
+        "index": 0
+      }
+    },
+    {
+      "name": "slicert-slice-2",
+      "unit": "slicert",
+      "rate": 44100,
+      "frames": 44100,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "sample": "data/drums.wav",
+        "points": [
+          0.0,
+          0.25,
+          0.5,
+          0.625,
+          0.75,
+          0.875,
+          1.0
+        ],
+        "index": 2
+      }
+    },
+    {
+      "name": "slicert-slice-5-short-fade",
+      "unit": "slicert",
+      "rate": 44100,
+      "frames": 44100,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "sample": "data/drums.wav",
+        "points": [
+          0.0,
+          0.25,
+          0.5,
+          0.625,
+          0.75,
+          0.875,
+          1.0
+        ],
+        "index": 5,
+        "FadeOut": 2.0
+      }
+    },
+    {
+      "name": "slicert-synced",
+      "unit": "slicert",
+      "rate": 44100,
+      "frames": 44100,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "sample": "data/drums.wav",
+        "points": [
+          0.0,
+          0.25,
+          0.5,
+          0.625,
+          0.75,
+          0.875,
+          1.0
+        ],
+        "index": 3,
+        "BPM sync": 1,
+        "Original bpm": 100
+      }
+    },
+    {
+      "name": "slicert-looped",
+      "unit": "slicert",
+      "rate": 44100,
+      "frames": 44100,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "sample": "data/drums.wav",
+        "points": [
+          0.0,
+          0.25,
+          0.5,
+          0.625,
+          0.75,
+          0.875,
+          1.0
+        ],
+        "index": 4,
+        "Loop": 1
+      }
+    },
+    {
+      "name": "slicert-ping-pong",
+      "unit": "slicert",
+      "rate": 44100,
+      "frames": 44100,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "sample": "data/drums.wav",
+        "points": [
+          0.0,
+          0.25,
+          0.5,
+          0.625,
+          0.75,
+          0.875,
+          1.0
+        ],
+        "index": 1,
+        "Loop": 2,
+        "BPM sync": 1,
+        "Original bpm": 175
+      }
+    },
+    {
+      "name": "slicert-analysis-default",
+      "unit": "slicert-analysis",
+      "rate": 44100,
+      "frames": 256,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "sample": "data/drums.wav"
+      }
+    },
+    {
+      "name": "slicert-analysis-snapped",
+      "unit": "slicert-analysis",
+      "rate": 44100,
+      "frames": 256,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "sample": "data/drums.wav",
+        "Note threshold": 0.3,
+        "Slice snap": 4,
+        "Original bpm": 120
+      }
+    },
+    {
+      "name": "slicert-analysis-strict",
+      "unit": "slicert-analysis",
+      "rate": 44100,
+      "frames": 256,
+      "block": 256,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "sample": "data/drums.wav",
+        "Note threshold": 1.5
+      }
     }
   ]
 }

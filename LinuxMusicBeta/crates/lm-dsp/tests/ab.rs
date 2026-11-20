@@ -909,6 +909,88 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "slicert-analysis" {
+        // The SlicerT's analysis: the tempo found on loading, the slices (again with the case's knobs)
+        use lm_dsp::slicert::{find_bpm, find_slices};
+        let s = &case["settings"];
+        let wav = std::fs::read(ab_dir().join(s["sample"].as_str().unwrap())).unwrap();
+        let rate = u32::from_le_bytes(wav[24..28].try_into().unwrap());
+        let data_at = wav.windows(4).position(|w| w == b"data").unwrap() + 8;
+        let frames: Vec<[f32; 2]> = wav[data_at..]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| {
+                [
+                    f32::from(i16::from_le_bytes([b[0], b[1]])) / 32768.0,
+                    f32::from(i16::from_le_bytes([b[2], b[3]])) / 32768.0,
+                ]
+            })
+            .collect();
+        let found = find_bpm(&frames, rate);
+        let bpm = f(s, "Original bpm", found as f32) as i32;
+        let points = find_slices(&frames, rate, f(s, "Note threshold", 0.6), bpm, f(s, "Slice snap", 0.0) as i32);
+        out.fill([0.0; 2]);
+        out[0] = [found as f32, points.len() as f32];
+        for (i, p) in points.iter().enumerate().take(out.len() - 1) {
+            out[i + 1] = [*p, *p];
+        }
+        return out;
+    }
+    if case["unit"] == "slicert" {
+        // The SlicerT on a 16-bit WAV of ab/data (read as libsndfile reads it: over 32768), the case's slice points,
+        // the song at its default 120 BPM, the interpolator linear
+        use lm_dsp::sample_player::{Interpolator, Loop};
+        use lm_dsp::slicert::*;
+        use lm_sys_samplerate::{Quality, Resampler};
+        struct Src(Resampler);
+        impl Interpolator for Src {
+            fn process(&mut self, input: &[[f32; 2]], output: &mut [[f32; 2]], ratio: f64) -> (usize, usize) {
+                self.0.set_ratio(ratio).unwrap();
+                let done = self.0.process(input.as_flattened(), output.as_flattened_mut()).unwrap();
+                (done.input_frames, done.output_frames)
+            }
+            fn reset(&mut self) {
+                self.0.reset().unwrap();
+            }
+        }
+        let s = &case["settings"];
+        let wav = std::fs::read(ab_dir().join(s["sample"].as_str().unwrap())).unwrap();
+        let rate = u32::from_le_bytes(wav[24..28].try_into().unwrap());
+        let data_at = wav.windows(4).position(|w| w == b"data").unwrap() + 8;
+        let frames: Vec<[f32; 2]> = wav[data_at..]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| {
+                let l = i16::from_le_bytes([b[0], b[1]]);
+                let r = i16::from_le_bytes([b[2], b[3]]);
+                [f32::from(l) / 32768.0, f32::from(r) / 32768.0]
+            })
+            .collect();
+        let points: Vec<f32> = s["points"].as_array().unwrap().iter().map(|p| p.as_f64().unwrap() as f32).collect();
+        let settings = SlicerSettings {
+            fade_out: f(s, "FadeOut", 10.0),
+            original_bpm: f(s, "Original bpm", 1.0) as i32,
+            sync: f(s, "BPM sync", 0.0) != 0.0,
+            looping: [Loop::Off, Loop::On, Loop::PingPong][f(s, "Loop", 0.0) as usize],
+        };
+        let slice = slice_for(&points, s["index"].as_i64().unwrap() as i32).unwrap();
+        let sample = SlicerSample { frames: &frames, sample_rate: rate };
+        let mut voice = SlicerVoice::new(slice, frames.len(), Src(Resampler::new(Quality::Linear, 2, 1.0).unwrap()));
+        let output_rate = case["rate"].as_f64().unwrap() as f32;
+        let mut playing = true;
+        for start in (0..out.len()).step_by(block as usize) {
+            let end = (start + block as usize).min(out.len());
+            if playing {
+                playing = voice.render(&mut out[start..end], &sample, &settings, 120.0, 0.0, output_rate, 256);
+            }
+            if !playing {
+                out[start..end].fill([0.0; 2]);
+            }
+        }
+        return out;
+    }
     if case["unit"] == "patman" {
         // The PatMan with its patch read from ab/data, the sample player's interpolator linear (libsamplerate's), as
         // the legacy plugin's
