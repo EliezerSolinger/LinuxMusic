@@ -33,6 +33,8 @@ pub struct HostConfig {
     pub load_timeout: Duration,
     /// Folders the helper searches for plugins besides the system's (an LV2 bundle or a folder of them)
     pub paths: Vec<PathBuf>,
+    /// Whether the system's plugin folders are searched too (the tests search only `paths`)
+    pub system_paths: bool,
 }
 
 impl HostConfig {
@@ -45,7 +47,13 @@ impl HostConfig {
                 _ => PathBuf::from("lm-plugin-host"),
             }
         });
-        HostConfig { binary, deadline: Deadline::default(), load_timeout: Duration::from_secs(20), paths: Vec::new() }
+        HostConfig {
+            binary,
+            deadline: Deadline::default(),
+            load_timeout: Duration::from_secs(20),
+            paths: Vec::new(),
+            system_paths: true,
+        }
     }
 }
 
@@ -61,6 +69,8 @@ pub struct LoadRequest {
     pub inputs: usize,
     pub outputs: usize,
     pub sidechain: usize,
+    /// The file it was found in, tried first
+    pub file: Option<String>,
     /// The plugin's own state, saved before
     pub chunk: Option<Vec<u8>>,
     /// Parameter values by their key (port symbol, param id)
@@ -174,6 +184,7 @@ pub fn start(config: &HostConfig, req: &LoadRequest) -> Result<(Proxy, Arc<Hoste
         ("t", Value::text("load")),
         ("format", Value::text(req.format.as_str())),
         ("uri", Value::text(req.uri.as_str())),
+        ("file", req.file.as_deref().map_or(Value::NULL, Value::text)),
         ("shm", Value::text(shm.name())),
         ("words", Value::int(layout.words() as i64)),
         ("chunk", req.chunk.as_ref().map_or(Value::NULL, |c| Value::text(hex(c)))),

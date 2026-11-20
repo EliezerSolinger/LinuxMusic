@@ -20,6 +20,7 @@ lm-state.workspace = true
 lm-render.workspace = true
 lm-sys-ipc.workspace = true
 lm-sys-lilv.workspace = true
+lm-sys-clap.workspace = true
 lm-plugin-proxy.workspace = true
 
 [dev-dependencies]
@@ -27,4 +28,5 @@ assert_no_alloc.workspace = true
 lm-plugin = { workspace = true, features = ["testing"] }
 lm-time.workspace = true
 lm-session.workspace = true
+lm-sys-clap = { workspace = true, features = ["testing"] }
 lm-doc.workspace = true

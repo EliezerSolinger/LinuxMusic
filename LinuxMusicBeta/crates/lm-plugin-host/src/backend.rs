@@ -45,6 +45,8 @@ pub struct Listed {
     pub params: Vec<Param>,
     pub latency: bool,
     pub has_window: bool,
+    /// The file it was found in (CLAP, VST3, LADSPA), tried first when it is loaded
+    pub file: Option<String>,
 }
 
 impl Listed {
@@ -61,7 +63,34 @@ impl Listed {
             ("params", Value::list(self.params.iter().map(Param::to_value))),
             ("latency", Value::bool(self.latency)),
             ("has_window", Value::bool(self.has_window)),
+            ("file", self.file.as_deref().map_or(Value::NULL, Value::text)),
         ])
+    }
+}
+
+/// The song's position for one block, from the shared block
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Transport {
+    pub rate: u32,
+    pub playing: bool,
+    pub recording: bool,
+    /// The timeline sample of the block's first frame
+    pub position: i64,
+    pub tick: i64,
+    pub ppq: u32,
+    pub bpm: f64,
+    /// (numerator, denominator)
+    pub signature: (u8, u8),
+}
+
+impl Transport {
+    /// Quarter notes from the start
+    pub fn beats(&self) -> f64 {
+        if self.ppq == 0 { 0.0 } else { self.tick as f64 / f64::from(self.ppq) }
+    }
+
+    pub fn seconds(&self) -> f64 {
+        if self.rate == 0 { 0.0 } else { self.position as f64 / f64::from(self.rate) }
     }
 }
 
@@ -73,7 +102,14 @@ pub trait Plugin: Send {
     /// A parameter's value now (after a state was restored, the core reads them back)
     fn param(&self, index: u32) -> f32;
     /// One block: `events` with their offsets, in order
-    fn process(&mut self, frames: usize, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[(u32, EventKind)]);
+    fn process(
+        &mut self,
+        frames: usize,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        events: &[(u32, EventKind)],
+        transport: &Transport,
+    );
     fn save(&mut self) -> Result<Option<Vec<u8>>>;
     fn restore(&mut self, chunk: &[u8]) -> Result<()>;
     /// Opens or closes the plugin's own window; `Ok(false)` when it has none
@@ -81,6 +117,8 @@ pub trait Plugin: Send {
         let _ = on;
         Ok(false)
     }
+    /// The main thread's turn, every ~10 ms (the plugin's callbacks, restarts)
+    fn idle(&mut self) {}
     /// Whether the plugin said its own state changed since the last call (the core then asks for it)
     fn state_changed(&mut self) -> bool {
         false

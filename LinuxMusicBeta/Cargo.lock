@@ -3669,6 +3669,7 @@ dependencies = [
  "lm-render",
  "lm-session",
  "lm-state",
+ "lm-sys-clap",
  "lm-sys-ipc",
  "lm-sys-lilv",
  "lm-time",

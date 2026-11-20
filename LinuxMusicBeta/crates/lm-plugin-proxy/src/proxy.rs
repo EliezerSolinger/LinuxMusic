@@ -171,6 +171,9 @@ impl Processor for Proxy {
         words[w::TICK_LO].store(t.tick as u32, Ordering::Relaxed);
         words[w::TICK_HI].store((t.tick >> 32) as u32, Ordering::Relaxed);
         words[w::BPM].store((t.bpm as f32).to_bits(), Ordering::Relaxed);
+        words[w::PPQ].store(t.ppq, Ordering::Relaxed);
+        let sig = (u32::from(t.time_signature.numerator()) << 8) | u32::from(t.time_signature.denominator());
+        words[w::SIGNATURE].store(sig, Ordering::Relaxed);
         // Hand it over
         self.seq = self.seq.wrapping_add(1);
         words[w::REQUEST].store(self.seq, Ordering::Release);

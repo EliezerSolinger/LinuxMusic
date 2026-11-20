@@ -48,6 +48,10 @@ pub mod w {
     pub const QUIT: usize = 22;
     /// Set by the helper when the plugin says its own state changed (its window, a preset); the core clears it
     pub const STATE: usize = 23;
+    /// Ticks per quarter note of `TICK`
+    pub const PPQ: usize = 24;
+    /// The time signature: numerator << 8 | denominator
+    pub const SIGNATURE: usize = 25;
     pub const HEADER: usize = 32;
 }
 

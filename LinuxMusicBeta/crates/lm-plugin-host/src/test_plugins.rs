@@ -6,7 +6,7 @@
 use lm_base::{Error, Result};
 use lm_render::EventKind;
 
-use crate::backend::{Listed, Param, Plugin};
+use crate::backend::{Listed, Param, Plugin, Transport};
 
 fn param(key: &str, min: f64, max: f64, default: f64, integer: bool) -> Param {
     Param { key: key.into(), name: key.into(), min, max, default, integer, toggled: false, logarithmic: false }
@@ -24,6 +24,7 @@ fn listed(uri: &str, instrument: bool, params: Vec<Param>) -> Listed {
         params,
         latency: uri == "gain",
         has_window: false,
+        file: None,
     }
 }
 
@@ -97,7 +98,14 @@ impl Plugin for Test {
         }
     }
 
-    fn process(&mut self, frames: usize, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[(u32, EventKind)]) {
+    fn process(
+        &mut self,
+        frames: usize,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        events: &[(u32, EventKind)],
+        _transport: &Transport,
+    ) {
         for (_, e) in events {
             match *e {
                 EventKind::Param { index, value } => self.set_param(index, value),

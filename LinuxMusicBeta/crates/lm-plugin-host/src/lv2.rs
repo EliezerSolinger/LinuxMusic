@@ -7,7 +7,7 @@ use lm_base::{Error, Result};
 use lm_render::EventKind;
 use lm_sys_lilv::{Direction, Instance, InstanceConfig, PluginInfo, PortKind, World};
 
-use crate::backend::{Listed, Param, Plugin};
+use crate::backend::{Listed, Param, Plugin, Transport};
 
 /// A world with the given folders (a bundle `*.lv2`, or a folder of bundles), or the system's LV2 path
 pub fn world(paths: &[PathBuf]) -> Result<World> {
@@ -69,6 +69,7 @@ fn listed(info: &PluginInfo) -> Listed {
         params: params_of(info, 48_000.0).into_iter().map(|(_, p)| p).collect(),
         latency: info.latency_port.is_some(),
         has_window: false,
+        file: None,
     }
 }
 
@@ -128,7 +129,14 @@ impl Plugin for Lv2 {
         }
     }
 
-    fn process(&mut self, frames: usize, inputs: &[&[f32]], outputs: &mut [&mut [f32]], events: &[(u32, EventKind)]) {
+    fn process(
+        &mut self,
+        frames: usize,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        events: &[(u32, EventKind)],
+        _transport: &Transport,
+    ) {
         for (offset, e) in events {
             let midi = |b: [u8; 3]| Some(b);
             let msg = match *e {

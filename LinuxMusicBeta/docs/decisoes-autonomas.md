@@ -1218,11 +1218,39 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
     estado do documento (o último guardado). O antigo, já em silêncio, toca até o novo ficar pronto.
   - **Na exportação** o proxy espera cada bloco (`Deadline::Wait`).
   - Um estado acima de 64 KB como recurso (U24) ainda não foi feito: o chunk vai inteiro na árvore.
+- **CLAP** (`lm-sys-clap`, 20/11):
+  - **O ABI foi escrito à mão**, sem bindgen. Os cabeçalhos do CLAP 1.2.6 (MIT) ficam no repositório só para os
+    testes: um programa em C compara o tamanho, o alinhamento e os offsets de cada struct com os do Rust, e os
+    plugins de teste são escritos em C contra eles. Um erro de transcrição aparece no teste e não num plugin de
+    verdade.
+  - **Varredura em dois tempos.** Listar um CLAP roda código do plugin (o `init` e a criação, para ler parâmetros e
+    portas). Por isso o helper primeiro só nomeia os arquivos (`files`), e cada arquivo é listado num helper próprio
+    com prazo. Um arquivo que derruba ou trava a listagem fica bloqueado como `file:<caminho>`. Formatos cuja
+    listagem não roda código (LV2, `test`) respondem `no_files` e seguem como antes.
+  - **Identidade:** a URI é o id do CLAP. O arquivo onde ele foi achado vai junto (`Scanned::file`,
+    `LoadRequest::file`) e é tentado primeiro; se o arquivo mudou de lugar, procura-se nas pastas.
+  - **Parâmetros:** a chave é `p<id>` (os ids do CLAP são estáveis entre versões). Os ocultos ficam de fora.
+  - **Threads.** A thread principal do helper passou a ser a thread principal do plugin: o canal de controle é lido
+    por uma thread própria, e entre as mensagens o plugin ganha a vez a cada 10 ms (`Plugin::idle`: callbacks,
+    restarts, novas leituras dos parâmetros). O `thread-check` do CLAP responde pelo papel que cada thread declarou.
+  - **Restart** (uma latência nova, portas novas): o lado de áudio para no bloco seguinte (`stop_processing` na
+    thread de áudio) e toca silêncio; a thread principal desativa, reativa e lê a latência de novo. A nova latência
+    chega ao núcleo pela palavra `LATENCY`, que vira `LatencyChanged` e recompila a PDC. Um estado restaurado ao
+    carregar faz o restart antes do `ready`, então a latência informada já é a nova.
+  - **Transporte para todos os formatos:** o bloco compartilhado passou a levar PPQ e fórmula de compasso, e o
+    `Plugin::process` recebe o transporte. O CLAP recebe batidas, segundos, andamento, tocando/gravando e compasso.
+    O LV2 ainda não usa (`time:Position` fica para depois).
+  - **Notas:**
+    - expressões com o id da nota; uma rampa vira um valor a cada 32 quadros até acabar;
+    - o pan vai de −1..1 para 0..1;
+    - "soltar todas" é um note-off curinga e "silêncio" é um choke curinga.
+  - **Sem alocação** do lado do host no `process` (testado sob a armadilha). No helper, a lista de canais por
+    bloco também deixou de alocar (vetores na pilha).
 - **Pendente:**
   - Plugin mono numa faixa estéreo processa só o canal 0. Falta rodar duas instâncias em dual mono.
   - Janela do plugin pelo helper (I-22): o protocolo tem `gui`; o LV2 precisa do suil/GTK.
   - Prioridade de tempo real na thread de áudio do helper (pelo `lm-sys-linux`).
-  - Os formatos CLAP, VST3, LADSPA e VST2-wine.
+  - Os formatos VST3, LADSPA e VST2-wine; janela do CLAP (item 4).
 
 ## Do `lm-session`, continuação 2 (20/11)
 

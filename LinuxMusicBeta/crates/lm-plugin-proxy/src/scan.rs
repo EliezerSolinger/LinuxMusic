@@ -43,6 +43,8 @@ pub struct Scanned {
     /// It reports a latency
     pub latency: bool,
     pub has_window: bool,
+    /// The file it was found in (CLAP, VST3, LADSPA): tried first when it is loaded; the id is what identifies it
+    pub file: Option<String>,
 }
 
 /// A plugin the probe could not run, and why (`plugin_host.crashed`, `plugin_host.timeout`, or the plugin's error)
@@ -101,6 +103,7 @@ impl Scanned {
             ("params", Value::list(params)),
             ("latency", Value::bool(self.latency)),
             ("has_window", Value::bool(self.has_window)),
+            ("file", self.file.as_deref().map_or(Value::NULL, Value::text)),
         ])
     }
 }
@@ -134,6 +137,7 @@ pub fn scanned_from(v: &Value) -> Option<Scanned> {
             .collect(),
         latency: get_b(v, "latency"),
         has_window: get_b(v, "has_window"),
+        file: v.get("file").and_then(Value::as_text).map(str::to_owned),
     })
 }
 
@@ -182,7 +186,11 @@ fn run_helper(config: &HostConfig, args: &[String], timeout: Duration, cancel: &
 }
 
 /// Scans a format: lists its plugins (`paths` adds search folders), then probes each one not in `blocked_uris`,
-/// each in a helper of its own within `probe_timeout`
+/// each in a helper of its own within `probe_timeout`.
+///
+/// For the formats whose listing runs plugin code (CLAP, VST3, LADSPA) the helper first names the files, without
+/// running any; then each file is listed in a helper of its own within `probe_timeout`. A file that crashes or hangs
+/// its listing is blocked as `file:<path>` (and skipped next time)
 pub fn scan(
     config: &HostConfig,
     format: &str,
@@ -193,31 +201,72 @@ pub fn scan(
     progress: &Progress,
 ) -> Result<ScanReport> {
     let paths: Vec<PathBuf> = config.paths.iter().chain(extra).cloned().collect();
-    let mut args = vec!["list".to_owned(), format.to_owned()];
-    for p in &paths {
-        args.push("--path".into());
-        args.push(p.display().to_string());
-    }
-    let listed = run_helper(config, &args, Duration::from_secs(60), cancel)?;
-    let found: Vec<Scanned> = listed
-        .iter()
-        .filter(|m| m.get("t").and_then(Value::as_text) == Some("plugin"))
-        .filter_map(scanned_from)
-        .collect();
+    let with_paths = |mut args: Vec<String>| {
+        for p in &paths {
+            args.push("--path".into());
+            args.push(p.display().to_string());
+        }
+        if !config.system_paths {
+            args.push("--no-system".into());
+        }
+        args
+    };
+    let plugins_of = |messages: &[Value]| -> Vec<Scanned> {
+        messages
+            .iter()
+            .filter(|m| m.get("t").and_then(Value::as_text) == Some("plugin"))
+            .filter_map(scanned_from)
+            .collect()
+    };
     let mut report = ScanReport::default();
+    let named =
+        run_helper(config, &with_paths(vec!["files".into(), format.to_owned()]), Duration::from_secs(60), cancel)?;
+    let files: Vec<String> = named
+        .iter()
+        .filter(|m| m.get("t").and_then(Value::as_text) == Some("file"))
+        .filter_map(|m| m.get("path").and_then(Value::as_text).map(str::to_owned))
+        .collect();
+    let by_file = !named.iter().any(|m| m.get("t").and_then(Value::as_text) == Some("no_files"));
+    let found: Vec<Scanned> = if by_file {
+        let mut found = Vec::new();
+        for (i, f) in files.iter().enumerate() {
+            cancel.check()?;
+            progress.set(0.5 * i as f32 / files.len().max(1) as f32);
+            let uri = format!("file:{f}");
+            if blocked_uris.contains(&uri) {
+                report.skipped.push(uri);
+                continue;
+            }
+            let args = with_paths(vec!["list".into(), format.to_owned(), "--file".into(), f.clone()]);
+            match run_helper(config, &args, probe_timeout, cancel) {
+                Ok(m) => found.extend(plugins_of(&m)),
+                Err(e) if e.is_cancelled() => return Err(e),
+                Err(reason) => report.blocked.push(Blocked { format: format.to_owned(), uri, reason }),
+            }
+        }
+        found
+    } else {
+        plugins_of(&run_helper(
+            config,
+            &with_paths(vec!["list".into(), format.to_owned()]),
+            Duration::from_secs(60),
+            cancel,
+        )?)
+    };
     let total = found.len().max(1);
     for (i, p) in found.into_iter().enumerate() {
         cancel.check()?;
-        progress.set(i as f32 / total as f32);
+        progress.set(if by_file { 0.5 + 0.5 * i as f32 / total as f32 } else { i as f32 / total as f32 });
         if blocked_uris.contains(&p.uri) {
             report.skipped.push(p.uri);
             continue;
         }
         let mut args = vec!["probe".to_owned(), p.format.clone(), p.uri.clone()];
-        for path in &paths {
-            args.push("--path".into());
-            args.push(path.display().to_string());
+        if let Some(f) = &p.file {
+            args.push("--file".into());
+            args.push(f.clone());
         }
+        let args = with_paths(args);
         match run_helper(config, &args, probe_timeout, cancel) {
             Ok(m) if m.iter().any(|x| x.get("t").and_then(Value::as_text) == Some("probed")) => report.plugins.push(p),
             Ok(_) => {

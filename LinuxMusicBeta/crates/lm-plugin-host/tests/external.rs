@@ -17,6 +17,7 @@ fn a_scanned_plugin_in_the_registry() {
         deadline: Deadline::Wait,
         load_timeout: Duration::from_secs(20),
         paths: Vec::new(),
+        system_paths: true,
     });
     let report =
         scan(&config, "test", &[], &["stall".to_owned()], Duration::from_secs(10), &Cancel::new(), &Progress::new())

@@ -55,6 +55,7 @@ pub fn external(scanned: &Scanned, config: Arc<HostConfig>, on_start: Option<OnS
         let req = LoadRequest {
             format: s.format.clone(),
             uri: s.uri.clone(),
+            file: s.file.clone(),
             rate: cx.spec.sample_rate,
             max_block: cx.spec.max_block,
             inputs: s.inputs,

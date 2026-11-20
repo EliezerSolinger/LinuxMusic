@@ -53,6 +53,7 @@ fn an_lv2_plugin_out_of_process() {
         deadline: Deadline::Wait,
         load_timeout: Duration::from_secs(20),
         paths: vec![bundle.clone()],
+        system_paths: false,
     };
     // The scan: listed from the Turtle, probed in a helper
     let report = scan(&config, "lv2", &[], &[], Duration::from_secs(10), &Cancel::new(), &Progress::new()).unwrap();
@@ -66,6 +67,7 @@ fn an_lv2_plugin_out_of_process() {
     let req = LoadRequest {
         format: "lv2".into(),
         uri: GAIN.into(),
+        file: None,
         rate: 48_000,
         max_block: 256,
         inputs: 1,
