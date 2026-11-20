@@ -909,6 +909,51 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "watsyn" {
+        use lm_dsp::watsyn::*;
+        let st = &case["settings"];
+        let v = |key: &str, default: f32| f(st, key, default);
+        let names = ["A1", "A2", "B1", "B2"];
+        let settings = WatsynSettings {
+            volume: names.map(|n| v(&format!("Volume {n}"), 32.0)),
+            pan: names.map(|n| v(&format!("Panning {n}"), 0.0)),
+            multiplier: names.map(|n| v(&format!("Freq. multiplier {n}"), 8.0)),
+            left_tune: names.map(|n| v(&format!("Left detune {n}"), 0.0)),
+            right_tune: names.map(|n| v(&format!("Right detune {n}"), 0.0)),
+            ab_mix: v("A-B Mix", 0.0),
+            env_amount: v("A-B Mix envelope amount", 0.0),
+            env_attack: v("A-B Mix envelope attack", 0.0),
+            env_hold: v("A-B Mix envelope hold", 0.0),
+            env_decay: v("A-B Mix envelope decay", 0.0),
+            crosstalk: v("A1-B2 Crosstalk", 0.0),
+            a_mod: WatsynMod::ALL[v("A2-A1 modulation", 0.0) as usize],
+            b_mod: WatsynMod::ALL[v("B2-B1 modulation", 0.0) as usize],
+        };
+        // The graphs (a sine each by default), oversampled as the legacy program does, by libsamplerate's fastest sinc
+        let graph = |g: usize| -> [f32; GRAPH_LENGTH] {
+            match case["graphs"].get(g) {
+                Some(values) => core::array::from_fn(|i| values[i].as_f64().unwrap() as f32),
+                None => core::array::from_fn(|i| lm_dsp::oscillator::sin_sample(i as f32 / GRAPH_LENGTH as f32)),
+            }
+        };
+        let waves = core::array::from_fn(|g| {
+            let mut resampler =
+                lm_sys_samplerate::Resampler::new(lm_sys_samplerate::Quality::Fastest, 1, WAVE_RATIO as f64).unwrap();
+            oversample(&graph(g), |input, output| {
+                let done = resampler.process(input, output).unwrap();
+                (done.input_frames, done.output_frames)
+            })
+        });
+        let waves = WatsynWaves::new(waves, v("Anti-aliasing", 1.0) != 0.0);
+        let rate = case["rate"].as_f64().unwrap() as u32;
+        let freq = case["freq"].as_f64().unwrap() as f32;
+        let mut voice = WatsynVoice::new(&settings, rate);
+        for start in (0..frames as usize).step_by(block as usize) {
+            let end = (start + block as usize).min(frames as usize);
+            voice.render(&mut out[start..end], &waves, &settings, freq, start as u64);
+        }
+        return out;
+    }
     if case["unit"] == "monstro" {
         use lm_dsp::monstro::*;
         let st = &case["settings"];

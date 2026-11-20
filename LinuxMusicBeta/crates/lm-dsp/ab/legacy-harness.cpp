@@ -74,6 +74,7 @@ using namespace lmms;
 
 // The instruments whose headers cannot share this file (each its own: legacy-harness-<name>.cpp)
 auto runMonstro(const QJsonObject& c, std::int64_t frames, std::int64_t block) -> std::vector<SampleFrame>;
+auto runWatsyn(const QJsonObject& c, std::int64_t frames, std::int64_t block) -> std::vector<SampleFrame>;
 
 namespace
 {
@@ -318,6 +319,7 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 		return out;
 	}
 	if (unit == "monstro") { return runMonstro(c, frames, block); }
+	if (unit == "watsyn") { return runWatsyn(c, frames, block); }
 	if (unit == "nes")
 	{
 		// The Nescaline's note (NesObject compiled in from the plugin) on a note of a track of the song, its frequency

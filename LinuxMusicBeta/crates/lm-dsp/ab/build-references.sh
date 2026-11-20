@@ -21,7 +21,7 @@ for source in "$here"/legacy-harness*.cpp; do
 	name=$(basename "$source" .cpp)
 	compile=$(printf '%s\n' "$commands" | grep 'MixerTest.cpp.o -c' \
 		| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/$name.o#" \
-			-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -I$root/legado/plugins/Kicker -I$root/legado/plugins/Vibed -I$root/legado/plugins/Lb302 -I$root/legado/plugins/Sfxr -I$root/legado/plugins/Nes -I$root/legado/plugins/Monstro -ffp-contract=off -c $source#")
+			-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -I$root/legado/plugins/Kicker -I$root/legado/plugins/Vibed -I$root/legado/plugins/Lb302 -I$root/legado/plugins/Sfxr -I$root/legado/plugins/Nes -I$root/legado/plugins/Monstro -I$root/legado/plugins/Watsyn -I$here -ffp-contract=off -c $source#")
 	sh -c "$compile"
 	harnesses="$harnesses $work/$name.o"
 done
@@ -45,7 +45,8 @@ for target in plugins/Delay/CMakeFiles/delay.dir/Lfo.cpp.o plugins/Delay/CMakeFi
 	plugins/Sfxr/CMakeFiles/sfxr.dir/Sfxr.cpp.o plugins/Sfxr/CMakeFiles/sfxr.dir/moc_Sfxr.cpp.o plugins/Sfxr/CMakeFiles/sfxr.dir/qrc_sfxr.cpp.o \
 	plugins/Nes/CMakeFiles/nes.dir/Nes.cpp.o plugins/Nes/CMakeFiles/nes.dir/moc_Nes.cpp.o plugins/Nes/CMakeFiles/nes.dir/qrc_nes.cpp.o \
 	plugins/Monstro/CMakeFiles/monstro.dir/Monstro.cpp.o plugins/Monstro/CMakeFiles/monstro.dir/moc_Monstro.cpp.o \
-	plugins/Monstro/CMakeFiles/monstro.dir/qrc_monstro.cpp.o; do
+	plugins/Monstro/CMakeFiles/monstro.dir/qrc_monstro.cpp.o plugins/Watsyn/CMakeFiles/watsyn.dir/Watsyn.cpp.o \
+	plugins/Watsyn/CMakeFiles/watsyn.dir/moc_Watsyn.cpp.o plugins/Watsyn/CMakeFiles/watsyn.dir/qrc_watsyn.cpp.o; do
 	name=$(basename "$target" .o)
 	symbol=$(printf '%s' "$name" | tr -c 'A-Za-z0-9_' '_')
 	plugincompile=$(ninja -t commands "$target" | tail -1 \

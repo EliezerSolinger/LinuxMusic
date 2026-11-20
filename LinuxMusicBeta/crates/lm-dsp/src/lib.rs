@@ -32,6 +32,7 @@
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
 //! - [`vibed`]: the Vibed's plucked strings;
 //! - [`sfxr`]: the sfxr;
+//! - [`watsyn`]: the Watsyn;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
 //!
 //! The effects of the validation plugins:
@@ -93,3 +94,4 @@ pub mod sound_shaping;
 pub mod tolerance;
 pub mod tube;
 pub mod vibed;
+pub mod watsyn;

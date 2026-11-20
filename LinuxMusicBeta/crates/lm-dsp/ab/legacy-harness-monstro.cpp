@@ -17,28 +17,10 @@
 #include "Track.h"
 #include "lmms_math.h"
 #include "Monstro.h"
+#include "legacy-harness-note.h"
 
 using namespace lmms;
 
-namespace
-{
-
-// A note's counters, which only its own play() moves, set by the harness that plays the instrument in its place: the
-// standard's way to name a private member (an explicit instantiation may)
-template<typename Tag, typename Tag::type Member>
-struct Rob
-{
-	friend typename Tag::type get(Tag) { return Member; }
-};
-struct NoteFramesPlayed { using type = std::atomic<f_cnt_t> NotePlayHandle::*; friend type get(NoteFramesPlayed); };
-struct NoteReleased { using type = std::atomic<bool> NotePlayHandle::*; friend type get(NoteReleased); };
-struct NoteBeforeRelease { using type = f_cnt_t NotePlayHandle::*; friend type get(NoteBeforeRelease); };
-
-template struct Rob<NoteFramesPlayed, &NotePlayHandle::m_totalFramesPlayed>;
-template struct Rob<NoteReleased, &NotePlayHandle::m_released>;
-template struct Rob<NoteBeforeRelease, &NotePlayHandle::m_framesBeforeRelease>;
-
-} // namespace
 
 auto runMonstro(const QJsonObject& c, std::int64_t frames, std::int64_t block) -> std::vector<SampleFrame>
 {
@@ -66,12 +48,12 @@ auto runMonstro(const QJsonObject& c, std::int64_t frames, std::int64_t block) -
 		const auto n = std::min(block, frames - start);
 		if (release >= start && release < start + n)
 		{
-			(note->*get(NoteReleased{})) = true;
-			(note->*get(NoteBeforeRelease{})) = static_cast<f_cnt_t>(release - start);
+			(note->*get(harness::NoteReleased{})) = true;
+			(note->*get(harness::NoteBeforeRelease{})) = static_cast<f_cnt_t>(release - start);
 		}
-		else if (release < start) { (note->*get(NoteBeforeRelease{})) = 0; }
+		else if (release < start) { (note->*get(harness::NoteBeforeRelease{})) = 0; }
 		synth.renderOutput(static_cast<f_cnt_t>(n), out.data() + start);
-		(note->*get(NoteFramesPlayed{})) += static_cast<f_cnt_t>(n);
+		(note->*get(harness::NoteFramesPlayed{})) += static_cast<f_cnt_t>(n);
 	}
 	NotePlayHandleManager::release(note);
 	return out;
