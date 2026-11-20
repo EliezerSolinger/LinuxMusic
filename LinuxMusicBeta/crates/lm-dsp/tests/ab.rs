@@ -399,6 +399,64 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "plugin-effect" && case["plugin"] == "lomm" {
+        use lm_dsp::lomm::*;
+        let first = &case["settings"];
+        let then = &case["then"]["settings"];
+        let at = case["then"]["at"].as_i64().unwrap_or(frames) as usize;
+        let value = |key: &str, default: f32, start: usize| {
+            let before = f(first, key, default);
+            if start < at { before } else { f(then, key, before) }
+        };
+        let on = |key: &str, default: bool, start: usize| value(key, if default { 1.0 } else { 0.0 }, start) != 0.0;
+        let mut lomm = Lomm::new(case["rate"].as_f64().unwrap() as f32);
+        for start in (0..frames as usize).step_by(block as usize) {
+            let span = &mut out[start..(start + block as usize).min(frames as usize)];
+            let d = LommSettings::default();
+            let names = [("High", "H"), ("Mid", "M"), ("Low", "L")];
+            let band = |j: usize| {
+                let (name, _) = names[j];
+                let b = d.bands[j];
+                LommBand {
+                    input: value(&format!("{name} Input Volume"), b.input, start),
+                    output: value(&format!("{name} Output Volume"), b.output, start),
+                    above_threshold: value(&format!("Above Threshold {name}"), b.above_threshold, start),
+                    above_ratio: value(&format!("Above Ratio {name}"), b.above_ratio, start),
+                    below_threshold: value(&format!("Below Threshold {name}"), b.below_threshold, start),
+                    below_ratio: value(&format!("Below Ratio {name}"), b.below_ratio, start),
+                    attack: value(&format!("Attack {name}"), b.attack, start),
+                    release: value(&format!("Release {name}"), b.release, start),
+                    enabled: on(&format!("Enable {name} Band"), true, start),
+                }
+            };
+            let settings = LommSettings {
+                bands: [band(0), band(1), band(2)],
+                depth: value("Depth", d.depth, start),
+                time: value("Time", d.time, start),
+                input: value("Input Volume", d.input, start),
+                output: value("Output Volume", d.output, start),
+                upward: value("Upward Depth", d.upward, start),
+                downward: value("Downward Depth", d.downward, start),
+                splits: [value("High/Mid Split", d.splits[0], start), value("Mid/Low Split", d.splits[1], start)],
+                splits_enabled: [on("Enable High/Mid Split", true, start), on("Enable Mid/Low Split", true, start)],
+                rms_time: value("RMS Time", d.rms_time, start),
+                knee: value("Knee", d.knee, start),
+                range: value("Range", d.range, start),
+                balance: value("Balance", d.balance, start),
+                depth_scaling: on("Scale output volume with Depth", true, start),
+                stereo_link: on("Stereo Link", false, start),
+                auto_time: value("Auto Time", d.auto_time, start),
+                mix: value("Mix", d.mix, start),
+                feedback: on("Feedback", false, start),
+                mid_side: on("Mid/Side", false, start),
+                lookahead_enabled: on("Lookahead", false, start),
+                lookahead: value("Lookahead Length", d.lookahead, start),
+                low_side_upward_suppress: on("Suppress upward compression for side band", false, start),
+            };
+            lomm.process(span, &settings);
+        }
+        return out;
+    }
     if case["unit"] == "plugin-effect" && case["plugin"] == "slewdistortion" {
         use lm_dsp::slew_distortion::*;
         let first = &case["settings"];

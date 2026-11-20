@@ -32,6 +32,7 @@
 //! - [`frequency_shifter`]: the Frequency Shifter;
 //! - [`filter_effects`]: the Dual Filter and the Crossover EQ;
 //! - [`modulation_effects`]: the Multitap Echo and the Flanger;
+//! - [`lomm`]: the LOMM (multiband upward and downward compressor);
 //! - [`slew_distortion`]: the Slew Distortion;
 //! - [`small_effects`]: the Amplifier, the Stereo Matrix, the Stereo Enhancer and the Bass Booster;
 //! - [`reverb_sc`]: the ReverbSC (Csound's reverbsc).
@@ -53,6 +54,7 @@ pub mod filter_effects;
 pub mod filters;
 pub mod frequency_shifter;
 pub mod gain_stage;
+pub mod lomm;
 pub mod master;
 pub mod math;
 pub mod modulation_effects;

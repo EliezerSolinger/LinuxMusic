@@ -5103,6 +5103,123 @@
         }
       },
       "settings": {}
+    },
+    {
+      "name": "lomm-defaults",
+      "unit": "plugin-effect",
+      "plugin": "lomm",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {}
+    },
+    {
+      "name": "lomm-deep-linked",
+      "unit": "plugin-effect",
+      "plugin": "lomm",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Depth": 0.9,
+        "Downward Depth": 1.6,
+        "Upward Depth": 0.5,
+        "Stereo Link": 1,
+        "Auto Time": 0.6,
+        "Knee": 12.0,
+        "Balance": 3.0,
+        "Time": 0.5
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Depth": 0.3,
+          "High/Mid Split": 4000.0,
+          "Range": 12.0,
+          "Mix": 0.7
+        }
+      }
+    },
+    {
+      "name": "lomm-lookahead-midside",
+      "unit": "plugin-effect",
+      "plugin": "lomm",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Lookahead": 1,
+        "Lookahead Length": 5.0,
+        "Mid/Side": 1,
+        "Suppress upward compression for side band": 1,
+        "RMS Time": 0.0,
+        "Enable Mid/Low Split": 0,
+        "Mid Input Volume": 6.0
+      },
+      "then": {
+        "at": 6144,
+        "settings": {
+          "Lookahead Length": 12.5,
+          "Enable High Band": 0,
+          "Mid/Side": 0
+        }
+      }
+    },
+    {
+      "name": "lomm-feedback",
+      "unit": "plugin-effect",
+      "plugin": "lomm",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Feedback": 1,
+        "Depth": 0.7,
+        "Scale output volume with Depth": 0,
+        "Above Ratio Mid": 4.0,
+        "Attack Low": 5.0,
+        "Release High": 40.0
+      }
     }
   ]
 }
