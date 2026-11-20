@@ -238,6 +238,35 @@ pub struct Compiled {
     /// How many event lists and curves this compilation made new (V8)
     pub made: Made,
     pub elapsed: Duration,
+    /// The routes of the program, in its summing order, with their PDC delays (for inspection and the routing
+    /// view)
+    pub routes: Vec<Route>,
+    /// The nodes silenced by a mute or a solo, and the latency each node counts in the PDC
+    pub nodes: Vec<NodeInfo>,
+}
+
+/// One route of a compiled program
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Route {
+    pub from: NodeKey,
+    pub to: NodeKey,
+    pub from_channel: u16,
+    pub channels: u16,
+    pub to_channel: u16,
+    pub sidechain: bool,
+    /// The monitoring path (H5): never delayed
+    pub monitor: bool,
+    /// Samples of PDC on this route
+    pub delay: u32,
+}
+
+/// One node of a compiled program
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NodeInfo {
+    pub key: NodeKey,
+    pub muted: bool,
+    pub latency: u32,
+    pub channels: u16,
 }
 
 impl Compiled {

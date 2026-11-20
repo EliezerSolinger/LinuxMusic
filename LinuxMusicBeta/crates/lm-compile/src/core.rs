@@ -62,7 +62,8 @@ use crate::read::{
     channels, device_channels, flag, id_number, id_of, int, items, key, real, ref_of, settings, tempo_map, text,
 };
 use crate::types::{
-    Build, BuildRequest, Compiled, Environment, InstalledProcessor, InstalledTable, InstalledTail, NodeKey, Ticket,
+    Build, BuildRequest, Compiled, Environment, InstalledProcessor, InstalledTable, InstalledTail, NodeInfo, NodeKey, Route,
+    Ticket,
 };
 
 /// A tail lives at most this long (U32; the renderer silences it at the same age)
@@ -330,6 +331,8 @@ pub struct CompilerCore {
     generation: u64,
     tempo: Option<TempoMap>,
     caches: Caches,
+    /// The automation curves of the last install, by parameter
+    curves: HashMap<(NodeId, Arc<str>), Curve>,
 }
 
 impl std::fmt::Debug for CompilerCore {
@@ -361,6 +364,7 @@ impl CompilerCore {
             generation: 0,
             tempo: None,
             caches: Caches::default(),
+            curves: HashMap::new(),
         }
     }
 
@@ -790,8 +794,28 @@ impl CompilerCore {
         self.generation = generation;
         self.tempo = Some(tempo);
         self.caches.sweep();
+        self.curves = std::mem::take(&mut plan.curves);
         let made = self.caches.made;
         let table = Arc::new(self.table());
+        let routes = plan
+            .feeds
+            .iter()
+            .map(|f| Route {
+                from: plan.nodes[f.from].key,
+                to: plan.nodes[f.to].key,
+                from_channel: f.from_channel,
+                channels: f.channels,
+                to_channel: f.to_channel,
+                sidechain: f.sidechain,
+                monitor: f.monitor,
+                delay: f.delay,
+            })
+            .collect();
+        let nodes = plan
+            .nodes
+            .iter()
+            .map(|n| NodeInfo { key: n.key, muted: n.muted, latency: n.latency, channels: n.outputs })
+            .collect();
         Ok(Compiled {
             install,
             generation: ProgramGen(generation),
@@ -801,6 +825,8 @@ impl CompilerCore {
             waiting,
             replacing,
             waiting_items: plan.waiting_items,
+            routes,
+            nodes,
             streamed: plan.streamed,
             made,
             elapsed: started.elapsed(),
@@ -836,6 +862,11 @@ impl CompilerCore {
             pending_slots: self.slot_alloc.pending(),
             slot_keys: self.slot_keys.clone(),
         }
+    }
+
+    /// The automation curve of a parameter in the last install (in samples)
+    pub fn curve(&self, node: NodeId, key: &str) -> Option<&Curve> {
+        self.curves.get(&(node, Arc::from(key)))
     }
 
     /// How many node indices and slots are free right now (not counting the pending ones)
