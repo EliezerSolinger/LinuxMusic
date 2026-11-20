@@ -1,6 +1,7 @@
 //! What every page draws the same way: the layout sizes, the timeline's scroll and zoom (in ticks), the knobs'
 //! mapping, the volume in dB, the meters' scale and fall, the transport's texts.
 
+use lm_port::{ParamRange, RangeScale};
 use lm_time::TempoMap;
 
 pub const WINDOW_W: f32 = 1600.0;
@@ -61,33 +62,25 @@ pub fn db_to_gain(db: f64) -> f64 {
     if db <= -60.0 { 0.0 } else { 10f64.powf(db / 20.0) }
 }
 
-/// Volume knob and fader: 0..1 of travel <-> dB, -60 dB (-inf at the bottom) to +12 dB, 0 dB at 75 %
+/// The fader's and the volume knob's law: the core's own (`RangeScale::Gain`, the legacy fader's
+/// computeScaledRatio, 0 dB at ~75 %), so a knob on screen, a mapped controller and an automation lane agree
+const FADER: ParamRange = ParamRange { min: 0.0, max: 4.0, scale: RangeScale::Gain };
+
+/// Volume knob and fader: 0..1 of travel <-> dB (-inf at the bottom, +12 dB at the top)
 pub fn travel_to_db(t: f64) -> f64 {
-    if t <= 0.0 {
-        f64::NEG_INFINITY
-    } else if t <= 0.75 {
-        -60.0 + 60.0 * (t / 0.75)
-    } else {
-        (t - 0.75) / 0.25 * 12.0
-    }
+    gain_to_db(travel_to_gain(t))
 }
 
 pub fn db_to_travel(db: f64) -> f64 {
-    if db <= -60.0 {
-        0.0
-    } else if db <= 0.0 {
-        0.75 * (db + 60.0) / 60.0
-    } else {
-        (0.75 + 0.25 * db / 12.0).min(1.0)
-    }
+    gain_to_travel(if db == f64::NEG_INFINITY { 0.0 } else { 10f64.powf(db / 20.0) })
 }
 
 pub fn gain_to_travel(g: f64) -> f64 {
-    db_to_travel(gain_to_db(g))
+    FADER.normalize(g.max(0.0) as f32) as f64
 }
 
 pub fn travel_to_gain(t: f64) -> f64 {
-    db_to_gain(travel_to_db(t)).min(4.0)
+    if t <= 0.0 { 0.0 } else { FADER.to_units(t.clamp(0.0, 1.0) as f32) as f64 }
 }
 
 /// Dragging a knob: 200 px of vertical travel for the whole range; Shift for fine
@@ -137,10 +130,13 @@ mod tests {
 
     #[test]
     fn the_knob_law_round_trips() {
+        // the core's f32 law: round trips within a hundredth of a dB
         for db in [-48.0, -12.0, -3.0, 0.0, 6.0, 12.0] {
-            assert!((travel_to_db(db_to_travel(db)) - db).abs() < 1e-9);
+            assert!((travel_to_db(db_to_travel(db)) - db).abs() < 1e-2, "{db}");
         }
-        assert!((gain_to_travel(1.0) - 0.75).abs() < 1e-9, "0 dB at 75 %");
+        // the legacy fader's numbers (Fader::computeScaledRatio, max 4)
+        assert!((gain_to_travel(1.0) - 0.751).abs() < 1e-3, "0 dB at ~75 %");
+        assert!((db_to_travel(-6.0) - 0.644).abs() < 1e-3);
         assert_eq!(travel_to_gain(0.0), 0.0);
     }
 
