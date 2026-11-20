@@ -3724,6 +3724,7 @@ dependencies = [
  "lm-plugin",
  "lm-render",
  "lm-state",
+ "lm-sys-samplerate",
 ]
 
 [[package]]

@@ -581,6 +581,12 @@ Regras gerais do legado que valem para quase todo plugin:
   tocar. Aceita pitch bend. Carregar uma amostra renomeia a faixa, se o nome da faixa ainda era o da amostra anterior.
 - **Formatos:** wav, ogg, ds (DrumSynth), spx, au, voc, aif/aiff, flac, raw, mp3 (se o libsndfile tiver).
   Amostra ausente vira aviso "Sample not found".
+- **Na beta:** plugin `audiofileprocessor`, em `lm-plugins-instruments`, sobre o `sample_player` do `lm-dsp`: `amplify`,
+  `startPoint`, `endPoint`, `loopPoint`, `reverse`, `stutter`, `declick`; campos `sample` (recurso de áudio), `loop`
+  (`off`, `on`, `pingPong`) e `interpolation` (`none`, `linear`, `sinc`). Pontos ordenados como no `pointChanged`;
+  stutter e a tecla mágica como no legado. Contrato e A/B por composição. Fica com outros: a duração da nota no editor
+  de passos (o host), renomear a faixa e o empurrão entre os botões ao arrastar (a interface), a posição de tocar na
+  forma de onda (dados ao vivo do painel).
 
 #### F-INS-002 AvlDrums (baterias acústicas AVL, do fork) — core
 

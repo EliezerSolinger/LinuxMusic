@@ -16,7 +16,9 @@ lm-state.workspace = true
 lm-render.workspace = true
 lm-plugin.workspace = true
 lm-dsp.workspace = true
+lm-sys-samplerate.workspace = true
 libm.workspace = true
 
 [dev-dependencies]
 lm-plugin = { workspace = true, features = ["testing"] }
+lm-sys-samplerate.workspace = true

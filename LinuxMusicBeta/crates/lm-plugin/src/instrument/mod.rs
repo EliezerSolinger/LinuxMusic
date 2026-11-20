@@ -149,6 +149,13 @@ pub trait Synth: Clone + Send + 'static {
         let _ = old;
         true
     }
+    /// Whether this synth's sounding voices can be copied on the audio thread (`clone_from` into a voice made in the
+    /// build), for the crossfade of a change: `false` when a voice holds state that cannot be copied without
+    /// allocating (a C library's converter). A changed instrument whose old synth says `false` is not adopted: the old
+    /// one plays its tail apart (U32). The same state is still adopted (no crossfade, nothing copied)
+    fn copies_voices(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -922,6 +929,7 @@ impl<S: Synth> Processor for Instrument<S> {
         if old.sample_rate != self.sample_rate
             || old.values.len() != self.values.len()
             || !self.synth.can_adopt(&old.synth)
+            || (old.fingerprint != self.fingerprint && !old.synth.copies_voices())
         {
             return Adopted::No;
         }

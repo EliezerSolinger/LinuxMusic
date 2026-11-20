@@ -82,8 +82,9 @@ pub struct Cursor {
     pub wrapped: bool,
 }
 
-/// Where a sample's playing is: one for each note or clip that plays it
-#[derive(Clone, Debug)]
+/// Where a sample's playing is: one for each note or clip that plays it. Its `clone_from` copies into its own buffer
+/// (a host copies a note's state on the audio thread)
+#[derive(Debug)]
 pub struct PlaybackState<I> {
     interpolator: I,
     buffer: Box<[[f32; 2]; BUFFER_FRAMES]>,
@@ -92,6 +93,26 @@ pub struct PlaybackState<I> {
     cursor: Cursor,
     /// Played without the interpolator (a ratio of exactly 1) the last time
     direct: bool,
+}
+
+impl<I: Clone> Clone for PlaybackState<I> {
+    fn clone(&self) -> Self {
+        Self {
+            interpolator: self.interpolator.clone(),
+            buffer: self.buffer.clone(),
+            view: self.view.clone(),
+            cursor: self.cursor,
+            direct: self.direct,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.interpolator.clone_from(&source.interpolator);
+        *self.buffer = *source.buffer;
+        self.view.clone_from(&source.view);
+        self.cursor = source.cursor;
+        self.direct = source.direct;
+    }
 }
 
 impl<I: Interpolator> PlaybackState<I> {
@@ -116,6 +137,16 @@ impl<I: Interpolator> PlaybackState<I> {
 
     pub fn set_frame_index(&mut self, index: i32) {
         self.cursor.frame_index = index;
+    }
+
+    /// Its interpolator (a host changes its mode between notes)
+    pub fn interpolator_mut(&mut self) -> &mut I {
+        &mut self.interpolator
+    }
+
+    /// Plays on backwards (a ping-pong loop's way back) or forwards from where it is
+    pub fn set_backwards(&mut self, backwards: bool) {
+        self.cursor.backwards = backwards;
     }
 
     /// From @p frame_index again, as a new note

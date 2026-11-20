@@ -870,6 +870,14 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
   antes da primeira peça e a cada mudança de andamento). A voz se solta pelos próprios envelopes, então o `Synth`
   ganhou `RELEASE_FADE` (falso no Monstro): o `Instrument` só segura a voz pelo release maior, sem a rampa do
   `applyRelease`, como o legado. As formas de onda e a modulação Osc 2→3 são campos `Choice` (U30).
+- **AudioFileProcessor: os conversores "none" e "linear" do libsamplerate portados para Rust**, amostra por amostra
+  (testados contra a biblioteca): o crossfade de uma troca toca uma cópia de cada voz, e o libsamplerate só copia um
+  estado alocando outro (`src_clone`). Numa entrada de um ou dois quadros, o linear da biblioteca lê a memória antes
+  da entrada; o porte usa o último quadro da chamada anterior (o mesmo quadro quando a entrada é contígua, como no
+  buffer do player). O sinc continua o da biblioteca, e uma voz em sinc não se copia: o `Synth` ganhou
+  `copies_voices`; um instrumento que toca sinc não é adotado por um mudado (o velho toca a cauda, U32); o mesmo
+  estado ainda é adotado. A interpolação de uma nota é escolhida quando ela começa, como no legado. O empurrão entre
+  os botões de ponto ao arrastar é gesto da interface; o plugin só ordena os pontos (`pointChanged`).
 - **Os duty cycles do Nes são campos `Choice`** (`12.5`, `25`, `50`, `75`), não números escalonados: são opções com
   nome (U30), mesmo que o grupo de botões do legado fosse automatizável.
 
