@@ -294,7 +294,32 @@ passo de desfazer (F-MIX-012, I-3.9).
 Fica para o `lm-gui`: dividir os canais de um take de áudio em saídas (8 mono, 4 estéreo), o número de canais de
 cada saída.
 
-### 9.6 Piano Roll (B)
+### 9.6–9.8 Piano Roll, editor de automação e editor de passos (B): substituídos pelo `lm-gui`
+
+**Superado (20/11).** O usuário viu o protótipo e pediu para seguir o legado (os designs 04 e 09 não foram
+aprovados). Os três editores foram portados para o `lm-gui` (`crates/lm-gui/src/screens/piano_roll.rs`,
+`automation.rs`, `steps.rs`) com o layout, as ferramentas, os ícones e as cores do legado, falando só pelo
+`CorePort`; o protótipo abaixo fica como registro do que foi medido e aprendido. O que difere do legado, e por quê,
+está em `decisoes-autonomas.md` (B-PR-1..9, B-AE-1..5, B-PE-1..5).
+
+O que o `lm-gui` tem hoje:
+- **Piano Roll:** as duas barras do legado com os ícones dele (tocar, gravar, gravar com a música, gravar por passos,
+  parar; lápis, borracha, seleção, afinação; quantizar e o menu de ferramentas com faca e strum; recortar, copiar,
+  colar; zoom, quantização, tamanho de nota, tom, escala, acorde, grade e fantasmas); teclado, grade e área de
+  velocidade/pan com as cores do `style.css`; notas por `AddNote`/`SetNote`/`RemoveNote` com `pan` e `bend`; o laço e o
+  cursor do item na régua (P-26); as teclas do legado no registro de ações.
+- **Editor de automação:** a barra do legado (tocar, parar; lápis, borracha, valores de saída; espelhar; progressões
+  discreta, linear e cúbica com tensão; zoom, quantização, fantasmas), a escala de valores; a alça de `curve` no lugar
+  das tangentes; o modo da lane, "a mão venceu" e rearmar (I-21.5); lápis livre, seleção, escalar e afinar.
+- **Editor de passos:** o layout do Pattern Editor (tocar, parar; tirar, acrescentar e clonar passos; linhas de passos
+  com os tempos em dois tons; a roda muda a velocidade) sobre itens MIDI: uma linha por peça de um kit, uma linha de
+  passos com altura num item melódico; passo e swing do item.
+- Comuns: `ui::icon` (os ícones do legado embutidos) e o tema escuro com as cores do legado; docas redimensionáveis
+  (o tamanho fica no documento da interface, `docks`).
+
+<details><summary>O texto do protótipo (19/11)</summary>
+
+#### 9.6 Piano Roll (B)
 Feito (`screens/piano_roll.rs`, dados em `fake-core/src/notes.rs`): as notas de um item MIDI, num mapa por número
 `n` (C1), em tiques de 960 PPQ, com velocidade, pan e **curva de afinação por nota** (P-24). Layout repensado: uma
 barra só (item, ferramentas, grade, tamanho, tom/escala/acorde, quantizar, ferramentas de nota, fantasma, tocar o
@@ -331,7 +356,7 @@ elemento, então o arrasto registra ouvintes da janela (`window.on_mouse_event`)
 nas teclas (Cmd/Ctrl decidido por nós); o Espaço do item precisou de uma ação no contexto `PianoRoll`, que vence o
 `Pages` da casca.
 
-### 9.7 Editor de automação (B)
+#### 9.7 Editor de automação (B)
 Feito (`screens/automation.rs`): a curva de uma lane (a lane é do dono do parâmetro e cobre a música inteira),
 escolhida na barra por dono e parâmetro; eixo de valores **nas unidades do parâmetro** (dB, Hz em escala log, %,
 semitons em degraus, os nomes de uma escolha); cada ponto tem forma até o próximo: **Degrau, Curva** (`curve` de −1
@@ -353,7 +378,7 @@ a lane dentro da Composição (dono A) reaproveitando este desenho. Dificuldades
 preenchimento com amostras a cada 3 px; o `PathBuilder` triangula na CPU (`lyon`), então o número de vértices tem
 de ficar na largura da tela, não no número de pontos.
 
-### 9.8 Editor de passos (B)
+#### 9.8 Editor de passos (B)
 Feito (`screens/steps.rs`): substitui o Beat+Bassline (F-PAD-001 obsoleto): mostra vários itens MIDI que se repetem,
 um grupo por item (escolhidos num menu), com **uma linha por peça do kit** (AVL Drums) ou de um **instrumento de
 pads de amostras** (P-23), ou uma linha de passos com altura para um item melódico (o baixo). Cobre F-PAD-002: clique
@@ -374,6 +399,9 @@ pintar a lane de velocidade; Ctrl+A e Shift+↑ pelo teclado e a faca; o menu do
 automação; um ponto numa lane de escolha é degrau; espelhar duas vezes volta ao início; ligar, desligar e pintar
 passos (um passo de desfazer); acrescentar, tirar e clonar passos. Em `fake-core`: quantizar, colar, faca,
 inverter, strum, escalas e acordes, as formas das curvas, a escala log, o afinamento do traço.
+
+</details>
+
 ### 9.9 Janela do instrumento e editor genérico de plugin (C, design 05)
 Feito (`screens/instrument.rs`, dados em `fake-core/src/plugins.rs`): o **design 05** como especificação, na doca
 da direita. Cabeçalho: a cor e o nome da faixa (clique lista as faixas de instrumento; ‹ › vão à anterior e à

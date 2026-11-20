@@ -121,6 +121,27 @@ impl Screen {
         }
     }
 
+    /// The legacy's icon for the screen (its window's or its toolbar button's)
+    pub fn icon(self) -> &'static str {
+        match self {
+            Screen::PianoRoll => "piano",
+            Screen::Automation => "automation",
+            Screen::Steps => "pattern_track",
+            Screen::Instrument => "instrument_track",
+            Screen::Effect => "effect_plugin",
+            Screen::Browser => "plugins",
+            Screen::Routing => "mixer",
+            Screen::Settings => "setup_general",
+            Screen::Export => "project_export",
+            Screen::Project => "project_open",
+            Screen::Notices => "error",
+            Screen::Palette => "setup_shortcuts",
+            Screen::NewProject => "project_new",
+            Screen::About => "help",
+            Screen::MidiBinding => "setup_midi",
+        }
+    }
+
     pub fn placement(self) -> Placement {
         match self {
             Screen::PianoRoll | Screen::Automation | Screen::Steps => Placement::Bottom,

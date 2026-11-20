@@ -786,6 +786,18 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
   são peças de um item, e o volume e o pan ficam no cabeçalho da faixa e na mesa.
 - **B-PE-5 "Acrescentar faixa de amostra/automação" ao editor** saiu: amostras em batida são o instrumento de pads
   (P-23) e a automação mora na lane do parâmetro.
+- **B-LK-1 Os ícones do legado** (`data/themes/default`, 307 PNG/SVG, 1,3 MB) ficam embutidos no `lm-gui`
+  (`assets/icons`, `ui::icon(nome)`, o nome é o do arquivo, como o `getIconPixmap` do legado). As barras das telas
+  usam os ícones onde o legado tinha ícones; texto só onde o legado tinha texto. O transporte (design 03 aprovado)
+  mantém o desenho e troca os símbolos pelos ícones do legado; os botões pintados da mesa (página de mixagem) ficam
+  como estão, porque reproduzem os da mesa do legado.
+- **B-LK-2 O tema escuro é o do legado** (`style.css`): texto `#d1d8e4`, fundo da janela `#111314`, verde `#0bd556`,
+  grade `#3c444c`, e campos próprios dos editores (grade, notas, teclas e velocidade do piano roll; grade e gráfico
+  da automação), dos menus, do laço e dos passos. O tema continua dado (`themes/*.txt`); o claro define os mesmos
+  campos. As cores próprias da mesa ficam na página dela (decisão do agente A).
+- **B-LK-3 As docas se redimensionam** arrastando a divisória (a de baixo, dos editores, e as dos lados), e o
+  tamanho fica no documento da interface (`docks: {bottom, left, right}`, I-3.8), salvo com o projeto; no legado as
+  janelas eram livres (MDI), e o tamanho do editor ficava no arquivo do projeto.
 
 ## Expressões de nota, loop e swing do item MIDI (20/11)
 

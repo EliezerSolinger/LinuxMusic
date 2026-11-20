@@ -9,7 +9,7 @@ use gpui::{Context, FontWeight, IntoElement, MouseButton, MouseDownEvent, Scroll
 use lm_port::{EditOp, GestureId, HostTime, Label, Position, ROOT, Value};
 
 use crate::model;
-use crate::ui::{THEME, c, tbutton, tr, trf};
+use crate::ui::{THEME, c, icon, tbutton, tr, trf};
 use crate::view;
 use crate::workspace::Workspace;
 
@@ -158,28 +158,36 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
         .bg(c(THEME.bg2))
         .border_b_1()
         .border_color(c(THEME.line))
-        .child(tbutton("rew", "⏮", false, 0).on_click(cx.listener(|ws, _, _, cx| {
+        .child(tbutton("rew", "", false, 0).child(icon("back_to_start")).on_click(cx.listener(|ws, _, _, cx| {
             ws.core.update(cx, |core, _| {
                 let _ = core.port_mut().run_action("transport.locate".into(), Value::int(0));
             });
             cx.notify();
         })))
-        .child(tbutton("stop", "■", false, 0).on_click(cx.listener(|ws, _, _, cx| {
+        .child(tbutton("stop", "", false, 0).child(icon("stop")).on_click(cx.listener(|ws, _, _, cx| {
             ws.core.update(cx, |core, _| {
                 let _ = core.port_mut().run_action("transport.stop".into(), Value::NULL);
             });
             cx.notify();
         })))
-        .child(tbutton("play", "▶", position.playing && !position.recording, THEME.green).on_click(cx.listener(
-            |ws, _, _, cx| {
+        .child(tbutton("play", "", position.playing && !position.recording, THEME.green).child(icon("play")).on_click(
+            cx.listener(|ws, _, _, cx| {
                 ws.core.update(cx, |core, _| {
                     let _ = core.port_mut().run_action("transport.play".into(), Value::NULL);
                 });
                 cx.notify();
-            },
-        )))
-        .child(tbutton("rec", "●", position.recording, THEME.red).on_click(cx.listener(|ws, _, _, cx| record(ws, cx))))
-        .child(tbutton("loop", "⟲", loop_on, THEME.green).on_click(cx.listener(|ws, _, _, cx| toggle_loop(ws, cx))))
+            }),
+        ))
+        .child(
+            tbutton("rec", "", position.recording, THEME.red)
+                .child(icon("record"))
+                .on_click(cx.listener(|ws, _, _, cx| record(ws, cx))),
+        )
+        .child(
+            tbutton("loop", "", loop_on, THEME.green)
+                .child(icon(if loop_on { "loop_points_on" } else { "loop_points_off" }))
+                .on_click(cx.listener(|ws, _, _, cx| toggle_loop(ws, cx))),
+        )
         .child(tbutton("punch", tr("Punch"), punch_on, THEME.red).on_click(
             cx.listener(move |ws, _, _, cx| set_song(ws, &["transport", "punch", "on"], Value::bool(!punch_on), cx)),
         ))
@@ -271,7 +279,7 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
                 }),
             ))
         })
-        .child(tbutton("metro", "◷", metro, THEME.green).on_click(
+        .child(tbutton("metro", "", metro, THEME.green).child(icon("metronome")).on_click(
             cx.listener(move |ws, _, _, cx| set_song(ws, &["transport", "metronome", "on"], Value::bool(!metro), cx)),
         ))
         .child(tbutton("countin", trf("Count-in {0}", &[&count_in]), count_in > 0, THEME.yellow).on_click(cx.listener(

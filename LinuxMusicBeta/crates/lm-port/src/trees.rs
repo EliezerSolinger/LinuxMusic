@@ -30,6 +30,9 @@
 //!              plugin: text (NodeId) | null, tracks: [text] }
 //!            the focused track, the selected desk channel, the focused plugin (its window or rack slot); the
 //!            selection-following MIDI targets read the first three (I-21.2)
+//! docks:     { bottom: int, left: int, right: int }
+//!            the docks' sizes in logical pixels, as the user dragged their splitters (the editors' height, the
+//!            side windows' widths); absent = the defaults
 //! ```
 //!
 //! `preferences()` (I-16; changed by `set_preference(path, value)`):

@@ -1989,4 +1989,19 @@ fn export_between_markers(cx: &mut TestAppContext) {
     click(cx, "what-2");
     click(cx, "marker-span-1");
     assert!(cx.debug_bounds("marker-span-0").is_some());
+
+/// The docks' splitters (agent B): dragging resizes the editors' dock, and the size is kept in the interface document
+#[gpui::test]
+fn dock_splitter_resizes_and_is_remembered(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    ws.update_in(cx, |ws, window, cx| ws.open(Screen::PianoRoll, None, window, cx));
+    cx.run_until_parked();
+    let before = ws.read_with(cx, |ws, _| ws.docks.bottom);
+    drag(cx, "splitter-bottom", 0.0, -60.0);
+    let after = ws.read_with(cx, |ws, _| ws.docks.bottom);
+    assert!((after - (before + 60.0)).abs() < 1.0, "{before} -> {after}");
+    let core = core(&ws, cx);
+    let saved = core
+        .read_with(cx, |core, _| core.port().ui().get("docks").and_then(|d| d.get("bottom")).and_then(Value::as_int));
+    assert_eq!(saved, Some(after.round() as i64), "kept in the interface document");
 }

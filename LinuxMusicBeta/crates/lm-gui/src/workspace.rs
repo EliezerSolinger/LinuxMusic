@@ -52,6 +52,41 @@ pub struct Workspace {
     _observe: Subscription,
     /// The pages' changes: the selection goes to the interface document when it changes
     _pages: [Subscription; 2],
+    /// The docks' sizes (the editors' height, the side windows' widths), dragged by their splitters and kept in the
+    /// interface document (`docks`)
+    pub docks: Docks,
+    dock_drag: Option<(DockEdge, f32, f32)>,
+}
+
+/// The docks' sizes, in logical pixels
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Docks {
+    pub bottom: f32,
+    pub left: f32,
+    pub right: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DockEdge {
+    Bottom,
+    Left,
+    Right,
+}
+
+impl DockEdge {
+    fn key(self) -> &'static str {
+        match self {
+            DockEdge::Bottom => "bottom",
+            DockEdge::Left => "left",
+            DockEdge::Right => "right",
+        }
+    }
+    fn range(self) -> (f32, f32) {
+        match self {
+            DockEdge::Bottom => (140.0, 900.0),
+            DockEdge::Left | DockEdge::Right => (220.0, 1000.0),
+        }
+    }
 }
 
 impl Workspace {
@@ -68,6 +103,18 @@ impl Workspace {
         ];
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        let docks = {
+            let saved = core.read(cx).port().ui().get("docks").cloned().unwrap_or_default();
+            let size = |e: DockEdge, d: f32| {
+                let (lo, hi) = e.range();
+                saved.get(e.key()).and_then(lm_port::Value::as_int).map_or(d, |v| (v as f32).clamp(lo, hi))
+            };
+            Docks {
+                bottom: size(DockEdge::Bottom, BOTTOM_DOCK_H),
+                left: size(DockEdge::Left, SIDE_DOCK_W),
+                right: size(DockEdge::Right, SIDE_DOCK_W),
+            }
+        };
         let mut ws = Workspace {
             core,
             focus,
@@ -83,6 +130,8 @@ impl Workspace {
             binding: None,
             _observe: observe,
             _pages: pages,
+            docks,
+            dock_drag: None,
         };
         // LM_OPEN=Settings,PianoRoll... opens screens at start (screenshots, and each author's own testing)
         if let Ok(list) = std::env::var("LM_OPEN") {
@@ -362,11 +411,8 @@ impl Render for Workspace {
                     .on_action(cx.listener(|ws, _: &Rewind, _, cx| ws.run("transport.locate", Value::int(0), cx)))
                     .on_action(cx.listener(|ws, _: &Record, _, cx| transport::record(ws, cx)))
                     .on_action(cx.listener(|ws, _: &ToggleLoop, _, cx| transport::toggle_loop(ws, cx)))
-                    .children(
-                        self.docked(Placement::Left).map(|v| {
-                            div().w(px(SIDE_DOCK_W)).h_full().border_r_1().border_color(c(THEME.line)).child(v)
-                        }),
-                    )
+                    .children(self.docked(Placement::Left).map(|v| div().w(px(self.docks.left)).h_full().child(v)))
+                    .children(self.docked(Placement::Left).map(|_| self.splitter(DockEdge::Left, cx)))
                     .child(
                         div()
                             .flex_1()
@@ -375,18 +421,18 @@ impl Render for Workspace {
                             .flex_col()
                             .overflow_hidden()
                             .child(div().flex_1().overflow_hidden().child(page_view))
+                            .children(self.docked(Placement::Bottom).map(|_| self.splitter(DockEdge::Bottom, cx)))
                             .children(
-                                self.docked(Placement::Bottom).map(|v| {
-                                    div().h(px(BOTTOM_DOCK_H)).border_t_2().border_color(c(THEME.line)).child(v)
-                                }),
+                                self.docked(Placement::Bottom)
+                                    .map(|v| div().h(px(self.docks.bottom)).flex_none().child(v)),
                             ),
                     )
-                    .children(
-                        self.docked(Placement::Right).map(|v| {
-                            div().w(px(SIDE_DOCK_W)).h_full().border_l_1().border_color(c(THEME.line)).child(v)
-                        }),
-                    ),
+                    .children(self.docked(Placement::Right).map(|_| self.splitter(DockEdge::Right, cx)))
+                    .children(self.docked(Placement::Right).map(|v| div().w(px(self.docks.right)).h_full().child(v))),
             )
+            .children(self.dock_drag.is_some().then(|| {
+                crate::screens::piano_roll::kit::capture(cx.weak_entity(), Self::splitter_move, Self::splitter_up)
+            }))
             .children(modal.map(|v| scrim("modal-scrim").child(v)))
             .children(confirm.map(|what| self.render_confirm(what, cx)))
             .children(self.learning_banner(cx))
@@ -446,7 +492,7 @@ impl Workspace {
             // the launcher for every other screen (the real program reaches them from menus, the palette and
             // context actions too)
             .child(div().flex().flex_row().gap(px(3.)).pb(px(6.)).children(Screen::ALL.iter().map(|&s| {
-                button(s.title(), tr(s.title()), self.is_open(s), THEME.green)
+                crate::screens::piano_roll::kit::icon_button(s.title(), s.icon(), self.is_open(s), s.title())
                     .on_click(cx.listener(move |ws, _, window, cx| ws.toggle_screen(s, window, cx)))
             })))
     }
@@ -507,4 +553,76 @@ pub fn start(cx: &mut App, preferences: &Value) {
     };
     gpui_component::Theme::change(mode, None, cx);
     let _ = bind_keys(cx, preferences);
+}
+
+// --- the docks' splitters ----------------------------------------------------------------------------------------
+
+impl Workspace {
+    /// The splitter between a dock and the page: dragging it resizes the dock
+    fn splitter(&self, edge: DockEdge, cx: &Context<Self>) -> impl IntoElement {
+        let id: &'static str = match edge {
+            DockEdge::Bottom => "splitter-bottom",
+            DockEdge::Left => "splitter-left",
+            DockEdge::Right => "splitter-right",
+        };
+        let vertical = edge != DockEdge::Bottom;
+        div()
+            .id(id)
+            .debug_selector(move || id.to_string())
+            .flex_none()
+            .when(vertical, |d| d.w(px(5.)).h_full().cursor(gpui::CursorStyle::ResizeLeftRight))
+            .when(!vertical, |d| d.h(px(5.)).w_full().cursor(gpui::CursorStyle::ResizeUpDown))
+            .bg(c(THEME.line))
+            .hover(|s| s.bg(c(THEME.line2)))
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(move |ws, ev: &gpui::MouseDownEvent, _, cx| {
+                    let at = if vertical { ev.position.x.as_f32() } else { ev.position.y.as_f32() };
+                    let size = match edge {
+                        DockEdge::Bottom => ws.docks.bottom,
+                        DockEdge::Left => ws.docks.left,
+                        DockEdge::Right => ws.docks.right,
+                    };
+                    ws.dock_drag = Some((edge, at, size));
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+    }
+
+    fn splitter_move(&mut self, ev: &gpui::MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some((edge, from, size)) = self.dock_drag else { return };
+        let (lo, hi) = edge.range();
+        // the bottom dock grows upward, the left one rightward, the right one leftward
+        let d = match edge {
+            DockEdge::Bottom => from - ev.position.y.as_f32(),
+            DockEdge::Left => ev.position.x.as_f32() - from,
+            DockEdge::Right => from - ev.position.x.as_f32(),
+        };
+        let v = (size + d).clamp(lo, hi);
+        match edge {
+            DockEdge::Bottom => self.docks.bottom = v,
+            DockEdge::Left => self.docks.left = v,
+            DockEdge::Right => self.docks.right = v,
+        }
+        cx.notify();
+    }
+
+    fn splitter_up(&mut self, _ev: &gpui::MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.dock_drag.take().is_none() {
+            return;
+        }
+        // remembered in the interface document (I-3.8): no undo, saved with the project; the object whole, so it
+        // exists the first time
+        let d = self.docks;
+        let docks = lm_port::Value::object([
+            ("bottom", lm_port::Value::int(d.bottom.round() as i64)),
+            ("left", lm_port::Value::int(d.left.round() as i64)),
+            ("right", lm_port::Value::int(d.right.round() as i64)),
+        ]);
+        self.core.update(cx, |core, _| {
+            let _ = core.port_mut().set_ui(vec![lm_port::PathStep::key("docks")], docks);
+        });
+        cx.notify();
+    }
 }
