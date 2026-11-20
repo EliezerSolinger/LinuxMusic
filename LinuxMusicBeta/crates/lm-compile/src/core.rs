@@ -47,9 +47,9 @@ use std::time::{Duration, Instant};
 use lm_base::{Error, Result};
 use lm_doc::schemas::{KIND_CHANNEL, KIND_PLUGIN, MASTER};
 use lm_render::{
-    AudioItem, ChannelMix, CountIn, Curve, Feed, HostParam, Install, Limits, Metronome, MidiItem, NodeCore, NodeDesc,
-    NodeIndex, OutputRoute, ParamInfo, ParamSlot, PortIndex, PortRoute, ProcessSpec, ProgramBuilder, ProgramGen, Rate,
-    Relocate, Returned, Rng, Strip, TransportSettings,
+    AudioItem, AutomationMode, ChannelMix, CountIn, Curve, Feed, HostParam, Install, Limits, Metronome, MidiItem,
+    NodeCore, NodeDesc, NodeIndex, OutputRoute, ParamInfo, ParamRange, ParamSlot, PortIndex, PortRoute, ProcessSpec,
+    ProgramBuilder, ProgramGen, RangeScale, Rate, Relocate, Returned, Rng, Strip, TransportSettings,
 };
 use lm_state::{NodeId, ParamSpec, Scale, SchemaRegistry, Value};
 use lm_time::TempoMap;
@@ -214,6 +214,7 @@ struct PParam {
     rate: Rate,
     discrete: bool,
     value: f32,
+    range: ParamRange,
 }
 
 /// What the plan decided for a processor node
@@ -251,6 +252,8 @@ struct Plan {
     metronome: Option<(usize, Metronome)>,
     transport: TransportSettings,
     curves: HashMap<(NodeId, Arc<str>), Curve>,
+    /// How each curve plays (I-21.5)
+    modes: HashMap<(NodeId, Arc<str>), AutomationMode>,
     procs: Vec<ProcPlan>,
     /// Tails: (serial, owner's plan index, the tail's plan index)
     tails: Vec<(u64, usize)>,
@@ -343,6 +346,8 @@ pub struct CompilerCore {
     caches: Caches,
     /// The automation curves of the last install, by parameter
     curves: HashMap<(NodeId, Arc<str>), Curve>,
+    /// The ranges of the parameters of the last install (I-21.2)
+    ranges: BTreeMap<(NodeId, Arc<str>), ParamRange>,
 }
 
 impl std::fmt::Debug for CompilerCore {
@@ -375,6 +380,7 @@ impl CompilerCore {
             tempo: None,
             caches: Caches::default(),
             curves: HashMap::new(),
+            ranges: BTreeMap::new(),
         }
     }
 
@@ -389,6 +395,7 @@ impl CompilerCore {
         c.slot_alloc = SlotAllocator::restore(c.config.limits.max_params, &used_slots, &table.pending_slots);
         c.nodes = table.nodes.clone();
         c.slot_keys = table.slot_keys.clone();
+        c.ranges = table.ranges.clone();
         for p in &table.processors {
             c.procs.insert(p.node, Proc { installed: Some(p.clone()), requested: None, ready: None });
         }
@@ -674,6 +681,13 @@ impl CompilerCore {
                 curve,
             );
         }
+        for ((owner, key, _), slot) in &slot_keys {
+            if let Some(mode) = plan.modes.get(&(*owner, key.clone()))
+                && *mode != AutomationMode::Read
+            {
+                b.automation_mode(*slot, *mode);
+            }
+        }
         for (n, items) in std::mem::take(&mut plan.audio) {
             b.audio_items(index_of[n], items);
         }
@@ -822,6 +836,16 @@ impl CompilerCore {
         self.tempo = Some(tempo);
         self.caches.sweep();
         self.curves = std::mem::take(&mut plan.curves);
+        let mut ranges = BTreeMap::new();
+        for p in &plan.params {
+            ranges.insert((p.owner, p.key.clone()), p.range);
+        }
+        for h in plan.host_params() {
+            if let HPlan::Param { owner, key, .. } = h {
+                ranges.insert((*owner, key.clone()), host_range(key));
+            }
+        }
+        self.ranges = ranges;
         let made = self.caches.made;
         let table = Arc::new(self.table());
         let routes = plan
@@ -891,6 +915,7 @@ impl CompilerCore {
             pending_nodes: self.node_alloc.pending(),
             pending_slots: self.slot_alloc.pending(),
             slot_keys: self.slot_keys.clone(),
+            ranges: self.ranges.clone(),
         }
     }
 
@@ -999,6 +1024,15 @@ impl CompilerCore {
                 rate: rate_of(spec),
                 discrete: spec.scale == Scale::Stepped,
                 value: value as f32,
+                range: ParamRange {
+                    min: spec.min as f32,
+                    max: spec.max as f32,
+                    scale: match spec.scale {
+                        Scale::Linear => RangeScale::Linear,
+                        Scale::Log => RangeScale::Log,
+                        Scale::Stepped => RangeScale::Stepped,
+                    },
+                },
             });
         }
     }
@@ -1109,7 +1143,20 @@ impl CompilerCore {
             }
             m
         };
+        // The global automation button wins over each lane's mode (I-21.5)
+        let global = root.get("transport").and_then(|t| t.get("automationMode")).and_then(Value::as_text);
         for (lane, lane_id) in lanes {
+            let mode = match global.filter(|g| *g != "lanes") {
+                Some(g) => g,
+                None => lane.get("mode").and_then(Value::as_text).unwrap_or("read"),
+            };
+            let mode = match mode {
+                "off" => continue,
+                "touch" => AutomationMode::Touch,
+                "latch" => AutomationMode::Latch,
+                "write" => AutomationMode::Write,
+                _ => AutomationMode::Read,
+            };
             let Some(target) = lane.get("target") else { continue };
             let Some(node) = ref_of(target, "node") else { continue };
             let param = text(target, "param", "");
@@ -1128,6 +1175,7 @@ impl CompilerCore {
                 continue;
             }
             if let Some(curve) = self.caches.curve(lane_id, lane, &tempo)? {
+                plan.modes.insert((node, canonical.clone()), mode);
                 plan.curves.insert((node, canonical), curve);
             }
         }
@@ -1365,6 +1413,7 @@ impl CompilerCore {
                             rate: Rate::Block,
                             discrete: false,
                             value: v as f32,
+                            range: ParamRange::linear(p.min as f32, p.max as f32),
                         });
                     }
                 }
@@ -1490,6 +1539,8 @@ impl CompilerCore {
                 let tap = if flag(send, "pre", false) { pre } else { post };
                 let tap_w = plan.nodes[tap].outputs.max(1).min(w.max(plan.nodes[tap].outputs));
                 let amount = real(send, "amount", 1.0) as f32;
+                // A slot, so a hand or a MIDI control moves it without a compilation (I-21.2)
+                let amount_param = HPlan::Param { owner: sid, key: key("amount"), instance: 0, value: amount };
                 let (dest, to_channel, dest_w, sidechain) = if to.kind == KIND_CHANNEL {
                     let Some(&d) = plan.index.get(&NodeKey::ChannelIn(to)) else { continue };
                     (d, 0, plan.nodes[d].inputs, false)
@@ -1506,10 +1557,10 @@ impl CompilerCore {
                 if plan.has_feed(tap, dest, 0, to_channel, sidechain) {
                     // The same route again: through its own summing node, so each has its own delay line
                     let hop = plan.add(PNode::sum(NodeKey::Hop(sid), tap_w));
-                    plan.feed(tap, 0, tap_w, hop, 0, tap_w, false).gain = Some(HPlan::Fixed(amount));
+                    plan.feed(tap, 0, tap_w, hop, 0, tap_w, false).gain = Some(amount_param);
                     plan.feed(hop, 0, tap_w, dest, to_channel, dest_w, sidechain);
                 } else {
-                    plan.feed(tap, 0, tap_w, dest, to_channel, dest_w, sidechain).gain = Some(HPlan::Fixed(amount));
+                    plan.feed(tap, 0, tap_w, dest, to_channel, dest_w, sidechain).gain = Some(amount_param);
                 }
             }
         }
@@ -1644,6 +1695,14 @@ impl Plan {
             .iter()
             .flat_map(|n| n.gain.iter().chain(n.pan.iter()))
             .chain(self.feeds.iter().filter_map(|f| f.gain.as_ref()))
+    }
+}
+
+/// The range of a parameter the host applies: gains (a fader, a send) on the fader scale, the pan from −1 to 1
+fn host_range(key: &str) -> ParamRange {
+    match key {
+        "pan" => ParamRange::linear(-1.0, 1.0),
+        _ => ParamRange { min: 0.0, max: 4.0, scale: RangeScale::Gain },
     }
 }
 

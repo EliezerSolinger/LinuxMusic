@@ -37,7 +37,7 @@ mod sync;
 mod telemetry;
 mod voice;
 
-pub use automation::{CURVE_STEEPNESS, Curve, CurvePoint, shape};
+pub use automation::{CURVE_STEEPNESS, Curve, CurvePoint, Segment, shape};
 pub use command::{COMMAND_RING_CAPACITY, Command, CommandReceiver, CommandSender, PreviewCommand, command_ring};
 pub use dummy::Dummy;
 pub use engine::{EngineControl, engine, engine_with};

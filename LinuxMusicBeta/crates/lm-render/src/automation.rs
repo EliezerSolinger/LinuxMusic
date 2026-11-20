@@ -21,10 +21,25 @@ pub struct CurvePoint {
     pub shape: f32,
 }
 
+/// The kind of the segment that ends at a point (I-21.5; the document's `shape`)
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Segment {
+    /// Bent by the point's `shape` (−1..1; 0 is a straight line)
+    #[default]
+    Curve,
+    /// Holds the previous value until the point, then jumps
+    Step,
+    /// A cardinal spline through the neighbours; `tension` 0 is Catmull-Rom, 1 has flat tangents. Kept inside the
+    /// two values it joins (never overshoots)
+    Smooth { tension: f32 },
+}
+
 /// A curve: points in increasing sample order. Shared (an `Arc`), so programs that did not change it share it
 #[derive(Clone, Debug, PartialEq)]
 pub struct Curve {
     points: Arc<[CurvePoint]>,
+    /// The kind of the segment ending at each point (empty: all `Curve`)
+    segments: Arc<[Segment]>,
 }
 
 impl Curve {
@@ -45,7 +60,35 @@ impl Curve {
                 return Err(Error::new("render.curve.not_increasing").arg("point", i as i64));
             }
         }
-        Ok(Self { points: points.into() })
+        Ok(Self { points: points.into(), segments: Arc::from(Vec::new()) })
+    }
+
+    /// A curve with a kind per segment (`segments[i]` is the segment ending at point `i`). Keys: those of
+    /// [`Curve::new`], and `render.curve.segments_length`, `render.curve.tension_out_of_range`
+    pub fn with_segments(points: Vec<CurvePoint>, segments: Vec<Segment>) -> Result<Self> {
+        if segments.len() != points.len() {
+            return Err(Error::new("render.curve.segments_length"));
+        }
+        for (i, s) in segments.iter().enumerate() {
+            if let Segment::Smooth { tension } = s
+                && !(0.0..=1.0).contains(tension)
+            {
+                return Err(Error::new("render.curve.tension_out_of_range").arg("point", i as i64));
+            }
+        }
+        let mut c = Self::new(points)?;
+        if segments.iter().any(|s| *s != Segment::Curve) {
+            c.segments = segments.into();
+        }
+        Ok(c)
+    }
+
+    pub fn segments(&self) -> &[Segment] {
+        &self.segments
+    }
+
+    fn segment_kind(&self, i: usize) -> Segment {
+        self.segments.get(i).copied().unwrap_or_default()
     }
 
     pub fn points(&self) -> &[CurvePoint] {
@@ -62,7 +105,7 @@ impl Curve {
         match self.last_at(sample) {
             None => self.points[0].value,
             Some(i) if i + 1 == self.points.len() => self.points[i].value,
-            Some(i) => segment(&self.points[i], &self.points[i + 1], sample),
+            Some(i) => self.segment(i, sample),
         }
     }
 
@@ -89,7 +132,7 @@ impl Curve {
             *o = match i {
                 None => self.points[0].value,
                 Some(i) if i + 1 == n => self.points[i].value,
-                Some(i) => segment(&self.points[i], &self.points[i + 1], s),
+                Some(i) => self.segment(i, s),
             };
         }
     }
@@ -102,14 +145,46 @@ impl Curve {
     }
 }
 
-fn segment(a: &CurvePoint, b: &CurvePoint, sample: i64) -> f32 {
-    let span = (b.sample - a.sample) as f64;
-    if span <= 0.0 {
-        return b.value;
+impl Curve {
+    /// The value inside the segment from point `i` to point `i + 1`
+    fn segment(&self, i: usize, sample: i64) -> f32 {
+        let (a, b) = (&self.points[i], &self.points[i + 1]);
+        let span = (b.sample - a.sample) as f64;
+        if span <= 0.0 {
+            return b.value;
+        }
+        let t = ((sample - a.sample) as f64 / span).clamp(0.0, 1.0);
+        let (va, vb) = (f64::from(a.value), f64::from(b.value));
+        match self.segment_kind(i + 1) {
+            Segment::Curve => (va + (vb - va) * shape(t, f64::from(b.shape))) as f32,
+            Segment::Step => {
+                if sample >= b.sample {
+                    b.value
+                } else {
+                    a.value
+                }
+            }
+            Segment::Smooth { tension } => {
+                // Tangents (value per sample) from the neighbours, scaled by 1 − tension; flat at the ends
+                let c = 1.0 - f64::from(tension);
+                let tangent = |k: usize| -> f64 {
+                    if k == 0 || k + 1 >= self.points.len() {
+                        return 0.0;
+                    }
+                    let (p, n) = (&self.points[k - 1], &self.points[k + 1]);
+                    let dt = (n.sample - p.sample) as f64;
+                    if dt <= 0.0 { 0.0 } else { c * (f64::from(n.value) - f64::from(p.value)) / dt }
+                };
+                let (ma, mb) = (tangent(i) * span, tangent(i + 1) * span);
+                let (t2, t3) = (t * t, t * t * t);
+                let v = (2.0 * t3 - 3.0 * t2 + 1.0) * va
+                    + (t3 - 2.0 * t2 + t) * ma
+                    + (-2.0 * t3 + 3.0 * t2) * vb
+                    + (t3 - t2) * mb;
+                v.clamp(va.min(vb), va.max(vb)) as f32
+            }
+        }
     }
-    let t = ((sample - a.sample) as f64 / span).clamp(0.0, 1.0);
-    let f = shape(t, f64::from(b.shape));
-    (f64::from(a.value) + (f64::from(b.value) - f64::from(a.value)) * f) as f32
 }
 
 /// The shape function of a segment (see [`CURVE_STEEPNESS`])
@@ -153,6 +228,36 @@ mod tests {
             assert!(mid > 0.0 && mid < 1.0);
             assert_eq!(mid < 0.5, c > 0.0);
         }
+    }
+
+    #[test]
+    fn step_and_smooth_segments() {
+        let pts = vec![p(0, 0.0, 0.0), p(100, 1.0, 0.0), p(200, 0.0, 0.0), p(300, 1.0, 0.0)];
+        let c = Curve::with_segments(
+            pts.clone(),
+            vec![Segment::Curve, Segment::Step, Segment::Smooth { tension: 0.0 }, Segment::Smooth { tension: 1.0 }],
+        )
+        .expect("curve");
+        assert_eq!(c.value_at(99), 0.0, "a step holds");
+        assert_eq!(c.value_at(100), 1.0);
+        // Smooth: continuous at the ends, inside the two values, symmetric with flat tangents (tension 1)
+        assert!((c.value_at(101) - 1.0).abs() < 0.01);
+        assert!((c.value_at(199) - 0.0).abs() < 0.01);
+        let mut last = f32::MAX;
+        for s in 100..=200 {
+            let v = c.value_at(s);
+            assert!((0.0..=1.0).contains(&v));
+            assert!(v <= last + 1e-6, "monotone between a high and a low point");
+            last = v;
+        }
+        assert!((c.value_at(250) - 0.5).abs() < 1e-6);
+        let mut out = [0.0; 300];
+        c.fill(0, &mut out);
+        for (k, v) in out.iter().enumerate() {
+            assert_eq!(*v, c.value_at(k as i64));
+        }
+        assert!(Curve::with_segments(pts.clone(), vec![Segment::Curve]).is_err());
+        assert!(Curve::with_segments(pts, vec![Segment::Smooth { tension: 2.0 }; 4]).is_err());
     }
 
     #[test]

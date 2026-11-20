@@ -3530,6 +3530,7 @@ version = "0.1.0"
 dependencies = [
  "lm-base",
  "lm-doc",
+ "lm-midimap",
  "lm-plugin",
  "lm-render",
  "lm-state",

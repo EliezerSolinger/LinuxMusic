@@ -451,7 +451,7 @@ pub(crate) fn check_plugin(ctx: &Ctx, id: NodeId, node: &Value) -> Result<Option
 }
 
 /// The slot key of a parameter written at `rel` in a node of `owner_type` (M5): `"vol1"` for a plugin's
-/// `state/params/vol1`, `"volume"`, `"pan"`, `"rack.tube.drive"` for the desk
+/// `state/params/vol1`, `"volume"`, `"pan"`, `"rack.tube.drive"` for the desk, a send's `"amount"`
 pub fn param_key(owner_type: &str, rel: &[PathStep]) -> Option<Arc<str>> {
     let keys: Option<Vec<&str>> = rel
         .iter()
@@ -463,9 +463,10 @@ pub fn param_key(owner_type: &str, rel: &[PathStep]) -> Option<Arc<str>> {
     let keys = keys?;
     match (owner_type, keys.as_slice()) {
         (types::PLUGIN, ["state", "params", k]) => Some(Arc::from(*k)),
-        (types::TRACK, ["volume"]) | (types::CHANNEL, ["volume" | "pan"]) | (types::MASTER, ["volume"]) => {
-            Some(Arc::from(keys[0]))
-        }
+        (types::TRACK, ["volume"])
+        | (types::CHANNEL, ["volume" | "pan"])
+        | (types::MASTER, ["volume"])
+        | (types::SEND, ["amount"]) => Some(Arc::from(keys[0])),
         (types::CHANNEL | types::MASTER, ["rack", section, field]) => {
             Some(Arc::from(format!("rack.{section}.{field}")))
         }

@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use lm_render::{Install, MidiTiming, NodeIndex, ParamSlot, PortIndex, ProcessSpec, ProgramGen, SampleData};
+use lm_render::{
+    Install, MidiTiming, NodeIndex, ParamRange, ParamSlot, PortIndex, ProcessSpec, ProgramGen, SampleData,
+};
 use lm_state::{NodeId, Value};
 
 use crate::catalog::PluginShape;
@@ -187,6 +189,8 @@ pub struct InstalledTable {
     /// Slots unbound by sent installs, by the install's generation
     pub pending_slots: Vec<(u64, ParamSlot)>,
     pub(crate) slot_keys: BTreeMap<(NodeId, Arc<str>, u8), ParamSlot>,
+    /// The range of each parameter, by `(node id, key)`: what a MIDI control maps onto (I-21.2)
+    pub ranges: BTreeMap<(NodeId, Arc<str>), ParamRange>,
 }
 
 impl InstalledTable {

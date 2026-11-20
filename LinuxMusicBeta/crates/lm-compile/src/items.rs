@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use lm_base::Result;
 use lm_render::{
-    AudioItem, AudioSource, Curve, CurvePoint, Expression, ItemEvent, ItemEventKind, MidiItem, SampleData,
+    AudioItem, AudioSource, Curve, CurvePoint, Expression, ItemEvent, ItemEventKind, MidiItem, SampleData, Segment,
     StreamFeeder, StreamSpec,
 };
 use lm_state::{NodeId, Value};
@@ -435,22 +435,31 @@ pub(crate) fn lane_curve(lane: &Value, tempo: &TempoMap) -> Result<Option<Curve>
     if !flag(lane, "on", true) {
         return Ok(None);
     }
-    let mut points: Vec<(i64, CurvePoint)> = items(lane, "points")
-        .map(|p| {
-            let tick = int(p, "tick", 0);
-            (
-                tick,
-                CurvePoint {
-                    sample: tempo.sample_at(tick),
-                    value: real(p, "value", 0.0) as f32,
-                    shape: real(p, "curve", 0.0).clamp(-1.0, 1.0) as f32,
-                },
-            )
-        })
-        .collect();
+    if lane.get("mode").and_then(Value::as_text) == Some("off") {
+        return Ok(None);
+    }
+    // A point: its tick, the segment that ends at it (shape, bend, tension) and its value; a point with `out` is two
+    // points at its sample (a jump, P-27), the second one leaving with `out`
+    let mut points: Vec<(i64, CurvePoint, Segment)> = Vec::new();
+    for p in items(lane, "points") {
+        let tick = int(p, "tick", 0);
+        let sample = tempo.sample_at(tick);
+        let segment = match p.get("shape").and_then(Value::as_text) {
+            Some("step") => Segment::Step,
+            Some("smooth") => Segment::Smooth { tension: real(p, "tension", 0.5).clamp(0.0, 1.0) as f32 },
+            _ => Segment::Curve,
+        };
+        let value = real(p, "value", 0.0) as f32;
+        let shape = real(p, "curve", 0.0).clamp(-1.0, 1.0) as f32;
+        points.push((tick, CurvePoint { sample, value, shape }, segment));
+        if let Some(out) = p.get("out").and_then(Value::as_real) {
+            points.push((tick, CurvePoint { sample, value: out as f32, shape: 0.0 }, Segment::Curve));
+        }
+    }
     if points.is_empty() {
         return Ok(None);
     }
-    points.sort_by_key(|(t, _)| *t); // stable: two points at one tick stay in order (a jump, P-27)
-    Ok(Some(Curve::new(points.into_iter().map(|(_, p)| p).collect())?))
+    points.sort_by_key(|(t, _, _)| *t); // stable: two points at one tick stay in order (a jump, P-27)
+    let (pts, segs): (Vec<CurvePoint>, Vec<Segment>) = points.into_iter().map(|(_, p, s)| (p, s)).unzip();
+    Ok(Some(Curve::with_segments(pts, segs)?))
 }
