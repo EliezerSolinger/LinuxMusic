@@ -130,6 +130,14 @@ pub trait Synth: Clone + Send + 'static {
     fn release_ms(&self) -> f32 {
         0.0
     }
+    /// Whether the instrument fades a released voice out over [`Synth::release_ms`] (legacy `applyRelease`).
+    /// `false` for a synth whose voice fades itself (its own envelopes): the voice is only kept that long
+    const RELEASE_FADE: bool = true;
+    /// The song's tempo, BPM: before the first piece and whenever it changes (a synth with tempo-synced knobs, legacy
+    /// `TempoSyncKnob`, works out their values from it). Most synths ignore it
+    fn set_tempo(&mut self, bpm: f64) {
+        let _ = bpm;
+    }
     /// Takes over what the old synth keeps across notes (most keep nothing: their voices carry the sound)
     fn adopt(&mut self, old: &mut Self) {
         let _ = old;
@@ -453,6 +461,8 @@ pub struct Instrument<S: Synth> {
     settings: SoundShapingSettings,
     dirty: bool,
     bpm: f64,
+    /// The tempo the synths were last told ([`Synth::set_tempo`]); 0 before the first piece
+    synth_bpm: f64,
     pool: VoicePool<KitVoice<S::Voice>>,
     run: Run,
     scratch: Scratch,
@@ -528,6 +538,7 @@ impl<S: Synth> Instrument<S> {
             settings,
             dirty: true,
             bpm: 0.0,
+            synth_bpm: 0.0,
             pool,
             run: Run::new(),
             scratch: Scratch {
@@ -610,6 +621,11 @@ impl<S: Synth> Instrument<S> {
     /// The LFOs move on to the piece of `n` frames at offset `at` (by the tempo while playing, when synced: U37)
     fn lfos(&mut self, n: usize, at: usize, transport: &TransportInfo) {
         let bpm = transport.bpm;
+        if bpm != self.synth_bpm {
+            self.synth_bpm = bpm;
+            self.synth.set_tempo(bpm);
+            self.fading.set_tempo(bpm);
+        }
         if self.kit.synced() && bpm != self.bpm {
             self.bpm = bpm;
             self.dirty = true;
@@ -733,7 +749,7 @@ impl<S: Synth> Instrument<S> {
                 *f = [l[i], r[i]];
             }
             fade_in(v, buf, rate);
-            if v.released && desired > 0 {
+            if S::RELEASE_FADE && v.released && desired > 0 {
                 for (i, f) in buf.iter_mut().enumerate() {
                     let left_frames = v.release_end - (v.frame + i as i32);
                     if left_frames <= desired {

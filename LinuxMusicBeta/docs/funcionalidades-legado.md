@@ -698,6 +698,7 @@ Regras gerais do legado que valem para quase todo plugin:
   oscilador, largura de pulso do Osc 1 e mistura do sub do Osc 3.
 - **O usuário pode:** alternar entre a vista dos operadores e a vista da matriz.
 - **Comportamento:** polifônico, estéreo; release = o maior release dos dois envelopes.
+- **Na beta:** plugin `monstro`, em `lm-plugins-instruments`: os 44 botões e as 44 quantidades da matriz em camelCase (`osc1Volume`…, `osc1VolEnv1`…), as formas de onda e a modulação Osc 2→3 como campos, um campo `<botão>Sync` por botão de tempo; a voz se solta pelos envelopes. Contrato e A/B por composição (com os botões sincronizados). A escolha da vista é da interface.
 
 #### F-INS-010 Nes (sintetizador estilo NES) — 1.0
 
@@ -710,7 +711,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **Master:** Volume 0–2, 1 · Vibrato 0–15, 0.
 - **Comportamento:** polifônico, cada nota é um NES inteiro; mistura mono com as proporções do NES, duplicada em L/R;
   release praticamente nulo (corta no note-off).
-- **Na beta:** plugin `nes`, em `lm-plugins-instruments`: os 35 botões do legado em camelCase (`ch1Enabled`…`ch4NoiseQuantize`, `masterVolume`, `vibrato`), os duty cycles como parâmetros escalonados 0–3 (automatizáveis, como os grupos de botões do legado); os botões agem nas notas que soam. Contrato e A/B por composição.
+- **Na beta:** plugin `nes`, em `lm-plugins-instruments`: os 33 botões do legado em camelCase (`ch1Enabled`…`ch4NoiseQuantize`, `masterVolume`, `vibrato`) e os duty cycles como campos (`ch1DutyCycle`, `ch2DutyCycle`); os botões agem nas notas que soam. Contrato e A/B por composição.
 
 #### F-INS-011 OpulenZ (FM de 2 operadores, OPL2/AdLib) — 1.0
 

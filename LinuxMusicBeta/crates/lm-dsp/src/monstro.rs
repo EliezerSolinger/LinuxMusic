@@ -233,8 +233,9 @@ fn fraction(x: f32) -> f32 {
     x - x.trunc()
 }
 
-/// One note of the Monstro
-#[derive(Clone, Debug)]
+/// One note of the Monstro. Its clone copies into its own buffers (`clone_from` never allocates: a host copies
+/// voices on the audio thread)
+#[derive(Debug)]
 pub struct MonstroVoice {
     sample_rate: u32,
     d: Derived,
@@ -252,6 +253,48 @@ pub struct MonstroVoice {
     counter: [[i32; 2]; 2],
     lfo: Box<[[f32; MAX_PERIOD]; 2]>,
     env: Box<[[f32; MAX_PERIOD]; 2]>,
+}
+
+impl Clone for MonstroVoice {
+    fn clone(&self) -> Self {
+        Self {
+            sample_rate: self.sample_rate,
+            d: self.d,
+            settings: self.settings,
+            rand: self.rand,
+            osc_phase: self.osc_phase,
+            ph_last: self.ph_last,
+            env_phase: self.env_phase,
+            lfo_phase: self.lfo_phase,
+            lfo_last: self.lfo_last,
+            lfo_next: self.lfo_next,
+            osc1_last: self.osc1_last,
+            out_last: self.out_last,
+            invert: self.invert,
+            counter: self.counter,
+            lfo: self.lfo.clone(),
+            env: self.env.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.sample_rate = source.sample_rate;
+        self.d = source.d;
+        self.settings = source.settings;
+        self.rand = source.rand;
+        self.osc_phase = source.osc_phase;
+        self.ph_last = source.ph_last;
+        self.env_phase = source.env_phase;
+        self.lfo_phase = source.lfo_phase;
+        self.lfo_last = source.lfo_last;
+        self.lfo_next = source.lfo_next;
+        self.osc1_last = source.osc1_last;
+        self.out_last = source.out_last;
+        self.invert = source.invert;
+        self.counter = source.counter;
+        *self.lfo = *source.lfo;
+        *self.env = *source.env;
+    }
 }
 
 impl MonstroVoice {
@@ -277,6 +320,27 @@ impl MonstroVoice {
             counter: [[0; 2]; 2],
             lfo: Box::new([[0.0; MAX_PERIOD]; 2]),
             env: Box::new([[0.0; MAX_PERIOD]; 2]),
+        }
+    }
+
+    /// A new note in this voice, as [`MonstroVoice::new`] makes one, without allocating
+    pub fn restart(&mut self, settings: &MonstroSettings, seed: u64) {
+        let mut rand = LegacyRand::new(seed);
+        self.lfo_next = [-1.0 + rand.inclusive(2.0), -1.0 + rand.inclusive(2.0)];
+        self.rand = rand;
+        self.d = derive(settings, self.sample_rate);
+        self.settings = *settings;
+        self.osc_phase = [[0.0; 2]; 3];
+        self.ph_last = [[0.0; 2]; 2];
+        self.env_phase = [0.0; 2];
+        self.lfo_phase = [0.0; 2];
+        self.lfo_last = [0.0; 2];
+        self.osc1_last = [0.0; 2];
+        self.out_last = [0.0; 2];
+        self.invert = [[false; 2]; 2];
+        self.counter = [[0; 2]; 2];
+        for b in self.lfo.iter_mut().chain(self.env.iter_mut()) {
+            b.fill(0.0);
         }
     }
 

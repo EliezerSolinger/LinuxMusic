@@ -864,6 +864,14 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
   inteiro). A 44,1 kHz é exatamente a corda do legado (o A/B do `lm-dsp` continua bit a bit); o legado corria a um
   múltiplo da taxa do projeto (menos acima de 88,2 kHz), e o decaimento e o timbre mudavam com a taxa (1,1 dB a
   192 kHz). Sem sonda de afinação: a altura é a do comprimento inteiro em amostras, como no legado.
+- **Monstro:** os 14 botões de tempo (ataque e taxa dos LFOs, os cinco tempos dos envelopes) têm cada um um campo
+  `<botão>Sync` (`off`, `2/1` … `1/32`), como o `TempoSyncKnob` do legado (sem o "personalizado"): sincronizado, o
+  botão vale a nota no andamento da música, no máximo o fim do botão. Para isso o `Synth` ganhou `set_tempo` (chamado
+  antes da primeira peça e a cada mudança de andamento). A voz se solta pelos próprios envelopes, então o `Synth`
+  ganhou `RELEASE_FADE` (falso no Monstro): o `Instrument` só segura a voz pelo release maior, sem a rampa do
+  `applyRelease`, como o legado. As formas de onda e a modulação Osc 2→3 são campos `Choice` (U30).
+- **Os duty cycles do Nes são campos `Choice`** (`12.5`, `25`, `50`, `75`), não números escalonados: são opções com
+  nome (U30), mesmo que o grupo de botões do legado fosse automatizável.
 
 ## As telas do agente D no `lm-gui`: o que muda em relação ao legado (20/11)
 

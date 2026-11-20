@@ -9,15 +9,24 @@ lm_plugin::contract_tests!(lm_plugins_instruments::nes::DESCRIPTOR, "nes");
 use common::{agree, render, state};
 use lm_dsp::nes::{NesSettings, NesVoice};
 use lm_plugin::testing::note_on;
-use lm_plugins_instruments::nes::{DESCRIPTOR, PARAMS, set};
+use lm_plugins_instruments::nes::{DESCRIPTOR, DUTY_KEYS, PARAMS, set};
 use lm_render::Rng;
+use lm_state::Value;
 
 const RATE: u32 = 48_000;
 const SEED: u64 = 23;
 const FRAMES: usize = 24_000;
 
 fn compare(params: &[(&str, f64)], key: u8, velocity: f32) {
+    compare_with(params, &[], key, velocity);
+}
+
+fn compare_with(params: &[(&str, f64)], duties: &[(&str, &str)], key: u8, velocity: f32) {
     let mut s = NesSettings::default();
+    for (field, duty) in duties {
+        let pulse = if *field == "ch1DutyCycle" { 0 } else { 1 };
+        s.pulses[pulse].duty = DUTY_KEYS.iter().position(|d| d == duty).unwrap();
+    }
     for (name, v) in params {
         set(&mut s, PARAMS.iter().position(|p| p.0 == *name).unwrap(), *v as f32);
     }
@@ -28,7 +37,8 @@ fn compare(params: &[(&str, f64)], key: u8, velocity: f32) {
     for chunk in theirs.chunks_mut(32) {
         voice.render(chunk, &s, freq);
     }
-    let ours = render(&DESCRIPTOR, &state(params, &[]), RATE, SEED, FRAMES, &[note_on(0, 1, key, velocity)]);
+    let fields: Vec<(&str, Value)> = duties.iter().map(|(f, d)| (*f, Value::text(*d))).collect();
+    let ours = render(&DESCRIPTOR, &state(params, &fields), RATE, SEED, FRAMES, &[note_on(0, 1, key, velocity)]);
     for ch in 0..2 {
         let t: Vec<f32> = theirs.iter().map(|f| f[ch] * velocity).collect();
         agree(&ours[ch], &t, RATE, 1.0e-6, "nes");
@@ -49,14 +59,12 @@ fn ab_against_the_legacy_note_with_envelopes_sweeps_and_vibrato() {
         ("ch1EnvEnabled", 1.0),
         ("ch1EnvLooped", 1.0),
         ("ch1EnvLength", 6.0),
-        ("ch1DutyCycle", 1.0),
         ("ch1SweepEnabled", 1.0),
         ("ch1SweepAmount", -3.0),
         ("ch1SweepRate", 4.0),
         ("ch2Coarse", -7.0),
         ("ch2EnvEnabled", 1.0),
         ("ch2EnvLength", 9.0),
-        ("ch2DutyCycle", 3.0),
         ("ch2SweepEnabled", 1.0),
         ("ch2SweepAmount", 2.0),
         ("ch2SweepRate", 2.0),
@@ -65,7 +73,7 @@ fn ab_against_the_legacy_note_with_envelopes_sweeps_and_vibrato() {
         ("masterVolume", 1.4),
         ("vibrato", 7.0),
     ];
-    compare(&params, 57, 0.7);
+    compare_with(&params, &[("ch1DutyCycle", "25"), ("ch2DutyCycle", "75")], 57, 0.7);
 }
 
 #[test]
