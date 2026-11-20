@@ -111,6 +111,26 @@ struct Welcome {
     role: Role,
     server: String,
     snapshot: Value,
+    /// The handshake's and the snapshot's bytes
+    bytes: u64,
+}
+
+/// The bytes received, by kind (I-20.8's measures), frames' headers included
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Traffic {
+    /// The handshakes and the snapshots (one per connection)
+    pub snapshots: u64,
+    /// The other JSON messages: tree updates, answers, session state
+    pub messages: u64,
+    pub peaks: u64,
+    pub telemetry: u64,
+    pub displays: u64,
+}
+
+impl Traffic {
+    pub fn total(&self) -> u64 {
+        self.snapshots + self.messages + self.peaks + self.telemetry + self.displays
+    }
 }
 
 /// What a request was, to make its result
@@ -163,8 +183,10 @@ fn handshake(cfg: &ClientConfig) -> Result<Welcome> {
         hello = hello.with("token", Value::text(t.as_str()));
     }
     wire::write_frame(&mut stream, KIND_JSON, &wire::json(&hello)?)?;
-    let read = |s: &mut Stream| -> Result<Value> {
+    let mut bytes = 0u64;
+    let mut read = |s: &mut Stream| -> Result<Value> {
         let f = wire::read_frame(s, wire::MAX_FRAME_FROM_SERVER)?;
+        bytes += f.payload.len() as u64 + 5;
         if f.kind != KIND_JSON {
             return Err(bad("handshake"));
         }
@@ -223,7 +245,7 @@ fn handshake(cfg: &ClientConfig) -> Result<Welcome> {
             }
         }),
     )?;
-    Ok(Welcome { live: Live { out: out_tx, incoming: in_rx, stream }, role, server, snapshot })
+    Ok(Welcome { live: Live { out: out_tx, incoming: in_rx, stream }, role, server, snapshot, bytes })
 }
 
 fn final_error(e: &Error) -> bool {
@@ -257,6 +279,7 @@ pub struct RemotePort {
     peaks_asked: HashMap<RequestId, (String, u8, u64, u64)>,
     /// Updates applied since connecting (for tests and the indicator)
     updates: u64,
+    traffic: Traffic,
 }
 
 impl std::fmt::Debug for RemotePort {
@@ -367,6 +390,7 @@ impl RemotePort {
             peaks: HashMap::new(),
             peaks_asked: HashMap::new(),
             updates: 0,
+            traffic: Traffic { snapshots: w.bytes, ..Traffic::default() },
         };
         port.session_state(&w.snapshot)?;
         port.live = Some(w.live);
@@ -376,6 +400,11 @@ impl RemotePort {
 
     pub fn connection(&self) -> &Connection {
         &self.connection
+    }
+
+    /// The bytes received so far, by kind
+    pub fn traffic(&self) -> Traffic {
+        self.traffic
     }
 
     /// The tree updates applied since the port was made
@@ -503,6 +532,7 @@ impl RemotePort {
     }
 
     fn resync(&mut self, w: Welcome) -> Result<()> {
+        self.traffic.snapshots += w.bytes;
         let root = get(&w.snapshot, "root")?.clone();
         self.doc.mirror(root, None)?;
         self.session_state(&w.snapshot)?;
@@ -514,6 +544,14 @@ impl RemotePort {
     }
 
     fn incoming(&mut self, f: Frame) -> Result<()> {
+        let n = f.payload.len() as u64 + 5;
+        match f.kind {
+            KIND_JSON => self.traffic.messages += n,
+            KIND_TELEMETRY => self.traffic.telemetry += n,
+            KIND_PEAKS => self.traffic.peaks += n,
+            KIND_DISPLAY => self.traffic.displays += n,
+            _ => {}
+        }
         match f.kind {
             KIND_JSON => self.json(&wire::parse_json(&f.payload)?),
             KIND_TELEMETRY => wire::telemetry_from(&f.payload, &mut self.telemetry),
