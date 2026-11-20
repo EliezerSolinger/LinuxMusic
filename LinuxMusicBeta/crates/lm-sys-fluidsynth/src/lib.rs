@@ -17,7 +17,7 @@
 //! | Who owns each handle? | `fluid_settings_t*` and `fluid_synth_t*`: one private `Instance`, inside the `SynthBuilder` and then the `Synth` (moved, never copied). Its `Drop` deletes the synth, then the settings. SoundFonts belong to the synth (freed with it); a [`SoundFontId`] is only a number. |
 //! | Which thread may call each function? | `synth.threadsafe-api` is **off**: FluidSynth takes no lock, so the instance must never be used by two threads at once. Both types are `Send` and **not `Sync`**, and every call takes `&mut self`: the compiler forbids concurrent use. The `Synth` is moved to the audio thread and stays there; it goes back to the main thread to be dropped (return ring, rule 5). |
 //! | Allocates, locks, does I/O? | `SynthBuilder::new` and `load_soundfont` allocate and do file I/O (the samples are read whole: no dynamic sample loading), and take this crate's log lock: build time only. `presets` allocates the list. On `Synth`: `note_on`, `note_off`, `cc`, `pitch_bend`, `program_change`, `bank_select`, `program_select`, `all_notes_off`, `all_sounds_off` and `render` neither allocate nor lock nor do I/O (voices are preallocated by `synth.polyphony`; checked by `tests/no_alloc.rs`, which counts the C heap) and are for the audio thread. `Drop` frees: never on the audio thread. |
-//! | Creates threads? | No: `synth.cpu-cores = 1` (no render threads) and no audio or MIDI driver is ever created (FluidSynth makes threads only for those). `tests/synth.rs` checks the thread count of the process does not grow (on macOS, the first `new_fluid_settings` of the process registers FluidSynth's drivers, CoreAudio and PortAudio, which makes the system start two idle libdispatch workers once per process: not FluidSynth's, never per instance, and never on the audio thread, since settings are made at build time). |
+//! | Creates threads? | No: `synth.cpu-cores = 1` (no render threads), no audio or MIDI driver is ever created, and a FluidSynth built with OpenMP (Debian, Ubuntu) loads SoundFonts with OpenMP limited to one thread on the loading thread (`OpenMpSingleThread`), so libgomp never starts its worker pool. `tests/synth.rs` checks the thread count of the process does not grow (on macOS, the first `new_fluid_settings` of the process registers FluidSynth's drivers, CoreAudio and PortAudio, which makes the system start two idle libdispatch workers once per process: not FluidSynth's, never per instance, and never on the audio thread, since settings are made at build time). |
 //! | Calls back into our code? | Only the log function, set once for the whole library: errors and panics go to `log_trampoline`, which runs under `catch_unwind` and only records text when the calling thread is the one loading (it compares `pthread_self`, so on the audio thread it neither allocates nor locks); warnings, info and debug are switched off (FluidSynth would print them to stderr from the audio thread). |
 //! | Tests | `tests/synth.rs` with a SoundFont made by the test (`tests/common/sf2.rs`): a note renders a non-silent tone at the right pitch, note off and all-sounds-off silence it, two MIDI channels render into two separate outputs, presets are listed, a broken SoundFont is an error with FluidSynth's message, no thread is created. `tests/no_alloc.rs`: the audio-thread calls under `assert_no_alloc` and the C heap trap. ASan in CI. |
 
@@ -110,6 +110,9 @@ mod ffi {
 
         /// From the C library: an id of the calling thread that costs nothing (no allocation, no lock)
         pub safe fn pthread_self() -> usize;
+
+        /// From the C library: a symbol of the loaded libraries, or NULL
+        pub fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
     }
 }
 
@@ -176,6 +179,63 @@ fn capturing<T>(f: impl FnOnce() -> T) -> (T, Vec<String>) {
 
 fn with_messages(error: Error, messages: &[String]) -> Error {
     if messages.is_empty() { error } else { error.arg("message", messages.join("; ")) }
+}
+
+// ---- OpenMP ------------------------------------------------------------------------------------------------------
+
+/// FluidSynth built with OpenMP (Debian and Ubuntu's `libfluidsynth3`, linked to libgomp) loads a SoundFont's samples
+/// in an `omp parallel` region: libgomp then starts its worker pool, one thread per core, and keeps it for the life of
+/// the process. U33 wants no threads of FluidSynth's, so the load runs with OpenMP limited to one thread, which makes
+/// libgomp run the region on the calling thread alone and start nothing.
+///
+/// `omp_set_num_threads` sets the `nthreads-var` of the calling thread only (each thread outside a parallel region
+/// has its own), so no other thread is affected, and the guard puts the old value back. The two functions are looked
+/// up at run time: a FluidSynth without OpenMP (Homebrew's) does not load libgomp, and then there is nothing to do.
+struct OpenMpSingleThread {
+    restore: Option<(unsafe extern "C" fn(c_int), c_int)>,
+}
+
+/// `RTLD_DEFAULT`: search every library loaded in the process
+#[cfg(target_os = "linux")]
+const RTLD_DEFAULT: *mut c_void = std::ptr::null_mut();
+#[cfg(target_os = "macos")]
+const RTLD_DEFAULT: *mut c_void = -2_isize as *mut c_void;
+
+impl OpenMpSingleThread {
+    fn enter() -> Self {
+        // SAFETY: dlsym with RTLD_DEFAULT and NUL-terminated names only looks symbols up
+        let (get, set) = unsafe {
+            (
+                ffi::dlsym(RTLD_DEFAULT, c"omp_get_max_threads".as_ptr()),
+                ffi::dlsym(RTLD_DEFAULT, c"omp_set_num_threads".as_ptr()),
+            )
+        };
+        if get.is_null() || set.is_null() {
+            return Self { restore: None };
+        }
+        // SAFETY: these are the OpenMP runtime's `int omp_get_max_threads(void)` and `void omp_set_num_threads(int)`
+        // (OpenMP API, every version), so the pointers have exactly these signatures
+        let (get, set) = unsafe {
+            (
+                std::mem::transmute::<*mut c_void, unsafe extern "C" fn() -> c_int>(get),
+                std::mem::transmute::<*mut c_void, unsafe extern "C" fn(c_int)>(set),
+            )
+        };
+        // SAFETY: plain calls into the OpenMP runtime from a thread that is not in a parallel region
+        let before = unsafe { get() };
+        // SAFETY: as above
+        unsafe { set(1) };
+        Self { restore: Some((set, before)) }
+    }
+}
+
+impl Drop for OpenMpSingleThread {
+    fn drop(&mut self) {
+        if let Some((set, before)) = self.restore {
+            // SAFETY: the function found in enter(), called on the same thread (the guard never leaves it)
+            unsafe { set(before.max(1)) };
+        }
+    }
 }
 
 // ---- The instance ------------------------------------------------------------------------------------------------
@@ -371,9 +431,12 @@ impl SynthBuilder {
         let load_error = || Error::new("fluidsynth.load_failed").arg("path", path.display().to_string());
         let name = CString::new(path.as_os_str().as_bytes()).map_err(|_| load_error())?;
         let synth = self.instance.ptr();
-        // SAFETY: the synth is valid and ours (&mut self), the name is NUL-terminated; reset_presets = 1 points every
-        // channel at the new font's presets
-        let (id, messages) = capturing(|| unsafe { ffi::fluid_synth_sfload(synth, name.as_ptr(), 1) });
+        let (id, messages) = capturing(|| {
+            let _single = OpenMpSingleThread::enter();
+            // SAFETY: the synth is valid and ours (&mut self), the name is NUL-terminated; reset_presets = 1 points
+            // every channel at the new font's presets
+            unsafe { ffi::fluid_synth_sfload(synth, name.as_ptr(), 1) }
+        });
         if id == ffi::FLUID_FAILED {
             return Err(with_messages(load_error(), &messages));
         }
