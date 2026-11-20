@@ -323,6 +323,7 @@ pub fn load_file(path: &Path, cancel: &Cancel, progress: &Progress) -> Result<Ar
 pub struct ResourceView {
     data: Arc<BTreeMap<String, Arc<SampleData>>>,
     on_disk: Arc<BTreeMap<String, OnDisk>>,
+    others: Arc<BTreeMap<(String, String), Content>>,
 }
 
 impl ResourceView {
@@ -341,8 +342,13 @@ impl ResourceView {
         self.data.contains_key(key) || self.on_disk.contains_key(key)
     }
 
+    /// A resource of another kind (a NAM model, an impulse response, a SoundFont): its bytes or its checked file
+    pub fn content(&self, kind: &str, key: &str) -> Option<&Content> {
+        self.others.get(&(kind.to_owned(), key.to_owned()))
+    }
+
     pub fn len(&self) -> usize {
-        self.data.len() + self.on_disk.len()
+        self.data.len() + self.on_disk.len() + self.others.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -459,6 +465,7 @@ pub struct ResourceStore {
     entries: BTreeMap<String, Entry>,
     data: BTreeMap<String, Arc<SampleData>>,
     on_disk: BTreeMap<String, OnDisk>,
+    others: BTreeMap<(String, String), Content>,
     view: ResourceView,
     clock: Arc<dyn Clock>,
     pub evict_after: Duration,
@@ -479,6 +486,7 @@ impl ResourceStore {
             entries: BTreeMap::new(),
             data: BTreeMap::new(),
             on_disk: BTreeMap::new(),
+            others: BTreeMap::new(),
             view: ResourceView::default(),
             clock,
             evict_after: EVICT_AFTER,
@@ -600,6 +608,9 @@ impl ResourceStore {
         let mut out = Vec::new();
         for k in &old {
             self.entries.remove(k);
+            if let Some((kind, key)) = k.split_once('/') {
+                self.others.remove(&(kind.to_owned(), key.to_owned()));
+            }
             self.on_disk.remove(k);
             if let Some(d) = self.data.remove(k) {
                 out.push(d);
@@ -622,7 +633,11 @@ impl ResourceStore {
     }
 
     fn publish(&mut self) {
-        self.view = ResourceView { data: Arc::new(self.data.clone()), on_disk: Arc::new(self.on_disk.clone()) };
+        self.view = ResourceView {
+            data: Arc::new(self.data.clone()),
+            on_disk: Arc::new(self.on_disk.clone()),
+            others: Arc::new(self.others.clone()),
+        };
     }
 }
 
@@ -631,6 +646,297 @@ impl ResourceStore {
 pub fn verify_located(path: &Path, key: &str, cancel: &Cancel, progress: &Progress) -> Result<bool> {
     check_key(key)?;
     Ok(crate::take::hash_file(path, cancel, progress)? == key)
+}
+
+/// How a kind of resource is loaded (a table of `lm-io`'s): audio is decoded; small data is read into memory; large
+/// libraries stay files that the plugin opens itself
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KindPolicy {
+    /// `audio/`: decoded into `SampleData`, with peaks (I-12)
+    Audio,
+    /// `state/`: read whole into memory (NAM models, impulse responses, opaque state, U24), up to [`BYTES_MAX`]
+    Bytes,
+    /// `state/`: a checked path (SoundFonts, GIG and SFZ libraries, kits): the plugin reads it in its build
+    File,
+}
+
+/// The largest file loaded as bytes; a bigger one is handed over as a file
+pub const BYTES_MAX: u64 = 64 << 20;
+
+/// The policy of a resource kind
+pub fn kind_policy(kind: &str) -> KindPolicy {
+    match kind {
+        "audio" => KindPolicy::Audio,
+        "nam" | "ir" | "state" | "wavetable" | "preset" => KindPolicy::Bytes,
+        // "sf2", "sf3", "sfz", "gig", "kit", "soundfont" and anything not known: the plugin opens the file
+        _ => KindPolicy::File,
+    }
+}
+
+/// Whether `kind` is a valid resource kind: 1 to 32 of `a-z`, `0-9`, `-`, `_`, starting with a letter (C9: it never
+/// names a path)
+pub fn is_valid_kind(kind: &str) -> bool {
+    let b = kind.as_bytes();
+    !b.is_empty()
+        && b.len() <= 32
+        && b[0].is_ascii_lowercase()
+        && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-' || *c == b'_')
+}
+
+/// What a non-audio resource is once loaded
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Content {
+    Bytes(Arc<[u8]>),
+    File(PathBuf),
+}
+
+/// The project's `state/` folder (non-audio resources, U24)
+pub fn state_folder(project: &Path) -> PathBuf {
+    project.join("state")
+}
+
+/// The file of resource (`kind`, `key`) in the project, if it is there (C9: kind and key validated first; a link out
+/// of its folder is refused). Audio is `audio/<key>.<audio extension>`; any other kind is `state/<key>.<extension>`
+pub fn resource_path_of(project: &Path, kind: &str, key: &str) -> Result<Option<PathBuf>> {
+    if !is_valid_kind(kind) {
+        return Err(Error::new("io.resource.invalid_kind").arg("kind", kind.chars().take(40).collect::<String>()));
+    }
+    if kind == "audio" {
+        return resource_path(project, key);
+    }
+    check_key(key)?;
+    let folder = state_folder(project);
+    let entries = match std::fs::read_dir(&folder) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io_error("io.resource.read_failed", &folder, &e)),
+    };
+    let prefix = format!("{key}.");
+    let mut found: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|e| e.file_name().to_str().is_some_and(|n| n.starts_with(&prefix) && !n.ends_with(".tmp")))
+        .map(|e| e.path())
+        .collect();
+    found.sort();
+    let Some(p) = found.into_iter().next() else { return Ok(None) };
+    let real = p.canonicalize().map_err(|e| io_error("io.resource.read_failed", &p, &e))?;
+    let root = folder.canonicalize().map_err(|e| io_error("io.resource.read_failed", &folder, &e))?;
+    if !real.starts_with(&root) {
+        return Err(Error::new("io.resource.outside_project").arg("path", p.display().to_string()));
+    }
+    Ok(Some(p))
+}
+
+/// What a non-audio import made
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportedResource {
+    pub kind: String,
+    /// The BLAKE3 hash of the file, lowercase hex
+    pub key: String,
+    pub path: PathBuf,
+    pub bytes: u64,
+}
+
+/// Imports a file of a non-audio kind into `state/` (I-12, U24), inside an `Operation`: the disk checked first (H3),
+/// copied through a `.tmp` while hashing, renamed to `state/<hash>.<extension>` at the end (U14). Nothing decoded.
+/// An identical file already there is reused. Audio goes through [`import_file`]
+pub fn import_file_as(
+    source: &Path,
+    project: &Path,
+    kind: &str,
+    cancel: &Cancel,
+    progress: &Progress,
+) -> Result<ImportedResource> {
+    if !is_valid_kind(kind) || kind == "audio" {
+        return Err(Error::new("io.resource.invalid_kind").arg("kind", kind.chars().take(40).collect::<String>()));
+    }
+    progress.stage(Label::new("io.import.copying"));
+    let folder = state_folder(project);
+    std::fs::create_dir_all(&folder).map_err(|e| io_error("io.import.write_failed", &folder, &e))?;
+    let size = std::fs::metadata(source).map_err(|e| io_error("io.import.read_failed", source, &e))?.len();
+    let needed = size + (1 << 20);
+    let free = free_space(&folder)?;
+    if free < needed {
+        return Err(Error::new("io.import.disk_full")
+            .arg("needed", needed as i64)
+            .arg("free", free as i64)
+            .arg("missing", (needed - free) as i64));
+    }
+    // The extension, lowercase letters and digits only (it ends up in a file name)
+    let ext: String = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin")
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(10)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let ext = if ext.is_empty() { "bin".to_owned() } else { ext };
+    let mut tmp = TempFile { path: folder.join(format!(".import-{}.tmp", new_uuid())), keep: false };
+    let mut src = File::open(source).map_err(|e| io_error("io.import.read_failed", source, &e))?;
+    let mut dst = File::create(&tmp.path).map_err(|e| io_error("io.import.write_failed", &tmp.path, &e))?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = vec![0u8; 1 << 20];
+    let mut done = 0u64;
+    loop {
+        cancel.check()?;
+        let n = src.read(&mut buf).map_err(|e| io_error("io.import.read_failed", source, &e))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        dst.write_all(&buf[..n]).map_err(|e| io_error("io.import.write_failed", &tmp.path, &e))?;
+        done += n as u64;
+        progress.set(done as f32 / size.max(1) as f32);
+    }
+    dst.sync_all().map_err(|e| io_error("io.import.write_failed", &tmp.path, &e))?;
+    drop(dst);
+    cancel.check()?;
+    let key = hasher.finalize().to_hex().to_string();
+    let path = match resource_path_of(project, kind, &key)? {
+        // The same content is already in the project (perhaps under another extension)
+        Some(existing) => existing,
+        None => {
+            let path = folder.join(format!("{key}.{ext}"));
+            std::fs::rename(&tmp.path, &path).map_err(|e| io_error("io.import.write_failed", &path, &e))?;
+            tmp.keep = true;
+            path
+        }
+    };
+    drop(tmp);
+    sync_dir(&folder);
+    progress.set(1.0);
+    Ok(ImportedResource { kind: kind.to_owned(), key, path, bytes: done })
+}
+
+/// A load of a non-audio resource, to run in an `Operation`
+#[derive(Clone, Debug)]
+pub struct KindJob {
+    pub kind: String,
+    pub key: String,
+    pub path: PathBuf,
+    faults: IoFaults,
+}
+
+/// What a non-audio load made
+#[derive(Clone, Debug)]
+pub struct KindLoaded {
+    pub kind: String,
+    pub key: String,
+    pub content: Content,
+}
+
+impl KindJob {
+    /// Reads the bytes (kinds loaded as bytes, up to [`BYTES_MAX`]) or checks the file can be opened (the others).
+    /// Cancellable, with progress
+    pub fn run(self, cancel: &Cancel, progress: &Progress) -> Result<KindLoaded> {
+        if !self.faults.load_delay.is_zero() {
+            let until = std::time::Instant::now() + self.faults.load_delay;
+            while std::time::Instant::now() < until {
+                cancel.check()?;
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        progress.stage(Label::new("io.resource.loading"));
+        let size =
+            std::fs::metadata(&self.path).map_err(|e| io_error("io.resource.read_failed", &self.path, &e))?.len();
+        let content = if kind_policy(&self.kind) == KindPolicy::Bytes && size <= BYTES_MAX {
+            let mut f = File::open(&self.path).map_err(|e| io_error("io.resource.read_failed", &self.path, &e))?;
+            let mut bytes = Vec::with_capacity(size as usize);
+            let mut buf = vec![0u8; 1 << 20];
+            loop {
+                cancel.check()?;
+                let n = f.read(&mut buf).map_err(|e| io_error("io.resource.read_failed", &self.path, &e))?;
+                if n == 0 {
+                    break;
+                }
+                bytes.extend_from_slice(&buf[..n]);
+                progress.set(bytes.len() as f32 / size.max(1) as f32);
+            }
+            Content::Bytes(Arc::from(bytes.into_boxed_slice()))
+        } else {
+            File::open(&self.path).map_err(|e| io_error("io.resource.read_failed", &self.path, &e))?;
+            Content::File(self.path.clone())
+        };
+        progress.set(1.0);
+        Ok(KindLoaded { kind: self.kind, key: self.key, content })
+    }
+}
+
+fn entry_key(kind: &str, key: &str) -> String {
+    format!("{kind}/{key}")
+}
+
+impl ResourceStore {
+    /// Starts loading a resource of a non-audio kind (I-12): `Loading` from now; `Err` with the state when there is
+    /// nothing to start (loading, ready, `Missing`, or an invalid kind or key, C9). Audio uses [`ResourceStore::begin_load`]
+    pub fn begin_load_kind(&mut self, kind: &str, key: &str) -> std::result::Result<KindJob, ResourceState> {
+        if kind == "audio" {
+            return Err(ResourceState::Failed(Error::new("io.resource.use_begin_load")));
+        }
+        let ek = entry_key(kind, key);
+        let now = self.clock.now();
+        if let Some(e) = self.entries.get_mut(&ek) {
+            match e.state {
+                ResourceState::Loading { .. } | ResourceState::Ready => {
+                    e.last_used = now;
+                    return Err(e.state.clone());
+                }
+                _ => {}
+            }
+        }
+        let path = match resource_path_of(&self.project, kind, key) {
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                self.entries.insert(ek, Entry { state: ResourceState::Missing, peaks: None, last_used: now });
+                return Err(ResourceState::Missing);
+            }
+            Err(e) => {
+                let state = ResourceState::Failed(e);
+                self.entries.insert(ek, Entry { state: state.clone(), peaks: None, last_used: now });
+                return Err(state);
+            }
+        };
+        self.entries.insert(ek, Entry { state: ResourceState::Loading { since: now }, peaks: None, last_used: now });
+        Ok(KindJob { kind: kind.to_owned(), key: key.to_owned(), path, faults: self.faults })
+    }
+
+    /// The outcome of a non-audio load: it enters the view whole, or fails
+    pub fn finish_kind(&mut self, kind: &str, key: &str, result: Result<KindLoaded>) {
+        let ek = entry_key(kind, key);
+        let now = self.clock.now();
+        match result {
+            Ok(l) => {
+                self.others.insert((kind.to_owned(), key.to_owned()), l.content);
+                self.entries.insert(ek, Entry { state: ResourceState::Ready, peaks: None, last_used: now });
+                self.publish();
+            }
+            Err(e) if e.is_cancelled() => {
+                self.entries.remove(&ek);
+            }
+            Err(e) => {
+                self.entries.insert(ek, Entry { state: ResourceState::Failed(e), peaks: None, last_used: now });
+            }
+        }
+    }
+
+    /// The state of a non-audio resource
+    pub fn state_kind(&self, kind: &str, key: &str) -> ResourceState {
+        if kind == "audio" {
+            return self.state(key);
+        }
+        self.entries.get(&entry_key(kind, key)).map_or(ResourceState::Absent, |e| e.state.clone())
+    }
+
+    /// Keeps a non-audio resource from eviction (C8)
+    pub fn touch_kind(&mut self, kind: &str, key: &str) {
+        let now = self.clock.now();
+        let ek = if kind == "audio" { key.to_owned() } else { entry_key(kind, key) };
+        if let Some(e) = self.entries.get_mut(&ek) {
+            e.last_used = now;
+        }
+    }
 }
 
 #[cfg(test)]

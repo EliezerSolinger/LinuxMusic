@@ -239,3 +239,51 @@ fn disk_reader_streams_a_file() {
     assert_eq!(failed, Some("io.stream.rate_mismatch"));
     drop(stream);
 }
+
+/// Resources of other kinds (U24): a NAM model is imported into `state/` by hash and loaded as bytes; a SoundFont
+/// stays a checked file; kinds and keys are validated (C9)
+#[test]
+fn resources_by_kind() {
+    let dir = TempDir::new("kinds");
+    let project = dir.0.join("project");
+    let model = dir.0.join("amp.nam");
+    std::fs::write(&model, b"{\"version\": \"0.5\", \"weights\": [1, 2, 3]}").expect("model");
+    let font = dir.0.join("piano.SF2");
+    std::fs::write(&font, vec![7u8; 4096]).expect("font");
+    let (c, p) = ops();
+    let a = import_file_as(&model, &project, "nam", &c, &p).expect("nam");
+    assert_eq!(a.path, project.join("state").join(format!("{}.nam", a.key)));
+    assert_eq!(a.key, hash_file(&model, &c, &p).expect("hash"));
+    let b = import_file_as(&font, &project, "sf2", &c, &p).expect("sf2");
+    assert!(b.path.to_str().is_some_and(|s| s.ends_with(".sf2")), "{:?}", b.path);
+    assert_eq!(import_file_as(&model, &project, "nam", &c, &p).expect("again").path, a.path, "reused");
+    assert_eq!(import_file_as(&model, &project, "../x", &c, &p).expect_err("kind").key(), "io.resource.invalid_kind");
+    assert_eq!(kind_policy("nam"), KindPolicy::Bytes);
+    assert_eq!(kind_policy("sf2"), KindPolicy::File);
+
+    let clock = ManualClock::new(HostTime(0));
+    let mut store = ResourceStore::new(project.clone(), Arc::new(clock));
+    let job = store.begin_load_kind("nam", &a.key).expect("job");
+    assert!(matches!(store.state_kind("nam", &a.key), ResourceState::Loading { .. }));
+    assert!(store.view().content("nam", &a.key).is_none(), "nothing half loaded");
+    store.finish_kind("nam", &a.key, job.run(&c, &p));
+    assert_eq!(store.state_kind("nam", &a.key), ResourceState::Ready);
+    assert_eq!(
+        store.view().content("nam", &a.key),
+        Some(&Content::Bytes(Arc::from(std::fs::read(&model).expect("bytes").into_boxed_slice())))
+    );
+    let job = store.begin_load_kind("sf2", &b.key).expect("job");
+    store.finish_kind("sf2", &b.key, job.run(&c, &p));
+    assert_eq!(store.view().content("sf2", &b.key), Some(&Content::File(b.path.clone())));
+    // Missing and invalid
+    assert!(matches!(store.begin_load_kind("nam", &"0".repeat(64)), Err(ResourceState::Missing)));
+    assert!(
+        matches!(store.begin_load_kind("nam", "../../etc"), Err(ResourceState::Failed(e)) if e.key() == "io.resource.invalid_key")
+    );
+    // A link out of state/ is refused
+    let k = "2".repeat(64);
+    std::os::unix::fs::symlink(&model, project.join("state").join(format!("{k}.nam"))).expect("link");
+    assert!(
+        matches!(store.begin_load_kind("nam", &k), Err(ResourceState::Failed(e)) if e.key() == "io.resource.outside_project")
+    );
+}

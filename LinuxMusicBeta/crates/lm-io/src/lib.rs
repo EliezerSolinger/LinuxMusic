@@ -37,9 +37,10 @@ pub use record::{
     DEFAULT_SECONDS, InputIndex, MAX_SPANS, RecordInput, RecordPlan, RecordReceiver, RecordSender, recording_channel,
 };
 pub use resources::{
-    AUDIO_EXTENSIONS, EVICT_AFTER, ImportedFile, IoFaults, KEY_LEN, LoadJob, Loaded, OnDisk, ResourceState,
-    ResourceStore, ResourceView, STREAM_ABOVE, audio_folder, clean_import_leftovers, import_file, is_valid_key,
-    load_file, resolve_external, resource_path, verify_located,
+    AUDIO_EXTENSIONS, BYTES_MAX, Content, EVICT_AFTER, ImportedFile, ImportedResource, IoFaults, KEY_LEN, KindJob,
+    KindLoaded, KindPolicy, LoadJob, Loaded, OnDisk, ResourceState, ResourceStore, ResourceView, STREAM_ABOVE,
+    audio_folder, clean_import_leftovers, import_file, import_file_as, is_valid_key, is_valid_kind, kind_policy,
+    load_file, resolve_external, resource_path, resource_path_of, state_folder, verify_located,
 };
 pub use rt::{
     DEFAULT_PRIORITY, DEFAULT_STACK, MemoryLock, NoRealtime, RealtimeThreads, RtBuffer, RtMembership, RtMethod,
