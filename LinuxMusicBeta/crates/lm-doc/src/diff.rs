@@ -223,6 +223,40 @@ impl DiffAcc {
         }
     }
 
+    /// A finished diff made an accumulator again (a mirror delivers another document's diff to its own feeds,
+    /// I-15): `type_of(id, before)` names each node's type in the state before or after the change
+    pub fn from_diff(diff: &Diff, type_of: &dyn Fn(NodeId, bool) -> &'static str) -> DiffAcc {
+        let mut acc = DiffAcc { structural: diff.structural, origin: Some(diff.origin), ..DiffAcc::default() };
+        for id in &diff.created {
+            acc.nodes.insert(*id, NodeAcc { now: true, ..NodeAcc::new(type_of(*id, false), false) });
+        }
+        for id in &diff.removed {
+            acc.nodes.insert(*id, NodeAcc { now: false, ..NodeAcc::new(type_of(*id, true), true) });
+        }
+        for c in &diff.changed {
+            let mut e = NodeAcc::new(type_of(c.node, false), true);
+            for p in &c.paths {
+                if p.is_empty() {
+                    e.whole = true;
+                } else {
+                    e.paths.insert(RelPath::new(p));
+                }
+            }
+            let n = &c.notes;
+            for (list, before, now) in [(&n.created, false, true), (&n.removed, true, false), (&n.changed, true, true)] {
+                for k in list {
+                    e.notes.insert(*k, Presence { before, now });
+                }
+            }
+            acc.nodes.insert(c.node, e);
+        }
+        for (id, key, v) in &diff.params {
+            acc.params.insert((*id, key.clone()), *v);
+        }
+        acc.notices.clone_from(&diff.notices);
+        acc
+    }
+
     pub fn set_origin(&mut self, origin: Origin) {
         self.origin = Some(origin);
     }

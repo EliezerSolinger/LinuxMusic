@@ -894,6 +894,52 @@ impl Document {
         self.feeds.borrow().len()
     }
 
+    // ---- mirror (I-15) ----
+
+    /// Makes this document a mirror's next state: the root becomes `root`, and `diff` — the diff the original
+    /// published for that change — reaches this document's feeds as it is (the RemotePort's feeds give the same
+    /// diffs as the core's). With `None` (a resync after a reconnection) the diff is worked out by id: the nodes that
+    /// appeared, the ones that went, and the ones whose value differs, as wholly changed. No rule runs; nothing enters
+    /// the history nor the journal. Keys: those of building the index (`doc.id.duplicate`...)
+    pub fn mirror(&mut self, root: Value, diff: Option<&Diff>) -> Result<Diff> {
+        let index = self.env.ctx.rebuild(&root)?;
+        let old = std::mem::replace(&mut self.current, State { root, index });
+        let new = &self.current;
+        let type_in = |state: &State, id: NodeId| self.env.ctx.type_of(&state.index, id).unwrap_or("");
+        let worked_out;
+        let diff = match diff {
+            Some(d) => d,
+            None => {
+                let mut d = Diff::empty(Origin::Journal);
+                for (id, _) in new.index.ids() {
+                    if !old.index.contains(*id) {
+                        d.created.push(*id);
+                    }
+                }
+                for (id, _) in old.index.ids() {
+                    if !new.index.contains(*id) {
+                        d.removed.push(*id);
+                    } else {
+                        let before = self.env.ctx.path_of(&old.index, &old.root, *id).ok().and_then(|p| old.root.at_path(&p).cloned());
+                        let now = self.env.ctx.path_of(&new.index, &new.root, *id).ok().and_then(|p| new.root.at_path(&p).cloned());
+                        if !matches!((&before, &now), (Some(a), Some(b)) if a.same_node(b) || a == b) {
+                            d.changed.push(crate::Changed { node: *id, paths: vec![Vec::new()], notes: Default::default() });
+                        }
+                    }
+                }
+                d.structural = true;
+                worked_out = d;
+                &worked_out
+            }
+        };
+        let acc = DiffAcc::from_diff(diff, &|id, before| type_in(if before { &old } else { new }, id));
+        if let Some(issued) = new.root.get("meta").and_then(|m| m.get("issued")).and_then(Value::as_int) {
+            self.issued = u64::try_from(issued).unwrap_or(self.issued);
+        }
+        self.publish(&acc);
+        Ok(acc.finish(diff.origin))
+    }
+
     // ---- journal ----
 
     /// The changes to the root since the last call, in order (transactions, gesture updates, undo and redo, the
