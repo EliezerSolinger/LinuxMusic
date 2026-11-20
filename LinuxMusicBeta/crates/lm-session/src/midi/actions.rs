@@ -109,6 +109,59 @@ pub static ACTIONS: &[ActionSpec] = &[
         enabled: always,
     },
     ActionSpec {
+        id: "notes.step_record",
+        label: "action.notes.step_record",
+        // {item, at?, step?, velocity?}: step recording at the cursor (F-PAS-001)
+        run: |s, p| s.step_start(p),
+        enabled: writable,
+    },
+    ActionSpec {
+        id: "notes.step_keys",
+        label: "action.notes.step_keys",
+        // {keys: [int], velocity?}: one chord at the cursor (the computer keyboard)
+        run: |s, p| {
+            let v = p.get("velocity").and_then(Value::as_real).unwrap_or(0.8).clamp(0.0, 1.0);
+            let keys: Vec<(u8, f64)> = p
+                .get("keys")
+                .map(|l| {
+                    l.items()
+                        .filter_map(Value::as_int)
+                        .filter_map(|k| u8::try_from(k).ok())
+                        .filter(|k| *k < 128)
+                        .map(|k| (k, v))
+                        .collect()
+                })
+                .unwrap_or_default();
+            s.step_chord(&keys)
+        },
+        enabled: writable,
+    },
+    ActionSpec { id: "notes.step_rest", label: "action.notes.step_rest", run: |s, _| s.step_rest(), enabled: always },
+    ActionSpec { id: "notes.step_back", label: "action.notes.step_back", run: |s, _| s.step_back(), enabled: writable },
+    ActionSpec {
+        id: "notes.step_length",
+        label: "action.notes.step_length",
+        // {delta: ticks}
+        run: |s, p| s.step_length(int_or(p, "delta", 0)),
+        enabled: writable,
+    },
+    ActionSpec {
+        id: "notes.step_stop",
+        label: "action.notes.step_stop",
+        run: |s, _| {
+            s.step_stop();
+            Ok(())
+        },
+        enabled: always,
+    },
+    ActionSpec {
+        id: "notes.record_into",
+        label: "action.notes.record_into",
+        // {item} or {}: the next recording writes into the item open in the Piano Roll (F-NOT-018)
+        run: |s, p| s.set_record_into(p),
+        enabled: always,
+    },
+    ActionSpec {
         id: "transport.rewind",
         label: "action.transport.rewind",
         run: |s, _| {

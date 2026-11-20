@@ -393,3 +393,96 @@ fn a_control_moved_during_a_rebuild_keeps_its_value() {
     s.document_mut().undo().expect("undo");
     assert!((vol(&s) - 20.0).abs() < 0.01, "and to before the gesture: {}", vol(&s));
 }
+
+fn notes_of(s: &Session, item: NodeId) -> Vec<(i64, i64, i64)> {
+    let mut v: Vec<(i64, i64, i64)> = s
+        .document()
+        .find(item)
+        .and_then(|i| i.get("notes").cloned())
+        .map(|n| {
+            n.entries()
+                .map(|(_, x)| {
+                    let g = |k: &str| x.get(k).and_then(Value::as_int).unwrap_or(-1);
+                    (g("start"), g("key"), g("length"))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+/// F-PAS-001: step recording in the core — chords at the cursor when the last key goes up, rests, lengthening,
+/// going back; each chord one undo step; the cursor in the interface document
+#[test]
+fn step_recording() {
+    let dir = TempDir::new("midi-step");
+    let (mut s, t, port) = ready(&dir);
+    let item = add_notes(&mut s, t, &[]);
+    let p = |pairs: Vec<(&str, Value)>| Value::object(pairs);
+    s.run_action("notes.step_record", &p(vec![("item", Value::text(item.to_string())), ("step", Value::int(240))]))
+        .expect("step on");
+    let cursor = |s: &Session| {
+        s.ui_document().root().get("stepRecord").and_then(|c| c.get("at")).and_then(Value::as_int).unwrap_or(-1)
+    };
+    assert_eq!(cursor(&s), 0);
+    let undo_before = s.document().history_len();
+    let now = HostTime::now();
+    for b in [[0x90u8, 60, 100], [0x90, 64, 100], [0x80, 60, 0], [0x80, 64, 0]] {
+        s.midi_input(port, now, &b);
+    }
+    assert_eq!(notes_of(&s, item), vec![(0, 60, 240), (0, 64, 240)], "a chord at the cursor");
+    assert_eq!(cursor(&s), 240);
+    assert_eq!(s.document().history_len(), undo_before + 1, "one undo step per chord");
+    s.run_action("notes.step_rest", &Value::empty_object()).expect("rest");
+    assert_eq!(cursor(&s), 480);
+    // The computer keyboard's chord, then → lengthens it
+    s.run_action("notes.step_keys", &p(vec![("keys", Value::list([Value::int(67)]))])).expect("keys");
+    s.run_action("notes.step_length", &p(vec![("delta", Value::int(240))])).expect("longer");
+    assert!(notes_of(&s, item).contains(&(480, 67, 480)));
+    assert_eq!(cursor(&s), 960);
+    // Back: the last chord goes, the cursor returns
+    s.run_action("notes.step_back", &Value::empty_object()).expect("back");
+    assert!(!notes_of(&s, item).iter().any(|n| n.1 == 67));
+    assert_eq!(cursor(&s), 480);
+    // Another port's keys, when the track listens to one port only, are not recorded
+    ports(&mut s, &["Ctl", "Other"]);
+    let other = s.midi_port_of("Other").unwrap();
+    set(&mut s, t, "midiInput", Value::object([("ports", Value::list([Value::text("Ctl")]))]));
+    s.midi_input(other, now, &[0x90, 72, 100]);
+    s.midi_input(other, now, &[0x80, 72, 0]);
+    assert!(!notes_of(&s, item).iter().any(|n| n.1 == 72));
+    s.run_action("notes.step_stop", &Value::empty_object()).expect("off");
+    assert!(s.ui_document().root().get("stepRecord").is_none_or(Value::is_null));
+}
+
+/// F-NOT-018, F-REC-029: a recording goes into the item open in the Piano Roll, not into a new item
+#[test]
+fn recording_into_the_open_item() {
+    let dir = TempDir::new("midi-into");
+    let (mut s, t, port) = ready(&dir);
+    let item = add_notes(&mut s, t, &[(48, 0, 240)]);
+    set(&mut s, t, "armed", Value::bool(true));
+    s.run_action("notes.record_into", &Value::object([("item", Value::text(item.to_string()))])).expect("into");
+    settle(&mut s);
+    let midi_items = |s: &Session| {
+        s.document()
+            .find(t)
+            .and_then(|v| v.get("items").cloned())
+            .map(|l| l.items().filter(|i| i.get("kind").and_then(Value::as_text) == Some("midi")).count())
+            .unwrap_or(0)
+    };
+    s.record(None).expect("record");
+    wait_until(&mut s, "recording", |s| s.telemetry().position.recording);
+    send(&mut s, port, [0x90, 60, 100]);
+    run_for(&mut s, Duration::from_millis(80));
+    send(&mut s, port, [0x80, 60, 0]);
+    send(&mut s, port, [0xB0, 74, 50]);
+    run_for(&mut s, Duration::from_millis(50));
+    s.stop();
+    wait_until(&mut s, "the take in the item", |s| notes_of(s, item).len() == 2);
+    assert_eq!(midi_items(&s), 1, "no new MIDI item");
+    assert!(notes_of(&s, item).iter().any(|n| n.1 == 60));
+    let controls = s.document().find(item).and_then(|i| i.get("controls").cloned()).expect("its control lane");
+    assert_eq!(controls.at(0).and_then(|c| c.get("number")).and_then(Value::as_int), Some(74));
+}

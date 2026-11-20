@@ -11,6 +11,7 @@ pub(crate) mod actions;
 pub(crate) mod automation;
 pub(crate) mod mcu;
 pub(crate) mod record;
+pub(crate) mod step;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
@@ -99,6 +100,8 @@ pub(crate) struct MidiCore {
     pub(crate) hand_won: BTreeSet<(NodeId, Arc<str>)>,
     /// The banks of the control surfaces (tracks, channels)
     pub(crate) bank: (u32, u32),
+    /// Step recording's cursor (F-PAS-001)
+    pub(crate) step: Option<step::Step>,
     /// "Test the control": the actions a control would run are listed instead of run
     dry_run: Option<Vec<Arc<str>>>,
 }
@@ -138,6 +141,7 @@ impl MidiCore {
             automation: automation::Recorder::default(),
             hand_won: BTreeSet::new(),
             bank: (0, 0),
+            step: None,
             dry_run: None,
         }
     }
@@ -631,6 +635,7 @@ impl Session {
 
     /// A raw message from a device (every one, mapped or not): the activity monitor and learning
     pub fn midi_input(&mut self, port: PortIndex, at: HostTime, bytes: &[u8]) {
+        self.step_key(port, bytes);
         if let Some(l) = self.midi.learning.as_mut() {
             l.detector.feed(port.0, at.0, bytes);
         }

@@ -448,7 +448,10 @@ fn interface_schemas() -> Result<Arc<SchemaRegistry>> {
         lm_state::NodeSchema::new(INTERFACE_TYPE, 1)
             .field(lm_state::FieldSpec::new("state", lm_state::FieldKind::Any).default(Value::empty_object()))
             // What the MIDI targets follow (I-21.2): `{track, channel, plugin}`, ids as text
-            .field(lm_state::FieldSpec::new("selection", lm_state::FieldKind::Any).default(Value::empty_object())),
+            .field(lm_state::FieldSpec::new("selection", lm_state::FieldKind::Any).default(Value::empty_object()))
+            // Step recording's cursor `{item, at, step}` and the item a recording goes into (I-21.4); null when off
+            .field(lm_state::FieldSpec::new("stepRecord", lm_state::FieldKind::Any).default(Value::NULL))
+            .field(lm_state::FieldSpec::new("recordInto", lm_state::FieldKind::Any).default(Value::NULL)),
     )?;
     registry.check_complete()?;
     Ok(Arc::new(registry))

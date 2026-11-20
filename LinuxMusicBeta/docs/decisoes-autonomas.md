@@ -1071,6 +1071,13 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 - **Testes da `Session` com todos os plugins em depuração esperam por condição, não por tempo:** o render em
   depuração com todos os plugins é mais lento que o tempo real, então o relógio do dispositivo atrasa e uma mensagem
   carimbada com o relógio do sistema espera a sua hora (a regra do atraso fixo funcionando).
+- **Gravação por passos e gravação no item aberto ficam no núcleo** (F-PAS-001, F-NOT-018, F-REC-029; combinado com
+  o agente B): o cursor mora no documento da interface (`stepRecord: {item, at, step}`), o item de destino em
+  `recordInto`; as teclas vêm do monitor de atividade (`midi_input`), filtradas pela entrada MIDI da faixa do item;
+  um acorde entra quando a última tecla sobe, num passo de desfazer, e o item cresce para caber. As ações:
+  `notes.step_record`, `step_keys` (o teclado do computador), `step_rest`, `step_back`, `step_length` (→/←),
+  `step_stop`, `notes.record_into`. Gravando no item aberto, o take se funde nele (camadas viram soma); o laço próprio
+  do item (P-26) continua na interface até ser um modo do transporte.
 - **O gesto MIDI é um gesto do documento** (I-3.7; o T4 já cita "um controlador MIDI noutro"), e não uma transação no
   fim (20/11, a lacuna do S20): a árvore segue o controle a cada `pump` (um `gesture_update` com o último valor, sem
   passo no histórico), então um programa compilado no meio — um processador reconstruído, um nó novo — nasce do valor

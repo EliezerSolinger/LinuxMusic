@@ -63,6 +63,8 @@ pub(crate) struct TakeInfo {
     pub wraps: Vec<u64>,
     pub mode: String,
     pub quantize: Option<Quantize>,
+    /// The MIDI item the take goes into (F-NOT-018), instead of a new item
+    pub into: Option<NodeId>,
 }
 
 #[derive(Debug)]
@@ -245,6 +247,7 @@ pub(crate) fn read_log(text: &str) -> Option<(TakeInfo, Vec<Rec>)> {
         loop_range: (a >= 0 && b > a).then_some((a, b)),
         wraps: Vec::new(),
         mode: h[6].to_owned(),
+        into: None,
         quantize: (grid > 0).then(|| Quantize {
             grid,
             strength: h[8].parse().unwrap_or(1.0),
@@ -295,9 +298,26 @@ pub(crate) fn apply(ready: &Ready, map: &TempoMap, e: &mut Edit<'_>) -> Result<(
             continue; // the track was removed while recording; its MIDI has nowhere to go
         }
         events.sort_by_key(|e| e.frame);
-        let items = build(&ready.info, &events, map);
-        if ready.info.mode == "replace" {
+        // Into the open item (F-NOT-018): its track's take merges into it (layers become an overdub there)
+        let into = ready.info.into.filter(|i| {
+            e.find(track).is_some_and(|t| {
+                t.get("items")
+                    .is_some_and(|l| l.items().any(|x| x.get("id").and_then(Value::as_text) == Some(&i.to_string())))
+            })
+        });
+        let info = match into {
+            Some(_) if ready.info.mode == "layers" => TakeInfo { mode: "overdub".into(), ..ready.info.clone() },
+            _ => ready.info.clone(),
+        };
+        let items = build(&info, &events, map);
+        if info.mode == "replace" {
             replace_under(e, track, &items)?;
+        }
+        if let Some(item) = into {
+            for b in &items {
+                merge_into(e, item, b)?;
+            }
+            continue;
         }
         for b in items {
             if b.notes.is_empty() && b.controls.is_empty() {
@@ -342,6 +362,64 @@ pub(crate) fn apply(ready: &Ready, map: &TempoMap, e: &mut Edit<'_>) -> Result<(
                 e.add_note(id, note)?;
             }
         }
+    }
+    Ok(())
+}
+
+/// A built take merged into an existing item: notes and control lanes at their ticks from the item's start (the
+/// item grows to hold them; what falls before its start is left out)
+fn merge_into(e: &mut Edit<'_>, item: NodeId, b: &Built) -> Result<()> {
+    let it = e.find(item).cloned().unwrap_or_default();
+    let start = it.get("start").and_then(Value::as_int).unwrap_or(0);
+    let mut length = it.get("length").and_then(Value::as_int).unwrap_or(1);
+    let shift = b.start - start;
+    for (key, s, len, velocity) in &b.notes {
+        let at = s + shift;
+        if at < 0 {
+            continue;
+        }
+        length = length.max(at + len);
+        let note = Value::object([
+            ("key", Value::int(*key)),
+            ("start", Value::int(at)),
+            ("length", Value::int(*len)),
+            ("velocity", Value::real(*velocity)?),
+        ]);
+        e.add_note(item, note)?;
+    }
+    if !b.controls.is_empty() {
+        let mut lanes: Vec<Value> = it.get("controls").map(|l| l.items().cloned().collect()).unwrap_or_default();
+        for ((kind, number, channel), points) in &b.controls {
+            let pts: Vec<Value> = points
+                .iter()
+                .filter(|(t, _)| t + shift >= 0)
+                .map(|(t, v)| Value::object([("tick", Value::int(t + shift)), ("value", Value::int(*v))]))
+                .collect();
+            let same = |l: &Value| {
+                l.get("kind").and_then(Value::as_text) == Some(*kind)
+                    && l.get("number").and_then(Value::as_int) == Some(i64::from(*number))
+                    && l.get("channel").and_then(Value::as_int) == Some(i64::from(*channel))
+            };
+            match lanes.iter().position(same) {
+                Some(i) => {
+                    let mut all: Vec<Value> =
+                        lanes[i].get("points").map(|l| l.items().cloned().collect()).unwrap_or_default();
+                    all.extend(pts);
+                    all.sort_by_key(|p| p.get("tick").and_then(Value::as_int).unwrap_or(0));
+                    lanes[i] = lanes[i].with("points", Value::list(all));
+                }
+                None => lanes.push(Value::object([
+                    ("kind", Value::text(*kind)),
+                    ("number", Value::int(i64::from(*number))),
+                    ("channel", Value::int(i64::from(*channel))),
+                    ("points", Value::list(pts)),
+                ])),
+            }
+        }
+        e.set(item, &[lm_state::PathStep::key("controls")], Value::list(lanes))?;
+    }
+    if length > it.get("length").and_then(Value::as_int).unwrap_or(1) {
+        e.set(item, &[lm_state::PathStep::key("length")], Value::int(length))?;
     }
     Ok(())
 }
@@ -432,6 +510,7 @@ impl Session {
                     loop_range,
                     wraps: Vec::new(),
                     mode: transport.get("recordMode").and_then(Value::as_text).unwrap_or("overdub").to_owned(),
+                    into: self.record_into(),
                     quantize: q.map(|q| Quantize {
                         grid: q.get("grid").and_then(Value::as_int).unwrap_or(240).max(1),
                         strength: q.get("strength").and_then(Value::as_real).unwrap_or(1.0),
@@ -611,6 +690,7 @@ mod tests {
             wraps: Vec::new(),
             mode: "overdub".into(),
             quantize: None,
+            into: None,
         }
     }
 
