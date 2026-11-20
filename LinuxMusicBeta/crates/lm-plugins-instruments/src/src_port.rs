@@ -155,3 +155,13 @@ impl Converter {
         ((in_used / ch) as usize, (out_gen / ch) as usize)
     }
 }
+
+impl lm_dsp::sample_player::Interpolator for Converter {
+    fn process(&mut self, input: &[[f32; 2]], output: &mut [[f32; 2]], ratio: f64) -> (usize, usize) {
+        Converter::process(self, input, output, ratio)
+    }
+
+    fn reset(&mut self) {
+        Converter::reset(self);
+    }
+}

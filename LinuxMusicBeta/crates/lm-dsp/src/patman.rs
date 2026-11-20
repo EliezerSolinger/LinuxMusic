@@ -155,12 +155,24 @@ pub fn select_sample(samples: &[PatchSample], frequency: f32) -> usize {
     chosen
 }
 
-/// One note of the PatMan
-#[derive(Clone, Debug)]
+/// One note of the PatMan. Its `clone_from` copies into its own buffer (a host copies a note on the audio thread)
+#[derive(Debug)]
 pub struct PatmanVoice<I> {
     sample: usize,
     tuned: bool,
     state: PlaybackState<I>,
+}
+
+impl<I: Clone> Clone for PatmanVoice<I> {
+    fn clone(&self) -> Self {
+        Self { sample: self.sample, tuned: self.tuned, state: self.state.clone() }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.sample = source.sample;
+        self.tuned = source.tuned;
+        self.state.clone_from(&source.state);
+    }
 }
 
 impl<I: Interpolator> PatmanVoice<I> {
@@ -168,6 +180,13 @@ impl<I: Interpolator> PatmanVoice<I> {
     /// pitch); @p interpolator: linear, as the legacy program's
     pub fn new(samples: &[PatchSample], frequency: f32, tuned: bool, interpolator: I) -> Self {
         Self { sample: select_sample(samples, frequency), tuned, state: PlaybackState::new(interpolator, 0) }
+    }
+
+    /// A new note in this voice, as [`PatmanVoice::new`] makes one, without allocating
+    pub fn restart(&mut self, samples: &[PatchSample], frequency: f32, tuned: bool) {
+        self.sample = select_sample(samples, frequency);
+        self.tuned = tuned;
+        self.state.restart(0);
     }
 
     /// The next @p out frames of the note at @p frequency, into a stream at @p output_rate in periods of @p period

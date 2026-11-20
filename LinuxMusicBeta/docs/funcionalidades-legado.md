@@ -754,6 +754,10 @@ Regras gerais do legado que valem para quase todo plugin:
   navegador; abrir um `.pat` em qualquer lugar escolhe o PatMan.
 - **Comportamento:** escolhe a amostra cuja nota raiz está mais perto da nota (ignora faixas de tecla, envelopes,
   pan, tremolo do patch); mono duplicado; release da faixa. Erros claros (não é GUS, mais de uma camada, truncado).
+- **Na beta:** plugin `patman`, em `lm-plugins-instruments`: `looped` e `tuned` (ligados) e o campo `patch` (recurso de
+  tipo `pat`), lido no build com os erros do legado (`patman.not_gus`, `patman.layers`, `patman.truncated`); a
+  amostra mais perto da nota pelo conversor linear do libsamplerate (o porte). Contrato e A/B por composição. Abrir e
+  soltar um `.pat` são da interface.
 
 #### F-INS-014 Sf2 Player (SoundFont) — 1.0
 
