@@ -1,6 +1,6 @@
 [package]
 name = "lm-sys-fluidsynth"
-description = "LinuxMusic: safe binding to FluidSynth for the AvlDrums instrument (one audio-thread instance, multi-output, no threads, no driver)"
+description = "LinuxMusic: safe binding to FluidSynth for the AvlDrums and Sf2 Player instruments (one audio-thread instance, multi-output, no threads, no driver)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -27,6 +27,10 @@ print_stdout = "warn"
 print_stderr = "warn"
 undocumented_unsafe_blocks = "deny"
 missing_safety_doc = "deny"
+
+[features]
+# A SoundFont written by tests (`test_font`), for the crates whose tests play SoundFonts
+testing = []
 
 [dependencies]
 lm-base.workspace = true

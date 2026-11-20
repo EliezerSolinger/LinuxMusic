@@ -9,7 +9,7 @@ struct Font(PathBuf);
 impl Font {
     fn new(name: &str) -> Self {
         let path = std::env::temp_dir().join(format!("lm-sys-fluidsynth-{}-{name}.sf2", std::process::id()));
-        sf2::standard(&path);
+        sf2::standard(&path).unwrap();
         Self(path)
     }
 }
@@ -248,4 +248,93 @@ fn no_thread_is_created() {
     assert_eq!(thread_count(), before, "FluidSynth made threads");
     drop(synths);
     drop(warm);
+}
+
+/// Renders `frames` of the one stereo output with the effects, in blocks of 100 (not a multiple of FluidSynth's 64)
+fn render_stereo(s: &mut Synth, frames: usize) -> (Vec<f32>, Vec<f32>) {
+    let (mut l, mut r) = (vec![0.0_f32; frames], vec![0.0_f32; frames]);
+    for (a, b) in l.chunks_mut(100).zip(r.chunks_mut(100)) {
+        s.render_stereo(a, b).unwrap();
+    }
+    (l, r)
+}
+
+#[test]
+fn stereo_render_with_reverb_and_chorus() {
+    use lm_sys_fluidsynth::{Chorus, Reverb};
+    let mut dry = synth("stereo-dry", SynthConfig::default());
+    let mut wet = synth("stereo-wet", SynthConfig::default());
+    assert_eq!(dry.internal_block(), 64);
+    wet.set_reverb_on(true).unwrap();
+    wet.set_reverb(Reverb { room_size: 0.9, damping: 0.1, width: 1.0, level: 1.0 }).unwrap();
+    wet.set_chorus_on(true).unwrap();
+    wet.set_chorus(Chorus { voices: 3, level: 2.0, speed: 0.3, depth: 8.0 }).unwrap();
+    for s in [&mut dry, &mut wet] {
+        // (the reverb and chorus sends of the channel, which the test font's zone leaves at their defaults)
+        s.cc(0, 91, 127).unwrap();
+        s.cc(0, 93, 127).unwrap();
+        s.note_on(0, 69, 127).unwrap();
+    }
+    let (dl, _) = render_stereo(&mut dry, 9_600);
+    let (wl, _) = render_stereo(&mut wet, 9_600);
+    for s in [&mut dry, &mut wet] {
+        s.note_off(0, 69).unwrap();
+    }
+    // After the note: the dry one is silent at once, the reverb rings on
+    let (dt, _) = render_stereo(&mut dry, 24_000);
+    let (wt, _) = render_stereo(&mut wet, 24_000);
+    assert!(rms(&dl[4_800..]) > 0.05 && rms(&wl[4_800..]) > 0.05);
+    assert!(rms(&dt[12_000..]) < 1.0e-6, "the dry tail {}", rms(&dt[12_000..]));
+    assert!(rms(&wt[2_400..12_000]) > 1.0e-4, "the reverb's tail {}", rms(&wt[2_400..12_000]));
+    // Gain: half the level
+    let mut half = synth("stereo-gain", SynthConfig::default());
+    half.set_gain(0.5);
+    half.note_on(0, 69, 127).unwrap();
+    let (hl, _) = render_stereo(&mut half, 9_600);
+    let ratio = rms(&hl[4_800..]) / rms(&dl[4_800..]);
+    assert!((ratio - 0.5).abs() < 0.01, "gain 0.5 gives {ratio}");
+    // A multi-output instance cannot render stereo
+    let mut multi = synth("stereo-multi", SynthConfig { outputs: 2, ..SynthConfig::default() });
+    let (mut a, mut b) = ([0.0; 8], [0.0; 8]);
+    assert!(multi.render_stereo(&mut a, &mut b).is_err());
+}
+
+#[test]
+fn a_playing_voice_is_retuned_and_a_stale_reference_is_ignored() {
+    use lm_sys_fluidsynth::{Generator, VoiceRef};
+    let mut s = synth("voices", SynthConfig::default());
+    s.set_interpolation(lm_sys_fluidsynth::Interpolation::FourthOrder).unwrap();
+    s.note_on(0, 69, 127).unwrap();
+    let mut voices = [VoiceRef::default(); 4];
+    let n = s.voices_of(0, 69, &mut voices);
+    assert_eq!(n, 1, "the test font has one zone");
+    assert_eq!(s.voices_of(0, 70, &mut voices[1..]), 0);
+    assert_eq!(s.voices_of(1, 69, &mut voices[1..]), 0);
+    let coarse = s.voice_gen(&voices[0], Generator::CoarseTune).unwrap();
+    assert!(s.set_voice_gen(&voices[0], Generator::CoarseTune, coarse + 12.0));
+    let (l, _) = render_stereo(&mut s, 24_000);
+    let f = frequency(&l[4_800..], 48_000.0);
+    assert!((f - 880.0).abs() < 6.0, "retuned an octave up, plays at {f} Hz");
+    // Half a semitone, as the legacy's per-note detune
+    assert!(s.set_voice_gen(&voices[0], Generator::CoarseTune, coarse + 0.5));
+    let (l, _) = render_stereo(&mut s, 24_000);
+    let want = 440.0 * 2f64.powf(0.5 / 12.0);
+    let f = frequency(&l[4_800..], 48_000.0);
+    assert!((f - want).abs() < 3.0, "a fractional coarse tune plays at {f} Hz, not {want}");
+    // The note ends: the reference names a voice that is gone
+    s.all_sounds_off(None).unwrap();
+    render_stereo(&mut s, 640);
+    assert!(!s.set_voice_gen(&voices[0], Generator::CoarseTune, 0.0));
+    assert_eq!(s.voice_gen(&voices[0], Generator::CoarseTune), None);
+    // A reference from another instance is never followed
+    let mut other = synth("voices-other", SynthConfig::default());
+    other.note_on(0, 69, 127).unwrap();
+    assert!(!other.set_voice_gen(&voices[0], Generator::CoarseTune, 0.0));
+    // The bend range
+    s.set_bend_range(0, 12).unwrap();
+    s.note_on(0, 69, 127).unwrap();
+    s.pitch_bend(0, 16_383).unwrap();
+    let (l, _) = render_stereo(&mut s, 24_000);
+    let f = frequency(&l[4_800..], 48_000.0);
+    assert!((f - 880.0).abs() < 8.0, "a full bend of 12 semitones plays at {f} Hz");
 }

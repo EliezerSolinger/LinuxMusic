@@ -1,4 +1,4 @@
-//! Safe binding to FluidSynth, for the AvlDrums instrument (interfaces.md U33): one synthesizer that only the audio
+//! Safe binding to FluidSynth, for the AvlDrums and Sf2 Player instruments (interfaces.md U33): one synthesizer that only the audio
 //! thread calls, with several stereo outputs (one per drum group), no threads of its own and no audio driver.
 //!
 //! The life of an instance has two types:
@@ -14,9 +14,9 @@
 //!
 //! | Question | Answer |
 //! |---|---|
-//! | Who owns each handle? | `fluid_settings_t*` and `fluid_synth_t*`: one private `Instance`, inside the `SynthBuilder` and then the `Synth` (moved, never copied). Its `Drop` deletes the synth, then the settings. SoundFonts belong to the synth (freed with it); a [`SoundFontId`] is only a number. |
+//! | Who owns each handle? | `fluid_settings_t*` and `fluid_synth_t*`: one private `Instance`, inside the `SynthBuilder` and then the `Synth` (moved, never copied). Its `Drop` deletes the synth, then the settings. SoundFonts belong to the synth (freed with it); a [`SoundFontId`] is only a number. A [`VoiceRef`] is plain data (the instance's serial number, the voice's address, its id): the `Synth` dereferences it only when the serial is its own, and touches the voice only when its id is still the one recorded and it plays (voices live as long as the instance: the voice table is allocated once and the polyphony never changes). |
 //! | Which thread may call each function? | `synth.threadsafe-api` is **off**: FluidSynth takes no lock, so the instance must never be used by two threads at once. Both types are `Send` and **not `Sync`**, and every call takes `&mut self`: the compiler forbids concurrent use. The `Synth` is moved to the audio thread and stays there; it goes back to the main thread to be dropped (return ring, rule 5). |
-//! | Allocates, locks, does I/O? | `SynthBuilder::new` and `load_soundfont` allocate and do file I/O (the samples are read whole: no dynamic sample loading), and take this crate's log lock: build time only. `presets` allocates the list. On `Synth`: `note_on`, `note_off`, `cc`, `pitch_bend`, `program_change`, `bank_select`, `program_select`, `all_notes_off`, `all_sounds_off` and `render` neither allocate nor lock nor do I/O (voices are preallocated by `synth.polyphony`; checked by `tests/no_alloc.rs`, which counts the C heap) and are for the audio thread. `Drop` frees: never on the audio thread. |
+//! | Allocates, locks, does I/O? | `SynthBuilder::new` and `load_soundfont` allocate and do file I/O (the samples are read whole: no dynamic sample loading), and take this crate's log lock: build time only. `presets` allocates the list. On `Synth`: `note_on`, `note_off`, `cc`, `pitch_bend`, `program_change`, `bank_select`, `program_select`, `all_notes_off`, `all_sounds_off`, `render`, `render_stereo`, `set_gain`, `set_reverb_on`, `set_reverb`, `set_chorus_on`, `set_chorus`, `set_bend_range`, `set_interpolation`, `voices_of`, `voice_gen` and `set_voice_gen` neither allocate nor lock nor do I/O (voices are preallocated by `synth.polyphony`; checked by `tests/no_alloc.rs`, which counts the C heap) and are for the audio thread. `Drop` frees: never on the audio thread. |
 //! | Creates threads? | No: `synth.cpu-cores = 1` (no render threads), no audio or MIDI driver is ever created, and a FluidSynth built with OpenMP (Debian, Ubuntu) loads SoundFonts with OpenMP limited to one thread on the loading thread (`OpenMpSingleThread`), so libgomp never starts its worker pool. `tests/synth.rs` checks the thread count of the process does not grow (on macOS, the first `new_fluid_settings` of the process registers FluidSynth's drivers, CoreAudio and PortAudio, which makes the system start two idle libdispatch workers once per process: not FluidSynth's, never per instance, and never on the audio thread, since settings are made at build time). |
 //! | Calls back into our code? | Only the log function, set once for the whole library: errors and panics go to `log_trampoline`, which runs under `catch_unwind` and only records text when the calling thread is the one loading (it compares `pthread_self`, so on the audio thread it neither allocates nor locks); warnings, info and debug are switched off (FluidSynth would print them to stderr from the audio thread). |
 //! | Tests | `tests/synth.rs` with a SoundFont made by the test (`tests/common/sf2.rs`): a note renders a non-silent tone at the right pitch, note off and all-sounds-off silence it, two MIDI channels render into two separate outputs, presets are listed, a broken SoundFont is an error with FluidSynth's message, no thread is created. `tests/no_alloc.rs`: the audio-thread calls under `assert_no_alloc` and the C heap trap. ASan in CI. |
@@ -47,6 +47,10 @@ mod ffi {
     }
     #[repr(C)]
     pub struct Preset {
+        _private: [u8; 0],
+    }
+    #[repr(C)]
+    pub struct Voice {
         _private: [u8; 0],
     }
 
@@ -105,6 +109,43 @@ mod ffi {
             out: *mut *mut c_float,
         ) -> c_int;
 
+        pub fn fluid_synth_write_float(
+            synth: *mut Synth,
+            len: c_int,
+            lout: *mut c_void,
+            loff: c_int,
+            lincr: c_int,
+            rout: *mut c_void,
+            roff: c_int,
+            rincr: c_int,
+        ) -> c_int;
+        pub fn fluid_synth_set_gain(synth: *mut Synth, gain: c_float);
+        pub fn fluid_synth_get_gain(synth: *mut Synth) -> c_float;
+        pub fn fluid_synth_reverb_on(synth: *mut Synth, fx_group: c_int, on: c_int) -> c_int;
+        pub fn fluid_synth_set_reverb_group_roomsize(synth: *mut Synth, fx_group: c_int, v: c_double) -> c_int;
+        pub fn fluid_synth_set_reverb_group_damp(synth: *mut Synth, fx_group: c_int, v: c_double) -> c_int;
+        pub fn fluid_synth_set_reverb_group_width(synth: *mut Synth, fx_group: c_int, v: c_double) -> c_int;
+        pub fn fluid_synth_set_reverb_group_level(synth: *mut Synth, fx_group: c_int, v: c_double) -> c_int;
+        pub fn fluid_synth_chorus_on(synth: *mut Synth, fx_group: c_int, on: c_int) -> c_int;
+        pub fn fluid_synth_set_chorus_group_nr(synth: *mut Synth, fx_group: c_int, nr: c_int) -> c_int;
+        pub fn fluid_synth_set_chorus_group_level(synth: *mut Synth, fx_group: c_int, v: c_double) -> c_int;
+        pub fn fluid_synth_set_chorus_group_speed(synth: *mut Synth, fx_group: c_int, v: c_double) -> c_int;
+        pub fn fluid_synth_set_chorus_group_depth(synth: *mut Synth, fx_group: c_int, v: c_double) -> c_int;
+        pub fn fluid_synth_set_chorus_group_type(synth: *mut Synth, fx_group: c_int, kind: c_int) -> c_int;
+        pub fn fluid_synth_pitch_wheel_sens(synth: *mut Synth, chan: c_int, val: c_int) -> c_int;
+        pub fn fluid_synth_set_interp_method(synth: *mut Synth, chan: c_int, method: c_int) -> c_int;
+        pub fn fluid_synth_get_internal_bufsize(synth: *mut Synth) -> c_int;
+        pub fn fluid_synth_get_polyphony(synth: *mut Synth) -> c_int;
+        pub fn fluid_synth_get_voicelist(synth: *mut Synth, buf: *mut *mut Voice, bufsize: c_int, id: c_int);
+        pub fn fluid_voice_get_id(voice: *const Voice) -> std::ffi::c_uint;
+        pub fn fluid_voice_get_channel(voice: *const Voice) -> c_int;
+        pub fn fluid_voice_get_key(voice: *const Voice) -> c_int;
+        pub fn fluid_voice_is_on(voice: *const Voice) -> c_int;
+        pub fn fluid_voice_is_playing(voice: *const Voice) -> c_int;
+        pub fn fluid_voice_gen_get(voice: *mut Voice, generator: c_int) -> c_float;
+        pub fn fluid_voice_gen_set(voice: *mut Voice, generator: c_int, value: c_float);
+        pub fn fluid_voice_update_param(voice: *mut Voice, generator: c_int);
+
         pub fn fluid_set_log_function(level: c_int, fun: LogFunction, data: *mut c_void) -> LogFunction;
         pub fn fluid_version(major: *mut c_int, minor: *mut c_int, micro: *mut c_int);
 
@@ -118,6 +159,9 @@ mod ffi {
 
 /// The most stereo outputs an instance may have (AvlDrums needs 9; the render keeps its pointer table on the stack)
 pub const MAX_OUTPUTS: usize = 32;
+
+#[cfg(feature = "testing")]
+pub mod test_font;
 
 /// The version of the linked FluidSynth, (major, minor, micro)
 pub fn version() -> (i32, i32, i32) {
@@ -266,7 +310,12 @@ struct Instance {
     settings: NonNull<ffi::Settings>,
     synth: NonNull<ffi::Synth>,
     config: SynthConfig,
+    /// A number no other instance of the process ever has: a [`VoiceRef`] is only used with the instance it came from
+    serial: u64,
 }
+
+/// The serial numbers of the instances
+static SERIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 // SAFETY: FluidSynth instances have no thread affinity (no thread-local state; with threadsafe-api off, no mutex
 // owned by a thread). With threadsafe-api off it must not be used by two threads at once: every use goes through
@@ -412,7 +461,8 @@ impl SynthBuilder {
         let synth = unsafe { ffi::new_fluid_synth(settings.as_ptr()) };
         let synth = NonNull::new(synth).ok_or_else(|| Error::new("fluidsynth.new_failed"))?;
         guard.0 = None;
-        let mut instance = Instance { settings, synth, config };
+        let serial = SERIALS.fetch_add(1, Ordering::Relaxed);
+        let mut instance = Instance { settings, synth, config, serial };
         // SAFETY: the synth is valid and ours
         let (channels, groups) = unsafe {
             (ffi::fluid_synth_count_audio_channels(instance.ptr()), ffi::fluid_synth_count_audio_groups(instance.ptr()))
@@ -494,9 +544,13 @@ impl SynthBuilder {
         self.instance.cc(channel, controller, value)
     }
 
-    /// The instance, ready to move to the audio thread
-    pub fn build(self) -> Synth {
-        Synth { instance: self.instance }
+    /// The instance, ready to move to the audio thread (with room to list every voice, for
+    /// [`Synth::voices_of`])
+    pub fn build(mut self) -> Synth {
+        // SAFETY: the synth is valid and ours
+        let polyphony = unsafe { ffi::fluid_synth_get_polyphony(self.instance.ptr()) };
+        let room = usize::try_from(polyphony).unwrap_or(0).max(self.instance.config.polyphony);
+        Synth { instance: self.instance, voice_list: VoiceList(vec![std::ptr::null_mut(); room].into_boxed_slice()) }
     }
 }
 
@@ -510,6 +564,85 @@ impl fmt::Debug for SynthBuilder {
 /// or does I/O. It cannot load a SoundFont. `Send`, not `Sync`; dropped on the main thread (rule 5)
 pub struct Synth {
     instance: Instance,
+    voice_list: VoiceList,
+}
+
+/// Room for FluidSynth's list of the voices playing (one pointer per voice of the polyphony)
+struct VoiceList(Box<[*mut ffi::Voice]>);
+
+// SAFETY: the pointers are only scratch written by fluid_synth_get_voicelist and read right after, by the owner of the
+// `Synth` (&mut self); they are never dereferenced from another thread
+unsafe impl Send for VoiceList {}
+
+/// A voice that a note started, to change its generators while it plays (the per-note pitch of the Sf2 Player).
+/// Plain data: it names the voice of one instance, and the [`Synth`] checks it is still that voice before touching it
+/// (The default names no voice: serial 0 is never an instance's)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct VoiceRef {
+    serial: u64,
+    /// The voice's address in the instance's voice table (allocated with the instance, never moved: the polyphony is
+    /// never changed after it is made)
+    address: usize,
+    /// FluidSynth's id of the voice when the note started: a voice reused by another note has another id
+    id: u32,
+}
+
+/// The SoundFont generators a voice may be given while it plays (the values are in the SoundFont's units)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Generator {
+    /// Semitones, fractional allowed (FluidSynth keeps generators as floats)
+    CoarseTune,
+    /// Timecents
+    VolEnvDelay,
+    VolEnvAttack,
+    VolEnvHold,
+    VolEnvDecay,
+    /// Centibels of attenuation
+    VolEnvSustain,
+    VolEnvRelease,
+}
+
+impl Generator {
+    /// FluidSynth's number (`enum fluid_gen_type`, the SoundFont 2.04 order)
+    fn number(self) -> c_int {
+        match self {
+            Generator::VolEnvDelay => 33,
+            Generator::VolEnvAttack => 34,
+            Generator::VolEnvHold => 35,
+            Generator::VolEnvDecay => 36,
+            Generator::VolEnvSustain => 37,
+            Generator::VolEnvRelease => 38,
+            Generator::CoarseTune => 51,
+        }
+    }
+}
+
+/// How FluidSynth interpolates the samples
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Interpolation {
+    None,
+    Linear,
+    /// FluidSynth's default
+    FourthOrder,
+    SeventhOrder,
+}
+
+/// The reverb's settings (FluidSynth's units: room size, damping, width and level)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reverb {
+    pub room_size: f64,
+    pub damping: f64,
+    pub width: f64,
+    pub level: f64,
+}
+
+/// The chorus's settings: voices, level, speed (Hz), depth (ms); the modulation is a sine
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Chorus {
+    pub voices: u32,
+    pub level: f64,
+    pub speed: f64,
+    pub depth: f64,
 }
 
 impl Synth {
@@ -620,6 +753,171 @@ impl Synth {
             return Err(Error::new("fluidsynth.render_failed"));
         }
         Ok(())
+    }
+}
+
+impl Synth {
+    /// Renders one stereo output with the reverb and chorus mixed in (FluidSynth's `write_float`), **replacing** what
+    /// `left` and `right` held; for an instance of one output. Voice changes made since the last render take effect
+    /// first. Neither allocates nor locks. Error `fluidsynth.bad_buffers` when the lengths differ or the instance has
+    /// more than one output
+    pub fn render_stereo(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<()> {
+        if left.len() != right.len() || self.instance.config.outputs != 1 {
+            return Err(Error::new("fluidsynth.bad_buffers"));
+        }
+        let Ok(len) = c_int::try_from(left.len()) else {
+            return Err(Error::new("fluidsynth.bad_buffers"));
+        };
+        if len == 0 {
+            return Ok(());
+        }
+        let synth = self.instance.ptr();
+        // SAFETY: the synth is valid and ours (&mut self); `left` and `right` are distinct buffers of `len` floats,
+        // written with offset 0 and stride 1, `len` frames each. `fluid_synth_get_gain` is called first only for its
+        // side effect: as a public call it flushes the voice changes queued by `set_voice_gen` (the legacy Sf2 Player
+        // does the same)
+        let code = unsafe {
+            ffi::fluid_synth_get_gain(synth);
+            ffi::fluid_synth_write_float(synth, len, left.as_mut_ptr().cast(), 0, 1, right.as_mut_ptr().cast(), 0, 1)
+        };
+        if code != ffi::FLUID_OK {
+            return Err(Error::new("fluidsynth.render_failed"));
+        }
+        Ok(())
+    }
+
+    /// The frames FluidSynth renders at once (64): an event takes effect at the start of its next block of the
+    /// instance's own frame count
+    pub fn internal_block(&mut self) -> usize {
+        // SAFETY: the synth is valid and ours
+        usize::try_from(unsafe { ffi::fluid_synth_get_internal_bufsize(self.instance.ptr()) }).unwrap_or(64)
+    }
+
+    /// The master gain (FluidSynth's `synth.gain`, 0 to 10)
+    pub fn set_gain(&mut self, gain: f32) {
+        // SAFETY: the synth is valid and ours; FluidSynth clamps the value
+        unsafe { ffi::fluid_synth_set_gain(self.instance.ptr(), gain) };
+    }
+
+    /// Turns the reverb on or off (every effects group)
+    pub fn set_reverb_on(&mut self, on: bool) -> Result<()> {
+        // SAFETY: the synth is valid and ours; -1 is every group
+        ok(unsafe { ffi::fluid_synth_reverb_on(self.instance.ptr(), -1, c_int::from(on)) })
+    }
+
+    /// The reverb's settings (every effects group)
+    pub fn set_reverb(&mut self, r: Reverb) -> Result<()> {
+        let synth = self.instance.ptr();
+        // SAFETY: the synth is valid and ours; FluidSynth checks the ranges; -1 is every group
+        unsafe {
+            ok(ffi::fluid_synth_set_reverb_group_roomsize(synth, -1, r.room_size))?;
+            ok(ffi::fluid_synth_set_reverb_group_damp(synth, -1, r.damping))?;
+            ok(ffi::fluid_synth_set_reverb_group_width(synth, -1, r.width))?;
+            ok(ffi::fluid_synth_set_reverb_group_level(synth, -1, r.level))
+        }
+    }
+
+    /// Turns the chorus on or off (every effects group)
+    pub fn set_chorus_on(&mut self, on: bool) -> Result<()> {
+        // SAFETY: the synth is valid and ours; -1 is every group
+        ok(unsafe { ffi::fluid_synth_chorus_on(self.instance.ptr(), -1, c_int::from(on)) })
+    }
+
+    /// The chorus's settings (every effects group), with a sine modulation
+    pub fn set_chorus(&mut self, c: Chorus) -> Result<()> {
+        let synth = self.instance.ptr();
+        let voices = c_int::try_from(c.voices).unwrap_or(c_int::MAX);
+        // SAFETY: the synth is valid and ours; FluidSynth checks the ranges (at most 99 voices, all preallocated);
+        // -1 is every group; type 0 is FLUID_CHORUS_MOD_SINE
+        unsafe {
+            ok(ffi::fluid_synth_set_chorus_group_nr(synth, -1, voices))?;
+            ok(ffi::fluid_synth_set_chorus_group_level(synth, -1, c.level))?;
+            ok(ffi::fluid_synth_set_chorus_group_speed(synth, -1, c.speed))?;
+            ok(ffi::fluid_synth_set_chorus_group_depth(synth, -1, c.depth))?;
+            ok(ffi::fluid_synth_set_chorus_group_type(synth, -1, 0))
+        }
+    }
+
+    /// The pitch bend's range of `channel`, semitones
+    pub fn set_bend_range(&mut self, channel: usize, semitones: u8) -> Result<()> {
+        // SAFETY: the synth is valid and ours; FluidSynth checks the ranges
+        ok(unsafe { ffi::fluid_synth_pitch_wheel_sens(self.instance.ptr(), int(channel), c_int::from(semitones)) })
+    }
+
+    /// How every channel interpolates its samples
+    pub fn set_interpolation(&mut self, method: Interpolation) -> Result<()> {
+        let m = match method {
+            Interpolation::None => 0,
+            Interpolation::Linear => 1,
+            Interpolation::FourthOrder => 4,
+            Interpolation::SeventhOrder => 7,
+        };
+        // SAFETY: the synth is valid and ours; -1 is every channel
+        ok(unsafe { ffi::fluid_synth_set_interp_method(self.instance.ptr(), -1, m) })
+    }
+
+    /// The voices playing `key` on `channel` that are on (not released), written to `out` (as many as fit); returns
+    /// how many. After a `note_on`, these are the voices it started: FluidSynth stops the voices of the same channel
+    /// and key at a note-on. Neither allocates nor locks
+    pub fn voices_of(&mut self, channel: usize, key: u8, out: &mut [VoiceRef]) -> usize {
+        let synth = self.instance.ptr();
+        let list = &mut self.voice_list.0;
+        list.fill(std::ptr::null_mut());
+        // SAFETY: the synth is valid and ours; `list` has room for `list.len()` pointers, which FluidSynth fills with
+        // the playing voices and ends with NULL when there are fewer (id -1: every voice)
+        unsafe { ffi::fluid_synth_get_voicelist(synth, list.as_mut_ptr(), int(list.len()), -1) };
+        let mut found = 0;
+        for &voice in list.iter() {
+            if voice.is_null() || found == out.len() {
+                break;
+            }
+            // SAFETY: `voice` is one of the instance's voices, just listed by FluidSynth; it lives as long as the
+            // instance (the voice table is never reallocated: the polyphony is never changed)
+            let (chan, k, on, id) = unsafe {
+                (
+                    ffi::fluid_voice_get_channel(voice),
+                    ffi::fluid_voice_get_key(voice),
+                    ffi::fluid_voice_is_on(voice),
+                    ffi::fluid_voice_get_id(voice),
+                )
+            };
+            if chan == int(channel) && k == c_int::from(key) && on != 0 {
+                out[found] = VoiceRef { serial: self.instance.serial, address: voice as usize, id };
+                found += 1;
+            }
+        }
+        found
+    }
+
+    /// The voice, if it is still the one `v` names and it plays
+    fn live(&mut self, v: &VoiceRef) -> Option<*mut ffi::Voice> {
+        if v.serial != self.instance.serial {
+            return None;
+        }
+        let voice = v.address as *mut ffi::Voice;
+        // SAFETY: a VoiceRef with this instance's serial was made by `voices_of` from this instance's voice table,
+        // whose voices live as long as the instance (never reallocated)
+        let (id, playing) = unsafe { (ffi::fluid_voice_get_id(voice), ffi::fluid_voice_is_playing(voice)) };
+        (id == v.id && playing != 0).then_some(voice)
+    }
+
+    /// A generator of a voice, or `None` when the voice has ended or plays another note
+    pub fn voice_gen(&mut self, v: &VoiceRef, generator: Generator) -> Option<f32> {
+        let voice = self.live(v)?;
+        // SAFETY: a live voice of this instance (see `live`)
+        Some(unsafe { ffi::fluid_voice_gen_get(voice, generator.number()) })
+    }
+
+    /// Sets a generator of a voice while it plays; it takes effect from the next render. `false` when the voice has
+    /// ended or plays another note (nothing is done). Neither allocates nor locks
+    pub fn set_voice_gen(&mut self, v: &VoiceRef, generator: Generator, value: f32) -> bool {
+        let Some(voice) = self.live(v) else { return false };
+        // SAFETY: a live voice of this instance (see `live`), on the thread that owns the instance (&mut self)
+        unsafe {
+            ffi::fluid_voice_gen_set(voice, generator.number(), value);
+            ffi::fluid_voice_update_param(voice, generator.number());
+        }
+        true
     }
 }
 

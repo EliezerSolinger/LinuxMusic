@@ -1,11 +1,11 @@
-//! A minimal SoundFont 2 made by the tests, so that no SoundFont has to be installed: each preset is one instrument
-//! with one zone, a looped single-cycle-ish sample of a sine (or noise) at a known pitch.
-
-#![allow(dead_code)]
+//! A minimal SoundFont 2 made by the tests (of this crate, and with the feature `testing` of the plugins that play
+//! SoundFonts), so that no SoundFont has to be installed: each preset is one instrument with one zone, a looped
+//! sample of a sine (or noise) at a known pitch, with the SoundFont's default envelopes.
 
 use std::path::Path;
 
 /// One preset of the generated font
+#[derive(Clone, Copy, Debug)]
 pub struct Voice {
     pub name: &'static str,
     pub program: u16,
@@ -51,7 +51,7 @@ fn u32le(v: u32) -> [u8; 4] {
 }
 
 /// Writes the font to `path`
-pub fn write(path: &Path, voices: &[Voice]) {
+pub fn write(path: &Path, voices: &[Voice]) -> std::io::Result<()> {
     // sdta: the samples, each followed by 46 zero points (the SF2 rule)
     let mut smpl: Vec<u8> = Vec::new();
     let mut headers = Vec::new(); // (start, end, loop_start, loop_end)
@@ -151,16 +151,16 @@ pub fn write(path: &Path, voices: &[Voice]) {
     body.extend_from_slice(&info);
     body.extend_from_slice(&sdta);
     body.extend_from_slice(&pdta);
-    std::fs::write(path, chunk(b"RIFF", &body)).unwrap();
+    std::fs::write(path, chunk(b"RIFF", &body))
 }
 
 /// The font most tests use: a sine at 440 Hz (program 0) and noise (program 1), bank 0
-pub fn standard(path: &Path) {
+pub fn standard(path: &Path) -> std::io::Result<()> {
     write(
         path,
         &[
             Voice { name: "Sine", program: 0, bank: 0, freq: 440.0, noise: false },
             Voice { name: "Noise", program: 1, bank: 0, freq: 441.0, noise: true },
         ],
-    );
+    )
 }
