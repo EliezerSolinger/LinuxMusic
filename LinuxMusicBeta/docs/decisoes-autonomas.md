@@ -321,6 +321,11 @@ de forma diz pelo que é substituído.
 - **`CorePort::plugins()` e `plugin_schema(id)`** (agente C, combinado com o A): o editor genérico de plugin, o
   "Trocar" do instrumento e o "acrescentar efeito" precisam dos plugins e dos esquemas, e no modo cliente eles são do
   servidor; corpo padrão vazio só na transição.
+- **O mapeamento MIDI no `CorePort`** (agente A, com os nomes do agente da I-21): `midi_learn`, `cancel_learn`,
+  `learning`, `unmap`, `drain_midi_ui` e `midi_activity`, com os tipos do `lm-midimap` reexportados, e
+  `TelemetryView::hand_won`. Os métodos têm corpo padrão só na transição, para o `lm-session` e o `lm-remote`
+  seguirem compilando; o falso já responde, e as portas de verdade passam a responder (a `LocalPort` pelo agente da
+  I-21). A `RemotePort` precisa levar `hand_won` na telemetria do fio.
 
 
 ## Do `lm-plugin` (19/11)

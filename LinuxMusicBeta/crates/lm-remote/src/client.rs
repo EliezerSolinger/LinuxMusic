@@ -487,6 +487,7 @@ impl RemotePort {
             counting_in: false,
             xruns: 0,
             xrun_marks: Vec::new(),
+            hand_won: Vec::new(),
         };
         let mut port = RemotePort {
             connection: Connection::Connected { role: w.role, server: w.server.clone() },

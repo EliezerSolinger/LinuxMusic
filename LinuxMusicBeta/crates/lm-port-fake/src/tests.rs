@@ -299,3 +299,59 @@ fn presets_load_as_one_step_and_save_to_the_library() {
     let Pending::Ready(Ok(after)) = port.browse(BrowsePage::Presets, None, false) else { panic!() };
     assert!(after.iter().any(|e| &*e.name == "Meu baixo" && !e.factory));
 }
+
+/// MIDI learn (I-21.2): the first message after `midi_learn` becomes a mapping in the project, in one undo step; the
+/// activity shows it as mapped; `unmap` removes it; a mapping to an action reaches the interface's feed
+#[test]
+fn learning_mapping_and_unmapping() {
+    use lm_port::{MapScope, MapTarget, MidiMessage, NodeRef};
+    let mut p = small();
+    let t = track(&p, 1);
+    let target = MapTarget::Param { node: NodeRef::Id(t), key: "volume".into() };
+    let id = match p.midi_learn(target.clone(), MapScope::Project) {
+        Pending::Ready(Ok(id)) => id,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(p.learning(), Some(id));
+    p.midi_in("Controlador 1", 0, MidiMessage::Cc { number: 7 }, 100);
+    assert_eq!(p.learning(), None, "learned");
+    let maps = p.mappings(MapScope::Project);
+    assert_eq!(maps.len(), 1);
+    assert_eq!(maps[0].target, target);
+    assert_eq!(maps[0].source.message, MidiMessage::Cc { number: 7 });
+    assert!(p.notices().iter().any(|n| n.key == "midi.learned"));
+    let (n, act) = p.midi_activity(0);
+    assert!(n >= 1 && act.last().is_some_and(|a| a.mapped), "the activity shows it");
+    p.midi_in("Controlador 1", 0, MidiMessage::Cc { number: 7 }, 20);
+    assert!(p.midi_activity(n).1[0].mapped, "the next one is mapped too");
+    assert!(p.can_undo());
+    assert!(matches!(p.unmap(&target, MapScope::Project), Pending::Ready(Ok(()))));
+    assert!(p.mappings(MapScope::Project).is_empty(), "unmapped");
+    p.undo().ok().unwrap();
+    assert_eq!(p.mappings(MapScope::Project).len(), 1, "undo brings it back");
+    // an action, in the machine's mappings: the interface gets it
+    let zoom = MapTarget::Action { id: "arrange.zoom_in".into(), params: Value::NULL, value_into: None };
+    let _ = p.midi_learn(zoom, MapScope::Machine);
+    p.midi_in("Controlador 1", 0, MidiMessage::Note { key: 36 }, 127);
+    p.midi_in("Controlador 1", 0, MidiMessage::Note { key: 36 }, 127);
+    let mut ui = Vec::new();
+    p.drain_midi_ui(&mut ui);
+    assert_eq!(ui.len(), 1);
+    assert_eq!(ui[0].action.as_str(), "arrange.zoom_in");
+    // a learn can be cancelled
+    let id = p.midi_learn(target, MapScope::Project).ok().unwrap();
+    p.cancel_learn(id);
+    assert_eq!(p.learning(), None);
+}
+
+/// "The hand won" (I-21.5) shows in the telemetry until `automation.rearm`
+#[test]
+fn the_hand_won_until_rearmed() {
+    let mut p = small();
+    let t = track(&p, 1);
+    p.hand_wins(t, "volume");
+    p.hand_wins(t, "pan");
+    assert_eq!(p.telemetry().hand_won.len(), 2);
+    p.run_action("automation.rearm".into(), Value::empty_object()).ok().unwrap();
+    assert!(p.telemetry().hand_won.is_empty());
+}

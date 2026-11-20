@@ -11,6 +11,7 @@
 
 pub mod demo;
 mod library;
+mod midi;
 pub mod peaks;
 mod services;
 
@@ -101,6 +102,7 @@ pub struct FakePort {
     live: HashMap<(NodeId, String), f32>,
     /// The fake's own feed: any change makes the project modified
     own_feed: Feed,
+    midi: midi::Midi,
 }
 
 impl std::fmt::Debug for FakePort {
@@ -125,6 +127,7 @@ impl FakePort {
         let own_feed = doc.feed(Topic::All);
         let mut port = FakePort {
             own_feed,
+            midi: Default::default(),
             doc,
             resources: HashMap::new(),
             loading_resources: Vec::new(),
@@ -146,6 +149,7 @@ impl FakePort {
                 counting_in: false,
                 xruns: 0,
                 xrun_marks: Vec::new(),
+                hand_won: Vec::new(),
             },
             preferences: library::preferences(),
             status: library::status(),
@@ -900,6 +904,7 @@ impl CorePort for FakePort {
             "arrange.split" => self.split(&params),
             "arrange.duplicate" => self.duplicate(&params),
             "mixer.create_channels_for_outputs" => self.create_channels_for_outputs(&params),
+            "automation.rearm" => self.rearm(&params),
             "items.rerender" => {
                 self.start(
                     Label::new("Re-rendering the recorded items"),
@@ -1131,6 +1136,30 @@ impl CorePort for FakePort {
 
     fn plugin_schema(&self, plugin: &str) -> Option<lm_port::NodeSchema> {
         self.doc.registry().find(&format!("plugin:{plugin}")).cloned()
+    }
+
+    fn midi_learn(&mut self, target: lm_port::MapTarget, scope: lm_port::MapScope) -> Pending<lm_port::LearnId> {
+        Pending::Ready(self.midi_learn_impl(target, scope))
+    }
+
+    fn cancel_learn(&mut self, id: lm_port::LearnId) {
+        self.cancel_learn_impl(id);
+    }
+
+    fn learning(&self) -> Option<lm_port::LearnId> {
+        self.learning_impl()
+    }
+
+    fn unmap(&mut self, target: &lm_port::MapTarget, scope: lm_port::MapScope) -> Pending<()> {
+        Pending::Ready(self.unmap_impl(target, scope))
+    }
+
+    fn drain_midi_ui(&mut self, out: &mut Vec<lm_port::MidiUiAction>) {
+        self.drain_midi_ui_impl(out);
+    }
+
+    fn midi_activity(&self, since: u64) -> (u64, Vec<lm_port::MidiActivity>) {
+        self.midi_activity_impl(since)
     }
 }
 

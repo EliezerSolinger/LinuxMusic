@@ -1051,7 +1051,14 @@ pub struct Applied { pub diff: Diff, pub created: Vec<(u32, NodeId)>, pub notes:
     monta os controles); toda porta de verdade responde (o falso pelo registro dele, a `LocalPort` pelos plugins
     internos, a `RemotePort` pelo que buscou ao conectar).
   - `preferences().monitor` = { level (dB), dim, cut, mono, side }: a monitoração do master (o MONITOR do legado),
-    que é da máquina e não entra no documento, no desfazer nem na exportação (`lm-port/src/trees.rs`).
+    que é da máquina e não entra no documento, no desfazer nem na exportação (`lm-port/src/trees.rs`);
+  - **o mapeamento MIDI (I-21.2)**: `midi_learn(target, scope) -> Pending<LearnId>`, `cancel_learn(id)`,
+    `learning()` (a interface mostra "mova um controle"), `unmap(target, scope)` ("Tirar o mapa"),
+    `drain_midi_ui(&mut Vec<MidiUiAction>)` (o `Feed` das ações da interface mapeadas) e
+    `midi_activity(since) -> (u64, Vec<MidiActivity>)` (a atividade crua, com perda, as últimas 256); os tipos do
+    mapa (`MapTarget`, `NodeRef`, `MapScope`, `Mapping`, `DocSource`, `Message`) vêm do `lm-midimap` e o `lm-port` os
+    reexporta. `TelemetryView::hand_won` lista as pistas em que a mão venceu (o dono e a chave do parâmetro), até o
+    `automation.rearm`. As implementações padrão são só da transição: toda porta de verdade responde.
 - **Testes:** o mesmo roteiro de interface roda contra a `LocalPort` e contra a `RemotePort` ligada a um servidor no
   mesmo processo (por um socket local), e tem que dar a mesma árvore e os mesmos `Diff`s.
 - **O protótipo** é escrito contra um núcleo de mentira que já tem a forma do `CorePort` (dados nos argumentos, sem

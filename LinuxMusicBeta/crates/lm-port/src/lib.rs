@@ -15,7 +15,10 @@
 //! - the browser service (`browse`, `search`, `prepare_preview`, `preview_play`, `preview_stop`,
 //!   `set_favorite`), because in the client the files are the server's (module `browse`);
 //! - `plugins` and `plugin_schema`: the plugins the core has and their schemas, which the generic plugin editor
-//!   builds its controls from.
+//!   builds its controls from;
+//! - MIDI mapping (I-21.2): `midi_learn`, `cancel_learn`, `learning`, `unmap`, the `MidiUiAction` feed
+//!   (`drain_midi_ui`) and the raw MIDI activity (`midi_activity`); the mappings' types come from `lm-midimap`;
+//!   `TelemetryView::hand_won`, the automation lanes the hand overrode (I-21.5).
 
 #![forbid(unsafe_code)]
 
@@ -32,6 +35,33 @@ pub use lm_render::{METER_CHANNELS, Meter};
 pub use lm_state::{FieldKind, FieldSpec, NodeId, NodeSchema, ParamSpec, PathStep, ROOT, Resource, Scale, Value};
 
 pub use browse::{BrowseEntry, BrowsePage, EntryId, EntryKind, PluginInfo, Preview};
+pub use lm_midimap::{DocSource, MapScope, MapTarget, Mapping, Message as MidiMessage, NodeRef, SelRole};
+
+/// A MIDI learn under way (I-21.2): its number, to cancel it
+pub type LearnId = u64;
+
+/// A mapped MIDI control reached an action of the interface (zoom, scroll, page...): the session sends it on, the
+/// interface runs it (I-21.2, the `MidiUiAction` feed). `value` is the control's, normalized 0..1
+#[derive(Clone, Debug, PartialEq)]
+pub struct MidiUiAction {
+    pub action: ActionId,
+    pub params: Value,
+    pub value: f32,
+}
+
+/// One raw MIDI message as it arrived (the activity monitor and learning, I-21.2): lossy, the last 256 kept
+#[derive(Clone, Debug, PartialEq)]
+pub struct MidiActivity {
+    /// The port's alias, or its name when it has none
+    pub port: Arc<str>,
+    pub channel: u8,
+    pub message: MidiMessage,
+    /// 7 or 14 bits
+    pub value: u16,
+    /// whether a mapping took it
+    pub mapped: bool,
+    pub time: HostTime,
+}
 
 /// The number of a request whose answer has not arrived (the RemotePort's; the LocalPort never waits)
 pub type RequestId = u64;
@@ -259,6 +289,9 @@ pub struct TelemetryView {
     /// Xruns so far, always shown (P-14), and where they happened (F-CLP-063)
     pub xruns: u32,
     pub xrun_marks: Vec<i64>,
+    /// The automation lanes the hand overrode in Read or Touch (I-21.5): the lane's owner node and the parameter's
+    /// key; shown as "the hand won" until re-armed (the action `automation.rearm`)
+    pub hand_won: Vec<(NodeId, Arc<str>)>,
 }
 
 impl TelemetryView {
@@ -385,6 +418,36 @@ pub trait CorePort {
     fn plugin_schema(&self, _plugin: &str) -> Option<NodeSchema> {
         None
     }
+
+    // --- MIDI mapping (I-21.2, addition of 20/11). The defaults are for the transition only: every real port
+    // answers (the fake in its tests, the LocalPort over the session's mapper, the RemotePort through the server)
+    /// Starts learning a mapping for `target`: the first control moved becomes its source (14 bits, NRPN and relative
+    /// encoders detected in the next 300 ms); the mapping is made in a transaction labelled "MIDI: aprender", with a
+    /// notice. A loop (the target controls its own source) is refused with a notice
+    fn midi_learn(&mut self, target: MapTarget, scope: MapScope) -> Pending<LearnId> {
+        let _ = (target, scope);
+        Pending::Ready(Err(Error::new("port.midi.unsupported")))
+    }
+    fn cancel_learn(&mut self, id: LearnId) {
+        let _ = id;
+    }
+    /// The learn under way, if any: the interface says "move a control"
+    fn learning(&self) -> Option<LearnId> {
+        None
+    }
+    /// Removes every mapping on `target` in `scope` ("Tirar o mapa")
+    fn unmap(&mut self, target: &MapTarget, scope: MapScope) -> Pending<()> {
+        let _ = (target, scope);
+        Pending::Ready(Err(Error::new("port.midi.unsupported")))
+    }
+    /// The interface's actions mapped controls reached since the last call
+    fn drain_midi_ui(&mut self, out: &mut Vec<MidiUiAction>) {
+        let _ = out;
+    }
+    /// The raw MIDI activity after `since` (a counter): the new counter and the messages, at most the last 256
+    fn midi_activity(&self, since: u64) -> (u64, Vec<MidiActivity>) {
+        (since, Vec::new())
+    }
 }
 
 #[cfg(test)]
@@ -438,6 +501,7 @@ mod tests {
             counting_in: false,
             xruns: 0,
             xrun_marks: Vec::new(),
+            hand_won: Vec::new(),
         };
         assert_eq!(t.peak(ROOT), 0.5);
         assert_eq!(t.peak(NodeId { kind: b't', number: 9 }), 0.0);

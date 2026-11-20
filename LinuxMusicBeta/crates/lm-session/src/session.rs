@@ -2351,6 +2351,7 @@ fn empty_telemetry(rate: u32) -> TelemetryView {
         counting_in: false,
         xruns: 0,
         xrun_marks: Vec::new(),
+        hand_won: Vec::new(),
     }
 }
 
