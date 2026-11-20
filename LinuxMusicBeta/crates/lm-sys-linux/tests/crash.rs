@@ -59,7 +59,7 @@ fn run(how: &'static str) -> (std::process::ExitStatus, Option<String>, bool) {
 #[test]
 fn a_native_crash_leaves_the_node_it_was_in() {
     if let (Some(how), Some(dir)) = (std::env::var(CHILD).ok(), std::env::var_os(DIR)) {
-        let how: &'static str = Box::leak(how.into_boxed_str());
+        let how: &'static str = lm_base::intern(&how);
         child(how, dir.into());
         return;
     }

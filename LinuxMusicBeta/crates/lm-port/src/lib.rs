@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub use lm_base::{Error, HostTime, Label, OperationId, ParamRange, RangeScale, Result};
+pub use lm_base::{Error, HostTime, Label, OperationId, ParamRange, RangeScale, Result, intern};
 pub use lm_doc::{Diff, Feed, GestureId, Topic};
 pub use lm_render::{METER_CHANNELS, Meter};
 pub use lm_state::{FieldKind, FieldSpec, NodeId, NodeSchema, ParamSpec, PathStep, ROOT, Resource, Scale, Value};

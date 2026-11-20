@@ -29,6 +29,22 @@ impl Drop for TempDir {
     }
 }
 
+/// Runs `test` (only that test, in this same test binary) again in a child process with `var` set to `value`, and
+/// expects the child to die by `abort`. This is how a test makes the process crash: the session is never dropped and
+/// nothing is saved, as when the program is killed, but the memory and the threads go with the process (a session
+/// kept alive with `mem::forget` would leak them all, and keep its threads running into the rest of the test)
+#[cfg(unix)]
+pub fn run_crashing_child(test: &str, var: &str, value: &std::ffi::OsStr) {
+    use std::os::unix::process::ExitStatusExt;
+    const SIGABRT: i32 = 6;
+    let status = std::process::Command::new(std::env::current_exe().expect("exe"))
+        .args(["--exact", test, "--nocapture"])
+        .env(var, value)
+        .status()
+        .expect("child");
+    assert_eq!(status.signal(), Some(SIGABRT), "the child must reach its crash (abort): {status:?}");
+}
+
 pub fn config(dir: &TempDir) -> SessionConfig {
     SessionConfig::headless(dir.join("untitled")).expect("config")
 }

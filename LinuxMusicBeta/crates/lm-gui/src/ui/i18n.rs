@@ -57,6 +57,13 @@ pub fn tr(key: &'static str) -> &'static str {
     TABLE.get(key).copied().unwrap_or(key)
 }
 
+/// `tr` for a key known only at run time (a plugin's port, a mode read from the document): the key becomes an
+/// interned symbol, made once for each distinct key and owned by the symbol table (lm_base::intern), so drawing it
+/// every frame allocates nothing new
+pub fn tr_str(key: &str) -> &'static str {
+    tr(lm_port::intern(key))
+}
+
 /// `tr` with `{0}`, `{1}`... replaced
 pub fn trf(key: &'static str, args: &[&dyn std::fmt::Display]) -> String {
     let mut s = tr(key).to_string();

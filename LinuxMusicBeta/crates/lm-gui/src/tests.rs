@@ -55,7 +55,7 @@ fn keys(cx: &mut VisualTestContext, keys: &str) {
 }
 
 fn bounds(cx: &mut VisualTestContext, selector: &str) -> gpui::Bounds<Pixels> {
-    let s: &'static str = Box::leak(selector.to_string().into_boxed_str());
+    let s: &'static str = lm_port::intern(selector);
     cx.debug_bounds(s).unwrap_or_else(|| panic!("{selector} is drawn"))
 }
 
@@ -473,7 +473,7 @@ fn mixing(ws: &Entity<Workspace>, cx: &mut VisualTestContext) -> Entity<crate::p
 }
 
 fn drawn(cx: &mut VisualTestContext, selector: &str) -> bool {
-    let s: &'static str = Box::leak(selector.to_string().into_boxed_str());
+    let s: &'static str = lm_port::intern(selector);
     cx.debug_bounds(s).is_some()
 }
 
@@ -1320,7 +1320,7 @@ fn instrument_choice_and_tabs(cx: &mut TestAppContext) {
     click(cx, "popup-item-1");
     assert_eq!(state(&ws, cx, node).get("filterType").and_then(Value::as_text), Some("high-pass"));
     click(cx, "iw-tab-Chords");
-    assert!(cx.debug_bounds(Box::leak(format!("ctl-{node}-arpOn").into_boxed_str())).is_some());
+    assert!(cx.debug_bounds(lm_port::intern(&format!("ctl-{node}-arpOn"))).is_some());
     click(cx, "iw-tab-Tuning");
     click(cx, "iw-transpose");
     let follows = model::list(&root(&ws, cx), "tracks")
@@ -1346,7 +1346,7 @@ fn instrument_swap_and_presets(cx: &mut TestAppContext) {
     click(cx, "iw-swap");
     let k = (0..20)
         .find(|k| {
-            let s: &'static str = Box::leak(format!("popup-item-{k}").into_boxed_str());
+            let s: &'static str = lm_port::intern(&format!("popup-item-{k}"));
             cx.debug_bounds(s).is_some()
                 && core.read_with(cx, |c, _| {
                     let mut list: Vec<_> = c.port().plugins().into_iter().filter(|p| p.instrument).collect();
@@ -1411,7 +1411,7 @@ fn effect_rack(cx: &mut TestAppContext) {
     let added = channel(&ws, cx, ch).inserts[last].clone();
     // its controls are under the card, from its schema
     let some_param = core(&ws, cx).read_with(cx, |c, _| c.port().plugin_schema(&added.plugin).unwrap().params[0].key);
-    assert!(cx.debug_bounds(Box::leak(format!("ctl-{}-{some_param}", added.id).into_boxed_str())).is_some());
+    assert!(cx.debug_bounds(lm_port::intern(&format!("ctl-{}-{some_param}", added.id))).is_some());
     if last > 0 {
         let p = center(cx, &format!("ef-card-{last}"));
         button_at(cx, p, MouseButton::Right, 1);
@@ -1421,10 +1421,7 @@ fn effect_rack(cx: &mut TestAppContext) {
     let at = channel(&ws, cx, ch).inserts.iter().position(|x| x.id == added.id).unwrap();
     let p = center(cx, &format!("ef-card-{at}"));
     button_at(cx, p, MouseButton::Right, 1);
-    let lastk = (0..12)
-        .rev()
-        .find(|k| cx.debug_bounds(Box::leak(format!("popup-item-{k}").into_boxed_str())).is_some())
-        .unwrap();
+    let lastk = (0..12).rev().find(|k| cx.debug_bounds(lm_port::intern(&format!("popup-item-{k}"))).is_some()).unwrap();
     click(cx, &format!("popup-item-{lastk}"));
     assert_eq!(channel(&ws, cx, ch).inserts.len(), n, "removed");
 }
@@ -1474,7 +1471,7 @@ fn browser_search(cx: &mut TestAppContext) {
     let core = core(&ws, cx);
     let hits = core.update(cx, |c, _| c.port_mut().search("kick").ok().unwrap());
     assert!(!hits.is_empty());
-    assert!(cx.debug_bounds(Box::leak(format!("br-entry-{}", hits[0].id.0).into_boxed_str())).is_some());
+    assert!(cx.debug_bounds(lm_port::intern(&format!("br-entry-{}", hits[0].id.0))).is_some());
 
     #[gpui::test]
     fn automation_hand_won_and_rearm(cx: &mut TestAppContext) {
@@ -2015,7 +2012,7 @@ fn track_node(ws: &Entity<Workspace>, cx: &mut VisualTestContext, id: NodeId) ->
 }
 
 fn popup_items(cx: &mut VisualTestContext) -> usize {
-    (0..40).take_while(|k| cx.debug_bounds(Box::leak(format!("popup-item-{k}").into_boxed_str())).is_some()).count()
+    (0..40).take_while(|k| cx.debug_bounds(lm_port::intern(&format!("popup-item-{k}"))).is_some()).count()
 }
 
 /// The MIDI tab (F-IJN-017): the base velocity, the output to a device and its channel, the input's channel

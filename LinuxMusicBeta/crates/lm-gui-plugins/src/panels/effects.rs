@@ -202,9 +202,9 @@ fn filter_types() -> Vec<ComboItem> {
 
 pub static DUALFILTER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
     let side = |n: u32, x: f32| -> Vec<Control> {
-        let k = |s: &str| -> &'static str { Box::leak(format!("{s}{n}").into_boxed_str()) };
-        let enabled: &'static str = Box::leak(format!("filter{n}Enabled").into_boxed_str());
-        let kind: &'static str = Box::leak(format!("filter{n}Type").into_boxed_str());
+        let k = |s: &str| -> &'static str { lm_port::intern(&format!("{s}{n}")) };
+        let enabled: &'static str = lm_port::intern(&format!("filter{n}Enabled"));
+        let kind: &'static str = lm_port::intern(&format!("filter{n}Type"));
         vec![
             led(Bind::Switch { param: enabled }, enabled, x + 3.0, 11.0, LedColor::Green, "", "Filter %1 enabled")
                 .tip("Enable/disable filter %1")

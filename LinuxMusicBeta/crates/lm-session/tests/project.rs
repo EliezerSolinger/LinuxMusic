@@ -127,39 +127,51 @@ fn a_full_disk_on_save_keeps_the_old_file_and_the_journal_keeps_the_change() {
     assert!(!s.modified());
 }
 
+const FULL_JOURNAL_CHILD: &str = "LM_SESSION_FULL_JOURNAL_CHILD";
+
+#[cfg(unix)]
 #[test]
 fn a_full_disk_on_the_journal_makes_an_autosave_that_recovery_uses() {
+    if let Some(dir) = std::env::var_os(FULL_JOURNAL_CHILD) {
+        // The child: the journal line is lost to a full disk, the autosave keeps the edit, then the process crashes
+        // (no save, the lock stays); it leaves the tracks it had for the parent to compare
+        let dir = std::path::PathBuf::from(dir);
+        let mut s =
+            Session::new(lm_session::SessionConfig::headless(dir.join("untitled")).expect("config")).expect("session");
+        s.create(dir.join("song")).expect("create");
+        settle(&mut s);
+        // The next journal line fails; then the disk has room again for the autosave
+        s.faults().full_after(0);
+        add_synth_track(&mut s, "Lost line");
+        for _ in 0..50 {
+            s.pump();
+            std::thread::sleep(Duration::from_millis(2));
+            if s.notices().keys().contains(&"session.disk.full") {
+                break;
+            }
+        }
+        s.faults().set_full(false);
+        for _ in 0..200 {
+            s.pump();
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(s.sync_journal(Duration::from_secs(5)));
+        let tracks = s.document().root().get("tracks").cloned().expect("tracks");
+        std::fs::write(dir.join("tracks.json"), to_json(&tracks).expect("json")).expect("write the tracks");
+        std::process::abort();
+    }
     let dir = TempDir::new("fulljournal");
     let folder = dir.join("song");
-    let mut s = session(&dir);
-    s.create(folder.clone()).expect("create");
-    settle(&mut s);
-    // The next journal line fails; then the disk has room again for the autosave
-    s.faults().full_after(0);
-    add_synth_track(&mut s, "Lost line");
-    for _ in 0..50 {
-        s.pump();
-        std::thread::sleep(Duration::from_millis(2));
-        if s.notices().keys().contains(&"session.disk.full") {
-            break;
-        }
-    }
-    s.faults().set_full(false);
-    for _ in 0..200 {
-        s.pump();
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    assert!(s.sync_journal(Duration::from_secs(5)));
-    let tree = s.document().root().clone();
-    std::mem::forget(s); // a crash: no save, the lock stays
+    run_crashing_child(
+        "a_full_disk_on_the_journal_makes_an_autosave_that_recovery_uses",
+        FULL_JOURNAL_CHILD,
+        dir.0.as_os_str(),
+    );
+    let tracks =
+        from_json(&std::fs::read_to_string(dir.join("tracks.json")).expect("the child's tracks")).expect("json");
     std::fs::remove_file(ProjectFolder::new(folder.clone()).lock()).expect("unlock as after a reboot");
-    let config = config(&dir);
-    std::thread::spawn(move || {
-        let mut r = Session::new(config).expect("session");
-        open(&mut r, folder);
-        let keys = r.notices().keys();
-        assert_eq!(r.document().root().get("tracks"), tree.get("tracks"), "{keys:?}");
-    })
-    .join()
-    .expect("reopen");
+    let mut r = session(&dir);
+    open(&mut r, folder);
+    let keys = r.notices().keys();
+    assert_eq!(r.document().root().get("tracks"), Some(&tracks), "{keys:?}");
 }

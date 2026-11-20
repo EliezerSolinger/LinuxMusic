@@ -331,6 +331,8 @@ fn opaque_state_over_64_kb_must_be_a_resource() {
 
 /// U29: the reference of this crate's test registry, compared on every run
 #[test]
+// Reads a file, which miri's isolation refuses; the comparison is plain safe code, run by every other job
+#[cfg_attr(miri, ignore)]
 fn defaults_are_frozen() {
     let reference = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/defaults.json");
     if let Err(mismatch) = lm_state::frozen::check_frozen_defaults(&registry(), reference.as_ref()) {
@@ -340,6 +342,8 @@ fn defaults_are_frozen() {
 
 /// U29: what the check catches, on a reference in a temporary folder
 #[test]
+// Writes and removes files, which miri's isolation refuses; plain safe code, run by every other job
+#[cfg_attr(miri, ignore)]
 fn a_default_changed_without_a_version_bump_fails() {
     let dir = std::env::temp_dir().join(format!("lm-state-frozen-{}", std::process::id()));
     let reference = dir.join("defaults.json");

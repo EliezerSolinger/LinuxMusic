@@ -54,7 +54,7 @@ fn ab_against_the_legacy_note_with_every_knob_moved() {
             detune: -300.0 + 77.0 * i as f32,
         };
         s.oscillators[i] = o;
-        let k = |name: &str| -> &'static str { Box::leak(format!("{name}{n}").into_boxed_str()) };
+        let k = |name: &str| -> &'static str { lm_base::intern(&format!("{name}{n}")) };
         params.push((k("harmonic"), o.harmonic as f64));
         params.push((k("volume"), f64::from(o.volume)));
         params.push((k("panning"), f64::from(o.pan)));

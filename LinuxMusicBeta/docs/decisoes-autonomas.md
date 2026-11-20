@@ -1421,3 +1421,47 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   e crybaby): **todos bit a bit**, com a latência do bloco fixo descontada.
 - **Pendente:** o `AllSoundOff` zera só as unidades com `clear_state` (a cola do legado e o Vibe não têm: elas saem do
   silêncio com o próprio estado); o teste no ThinkPad (sem acesso hoje).
+
+## Vazamentos e sanitizers (20/11)
+
+O LSan acusava vazamento em 19 alvos de teste, o miri estourava o tempo, e dois testes falhavam fora dos
+sanitizers. As causas, e as correções na raiz:
+
+- **`Box::leak` para fazer `&'static str` em tempo de execução** (a causa da maior parte: `lm-port-fake`, e por ele o
+  `lm-remote`; `lm-plugin` e as funções de instrumento, e por eles o `lm-session`; o `lm-plugin-proxy`, e por ele o
+  `lm-plugin-host`; os testes de A/B do EQ, do Slew Distortion, do Organic e do Vibed). As chaves de esquema,
+  parâmetro e rótulo são `&'static str`; quem montava uma chave (`"{t}Attack"`, `plugin:<id>`) a vazava, a cada vez
+  que montava o esquema. O ponteiro ia para um `SchemaRegistry` que morria depois, e a memória ficava sem dono: um
+  vazamento de verdade, que crescia a cada registro montado (1960 alocações num só binário de teste).
+  **Correção:** `lm_base::intern`, uma tabela de símbolos estática (`Mutex<BTreeSet<&'static str>>`): o mesmo texto
+  dá o mesmo ponteiro, cada chave é alocada uma vez, e a tabela é dona de todas (alcançável de uma estática, então
+  nem o LSan nem o miri a acusam, e com razão: não se perde nada, e o vocabulário é finito). Trocados todos os
+  `Box::leak` de chave do workspace: `lm-plugin` (esquema das funções de instrumento, teste do registro),
+  `lm-port-fake`, `lm-plugin-proxy`, os testes de efeitos e instrumentos, `lm-sys-linux` (teste), e na interface
+  (`lm-port` reexporta `intern`). **Na interface o vazamento era pior:** `tr(Box::leak(...))` dentro do `render`
+  (Composição, mapas MIDI, ligação MIDI, Roteamento) vazava um texto **a cada quadro**. Agora `ui::tr_str(&str)`
+  passa pela tabela. O `intern` próprio do `lm-gui` (instrumento) e os dos painéis (`lm-gui-plugins`) também usam a
+  tabela única. Os interners com limite do `lm-remote` (chaves vindas da rede) e do protocolo do `lm-plugin-proxy`
+  continuam: já eram tabelas estáticas, e o limite deles é política contra texto de fora. Não trocados: os
+  protótipos (`prototypes/`, código descartável fora do CI dos sanitizers).
+- **`mem::forget` para simular uma queda** (`lm-session` `project` e `safe_mode`, `lm-sys-sndfile` `crash`): esquecer
+  a sessão vaza tudo dela e deixa as threads (áudio, relógio, disco) rodando no resto do teste; esquecer o `Writer`
+  vaza o `SNDFILE*`. **Correção:** a queda é de verdade: o próprio binário de teste roda de novo, só aquele teste,
+  num processo filho que faz a primeira parte e chama `abort()` (como o `tests/crash.rs` do `lm-session` já fazia);
+  o pai confere que o filho morreu de `SIGABRT` e segue com a segunda parte. A memória e as threads vão com o
+  processo, e o teste fica mais fiel (o descritor de arquivo fecha pelo kernel, a trava fica no disco).
+- **miri:** o "error: aborting due to 1 previous error" do CI não era comportamento indefinido: era o próprio miri
+  dizendo "interpretation was interrupted" quando o `timeout --signal=INT` chegou (reproduzido localmente com um
+  nightly privado). Os testes aleatórios do `lm-state` passam a rodar `Rng::cases(n)` casos: `n` em todo job, e
+  `n/1000` (no mínimo 16) sob o miri, que é ~1000 vezes mais lento; cada caso ainda percorre uma árvore aleatória
+  inteira, o que cobre os nós do `imbl` e o leitor de JSON, que é o que o miri vigia. O teste de 10 mil notas (mede
+  tempo e memória residente pelo `ps`) e os dois testes do esquema congelado (leem e escrevem arquivos, que o
+  isolamento do miri recusa) são `#[cfg_attr(miri, ignore)]`. O `lm-base` e o `lm-state` inteiros passam sob o miri
+  em ~10 min, sem nenhum erro.
+- **`lm-sys-lilv --test worker` no Linux:** o teste que conta as threads `lv2-worker` do processo
+  (`/proc/self/task`) rodava em paralelo com os outros testes do arquivo, que criam e juntam as suas: a contagem via
+  as threads dos vizinhos. No macOS a contagem não roda, por isso só falhava no Linux. **Correção:** um `RwLock` do
+  arquivo: o teste que conta pega a escrita (roda sozinho), os outros a leitura.
+- **As anotações do CI não mostravam os pânicos:** desde o Rust 1.92 a linha é `thread 'x' (1234) panicked at`, e a
+  expressão do `ci/run.sh` não casava. Corrigida, e os blocos "Direct leak of" do LSan entram na anotação com os
+  quadros do nosso código.

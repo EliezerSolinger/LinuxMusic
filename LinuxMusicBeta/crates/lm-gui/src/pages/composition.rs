@@ -23,7 +23,7 @@ use crate::core::Core;
 use crate::model::{self, ItemView, TrackView};
 use crate::screens::Screen;
 use crate::tiles::{TileCache, level_for, paint_wave, tile_range};
-use crate::ui::{THEME, button, c, knob_face, loading_component, meter, midi, tr, track_color, trf};
+use crate::ui::{THEME, button, c, knob_face, loading_component, meter, midi, tr, tr_str, track_color, trf};
 use crate::view::{self, TimelineView};
 
 use super::marks::{self, MarksState};
@@ -1156,13 +1156,7 @@ impl CompositionPage {
             .bg(c(THEME.bg1))
             .border_b_1()
             .border_color(c(THEME.line))
-            .child(
-                div()
-                    .flex_1()
-                    .overflow_hidden()
-                    .text_size(px(11.))
-                    .child(tr(Box::leak(capitalize(&a.param).into_boxed_str()))),
-            )
+            .child(div().flex_1().overflow_hidden().text_size(px(11.)).child(tr_str(&capitalize(&a.param))))
             .child(div().text_size(px(10.)).text_color(c(THEME.text3)).child(if a.on { "" } else { "(off)" }))
             .when(won, |d| {
                 d.child(

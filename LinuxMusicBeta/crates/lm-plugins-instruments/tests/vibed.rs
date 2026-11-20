@@ -33,7 +33,7 @@ fn compare(strings: &[VibedString; 9], key: u8, velocity: f32) {
     let mut fields = Vec::new();
     for (i, s) in strings.iter().enumerate() {
         let n = i + 1;
-        let k = |name: &str| -> &'static str { Box::leak(format!("{name}{n}").into_boxed_str()) };
+        let k = |name: &str| -> &'static str { lm_base::intern(&format!("{name}{n}")) };
         // (the knob as written in a project: its decimal value, not the f32's widening)
         let d = |v: f32| (f64::from(v) * 1.0e6).round() / 1.0e6;
         params.extend([

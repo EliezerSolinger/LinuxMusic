@@ -86,7 +86,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         ),
     ];
     for (key, on, off, x, tip) in waves {
-        let id: &'static str = Box::leak(format!("waveform.{key}").into_boxed_str());
+        let id: &'static str = lm_port::intern(&format!("waveform.{key}"));
         let c: Control = button(Bind::Choice { field: "waveform", key }, id, x, 96.0, on, off, "Waveform").tip(tip);
         controls.push(c);
     }

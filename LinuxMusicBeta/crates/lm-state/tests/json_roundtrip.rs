@@ -10,7 +10,7 @@ use lm_state::{Value, from_json, to_json, to_json_compact};
 fn round_trip_is_bit_exact() {
     let seed = Rng::seed(0x5eed_0001);
     let mut rng = Rng::new(seed);
-    for case in 0..20_000 {
+    for case in 0..Rng::cases(20_000) {
         let v = rng.tree(6);
         let json = to_json(&v).unwrap_or_else(|e| panic!("seed {seed} case {case}: {e} for {v:?}"));
         let back = from_json(&json).unwrap_or_else(|e| panic!("seed {seed} case {case}: {e} reading {json}"));
@@ -27,7 +27,7 @@ fn round_trip_is_bit_exact() {
 fn reals_keep_their_bits() {
     let seed = Rng::seed(0x5eed_0002);
     let mut rng = Rng::new(seed);
-    for case in 0..200_000 {
+    for case in 0..Rng::cases(200_000) {
         let x = rng.real();
         let json = to_json_compact(&Value::real(x).unwrap()).unwrap();
         assert!(json.contains('.') || json.contains('e'), "{json}");

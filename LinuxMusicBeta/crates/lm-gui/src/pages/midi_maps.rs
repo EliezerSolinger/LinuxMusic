@@ -8,7 +8,7 @@ use lm_port::{EditOp, Label, MapScope, Mapping, MidiActivity, PathStep, Ref, Val
 
 use crate::core::Core;
 use crate::ui::midi::{self, describe, describe_source};
-use crate::ui::{THEME, button, c, caption, tr};
+use crate::ui::{THEME, button, c, caption, tr, tr_str};
 use crate::workspace::Workspace;
 
 /// The activity kept on screen
@@ -137,28 +137,24 @@ impl Render for MidiMapsPage {
                         .child(div().w(px(240.)).overflow_hidden().child(source))
                         .child(div().flex_1().overflow_hidden().child(target))
                         .child(
-                            button(
-                                SharedString::from(format!("mode-{row}")),
-                                tr(Box::leak(mode.into_boxed_str())),
-                                false,
-                                0,
-                            )
-                            .debug_selector(move || format!("map-{row}-mode"))
-                            .on_click(cx.listener(move |p, _, _, cx| {
-                                p.set(scope, index, &["transform", "mode"], Value::text(next(MODES, &t1)), cx)
-                            })),
+                            button(SharedString::from(format!("mode-{row}")), tr_str(&mode), false, 0)
+                                .debug_selector(move || format!("map-{row}-mode"))
+                                .on_click(cx.listener(move |p, _, _, cx| {
+                                    p.set(scope, index, &["transform", "mode"], Value::text(next(MODES, &t1)), cx)
+                                })),
                         )
                         .child(
-                            button(
-                                SharedString::from(format!("take-{row}")),
-                                tr(Box::leak(takeover.into_boxed_str())),
-                                false,
-                                0,
-                            )
-                            .debug_selector(move || format!("map-{row}-takeover"))
-                            .on_click(cx.listener(move |p, _, _, cx| {
-                                p.set(scope, index, &["transform", "takeover"], Value::text(next(TAKEOVERS, &t2)), cx)
-                            })),
+                            button(SharedString::from(format!("take-{row}")), tr_str(&takeover), false, 0)
+                                .debug_selector(move || format!("map-{row}-takeover"))
+                                .on_click(cx.listener(move |p, _, _, cx| {
+                                    p.set(
+                                        scope,
+                                        index,
+                                        &["transform", "takeover"],
+                                        Value::text(next(TAKEOVERS, &t2)),
+                                        cx,
+                                    )
+                                })),
                         )
                         .child(
                             button(SharedString::from(format!("fb-{row}")), tr("Feedback"), feedback, THEME.blue)

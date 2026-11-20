@@ -9,7 +9,7 @@ use lm_port::{CorePort, EditOp, Label, MapScope, MapTarget, PathStep, Value};
 
 use super::ScreenCx;
 use crate::ui::midi::{self, describe, describe_source, mappings_of};
-use crate::ui::{THEME, button, c, caption, tr};
+use crate::ui::{THEME, button, c, caption, tr, tr_str};
 
 const MODES: &[&str] = &["absolute", "twos", "signMagnitude", "offset64"];
 const TAKEOVERS: &[&str] = &["jump", "pickup", "scale"];
@@ -105,16 +105,11 @@ impl Render for MidiBinding {
                 let (feedback, consume) = (flag(node.get("feedback"), true), flag(node.get("consume"), true));
                 let cycle = |key: &'static str, list: &'static [&'static str], now: String| {
                     let next = list[list.iter().position(|x| *x == now).map_or(0, |i| (i + 1) % list.len())];
-                    button(
-                        SharedString::from(format!("b-{row}-{key}")),
-                        tr(Box::leak(now.clone().into_boxed_str())),
-                        false,
-                        0,
-                    )
-                    .debug_selector(move || format!("binding-{row}-{key}"))
-                    .on_click(
-                        cx.listener(move |b, _, _, cx| b.set(scope, index, &["transform", key], Value::text(next), cx)),
-                    )
+                    button(SharedString::from(format!("b-{row}-{key}")), tr_str(&now), false, 0)
+                        .debug_selector(move || format!("binding-{row}-{key}"))
+                        .on_click(cx.listener(move |b, _, _, cx| {
+                            b.set(scope, index, &["transform", key], Value::text(next), cx)
+                        }))
                 };
                 let step = |key: &'static str, now: f64, by: f64, label: &'static str| {
                     button(SharedString::from(format!("b-{row}-{key}-{label}")), label, false, 0)

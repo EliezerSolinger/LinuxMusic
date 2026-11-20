@@ -19,6 +19,14 @@ impl Rng {
         std::env::var("LM_TEST_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(default)
     }
 
+    /// How many random cases a test runs: `full` normally; under miri, which interprets every instruction (about a
+    /// thousand times slower), a thousandth of it, at least 16. Miri is there for undefined behaviour in the code
+    /// the cases reach (`imbl`'s nodes, the JSON reader), and each case still walks a whole random tree, so a few
+    /// dozen cases cover those paths; the full count runs in every other job.
+    pub fn cases(full: usize) -> usize {
+        if cfg!(miri) { (full / 1000).max(16) } else { full }
+    }
+
     pub fn next_u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.0;

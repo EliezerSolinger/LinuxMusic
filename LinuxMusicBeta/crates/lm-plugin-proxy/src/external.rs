@@ -21,20 +21,16 @@ pub fn plugin_id(format: &str, uri: &str) -> String {
     format!("{format}-{}", &h[..16])
 }
 
-fn leak(s: &str) -> &'static str {
-    Box::leak(s.to_owned().into_boxed_str())
-}
-
 /// The external plugin for a scanned one
 pub fn external(scanned: &Scanned, config: Arc<HostConfig>, on_start: Option<OnStart>) -> External {
     let id = plugin_id(&scanned.format, &scanned.uri);
-    let type_name = leak(&lm_plugin::plugin_type(&id));
+    let type_name = lm_base::intern(&lm_plugin::plugin_type(&id));
     // The plugin's format and URI are its id's (fixed); its own state is `"chunk"`, in hex (above 64 KB the session
     // keeps it as a resource, U24). A chunk the plugin cannot read is not an error: it starts from its defaults
     let mut schema = NodeSchema::new(type_name, 1).field(FieldSpec::new("chunk", FieldKind::Text).optional());
     for p in &scanned.params {
         let max = if p.max > p.min { p.max } else { p.min + 1.0 };
-        let mut spec = ParamSpec::new(leak(&p.key), p.min, max, p.default.clamp(p.min, max));
+        let mut spec = ParamSpec::new(lm_base::intern(&p.key), p.min, max, p.default.clamp(p.min, max));
         if p.integer || p.toggled {
             spec = spec.scale(Scale::Stepped);
         } else if p.logarithmic && p.min > 0.0 {

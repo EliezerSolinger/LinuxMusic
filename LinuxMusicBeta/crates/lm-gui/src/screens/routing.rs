@@ -9,7 +9,7 @@ use lm_port::{EditOp, Label, NodeId, Value};
 
 use super::ScreenCx;
 use crate::model::{self, ChannelKind};
-use crate::ui::{THEME, button, c, caption, tr, track_color, trf};
+use crate::ui::{THEME, button, c, caption, tr, tr_str, track_color, trf};
 
 pub struct Routing {
     scx: ScreenCx,
@@ -44,11 +44,6 @@ impl Routing {
         });
         cx.notify();
     }
-}
-
-/// A port key as a translation key (the ports are the plugin's own words: "kick", "oh")
-fn leak(s: &str) -> &'static str {
-    Box::leak(s.to_string().into_boxed_str())
 }
 
 impl Render for Routing {
@@ -100,7 +95,7 @@ impl Render for Routing {
                         .items_center()
                         .gap(px(8.))
                         .pl(px(16.))
-                        .child(div().w(px(90.)).text_size(px(11.)).child(tr(leak(&o.port))))
+                        .child(div().w(px(90.)).text_size(px(11.)).child(tr_str(&o.port)))
                         .child(
                             div().w(px(60.)).text_size(px(10.)).text_color(c(THEME.text3)).child(if o.channels == 1 {
                                 tr("mono")
