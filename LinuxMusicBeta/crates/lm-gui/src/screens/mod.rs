@@ -72,7 +72,6 @@ impl ScreenCx {
         let s = self.screen;
         let _ = self.workspace.update(cx, |ws, cx| ws.close(s, cx));
     }
-    #[expect(dead_code, reason = "read by the screens B, C and D port onto lm-gui next")]
     pub fn open(&self, other: Screen, target: Option<NodeId>, window: &mut Window, cx: &mut App) {
         let _ = self.workspace.update(cx, |ws, cx| ws.open(other, target, window, cx));
     }
@@ -119,10 +118,9 @@ impl Screen {
     pub fn placement(self) -> Placement {
         match self {
             Screen::PianoRoll | Screen::Automation | Screen::Steps => Placement::Bottom,
-            // the effect window is a channel's whole path, left to right: it wants the width of the bottom dock
-            Screen::Effect => Placement::Bottom,
             Screen::Browser => Placement::Left,
-            Screen::Instrument | Screen::Notices => Placement::Right,
+            // the effect window is the legacy's effects rack, a column beside the page
+            Screen::Instrument | Screen::Effect | Screen::Notices => Placement::Right,
             Screen::Routing
             | Screen::Settings
             | Screen::Export

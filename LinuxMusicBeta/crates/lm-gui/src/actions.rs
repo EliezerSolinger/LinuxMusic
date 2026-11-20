@@ -85,6 +85,11 @@ actions!(
     ]
 );
 
+actions!(
+    browser,
+    [BrowserUp, BrowserDown, BrowserSend, BrowserOpenFolder, BrowserCloseFolder, BrowserRefresh, BrowserFind]
+);
+
 /// One entry of the registry
 #[derive(Clone, Copy, Debug)]
 pub struct ActionDef {
@@ -244,6 +249,20 @@ pub const REGISTRY: &[ActionDef] = &[
     a("desk.move_right", "mixing::MoveChannelRight", "Move the channel right", "Desk", &["alt-right"], Some("Mixing")),
     a("desk.remove_channel", "mixing::RemoveChannel", "Remove the channel", "Desk", &["delete"], Some("Mixing")),
     a("desk.rename_channel", "mixing::RenameChannel", "Rename the channel", "Desk", &["enter", "f2"], Some("Mixing")),
+    a("browser.down", "browser::BrowserDown", "Next entry (previews it)", "Browser", &["down"], Some("Browser")),
+    a("browser.up", "browser::BrowserUp", "Previous entry (previews it)", "Browser", &["up"], Some("Browser")),
+    a(
+        "browser.send",
+        "browser::BrowserSend",
+        "Send to the active track or channel",
+        "Browser",
+        &["enter"],
+        Some("Browser"),
+    ),
+    a("browser.open_folder", "browser::BrowserOpenFolder", "Open the folder", "Browser", &["right"], Some("Browser")),
+    a("browser.close_folder", "browser::BrowserCloseFolder", "Close the folder", "Browser", &["left"], Some("Browser")),
+    a("browser.refresh", "browser::BrowserRefresh", "Read the folders again", "Browser", &["f5"], Some("Browser")),
+    a("browser.find", "browser::BrowserFind", "Search the browser", "Browser", &["secondary-f"], Some("Browser")),
 ];
 
 /// `secondary` written out for this platform: Cmd on macOS, Ctrl elsewhere

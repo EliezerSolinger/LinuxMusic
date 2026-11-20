@@ -328,6 +328,46 @@ de forma diz pelo que é substituído.
   I-21). A `RemotePort` precisa levar `hand_won` na telemetria do fio.
 
 
+### Janela de efeito e navegador no `lm-gui`: o que difere do legado e por quê (agente C, 20/11)
+
+Regra do usuário (20/11): a janela de efeito e o navegador seguem o legado (layout, densidade, aparência); só muda o
+que o modelo novo obriga. A janela do instrumento segue o design 05, aprovado.
+
+- **Rack de efeitos (`EffectRackView`)**: mesmo cartão por efeito (LED que liga e desliga, engrenagem dos controles,
+  nome em negrito embaixo), arrastar na vertical move de lugar, o mesmo menu (mover acima e abaixo, trocar por,
+  carregar e salvar preset, remover) e "Acrescentar efeito" no fim. Diferenças:
+  - **sem o botão Molhado/Seco**: o esquema do nó de plugin (`lm-doc`, `ty::PLUGIN`) não tem molhado/seco por insert;
+    entra no cartão quando o esquema tiver;
+  - **sem o DECAY**: o "dormir no silêncio" virou contrato do processador (P-07);
+  - **sem o conector de pinos**: obsoleto (as saídas da faixa, I-3.9);
+  - **o ponto do insert fica no cartão** (P-20: um por insert), e só no modo analógico. O legado tinha uma caixa só
+    por canal. No modo digital não há seções do rack, então o rack é só a cadeia, como no legado;
+  - **a engrenagem abre os controles embaixo do cartão**, dentro da doca, e não numa subjanela: a casca do programa
+    novo não tem subjanelas MDI. Os controles vêm do editor genérico, montado pelo esquema do plugin;
+  - **sem a "fonte de sidechain" no menu** por enquanto: a porta não diz quais plugins têm a porta de sidechain
+    (o `PluginInfo` não traz as portas);
+  - **sem "rodar num processo separado"**: terceiros sempre fora do processo, internos sempre dentro (I-9.6);
+  - a latência de cada efeito e a da cadeia aparecem (a mesa compensa, PDC).
+- **Navegador (`FileBrowser`/`PluginBrowser`)**: as mesmas páginas, o título da página, uma busca, a árvore densa com as
+  pastas do usuário e depois as de fábrica sob a linha "Arquivos de fábrica", o clique que toca a prévia, o menu do
+  item e o arrastar. Diferenças:
+  - **as páginas como texto numa linha em cima**, no lugar da barra lateral de ícones com texto girado (a GPUI não
+    gira texto, e a doca da esquerda já é a barra);
+  - **a busca passa pelo núcleo** (`CorePort::search`): no modo cliente os arquivos são do servidor; o carregamento
+    aparece embaixo, no componente único;
+  - **a prévia é do núcleo** (`prepare_preview`, `preview_play`, I-7.3), e a linha de baixo diz o que toca, com ■;
+  - **"mandar para" vai à faixa ou ao canal ativo**: a faixa da janela do instrumento ou o canal da janela de
+    efeito (o legado só tinha a faixa ativa). "Mandar para uma faixa nova / um sampler novo / um SlicerT novo" esperam
+    as ações de criar faixa e o sampler com amostra no esquema;
+  - **"mostrar no gerenciador de arquivos" é uma ação do núcleo** (`browser.reveal`): o arquivo está na máquina do
+    núcleo.
+- **Janela do instrumento**: a aba MIDI diz que a entrada e a saída MIDI da faixa chegam com o roteamento MIDI do
+  documento (o esquema da faixa ainda não tem); a afinação tem a afinação, a faixa do bend e "seguir a transposição
+  geral" (P-37); o microafinador e as teclas (primeira, última, base) esperam os seus campos no esquema. O nome do
+  último preset carregado é estado da interface (o documento não guarda nome de preset: um preset é um estado, 7a).
+- **Presets pelo núcleo**: `plugin.load_preset { node, entry }` (um passo de desfazer) e `plugin.save_preset
+  { node, name }` (um arquivo nos presets do usuário), ações do núcleo; a lista vem da página Presets do navegador.
+
 ## Do `lm-plugin` (19/11)
 
 - **O `build` recebe um `BuildContext`** (`spec`, `resources`, `channels`) em vez de três argumentos: um efeito precisa

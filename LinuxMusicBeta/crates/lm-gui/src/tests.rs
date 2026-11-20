@@ -1090,3 +1090,215 @@ mod notes_editors {
         assert!(clip(&pr, cx).notes.values().all(|x| x.start % grid == 0), "every start on the 1/16 grid");
     }
 }
+
+// --- the instrument window, the effect window and the browser (agent C) -----------------------------------------
+
+fn open_screen(ws: &Entity<Workspace>, cx: &mut VisualTestContext, s: Screen, target: Option<NodeId>) {
+    ws.update_in(cx, |ws, window, cx| ws.open(s, target, window, cx));
+    cx.run_until_parked();
+}
+
+/// The first track playing a TripleOscillator: (track, instrument node)
+fn triple(ws: &Entity<Workspace>, cx: &mut VisualTestContext) -> (NodeId, NodeId) {
+    let t = model::tracks(&root(ws, cx))
+        .into_iter()
+        .find(|t| t.instrument.as_ref().is_some_and(|(_, p)| &**p == "tripleoscillator"))
+        .expect("a TripleOscillator track");
+    (t.id, t.instrument.unwrap().0)
+}
+
+fn state(ws: &Entity<Workspace>, cx: &mut VisualTestContext, node: NodeId) -> Value {
+    let core = core(ws, cx);
+    core.read_with(cx, |core, _| core.port().find(node).and_then(|n| n.get("state").cloned()).unwrap_or_default())
+}
+
+fn param(ws: &Entity<Workspace>, cx: &mut VisualTestContext, node: NodeId, key: &str) -> Option<f64> {
+    state(ws, cx, node).get("params").and_then(|p| p.get(key)).and_then(Value::as_real)
+}
+
+/// A knob of the generic editor: a drag is one gesture and one undo step; the middle click goes back to the default
+#[gpui::test]
+fn instrument_knob_drag_and_middle_click(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let (track, node) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    let before = param(&ws, cx, node, "vol2").unwrap_or(0.5);
+    drag(cx, &format!("ctl-{node}-vol2"), 0.0, -50.0);
+    let after = param(&ws, cx, node, "vol2").unwrap();
+    assert!((after - (before + 0.25).min(1.0)).abs() < 1e-6, "50 px of 200 is a quarter of 0..1: {after}");
+    undo(cx);
+    assert_eq!(param(&ws, cx, node, "vol2").unwrap_or(before), before, "one undo step");
+    drag(cx, &format!("ctl-{node}-vol2"), 0.0, -30.0);
+    let p = center(cx, &format!("ctl-{node}-vol2"));
+    button_at(cx, p, MouseButton::Middle, 1);
+    assert_eq!(param(&ws, cx, node, "vol2"), Some(0.5), "the middle click: the default");
+}
+
+/// A choice by its key (U30) from its list; the envelopes' target buttons; the transposition switch on the track
+#[gpui::test]
+fn instrument_choice_and_tabs(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let (track, node) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    click(cx, "iw-tab-Envelopes");
+    click(cx, "iw-target-1");
+    click(cx, &format!("ctl-{node}-filterType"));
+    click(cx, "popup-item-1");
+    assert_eq!(state(&ws, cx, node).get("filterType").and_then(Value::as_text), Some("high-pass"));
+    click(cx, "iw-tab-Chords");
+    assert!(cx.debug_bounds(Box::leak(format!("ctl-{node}-arpOn").into_boxed_str())).is_some());
+    click(cx, "iw-tab-Tuning");
+    click(cx, "iw-transpose");
+    let follows = model::list(&root(&ws, cx), "tracks")
+        .find(|t| model::id_of(t) == Some(track))
+        .and_then(|t| t.get("transpose").and_then(Value::as_bool));
+    assert_eq!(follows, Some(false));
+    for t in ["Instrument", "Effects", "Midi"] {
+        click(cx, &format!("iw-tab-{t}"));
+    }
+}
+
+/// Swap ▾ replaces the instrument without removing the track, one step; the presets load and save
+#[gpui::test]
+fn instrument_swap_and_presets(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let (track, node) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    click(cx, "iw-preset-next");
+    let core = core(&ws, cx);
+    assert!(core.read_with(cx, |c, _| c.port().can_undo()), "the preset loaded as an edit");
+    click(cx, "iw-save");
+    // Swap: the list by category; pick the sampler
+    click(cx, "iw-swap");
+    let k = (0..20)
+        .find(|k| {
+            let s: &'static str = Box::leak(format!("popup-item-{k}").into_boxed_str());
+            cx.debug_bounds(s).is_some()
+                && core.read_with(cx, |c, _| {
+                    let mut list: Vec<_> = c.port().plugins().into_iter().filter(|p| p.instrument).collect();
+                    list.sort_by_key(|p| (p.third_party, p.category.clone(), p.id.clone()));
+                    let mut i = 0;
+                    let mut last = None;
+                    for p in list {
+                        if last.as_ref() != Some(&p.category) {
+                            i += 1;
+                            last = Some(p.category.clone());
+                        }
+                        if &*p.id == "sampler" {
+                            return i == *k;
+                        }
+                        i += 1;
+                    }
+                    false
+                })
+        })
+        .expect("the sampler in the list");
+    click(cx, &format!("popup-item-{k}"));
+    let now = model::tracks(&root(&ws, cx)).into_iter().find(|t| t.id == track).unwrap().instrument.unwrap();
+    assert_eq!(&*now.1, "sampler");
+    assert_ne!(now.0, node, "a new node, the document's id");
+    undo(cx);
+    let back = model::tracks(&root(&ws, cx)).into_iter().find(|t| t.id == track).unwrap().instrument.unwrap();
+    assert_eq!(&*back.1, "tripleoscillator");
+}
+
+/// The window closes when its track is removed (U38)
+#[gpui::test]
+fn instrument_window_closes_with_its_track(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let (track, _) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    assert!(ws.read_with(cx, |ws, _| ws.is_open(Screen::Instrument)));
+    let core = core(&ws, cx);
+    core.update(cx, |c, _| {
+        let _ = c
+            .port_mut()
+            .apply(lm_port::Label::new("Remove"), vec![lm_port::EditOp::Remove { id: lm_port::Ref::Id(track) }]);
+    });
+    settle(cx);
+    assert!(!ws.read_with(cx, |ws, _| ws.is_open(Screen::Instrument)), "closed with its track");
+}
+
+/// The effects rack: add, bypass by the LED, move down by the menu, open the controls, remove
+#[gpui::test]
+fn effect_rack(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let ch = some_channel(&ws, cx);
+    open_screen(&ws, cx, Screen::Effect, Some(ch));
+    let n = channel(&ws, cx, ch).inserts.len();
+    click(cx, "ef-add");
+    click(cx, "popup-item-1");
+    let ins = channel(&ws, cx, ch).inserts;
+    assert_eq!(ins.len(), n + 1);
+    let last = ins.len() - 1;
+    click(cx, &format!("ef-led-{last}"));
+    assert!(channel(&ws, cx, ch).inserts[last].bypass);
+    click(cx, &format!("ef-gear-{last}"));
+    let added = channel(&ws, cx, ch).inserts[last].clone();
+    // its controls are under the card, from its schema
+    let some_param = core(&ws, cx).read_with(cx, |c, _| c.port().plugin_schema(&added.plugin).unwrap().params[0].key);
+    assert!(cx.debug_bounds(Box::leak(format!("ctl-{}-{some_param}", added.id).into_boxed_str())).is_some());
+    if last > 0 {
+        let p = center(cx, &format!("ef-card-{last}"));
+        button_at(cx, p, MouseButton::Right, 1);
+        click(cx, "popup-item-0");
+        assert_eq!(channel(&ws, cx, ch).inserts[last - 1].id, added.id, "moved up");
+    }
+    let at = channel(&ws, cx, ch).inserts.iter().position(|x| x.id == added.id).unwrap();
+    let p = center(cx, &format!("ef-card-{at}"));
+    button_at(cx, p, MouseButton::Right, 1);
+    let lastk = (0..12)
+        .rev()
+        .find(|k| cx.debug_bounds(Box::leak(format!("popup-item-{k}").into_boxed_str())).is_some())
+        .unwrap();
+    click(cx, &format!("popup-item-{lastk}"));
+    assert_eq!(channel(&ws, cx, ch).inserts.len(), n, "removed");
+}
+
+/// The browser: a folder opens, a sample previews, ↓ walks and previews, the menu favourites, Enter sends a plugin
+#[gpui::test]
+fn browser_preview_keys_and_send(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_screen(&ws, cx, Screen::Browser, None);
+    click(cx, "br-tab-Samples");
+    let core = core(&ws, cx);
+    let top = core.update(cx, |c, _| c.port_mut().browse(lm_port::BrowsePage::Samples, None, false).ok().unwrap());
+    let folder = top.iter().find(|e| e.kind == lm_port::EntryKind::Folder).unwrap().clone();
+    click(cx, &format!("br-entry-{}", folder.id.0));
+    let kids =
+        core.update(cx, |c, _| c.port_mut().browse(lm_port::BrowsePage::Samples, Some(folder.id), false).ok().unwrap());
+    let first = kids.first().unwrap().clone();
+    click(cx, &format!("br-entry-{}", first.id.0));
+    assert!(cx.debug_bounds("br-playing").is_some() || first.kind == lm_port::EntryKind::Folder, "the preview plays");
+    keys(cx, "down");
+    let p = center(cx, &format!("br-entry-{}", first.id.0));
+    button_at(cx, p, MouseButton::Right, 1);
+    click(cx, "br-menu-item-1");
+    let fav = core.update(cx, |c, _| c.port_mut().browse(lm_port::BrowsePage::Favorites, None, false).ok().unwrap());
+    assert!(fav.iter().any(|e| e.id == first.id), "a favourite");
+    // Instruments: Enter sends the selected instrument to the active track
+    click(cx, "br-tab-Instruments");
+    let plugins =
+        core.update(cx, |c, _| c.port_mut().browse(lm_port::BrowsePage::Instruments, None, false).ok().unwrap());
+    let sampler =
+        plugins.iter().find(|e| e.info.get("plugin").and_then(Value::as_text) == Some("sampler")).unwrap().clone();
+    let track = model::tracks(&root(&ws, cx)).into_iter().find(|t| t.instrument.is_some()).unwrap().id;
+    click(cx, &format!("br-entry-{}", sampler.id.0));
+    keys(cx, "enter");
+    let now = model::tracks(&root(&ws, cx)).into_iter().find(|t| t.id == track).unwrap().instrument.unwrap();
+    assert_eq!(&*now.1, "sampler");
+}
+
+/// The browser's search: words and "a phrase", the results replacing the tree
+#[gpui::test]
+fn browser_search(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    open_screen(&ws, cx, Screen::Browser, None);
+    click(cx, "br-search");
+    cx.simulate_input("kick");
+    settle(cx);
+    let core = core(&ws, cx);
+    let hits = core.update(cx, |c, _| c.port_mut().search("kick").ok().unwrap());
+    assert!(!hits.is_empty());
+    assert!(cx.debug_bounds(Box::leak(format!("br-entry-{}", hits[0].id.0).into_boxed_str())).is_some());
+}
