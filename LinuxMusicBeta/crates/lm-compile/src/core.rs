@@ -134,7 +134,7 @@ struct Tail {
 #[derive(Clone, Debug)]
 enum HPlan {
     Fixed(f32),
-    Param { owner: NodeId, key: Arc<str>, instance: u8, value: f32 },
+    Param { owner: NodeId, key: Arc<str>, instance: u8, value: f32, complement: bool },
 }
 
 #[derive(Clone, Debug)]
@@ -623,8 +623,11 @@ impl CompilerCore {
         let host = |h: &HPlan, curves: &HashMap<(NodeId, Arc<str>), Curve>| -> HostParam {
             match h {
                 HPlan::Fixed(v) => HostParam::fixed(*v),
-                HPlan::Param { owner, key, instance, value } => {
-                    let p = HostParam::slot(slot_of(*owner, key, *instance), *value);
+                HPlan::Param { owner, key, instance, value, complement } => {
+                    let mut p = HostParam::slot(slot_of(*owner, key, *instance), *value);
+                    if *complement {
+                        p = p.complement();
+                    }
                     match curves.get(&(*owner, key.clone())) {
                         Some(c) => p.automated(c.clone()),
                         None => p,
@@ -1224,7 +1227,13 @@ impl CompilerCore {
             let width = channels(t, 2);
             let muted = flag(t, "mute", false) || !track_audible(tid);
             let volume = real(t, "volume", 1.0) as f32;
-            let vol = |instance: u8| HPlan::Param { owner: tid, key: key("volume"), instance, value: volume };
+            let vol = |instance: u8| HPlan::Param {
+                owner: tid,
+                key: key("volume"),
+                instance,
+                value: volume,
+                complement: false,
+            };
             // A bypassed instrument is not built nor run (safe mode, U21): the track plays its audio items only
             let instrument = t.get("instrument").filter(|i| !i.is_null() && !flag(i, "bypass", false));
             let audio_items: Vec<&Value> =
@@ -1474,7 +1483,26 @@ impl CompilerCore {
                 }
                 if !low_latency {
                     plan.feed(prev.0, 0, prev.1, n, 0, shape.inputs.max(1), false);
-                    *prev = (n, shape.output_channels().max(1));
+                    // The legacy EffectView's W/D: the insert's output at `wet`, the dry signal at `1 − wet`, summed
+                    // in a node of their own; the PDC delays the dry side by the insert's latency
+                    if let Some(wet) = p.get("wet").and_then(Value::as_real) {
+                        let out = shape.output_channels().max(1);
+                        let mut mix = PNode::sum(NodeKey::InsertMix(pid), out);
+                        mix.gain = Some(HPlan::Fixed(1.0));
+                        let m = plan.add(mix);
+                        let wet_param = |instance: u8, complement: bool| HPlan::Param {
+                            owner: pid,
+                            key: key("insert.wet"),
+                            instance,
+                            value: wet as f32,
+                            complement,
+                        };
+                        plan.feed(n, 0, out, m, 0, out, false).gain = Some(wet_param(0, false));
+                        plan.feed(prev.0, 0, prev.1, m, 0, out, false).gain = Some(wet_param(1, true));
+                        *prev = (m, out);
+                    } else {
+                        *prev = (n, shape.output_channels().max(1));
+                    }
                 }
                 Ok(())
             };
@@ -1517,12 +1545,14 @@ impl CompilerCore {
                 key: key("volume"),
                 instance: 0,
                 value: real(c.value, "volume", 1.0) as f32,
+                complement: false,
             };
             let pan = (!c.master).then(|| HPlan::Param {
                 owner: c.id,
                 key: key("pan"),
                 instance: 0,
                 value: real(c.value, "pan", 0.0) as f32,
+                complement: false,
             });
             let pre_pan: Vec<&Value> =
                 inserts.iter().filter(|(_, pt)| !c.master && *pt == InsertPoint::PrePan).map(|(p, _)| *p).collect();
@@ -1579,7 +1609,8 @@ impl CompilerCore {
                 let tap_w = plan.nodes[tap].outputs.max(1).min(w.max(plan.nodes[tap].outputs));
                 let amount = real(send, "amount", 1.0) as f32;
                 // A slot, so a hand or a MIDI control moves it without a compilation (I-21.2)
-                let amount_param = HPlan::Param { owner: sid, key: key("amount"), instance: 0, value: amount };
+                let amount_param =
+                    HPlan::Param { owner: sid, key: key("amount"), instance: 0, value: amount, complement: false };
                 let (dest, to_channel, dest_w, sidechain) = if to.kind == KIND_CHANNEL {
                     let Some(&d) = plan.index.get(&NodeKey::ChannelIn(to)) else { continue };
                     (d, 0, plan.nodes[d].inputs, false)
@@ -1741,6 +1772,7 @@ impl Plan {
 fn host_range(key: &str) -> ParamRange {
     match key {
         "pan" => ParamRange::linear(-1.0, 1.0),
+        "insert.wet" => ParamRange::linear(0.0, 1.0),
         _ => ParamRange { min: 0.0, max: 4.0, scale: RangeScale::Gain },
     }
 }

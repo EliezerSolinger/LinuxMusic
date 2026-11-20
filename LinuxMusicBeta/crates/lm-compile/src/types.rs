@@ -45,6 +45,9 @@ pub enum NodeKey {
     Pan(NodeId),
     /// A send that repeats another route between the same two nodes, through its own summing node (`s:`)
     Hop(NodeId),
+    /// An insert's wet/dry mix (`p:`): the insert's output at `wet`, the dry signal before it at `1 − wet`, delayed
+    /// by the insert's latency (the PDC)
+    InsertMix(NodeId),
     /// The old processor of a replaced node, sounding until its tail ends (U32), by a serial number
     Tail(u64),
 }
@@ -64,7 +67,8 @@ impl NodeKey {
             | NodeKey::Insert(id)
             | NodeKey::Fader(id)
             | NodeKey::Pan(id)
-            | NodeKey::Hop(id) => Some(id),
+            | NodeKey::Hop(id)
+            | NodeKey::InsertMix(id) => Some(id),
         }
     }
 }
