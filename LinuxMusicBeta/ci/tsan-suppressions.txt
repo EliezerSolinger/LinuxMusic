@@ -1,0 +1,15 @@
+# ThreadSanitizer suppressions (ci/run-sanitizer.sh). Only races reported inside the system's C libraries, which are
+# not built with TSan: their own locks are invisible to it, so it reports their internal locking as races. A race in
+# our code, or one TSan sees between our code and a library (a wrong use of the library), is still reported.
+called_from_lib:libasound.so
+called_from_lib:liblilv-0.so
+called_from_lib:libserd-0.so
+called_from_lib:libsord-0.so
+called_from_lib:libsratom-0.so
+called_from_lib:libfluidsynth.so
+called_from_lib:libglib-2.0.so
+called_from_lib:libgthread-2.0.so
+called_from_lib:libsndfile.so
+called_from_lib:librubberband.so
+called_from_lib:libsamplerate.so
+called_from_lib:libdbus-1.so

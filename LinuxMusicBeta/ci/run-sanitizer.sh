@@ -17,7 +17,7 @@ cd "$here/.."
 kind="${1:?usage: run-sanitizer.sh address|thread|leak}"
 case "$kind" in
 address) export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1}" ;;
-thread) export TSAN_OPTIONS="${TSAN_OPTIONS:-halt_on_error=1:second_deadlock_stack=1}" ;;
+thread) export TSAN_OPTIONS="${TSAN_OPTIONS:-halt_on_error=1:second_deadlock_stack=1:suppressions=$here/tsan-suppressions.txt}" ;;
 leak) export LSAN_OPTIONS="${LSAN_OPTIONS:-report_objects=1}" ;;
 *)
 	echo "unknown sanitizer: $kind" >&2
