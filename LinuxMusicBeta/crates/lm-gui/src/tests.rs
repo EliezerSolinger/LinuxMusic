@@ -1293,16 +1293,19 @@ fn instrument_knob_drag_and_middle_click(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
     let (track, node) = triple(&ws, cx);
     open_screen(&ws, cx, Screen::Instrument, Some(track));
-    let before = param(&ws, cx, node, "vol2").unwrap_or(0.5);
-    drag(cx, &format!("ctl-{node}-vol2"), 0.0, -50.0);
-    let after = param(&ws, cx, node, "vol2").unwrap();
-    assert!((after - (before + 0.25).min(1.0)).abs() < 1e-6, "50 px of 200 is a quarter of 0..1: {after}");
+    // the TripleOscillator's own controls are its legacy panel (lm-gui-plugins); the instrument functions' tabs are
+    // the generic editor's
+    click(cx, "iw-tab-Envelopes");
+    let before = param(&ws, cx, node, "volAttack").unwrap_or(0.0);
+    drag(cx, &format!("ctl-{node}-volAttack"), 0.0, -50.0);
+    let after = param(&ws, cx, node, "volAttack").unwrap();
+    assert!((after - (before + 0.5)).abs() < 1e-6, "50 px of 200 is a quarter of 0..2 s: {after}");
     undo(cx);
-    assert_eq!(param(&ws, cx, node, "vol2").unwrap_or(before), before, "one undo step");
-    drag(cx, &format!("ctl-{node}-vol2"), 0.0, -30.0);
-    let p = center(cx, &format!("ctl-{node}-vol2"));
+    assert_eq!(param(&ws, cx, node, "volAttack").unwrap_or(before), before, "one undo step");
+    drag(cx, &format!("ctl-{node}-volAttack"), 0.0, -30.0);
+    let p = center(cx, &format!("ctl-{node}-volAttack"));
     button_at(cx, p, MouseButton::Middle, 1);
-    assert_eq!(param(&ws, cx, node, "vol2"), Some(0.5), "the middle click: the default");
+    assert_eq!(param(&ws, cx, node, "volAttack"), Some(0.0), "the middle click: the default");
 }
 
 /// A choice by its key (U30) from its list; the envelopes' target buttons; the transposition switch on the track
@@ -2005,4 +2008,102 @@ fn dock_splitter_resizes_and_is_remembered(cx: &mut TestAppContext) {
     let saved = core
         .read_with(cx, |core, _| core.port().ui().get("docks").and_then(|d| d.get("bottom")).and_then(Value::as_int));
     assert_eq!(saved, Some(after.round() as i64), "kept in the interface document");
+}
+
+fn track_node(ws: &Entity<Workspace>, cx: &mut VisualTestContext, id: NodeId) -> Value {
+    model::list(&root(ws, cx), "tracks").find(|t| model::id_of(t) == Some(id)).cloned().unwrap()
+}
+
+fn popup_items(cx: &mut VisualTestContext) -> usize {
+    (0..40).take_while(|k| cx.debug_bounds(Box::leak(format!("popup-item-{k}").into_boxed_str())).is_some()).count()
+}
+
+/// The MIDI tab (F-IJN-017): the base velocity, the output to a device and its channel, the input's channel
+#[gpui::test]
+fn instrument_midi_tab(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let (track, _) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    click(cx, "iw-tab-Midi");
+    click(cx, "iw-base-velocity-plus");
+    assert_eq!(track_node(&ws, cx, track).get("baseVelocity").and_then(Value::as_int), Some(64));
+    click(cx, "iw-midi-out-on");
+    assert!(track_node(&ws, cx, track).get("midiOutput").is_some_and(|o| !o.is_null()));
+    click(cx, "iw-midi-out-channel-plus");
+    let ch = track_node(&ws, cx, track).get("midiOutput").and_then(|o| o.get("channel")).and_then(Value::as_int);
+    assert_eq!(ch, Some(1));
+    click(cx, "iw-midi-in-channel-plus");
+    let ch = track_node(&ws, cx, track).get("midiInput").and_then(|o| o.get("channel")).and_then(Value::as_int);
+    assert_eq!(ch, Some(0), "from all (-1) to the first channel");
+    undo(cx);
+    click(cx, "iw-midi-out-on");
+    assert!(track_node(&ws, cx, track).get("midiOutput").is_none_or(Value::is_null), "off again: absent");
+}
+
+/// The Tuning tab (F-IJN-019..021): the microtuner on, its scale slot, the keys, and a scale written in the editor
+#[gpui::test]
+fn instrument_tuning_tab(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let (track, _) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    click(cx, "iw-tab-Tuning");
+    click(cx, "iw-micro-on");
+    click(cx, "iw-micro-scale-plus");
+    let micro = track_node(&ws, cx, track).get("microtuner").cloned().unwrap();
+    assert_eq!(
+        (micro.get("on").and_then(Value::as_bool), micro.get("scale").and_then(Value::as_int)),
+        (Some(true), Some(1))
+    );
+    click(cx, "iw-keys-first-plus");
+    assert_eq!(track_node(&ws, cx, track).get("keys").and_then(|k| k.get("first")).and_then(Value::as_int), Some(1));
+    // a bad line is refused; a good scale goes in the project's slot
+    click(cx, "iw-edit-scale");
+    click(cx, "iw-tuning-apply");
+    assert!(root(&ws, cx).get("tuning").is_none_or(Value::is_null), "an empty scale is refused");
+}
+
+/// MIDI learn from a control's menu (I-21.2): the port starts learning that control
+#[gpui::test]
+fn instrument_midi_learn(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let (track, node) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    click(cx, "iw-tab-Envelopes");
+    let p = center(cx, &format!("ctl-{node}-volAttack"));
+    button_at(cx, p, MouseButton::Right, 1);
+    let n = popup_items(cx);
+    // default, copy, paste, automate, MIDI learn, (remove), binding, ...
+    assert!(n >= 6);
+    click(cx, "popup-item-4");
+    let core = core(&ws, cx);
+    assert!(core.read_with(cx, |c, _| c.port().learning().is_some()), "learning the knob");
+}
+
+/// The sidechain source of an insert that has the port: a send from another channel, never a loop
+#[gpui::test]
+fn effect_sidechain_source(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let chs = model::channels(&root(&ws, cx));
+    let ch = chs.iter().find(|c| c.inserts.iter().any(|x| &*x.plugin == "compressor")).expect("a compressor").clone();
+    let at = ch.inserts.iter().position(|x| &*x.plugin == "compressor").unwrap();
+    let ins = ch.inserts[at].id;
+    open_screen(&ws, cx, Screen::Effect, Some(ch.id));
+    let p = center(cx, &format!("ef-card-{at}"));
+    button_at(cx, p, MouseButton::Right, 1);
+    // move up, move down, replace with, load preset, save preset, then the sidechain source (the compressor has it)
+    click(cx, "popup-item-5");
+    assert!(popup_items(cx) >= 2, "None and the sources");
+    let before: usize =
+        model::channels(&root(&ws, cx)).iter().map(|c| c.sends.iter().filter(|s| s.to == ins).count()).sum();
+    // pick the first enabled source
+    for k in 1..popup_items(cx) {
+        click(cx, &format!("popup-item-{k}"));
+        let after: usize =
+            model::channels(&root(&ws, cx)).iter().map(|c| c.sends.iter().filter(|s| s.to == ins).count()).sum();
+        if after > before {
+            assert_eq!(after, 1, "one source");
+            return;
+        }
+    }
+    panic!("no source could be chosen");
 }

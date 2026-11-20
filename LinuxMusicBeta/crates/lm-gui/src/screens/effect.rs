@@ -52,6 +52,38 @@ pub enum EfPopup {
     Replace(NodeId),
     Presets(NodeId),
     Point(NodeId),
+    Sidechain(NodeId),
+}
+
+/// The channels a channel feeds: by its output, and by its sends (to a channel, or to an insert's sidechain, which
+/// feeds the insert's channel)
+fn feeds(chs: &[ChannelView], from: NodeId, to: NodeId) -> bool {
+    let mut seen = vec![from];
+    let mut at = 0;
+    while at < seen.len() {
+        let id = seen[at];
+        at += 1;
+        if id == to {
+            return true;
+        }
+        let Some(ch) = chs.iter().find(|c| c.id == id) else { continue };
+        let mut next: Vec<NodeId> = ch.output.into_iter().collect();
+        for s in &ch.sends {
+            let dest = chs.iter().find(|c| c.id == s.to || c.inserts.iter().any(|x| x.id == s.to)).map(|c| c.id);
+            next.extend(dest);
+        }
+        for n in next {
+            if !seen.contains(&n) {
+                seen.push(n);
+            }
+        }
+    }
+    false
+}
+
+/// The sends feeding an insert's sidechain port: (the source channel, the send)
+fn sidechain_sends(chs: &[ChannelView], ins: NodeId) -> Vec<(NodeId, NodeId)> {
+    chs.iter().flat_map(|c| c.sends.iter().filter(|s| s.to == ins).map(|s| (c.id, s.id)).collect::<Vec<_>>()).collect()
 }
 
 /// A card being dragged up or down (the legacy's gesture: past the card's edge it moves one place)
@@ -398,6 +430,9 @@ impl ParamHost<EfPopup> for EffectWindow {
     fn editor_ref(&self) -> &EditorState<EfPopup> {
         &self.editor
     }
+    fn workspace(&self) -> gpui::WeakEntity<crate::workspace::Workspace> {
+        self.scx.workspace.clone()
+    }
     fn own_menu(&self, p: &EfPopup, cx: &Context<Self>) -> Vec<MenuItem<Self>> {
         let port = self.scx.core.read(cx).port();
         let chs = model::channels(port.root());
@@ -481,6 +516,11 @@ impl ParamHost<EfPopup> for EffectWindow {
                     })
                     .enabled(installed),
                 ];
+                if plugins.iter().any(|p| p.id == x.plugin && p.sidechain) {
+                    items.push(MenuItem::new(tr("Sidechain source…"), move |w: &mut Self, _, cx| {
+                        w.reopen(EfPopup::Sidechain(ins), cx)
+                    }));
+                }
                 if model::song(port.root()).analog {
                     items.push(MenuItem::new(tr("Point in the rack…"), move |w: &mut Self, _, cx| {
                         w.reopen(EfPopup::Point(ins), cx)
@@ -512,6 +552,44 @@ impl ParamHost<EfPopup> for EffectWindow {
                     .collect();
                 if items.is_empty() {
                     items.push(MenuItem::heading(tr("No presets")));
+                }
+                items
+            }
+            EfPopup::Sidechain(ins) => {
+                // the source is a send from another channel to the insert's sidechain port (arquitetura-nova.md
+                // item 3); a channel this one feeds would make a loop: shown, refused
+                let ins = *ins;
+                let current = sidechain_sends(&chs, ins);
+                let remove: Vec<EditOp> = current.iter().map(|(_, s)| EditOp::Remove { id: Ref::Id(*s) }).collect();
+                let none = remove.clone();
+                let mut items = vec![
+                    MenuItem::new(tr("None"), move |w: &mut Self, _, cx| {
+                        let core = w.scx.core.clone();
+                        apply_ops(&core, "Sidechain source", none.clone(), cx);
+                    })
+                    .checked(current.is_empty()),
+                ];
+                for src in chs.iter().filter(|c| c.id != chid && c.kind != model::ChannelKind::Master) {
+                    let (sid, count) = (src.id, src.sends.len());
+                    let looped = feeds(&chs, chid, sid);
+                    let checked = current.iter().any(|(c, _)| *c == sid);
+                    let mut ops = remove.clone();
+                    let node = Value::object([
+                        ("to", Value::text(ins.to_string())),
+                        ("port", Value::text("sidechain")),
+                        ("amount", Value::real(1.0).unwrap_or_default()),
+                        ("pre", Value::bool(false)),
+                    ]);
+                    let index = count - current.iter().filter(|(c, _)| *c == sid).count();
+                    ops.push(EditOp::Insert { temp: 1, parent: Ref::Id(sid), list: "sends".into(), index, node });
+                    items.push(
+                        MenuItem::new(src.name.to_string(), move |w: &mut Self, _, cx| {
+                            let core = w.scx.core.clone();
+                            apply_ops(&core, "Sidechain source", ops.clone(), cx);
+                        })
+                        .checked(checked)
+                        .enabled(!looped),
+                    );
                 }
                 items
             }

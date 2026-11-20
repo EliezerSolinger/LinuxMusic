@@ -22,11 +22,11 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, Bounds, Context, Entity, FontWeight, Global, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PathBuilder, Pixels, Point, Render, ScrollEvent, SharedString, Subscription, Window, anchored,
-    canvas, deferred, div, fill, point, prelude::*, px, size,
+    MouseUpEvent, PathBuilder, Pixels, Point, Render, ScrollEvent, SharedString, Subscription, WeakEntity, Window,
+    anchored, canvas, deferred, div, fill, point, prelude::*, px, size,
 };
 use gpui_component::Sizable;
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use lm_port::{
     BrowsePage, EditOp, Feed, FieldKind, GestureId, Label, Loading, NodeId, NodeSchema, Pending, PluginInfo, Ref,
     Scale, Target, Topic, Value,
@@ -170,6 +170,15 @@ impl Ctl {
             Slot::TrackVolume => {
                 EditOp::set(self.node, &["volume"], Value::real(view::db_to_gain(v).min(4.0)).unwrap_or_default())
             }
+        }
+    }
+
+    /// The control as a MIDI mapping's target (I-21.2)
+    pub fn map_target(&self) -> lm_port::MapTarget {
+        match self.slot {
+            Slot::Param(k) => crate::ui::midi::param(self.node, k),
+            Slot::Field(k) => crate::ui::midi::field(self.node, &["state", k]),
+            Slot::TrackVolume => crate::ui::midi::param(self.node, "volume"),
         }
     }
 
@@ -375,6 +384,8 @@ pub trait ParamHost<C: Clone + 'static>: Render + Sized + 'static {
     fn editor_ref(&self) -> &EditorState<C>;
     /// the window's own popup items
     fn own_menu(&self, popup: &C, cx: &Context<Self>) -> Vec<MenuItem<Self>>;
+    /// the workspace, for the MIDI binding window
+    fn workspace(&self) -> WeakEntity<crate::workspace::Workspace>;
 }
 
 /// The value clipboard and the display options of the controls (P-06: linear/log per control is the interface's
@@ -526,13 +537,14 @@ pub fn parse_value(text: &str) -> Option<f64> {
     num.replace(',', ".").parse::<f64>().ok().map(|x| x * mul)
 }
 
-/// The automation mark
-fn marks(c_: &Ctl) -> impl IntoElement {
+/// The automation mark, and the MIDI mark when a controller is mapped to it
+fn marks(c_: &Ctl, mapped: bool) -> impl IntoElement {
     div()
         .flex()
         .gap(px(2.))
         .h(px(8.))
         .when(c_.automated, |d| d.child(div().size(px(6.)).mt(px(1.)).rounded(px(3.)).bg(c(THEME.orange))))
+        .when(mapped, |d| d.child(div().text_size(px(7.5)).text_color(c(THEME.cyan)).child("MIDI")))
 }
 
 fn ctl_id(c_: &Ctl) -> SharedString {
@@ -551,6 +563,7 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
         _ => label_of(&c_.plugin, c_.key()),
     };
     let value_color = if c_.automated { THEME.orange } else { THEME.text };
+    let mapped = !crate::ui::midi::mappings_of(this.core().read(cx).port(), &c_.map_target()).is_empty();
     let typing = this
         .editor_ref()
         .typing
@@ -585,7 +598,7 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
                 .flex_col()
                 .gap(px(2.))
                 .min_w(px(64.))
-                .child(div().flex().gap(px(4.)).child(small_label(label)).child(marks(&c_)))
+                .child(div().flex().gap(px(4.)).child(small_label(label)).child(marks(&c_, mapped)))
                 .child(
                     div()
                         .flex()
@@ -627,7 +640,7 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
                 .items_center()
                 .gap(px(1.))
                 .w(px(64.))
-                .child(marks(&c_))
+                .child(marks(&c_, mapped))
                 .child(
                     div()
                         .id(SharedString::from(format!("{id}-k")))
@@ -696,7 +709,7 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
                         })),
                 )
                 .child(div().text_size(px(10.5)).text_color(c(if on { THEME.text } else { THEME.text2 })).child(label))
-                .child(marks(&c_))
+                .child(marks(&c_, mapped))
                 .into_any_element()
         }
         CtlKind::Choice { .. } => {
@@ -706,7 +719,7 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
                 .flex_col()
                 .gap(px(2.))
                 .min_w(px(84.))
-                .child(div().flex().gap(px(4.)).child(small_label(label)).child(marks(&c_)))
+                .child(div().flex().gap(px(4.)).child(small_label(label)).child(marks(&c_, mapped)))
                 .child(
                     div()
                         .id(SharedString::from(format!("{id}-c")))
@@ -922,6 +935,24 @@ fn shared_menu<C: Clone + 'static, V: ParamHost<C>>(this: &V, p: &Popup<C>, cx: 
                     .enabled(c_.automatable && owner.is_some()),
                 });
             }
+            // MIDI learn, remove the mapping, the binding window (I-21.2; F-CTL-004/005)
+            let target = c_.map_target();
+            let mapped = !crate::ui::midi::mappings_of(this.core().read(cx).port(), &target).is_empty();
+            let (t1, t2, t3) = (target.clone(), target.clone(), target);
+            items.push(MenuItem::new(tr("MIDI learn"), move |v: &mut V, _, cx| {
+                let core = v.core().clone();
+                crate::ui::midi::learn(&core, t1.clone(), lm_port::MapScope::Project, cx);
+            }));
+            if mapped {
+                items.push(MenuItem::new(tr("Remove MIDI mapping"), move |v: &mut V, _, cx| {
+                    let core = v.core().clone();
+                    crate::ui::midi::unmap(&core, &t2, cx);
+                }));
+            }
+            items.push(MenuItem::new(tr("MIDI binding…"), move |v: &mut V, window, cx| {
+                let ws = v.workspace();
+                crate::ui::midi::open_binding(&ws, t3.clone(), window, cx);
+            }));
             if let CtlKind::Knob { min, log, .. } = c_.kind
                 && min > 0.0
             {
@@ -1135,6 +1166,38 @@ pub enum IwPopup {
 /// A preset of the browser service: its entry, its name, whether it is the factory's
 pub type PresetEntry = (lm_port::EntryId, Arc<str>, bool);
 
+/// The project's scale and keymap slots (lm-doc's `TUNING_SLOTS`)
+const TUNING_SLOTS: i64 = 10;
+
+/// The editor of a scale or keymap slot (F-IJN-020)
+struct TuningEditor {
+    keymap: bool,
+    slot: usize,
+    description: Entity<InputState>,
+    text: Entity<gpui_component::input::TextareaState>,
+    /// the keymap's numbers: first, last, middle, base key, base frequency
+    numbers: [f64; 5],
+    error: Option<String>,
+}
+
+/// One interval in cents: a number with a point is cents, `a/b` or a whole number is a ratio (as lm-doc's tuning)
+fn interval_cents(text: &str) -> Option<f64> {
+    let t = text.split_whitespace().next()?;
+    if t.contains('.') {
+        return t.parse::<f64>().ok().filter(|c| c.is_finite());
+    }
+    let (a, b) = t.split_once('/').unwrap_or((t, "1"));
+    let (a, b) = (a.parse::<f64>().ok()?, b.parse::<f64>().ok()?);
+    (a > 0.0 && b > 0.0).then(|| 1200.0 * (a / b).log2())
+}
+
+/// A note's name (MIDI numbering, C4 = 60)
+pub fn note_name(k: f64) -> String {
+    const N: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let k = k.round() as i32;
+    format!("{}{}", N[k.rem_euclid(12) as usize], k.div_euclid(12) - 1)
+}
+
 /// The last preset loaded on a node, as the window shows it (the document keeps no preset's name: a preset is a
 /// state, piece 7a)
 #[derive(Default)]
@@ -1159,6 +1222,8 @@ pub struct InstrumentWindow {
     lit: Option<(usize, Instant)>,
     /// the presets of the current plugin (the browser service's Presets page), refreshed when the list opens
     presets: Vec<PresetEntry>,
+    /// the scale or keymap editor, when open
+    tuning: Option<TuningEditor>,
     editor: EditorState<IwPopup>,
     /// The plugin's own panel (I-22, lm-gui-plugins), for the instrument it was made for
     panel: Option<(NodeId, Arc<str>, AnyView, Subscription)>,
@@ -1174,6 +1239,9 @@ impl ParamHost<IwPopup> for InstrumentWindow {
     }
     fn editor_ref(&self) -> &EditorState<IwPopup> {
         &self.editor
+    }
+    fn workspace(&self) -> WeakEntity<crate::workspace::Workspace> {
+        self.scx.workspace.clone()
     }
     fn own_menu(&self, p: &IwPopup, cx: &Context<Self>) -> Vec<MenuItem<Self>> {
         let port = self.scx.core.read(cx).port();
@@ -1280,6 +1348,7 @@ impl InstrumentWindow {
             kit_bounds: Rc::new(Cell::new(None)),
             lit: None,
             presets: Vec::new(),
+            tuning: None,
             editor: EditorState::default(),
             panel: None,
             _subs: vec![observe],
@@ -2007,12 +2076,301 @@ impl InstrumentWindow {
         out
     }
 
+    /// The track's node, as it is in the tree
+    fn track_node(&self, cx: &App) -> Value {
+        let Some(id) = self.track else { return Value::NULL };
+        model::list(self.scx.core.read(cx).port().root(), "tracks")
+            .find(|x| model::id_of(x) == Some(id))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Sets one of the track's optional objects whole (`midiInput`, `midiOutput`, `microtuner`, `keys`); `None`
+    /// removes it (absent keeps the old meaning, U29)
+    fn set_track_object(&mut self, key: &str, v: Option<Value>, label: &'static str, cx: &mut Context<Self>) {
+        let Some(track) = self.track else { return };
+        let op = EditOp::set(track, &[key], v.unwrap_or(Value::NULL));
+        let core = self.scx.core.clone();
+        apply_ops(&core, label, vec![op], cx);
+    }
+
+    /// The machine's MIDI ports by alias (the preferences, I-21.1): (alias, input, output)
+    fn midi_ports(&self, cx: &App) -> Vec<(Arc<str>, bool, bool)> {
+        let prefs = self.scx.core.read(cx).port().preferences().clone();
+        model::at(&prefs, &["midi", "ports"])
+            .map(|l| {
+                l.items()
+                    .filter_map(|p| {
+                        let alias =
+                            p.get("alias").and_then(Value::as_shared_text).cloned().filter(|a| !a.is_empty())?;
+                        let role = p.get("role").and_then(Value::as_text).unwrap_or("both");
+                        let input = p.get("input").and_then(Value::as_bool).unwrap_or(true) && role != "controller";
+                        let output = p.get("output").and_then(Value::as_bool).unwrap_or(false);
+                        Some((alias, input, output))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The MIDI tab (F-IJN-017): the track's input (ports, channel, fixed velocity, follow the selection), its output
+    /// to a device (port, channel, program, fixed velocity and note) and the base velocity
+    fn midi_tab(&self, cx: &Context<Self>) -> Vec<AnyElement> {
+        let node = self.track_node(cx);
+        let input = node.get("midiInput").filter(|v| !v.is_null()).cloned();
+        let output = node.get("midiOutput").filter(|v| !v.is_null()).cloned();
+        let ports = self.midi_ports(cx);
+        let inp = input.clone().unwrap_or_else(|| {
+            Value::object([
+                ("ports", Value::list([])),
+                ("channel", Value::int(-1)),
+                ("followSelection", Value::bool(false)),
+            ])
+        });
+        let chosen: Vec<Arc<str>> = model::list(&inp, "ports").filter_map(|v| v.as_shared_text().cloned()).collect();
+        let channel = model::int(&inp, "channel", -1);
+        let fixed_in = inp.get("fixedVelocity").and_then(Value::as_int);
+        let follow = model::flag(&inp, "followSelection");
+        // input: the ports (none chosen = every instrument port)
+        let mut in_rows: Vec<AnyElement> = vec![
+            caption(if chosen.is_empty() { tr("Every instrument port") } else { tr("These ports") }).into_any_element(),
+        ];
+        for (alias, is_in, _) in ports.iter().filter(|p| p.1) {
+            let _ = is_in;
+            let on = chosen.contains(alias);
+            let (a, base) = (alias.clone(), inp.clone());
+            in_rows.push(
+                button(
+                    SharedString::from(format!("iw-midi-in-{alias}")),
+                    format!("{} {}", if on { "✓" } else { "·" }, alias),
+                    on,
+                    THEME.blue,
+                )
+                .h(px(20.))
+                .on_click(cx.listener(move |w, _, _, cx| {
+                    let mut list: Vec<Value> =
+                        model::list(&base, "ports").filter(|v| v.as_text() != Some(&*a)).cloned().collect();
+                    if !on {
+                        list.push(Value::text(a.clone()));
+                    }
+                    w.set_track_object("midiInput", Some(base.with("ports", Value::list(list))), "MIDI input", cx);
+                }))
+                .into_any_element(),
+            );
+        }
+        let inp_c = inp.clone();
+        in_rows.push(self.stepper(
+            "iw-midi-in-channel",
+            tr("Channel"),
+            if channel < 0 { tr("All").to_string() } else { (channel + 1).to_string() },
+            cx,
+            move |w, d, cx| {
+                let v = (model::int(&inp_c, "channel", -1) + d).clamp(-1, 15);
+                w.set_track_object("midiInput", Some(inp_c.with("channel", Value::int(v))), "MIDI input", cx);
+            },
+        ));
+        let inp_v = inp.clone();
+        in_rows.push(self.stepper(
+            "iw-midi-in-velocity",
+            tr("Fixed velocity"),
+            fixed_in.map_or_else(|| tr("As played").to_string(), |v| v.to_string()),
+            cx,
+            move |w, d, cx| {
+                let next = match inp_v.get("fixedVelocity").and_then(Value::as_int) {
+                    None if d > 0 => Some(1),
+                    None => None,
+                    Some(v) if v + d < 1 => None,
+                    Some(v) => Some((v + d).min(127)),
+                };
+                let node = match next {
+                    Some(v) => inp_v.with("fixedVelocity", Value::int(v)),
+                    None => inp_v.without("fixedVelocity"),
+                };
+                w.set_track_object("midiInput", Some(node), "MIDI input", cx);
+            },
+        ));
+        let inp_f = inp.clone();
+        in_rows.push(
+            button("iw-midi-follow", tr("Follow the selected track"), follow, THEME.green)
+                .h(px(20.))
+                .debug_selector(|| "iw-midi-follow".into())
+                .on_click(cx.listener(move |w, _, _, cx| {
+                    w.set_track_object(
+                        "midiInput",
+                        Some(inp_f.with("followSelection", Value::bool(!follow))),
+                        "MIDI input",
+                        cx,
+                    );
+                }))
+                .into_any_element(),
+        );
+        // output: off (absent), or to a port
+        let mut out_rows: Vec<AnyElement> = vec![
+            button("iw-midi-out-on", tr("Send MIDI to a device"), output.is_some(), THEME.green)
+                .h(px(20.))
+                .debug_selector(|| "iw-midi-out-on".into())
+                .on_click(cx.listener({
+                    let on = output.is_some();
+                    let first = ports.iter().find(|p| p.2).map(|p| p.0.clone()).unwrap_or_else(|| Arc::from(""));
+                    move |w, _, _, cx| {
+                        let v = (!on)
+                            .then(|| Value::object([("port", Value::text(first.clone())), ("channel", Value::int(0))]));
+                        w.set_track_object("midiOutput", v, "MIDI output", cx);
+                    }
+                }))
+                .into_any_element(),
+        ];
+        if let Some(out) = output {
+            let port = model::text(&out, "port");
+            for (alias, _, _) in ports.iter().filter(|p| p.2) {
+                let (a, base) = (alias.clone(), out.clone());
+                out_rows.push(
+                    button(
+                        SharedString::from(format!("iw-midi-out-{alias}")),
+                        alias.to_string(),
+                        *alias == port,
+                        THEME.blue,
+                    )
+                    .h(px(20.))
+                    .on_click(cx.listener(move |w, _, _, cx| {
+                        w.set_track_object(
+                            "midiOutput",
+                            Some(base.with("port", Value::text(a.clone()))),
+                            "MIDI output",
+                            cx,
+                        );
+                    }))
+                    .into_any_element(),
+                );
+            }
+            let o = out.clone();
+            out_rows.push(self.stepper(
+                "iw-midi-out-channel",
+                tr("Channel"),
+                (model::int(&out, "channel", 0) + 1).to_string(),
+                cx,
+                move |w, d, cx| {
+                    let v = (model::int(&o, "channel", 0) + d).clamp(0, 15);
+                    w.set_track_object("midiOutput", Some(o.with("channel", Value::int(v))), "MIDI output", cx);
+                },
+            ));
+            for (key, label, min, max) in [
+                ("program", "Program", 0, 127),
+                ("fixedVelocity", "Fixed velocity", 1, 127),
+                ("fixedNote", "Fixed note", 0, 127),
+            ] {
+                let cur = out.get(key).and_then(Value::as_int);
+                let o = out.clone();
+                let shown = match (key, cur) {
+                    (_, None) => tr("As played").to_string(),
+                    ("program", Some(v)) => (v + 1).to_string(),
+                    ("fixedNote", Some(v)) => note_name(v as f64),
+                    (_, Some(v)) => v.to_string(),
+                };
+                out_rows.push(self.stepper(
+                    intern(&format!("iw-midi-out-{key}")),
+                    tr(label),
+                    shown,
+                    cx,
+                    move |w, d, cx| {
+                        let next = match o.get(key).and_then(Value::as_int) {
+                            None if d > 0 => Some(min),
+                            None => None,
+                            Some(v) if v + d < min => None,
+                            Some(v) => Some((v + d).min(max)),
+                        };
+                        let node = match next {
+                            Some(v) => o.with(key, Value::int(v)),
+                            None => o.without(key),
+                        };
+                        w.set_track_object("midiOutput", Some(node), "MIDI output", cx);
+                    },
+                ));
+            }
+        }
+        let base = node.get("baseVelocity").and_then(Value::as_int).unwrap_or(63);
+        let tid = self.track;
+        let vel = self.stepper("iw-base-velocity", tr("Base velocity"), base.to_string(), cx, move |w, d, cx| {
+            let Some(t) = tid else { return };
+            let core = w.scx.core.clone();
+            apply_ops(
+                &core,
+                "Base velocity",
+                vec![EditOp::set(t, &["baseVelocity"], Value::int((base + d).clamp(1, 127)))],
+                cx,
+            );
+        });
+        vec![
+            group_card(tr("MIDI input"), in_rows),
+            group_card(tr("MIDI output"), out_rows),
+            group_card(
+                tr("Velocity"),
+                vec![vel, caption(tr("MIDI notes at the base velocity play at 100 %.")).into_any_element()],
+            ),
+        ]
+    }
+
+    /// A labelled − value + stepper of a track field (the click steps by one, Shift by ten)
+    fn stepper(
+        &self,
+        id: &'static str,
+        label: impl Into<SharedString>,
+        value: String,
+        cx: &Context<Self>,
+        step: impl Fn(&mut Self, i64, &mut Context<Self>) + Clone + 'static,
+    ) -> AnyElement {
+        let (s1, s2) = (step.clone(), step);
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .min_w(px(80.))
+            .child(div().text_size(px(9.5)).text_color(c(THEME.text2)).child(label.into()))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(3.))
+                    .child(
+                        button(SharedString::from(format!("{id}-minus")), "−", false, 0)
+                            .debug_selector(move || format!("{id}-minus"))
+                            .on_click(cx.listener(move |w, ev: &gpui::ClickEvent, _, cx| {
+                                s1(w, if ev.modifiers().shift { -10 } else { -1 }, cx)
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(id)
+                            .debug_selector(move || id.to_string())
+                            .min_w(px(44.))
+                            .h(px(18.))
+                            .px(px(4.))
+                            .rounded(px(3.))
+                            .bg(c(THEME.lcd_bg))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(10.))
+                            .child(value),
+                    )
+                    .child(
+                        button(SharedString::from(format!("{id}-plus")), "+", false, 0)
+                            .debug_selector(move || format!("{id}-plus"))
+                            .on_click(cx.listener(move |w, ev: &gpui::ClickEvent, _, cx| {
+                                s2(w, if ev.modifiers().shift { 10 } else { 1 }, cx)
+                            })),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// The Tuning tab (F-IJN-018..021): pitch, bend range, the global transposition; the microtuner (on, the scale
+    /// and keymap slots of the project, the keymap's ranges); the scale and keymap editor with the Scala files; the
+    /// first, last and base key
     fn tuning_tab(&self, t: &TrackView, ctls: &[Ctl], cx: &Context<Self>) -> Vec<AnyElement> {
         let root = self.scx.core.read(cx).port().root().clone();
-        let follows = model::list(&root, "tracks")
-            .find(|x| model::id_of(x) == Some(t.id))
-            .and_then(|x| x.get("transpose").and_then(Value::as_bool))
-            .unwrap_or(true);
+        let node = self.track_node(cx);
+        let follows = node.get("transpose").and_then(Value::as_bool).unwrap_or(true);
         let tid = t.id;
         let mut controls: Vec<AnyElement> = TUNING_KEYS
             .iter()
@@ -2034,14 +2392,334 @@ impl InstrumentWindow {
                 }))
                 .into_any_element(),
         );
-        vec![group_card(tr("Transposition"), controls)]
+        let mut out = vec![group_card(tr("Transposition"), controls)];
+        // the microtuner: not for an instrument that plays its own voices
+        let per_note = ctls.iter().any(|k| k.key() == "volAttack");
+        let micro = node.get("microtuner").filter(|v| !v.is_null()).cloned().unwrap_or_else(|| {
+            Value::object([
+                ("on", Value::bool(false)),
+                ("scale", Value::int(0)),
+                ("keymap", Value::int(0)),
+                ("importRanges", Value::bool(true)),
+            ])
+        });
+        let on = model::flag(&micro, "on");
+        let slot_name = |list: &str, k: i64| -> String {
+            let d = model::at(&root, &["tuning", list])
+                .and_then(|l| l.items().nth(k as usize))
+                .map(|s| model::text(s, "description").to_string())
+                .unwrap_or_default();
+            format!("{} · {}", k + 1, if d.is_empty() { tr("(empty)").to_string() } else { d })
+        };
+        let mut mrows: Vec<AnyElement> = Vec::new();
+        if !per_note {
+            mrows.push(notice(tr("The microtuner does not apply to this instrument: it plays its own voices.")));
+        }
+        let m1 = micro.clone();
+        mrows.push(
+            button("iw-micro-on", tr("Microtuner"), on, THEME.green)
+                .h(px(20.))
+                .debug_selector(|| "iw-micro-on".into())
+                .on_click(cx.listener(move |w, _, _, cx| {
+                    w.set_track_object("microtuner", Some(m1.with("on", Value::bool(!on))), "Microtuner", cx)
+                }))
+                .into_any_element(),
+        );
+        for (key, list, label) in [("scale", "scales", "Scale"), ("keymap", "keymaps", "Keymap")] {
+            let m = micro.clone();
+            let cur = model::int(&micro, key, 0);
+            mrows.push(self.stepper(
+                intern(&format!("iw-micro-{key}")),
+                tr(label),
+                slot_name(list, cur),
+                cx,
+                move |w, d, cx| {
+                    let v = (model::int(&m, key, 0) + d).clamp(0, TUNING_SLOTS - 1);
+                    w.set_track_object("microtuner", Some(m.with(key, Value::int(v))), "Microtuner", cx);
+                },
+            ));
+        }
+        let imp = model::flag(&micro, "importRanges") || micro.get("importRanges").is_none();
+        let m2 = micro.clone();
+        mrows.push(
+            button("iw-micro-ranges", tr("Note range from the keymap"), imp, THEME.green)
+                .h(px(20.))
+                .on_click(cx.listener(move |w, _, _, cx| {
+                    w.set_track_object("microtuner", Some(m2.with("importRanges", Value::bool(!imp))), "Microtuner", cx)
+                }))
+                .into_any_element(),
+        );
+        mrows.push(
+            div()
+                .flex()
+                .gap(px(6.))
+                .child(
+                    button("iw-edit-scale", tr("Edit scales…"), false, 0)
+                        .h(px(22.))
+                        .px(px(8.))
+                        .debug_selector(|| "iw-edit-scale".into())
+                        .on_click(cx.listener(|w, _, window, cx| w.open_tuning(false, window, cx))),
+                )
+                .child(
+                    button("iw-edit-keymap", tr("Edit keymaps…"), false, 0)
+                        .h(px(22.))
+                        .px(px(8.))
+                        .debug_selector(|| "iw-edit-keymap".into())
+                        .on_click(cx.listener(|w, _, window, cx| w.open_tuning(true, window, cx))),
+                )
+                .into_any_element(),
+        );
+        out.push(group_card(tr("Microtuner"), mrows));
+        if let Some(e) = &self.tuning {
+            out.push(self.tuning_editor(e, cx));
+        }
+        // the keys: the first and last the instrument plays, the base key
+        let keys = node.get("keys").filter(|v| !v.is_null()).cloned().unwrap_or_else(|| {
+            Value::object([("first", Value::int(0)), ("last", Value::int(127)), ("base", Value::int(69))])
+        });
+        let mut krows = Vec::new();
+        for (key, label, def) in [("first", "First key", 0), ("last", "Last key", 127), ("base", "Base key", 69)] {
+            let k = keys.clone();
+            let v = model::int(&keys, key, def);
+            krows.push(self.stepper(
+                intern(&format!("iw-keys-{key}")),
+                tr(label),
+                note_name(v as f64),
+                cx,
+                move |w, d, cx| {
+                    let n = (model::int(&k, key, def) + d).clamp(0, 127);
+                    let mut node = k.with(key, Value::int(n));
+                    // first ≤ last
+                    let (f, l) = (model::int(&node, "first", 0), model::int(&node, "last", 127));
+                    if f > l {
+                        node = node.with(if key == "first" { "last" } else { "first" }, Value::int(n));
+                    }
+                    w.set_track_object("keys", Some(node), "Keys", cx);
+                },
+            ));
+        }
+        out.push(group_card(tr("Keys"), krows));
+        out
     }
 
-    fn midi_tab(&self) -> Vec<AnyElement> {
-        // the track's MIDI routing is not in the document's schemas yet (lm-doc): the tab says what comes there
-        vec![notice(tr(
-            "The track's MIDI input and output (channel, fixed velocity, devices) come with the MIDI routing of the document.",
-        ))]
+    fn open_tuning(&mut self, keymap: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let micro = self.track_node(cx).get("microtuner").cloned().unwrap_or_default();
+        let slot = model::int(&micro, if keymap { "keymap" } else { "scale" }, 0) as usize;
+        self.load_tuning(keymap, slot, window, cx);
+    }
+
+    fn load_tuning(&mut self, keymap: bool, slot: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let root = self.scx.core.read(cx).port().root().clone();
+        let node = model::at(&root, &["tuning", if keymap { "keymaps" } else { "scales" }])
+            .and_then(|l| l.items().nth(slot))
+            .cloned()
+            .unwrap_or_default();
+        let desc = model::text(&node, "description").to_string();
+        let text: String = if keymap {
+            model::list(&node, "degrees")
+                .map(|d| d.as_int().map_or("x".to_string(), |v| if v < 0 { "x".into() } else { v.to_string() }))
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else {
+            model::list(&node, "intervals")
+                .filter_map(|v| v.as_text().map(str::to_string))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let numbers = [
+            model::int(&node, "first", 0) as f64,
+            model::int(&node, "last", 127) as f64,
+            model::int(&node, "middle", 60) as f64,
+            model::int(&node, "baseKey", 69) as f64,
+            model::real(&node, "baseFrequency", 440.0),
+        ];
+        let description = cx.new(|cx| InputState::new(window, cx).default_value(desc));
+        let text = cx.new(|cx| TextareaState::new(window, cx).rows(5).default_value(text));
+        self.tuning = Some(TuningEditor { keymap, slot, description, text, numbers, error: None });
+        cx.notify();
+    }
+
+    /// The slot's node from the editor, checked (a bad line refuses it whole, F-IJN-020)
+    fn apply_tuning(&mut self, cx: &mut Context<Self>) {
+        let Some(e) = &mut self.tuning else { return };
+        let description = e.description.read(cx).value().to_string();
+        let text = e.text.read(cx).value().to_string();
+        let (list, node) = if e.keymap {
+            let mut degrees = Vec::new();
+            for (i, d) in text.split_whitespace().enumerate() {
+                match d {
+                    "x" => degrees.push(Value::int(-1)),
+                    d => match d.parse::<i64>() {
+                        Ok(v) if (0..=1023).contains(&v) => degrees.push(Value::int(v)),
+                        _ => {
+                            e.error = Some(trf("Key {0} is not a degree (a number, or x for silent).", &[&(i + 1)]));
+                            cx.notify();
+                            return;
+                        }
+                    },
+                }
+            }
+            let n = e.numbers;
+            let v = Value::object([
+                ("description", Value::text(description.as_str())),
+                ("degrees", Value::list(degrees)),
+                ("first", Value::int(n[0] as i64)),
+                ("last", Value::int(n[1].max(n[0]) as i64)),
+                ("middle", Value::int(n[2] as i64)),
+                ("baseKey", Value::int(n[3] as i64)),
+                ("baseFrequency", Value::real(n[4]).unwrap_or_default()),
+            ]);
+            ("keymaps", v)
+        } else {
+            let lines: Vec<&str> =
+                text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('!')).collect();
+            if let Some(bad) =
+                lines.iter().position(|l| interval_cents(l).is_none()).map(|k| k + 1).or(lines.is_empty().then_some(1))
+            {
+                e.error = Some(trf("Line {0} is not an interval (cents with a point, or a ratio like 3/2).", &[&bad]));
+                cx.notify();
+                return;
+            }
+            let v = Value::object([
+                ("description", Value::text(description.as_str())),
+                ("intervals", Value::list(lines.iter().map(|l| Value::text(*l)))),
+            ]);
+            ("scales", v)
+        };
+        let slot = e.slot;
+        e.error = None;
+        let ops = self.tuning_ops(list, slot, node, cx);
+        let core = self.scx.core.clone();
+        apply_ops(&core, "Edit the tuning", ops, cx);
+    }
+
+    /// The edits that put a node in a tuning slot, making the project's ten slots of each when there are none
+    fn tuning_ops(&self, list: &str, slot: usize, node: Value, cx: &App) -> Vec<EditOp> {
+        let root = self.scx.core.read(cx).port().root().clone();
+        if root.get("tuning").is_some_and(|t| !t.is_null()) {
+            return vec![EditOp::Set {
+                id: Ref::Id(lm_port::ROOT),
+                path: vec![
+                    lm_port::PathStep::key("tuning"),
+                    lm_port::PathStep::key(list),
+                    lm_port::PathStep::Index(slot),
+                ],
+                value: node,
+            }];
+        }
+        let empty = |k: &str| {
+            Value::list(
+                (0..TUNING_SLOTS).map(|_| Value::object([("description", Value::text(""))]).with(k, Value::list([]))),
+            )
+        };
+        let (mut scales, mut keymaps) = (empty("intervals"), empty("degrees"));
+        let target = if list == "keymaps" { &mut keymaps } else { &mut scales };
+        if let Ok(v) = target.with_at(slot, node) {
+            *target = v;
+        }
+        vec![EditOp::set(lm_port::ROOT, &["tuning"], Value::object([("scales", scales), ("keymaps", keymaps)]))]
+    }
+
+    /// A Scala file (`.scl`, `.kbm`) into the editor's slot: the core reads it (`tuning.import_*`, one undo step)
+    fn import_tuning(&mut self, cx: &mut Context<Self>) {
+        let Some(e) = &self.tuning else { return };
+        let (keymap, slot) = (e.keymap, e.slot);
+        let rx = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+        cx.spawn(async move |w, cx| {
+            let Ok(Ok(Some(paths))) = rx.await else { return };
+            let Some(path) = paths.first().and_then(|p| p.to_str()).map(str::to_string) else { return };
+            let _ = w.update(cx, |w, cx| {
+                let params = Value::object([("slot", Value::int(slot as i64)), ("path", Value::text(path.as_str()))]);
+                let core = w.scx.core.clone();
+                run_action(&core, if keymap { "tuning.import_keymap" } else { "tuning.import_scale" }, params, cx);
+                w.tuning = None;
+            });
+        })
+        .detach();
+    }
+
+    fn tuning_editor(&self, e: &TuningEditor, cx: &Context<Self>) -> AnyElement {
+        let keymap = e.keymap;
+        let slots: Vec<AnyElement> = (0..TUNING_SLOTS as usize)
+            .map(|k| {
+                button(SharedString::from(format!("iw-slot-{k}")), format!("{}", k + 1), e.slot == k, THEME.green)
+                    .on_click(cx.listener(move |w, _, window, cx| w.load_tuning(keymap, k, window, cx)))
+                    .into_any_element()
+            })
+            .collect();
+        let mut body = vec![
+            div().flex().flex_wrap().gap(px(3.)).children(slots).into_any_element(),
+            caption(tr("Description")).into_any_element(),
+            div().w_full().child(Input::new(&e.description).small()).into_any_element(),
+            caption(if keymap {
+                tr("Scale degree of each key (x for silent)")
+            } else {
+                tr("Intervals, one per line: cents (701.955) or ratios (3/2)")
+            })
+            .into_any_element(),
+            div().w_full().child(Textarea::new(&e.text)).into_any_element(),
+        ];
+        if keymap {
+            let labels = ["First key", "Last key", "Middle key", "Base key", "Base frequency"];
+            let row: Vec<AnyElement> = labels
+                .iter()
+                .enumerate()
+                .map(|(k, l)| {
+                    let v = e.numbers[k];
+                    let shown = if k == 4 { format!("{v:.3} Hz") } else { note_name(v) };
+                    self.stepper(intern(&format!("iw-km-{k}")), tr(l), shown, cx, move |w, d, cx| {
+                        if let Some(e) = &mut w.tuning {
+                            e.numbers[k] = if k == 4 {
+                                (e.numbers[k] + d as f64).clamp(0.1, 9999.999)
+                            } else {
+                                (e.numbers[k] + d as f64).clamp(0.0, 127.0)
+                            };
+                            cx.notify();
+                        }
+                    })
+                })
+                .collect();
+            body.push(div().flex().flex_wrap().gap(px(8.)).children(row).into_any_element());
+        }
+        if let Some(err) = &e.error {
+            body.push(div().text_size(px(11.)).text_color(c(THEME.red)).child(err.clone()).into_any_element());
+        }
+        body.push(
+            div()
+                .flex()
+                .gap(px(6.))
+                .child(
+                    button("iw-tuning-apply", tr("Apply"), false, 0)
+                        .h(px(22.))
+                        .px(px(10.))
+                        .debug_selector(|| "iw-tuning-apply".into())
+                        .on_click(cx.listener(|w, _, _, cx| w.apply_tuning(cx))),
+                )
+                .child(
+                    button(
+                        "iw-tuning-import",
+                        if keymap { tr("Import a .kbm…") } else { tr("Import a .scl…") },
+                        false,
+                        0,
+                    )
+                    .h(px(22.))
+                    .px(px(10.))
+                    .on_click(cx.listener(|w, _, _, cx| w.import_tuning(cx))),
+                )
+                .child(button("iw-tuning-close", tr("Close"), false, 0).h(px(22.)).px(px(10.)).on_click(cx.listener(
+                    |w, _, _, cx| {
+                        w.tuning = None;
+                        cx.notify();
+                    },
+                )))
+                .into_any_element(),
+        );
+        group_card(if keymap { trf("Keymap {0}", &[&(e.slot + 1)]) } else { trf("Scale {0}", &[&(e.slot + 1)]) }, body)
     }
 
     /// A drop from the browser (F-IJN-004): an instrument swaps the instrument; a preset of this instrument loads
@@ -2225,7 +2903,7 @@ impl Render for InstrumentWindow {
             Tab::Envelopes => self.envelopes_tab(&ctls, cx),
             Tab::Chords => self.chords_tab(&ctls, cx),
             Tab::Effects => self.effects_tab(&t, &plugins, cx),
-            Tab::Midi => self.midi_tab(),
+            Tab::Midi => self.midi_tab(cx),
             Tab::Tuning => self.tuning_tab(&t, &ctls, cx),
         };
         div()

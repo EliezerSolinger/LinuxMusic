@@ -309,14 +309,14 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(object("input", ty::TRACK_INPUT).nullable().default(Value::NULL))
             // The live MIDI input (I-21.1; F-REC-103, F-REC-131); absent = every instrument port, every channel
             .field(FieldSpec::new("midiInput", FieldKind::Object(ty::TRACK_MIDI_INPUT)).optional())
-            // The track's MIDI output to an external device (F-IJN-017, P-38); absent = none
-            .field(FieldSpec::new("midiOutput", FieldKind::Object(ty::TRACK_MIDI_OUTPUT)).optional())
+            // The track's MIDI output to an external device (F-IJN-017, P-38); absent or null = none
+            .field(FieldSpec::new("midiOutput", FieldKind::Object(ty::TRACK_MIDI_OUTPUT)).optional().nullable())
             // The velocity that plays at 100 % (F-IJN-017); absent: 63
             .field(FieldSpec::new("baseVelocity", FieldKind::Int { min: 1, max: 127 }).optional())
             // The microtuner (F-IJN-019); absent = off (12-TET)
-            .field(FieldSpec::new("microtuner", FieldKind::Object(ty::TRACK_MICROTUNER)).optional())
+            .field(FieldSpec::new("microtuner", FieldKind::Object(ty::TRACK_MICROTUNER)).optional().nullable())
             // The keys the instrument plays and its base key (F-IJN-021); absent = every key, base A4 (69)
-            .field(FieldSpec::new("keys", FieldKind::Object(ty::TRACK_KEYS)).optional())
+            .field(FieldSpec::new("keys", FieldKind::Object(ty::TRACK_KEYS)).optional().nullable())
             .field(FieldSpec::bool("armed", false))
             .field(FieldSpec::choice("monitor", MONITOR_MODES, "auto"))
             .field(list_of("outputs", ty::OUTPUT))

@@ -58,7 +58,6 @@ Keys = Teclas
 Line {0} is not an interval (cents with a point, or a ratio like 3/2). = A linha {0} não é um intervalo (cents com ponto, ou uma razão como 3/2).
 Not applied: check the keys and the base frequency (0.1–9999.999 Hz). = Não aplicado: confira as teclas e a frequência base (0,1–9999,999 Hz).
 Description = Descrição
-Scale degree of each key (x = silent) = Grau da escala de cada tecla (x = sem som)
 Intervals, one per line: cents (701.955) or ratios (3/2) = Intervalos, um por linha: cents (701.955) ou razões (3/2)
 Apply = Aplicar
 Keymap {0} = Mapa de teclas {0}
@@ -640,3 +639,18 @@ plugin.eq8 = EQ 8
 plugin.reverb = Reverb
 plugin.delay = Atraso
 plugin.limiter = Limitador
+
+# --- the MIDI and Tuning tabs (21/11)
+Every instrument port = Todas as portas de instrumento
+These ports = Estas portas
+Fixed velocity = Velocidade fixa
+As played = Como tocada
+Follow the selected track = Seguir a faixa selecionada
+Send MIDI to a device = Mandar MIDI para um aparelho
+Key {0} is not a degree (a number, or x for silent). = A tecla {0} não é um grau (um número, ou x para sem som).
+Import a .kbm… = Importar um .kbm…
+Import a .scl… = Importar um .scl…
+Fixed note = Nota fixa
+Keymap = Mapa de teclas
+
+Scale degree of each key (x for silent) = Grau da escala de cada tecla (x para sem som)
