@@ -85,6 +85,7 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
         no_adopt: &[],
         voices: VOICES,
         max_level: TestHints::new().max_level,
+        tail: lm_plugin::DEFAULT_TAIL,
     },
 };
 
