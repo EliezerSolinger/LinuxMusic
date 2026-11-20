@@ -609,6 +609,9 @@ struct RecState {
     /// where the pre-roll began (the handle before the take, U4)
     pre_roll_from: i64,
     tracks: Vec<usize>,
+    /// loop recording: the passes completed (the cursor went back to the loop's start)
+    passes: u32,
+    last_pos: i64,
 }
 
 /// Proof of the main thread; makes the session `!Send` (I-1)
@@ -751,6 +754,14 @@ impl Session {
         self.pumps += 1;
         let mut changed = false;
         // telemetry
+        // loop recording: a pass ends when the cursor jumps back to the loop's start
+        if let Some(r) = &mut self.rec {
+            let p = self.last_frame.position;
+            if p + arrange::BAR / 8 < r.last_pos && self.doc.song.loop_range.on {
+                r.passes += 1;
+            }
+            r.last_pos = p;
+        }
         // xruns: where they happened (the fake marks the position of the frame that saw it)
         let x = self.engine.xruns.load(Ordering::Relaxed);
         if x != self.xruns_seen {
@@ -1050,6 +1061,19 @@ impl Session {
                 }
             }
         }
+        if diff.changed.iter().any(|(_, f)| *f == Some(Field::Tempo)) {
+            let recorded = self.doc.tracks.iter().flat_map(|t| t.items.iter()).filter(|i| i.resource().is_some()).count();
+            if recorded > 0 {
+                let secs = recorded as f64 * 0.4; // the fake time-stretch's speed
+                self.services.notices.push(
+                    "The tempo changed: re-render the {0} recorded items to the new tempo (about {1} s)?",
+                    vec![recorded.to_string(), format!("{secs:.0}")],
+                    notices::Severity::Info,
+                    Some(Target::Project),
+                    vec![notices::NoticeAction::new("items.rerender", "")],
+                );
+            }
+        }
         if diff.changed.iter().any(|(_, f)| *f == Some(Field::LoopOn)) {
             let l = self.doc.song.loop_range;
             self.engine.loop_start.store(l.start, Ordering::Relaxed);
@@ -1148,18 +1172,34 @@ impl Session {
     }
     /// Recording starts at the cursor, after the count-in (pre-roll bars played before it, U4): the cursor goes
     /// back that much and the take begins at the old position. Pressed again: the takes become items.
-    pub fn toggle_record(&mut self) {
+    /// Record. Stopped: recording starts at the cursor after the count-in (the cursor goes back the pre-roll's
+    /// bars; what plays before is kept as the take's handle, U4). Playing: punch-in at once, and pressing again
+    /// punches out (F-REC-006). With nothing armed, the selected track `fallback` is armed first (F-REC-021).
+    pub fn record(&mut self, fallback: Option<NodeId>) {
         if self.rec.is_some() {
             self.finish_recording();
             return;
         }
+        if !self.doc.tracks.iter().any(|t| t.armed) {
+            if let Some(t) = fallback {
+                let _ = self.transact("Arm", |e| e.set(t, Field::Armed, Value::Bool(true)));
+            }
+        }
         let at = self.last_frame.position;
-        let pre = self.doc.song.pre_roll_bars as i64 * arrange::BAR;
         let tracks: Vec<usize> = (0..self.doc.tracks.len()).filter(|&i| self.doc.tracks[i].armed).collect();
-        self.rec = Some(RecState { start: at, pre_roll_from: (at - pre).max(0), tracks });
-        self.engine.locate.store((at - pre).max(0), Ordering::Relaxed);
+        if self.last_frame.playing {
+            // punch-in: what played since the last bar line is the handle before
+            self.rec = Some(RecState { start: at, pre_roll_from: (at - arrange::BAR).max(0), tracks, passes: 0, last_pos: at });
+        } else {
+            let pre = self.doc.song.pre_roll_bars as i64 * arrange::BAR;
+            self.rec = Some(RecState { start: at, pre_roll_from: (at - pre).max(0), tracks, passes: 0, last_pos: at });
+            self.engine.locate.store((at - pre).max(0), Ordering::Relaxed);
+        }
         self.engine.recording.store(true, Ordering::Relaxed);
         self.play();
+    }
+    pub fn toggle_record(&mut self) {
+        self.record(None)
     }
     /// The takes being recorded, for the waveform that grows (U3): (track index, start, recorded length, peaks).
     /// The peaks are the fake DiskWriter's, published as they are computed.
@@ -1181,6 +1221,9 @@ impl Session {
     fn finish_recording(&mut self) {
         self.engine.recording.store(false, Ordering::Relaxed);
         let Some(r) = self.rec.take() else { return };
+        if r.passes > 0 {
+            return self.finish_loop_recording(r);
+        }
         let len = self.last_frame.position - r.start;
         if len <= 0 {
             return;
@@ -1209,6 +1252,46 @@ impl Session {
             Ok(())
         });
         self.next_id = next + 1;
+    }
+    /// Loop recording (F-REC-040/041): every pass is a take of one item over the loop, stacked; the last pass is
+    /// kept only if it reached 90 % of the loop; the comp plays the last whole pass
+    fn finish_loop_recording(&mut self, r: RecState) {
+        let l = self.doc.song.loop_range;
+        let loop_len = (l.end - l.start).max(1);
+        let last = self.last_frame.position - l.start;
+        let mut passes = r.passes as i64;
+        if last as f64 >= 0.9 * loop_len as f64 {
+            passes += 1;
+        }
+        if passes == 0 {
+            return;
+        }
+        let base = self.next_id;
+        self.next_id += 2 + passes as u64;
+        let _ = self.transact("Record loop", |e| {
+            for &t in &r.tracks {
+                let takes: Vec<arrange::Take> = (0..passes)
+                    .map(|k| arrange::Take { id: NodeId { kind: b'x', number: 300_000 + base * 10 + k as u64 }, resource: ResourceId(((t as i64 + k) % 8) as u32) })
+                    .collect();
+                let comp = vec![arrange::CompSegment { start: 0, take: takes.last().unwrap().id, crossfade_ms: 5.0 }];
+                let id = NodeId { kind: b'i', number: 300_000 + base * 10 + 9 };
+                e.doc.tracks[t].items.push(Item {
+                    id,
+                    name: format!("Loop ({passes} takes)"),
+                    fades: (0, 0),
+                    fade_curve: 0.0,
+                    gain_db: 0.0,
+                    reversed: false,
+                    start: l.start,
+                    length: loop_len,
+                    kind: ItemKind::Audio { resource: takes[0].resource, takes, comp, handle_before: 0, handle_after: 0 },
+                });
+                e.doc.tracks[t].show_takes = true;
+                e.diff.changed.push((id, None));
+                e.diff.changed.push((e.doc.tracks[t].id, None));
+            }
+            Ok(())
+        });
     }
     pub fn locate(&mut self, sample: i64) {
         self.engine.locate.store(sample.max(0), Ordering::Relaxed);

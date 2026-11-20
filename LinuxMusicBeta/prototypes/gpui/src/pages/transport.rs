@@ -126,7 +126,15 @@ pub fn render(ws: &Workspace, cursor: f64, cx: &Context<Workspace>) -> impl Into
             cx.notify();
         })))
         .child(tbutton("rec", "●", pos.recording, THEME.red).on_click(cx.listener(|ws, _, _, cx| {
-            ws.core.update(cx, |core, _| { let _ = core.port_mut().run_action("transport.record", Value::Bool(true)); });
+            // stopped: count-in and record; playing: punch in, and again to punch out (F-REC-006)
+            let root_track = {
+                let root = ws.core.read(cx).port().root();
+                ws.composition.read(cx).selected_track(root)
+            };
+            let param = root_track.map_or(Value::Bool(true), Value::Id);
+            ws.core.update(cx, |core, _| {
+                let _ = core.port_mut().run_action("transport.record", param);
+            });
             cx.notify();
         })))
         .child(tbutton("loop", "⟲", loop_on, THEME.green).on_click(cx.listener(move |ws, _, _, cx| set_song(ws, Field::LoopOn, Value::Bool(!loop_on), cx))))

@@ -366,6 +366,12 @@ impl CompositionPage {
         }
     }
 
+    /// The track of the selected item: what Record arms when nothing is armed (F-REC-021)
+    pub fn selected_track(&self, root: &Doc) -> Option<NodeId> {
+        let it = self.selected_item?;
+        root.tracks.iter().find(|t| t.items.iter().any(|i| i.id == it)).map(|t| t.id)
+    }
+
     /// A click on the ruler moves the cursor there
     fn on_ruler(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) {
         let b = *self.timeline_bounds.borrow();

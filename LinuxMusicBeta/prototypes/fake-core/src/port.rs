@@ -248,7 +248,10 @@ impl CorePort for Session {
         let r = match action {
             "transport.play" => Ok(self.play()),
             "transport.stop" => Ok(self.stop()),
-            "transport.record" => Ok(self.toggle_record()),
+            "transport.record" => Ok(self.record(match params {
+                Value::Id(t) => Some(t),
+                _ => None,
+            })),
             "transport.toggle" => Ok(if self.position().playing { self.stop() } else { self.play() }),
             "transport.locate" => num(&params).map(|s| self.locate(s as i64)).ok_or(Error::WrongType),
             "take.reload" => num(&params).map(|t| self.reload_take(t as usize)).ok_or(Error::WrongType),
@@ -273,6 +276,21 @@ impl CorePort for Session {
                 _ => Err(Error::WrongType),
             },
             "region.from_loop" => self.region_from_loop(),
+            // the recorded items stretched to a new tempo (F-REC-090): a long operation, cancellable
+            "items.rerender" => {
+                let n = self.doc().tracks.iter().flat_map(|t| t.items.iter()).filter(|i| i.resource().is_some()).count();
+                let _ = self.start("Re-rendering the recorded items", Target::Project, true, move |cancel, progress| {
+                    for k in 0..n {
+                        if cancel.is_cancelled() {
+                            return Err("cancelled".to_string());
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(40));
+                        progress.set((k + 1) as f32 / n as f32);
+                    }
+                    Ok(())
+                });
+                Ok(())
+            }
             "mixer.create_channels_for_outputs" => {
                 num(&params).ok_or(Error::WrongType).and_then(|t| self.create_channels_for_outputs(t as usize))
             }

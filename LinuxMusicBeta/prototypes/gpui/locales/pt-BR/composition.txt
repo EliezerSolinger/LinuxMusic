@@ -6,3 +6,5 @@ Take {0} = Take {0}
 used in {0} parts = usado em {0} trechos
 I/O ×{0} = E/S ×{0}
 Filter cutoff = Corte do filtro
+The tempo changed: re-render the {0} recorded items to the new tempo (about {1} s)? = O andamento mudou: re-renderizar os {0} itens gravados no andamento novo (uns {1} s)?
+Re-rendering the recorded items = Re-renderizando os itens gravados
