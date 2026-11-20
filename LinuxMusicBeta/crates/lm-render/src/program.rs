@@ -307,25 +307,24 @@ impl MidiItem {
             ItemEventKind::NoteOn { .. } => 2,
         };
         events.sort_by(|a, b| a.tick.cmp(&b.tick).then(rank(&a.kind).cmp(&rank(&b.kind))));
-        let mut notes: Vec<(u32, i64)> = Vec::new();
-        let mut open: Vec<u32> = Vec::new();
+        // Linear in the events (V8: one item of 10,000 notes is made again when one note moves)
+        let mut notes: Vec<(u32, i64)> = Vec::with_capacity(events.len() / 2);
+        let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::with_capacity(events.len() / 2);
+        let mut open: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
         for e in &events {
             match e.kind {
                 ItemEventKind::NoteOn { n, .. } => {
-                    if notes.iter().any(|(m, _)| *m == n) {
+                    if !seen.insert(n) {
                         return Err(Error::new("render.item.note_twice").arg("n", i64::from(n)));
                     }
+                    open.insert(n, notes.len());
                     notes.push((n, i64::MAX));
-                    open.push(n);
                 }
                 ItemEventKind::NoteOff { n } => {
-                    let Some(pos) = open.iter().position(|m| *m == n) else {
+                    let Some(i) = open.remove(&n) else {
                         return Err(Error::new("render.item.off_without_on").arg("n", i64::from(n)));
                     };
-                    open.swap_remove(pos);
-                    if let Some(note) = notes.iter_mut().find(|(m, _)| *m == n) {
-                        note.1 = e.tick;
-                    }
+                    notes[i].1 = e.tick;
                 }
                 ItemEventKind::Midi { .. } => {}
             }
