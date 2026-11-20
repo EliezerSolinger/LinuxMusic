@@ -4,6 +4,7 @@
 #[cfg(target_os = "linux")]
 mod alsa;
 mod backend;
+mod calibrate;
 mod device;
 mod disk;
 mod dummy;
@@ -43,3 +44,4 @@ pub use resources::{
     ResourceView, STREAM_ABOVE, audio_folder, clean_import_leftovers, import_file, is_valid_key, load_file, resolve_external,
     resource_path, verify_located,
 };
+pub use calibrate::{BURST, Calibration, CalibrationKey, CalibrationOptions, burst, calibrate, find_lag};

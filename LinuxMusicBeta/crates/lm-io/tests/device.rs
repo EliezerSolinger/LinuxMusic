@@ -180,3 +180,58 @@ fn switch_keeps_the_renderer() {
     let renderer = device.stop().expect("stop");
     assert!(renderer.is_playing());
 }
+
+/// Broadband noise, like a fan in front of the microphone
+struct Fan(u32);
+
+impl DummySource for Fan {
+    fn fill(&mut self, _: u64, _: lm_base::HostTime, inputs: &mut [Vec<f32>], frames: usize) {
+        for c in inputs.iter_mut() {
+            for x in c[..frames].iter_mut() {
+                self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                *x = ((self.0 >> 8) as f32 / (1u32 << 24) as f32 - 0.5) * 0.2;
+            }
+        }
+    }
+}
+
+/// I-10.4, H19: five measures through a loopback of known latency, under fan noise; the residual is the measure
+/// minus what the device reports
+#[test]
+fn calibration_measures_the_loopback() {
+    let latency = 1_000;
+    let options = DummyOptions {
+        pace: Pace::Free { speed: Some(20.0) },
+        loopback: Some(latency),
+        reported_latency: 100,
+        ..DummyOptions::default()
+    };
+    let backend = DummyBackend::new(options).with_source(Box::new(Fan(7)));
+    let cfg = config(48_000, 256);
+    let (result, _backend) = calibrate(
+        Box::new(backend),
+        &cfg,
+        CalibrationOptions::default(),
+        RenderThreads::default(),
+        &lm_base::Cancel::new(),
+        &lm_base::Progress::new(),
+    );
+    let c = result.expect("calibration");
+    assert_eq!(c.measures.len(), 5);
+    assert_eq!(c.round_trip, i64::from(latency), "{c:?}");
+    assert_eq!(c.reported, 100 + 100 + 512);
+    assert_eq!(c.residual, i64::from(latency) - c.reported);
+    assert_eq!(c.key, CalibrationKey { device: "dummy".into(), rate: 48_000, edge_resampler: false });
+    // Without a loopback there is nothing to find: refused, not guessed
+    let silent = DummyBackend::new(DummyOptions { pace: Pace::Free { speed: Some(20.0) }, ..DummyOptions::default() })
+        .with_source(Box::new(Fan(3)));
+    let (result, _) = calibrate(
+        Box::new(silent),
+        &cfg,
+        CalibrationOptions::default(),
+        RenderThreads::default(),
+        &lm_base::Cancel::new(),
+        &lm_base::Progress::new(),
+    );
+    assert_eq!(result.expect_err("no signal").key(), "io.calibration.no_signal");
+}
