@@ -62,6 +62,13 @@ public:
 		set_samplerate = &ModuleSelector::initialize;
 		register_params = &ModuleSelector::registerParameters;
 		delete_instance = &ModuleSelector::destroy;
+		// (LinuxMusicBeta: a panic's silence) every module's memory
+		clear_state = [](PluginDef* plugin) {
+			for (auto* module : self(plugin).m_modules)
+			{
+				if (module->clear_state) { module->clear_state(module); }
+			}
+		};
 		for (const auto create : creators) { m_modules.push_back(create()); }
 		m_values.reserve(m_modules.size() + 1);
 		for (auto* module : m_modules) { m_values.push_back({module->id, module->name}); }

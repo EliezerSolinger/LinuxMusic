@@ -27,7 +27,7 @@ mod schema;
 pub use schema::{DISPLAY_BYTES, Plan, fixed_block, key_of, name_of, outputs, plan, rebuilds};
 
 macro_rules! units {
-    ($($module:ident = $unit:literal => $id:literal $([$($no_adopt:literal),*])?,)*) => {
+    ($($module:ident = $unit:literal => $id:literal $(max $max:literal)?,)*) => {
         /// One module per unit, each with its `DESCRIPTOR`
         pub mod units {
             $(
@@ -47,7 +47,10 @@ macro_rules! units {
                         velocity: Velocity::Ignored,
                         display: Some(DisplaySpec { bytes: crate::DISPLAY_BYTES }),
                         build: |state, cx| crate::processor::build(UNIT, state, cx),
-                        tests: TestHints { tuning: None, no_adopt: &[$($($no_adopt),*)?], voices: 16 },
+                        tests: TestHints {
+                            max_level: { let _m = 1.0e3; $(let _m = $max;)? _m },
+                            ..TestHints::new()
+                        },
                     };
                 }
             )*
@@ -62,7 +65,8 @@ units! {
     gain = "gain" => "gx-gain",
     low_highpass = "low_highpass" => "gx-low-highpass",
     highbooster = "highbooster" => "gx-highbooster",
-    eqs = "eqs" => "gx-eqs",
+    // (ten bands of up to +30 dB: three that overlap add +90 dB to the tests' 0.5)
+    eqs = "eqs" => "gx-eqs" max 1.6e4,
     ampstack = "ampstack" => "gx-ampstack",
     crybaby = "crybaby" => "gx-crybaby",
     poweramp = "poweramp" => "gx-poweramp",
@@ -90,7 +94,8 @@ units! {
     flanger_mono = "flanger_mono" => "gx-flanger-mono",
     flanger_mono_gx = "flanger_mono_gx" => "gx-flanger-mono-gx",
     feedback = "feedback" => "gx-feedback",
-    eq = "eq" => "gx-eq",
+    // (four peaks of up to +50 dB, anywhere: two on one frequency add +100 dB)
+    eq = "eq" => "gx-eq" max 5.0e4,
     dide = "dide" => "gx-dide",
     amp_tonestack = "amp.tonestack" => "gx-amp-tonestack",
     cab = "cab" => "gx-cab",

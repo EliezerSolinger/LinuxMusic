@@ -10,6 +10,7 @@ libfluidsynth-dev     # lm-sys-fluidsynth (>= 2.2.0; 24.04 has 2.3.4)
 librubberband-dev     # lm-sys-rubberband (>= 3.0.0; 24.04 has 3.3.0)
 # libjack-jackd2-dev  # lm-sys-jack
 liblilv-dev           # lm-sys-lilv
+libfftw3-dev          # lm-sys-guitarix: the Detune's and zita-convolver's FFT (fftw3f and fftw3f_threads)
 lv2-dev               # lm-sys-lilv: the LV2 headers of its test bundle
 gcc                   # lm-sys-lilv: its tests compile a test LV2 bundle (the runners have it; listed to be explicit)
 dbus                  # lm-sys-linux tests: dbus-daemon for the ReserveDevice1 test

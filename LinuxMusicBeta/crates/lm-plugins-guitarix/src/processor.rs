@@ -21,9 +21,7 @@
 //!   with the new value, and takes over the old one's instances only to crossfade from them over
 //!   [`lm_plugin::instrument::CROSSFADE_MS`] (a module switched in Guitarix is cleared: a click; a cabinet's new
 //!   response starts fresh). The same tree rebuilt takes the old instances over and goes on bit for bit.
-//! - **Guard:** a non-finite sample clears the unit (its state would stay poisoned) and plays silence for that call;
-//!   samples beyond ±[`CEILING`] (+60 dBFS: Guitarix's ranges allow four +50 dB peaks on one frequency) are held
-//!   there. Neither happens at any setting a guitar is played through.
+//! - **Guard:** a non-finite sample clears the unit (its state would stay poisoned) and plays silence for that call.
 
 use std::any::Any;
 
@@ -41,8 +39,6 @@ use crate::schema::{DISPLAY_BYTES, Plan, plan};
 pub const UNIT_RATE: u32 = 48_000;
 /// The glide of a logarithmic parameter: its time constant
 pub const GLIDE_MS: f64 = 5.0;
-/// The guard's ceiling
-pub const CEILING: f32 = 1000.0;
 /// A unit's calls when nothing else asks for a size
 const UNIT_BLOCK: usize = GRID;
 
@@ -320,12 +316,6 @@ fn run(
         *poisoned = true;
         for ch in output.iter_mut() {
             ch[..n].fill(0.0);
-        }
-    } else {
-        for ch in output.iter_mut() {
-            for x in &mut ch[..n] {
-                *x = x.clamp(-CEILING, CEILING);
-            }
         }
     }
 }

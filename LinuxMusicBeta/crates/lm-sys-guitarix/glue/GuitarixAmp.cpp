@@ -63,6 +63,7 @@ public:
 		set_samplerate = &AmpHead::initialize;
 		register_params = &AmpHead::registerParameters;
 		delete_instance = [](PluginDef* plugin) { delete static_cast<AmpHead*>(plugin); };
+		clear_state = &AmpHead::clear; // (LinuxMusicBeta)
 		for (auto& channel : m_channels)
 		{
 			channel.shaper = gx_effects::noise_shaper::plugin();
@@ -132,6 +133,27 @@ private:
 		builder.load_glade_file("ampbox.glade#amp_background");
 		builder.load_glade_file("mainpanel.glade#ampdetail_normal");
 		return 0;
+	}
+
+	//! (LinuxMusicBeta: a panic's silence) every module's memory, the gates open, the meters at rest
+	static void clear(PluginDef* plugin)
+	{
+		auto& self = *static_cast<AmpHead*>(plugin);
+		// (each one by name: modules() makes a list, which allocates)
+		const auto clearOne = [](PluginDef* module) {
+			if (module && module->clear_state) { module->clear_state(module); }
+		};
+		for (auto& channel : self.m_channels)
+		{
+			for (auto* module : {channel.shaper, channel.amps, channel.clip, channel.bassBooster, channel.ampOut,
+					 channel.presence})
+			{
+				clearOne(module);
+			}
+		}
+		for (auto* module : {self.m_feed, self.m_master, self.m_balance, self.m_fizz, self.m_limiter}) { clearOne(module); }
+		for (auto& channel : self.m_channels) { channel.gate = 1.f; }
+		self.m_maxLevel = {};
 	}
 
 	static void initialize(unsigned int rate, PluginDef* plugin)

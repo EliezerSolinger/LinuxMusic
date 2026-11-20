@@ -124,6 +124,11 @@ public:
 		activate_plugin = activate_static;
 		register_params = registerparam;
 		delete_instance = del_instance;
+		// (LinuxMusicBeta: a panic's silence) its FIFOs and phases, when its buffers are there (no allocation)
+		PluginDef::clear_state = [](PluginDef* p) {
+			auto& self = *static_cast<smbPitchShift*>(p);
+			if (self.mem_allocated) { self.clear_state(); }
+		};
 		load_ui = load_ui_f_static;
 	}
 

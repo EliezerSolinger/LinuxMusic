@@ -210,6 +210,12 @@ public:
 		return impdata_update(0, 0, 1, data, 0, count) == 0;
 	}
 
+	//! Forgets the signal it holds (LinuxMusicBeta: a panic's silence) [audio thread: no allocation]
+	void clear()
+	{
+		if (state() == Convproc::ST_PROC) { Convproc::reset(); }
+	}
+
 private:
 	void stop()
 	{
@@ -251,6 +257,7 @@ public:
 		set_samplerate = &IrUnit::initialize;
 		register_params = &IrUnit::registerParameters;
 		delete_instance = &IrUnit::destroy;
+		clear_state = &IrUnit::clear; // (LinuxMusicBeta)
 		for (int i = 0; i < size; ++i) { m_names.push_back({table[i].value_id, table[i].value_label}); }
 		m_names.push_back({nullptr, nullptr});
 	}
@@ -314,6 +321,14 @@ private:
 
 	static void destroy(PluginDef* plugin) { delete static_cast<IrUnit*>(plugin); }
 
+	//! (LinuxMusicBeta: a panic's silence) the filter's and the convolver's memory
+	static void clear(PluginDef* plugin)
+	{
+		auto& self = *static_cast<IrUnit*>(plugin);
+		self.m_former.clear_state_f();
+		self.m_convolver.clear();
+	}
+
 	const char* m_selectId;
 	const char* m_levelId;
 	const char* m_bassId;
@@ -357,6 +372,8 @@ public:
 		set_samplerate = &Contrast::initialize;
 		register_params = &Contrast::registerParameters;
 		delete_instance = [](PluginDef* plugin) { delete static_cast<Contrast*>(plugin); };
+		// (LinuxMusicBeta: a panic's silence) the convolver's memory
+		clear_state = [](PluginDef* plugin) { static_cast<Contrast*>(plugin)->m_convolver.clear(); };
 	}
 
 	static void update(PluginDef* plugin)
