@@ -114,6 +114,12 @@ pub trait Synth: Clone + Send + 'static {
         let _ = voice;
         false
     }
+    /// The note is let go: its release starts at the start of the piece about to be rendered (after
+    /// [`Synth::start`] when the note starts in the same piece). A synth whose voice has a release of its own (an
+    /// emulated chip's gate) starts it here; the others need nothing (the instrument's release shapes their sound)
+    fn release(&self, voice: &mut Self::Voice) {
+        let _ = voice;
+    }
     /// The release the synth wants even without a volume envelope, ms (legacy `desiredReleaseTimeMs`)
     fn release_ms(&self) -> f32 {
         0.0
@@ -1155,12 +1161,14 @@ impl<S: Synth> Instrument<S> {
                 v.tuning = b.tuning.value;
                 pan_ramp = b.pan;
             }
+            let mut releasing = false;
             if v.release_pending && !v.released {
                 v.released = true;
                 v.release_pending = false;
                 v.release_begin = v.frame;
                 let frames = shaping.release_frames(desired, false).max(desired).max(1);
                 v.release_end = v.release_begin.saturating_add(frames);
+                releasing = true;
             }
             let m = if v.released { n.min((v.release_end - v.frame).max(0) as usize) } else { n };
             if m == 0 {
@@ -1178,6 +1186,12 @@ impl<S: Synth> Instrument<S> {
             if !v.started {
                 v.started = true;
                 synth.start(&mut v.inner, &NoteStart { key: v.key, velocity: v.velocity, freq }, rng);
+            }
+            if releasing {
+                synth.release(&mut v.inner);
+                if v.ghost_on {
+                    fading.release(&mut v.ghost);
+                }
             }
             let (l, r) = (&mut scratch.left[..m], &mut scratch.right[..m]);
             l.fill(0.0);

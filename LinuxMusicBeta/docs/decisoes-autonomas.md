@@ -872,3 +872,51 @@ conservadora; só entra o que o modelo novo pede.
   ela. Não tem as funções de instrumento, como o legado não dava envelope e filtro a instrumentos de fluxo único;
   acordes e arpejo ficam de fora (de um fluxo monofônico só soaria a nota mais nova). `Lb302::set_frequency` no
   `lm-dsp` move a afinação da nota sem recomeçá-la (o legado lia a frequência da nota a cada período).
+## Chips e amplificadores (20/11)
+
+Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções próprias, o Guitarix e o Amp & IR.
+
+- **Portar ou embrulhar, plugin por plugin** (pedido: portar para Rust seguro o que é do legado ou pequeno o
+  bastante para portar fielmente; embrulhar o resto num `lm-sys-*` com ficha):
+  - **Sid: embrulhado (`lm-sys-resid`).** O reSID 1.0 tem ~5 mil linhas de C++ de terceiros (Dag Lem, GPL-2.0 ou
+    posterior), com um filtro do 6581 em ponto fixo a partir de tabelas feitas em `double` na partida; uma
+    tradução faria o som depender de cada arredondamento traduzido. As fontes que o legado compilava ficam em
+    `crates/lm-sys-resid/vendor/resid` (com o `siddefs.h` configurado e as tabelas de onda que o `samp2src.pl`
+    gerava) e o `build.rs` compila com as flags do legado (GNU C++20, `-O2`, a contração de ponto flutuante do
+    compilador): o A/B dá bit a bit.
+  - **FreeBoy e OpulenZ: portados para Rust** dentro dos crates dos plugins (o APU do Game Boy do game-music-emu e o
+    OPL2 do MAME/adplug são pequenos e de aritmética inteira): ver abaixo.
+- **`cc` nas dependências do workspace** para os `build.rs` que compilam C/C++ incluído no repositório (reSID,
+  Guitarix, Neural Amp Modeler), com `parallel`. Já estava no `Cargo.lock` por outras crates; nenhuma crate nova.
+  O pedido de dependência nova à sessão de design fica registrado aqui.
+- **`Synth::release` no `lm-plugin`** (correção fora da pasta, aditiva, padrão sem efeito): o sintetizador fica
+  sabendo quando a voz é solta, no começo da peça em que o release começa (depois do `start` se a nota começa na
+  mesma peça). O SID precisa: o release do chip é o gate do envelope dele. A voz fantasma do crossfade também é
+  solta.
+- **Sid, como toca uma nota:** um chip novo por nota (cópia de um chip feito no build, sem alocar), os 25
+  registradores calculados como o `playNoteImpl` calculava e escritos na ordem e no tempo do `sid_fillbuffer` (9
+  ciclos depois de cada escrita, 4 antes de cada registrador de controle). O legado escrevia tudo a cada período do
+  motor dele; aqui a cada **256 quadros da nota** (o período padrão do legado, contado do começo da nota: a nota soa
+  igual em qualquer tamanho de bloco e em qualquer ponto da linha do tempo) e na hora em que algum registrador muda
+  (botão, altura, gate: o legado esperava o período seguinte). Reescrever não é inócuo no chip: a escrita no
+  registrador de controle recalcula a saída da onda (e anda o pipeline de meio ciclo do 8580), como um player de C64
+  escrevendo a cada quadro; por isso o tique fica.
+- **Diferenças intencionais do Sid:**
+  - o legado chamava `set_chip_model` a cada período, e o reSID zera os integradores do filtro nessa chamada: o som
+    filtrado recomeçava do zero a cada período (um zumbido na frequência do período). Aqui o modelo só é aplicado
+    quando muda;
+  - o legado pedia `relTime[release]` **quadros** de release (a tabela é em milissegundos: a 48 kHz o release de
+    300 ms do SID era cortado em 6 ms; o upstream convertia, o `desiredReleaseTimeMs` do fork trocou a unidade).
+    Aqui o release dura os milissegundos;
+  - uma sequência de escritas que não cabe numa peça (a 192 kHz, 32 amostras são 164 ciclos e a sequência leva 237)
+    continua na peça seguinte, ciclo a ciclo; o legado perdia as escritas depois da última amostra do período, e no
+    8580 (cuja escrita só pousa no ciclo seguinte) a voz 3 nem chegava ao chip num período curto.
+- **A/B do Sid** (`crates/lm-plugins-sid/ab`): o harness carrega o `libsid.so` do legado numa faixa de instrumento
+  e toca as notas pelo `NotePlayHandle` (o `playNoteImpl` do plugin, o sound shaping e o volume da nota), com os
+  ajustes pelo `restoreState` do próprio plugin. Pelo plugin, em blocos de 256, 32 e 1024: **bit a bit** do quadro
+  128 até o fim das notas (o fade-in é das funções de instrumento, que o calculam por peça de 32 quadros; o legado,
+  por período, como no A/B do TripleOscillator), e nos casos filtrados no primeiro período (por causa do filtro
+  zerado acima). Um segundo teste dirige o chip exatamente como o laço do legado (modelo a cada período, registradores
+  pelo `SidSynth::registers` do plugin, a sequência do `sid_fillbuffer`) e dá bit a bit em todas as notas inteiras,
+  as filtradas também: as únicas diferenças do plugin são as de cima. O harness serve aos três instrumentos de chip
+  (`build-references.sh <pasta ab do crate>`).

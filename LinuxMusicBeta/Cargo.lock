@@ -3682,6 +3682,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-sid"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "lm-base",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+ "lm-sys-resid",
+ "serde_json",
+]
+
+[[package]]
 name = "lm-plugins-testsine"
 version = "0.1.0"
 dependencies = [
@@ -3837,6 +3850,15 @@ dependencies = [
 
 [[package]]
 name = "lm-sys-nam"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "cc",
+ "lm-base",
+]
+
+[[package]]
+name = "lm-sys-resid"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
