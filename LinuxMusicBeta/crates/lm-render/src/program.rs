@@ -33,6 +33,7 @@ use crate::ids::{NodeIndex, ParamSlot, PortIndex, ProgramGen};
 use crate::processor::BufferLayout;
 use crate::sample::SampleData;
 use crate::spec::{Limits, ProcessSpec};
+use crate::stream::Stream;
 
 /// What runs in a node
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -258,14 +259,39 @@ pub struct ParamInfo {
     pub initial: f32,
 }
 
+/// Where an audio item's samples come from
+#[derive(Clone, Debug, PartialEq)]
+pub enum AudioSource {
+    /// Decoded in memory
+    Memory(Arc<SampleData>),
+    /// Read from the disk ahead of the playhead (P-32, `stream.rs`)
+    Stream(Stream),
+}
+
+impl AudioSource {
+    pub fn rate(&self) -> u32 {
+        match self {
+            AudioSource::Memory(d) => d.rate(),
+            AudioSource::Stream(s) => s.rate(),
+        }
+    }
+
+    pub fn channels(&self) -> usize {
+        match self {
+            AudioSource::Memory(d) => d.channels(),
+            AudioSource::Stream(s) => s.channels(),
+        }
+    }
+}
+
 /// An audio item's playback, resolved to samples by the compiler (comping and crossfades are flattened into items)
 #[derive(Clone, Debug, PartialEq)]
 pub struct AudioItem {
     /// Timeline sample where the item starts
     pub start: i64,
     pub length: i64,
-    pub data: Arc<SampleData>,
-    /// Frame of `data` played at `start`
+    pub source: AudioSource,
+    /// Frame of the source played at `start`
     pub offset: i64,
     pub gain: f32,
     /// Linear fades, in samples, inside the item
@@ -535,6 +561,8 @@ pub struct Program {
     pub(crate) preview: Option<u32>,
     pub(crate) metronome: Option<(u32, Metronome)>,
     pub(crate) midi: Box<[MidiSource]>,
+    /// The streamed audio items, by node and item (the renderer tells them where the playhead is)
+    pub(crate) streams: Box<[(u32, u32)]>,
 }
 
 impl Program {
@@ -956,13 +984,14 @@ impl ProgramBuilder {
 
         // Sources
         let rate = self.spec.sample_rate;
+        let mut streams: Vec<(u32, u32)> = Vec::new();
         for (node, mut items) in self.audio {
             let i = find(node)? as usize;
             if pnodes[i].desc.inputs == 0 {
                 return Err(node_arg(invalid("render.program.source_without_inputs"), node));
             }
             for it in &items {
-                if it.data.rate() != rate {
+                if it.source.rate() != rate {
                     return Err(node_arg(invalid("render.program.sample_rate_mismatch"), node));
                 }
                 if it.length < 0 || it.offset < 0 || !it.gain.is_finite() {
@@ -970,6 +999,11 @@ impl ProgramBuilder {
                 }
             }
             items.sort_by_key(|it| it.start);
+            for (k, it) in items.iter().enumerate() {
+                if matches!(it.source, AudioSource::Stream(_)) {
+                    streams.push((i as u32, k as u32));
+                }
+            }
             pnodes[i].audio_max_len = items.iter().map(|it| it.length).max().unwrap_or(0);
             pnodes[i].audio = items.into_boxed_slice();
         }
@@ -1077,6 +1111,7 @@ impl ProgramBuilder {
             preview,
             metronome,
             midi: midi.into_boxed_slice(),
+            streams: streams.into_boxed_slice(),
         }))
     }
 }

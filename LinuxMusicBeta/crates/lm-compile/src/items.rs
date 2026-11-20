@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use lm_base::Result;
-use lm_render::{AudioItem, Curve, CurvePoint, ItemEvent, ItemEventKind, MidiItem, SampleData};
+use lm_render::{AudioItem, AudioSource, Curve, CurvePoint, ItemEvent, ItemEventKind, MidiItem, SampleData};
 use lm_state::{NodeId, Value};
 use lm_time::TempoMap;
 
@@ -315,7 +315,7 @@ fn audio_segments(item: &Value, tempo: &TempoMap, data: &[Option<Arc<SampleData>
         if source_kind(d) == SourceKind::Disk {
             disk += 1;
         }
-        out.push(AudioItem { start: begin, length: len, data: d.clone(), offset, gain, fade_in: fi, fade_out: fo });
+        out.push(AudioItem { start: begin, length: len, source: AudioSource::Memory(d.clone()), offset, gain, fade_in: fi, fade_out: fo });
     }
     (out, disk)
 }

@@ -112,6 +112,12 @@ pub enum Telemetry {
         generation: ProgramGen,
         node: NodeIndex,
     },
+    /// A streamed item (P-32) needed frames the disk had not loaded yet: they played as silence
+    StreamUnderrun {
+        generation: ProgramGen,
+        node: NodeIndex,
+        frames: u32,
+    },
     /// The master went above +24 dBFS: the output is cut (U20)
     MasterProtection {
         generation: ProgramGen,

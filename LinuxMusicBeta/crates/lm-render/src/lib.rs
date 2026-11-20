@@ -31,6 +31,7 @@ mod renderer;
 mod rng;
 mod sample;
 mod spec;
+mod stream;
 mod sync;
 mod telemetry;
 mod voice;
@@ -50,12 +51,13 @@ pub use processor::{
     PluginRequest, ProcessContext, Processor, TransportInfo, display_channel,
 };
 pub use program::{
-    AUTOMATION_GRID, AudioItem, ChannelMix, CountIn, Feed, HostParam, ItemEvent, ItemEventKind, Metronome, MidiItem, MidiTiming,
+    AUTOMATION_GRID, AudioItem, AudioSource, ChannelMix, CountIn, Feed, HostParam, ItemEvent, ItemEventKind, Metronome, MidiItem, MidiTiming,
     NodeDesc, NodeKind, OutputRoute, ParamInfo, PortRoute, Program, ProgramBuilder, Rate, Strip, TransportSettings,
 };
 pub use renderer::{BlockReport, DeviceBlock, PROTECTION_THRESHOLD, RecordSpan, Renderer};
 pub use rng::Rng;
 pub use sample::SampleData;
+pub use stream::{Stream, StreamFeeder, StreamSpec, stream};
 pub use spec::{Limits, ProcessSpec, RenderThreads, ThreadHook, ThreadKind, flushing_denormals};
 pub use telemetry::{
     METER_CHANNELS, Meter, PanicReport, PreviewEnded, PreviewReturn, Telemetry, TelemetryFrame, TelemetryKind, Touched,

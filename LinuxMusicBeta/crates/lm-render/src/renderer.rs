@@ -31,6 +31,7 @@ use crate::install::{Install, NodeCore, Retired};
 use crate::notes::{ActiveNotes, NoteSource};
 use crate::panic::RenderThreadGuard;
 use crate::params::ParamSlots;
+use crate::program::{AudioItem, AudioSource};
 use crate::processor::{Adopted, BufferLayout, Buffers, HostOutbox, ProcessContext, TransportInfo};
 use crate::program::{
     AUTOMATION_GRID, ChannelMix, DelayLine, MidiTiming, NONE, NodeKind, PFeed, PHostParam, PNode, Program, Rate, Target,
@@ -288,6 +289,8 @@ pub struct Renderer {
     gain: Box<[f32]>,
     pan: Box<[f32]>,
     curve: Box<[f32]>,
+    /// A streamed item's frames for one pass (64 channels at most)
+    stream_scratch: Box<[f32]>,
     protection: Protection,
     watch: Arc<Watch>,
     frame: u64,
@@ -366,6 +369,7 @@ impl Renderer {
             gain: vec![0.0; spec.max_block].into_boxed_slice(),
             pan: vec![0.0; spec.max_block].into_boxed_slice(),
             curve: vec![0.0; spec.max_block].into_boxed_slice(),
+            stream_scratch: vec![0.0; 64 * spec.max_block].into_boxed_slice(),
             protection: Protection { engaged: false, gain: 1.0, quiet: 0 },
             watch,
             frame: 0,
@@ -487,6 +491,7 @@ impl Renderer {
         }
         // MIDI not consumed (its time is ahead) stays in its ring; what was taken is all played
         self.live.clear();
+        self.publish_streams();
 
         self.watch.periods.fetch_add(1, Ordering::Relaxed);
         let elapsed = HostTime::now().since(started) as f64;
@@ -824,6 +829,23 @@ impl Renderer {
                 }
             }
             Command::Preview(_) => {}
+        }
+    }
+
+    /// Tells every streamed item where the playhead will need it next, and where the loop comes back (P-32)
+    fn publish_streams(&self) {
+        let pos = self.transport.position;
+        let lp = self.program.transport.loop_range;
+        for &(ni, ii) in self.program.streams.iter() {
+            let it = &self.program.nodes[ni as usize].audio[ii as usize];
+            let AudioSource::Stream(s) = &it.source else { continue };
+            let end = it.start + it.length;
+            let map = |t: i64| u64::try_from(it.offset + (t.max(it.start) - it.start)).ok();
+            s.set_playhead(if pos < end { map(pos) } else { None });
+            s.set_cue(match lp {
+                Some((a, b)) if a < end && b > it.start => map(a),
+                _ => None,
+            });
         }
     }
 
@@ -1267,6 +1289,7 @@ impl Renderer {
         }
         let playing = self.transport.playing;
         let pos0 = self.transport.position;
+        let mut missing = 0u64;
         {
             let node = &self.program.nodes[i as usize];
             // Device input (monitoring)
@@ -1280,8 +1303,13 @@ impl Renderer {
                 }
             }
             if playing && !node.audio.is_empty() {
-                play_audio(node, &mut io.buffer, &layout, pos0, n);
+                missing = play_audio(node, &mut io.buffer, &layout, pos0, n, &mut self.stream_scratch);
             }
+        }
+        if missing > 0 {
+            let (generation, node) = (self.program.generation, self.program.nodes[i as usize].desc.node);
+            let frames = u32::try_from(missing).unwrap_or(u32::MAX);
+            self.telemetry(Telemetry::StreamUnderrun { generation, node, frames });
         }
         if let Some((mi, _)) = &self.program.metronome
             && *mi == i
@@ -1950,10 +1978,12 @@ fn click(
 }
 
 /// Audio items into a node's inputs, with the explicit channel conversions (mono to N at equal power, N to mono
-/// averaged, otherwise channel to channel)
-fn play_audio(node: &PNode, buffer: &mut [f32], layout: &BufferLayout, pos0: i64, n: usize) {
+/// averaged, otherwise channel to channel). A streamed item is read into `scratch` first (P-32); its frames not
+/// loaded play as silence and are returned as missing
+fn play_audio(node: &PNode, buffer: &mut [f32], layout: &BufferLayout, pos0: i64, n: usize, scratch: &mut [f32]) -> u64 {
     let end = pos0 + n as i64;
     let first = node.audio.partition_point(|it| it.start + node.audio_max_len <= pos0);
+    let mut missing = 0u64;
     for it in &node.audio[first..] {
         if it.start >= end {
             break;
@@ -1963,43 +1993,80 @@ fn play_audio(node: &PNode, buffer: &mut [f32], layout: &BufferLayout, pos0: i64
         if b <= a {
             continue;
         }
-        let src_ch = it.data.channels();
-        let dst_ch = layout.inputs;
-        for k in a..b {
-            let in_item = k - it.start;
-            let frame = it.offset + in_item;
-            if frame < 0 || frame as usize >= it.data.frames() {
-                continue;
+        match &it.source {
+            AudioSource::Memory(data) => {
+                let frames = data.frames() as i64;
+                mix_item(it, buffer, layout, pos0, a, b, data.channels(), |ch, f| {
+                    if f < 0 || f >= frames { None } else { Some(data.channel(ch)[f as usize]) }
+                });
             }
-            let mut g = it.gain;
-            if it.fade_in > 0 && in_item < i64::from(it.fade_in) {
-                g *= in_item as f32 / it.fade_in as f32;
+            AudioSource::Stream(stream) => {
+                let frame0 = it.offset + (a - it.start);
+                let from = frame0.max(0);
+                let count = (b - a - (from - frame0)).max(0) as usize;
+                let channels = stream.channels();
+                if count == 0 || scratch.len() < channels * count {
+                    continue;
+                }
+                missing += stream.read(from as u64, count, scratch) as u64;
+                let got = &scratch[..channels * count];
+                mix_item(it, buffer, layout, pos0, a, b, channels, |ch, f| {
+                    let k = f - from;
+                    (k >= 0 && (k as usize) < count).then(|| got[ch * count + k as usize])
+                });
             }
-            let to_end = it.length - in_item;
-            if it.fade_out > 0 && to_end <= i64::from(it.fade_out) {
-                g *= (to_end - 1).max(0) as f32 / it.fade_out as f32;
+        }
+    }
+    missing
+}
+
+/// One item's samples `a..b` (timeline) into the buffer, with its gain and fades; `get(channel, source frame)`
+#[allow(clippy::too_many_arguments)]
+fn mix_item(
+    it: &AudioItem,
+    buffer: &mut [f32],
+    layout: &BufferLayout,
+    pos0: i64,
+    a: i64,
+    b: i64,
+    src_ch: usize,
+    get: impl Fn(usize, i64) -> Option<f32>,
+) {
+    let dst_ch = layout.inputs;
+    for k in a..b {
+        let in_item = k - it.start;
+        let frame = it.offset + in_item;
+        if get(0, frame).is_none() {
+            continue;
+        }
+        let mut g = it.gain;
+        if it.fade_in > 0 && in_item < i64::from(it.fade_in) {
+            g *= in_item as f32 / it.fade_in as f32;
+        }
+        let to_end = it.length - in_item;
+        if it.fade_out > 0 && to_end <= i64::from(it.fade_out) {
+            g *= (to_end - 1).max(0) as f32 / it.fade_out as f32;
+        }
+        let at = (k - pos0) as usize;
+        let s = |ch: usize| get(ch, frame).unwrap_or(0.0);
+        if src_ch == dst_ch {
+            for ch in 0..dst_ch {
+                buffer[layout.input_offset(ch) + at] += s(ch) * g;
             }
-            let at = (k - pos0) as usize;
-            let frame = frame as usize;
-            if src_ch == dst_ch {
-                for ch in 0..dst_ch {
-                    buffer[layout.input_offset(ch) + at] += it.data.channel(ch)[frame] * g;
-                }
-            } else if src_ch == 1 {
-                let x = it.data.channel(0)[frame] * g / (dst_ch as f32).sqrt();
-                for ch in 0..dst_ch {
-                    buffer[layout.input_offset(ch) + at] += x;
-                }
-            } else if dst_ch == 1 {
-                let mut x = 0.0;
-                for ch in 0..src_ch {
-                    x += it.data.channel(ch)[frame];
-                }
-                buffer[layout.input_offset(0) + at] += x * g / src_ch as f32;
-            } else {
-                for ch in 0..dst_ch.min(src_ch) {
-                    buffer[layout.input_offset(ch) + at] += it.data.channel(ch)[frame] * g;
-                }
+        } else if src_ch == 1 {
+            let x = s(0) * g / (dst_ch as f32).sqrt();
+            for ch in 0..dst_ch {
+                buffer[layout.input_offset(ch) + at] += x;
+            }
+        } else if dst_ch == 1 {
+            let mut x = 0.0;
+            for ch in 0..src_ch {
+                x += s(ch);
+            }
+            buffer[layout.input_offset(0) + at] += x * g / src_ch as f32;
+        } else {
+            for ch in 0..dst_ch.min(src_ch) {
+                buffer[layout.input_offset(ch) + at] += s(ch) * g;
             }
         }
     }
