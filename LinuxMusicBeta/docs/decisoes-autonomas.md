@@ -114,7 +114,7 @@ de forma diz pelo que é substituído.
   interface VST2 (como o VeSTige do legado, compatível com a GPL). VST2 nativo do Linux primeiro; plugins de Windows
   pelo wine, depois, ainda antes da 1.0. CLAP e VST3 também, como na especificação.
 - **P-02 Carla:** obsoleta, substituída pelo nosso processo auxiliar, que hospeda LV2, CLAP, VST2, VST3 e LADSPA.
-- **P-03 LADSPA:** entra na 1.0, fora do processo, como terceiros. Os conjuntos que o legado distribui (calf, caps,
+- **P-03 LADSPA:** **confirmada pelo usuário em 20/11** (escolheu entre portar, linkar e fora do processo): entra na 1.0, fora do processo, como terceiros, sem port para Rust e sem linkar o C. Os conjuntos que o legado distribui (calf, caps,
   cmt, swh, tap) continuam distribuídos e carregados pelo auxiliar.
 - **P-04 e P-33 (ligar dois botões, uma curva para vários controles):** viram um **controle compartilhado**: um nó de
   automação ou de controlador com vários alvos. Arrastar com Ctrl de um botão a outro cria esse vínculo.
