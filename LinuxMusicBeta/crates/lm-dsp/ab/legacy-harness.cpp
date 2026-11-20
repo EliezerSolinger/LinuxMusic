@@ -65,6 +65,7 @@ extern "C"
 #define private public
 #define protected public
 #include "Lb302.h"
+#include "Sfxr.h"
 #undef protected
 #undef private
 
@@ -309,6 +310,24 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			const auto n = std::min(block, frames - start);
 			chain[0]->update(out.data() + start, n, 0);
 			for (std::int64_t f = start; f < start + n; ++f) { out[f][1] = out[f][0]; }
+		}
+		return out;
+	}
+	if (unit == "sfxr")
+	{
+		// The sfxr's synth at its own rate, its sound's knobs set by their names, the legacy fastRand seeded
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto instrument = std::make_unique<SfxrInstrument>(track);
+		const auto s = c["settings"].toObject();
+		for (auto* model : instrument->findChildren<AutomatableModel*>())
+		{
+			if (s.contains(model->displayName())) { model->setValue(static_cast<float>(s[model->displayName()].toDouble())); }
+		}
+		fastRandState() = static_cast<unsigned long>(c["seed"].toDouble());
+		auto synth = SfxrSynth{instrument.get()};
+		for (std::int64_t start = 0; start < frames; start += block)
+		{
+			synth.update(out.data() + start, static_cast<std::int32_t>(std::min(block, frames - start)));
 		}
 		return out;
 	}

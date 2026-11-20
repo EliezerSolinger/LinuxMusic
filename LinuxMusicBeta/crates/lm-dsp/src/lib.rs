@@ -29,6 +29,7 @@
 //! - [`organic`]: the Organic's voice;
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
 //! - [`vibed`]: the Vibed's plucked strings;
+//! - [`sfxr`]: the sfxr;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
 //!
 //! The effects of the validation plugins:
@@ -81,6 +82,7 @@ pub mod oversampling;
 pub mod rbj;
 pub mod reverb_sc;
 pub mod sample_player;
+pub mod sfxr;
 pub mod slew_distortion;
 pub mod small_effects;
 pub mod sound_shaping;

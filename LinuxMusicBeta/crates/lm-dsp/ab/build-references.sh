@@ -17,7 +17,7 @@ commands=$(ninja -t commands tests/MixerTest)
 # be the same bit for bit as the ones tests/ab.rs makes)
 compile=$(printf '%s\n' "$commands" | grep 'MixerTest.cpp.o -c' \
 	| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/harness.o#" \
-		-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -I$root/legado/plugins/Kicker -I$root/legado/plugins/Vibed -I$root/legado/plugins/Lb302 -ffp-contract=off -c $here/legacy-harness.cpp#")
+		-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -I$root/legado/plugins/Kicker -I$root/legado/plugins/Vibed -I$root/legado/plugins/Lb302 -I$root/legado/plugins/Sfxr -ffp-contract=off -c $here/legacy-harness.cpp#")
 sh -c "$compile"
 
 # The legacy objects to rebuild without fused multiply-adds (CONTRACT_OFF="TubeStage GainStage ..."), to tell
@@ -35,10 +35,14 @@ for target in plugins/Delay/CMakeFiles/delay.dir/Lfo.cpp.o plugins/Delay/CMakeFi
 	plugins/ReverbSC/CMakeFiles/reverbsc.dir/base.c.o plugins/ReverbSC/CMakeFiles/reverbsc.dir/revsc.c.o \
 	plugins/ReverbSC/CMakeFiles/reverbsc.dir/dcblock.c.o \
 	plugins/Vibed/CMakeFiles/vibedstrings.dir/VibratingString.cpp.o plugins/Lb302/CMakeFiles/lb302.dir/Lb302.cpp.o \
-	plugins/Lb302/CMakeFiles/lb302.dir/moc_Lb302.cpp.o plugins/Lb302/CMakeFiles/lb302.dir/qrc_lb302.cpp.o; do
+	plugins/Lb302/CMakeFiles/lb302.dir/moc_Lb302.cpp.o plugins/Lb302/CMakeFiles/lb302.dir/qrc_lb302.cpp.o \
+	plugins/Sfxr/CMakeFiles/sfxr.dir/Sfxr.cpp.o plugins/Sfxr/CMakeFiles/sfxr.dir/moc_Sfxr.cpp.o plugins/Sfxr/CMakeFiles/sfxr.dir/qrc_sfxr.cpp.o; do
 	name=$(basename "$target" .o)
+	symbol=$(printf '%s' "$name" | tr -c 'A-Za-z0-9_' '_')
 	plugincompile=$(ninja -t commands "$target" | tail -1 \
-		| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/$name.o#" -e "s# -c # -ffp-contract=off -c #")
+		| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/$name.o#" \
+			-e "s# -c # -ffp-contract=off -Dlmms_plugin_main=lmms_plugin_main_$symbol -c #")
+	# (each plugin's entry point named apart: several plugins are linked into the harness)
 	sh -c "$plugincompile"
 	plugins="${plugins:-} $work/$name.o"
 done

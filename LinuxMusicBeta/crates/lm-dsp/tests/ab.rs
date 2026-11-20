@@ -909,6 +909,42 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "sfxr" {
+        use lm_dsp::sfxr::*;
+        let st = &case["settings"];
+        let d = SfxrSettings::default();
+        let v = |key: &str, default: f32| f(st, key, default);
+        let settings = SfxrSettings {
+            attack: v("Attack Time", d.attack),
+            sustain: v("Sustain Time", d.sustain),
+            punch: v("Sustain Punch", d.punch),
+            decay: v("Decay Time", d.decay),
+            start_freq: v("Start Frequency", d.start_freq),
+            min_freq: v("Min Frequency", d.min_freq),
+            slide: v("Slide", d.slide),
+            delta_slide: v("Delta Slide", d.delta_slide),
+            vibrato_depth: v("Vibrato Depth", d.vibrato_depth),
+            vibrato_speed: v("Vibrato Speed", d.vibrato_speed),
+            change_amount: v("Change Amount", d.change_amount),
+            change_speed: v("Change Speed", d.change_speed),
+            square_duty: v("Square Duty", d.square_duty),
+            duty_sweep: v("Duty Sweep", d.duty_sweep),
+            repeat_speed: v("Repeat Speed", d.repeat_speed),
+            phaser_offset: v("Phaser Offset", d.phaser_offset),
+            phaser_sweep: v("Phaser Sweep", d.phaser_sweep),
+            lp_cutoff: v("LP Filter Cutoff", d.lp_cutoff),
+            lp_cutoff_sweep: v("LP Filter Cutoff Sweep", d.lp_cutoff_sweep),
+            lp_resonance: v("LP Filter Resonance", d.lp_resonance),
+            hp_cutoff: v("HP Filter Cutoff", d.hp_cutoff),
+            hp_cutoff_sweep: v("HP Filter Cutoff Sweep", d.hp_cutoff_sweep),
+            wave: SfxrWave::ALL[v("Wave", 0.0) as usize],
+        };
+        let mut synth = SfxrSynth::new(&settings, case["seed"].as_u64().unwrap());
+        for start in (0..frames as usize).step_by(block as usize) {
+            synth.update(&mut out[start..(start + block as usize).min(frames as usize)]);
+        }
+        return out;
+    }
     if case["unit"] == "lb302" {
         use lm_dsp::lb302::*;
         let first = &case["settings"];

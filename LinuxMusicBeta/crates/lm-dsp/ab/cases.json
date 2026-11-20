@@ -7395,6 +7395,120 @@
           "Waveform": 9
         }
       }
+    },
+    {
+      "name": "sfxr-default",
+      "unit": "sfxr",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "seed": 1,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {}
+    },
+    {
+      "name": "sfxr-laser",
+      "unit": "sfxr",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "seed": 1,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Wave": 1,
+        "Start Frequency": 0.7,
+        "Min Frequency": 0.2,
+        "Slide": -0.35,
+        "Delta Slide": 0.2,
+        "Square Duty": 0.3,
+        "Duty Sweep": 0.1,
+        "Decay Time": 0.3,
+        "Sustain Punch": 0.4,
+        "HP Filter Cutoff": 0.1
+      }
+    },
+    {
+      "name": "sfxr-explosion",
+      "unit": "sfxr",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "seed": 77,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Wave": 3,
+        "Start Frequency": 0.25,
+        "Slide": -0.2,
+        "Repeat Speed": 0.4,
+        "Phaser Offset": -0.3,
+        "Phaser Sweep": -0.2,
+        "Vibrato Depth": 0.4,
+        "Vibrato Speed": 0.5,
+        "Sustain Time": 0.3,
+        "Decay Time": 0.6,
+        "Attack Time": 0.1
+      }
+    },
+    {
+      "name": "sfxr-powerup",
+      "unit": "sfxr",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "seed": 1,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Wave": 2,
+        "Start Frequency": 0.4,
+        "Slide": 0.2,
+        "Change Amount": 0.5,
+        "Change Speed": 0.6,
+        "LP Filter Cutoff": 0.6,
+        "LP Filter Cutoff Sweep": -0.3,
+        "LP Filter Resonance": 0.5,
+        "HP Filter Cutoff Sweep": 0.4,
+        "Vibrato Depth": 0.2,
+        "Vibrato Speed": 0.3
+      }
+    },
+    {
+      "name": "sfxr-arp-down",
+      "unit": "sfxr",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "seed": 1,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "Wave": 0,
+        "Change Amount": -0.4,
+        "Change Speed": 0.8,
+        "Square Duty": 0.6,
+        "Duty Sweep": -0.3,
+        "Min Frequency": 0.1,
+        "Delta Slide": -0.5,
+        "Repeat Speed": 0.7
+      }
     }
   ]
 }
