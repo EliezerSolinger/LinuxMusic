@@ -264,6 +264,8 @@ fn resources_by_kind() {
     assert_eq!(import_file_as(&model, &project, "../x", &c, &p).expect_err("kind").key(), "io.resource.invalid_kind");
     assert_eq!(kind_policy("nam"), KindPolicy::Bytes);
     assert_eq!(kind_policy("sf2"), KindPolicy::File);
+    assert_eq!(kind_policy("pat"), KindPolicy::Bytes);
+    assert_eq!(kind_policy("render"), KindPolicy::Audio);
 
     let clock = ManualClock::new(HostTime(0));
     let mut store = ResourceStore::new(project.clone(), Arc::new(clock));
@@ -290,4 +292,31 @@ fn resources_by_kind() {
     assert!(
         matches!(store.begin_load_kind("nam", &k), Err(ResourceState::Failed(e)) if e.key() == "io.resource.outside_project")
     );
+}
+
+/// F-REC-090: a tempo render lives in `render/<plan key>.wav`, apart from the content-hashed `audio/`, and loads like
+/// audio (decoded, with peaks), into its own place in the view
+#[test]
+fn renders_load_like_audio_from_their_folder() {
+    let dir = TempDir::new("render");
+    let project = dir.0.join("project");
+    std::fs::create_dir_all(render_folder(&project)).expect("render folder");
+    let key = "3".repeat(64);
+    write_wav(&render_folder(&project).join(format!("{key}.wav")), 48_000, 2, 9_000);
+    std::fs::write(render_folder(&project).join(format!("{key}.x.tmp")), b"half").expect("leftover");
+    let (c, p) = ops();
+    let mut store = ResourceStore::new(project.clone(), Arc::new(ManualClock::new(HostTime(0))));
+    assert!(
+        matches!(store.begin_load_kind("render", &key), Err(ResourceState::Failed(e)) if e.key() == "io.resource.use_begin_load")
+    );
+    let job = store.begin_load_render(&key).expect("job");
+    assert!(matches!(store.state_kind("render", &key), ResourceState::Loading { .. }));
+    store.finish_render(&key, job.run(&c, &p));
+    assert_eq!(store.state_kind("render", &key), ResourceState::Ready);
+    let view = store.view();
+    assert_eq!(view.render(&key).map(|d| d.frames()), Some(9_000));
+    assert!(view.get(&key).is_none(), "not an audio resource");
+    assert_eq!(store.render_peaks(&key).map(|p| p.frames()), Some(9_000));
+    assert!(matches!(store.begin_load_render(&"4".repeat(64)), Err(ResourceState::Missing)));
+    assert_eq!(clean_import_leftovers(&project).expect("clean"), 1);
 }

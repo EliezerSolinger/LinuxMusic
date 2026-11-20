@@ -257,24 +257,23 @@ pub fn import_file(
     })
 }
 
-/// Removes the `.import-*.tmp` files a crash left in `audio/` (U14), when a project is opened. Returns how many
+/// Removes the temporary files a crash left in `audio/`, `state/` and `render/` (U14: imports, conversions, peaks,
+/// renders; every one ends in `.tmp`), when a project is opened. Returns how many
 pub fn clean_import_leftovers(project: &Path) -> Result<usize> {
-    let audio = audio_folder(project);
-    let entries = match std::fs::read_dir(&audio) {
-        Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-        Err(e) => return Err(io_error("io.resource.read_failed", &audio, &e)),
-    };
     let mut n = 0;
-    for e in entries.flatten() {
-        let name = e.file_name();
-        let Some(name) = name.to_str() else { continue };
-        if (name.starts_with(".import-") && name.ends_with(".tmp"))
-            || name.ends_with(".convert.tmp")
-            || (name.contains(".peaks.") && name.ends_with(".tmp"))
-        {
-            std::fs::remove_file(e.path()).map_err(|err| io_error("io.resource.remove_failed", &e.path(), &err))?;
-            n += 1;
+    for folder in [audio_folder(project), state_folder(project), render_folder(project)] {
+        let entries = match std::fs::read_dir(&folder) {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(io_error("io.resource.read_failed", &folder, &e)),
+        };
+        for e in entries.flatten() {
+            let name = e.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if name.ends_with(".tmp") {
+                std::fs::remove_file(e.path()).map_err(|err| io_error("io.resource.remove_failed", &e.path(), &err))?;
+                n += 1;
+            }
         }
     }
     Ok(n)
@@ -340,6 +339,16 @@ impl ResourceView {
     /// Whether `key` is ready to play (in memory or from disk)
     pub fn is_ready(&self, key: &str) -> bool {
         self.data.contains_key(key) || self.on_disk.contains_key(key)
+    }
+
+    /// A tempo render, decoded in memory (F-REC-090)
+    pub fn render(&self, key: &str) -> Option<&Arc<SampleData>> {
+        self.data.get(&format!("render/{key}"))
+    }
+
+    /// A long tempo render that plays from disk (P-32)
+    pub fn render_on_disk(&self, key: &str) -> Option<&OnDisk> {
+        self.on_disk.get(&format!("render/{key}"))
     }
 
     /// A resource of another kind (a NAM model, an impulse response, a SoundFont): its bytes or its checked file
@@ -533,7 +542,30 @@ impl ResourceStore {
     /// state when there is nothing to start (already loading, ready, or the file is missing: `Missing`, H17). An
     /// invalid key is refused (C9)
     pub fn begin_load(&mut self, key: &str) -> std::result::Result<LoadJob, ResourceState> {
-        if let Some(e) = self.entries.get_mut(key) {
+        let path = resource_path(&self.project, key);
+        self.begin_audio_like(key.to_owned(), key, path)
+    }
+
+    /// Starts loading a tempo render (`render/<key>.wav`, F-REC-090): decoded like audio, with peaks and the 30 s
+    /// rule; it enters the view as [`ResourceView::render`]. The key names the render's plan, not its content: the
+    /// folder is a rebuildable cache, apart from `audio/`, whose keys are content hashes (C10)
+    pub fn begin_load_render(&mut self, key: &str) -> std::result::Result<LoadJob, ResourceState> {
+        let path = resource_path_of(&self.project, "render", key);
+        self.begin_audio_like(entry_key("render", key), key, path)
+    }
+
+    /// The outcome of a render's load
+    pub fn finish_render(&mut self, key: &str, result: Result<Loaded>) {
+        self.finish_audio_like(entry_key("render", key), result);
+    }
+
+    fn begin_audio_like(
+        &mut self,
+        ek: String,
+        key: &str,
+        path: Result<Option<PathBuf>>,
+    ) -> std::result::Result<LoadJob, ResourceState> {
+        if let Some(e) = self.entries.get_mut(&ek) {
             match e.state {
                 ResourceState::Loading { .. } | ResourceState::Ready | ResourceState::OnDisk => {
                     e.last_used = self.clock.now();
@@ -543,51 +575,53 @@ impl ResourceStore {
             }
         }
         let now = self.clock.now();
-        let path = match resource_path(&self.project, key) {
+        let path = match path {
             Ok(Some(p)) => p,
             Ok(None) => {
-                self.entries
-                    .insert(key.to_owned(), Entry { state: ResourceState::Missing, peaks: None, last_used: now });
+                self.entries.insert(ek, Entry { state: ResourceState::Missing, peaks: None, last_used: now });
                 return Err(ResourceState::Missing);
             }
             Err(e) => {
                 let state = ResourceState::Failed(e);
-                self.entries.insert(key.to_owned(), Entry { state: state.clone(), peaks: None, last_used: now });
+                self.entries.insert(ek, Entry { state: state.clone(), peaks: None, last_used: now });
                 return Err(state);
             }
         };
-        self.entries.insert(
-            key.to_owned(),
-            Entry { state: ResourceState::Loading { since: now }, peaks: None, last_used: now },
-        );
+        self.entries.insert(ek, Entry { state: ResourceState::Loading { since: now }, peaks: None, last_used: now });
         Ok(LoadJob { key: key.to_owned(), path, faults: self.faults.clone(), stream_above: self.stream_above })
     }
 
     /// The outcome of a load: the resource enters the view whole, in one step, or fails
     pub fn finish(&mut self, key: &str, result: Result<Loaded>) {
+        self.finish_audio_like(key.to_owned(), result);
+    }
+
+    fn finish_audio_like(&mut self, ek: String, result: Result<Loaded>) {
         let now = self.clock.now();
         match result {
             Ok(l) => {
                 if let Some(d) = l.data {
-                    self.loaded(key.to_owned(), d, l.peaks);
+                    self.loaded(ek, d, l.peaks);
                 } else if let Some(od) = l.on_disk {
-                    self.on_disk.insert(key.to_owned(), od);
-                    self.entries.insert(
-                        key.to_owned(),
-                        Entry { state: ResourceState::OnDisk, peaks: Some(l.peaks), last_used: now },
-                    );
+                    self.on_disk.insert(ek.clone(), od);
+                    self.entries
+                        .insert(ek, Entry { state: ResourceState::OnDisk, peaks: Some(l.peaks), last_used: now });
                     self.publish();
                 }
             }
             // A cancelled load leaves the resource as if never asked
             Err(e) if e.is_cancelled() => {
-                self.entries.remove(key);
+                self.entries.remove(&ek);
             }
             Err(e) => {
-                self.entries
-                    .insert(key.to_owned(), Entry { state: ResourceState::Failed(e), peaks: None, last_used: now });
+                self.entries.insert(ek, Entry { state: ResourceState::Failed(e), peaks: None, last_used: now });
             }
         }
+    }
+
+    /// The peaks of a render, once loaded
+    pub fn render_peaks(&self, key: &str) -> Option<Arc<Peaks>> {
+        self.entries.get(&entry_key("render", key)).and_then(|e| e.peaks.clone())
     }
 
     /// A resource made elsewhere (an import, a finalised take): it enters the view whole (I-12)
@@ -627,6 +661,7 @@ impl ResourceStore {
             if let Some((kind, key)) = k.split_once('/') {
                 self.others.remove(&(kind.to_owned(), key.to_owned()));
             }
+            // Renders keep their audio under the composite key ("render/<key>")
             self.on_disk.remove(k);
             if let Some(d) = self.data.remove(k) {
                 out.push(d);
@@ -682,8 +717,8 @@ pub const BYTES_MAX: u64 = 64 << 20;
 /// The policy of a resource kind
 pub fn kind_policy(kind: &str) -> KindPolicy {
     match kind {
-        "audio" => KindPolicy::Audio,
-        "nam" | "ir" | "state" | "wavetable" | "preset" => KindPolicy::Bytes,
+        "audio" | "render" => KindPolicy::Audio,
+        "nam" | "ir" | "state" | "wavetable" | "preset" | "pat" => KindPolicy::Bytes,
         // "sf2", "sf3", "sfz", "gig", "kit", "soundfont" and anything not known: the plugin opens the file
         _ => KindPolicy::File,
     }
@@ -706,6 +741,11 @@ pub enum Content {
     File(PathBuf),
 }
 
+/// The project's `render/` folder: tempo renders (F-REC-090), named by their plan, a cache that can be rebuilt
+pub fn render_folder(project: &Path) -> PathBuf {
+    project.join("render")
+}
+
 /// The project's `state/` folder (non-audio resources, U24)
 pub fn state_folder(project: &Path) -> PathBuf {
     project.join("state")
@@ -721,6 +761,19 @@ pub fn resource_path_of(project: &Path, kind: &str, key: &str) -> Result<Option<
         return resource_path(project, key);
     }
     check_key(key)?;
+    if kind == "render" {
+        let folder = render_folder(project);
+        let p = folder.join(format!("{key}.wav"));
+        if std::fs::symlink_metadata(&p).is_err() {
+            return Ok(None);
+        }
+        let real = p.canonicalize().map_err(|e| io_error("io.resource.read_failed", &p, &e))?;
+        let root = folder.canonicalize().map_err(|e| io_error("io.resource.read_failed", &folder, &e))?;
+        if !real.starts_with(&root) {
+            return Err(Error::new("io.resource.outside_project").arg("path", p.display().to_string()));
+        }
+        return Ok(Some(p));
+    }
     let folder = state_folder(project);
     let entries = match std::fs::read_dir(&folder) {
         Ok(e) => e,
@@ -882,7 +935,7 @@ impl ResourceStore {
     /// Starts loading a resource of a non-audio kind (I-12): `Loading` from now; `Err` with the state when there is
     /// nothing to start (loading, ready, `Missing`, or an invalid kind or key, C9). Audio uses [`ResourceStore::begin_load`]
     pub fn begin_load_kind(&mut self, kind: &str, key: &str) -> std::result::Result<KindJob, ResourceState> {
-        if kind == "audio" {
+        if kind_policy(kind) == KindPolicy::Audio {
             return Err(ResourceState::Failed(Error::new("io.resource.use_begin_load")));
         }
         let ek = entry_key(kind, key);
