@@ -1,7 +1,7 @@
 //! PCM tests on Linux: the ALSA `null` PCM always (it is part of alsa-lib's configuration), and the `snd-aloop`
-//! loopback card when the runner has it (`LM_TEST_ALSA_LOOPBACK`, set by ci/setup-alsa.sh). When the CI says a device
-//! exists (`LM_TEST_ALSA_NULL`, `LM_TEST_ALSA_LOOPBACK`), failing to open it fails the test; otherwise the test says
-//! why it skips and passes.
+//! loopback card when the runner has it (`LM_TEST_ALSA_LOOPBACK=hw:Loopback`, set by ci/setup-alsa.sh; a bare
+//! `Loopback` is accepted too). When the CI says a device exists (`LM_TEST_ALSA_NULL`, `LM_TEST_ALSA_LOOPBACK`),
+//! failing to open it fails the test; otherwise the test says why it skips and passes.
 #![cfg(target_os = "linux")]
 #![allow(clippy::print_stderr)]
 
@@ -28,9 +28,12 @@ fn open_null(stream: Stream) -> Option<Pcm> {
     }
 }
 
+/// The loopback card's PCM name prefix: `LM_TEST_ALSA_LOOPBACK` is `hw:Loopback` (what ci/setup-alsa.sh exports); a
+/// bare card name (`Loopback`) is taken as `hw:Loopback`
 fn loopback() -> Option<String> {
     match std::env::var("LM_TEST_ALSA_LOOPBACK") {
-        Ok(card) => Some(card),
+        Ok(card) if card.contains(':') => Some(card),
+        Ok(card) => Some(format!("hw:{card}")),
         Err(_) => {
             eprintln!("SKIPPED: no snd-aloop loopback card on this machine (LM_TEST_ALSA_LOOPBACK unset)");
             None
@@ -94,29 +97,45 @@ fn null_playback_runs_in_every_access_and_format() {
     }
 }
 
+/// The null PCM's capture side delivers frames but never writes sample data: with mmap access the buffer keeps
+/// whatever the memory held, and with read/write access the caller's buffer is left as it was (measured on Ubuntu
+/// 24.04, alsa-lib 1.2.11). So the content is undefined, and this test only relies on what holds for any bytes: the
+/// frame counts, and that every integer format decodes to [-1, 1]. A float device's samples are passed through
+/// unclamped (a float device may legitimately go past full scale), so F32 is checked for counts only. The content
+/// itself is checked with real data on the loopback card (`loopback_links_capture_and_playback_on_one_clock`).
 #[test]
-fn null_capture_reads_samples_in_range() {
+fn null_capture_reads_frames_and_integer_formats_decode_in_range() {
     for access in [AccessChoice::MmapOnly, AccessChoice::ReadWriteOnly] {
-        let Some(mut pcm) = open_null(Stream::Capture) else { return };
-        let mut req = HwRequest::new(44_100, 3, 128, 3);
-        req.access = access;
-        let config = pcm.configure(&req).expect("configure capture");
-        assert_eq!(config.channels, 3);
-        pcm.start().expect("start");
-        let mut interleaved = vec![9.0f32; config.period_frames as usize * 3];
-        let mut a = vec![9.0f32; 64];
-        let mut b = vec![9.0f32; 64];
-        let mut c = vec![9.0f32; 64];
-        let mut read = 0;
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while read == 0 && Instant::now() < deadline {
-            read += pcm.read_interleaved(&mut interleaved).expect("read interleaved");
-            read += pcm.read_planar(&mut [&mut a, &mut b, &mut c]).expect("read planar");
+        for format in SampleFormat::PREFERENCE {
+            let Some(mut pcm) = open_null(Stream::Capture) else { return };
+            let mut req = HwRequest::new(44_100, 3, 128, 3);
+            req.access = access;
+            req.formats = vec![format];
+            let config = pcm.configure(&req).expect("configure capture");
+            assert_eq!(config.channels, 3);
+            assert_eq!(config.format, format);
+            pcm.start().expect("start");
+            let mut interleaved = vec![9.0f32; config.period_frames as usize * 3];
+            let mut a = vec![9.0f32; 64];
+            let mut b = vec![9.0f32; 64];
+            let mut c = vec![9.0f32; 64];
+            let (mut from_interleaved, mut from_planar) = (0, 0);
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while (from_interleaved == 0 || from_planar == 0) && Instant::now() < deadline {
+                from_interleaved += pcm.read_interleaved(&mut interleaved).expect("read interleaved");
+                from_planar += pcm.read_planar(&mut [&mut a, &mut b, &mut c]).expect("read planar");
+            }
+            assert!(from_interleaved > 0 && from_planar > 0, "{access:?} {format:?}: the null capture gave nothing");
+            assert!(from_interleaved <= config.period_frames as usize && from_planar <= 64);
+            let in_range = |x: &f32| (-1.0..=1.0).contains(x) || *x == 9.0;
+            if format != SampleFormat::F32 {
+                let samples = interleaved[..from_interleaved * 3].iter().chain(&a[..from_planar]);
+                let samples = samples.chain(&b[..from_planar]).chain(&c[..from_planar]);
+                assert!(samples.clone().all(in_range), "{access:?} {format:?}: a sample outside [-1, 1]");
+            }
+            // The wrong direction is refused without touching the device
+            assert_eq!(pcm.write_silence(1), Err(PcmIoError::BadState));
         }
-        assert!(read > 0, "{access:?}: the null capture gave nothing");
-        assert!(interleaved.iter().chain(&a).all(|x| x.is_finite() && (-1.0..=1.0).contains(x) || *x == 9.0));
-        // The wrong direction is refused without touching the device
-        assert_eq!(pcm.write_silence(1), Err(PcmIoError::BadState));
     }
 }
 
@@ -184,36 +203,65 @@ fn poll_reports_ready_and_the_waker_stops_a_wait() {
     assert!(outcome.is_empty());
 }
 
+/// Plays a tone into the linked pair until it comes back on the capture side, handling xruns as the engine does
+/// (recover both, prefill, restart the pair). Returns the xruns met
+fn play_until_heard(playback: &mut Pcm, capture: &mut Pcm, poll: &mut PcmPoll, buffer: usize, period: usize) -> u32 {
+    let tone: Vec<f32> = (0..period * 2).map(|i| if i % 2 == 0 { 0.5 } else { -0.5 }).collect();
+    let mut heard = vec![0.0f32; period * 2];
+    let mut xruns = 0;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        assert!(Instant::now() < deadline, "what was played never came back on the loopback's capture ({xruns} xruns)");
+        let o = poll.wait(&[&*playback, &*capture], Some(Duration::from_millis(500))).expect("wait");
+        let mut result = Ok(false);
+        if o.is_ready(0) || o.has_error(0) {
+            result = playback.write_interleaved(&tone).map(|_| false);
+        }
+        if result.is_ok() && (o.is_ready(1) || o.has_error(1)) {
+            result = capture
+                .read_interleaved(&mut heard)
+                .map(|n| heard[..n * 2].iter().any(|x| (x.abs() - 0.5).abs() < 0.01));
+        }
+        match result {
+            Ok(true) => return xruns,
+            Ok(false) => {}
+            Err(PcmIoError::Xrun) => {
+                xruns += 1;
+                playback.recover(PcmIoError::Xrun).expect("recover playback");
+                capture.recover(PcmIoError::Xrun).expect("recover capture");
+                assert_eq!(capture.state(), PcmState::Prepared);
+                playback.write_silence(buffer).expect("prefill after the xrun");
+                playback.start().expect("restart the pair");
+                assert_eq!(capture.state(), PcmState::Running, "the linked capture did not restart with the playback");
+            }
+            Err(e) => panic!("transfer: {e:?}"),
+        }
+    }
+}
+
 #[test]
 fn loopback_links_capture_and_playback_on_one_clock() {
     let Some(card) = loopback() else { return };
     let mut playback = Pcm::open(&format!("{card},0,0"), Stream::Playback).expect("open loopback playback");
     let mut capture = Pcm::open(&format!("{card},1,0"), Stream::Capture).expect("open loopback capture");
-    let req = HwRequest::new(48_000, 2, 256, 2);
+    // A buffer a test thread (not real-time, on a shared machine) keeps up with: 4 x 1024 frames, 85 ms
+    let req = HwRequest::new(48_000, 2, 1024, 4);
     let pc = playback.configure(&req).expect("configure playback");
     capture.configure(&req).expect("configure capture");
     capture.link(&mut playback).expect("link");
     assert!(capture.is_linked() && playback.is_linked());
-    playback.write_silence(pc.buffer_frames as usize).expect("prefill");
+    let (buffer, period) = (pc.buffer_frames as usize, pc.period_frames as usize);
+    playback.write_silence(buffer).expect("prefill");
     playback.start().expect("start both");
     assert_eq!(capture.state(), PcmState::Running, "the linked capture did not start with the playback");
-
     let mut poll = PcmPoll::new(&[&playback, &capture], None).expect("poll set");
-    let tone: Vec<f32> = (0..pc.period_frames as usize * 2).map(|i| if i % 2 == 0 { 0.5 } else { -0.5 }).collect();
-    let mut heard = vec![0.0f32; pc.period_frames as usize * 2];
-    let mut loud = false;
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while !loud && Instant::now() < deadline {
-        let o = poll.wait(&[&playback, &capture], Some(Duration::from_millis(500))).expect("wait");
-        if o.is_ready(0) {
-            playback.write_interleaved(&tone).expect("write");
-        }
-        if o.is_ready(1) {
-            let n = capture.read_interleaved(&mut heard).expect("read");
-            loud = heard[..n * 2].iter().any(|x| (x.abs() - 0.5).abs() < 0.01);
-        }
-    }
-    assert!(loud, "what was played never came back on the loopback's capture");
+
+    let before = play_until_heard(&mut playback, &mut capture, &mut poll, buffer, period);
+    // An xrun on purpose: nobody writes or reads for three buffers. The pair must come back and carry sound again
+    std::thread::sleep(Duration::from_nanos(pc.buffer_nanos() * 3));
+    let after = play_until_heard(&mut playback, &mut capture, &mut poll, buffer, period);
+    assert!(after >= 1, "no xrun after three buffers of silence");
+    eprintln!("loopback: {before} xrun(s) before the forced one, {after} after it");
     capture.unlink().expect("unlink");
 }
 
