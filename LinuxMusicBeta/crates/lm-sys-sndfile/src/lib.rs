@@ -75,11 +75,13 @@ mod ffi {
     pub const SF_FORMAT_SUBMASK: c_int = 0x0000_FFFF;
     pub const SF_FORMAT_TYPEMASK: c_int = 0x0FFF_0000;
 
+    pub const SFC_SET_ADD_PEAK_CHUNK: c_int = 0x1050;
     pub const SFC_UPDATE_HEADER_NOW: c_int = 0x1060;
     pub const SFC_SET_CLIPPING: c_int = 0x10C0;
     pub const SFC_SET_VBR_ENCODING_QUALITY: c_int = 0x1300;
     pub const SFC_SET_COMPRESSION_LEVEL: c_int = 0x1301;
 
+    pub const SF_FALSE: c_int = 0;
     pub const SF_TRUE: c_int = 1;
 
     unsafe extern "C" {
@@ -536,6 +538,12 @@ impl Writer {
         // Settings that must come before the first write
         // SAFETY: SFC_SET_CLIPPING takes no data pointer (the flag goes in `datasize`); the handle is valid
         unsafe { ffi::sf_command(writer.handle.as_ptr(), ffi::SFC_SET_CLIPPING, std::ptr::null_mut(), ffi::SF_TRUE) };
+        // No PEAK chunk: libsndfile stamps it with the wall-clock time, so two writes of the same samples would differ
+        // in their bytes (T19: an export is bit-identical every time)
+        // SAFETY: SFC_SET_ADD_PEAK_CHUNK takes no data pointer (the flag goes in `datasize`); the handle is valid
+        unsafe {
+            ffi::sf_command(writer.handle.as_ptr(), ffi::SFC_SET_ADD_PEAK_CHUNK, std::ptr::null_mut(), ffi::SF_FALSE)
+        };
         match spec.format {
             WriteFormat::Flac { compression, .. } => {
                 writer.set_double(ffi::SFC_SET_COMPRESSION_LEVEL, compression)?;
@@ -696,9 +704,37 @@ impl Writer {
                 .arg("code", i64::from(code))
                 .arg("message", error_message(code)));
         }
+        if matches!(this.spec.format, WriteFormat::Rf64(_)) {
+            clear_peak_time(&file).map_err(|e| io_error("sndfile.write_failed", &path, &e))?;
+        }
         file.sync_all().map_err(|e| io_error("sndfile.sync_failed", &path, &e))?;
         Ok(frames)
     }
+}
+
+/// Zeroes the timestamp of an RF64 file's PEAK chunk.
+///
+/// libsndfile honours `SFC_SET_ADD_PEAK_CHUNK` for WAV and AIFF but not for RF64, and stamps the chunk with the
+/// wall-clock time: without this, the same samples would give different bytes a second later (T19). The peaks
+/// themselves stay; the time is informational and 0 is a valid value
+fn clear_peak_time(file: &File) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    // RF64 + size + WAVE, then chunks (id, little-endian size, data padded to even) up to `data`
+    let mut at = 12u64;
+    let mut head = [0u8; 8];
+    for _ in 0..64 {
+        if file.read_at(&mut head, at)? < head.len() {
+            return Ok(());
+        }
+        let size = u64::from(u32::from_le_bytes([head[4], head[5], head[6], head[7]]));
+        match &head[..4] {
+            b"data" => return Ok(()),
+            // version (4 bytes), then the timestamp (4 bytes)
+            b"PEAK" if size >= 8 => return file.write_all_at(&[0; 4], at + 8 + 4),
+            _ => at += 8 + size + (size & 1),
+        }
+    }
+    Ok(())
 }
 
 impl AsFd for Writer {

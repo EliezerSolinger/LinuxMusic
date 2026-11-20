@@ -202,3 +202,21 @@ fn readers_and_writers_move_between_threads() {
     let frames = std::thread::spawn(move || r.info().frames).join().unwrap();
     assert_eq!(frames, 1_000);
 }
+
+#[test]
+fn the_same_samples_give_the_same_bytes_a_second_later() {
+    // libsndfile's PEAK chunk carries the wall-clock time: with it, two exports of the same song differed whenever
+    // they straddled a second (T19)
+    let dir = TempDir::new("same-bytes");
+    let data = signal(4_800, 2);
+    for format in
+        [WriteFormat::Wav(Sample::Float32), WriteFormat::Rf64(Sample::Float32), WriteFormat::Aiff(Sample::Float32)]
+    {
+        let a = dir.path(&format!("a-{format:?}"));
+        let b = dir.path(&format!("b-{format:?}"));
+        write_f32(&a, format, 2, &data);
+        std::thread::sleep(std::time::Duration::from_millis(1_100));
+        write_f32(&b, format, 2, &data);
+        assert!(std::fs::read(&a).unwrap() == std::fs::read(&b).unwrap(), "{format:?}");
+    }
+}

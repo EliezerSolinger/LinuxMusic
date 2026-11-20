@@ -25,3 +25,21 @@ fn the_first_slice_end_to_end_on_the_dummy() {
     let peak = report.get("exportBefore").and_then(|e| e.get("peakDb")).and_then(Value::as_real).unwrap_or(-200.0);
     assert!(peak > -40.0, "the song sounds: {report:?}");
 }
+
+#[test]
+fn the_export_is_identical_after_reopening_at_any_device_block() {
+    // The device's block decides when builds and installs land in the live engine; the export must not depend on it
+    for block in [32, 64, 128, 1024] {
+        let dir = TempDir::new("slice-block");
+        let mut config = config(&dir);
+        config.block = block;
+        config.dummy_source = Some(|| Box::new(lm_session::FanNoise::default()));
+        let mut s = Session::new(config).expect("session");
+        let mut o = SliceOptions::new(dir.join("slice"));
+        o.record_seconds = 1.0;
+        let report = run_slice(&mut s, &o).expect("slice");
+        assert_eq!(report.get("identicalAfterReopen").and_then(Value::as_bool), Some(true), "{block}: {report:?}");
+        let period = report.get("device").and_then(|d| d.get("period")).and_then(Value::as_int);
+        assert_eq!(period, Some(i64::from(block)), "{report:?}");
+    }
+}
