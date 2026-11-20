@@ -145,6 +145,7 @@ pub fn project_rules() -> Vec<Rule> {
         ),
         Rule::new("items", RuleKind::Check, &[types::ITEM], check_items),
         Rule::new("tempo", RuleKind::Check, &[PROJECT], check_tempo),
+        Rule::new("marks", RuleKind::Check, &[PROJECT, types::MARKER, types::REGION], check_marks),
         Rule::new("automation", RuleKind::Check, &[types::AUTOMATION], check_automation),
         Rule::new("limits", RuleKind::Check, &[], check_limits),
     ]
@@ -499,6 +500,34 @@ fn check_items(e: &mut Edit<'_>, touched: &Touched) -> Result<()> {
             {
                 return Err(bad("comp_lane_elsewhere"));
             }
+        }
+    }
+    Ok(())
+}
+
+/// Markers and regions (F-REG-011, F-REG-012): one marker per tick; a region at least a sixteenth of a 4/4 bar
+fn check_marks(e: &mut Edit<'_>, _: &Touched) -> Result<()> {
+    if e.type_of(ROOT)? != PROJECT {
+        return Ok(());
+    }
+    let root = e.root();
+    let ppq = root.get("project").and_then(|p| p.get("ppq")).and_then(Value::as_int).unwrap_or(960);
+    let bad = |what: &'static str| Error::new("doc.marks.invalid").arg("problem", what);
+    let mut ticks: Vec<i64> = root
+        .get("markers")
+        .map(|l| l.items().filter_map(|m| m.get("tick").and_then(Value::as_int)).collect())
+        .unwrap_or_default();
+    let n = ticks.len();
+    ticks.sort_unstable();
+    ticks.dedup();
+    if ticks.len() != n {
+        return Err(bad("two_markers_on_one_tick"));
+    }
+    for r in root.get("regions").into_iter().flat_map(Value::items) {
+        let from = r.get("from").and_then(Value::as_int).unwrap_or(0);
+        let to = r.get("to").and_then(Value::as_int).unwrap_or(0);
+        if to - from < (ppq / 4).max(1) {
+            return Err(bad("region_too_short"));
         }
     }
     Ok(())

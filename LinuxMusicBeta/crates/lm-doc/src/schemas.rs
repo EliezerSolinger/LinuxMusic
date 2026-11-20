@@ -9,8 +9,8 @@
 //! Every type is at version 1. Their defaults are frozen by the reference file `tests/data/defaults.json` (U29).
 //!
 //! The kind letters of the ids: `t` track, `o` track output, `c` item, `l` item lane, `a` automation lane, `p` plugin
-//! (instrument or insert), `m` mixer channel (the master is always `m:0`), `s` send, `k` MIDI mapping (I-21.2). The
-//! root is `r:0`.
+//! (instrument or insert), `m` mixer channel (the master is always `m:0`), `s` send, `k` MIDI mapping (I-21.2), `g`
+//! marker and `q` region of the ruler (F-REG-011, F-REG-012). The root is `r:0`.
 
 use lm_base::Result;
 use lm_state::{FieldKind, FieldSpec, MAX_SAFE_INT, NodeId, NodeSchema, OnRemove, SchemaRegistry, Value};
@@ -30,6 +30,8 @@ pub const KIND_PLUGIN: u8 = b'p';
 pub const KIND_CHANNEL: u8 = b'm';
 pub const KIND_SEND: u8 = b's';
 pub const KIND_MAPPING: u8 = b'k';
+pub const KIND_MARKER: u8 = b'g';
+pub const KIND_REGION: u8 = b'q';
 
 /// The type names, for code that reads the tree
 pub mod types {
@@ -72,6 +74,8 @@ pub mod types {
     pub const MIDI_TRANSFORM: &str = "midi.transform";
     pub const TRACK_MIDI_INPUT: &str = "track.midi_input";
     pub const RECORD_QUANTIZE: &str = "transport.record_quantize";
+    pub const MARKER: &str = "marker";
+    pub const REGION: &str = "region";
 }
 
 /// The gain stage models of the rack, by their permanent keys (`lm-dsp`, `GainModel::key`)
@@ -185,7 +189,7 @@ fn ints(key: &'static str, min: i64, max: i64, default: &[i64]) -> FieldSpec {
 pub fn project_schemas() -> Vec<NodeSchema> {
     use types as ty;
     vec![
-        NodeSchema::new(PROJECT, 1)
+        NodeSchema::new(PROJECT, 2)
             .field(object("meta", ty::META))
             .field(object("project", ty::SETTINGS))
             .field(object("transport", ty::TRANSPORT))
@@ -198,7 +202,24 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(list_of("tracks", ty::TRACK))
             .field(object("mixer", ty::MIXER))
             // The project's MIDI mappings (I-21.2); absent = none
-            .field(FieldSpec::new("midiMap", FieldKind::List(Box::new(FieldKind::Object(ty::MAPPING)))).optional()),
+            .field(FieldSpec::new("midiMap", FieldKind::List(Box::new(FieldKind::Object(ty::MAPPING)))).optional())
+            // The ruler's named markers and regions (F-REG-011, F-REG-012); absent = none. Version 2 only added them
+            .field(list_of("markers", ty::MARKER).optional())
+            .field(list_of("regions", ty::REGION).optional())
+            .upgrade(1, unchanged),
+        // A named point of the ruler (F-REG-011): one per tick; color as 0xRRGGBB, absent = the theme's
+        NodeSchema::new(ty::MARKER, 1)
+            .field(FieldSpec::id(KIND_MARKER))
+            .field(FieldSpec::text("name", ""))
+            .field(FieldSpec::int("tick", 0, MAX, 0))
+            .field(FieldSpec::int("color", 0, 0xFF_FFFF, 0).optional()),
+        // A named range of the ruler (F-REG-012): at least a sixteenth of a 4/4 bar long; regions may overlap
+        NodeSchema::new(ty::REGION, 1)
+            .field(FieldSpec::id(KIND_REGION))
+            .field(FieldSpec::text("name", ""))
+            .field(FieldSpec::int("from", 0, MAX, 0))
+            .field(FieldSpec::int("to", 0, MAX, 960))
+            .field(FieldSpec::int("color", 0, 0xFF_FFFF, 0).optional()),
         // The part of the root that undo never restores (R7)
         NodeSchema::new(ty::META, 1).field(FieldSpec::int("issued", 0, MAX, 0)).field(FieldSpec::text("uuid", "")),
         NodeSchema::new(ty::SETTINGS, 1)
@@ -495,7 +516,7 @@ pub fn plugin_type(plugin: &str) -> String {
     format!("plugin:{plugin}")
 }
 
-/// Version 2 of `item` and `note` only added optional fields whose absence keeps the version-1 meaning
+/// Version 2 of `item`, `note` and `project` only added optional fields whose absence keeps the version-1 meaning
 fn unchanged(node: Value) -> Result<Value> {
     Ok(node)
 }

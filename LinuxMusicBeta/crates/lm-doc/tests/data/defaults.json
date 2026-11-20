@@ -54,6 +54,14 @@
     },
     "version": 1
   },
+  "marker": {
+    "defaults": {
+      "color": 0,
+      "name": "",
+      "tick": 0
+    },
+    "version": 1
+  },
   "meta": {
     "defaults": {
       "issued": 0,
@@ -398,7 +406,7 @@
         }
       }
     },
-    "version": 1
+    "version": 2
   },
   "project.settings": {
     "defaults": {
@@ -544,6 +552,15 @@
       "model": "4558",
       "on": true,
       "realistic": false
+    },
+    "version": 1
+  },
+  "region": {
+    "defaults": {
+      "color": 0,
+      "from": 0,
+      "name": "",
+      "to": 960
     },
     "version": 1
   },
