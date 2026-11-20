@@ -412,3 +412,32 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
   - **CC sem mapa gravado vai para o item MIDI** (toca de volta no instrumento); **CC com mapa vira automação** do
     alvo.
   - **Gravação MIDI à prova de queda**, com registro só de acréscimo e `fsync` a cada segundo, como o áudio.
+
+## Do `lm-io` (20/11)
+
+- **A barreira é a posse da callback:** a thread do dispositivo é dona do `CallbackHandle`, que devolve a callback (o
+  `Renderer`) à `Device` no seu `Drop`. "A callback voltou" é a barreira; sem ela em 2 s, a `Device` é abandonada e uma
+  thread vigia fecha o dispositivo se a callback um dia voltar (D11).
+- **O gravador roda na mesma callback que o `Renderer`**, logo depois dele, com as `RecordSpan` do bloco. Grava todo
+  bloco tocado com a gravação armada (pré-roll e fora do punch são alças, U4); as `RecordSpan` dizem onde está o take.
+  Um arquivo por entrada e por passada do transporte; as voltas do loop ficam no mesmo arquivo, com cortes (U1).
+- **Armar é confirmado:** `Device::arm` manda o `RecordSender` pela callback, e a `Session` espera `is_armed()` (um
+  período) antes de mandar `Command::Record`. Sem isso, o primeiro bloco gravado podia escapar.
+- **`recording.json` em linhas JSON** (uma por evento, só acréscimo, lido até a primeira linha inválida); as `RecordSpan`
+  vão em pedaços de 1 s para uma queda guardar onde está o take; ao finalizar vira `<hash>.recording.json`, removido pela
+  `Session` quando o take entra no diário (`forget_record`).
+- **Nomes dos arquivos de áudio:** `audio/<hash>.<ext>` com a extensão do formato (`wav` para RF64 e WAV, `flac`, `aiff`,
+  `ogg`, `mp3`); importar com a mesma taxa copia os bytes, com outra converte para RF64 f32.
+- **Picos:** arquivo próprio `LMPEAKS\0` versão 1 (cabeçalho, contagem de pares por nível, os níveis em `i16` LE por
+  canal), base 64 e fator 4 até um par; escrita por `.tmp` + rename.
+- **Calibração:** rajada de ruído branco com janela de Hann, 16384 quadros por padrão (com 2048, alto-falante e microfone
+  do ThinkPad com o ventilador davam SNR 4,6); o pico de correlação tem que ficar 8× acima do RMS da correlação fora do
+  pico e do eco de 100 ms, e as cinco medidas concordarem em 1 ms.
+- **Correção de deriva:** reamostrador adaptativo na captura, com um PI sobre o nível da FIFO de entrada (limite de
+  2000 ppm); testado com relógios a 300 ppm.
+- **O `ResourceView` fica no `lm-io`** (chaves de 64 hex; `get` para o que está na memória, `on_disk` para itens longos).
+  O `lm-compile` tem o próprio trait `Resources`, que a `Session` implementa por cima.
+- **Recursos com taxa diferente da do projeto não tocam do disco** (`io.stream.rate_mismatch`): toda importação converte.
+- **No ThinkPad, rtkit e logind só respondem a um processo da sessão gráfica:** os testes rodam com `systemd-run --user`
+  (o polkit trata a sessão SSH como remota). O rtkit dá `SCHED_RR`, não `SCHED_FIFO`.
+
