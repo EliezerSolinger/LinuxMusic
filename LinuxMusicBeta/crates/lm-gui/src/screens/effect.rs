@@ -42,7 +42,7 @@ fn point_label(p: &str) -> &'static str {
 }
 
 /// The legacy's card: 60 px tall
-const CARD_H: f32 = 56.0;
+const CARD_H: f32 = 62.0;
 
 #[derive(Clone, Debug)]
 pub enum EfPopup {
@@ -260,25 +260,26 @@ impl EffectWindow {
                     .absolute()
                     .left(px(4.))
                     .top(px(4.))
-                    .w(px(14.))
-                    .h(px(8.))
-                    .rounded(px(2.))
-                    .bg(c(if failed {
-                        THEME.red
-                    } else if on {
-                        THEME.green
-                    } else {
-                        THEME.bg1
-                    }))
-                    .border_1()
-                    .border_color(c(THEME.line))
                     .cursor_pointer()
+                    // the legacy's LED images: green on, off, red when the plugin did not build
+                    .child(
+                        crate::ui::icon(if failed {
+                            "led_red"
+                        } else if on {
+                            "led_green"
+                        } else {
+                            "led_off"
+                        })
+                        .size(px(14.)),
+                    )
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |w, _, _, cx| {
                         let core = w.scx.core.clone();
                         apply_ops(&core, "Bypass", vec![EditOp::set(id, &["bypass"], Value::bool(on))], cx);
                     })),
             )
+            // W/D: the insert's wet/dry mix (the legacy EffectView's knob; the field `wet`, absent = all wet)
+            .child(div().absolute().left(px(26.)).top(px(3.)).child(self.wet_knob(id, x, cx)))
             // the gear: the effect's controls
             .when(installed, |d| {
                 d.child(
@@ -296,9 +297,8 @@ impl EffectWindow {
                         .bg(c(if open { THEME.bg4 } else { THEME.bg2 }))
                         .border_1()
                         .border_color(c(THEME.line2))
-                        .text_size(px(13.))
                         .cursor_pointer()
-                        .child("⚙")
+                        .child(crate::ui::icon("gear").size(px(18.)))
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .on_click(cx.listener(move |w, _, _, cx| {
                             if let Some(k) = w.open.iter().position(|x| *x == id) {
@@ -317,7 +317,7 @@ impl EffectWindow {
                         .id(("ef-point", id.number as usize))
                         .debug_selector(move || format!("ef-point-{index}"))
                         .absolute()
-                        .left(px(24.))
+                        .left(px(60.))
                         .top(px(3.))
                         .text_size(px(9.5))
                         .text_color(c(THEME.text3))
@@ -368,6 +368,52 @@ impl EffectWindow {
                                 trf("{0} (not installed)", &[&x.plugin]).into()
                             }),
                     ),
+            )
+            .into_any_element()
+    }
+
+    /// The W/D knob of a card: a small knob of the generic editor's gestures (drag, wheel, middle click, menu)
+    fn wet_knob(&self, id: NodeId, x: &PluginView, cx: &Context<Self>) -> AnyElement {
+        let wet =
+            self.scx.core.read(cx).port().find(id).and_then(|n| n.get("wet").and_then(Value::as_real)).unwrap_or(1.0);
+        let k = super::instrument::Ctl {
+            node: id,
+            plugin: x.plugin.clone(),
+            slot: super::instrument::Slot::Wet,
+            kind: super::instrument::CtlKind::Knob { min: 0.0, max: 1.0, def: 1.0, log: false },
+            unit: "",
+            automatable: true,
+            value: wet,
+            choice: Arc::from(""),
+            automated: super::instrument::lanes_of(self.scx.core.read(cx).port().root(), id)
+                .iter()
+                .any(|l| &*l.2 == "wet"),
+            enabled: true,
+            shown: None,
+        };
+        let (kd, km) = (k.clone(), k);
+        div()
+            .id(("ef-wet", id.number as usize))
+            .debug_selector(move || format!("ef-wet-{}", id.number))
+            .flex()
+            .flex_col()
+            .items_center()
+            .cursor_ns_resize()
+            .child(crate::ui::knob_face(wet, 22.0))
+            .child(div().text_size(px(8.5)).text_color(c(THEME.text2)).child(tr("W/D")))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |w, ev: &MouseDownEvent, window, cx| {
+                    super::instrument::begin_drag(w, kd.clone(), ev, window, cx);
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |w, ev: &MouseDownEvent, _, cx| {
+                    w.editor.popup = Some((Popup::Param(km.clone()), ev.position));
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
             )
             .into_any_element()
     }

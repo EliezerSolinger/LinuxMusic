@@ -2139,3 +2139,19 @@ fn adding_tracks_and_a_clip(cx: &mut TestAppContext) {
     assert!(!items[0].audio && items[0].length > 0);
     assert!(ws.read_with(cx, |ws, _| ws.is_open(Screen::PianoRoll)), "opened in the Piano Roll");
 }
+
+/// The W/D knob of an effect card (the legacy EffectView's): a drag is one step on the insert's `wet`
+#[gpui::test]
+fn effect_wet_knob(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let ch = model::channels(&root(&ws, cx)).into_iter().find(|c| !c.inserts.is_empty()).unwrap();
+    let ins = ch.inserts[0].id;
+    open_screen(&ws, cx, Screen::Effect, Some(ch.id));
+    drag(cx, &format!("ef-wet-{}", ins.number), 0.0, 50.0);
+    let core = core(&ws, cx);
+    let wet = core.read_with(cx, |c, _| c.port().find(ins).and_then(|n| n.get("wet").and_then(Value::as_real)));
+    assert_eq!(wet, Some(0.75), "50 px of 200 down from all wet");
+    undo(cx);
+    let wet = core.read_with(cx, |c, _| c.port().find(ins).and_then(|n| n.get("wet").and_then(Value::as_real)));
+    assert!(wet.is_none_or(|w| w == 1.0), "one undo step");
+}
