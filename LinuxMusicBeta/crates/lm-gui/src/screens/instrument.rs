@@ -51,6 +51,8 @@ pub enum Slot {
     Field(&'static str),
     /// the track's own `volume` (linear gain; shown in dB)
     TrackVolume,
+    /// an insert's `wet` (0..1; absent: all wet), the legacy EffectView's W/D
+    Wet,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -86,6 +88,7 @@ impl Ctl {
         match self.slot {
             Slot::Param(k) | Slot::Field(k) => k,
             Slot::TrackVolume => "volume",
+            Slot::Wet => "wet",
         }
     }
 
@@ -170,6 +173,7 @@ impl Ctl {
             Slot::TrackVolume => {
                 EditOp::set(self.node, &["volume"], Value::real(view::db_to_gain(v).min(4.0)).unwrap_or_default())
             }
+            Slot::Wet => EditOp::set(self.node, &["wet"], Value::real(v.clamp(0.0, 1.0)).unwrap_or_default()),
         }
     }
 
@@ -179,6 +183,8 @@ impl Ctl {
             Slot::Param(k) => crate::ui::midi::param(self.node, k),
             Slot::Field(k) => crate::ui::midi::field(self.node, &["state", k]),
             Slot::TrackVolume => crate::ui::midi::param(self.node, "volume"),
+            // lm-doc's parameter key of an insert's mix
+            Slot::Wet => crate::ui::midi::param(self.node, "insert.wet"),
         }
     }
 
@@ -426,6 +432,7 @@ fn current(core: &Core, c_: &Ctl) -> f64 {
             .find(c_.node)
             .and_then(|n| n.get("state").and_then(|s| s.get("params")).and_then(|p| p.get(k)).and_then(Value::as_real))
             .unwrap_or(c_.value),
+        Slot::Wet => port.find(c_.node).and_then(|n| n.get("wet").and_then(Value::as_real)).unwrap_or(1.0),
         Slot::Field(k) => port
             .find(c_.node)
             .and_then(|n| n.get("state").and_then(|s| s.get(k)).and_then(Value::as_bool))
@@ -560,6 +567,7 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
     };
     let label = match c_.slot {
         Slot::TrackVolume => SharedString::from(tr("Volume")),
+        Slot::Wet => SharedString::from(tr("W/D")),
         _ => label_of(&c_.plugin, c_.key()),
     };
     let value_color = if c_.automated { THEME.orange } else { THEME.text };

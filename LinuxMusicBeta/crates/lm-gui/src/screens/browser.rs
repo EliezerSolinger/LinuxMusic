@@ -75,16 +75,18 @@ fn page_title(p: BrowsePage) -> &'static str {
     }
 }
 
-/// The legacy's icon colours by kind (a small square in place of its file icons)
-fn kind_color(k: EntryKind) -> u32 {
+/// The legacy's file icons by kind (FileBrowser's): an open or closed folder, a sample, a MIDI file, a preset, a
+/// project, a plugin
+fn kind_icon(k: EntryKind, open: bool) -> &'static str {
     match k {
-        EntryKind::Folder => THEME.yellow,
-        EntryKind::Audio => THEME.green,
-        EntryKind::Midi => THEME.purple,
-        EntryKind::Preset => THEME.cyan,
-        EntryKind::Project => THEME.blue,
-        EntryKind::Plugin => THEME.orange,
-        EntryKind::Other => THEME.text3,
+        EntryKind::Folder if open => "folder_opened",
+        EntryKind::Folder => "folder",
+        EntryKind::Audio => "sample_file",
+        EntryKind::Midi => "midi_file",
+        EntryKind::Preset => "preset_file",
+        EntryKind::Project => "project_file",
+        EntryKind::Plugin => "plugins",
+        EntryKind::Other => "dont_know",
     }
 }
 
@@ -410,9 +412,9 @@ impl Browser {
                 EntryKind::Folder => "▸",
                 _ => "",
             }))
-            .child(div().size(px(8.)).rounded(px(1.)).bg(c(kind_color(e.kind))))
+            .child(crate::ui::icon(kind_icon(e.kind, open)).size(px(14.)))
             .child(div().flex_1().overflow_hidden().whitespace_nowrap().child(e.name.to_string()))
-            .when(e.favorite, |d| d.child(div().text_size(px(10.)).text_color(c(THEME.yellow)).child("★")))
+            .when(e.favorite, |d| d.child(crate::ui::icon("star").size(px(12.))))
             .when(blocked, |d| d.child(div().text_size(px(9.5)).text_color(c(THEME.red)).child(tr("blocked"))))
             .into_any_element()
     }
