@@ -140,5 +140,13 @@ pub mod rack_display {
     /// The goniometer: `POINTS` (left, right) pairs of the master's output
     pub const GONIO: usize = 6;
     pub const POINTS: usize = 64;
-    pub const FLOATS: usize = GONIO + 2 * POINTS;
+    /// The master's loudness by BS.1770-4 (lm_dsp::loudness): momentary, short-term and integrated LUFS (−∞ or NaN
+    /// before anything passed), the true peak since the reset (dBTP) and the loudness range (LU); the action
+    /// `loudness.reset` starts the integrated value, the range and the peak hold again
+    pub const LUFS_M: usize = GONIO + 2 * POINTS;
+    pub const LUFS_S: usize = LUFS_M + 1;
+    pub const LUFS_I: usize = LUFS_M + 2;
+    pub const TRUE_PEAK: usize = LUFS_M + 3;
+    pub const LRA: usize = LUFS_M + 4;
+    pub const FLOATS: usize = LRA + 1;
 }

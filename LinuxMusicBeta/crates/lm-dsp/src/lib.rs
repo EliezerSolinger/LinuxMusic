@@ -76,6 +76,7 @@ pub mod instrument;
 pub mod kicker;
 pub mod lb302;
 pub mod lomm;
+pub mod loudness;
 pub mod master;
 pub mod math;
 pub mod modulation_effects;

@@ -413,6 +413,13 @@ impl FakePort {
                 .unwrap_or(false);
             frame[d::BUS_GR] = if bus_in { (db + 6.0).max(0.0) * 0.5 } else { 0.0 };
             frame[d::CORRELATION] = if peak > 0.0 { 0.85 } else { 0.0 };
+            // the fake's loudness follows its meter: a sine-like reading 3 dB under the peak
+            let l = if peak > 0.0 { db - 3.0 } else { f32::NEG_INFINITY };
+            frame[d::LUFS_M] = l;
+            frame[d::LUFS_S] = l;
+            frame[d::LUFS_I] = l;
+            frame[d::TRUE_PEAK] = db;
+            frame[d::LRA] = if peak > 0.0 { 4.0 } else { 0.0 };
             let t = self.pumps as f32 * 0.37;
             for i in 0..d::POINTS {
                 let a = t + i as f32 * 0.29;
