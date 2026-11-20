@@ -13,16 +13,20 @@ use std::time::Instant;
 use fake_core::arrange::{self, BAR, ItemKind, TrackKind};
 use fake_core::view::{self, TimelineView};
 use fake_core::port::EditOp;
-use fake_core::{Doc, Feed, Field, GestureId, ResourceId, SAMPLE_RATE, Target, Topic, Value};
+use fake_core::{Doc, Feed, Field, GestureId, NodeId, ResourceId, SAMPLE_RATE, Target, Topic, Value};
 use gpui::{
-    AnyElement, Bounds, Context, Entity, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PathBuilder, PinchEvent, Pixels, Render, ScrollDelta, ScrollEvent, SharedString, Window, canvas, div, fill, point,
-    prelude::*, px, size,
+    AnyElement, Bounds, Context, Entity, FocusHandle, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PathBuilder, PinchEvent, Pixels, Render, ScrollDelta, ScrollEvent, SharedString, WeakEntity, Window,
+    actions, canvas, div, fill, point, prelude::*, px, size,
 };
 
 use crate::core::Core;
 use crate::tiles::{TileCache, level_for, paint_wave, tile_range};
 use crate::ui::{THEME, button, c, knob_face, loading_component, meter, tr, trf, track_color};
+use crate::workspace::Workspace;
+
+// The arrangement's keys (F-ARR-005..007), REAPER-like; bound in workspace.rs to the "Composition" context
+actions!(composition, [Split, AddMarker, RegionFromLoop, Duplicate, DeleteItem, EmptyItem, Marker1, Marker2, Marker3, Marker4, Marker5, Marker6, Marker7, Marker8, Marker9]);
 
 pub const TEMPO_H: f32 = 34.0;
 const FOLDER_H: f32 = 30.0;
@@ -48,7 +52,7 @@ struct Row {
 }
 
 /// The rows of the arrangement: tracks not hidden by a collapsed folder, then each track's take rows and lanes
-fn layout(d: &Doc) -> Vec<Row> {
+fn layout(d: &Doc, track_h: f32) -> Vec<Row> {
     let tracks = &d.tracks;
     let mut rows = Vec::with_capacity(tracks.len() + 8);
     let mut top = 0.0;
@@ -58,7 +62,7 @@ fn layout(d: &Doc) -> Vec<Row> {
             continue;
         }
         let depth = parent.is_some() as u8;
-        let h = if t.kind == TrackKind::Folder { FOLDER_H } else { view::TRACK_H };
+        let h = if t.kind == TrackKind::Folder { FOLDER_H.min(track_h) } else { track_h };
         rows.push(Row { kind: RowKind::Track(i), top, h, depth });
         top += h;
         if t.show_takes {
@@ -99,10 +103,34 @@ pub struct CompositionPage {
     timeline_bounds: Rc<RefCell<Bounds<Pixels>>>,
     tiles: Rc<RefCell<TileCache>>,
     pub follow_cursor: bool,
+    workspace: WeakEntity<Workspace>,
+    focus: FocusHandle,
+    /// the track height (design 02: compact 24 px, normal 70, large; Ctrl+wheel changes all, F-ARR-007)
+    track_h: f32,
+    selected_item: Option<NodeId>,
+    item_drag: Option<ItemDrag>,
+    /// what was drawn where in the last frame: (x, y, w, h, item, fade in px, fade out px), relative to the timeline
+    hits: Rc<RefCell<Vec<(f32, f32, f32, f32, NodeId, f32, f32)>>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ItemZone {
+    Move,
+    FadeIn,
+    FadeOut,
+    Gain,
+}
+
+struct ItemDrag {
+    item: NodeId,
+    zone: ItemZone,
+    start: (f32, f32),
+    start_value: f64,
+    gesture: GestureId,
 }
 
 impl CompositionPage {
-    pub fn new(core: Entity<Core>, cx: &mut Context<Self>) -> Self {
+    pub fn new(core: Entity<Core>, workspace: WeakEntity<Workspace>, cx: &mut Context<Self>) -> Self {
         let feed = core.update(cx, |core, _| core.port_mut().feed(Topic::All));
         let track_db = core.read(cx).port().root().tracks.iter().map(|t| view::format_db(t.volume_db).into()).collect();
         CompositionPage {
@@ -114,6 +142,12 @@ impl CompositionPage {
             timeline_bounds: Rc::new(RefCell::new(Bounds::default())),
             tiles: Rc::new(RefCell::new(TileCache::default())),
             follow_cursor: false,
+            workspace,
+            focus: cx.focus_handle(),
+            track_h: view::TRACK_H,
+            selected_item: None,
+            item_drag: None,
+            hits: Default::default(),
         }
     }
 
@@ -186,17 +220,24 @@ impl CompositionPage {
     }
 
     fn content_h(&self, cx: &Context<Self>) -> f64 {
-        layout(self.core.read(cx).port().root()).last().map_or(0.0, |r| (r.top + r.h) as f64)
+        layout(self.core.read(cx).port().root(), self.track_h).last().map_or(0.0, |r| (r.top + r.h) as f64)
     }
 
     fn on_scroll(&mut self, ev: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
         let d = ev.delta.pixel_delta(px(16.0));
         let b = *self.timeline_bounds.borrow();
         let x = (ev.position.x - b.origin.x).as_f32() as f64;
-        let zoom = ev.modifiers.platform || ev.modifiers.control;
         let (dx, dy) = (d.x.as_f32() as f64, d.y.as_f32() as f64);
-        // a mouse wheel with Shift scrolls horizontally
-        let (dx, dy) = if ev.modifiers.shift && matches!(ev.delta, ScrollDelta::Lines(_)) { (dy, 0.0) } else { (dx, dy) };
+        let wheel = matches!(ev.delta, ScrollDelta::Lines(_));
+        // REAPER's wheel (F-ARR-007): a mouse wheel zooms; Ctrl+wheel changes every track's height; Alt+wheel (or
+        // Shift) scrolls sideways. A trackpad pans in both directions; with Cmd/Ctrl it zooms.
+        if ev.modifiers.control && wheel {
+            self.track_h = (self.track_h * (1.0 + dy as f32 * 0.004)).clamp(24.0, 160.0);
+            cx.notify();
+            return;
+        }
+        let zoom = if wheel { !(ev.modifiers.alt || ev.modifiers.shift) } else { ev.modifiers.platform || ev.modifiers.control };
+        let (dx, dy) = if wheel && (ev.modifiers.alt || ev.modifiers.shift) { (dy, 0.0) } else { (dx, dy) };
         let content = self.content_h(cx);
         self.view.wheel(dx, if zoom { -dy } else { dy }, zoom, x, content, Self::view_h(window));
         cx.notify();
@@ -209,6 +250,120 @@ impl CompositionPage {
         let dy = -(1.0 + ev.delta as f64).ln() * 100.0; // a pinch of +0.1 is 10 % closer
         self.view.wheel(0.0, dy, true, x, content, Self::view_h(window));
         cx.notify();
+    }
+
+    fn action(&mut self, id: &'static str, v: Value, cx: &mut Context<Self>) {
+        self.core.update(cx, |core, _| {
+            let _ = core.port_mut().run_action(id, v);
+        });
+        cx.notify();
+    }
+
+    fn item_action(&mut self, id: &'static str, cx: &mut Context<Self>) {
+        if let Some(it) = self.selected_item {
+            self.action(id, Value::Id(it), cx);
+        }
+    }
+
+    fn delete_item(&mut self, cx: &mut Context<Self>) {
+        if let Some(it) = self.selected_item.take() {
+            self.core.update(cx, |core, _| {
+                let _ = core.port_mut().apply("Delete", vec![EditOp::Remove { id: fake_core::port::Ref::Id(it) }]);
+            });
+            cx.notify();
+        }
+    }
+
+    /// An empty item on the selected item's track, or the first armed one, at the cursor (P-29)
+    fn empty_item(&mut self, cx: &mut Context<Self>) {
+        let root = self.core.read(cx).port().root();
+        let track = self
+            .selected_item
+            .and_then(|it| root.tracks.iter().position(|t| t.items.iter().any(|i| i.id == it)))
+            .or_else(|| root.tracks.iter().position(|t| t.armed))
+            .unwrap_or(2);
+        self.action("item.empty", Value::Real(track as f64), cx);
+    }
+
+    /// FX on a track header: the inserts of the channel its main output goes to (P-28), on the mixing page
+    fn open_fx(&mut self, i: usize, _window: &mut Window, cx: &mut Context<Self>) {
+        let to = self.core.read(cx).port().root().tracks[i].outputs.first().map(|o| o.to);
+        if let Some(ch) = to {
+            let _ = self.workspace.update(cx, |ws, cx| {
+                ws.page = crate::pages::Page::Mixing;
+                ws.mixing.update(cx, |m, cx| m.select_channel(ch, cx));
+                cx.notify();
+            });
+        }
+    }
+
+    // --- items: select, move, fades, gain (F-CLP-061) ---------------------------------------------------------
+
+    fn on_timeline_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus, cx); // the arrangement's keys (S, M, Ctrl+D...) go to the page
+        let b = *self.timeline_bounds.borrow();
+        let (mx, my) = ((ev.position.x - b.origin.x).as_f32(), (ev.position.y - b.origin.y).as_f32());
+        if my < view::RULER_H + TEMPO_H {
+            return;
+        }
+        let hit = self.hits.borrow().iter().rev().find(|(x, y, w, h, ..)| mx >= *x && mx <= x + w && my >= *y && my <= y + h).copied();
+        let Some((x, y, w, _, item, fi, fo)) = hit else {
+            self.selected_item = None;
+            cx.notify();
+            return;
+        };
+        self.selected_item = Some(item);
+        // the top 7 px: the fade handles at the corners, the gain handle in between; the rest moves the item
+        let zone = if my - y <= 7.0 {
+            if mx <= x + fi.max(10.0) {
+                ItemZone::FadeIn
+            } else if mx >= x + w - fo.max(10.0) {
+                ItemZone::FadeOut
+            } else {
+                ItemZone::Gain
+            }
+        } else {
+            ItemZone::Move
+        };
+        let it = self.core.read(cx).port().root().tracks.iter().flat_map(|t| t.items.iter()).find(|i| i.id == item).cloned();
+        let Some(it) = it else { return };
+        let start_value = match zone {
+            ItemZone::Move => it.start as f64,
+            ItemZone::FadeIn => it.fades.0 as f64,
+            ItemZone::FadeOut => it.fades.1 as f64,
+            ItemZone::Gain => it.gain_db,
+        };
+        let gesture = self.core.update(cx, |core, _| core.port_mut().begin_gesture("Item"));
+        self.item_drag = Some(ItemDrag { item, zone, start: (ev.position.x.as_f32(), ev.position.y.as_f32()), start_value, gesture });
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn drag_item(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some(d) = &self.item_drag else { return };
+        let dx = (ev.position.x.as_f32() - d.start.0) as f64 * self.view.samples_per_px;
+        let dy = (ev.position.y.as_f32() - d.start.1) as f64;
+        let (field, value) = match d.zone {
+            ItemZone::Move => {
+                // snapped to the beat, unless Shift
+                let beat = (BAR / 4) as f64;
+                let s = (d.start_value + dx).max(0.0);
+                (Field::ItemStart, if ev.modifiers.shift { s } else { (s / beat).round() * beat })
+            }
+            ItemZone::FadeIn => (Field::FadeIn, (d.start_value + dx).max(0.0)),
+            ItemZone::FadeOut => (Field::FadeOut, (d.start_value - dx).max(0.0)),
+            ItemZone::Gain => (Field::ItemGain, (d.start_value - dy * 0.3).clamp(-60.0, 12.0)),
+        };
+        let op = EditOp::set(d.item, field, Value::Real(value));
+        self.core.update(cx, |core, _| core.port_mut().gesture_apply(&self.item_drag.as_ref().unwrap().gesture, vec![op]));
+        cx.notify();
+    }
+
+    fn end_item(&mut self, cx: &mut Context<Self>) {
+        if let Some(d) = self.item_drag.take() {
+            self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+            cx.notify();
+        }
     }
 
     /// A click on the ruler moves the cursor there
@@ -255,7 +410,7 @@ impl Render for CompositionPage {
                 self.view.scroll_samples = (cursor - w * 0.1 * self.view.samples_per_px).max(0.0);
             }
         }
-        let rows = layout(self.core.read(cx).port().root());
+        let rows = layout(self.core.read(cx).port().root(), self.track_h);
         let y0 = self.view.scroll_y as f32;
         let visible: Vec<Row> =
             rows.into_iter().filter(|r| r.top + r.h >= y0 && r.top <= y0 + view_h as f32).collect();
@@ -276,8 +431,32 @@ impl Render for CompositionPage {
             .flex()
             .flex_row()
             .overflow_hidden()
-            .on_mouse_move(cx.listener(|p, ev: &MouseMoveEvent, _, cx| p.drag_knob(ev, cx)))
-            .on_mouse_up(MouseButton::Left, cx.listener(|p, _: &MouseUpEvent, _, cx| p.end_knob(cx)))
+            .key_context("Composition")
+            .track_focus(&self.focus)
+            .on_mouse_down(MouseButton::Left, cx.listener(|p, _, window, cx| window.focus(&p.focus, cx)))
+            .on_action(cx.listener(|p, _: &Split, _, cx| p.item_action("item.split", cx)))
+            .on_action(cx.listener(|p, _: &Duplicate, _, cx| p.item_action("item.duplicate", cx)))
+            .on_action(cx.listener(|p, _: &DeleteItem, _, cx| p.delete_item(cx)))
+            .on_action(cx.listener(|p, _: &AddMarker, _, cx| p.action("marker.add", Value::Bool(true), cx)))
+            .on_action(cx.listener(|p, _: &RegionFromLoop, _, cx| p.action("region.from_loop", Value::Bool(true), cx)))
+            .on_action(cx.listener(|p, _: &EmptyItem, _, cx| p.empty_item(cx)))
+            .on_action(cx.listener(|p, _: &Marker1, _, cx| p.action("marker.goto", Value::Real(0.0), cx)))
+            .on_action(cx.listener(|p, _: &Marker2, _, cx| p.action("marker.goto", Value::Real(1.0), cx)))
+            .on_action(cx.listener(|p, _: &Marker3, _, cx| p.action("marker.goto", Value::Real(2.0), cx)))
+            .on_action(cx.listener(|p, _: &Marker4, _, cx| p.action("marker.goto", Value::Real(3.0), cx)))
+            .on_action(cx.listener(|p, _: &Marker5, _, cx| p.action("marker.goto", Value::Real(4.0), cx)))
+            .on_action(cx.listener(|p, _: &Marker6, _, cx| p.action("marker.goto", Value::Real(5.0), cx)))
+            .on_action(cx.listener(|p, _: &Marker7, _, cx| p.action("marker.goto", Value::Real(6.0), cx)))
+            .on_action(cx.listener(|p, _: &Marker8, _, cx| p.action("marker.goto", Value::Real(7.0), cx)))
+            .on_action(cx.listener(|p, _: &Marker9, _, cx| p.action("marker.goto", Value::Real(8.0), cx)))
+            .on_mouse_move(cx.listener(|p, ev: &MouseMoveEvent, _, cx| {
+                p.drag_knob(ev, cx);
+                p.drag_item(ev, cx);
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|p, _: &MouseUpEvent, _, cx| {
+                p.end_knob(cx);
+                p.end_item(cx);
+            }))
             .child(headers)
             .child(timeline)
     }
@@ -330,6 +509,7 @@ impl CompositionPage {
 
     fn track_header(&self, i: usize, r: &Row, d: &Doc, core: &Core, cx: &Context<Self>) -> AnyElement {
         let t = &d.tracks[i];
+        let tele_inputs = core.port().telemetry().inputs;
         let indent = r.depth as f32 * INDENT;
         let number = div()
             .w(px(22.))
@@ -425,7 +605,7 @@ impl CompositionPage {
                         .child(div().flex_1())
                         .when(has_takes, |d| d.child(button(SharedString::from(format!("tk{i}")), tr("Takes"), t.show_takes, THEME.blue).on_click(cx.listener(move |p, _, _, cx| p.toggle(i, Field::ShowTakes, cx)))))
                         .when(!t.lanes.is_empty(), |d| d.child(button(SharedString::from(format!("ln{i}")), "A", t.show_lanes, THEME.blue).on_click(cx.listener(move |p, _, _, cx| p.toggle(i, Field::ShowLanes, cx)))))
-                        .child(button(SharedString::from(format!("fx{i}")), "FX", false, 0))
+                        .child(button(SharedString::from(format!("fx{i}")), "FX", false, 0).on_click(cx.listener(move |p, _, window, cx| p.open_fx(i, window, cx))))
                         .child(button(SharedString::from(format!("io{i}")), if outs > 1 { trf("I/O ×{0}", &[&outs]) } else { "I/O".into() }, outs > 1, THEME.green)),
                 ),
         )
@@ -437,7 +617,14 @@ impl CompositionPage {
                 .flex_col()
                 .items_center()
                 .gap(px(2.))
-                .child(meter(core.shown[i], 6.0, r.h - (if outs > 1 { 14.0 } else { 6.0 })))
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(2.))
+                        // armed: the input's level beside the output's, even without monitoring (F-REC-009)
+                        .when(t.armed, |d| d.child(meter(fake_core::view::meter_fill(tele_inputs[i % 8]), 4.0, r.h - (if outs > 1 { 14.0 } else { 6.0 }))))
+                        .child(meter(core.shown[i], 6.0, r.h - (if outs > 1 { 14.0 } else { 6.0 }))),
+                )
                 .when(outs > 1, |d| d.child(div().size(px(5.)).rounded(px(3.)).bg(c(THEME.green)))),
         )
         .into_any_element()
@@ -501,6 +688,9 @@ enum Paint {
     Handle { y: f32, h: f32, x: f32, w: f32 },
     Boundary { y: f32, h: f32, x: f32, fade_px: f32 },
     Curve { y: f32, h: f32, pts: Vec<(f32, f32)> },
+    /// an item's fades, gain line, selection and the automatic crossfade of overlapping items
+    Edges { y: f32, h: f32, x: f32, w: f32, fade_in: f32, fade_out: f32, gain_db: f64, selected: bool, reversed: bool },
+    Overlap { y: f32, h: f32, x: f32, w: f32 },
 }
 
 enum Body {
@@ -522,6 +712,7 @@ impl CompositionPage {
         let sy = v.scroll_y as f32;
         let xs = |sample: f64| v.sample_to_x(sample) as f32;
         let mut paint = Vec::new();
+        self.hits.borrow_mut().clear();
         let mut overlays: Vec<AnyElement> = Vec::new();
         let tele = port.telemetry();
         let rec = &tele.recording;
@@ -585,6 +776,10 @@ impl CompositionPage {
                             }
                         };
                         paint.push(Paint::Item { y, h: r.h, x, w, color, body });
+                        let fi = (it.fades.0 as f64 / v.samples_per_px) as f32;
+                        let fo = (it.fades.1 as f64 / v.samples_per_px) as f32;
+                        paint.push(Paint::Edges { y, h: r.h, x, w, fade_in: fi, fade_out: fo, gain_db: it.gain_db, selected: self.selected_item == Some(it.id), reversed: it.reversed });
+                        self.hits.borrow_mut().push((x, y + 3.0, w, r.h - 6.0, it.id, fi, fo));
                         // the item's name, and the loading component in place of the waveform (I-2)
                         let target = Target::Node(it.id);
                         let loading = port.loading(&target);
@@ -612,6 +807,15 @@ impl CompositionPage {
                                     .child(it.name.clone())
                                     .into_any_element(),
                             );
+                        }
+                    }
+                    // overlapping items cross-fade by themselves (F-CLP-062): the overlap is marked
+                    let mut spans: Vec<(i64, i64)> = t.items.iter().map(|it| (it.start, it.start + it.length)).collect();
+                    spans.sort();
+                    for w2 in spans.windows(2) {
+                        if w2[1].0 < w2[0].1 {
+                            let (a, z) = (xs(w2[1].0 as f64), xs(w2[0].1.min(w2[1].1) as f64));
+                            paint.push(Paint::Overlap { y, h: r.h, x: a, w: z - a });
                         }
                     }
                     // the take growing while recording (U3), with its pre-roll handle (U4)
@@ -649,6 +853,37 @@ impl CompositionPage {
                     paint.push(Paint::Curve { y, h: r.h, pts });
                 }
             }
+        }
+        // the regions, in the tempo lane's top: a click makes one the loop (F-REG-011)
+        for reg in &d.song.regions {
+            let (a, z) = (xs(reg.start as f64), xs(reg.end as f64));
+            if z < 0.0 || a > 2400.0 {
+                continue;
+            }
+            let rid = reg.id;
+            overlays.push(
+                div()
+                    .id(SharedString::from(format!("reg{}", rid.number)))
+                    .absolute()
+                    .top(px(view::RULER_H + 1.0))
+                    .left(px(a.max(0.0)))
+                    .w(px((z - a.max(0.0)).max(4.0)))
+                    .h(px(11.))
+                    .px(px(4.))
+                    .bg(gpui::rgba(THEME.selection))
+                    .text_size(px(8.5))
+                    .text_color(c(THEME.text))
+                    .overflow_hidden()
+                    .cursor_pointer()
+                    .child(reg.name.clone())
+                    .on_click(cx.listener(move |p, _, _, cx| {
+                        p.core.update(cx, |core, _| {
+                            let _ = core.port_mut().run_action("loop.from_region", Value::Id(rid));
+                        });
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+            );
         }
         // the ruler: bars, loop, punch, markers (texts as elements)
         let song = d.song.clone();
@@ -714,6 +949,7 @@ impl CompositionPage {
         let bounds_cell = self.timeline_bounds.clone();
         let tile_cache = self.tiles.clone();
         let playing_x = xs(cursor);
+        let xrun_xs: Vec<f32> = tele.xrun_marks.iter().map(|m| xs(*m as f64)).collect();
         let loop_x = (xs(song.loop_range.start as f64), xs(song.loop_range.end as f64), song.loop_range.on);
         let punch_x = (xs(song.punch.start as f64), xs(song.punch.end as f64), song.punch.on);
         let spp = v.samples_per_px;
@@ -726,6 +962,7 @@ impl CompositionPage {
             .bg(c(THEME.bg1))
             .on_scroll(cx.listener(Self::on_scroll))
             .on_pinch(cx.listener(Self::on_pinch))
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_timeline_down))
             .child(
                 canvas(
                     move |b, _, _| {
@@ -761,6 +998,50 @@ impl CompositionPage {
                                     pb.line_to(at(x + fade_px, y + 4.0));
                                     if let Ok(path) = pb.build() {
                                         window.paint_path(path, c(THEME.yellow));
+                                    }
+                                }
+                                Paint::Edges { y, h, x, w: iw, fade_in, fade_out, gain_db, selected, reversed } => {
+                                    let iy = y + 3.0;
+                                    let ih = h - 6.0;
+                                    // fades: a shaded corner triangle each, the handle in the top 7 px
+                                    for (fx, fw, left) in [(*x, *fade_in, true), (x + iw - fade_out, *fade_out, false)] {
+                                        if fw > 0.5 {
+                                            let mut pb = PathBuilder::fill();
+                                            if left {
+                                                pb.move_to(at(fx, iy));
+                                                pb.line_to(at(fx + fw, iy));
+                                                pb.line_to(at(fx, iy + ih));
+                                            } else {
+                                                pb.move_to(at(fx, iy));
+                                                pb.line_to(at(fx + fw, iy));
+                                                pb.line_to(at(fx + fw, iy + ih));
+                                            }
+                                            pb.close();
+                                            if let Ok(path) = pb.build() {
+                                                window.paint_path(path, gpui::rgba(THEME.scrim));
+                                            }
+                                        }
+                                    }
+                                    // the gain: a line, lower when quieter (0 dB at the top)
+                                    if *gain_db < -0.05 {
+                                        let gy = iy + ((-gain_db / 60.0).min(1.0) as f32) * ih;
+                                        window.paint_quad(fill(Bounds::new(at(x.max(0.0), gy), size(px((x + iw).min(w) - x.max(0.0)), px(1.0))), c(THEME.yellow)));
+                                    }
+                                    if *selected {
+                                        window.paint_quad(gpui::outline(Bounds::new(at(x.max(0.0), iy), size(px((x + iw).min(w) - x.max(0.0)), px(ih))), c(THEME.cursor), gpui::BorderStyle::Solid));
+                                    }
+                                    if *reversed {
+                                        window.paint_quad(fill(Bounds::new(at(x + iw - 10.0, iy + 2.0), size(px(6.0), px(6.0))), c(THEME.orange)));
+                                    }
+                                }
+                                Paint::Overlap { y, h, x, w: ow } => {
+                                    let mut pb = PathBuilder::stroke(px(1.5));
+                                    pb.move_to(at(*x, y + 3.0));
+                                    pb.line_to(at(x + ow, y + h - 3.0));
+                                    pb.move_to(at(*x, y + h - 3.0));
+                                    pb.line_to(at(x + ow, y + 3.0));
+                                    if let Ok(path) = pb.build() {
+                                        window.paint_path(path, c(THEME.cyan));
                                     }
                                 }
                                 Paint::Curve { y, h, pts } => {
@@ -864,6 +1145,13 @@ impl CompositionPage {
                         if let Ok(path) = pb.build() {
                             window.paint_path(path, c(THEME.orange));
                         }
+                        // the xruns, as red marks (F-CLP-063)
+                        for x in &xrun_xs {
+                            if (0.0..w).contains(x) {
+                                window.paint_quad(fill(Bounds::new(at(*x, 0.0), size(px(2.0), b.size.height)), gpui::rgba(THEME.punch_range)));
+                                window.paint_quad(fill(Bounds::new(at(*x - 2.0, 0.0), size(px(6.0), px(6.0))), c(THEME.red)));
+                            }
+                        }
                         // the play cursor, interpolated between telemetry frames
                         if playing_x >= 0.0 && playing_x < w {
                             window.paint_quad(fill(Bounds::new(at(playing_x, 0.0), size(px(1.0), b.size.height)), c(THEME.cursor)));
@@ -886,5 +1174,57 @@ impl CompositionPage {
             )
             .children(overlays)
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use gpui::{Modifiers, TestAppContext, point};
+
+    use super::*;
+    use crate::workspace::{self, Workspace};
+
+    /// Drag an item by its body: one gesture, snapped to the beat, one undo step; then S splits it at the cursor
+    #[gpui::test]
+    fn move_and_split_an_item(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            workspace::bind_keys(cx);
+        });
+        let (ws, cx) = cx.add_window_view(|window, cx| Workspace::new(window, cx));
+        cx.run_until_parked();
+        let page = ws.read_with(cx, |ws, _| ws.composition.clone());
+        let core = ws.read_with(cx, |ws, _| ws.core.clone());
+        let bounds = page.read_with(cx, |p, _| *p.timeline_bounds.borrow());
+        let (x, y, w, h, item, ..) = page.read_with(cx, |p, _| p.hits.borrow().iter().copied().find(|hit| hit.2 > 60.0 && hit.0 > 0.0).expect("an item is drawn"));
+        let start0 = core.read_with(cx, |c, _| c.port().root().tracks.iter().flat_map(|t| t.items.iter()).find(|i| i.id == item).unwrap().start);
+        let p0 = point(bounds.origin.x + px(x + w / 2.0), bounds.origin.y + px(y + h / 2.0));
+        cx.simulate_mouse_down(p0, MouseButton::Left, Modifiers::none());
+        for k in 1..=5 {
+            cx.simulate_mouse_move(point(p0.x + px(k as f32 * 20.0), p0.y), MouseButton::Left, Modifiers::none());
+        }
+        cx.simulate_mouse_up(point(p0.x + px(100.0), p0.y), MouseButton::Left, Modifiers::none());
+        let start1 = core.read_with(cx, |c, _| c.port().root().tracks.iter().flat_map(|t| t.items.iter()).find(|i| i.id == item).unwrap().start);
+        assert!(start1 > start0, "moved right");
+        assert_eq!(start1 % (BAR / 4), 0, "snapped to the beat");
+        // S at the cursor, inside the item
+        core.update(cx, |c, _| {
+            let _ = c.port_mut().run_action("transport.locate", Value::Real((start1 + BAR) as f64));
+        });
+        std::thread::sleep(Duration::from_millis(60)); // the fake engine thread publishes the position
+        cx.executor().advance_clock(Duration::from_millis(20));
+        cx.run_until_parked();
+        let before = core.read_with(cx, |c, _| c.port().root().tracks.iter().map(|t| t.items.len()).sum::<usize>());
+        cx.dispatch_action(Split);
+        let after = core.read_with(cx, |c, _| c.port().root().tracks.iter().map(|t| t.items.len()).sum::<usize>());
+        assert_eq!(after, before + 1, "split in two");
+        core.update(cx, |c, _| {
+            let _ = c.port_mut().undo();
+            let _ = c.port_mut().undo();
+        });
+        let back = core.read_with(cx, |c, _| c.port().root().tracks.iter().flat_map(|t| t.items.iter()).find(|i| i.id == item).unwrap().start);
+        assert_eq!(back, start0, "two undo steps: the split, then the whole drag");
     }
 }

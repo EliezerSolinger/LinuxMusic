@@ -13,13 +13,13 @@ use gpui::{
 };
 
 use crate::core::Core;
-use crate::pages::composition::CompositionPage;
+use crate::pages::composition::{self, CompositionPage};
 use crate::pages::mixing::{self, MixingPage};
 use crate::pages::{Page, transport};
 use crate::screens::{self, Placement, Screen, ScreenCx};
 use crate::ui::{THEME, button, c, tab, tr};
 
-actions!(linuxmusic, [ShowComposition, ShowMixing, NextPage, TogglePlay, OpenPalette, OpenSettings, CloseModal]);
+actions!(linuxmusic, [ShowComposition, ShowMixing, NextPage, TogglePlay, OpenPalette, OpenSettings, CloseModal, Undo]);
 
 pub const TABS_H: f32 = 34.0;
 /// Height of what is above the page: the transport bar and the tabs
@@ -41,6 +41,24 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new(primary("k"), OpenPalette, None),
         KeyBinding::new(primary(","), OpenSettings, None),
         KeyBinding::new("escape", CloseModal, None),
+        KeyBinding::new(primary("z"), Undo, None),
+        // the arrangement (F-ARR-005..007)
+        KeyBinding::new("s", composition::Split, Some("Composition")),
+        KeyBinding::new("m", composition::AddMarker, Some("Composition")),
+        KeyBinding::new("shift-r", composition::RegionFromLoop, Some("Composition")),
+        KeyBinding::new(primary("d"), composition::Duplicate, Some("Composition")),
+        KeyBinding::new("delete", composition::DeleteItem, Some("Composition")),
+        KeyBinding::new("backspace", composition::DeleteItem, Some("Composition")),
+        KeyBinding::new("shift-e", composition::EmptyItem, Some("Composition")),
+        KeyBinding::new("1", composition::Marker1, Some("Composition")),
+        KeyBinding::new("2", composition::Marker2, Some("Composition")),
+        KeyBinding::new("3", composition::Marker3, Some("Composition")),
+        KeyBinding::new("4", composition::Marker4, Some("Composition")),
+        KeyBinding::new("5", composition::Marker5, Some("Composition")),
+        KeyBinding::new("6", composition::Marker6, Some("Composition")),
+        KeyBinding::new("7", composition::Marker7, Some("Composition")),
+        KeyBinding::new("8", composition::Marker8, Some("Composition")),
+        KeyBinding::new("9", composition::Marker9, Some("Composition")),
         // the desk (F-MIX-013)
         KeyBinding::new("left", mixing::SelectLeft, Some("Mixing")),
         KeyBinding::new("right", mixing::SelectRight, Some("Mixing")),
@@ -69,8 +87,8 @@ pub struct Workspace {
 impl Workspace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let core = cx.new(Core::new);
-        let composition = cx.new(|cx| CompositionPage::new(core.clone(), cx));
         let weak = cx.weak_entity();
+        let composition = cx.new(|cx| CompositionPage::new(core.clone(), weak.clone(), cx));
         let mixing = cx.new(|cx| MixingPage::new(core.clone(), weak, cx));
         let observe = cx.observe(&core, |_, _, cx| cx.notify());
         let focus = cx.focus_handle();
@@ -178,6 +196,12 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|ws, _: &OpenPalette, window, cx| ws.toggle_screen(Screen::Palette, window, cx)))
             .on_action(cx.listener(|ws, _: &OpenSettings, window, cx| ws.toggle_screen(Screen::Settings, window, cx)))
+            .on_action(cx.listener(|ws, _: &Undo, _, cx| {
+                ws.core.update(cx, |core, _| {
+                    let _ = core.port_mut().undo();
+                });
+                cx.notify();
+            }))
             .on_action(cx.listener(|ws, _: &CloseModal, _, cx| {
                 ws.open.retain(|(s, _)| s.placement() != Placement::Modal);
                 cx.notify();

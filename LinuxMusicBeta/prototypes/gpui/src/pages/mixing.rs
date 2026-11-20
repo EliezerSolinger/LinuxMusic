@@ -359,6 +359,17 @@ impl MixingPage {
         cx.notify();
     }
 
+    /// Shows a channel (the FX button of a track's header, P-28)
+    pub fn select_channel(&mut self, id: NodeId, cx: &mut Context<Self>) {
+        if let Some(i) = chs(self.core.read(cx)).iter().position(|c| c.id == id) {
+            self.selected = i;
+            self.multi.clear();
+            let n = self.normal(cx).iter().position(|&k| k == i).unwrap_or(0) as f32;
+            self.scroll = (n * STRIP_W - 2.0 * STRIP_W).max(0.0);
+            cx.notify();
+        }
+    }
+
     fn normal(&self, cx: &Context<Self>) -> Vec<usize> {
         let chs = chs(self.core.read(cx));
         (0..chs.len()).filter(|&k| matches!(chs[k].kind, ChannelKind::Normal | ChannelKind::Group)).collect()

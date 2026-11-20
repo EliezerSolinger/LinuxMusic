@@ -186,6 +186,25 @@ pub fn render(ws: &Workspace, cursor: f64, cx: &Context<Workspace>) -> impl Into
             tbutton("preroll", trf("Pre-roll {0}", &[&pre_roll]), pre_roll > 0, THEME.yellow)
                 .on_click(cx.listener(move |ws, _, _, cx| set_song(ws, Field::PreRoll, Value::Real(((pre_roll + 1) % 3) as f64), cx))),
         )
+        // the global transposition (P-37): click up, Alt+click down, double click back to 0
+        .child(
+            tbutton("transpose", trf("Transpose {0}", &[&format!("{:+}", song.transpose)]), song.transpose != 0, THEME.purple).on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |ws, ev: &MouseDownEvent, _, cx| {
+                    let t = ws.core.read(cx).port().root().song.transpose;
+                    let v = if ev.click_count == 2 { 0 } else if ev.modifiers.alt { t - 1 } else { t + 1 };
+                    set_song(ws, Field::Transpose, Value::Real(v as f64), cx);
+                }),
+            ),
+        )
+        // the xruns, always visible (P-14)
+        .child(
+            div()
+                .px(px(6.))
+                .text_size(px(11.))
+                .text_color(c(if tele.xruns > 0 { THEME.red } else { THEME.text3 }))
+                .child(trf("xruns {0}", &[&tele.xruns])),
+        )
         .child(div().flex_1())
         .child(tbutton("reload", tr("Reload take"), false, 0).on_click(cx.listener(|ws, _, _, cx| {
             ws.core.update(cx, |core, _| { let _ = core.port_mut().run_action("take.reload", Value::Real(2.0)); });

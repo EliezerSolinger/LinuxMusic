@@ -99,6 +99,10 @@ pub struct TelemetryView {
     pub recording: Vec<RecTake>,
     pub counting_in: bool,
     pub xruns: u32,
+    /// where the xruns happened, in samples (red marks on the timeline, F-CLP-063)
+    pub xrun_marks: Vec<i64>,
+    /// the inputs' levels (linear peak), shown in the armed tracks' headers even without monitoring (F-REC-009)
+    pub inputs: [f32; 8],
 }
 
 impl TelemetryView {
@@ -166,7 +170,7 @@ pub trait CorePort {
 /// Edits that another module of the fake handles (notes, plugins...): ONE LINE PER MODULE. A handler returns None
 /// when the edit is not its own.
 type OpHandler = fn(&mut crate::Edit, &EditOp, &[(u32, NodeId)]) -> Option<Result<Option<(u32, NodeId)>>>;
-const OP_HANDLERS: &[OpHandler] = &[crate::mixer::apply_op];
+const OP_HANDLERS: &[OpHandler] = &[crate::mixer::apply_op, crate::arrange::apply_op];
 
 fn resolve(r: Ref, created: &[(u32, NodeId)]) -> Result<NodeId> {
     match r {
@@ -249,6 +253,26 @@ impl CorePort for Session {
             "transport.locate" => num(&params).map(|s| self.locate(s as i64)).ok_or(Error::WrongType),
             "take.reload" => num(&params).map(|t| self.reload_take(t as usize)).ok_or(Error::WrongType),
             "mixer.add_channel" => self.add_channel().map(|_| ()),
+            // the arrangement (arrange.rs): at the cursor where it applies
+            "item.split" => match params {
+                Value::Id(item) => self.split_item(item, self.position().samples),
+                _ => Err(Error::WrongType),
+            },
+            "item.duplicate" => match params {
+                Value::Id(item) => self.duplicate_item(item),
+                _ => Err(Error::WrongType),
+            },
+            "item.empty" => num(&params).ok_or(Error::WrongType).and_then(|t| self.empty_item(t as usize, self.position().samples)),
+            "marker.add" => self.add_marker(self.position().samples),
+            "marker.goto" => num(&params)
+                .and_then(|k| self.doc().song.markers.get(k as usize).map(|m| m.at))
+                .map(|at| self.locate(at))
+                .ok_or(Error::WrongType),
+            "loop.from_region" => match params {
+                Value::Id(r) => self.loop_from_region(r),
+                _ => Err(Error::WrongType),
+            },
+            "region.from_loop" => self.region_from_loop(),
             "mixer.create_channels_for_outputs" => {
                 num(&params).ok_or(Error::WrongType).and_then(|t| self.create_channels_for_outputs(t as usize))
             }
@@ -321,6 +345,12 @@ impl CorePort for Session {
                 .collect(),
             counting_in: self.counting_in(),
             xruns: self.xruns(),
+            xrun_marks: self.xrun_marks.clone(),
+            inputs: {
+                // the fake inputs: a voice-like level on each, moving with the clock
+                let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f32());
+                std::array::from_fn(|k| (0.35 + 0.3 * (t * (1.3 + k as f32 * 0.4)).sin().abs()) * if k % 3 == 2 { 0.2 } else { 1.0 })
+            },
         }
     }
 

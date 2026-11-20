@@ -76,6 +76,13 @@ pub struct Item {
     pub start: i64,
     pub length: i64,
     pub kind: ItemKind,
+    /// fade in and out, in samples (the handles in the item's top 7 px, F-CLP-061), and their curve (P-30): 0 linear
+    pub fades: (i64, i64),
+    pub fade_curve: f32,
+    /// the item's gain (the top edge's handle)
+    pub gain_db: f64,
+    /// played backwards (P-31)
+    pub reversed: bool,
 }
 
 impl Item {
@@ -114,6 +121,15 @@ pub struct Range {
     pub on: bool,
 }
 
+/// A region of the song (F-REG-011..013): a click makes it the loop; it can be exported alone
+#[derive(Clone, Debug)]
+pub struct Region {
+    pub id: NodeId,
+    pub start: i64,
+    pub end: i64,
+    pub name: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct Marker {
     pub id: NodeId,
@@ -129,6 +145,9 @@ pub struct Song {
     pub loop_range: Range,
     pub punch: Range,
     pub markers: Vec<Marker>,
+    pub regions: Vec<Region>,
+    /// the project's global transposition in semitones (P-37)
+    pub transpose: i32,
     pub metronome: bool,
     pub count_in_bars: u8,
     pub pre_roll_bars: u8,
@@ -154,6 +173,11 @@ impl Default for Song {
                 Marker { id: NodeId { kind: b'k', number: 3 }, at: 24 * BAR, name: "Refrão".into() },
                 Marker { id: NodeId { kind: b'k', number: 4 }, at: 40 * BAR, name: "Ponte".into() },
             ],
+            regions: vec![
+                Region { id: NodeId { kind: b'g', number: 1 }, start: 8 * BAR, end: 24 * BAR, name: "Verso".into() },
+                Region { id: NodeId { kind: b'g', number: 2 }, start: 24 * BAR, end: 40 * BAR, name: "Refrão".into() },
+            ],
+            transpose: 0,
             metronome: true,
             count_in_bars: 1,
             pre_roll_bars: 1,
@@ -200,4 +224,145 @@ pub fn tempo_at(map: &[TempoPoint], bar: f64) -> f64 {
         prev = *p;
     }
     prev.bpm
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The arrangement's actions (run through `CorePort::run_action`; each is one transaction, one undo step)
+
+impl crate::Session {
+    fn item_place(&self, item: NodeId) -> crate::Result<(usize, usize)> {
+        for (t, tr) in self.doc.tracks.iter().enumerate() {
+            if let Some(k) = tr.items.iter().position(|i| i.id == item) {
+                return Ok((t, k));
+            }
+        }
+        Err(crate::Error::NoSuchNode(item))
+    }
+
+    fn new_node(&mut self, kind: u8) -> NodeId {
+        self.next_id += 1;
+        NodeId { kind, number: 200_000 + self.next_id }
+    }
+
+    /// S: split the item at `at` (F-ARR-005); the right part is a new item
+    pub fn split_item(&mut self, item: NodeId, at: i64) -> crate::Result<()> {
+        let (t, k) = self.item_place(item)?;
+        let it = self.doc.tracks[t].items[k].clone();
+        if at <= it.start || at >= it.start + it.length {
+            return Err(crate::Error::WrongType);
+        }
+        let id = self.new_node(b'i');
+        self.transact("Split", |e| {
+            let left = &mut e.doc.tracks[t].items[k];
+            left.length = at - it.start;
+            left.fades.1 = 0;
+            let mut right = it.clone();
+            right.id = id;
+            right.start = at;
+            right.length = it.start + it.length - at;
+            right.fades.0 = 0;
+            if let ItemKind::Audio { comp, .. } = &mut right.kind {
+                let cut = at - it.start;
+                for s in comp.iter_mut() {
+                    s.start = (s.start - cut).max(0);
+                }
+            }
+            e.doc.tracks[t].items.insert(k + 1, right);
+            e.diff.changed.push((item, None));
+            e.diff.changed.push((id, None));
+            Ok(())
+        })
+        .map(|_| ())
+    }
+
+    /// Ctrl+D: a copy right after the item, on bar lines (F-ARR-007)
+    pub fn duplicate_item(&mut self, item: NodeId) -> crate::Result<()> {
+        let (t, k) = self.item_place(item)?;
+        let mut copy = self.doc.tracks[t].items[k].clone();
+        copy.id = self.new_node(b'i');
+        let end = copy.start + copy.length;
+        copy.start = (end + BAR - 1) / BAR * BAR;
+        let id = copy.id;
+        self.transact("Duplicate", |e| {
+            e.doc.tracks[t].items.push(copy);
+            e.diff.changed.push((id, None));
+            Ok(())
+        })
+        .map(|_| ())
+    }
+
+    /// An empty audio item with one click (P-29), a bar long
+    pub fn empty_item(&mut self, track: usize, at: i64) -> crate::Result<()> {
+        let id = self.new_node(b'i');
+        let res = self.doc.tracks.get(track).and_then(|t| t.main_resource()).unwrap_or(crate::ResourceId(0));
+        self.transact("Empty item", |e| {
+            let tr = e.doc.tracks.get_mut(track).ok_or(crate::Error::WrongType)?;
+            tr.items.push(Item {
+                id,
+                name: "Vazio".into(),
+                start: at,
+                length: BAR,
+                kind: ItemKind::Audio { resource: res, takes: Vec::new(), comp: Vec::new(), handle_before: 0, handle_after: 0 },
+                fades: (0, 0),
+                fade_curve: 0.0,
+                gain_db: -120.0,
+                reversed: false,
+            });
+            e.diff.changed.push((id, None));
+            Ok(())
+        })
+        .map(|_| ())
+    }
+
+    /// M: a marker at `at` (F-ARR-006)
+    pub fn add_marker(&mut self, at: i64) -> crate::Result<()> {
+        let id = self.new_node(b'k');
+        let n = self.doc.song.markers.len() + 1;
+        self.transact("Marker", |e| {
+            e.doc.song.markers.push(Marker { id, at, name: format!("{n}") });
+            e.doc.song.markers.sort_by_key(|m| m.at);
+            e.diff.changed.push((crate::ROOT, None));
+            Ok(())
+        })
+        .map(|_| ())
+    }
+
+    /// A click on a region: it becomes the loop, switched on (F-REG-011)
+    pub fn loop_from_region(&mut self, region: NodeId) -> crate::Result<()> {
+        let r = self.doc.song.regions.iter().find(|r| r.id == region).cloned().ok_or(crate::Error::NoSuchNode(region))?;
+        self.transact("Loop from region", |e| {
+            e.doc.song.loop_range = Range { start: r.start, end: r.end, on: false };
+            e.set(crate::ROOT, crate::Field::LoopOn, crate::Value::Bool(true))
+        })
+        .map(|_| ())
+    }
+
+    /// Shift+R: a region from the loop (F-ARR-006)
+    pub fn region_from_loop(&mut self) -> crate::Result<()> {
+        let id = self.new_node(b'g');
+        let l = self.doc.song.loop_range;
+        let n = self.doc.song.regions.len() + 1;
+        self.transact("Region", |e| {
+            e.doc.song.regions.push(Region { id, start: l.start, end: l.end, name: format!("Região {n}") });
+            e.diff.changed.push((crate::ROOT, None));
+            Ok(())
+        })
+        .map(|_| ())
+    }
+}
+
+/// The arrangement's structural edits (port.rs routes them here): removing an item
+pub(crate) fn apply_op(e: &mut crate::Edit, op: &crate::port::EditOp, _created: &[(u32, NodeId)]) -> Option<crate::Result<Option<(u32, NodeId)>>> {
+    use crate::port::{EditOp, Ref};
+    match op {
+        EditOp::Remove { id: Ref::Id(id) } if id.kind == b'i' => {
+            let t = e.doc.tracks.iter_mut().find(|t| t.items.iter().any(|i| i.id == *id))?;
+            t.items.retain(|i| i.id != *id);
+            let tid = t.id;
+            e.diff.changed.push((*id, None));
+            e.diff.changed.push((tid, None));
+            Some(Ok(None))
+        }
+        _ => None,
+    }
 }

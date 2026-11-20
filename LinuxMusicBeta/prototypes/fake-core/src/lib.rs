@@ -149,6 +149,14 @@ pub enum Field {
     PreRoll,
     // the desk (mixer.rs): an insert's point among the rack's sections and its bypass, the fader link, the mode
     InsertPoint(NodeId),
+    // an item (arrange.rs): its start, fades, fade curve, gain, reversed
+    ItemStart,
+    FadeIn,
+    FadeOut,
+    FadeCurve,
+    ItemGain,
+    Reversed,
+    Transpose,
     Bypass(NodeId),
     FaderLink,
     DeskAnalog,
@@ -255,6 +263,13 @@ impl Edit<'_> {
             (b't' | b'p' | b'x', Field::Param(k), Value::Real(x)) => plugins::set_param(self.doc, id, k, x)?,
             (b'm', f @ (Field::InsertPoint(_) | Field::Bypass(_) | Field::FaderLink), v) => mixer::set(self.doc, id, f, v)?,
             (b'r', Field::DeskAnalog, Value::Bool(b)) => self.doc.song.desk_analog = b,
+            (b'r', Field::Transpose, Value::Real(x)) => self.doc.song.transpose = x.clamp(-24.0, 24.0) as i32,
+            (b'i', Field::ItemStart, Value::Real(x)) => self.item(id)?.start = (x as i64).max(0),
+            (b'i', Field::FadeIn, Value::Real(x)) => { let it = self.item(id)?; it.fades.0 = (x as i64).clamp(0, it.length); }
+            (b'i', Field::FadeOut, Value::Real(x)) => { let it = self.item(id)?; it.fades.1 = (x as i64).clamp(0, it.length); }
+            (b'i', Field::FadeCurve, Value::Real(x)) => self.item(id)?.fade_curve = x.clamp(-1.0, 1.0) as f32,
+            (b'i', Field::ItemGain, Value::Real(x)) => self.item(id)?.gain_db = x.clamp(-120.0, 24.0),
+            (b'i', Field::Reversed, Value::Bool(b)) => self.item(id)?.reversed = b,
             (b'r', Field::CountIn, Value::Real(x)) => self.doc.song.count_in_bars = x.clamp(0.0, 4.0) as u8,
             (b'r', Field::PreRoll, Value::Real(x)) => self.doc.song.pre_roll_bars = x.clamp(0.0, 4.0) as u8,
             (b'm', Field::Volume, Value::Real(x)) => self.channel(id)?.volume_db = x,
@@ -296,6 +311,13 @@ impl Edit<'_> {
             (b't' | b'p' | b'x', Field::Param(k)) => Value::Real(plugins::get_param(self.doc, id, k)?),
             (b'm', f @ (Field::InsertPoint(_) | Field::Bypass(_) | Field::FaderLink)) => mixer::get(self.doc, id, f)?,
             (b'r', Field::DeskAnalog) => Value::Bool(self.doc.song.desk_analog),
+            (b'r', Field::Transpose) => Value::Real(self.doc.song.transpose as f64),
+            (b'i', Field::ItemStart) => Value::Real(self.item(id)?.start as f64),
+            (b'i', Field::FadeIn) => Value::Real(self.item(id)?.fades.0 as f64),
+            (b'i', Field::FadeOut) => Value::Real(self.item(id)?.fades.1 as f64),
+            (b'i', Field::FadeCurve) => Value::Real(self.item(id)?.fade_curve as f64),
+            (b'i', Field::ItemGain) => Value::Real(self.item(id)?.gain_db),
+            (b'i', Field::Reversed) => Value::Bool(self.item(id)?.reversed),
             (b'r', Field::CountIn) => Value::Real(self.doc.song.count_in_bars as f64),
             (b'r', Field::PreRoll) => Value::Real(self.doc.song.pre_roll_bars as f64),
             (b'm', Field::Volume) => Value::Real(self.channel(id)?.volume_db),
@@ -313,6 +335,9 @@ impl Edit<'_> {
     }
     fn track(&mut self, id: NodeId) -> Result<&mut Track> {
         self.doc.tracks.iter_mut().find(|t| t.id == id).ok_or(Error::NoSuchNode(id))
+    }
+    fn item(&mut self, id: NodeId) -> Result<&mut Item> {
+        self.doc.tracks.iter_mut().flat_map(|t| t.items.iter_mut()).find(|i| i.id == id).ok_or(Error::NoSuchNode(id))
     }
     fn channel(&mut self, id: NodeId) -> Result<&mut Channel> {
         self.doc.channels.iter_mut().find(|c| c.id == id).ok_or(Error::NoSuchNode(id))
@@ -625,6 +650,8 @@ pub struct Session {
     config: Config,
     pumps: u64,
     rec: Option<RecState>,
+    pub(crate) xrun_marks: Vec<i64>,
+    xruns_seen: u32,
     /// The project folder, preferences, devices, export, notices (owner: agent D, `project.rs`)
     pub services: project::Services,
     _main: Main,
@@ -698,6 +725,8 @@ impl Session {
             config,
             pumps: 0,
             rec: None,
+            xrun_marks: Vec::new(),
+            xruns_seen: 0,
             services: project::Services::default(),
             _main: Main { _not_send: PhantomData },
         };
@@ -722,6 +751,13 @@ impl Session {
         self.pumps += 1;
         let mut changed = false;
         // telemetry
+        // xruns: where they happened (the fake marks the position of the frame that saw it)
+        let x = self.engine.xruns.load(Ordering::Relaxed);
+        if x != self.xruns_seen {
+            self.xruns_seen = x;
+            self.xrun_marks.push(self.last_frame.position);
+            changed = true;
+        }
         // a new frame counts as a change only if what it shows changed (no redraws while stopped and silent)
         let f = *self.telemetry.read();
         if f.serial != self.last_frame.serial
@@ -1159,6 +1195,10 @@ impl Session {
                 e.doc.tracks[t].items.push(Item {
                     id,
                     name: "Take".into(),
+                    fades: (0, 0),
+                    fade_curve: 0.0,
+                    gain_db: 0.0,
+                    reversed: false,
                     start: r.start,
                     length: len,
                     kind: ItemKind::Audio { resource: res, takes: Vec::new(), comp: Vec::new(), handle_before: handle, handle_after: 0 },
@@ -1254,6 +1294,10 @@ fn arrange_tracks(config: &Config, resources: &HashMap<ResourceId, Arc<Peaks>>) 
                 items.push(Item {
                     id: NodeId { kind: b'i', number: 1000 + i as u64 },
                     name: if i == 2 { "Voz (3 takes)".into() } else { format!("Take {}", i) },
+                    fades: (0, 0),
+                    fade_curve: 0.0,
+                    gain_db: 0.0,
+                    reversed: false,
                     start,
                     length: item_len,
                     kind: ItemKind::Audio {
@@ -1267,6 +1311,10 @@ fn arrange_tracks(config: &Config, resources: &HashMap<ResourceId, Arc<Peaks>>) 
                 items.push(Item {
                     id: NodeId { kind: b'i', number: 3000 + i as u64 },
                     name: format!("Take {}b", i),
+                    fades: (0, 0),
+                    fade_curve: 0.0,
+                    gain_db: 0.0,
+                    reversed: false,
                     start: start + item_len + 2 * BAR,
                     length: item_len,
                     kind: ItemKind::Audio { resource, takes: Vec::new(), comp: Vec::new(), handle_before: 0, handle_after: 0 },
@@ -1278,6 +1326,10 @@ fn arrange_tracks(config: &Config, resources: &HashMap<ResourceId, Arc<Peaks>>) 
                     items.push(Item {
                         id: NodeId { kind: b'i', number: 5000 + (i * 3 + k) as u64 },
                         name: if k == 0 { "Padrão A".into() } else { format!("Frase {}", k) },
+                        fades: (0, 0),
+                        fade_curve: 0.0,
+                        gain_db: 0.0,
+                        reversed: false,
                         start: start + k as i64 * 12 * BAR,
                         length: len,
                         kind: ItemKind::Midi { notes: fake_notes(i as u64 + k as u64, len), repeats: if k == 0 { 2 } else { 0 } },
