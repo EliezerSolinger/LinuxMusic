@@ -250,6 +250,8 @@ pub struct Compiled {
     pub nodes: Vec<NodeInfo>,
     /// The live MIDI routes (I-7.1): each input port to the armed instruments
     pub ports: Vec<(PortIndex, NodeKey)>,
+    /// The inserts left out by the low-latency monitoring (P-10)
+    pub low_latency_bypassed: Vec<NodeKey>,
 }
 
 /// One route of a compiled program

@@ -257,6 +257,7 @@ struct Plan {
     new_tails: Vec<(u64, NodeKey, PluginShape, bool, u32)>,
     waiting_items: Vec<WaitingItem>,
     streamed: usize,
+    low_latency_bypassed: Vec<NodeKey>,
 }
 
 impl Plan {
@@ -829,6 +830,7 @@ impl CompilerCore {
             routes,
             nodes,
             ports,
+            low_latency_bypassed: plan.low_latency_bypassed,
             streamed: plan.streamed,
             made,
             elapsed: started.elapsed(),
@@ -1262,6 +1264,20 @@ impl CompilerCore {
             }
         }
 
+        // Low-latency monitoring (P-10): the channels from each armed track's main output to the master
+        let mut low_latency_path: HashSet<NodeId> = HashSet::new();
+        if env.low_latency_monitoring {
+            for t in tracks.iter().filter(|t| flag(t, "armed", false) && !flag(t, "folder", false)) {
+                let Some(main) = items(t, "outputs").next() else { continue };
+                let mut at = dest_of(ref_of(main, "to"));
+                while low_latency_path.insert(at) && at != MASTER {
+                    let next = by_id.get(&at).map(|i| desk[*i].value).and_then(|c| ref_of(c, "output"));
+                    at = dest_of(next);
+                }
+                low_latency_path.insert(MASTER);
+            }
+        }
+
         // ---- The desk
         let mut sends_later: Vec<(usize, usize, u16, &Value)> = Vec::new(); // (pre tap, post tap, width, channel)
         for c in desk.iter().chain(master_view.iter()) {
@@ -1310,7 +1326,12 @@ impl CompilerCore {
                 let (shape, latency) = this.decide(plan, k, wanted, iseed, PluginShape::effect(w));
                 let n = plan.add(PNode::processor(k, &shape, latency));
                 this.plugin_params(plan, n, p);
-                if !flag(p, "bypass", false) {
+                // Low-latency monitoring (P-10): on an armed track's path, an insert with latency is left out
+                let low_latency = latency > 0 && low_latency_path.contains(&c.id);
+                if low_latency {
+                    plan.low_latency_bypassed.push(k);
+                }
+                if !flag(p, "bypass", false) && !low_latency {
                     plan.feed(prev.0, 0, prev.1, n, 0, shape.inputs.max(1), false);
                     *prev = (n, shape.output_channels().max(1));
                 }

@@ -924,3 +924,54 @@ fn the_count_in_clicks_on_exact_samples_and_the_song_starts_after_it() {
     assert_eq!(out[total - 1], 0.0);
     assert_eq!(out[total], 0.5);
 }
+
+#[test]
+fn low_latency_monitoring_bypasses_the_inserts_with_latency_on_the_armed_path() {
+    let plugins = plugins();
+    let mut doc = new_doc(&plugins);
+    digital(&mut doc);
+    let voice = add_track(&mut doc, None);
+    let other = add_track(&mut doc, Some(dc()));
+    let vox = add_channel(&mut doc);
+    let bus = add_channel(&mut doc);
+    let drums = add_channel(&mut doc);
+    let (ov, oo) = (outputs(&doc, voice)[0], outputs(&doc, other)[0]);
+    route_output(&mut doc, ov, vox);
+    route_output(&mut doc, oo, drums);
+    edit(&mut doc, |e| e.set(vox, &[k("output")], text(&bus.to_string())));
+    let slow_vox = insert(&mut doc, vox, delay(256));
+    let none_vox = insert(&mut doc, vox, delay(0));
+    let slow_bus = insert(&mut doc, bus, delay(128));
+    let slow_drums = insert(&mut doc, drums, delay(512));
+    let slow_master = insert(&mut doc, lm_doc::MASTER, delay(64));
+    edit(&mut doc, |e| {
+        e.set(voice, &[k("input")], Value::object([("channels", Value::list([Value::int(1)]))]))?;
+        e.set(voice, &[k("armed")], Value::bool(true))
+    });
+    let mut h = Harness::new(&plugins);
+    h.env.low_latency_monitoring = true;
+    let c = h.settle(doc.root());
+    let mut bypassed = c.low_latency_bypassed.clone();
+    bypassed.sort();
+    let mut want = vec![NodeKey::Insert(slow_vox), NodeKey::Insert(slow_bus), NodeKey::Insert(slow_master)];
+    want.sort();
+    assert_eq!(bypassed, want);
+    // Out of the chain (still built, so turning the preference off does not wait), the others in it
+    assert!(route(&c, NodeKey::ChannelIn(vox), NodeKey::Insert(slow_vox)).is_none());
+    assert!(route(&c, NodeKey::ChannelIn(vox), NodeKey::Insert(none_vox)).is_some());
+    assert!(route(&c, NodeKey::ChannelIn(drums), NodeKey::Insert(slow_drums)).is_some());
+    assert!(c.table.node(NodeKey::Insert(slow_vox)).is_some());
+    // The path has no PDC left from them: the bus and vox paths add no delay at the master
+    assert_eq!(route(&c, NodeKey::Fader(bus), NodeKey::ChannelIn(lm_doc::MASTER)).unwrap().delay, 512);
+    // Disarmed: everything back, nothing to build
+    edit(&mut doc, |e| e.set(voice, &[k("armed")], Value::bool(false)));
+    let c = h.compile(doc.root());
+    assert!(c.low_latency_bypassed.is_empty() && c.builds.is_empty());
+    assert!(route(&c, NodeKey::ChannelIn(vox), NodeKey::Insert(slow_vox)).is_some());
+    // The preference off: nothing bypassed even when armed
+    h.pump();
+    edit(&mut doc, |e| e.set(voice, &[k("armed")], Value::bool(true)));
+    h.env.low_latency_monitoring = false;
+    let c = h.compile(doc.root());
+    assert!(c.low_latency_bypassed.is_empty());
+}
