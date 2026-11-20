@@ -921,7 +921,16 @@ mod notes_editors {
         target: impl FnOnce(&Value) -> Option<NodeId> + 'static,
         make: fn(ScreenCx, &mut gpui::Window, &mut gpui::Context<V>) -> V,
     ) -> (Entity<V>, Entity<Core>, &mut VisualTestContext) {
-        let p = port();
+        open_screen_on(cx, port(), screen, target, make)
+    }
+
+    pub(super) fn open_screen_on<V: gpui::Render + 'static>(
+        cx: &mut TestAppContext,
+        p: Box<dyn CorePort>,
+        screen: Screen,
+        target: impl FnOnce(&Value) -> Option<NodeId> + 'static,
+        make: fn(ScreenCx, &mut gpui::Window, &mut gpui::Context<V>) -> V,
+    ) -> (Entity<V>, Entity<Core>, &mut VisualTestContext) {
         let prefs = p.preferences().clone();
         cx.update(|cx| workspace::start(cx, &prefs));
         let mut p = Some(p);
@@ -1455,6 +1464,28 @@ fn browser_search(cx: &mut TestAppContext) {
     let hits = core.update(cx, |c, _| c.port_mut().search("kick").ok().unwrap());
     assert!(!hits.is_empty());
     assert!(cx.debug_bounds(Box::leak(format!("br-entry-{}", hits[0].id.0).into_boxed_str())).is_some());
+
+    #[gpui::test]
+    fn automation_hand_won_and_rearm(cx: &mut TestAppContext) {
+        let mut fake =
+            FakePort::new(Config { tracks: 12, slow_delay: None, slow_track: usize::MAX }).expect("the demo");
+        let l = crate::screens::automation::Lane::all(fake.root()).into_iter().next().expect("a lane");
+        fake.hand_wins(l.target.expect("the lane's node"), &l.param);
+        let (_ae, core, cx) = notes_editors::open_screen_on(
+            cx,
+            Box::new(fake),
+            Screen::Automation,
+            move |_| Some(l.id),
+            crate::screens::automation::AutomationEditor::new,
+        );
+        let won = |core: &Entity<Core>, cx: &mut VisualTestContext| {
+            core.read_with(cx, |core, _| core.port().telemetry().hand_won.len())
+        };
+        assert_eq!(won(&core, cx), 1, "the hand won");
+        click(cx, "ae-rearm");
+        settle(cx);
+        assert_eq!(won(&core, cx), 0, "re-armed: back to the curve");
+    }
 }
 
 // --- agent D: settings, export, project, notices, palette, new project, about ----------------------------------

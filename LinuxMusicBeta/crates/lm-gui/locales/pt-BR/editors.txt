@@ -275,7 +275,6 @@ Move the notes a bar left = Mover as notas um compasso à esquerda
 Move the notes a bar right = Mover as notas um compasso à direita
 # Automation editor (lm-gui, the legacy's screen)
 Add a point = Acrescentar um ponto
-Auto = Auto
 Automation mode = Modo de automação
 Cubic = Cúbica
 Cubic Hermite progression = Progressão cúbica (Hermite)
@@ -331,3 +330,5 @@ Step size = Tamanho do passo
 Step velocity = Velocidade do passo
 Swing = Swing
 The MIDI items shown here = Os itens MIDI mostrados aqui
+Hand won ↺ = A mão venceu ↺
+This lane back to its curve = Esta lane de volta à curva

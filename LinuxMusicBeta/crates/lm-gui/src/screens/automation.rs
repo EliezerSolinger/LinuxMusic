@@ -150,6 +150,8 @@ pub struct Lane {
     pub id: NodeId,
     pub owner: String,
     pub param: String,
+    /// the target's node: with `param`, how the telemetry names the lane (`hand_won`)
+    pub target: Option<NodeId>,
     pub color: u32,
     pub mode: String,
     pub points: Arc<Vec<Pt>>,
@@ -184,6 +186,7 @@ impl Lane {
                 out.push(Lane {
                     id,
                     owner: model::text(o, "name").to_string(),
+                    target: a.get("target").and_then(|t| model::ref_of(t, "node")),
                     param,
                     color,
                     mode: a.get("mode").and_then(Value::as_text).unwrap_or("read").to_string(),
@@ -906,9 +909,12 @@ impl AutomationEditor {
         cx.notify();
     }
 
+    /// Re-arm: this lane back to its curve (I-21.5)
     fn rearm(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.lane else { return };
+        let params = Value::object([("lane", Value::text(id.to_string()))]);
         self.scx.core.update(cx, |core, _| {
-            let _ = core.port_mut().run_action("automation.rearm".into(), Value::empty_object());
+            let _ = core.port_mut().run_action("automation.rearm".into(), params);
         });
         cx.notify();
     }
@@ -1435,6 +1441,11 @@ impl AutomationEditor {
                 .on_mouse_down(MouseButton::Left, cx.listener(Self::open_menu(m)))
         };
         let playing = self.playing.is_some();
+        // the hand overrode this lane's parameter: shown until the re-arm (I-21.5)
+        let hand_won = lane.is_some_and(|l| {
+            let t = self.scx.core.read(cx).port().telemetry();
+            t.hand_won.iter().any(|(n, p)| Some(*n) == l.target && p.as_ref() == l.param)
+        });
         let mode = lane.map(|l| l.mode.clone()).unwrap_or_default();
         let mode_name = MODES.iter().find(|m| m.0 == mode).map_or("Read", |m| m.1);
         div()
@@ -1547,8 +1558,14 @@ impl AutomationEditor {
             .child(label(tr("Mode")))
             .child(combo("ae-lane-mode", Menu::Mode, tr(mode_name).into(), "Off, Read, Touch, Latch or Write"))
             .child(
-                small("ae-rearm", tr("Re-arm").into(), false, 0, "Every lane back to its curve")
-                    .on_click(cx.listener(|ae, _, _, cx| ae.rearm(cx))),
+                small(
+                    "ae-rearm",
+                    tr(if hand_won { "Hand won ↺" } else { "Re-arm" }).into(),
+                    hand_won,
+                    THEME.red,
+                    "This lane back to its curve",
+                )
+                .on_click(cx.listener(|ae, _, _, cx| ae.rearm(cx))),
             )
     }
 
