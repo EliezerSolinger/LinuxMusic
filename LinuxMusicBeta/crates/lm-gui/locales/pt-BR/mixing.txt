@@ -162,4 +162,3 @@ Air = Ar
 Volume: = Volume:
 Send: = Envio:
 Monitor level: = Nível da monitoração:
-Auto = Auto
