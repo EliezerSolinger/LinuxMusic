@@ -203,3 +203,43 @@ fn removing_a_channel_sends_its_sources_to_the_master() {
     assert!(p.apply(Label::new("Remove"), vec![EditOp::Remove { id: Ref::Id(group) }]).ok().is_some());
     assert_eq!(p.find(piece).unwrap().get("output").unwrap().as_text(), Some("m:0"));
 }
+
+#[test]
+fn split_and_duplicate_keep_notes_and_comps_coherent() {
+    let mut p = small();
+    let t = p.root().get("tracks").unwrap().at(3).unwrap().clone(); // an instrument track: MIDI items
+    let item = t.get("items").unwrap().at(0).unwrap().clone();
+    let id = item.get("id").unwrap().as_text().unwrap().to_string();
+    let start = item.get("start").unwrap().as_int().unwrap();
+    let notes = item.get("notes").unwrap().len();
+    let params = Value::object([("item", Value::text(id.clone())), ("tick", Value::int(start + 2 * demo::BAR))]);
+    assert!(p.run_action(ActionId::from("arrange.split"), params).ok().is_some());
+    let track = NodeId::parse(t.get("id").unwrap().as_text().unwrap()).unwrap();
+    let items = p.find(track).unwrap().get("items").unwrap().clone();
+    let (left, right) = (items.at(0).unwrap(), items.at(1).unwrap());
+    assert_eq!(left.get("length").unwrap().as_int(), Some(2 * demo::BAR));
+    assert_eq!(right.get("start").unwrap().as_int(), Some(start + 2 * demo::BAR));
+    assert_eq!(left.get("notes").unwrap().len() + right.get("notes").unwrap().len(), notes, "every note on one side");
+    assert!(
+        right.get("notes").unwrap().entries().all(|(_, n)| n.get("start").unwrap().as_int().unwrap() < 2 * demo::BAR)
+    );
+    // the audio item with three lanes: the comp follows the cut
+    let voice = p.root().get("tracks").unwrap().at(2).unwrap().get("items").unwrap().at(0).unwrap().clone();
+    let vid = voice.get("id").unwrap().as_text().unwrap().to_string();
+    let vstart = voice.get("start").unwrap().as_int().unwrap();
+    let params = Value::object([("item", Value::text(vid.clone())), ("tick", Value::int(vstart + 10 * demo::BAR))]);
+    assert!(p.run_action(ActionId::from("arrange.split"), params).ok().is_some());
+    let v = p.find(NodeId::parse(&vid).unwrap()).unwrap();
+    assert_eq!(v.get("comp").unwrap().len(), 2, "two segments before the cut");
+    assert!(
+        p.run_action(ActionId::from("arrange.duplicate"), Value::object([("item", Value::text(vid))])).ok().is_some()
+    );
+    assert!(p.undo().ok().is_some() && p.undo().ok().is_some(), "two steps");
+    let back = p.find(NodeId::parse(&id).unwrap()).unwrap();
+    assert_eq!(back.get("notes").unwrap().len(), notes - right_count(&p, track));
+}
+
+fn right_count(p: &FakePort, track: NodeId) -> usize {
+    // after two undos the MIDI split stays (it was the first step): its right part's notes
+    p.find(track).unwrap().get("items").unwrap().at(1).unwrap().get("notes").unwrap().len()
+}
