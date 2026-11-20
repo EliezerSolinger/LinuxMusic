@@ -963,6 +963,7 @@ fn finished_value(f: Finished) -> Result<Value> {
         Finished::Devices(r) => r.map(|d| Value::list(d.iter().map(c::device_to))),
         Finished::Entries(r) => r.and_then(|e| c::entries_to(&e)),
         Finished::Preview(r) => r.and_then(|p| c::preview_to(&p)),
+        Finished::Imported(r) => r.map(|res| c::resource_to(&res)),
     }
 }
 

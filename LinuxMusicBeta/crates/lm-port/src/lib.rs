@@ -75,6 +75,8 @@ pub enum Finished {
     /// `browse`, `search`
     Entries(Result<Vec<BrowseEntry>>),
     Preview(Result<Preview>),
+    /// `import`: the resource the file became in the project's store
+    Imported(Result<Resource>),
 }
 
 /// An action of the registry (I-19), by id: `"transport.play"`, `"notes.quantize"`
@@ -361,6 +363,14 @@ pub trait CorePort {
     fn preview_play(&mut self, entry: EntryId, from: i64);
     fn preview_stop(&mut self);
     fn set_favorite(&mut self, entry: EntryId, on: bool) -> Pending<()>;
+
+    /// Imports an audio file into the project's resources (I-12; an operation, its loading on
+    /// `Target::Scan(Library)`). In-process the path is the core's; over the network the RemotePort uploads the
+    /// client's file first (chunked, resumable, hash-checked, I-20.3) and the server imports the upload
+    fn import(&mut self, path: std::path::PathBuf) -> Pending<Resource> {
+        let _ = path;
+        Pending::Ready(Err(Error::new("port.import.unsupported")))
+    }
 }
 
 #[cfg(test)]

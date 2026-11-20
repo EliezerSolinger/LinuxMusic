@@ -1032,6 +1032,8 @@ pub struct Applied { pub diff: Diff, pub created: Vec<(u32, NodeId)>, pub notes:
   - `modified()`, `can_undo()`, `can_redo()`: para perguntar antes de perder mudanças e acender desfazer e refazer;
   - `dismiss_notice(id)`;
   - `finished()`: os resultados dos pedidos que responderam `Waiting`, coletados a cada `pump`;
+  - `import(path)`: importar um arquivo de áudio para os recursos do projeto (I-12); no cliente, a `RemotePort` envia
+    o arquivo do cliente em pedaços, retomável e conferido pelo hash, e o servidor importa o envio;
   - o lado da sessão que não é o documento do projeto: `preferences()` e `set_preference(path, value)` (I-16),
     `status()` (o arquivo do projeto e o acesso H10, os projetos recentes, os modelos, os takes interrompidos U5, o
     modo seguro U21, o relatório da última exportação, como uma árvore de `Value`) e `devices()` (`Pending`);
