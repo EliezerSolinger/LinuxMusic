@@ -314,7 +314,19 @@ dependencies = [
 name = "lm-io"
 version = "0.1.0"
 dependencies = [
+ "assert_no_alloc",
+ "blake3",
  "lm-base",
+ "lm-render",
+ "lm-sys-alsa",
+ "lm-sys-linux",
+ "lm-sys-samplerate",
+ "lm-sys-sndfile",
+ "lm-time",
+ "rtrb",
+ "rustix",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

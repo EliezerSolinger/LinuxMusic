@@ -1,6 +1,6 @@
 [package]
 name = "lm-io"
-description = "LinuxMusic: devices (Dummy, ALSA), MIDI input, recording to disk and the resource store"
+description = "LinuxMusic: devices (Dummy, ALSA), MIDI input, recording to disk, calibration and the resource store"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,3 +12,20 @@ workspace = true
 
 [dependencies]
 lm-base.workspace = true
+lm-render.workspace = true
+lm-sys-sndfile.workspace = true
+lm-sys-samplerate.workspace = true
+# The platform-independent half (sample formats, MIDI translation, error keys) builds everywhere; the PCM, the
+# sequencer and the system services exist only on Linux
+lm-sys-alsa.workspace = true
+lm-sys-linux.workspace = true
+rtrb.workspace = true
+assert_no_alloc.workspace = true
+blake3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# statvfs (H3: free disk space), poll and eventfd (the raw MIDI reader)
+rustix = { workspace = true, features = ["fs", "event"] }
+
+[dev-dependencies]
+lm-time.workspace = true
