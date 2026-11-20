@@ -370,8 +370,12 @@ fn interrupted_take_is_recovered() {
         });
         started.is_some()
     });
-    wait_for(20, "5 s", || engine.frame().position > 5 * i64::from(rate));
-    let (path, record) = started.expect("started");
+    let (path, record) = started.clone().expect("started");
+    // The crash comes after the disk thread's sync at 4 s: wait for the file's own header to say so (a slow machine's
+    // disk thread may be behind the transport), then copy what the disk holds
+    wait_for(60, "the sync at 4 s", || {
+        Reader::open(&path).map(|r| r.info().frames >= 4 * u64::from(rate)).unwrap_or(false)
+    });
     let crashed_audio = copy.0.join(path.file_name().expect("name"));
     let crashed_record = copy.0.join(record.file_name().expect("name"));
     std::fs::copy(&record, &crashed_record).expect("copy record");
@@ -381,8 +385,8 @@ fn interrupted_take_is_recovered() {
     let found = find_interrupted(&copy.0).expect("scan");
     assert_eq!(found, vec![crashed_record.clone()]);
     let take = recover_take(&crashed_record, &Cancel::new(), &Progress::new()).expect("recover");
-    // At least the last sync (every 2 s) before 5 s
-    assert!(take.frames >= 4 * i64::from(rate) - 256, "{} frames", take.frames);
+    // At least up to the sync the header showed before the copy
+    assert!(take.frames >= 4 * i64::from(rate), "{} frames", take.frames);
     assert_eq!(take.start_sample, 0);
     // U5: the span is in the record in pieces of a second, so the crash keeps where the take proper is
     assert_eq!(take.spans.len(), 1, "{:?}", take.spans);

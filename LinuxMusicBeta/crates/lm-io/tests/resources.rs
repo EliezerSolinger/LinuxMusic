@@ -90,31 +90,35 @@ fn delayed_load_shows_loading_and_never_half_loaded() {
     let key = import_file(&src, &project, 48_000, &c, &p).expect("import").key;
     let clock = ManualClock::new(HostTime(1_000_000_000));
     let mut store = ResourceStore::new(project.clone(), Arc::new(clock.clone()));
-    store.faults = IoFaults { load_delay: Duration::from_millis(400) };
+    // The load is held until the test lets it go: what happens in between depends on the injected clock only
+    let hold = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    store.faults = IoFaults { load_delay: Duration::ZERO, hold: Some(hold.clone()) };
     let job = store.begin_load(&key).expect("job");
     assert!(matches!(store.state(&key), ResourceState::Loading { since } if since == HostTime(1_000_000_000)));
     assert!(matches!(store.begin_load(&key), Err(ResourceState::Loading { .. })), "asked twice, loaded once");
     let workers = Workers::new("test-load", 1, Role::Worker);
     let mut handle = workers.start(move |c, p| job.run(c, p));
-    let mut polled = 0;
-    let result = loop {
-        // While it runs: loading, and nothing of it in the view
+    // 300 ms of the session's clock while the load is held: always loading, nothing of it in the view
+    for _ in 0..30 {
+        clock.advance_millis(10);
+        assert!(handle.poll().is_none(), "the held load cannot finish");
         assert!(store.view().get(&key).is_none());
         assert!(store.peaks(&key).is_none());
+        assert!(matches!(store.state(&key), ResourceState::Loading { .. }));
+    }
+    // Past 200 ms the interface draws the loading: the state says since when
+    match store.state(&key) {
+        ResourceState::Loading { since } => assert_eq!(clock.now_ns() - since.0, 300_000_000),
+        other => panic!("not loading: {other:?}"),
+    }
+    hold.store(false, std::sync::atomic::Ordering::Release);
+    let result = loop {
+        assert!(store.view().get(&key).is_none(), "nothing half loaded while it finishes");
         if let Some(r) = handle.poll() {
             break r;
         }
-        clock.advance_millis(10);
-        polled += 1;
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(1));
     };
-    assert!(polled >= 30, "the delay was injected ({polled} polls)");
-    // Past 200 ms of the session's clock the interface draws the loading: the state says since when
-    if let ResourceState::Loading { since } = store.state(&key) {
-        assert!(clock.now_ns() - since.0 >= 200_000_000);
-    } else {
-        panic!("not loading");
-    }
     store.finish(&key, result);
     assert_eq!(store.state(&key), ResourceState::Ready);
     let data = store.view().get(&key).cloned().expect("in the view");

@@ -365,11 +365,33 @@ pub struct OnDisk {
     pub frames: u64,
 }
 
-/// Faults injected in test mode (I-2.4): a delay before every load, to check that the loading state shows and
-/// that nothing half loaded is ever shown
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Faults injected in test mode (I-2.4), to check that the loading state shows and that nothing half loaded is
+/// ever shown: a delay before every load, and a hold that keeps every load waiting while it is set (a test sets it,
+/// moves its injected clock, checks, then clears it: no race with the real time)
+#[derive(Clone, Debug, Default)]
 pub struct IoFaults {
     pub load_delay: Duration,
+    pub hold: Option<Arc<std::sync::atomic::AtomicBool>>,
+}
+
+impl IoFaults {
+    /// The injected wait: the delay, then the hold while it is set. Cancellable
+    fn wait(&self, cancel: &Cancel) -> Result<()> {
+        if !self.load_delay.is_zero() {
+            let until = std::time::Instant::now() + self.load_delay;
+            while std::time::Instant::now() < until {
+                cancel.check()?;
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        if let Some(hold) = &self.hold {
+            while hold.load(std::sync::atomic::Ordering::Acquire) {
+                cancel.check()?;
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A load to run in an `Operation` (T1: the session starts it)
@@ -396,13 +418,7 @@ impl LoadJob {
     /// Loads the resource: its peaks (read from `audio/<key>.peaks`, or built and written), then the audio,
     /// decoded unless it is longer than 30 s. Cancellable, with progress
     pub fn run(self, cancel: &Cancel, progress: &Progress) -> Result<Loaded> {
-        if !self.faults.load_delay.is_zero() {
-            let until = std::time::Instant::now() + self.faults.load_delay;
-            while std::time::Instant::now() < until {
-                cancel.check()?;
-                std::thread::sleep(Duration::from_millis(5));
-            }
-        }
+        self.faults.wait(cancel)?;
         progress.stage(Label::new("io.resource.peaks"));
         let peaks_path = self.path.with_extension("peaks");
         let info = *Reader::open(&self.path)?.info();
@@ -544,7 +560,7 @@ impl ResourceStore {
             key.to_owned(),
             Entry { state: ResourceState::Loading { since: now }, peaks: None, last_used: now },
         );
-        Ok(LoadJob { key: key.to_owned(), path, faults: self.faults, stream_above: self.stream_above })
+        Ok(LoadJob { key: key.to_owned(), path, faults: self.faults.clone(), stream_above: self.stream_above })
     }
 
     /// The outcome of a load: the resource enters the view whole, in one step, or fails
@@ -831,13 +847,7 @@ impl KindJob {
     /// Reads the bytes (kinds loaded as bytes, up to [`BYTES_MAX`]) or checks the file can be opened (the others).
     /// Cancellable, with progress
     pub fn run(self, cancel: &Cancel, progress: &Progress) -> Result<KindLoaded> {
-        if !self.faults.load_delay.is_zero() {
-            let until = std::time::Instant::now() + self.faults.load_delay;
-            while std::time::Instant::now() < until {
-                cancel.check()?;
-                std::thread::sleep(Duration::from_millis(5));
-            }
-        }
+        self.faults.wait(cancel)?;
         progress.stage(Label::new("io.resource.loading"));
         let size =
             std::fs::metadata(&self.path).map_err(|e| io_error("io.resource.read_failed", &self.path, &e))?.len();
@@ -899,7 +909,7 @@ impl ResourceStore {
             }
         };
         self.entries.insert(ek, Entry { state: ResourceState::Loading { since: now }, peaks: None, last_used: now });
-        Ok(KindJob { kind: kind.to_owned(), key: key.to_owned(), path, faults: self.faults })
+        Ok(KindJob { kind: kind.to_owned(), key: key.to_owned(), path, faults: self.faults.clone() })
     }
 
     /// The outcome of a non-audio load: it enters the view whole, or fails
