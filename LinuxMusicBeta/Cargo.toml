@@ -73,6 +73,7 @@ lm-compile = { path = "crates/lm-compile" }
 lm-port = { path = "crates/lm-port" }
 lm-port-fake = { path = "crates/lm-port-fake" }
 lm-session = { path = "crates/lm-session" }
+lm-remote = { path = "crates/lm-remote" }
 
 [profile.dev]
 # Audio code is unusable without some optimisation. Disk is limited on the development machine: line tables are

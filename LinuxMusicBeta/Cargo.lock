@@ -405,6 +405,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-remote"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-doc",
+ "lm-port",
+ "lm-port-fake",
+ "lm-state",
+]
+
+[[package]]
 name = "lm-render"
 version = "0.1.0"
 dependencies = [

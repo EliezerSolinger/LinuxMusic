@@ -1,0 +1,843 @@
+//! The `RemotePort` (I-15): the interface's `CorePort` over the network. It keeps a mirror of the tree (an lm-doc
+//! `Document` in mirror mode, updated by the server's differences and diffs), so reading and the feeds are local and
+//! immediate; changes answer `Pending::Waiting` and their results come in later pumps (`finished`); gestures and
+//! parameter writes never wait for anyone.
+//!
+//! A dropped connection is retried in the background, with a growing pause (100 ms to 2 s); the mirror is resynced
+//! from the new snapshot and the feeds get the difference as one diff. A version mismatch is a clear, final error
+//! (`remote.version_mismatch`, with both versions).
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::time::{Duration, Instant};
+
+use lm_base::{Error, Label, OperationId, Result};
+use lm_doc::{Diff, Document, Feed, GestureId, Options, Topic};
+use lm_port::{
+    ActionId, Applied, BrowseEntry, BrowsePage, CorePort, DeviceInfo, DisplayView, EditOp, EntryId, Finished, Loading,
+    Notice, OperationInfo, PeakBlock, Pending, Position, Preview, RecordingTake, RequestId, Target, TelemetryView,
+};
+use lm_state::{NodeId, PathStep, Resource, SchemaRegistry, Value};
+
+use crate::codec::{self as c, bad, get, text};
+use crate::delta;
+use crate::proto::{PROGRAM, PROTOCOL, Role, Stream};
+use crate::wire::{self, Frame, KIND_DISPLAY, KIND_JSON, KIND_PEAKS, KIND_TELEMETRY};
+
+/// Where the server is
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Endpoint {
+    #[cfg(unix)]
+    Unix(PathBuf),
+    /// `host:port` (through an SSH tunnel to reach another machine, decisoes-autonomas.md)
+    Tcp(String),
+}
+
+/// How the RemotePort connects
+#[derive(Clone, Debug)]
+pub struct ClientConfig {
+    pub endpoint: Endpoint,
+    pub token: Option<String>,
+    pub name: String,
+    /// The role asked for (the server grants at most the token's)
+    pub role: Role,
+    /// The project's schemas (the same program on both ends, so the same registry)
+    pub schemas: Arc<SchemaRegistry>,
+    /// Telemetry frames per second asked (up to 60)
+    pub telemetry_hz: f64,
+    /// Where peak blocks are kept forever, by resource hash (I-20.4); `None`: in memory only
+    pub peaks_cache: Option<PathBuf>,
+    /// How long a handshake may take
+    pub timeout: Duration,
+}
+
+impl ClientConfig {
+    pub fn new(endpoint: Endpoint, schemas: Arc<SchemaRegistry>) -> Self {
+        Self {
+            endpoint,
+            token: None,
+            name: "lm-gui".into(),
+            role: Role::Admin,
+            schemas,
+            telemetry_hz: 30.0,
+            peaks_cache: None,
+            timeout: Duration::from_secs(10),
+        }
+    }
+}
+
+/// The connection's state, for the interface's indicator
+#[derive(Clone, Debug, PartialEq)]
+pub enum Connection {
+    Connected {
+        role: Role,
+        server: String,
+    },
+    /// Lost; retrying in the background
+    Reconnecting {
+        since: Instant,
+        attempts: u32,
+        last: Error,
+    },
+    /// Given up: a refusal that retrying cannot change (version, authentication)
+    Failed(Error),
+}
+
+enum Incoming {
+    Frame(Frame),
+    Closed(Error),
+}
+
+struct Live {
+    out: Sender<(u8, Vec<u8>)>,
+    incoming: Receiver<Incoming>,
+    stream: Stream,
+}
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        self.stream.shutdown();
+    }
+}
+
+struct Welcome {
+    live: Live,
+    role: Role,
+    server: String,
+    snapshot: Value,
+}
+
+/// What a request was, to make its result
+#[derive(Clone, Copy, Debug)]
+enum Kind {
+    Applied,
+    Done,
+    Peaks,
+    Devices,
+    Entries,
+    Preview,
+    Ping,
+}
+
+fn open(endpoint: &Endpoint, timeout: Duration) -> Result<Stream> {
+    let e = |e: std::io::Error| Error::new("remote.connect").arg("error", e.to_string());
+    match endpoint {
+        #[cfg(unix)]
+        Endpoint::Unix(p) => Ok(Stream::Unix(UnixStream::connect(p).map_err(e)?)),
+        Endpoint::Tcp(addr) => {
+            let addrs: Vec<SocketAddr> = addr.to_socket_addrs().map_err(e)?.collect();
+            let mut last = Error::new("remote.connect").arg("error", "no address");
+            for a in addrs {
+                match TcpStream::connect_timeout(&a, timeout) {
+                    Ok(s) => {
+                        let _ = s.set_nodelay(true);
+                        return Ok(Stream::Tcp(s));
+                    }
+                    Err(err) => last = e(err),
+                }
+            }
+            Err(last)
+        }
+    }
+}
+
+/// Connects and shakes hands (blocking, bounded by the config's timeout)
+fn handshake(cfg: &ClientConfig) -> Result<Welcome> {
+    let mut stream = open(&cfg.endpoint, cfg.timeout)?;
+    stream.set_read_timeout(Some(cfg.timeout));
+    let mut hello = Value::object([
+        ("t", Value::text("hello")),
+        ("protocol", Value::int(PROTOCOL)),
+        ("program", Value::text(PROGRAM)),
+        ("mode", Value::text("gui")),
+        ("name", Value::text(cfg.name.as_str())),
+        ("role", Value::text(cfg.role.key())),
+    ]);
+    if let Some(t) = &cfg.token {
+        hello = hello.with("token", Value::text(t.as_str()));
+    }
+    wire::write_frame(&mut stream, KIND_JSON, &wire::json(&hello)?)?;
+    let read = |s: &mut Stream| -> Result<Value> {
+        let f = wire::read_frame(s, wire::MAX_FRAME_FROM_SERVER)?;
+        if f.kind != KIND_JSON {
+            return Err(bad("handshake"));
+        }
+        wire::parse_json(&f.payload)
+    };
+    let w = read(&mut stream)?;
+    match text(&w, "t")? {
+        "welcome" => {}
+        "refused" => return Err(c::error_from(get(&w, "error")?)?),
+        _ => return Err(bad("handshake")),
+    }
+    let role = Role::parse(text(&w, "role")?).ok_or_else(|| bad("role"))?;
+    let server = text(&w, "server")?.to_owned();
+    let snapshot = read(&mut stream)?;
+    if text(&snapshot, "t")? != "snapshot" {
+        return Err(bad("snapshot"));
+    }
+    stream.set_read_timeout(None);
+    // The threads
+    let (in_tx, in_rx) = channel::<Incoming>();
+    let (out_tx, out_rx) = channel::<(u8, Vec<u8>)>();
+    let mut reader = stream.try_clone()?;
+    let mut writer = stream.try_clone()?;
+    let spawn = |name: &str, f: Box<dyn FnOnce() + Send>| {
+        std::thread::Builder::new()
+            .name(name.into())
+            .spawn(f)
+            .map_err(|e| Error::new("remote.io").arg("error", e.to_string()))
+    };
+    spawn(
+        "lm-remote-client-in",
+        Box::new(move || {
+            loop {
+                match wire::read_frame(&mut reader, wire::MAX_FRAME_FROM_SERVER) {
+                    Ok(f) => {
+                        if in_tx.send(Incoming::Frame(f)).is_err() {
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = in_tx.send(Incoming::Closed(e));
+                        return;
+                    }
+                }
+            }
+        }),
+    )?;
+    spawn(
+        "lm-remote-client-out",
+        Box::new(move || {
+            while let Ok((kind, payload)) = out_rx.recv() {
+                if wire::write_frame(&mut writer, kind, &payload).is_err() {
+                    writer.shutdown();
+                    return;
+                }
+            }
+        }),
+    )?;
+    Ok(Welcome { live: Live { out: out_tx, incoming: in_rx, stream }, role, server, snapshot })
+}
+
+fn final_error(e: &Error) -> bool {
+    e.key() == "remote.version_mismatch" || e.key().starts_with("remote.auth")
+}
+
+/// The port over the network
+pub struct RemotePort {
+    cfg: ClientConfig,
+    live: Option<Live>,
+    connection: Connection,
+    retry: Option<(Instant, Receiver<Result<Welcome>>)>,
+    doc: Document,
+    modified: bool,
+    can_undo: bool,
+    can_redo: bool,
+    prefs: Value,
+    status: Value,
+    notices: Vec<Notice>,
+    activity: Vec<OperationInfo>,
+    telemetry: TelemetryView,
+    loadings: RefCell<HashMap<Target, Loading>>,
+    watch_new: RefCell<Vec<Target>>,
+    displays: RefCell<HashMap<NodeId, Option<DisplayView>>>,
+    display_new: RefCell<Vec<NodeId>>,
+    next_request: u64,
+    requests: HashMap<RequestId, Kind>,
+    finished: Vec<(RequestId, Finished)>,
+    next_gesture: u64,
+    peaks: HashMap<(String, u8, u64, u64), PeakBlock>,
+    peaks_asked: HashMap<RequestId, (String, u8, u64, u64)>,
+    /// Updates applied since connecting (for tests and the indicator)
+    updates: u64,
+}
+
+impl std::fmt::Debug for RemotePort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemotePort").field("connection", &self.connection).finish_non_exhaustive()
+    }
+}
+
+fn mirror_options() -> Options {
+    Options { history_limit: 0, journal: false, rules: Vec::new(), ..Options::default() }
+}
+
+impl RemotePort {
+    /// Connects, shakes hands and loads the snapshot (blocking, bounded by the timeout)
+    pub fn connect(cfg: ClientConfig) -> Result<RemotePort> {
+        let w = handshake(&cfg)?;
+        let root = get(&w.snapshot, "root")?.clone();
+        let doc = Document::from_root(Arc::clone(&cfg.schemas), lm_doc::PROJECT, root, mirror_options())?.document;
+        let telemetry = TelemetryView {
+            position: Position {
+                samples: 0,
+                host_time: lm_base::HostTime(0),
+                sample_rate: 0,
+                playing: false,
+                recording: false,
+            },
+            meters: HashMap::new(),
+            inputs: Vec::new(),
+            recording: Vec::new(),
+            counting_in: false,
+            xruns: 0,
+            xrun_marks: Vec::new(),
+        };
+        let mut port = RemotePort {
+            connection: Connection::Connected { role: w.role, server: w.server.clone() },
+            cfg,
+            live: None,
+            retry: None,
+            doc,
+            modified: false,
+            can_undo: false,
+            can_redo: false,
+            prefs: Value::NULL,
+            status: Value::NULL,
+            notices: Vec::new(),
+            activity: Vec::new(),
+            telemetry,
+            loadings: RefCell::new(HashMap::new()),
+            watch_new: RefCell::new(Vec::new()),
+            displays: RefCell::new(HashMap::new()),
+            display_new: RefCell::new(Vec::new()),
+            next_request: 1,
+            requests: HashMap::new(),
+            finished: Vec::new(),
+            next_gesture: 1,
+            peaks: HashMap::new(),
+            peaks_asked: HashMap::new(),
+            updates: 0,
+        };
+        port.session_state(&w.snapshot)?;
+        port.live = Some(w.live);
+        port.subscribe_all();
+        Ok(port)
+    }
+
+    pub fn connection(&self) -> &Connection {
+        &self.connection
+    }
+
+    /// The tree updates applied since the port was made
+    pub fn updates(&self) -> u64 {
+        self.updates
+    }
+
+    /// Cuts the connection (tests; it reconnects at the next pumps)
+    pub fn disconnect(&mut self) {
+        if let Some(l) = &self.live {
+            l.stream.shutdown();
+        }
+    }
+
+    fn session_state(&mut self, s: &Value) -> Result<()> {
+        self.prefs = get(s, "prefs")?.clone();
+        self.status = get(s, "status")?.clone();
+        self.flags(s)?;
+        self.notices = c::list(s, "notices")?.map(c::notice_from).collect::<Result<_>>()?;
+        self.activity = c::list(s, "activity")?.map(c::operation_from).collect::<Result<_>>()?;
+        Ok(())
+    }
+
+    fn flags(&mut self, v: &Value) -> Result<()> {
+        self.modified = c::flag(v, "modified")?;
+        self.can_undo = c::flag(v, "can_undo")?;
+        self.can_redo = c::flag(v, "can_redo")?;
+        Ok(())
+    }
+
+    fn send(&self, v: &Value) -> bool {
+        match (&self.live, wire::json(v)) {
+            (Some(l), Ok(p)) => l.out.send((KIND_JSON, p)).is_ok(),
+            _ => false,
+        }
+    }
+
+    fn subscribe_all(&mut self) {
+        self.send(&Value::object([("t", Value::text("telemetry")), ("hz", c::real_value(self.cfg.telemetry_hz))]));
+        let targets: Vec<Target> = self.loadings.borrow().keys().cloned().collect();
+        self.watch_new.borrow_mut().extend(targets);
+        let nodes: Vec<NodeId> = self.displays.borrow().keys().copied().collect();
+        self.display_new.borrow_mut().extend(nodes);
+    }
+
+    /// Sends a request; `Waiting(id)`, or a ready error when not connected
+    fn request<T>(&mut self, kind: Kind, msg: Value) -> Pending<T> {
+        let id = self.next_request;
+        self.next_request += 1;
+        let msg = msg.with("id", Value::int(id as i64));
+        if self.send(&msg) {
+            self.requests.insert(id, kind);
+            Pending::Waiting(id)
+        } else {
+            Pending::Ready(Err(Error::new("remote.disconnected")))
+        }
+    }
+
+    fn message(t: &str, fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
+        Value::object(std::iter::once(("t", Value::text(t))).chain(fields))
+    }
+
+    fn on_disconnect(&mut self, e: Error) {
+        self.live = None;
+        for (id, kind) in std::mem::take(&mut self.requests) {
+            self.finished.push((id, failed(kind, Error::new("remote.disconnected"))));
+        }
+        self.peaks_asked.clear();
+        if final_error(&e) {
+            self.connection = Connection::Failed(e);
+            return;
+        }
+        let since = match &self.connection {
+            Connection::Reconnecting { since, .. } => *since,
+            _ => Instant::now(),
+        };
+        self.connection = Connection::Reconnecting { since, attempts: 0, last: e };
+        self.start_retry(Duration::from_millis(100));
+    }
+
+    fn start_retry(&mut self, after: Duration) {
+        let (tx, rx) = channel();
+        let cfg = self.cfg.clone();
+        let started = std::thread::Builder::new().name("lm-remote-reconnect".into()).spawn(move || {
+            std::thread::sleep(after);
+            let _ = tx.send(handshake(&cfg));
+        });
+        if started.is_ok() {
+            self.retry = Some((Instant::now(), rx));
+        }
+    }
+
+    fn poll_retry(&mut self) -> bool {
+        let Some((_, rx)) = &self.retry else { return false };
+        let r = match rx.try_recv() {
+            Ok(r) => r,
+            Err(TryRecvError::Empty) => return false,
+            Err(TryRecvError::Disconnected) => Err(Error::new("remote.connect")),
+        };
+        self.retry = None;
+        match r {
+            Ok(w) => match self.resync(w) {
+                Ok(()) => true,
+                Err(e) => {
+                    self.on_disconnect(e);
+                    true
+                }
+            },
+            Err(e) => {
+                if final_error(&e) {
+                    self.connection = Connection::Failed(e);
+                    return true;
+                }
+                let (since, attempts) = match &self.connection {
+                    Connection::Reconnecting { since, attempts, .. } => (*since, attempts + 1),
+                    _ => (Instant::now(), 1),
+                };
+                self.connection = Connection::Reconnecting { since, attempts, last: e };
+                let pause =
+                    Duration::from_millis(100u64.saturating_mul(1 << attempts.min(5))).min(Duration::from_secs(2));
+                self.start_retry(pause);
+                true
+            }
+        }
+    }
+
+    fn resync(&mut self, w: Welcome) -> Result<()> {
+        let root = get(&w.snapshot, "root")?.clone();
+        self.doc.mirror(root, None)?;
+        self.session_state(&w.snapshot)?;
+        self.connection = Connection::Connected { role: w.role, server: w.server };
+        self.live = Some(w.live);
+        self.subscribe_all();
+        self.updates += 1;
+        Ok(())
+    }
+
+    fn incoming(&mut self, f: Frame) -> Result<()> {
+        match f.kind {
+            KIND_JSON => self.json(&wire::parse_json(&f.payload)?),
+            KIND_TELEMETRY => wire::telemetry_from(&f.payload, &mut self.telemetry),
+            KIND_PEAKS => {
+                let (id, block) = wire::peaks_from(&f.payload)?;
+                self.requests.remove(&id);
+                if let Some(key) = self.peaks_asked.remove(&id) {
+                    self.store_peaks(&key, &block);
+                    self.peaks.insert(key, block.clone());
+                }
+                self.finished.push((id, Finished::Peaks(Ok(block))));
+                Ok(())
+            }
+            KIND_DISPLAY => {
+                let (node, view) = wire::display_from(&f.payload)?;
+                self.displays.borrow_mut().insert(node, Some(view));
+                Ok(())
+            }
+            _ => Err(bad("frame kind")),
+        }
+    }
+
+    fn json(&mut self, m: &Value) -> Result<()> {
+        match text(m, "t")? {
+            "update" => {
+                let ops = delta::from_value(get(m, "ops")?)?;
+                let diff: Diff = c::diff_from(get(m, "diff")?)?;
+                let root = delta::apply(self.doc.root(), &ops)?;
+                self.doc.mirror(root, Some(&diff))?;
+                self.flags(m)?;
+                self.updates += 1;
+            }
+            "state" => self.flags(m)?,
+            "prefs" => self.prefs = get(m, "value")?.clone(),
+            "status" => self.status = get(m, "value")?.clone(),
+            "notices" => self.notices = c::list(m, "value")?.map(c::notice_from).collect::<Result<_>>()?,
+            "activity" => self.activity = c::list(m, "value")?.map(c::operation_from).collect::<Result<_>>()?,
+            "loading" => {
+                let t = c::target_from(get(m, "target")?)?;
+                let l = c::loading_from(get(m, "value")?)?;
+                self.loadings.borrow_mut().insert(t, l);
+            }
+            "recording" => {
+                self.telemetry.recording = c::list(m, "value")?
+                    .map(|r| {
+                        Ok(RecordingTake {
+                            track: c::id_from(get(r, "track")?)?,
+                            resource: c::resource_from(get(r, "resource")?)?,
+                            start: c::int(r, "start")?,
+                            length: c::int(r, "length")?,
+                        })
+                    })
+                    .collect::<Result<_>>()?;
+            }
+            "done" => {
+                let id = c::uint(m, "id")?;
+                let r: Result<Value> = match m.get("err") {
+                    Some(e) => Err(c::error_from(e)?),
+                    None => Ok(get(m, "ok")?.clone()),
+                };
+                if let Some(kind) = self.requests.remove(&id) {
+                    self.peaks_asked.remove(&id);
+                    self.finished.push((id, finish(kind, r)));
+                }
+            }
+            "error" => {
+                // A message of ours the server could not take: shown as a notice-like activity would be noise; kept
+                // only in the connection state for debugging
+            }
+            _ => return Err(bad("t")),
+        }
+        Ok(())
+    }
+
+    fn peaks_file(&self, key: &(String, u8, u64, u64)) -> Option<PathBuf> {
+        let dir = self.cfg.peaks_cache.as_ref()?;
+        // The key is a validated 64-hex hash (lm-state, C9): safe as a file name
+        if !lm_state::is_valid_resource_key(&key.0) {
+            return None;
+        }
+        Some(dir.join(format!("{}-{}-{}-{}.peaks", key.0, key.1, key.2, key.3)))
+    }
+
+    fn store_peaks(&self, key: &(String, u8, u64, u64), b: &PeakBlock) {
+        if let Some(path) = self.peaks_file(key) {
+            let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
+            let _ = std::fs::write(&path, wire::peaks_to(0, b));
+        }
+    }
+
+    fn cached_peaks(&mut self, key: &(String, u8, u64, u64)) -> Option<PeakBlock> {
+        if let Some(b) = self.peaks.get(key) {
+            return Some(b.clone());
+        }
+        let bytes = std::fs::read(self.peaks_file(key)?).ok()?;
+        let (_, b) = wire::peaks_from(&bytes).ok()?;
+        self.peaks.insert(key.clone(), b.clone());
+        Some(b)
+    }
+
+    /// Asks the server for a round trip (tests and the latency indicator)
+    pub fn ping(&mut self) -> Pending<()> {
+        self.request(Kind::Ping, Self::message("ping", []))
+    }
+}
+
+fn failed(kind: Kind, e: Error) -> Finished {
+    match kind {
+        Kind::Applied => Finished::Applied(Err(e)),
+        Kind::Done | Kind::Ping => Finished::Done(Err(e)),
+        Kind::Peaks => Finished::Peaks(Err(e)),
+        Kind::Devices => Finished::Devices(Err(e)),
+        Kind::Entries => Finished::Entries(Err(e)),
+        Kind::Preview => Finished::Preview(Err(e)),
+    }
+}
+
+fn finish(kind: Kind, r: Result<Value>) -> Finished {
+    match kind {
+        Kind::Applied => Finished::Applied(r.and_then(|v| c::applied_from(&v))),
+        Kind::Done | Kind::Ping => Finished::Done(r.map(|_| ())),
+        Kind::Peaks => Finished::Peaks(r.and_then(|_| Err(bad("peaks")))),
+        Kind::Devices => Finished::Devices(
+            r.and_then(|v| if v.is_list() { v.items().map(c::device_from).collect() } else { Err(bad("devices")) }),
+        ),
+        Kind::Entries => Finished::Entries(r.and_then(|v| c::entries_from(&v))),
+        Kind::Preview => Finished::Preview(r.and_then(|v| c::preview_from(&v))),
+    }
+}
+
+impl CorePort for RemotePort {
+    fn pump(&mut self) -> bool {
+        let mut changed = self.poll_retry();
+        // Everything that arrived
+        let mut closed = None;
+        if let Some(l) = &self.live {
+            let mut frames = Vec::new();
+            loop {
+                match l.incoming.try_recv() {
+                    Ok(Incoming::Frame(f)) => frames.push(f),
+                    Ok(Incoming::Closed(e)) => {
+                        closed = Some(e);
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        closed = Some(Error::new("remote.disconnected"));
+                        break;
+                    }
+                }
+            }
+            for f in frames {
+                changed = true;
+                if let Err(e) = self.incoming(f) {
+                    // A message that does not decode means the two ends disagree: start over from a snapshot
+                    closed = Some(e);
+                    break;
+                }
+            }
+        }
+        if let Some(e) = closed {
+            self.on_disconnect(e);
+            changed = true;
+        }
+        // Subscriptions asked by the reading calls (which take &self)
+        let watches: Vec<Target> = std::mem::take(&mut *self.watch_new.borrow_mut());
+        for t in watches {
+            if let Ok(tv) = c::target_to(&t) {
+                self.send(&Self::message("watch", [("target", tv), ("on", Value::bool(true))]));
+            }
+        }
+        let displays: Vec<NodeId> = std::mem::take(&mut *self.display_new.borrow_mut());
+        for n in displays {
+            self.send(&Self::message("display", [("node", c::id_to(n)), ("on", Value::bool(true))]));
+        }
+        changed
+    }
+
+    fn finished(&mut self) -> Vec<(RequestId, Finished)> {
+        std::mem::take(&mut self.finished)
+    }
+
+    fn root(&self) -> &Value {
+        self.doc.root()
+    }
+
+    fn find(&self, id: NodeId) -> Option<Value> {
+        self.doc.find(id)
+    }
+
+    fn feed(&mut self, topic: Topic) -> Feed {
+        self.doc.feed(topic)
+    }
+
+    fn drain(&self, feed: &mut Feed) -> Option<Diff> {
+        feed.drain(&self.doc)
+    }
+
+    fn modified(&self) -> bool {
+        self.modified
+    }
+
+    fn can_undo(&self) -> bool {
+        self.can_undo
+    }
+
+    fn can_redo(&self) -> bool {
+        self.can_redo
+    }
+
+    fn apply(&mut self, label: Label, ops: Vec<EditOp>) -> Pending<Applied> {
+        match c::ops_to(&ops) {
+            Ok(o) => self.request(Kind::Applied, Self::message("apply", [("label", c::label_to(&label)), ("ops", o)])),
+            Err(e) => Pending::Ready(Err(e)),
+        }
+    }
+
+    fn run_action(&mut self, action: ActionId, params: Value) -> Pending<()> {
+        self.request(
+            Kind::Done,
+            Self::message("run_action", [("action", Value::text(action.as_str())), ("params", params)]),
+        )
+    }
+
+    fn undo(&mut self) -> Pending<()> {
+        self.request(Kind::Done, Self::message("undo", []))
+    }
+
+    fn redo(&mut self) -> Pending<()> {
+        self.request(Kind::Done, Self::message("redo", []))
+    }
+
+    fn begin_gesture(&mut self, label: Label) -> GestureId {
+        let g = self.next_gesture;
+        self.next_gesture += 1;
+        self.send(&Self::message("gesture_begin", [("g", Value::int(g as i64)), ("label", c::label_to(&label))]));
+        GestureId::from_raw(g)
+    }
+
+    fn gesture_apply(&mut self, g: &GestureId, ops: Vec<EditOp>) {
+        if let Ok(o) = c::ops_to(&ops) {
+            self.send(&Self::message("gesture_apply", [("g", Value::int(g.raw() as i64)), ("ops", o)]));
+        }
+    }
+
+    fn gesture_commit(&mut self, g: GestureId) {
+        self.send(&Self::message("gesture_commit", [("g", Value::int(g.raw() as i64))]));
+    }
+
+    fn gesture_cancel(&mut self, g: GestureId) {
+        self.send(&Self::message("gesture_cancel", [("g", Value::int(g.raw() as i64))]));
+    }
+
+    fn param_write(&mut self, node: NodeId, param: &str, value: f32) {
+        self.send(&Self::message(
+            "param",
+            [("node", c::id_to(node)), ("param", Value::text(param)), ("value", c::real_value(f64::from(value)))],
+        ));
+    }
+
+    fn loading(&self, target: &Target) -> Loading {
+        if let Some(l) = self.loadings.borrow().get(target) {
+            return l.clone();
+        }
+        // First asked: watched from now on; ready until the server says otherwise
+        self.loadings.borrow_mut().insert(target.clone(), Loading::Ready);
+        self.watch_new.borrow_mut().push(target.clone());
+        Loading::Ready
+    }
+
+    fn activity(&self) -> Vec<OperationInfo> {
+        self.activity.clone()
+    }
+
+    fn cancel(&mut self, op: OperationId) {
+        self.send(&Self::message("cancel", [("op", Value::int(op.0 as i64))]));
+    }
+
+    fn notices(&mut self) -> Vec<Notice> {
+        self.notices.clone()
+    }
+
+    fn dismiss_notice(&mut self, id: u64) {
+        self.notices.retain(|n| n.id != id);
+        self.send(&Self::message("dismiss", [("notice", Value::int(id as i64))]));
+    }
+
+    fn telemetry(&self) -> &TelemetryView {
+        &self.telemetry
+    }
+
+    fn peaks(&mut self, resource: &Resource, level: u8, from: u64, to: u64) -> Pending<PeakBlock> {
+        let key = (resource.key().to_owned(), level, from, to);
+        if let Some(b) = self.cached_peaks(&key) {
+            return Pending::Ready(Ok(b));
+        }
+        let (Ok(f), Ok(t)) = (c::int_value(from), c::int_value(to)) else {
+            return Pending::Ready(Err(bad("peaks range")));
+        };
+        let p = self.request(
+            Kind::Peaks,
+            Self::message(
+                "peaks",
+                [
+                    ("resource", c::resource_to(resource)),
+                    ("level", Value::int(i64::from(level))),
+                    ("from", f),
+                    ("to", t),
+                ],
+            ),
+        );
+        if let Pending::Waiting(id) = &p {
+            self.peaks_asked.insert(*id, key);
+        }
+        p
+    }
+
+    fn display(&self, node: NodeId) -> Option<DisplayView> {
+        if let Some(d) = self.displays.borrow().get(&node) {
+            return d.clone();
+        }
+        self.displays.borrow_mut().insert(node, None);
+        self.display_new.borrow_mut().push(node);
+        None
+    }
+
+    fn preferences(&self) -> &Value {
+        &self.prefs
+    }
+
+    fn set_preference(&mut self, path: Vec<PathStep>, value: Value) -> Pending<()> {
+        match c::path_to(&path) {
+            Ok(p) => self.request(Kind::Done, Self::message("set_preference", [("path", p), ("value", value)])),
+            Err(e) => Pending::Ready(Err(e)),
+        }
+    }
+
+    fn status(&self) -> &Value {
+        &self.status
+    }
+
+    fn devices(&mut self) -> Pending<Vec<DeviceInfo>> {
+        self.request(Kind::Devices, Self::message("devices", []))
+    }
+
+    fn browse(&mut self, page: BrowsePage, parent: Option<EntryId>, show_hidden: bool) -> Pending<Vec<BrowseEntry>> {
+        let parent = parent.map_or(Value::NULL, |p| Value::int(p.0 as i64));
+        self.request(
+            Kind::Entries,
+            Self::message(
+                "browse",
+                [("page", Value::text(c::page_key(page))), ("parent", parent), ("hidden", Value::bool(show_hidden))],
+            ),
+        )
+    }
+
+    fn search(&mut self, query: &str) -> Pending<Vec<BrowseEntry>> {
+        self.request(Kind::Entries, Self::message("search", [("query", Value::text(query))]))
+    }
+
+    fn prepare_preview(&mut self, entry: EntryId) -> Pending<Preview> {
+        self.request(Kind::Preview, Self::message("prepare_preview", [("entry", Value::int(entry.0 as i64))]))
+    }
+
+    fn preview_play(&mut self, entry: EntryId, from: i64) {
+        self.send(&Self::message("preview_play", [("entry", Value::int(entry.0 as i64)), ("from", Value::int(from))]));
+    }
+
+    fn preview_stop(&mut self) {
+        self.send(&Self::message("preview_stop", []));
+    }
+
+    fn set_favorite(&mut self, entry: EntryId, on: bool) -> Pending<()> {
+        self.request(
+            Kind::Done,
+            Self::message("set_favorite", [("entry", Value::int(entry.0 as i64)), ("on", Value::bool(on))]),
+        )
+    }
+}
