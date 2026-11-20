@@ -20,6 +20,14 @@ pub enum StereoLink {
 }
 
 impl StereoLink {
+    /// In the legacy program's order (its "Stereo Link" knob's values)
+    pub const ALL: [StereoLink; 5] =
+        [StereoLink::Unlinked, StereoLink::Maximum, StereoLink::Average, StereoLink::Minimum, StereoLink::Blend];
+
+    pub fn from_key(key: &str) -> Option<StereoLink> {
+        Self::ALL.into_iter().find(|l| l.key() == key)
+    }
+
     pub fn key(self) -> &'static str {
         match self {
             StereoLink::Unlinked => "unlinked",
@@ -474,6 +482,11 @@ impl CompressorPlugin {
 
             self.look_write = if self.look_write == 0 { self.look_buf_length - 1 } else { self.look_write - 1 };
         }
+    }
+
+    /// The delay the lookahead puts on the signal, in frames (its whole ring: the same for any lookahead length)
+    pub fn lookahead_latency(&self) -> usize {
+        self.look_buf_length
     }
 
     /// The gains applied last, linear, for the meters

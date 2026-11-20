@@ -12,15 +12,20 @@ pub mod effect;
 pub mod amplifier;
 pub mod bass_booster;
 pub mod bitcrush;
+pub mod compressor;
 pub mod crossover_eq;
 pub mod delay;
 pub mod dispersion;
 pub mod dual_filter;
 pub mod dynamics_processor;
+pub mod eq;
 pub mod flanger;
 pub mod frequency_shifter;
+pub mod granular_pitch_shifter;
+pub mod lomm;
 pub mod multitap_echo;
 pub mod reverb_sc;
+pub mod slew_distortion;
 pub mod stereo_enhancer;
 pub mod stereo_matrix;
 pub mod wave_shaper;
@@ -32,15 +37,20 @@ pub static ALL: &[&Descriptor] = &[
     &amplifier::DESCRIPTOR,
     &bass_booster::DESCRIPTOR,
     &bitcrush::DESCRIPTOR,
+    &compressor::DESCRIPTOR,
     &crossover_eq::DESCRIPTOR,
     &delay::DESCRIPTOR,
     &dispersion::DESCRIPTOR,
     &dual_filter::DESCRIPTOR,
     &dynamics_processor::DESCRIPTOR,
+    &eq::DESCRIPTOR,
     &flanger::DESCRIPTOR,
     &frequency_shifter::DESCRIPTOR,
+    &granular_pitch_shifter::DESCRIPTOR,
+    &lomm::DESCRIPTOR,
     &multitap_echo::DESCRIPTOR,
     &reverb_sc::DESCRIPTOR,
+    &slew_distortion::DESCRIPTOR,
     &stereo_enhancer::DESCRIPTOR,
     &stereo_matrix::DESCRIPTOR,
     &wave_shaper::DESCRIPTOR,

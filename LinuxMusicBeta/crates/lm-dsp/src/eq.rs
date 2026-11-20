@@ -39,6 +39,11 @@ pub struct EqSettings {
     pub high_shelf: EqBand,
     pub low_pass: EqBand,
     pub low_pass_slope: Slope,
+    /// The legacy program's steep passes: each of the 2 or 4 sections of a 24 or 48 dB/oct pass at the resonance, so
+    /// that its peak is the resonance's to the power of 2 or 4 (+80 dB at a resonance of 10 at 48 dB/oct). Off: the
+    /// resonance on the first section and the others at 0.707, the legacy default, so that the peak is the
+    /// resonance's at every slope, and every setting at the default resonance sounds as in the legacy program
+    pub resonance_on_every_section: bool,
 }
 
 impl Default for EqSettings {
@@ -54,6 +59,7 @@ impl Default for EqSettings {
             high_shelf: band(12000.0, 0.707),
             low_pass: band(18000.0, 0.707),
             low_pass_slope: Slope::Db12,
+            resonance_on_every_section: true,
         }
     }
 }
@@ -82,20 +88,30 @@ impl Eq {
         }
     }
 
+    /// Forgets every filter's memory (no allocation)
+    pub fn reset(&mut self) {
+        for f in self.hp.iter_mut().chain(self.peaks.iter_mut()).chain(self.lp.iter_mut()) {
+            f.clear();
+        }
+        self.low_shelf.clear();
+        self.high_shelf.clear();
+    }
+
     /// Equalizes @p frames in place; returns the output's peaks, for the meters
     pub fn process(&mut self, frames: &mut [[f32; 2]], s: &EqSettings) -> [f32; 2] {
         let rate = self.sample_rate;
         // Every filter's settings once a call; each crossfades into them over the call
-        for f in &mut self.hp {
-            f.set_parameters(rate, s.high_pass.freq, s.high_pass.q, 1.0);
+        let q = |section: usize, q: f32| if section == 0 || s.resonance_on_every_section { q } else { 0.707 };
+        for (i, f) in self.hp.iter_mut().enumerate() {
+            f.set_parameters(rate, s.high_pass.freq, q(i, s.high_pass.q), 1.0);
         }
         self.low_shelf.set_parameters(rate, s.low_shelf.freq, s.low_shelf.q, s.low_shelf.gain);
         for (f, band) in self.peaks.iter_mut().zip(&s.peaks) {
             f.set_parameters(rate, band.freq, band.q, band.gain);
         }
         self.high_shelf.set_parameters(rate, s.high_shelf.freq, s.high_shelf.q, s.high_shelf.gain);
-        for f in &mut self.lp {
-            f.set_parameters(rate, s.low_pass.freq, s.low_pass.q, 1.0);
+        for (i, f) in self.lp.iter_mut().enumerate() {
+            f.set_parameters(rate, s.low_pass.freq, q(i, s.low_pass.q), 1.0);
         }
 
         let in_gain = dbfs_to_amp(s.in_gain);
@@ -106,7 +122,8 @@ impl Eq {
 
         let count = frames.len();
         for (n, frame) in frames.iter_mut().enumerate() {
-            let progress = n as f32 / (count as i64 - 1) as f32;
+            // (a call of one frame ends the crossfade on it: count - 1 would be 0)
+            let progress = if count > 1 { n as f32 / (count - 1) as f32 } else { 1.0 };
             let mut through = |filter: &mut CrossfadedBiquad| {
                 frame[0] = filter.process(frame[0], 0, progress);
                 frame[1] = filter.process(frame[1], 1, progress);

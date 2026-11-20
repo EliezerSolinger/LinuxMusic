@@ -1,0 +1,37 @@
+{
+  "plugin:compressor": {
+    "defaults": {
+      "params": {
+        "attack": 10.0,
+        "audition": 0.0,
+        "autoAttack": 0.0,
+        "autoMakeupGain": 0.0,
+        "autoRelease": 0.0,
+        "blend": 1.0,
+        "feedback": 0.0,
+        "hold": 0.0,
+        "inputBalance": 0.0,
+        "inputGain": 0.0,
+        "knee": 12.0,
+        "limiter": 0.0,
+        "lookahead": 0.0,
+        "lookaheadLength": 0.0,
+        "midSide": 0.0,
+        "mix": 100.0,
+        "outputBalance": 0.0,
+        "outputGain": 0.0,
+        "peakMode": 0.0,
+        "range": -240.0,
+        "ratio": 1.8,
+        "release": 100.0,
+        "rmsSize": 1.0,
+        "stereoBalance": 0.0,
+        "threshold": -8.0,
+        "tilt": 0.0,
+        "tiltFrequency": 150.0
+      },
+      "stereoLink": "maximum"
+    },
+    "version": 1
+  }
+}

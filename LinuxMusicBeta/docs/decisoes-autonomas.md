@@ -493,6 +493,21 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
   do `lm-dsp` os cobre com as rampas do legado.
 - **Botões de ação do legado** (reiniciar o deslocador e o LFO do Frequency Shifter) são parâmetros `Stepped` de 0 a
   1 que agem ao ir a 1, como o botão.
+- **Eq:** a ressonância de uma passagem de 24 ou 48 dB/oct vai na primeira seção, as outras em 0,707 (o padrão do
+  legado). O legado punha a ressonância em todas as seções, e o pico era a ressonância ao quadrado ou à quarta (+80 dB
+  com ressonância 10 a 48 dB/oct), o que derrubava a suíte do contrato; no padrão as duas formas são iguais. O `lm-dsp`
+  guarda o modo do legado (`resonance_on_every_section`) para o seu A/B. O analisador de espectro da janela do Eq é
+  análise do host sobre o áudio do canal, não um quadro do plugin.
+- **Uma divisão por zero do Eq do `lm-dsp`:** o crossfade dos filtros dividia por `frames − 1`; numa chamada de um
+  quadro (uma peça cortada num evento) isso dava NaN. Uma chamada de um quadro termina o crossfade nele.
+- **Latência de lookahead** (Compressor, LOMM): a do anel inteiro (20 ms), informada no build quando o lookahead está
+  ligado; o processador pede `LatencyChanged` ao host quando o botão muda, e o host recompila a compensação.
+- **O nível máximo da suíte do contrato** (`TestHints::max_level`, padrão 1000): um plugin cujos botões somam mais
+  ganho legítimo declara o seu (o LOMM: 288 dB). Acima dele, ou não finito, é estouro.
+- **Granular Pitch Shifter:** trocar o comprimento do anel não adota (o anel muda de tamanho; o velho toca a cauda,
+  U32), e cada parâmetro cuja faixa o legado mudava com o anel é limitado à faixa daquele anel. Dois casos novos no A/B
+  do `lm-dsp` (`granular-defaults-without-spray`, `granular-grains`), escritos pelo plugin do legado, comparam o plugin
+  sem as rampas do primeiro período do harness.
 - **Amplifier e Stereo Matrix** existem para abrir projetos antigos (F-FX-005 e F-FX-028 continuam obsoletos no
   navegador).
 

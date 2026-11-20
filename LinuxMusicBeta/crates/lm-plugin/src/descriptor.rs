@@ -84,11 +84,16 @@ pub struct TestHints {
     pub no_adopt: &'static [&'static str],
     /// The voices the plugin has (the tests play more notes than this)
     pub voices: usize,
+    /// The largest sample a valid state may give from the tests' input (about 0.5 at its peak): a sample above it, or
+    /// one not finite, is a blowup. 1000 (+60 dB) by default; a plugin whose knobs legitimately add more gain than
+    /// that (a multiband compressor with ±48 dB of input, output and band volume and 96 dB of upward range) declares
+    /// its own, from its ranges
+    pub max_level: f32,
 }
 
 impl TestHints {
     pub const fn new() -> Self {
-        Self { tuning: None, no_adopt: &[], voices: 16 }
+        Self { tuning: None, no_adopt: &[], voices: 16, max_level: 1.0e3 }
     }
 }
 

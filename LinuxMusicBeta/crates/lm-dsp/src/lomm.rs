@@ -209,6 +209,11 @@ impl Lomm {
         if ms == 0.0 { 0.0 } else { expf(self.coeff_precalc / ms) }
     }
 
+    /// The delay the lookahead puts on the signal, in frames (its whole ring: the same for any lookahead length)
+    pub fn lookahead_latency(&self) -> usize {
+        self.in_look[0][0].len()
+    }
+
     pub fn process(&mut self, frames: &mut [[f32; 2]], s: &LommSettings) {
         if self.splits[0] != Some(s.splits[0]) {
             self.lp1.set_lowpass(s.splits[0]);
@@ -243,7 +248,8 @@ impl Lomm {
         let auto_time = s.auto_time * s.auto_time;
         let mix = s.mix;
         let look_len = self.in_look[0][0].len();
-        let lookahead = ((s.lookahead / 1000.0) * sr).ceil() as usize;
+        // (the knob's top, 20 ms, fits the ring; a longer one is held to the ring, the most it can look ahead)
+        let lookahead = (((s.lookahead / 1000.0) * sr).ceil() as usize).min(look_len - 1);
         let feedback = s.feedback && !s.lookahead_enabled;
         let suppress = s.low_side_upward_suppress && s.mid_side;
         let enabled = s.bands.map(|b| if b.enabled { 1.0f32 } else { 0.0 });

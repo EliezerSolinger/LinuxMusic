@@ -14,7 +14,7 @@ use std::any::Any;
 
 use lm_base::Result;
 use lm_dsp::small_effects::Ramp;
-use lm_render::{Adopted, EventKind, ProcessContext, Processor};
+use lm_render::{Adopted, EventKind, PluginRequest, ProcessContext, Processor};
 use lm_state::Value;
 
 use lm_plugin::instrument::GRID;
@@ -72,6 +72,8 @@ pub fn raise_peaks(peaks: &mut [f32; 2], frames: &[[f32; 2]]) {
 pub struct EffectProcessor<E: Effect> {
     pairs: Vec<E>,
     channels: usize,
+    /// The latency the host knows (read at the build, or asked for again since)
+    latency: u32,
     piece: [[f32; 2]; GRID],
 }
 
@@ -86,7 +88,8 @@ impl<E: Effect> EffectProcessor<E> {
     pub fn build(cx: &BuildContext<'_>, mut make: impl FnMut() -> Result<E>) -> Result<Box<dyn Processor>> {
         let channels = usize::from(cx.channels).max(1);
         let pairs = (0..channels.div_ceil(2)).map(|_| make()).collect::<Result<Vec<E>>>()?;
-        Ok(Box::new(Self { pairs, channels, piece: [[0.0; 2]; GRID] }))
+        let latency = pairs[0].latency();
+        Ok(Box::new(Self { pairs, channels, latency, piece: [[0.0; 2]; GRID] }))
     }
 
     /// The algorithm of the first pair (tests)
@@ -169,6 +172,11 @@ impl<E: Effect> Processor for EffectProcessor<E> {
         for ev in &events[e..] {
             self.event(ev.kind);
         }
+        // A knob that changes the latency (a lookahead switched on): the host asks again and compensates (U23)
+        let latency = self.pairs[0].latency();
+        if latency != self.latency && cx.host.request(PluginRequest::LatencyChanged) {
+            self.latency = latency;
+        }
         if let Some(writer) = cx.display.as_mut() {
             let fx = &mut self.pairs[0];
             writer.write(|frame| fx.display(frame));
@@ -182,7 +190,7 @@ impl<E: Effect> Processor for EffectProcessor<E> {
     }
 
     fn latency(&self) -> u32 {
-        self.pairs[0].latency()
+        self.latency
     }
 
     fn adopt(&mut self, old: &mut dyn Processor) -> Adopted {

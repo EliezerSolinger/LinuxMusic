@@ -1024,6 +1024,7 @@ Regras gerais do legado que valem para quase todo plugin:
   transferência; dar zoom na faixa de dB com a roda (3–96 dB); esconder o painel com duplo clique; os botões sem
   efeito no modo atual aparecem marcados.
 - **Quirk:** o lookahead atrasa 20 ms e **não é informado** à compensação de latência. O porte deve informar.
+- **Na beta:** plugin `compressor`: os 27 botões do legado em camelCase e `stereoLink`; com o lookahead ligado, latência informada (e pedida de novo quando o botão muda); medidores de entrada, saída e redução na janela, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-010 CrossoverEQ — 1.0
 
@@ -1076,6 +1077,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **O usuário pode:** arrastar a alça numerada de cada banda na curva (frequência e ganho); mudar Q/largura com a roda
   sobre a alça (Ctrl = fino); ver os valores ao passar o mouse; ver a curva total e os **espectros de entrada e saída**
   por cima; medidores na entrada e na saída.
+- **Na beta:** plugin `eq`: ganhos de entrada e saída, as 8 bandas (`hp…`, `lowShelf…`, `peak1…`–`peak4…`, `highShelf…`, `lp…`), `hpSlope`/`lpSlope`, `analyseIn`/`analyseOut`; medidores na janela. Diferença intencional: a ressonância de uma passagem de 24/48 dB/oct vai numa seção só, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-016 Flanger — 1.0
 
@@ -1106,6 +1108,7 @@ Regras gerais do legado que valem para quase todo plugin:
   realoca).
 - **O usuário pode:** abrir um texto de ajuda.
 - **Quirk:** atraso variável não informado à compensação.
+- **Na beta:** plugin `granularpitchshifter`: os 14 botões e `ringBufferLength` (trocar o anel é um processador novo que não adota: o velho toca a cauda), em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-019 Guitarix (pedais, amplificadores e gabinetes do Guitarix, embutidos, do fork) — 1.0
 
@@ -1148,6 +1151,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **O usuário pode:** ver os níveis de entrada e saída por banda; **arrastar os limiares direto no visor** (à
   esquerda move o de baixo, à direita o de cima, no meio os dois); clique do meio volta o limiar; "Init" zera tudo
   para um ponto neutro (pergunta antes, desfazível).
+- **Na beta:** plugin `lomm`: os 50 botões do legado em camelCase; latência do lookahead informada; medidores das 3 bandas na janela, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-021 MultitapEcho — 1.0
 
@@ -1192,6 +1196,7 @@ Regras gerais do legado que valem para quase todo plugin:
   8×, 16×, 32×.
 - **O usuário pode:** arrastar Drive, Bias e Saída como alças; ver as curvas de transferência e os medidores; abrir a
   ajuda.
+- **Na beta:** plugin `slewdistortion`: os 13 botões de cada banda, `type1`/`type2`, `dcRemove`, `multiband`, `oversample`, `split`, em `lm-plugins-effects` (contrato e A/B pelo plugin contra o legado).
 
 #### F-FX-026 Spectrum Analyzer — 1.0
 

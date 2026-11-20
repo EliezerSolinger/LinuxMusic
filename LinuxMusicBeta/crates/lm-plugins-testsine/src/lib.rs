@@ -37,6 +37,7 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
         tuning: Some(TuningProbe { state: tuning_state, key: 69, hz: 440.0 }),
         no_adopt: &[],
         voices: VOICES,
+        max_level: 1.0e3,
     },
 };
 

@@ -5320,6 +5320,55 @@
       }
     },
     {
+      "name": "granular-defaults-without-spray",
+      "unit": "plugin-effect",
+      "plugin": "granularpitchshifter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Spray": 0.0
+      }
+    },
+    {
+      "name": "granular-grains",
+      "unit": "plugin-effect",
+      "plugin": "granularpitchshifter",
+      "rate": 44100,
+      "frames": 12032,
+      "block": 256,
+      "signal": {
+        "kind": "noise",
+        "seed": 95,
+        "amp": 0.5,
+        "right": {
+          "kind": "sine",
+          "hz": 440,
+          "amp": 0.7
+        }
+      },
+      "settings": {
+        "Spray": 0.0,
+        "Grain Size": 25.0,
+        "Shape": 1.4,
+        "Fade Length": 0.6,
+        "Density": 4.0,
+        "Feedback": 0.5,
+        "Prefilter": 0,
+        "Minimum Allowed Latency": 0.002
+      }
+    },
+    {
       "name": "kicker-default",
       "unit": "kicker-osc",
       "rate": 44100,

@@ -81,9 +81,10 @@ fn short(state: &Value) -> String {
     to_json(state).unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn finite(chans: &[Vec<f32>], what: &str) {
+/// Every sample finite and within the plugin's largest legitimate level (TestHints::max_level): above it is a blowup
+fn finite(chans: &[Vec<f32>], limit: f32, what: &str) {
     for (c, ch) in chans.iter().enumerate() {
-        if let Some(i) = ch.iter().position(|x| !x.is_finite() || x.abs() > 1.0e3) {
+        if let Some(i) = ch.iter().position(|x| !x.is_finite() || x.abs() > limit) {
             panic!("{what}: channel {c}, sample {i} is {}", ch[i]);
         }
     }
@@ -188,7 +189,7 @@ pub fn no_hidden_state(d: &'static Descriptor) {
         events.extend(param_changes(&p, 48_000, 1.5, &mut rng));
         let a = p.bench(state, 48_000).render(72_000, 256, &events, false);
         let b = p.bench(state, 48_000).render(72_000, 256, &events, false);
-        finite(&a, "a random state");
+        finite(&a, p.d.tests.max_level, "a random state");
         same(&a, &b, &format!("state {n} built twice"));
     }
 }
@@ -260,7 +261,7 @@ pub fn adopt_while_playing(d: &'static Descriptor) {
             continue;
         }
         let b = bench.render(after, 256, &events, true);
-        finite(&b, field.key);
+        finite(&b, p.d.tests.max_level, field.key);
         if bench.outputs() != a.len() {
             continue;
         }
@@ -322,7 +323,7 @@ fn probe(p: &Plugin, state: &Value, key: u8, rate: u32) -> (Option<f64>, f64) {
         PluginKind::Effect => Vec::new(),
     };
     let out = p.bench(state, rate).render(total, 256, &events, false);
-    finite(&out, "a probe");
+    finite(&out, p.d.tests.max_level, "a probe");
     let x = mono(&out[..out.len().min(2)]);
     let window = &x[(0.3 * f64::from(rate)) as usize..(1.3 * f64::from(rate)) as usize];
     let period = p.d.tests.tuning.map(|t| period(window, f64::from(rate) / t.hz));
@@ -373,7 +374,7 @@ pub fn param_sweep(d: &'static Descriptor) {
             events.push(Timed::new(start + (s * 16) as u64, EventKind::Param { index: i as u32, value }));
         }
         let out = bench.render(total, 256, &events, true);
-        finite(&out, spec.key);
+        finite(&out, p.d.tests.max_level, spec.key);
         // Back to the default before the next
         let reset = [Timed::new(bench.frame(), EventKind::Param { index: i as u32, value: spec.def as f32 })];
         bench.render(64, 64, &reset, true);
@@ -393,7 +394,7 @@ pub fn param_sweep(d: &'static Descriptor) {
     let start = bench.frame();
     events.extend(script(&p, rate, 0.5).into_iter().map(|t| Timed::new(t.at + start, t.kind)));
     let out = bench.render(24_000, 128, &events, true);
-    finite(&out, "every parameter at random");
+    finite(&out, p.d.tests.max_level, "every parameter at random");
 }
 
 /// A state with every switch (a stepped parameter of 0 to 1) on, so every function of the plugin plays
@@ -426,7 +427,7 @@ pub fn every_choice(d: &'static Descriptor) {
                     None => {
                         let mut b = p.bench(&state, rate);
                         let out = b.render(12_000, 256, &notes, true);
-                        finite(&out, key);
+                        finite(&out, p.d.tests.max_level, key);
                         bench = Some(b);
                     }
                     Some(b) => {
@@ -436,7 +437,7 @@ pub fn every_choice(d: &'static Descriptor) {
                         let start = b.frame();
                         let more: Vec<Timed> = notes.iter().map(|t| Timed::new(t.at + start, t.kind)).collect();
                         let out = b.render(12_000, 256, &more, true);
-                        finite(&out, key);
+                        finite(&out, p.d.tests.max_level, key);
                     }
                 }
             }
@@ -473,7 +474,7 @@ pub fn short_notes(d: &'static Descriptor) {
     events.extend(chord(14_000, 100, 3 * p.voices(), 0, Some(16_000)));
     let total = 4 * rate as usize;
     let out = p.bench(&p.defaults(), rate).render(total, 256, &events, true);
-    finite(&out, "short notes");
+    finite(&out, p.d.tests.max_level, "short notes");
     let x = mono(&out);
     assert!(peak(&x[9_200..9_800]) > 1.0e-4, "{}: the retriggered note does not sound", d.id);
     let tail = peak(&x[total - rate as usize / 10..]);
@@ -593,6 +594,6 @@ pub fn ports_follow_the_state(d: &'static Descriptor) {
         let channels = p.channels(&state);
         let out = p.bench(&state, 48_000).render(2048, 256, &chord(0, 1, 3, 0, None), true);
         assert_eq!(out.len(), channels);
-        finite(&out, "ports");
+        finite(&out, p.d.tests.max_level, "ports");
     }
 }

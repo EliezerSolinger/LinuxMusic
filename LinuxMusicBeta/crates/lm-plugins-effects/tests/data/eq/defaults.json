@@ -1,0 +1,45 @@
+{
+  "plugin:eq": {
+    "defaults": {
+      "analyseIn": true,
+      "analyseOut": true,
+      "hpSlope": "12db",
+      "lpSlope": "12db",
+      "params": {
+        "highShelfActive": 0.0,
+        "highShelfFreq": 12000.0,
+        "highShelfGain": 0.0,
+        "highShelfRes": 0.707,
+        "hpActive": 0.0,
+        "hpFreq": 31.0,
+        "hpRes": 0.707,
+        "inputGain": 0.0,
+        "lowShelfActive": 0.0,
+        "lowShelfFreq": 80.0,
+        "lowShelfGain": 0.0,
+        "lowShelfRes": 0.707,
+        "lpActive": 0.0,
+        "lpFreq": 18000.0,
+        "lpRes": 0.707,
+        "outputGain": 0.0,
+        "peak1Active": 0.0,
+        "peak1Bw": 0.3,
+        "peak1Freq": 120.0,
+        "peak1Gain": 0.0,
+        "peak2Active": 0.0,
+        "peak2Bw": 0.3,
+        "peak2Freq": 250.0,
+        "peak2Gain": 0.0,
+        "peak3Active": 0.0,
+        "peak3Bw": 0.3,
+        "peak3Freq": 2000.0,
+        "peak3Gain": 0.0,
+        "peak4Active": 0.0,
+        "peak4Bw": 0.3,
+        "peak4Freq": 4000.0,
+        "peak4Gain": 0.0
+      }
+    },
+    "version": 1
+  }
+}

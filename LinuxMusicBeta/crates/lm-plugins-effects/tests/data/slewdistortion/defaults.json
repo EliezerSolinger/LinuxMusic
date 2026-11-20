@@ -1,0 +1,41 @@
+{
+  "plugin:slewdistortion": {
+    "defaults": {
+      "params": {
+        "attack1": 2.0,
+        "attack2": 2.0,
+        "bias1": 0.0,
+        "bias2": 0.0,
+        "crush1": 0.0,
+        "crush2": 0.0,
+        "dcRemove": 1.0,
+        "drive1": 0.0,
+        "drive2": 0.0,
+        "dynamicSlew1": 0.0,
+        "dynamicSlew2": 0.0,
+        "dynamics1": 0.0,
+        "dynamics2": 0.0,
+        "mix1": 1.0,
+        "mix2": 1.0,
+        "multiband": 0.0,
+        "outVol1": 0.0,
+        "outVol2": 0.0,
+        "oversample": 0.0,
+        "release1": 20.0,
+        "release2": 20.0,
+        "slewDown1": 6.0,
+        "slewDown2": 6.0,
+        "slewLink1": 1.0,
+        "slewLink2": 1.0,
+        "slewUp1": 6.0,
+        "slewUp2": 6.0,
+        "split": 200.0,
+        "warp1": 0.0,
+        "warp2": 0.0
+      },
+      "type1": "hard-clip",
+      "type2": "hard-clip"
+    },
+    "version": 1
+  }
+}
