@@ -125,7 +125,7 @@ impl Session {
                             .collect()
                     })
                     .unwrap_or_default();
-                if now.get("comp").is_some_and(|c| c.len() > 0) {
+                if now.get("comp").is_some_and(|c| !c.is_empty()) {
                     e.set(side, &[k("comp")], Value::list(comp))?;
                 }
                 // The control lanes' points (ticks from the item's start), clipped and moved
