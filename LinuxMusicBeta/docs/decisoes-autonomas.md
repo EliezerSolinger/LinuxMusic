@@ -254,3 +254,35 @@ de forma diz pelo que é substituído.
   as crates do commit — um lock adiantado (commitado antes da crate) deixa só esse passo vermelho, não o CI inteiro.
 - **No master, uma execução do CI nunca é cancelada pelo próximo push** (os agentes fazem push a cada poucos minutos);
   em PRs e outros ramos a execução antiga é cancelada.
+
+
+## Do `lm-compile` (19/11)
+
+- **Campos opcionais no esquema, sem padrão** (para não mudar os padrões congelados, U29): `point` do insert (P-20;
+  ausente = `post-eq`, o padrão do `lm-dsp`), `mixer.mode` (P-17; ausente = analógico), `transport.transpose` e
+  `track.transpose` (P-37; ausentes = 0 e "segue").
+- **O rack é um nó por trecho de seções sem insert no meio** (estágios ganho, filtros, dinâmica, EQ+transformador; no
+  master: drive, estéreo+bus comp, transformador depois do fader). Todos os trechos são o mesmo processador de rack,
+  avisado de quais estágios roda, com os parâmetros num índice só (`rack_params`: os campos reais das seções, na
+  ordem do esquema). A semente é o id do canal (P-21). **No modo digital não há nó de rack** (o canal fica limpo, e
+  os campos do rack ficam guardados sem vaga).
+- **O volume e o mudo da faixa ficam num nó de ganho só**, antes das saídas: uma vaga serve todas as saídas. O
+  monitoramento tem uma **segunda vaga do mesmo volume** (`slots_of` devolve as duas; a `Session` escreve todas).
+- **A PDC da saída de uma faixa vai para antes do nó da saída**, para o monitoramento, que entra no nó da saída
+  principal, nunca ser atrasado (H5). MIDI ao vivo num instrumento armado passa pela PDC do caminho (como o áudio do
+  instrumento).
+- **Solo de canal:** tocam os solados, as fontes deles e tudo que eles alcançam por saída e envio; o resto é calado
+  **antes do fader** (os envios pré também calam). Um canal que só alcança um audível por sidechain é calado **depois**
+  do fader e continua alimentando o sidechain (F-MIX-014). O mudo do próprio canal fica depois do pan (os envios pré
+  continuam, como numa mesa).
+- **Um insert em bypass continua no programa, desligado da cadeia**: o processador fica vivo e voltar não espera um
+  build.
+- **Itens de áudio:** `start`/`length` e o comping em tiques (ou amostras com `timebase: "audio"`), `sourceOffset`,
+  fades e o `fade` do comping em amostras; sem comping toca a última lane; o crossfade do comping é linear, com o
+  segmento anterior estendido pelo `fade` do seguinte. Itens acima de 30 s são classificados para o disco (P-32) e
+  tocam da memória até o renderer ler do disco.
+- **Um envio que repete a rota de outro** (mesmo nó de origem e destino) passa por um nó de soma próprio, para cada um
+  ter a sua linha de atraso.
+- **Pendente no `lm-render`:** a contagem (pré-roll com o metrônomo, I-5.5) precisa de uma região de contagem no
+  `Renderer`; o compilador já põe o metrônomo, o volume e o liga/desliga.
+
