@@ -441,3 +441,17 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
 - **No ThinkPad, rtkit e logind só respondem a um processo da sessão gráfica:** os testes rodam com `systemd-run --user`
   (o polkit trata a sessão SSH como remota). O rtkit dá `SCHED_RR`, não `SCHED_FIFO`.
 
+
+## A mesa de mixagem (decisão do usuário, 20/11)
+
+- **O que o usuário disse:** depois de ver o protótipo, que "o design da mesa de mixagem quebrou muito", que o
+  original tinha muitas coisas boas e que o novo ficou verboso.
+- **A causa:** o design da mesa não está aprovado, então a referência era o legado, mas o protótipo o "repensou".
+- **A decisão:**
+  - **A mesa nova é conservadora com a do legado.** A analógica segue o desenho exato de uma mesa analógica de
+    verdade, como no legado: a ordem das seções, os botões, as posições e a aparência.
+  - **A mesa digital continua simples**, como no legado.
+  - **Há um botão visível para alternar entre a mesa analógica e a digital** (`mixer.mode`, P-17), e a página
+    inteira troca de desenho.
+  - Só muda o que o modelo novo exige: roteamento livre, várias saídas por faixa, os inserts nos pontos do rack, a
+    faixa sem pan, os faders sobre os medidores e a página separada. Cada diferença fica registrada com o motivo.
