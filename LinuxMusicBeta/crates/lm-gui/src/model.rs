@@ -285,6 +285,8 @@ pub struct SendView {
     pub to: NodeId,
     pub amount: f64,
     pub pre: bool,
+    /// the input of the plugin it feeds (`"sidechain"`), when it goes to an insert rather than a channel
+    pub port: Option<Arc<str>>,
 }
 
 #[derive(Clone, Debug)]
@@ -361,6 +363,7 @@ pub fn channels(root: &Value) -> Vec<ChannelView> {
                             to: ref_of(s, "to")?,
                             amount: real(s, "amount", 1.0),
                             pre: flag(s, "pre"),
+                            port: s.get("port").and_then(Value::as_shared_text).cloned(),
                         })
                     })
                     .collect(),

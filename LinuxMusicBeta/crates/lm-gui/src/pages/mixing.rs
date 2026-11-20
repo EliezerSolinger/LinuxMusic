@@ -145,7 +145,7 @@ const RELEASE_S: [f64; 4] = [0.1, 0.3, 0.6, 1.2];
 /// tallest of a channel's and the master section's, per mode
 const ANALOG_SECTION_H: f32 = 317.0;
 const UPPER_ANALOG: f32 = 413.0;
-const UPPER_DIGITAL: f32 = 338.0;
+const UPPER_DIGITAL: f32 = 368.0;
 const NAME_H: f32 = 15.0;
 const SLOT_H: f32 = 11.0;
 
@@ -276,6 +276,9 @@ struct Reading {
     correlation: f32,
     /// (side, mid) points of the master's output
     gonio: Vec<(f32, f32)>,
+    /// the master's loudness (BS.1770): momentary, short-term, integrated LUFS, true peak dBTP, range LU; NaN
+    /// before anything passed
+    loudness: [f32; 5],
 }
 
 /// How long the CLIP LED stays lit after a clipped block (SaturationLeds::ClipHold: 10 GUI updates)
@@ -299,6 +302,8 @@ pub struct MixingPage {
     /// the highest peak since the last click, per channel, in dB (PeakIndicator)
     peaks: HashMap<NodeId, f32>,
     renaming: Option<(NodeId, Entity<InputState>, Subscription)>,
+    /// A channel others use, waiting for "remove it?" (MixerChannelView::confirmRemoval), and "don't ask again"
+    confirm_remove: Option<(NodeId, bool)>,
     /// the hint of the value being dragged (SimpleTextFloat)
     hint: Option<(String, Point<Pixels>)>,
     area: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
@@ -308,6 +313,8 @@ pub struct MixingPage {
     /// the page's bounds in the window: the menus and the hint are placed in its coordinates
     page: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
     fader_h: f32,
+    /// the rows of send knobs, two returns to a row: the upper areas grow by the extra rows
+    send_rows: usize,
 }
 
 fn channels(core: &Core) -> Vec<ChannelView> {
@@ -322,6 +329,15 @@ impl MixingPage {
     pub fn new(core: Entity<Core>, workspace: WeakEntity<Workspace>, cx: &mut Context<Self>) -> Self {
         // the master is selected at the start, as in the legacy
         let master = channels(core.read(cx)).into_iter().find(|c| c.kind == ChannelKind::Master).map(|c| c.id);
+        // the linked faders (P-18) are the interface's state: kept in the interface document (I-3.8)
+        let linked: BTreeSet<NodeId> = core
+            .read(cx)
+            .port()
+            .ui()
+            .get("desk")
+            .and_then(|d| d.get("linked"))
+            .map(|l| l.items().filter_map(|v| v.as_text().and_then(|t| NodeId::parse(t).ok())).collect())
+            .unwrap_or_default();
         MixingPage {
             core,
             workspace,
@@ -329,19 +345,21 @@ impl MixingPage {
             scroll: 0.0,
             selected: master,
             multi: BTreeSet::new(),
-            linked: BTreeSet::new(),
+            linked,
             collapsed: HashSet::new(),
             drag: None,
             menu: None,
             clipboard: None,
             peaks: HashMap::new(),
             renaming: None,
+            confirm_remove: None,
             hint: None,
             area: Default::default(),
             readings: HashMap::new(),
             clips: HashMap::new(),
             page: Default::default(),
             fader_h: 300.0,
+            send_rows: 1,
         }
     }
 
@@ -616,11 +634,17 @@ impl MixingPage {
                 self.linked.remove(&id);
             }
         }
+        // kept in the interface document, so the link survives saving and opening the project
+        let list = Value::list(self.linked.iter().map(|id| Value::text(id.to_string())));
+        self.core.update(cx, |core, _| {
+            let _ = core.port_mut().set_ui(vec![PathStep::key("desk")], Value::object([("linked", list)]));
+        });
         cx.notify();
     }
 
-    fn nudge(&mut self, db: f64, cx: &mut Context<Self>) {
-        let Some(id) = self.selected else { return };
+    /// The fader and the wheel: the legacy's steps (Fader::determineAdjustmentDelta): 1 dB, Shift 3 dB, Ctrl (Cmd on
+    /// macOS) 0.1 dB, for one channel
+    fn nudge_channel(&mut self, id: NodeId, db: f64, cx: &mut Context<Self>) {
         let Some(ch) = self.channel(id, cx) else { return };
         let v = (view::gain_to_db(ch.volume).max(-60.0) + db).clamp(-60.0, 12.0);
         self.apply(
@@ -628,6 +652,41 @@ impl MixingPage {
             vec![EditOp::set(id, &["volume"], Value::real(view::db_to_gain(v)).unwrap_or_default())],
             cx,
         );
+    }
+
+    fn wheel_fader(&mut self, id: NodeId, ev: &ScrollEvent, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        let dy = ev.delta.pixel_delta(px(16.0)).y.as_f32();
+        if dy == 0.0 {
+            return;
+        }
+        let m = ev.modifiers;
+        let step = if m.shift {
+            3.0
+        } else if m.platform || m.control {
+            0.1
+        } else {
+            1.0
+        };
+        self.nudge_channel(id, if dy > 0.0 { step } else { -step }, cx);
+    }
+
+    /// The wheel on a knob (Knob::wheelEvent): a step of its travel each notch, Shift finer
+    fn wheel_knob(&mut self, t: Target, ev: &ScrollEvent, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        let dy = ev.delta.pixel_delta(px(16.0)).y.as_f32();
+        if dy == 0.0 {
+            return;
+        }
+        let step = if ev.modifiers.shift { 0.001 } else { 0.01 };
+        let travel = self.travel_of(&t, cx) + if dy > 0.0 { step } else { -step };
+        self.set_travel(&t, travel, "Knob", cx);
+    }
+
+    fn nudge(&mut self, db: f64, cx: &mut Context<Self>) {
+        if let Some(id) = self.selected {
+            self.nudge_channel(id, db, cx);
+        }
     }
 
     fn move_selection(&mut self, by: isize, cx: &mut Context<Self>) {
@@ -677,11 +736,127 @@ impl MixingPage {
         cx.notify();
     }
 
+    /// Remove: a channel something feeds asks first, unless the user said not to ask again
+    /// (MixerChannelView::confirmRemoval, the preference `interface.confirmChannelRemoval`)
     fn remove_channel(&mut self, id: NodeId, cx: &mut Context<Self>) {
-        if self.channel(id, cx).is_some_and(|c| c.kind != ChannelKind::Master) {
-            self.apply("Remove channel", vec![EditOp::Remove { id: Ref::Id(id) }], cx);
-            self.move_selection(0, cx);
+        if !self.channel(id, cx).is_some_and(|c| c.kind != ChannelKind::Master) {
+            return;
         }
+        let ask = model::at(self.core.read(cx).port().preferences(), &["interface", "confirmChannelRemoval"])
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        if ask && self.in_use(cx).contains(&id) {
+            self.confirm_remove = Some((id, false));
+            cx.notify();
+            return;
+        }
+        self.remove_now(id, cx);
+    }
+
+    fn remove_now(&mut self, id: NodeId, cx: &mut Context<Self>) {
+        self.apply("Remove channel", vec![EditOp::Remove { id: Ref::Id(id) }], cx);
+        self.move_selection(0, cx);
+    }
+
+    fn answer_remove(&mut self, yes: bool, cx: &mut Context<Self>) {
+        let Some((id, dont_ask)) = self.confirm_remove.take() else { return };
+        if dont_ask {
+            self.core.update(cx, |core, _| {
+                let path = vec![PathStep::key("interface"), PathStep::key("confirmChannelRemoval")];
+                let _ = core.port_mut().set_preference(path, Value::bool(false));
+            });
+        }
+        if yes {
+            self.remove_now(id, cx);
+        }
+        cx.notify();
+    }
+
+    /// The channels something feeds: a track's output, another channel's output or send
+    fn in_use(&self, cx: &Context<Self>) -> HashSet<NodeId> {
+        let root = self.core.read(cx).port().root().clone();
+        let mut used: HashSet<NodeId> =
+            model::tracks(&root).iter().flat_map(|t| t.outputs.iter().map(|o| o.to)).collect();
+        for c in model::channels(&root) {
+            used.extend(c.output);
+            used.extend(c.sends.iter().map(|s| s.to));
+        }
+        used
+    }
+
+    /// "Arrange channels like the tracks" (Mixer::arrangeChannelsByTracks): the channels the tracks feed, in the
+    /// tracks' order, then the others as they were; one undo step
+    fn arrange_like_tracks(&mut self, cx: &mut Context<Self>) {
+        let root = self.core.read(cx).port().root().clone();
+        let mut current: Vec<NodeId> =
+            model::at(&root, &["mixer", "channels"]).map(|l| l.items().filter_map(model::id_of).collect()).unwrap_or_default();
+        let mut wanted: Vec<NodeId> = Vec::new();
+        for t in model::tracks(&root) {
+            for o in &t.outputs {
+                if current.contains(&o.to) && !wanted.contains(&o.to) {
+                    wanted.push(o.to);
+                }
+            }
+        }
+        wanted.extend(current.iter().copied().filter(|c| !wanted.contains(c)).collect::<Vec<_>>());
+        let mut ops = Vec::new();
+        for (index, id) in wanted.iter().enumerate() {
+            if current.get(index) != Some(id) {
+                current.retain(|c| c != id);
+                current.insert(index, *id);
+                ops.push(EditOp::Move { id: Ref::Id(*id), parent: Ref::Id(ROOT), list: "mixer.channels".into(), index });
+            }
+        }
+        if !ops.is_empty() {
+            self.apply("Arrange channels like the tracks", ops, cx);
+        }
+    }
+
+    /// The selected channels into a new group channel (P-18): the group made before the first of them, their
+    /// outputs into it, in one step (the core's `mixer.group`)
+    fn group_selected(&mut self, cx: &mut Context<Self>) {
+        let mut set: Vec<NodeId> = self.multi.iter().copied().collect();
+        set.extend(self.selected.filter(|s| !set.contains(s)));
+        let chs = channels(self.core.read(cx));
+        set.retain(|id| chs.iter().any(|c| c.id == *id && c.kind != ChannelKind::Master));
+        if set.is_empty() {
+            return;
+        }
+        let params = Value::object([("channels", Value::list(set.iter().map(|id| Value::text(id.to_string()))))]);
+        self.core.update(cx, |core, _| {
+            let _ = core.port_mut().run_action("mixer.group".into(), params);
+        });
+        self.multi.clear();
+        cx.notify();
+    }
+
+    /// The sidechain sends of a channel's inserts: toggled from a source channel to the first insert of `to` whose
+    /// plugin has a sidechain input (a send with `port: "sidechain"`, as the effect window's source)
+    fn toggle_sidechain(&mut self, from: NodeId, to: NodeId, cx: &mut Context<Self>) {
+        let port = self.core.read(cx).port();
+        let plugins = port.plugins();
+        let chs = model::channels(port.root());
+        let Some(target) = chs
+            .iter()
+            .find(|c| c.id == to)
+            .and_then(|c| c.inserts.iter().find(|i| plugins.iter().any(|p| p.id == i.plugin && p.sidechain)))
+            .map(|i| i.id)
+        else {
+            return;
+        };
+        let Some(src) = chs.iter().find(|c| c.id == from) else { return };
+        let existing = src.sends.iter().find(|s| s.to == target).map(|s| s.id);
+        let op = match existing {
+            Some(sid) => EditOp::Remove { id: Ref::Id(sid) },
+            None => EditOp::Insert {
+                temp: 0,
+                parent: Ref::Id(from),
+                list: "sends".into(),
+                index: src.sends.len(),
+                node: Value::object([("to", Value::text(target.to_string())), ("port", Value::text("sidechain"))]),
+            },
+        };
+        self.apply("Sidechain", vec![op], cx);
     }
 
     /// Remove unused channels: nothing outputs or sends to them, and no track's output goes to them
@@ -859,6 +1034,10 @@ impl MixingPage {
             .aria_max_numeric_value(1.0)
             .cursor_ns_resize()
             .child(desk::desk_knob(k.cap, tr(k.label), travel, enabled))
+            .on_scroll({
+                let t = Target::Knob(id, k);
+                cx.listener(move |p, ev: &ScrollEvent, _, cx| p.wheel_knob(t.clone(), ev, cx))
+            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |p, ev, w, cx| p.press(t1.clone(), 160.0, channel, ev, w, cx)),
@@ -1143,6 +1322,8 @@ impl MixingPage {
                     bus_gr: num(f, d::BUS_GR),
                     correlation: num(f, d::CORRELATION),
                     gonio,
+                    loudness: [d::LUFS_M, d::LUFS_S, d::LUFS_I, d::TRUE_PEAK, d::LRA]
+                        .map(|i| f.get(i).copied().filter(|v| v.is_finite()).unwrap_or(f32::NAN)),
                 },
             );
         }
@@ -1166,12 +1347,13 @@ impl MixingPage {
         let send_from_selected = selected.and_then(|s| s.sends.iter().find(|x| x.to == id));
         let receives = selected.is_some_and(|s| ch.output == Some(s.id) || ch.sends.iter().any(|x| x.to == s.id));
         let loops = selected.is_none_or(|s| leads_to(chs, id, s.id));
-        let returns: Vec<&ChannelView> = chs.iter().filter(|c| c.kind == ChannelKind::Return).take(2).collect();
+        // a send knob per return (P-19), two to a row as the legacy's FX1 and FX2
+        let returns: Vec<&ChannelView> = chs.iter().filter(|c| c.kind == ChannelKind::Return).collect();
         let is_return = ch.kind == ChannelKind::Return;
         let from = selected.map_or(id, |s| s.id);
         let mut d = div()
             .w(px(desk::NAME_W))
-            .h(px(if analog { UPPER_ANALOG } else { UPPER_DIGITAL }))
+            .h(px(self.upper_h(analog)))
             .flex()
             .flex_col()
             .items_center()
@@ -1213,7 +1395,8 @@ impl MixingPage {
             d = d.child(self.analog_section(ch, sat, clip, cx));
         }
         // the sends to the effect returns (not on the returns themselves)
-        d = d.child(div().w(px(desk::NAME_W)).h(px(desk::KNOB_D + desk::KNOB_LABEL_H)).flex().justify_center().when(
+        let rows = self.send_rows as f32;
+        d = d.child(div().w(px(desk::NAME_W)).h(px((desk::KNOB_D + desk::KNOB_LABEL_H) * rows)).flex().flex_wrap().justify_center().when(
             !is_return,
             |d| {
                 d.children(returns.iter().enumerate().map(|(i, r)| {
@@ -1267,6 +1450,7 @@ impl MixingPage {
             .h(px(fader_h))
             .cursor_ns_resize()
             .child(desk::fader(travel, levels, role, fader_w))
+            .on_scroll(cx.listener(move |p, ev: &ScrollEvent, _, cx| p.wheel_fader(id, ev, cx)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |p, ev, w, cx| p.press(Target::Fader(id, "volume"), grab, id, ev, w, cx)),
@@ -1646,6 +1830,56 @@ fn choice_name(key: &str, v: &str) -> String {
 // The master section
 
 impl MixingPage {
+    /// The upper area's height: the legacy's, plus a row for each two returns past the first two (P-19)
+    fn upper_h(&self, analog: bool) -> f32 {
+        let base = if analog { UPPER_ANALOG } else { UPPER_DIGITAL };
+        base + (self.send_rows.saturating_sub(1)) as f32 * (desk::KNOB_D + desk::KNOB_LABEL_H)
+    }
+
+    /// The master's loudness (BS.1770-4, EBU R 128) from the engine: M, S and I in LUFS, the true peak and the range;
+    /// a click resets the integrated value, the range and the peak hold (the core's `loudness.reset`)
+    fn loudness_readout(&self, r: &Reading, w: f32, cx: &Context<Self>) -> impl IntoElement {
+        let show = |v: f32, unit: &str| if v.is_finite() { format!("{v:.1}{unit}") } else { "—".to_owned() };
+        let [m, st, i, tp, lra] = r.loudness;
+        let cell = |label: &'static str, text: String, red: bool| {
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .child(div().text_size(px(6.)).text_color(rgb(col::DIM)).child(label))
+                .child(
+                    div()
+                        .text_size(px(8.))
+                        .font_family("Menlo")
+                        .text_color(rgb(if red { col::LED_RED } else { col::GREEN_LED }))
+                        .child(text),
+                )
+        };
+        div()
+            .id("loudness")
+            .debug_selector(|| "loudness".into())
+            .w(px(w))
+            .h(px(24.))
+            .px(px(2.))
+            .flex()
+            .justify_between()
+            .items_center()
+            .rounded(px(2.))
+            .bg(rgb(0x0c0d0f))
+            .cursor_pointer()
+            .child(cell("M", show(m, ""), false))
+            .child(cell("S", show(st, ""), false))
+            .child(cell("I LUFS", show(i, ""), false))
+            .child(cell("TP", show(tp, ""), tp.is_finite() && tp > -1.0))
+            .child(cell("LRA", show(lra, ""), false))
+            .on_click(cx.listener(|p, _, _, cx| {
+                p.core.update(cx, |core, _| {
+                    let _ = core.port_mut().run_action("loudness.reset".into(), Value::empty_object());
+                });
+                cx.notify();
+            }))
+    }
+
     fn master_section(&self, ch: &ChannelView, analog: bool, cx: &Context<Self>) -> Div {
         let id = ch.id;
         let core = self.core.read(cx);
@@ -1671,7 +1905,7 @@ impl MixingPage {
         let monitor_t = self.travel_of(&Target::Monitor, cx);
         div()
             .w(px(desk::MASTER_SECTION_W))
-            .h(px(if analog { UPPER_ANALOG } else { UPPER_DIGITAL }))
+            .h(px(self.upper_h(analog)))
             .p(px(4.))
             .flex()
             .flex_col()
@@ -1685,6 +1919,7 @@ impl MixingPage {
             .child(div().flex().gap(px(4.)).child(desk::vu_meter("L", vu(l))).child(desk::vu_meter("R", vu(r))))
             .child(desk::goniometer(reading.gonio.clone(), w))
             .child(desk::correlation(reading.correlation, w))
+            .child(self.loudness_readout(&reading, w, cx))
             .when(analog, |d| {
                 d.child(title("DRIVE"))
                     .child(
@@ -2038,6 +2273,75 @@ impl MixingPage {
     }
 }
 
+impl MixingPage {
+    /// "This channel is being used" (MixerChannelView::confirmRemoval): Cancel by default, "Don't ask again"
+    fn render_confirm_remove(&self, id: NodeId, dont_ask: bool, cx: &Context<Self>) -> AnyElement {
+        let name = self.channel(id, cx).map_or_else(String::new, |c| c.name.to_string());
+        div()
+            .absolute()
+            .left(px(0.))
+            .top(px(0.))
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(gpui::rgba(0x00000080))
+            .occlude()
+            .child(
+                div()
+                    .id("confirm-remove")
+                    .w(px(380.))
+                    .p(px(16.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .rounded(px(8.))
+                    .bg(c(THEME.bg2))
+                    .border_1()
+                    .border_color(c(THEME.line2))
+                    .child(div().text_size(px(13.)).font_weight(FontWeight::BOLD).child(tr("Confirm removal")))
+                    .child(div().text_size(px(12.)).child(trf(
+                        "The channel {0} is being used. Are you sure you want to remove it?",
+                        &[&name],
+                    )))
+                    .child(
+                        div()
+                            .id("confirm-dont-ask")
+                            .debug_selector(|| "confirm-dont-ask".into())
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .cursor_pointer()
+                            .child(div().size(px(10.)).rounded(px(2.)).bg(rgb(if dont_ask { col::GREEN_LED } else { col::LED_OFF })))
+                            .child(div().text_size(px(11.)).child(tr("Don't ask again")))
+                            .on_click(cx.listener(|p, _, _, cx| {
+                                if let Some((_, d)) = p.confirm_remove.as_mut() {
+                                    *d = !*d;
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap(px(8.))
+                            .child(
+                                crate::ui::button("confirm-cancel", tr("Cancel"), false, 0)
+                                    .debug_selector(|| "confirm-cancel".into())
+                                    .on_click(cx.listener(|p, _, _, cx| p.answer_remove(false, cx))),
+                            )
+                            .child(
+                                crate::ui::button("confirm-ok", tr("OK"), true, THEME.red)
+                                    .debug_selector(|| "confirm-ok".into())
+                                    .on_click(cx.listener(|p, _, _, cx| p.answer_remove(true, cx))),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
 /// An insert point's name (the effects' insert point combo of MixerView)
 fn point_name(p: &str) -> &'static str {
     match p {
@@ -2239,6 +2543,16 @@ impl MixingPage {
                 .into_any_element(),
         );
         items.push(separator());
+        items.push(
+            menu_item("menu-arrange", tr("Arrange channels like the tracks"))
+                .on_click(cx.listener(|p, _, _, cx| {
+                    p.menu = None;
+                    p.arrange_like_tracks(cx);
+                }))
+                .into_any_element(),
+        );
+        items.push(separator());
+        // Color (ColorChooser's mixer palette: 8 hues in 6 shades), reset, a random one of it
         items.push(caption_row("Color"));
         items.push(
             menu_item("menu-color-reset", tr("Reset"))
@@ -2255,11 +2569,8 @@ impl MixingPage {
                     let n = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map_or(0, |d| d.subsec_nanos()) as usize;
-                    p.apply(
-                        "Color",
-                        vec![EditOp::set(id, &["color"], Value::text(format!("#{:06x}", track_color(n % 8))))],
-                        cx,
-                    );
+                    let color = desk::mixer_palette()[n % 48];
+                    p.apply("Color", vec![EditOp::set(id, &["color"], Value::text(format!("#{color:06x}")))], cx);
                 }))
                 .into_any_element(),
         );
@@ -2267,28 +2578,81 @@ impl MixingPage {
             div()
                 .px(px(10.))
                 .py(px(3.))
-                .flex()
-                .gap(px(3.))
-                .children((0..8).map(|n| {
-                    let color = track_color(n);
+                .grid()
+                .grid_cols(8)
+                .gap(px(2.))
+                .children(desk::mixer_palette().into_iter().enumerate().map(|(n, color)| {
                     div()
                         .id(SharedString::from(format!("menu-color-{n}")))
                         .debug_selector(move || format!("menu-color-{n}"))
                         .size(px(14.))
                         .rounded(px(2.))
-                        .bg(c(color))
+                        .bg(rgb(color))
                         .cursor_pointer()
                         .on_click(cx.listener(move |p, _, _, cx| {
                             p.menu = None;
-                            p.apply(
-                                "Color",
-                                vec![EditOp::set(id, &["color"], Value::text(format!("#{color:06x}")))],
-                                cx,
-                            );
+                            p.apply("Color", vec![EditOp::set(id, &["color"], Value::text(format!("#{color:06x}")))], cx);
                         }))
                 }))
                 .into_any_element(),
         );
+        if !master && (self.multi.len() + 1) > 1 {
+            items.push(separator());
+            items.push(
+                menu_item("menu-group-selected", tr("Group the selected channels"))
+                    .on_click(cx.listener(|p, _, _, cx| {
+                        p.menu = None;
+                        p.group_selected(cx);
+                    }))
+                    .into_any_element(),
+            );
+        }
+        // Sidechain, either way (the legacy's "Sidechain input from" and "Send as sidechain to"): a send to an
+        // insert's sidechain input; the channels that would make a loop are left out
+        if !master {
+            let plugins = self.core.read(cx).port().plugins();
+            let has_sidechain =
+                |c: &ChannelView| c.inserts.iter().any(|i| plugins.iter().any(|p| p.id == i.plugin && p.sidechain));
+            let feeds = |from: &ChannelView, to: &ChannelView| {
+                from.sends
+                    .iter()
+                    .any(|s| s.port.as_deref() == Some("sidechain") && to.inserts.iter().any(|i| i.id == s.to))
+            };
+            if has_sidechain(chv) {
+                items.push(separator());
+                items.push(caption_row("Sidechain input from"));
+                for src in chs.iter().filter(|c| c.id != id && c.kind != ChannelKind::Master && !leads_to(chs, id, c.id)) {
+                    let sid = src.id;
+                    let on = feeds(src, chv);
+                    items.push(
+                        menu_item(format!("menu-sc-from-{}", sid.number), format!("{}{}", if on { "✓ " } else { "" }, src.name))
+                            .on_click(cx.listener(move |p, _, _, cx| {
+                                p.menu = None;
+                                p.toggle_sidechain(sid, id, cx);
+                            }))
+                            .into_any_element(),
+                    );
+                }
+            }
+            let targets: Vec<&ChannelView> =
+                chs.iter().filter(|c| c.id != id && has_sidechain(c) && !leads_to(chs, c.id, id)).collect();
+            if !targets.is_empty() {
+                items.push(separator());
+                items.push(caption_row("Send as sidechain to"));
+                for to in targets {
+                    let tid = to.id;
+                    let on = feeds(chv, to);
+                    items.push(
+                        menu_item(format!("menu-sc-to-{}", tid.number), format!("{}{}", if on { "✓ " } else { "" }, to.name))
+                            .on_click(cx.listener(move |p, _, _, cx| {
+                                p.menu = None;
+                                p.toggle_sidechain(id, tid, cx);
+                            }))
+                            .into_any_element(),
+                    );
+                }
+            }
+        }
         if master {
             return;
         }
@@ -2377,7 +2741,8 @@ impl Render for MixingPage {
         // the fader's height: what is left under the upper area, the pan, the peak and the name
         let page_h = viewport.height.as_f32() - crate::workspace::CHROME_H - 4.0;
         let pan_h = if analog { desk::KNOB_D + desk::KNOB_LABEL_H + 4.0 } else { 21.0 };
-        let upper = if analog { UPPER_ANALOG } else { UPPER_DIGITAL };
+        self.send_rows = chs.iter().filter(|c| c.kind == ChannelKind::Return).count().div_ceil(2).max(1);
+        let upper = self.upper_h(analog);
         let fixed = 8.0 + upper + pan_h + NAME_H + 12.0 + 9.0 + 2.0 * 6.0;
         let fader_room = page_h - fixed;
         let min_h = fixed + 116.0;
@@ -2537,6 +2902,7 @@ impl Render for MixingPage {
                         .text_color(c(THEME.text))
                         .children(items)
                 }))
+                .children(self.confirm_remove.map(|(id, dont_ask)| self.render_confirm_remove(id, dont_ask, cx)))
                 .children(hint.map(|(text, pos)| {
                     div()
                         .absolute()
