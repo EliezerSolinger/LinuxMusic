@@ -1,0 +1,212 @@
+{
+ "about": "The A/B cases of FreeBoy against the legacy plugin (crates/lm-plugins-sid/ab/legacy-harness.cpp; settings by the attributes the legacy plugin saves: note that its chN so1/so2 attributes are swapped, ch1so2 is channel 1 to SO1). 48 kHz, periods of 256. `until`: the frames compared (the notes' end).",
+ "cases": [
+  {
+   "name": "freeboy-defaults",
+   "plugin": "freeboy",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {},
+   "notes": [
+    {
+     "key": 69,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "freeboy-squares",
+   "plugin": "freeboy",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {
+    "st": 0,
+    "ch1wpd": 0,
+    "ch2wpd": 3,
+    "ch1vol": 12,
+    "ch2vol": 4,
+    "ch1ssl": 3,
+    "ch2vsd": 1,
+    "ch2ssl": 2
+   },
+   "notes": [
+    {
+     "key": 57,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "freeboy-sweep-down",
+   "plugin": "freeboy",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {
+    "st": 2,
+    "sd": 1,
+    "srs": 3,
+    "ch2so1": 0,
+    "ch2so2": 0,
+    "ch3so1": 0,
+    "ch3so2": 0
+   },
+   "notes": [
+    {
+     "key": 76,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "freeboy-wave",
+   "plugin": "freeboy",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {
+    "ch1so1": 0,
+    "ch1so2": 0,
+    "ch2so1": 0,
+    "ch2so2": 0,
+    "ch3vol": 2,
+    "sampleShape": "AAAAAAAAAAAAAIA/AACAPwAAAEAAAABAAABAQAAAQEAAAIBAAACAQAAAoEAAAKBAAADAQAAAwEAAAOBAAADgQAAAAEEAAABBAAAQQQAAEEEAACBBAAAgQQAAMEEAADBBAABAQQAAQEEAAFBBAABQQQAAYEEAAGBBAABwQQAAcEE="
+   },
+   "notes": [
+    {
+     "key": 48,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "freeboy-noise",
+   "plugin": "freeboy",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {
+    "ch1so1": 0,
+    "ch1so2": 0,
+    "ch2so1": 0,
+    "ch2so2": 0,
+    "ch3so1": 0,
+    "ch3so2": 0,
+    "ch4so1": 1,
+    "ch4so2": 1,
+    "ch4vol": 11,
+    "ch4ssl": 1,
+    "srw": 1
+   },
+   "notes": [
+    {
+     "key": 60,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "freeboy-stereo",
+   "plugin": "freeboy",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {
+    "st": 0,
+    "ch1so2": 0,
+    "ch2so1": 0,
+    "ch3so1": 0,
+    "ch4so2": 1,
+    "so1vol": 5,
+    "so2vol": 3,
+    "ch4vol": 6,
+    "sampleShape": "AAAAAAAAgD8AAABAAABAQAAAgEAAAKBAAADAQAAA4EAAAABBAAAQQQAAIEEAADBBAABAQQAAUEEAAGBBAABwQQAAcEEAAGBBAABQQQAAQEEAADBBAAAgQQAAEEEAAABBAADgQAAAwEAAAKBAAACAQAAAQEAAAABAAACAPwAAAAA=",
+    "Treble": 40,
+    "Bass": 120
+   },
+   "notes": [
+    {
+     "key": 64,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "freeboy-chord",
+   "plugin": "freeboy",
+   "frames": 8192,
+   "until": 6400,
+   "settings": {
+    "st": 0,
+    "sampleShape": "AAAAAAAAgD8AAABAAABAQAAAgEAAAKBAAADAQAAA4EAAAABBAAAQQQAAIEEAADBBAABAQQAAUEEAAGBBAABwQQAAcEEAAGBBAABQQQAAQEEAADBBAAAgQQAAEEEAAABBAADgQAAAwEAAAKBAAACAQAAAQEAAAABAAACAPwAAAAA="
+   },
+   "notes": [
+    {
+     "key": 60,
+     "start": 0,
+     "length": 6400
+    },
+    {
+     "key": 67,
+     "start": 512,
+     "length": 5888
+    },
+    {
+     "key": 36,
+     "start": 1536,
+     "length": 4864
+    },
+    {
+     "key": 95,
+     "start": 2560,
+     "length": 3840
+    }
+   ]
+  },
+  {
+   "name": "freeboy-change",
+   "plugin": "freeboy",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {
+    "st": 0
+   },
+   "then": {
+    "at": 2560,
+    "settings": {
+     "ch1wpd": 1,
+     "Treble": -60,
+     "Bass": 30,
+     "so2vol": 2,
+     "ch3so2": 0
+    }
+   },
+   "notes": [
+    {
+     "key": 62,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "freeboy-out-of-range",
+   "plugin": "freeboy",
+   "frames": 4096,
+   "until": 3072,
+   "settings": {
+    "ch4so1": 1,
+    "ch4so2": 1
+   },
+   "notes": [
+    {
+     "key": 10,
+     "start": 0,
+     "length": 3072
+    }
+   ]
+  }
+ ]
+}

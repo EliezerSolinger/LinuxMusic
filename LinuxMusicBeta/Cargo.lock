@@ -3672,6 +3672,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-freeboy"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "lm-base",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+ "serde_json",
+]
+
+[[package]]
 name = "lm-plugins-instruments"
 version = "0.1.0"
 dependencies = [
