@@ -64,7 +64,6 @@ pub struct ScreenCx {
     pub core: Entity<Core>,
     pub workspace: WeakEntity<Workspace>,
     pub screen: Screen,
-    #[expect(dead_code, reason = "read by the screens B, C and D port onto lm-gui next")]
     pub target: Option<NodeId>,
 }
 

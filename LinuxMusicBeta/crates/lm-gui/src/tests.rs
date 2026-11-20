@@ -669,3 +669,192 @@ fn routing(cx: &mut TestAppContext) {
     undo(cx);
     assert_eq!(model::channels(&root(&ws, cx)).len(), n, "one undo step");
 }
+
+// --- the note editors (agent B): the Piano Roll ----------------------------------------------------------------
+
+mod notes_editors {
+    use std::collections::BTreeSet;
+
+    use gpui::{AppContext, WeakEntity};
+
+    use super::*;
+    use crate::screens::ScreenCx;
+    use crate::screens::piano_roll::music::{BEAT, Clip};
+    use crate::screens::piano_roll::{PianoRoll, Tool};
+
+    /// A screen alone in a window, on the fake core, with the registry's keys bound
+    pub(super) fn open_screen<V: gpui::Render + 'static>(
+        cx: &mut TestAppContext,
+        screen: Screen,
+        target: impl FnOnce(&Value) -> Option<NodeId> + 'static,
+        make: fn(ScreenCx, &mut gpui::Window, &mut gpui::Context<V>) -> V,
+    ) -> (Entity<V>, Entity<Core>, &mut VisualTestContext) {
+        let p = port();
+        let prefs = p.preferences().clone();
+        cx.update(|cx| workspace::start(cx, &prefs));
+        let mut p = Some(p);
+        let slot = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let s2 = slot.clone();
+        let (v, vcx) = cx.add_window_view(move |window, cx| {
+            let core = cx.new(|cx| Core::new(p.take().unwrap(), cx));
+            let t = target(core.read(cx).port().root());
+            *s2.borrow_mut() = Some(core.clone());
+            make(ScreenCx { core, workspace: WeakEntity::new_invalid(), screen, target: t }, window, cx)
+        });
+        vcx.run_until_parked();
+        v.update(vcx, |_, cx| cx.notify());
+        vcx.run_until_parked();
+        let core = slot.borrow_mut().take().unwrap();
+        (v, core, vcx)
+    }
+
+    fn clip(pr: &Entity<PianoRoll>, cx: &mut VisualTestContext) -> Clip {
+        pr.read_with(cx, |pr, cx| pr.clip(cx).expect("an item is open"))
+    }
+
+    /// Where a tick and key are on the screen
+    fn at(pr: &Entity<PianoRoll>, cx: &mut VisualTestContext, tick: f64, key: i32) -> Point<Pixels> {
+        let o = bounds(cx, "pr-grid").origin;
+        pr.read_with(cx, |pr, _| o + point(px(pr.tick_to_x(tick) + 1.0), px(pr.key_to_y(key) + pr.key_h / 2.0)))
+    }
+
+    /// A key on screen with no note in the item
+    fn free_key(pr: &Entity<PianoRoll>, cx: &mut VisualTestContext) -> i32 {
+        let c = clip(pr, cx);
+        let g = bounds(cx, "pr-grid");
+        let used: BTreeSet<u8> = c.notes.values().map(|x| x.key).collect();
+        pr.read_with(cx, |pr, _| {
+            (0..128).rev().find(|k| {
+                let y = pr.key_to_y(*k);
+                y > 4.0 && y < g.size.height.as_f32() - 20.0 && !used.contains(&(*k as u8))
+            })
+        })
+        .expect("a free key on screen")
+    }
+
+    fn piano(cx: &mut TestAppContext) -> (Entity<PianoRoll>, Entity<Core>, &mut VisualTestContext) {
+        open_screen(cx, Screen::PianoRoll, crate::screens::piano_roll::music::first_midi, PianoRoll::new)
+    }
+
+    fn count(pr: &Entity<PianoRoll>, cx: &mut VisualTestContext) -> usize {
+        clip(pr, cx).notes.len()
+    }
+
+    #[gpui::test]
+    fn piano_roll_draws_moves_and_undoes(cx: &mut TestAppContext) {
+        let (pr, core, cx) = piano(cx);
+        let before = count(&pr, cx);
+        let key = free_key(&pr, cx);
+        let p = at(&pr, cx, (BEAT * 2) as f64 + 10.0, key);
+        cx.simulate_click(p, Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(count(&pr, cx), before + 1, "a click draws one note");
+        let (n, note) =
+            clip(&pr, cx).notes.iter().find(|(_, x)| x.key as i32 == key).map(|(n, x)| (*n, x.clone())).unwrap();
+        assert_eq!(note.start, BEAT * 2, "on the grid");
+        // dragging its body a beat right moves it: one gesture
+        let from = at(&pr, cx, note.start as f64 + 20.0, key);
+        let dx = pr.read_with(cx, |pr, _| (BEAT as f64 / pr.tpp) as f32);
+        drag_at(cx, from, dx, 0.0, Modifiers::none());
+        assert_eq!(clip(&pr, cx).notes[&n].start, BEAT * 3);
+        settle(cx);
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        assert_eq!(clip(&pr, cx).notes[&n].start, BEAT * 2, "the drag is one undo step");
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        assert_eq!(count(&pr, cx), before, "and the drawing another");
+    }
+
+    #[gpui::test]
+    fn piano_roll_right_drag_erases_in_one_step(cx: &mut TestAppContext) {
+        let (pr, core, cx) = piano(cx);
+        let c = clip(&pr, cx);
+        let (_, first) = c.notes.iter().min_by_key(|(_, x)| (x.start, x.key)).map(|(n, x)| (*n, x.clone())).unwrap();
+        let before = c.notes.len();
+        let row: Vec<i64> = c.notes.values().filter(|x| x.key == first.key).map(|x| x.start).collect();
+        let p = at(&pr, cx, first.start as f64 + 10.0, first.key as i32);
+        let span = pr.read_with(cx, |pr, _| (crate::screens::piano_roll::music::BAR as f64 / pr.tpp) as f32);
+        cx.simulate_mouse_down(p, MouseButton::Right, Modifiers::none());
+        for k in 1..=20 {
+            cx.simulate_mouse_move(point(p.x + px(span * k as f32 / 20.0), p.y), MouseButton::Right, Modifiers::none());
+        }
+        cx.simulate_mouse_up(point(p.x + px(span), p.y), MouseButton::Right, Modifiers::none());
+        cx.run_until_parked();
+        let erased = before - count(&pr, cx);
+        let expected = row
+            .iter()
+            .filter(|s| **s >= first.start && **s < first.start + crate::screens::piano_roll::music::BAR)
+            .count();
+        assert!(erased >= expected.min(1), "{erased} erased along the row");
+        settle(cx);
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        assert_eq!(count(&pr, cx), before, "one undo step");
+    }
+
+    #[gpui::test]
+    fn piano_roll_velocity_area_paints_in_one_step(cx: &mut TestAppContext) {
+        let (pr, core, cx) = piano(cx);
+        let lane = bounds(cx, "pr-lane");
+        let y = lane.origin.y + lane.size.height * 0.75;
+        drag_at(cx, point(lane.origin.x + px(1.), y), (lane.size.width - px(3.)).as_f32(), 0.0, Modifiers::none());
+        let low = clip(&pr, cx).notes.values().filter(|x| (x.velocity - 0.25).abs() < 0.06).count();
+        assert!(low > 0, "the sweep set the velocities");
+        settle(cx);
+        core.update(cx, |core, _| core.port_mut().undo().ok().unwrap());
+        assert_eq!(
+            clip(&pr, cx).notes.values().filter(|x| (x.velocity - 0.25).abs() < 0.06).count(),
+            0,
+            "one undo step"
+        );
+    }
+
+    #[gpui::test]
+    fn piano_roll_shortcuts(cx: &mut TestAppContext) {
+        let (pr, _core, cx) = piano(cx);
+        // focus the editor (a right click on an empty place erases nothing)
+        let key = free_key(&pr, cx);
+        let p = at(&pr, cx, 10.0, key);
+        button_at(cx, p, MouseButton::Right, 1);
+        let keys_before: Vec<u8> = clip(&pr, cx).notes.values().map(|x| x.key).collect();
+        keys(cx, "secondary-a shift-up");
+        let keys_after: Vec<u8> = clip(&pr, cx).notes.values().map(|x| x.key).collect();
+        assert_eq!(keys_before.iter().map(|k| k + 1).collect::<Vec<_>>(), keys_after, "Ctrl+A, Shift+Up");
+        keys(cx, "secondary-up");
+        assert_eq!(clip(&pr, cx).notes.values().next().unwrap().key, keys_before[0] + 13, "Ctrl+Up: an octave");
+        let n = count(&pr, cx);
+        keys(cx, "secondary-c secondary-v");
+        assert_eq!(count(&pr, cx), n * 2, "copy and paste");
+        keys(cx, "delete");
+        assert_eq!(count(&pr, cx), n, "the pasted (selected) notes deleted");
+        keys(cx, "shift-e");
+        assert_eq!(pr.read_with(cx, |pr, _| pr.tool), Tool::Erase);
+        keys(cx, "shift-k");
+        assert_eq!(pr.read_with(cx, |pr, _| pr.tool), Tool::Knife);
+        keys(cx, "escape");
+        assert!(pr.read_with(cx, |pr, _| pr.sel.is_empty()), "Esc selects nothing");
+    }
+
+    #[gpui::test]
+    fn piano_roll_knife_cuts_along_a_line(cx: &mut TestAppContext) {
+        let (pr, _core, cx) = piano(cx);
+        let c = clip(&pr, cx);
+        let x = c.notes.values().min_by_key(|x| x.start).unwrap().clone();
+        pr.update(cx, |pr, cx| {
+            pr.tool = Tool::Knife;
+            cx.notify();
+        });
+        let before = count(&pr, cx);
+        // a vertical line through the middle of the first note
+        let mid = (x.start + x.length / 2) as f64;
+        let top = at(&pr, cx, mid, x.key as i32 + 1);
+        drag_at(cx, top, 0.0, pr.read_with(cx, |pr, _| pr.key_h * 2.0), Modifiers::none());
+        assert!(count(&pr, cx) > before, "the note crossed is cut in two");
+    }
+
+    #[gpui::test]
+    fn piano_roll_quantize_button(cx: &mut TestAppContext) {
+        let (pr, _core, cx) = piano(cx);
+        click(cx, "pr-quantize");
+        let grid = BEAT / 4;
+        assert!(clip(&pr, cx).notes.values().all(|x| x.start % grid == 0), "every start on the 1/16 grid");
+    }
+}

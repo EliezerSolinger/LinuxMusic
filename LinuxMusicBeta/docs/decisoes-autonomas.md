@@ -559,3 +559,29 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
   `ChannelStrip::process_stages` do `lm-dsp` para os trechos entre inserts; o DRIVE do master entra como o ganho do
   potenciômetro antes do estágio.
 - **`lm-headless render` renderiza o arquivo salvo, não o diário**, para ser a referência determinística.
+
+
+## Os editores de notas no `lm-gui`: o que difere do legado (agente B, 20/11)
+
+Regra do usuário (20/11): os designs 04 e 09 não foram aprovados, então o Piano Roll, o editor de automação e o
+editor de passos seguem a tela do legado; esta lista é só o que muda, e por quê.
+
+- **B-PR-1 Sem ícones:** os botões das barras têm texto curto ou um símbolo (▶ ● ■), porque o `lm-gui` ainda não tem
+  o conjunto de ícones do legado. Quando os ícones entrarem, voltam os do legado, no mesmo lugar.
+- **B-PR-2 Loop e cursor do item na régua (P-26):** o legado tocava o clipe em loop inteiro; agora a régua do editor
+  tem o laço do item (botão direito ou Shift na régua mexe nos pontos) e o cursor do item. Espaço toca só o item.
+- **B-PR-3 Fantasma escolhido no editor:** o legado marcava o fantasma pelo menu do clipe na Composição; aqui o combo
+  "Notas fantasmas" da barra lista os itens MIDI e limpa, porque o menu do item é de outra tela. O menu do item pode
+  ganhar a mesma ação depois.
+- **B-PR-4 Faca e Strum no menu de ferramentas:** como no legado (são modos, com Shift+K e Shift+J), e o botão do menu
+  mostra o modo ativo.
+- **B-PR-5 Apagar arrastando vira uma transação ao soltar:** o documento não aceita tirar notas dentro de um gesto;
+  as notas somem da tela durante o arrasto e saem num passo de desfazer ao soltar. Copiar com Shift arrastando também
+  entra ao soltar, com a prévia na tela. Desenhar é um passo e o tamanho arrastado outro, como no legado.
+- **B-PR-6 Pan e curva de afinação por nota são campos do item** (`pan`, `bend`, P-24), não a automação por nota
+  do legado (`detuning`), que abria o editor de automação. Shift+clique no modo afinação não abre outro editor.
+- **B-PR-7 Importar e exportar clipe (`.xpt`)** saiu (P-25): copiar e colar entre projetos substitui.
+- **B-PR-8 A área de velocidade tem altura fixa** (o legado arrastava a borda): a doca de baixo do `lm-gui` tem altura
+  fixa hoje. Volta quando a doca for redimensionável.
+- **B-PR-9 Teclas:** as do legado, pelo registro de ações no contexto `PianoRoll`; Esc também desmarca (o legado só
+  tinha Ctrl+Shift+A), porque Esc já fecha e cancela no resto do programa.

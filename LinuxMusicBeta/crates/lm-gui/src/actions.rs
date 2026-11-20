@@ -50,6 +50,37 @@ actions!(
     ]
 );
 
+actions!(
+    piano_roll,
+    [
+        PrPlay,
+        PrModeDraw,
+        PrModeErase,
+        PrModeSelect,
+        PrModePitch,
+        PrModeKnife,
+        PrModeStrum,
+        PrGlue,
+        PrFill,
+        PrCutOverlaps,
+        PrReverse,
+        PrSelectAll,
+        PrSelectNone,
+        PrCopy,
+        PrCut,
+        PrPaste,
+        PrDelete,
+        PrTransposeUp,
+        PrTransposeDown,
+        PrOctaveUp,
+        PrOctaveDown,
+        PrMoveLeft,
+        PrMoveRight,
+        PrMoveBarLeft,
+        PrMoveBarRight
+    ]
+);
+
 /// One entry of the registry
 #[derive(Clone, Copy, Debug)]
 pub struct ActionDef {
@@ -117,6 +148,94 @@ pub const REGISTRY: &[ActionDef] = &[
     a("desk.fader_up_fine", "mixing::FaderUpFine", "Fader up 0.1 dB", "Desk", &["alt-up"], Some("Mixing")),
     a("desk.fader_down_fine", "mixing::FaderDownFine", "Fader down 0.1 dB", "Desk", &["alt-down"], Some("Mixing")),
     a("desk.add_channel", "mixing::AddChannel", "Add a channel", "Desk", &["shift-insert"], Some("Mixing")),
+    a("notes.play", "piano_roll::PrPlay", "Play/pause current clip", "Notes", &["space"], Some("PianoRoll")),
+    a("notes.mode_draw", "piano_roll::PrModeDraw", "Draw mode", "Notes", &["shift-d"], Some("PianoRoll")),
+    a("notes.mode_erase", "piano_roll::PrModeErase", "Erase mode", "Notes", &["shift-e"], Some("PianoRoll")),
+    a("notes.mode_select", "piano_roll::PrModeSelect", "Select mode", "Notes", &["shift-s"], Some("PianoRoll")),
+    a("notes.mode_pitch", "piano_roll::PrModePitch", "Pitch Bend mode", "Notes", &["shift-t"], Some("PianoRoll")),
+    a("notes.mode_knife", "piano_roll::PrModeKnife", "Knife", "Notes", &["shift-k"], Some("PianoRoll")),
+    a("notes.mode_strum", "piano_roll::PrModeStrum", "Strum", "Notes", &["shift-j"], Some("PianoRoll")),
+    a("notes.glue", "piano_roll::PrGlue", "Glue", "Notes", &["shift-g"], Some("PianoRoll")),
+    a("notes.fill", "piano_roll::PrFill", "Fill", "Notes", &["shift-f"], Some("PianoRoll")),
+    a("notes.cut_overlaps", "piano_roll::PrCutOverlaps", "Cut overlaps", "Notes", &["shift-c"], Some("PianoRoll")),
+    a("notes.reverse", "piano_roll::PrReverse", "Reverse Notes", "Notes", &["shift-r"], Some("PianoRoll")),
+    a("notes.select_all", "piano_roll::PrSelectAll", "Select all notes", "Notes", &["secondary-a"], Some("PianoRoll")),
+    a(
+        "notes.select_none",
+        "piano_roll::PrSelectNone",
+        "Select no notes",
+        "Notes",
+        &["secondary-shift-a", "escape"],
+        Some("PianoRoll"),
+    ),
+    a("notes.copy", "piano_roll::PrCopy", "Copy", "Notes", &["secondary-c"], Some("PianoRoll")),
+    a("notes.cut", "piano_roll::PrCut", "Cut", "Notes", &["secondary-x"], Some("PianoRoll")),
+    a("notes.paste", "piano_roll::PrPaste", "Paste", "Notes", &["secondary-v"], Some("PianoRoll")),
+    a("notes.delete", "piano_roll::PrDelete", "Delete notes", "Notes", &["delete", "backspace"], Some("PianoRoll")),
+    a(
+        "notes.transpose_up",
+        "piano_roll::PrTransposeUp",
+        "Transpose a semitone up",
+        "Notes",
+        &["shift-up"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.transpose_down",
+        "piano_roll::PrTransposeDown",
+        "Transpose a semitone down",
+        "Notes",
+        &["shift-down"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.octave_up",
+        "piano_roll::PrOctaveUp",
+        "Transpose an octave up",
+        "Notes",
+        &["secondary-up"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.octave_down",
+        "piano_roll::PrOctaveDown",
+        "Transpose an octave down",
+        "Notes",
+        &["secondary-down"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.move_left",
+        "piano_roll::PrMoveLeft",
+        "Move the notes a step left",
+        "Notes",
+        &["shift-left"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.move_right",
+        "piano_roll::PrMoveRight",
+        "Move the notes a step right",
+        "Notes",
+        &["shift-right"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.move_bar_left",
+        "piano_roll::PrMoveBarLeft",
+        "Move the notes a bar left",
+        "Notes",
+        &["secondary-left"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.move_bar_right",
+        "piano_roll::PrMoveBarRight",
+        "Move the notes a bar right",
+        "Notes",
+        &["secondary-right"],
+        Some("PianoRoll"),
+    ),
 ];
 
 /// `secondary` written out for this platform: Cmd on macOS, Ctrl elsewhere
