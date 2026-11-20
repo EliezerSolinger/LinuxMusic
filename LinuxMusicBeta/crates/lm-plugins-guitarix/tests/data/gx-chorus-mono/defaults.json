@@ -1,0 +1,12 @@
+{
+  "plugin:gx-chorus-mono": {
+    "defaults": {
+      "params": {
+        "chorus_mono_freq": 2.0,
+        "chorus_mono_level": 0.5,
+        "chorus_mono_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

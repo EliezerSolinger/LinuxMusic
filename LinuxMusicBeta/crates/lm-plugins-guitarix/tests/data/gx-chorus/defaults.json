@@ -1,0 +1,13 @@
+{
+  "plugin:gx-chorus": {
+    "defaults": {
+      "params": {
+        "chorus_delay": 0.019999999552965164,
+        "chorus_depth": 0.019999999552965164,
+        "chorus_freq": 3.0,
+        "chorus_level": 0.5
+      }
+    },
+    "version": 1
+  }
+}

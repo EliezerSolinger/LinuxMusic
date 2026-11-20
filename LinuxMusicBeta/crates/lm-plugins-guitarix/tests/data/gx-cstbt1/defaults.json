@@ -1,0 +1,13 @@
+{
+  "plugin:gx-cstbt1": {
+    "defaults": {
+      "params": {
+        "cstbt1_Attack": 0.5,
+        "cstbt1_Level": 0.5,
+        "cstbt1_Tone": 0.5,
+        "cstbt1_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

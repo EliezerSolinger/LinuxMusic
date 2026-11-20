@@ -1,0 +1,11 @@
+{
+  "plugin:gx-buffb": {
+    "defaults": {
+      "params": {
+        "buffb_Intensity": 0.5,
+        "buffb_Volume": 0.5
+      }
+    },
+    "version": 1
+  }
+}

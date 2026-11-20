@@ -1,0 +1,43 @@
+{
+  "plugin:gx-mbcs": {
+    "defaults": {
+      "mbcs_Mode1": "Compress",
+      "mbcs_Mode2": "Compress",
+      "mbcs_Mode3": "Compress",
+      "mbcs_Mode4": "Compress",
+      "mbcs_Mode5": "Compress",
+      "params": {
+        "mbcs_Attack1": 0.012000000104308128,
+        "mbcs_Attack2": 0.012000000104308128,
+        "mbcs_Attack3": 0.012000000104308128,
+        "mbcs_Attack4": 0.012000000104308128,
+        "mbcs_Attack5": 0.012000000104308128,
+        "mbcs_Makeup1": 13.0,
+        "mbcs_Makeup2": 10.0,
+        "mbcs_Makeup3": 4.0,
+        "mbcs_Makeup4": 8.0,
+        "mbcs_Makeup5": 11.0,
+        "mbcs_Makeup_Threshold1": 2.0,
+        "mbcs_Makeup_Threshold2": 2.0,
+        "mbcs_Makeup_Threshold3": 2.0,
+        "mbcs_Makeup_Threshold4": 2.0,
+        "mbcs_Makeup_Threshold5": 2.0,
+        "mbcs_Ratio1": 2.0,
+        "mbcs_Ratio2": 2.0,
+        "mbcs_Ratio3": 2.0,
+        "mbcs_Ratio4": 2.0,
+        "mbcs_Ratio5": 2.0,
+        "mbcs_Release1": 1.25,
+        "mbcs_Release2": 1.25,
+        "mbcs_Release3": 1.25,
+        "mbcs_Release4": 1.25,
+        "mbcs_Release5": 1.25,
+        "mbcs_crossover_b1_b2": 80.0,
+        "mbcs_crossover_b2_b3": 210.0,
+        "mbcs_crossover_b3_b4": 1700.0,
+        "mbcs_crossover_b4_b5": 5000.0
+      }
+    },
+    "version": 1
+  }
+}

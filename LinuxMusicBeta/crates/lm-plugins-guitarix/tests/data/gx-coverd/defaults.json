@@ -1,0 +1,13 @@
+{
+  "plugin:gx-coverd": {
+    "defaults": {
+      "params": {
+        "coverd_Bass": 0.5,
+        "coverd_Treble": 0.5,
+        "coverd_Volume": 0.5,
+        "coverd_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

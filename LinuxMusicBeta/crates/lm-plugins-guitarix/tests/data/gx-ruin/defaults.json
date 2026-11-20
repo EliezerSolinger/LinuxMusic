@@ -1,0 +1,12 @@
+{
+  "plugin:gx-ruin": {
+    "defaults": {
+      "params": {
+        "ruin_Intensity": 0.5,
+        "ruin_Level": 0.5,
+        "ruin_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

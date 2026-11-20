@@ -1,0 +1,10 @@
+{
+  "plugin:gx-scream": {
+    "defaults": {
+      "params": {
+        "scream_Scream": 0.5
+      }
+    },
+    "version": 1
+  }
+}

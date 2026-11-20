@@ -1,0 +1,11 @@
+{
+  "plugin:gx-foxeylady": {
+    "defaults": {
+      "params": {
+        "foxeylady_Fuzz": 0.5,
+        "foxeylady_Level": 0.5
+      }
+    },
+    "version": 1
+  }
+}

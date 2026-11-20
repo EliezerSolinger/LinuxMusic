@@ -1,0 +1,11 @@
+{
+  "plugin:gx-muff": {
+    "defaults": {
+      "params": {
+        "muff_Level": 0.5,
+        "muff_Tone": 0.5
+      }
+    },
+    "version": 1
+  }
+}

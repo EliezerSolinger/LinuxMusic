@@ -1,0 +1,4863 @@
+{
+ "cases": [
+  {
+   "name": "gx-gain",
+   "unit": "gain",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "gain.gain": -13.33
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "gain.gain": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-low-highpass",
+   "unit": "low_highpass",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "low_high_pass.lhc.high_freq": 7333.0,
+    "low_high_pass.lhc.low_freq": 420.0,
+    "low_high_pass.lhc.on_off": 1.0,
+    "low_high_pass.lhp.high_freq": 2433.0,
+    "low_high_pass.lhp.low_freq": 7333.0,
+    "low_high_pass.lhp.on_off": 1.0
+   }
+  },
+  {
+   "name": "gx-highbooster",
+   "unit": "highbooster",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "highbooster.Level": 7.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "highbooster.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-eqs",
+   "unit": "eqs",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "eqs.Qs125": 67.0,
+    "eqs.Qs16k": 67.0,
+    "eqs.Qs1k": 67.0,
+    "eqs.Qs250": 67.0,
+    "eqs.Qs2k": 67.0,
+    "eqs.Qs31_25": 67.0,
+    "eqs.Qs4k": 67.0,
+    "eqs.Qs500": 67.0,
+    "eqs.Qs62_5": 67.0,
+    "eqs.Qs8k": 67.0,
+    "eqs.freq125": 6750.0,
+    "eqs.freq16k": 10673.0,
+    "eqs.freq1k": 7333.0,
+    "eqs.freq250": 6833.0,
+    "eqs.freq2k": 8000.0,
+    "eqs.freq31_25": 6687.25,
+    "eqs.freq4k": 9333.0,
+    "eqs.freq500": 7000.0,
+    "eqs.freq62_5": 6708.5,
+    "eqs.freq8k": 12000.0,
+    "eqs.fs125": -13.33,
+    "eqs.fs16k": -13.33,
+    "eqs.fs1k": -13.33,
+    "eqs.fs250": -13.33,
+    "eqs.fs2k": -13.33,
+    "eqs.fs31_25": -13.33,
+    "eqs.fs4k": -13.33,
+    "eqs.fs500": -13.33,
+    "eqs.fs62_5": -13.33,
+    "eqs.fs8k": -13.33
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "eqs.fs125": 0.0,
+     "eqs.fs16k": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-ampstack",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "noise_gate.on_off": 1.0,
+    "shaper.on_off": 1.0,
+    "amp.clip.on_off": 1.0,
+    "amp.bass_boost.on_off": 0.0,
+    "amp.on_off": 1.0,
+    "con.on_off": 0.0,
+    "antyfizz.on_off": 1.0,
+    "noise_gate.threshold": 0.1147,
+    "shaper.sharper": 4.0,
+    "tube.select": 1.0,
+    "gxdistortion.drive": 0.5667,
+    "gxdistortion.wet_dry": 67.0,
+    "amp.highgain": 1.0,
+    "amp2.stage1.Pregain": 2.667,
+    "amp2.stage2.gain1": 2.667,
+    "amp.fuzz": 0.6633,
+    "bassbooster.Level": 13.33,
+    "amp.out_amp": -6.667,
+    "con.Level": 2.333,
+    "amp.feed_on_off": 1.0,
+    "amp.wet_dry": -0.3333,
+    "amp.out_master": -16.67,
+    "amp.balance": -0.3333
+   },
+   "then": {
+    "at": 512,
+    "settings": {
+     "noise_gate.threshold": 0.017,
+     "gxdistortion.drive": 0.35
+    }
+   }
+  },
+  {
+   "name": "gx-ampstack-12ax7-0",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 0.0
+   }
+  },
+  {
+   "name": "gx-ampstack-12au7-1",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 1.0
+   }
+  },
+  {
+   "name": "gx-ampstack-12at7-2",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 2.0
+   }
+  },
+  {
+   "name": "gx-ampstack-6dj8-3",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 3.0
+   }
+  },
+  {
+   "name": "gx-ampstack-6c16-4",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 4.0
+   }
+  },
+  {
+   "name": "gx-ampstack-6v6-5",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 5.0
+   }
+  },
+  {
+   "name": "gx-ampstack-12ax7-feedback-6",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 6.0
+   }
+  },
+  {
+   "name": "gx-ampstack-12au7-feedback-7",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 7.0
+   }
+  },
+  {
+   "name": "gx-ampstack-12at7-feedback-8",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 8.0
+   }
+  },
+  {
+   "name": "gx-ampstack-6dj8-feedback-9",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 9.0
+   }
+  },
+  {
+   "name": "gx-ampstack-pre-12ax7-master-6v6-10",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 10.0
+   }
+  },
+  {
+   "name": "gx-ampstack-pre-12au7-master-6v6-11",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 11.0
+   }
+  },
+  {
+   "name": "gx-ampstack-pre-12at7-master-6v6-12",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 12.0
+   }
+  },
+  {
+   "name": "gx-ampstack-pre-6dj8-master-6v6-13",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 13.0
+   }
+  },
+  {
+   "name": "gx-ampstack-pre-12ax7-push-pull-6v6-14",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 14.0
+   }
+  },
+  {
+   "name": "gx-ampstack-pre-12au7-push-pull-6v6-15",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 15.0
+   }
+  },
+  {
+   "name": "gx-ampstack-pre-12at7-push-pull-6v6-16",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 16.0
+   }
+  },
+  {
+   "name": "gx-ampstack-pre-6dj8-push-pull-6v6-17",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 17.0
+   }
+  },
+  {
+   "name": "gx-ampstack-noamp-18",
+   "unit": "ampstack",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tube.select": 18.0
+   }
+  },
+  {
+   "name": "gx-crybaby",
+   "unit": "crybaby",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "crybaby.autowah": 1.0,
+    "crybaby.level": 0.4,
+    "crybaby.wah": 0.3333,
+    "crybaby.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "crybaby.level": 0.1,
+     "crybaby.wah": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-crybaby-manual-0",
+   "unit": "crybaby",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "crybaby.autowah": 0.0
+   }
+  },
+  {
+   "name": "gx-crybaby-auto-1",
+   "unit": "crybaby",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "crybaby.autowah": 1.0
+   }
+  },
+  {
+   "name": "gx-poweramp",
+   "unit": "poweramp",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "poweramp.mode": 1.0,
+    "poweramp.Gain": -10.0,
+    "poweramp.Pregain": -10.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "poweramp.Gain": 0.0,
+     "poweramp.Pregain": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-poweramp-camp-0",
+   "unit": "poweramp",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "poweramp.mode": 0.0
+   }
+  },
+  {
+   "name": "gx-poweramp-epiphone-1",
+   "unit": "poweramp",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "poweramp.mode": 1.0
+   }
+  },
+  {
+   "name": "gx-poweramp-princeton-2",
+   "unit": "poweramp",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "poweramp.mode": 2.0
+   }
+  },
+  {
+   "name": "gx-poweramp-orangedarkterror-3",
+   "unit": "poweramp",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "poweramp.mode": 3.0
+   }
+  },
+  {
+   "name": "gx-poweramp-plexiel34-4",
+   "unit": "poweramp",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "poweramp.mode": 4.0
+   }
+  },
+  {
+   "name": "gx-poweramp-supersonic-5",
+   "unit": "poweramp",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "poweramp.mode": 5.0
+   }
+  },
+  {
+   "name": "gx-wah",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 1.0,
+    "wah.Wah": 0.3333,
+    "wah.freq": 136.0,
+    "wah.mode": 1.0,
+    "wah.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "wah.Wah": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-wah-colwah-0",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 0.0
+   }
+  },
+  {
+   "name": "gx-wah-dallaswah-1",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 1.0
+   }
+  },
+  {
+   "name": "gx-wah-foxwah-2",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 2.0
+   }
+  },
+  {
+   "name": "gx-wah-jenwah-3",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 3.0
+   }
+  },
+  {
+   "name": "gx-wah-maestrowah-4",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 4.0
+   }
+  },
+  {
+   "name": "gx-wah-selwah-5",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 5.0
+   }
+  },
+  {
+   "name": "gx-wah-voxwah-6",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 6.0
+   }
+  },
+  {
+   "name": "gx-wah-rolwah-7",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 7.0
+   }
+  },
+  {
+   "name": "gx-wah-colbwah-8",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 8.0
+   }
+  },
+  {
+   "name": "gx-wah-jenbasswah-9",
+   "unit": "wah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "wah.select": 9.0
+   }
+  },
+  {
+   "name": "gx-smbpitchshift",
+   "unit": "smbPitchShift",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "smbPitchShift.semitone": -4.0,
+    "smbPitchShift.octave": 1.0,
+    "smbPitchShift.l": 1.0,
+    "smbPitchShift.latency": 1.0,
+    "smbPitchShift.wet": 33.0,
+    "smbPitchShift.dry": 33.0,
+    "smbPitchShift.a": 0.6667,
+    "smbPitchShift.b": 0.6667,
+    "smbPitchShift.c": 0.6667,
+    "smbPitchShift.d": 0.6667
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "smbPitchShift.semitone": 0.0,
+     "smbPitchShift.a": 1.0
+    }
+   }
+  },
+  {
+   "name": "gx-gx-distortion",
+   "unit": "gx_distortion",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "gx_distortion.drive": 0.4267,
+    "gx_distortion.gain": -2.0,
+    "gx_distortion.high_drive": 0.6667,
+    "gx_distortion.high_gain": 3.333,
+    "gx_distortion.level": 0.1667,
+    "gx_distortion.low_drive": 0.6667,
+    "gx_distortion.low_gain": 3.333,
+    "gx_distortion.middle_h_drive": 0.6667,
+    "gx_distortion.middle_h_gain": 3.333,
+    "gx_distortion.middle_l_drive": 0.6667,
+    "gx_distortion.middle_l_gain": 3.333,
+    "gx_distortion.resonator.on_off": 1.0,
+    "gx_distortion.split_high_freq": 4833.0,
+    "gx_distortion.split_low_freq": 367.0,
+    "gx_distortion.split_middle_freq": 850.0,
+    "gx_distortion.trigger": 0.4133,
+    "gx_distortion.vibrato": 0.6667,
+    "gx_distortion.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "gx_distortion.drive": 0.64,
+     "gx_distortion.gain": 2.0
+    }
+   }
+  },
+  {
+   "name": "gx-bitdowner",
+   "unit": "bitdowner",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "bitdowner.bit_down": 11.0,
+    "bitdowner.downsampling": 67.0,
+    "bitdowner.input_gain": -13.33,
+    "bitdowner.volume": -30.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "bitdowner.bit_down": 16.0,
+     "bitdowner.input_gain": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-thick-distortion",
+   "unit": "thick_distortion",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "thick_distortion.input_gain": 40.0,
+    "thick_distortion.thickness": 0.5333,
+    "thick_distortion.volume": -30.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "thick_distortion.input_gain": 0.0,
+     "thick_distortion.thickness": 0.8
+    }
+   }
+  },
+  {
+   "name": "gx-ts9sim",
+   "unit": "ts9sim",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "ts9sim.drive": 0.3333,
+    "ts9sim.level": -9.333,
+    "ts9sim.tone": 600.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "ts9sim.drive": 0.5,
+     "ts9sim.level": -16.0
+    }
+   }
+  },
+  {
+   "name": "gx-aclipper",
+   "unit": "aclipper",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "aclipper.drive": 0.3333,
+    "aclipper.level": -8.0,
+    "aclipper.tone": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "aclipper.drive": 0.5,
+     "aclipper.level": -2.0
+    }
+   }
+  },
+  {
+   "name": "gx-mxrdis",
+   "unit": "mxrdis",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "mxrdis.Volume": 0.3333,
+    "mxrdis.drive": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "mxrdis.Volume": 0.5,
+     "mxrdis.drive": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-bossds1",
+   "unit": "bossds1",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "bossds1.Level": -4.667,
+    "bossds1.Tone": 0.4667,
+    "bossds1.drive": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "bossds1.Level": 3.0,
+     "bossds1.Tone": 0.7
+    }
+   }
+  },
+  {
+   "name": "gx-bmp",
+   "unit": "bmp",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "bmp.Sustain": 0.3333,
+    "bmp.Tone": 0.3333,
+    "bmp.Volume": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "bmp.Sustain": 0.5,
+     "bmp.Tone": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-ir",
+   "unit": "IR",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "IR.auto_freq": 1.0,
+    "IR.bandwidth": 6733.0,
+    "IR.freq": 4293.0,
+    "IR.peak": 4.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "IR.peak": 1.0
+    }
+   }
+  },
+  {
+   "name": "gx-compressor",
+   "unit": "compressor",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "compressor.attack": 0.3347,
+    "compressor.knee": 8.667,
+    "compressor.ratio": 8.0,
+    "compressor.release": 3.667,
+    "compressor.threshold": -45.33
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "compressor.attack": 0.002,
+     "compressor.knee": 3.0
+    }
+   }
+  },
+  {
+   "name": "gx-expander",
+   "unit": "expander",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "expander.attack": 0.334,
+    "expander.knee": 8.667,
+    "expander.ratio": 8.0,
+    "expander.release": 3.4,
+    "expander.threshold": -58.67
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "expander.attack": 0.001,
+     "expander.knee": 3.0
+    }
+   }
+  },
+  {
+   "name": "gx-overdrive",
+   "unit": "overdrive",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "overdrive.drive": 7.333,
+    "overdrive.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "overdrive.drive": 1.0
+    }
+   }
+  },
+  {
+   "name": "gx-echo",
+   "unit": "echo",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "echo.bpm": 200.0,
+    "echo.percent": 33.33
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "echo.percent": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-delay",
+   "unit": "delay",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "delay.bpm": 200.0,
+    "delay.gain": -6.667
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "delay.gain": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-freeverb",
+   "unit": "freeverb",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "noise",
+    "seed": 7,
+    "amp": 0.2,
+    "right": {
+     "kind": "noise",
+     "seed": 11,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "freeverb.RoomSize": 0.3333,
+    "freeverb.damp": 0.3333,
+    "freeverb.wet_dry": 33.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "freeverb.RoomSize": 0.5,
+     "freeverb.damp": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-biquad",
+   "unit": "biquad",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "biquad.Freq": 1800.0
+   }
+  },
+  {
+   "name": "gx-tremolo",
+   "unit": "tremolo",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tremolo.SINE": 1.0,
+    "tremolo.depth": 0.3333,
+    "tremolo.freq": 20.0,
+    "tremolo.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "tremolo.depth": 0.5,
+     "tremolo.freq": 5.0
+    }
+   }
+  },
+  {
+   "name": "gx-phaser-mono",
+   "unit": "phaser_mono",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "phaser_mono.level": -20.0,
+    "phaser_mono.lfobpm": 140.0,
+    "phaser_mono.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "phaser_mono.level": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-chorus-mono",
+   "unit": "chorus_mono",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "chorus_mono.freq": 4.667,
+    "chorus_mono.level": 0.3333,
+    "chorus_mono.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "chorus_mono.freq": 2.0,
+     "chorus_mono.level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-flanger-mono",
+   "unit": "flanger_mono",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "flanger_mono.level": -20.0,
+    "flanger_mono.lfobpm": 136.0,
+    "flanger_mono.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "flanger_mono.level": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-flanger-mono-gx",
+   "unit": "flanger_mono_gx",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "flanger_mono_gx.depth": 2.0,
+    "flanger_mono_gx.feedback": -0.1413,
+    "flanger_mono_gx.freq": 3.467,
+    "flanger_mono_gx.mix": -0.3333,
+    "flanger_mono_gx.wet": 67.0,
+    "flanger_mono_gx.width": 3.333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "flanger_mono_gx.depth": 0.5,
+     "flanger_mono_gx.feedback": -0.707
+    }
+   }
+  },
+  {
+   "name": "gx-feedback",
+   "unit": "feedback",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "feedback.feedback": -0.3333,
+    "feedback.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "feedback.feedback": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-eq",
+   "unit": "eq",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "eq.bandwidth1": 6694.0,
+    "eq.bandwidth2": 6813.0,
+    "eq.bandwidth3": 7253.0,
+    "eq.bandwidth4": 7840.0,
+    "eq.level1": -16.67,
+    "eq.level2": -16.67,
+    "eq.level3": -16.67,
+    "eq.level4": -16.67,
+    "eq.peak1": 7407.0,
+    "eq.peak2": 7627.0,
+    "eq.peak3": 8507.0,
+    "eq.peak4": 9680.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "eq.level1": 0.0,
+     "eq.level2": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-dide",
+   "unit": "dide",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "dide.Freeze": 1.0,
+    "dide.bpm": 200.0,
+    "dide.feedback": 67.0,
+    "dide.gain": 67.0,
+    "dide.highpass": 6747.0,
+    "dide.howpass": 8007.0,
+    "dide.level": 67.0,
+    "dide.mode": 1.0,
+    "dide.notes": 5.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 1.0,
+    "amp.tonestack.Bass": 0.3333,
+    "amp.tonestack.Middle": 0.3333,
+    "amp.tonestack.Treble": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "amp.tonestack.Bass": 0.5,
+     "amp.tonestack.Middle": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-default-0",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 0.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-bassman-1",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 1.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-twin-reverb-2",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 2.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-princeton-3",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 3.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-jcm-800-4",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 4.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-jcm-2000-5",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 5.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-m-lead-6",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 6.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-m2199-7",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 7.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-ac-30-8",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 8.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-sol-100-9",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 9.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-mesa-boogie-10",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 10.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-jtm-45-11",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 11.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-ac-15-12",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 12.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-peavey-13",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 13.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-ibanez-14",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 14.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-roland-15",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 15.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-ampeg-16",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 16.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-rev-rocket-17",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 17.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-mig-100-h-18",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 18.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-triple-giant-19",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 19.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-trio-preamp-20",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 20.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-hughes-kettner-21",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 21.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-junior-22",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 22.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-fender-23",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 23.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-deville-24",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 24.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-gibsen-25",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 25.0
+   }
+  },
+  {
+   "name": "gx-amp-tonestack-engl-26",
+   "unit": "amp.tonestack",
+   "rate": 48000,
+   "block": 256,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "amp.tonestack.select": 26.0
+   }
+  },
+  {
+   "name": "gx-cab",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 1.0,
+    "cab.Level": 2.333,
+    "cab.bass": -3.333,
+    "cab.treble": -3.333
+   },
+   "then": {
+    "at": 512,
+    "settings": {
+     "cab.Level": 1.0,
+     "cab.bass": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-cab-4x12-0",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 0.0
+   }
+  },
+  {
+   "name": "gx-cab-2x12-1",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 1.0
+   }
+  },
+  {
+   "name": "gx-cab-1x12-2",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 2.0
+   }
+  },
+  {
+   "name": "gx-cab-4x10-3",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 3.0
+   }
+  },
+  {
+   "name": "gx-cab-2x10-4",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 4.0
+   }
+  },
+  {
+   "name": "gx-cab-highgain-5",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 5.0
+   }
+  },
+  {
+   "name": "gx-cab-twin-6",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 6.0
+   }
+  },
+  {
+   "name": "gx-cab-bassman-7",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 7.0
+   }
+  },
+  {
+   "name": "gx-cab-marshall-8",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 8.0
+   }
+  },
+  {
+   "name": "gx-cab-ac-30-9",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 9.0
+   }
+  },
+  {
+   "name": "gx-cab-princeton-10",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 10.0
+   }
+  },
+  {
+   "name": "gx-cab-a2-11",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 11.0
+   }
+  },
+  {
+   "name": "gx-cab-1x15-12",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 12.0
+   }
+  },
+  {
+   "name": "gx-cab-mesa-boogie-13",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 13.0
+   }
+  },
+  {
+   "name": "gx-cab-briliant-14",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 14.0
+   }
+  },
+  {
+   "name": "gx-cab-vitalize-15",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 15.0
+   }
+  },
+  {
+   "name": "gx-cab-charisma-16",
+   "unit": "cab",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cab.select": 16.0
+   }
+  },
+  {
+   "name": "gx-pre",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 1.0,
+    "pre.Level": 1.367,
+    "pre.bass": -3.333,
+    "pre.treble": -3.333
+   },
+   "then": {
+    "at": 512,
+    "settings": {
+     "pre.Level": 1.0,
+     "pre.bass": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-pre-ac30-0",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 0.0
+   }
+  },
+  {
+   "name": "gx-pre-bassman-1",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 1.0
+   }
+  },
+  {
+   "name": "gx-pre-tube-2",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 2.0
+   }
+  },
+  {
+   "name": "gx-pre-fender-3",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 3.0
+   }
+  },
+  {
+   "name": "gx-pre-jcm800-4",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 4.0
+   }
+  },
+  {
+   "name": "gx-pre-jtm45-5",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 5.0
+   }
+  },
+  {
+   "name": "gx-pre-mesa-boogie-6",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 6.0
+   }
+  },
+  {
+   "name": "gx-pre-boutique-7",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 7.0
+   }
+  },
+  {
+   "name": "gx-pre-ampeg-8",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 8.0
+   }
+  },
+  {
+   "name": "gx-pre-rectifier-9",
+   "unit": "pre",
+   "rate": 48000,
+   "block": 64,
+   "frames": 2048,
+   "signal": {
+    "kind": "sine",
+    "hz": 165,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 220,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "pre.select": 9.0
+   }
+  },
+  {
+   "name": "gx-abgate",
+   "unit": "abgate",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "abgate.threshold": -43.0,
+    "abgate.attack": 169.3,
+    "abgate.hold": 1003.0,
+    "abgate.decay": 1367.0,
+    "abgate.gaterange": -50.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "abgate.attack": 4.0,
+     "abgate.hold": 5.0
+    }
+   }
+  },
+  {
+   "name": "gx-ring-modulator",
+   "unit": "ring_modulator",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "ring_modulator.dry/wet": 0.3333,
+    "ring_modulator.freq": 693.3
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "ring_modulator.dry/wet": 0.5,
+     "ring_modulator.freq": 240.0
+    }
+   }
+  },
+  {
+   "name": "gx-graphiceq",
+   "unit": "graphiceq",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "graphiceq.g10": -10.0,
+    "graphiceq.g11": -10.0,
+    "graphiceq.g1": -10.0,
+    "graphiceq.g2": -10.0,
+    "graphiceq.g3": -10.0,
+    "graphiceq.g4": -10.0,
+    "graphiceq.g5": -10.0,
+    "graphiceq.g6": -10.0,
+    "graphiceq.g7": -10.0,
+    "graphiceq.g8": -10.0,
+    "graphiceq.g9": -10.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "graphiceq.g10": 0.0,
+     "graphiceq.g11": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-univibe-mono",
+   "unit": "univibe_mono",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "univibe_mono.freq": 6.267,
+    "univibe_mono.width": 0.3333,
+    "univibe_mono.depth": 0.58,
+    "univibe_mono.wet_dry": 0.6667,
+    "univibe_mono.fb": -0.06667
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "univibe_mono.freq": 4.4,
+     "univibe_mono.width": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-mbc",
+   "unit": "mbc",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "mbc.Mode1": 2.0,
+    "mbc.Mode2": 2.0,
+    "mbc.Mode3": 2.0,
+    "mbc.Mode4": 2.0,
+    "mbc.Mode5": 2.0,
+    "mbc.Makeup1": -8.0,
+    "mbc.Makeup2": -10.0,
+    "mbc.Makeup3": -14.0,
+    "mbc.Makeup4": -11.33,
+    "mbc.Makeup5": -9.333,
+    "mbc.Makeup-Threshold1": 4.667,
+    "mbc.Makeup-Threshold2": 4.667,
+    "mbc.Makeup-Threshold3": 4.667,
+    "mbc.Makeup-Threshold4": 4.667,
+    "mbc.Makeup-Threshold5": 4.667,
+    "mbc.Ratio1": 34.67,
+    "mbc.Ratio2": 34.67,
+    "mbc.Ratio3": 34.67,
+    "mbc.Ratio4": 34.67,
+    "mbc.Ratio5": 34.67,
+    "mbc.Attack1": 0.3413,
+    "mbc.Attack2": 0.3413,
+    "mbc.Attack3": 0.3413,
+    "mbc.Attack4": 0.3413,
+    "mbc.Attack5": 0.3413,
+    "mbc.Release1": 4.167,
+    "mbc.Release2": 4.167,
+    "mbc.Release3": 4.167,
+    "mbc.Release4": 4.167,
+    "mbc.Release5": 4.167,
+    "mbc.crossover_b1_b2": 6720.0,
+    "mbc.crossover_b2_b3": 6807.0,
+    "mbc.crossover_b3_b4": 7800.0,
+    "mbc.crossover_b4_b5": 10000.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "mbc.Makeup1": 13.0,
+     "mbc.Makeup2": 10.0
+    }
+   }
+  },
+  {
+   "name": "gx-mbd",
+   "unit": "mbd",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "mbd.Drive1": 0.3333,
+    "mbd.Drive2": 0.3333,
+    "mbd.Drive3": 0.3333,
+    "mbd.Drive4": 0.3333,
+    "mbd.Drive5": 0.3333,
+    "mbd.Gain": -13.33,
+    "mbd.Gain1": -8.333,
+    "mbd.Gain2": -8.333,
+    "mbd.Gain3": -8.333,
+    "mbd.Gain4": -8.333,
+    "mbd.Gain5": -8.333,
+    "mbd.Offset1": 0.1667,
+    "mbd.Offset2": 0.1667,
+    "mbd.Offset3": 0.1667,
+    "mbd.Offset4": 0.1667,
+    "mbd.Offset5": 0.1667,
+    "mbd.crossover_b1_b2": 6720.0,
+    "mbd.crossover_b2_b3": 6807.0,
+    "mbd.crossover_b3_b4": 7800.0,
+    "mbd.crossover_b4_b5": 10000.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "mbd.Drive1": 0.0,
+     "mbd.Drive2": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-mbe",
+   "unit": "mbe",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "mbe.crossover_b1_b2": 6720.0,
+    "mbe.crossover_b2_b3": 6807.0,
+    "mbe.crossover_b3_b4": 7800.0,
+    "mbe.crossover_b4_b5": 10000.0,
+    "mbe.percent1": 40.0,
+    "mbe.percent2": 53.33,
+    "mbe.percent3": 63.33,
+    "mbe.percent4": 46.67,
+    "mbe.percent5": 33.33,
+    "mbe.time1": 140.0,
+    "mbe.time2": 160.0,
+    "mbe.time3": 200.0,
+    "mbe.time4": 220.0,
+    "mbe.time5": 168.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "mbe.percent1": 10.0,
+     "mbe.percent2": 30.0
+    }
+   }
+  },
+  {
+   "name": "gx-mbdel",
+   "unit": "mbdel",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "mbdel.crossover_b1_b2": 6720.0,
+    "mbdel.crossover_b2_b3": 6807.0,
+    "mbdel.crossover_b3_b4": 7800.0,
+    "mbdel.crossover_b4_b5": 10000.0,
+    "mbdel.delay1": 140.0,
+    "mbdel.delay2": 160.0,
+    "mbdel.delay3": 180.0,
+    "mbdel.delay4": 200.0,
+    "mbdel.delay5": 220.0,
+    "mbdel.gain1": 0.0,
+    "mbdel.gain2": 3.333,
+    "mbdel.gain3": 5.333,
+    "mbdel.gain4": -6.667,
+    "mbdel.gain5": 0.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "mbdel.gain1": -10.0,
+     "mbdel.gain2": -5.0
+    }
+   }
+  },
+  {
+   "name": "gx-mbclip",
+   "unit": "mbclip",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "mbclip.Drive1": 0.5533,
+    "mbclip.Drive2": 0.3333,
+    "mbclip.Drive3": 0.4333,
+    "mbclip.Drive4": 0.5533,
+    "mbclip.Drive5": 0.4,
+    "mbclip.Gain": -13.33,
+    "mbclip.Gain1": -13.33,
+    "mbclip.Gain2": -13.33,
+    "mbclip.Gain3": -13.33,
+    "mbclip.Gain4": -13.33,
+    "mbclip.Gain5": -13.33,
+    "mbclip.crossover_b1_b2": 6720.0,
+    "mbclip.crossover_b2_b3": 6807.0,
+    "mbclip.crossover_b3_b4": 7800.0,
+    "mbclip.crossover_b4_b5": 10000.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "mbclip.Drive1": 0.33,
+     "mbclip.Drive2": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-bboom",
+   "unit": "bboom",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "bboom.Drive": 0.5533,
+    "bboom.Gain": -13.33
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "bboom.Drive": 0.33,
+     "bboom.Gain": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-mbchor",
+   "unit": "mbchor",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "mbchor.crossover_b1_b2": 6720.0,
+    "mbchor.crossover_b2_b3": 6807.0,
+    "mbchor.crossover_b3_b4": 7800.0,
+    "mbchor.crossover_b4_b5": 10000.0,
+    "mbchor.delay1": 0.08,
+    "mbchor.delay2": 0.09333,
+    "mbchor.delay3": 0.1067,
+    "mbchor.delay4": 0.12,
+    "mbchor.delay5": 0.06667,
+    "mbchor.depth1": 0.3467,
+    "mbchor.depth2": 0.36,
+    "mbchor.depth3": 0.3733,
+    "mbchor.depth4": 0.3867,
+    "mbchor.depth5": 0.4,
+    "mbchor.freq1": 140.0,
+    "mbchor.freq2": 160.0,
+    "mbchor.freq3": 180.0,
+    "mbchor.freq4": 200.0,
+    "mbchor.freq5": 220.0,
+    "mbchor.level1": 0.3333,
+    "mbchor.level2": 0.3333,
+    "mbchor.level3": 0.3333,
+    "mbchor.level4": 0.3333,
+    "mbchor.level5": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "mbchor.delay1": 0.02,
+     "mbchor.delay2": 0.04
+    }
+   }
+  },
+  {
+   "name": "gx-gcb-95",
+   "unit": "GCB_95",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "GCB_95.Volume": -6.667,
+    "GCB_95.hotpotz": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "GCB_95.Volume": 0.0,
+     "GCB_95.hotpotz": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-duckdelay",
+   "unit": "duckDelay",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "duckDelay.amount": 19.0,
+    "duckDelay.attack": 0.2333,
+    "duckDelay.feedback": 0.3333,
+    "duckDelay.relese": 0.7333,
+    "duckDelay.time": 1000.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "duckDelay.amount": 0.5,
+     "duckDelay.attack": 0.1
+    }
+   }
+  },
+  {
+   "name": "gx-reversedelay",
+   "unit": "reversedelay",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "noise",
+    "seed": 7,
+    "amp": 0.2,
+    "right": {
+     "kind": "noise",
+     "seed": 11,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "reversedelay.time": 1000.0,
+    "reversedelay.feedback": 0.3333,
+    "reversedelay.window": 33.0,
+    "reversedelay.drywet": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "reversedelay.feedback": 0.0,
+     "reversedelay.drywet": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-baxandall",
+   "unit": "baxandall",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "baxandall.ba": 0.3333,
+    "baxandall.tr": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "baxandall.ba": 0.5,
+     "baxandall.tr": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-distortion2",
+   "unit": "distortion2",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "distortion2.Hfreq": 686.7,
+    "distortion2.drive": 33.0,
+    "distortion2.freq": 13330.0,
+    "distortion2.gain": -10.0,
+    "distortion2.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "distortion2.gain": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-fuzzface",
+   "unit": "fuzzface",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "fuzzface.Fuzz": 0.3333,
+    "fuzzface.Level": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "fuzzface.Fuzz": 0.5,
+     "fuzzface.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-trbuff",
+   "unit": "trbuff",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "trbuff.wet_dry": 67.0
+   }
+  },
+  {
+   "name": "gx-fuzzfacefm",
+   "unit": "fuzzfacefm",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "fuzzfacefm.Level": 0.3333,
+    "fuzzfacefm.Drive": 0.3333,
+    "fuzzfacefm.Fuzz": 0.3333,
+    "fuzzfacefm.Input": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "fuzzfacefm.Level": 0.5,
+     "fuzzfacefm.Drive": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-fuzzfacerm",
+   "unit": "fuzzfacerm",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "fuzzfacerm.Fuzz": 0.3333,
+    "fuzzfacerm.Level": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "fuzzfacerm.Fuzz": 0.5,
+     "fuzzfacerm.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-hornet",
+   "unit": "hornet",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "hornet.Fuzz": 0.3333,
+    "hornet.Level": 0.3333,
+    "hornet.Sustain": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "hornet.Fuzz": 0.5,
+     "hornet.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-susta",
+   "unit": "susta",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "susta.Volume": 0.3333,
+    "susta.Sustain": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "susta.Volume": 0.5,
+     "susta.Sustain": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-hfb",
+   "unit": "hfb",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "hfb.Intensity": 0.3333,
+    "hfb.Volume": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "hfb.Intensity": 0.5,
+     "hfb.Volume": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-muff",
+   "unit": "muff",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "muff.Level": 0.3333,
+    "muff.Tone": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "muff.Level": 0.5,
+     "muff.Tone": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-scream",
+   "unit": "scream",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "scream.Scream": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "scream.Scream": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-lpbboost",
+   "unit": "lpbboost",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "lpbboost.Boost": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "lpbboost.Boost": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-foxeylady",
+   "unit": "foxeylady",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "foxeylady.Fuzz": 0.3333,
+    "foxeylady.Level": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "foxeylady.Fuzz": 0.5,
+     "foxeylady.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-hogsfoot",
+   "unit": "hogsfoot",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "hogsfoot.Volume": 0.3333,
+    "hogsfoot.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "hogsfoot.Volume": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-cstbt1",
+   "unit": "cstbt1",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "cstbt1.wet_dry": 67.0,
+    "cstbt1.Attack": 0.3333,
+    "cstbt1.Level": 0.3333,
+    "cstbt1.Tone": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "cstbt1.Attack": 0.5,
+     "cstbt1.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-coverd",
+   "unit": "coverd",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "coverd.Bass": 0.3333,
+    "coverd.Treble": 0.3333,
+    "coverd.Volume": 0.3333,
+    "coverd.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "coverd.Bass": 0.5,
+     "coverd.Treble": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-rangem",
+   "unit": "rangem",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "rangem.Boost": 0.3333,
+    "rangem.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "rangem.Boost": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-ruin",
+   "unit": "ruin",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "ruin.wet_dry": 67.0,
+    "ruin.Intensity": 0.3333,
+    "ruin.Level": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "ruin.Intensity": 0.5,
+     "ruin.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-ffreak",
+   "unit": "ffreak",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "ffreak.wet_dry": 67.0,
+    "ffreak.Fuzz": 0.3333,
+    "ffreak.Gate": 0.3333,
+    "ffreak.Level": 0.3333,
+    "ffreak.Tone": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "ffreak.Fuzz": 0.5,
+     "ffreak.Gate": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-fumaster",
+   "unit": "fumaster",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "fumaster.wet_dry": 67.0,
+    "fumaster.Level": 0.3333,
+    "fumaster.Tone": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "fumaster.Level": 0.5,
+     "fumaster.Tone": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-fuzzdrive",
+   "unit": "fuzzdrive",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "fuzzdrive.Distortion": 0.3333,
+    "fuzzdrive.Level": -8.0,
+    "fuzzdrive.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "fuzzdrive.Distortion": 0.5,
+     "fuzzdrive.Level": -2.0
+    }
+   }
+  },
+  {
+   "name": "gx-rolandwah",
+   "unit": "rolandwah",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "rolandwah.Fuzz": 0.3333,
+    "rolandwah.Wah": 0.6667,
+    "rolandwah.lfobpm": 136.0,
+    "rolandwah.mode": 1.0,
+    "rolandwah.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "rolandwah.Fuzz": 0.5,
+     "rolandwah.Wah": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-astrofuzz",
+   "unit": "astrofuzz",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "astrofuzz.Attack": 0.3333,
+    "astrofuzz.Tone": 0.3333,
+    "astrofuzz.Volume": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "astrofuzz.Attack": 0.5,
+     "astrofuzz.Tone": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-buffb",
+   "unit": "buffb",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "buffb.Intensity": 0.3333,
+    "buffb.Volume": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "buffb.Intensity": 0.5,
+     "buffb.Volume": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-eldist",
+   "unit": "eldist",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "eldist.Drive": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "eldist.Drive": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-mole",
+   "unit": "mole",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "mole.Boost": 0.3333,
+    "mole.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "mole.Boost": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-buzz",
+   "unit": "buzz",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "buzz.Level": 0.3333,
+    "buzz.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "buzz.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-bfuzz",
+   "unit": "bfuzz",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "bfuzz.Drive": 0.3333,
+    "bfuzz.Level": 0.3333,
+    "bfuzz.Thickness": 0.3333,
+    "bfuzz.wet_dry": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "bfuzz.Drive": 0.5,
+     "bfuzz.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-axface",
+   "unit": "axface",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "axface.Attack": 0.3333,
+    "axface.Level": 0.3333,
+    "axface.Smooth": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "axface.Attack": 0.5,
+     "axface.Level": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-chorus",
+   "unit": "chorus",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "chorus.delay": 0.08,
+    "chorus.depth": 0.3467,
+    "chorus.freq": 5.333,
+    "chorus.level": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "chorus.delay": 0.02,
+     "chorus.depth": 0.02
+    }
+   }
+  },
+  {
+   "name": "gx-flanger",
+   "unit": "flanger",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "flanger.depth": 0.6667,
+    "flanger.feedback gain": 0.3333,
+    "flanger.flange delay offset": 7.333,
+    "flanger.flange delay": 6.667,
+    "flanger.invert": 1.0,
+    "flanger.level": -20.0,
+    "flanger.lfobpm": 136.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "flanger.depth": 1.0,
+     "flanger.feedback gain": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-phaser",
+   "unit": "phaser",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "phaser.MaxNotch1Freq": 3867.0,
+    "phaser.MinNotch1Freq": 1733.0,
+    "phaser.Notch width": 2333.0,
+    "phaser.NotchFreq": 2.333,
+    "phaser.VibratoMode": 1.0,
+    "phaser.depth": 0.6667,
+    "phaser.feedback gain": 0.3333,
+    "phaser.invert": 1.0,
+    "phaser.level": -20.0,
+    "phaser.lfobpm": 140.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "phaser.NotchFreq": 1.5,
+     "phaser.depth": 1.0
+    }
+   }
+  },
+  {
+   "name": "gx-stereodelay",
+   "unit": "stereodelay",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "stereodelay.invert": 1.0,
+    "stereodelay.l_gain": -6.667,
+    "stereodelay.lbpm": 200.0,
+    "stereodelay.lfobpm": 136.0,
+    "stereodelay.r_gain": -6.667,
+    "stereodelay.rbpm": 200.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "stereodelay.l_gain": 0.0,
+     "stereodelay.r_gain": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-stereoecho",
+   "unit": "stereoecho",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "stereoecho.invert": 1.0,
+    "stereoecho.lbpm": 200.0,
+    "stereoecho.lfobpm": 136.0,
+    "stereoecho.percent_l": 33.33,
+    "stereoecho.percent_r": 33.33,
+    "stereoecho.rbpm": 200.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "stereoecho.percent_l": 0.0,
+     "stereoecho.percent_r": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-moog",
+   "unit": "moog",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "moog.Q": 2.0,
+    "moog.fr": 4000.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "moog.Q": 1.0
+    }
+   }
+  },
+  {
+   "name": "gx-ampmodul",
+   "unit": "ampmodul",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "ampmodul.feedbac": -0.3333,
+    "ampmodul.feedback": -0.3333,
+    "ampmodul.level": -12.0,
+    "amp.highgain": 1.0,
+    "ampmodul.amp2.stage1.tube1": -2.667,
+    "ampmodul.amp2.stage2.tube2": -2.667,
+    "ampmodul.wet_dry": -0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "ampmodul.feedbac": 0.0,
+     "ampmodul.feedback": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-tonemodul",
+   "unit": "tonemodul",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "tonemodul.Bass": -1.667,
+    "tonemodul.Middle": -1.667,
+    "tonemodul.ON": 1.0,
+    "tonemodul.Treble": -1.667,
+    "tonemodul.sharper": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "tonemodul.Bass": 0.0,
+     "tonemodul.Middle": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-didest",
+   "unit": "didest",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "didest.Freeze": 1.0,
+    "didest.bpm": 200.0,
+    "didest.feedback": 67.0,
+    "didest.gain": 67.0,
+    "didest.highpass": 6747.0,
+    "didest.howpass": 8007.0,
+    "didest.level": 67.0,
+    "didest.mode": 1.0,
+    "didest.notes": 5.0
+   }
+  },
+  {
+   "name": "gx-stereoverb",
+   "unit": "stereoverb",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "noise",
+    "seed": 7,
+    "amp": 0.2,
+    "right": {
+     "kind": "noise",
+     "seed": 11,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "stereoverb.LFO freq": 1.8,
+    "stereoverb.RoomSize": 0.3333,
+    "stereoverb.damp": 0.3333,
+    "stereoverb.invert": 1.0,
+    "stereoverb.wet_dry": 33.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "stereoverb.LFO freq": 0.2,
+     "stereoverb.RoomSize": 0.5
+    }
+   }
+  },
+  {
+   "name": "gx-zita-rev1",
+   "unit": "zita_rev1",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "noise",
+    "seed": 7,
+    "amp": 0.2,
+    "right": {
+     "kind": "noise",
+     "seed": 11,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "zita_rev1.decay_times.hf_damping": 11840.0,
+    "zita_rev1.decay_times.lf_x": 466.7,
+    "zita_rev1.decay_times.low_rt60": 4.667,
+    "zita_rev1.decay_times.mid_rt60": 4.0,
+    "zita_rev1.equalizer1.eq1_freq": 1043.0,
+    "zita_rev1.equalizer1.eq1_level": -5.0,
+    "zita_rev1.equalizer2.eq2_freq": 4333.0,
+    "zita_rev1.equalizer2.eq2_level": -5.0,
+    "zita_rev1.input.in_delay": 47.0,
+    "zita_rev1.output.dry_wet_mix": -0.3333,
+    "zita_rev1.output.level": -23.33
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "zita_rev1.equalizer1.eq1_level": 0.0,
+     "zita_rev1.equalizer2.eq2_level": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-univibe",
+   "unit": "univibe",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "univibe.freq": 6.267,
+    "univibe.stereo": -0.09333,
+    "univibe.panning": -0.3333,
+    "univibe.lrcross": -0.3333,
+    "univibe.width": 0.3333,
+    "univibe.depth": 0.58,
+    "univibe.wet_dry": 0.6667,
+    "univibe.fb": -0.06667
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "univibe.freq": 4.4,
+     "univibe.stereo": 0.11
+    }
+   }
+  },
+  {
+   "name": "gx-mbcs",
+   "unit": "mbcs",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "mbcs.Mode1": 2.0,
+    "mbcs.Mode2": 2.0,
+    "mbcs.Mode3": 2.0,
+    "mbcs.Mode4": 2.0,
+    "mbcs.Mode5": 2.0,
+    "mbcs.Makeup1": -8.0,
+    "mbcs.Makeup2": -10.0,
+    "mbcs.Makeup3": -14.0,
+    "mbcs.Makeup4": -11.33,
+    "mbcs.Makeup5": -9.333,
+    "mbcs.Makeup-Threshold1": 4.667,
+    "mbcs.Makeup-Threshold2": 4.667,
+    "mbcs.Makeup-Threshold3": 4.667,
+    "mbcs.Makeup-Threshold4": 4.667,
+    "mbcs.Makeup-Threshold5": 4.667,
+    "mbcs.Ratio1": 34.67,
+    "mbcs.Ratio2": 34.67,
+    "mbcs.Ratio3": 34.67,
+    "mbcs.Ratio4": 34.67,
+    "mbcs.Ratio5": 34.67,
+    "mbcs.Attack1": 0.3413,
+    "mbcs.Attack2": 0.3413,
+    "mbcs.Attack3": 0.3413,
+    "mbcs.Attack4": 0.3413,
+    "mbcs.Attack5": 0.3413,
+    "mbcs.Release1": 4.167,
+    "mbcs.Release2": 4.167,
+    "mbcs.Release3": 4.167,
+    "mbcs.Release4": 4.167,
+    "mbcs.Release5": 4.167,
+    "mbcs.crossover_b1_b2": 6720.0,
+    "mbcs.crossover_b2_b3": 6807.0,
+    "mbcs.crossover_b3_b4": 7800.0,
+    "mbcs.crossover_b4_b5": 10000.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "mbcs.Makeup1": 13.0,
+     "mbcs.Makeup2": 10.0
+    }
+   }
+  },
+  {
+   "name": "gx-dattorros-progenitor",
+   "unit": "dattorros_progenitor",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "dattorros_progenitor.bandwidth": 0.6333,
+    "dattorros_progenitor.damping": 0.3833,
+    "dattorros_progenitor.decay diff 1": 0.3,
+    "dattorros_progenitor.decay diff 2": 0.2333,
+    "dattorros_progenitor.decay": 0.2333,
+    "dattorros_progenitor.dry/wet": 0.3333,
+    "dattorros_progenitor.excursion": 5.333,
+    "dattorros_progenitor.input diff 1": 0.3167,
+    "dattorros_progenitor.input diff 2": 0.275,
+    "dattorros_progenitor.predelay ms": 67.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "dattorros_progenitor.bandwidth": 0.9,
+     "dattorros_progenitor.damping": 0.1
+    }
+   }
+  },
+  {
+   "name": "gx-panoram-enhancer",
+   "unit": "panoram_enhancer",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "panoram_enhancer.Delay width": 0.3333,
+    "panoram_enhancer.Frequency width": 0.3333
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "panoram_enhancer.Delay width": 0.0,
+     "panoram_enhancer.Frequency width": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-bassenhancer",
+   "unit": "bassEnhancer",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "bassEnhancer.Frequency": 147.0,
+    "bassEnhancer.HarmonicsdB": 10.67
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "bassEnhancer.HarmonicsdB": 0.0
+    }
+   }
+  },
+  {
+   "name": "gx-ringmodulatorst",
+   "unit": "ringModulatorSt",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "ringModulatorSt.dry/wet": 0.3333,
+    "ringModulatorSt.freq": 693.3
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "ringModulatorSt.dry/wet": 0.5,
+     "ringModulatorSt.freq": 240.0
+    }
+   }
+  },
+  {
+   "name": "gx-duckdelayst",
+   "unit": "duckDelaySt",
+   "rate": 48000,
+   "block": 256,
+   "frames": 4096,
+   "signal": {
+    "kind": "sine",
+    "hz": 196,
+    "amp": 0.25,
+    "right": {
+     "kind": "sine",
+     "hz": 247,
+     "amp": 0.2
+    }
+   },
+   "settings": {
+    "duckDelaySt.amount": 19.0,
+    "duckDelaySt.attack": 0.2333,
+    "duckDelaySt.coloration": -0.3333,
+    "duckDelaySt.effect": -5.333,
+    "duckDelaySt.feedback": 0.3333,
+    "duckDelaySt.pingpong": 0.3333,
+    "duckDelaySt.release": 0.7333,
+    "duckDelaySt.time": 1000.0
+   },
+   "then": {
+    "at": 2048,
+    "settings": {
+     "duckDelaySt.amount": 0.5,
+     "duckDelaySt.attack": 0.1
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,12 @@
+{
+  "plugin:gx-freeverb": {
+    "defaults": {
+      "params": {
+        "freeverb_RoomSize": 0.5,
+        "freeverb_damp": 0.5,
+        "freeverb_wet_dry": 50.0
+      }
+    },
+    "version": 1
+  }
+}

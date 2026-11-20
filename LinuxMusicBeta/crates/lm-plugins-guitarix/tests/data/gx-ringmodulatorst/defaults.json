@@ -1,0 +1,11 @@
+{
+  "plugin:gx-ringmodulatorst": {
+    "defaults": {
+      "params": {
+        "ringModulatorSt_dry_wet": 0.5,
+        "ringModulatorSt_freq": 240.0
+      }
+    },
+    "version": 1
+  }
+}

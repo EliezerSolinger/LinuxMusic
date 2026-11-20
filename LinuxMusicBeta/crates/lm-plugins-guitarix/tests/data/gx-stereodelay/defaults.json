@@ -1,0 +1,15 @@
+{
+  "plugin:gx-stereodelay": {
+    "defaults": {
+      "params": {
+        "stereodelay_l_gain": 0.0,
+        "stereodelay_lbpm": 120.0,
+        "stereodelay_lfobpm": 24.0,
+        "stereodelay_r_gain": 0.0,
+        "stereodelay_rbpm": 120.0
+      },
+      "stereodelay_invert": "linear"
+    },
+    "version": 1
+  }
+}

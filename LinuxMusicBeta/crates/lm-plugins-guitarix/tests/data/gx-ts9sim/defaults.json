@@ -1,0 +1,12 @@
+{
+  "plugin:gx-ts9sim": {
+    "defaults": {
+      "params": {
+        "ts9sim_drive": 0.5,
+        "ts9sim_level": -16.0,
+        "ts9sim_tone": 400.0
+      }
+    },
+    "version": 1
+  }
+}

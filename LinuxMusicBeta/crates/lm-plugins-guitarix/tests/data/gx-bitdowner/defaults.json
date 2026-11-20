@@ -1,0 +1,13 @@
+{
+  "plugin:gx-bitdowner": {
+    "defaults": {
+      "params": {
+        "bitdowner_bit_down": 16.0,
+        "bitdowner_downsampling": 1.0,
+        "bitdowner_input_gain": 0.0,
+        "bitdowner_volume": 0.0
+      }
+    },
+    "version": 1
+  }
+}

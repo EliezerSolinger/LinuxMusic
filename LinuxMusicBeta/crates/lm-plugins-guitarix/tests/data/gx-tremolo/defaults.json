@@ -1,0 +1,13 @@
+{
+  "plugin:gx-tremolo": {
+    "defaults": {
+      "params": {
+        "tremolo_depth": 0.5,
+        "tremolo_freq": 5.0,
+        "tremolo_wet_dry": 100.0
+      },
+      "tremolo_SINE": "triangle"
+    },
+    "version": 1
+  }
+}

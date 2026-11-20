@@ -1,0 +1,11 @@
+{
+  "plugin:gx-mxrdis": {
+    "defaults": {
+      "params": {
+        "mxrdis_Volume": 0.5,
+        "mxrdis_drive": 0.5
+      }
+    },
+    "version": 1
+  }
+}

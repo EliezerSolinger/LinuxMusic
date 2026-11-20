@@ -1,0 +1,13 @@
+{
+  "plugin:gx-amp-tonestack": {
+    "defaults": {
+      "amp_tonestack_select": "default",
+      "params": {
+        "amp_tonestack_Bass": 0.5,
+        "amp_tonestack_Middle": 0.5,
+        "amp_tonestack_Treble": 0.5
+      }
+    },
+    "version": 1
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "plugin:gx-bfuzz": {
+    "defaults": {
+      "params": {
+        "bfuzz_Drive": 0.5,
+        "bfuzz_Level": 0.5,
+        "bfuzz_Thickness": 0.5,
+        "bfuzz_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

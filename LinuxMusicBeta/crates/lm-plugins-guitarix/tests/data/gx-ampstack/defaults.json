@@ -1,0 +1,32 @@
+{
+  "plugin:gx-ampstack": {
+    "defaults": {
+      "con_Level": 1.0,
+      "params": {
+        "amp2_stage1_Pregain": -6.0,
+        "amp2_stage2_gain1": -6.0,
+        "amp_balance": 0.0,
+        "amp_bass_boost_on_off": 1.0,
+        "amp_clip_on_off": 0.0,
+        "amp_feed_on_off": 0.0,
+        "amp_fuzz": 0.0,
+        "amp_highgain": 0.0,
+        "amp_on_off": 0.0,
+        "amp_out_amp": 0.0,
+        "amp_out_master": 0.0,
+        "amp_wet_dry": 0.0,
+        "antyfizz_on_off": 0.0,
+        "bassbooster_Level": 10.0,
+        "con_on_off": 1.0,
+        "gxdistortion_drive": 0.3499999940395355,
+        "gxdistortion_wet_dry": 100.0,
+        "noise_gate_on_off": 0.0,
+        "noise_gate_threshold": 0.017000000923871994,
+        "shaper_on_off": 0.0,
+        "shaper_sharper": 1.0
+      },
+      "tube_select": "12ax7"
+    },
+    "version": 1
+  }
+}

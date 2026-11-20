@@ -1,0 +1,24 @@
+{
+  "plugin:gx-mbclip": {
+    "defaults": {
+      "params": {
+        "mbclip_Drive1": 0.33000001311302185,
+        "mbclip_Drive2": 0.5,
+        "mbclip_Drive3": 0.6499999761581421,
+        "mbclip_Drive4": 0.33000001311302185,
+        "mbclip_Drive5": 0.10000000149011612,
+        "mbclip_Gain": 0.0,
+        "mbclip_Gain1": 0.0,
+        "mbclip_Gain2": 0.0,
+        "mbclip_Gain3": 0.0,
+        "mbclip_Gain4": 0.0,
+        "mbclip_Gain5": 0.0,
+        "mbclip_crossover_b1_b2": 80.0,
+        "mbclip_crossover_b2_b3": 210.0,
+        "mbclip_crossover_b3_b4": 1700.0,
+        "mbclip_crossover_b4_b5": 5000.0
+      }
+    },
+    "version": 1
+  }
+}

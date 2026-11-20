@@ -1,0 +1,23 @@
+{
+  "plugin:gx-mbe": {
+    "defaults": {
+      "params": {
+        "mbe_crossover_b1_b2": 80.0,
+        "mbe_crossover_b2_b3": 210.0,
+        "mbe_crossover_b3_b4": 1700.0,
+        "mbe_crossover_b4_b5": 5000.0,
+        "mbe_percent1": 10.0,
+        "mbe_percent2": 30.0,
+        "mbe_percent3": 45.0,
+        "mbe_percent4": 20.0,
+        "mbe_percent5": 0.0,
+        "mbe_time1": 30.0,
+        "mbe_time2": 60.0,
+        "mbe_time3": 120.0,
+        "mbe_time4": 150.0,
+        "mbe_time5": 240.0
+      }
+    },
+    "version": 1
+  }
+}

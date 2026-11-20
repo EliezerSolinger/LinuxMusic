@@ -1,0 +1,11 @@
+{
+  "plugin:gx-panoram-enhancer": {
+    "defaults": {
+      "params": {
+        "panoram_enhancer_Delay_width": 0.0,
+        "panoram_enhancer_Frequency_width": 0.0
+      }
+    },
+    "version": 1
+  }
+}

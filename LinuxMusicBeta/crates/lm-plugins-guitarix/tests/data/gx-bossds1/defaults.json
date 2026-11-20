@@ -1,0 +1,12 @@
+{
+  "plugin:gx-bossds1": {
+    "defaults": {
+      "params": {
+        "bossds1_Level": 3.0,
+        "bossds1_Tone": 0.699999988079071,
+        "bossds1_drive": 0.5
+      }
+    },
+    "version": 1
+  }
+}

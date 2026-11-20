@@ -1,0 +1,16 @@
+{
+  "plugin:gx-flanger": {
+    "defaults": {
+      "flanger_invert": "linear",
+      "params": {
+        "flanger_depth": 1.0,
+        "flanger_feedback_gain": 0.0,
+        "flanger_flange_delay": 10.0,
+        "flanger_flange_delay_offset": 1.0,
+        "flanger_level": 0.0,
+        "flanger_lfobpm": 24.0
+      }
+    },
+    "version": 1
+  }
+}

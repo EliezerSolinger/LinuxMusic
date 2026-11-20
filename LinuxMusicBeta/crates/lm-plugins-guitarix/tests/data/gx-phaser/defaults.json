@@ -1,0 +1,19 @@
+{
+  "plugin:gx-phaser": {
+    "defaults": {
+      "params": {
+        "phaser_MaxNotch1Freq": 800.0,
+        "phaser_MinNotch1Freq": 100.0,
+        "phaser_NotchFreq": 1.5,
+        "phaser_Notch_width": 1000.0,
+        "phaser_depth": 1.0,
+        "phaser_feedback_gain": 0.0,
+        "phaser_level": 0.0,
+        "phaser_lfobpm": 30.0
+      },
+      "phaser_VibratoMode": "direct",
+      "phaser_invert": "linear"
+    },
+    "version": 1
+  }
+}

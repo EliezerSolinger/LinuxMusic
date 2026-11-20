@@ -1,0 +1,23 @@
+{
+  "plugin:gx-mbdel": {
+    "defaults": {
+      "params": {
+        "mbdel_crossover_b1_b2": 80.0,
+        "mbdel_crossover_b2_b3": 210.0,
+        "mbdel_crossover_b3_b4": 1700.0,
+        "mbdel_crossover_b4_b5": 5000.0,
+        "mbdel_delay1": 30.0,
+        "mbdel_delay2": 60.0,
+        "mbdel_delay3": 90.0,
+        "mbdel_delay4": 120.0,
+        "mbdel_delay5": 150.0,
+        "mbdel_gain1": -10.0,
+        "mbdel_gain2": -5.0,
+        "mbdel_gain3": -2.0,
+        "mbdel_gain4": 0.0,
+        "mbdel_gain5": -10.0
+      }
+    },
+    "version": 1
+  }
+}

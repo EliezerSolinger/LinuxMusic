@@ -1362,3 +1362,62 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   interface e o mapeamento MIDI a leem de lá.
 - **O motivo:** a regra do usuário de ser conservador com o legado. A curva por partes do protótipo era invenção, e
   abaixo de cerca de −12 dB a mesa não bateria com o fader do legado.
+
+## Do Guitarix (20/11)
+
+- **O DSP do Guitarix é compilado, não portado** (`lm-sys-guitarix`): são ~5 MB de C++ (117 unidades Faust geradas, 43
+  plugins escritos à mão, as tabelas das válvulas e dos gabinetes, o zita-resampler e o zita-convolver). Portar para
+  Rust seria reescrever o Guitarix inteiro sem ganho de som; compilado do mesmo código, o A/B dá bit a bit. O código
+  vem em `vendor/gx` exatamente como o legado compila (`legado/plugins/Guitarix/CMakeLists.txt`), e a cola do legado
+  (`GuitarixUnits/Amp/Convolution/Detune/Vibe/Selectors`) em `glue/`, sem Qt nem `AudioEngine`: o `blockFrames()` é
+  um valor por thread que a ficha define antes de iniciar a unidade.
+- **Licença GPL-3.0-or-later** nos dois pacotes: o zita-resampler e o zita-convolver são GPL-3+; o resto do Guitarix é
+  GPL-2+. O programa já sai GPLv3 por causa do GPUI (decisão de 19/11), então nada muda para ele.
+- **Três mudanças no código do Guitarix, todas para tirar estado compartilhado entre instâncias** (o legado as tratava
+  com uma trava no áudio e com o "changes guard" do motor): os LFOs do Vibe passam de variáveis do arquivo a membros de
+  cada Vibe (`vibe.cc`, `vibe_*_lfo_sine.cc`; o legado copiava esse estado para dentro e para fora em volta de cada
+  período, sob uma trava de espera ativa: o resultado é o mesmo, sem trava); as tabelas de seno de 6 unidades Faust
+  são preenchidas uma vez (`std::call_once`), não a cada início enquanto outra instância lê; o planejador do FFTW
+  (zita-convolver, Detune) fica seguro entre threads para o processo inteiro (`fftwf_make_planner_thread_safe`, com
+  `fftw3f_threads`), porque os efeitos são construídos em várias threads. O FFTW vira dependência do sistema
+  (`libfftw3-dev`, `fftw`).
+- **Um plugin por unidade** (`gx-<id do Guitarix>`, minúsculas e `-`), geradas por macro, como as sub-plugins do
+  legado. **Um só binário de teste do contrato** chama as funções de `lm_plugin::testing` para as 97: o
+  `contract_tests!` faz um binário por descritor, e 97 binários de ~20 MB não cabem no disco.
+- **Chaves:** o id do Guitarix com tudo que não é letra, dígito ou `_` virando `_` (`ts9sim_drive`). Faixas e padrões
+  do Guitarix. Escala logarítmica onde o Guitarix tem `L`; passos inteiros onde o passo é inteiro. **Seletores viram
+  `Choice`** (U30: escolha com nome nunca é número), com as chaves dos ids dos valores do Guitarix; no legado eram
+  FloatModels automatizáveis. As configurações que a unidade só lê ao iniciar (o IR do gabinete e do amp impulse, a
+  presença do cabeçote `con_Level`, a latência do Detune) são campos.
+- **As unidades rodam sempre a 48 kHz.** O DSP do Guitarix muda com a taxa (medido: o Freeverb −1,6 dB a 96 kHz, o
+  C Overdrive +37 dB a 192 kHz, o Cabinet −0,7 dB a 44,1 kHz, 30 unidades fora de 0,5 dB), o que fere a U36. A 48 kHz
+  roda direto, como no legado (onde está o A/B); em outra taxa, o par de canais é convertido para 48 kHz e de volta
+  (libsamplerate, sinc médio, alinhado no tempo) em volta da unidade, com latência fixa declarada. Com isso as 97
+  passam a U36 com uma entrada limitada em banda (`tests/rates.rs`); o Rangemaster e o Screaming Bird ainda saem da
+  tolerância com a serra ingênua do teste do contrato, porque realçam justamente o rebatimento dela (que muda de taxa
+  para taxa), e só eles são checados pelo teste com entrada sem rebatimento.
+- **Blocos fixos:** as unidades cujo som depende do tamanho de cada chamada rodam num FIFO de bloco fixo, com essa
+  latência: os convolvedores (Cabinet, Amp Impulse) e o cabeçote (a presença é um convolvedor e o noise gate mede a
+  chamada) em 64 (o menor bloco em que o zita-convolver roda na própria thread, sem as threads dele; 1,3 ms), e o
+  Detune em 256 (ele só funciona com chamadas exatamente do bloco, e as opções de latência foram feitas para o período
+  de 256 do legado). As outras rodam nas peças da grade de 32, sem latência; o teste de blocos (V3) passa em todas.
+- **Parâmetros logarítmicos deslizam** (constante de 5 ms, no domínio log): os crossovers e os filtros de pico do
+  Guitarix, em forma direta, soltavam um estouro de até +56 dB quando a frequência pulava (20 Hz → 20 kHz). Diferença
+  intencional do legado só durante a automação dessas frequências.
+- **Troca de campo em crossfade de 10 ms:** um seletor que muda (no Guitarix o módulo escolhido é zerado: um clique)
+  ou um IR novo constrói o processador de novo, que toca as instâncias velhas e as novas cruzando. A mesma árvore
+  reconstruída adota as instâncias e continua bit a bit.
+- **Proteção:** uma amostra não finita zera a unidade e a chamada sai em silêncio. Sem teto de nível: as faixas do
+  Guitarix permitem mais de +60 dB, e as duas unidades que passam disso na suíte declaram o seu `max_level` (U31) pelas
+  faixas: o Peak EQ (quatro picos de até +50 dB em qualquer frequência: dois juntos, +100 dB, 5e4) e o Scaleable EQ
+  (dez bandas de até +30 dB: três que se sobrepõem, +90 dB, 1,6e4). Nenhuma outra passa de 1e3 (os estouros dos
+  crossovers acabaram com o deslizamento acima).
+- **Os medidores** (níveis do cabeçote, compressores, bandas do EQ gráfico) vão no quadro do display (64 bytes, `f32`
+  na ordem de `lm_plugins_guitarix::outputs`), não são parâmetros; um pico (`M`) é o maior desde a última leitura.
+- **A/B contra o `.so` do legado** (`crates/lm-plugins-guitarix/ab`): o `libguitarix.so` reconstruído sem FMA (como o
+  `lm-sys-guitarix` compila), rodado como o mixer do legado roda um efeito, com o período de cada caso (64 para os
+  blocos fixos, 256 para o resto) e os ajustes carregados como um projeto; 188 casos (cada unidade com tudo fora do
+  padrão e dois botões voltando no meio, e cada módulo das amps, tonestacks, gabinetes, amp impulses, wahs, power amps
+  e crybaby): **todos bit a bit**, com a latência do bloco fixo descontada.
+- **Pendente:** o `AllSoundOff` zera só as unidades com `clear_state` (a cola do legado e o Vibe não têm: elas saem do
+  silêncio com o próprio estado); o teste no ThinkPad (sem acesso hoje).

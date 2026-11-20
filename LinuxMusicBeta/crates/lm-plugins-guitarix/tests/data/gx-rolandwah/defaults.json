@@ -1,0 +1,14 @@
+{
+  "plugin:gx-rolandwah": {
+    "defaults": {
+      "params": {
+        "rolandwah_Fuzz": 0.5,
+        "rolandwah_Wah": 0.5,
+        "rolandwah_lfobpm": 24.0,
+        "rolandwah_wet_dry": 100.0
+      },
+      "rolandwah_mode": "manual"
+    },
+    "version": 1
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "plugin:gx-univibe-mono": {
+    "defaults": {
+      "params": {
+        "univibe_mono_depth": 0.3700000047683716,
+        "univibe_mono_fb": -0.6000000238418579,
+        "univibe_mono_freq": 4.400000095367432,
+        "univibe_mono_wet_dry": 1.0,
+        "univibe_mono_width": 0.5
+      }
+    },
+    "version": 1
+  }
+}

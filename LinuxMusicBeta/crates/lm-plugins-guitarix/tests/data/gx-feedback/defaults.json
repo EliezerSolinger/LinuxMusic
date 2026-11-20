@@ -1,0 +1,11 @@
+{
+  "plugin:gx-feedback": {
+    "defaults": {
+      "params": {
+        "feedback_feedback": 0.0,
+        "feedback_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

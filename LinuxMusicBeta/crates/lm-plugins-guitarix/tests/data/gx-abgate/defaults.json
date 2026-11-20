@@ -1,0 +1,14 @@
+{
+  "plugin:gx-abgate": {
+    "defaults": {
+      "params": {
+        "abgate_attack": 4.0,
+        "abgate_decay": 50.0,
+        "abgate_gaterange": -30.0,
+        "abgate_hold": 5.0,
+        "abgate_threshold": -70.0
+      }
+    },
+    "version": 1
+  }
+}

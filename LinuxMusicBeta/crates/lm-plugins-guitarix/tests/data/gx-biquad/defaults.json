@@ -1,0 +1,10 @@
+{
+  "plugin:gx-biquad": {
+    "defaults": {
+      "params": {
+        "biquad_Freq": 1200.0
+      }
+    },
+    "version": 1
+  }
+}

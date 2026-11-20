@@ -1,0 +1,15 @@
+{
+  "plugin:gx-low-highpass": {
+    "defaults": {
+      "params": {
+        "low_high_pass_lhc_high_freq": 5000.0,
+        "low_high_pass_lhc_low_freq": 130.0,
+        "low_high_pass_lhc_on_off": 0.0,
+        "low_high_pass_lhp_high_freq": 130.0,
+        "low_high_pass_lhp_low_freq": 5000.0,
+        "low_high_pass_lhp_on_off": 0.0
+      }
+    },
+    "version": 1
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "plugin:gx-dattorros-progenitor": {
+    "defaults": {
+      "params": {
+        "dattorros_progenitor_bandwidth": 0.8999999761581421,
+        "dattorros_progenitor_damping": 0.10000000149011612,
+        "dattorros_progenitor_decay": 0.10000000149011612,
+        "dattorros_progenitor_decay_diff_1": 0.10000000149011612,
+        "dattorros_progenitor_decay_diff_2": 0.10000000149011612,
+        "dattorros_progenitor_dry_wet": 0.5,
+        "dattorros_progenitor_excursion": 0.0,
+        "dattorros_progenitor_input_diff_1": 0.10000000149011612,
+        "dattorros_progenitor_input_diff_2": 0.10000000149011612,
+        "dattorros_progenitor_predelay_ms": 0.0
+      }
+    },
+    "version": 1
+  }
+}

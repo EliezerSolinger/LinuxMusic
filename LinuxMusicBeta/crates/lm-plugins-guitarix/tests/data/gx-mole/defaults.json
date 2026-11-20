@@ -1,0 +1,11 @@
+{
+  "plugin:gx-mole": {
+    "defaults": {
+      "params": {
+        "mole_Boost": 0.5,
+        "mole_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

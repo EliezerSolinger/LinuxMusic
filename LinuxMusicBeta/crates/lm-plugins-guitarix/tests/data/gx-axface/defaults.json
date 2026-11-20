@@ -1,0 +1,12 @@
+{
+  "plugin:gx-axface": {
+    "defaults": {
+      "params": {
+        "axface_Attack": 0.5,
+        "axface_Level": 0.5,
+        "axface_Smooth": 0.5
+      }
+    },
+    "version": 1
+  }
+}

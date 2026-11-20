@@ -1,0 +1,13 @@
+{
+  "plugin:gx-ir": {
+    "defaults": {
+      "IR_auto_freq": "manual",
+      "params": {
+        "IR_bandwidth": 100.0,
+        "IR_freq": 440.0,
+        "IR_peak": 1.0
+      }
+    },
+    "version": 1
+  }
+}

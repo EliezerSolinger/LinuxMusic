@@ -1,0 +1,12 @@
+{
+  "plugin:gx-fuzzdrive": {
+    "defaults": {
+      "params": {
+        "fuzzdrive_Distortion": 0.5,
+        "fuzzdrive_Level": -2.0,
+        "fuzzdrive_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "plugin:gx-eqs": {
+    "defaults": {
+      "params": {
+        "eqs_Qs125": 50.0,
+        "eqs_Qs16k": 50.0,
+        "eqs_Qs1k": 50.0,
+        "eqs_Qs250": 50.0,
+        "eqs_Qs2k": 50.0,
+        "eqs_Qs31_25": 50.0,
+        "eqs_Qs4k": 50.0,
+        "eqs_Qs500": 50.0,
+        "eqs_Qs62_5": 50.0,
+        "eqs_Qs8k": 50.0,
+        "eqs_freq125": 125.0,
+        "eqs_freq16k": 16000.0,
+        "eqs_freq1k": 1000.0,
+        "eqs_freq250": 250.0,
+        "eqs_freq2k": 2000.0,
+        "eqs_freq31_25": 31.25,
+        "eqs_freq4k": 4000.0,
+        "eqs_freq500": 500.0,
+        "eqs_freq62_5": 62.5,
+        "eqs_freq8k": 8000.0,
+        "eqs_fs125": 0.0,
+        "eqs_fs16k": 0.0,
+        "eqs_fs1k": 0.0,
+        "eqs_fs250": 0.0,
+        "eqs_fs2k": 0.0,
+        "eqs_fs31_25": 0.0,
+        "eqs_fs4k": 0.0,
+        "eqs_fs500": 0.0,
+        "eqs_fs62_5": 0.0,
+        "eqs_fs8k": 0.0
+      }
+    },
+    "version": 1
+  }
+}

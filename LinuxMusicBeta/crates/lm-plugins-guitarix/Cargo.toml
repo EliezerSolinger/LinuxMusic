@@ -1,0 +1,25 @@
+[package]
+name = "lm-plugins-guitarix"
+description = "LinuxMusic: Guitarix's units (pedals, amp head, cabinets, modulations, delays, reverbs) as effect plugins, on lm-sys-guitarix"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# (it links lm-sys-guitarix, GPL-3.0-or-later: decisoes-autonomas.md, "Do Guitarix")
+license = "GPL-3.0-or-later"
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lm-base.workspace = true
+lm-state.workspace = true
+lm-render.workspace = true
+lm-plugin.workspace = true
+lm-sys-guitarix.workspace = true
+lm-sys-samplerate.workspace = true
+libm.workspace = true
+
+[dev-dependencies]
+lm-plugin = { workspace = true, features = ["testing"] }
+serde_json.workspace = true

@@ -1,0 +1,19 @@
+{
+  "plugin:gx-smbpitchshift": {
+    "defaults": {
+      "params": {
+        "smbPitchShift_a": 1.0,
+        "smbPitchShift_b": 1.0,
+        "smbPitchShift_c": 1.0,
+        "smbPitchShift_d": 1.0,
+        "smbPitchShift_dry": 50.0,
+        "smbPitchShift_semitone": 0.0,
+        "smbPitchShift_wet": 50.0
+      },
+      "smbPitchShift_l": "latency",
+      "smbPitchShift_latency": "high quality",
+      "smbPitchShift_octave": "unison"
+    },
+    "version": 1
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "plugin:gx-gx-distortion": {
+    "defaults": {
+      "params": {
+        "gx_distortion_drive": 0.6399999856948853,
+        "gx_distortion_gain": 2.0,
+        "gx_distortion_high_drive": 1.0,
+        "gx_distortion_high_gain": 10.0,
+        "gx_distortion_level": 0.0,
+        "gx_distortion_low_drive": 1.0,
+        "gx_distortion_low_gain": 10.0,
+        "gx_distortion_middle_h_drive": 1.0,
+        "gx_distortion_middle_h_gain": 10.0,
+        "gx_distortion_middle_l_drive": 1.0,
+        "gx_distortion_middle_l_gain": 10.0,
+        "gx_distortion_resonator_on_off": 0.0,
+        "gx_distortion_split_high_freq": 1250.0,
+        "gx_distortion_split_low_freq": 250.0,
+        "gx_distortion_split_middle_freq": 650.0,
+        "gx_distortion_trigger": 0.11999999731779099,
+        "gx_distortion_vibrato": 1.0,
+        "gx_distortion_wet_dry": 100.0
+      }
+    },
+    "version": 1
+  }
+}

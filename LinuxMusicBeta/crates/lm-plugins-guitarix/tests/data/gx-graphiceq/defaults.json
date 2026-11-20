@@ -1,0 +1,20 @@
+{
+  "plugin:gx-graphiceq": {
+    "defaults": {
+      "params": {
+        "graphiceq_g1": 0.0,
+        "graphiceq_g10": 0.0,
+        "graphiceq_g11": 0.0,
+        "graphiceq_g2": 0.0,
+        "graphiceq_g3": 0.0,
+        "graphiceq_g4": 0.0,
+        "graphiceq_g5": 0.0,
+        "graphiceq_g6": 0.0,
+        "graphiceq_g7": 0.0,
+        "graphiceq_g8": 0.0,
+        "graphiceq_g9": 0.0
+      }
+    },
+    "version": 1
+  }
+}
