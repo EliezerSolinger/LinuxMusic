@@ -19,8 +19,8 @@ mod resources;
 mod state;
 
 pub use descriptor::{
-    BuildContext, BuildFn, Descriptor, DisplaySpec, PluginKind, StatePortsFn, TestHints, TuningProbe, Velocity,
-    is_valid_plugin_id, plugin_type,
+    BuildContext, BuildFn, DEFAULT_TAIL, Descriptor, DisplaySpec, PluginKind, StatePortsFn, TestHints, TuningProbe,
+    Velocity, is_valid_plugin_id, plugin_type,
 };
 pub use lm_doc::{Port, Ports};
 pub use registry::{CHUNK_KEY, EntryInfo, External, ExternalBuild, Registry, check_ports};

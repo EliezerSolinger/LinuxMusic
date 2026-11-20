@@ -89,11 +89,18 @@ pub struct TestHints {
     /// that (a multiband compressor with ±48 dB of input, output and band volume and 96 dB of upward range) declares
     /// its own, from its ranges
     pub max_level: f32,
+    /// How long, in seconds, a note of the default state may still sound after its note-off: its own release (an
+    /// emulated chip's envelope, a long decay). The short-notes test waits this long, then wants silence. 3.4 s by
+    /// default
+    pub tail: f64,
 }
+
+/// The default [`TestHints::tail`]
+pub const DEFAULT_TAIL: f64 = 3.4;
 
 impl TestHints {
     pub const fn new() -> Self {
-        Self { tuning: None, no_adopt: &[], voices: 16, max_level: 1.0e3 }
+        Self { tuning: None, no_adopt: &[], voices: 16, max_level: 1.0e3, tail: DEFAULT_TAIL }
     }
 }
 

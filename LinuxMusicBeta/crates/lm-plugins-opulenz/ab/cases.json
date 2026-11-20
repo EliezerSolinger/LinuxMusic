@@ -1,0 +1,169 @@
+{
+ "about": "The A/B cases of OpulenZ against the legacy plugin (crates/lm-plugins-sid/ab/legacy-harness.cpp; settings by the attributes the legacy plugin saves). 48 kHz, periods of 256. Notes by NotePlayHandle (volume 100: the base velocity), the instrument rendered through its play handle. `until`: the frames compared.",
+ "cases": [
+  {
+   "name": "opulenz-defaults",
+   "plugin": "opulenz",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {},
+   "notes": [
+    {
+     "key": 69,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "opulenz-additive",
+   "plugin": "opulenz",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {
+    "fm": 0,
+    "op1_lvl": 50,
+    "op1_mul": 3,
+    "op1_waveform": 1,
+    "op2_waveform": 2,
+    "op1_trem": 0
+   },
+   "notes": [
+    {
+     "key": 57,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "opulenz-feedback",
+   "plugin": "opulenz",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {
+    "feedback": 6,
+    "op1_mul": 2,
+    "op2_mul": 1,
+    "op1_a": 15,
+    "op1_d": 9,
+    "op2_a": 12,
+    "op1_waveform": 3,
+    "op1_scale": 2,
+    "op2_scale": 1
+   },
+   "notes": [
+    {
+     "key": 40,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  },
+  {
+   "name": "opulenz-lfo",
+   "plugin": "opulenz",
+   "frames": 9216,
+   "until": 8192,
+   "settings": {
+    "vib_depth": 1,
+    "trem_depth": 1,
+    "op2_trem": 1,
+    "op1_vib": 1,
+    "op2_vib": 1,
+    "op1_ksr": 1,
+    "op2_perc": 1,
+    "op2_d": 8
+   },
+   "notes": [
+    {
+     "key": 76,
+     "start": 0,
+     "length": 8192
+    }
+   ]
+  },
+  {
+   "name": "opulenz-chord",
+   "plugin": "opulenz",
+   "frames": 8192,
+   "until": 6400,
+   "settings": {
+    "op2_r": 4
+   },
+   "notes": [
+    {
+     "key": 60,
+     "start": 0,
+     "length": 6400
+    },
+    {
+     "key": 64,
+     "start": 256,
+     "length": 6144
+    },
+    {
+     "key": 67,
+     "start": 1001,
+     "length": 5399
+    },
+    {
+     "key": 72,
+     "start": 2560,
+     "length": 1280
+    },
+    {
+     "key": 48,
+     "start": 4000,
+     "length": 2400
+    }
+   ]
+  },
+  {
+   "name": "opulenz-volume",
+   "plugin": "opulenz",
+   "frames": 4096,
+   "until": 4096,
+   "settings": {
+    "volume": -7.5
+   },
+   "notes": [
+    {
+     "key": 81,
+     "start": 0,
+     "length": 2048
+    },
+    {
+     "key": 84,
+     "start": 2048,
+     "length": 2048,
+     "volume": 50
+    }
+   ]
+  },
+  {
+   "name": "opulenz-change",
+   "plugin": "opulenz",
+   "frames": 7168,
+   "until": 6144,
+   "settings": {},
+   "then": {
+    "at": 2560,
+    "settings": {
+     "op1_lvl": 40,
+     "op2_lvl": 55,
+     "feedback": 3,
+     "op1_mul": 5,
+     "volume": 3
+    }
+   },
+   "notes": [
+    {
+     "key": 62,
+     "start": 0,
+     "length": 6144
+    }
+   ]
+  }
+ ]
+}

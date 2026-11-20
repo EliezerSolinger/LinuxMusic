@@ -1,8 +1,8 @@
 //! Compiles the vendored reSID 1.0 (`vendor/resid`, GPL-2.0-or-later, by Dag Lem; the files the legacy program's
 //! `plugins/Sid/resid` compiled, with its configured `siddefs.h` and the waveform tables its `samp2src.pl` made from
-//! the `.dat` samples) and the C interface `src/shim.cc`, as the legacy build compiled them: GNU C++20, `-O2`, the
-//! compiler's own floating-point contraction (the filter tables are made in double at start-up: the same compiler
-//! and flags give the same tables, bit for bit, as the legacy plugin's).
+//! the `.dat` samples) and the C interface `src/shim.cc`, as the legacy build compiled them: GNU C++20, `-O2`, but
+//! without floating-point contraction, so the filter tables made in double at start-up are the same on every platform
+//! (the A/B references come from the legacy plugin rebuilt the same way).
 
 fn main() {
     const SOURCES: [&str; 9] =
@@ -12,6 +12,10 @@ fn main() {
         .cpp(true)
         // (GNU mode as the legacy build: GCC contracts a * b + c only in it, so ISO mode would round otherwise)
         .flag("-std=gnu++20")
+        // No fused multiply-add anywhere: the filter's tables are made in double at start-up, and a contraction the
+        // compiler may or may not do (clang on arm64 does, GCC on x86-64 cannot) would make them differ between
+        // platforms. The A/B references are made from the legacy plugin rebuilt the same way
+        .flag("-ffp-contract=off")
         .opt_level(2)
         .warnings(false)
         .include("vendor/resid")

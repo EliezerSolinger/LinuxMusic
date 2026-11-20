@@ -74,6 +74,7 @@ lm-plugins-tripleoscillator = { path = "crates/lm-plugins-tripleoscillator" }
 lm-plugins-ampandir = { path = "crates/lm-plugins-ampandir" }
 lm-plugins-sid = { path = "crates/lm-plugins-sid" }
 lm-plugins-freeboy = { path = "crates/lm-plugins-freeboy" }
+lm-plugins-opulenz = { path = "crates/lm-plugins-opulenz" }
 lm-plugins-effects = { path = "crates/lm-plugins-effects" }
 lm-plugins-instruments = { path = "crates/lm-plugins-instruments" }
 lm-plugins-stk = { path = "crates/lm-plugins-stk" }

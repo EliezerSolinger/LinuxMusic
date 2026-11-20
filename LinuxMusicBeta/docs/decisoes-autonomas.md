@@ -1012,6 +1012,39 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   nota fora da faixa tonal), em blocos de 256, 32 e 1024, do quadro 128 até o fim das notas. As chaves SO1/SO2
   trocadas na gravação do legado viram `ch<n>ToSo1`/`ch<n>ToSo2` pelo que fazem. A sonda de afinação do contrato
   usa o padrão sem o sweep do canal 1 (que sobe a nota) e a frequência que o registrador dá (A4 = 131072/297 Hz).
+- **OpulenZ: o YM3812 do `fmopl.c` (adplug/MAME 0.37a, LGPL-2.1 ou posterior) portado para Rust**
+  (`crates/lm-plugins-opulenz/src/opl.rs`), tabelas feitas como no original em `double`, contadores de fase sem sinal
+  com volta. Não portados porque o OpulenZ nunca chega a eles: o modo de ritmo, os timers/IRQ e o ADPCM do Y8950.
+  O instrumento é um fluxo só (como o legado, single-streamed e MIDI): nove vozes na ordem do LRU do legado, pitch
+  bend com a faixa do RPN 0, pressão de tecla, expressão de afinação por nota. Sem as funções de instrumento (o legado
+  também não as dava a um instrumento de fluxo único). **A velocidade** segue a lei proporcional do legado com a
+  velocidade base padrão da faixa (63): por isso `Velocity::Timbre` (degraus de 0,75 dB).
+- **Diferenças intencionais do OpulenZ:** uma mudança de botão chega ao chip na amostra (o legado: no período
+  seguinte); o note-off solta só a sua nota (o legado soltava todas as vozes da mesma tecla); a profundidade de
+  tremolo/vibrato muda de fato (o `fmopl.c` guardava as tabelas da última chip renderizada em globais e só as relia ao
+  renderizar outra chip); todo projeto usa a lei de velocidade proporcional; trocar a forma de onda (um campo `Choice`,
+  que reconstrói) faz crossfade de 10 ms entre a chip velha e a nova, como as funções de instrumento; a nota de
+  duração zero (note-off antes do note-on na mesma amostra) toca e é solta na hora. O patch GM sem tela e sem
+  gravação do legado não foi portado; a leitura de `.sbi` é da janela (pendente com o painel).
+- **A/B do OpulenZ:** o harness dos chips toca as notas por `NotePlayHandle` (o MIDI que elas mandam) e renderiza pelo
+  `InstrumentPlayHandle`, avançando o contador de período dos modelos e chamando o `preparePeriod` do instrumento
+  como o motor faz. 7 casos (padrão, aditivo com formas de onda, realimentação e escalas, LFOs com KSR e envelope
+  percussivo, acorde com 5 notas, volume e velocidade, mudança de botões): abaixo de −138 dBFS em todos (o resto é o
+  arredondamento do `expf` do ganho), blocos de 256, 32 e 1024.
+- **`TestHints::tail` no `lm-plugin`** (correção fora da pasta): quanto tempo uma nota do estado padrão pode ainda
+  soar depois do note-off; o teste de notas curtas espera esse tempo. O release do OPL no padrão do OpulenZ (taxa 3 da
+  portadora) leva 9,8 s até o silêncio, como no legado: 10 s declarados. O padrão continua 3,4 s.
+- **As referências dos chips sem contração de ponto flutuante:** o `build-references.sh` reconstrói `libsid`,
+  `libfreeboy` e `libopulenz` (e as bibliotecas `gme` e `adplug`) com `-ffp-contract=off`, e o `lm-sys-resid` compila
+  assim também: as tabelas feitas em `double` dão o mesmo em x86-64 e arm64, em qualquer compilador. As referências
+  não mudaram (o clang não contraía nada nelas).
+- **A tabela do VCR do filtro 6581 vem pronta** (`vendor/resid/vcr_n_ids_term.h`, gerada por
+  `tools/dump-vcr-table.sh` a partir do `filter.cc` intacto do legado, no macOS): ela é a única do reSID feita com
+  `exp` e `log1p`, que cada biblioteca C arredonda de um jeito, e o A/B do Sid falhava no Linux (x86-64 e aarch64)
+  contra as referências feitas no Mac. O resto das tabelas usa só `+ − × ÷ √`, exatos em IEEE sem contração.
+- **Target próprio do worktree** (`/private/tmp/claude-501/wt/chips-amps-target`, apagado no fim): o compartilhado
+  misturava artefatos do `lm-plugin` e do `lm-render` de outros worktrees mesmo com o `touch` (erros de campos e
+  tipos que não existem na árvore deste), como a seção do `lm-session` já registrou.
 
 ## Do `lm-session`, continuação (20/11)
 

@@ -10,7 +10,8 @@
  * through its own saveState()/restoreState() (the keys are the attributes the plugin saves). A per-note instrument plays each
  * note through a NotePlayHandle as the engine plays it (NotePlayHandle::play: the plugin's playNoteImpl, then the
  * track's sound shaping and the note's volume), each note into a buffer of its own, summed. A single-streamed one
- * (OpulenZ) gets the notes as MIDI events with the period and renders the period.
+ * (OpulenZ) gets the notes' MIDI events from the same NotePlayHandles and renders the period through an
+ * InstrumentPlayHandle, as the engine does.
  *
  * This file is part of LinuxMusic - GPL-2.0-or-later.
  */
@@ -31,9 +32,11 @@
 #include <QJsonObject>
 
 #include "AudioEngine.h"
+#include "AutomatableModel.h"
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "Instrument.h"
+#include "InstrumentPlayHandle.h"
 #include "InstrumentTrack.h"
 #include "MidiEvent.h"
 #include "Note.h"
@@ -85,9 +88,17 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 
 	auto notes = c["notes"].toArray();
 	auto playing = std::vector<Playing>{};
+	// A single-streamed instrument renders the period after its notes have sent their events, as the engine has it
+	auto stream = instrument->isSingleStreamed() ? std::make_unique<InstrumentPlayHandle>(instrument, track) : nullptr;
+	auto streamed = std::vector<SampleFrame>(static_cast<std::size_t>(period));
 	for (std::int64_t start = 0; start < frames; start += period)
 	{
+		// A period starts, as the engine counts them: the models' period (their changes are seen once, in it) and the
+		// instrument's preparePeriod() (where OpulenZ takes its knobs' changes to the chip)
+		AutomatableModel::incrementPeriodCounter();
 		if (start == changeAt) { apply(instrument, then["settings"].toObject()); }
+		for (auto* model : instrument->findChildren<AutomatableModel*>()) { model->valueBuffer(); }
+		instrument->prepareFor(start / period);
 		// The notes starting in this period, at their offset in it
 		for (const auto& value : notes)
 		{
@@ -106,6 +117,12 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			std::fill(p.buffer.begin(), p.buffer.end(), SampleFrame{});
 			p.handle->play(std::span<SampleFrame>{p.buffer.data(), p.buffer.size()});
 			for (std::int64_t f = 0; f < count; ++f) { out[start + f] += p.buffer[f]; }
+		}
+		if (stream)
+		{
+			std::fill(streamed.begin(), streamed.end(), SampleFrame{});
+			stream->play(std::span<SampleFrame>{streamed.data(), streamed.size()});
+			for (std::int64_t f = 0; f < count; ++f) { out[start + f] += streamed[f]; }
 		}
 		std::erase_if(playing, [](Playing& p) {
 			if (!p.handle->isFinished()) { return false; }

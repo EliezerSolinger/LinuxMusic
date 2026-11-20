@@ -520,13 +520,19 @@ pub fn short_notes(d: &'static Descriptor) {
     events.push(note_off(12_000, 40, 67));
     // Three times more notes than voices
     events.extend(chord(14_000, 100, 3 * p.voices(), 0, Some(16_000)));
-    let total = 4 * rate as usize;
+    // (the last note-off is at 20 000: the test listens 3.5 s after it, or after the plugin's own tail and 0.1 s)
+    let total = if p.tests.tail <= crate::DEFAULT_TAIL {
+        4 * rate as usize
+    } else {
+        20_000 + ((p.tests.tail + 0.2) * f64::from(rate)) as usize
+    };
     let out = p.bench(&p.playing(), rate).render(total, 256, &events, true);
     finite(&out, p.tests.max_level, "short notes");
     let x = mono(&out);
     assert!(peak(&x[9_200..9_800]) > 1.0e-4, "{}: the retriggered note does not sound", p.id);
     let tail = peak(&x[total - rate as usize / 10..]);
-    assert!(tail < 1.0e-5, "{}: something still sounds 3.5 s after the last note-off: {tail}", p.id);
+    let after = (total - rate as usize / 10 - 20_000) as f64 / f64::from(rate);
+    assert!(tail < 1.0e-5, "{}: something still sounds {after:.1} s after the last note-off: {tail}", p.id);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

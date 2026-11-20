@@ -199,6 +199,9 @@ static double log1p(double x)
 
 Filter::model_filter_t Filter::model_filter[2];
 
+// LinuxMusic (lm-sys-resid): see the VCR table below
+#include "vcr_n_ids_term.h"
+
 
 // ----------------------------------------------------------------------------
 // Constructor.
@@ -424,10 +427,11 @@ Filter::Filter()
 
         // kVg_Vx = k*Vg - Vx
         // I.e. if k != 1.0, Vg must be scaled accordingly.
+        // LinuxMusic (lm-sys-resid): the table as the legacy build made it, the same on every platform: exp() and
+        // log1p() round differently in each C library (vcr_n_ids_term.h, made by tools/dump-vcr-table.sh)
+        (void)n_Is;
         for (int kVg_Vx = 0; kVg_Vx < (1 << 16); kVg_Vx++) {
-            double log_term = log1p(exp((kVg_Vx/N16 - kVt)/(2*Ut)));
-            // Scaled by m*2^15
-            vcr_n_Ids_term[kVg_Vx] = to_table(n_Is*log_term*log_term);
+            vcr_n_Ids_term[kVg_Vx] = vcr_n_ids_term_table[kVg_Vx];
         }
 
         class_init = true;

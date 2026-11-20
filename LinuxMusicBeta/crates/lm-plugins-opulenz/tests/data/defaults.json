@@ -1,0 +1,38 @@
+{
+  "plugin:opulenz": {
+    "defaults": {
+      "op1Waveform": "sine",
+      "op2Waveform": "sine",
+      "params": {
+        "feedback": 0.0,
+        "fm": 1.0,
+        "op1Attack": 14.0,
+        "op1Decay": 14.0,
+        "op1KeyScalingRate": 0.0,
+        "op1Level": 62.0,
+        "op1LevelScaling": 0.0,
+        "op1Multiplier": 0.0,
+        "op1Percussive": 0.0,
+        "op1Release": 10.0,
+        "op1Sustain": 3.0,
+        "op1Tremolo": 1.0,
+        "op1Vibrato": 0.0,
+        "op2Attack": 1.0,
+        "op2Decay": 3.0,
+        "op2KeyScalingRate": 0.0,
+        "op2Level": 63.0,
+        "op2LevelScaling": 0.0,
+        "op2Multiplier": 1.0,
+        "op2Percussive": 0.0,
+        "op2Release": 12.0,
+        "op2Sustain": 14.0,
+        "op2Tremolo": 0.0,
+        "op2Vibrato": 1.0,
+        "tremoloDepth": 0.0,
+        "vibratoDepth": 0.0,
+        "volume": 16.0
+      }
+    },
+    "version": 1
+  }
+}
