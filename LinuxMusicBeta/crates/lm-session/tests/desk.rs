@@ -169,3 +169,135 @@ fn an_inserts_wet_dry_mix() {
     set(&mut s, p, "wet", Value::real(0.5).expect("r"));
     assert!((ratio(&s, "wet05.wav") - 1.5).abs() < 0.01, "half: 0.5·2 + 0.5·1");
 }
+
+mod latency {
+    //! A click instrument and an insert that delays by `LATENCY` samples and reports it
+    use std::any::Any;
+
+    use lm_base::Result;
+    use lm_plugin::{BuildContext, Descriptor, PluginKind, Port, Ports, TestHints, Velocity};
+    use lm_render::{EventKind, ProcessContext, Processor};
+    use lm_state::{NodeSchema, Value};
+
+    pub const LATENCY: usize = 100;
+
+    struct Click;
+    impl Processor for Click {
+        fn process(&mut self, cx: &mut ProcessContext<'_>) {
+            for e in cx.events {
+                if let EventKind::NoteOn { .. } = e.kind {
+                    for ch in 0..cx.buffers.outputs() {
+                        cx.buffers.output(ch)[e.offset as usize] = 1.0;
+                    }
+                }
+            }
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    struct Late {
+        memory: Vec<Vec<f32>>,
+        pos: usize,
+    }
+    impl Processor for Late {
+        fn process(&mut self, cx: &mut ProcessContext<'_>) {
+            let start = self.pos;
+            for ch in 0..cx.buffers.outputs() {
+                let mut pos = start;
+                let mem = &mut self.memory[ch];
+                for x in cx.buffers.in_out(ch).iter_mut() {
+                    std::mem::swap(&mut mem[pos], x);
+                    pos = (pos + 1) % LATENCY;
+                }
+                self.pos = pos;
+            }
+        }
+        fn latency(&self) -> u32 {
+            LATENCY as u32
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    fn click(_: &Value, _: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
+        Ok(Box::new(Click))
+    }
+    fn late(_: &Value, cx: &BuildContext<'_>) -> Result<Box<dyn Processor>> {
+        Ok(Box::new(Late { memory: vec![vec![0.0; LATENCY]; usize::from(cx.channels).max(1)], pos: 0 }))
+    }
+
+    pub static CLICK: Descriptor = Descriptor {
+        id: "click",
+        name: "plugin.click.name",
+        kind: PluginKind::Instrument,
+        schemas: || vec![NodeSchema::new("plugin:click", 1)],
+        ports: |_| Ports { outputs: vec![Port::new("main", 2)], sidechains: Vec::new() },
+        velocity: Velocity::Ignored,
+        display: None,
+        build: click,
+        tests: TestHints::new(),
+    };
+    pub static LATE: Descriptor = Descriptor {
+        id: "late",
+        name: "plugin.late.name",
+        kind: PluginKind::Effect,
+        schemas: || vec![NodeSchema::new("plugin:late", 1)],
+        ports: |_| Ports::default(),
+        velocity: Velocity::Ignored,
+        display: None,
+        build: late,
+        tests: TestHints::new(),
+    };
+}
+
+#[test]
+fn the_dry_side_is_delayed_by_the_inserts_latency() {
+    let dir = TempDir::new("wetdry-latency");
+    let mut config = config(&dir);
+    config.registry = lm_plugin::Registry::new(&[&latency::CLICK, &latency::LATE, &lm_plugins_testsine::DESCRIPTOR])
+        .expect("registry");
+    let mut s = Session::new(config).expect("session");
+    s.create(dir.join("lat")).expect("create");
+    let mut ch = None;
+    let mut track = None;
+    s.document_mut()
+        .transact(Label::new("test"), |e| {
+            e.set(ROOT, &[PathStep::key("mixer"), PathStep::key("mode")], Value::text("digital"))?;
+            let late = Value::object([
+                ("plugin", Value::text("late")),
+                ("version", Value::int(1)),
+                ("wet", Value::real(0.5)?),
+            ]);
+            let c = e.insert(ROOT, "mixer.channels", 0, Value::object([("inserts", Value::list([late]))]))?;
+            let inst = Value::object([("plugin", Value::text("click")), ("version", Value::int(1))]);
+            let t = e.insert(ROOT, "tracks", 0, Value::object([("instrument", inst)]))?;
+            let it =
+                e.insert(t, "items", 0, Value::object([("kind", Value::text("midi")), ("length", Value::int(960))]))?;
+            e.add_note(
+                it,
+                Value::object([("key", Value::int(60)), ("start", Value::int(480)), ("length", Value::int(240))]),
+            )?;
+            ch = Some(c);
+            track = Some(t);
+            Ok(())
+        })
+        .expect("setup");
+    let (c, t) = (ch.expect("c"), track.expect("t"));
+    s.document_mut()
+        .transact(Label::new("route"), |e| {
+            let out = e.find(t).and_then(|n| n.get("outputs").and_then(|l| l.at(0)).and_then(|o| o.get("id").cloned()));
+            let out = NodeId::parse(out.and_then(|v| v.as_text().map(str::to_owned)).unwrap_or_default().as_str())?;
+            e.set(out, &[PathStep::key("to")], Value::text(c.to_string()))
+        })
+        .expect("route");
+    settle(&mut s);
+    let (l, _) = render(&s, &dir, "lat.wav");
+    let hits: Vec<(usize, f32)> =
+        l.iter().enumerate().filter(|(_, v)| v.abs() > 1.0e-6).map(|(i, v)| (i, *v)).collect();
+    // One click of 0.5 + 0.5 at one sample: the dry half waited exactly as long as the wet half
+    assert_eq!(hits.len(), 1, "{hits:?}");
+    assert!((hits[0].1 - 1.0).abs() < 1.0e-6, "{hits:?}");
+}

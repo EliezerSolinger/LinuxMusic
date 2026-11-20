@@ -449,8 +449,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             // The value leaving this point when it differs from the arriving one (a jump, P-27)
             .field(FieldSpec::new("out", FieldKind::Real { min: -1.0e12, max: 1.0e12 }).optional()),
         // An instrument or an insert. `state` is the plugin's own tree, validated by the schema "plugin:<plugin>" at
-        // `version`
-        NodeSchema::new(ty::PLUGIN, 1)
+        // `version`. Version 2: the optional `wet` (a node of version 1 has none: all wet)
+        NodeSchema::new(ty::PLUGIN, 2)
             .field(FieldSpec::id(KIND_PLUGIN))
             .field(FieldSpec::new("plugin", FieldKind::Text))
             .field(FieldSpec::int("version", 1, MAX, 1))
@@ -459,7 +459,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             // An insert's wet/dry mix, 0 to 1 (the legacy EffectView's W/D; optional: absent is all wet, no mix node)
             .field(FieldSpec::new("wet", FieldKind::Real { min: 0.0, max: 1.0 }).optional())
             // Only for an insert of a channel (P-20); absent: "post-eq"
-            .field(FieldSpec::new("point", FieldKind::Choice(INSERT_POINTS)).optional()),
+            .field(FieldSpec::new("point", FieldKind::Choice(INSERT_POINTS)).optional())
+            .upgrade(1, unchanged),
         // A send to another channel, or to an insert's sidechain port (`port`, then required)
         NodeSchema::new(ty::SEND, 1)
             .field(FieldSpec::id(KIND_SEND))
