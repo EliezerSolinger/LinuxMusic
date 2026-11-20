@@ -47,6 +47,15 @@ pub const WHEEL_SHOW: Duration = Duration::from_millis(1000);
 /// Pixels of a trackpad's scroll that make one wheel notch (Qt's 120 of `angleDelta`)
 const PIXELS_PER_NOTCH: f32 = 20.0;
 
+/// A graph being drawn: one gesture, the samples as drawn so far
+struct GraphDraw {
+    ctrl: usize,
+    gesture: GestureId,
+    samples: Vec<f64>,
+    last_x: f32,
+    cursor: (f32, f32),
+}
+
 struct Drag {
     ctrl: usize,
     gesture: GestureId,
@@ -106,6 +115,9 @@ pub struct PluginPanel<H: PortHost> {
     schema: Option<NodeSchema>,
     focus: FocusHandle,
     drag: Option<Drag>,
+    graph: Option<GraphDraw>,
+    /// The last x drawn on each graph (`m_lastCursorX`, for Shift+click lines)
+    graph_last_x: HashMap<usize, f32>,
     /// A non-checkable button held down shows its active image
     pressed: Option<usize>,
     /// Shift+drag: the value carried, from this control
@@ -139,6 +151,8 @@ impl<H: PortHost> PluginPanel<H> {
             schema,
             focus: cx.focus_handle(),
             drag: None,
+            graph: None,
+            graph_last_x: HashMap::new(),
             pressed: None,
             carried: None,
             float: None,
@@ -170,6 +184,15 @@ impl<H: PortHost> PluginPanel<H> {
 
     /// A parameter's value: the one being dragged, the tree's, or the schema's default (the tree omits defaults)
     pub fn param(&self, key: &str, cx: &App) -> f64 {
+        if let Some(keys) = self.choice_keys(key) {
+            if let Some(d) = &self.drag
+                && self.spec.controls[d.ctrl].target().key() == key
+            {
+                return d.value;
+            }
+            let v = self.field(key, cx);
+            return keys.iter().position(|k| v.as_text() == Some(*k)).unwrap_or(0) as f64;
+        }
         if let Some(d) = &self.drag
             && self.spec.controls[d.ctrl].target() == Target::Param(self.spec.controls[d.ctrl].target().key())
             && self.spec.controls[d.ctrl].target().key() == key
@@ -182,6 +205,14 @@ impl<H: PortHost> PluginPanel<H> {
             .unwrap_or(0.0)
     }
 
+    /// The keys of a knob that turns this choice field, if one does
+    fn choice_keys(&self, field: &str) -> Option<&'static [&'static str]> {
+        self.spec.controls.iter().find_map(|c| match &c.kind {
+            Kind::Knob(k) if k.param == field => k.choices,
+            _ => None,
+        })
+    }
+
     /// A field's value, or its default
     pub fn field(&self, key: &str, cx: &App) -> Value {
         self.state(cx)
@@ -190,15 +221,89 @@ impl<H: PortHost> PluginPanel<H> {
             .unwrap_or(Value::NULL)
     }
 
+    /// A graph's samples: the one being drawn, the tree's list, or its default
+    pub fn samples(&self, ctrl: usize, cx: &App) -> Vec<f64> {
+        if let Some(d) = &self.graph
+            && d.ctrl == ctrl
+        {
+            return d.samples.clone();
+        }
+        let Kind::Graph(g) = &self.spec.controls[ctrl].kind else { return Vec::new() };
+        let v = self.field(g.field, cx);
+        let mut out: Vec<f64> = v.items().map(|x| x.as_real().unwrap_or(0.0)).collect();
+        out.resize(g.length, 0.0);
+        out
+    }
+
+    fn samples_value(samples: &[f64]) -> Value {
+        Value::list(samples.iter().map(|v| Value::real(*v).unwrap_or_default()))
+    }
+
+    fn graph_down(&mut self, ctrl: usize, x: f32, y: f32, shift: bool, cx: &mut Context<Self>) {
+        let Kind::Graph(g) = &self.spec.controls[ctrl].kind else { return };
+        let c = &self.spec.controls[ctrl];
+        let (lx, ly) = (x - c.x, y - c.y);
+        let mut samples = self.samples(ctrl, cx);
+        let last = self.graph_last_x.get(&ctrl).copied().unwrap_or(lx);
+        if shift {
+            widgets::graph_line(g, &mut samples, lx, ly, last);
+        } else {
+            widgets::graph_set(g, &mut samples, lx, ly);
+        }
+        let field = g.field;
+        let label = Label::new(c.name.key);
+        let op = self.field_op(field, Self::samples_value(&samples));
+        let gesture = self.host.update(cx, |h, _| {
+            let port = h.port_mut();
+            let gid = port.begin_gesture(label);
+            port.gesture_apply(&gid, vec![op]);
+            gid
+        });
+        self.graph = Some(GraphDraw { ctrl, gesture, samples, last_x: lx, cursor: (lx, ly) });
+        self.graph_last_x.insert(ctrl, lx);
+        cx.notify();
+    }
+
+    fn graph_move(&mut self, x: f32, y: f32, cx: &mut Context<Self>) {
+        let Some(d) = &mut self.graph else { return };
+        let c = &self.spec.controls[d.ctrl];
+        let Kind::Graph(g) = &c.kind else { return };
+        // `Graph::mouseMoveEvent`: the cursor kept inside the graph's 2-pixel border
+        let lx = (x - c.x).clamp(2.0, g.w - 3.0);
+        let ly = (y - c.y).clamp(2.0, g.h - 3.0);
+        widgets::graph_line(g, &mut d.samples, lx, ly, d.last_x);
+        d.last_x = lx;
+        d.cursor = (lx, ly);
+        let ctrl = d.ctrl;
+        let value = Self::samples_value(&d.samples);
+        let field = g.field;
+        let op = self.field_op(field, value);
+        self.graph_last_x.insert(ctrl, lx);
+        let host = self.host.clone();
+        let Some(d) = &self.graph else { return };
+        host.update(cx, |h, _| h.port_mut().gesture_apply(&d.gesture, vec![op]));
+        cx.notify();
+    }
+
+    fn graph_up(&mut self, cx: &mut Context<Self>) {
+        if let Some(d) = self.graph.take() {
+            self.host.update(cx, |h, _| h.port_mut().gesture_commit(d.gesture));
+            cx.notify();
+        }
+    }
+
     fn range(&self, ctrl: usize) -> Range {
         let c = &self.spec.controls[ctrl];
         let (key, step, center, log) = match &c.kind {
             Kind::Knob(k) => (k.param, k.step, k.center, k.log),
             Kind::Lcd(l) => (l.param, 1.0, None, false),
-            Kind::Led(_) | Kind::Button(_) | Kind::Combo(_) => (c.target().key(), 1.0, None, false),
+            Kind::Led(_) | Kind::Button(_) | Kind::Combo(_) | Kind::Graph(_) => (c.target().key(), 1.0, None, false),
         };
         let p = self.schema.as_ref().and_then(|s| s.find_param(key));
-        let (min, max) = p.map_or((0.0, 1.0), |p| (p.min, p.max));
+        let (min, max) = match self.choice_keys(key) {
+            Some(keys) => (0.0, keys.len().saturating_sub(1) as f64),
+            None => p.map_or((0.0, 1.0), |p| (p.min, p.max)),
+        };
         let log = log != self.toggled_log.contains(&c.target());
         Range { min, max, step, center: center.unwrap_or(min), log }
     }
@@ -217,6 +322,7 @@ impl<H: PortHost> PluginPanel<H> {
             Bind::Choice { field, key } => self.field(field, cx).as_text() == Some(key),
             Bind::Switch { param } => self.param(param, cx) >= 0.5,
             Bind::Flag { field } => self.field(field, cx).as_bool() == Some(true),
+            Bind::Press(_) => false,
         }
     }
 
@@ -229,6 +335,8 @@ impl<H: PortHost> PluginPanel<H> {
                 let v = r.rounded(self.param(k.param, cx));
                 if k.volume {
                     widgets::volume_text(v, k.zero_dbfs)
+                } else if let Some(f) = k.unit_of {
+                    format!("{}{}", widgets::qt_number(v), f(v))
                 } else {
                     format!("{}{}", widgets::qt_number(v), unit(k.unit))
                 }
@@ -238,6 +346,7 @@ impl<H: PortHost> PluginPanel<H> {
                 let v = self.field(cb.field, cx);
                 cb.items.iter().find(|i| v.as_text() == Some(i.key)).map(|i| i.text.show()).unwrap_or_default()
             }
+            Kind::Graph(_) => String::new(),
             Kind::Led(_) | Kind::Button(_) => match c.target() {
                 Target::Param(k) => widgets::qt_number(self.param(k, cx)),
                 Target::Field(k) => match self.field(k, cx) {
@@ -286,7 +395,13 @@ impl<H: PortHost> PluginPanel<H> {
                 let v = r.fit(v);
                 (self.param_op(k, v), Some((k, v)))
             }
-            Target::Field(k) => (Some(self.field_op(k, value)), None),
+            Target::Field(k) => {
+                let value = match (self.choice_keys(k), value.as_real()) {
+                    (Some(keys), Some(i)) => Value::text(keys[(i.round().max(0.0) as usize).min(keys.len() - 1)]),
+                    _ => value,
+                };
+                (Some(self.field_op(k, value)), None)
+            }
         };
         let Some(op) = op else { return };
         self.host.update(cx, |h, _| {
@@ -301,7 +416,7 @@ impl<H: PortHost> PluginPanel<H> {
     }
 
     fn begin_drag(&mut self, ctrl: usize, y: f32, cx: &mut Context<Self>) {
-        let Target::Param(key) = self.spec.controls[ctrl].target() else { return };
+        let key = self.spec.controls[ctrl].target().key();
         let value = self.param(key, cx);
         let label = Label::new(self.spec.controls[ctrl].name.key);
         let gesture = self.host.update(cx, |h, _| h.port_mut().begin_gesture(label));
@@ -324,14 +439,22 @@ impl<H: PortHost> PluginPanel<H> {
             return;
         }
         d.value = v;
-        let Target::Param(key) = self.spec.controls[ctrl].target() else { return };
-        let Some(op) = self.param_op(key, v) else { return };
+        let (op, live) = match self.spec.controls[ctrl].target() {
+            Target::Param(key) => (self.param_op(key, v), Some(key)),
+            Target::Field(key) => match self.choice_keys(key) {
+                Some(keys) => (Some(self.field_op(key, Value::text(keys[(v as usize).min(keys.len() - 1)]))), None),
+                None => (None, None),
+            },
+        };
+        let Some(op) = op else { return };
         let node = self.node;
         let host = self.host.clone();
         let Some(d) = &self.drag else { return };
         host.update(cx, |h, _| {
             let port = h.port_mut();
-            port.param_write(node, key, v as f32);
+            if let Some(key) = live {
+                port.param_write(node, key, v as f32);
+            }
             port.gesture_apply(&d.gesture, vec![op]);
         });
         self.show_float(ctrl, None, cx);
@@ -394,6 +517,18 @@ impl<H: PortHost> PluginPanel<H> {
         let Some(ctrl) = self.spec.hit(x, y) else { return };
         let c = &self.spec.controls[ctrl];
         let m = ev.modifiers;
+        if let Kind::Graph(_) = &c.kind {
+            // a graph has no model menu in the legacy: only the left button draws
+            if ev.button == MouseButton::Left {
+                self.graph_down(ctrl, x, y, m.shift, cx);
+            }
+            return;
+        }
+        let press = matches!(&c.kind, Kind::Button(b) if matches!(b.bind, Bind::Press(_)));
+        if press && ev.button != MouseButton::Left {
+            // a push button has no model: no reset, no menu
+            return;
+        }
         match ev.button {
             MouseButton::Middle => {
                 let t = c.target();
@@ -423,6 +558,7 @@ impl<H: PortHost> PluginPanel<H> {
                     let bind = l.bind;
                     self.click_button(ctrl, bind, ev.click_count, cx);
                 }
+                Kind::Graph(_) => {}
                 Kind::Combo(_) => {
                     // `ComboBox::mousePressEvent`: the list of the choices under the box
                     let c = &self.spec.controls[ctrl];
@@ -455,6 +591,37 @@ impl<H: PortHost> PluginPanel<H> {
                 let on = self.is_on(bind, cx);
                 self.set(ctrl, Value::bool(!on), cx);
             }
+            Bind::Press(f) => {
+                // a push button: its active image while held (`PixmapButton::mousePressEvent`), its edits in one step
+                self.pressed = Some(ctrl);
+                let mut seed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0x9e37_79b9, |d| d.as_nanos() as u64)
+                    | 1;
+                let mut rand = move || {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    (seed >> 11) as f64 / (1u64 << 53) as f64
+                };
+                let value = |k: &str| self.param(k, cx);
+                let default = |k: &str| self.schema.as_ref().and_then(|s| s.find_param(k)).map_or(0.0, |p| p.def);
+                let field = |k: &str| self.field(k, cx);
+                let edits =
+                    f(&mut crate::spec::PressCx { value: &value, field: &field, default: &default, rand: &mut rand });
+                let ops: Vec<EditOp> = edits
+                    .into_iter()
+                    .filter_map(|(t, v)| match t {
+                        Target::Param(k) => v.as_real().and_then(|x| self.param_op(k, x)),
+                        Target::Field(k) => Some(self.field_op(k, v)),
+                    })
+                    .collect();
+                let label = Label::new(self.spec.controls[ctrl].name.key);
+                self.host.update(cx, |h, _| {
+                    let _ = h.port_mut().apply(label, ops);
+                });
+                cx.notify();
+            }
         }
     }
 
@@ -476,6 +643,42 @@ impl<H: PortHost> PluginPanel<H> {
             let Some(path) = chosen.pop() else { return };
             let _ = this.update(cx, |p, cx| p.import_file(ctrl, path, cx));
         }));
+    }
+
+    /// Files dropped on the panel: the first with one of `extensions` goes to the core's `action` as its bytes
+    /// (`{node, bytes}`), read here off the main thread: the file is on the interface's machine, which in the client
+    /// is not the core's
+    pub fn drop_files(
+        &mut self,
+        action: &'static str,
+        extensions: &[&str],
+        paths: &[std::path::PathBuf],
+        cx: &mut Context<Self>,
+    ) {
+        let wanted = |p: &&std::path::PathBuf| {
+            p.extension().and_then(|e| e.to_str()).is_some_and(|e| extensions.iter().any(|x| x.eq_ignore_ascii_case(e)))
+        };
+        let Some(path) = paths.iter().find(wanted).cloned() else { return };
+        let node = self.node;
+        let read = cx.background_executor().spawn(async move {
+            // a patch is a few bytes; anything past 1 MB is not one
+            std::fs::read(&path).ok().filter(|b| b.len() <= 1 << 20)
+        });
+        self.timer = Some(cx.spawn(async move |this, cx| {
+            let Some(bytes) = read.await else { return };
+            let _ = this.update(cx, |p, cx| p.send_file(action, node, &bytes, cx));
+        }));
+    }
+
+    /// Sends a file's bytes to the core's action for this plugin (`{node, bytes}`, one undo step there)
+    pub fn send_file(&mut self, action: &'static str, node: NodeId, bytes: &[u8], cx: &mut Context<Self>) {
+        let params = Value::object([
+            ("node", Value::text(node.to_string())),
+            ("bytes", Value::list(bytes.iter().map(|b| Value::int(i64::from(*b))))),
+        ]);
+        self.host.update(cx, |h, _| {
+            let _ = h.port_mut().run_action(action.into(), params);
+        });
     }
 
     /// Imports `path` for the file field of `ctrl` (also what the double click ends in; the tests call it)
@@ -520,6 +723,10 @@ impl<H: PortHost> PluginPanel<H> {
     }
 
     fn mouse_move(&mut self, x: f32, y: f32, ev: &MouseMoveEvent, inside: bool, cx: &mut Context<Self>) {
+        if self.graph.is_some() {
+            self.graph_move(x, y, cx);
+            return;
+        }
         if self.drag.is_some() {
             self.drag_to(y, ev.modifiers.shift, cx);
             return;
@@ -537,6 +744,7 @@ impl<H: PortHost> PluginPanel<H> {
             return;
         }
         self.end_drag(cx);
+        self.graph_up(cx);
         self.pressed = None;
         if let Some((from, v)) = self.carried.take()
             && let Some(to) = self.spec.hit(x, y)
@@ -899,6 +1107,18 @@ impl<H: PortHost> PluginPanel<H> {
                 let (sheet, digits) = (l.sheet, l.digits);
                 (hsh, Box::new(move |cv| widgets::draw_lcd(cv, sheet, digits, &text, true)))
             }
+            Kind::Graph(g) => {
+                let samples = self.samples(ctrl, cx);
+                let cursor = self.graph.as_ref().filter(|d| d.ctrl == ctrl).map(|d| d.cursor);
+                let mut h = std::hash::DefaultHasher::new();
+                use std::hash::{Hash, Hasher};
+                for v in &samples {
+                    v.to_bits().hash(&mut h);
+                }
+                cursor.map(|(x, y)| (x.to_bits(), y.to_bits())).hash(&mut h);
+                let g = g.clone();
+                (h.finish(), Box::new(move |cv| widgets::draw_graph(cv, &g, &samples, cursor)))
+            }
             Kind::Combo(cb) => {
                 let v = self.field(cb.field, cx);
                 let i = cb.items.iter().position(|it| v.as_text() == Some(it.key));
@@ -985,7 +1205,7 @@ impl<H: PortHost> PluginPanel<H> {
                         out.push(base(tx, y, theme::DEFAULT_FONT_PX, t, 0xe0e0e0, false));
                     }
                 }
-                Kind::Button(_) => {}
+                Kind::Button(_) | Kind::Graph(_) => {}
             }
         }
         for l in &self.spec.labels {
@@ -1113,6 +1333,11 @@ impl<H: PortHost> Render for PluginPanel<H> {
             .w(px(w))
             .h(px(h))
             .bg(rgb(spec.fill));
+        if let Some(crate::spec::FileDrop::Action { action, extensions }) = spec.file_drop {
+            root = root.on_drop(cx.listener(move |p, paths: &gpui::ExternalPaths, _, cx| {
+                p.drop_files(action, extensions, paths.paths(), cx);
+            }));
+        }
         if let Some(bg) = spec.background {
             root = root.child(img(bg.gpui_image()).absolute().top_0().left_0().w(px(w)).h(px(h)));
         }

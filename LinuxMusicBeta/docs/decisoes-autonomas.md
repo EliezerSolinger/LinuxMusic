@@ -719,6 +719,18 @@ modos e a chave ANALOG / DIGITAL. Só muda o que segue:
     a entidade com `open_entity`) responde abrindo a janela de ligação do `lm-gui` (o painel não depende do `lm-gui`).
   - **O `VolumeKnob` guarda o seu 0 dBFS** (`setZeroDbfsPoint`: 100 nos instrumentos, 1 no FDBK e no NOISE do
     Flanger), para o texto e a digitação em dBFS darem os números do legado.
+  - **Botões sem modelo** (o "Randomise" do Organic, os geradores e o "mutate" do sfxr) são `Bind::Press`: uma
+    função que lê os valores e os padrões e devolve as mudanças, aplicadas numa transação só (um passo de desfazer),
+    com os números do legado (`randomiseSettings`, `genPickup`…`mutate`). Os geradores do sfxr guardam cada valor em
+    0–1, como os `SfxrZeroToOneFloatModel` do legado, mesmo onde o esquema novo aceita −1–1: o som gerado é o do
+    legado.
+  - **Knob sobre um campo de escolha:** quando o legado tinha um número e o estado novo uma chave (a forma de onda
+    do Organic, U30), o knob anda pelas chaves na ordem do legado (`KnobSpec::choices`).
+  - **Gráficos desenháveis** (`Graph` do legado: Nearest, Linear, LinearNonCyclic, Bar) sobre um campo lista de
+    reais: clicar põe uma amostra, arrastar traça a reta (`drawLineAt`), Shift+clique liga ao último x; um traço é
+    um gesto, um passo de desfazer. Não têm menu nem mapa MIDI, como no legado (não são um valor).
+  - **Arquivo solto no painel** (o `.sbi` do OpulenZ): o painel lê os bytes fora da thread principal e manda à ação
+    do núcleo (`opulenz.import_sbi` com `{node, bytes}`), porque no cliente o arquivo está na máquina da interface.
   - **Ligar dois controles com Ctrl+arrasto (P-04) não entra ainda:** o controle compartilhado não existe no núcleo.
   - **O arquivo da onda do usuário (TripleOscillator) é importado pela porta** (`CorePort::import`) e o campo e a
     escolha mudam num passo. No cliente a resposta chega depois: o host entrega por `PortHost::take_imported`, o

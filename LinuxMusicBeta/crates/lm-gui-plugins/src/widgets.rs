@@ -636,3 +636,105 @@ mod tests {
         }
     }
 }
+
+/// `Graph::paintEvent`: the curve in its style, the cross of the cursor while drawing, the foreground pixmap
+pub fn draw_graph(c: &mut Canvas, g: &crate::spec::GraphSpec, samples: &[f64], cursor: Option<(f32, f32)>) {
+    use crate::spec::GraphStyle;
+    let (w, h) = (g.w, g.h);
+    let n = samples.len().max(1);
+    let xscale = (w - 4.0) / n as f32;
+    let yscale = (h - 4.0) / (g.min - g.max) as f32;
+    let ys = |v: f64| 2.0 + (((v - g.max) as f32 * yscale) as i32) as f32;
+    let xs = |i: usize| 2.0 + ((i as f32 * xscale) as i32) as f32;
+    let pen = Paint::Solid(g.color);
+    let last = n - 1;
+    // a cosmetic pen of 1: the pixel row of the integer coordinate (Qt draws it at +0.5 without antialiasing)
+    let crisp = |c: &mut Canvas, x0: f32, y0: f32, x1: f32, y1: f32| {
+        c.line((x0 + 0.5, y0 + 0.5), (x1 + 0.5, y1 + 0.5), 1.0, Cap::Square, &pen);
+    };
+    match g.style {
+        GraphStyle::Linear | GraphStyle::LinearNonCyclic => {
+            for i in 0..last {
+                c.line((xs(i), ys(samples[i])), (xs(i + 1), ys(samples[i + 1])), 1.0, Cap::Flat, &pen);
+            }
+            if g.style == GraphStyle::Linear {
+                c.line((xs(last), ys(samples[last])), (w - 3.0, ys(samples[0])), 1.0, Cap::Flat, &pen);
+            }
+        }
+        GraphStyle::Nearest => {
+            for i in 0..last {
+                crisp(c, xs(i), ys(samples[i]), xs(i + 1), ys(samples[i]));
+                crisp(c, xs(i + 1), ys(samples[i]), xs(i + 1), ys(samples[i + 1]));
+            }
+            crisp(c, xs(last), ys(samples[last]), w - 3.0, ys(samples[last]));
+        }
+        GraphStyle::Bar => {
+            let fill = Rgba { a: 100.0 / 255.0, ..g.color };
+            let bottom = (((g.min - g.max) as f32 * yscale) as i32) as f32;
+            for (i, v) in samples.iter().enumerate() {
+                let top = ys(*v) - 2.0;
+                c.fill_rect(xs(i), ys(*v), ((xscale as i32) - 1).max(1) as f32, (bottom - top).max(1.0), fill);
+                let x1 = ((i as f32 * xscale) as i32 + xscale as i32).max(2 + (i as f32 * xscale) as i32) as f32;
+                crisp(c, xs(i), ys(*v), x1, ys(*v));
+            }
+        }
+    }
+    if let Some((x, y)) = cursor {
+        let cross = Paint::Solid(Rgba::hex(0x707c91));
+        c.line((2.0, y.floor() + 0.5), (w - 2.0, y.floor() + 0.5), 1.0, Cap::Flat, &cross);
+        c.line((x.floor() + 0.5, 2.0), (x.floor() + 0.5, h - 2.0), 1.0, Cap::Flat, &cross);
+    }
+    if let Some(fg) = g.foreground {
+        c.pixmap(assets::image(fg), 0.0, 0.0, false);
+    }
+}
+
+/// `Graph::changeSampleAt`: the sample under `x` takes the value of `y`
+pub fn graph_set(g: &crate::spec::GraphSpec, samples: &mut [f64], x: f32, y: f32) {
+    if g.w <= 4.0 || samples.is_empty() {
+        return;
+    }
+    let xscale = samples.len() as f32 / (g.w - 4.0);
+    let (x, y) = (x - 2.0, y - 2.0);
+    let v = f64::from(y) * (g.min - g.max) / f64::from(g.h - 5.0) + g.max;
+    let i = ((x * xscale) as isize).clamp(0, samples.len() as isize - 1) as usize;
+    samples[i] = graph_fit(g, v);
+}
+
+/// `Graph::drawLineAt`: a straight line of samples from the last x to this one
+pub fn graph_line(g: &crate::spec::GraphSpec, samples: &mut [f64], x: f32, y: f32, last_x: f32) {
+    if g.w <= 4.0 || samples.is_empty() {
+        return;
+    }
+    let len = samples.len();
+    let xscale = len as f32 / (g.w - 4.0);
+    let x = (x - 2.0) as i32;
+    let y = y - 2.0;
+    let lastx = ((last_x - 2.0) as i32).clamp(0, g.w as i32 - 5);
+    let v = f64::from(y) * (g.min - g.max) / f64::from(g.h - 5.0) + g.max;
+    let (begin, end, mut vb, ve) = if lastx > x {
+        let b = ((x as f32 * xscale) as i32).max(0) as usize;
+        let e = (((lastx + 1) as f32 * xscale).ceil() as usize).min(len);
+        (b, e, v, samples[e.saturating_sub(1)])
+    } else {
+        let b = ((lastx as f32 * xscale) as i32).max(0) as usize;
+        let e = (((x + 1) as f32 * xscale).ceil().max(0.0) as usize).min(len);
+        (b.min(len - 1), e, samples[b.min(len - 1)], v)
+    };
+    let n = end.saturating_sub(begin).max(1);
+    if n == 1 {
+        vb = v;
+    }
+    let step = (ve - vb) / n as f64;
+    for i in 0..n {
+        if begin + i < len {
+            samples[begin + i] = graph_fit(g, vb + i as f64 * step);
+        }
+    }
+}
+
+/// `graphModel::drawSampleAt`: clamped to the range, rounded to the step
+fn graph_fit(g: &crate::spec::GraphSpec, v: f64) -> f64 {
+    let v = v.clamp(g.min, g.max);
+    if g.step > 0.0 { ((v / g.step).round() * g.step).clamp(g.min, g.max) } else { v }
+}

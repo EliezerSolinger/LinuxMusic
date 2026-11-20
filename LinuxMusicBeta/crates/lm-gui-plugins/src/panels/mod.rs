@@ -3,8 +3,14 @@
 use crate::spec::PanelSpec;
 
 pub mod effects;
+pub mod freeboy;
 pub mod kicker;
 pub mod lb302;
+pub mod nes;
+pub mod opulenz;
+pub mod organic;
+pub mod sfxr;
+pub mod sid;
 pub mod tripleoscillator;
 
 type SpecFn = fn() -> &'static PanelSpec;
@@ -21,6 +27,12 @@ pub static ALL: &[(&str, SpecFn)] = &[
     ("stereomatrix", || &effects::STEREOMATRIX_PANEL),
     ("dualfilter", || &effects::DUALFILTER_PANEL),
     (lb302::ID, || &lb302::PANEL),
+    (sid::ID, || &sid::PANEL),
+    (organic::ID, || &organic::PANEL),
+    (sfxr::ID, || &sfxr::PANEL),
+    (nes::ID, || &nes::PANEL),
+    (freeboy::ID, || &freeboy::PANEL),
+    (opulenz::ID, || &opulenz::PANEL),
 ];
 
 pub fn spec(plugin: &str) -> Option<&'static PanelSpec> {
@@ -28,5 +40,13 @@ pub fn spec(plugin: &str) -> Option<&'static PanelSpec> {
 }
 
 /// Every panel's images (the asset test decodes them all)
-pub static ASSETS: &[&[&crate::assets::Asset]] =
-    &[tripleoscillator::ASSETS, kicker::ASSETS, effects::ASSETS, lb302::ASSETS];
+pub static ASSETS: &[&[&crate::assets::Asset]] = &[
+    tripleoscillator::ASSETS,
+    kicker::ASSETS,
+    effects::ASSETS,
+    lb302::ASSETS,
+    sid::ASSETS,
+    organic::ASSETS,
+    sfxr::ASSETS,
+    nes::ASSETS,
+];

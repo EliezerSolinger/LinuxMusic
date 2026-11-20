@@ -162,7 +162,9 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                     unit,
                     volume,
                     zero_dbfs: 100.0,
+                    unit_of: None,
                     label: None,
+                    choices: None,
                     log: false,
                 }),
                 name: Text::n(name, n),
@@ -209,6 +211,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         fill: 0x000000,
         controls,
         labels: Vec::new(),
+        file_drop: None,
     }
 });
 
