@@ -418,7 +418,7 @@ a linha diz "só planejado".
 | F-REC-101 | Modos de gravação MIDI | Overdub (padrão: as notas vão para o clipe que cobre o lugar ou para um novo no compasso); Substituir (as notas do trecho somem); Take numa camada | menu do ● da faixa de instrumento | 1.0 |
 | F-REC-102 | Quantizar ao gravar | Grade desligada (padrão) / 1/4 / 1/8 / 1/16 / 1/32 / 1/64; força 50 / 75 / 100 %; só o início da nota | mesmo menu | 1.0 |
 | F-REC-103 | Entrada MIDI da faixa | Receber liga/desliga, dispositivos, canal (todos, padrão) | botão MIDI no cabeçalho | 1.0 |
-| F-REC-104 | CC, pitch bend, aftertouch, program change na gravação; um take MIDI por passada de loop; compensar a latência MIDI | Não feitos | — | aberto (P-15) |
+| F-REC-104 | CC, pitch bend, aftertouch, program change na gravação; um take MIDI por passada de loop; compensar a latência MIDI | Não feitos | — | 1.0 (I-21.4) |
 
 ### 5.7 Andamento e itens gravados
 

@@ -1284,6 +1284,256 @@ controlado de outro", e também o jeito de testar o protocolo no CI.
   2 MB transferidos; reaberto, com zero de formas de onda transferidas.
 - Um cliente com papel "observar" não consegue mudar nada (testado para cada pedido).
 
+## I-21. MIDI e automação (F1, tudo na 1.0)
+
+**Decisões do usuário (20/11):**
+- **Tudo é mapeável por MIDI:** todo parâmetro, todo campo e toda ação.
+- **Na 1.0 entram:** o mapeamento, o retorno MIDI (LEDs, faders motorizados), as interfaces MIDI, a gravação MIDI
+  completa e a gravação e a edição de automação.
+- Esta seção junta e completa o que estava espalhado:
+  - na especificação: P-15, P-16 e P-38, a I-6.4 e a I-10.2;
+  - no inventário: F-CTL-004, F-REC-100 a 104 e 130/131, F-AUT-001 a 011, F-IJN-017 e 025, F-NOT-018 e F-PAS-001.
+- **Em conflito com aqueles itens, vale esta seção.**
+
+**A regra de arquitetura:** nenhum recurso precisa de código próprio para ser mapeável. O mapa aponta para os mesmos
+três tipos de alvo que já existem no núcleo:
+- os parâmetros (I-6);
+- os campos do documento (I-3);
+- as ações do registro (I-19, incluídas as ações da interface).
+
+Um parâmetro, campo ou ação novo nasce mapeável. **Teste gerado:** percorre todos os esquemas e o registro inteiro e
+mapeia cada alvo.
+
+### I-21.1 Interfaces MIDI (dispositivos)
+
+- **Backends:**
+  - ALSA seq: o primeiro, núcleo;
+  - ALSA raw MIDI (P-16): para placas que o seq não expõe bem;
+  - JACK MIDI: junto com o JACK;
+  - CoreMIDI: no macOS, depois.
+- **Uma porta tem identidade estável:** nome do cliente + nome da porta, nunca o número do ALSA, que muda a cada
+  ligação.
+  - As preferências da máquina dão a cada porta:
+    - entrada e saída ligadas;
+    - o papel: **instrumento**, **controlador** ou os dois;
+    - a latência de entrada (P-15);
+    - um **apelido** ("Teclado", "Controlador 1").
+  - O projeto guarda só apelidos (P-36): um projeto aberto noutra máquina pede, uma vez, a porta de cada apelido.
+- **Ligar e desligar a quente:** os anúncios do seq (porta nova, porta que sumiu) chegam como eventos.
+  - O que usava uma porta que sumiu mostra "desconectado" e continua no projeto.
+  - Quando a porta volta, tudo religa sozinho, com um aviso (I-14).
+- **Portas próprias:** o programa expõe "LinuxMusicBeta entrada" e "LinuxMusicBeta saída" no seq, para outros
+  programas ligarem nele.
+- **Entrada:**
+  - Cada evento chega com o carimbo do relógio da fila do seq, convertido para `CLOCK_MONOTONIC` (C6), menos a
+    latência da porta.
+  - O `Renderer` põe o evento na amostra exata **com atraso fixo de um bloco**: sem jitter, a mesma latência sempre,
+    e a gravação fica onde foi tocada.
+  - Mensagens aceitas:
+    - notas, CC (7 bits e pares de 14 bits), NRPN/RPN, pitch bend, aftertouch de canal e polifônico;
+    - program change;
+    - SysEx: só passa para plugins e para o retorno de perfis de controlador; não grava.
+- **Saída** (`MidiOutput`):
+  - Uma thread por backend, alimentada pelo `Renderer` por um anel com carimbos.
+  - Os eventos vão para a fila do seq com o horário marcado, então saem na hora exata, não na hora do bloco.
+  - Servem a esta saída: a saída MIDI de faixas para aparelhos externos (P-38), o retorno (I-21.3) e a compensação de
+    latência de saída por porta.
+- **Entrada da faixa** (F-REC-103, F-REC-131):
+  - portas (lista ou "todas as de papel instrumento") e filtro de canal;
+  - "seguir a seleção": o teclado toca a faixa selecionada.
+  - Uma faixa armada ou em monitoramento recebe.
+- **Ponte MIDI do sistema:** fora. Não há roteamento de MIDI entre faixas na 1.0 (P-38).
+- **MIDI Clock e MTC:** depois da 1.0. O legado não tem.
+
+### I-21.2 Mapeamento
+
+```rust
+/// One mapping: a source on a port, a transform, a target. Lives in the project (`project.midiMap`), or in the
+/// machine's preferences for mappings that hold in every project (the same schema). The project wins on a conflict
+pub struct Mapping {
+    pub source: Source,        // port alias (or Any) + channel + message
+    pub target: MapTarget,
+    pub transform: Transform,
+    pub feedback: bool,        // send the target's value back (I-21.3); on by default when the port has an output
+    pub consume: bool,         // the message does not also reach instruments (default true)
+}
+
+pub enum Message {
+    Cc { number: u8 }, Cc14 { msb: u8 },         // 14-bit pair: msb and msb+32
+    Nrpn { number: u16 }, Rpn { number: u16 },   // 14-bit
+    Note { key: u8 }, PitchBend, ChannelPressure, PolyPressure { key: u8 }, ProgramChange,
+}
+
+pub enum MapTarget {
+    Param { node: NodeRef, key: String },         // any parameter: plugin, rack section, fader, send, pan, master
+    Field { node: NodeRef, path: Vec<PathStep> }, // switches and choices (mute, solo, arm, monitor, a wave shape)
+    Action { id: ActionId, params: Value, value_into: Option<Vec<PathStep>> }, // any registered action
+}
+
+/// A fixed node, or one that follows the selection (a control surface works on "the selected track")
+pub enum NodeRef {
+    Id(NodeId),
+    Selected { role: SelRole, offset: u32 },     // SelRole: Track, Channel, Plugin (the focused one); offset: banks
+}
+
+pub struct Transform {
+    pub min: f32, pub max: f32, pub invert: bool, pub curve: Curve,     // in the target's normalized range
+    pub mode: Mode,         // Absolute, Relative(Encoding: TwosComplement | SignMagnitude | Offset64), with a step
+    pub takeover: Takeover, // Jump, Pickup (waits until the control passes the value), Scale (converges)
+    pub button: Button,     // for Note and on/off CCs: Momentary, Toggle, Trigger (on press)
+}
+```
+
+- **Onde o mapa mora:** no projeto (`project.midiMap`), porque o botão tem que voltar a obedecer quando o projeto
+  abre.
+  - Os mapas "de máquina" (transporte, desfazer, os botões de um controlador que valem em todo projeto) ficam nas
+    preferências, com o mesmo esquema.
+  - O alvo de um mapa do projeto é uma referência com `OnRemove::RemoveOwner`: o mapa some com o alvo e volta com o
+    desfazer.
+- **Um controle pode mover vários alvos**, que é o "controle compartilhado" de P-04/P-33. **Um alvo pode ter vários
+  controles**: vale o último que mexeu.
+- **O caminho em tempo real** (parâmetros):
+  - o compilador compila o mapa numa tabela fixa, na `Install` (I-5): a fonte vira a vaga, já com a faixa e a curva;
+  - o estado de cada mapa (metade de um par de 14 bits, pickup, toggle) mora em memória alocada na compilação;
+  - o `Renderer`, ao receber o evento, gera o `Param` **na amostra do evento**, marca a vaga como tocada (a mão vence
+    a automação, I-6.2) e escreve o valor na vaga;
+  - não passa pela thread principal nem aloca;
+  - a telemetria manda as vagas mexidas pelo MIDI (I-6.4).
+- **Fim do gesto:** o gesto MIDI termina 500 ms depois da última mensagem, ou com o toque solto num fader sensível ao
+  toque (I-21.3). Aí a `Session` grava o valor final no documento: um passo de desfazer por gesto, com rótulo
+  "MIDI: <alvo>".
+- **Campos e ações:**
+  - não são tempo real: o `Renderer` manda um evento pelo anel sem perda, e a `Session` aplica no próximo `pump`
+    (≤ 10 ms);
+  - um campo vira uma transação;
+  - uma ação roda pelo registro, com `value_into` levando o valor do controle para dentro dos parâmetros da ação (por
+    exemplo, o program change escolhe o preset de número N);
+  - as ações da interface (zoom, rolar, trocar de página) chegam à GUI pelo `Feed` `MidiUiAction`.
+- **Alvos que seguem a seleção:** quando a seleção muda (no documento da interface, I-3.8), a `Session` manda
+  recompilar só a tabela do mapa. Isso é barato.
+- **Aprender** (F-CTL-004), pelo `CorePort`: `midi_learn(target) -> Pending<LearnId>`, que tem cancelamento.
+  - A `Session` olha a atividade MIDI crua (um `Feed` com perda, que também alimenta o monitor de atividade da
+    interface).
+  - O primeiro movimento define a fonte. Nos 300 ms seguintes, ela detecta:
+    - o par de 14 bits;
+    - o NRPN;
+    - o encoder relativo: só valores perto de 1/127 ou 63/65.
+  - Depois cria o mapa numa transação.
+  - Um laço (o alvo controla a própria fonte) é recusado.
+- **Interface:** "Aprender MIDI" e "Tirar o mapa" no menu de todo controle (F-CTL-005), a janela de ligação, e uma
+  página "Mapas MIDI" com todos os mapas do projeto e da máquina, com edição, busca e o monitor de atividade.
+
+### I-21.3 Retorno MIDI e perfis de controlador
+
+- **Retorno:** um mapa com `feedback` manda o valor do alvo de volta pela saída da mesma porta, sempre que o valor
+  muda, venha a mudança da mão, da automação, do desfazer ou de outro controle.
+  - Mensagens: CC, par de 14 bits, nota com velocidade para o LED, pitch bend para fader motorizado.
+  - **Limite de taxa:** um valor por controle a cada 10 ms, sempre com o último valor.
+  - **Sem eco:** o valor que acabou de chegar daquela fonte não volta para ela por 50 ms, para não brigar com o fader
+    motorizado.
+  - Ao abrir o projeto, ao trocar o banco e ao religar a porta, todos os valores são mandados de novo.
+- **Toque:** uma fonte de toque opcional por mapa (a nota de toque dos faders motorizados) liga e desliga a vaga
+  tocada. Com o fader tocado, a automação não o move.
+- **Perfis de controlador:** um perfil é um arquivo de dados (`controllers/*.json`) com um conjunto de mapas de
+  máquina, os bancos (`offset` de 8 em 8) e o retorno.
+  - Na 1.0 há:
+    - **um perfil genérico editável**;
+    - **o protocolo Mackie Control Universal**: 8 faders motorizados com toque, V-pots relativos com anel de LED,
+      mute/solo/arm/seleção, transporte, bancos, o visor com nome e valor, e os medidores pelo retorno.
+  - O MCU precisa de código próprio, além dos mapas, para o visor (SysEx) e os medidores: fica num módulo do
+    `lm-session` que só traduz entre o protocolo e os mapas, sem outro caminho para o núcleo.
+  - HUI: depois da 1.0.
+
+### I-21.4 Gravação MIDI
+
+- **O que grava:** faixas armadas gravam notas com velocidade, CC, pitch bend, aftertouch e program change (P-15),
+  com o mesmo punch, pré-roll, contagem e laço da gravação de áudio. As teclas seguradas terminam no Parar.
+- **Para onde vai:**
+  - as mensagens **sem mapa** vão para o item MIDI, em faixas de controle dentro do item, e tocam de volta no
+    instrumento;
+  - as mensagens **com mapa** viram **automação do alvo** (I-21.5).
+- **Modos** (F-REC-101): somar (overdub, o padrão), substituir o trecho, ou take numa camada nova.
+  - Em laço, cada passada é uma camada, e uma passada com menos de 90 % do laço é descartada, como no áudio.
+- **Quantizar ao gravar** (F-REC-102): grade, força e "só o início".
+- **Também gravam:** o passo a passo (F-PAS-001) e a gravação no item aberto no editor de notas (F-NOT-018,
+  F-REC-029).
+- **À prova de queda:** os eventos gravados vão, a cada segundo, para um arquivo de registro só de acréscimo
+  (`audio/rec-<uuid>.midilog`), com `fsync`. A recuperação depois de uma queda segue a do áudio (`recording.json`,
+  U5).
+- **Desfazer:** um desfazer tira a gravação inteira, de todas as faixas (F-REC-027).
+
+### I-21.5 Automação: gravar e editar
+
+- **Onde mora:** cada faixa e cada canal da mesa têm a lista `automation` (o esquema do `lm-doc`). Cada pista aponta
+  para um parâmetro de qualquer nó do dono: plugin, seção do rack, fader, envio, pan, master.
+  - Pontos com forma (degrau, curva −1 a 1, suave com tensão) e salto (P-27).
+  - Os campos automatizáveis são parâmetros em degraus (a regra do `lm-plugin`).
+  - O andamento é a pista de andamento, com rampas (I-18).
+- **Modos por pista**, com um botão global que vale para todas:
+
+| Modo | Tocando |
+|---|---|
+| Desligado | a curva não toca |
+| Ler | a curva manda; a mão vence só enquanto toca (I-6.2) e volta para a curva em 50 ms |
+| Toque | grava só enquanto o controle está tocado; ao soltar, volta para a curva em 50 ms |
+| Trava | grava a partir do primeiro toque e segura o último valor até parar |
+| Escrever | grava a pista inteira enquanto toca, apagando o que havia |
+
+- **Gravação:**
+  - As fontes: a mão na interface (`param_write` com toque), o MIDI mapeado e o cliente remoto, todas pela vaga
+    tocada.
+  - A telemetria manda as vagas tocadas com a posição em amostras pelo anel que nunca perde (I-6.4, C3).
+  - A `Session` acumula e simplifica, com a tolerância na unidade do parâmetro (0,1 dB, 1 cent, 0,5 % da faixa) e
+    degraus exatos nos parâmetros discretos.
+  - Ela grava ao soltar, ao parar e a cada volta do laço: **uma transação de `Origin::Recording` por passada**, um
+    passo de desfazer. Em laço, a passada nova substitui o trecho que ela cobriu.
+  - Uma pista que ainda não existe é criada na mesma transação.
+  - O cabeçalho mostra "a mão venceu" até o rearme (o botão de rearmar volta todas as pistas para a curva).
+- **Edição:**
+  - Todo o F-AUT:
+    - desenhar e mover pontos, borracha, valor no ponto;
+    - espelhar, zoom e grade, fantasmas das notas e da onda;
+    - tocar a curva.
+  - Além disso:
+    - **lápis livre**, simplificado ao soltar;
+    - **linha** (Shift+clique);
+    - **selecionar trechos**, recortar, copiar e colar;
+    - **escalar e deslocar valores** da seleção;
+    - **afinar** (tirar pontos redundantes);
+    - **mover a automação junto com os itens** (opção, ligada por padrão);
+    - converter entre as faixas de controle de um item MIDI e uma pista de automação.
+  - As edições pesadas (afinar, converter, escalar muitos pontos) são ações do núcleo (I-19), com mais de 200 ms
+    virando `Operation`.
+
+### I-21.6 Pronto quando
+
+- **Mapeamento:**
+  - O teste gerado mapeia todo parâmetro de todo esquema, todo campo automatizável e toda ação do registro, e cada
+    um responde a um CC.
+  - Um CC mapeado chega ao processador na amostra certa, com o atraso fixo de um bloco, sob a armadilha de alocação.
+  - 14 bits, NRPN e os três modos relativos convertem exatamente; pickup não pula; toggle e momentâneo.
+  - Aprender detecta 7 bits, 14 bits, NRPN e encoder relativo a partir de sequências gravadas.
+  - Remover o alvo remove o mapa; desfazer o devolve.
+  - Seguir a seleção e trocar de banco recompilam só a tabela do mapa.
+- **Retorno:** o valor volta em toda origem de mudança; sem eco por 50 ms; limite de 10 ms; tudo reenviado ao abrir.
+  - Contra uma porta virtual no ThinkPad.
+  - O MCU contra um simulador de MCU em teste: faders, toque, V-pots, visor, bancos.
+- **Interfaces:**
+  - Desligar e religar uma porta (porta virtual) mantém os mapas e religa sozinho.
+  - O apelido resolve noutra máquina.
+  - A saída MIDI sai no horário marcado, com menos de 1 ms de erro no ThinkPad.
+- **Gravação MIDI:**
+  - Notas, CC, pitch bend, aftertouch e program change gravados nas posições certas.
+  - Camadas por passada.
+  - `kill -9` no meio devolve tudo até o último segundo.
+  - Um desfazer tira tudo.
+- **Automação:**
+  - Os cinco modos, cada um num teste com o tempo injetado.
+  - A curva gravada reproduz o movimento dentro da tolerância.
+  - Uma passada por passo de desfazer.
+  - A mão vence e volta em 50 ms.
+  - Gravar e tocar ao mesmo tempo, em 64 pistas, sem alocar no áudio.
+
 ---
 
 ## Parte 5: o programa no mundo real (H1–H19)
@@ -1786,6 +2036,7 @@ Linux.
 | 7 | `lm-compile` | compila árvores sorteadas; reaproveita nós iguais; nunca reutiliza um índice antes da devolução |
 | 8 | `lm-io` (Dummy, ALSA PCM, ALSA seq, DiskWriter, ResourceStore), testado numa máquina Linux de verdade e não só no CI | barreira testada com callback lenta; gravação de 1 h sem perda; anel cheio vira erro explícito; recursos com atraso injetado mostram o carregamento; trocar o SoundFont tocando não dá silêncio (o antigo toca até o novo ficar pronto, T7) |
 | 9 | `lm-session` + `lm-headless` | (e os da Parte 5:) disco cheio simulado em salvar, diário, gravação e importação não perde dados; projeto travado abre só para leitura; esquema mais novo abre só para leitura; colar entre dois projetos não repete ids; take de faixa apagada vira "Take recuperado"; janela minimizada por 10 min gravando não para a coleta; criar e destruir a sessão mil vezes tocando, sob ASan e LSan; salvar → abrir → salvar dá o mesmo arquivo; matar o processo e reabrir volta à última ação; toda operação da lista de I-2 aparece no `activity`; exportar com recursos e plugins ainda carregando dá o mesmo arquivo que exportar com tudo pronto (T8); com o relógio injetado, nenhum alvo mostra estado intermediário |
+| 9b | MIDI e automação (I-21) | todos os itens de I-21.6 |
 | 10 | A primeira fatia | `arquitetura-nova.md`: gravar com monitoramento, TripleOscillator, um efeito, salvar e abrir |
 | 10b | Revisão final de coerência dos dois documentos (C12) | as duas sessões confirmam por escrito que não há contradição nem termo sem definição |
 | 11 | O protótipo de interface e depois a `gui` | o protótipo decide a biblioteca; a `gui` usa só a superfície de I-15 |

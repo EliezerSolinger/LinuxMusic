@@ -389,3 +389,26 @@ mantém o som dentro da faixa dos botões; fora dela, faz o que a conta manda em
   dá os mesmos números em todos os 166 casos). O único dado do bloco que cruza estágios, se algum filtro soa depois
   da entrada (a cauda), é acumulado estágio a estágio e fechado pelo estágio 3; por isso `had_input` tem de ser o
   mesmo em todos os segmentos de um bloco, e todo bloco passa por todos os estágios, em ordem.
+
+## MIDI e automação (decisão do usuário, 20/11; especificação em `interfaces.md`, I-21)
+
+- **Do usuário:**
+  - "tudo pode e deve ser mapeável MIDI";
+  - interfaces MIDI, gravação MIDI e gravação e edição de automação;
+  - "o suporte a retorno MIDI também, tudo na 1.0".
+- **Minhas, com o motivo:**
+  - **O mapa mora no projeto**, porque o botão tem que voltar a obedecer ao abrir o projeto. Os dispositivos ficam
+    por apelido, resolvido nas preferências da máquina, para o projeto funcionar noutra máquina (P-36). Os mapas
+    que valem em todo projeto ficam nas preferências, com o mesmo esquema.
+  - **"Tudo mapeável" sem código por recurso:** os alvos são só parâmetro, campo e ação, os três tipos que já
+    existem, com um teste gerado que mapeia todos.
+  - **Parâmetros mapeados no `Renderer`**, na amostra do evento e com atraso fixo de um bloco: menor latência,
+    nenhum jitter, e a gravação fica onde foi tocada. Campos e ações vão pela `Session`, em até 10 ms.
+  - **Um gesto MIDI vira um passo de desfazer**, encerrado 500 ms depois da última mensagem ou ao soltar o toque.
+  - **Mackie Control Universal na 1.0**, porque é o protocolo dos controladores com faders motorizados que o retorno
+    pede. HUI, MIDI Clock e MTC ficam depois da 1.0: o legado não tem.
+  - **Modos de automação** Desligado/Ler/Toque/Trava/Escrever, os de todo DAW. Gravação: uma passada por passo de
+    desfazer.
+  - **CC sem mapa gravado vai para o item MIDI** (toca de volta no instrumento); **CC com mapa vira automação** do
+    alvo.
+  - **Gravação MIDI à prova de queda**, com registro só de acréscimo e `fsync` a cada segundo, como o áudio.
