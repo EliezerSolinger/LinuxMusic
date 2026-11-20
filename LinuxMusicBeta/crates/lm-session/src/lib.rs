@@ -7,6 +7,7 @@ pub mod export;
 pub mod folder;
 pub mod journal;
 pub mod lock;
+pub mod midifile;
 pub mod notices;
 mod port;
 pub mod prefs;

@@ -1307,6 +1307,7 @@ impl Session {
                     self.notices.error(&e, Some(Target::Project), None);
                 }
             }
+            ("midi_import", Ok(result)) => self.midi_import_finished(result),
             ("paste", Ok(list)) => {
                 for r in list.items().filter_map(Value::as_resource).cloned().collect::<Vec<_>>() {
                     self.request(&r);

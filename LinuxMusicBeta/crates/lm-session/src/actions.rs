@@ -133,6 +133,27 @@ pub static ACTIONS: &[ActionSpec] = &[
         },
         enabled: always,
     },
+    // MIDI files (agent D, midifile.rs): { path, at: tick } and { path, track: "t:N" }
+    ActionSpec {
+        id: "midi.import",
+        label: "action.midi.import",
+        run: |s, p| {
+            let at = p.get("at").and_then(Value::as_int).unwrap_or(0).max(0);
+            let _ = s.midi_import(PathBuf::from(text(p, "path")?), at);
+            Ok(())
+        },
+        enabled: writable,
+    },
+    ActionSpec {
+        id: "midi.export",
+        label: "action.midi.export",
+        run: |s, p| {
+            let only = p.get("track").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
+            let _ = s.midi_export(PathBuf::from(text(p, "path")?), only);
+            Ok(())
+        },
+        enabled: always,
+    },
     ActionSpec { id: "takes.recover", label: "action.takes.recover", run: |s, _| s.recover_takes(), enabled: writable },
     ActionSpec {
         id: "resources.import",

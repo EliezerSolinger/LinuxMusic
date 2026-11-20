@@ -27,8 +27,11 @@ lm-port.workspace = true
 # MIDI mapping, learning, feedback and the Mackie Control protocol (I-21)
 lm-midimap = { workspace = true, features = ["doc"] }
 lm-sys-sndfile.workspace = true
+# Standard MIDI files: importing and exporting MIDI (midifile.rs)
+lm-smf.workspace = true
 blake3.workspace = true
 rustix = { workspace = true, features = ["system"] }
 
 [dev-dependencies]
+lm-smf.workspace = true
 assert_no_alloc.workspace = true

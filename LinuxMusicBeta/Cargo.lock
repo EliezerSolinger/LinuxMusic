@@ -3811,6 +3811,7 @@ dependencies = [
  "lm-plugins-tripleoscillator",
  "lm-port",
  "lm-render",
+ "lm-smf",
  "lm-state",
  "lm-sys-sndfile",
  "lm-time",
