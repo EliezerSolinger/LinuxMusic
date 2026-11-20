@@ -15,26 +15,48 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use lm_base::Result;
-use lm_render::{AudioItem, AudioSource, Curve, CurvePoint, ItemEvent, ItemEventKind, MidiItem, SampleData};
+use lm_render::{AudioItem, AudioSource, Curve, StreamFeeder, StreamSpec, CurvePoint, ItemEvent, ItemEventKind, MidiItem, SampleData};
 use lm_state::{NodeId, Value};
 use lm_time::TempoMap;
 
 use crate::catalog::{ResourceState, Resources};
 use crate::read::{flag, id_of, int, items, real, ref_of, text};
 
-/// Items above this many seconds would stream from the disk (P-32)
+/// Resources above this many seconds are streamed from the disk (P-32): the store says so with
+/// [`ResourceState::OnDisk`] instead of decoding them
 pub const STREAM_SECONDS: u32 = 30;
 
-/// Where an audio item's samples come from (P-32): short sources stay in memory; long ones are meant to stream
-/// from the disk, which the renderer does not do yet, so they play from memory when the store has them decoded
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SourceKind {
-    Memory,
-    Disk,
+/// A stream the compiler made for a played segment of a long item: the session hands the feeder to `lm-io`'s
+/// `DiskReader` with the resource's file (`serve(path, rate, feeder)`)
+#[derive(Debug)]
+pub struct StreamRegistration {
+    pub resource: lm_state::Resource,
+    pub feeder: StreamFeeder,
 }
 
-pub(crate) fn source_kind(data: &SampleData) -> SourceKind {
-    if data.frames() as u64 > u64::from(STREAM_SECONDS) * u64::from(data.rate()) { SourceKind::Disk } else { SourceKind::Memory }
+/// An item's played segments, the resources it waits for, and the streams made for it now
+pub(crate) type AudioPlan = (Arc<[AudioItem]>, Vec<WaitingItem>, Vec<StreamRegistration>);
+
+/// A lane's source, as loaded now
+#[derive(Clone, Debug)]
+enum LaneData {
+    None,
+    Memory(Arc<SampleData>),
+    Disk { resource: lm_state::Resource, rate: u32, channels: usize, frames: u64 },
+}
+
+impl LaneData {
+    fn same(&self, other: &LaneData) -> bool {
+        match (self, other) {
+            (LaneData::None, LaneData::None) => true,
+            (LaneData::Memory(a), LaneData::Memory(b)) => Arc::ptr_eq(a, b),
+            (
+                LaneData::Disk { resource: a, rate: ra, channels: ca, frames: fa },
+                LaneData::Disk { resource: b, rate: rb, channels: cb, frames: fb },
+            ) => a == b && ra == rb && ca == cb && fa == fb,
+            _ => false,
+        }
+    }
 }
 
 /// An item that cannot play yet, and why
@@ -58,11 +80,10 @@ struct MidiEntry {
 struct AudioEntry {
     item: Value,
     tempo: u64,
-    data: Vec<Option<Arc<SampleData>>>,
+    data: Vec<LaneData>,
     used: u64,
     out: Arc<[AudioItem]>,
     waiting: Vec<WaitingItem>,
-    disk: usize,
 }
 
 #[derive(Debug)]
@@ -128,62 +149,66 @@ impl Caches {
         Ok(out)
     }
 
-    /// The played segments of an audio item, and the resources it waits for
+    /// The played segments of an audio item, the resources it waits for, and the streams made for it now (P-32).
+    /// Audio at another rate than the project's (`rate`) is not played: the store converts it (base item 8)
     pub(crate) fn audio(
         &mut self,
         id: NodeId,
         item: &Value,
         tempo: &TempoMap,
         resources: &dyn Resources,
-    ) -> (Arc<[AudioItem]>, Vec<WaitingItem>, usize) {
+        rate: u32,
+    ) -> Result<AudioPlan> {
         // The resources of the lanes, in lane order
         let mut data = Vec::new();
         let mut waiting = Vec::new();
         for lane in items(item, "lanes") {
-            match lane.get("source").and_then(Value::as_resource) {
-                Some(r) => match resources.audio(r) {
-                    ResourceState::Ready(d) => data.push(Some(d)),
-                    ResourceState::Loading => {
-                        waiting.push(WaitingItem { item: id, resource: r.clone(), missing: false });
-                        data.push(None);
-                    }
-                    ResourceState::Missing => {
-                        waiting.push(WaitingItem { item: id, resource: r.clone(), missing: true });
-                        data.push(None);
-                    }
-                },
-                None => data.push(None),
-            }
+            let Some(r) = lane.get("source").and_then(Value::as_resource) else {
+                data.push(LaneData::None);
+                continue;
+            };
+            let mut wait = |missing: bool| waiting.push(WaitingItem { item: id, resource: r.clone(), missing });
+            data.push(match resources.audio(r) {
+                ResourceState::Ready(d) if d.rate() == rate => LaneData::Memory(d),
+                ResourceState::OnDisk { rate: r_rate, channels, frames } if r_rate == rate && (1..=64).contains(&channels) => {
+                    LaneData::Disk { resource: r.clone(), rate, channels, frames }
+                }
+                ResourceState::Loading => {
+                    wait(false);
+                    LaneData::None
+                }
+                _ => {
+                    wait(true);
+                    LaneData::None
+                }
+            });
         }
         if let Some(e) = self.audio.get_mut(&id)
             && e.item.same_node(item)
             && e.tempo == self.tempo_version
             && e.data.len() == data.len()
-            && e.data.iter().zip(&data).all(|(a, b)| match (a, b) {
-                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
-                (None, None) => true,
-                _ => false,
-            })
+            && e.data.iter().zip(&data).all(|(a, b)| a.same(b))
         {
             e.used = self.pass;
-            return (e.out.clone(), e.waiting.clone(), e.disk);
+            return Ok((e.out.clone(), e.waiting.clone(), Vec::new()));
         }
-        let (segments, disk) = audio_segments(item, tempo, &data);
+        let (segments, streams) = audio_segments(item, tempo, &data)?;
         let out: Arc<[AudioItem]> = segments.into();
         self.made.audio_items += 1;
         self.audio.insert(
             id,
-            AudioEntry {
-                item: item.clone(),
-                tempo: self.tempo_version,
-                data,
-                used: self.pass,
-                out: out.clone(),
-                waiting: waiting.clone(),
-                disk,
-            },
+            AudioEntry { item: item.clone(), tempo: self.tempo_version, data, used: self.pass, out: out.clone(), waiting: waiting.clone() },
         );
-        (out, waiting, disk)
+        Ok((out, waiting, streams))
+    }
+
+    /// Whether a streamed item of the last compilation still waits for the disk at its playhead (the export
+    /// waits for this to be false, T8)
+    pub(crate) fn streams_pending(&self) -> bool {
+        self.audio.values().flat_map(|e| e.out.iter()).any(|it| match &it.source {
+            AudioSource::Stream(s) => s.pending(),
+            AudioSource::Memory(_) => false,
+        })
     }
 
     /// The curve of an automation lane (`None`: off or without points)
@@ -252,8 +277,9 @@ pub(crate) fn midi_events(id: NodeId, item: &Value, transpose: i32, audio_time: 
     MidiItem::new(crate::read::id_number(id), events)
 }
 
-/// The played segments of an audio item (comping flattened), and how many are long enough to stream (P-32)
-fn audio_segments(item: &Value, tempo: &TempoMap, data: &[Option<Arc<SampleData>>]) -> (Vec<AudioItem>, usize) {
+/// The played segments of an audio item (comping flattened), and a stream for each segment of a long source
+/// (P-32)
+fn audio_segments(item: &Value, tempo: &TempoMap, data: &[LaneData]) -> Result<(Vec<AudioItem>, Vec<StreamRegistration>)> {
     let audio_time = text(item, "timebase", "musical") == "audio";
     let start = int(item, "start", 0);
     let length = int(item, "length", 1);
@@ -292,12 +318,15 @@ fn audio_segments(item: &Value, tempo: &TempoMap, data: &[Option<Arc<SampleData>
     let fade_out = u32::try_from(int(item, "fadeOut", 0).max(0)).unwrap_or(u32::MAX);
     let gain = real(item, "gain", 1.0) as f32;
     let mut out = Vec::new();
-    let mut disk = 0;
+    let mut streams = Vec::new();
     let n = segs.len();
     for i in 0..n {
         let (from, to, lane, fade) = segs[i];
         let Some(lane) = lane else { continue };
-        let Some(Some(d)) = data.get(lane) else { continue };
+        let Some(d) = data.get(lane) else { continue };
+        if matches!(d, LaneData::None) {
+            continue;
+        }
         // The crossfade into the next segment: this one goes on for the next one's fade
         let next_fade = if i + 1 < n && segs[i + 1].0 <= to { i64::from(segs[i + 1].3) } else { 0 };
         let end = (to + next_fade).min(item_end);
@@ -312,12 +341,20 @@ fn audio_segments(item: &Value, tempo: &TempoMap, data: &[Option<Arc<SampleData>
         let cap = u32::try_from(len).unwrap_or(u32::MAX);
         fi = fi.min(cap);
         fo = fo.min(cap);
-        if source_kind(d) == SourceKind::Disk {
-            disk += 1;
-        }
-        out.push(AudioItem { start: begin, length: len, source: AudioSource::Memory(d.clone()), offset, gain, fade_in: fi, fade_out: fo });
+        let source = match d {
+            LaneData::Memory(d) => AudioSource::Memory(d.clone()),
+            LaneData::Disk { resource, rate, channels, frames } => {
+                let (stream, feeder) = lm_render::stream(StreamSpec::new(*rate, *channels, *frames))?;
+                // The head is read before the program is even installed
+                stream.set_playhead(u64::try_from(offset).ok());
+                streams.push(StreamRegistration { resource: resource.clone(), feeder });
+                AudioSource::Stream(stream)
+            }
+            LaneData::None => continue,
+        };
+        out.push(AudioItem { start: begin, length: len, source, offset, gain, fade_in: fi, fade_out: fo });
     }
-    (out, disk)
+    Ok((out, streams))
 }
 
 /// The curve of an automation lane, its ticks converted to samples

@@ -25,7 +25,7 @@ mod types;
 
 pub use crate::catalog::{NoResources, PluginCatalog, PluginShape, ResourceState, Resources};
 pub use crate::core::{CompilerConfig, CompilerCore, TAIL_LIFETIME, Usage};
-pub use crate::items::{Made, STREAM_SECONDS, SourceKind, WaitingItem};
+pub use crate::items::{Made, STREAM_SECONDS, StreamRegistration, WaitingItem};
 pub use crate::rack::{InsertPoint, RackParam, Stage, rack_params};
 pub use crate::read::id_number;
 pub use crate::thread::{CompileActivity, Compiler};

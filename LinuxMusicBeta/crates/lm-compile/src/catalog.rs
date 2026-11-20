@@ -115,6 +115,9 @@ impl PluginCatalog for lm_plugin::Registry {
 pub enum ResourceState {
     /// Decoded at the project's rate
     Ready(Arc<SampleData>),
+    /// Long (P-32, above 30 s): not decoded in memory but read from the disk ahead of the playhead, at the
+    /// project's rate. The compiler makes a stream per played segment (`Compiled::streams`)
+    OnDisk { rate: u32, channels: usize, frames: u64 },
     /// Being loaded: the items that use it are compiled as waiting (silence) until it is
     Loading,
     /// Not where the project says (H17): silence, and the session shows "locate file"

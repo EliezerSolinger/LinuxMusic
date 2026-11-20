@@ -56,7 +56,7 @@ use lm_time::TempoMap;
 
 use crate::alloc::{NodeAllocator, SlotAllocator};
 use crate::catalog::{PluginCatalog, PluginShape, Resources};
-use crate::items::{Caches, WaitingItem};
+use crate::items::{Caches, StreamRegistration, WaitingItem};
 use crate::rack::{InsertPoint, RackParam, Stage, rack_params};
 use crate::read::{
     channels, device_channels, flag, id_number, id_of, int, items, key, real, ref_of, settings, tempo_map, text,
@@ -256,7 +256,7 @@ struct Plan {
     tails: Vec<(u64, usize)>,
     new_tails: Vec<(u64, NodeKey, PluginShape, bool, u32)>,
     waiting_items: Vec<WaitingItem>,
-    streamed: usize,
+    streams: Vec<StreamRegistration>,
     low_latency_bypassed: Vec<NodeKey>,
 }
 
@@ -831,7 +831,7 @@ impl CompilerCore {
             nodes,
             ports,
             low_latency_bypassed: plan.low_latency_bypassed,
-            streamed: plan.streamed,
+            streams: plan.streams,
             made,
             elapsed: started.elapsed(),
         })
@@ -866,6 +866,11 @@ impl CompilerCore {
             pending_slots: self.slot_alloc.pending(),
             slot_keys: self.slot_keys.clone(),
         }
+    }
+
+    /// A streamed item still waits for the disk where the playhead needs it (the export waits, T8)
+    pub fn streams_pending(&self) -> bool {
+        self.caches.streams_pending()
     }
 
     /// The automation curve of a parameter in the last install (in samples)
@@ -1205,10 +1210,10 @@ impl CompilerCore {
                 let mut list = Vec::new();
                 for item in &audio_items {
                     let Some(iid) = id_of(item) else { continue };
-                    let (segments, waiting, disk) = self.caches.audio(iid, item, &tempo, resources);
+                    let (segments, waiting, streams) = self.caches.audio(iid, item, &tempo, resources, s.sample_rate)?;
                     list.extend(segments.iter().cloned());
                     plan.waiting_items.extend(waiting);
-                    plan.streamed += disk;
+                    plan.streams.extend(streams);
                 }
                 if !list.is_empty() {
                     plan.audio.push((a, list));

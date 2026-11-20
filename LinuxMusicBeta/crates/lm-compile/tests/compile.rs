@@ -975,3 +975,84 @@ fn low_latency_monitoring_bypasses_the_inserts_with_latency_on_the_armed_path() 
     let c = h.compile(doc.root());
     assert!(c.low_latency_bypassed.is_empty());
 }
+
+/// A store that keeps one long resource on the disk (P-32)
+struct Long {
+    resource: Resource,
+    frames: u64,
+}
+
+impl Resources for Long {
+    fn audio(&self, r: &Resource) -> ResourceState {
+        if *r == self.resource {
+            ResourceState::OnDisk { rate: RATE, channels: 1, frames: self.frames }
+        } else {
+            ResourceState::Loading
+        }
+    }
+}
+
+#[test]
+fn a_long_item_streams_from_the_disk() {
+    let plugins = plugins();
+    let mut doc = new_doc(&plugins);
+    digital(&mut doc);
+    let t = add_track(&mut doc, None);
+    edit(&mut doc, |e| e.set(t, &[k("channels")], Value::int(1)));
+    let o = outputs(&doc, t)[0];
+    edit(&mut doc, |e| e.set(o, &[k("channels")], Value::int(1)));
+    let frames = 40 * RATE as usize;
+    let data: Vec<f32> = (0..frames).map(|i| ((i % 1000) as f32 / 1000.0) - 0.5).collect();
+    let file = SampleData::from_channels(RATE, vec![data]).unwrap();
+    let resource = Resource::of_content("audio", b"a long take").unwrap();
+    // 40 s at 120 BPM: 1920 ticks per second... the item is 30 s long, from 1 s into the take
+    let item = add_item(&mut doc, t, "audio", 0, 30 * 1920);
+    edit(&mut doc, |e| {
+        e.insert(item, "lanes", 0, Value::object([("source", Value::resource(resource.clone())), ("sourceOffset", Value::int(48_000))]))
+            .map(|_| ())
+    });
+    let mut h = Harness::new(&plugins);
+    h.resources = Arc::new(Long { resource: resource.clone(), frames: frames as u64 });
+    let mut c = h.settle(doc.root());
+    assert_eq!(c.streams.len(), 1);
+    let reg = c.streams.pop().unwrap();
+    assert_eq!(reg.resource, resource);
+    let feeder = reg.feeder;
+    // The disk, synchronously: everything wanted, now
+    let serve = |f: &lm_render::StreamFeeder| {
+        let chunk = f.chunk_frames();
+        while let Some(ch) = f.next_request() {
+            let from = ch as usize * chunk;
+            let to = (from + chunk).min(file.frames());
+            f.write(ch, &file.channel(0)[from..to]).unwrap();
+        }
+    };
+    serve(&feeder);
+    assert!(!h.core.streams_pending());
+    h.play();
+    for _ in 0..200 {
+        serve(&feeder);
+        let pos = h.dummy.renderer().position();
+        let playing = h.dummy.renderer().is_playing();
+        h.pump();
+        if playing {
+            for (i, v) in h.dummy.outputs()[0][..BLOCK].iter().enumerate() {
+                let p = pos as usize + i;
+                let want = file.channel(0)[48_000 + p] * (1.0 / 2f32.sqrt());
+                assert_eq!(*v, want, "at {p}");
+            }
+        }
+    }
+    // An unrelated edit keeps the stream (no new registration, the feeder still wanted)
+    add_channel(&mut doc);
+    let c = h.compile(doc.root());
+    h.pump();
+    assert!(c.streams.is_empty());
+    assert!(!feeder.is_abandoned());
+    // The item goes: once the old program is back, the feeder is abandoned
+    edit(&mut doc, |e| e.remove(item));
+    h.compile(doc.root());
+    h.pump();
+    h.pump();
+    assert!(feeder.is_abandoned());
+}

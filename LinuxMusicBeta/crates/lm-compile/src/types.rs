@@ -238,8 +238,9 @@ pub struct Compiled {
     pub replacing: Vec<NodeKey>,
     /// Audio items whose resources are not loaded (silent until they are; the session recompiles then)
     pub waiting_items: Vec<WaitingItem>,
-    /// Played audio segments long enough to stream from the disk (P-32), played from memory meanwhile
-    pub streamed: usize,
+    /// The streams made by this compilation (P-32): hand each feeder to the disk reader with its resource's file.
+    /// Streams of unchanged items are kept from compilation to compilation
+    pub streams: Vec<crate::items::StreamRegistration>,
     /// How many event lists and curves this compilation made new (V8)
     pub made: Made,
     pub elapsed: Duration,
