@@ -19,10 +19,12 @@
 //!
 //! The instruments' sources and shaping:
 //! - [`basic_filters`]: the general filters (every instrument's filter, the DualFilter's);
+//! - [`instrument`]: what every legacy instrument's notes get (the fade-in, the release fade);
 //! - [`kicker`]: the Kicker's swept sine;
-//! - [`bit_invader`]: the BitInvader's voice, and the release fade of the legacy instruments;
+//! - [`bit_invader`]: the BitInvader's voice;
 //! - [`drawn_wave`]: a drawn wave's band-limited tables (the BitInvader's, the Watsyn's);
 //! - [`envelope`], [`sound_shaping`]: every instrument's envelopes and LFOs, and its filter;
+//! - [`organic`]: the Organic's voice;
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
 //!
@@ -61,12 +63,14 @@ pub mod filters;
 pub mod frequency_shifter;
 pub mod gain_stage;
 pub mod granular_pitch_shifter;
+pub mod instrument;
 pub mod kicker;
 pub mod lomm;
 pub mod master;
 pub mod math;
 pub mod modulation_effects;
 pub mod mono_bass;
+pub mod organic;
 pub mod oscillator;
 pub mod oversampling;
 pub mod rbj;

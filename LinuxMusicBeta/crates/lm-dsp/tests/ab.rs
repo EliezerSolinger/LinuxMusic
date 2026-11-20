@@ -877,6 +877,31 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "organic" {
+        use lm_dsp::organic::*;
+        let s = &case["settings"];
+        let oscs = s["oscs"].as_array().unwrap();
+        let o = |i: usize, key: &str| oscs[i][key].as_f64().unwrap() as f32;
+        let settings = OrganicSettings {
+            oscillators: core::array::from_fn(|i| OrganicOsc {
+                shape: SHAPES[oscs[i]["shape"].as_u64().unwrap() as usize],
+                harmonic: oscs[i]["harmonic"].as_u64().unwrap() as usize,
+                volume: o(i, "volume"),
+                pan: o(i, "pan"),
+                detune: o(i, "detune"),
+            }),
+            distortion: s["distortion"].as_f64().unwrap() as f32,
+            volume: s["volume"].as_f64().unwrap() as f32,
+        };
+        let phases = [core::array::from_fn(|i| o(i, "phaseLeft")), core::array::from_fn(|i| o(i, "phaseRight"))];
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let mut voice = OrganicVoice::with_phases(rate, block as usize, phases);
+        let freq = s["freq"].as_f64().unwrap() as f32;
+        for start in (0..frames as usize).step_by(block as usize) {
+            voice.render(&mut out[start..(start + block as usize).min(frames as usize)], &settings, freq, rate);
+        }
+        return out;
+    }
     if case["unit"] == "drawn-wave" {
         use lm_dsp::drawn_wave::{DrawnWave, Hold, MOST_HARMONICS};
         let s = &case["settings"];

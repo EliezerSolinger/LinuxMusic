@@ -1,6 +1,5 @@
 //! The legacy program's BitInvader: a drawn wave of up to 200 points played as a note, stepped or interpolated,
-//! band limited (through [`DrawnWave`]) or as drawn; and the release fade every legacy instrument without an
-//! envelope of its own gets (`Instrument::applyRelease`).
+//! band limited (through [`DrawnWave`]) or as drawn (its release: [`crate::instrument::apply_release`]).
 
 use crate::drawn_wave::{DrawnWave, Hold, MOST_HARMONICS};
 use crate::oscillator::lerp;
@@ -103,25 +102,6 @@ impl BitInvaderVoice {
     }
 }
 
-/// The legacy `Instrument::applyRelease`: a linear fade over the note's last @p release frames, @p frames_left of it
-/// left from the start of @p out
-pub fn apply_release(out: &mut [[f32; 2]], frames_left: usize, release: usize) {
-    if release == 0 {
-        return;
-    }
-    let start = frames_left - frames_left.min(release);
-    for f in start..frames_left.min(out.len()) {
-        let fac = (frames_left - f) as f32 / release as f32;
-        out[f][0] *= fac;
-        out[f][1] *= fac;
-    }
-}
-
-/// The frames of a release of @p ms at @p sample_rate (the legacy `desiredReleaseFrames`)
-pub fn release_frames(ms: f32, sample_rate: f32) -> usize {
-    (ms * sample_rate / 1000.0).ceil() as usize
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,13 +133,5 @@ mod tests {
         let mut out = [[1.0; 2]; 16];
         voice.render(&mut out, &wave, 21000.0, 44100.0);
         assert!(out.iter().all(|f| f[0] == 0.0));
-    }
-
-    #[test]
-    fn release_fades_the_last_frames_to_zero() {
-        let mut out = [[1.0; 2]; 8];
-        apply_release(&mut out, 6, 4);
-        assert_eq!(out.map(|f| f[0]), [1.0, 1.0, 1.0, 0.75, 0.5, 0.25, 1.0, 1.0]);
-        assert_eq!(release_frames(1.5, 44100.0), 67);
     }
 }

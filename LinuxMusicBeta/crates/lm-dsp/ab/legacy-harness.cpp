@@ -294,6 +294,73 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 		}
 		return out;
 	}
+	if (unit == "organic")
+	{
+		// The Organic's note: its eight oscillators on each side made as Organic.cpp makes them (the volumes and
+		// detunings by its formulas, copied here: the plugin's library is not linked), mixed through the core's
+		// Oscillator, band limited, then its waveshaper and volume
+		const auto s = c["settings"].toObject();
+		const auto rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		const auto oscs = s["oscs"].toArray();
+		const auto shapes = std::array{Oscillator::WaveShape::Sine, Oscillator::WaveShape::Saw,
+			Oscillator::WaveShape::Square, Oscillator::WaveShape::Triangle, Oscillator::WaveShape::MoogSaw,
+			Oscillator::WaveShape::Exponential};
+		constexpr auto Ratios = std::array<double, 18>{0.5, 0.75, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+		const auto count = static_cast<std::size_t>(oscs.size());
+		auto algo = IntModel{static_cast<int>(Oscillator::ModulationAlgo::SignalMix), 0, 4};
+		std::vector<std::unique_ptr<IntModel>> shapeModels;
+		std::array<std::vector<std::unique_ptr<Oscillator>>, 2> chains;
+		std::array<std::vector<float>, 2> volumes, phases;
+		std::array<std::vector<double>, 2> detunings;
+		for (auto side = 0; side < 2; ++side)
+		{
+			chains[side].resize(count);
+			volumes[side].resize(count);
+			phases[side].resize(count);
+			detunings[side].resize(count);
+		}
+		const auto freq = static_cast<float>(s["freq"].toDouble());
+		for (auto i = count; i-- > 0;)
+		{
+			const auto o = oscs[static_cast<int>(i)].toObject();
+			shapeModels.push_back(std::make_unique<IntModel>(static_cast<int>(shapes[o["shape"].toInt()]), 0, 7));
+			const auto vol = static_cast<float>(o["volume"].toDouble());
+			const auto pan = static_cast<float>(o["pan"].toDouble());
+			const auto num = static_cast<int>(count);
+			volumes[0][i] = (1.0f - pan / 100.f) * vol / num / 100.0f;
+			volumes[1][i] = (1.0f + pan / 100.f) * vol / num / 100.0f;
+			const auto ratio = Ratios[o["harmonic"].toInt()];
+			const auto detune = static_cast<double>(static_cast<float>(o["detune"].toDouble())) * (1.0f / 1200.0f);
+			detunings[0][i] = ratio * std::exp2(detune) / rate;
+			detunings[1][i] = ratio * std::exp2(-detune) / rate;
+			phases[0][i] = static_cast<float>(o["phaseLeft"].toDouble());
+			phases[1][i] = static_cast<float>(o["phaseRight"].toDouble());
+			for (auto side = 0; side < 2; ++side)
+			{
+				chains[side][i] = std::make_unique<Oscillator>(shapeModels.back().get(), &algo, freq, detunings[side][i],
+					phases[side][i], volumes[side][i], i + 1 < count ? chains[side][i + 1].get() : nullptr);
+				chains[side][i]->setUseWaveTable(true);
+			}
+		}
+		const auto amount = static_cast<float>(s["distortion"].toDouble());
+		const auto volume = static_cast<float>(s["volume"].toDouble());
+		const auto shape = [](float in, float a) {
+			const float k = 2.0f * a / (1.0f - a);
+			return (1.0f + k) * in / (1.0f + k * std::abs(in));
+		};
+		for (std::int64_t start = 0; start < frames; start += block)
+		{
+			const auto n = std::min(block, frames - start);
+			chains[0][0]->update(out.data() + start, n, 0);
+			chains[1][0]->update(out.data() + start, n, 1);
+			for (auto f = start; f < start + n; ++f)
+			{
+				out[f][0] = shape(out[f][0], amount) * volume / 100.0f;
+				out[f][1] = shape(out[f][1], amount) * volume / 100.0f;
+			}
+		}
+		return out;
+	}
 	if (unit == "plugin-effect")
 	{
 		// A legacy effect plugin, loaded and run as the mixer runs it (wet only), its knobs set by their names
