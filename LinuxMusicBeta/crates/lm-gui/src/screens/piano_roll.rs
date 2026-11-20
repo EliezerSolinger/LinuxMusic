@@ -27,7 +27,9 @@ use gpui::{
 };
 use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, NoteRef, PathStep, Ref, Topic, Value};
 
-use self::kit::{MenuItem, ValueEntry, dropdown, paint_text, popup, primary, sep, tip, with_alpha};
+use self::kit::{
+    MenuItem, ValueEntry, dropdown, dropdown_icon, icon_button, paint_text, popup, primary, sep, tip, with_alpha,
+};
 use self::music::{
     BAR, BEAT, CHORDS, Clip, GRIDS, KEY_NAMES, Note, NoteChange, NoteMap, QuantizeWhat, SCALES, format_bbt, format_len,
     key_name,
@@ -39,7 +41,7 @@ use crate::actions::{
     PrPaste, PrPlay, PrReverse, PrSelectAll, PrSelectNone, PrTransposeDown, PrTransposeUp,
 };
 use crate::model;
-use crate::ui::{THEME, button, c, tr, track_color, trf};
+use crate::ui::{THEME, c, tr, track_color, trf};
 
 const ROW_H: f32 = 26.0;
 const RULER_H: f32 = 18.0;
@@ -1485,7 +1487,6 @@ struct GridPaint {
     /// notes being erased (hidden until the release removes them) and a copy being dragged
     gone: BTreeSet<u64>,
     copies: Vec<Note>,
-    color: u32,
     scroll: f64,
     tpp: f64,
     key_h: f32,
@@ -1515,8 +1516,10 @@ impl GridPaint {
         let nw = ((x.length as f64 / self.tpp) as f32).max(2.0);
         let bb = Bounds::new(point(o.x + px(nx), o.y + px(ny + 0.5)), size(px(nw), px(self.key_h - 1.0)));
         // the legacy: the note's opacity shows its velocity; the selected notes in the selection's color
-        let body =
-            with_alpha(if selected { THEME.blue } else { self.color }, alpha * (0.35 + 0.65 * x.velocity as f32));
+        let body = with_alpha(
+            if selected { THEME.pr_note_sel } else { THEME.pr_note },
+            alpha * (0.35 + 0.65 * x.velocity as f32),
+        );
         window.paint_quad(gpui::quad(bb, px(2.0), body, px(1.0), with_alpha(THEME.line, 0.9), Default::default()));
         if x.bend.iter().any(|p| p.semitones != 0.0) {
             let mut pb = PathBuilder::stroke(px(1.5));
@@ -1542,7 +1545,7 @@ impl GridPaint {
         let o = b.origin;
         let (w, h) = (b.size.width.as_f32(), b.size.height.as_f32());
         let r = |x: f32, y: f32, ww: f32, hh: f32| Bounds::new(point(o.x + px(x), o.y + px(y)), size(px(ww), px(hh)));
-        window.paint_quad(fill(b, c(THEME.bg1)));
+        window.paint_quad(fill(b, c(THEME.pr_bg)));
         let first = (127 - (self.scroll_y / self.key_h).floor() as i32).min(127);
         let last = (127 - ((self.scroll_y + h) / self.key_h).ceil() as i32).max(0);
         for k in (last..=first).rev() {
@@ -1557,7 +1560,7 @@ impl GridPaint {
                 window.paint_quad(fill(r(0.0, y, w, self.key_h), with_alpha(THEME.green, 0.06)));
             }
             if self.marked.contains(&ku) {
-                window.paint_quad(fill(r(0.0, y, w, self.key_h), with_alpha(THEME.yellow, 0.12)));
+                window.paint_quad(fill(r(0.0, y, w, self.key_h), gpui::rgba(THEME.pr_marked)));
             }
             if ku.is_multiple_of(12) {
                 window.paint_quad(fill(r(0.0, y + self.key_h - 1.0, w, 1.0), c(THEME.bg3)));
@@ -1574,9 +1577,9 @@ impl GridPaint {
                 t += step;
             }
         };
-        lines(self.grid, THEME.bg2);
-        lines(BEAT, THEME.bg3);
-        lines(BAR, THEME.line2);
+        lines(self.grid, THEME.pr_line);
+        lines(BEAT, THEME.pr_beat);
+        lines(BAR, THEME.pr_bar);
         // past the repeating part (a pattern) and past the item's end
         if let Some(l) = self.loop_len {
             let lx = self.x(l as f64).max(0.0);
@@ -1607,9 +1610,9 @@ impl GridPaint {
                 window.paint_quad(gpui::quad(
                     bb,
                     px(2.0),
-                    with_alpha(THEME.text3, 0.18),
+                    with_alpha(THEME.pr_ghost, 0.6),
                     px(1.0),
-                    with_alpha(THEME.text3, 0.5),
+                    c(THEME.pr_ghost),
                     Default::default(),
                 ));
             }
@@ -1776,32 +1779,23 @@ impl Render for PianoRoll {
 }
 
 impl PianoRoll {
-    /// The legacy's two toolbar rows
+    /// The legacy's two toolbar rows, with its icons
     fn render_toolbars(&self, clip: Option<&Clip>, cx: &Context<Self>) -> impl IntoElement {
         let row =
-            || div().h(px(ROW_H)).flex_none().flex().flex_row().items_center().gap(px(3.)).px(px(4.)).overflow_hidden();
-        let small = |id: &'static str, label: SharedString, on: bool, col: u32, help: &'static str| {
-            button(id, label, on, col)
-                .debug_selector(move || id.to_string())
-                .h(px(20.))
-                .min_w(px(24.))
-                .px(px(6.))
-                .tooltip(tip(help))
+            || div().h(px(ROW_H)).flex_none().flex().flex_row().items_center().gap(px(2.)).px(px(4.)).overflow_hidden();
+        let tool_button = |t: Tool, id: &'static str, icon: &'static str, help: &'static str| {
+            icon_button(id, icon, self.tool == t, help).on_click(cx.listener(move |pr, _, _, cx| pr.set_tool(t, cx)))
         };
-        let tool_button = |t: Tool, id: &'static str, label: &'static str, help: &'static str| {
-            small(id, tr(label).into(), self.tool == t, THEME.green, help)
-                .on_click(cx.listener(move |pr, _, _, cx| pr.set_tool(t, cx)))
-        };
-        let combo = |id: &'static str, m: Menu, text: SharedString, help: &'static str| {
-            dropdown(id, text, false)
+        let combo = |id: &'static str, icon: &'static str, m: Menu, text: SharedString, help: &'static str| {
+            dropdown_icon(id, icon, text, false)
                 .tooltip(tip(help))
                 .on_mouse_down(MouseButton::Left, cx.listener(Self::open_menu(m)))
         };
         let playing = self.play.since.is_some();
-        let tools_label = match self.tool {
-            Tool::Knife => "Knife",
-            Tool::Strum => "Strum",
-            _ => "Note tools",
+        let tools_icon = match self.tool {
+            Tool::Knife => "edit_knife",
+            Tool::Strum => "arp_free",
+            _ => "tool",
         };
         div()
             .flex_none()
@@ -1813,57 +1807,53 @@ impl PianoRoll {
             .child(
                 row()
                     .child(
-                        small(
+                        icon_button(
                             "pr-play",
-                            if playing { "❚❚" } else { "▶" }.into(),
+                            if playing { "pause" } else { "play" },
                             playing,
-                            THEME.green,
                             "Play/pause current clip (Space)",
                         )
                         .on_click(cx.listener(|pr, _, _, cx| pr.toggle_play_item(cx))),
                     )
                     .child(
-                        small(
+                        icon_button(
                             "pr-record",
-                            "●".into(),
+                            "record",
                             self.rec == Rec::Live,
-                            THEME.red,
                             "Record notes from MIDI-device/channel-piano",
                         )
                         .on_click(cx.listener(|pr, _, _, cx| pr.set_rec(Rec::Live, cx))),
                     )
                     .child(
-                        small(
+                        icon_button(
                             "pr-record-song",
-                            "●▶".into(),
+                            "record_accompany",
                             self.rec == Rec::Accompany,
-                            THEME.red,
                             "Record notes from MIDI-device/channel-piano while playing song or pattern track",
                         )
                         .on_click(cx.listener(|pr, _, _, cx| pr.set_rec(Rec::Accompany, cx))),
                     )
                     .child(
-                        small(
+                        icon_button(
                             "pr-record-step",
-                            "●|".into(),
+                            if self.rec == Rec::Step { "record_step_on" } else { "record_step_off" },
                             self.rec == Rec::Step,
-                            THEME.red,
                             "Record notes from MIDI-device/channel-piano, one step at the time",
                         )
                         .on_click(cx.listener(|pr, _, _, cx| pr.set_rec(Rec::Step, cx))),
                     )
                     .child(
-                        small("pr-stop", "■".into(), false, 0, "Stop playing of current clip (Space)")
+                        icon_button("pr-stop", "stop", false, "Stop playing of current clip (Space)")
                             .on_click(cx.listener(|pr, _, _, cx| pr.stop(cx))),
                     )
                     .child(sep())
-                    .child(tool_button(Tool::Draw, "pr-mode-draw", "Draw", "Draw mode (Shift+D)"))
-                    .child(tool_button(Tool::Erase, "pr-mode-erase", "Erase", "Erase mode (Shift+E)"))
-                    .child(tool_button(Tool::Select, "pr-mode-select", "Select", "Select mode (Shift+S)"))
-                    .child(tool_button(Tool::Pitch, "pr-mode-pitch", "Pitch Bend", "Pitch Bend mode (Shift+T)"))
+                    .child(tool_button(Tool::Draw, "pr-mode-draw", "edit_draw", "Draw mode (Shift+D)"))
+                    .child(tool_button(Tool::Erase, "pr-mode-erase", "edit_erase", "Erase mode (Shift+E)"))
+                    .child(tool_button(Tool::Select, "pr-mode-select", "edit_select", "Select mode (Shift+S)"))
+                    .child(tool_button(Tool::Pitch, "pr-mode-pitch", "automation", "Pitch Bend mode (Shift+T)"))
                     .child(sep())
                     .child(
-                        small("pr-quantize", tr("Quantize").into(), false, 0, "Quantize")
+                        icon_button("pr-quantize", "quantize", false, "Quantize")
                             .on_click(cx.listener(|pr, _, _, cx| pr.quantize(0, cx))),
                     )
                     .child(
@@ -1871,21 +1861,22 @@ impl PianoRoll {
                             .on_mouse_down(MouseButton::Left, cx.listener(Self::open_menu(Menu::Quantize))),
                     )
                     .child(
-                        dropdown("pr-tools", tr(tools_label), matches!(self.tool, Tool::Knife | Tool::Strum))
+                        dropdown_icon("pr-tools", tools_icon, "", matches!(self.tool, Tool::Knife | Tool::Strum))
                             .debug_selector(|| "pr-tools".into())
+                            .tooltip(tip("Note tools"))
                             .on_mouse_down(MouseButton::Left, cx.listener(Self::open_menu(Menu::Tools))),
                     )
                     .child(sep())
                     .child(
-                        small("pr-cut", tr("Cut").into(), false, 0, "Cut (Ctrl+X)")
+                        icon_button("pr-cut", "edit_cut", false, "Cut (Ctrl+X)")
                             .on_click(cx.listener(|pr, _, _, cx| pr.copy(true, cx))),
                     )
                     .child(
-                        small("pr-copy", tr("Copy").into(), false, 0, "Copy (Ctrl+C)")
+                        icon_button("pr-copy", "edit_copy", false, "Copy (Ctrl+C)")
                             .on_click(cx.listener(|pr, _, _, cx| pr.copy(false, cx))),
                     )
                     .child(
-                        small("pr-paste", tr("Paste").into(), false, 0, "Paste (Ctrl+V)")
+                        icon_button("pr-paste", "edit_paste", false, "Paste (Ctrl+V)")
                             .on_click(cx.listener(|pr, _, _, cx| pr.paste(cx))),
                     )
                     .child(div().flex_1())
@@ -1900,58 +1891,74 @@ impl PianoRoll {
                 row()
                     .child(combo(
                         "pr-zoom-x",
+                        "zoom_x",
                         Menu::ZoomX,
-                        format!("↔ {}%", ZOOM_X[self.zoom_x] * 100.0).into(),
+                        format!("{}%", ZOOM_X[self.zoom_x] * 100.0).into(),
                         "Horizontal zooming",
                     ))
                     .child(combo(
                         "pr-zoom-y",
+                        "zoom_y",
                         Menu::ZoomY,
-                        format!("↕ {}%", ZOOM_Y[self.zoom_y] * 100.0).into(),
+                        format!("{}%", ZOOM_Y[self.zoom_y] * 100.0).into(),
                         "Vertical zooming",
                     ))
-                    .child(combo("pr-grid", Menu::Grid, format!("Q {}", GRIDS[self.grid].0).into(), "Quantization"))
+                    .child(combo("pr-grid", "quantize", Menu::Grid, GRIDS[self.grid].0.into(), "Quantization"))
                     .child(combo(
                         "pr-length",
+                        "note",
                         Menu::Length,
                         self.length
                             .map_or_else(
-                                || trf("♪ Last note ({0})", &[&format_len(self.last.length)]),
-                                |i| format!("♪ {}", GRIDS[i].0),
+                                || trf("Last note ({0})", &[&format_len(self.last.length)]),
+                                |i| GRIDS[i].0.to_string(),
                             )
                             .into(),
                         "Note length",
                     ))
                     .child(combo(
                         "pr-key",
+                        "piano",
                         Menu::Key,
                         if self.scale.is_some() { KEY_NAMES[self.root as usize].into() } else { tr("No key").into() },
                         "Key",
                     ))
                     .child(combo(
                         "pr-scale",
+                        "scale",
                         Menu::Scale,
                         self.scale.map_or(tr("No scale"), |s| tr(SCALES[s].0)).into(),
                         "Scale",
                     ))
                     .child(combo(
                         "pr-chord",
+                        "chord",
                         Menu::Chord,
                         self.chord.map_or(tr("No chord"), |s| tr(CHORDS[s].0)).into(),
                         "Chord",
                     ))
                     .child(combo(
                         "pr-snap",
+                        "gridmode",
                         Menu::Snap,
                         tr(if self.snap == SnapMode::Snap { "Snap" } else { "Nudge" }).into(),
                         "Snap mode",
                     ))
                     .child(combo(
                         "pr-ghost",
+                        "ghost_note",
                         Menu::Ghost,
-                        if self.ghost.is_some() { tr("Ghost notes").into() } else { "–".into() },
+                        if self.ghost.is_some() { tr("Ghost notes").into() } else { "".into() },
                         "Ghost notes",
                     ))
+                    .when(self.ghost.is_some(), |d| {
+                        d.child(icon_button("pr-clear-ghost", "clear_ghost_note", false, "Clear ghost notes").on_click(
+                            cx.listener(|pr, _, _, cx| {
+                                pr.ghost = None;
+                                cx.notify();
+                            }),
+                        ))
+                    })
                     .when(self.rec != Rec::Off, |d| {
                         d.child(div().flex_1()).child(div().text_size(px(11.)).text_color(c(THEME.red)).child(
                             match self.rec {
@@ -2001,13 +2008,13 @@ impl PianoRoll {
                                     let ku = k as u8;
                                     let black = music::is_black(ku);
                                     let col = if pressed.contains(&ku) {
-                                        c(THEME.green)
+                                        c(THEME.key_active)
                                     } else if marked.contains(&ku) {
                                         c(THEME.yellow)
                                     } else if black {
-                                        c(THEME.window)
+                                        c(THEME.key_black)
                                     } else {
-                                        c(THEME.text)
+                                        c(THEME.key_white)
                                     };
                                     let kw = if black { w * 0.62 } else { w };
                                     let kb = Bounds::new(point(o.x, o.y + px(y + 0.5)), size(px(kw), px(key_h - 1.0)));
@@ -2074,7 +2081,6 @@ impl PianoRoll {
             sel: self.sel.clone(),
             gone,
             copies,
-            color: clip.color,
             scroll: self.scroll,
             tpp: self.tpp,
             key_h: self.key_h,
@@ -2108,7 +2114,7 @@ impl PianoRoll {
         let (scroll, tpp) = (self.scroll, self.tpp);
         let item_loop = (self.play.loop_on, self.play.loop_a, self.play.loop_b);
         let item_cursor = self.play.at(HostTime::now());
-        let (lane_notes, lane_sel, lane_mode, color) = (clip.notes.clone(), self.sel.clone(), self.lane, clip.color);
+        let (lane_notes, lane_sel, lane_mode) = (clip.notes.clone(), self.sel.clone(), self.lane);
         div()
             .flex_1()
             .h_full()
@@ -2138,7 +2144,7 @@ impl PianoRoll {
                                         point(o.x + px(a), o.y + px(12.0)),
                                         size(px((z - a).max(0.0)), px(6.0)),
                                     );
-                                    window.paint_quad(fill(lb, c(THEME.green)));
+                                    window.paint_quad(fill(lb, c(THEME.loop_on)));
                                 }
                                 let step = BAR * ((60.0 * tpp / BAR as f64).ceil() as i64).max(1);
                                 let mut t = (scroll / step as f64).floor() as i64 * step;
@@ -2229,7 +2235,7 @@ impl PianoRoll {
                                         nt.pan as f32 * 0.5 + 0.5
                                     };
                                     let top = 3.0 + (1.0 - v) * h;
-                                    let col = if lane_sel.contains(n) { c(THEME.blue) } else { c(color) };
+                                    let col = if lane_sel.contains(n) { c(THEME.pr_note_sel) } else { c(THEME.pr_vel) };
                                     let (y0, y1) = (top.min(base), top.max(base));
                                     let stem = Bounds::new(
                                         point(o.x + px(xx), o.y + px(y0)),
@@ -2765,6 +2771,15 @@ pub mod kit {
 
     /// A combo box of the toolbars: the current choice and a ▾
     pub fn dropdown(id: impl Into<ElementId>, text: impl Into<SharedString>, active: bool) -> Stateful<Div> {
+        combo_box(id, None, text.into(), active)
+    }
+
+    fn combo_box(
+        id: impl Into<ElementId>,
+        icon: Option<&'static str>,
+        text: SharedString,
+        active: bool,
+    ) -> Stateful<Div> {
         div()
             .id(id.into())
             .flex()
@@ -2773,16 +2788,47 @@ pub mod kit {
             .items_center()
             .gap(px(4.))
             .h(px(20.))
-            .px(px(6.))
+            .px(px(5.))
             .rounded(px(3.))
             .border_1()
-            .border_color(c(if active { THEME.green } else { THEME.line2 }))
+            .border_color(c(if active { THEME.menu_border } else { THEME.line2 }))
             .bg(c(THEME.bg3))
             .text_size(px(11.))
             .cursor_pointer()
             .hover(|s| s.bg(c(THEME.bg4)))
-            .child(text.into())
+            .children(icon.map(crate::ui::icon))
+            .when(!text.is_empty(), |d| d.child(text))
             .child(div().text_size(px(8.)).text_color(c(THEME.text2)).child("▾"))
+    }
+
+    /// A legacy toolbar button: its icon, pressed (sunken, highlighted) when on
+    pub fn icon_button(id: &'static str, icon: &'static str, on: bool, help: &'static str) -> Stateful<Div> {
+        div()
+            .id(id)
+            .debug_selector(move || id.to_string())
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .size(px(24.))
+            .rounded(px(3.))
+            .border_1()
+            .border_color(c(if on { THEME.menu_border } else { THEME.bg2 }))
+            .bg(c(if on { THEME.bg1 } else { THEME.bg2 }))
+            .hover(|s| s.bg(c(THEME.bg4)))
+            .cursor_pointer()
+            .tooltip(tip(help))
+            .child(crate::ui::icon(icon))
+    }
+
+    /// A combo box with the legacy's icon in front of its text
+    pub fn dropdown_icon(
+        id: impl Into<ElementId>,
+        icon: &'static str,
+        text: impl Into<SharedString>,
+        active: bool,
+    ) -> Stateful<Div> {
+        combo_box(id, Some(icon), text.into(), active)
     }
 
     pub fn label(text: impl Into<SharedString>) -> Div {
@@ -2833,7 +2879,7 @@ pub mod kit {
                     .overflow_y_scroll()
                     .p(px(3.))
                     .rounded(px(4.))
-                    .bg(c(THEME.bg2))
+                    .bg(c(THEME.menu_bg))
                     .border_1()
                     .border_color(c(THEME.line2))
                     .shadow_lg()
@@ -2854,7 +2900,7 @@ pub mod kit {
                             .cursor_pointer()
                             .hover(|s| s.bg(c(THEME.bg4)))
                             .on_click(move |_, w, cx| pick(i, w, cx))
-                            .child(div().w(px(10.)).text_color(c(THEME.green)).child(if it.checked {
+                            .child(div().w(px(10.)).text_color(c(THEME.menu_border)).child(if it.checked {
                                 "✓"
                             } else {
                                 ""
@@ -2905,7 +2951,7 @@ pub mod kit {
                         .rounded(px(4.))
                         .bg(c(THEME.bg2))
                         .border_1()
-                        .border_color(c(THEME.green))
+                        .border_color(c(THEME.menu_border))
                         .shadow_lg()
                         .on_mouse_down_out(move |_, w, cx| close2(w, cx))
                         .on_key_down(move |ev: &gpui::KeyDownEvent, w, cx| {

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- An amp model (NAM): an amplifier's front with its knobs. LinuxMusic, CC0 -->
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="16" height="16" viewBox="0 0 16 16">
+	<rect x="1.5" y="3.5" width="13" height="9" rx="1.2" fill="none" stroke="#f0913a" stroke-width="1.2"/>
+	<path d="M 1.5 7 L 14.5 7" stroke="#f0913a" stroke-width="1"/>
+	<circle cx="4.5" cy="5.25" r="0.9" fill="#fff"/>
+	<circle cx="7.5" cy="5.25" r="0.9" fill="#fff"/>
+	<circle cx="10.5" cy="5.25" r="0.9" fill="#fff"/>
+	<path d="M 3.5 9 L 12.5 9 M 3.5 10.8 L 12.5 10.8" stroke="#fff" stroke-width="0.7" opacity="0.6"/>
+</svg>

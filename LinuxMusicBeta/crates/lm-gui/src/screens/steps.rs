@@ -22,7 +22,9 @@ use gpui::{
 use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, Topic, Value};
 
 use super::ScreenCx;
-use super::piano_roll::kit::{self, MenuItem, dropdown, label, paint_text, popup, primary, sep, tip, with_alpha};
+use super::piano_roll::kit::{
+    self, MenuItem, dropdown, icon_button, label, paint_text, popup, primary, sep, tip, with_alpha,
+};
 use super::piano_roll::music::{BAR, BEAT, Clip, Note, NoteChange, key_name};
 use super::piano_roll::{NEW, note_ops};
 use crate::model;
@@ -522,7 +524,8 @@ impl CellsPaint {
                 };
                 if !lit {
                     // the legacy: the beats in two shades
-                    let shade = c(if (s / per_beat) % 2 == 0 { THEME.bg3 } else { THEME.bg2 });
+                    let shade =
+                        if (s / per_beat) % 2 == 0 { c(THEME.step_off) } else { with_alpha(THEME.step_off, 0.6) };
                     window.paint_quad(gpui::quad(cell, px(2.0), shade, px(0.0), shade, Default::default()));
                     continue;
                 }
@@ -532,9 +535,9 @@ impl CellsPaint {
                 window.paint_quad(gpui::quad(
                     cell,
                     px(2.0),
-                    with_alpha(cl.color, 0.3 + 0.7 * v),
+                    with_alpha(THEME.step_on, 0.3 + 0.7 * v),
                     px(1.0),
-                    with_alpha(cl.color, 1.0),
+                    with_alpha(THEME.step_on, 1.0),
                     Default::default(),
                 ));
                 if *row == Row::Pitched && self.step_w >= 20.0 && !here.is_empty() {
@@ -670,9 +673,9 @@ impl StepEditor {
             .border_color(c(THEME.line))
             .overflow_hidden()
             .child(
-                small(
+                icon_button(
                     "st-play",
-                    if playing { "❚❚" } else { "▶" }.into(),
+                    if playing { "pause" } else { "play" },
                     playing,
                     "Play/pause current pattern (Space)",
                 )
@@ -681,7 +684,7 @@ impl StepEditor {
                     cx.notify();
                 })),
             )
-            .child(small("st-stop", "■".into(), false, "Stop playback of current pattern (Space)").on_click(
+            .child(icon_button("st-stop", "stop", false, "Stop playback of current pattern (Space)").on_click(
                 cx.listener(|st, _, _, cx| {
                     st.playing = None;
                     cx.notify();
@@ -696,15 +699,15 @@ impl StepEditor {
             )
             .child(sep())
             .child(
-                small("st-remove-steps", tr("Remove steps").into(), false, "Remove steps")
+                icon_button("st-remove-steps", "step_btn_remove", false, "Remove steps")
                     .on_click(cx.listener(|st, _, _, cx| st.remove_steps(cx))),
             )
             .child(
-                small("st-add-steps", tr("Add steps").into(), false, "Add steps")
+                icon_button("st-add-steps", "step_btn_add", false, "Add steps")
                     .on_click(cx.listener(|st, _, _, cx| st.add_steps(cx))),
             )
             .child(
-                small("st-clone-steps", tr("Clone Steps").into(), false, "Clone Steps")
+                icon_button("st-clone-steps", "step_btn_duplicate", false, "Clone Steps")
                     .on_click(cx.listener(|st, _, _, cx| st.clone_steps(cx))),
             )
             .child(sep())

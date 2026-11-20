@@ -26,7 +26,8 @@ use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, Topic, Value};
 
 use super::ScreenCx;
 use super::piano_roll::kit::{
-    self, MenuItem, ValueEntry, dropdown, label, paint_text, popup, primary, sep, tip, with_alpha,
+    self, MenuItem, ValueEntry, dropdown, dropdown_icon, icon_button, label, paint_text, popup, primary, sep, tip,
+    with_alpha,
 };
 use super::piano_roll::music::{self, BAR, BEAT, Clip, GRIDS, NoteMap};
 use crate::model;
@@ -1172,7 +1173,7 @@ impl CurvePaint {
         let o = b.origin;
         let (w, h) = (b.size.width.as_f32(), b.size.height.as_f32());
         let r = |x: f32, y: f32, ww: f32, hh: f32| Bounds::new(point(o.x + px(x), o.y + px(y)), size(px(ww), px(hh)));
-        window.paint_quad(fill(b, c(THEME.bg1)));
+        window.paint_quad(fill(b, c(THEME.ae_bg)));
         // the legacy: eight horizontal lines, and the grid of the quantization, beats and bars
         for i in 0..=8 {
             window.paint_quad(fill(r(0.0, 4.0 + i as f32 * (h - 8.0) / 8.0, w, 1.0), c(THEME.bg2)));
@@ -1188,9 +1189,9 @@ impl CurvePaint {
                 t += step;
             }
         };
-        lines(self.grid, THEME.bg2);
-        lines(BEAT, THEME.bg3);
-        lines(BAR, THEME.line2);
+        lines(self.grid, THEME.pr_line);
+        lines(BEAT, THEME.ae_beat);
+        lines(BAR, THEME.ae_bar);
         // ghost notes (F-AUT-009), by height in their own key range
         if let Some(g) = &self.ghost {
             let (lo, hi) = g.values().fold((127u8, 0u8), |(a, z), x| (a.min(x.key), z.max(x.key)));
@@ -1226,7 +1227,7 @@ impl CurvePaint {
             line.push(o + point(px(x), px(self.y(at(t), h))));
             x += 3.0;
         }
-        let col = self.lane.color;
+        let col = THEME.ae_graph;
         if line.len() >= 2 && !pts.is_empty() {
             let mut area = line.clone();
             area.push(o + point(px(w + 3.0), px(h)));
@@ -1234,7 +1235,7 @@ impl CurvePaint {
             let mut pb = PathBuilder::fill();
             pb.add_polygon(&area, true);
             if let Ok(p) = pb.build() {
-                window.paint_path(p, with_alpha(col, 0.14));
+                window.paint_path(p, gpui::rgba(col));
             }
             let mut pb = PathBuilder::stroke(px(1.6));
             pb.move_to(line[0]);
@@ -1242,7 +1243,7 @@ impl CurvePaint {
                 pb.line_to(*p);
             }
             if let Ok(p) = pb.build() {
-                window.paint_path(p, c(col));
+                window.paint_path(p, c(THEME.ae_bar));
             }
         }
         // the points, their out values and the curve handles (only the visible ones)
@@ -1251,7 +1252,7 @@ impl CurvePaint {
             if !(-10.0..=w + 10.0).contains(&px_) || self.gone.contains(&i) {
                 continue;
             }
-            let edge = c(if self.sel.contains(&i) { THEME.blue } else { col });
+            let edge = if self.sel.contains(&i) { c(THEME.blue) } else { gpui::rgba(THEME.ae_in) };
             let dot = |window: &mut Window, y: f32, filled: bool| {
                 let bb = r(px_ - POINT_R, y - POINT_R, POINT_R * 2.0, POINT_R * 2.0);
                 window.paint_quad(gpui::quad(
@@ -1424,21 +1425,23 @@ impl AutomationEditor {
                 .px(px(6.))
                 .tooltip(tip(help))
         };
-        let tool = |t: Tool, id: &'static str, l: &'static str, help: &'static str| {
-            small(id, tr(l).into(), self.tool == t, THEME.green, help).on_click(cx.listener(move |ae, _, _, cx| {
+        let tool = |t: Tool, id: &'static str, icon: &'static str, help: &'static str| {
+            icon_button(id, icon, self.tool == t, help).on_click(cx.listener(move |ae, _, _, cx| {
                 ae.tool = t;
                 cx.notify();
             }))
         };
-        let shape = |s: Shape, id: &'static str, l: &'static str, help: &'static str| {
-            small(id, tr(l).into(), self.shape == s, THEME.blue, help)
-                .on_click(cx.listener(move |ae, _, _, cx| ae.set_shape(s, cx)))
+        let shape = |s: Shape, id: &'static str, icon: &'static str, help: &'static str| {
+            icon_button(id, icon, self.shape == s, help).on_click(cx.listener(move |ae, _, _, cx| ae.set_shape(s, cx)))
         };
-        let combo = |id: &'static str, m: Menu, text: SharedString, help: &'static str| {
-            dropdown(id, text, false)
-                .debug_selector(move || id.to_string())
-                .tooltip(tip(help))
-                .on_mouse_down(MouseButton::Left, cx.listener(Self::open_menu(m)))
+        let combo = |id: &'static str, icon: Option<&'static str>, m: Menu, text: SharedString, help: &'static str| {
+            match icon {
+                Some(i) => dropdown_icon(id, i, text, false),
+                None => dropdown(id, text, false),
+            }
+            .debug_selector(move || id.to_string())
+            .tooltip(tip(help))
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::open_menu(m)))
         };
         let playing = self.playing.is_some();
         // the hand overrode this lane's parameter: shown until the re-arm (I-21.5)
@@ -1461,41 +1464,40 @@ impl AutomationEditor {
             .border_color(c(THEME.line))
             .overflow_hidden()
             .child(
-                small(
+                icon_button(
                     "ae-play",
-                    if playing { "❚❚" } else { "▶" }.into(),
+                    if playing { "pause" } else { "play" },
                     playing,
-                    THEME.green,
                     "Play/pause current clip (Space)",
                 )
                 .on_click(cx.listener(|ae, _, _, cx| ae.toggle_play(cx))),
             )
-            .child(small("ae-stop", "■".into(), false, 0, "Stop playing of current clip (Space)").on_click(
-                cx.listener(|ae, _, _, cx| {
+            .child(icon_button("ae-stop", "stop", false, "Stop playing of current clip (Space)").on_click(cx.listener(
+                |ae, _, _, cx| {
                     ae.playing = None;
                     ae.cursor = 0;
                     cx.notify();
-                }),
-            ))
+                },
+            )))
             .child(sep())
-            .child(tool(Tool::Draw, "ae-mode-draw", "Draw", "Draw mode (Shift+D)"))
-            .child(tool(Tool::Erase, "ae-mode-erase", "Erase", "Erase mode (Shift+E)"))
-            .child(tool(Tool::Out, "ae-mode-out", "Out values", "Draw outValues mode (Shift+C)"))
-            .child(tool(Tool::Pencil, "ae-mode-pencil", "Pencil", "Draw freehand (Shift+P)"))
-            .child(tool(Tool::Select, "ae-mode-select", "Select", "Select mode (Shift+S)"))
+            .child(tool(Tool::Draw, "ae-mode-draw", "edit_draw", "Draw mode (Shift+D)"))
+            .child(tool(Tool::Erase, "ae-mode-erase", "edit_erase", "Erase mode (Shift+E)"))
+            .child(tool(Tool::Out, "ae-mode-out", "edit_draw_outvalue", "Draw outValues mode (Shift+C)"))
+            .child(tool(Tool::Pencil, "ae-mode-pencil", "edit_draw_small", "Draw freehand (Shift+P)"))
+            .child(tool(Tool::Select, "ae-mode-select", "edit_select", "Select mode (Shift+S)"))
             .child(sep())
             .child(
-                small("ae-flip-y", tr("Flip ↕").into(), false, 0, "Flip vertically")
+                icon_button("ae-flip-y", "flip_y", false, "Flip vertically")
                     .on_click(cx.listener(|ae, _, _, cx| ae.flip(false, cx))),
             )
             .child(
-                small("ae-flip-x", tr("Flip ↔").into(), false, 0, "Flip horizontally")
+                icon_button("ae-flip-x", "flip_x", false, "Flip horizontally")
                     .on_click(cx.listener(|ae, _, _, cx| ae.flip(true, cx))),
             )
             .child(sep())
-            .child(shape(Shape::Step, "ae-discrete", "Discrete", "Discrete progression"))
-            .child(shape(Shape::Curve, "ae-linear", "Linear", "Linear progression"))
-            .child(shape(Shape::Smooth, "ae-cubic", "Cubic", "Cubic Hermite progression"))
+            .child(shape(Shape::Step, "ae-discrete", "progression_discrete", "Discrete progression"))
+            .child(shape(Shape::Curve, "ae-linear", "progression_linear", "Linear progression"))
+            .child(shape(Shape::Smooth, "ae-cubic", "progression_cubic_hermite", "Cubic Hermite progression"))
             .child(
                 div()
                     .id("ae-tension")
@@ -1528,35 +1530,34 @@ impl AutomationEditor {
             .child(sep())
             .child(combo(
                 "ae-zoom-x",
+                Some("zoom_x"),
                 Menu::ZoomX,
-                format!("↔ {}%", ZOOM_X[self.zoom_x] * 100.0).into(),
+                format!("{}%", ZOOM_X[self.zoom_x] * 100.0).into(),
                 "Horizontal zooming",
             ))
             .child(combo(
                 "ae-zoom-y",
+                Some("zoom_y"),
                 Menu::ZoomY,
-                if self.zoom_y == 0 {
-                    format!("↕ {}", tr("Auto")).into()
-                } else {
-                    format!("↕ {}%", ZOOM_Y[self.zoom_y] * 100.0).into()
-                },
+                if self.zoom_y == 0 { tr("Auto").into() } else { format!("{}%", ZOOM_Y[self.zoom_y] * 100.0).into() },
                 "Vertical zooming",
             ))
-            .child(combo("ae-grid", Menu::Grid, format!("Q {}", GRIDS[self.grid].0).into(), "Quantization"))
+            .child(combo("ae-grid", Some("quantize"), Menu::Grid, GRIDS[self.grid].0.into(), "Quantization"))
             .child(combo(
                 "ae-ghost",
+                Some("automation_ghost_note"),
                 Menu::Ghost,
-                if self.ghost.is_some() { tr("Ghost notes").into() } else { "–".into() },
+                if self.ghost.is_some() { tr("Ghost notes").into() } else { "".into() },
                 "Ghost notes",
             ))
-            .child(combo("ae-tools", Menu::Tools, tr("Tools").into(), "Scale, thin, copy and paste the points"))
+            .child(combo("ae-tools", Some("tool"), Menu::Tools, "".into(), "Scale, thin, copy and paste the points"))
             .child(div().flex_1())
             .children(lane.map(|l| {
                 div().text_size(px(11.)).text_color(c(THEME.text2)).child(format!("{} · {}", l.owner, l.param))
             }))
-            .child(combo("ae-lane", Menu::Lane, tr("Lane").into(), "The lane shown"))
+            .child(combo("ae-lane", Some("automation"), Menu::Lane, tr("Lane").into(), "The lane shown"))
             .child(label(tr("Mode")))
-            .child(combo("ae-lane-mode", Menu::Mode, tr(mode_name).into(), "Off, Read, Touch, Latch or Write"))
+            .child(combo("ae-lane-mode", None, Menu::Mode, tr(mode_name).into(), "Off, Read, Touch, Latch or Write"))
             .child(
                 small(
                     "ae-rearm",

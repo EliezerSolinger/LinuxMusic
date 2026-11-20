@@ -53,6 +53,32 @@ theme!(
     track6,
     track7,
     track8,
+    pr_bg,
+    pr_line,
+    pr_beat,
+    pr_bar,
+    pr_note,
+    pr_note_sel,
+    pr_vel,
+    pr_ghost,
+    pr_marked,
+    key_white,
+    key_black,
+    key_active,
+    ae_bg,
+    ae_beat,
+    ae_bar,
+    ae_graph,
+    ae_in,
+    ae_out,
+    menu_bg,
+    menu_sel,
+    menu_border,
+    tooltip_bg,
+    loop_on,
+    loop_off,
+    step_on,
+    step_off,
 );
 
 const DARK: &str = include_str!("../../themes/dark.txt");
@@ -116,8 +142,8 @@ mod tests {
             assert!(super::Theme::default().set(k.trim(), 0), "unknown key {k}");
             keys += 1;
         }
-        assert_eq!(keys, 33, "every field has a line");
+        assert_eq!(keys, 59, "every field has a line");
         let light = super::LIGHT.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).count();
-        assert_eq!(light, 33, "the light theme sets every field too");
+        assert_eq!(light, 59, "the light theme sets every field too");
     }
 }
