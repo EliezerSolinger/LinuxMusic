@@ -37,10 +37,10 @@ fn matches(source: &DocSource, port: &str, channel: u8, message: MidiMessage) ->
 
 impl FakePort {
     pub(crate) fn midi_learn_impl(&mut self, target: MapTarget, scope: MapScope) -> Result<LearnId> {
-        if let Some(NodeRef::Id(id)) = target.node() {
-            if self.doc.find(*id).is_none() {
-                return Err(Error::new("port.no_such_node"));
-            }
+        if let Some(NodeRef::Id(id)) = target.node()
+            && self.doc.find(*id).is_none()
+        {
+            return Err(Error::new("port.no_such_node"));
         }
         self.midi.next += 1;
         let id = self.midi.next;
