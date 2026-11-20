@@ -946,3 +946,25 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   pelo `SidSynth::registers` do plugin, a sequência do `sid_fillbuffer`) e dá bit a bit em todas as notas inteiras,
   as filtradas também: as únicas diferenças do plugin são as de cima. O harness serve aos três instrumentos de chip
   (`build-references.sh <pasta ab do crate>`).
+
+## Do `lm-session`, continuação (20/11)
+
+- **Modo seguro (U21):** um vigia lê o `Watch` do renderer a cada 250 ms; com os blocos parados por 2 s e o
+  dispositivo ligado, grava o nó em que a callback está em `backup/suspeito.json`. Abrir o projeto com o arquivo põe
+  aquele plugin em `bypass` (um passo desfazível), com aviso e `status().safeMode`; o arquivo é apagado ao usar. O
+  `bypass` de um instrumento ou insert tira o nó do programa (o compilador nem o constrói nem o chama).
+- **A mesa do legado no motor:** `trim`, `mono` (com crossfade) antes do rack e de todo insert; `phaseInvert` e `swap`
+  depois do tap pré-fader e antes do fader; os PRE do master antes do estágio de ganho dele (o master do legado não
+  tem botão de drive: o `tube.drive` do master não é usado). São estágios do rack (`Input`, `Polarity`), construídos
+  nos dois modos da mesa quando o canal tem os campos.
+- **Monitoração** (`preferences().monitor`): no último trecho do master, só no programa ao vivo (o `Environment` da
+  exportação não a tem); o LEVEL anda pela vaga, os botões recompilam.
+- **Medidores da mesa** (SAT, CLIP como contador, redução do gate, do compressor e do barramento, correlação,
+  goniômetro de 64 pontos) vão pelo quadro de display de cada nó do rack e são juntados por canal em
+  `LocalPort::display(m:N)` (tipo `"rack"`, layout em `lm_session::rack::display`).
+- **Wet/dry do insert:** campo opcional `wet` do nó de plugin (sem padrão, então os padrões congelados não mudam e a
+  versão fica), parâmetro de chave `insert.wet`; o compilador soma a saída do insert com o sinal seco por `1 − wet`
+  (`HostParam::complement`, numa segunda instância da vaga), e a PDC atrasa o seco pela latência do insert.
+- **O target compartilhado não é seguro mesmo com o `touch`:** dois worktrees compilando o mesmo pacote ao mesmo
+  tempo trocam o artefato um do outro (um teste do `lm-compile` falhou com o `lm-doc` de outro worktree). Este
+  worktree passou a usar um target próprio, apagado no fim.
