@@ -38,7 +38,7 @@ pub fn session(dir: &TempDir) -> Session {
 }
 
 pub fn settle(s: &mut Session) {
-    assert!(s.settle(Duration::from_secs(20)), "the session did not settle: {:?}", s.activity());
+    assert!(s.settle(Duration::from_secs(20)), "the session did not settle: {:?} {:?}", s.busy(), s.notices().keys());
 }
 
 /// A track with a TripleOscillator, as the last track

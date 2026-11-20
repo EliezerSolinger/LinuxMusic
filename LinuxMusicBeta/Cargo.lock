@@ -3577,6 +3577,8 @@ dependencies = [
  "lm-doc",
  "lm-io",
  "lm-plugin",
+ "lm-port",
+ "lm-remote",
  "lm-render",
  "lm-session",
  "lm-state",

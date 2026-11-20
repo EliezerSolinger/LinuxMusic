@@ -3,13 +3,14 @@
 //! ```text
 //! lm-headless render <project folder> <out.wav> [--from SAMPLE] [--to SAMPLE] [--tail SECONDS]
 //! lm-headless info <project folder>
-//! lm-headless serve [<project folder>] [--device NAME]
+//! lm-headless serve [<project folder>] [--device NAME] [--socket PATH] [--tcp ADDR] [--token TOKEN:ROLE]...
 //! ```
 //!
 //! `render` is the export's path exactly (T19): the reference of the deterministic render. It renders the saved
 //! file (not the journal), waits for every resource and plugin (T8), and prints the operation and its progress
-//! (I-2.4) on the standard error. `serve` runs a session pumped every 10 ms (H2), printing its notices; the network
-//! server (lm-remote, I-20) plugs into the same loop. It ends when its standard input closes.
+//! (I-2.4) on the standard error. `serve` runs a session behind its LocalPort, pumped every 10 ms (H2) with the
+//! network server (lm-remote, I-20.7: a Unix socket by default, TCP only when asked and only with tokens), printing
+//! the notices and the operations. It ends when its standard input closes.
 
 #![forbid(unsafe_code)]
 #![allow(clippy::print_stdout, clippy::print_stderr)]
@@ -29,7 +30,7 @@ use lm_state::{Value, from_json, to_json};
 fn usage() -> ! {
     eprintln!(
         "usage:\n  lm-headless render <project> <out.wav> [--from S] [--to S] [--tail SECONDS]\n  lm-headless info \
-         <project>\n  lm-headless serve [<project>] [--device NAME]"
+         <project>\n  lm-headless serve [<project>] [--device NAME] [--socket PATH] [--tcp ADDR] [--token TOKEN:ROLE]"
     );
     std::process::exit(2)
 }
@@ -145,6 +146,30 @@ fn serve(args: &[String]) -> Result<()> {
     if let Some(project) = pos.first() {
         let _ = session.open(PathBuf::from(project));
     }
+    let mut server_config = lm_remote::ServerConfig::new("lm-headless");
+    server_config.socket = Some(match flag(args, "--socket") {
+        Some(p) => PathBuf::from(p),
+        None => std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("linuxmusic.sock"),
+    });
+    if let Some(addr) = flag(args, "--tcp") {
+        server_config.tcp = Some(addr.parse().map_err(|_| Error::new("headless.tcp").arg("address", addr.as_str()))?);
+    }
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--token"
+            && let Some(t) = args.get(i + 1)
+        {
+            let (token, role) = t.split_once(':').ok_or_else(|| Error::new("headless.token"))?;
+            let role = lm_remote::Role::parse(role).ok_or_else(|| Error::new("headless.role").arg("role", role))?;
+            server_config.tokens.push((token.to_owned(), role));
+        }
+        i += 1;
+    }
+    let mut server = lm_remote::Server::start(server_config)?;
+    let mut port = lm_session::LocalPort::new(session);
     // Ends when the standard input closes (a supervisor, or ^D)
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     std::thread::spawn(move || {
@@ -154,7 +179,10 @@ fn serve(args: &[String]) -> Result<()> {
     });
     eprintln!("serving; close the standard input to stop");
     loop {
-        session.pump();
+        use lm_port::CorePort;
+        port.pump();
+        server.pump(&mut port);
+        let session = port.session_mut();
         for n in session.notices().take_new() {
             eprintln!("notice: {} {:?}", n.key, n.args);
         }
@@ -167,6 +195,8 @@ fn serve(args: &[String]) -> Result<()> {
         }
         std::thread::sleep(lm_session::PUMP_PERIOD);
     }
+    drop(server);
+    let mut session = port.into_session();
     if session.modified() && !session.project().untitled && !session.project().read_only {
         session.save()?;
         session.settle(Duration::from_secs(10));

@@ -117,6 +117,7 @@ pub static ACTIONS: &[ActionSpec] = &[
         },
         enabled: always,
     },
+    ActionSpec { id: "project.close", label: "action.project.close", run: |s, _| s.close_project(), enabled: always },
     ActionSpec {
         id: "project.new",
         label: "action.project.new",

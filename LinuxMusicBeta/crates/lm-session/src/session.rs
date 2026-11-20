@@ -271,6 +271,9 @@ pub struct Session {
     faults: Arc<DiskFaults>,
     delay: Duration,
     device_setup: DeviceSetup,
+    untitled: PathBuf,
+    /// A "save as" copying the audio: where the project goes, with the lock already taken
+    pending_save_as: Option<(lm_base::OperationId, ProjectFolder, ProjectLock)>,
     block: u32,
     /// Builds waiting for the resources their state cites (C11)
     builds_waiting: Vec<BuildRequest>,
@@ -299,6 +302,8 @@ pub struct Session {
     /// Records forgotten once the journal line that holds their take is on the disk (U5)
     forget_after: Vec<(Arc<AtomicBool>, PathBuf)>,
     xruns: u32,
+    /// The imports that ended, by their operation, for the port to answer (`take_imported`)
+    imported: Vec<(lm_base::OperationId, Result<Resource>)>,
     /// What `edit.copy` copied (H13)
     pub(crate) clipboard: Option<Clipboard>,
     /// The finished operations the headless printer has not shown
@@ -499,6 +504,8 @@ impl Session {
             faults: config.faults.clone(),
             delay: config.delay,
             device_setup: config.device.clone(),
+            untitled: config.untitled.clone(),
+            pending_save_as: None,
             block: config.block,
             builds_waiting: Vec::new(),
             waiting_nodes: BTreeSet::new(),
@@ -522,6 +529,7 @@ impl Session {
             next_take_after: false,
             xruns: 0,
             clipboard: None,
+            imported: Vec::new(),
             finished: Vec::new(),
             main,
         };
@@ -612,6 +620,41 @@ impl Session {
 
     pub fn engine(&mut self) -> &mut EngineControl {
         &mut self.engine
+    }
+
+    /// What keeps the session from being settled (diagnostics for the tests and the headless tool)
+    pub fn busy(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let counts = [
+            ("builds", self.build_ops.len()),
+            ("loads", self.load_ops.len()),
+            ("builds_waiting", self.builds_waiting.len()),
+            ("waiting_nodes", self.waiting_nodes.len()),
+            ("replacing_nodes", self.replacing_nodes.len()),
+            ("installs_in_flight", self.engine.installs_in_flight()),
+            ("installs_queued", self.engine.installs_queued()),
+            ("opening", self.open_ops.len()),
+        ];
+        for (k, n) in counts {
+            if n > 0 {
+                out.push(format!("{k}: {n}"));
+            }
+        }
+        if self.compiling_since.is_some() {
+            out.push("compiling".into());
+        }
+        if self.needs_compile {
+            out.push("needs_compile".into());
+        }
+        if self.saving.is_some() {
+            out.push("saving".into());
+        }
+        for (id, _) in self.document.index().ids() {
+            if self.is_waiting(*id) {
+                out.push(format!("waiting {id}"));
+            }
+        }
+        out
     }
 
     /// Whether a document node's processor is still being built (new nodes are silent meanwhile, I-2.3)
@@ -1076,6 +1119,14 @@ impl Session {
         }
         for (op, result) in self.import_ops.finished(now, &mut done) {
             changed = true;
+            let id = op.handle.id();
+            self.imported.push((
+                id,
+                match &result {
+                    Ok(file) => Resource::new("audio", &file.key),
+                    Err(e) => Err(e.clone()),
+                },
+            ));
             match result {
                 Ok(file) => {
                     let peaks = file.peaks.clone();
@@ -1124,9 +1175,19 @@ impl Session {
     }
 
     fn generic_finished(&mut self, kind: &'static str, target: Target, result: Result<Value>) {
+        if kind == "save_as" && result.is_err() {
+            self.pending_save_as = None;
+        }
         match (kind, result) {
             ("export", Ok(report)) => {
                 self.status = self.status.with("lastExport", report);
+            }
+            ("save_as", Ok(_)) => {
+                if let Some((_, to, lock)) = self.pending_save_as.take()
+                    && let Err(e) = self.finish_save_as(to, lock)
+                {
+                    self.notices.error(&e, Some(Target::Project), None);
+                }
             }
             ("paste", Ok(list)) => {
                 for r in list.items().filter_map(Value::as_resource).cloned().collect::<Vec<_>>() {
@@ -1372,6 +1433,11 @@ impl Session {
         }
     }
 
+    /// The imports that ended since the last call, by their operation: the resource each made
+    pub fn take_imported(&mut self) -> Vec<(lm_base::OperationId, Result<Resource>)> {
+        std::mem::take(&mut self.imported)
+    }
+
     /// The operations that finished since the last call (the headless printer; the duration profile, I-2.3)
     pub fn take_finished(&mut self) -> Vec<Finished> {
         std::mem::take(&mut self.finished)
@@ -1426,7 +1492,8 @@ impl Session {
         if let Locking::Held(owner) = locking {
             return Err(err("session.project.locked").arg("host", owner.host).arg("pid", i64::from(owner.pid)));
         }
-        // The audio files cited: copied now (they are content-addressed; existing ones are kept)
+        // The audio files cited (content-addressed: those already there are kept), copied in an operation; the
+        // project moves there when they are all in
         let from_audio = self.project.folder.audio();
         let mut keys = BTreeSet::new();
         self.document.root().walk(&mut |_, v| {
@@ -1434,18 +1501,43 @@ impl Session {
                 keys.insert(r.key().to_owned());
             }
         });
+        let mut copies = Vec::new();
         for entry in std::fs::read_dir(&from_audio).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             let stem = name.split('.').next().unwrap_or("");
-            if keys.contains(stem) {
-                let dest = to.audio().join(&name);
-                if !dest.exists() {
-                    self.faults.check(entry.metadata().map(|m| m.len()).unwrap_or(0))?;
-                    std::fs::copy(entry.path(), &dest)
-                        .map_err(|e| crate::folder::io_error("session.save_as.copy", &dest, &e))?;
-                }
+            let dest = to.audio().join(&name);
+            if keys.contains(stem) && !dest.exists() {
+                copies.push((entry.path(), dest));
             }
         }
+        if copies.is_empty() {
+            return self.finish_save_as(to, lock);
+        }
+        let faults = self.faults.clone();
+        let id = self.start(
+            Label::new("session.save_as.copying"),
+            Target::Project,
+            true,
+            "save_as",
+            move |cancel, progress| {
+                for (i, (from, dest)) in copies.iter().enumerate() {
+                    cancel.check()?;
+                    faults.check(std::fs::metadata(from).map(|m| m.len()).unwrap_or(0))?;
+                    let tmp = dest.with_extension("save_as.tmp");
+                    std::fs::copy(from, &tmp).map_err(|e| crate::folder::io_error("session.save_as.copy", &tmp, &e))?;
+                    std::fs::rename(&tmp, dest)
+                        .map_err(|e| crate::folder::io_error("session.save_as.copy", dest, &e))?;
+                    progress.set((i + 1) as f32 / copies.len() as f32);
+                }
+                Ok(Value::NULL)
+            },
+        );
+        self.pending_save_as = Some((id, to, lock));
+        Ok(())
+    }
+
+    /// The project moves to its new folder: its journal, its resources, its lock; then it is saved there
+    fn finish_save_as(&mut self, to: ProjectFolder, lock: ProjectLock) -> Result<()> {
         self.journal = Journal::start(&to, self.faults.clone(), String::new(), self.journal.seq(), false);
         self.resources = ResourceStore::new(to.root().to_path_buf(), self.clock.clone());
         // The untitled folder is no longer ours to remove (its audio was copied; it goes now if it holds none)
@@ -1458,6 +1550,35 @@ impl Session {
         self.needs_compile = true;
         self.save_here()?;
         self.preferences.add_recent(&self.project.folder.name(), &self.project.folder.root().display().to_string());
+        self.request_all_resources();
+        Ok(())
+    }
+
+    /// Closes the project: a new untitled one takes its place (its lock released, its journal ended). The caller
+    /// asks about saving before
+    pub fn close_project(&mut self) -> Result<()> {
+        let _ = self.engine.commands().send(Command::Stop);
+        let folder = ProjectFolder::new(self.untitled.join(format!("untitled-{}", lm_io::new_uuid())));
+        folder.create(&self.faults)?;
+        if let Some(patch) = self.document.take_journal() {
+            self.write_journal(&patch);
+        }
+        self.journal = Journal::start(&folder, self.faults.clone(), String::new(), 0, false);
+        self.resources = ResourceStore::new(folder.root().to_path_buf(), self.clock.clone());
+        let options = project_options(&self.plugins, &self.schemas, self.limits);
+        let document = Document::new_project(self.schemas.clone(), options)?;
+        self.replace_document(document, None)?;
+        self.untitled_guard = UntitledGuard(Some(folder.root().to_path_buf()));
+        self.project = Project {
+            folder,
+            lock: ProjectLock::none(),
+            read_only: false,
+            untitled: true,
+            migrated_from: None,
+            saved_root: self.document.root().clone(),
+            locked_by: None,
+        };
+        self.refresh_status();
         Ok(())
     }
 
@@ -1500,10 +1621,12 @@ impl Session {
         self.project.saved_root = self.document.root().clone();
         let rate = project_rate(self.document.root());
         if rate != self.spec.sample_rate {
+            // A new compiler: the old one's requests are stale
+            self.builds_waiting.clear();
+            self.build_ops.cancel_all();
             self.restart_audio(rate)?;
         }
-        self.builds_waiting.clear();
-        self.build_ops.cancel_all();
+        // Otherwise the compiler says which requests are stale (`Compiled::cancelled`); the others still count
         self.needs_compile = true;
         Ok(())
     }
