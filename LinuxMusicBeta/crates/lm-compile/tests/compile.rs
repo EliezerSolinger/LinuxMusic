@@ -858,3 +858,69 @@ fn the_compile_thread_keeps_only_the_newest_root() {
     }
     assert_eq!(next.waiting.len(), 0);
 }
+
+/// The raw device output from the next block on (channel 0), `blocks` blocks
+fn raw(h: &mut Harness, blocks: usize) -> Vec<f32> {
+    let mut out = Vec::with_capacity(blocks * BLOCK);
+    for _ in 0..blocks {
+        h.pump();
+        out.extend_from_slice(&h.dummy.outputs()[0][..BLOCK]);
+    }
+    out
+}
+
+#[test]
+fn the_count_in_clicks_on_exact_samples_and_the_song_starts_after_it() {
+    let plugins = plugins();
+    let mut doc = new_doc(&plugins);
+    digital(&mut doc);
+    let t = add_track(&mut doc, Some(dc()));
+    let item = add_item(&mut doc, t, "midi", 0, 3840);
+    edit(&mut doc, |e| {
+        e.add_note(item, note(60, 0, 3840, 0.5))?;
+        // One bar of 3/4 at 120 BPM: three beats of 24,000 samples
+        e.set(ROOT, &[k("tempoMap"), lm_state::PathStep::Index(0), k("timeSig")], Value::list([Value::int(3), Value::int(4)]))?;
+        e.set(ROOT, &[k("transport"), k("metronome"), k("countIn")], Value::int(1))
+    });
+    let accent = Arc::new(SampleData::from_channels(RATE, vec![vec![1.0; 10]]).unwrap());
+    let beat = Arc::new(SampleData::from_channels(RATE, vec![vec![0.5; 10]]).unwrap());
+    let mut h = Harness::new(&plugins);
+    h.env.metronome_sounds = Some((accent, beat));
+
+    // Playing without recording: no count-in unless the preference says so
+    h.settle(doc.root());
+    h.play();
+    let out = raw(&mut h, 4);
+    assert_eq!(out[0], 0.5, "the song starts at once");
+    h.control.commands().send(lm_render::Command::Stop).unwrap();
+    h.control.commands().send(lm_render::Command::Locate { sample: 0 }).unwrap();
+    h.pump();
+
+    h.env.count_in_on_play = true;
+    h.settle(doc.root());
+    h.play();
+    let total = 3 * 24_000;
+    let out = raw(&mut h, (total + 4_000) / BLOCK);
+    let gain = 0.8; // the metronome's default volume
+    for (i, v) in out.iter().enumerate() {
+        let want = if i >= total {
+            0.5
+        } else {
+            let beat_at = i / 24_000 * 24_000;
+            if i - beat_at < 10 { if beat_at == 0 { gain } else { 0.5 * gain } } else { 0.0 }
+        };
+        assert!((v - want).abs() < 1e-6, "at {i}: {v} (want {want})");
+    }
+    // Recording armed starts with the count-in too
+    h.control.commands().send(lm_render::Command::Stop).unwrap();
+    h.control.commands().send(lm_render::Command::Locate { sample: 0 }).unwrap();
+    h.pump();
+    h.env.count_in_on_play = false;
+    h.settle(doc.root());
+    h.control.commands().send(lm_render::Command::Record { on: true }).unwrap();
+    h.play();
+    let out = raw(&mut h, (total + 1_000) / BLOCK);
+    assert_eq!(out[0], gain);
+    assert_eq!(out[total - 1], 0.0);
+    assert_eq!(out[total], 0.5);
+}

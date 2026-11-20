@@ -142,6 +142,11 @@ pub struct Environment {
     pub midi_timing: MidiTiming,
     /// The playhead in samples, for the informative tick of a relocation (H9)
     pub playhead: i64,
+    /// The count-in (`transport.metronome.countIn`) also when playing, not only when recording (a preference)
+    pub count_in_on_play: bool,
+    /// Low-latency monitoring (P-10, a preference): on the output path of an armed track, the inserts that have
+    /// latency are bypassed
+    pub low_latency_monitoring: bool,
 }
 
 /// A processor in the renderer's table, as the compiler knows it

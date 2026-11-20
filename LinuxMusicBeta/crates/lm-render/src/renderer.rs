@@ -239,6 +239,21 @@ struct MetronomeState {
     click: Option<(bool, usize)>,
 }
 
+/// A count-in running (I-5.5): the transport waits at its position while the metronome counts
+#[derive(Clone, Copy, Debug)]
+struct Counting {
+    /// The tick where the music starts
+    t0: i64,
+    /// Samples counted so far, and in all
+    elapsed: i64,
+    total: i64,
+    /// Ticks per beat, beats per bar, beats in all, the next beat to click
+    beat: i64,
+    per_bar: u32,
+    beats: u32,
+    next: u32,
+}
+
 /// The rings from the audio side to the main thread
 pub(crate) struct Outbound {
     pub(crate) frame: triple_buffer::Input<TelemetryFrame>,
@@ -268,6 +283,7 @@ pub struct Renderer {
     previews: Box<[PreviewSlot]>,
     preview_mix: Box<[f32]>,
     metronome: MetronomeState,
+    counting: Option<Counting>,
     workers: Workers,
     gain: Box<[f32]>,
     pan: Box<[f32]>,
@@ -345,6 +361,7 @@ impl Renderer {
             previews,
             preview_mix: vec![0.0; 2 * spec.max_block].into_boxed_slice(),
             metronome: MetronomeState::default(),
+            counting: None,
             workers,
             gain: vec![0.0; spec.max_block].into_boxed_slice(),
             pan: vec![0.0; spec.max_block].into_boxed_slice(),
@@ -455,6 +472,15 @@ impl Renderer {
                     }
                     self.transport.position = a;
                     self.release_item_notes();
+                    self.jump = true;
+                }
+            }
+            if let Some(c) = self.counting.as_mut() {
+                c.elapsed += n as i64;
+                if c.elapsed >= c.total {
+                    // The count-in is over: the music starts at the next sample, where it was asked to
+                    self.counting = None;
+                    self.transport.playing = true;
                     self.jump = true;
                 }
             }
@@ -751,12 +777,18 @@ impl Renderer {
     fn command(&mut self, cmd: Command) {
         match cmd {
             Command::Play => {
-                if !self.transport.playing {
-                    self.transport.playing = true;
-                    self.jump = true;
+                if !self.transport.playing && self.counting.is_none() {
+                    match self.count_in() {
+                        Some(c) => self.counting = Some(c),
+                        None => {
+                            self.transport.playing = true;
+                            self.jump = true;
+                        }
+                    }
                 }
             }
             Command::Stop => {
+                self.counting = None;
                 if self.transport.playing {
                     self.transport.playing = false;
                     self.release_item_notes();
@@ -793,6 +825,23 @@ impl Renderer {
             }
             Command::Preview(_) => {}
         }
+    }
+
+    /// The count-in the program asks for at the playhead, if any
+    fn count_in(&self) -> Option<Counting> {
+        let ci = self.program.transport.count_in?;
+        if ci.bars == 0 || !(ci.on_play || self.transport.armed) {
+            return None;
+        }
+        let tempo = &self.program.tempo;
+        let t0 = tempo.tick_at(self.transport.position);
+        let sig = tempo.time_signature_at(t0);
+        let beat = sig.beat_ticks(tempo.ppq())?.max(1);
+        let per_bar = u32::from(sig.numerator()).max(1);
+        let beats = ci.bars.saturating_mul(per_bar);
+        let base = tempo.sample_at(t0);
+        let total = tempo.sample_at(t0.saturating_add(i64::from(beats) * beat)) - base;
+        (total > 0).then_some(Counting { t0, elapsed: 0, total, beat, per_bar, beats, next: 0 })
     }
 
     fn panic_all(&mut self) {
@@ -858,6 +907,9 @@ impl Renderer {
 
     fn next_pass_len(&self, left: usize) -> usize {
         let mut n = left.min(self.spec.max_block) as i64;
+        if let Some(c) = &self.counting {
+            n = n.min(c.total - c.elapsed);
+        }
         if self.transport.playing {
             let pos = self.transport.position;
             if let Some((_, b)) = self.program.transport.loop_range
@@ -1231,11 +1283,14 @@ impl Renderer {
                 play_audio(node, &mut io.buffer, &layout, pos0, n);
             }
         }
-        if playing
-            && let Some((mi, _)) = &self.program.metronome
+        if let Some((mi, _)) = &self.program.metronome
             && *mi == i
         {
-            self.metronome_into(&mut io.buffer, &layout, n);
+            if playing {
+                self.metronome_into(&mut io.buffer, &layout, n);
+            } else if self.counting.is_some() {
+                self.count_into(&mut io.buffer, &layout, n);
+            }
         }
         if self.program.preview == Some(i) {
             for ch in 0..in_channels {
@@ -1595,6 +1650,28 @@ impl Renderer {
                 next = next.min(bar_end);
             }
             t = next.max(t + 1);
+        }
+        click(&mut self.metronome.click, m, buffer, layout, cursor, n);
+    }
+
+    /// The count-in's clicks (whatever the metronome's own switch says): beat `k` at the sample where the `k`-th
+    /// beat after the start falls, counted from the start, the accent on each bar's first beat
+    fn count_into(&mut self, buffer: &mut [f32], layout: &BufferLayout, n: usize) {
+        let Some((_, m)) = &self.program.metronome else { return };
+        let Some(c) = self.counting.as_mut() else { return };
+        let tempo = &self.program.tempo;
+        let base = tempo.sample_at(c.t0);
+        let mut cursor = 0usize;
+        while c.next < c.beats {
+            let d = tempo.sample_at(c.t0 + i64::from(c.next) * c.beat) - base;
+            if d >= c.elapsed + n as i64 {
+                break;
+            }
+            let at = (d - c.elapsed).clamp(0, n as i64) as usize;
+            click(&mut self.metronome.click, m, buffer, layout, cursor, at);
+            self.metronome.click = Some((c.next % c.per_bar == 0, 0));
+            cursor = at;
+            c.next += 1;
         }
         click(&mut self.metronome.click, m, buffer, layout, cursor, n);
     }

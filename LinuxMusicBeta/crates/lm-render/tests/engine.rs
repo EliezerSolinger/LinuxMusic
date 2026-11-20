@@ -514,6 +514,7 @@ fn loop_and_punch_at_exact_samples() {
             loop_range: Some((5000, 8000)),
             punch: Some((6000, 7000)),
             midi: MidiTiming::FixedBlock,
+            count_in: None,
         });
         let mut i = Install::new(b.build().expect("program"));
         i.add(n(1), core(Position));

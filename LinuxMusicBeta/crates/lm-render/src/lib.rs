@@ -50,7 +50,7 @@ pub use processor::{
     PluginRequest, ProcessContext, Processor, TransportInfo, display_channel,
 };
 pub use program::{
-    AUTOMATION_GRID, AudioItem, ChannelMix, Feed, HostParam, ItemEvent, ItemEventKind, Metronome, MidiItem, MidiTiming,
+    AUTOMATION_GRID, AudioItem, ChannelMix, CountIn, Feed, HostParam, ItemEvent, ItemEventKind, Metronome, MidiItem, MidiTiming,
     NodeDesc, NodeKind, OutputRoute, ParamInfo, PortRoute, Program, ProgramBuilder, Rate, Strip, TransportSettings,
 };
 pub use renderer::{BlockReport, DeviceBlock, PROTECTION_THRESHOLD, RecordSpan, Renderer};

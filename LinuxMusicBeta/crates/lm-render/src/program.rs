@@ -389,6 +389,16 @@ pub enum MidiTiming {
     Immediate,
 }
 
+/// The count-in (I-5.5): `bars` bars of the metronome before the music starts, at the meter and tempo where it
+/// starts. The clicks fall where the beats of the bars that follow the start fall, so the music starts exactly one
+/// count-in after the start command
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CountIn {
+    pub bars: u32,
+    /// Also when playing; otherwise only when the transport starts with recording armed
+    pub on_play: bool,
+}
+
 /// The persistent transport settings of the tree (I-7.2), in samples
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TransportSettings {
@@ -397,6 +407,8 @@ pub struct TransportSettings {
     /// Recording happens only inside `from..to` (U4: the handles outside are the recorder's business)
     pub punch: Option<(i64, i64)>,
     pub midi: MidiTiming,
+    /// The count-in before the music starts (I-5.5)
+    pub count_in: Option<CountIn>,
 }
 
 // ---------------------------------------------------------------------------------------------------------------

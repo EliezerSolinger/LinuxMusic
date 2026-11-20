@@ -47,7 +47,7 @@ use std::time::{Duration, Instant};
 use lm_base::{Error, Result};
 use lm_doc::schemas::{KIND_CHANNEL, KIND_PLUGIN, MASTER};
 use lm_render::{
-    AudioItem, ChannelMix, Curve, Feed, HostParam, Install, Limits, Metronome, MidiItem, NodeCore, NodeDesc, NodeIndex,
+    AudioItem, ChannelMix, CountIn, Curve, Feed, HostParam, Install, Limits, Metronome, MidiItem, NodeCore, NodeDesc, NodeIndex,
     OutputRoute, ParamInfo, ParamSlot, PortIndex, PortRoute, ProcessSpec, ProgramBuilder, ProgramGen, Rate, Relocate,
     Returned, Rng, Strip, TransportSettings,
 };
@@ -1467,6 +1467,8 @@ impl CompilerCore {
         let min_loop = i64::from((s.sample_rate / 20).max(1));
         plan.transport.loop_range = range("loop").filter(|(a, b)| b - a >= min_loop);
         plan.transport.punch = range("punch").filter(|(a, b)| b > a);
+        let bars = transport.get("metronome").map_or(0, |m| int(m, "countIn", 0)).clamp(0, 64) as u32;
+        plan.transport.count_in = (bars > 0).then_some(CountIn { bars, on_play: env.count_in_on_play });
         Ok(plan)
     }
 
