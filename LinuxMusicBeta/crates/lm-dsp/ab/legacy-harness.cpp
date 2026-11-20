@@ -30,6 +30,7 @@
 #include "EnvelopeAndLfoParameters.h"
 #include "Engine.h"
 #include "Graph.h"
+#include "KickerOsc.h"
 #include "PluginInstance.h"
 #include "DeskTolerance.h"
 #include "GainStage.h"
@@ -387,6 +388,20 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 			{
 				out[f] = SampleFrame{filter.update(out[f][0], 0), filter.update(out[f][1], 1)};
 			}
+		}
+		return out;
+	}
+	if (unit == "kicker-osc")
+	{
+		// The Kicker's oscillator as a note builds it (its noise off: the legacy noise is the global generator's)
+		const auto s = c["settings"].toObject();
+		const auto v = [&](const char* key) { return static_cast<float>(s[key].toDouble()); };
+		using DistFX = DspEffectLibrary::Distortion;
+		auto osc = KickerOsc<DspEffectLibrary::MonoToStereoAdaptor<DistFX>>{DistFX{v("dist"), v("gain")}, v("start"),
+			v("end"), 0.f, v("offset"), v("slope"), v("env"), v("dist"), v("distEnd"), v("length"), v("attack")};
+		for (std::int64_t start = 0; start < frames; start += block)
+		{
+			osc.update(out.data() + start, std::min(block, frames - start), static_cast<float>(c["rate"].toDouble()));
 		}
 		return out;
 	}

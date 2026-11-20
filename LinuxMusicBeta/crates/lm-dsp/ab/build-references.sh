@@ -17,7 +17,7 @@ commands=$(ninja -t commands tests/MixerTest)
 # be the same bit for bit as the ones tests/ab.rs makes)
 compile=$(printf '%s\n' "$commands" | grep 'MixerTest.cpp.o -c' \
 	| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/harness.o#" \
-		-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -ffp-contract=off -c $here/legacy-harness.cpp#")
+		-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -I$root/legado/plugins/Kicker -ffp-contract=off -c $here/legacy-harness.cpp#")
 sh -c "$compile"
 
 # The legacy objects to rebuild without fused multiply-adds (CONTRACT_OFF="TubeStage GainStage ..."), to tell

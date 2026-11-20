@@ -19,6 +19,7 @@
 //!
 //! The instruments' sources and shaping:
 //! - [`basic_filters`]: the general filters (every instrument's filter, the DualFilter's);
+//! - [`kicker`]: the Kicker's swept sine;
 //! - [`envelope`], [`sound_shaping`]: every instrument's envelopes and LFOs, and its filter;
 //! - [`oscillator`]: the legacy program's oscillator (the TripleOscillator's), with its band-limited tables;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
@@ -56,6 +57,7 @@ pub mod filters;
 pub mod frequency_shifter;
 pub mod gain_stage;
 pub mod granular_pitch_shifter;
+pub mod kicker;
 pub mod lomm;
 pub mod master;
 pub mod math;

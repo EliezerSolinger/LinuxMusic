@@ -877,6 +877,29 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "kicker-osc" {
+        let s = &case["settings"];
+        let v = |key: &str| s[key].as_f64().unwrap() as f32;
+        let rate = case["rate"].as_f64().unwrap() as f32;
+        let mut voice = lm_dsp::kicker::KickerVoice::from_parts(
+            v("start"),
+            v("end"),
+            0.0,
+            v("offset"),
+            v("slope"),
+            v("env"),
+            v("dist"),
+            v("distEnd"),
+            v("gain"),
+            v("length"),
+            v("attack"),
+            0,
+        );
+        for start in (0..frames as usize).step_by(block as usize) {
+            voice.render(&mut out[start..(start + block as usize).min(frames as usize)], rate);
+        }
+        return out;
+    }
     if case["unit"] == "envelope" {
         use lm_dsp::envelope::{EnvelopeAndLfo, EnvelopeSettings, LfoShape};
         let s = &case["settings"];
