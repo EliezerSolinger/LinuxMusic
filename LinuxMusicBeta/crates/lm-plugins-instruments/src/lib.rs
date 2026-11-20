@@ -17,6 +17,7 @@ pub mod organic;
 pub mod sfxr;
 pub mod src_port;
 pub mod vibed;
+pub mod watsyn;
 
 use lm_plugin::Descriptor;
 
@@ -31,6 +32,7 @@ pub static ALL: &[&Descriptor] = &[
     &organic::DESCRIPTOR,
     &sfxr::DESCRIPTOR,
     &vibed::DESCRIPTOR,
+    &watsyn::DESCRIPTOR,
 ];
 
 /// The main stereo output every instrument here has

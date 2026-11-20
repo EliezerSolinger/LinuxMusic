@@ -861,6 +861,11 @@ Regras gerais do legado que valem para quase todo plugin:
   sync · Crosstalk A1→B2 0–100 · Modulação A2→A1 e B2→B1: Mistura, AM, Ring, PM · Anti-aliasing (ligado).
 - **O usuário pode:** escolher qual onda editar e desenhá-la; carregar de arquivo; deslocar a fase ±15°; normalizar;
   inverter; suavizar; formas prontas.
+- **Na beta:** plugin `watsyn`, em `lm-plugins-instruments`: por oscilador `a1Volume`…`b2RightDetune`; `abMix`,
+  `envAmount`, `envAttack`, `envHold`, `envDecay`, `crosstalk`; campos `a1Graph`…`b2Graph` (220 pontos), `aMod`,
+  `bMod`, `antiAliasing` e o sync de cada tempo do envelope. As ondas são sobreamostradas no build (fora do áudio),
+  como o `srccpy` do legado. Contrato e A/B por composição. As ferramentas de desenho (carregar, fase, normalizar,
+  inverter, suavizar, formas prontas) são do painel: editam o campo.
 
 #### F-INS-022 Xpressive (síntese por expressões) — 1.0
 
