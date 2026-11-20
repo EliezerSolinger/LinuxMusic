@@ -45,6 +45,7 @@ pub mod types {
     pub const LANE: &str = "item.lane";
     pub const COMP: &str = "item.comp";
     pub const NOTE: &str = "note";
+    pub const NOTE_BEND: &str = "note.bend";
     pub const AUTOMATION: &str = "automation";
     pub const AUTOMATION_TARGET: &str = "automation.target";
     pub const AUTOMATION_POINT: &str = "automation.point";
@@ -194,7 +195,12 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(list_of("comp", ty::COMP))
             .field(FieldSpec::int("fadeIn", 0, MAX, 0))
             .field(FieldSpec::int("fadeOut", 0, MAX, 0))
-            .field(FieldSpec::real("gain", 0.0, 4.0, 1.0)),
+            .field(FieldSpec::real("gain", 0.0, 4.0, 1.0))
+            // MIDI items (absent = the meaning in brackets, so trees without them keep their meaning, U29):
+            // the repeating part of a pattern [no repeat], the swing [0] and the step editor's resolution [240]
+            .field(FieldSpec::int("loop", 1, MAX, 3840).optional())
+            .field(FieldSpec::real("swing", 0.0, 1.0, 0.0).optional())
+            .field(FieldSpec::int("step", 1, MAX, 240).optional()),
         NodeSchema::new(ty::LANE, 1)
             .field(FieldSpec::id(KIND_LANE))
             .field(FieldSpec::new("source", FieldKind::Resource("audio")))
@@ -211,7 +217,17 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::int("key", 0, 127, 60))
             .field(FieldSpec::int("start", 0, MAX, 0))
             .field(FieldSpec::int("length", 1, MAX, 240))
-            .field(FieldSpec::real("velocity", 0.0, 1.0, 0.8)),
+            .field(FieldSpec::real("velocity", 0.0, 1.0, 0.8))
+            // Per-note pan (F-NOT-010) [0] and pitch-bend curve (P-24) [none]
+            .field(FieldSpec::real("pan", -1.0, 1.0, 0.0).optional())
+            .field(list_of("bend", ty::NOTE_BEND).optional()),
+        // A point of a note's bend: ticks from the note's start, and semitones; linear between points
+        NodeSchema::new(ty::NOTE_BEND, 1).field(FieldSpec::int("at", 0, MAX, 0)).field(FieldSpec::real(
+            "semitones",
+            -24.0,
+            24.0,
+            0.0,
+        )),
         // Automation lives with the owner of the parameter (base spec, item 2)
         NodeSchema::new(ty::AUTOMATION, 1)
             .field(FieldSpec::id(KIND_AUTOMATION))
