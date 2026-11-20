@@ -137,6 +137,21 @@ impl Drop for Ticker {
     }
 }
 
+/// Removes an untitled project's folder when the session ends, if nothing worth keeping is in it (no audio)
+#[derive(Debug)]
+struct UntitledGuard(Option<PathBuf>);
+
+impl Drop for UntitledGuard {
+    fn drop(&mut self) {
+        let Some(path) = self.0.take() else { return };
+        let audio = path.join(crate::folder::AUDIO_DIR);
+        let empty = std::fs::read_dir(&audio).map(|mut d| d.next().is_none()).unwrap_or(true);
+        if empty {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+    }
+}
+
 /// The project open now
 #[derive(Debug)]
 pub struct Project {
@@ -190,6 +205,13 @@ pub(crate) struct BuildData {
     seed: u64,
 }
 
+/// What was copied: the tree and the project it came from (its uuid is in the clip, its folder holds its audio)
+#[derive(Clone, Debug)]
+pub struct Clipboard {
+    pub clip: lm_doc::Clip,
+    pub project: PathBuf,
+}
+
 /// A request for a recording that waits for the device to arm (lm-io: arm first, then record)
 #[derive(Debug)]
 struct RecordStart {
@@ -203,6 +225,8 @@ pub struct Session {
     device: Option<Device>,
     disk: Option<DiskWriter>,
     journal: Journal,
+    /// After the journal: removes the untitled folder of a session that ends without a recording or a save in it
+    untitled_guard: UntitledGuard,
     compiler: Compiler,
     engine: EngineControl,
     // The operations, by kind (I-2)
@@ -414,6 +438,7 @@ impl Session {
             device: Some(device),
             disk,
             journal,
+            untitled_guard: UntitledGuard(Some(folder.root().to_path_buf())),
             compiler,
             engine,
             open_ops: Ops::default(),
@@ -555,6 +580,13 @@ impl Session {
 
     pub fn engine(&mut self) -> &mut EngineControl {
         &mut self.engine
+    }
+
+    /// Whether a document node's processor is still being built (new nodes are silent meanwhile, I-2.3)
+    pub fn is_waiting(&self, id: NodeId) -> bool {
+        self.waiting_nodes.iter().any(|k| k.owner() == Some(id))
+            || self.builds_waiting.iter().any(|b| b.node.owner() == Some(id))
+            || self.build_ops.list.iter().any(|op| op.data.node.owner() == Some(id))
     }
 
     /// Nothing waits: no build, no load, no compilation, no install in flight (the tests' and the export's "ready")
@@ -1036,6 +1068,12 @@ impl Session {
             ("export", Ok(report)) => {
                 self.status = self.status.with("lastExport", report);
             }
+            ("paste", Ok(list)) => {
+                for r in list.items().filter_map(Value::as_resource).cloned().collect::<Vec<_>>() {
+                    self.request(&r);
+                }
+                self.needs_compile = true;
+            }
             (_, Ok(_)) => {}
             (_, Err(e)) if e.is_cancelled() => {}
             (kind, Err(e)) => {
@@ -1350,6 +1388,8 @@ impl Session {
         }
         self.journal = Journal::start(&to, self.faults.clone(), String::new(), self.journal.seq(), false);
         self.resources = ResourceStore::new(to.root().to_path_buf(), self.clock.clone());
+        // The untitled folder is no longer ours to remove (its audio was copied; it goes now if it holds none)
+        drop(std::mem::replace(&mut self.untitled_guard, UntitledGuard(None)));
         self.project.folder = to;
         self.project.lock = lock;
         self.project.untitled = false;
@@ -1512,6 +1552,7 @@ impl Session {
         };
         self.resources = ResourceStore::new(folder.root().to_path_buf(), self.clock.clone());
         self.replace_document(document, interface)?;
+        drop(std::mem::replace(&mut self.untitled_guard, UntitledGuard(None)));
         self.project = Project {
             locked_by: match &locking {
                 Locking::Held(o) => Some(o.clone()),
@@ -1531,6 +1572,20 @@ impl Session {
         self.request_all_resources();
         self.refresh_status();
         Ok(())
+    }
+
+    /// Forgets every resource and loads them again (files replaced on the disk)
+    pub fn reload_resources(&mut self) {
+        let mut all = Vec::new();
+        self.document.root().walk(&mut |_, v| {
+            if let Some(r) = v.as_resource() {
+                all.push(r.key().to_owned());
+            }
+        });
+        for key in all {
+            self.resources.forget(&key);
+        }
+        self.request_all_resources();
     }
 
     /// Asks for every resource the project cites (opening: C11, the builds wait for them)
@@ -1859,6 +1914,63 @@ impl Session {
             data: (),
         });
         id
+    }
+
+    // ---- copy and paste (H13) ----
+
+    /// Copies a node (with everything under it) to a clipboard that can be pasted into any project
+    pub fn copy(&self, id: NodeId) -> Result<Clipboard> {
+        Ok(Clipboard { clip: self.document.copy(id)?, project: self.project.folder.root().to_path_buf() })
+    }
+
+    /// Pastes a clipboard at `index` of `list` of `parent`: new ids everywhere, the references inside fixed, those
+    /// to the outside kept only when it came from this project (lm-doc). The audio it cites that this project lacks
+    /// is copied into `audio/` in an operation, and the pasted items show loading until then
+    pub fn paste(&mut self, clipboard: &Clipboard, parent: NodeId, list: &str, index: usize) -> Result<Option<NodeId>> {
+        let mut made = None;
+        self.document.transact(Label::new("session.paste"), |e| {
+            made = e.paste(parent, list, index, &clipboard.clip)?;
+            Ok(())
+        })?;
+        let mut cited = Vec::new();
+        clipboard.clip.node.walk(&mut |_, v| {
+            if let Some(r) = v.as_resource() {
+                cited.push(r.clone());
+            }
+        });
+        cited.sort();
+        cited.dedup();
+        let here = self.project.folder.root().to_path_buf();
+        let from = clipboard.project.clone();
+        let missing: Vec<Resource> =
+            cited.into_iter().filter(|r| matches!(lm_io::resource_path(&here, r.key()), Ok(None))).collect();
+        if !missing.is_empty() {
+            let faults = self.faults.clone();
+            self.start(Label::new("session.paste.copying"), Target::Project, true, "paste", move |cancel, progress| {
+                let audio = here.join(crate::folder::AUDIO_DIR);
+                for (i, r) in missing.iter().enumerate() {
+                    cancel.check()?;
+                    if let Some(source) = lm_io::resource_path(&from, r.key())? {
+                        let name = source.file_name().map(|n| n.to_owned()).unwrap_or_default();
+                        let dest = audio.join(name);
+                        let tmp = dest.with_extension("paste.tmp");
+                        faults.check(std::fs::metadata(&source).map(|m| m.len()).unwrap_or(0))?;
+                        std::fs::copy(&source, &tmp)
+                            .map_err(|e| crate::folder::io_error("session.paste.copy", &tmp, &e))?;
+                        std::fs::rename(&tmp, &dest)
+                            .map_err(|e| crate::folder::io_error("session.paste.copy", &dest, &e))?;
+                        // The peaks go along (they are by hash too)
+                        let peaks = source.with_extension("peaks");
+                        if peaks.exists() {
+                            let _ = std::fs::copy(&peaks, dest.with_extension("peaks"));
+                        }
+                    }
+                    progress.set((i + 1) as f32 / missing.len() as f32);
+                }
+                Ok(Value::list(missing.into_iter().map(Value::resource)))
+            });
+        }
+        Ok(made)
     }
 
     /// Exports the project as it is now into `target` (I-13): an operation on `Target::Export`; the report goes to

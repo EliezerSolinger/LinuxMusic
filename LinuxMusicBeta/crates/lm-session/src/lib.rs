@@ -7,8 +7,10 @@ pub mod folder;
 pub mod journal;
 pub mod lock;
 pub mod notices;
+mod port;
 pub mod prefs;
 pub mod rack;
 mod session;
 
+pub use port::LocalPort;
 pub use session::*;

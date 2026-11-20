@@ -39,6 +39,8 @@ pub fn defaults() -> Value {
         // Not shown on the settings screen
         ("recent", Value::empty_list()),
         ("allowedFolders", Value::empty_list()),
+        ("sampleFolders", Value::empty_list()),
+        ("favorites", Value::empty_list()),
         ("autosaveSeconds", Value::int(60)),
         ("lowLatencyMonitoring", Value::bool(false)),
     ])
