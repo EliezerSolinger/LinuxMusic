@@ -112,5 +112,5 @@ fn a_broken_file_is_a_notice_not_a_change() {
     let _ = s.midi_import(file, 0);
     wait_ops(&mut s);
     assert_eq!(s.document().root().get("tracks").map_or(0, Value::len), tracks);
-    assert!(s.notices().keys().iter().any(|k| *k == "session.midi.read"), "{:?}", s.notices().keys());
+    assert!(s.notices().keys().contains(&"session.midi.read"), "{:?}", s.notices().keys());
 }

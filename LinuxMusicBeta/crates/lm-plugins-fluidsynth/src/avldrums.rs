@@ -175,6 +175,7 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
         no_adopt: &["multiOutput"],
         voices: 16,
         max_level: 1.0e3,
+        tail: lm_plugin::DEFAULT_TAIL,
     },
 };
 

@@ -45,10 +45,13 @@ fn kill_9_while_recording_midi_keeps_everything_up_to_the_last_second() {
         }
         let mut log = std::fs::File::create(folder.join("played.txt")).expect("log");
         let begun = Instant::now();
-        for n in 0u64.. {
+        for n in 0u64..u64::MAX {
             let key = 36 + (n % 48) as u8;
             for bytes in [[0x90, key, 100], [0x80, key, 0]] {
-                s.engine().commands().send(Command::Midi { port: PortIndex(0), at: HostTime::now(), bytes }).expect("midi");
+                s.engine()
+                    .commands()
+                    .send(Command::Midi { port: PortIndex(0), at: HostTime::now(), bytes })
+                    .expect("midi");
             }
             // Played: once the renderer has it and the session has read it (the next pumps)
             let until = Instant::now() + Duration::from_millis(40);

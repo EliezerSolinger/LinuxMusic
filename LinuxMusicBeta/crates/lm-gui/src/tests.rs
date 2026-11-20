@@ -2151,6 +2151,8 @@ fn effect_wet_knob(cx: &mut TestAppContext) {
     undo(cx);
     let wet = core.read_with(cx, |c, _| c.port().find(ins).and_then(|n| n.get("wet").and_then(Value::as_real)));
     assert!(wet.is_none_or(|w| w == 1.0), "one undo step");
+}
+
 // --- agent D: files in and out (F-ARR-011, F-PRJ-019/020/021) --------------------------------------------------
 
 fn temp_file(name: &str, bytes: &[u8]) -> std::path::PathBuf {

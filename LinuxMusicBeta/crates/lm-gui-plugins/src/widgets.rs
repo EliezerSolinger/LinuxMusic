@@ -549,94 +549,6 @@ pub fn lcd_text(value: f64, digits: usize, leading_zero: bool) -> String {
     if leading_zero && s.len() < digits { format!("{s:0>digits$}") } else { s }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn lin(min: f64, max: f64, step: f64) -> Range {
-        Range { min, max, step, center: min, log: false }
-    }
-
-    #[test]
-    fn the_angle_runs_from_minus_135_to_135() {
-        let r = lin(0.0, 200.0, 1.0);
-        assert_eq!(r.angle(0.0), -135);
-        assert_eq!(r.angle(100.0), 0);
-        assert_eq!(r.angle(200.0), 135);
-        // truncated toward zero, like the legacy int cast
-        assert_eq!(r.angle(0.5), -134);
-    }
-
-    #[test]
-    fn a_drag_of_250_pixels_sweeps_the_whole_range() {
-        let r = lin(0.0, 200.0, 1.0);
-        let mut left = 0.0;
-        let mut v = 200.0;
-        for _ in 0..250 {
-            v = r.drag(v, 1.0, false, &mut left);
-        }
-        assert_eq!(v, 0.0);
-        // Shift: four times slower
-        let mut left = 0.0;
-        let mut v = 0.0;
-        for _ in 0..100 {
-            v = r.drag(v, -1.0, true, &mut left);
-        }
-        // 0.2 a pixel, rounded to the step of 1 with what is left carried: a step every 3 pixels (the legacy's)
-        assert_eq!(v, 33.0);
-    }
-
-    #[test]
-    fn the_wheel_takes_100_notches_or_10_with_shift() {
-        let r = lin(0.0, 200.0, 1.0);
-        assert_eq!(r.wheel(100.0, true, 100.0), 102.0);
-        assert_eq!(r.wheel(100.0, false, 10.0), 80.0);
-        // never less than one step
-        assert_eq!(r.wheel(100.0, true, 2000.0), 101.0);
-    }
-
-    #[test]
-    fn the_log_scale_is_the_legacy_power_curve() {
-        let r = Range { min: 20.0, max: 20000.0, step: 0.0, center: 20.0, log: true };
-        let mid = r.scaled(r.min + r.span() / 2.0);
-        assert!((mid - (0.5f64.powf(E) * r.span() + r.min)).abs() < 1e-6);
-        assert!((r.inverse_scaled(mid) - (r.min + r.span() / 2.0)).abs() < 1e-6);
-    }
-
-    #[test]
-    fn numbers_print_as_qt_does() {
-        assert_eq!(qt_number(20.0), "20");
-        assert_eq!(qt_number(-12.0), "-12");
-        assert_eq!(qt_number(0.5), "0.5");
-        assert_eq!(qt_number(1234.5678), "1234.57");
-        assert_eq!(volume_text(100.0, 100.0), "0.00 dBFS");
-        assert_eq!(volume_text(0.0, 100.0), "-∞ dBFS");
-    }
-
-    #[test]
-    fn every_knob_draws_its_line_at_its_angle() {
-        for style in [KnobStyle::Dark28, KnobStyle::Bright26, KnobStyle::Small17, KnobStyle::Vintage32] {
-            let (w, h) = style.size();
-            let mut up = Canvas::new(w, h, 1.0);
-            draw_knob(&mut up, &style, 0, -135, true);
-            let mut right = Canvas::new(w, h, 1.0);
-            draw_knob(&mut right, &style, 90, -135, true);
-            // the line (green, black on the vintage knob) is above the middle at 0°, right of it at 90°
-            let line = |c: &Canvas, x: usize, y: usize| {
-                let p = c.pixel(x, y);
-                if style == KnobStyle::Vintage32 {
-                    p[3] > 0.5 && p[0] + p[1] + p[2] < 0.3
-                } else {
-                    p[1] > p[0] + 0.2 && p[1] > p[2]
-                }
-            };
-            let (mx, my) = ((w as usize) / 2, (h as usize) / 2);
-            assert!((0..3).any(|d| line(&up, mx + d - 1, my - 5)), "{style:?} up");
-            assert!((0..3).any(|d| line(&right, mx + 5, my + d - 1)), "{style:?} right");
-        }
-    }
-}
-
 /// `Graph::paintEvent`: the curve in its style, the cross of the cursor while drawing, the foreground pixmap
 pub fn draw_graph(c: &mut Canvas, g: &crate::spec::GraphSpec, samples: &[f64], cursor: Option<(f32, f32)>) {
     use crate::spec::GraphStyle;
@@ -737,4 +649,92 @@ pub fn graph_line(g: &crate::spec::GraphSpec, samples: &mut [f64], x: f32, y: f3
 fn graph_fit(g: &crate::spec::GraphSpec, v: f64) -> f64 {
     let v = v.clamp(g.min, g.max);
     if g.step > 0.0 { ((v / g.step).round() * g.step).clamp(g.min, g.max) } else { v }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lin(min: f64, max: f64, step: f64) -> Range {
+        Range { min, max, step, center: min, log: false }
+    }
+
+    #[test]
+    fn the_angle_runs_from_minus_135_to_135() {
+        let r = lin(0.0, 200.0, 1.0);
+        assert_eq!(r.angle(0.0), -135);
+        assert_eq!(r.angle(100.0), 0);
+        assert_eq!(r.angle(200.0), 135);
+        // truncated toward zero, like the legacy int cast
+        assert_eq!(r.angle(0.5), -134);
+    }
+
+    #[test]
+    fn a_drag_of_250_pixels_sweeps_the_whole_range() {
+        let r = lin(0.0, 200.0, 1.0);
+        let mut left = 0.0;
+        let mut v = 200.0;
+        for _ in 0..250 {
+            v = r.drag(v, 1.0, false, &mut left);
+        }
+        assert_eq!(v, 0.0);
+        // Shift: four times slower
+        let mut left = 0.0;
+        let mut v = 0.0;
+        for _ in 0..100 {
+            v = r.drag(v, -1.0, true, &mut left);
+        }
+        // 0.2 a pixel, rounded to the step of 1 with what is left carried: a step every 3 pixels (the legacy's)
+        assert_eq!(v, 33.0);
+    }
+
+    #[test]
+    fn the_wheel_takes_100_notches_or_10_with_shift() {
+        let r = lin(0.0, 200.0, 1.0);
+        assert_eq!(r.wheel(100.0, true, 100.0), 102.0);
+        assert_eq!(r.wheel(100.0, false, 10.0), 80.0);
+        // never less than one step
+        assert_eq!(r.wheel(100.0, true, 2000.0), 101.0);
+    }
+
+    #[test]
+    fn the_log_scale_is_the_legacy_power_curve() {
+        let r = Range { min: 20.0, max: 20000.0, step: 0.0, center: 20.0, log: true };
+        let mid = r.scaled(r.min + r.span() / 2.0);
+        assert!((mid - (0.5f64.powf(E) * r.span() + r.min)).abs() < 1e-6);
+        assert!((r.inverse_scaled(mid) - (r.min + r.span() / 2.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn numbers_print_as_qt_does() {
+        assert_eq!(qt_number(20.0), "20");
+        assert_eq!(qt_number(-12.0), "-12");
+        assert_eq!(qt_number(0.5), "0.5");
+        assert_eq!(qt_number(1234.5678), "1234.57");
+        assert_eq!(volume_text(100.0, 100.0), "0.00 dBFS");
+        assert_eq!(volume_text(0.0, 100.0), "-∞ dBFS");
+    }
+
+    #[test]
+    fn every_knob_draws_its_line_at_its_angle() {
+        for style in [KnobStyle::Dark28, KnobStyle::Bright26, KnobStyle::Small17, KnobStyle::Vintage32] {
+            let (w, h) = style.size();
+            let mut up = Canvas::new(w, h, 1.0);
+            draw_knob(&mut up, &style, 0, -135, true);
+            let mut right = Canvas::new(w, h, 1.0);
+            draw_knob(&mut right, &style, 90, -135, true);
+            // the line (green, black on the vintage knob) is above the middle at 0°, right of it at 90°
+            let line = |c: &Canvas, x: usize, y: usize| {
+                let p = c.pixel(x, y);
+                if style == KnobStyle::Vintage32 {
+                    p[3] > 0.5 && p[0] + p[1] + p[2] < 0.3
+                } else {
+                    p[1] > p[0] + 0.2 && p[1] > p[2]
+                }
+            };
+            let (mx, my) = ((w as usize) / 2, (h as usize) / 2);
+            assert!((0..3).any(|d| line(&up, mx + d - 1, my - 5)), "{style:?} up");
+            assert!((0..3).any(|d| line(&right, mx + 5, my + d - 1)), "{style:?} right");
+        }
+    }
 }

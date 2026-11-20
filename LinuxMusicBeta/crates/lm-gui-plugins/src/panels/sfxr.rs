@@ -91,8 +91,11 @@ const REPEAT: (u32, u32) = (0x292929, 0x515151);
 const PHASER: (u32, u32) = (0x144c4d, 0x299899);
 const FILTER: (u32, u32) = (0x47224c, 0x8e4397);
 
-/// The knobs: (key, column, row, group, the legacy name, the hint when it differs)
-const KNOBS: [(&str, u32, u32, (u32, u32), &str, Option<&str>); 22] = [
+/// One knob: (key, column, row, group, the legacy name, the hint when it differs)
+type KnobRow = (&'static str, u32, u32, (u32, u32), &'static str, Option<&'static str>);
+
+/// The knobs
+const KNOBS: [KnobRow; 22] = [
     ("attackTime", 0, 0, ENV, "Attack Time", None),
     ("sustainTime", 1, 0, ENV, "Sustain Time", None),
     ("sustainPunch", 2, 0, ENV, "Sustain Punch", None),

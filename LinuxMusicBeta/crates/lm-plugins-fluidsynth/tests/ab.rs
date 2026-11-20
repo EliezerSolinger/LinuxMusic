@@ -120,11 +120,9 @@ fn db(x: f64) -> f64 {
 
 #[test]
 fn the_plugins_render_as_the_legacy_ones() {
-    let registry = Registry::new(&[
-        &lm_plugins_fluidsynth::avldrums::DESCRIPTOR,
-        &lm_plugins_fluidsynth::sf2player::DESCRIPTOR,
-    ])
-    .expect("registry");
+    let registry =
+        Registry::new(&[&lm_plugins_fluidsynth::avldrums::DESCRIPTOR, &lm_plugins_fluidsynth::sf2player::DESCRIPTOR])
+            .expect("registry");
     let mut failures = Vec::new();
     for c in cases() {
         let name = c.get("name").and_then(Value::as_text).expect("name").to_owned();

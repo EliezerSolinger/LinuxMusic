@@ -35,7 +35,7 @@ use crate::actions::{
 use crate::core::Core;
 use crate::model::{self, ChannelKind, ChannelView};
 use crate::screens::Screen;
-use crate::ui::{THEME, c, midi, tr, track_color, trf};
+use crate::ui::{THEME, c, midi, tr, trf};
 use crate::view;
 use crate::workspace::Workspace;
 
@@ -788,8 +788,9 @@ impl MixingPage {
     /// tracks' order, then the others as they were; one undo step
     fn arrange_like_tracks(&mut self, cx: &mut Context<Self>) {
         let root = self.core.read(cx).port().root().clone();
-        let mut current: Vec<NodeId> =
-            model::at(&root, &["mixer", "channels"]).map(|l| l.items().filter_map(model::id_of).collect()).unwrap_or_default();
+        let mut current: Vec<NodeId> = model::at(&root, &["mixer", "channels"])
+            .map(|l| l.items().filter_map(model::id_of).collect())
+            .unwrap_or_default();
         let mut wanted: Vec<NodeId> = Vec::new();
         for t in model::tracks(&root) {
             for o in &t.outputs {
@@ -804,7 +805,12 @@ impl MixingPage {
             if current.get(index) != Some(id) {
                 current.retain(|c| c != id);
                 current.insert(index, *id);
-                ops.push(EditOp::Move { id: Ref::Id(*id), parent: Ref::Id(ROOT), list: "mixer.channels".into(), index });
+                ops.push(EditOp::Move {
+                    id: Ref::Id(*id),
+                    parent: Ref::Id(ROOT),
+                    list: "mixer.channels".into(),
+                    index,
+                });
             }
         }
         if !ops.is_empty() {
@@ -1351,13 +1357,7 @@ impl MixingPage {
         let returns: Vec<&ChannelView> = chs.iter().filter(|c| c.kind == ChannelKind::Return).collect();
         let is_return = ch.kind == ChannelKind::Return;
         let from = selected.map_or(id, |s| s.id);
-        let mut d = div()
-            .w(px(desk::NAME_W))
-            .h(px(self.upper_h(analog)))
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(px(2.));
+        let mut d = div().w(px(desk::NAME_W)).h(px(self.upper_h(analog))).flex().flex_col().items_center().gap(px(2.));
         d = d.child(div().h(px(14.)).child(if receives {
             desk::receive_arrow().into_any_element()
         } else if loops {
@@ -1396,30 +1396,36 @@ impl MixingPage {
         }
         // the sends to the effect returns (not on the returns themselves)
         let rows = self.send_rows as f32;
-        d = d.child(div().w(px(desk::NAME_W)).h(px((desk::KNOB_D + desk::KNOB_LABEL_H) * rows)).flex().flex_wrap().justify_center().when(
-            !is_return,
-            |d| {
-                d.children(returns.iter().enumerate().map(|(i, r)| {
-                    let rid = r.id;
-                    let travel = ch.sends.iter().find(|s| s.to == rid).map_or(0.0, |s| view::gain_to_travel(s.amount));
-                    let sel = format!("fx-{}-{}", id.number, i + 1);
-                    let s2 = sel.clone();
-                    div()
-                        .id(SharedString::from(sel))
-                        .debug_selector(move || s2.clone())
-                        .cursor_ns_resize()
-                        .child(desk::desk_knob(col::FX_SEND, format!("FX{}", i + 1), travel, true))
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |p, ev: &MouseDownEvent, w, cx| p.send_to_return(id, rid, ev, w, cx)),
-                        )
-                        .on_mouse_down(
-                            MouseButton::Right,
-                            cx.listener(move |p, ev: &MouseDownEvent, w, cx| p.send_to_return(id, rid, ev, w, cx)),
-                        )
-                }))
-            },
-        ));
+        d = d.child(
+            div()
+                .w(px(desk::NAME_W))
+                .h(px((desk::KNOB_D + desk::KNOB_LABEL_H) * rows))
+                .flex()
+                .flex_wrap()
+                .justify_center()
+                .when(!is_return, |d| {
+                    d.children(returns.iter().enumerate().map(|(i, r)| {
+                        let rid = r.id;
+                        let travel =
+                            ch.sends.iter().find(|s| s.to == rid).map_or(0.0, |s| view::gain_to_travel(s.amount));
+                        let sel = format!("fx-{}-{}", id.number, i + 1);
+                        let s2 = sel.clone();
+                        div()
+                            .id(SharedString::from(sel))
+                            .debug_selector(move || s2.clone())
+                            .cursor_ns_resize()
+                            .child(desk::desk_knob(col::FX_SEND, format!("FX{}", i + 1), travel, true))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |p, ev: &MouseDownEvent, w, cx| p.send_to_return(id, rid, ev, w, cx)),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(move |p, ev: &MouseDownEvent, w, cx| p.send_to_return(id, rid, ev, w, cx)),
+                            )
+                    }))
+                }),
+        );
         if !analog {
             d = d.child(self.slot_list(ch, cx));
         }
@@ -2300,10 +2306,11 @@ impl MixingPage {
                     .border_1()
                     .border_color(c(THEME.line2))
                     .child(div().text_size(px(13.)).font_weight(FontWeight::BOLD).child(tr("Confirm removal")))
-                    .child(div().text_size(px(12.)).child(trf(
-                        "The channel {0} is being used. Are you sure you want to remove it?",
-                        &[&name],
-                    )))
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .child(trf("The channel {0} is being used. Are you sure you want to remove it?", &[&name])),
+                    )
                     .child(
                         div()
                             .id("confirm-dont-ask")
@@ -2312,7 +2319,11 @@ impl MixingPage {
                             .items_center()
                             .gap(px(6.))
                             .cursor_pointer()
-                            .child(div().size(px(10.)).rounded(px(2.)).bg(rgb(if dont_ask { col::GREEN_LED } else { col::LED_OFF })))
+                            .child(div().size(px(10.)).rounded(px(2.)).bg(rgb(if dont_ask {
+                                col::GREEN_LED
+                            } else {
+                                col::LED_OFF
+                            })))
                             .child(div().text_size(px(11.)).child(tr("Don't ask again")))
                             .on_click(cx.listener(|p, _, _, cx| {
                                 if let Some((_, d)) = p.confirm_remove.as_mut() {
@@ -2591,7 +2602,11 @@ impl MixingPage {
                         .cursor_pointer()
                         .on_click(cx.listener(move |p, _, _, cx| {
                             p.menu = None;
-                            p.apply("Color", vec![EditOp::set(id, &["color"], Value::text(format!("#{color:06x}")))], cx);
+                            p.apply(
+                                "Color",
+                                vec![EditOp::set(id, &["color"], Value::text(format!("#{color:06x}")))],
+                                cx,
+                            );
                         }))
                 }))
                 .into_any_element(),
@@ -2621,16 +2636,21 @@ impl MixingPage {
             if has_sidechain(chv) {
                 items.push(separator());
                 items.push(caption_row("Sidechain input from"));
-                for src in chs.iter().filter(|c| c.id != id && c.kind != ChannelKind::Master && !leads_to(chs, id, c.id)) {
+                for src in
+                    chs.iter().filter(|c| c.id != id && c.kind != ChannelKind::Master && !leads_to(chs, id, c.id))
+                {
                     let sid = src.id;
                     let on = feeds(src, chv);
                     items.push(
-                        menu_item(format!("menu-sc-from-{}", sid.number), format!("{}{}", if on { "✓ " } else { "" }, src.name))
-                            .on_click(cx.listener(move |p, _, _, cx| {
-                                p.menu = None;
-                                p.toggle_sidechain(sid, id, cx);
-                            }))
-                            .into_any_element(),
+                        menu_item(
+                            format!("menu-sc-from-{}", sid.number),
+                            format!("{}{}", if on { "✓ " } else { "" }, src.name),
+                        )
+                        .on_click(cx.listener(move |p, _, _, cx| {
+                            p.menu = None;
+                            p.toggle_sidechain(sid, id, cx);
+                        }))
+                        .into_any_element(),
                     );
                 }
             }
@@ -2643,12 +2663,15 @@ impl MixingPage {
                     let tid = to.id;
                     let on = feeds(chv, to);
                     items.push(
-                        menu_item(format!("menu-sc-to-{}", tid.number), format!("{}{}", if on { "✓ " } else { "" }, to.name))
-                            .on_click(cx.listener(move |p, _, _, cx| {
-                                p.menu = None;
-                                p.toggle_sidechain(id, tid, cx);
-                            }))
-                            .into_any_element(),
+                        menu_item(
+                            format!("menu-sc-to-{}", tid.number),
+                            format!("{}{}", if on { "✓ " } else { "" }, to.name),
+                        )
+                        .on_click(cx.listener(move |p, _, _, cx| {
+                            p.menu = None;
+                            p.toggle_sidechain(id, tid, cx);
+                        }))
+                        .into_any_element(),
                     );
                 }
             }

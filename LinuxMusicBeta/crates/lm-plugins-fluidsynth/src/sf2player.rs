@@ -59,7 +59,8 @@ mod k {
     pub const COUNT: usize = ENV + 7;
 }
 
-const ENV_KEYS: [&str; 7] = ["volPredelay", "volAttack", "volHold", "volDecay", "volSustain", "volRelease", "volAmount"];
+const ENV_KEYS: [&str; 7] =
+    ["volPredelay", "volAttack", "volHold", "volDecay", "volSustain", "volRelease", "volAmount"];
 
 fn switch(key: &'static str) -> ParamSpec {
     ParamSpec::new(key, 0.0, 1.0, 0.0).scale(Scale::Stepped)
@@ -105,6 +106,7 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
         no_adopt: &[],
         voices: 16,
         max_level: 1.0e3,
+        tail: lm_plugin::DEFAULT_TAIL,
     },
 };
 

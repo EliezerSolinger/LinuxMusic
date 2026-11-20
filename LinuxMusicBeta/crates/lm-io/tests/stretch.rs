@@ -70,13 +70,10 @@ fn a_rendering_is_exactly_as_long_as_asked_keeps_the_pitch_and_puts_each_key_fra
     assert_eq!(path, render_path(&dir.0, KEY));
     let (frames, left, right) = read(&path);
     assert_eq!(frames, 100_000, "exactly the frames asked");
-    eprintln!("last sound {:?}", left.iter().rposition(|v| v.abs() > 1e-4));
-    for w in (60_000..97_000).step_by(4_000) { eprintln!("{w}: {}", frequency(&left[w..w + 4_000])); }
     assert!(left[..1_000].iter().chain(&left[97_000..]).all(|v| *v == 0.0), "silence around");
     for (from, to) in [(3_000, 23_000), (30_000, 94_000), (30_000, 50_000), (50_000, 70_000), (70_000, 94_000)] {
-        let f = frequency(&left[from..to]);
-        eprintln!("{from}..{to}: {f}");
-        let _ = f;
+        // TODO(stretch agent, WIP at the 20/11 pause): assert the pitch of each span
+        let _ = frequency(&left[from..to]);
     }
     // The clicks at 0.25 s, 0.75 s, 1.25 s, 1.75 s of the take, where the key frames put them
     // (source 0..48000 to 1000..25000: half speed; 48000..96000 to 25000..97000: 1.5 times)

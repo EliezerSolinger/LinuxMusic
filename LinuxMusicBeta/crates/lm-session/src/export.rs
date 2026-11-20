@@ -118,7 +118,7 @@ fn render(
     let limits = *limits;
     let project: &Path = project;
     progress.stage(Label::new("session.export.preparing"));
-    let rate = project_rate(&root);
+    let rate = project_rate(root);
     let spec = ProcessSpec { sample_rate: rate, max_block: EXPORT_BLOCK };
     // Every resource first (T8)
     let mut audio = std::collections::BTreeMap::new();
@@ -153,7 +153,7 @@ fn render(
     let mut rounds = 0;
     loop {
         cancel.check()?;
-        let compiled = core.compile(&root, &resources, &env)?;
+        let compiled = core.compile(root, &resources, &env)?;
         let complete = compiled.complete();
         let builds = compiled.builds.clone();
         control.install(compiled.install)?;
@@ -162,7 +162,7 @@ fn render(
         }
         for b in builds {
             cancel.check()?;
-            let mut p = build_processor(&plugins, &schemas, &b.build, b.spec, &plugin_view, b.seed)?;
+            let mut p = build_processor(plugins, schemas, &b.build, b.spec, &plugin_view, b.seed)?;
             // A third-party plugin is waited for at every block: the file is the same bit for bit (S19)
             if let Some(proxy) = p.as_any_mut().downcast_mut::<lm_plugin_proxy::Proxy>() {
                 proxy.set_deadline(lm_plugin_proxy::Deadline::Wait);
@@ -191,11 +191,12 @@ fn render(
         let outs = dummy.outputs();
         // The warm-up is rendered and dropped
         let skip = run.discard.saturating_sub(done).min(n);
-        let mut m = 0;
-        for k in skip..n {
-            interleaved[2 * m] = outs[0][k];
-            interleaved[2 * m + 1] = outs[1][k];
-            m += 1;
+        let m = n - skip;
+        for (frame, (l, r)) in
+            interleaved.as_chunks_mut::<2>().0.iter_mut().zip(outs[0][skip..n].iter().zip(&outs[1][skip..n]))
+        {
+            frame[0] = *l;
+            frame[1] = *r;
         }
         if m > 0 {
             sink(&interleaved[..2 * m])?;
@@ -235,7 +236,7 @@ impl Meter {
     fn add(&mut self, interleaved: &[f32]) {
         self.l.clear();
         self.r.clear();
-        for f in interleaved.chunks_exact(2) {
+        for f in interleaved.as_chunks::<2>().0 {
             self.peak = self.peak.max(f[0].abs()).max(f[1].abs());
             self.l.push(f[0]);
             self.r.push(f[1]);

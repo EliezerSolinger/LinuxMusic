@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use crate::asset;
 use crate::assets::Asset;
 use crate::raster::Rgba;
-use crate::spec::{Bind, Control, FileDrop, PanelSpec, button, knob};
+use crate::spec::{Bind, Control, PanelSpec, button, knob};
 use crate::widgets::{KnobStyle, Styled};
 
 pub const ID: &str = "opulenz";

@@ -25,8 +25,8 @@ mod ab {
     use common::{agree, render, state};
     use lm_dsp::patman::{PatmanVoice, RELEASE_MS};
     use lm_dsp::sample_player::Interpolator;
-    use lm_plugin::testing::{note_off, note_on, use_setup};
     use lm_plugin::Loaded;
+    use lm_plugin::testing::{note_off, note_on, use_setup};
     use lm_plugins_instruments::patman::{DESCRIPTOR, read_patch};
     use lm_sys_samplerate::{Quality, Resampler};
 

@@ -242,34 +242,35 @@ fn following(
     let mut done = false;
 
     // Feeds n frames from `interleaved` (or silence), then moves what came out to the file
-    let mut feed = |stretcher: &mut Realtime, frames: Option<&[f32]>, n: usize, drop: &mut usize, done: &mut bool| -> Result<()> {
-        for (c, plane) in planar_in.iter_mut().enumerate() {
-            for (f, v) in plane[..n].iter_mut().enumerate() {
-                *v = frames.map_or(0.0, |x| x[f * channels + c]);
-            }
-        }
-        let input: Vec<&[f32]> = planar_in.iter().map(|p| &p[..n]).collect();
-        stretcher.process(&input)?;
-        loop {
-            let ready = stretcher.available().min(BLOCK * 4);
-            if ready == 0 {
-                return Ok(());
-            }
-            let mut output: Vec<&mut [f32]> = planar_out.iter_mut().map(|p| &mut p[..ready]).collect();
-            let got = stretcher.retrieve(&mut output)?;
-            let skip = (*drop).min(got);
-            *drop -= skip;
-            out.clear();
-            for f in skip..got {
-                for plane in &planar_out {
-                    out.push(plane[f]);
+    let mut feed =
+        |stretcher: &mut Realtime, frames: Option<&[f32]>, n: usize, drop: &mut usize, done: &mut bool| -> Result<()> {
+            for (c, plane) in planar_in.iter_mut().enumerate() {
+                for (f, v) in plane[..n].iter_mut().enumerate() {
+                    *v = frames.map_or(0.0, |x| x[f * channels + c]);
                 }
             }
-            if !*done {
-                *done = sink.write(&out, channels)?;
+            let input: Vec<&[f32]> = planar_in.iter().map(|p| &p[..n]).collect();
+            stretcher.process(&input)?;
+            loop {
+                let ready = stretcher.available().min(BLOCK * 4);
+                if ready == 0 {
+                    return Ok(());
+                }
+                let mut output: Vec<&mut [f32]> = planar_out.iter_mut().map(|p| &mut p[..ready]).collect();
+                let got = stretcher.retrieve(&mut output)?;
+                let skip = (*drop).min(got);
+                *drop -= skip;
+                out.clear();
+                for f in skip..got {
+                    for plane in &planar_out {
+                        out.push(plane[f]);
+                    }
+                }
+                if !*done {
+                    *done = sink.write(&out, channels)?;
+                }
             }
-        }
-    };
+        };
 
     // The engine's preferred lead-in, as silence (its output is part of the delay dropped)
     let mut pad = stretcher.preferred_start_pad();
@@ -280,7 +281,7 @@ fn following(
     }
     // The engine works on the frames it was given some time before (its delay, in input frames): each ratio is set
     // when the frames it is for reach it
-    let lag = std::env::var("LAG").ok().and_then(|v| v.parse().ok()).unwrap_or(stretcher.start_delay() as u64); eprintln!("start delay {} pad {}", stretcher.start_delay(), stretcher.preferred_start_pad());
+    let lag = stretcher.start_delay() as u64;
     let mut at = 0u64;
     let mut piece = 0;
     let mut guard = 0u64;

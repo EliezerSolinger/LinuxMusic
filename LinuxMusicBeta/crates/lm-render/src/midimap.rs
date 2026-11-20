@@ -117,7 +117,9 @@ mod tests {
         assert_eq!(gain.to_units(0.0), 0.0);
         assert!((gain.to_units(1.0) - 4.0).abs() < 1e-4);
         // The legacy fader's numbers for a maximum of 4 (+12.04 dB)
-        for (db, travel) in [(0.0f32, 0.751f32), (-6.0, 0.644), (-12.0, 0.547), (-24.0, 0.384), (-60.0, 0.094), (6.0, 0.869)] {
+        for (db, travel) in
+            [(0.0f32, 0.751f32), (-6.0, 0.644), (-12.0, 0.547), (-24.0, 0.384), (-60.0, 0.094), (6.0, 0.869)]
+        {
             let t = gain.normalize(libm::powf(10.0, db / 20.0));
             assert!((t - travel).abs() < 1.5e-3, "{db} dB at {t}, the legacy says {travel}");
         }

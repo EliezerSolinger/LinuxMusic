@@ -22,12 +22,18 @@ impl FakePort {
             .and_then(|m| m.get("channels"))
             .map(|l| l.items().filter_map(crate::lm_id).collect())
             .unwrap_or_default();
-        let index = ids.iter().filter_map(|id| list.iter().position(|c| c == id)).min().ok_or_else(|| Error::new("port.no_such_node"))?;
+        let index = ids
+            .iter()
+            .filter_map(|id| list.iter().position(|c| c == id))
+            .min()
+            .ok_or_else(|| Error::new("port.no_such_node"))?;
         let groups = list.len();
-        let name = params.get("name").and_then(Value::as_text).map_or_else(|| format!("Grupo {}", groups + 1), str::to_owned);
+        let name =
+            params.get("name").and_then(Value::as_text).map_or_else(|| format!("Grupo {}", groups + 1), str::to_owned);
         self.doc
             .transact(Label::new("Group the channels"), |e| {
-                let group = e.insert(ROOT, "mixer.channels", index, Value::object([("name", Value::text(name.as_str()))]))?;
+                let group =
+                    e.insert(ROOT, "mixer.channels", index, Value::object([("name", Value::text(name.as_str()))]))?;
                 for id in &ids {
                     e.set(*id, &[PathStep::key("output")], Value::text(group.to_string()))?;
                 }
