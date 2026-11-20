@@ -134,6 +134,13 @@ pub trait Synth: Clone + Send + 'static {
     fn adopt(&mut self, old: &mut Self) {
         let _ = old;
     }
+    /// Whether this synth can play on the old one's voices (an adopting instrument keeps the old pool): `false` when
+    /// they lack what its notes need (room for longer strings than they were made for); the old instrument then plays
+    /// its tail apart (U32). Most synths can
+    fn can_adopt(&self, old: &Self) -> bool {
+        let _ = old;
+        true
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -896,7 +903,10 @@ impl<S: Synth> Processor for Instrument<S> {
     /// that is the same instrument at the same rate (R18)
     fn adopt(&mut self, old: &mut dyn Processor) -> Adopted {
         let Some(old) = old.as_any_mut().downcast_mut::<Self>() else { return Adopted::No };
-        if old.sample_rate != self.sample_rate || old.values.len() != self.values.len() {
+        if old.sample_rate != self.sample_rate
+            || old.values.len() != self.values.len()
+            || !self.synth.can_adopt(&old.synth)
+        {
             return Adopted::No;
         }
         std::mem::swap(&mut self.pool, &mut old.pool);

@@ -24,10 +24,24 @@ fn cubic(v0: f32, v1: f32, v2: f32, v3: f32, x: f32) -> f32 {
 }
 
 /// A delay line read and written through a moving index
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct DelayLine {
     data: Vec<f32>,
     pointer: usize,
+}
+
+impl Clone for DelayLine {
+    fn clone(&self) -> Self {
+        let mut data = Vec::with_capacity(self.data.capacity());
+        data.extend_from_slice(&self.data);
+        Self { data, pointer: self.pointer }
+    }
+
+    /// Into its own room: no allocation when the room holds the source (the voices of one instrument share theirs)
+    fn clone_from(&mut self, source: &Self) {
+        self.data.clone_from(&source.data);
+        self.pointer = source.pointer;
+    }
 }
 
 impl DelayLine {
@@ -46,20 +60,102 @@ impl DelayLine {
     }
 }
 
-/// One string
-#[derive(Clone, Debug)]
+/// One string. Made with room for its longest note ([`VibratingString::with_room`]): a note restarts it in that
+/// room ([`VibratingString::restart`]) and `clone_from` copies into it, without allocating
+#[derive(Debug)]
 pub struct VibratingString {
     from_bridge: DelayLine,
     to_bridge: DelayLine,
     pickup: i32,
-    oversample: usize,
     string_loss: f32,
-    choice: usize,
     state: f32,
-    out: Vec<f32>,
+    /// Internal samples per output sample: the string runs at its own rate (see [`VibratingString::restart`])
+    steps: f64,
+    /// The internal sample the next output sample is read at (fractional between two)
+    target: f64,
+    /// Internal samples made so far, and the last two (`cur` the newest)
+    produced: u64,
+    prev: f32,
+    cur: f32,
+    /// The impulse stretched over the string (scratch of a restart)
+    stretched: Vec<f32>,
+}
+
+impl Clone for VibratingString {
+    fn clone(&self) -> Self {
+        let mut stretched = Vec::with_capacity(self.stretched.capacity());
+        stretched.extend_from_slice(&self.stretched);
+        Self {
+            from_bridge: self.from_bridge.clone(),
+            to_bridge: self.to_bridge.clone(),
+            pickup: self.pickup,
+            string_loss: self.string_loss,
+            state: self.state,
+            steps: self.steps,
+            target: self.target,
+            produced: self.produced,
+            prev: self.prev,
+            cur: self.cur,
+            stretched,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.from_bridge.clone_from(&source.from_bridge);
+        self.to_bridge.clone_from(&source.to_bridge);
+        self.pickup = source.pickup;
+        self.string_loss = source.string_loss;
+        self.state = source.state;
+        self.steps = source.steps;
+        self.target = source.target;
+        self.produced = source.produced;
+        self.prev = source.prev;
+        self.cur = source.cur;
+        self.stretched.clone_from(&source.stretched);
+    }
 }
 
 impl VibratingString {
+    /// The length of a string at @p pitch Hz (its delay lines', in internal samples), as
+    /// [`VibratingString::new`] makes it: the same at any sample rate
+    pub fn length_for(pitch: f32, sample_rate: u32, oversample: i32, detune: f32) -> usize {
+        let _ = sample_rate;
+        let mut length = ((Self::oversample_for(oversample) as u32 * BASE_SAMPLE_RATE) as f32 / pitch) as i32 + 1;
+        length += (length as f32 * -detune) as i32;
+        length.max(1) as usize
+    }
+
+    /// The internal samples per sample of the base rate: twice the length knob
+    fn oversample_for(oversample: i32) -> i32 {
+        (2 * oversample).max(1)
+    }
+
+    /// A silent string with room for delay lines of @p room samples (allocates: in the build)
+    pub fn with_room(room: usize) -> Self {
+        let room = room.max(IMPULSE_LENGTH);
+        let line = || DelayLine { data: Vec::with_capacity(room), pointer: 0 };
+        let mut s = Self {
+            from_bridge: line(),
+            to_bridge: line(),
+            pickup: 0,
+            string_loss: 1.0,
+            state: 0.1,
+            steps: 1.0,
+            target: 0.0,
+            produced: 0,
+            prev: 0.0,
+            cur: 0.0,
+            stretched: Vec::with_capacity(room),
+        };
+        s.from_bridge.data.push(0.0);
+        s.to_bridge.data.push(0.0);
+        s
+    }
+
+    /// The samples its delay lines have room for
+    pub fn room(&self) -> usize {
+        self.to_bridge.data.capacity().min(self.from_bridge.data.capacity())
+    }
     /// A string at @p pitch Hz, picked at @p pick and heard at @p pickup (fractions of its length), struck with
     /// @p impulse; @p oversample the length knob (1 to 16), @p randomize the fuzziness, @p stiffness its loss,
     /// @p detune its length's change, @p state the impulse as it is (not stretched over the string); its randomness
@@ -78,74 +174,110 @@ impl VibratingString {
         state: bool,
         rand: &mut LegacyRand,
     ) -> Self {
-        // Twice the length's oversampling at the base rate, less at the higher ones; never none
-        let oversample = (2 * oversample / (sample_rate / BASE_SAMPLE_RATE).max(1) as i32).max(1);
-        let choice = rand.below_int(oversample).clamp(0, oversample - 1) as usize;
-        let mut length = ((oversample as u32 * sample_rate) as f32 / pitch) as i32 + 1;
+        let mut s = Self::with_room(Self::length_for(pitch, sample_rate, oversample, detune));
+        s.restart(pitch, pick, pickup, impulse, sample_rate, oversample, randomize, stiffness, detune, state, rand);
+        s
+    }
+
+    /// A new note on this string, as [`VibratingString::new`] makes one, in the room it has: never allocates. A
+    /// string longer than the room (a pitch below the lowest it was made for) is as long as the room
+    #[allow(clippy::too_many_arguments)]
+    pub fn restart(
+        &mut self,
+        pitch: f32,
+        pick: f32,
+        pickup: f32,
+        impulse: &[f32],
+        sample_rate: u32,
+        oversample: i32,
+        randomize: f32,
+        stiffness: f32,
+        detune: f32,
+        state: bool,
+        rand: &mut LegacyRand,
+    ) {
+        // The string runs at its own rate: twice the length knob times the base rate (44.1 kHz), the same at any
+        // project rate, so it sounds the same at any (U36). An output sample is read every `steps` of its samples,
+        // between two when that is not whole; at 44.1 kHz it is whole and the string is the legacy one, which ran
+        // at that many times the project rate (fewer above 88.2 kHz) and so changed its decay and tone with the rate
+        let oversample = Self::oversample_for(oversample);
+        let choice = rand.below_int(oversample).clamp(0, oversample - 1);
+        let mut length = ((oversample as u32 * BASE_SAMPLE_RATE) as f32 / pitch) as i32 + 1;
         length += (length as f32 * -detune) as i32;
-        let length = length.max(1);
+        let length = (length.max(1) as usize).min(self.room()) as i32;
         let pick_at = (length as f32 * pick).ceil() as i32;
 
-        let impulse: Vec<f32> = if state {
-            impulse.to_vec()
+        self.stretched.clear();
+        if state {
+            self.stretched.extend_from_slice(impulse);
         } else {
             // The impulse stretched over the string
             let src = impulse.len() as i32;
-            (0..length)
-                .map(|frame| {
-                    let at = frame as f32 * src as f32 / length as f32;
-                    let frac = at - (at as i32) as f32;
-                    let i = (at as i32).clamp(1, src - 3) as usize;
-                    cubic(impulse[i - 1], impulse[i], impulse[i + 1], impulse[i + 2], frac)
-                })
-                .collect()
-        };
+            self.stretched.extend((0..length).map(|frame| {
+                let at = frame as f32 * src as f32 / length as f32;
+                let frac = at - (at as i32) as f32;
+                let i = (at as i32).clamp(1, src - 3) as usize;
+                cubic(impulse[i - 1], impulse[i], impulse[i + 1], impulse[i + 2], frac)
+            }));
+        }
 
         let amount = randomize / 2.0 - randomize;
-        let line = |rand: &mut LegacyRand| DelayLine {
-            data: (0..length).map(|_| rand.inclusive(amount)).collect(),
-            pointer: 0,
-        };
-        let mut to_bridge = line(rand);
-        let mut from_bridge = line(rand);
-        for dl in [&mut to_bridge, &mut from_bridge] {
-            set_delay_line(dl, pick_at, &impulse, IMPULSE_LENGTH as i32, 0.5, state, amount, rand);
+        for dl in [&mut self.to_bridge, &mut self.from_bridge] {
+            dl.data.clear();
+            dl.data.extend((0..length).map(|_| rand.inclusive(amount)));
+            dl.pointer = 0;
         }
-        Self {
-            from_bridge,
-            to_bridge,
-            pickup: (pickup * length as f32) as i32,
-            oversample: oversample as usize,
-            string_loss: 1.0 - stiffness,
-            choice,
-            state: 0.1,
-            out: vec![0.0; oversample as usize],
+        for dl in [&mut self.to_bridge, &mut self.from_bridge] {
+            set_delay_line(dl, pick_at, &self.stretched, IMPULSE_LENGTH as i32, 0.5, state, amount, rand);
         }
+        self.pickup = (pickup * length as f32) as i32;
+        self.string_loss = 1.0 - stiffness;
+        self.state = 0.1;
+        // (the legacy read the `choice`-th of each output sample's internal samples)
+        self.steps = f64::from(oversample) * f64::from(BASE_SAMPLE_RATE) / f64::from(sample_rate);
+        self.target = f64::from(choice);
+        self.produced = 0;
+        self.prev = 0.0;
+        self.cur = 0.0;
     }
 
+    /// One internal sample: what the pickup hears, then the waves move on
+    #[inline]
+    fn step(&mut self) {
+        // What the pickup hears
+        let heard = self.from_bridge.access(self.pickup) + self.to_bridge.access(self.pickup);
+        // Into the bridge, and to the nut
+        let ym0 = self.to_bridge.access(1);
+        let yp_m = self.from_bridge.access(self.from_bridge.data.len() as i32 - 2);
+        // The bridge reflects it, averaged with the last (a low-pass)
+        self.state = (f64::from(self.state + ym0) * 0.5) as f32;
+        let reflected = -self.state;
+        // Back from the bridge: the pointer moves, then the sample
+        let len = self.from_bridge.data.len();
+        self.from_bridge.pointer = if self.from_bridge.pointer == 0 { len - 1 } else { self.from_bridge.pointer - 1 };
+        let at = self.from_bridge.pointer;
+        self.from_bridge.data[at] = reflected * self.string_loss;
+        // To the bridge: the sample, then the pointer moves
+        let at = self.to_bridge.pointer;
+        self.to_bridge.data[at] = -yp_m * self.string_loss;
+        self.to_bridge.pointer = if at + 1 > len - 1 { 0 } else { at + 1 };
+        self.prev = self.cur;
+        self.cur = heard;
+        self.produced += 1;
+    }
+
+    /// The next output sample
     #[inline]
     pub fn next_sample(&mut self) -> f32 {
-        for i in 0..self.oversample {
-            // What the pickup hears
-            self.out[i] = self.from_bridge.access(self.pickup) + self.to_bridge.access(self.pickup);
-            // Into the bridge, and to the nut
-            let ym0 = self.to_bridge.access(1);
-            let yp_m = self.from_bridge.access(self.from_bridge.data.len() as i32 - 2);
-            // The bridge reflects it, averaged with the last (a low-pass)
-            self.state = (f64::from(self.state + ym0) * 0.5) as f32;
-            let reflected = -self.state;
-            // Back from the bridge: the pointer moves, then the sample
-            let len = self.from_bridge.data.len();
-            self.from_bridge.pointer =
-                if self.from_bridge.pointer == 0 { len - 1 } else { self.from_bridge.pointer - 1 };
-            let at = self.from_bridge.pointer;
-            self.from_bridge.data[at] = reflected * self.string_loss;
-            // To the bridge: the sample, then the pointer moves
-            let at = self.to_bridge.pointer;
-            self.to_bridge.data[at] = -yp_m * self.string_loss;
-            self.to_bridge.pointer = if at + 1 > len - 1 { 0 } else { at + 1 };
+        let floor = self.target.floor();
+        let frac = (self.target - floor) as f32;
+        // The internal samples up to the target (and the one after it, between two)
+        let needed = floor as u64 + if frac > 0.0 { 2 } else { 1 };
+        while self.produced < needed {
+            self.step();
         }
-        self.out[self.choice]
+        self.target += self.steps;
+        if frac > 0.0 { self.prev + (self.cur - self.prev) * frac } else { self.cur }
     }
 }
 
@@ -229,46 +361,94 @@ impl Default for VibedString {
     }
 }
 
-/// One note of the Vibed: its strings
-#[derive(Clone, Debug)]
+/// One note of the Vibed: its strings, one slot for each, made with their room (see [`VibedVoice::rooms`]); a note
+/// restarts them in it and `clone_from` copies into it, without allocating
+#[derive(Debug)]
 pub struct VibedVoice {
-    strings: Vec<(usize, VibratingString)>,
+    strings: Vec<VibratingString>,
+    playing: [bool; STRINGS],
+}
+
+impl Clone for VibedVoice {
+    fn clone(&self) -> Self {
+        Self { strings: self.strings.clone(), playing: self.playing }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.strings.clone_from(&source.strings);
+        self.playing = source.playing;
+    }
 }
 
 impl VibedVoice {
     /// A note at @p frequency of the enabled @p strings; their randomness from @p seed
     pub fn new(strings: &[VibedString], frequency: f32, sample_rate: u32, seed: u64) -> Self {
-        let mut rand = LegacyRand::new(seed);
-        let strings = strings
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.enabled)
-            .map(|(i, s)| {
-                let string = VibratingString::new(
-                    frequency * OCTAVES[s.harmonic.min(OCTAVES.len() - 1)],
-                    s.pick,
-                    s.pickup,
-                    &s.shape,
-                    sample_rate,
-                    s.length,
-                    s.fuzziness,
-                    s.stiffness,
-                    s.detune,
-                    s.impulse,
-                    &mut rand,
-                );
-                (i, string)
+        let rooms: [usize; STRINGS] = core::array::from_fn(|i| {
+            strings.get(i).map_or(1, |s| {
+                let pitch = frequency * OCTAVES[s.harmonic.min(OCTAVES.len() - 1)];
+                VibratingString::length_for(pitch, sample_rate, s.length, s.detune)
             })
-            .collect();
-        Self { strings }
+        });
+        let mut voice = Self::with_rooms(rooms);
+        voice.restart(strings, frequency, sample_rate, seed);
+        voice
+    }
+
+    /// The room each string needs for every note from @p lowest Hz up, with its harmonic and length, at any detune
+    pub fn rooms(strings: &[VibedString], lowest: f32, sample_rate: u32) -> [usize; STRINGS] {
+        core::array::from_fn(|i| {
+            strings.get(i).map_or(1, |s| {
+                let pitch = lowest * OCTAVES[s.harmonic.min(OCTAVES.len() - 1)];
+                // (the detune's longest: −0.1 makes the string a tenth longer)
+                VibratingString::length_for(pitch, sample_rate, s.length, -0.1)
+            })
+        })
+    }
+
+    /// A silent voice with these rooms (allocates: in the build)
+    pub fn with_rooms(rooms: [usize; STRINGS]) -> Self {
+        Self { strings: rooms.iter().map(|r| VibratingString::with_room(*r)).collect(), playing: [false; STRINGS] }
+    }
+
+    /// The room of each string
+    pub fn room(&self) -> [usize; STRINGS] {
+        core::array::from_fn(|i| self.strings[i].room())
+    }
+
+    /// A new note in this voice, as [`VibedVoice::new`] makes one, in its rooms: never allocates
+    pub fn restart(&mut self, strings: &[VibedString], frequency: f32, sample_rate: u32, seed: u64) {
+        let mut rand = LegacyRand::new(seed);
+        for (i, string) in self.strings.iter_mut().enumerate() {
+            let Some(s) = strings.get(i).filter(|s| s.enabled) else {
+                self.playing[i] = false;
+                continue;
+            };
+            self.playing[i] = true;
+            string.restart(
+                frequency * OCTAVES[s.harmonic.min(OCTAVES.len() - 1)],
+                s.pick,
+                s.pickup,
+                &s.shape,
+                sample_rate,
+                s.length,
+                s.fuzziness,
+                s.stiffness,
+                s.detune,
+                s.impulse,
+                &mut rand,
+            );
+        }
     }
 
     /// The next @p out frames (before the fade-in, which the host's note applies)
     pub fn render(&mut self, out: &mut [[f32; 2]], strings: &[VibedString]) {
         for frame in out.iter_mut() {
             *frame = [0.0; 2];
-            for (i, string) in &mut self.strings {
-                let s = &strings[*i];
+            for (i, string) in self.strings.iter_mut().enumerate() {
+                if !self.playing[i] {
+                    continue;
+                }
+                let s = &strings[i];
                 // 0: left, 1: right
                 let pan = (s.pan + 1.0) / 2.0;
                 let sample = string.next_sample() * s.volume / 100.0;

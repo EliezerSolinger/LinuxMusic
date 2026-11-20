@@ -11,12 +11,13 @@ pub mod bit_invader;
 pub mod kicker;
 pub mod lb302;
 pub mod organic;
+pub mod vibed;
 
 use lm_plugin::Descriptor;
 
 /// Every instrument of this crate, for the registry
 pub static ALL: &[&Descriptor] =
-    &[&bit_invader::DESCRIPTOR, &kicker::DESCRIPTOR, &lb302::DESCRIPTOR, &organic::DESCRIPTOR];
+    &[&bit_invader::DESCRIPTOR, &kicker::DESCRIPTOR, &lb302::DESCRIPTOR, &organic::DESCRIPTOR, &vibed::DESCRIPTOR];
 
 /// The main stereo output every instrument here has
 pub fn stereo_out(_: &lm_state::Value) -> lm_plugin::Ports {

@@ -840,6 +840,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **O usuário pode:** escolher qual corda editar; desenhar a forma; aplicar senoide, triângulo, serra, quadrada,
   ruído, arquivo; suavizar; normalizar.
 - **Comportamento:** **sem pitch bend**; sem release (as cordas decaem sozinhas).
+- **Na beta:** plugin `vibed`, em `lm-plugins-instruments`: por corda `string`, `volume`, `stiffness`, `pick`, `pickup`, `panning`, `detune`, `fuzziness`, `impulse` (parâmetros) e `harmonic`, `length`, `shape` (campos: decidem a memória da corda); as cordas correm no próprio relógio (2 × comprimento × 44,1 kHz) em qualquer taxa do projeto; nenhuma nota aloca. Contrato e A/B por composição.
 
 #### F-INS-021 Watsyn (4 osciladores de onda desenhada) — 1.0
 

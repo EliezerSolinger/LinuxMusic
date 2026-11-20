@@ -825,6 +825,17 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
   acordes e arpejo ficam de fora (de um fluxo monofônico só soaria a nota mais nova). `Lb302::set_frequency` no
   `lm-dsp` move a afinação da nota sem recomeçá-la (o legado lia a frequência da nota a cada período).
 
+- **Vibed sem alocar no áudio:** as linhas de atraso de cada corda são feitas no build, com espaço para a nota mais
+  grave (tecla 0 no menor `pitch`) com o harmônico e o comprimento dela; uma nota recomeça a corda nesse espaço. Por
+  isso `harmonic` e `length` são campos (no legado eram botões automatizáveis): uma corda mais longa do que as vozes
+  do instrumento velho guardam não se adota (`Synth::can_adopt`, novo no `lm-plugin`) e o velho toca a cauda (U32).
+  Uma afinação abaixo da tecla 0 toca a corda do tamanho do espaço.
+- **As cordas do Vibed correm no próprio relógio:** 2 × comprimento × 44,1 kHz em qualquer taxa do projeto, lendo uma
+  amostra de saída a cada `taxa interna / taxa do projeto` amostras internas (entre duas, interpoladas, quando não é
+  inteiro). A 44,1 kHz é exatamente a corda do legado (o A/B do `lm-dsp` continua bit a bit); o legado corria a um
+  múltiplo da taxa do projeto (menos acima de 88,2 kHz), e o decaimento e o timbre mudavam com a taxa (1,1 dB a
+  192 kHz). Sem sonda de afinação: a altura é a do comprimento inteiro em amostras, como no legado.
+
 ## As telas do agente D no `lm-gui`: o que muda em relação ao legado (20/11)
 
 Regra do usuário (20/11): fora dos designs aprovados (2, 3, 5, 8), as telas seguem os diálogos do legado, de forma
