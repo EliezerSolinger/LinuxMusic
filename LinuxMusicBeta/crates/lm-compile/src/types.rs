@@ -201,7 +201,10 @@ impl InstalledTable {
 
     /// The node behind an index of this generation (for the telemetry)
     pub fn key_of(&self, index: NodeIndex) -> Option<NodeKey> {
-        self.nodes.iter().find(|(_, i)| **i == index).map(|(k, _)| *k)
+        self.nodes
+            .iter()
+            .find(|(_, i)| **i == index)
+            .map(|(k, _)| *k)
             .or_else(|| self.tails.iter().find(|t| t.index == index).map(|t| NodeKey::Tail(t.serial)))
     }
 

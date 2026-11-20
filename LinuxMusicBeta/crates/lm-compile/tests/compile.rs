@@ -112,7 +112,8 @@ fn unchanged_nodes_keep_their_index_processor_and_slots() {
     let c = h.compile(doc.root());
     assert!(c.builds.is_empty(), "bypass is not the plugin's state");
     h.pump();
-    let p2 = NodeId::parse(doc.find(t2).unwrap().get("instrument").unwrap().get("id").unwrap().as_text().unwrap()).unwrap();
+    let p2 =
+        NodeId::parse(doc.find(t2).unwrap().get("instrument").unwrap().get("id").unwrap().as_text().unwrap()).unwrap();
     edit(&mut doc, |e| e.set(p2, &[k("version")], Value::int(1)));
     let c = h.compile(doc.root());
     assert!(c.builds.is_empty(), "the same value is the same processor");
@@ -345,7 +346,11 @@ fn monitoring_is_outside_the_pdc() {
     insert(&mut doc, late, delay(500));
     edit(&mut doc, |e| {
         e.set(late, &[k("output")], text(&ch.to_string()))?;
-        e.set(voice, &[k("input")], Value::object([("device", text("in")), ("channels", Value::list([Value::int(1)]))]))?;
+        e.set(
+            voice,
+            &[k("input")],
+            Value::object([("device", text("in")), ("channels", Value::list([Value::int(1)]))]),
+        )?;
         e.set(voice, &[k("armed")], Value::bool(true))
     });
     let mut h = Harness::new(&plugins);
@@ -402,7 +407,8 @@ fn a_kit_routes_each_port_and_keeps_playing_while_it_changes() {
     assert_eq!(route(&c, NodeKey::Output(outs[0]), NodeKey::ChannelIn(kick)).unwrap().channels, 1);
 
     // Another kit: a new port, a build; meanwhile the old kit keeps its shape and plays (T7)
-    let p = NodeId::parse(doc.find(t).unwrap().get("instrument").unwrap().get("id").unwrap().as_text().unwrap()).unwrap();
+    let p =
+        NodeId::parse(doc.find(t).unwrap().get("instrument").unwrap().get("id").unwrap().as_text().unwrap()).unwrap();
     edit(&mut doc, |e| e.set(p, &[k("state"), k("kit")], text("big")));
     assert_eq!(outputs(&doc, t).len(), 3);
     let c = h.compile(doc.root());
@@ -539,7 +545,12 @@ fn audio_items_play_their_comp_with_fades() {
     let mut lanes = Vec::new();
     edit(&mut doc, |e| {
         for r in [&take_a, &take_b] {
-            lanes.push(e.insert(item, "lanes", lanes.len(), Value::object([("source", Value::resource(r.clone()))]))?);
+            lanes.push(e.insert(
+                item,
+                "lanes",
+                lanes.len(),
+                Value::object([("source", Value::resource(r.clone()))]),
+            )?);
         }
         // Lane a for ticks 0..480, lane b for 480..960, with a 100-sample crossfade
         let comp = Value::list([
@@ -620,7 +631,8 @@ fn tempo_ramps_reach_the_curves_at_exact_samples() {
         RATE,
         lm_time::Ppq::DEFAULT,
         &[
-            lm_time::TempoPoint::new(0, lm_time::Bpm::from_integer(60).unwrap(), lm_time::TimeSignature::COMMON).linear(),
+            lm_time::TempoPoint::new(0, lm_time::Bpm::from_integer(60).unwrap(), lm_time::TimeSignature::COMMON)
+                .linear(),
             lm_time::TempoPoint::new(3840, lm_time::Bpm::from_integer(180).unwrap(), lm_time::TimeSignature::COMMON),
         ],
     )
@@ -670,7 +682,8 @@ fn random_projects_compile_and_play() {
             random_edit(&mut doc, &mut rng);
             let c = h.compile(doc.root());
             // Each live index is used by one node, and an index that was removed came back before its reuse
-            let live: Vec<NodeIndex> = c.table.nodes.values().copied().chain(c.table.tails.iter().map(|t| t.index)).collect();
+            let live: Vec<NodeIndex> =
+                c.table.nodes.values().copied().chain(c.table.tails.iter().map(|t| t.index)).collect();
             let unique: HashSet<u32> = live.iter().map(|i| i.index).collect();
             assert_eq!(unique.len(), live.len(), "round {round} step {step}");
             for i in &live {
@@ -727,7 +740,10 @@ fn random_edit(doc: &mut lm_doc::Document, rng: &mut Rng) {
                 let inst = match rng.below(3) {
                     0 => None,
                     1 => Some(dc()),
-                    _ => Some(plugin("kit", Value::object([("kit", text(if rng.below(2) == 0 { "small" } else { "big" }))]))),
+                    _ => Some(plugin(
+                        "kit",
+                        Value::object([("kit", text(if rng.below(2) == 0 { "small" } else { "big" }))]),
+                    )),
                 };
                 let mut node = Value::object([("name", text("r"))]);
                 if let Some(i) = inst {
@@ -766,7 +782,12 @@ fn random_edit(doc: &mut lm_doc::Document, rng: &mut Rng) {
             }
             7 => {
                 if let (Some(a), Some(b)) = (pick(rng, &channels), pick(rng, &channels)) {
-                    e.insert(a, "sends", 0, Value::object([("to", text(&b.to_string())), ("pre", Value::bool(rng.below(2) == 0))]))?;
+                    e.insert(
+                        a,
+                        "sends",
+                        0,
+                        Value::object([("to", text(&b.to_string())), ("pre", Value::bool(rng.below(2) == 0))]),
+                    )?;
                 }
             }
             8 => {
@@ -784,9 +805,17 @@ fn random_edit(doc: &mut lm_doc::Document, rng: &mut Rng) {
             10 | 11 => {
                 if let Some(t) = pick(rng, &tracks) {
                     let n = e.find(t).and_then(|t| t.get("items")).map_or(0, Value::len);
-                    let item = e.insert(t, "items", n, Value::object([("kind", text("midi")), ("start", Value::int(rng.below(4000) as i64))]))?;
+                    let item = e.insert(
+                        t,
+                        "items",
+                        n,
+                        Value::object([("kind", text("midi")), ("start", Value::int(rng.below(4000) as i64))]),
+                    )?;
                     for _ in 0..rng.below(20) {
-                        e.add_note(item, note(36 + rng.below(60) as i64, rng.below(3000) as i64, 1 + rng.below(500) as i64, 0.7))?;
+                        e.add_note(
+                            item,
+                            note(36 + rng.below(60) as i64, rng.below(3000) as i64, 1 + rng.below(500) as i64, 0.7),
+                        )?;
                     }
                 }
             }
@@ -879,7 +908,11 @@ fn the_count_in_clicks_on_exact_samples_and_the_song_starts_after_it() {
     edit(&mut doc, |e| {
         e.add_note(item, note(60, 0, 3840, 0.5))?;
         // One bar of 3/4 at 120 BPM: three beats of 24,000 samples
-        e.set(ROOT, &[k("tempoMap"), lm_state::PathStep::Index(0), k("timeSig")], Value::list([Value::int(3), Value::int(4)]))?;
+        e.set(
+            ROOT,
+            &[k("tempoMap"), lm_state::PathStep::Index(0), k("timeSig")],
+            Value::list([Value::int(3), Value::int(4)]),
+        )?;
         e.set(ROOT, &[k("transport"), k("metronome"), k("countIn")], Value::int(1))
     });
     let accent = Arc::new(SampleData::from_channels(RATE, vec![vec![1.0; 10]]).unwrap());
@@ -1008,8 +1041,13 @@ fn a_long_item_streams_from_the_disk() {
     // 40 s at 120 BPM: 1920 ticks per second... the item is 30 s long, from 1 s into the take
     let item = add_item(&mut doc, t, "audio", 0, 30 * 1920);
     edit(&mut doc, |e| {
-        e.insert(item, "lanes", 0, Value::object([("source", Value::resource(resource.clone())), ("sourceOffset", Value::int(48_000))]))
-            .map(|_| ())
+        e.insert(
+            item,
+            "lanes",
+            0,
+            Value::object([("source", Value::resource(resource.clone())), ("sourceOffset", Value::int(48_000))]),
+        )
+        .map(|_| ())
     });
     let mut h = Harness::new(&plugins);
     h.resources = Arc::new(Long { resource: resource.clone(), frames: frames as u64 });

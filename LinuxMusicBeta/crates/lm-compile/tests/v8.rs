@@ -38,7 +38,12 @@ fn project(plugins: &std::sync::Arc<lm_plugin::Registry>) -> Value {
             ("notes", notes),
         ]);
         let instrument = dc().with("id", next('p'));
-        let output = Value::object([("id", next('o')), ("port", text("main")), ("channels", Value::int(2)), ("to", text("m:0"))]);
+        let output = Value::object([
+            ("id", next('o')),
+            ("port", text("main")),
+            ("channels", Value::int(2)),
+            ("to", text("m:0")),
+        ]);
         tracks.push(Value::object([
             ("id", next('t')),
             ("instrument", instrument),

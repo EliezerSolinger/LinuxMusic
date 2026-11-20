@@ -242,9 +242,10 @@ fn run(mut core: CompilerCore, shared: &Shared) {
                 Err(Error::new("compile.panicked"))
             }
         };
-        retry = result.as_ref().err().is_some_and(|e| {
-            matches!(e.key(), "compile.limits.nodes_pending" | "compile.limits.params_pending")
-        });
+        retry = result
+            .as_ref()
+            .err()
+            .is_some_and(|e| matches!(e.key(), "compile.limits.nodes_pending" | "compile.limits.params_pending"));
         lock(&shared.results).push_back(result);
         last = Some(job);
     }

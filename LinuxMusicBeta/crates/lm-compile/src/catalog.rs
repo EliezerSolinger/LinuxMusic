@@ -33,7 +33,12 @@ impl PluginShape {
 
     /// An effect working on `channels` channels in and out
     pub fn effect(channels: u16) -> Self {
-        Self { inputs: channels, outputs: vec![Port::new("main", u32::from(channels))], sidechains: Vec::new(), notes: false }
+        Self {
+            inputs: channels,
+            outputs: vec![Port::new("main", u32::from(channels))],
+            sidechains: Vec::new(),
+            notes: false,
+        }
     }
 
     /// The channels of all the output ports together

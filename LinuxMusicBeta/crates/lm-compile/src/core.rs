@@ -47,11 +47,11 @@ use std::time::{Duration, Instant};
 use lm_base::{Error, Result};
 use lm_doc::schemas::{KIND_CHANNEL, KIND_PLUGIN, MASTER};
 use lm_render::{
-    AudioItem, ChannelMix, CountIn, Curve, Feed, HostParam, Install, Limits, Metronome, MidiItem, NodeCore, NodeDesc, NodeIndex,
-    OutputRoute, ParamInfo, ParamSlot, PortIndex, PortRoute, ProcessSpec, ProgramBuilder, ProgramGen, Rate, Relocate,
-    Returned, Rng, Strip, TransportSettings,
+    AudioItem, ChannelMix, CountIn, Curve, Feed, HostParam, Install, Limits, Metronome, MidiItem, NodeCore, NodeDesc,
+    NodeIndex, OutputRoute, ParamInfo, ParamSlot, PortIndex, PortRoute, ProcessSpec, ProgramBuilder, ProgramGen, Rate,
+    Relocate, Returned, Rng, Strip, TransportSettings,
 };
-use lm_state::{NodeId, ParamSpec, SchemaRegistry, Scale, Value};
+use lm_state::{NodeId, ParamSpec, Scale, SchemaRegistry, Value};
 use lm_time::TempoMap;
 
 use crate::alloc::{NodeAllocator, SlotAllocator};
@@ -62,8 +62,8 @@ use crate::read::{
     channels, device_channels, flag, id_number, id_of, int, items, key, real, ref_of, settings, tempo_map, text,
 };
 use crate::types::{
-    Build, BuildRequest, Compiled, Environment, InstalledProcessor, InstalledTable, InstalledTail, NodeInfo, NodeKey, Route,
-    Ticket,
+    Build, BuildRequest, Compiled, Environment, InstalledProcessor, InstalledTable, InstalledTail, NodeInfo, NodeKey,
+    Route, Ticket,
 };
 
 /// A tail lives at most this long (U32; the renderer silences it at the same age)
@@ -271,7 +271,16 @@ impl Plan {
     /// A feed converting `from_ch` channels (from `from_channel`) to `to_ch` channels (at `to_channel`): direct,
     /// mono to N at equal power, N to mono averaged, or the common channels (base item 3)
     #[allow(clippy::too_many_arguments)]
-    fn feed(&mut self, from: usize, from_channel: u16, from_ch: u16, to: usize, to_channel: u16, to_ch: u16, sidechain: bool) -> &mut PFeed {
+    fn feed(
+        &mut self,
+        from: usize,
+        from_channel: u16,
+        from_ch: u16,
+        to: usize,
+        to_channel: u16,
+        to_ch: u16,
+        sidechain: bool,
+    ) -> &mut PFeed {
         let (channels, mix) = convert(from_ch, to_ch);
         self.feed_keys.insert((from, to, from_channel, to_channel, sidechain));
         self.feeds.push(PFeed {
@@ -602,9 +611,8 @@ impl CompilerCore {
 
         // The program
         let mut b = ProgramBuilder::new(ProgramGen(generation), self.config.spec, &limits, tempo.clone());
-        let slot_of = |owner: NodeId, key: &Arc<str>, instance: u8| -> ParamSlot {
-            slot_keys[&(owner, key.clone(), instance)]
-        };
+        let slot_of =
+            |owner: NodeId, key: &Arc<str>, instance: u8| -> ParamSlot { slot_keys[&(owner, key.clone(), instance)] };
         let host = |h: &HPlan, curves: &HashMap<(NodeId, Arc<str>), Curve>| -> HostParam {
             match h {
                 HPlan::Fixed(v) => HostParam::fixed(*v),
@@ -630,7 +638,10 @@ impl CompilerCore {
                 d = d.with_sidechain(n.sidechain);
             }
             if let Some(g) = &n.gain {
-                d = d.with_strip(Strip { gain: host(g, &plan.curves), pan: n.pan.as_ref().map(|p| host(p, &plan.curves)) });
+                d = d.with_strip(Strip {
+                    gain: host(g, &plan.curves),
+                    pan: n.pan.as_ref().map(|p| host(p, &plan.curves)),
+                });
             }
             d = d.muted(n.muted);
             if n.tail {
@@ -655,7 +666,13 @@ impl CompilerCore {
         for p in &plan.params {
             let slot = slot_of(p.owner, &p.key, 0);
             let curve = plan.curves.get(&(p.owner, p.key.clone())).cloned();
-            b.param(slot, index_of[p.node], p.index, ParamInfo { rate: p.rate, discrete: p.discrete, initial: p.value }, curve);
+            b.param(
+                slot,
+                index_of[p.node],
+                p.index,
+                ParamInfo { rate: p.rate, discrete: p.discrete, initial: p.value },
+                curve,
+            );
         }
         for (n, items) in std::mem::take(&mut plan.audio) {
             b.audio_items(index_of[n], items);
@@ -785,7 +802,16 @@ impl CompilerCore {
             self.next_serial = self.next_serial.max(serial + 1);
             // A tail with nowhere to sound was not put in the program: the old processor just comes back
             if let Some(index) = tail_index.get(&serial).copied() {
-                self.tails.push(Tail { serial, owner, shape, in_place, latency, index: Some(index), created: now, ended: false });
+                self.tails.push(Tail {
+                    serial,
+                    owner,
+                    shape,
+                    in_place,
+                    latency,
+                    index: Some(index),
+                    created: now,
+                    ended: false,
+                });
             }
         }
         self.nodes = new_nodes;
@@ -888,7 +914,14 @@ impl CompilerCore {
 
     /// Decides a processor node: what it should be, and what plays meanwhile. Returns the shape the program gives
     /// it and its latency
-    fn decide(&self, plan: &mut Plan, key: NodeKey, wanted: Option<(Build, PluginShape)>, seed: u64, fallback: PluginShape) -> (PluginShape, u32) {
+    fn decide(
+        &self,
+        plan: &mut Plan,
+        key: NodeKey,
+        wanted: Option<(Build, PluginShape)>,
+        seed: u64,
+        fallback: PluginShape,
+    ) -> (PluginShape, u32) {
         let proc = self.procs.get(&key);
         let installed = proc.and_then(|p| p.installed.as_ref());
         let ready = proc.and_then(|p| p.ready.as_ref());
@@ -989,7 +1022,8 @@ impl CompilerCore {
             .filter_map(|c| Some(ChannelView { id: id_of(c)?, value: c, master: false, width: channels(c, 2) }))
             .collect();
         let master_value = mixer.get("master");
-        let master_view = master_value.map(|m| ChannelView { id: MASTER, value: m, master: true, width: channels(m, 2) });
+        let master_view =
+            master_value.map(|m| ChannelView { id: MASTER, value: m, master: true, width: channels(m, 2) });
         let by_id: HashMap<NodeId, usize> = desk.iter().enumerate().map(|(i, c)| (c.id, i)).collect();
         let width_of = |id: NodeId| -> u16 {
             match by_id.get(&id) {
@@ -1173,7 +1207,9 @@ impl CompilerCore {
                 if shape.notes {
                     let transpose = if flag(t, "transpose", true) { project_transpose } else { 0 };
                     let mut list = Vec::new();
-                    for item in items(t, "items").filter(|i| text(i, "kind", "midi") == "midi" && !flag(i, "mute", false)) {
+                    for item in
+                        items(t, "items").filter(|i| text(i, "kind", "midi") == "midi" && !flag(i, "mute", false))
+                    {
                         if let Some(iid) = id_of(item) {
                             list.push(self.caches.midi(iid, item, transpose, &tempo)?);
                         }
@@ -1210,7 +1246,8 @@ impl CompilerCore {
                 let mut list = Vec::new();
                 for item in &audio_items {
                     let Some(iid) = id_of(item) else { continue };
-                    let (segments, waiting, streams) = self.caches.audio(iid, item, &tempo, resources, s.sample_rate)?;
+                    let (segments, waiting, streams) =
+                        self.caches.audio(iid, item, &tempo, resources, s.sample_rate)?;
                     list.extend(segments.iter().cloned());
                     plan.waiting_items.extend(waiting);
                     plan.streams.extend(streams);
@@ -1290,8 +1327,9 @@ impl CompilerCore {
             let w = c.width;
             let rack = c.value.get("rack").cloned().unwrap_or_default();
             let seed = Rng::seed_for(s.seed, id_number(c.id));
-            let inserts: Vec<(&Value, InsertPoint)> =
-                items(c.value, "inserts").map(|p| (p, InsertPoint::parse(p.get("point").and_then(Value::as_text)))).collect();
+            let inserts: Vec<(&Value, InsertPoint)> = items(c.value, "inserts")
+                .map(|p| (p, InsertPoint::parse(p.get("point").and_then(Value::as_text))))
+                .collect();
 
             // The chain before the fader: (node, input width, output width)
             let mut prev = (input, w);
@@ -1300,14 +1338,24 @@ impl CompilerCore {
                     return;
                 }
                 let k = NodeKey::Rack(c.id, stages[0]);
-                let build = Build::Rack { channel: c.id, master: c.master, stages: stages.clone(), rack: rack.clone(), channels: w };
+                let build = Build::Rack {
+                    channel: c.id,
+                    master: c.master,
+                    stages: stages.clone(),
+                    rack: rack.clone(),
+                    channels: w,
+                };
                 let shape = PluginShape::effect(w);
                 let (shape, latency) = this.decide(plan, k, Some((build, shape.clone())), seed, shape);
                 let n = plan.add(PNode::processor(k, &shape, latency));
                 let table = if c.master { &this.rack_master } else { &this.rack_channel };
                 for (i, p) in table.iter().enumerate() {
                     if stages.contains(&p.stage) {
-                        let v = rack.get(p.section).and_then(|sec| sec.get(p.field)).and_then(Value::as_real).unwrap_or(p.default);
+                        let v = rack
+                            .get(p.section)
+                            .and_then(|sec| sec.get(p.field))
+                            .and_then(Value::as_real)
+                            .unwrap_or(p.default);
                         plan.params.push(PParam {
                             node: n,
                             index: i as u32,
@@ -1351,8 +1399,11 @@ impl CompilerCore {
             } else {
                 let mut run: Vec<Stage> = Vec::new();
                 for (s_idx, stage) in Stage::CHANNEL.iter().enumerate() {
-                    let here: Vec<&Value> =
-                        inserts.iter().filter(|(_, pt)| *pt != InsertPoint::PrePan && pt.stages_before() == s_idx).map(|(p, _)| *p).collect();
+                    let here: Vec<&Value> = inserts
+                        .iter()
+                        .filter(|(_, pt)| *pt != InsertPoint::PrePan && pt.stages_before() == s_idx)
+                        .map(|(p, _)| *p)
+                        .collect();
                     if !here.is_empty() {
                         add_rack(self, &mut plan, std::mem::take(&mut run), &mut prev);
                         for p in here {
@@ -1367,7 +1418,12 @@ impl CompilerCore {
                 }
             }
             let pre_tap = prev;
-            let volume = HPlan::Param { owner: c.id, key: key("volume"), instance: 0, value: real(c.value, "volume", 1.0) as f32 };
+            let volume = HPlan::Param {
+                owner: c.id,
+                key: key("volume"),
+                instance: 0,
+                value: real(c.value, "volume", 1.0) as f32,
+            };
             let pan = (!c.master).then(|| HPlan::Param {
                 owner: c.id,
                 key: key("pan"),
@@ -1553,11 +1609,8 @@ impl CompilerCore {
             out[i] = a + u64::from(plan.nodes[i].latency);
         }
         for f in &mut plan.feeds {
-            f.delay = if f.monitor {
-                0
-            } else {
-                u32::try_from(arrive[f.to].saturating_sub(out[f.from])).unwrap_or(u32::MAX)
-            };
+            f.delay =
+                if f.monitor { 0 } else { u32::try_from(arrive[f.to].saturating_sub(out[f.from])).unwrap_or(u32::MAX) };
         }
         // A track output's delay goes before the output node, so the monitoring that joins there is not delayed
         for fi in 0..plan.feeds.len() {

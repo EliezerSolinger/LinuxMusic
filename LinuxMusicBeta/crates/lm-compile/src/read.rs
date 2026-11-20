@@ -41,8 +41,10 @@ pub(crate) fn channels(v: &Value, default: i64) -> u16 {
 
 /// A device channel list (`[1, 2]`, numbered from 1) as 0-based channels
 pub(crate) fn device_channels(v: Option<&Value>) -> Vec<u16> {
-    v.map(|l| l.items().filter_map(Value::as_int).map(|c| u16::try_from((c - 1).clamp(0, 65_535)).unwrap_or(0)).collect())
-        .unwrap_or_default()
+    v.map(|l| {
+        l.items().filter_map(Value::as_int).map(|c| u16::try_from((c - 1).clamp(0, 65_535)).unwrap_or(0)).collect()
+    })
+    .unwrap_or_default()
 }
 
 /// A stable 64-bit number for an id (the kind letter in the top byte; numbers stay below 2^53), for the item keys

@@ -15,7 +15,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use lm_base::Result;
-use lm_render::{AudioItem, AudioSource, Curve, StreamFeeder, StreamSpec, CurvePoint, ItemEvent, ItemEventKind, MidiItem, SampleData};
+use lm_render::{
+    AudioItem, AudioSource, Curve, CurvePoint, ItemEvent, ItemEventKind, MidiItem, SampleData, StreamFeeder, StreamSpec,
+};
 use lm_state::{NodeId, Value};
 use lm_time::TempoMap;
 
@@ -144,8 +146,10 @@ impl Caches {
         }
         let out = Arc::new(midi_events(id, item, transpose, audio_time.then_some(tempo))?);
         self.made.midi_items += 1;
-        self.midi
-            .insert(id, MidiEntry { item: item.clone(), transpose, tempo: tempo_key, used: self.pass, out: out.clone() });
+        self.midi.insert(
+            id,
+            MidiEntry { item: item.clone(), transpose, tempo: tempo_key, used: self.pass, out: out.clone() },
+        );
         Ok(out)
     }
 
@@ -170,7 +174,9 @@ impl Caches {
             let mut wait = |missing: bool| waiting.push(WaitingItem { item: id, resource: r.clone(), missing });
             data.push(match resources.audio(r) {
                 ResourceState::Ready(d) if d.rate() == rate => LaneData::Memory(d),
-                ResourceState::OnDisk { rate: r_rate, channels, frames } if r_rate == rate && (1..=64).contains(&channels) => {
+                ResourceState::OnDisk { rate: r_rate, channels, frames }
+                    if r_rate == rate && (1..=64).contains(&channels) =>
+                {
                     LaneData::Disk { resource: r.clone(), rate, channels, frames }
                 }
                 ResourceState::Loading => {
@@ -197,7 +203,14 @@ impl Caches {
         self.made.audio_items += 1;
         self.audio.insert(
             id,
-            AudioEntry { item: item.clone(), tempo: self.tempo_version, data, used: self.pass, out: out.clone(), waiting: waiting.clone() },
+            AudioEntry {
+                item: item.clone(),
+                tempo: self.tempo_version,
+                data,
+                used: self.pass,
+                out: out.clone(),
+                waiting: waiting.clone(),
+            },
         );
         Ok((out, waiting, streams))
     }
@@ -222,7 +235,10 @@ impl Caches {
         }
         let out = lane_curve(lane, tempo)?;
         self.made.curves += 1;
-        self.curves.insert(id, CurveEntry { lane: lane.clone(), tempo: self.tempo_version, used: self.pass, out: out.clone() });
+        self.curves.insert(
+            id,
+            CurveEntry { lane: lane.clone(), tempo: self.tempo_version, used: self.pass, out: out.clone() },
+        );
         Ok(out)
     }
 }
@@ -279,7 +295,11 @@ pub(crate) fn midi_events(id: NodeId, item: &Value, transpose: i32, audio_time: 
 
 /// The played segments of an audio item (comping flattened), and a stream for each segment of a long source
 /// (P-32)
-fn audio_segments(item: &Value, tempo: &TempoMap, data: &[LaneData]) -> Result<(Vec<AudioItem>, Vec<StreamRegistration>)> {
+fn audio_segments(
+    item: &Value,
+    tempo: &TempoMap,
+    data: &[LaneData],
+) -> Result<(Vec<AudioItem>, Vec<StreamRegistration>)> {
     let audio_time = text(item, "timebase", "musical") == "audio";
     let start = int(item, "start", 0);
     let length = int(item, "length", 1);

@@ -7,9 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use lm_base::{Label, Result};
-use lm_compile::{
-    Build, Compiled, CompilerConfig, CompilerCore, Environment, InstalledTable, NoResources, Resources,
-};
+use lm_compile::{Build, Compiled, CompilerConfig, CompilerCore, Environment, InstalledTable, NoResources, Resources};
 use lm_doc::{Document, Options, Port, Ports};
 use lm_plugin::{BuildContext, Descriptor, PluginKind, Registry, ResourceView, StateView, TestHints, Velocity};
 use lm_render::{
@@ -414,7 +412,8 @@ impl Harness {
     /// Compiles and installs (builds are not made)
     pub fn compile(&mut self, root: &Value) -> Compiled {
         let mut c = self.core.compile(root, self.resources.as_ref(), &self.env).expect("compile");
-        let install = std::mem::replace(&mut c.install, lm_render::Install::new(lm_render::Program::empty(spec(), &limits())));
+        let install =
+            std::mem::replace(&mut c.install, lm_render::Install::new(lm_render::Program::empty(spec(), &limits())));
         self.control.install(install).expect("install");
         self.table = Some(c.table.clone());
         self.outstanding.retain(|b| !c.cancelled.contains(&b.ticket));
@@ -445,7 +444,13 @@ impl Harness {
             self.build_all();
         }
         let c = self.compile(root);
-        panic!("never settled: waiting {:?} replacing {:?} builds {:?} items {:?}", c.waiting, c.replacing, c.builds.iter().map(|b| b.node).collect::<Vec<_>>(), c.waiting_items);
+        panic!(
+            "never settled: waiting {:?} replacing {:?} builds {:?} items {:?}",
+            c.waiting,
+            c.replacing,
+            c.builds.iter().map(|b| b.node).collect::<Vec<_>>(),
+            c.waiting_items
+        );
     }
 }
 
