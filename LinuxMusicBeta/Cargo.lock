@@ -3902,6 +3902,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-sys-clap"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "libc",
+ "lm-base",
+ "lm-sys-clap",
+]
+
+[[package]]
 name = "lm-sys-fluidsynth"
 version = "0.1.0"
 dependencies = [
