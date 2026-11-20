@@ -293,6 +293,8 @@ pub struct Session {
     open_ops: Ops<ReadProject, ()>,
     build_ops: Ops<Box<dyn Processor>, BuildData>,
     load_ops: Ops<lm_io::Loaded, String>,
+    /// Loads of the other kinds (U24, C9): bytes or a checked file
+    kind_ops: Ops<lm_io::KindLoaded, Resource>,
     import_ops: Ops<lm_io::ImportedFile, ()>,
     /// Takes being closed, by the recording they belong to (0: a recovered take, alone)
     take_ops: Ops<FinalizedTake, u64>,
@@ -326,6 +328,9 @@ pub struct Session {
     /// New nodes silent until built; nodes whose old processor plays while the new one builds (I-2.3, T7)
     waiting_nodes: BTreeSet<NodeKey>,
     replacing_nodes: BTreeSet<NodeKey>,
+    /// Nodes whose last build failed (a plugin refusing a missing resource): nothing will come for them until the
+    /// tree asks for another build, so they do not keep the session from being settled
+    failed_builds: BTreeSet<NodeKey>,
     /// The compiler was asked to compile and has not answered
     compiling_since: Option<HostTime>,
     needs_compile: bool,
@@ -548,6 +553,7 @@ impl Session {
             open_ops: Ops::default(),
             build_ops: Ops::default(),
             load_ops: Ops::default(),
+            kind_ops: Ops::default(),
             import_ops: Ops::default(),
             take_ops: Ops::default(),
             generic_ops: Ops::default(),
@@ -584,6 +590,7 @@ impl Session {
             builds_waiting: Vec::new(),
             waiting_nodes: BTreeSet::new(),
             replacing_nodes: BTreeSet::new(),
+            failed_builds: BTreeSet::new(),
             compiling_since: None,
             needs_compile: true,
             telemetry: empty_telemetry(rate),
@@ -716,7 +723,7 @@ impl Session {
         let mut out = Vec::new();
         let counts = [
             ("builds", self.build_ops.len()),
-            ("loads", self.load_ops.len()),
+            ("loads", self.load_ops.len() + self.kind_ops.len()),
             ("builds_waiting", self.builds_waiting.len()),
             ("waiting_nodes", self.waiting_nodes.len()),
             ("replacing_nodes", self.replacing_nodes.len()),
@@ -791,10 +798,12 @@ impl Session {
     pub fn settled(&self) -> bool {
         self.build_ops.is_empty()
             && self.load_ops.is_empty()
+            && self.kind_ops.is_empty()
             && self.builds_waiting.is_empty()
             && self.waiting_nodes.is_empty()
             && self.replacing_nodes.is_empty()
             && self.compiling_since.is_none()
+            && !self.compiler.pending()
             && !self.needs_compile
             && self.engine.installs_in_flight() == 0
             && self.engine.installs_queued() == 0
@@ -810,8 +819,15 @@ impl Session {
     pub fn activity(&self) -> Vec<OperationInfo> {
         let now = self.clock.now();
         let mut out = Vec::new();
-        let lists: [&dyn OpList; 6] =
-            [&self.open_ops, &self.build_ops, &self.load_ops, &self.import_ops, &self.take_ops, &self.generic_ops];
+        let lists: [&dyn OpList; 7] = [
+            &self.open_ops,
+            &self.build_ops,
+            &self.load_ops,
+            &self.kind_ops,
+            &self.import_ops,
+            &self.take_ops,
+            &self.generic_ops,
+        ];
         for l in lists {
             l.infos(now, &mut out);
         }
@@ -841,8 +857,15 @@ impl Session {
     }
 
     pub fn cancel(&mut self, id: lm_base::OperationId) {
-        let lists: [&dyn OpList; 6] =
-            [&self.open_ops, &self.build_ops, &self.load_ops, &self.import_ops, &self.take_ops, &self.generic_ops];
+        let lists: [&dyn OpList; 7] = [
+            &self.open_ops,
+            &self.build_ops,
+            &self.load_ops,
+            &self.kind_ops,
+            &self.import_ops,
+            &self.take_ops,
+            &self.generic_ops,
+        ];
         for l in lists {
             if l.cancel(id) {
                 return;
@@ -858,7 +881,7 @@ impl Session {
         if let Target::Node(id) = target {
             if let Some(node) = self.document.find(*id) {
                 for (_, r) in self.cited_resources(*id, &node) {
-                    match self.resources.state(r.key()) {
+                    match self.resources.state_kind(r.kind(), r.key()) {
                         lm_io::ResourceState::Missing => return Loading::Missing { resource: r },
                         lm_io::ResourceState::Failed(e) => return Loading::Failed(e),
                         _ => {}
@@ -1016,6 +1039,7 @@ impl Session {
         let resources = &self.resources;
         self.document.root().walk(&mut |_, v| {
             if let Some(r) = v.as_resource()
+                && r.kind() == "audio"
                 && resources.state(r.key()) == lm_io::ResourceState::Missing
             {
                 missing.insert(r.key().to_owned());
@@ -1046,7 +1070,7 @@ impl Session {
                 },
             }
         }
-        if self.compiler.activity().is_none() {
+        if self.compiler.activity().is_none() && !self.compiler.pending() {
             self.compiling_since = None;
         }
         changed
@@ -1065,8 +1089,11 @@ impl Session {
             *t = self.table.clone();
         }
         self.crash.update(&self.table, &self.engine.watch());
-        self.waiting_nodes = waiting.into_iter().collect();
-        self.replacing_nodes = replacing.into_iter().collect();
+        for b in &builds {
+            self.failed_builds.remove(&b.node);
+        }
+        self.waiting_nodes = waiting.into_iter().filter(|k| !self.failed_builds.contains(k)).collect();
+        self.replacing_nodes = replacing.into_iter().filter(|k| !self.failed_builds.contains(k)).collect();
         for t in cancelled {
             self.builds_waiting.retain(|b| b.ticket != t);
             for op in &self.build_ops.list {
@@ -1090,6 +1117,9 @@ impl Session {
 
     /// Loads a resource in an operation on its target (I-12), once
     pub fn request(&mut self, r: &Resource) {
+        if r.kind() != "audio" {
+            return self.request_kind(r);
+        }
         if self.load_ops.list.iter().any(|op| op.data == r.key()) {
             return;
         }
@@ -1122,6 +1152,40 @@ impl Session {
         }
     }
 
+    /// A resource of another kind (a NAM model as bytes, a SoundFont as a file): the same, through the store's kinds
+    fn request_kind(&mut self, r: &Resource) {
+        if self.kind_ops.list.iter().any(|op| op.data == *r) {
+            return;
+        }
+        match self.resources.begin_load_kind(r.kind(), r.key()) {
+            Ok(job) => {
+                let delay = self.delay;
+                let target = Target::Resource(r.clone());
+                self.activity.clear(&target);
+                let handle = self.workers.start(move |cancel, progress| {
+                    sleep_cancellable(delay, cancel)?;
+                    job.run(cancel, progress)
+                });
+                let started = self.clock.now();
+                self.kind_ops.push(Op {
+                    handle,
+                    label: Label::new("session.loading_resource"),
+                    target,
+                    cancellable: true,
+                    started,
+                    data: r.clone(),
+                });
+            }
+            Err(lm_io::ResourceState::Missing) => {
+                self.needs_compile = true;
+            }
+            Err(lm_io::ResourceState::Failed(e)) => {
+                self.activity.fail(Target::Resource(r.clone()), e);
+            }
+            Err(_) => {}
+        }
+    }
+
     /// Starts the builds whose resources are all loaded (C11); asks for the others' resources
     fn start_ready_builds(&mut self) {
         let waiting = std::mem::take(&mut self.builds_waiting);
@@ -1129,7 +1193,7 @@ impl Session {
             let cited = self.build_resources(&b);
             let mut ready = true;
             for r in &cited {
-                match self.resources.state(r.key()) {
+                match self.resources.state_kind(r.kind(), r.key()) {
                     lm_io::ResourceState::Ready | lm_io::ResourceState::OnDisk => {}
                     lm_io::ResourceState::Missing | lm_io::ResourceState::Failed(_) => {
                         // A missing resource: the plugin decides (a wave not played is no error); built without it
@@ -1167,8 +1231,12 @@ impl Session {
         let view = self.resources.view();
         let mut resources = lm_plugin::ResourceView::new();
         for r in cited {
-            if let Some(d) = view.get(r.key()) {
-                resources.insert(r.clone(), lm_plugin::Loaded::Audio(d.clone()));
+            if r.kind() == "audio" {
+                if let Some(d) = view.get(r.key()) {
+                    resources.insert(r.clone(), lm_plugin::Loaded::Audio(d.clone()));
+                }
+            } else if let Some(c) = view.content(r.kind(), r.key()) {
+                resources.insert(r.clone(), plugin_content(c));
             }
         }
         let plugins = self.plugins.clone();
@@ -1217,7 +1285,15 @@ impl Session {
                 Err(e) => {
                     self.notices.error(&e, Some(op.target.clone()), None);
                     self.activity.fail(op.target, e);
-                    let _ = op.data.node;
+                    // Unless a newer build of the node is on its way
+                    let node = op.data.node;
+                    let newer = self.build_ops.list.iter().any(|o| o.data.node == node)
+                        || self.builds_waiting.iter().any(|w| w.node == node);
+                    if !newer {
+                        self.failed_builds.insert(node);
+                        self.waiting_nodes.remove(&node);
+                        self.replacing_nodes.remove(&node);
+                    }
                 }
             }
         }
@@ -1232,6 +1308,21 @@ impl Session {
                 Err(e) => {
                     self.activity.fail(op.target.clone(), e.clone());
                     self.resources.finish(&op.data, Err(e));
+                }
+            }
+        }
+        for (op, result) in self.kind_ops.finished(now, &mut done) {
+            changed = true;
+            let r = &op.data;
+            match result {
+                Ok(loaded) => {
+                    self.resources.finish_kind(r.kind(), r.key(), Ok(loaded));
+                    self.needs_compile = true;
+                }
+                Err(e) if e.is_cancelled() => self.resources.finish_kind(r.kind(), r.key(), Err(e)),
+                Err(e) => {
+                    self.activity.fail(op.target.clone(), e.clone());
+                    self.resources.finish_kind(r.kind(), r.key(), Err(e));
                 }
             }
         }
@@ -2482,12 +2573,17 @@ impl Session {
         self.resources.state(key)
     }
 
+    /// The state of a resource of any kind
+    pub fn resource_state_of(&self, r: &Resource) -> lm_io::ResourceState {
+        self.resources.state_kind(r.kind(), r.key())
+    }
+
     /// Ends the session the way U13 asks: the recording stops and closes, cancellable operations are cancelled,
     /// the others finish, the journal reaches the disk. The caller asks about saving before
     pub fn close(mut self) {
         self.watchdog.shared.running.store(false, Ordering::Release);
         self.stop();
-        let lists: [&dyn OpList; 3] = [&self.open_ops, &self.load_ops, &self.import_ops];
+        let lists: [&dyn OpList; 4] = [&self.open_ops, &self.load_ops, &self.kind_ops, &self.import_ops];
         for l in lists {
             l.cancel_all();
         }
@@ -2577,4 +2673,12 @@ pub fn read_project(
 /// Where a project's file lives, for the tools
 pub fn project_file(folder: &Path) -> PathBuf {
     ProjectFolder::new(folder).project()
+}
+
+/// A loaded resource of another kind as a build sees it
+pub(crate) fn plugin_content(c: &lm_io::Content) -> lm_plugin::Loaded {
+    match c {
+        lm_io::Content::Bytes(b) => lm_plugin::Loaded::Bytes(b.clone()),
+        lm_io::Content::File(p) => lm_plugin::Loaded::File(Arc::from(p.as_path())),
+    }
 }

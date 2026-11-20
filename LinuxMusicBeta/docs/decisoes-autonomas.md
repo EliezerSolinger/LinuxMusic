@@ -1248,3 +1248,11 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   dura, a barra afinada é quase harmônica, e em Ré♯5 os truncamentos se cancelam (0,02 cent nas quatro taxas). A
   afinação de cada preset em cada taxa e 30 min de arco (0,0002 cent) são testados pela frequência do modo fundamental
   em `tests/rates.rs`.
+- **Recursos de outros tipos na sessão (U24, C9):** a sessão pede ao `lm-io` pelo tipo (`begin_load_kind`/`finish_kind`,
+  operação própria `kind_ops`); o build recebe `Loaded::Bytes` (NAM, IR, wavetable, preset) ou `Loaded::File`
+  (SoundFont, .gig, kits), conforme `lm_io::kind_policy`; a exportação lê pela mesma política. Teste com o AmpAndIr:
+  um `.nam` importado em `state/` molda o som ao vivo e na exportação; um ausente dá `Missing` ("localizar arquivo").
+- **Duas folgas do "assentado" corrigidas:** (1) entre o `submit` e o compilador pegar o trabalho (e entre terminar e
+  publicar o resultado) não havia atividade e a sessão se dizia assentada; o `Compiler` ganhou `pending()` (número da
+  submissão contra o da última respondida). (2) um build que falha (um plugin que recusa recurso ausente) deixava o
+  nó em substituição para sempre; agora fica em `failed_builds` até o documento pedir outro build dele.

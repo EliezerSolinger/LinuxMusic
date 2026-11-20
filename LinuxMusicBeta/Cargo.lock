@@ -3840,6 +3840,7 @@ dependencies = [
  "lm-midimap",
  "lm-plugin",
  "lm-plugin-proxy",
+ "lm-plugins-ampandir",
  "lm-plugins-effects",
  "lm-plugins-testsine",
  "lm-plugins-tripleoscillator",

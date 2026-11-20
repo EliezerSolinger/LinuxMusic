@@ -301,3 +301,55 @@ fn the_dry_side_is_delayed_by_the_inserts_latency() {
     assert_eq!(hits.len(), 1, "{hits:?}");
     assert!((hits[0].1 - 1.0).abs() < 1.0e-6, "{hits:?}");
 }
+
+#[test]
+fn a_resource_of_another_kind_reaches_its_plugin_as_bytes() {
+    // AmpAndIr's `nam` (lm-io's kinds, U24): imported into state/, loaded as bytes in an operation, given to the
+    // build, and to the export
+    let dir = TempDir::new("kinds");
+    let mut config = common::config(&dir);
+    let mut all: Vec<&'static lm_plugin::Descriptor> =
+        vec![&lm_plugins_testsine::DESCRIPTOR, &lm_plugins_ampandir::DESCRIPTOR];
+    all.extend(lm_plugins_effects::ALL.iter().copied());
+    config.registry = lm_plugin::Registry::new(&all).expect("registry");
+    let mut s = Session::new(config).expect("session");
+    let c = setup(&mut s, &dir);
+    let model =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../lm-plugins-ampandir/ab/data/wavenet-48000.nam");
+    let imported = lm_io::import_file_as(&model, s.project().folder.root(), "nam", &Cancel::new(), &Progress::new())
+        .expect("import");
+    let nam = lm_state::Resource::new("nam", &imported.key).expect("resource");
+    let mut insert = None;
+    s.document_mut()
+        .transact(Label::new("test.insert"), |e| {
+            let state = Value::object([("nam", Value::NULL)]);
+            let p = Value::object([("plugin", Value::text("ampandir")), ("version", Value::int(1)), ("state", state)]);
+            insert = Some(e.insert(c, "inserts", 0, p)?);
+            Ok(())
+        })
+        .expect("insert");
+    settle(&mut s);
+    let p = insert.expect("p");
+    let (plain, _) = render(&s, &dir, "no-model.wav");
+    s.document_mut()
+        .transact(Label::new("test.model"), |e| {
+            e.set(p, &[PathStep::key("state"), PathStep::key("nam")], Value::resource(nam.clone()))
+        })
+        .expect("model");
+    settle(&mut s);
+    assert_eq!(s.resource_state_of(&nam), lm_io::ResourceState::Ready);
+    assert_eq!(s.loading(&lm_port::Target::Node(p)), lm_port::Loading::Ready, "{:?}", s.notices_keys());
+    let (amp, _) = render(&s, &dir, "model.wav");
+    assert_eq!(plain.len(), amp.len());
+    assert!(plain.iter().zip(&amp).any(|(a, b)| (a - b).abs() > 1.0e-3), "the model shapes the sound");
+    // A model the project does not have: Missing, the action "locate file" (H17)
+    let gone = lm_state::Resource::new("nam", &"0".repeat(lm_io::KEY_LEN)).expect("resource");
+    s.document_mut()
+        .transact(Label::new("test.gone"), |e| {
+            e.set(p, &[PathStep::key("state"), PathStep::key("nam")], Value::resource(gone.clone()))
+        })
+        .expect("gone");
+    settle(&mut s);
+    assert_eq!(s.resource_state_of(&gone), lm_io::ResourceState::Missing);
+    assert!(matches!(s.loading(&lm_port::Target::Node(p)), lm_port::Loading::Missing { .. }));
+}

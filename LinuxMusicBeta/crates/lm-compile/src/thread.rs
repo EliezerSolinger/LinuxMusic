@@ -8,6 +8,7 @@
 
 use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -38,6 +39,8 @@ enum Message {
 }
 
 struct Job {
+    /// The number of the submission (the newest one is compiled, R17)
+    seq: u64,
     root: Value,
     resources: Arc<dyn Resources>,
     env: Environment,
@@ -55,6 +58,9 @@ struct Shared {
     wake: Condvar,
     results: Mutex<VecDeque<Result<Compiled>>>,
     activity: Mutex<Option<CompileActivity>>,
+    /// Submissions made, and the newest one whose result is in `results`: a submission is pending until then
+    submitted: AtomicU64,
+    answered: AtomicU64,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -90,6 +96,8 @@ impl Compiler {
             wake: Condvar::new(),
             results: Mutex::new(VecDeque::new()),
             activity: Mutex::new(None),
+            submitted: AtomicU64::new(0),
+            answered: AtomicU64::new(0),
         });
         let s = Arc::clone(&shared);
         let thread = std::thread::Builder::new()
@@ -107,7 +115,8 @@ impl Compiler {
     /// Compiles `root` (with the resources loaded now and the machine's environment). Only the newest submitted
     /// root is compiled (R17)
     pub fn submit(&mut self, root: Value, resources: Arc<dyn Resources>, env: Environment) {
-        lock(&self.shared.inbox).job = Some(Job { root, resources, env });
+        let seq = self.shared.submitted.fetch_add(1, Ordering::AcqRel) + 1;
+        lock(&self.shared.inbox).job = Some(Job { seq, root, resources, env });
         self.shared.wake.notify_one();
     }
 
@@ -164,6 +173,12 @@ impl Compiler {
     /// Starts over from a table (H14)
     pub fn rebuild(&mut self, table: InstalledTable) {
         self.send(Message::Rebuild(Box::new(table)));
+    }
+
+    /// A submitted root has no result yet: queued, compiling, or between the two. Unlike [`Compiler::activity`],
+    /// true from the moment of `submit` until its result can be polled (a session waiting to be settled)
+    pub fn pending(&self) -> bool {
+        self.shared.answered.load(Ordering::Acquire) < self.shared.submitted.load(Ordering::Acquire)
     }
 
     /// A compilation running, and since when (T10)
@@ -267,6 +282,7 @@ fn run(mut core: CompilerCore, shared: &Shared) {
             .err()
             .is_some_and(|e| matches!(e.key(), "compile.limits.nodes_pending" | "compile.limits.params_pending"));
         lock(&shared.results).push_back(result);
+        shared.answered.fetch_max(job.seq, Ordering::AcqRel);
         last = Some(job);
     }
 }

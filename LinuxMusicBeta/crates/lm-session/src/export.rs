@@ -53,6 +53,22 @@ impl Resources for AllLoaded {
     }
 }
 
+/// A resource of another kind, read as the session's store reads it (`lm_io::kind_policy`): bytes, or a checked
+/// file; `None` when the project does not have it
+fn load_kind(project: &Path, r: &Resource, cancel: &Cancel) -> Result<Option<lm_io::Content>> {
+    let Some(path) = lm_io::resource_path_of(project, r.kind(), r.key())? else { return Ok(None) };
+    let io = |e: std::io::Error| crate::folder::io_error("session.export.read", &path, &e);
+    let size = std::fs::metadata(&path).map_err(io)?.len();
+    cancel.check()?;
+    if lm_io::kind_policy(r.kind()) == lm_io::KindPolicy::Bytes && size <= lm_io::BYTES_MAX {
+        let bytes = std::fs::read(&path).map_err(io)?;
+        Ok(Some(lm_io::Content::Bytes(Arc::from(bytes.into_boxed_slice()))))
+    } else {
+        std::fs::File::open(&path).map_err(io)?;
+        Ok(Some(lm_io::Content::File(path)))
+    }
+}
+
 /// The last sample of the song: the end of its last item
 pub fn song_end(root: &Value) -> Result<i64> {
     let map = tempo_map(root)?;
@@ -156,27 +172,27 @@ pub fn export(job: ExportJob, target: &ExportTarget, cancel: &Cancel, progress: 
     let mut audio = std::collections::BTreeMap::new();
     let mut cited = Vec::new();
     root.walk(&mut |_, v| {
-        if let Some(r) = v.as_resource()
-            && r.kind() == "audio"
-        {
+        if let Some(r) = v.as_resource() {
             cited.push(r.clone());
         }
     });
     cited.sort();
     cited.dedup();
-    for r in &cited {
-        cancel.check()?;
-        let path = lm_io::resource_path(project, r.key())?
-            .ok_or_else(|| Error::new("session.export.missing").arg("resource", r.key()))?;
-        audio.insert(r.key().to_owned(), lm_io::load_file(&path, cancel, &Progress::new())?);
-    }
-    let resources = AllLoaded { audio };
     let mut plugin_view = lm_plugin::ResourceView::new();
     for r in &cited {
-        if let Some(d) = resources.audio.get(r.key()) {
+        cancel.check()?;
+        if r.kind() == "audio" {
+            let path = lm_io::resource_path(project, r.key())?
+                .ok_or_else(|| Error::new("session.export.missing").arg("resource", r.key()))?;
+            let d = lm_io::load_file(&path, cancel, &Progress::new())?;
             plugin_view.insert(r.clone(), lm_plugin::Loaded::Audio(d.clone()));
+            audio.insert(r.key().to_owned(), d);
+        } else if let Some(c) = load_kind(project, r, cancel)? {
+            // A missing one of another kind: the plugin builds without it, as in the session
+            plugin_view.insert(r.clone(), crate::session::plugin_content(&c));
         }
     }
+    let resources = AllLoaded { audio };
     // Compile, build what it asks, compile again, until nothing waits
     let mut core =
         CompilerCore::new(CompilerConfig { spec, limits, schemas: schemas.clone(), plugins: plugins.clone() });

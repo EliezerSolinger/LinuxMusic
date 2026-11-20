@@ -35,4 +35,6 @@ blake3.workspace = true
 rustix = { workspace = true, features = ["system"] }
 
 [dev-dependencies]
+# A plugin whose resource is not audio (a NAM model, read as bytes)
+lm-plugins-ampandir.workspace = true
 assert_no_alloc.workspace = true
