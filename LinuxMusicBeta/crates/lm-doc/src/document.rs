@@ -81,6 +81,13 @@ impl GestureId {
         self.raw
     }
 
+    /// A handle for a gesture opened elsewhere, by its number: the RemotePort's id of a gesture the server opened
+    /// (I-15). Not armed: dropping it commits nothing. A number this document did not issue, or a gesture already
+    /// closed, is refused with `doc.gesture.closed` by `gesture_update`, `gesture_commit` and `gesture_cancel`
+    pub fn from_raw(raw: u64) -> Self {
+        Self { raw, dropped: None }
+    }
+
     fn disarm(mut self) -> u64 {
         self.dropped = None;
         self.raw

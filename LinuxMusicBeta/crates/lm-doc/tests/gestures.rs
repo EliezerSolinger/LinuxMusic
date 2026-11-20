@@ -278,3 +278,33 @@ fn the_journal_carries_gestures_cancels_and_undo() {
     }
     assert_eq!(lm_doc::replay(&base, &patches).unwrap(), *doc.root());
 }
+
+/// I-15: the RemotePort names a gesture by its number. A number this document did not issue, or one already
+/// closed, is refused with an error and never panics; an unarmed handle commits nothing when dropped
+#[test]
+fn a_gesture_from_a_raw_number_is_refused_unless_open() {
+    use lm_doc::GestureId;
+    let (mut doc, a, _) = setup();
+    let steps = doc.history_len();
+    for raw in [0, 7, 999_999, u64::MAX] {
+        let g = GestureId::from_raw(raw);
+        let err = doc.gesture_update(&g, |e| e.set_param(a, "volume", 0.5)).unwrap_err();
+        assert_eq!(err.label.key, "doc.gesture.closed");
+        assert_eq!(doc.gesture_commit(GestureId::from_raw(raw)).unwrap_err().label.key, "doc.gesture.closed");
+        assert_eq!(doc.gesture_cancel(GestureId::from_raw(raw)).unwrap_err().label.key, "doc.gesture.closed");
+        drop(g);
+    }
+    assert_eq!(volume(&doc, a), 1.0);
+    assert_eq!(doc.history_len(), steps);
+    // a real gesture, named again by its number: it works, and once committed the number is closed
+    let g = doc.begin_gesture(label("test.drag"));
+    let raw = g.raw();
+    doc.gesture_update(&GestureId::from_raw(raw), |e| e.set_param(a, "volume", 0.4)).unwrap();
+    doc.gesture_commit(GestureId::from_raw(raw)).unwrap();
+    assert_eq!(volume(&doc, a), 0.4);
+    assert_eq!(doc.gesture_commit(g).unwrap_err().label.key, "doc.gesture.closed");
+    let mut feed = doc.feed(Topic::All);
+    doc.deliver();
+    let _ = feed.drain(&doc);
+    assert_eq!(doc.history_len(), steps + 1);
+}
