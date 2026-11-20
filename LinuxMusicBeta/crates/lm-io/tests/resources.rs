@@ -13,8 +13,12 @@ use lm_io::*;
 use lm_sys_sndfile::{Existing, Sample, WriteFormat, WriteSpec, Writer};
 
 fn write_wav(path: &Path, rate: u32, channels: usize, frames: usize) {
-    let mut w = Writer::create(path, WriteSpec { format: WriteFormat::Wav(Sample::Float32), rate, channels }, Existing::Replace)
-        .expect("create");
+    let mut w = Writer::create(
+        path,
+        WriteSpec { format: WriteFormat::Wav(Sample::Float32), rate, channels },
+        Existing::Replace,
+    )
+    .expect("create");
     let samples: Vec<f32> = (0..frames * channels).map(|i| ((i as f32) * 0.001).sin() * 0.5).collect();
     w.write_f32(&samples).expect("write");
     w.close().expect("close");
@@ -138,15 +142,20 @@ fn missing_bad_keys_and_links_out() {
     let key = "0".repeat(64);
     assert!(matches!(store.begin_load(&key), Err(ResourceState::Missing)));
     assert_eq!(store.state(&key), ResourceState::Missing);
-    assert!(matches!(store.begin_load("../../etc/passwd"), Err(ResourceState::Failed(e)) if e.key() == "io.resource.invalid_key"));
+    assert!(
+        matches!(store.begin_load("../../etc/passwd"), Err(ResourceState::Failed(e)) if e.key() == "io.resource.invalid_key")
+    );
     let outside = dir.0.join("secret.wav");
     write_wav(&outside, 48_000, 1, 100);
     let k2 = "1".repeat(64);
     std::os::unix::fs::symlink(&outside, project.join("audio").join(format!("{k2}.wav"))).expect("link");
     assert!(matches!(store.begin_load(&k2), Err(ResourceState::Failed(e)) if e.key() == "io.resource.outside_project"));
     // External files only inside allowed folders
-    assert_eq!(resolve_external(&outside, &[project.clone()]).expect_err("not allowed").key(), "io.resource.not_allowed");
-    assert!(resolve_external(&outside, &[dir.0.clone()]).is_ok());
+    assert_eq!(
+        resolve_external(&outside, std::slice::from_ref(&project)).expect_err("not allowed").key(),
+        "io.resource.not_allowed"
+    );
+    assert!(resolve_external(&outside, std::slice::from_ref(&dir.0)).is_ok());
     // A located file is the resource only if its hash is the key
     let (c, p) = ops();
     assert!(!verify_located(&outside, &key, &c, &p).expect("hash"));

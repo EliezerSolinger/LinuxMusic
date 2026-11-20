@@ -19,8 +19,9 @@ use lm_render::{DeviceBlock, RenderThreads};
 
 use crate::backend::{Backend, CallbackGuard, CallbackHandle, DeviceCallback, DeviceConfig};
 
-/// The burst's length in frames
-pub const BURST: usize = 2048;
+/// The burst's default length in frames: long enough for a small speaker into a laptop microphone over a fan
+/// (the correlation gains about 3 dB each time the length doubles)
+pub const BURST: usize = 16_384;
 
 /// How to measure
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -37,6 +38,8 @@ pub struct CalibrationOptions {
     pub max_latency: Duration,
     /// How far the correlation peak must stand above the correlation's RMS
     pub min_snr: f32,
+    /// The burst's length in frames
+    pub burst_frames: usize,
 }
 
 impl Default for CalibrationOptions {
@@ -46,9 +49,10 @@ impl Default for CalibrationOptions {
             input_channel: 0,
             measures: 5,
             level: 0.5,
-            spacing: Duration::from_millis(700),
+            spacing: Duration::from_millis(1200),
             max_latency: Duration::from_millis(500),
             min_snr: 8.0,
+            burst_frames: BURST,
         }
     }
 }
@@ -77,16 +81,17 @@ pub struct Calibration {
     pub snr: f32,
 }
 
-/// The burst: deterministic white noise under a Hann window
-pub fn burst(level: f32) -> Vec<f32> {
+/// The burst: deterministic white noise under a Hann window, `frames` long
+pub fn burst(level: f32, frames: usize) -> Vec<f32> {
+    let frames = frames.max(64);
     let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
-    (0..BURST)
+    (0..frames)
         .map(|i| {
             x ^= x << 13;
             x ^= x >> 7;
             x ^= x << 17;
             let noise = ((x >> 40) as f32 / (1u64 << 24) as f32) * 2.0 - 1.0;
-            let w = 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / (BURST - 1) as f32).cos();
+            let w = 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / (frames - 1) as f32).cos();
             noise * w * level
         })
         .collect()
@@ -113,7 +118,7 @@ impl DeviceCallback for Measure {
                 if c == self.out_ch {
                     let f = self.frame + k as u64;
                     for s in &self.starts {
-                        if f >= *s && f < *s + BURST as u64 {
+                        if f >= *s && f < *s + self.burst.len() as u64 {
                             *x = self.burst[(f - s) as usize];
                         }
                     }
@@ -141,8 +146,9 @@ impl DeviceCallback for Measure {
 }
 
 /// The lag (in frames, from 0 to `max_lag`) at which `burst` best matches `capture[from..]`, and how far the peak
-/// stands above the correlation's RMS
-pub fn find_lag(capture: &[f32], from: usize, burst: &[f32], max_lag: usize) -> (usize, f32) {
+/// stands above the correlation's RMS away from the peak (`echo` frames after it are the room's reflections, left
+/// out of the noise)
+pub fn find_lag(capture: &[f32], from: usize, burst: &[f32], max_lag: usize, echo: usize) -> (usize, f32) {
     let n = burst.len();
     let mut corr = Vec::with_capacity(max_lag + 1);
     for lag in 0..=max_lag {
@@ -160,18 +166,27 @@ pub fn find_lag(capture: &[f32], from: usize, burst: &[f32], max_lag: usize) -> 
     if corr.is_empty() {
         return (0, 0.0);
     }
-    let (best, peak) = corr.iter().enumerate().fold((0, 0.0f64), |(bi, bv), (i, v)| if v.abs() > bv { (i, v.abs()) } else { (bi, bv) });
+    let (best, peak) = corr
+        .iter()
+        .enumerate()
+        .fold((0, 0.0f64), |(bi, bv), (i, v)| if v.abs() > bv { (i, v.abs()) } else { (bi, bv) });
     // The noise floor: the correlation away from the peak (a burst wide on each side excluded)
     let mut sum = 0.0f64;
     let mut count = 0usize;
     for (i, v) in corr.iter().enumerate() {
-        if i + n < best || i > best + n {
+        if i + n < best || i > best + n + echo {
             sum += v * v;
             count += 1;
         }
     }
     let rms = if count > 0 { (sum / count as f64).sqrt() } else { 0.0 };
-    let snr = if rms > 0.0 { (peak / rms) as f32 } else if peak > 0.0 { f32::INFINITY } else { 0.0 };
+    let snr = if rms > 0.0 {
+        (peak / rms) as f32
+    } else if peak > 0.0 {
+        f32::INFINITY
+    } else {
+        0.0
+    };
     (best, snr)
 }
 
@@ -212,10 +227,10 @@ fn run(
     // Half a second of settling before the first burst (the device's start, filters filling)
     let first = (0.5 * rate) as u64;
     let starts: Vec<u64> = (0..o.measures.max(1) as u64).map(|k| first + k * spacing).collect();
-    let total = starts.last().copied().unwrap_or(0) as usize + BURST + max_lag + info.max_block * 4;
+    let total = starts.last().copied().unwrap_or(0) as usize + o.burst_frames + max_lag + info.max_block * 4;
     let done = Arc::new(AtomicBool::new(false));
     let frames = Arc::new(AtomicU64::new(0));
-    let signal = burst(o.level);
+    let signal = burst(o.level, o.burst_frames);
     let measure = Measure {
         burst: signal.clone(),
         starts: starts.clone(),
@@ -262,7 +277,7 @@ fn run(
     let mut snr_min = f32::INFINITY;
     for s in &starts {
         cancel.check()?;
-        let (lag, snr) = find_lag(&m.capture, *s as usize, &signal, max_lag);
+        let (lag, snr) = find_lag(&m.capture, *s as usize, &signal, max_lag, info.rate as usize / 10);
         if snr < o.min_snr {
             return Err(Error::new("io.calibration.no_signal").arg("snr", f64::from(snr)));
         }
@@ -294,7 +309,7 @@ mod tests {
 
     #[test]
     fn lag_is_found_under_broadband_noise() {
-        let b = burst(0.3);
+        let b = burst(0.3, 2048);
         let mut capture = vec![0.0f32; 20_000];
         let mut x: u32 = 12345;
         for s in capture.iter_mut() {
@@ -304,7 +319,7 @@ mod tests {
         for (k, v) in b.iter().enumerate() {
             capture[1000 + 3333 + k] += v * 0.2;
         }
-        let (lag, snr) = find_lag(&capture, 1000, &b, 10_000);
+        let (lag, snr) = find_lag(&capture, 1000, &b, 10_000, 0);
         assert_eq!(lag, 3333);
         assert!(snr > 8.0, "snr {snr}");
     }

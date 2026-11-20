@@ -134,11 +134,17 @@ pub fn wait_for(secs: u64, what: &str, mut f: impl FnMut() -> bool) {
 }
 
 /// A started Dummy device with an engine
-pub fn dummy_device(options: DummyOptions, config: &DeviceConfig) -> (Device, EngineControl, Arc<DummyControl>, DeviceInfo) {
+pub fn dummy_device(
+    options: DummyOptions,
+    config: &DeviceConfig,
+) -> (Device, EngineControl, Arc<DummyControl>, DeviceInfo) {
     dummy_device_with(DummyBackend::new(options), config)
 }
 
-pub fn dummy_device_with(backend: DummyBackend, config: &DeviceConfig) -> (Device, EngineControl, Arc<DummyControl>, DeviceInfo) {
+pub fn dummy_device_with(
+    backend: DummyBackend,
+    config: &DeviceConfig,
+) -> (Device, EngineControl, Arc<DummyControl>, DeviceInfo) {
     install_panic_hook();
     let control = backend.control();
     let mut device = Device::new(Box::new(backend), RenderThreads::default());

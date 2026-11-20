@@ -12,6 +12,8 @@ use lm_io::*;
 use lm_render::*;
 use lm_sys_sndfile::Reader;
 
+// The trap exists in debug builds only (assert_no_alloc compiles it out of release)
+#[cfg(debug_assertions)]
 #[global_allocator]
 static ALLOC: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 
@@ -19,7 +21,11 @@ fn plan(folder: &Path, rate: u32, inputs: &[&[u16]]) -> RecordPlan {
     let inputs = inputs
         .iter()
         .enumerate()
-        .map(|(k, ch)| RecordInput { input: InputIndex(k as u32), channels: ch.to_vec(), tracks: vec![format!("t:{k}")] })
+        .map(|(k, ch)| RecordInput {
+            input: InputIndex(k as u32),
+            channels: ch.to_vec(),
+            tracks: vec![format!("t:{k}")],
+        })
         .collect();
     let mut p = RecordPlan::new(folder.to_path_buf(), inputs, rate);
     p.latency = 123;
@@ -83,7 +89,8 @@ fn records_a_take() {
     let dir = TempDir::new("take");
     let options = DummyOptions { pace: Pace::Free { speed: Some(50.0) }, ..DummyOptions::default() };
     let backend = DummyBackend::new(options).with_source(Box::new(Ramp));
-    let (mut device, mut engine, control, info) = dummy_device_with(backend, &DeviceConfig::duplex("dummy", 48_000, 256));
+    let (mut device, mut engine, control, info) =
+        dummy_device_with(backend, &DeviceConfig::duplex("dummy", 48_000, 256));
     let mut disk = DiskWriter::start().expect("disk");
     let (sender, receiver) = recording_channel(plan(&dir.0, 48_000, &[&[0, 1], &[1]])).expect("channel");
     disk.record(receiver).expect("record");
@@ -128,7 +135,8 @@ fn one_hour_without_loss_and_an_xrun_on_the_grid() {
     let rate = 8_000;
     let hour = u64::from(rate) * 3600;
     let speed = 200.0;
-    let options = DummyOptions { inputs: 1, outputs: 1, pace: Pace::Free { speed: Some(speed) }, ..DummyOptions::default() };
+    let options =
+        DummyOptions { inputs: 1, outputs: 1, pace: Pace::Free { speed: Some(speed) }, ..DummyOptions::default() };
     let backend = DummyBackend::new(options).with_source(Box::new(Ramp));
     let mut cfg = DeviceConfig::duplex("dummy", rate, 256);
     cfg.playback_channels = Some(1);
@@ -240,7 +248,11 @@ fn loop_cuts_and_punch_handles() {
     let mut b = ProgramBuilder::new(ProgramGen(1), spec, &limits(), tempo(rate));
     b.node(NodeDesc::sum(n(0), 2));
     b.master(n(0));
-    b.transport(TransportSettings { loop_range: Some((10_000, 30_000)), punch: Some((15_000, 25_000)), ..Default::default() });
+    b.transport(TransportSettings {
+        loop_range: Some((10_000, 30_000)),
+        punch: Some((15_000, 25_000)),
+        ..Default::default()
+    });
     engine.install(Install::new(b.build().expect("program"))).expect("install");
     let mut disk = DiskWriter::start().expect("disk");
     let (sender, receiver) = recording_channel(plan(&dir.0, rate, &[&[0]])).expect("channel");
@@ -300,7 +312,13 @@ fn finalize_names_by_hash_and_writes_peaks() {
     let (t, _) = takes(&mut disk, 2, 20);
     assert!(t.iter().all(|t| t.frames >= i64::from(rate)));
     disk.live_peaks(|_| live += 1);
-    assert!(live > 2 * 700, "U3: the growing waveform ({live} live pairs, {} dropped, frames {} {})", disk.live_dropped(), t[0].frames, t[1].frames);
+    assert!(
+        live > 2 * 700,
+        "U3: the growing waveform ({live} live pairs, {} dropped, frames {} {})",
+        disk.live_dropped(),
+        t[0].frames,
+        t[1].frames
+    );
     let cancel = Cancel::new();
     let progress = Progress::new();
     let a = finalize_take(&t[0], TakeFormat::Float32, &cancel, &progress).expect("finalize");

@@ -12,7 +12,7 @@
 //!   real-time bytes inside messages and sysex skipped (F1 has no sysex, T14); stamped on arrival.
 //!
 //! [`MidiInput::stop`] (and `Drop`) waits for the thread to leave. Listing the ports is an `Operation`
-//! ([`list_midi_ports`]).
+//! (`list_midi_ports`, Linux).
 
 use std::fmt;
 use std::sync::Arc;
@@ -20,7 +20,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 
 use lm_base::HostTime;
-use lm_render::{COMMAND_RING_CAPACITY, Command, CommandReceiver, CommandSender, PortIndex, ProducerIndex, command_ring};
+use lm_render::{
+    COMMAND_RING_CAPACITY, Command, CommandReceiver, CommandSender, PortIndex, ProducerIndex, command_ring,
+};
 
 /// Where a MIDI input's messages go
 pub trait MidiSink: Send {
@@ -244,7 +246,12 @@ impl MidiInput {
     /// Opens a sequencer input connected to `source` (`(client, port)`), delivering to `sink` as `port`. Not
     /// real-time; opening talks to the kernel: from an `Operation`
     #[cfg(target_os = "linux")]
-    pub fn open_seq(name: &str, source: Option<(u8, u8)>, port: PortIndex, mut sink: Box<dyn MidiSink>) -> lm_base::Result<MidiInput> {
+    pub fn open_seq(
+        name: &str,
+        source: Option<(u8, u8)>,
+        port: PortIndex,
+        mut sink: Box<dyn MidiSink>,
+    ) -> lm_base::Result<MidiInput> {
         use lm_sys_alsa::{Addr, ReadOutcome, SeqInput};
         let mut input = lm_sys_alsa::MidiInput::open("LinuxMusic", name, true)?;
         if let Some((client, p)) = source {
@@ -297,7 +304,11 @@ impl MidiInput {
 
     /// Opens a raw MIDI device file (P-16), delivering to `sink` as `port`, stamped on arrival
     #[cfg(target_os = "linux")]
-    pub fn open_raw(path: &std::path::Path, port: PortIndex, mut sink: Box<dyn MidiSink>) -> lm_base::Result<MidiInput> {
+    pub fn open_raw(
+        path: &std::path::Path,
+        port: PortIndex,
+        mut sink: Box<dyn MidiSink>,
+    ) -> lm_base::Result<MidiInput> {
         use rustix::event::{EventfdFlags, PollFd, PollFlags, eventfd, poll};
         use rustix::fs::{Mode, OFlags, open};
         let fd = open(path, OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC, Mode::empty()).map_err(|e| {
@@ -336,7 +347,8 @@ impl MidiInput {
                     if stop.contains(PollFlags::IN) {
                         break;
                     }
-                    if dev.intersects(PollFlags::ERR | PollFlags::HUP | PollFlags::NVAL) && !dev.contains(PollFlags::IN) {
+                    if dev.intersects(PollFlags::ERR | PollFlags::HUP | PollFlags::NVAL) && !dev.contains(PollFlags::IN)
+                    {
                         // The device went away
                         c.failed.store(true, Ordering::Release);
                         break;
@@ -463,14 +475,22 @@ mod tests {
         let out = parse(&[0x90, 60, 100, 0xf0, 1, 2, 3, 0xf7, 61, 62, 0xc0, 5, 6]);
         assert_eq!(
             out,
-            vec![Parsed::Message([0x90, 60, 100]), Parsed::SysexSkipped, Parsed::Message([0xc0, 5, 0]), Parsed::Message([0xc0, 6, 0])]
+            vec![
+                Parsed::Message([0x90, 60, 100]),
+                Parsed::SysexSkipped,
+                Parsed::Message([0xc0, 5, 0]),
+                Parsed::Message([0xc0, 6, 0])
+            ]
         );
     }
 
     #[test]
     fn system_common_and_stray_data() {
         let out = parse(&[12, 0xf2, 1, 2, 3, 0xf6, 0xb0, 7, 127]);
-        assert_eq!(out, vec![Parsed::Message([0xf2, 1, 2]), Parsed::Message([0xf6, 0, 0]), Parsed::Message([0xb0, 7, 127])]);
+        assert_eq!(
+            out,
+            vec![Parsed::Message([0xf2, 1, 2]), Parsed::Message([0xf6, 0, 0]), Parsed::Message([0xb0, 7, 127])]
+        );
     }
 
     #[test]

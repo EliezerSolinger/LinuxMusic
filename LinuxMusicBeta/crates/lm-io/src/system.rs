@@ -34,6 +34,13 @@ pub struct SleepGuard {
     reported: bool,
 }
 
+#[cfg(not(target_os = "linux"))]
+impl Default for SleepGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl fmt::Debug for SleepGuard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SleepGuard").field("state", &self.state).field("wanted", &self.wanted).finish()
@@ -62,10 +69,10 @@ impl SleepGuard {
     /// True while the system is kept awake
     pub fn is_held(&self) -> bool {
         #[cfg(target_os = "linux")]
-        if matches!(self.state, Inhibit::Held(_)) {
-            return true;
-        }
-        false
+        let held = matches!(self.state, Inhibit::Held(_));
+        #[cfg(not(target_os = "linux"))]
+        let held = false;
+        held
     }
 
     /// From the pump: advances the request; returns the failure once (`linux.logind.unavailable`,

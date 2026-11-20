@@ -144,9 +144,9 @@ impl Peaks {
     /// Reads a peaks file, checking every size
     pub fn read(path: &Path) -> Result<Peaks> {
         let mut bytes = Vec::new();
-        File::open(path)
-            .and_then(|mut f| f.read_to_end(&mut bytes))
-            .map_err(|e| Error::new("io.peaks.read_failed").arg("path", path.display().to_string()).arg("message", e.to_string()))?;
+        File::open(path).and_then(|mut f| f.read_to_end(&mut bytes)).map_err(|e| {
+            Error::new("io.peaks.read_failed").arg("path", path.display().to_string()).arg("message", e.to_string())
+        })?;
         Self::parse(&bytes).ok_or_else(|| Error::new("io.peaks.malformed").arg("path", path.display().to_string()))
     }
 
@@ -186,7 +186,7 @@ impl Peaks {
         for p in pairs {
             let n = p.checked_mul(channels)?.checked_mul(2)?;
             let raw = take(n.checked_mul(2)?)?;
-            let data = raw.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+            let data = raw.as_chunks::<2>().0.iter().map(|c| i16::from_le_bytes(*c)).collect();
             levels.push(Level { pairs: p, data });
         }
         if at != bytes.len() {
@@ -300,9 +300,9 @@ impl PeaksBuilder {
                     for group in run.chunks(FACTOR * 2) {
                         let mut lo = i16::MAX;
                         let mut hi = i16::MIN;
-                        for p in group.chunks_exact(2) {
-                            lo = lo.min(p[0]);
-                            hi = hi.max(p[1]);
+                        for [l, h] in group.as_chunks::<2>().0 {
+                            lo = lo.min(*l);
+                            hi = hi.max(*h);
                         }
                         data.push(lo);
                         data.push(hi);
@@ -342,7 +342,7 @@ mod tests {
         }
         assert_eq!(p.pairs(p.levels() - 1), 1);
         // Each pair contains every sample it covers
-        for (i, s) in samples.chunks_exact(2).enumerate() {
+        for (i, s) in samples.as_chunks::<2>().0.iter().enumerate() {
             let (lo, hi) = p.pair(0, 0, i / 64).expect("pair");
             assert!(f32::from(lo) / 32767.0 <= s[0] + 1e-6 && f32::from(hi) / 32767.0 >= s[0] - 1e-6);
         }

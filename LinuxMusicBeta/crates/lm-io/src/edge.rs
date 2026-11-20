@@ -169,7 +169,8 @@ impl Edge {
         } else {
             None
         };
-        let playback = if outputs > 0 && resample { Some(Resampler::new(Quality::Best, outputs, ratio_out)?) } else { None };
+        let playback =
+            if outputs > 0 && resample { Some(Resampler::new(Quality::Best, outputs, ratio_out)?) } else { None };
         let cap_latency = capture.as_ref().map_or(0.0, Resampler::latency);
         let play_latency = playback.as_ref().map_or(0.0, |r| r.latency() * ratio_in);
         // The input FIFO keeps one block plus a period of margin (and with drift, a second period for the clock
@@ -185,12 +186,8 @@ impl Edge {
             in_fifo.push_silence(prefill);
         }
         let out_fifo = Fifo::new(outputs, (block as f64 * ratio_out).ceil() as usize * 4 + device_period * 2 + 64);
-        let drift = drift.then(|| Drift {
-            target: prefill as f64,
-            level: prefill as f64,
-            integral: 0.0,
-            nominal: ratio_in,
-        });
+        let drift =
+            drift.then_some(Drift { target: prefill as f64, level: prefill as f64, integral: 0.0, nominal: ratio_in });
         let scratch_frames = (block as f64 * ratio_out.max(1.0)).ceil() as usize * 2 + device_period * 4 + 64;
         let max_ch = inputs.max(outputs).max(1);
         Ok(Self {
@@ -378,9 +375,8 @@ impl Edge {
         call: &mut dyn FnMut(DeviceBlock<'_, '_>),
     ) {
         let block_ns = self.block as u64 * 1_000_000_000 / u64::from(self.rate);
-        let mut t = HostTime(
-            host_time.0.saturating_sub(self.in_fifo.frames() as u64 * 1_000_000_000 / u64::from(self.rate)),
-        );
+        let mut t =
+            HostTime(host_time.0.saturating_sub(self.in_fifo.frames() as u64 * 1_000_000_000 / u64::from(self.rate)));
         if self.outputs == 0 {
             while self.in_fifo.frames() >= self.block {
                 self.render_one(t, call);
@@ -411,7 +407,9 @@ mod tests {
     use super::*;
 
     fn sine(frames: usize, start: usize, freq: f64, rate: u32) -> Vec<f32> {
-        (0..frames).map(|i| (((start + i) as f64 * freq / f64::from(rate)) * std::f64::consts::TAU).sin() as f32 * 0.5).collect()
+        (0..frames)
+            .map(|i| (((start + i) as f64 * freq / f64::from(rate)) * std::f64::consts::TAU).sin() as f32 * 0.5)
+            .collect()
     }
 
     /// The renderer sees whole blocks at the project rate; a sine through capture → render (copy) → playback keeps

@@ -116,9 +116,13 @@ pub enum RecordLine {
     Cut(LoopCut),
     Gap(TakeGap),
     Stop(TakeStop),
-    End { frames: u64 },
+    End {
+        frames: u64,
+    },
     /// Written by the finalisation: the file's new name
-    Final { file: String },
+    Final {
+        file: String,
+    },
 }
 
 /// The append-only `recording.json` of an open take
@@ -146,7 +150,8 @@ impl RecordFile {
     }
 
     pub(crate) fn append(&mut self, line: &RecordLine) -> Result<()> {
-        let mut text = serde_json::to_string(line).map_err(|e| Error::new("io.record.encode").arg("message", e.to_string()))?;
+        let mut text =
+            serde_json::to_string(line).map_err(|e| Error::new("io.record.encode").arg("message", e.to_string()))?;
         text.push('\n');
         self.file.write_all(text.as_bytes()).map_err(|e| io_error("io.record.write_failed", &self.path, &e))
     }
@@ -215,7 +220,13 @@ pub fn read_record(path: &Path) -> Result<(RecordHeader, Vec<RecordLine>)> {
 }
 
 /// The take a `recording.json` describes, with the audio file's frames as written so far (`frames`)
-pub(crate) fn take_from_record(record: &Path, header: &RecordHeader, events: &[RecordLine], frames: u64, channels: usize) -> Take {
+pub(crate) fn take_from_record(
+    record: &Path,
+    header: &RecordHeader,
+    events: &[RecordLine],
+    frames: u64,
+    channels: usize,
+) -> Take {
     let mut take = Take {
         input: InputIndex(header.input),
         path: record.with_file_name(&header.file),
@@ -238,7 +249,10 @@ pub(crate) fn take_from_record(record: &Path, header: &RecordHeader, events: &[R
                 let mut s = s;
                 s.frames = s.frames.min(frames - s.file_frame);
                 match take.spans.last_mut() {
-                    Some(last) if last.file_frame + last.frames == s.file_frame && last.sample + last.frames as i64 == s.sample => {
+                    Some(last)
+                        if last.file_frame + last.frames == s.file_frame
+                            && last.sample + last.frames as i64 == s.sample =>
+                    {
                         last.frames += s.frames;
                     }
                     _ => take.spans.push(s),
@@ -295,8 +309,10 @@ pub fn recover_take(record: &Path, cancel: &Cancel, progress: &Progress) -> Resu
     let frames = reader.info().frames;
     let channels = reader.info().channels;
     drop(reader);
-    let mut file = OpenOptions::new().append(true).open(record).map_err(|e| io_error("io.record.write_failed", record, &e))?;
-    let line = serde_json::to_string(&RecordLine::End { frames }).map_err(|e| Error::new("io.record.encode").arg("message", e.to_string()))?;
+    let mut file =
+        OpenOptions::new().append(true).open(record).map_err(|e| io_error("io.record.write_failed", record, &e))?;
+    let line = serde_json::to_string(&RecordLine::End { frames })
+        .map_err(|e| Error::new("io.record.encode").arg("message", e.to_string()))?;
     // A crash may have cut the last line: start the end on a line of its own
     file.write_all(format!("\n{line}\n").as_bytes()).map_err(|e| io_error("io.record.write_failed", record, &e))?;
     file.sync_data().map_err(|e| io_error("io.record.write_failed", record, &e))?;
@@ -346,10 +362,8 @@ pub fn finalize_take(take: &Take, format: TakeFormat, cancel: &Cancel, progress:
     let mut source = take.path.clone();
     if format != TakeFormat::Float32 {
         progress.stage(Label::new("io.take.converting"));
-        let converted = folder.join(format!(
-            "{}.convert.tmp",
-            take.path.file_stem().and_then(|s| s.to_str()).unwrap_or("take")
-        ));
+        let converted =
+            folder.join(format!("{}.convert.tmp", take.path.file_stem().and_then(|s| s.to_str()).unwrap_or("take")));
         convert(&source, &converted, format, cancel, progress)?;
         source = converted;
     }
@@ -371,11 +385,15 @@ pub fn finalize_take(take: &Take, format: TakeFormat, cancel: &Cancel, progress:
     }
     let record = folder.join(format!("{key}.recording.json"));
     if take.record.exists() {
-        let mut f = OpenOptions::new().append(true).open(&take.record).map_err(|e| io_error("io.record.write_failed", &take.record, &e))?;
+        let mut f = OpenOptions::new()
+            .append(true)
+            .open(&take.record)
+            .map_err(|e| io_error("io.record.write_failed", &take.record, &e))?;
         let file_name = final_path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned();
         let line = serde_json::to_string(&RecordLine::Final { file: file_name })
             .map_err(|e| Error::new("io.record.encode").arg("message", e.to_string()))?;
-        f.write_all(format!("{line}\n").as_bytes()).map_err(|e| io_error("io.record.write_failed", &take.record, &e))?;
+        f.write_all(format!("{line}\n").as_bytes())
+            .map_err(|e| io_error("io.record.write_failed", &take.record, &e))?;
         f.sync_data().map_err(|e| io_error("io.record.write_failed", &take.record, &e))?;
         std::fs::rename(&take.record, &record).map_err(|e| io_error("io.take.rename_failed", &take.record, &e))?;
     }
@@ -437,7 +455,7 @@ pub fn peaks_of_file(path: &Path, cancel: &Cancel, progress: &Progress) -> Resul
 
 fn convert(from: &Path, to: &Path, format: TakeFormat, cancel: &Cancel, progress: &Progress) -> Result<()> {
     let mut reader = Reader::open(from)?;
-    let info = reader.info().clone();
+    let info = *reader.info();
     let write = match format {
         TakeFormat::Float32 => WriteFormat::Rf64(Sample::Float32),
         TakeFormat::Int24 => WriteFormat::Rf64(Sample::Int24),
@@ -470,7 +488,9 @@ fn convert(from: &Path, to: &Path, format: TakeFormat, cancel: &Cancel, progress
 /// Free space on the file system that holds `path`, in bytes (H3)
 pub fn free_space(path: &Path) -> Result<u64> {
     let st = rustix::fs::statvfs(path).map_err(|e| {
-        Error::new("io.disk.statvfs_failed").arg("path", path.display().to_string()).arg("errno", i64::from(e.raw_os_error()))
+        Error::new("io.disk.statvfs_failed")
+            .arg("path", path.display().to_string())
+            .arg("errno", i64::from(e.raw_os_error()))
     })?;
     Ok(st.f_bavail.saturating_mul(st.f_frsize))
 }

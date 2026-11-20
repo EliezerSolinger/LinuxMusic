@@ -138,7 +138,7 @@ pub struct Device {
     events: Option<Consumer<DeviceEvent>>,
     /// Armed before start, or come back from the driver
     armed: Option<Box<RecordSender>>,
-    returned_senders: Vec<Box<RecordSender>>,
+    returned_senders: Vec<RecordSender>,
     senders_out: usize,
     disconnected: bool,
     arms_sent: u64,
@@ -209,6 +209,9 @@ impl Device {
 
     /// Starts the device thread with `renderer`. The renderer's `max_block` must be at least the device's (C7). On an
     /// error the renderer comes back with it
+    // The renderer comes back by value with the error: a failed start is rare and on the main thread, and boxing
+    // it would allocate on every call
+    #[allow(clippy::result_large_err)]
     pub fn start(&mut self, renderer: Renderer) -> std::result::Result<(), (Error, Renderer)> {
         if self.is_running() {
             return Err((Error::new("io.device.running"), renderer));
@@ -244,7 +247,8 @@ impl Device {
         };
         let (returned_tx, returned) = mpsc::sync_channel(1);
         self.guard = Arc::new(CallbackGuard::default());
-        let (handle, events) = CallbackHandle::new(Box::new(driver), self.guard.clone(), returned_tx, self.threads.clone());
+        let (handle, events) =
+            CallbackHandle::new(Box::new(driver), self.guard.clone(), returned_tx, self.threads.clone());
         if let Err(e) = backend.start(handle) {
             // The handle was dropped by the backend: the driver is already back
             let renderer = match returned.recv_timeout(STOP_TIMEOUT) {
@@ -312,7 +316,7 @@ impl Device {
             State::Stopped => {
                 if let Some(mut s) = self.armed.take() {
                     s.end();
-                    self.returned_senders.push(s);
+                    self.returned_senders.push(*s);
                 }
             }
             State::Running { control, .. } => {
@@ -323,7 +327,7 @@ impl Device {
 
     /// From the main thread's pump: the device's events, and the senders that came back (drop them on the main
     /// thread, rule 5)
-    pub fn poll(&mut self, mut f: impl FnMut(DeviceEvent)) -> Vec<Box<RecordSender>> {
+    pub fn poll(&mut self, mut f: impl FnMut(DeviceEvent)) -> Vec<RecordSender> {
         if let Some(events) = self.events.as_mut() {
             while let Ok(e) = events.pop() {
                 if matches!(e, DeviceEvent::Disconnected | DeviceEvent::Failed { .. } | DeviceEvent::Panicked) {
@@ -335,7 +339,7 @@ impl Device {
         if let State::Running { back, .. } = &mut self.state {
             while let Ok(s) = back.pop() {
                 self.senders_out = self.senders_out.saturating_sub(1);
-                self.returned_senders.push(s);
+                self.returned_senders.push(*s);
             }
         }
         std::mem::take(&mut self.returned_senders)
@@ -366,15 +370,15 @@ impl Device {
                 // Senders still in the control ring or already back, and the one in the driver (ended by `finish`)
                 while let Ok(msg) = driver.control.pop() {
                     if let DriverMsg::Arm(s) = msg {
-                        self.returned_senders.push(s);
+                        self.returned_senders.push(*s);
                     }
                 }
                 let mut back = back;
                 while let Ok(s) = back.pop() {
-                    self.returned_senders.push(s);
+                    self.returned_senders.push(*s);
                 }
                 if let Some(s) = driver.recorder.take() {
-                    self.returned_senders.push(s);
+                    self.returned_senders.push(*s);
                 }
                 self.senders_out = 0;
                 if let Some(events) = self.events.as_mut() {
@@ -469,6 +473,7 @@ fn take_driver(callback: Box<dyn DeviceCallback>) -> Driver {
 /// Switches to another device (I-10.3), inside an `Operation` on the target `Device`: the barrier, open the new
 /// one, and start it with the same renderer. A different negotiated block or rate than the engine's is refused
 /// (`io.device.spec_mismatch`): the session then makes a new engine
+#[allow(clippy::result_large_err)]
 pub fn switch_device(
     mut old: Device,
     backend: Box<dyn Backend>,
@@ -484,14 +489,14 @@ pub fn switch_device(
     drop(old);
     let mut new = Device::new(backend, threads);
     if let Err(e) = new.open(config) {
-        return Err(SwitchFailed::Open { error: e, renderer, senders });
+        return Err(SwitchFailed::Open { error: e, renderer: Box::new(renderer), senders });
     }
     match new.start(renderer) {
         Ok(()) => {
             new.returned_senders = senders;
             Ok(new)
         }
-        Err((error, renderer)) => Err(SwitchFailed::Open { error, renderer, senders }),
+        Err((error, renderer)) => Err(SwitchFailed::Open { error, renderer: Box::new(renderer), senders }),
     }
 }
 
@@ -501,5 +506,5 @@ pub enum SwitchFailed {
     /// The old device's callback is stuck: it was abandoned (D11)
     Stuck(StopTimedOut),
     /// The new device did not open or start; the renderer is free for the Dummy
-    Open { error: Error, renderer: Renderer, senders: Vec<Box<RecordSender>> },
+    Open { error: Error, renderer: Box<Renderer>, senders: Vec<RecordSender> },
 }

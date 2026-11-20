@@ -104,11 +104,15 @@ fn open(path: PathBuf, feeder: StreamFeeder) -> std::result::Result<Served, (Pat
     };
     let info = reader.info();
     if info.rate != feeder.rate() {
-        let e = Error::new("io.stream.rate_mismatch").arg("file", i64::from(info.rate)).arg("project", i64::from(feeder.rate()));
+        let e = Error::new("io.stream.rate_mismatch")
+            .arg("file", i64::from(info.rate))
+            .arg("project", i64::from(feeder.rate()));
         return Err((path, e));
     }
     if info.channels != feeder.channels() {
-        let e = Error::new("io.stream.channels_mismatch").arg("file", info.channels as i64).arg("stream", feeder.channels() as i64);
+        let e = Error::new("io.stream.channels_mismatch")
+            .arg("file", info.channels as i64)
+            .arg("stream", feeder.channels() as i64);
         return Err((path, e));
     }
     let n = feeder.chunk_frames() * feeder.channels();

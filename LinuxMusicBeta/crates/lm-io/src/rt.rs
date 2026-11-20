@@ -121,7 +121,10 @@ pub struct SystemRealtime {
 
 impl fmt::Debug for SystemRealtime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SystemRealtime").field("priority", &self.priority).field("stack_bytes", &self.stack_bytes).finish()
+        f.debug_struct("SystemRealtime")
+            .field("priority", &self.priority)
+            .field("stack_bytes", &self.stack_bytes)
+            .finish()
     }
 }
 
@@ -142,6 +145,13 @@ impl SystemRealtime {
     #[cfg(not(target_os = "linux"))]
     pub fn new() -> Self {
         Self { priority: DEFAULT_PRIORITY, stack_bytes: DEFAULT_STACK, timeout: Duration::from_secs(2) }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl Default for SystemRealtime {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -276,10 +286,10 @@ impl RtBuffer {
 
     pub fn is_locked(&self) -> bool {
         #[cfg(target_os = "linux")]
-        if matches!(self, RtBuffer::Locked(_)) {
-            return true;
-        }
-        false
+        let locked = matches!(self, RtBuffer::Locked(_));
+        #[cfg(not(target_os = "linux"))]
+        let locked = false;
+        locked
     }
 }
 

@@ -124,7 +124,10 @@ impl AlsaBackend {
                 Err(_) => return Ok(config.rate),
             }
         }
-        let fits = |rate: u32| caps.iter().all(|c| rate >= c.rate_min && rate <= c.rate_max && (c.rates.is_empty() || c.rates.contains(&rate)));
+        let fits = |rate: u32| {
+            caps.iter()
+                .all(|c| rate >= c.rate_min && rate <= c.rate_max && (c.rates.is_empty() || c.rates.contains(&rate)))
+        };
         if fits(config.rate) {
             return Ok(config.rate);
         }
@@ -200,7 +203,9 @@ impl Backend for AlsaBackend {
         if let Some(name) = config.playback.clone() {
             let channels = Self::channels_for(&name, Stream::Playback, config.playback_channels)?;
             let mut pcm = self.open_pcm(&name, Stream::Playback)?;
-            let cfg = pcm.configure(&HwRequest::new(device_rate, channels, period, periods)).map_err(|e| device_error(e, &name))?;
+            let cfg = pcm
+                .configure(&HwRequest::new(device_rate, channels, period, periods))
+                .map_err(|e| device_error(e, &name))?;
             play_config = Some(cfg);
             playback = Some(pcm);
         }
@@ -211,7 +216,9 @@ impl Backend for AlsaBackend {
             let mut pcm = self.open_pcm(&name, Stream::Capture)?;
             // The capture gets the playback's negotiated period, so the linked streams move in the same steps
             let want = play_config.map_or(period, |c| c.period_frames);
-            let cfg = pcm.configure(&HwRequest::new(device_rate, channels, want, periods)).map_err(|e| device_error(e, &name))?;
+            let cfg = pcm
+                .configure(&HwRequest::new(device_rate, channels, want, periods))
+                .map_err(|e| device_error(e, &name))?;
             cap_config = Some(cfg);
             capture = Some(pcm);
         }
@@ -409,7 +416,9 @@ fn recover(o: &mut Opened, err: PcmIoError) -> std::result::Result<(u32, u32), P
         _ => None,
     };
     let late = match o.playback.as_mut() {
-        Some(p) if p.state() == PcmState::Xrun => p.xrun_info().map(|x| x.pending.min(u64::from(u32::MAX)) as u32).unwrap_or(1),
+        Some(p) if p.state() == PcmState::Xrun => {
+            p.xrun_info().map(|x| x.pending.min(u64::from(u32::MAX)) as u32).unwrap_or(1)
+        }
         _ => 0,
     };
     if let Some(p) = o.playback.as_mut() {
@@ -640,7 +649,13 @@ fn run_locked(o: &mut Opened, handle: &mut CallbackHandle) -> Exit {
 }
 
 /// An error of a transfer or a state found by poll: recover (xrun, suspend) or end (removed card)
-fn handle_problem(o: &mut Opened, err: PcmIoError, handle: &mut CallbackHandle, lost: &mut u32, late: &mut u32) -> std::result::Result<(), Exit> {
+fn handle_problem(
+    o: &mut Opened,
+    err: PcmIoError,
+    handle: &mut CallbackHandle,
+    lost: &mut u32,
+    late: &mut u32,
+) -> std::result::Result<(), Exit> {
     match err {
         PcmIoError::Disconnected => Err(Exit::Disconnected),
         PcmIoError::Suspended => {
@@ -677,11 +692,7 @@ fn handle_problem(o: &mut Opened, err: PcmIoError, handle: &mut CallbackHandle, 
         },
         PcmIoError::Other(n) => {
             // ENODEV can come as a plain errno from a call that does not map it
-            if n == 19 || n == 108 {
-                Err(Exit::Disconnected)
-            } else {
-                Err(Exit::Failed(n))
-            }
+            if n == 19 || n == 108 { Err(Exit::Disconnected) } else { Err(Exit::Failed(n)) }
         }
     }
 }
@@ -734,7 +745,8 @@ fn run_drift(o: &mut Opened, handle: &mut CallbackHandle) -> Exit {
                 let _ = c.start();
                 if let Some(x) = x {
                     let restarted = c.trigger_time().unwrap_or_else(|_| HostTime::now());
-                    let l = lost_capture_frames(x, restarted, o.cap_config.map_or(rate, |k| k.rate)).min(u64::from(u32::MAX)) as u32;
+                    let l = lost_capture_frames(x, restarted, o.cap_config.map_or(rate, |k| k.rate))
+                        .min(u64::from(u32::MAX)) as u32;
                     if let Some(edge) = o.edge.as_mut() {
                         edge.add_capture_lost(l);
                     }

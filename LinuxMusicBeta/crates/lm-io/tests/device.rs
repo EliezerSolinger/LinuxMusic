@@ -174,7 +174,8 @@ fn switch_keeps_the_renderer() {
     wait_for(5, "playing", || engine.frame().position > 4800);
     let new = DummyBackend::new(DummyOptions { inputs: 4, outputs: 4, ..DummyOptions::default() });
     let control = new.control();
-    let mut device = switch_device(device, Box::new(new), &config(48_000, 128), RenderThreads::default()).expect("switch");
+    let mut device =
+        switch_device(device, Box::new(new), &config(48_000, 128), RenderThreads::default()).expect("switch");
     wait_for(5, "the new device runs", || control.periods() > 10);
     assert_eq!(device.info().map(|i| i.inputs), Some(4));
     let renderer = device.stop().expect("stop");

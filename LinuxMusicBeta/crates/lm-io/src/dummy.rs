@@ -160,7 +160,8 @@ impl Backend for DummyBackend {
         }
         let o = self.options;
         let inputs = config.capture.as_ref().map_or(0, |_| config.capture_channels.map_or(o.inputs, |c| c as usize));
-        let outputs = config.playback.as_ref().map_or(0, |_| config.playback_channels.map_or(o.outputs, |c| c as usize));
+        let outputs =
+            config.playback.as_ref().map_or(0, |_| config.playback_channels.map_or(o.outputs, |c| c as usize));
         if inputs > o.inputs || outputs > o.outputs || inputs > MAX_CHANNELS || outputs > MAX_CHANNELS {
             return Err(Error::new("io.device.channels_unsupported")
                 .arg("inputs", inputs as i64)
@@ -312,11 +313,10 @@ impl Run {
             if let Some(len) = loop_len {
                 // A block's output can come back at the earliest one period later
                 let lat = (self.options.loopback.unwrap_or(0) as usize).max(period);
-                for (c, line) in delay.iter_mut().enumerate() {
-                    for f in 0..period {
+                for (input, line) in inputs.iter_mut().zip(delay.iter()) {
+                    for (f, x) in input[..period].iter_mut().enumerate() {
                         // What was played `lat` frames before this frame
-                        let at = (delay_pos + f + len - lat) % len;
-                        inputs[c][f] += line[at];
+                        *x += line[(delay_pos + f + len - lat) % len];
                     }
                 }
             }

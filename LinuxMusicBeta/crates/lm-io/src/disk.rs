@@ -28,7 +28,7 @@ use lm_sys_sndfile::{Existing, Sample, WriteFormat, WriteSpec, Writer};
 
 use crate::record::{InputIndex, Marker, RecordReceiver};
 use crate::take::{
-    LoopCut, RECORD_VERSION, RecordFile, RecordHeader, RecordLine, REFUSE_SECONDS, StopReason, Take, TakeGap, TakeSpan,
+    LoopCut, RECORD_VERSION, REFUSE_SECONDS, RecordFile, RecordHeader, RecordLine, StopReason, Take, TakeGap, TakeSpan,
     TakeStop, free_space, new_uuid, record_bytes_per_second,
 };
 
@@ -50,7 +50,14 @@ pub enum DiskEvent {
     TakeStarted { input: InputIndex, path: PathBuf, record: PathBuf, start_sample: i64 },
     /// An input stopped before the take ended (I-11, H3): its file ends at `file_frame`, `seconds` into the take,
     /// at timeline sample `sample`. `RecordingOverflow` of the interfaces is the `Overflow` reason
-    InputStopped { input: InputIndex, reason: StopReason, file_frame: u64, sample: i64, seconds: f64, error: Option<Error> },
+    InputStopped {
+        input: InputIndex,
+        reason: StopReason,
+        file_frame: u64,
+        sample: i64,
+        seconds: f64,
+        error: Option<Error>,
+    },
     /// A take is closed (the RF64 has its final header): finalise it in an `Operation` ([`crate::finalize_take`])
     TakeClosed(Take),
     /// A file could not be created or a record could not be written
@@ -129,9 +136,7 @@ impl DiskWriter {
 
     /// Hands a recording's receiver to the disk thread (before arming its sender in the device)
     pub fn record(&mut self, receiver: RecordReceiver) -> Result<()> {
-        self.commands
-            .push(DiskCommand::Record(Box::new(receiver)))
-            .map_err(|_| Error::new("io.disk.busy"))?;
+        self.commands.push(DiskCommand::Record(Box::new(receiver))).map_err(|_| Error::new("io.disk.busy"))?;
         if let Some(t) = &self.thread {
             t.thread().unpark();
         }
@@ -223,7 +228,12 @@ struct LivePeaker {
 
 impl LivePeaker {
     fn new() -> Self {
-        Self { min: [f32::INFINITY; LIVE_PEAK_CHANNELS], max: [f32::NEG_INFINITY; LIVE_PEAK_CHANNELS], in_pair: 0, pair: 0 }
+        Self {
+            min: [f32::INFINITY; LIVE_PEAK_CHANNELS],
+            max: [f32::NEG_INFINITY; LIVE_PEAK_CHANNELS],
+            in_pair: 0,
+            pair: 0,
+        }
     }
 }
 
@@ -289,18 +299,12 @@ impl Worker {
         // What the data rings hold now. Every marker is pushed after the data before its frame, so a marker handler
         // drains up to its frame whatever the snapshot says; the final drain below takes only what was there before
         // the markers were read (data that came later may lie past a marker not popped yet)
-        let mut allow: Vec<u64> = a
-            .recv
-            .data
-            .iter()
-            .zip(&a.recv.plan.inputs)
-            .map(|(rx, i)| (rx.slots() / i.channels.len()) as u64)
-            .collect();
+        let mut allow: Vec<u64> =
+            a.recv.data.iter().zip(&a.recv.plan.inputs).map(|(rx, i)| (rx.slots() / i.channels.len()) as u64).collect();
         if a.recv.failed.load(Ordering::Acquire) {
             // The marker ring overflowed: nothing after this point can be placed; close every input with what it has
-            if let Some(t) = a.take.as_mut() {
-                for k in 0..t.inputs.len() {
-                    let avail = allow[k];
+            if a.take.is_some() {
+                for (k, avail) in allow.iter().copied().enumerate() {
                     self.drain(a, k, u64::MAX, avail);
                     if let Some(t) = a.take.as_mut() {
                         let at = t.inputs[k].written;
@@ -310,12 +314,11 @@ impl Worker {
             }
             self.close_take(a);
             while a.recv.markers.pop().is_ok() {}
-            for (k, rx) in a.recv.data.iter_mut().enumerate() {
+            for rx in a.recv.data.iter_mut() {
                 let n = rx.slots();
                 if let Ok(chunk) = rx.read_chunk(n) {
                     chunk.commit_all();
                 }
-                let _ = k;
             }
             return (true, a.recv.markers.is_abandoned());
         }
@@ -323,8 +326,7 @@ impl Worker {
             busy = true;
             self.handle(a, m, &mut allow);
         }
-        for k in 0..a.recv.data.len() {
-            let n = allow[k];
+        for (k, n) in allow.iter().copied().enumerate() {
             if n > 0 {
                 busy = true;
                 self.drain(a, k, u64::MAX, n);
@@ -333,7 +335,8 @@ impl Worker {
         let abandoned = a.recv.markers.is_abandoned() && a.recv.markers.is_empty();
         if (abandoned || stopping) && a.take.is_some() && a.recv.markers.is_empty() {
             // The sender is gone without an end (or the program is closing): close at what was written
-            let ends: Vec<u64> = a.take.as_ref().map(|t| t.inputs.iter().map(|i| i.written).collect()).unwrap_or_default();
+            let ends: Vec<u64> =
+                a.take.as_ref().map(|t| t.inputs.iter().map(|i| i.written).collect()).unwrap_or_default();
             let end = ends.into_iter().max().unwrap_or(0);
             self.end_take(a, end, &mut allow);
         }
@@ -366,7 +369,10 @@ impl Worker {
                 let span = TakeSpan { file_frame, sample, frames };
                 // A span sent in pieces (one a second) is one span
                 match t.spans.last_mut() {
-                    Some(last) if last.file_frame + last.frames == file_frame && last.sample + last.frames as i64 == sample => {
+                    Some(last)
+                        if last.file_frame + last.frames == file_frame
+                            && last.sample + last.frames as i64 == sample =>
+                    {
                         last.frames += frames;
                     }
                     _ => t.spans.push(span),
@@ -377,10 +383,12 @@ impl Worker {
                 }
             }
             Marker::Gap { file_frame, frames } => {
-                let Some(n) = a.take.as_ref().map(|t| t.inputs.len()) else { return };
-                for k in 0..n {
+                if a.take.is_none() {
+                    return;
+                }
+                for (k, allowed) in allow.iter_mut().enumerate() {
                     let used = self.drain(a, k, file_frame, u64::MAX);
-                    allow[k] = allow[k].saturating_sub(used);
+                    *allowed = allowed.saturating_sub(used);
                     self.silence(a, k, frames);
                 }
                 if let Some(t) = a.take.as_mut() {
@@ -457,12 +465,7 @@ impl Worker {
                     open.record = Some(record);
                     open.writer = Some(writer);
                     self.reserve(&mut open, plan.rate);
-                    self.emit(DiskEvent::TakeStarted {
-                        input: input.input,
-                        path,
-                        record: record_path,
-                        start_sample,
-                    });
+                    self.emit(DiskEvent::TakeStarted { input: input.input, path, record: record_path, start_sample });
                 }
                 Err(error) => {
                     open.stopped = Some(TakeStop { reason: StopReason::WriteFailed, file_frame: 0 });
@@ -553,7 +556,8 @@ impl Worker {
                 Err(e) => {
                     let written = input.writer.as_ref().map_or(input.written, Writer::frames);
                     input.written = written;
-                    let reason = if e.key() == "sndfile.write_failed" { StopReason::DiskFull } else { StopReason::WriteFailed };
+                    let reason =
+                        if e.key() == "sndfile.write_failed" { StopReason::DiskFull } else { StopReason::WriteFailed };
                     Some((reason, e))
                 }
             }
@@ -586,10 +590,10 @@ impl Worker {
         let shown = ch.min(LIVE_PEAK_CHANNELS);
         let p = &mut i.peak;
         for frame in samples.chunks_exact(ch) {
-            for c in 0..shown {
-                let x = if frame[c].is_finite() { frame[c] } else { 0.0 };
-                p.min[c] = p.min[c].min(x);
-                p.max[c] = p.max[c].max(x);
+            for ((lo, hi), x) in p.min.iter_mut().zip(p.max.iter_mut()).zip(&frame[..shown]) {
+                let x = if x.is_finite() { *x } else { 0.0 };
+                *lo = lo.min(x);
+                *hi = hi.max(x);
             }
             p.in_pair += 1;
             if p.in_pair == crate::peaks::BASE {
@@ -598,7 +602,14 @@ impl Worker {
         }
     }
 
-    fn emit_pair(live: &mut Producer<LivePeak>, dropped: &AtomicU64, input: InputIndex, take: u32, p: &mut LivePeaker, shown: usize) {
+    fn emit_pair(
+        live: &mut Producer<LivePeak>,
+        dropped: &AtomicU64,
+        input: InputIndex,
+        take: u32,
+        p: &mut LivePeaker,
+        shown: usize,
+    ) {
         let mut out = LivePeak { input, take, pair: p.pair, channels: shown as u8, min: [0; 8], max: [0; 8] };
         for c in 0..shown {
             out.min[c] = q(p.min[c], false);
@@ -682,10 +693,12 @@ impl Worker {
     }
 
     fn end_take(&mut self, a: &mut Active, file_frame: u64, allow: &mut [u64]) {
-        let Some(n) = a.take.as_ref().map(|t| t.inputs.len()) else { return };
-        for k in 0..n {
+        if a.take.is_none() {
+            return;
+        }
+        for (k, allowed) in allow.iter_mut().enumerate() {
             let used = self.drain(a, k, file_frame, u64::MAX);
-            allow[k] = allow[k].saturating_sub(used);
+            *allowed = allowed.saturating_sub(used);
         }
         self.close_take(a);
     }

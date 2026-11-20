@@ -267,7 +267,9 @@ impl RecordSender {
             let Ok(chunk) = input.tx.write_chunk_uninit(needed) else { continue };
             let channels = &input.channels;
             let samples = (0..frames).flat_map(|f| {
-                channels.iter().map(move |&c| inputs.get(usize::from(c)).and_then(|ch| ch.get(f)).copied().unwrap_or(0.0))
+                channels
+                    .iter()
+                    .map(move |&c| inputs.get(usize::from(c)).and_then(|ch| ch.get(f)).copied().unwrap_or(0.0))
             });
             chunk.fill_from_iter(samples);
         }

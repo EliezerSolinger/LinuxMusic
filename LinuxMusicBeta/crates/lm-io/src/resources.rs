@@ -127,14 +127,24 @@ impl Drop for TempFile {
 /// copying, saying how much is missing), copies it (same rate) or converts it once at the best quality to the
 /// project's rate (RF64 float), hashes it, writes its peaks, and renames the `.tmp` to `audio/<hash>.<ext>` only at
 /// the end (U14). An identical file already there is reused. Cancellable, with progress
-pub fn import_file(source: &Path, project: &Path, rate: u32, cancel: &Cancel, progress: &Progress) -> Result<ImportedFile> {
+pub fn import_file(
+    source: &Path,
+    project: &Path,
+    rate: u32,
+    cancel: &Cancel,
+    progress: &Progress,
+) -> Result<ImportedFile> {
     progress.stage(Label::new("io.import.reading"));
     let mut reader = Reader::open(source)?;
-    let info = reader.info().clone();
+    let info = *reader.info();
     let audio = audio_folder(project);
     std::fs::create_dir_all(&audio).map_err(|e| io_error("io.import.write_failed", &audio, &e))?;
     let converted = info.rate != rate;
-    let out_frames = if converted { lm_sys_samplerate::output_frames(info.frames as usize, info.rate, rate) as u64 } else { info.frames };
+    let out_frames = if converted {
+        lm_sys_samplerate::output_frames(info.frames as usize, info.rate, rate) as u64
+    } else {
+        info.frames
+    };
     let needed = if converted {
         out_frames * info.channels as u64 * 4 + 4096
     } else {
@@ -144,7 +154,10 @@ pub fn import_file(source: &Path, project: &Path, rate: u32, cancel: &Cancel, pr
     let needed = needed + needed / 16 + (1 << 20);
     let free = free_space(&audio)?;
     if free < needed {
-        return Err(Error::new("io.import.disk_full").arg("needed", needed as i64).arg("free", free as i64).arg("missing", (needed - free) as i64));
+        return Err(Error::new("io.import.disk_full")
+            .arg("needed", needed as i64)
+            .arg("free", free as i64)
+            .arg("missing", (needed - free) as i64));
     }
     let mut tmp = TempFile { path: audio.join(format!(".import-{}.tmp", new_uuid())), keep: false };
     let (key, ext, peaks) = if converted {
@@ -163,7 +176,11 @@ pub fn import_file(source: &Path, project: &Path, rate: u32, cancel: &Cancel, pr
         let out = lm_sys_samplerate::convert(&all, info.channels, info.rate, rate, Quality::Best, cancel, progress)?;
         drop(all);
         progress.stage(Label::new("io.import.writing"));
-        let mut w = Writer::create(&tmp.path, WriteSpec { format: WriteFormat::Rf64(Sample::Float32), rate, channels: info.channels }, Existing::Replace)?;
+        let mut w = Writer::create(
+            &tmp.path,
+            WriteSpec { format: WriteFormat::Rf64(Sample::Float32), rate, channels: info.channels },
+            Existing::Replace,
+        )?;
         let mut builder = PeaksBuilder::new(info.channels);
         for chunk in out.chunks(CHUNK * info.channels) {
             cancel.check()?;
@@ -252,7 +269,10 @@ pub fn clean_import_leftovers(project: &Path) -> Result<usize> {
     for e in entries.flatten() {
         let name = e.file_name();
         let Some(name) = name.to_str() else { continue };
-        if (name.starts_with(".import-") && name.ends_with(".tmp")) || name.ends_with(".convert.tmp") || name.ends_with(".peaks.tmp") {
+        if (name.starts_with(".import-") && name.ends_with(".tmp"))
+            || name.ends_with(".convert.tmp")
+            || name.ends_with(".peaks.tmp")
+        {
             std::fs::remove_file(e.path()).map_err(|err| io_error("io.resource.remove_failed", &e.path(), &err))?;
             n += 1;
         }
@@ -263,7 +283,7 @@ pub fn clean_import_leftovers(project: &Path) -> Result<usize> {
 /// Decodes a whole file into immutable planar audio (I-12), inside an `Operation`. Cancellable, with progress
 pub fn load_file(path: &Path, cancel: &Cancel, progress: &Progress) -> Result<Arc<SampleData>> {
     let mut reader = Reader::open(path)?;
-    let info = reader.info().clone();
+    let info = *reader.info();
     let ch = info.channels;
     let frames = info.frames as usize;
     let mut planar = vec![0.0f32; frames * ch];
@@ -379,7 +399,7 @@ impl LoadJob {
         }
         progress.stage(Label::new("io.resource.peaks"));
         let peaks_path = self.path.with_extension("peaks");
-        let info = Reader::open(&self.path)?.info().clone();
+        let info = *Reader::open(&self.path)?.info();
         let peaks = match Peaks::read(&peaks_path) {
             Ok(p) if p.frames() == info.frames && p.channels() == info.channels => p,
             _ => {
@@ -394,7 +414,12 @@ impl LoadJob {
             return Ok(Loaded {
                 key: self.key,
                 data: None,
-                on_disk: Some(OnDisk { path: self.path, rate: info.rate, channels: info.channels, frames: info.frames }),
+                on_disk: Some(OnDisk {
+                    path: self.path,
+                    rate: info.rate,
+                    channels: info.channels,
+                    frames: info.frames,
+                }),
                 peaks: Arc::new(peaks),
             });
         }
@@ -409,7 +434,9 @@ pub enum ResourceState {
     /// Never asked for
     Absent,
     /// Being loaded since `since`
-    Loading { since: HostTime },
+    Loading {
+        since: HostTime,
+    },
     /// In the view, in memory
     Ready,
     /// In the view, played from disk (P-32)
@@ -495,7 +522,8 @@ impl ResourceStore {
         let path = match resource_path(&self.project, key) {
             Ok(Some(p)) => p,
             Ok(None) => {
-                self.entries.insert(key.to_owned(), Entry { state: ResourceState::Missing, peaks: None, last_used: now });
+                self.entries
+                    .insert(key.to_owned(), Entry { state: ResourceState::Missing, peaks: None, last_used: now });
                 return Err(ResourceState::Missing);
             }
             Err(e) => {
@@ -504,7 +532,10 @@ impl ResourceStore {
                 return Err(state);
             }
         };
-        self.entries.insert(key.to_owned(), Entry { state: ResourceState::Loading { since: now }, peaks: None, last_used: now });
+        self.entries.insert(
+            key.to_owned(),
+            Entry { state: ResourceState::Loading { since: now }, peaks: None, last_used: now },
+        );
         Ok(LoadJob { key: key.to_owned(), path, faults: self.faults, stream_above: self.stream_above })
     }
 
@@ -517,7 +548,10 @@ impl ResourceStore {
                     self.loaded(key.to_owned(), d, l.peaks);
                 } else if let Some(od) = l.on_disk {
                     self.on_disk.insert(key.to_owned(), od);
-                    self.entries.insert(key.to_owned(), Entry { state: ResourceState::OnDisk, peaks: Some(l.peaks), last_used: now });
+                    self.entries.insert(
+                        key.to_owned(),
+                        Entry { state: ResourceState::OnDisk, peaks: Some(l.peaks), last_used: now },
+                    );
                     self.publish();
                 }
             }
@@ -526,7 +560,8 @@ impl ResourceStore {
                 self.entries.remove(key);
             }
             Err(e) => {
-                self.entries.insert(key.to_owned(), Entry { state: ResourceState::Failed(e), peaks: None, last_used: now });
+                self.entries
+                    .insert(key.to_owned(), Entry { state: ResourceState::Failed(e), peaks: None, last_used: now });
             }
         }
     }
@@ -556,7 +591,9 @@ impl ResourceStore {
             .entries
             .iter()
             .filter(|(k, e)| {
-                matches!(e.state, ResourceState::Ready | ResourceState::OnDisk) && now.since(e.last_used) >= limit && !in_use(k)
+                matches!(e.state, ResourceState::Ready | ResourceState::OnDisk)
+                    && now.since(e.last_used) >= limit
+                    && !in_use(k)
             })
             .map(|(k, _)| k.clone())
             .collect();
