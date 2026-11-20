@@ -463,6 +463,8 @@ pub fn param_key(owner_type: &str, rel: &[PathStep]) -> Option<Arc<str>> {
     let keys = keys?;
     match (owner_type, keys.as_slice()) {
         (types::PLUGIN, ["state", "params", k]) => Some(Arc::from(*k)),
+        // An insert's wet/dry mix (the legacy EffectView's W/D)
+        (types::PLUGIN, ["wet"]) => Some(Arc::from("insert.wet")),
         (types::TRACK, ["volume"])
         | (types::CHANNEL, ["volume" | "pan"])
         | (types::MASTER, ["volume"])
@@ -476,6 +478,9 @@ pub fn param_key(owner_type: &str, rel: &[PathStep]) -> Option<Arc<str>> {
 
 /// The path of a parameter in a node of `owner_type` (the inverse of [`param_key`])
 pub fn param_path(owner_type: &str, key: &str) -> Vec<PathStep> {
+    if owner_type == types::PLUGIN && key == "insert.wet" {
+        return vec![PathStep::key("wet")];
+    }
     if owner_type == types::PLUGIN {
         return vec![PathStep::key("state"), PathStep::key("params"), PathStep::key(key)];
     }

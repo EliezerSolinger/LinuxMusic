@@ -437,6 +437,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::int("version", 1, MAX, 1))
             .field(FieldSpec::new("state", FieldKind::Any).default(Value::empty_object()))
             .field(FieldSpec::bool("bypass", false))
+            // An insert's wet/dry mix, 0 to 1 (the legacy EffectView's W/D; optional: absent is all wet, no mix node)
+            .field(FieldSpec::new("wet", FieldKind::Real { min: 0.0, max: 1.0 }).optional())
             // Only for an insert of a channel (P-20); absent: "post-eq"
             .field(FieldSpec::new("point", FieldKind::Choice(INSERT_POINTS)).optional()),
         // A send to another channel, or to an insert's sidechain port (`port`, then required)
