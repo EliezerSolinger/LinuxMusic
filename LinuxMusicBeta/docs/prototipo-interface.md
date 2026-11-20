@@ -504,8 +504,86 @@ quando a faixa some; a cadeia (acrescentar pela lista, desligar pela luz, remove
 (abrir pasta, prévia com carregamento, favorito, mandar para o sampler) e a busca com frase (nada antes de 200 ms,
 carregamento, resultado, a frase inteira).
 ### 9.12 Configurações (D, design 08)
+Feito (`screens/settings.rs`): seções numa lista à esquerda, com busca por rótulo, dica e título da seção, sem
+acento (F-CFG-001); cada linha diz antes de mudar se vale na hora, se reabre o dispositivo ou se pede reinício, e o que
+pede reinício mostra a faixa "Reiniciar agora" (F-CFG-002), que salva e reabre o programa com o tema novo
+(F-GER-013). Páginas: Geral (F-CFG-010, P-17, P-35, a taxa dos projetos novos F-REC-121); Áudio (F-CFG-011: sistema,
+estado do dispositivo com o carregamento comum, **entrada e saída escolhidas à parte** e a opção explícita **corrigir a
+deriva entre as placas** U7, aviso de Bluetooth, taxa do projeto ou outra com conversão na borda, bloco com a
+latência medida e os avisos, a reabertura 0,4 s depois da última mudança F-REC-120, a **calibração** com progresso e o
+**resíduo por dispositivo, taxa e conversor** H19/I-10.4/F-REC-081, o ajuste manual F-REC-082, a **permissão de tempo
+real no Linux** com o que configurar H1); MIDI (F-CFG-012, portas desta máquina P-36, seq/raw P-16, latência por
+porta P-15); Gravação e metrônomo (F-CFG-013, P-11, P-12, a regra do disco H3); Plugins (F-CFG-014); Pastas (F-CFG-015,
+**pastas que um projeto pode ler** C9); Aparência (F-CFG-016, **tema como dado** lido de `themes/*.txt` com a
+amostra das cores, idioma P-08); Teclado (F-CFG-017: **todas as ações do registro**, tecla nova apertando, conflito
+pede um segundo aperto); Autosave e cópias (o diário, F-PRJ-010, F-PRJ-016); Servidor (I-15); Avançado (F-CFG-018,
+U20, P-07). As peças de formulário (`segmented`, `stepper`, `switch`, `radio_card`, `badge`, `note`,
+`target_loading`, `connect_panel`) servem às outras telas do D.
+Fica para o `lm-gui`: o `ui::i18n` ler `LM_LANG` (o reinício já o passa); um tema claro em `themes/` (P-08); a
+primeira execução e a pasta de trabalho (F-CFG-019); listas de dispositivos de verdade (a varredura é uma operação).
+Dificuldades da GPUI: o `Switch` do gpui-component não aceita `debug_selector` (um `div` em volta, que precisa ser
+`flex` para não esticar); num `flex` de linha, um texto longo empurra os botões para fora se o filho não tiver
+`min_w_0` (e o botão `flex_none`); a captura de teclas para o atalho usa `on_key_down` num `FocusHandle` próprio.
+
 ### 9.13 Exportação (D)
+Feito (`screens/export.rs`): o que exportar (a música inteira, sempre exata V18; o trecho do loop; entre marcadores;
+compassos digitados; uma faixa com as outras mudas F-PRJ-023); num trecho, **Rápido** (padrão, aquecimento de 10 s) ou
+**Exato**, cada um com o que renderiza e o **custo estimado** (U37); cauda ou loop com 1 a 64 repetições; **stems
+por faixa ou por canal da mesa** (P-40); vários formatos de uma vez (WAV, FLAC, OGG, MP3) com taxa, profundidade,
+compressão do FLAC, qualidade do OGG, taxa e modo do MP3, dither TPDF, normalização por pico ou loudness com o alvo,
+fades (F-PRJ-022, F-PRJ-024); pasta, nome e os arquivos que vão sair; o **aviso dos plugins de terceiros que não
+garantem o mesmo resultado** (H18); progresso e cancelar com o componente comum; o relatório, que diz quando o trecho
+rápido não é idêntico. A exportação é uma operação no núcleo (`export.start`, o pedido como dado).
+Fica para o `lm-gui`: escolher a pasta num diálogo do sistema (F-GER-011); exportar MIDI (F-PRJ-021) e a amostra de
+um clipe (F-PRJ-026), que entram pelos menus da faixa e do clipe.
+
 ### 9.14 Projeto: abrir, salvar, somente leitura, recuperação, modo seguro (D)
+Feito (`screens/project.rs`): a **pasta do projeto** (onde está, a taxa fixa, quando salvou, o diário, o que há em
+`audio/`); **só leitura** quando outro programa tem a trava ou uma versão mais nova salvou (H10, H11), com "Salvar
+como" como saída; a cópia guardada ao converter de versão mais velha (H11); os **takes interrompidos por uma queda**,
+recuperados no lugar ou deixados (U5); o **modo seguro** com o plugin que parou o programa desligado (U21); salvar,
+salvar como nova versão (F-PRJ-008), salvar como modelo (F-PRJ-002), **exportar como arquivo único** (.zip, com
+progresso), limpar os arquivos sem uso para a lixeira avisando que o desfazer zera (H4, P-13), notas do projeto
+(F-PRJ-018). Abrir: recentes (F-PRJ-015) com taxa, faixas, duração e idade, ou uma pasta ou `.zip` pelo caminho,
+como operação com carregamento e cancelar (F-PRJ-003). Salvar como mostra a pasta que vai ser escrita. Conectar a um
+servidor (I-15). Os recentes do protótipo têm um caso de cada (trava, versão nova, queda gravando, queda num plugin,
+versão velha, trava órfã, pasta sumida).
+Fica para o `lm-gui`: o diálogo de arquivos do sistema; perguntar antes de perder mudanças ao abrir e ao sair
+(F-JAN-009, U13), que é da casca; importar áudio e MIDI (F-PRJ-019, F-PRJ-020).
+
 ### 9.15 Avisos e atividades (D)
+Feito (`screens/notices.rs`): a doca da direita com as **atividades** (toda operação passando de 200 ms, de
+`activity()`, cada uma com o componente de carregamento comum e cancelar depois de 2 s) e a **fila de avisos** (I-14):
+chave traduzível com argumentos, gravidade, quando chegou, repetições contadas em vez de empilhadas, e as **ações do
+registro** ("tentar de novo", "recriar o plugin", "localizar o arquivo", "localizar a pasta", "permitir esta pasta",
+"o que configurar", "reconectar", "mostrar os arquivos"); filtros; dispensar e limpar. Abrir a doca marca como lidos.
+O núcleo nunca escreve frase pronta: as falhas das operações também são chaves.
+Fica para o `lm-gui`: o indicador de atividade e de avisos não lidos na casca (A).
+
 ### 9.16 Paleta de comandos (D)
+Feito (`screens/palette.rs`): Cmd/Ctrl+K; busca aproximada sobre o **registro de ações** (`fake-core/src/actions.rs`,
+I-19: id, rótulo traduzível, grupo, teclas, o que roda, quando está habilitado, lido pelo `CorePort`), sem acento,
+com as letras achadas em destaque, o grupo e o atalho de cada ação escrito como a plataforma escreve (⌘⇧S no Mac,
+Ctrl+Shift+S no Linux); antes de digitar, as usadas por último; setas, Enter, Esc; ação desabilitada aparece apagada.
+`run_action` é o mesmo caminho dos avisos e das configurações: ações do núcleo vão pela porta (`run_action(id,
+Value::Text)`), as da interface abrem telas e páginas.
+Fica para o `lm-gui`: a casca ligar as teclas a partir de `actions::keymap(prefs)` (hoje só as da casca estão
+ligadas); refazer (o núcleo de mentira não tem).
+Dificuldade: setas dentro de um `Input` do gpui-component: um `capture_key_down` no contêiner pega antes do campo.
+
 ### 9.17 Projeto novo e "sobre" (D)
+Feito (`screens/new_project.rs`, `screens/about.rs`): nome e pasta (e se já existe), **taxa fixa por projeto** com o
+que isso quer dizer (item 8), o modelo com as faixas que traz, a mesa analógica ou digital como as configurações
+dizem, e o aviso de salvar o projeto aberto antes (F-PRJ-001, F-PRJ-002); criar é uma operação. "Sobre": versão e
+ambiente copiáveis para um relato de erro, autores do fork e do LMMS, traduções, licença e bibliotecas (F-GER-009), e
+o manual que vem com o programa (P-34, F1).
+
+**Do D para o núcleo de mentira:** `fake-core/src/project.rs` (serviços: projeto, recentes, preferências,
+dispositivos, exportação, servidor, e o corpo das ações), `actions.rs` (o registro) e `notices.rs` (a fila);
+em `lib.rs`, `Target::Export`/`Target::Scan`, `Session::services`, `Session::activity` e `Value::Text` (os parâmetros
+das ações como linhas `chave=valor`). Testes (`cargo test -p proto-gpui`): paleta (digitar e Enter, setas, teclas por
+plataforma), avisos (ação que resolve o aviso, dispensar), configurações (dispositivo aplica e reabre, faixa de
+reinício, trocar atalho com conflito), exportação (trecho rápido até o relatório), projeto (trava abre só leitura e
+"Salvar como" libera; recuperar take), projeto novo (taxa e modelo), "sobre" (copiar o ambiente, abrir o manual).
+Não deu para olhar as telas com os olhos à noite (a tela da máquina estava apagada); a verificação foi pelos testes
+sem janela e uma captura da página de áudio antes.
