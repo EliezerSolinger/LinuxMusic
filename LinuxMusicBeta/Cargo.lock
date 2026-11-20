@@ -3571,6 +3571,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-gui-plugins"
+version = "0.1.0"
+dependencies = [
+ "gpui-pre",
+ "image",
+ "lm-plugin",
+ "lm-plugins-effects",
+ "lm-plugins-tripleoscillator",
+ "lm-port",
+ "lm-port-fake",
+]
+
+[[package]]
 name = "lm-headless"
 version = "0.1.0"
 dependencies = [

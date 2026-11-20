@@ -133,9 +133,17 @@ pub fn latency(id: &str) -> u32 {
 
 /// The registry: the project's types and the fake plugins
 pub fn registry() -> Result<SchemaRegistry> {
+    registry_with(Vec::new())
+}
+
+/// The registry with real plugin schemas: each replaces the fake plugin of the same type (or is added)
+pub fn registry_with(real: Vec<NodeSchema>) -> Result<SchemaRegistry> {
     let mut r = SchemaRegistry::new();
     register_project_schemas(&mut r)?;
     for (id, _, params) in PLUGINS {
+        if real.iter().any(|s| s.type_name.strip_prefix("plugin:") == Some(*id)) {
+            continue;
+        }
         let mut s = NodeSchema::new(Box::leak(format!("plugin:{id}").into_boxed_str()), 1);
         for (k, min, max, d) in params.iter() {
             s = s.param(ParamSpec::new(k, *min, *max, *d));
@@ -148,8 +156,44 @@ pub fn registry() -> Result<SchemaRegistry> {
         }
         r.add(s)?;
     }
+    for s in real {
+        r.add(s)?;
+    }
     r.check_complete()?;
     Ok(r)
+}
+
+/// A saved demo with the nodes of these plugins at their real schema's defaults: the real schemas do not know the
+/// fake parameters
+pub fn reset_plugins(saved: &Value, ids: &[String], registry: &SchemaRegistry) -> Result<Value> {
+    let mut sites = Vec::new();
+    saved.walk(&mut |path, v| {
+        if v.get("state").is_some()
+            && v.get("plugin").and_then(Value::as_text).is_some_and(|p| ids.iter().any(|i| i == p))
+        {
+            sites.push(path.to_vec());
+        }
+    });
+    let mut out = saved.clone();
+    for mut path in sites {
+        let plugin = out.at_path(&path).and_then(|v| v.get("plugin")).and_then(Value::as_text).unwrap_or("").to_owned();
+        let state = registry.defaults(&format!("plugin:{plugin}"))?;
+        path.push(PathStep::key("state"));
+        out = out.with_path(&path, state)?;
+    }
+    Ok(out)
+}
+
+/// The options with real plugins: each has one stereo output, like the fake ones
+pub fn options_with(real: Vec<String>) -> Options {
+    let ports = move |plugin: &str, state: &Value| {
+        if real.iter().any(|r| r == plugin) {
+            Some(Ports { outputs: vec![Port::new("main", 2)], sidechains: vec![] })
+        } else {
+            self::ports(plugin, state)
+        }
+    };
+    Options { ports: Some(Arc::new(ports)), ..Options::default() }
 }
 
 /// The fake plugins' ports (M1): one stereo output, or a drum kit's pieces

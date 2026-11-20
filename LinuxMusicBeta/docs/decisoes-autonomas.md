@@ -643,6 +643,43 @@ modos e a chave ANALOG / DIGITAL. Só muda o que segue:
     GPUI, e falam só pelo `CorePort`, para funcionar também no modo cliente.
   - **A arte é copiada do legado.**
   - **As imagens de terceiros só entram com a permissão registrada.**
+- **Do agente dos painéis (`lm-gui-plugins`, 20/11):**
+  - **Um painel é dado** (`spec.rs`: tamanho, fundo, cada controle com posição, tipo e alvo), lido do `*View.cpp` do
+    legado, e uma só view (`panel.rs`) desenha e trata os gestos de todos. Motivo: os 46 painéis repetem os mesmos
+    widgets; os gestos de F-CTL-005/006 ficam escritos uma vez e testados por um só roteiro.
+  - **Cada controle é rasterizado na CPU numa imagem por estado** (`raster.rs`, com a semântica das chamadas de
+    QPainter que o legado faz: linha com ponta quadrada ou redonda, arco nos ângulos do Qt, caneta com gradiente
+    radial, pixmap por cima), guardada pelo ângulo em graus inteiros, como o `m_cache` do `Knob`. Motivo: o custo da
+    GPUI é por primitiva (um knob em caminhos seria 3 ou 4) e desenhar como o Qt desenha é o jeito de ficar fiel. O
+    painel desenha na escala da tela (linhas nítidas em 2x; os pixmaps do legado, todos 1x, reamostrados como o Qt).
+  - **Sem dependência nova:** o PNG é lido pelo `image` (o mesmo da GPUI) e o fundo SVG vai para a GPUI como imagem
+    (ela usa o resvg). Não entrou `tiny-skia` nem `resvg` no `[workspace.dependencies]`.
+  - **Os gestos são os do legado, com os números do legado:** 0,4 % da faixa por pixel, Shift 4× mais devagar
+    (com o resto que não chegou ao passo carregado, então em passo 1 a mudança vem a cada 3 pixels, como lá); roda
+    com 100/10/1000/2000 notches; o passo de cada controle é o do modelo do legado (`KnobSpec::step`), porque o
+    `ParamSpec` não tem passo; a escala "logarítmica" é a curva de potência `e` do legado (`linearToLogScale`).
+    Shift no clique carrega o valor (F-CTL-006); por isso o Shift lento vale quando apertado durante o arrasto, como
+    no legado.
+  - **O alvo de cada controle é o mesmo de um mapa MIDI** (`map_target`: `{kind: param, node, param}` ou
+    `{kind: field, node, path: [state, <campo>]}`, o esquema `midi.target` do `lm-doc`). Escolhas (forma de onda,
+    modulação) são campos `Choice`, mapeáveis por `MapTarget::Field`; parâmetros são mapeáveis e automatizáveis.
+  - **Menu de todo controle:** restaurar, copiar e colar o valor (uma área de cópia para todos os painéis, como o
+    legado), "Aprender MIDI" (a ação `midi.learn` com `{target}`; a sessão ainda não a registra: combinar com quem
+    fizer a I-21.2 na sessão), "Tirar o mapa MIDI" (remove os `midiMap` do projeto que apontam para o controle),
+    criar ou tirar a pista de automação (no dono do plugin: faixa, canal ou master) e linear/logarítmico (P-06, por
+    enquanto só na view: falta o documento da interface na porta).
+  - **Ligar dois controles com Ctrl+arrasto (P-04) não entra ainda:** o controle compartilhado não existe no núcleo.
+  - **O arquivo da onda do usuário (TripleOscillator) é importado pela porta** (`CorePort::import`) e o campo e a
+    escolha mudam num passo. No cliente a resposta chega depois: o host entrega por `PortHost::take_imported`, o
+    que pede ao `Core` do `lm-gui` guardar os `Finished::Imported` do `finished()` até o painel pedir.
+  - **`lm-port-fake` ganhou `FakePort::with_plugins`** (os esquemas reais dos plugins substituem os falsos, e os nós
+    do demo desses plugins começam nos padrões reais) e `last_param_write`, para os testes moverem os parâmetros de
+    verdade. O fake continua sem depender do `lm-plugin`: quem chama passa o esquema.
+  - **Textos:** as chaves são as frases em inglês do legado, então as traduções do `pt.ts` do legado entram como
+    estão (`locales/pt-BR/panels.txt`); o teste confere que nenhuma falta.
+  - **Inventário (`docs/plugins-visual.md`):** 46 com visual próprio, 4 genéricos, 2 filtros sem janela, 10 de
+    terceiros fora do processo (os 3 do Carla obsoletos). Amplifier e StereoMatrix (obsoletos no navegador) ganham
+    painel porque existem para abrir projetos antigos.
 
 ## Do `lm-session` (20/11)
 

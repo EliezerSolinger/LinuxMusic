@@ -1,0 +1,63 @@
+# The plugin panels' texts (lm-gui-plugins). Keys: the legacy English strings (so the legacy pt.ts carries over);
+# where the legacy had no Portuguese, or a wrong one, the translation is ours. `Key = Translation`, one per line.
+
+# The control menu and the value entry (FloatModelEditorBase, AutomatableModelView)
+&Reset (%1) = &Restaurar (%1)
+&Copy value (%1) = &Copiar valor (%1)
+&Paste value (%1) = Co&lar valor (%1)
+&Paste value = Co&lar valor
+MIDI learn = Aprender MIDI
+Remove MIDI mapping = Tirar o mapa MIDI
+Add automation lane = Automatizar (criar pista)
+Remove automation lane = Tirar a pista de automação
+Set linear = Definir linear
+Set logarithmic = Definir logarítmico
+Set value = Alterar valor
+Please enter a new value between %1 and %2: = Digite um novo valor entre %1 e %2:
+Please enter a new value between %1 dBFS and %2 dBFS: = Digite um novo valor entre %1 dBFS e %2 dBFS:
+Cancel = Cancelar
+OK = OK
+Open audio file = Abrir arquivo de áudio
+
+# Units
+semitones = semitons
+cents = centésimos
+degrees = graus
+
+# TripleOscillator
+Modulation type %1 = Tipo de modulação %1
+Modulate phase of oscillator 1 by oscillator 2 = Modular a fase do oscilador 1 pelo oscilador 2
+Modulate amplitude of oscillator 1 by oscillator 2 = Modular a amplitude do oscilador 1 pelo oscilador 2
+Mix output of oscillators 1 & 2 = Misturar as saídas dos osciladores 1 e 2
+Synchronize oscillator 1 with oscillator 2 = Sincronize o oscilador 1 com o oscilador 2
+Modulate frequency of oscillator 1 by oscillator 2 = Modular a frequência do oscilador 1 pelo oscilador 2
+Modulate phase of oscillator 2 by oscillator 3 = Modular a fase do oscilador 2 pelo oscilador 3
+Modulate amplitude of oscillator 2 by oscillator 3 = Modular a amplitude do oscilador 2 pelo oscilador 3
+Mix output of oscillators 2 & 3 = Misturar as saídas dos osciladores 2 e 3
+Synchronize oscillator 2 with oscillator 3 = Sincronize o oscilador 2 com o oscilador 3
+Modulate frequency of oscillator 2 by oscillator 3 = Modular a frequência do oscilador 2 pelo oscilador 3
+Osc %1 volume = Volume Osc %1
+Osc %1 volume: = Volume Osc %1:
+Osc %1 panning = Panorâmico Osc %1
+Osc %1 panning: = Panorâmico Osc %1:
+Osc %1 coarse detuning = Ajuste bruto Osc %1
+Osc %1 coarse detuning: = Ajuste bruto Osc %1:
+Osc %1 fine detuning left = Ajuste fino esquerdo Osc %1
+Osc %1 fine detuning left: = Ajuste fino esquerdo Osc %1:
+Osc %1 fine detuning right = Ajuste fino direito Osc %1
+Osc %1 fine detuning right: = Ajuste fino direito Osc %1:
+Osc %1 phase-offset = Defasamento Osc %1
+Osc %1 phase-offset: = Defasamento Osc %1:
+Osc %1 stereo phase-detuning = Defasamento estéreo Osc %1
+Osc %1 stereo phase-detuning: = Defasamento estéreo Osc %1:
+Osc %1 wavetable = Tabela de ondas Osc %1
+Use alias-free wavetable oscillators. = Usar osciladores de tabela de ondas sem aliasing.
+Osc %1 wave shape = Formato de onda Osc %1
+Sine wave = Onda senoidal
+Triangle wave = Onda triangular
+Saw wave = Onda dente de serra
+Square wave = Onda quadrada
+Moog-like saw wave = Onda dente de serra estilo Moog
+Exponential wave = Onda exponencial
+White noise = Ruído branco
+User-defined wave = Onda definida pelo usuário

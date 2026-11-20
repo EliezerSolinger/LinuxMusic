@@ -28,7 +28,7 @@ use lm_port::{
     Loading, Meter, NoteRef, Notice, OperationInfo, PeakBlock, Pending, Position, Preview, RecordingTake, Ref,
     ScanKind, Severity, Target, TelemetryView,
 };
-use lm_state::{NodeId, PathStep, Resource, Value};
+use lm_state::{NodeId, NodeSchema, PathStep, Resource, Value};
 
 use crate::demo::BAR;
 use crate::peaks::Peaks;
@@ -103,6 +103,18 @@ pub struct FakePort {
     /// The fake's own feed: any change makes the project modified
     own_feed: Feed,
     midi: midi::Midi,
+    /// Real plugins given by `with_plugins` (their schemas replace the fake ones of the same id): id, instrument
+    real_plugins: Vec<(Arc<str>, bool)>,
+    /// The last `param_write` (not cleared at the gesture's end, for the plugin panels' tests)
+    last_write: Option<(NodeId, String, f32)>,
+}
+
+/// A real plugin's schema for the fake (lm-gui-plugins' tests: the panels move the real parameters). The fake
+/// cannot depend on lm-plugin, so the caller passes the descriptor's main schema
+#[derive(Clone, Debug)]
+pub struct RealPlugin {
+    pub schema: NodeSchema,
+    pub instrument: bool,
 }
 
 impl std::fmt::Debug for FakePort {
@@ -117,11 +129,27 @@ fn err(key: &'static str) -> Error {
 
 impl FakePort {
     pub fn new(config: Config) -> Result<FakePort> {
+        Self::with_plugins(config, Vec::new())
+    }
+
+    /// The demo with real plugins: each schema replaces the fake plugin of the same id (or adds one), and every
+    /// node of a replaced plugin in the demo starts at the real plugin's defaults (an empty state)
+    pub fn with_plugins(config: Config, real: Vec<RealPlugin>) -> Result<FakePort> {
         let registry = Arc::new(demo::registry()?);
         let mut doc = Document::new_project(registry, demo::options())?;
         demo::project(&mut doc, config.tracks.max(3))?;
         // the demo is the opening state: nothing to undo
-        let doc = Document::open(Arc::clone(doc.registry()), doc.saved(), demo::options())?.document;
+        let doc = if real.is_empty() {
+            Document::open(Arc::clone(doc.registry()), doc.saved(), demo::options())?.document
+        } else {
+            let ids: Vec<String> =
+                real.iter().map(|p| p.schema.type_name.trim_start_matches("plugin:").to_string()).collect();
+            let registry = Arc::new(demo::registry_with(real.iter().map(|p| p.schema.clone()).collect())?);
+            let saved = demo::reset_plugins(&doc.saved(), &ids, &registry)?;
+            Document::open(registry, saved, demo::options_with(ids))?.document
+        };
+        let real_plugins =
+            real.iter().map(|p| (Arc::from(p.schema.type_name.trim_start_matches("plugin:")), p.instrument)).collect();
         let now = Instant::now();
         let mut doc = doc;
         let own_feed = doc.feed(Topic::All);
@@ -160,6 +188,8 @@ impl FakePort {
             library: library::Library::new(),
             preview: None,
             live: HashMap::new(),
+            real_plugins,
+            last_write: None,
         };
         port.push_notice("Autosaved {0}", vec![("time", Value::text("12:04"))], Severity::Info, None, Vec::new());
         if let Some(delay) = config.slow_delay
@@ -976,6 +1006,7 @@ impl CorePort for FakePort {
 
     fn param_write(&mut self, node: NodeId, param: &str, value: f32) {
         self.live.insert((node, param.to_string()), value);
+        self.last_write = Some((node, param.to_string(), value));
     }
 
     fn loading(&self, target: &Target) -> Loading {
@@ -1121,17 +1152,24 @@ impl CorePort for FakePort {
     }
 
     fn plugins(&self) -> Vec<lm_port::PluginInfo> {
-        demo::PLUGINS
-            .iter()
-            .map(|(id, instrument, _)| lm_port::PluginInfo {
-                id: Arc::from(*id),
-                name: Arc::from(*id),
-                instrument: *instrument,
-                category: Arc::from(demo::category(id)),
-                third_party: false,
-                latency: demo::latency(id),
-            })
-            .collect()
+        let fake = demo::PLUGINS.iter().filter(|(id, ..)| !self.real_plugins.iter().any(|(r, _)| &**r == *id));
+        fake.map(|(id, instrument, _)| lm_port::PluginInfo {
+            id: Arc::from(*id),
+            name: Arc::from(*id),
+            instrument: *instrument,
+            category: Arc::from(demo::category(id)),
+            third_party: false,
+            latency: demo::latency(id),
+        })
+        .chain(self.real_plugins.iter().map(|(id, instrument)| lm_port::PluginInfo {
+            id: Arc::clone(id),
+            name: Arc::clone(id),
+            instrument: *instrument,
+            category: Arc::from(demo::category(id)),
+            third_party: false,
+            latency: 0,
+        }))
+        .collect()
     }
 
     fn plugin_schema(&self, plugin: &str) -> Option<lm_port::NodeSchema> {
@@ -1213,6 +1251,11 @@ impl FakePort {
     }
 
     /// The xruns the fake counts: tests make a pump late on purpose
+    /// The last value written by `param_write`: node, key, value
+    pub fn last_param_write(&self) -> Option<(NodeId, &str, f32)> {
+        self.last_write.as_ref().map(|(n, k, v)| (*n, k.as_str(), *v))
+    }
+
     pub fn pumps(&self) -> u64 {
         self.pumps
     }

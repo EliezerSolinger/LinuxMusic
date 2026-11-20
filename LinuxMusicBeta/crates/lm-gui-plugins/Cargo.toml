@@ -1,0 +1,25 @@
+[package]
+name = "lm-gui-plugins"
+description = "LinuxMusic: the native plugins' own panels, faithful to the legacy (interfaces.md, I-22), on the CorePort only"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lm-port.workspace = true
+gpui.workspace = true
+# The legacy pixmaps (PNG) are decoded once and composited with the controls' drawing on the CPU (src/raster.rs)
+image = { workspace = true, features = ["png"] }
+
+[dev-dependencies]
+# The tests move every control on the fake core, with the real plugins' schemas
+lm-port-fake.workspace = true
+lm-plugin.workspace = true
+lm-plugins-tripleoscillator.workspace = true
+lm-plugins-effects.workspace = true
+gpui = { workspace = true, features = ["test-support"] }
