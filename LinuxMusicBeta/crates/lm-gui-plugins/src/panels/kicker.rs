@@ -91,4 +91,5 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| PanelSpec {
             "End to note",
         ),
     ],
+    labels: Vec::new(),
 });

@@ -70,7 +70,31 @@ pub mod lmms {
     pub static LCD_11GREEN: Asset = asset!("lmms/lcd_11green.png");
     pub static LCD_19PURPLE: Asset = asset!("lmms/lcd_19purple.png");
     pub static COMBOBOX_ARROW: Asset = asset!("lmms/combobox_arrow.png");
+    pub static COMBOBOX_ARROW_SELECTED: Asset = asset!("lmms/combobox_arrow_selected.png");
     pub static COMBOBOX_BG: Asset = asset!("lmms/combobox_bg.png");
+
+    pub static SAW_WAVE_ACTIVE: Asset = asset!("lmms/saw_wave_active.png");
+    pub static SAW_WAVE_INACTIVE: Asset = asset!("lmms/saw_wave_inactive.png");
+    pub static TRIANGLE_WAVE_ACTIVE: Asset = asset!("lmms/triangle_wave_active.png");
+    pub static TRIANGLE_WAVE_INACTIVE: Asset = asset!("lmms/triangle_wave_inactive.png");
+    pub static SQUARE_WAVE_ACTIVE: Asset = asset!("lmms/square_wave_active.png");
+    pub static SQUARE_WAVE_INACTIVE: Asset = asset!("lmms/square_wave_inactive.png");
+    pub static ROUND_SQUARE_WAVE_ACTIVE: Asset = asset!("lmms/round_square_wave_active.png");
+    pub static ROUND_SQUARE_WAVE_INACTIVE: Asset = asset!("lmms/round_square_wave_inactive.png");
+    pub static MOOG_SAW_WAVE_ACTIVE: Asset = asset!("lmms/moog_saw_wave_active.png");
+    pub static MOOG_SAW_WAVE_INACTIVE: Asset = asset!("lmms/moog_saw_wave_inactive.png");
+    pub static SIN_WAVE_ACTIVE: Asset = asset!("lmms/sin_wave_active.png");
+    pub static SIN_WAVE_INACTIVE: Asset = asset!("lmms/sin_wave_inactive.png");
+    pub static EXP_WAVE_ACTIVE: Asset = asset!("lmms/exp_wave_active.png");
+    pub static EXP_WAVE_INACTIVE: Asset = asset!("lmms/exp_wave_inactive.png");
+    pub static WHITE_NOISE_WAVE_ACTIVE: Asset = asset!("lmms/white_noise_wave_active.png");
+    pub static WHITE_NOISE_WAVE_INACTIVE: Asset = asset!("lmms/white_noise_wave_inactive.png");
+    pub static FILTER_LP: Asset = asset!("lmms/filter_lp.png");
+    pub static FILTER_HP: Asset = asset!("lmms/filter_hp.png");
+    pub static FILTER_BP: Asset = asset!("lmms/filter_bp.png");
+    pub static FILTER_NOTCH: Asset = asset!("lmms/filter_notch.png");
+    pub static FILTER_AP: Asset = asset!("lmms/filter_ap.png");
+    pub static FILTER_2LP: Asset = asset!("lmms/filter_2lp.png");
 
     pub static ALL: &[&Asset] = &[
         &KNOB01,
@@ -88,7 +112,30 @@ pub mod lmms {
         &LCD_11GREEN,
         &LCD_19PURPLE,
         &COMBOBOX_ARROW,
+        &COMBOBOX_ARROW_SELECTED,
         &COMBOBOX_BG,
+        &SAW_WAVE_ACTIVE,
+        &SAW_WAVE_INACTIVE,
+        &TRIANGLE_WAVE_ACTIVE,
+        &TRIANGLE_WAVE_INACTIVE,
+        &SQUARE_WAVE_ACTIVE,
+        &SQUARE_WAVE_INACTIVE,
+        &ROUND_SQUARE_WAVE_ACTIVE,
+        &ROUND_SQUARE_WAVE_INACTIVE,
+        &MOOG_SAW_WAVE_ACTIVE,
+        &MOOG_SAW_WAVE_INACTIVE,
+        &SIN_WAVE_ACTIVE,
+        &SIN_WAVE_INACTIVE,
+        &EXP_WAVE_ACTIVE,
+        &EXP_WAVE_INACTIVE,
+        &WHITE_NOISE_WAVE_ACTIVE,
+        &WHITE_NOISE_WAVE_INACTIVE,
+        &FILTER_LP,
+        &FILTER_HP,
+        &FILTER_BP,
+        &FILTER_NOTCH,
+        &FILTER_AP,
+        &FILTER_2LP,
     ];
 }
 

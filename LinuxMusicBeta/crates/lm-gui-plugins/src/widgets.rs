@@ -447,6 +447,12 @@ pub fn draw_lcd(c: &mut Canvas, sheet: LcdSheet, digits: usize, text: &str, enab
     // the frame: rect (0, 0, w, h) with w = cells + margins - 1
     let w = (cw * digits as u32 + (1 + mw) * 2 - 1) as f32;
     let h = (ch + 2) as f32;
+    draw_frame(c, w, h);
+}
+
+/// `LmmsStyle::drawPrimitive(PE_Frame)`: the sunken frame of LCDs, combo boxes and line edits, on the rectangle
+/// (0, 0, `w`, `h`)
+pub fn draw_frame(c: &mut Canvas, w: f32, h: f32) {
     let (l, t, r, b) = (0.0, 0.0, w - 1.0, h - 1.0);
     let black = |a: f32| Rgba { r: 0.0, g: 0.0, b: 0.0, a: a / 255.0 };
     let hl = |a: f32| Rgba { a: a / 255.0, ..Rgba::hex(0x262b30) };
@@ -475,6 +481,63 @@ pub fn draw_lcd(c: &mut Canvas, sheet: LcdSheet, digits: usize, text: &str, enab
     for (px_, py_) in [(r - 1.0, b), (r, b - 1.0), (l + 1.0, b), (r, t + 1.0)] {
         dot(c, px_, py_, hl(a25));
     }
+}
+
+/// `ComboBox::DEFAULT_HEIGHT`
+pub const COMBO_HEIGHT: f32 = 22.0;
+/// `CB_ARROW_BTN_WIDTH`
+pub const COMBO_ARROW_W: f32 = 18.0;
+
+/// `ComboBox::paintEvent` without the text (drawn as text by the panel): the tiled `combobox_bg`, the button's
+/// separator, the frame, the arrow, and the current item's icon (scaled to 16 pixels high when taller). Returns
+/// where the text starts
+pub fn draw_combo(c: &mut Canvas, w: f32, icon: Option<&image::RgbaImage>, pressed: bool) -> f32 {
+    let h = COMBO_HEIGHT;
+    let bg = assets::image(&assets::lmms::COMBOBOX_BG);
+    // fillRect(2, 2, width - 2, height - 4) with the pixmap as a tiled brush
+    let (bw, bh) = (bg.width().max(1), bg.height().max(1));
+    let mut y = 2u32;
+    while (y as f32) < h - 2.0 {
+        let mut x = 2u32;
+        while (x as f32) < w {
+            let cw = bw.min(w as u32 - x);
+            let chh = bh.min((h - 2.0) as u32 - y);
+            c.pixmap_part(
+                bg,
+                ((x % bw), (y % bh), cw.min(bw - x % bw), chh.min(bh - y % bh)),
+                x as f32,
+                y as f32,
+                false,
+            );
+            x += bw - x % bw;
+        }
+        y += bh - y % bh;
+    }
+    let shadow = Rgba::alpha(0, 0, 0, 124);
+    let highlight = Rgba { a: 124.0 / 255.0, ..Rgba::hex(0x262b30) };
+    c.fill_rect(w - COMBO_ARROW_W - 1.0, 1.0, 1.0, h - 3.0, shadow);
+    c.fill_rect(w - COMBO_ARROW_W, 1.0, 1.0, h - 3.0, highlight);
+    draw_frame(c, w, h);
+    let arrow = if pressed { &assets::lmms::COMBOBOX_ARROW_SELECTED } else { &assets::lmms::COMBOBOX_ARROW };
+    c.pixmap(assets::image(arrow), w - COMBO_ARROW_W + 3.0, 4.0, false);
+    let mut tx = 5.0;
+    if let Some(icon) = icon {
+        if icon.height() > 16 {
+            let k = 16.0 / icon.height() as f32;
+            let scaled = image::imageops::resize(
+                icon,
+                (icon.width() as f32 * k).round() as u32,
+                16,
+                image::imageops::FilterType::Triangle,
+            );
+            c.pixmap(&scaled, tx, 3.0, false);
+            tx += scaled.width() as f32 + 3.0;
+        } else {
+            c.pixmap(icon, tx, 3.0, false);
+            tx += icon.width() as f32 + 3.0;
+        }
+    }
+    tx
 }
 
 /// `LcdWidget::setValue(float)`: the text shown for a value (`-0` for values in (-1, 0)), with leading zeros

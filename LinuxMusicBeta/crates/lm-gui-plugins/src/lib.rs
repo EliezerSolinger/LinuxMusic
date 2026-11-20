@@ -28,7 +28,7 @@ use gpui::{AnyView, App, AppContext, Entity, Window};
 use lm_port::{CorePort, NodeId, RequestId, Resource};
 
 pub use i18n::set_language;
-pub use panel::PluginPanel;
+pub use panel::{PanelEvent, PluginPanel};
 
 /// What a panel needs of its host: the port, read and changed (lm-gui's `Core` entity implements it)
 pub trait PortHost: 'static {
@@ -63,6 +63,17 @@ pub fn open<H: PortHost>(
 ) -> Option<AnyView> {
     let spec = panels::spec(plugin)?;
     Some(cx.new(|cx| PluginPanel::new(host, node, spec, cx)).into())
+}
+
+/// The panel as its entity, for a host that subscribes to its [`panel::PanelEvent`]s (the binding window)
+pub fn open_entity<H: PortHost>(
+    plugin: &str,
+    node: NodeId,
+    host: Entity<H>,
+    cx: &mut App,
+) -> Option<Entity<PluginPanel<H>>> {
+    let spec = panels::spec(plugin)?;
+    Some(cx.new(|cx| PluginPanel::new(host, node, spec, cx)))
 }
 
 /// The plugins that have a panel, in the registry's order

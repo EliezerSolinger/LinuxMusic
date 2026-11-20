@@ -2,18 +2,31 @@
 
 use crate::spec::PanelSpec;
 
+pub mod effects;
 pub mod kicker;
+pub mod lb302;
 pub mod tripleoscillator;
 
 type SpecFn = fn() -> &'static PanelSpec;
 
 /// `plugin id → panel`
-pub static ALL: &[(&str, SpecFn)] =
-    &[(tripleoscillator::ID, || &tripleoscillator::PANEL), (kicker::ID, || &kicker::PANEL)];
+pub static ALL: &[(&str, SpecFn)] = &[
+    (tripleoscillator::ID, || &tripleoscillator::PANEL),
+    (kicker::ID, || &kicker::PANEL),
+    ("bitcrush", || &effects::BITCRUSH_PANEL),
+    ("bassbooster", || &effects::BASSBOOSTER_PANEL),
+    ("reverbsc", || &effects::REVERBSC_PANEL),
+    ("flanger", || &effects::FLANGER_PANEL),
+    ("amplifier", || &effects::AMPLIFIER_PANEL),
+    ("stereomatrix", || &effects::STEREOMATRIX_PANEL),
+    ("dualfilter", || &effects::DUALFILTER_PANEL),
+    (lb302::ID, || &lb302::PANEL),
+];
 
 pub fn spec(plugin: &str) -> Option<&'static PanelSpec> {
     ALL.iter().find(|(id, _)| *id == plugin).map(|(_, f)| f())
 }
 
 /// Every panel's images (the asset test decodes them all)
-pub static ASSETS: &[&[&crate::assets::Asset]] = &[tripleoscillator::ASSETS, kicker::ASSETS];
+pub static ASSETS: &[&[&crate::assets::Asset]] =
+    &[tripleoscillator::ASSETS, kicker::ASSETS, effects::ASSETS, lb302::ASSETS];

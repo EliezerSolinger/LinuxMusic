@@ -161,6 +161,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                     hint: Text::n(hint, n),
                     unit,
                     volume,
+                    zero_dbfs: 100.0,
                     label: None,
                     log: false,
                 }),
@@ -201,7 +202,14 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             });
         }
     }
-    PanelSpec { plugin: ID, size: (250.0, 250.0), background: Some(&ARTWORK), fill: 0x000000, controls }
+    PanelSpec {
+        plugin: ID,
+        size: (250.0, 250.0),
+        background: Some(&ARTWORK),
+        fill: 0x000000,
+        controls,
+        labels: Vec::new(),
+    }
 });
 
 /// The panel's names are built once and live as long as the program (the spec is a static)

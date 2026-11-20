@@ -84,8 +84,10 @@ pub struct KnobSpec {
     /// `setHintText(text, unit)`
     pub hint: Text,
     pub unit: &'static str,
-    /// A `VolumeKnob`: its text is dBFS of `value / 100`, and the entry asks in dBFS
+    /// A `VolumeKnob`: its text is dBFS of `value / zero_dbfs`, and the entry asks in dBFS
     pub volume: bool,
+    /// The value that is 0 dBFS (`setZeroDbfsPoint`, 100 by default)
+    pub zero_dbfs: f64,
     /// The label under the pixmap (`setLabel`), drawn at `SMALL_FONT_SIZE`
     pub label: Option<Text>,
     /// The legacy model's `setScaleLogarithmic(true)` (the knob's travel; the schema's `Scale::Log` is only how the
@@ -123,12 +125,39 @@ pub struct LcdSpec {
     pub leading_zero: bool,
 }
 
+/// One entry of a combo box: the choice's key, its text and its icon
+#[derive(Clone, Debug, PartialEq)]
+pub struct ComboItem {
+    pub key: &'static str,
+    pub text: Text,
+    pub icon: Option<&'static Asset>,
+}
+
+/// A combo box (`ComboBox`) on a choice field, `w` wide (its height is `ComboBox::DEFAULT_HEIGHT`, 22)
+#[derive(Clone, Debug, PartialEq)]
+pub struct ComboSpec {
+    pub field: &'static str,
+    pub w: f32,
+    pub items: Vec<ComboItem>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     Knob(KnobSpec),
     Led(LedSpec),
     Button(ButtonSpec),
     Lcd(LcdSpec),
+    Combo(ComboSpec),
+}
+
+/// A fixed text of the view (a `QLabel`): its top-left corner, its size in pixels
+#[derive(Clone, Debug, PartialEq)]
+pub struct StaticText {
+    pub x: f32,
+    pub y: f32,
+    pub px: f32,
+    pub text: Text,
+    pub color: u32,
 }
 
 /// One control at its place
@@ -152,6 +181,7 @@ impl Control {
             Kind::Lcd(l) => Target::Param(l.param),
             Kind::Led(l) => l.bind.target(),
             Kind::Button(b) => b.bind.target(),
+            Kind::Combo(c) => Target::Field(c.field),
         }
     }
 
@@ -169,6 +199,7 @@ impl Control {
                 (a.width().max(i.width()) as f32, a.height().max(i.height()) as f32)
             }
             Kind::Lcd(l) => crate::widgets::lcd_size(l.sheet, l.digits),
+            Kind::Combo(c) => (c.w, crate::widgets::COMBO_HEIGHT),
         }
     }
 }
@@ -184,6 +215,8 @@ pub struct PanelSpec {
     /// The fill under it (the parts the artwork does not cover)
     pub fill: u32,
     pub controls: Vec<Control>,
+    /// The view's fixed texts
+    pub labels: Vec<StaticText>,
 }
 
 impl PanelSpec {
@@ -227,6 +260,7 @@ pub fn knob(
             hint: Text::new(hint),
             unit,
             volume: false,
+            zero_dbfs: 100.0,
             label: None,
             log: false,
         }),
@@ -301,6 +335,16 @@ impl Control {
         self
     }
 
+    /// A `VolumeKnob` whose 0 dBFS is at `zero` (`setZeroDbfsPoint`)
+    #[must_use]
+    pub fn volume_at(mut self, zero: f64) -> Self {
+        if let Some(k) = self.knob_mut() {
+            k.volume = true;
+            k.zero_dbfs = zero;
+        }
+        self
+    }
+
     /// `setCenterValue`
     #[must_use]
     pub fn center(mut self, v: f64) -> Self {
@@ -336,4 +380,21 @@ impl Control {
         }
         self
     }
+}
+
+/// A combo box at `x`, `y`
+pub fn combo(field: &'static str, x: f32, y: f32, w: f32, name: &'static str, items: Vec<ComboItem>) -> Control {
+    Control {
+        id: field,
+        x,
+        y,
+        kind: Kind::Combo(ComboSpec { field, w, items }),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+    }
+}
+
+/// A fixed text (`QLabel`) at its top-left corner, white, `DEFAULT_FONT_SIZE`
+pub fn label(x: f32, y: f32, text: &'static str) -> StaticText {
+    StaticText { x, y, px: crate::widgets::theme::DEFAULT_FONT_PX, text: Text::new(text), color: 0xd1d8e4 }
 }

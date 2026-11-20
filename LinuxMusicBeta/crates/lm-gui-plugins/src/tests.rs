@@ -267,7 +267,7 @@ fn exercise(o: &mut Opened<'_>) {
                 }
                 o.cx.simulate_keystrokes("enter");
                 o.settle();
-                let want = if k.volume { r.fit(10f64.powf(-6.0 / 20.0) * 100.0) } else { quarter };
+                let want = if k.volume { r.fit(10f64.powf(-6.0 / 20.0) * k.zero_dbfs) } else { quarter };
                 assert!((o.param(key) - want).abs() < 1e-9, "{id}: typed {typed}: {} vs {want}", o.param(key));
                 // the menu: reset
                 o.click(id, MouseButton::Right);
@@ -283,6 +283,21 @@ fn exercise(o: &mut Opened<'_>) {
             }
             Kind::Button(b) => check_bind(o, id, b.bind),
             Kind::Led(l) => check_bind(o, id, l.bind),
+            Kind::Combo(cb) => {
+                // the list opens under the box; a click on the last choice selects it
+                o.click(id, MouseButton::Left);
+                assert!(o.cx.debug_bounds("combo-list").is_some(), "{id}: the list opens");
+                let last = cb.items.last().unwrap().key;
+                o.click(leak(format!("choice-{last}")), MouseButton::Left);
+                assert_eq!(o.field(cb.field).as_text(), Some(last), "{id}: selects {last}");
+                // the wheel up goes to the previous choice
+                o.wheel(id, true, Modifiers::none());
+                let prev = cb.items[cb.items.len() - 2].key;
+                assert_eq!(o.field(cb.field).as_text(), Some(prev), "{id}: wheel");
+                o.click(id, MouseButton::Middle);
+                let def = schema.find_field(cb.field).and_then(|f| f.default.clone());
+                assert_eq!(Some(o.field(cb.field)), def, "{id}: middle click resets");
+            }
             Kind::Lcd(l) => {
                 let key = l.param;
                 let before = o.param(key);
@@ -339,6 +354,52 @@ fn kicker(cx: &mut TestAppContext) {
     exercise(&mut o);
 }
 
+fn effect(cx: &mut TestAppContext, d: &'static Descriptor) {
+    let mut o = open(cx, &[(d, false)], d.id);
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn lb302(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::lb302::DESCRIPTOR, true)], "lb302");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn bitcrush(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::bitcrush::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn bassbooster(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::bass_booster::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn reverbsc(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::reverb_sc::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn flanger(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::flanger::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn amplifier(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::amplifier::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn stereomatrix(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::stereo_matrix::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn dualfilter(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::dual_filter::DESCRIPTOR);
+}
+
 #[gpui::test]
 fn the_value_float_shows_after_700_ms(cx: &mut TestAppContext) {
     let mut o = open(cx, &[(&lm_plugins_tripleoscillator::DESCRIPTOR, true)], "tripleoscillator");
@@ -367,6 +428,26 @@ fn shift_drag_carries_a_value_to_another_knob(cx: &mut TestAppContext) {
     o.settle();
     assert_eq!(o.param("fineR1"), 37.0);
     assert_eq!(o.param("fineL1"), 37.0);
+}
+
+#[gpui::test]
+fn midi_binding_asks_the_host(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_tripleoscillator::DESCRIPTOR, true)], "tripleoscillator");
+    let got = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let sink = got.clone();
+    let panel = o.panel.clone();
+    let _sub =
+        o.cx.update(|_, cx| cx.subscribe(&panel, move |_, e: &crate::PanelEvent, _| sink.borrow_mut().push(e.clone())));
+    o.click("pan2", MouseButton::Right);
+    o.click("menu-midi-binding", MouseButton::Left);
+    let node = o.node;
+    assert_eq!(
+        *got.borrow(),
+        vec![crate::PanelEvent::OpenBinding(lm_port::MapTarget::Param {
+            node: lm_port::NodeRef::Id(node),
+            key: "pan2".into()
+        })]
+    );
 }
 
 #[gpui::test]
@@ -415,11 +496,22 @@ fn every_text_has_its_translation() {
         }
     };
     for (_, spec) in panels::ALL {
+        for l in &spec().labels {
+            want(l.text.key);
+        }
         for c in &spec().controls {
             want(c.name.key);
             want(c.tip.key);
+            if let Kind::Combo(cb) = &c.kind {
+                for i in &cb.items {
+                    want(i.text.key);
+                }
+            }
             if let Kind::Knob(k) = &c.kind {
                 want(k.hint.key);
+                if let Some(l) = &k.label {
+                    want(l.key);
+                }
                 if k.unit.trim().chars().any(char::is_alphabetic) {
                     want(k.unit.trim());
                 }
@@ -483,6 +575,15 @@ fn snapshots() {
                     }
                     Kind::Led(l) => one.pixmap(crate::assets::image(l.color.asset()), 0.0, 0.0, false),
                     Kind::Lcd(l) => crate::widgets::draw_lcd(&mut one, l.sheet, l.digits, "0", true),
+                    Kind::Combo(cb) => {
+                        let def = schema.find_field(cb.field).and_then(|f| f.default.clone());
+                        let icon = cb
+                            .items
+                            .iter()
+                            .find(|i| def.as_ref().and_then(|d| d.as_text()) == Some(i.key))
+                            .and_then(|i| i.icon);
+                        let _ = crate::widgets::draw_combo(&mut one, cb.w, icon.map(crate::assets::image), false);
+                    }
                 }
                 c.composite(&one, ctl.x, ctl.y);
             }

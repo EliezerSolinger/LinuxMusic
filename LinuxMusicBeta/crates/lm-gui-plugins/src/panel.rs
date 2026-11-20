@@ -67,12 +67,21 @@ struct Menu {
     ctrl: usize,
     x: f32,
     y: f32,
+    /// a combo box's list of choices, not the control's menu
+    choices: bool,
 }
 
 /// The value entry (`enterValue`) being typed
 struct Entry {
     ctrl: usize,
     text: String,
+}
+
+/// What a panel asks of the window that hosts it
+#[derive(Clone, Debug, PartialEq)]
+pub enum PanelEvent {
+    /// "MIDI binding…": open the interface's binding window on this target (lm-gui's `ui::midi::open_binding`)
+    OpenBinding(MapTarget),
 }
 
 /// One entry of the context menu
@@ -83,6 +92,7 @@ pub enum MenuItem {
     Paste,
     MidiLearn,
     MidiForget,
+    MidiBinding,
     AddLane,
     RemoveLane,
     ToggleLog,
@@ -185,7 +195,7 @@ impl<H: PortHost> PluginPanel<H> {
         let (key, step, center, log) = match &c.kind {
             Kind::Knob(k) => (k.param, k.step, k.center, k.log),
             Kind::Lcd(l) => (l.param, 1.0, None, false),
-            Kind::Led(_) | Kind::Button(_) => (c.target().key(), 1.0, None, false),
+            Kind::Led(_) | Kind::Button(_) | Kind::Combo(_) => (c.target().key(), 1.0, None, false),
         };
         let p = self.schema.as_ref().and_then(|s| s.find_param(key));
         let (min, max) = p.map_or((0.0, 1.0), |p| (p.min, p.max));
@@ -218,12 +228,16 @@ impl<H: PortHost> PluginPanel<H> {
                 let r = self.range(ctrl);
                 let v = r.rounded(self.param(k.param, cx));
                 if k.volume {
-                    widgets::volume_text(v, 100.0)
+                    widgets::volume_text(v, k.zero_dbfs)
                 } else {
                     format!("{}{}", widgets::qt_number(v), unit(k.unit))
                 }
             }
             Kind::Lcd(l) => widgets::qt_number(self.param(l.param, cx)),
+            Kind::Combo(cb) => {
+                let v = self.field(cb.field, cx);
+                cb.items.iter().find(|i| v.as_text() == Some(i.key)).map(|i| i.text.show()).unwrap_or_default()
+            }
             Kind::Led(_) | Kind::Button(_) => match c.target() {
                 Target::Param(k) => widgets::qt_number(self.param(k, cx)),
                 Target::Field(k) => match self.field(k, cx) {
@@ -387,7 +401,7 @@ impl<H: PortHost> PluginPanel<H> {
             }
             MouseButton::Right => {
                 self.float = None;
-                self.menu = Some(Menu { ctrl, x, y });
+                self.menu = Some(Menu { ctrl, x, y, choices: false });
                 cx.notify();
             }
             MouseButton::Left => match &c.kind {
@@ -408,6 +422,14 @@ impl<H: PortHost> PluginPanel<H> {
                 Kind::Led(l) => {
                     let bind = l.bind;
                     self.click_button(ctrl, bind, ev.click_count, cx);
+                }
+                Kind::Combo(_) => {
+                    // `ComboBox::mousePressEvent`: the list of the choices under the box
+                    let c = &self.spec.controls[ctrl];
+                    self.pressed = Some(ctrl);
+                    self.float = None;
+                    self.menu = Some(Menu { ctrl, x: c.x, y: c.y + widgets::COMBO_HEIGHT, choices: true });
+                    cx.notify();
                 }
             },
             _ => {}
@@ -528,6 +550,20 @@ impl<H: PortHost> PluginPanel<H> {
 
     fn scroll(&mut self, x: f32, y: f32, ev: &ScrollEvent, cx: &mut Context<Self>) {
         let Some(ctrl) = self.spec.hit(x, y) else { return };
+        if let Kind::Combo(cb) = &self.spec.controls[ctrl].kind {
+            // `ComboBox::wheelEvent`: down selects the next choice, up the previous
+            let down = match ev.delta {
+                ScrollDelta::Lines(d) => d.y < 0.0,
+                ScrollDelta::Pixels(d) => d.y < px(0.),
+            };
+            let v = self.field(cb.field, cx);
+            let i = cb.items.iter().position(|it| v.as_text() == Some(it.key)).unwrap_or(0);
+            let j = if down { (i + 1).min(cb.items.len() - 1) } else { i.saturating_sub(1) };
+            if j != i {
+                self.set(ctrl, Value::text(cb.items[j].key), cx);
+            }
+            return;
+        }
         if !matches!(self.spec.controls[ctrl].kind, Kind::Knob(_) | Kind::Lcd(_)) {
             return;
         }
@@ -567,7 +603,7 @@ impl<H: PortHost> PluginPanel<H> {
         let r = self.range(ctrl);
         let text = match &c.kind {
             Kind::Knob(k) if k.volume => {
-                let ratio = r.rounded(v).abs() / 100.0;
+                let ratio = r.rounded(v).abs() / k.zero_dbfs;
                 let db = if ratio > 0.0 { 20.0 * ratio.log10() } else { -96.0 };
                 format!("{db:.2}")
             }
@@ -585,7 +621,7 @@ impl<H: PortHost> PluginPanel<H> {
         match &c.kind {
             Kind::Knob(k) if k.volume => {
                 let magnitude = r.max.max(r.min.abs());
-                (-96.0, 20.0 * (magnitude / 100.0).log10())
+                (-96.0, 20.0 * (magnitude / k.zero_dbfs).log10())
             }
             _ => (r.min, r.max),
         }
@@ -603,7 +639,7 @@ impl<H: PortHost> PluginPanel<H> {
         let value = match &self.spec.controls[e.ctrl].kind {
             Kind::Knob(k) if k.volume => {
                 let sign = if self.param(k.param, cx) < 0.0 { -1.0 } else { 1.0 };
-                if typed <= -96.0 { 0.0 } else { sign * 10f64.powf(typed / 20.0) * 100.0 }
+                if typed <= -96.0 { 0.0 } else { sign * 10f64.powf(typed / 20.0) * k.zero_dbfs }
             }
             _ => typed,
         };
@@ -648,6 +684,7 @@ impl<H: PortHost> PluginPanel<H> {
         }
         items.push((MenuItem::MidiLearn, true));
         items.push((MenuItem::MidiForget, self.mappings(ctrl, cx) > 0));
+        items.push((MenuItem::MidiBinding, true));
         if param {
             if self.lane(ctrl, cx).is_some() {
                 items.push((MenuItem::RemoveLane, true));
@@ -668,7 +705,7 @@ impl<H: PortHost> PluginPanel<H> {
             MenuItem::Reset => {
                 let d = self.default_of(c.target());
                 let shown = match (&c.kind, d.as_real()) {
-                    (Kind::Knob(k), Some(v)) if k.volume => widgets::volume_text(v, 100.0),
+                    (Kind::Knob(k), Some(v)) if k.volume => widgets::volume_text(v, k.zero_dbfs),
                     (Kind::Knob(k), Some(v)) => format!("{}{}", widgets::qt_number(v), unit(k.unit)),
                     (_, Some(v)) => widgets::qt_number(v),
                     (_, None) => d.as_text().map(str::to_owned).unwrap_or_default(),
@@ -682,6 +719,7 @@ impl<H: PortHost> PluginPanel<H> {
             },
             MenuItem::MidiLearn => Text::new("MIDI learn").show(),
             MenuItem::MidiForget => Text::new("Remove MIDI mapping").show(),
+            MenuItem::MidiBinding => Text::new("MIDI binding…").show(),
             MenuItem::AddLane => Text::new("Add automation lane").show(),
             MenuItem::RemoveLane => Text::new("Remove automation lane").show(),
             MenuItem::ToggleLog => {
@@ -721,6 +759,7 @@ impl<H: PortHost> PluginPanel<H> {
                     let _ = h.port_mut().unmap(&target, MapScope::Project);
                 });
             }
+            MenuItem::MidiBinding => cx.emit(PanelEvent::OpenBinding(self.map_target(ctrl))),
             MenuItem::AddLane => {
                 if let Some(owner) = self.owner(cx) {
                     let lane = Value::object([
@@ -860,6 +899,19 @@ impl<H: PortHost> PluginPanel<H> {
                 let (sheet, digits) = (l.sheet, l.digits);
                 (hsh, Box::new(move |cv| widgets::draw_lcd(cv, sheet, digits, &text, true)))
             }
+            Kind::Combo(cb) => {
+                let v = self.field(cb.field, cx);
+                let i = cb.items.iter().position(|it| v.as_text() == Some(it.key));
+                let icon = i.and_then(|i| cb.items[i].icon);
+                let pressed = self.pressed == Some(ctrl) && self.menu.is_some();
+                let w = cb.w;
+                (
+                    i.map_or(u64::MAX, |i| i as u64) ^ (pressed as u64) << 32,
+                    Box::new(move |cv| {
+                        widgets::draw_combo(cv, w, icon.map(assets::image), pressed);
+                    }),
+                )
+            }
         };
         let key = (ctrl, state_key ^ (scale.to_bits() as u64).rotate_left(7));
         if let Some(i) = self.images.get(&key) {
@@ -873,29 +925,45 @@ impl<H: PortHost> PluginPanel<H> {
         image
     }
 
-    fn texts(&self) -> Vec<(f32, f32, f32, String, u32, bool)> {
-        // (x, y baseline, font px, text, color, centered at x)
+    fn texts(&self, cx: &App) -> Vec<Txt> {
         let mut out = Vec::new();
+        let base = |x: f32, y: f32, px: f32, text: String, color: u32, centered: bool| Txt {
+            x,
+            y,
+            px,
+            text,
+            color,
+            centered,
+            top: false,
+        };
         for c in &self.spec.controls {
             let (w, h) = c.size();
             match &c.kind {
                 Kind::Knob(k) => {
                     if let Some(l) = &k.label {
-                        out.push((c.x + w / 2.0, c.y + h + 10.0 - 2.0, theme::SMALL_FONT_PX, l.show(), 0xffffff, true));
+                        // the legacy label: at the bottom of the widget, 2 pixels above its edge (`drawLabel`)
+                        out.push(base(
+                            c.x + w / 2.0,
+                            c.y + h + 10.0 - 2.0,
+                            theme::SMALL_FONT_PX,
+                            l.show(),
+                            0xffffff,
+                            true,
+                        ));
                     }
                 }
                 Kind::Led(l) => {
                     let t = l.text.show();
                     if !t.is_empty() {
                         // paintLegacy: a shadow (64, 64, 64) one pixel down-right, then white
-                        out.push((c.x + w + 4.0, c.y + 11.0, theme::DEFAULT_FONT_PX, t.clone(), 0x404040, false));
-                        out.push((c.x + w + 3.0, c.y + 10.0, theme::DEFAULT_FONT_PX, t, 0xffffff, false));
+                        out.push(base(c.x + w + 4.0, c.y + 11.0, theme::DEFAULT_FONT_PX, t.clone(), 0x404040, false));
+                        out.push(base(c.x + w + 3.0, c.y + 10.0, theme::DEFAULT_FONT_PX, t, 0xffffff, false));
                     }
                 }
                 Kind::Lcd(l) => {
                     if let Some(t) = &l.label {
                         let t = t.show();
-                        out.push((
+                        out.push(base(
                             c.x + w / 2.0 + 1.0,
                             c.y + h + 9.0,
                             theme::DEFAULT_FONT_PX,
@@ -903,14 +971,56 @@ impl<H: PortHost> PluginPanel<H> {
                             0x404040,
                             true,
                         ));
-                        out.push((c.x + w / 2.0, c.y + h + 8.0, theme::DEFAULT_FONT_PX, t, 0xffffff, true));
+                        out.push(base(c.x + w / 2.0, c.y + h + 8.0, theme::DEFAULT_FONT_PX, t, 0xffffff, true));
+                    }
+                }
+                Kind::Combo(cb) => {
+                    let current = self.field(cb.field, cx);
+                    if let Some(item) = cb.items.iter().find(|i| current.as_text() == Some(i.key)) {
+                        let tx = c.x + combo_text_x(item);
+                        // `(height + fontMetrics.height) / 2 - 4`, the shadow one pixel down-right in (64, 64, 64)
+                        let y = c.y + ((widgets::COMBO_HEIGHT + 15.0) / 2.0).floor() - 4.0;
+                        let t = item.text.show();
+                        out.push(base(tx + 1.0, y + 1.0, theme::DEFAULT_FONT_PX, t.clone(), 0x404040, false));
+                        out.push(base(tx, y, theme::DEFAULT_FONT_PX, t, 0xe0e0e0, false));
                     }
                 }
                 Kind::Button(_) => {}
             }
         }
+        for l in &self.spec.labels {
+            out.push(Txt { x: l.x, y: l.y, px: l.px, text: l.text.show(), color: l.color, centered: false, top: true });
+        }
         out
     }
+}
+
+/// Where a combo box's text starts: after the icon (`tx = 5`, plus the icon's width and 3)
+fn combo_text_x(item: &crate::spec::ComboItem) -> f32 {
+    match item.icon {
+        Some(a) => {
+            let img = assets::image(a);
+            let w = if img.height() > 16 {
+                (img.width() as f32 * 16.0 / img.height() as f32).round()
+            } else {
+                img.width() as f32
+            };
+            5.0 + w + 3.0
+        }
+        None => 5.0,
+    }
+}
+
+/// A text the panel paints: at its baseline (`top` false, as QPainter::drawText) or its top-left (a QLabel)
+#[derive(Clone, Debug)]
+struct Txt {
+    x: f32,
+    y: f32,
+    px: f32,
+    text: String,
+    color: u32,
+    centered: bool,
+    top: bool,
 }
 
 /// A unit as the legacy hint writes it (`" " + tr("semitones")`): the word translated, the space kept
@@ -935,6 +1045,7 @@ pub const TEXTS: &[&str] = &[
     "&Paste value",
     "MIDI learn",
     "Remove MIDI mapping",
+    "MIDI binding…",
     "Add automation lane",
     "Remove automation lane",
     "Set linear",
@@ -969,6 +1080,8 @@ impl<H: PortHost> std::fmt::Debug for PluginPanel<H> {
     }
 }
 
+impl<H: PortHost> gpui::EventEmitter<PanelEvent> for PluginPanel<H> {}
+
 impl<H: PortHost> Focusable for PluginPanel<H> {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus.clone()
@@ -987,7 +1100,7 @@ impl<H: PortHost> Render for PluginPanel<H> {
                 (Bounds::new(point(px(c.x), px(c.y)), size(px(cw), px(ch))), self.control_image(i, scale, cx))
             })
             .collect();
-        let texts = self.texts();
+        let texts = self.texts(cx);
         let weak = cx.entity().downgrade();
 
         let mut root = div()
@@ -1040,7 +1153,11 @@ impl<H: PortHost> Render for PluginPanel<H> {
             );
         }
         if let Some(m) = &self.menu {
-            root = root.child(self.render_menu(m.ctrl, m.x, m.y, cx));
+            root = if m.choices {
+                root.child(self.render_choices(m.ctrl, m.x, m.y, cx))
+            } else {
+                root.child(self.render_menu(m.ctrl, m.x, m.y, cx))
+            };
         }
         if let Some(e) = &self.entry {
             root = root.child(self.render_entry(e.ctrl, &e.text, cx));
@@ -1098,6 +1215,61 @@ impl<H: PortHost> PluginPanel<H> {
             menu = menu.child(row);
         }
         menu
+    }
+
+    /// A combo box's list (`ComboBox::mousePressEvent`'s QMenu): every choice with its icon; a click selects it
+    fn render_choices(&self, ctrl: usize, x: f32, y: f32, cx: &mut Context<Self>) -> impl IntoElement {
+        let Kind::Combo(cb) = &self.spec.controls[ctrl].kind else { return div().into_any_element() };
+        let current = self.field(cb.field, cx);
+        let mut list = div()
+            .id("combo-list")
+            .debug_selector(|| "combo-list".into())
+            .occlude()
+            .absolute()
+            .left(px(x))
+            .top(px(y))
+            .min_w(px(cb.w))
+            .bg(rgb(theme::MENU_BG))
+            .border_1()
+            .border_color(rgb(theme::MENU_CAPTION))
+            .text_size(px(theme::DEFAULT_FONT_PX))
+            .text_color(rgb(theme::MENU_TEXT))
+            .on_mouse_down_out(cx.listener(|p, _, _, cx| {
+                p.menu = None;
+                p.pressed = None;
+                cx.notify();
+            }));
+        for (i, item) in cb.items.iter().enumerate() {
+            let key = item.key;
+            let sel = format!("choice-{key}");
+            let on = current.as_text() == Some(key);
+            let mut row = div()
+                .id(("combo-item", i))
+                .debug_selector(move || sel.clone())
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .px(px(6.))
+                .py(px(2.))
+                .hover(|s| s.bg(rgb(theme::MENU_HOVER)))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |p, _, _, cx| {
+                        cx.stop_propagation();
+                        p.menu = None;
+                        p.pressed = None;
+                        p.set(ctrl, Value::text(key), cx);
+                    }),
+                );
+            if on {
+                row = row.bg(rgb(theme::MENU_CAPTION));
+            }
+            if let Some(icon) = item.icon {
+                row = row.child(img(icon.gpui_image()).w(px(assets::image(icon).width() as f32)).h(px(16.)));
+            }
+            list = list.child(row.child(item.text.show()));
+        }
+        list.into_any_element()
     }
 
     fn render_entry(&self, ctrl: usize, text: &str, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1189,6 +1361,7 @@ fn menu_name(item: MenuItem) -> &'static str {
         MenuItem::Paste => "paste",
         MenuItem::MidiLearn => "midi-learn",
         MenuItem::MidiForget => "midi-forget",
+        MenuItem::MidiBinding => "midi-binding",
         MenuItem::AddLane => "add-lane",
         MenuItem::RemoveLane => "remove-lane",
         MenuItem::ToggleLog => "toggle-log",
@@ -1198,14 +1371,12 @@ fn menu_name(item: MenuItem) -> &'static str {
 /// How a control's image is drawn for its present state
 type Draw = Box<dyn Fn(&mut Canvas)>;
 
-type TextItem = (f32, f32, f32, String, u32, bool);
-
 /// Paints the controls' images and texts, and listens to the mouse for the whole panel (a drag goes on outside it)
 fn paint<H: PortHost>(
     bounds: Bounds<Pixels>,
     hitbox: Hitbox,
     images: Vec<(Bounds<Pixels>, Arc<RenderImage>)>,
-    texts: Vec<TextItem>,
+    texts: Vec<Txt>,
     weak: WeakEntity<PluginPanel<H>>,
     window: &mut Window,
     cx: &mut App,
@@ -1216,21 +1387,25 @@ fn paint<H: PortHost>(
         let _ = window.paint_image(at, at, Default::default(), image, 0, false);
     }
     let font = window.text_style().font();
-    for (x, y, size_px, text, color, centered) in texts {
+    let font_id = window.text_system().resolve_font(&font);
+    for t in texts {
         let run = TextRun {
-            len: text.len(),
+            len: t.text.len(),
             font: font.clone(),
-            color: rgb(color).into(),
+            color: rgb(t.color).into(),
             background_color: None,
             underline: None,
             strikethrough: None,
         };
-        let line = window.text_system().shape_line(text.into(), px(size_px), &[run], None);
+        let size_px = px(t.px);
+        let ascent = window.text_system().ascent(font_id, size_px);
+        let descent = window.text_system().descent(font_id, size_px);
+        let line = window.text_system().shape_line(t.text.into(), size_px, &[run], None);
         let lw = line.width.as_f32();
-        let left = if centered { x - lw / 2.0 } else { x };
-        // the legacy draws at the baseline: the line box starts about one ascent above it
-        let top = y - size_px;
-        let _ = line.paint(o + point(px(left), px(top)), px(size_px * 1.2), TextAlign::Left, None, window, cx);
+        let left = if t.centered { t.x - lw / 2.0 } else { t.x };
+        // a line box exactly ascent + descent high: its baseline is one ascent below its top
+        let top = if t.top { px(t.y) } else { px(t.y) - ascent };
+        let _ = line.paint(o + point(px(left), top), ascent + descent.abs(), TextAlign::Left, None, window, cx);
     }
     let local = move |p: gpui::Point<Pixels>| ((p.x - o.x).as_f32(), (p.y - o.y).as_f32());
     let w = weak.clone();

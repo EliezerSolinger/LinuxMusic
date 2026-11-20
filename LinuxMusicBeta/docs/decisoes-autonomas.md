@@ -700,6 +700,15 @@ modos e a chave ANALOG / DIGITAL. Só muda o que segue:
   - **O "logarítmico" de cada knob é o do modelo do legado** (`KnobSpec::log`, de `setScaleLogarithmic`), não o
     `Scale::Log` do esquema, que é só a apresentação do editor genérico: o Kicker tem as frequências em `Log` no
     esquema, mas os knobs do legado eram lineares no curso.
+  - **Diálogos montados por layout do Qt** (BassBooster, ReverbSC, Flanger, Amplifier, StereoMatrix): no legado a
+    posição vinha do layout com a fonte do sistema, então nunca foi um número fixo. O painel tem o tamanho da arte
+    (o tamanho para que ela foi desenhada) e cada knob fica centrado na sua célula igual dentro das margens de 9 px
+    do layout; o StereoMatrix põe os knobs nos círculos que a arte desenha para eles. Os rótulos desses knobs usam
+    10 px (`SMALL_FONT_SIZE`), o tamanho que cabe na arte.
+  - **"MIDI binding…" no menu** emite `PanelEvent::OpenBinding(MapTarget)`; a janela que hospeda o painel (que pega
+    a entidade com `open_entity`) responde abrindo a janela de ligação do `lm-gui` (o painel não depende do `lm-gui`).
+  - **O `VolumeKnob` guarda o seu 0 dBFS** (`setZeroDbfsPoint`: 100 nos instrumentos, 1 no FDBK e no NOISE do
+    Flanger), para o texto e a digitação em dBFS darem os números do legado.
   - **Ligar dois controles com Ctrl+arrasto (P-04) não entra ainda:** o controle compartilhado não existe no núcleo.
   - **O arquivo da onda do usuário (TripleOscillator) é importado pela porta** (`CorePort::import`) e o campo e a
     escolha mudam num passo. No cliente a resposta chega depois: o host entrega por `PortHost::take_imported`, o
