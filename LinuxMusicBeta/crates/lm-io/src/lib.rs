@@ -1,6 +1,8 @@
 //! LinuxMusic I/O (interfaces.md, I-10, I-11, I-12; Parte 5 H1–H3, H19; Parte 6 U3–U17; Parte 7 C2, C6–C10).
 #![forbid(unsafe_code)]
 
+#[cfg(target_os = "linux")]
+mod alsa;
 mod backend;
 mod device;
 mod disk;
@@ -8,8 +10,12 @@ mod dummy;
 mod edge;
 pub mod peaks;
 mod record;
+mod rt;
+mod system;
 mod take;
 
+#[cfg(target_os = "linux")]
+pub use alsa::{AlsaBackend, ChoiceCaps, DeviceChoice, card_index, device_present, list_devices};
 pub use backend::{Backend, CallbackGuard, CallbackHandle, DeviceCallback, DeviceConfig, DeviceEvent, DeviceInfo};
 pub use device::{Device, STOP_TIMEOUT, StopTimedOut, SwitchFailed, abandoned_devices, switch_device};
 pub use disk::{DiskEvent, DiskWriter, LIVE_PEAK_CHANNELS, LivePeak, RESERVE_SECONDS, SYNC_SECONDS, ring_frames};
@@ -22,3 +28,8 @@ pub use take::{
     TakeSpan, TakeStop, WARN_SECONDS, check_record_space, finalize_take, find_interrupted, forget_record, free_space,
     hash_file, new_uuid, peaks_of_file, read_record, record_bytes_per_second, recover_take, space_for,
 };
+pub use rt::{
+    DEFAULT_PRIORITY, DEFAULT_STACK, MemoryLock, NoRealtime, RealtimeThreads, RtBuffer, RtMembership, RtMethod, RtReport,
+    SystemRealtime, lock_memory, realtime_hook,
+};
+pub use system::{SleepGuard, device_error};
