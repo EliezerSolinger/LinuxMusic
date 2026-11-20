@@ -1521,6 +1521,15 @@ pub struct Transform {
     - converter entre as faixas de controle de um item MIDI e uma pista de automação.
   - As edições pesadas (afinar, converter, escalar muitos pontos) são ações do núcleo (I-19), com mais de 200 ms
     virando `Operation`.
+- **Na interface** (`lm-gui`, editor de automação, a tela do legado com estes acréscimos):
+  - a barra mostra a lane aberta, o **modo da lane** (combo que grava `mode`) e **Rearmar** (`automation.rearm`);
+  - **"a mão venceu"**: a lane cujo par (dono, parâmetro) está em `TelemetryView.hand_won` mostra o aviso no
+    cabeçalho da lane e no editor, até o rearme; o botão global de modo (`transport.automationMode`) fica no
+    transporte;
+  - lápis livre (Shift+P) manda os pontos crus e chama `automation.thin` ao soltar; Shift+clique traça a linha; a
+    seleção por retângulo (Shift+S) serve a recortar, copiar, colar, escalar e deslocar (`automation.scale`); cada
+    ponto mostra a forma do trecho que termina nele (alça no meio do trecho "curva") e o valor de saída (`out`) como
+    um segundo ponto vazado na mesma vertical.
 
 ### I-21.6 Pronto quando
 

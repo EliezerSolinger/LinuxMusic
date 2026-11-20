@@ -691,7 +691,6 @@ editor de passos seguem a tela do legado; esta lista é só o que muda, e por qu
   fixa hoje. Volta quando a doca for redimensionável.
 - **B-PR-9 Teclas:** as do legado, pelo registro de ações no contexto `PianoRoll`; Esc também desmarca (o legado só
   tinha Ctrl+Shift+A), porque Esc já fecha e cancela no resto do programa.
-
 - **B-AE-1 Tangentes viram a `curve` do ponto:** o modo "editar tangentes" (Shift+T) saiu; no lugar, cada trecho
   "curva" tem uma alça no meio que se arrasta para dobrá-lo (−1 a 1). A progressão (discreta, linear, cúbica com
   tensão) passa a valer por ponto (o trecho que termina nele), não pelo clipe todo: os botões dão a forma dos pontos
