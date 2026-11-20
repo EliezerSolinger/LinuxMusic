@@ -226,9 +226,15 @@ impl RecordSender {
                 input.enabled = true;
             }
         } else if let Some((_, lost)) = gap {
-            self.flush_span();
-            self.push(Marker::Gap { file_frame: self.file_pos, frames: u64::from(lost) });
-            self.file_pos += u64::from(lost);
+            let lost = u64::from(lost);
+            self.push(Marker::Gap { file_frame: self.file_pos, frames: lost });
+            // The renderer moved the playhead by the lost frames too: the silence is on the grid, inside the span
+            if let Some((f, _, n)) = &mut self.pending
+                && *f + *n == self.file_pos
+            {
+                *n += lost;
+            }
+            self.file_pos += lost;
         }
         for s in spans {
             let file_frame = self.file_pos + s.offset as u64;

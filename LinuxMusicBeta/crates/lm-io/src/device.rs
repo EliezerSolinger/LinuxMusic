@@ -64,13 +64,18 @@ struct Driver {
     control: Consumer<DriverMsg>,
     back: Producer<Box<RecordSender>>,
     spans: [RecordSpan; MAX_SPANS],
+    /// Arms taken from the ring (the device compares with the arms it sent)
+    arms_taken: Arc<AtomicU64>,
 }
 
 impl Driver {
     fn take_messages(&mut self) {
         while let Ok(msg) = self.control.pop() {
             let old = match msg {
-                DriverMsg::Arm(sender) => self.recorder.replace(sender),
+                DriverMsg::Arm(sender) => {
+                    self.arms_taken.fetch_add(1, Ordering::Release);
+                    self.recorder.replace(sender)
+                }
                 DriverMsg::Disarm => self.recorder.take(),
             };
             if let Some(mut old) = old {
@@ -136,6 +141,8 @@ pub struct Device {
     returned_senders: Vec<Box<RecordSender>>,
     senders_out: usize,
     disconnected: bool,
+    arms_sent: u64,
+    arms_taken: Arc<AtomicU64>,
 }
 
 impl fmt::Debug for Device {
@@ -164,6 +171,8 @@ impl Device {
             returned_senders: Vec::new(),
             senders_out: 0,
             disconnected: false,
+            arms_sent: 0,
+            arms_taken: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -223,7 +232,16 @@ impl Device {
         };
         let (control, control_rx) = ring(DRIVER_RING);
         let (back_tx, back) = ring(DRIVER_RING);
-        let driver = Driver { renderer, recorder: None, control: control_rx, back: back_tx, spans: [RecordSpan::default(); MAX_SPANS] };
+        self.arms_sent = 0;
+        self.arms_taken = Arc::new(AtomicU64::new(0));
+        let driver = Driver {
+            renderer,
+            recorder: None,
+            control: control_rx,
+            back: back_tx,
+            spans: [RecordSpan::default(); MAX_SPANS],
+            arms_taken: self.arms_taken.clone(),
+        };
         let (returned_tx, returned) = mpsc::sync_channel(1);
         self.guard = Arc::new(CallbackGuard::default());
         let (handle, events) = CallbackHandle::new(Box::new(driver), self.guard.clone(), returned_tx, self.threads.clone());
@@ -268,12 +286,23 @@ impl Device {
                 match control.push(DriverMsg::Arm(Box::new(sender))) {
                     Ok(()) => {
                         self.senders_out += 1;
+                        self.arms_sent += 1;
                         Ok(())
                     }
                     Err(rtrb::PushError::Full(DriverMsg::Arm(s))) => Err(*s),
                     Err(rtrb::PushError::Full(DriverMsg::Disarm)) => unreachable!("pushed an Arm"),
                 }
             }
+        }
+    }
+
+    /// True once the device callback has taken every sender given to [`Device::arm`]. The session arms, waits for
+    /// this (one period), and only then sends `Command::Record`: a recorder that arrives after the transport started
+    /// recording would miss the first blocks
+    pub fn is_armed(&self) -> bool {
+        match self.state {
+            State::Stopped => self.armed.is_some(),
+            State::Running { .. } => self.arms_sent > 0 && self.arms_taken.load(Ordering::Acquire) == self.arms_sent,
         }
     }
 

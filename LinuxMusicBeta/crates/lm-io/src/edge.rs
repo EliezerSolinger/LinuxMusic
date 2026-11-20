@@ -174,7 +174,10 @@ impl Edge {
         let play_latency = playback.as_ref().map_or(0.0, |r| r.latency() * ratio_in);
         // The input FIFO keeps one block plus a period of margin (and with drift, a second period for the clock
         // difference to move in)
-        let margin = (device_period as f64 * ratio_in).ceil() as usize + if drift { block } else { 0 };
+        // and what the two filters hold back at the start (the playback converter gives fewer frames until its
+        // filter is full, so the first renders take more input than a period brings)
+        let filters = (cap_latency + play_latency).ceil() as usize;
+        let margin = (device_period as f64 * ratio_in).ceil() as usize + filters + if drift { block } else { 0 };
         let prefill = block + margin;
         let fifo_frames = 4 * (block + margin) + 64;
         let mut in_fifo = Fifo::new(inputs, fifo_frames);

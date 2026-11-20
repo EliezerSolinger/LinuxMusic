@@ -203,6 +203,9 @@ pub fn read_record(path: &Path) -> Result<(RecordHeader, Vec<RecordLine>)> {
     let mut events = Vec::new();
     for line in lines {
         let Ok(text) = line else { break };
+        if text.trim().is_empty() {
+            continue;
+        }
         match serde_json::from_str::<RecordLine>(&text) {
             Ok(l) => events.push(l),
             Err(_) => break,

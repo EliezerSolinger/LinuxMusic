@@ -286,7 +286,9 @@ impl Worker {
     /// there before the markers were read. Returns (did something, is finished)
     fn service(&mut self, a: &mut Active, stopping: bool) -> (bool, bool) {
         let mut busy = false;
-        // What the data rings hold now: a marker pushed after this snapshot can only refer to data pushed after it
+        // What the data rings hold now. Every marker is pushed after the data before its frame, so a marker handler
+        // drains up to its frame whatever the snapshot says; the final drain below takes only what was there before
+        // the markers were read (data that came later may lie past a marker not popped yet)
         let mut allow: Vec<u64> = a
             .recv
             .data
@@ -371,9 +373,8 @@ impl Worker {
             Marker::Gap { file_frame, frames } => {
                 let Some(n) = a.take.as_ref().map(|t| t.inputs.len()) else { return };
                 for k in 0..n {
-                    let avail = allow[k];
-                    let used = self.drain(a, k, file_frame, avail);
-                    allow[k] -= used;
+                    let used = self.drain(a, k, file_frame, u64::MAX);
+                    allow[k] = allow[k].saturating_sub(used);
                     self.silence(a, k, frames);
                 }
                 if let Some(t) = a.take.as_mut() {
@@ -394,9 +395,8 @@ impl Worker {
             Marker::Overflow { input, file_frame } => {
                 let k = usize::from(input);
                 if a.take.as_ref().is_some_and(|t| k < t.inputs.len()) {
-                    let avail = allow[k];
-                    let used = self.drain(a, k, file_frame, avail);
-                    allow[k] -= used;
+                    let used = self.drain(a, k, file_frame, u64::MAX);
+                    allow[k] = allow[k].saturating_sub(used);
                     self.stop_input(a, k, StopReason::Overflow, file_frame, None);
                 }
             }
@@ -678,9 +678,8 @@ impl Worker {
     fn end_take(&mut self, a: &mut Active, file_frame: u64, allow: &mut [u64]) {
         let Some(n) = a.take.as_ref().map(|t| t.inputs.len()) else { return };
         for k in 0..n {
-            let avail = allow[k];
-            let used = self.drain(a, k, file_frame, avail);
-            allow[k] -= used;
+            let used = self.drain(a, k, file_frame, u64::MAX);
+            allow[k] = allow[k].saturating_sub(used);
         }
         self.close_take(a);
     }
