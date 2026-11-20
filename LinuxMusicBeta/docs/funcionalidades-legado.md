@@ -710,6 +710,7 @@ Regras gerais do legado que valem para quase todo plugin:
 - **Master:** Volume 0–2, 1 · Vibrato 0–15, 0.
 - **Comportamento:** polifônico, cada nota é um NES inteiro; mistura mono com as proporções do NES, duplicada em L/R;
   release praticamente nulo (corta no note-off).
+- **Na beta:** plugin `nes`, em `lm-plugins-instruments`: os 35 botões do legado em camelCase (`ch1Enabled`…`ch4NoiseQuantize`, `masterVolume`, `vibrato`), os duty cycles como parâmetros escalonados 0–3 (automatizáveis, como os grupos de botões do legado); os botões agem nas notas que soam. Contrato e A/B por composição.
 
 #### F-INS-011 OpulenZ (FM de 2 operadores, OPL2/AdLib) — 1.0
 

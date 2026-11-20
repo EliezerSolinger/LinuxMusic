@@ -10,6 +10,7 @@
 pub mod bit_invader;
 pub mod kicker;
 pub mod lb302;
+pub mod nes;
 pub mod organic;
 pub mod sfxr;
 pub mod vibed;
@@ -21,6 +22,7 @@ pub static ALL: &[&Descriptor] = &[
     &bit_invader::DESCRIPTOR,
     &kicker::DESCRIPTOR,
     &lb302::DESCRIPTOR,
+    &nes::DESCRIPTOR,
     &organic::DESCRIPTOR,
     &sfxr::DESCRIPTOR,
     &vibed::DESCRIPTOR,
