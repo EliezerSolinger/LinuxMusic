@@ -79,3 +79,25 @@ git sparse-checkout set --cone LinuxMusicBeta && git checkout
   as partes 5 a 7), `decisoes-autonomas.md`, `funcionalidades-legado.md` (as funcionalidades da sua área) e o código
   dos pacotes de que dependem.
 - Disco limitado: só debug e release localmente, nada de `cargo clean` no workspace inteiro.
+
+## Estado na pausa de 20/11 (integração do trabalho em andamento)
+
+Pedido do usuário: todo o progresso de todos os agentes foi juntado no master antes da pausa até 27/11. Cada um dos 13
+ramos `wip/*` (o que estava sem commit nas worktrees) entrou por merge. O workspace compila, e `clippy -D warnings` e
+`rustfmt` passam.
+
+`cargo test --workspace` no macOS deu 1463 testes passando e 19 falhando. As falhas são do trabalho que estava pela
+metade e ficam para os donos, na volta:
+
+| Teste | Dono (ramo de origem) |
+|---|---|
+| lm-doc `basics::frozen_defaults` (padrões mudaram sem subir a versão) | quem mudou o esquema na integração; conferir com `LM_BLESS_DEFAULTS=1` e subir a versão |
+| lm-gui `desk_keys`, `strip_menu` | agente A (`wip/gui-a`) |
+| lm-gui `importing_and_exporting_midi` | agente D (`wip/gui-d`) |
+| lm-io `stretch::a_rendering_is_exactly_as_long_as_asked…` | re-render do andamento (`wip/instruments-stretch`) |
+| lm-plugins-fluidsynth `ab` e os 11 de `avldrums_contract` | plugins com bibliotecas (`wip/instr-libs`) |
+| lm-plugins-guitarix `param_sweep_without_allocation` | Guitarix (`wip/guitarix`) |
+| lm-session `plugins::every_plugin_crate_is_registered` (fluidsynth e guitarix fora de `internal_plugins()`) | sessão |
+
+**Para cada agente, na volta:** o trabalho que estava sem commit na sua worktree já está no master. Comece com
+`git fetch && git reset --hard origin/master` na sua worktree, em vez de commitar de novo as mesmas mudanças.
