@@ -10503,6 +10503,114 @@
           -0.981818
         ]
       ]
+    },
+    {
+      "name": "patman-three-layers-low",
+      "unit": "patman",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "freq": 196.0,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "patch": "data/three-layers.pat",
+        "looped": true,
+        "tuned": true
+      }
+    },
+    {
+      "name": "patman-three-layers-high",
+      "unit": "patman",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "freq": 1000.0,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "patch": "data/three-layers.pat",
+        "looped": true,
+        "tuned": true
+      }
+    },
+    {
+      "name": "patman-untuned",
+      "unit": "patman",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "freq": 523.25,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "patch": "data/three-layers.pat",
+        "looped": true,
+        "tuned": false
+      }
+    },
+    {
+      "name": "patman-eight-bit",
+      "unit": "patman",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "freq": 330.0,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "patch": "data/eight-bit.pat",
+        "looped": false,
+        "tuned": true
+      }
+    },
+    {
+      "name": "patman-mixed-unlooped",
+      "unit": "patman",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "freq": 260.0,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "patch": "data/mixed.pat",
+        "looped": false,
+        "tuned": true
+      }
+    },
+    {
+      "name": "patman-mixed-looped",
+      "unit": "patman",
+      "rate": 44100,
+      "frames": 24064,
+      "block": 256,
+      "freq": 410.0,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "patch": "data/mixed.pat",
+        "looped": true,
+        "tuned": true
+      }
     }
   ]
 }

@@ -909,6 +909,36 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "patman" {
+        // The PatMan with its patch read from ab/data, the sample player's interpolator linear (libsamplerate's), as
+        // the legacy plugin's
+        use lm_dsp::patman::*;
+        use lm_dsp::sample_player::Interpolator;
+        use lm_sys_samplerate::{Quality, Resampler};
+        struct Src(Resampler);
+        impl Interpolator for Src {
+            fn process(&mut self, input: &[[f32; 2]], output: &mut [[f32; 2]], ratio: f64) -> (usize, usize) {
+                self.0.set_ratio(ratio).unwrap();
+                let done = self.0.process(input.as_flattened(), output.as_flattened_mut()).unwrap();
+                (done.input_frames, done.output_frames)
+            }
+            fn reset(&mut self) {
+                self.0.reset().unwrap();
+            }
+        }
+        let s = &case["settings"];
+        let bytes = std::fs::read(ab_dir().join(s["patch"].as_str().unwrap())).unwrap();
+        let samples = parse_patch(&bytes).unwrap();
+        let freq = case["freq"].as_f64().unwrap() as f32;
+        let looped = s["looped"].as_bool().unwrap();
+        let interpolator = Src(Resampler::new(Quality::Linear, 2, 1.0).unwrap());
+        let mut voice = PatmanVoice::new(&samples, freq, s["tuned"].as_bool().unwrap(), interpolator);
+        for start in (0..frames as usize).step_by(block as usize) {
+            let end = (start + block as usize).min(frames as usize);
+            voice.render(&mut out[start..end], &samples, freq, looped, case["rate"].as_f64().unwrap() as f32, 256);
+        }
+        return out;
+    }
     if case["unit"] == "watsyn" {
         use lm_dsp::watsyn::*;
         let st = &case["settings"];

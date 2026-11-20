@@ -33,6 +33,7 @@
 //! - [`vibed`]: the Vibed's plucked strings;
 //! - [`sfxr`]: the sfxr;
 //! - [`watsyn`]: the Watsyn;
+//! - [`patman`]: the PatMan (Gravis Ultrasound patches);
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
 //!
 //! The effects of the validation plugins:
@@ -84,6 +85,7 @@ pub mod nes;
 pub mod organic;
 pub mod oscillator;
 pub mod oversampling;
+pub mod patman;
 pub mod rbj;
 pub mod reverb_sc;
 pub mod sample_player;
