@@ -2107,3 +2107,35 @@ fn effect_sidechain_source(cx: &mut TestAppContext) {
     }
     panic!("no source could be chosen");
 }
+
+/// "+ Instrument track" adds a TripleOscillator track at the end, "+ Audio track" an audio one; a double click on
+/// the instrument track's row makes a MIDI item a bar long there and opens it in the Piano Roll
+#[gpui::test]
+fn adding_tracks_and_a_clip(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let n = model::tracks(&root(&ws, cx)).len();
+    let comp = ws.read_with(cx, |ws, _| ws.composition.clone());
+    // the last row is in view
+    comp.update(cx, |c, cx| {
+        c.track_h = 24.0;
+        c.view.scroll_y = 1e6;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    click(cx, "add-audio-track");
+    click(cx, "add-instrument-track");
+    let tracks = model::tracks(&root(&ws, cx));
+    assert_eq!(tracks.len(), n + 2);
+    assert!(tracks[n].instrument.is_none(), "an audio track");
+    let t = tracks[n + 1].clone();
+    assert_eq!(t.instrument.as_ref().map(|i| i.1.to_string()), Some("tripleoscillator".into()));
+    cx.run_until_parked();
+    let row = comp.read_with(cx, |c, _| c.track_row(t.id)).expect("the new track is drawn");
+    let b = bounds(cx, "timeline");
+    let p = point(b.origin.x + px(200.0), b.origin.y + px(row.0 + row.1 / 2.0));
+    button_at(cx, p, MouseButton::Left, 2);
+    let items = model::tracks(&root(&ws, cx))[n + 1].items.clone();
+    assert_eq!(items.len(), 1, "a double click made an item");
+    assert!(!items[0].audio && items[0].length > 0);
+    assert!(ws.read_with(cx, |ws, _| ws.is_open(Screen::PianoRoll)), "opened in the Piano Roll");
+}

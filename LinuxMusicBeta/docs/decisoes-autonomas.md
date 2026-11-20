@@ -326,6 +326,16 @@ de forma diz pelo que é substituído.
   `TelemetryView::hand_won`. Os métodos têm corpo padrão só na transição, para o `lm-session` e o `lm-remote`
   seguirem compilando; o falso já responde, e as portas de verdade passam a responder (a `LocalPort` pelo agente da
   I-21). A `RemotePort` precisa levar `hand_won` na telemetria do fio.
+- **O programa é o pacote `lm-gui-app` (binário `linuxmusicbeta`, agente A, 20/11)**, e não um binário dentro do
+  `lm-gui`:
+  - o `lm-gui` fala só com o `CorePort` e não depende do `lm-session` nem do `lm-remote`; o programa junta os três;
+  - o nome começa por `lm-gui` porque o `ci/check-core-no-gui.py` trata todo `lm-*` que não seja `lm-gui*` como
+    núcleo, e o programa depende da GPUI;
+  - sem argumentos, abre a sessão local e mostra os projetos recentes; com uma pasta, abre o projeto (uma operação,
+    com a regra dos 200 ms desde a primeira janela); com `--connect`, abre como cliente do `lm-remote`.
+- **Os testes de interface do `lm-gui` só rodam em compilação com `debug_assertions`:** a GPUI só grava os
+  `debug_selector` nessa compilação, e os testes acham os elementos por eles. Na compilação de release da CI, os
+  testes de interface ficam de fora, e não falham por seletores que não existem; o job de debug os roda.
 - **O `lm-remote` leva as chamadas novas (agente A, 20/11):**
   - `ui`, o aprendizado em curso, `hand_won` e a atividade MIDI vão do servidor ao espelho como `prefs` e `status`:
     no retrato inicial e quando mudam;

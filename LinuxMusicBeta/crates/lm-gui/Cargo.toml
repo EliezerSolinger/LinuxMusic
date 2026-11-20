@@ -30,3 +30,5 @@ image.workspace = true
 # Only the tests and the demo example: the interface never depends on the fake core
 lm-port-fake.workspace = true
 gpui = { workspace = true, features = ["test-support"] }
+# The test of the real program: the interface on lm-session's LocalPort (src/tests_app.rs)
+lm-session.workspace = true

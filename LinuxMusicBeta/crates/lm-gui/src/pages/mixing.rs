@@ -584,6 +584,11 @@ impl MixingPage {
         cx.notify();
     }
 
+    /// Whether the focus is in this page (its keys work)
+    pub fn has_focus(&self, window: &Window, cx: &gpui::App) -> bool {
+        self.focus.contains_focused(window, cx)
+    }
+
     /// Shows a channel (the FX button of a track's header, P-28)
     pub fn select_channel(&mut self, id: NodeId, cx: &mut Context<Self>) {
         let chs = channels(self.core.read(cx));

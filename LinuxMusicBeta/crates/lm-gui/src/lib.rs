@@ -29,16 +29,37 @@ use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, point, px, size
 use gpui_component::Root;
 use lm_port::CorePort;
 
+/// How the program starts (the application binary's choices)
+#[derive(Clone, Debug, Default)]
+pub struct Options {
+    /// The window's title
+    pub title: Option<String>,
+    /// Show the recent projects at the start (no project was given)
+    pub recents: bool,
+}
+
 /// Starts the interface on a port, in a GPUI application, and runs until the user quits
 pub fn run(make_port: impl FnOnce() -> Box<dyn CorePort> + 'static) {
+    run_with(make_port, Options::default())
+}
+
+/// `run`, with the start's options
+pub fn run_with(make_port: impl FnOnce() -> Box<dyn CorePort> + 'static, options: Options) {
     gpui_platform::application().run(move |cx: &mut App| {
         let port = make_port();
         workspace::start(cx, port.preferences());
         let bounds = Bounds::new(point(px(0.), px(0.)), size(px(view::WINDOW_W), px(view::WINDOW_H)));
+        let titlebar =
+            options.title.clone().map(|t| gpui::TitlebarOptions { title: Some(t.into()), ..Default::default() });
+        let recents = options.recents;
         let opened = cx.open_window(
-            WindowOptions { window_bounds: Some(WindowBounds::Windowed(bounds)), ..Default::default() },
+            WindowOptions { window_bounds: Some(WindowBounds::Windowed(bounds)), titlebar, ..Default::default() },
             |window, cx| {
                 let ws = cx.new(|cx| workspace::Workspace::new(port, window, cx));
+                if recents {
+                    // no project was given: the recent projects, to open one (the Project screen's Open)
+                    ws.update(cx, |ws, cx| ws.open(screens::Screen::Project, None, window, cx));
+                }
                 // the window's close button asks before losing changes, like Quit
                 let weak = ws.downgrade();
                 window.on_window_should_close(cx, move |window, cx| {
@@ -58,5 +79,10 @@ pub fn run(make_port: impl FnOnce() -> Box<dyn CorePort> + 'static) {
     });
 }
 
-#[cfg(test)]
+// The tests drive the views by GPUI's debug selectors, which GPUI records only in builds with debug assertions
+// (InteractiveElement::debug_selector): they run in the debug test builds, and a release test build leaves them
+// out rather than fail on selectors it cannot see
+#[cfg(all(test, debug_assertions))]
 mod tests;
+#[cfg(all(test, debug_assertions))]
+mod tests_app;

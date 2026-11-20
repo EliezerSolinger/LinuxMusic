@@ -103,6 +103,8 @@ pub struct CompositionPage {
     pub move_automation: bool,
     /// The lanes drawn in the last frame, relative to the timeline: (y, h, lane, track)
     lane_hits: Rc<RefCell<Vec<LaneHit>>>,
+    /// The track rows drawn in the last frame, relative to the timeline: (y, h, track)
+    track_hits: Rc<RefCell<Vec<(f32, f32, NodeId)>>>,
     /// The page's bounds, for placing the menu
     page_bounds: Rc<RefCell<Bounds<Pixels>>>,
     timeline_bounds: Rc<RefCell<Bounds<Pixels>>>,
@@ -166,6 +168,7 @@ impl CompositionPage {
             lane_menu: None,
             move_automation: true,
             lane_hits: Default::default(),
+            track_hits: Default::default(),
             page_bounds: Default::default(),
             timeline_bounds: Rc::new(RefCell::new(Bounds::default())),
             tiles: Rc::new(RefCell::new(TileCache::default())),
@@ -440,6 +443,13 @@ impl CompositionPage {
             .find(|(x, y, w, h, ..)| mx >= *x && mx <= x + w && my >= *y && my <= y + h)
             .copied();
         let Some((x, y, w, _, item, fi, fo)) = hit else {
+            if ev.click_count == 2 {
+                let row = self.track_hits.borrow().iter().find(|(y, h, _)| my >= *y && my <= y + h).copied();
+                if let Some((_, _, track)) = row {
+                    let tick = self.view.tick_at(mx);
+                    return self.new_item_at(track, tick, window, cx);
+                }
+            }
             self.selected_item = None;
             cx.notify();
             return;
@@ -800,6 +810,84 @@ impl CompositionPage {
                 };
                 div().absolute().top(px(top)).left(px(0.)).w(px(view::HEADER_W)).h(px(r.h)).child(el)
             }))
+            // under the last track: add one (the legacy song editor's "Add instrument track" and "Add sample track")
+            .child(
+                div()
+                    .absolute()
+                    .top(px(top0 + self.content_h(cx) as f32 - self.view.scroll_y as f32 + 4.0))
+                    .left(px(0.))
+                    .w(px(view::HEADER_W))
+                    .px(px(8.))
+                    .flex()
+                    .gap(px(6.))
+                    .child(
+                        button("add-instrument-track", tr("+ Instrument track"), false, 0)
+                            .debug_selector(|| "add-instrument-track".into())
+                            .on_click(cx.listener(|p, _, _, cx| p.add_track(true, cx))),
+                    )
+                    .child(
+                        button("add-audio-track", tr("+ Audio track"), false, 0)
+                            .debug_selector(|| "add-audio-track".into())
+                            .on_click(cx.listener(|p, _, _, cx| p.add_track(false, cx))),
+                    ),
+            )
+    }
+
+    /// Whether the focus is in this page (its keys work)
+    pub fn has_focus(&self, window: &Window, cx: &gpui::App) -> bool {
+        self.focus.contains_focused(window, cx)
+    }
+
+    /// Where a track's row was drawn in the last frame, relative to the timeline: (y, h)
+    #[cfg(test)]
+    pub fn track_row(&self, track: NodeId) -> Option<(f32, f32)> {
+        self.track_hits.borrow().iter().find(|(.., t)| *t == track).map(|(y, h, _)| (*y, *h))
+    }
+
+    /// A new track at the end: an instrument track with the TripleOscillator, as the legacy's default, or an
+    /// audio track; its main output goes to the master (I-3.9)
+    fn add_track(&mut self, instrument: bool, cx: &mut Context<Self>) {
+        let n = self.tracks(cx).len();
+        let node = if instrument {
+            Value::object([
+                ("name", Value::text("TripleOscillator")),
+                ("instrument", Value::object([("plugin", Value::text("tripleoscillator"))])),
+            ])
+        } else {
+            Value::object([("name", Value::text(trf("Audio {0}", &[&(n + 1)])))])
+        };
+        self.apply(
+            if instrument { "Add instrument track" } else { "Add audio track" },
+            vec![EditOp::Insert { temp: 0, parent: Ref::Id(lm_port::ROOT), list: "tracks".into(), index: n, node }],
+            cx,
+        );
+    }
+
+    /// A double click on an empty part of an instrument track: a MIDI item a bar long on that bar, opened in the
+    /// Piano Roll (the legacy's click in the song editor makes a clip)
+    fn new_item_at(&mut self, track: NodeId, tick: f64, window: &mut Window, cx: &mut Context<Self>) {
+        let root = self.core.read(cx).port().root().clone();
+        let Some(t) = model::tracks(&root).into_iter().find(|t| t.id == track) else { return };
+        if t.instrument.is_none() {
+            return;
+        }
+        let map = model::tempo_map(&root);
+        let bar = map.bar_beat_tick(tick.max(0.0) as i64).bar;
+        let start = map.bar_start(bar).unwrap_or(0);
+        let length = map.bar_start(bar + 1).unwrap_or(start + 4 * model::ppq(&root) as i64) - start;
+        let node = Value::object([
+            ("kind", Value::text("midi")),
+            ("name", Value::text(t.name.to_string())),
+            ("start", Value::int(start)),
+            ("length", Value::int(length.max(1))),
+        ]);
+        let op = EditOp::Insert { temp: 0, parent: Ref::Id(track), list: "items".into(), index: t.items.len(), node };
+        let made = self.core.update(cx, |core, _| core.port_mut().apply(Label::new("New item"), vec![op]).ok());
+        if let Some(item) = made.and_then(|a| a.created.first().map(|(_, id)| *id)) {
+            self.selected_item = Some(item);
+            let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::PianoRoll, Some(item), window, cx));
+        }
+        cx.notify();
     }
 
     fn track_header(&self, t: &TrackView, r: &Row, core: &Core, inputs: &[f32], cx: &Context<Self>) -> AnyElement {
@@ -1146,6 +1234,7 @@ impl CompositionPage {
         let mut wants: Vec<(Resource, f32, f64, f32, f32)> = Vec::new();
         self.hits.borrow_mut().clear();
         self.lane_hits.borrow_mut().clear();
+        self.track_hits.borrow_mut().clear();
         let tele = port.telemetry();
         // the samples per pixel of audio at a tick (the tempo there)
         let spp_at = |map: &TempoMap, tick: i64| {
@@ -1159,6 +1248,7 @@ impl CompositionPage {
             match r.kind {
                 RowKind::Track(i) => {
                     let t = &tracks[i];
+                    self.track_hits.borrow_mut().push((y, r.h, t.id));
                     let color = track_color(i);
                     for it in &t.items {
                         let x = v.x(it.start as f64);

@@ -6,8 +6,8 @@
 use std::time::Instant;
 
 use gpui::{
-    AnyView, App, Context, Entity, FocusHandle, FontWeight, Render, SharedString, Subscription, Window, canvas, div,
-    prelude::*, px,
+    AnyElement, AnyView, App, Context, Entity, FocusHandle, FontWeight, Render, SharedString, Subscription, Window,
+    canvas, div, prelude::*, px,
 };
 use lm_port::trees::ui;
 use lm_port::{CorePort, NodeId, PathStep, Value};
@@ -49,6 +49,8 @@ pub struct Workspace {
     pub confirm: Option<Pending>,
     /// The control the MIDI binding window shows (I-21.2)
     pub binding: Option<lm_port::MapTarget>,
+    /// A screen closed: the focus comes back to the shell at the next render
+    refocus: bool,
     _observe: Subscription,
     /// The pages' changes: the selection goes to the interface document when it changes
     _pages: [Subscription; 2],
@@ -128,6 +130,7 @@ impl Workspace {
             tempo_drag: None,
             confirm: None,
             binding: None,
+            refocus: false,
             _observe: observe,
             _pages: pages,
             docks,
@@ -177,11 +180,19 @@ impl Workspace {
             self.focused_plugin = None;
         }
         self.open.retain(|(o, _)| *o != s);
+        // the screen may have held the focus: the shell takes it back at the next frame, or the keys reach nothing
+        self.refocus = true;
         cx.notify();
     }
 
     pub fn is_open(&self, s: Screen) -> bool {
         self.open.iter().any(|(o, _)| *o == s)
+    }
+
+    /// An open screen's view (the tests reach the screen's own state through it)
+    #[cfg(test)]
+    pub fn screen_view(&self, s: Screen) -> Option<AnyView> {
+        self.open.iter().find(|(o, _)| *o == s).map(|(_, v)| v.clone())
     }
 
     fn docked(&self, p: Placement) -> Option<AnyView> {
@@ -232,6 +243,30 @@ impl Workspace {
                 let _ = core.port_mut().set_ui(vec![PathStep::key(ui::SELECTION)], selection);
             });
         }
+    }
+
+    /// The project's own operation (opening, creating), over the pages from the first window on: nothing in its
+    /// first 200 ms, then the shared loading component with its stage and Cancel (I-2)
+    fn project_loading(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let loading = self.core.read(cx).port().loading(&lm_port::Target::Project);
+        let core = self.core.clone();
+        crate::ui::loading_component("project-loading", &loading, move |_, cx| {
+            core.update(cx, |core, _| {
+                let ops: Vec<_> = core
+                    .port()
+                    .activity()
+                    .into_iter()
+                    .filter(|a| a.target == lm_port::Target::Project)
+                    .map(|a| a.id)
+                    .collect();
+                for op in ops {
+                    core.port_mut().cancel(op);
+                }
+            })
+        })
+        .map(|l| {
+            div().absolute().left(px(0.)).top(px(0.)).size_full().bg(c(THEME.bg1)).occlude().child(l).into_any_element()
+        })
     }
 
     /// While a MIDI learn waits for a control: say so, with Cancel (I-21.2)
@@ -308,7 +343,8 @@ impl Workspace {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // a screen that had the focus (a text field) closed: the keys go back to the pages
-        if window.focused(cx).is_none() {
+        let in_a_page = self.composition.read(cx).has_focus(window, cx) || self.mixing.read(cx).has_focus(window, cx);
+        if (std::mem::take(&mut self.refocus) && !in_a_page) || window.focused(cx).is_none() {
             window.focus(&self.focus, cx);
         }
         let started = Instant::now();
@@ -420,7 +456,15 @@ impl Render for Workspace {
                             .flex()
                             .flex_col()
                             .overflow_hidden()
-                            .child(div().flex_1().overflow_hidden().child(page_view))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .relative()
+                                    .overflow_hidden()
+                                    .child(page_view)
+                                    // the project opening (I-2: shown only past 200 ms, with its stage and Cancel)
+                                    .children(self.project_loading(cx)),
+                            )
                             .children(self.docked(Placement::Bottom).map(|_| self.splitter(DockEdge::Bottom, cx)))
                             .children(
                                 self.docked(Placement::Bottom)

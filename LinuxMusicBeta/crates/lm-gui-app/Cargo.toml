@@ -1,0 +1,27 @@
+[package]
+name = "lm-gui-app"
+description = "LinuxMusicBeta, the program: lm-gui on lm-session's LocalPort, or on lm-remote's RemotePort as a client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "linuxmusicbeta"
+path = "src/main.rs"
+
+[features]
+default = ["runtime-shaders"]
+runtime-shaders = ["lm-gui/runtime-shaders"]
+
+[dependencies]
+lm-base.workspace = true
+lm-state.workspace = true
+lm-port.workspace = true
+lm-gui = { workspace = true, default-features = false }
+lm-session.workspace = true
+lm-remote.workspace = true

@@ -3568,7 +3568,20 @@ dependencies = [
  "lm-gui-plugins",
  "lm-port",
  "lm-port-fake",
+ "lm-session",
  "lm-time",
+]
+
+[[package]]
+name = "lm-gui-app"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-gui",
+ "lm-port",
+ "lm-remote",
+ "lm-session",
+ "lm-state",
 ]
 
 [[package]]
