@@ -1304,7 +1304,9 @@ pub trait RealtimeThreads {
 
 - **Linux:**
   - o áudio e os workers pedem `SCHED_FIFO` com a mesma prioridade, pelo `rtkit` (D-Bus) ou direto, se o
-    `RLIMIT_RTPRIO` permitir (grupo `audio`, `limits.conf`);
+    `RLIMIT_RTPRIO` permitir (grupo `audio`, `limits.conf`). **O `rtkit` dá `SCHED_RR`, não `SCHED_FIFO`** (medido
+    no ThinkPad, Ubuntu 24.04): os dois valem como tempo real. A única diferença é que o RR reveza threads da mesma
+    prioridade em fatias de 100 ms, e cada thread de áudio dorme no `poll` muito antes disso, a cada período;
   - **memória travada:** `mlockall(MCL_CURRENT | MCL_FUTURE)` ao armar ou tocar, se o `RLIMIT_MEMLOCK` permitir, e as
     pilhas das threads de áudio pré-tocadas na criação. Uma falta de página na thread de áudio é um estalo;
   - sem permissão de tempo real: o programa toca mesmo assim e mostra um aviso, uma vez, com o que configurar (o grupo

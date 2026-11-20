@@ -76,7 +76,13 @@ async fn take_name(conn: &Connection, name: &str, replace: bool) -> Result<Reque
     if replace {
         flags |= RequestNameFlags::REPLACE_EXISTING;
     }
-    conn.request_name_with_flags(name, flags).await.map_err(|e| failed(&e))
+    // zbus turns the bus's `Exists` reply into `Error::NameTaken`; here it is an answer, not a failure: the name has
+    // an owner, who is asked to release it (or, after a yes, did not allow the replacement)
+    match conn.request_name_with_flags(name, flags).await {
+        Ok(reply) => Ok(reply),
+        Err(zbus::Error::NameTaken) => Ok(RequestNameReply::Exists),
+        Err(e) => Err(failed(&e)),
+    }
 }
 
 /// Owns the name for `object`'s card, asking the owner to release it if needed

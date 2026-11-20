@@ -168,11 +168,13 @@ pub fn current_policy() -> SchedPolicy {
 pub enum RtMethod {
     /// `sched_setscheduler` by the thread itself (`RLIMIT_RTPRIO` allowed it)
     Direct,
-    /// rtkit (`org.freedesktop.RealtimeKit1`) did it
+    /// rtkit (`org.freedesktop.RealtimeKit1`) did it. rtkit gives `SCHED_RR` (with `SCHED_RESET_ON_FORK`), not
+    /// `SCHED_FIFO`: for one audio thread per priority level the two behave the same (RR only time-slices between
+    /// threads of the *same* priority), so both count as real time
     Rtkit,
 }
 
-/// A thread running `SCHED_FIFO`: on drop, the thread goes back to the policy it had. Not `Send`: it must be dropped
+/// A thread running in real time (`SCHED_FIFO` when set directly, `SCHED_RR` when rtkit set it): on drop, the thread goes back to the policy it had. Not `Send`: it must be dropped
 /// on the thread it belongs to (H1: `RtMembership` leaves on the same thread that joined)
 #[must_use = "dropping it at once takes the thread back out of real time"]
 pub struct RealtimeGuard {
@@ -202,8 +204,14 @@ impl RealtimeGuard {
 
 impl Drop for RealtimeGuard {
     fn drop(&mut self) {
-        // SAFETY: the calling thread (pid 0) back to its previous policy; lowering needs no privilege
-        unsafe { libc::sched_setscheduler(0, self.previous_policy, &self.previous_param) };
+        // An unprivileged thread may leave real time but may not clear SCHED_RESET_ON_FORK (set by us and by rtkit):
+        // asking for the old policy without the flag fails with EPERM and leaves the thread in real time. So the flag
+        // stays (it is harmless on SCHED_OTHER: a child still starts with the normal policy)
+        // SAFETY: plain calls on the calling thread (pid 0)
+        let keep = unsafe { libc::sched_getscheduler(0) } & libc::SCHED_RESET_ON_FORK;
+        // SAFETY: the calling thread back to its previous policy, with a valid param
+        let r = unsafe { libc::sched_setscheduler(0, self.previous_policy | keep, &self.previous_param) };
+        debug_assert_eq!(r, 0, "leaving real time failed: errno {}", errno());
     }
 }
 
@@ -217,8 +225,8 @@ fn set_fifo(priority: u32) -> std::result::Result<(), i32> {
     }
 }
 
-/// Makes the calling thread `SCHED_FIFO` at `priority` (1..=99): directly if the limits allow, otherwise through
-/// rtkit when `bus` is given (waiting up to `timeout` for it). Blocks (the D-Bus round trip): call it once when the
+/// Makes the calling thread real-time at `priority` (1..=99): `SCHED_FIFO` directly if the limits allow, otherwise
+/// through rtkit when `bus` is given (rtkit grants `SCHED_RR`; see [`RtMethod::Rtkit`]) (waiting up to `timeout` for it). Blocks (the D-Bus round trip): call it once when the
 /// thread starts, before its real-time loop, never inside it.
 ///
 /// When neither works: `linux.realtime.denied`, with what to configure: `priority`, `rtprio_limit` (-1 unlimited),

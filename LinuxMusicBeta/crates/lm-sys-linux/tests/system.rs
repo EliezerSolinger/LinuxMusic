@@ -1,5 +1,13 @@
 //! Limits, scheduling and memory locking on Linux, and the requests to the system bus (rtkit, logind), which skip
 //! with a message when the machine has no system bus or no rtkit (CI containers).
+//!
+//! **On a real machine, run them inside the user's session.** polkit grants rtkit's `MakeThreadRealtime` and logind's
+//! inhibitor only to processes of an active local session; a test started over plain SSH is refused (and takes the
+//! "denied" paths). Build with `cargo test -p lm-sys-linux --no-run`, then run the binary as a user unit:
+//!
+//! ```text
+//! systemd-run --user --wait --pipe /full/path/of/the/system-<hash>/binary/cargo/printed --nocapture
+//! ```
 #![cfg(target_os = "linux")]
 #![allow(clippy::print_stderr)]
 
@@ -104,7 +112,13 @@ fn realtime_is_granted_or_the_error_says_what_is_missing() {
     match outcome {
         (before, during, Ok((method, after))) => {
             eprintln!("real time granted by {method:?}");
-            assert!(matches!(during, SchedPolicy::Fifo(_)), "{during:?}");
+            // Direct: SCHED_FIFO. rtkit: SCHED_RR (its MakeThreadRealtime always gives RR)
+            match method {
+                lm_sys_linux::RtMethod::Direct => assert!(matches!(during, SchedPolicy::Fifo(_)), "{during:?}"),
+                lm_sys_linux::RtMethod::Rtkit => {
+                    assert!(matches!(during, SchedPolicy::Fifo(_) | SchedPolicy::RoundRobin(_)), "{during:?}")
+                }
+            }
             assert_eq!(after, before, "the guard did not restore the policy");
         }
         (_, _, Err(e)) => {

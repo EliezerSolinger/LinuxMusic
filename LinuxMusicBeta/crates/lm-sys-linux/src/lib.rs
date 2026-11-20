@@ -1,6 +1,7 @@
 //! `lm-sys-linux`: the Linux system services the audio engine needs (interfaces.md, H1, H2, U8; I-17):
 //!
-//! - real-time scheduling of the audio threads: `SCHED_FIFO` directly when `RLIMIT_RTPRIO` allows, else through rtkit
+//! - real-time scheduling of the audio threads: `SCHED_FIFO` directly when `RLIMIT_RTPRIO` allows, else through rtkit,
+//!   which grants `SCHED_RR` (the same as FIFO for one thread per priority level; both are accepted)
 //!   ([`make_current_thread_realtime`]), and what is missing when neither works (`linux.realtime.denied`, with the
 //!   limit and the `audio` group) (H1);
 //! - memory locking by the rule of revisão V6: [`lock_all`] only when `RLIMIT_MEMLOCK` is unlimited, otherwise
@@ -20,7 +21,7 @@
 //! | **Allocates, locks, does I/O?** | Nothing here is real-time safe, and nothing here is called by an audio processor: all of it prepares a thread or the process before the real-time loop, or releases after it. The only calls an audio thread makes are at its start and end (`make_current_thread_realtime`, `lock_current_stack`, and the guards' drops: one `sched_setscheduler` or `munlock`). Reading and writing a `LockedBuffer` is plain memory. |
 //! | **Creates threads?** | **"lm-dbus"** ([`SystemBus::start`]): owns both bus connections, runs one request at a time inside `zbus::block_on`, and ends when its handle and every `Reservation` are dropped or on [`SystemBus::shutdown`]; it releases every reservation and closes the connections before ending, and it owns everything it uses, so it never outlives anything it touches. **zbus's helper thread** (from `zbus::block_on`, zbus 6): drives the connections between our requests, so the ReserveDevice1 object answers other programs; it ends when the connections are dropped by "lm-dbus". |
 //! | **Calls our code back?** | No C callbacks. zbus calls `ReserveDevice::request_release` and its property getters (plain Rust, on its helper thread): they only read fields and bump an atomic counter, and cannot panic. |
-//! | **Tests** | On Linux, in CI: limits and groups; memory locking within the limit (a buffer, a stack) and the clear error beyond it; scheduling (a direct `SCHED_FIFO` where allowed, otherwise the `linux.realtime.denied` error with its arguments, and the guard restoring the policy); the D-Bus requests against the real buses when present, and their errors when absent (CI containers have no system bus: those tests say so on stderr and pass). Under ASan, LSan and TSan with the rest of the workspace. |
+//! | **Tests** | On Linux, in CI: limits and groups; memory locking within the limit (a buffer, a stack) and the clear error beyond it; scheduling (a direct `SCHED_FIFO` or rtkit's `SCHED_RR` where allowed, otherwise the `linux.realtime.denied` error with its arguments, and the guard restoring the policy); the D-Bus requests against the real buses when present, and their errors when absent (CI containers have no system bus: those tests say so on stderr and pass). On a real machine the rtkit and logind tests must run in the user's session, e.g. `systemd-run --user --wait --pipe <test binary>`: over plain SSH polkit refuses both. Under ASan, LSan and TSan with the rest of the workspace. |
 //!
 //! # Error keys
 //!
