@@ -909,6 +909,75 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "monstro" {
+        use lm_dsp::monstro::*;
+        let st = &case["settings"];
+        let d = MonstroSettings::default();
+        let v = |key: &str, default: f32| f(st, key, default);
+        let on = |key: &str| v(key, 0.0) != 0.0;
+        let m = |target: &str| -> Mod {
+            ["env 1", "env 2", "LFO 1", "LFO 2"].map(|source| v(&format!("{target} {source}"), 0.0))
+        };
+        let lfo = |n: usize| MonstroLfo {
+            wave: v(&format!("LFO {n} waveform"), 0.0) as usize,
+            attack: v(&format!("LFO {n} attack"), 0.0),
+            rate: v(&format!("LFO {n} rate"), 1.0),
+            phase: v(&format!("LFO {n} phase"), 0.0),
+        };
+        let env = |n: usize| MonstroEnvelope {
+            pre: v(&format!("Env {n} pre-delay"), 0.0),
+            attack: v(&format!("Env {n} attack"), 0.0),
+            hold: v(&format!("Env {n} hold"), 0.0),
+            decay: v(&format!("Env {n} decay"), 0.0),
+            sustain: v(&format!("Env {n} sustain"), 1.0),
+            release: v(&format!("Env {n} release"), 0.0),
+            slope: v(&format!("Env {n} slope"), 0.0),
+        };
+        let settings = MonstroSettings {
+            volume: [1, 2, 3].map(|n| v(&format!("Osc {n} volume"), 10.0)),
+            pan: [1, 2, 3].map(|n| v(&format!("Osc {n} panning"), 0.0)),
+            coarse: [1, 2, 3].map(|n| v(&format!("Osc {n} coarse detune"), 0.0)),
+            fine: [1, 2]
+                .map(|n| [v(&format!("Osc {n} fine detune left"), 0.0), v(&format!("Osc {n} fine detune right"), 0.0)]),
+            stereo_phase: [
+                v("Osc 1 stereo phase offset", 0.0),
+                v("Osc 2 stereo phase offset", 0.0),
+                v("Osc 3 Stereo phase offset", 0.0),
+            ],
+            pulse_width: v("Osc 1 pulse width", d.pulse_width),
+            sync_on_rise: on("Osc 1 sync send on rise"),
+            sync_on_fall: on("Osc 1 sync send on fall"),
+            osc2_wave: v("Osc 2 waveform", 0.0) as usize,
+            sync_hard: [on("Osc 2 sync hard"), on("Osc 3 sync hard")],
+            sync_reverse: [on("Osc 2 sync reverse"), on("Osc 3 Sync reverse")],
+            osc3_waves: [v("Osc 3 waveform 1", 0.0) as usize, v("Osc 3 waveform 2", 0.0) as usize],
+            osc3_sub: v("Osc 3 sub-oscillator mix", 0.0),
+            lfos: [lfo(1), lfo(2)],
+            envelopes: [env(1), env(2)],
+            o23: O23Mod::ALL[v("Osc 2+3 modulation", 0.0) as usize],
+            vol_mod: [m("Osc 1 - Vol"), m("Osc 2 - Vol"), m("Osc 3 - Vol")],
+            phase_mod: [m("Osc 1 - Phs"), m("Osc 2 - Phs"), m("Osc 3 - Phs")],
+            pitch_mod: [m("Osc 1 - Pit"), m("Osc 2 - Pit"), m("Osc 3 - Pit")],
+            pw_mod: m("Osc 1 - PW"),
+            sub_mod: m("Osc 3 - Sub"),
+        };
+        let mut voice =
+            MonstroVoice::new(&settings, case["rate"].as_f64().unwrap() as u32, case["seed"].as_u64().unwrap());
+        let freq = case["freq"].as_f64().unwrap() as f32;
+        let release = case["release"].as_i64().unwrap();
+        for start in (0..frames as usize).step_by(block as usize) {
+            let n = (block as usize).min(frames as usize - start);
+            let at = if release >= start as i64 && release < (start + n) as i64 {
+                Some((release - start as i64) as usize)
+            } else if release < start as i64 {
+                Some(0)
+            } else {
+                None
+            };
+            voice.render(&mut out[start..start + n], freq, start as i64, at);
+        }
+        return out;
+    }
     if case["unit"] == "nes" {
         use lm_dsp::nes::*;
         let st = &case["settings"];

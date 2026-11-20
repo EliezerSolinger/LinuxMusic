@@ -18,7 +18,7 @@ pub const TABLE_LENGTHS: [usize; 24] = {
     t
 };
 /// The last table
-const MAX_TABLE: usize = 23;
+pub const MAX_TABLE: usize = 23;
 
 /// The band-limited waves
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,6 +84,21 @@ fn waves() -> &'static [MipMap; 4] {
     })
 }
 
+/// Table @p t (of [`TABLE_LENGTHS`]) of @p wave
+pub fn table(wave: BandLimitedWaveform, t: usize) -> &'static [f32] {
+    &waves()[wave as usize][t]
+}
+
+/// The table a wave of @p wavelength samples is read from
+#[inline]
+pub fn table_for(wavelength: f32) -> usize {
+    let mut t = 0;
+    while t < MAX_TABLE && wavelength >= TABLE_LENGTHS[t + 1] as f32 {
+        t += 1;
+    }
+    t
+}
+
 /// Builds the tables now (they are built on first use otherwise): away from the audio thread
 pub fn prepare() {
     let _ = waves();
@@ -108,10 +123,7 @@ pub fn optimal_4p(v0: f32, v1: f32, v2: f32, v3: f32, x: f32) -> f32 {
 #[inline]
 pub fn oscillate(phase: f32, wavelength: f32, wave: BandLimitedWaveform) -> f32 {
     // The next longer table
-    let mut t = 0;
-    while t < MAX_TABLE && wavelength >= TABLE_LENGTHS[t + 1] as f32 {
-        t += 1;
-    }
+    let t = table_for(wavelength);
     let len = TABLE_LENGTHS[t];
     let ph = phase - phase.trunc();
     let lookup_f = ph * len as f32;

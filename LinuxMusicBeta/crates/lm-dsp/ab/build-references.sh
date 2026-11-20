@@ -13,12 +13,18 @@ work=$(mktemp -d)
 cd "$build"
 commands=$(ninja -t commands tests/MixerTest)
 
-# Compile the harness as MixerTest.cpp is compiled, without contracting a * b + c into one rounding (the signals must
+# Compile the harness (its files: one more for each plugin whose header clashes with another's) as MixerTest.cpp
+# is compiled, without contracting a * b + c into one rounding (the signals must
 # be the same bit for bit as the ones tests/ab.rs makes)
-compile=$(printf '%s\n' "$commands" | grep 'MixerTest.cpp.o -c' \
-	| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/harness.o#" \
-		-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -I$root/legado/plugins/Kicker -I$root/legado/plugins/Vibed -I$root/legado/plugins/Lb302 -I$root/legado/plugins/Sfxr -I$root/legado/plugins/Nes -ffp-contract=off -c $here/legacy-harness.cpp#")
-sh -c "$compile"
+harnesses=""
+for source in "$here"/legacy-harness*.cpp; do
+	name=$(basename "$source" .cpp)
+	compile=$(printf '%s\n' "$commands" | grep 'MixerTest.cpp.o -c' \
+		| sed -e "s# -MD -MT [^ ]*##" -e "s# -MF [^ ]*##" -e "s# -o [^ ]*# -o $work/$name.o#" \
+			-e "s# -c [^ ]*MixerTest.cpp# -I$root/legado/plugins/Delay -I$root/legado/plugins/ReverbSC -I$root/legado/plugins/Kicker -I$root/legado/plugins/Vibed -I$root/legado/plugins/Lb302 -I$root/legado/plugins/Sfxr -I$root/legado/plugins/Nes -I$root/legado/plugins/Monstro -ffp-contract=off -c $source#")
+	sh -c "$compile"
+	harnesses="$harnesses $work/$name.o"
+done
 
 # The legacy objects to rebuild without fused multiply-adds (CONTRACT_OFF="TubeStage GainStage ..."), to tell
 # rounding apart from a real difference
@@ -37,7 +43,9 @@ for target in plugins/Delay/CMakeFiles/delay.dir/Lfo.cpp.o plugins/Delay/CMakeFi
 	plugins/Vibed/CMakeFiles/vibedstrings.dir/VibratingString.cpp.o plugins/Lb302/CMakeFiles/lb302.dir/Lb302.cpp.o \
 	plugins/Lb302/CMakeFiles/lb302.dir/moc_Lb302.cpp.o plugins/Lb302/CMakeFiles/lb302.dir/qrc_lb302.cpp.o \
 	plugins/Sfxr/CMakeFiles/sfxr.dir/Sfxr.cpp.o plugins/Sfxr/CMakeFiles/sfxr.dir/moc_Sfxr.cpp.o plugins/Sfxr/CMakeFiles/sfxr.dir/qrc_sfxr.cpp.o \
-	plugins/Nes/CMakeFiles/nes.dir/Nes.cpp.o plugins/Nes/CMakeFiles/nes.dir/moc_Nes.cpp.o plugins/Nes/CMakeFiles/nes.dir/qrc_nes.cpp.o; do
+	plugins/Nes/CMakeFiles/nes.dir/Nes.cpp.o plugins/Nes/CMakeFiles/nes.dir/moc_Nes.cpp.o plugins/Nes/CMakeFiles/nes.dir/qrc_nes.cpp.o \
+	plugins/Monstro/CMakeFiles/monstro.dir/Monstro.cpp.o plugins/Monstro/CMakeFiles/monstro.dir/moc_Monstro.cpp.o \
+	plugins/Monstro/CMakeFiles/monstro.dir/qrc_monstro.cpp.o; do
 	name=$(basename "$target" .o)
 	symbol=$(printf '%s' "$name" | tr -c 'A-Za-z0-9_' '_')
 	plugincompile=$(ninja -t commands "$target" | tail -1 \
@@ -51,7 +59,7 @@ done
 # Link it as MixerTest is linked, with the harness in place of the test's own objects
 link=$(printf '%s\n' "$commands" | tail -1 | sed -e 's#^: && ##' -e 's# && :$##' \
 	-e "s# tests/CMakeFiles/MixerTest.dir/MixerTest_autogen/mocs_compilation.cpp.o##" \
-	-e "s# tests/CMakeFiles/MixerTest.dir/src/core/MixerTest.cpp.o# $work/harness.o $plugins#" \
+	-e "s# tests/CMakeFiles/MixerTest.dir/src/core/MixerTest.cpp.o#$harnesses $plugins#" \
 	-e "s# -o tests/MixerTest# -o $work/legacy-harness#" $objects)
 sh -c "$link"
 
