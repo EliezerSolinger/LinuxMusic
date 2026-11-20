@@ -486,3 +486,45 @@ fn recording_into_the_open_item() {
     let controls = s.document().find(item).and_then(|i| i.get("controls").cloned()).expect("its control lane");
     assert_eq!(controls.at(0).and_then(|c| c.get("number")).and_then(Value::as_int), Some(74));
 }
+
+/// I-21.1: the devices' settings from the preferences — an alias keeps its index for the whole session (through
+/// reordering and disconnection), a port without an alias has one too, and the program's own input is there
+#[test]
+fn port_settings_keep_their_indices() {
+    let dir = TempDir::new("midi-ports");
+    let mut s = session(&dir);
+    let port = |client: &str, alias: &str, role: &str| {
+        Value::object([
+            ("client", Value::text(client)),
+            ("port", Value::text("MIDI 1")),
+            ("alias", Value::text(alias)),
+            ("role", Value::text(role)),
+            ("inputLatencyMs", Value::real(2.5).unwrap()),
+        ])
+    };
+    let set_ports = |s: &mut Session, list: Vec<Value>| {
+        s.set_preference(&[PathStep::key("midi"), PathStep::key("ports")], Value::list(list)).unwrap()
+    };
+    set_ports(&mut s, vec![port("Keystation", "Teclado", "instrument"), port("nanoKONTROL", "", "controller")]);
+    let a = s.midi_port_settings();
+    assert_eq!(a.len(), 3);
+    assert_eq!(a[0].alias, "Teclado");
+    assert_eq!(a[0].input_latency_ns, 2_500_000);
+    assert_eq!(a[2].id, lm_io::PortId::new(lm_io::CLIENT_NAME, lm_io::OWN_INPUT));
+    assert_eq!(Some(a[0].index), s.midi_port_of("Teclado"));
+    // Reordered, and a new port added: the old ones keep their indices
+    set_ports(
+        &mut s,
+        vec![
+            port("Other", "Pads", "both"),
+            port("nanoKONTROL", "", "controller"),
+            port("Keystation", "Teclado", "instrument"),
+        ],
+    );
+    let b = s.midi_port_settings();
+    let index_of = |v: &[lm_io::PortSettings], client: &str| v.iter().find(|p| p.id.client == client).unwrap().index;
+    assert_eq!(index_of(&b, "Keystation"), a[0].index);
+    assert_eq!(index_of(&b, "nanoKONTROL"), a[1].index);
+    assert_ne!(index_of(&b, "Other"), a[0].index);
+    assert_eq!(b.iter().filter(|p| p.index == index_of(&b, "Other")).count(), 1);
+}
