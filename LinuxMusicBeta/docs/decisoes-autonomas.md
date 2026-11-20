@@ -301,3 +301,39 @@ de forma diz pelo que é substituído.
   dele (só `dev-dependency`).
 - **`GestureId::from_raw`** no `lm-doc`, para a `RemotePort`, com teste de que um número não dado é recusado com erro.
 
+
+## Do `lm-plugin` (19/11)
+
+- **O `build` recebe um `BuildContext`** (`spec`, `resources`, `channels`) em vez de três argumentos: um efeito precisa
+  saber quantos canais tem o canal em que está inserido para alocar tudo no build (U31). O `Registry::build` entrega ao
+  plugin o estado **completo** (os padrões congelados no que a árvore omite), validado, e roda o build em
+  `catch_unwind` (`plugin.build.panicked`, H14).
+- **O `lm-plugin` depende do `lm-doc`** (além de `lm-state` e `lm-render`): os tipos `Port`/`Ports`/`PortsFn` são os do
+  documento, para não haver dois.
+- **O índice de um parâmetro é a sua posição em `schema.params`**, e o valor do evento `Param` está na unidade do
+  parâmetro (não normalizado), como a automação do `lm-doc`.
+- **As funções de instrumento (F-IJN-002 afinação e bend, F-IJN-010, 011, 013, 014, 015) moram no estado do
+  instrumento**, com chaves fixas acrescentadas ao esquema por `add_instrument_functions` (a faixa do `lm-doc` não as
+  tem). Interruptores automatizáveis do legado viram parâmetros `Stepped` de 0 a 1 (`filterOn`, `chordOn`, `arpOn`,
+  `*LfoX100`...); toda escolha é `Choice` (formas de LFO, tipo de filtro, acorde, direção e modo do arpejo,
+  sincronia, `voiceMode` = poly/mono/legato, que junta os dois botões do legado). Mudar uma escolha reconstrói o
+  processador, que adota as vozes. Microafinador (F-IJN-019) e MIDI (F-IJN-017) ficam para quando o projeto tiver as
+  escalas e as portas: são do projeto, não do plugin.
+- **Mono e legato são do instrumento, por nota-base, e não do `VoicePool`** (que fica sempre em `Poly`): no legado o
+  mono vale para a nota-base com o acorde inteiro; no `VoicePool` ele cortaria o acorde. Trocar o modo tocando não
+  solta as notas.
+- **Peças numa grade de 32 amostras do relógio do motor**: o áudio é igual, bit a bit, para qualquer bloco múltiplo de
+  32 (V3). O LFO sincronizado deriva a fase da amostra da linha do tempo (repetível no locate e no loop, U37; num
+  andamento constante é a fase do compasso).
+- **Velocidade linear como nível** para os instrumentos com as funções de instrumento (o legado multiplicava pelo
+  volume da nota); o teste gerado confere −6,02 dB em 0,5 e −20 dB em 0,1.
+- **Adopt sem estalo:** quando o estado muda (não um rebuild idêntico), o sintetizador velho toca cópias das vozes
+  por 10 ms em crossfade com o novo (`Synth: Clone`, voz clonada sem alocar). Um rebuild do mesmo estado continua
+  bit a bit.
+- **Diferenças intencionais do legado:** o primeiro passo do arpejo começa na amostra da nota (o legado atrasava 1
+  amostra); o predelay do LFO e a escolha da tabela do oscilador valem por peça de até 32 amostras (o legado, por
+  período de 256 ou mais); o LFO aleatório tem semente fixa por instrumento.
+- **O teste de 30 minutos (U35) roda sempre**: renderizar 30 min do TripleOscillator leva ~3 s.
+- **Duas correções fora da pasta:** `Buffers::from_block`/`BlockShape` no `lm-render` (um host fora do renderer: a
+  bancada de testes, um render isolado de plugin) e, no `lm-dsp`, a leitura da tabela de banda limitada numa fase a
+  um fio de um período inteiro, que indexava além da tabela (achada pelos testes do TripleOscillator).
