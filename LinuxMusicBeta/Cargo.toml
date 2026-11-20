@@ -84,6 +84,7 @@ lm-port-fake = { path = "crates/lm-port-fake" }
 lm-gui = { path = "crates/lm-gui" }
 lm-session = { path = "crates/lm-session" }
 lm-remote = { path = "crates/lm-remote" }
+lm-midimap = { path = "crates/lm-midimap" }
 
 [profile.dev]
 # Audio code is unusable without some optimisation. Disk is limited on the development machine: line tables are

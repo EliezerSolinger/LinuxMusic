@@ -58,6 +58,77 @@
     },
     "version": 1
   },
+  "midi.mapping": {
+    "defaults": {
+      "consume": true,
+      "feedback": true,
+      "source": {
+        "channel": -1,
+        "message": "cc",
+        "number": 0,
+        "port": ""
+      },
+      "target": {
+        "action": "",
+        "follow": "none",
+        "kind": "param",
+        "node": null,
+        "offset": 0,
+        "param": "",
+        "params": {},
+        "path": [],
+        "valueInto": null
+      },
+      "touch": null,
+      "transform": {
+        "button": "toggle",
+        "curve": 0.0,
+        "invert": false,
+        "max": 1.0,
+        "min": 0.0,
+        "mode": "absolute",
+        "step": 0.0078125,
+        "takeover": "pickup"
+      }
+    },
+    "version": 1
+  },
+  "midi.source": {
+    "defaults": {
+      "channel": -1,
+      "message": "cc",
+      "number": 0,
+      "port": ""
+    },
+    "version": 1
+  },
+  "midi.target": {
+    "defaults": {
+      "action": "",
+      "follow": "none",
+      "kind": "param",
+      "node": null,
+      "offset": 0,
+      "param": "",
+      "params": {},
+      "path": [],
+      "valueInto": null
+    },
+    "version": 1
+  },
+  "midi.transform": {
+    "defaults": {
+      "button": "toggle",
+      "curve": 0.0,
+      "invert": false,
+      "max": 1.0,
+      "min": 0.0,
+      "mode": "absolute",
+      "step": 0.0078125,
+      "takeover": "pickup"
+    },
+    "version": 1
+  },
   "mixer": {
     "defaults": {
       "channels": [],
@@ -513,6 +584,14 @@
     },
     "version": 1
   },
+  "track.midi_input": {
+    "defaults": {
+      "channel": -1,
+      "followSelection": false,
+      "ports": []
+    },
+    "version": 1
+  },
   "track.output": {
     "defaults": {
       "channels": 2,
@@ -563,6 +642,15 @@
       "from": 0,
       "on": false,
       "to": 0
+    },
+    "version": 1
+  },
+  "transport.record_quantize": {
+    "defaults": {
+      "grid": 240,
+      "on": false,
+      "startsOnly": false,
+      "strength": 1.0
     },
     "version": 1
   }

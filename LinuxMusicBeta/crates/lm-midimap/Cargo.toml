@@ -1,0 +1,25 @@
+[package]
+name = "lm-midimap"
+description = "LinuxMusic: MIDI mapping logic (I-21.2/I-21.3): sources, transforms, 14-bit/NRPN/relative decoding, takeover, buttons, learn, feedback encoding and the Mackie Control protocol; pure, no allocation on the hot path"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# The document form of a mapping (`Mapping`, `MapTarget`, `NodeRef`) over lm-state. Off for lm-render, which must
+# not depend on the tree (R1): the renderer uses only the compiled table
+doc = ["dep:lm-state"]
+
+[dependencies]
+lm-base.workspace = true
+libm.workspace = true
+lm-state = { workspace = true, optional = true }
+
+[dev-dependencies]
+assert_no_alloc.workspace = true

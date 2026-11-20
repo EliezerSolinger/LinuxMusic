@@ -9,7 +9,8 @@
 //! Every type is at version 1. Their defaults are frozen by the reference file `tests/data/defaults.json` (U29).
 //!
 //! The kind letters of the ids: `t` track, `o` track output, `c` item, `l` item lane, `a` automation lane, `p` plugin
-//! (instrument or insert), `m` mixer channel (the master is always `m:0`), `s` send. The root is `r:0`.
+//! (instrument or insert), `m` mixer channel (the master is always `m:0`), `s` send, `k` MIDI mapping (I-21.2). The
+//! root is `r:0`.
 
 use lm_base::Result;
 use lm_state::{FieldKind, FieldSpec, MAX_SAFE_INT, NodeId, NodeSchema, OnRemove, SchemaRegistry, Value};
@@ -28,6 +29,7 @@ pub const KIND_AUTOMATION: u8 = b'a';
 pub const KIND_PLUGIN: u8 = b'p';
 pub const KIND_CHANNEL: u8 = b'm';
 pub const KIND_SEND: u8 = b's';
+pub const KIND_MAPPING: u8 = b'k';
 
 /// The type names, for code that reads the tree
 pub mod types {
@@ -64,6 +66,12 @@ pub mod types {
     pub const TOLERANCE: &str = "rack.tolerance";
     pub const STEREO: &str = "rack.stereo";
     pub const BUS_COMPRESSOR: &str = "rack.bus_compressor";
+    pub const MAPPING: &str = "midi.mapping";
+    pub const MIDI_SOURCE: &str = "midi.source";
+    pub const MIDI_TARGET: &str = "midi.target";
+    pub const MIDI_TRANSFORM: &str = "midi.transform";
+    pub const TRACK_MIDI_INPUT: &str = "track.midi_input";
+    pub const RECORD_QUANTIZE: &str = "transport.record_quantize";
 }
 
 /// The gain stage models of the rack, by their permanent keys (`lm-dsp`, `GainModel::key`)
@@ -84,6 +92,75 @@ pub const MONITOR_MODES: &[&str] = &["auto", "on", "off"];
 pub const INSERT_POINTS: &[&str] = &["pre-gain", "post-gain", "post-filter", "post-dynamics", "post-eq", "pre-pan"];
 /// The desk's mode (P-17): in `"digital"` the rack is clean, without the analog modelling
 pub const DESK_MODES: &[&str] = &["analog", "digital"];
+/// The automation modes of a lane (I-21.5); an automation lane without `mode` is in `"read"`
+pub const AUTOMATION_MODES: &[&str] = &["off", "read", "touch", "latch", "write"];
+/// The global automation button: `"lanes"` lets each lane use its own mode; absent = `"lanes"`
+pub const GLOBAL_AUTOMATION_MODES: &[&str] = &["lanes", "off", "read", "touch", "latch", "write"];
+/// The shape of the segment that ends at an automation point; absent = `"curve"` (I-21.5)
+pub const POINT_SHAPES: &[&str] = &["curve", "step", "smooth"];
+/// How MIDI recording treats what is under it (I-21.4, F-REC-101); absent = `"overdub"`
+pub const RECORD_MODES: &[&str] = &["overdub", "replace", "layers"];
+/// The message kinds of a mapping's source (lm-midimap, `Message::kind_name`)
+pub const MIDI_MESSAGES: &[&str] =
+    &["cc", "cc14", "nrpn", "rpn", "note", "pitchBend", "channelPressure", "polyPressure", "programChange"];
+pub const MIDI_TARGET_KINDS: &[&str] = &["param", "field", "action"];
+/// A selection-following target (lm-midimap, `SelRole`); `"none"` = the fixed `node`
+pub const MIDI_FOLLOW: &[&str] = &["none", "track", "channel", "plugin"];
+pub const MIDI_MODES: &[&str] = &["absolute", "twos", "signMagnitude", "offset64"];
+pub const MIDI_TAKEOVERS: &[&str] = &["jump", "pickup", "scale"];
+pub const MIDI_BUTTONS: &[&str] = &["momentary", "toggle", "trigger"];
+pub const MIDI_RINGS: &[&str] = &["none", "dot", "boostCut", "wrap", "spread"];
+/// What a mapping's target may point at: every node kind with fields or parameters, and the root (transport)
+pub const MAPPABLE_KINDS: &[u8] =
+    &[KIND_TRACK, KIND_OUTPUT, KIND_ITEM, KIND_LANE, KIND_AUTOMATION, KIND_PLUGIN, KIND_CHANNEL, KIND_SEND, b'r'];
+
+/// The MIDI mapping types (I-21.2), shared with the machine preferences, whose `midiMap` holds the same nodes
+pub fn midi_map_schemas() -> Vec<NodeSchema> {
+    use types as ty;
+    vec![
+        NodeSchema::new(ty::MAPPING, 1)
+            .field(FieldSpec::id(KIND_MAPPING))
+            .field(object("source", ty::MIDI_SOURCE))
+            // A motor fader's touch note: on while held, the hand wins over automation (I-21.3)
+            .field(object("touch", ty::MIDI_SOURCE).nullable().default(Value::NULL))
+            .field(object("target", ty::MIDI_TARGET))
+            .field(object("transform", ty::MIDI_TRANSFORM))
+            .field(FieldSpec::bool("feedback", true))
+            .field(FieldSpec::bool("consume", true))
+            // Feedback to another message than the source (a Mackie Control V-pot's LED ring), and its ring style
+            .field(FieldSpec::new("feedbackTo", FieldKind::Object(ty::MIDI_SOURCE)).optional())
+            .field(FieldSpec::new("ring", FieldKind::Choice(MIDI_RINGS)).optional()),
+        // port: an alias of the machine's preferences ("" = any controller port); channel −1 = any
+        NodeSchema::new(ty::MIDI_SOURCE, 1)
+            .field(FieldSpec::text("port", ""))
+            .field(FieldSpec::int("channel", -1, 15, -1))
+            .field(FieldSpec::choice("message", MIDI_MESSAGES, "cc"))
+            .field(FieldSpec::int("number", 0, 16383, 0)),
+        // The target goes with its node (OnRemove::RemoveOwner: the mapping goes with the target and comes back with
+        // undo). `node` is null for actions and for selection-following targets
+        NodeSchema::new(ty::MIDI_TARGET, 1)
+            .field(FieldSpec::choice("kind", MIDI_TARGET_KINDS, "param"))
+            .field(reference("node", MAPPABLE_KINDS, OnRemove::RemoveOwner).nullable().default(Value::NULL))
+            .field(FieldSpec::choice("follow", MIDI_FOLLOW, "none"))
+            .field(FieldSpec::int("offset", 0, 4095, 0))
+            .field(FieldSpec::text("param", ""))
+            .field(FieldSpec::new("path", FieldKind::List(Box::new(FieldKind::Text))).default(Value::empty_list()))
+            .field(FieldSpec::text("action", ""))
+            .field(FieldSpec::new("params", FieldKind::Any).default(Value::empty_object()))
+            .field(
+                FieldSpec::new("valueInto", FieldKind::List(Box::new(FieldKind::Text))).nullable().default(Value::NULL),
+            ),
+        NodeSchema::new(ty::MIDI_TRANSFORM, 1)
+            .field(FieldSpec::real("min", 0.0, 1.0, 0.0))
+            .field(FieldSpec::real("max", 0.0, 1.0, 1.0))
+            .field(FieldSpec::bool("invert", false))
+            .field(FieldSpec::real("curve", -1.0, 1.0, 0.0))
+            .field(FieldSpec::choice("mode", MIDI_MODES, "absolute"))
+            .field(FieldSpec::real("step", 0.0, 1.0, 1.0 / 128.0))
+            .field(FieldSpec::choice("takeover", MIDI_TAKEOVERS, "pickup"))
+            .field(FieldSpec::choice("button", MIDI_BUTTONS, "toggle")),
+    ]
+}
 
 const MAX: i64 = MAX_SAFE_INT;
 
@@ -119,7 +196,9 @@ pub fn project_schemas() -> Vec<NodeSchema> {
                 ("ramp", Value::bool(false)),
             ])])))
             .field(list_of("tracks", ty::TRACK))
-            .field(object("mixer", ty::MIXER)),
+            .field(object("mixer", ty::MIXER))
+            // The project's MIDI mappings (I-21.2); absent = none
+            .field(FieldSpec::new("midiMap", FieldKind::List(Box::new(FieldKind::Object(ty::MAPPING)))).optional()),
         // The part of the root that undo never restores (R7)
         NodeSchema::new(ty::META, 1).field(FieldSpec::int("issued", 0, MAX, 0)).field(FieldSpec::text("uuid", "")),
         NodeSchema::new(ty::SETTINGS, 1)
@@ -132,7 +211,18 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(object("preRoll", ty::PREROLL))
             .field(object("metronome", ty::METRONOME))
             // The project's transposition in semitones (P-37), for the tracks that follow it; absent: 0
-            .field(FieldSpec::new("transpose", FieldKind::Int { min: -12, max: 12 }).optional()),
+            .field(FieldSpec::new("transpose", FieldKind::Int { min: -12, max: 12 }).optional())
+            // The global automation button (I-21.5); absent = "lanes"
+            .field(FieldSpec::new("automationMode", FieldKind::Choice(GLOBAL_AUTOMATION_MODES)).optional())
+            // MIDI recording (I-21.4): the mode and quantize on record; absent = overdub, no quantize
+            .field(FieldSpec::new("recordMode", FieldKind::Choice(RECORD_MODES)).optional())
+            .field(FieldSpec::new("recordQuantize", FieldKind::Object(ty::RECORD_QUANTIZE)).optional()),
+        // grid in ticks; strength 0..1 (1 = onto the grid); startsOnly keeps the lengths' ends where they were played
+        NodeSchema::new(ty::RECORD_QUANTIZE, 1)
+            .field(FieldSpec::bool("on", false))
+            .field(FieldSpec::int("grid", 1, MAX, 240))
+            .field(FieldSpec::real("strength", 0.0, 1.0, 1.0))
+            .field(FieldSpec::bool("startsOnly", false)),
         NodeSchema::new(ty::RANGE, 1)
             .field(FieldSpec::bool("on", false))
             .field(FieldSpec::int("from", 0, MAX, 0))
@@ -163,11 +253,19 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("transpose", FieldKind::Bool).optional())
             .field(object("instrument", ty::PLUGIN).nullable().default(Value::NULL))
             .field(object("input", ty::TRACK_INPUT).nullable().default(Value::NULL))
+            // The live MIDI input (I-21.1; F-REC-103, F-REC-131); absent = every instrument port, every channel
+            .field(FieldSpec::new("midiInput", FieldKind::Object(ty::TRACK_MIDI_INPUT)).optional())
             .field(FieldSpec::bool("armed", false))
             .field(FieldSpec::choice("monitor", MONITOR_MODES, "auto"))
             .field(list_of("outputs", ty::OUTPUT))
             .field(list_of("items", ty::ITEM))
             .field(list_of("automation", ty::AUTOMATION)),
+        // ports: aliases (empty = every port whose role is instrument); channel −1 = all; followSelection: the
+        // keyboard plays the selected track
+        NodeSchema::new(ty::TRACK_MIDI_INPUT, 1)
+            .field(FieldSpec::new("ports", FieldKind::List(Box::new(FieldKind::Text))).default(Value::empty_list()))
+            .field(FieldSpec::int("channel", -1, 15, -1))
+            .field(FieldSpec::bool("followSelection", false)),
         NodeSchema::new(ty::TRACK_INPUT, 1).field(FieldSpec::text("device", "in")).field(ints(
             "channels",
             1,
@@ -233,6 +331,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::id(KIND_AUTOMATION))
             .field(object("target", ty::AUTOMATION_TARGET))
             .field(FieldSpec::bool("on", true))
+            // I-21.5; absent = "read"
+            .field(FieldSpec::new("mode", FieldKind::Choice(AUTOMATION_MODES)).optional())
             .field(list_of("points", ty::AUTOMATION_POINT)),
         NodeSchema::new(ty::AUTOMATION_TARGET, 1)
             .field(reference("node", &[KIND_TRACK, KIND_CHANNEL, KIND_PLUGIN], OnRemove::RemoveOwner))
@@ -240,7 +340,13 @@ pub fn project_schemas() -> Vec<NodeSchema> {
         NodeSchema::new(ty::AUTOMATION_POINT, 1)
             .field(FieldSpec::int("tick", 0, MAX, 0))
             .field(FieldSpec::new("value", FieldKind::Real { min: -1.0e12, max: 1.0e12 }))
-            .field(FieldSpec::real("curve", -1.0, 1.0, 0.0).optional()),
+            .field(FieldSpec::real("curve", -1.0, 1.0, 0.0).optional())
+            // The segment that ends here: "curve" (bent by `curve`), "step" (holds, then jumps here) or "smooth" (a
+            // cardinal spline through the neighbours, with `tension`, absent = 0.5); absent = "curve" (I-21.5)
+            .field(FieldSpec::new("shape", FieldKind::Choice(POINT_SHAPES)).optional())
+            .field(FieldSpec::new("tension", FieldKind::Real { min: 0.0, max: 1.0 }).optional())
+            // The value leaving this point when it differs from the arriving one (a jump, P-27)
+            .field(FieldSpec::new("out", FieldKind::Real { min: -1.0e12, max: 1.0e12 }).optional()),
         // An instrument or an insert. `state` is the plugin's own tree, validated by the schema "plugin:<plugin>" at
         // `version`
         NodeSchema::new(ty::PLUGIN, 1)
@@ -354,7 +460,7 @@ pub fn project_schemas() -> Vec<NodeSchema> {
 
 /// Adds every project type to a registry (the plugins add theirs, `"plugin:<id>"`, before or after)
 pub fn register_project_schemas(registry: &mut SchemaRegistry) -> Result<()> {
-    for schema in project_schemas() {
+    for schema in project_schemas().into_iter().chain(midi_map_schemas()) {
         registry.add(schema)?;
     }
     Ok(())

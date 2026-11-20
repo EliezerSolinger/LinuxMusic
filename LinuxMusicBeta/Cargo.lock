@@ -3603,6 +3603,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-midimap"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "libm",
+ "lm-base",
+ "lm-state",
+]
+
+[[package]]
 name = "lm-plugin"
 version = "0.1.0"
 dependencies = [
