@@ -2,8 +2,10 @@
 
 Estado: **em andamento** (19/11). A biblioteca de interface é a **GPUI**, por decisão do usuário (19/11): não há mais
 comparação com Slint e Qt. O protótipo em `LinuxMusicBeta/prototypes/gpui`, sobre o núcleo de mentira
-`prototypes/fake-core`, serve de linha de base, de validação de como a GPUI se encaixa no núcleo (I-15) e de começo
-da interface de verdade: ele vai prototipar **todas as telas do programa** e virar o `lm-gui`.
+`prototypes/fake-core`, é a linha de base, a validação de como a GPUI se encaixa no núcleo (I-15) e o começo da
+interface de verdade: ele prototipa **todas as telas do programa** e vira o `lm-gui`. Desde a decisão de 19/11 de o
+programa ser servidor e cliente de rede, **toda tela fala com o núcleo só pelo `CorePort`** (dados nos argumentos,
+sem fechamentos), a mesma porta que a interface remota vai usar.
 
 Este documento tem as medidas, como a versão da GPUI está fixada, o que a GPUI faz bem e mal no nosso caso, as
 recomendações para o pacote `lm-gui` e uma seção por tela (o que foi feito, o que fica para o `lm-gui`, as
@@ -21,7 +23,7 @@ CARGO_TARGET_DIR=../target cargo build --release -p proto-gpui && ./measure.sh 3
 ```
 
 Variáveis úteis: `LM_PAGE=mixing` abre na mixagem; `LM_OPEN=Settings,PianoRoll` abre telas no início;
-`LM_WAVE=quads|path` troca o desenho das formas de onda (para comparar); `LM_THEME=arquivo` carrega outro tema;
+`LM_THEME=arquivo` carrega outro tema;
 `LM_BENCH=scroll|play|idle` liga a medição (abaixo).
 
 **Método.** O próprio programa mede o tempo entre quadros e o tempo de CPU de cada quadro
@@ -66,44 +68,61 @@ quadro tocando, a 120 quadros por segundo (medida curta, 3 s).
 | Um caminho preenchido por item | 5,35 ms | 6,6 / 9,3 ms | o custo passa para a triangulação na CPU (`lyon`); 44 quadros perdidos em 8 s |
 | **Ladrilhos de imagem da pirâmide** | **2,2 ms** | **2,3 / 3,0 ms** | adotado: cada ladrilho (256 pares de um nível, 64 px de altura) é rasterizado uma vez e reaproveitado; rolar só move ladrilhos, o zoom entre dois níveis só estica na GPU |
 
-Os números vêm de perfis com `sample` sobre um binário com símbolos. O custo da GPUI cresce com o **número de
+Os números vêm de perfis com `sample` sobre um binário com símbolos. Os dois jeitos descartados saíram do código
+depois de medidos (estão no commit 056aa36b0, com `LM_WAVE=quads|path`). O custo da GPUI cresce com o **número de
 primitivas**, não com a área pintada: qualquer desenho denso (formas de onda, piano roll com milhares de notas,
 curvas de automação) precisa juntar primitivas ou virar imagem em cache.
 
-### 2.3 Build e binário
+### 2.3 Build e binário (o protótipo com todas as telas)
 
 | Medida | Valor |
 |---|---|
-| Build limpo, release (LTO fino), só GPUI | 48 s |
-| Build limpo, debug | ~2 min 15 s |
-| Build incremental (mudança no `main.rs`), release / debug | 9,6 s / 0,6–1,3 s |
-| Binário release, sem símbolos, só GPUI | 7,2 MB |
-| Binário release com o `gpui-component` | 19 MB |
-| Crates no grafo de dependências | 517 |
-| Disco do `target` do protótipo (debug + release) | ~3 GB |
+| Build limpo, release (LTO fino) | 1 min 44 s (CPU: 8 min) (M4, 10 núcleos, com outros agentes compilando ao mesmo tempo) |
+| Build incremental (mudança num arquivo da casca), release | 28 s (com a máquina carregada; ~10 s livre) |
+| Build incremental, debug | 1–3 s |
+| Binário release, sem símbolos | 22,9 MB |
+| Binário release só com a GPUI (sem `gpui-component`), no começo | 7,2 MB |
+| Linhas do protótipo (`gpui/src`, todas as telas) | 16 444 |
+| Linhas do `fake-core` | 8 819 |
+| Disco de um `target` (debug + release) | ~3,5 GB |
 
-(A medir de novo no fim, com todas as telas.)
+### 2.4 Medidas com todas as telas: pendentes
+
+As séries 2.1 e 2.2 foram medidas com a linha do tempo e a mesa. A medida com todas as telas (a mesma
+`measure.sh`) ficou pendente: no fim do trabalho a tela do Mac estava bloqueada e o monitor dormindo, e uma janela
+que não aparece não recebe quadros do sistema (0 quadros, como numa janela coberta). Para medir: desbloquear a
+máquina, deixar a janela na frente e rodar `./measure.sh 3` em `prototypes/` (uns 4 minutos).
 
 ## 3. Como a GPUI se encaixa no núcleo (I-15)
 
-Tudo validado no protótipo, com testes que rodam a GPUI sem janela (`cargo test -p proto-gpui`):
+Tudo validado no protótipo, com testes que rodam a GPUI sem janela (`cargo test -p proto-gpui -p fake-core`: os
+testes das telas clicam, arrastam e digitam numa janela de teste com relógio falso).
 
-- **A `Session` `!Send` mora numa entidade** (`Core`, em `gpui/src/core.rs`). As entidades da GPUI vivem na thread
-  principal e não pedem `Send`, então a `Session` cabe sem adaptação. As vistas guardam um `Entity<Core>`, leem em
-  `render` (`self.core.read(cx)`) e mudam nos eventos (`self.core.update(cx, ...)`). Nenhuma vista guarda ponteiro
-  para o núcleo: só ids, `Feed`s e `GestureId`s. Não precisa de `Rc<RefCell<>>`.
-- **O `pump` a cada 10 ms independe do desenho (H2)**: é uma tarefa no executor da thread principal, com um
-  temporizador do relógio da GPUI. Ela só pede quadro (`cx.notify()`) quando algo mostrado mudou. Teste: 100 pumps
+- **A porta.** O `fake-core` expõe o `CorePort` do I-15 (`fake-core/src/port.rs`): `root`, `find`, `feed`/`drain`,
+  `apply(label, Vec<EditOp>)`, `run_action(id, params)`, `undo`, `begin_gesture`/`gesture_apply`/`gesture_commit`/
+  `gesture_cancel`, `param_write`, `loading`, `activity`, `cancel`, `notices`, `telemetry`, `peaks` em blocos e
+  `services`. Os resultados que podem demorar vêm como `Pending` (no fake, `Ready`, menos os picos de um recurso
+  que ainda carrega, que vêm `Waiting` e são pedidos de novo no quadro seguinte). Uma lista de `EditOp` é uma
+  transação: tudo ou nada, um passo de desfazer. As edições estruturais (inserir, remover, mover) vão ao módulo
+  dono, por uma linha de registro por módulo.
+- **A `Session` `!Send` mora numa entidade** (`Core`, em `gpui/src/core.rs`), **privada**: as vistas só alcançam
+  `core.port()` e `core.port_mut()`. As entidades da GPUI vivem na thread principal e não pedem `Send`. As vistas
+  guardam um `Entity<Core>`, leem em `render` e mudam nos eventos. Nenhuma guarda ponteiro para o núcleo: só ids,
+  `Feed`s, `GestureId`s e números de operação. Não precisa de `Rc<RefCell<>>`.
+- **O `pump` a cada 10 ms independe do desenho (H2)**: uma tarefa no executor da thread principal, com o relógio da
+  GPUI (o mesmo código roda no teste com relógio falso). Só pede quadro quando algo mostrado mudou. Teste: 100 pumps
   em 1 s de relógio falso, sem nenhum quadro. Com a janela coberta, o desenho para e o `pump` continua.
 - **Os `Feed`s são drenados no `render`** de cada vista (I-3.6): o rótulo de volume é refeito só quando o `Diff` diz.
-- **Gestos por `GestureId` (I-3.7)**: o arrasto de um knob ou de um fader abre o gesto no clique, atualiza no
-  movimento e confirma ao soltar. Teste: um arrasto simulado é um passo de desfazer só; duplo clique no fader volta a
-  0 dB.
+- **Gestos por `GestureId` (I-3.7)**: knob, fader, andamento, item arrastado, fades e ganho: o gesto abre no clique,
+  manda `gesture_apply` no movimento e confirma ao soltar. Os faders vinculados andam juntos no mesmo gesto. Testes:
+  um arrasto é um passo de desfazer; duplo clique no fader volta a 0 dB; mover e dividir um item são dois passos.
+- **Formas de onda pela porta**: a vista anota os ladrilhos que vai desenhar, pede os blocos da pirâmide com
+  `peaks(recurso, nível, de, até)` antes da pintura e guarda o que recebeu para sempre (os picos de um hash não mudam,
+  I-20.4); um bloco `Waiting` não é desenhado e é pedido de novo.
 - **Carregamento (I-2)**: um componente só (`ui::loading_component`) lê o `Loading` do alvo; antes de 200 ms não
   desenha nada; depois, a barra de progresso no lugar da forma de onda; o botão de cancelar depois de 2 s.
-- **Medidores a ~60 Hz (H16)** e **cursor interpolado**: o quadro de telemetria chega por triplo buffer; enquanto
-  toca, `request_animation_frame` pede um quadro por atualização da tela (120 Hz aqui) e o cursor é interpolado
-  entre quadros de telemetria pelo carimbo de tempo.
+- **Medidores a ~60 Hz (H16)** e **cursor interpolado**: a telemetria chega por triplo buffer; enquanto toca,
+  `request_animation_frame` pede um quadro por atualização da tela e o cursor é interpolado pelo carimbo de tempo.
 - **Parado não desenha**: 0 quadros e < 1 % de CPU.
 
 ## 4. A versão da GPUI e como está fixada
@@ -135,36 +154,45 @@ direto na GPUI.
 
 - A GPUI tem backend próprio para **X11 e Wayland** (`gpui-pre-linux`), com desenho por **wgpu** (Vulkan) e
   acessibilidade pela `accesskit_unix` (AT-SPI). É o mesmo código do Zed no Linux.
-- **Não foi testado em Linux aqui** (não há máquina Linux nem o alvo instalado). O grafo de dependências para
-  `x86_64-unknown-linux-gnu` resolve e baixa (`cargo fetch --target`).
-- Riscos: placas sem Vulkan (máquinas antigas, algumas VMs); o desenho cai para o que o wgpu oferecer. A embalagem
-  (Flatpak, .deb) é nossa, como a do Zed.
-- **Recomendação:** um job no CI (Ubuntu) que compile o `lm-gui` e rode os testes sem janela, e um teste manual em X11
-  e em Wayland antes da primeira fatia.
+- **Ainda não rodou em Linux.** O grafo de dependências para `x86_64-unknown-linux-gnu` resolve e baixa. No
+  ThinkPad do projeto (Ubuntu 24.04, Vulkan 1.3.275, sessão gráfica ativa) faltam três pacotes de desenvolvimento
+  para compilar a GPUI: `libxkbcommon-x11-dev`, `libx11-xcb-dev` e `libfontconfig-dev` (instalar pede `sudo`, então
+  fica com o usuário), e o disco dele tem ~7,8 GB livres: o build cabe, mas apertado (melhor no disco externo).
+- Riscos: placas sem Vulkan (máquinas antigas, algumas VMs). A embalagem (Flatpak, .deb) é nossa, como a do Zed.
+- **Recomendação:** um job no CI (Ubuntu) que compile o `lm-gui` e rode os testes sem janela (a GPUI de teste não
+  precisa de servidor gráfico), e um teste manual em X11 e em Wayland no ThinkPad antes da primeira fatia.
 
 ## 7. Riscos e como mitigar
 
 | Risco | Mitigação |
 |---|---|
-| GPUI antes da 1.0, API muda toda semana | versão fixada com `=`; atualização como tarefa própria, com testes de tela sem janela |
+| GPUI antes da 1.0, API muda toda semana | versão fixada com `=`; atualização como tarefa própria, com os testes de tela sem janela |
 | O `gpui-pre` é de terceiros (Longbridge) | é o código do Zed; recuo: git do Zed no mesmo commit |
 | Desenho denso fica caro (custo por primitiva) | ladrilhos em cache para formas de onda; juntar primitivas; medir cada tela nova com `LM_BENCH` |
-| Linux sem teste real | CI compilando e testando; teste manual em X11 e Wayland |
-| Sem tradução embutida | tradução como dado, nossa (`ui/i18n.rs`, arquivos por área) |
-| Acessibilidade dos controles próprios | a GPUI tem `role`, `aria_label`, `aria_numeric_value`: cada knob e fader declara papel e valor |
-| HiDPI não visto aqui | ladrilhos rasterizados no fator de escala da janela (pendente) |
+| Linux sem teste real | CI compilando e testando; teste manual em X11 e Wayland no ThinkPad |
+| Sem tradução embutida | tradução como dado, nossa (`ui/i18n.rs`, um arquivo por área, teste de chaves repetidas) |
+| Acessibilidade dos controles próprios | a GPUI tem `role`, `aria_label`, `aria_numeric_value`: cada knob e fader declara papel e valor (a fazer no `lm-gui`) |
+| HiDPI não visto aqui (tela 1x) | ladrilhos rasterizados no fator de escala da janela (a fazer) |
+| Vários agentes no mesmo `target` | os pacotes locais de dois worktrees ganham o mesmo hash e um reaproveita o artefato velho do outro: cada worktree com `--config profile.dev.package.<pacote>.codegen-units=N` próprio, ou o próprio `target` |
 
 ## 8. Recomendações para o `lm-gui`
 
-- **Estrutura:** a do protótipo: `core` (a entidade dona da `Session` e do pump), `workspace` (a casca: transporte,
-  abas das páginas, docas, modais, teclas), `pages` (Composição e Mixagem), `screens` (uma tela por arquivo, com um
-  registro), `ui` (tema, tradução, componentes comuns, o componente de carregamento).
-- **A `Session` numa entidade `Core`**; vistas leem em `render` e mudam em eventos; nenhuma referência guardada.
-- **O pump numa tarefa com o relógio da GPUI** (assim roda igual no teste com relógio falso).
+- **Estrutura:** a do protótipo: `core` (a entidade dona da porta e do pump), `workspace` (a casca: transporte,
+  abas das páginas, docas, modais, teclas), `pages` (Composição e Mixagem, páginas separadas), `screens` (uma tela
+  por arquivo, com um registro: posição na doca ou modal), `ui` (tema, tradução, componentes comuns, o componente
+  de carregamento), `tiles` (o cache de formas de onda).
+- **Só o `CorePort`**: a `LocalPort` dona da `Session` numa entidade `Core`, privada; as telas só veem a porta.
+  Nenhum fechamento cruza para o núcleo; leituras de `root()`/`telemetry()`, mudanças como `EditOp`, ações por id.
+  Tratar sempre o `Pending::Waiting` (é o caso normal no cliente remoto).
+- **O pump numa tarefa com o relógio da GPUI.**
 - **Tema como dado** (`themes/*.txt`, carregado no início; nenhuma cor no código) e **tradução como dado**
-  (`locales/<língua>/<área>.txt`, chaves em inglês; um arquivo por área para ninguém pisar no outro).
-- **Testes de tela sem janela** (`#[gpui::test]`, `debug_selector`, cliques e arrastos simulados) para cada gesto.
-- **Medir cada tela** com o `LM_BENCH`: a meta é ficar abaixo de 4 ms de CPU por quadro a 120 Hz.
+  (`locales/<língua>/<área>.txt`, chaves em inglês; um arquivo por área).
+- **Testes de tela sem janela** (`#[gpui::test]`, `debug_selector`, cliques, arrastos e teclas simulados) para cada
+  gesto e cada atalho.
+- **Desenho denso em poucas primitivas** (imagens em cache, caminhos juntos); medir cada tela com o `LM_BENCH`: a
+  meta é ficar abaixo de 4 ms de CPU por quadro a 120 Hz.
+- **O foco decide os atalhos**: cada página tem o seu contexto de teclas ("Composition", "Mixing") e pega o foco no
+  clique; um elemento que para a propagação do clique tem de pegar o foco ele mesmo.
 
 ---
 
@@ -184,32 +212,87 @@ máquina é compartilhada; as medidas são feitas no fim).
 Cada seção abaixo diz: o que foi feito, o que fica para o `lm-gui`, e as dificuldades da GPUI.
 
 ### 9.1 Casca: páginas, docas, modais, teclas (A)
-Feito: transporte sobre as duas páginas; abas Composição e Mixagem (Cmd/Ctrl+1, +2, Ctrl+Tab); docas embaixo (editores),
-à esquerda (navegador) e à direita (instrumento, efeito, avisos); modais centralizados; Espaço toca e para só nas
-páginas (um campo de texto guarda os espaços); Esc fecha o modal; um lançador provisório para cada tela.
-Dificuldades: o analisador de atalhos desta GPUI não tem o modificador "secondary" (Cmd no Mac, Ctrl no Linux): uma
-função nossa escolhe.
+Feito: a barra de transporte sobre as duas páginas; **Composição e Mixagem como páginas separadas** (abas,
+Cmd/Ctrl+1, +2, Ctrl+Tab); docas embaixo (editores), à esquerda (navegador) e à direita (instrumento, avisos); modais
+centralizados; Espaço toca e para só nas páginas (um campo de texto guarda os espaços); Esc fecha o modal;
+Cmd/Ctrl+Z desfaz; um lançador provisório para cada tela.
+Fica para o `lm-gui`: o menu e a paleta como os caminhos de verdade para as telas (o lançador some); lembrar as
+docas e os tamanhos no documento da interface (I-3.8).
+Dificuldades da GPUI: o analisador de atalhos desta versão não tem o modificador "secondary" (Cmd no Mac, Ctrl no
+Linux): uma função nossa escolhe. Um `KeyBinding` precisa de `&'static str`.
 
 ### 9.2 Composição: linha do tempo e cabeçalhos (A)
-Feito até aqui: 64 faixas, cabeçalho do design 02 sem pan (número na cor, gravar, nome, M, S, knob de volume com
-gesto, valor, FX, I/O, medidor), formas de onda em ladrilhos da pirâmide, rolagem e zoom (roda, trackpad, pinça),
-régua com compassos, cursor interpolado, carregamento no lugar da forma de onda.
-A fazer: várias saídas por faixa, pastas, itens MIDI, camadas de takes com comping, alças de pré-roll e punch, forma
-de onda crescendo na gravação, lane de andamento com rampas, lanes de automação, loop e punch na régua.
+Feito (`pages/composition.rs`, dados em `fake-core/src/arrange.rs`):
+- cabeçalho do design 02 sem pan: número na cor, gravar, nome com o tipo, M, S, knob de volume com gesto (duplo
+  clique volta a 0 dB), valor, monitorar, Takes, lanes, FX, E/S com o número de saídas, o medidor da saída principal
+  com um ponto quando há outras e, numa faixa armada, o medidor da entrada mesmo sem monitorar (F-REC-009);
+- pastas que recolhem e recuam as faixas de dentro (não somam áudio); a altura das faixas pela Ctrl+roda (24 a 160 px);
+- itens de áudio e de MIDI (notas em miniatura, as repetições de um padrão como fantasmas); camadas de takes com o
+  comping (cada trecho toca o seu take; fronteiras com crossfade, U2), uma linha por take com os trechos usados;
+  alças de pré-roll e punch (U4); itens sobrepostos marcam o crossfade automático; xruns como marcas vermelhas;
+- itens: selecionar, mover (um gesto, no tempo do compasso; Shift solta), fades e ganho nos 7 px de cima
+  (F-CLP-061); S divide no cursor, M põe marcador, Shift+R faz região do loop, 1–9 vão aos marcadores, Ctrl+D
+  duplica no compasso seguinte, Delete apaga, Shift+E cria um item vazio (P-29);
+- a roda como no REAPER (F-ARR-007): a roda do mouse dá zoom, Ctrl+roda muda a altura, Alt+roda rola de lado; o
+  trackpad rola nas duas direções e a pinça dá zoom;
+- a lane de andamento com rampas e degraus, as regiões (um clique faz delas o loop), os marcadores, o loop e o punch
+  na metade de cima da régua; lanes de automação com a curva; o cursor interpolado; clique na régua leva o cursor;
+- a gravação: contagem, take crescendo com os picos do gravador (U3), punch-in tocando e punch-out ao apertar de
+  novo (F-REC-006), arma a faixa selecionada quando nada está armado (F-REC-021), gravação em loop empilha um take
+  por passada e descarta a última com menos de 90 % (F-REC-040/041); mudar o andamento oferece re-renderizar os
+  itens gravados, como aviso com uma operação cancelável (F-REC-090);
+- FX no cabeçalho abre os inserts do canal da saída principal, na página de mixagem (P-28).
+Fica para o `lm-gui`: colar (Ctrl+V) no cursor, os três modos de editar o loop com Shift (F-REG-006/007), a curva do
+fade ajustável na tela (o campo existe), inverter item na tela (o campo existe), exportar uma região, editar pontos
+de andamento e de automação na própria lane (o editor de automação de B já edita), as três alturas do design 02 com
+os controles da altura grande, o menu do botão direito do cabeçalho.
+Dificuldades da GPUI: o custo por primitiva (seção 2.2) obrigou o cache de ladrilhos; texto dentro de um `canvas`
+pede o sistema de texto à parte, então rótulos (compassos, nomes, marcadores) são elementos por cima; o elemento que
+recebe o clique e para a propagação tem de pegar o foco ele mesmo, senão os atalhos da página não chegam.
 
 ### 9.3 Transporte (A, design 03)
-Feito: visor grande em compassos, relógio, estado por palavra e cor, andamento, compasso, metrônomo, pré-roll.
-A fazer: contagem, loop e punch ligados ao núcleo, trocar o formato do visor num clique, andamento editável no lugar.
+Feito: voltar, parar, tocar, gravar; loop e punch; o visor grande cujo formato troca num clique (compassos, tempo,
+amostras, timecode) e um visor menor com o outro formato; o estado por palavra e pela cor da borda (parado,
+tocando, gravando, CONTAGEM n…); o andamento editável no lugar (arrastar é um gesto, a roda muda 1 BPM, duplo
+clique volta a 120); compasso; metrônomo; contagem e pré-roll (0, 1, 2 compassos); a transposição global (P-37); o
+contador de xruns sempre à vista (P-14).
+Fica para o `lm-gui`: o menu do visor e o do andamento do design 03 (digitar o valor, Tap tempo, abrir o mapa de
+andamentos), as opções do metrônomo (F-REC-023..025), o mudo do master no transporte (F-MIX-015).
 
 ### 9.4 Mixagem (A)
-Feito: página própria; canais que existem por si (64 normais, 4 retornos, o master fixos à direita); por canal, as
-seções do rack como chaves, os inserts, os envios (com nível em knob e marca de pré-fader), pan, M, S, **o fader
-sobre o medidor** (gesto ao arrastar, duplo clique volta a 0 dB, valor em dB), a saída; o rack inteiro do canal
-selecionado no inspetor à direita, com um knob por parâmetro (gesto, duplo clique volta ao padrão).
-A fazer: escolher a saída, adicionar e remover inserts e envios, abrir a janela do efeito, criar e apagar canais.
+Feito (`pages/mixing.rs`, dados em `fake-core/src/mixer.rs`), uma página própria e repensada: em vez de espremer
+quinze knobs em cada canal, a faixa do canal mostra o que se mexe ao mixar e o inspetor à direita mostra o rack
+inteiro do canal selecionado.
+- canais que existem por si: normais, grupos (um canal para onde outros mandam, P-18), dois retornos (P-19) e o
+  master, fixos à direita; um canal "fantasma" tracejado cria canal (F-MIX-004);
+- por canal: as luzes SAT e CLIP e a lâmpada da válvula (LT amarela, RL vermelha); as seções do rack como chaves;
+  os inserts com o seu ponto entre as seções (P-20; clique abre a janela do efeito, Alt+clique faz bypass); um envio
+  por retorno, com marca de pré-fader; pan, mudo, solo e fase; **o fader sobre o medidor** (gesto, duplo clique ou
+  botão do meio volta a 0 dB, leitura do pico acima); a saída escolhida numa lista que nunca oferece um laço;
+- o inspetor: o rack do legado (F-MIX-030..055): entrada (trim, mono, fase, L⇄R, LCUT, largura), estágio de ganho
+  (GAIN até +60 dB, os 10 modelos, válvula leve ou realista), filtros (HPF, LPF, grave mono), dinâmica (9 modelos de
+  compressor, COMP, RATIO, ATK, REL, gate com os 9 modos), EQ de 4 bandas fixas, transformador e tolerância
+  (desvios semeados pelo id do canal, P-21); os inserts com o ponto e o bypass; os envios;
+- o master (F-MIX-060..068): PRE L e R com LINK, DRIVE com modelo, estéreo (WIDTH, BASS, FREQ, AIR), BUS COMP com a
+  redução de ganho, XFMR; dois VU de ponteiro, correlação e goniômetro; a monitoração (DIM, CUT, MONO, SIDE, LEVEL)
+  que nunca é salva nem exportada (fica no estado da interface);
+- modo analógico ou digital (P-17); escala dos medidores escolhível (pico, RMS, VU, K-14; P-22); Ctrl+clique
+  seleciona vários canais e "Vincular faders" os move juntos, num gesto só (P-18);
+- o menu dos knobs e faders: valor padrão, copiar e colar valor, aprender MIDI, automatizar (F-CTL-006);
+- teclas (F-MIX-013): ←/→ seleciona, ↑/↓ move o fader 1 dB (Shift 3, Alt 0,1), Shift+Insert cria canal.
+Fica para o `lm-gui`: renomear, colorir, reordenar e apagar canais na própria mesa (a porta já remove canal e
+redireciona o que mandava para ele), adicionar envio e insert pela faixa do canal (a cadeia de inserts de C já
+faz), sidechain (F-MIX-024), LUFS no master, o "aprender MIDI" ligado a um controlador de verdade, Shift arrastando
+para copiar o valor para outro knob e Ctrl arrastando para automatizar (F-CTL-005).
+Dificuldades da GPUI: nenhuma de peso; o goniômetro e os ponteiros são um caminho cada (uma primitiva).
 
 ### 9.5 Roteamento (A)
-A fazer: a saída de cada faixa para um canal, e a ação "criar canais para as saídas".
+Feito (`screens/routing.rs`): todas as saídas de todas as faixas, cada uma com o canal para onde vai, escolhido por
+nome numa lista agrupada por tipo (várias saídas podem ir para o mesmo canal); um filtro "só faixas com várias
+saídas"; numa faixa com várias saídas, "Criar canais para as saídas": um grupo e um canal por saída, roteados, num
+passo de desfazer (F-MIX-012, I-3.9).
+Fica para o `lm-gui`: dividir os canais de um take de áudio em saídas (8 mono, 4 estéreo), o número de canais de
+cada saída.
 
 ### 9.6 Piano Roll (B)
 Feito (`screens/piano_roll.rs`, dados em `fake-core/src/notes.rs`): as notas de um item MIDI, num mapa por número
