@@ -3923,6 +3923,7 @@ dependencies = [
  "lm-smf",
  "lm-state",
  "lm-sys-linux",
+ "lm-sys-samplerate",
  "lm-sys-sndfile",
  "lm-time",
  "rustix",

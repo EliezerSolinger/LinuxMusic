@@ -2574,6 +2574,17 @@ impl Session {
         })
     }
 
+    /// Exports as the export screen asks (stems, formats, rate, normalisation…), in an operation; the report goes
+    /// to `status().lastExport`
+    pub fn export_request(&mut self, req: crate::export::ExportRequest) -> lm_base::OperationId {
+        let job = self.export_job();
+        self.export_serial += 1;
+        let target_id = Target::Export(self.export_serial);
+        self.start(Label::new("session.exporting"), target_id, true, "export", move |cancel, progress| {
+            crate::export::export_request(job, &req, cancel, progress)
+        })
+    }
+
     /// The project as it is now, for an export
     pub fn export_job(&self) -> crate::export::ExportJob {
         crate::export::ExportJob {

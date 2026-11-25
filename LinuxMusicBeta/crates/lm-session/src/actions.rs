@@ -127,8 +127,13 @@ pub static ACTIONS: &[ActionSpec] = &[
     ActionSpec {
         id: "project.export",
         label: "action.project.export",
+        // The export screen's request (lm_port::trees); `{file}` alone: the whole song as a float WAV
         run: |s, p| {
-            let _ = s.export(crate::export::ExportTarget::wav(PathBuf::from(text(p, "file")?)));
+            if let Some(file) = p.get("file").and_then(Value::as_text) {
+                let _ = s.export(crate::export::ExportTarget::wav(PathBuf::from(file)));
+            } else {
+                let _ = s.export_request(crate::export::ExportRequest::from_value(p)?);
+            }
             Ok(())
         },
         enabled: always,
