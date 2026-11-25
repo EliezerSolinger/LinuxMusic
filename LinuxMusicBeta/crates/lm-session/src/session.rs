@@ -105,7 +105,10 @@ pub fn internal_descriptors() -> Vec<&'static lm_plugin::Descriptor> {
         &lm_plugins_freeboy::DESCRIPTOR,
         &lm_plugins_opulenz::DESCRIPTOR,
         &lm_plugins_stk::DESCRIPTOR,
+        &lm_plugins_fluidsynth::sf2player::DESCRIPTOR,
+        &lm_plugins_fluidsynth::avldrums::DESCRIPTOR,
     ];
+    all.extend(lm_plugins_guitarix::ALL.iter().map(|(_, d)| *d));
     all.extend(lm_plugins_effects::ALL.iter().copied());
     all.extend(lm_plugins_instruments::ALL.iter().copied());
     all
