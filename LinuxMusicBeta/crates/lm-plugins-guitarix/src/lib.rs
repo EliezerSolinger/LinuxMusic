@@ -65,8 +65,9 @@ units! {
     gain = "gain" => "gx-gain",
     low_highpass = "low_highpass" => "gx-low-highpass",
     highbooster = "highbooster" => "gx-highbooster",
-    // (ten bands of up to +30 dB: three that overlap add +90 dB to the tests' 0.5)
-    eqs = "eqs" => "gx-eqs" max 1.6e4,
+    // (ten bands of up to +30 dB, each anywhere: from the ranges, all ten on one frequency add +300 dB to the tests'
+    // 0.5 — random states of the sweep did stack four, +108 dB)
+    eqs = "eqs" => "gx-eqs" max 1.0e15,
     ampstack = "ampstack" => "gx-ampstack",
     crybaby = "crybaby" => "gx-crybaby",
     poweramp = "poweramp" => "gx-poweramp",
@@ -94,8 +95,8 @@ units! {
     flanger_mono = "flanger_mono" => "gx-flanger-mono",
     flanger_mono_gx = "flanger_mono_gx" => "gx-flanger-mono-gx",
     feedback = "feedback" => "gx-feedback",
-    // (four peaks of up to +50 dB, anywhere: two on one frequency add +100 dB)
-    eq = "eq" => "gx-eq" max 5.0e4,
+    // (four peaks of up to +50 dB, anywhere: from the ranges, all four on one frequency add +200 dB)
+    eq = "eq" => "gx-eq" max 1.0e10,
     dide = "dide" => "gx-dide",
     amp_tonestack = "amp.tonestack" => "gx-amp-tonestack",
     cab = "cab" => "gx-cab",
