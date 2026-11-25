@@ -707,6 +707,9 @@ impl Writer {
         if matches!(this.spec.format, WriteFormat::Rf64(_)) {
             clear_peak_time(&file).map_err(|e| io_error("sndfile.write_failed", &path, &e))?;
         }
+        if matches!(this.spec.format, WriteFormat::OggVorbis { .. }) {
+            fix_ogg_serial(&file).map_err(|e| io_error("sndfile.write_failed", &path, &e))?;
+        }
         file.sync_all().map_err(|e| io_error("sndfile.sync_failed", &path, &e))?;
         Ok(frames)
     }
@@ -717,6 +720,54 @@ impl Writer {
 /// libsndfile honours `SFC_SET_ADD_PEAK_CHUNK` for WAV and AIFF but not for RF64, and stamps the chunk with the
 /// wall-clock time: without this, the same samples would give different bytes a second later (T19). The peaks
 /// themselves stay; the time is informational and 0 is a valid value
+/// The serial number every page of our Ogg files carries (any fixed value: one logical stream per file)
+const OGG_SERIAL: u32 = 0x4C4D_0001;
+
+/// Gives every page of an Ogg file the same fixed serial number, with each page's CRC computed again.
+///
+/// libsndfile picks the stream's serial number at random (seeded by the clock): the same samples would give
+/// different bytes at every export (T19). The serial only has to differ between the streams of one file, and our
+/// files have one
+fn fix_ogg_serial(file: &File) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    let len = file.metadata()?.len();
+    let mut at = 0u64;
+    let mut page = Vec::new();
+    while at + 27 <= len {
+        let mut head = [0u8; 27];
+        file.read_exact_at(&mut head, at)?;
+        if &head[..4] != b"OggS" {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "not an Ogg page"));
+        }
+        let segments = usize::from(head[26]);
+        let mut table = vec![0u8; segments];
+        file.read_exact_at(&mut table, at + 27)?;
+        let body: u64 = table.iter().map(|&b| u64::from(b)).sum();
+        let size = 27 + segments as u64 + body;
+        page.resize(usize::try_from(size).unwrap_or(0), 0);
+        file.read_exact_at(&mut page, at)?;
+        page[14..18].copy_from_slice(&OGG_SERIAL.to_le_bytes());
+        page[22..26].fill(0);
+        let crc = ogg_crc(&page);
+        page[22..26].copy_from_slice(&crc.to_le_bytes());
+        file.write_all_at(&page[14..26], at + 14)?;
+        at += size;
+    }
+    Ok(())
+}
+
+/// The CRC of an Ogg page (polynomial 0x04C11DB7, no reflection, initial 0, as RFC 3533 says)
+fn ogg_crc(data: &[u8]) -> u32 {
+    let mut crc = 0u32;
+    for &b in data {
+        crc ^= u32::from(b) << 24;
+        for _ in 0..8 {
+            crc = if crc & 0x8000_0000 != 0 { (crc << 1) ^ 0x04C1_1DB7 } else { crc << 1 };
+        }
+    }
+    crc
+}
+
 fn clear_peak_time(file: &File) -> std::io::Result<()> {
     use std::os::unix::fs::FileExt;
     // RF64 + size + WAVE, then chunks (id, little-endian size, data padded to even) up to `data`

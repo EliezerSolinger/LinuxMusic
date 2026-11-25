@@ -209,9 +209,13 @@ fn the_same_samples_give_the_same_bytes_a_second_later() {
     // they straddled a second (T19)
     let dir = TempDir::new("same-bytes");
     let data = signal(4_800, 2);
-    for format in
-        [WriteFormat::Wav(Sample::Float32), WriteFormat::Rf64(Sample::Float32), WriteFormat::Aiff(Sample::Float32)]
-    {
+    for format in [
+        WriteFormat::Wav(Sample::Float32),
+        WriteFormat::Rf64(Sample::Float32),
+        WriteFormat::Aiff(Sample::Float32),
+        WriteFormat::OggVorbis { quality: 0.6 },
+        WriteFormat::Flac { depth: FlacDepth::Int24, compression: 0.5 },
+    ] {
         let a = dir.path(&format!("a-{format:?}"));
         let b = dir.path(&format!("b-{format:?}"));
         write_f32(&a, format, 2, &data);
@@ -219,4 +223,9 @@ fn the_same_samples_give_the_same_bytes_a_second_later() {
         write_f32(&b, format, 2, &data);
         assert!(std::fs::read(&a).unwrap() == std::fs::read(&b).unwrap(), "{format:?}");
     }
+    // The fixed serial keeps the Ogg file readable
+    let ogg = dir.path("read.ogg");
+    write_f32(&ogg, WriteFormat::OggVorbis { quality: 0.6 }, 2, &data);
+    let (_, back) = read_all_f32(&ogg);
+    assert_eq!(back.len(), data.len());
 }
