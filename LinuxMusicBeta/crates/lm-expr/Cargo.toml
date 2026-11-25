@@ -1,0 +1,18 @@
+[package]
+name = "lm-expr"
+description = "LinuxMusic: an evaluator of exprtk's expressions as the legacy Xpressive used them (exprtk<float>, its parser settings and its compile-time rewrites), compiled once and evaluated per sample without allocating"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lm-base.workspace = true
+libm.workspace = true
+
+[dev-dependencies]
+assert_no_alloc.workspace = true

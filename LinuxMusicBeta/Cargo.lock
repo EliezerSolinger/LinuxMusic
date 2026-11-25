@@ -3566,6 +3566,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-expr"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "libm",
+ "lm-base",
+]
+
+[[package]]
 name = "lm-gui"
 version = "0.1.0"
 dependencies = [

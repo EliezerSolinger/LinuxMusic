@@ -77,6 +77,7 @@ lm-plugins-ampandir = { path = "crates/lm-plugins-ampandir" }
 lm-plugins-sid = { path = "crates/lm-plugins-sid" }
 lm-plugins-freeboy = { path = "crates/lm-plugins-freeboy" }
 lm-plugins-opulenz = { path = "crates/lm-plugins-opulenz" }
+lm-expr = { path = "crates/lm-expr" }
 lm-plugins-effects = { path = "crates/lm-plugins-effects" }
 lm-plugins-fluidsynth = { path = "crates/lm-plugins-fluidsynth" }
 lm-plugins-instruments = { path = "crates/lm-plugins-instruments" }
