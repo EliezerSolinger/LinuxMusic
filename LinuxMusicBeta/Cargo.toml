@@ -41,6 +41,8 @@ blake3 = "1"
 rustix = { version = "1", default-features = false, features = ["std", "time"] }
 # lm-sys-alsa and lm-sys-linux (Linux only): the C types and calls of the system (poll, eventfd, sched, mlock, rlimit)
 libc = "0.2"
+# VST3 bindings generated from the SDK headers (MIT OR Apache-2.0), for the plugin host (I-9.6)
+vst3 = "0.3"
 # lm-sys-linux (Linux only): D-Bus for rtkit, logind and ReserveDevice1, pure Rust (decisoes-autonomas.md). zbus 6 has
 # no `blocking` module any more: the crate drives it with `zbus::block_on` on its own thread, which is the blocking
 # mode of the decision. `service` serves the ReserveDevice1 object; no proxies (the calls are written by hand).
@@ -89,6 +91,7 @@ lm-sys-rubberband = { path = "crates/lm-sys-rubberband" }
 lm-sys-lilv = { path = "crates/lm-sys-lilv" }
 lm-sys-ipc = { path = "crates/lm-sys-ipc" }
 lm-sys-clap = { path = "crates/lm-sys-clap" }
+lm-sys-vst3 = { path = "crates/lm-sys-vst3" }
 lm-sys-nam = { path = "crates/lm-sys-nam" }
 lm-sys-resid = { path = "crates/lm-sys-resid" }
 lm-plugin-proxy = { path = "crates/lm-plugin-proxy" }
