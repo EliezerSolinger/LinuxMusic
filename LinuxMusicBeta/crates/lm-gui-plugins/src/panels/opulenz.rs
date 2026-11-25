@@ -68,8 +68,9 @@ fn semitones(v: f64) -> String {
     format!(" ({} {})", MULT_SEMITONES[(v.max(0.0) as usize).min(15)], crate::i18n::tr("semitones"))
 }
 
+/// A name built once, as an interned symbol owned by the symbol table (lm_base::intern)
 fn leak(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
+    lm_port::intern(&s)
 }
 
 fn led(param: &'static str, x: f32, y: f32, name: &'static str, tip: &'static str, op: u32) -> Control {

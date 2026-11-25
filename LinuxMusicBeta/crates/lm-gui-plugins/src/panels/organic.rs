@@ -95,7 +95,7 @@ fn randomise(cx: &mut PressCx<'_>) -> Vec<(Target, Value)> {
     let rand = &mut cx.rand;
     let mut out = Vec::new();
     for n in 1..=8 {
-        let k = |s: &str| -> &'static str { Box::leak(format!("{s}{n}").into_boxed_str()) };
+        let k = |s: &str| -> &'static str { lm_port::intern(&format!("{s}{n}")) };
         let real = |v: f64| Value::real(v).unwrap_or_default();
         out.push((Target::Param(k("volume")), real((rand() * 100.0).round())));
         out.push((Target::Param(k("detune")), real((rand() * 10.0 - 5.0).round())));
@@ -114,7 +114,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
     for i in 0..8u32 {
         let n = i + 1;
         let x = 53.0 + 24.0 * i as f32;
-        let k = |s: &str| -> &'static str { Box::leak(format!("{s}{n}").into_boxed_str()) };
+        let k = |s: &str| -> &'static str { lm_port::intern(&format!("{s}{n}")) };
         controls.extend([
             knob(k("harmonic"), x, 65.0, small(true), 1.0, "Osc %1 harmonic", "Osc %1 harmonic:", "")
                 .unit_of(harmonic_name)

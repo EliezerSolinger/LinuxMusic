@@ -38,8 +38,9 @@ fn nes_knob() -> KnobStyle {
 const Y: [f32; 4] = [24.0, 81.0, 138.0, 195.0];
 const X: [f32; 7] = [12.0, 46.0, 84.0, 117.0, 151.0, 172.0, 206.0];
 
+/// A name built once, as an interned symbol owned by the symbol table (lm_base::intern)
 fn leak(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
+    lm_port::intern(&s)
 }
 
 /// A `makenesled`: a checkable red LED on a switch

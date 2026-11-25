@@ -108,8 +108,9 @@ fn cutoff_hz(v: f64) -> String {
     format!(" ({} Hz)", (9970.0 / 2047.0 * v + 30.0) as i64)
 }
 
+/// A name built once, as an interned symbol owned by the symbol table (lm_base::intern)
 fn leak(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
+    lm_port::intern(&s)
 }
 
 pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {

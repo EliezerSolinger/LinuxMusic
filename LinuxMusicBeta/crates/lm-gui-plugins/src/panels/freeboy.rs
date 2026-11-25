@@ -53,8 +53,8 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
     ];
     for n in 1..=4u32 {
         let y = 51.0 + 12.0 * (n - 1) as f32;
-        let so2: &'static str = Box::leak(format!("ch{n}ToSo2").into_boxed_str());
-        let so1: &'static str = Box::leak(format!("ch{n}ToSo1").into_boxed_str());
+        let so2: &'static str = lm_port::intern(&format!("ch{n}ToSo2"));
+        let so1: &'static str = lm_port::intern(&format!("ch{n}ToSo1"));
         controls.push(sw(so2, 148.0, y, &ON, &OFF, "Channel %1 to SO2 (Left)").n(n));
         controls.push(sw(so1, 208.0, y, &ON, &OFF, "Channel %1 to SO1 (Right)").n(n));
     }

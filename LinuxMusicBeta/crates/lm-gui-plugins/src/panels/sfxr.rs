@@ -482,7 +482,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
     let mut controls: Vec<Control> = KNOBS
         .iter()
         .map(|&(key, col, row, (color, outer), name, hint)| {
-            let hint: &'static str = hint.unwrap_or_else(|| Box::leak(format!("{name}:").into_boxed_str()));
+            let hint: &'static str = hint.unwrap_or_else(|| lm_port::intern(&format!("{name}:")));
             knob(
                 key,
                 20.0 + 40.0 * col as f32,
@@ -504,7 +504,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
     ];
     for (i, (on, off, tip)) in waves.into_iter().enumerate() {
         let key = WAVES[i];
-        let id: &'static str = Box::leak(format!("wave.{key}").into_boxed_str());
+        let id: &'static str = lm_port::intern(&format!("wave.{key}"));
         controls.push(
             button(Bind::Choice { field: "wave", key }, id, 20.0 + 16.0 * i as f32, 15.0, on, off, "Wave").tip(tip),
         );
