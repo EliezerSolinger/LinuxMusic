@@ -7,7 +7,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::*;
-use lm_base::{HostTime, Label};
+use lm_base::Label;
 use lm_midimap::{DocSource, MapTarget, Mapping, Message, NodeRef, SelRole, Transform};
 use lm_plugin::PluginKind;
 use lm_render::{Command, PortIndex};
@@ -56,8 +56,10 @@ fn nrpn_max(number: u16) -> [[u8; 3]; 4] {
 
 fn send_all(s: &mut Session, port: PortIndex, msgs: &[[u8; 3]]) {
     for chunk in msgs.chunks(64) {
+        // Stamped with the device's own clock (the free-running Dummy's), so they are due at once
+        let at = s.telemetry().position.host_time;
         for m in chunk {
-            s.engine().commands().send(Command::Midi { port, at: HostTime::now(), bytes: *m }).expect("midi");
+            s.engine().commands().send(Command::Midi { port, at, bytes: *m }).expect("midi");
         }
         run_for(s, Duration::from_millis(15));
     }
@@ -77,7 +79,14 @@ fn add_all_mappings(s: &mut Session, maps: Vec<Mapping>) {
 
 fn setup() -> (TempDir, Session, PortIndex, Vec<NodeId>, Vec<NodeId>) {
     let dir = TempDir::new("midi-everything");
-    let mut s = session(&dir);
+    // Every plugin at once renders slower than real time in a debug build: the Dummy runs free instead, so the
+    // test does not depend on the machine's speed
+    let mut c = config(&dir);
+    c.device = lm_session::DeviceSetup::Dummy(lm_io::DummyOptions {
+        pace: lm_io::Pace::Free { speed: None },
+        ..lm_io::DummyOptions::default()
+    });
+    let mut s = Session::new(c).expect("session");
     let registry = s.registry().clone();
     let mut tracks = Vec::new();
     let channels_n = 2;
@@ -119,6 +128,8 @@ fn setup() -> (TempDir, Session, PortIndex, Vec<NodeId>, Vec<NodeId>) {
                 Ok(())
             })
             .expect("plugin");
+        // One plugin at a time, as a user adds them: every build and install done before the next
+        settle(&mut s);
     }
     settle(&mut s);
     let list = Value::list([Value::object([
@@ -174,7 +185,12 @@ fn every_parameter_field_and_action_answers_a_control() {
     }
     add_all_mappings(&mut s, maps.clone());
     settle(&mut s);
+    // I-21.2: the map follows the selection on the main thread, so compiling it never passes 200 ms (I-2.1), even
+    // with every parameter, field and action of the program mapped
+    let t0 = Instant::now();
     s.midi_refresh();
+    let took = t0.elapsed();
+    assert!(took < Duration::from_millis(200), "{} mappings compiled in {took:?}", maps.len());
     s.midi_dry_run(true);
     // The parameters first (their slots), then the fields and actions (a field may recompile the program)
     let send_range = |s: &mut Session, from: usize, to: usize| {

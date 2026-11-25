@@ -300,7 +300,8 @@ impl Session {
             port_count: u16::try_from(self.midi.aliases.len().max(1)).unwrap_or(u16::MAX),
             selection: self.midi.selection.clone(),
         };
-        let CompiledMap { map, resolved, .. } = compile_map(self.document.root(), &self.table, &input, self.spec);
+        let CompiledMap { map, resolved, .. } =
+            compile_map(self.document.root(), &|id| self.document.find(id), &self.table, &input, self.spec);
         if let Err(e) = self.engine.install(Install::map_only(self.table.generation, map)) {
             self.notices.error(&e, None, None);
             return;

@@ -78,7 +78,7 @@ fn ranges_slots_and_the_map() {
         port_count: 4,
         selection: Selection { track: Some(t1), track_bank: 1, ..Selection::default() },
     };
-    let compiled = compile_map(doc.root(), &table, &input, spec());
+    let compiled = compile_map(doc.root(), &|id| doc.find(id), &table, &input, spec());
     assert_eq!(compiled.inactive, vec![5, 7], "the missing alias and the losing machine mapping");
     let entries = compiled.map.entries();
     let target_of = |id: u64| entries.iter().filter(|e| e.id == id).map(|e| e.target).collect::<Vec<_>>();
@@ -110,7 +110,7 @@ fn ranges_slots_and_the_map() {
     assert_eq!(r.node, Some(t2));
     // Selecting the last track: offset 1 is past the end, the mapping does nothing
     let input = MapInput { selection: Selection { track: Some(t2), ..Selection::default() }, ..input };
-    let compiled = compile_map(doc.root(), &table, &input, spec());
+    let compiled = compile_map(doc.root(), &|id| doc.find(id), &table, &input, spec());
     assert!(compiled.inactive.contains(&3));
 }
 

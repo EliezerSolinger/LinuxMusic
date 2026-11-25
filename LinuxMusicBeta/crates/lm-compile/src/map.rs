@@ -110,8 +110,19 @@ pub fn resolve_node(root: &Value, node: &NodeRef, sel: &Selection) -> Option<Nod
     }
 }
 
-/// The renderer's MIDI map for `input` against the tree and the slots of the last install
-pub fn compile_map(root: &Value, table: &InstalledTable, input: &MapInput, spec: ProcessSpec) -> CompiledMap {
+/// A node of the tree by id, through the document's index (O(log n); the session passes `Document::find`)
+pub type NodeLookup<'a> = &'a dyn Fn(NodeId) -> Option<Value>;
+
+/// The renderer's MIDI map for `input` against the tree and the slots of the last install. `lookup` finds a node by
+/// id through the document's index: the cost is linear in the mappings, never in the tree (a thousand mappings
+/// compile in milliseconds, I-21.2: the map follows the selection on the main thread)
+pub fn compile_map(
+    root: &Value,
+    lookup: NodeLookup<'_>,
+    table: &InstalledTable,
+    input: &MapInput,
+    spec: ProcessSpec,
+) -> CompiledMap {
     let mut entries: Vec<Entry<MapTarget>> = Vec::new();
     let mut resolved = Vec::new();
     let mut inactive = Vec::new();
@@ -136,7 +147,7 @@ pub fn compile_map(root: &Value, table: &InstalledTable, input: &MapInput, spec:
         let touch_port = m.touch.as_ref().and_then(|t| port_of(&t.port, input).map(|p| (p, t)));
         let id = mapping_id(m, i);
         let node = m.target.node().and_then(|n| resolve_node(root, n, &input.selection));
-        if m.target.node().is_some() && node.is_none_or(|n| !exists(root, n)) {
+        if m.target.node().is_some() && node.is_none_or(|n| n != lm_state::ROOT && lookup(n).is_none()) {
             inactive.push(i);
             continue;
         }
@@ -172,7 +183,7 @@ pub fn compile_map(root: &Value, table: &InstalledTable, input: &MapInput, spec:
                     && match &m.target {
                         DocTarget::Action { .. } => true,
                         DocTarget::Field { path, .. } => node
-                            .and_then(|n| find(root, n))
+                            .and_then(|n| if n == lm_state::ROOT { Some(root.clone()) } else { lookup(n) })
                             .and_then(|v| v.at_path(path).cloned())
                             .is_some_and(|v| v.as_bool().is_some()),
                         DocTarget::Param { .. } => false,
@@ -195,12 +206,8 @@ fn port_of(alias: &str, input: &MapInput) -> Option<u16> {
     input.ports.iter().find(|p| &*p.alias == alias).map(|p| p.index.0)
 }
 
-fn exists(root: &Value, id: NodeId) -> bool {
-    find(root, id).is_some()
-}
-
-/// A node of the tree by id (tracks, their outputs, items, automation and instrument; channels with their inserts,
-/// sends and automation; the master; the root). Notes and plugin states are not searched: they hold no ids
+/// A node of the tree by id, searching the tree (for callers without a document: tests, tools). Linear in the tree:
+/// the session uses the document's index instead. Notes and plugin states are not searched: they hold no ids
 pub fn find(root: &Value, id: NodeId) -> Option<&Value> {
     if id == lm_state::ROOT {
         return Some(root);
