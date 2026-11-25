@@ -70,6 +70,13 @@
     },
     "version": 1
   },
+  "item.lane.timing": {
+    "defaults": {
+      "frame": 0.0,
+      "tick": 0
+    },
+    "version": 1
+  },
   "marker": {
     "defaults": {
       "color": 0,

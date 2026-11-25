@@ -212,6 +212,22 @@ de forma diz pelo que é substituído.
 
 - **Time-stretch com o motor R3 ("finer") do Rubber Band**, offline, numa `Operation`, com o tamanho de saída exato
   vindo do mapa de andamentos; o R2 oscila 1–2% de afinação em notas longas.
+- **Takes que seguem o andamento (F-REC-090), 25/11:** a faixa (lane) guarda `timing`, o andamento em que foi tocada
+  (o quadro da fonte em cada tique desde o início do item). No andamento em que foi tocada, toca o original, cada
+  quadro onde foi tocado; noutro, toca uma renderização a partir do **original**, do tamanho exato do item em
+  amostras, em `render/<chave>.wav` (RF64 float), a chave o hash do plano (original, quadros-chave, tamanho, taxa,
+  versão do código): desfazer a mudança de andamento acha a renderização pronta. Sem Rubber Band não há build (é
+  dependência direta do `lm-io`), então não existe o caminho "reamostrar e avisar" do legado: nenhuma build toca
+  diferente. **O mapa de quadros-chave do próprio Rubber Band não serve:** medido, no R3 offline um trecho comprimido
+  seguido de um esticado sai vários por cento mais curto e termina cedo (96000→96000 com 48000→24000 deu 93876
+  quadros e som até 90201); o modo de tempo real com a razão trocada por bloco erra a posição em centenas de quadros,
+  conforme a latência, que não é um número fixo. Por isso: um trecho de uma razão só vai inteiro pelo offline (exato);
+  com várias razões, cada trecho vai pelo offline na sua razão, com 8192 quadros de contexto de cada lado, posto entre
+  os seus quadros-chave, e dois vizinhos se cruzam em 2 × 256 quadros (cossenos que somam 1). Dois phase vocoders
+  separados não estão em fase: cruzados como vêm, a 440 Hz caíam 2,3 dB no meio; cada trecho se desloca até 10 ms
+  para onde melhor se correlaciona com o anterior (o menor deslocamento que chega a 0,02 do melhor), e o quadro-chave
+  fica a no máximo 10 ms do lugar. `Offline::finish` passou a pedir ao Rubber Band o que ele ainda guarda (uma chamada
+  final vazia), como o legado.
 - **lilv ≥ 0.24.10.** O host não oferece o recurso `log:log` aos plugins LV2 (o Rust estável não define funções C
   variádicas); um plugin que o exige é recusado com `lilv.missing_feature`, e um que o tem como opcional funciona.
 - **A ordem de destruição de um plugin LV2** é: encerrar o worker (join), entregar as últimas respostas, desativar e

@@ -71,9 +71,18 @@ fn a_rendering_is_exactly_as_long_as_asked_keeps_the_pitch_and_puts_each_key_fra
     let (frames, left, right) = read(&path);
     assert_eq!(frames, 100_000, "exactly the frames asked");
     assert!(left[..1_000].iter().chain(&left[97_000..]).all(|v| *v == 0.0), "silence around");
-    for (from, to) in [(3_000, 23_000), (30_000, 94_000), (30_000, 50_000), (50_000, 70_000), (70_000, 94_000)] {
-        // TODO(stretch agent, WIP at the 20/11 pause): assert the pitch of each span
-        let _ = frequency(&left[from..to]);
+    // The pitch of every stretch between the clicks (a click is a transient: the engine's channels go together)
+    for (from, to) in
+        [(1_500, 6_000), (8_000, 18_000), (20_000, 24_500), (26_000, 42_000), (44_000, 78_000), (80_000, 96_500)]
+    {
+        let f = frequency(&left[from..to]);
+        assert!((f / 440.0 - 1.0).abs() < 0.005, "{from}..{to}: the pitch kept, {f} Hz");
+    }
+    // No dip where the pieces meet (the key frame at 25000, crossfaded)
+    let rms = |x: &[f32]| (x.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>() / x.len() as f64).sqrt();
+    for w in (24_000..26_000).step_by(100) {
+        let level = rms(&left[w..w + 200]) / rms(&left[20_000..24_000]);
+        assert!((level - 1.0).abs() < 0.12, "the level at {w}: {level}");
     }
     // The clicks at 0.25 s, 0.75 s, 1.25 s, 1.75 s of the take, where the key frames put them
     // (source 0..48000 to 1000..25000: half speed; 48000..96000 to 25000..97000: 1.5 times)
@@ -111,4 +120,32 @@ fn a_cancel_leaves_nothing_and_a_rendering_there_is_kept() {
     let bad = job(&dir.0, vec![(0, 0), (200_000, 1_000)], 1_000);
     let bad = StretchJob { key: KEY.replace('0', "f"), ..bad };
     assert_eq!(render_stretch(&bad, &Cancel::new(), &Progress::new()).unwrap_err().key(), "io.stretch.bad_plan");
+}
+
+#[test]
+fn a_ramp_of_many_pieces_keeps_the_pitch_and_the_level() {
+    let dir = TempDir::new("stretch-ramp");
+    // Twelve pieces of 8000 frames, their ratios from 0.8 to 1.35 (a tempo ramp cut into key frames)
+    let mut points = vec![(0u64, 0u64)];
+    for k in 0..12u64 {
+        let r = 0.8 + 0.05 * k as f64;
+        let last = *points.last().unwrap();
+        points.push((last.0 + 8_000, last.1 + (8_000.0 * r).round() as u64));
+    }
+    let out = points.last().unwrap().1;
+    let path = render_stretch(&job(&dir.0, points.clone(), out), &Cancel::new(), &Progress::new()).unwrap();
+    let (frames, left, _) = read(&path);
+    assert_eq!(frames as u64, out);
+    let rms = |x: &[f32]| (x.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>() / x.len() as f64).sqrt();
+    let reference = rms(&left[2_000..6_000]);
+    for w in (1_000..frames - 1_200).step_by(150) {
+        let level = rms(&left[w..w + 200]) / reference;
+        assert!((level - 1.0).abs() < 0.12, "the level at {w}: {level}");
+    }
+    // (the pieces without a click: a click is a transient the engine spreads over both channels)
+    for w in points.windows(2).skip(1).filter(|w| (w[0].0..w[1].0).all(|x| x % 24_000 != 12_000)) {
+        let (from, to) = (w[0].1 as usize + 800, w[1].1 as usize - 800);
+        let f = frequency(&left[from..to]);
+        assert!((f / 440.0 - 1.0).abs() < 0.005, "{from}..{to}: {f} Hz");
+    }
 }
