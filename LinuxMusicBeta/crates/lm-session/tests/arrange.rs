@@ -193,3 +193,62 @@ fn splitting_a_repeating_pattern_does_not_change_what_plays() {
     assert_eq!(before.len(), after.len());
     assert!(before.iter().zip(&after).all(|(a, b)| (a - b).abs() < 1.0e-4), "the same notes at the same times");
 }
+
+fn ids_param(ids: &[NodeId]) -> Value {
+    Value::object([("items", Value::list(ids.iter().map(|i| Value::text(i.to_string()))))])
+}
+
+#[test]
+fn copy_cut_and_paste_keep_distances_and_tracks() {
+    let dir = TempDir::new("clipboard");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    let a = add_synth_track(&mut s, "A");
+    let b = add_synth_track(&mut s, "B");
+    let x = add_notes(&mut s, a, &[(60, 0, 480)]);
+    let y = add_notes(&mut s, b, &[(62, 0, 480)]);
+    set(&mut s, x, "start", Value::int(3840));
+    set(&mut s, y, "start", Value::int(7680));
+    assert!(s.run_action("arrange.paste", &Value::object([("at", Value::int(0))])).is_err(), "empty clipboard");
+    s.run_action("arrange.copy", &ids_param(&[y, x])).expect("copy");
+    // Pasted at bar 5 on track B: x (the first) goes to B, y one track further down: none, so it stays on B
+    let at = Value::object([("at", Value::int(15360)), ("track", Value::text(b.to_string()))]);
+    s.run_action("arrange.paste", &at).expect("paste");
+    let on_b = item_ids(&s, b);
+    assert_eq!(on_b.len(), 3);
+    assert_eq!(field(&s, on_b[1], "start"), 15360);
+    assert_eq!(field(&s, on_b[2], "start"), 19200);
+    // Pasted with no track: each copy on its own track
+    s.run_action("arrange.paste", &Value::object([("at", Value::int(0))])).expect("paste 2");
+    assert_eq!(item_ids(&s, a).len(), 2);
+    assert_eq!(field(&s, item_ids(&s, a)[1], "start"), 0);
+    assert_eq!(field(&s, item_ids(&s, b)[3], "start"), 3840);
+    // Cut: gone in one undo step, and on the clipboard
+    s.run_action("arrange.cut", &ids_param(&[x])).expect("cut");
+    assert_eq!(item_ids(&s, a).len(), 1);
+    s.document_mut().undo().expect("undo");
+    assert_eq!(item_ids(&s, a).len(), 2);
+    s.run_action("arrange.cut", &ids_param(&[x])).expect("cut again");
+    s.run_action("arrange.paste", &Value::object([("at", Value::int(960))])).expect("paste cut");
+    assert_eq!(field(&s, *item_ids(&s, a).last().expect("pasted"), "start"), 960);
+}
+
+#[test]
+fn insert_and_remove_bar_move_what_follows() {
+    let dir = TempDir::new("bars");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    let t = add_synth_track(&mut s, "Synth");
+    let before = add_notes(&mut s, t, &[(60, 0, 480)]);
+    let after = add_notes(&mut s, t, &[(62, 0, 480)]);
+    set(&mut s, after, "start", Value::int(7680));
+    s.run_action("arrange.insert_bar", &Value::object([("tick", Value::int(3840))])).expect("insert");
+    assert_eq!((field(&s, before, "start"), field(&s, after, "start")), (0, 11520));
+    s.document_mut().undo().expect("undo");
+    assert_eq!(field(&s, after, "start"), 7680);
+    // Removing the bar the item starts in: it goes to the removed bar's start
+    s.run_action("arrange.remove_bar", &Value::object([("tick", Value::int(3840))])).expect("remove");
+    assert_eq!(field(&s, after, "start"), 3840);
+    s.run_action("arrange.remove_bar", &Value::object([("tick", Value::int(3840))])).expect("remove 2");
+    assert_eq!((field(&s, before, "start"), field(&s, after, "start")), (0, 3840));
+}

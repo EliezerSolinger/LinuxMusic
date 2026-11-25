@@ -469,3 +469,39 @@ fn the_rack_display() {
     .unwrap();
     assert!(p.display(ch).is_none(), "the digital desk has no rack");
 }
+
+fn items_of(p: &FakePort, t: NodeId) -> Vec<(NodeId, i64)> {
+    p.find(t)
+        .and_then(|t| t.get("items").cloned())
+        .map(|l| {
+            l.items()
+                .filter_map(|i| {
+                    Some((NodeId::parse(i.get("id")?.as_text()?).ok()?, i.get("start").and_then(Value::as_int)?))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn clipboard_and_bars_follow_the_session_rules() {
+    let mut p = small();
+    let t = (0..12).map(|i| track(&p, i)).find(|t| !items_of(&p, *t).is_empty()).expect("a track with items");
+    let (first, start) = items_of(&p, t)[0];
+    let n = items_of(&p, t).len();
+    let ids = Value::object([("items", Value::list([Value::text(first.to_string())]))]);
+    assert!(p.run_action(ActionId::from("arrange.copy"), ids.clone()).ok().is_some());
+    let at = Value::object([("at", Value::int(start + 64 * demo::BAR))]);
+    assert!(p.run_action(ActionId::from("arrange.paste"), at).ok().is_some());
+    assert_eq!(items_of(&p, t).len(), n + 1);
+    assert_eq!(items_of(&p, t)[n].1, start + 64 * demo::BAR);
+    let bar = Value::object([("tick", Value::int(start))]);
+    assert!(p.run_action(ActionId::from("arrange.insert_bar"), bar.clone()).ok().is_some());
+    assert_eq!(items_of(&p, t)[0].1, start + demo::BAR);
+    assert!(p.run_action(ActionId::from("arrange.remove_bar"), bar).ok().is_some());
+    assert_eq!(items_of(&p, t)[0].1, start);
+    assert!(p.run_action(ActionId::from("arrange.cut"), ids).ok().is_some());
+    assert_eq!(items_of(&p, t).len(), n);
+    assert!(p.undo().ok().is_some());
+    assert_eq!(items_of(&p, t).len(), n + 1);
+}

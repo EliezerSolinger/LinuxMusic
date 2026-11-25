@@ -14,6 +14,7 @@ mod desk;
 mod library;
 mod midi;
 pub use midi::Outside;
+mod arrange_b;
 pub mod peaks;
 mod ranges;
 mod services;
@@ -86,6 +87,8 @@ struct Transport {
 /// The fake port
 pub struct FakePort {
     doc: Document,
+    /// the arrangement's clipboard (arrange_b.rs)
+    clipboard: Vec<arrange_b::Copied>,
     resources: HashMap<Resource, Arc<Peaks>>,
     loading_resources: Vec<Resource>,
     ops: Vec<Op>,
@@ -167,6 +170,7 @@ impl FakePort {
         let mut doc = doc;
         let own_feed = doc.feed(Topic::All);
         let mut port = FakePort {
+            clipboard: Vec::new(),
             own_feed,
             midi: Default::default(),
             ui: Value::empty_object(),
@@ -955,6 +959,9 @@ impl CorePort for FakePort {
             // the arrangement's domain edits: copy and paste keep the lanes, the comp and the notes coherent
             "arrange.split" => self.split(&params),
             "arrange.duplicate" => self.duplicate(&params),
+            "arrange.copy" | "arrange.cut" | "arrange.paste" | "arrange.insert_bar" | "arrange.remove_bar" => {
+                self.arrange_b(action.as_str(), &params)
+            }
             "mixer.create_channels_for_outputs" => self.create_channels_for_outputs(&params),
             "automation.rearm" => self.rearm(&params),
             "mixer.group" => self.mixer_group(&params),

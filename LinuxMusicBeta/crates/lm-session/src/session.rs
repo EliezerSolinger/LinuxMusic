@@ -298,6 +298,8 @@ pub struct Session {
     watchdog: crate::watchdog::Watchdog,
     /// The native-crash note (U21), armed while a project is open
     crash: crate::crashnote::CrashNote,
+    /// The arrangement's clipboard (F-ARR-006): the items copied, each with its track and start (`arrange.rs`)
+    pub(crate) arrange_clipboard: Vec<crate::arrange::Copied>,
     device: Option<Device>,
     disk: Option<DiskWriter>,
     journal: Journal,
@@ -560,6 +562,7 @@ impl Session {
             })),
             _ticker: config.waker.clone().map(Ticker::start),
             crash: crate::crashnote::CrashNote::default(),
+            arrange_clipboard: Vec::new(),
             device: Some(device),
             disk,
             journal,
