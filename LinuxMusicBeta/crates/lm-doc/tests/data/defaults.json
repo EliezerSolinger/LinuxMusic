@@ -20,6 +20,7 @@
   },
   "item": {
     "defaults": {
+      "color": 0,
       "comp": [],
       "fadeIn": 0,
       "fadeOut": 0,
@@ -36,7 +37,7 @@
       "swing": 0.0,
       "timebase": "musical"
     },
-    "version": 2
+    "version": 3
   },
   "item.comp": {
     "defaults": {
@@ -612,6 +613,7 @@
       "automation": [],
       "channels": 2,
       "collapsed": false,
+      "color": 0,
       "folder": false,
       "input": null,
       "instrument": null,
@@ -624,7 +626,7 @@
       "solo": false,
       "volume": 1.0
     },
-    "version": 2
+    "version": 3
   },
   "track.input": {
     "defaults": {

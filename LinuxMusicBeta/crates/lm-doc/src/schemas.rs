@@ -294,9 +294,11 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(ints("timeSig", 1, 64, &[4, 4]))
             .field(FieldSpec::bool("ramp", false)),
         // The timeline: items, automation, the instrument and the outputs. No pan (decision of 19/11)
-        NodeSchema::new(ty::TRACK, 2)
+        NodeSchema::new(ty::TRACK, 3)
             .field(FieldSpec::id(KIND_TRACK))
             .field(FieldSpec::text("name", ""))
+            // 0xRRGGBB; absent: the palette's colour for the track's place (F-TRK-001)
+            .field(FieldSpec::int("color", 0, 0xFF_FFFF, 0).optional())
             .field(FieldSpec::bool("folder", false))
             .field(FieldSpec::bool("collapsed", false))
             .field(reference("parent", &[KIND_TRACK], OnRemove::Clear).nullable().default(Value::NULL))
@@ -323,7 +325,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(list_of("outputs", ty::OUTPUT))
             .field(list_of("items", ty::ITEM))
             .field(list_of("automation", ty::AUTOMATION))
-            .upgrade(1, unchanged),
+            .upgrade(1, unchanged)
+            .upgrade(2, unchanged),
         // ports: aliases (empty = every port whose role is instrument); channel −1 = all; followSelection: the
         // keyboard plays the selected track
         NodeSchema::new(ty::TRACK_MIDI_INPUT, 2)
@@ -365,10 +368,12 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::int("channels", 1, 64, 2))
             .field(reference("to", &[KIND_CHANNEL], OnRemove::Redirect(MASTER)).default(Value::text("m:0"))),
         // One type for both kinds; the fields of the other kind stay empty (a domain rule)
-        NodeSchema::new(ty::ITEM, 2)
+        NodeSchema::new(ty::ITEM, 3)
             .field(FieldSpec::id(KIND_ITEM))
             .field(FieldSpec::choice("kind", ITEM_KINDS, "midi"))
             .field(FieldSpec::text("name", ""))
+            // 0xRRGGBB; absent: the track's (F-CLP-001)
+            .field(FieldSpec::int("color", 0, 0xFF_FFFF, 0).optional())
             .field(FieldSpec::int("start", 0, MAX, 0))
             .field(FieldSpec::int("length", 1, MAX, 3840))
             .field(FieldSpec::bool("mute", false))
@@ -389,7 +394,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(
                 FieldSpec::new("controls", FieldKind::List(Box::new(FieldKind::Object(ty::ITEM_CONTROL)))).optional(),
             )
-            .upgrade(1, unchanged),
+            .upgrade(1, unchanged)
+            .upgrade(2, unchanged),
         // kind and number (the controller, the key of a poly aftertouch; 0 otherwise), the channel; points: ticks from
         // the item's start, values 0..127 (pitch bend 0..16383, centre 8192)
         NodeSchema::new(ty::ITEM_CONTROL, 1)
@@ -605,7 +611,8 @@ pub fn plugin_type(plugin: &str) -> String {
     format!("plugin:{plugin}")
 }
 
-/// Version 2 of `item`, `note` and `project` only added optional fields whose absence keeps the version-1 meaning
+/// Version 2 of `item`, `note` and `project`, and 3 of `track` and `item` (their `color`), only added optional fields
+/// whose absence keeps the earlier meaning
 fn unchanged(node: Value) -> Result<Value> {
     Ok(node)
 }
