@@ -8,7 +8,8 @@ libsndfile1-dev       # lm-sys-sndfile (>= 1.1.0; Ubuntu 24.04 has 1.2.2)
 libsamplerate0-dev    # lm-sys-samplerate (>= 0.1.9; 24.04 has 0.2.2)
 libfluidsynth-dev     # lm-sys-fluidsynth (>= 2.2.0; 24.04 has 2.3.4)
 librubberband-dev     # lm-sys-rubberband (>= 3.0.0; 24.04 has 3.3.0)
-# libjack-jackd2-dev  # lm-sys-jack
+libjack-jackd2-dev    # lm-sys-jack: JACK2's libjack (PipeWire's pipewire-jack works the same at run time)
+jackd2                # lm-sys-jack tests: they start a jackd of their own with the dummy driver
 liblilv-dev           # lm-sys-lilv
 libfftw3-dev          # lm-sys-guitarix: the Detune's and zita-convolver's FFT (fftw3f and fftw3f_threads)
 lv2-dev               # lm-sys-lilv: the LV2 headers of its test bundle

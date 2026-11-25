@@ -4003,6 +4003,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-sys-jack"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "lm-base",
+]
+
+[[package]]
 name = "lm-sys-lilv"
 version = "0.1.0"
 dependencies = [

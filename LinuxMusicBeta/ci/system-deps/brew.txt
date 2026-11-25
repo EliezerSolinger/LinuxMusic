@@ -7,3 +7,4 @@ fluid-synth           # lm-sys-fluidsynth
 rubberband            # lm-sys-rubberband
 lilv                  # lm-sys-lilv (pulls lv2, serd, sord, sratom)
 fftw                  # lm-sys-guitarix (fftw3f and fftw3f_threads)
+jack                  # lm-sys-jack (libjack, and jackd for its tests)

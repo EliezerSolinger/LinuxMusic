@@ -84,6 +84,7 @@ lm-plugins-instruments = { path = "crates/lm-plugins-instruments" }
 lm-plugins-stk = { path = "crates/lm-plugins-stk" }
 lm-sys-fpu = { path = "crates/lm-sys-fpu" }
 lm-sys-samplerate = { path = "crates/lm-sys-samplerate" }
+lm-sys-jack = { path = "crates/lm-sys-jack" }
 lm-sys-sndfile = { path = "crates/lm-sys-sndfile" }
 lm-sys-fluidsynth = { path = "crates/lm-sys-fluidsynth" }
 lm-sys-alsa = { path = "crates/lm-sys-alsa" }
