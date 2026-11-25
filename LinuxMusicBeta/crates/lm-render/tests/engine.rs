@@ -272,7 +272,7 @@ fn no_stuck_notes_over_a_thousand_swaps() {
             b.node(NodeDesc::processor(synth, 0, 2));
             b.feed(Feed::new(synth, m, 2));
             b.midi_items(synth, vec![item.clone()]);
-            b.port(PortRoute { port: PortIndex(0), channel: None, node: synth });
+            b.port(PortRoute { port: PortIndex(0), channel: None, node: synth, fixed_velocity: None });
         }
         if with_tail {
             b.node(NodeDesc::processor(tail, 0, 2).tail());
@@ -600,7 +600,7 @@ fn midi_lands_at_its_time_plus_one_block() {
     let m = master(&mut b);
     b.node(NodeDesc::processor(n(1), 0, 2));
     b.feed(Feed::new(n(1), m, 2));
-    b.port(PortRoute { port: PortIndex(3), channel: None, node: n(1) });
+    b.port(PortRoute { port: PortIndex(3), channel: None, node: n(1), fixed_velocity: None });
     let open = Arc::new(AtomicI64::new(0));
     let mut i = Install::new(b.build().expect("program"));
     i.add(n(1), core(NoteCounter::new(open.clone(), Arc::new(AtomicU64::new(0)), false)));
@@ -734,7 +734,7 @@ fn replace_without_adopt_goes_to_the_tail() {
         let m = master(&mut b);
         b.node(NodeDesc::processor(n(1), 0, 2));
         b.feed(Feed::new(n(1), m, 2));
-        b.port(PortRoute { port: PortIndex(0), channel: None, node: n(1) });
+        b.port(PortRoute { port: PortIndex(0), channel: None, node: n(1), fixed_velocity: None });
         if tail {
             b.node(NodeDesc::processor(n(2), 0, 2).tail());
             b.feed(Feed::new(n(2), m, 2));

@@ -20,6 +20,32 @@ fn ms_to_ns(v: Option<&Value>) -> i64 {
 }
 
 impl Session {
+    /// The ports of the instrument role (instrument or both): a track whose input names no port listens to these
+    pub(crate) fn midi_instrument_ports(&self) -> Vec<PortIndex> {
+        let ports = self.preferences.get(&["midi", "ports"]).cloned().unwrap_or_else(Value::empty_list);
+        ports
+            .items()
+            .filter(|p| p.get("role").and_then(Value::as_text) != Some("controller"))
+            .filter_map(|p| {
+                let alias = p.get("alias").and_then(Value::as_text).unwrap_or("");
+                let key: Arc<str> = if alias.is_empty() {
+                    id_key(
+                        p.get("client").and_then(Value::as_text).unwrap_or(""),
+                        p.get("port").and_then(Value::as_text).unwrap_or(""),
+                    )
+                } else {
+                    Arc::from(alias)
+                };
+                self.midi.aliases.get(&key).map(|(i, _)| *i)
+            })
+            .collect()
+    }
+
+    /// Every alias with its index (for the compiler: tracks name ports by alias)
+    pub(crate) fn midi_aliases(&self) -> Vec<(Arc<str>, PortIndex)> {
+        self.midi.aliases.iter().filter(|(a, _)| !a.starts_with('\u{0}')).map(|(a, (i, _))| (a.clone(), *i)).collect()
+    }
+
     /// The index of a key in the session's table, given when first seen
     fn port_index(&mut self, key: Arc<str>, controller: bool) -> PortIndex {
         let next = PortIndex(u16::try_from(self.midi.aliases.len()).unwrap_or(u16::MAX));
@@ -186,6 +212,10 @@ impl Session {
         self.engine.install(install)?;
         if let Some(feedback) = self.take_midi_feedback() {
             link.add_output_source(feedback)?;
+        }
+        // What the tracks play out to devices (P-38)
+        if let Some(out) = self.engine.take_midi_out() {
+            link.add_output_source(out)?;
         }
         let (tx, rx) = ring(SYSEX_RING);
         link.add_sysex_output(rx)?;

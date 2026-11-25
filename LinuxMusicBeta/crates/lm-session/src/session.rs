@@ -1054,6 +1054,10 @@ impl Session {
             playhead: self.telemetry.position.samples,
             low_latency_monitoring: self.preferences.bool(&["lowLatencyMonitoring"]).unwrap_or(false),
             monitor: self.preferences.get(&["monitor"]).cloned(),
+            // The tracks' MIDI inputs and outputs (I-21.1, P-38)
+            midi_ports: self.midi_instrument_ports(),
+            midi_aliases: self.midi_aliases(),
+            selected_track: self.midi.selection.track,
             ..Environment::default()
         }
     }

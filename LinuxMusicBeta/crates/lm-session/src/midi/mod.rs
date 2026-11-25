@@ -107,6 +107,10 @@ pub(crate) struct MidiCore {
     pub(crate) devices: devices::Devices,
     /// Ports connected at some point in this session (a later connection is a reconnection)
     ever_connected: BTreeSet<u16>,
+    /// The machine's ports as last compiled
+    ports_seen: Value,
+    /// The program each track's MIDI output was sent, by track: (ports, channel, program)
+    programs_sent: HashMap<NodeId, (Vec<PortIndex>, u8, u8)>,
     /// "Test the control": the actions a control would run are listed instead of run
     dry_run: Option<Vec<Arc<str>>>,
 }
@@ -149,6 +153,8 @@ impl MidiCore {
             step: None,
             devices: devices::Devices::default(),
             ever_connected: BTreeSet::new(),
+            ports_seen: Value::NULL,
+            programs_sent: HashMap::new(),
             dry_run: None,
         }
     }
@@ -375,6 +381,24 @@ impl Session {
         let s = &self.midi.selection;
         if (s.track, s.channel, s.plugin) != (track, channel, plugin) {
             self.midi.map_dirty = true;
+            // A track whose input follows the selection: the live routes change (F-REC-131)
+            let follows = self.document.root().get("tracks").is_some_and(|l| {
+                l.items().any(|t| {
+                    t.get("midiInput").and_then(|i| i.get("followSelection")).and_then(Value::as_bool) == Some(true)
+                })
+            });
+            if follows && s.track != track {
+                self.midi.selection.track = track;
+                self.needs_compile = true;
+            }
+        }
+        // The ports of the machine changed: the tracks' routes by alias are compiled again
+        let ports = self.preferences.get(&["midi", "ports"]).cloned().unwrap_or(Value::NULL);
+        if ports != self.midi.ports_seen {
+            self.midi.ports_seen = ports;
+            self.midi_read_mappings();
+            self.needs_compile = true;
+            self.midi.map_dirty = true;
         }
         if self.midi.map_dirty {
             self.midi_read_mappings();
@@ -382,6 +406,7 @@ impl Session {
         }
         self.midi_feedback(now);
         self.mcu_pump(now);
+        self.midi_programs();
         self.midi_devices_out(now);
         self.automation_pump();
         self.record_pump(now);
@@ -855,6 +880,8 @@ impl Session {
                     f.limiter.resend();
                 }
             }
+            // The output programs go again to a port that came back
+            self.midi.programs_sent.retain(|_, (ports, _, _)| !ports.iter().any(|p| back.contains(&p.0)));
             for m in &mut self.midi.mcu {
                 if back.contains(&m.port.0) {
                     m.reset();
@@ -932,6 +959,37 @@ impl Session {
         for e in out {
             let _ = self.midi.out.push(e); // lossy: the next change or resend sends it again
         }
+    }
+
+    /// The output program of each track's MIDI output (P-38, the legacy "Output MIDI program"): sent when it changes,
+    /// when the project opens and when its port comes back
+    fn midi_programs(&mut self) {
+        let mut wanted: HashMap<NodeId, (Vec<PortIndex>, u8, u8)> = HashMap::new();
+        for t in self.document.root().get("tracks").map(|l| l.items().cloned().collect::<Vec<_>>()).unwrap_or_default()
+        {
+            let Some(id) = t.get("id").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok()) else { continue };
+            let Some(o) = t.get("midiOutput").filter(|o| !o.is_null()) else { continue };
+            if o.get("on").and_then(Value::as_bool) == Some(false) {
+                continue;
+            }
+            let Some(program) = o.get("program").and_then(Value::as_int).and_then(|p| u8::try_from(p).ok()) else {
+                continue;
+            };
+            let channel = o.get("channel").and_then(Value::as_int).unwrap_or(0).clamp(0, 15) as u8;
+            let ports: Vec<PortIndex> = o
+                .get("ports")
+                .map(|l| l.items().filter_map(Value::as_text).filter_map(|a| self.midi_port_of(a)).collect())
+                .unwrap_or_default();
+            wanted.insert(id, (ports, channel, program.min(127)));
+        }
+        for (id, w) in &wanted {
+            if self.midi.programs_sent.get(id) != Some(w) {
+                for port in &w.0 {
+                    self.midi_send(*port, &[0xC0 | w.1, w.2]);
+                }
+            }
+        }
+        self.midi.programs_sent = wanted;
     }
 
     /// Sends a raw message to a port through the feedback ring (the MCU module's meters and LEDs)

@@ -98,7 +98,7 @@ fn setup(curve: Option<(Curve, AutomationMode)>) -> (EngineControl, Dummy, Seen)
     let m = master(&mut b);
     b.node(NodeDesc::insert(n(1), 2));
     b.feed(Feed::new(n(1), m, 2));
-    b.port(PortRoute { port: PortIndex(0), channel: None, node: n(1) });
+    b.port(PortRoute { port: PortIndex(0), channel: None, node: n(1), fixed_velocity: None });
     let automated = curve.as_ref().map(|(c, _)| c.clone());
     b.param(SLOT, n(1), 0, ParamInfo { rate: Rate::Block, discrete: false, initial: 0.0 }, automated);
     if let Some((_, mode)) = curve {
@@ -355,4 +355,120 @@ fn sixty_four_tracks_play_and_record_at_once_without_allocating() {
     }
     assert!(touched >= 64 * 30, "touched values reached the session: {touched}");
     assert!(control.frame().playing);
+}
+
+/// Records every MIDI channel message it gets (CC from the rack), packed as `b0 << 16 | b1 << 8 | b2`
+struct MidiProbe {
+    seen: Seen,
+}
+
+impl Processor for MidiProbe {
+    fn process(&mut self, cx: &mut ProcessContext<'_>) {
+        let frame = cx.transport.frame;
+        for e in cx.events {
+            if let EventKind::Midi { bytes } = e.kind {
+                let i = self.seen.len.load(Ordering::Relaxed);
+                if i < self.seen.frames.len() {
+                    self.seen.frames[i].store(frame + u64::from(e.offset), Ordering::Relaxed);
+                    let packed = (u32::from(bytes[0]) << 16) | (u32::from(bytes[1]) << 8) | u32::from(bytes[2]);
+                    self.seen.values[i].store(packed, Ordering::Relaxed);
+                    self.seen.len.store(i + 1, Ordering::Release);
+                }
+            }
+        }
+        for ch in 0..cx.buffers.outputs() {
+            cx.buffers.output(ch).fill(0.0);
+        }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+fn midi_seen(seen: &Seen) -> Vec<(u64, [u8; 3])> {
+    let n = seen.len.load(Ordering::Acquire);
+    (0..n)
+        .map(|i| {
+            let v = seen.values[i].load(Ordering::Relaxed);
+            (seen.frames[i].load(Ordering::Relaxed), [(v >> 16) as u8, (v >> 8) as u8, v as u8])
+        })
+        .collect()
+}
+
+/// F-IJN-025: a CC of the track's rack reaches the instrument as a control change, at its sample, only when the
+/// rounded value changes; its automation does too
+#[test]
+fn the_cc_rack_sends_control_changes() {
+    let (mut control, mut dummy) = make(0);
+    let mut b = ProgramBuilder::new(ProgramGen(1), spec(), &limits(0), tempo(120));
+    let m = master(&mut b);
+    b.node(NodeDesc::processor(n(1), 0, 2));
+    b.feed(Feed::new(n(1), m, 2));
+    let ramp = Curve::new(vec![
+        CurvePoint { sample: 0, value: 0.0, shape: 0.0 },
+        CurvePoint { sample: 12_700, value: 127.0, shape: 0.0 },
+    ])
+    .unwrap();
+    b.cc_param(ParamSlot(30), n(1), 2, 74, 10.0, None);
+    b.cc_param(ParamSlot(31), n(1), 2, 1, 0.0, Some(ramp));
+    let seen: Seen = Record::new(1 << 12);
+    let mut i = Install::new(b.build().expect("program"));
+    i.add(n(1), core(MidiProbe { seen: seen.clone() }));
+    install(&mut control, i);
+    block(&mut dummy, 256);
+    // The rack's initial value goes once; a new value goes; the same rounded value does not
+    control.param_write(ParamSlot(30), 99.6);
+    block(&mut dummy, 256);
+    control.param_write(ParamSlot(30), 100.2);
+    block(&mut dummy, 256);
+    let cc74: Vec<u8> =
+        midi_seen(&seen).iter().filter(|(_, b)| b[0] == 0xB2 && b[1] == 74).map(|(_, b)| b[2]).collect();
+    assert_eq!(cc74, vec![10, 100]);
+    // The automated CC climbs one step at a time while playing
+    control.commands().send(Command::Play).expect("play");
+    for _ in 0..60 {
+        block(&mut dummy, 256);
+    }
+    let cc1: Vec<u8> = midi_seen(&seen).iter().filter(|(_, b)| b[0] == 0xB2 && b[1] == 1).map(|(_, b)| b[2]).collect();
+    assert!(cc1.len() > 100, "{} steps", cc1.len());
+    assert!(cc1.windows(2).all(|w| w[1] > w[0]), "each one a new value: {cc1:?}");
+    assert_eq!(*cc1.last().unwrap(), 127);
+}
+
+/// P-38 and F-IJN-017: what a track plays goes out to its device at its exact time, on the route's channel, with
+/// the fixed note (its note-off ends the same key) and the fixed input velocity of the port route
+#[test]
+fn midi_out_to_a_device() {
+    let (mut control, mut dummy) = make(0);
+    let mut b = ProgramBuilder::new(ProgramGen(1), spec(), &limits(0), tempo(120));
+    let m = master(&mut b);
+    b.node(NodeDesc::processor(n(1), 0, 2));
+    b.feed(Feed::new(n(1), m, 2));
+    b.port(PortRoute { port: PortIndex(0), channel: None, node: n(1), fixed_velocity: Some(99) });
+    b.midi_out(MidiOutRoute { node: n(1), port: PortIndex(5), channel: 3, fixed_velocity: None, fixed_note: Some(50) });
+    let mut i = Install::new(b.build().expect("program"));
+    i.add(n(1), core(MidiProbe { seen: Record::new(16) }));
+    install(&mut control, i);
+    let mut out = control.take_midi_out().expect("the output ring");
+    block(&mut dummy, 256);
+    let t0 = dummy.host_time();
+    send(&mut control, host_at(&dummy, 100), [0x90, 60, 20]);
+    send(&mut control, host_at(&dummy, 200), [0xB0, 7, 33]);
+    send(&mut control, host_at(&dummy, 300), [0x80, 60, 0]);
+    for _ in 0..8 {
+        block(&mut dummy, 256);
+    }
+    let mut got = Vec::new();
+    while let Ok(e) = out.pop() {
+        got.push(e);
+    }
+    let bytes: Vec<[u8; 3]> = got.iter().map(|e| e.bytes).collect();
+    assert_eq!(bytes, vec![[0x93, 50, 99], [0xB3, 7, 33], [0x83, 50, 0]], "{got:?}");
+    assert!(got.iter().all(|e| e.port == PortIndex(5)));
+    // At the exact time: the stamp plus the one block the live MIDI waits
+    let ns = |samples: u64| samples * 1_000_000_000 / u64::from(RATE);
+    let want = t0.0 + ns(100 + MAX_BLOCK as u64);
+    assert!(got[0].at.0.abs_diff(want) <= ns(1) + 1, "{} vs {want}", got[0].at.0);
+    assert_eq!(got[2].at.0 - got[0].at.0, ns(200));
 }

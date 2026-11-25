@@ -149,8 +149,13 @@ pub struct Environment {
     pub metronome_sounds: Option<(Arc<SampleData>, Arc<SampleData>)>,
     /// The device channels of the metronome (a preference, I-5.5); `None`: the master's output
     pub metronome_output: Option<Vec<u16>>,
-    /// The live MIDI input ports: an armed track with an instrument takes all of them (I-7.1)
+    /// The live MIDI input ports of the instrument role: an armed track with an instrument and no ports of its own
+    /// takes all of them (I-7.1)
     pub midi_ports: Vec<PortIndex>,
+    /// Every port alias of the machine with its index (a track's `midiInput.ports` and `midiOutput.ports`, I-21.1)
+    pub midi_aliases: Vec<(Arc<str>, PortIndex)>,
+    /// The selected track: a track whose input follows the selection plays when selected (F-REC-131)
+    pub selected_track: Option<NodeId>,
     pub midi_timing: MidiTiming,
     /// The playhead in samples, for the informative tick of a relocation (H9)
     pub playhead: i64,

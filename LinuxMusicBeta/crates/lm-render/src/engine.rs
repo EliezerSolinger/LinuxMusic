@@ -11,7 +11,7 @@ use crate::exec::{Watch, Workers};
 use crate::handoff::{HandoffSender, handoff};
 use crate::ids::{ParamSlot, ProducerIndex};
 use crate::install::{Install, Returned};
-use crate::midimap::{MapEvent, RecordedMidi};
+use crate::midimap::{MapEvent, MidiOutEvent, RecordedMidi};
 use crate::params::ParamSlots;
 use crate::renderer::{Outbound, Renderer};
 use crate::spec::{Limits, ProcessSpec, RenderThreads};
@@ -30,6 +30,8 @@ pub struct EngineControl {
     touched: Consumer<Touched>,
     map_events: Consumer<MapEvent>,
     recorded_midi: Consumer<RecordedMidi>,
+    /// MIDI out to devices (P-38), for lm-io's output thread: taken once
+    midi_out: Option<Consumer<MidiOutEvent>>,
     previews: Consumer<PreviewEnded>,
     panics: Consumer<PanicReport>,
     watch: Arc<Watch>,
@@ -87,6 +89,8 @@ pub fn engine_with(spec: ProcessSpec, limits: Limits, threads: RenderThreads) ->
     let (touched_tx, touched_rx) = ring(capacity_for(blocks_per_second * 8.0 + MIDI_RATE, 10.0, 4096));
     let (map_tx, map_rx) = ring(capacity_for(MIDI_RATE, 10.0, 4096));
     let (recorded_tx, recorded_rx) = ring(capacity_for(MIDI_RATE, 10.0, 4096));
+    // MIDI out: the output thread drains it every millisecond; a second of the worst case, lossy and counted
+    let (midi_out_tx, midi_out_rx) = ring(capacity_for(MIDI_RATE, 1.0, 4096));
     let (previews_tx, previews_rx) = ring(limits.max_previews.max(1));
     let (panics_tx, panics_rx) = ring(limits.max_nodes * (limits.installs_in_flight + 1) + limits.max_previews);
     let watch = Arc::new(Watch::new(limits.workers + 1));
@@ -99,6 +103,7 @@ pub fn engine_with(spec: ProcessSpec, limits: Limits, threads: RenderThreads) ->
         touched: touched_tx,
         map_events: map_tx,
         recorded_midi: recorded_tx,
+        midi_out: midi_out_tx,
         previews: previews_tx,
         panics: panics_tx,
     };
@@ -115,6 +120,7 @@ pub fn engine_with(spec: ProcessSpec, limits: Limits, threads: RenderThreads) ->
         touched: touched_rx,
         map_events: map_rx,
         recorded_midi: recorded_rx,
+        midi_out: Some(midi_out_rx),
         previews: previews_rx,
         panics: panics_rx,
         watch,
@@ -242,6 +248,11 @@ impl EngineControl {
         while let Ok(e) = self.map_events.pop() {
             f(e);
         }
+    }
+
+    /// The MIDI going out to devices (P-38): the consumer for lm-io's output thread, taken once
+    pub fn take_midi_out(&mut self) -> Option<Consumer<MidiOutEvent>> {
+        self.midi_out.take()
     }
 
     /// Drains the MIDI played while recording (lossless, I-21.4)

@@ -164,3 +164,30 @@ fn lane_modes_shapes_and_jumps() {
     core.compile(doc.root(), &lm_compile::NoResources, &Environment::default()).unwrap();
     assert!(core.curve(t, "volume").is_some(), "back to the lane's own mode (latch plays)");
 }
+
+/// F-IJN-025: the CC rack's controllers that are set, and the ones with a lane, get slots on the track (range 0..127,
+/// whole numbers); with the rack off, none
+#[test]
+fn the_cc_rack_gets_slots() {
+    let plugins = plugins();
+    let mut doc = new_doc(&plugins);
+    let t = add_track(&mut doc, Some(dc()));
+    edit(&mut doc, |e| {
+        e.set(t, &[k("cc"), k("c74")], real(64.0))?;
+        let lane = Value::object([
+            ("target", Value::object([("node", text(&t.to_string())), ("param", text("cc.1"))])),
+            ("points", Value::list([Value::object([("tick", Value::int(0)), ("value", real(5.0))])])),
+        ]);
+        e.insert(t, "automation", 0, lane).map(|_| ())
+    });
+    let mut core = CompilerCore::new(config(&plugins));
+    let c = core.compile(doc.root(), &lm_compile::NoResources, &Environment::default()).unwrap();
+    assert!(c.table.slots_of(t, "cc.74").is_empty(), "the rack is off");
+    edit(&mut doc, |e| e.set(t, &[k("ccRack")], Value::object([("on", Value::bool(true))])));
+    let c = core.compile(doc.root(), &lm_compile::NoResources, &Environment::default()).unwrap();
+    assert_eq!(c.table.slots_of(t, "cc.74").len(), 1);
+    assert_eq!(c.table.slots_of(t, "cc.1").len(), 1, "a lane's controller too");
+    let r = c.table.ranges[&(t, Arc::from("cc.74"))];
+    assert_eq!((r.min, r.max, r.scale), (0.0, 127.0, RangeScale::Stepped));
+    assert!(core.curve(t, "cc.1").is_some());
+}

@@ -77,6 +77,8 @@ pub mod types {
     pub const MIDI_TRANSFORM: &str = "midi.transform";
     pub const TRACK_MIDI_INPUT: &str = "track.midi_input";
     pub const TRACK_MIDI_OUTPUT: &str = "track.midi_output";
+    pub const TRACK_CC_RACK: &str = "track.cc_rack";
+    pub const TRACK_CC: &str = "track.cc";
     pub const TRACK_MICROTUNER: &str = "track.microtuner";
     pub const TRACK_KEYS: &str = "track.keys";
     pub const TUNING: &str = "tuning";
@@ -314,6 +316,10 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("midiInput", FieldKind::Object(ty::TRACK_MIDI_INPUT)).optional())
             // The track's MIDI output to an external device (F-IJN-017, P-38); absent or null = none
             .field(FieldSpec::new("midiOutput", FieldKind::Object(ty::TRACK_MIDI_OUTPUT)).optional().nullable())
+            // The CC rack (F-IJN-025): its switch, and the values of the controllers set ("cc.N" parameters,
+            // 0..127, sent to the instrument as control changes); absent = off, none set
+            .field(FieldSpec::new("ccRack", FieldKind::Object(ty::TRACK_CC_RACK)).optional())
+            .field(FieldSpec::new("cc", FieldKind::Object(ty::TRACK_CC)).optional())
             // The velocity that plays at 100 % (F-IJN-017); absent: 63
             .field(FieldSpec::new("baseVelocity", FieldKind::Int { min: 1, max: 127 }).optional())
             // The microtuner (F-IJN-019); absent = off (12-TET)
@@ -336,13 +342,19 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             // Every note at this velocity (F-IJN-017); absent = as played
             .field(FieldSpec::new("fixedVelocity", FieldKind::Int { min: 1, max: 127 }).optional())
             .upgrade(1, unchanged),
-        // port: an alias of the machine's preferences (I-21.1); program and the fixed ones: absent = as played
-        NodeSchema::new(ty::TRACK_MIDI_OUTPUT, 1)
-            .field(FieldSpec::text("port", ""))
+        // P-38: on (the legacy's checkbox keeps the settings while off); ports: aliases of the machine's preferences
+        // (I-21.1); channel 0..15 (shown +1); program and the fixed ones: absent = as played (program: none sent)
+        NodeSchema::new(ty::TRACK_MIDI_OUTPUT, 2)
+            .field(FieldSpec::bool("on", true))
+            .field(FieldSpec::new("ports", FieldKind::List(Box::new(FieldKind::Text))).default(Value::empty_list()))
             .field(FieldSpec::int("channel", 0, 15, 0))
             .field(FieldSpec::new("program", FieldKind::Int { min: 0, max: 127 }).optional())
             .field(FieldSpec::new("fixedVelocity", FieldKind::Int { min: 1, max: 127 }).optional())
-            .field(FieldSpec::new("fixedNote", FieldKind::Int { min: 0, max: 127 }).optional()),
+            .field(FieldSpec::new("fixedNote", FieldKind::Int { min: 0, max: 127 }).optional())
+            // v1 had one `port` ("" = none) and no switch: the same output, on
+            .upgrade(1, midi_output_v1),
+        NodeSchema::new(ty::TRACK_CC_RACK, 1).field(FieldSpec::bool("on", false)),
+        cc_schema(),
         // scale and keymap: slots of the project's `tuning` (0-based); importRanges: the keymap's first and last key
         // replace the track's keys
         NodeSchema::new(ty::TRACK_MICROTUNER, 1)
@@ -615,4 +627,34 @@ pub fn plugin_type(plugin: &str) -> String {
 /// whose absence keeps the earlier meaning
 fn unchanged(node: Value) -> Result<Value> {
     Ok(node)
+}
+
+/// `track.midi_output` v1 → v2: `port` becomes `ports`, and the output is on
+fn midi_output_v1(node: Value) -> Result<Value> {
+    let port = node.get("port").and_then(Value::as_text).unwrap_or("").to_owned();
+    let ports = if port.is_empty() { Value::empty_list() } else { Value::list([Value::text(port)]) };
+    Ok(node.without("port").with("ports", ports).with("on", Value::bool(true)))
+}
+
+/// The field keys of the CC rack's values (`c0`..`c127`): a track's `cc` holds the controllers set; their parameter
+/// keys are `cc.0`..`cc.127`
+pub const CC_KEYS: [&str; 128] = [
+    "c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c14", "c15", "c16", "c17",
+    "c18", "c19", "c20", "c21", "c22", "c23", "c24", "c25", "c26", "c27", "c28", "c29", "c30", "c31", "c32", "c33",
+    "c34", "c35", "c36", "c37", "c38", "c39", "c40", "c41", "c42", "c43", "c44", "c45", "c46", "c47", "c48", "c49",
+    "c50", "c51", "c52", "c53", "c54", "c55", "c56", "c57", "c58", "c59", "c60", "c61", "c62", "c63", "c64", "c65",
+    "c66", "c67", "c68", "c69", "c70", "c71", "c72", "c73", "c74", "c75", "c76", "c77", "c78", "c79", "c80", "c81",
+    "c82", "c83", "c84", "c85", "c86", "c87", "c88", "c89", "c90", "c91", "c92", "c93", "c94", "c95", "c96", "c97",
+    "c98", "c99", "c100", "c101", "c102", "c103", "c104", "c105", "c106", "c107", "c108", "c109", "c110", "c111",
+    "c112", "c113", "c114", "c115", "c116", "c117", "c118", "c119", "c120", "c121", "c122", "c123", "c124", "c125",
+    "c126", "c127",
+];
+
+/// `track.cc`: every controller optional (absent = never sent), 0..127
+fn cc_schema() -> NodeSchema {
+    let mut s = NodeSchema::new(types::TRACK_CC, 1);
+    for k in CC_KEYS {
+        s = s.field(FieldSpec::new(k, FieldKind::Real { min: 0.0, max: 127.0 }).optional());
+    }
+    s
 }

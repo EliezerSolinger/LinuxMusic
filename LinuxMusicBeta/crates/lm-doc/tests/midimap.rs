@@ -124,3 +124,32 @@ fn automation_modes_and_recording_fields() {
     let err = doc.transact(label("x"), |e| e.set(ROOT, &[k("transport"), k("automationMode")], text("x"))).unwrap_err();
     assert_eq!(err.key(), "doc.value.not_a_choice", "{err}");
 }
+
+/// F-IJN-025: the CC rack's values are parameters of the track ("cc.7" at `cc.c7`), automatable before they are
+/// first set; P-38: a v1 MIDI output becomes v2 (`port` → `ports`, on)
+#[test]
+fn the_cc_rack_and_the_midi_output_upgrade() {
+    let mut doc = new_doc();
+    let t = add_track(&mut doc, "a", Some(synth()));
+    let d = doc.transact(label("x"), |e| e.set(t, &[k("cc"), k("c7")], real(64.0))).expect("a CC value");
+    assert!(d.params.iter().any(|(n, key, v)| *n == t && &**key == "cc.7" && *v == 64.0), "{:?}", d.params);
+    assert_eq!(lm_doc::param_path("track", "cc.74"), vec![k("cc"), k("c74")]);
+    // A lane on a CC not set yet
+    let lane = Value::object([
+        ("target", Value::object([("node", id_text(t)), ("param", text("cc.74"))])),
+        ("points", Value::list([Value::object([("tick", Value::int(0)), ("value", real(10.0))])])),
+    ]);
+    doc.transact(label("x"), |e| e.insert(t, "automation", 0, lane).map(|_| ())).expect("the lane");
+    let bad = Value::object([("target", Value::object([("node", id_text(t)), ("param", text("cc.200"))]))]);
+    let err = doc.transact(label("x"), |e| e.insert(t, "automation", 0, bad).map(|_| ())).unwrap_err();
+    assert_eq!(err.key(), "doc.automation.no_such_param");
+    // The output's upgrade
+    let registry = registry();
+    let v1 = Value::object([("port", text("Synth")), ("channel", Value::int(2))]);
+    let v2 = registry.upgrade("track.midi_output", 1, v1).expect("upgrade");
+    assert_eq!(v2.get("ports"), Some(&Value::list([text("Synth")])));
+    assert_eq!(v2.get("on").and_then(Value::as_bool), Some(true));
+    assert!(v2.get("port").is_none());
+    let none = registry.upgrade("track.midi_output", 1, Value::object([("port", text(""))])).expect("upgrade");
+    assert_eq!(none.get("ports"), Some(&Value::empty_list()));
+}

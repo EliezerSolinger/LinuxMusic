@@ -22,7 +22,8 @@ struct State {
     settings: Vec<PortSettings>,
     events: Vec<MidiDeviceEvent>,
     activity: Vec<MidiActivity>,
-    feedback: Option<Consumer<MidiOutEvent>>,
+    /// The output sources given: the session's feedback, then the renderer's MIDI out
+    outputs: Vec<Consumer<MidiOutEvent>>,
     sysex: Option<Consumer<SysexOut>>,
     wakes: usize,
 }
@@ -47,7 +48,7 @@ impl MidiDeviceLink for Fake {
     }
     fn sysex(&mut self, _f: &mut dyn FnMut(SysexIn)) {}
     fn add_output_source(&mut self, source: Consumer<MidiOutEvent>) -> Result<()> {
-        self.0.lock().unwrap().feedback = Some(source);
+        self.0.lock().unwrap().outputs.push(source);
         Ok(())
     }
     fn add_sysex_output(&mut self, source: Consumer<SysexOut>) -> Result<()> {
@@ -73,7 +74,7 @@ impl Fake {
     fn feedback(&self) -> Vec<MidiOutEvent> {
         let mut st = self.0.lock().unwrap();
         let mut out = Vec::new();
-        if let Some(c) = st.feedback.as_mut() {
+        for c in st.outputs.iter_mut() {
             while let Ok(e) = c.pop() {
                 out.push(e);
             }
@@ -204,4 +205,99 @@ fn an_alias_of_another_machine_is_asked_for_and_assigned() {
     let settings = fake.0.lock().unwrap().settings.clone();
     assert!(settings.iter().any(|p| p.index == index && p.id == PortId::new("Keystation", "MIDI 1")));
     assert!(s.midi_mappings_of(t).iter().any(|m| &*m.source.port == "Teclado"), "the mapping resolves");
+}
+
+/// P-38 and F-IJN-017: a track's MIDI output (its program sent once, its notes on its channel with the fixed note)
+/// and its input (only its port and channel, at the fixed velocity, recorded so)
+#[test]
+fn a_tracks_midi_input_and_output() {
+    let dir = TempDir::new("midi-io");
+    let mut s = session(&dir);
+    let t = add_synth_track(&mut s, "Synth");
+    prefs_ports(&mut s, &[("Keystation", "Keys"), ("Other", "Other"), ("Moog", "Synth")]);
+    let fake = Fake::default();
+    let (mut input, receiver) = lm_render::command_ring(ProducerIndex(1), 1024);
+    s.attach_midi_devices(Box::new(fake.clone()), receiver).expect("attach");
+    let (keys, other, synth) =
+        (s.midi_port_of("Keys").unwrap(), s.midi_port_of("Other").unwrap(), s.midi_port_of("Synth").unwrap());
+    set(&mut s, t, "armed", Value::bool(true));
+    set(
+        &mut s,
+        t,
+        "midiInput",
+        Value::object([
+            ("ports", Value::list([Value::text("Keys")])),
+            ("channel", Value::int(2)),
+            ("fixedVelocity", Value::int(99)),
+        ]),
+    );
+    set(
+        &mut s,
+        t,
+        "midiOutput",
+        Value::object([
+            ("on", Value::bool(true)),
+            ("ports", Value::list([Value::text("Synth")])),
+            ("channel", Value::int(4)),
+            ("fixedNote", Value::int(50)),
+            ("program", Value::int(9)),
+        ]),
+    );
+    settle(&mut s);
+    run_for(&mut s, Duration::from_millis(50));
+    let out = fake.feedback();
+    assert_eq!(out.iter().filter(|e| e.port == synth && e.bytes[..2] == [0xC4, 9]).count(), 1, "the program, once");
+    // Keys on channel 3 (2 counted from 0) play and go out; another port or channel does not
+    let send = |input: &mut lm_render::CommandSender, port, bytes| {
+        input.send(Command::Midi { port, at: HostTime::now(), bytes }).expect("midi")
+    };
+    send(&mut input, keys, [0x92, 60, 20]);
+    send(&mut input, other, [0x92, 61, 20]);
+    send(&mut input, keys, [0x93, 62, 20]);
+    run_for(&mut s, Duration::from_millis(80));
+    send(&mut input, keys, [0x82, 60, 0]);
+    run_for(&mut s, Duration::from_millis(80));
+    let out: Vec<[u8; 3]> = fake.feedback().iter().filter(|e| e.port == synth).map(|e| e.bytes).collect();
+    assert_eq!(out, vec![[0x94, 50, 99], [0x84, 50, 0]], "out on channel 5, the fixed note, the fixed velocity");
+    // Recorded as played through the input: its channel only, at the fixed velocity
+    s.record(None).expect("record");
+    wait_until(&mut s, "recording", |s| s.telemetry().position.recording);
+    send(&mut input, keys, [0x92, 64, 10]);
+    send(&mut input, keys, [0x93, 65, 10]);
+    run_for(&mut s, Duration::from_millis(80));
+    send(&mut input, keys, [0x82, 64, 0]);
+    run_for(&mut s, Duration::from_millis(80));
+    s.stop();
+    let notes = |s: &Session| -> Vec<(i64, f64)> {
+        s.document()
+            .find(t)
+            .and_then(|v| v.get("items").cloned())
+            .map(|l| {
+                l.items()
+                    .filter(|i| i.get("kind").and_then(Value::as_text) == Some("midi"))
+                    .flat_map(|i| {
+                        i.get("notes")
+                            .map(|n| n.entries().map(|(_, x)| x.clone()).collect::<Vec<_>>())
+                            .unwrap_or_default()
+                    })
+                    .map(|x| {
+                        (
+                            x.get("key").and_then(Value::as_int).unwrap(),
+                            x.get("velocity").and_then(Value::as_real).unwrap(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    wait_until(&mut s, "the take", |s| !notes(s).is_empty());
+    let got = notes(&s);
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!(got[0].0, 64);
+    assert!((got[0].1 - 99.0 / 127.0).abs() < 1e-6);
+    // The program again when the port comes back
+    s.midi_ports(&[]);
+    s.midi_ports(&[synth]);
+    run_for(&mut s, Duration::from_millis(30));
+    assert!(fake.feedback().iter().any(|e| e.port == synth && e.bytes[..2] == [0xC4, 9]));
 }

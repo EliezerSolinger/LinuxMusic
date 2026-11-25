@@ -54,8 +54,8 @@ pub use processor::{
 };
 pub use program::{
     AUTOMATION_GRID, AudioItem, AudioSource, AutomationMode, ChannelMix, CountIn, Feed, HostParam, ItemEvent,
-    ItemEventKind, Metronome, MidiItem, MidiTiming, NodeDesc, NodeKind, OutputRoute, ParamInfo, PortRoute, Program,
-    ProgramBuilder, Rate, Strip, TransportSettings,
+    ItemEventKind, Metronome, MidiItem, MidiOutRoute, MidiTiming, NodeDesc, NodeKind, OutputRoute, ParamInfo,
+    PortRoute, Program, ProgramBuilder, Rate, Strip, TransportSettings,
 };
 pub use renderer::{BlockReport, DeviceBlock, PROTECTION_THRESHOLD, RecordSpan, Renderer};
 pub use rng::Rng;

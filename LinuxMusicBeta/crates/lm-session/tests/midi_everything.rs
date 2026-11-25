@@ -31,7 +31,7 @@ fn eventually(s: &mut Session, what: &str, mut f: impl FnMut(&mut Session) -> Ve
         if missing.is_empty() {
             return;
         }
-        assert!(start.elapsed() < Duration::from_secs(60), "{what}: {missing:?} {:?}", s.notices().keys());
+        assert!(start.elapsed() < Duration::from_secs(60) * slowdown(), "{what}: {missing:?} {:?}", s.notices().keys());
         run_for(s, Duration::from_millis(50));
     }
 }
@@ -190,7 +190,7 @@ fn every_parameter_field_and_action_answers_a_control() {
     let t0 = Instant::now();
     s.midi_refresh();
     let took = t0.elapsed();
-    assert!(took < Duration::from_millis(200), "{} mappings compiled in {took:?}", maps.len());
+    assert!(took < Duration::from_millis(200) * slowdown(), "{} mappings compiled in {took:?}", maps.len());
     s.midi_dry_run(true);
     // The parameters first (their slots), then the fields and actions (a field may recompile the program)
     let send_range = |s: &mut Session, from: usize, to: usize| {

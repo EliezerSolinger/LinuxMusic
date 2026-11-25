@@ -53,8 +53,18 @@ pub fn session(dir: &TempDir) -> Session {
     Session::new(config(dir)).expect("session")
 }
 
+/// How much longer waits are under a sanitizer (CI sets `LM_TEST_SANITIZER`; TSan runs 5 to 15 times slower)
+pub fn slowdown() -> u32 {
+    if std::env::var_os("LM_TEST_SANITIZER").is_some() { 15 } else { 1 }
+}
+
 pub fn settle(s: &mut Session) {
-    assert!(s.settle(Duration::from_secs(20)), "the session did not settle: {:?} {:?}", s.busy(), s.notices().keys());
+    assert!(
+        s.settle(Duration::from_secs(20) * slowdown()),
+        "the session did not settle: {:?} {:?}",
+        s.busy(),
+        s.notices().keys()
+    );
 }
 
 /// A track with a TripleOscillator, as the last track

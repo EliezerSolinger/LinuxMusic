@@ -286,6 +286,10 @@ fn param_exists(e: &Edit<'_>, target: NodeId, param: &str) -> Option<bool> {
     }
     let path = param_path(t, param);
     let is_param = crate::edit::param_key(t, &path).is_some();
+    // A CC of the rack exists before it is first set (a lane may create it)
+    if t == types::TRACK && path.first() == Some(&PathStep::key("cc")) {
+        return Some(is_param);
+    }
     Some(is_param && node.at_path(&path).and_then(Value::as_real).is_some())
 }
 

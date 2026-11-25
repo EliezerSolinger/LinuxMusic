@@ -141,6 +141,10 @@ pub enum Telemetry {
     },
     /// The recorded MIDI ring was full: MIDI recording stopped (an explicit error, never a silent loss)
     MidiRecordOverflow,
+    /// MIDI out to devices dropped (its ring full: the output thread fell behind)
+    MidiOutDropped {
+        count: u32,
+    },
     /// The transport events ring was full: recording stopped (U1)
     TransportEventsOverflow,
     /// An install named a node outside the table or a producer outside the limits; that part was skipped

@@ -28,7 +28,7 @@ use crate::exec::{Job, Watch, Workers, run_job, scan};
 use crate::handoff::HandoffReceiver;
 use crate::ids::{NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProgramGen};
 use crate::install::{Install, NodeCore, Retired};
-use crate::midimap::{MapEvent, MapTarget, MidiMap, RETURN_DIV, RecordedMidi};
+use crate::midimap::{MapEvent, MapTarget, MidiMap, MidiOutEvent, RETURN_DIV, RecordedMidi};
 use crate::notes::{ActiveNotes, NoteSource};
 use crate::panic::RenderThreadGuard;
 use crate::params::ParamSlots;
@@ -307,6 +307,7 @@ pub(crate) struct Outbound {
     pub(crate) touched: Producer<Touched>,
     pub(crate) map_events: Producer<MapEvent>,
     pub(crate) recorded_midi: Producer<RecordedMidi>,
+    pub(crate) midi_out: Producer<MidiOutEvent>,
     pub(crate) previews: Producer<PreviewEnded>,
     pub(crate) panics: Producer<PanicReport>,
 }
@@ -354,6 +355,10 @@ pub struct Renderer {
     held: Vec<(PortIndex, HostTime, [u8; 3])>,
     map_lost: u32,
     midi_record_stopped: bool,
+    /// The block's host time and the current pass's offset (MIDI out leaves at its exact time, P-38)
+    block_host_time: HostTime,
+    pass_off: u32,
+    midi_out_lost: u32,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -439,6 +444,9 @@ impl Renderer {
             held: Vec::with_capacity(limits.max_live_midi_per_block),
             map_lost: 0,
             midi_record_stopped: false,
+            block_host_time: HostTime(0),
+            pass_off: 0,
+            midi_out_lost: 0,
         }
     }
 
@@ -477,6 +485,7 @@ impl Renderer {
         let _flush = lm_sys_fpu::FlushDenormals::enable();
         let started = HostTime::now();
         let DeviceBlock { frames, host_time, inputs, outputs, capture_lost, late_by } = block;
+        self.block_host_time = host_time;
         for out in outputs.iter_mut() {
             let n = frames.min(out.len());
             out[..n].fill(0.0);
@@ -1239,6 +1248,7 @@ impl Renderer {
                     self.push_event(node, offset, EventKind::Param { index, value });
                 }
                 Target::Host(_) => self.slot_state[s].set_target(value, discrete),
+                Target::Cc { node, channel, number } => self.cc_value(s, node, offset, channel, number, value),
             }
         }
         let sample = self.transport.position + i64::from(offset);
@@ -1311,9 +1321,56 @@ impl Renderer {
         {
             self.dropped[1] = self.dropped[1].saturating_add(1);
         }
+        if !self.program.midi_out.is_empty() {
+            self.send_out(node, offset, kind);
+        }
+    }
+
+    /// What a node plays goes out to its devices too (P-38): notes on the route's channel with its fixed velocity
+    /// and fixed note, controllers and other channel messages, stamped with their exact time
+    fn send_out(&mut self, node: u32, offset: u32, kind: EventKind) {
+        let rate = u64::from(self.spec.sample_rate.max(1));
+        let at = HostTime(self.block_host_time.0 + u64::from(self.pass_off + offset) * 1_000_000_000 / rate);
+        for r in 0..self.program.midi_out.len() {
+            let (n, route) = self.program.midi_out[r];
+            if n != node {
+                continue;
+            }
+            let ch = route.channel & 0x0F;
+            let sent = &mut self.program.midi_sent[r * 128..(r + 1) * 128];
+            let (bytes, len) = match kind {
+                EventKind::NoteOn { key, velocity, .. } => {
+                    let k = route.fixed_note.unwrap_or(key) & 0x7F;
+                    sent[usize::from(key & 0x7F)] = k as i8;
+                    let v = route.fixed_velocity.unwrap_or(((velocity * 127.0).round() as u8).max(1)).clamp(1, 127);
+                    ([0x90 | ch, k, v], 3)
+                }
+                EventKind::NoteOff { key, .. } => {
+                    let slot = &mut sent[usize::from(key & 0x7F)];
+                    let k = if *slot >= 0 { *slot as u8 } else { route.fixed_note.unwrap_or(key) & 0x7F };
+                    *slot = -1;
+                    ([0x80 | ch, k, 0], 3)
+                }
+                EventKind::Midi { bytes } if (0x80..0xF0).contains(&bytes[0]) => {
+                    let len = lm_midimap::message::channel_message_len(bytes[0]);
+                    ([(bytes[0] & 0xF0) | ch, bytes[1], bytes[2]], len)
+                }
+                // Stop, locate, a wrap: the device's notes end too (all notes off on the route's channel)
+                EventKind::AllNotesRelease | EventKind::AllSoundOff => {
+                    sent.fill(-1);
+                    ([0xB0 | ch, 123, 0], 3)
+                }
+                _ => continue,
+            };
+            let e = MidiOutEvent { port: route.port, at, len, bytes };
+            if self.out.midi_out.push(e).is_err() {
+                self.midi_out_lost = self.midi_out_lost.saturating_add(1);
+            }
+        }
     }
 
     fn pass(&mut self, off: usize, n: usize, first: bool, inputs: &[&[f32]], live_next: &mut usize) {
+        self.pass_off = off as u32;
         let info = self.transport_info();
         for node in self.program.nodes.iter_mut() {
             if let Some(io) = node.io.as_mut() {
@@ -1406,8 +1463,20 @@ impl Renderer {
                         self.push_event(node, 0, EventKind::Param { index, value });
                     }
                     Target::Host(_) => self.slot_state[s].set_target(value, discrete),
+                    Target::Cc { node, channel, number } => self.cc_value(s, node, 0, channel, number, value),
                 }
             }
+        }
+    }
+
+    /// A CC rack value (F-IJN-025): a control change to the processor when its rounded value changes
+    fn cc_value(&mut self, s: usize, node: u32, offset: u32, channel: u8, number: u8, value: f32) {
+        let st = &mut self.slot_state[s];
+        st.current = value;
+        let q = value.round().clamp(0.0, 127.0);
+        if st.emitted.is_nan() || st.emitted.round() != q {
+            st.emitted = value;
+            self.push_event(node, offset, EventKind::Midi { bytes: [0xB0 | (channel & 0x0F), number & 0x7F, q as u8] });
         }
     }
 
@@ -1421,7 +1490,12 @@ impl Renderer {
         let dropped = &mut self.dropped[1];
         for &bi in automated.iter() {
             let b = &bindings[bi as usize];
-            let Target::Processor { node, index } = b.target else { continue };
+            // A processor's parameter, or a CC of the rack (a control change when the rounded value changes)
+            let (node, index, cc) = match b.target {
+                Target::Processor { node, index } => (node, index, None),
+                Target::Cc { node, channel, number } => (node, 0, Some((channel, number))),
+                Target::Host(_) => continue,
+            };
             let Some(curve) = b.curve.as_ref() else { continue };
             let slot = b.slot as usize;
             let st = &mut self.slot_state[slot];
@@ -1446,8 +1520,21 @@ impl Renderer {
             let resume = jump || st.resume || st.emitted.is_nan();
             st.resume = false;
             let Some(io) = nodes[node as usize].io.as_mut() else { continue };
+            let returning = st.ret.is_some();
             let mut emit = |offset: usize, v: f32, force: bool| {
                 let v = st.returning(v, frame0 + offset as u64, ret_len);
+                if let Some((channel, number)) = cc {
+                    st.current = v;
+                    let q = v.round().clamp(0.0, 127.0);
+                    if force || st.emitted.is_nan() || st.emitted.round() != q {
+                        st.emitted = v;
+                        let kind = EventKind::Midi { bytes: [0xB0 | channel, number, q as u8] };
+                        if !io.events.push(offset as u32, kind) {
+                            *dropped = dropped.saturating_add(1);
+                        }
+                    }
+                    return;
+                }
                 if force || v.to_bits() != st.emitted.to_bits() {
                     st.emitted = v;
                     st.current = v;
@@ -1465,6 +1552,17 @@ impl Renderer {
                 };
                 for p in curve.points_in(from, pos0 + n as i64) {
                     emit((p.sample - pos0) as usize, p.value, true);
+                }
+                continue;
+            }
+            if !playing && !b.discrete {
+                // Stopped, the playhead does not move: the curve holds its value there (the return ramp still
+                // runs, on the grid)
+                emit(0, curve.value_at(pos0), false);
+                let mut f = frame0.div_ceil(AUTOMATION_GRID) * AUTOMATION_GRID;
+                while returning && f < frame0 + n as u64 {
+                    emit((f - frame0) as usize, curve.value_at(pos0), false);
+                    f += AUTOMATION_GRID;
                 }
                 continue;
             }
@@ -1608,6 +1706,7 @@ impl Renderer {
                     }
                     match self.notes.start(NoteSource::Port(m.port), channel, key, route.node) {
                         Some(note) => {
+                            let vel = route.fixed_velocity.map_or(vel, |f| f.clamp(1, 127));
                             let velocity = f32::from(vel) / 127.0;
                             self.push_event(target, offset, EventKind::NoteOn { note, channel, key, velocity });
                         }
@@ -2000,7 +2099,12 @@ impl Renderer {
         if let Some(curve) = &b.curve
             && !hold
         {
-            curve.fill(self.transport.position, out);
+            if self.transport.playing {
+                curve.fill(self.transport.position, out);
+            } else {
+                // Stopped: the value at the playhead, held
+                out.fill(curve.value_at(self.transport.position));
+            }
             if self.jump {
                 state.ret = None;
             }
@@ -2291,6 +2395,11 @@ impl Renderer {
     }
 
     fn flush_dropped(&mut self) {
+        if self.midi_out_lost > 0
+            && self.out.events.push(Telemetry::MidiOutDropped { count: self.midi_out_lost }).is_ok()
+        {
+            self.midi_out_lost = 0;
+        }
         if self.map_lost > 0 && self.out.events.push(Telemetry::MapEventsOverflow { count: self.map_lost }).is_ok() {
             self.map_lost = 0;
         }

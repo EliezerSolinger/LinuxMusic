@@ -469,6 +469,12 @@ pub fn param_key(owner_type: &str, rel: &[PathStep]) -> Option<Arc<str>> {
         | (types::CHANNEL, ["volume" | "pan"])
         | (types::MASTER, ["volume"])
         | (types::SEND, ["amount"]) => Some(Arc::from(keys[0])),
+        // The CC rack (F-IJN-025): "cc.7"
+        (types::TRACK, ["cc", c])
+            if c.strip_prefix('c').and_then(|n| n.parse::<u8>().ok()).is_some_and(|n| n < 128) =>
+        {
+            Some(Arc::from(format!("cc.{}", &c[1..])))
+        }
         (types::CHANNEL | types::MASTER, ["rack", section, field]) => {
             Some(Arc::from(format!("rack.{section}.{field}")))
         }
@@ -478,6 +484,12 @@ pub fn param_key(owner_type: &str, rel: &[PathStep]) -> Option<Arc<str>> {
 
 /// The path of a parameter in a node of `owner_type` (the inverse of [`param_key`])
 pub fn param_path(owner_type: &str, key: &str) -> Vec<PathStep> {
+    // The CC rack: "cc.7" lives at `cc.c7`
+    if owner_type == types::TRACK
+        && let Some(n) = key.strip_prefix("cc.")
+    {
+        return vec![PathStep::key("cc"), PathStep::key(&format!("c{n}"))];
+    }
     if owner_type == types::PLUGIN && key == "insert.wet" {
         return vec![PathStep::key("wet")];
     }
@@ -568,7 +580,16 @@ impl Edit<'_> {
         }
         let env = Arc::clone(&self.w.env);
         let ctx = &env.ctx;
-        let r = ctx.resolve(&self.w.state.index, &self.w.state.root, id, path)?;
+        let r = match ctx.resolve(&self.w.state.index, &self.w.state.root, id, path) {
+            Ok(r) => r,
+            // An optional object on the way that is absent (a track's `cc`, I-21): it starts with its defaults
+            Err(e) if e.key() == "doc.path.not_found" && path.len() > 1 => {
+                let Some(prefix) = self.absent_object_prefix(id, path) else { return Err(e) };
+                self.set(id, &prefix, Value::empty_object()).map_err(|_| e)?;
+                return self.set(id, path, v);
+            }
+            Err(e) => return Err(e),
+        };
         if r.owner == ROOT && ctx.has_meta && matches!(r.rel.first(), Some(PathStep::Key(k)) if &**k == "meta") {
             return Err(Error::new("doc.meta.read_only"));
         }
@@ -599,6 +620,17 @@ impl Edit<'_> {
         ctx.check_slot(&r.slot, r.nullable, &v, path)?;
         let gone = self.w.replace(r.owner, r.owner_type, &r.rel, &r.slot, Some(v))?;
         self.w.process_removed(&gone)
+    }
+
+    /// The shortest prefix of `path` (not the whole path) that is absent under `id`, when it is a plain object field
+    fn absent_object_prefix(&self, id: NodeId, path: &[PathStep]) -> Option<Vec<PathStep>> {
+        let node = self.find(id)?;
+        for n in 1..path.len() {
+            if node.at_path(&path[..n]).is_none() {
+                return matches!(path[n - 1], PathStep::Key(_)).then(|| path[..n].to_vec());
+            }
+        }
+        None
     }
 
     /// Sets a parameter by its key (`"vol1"`, `"rack.tube.drive"`; an old key resolves through its alias, C5)

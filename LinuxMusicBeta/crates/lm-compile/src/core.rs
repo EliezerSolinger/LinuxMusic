@@ -48,8 +48,8 @@ use lm_base::{Error, Result};
 use lm_doc::schemas::{KIND_CHANNEL, KIND_PLUGIN, MASTER};
 use lm_render::{
     AudioItem, AutomationMode, ChannelMix, CountIn, Curve, Feed, HostParam, Install, Limits, Metronome, MidiItem,
-    NodeCore, NodeDesc, NodeIndex, OutputRoute, ParamInfo, ParamRange, ParamSlot, PortIndex, PortRoute, ProcessSpec,
-    ProgramBuilder, ProgramGen, RangeScale, Rate, Relocate, Returned, Rng, Strip, TransportSettings,
+    MidiOutRoute, NodeCore, NodeDesc, NodeIndex, OutputRoute, ParamInfo, ParamRange, ParamSlot, PortIndex, PortRoute,
+    ProcessSpec, ProgramBuilder, ProgramGen, RangeScale, Rate, Relocate, Returned, Rng, Strip, TransportSettings,
 };
 use lm_state::{NodeId, ParamSpec, Scale, SchemaRegistry, Value};
 use lm_time::TempoMap;
@@ -238,6 +238,9 @@ struct ProcPlan {
     seed: u64,
 }
 
+/// A track's MIDI out (P-38): (node, port, channel, fixed velocity, fixed note)
+type PMidiOut = (usize, PortIndex, u8, Option<u8>, Option<u8>);
+
 #[derive(Debug, Default)]
 struct Plan {
     nodes: Vec<PNode>,
@@ -248,7 +251,12 @@ struct Plan {
     audio: Vec<(usize, Vec<AudioItem>)>,
     midi: Vec<(usize, Vec<Arc<MidiItem>>)>,
     inputs: Vec<(usize, Vec<u16>)>,
-    ports: Vec<(PortIndex, usize)>,
+    /// Live MIDI routes: (port, node, channel filter, fixed velocity)
+    ports: Vec<(PortIndex, usize, Option<u8>, Option<u8>)>,
+    /// MIDI out to devices (P-38)
+    midi_out: Vec<PMidiOut>,
+    /// The CC rack (F-IJN-025): (instrument node, track, controller, value)
+    ccs: Vec<(usize, NodeId, u8, f32)>,
     outputs: Vec<(usize, u16, u16)>,
     master: Option<usize>,
     preview: Option<usize>,
@@ -533,6 +541,9 @@ impl CompilerCore {
                 slots.insert((*owner, key.clone(), *instance));
             }
         }
+        for (_, track, number, _) in &plan.ccs {
+            slots.insert((*track, Arc::from(format!("cc.{number}")), 0));
+        }
         Ok(Usage { nodes: plan.nodes.len(), params: slots.len() })
     }
 
@@ -565,6 +576,12 @@ impl CompilerCore {
             let mut seen = HashSet::new();
             for p in &plan.params {
                 let k = (p.owner, p.key.clone(), 0u8);
+                if seen.insert(k.clone()) {
+                    wanted_slots.push(k);
+                }
+            }
+            for (_, track, number, _) in &plan.ccs {
+                let k = (*track, Arc::from(format!("cc.{number}")), 0u8);
                 if seen.insert(k.clone()) {
                     wanted_slots.push(k);
                 }
@@ -726,8 +743,22 @@ impl CompilerCore {
         for (n, chans) in std::mem::take(&mut plan.inputs) {
             b.input(index_of[n], chans);
         }
-        for (port, n) in &plan.ports {
-            b.port(PortRoute { port: *port, channel: None, node: index_of[*n] });
+        for (port, n, channel, fixed_velocity) in &plan.ports {
+            b.port(PortRoute { port: *port, channel: *channel, node: index_of[*n], fixed_velocity: *fixed_velocity });
+        }
+        for (n, port, channel, fixed_velocity, fixed_note) in &plan.midi_out {
+            b.midi_out(MidiOutRoute {
+                node: index_of[*n],
+                port: *port,
+                channel: *channel,
+                fixed_velocity: *fixed_velocity,
+                fixed_note: *fixed_note,
+            });
+        }
+        for (n, track, number, value) in &plan.ccs {
+            let key: Arc<str> = Arc::from(format!("cc.{number}"));
+            let curve = plan.curves.get(&(*track, key.clone())).cloned();
+            b.cc_param(slot_of(*track, &key, 0), index_of[*n], 0, *number, *value, curve);
         }
         for (n, channel, device_channel) in &plan.outputs {
             b.output(OutputRoute { node: index_of[*n], channel: *channel, device_channel: *device_channel });
@@ -875,6 +906,12 @@ impl CompilerCore {
                 ranges.insert((*owner, key.clone()), host_range(key));
             }
         }
+        for (_, track, number, _) in &plan.ccs {
+            ranges.insert(
+                (*track, Arc::from(format!("cc.{number}"))),
+                ParamRange { min: 0.0, max: 127.0, scale: RangeScale::Stepped },
+            );
+        }
         self.ranges = ranges;
         let made = self.caches.made;
         let table = Arc::new(self.table());
@@ -892,7 +929,7 @@ impl CompilerCore {
                 delay: f.delay,
             })
             .collect();
-        let ports = plan.ports.iter().map(|(p, n)| (*p, plan.nodes[*n].key)).collect();
+        let ports = plan.ports.iter().map(|(p, n, _, _)| (*p, plan.nodes[*n].key)).collect();
         let nodes = plan
             .nodes
             .iter()
@@ -1304,10 +1341,77 @@ impl CompilerCore {
                     if !list.is_empty() {
                         plan.midi.push((p, list));
                     }
-                    if flag(t, "armed", false) {
-                        for port in &env.midi_ports {
-                            plan.ports.push((*port, p));
+                    // The live input (I-21.1, F-IJN-017): armed or monitored, or following the selection; its ports
+                    // (the instrument ports when none), its channel and fixed velocity
+                    let input = t.get("midiInput").filter(|i| !i.is_null());
+                    let follows = input.is_some_and(|i| flag(i, "followSelection", false));
+                    let listening = flag(t, "armed", false)
+                        || text(t, "monitor", "auto") == "on"
+                        || (follows && env.selected_track == Some(tid));
+                    if listening {
+                        let aliases: Vec<&str> =
+                            input.map(|i| items(i, "ports").filter_map(Value::as_text).collect()).unwrap_or_default();
+                        let ports: Vec<PortIndex> = if aliases.is_empty() {
+                            env.midi_ports.clone()
+                        } else {
+                            aliases
+                                .iter()
+                                .filter_map(|a| env.midi_aliases.iter().find(|(x, _)| &**x == *a).map(|(_, p)| *p))
+                                .collect()
+                        };
+                        let channel = input.map_or(-1, |i| int(i, "channel", -1));
+                        let channel = u8::try_from(channel).ok().filter(|c| *c < 16);
+                        let fixed = input.and_then(|i| i.get("fixedVelocity")).and_then(Value::as_int);
+                        let fixed = fixed.and_then(|v| u8::try_from(v).ok()).filter(|v| (1..128).contains(v));
+                        for port in ports {
+                            plan.ports.push((port, p, channel, fixed));
                         }
+                    }
+                }
+                // MIDI out to devices (P-38): what the instrument plays, on the output's channel
+                if let Some(o) = t.get("midiOutput").filter(|o| !o.is_null() && flag(o, "on", true)) {
+                    let channel = int(o, "channel", 0).clamp(0, 15) as u8;
+                    let seven = |k: &str| {
+                        o.get(k).and_then(Value::as_int).and_then(|v| u8::try_from(v).ok()).filter(|v| *v < 128)
+                    };
+                    let (velocity, note) = (seven("fixedVelocity").filter(|v| *v > 0), seven("fixedNote"));
+                    for alias in items(o, "ports").filter_map(Value::as_text) {
+                        if let Some((_, port)) = env.midi_aliases.iter().find(|(x, _)| &**x == alias) {
+                            plan.midi_out.push((p, *port, channel, velocity, note));
+                        }
+                    }
+                }
+                // The CC rack (F-IJN-025): every controller set, and every one with a lane, to the instrument
+                if t.get("ccRack").is_some_and(|r| flag(r, "on", false)) {
+                    let mut numbers: Vec<(u8, f32)> = t
+                        .get("cc")
+                        .map(|c| {
+                            c.entries()
+                                .filter_map(|(k, v)| {
+                                    let n = k.strip_prefix('c')?.parse::<u8>().ok().filter(|n| *n < 128)?;
+                                    Some((n, v.as_real()? as f32))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    for lane in items(t, "automation") {
+                        let target = lane.get("target");
+                        let on_this = target.and_then(|x| ref_of(x, "node")) == Some(tid);
+                        let n = target
+                            .and_then(|x| x.get("param"))
+                            .and_then(Value::as_text)
+                            .and_then(|k| k.strip_prefix("cc."))
+                            .and_then(|n| n.parse::<u8>().ok())
+                            .filter(|n| *n < 128);
+                        if let (true, Some(n)) = (on_this, n)
+                            && !numbers.iter().any(|(m, _)| *m == n)
+                        {
+                            numbers.push((n, 0.0));
+                        }
+                    }
+                    numbers.sort_by_key(|(n, _)| *n);
+                    for (n, v) in numbers {
+                        plan.ccs.push((p, tid, n, v.clamp(0.0, 127.0)));
                     }
                 }
                 port_layout = Some(shape);

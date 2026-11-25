@@ -1183,6 +1183,25 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   ação `midi.assign_alias`; atribuído, o mapa resolve na hora.
 - **O `compile_map` acha os nós pelo índice do documento**, não percorrendo a árvore: com 1608 mapas ele levava 19 s
   na thread principal (a árvore inclui os próprios mapas); agora 26 ms, e o teste gerado exige menos de 200 ms.
+- **Entrada e saída MIDI da faixa, como o legado** (25/11; campos combinados com o agente C, que faz a aba MIDI):
+  - entrada (`track.midiInput`): portas por apelido (nenhuma = as de papel instrumento), canal (−1 = todos), velocidade
+    fixa (`MidiPort::processInEvent`: troca toda velocidade não nula, também no que se grava). Uma faixa armada, em
+    monitoramento "on", ou que segue a seleção e está selecionada, recebe;
+  - saída (`track.midiOutput` v2: `on`, `ports`, canal 0..15, `fixedVelocity`, `fixedNote`, `program`; a v1 tinha uma
+    `port` e sobe com `on` verdadeiro): o que o instrumento toca sai no canal da saída, com a nota e a velocidade fixas
+    (`processOutEvent`; a nota-off termina a tecla em que a nota foi mandada), no horário exato pelo anel de saída do
+    `Renderer` (`take_midi_out`); parar e o laço mandam "all notes off"; o programa vai quando muda, ao abrir e
+    quando a porta volta. A latência por porta é do `lm-io`;
+  - a `baseVelocity` (do agente C) fica: é parâmetro da curva de velocidade do host por faixa (decisão de 19/11), não
+    da E/S MIDI — na saída ela se anula como no legado.
+- **O rack de CC (F-IJN-025) são parâmetros da faixa** (`cc.N`, em `cc.cN`, 0..127, ligado por `ccRack.on`): vagas,
+  automação, mapa MIDI; o `Renderer` manda um CC ao instrumento quando o valor arredondado muda (`Target::Cc`). Só os
+  controles usados (com valor ou com pista) ganham vaga: 128 por faixa não caberiam em `max_params`. `Edit::set` cria
+  um objeto opcional ausente no caminho (o `cc` de uma faixa nova).
+- **Program change que chega vai ao instrumento**, como no legado (lá só o Carla e o VST o usam; os internos o
+  ignoram); ele já é gravado na faixa de controle do item. Escolher um preset pelo número é o mapa MIDI (`value_into`).
+- **Com o transporte parado, a automação fica no valor do cursor**: antes, a curva corria pelos offsets de cada bloco e
+  voltava no bloco seguinte (o parâmetro tremia parado). Achado pelo teste do rack de CC.
 - **O gesto MIDI é um gesto do documento** (I-3.7; o T4 já cita "um controlador MIDI noutro"), e não uma transação no
   fim (20/11, a lacuna do S20): a árvore segue o controle a cada `pump` (um `gesture_update` com o último valor, sem
   passo no histórico), então um programa compilado no meio — um processador reconstruído, um nó novo — nasce do valor

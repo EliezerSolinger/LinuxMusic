@@ -628,6 +628,16 @@
     },
     "version": 3
   },
+  "track.cc": {
+    "defaults": {},
+    "version": 1
+  },
+  "track.cc_rack": {
+    "defaults": {
+      "on": false
+    },
+    "version": 1
+  },
   "track.input": {
     "defaults": {
       "channels": [
@@ -665,9 +675,10 @@
   "track.midi_output": {
     "defaults": {
       "channel": 0,
-      "port": ""
+      "on": true,
+      "ports": []
     },
-    "version": 1
+    "version": 2
   },
   "track.output": {
     "defaults": {

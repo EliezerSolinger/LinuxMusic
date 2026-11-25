@@ -423,6 +423,19 @@ pub struct PortRoute {
     pub port: PortIndex,
     pub channel: Option<u8>,
     pub node: NodeIndex,
+    /// The legacy's "fixed input velocity" (F-IJN-017): every note-on takes this velocity (1..=127)
+    pub fixed_velocity: Option<u8>,
+}
+
+/// A node's notes and controls out to an external device (P-38): on `channel` (0..16), with the legacy's fixed
+/// velocity and fixed note (F-IJN-017). The same note-off ends the key its note-on was sent on
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MidiOutRoute {
+    pub node: NodeIndex,
+    pub port: PortIndex,
+    pub channel: u8,
+    pub fixed_velocity: Option<u8>,
+    pub fixed_note: Option<u8>,
 }
 
 /// A node's output channel summed into a device output channel
@@ -553,8 +566,18 @@ pub enum AutomationMode {
 /// What a parameter slot drives
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Target {
-    Processor { node: u32, index: u32 },
+    Processor {
+        node: u32,
+        index: u32,
+    },
     Host(u32),
+    /// A controller sent to the node's processor as a MIDI message (the track's CC rack, F-IJN-025): the value is
+    /// 0..=127, rounded; a message only when the rounded value changes
+    Cc {
+        node: u32,
+        channel: u8,
+        number: u8,
+    },
 }
 
 #[derive(Debug)]
@@ -600,6 +623,11 @@ pub struct Program {
     pub(crate) slot_map: Box<[u32]>,
     pub(crate) node_map: Box<[u32]>,
     pub(crate) ports: Box<[PortRoute]>,
+    /// MIDI out to devices, by the node's program index
+    pub(crate) midi_out: Box<[(u32, MidiOutRoute)]>,
+    /// For each route, the key each sounding note was sent on (−1: none), by the note's key: its note-off ends that
+    /// key, though the fixed note changed since
+    pub(crate) midi_sent: Box<[i8]>,
     pub(crate) outputs: Box<[OutputRoute]>,
     pub(crate) master: Option<u32>,
     pub(crate) preview: Option<u32>,
@@ -675,6 +703,8 @@ pub struct ProgramBuilder {
     preview: Option<NodeIndex>,
     metronome: Option<(NodeIndex, Metronome)>,
     modes: Vec<(ParamSlot, AutomationMode)>,
+    midi_out: Vec<MidiOutRoute>,
+    ccs: Vec<(ParamSlot, NodeIndex, u8, u8, f32, Option<Curve>)>,
 }
 
 fn invalid(key: &'static str) -> Error {
@@ -705,6 +735,8 @@ impl ProgramBuilder {
             preview: None,
             metronome: None,
             modes: Vec::new(),
+            midi_out: Vec::new(),
+            ccs: Vec::new(),
         }
     }
 
@@ -757,6 +789,27 @@ impl ProgramBuilder {
 
     pub fn port(&mut self, route: PortRoute) -> &mut Self {
         self.ports.push(route);
+        self
+    }
+
+    /// A node's MIDI out to a device (P-38)
+    pub fn midi_out(&mut self, route: MidiOutRoute) -> &mut Self {
+        self.midi_out.push(route);
+        self
+    }
+
+    /// A slot whose value goes to `node`'s processor as controller `number` on `channel` (the CC rack, F-IJN-025),
+    /// with its automation
+    pub fn cc_param(
+        &mut self,
+        slot: ParamSlot,
+        node: NodeIndex,
+        channel: u8,
+        number: u8,
+        initial: f32,
+        automation: Option<Curve>,
+    ) -> &mut Self {
+        self.ccs.push((slot, node, channel & 0x0F, number & 0x7F, initial, automation));
         self
     }
 
@@ -1031,6 +1084,13 @@ impl ProgramBuilder {
                 Rate::Sample => max_block + 1,
             } + 2;
         }
+        for (slot, node, channel, number, initial, curve) in self.ccs {
+            let i = find(node)?;
+            if pnodes[i as usize].desc.kind != NodeKind::Processor {
+                return Err(node_arg(invalid("render.program.midi_on_sum"), node));
+            }
+            bind(slot, Target::Cc { node: i, channel, number }, Rate::Block, false, initial, curve, &mut bindings)?;
+        }
         for (slot, mode) in &self.modes {
             if let Some(&bi) = slot_map.get(slot.0 as usize)
                 && bi != NONE
@@ -1091,6 +1151,10 @@ impl ProgramBuilder {
             pnodes[i as usize].has_midi = true;
         }
         ports.sort_by_key(|r| r.port);
+        let mut midi_out = Vec::with_capacity(self.midi_out.len());
+        for r in &self.midi_out {
+            midi_out.push((find(r.node)?, *r));
+        }
         for o in &self.outputs {
             let i = find(o.node)?;
             if o.channel >= pnodes[i as usize].desc.outputs {
@@ -1165,6 +1229,8 @@ impl ProgramBuilder {
             slot_map,
             node_map,
             ports: ports.into_boxed_slice(),
+            midi_sent: vec![-1i8; midi_out.len() * 128].into_boxed_slice(),
+            midi_out: midi_out.into_boxed_slice(),
             outputs: self.outputs.into_boxed_slice(),
             master,
             preview,

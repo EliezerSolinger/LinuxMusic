@@ -42,6 +42,8 @@ struct Route {
     /// Port indices (empty: every port)
     ports: Vec<u16>,
     channel: Option<u8>,
+    /// The legacy's fixed input velocity (F-IJN-017): recorded notes take it too
+    fixed_velocity: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -479,7 +481,12 @@ impl Session {
                 .unwrap_or_default();
             let channel =
                 input.and_then(|i| i.get("channel")).and_then(Value::as_int).and_then(|c| u8::try_from(c).ok());
-            out.push(Route { track: id, ports, channel });
+            let fixed_velocity = input
+                .and_then(|i| i.get("fixedVelocity"))
+                .and_then(Value::as_int)
+                .and_then(|v| u8::try_from(v).ok())
+                .filter(|v| (1..128).contains(v));
+            out.push(Route { track: id, ports, channel, fixed_velocity });
         }
         out
     }
@@ -571,7 +578,13 @@ impl Session {
                 {
                     continue;
                 }
-                let bytes = if r.len < 3 { [r.bytes[0], r.bytes[1], 0] } else { r.bytes };
+                let mut bytes = if r.len < 3 { [r.bytes[0], r.bytes[1], 0] } else { r.bytes };
+                if let Some(v) = route.fixed_velocity
+                    && bytes[0] & 0xF0 == 0x90
+                    && bytes[2] > 0
+                {
+                    bytes[2] = v;
+                }
                 t.events.push(Rec { track: route.track, sample: r.sample, frame: r.frame, bytes });
                 t.unsynced.push_str(&format!(
                     "{} {} {} {} {} {}\n",
