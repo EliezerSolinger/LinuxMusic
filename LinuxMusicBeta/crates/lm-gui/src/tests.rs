@@ -2034,7 +2034,28 @@ fn instrument_midi_tab(cx: &mut TestAppContext) {
     assert_eq!(ch, Some(0), "from all (-1) to the first channel");
     undo(cx);
     click(cx, "iw-midi-out-on");
-    assert!(track_node(&ws, cx, track).get("midiOutput").is_none_or(Value::is_null), "off again: absent");
+    let out = track_node(&ws, cx, track).get("midiOutput").cloned().unwrap();
+    assert_eq!(out.get("on").and_then(Value::as_bool), Some(false), "off, the settings kept");
+    assert_eq!(out.get("channel").and_then(Value::as_int), Some(1));
+}
+
+/// The CC rack (F-IJN-025): its switch, and a controller's knob as one gesture on `track.cc.cN`, a whole number
+#[gpui::test]
+fn instrument_cc_rack(cx: &mut TestAppContext) {
+    let (ws, cx) = open(cx);
+    let (track, _) = triple(&ws, cx);
+    open_screen(&ws, cx, Screen::Instrument, Some(track));
+    click(cx, "iw-tab-Midi");
+    click(cx, "iw-cc-rack-on");
+    let on = track_node(&ws, cx, track).get("ccRack").and_then(|r| r.get("on")).and_then(Value::as_bool);
+    assert_eq!(on, Some(true));
+    drag(cx, &format!("ctl-{track}-cc.7"), 0.0, -100.0);
+    let cc = |ws: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        track_node(ws, cx, track).get("cc").and_then(|c| c.get("c7")).and_then(Value::as_real)
+    };
+    assert_eq!(cc(&ws, cx), Some(64.0), "half the travel up from 0, rounded");
+    undo(cx);
+    assert!(cc(&ws, cx).is_none_or(|v| v == 0.0), "one undo step");
 }
 
 /// The Tuning tab (F-IJN-019..021): the microtuner on, its scale slot, the keys, and a scale written in the editor

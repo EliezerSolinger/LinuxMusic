@@ -53,6 +53,8 @@ pub enum Slot {
     TrackVolume,
     /// an insert's `wet` (0..1; absent: all wet), the legacy EffectView's W/D
     Wet,
+    /// a track's MIDI controller `cc.N` of the CC rack (F-IJN-025), stored at `track.cc.cN`
+    Cc(u8),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,6 +91,7 @@ impl Ctl {
             Slot::Param(k) | Slot::Field(k) => k,
             Slot::TrackVolume => "volume",
             Slot::Wet => "wet",
+            Slot::Cc(n) => intern(&format!("cc.{n}")),
         }
     }
 
@@ -102,6 +105,8 @@ impl Ctl {
 
     fn clamp(&self, v: f64) -> f64 {
         match &self.kind {
+            // a MIDI controller's value is a whole number
+            CtlKind::Knob { min, max, .. } if matches!(self.slot, Slot::Cc(_)) => v.clamp(*min, *max).round(),
             CtlKind::Knob { min, max, .. } => v.clamp(*min, *max),
             CtlKind::Stepper { min, max, .. } => v.clamp(*min, *max).round(),
             CtlKind::Switch { .. } => f64::from(u8::from(v > 0.5)),
@@ -148,7 +153,7 @@ impl Ctl {
         if let CtlKind::Volume = self.kind {
             return view::format_db(v);
         }
-        let stepped = matches!(self.kind, CtlKind::Stepper { .. });
+        let stepped = matches!(self.kind, CtlKind::Stepper { .. }) || matches!(self.slot, Slot::Cc(_));
         match self.unit {
             "Hz" if v >= 1000.0 => format!("{:.2} kHz", v / 1000.0),
             "Hz" if v < 10.0 => format!("{v:.2} Hz"),
@@ -174,6 +179,9 @@ impl Ctl {
                 EditOp::set(self.node, &["volume"], Value::real(view::db_to_gain(v).min(4.0)).unwrap_or_default())
             }
             Slot::Wet => EditOp::set(self.node, &["wet"], Value::real(v.clamp(0.0, 1.0)).unwrap_or_default()),
+            Slot::Cc(n) => {
+                EditOp::set(self.node, &["cc", intern(&format!("c{n}"))], Value::real(v.round()).unwrap_or_default())
+            }
         }
     }
 
@@ -185,6 +193,7 @@ impl Ctl {
             Slot::TrackVolume => crate::ui::midi::param(self.node, "volume"),
             // lm-doc's parameter key of an insert's mix
             Slot::Wet => crate::ui::midi::param(self.node, "insert.wet"),
+            Slot::Cc(_) => crate::ui::midi::param(self.node, self.key()),
         }
     }
 
@@ -278,6 +287,8 @@ pub fn owner_of(root: &Value, node: NodeId) -> Option<NodeId> {
         .find(|t| t.instrument.as_ref().is_some_and(|(i, _)| *i == node))
         .map(|t| t.id)
         .or_else(|| model::channels(root).into_iter().find(|c| c.inserts.iter().any(|x| x.id == node)).map(|c| c.id))
+        // a track's own parameters (its CC rack's controllers) have their lanes on the track
+        .or_else(|| model::tracks(root).into_iter().find(|t| t.id == node).map(|t| t.id))
 }
 
 /// The controls of a plugin node from its schema: the parameters, then the choice and bool fields
@@ -426,6 +437,10 @@ fn current(core: &Core, c_: &Ctl) -> f64 {
             .and_then(|n| n.get("state").and_then(|s| s.get("params")).and_then(|p| p.get(k)).and_then(Value::as_real))
             .unwrap_or(c_.value),
         Slot::Wet => port.find(c_.node).and_then(|n| n.get("wet").and_then(Value::as_real)).unwrap_or(1.0),
+        Slot::Cc(n) => port
+            .find(c_.node)
+            .and_then(|t| t.get("cc").and_then(|cc| cc.get(&format!("c{n}"))).and_then(Value::as_real))
+            .unwrap_or(c_.value),
         Slot::Field(k) => port
             .find(c_.node)
             .and_then(|n| n.get("state").and_then(|s| s.get(k)).and_then(Value::as_bool))
@@ -476,8 +491,8 @@ pub fn drag_move<C: Clone + 'static, V: ParamHost<C>>(v: &mut V, ev: &MouseMoveE
     let value = c_.value_at(t, flipped(&c_, cx));
     let core = v.core().clone();
     core.update(cx, |core, _| {
-        if let Slot::Param(k) = c_.slot {
-            core.port_mut().param_write(c_.node, k, value as f32);
+        if matches!(c_.slot, Slot::Param(_) | Slot::Cc(_)) {
+            core.port_mut().param_write(c_.node, c_.key(), value as f32);
         }
         if let Some(d) = &v.editor_ref().drag {
             core.port_mut().gesture_apply(&d.gesture, vec![c_.op(value)]);
@@ -561,6 +576,7 @@ pub fn control<C: Clone + 'static, V: ParamHost<C>>(this: &V, c_: Ctl, cx: &Cont
     let label = match c_.slot {
         Slot::TrackVolume => SharedString::from(tr("Volume")),
         Slot::Wet => SharedString::from(tr("W/D")),
+        Slot::Cc(n) => SharedString::from(format!("CC {n}")),
         _ => label_of(&c_.plugin, c_.key()),
     };
     let value_color = if c_.automated { THEME.orange } else { THEME.text };
@@ -905,7 +921,8 @@ fn shared_menu<C: Clone + 'static, V: ParamHost<C>>(this: &V, p: &Popup<C>, cx: 
                 })
                 .enabled(clip.is_some() && !is_choice),
             ];
-            if let Slot::Param(key) = c_.slot {
+            if let Slot::Param(_) | Slot::Cc(_) = c_.slot {
+                let key = c_.key();
                 let port = this.core().read(cx).port();
                 let root = port.root();
                 let lane = lanes_of(root, c_.node).into_iter().find(|(_, _, k)| &**k == key);
@@ -2205,38 +2222,53 @@ impl InstrumentWindow {
                 }))
                 .into_any_element(),
         );
-        // output: off (absent), or to a port
+        // output (track.midi_output v2): absent = none; `on` switches it and keeps the settings, as the legacy's
+        // checkbox; any number of ports
+        let out_on = output.as_ref().is_some_and(|o| o.get("on").and_then(Value::as_bool).unwrap_or(true));
         let mut out_rows: Vec<AnyElement> = vec![
-            button("iw-midi-out-on", tr("Send MIDI to a device"), output.is_some(), THEME.green)
+            button("iw-midi-out-on", tr("Send MIDI to a device"), out_on, THEME.green)
                 .h(px(20.))
                 .debug_selector(|| "iw-midi-out-on".into())
                 .on_click(cx.listener({
-                    let on = output.is_some();
-                    let first = ports.iter().find(|p| p.2).map(|p| p.0.clone()).unwrap_or_else(|| Arc::from(""));
+                    let current = output.clone();
+                    let first = ports.iter().find(|p| p.2).map(|p| p.0.clone());
                     move |w, _, _, cx| {
-                        let v = (!on)
-                            .then(|| Value::object([("port", Value::text(first.clone())), ("channel", Value::int(0))]));
-                        w.set_track_object("midiOutput", v, "MIDI output", cx);
+                        let v = match &current {
+                            Some(o) => o.with("on", Value::bool(!out_on)),
+                            None => Value::object([
+                                ("on", Value::bool(true)),
+                                ("ports", Value::list(first.iter().map(|a| Value::text(a.clone())))),
+                                ("channel", Value::int(0)),
+                            ]),
+                        };
+                        w.set_track_object("midiOutput", Some(v), "MIDI output", cx);
                     }
                 }))
                 .into_any_element(),
         ];
         if let Some(out) = output {
-            let port = model::text(&out, "port");
+            let chosen: Vec<Arc<str>> =
+                model::list(&out, "ports").filter_map(|v| v.as_shared_text().cloned()).collect();
             for (alias, _, _) in ports.iter().filter(|p| p.2) {
+                let on = chosen.contains(alias);
                 let (a, base) = (alias.clone(), out.clone());
                 out_rows.push(
                     button(
                         SharedString::from(format!("iw-midi-out-{alias}")),
-                        alias.to_string(),
-                        *alias == port,
+                        format!("{} {}", if on { "✓" } else { "·" }, alias),
+                        on,
                         THEME.blue,
                     )
                     .h(px(20.))
                     .on_click(cx.listener(move |w, _, _, cx| {
+                        let mut list: Vec<Value> =
+                            model::list(&base, "ports").filter(|v| v.as_text() != Some(&*a)).cloned().collect();
+                        if !on {
+                            list.push(Value::text(a.clone()));
+                        }
                         w.set_track_object(
                             "midiOutput",
-                            Some(base.with("port", Value::text(a.clone()))),
+                            Some(base.with("ports", Value::list(list))),
                             "MIDI output",
                             cx,
                         );
@@ -2301,6 +2333,42 @@ impl InstrumentWindow {
                 cx,
             );
         });
+        // the CC rack (F-IJN-025, the legacy MidiCCRackView): its switch, and 128 controllers sent to the instrument
+        let rack_on = node.get("ccRack").and_then(|r| r.get("on")).and_then(Value::as_bool).unwrap_or(false);
+        let mut rack: Vec<AnyElement> = vec![
+            button("iw-cc-rack-on", tr("Send the controllers to the instrument"), rack_on, THEME.green)
+                .h(px(20.))
+                .debug_selector(|| "iw-cc-rack-on".into())
+                .on_click(cx.listener(move |w, _, _, cx| {
+                    let Some(t) = w.track else { return };
+                    let core = w.scx.core.clone();
+                    let op = EditOp::set(t, &["ccRack"], Value::object([("on", Value::bool(!rack_on))]));
+                    apply_ops(&core, "CC rack", vec![op], cx);
+                }))
+                .into_any_element(),
+        ];
+        if let Some(t) = self.track {
+            let root = self.scx.core.read(cx).port().root().clone();
+            let lanes = lanes_of(&root, t);
+            let cc = node.get("cc").cloned().unwrap_or_default();
+            rack.extend((0..128u8).map(|n| {
+                let key = intern(&format!("cc.{n}"));
+                let ctl = Ctl {
+                    node: t,
+                    plugin: Arc::from(""),
+                    slot: Slot::Cc(n),
+                    kind: CtlKind::Knob { min: 0.0, max: 127.0, def: 0.0, log: false },
+                    unit: "",
+                    automatable: true,
+                    value: cc.get(&format!("c{n}")).and_then(Value::as_real).unwrap_or(0.0),
+                    choice: Arc::from(""),
+                    automated: lanes.iter().any(|(_, _, k)| &**k == key),
+                    enabled: true,
+                    shown: None,
+                };
+                control(self, ctl, cx)
+            }));
+        }
         vec![
             group_card(tr("MIDI input"), in_rows),
             group_card(tr("MIDI output"), out_rows),
@@ -2308,6 +2376,7 @@ impl InstrumentWindow {
                 tr("Velocity"),
                 vec![vel, caption(tr("MIDI notes at the base velocity play at 100 %.")).into_any_element()],
             ),
+            group_card(tr("Controllers (CC)"), rack),
         ]
     }
 
