@@ -24,6 +24,8 @@
 //! - [`lb302`]: the LB302;
 //! - [`kicker`]: the Kicker's swept sine;
 //! - [`bit_invader`]: the BitInvader's voice;
+//! - [`drum_machines`]: the Drum Machines' voices;
+//! - [`drumsynth`]: DrumSynth, the .ds percussion synthesizer;
 //! - [`drawn_wave`]: a drawn wave's band-limited tables (the BitInvader's, the Watsyn's);
 //! - [`envelope`], [`sound_shaping`]: every instrument's envelopes and LFOs, and its filter;
 //! - [`monstro`]: the Monstro;
@@ -64,6 +66,8 @@ pub mod compressor;
 pub mod delay;
 pub mod distortion_effects;
 pub mod drawn_wave;
+pub mod drum_machines;
+pub mod drumsynth;
 pub mod dynamics;
 pub mod dynamics_processor;
 pub mod envelope;

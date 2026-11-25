@@ -12,7 +12,7 @@ To write the references (needs the legacy build, `cmake -S legado -B build && cm
 
 ```sh
 CONTRACT_OFF="TubeStage GainStage AnalogChannelStrip DeskFilters DeskDynamics DeskTolerance MonoBass MasterSection \
-    Oscillator Sample EnvelopeAndLfoParameters DrawnWave" crates/lm-dsp/ab/build-references.sh
+    Oscillator Sample EnvelopeAndLfoParameters DrawnWave DrumSynth" crates/lm-dsp/ab/build-references.sh
 ```
 
 From a worktree that checks out only `LinuxMusicBeta/`, point `LEGACY_ROOT` at the tree that has `legado/` and its
@@ -36,3 +36,6 @@ may pick another algorithm on another run: regenerating the references can chang
 The harness also works out each knob's value buffer at the start of each period. Left to the effect, a knob that
 changed read as changed in that period (its change flag) and again in the next (its value buffer, worked out then):
 the Bitcrush reset its rate counters twice. In the new program a change arrives once, as an event.
+
+The DrumSynth cases read the kits of `legado/data/samples/drumsynth`: from a worktree without `legado/`, run the
+tests with `LM_LEGACY_ROOT` set to the tree that has it.

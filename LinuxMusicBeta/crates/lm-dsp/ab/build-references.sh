@@ -88,4 +88,4 @@ for plugin in compressor eq amplifier stereomatrix stereoenhancer bassbooster di
 done
 
 mkdir -p "$here/reference"
-LM_AB_DIR="$here" LMMS_PLUGIN_DIR="$work/plugins" "$work/legacy-harness" "$here/cases.json" "$here/reference"
+LM_AB_DIR="$here" LM_LEGACY_ROOT="$root" LMMS_PLUGIN_DIR="$work/plugins" "$work/legacy-harness" "$here/cases.json" "$here/reference"

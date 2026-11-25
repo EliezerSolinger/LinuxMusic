@@ -1318,6 +1318,27 @@ fn run(case: &Value) -> Vec<[f32; 2]> {
         }
         return out;
     }
+    if case["unit"] == "drumsynth" {
+        // A DrumSynth file of the legacy program's kits, rendered mono with the legacy generator seeded as the harness
+        let path =
+            ab_dir().join("../../../../legado/data/samples/drumsynth").join(case["settings"]["file"].as_str().unwrap());
+        let text = std::fs::read(&path).unwrap_or_else(|_| {
+            // (a worktree without legado/: the main tree's)
+            std::fs::read(
+                std::path::Path::new(&std::env::var("LM_LEGACY_ROOT").unwrap_or_default())
+                    .join("legado/data/samples/drumsynth")
+                    .join(case["settings"]["file"].as_str().unwrap()),
+            )
+            .unwrap()
+        });
+        let mut rand = lm_dsp::math::LegacyRand::new(case["seed"].as_u64().unwrap());
+        let wave = lm_dsp::drumsynth::render(&text, case["rate"].as_f64().unwrap() as u32, &mut rand);
+        for (f, frame) in out.iter_mut().enumerate() {
+            let v = wave.get(f).map_or(0.0, |&s| f32::from(s) / 32768.0);
+            *frame = [v, v];
+        }
+        return out;
+    }
     if case["unit"] == "drawn-wave" {
         use lm_dsp::drawn_wave::{DrawnWave, Hold, MOST_HARMONICS};
         let s = &case["settings"];

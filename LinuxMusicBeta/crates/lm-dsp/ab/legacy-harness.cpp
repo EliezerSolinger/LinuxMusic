@@ -31,6 +31,7 @@
 #include "Engine.h"
 #include "lmms_math.h"
 #include "DrawnWave.h"
+#include "DrumSynth.h"
 #include "Graph.h"
 #include "KickerOsc.h"
 #include "VibratingString.h"
@@ -610,6 +611,24 @@ auto run(const QJsonObject& c) -> std::vector<SampleFrame>
 				out[f] = SampleFrame{filter.update(out[f][0], 0), filter.update(out[f][1], 1)};
 			}
 		}
+		return out;
+	}
+	if (unit == "drumsynth")
+	{
+		// A DrumSynth file of the legacy program's kits (data/samples/drumsynth, under LM_LEGACY_ROOT) rendered by its
+		// core, mono at the case's rate, the legacy fastRand seeded: 16-bit frames over 32768, as its decoder reads them
+		const auto file = QString{std::getenv("LM_LEGACY_ROOT")} + "/legado/data/samples/drumsynth/"
+			+ c["settings"].toObject()["file"].toString();
+		fastRandState() = static_cast<unsigned long>(c["seed"].toDouble());
+		int16_t* data = nullptr;
+		auto ds = DrumSynth{};
+		const auto length = ds.GetDSFileSamples(file, data, 1, static_cast<sample_rate_t>(c["rate"].toDouble()));
+		for (std::int64_t f = 0; f < frames; ++f)
+		{
+			const auto v = f < length ? data[f] / 32768.f : 0.f;
+			out[f] = SampleFrame{v, v};
+		}
+		delete[] data;
 		return out;
 	}
 	if (unit == "drawn-wave")

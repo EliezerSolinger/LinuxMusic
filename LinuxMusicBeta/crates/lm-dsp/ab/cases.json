@@ -10817,6 +10817,198 @@
         "sample": "data/drums.wav",
         "Note threshold": 1.5
       }
+    },
+    {
+      "name": "drumsynth-tr808-kick",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 11,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "tr808/Kick.ds"
+      }
+    },
+    {
+      "name": "drumsynth-tr808-hat_o",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 12,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "tr808/Hat_o.ds"
+      }
+    },
+    {
+      "name": "drumsynth-tr808-cowbell",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 13,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "tr808/Cowbell.ds"
+      }
+    },
+    {
+      "name": "drumsynth-tr808-handclap",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 14,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "tr808/Handclap.ds"
+      }
+    },
+    {
+      "name": "drumsynth-tr909-kick",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 15,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "tr909/Kick.ds"
+      }
+    },
+    {
+      "name": "drumsynth-dmx-tom1",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 16,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "dmx/tom1.ds"
+      }
+    },
+    {
+      "name": "drumsynth-cr8000-snare",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 17,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "cr8000/Snare.ds"
+      }
+    },
+    {
+      "name": "drumsynth-cr78-clave",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 18,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "cr78/Clave.ds"
+      }
+    },
+    {
+      "name": "drumsynth-effects-laser",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 19,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "effects/Laser.ds"
+      }
+    },
+    {
+      "name": "drumsynth-dmx-tamb",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 20,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "dmx/tamb.ds"
+      }
+    },
+    {
+      "name": "drumsynth-electro-s_8bit",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 21,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "electro/S_8bit.ds"
+      }
+    },
+    {
+      "name": "drumsynth-r_n_b-hat",
+      "unit": "drumsynth",
+      "rate": 44100,
+      "frames": 66150,
+      "block": 256,
+      "seed": 22,
+      "signal": {
+        "kind": "sine",
+        "hz": 0,
+        "amp": 0
+      },
+      "settings": {
+        "file": "r_n_b/hat.ds"
+      }
     }
   ]
 }
