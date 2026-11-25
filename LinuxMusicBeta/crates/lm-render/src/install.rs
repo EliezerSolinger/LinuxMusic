@@ -130,6 +130,23 @@ impl Install {
         }
     }
 
+    /// An install with only rings to add or remove (a MIDI input that appeared or went away, I-7.1): no program, no
+    /// map. `generation` is the generation of the last program sent
+    pub fn producers_only(generation: ProgramGen) -> Self {
+        Self {
+            generation,
+            program: None,
+            add: Vec::new(),
+            replace: Vec::new(),
+            remove: Vec::new(),
+            producers: Vec::new(),
+            remove_producers: Vec::new(),
+            relocate: None,
+            map: None,
+            returned: Returned::default(),
+        }
+    }
+
     /// A new MIDI map with this install (the old one comes back in [`Returned::map`])
     pub fn set_map(&mut self, map: Box<MidiMap>) -> &mut Self {
         self.map = Some(map);

@@ -1172,6 +1172,17 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   `notes.step_record`, `step_keys` (o teclado do computador), `step_rest`, `step_back`, `step_length` (→/←),
   `step_stop`, `notes.record_into`. Gravando no item aberto, o take se funde nele (camadas viram soma); o laço próprio
   do item (P-26) continua na interface até ser um modo do transporte.
+- **Os dispositivos MIDI entram na sessão por um traço, `MidiDeviceLink`** (25/11): o `lm_io::MidiDevices` (Linux) o
+  implementa em poucas linhas, e toda a lógica da sessão — as `PortSettings` das preferências, o anel de entrada
+  instalado no motor, os anéis dos portos raw (`Install::producers_only`), avisos de desligado e religado
+  (`midi.port.disconnected`, `midi.port.reconnected`), o retorno mandado de novo ao religar, a atividade para aprender,
+  a gravação por passos e o monitor, o SysEx do MCU, `status.midiPorts` — é testada no Mac com um dispositivo falso.
+  A sessão abre os dispositivos numa `Operation` quando abre um dispositivo de áudio ALSA de verdade (nunca com o
+  Dummy: os testes não abrem o sequenciador). Produtores: 1 para o anel do sequenciador, 2 a 9 para portos raw.
+- **Um apelido desconhecido** (um projeto de outra máquina, P-36) gera um aviso por apelido, uma vez por sessão, com a
+  ação `midi.assign_alias`; atribuído, o mapa resolve na hora.
+- **O `compile_map` acha os nós pelo índice do documento**, não percorrendo a árvore: com 1608 mapas ele levava 19 s
+  na thread principal (a árvore inclui os próprios mapas); agora 26 ms, e o teste gerado exige menos de 200 ms.
 - **O gesto MIDI é um gesto do documento** (I-3.7; o T4 já cita "um controlador MIDI noutro"), e não uma transação no
   fim (20/11, a lacuna do S20): a árvore segue o controle a cada `pump` (um `gesture_update` com o último valor, sem
   passo no histórico), então um programa compilado no meio — um processador reconstruído, um nó novo — nasce do valor

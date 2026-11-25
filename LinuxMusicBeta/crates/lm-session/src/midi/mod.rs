@@ -103,6 +103,10 @@ pub(crate) struct MidiCore {
     pub(crate) bank: (u32, u32),
     /// Step recording's cursor (F-PAS-001)
     pub(crate) step: Option<step::Step>,
+    /// The machine's MIDI devices (`lm_io::MidiDevices`, I-21.1)
+    pub(crate) devices: devices::Devices,
+    /// Ports connected at some point in this session (a later connection is a reconnection)
+    ever_connected: BTreeSet<u16>,
     /// "Test the control": the actions a control would run are listed instead of run
     dry_run: Option<Vec<Arc<str>>>,
 }
@@ -143,12 +147,23 @@ impl MidiCore {
             hand_won: BTreeSet::new(),
             bank: (0, 0),
             step: None,
+            devices: devices::Devices::default(),
+            ever_connected: BTreeSet::new(),
             dry_run: None,
         }
     }
 
     pub(crate) fn mark_dirty(&mut self) {
         self.map_dirty = true;
+    }
+
+    pub(crate) fn connected_ports(&self) -> Vec<PortIndex> {
+        self.connected.iter().map(|p| PortIndex(*p)).collect()
+    }
+
+    /// Whether a port was connected before in this session
+    pub(crate) fn was_connected(&self, port: PortIndex) -> bool {
+        self.ever_connected.contains(&port.0)
     }
 
     fn mapping_of(&self, id: u64) -> Option<(&Mapping, &Resolved)> {
@@ -278,8 +293,13 @@ impl Session {
         if bad > 0 {
             self.notices.warn("midi.map.unreadable", vec![("count", Value::int(bad as i64))]);
         }
+        let aliases: Vec<Arc<str>> = mappings[..project_count]
+            .iter()
+            .flat_map(|m| std::iter::once(m.source.port.clone()).chain(m.touch.as_ref().map(|t| t.port.clone())))
+            .collect();
         self.midi.mappings = mappings;
         self.midi.project_count = project_count;
+        self.midi_unknown_aliases(aliases);
     }
 
     /// Compiles the map against the last install's slots and sends it alone (I-21.2: cheap)
@@ -330,6 +350,8 @@ impl Session {
     /// learning, the map when it must change, feedback and the control surfaces
     pub(crate) fn midi_pump(&mut self) -> bool {
         let mut changed = false;
+        let now0 = self.clock.now();
+        self.midi_devices_in(now0);
         let mut events = Vec::new();
         self.engine.map_events(|e| events.push(e));
         changed |= !events.is_empty();
@@ -360,6 +382,7 @@ impl Session {
         }
         self.midi_feedback(now);
         self.mcu_pump(now);
+        self.midi_devices_out(now);
         self.automation_pump();
         self.record_pump(now);
         changed
@@ -823,6 +846,7 @@ impl Session {
     /// The ports that are connected now (`lm-io`'s hotplug events): a port that comes back gets every value again
     pub fn midi_ports(&mut self, connected: &[PortIndex]) {
         let now: BTreeSet<u16> = connected.iter().map(|p| p.0).collect();
+        self.midi.ever_connected.extend(now.iter().copied());
         let back: Vec<u16> = now.difference(&self.midi.connected).copied().collect();
         if !back.is_empty() {
             for f in self.midi.feedback.values_mut() {

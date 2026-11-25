@@ -20,4 +20,6 @@ pub mod slice;
 pub mod watchdog;
 
 pub use port::LocalPort;
+/// The MIDI device service the session drives (`lm_io::MidiDevices` on Linux; a fake in tests)
+pub use session::midi::devices::MidiDeviceLink;
 pub use session::*;

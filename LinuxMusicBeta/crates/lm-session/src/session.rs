@@ -640,6 +640,11 @@ impl Session {
         s.external_start();
         s.refresh_status();
         s.submit();
+        // A real device: the machine's MIDI devices open too, in an operation (I-21.1); the Dummy (tests) has none
+        #[cfg(target_os = "linux")]
+        if matches!(s.device_setup, DeviceSetup::Alsa { .. }) {
+            s.midi_open_devices();
+        }
         Ok(s)
     }
 

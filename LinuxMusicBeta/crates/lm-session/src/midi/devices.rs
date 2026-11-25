@@ -76,3 +76,295 @@ impl Session {
         out
     }
 }
+
+// ---- the device service (lm-io's `MidiDevices`) ----
+
+use std::collections::BTreeSet;
+
+use lm_base::ring::{Producer, ring};
+use lm_base::{HostTime, Result};
+use lm_io::{MidiDeviceEvent, PortInfo, SYSEX_OUT_MAX, SysexIn, SysexOut};
+use lm_render::{CommandReceiver, Install, MidiOutEvent};
+
+/// What the session needs from a MIDI device service. `lm_io::MidiDevices` is the one on Linux; a test drives the
+/// session through a fake. Everything here is called from the pump
+pub trait MidiDeviceLink {
+    fn set_settings(&mut self, settings: Vec<PortSettings>) -> Result<()>;
+    fn poll(&mut self, f: &mut dyn FnMut(MidiDeviceEvent));
+    fn activity(&mut self, f: &mut dyn FnMut(lm_io::MidiActivity));
+    fn sysex(&mut self, f: &mut dyn FnMut(SysexIn));
+    fn add_output_source(&mut self, source: lm_base::ring::Consumer<MidiOutEvent>) -> Result<()>;
+    fn add_sysex_output(&mut self, source: lm_base::ring::Consumer<SysexOut>) -> Result<()>;
+    /// Wakes the output thread: what was pushed leaves now
+    fn wake(&self);
+    fn ports(&self) -> Vec<PortInfo>;
+    /// Raw MIDI ports have no announcements: the session looks again every 2 s
+    fn rescan_raw(&mut self);
+}
+
+#[cfg(target_os = "linux")]
+impl MidiDeviceLink for lm_io::MidiDevices {
+    fn set_settings(&mut self, settings: Vec<PortSettings>) -> Result<()> {
+        lm_io::MidiDevices::set_settings(self, settings)
+    }
+    fn poll(&mut self, f: &mut dyn FnMut(MidiDeviceEvent)) {
+        lm_io::MidiDevices::poll(self, f)
+    }
+    fn activity(&mut self, f: &mut dyn FnMut(lm_io::MidiActivity)) {
+        lm_io::MidiDevices::activity(self, f)
+    }
+    fn sysex(&mut self, f: &mut dyn FnMut(SysexIn)) {
+        lm_io::MidiDevices::sysex(self, f)
+    }
+    fn add_output_source(&mut self, source: lm_base::ring::Consumer<MidiOutEvent>) -> Result<()> {
+        lm_io::MidiDevices::add_output_source(self, source)
+    }
+    fn add_sysex_output(&mut self, source: lm_base::ring::Consumer<SysexOut>) -> Result<()> {
+        lm_io::MidiDevices::add_sysex_output(self, source)
+    }
+    fn wake(&self) {
+        self.waker().wake();
+    }
+    fn ports(&self) -> Vec<PortInfo> {
+        lm_io::MidiDevices::ports(self)
+    }
+    fn rescan_raw(&mut self) {
+        lm_io::MidiDevices::rescan_raw(self)
+    }
+}
+
+/// The SysEx ring to the devices: 64 messages (the MCU display is 16 cells at most per refresh)
+const SYSEX_RING: usize = 64;
+/// Raw MIDI ports are looked for again this often (ns)
+const RESCAN: u64 = 2_000_000_000;
+/// The command rings the devices may take: the sequencer's shared ring, then one per raw port (producer 0 is the
+/// main thread's)
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const SEQ_PRODUCER: u16 = 1;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const RAW_PRODUCERS: std::ops::Range<u16> = 2..10;
+
+/// The devices attached to the session, and what the session keeps about them
+#[derive(Default)]
+pub(crate) struct Devices {
+    pub(crate) link: Option<Box<dyn MidiDeviceLink>>,
+    sysex_out: Option<Producer<SysexOut>>,
+    settings_from: Value,
+    last_rescan: u64,
+    pub(crate) unknown_aliases: BTreeSet<Arc<str>>,
+    #[cfg(target_os = "linux")]
+    pub(crate) opening: Option<lm_base::OperationHandle<(lm_io::MidiDevices, CommandReceiver)>>,
+}
+
+impl std::fmt::Debug for Devices {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Devices").field("attached", &self.link.is_some()).finish_non_exhaustive()
+    }
+}
+
+impl Session {
+    /// Opens the machine's MIDI devices (`lm_io::MidiDevices`) in an operation: it talks to the kernel (I-2). The
+    /// session calls it when it opens a real audio device; the result is attached at a later pump
+    #[cfg(target_os = "linux")]
+    pub fn midi_open_devices(&mut self) {
+        let settings = self.midi_port_settings();
+        let handle = self.workers.start(move |_, _| {
+            lm_io::MidiDevices::start(
+                settings,
+                lm_render::ProducerIndex(SEQ_PRODUCER),
+                RAW_PRODUCERS.map(lm_render::ProducerIndex).collect(),
+            )
+        });
+        self.midi.devices.opening = Some(handle);
+    }
+
+    /// Attaches a device service: its input ring goes to the engine, the feedback and SysEx rings go to it, and it
+    /// gets the ports of the preferences
+    pub fn attach_midi_devices(&mut self, mut link: Box<dyn MidiDeviceLink>, input: CommandReceiver) -> Result<()> {
+        let mut install = Install::producers_only(self.table.generation);
+        install.add_producer(input);
+        self.engine.install(install)?;
+        if let Some(feedback) = self.take_midi_feedback() {
+            link.add_output_source(feedback)?;
+        }
+        let (tx, rx) = ring(SYSEX_RING);
+        link.add_sysex_output(rx)?;
+        let settings = self.midi_port_settings();
+        link.set_settings(settings)?;
+        self.midi.devices.settings_from = self.preferences.get(&["midi", "ports"]).cloned().unwrap_or(Value::NULL);
+        self.midi.devices.sysex_out = Some(tx);
+        self.midi.devices.link = Some(link);
+        self.midi.mark_dirty();
+        Ok(())
+    }
+
+    /// From the pump, before the map's rings: the device events, the activity (learning, step recording, the
+    /// monitor), new settings when the preferences changed
+    pub(crate) fn midi_devices_in(&mut self, now: HostTime) {
+        #[cfg(target_os = "linux")]
+        if let Some(mut h) = self.midi.devices.opening.take() {
+            match h.poll() {
+                None => self.midi.devices.opening = Some(h),
+                Some(Ok((devices, input))) => {
+                    if let Err(e) = self.attach_midi_devices(Box::new(devices), input) {
+                        self.notices.error(&e, None, None);
+                    }
+                }
+                Some(Err(e)) => self.notices.error(&e, None, None),
+            }
+        }
+        if self.midi.devices.link.is_none() {
+            return;
+        }
+        let ports = self.preferences.get(&["midi", "ports"]).cloned().unwrap_or(Value::NULL);
+        if ports != self.midi.devices.settings_from {
+            self.midi.devices.settings_from = ports;
+            let settings = self.midi_port_settings();
+            if let Some(link) = self.midi.devices.link.as_mut()
+                && let Err(e) = link.set_settings(settings)
+            {
+                self.notices.error(&e, None, None);
+            }
+            self.midi.mark_dirty();
+        }
+        let mut events = Vec::new();
+        let mut activity = Vec::new();
+        if let Some(link) = self.midi.devices.link.as_mut() {
+            link.poll(&mut |e| events.push(e));
+            link.activity(&mut |a| activity.push(a));
+            link.sysex(&mut |_s: SysexIn| {}); // no profile answers SysEx yet: taken so the ring never fills
+            if now.0.saturating_sub(self.midi.devices.last_rescan) >= RESCAN {
+                self.midi.devices.last_rescan = now.0;
+                link.rescan_raw();
+            }
+        }
+        let ports_changed = !events.is_empty();
+        for e in events {
+            self.midi_device_event(e);
+        }
+        for a in activity {
+            let len = usize::from(a.len).min(3);
+            self.midi_input(a.port, a.at, &a.bytes[..len]);
+        }
+        if ports_changed {
+            self.midi_publish_ports();
+        }
+    }
+
+    fn midi_device_event(&mut self, e: MidiDeviceEvent) {
+        let alias = |s: &Session, index: PortIndex| s.midi.port_alias(index);
+        match e {
+            MidiDeviceEvent::Connected { index, .. } => {
+                let mut connected: Vec<PortIndex> = self.midi.connected_ports();
+                if !connected.contains(&index) {
+                    connected.push(index);
+                }
+                let was_seen = self.midi.was_connected(index);
+                self.midi_ports(&connected);
+                if was_seen {
+                    // Back after a disconnection: everything works again by itself (I-21.1, I-14)
+                    let a = alias(self, index);
+                    self.notices.push(
+                        "midi.port.reconnected",
+                        vec![("port", Value::text(a))],
+                        lm_port::Severity::Info,
+                        None,
+                        Vec::new(),
+                    );
+                }
+            }
+            MidiDeviceEvent::Disconnected { index, .. } => {
+                let connected: Vec<PortIndex> =
+                    self.midi.connected_ports().into_iter().filter(|p| *p != index).collect();
+                self.midi_ports(&connected);
+                let a = alias(self, index);
+                self.notices.warn("midi.port.disconnected", vec![("port", Value::text(a))]);
+            }
+            MidiDeviceEvent::ProducerReady(rx) => {
+                let mut install = Install::producers_only(self.table.generation);
+                install.add_producer(rx);
+                if let Err(e) = self.engine.install(install) {
+                    self.notices.error(&e, None, None);
+                }
+            }
+            MidiDeviceEvent::ProducerDone(p) => {
+                let mut install = Install::producers_only(self.table.generation);
+                install.remove_producer(p);
+                if let Err(e) = self.engine.install(install) {
+                    self.notices.error(&e, None, None);
+                }
+            }
+            MidiDeviceEvent::Lost { count, .. } => self
+                .notices
+                .warn("midi.input.lost", vec![("count", Value::int(i64::try_from(count).unwrap_or(i64::MAX)))]),
+            MidiDeviceEvent::OutputDropped { count, .. } => self
+                .notices
+                .warn("midi.output.dropped", vec![("count", Value::int(i64::try_from(count).unwrap_or(i64::MAX)))]),
+            MidiDeviceEvent::Failed { error, .. } => self.notices.error(&error, None, None),
+            MidiDeviceEvent::Appeared(_) | MidiDeviceEvent::Gone(_) => {}
+        }
+    }
+
+    /// `status.midiPorts`: every port the machine has, with its alias and whether it is connected
+    fn midi_publish_ports(&mut self) {
+        let Some(link) = self.midi.devices.link.as_ref() else { return };
+        let infos = link.ports();
+        let prefs = self.preferences.get(&["midi", "ports"]).cloned().unwrap_or_else(Value::empty_list);
+        let list: Vec<Value> = infos
+            .iter()
+            .map(|p| {
+                let entry = prefs.items().find(|e| {
+                    e.get("client").and_then(Value::as_text) == Some(p.id.client.as_str())
+                        && e.get("port").and_then(Value::as_text) == Some(p.id.port.as_str())
+                });
+                let alias = entry.and_then(|e| e.get("alias").and_then(Value::as_text)).unwrap_or("").to_owned();
+                let connected = !alias.is_empty()
+                    && self.midi_port_of(&alias).is_some_and(|i| self.midi.connected_ports().contains(&i));
+                Value::object([
+                    ("client", Value::text(p.id.client.as_str())),
+                    ("port", Value::text(p.id.port.as_str())),
+                    ("backend", Value::text(if p.backend == MidiBackendKind::Raw { "raw" } else { "seq" })),
+                    ("alias", Value::text(alias)),
+                    ("connected", Value::bool(connected)),
+                    ("readable", Value::bool(p.readable)),
+                    ("writable", Value::bool(p.writable)),
+                ])
+            })
+            .collect();
+        self.status = self.status.with("midiPorts", Value::list(list));
+    }
+
+    /// From the pump, after feedback: the SysEx to the devices, and the output thread woken
+    pub(crate) fn midi_devices_out(&mut self, now: HostTime) {
+        if self.midi.devices.link.is_none() {
+            return;
+        }
+        for (port, data) in self.take_midi_sysex() {
+            let Some(tx) = self.midi.devices.sysex_out.as_mut() else { break };
+            let len = data.len().min(SYSEX_OUT_MAX);
+            let mut buf = [0u8; SYSEX_OUT_MAX];
+            buf[..len].copy_from_slice(&data[..len]);
+            let _ = tx.push(SysexOut { port, at: now, len: len as u16, data: buf });
+        }
+        if let Some(link) = self.midi.devices.link.as_ref() {
+            link.wake();
+        }
+    }
+
+    /// A project opened on another machine (P-36): each alias of its mappings that no port of this machine has is
+    /// asked for once, with the action that assigns it
+    pub(crate) fn midi_unknown_aliases(&mut self, aliases: Vec<Arc<str>>) {
+        for a in aliases {
+            if a.is_empty() || self.midi_port_of(&a).is_some() || !self.midi.devices.unknown_aliases.insert(a.clone()) {
+                continue;
+            }
+            self.notices.push(
+                "midi.alias.unknown",
+                vec![("alias", Value::text(a.clone()))],
+                lm_port::Severity::Warning,
+                None,
+                vec![(lm_port::ActionId::from("midi.assign_alias"), Value::object([("alias", Value::text(a))]))],
+            );
+        }
+    }
+}
