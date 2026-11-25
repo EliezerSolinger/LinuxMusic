@@ -15,15 +15,17 @@
 //! The main thread is the plugin's main thread: it answers the control channel (read by a thread of its own) and
 //! gives the plugin its turn every 10 ms ([`backend::Plugin::idle`]).
 //!
-//! Formats: `lv2`, `clap`, `test` (the helper's own test plugins). VST3, LADSPA and VST2 (through wine) take the same
+//! Formats: `lv2`, `clap`, `vst3`, `test` (the helper's own test plugins). LADSPA and VST2 (through wine) take the same
 //! place behind [`backend::Plugin`].
 
 #![allow(clippy::print_stderr)]
 
 mod backend;
 mod clap;
+mod expressions;
 mod lv2;
 mod test_plugins;
+mod vst3;
 
 use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -58,6 +60,7 @@ fn error(e: &Error) -> Value {
 fn files(format: &str, paths: &[PathBuf], system: bool) -> Result<Option<Vec<PathBuf>>> {
     match format {
         "clap" => Ok(Some(clap::files(paths, system))),
+        "vst3" => Ok(Some(vst3::files(paths, system))),
         "lv2" | "test" => Ok(None),
         other => Err(unknown_format(other)),
     }
@@ -67,6 +70,7 @@ fn list(format: &str, paths: &[PathBuf], file: Option<&Path>, system: bool) -> R
     match format {
         "lv2" => lv2::list(paths),
         "clap" => clap::list(paths, file, system),
+        "vst3" => vst3::list(paths, file, system),
         "test" => Ok(test_plugins::list()),
         other => Err(unknown_format(other)),
     }
@@ -83,6 +87,7 @@ fn open(
     match format {
         "lv2" => Ok(Box::new(lv2::Lv2::open(paths, uri, rate, max_block)?)),
         "clap" => Ok(Box::new(clap::Clap::open(paths, file, uri, rate, max_block)?)),
+        "vst3" => Ok(Box::new(vst3::Vst3::open(paths, file, uri, rate, max_block)?)),
         "test" => Ok(Box::new(test_plugins::Test::open(uri, max_block)?)),
         other => Err(unknown_format(other)),
     }

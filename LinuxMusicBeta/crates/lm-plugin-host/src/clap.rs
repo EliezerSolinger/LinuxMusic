@@ -7,7 +7,7 @@
 //! - The plugin is identified by its CLAP id (`uri`); the file it was found in is tried first, and when it moved the
 //!   search paths are looked through.
 //! - Notes go as CLAP note events with their note id; a note expression's ramp is sent as a value every
-//!   [`RAMP_STEP`] frames until it ends; pan goes from −1..1 to CLAP's 0..1; "all notes release" is a wildcard
+//!   [`RAMP_STEP`](crate::expressions::RAMP_STEP) frames until it ends; pan goes from −1..1 to CLAP's 0..1; "all notes release" is a wildcard
 //!   note-off, "all sound off" a wildcard choke.
 
 use std::path::{Path, PathBuf};
@@ -17,13 +17,7 @@ use lm_render::{EventKind, Expression};
 use lm_sys_clap::{Event, Instance, Library, MAX_EVENTS};
 
 use crate::backend::{Listed, Param, Plugin, Transport};
-
-/// The frames between two values of a note expression's ramp
-pub const RAMP_STEP: u32 = 32;
-/// The most ramps running at once
-const MAX_RAMPS: usize = 256;
-/// The most sounding notes remembered (for their expressions' start values)
-const MAX_NOTES: usize = 512;
+use crate::expressions::{Expressions, Note, sort_by_time};
 
 /// The `.clap` files under the given folders and the system's (`CLAP_PATH`, the user's, the system's)
 pub fn files(paths: &[PathBuf], system: bool) -> Vec<PathBuf> {
@@ -100,46 +94,34 @@ pub fn list(paths: &[PathBuf], file: Option<&Path>, system: bool) -> Result<Vec<
     Ok(out)
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Note {
-    id: u32,
-    channel: i16,
-    key: i16,
-    pan: f64,
-    tuning: f64,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Ramp {
-    note: u32,
-    expression: Expression,
-    from: f64,
-    to: f64,
-    /// Frames into the ramp at the start of the coming block
-    done: u32,
-    length: u32,
-    /// Where it starts in the block it was given in
-    offset: u32,
-}
-
 /// One CLAP plugin
 pub struct Clap {
     inst: Instance,
     ids: Vec<u32>,
     params: Vec<Param>,
     events: Vec<Event>,
-    notes: Vec<Note>,
-    ramps: Vec<Ramp>,
+    notes: Expressions,
 }
 
-fn clap_id(note: lm_render::NoteId) -> i32 {
-    (note.0 & 0x7fff_ffff) as i32
+fn clap_id(note: u32) -> i32 {
+    (note & 0x7fff_ffff) as i32
 }
 
 fn clap_value(expression: Expression, v: f64) -> (i32, f64) {
     match expression {
         Expression::Pan => (lm_sys_clap::CLAP_NOTE_EXPRESSION_PAN, ((v + 1.0) / 2.0).clamp(0.0, 1.0)),
         Expression::Tuning => (lm_sys_clap::CLAP_NOTE_EXPRESSION_TUNING, v.clamp(-120.0, 120.0)),
+    }
+}
+
+fn expression_event(time: u32, n: &Note, expression: Expression, value: f64) -> Event {
+    let (id, v) = clap_value(expression, value);
+    Event::Expression { time, expression: id, note_id: clap_id(n.id), channel: n.channel, key: n.key, value: v }
+}
+
+fn push(events: &mut Vec<Event>, e: Event) {
+    if events.len() < events.capacity() {
+        events.push(e);
     }
 }
 
@@ -154,66 +136,7 @@ impl Clap {
             .ok_or_else(|| Error::new("plugin_host.not_found").arg("uri", uri))?;
         let inst = Instance::new(&lib, uri, f64::from(rate), u32::try_from(max_block).unwrap_or(u32::MAX))?;
         let (ids, params) = params_of(&inst);
-        Ok(Clap {
-            inst,
-            ids,
-            params,
-            events: Vec::with_capacity(MAX_EVENTS),
-            notes: Vec::with_capacity(MAX_NOTES),
-            ramps: Vec::with_capacity(MAX_RAMPS),
-        })
-    }
-
-    fn note(&self, id: u32) -> Option<&Note> {
-        self.notes.iter().find(|n| n.id == id)
-    }
-
-    fn push(&mut self, e: Event) {
-        if self.events.len() < self.events.capacity() {
-            self.events.push(e);
-        }
-    }
-
-    fn expression(&mut self, time: u32, note: u32, expression: Expression, value: f64) {
-        let (channel, key) = self.note(note).map_or((-1, -1), |n| (n.channel, n.key));
-        if let Some(n) = self.notes.iter_mut().find(|n| n.id == note) {
-            match expression {
-                Expression::Pan => n.pan = value,
-                Expression::Tuning => n.tuning = value,
-            }
-        }
-        let (id, v) = clap_value(expression, value);
-        self.push(Event::Expression {
-            time,
-            expression: id,
-            note_id: clap_id(lm_render::NoteId(note)),
-            channel,
-            key,
-            value: v,
-        });
-    }
-
-    /// The ramps' values in this block, every `RAMP_STEP` frames; the ones that end are dropped
-    fn run_ramps(&mut self, frames: u32) {
-        let mut k = 0;
-        while k < self.ramps.len() {
-            let r = self.ramps[k];
-            let mut t = r.offset;
-            let mut done = r.done;
-            while t < frames && done < r.length {
-                done = (done + RAMP_STEP).min(r.length);
-                let x = r.from + (r.to - r.from) * f64::from(done) / f64::from(r.length);
-                self.expression(t, r.note, r.expression, x);
-                t += RAMP_STEP;
-            }
-            if done >= r.length {
-                self.ramps.swap_remove(k);
-            } else {
-                self.ramps[k].done = done;
-                self.ramps[k].offset = t.saturating_sub(frames);
-                k += 1;
-            }
-        }
+        Ok(Clap { inst, ids, params, events: Vec::with_capacity(MAX_EVENTS), notes: Expressions::new() })
     }
 }
 
@@ -245,88 +168,44 @@ impl Plugin for Clap {
         transport: &Transport,
     ) {
         self.events.clear();
+        let (notes, out) = (&mut self.notes, &mut self.events);
         for (time, e) in events {
             let time = *time;
             match *e {
                 EventKind::NoteOn { note, channel, key, velocity } => {
-                    if self.notes.len() == self.notes.capacity() {
-                        self.notes.remove(0);
-                    }
-                    self.notes.push(Note {
-                        id: note.0,
-                        channel: i16::from(channel),
-                        key: i16::from(key),
-                        pan: 0.0,
-                        tuning: 0.0,
-                    });
-                    self.push(Event::NoteOn {
-                        time,
-                        note_id: clap_id(note),
-                        channel: i16::from(channel),
-                        key: i16::from(key),
-                        velocity: f64::from(velocity),
-                    });
+                    notes.note_on(note.0, i16::from(channel), i16::from(key));
+                    let (channel, key, velocity) = (i16::from(channel), i16::from(key), f64::from(velocity));
+                    push(out, Event::NoteOn { time, note_id: clap_id(note.0), channel, key, velocity });
                 }
                 EventKind::NoteOff { note, channel, key, velocity } => {
-                    self.notes.retain(|n| n.id != note.0);
-                    self.ramps.retain(|r| r.note != note.0);
-                    self.push(Event::NoteOff {
-                        time,
-                        note_id: clap_id(note),
-                        channel: i16::from(channel),
-                        key: i16::from(key),
-                        velocity: f64::from(velocity),
-                    });
+                    notes.note_off(note.0);
+                    let (channel, key, velocity) = (i16::from(channel), i16::from(key), f64::from(velocity));
+                    push(out, Event::NoteOff { time, note_id: clap_id(note.0), channel, key, velocity });
                 }
                 EventKind::Param { index, value } => {
                     if let Some(id) = self.ids.get(index as usize) {
-                        let id = *id;
-                        self.push(Event::Param { time, id, value: f64::from(value) });
+                        push(out, Event::Param { time, id: *id, value: f64::from(value) });
                     }
                 }
-                EventKind::Midi { bytes } => self.push(Event::Midi { time, data: bytes }),
+                EventKind::Midi { bytes } => push(out, Event::Midi { time, data: bytes }),
                 EventKind::NoteExpression { note, expression, value, ramp } => {
-                    self.ramps.retain(|r| !(r.note == note.0 && r.expression == expression));
-                    if ramp == 0 {
-                        self.expression(time, note.0, expression, f64::from(value));
-                    } else if self.ramps.len() < self.ramps.capacity() {
-                        let from = self.note(note.0).map_or(0.0, |n| match expression {
-                            Expression::Pan => n.pan,
-                            Expression::Tuning => n.tuning,
-                        });
-                        self.ramps.push(Ramp {
-                            note: note.0,
-                            expression,
-                            from,
-                            to: f64::from(value),
-                            done: 0,
-                            length: ramp,
-                            offset: time,
-                        });
-                    }
+                    notes.set(time, note.0, expression, f64::from(value), ramp, &mut |t, n, x, v| {
+                        push(out, expression_event(t, n, x, v))
+                    });
                 }
                 EventKind::AllNotesRelease => {
-                    self.notes.clear();
-                    self.ramps.clear();
-                    self.push(Event::NoteOff { time, note_id: -1, channel: -1, key: -1, velocity: 0.0 });
+                    notes.clear();
+                    push(out, Event::NoteOff { time, note_id: -1, channel: -1, key: -1, velocity: 0.0 });
                 }
                 EventKind::AllSoundOff => {
-                    self.notes.clear();
-                    self.ramps.clear();
-                    self.push(Event::Choke { time, note_id: -1, channel: -1, key: -1 });
+                    notes.clear();
+                    push(out, Event::Choke { time, note_id: -1, channel: -1, key: -1 });
                 }
             }
         }
-        self.run_ramps(frames as u32);
-        // In time order, stable (the ramps' values were added after the block's own events); no allocation
-        let ev = &mut self.events;
-        for i in 1..ev.len() {
-            let mut j = i;
-            while j > 0 && time_of(&ev[j - 1]) > time_of(&ev[j]) {
-                ev.swap(j - 1, j);
-                j -= 1;
-            }
-        }
+        notes.run(frames as u32, &mut |t, n, x, v| push(out, expression_event(t, n, x, v)));
+        // In time order, stable (the ramps' values were added after the block's own events)
+        sort_by_time(&mut self.events, time_of);
         let t = lm_sys_clap::Transport {
             playing: transport.playing,
             recording: transport.recording,

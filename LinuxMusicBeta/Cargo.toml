@@ -93,6 +93,7 @@ lm-sys-lilv = { path = "crates/lm-sys-lilv" }
 lm-sys-ipc = { path = "crates/lm-sys-ipc" }
 lm-sys-clap = { path = "crates/lm-sys-clap" }
 lm-sys-vst3 = { path = "crates/lm-sys-vst3" }
+lm-sys-vst3-test = { path = "crates/lm-sys-vst3-test" }
 lm-sys-nam = { path = "crates/lm-sys-nam" }
 lm-sys-resid = { path = "crates/lm-sys-resid" }
 lm-plugin-proxy = { path = "crates/lm-plugin-proxy" }

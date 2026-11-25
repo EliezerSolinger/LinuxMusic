@@ -3694,6 +3694,8 @@ dependencies = [
  "lm-sys-clap",
  "lm-sys-ipc",
  "lm-sys-lilv",
+ "lm-sys-vst3",
+ "lm-sys-vst3-test",
  "lm-time",
 ]
 
@@ -4069,6 +4071,13 @@ dependencies = [
  "lm-sys-vst3",
  "rtrb",
  "vst3",
+]
+
+[[package]]
+name = "lm-sys-vst3-test"
+version = "0.1.0"
+dependencies = [
+ "lm-sys-vst3",
 ]
 
 [[package]]

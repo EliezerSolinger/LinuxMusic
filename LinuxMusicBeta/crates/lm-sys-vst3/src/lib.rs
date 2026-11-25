@@ -1069,6 +1069,11 @@ impl Instance {
                 }
             }
         }
+        // A state with another latency: applied by a restart, as if the plugin had asked (many do not)
+        // SAFETY: main thread, active
+        if self.active && unsafe { self.processor.getLatencySamples() } != self.latency {
+            self.requests.restart.store(true, Ordering::Release);
+        }
         Ok(())
     }
 }

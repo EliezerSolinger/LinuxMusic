@@ -1279,11 +1279,37 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
     - "soltar todas" é um note-off curinga e "silêncio" é um choke curinga.
   - **Sem alocação** do lado do host no `process` (testado sob a armadilha). No helper, a lista de canais por
     bloco também deixou de alocar (vetores na pilha).
+- **VST3** (`lm-sys-vst3`, 25/11):
+  - **Bindings do crate `vst3` 0.3** (MIT OR Apache-2.0, gerados dos cabeçalhos do SDK; o SDK VST 3 é MIT desde
+    2025). É uma dependência nova do workspace. Escrever à mão as vtables COM de uma dúzia de interfaces seria a
+    alternativa, com mais risco e sem ganho.
+  - **Os objetos do host são classes COM nossas:**
+    - a aplicação, que fabrica `IMessage` e `IAttributeList` para as duas metades do plugin conversarem;
+    - o handler (`performEdit`, `restartComponent`, `setDirty`);
+    - as listas e filas de mudanças de parâmetro e a lista de eventos, de capacidade fixa e reaproveitadas;
+    - o stream do estado.
+    As edições do controller (a janela) chegam ao lado de áudio por um anel `rtrb`: vão ao processador no bloco
+    seguinte e ao núcleo como `ParamChanged`.
+  - **Parâmetros normalizados (0..1)**, chave `p<id>`. Pedir o valor "plain" ao controller seria chamar a thread
+    principal a partir do áudio. A exibição em unidades fica com a interface, pelo controller.
+  - **O controller acompanha os valores do host:** o que o host mudou é entregue a ele (`setParamNormalized`) na vez
+    da thread principal. Assim a janela mostra a automação, e plugins que reagem no controller (latência,
+    `restartComponent`) funcionam.
+  - **CC, pitch bend e pressão** viram mudanças de parâmetro pelo `IMidiMapping` do próprio plugin (o VST3 não tem
+    eventos MIDI de canal). "Silêncio" solta todas as notas guardadas (o VST3 não tem choke).
+  - **Estado** = `LMV3` + tamanho + estado do componente + estado do controller. Ao carregar, o controller recebe
+    também o estado do componente. Um estado que muda a latência pede restart mesmo que o plugin não peça.
+  - **Plugins de teste em Rust**, atrás da feature `testing`: um gain com controller separado que avisa o
+    processador por mensagem do host e pede restart, e um synth de objeto único com mapeamento MIDI. Para os testes
+    do helper eles viram biblioteca no crate `lm-sys-vst3-test` (`cdylib`). O `lm-plugin-host` proíbe `unsafe`, e
+    exportar símbolos (`no_mangle`) exige `unsafe`.
+  - **As expressões de nota de CLAP e VST3** (rampas em passos de 32 quadros, valor inicial da nota) ficam em
+    `lm-plugin-host/src/expressions.rs`, um só código para os dois formatos.
 - **Pendente:**
   - Plugin mono numa faixa estéreo processa só o canal 0. Falta rodar duas instâncias em dual mono.
   - Janela do plugin pelo helper (I-22): o protocolo tem `gui`; o LV2 precisa do suil/GTK.
   - Prioridade de tempo real na thread de áudio do helper (pelo `lm-sys-linux`).
-  - Os formatos VST3, LADSPA e VST2-wine; janela do CLAP (item 4).
+  - Os formatos LADSPA e VST2-wine; janelas de CLAP e VST3 (item 4).
 
 ## Do `lm-session`, continuação 2 (20/11)
 
