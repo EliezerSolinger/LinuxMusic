@@ -252,3 +252,30 @@ fn insert_and_remove_bar_move_what_follows() {
     s.run_action("arrange.remove_bar", &Value::object([("tick", Value::int(3840))])).expect("remove 2");
     assert_eq!((field(&s, before, "start"), field(&s, after, "start")), (0, 3840));
 }
+
+#[test]
+fn split_and_duplicate_a_selection_in_one_undo_step() {
+    let dir = TempDir::new("split-many");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    let a = add_synth_track(&mut s, "A");
+    let b = add_synth_track(&mut s, "B");
+    let x = add_notes(&mut s, a, &[(60, 0, 3840)]);
+    let y = add_notes(&mut s, b, &[(62, 0, 3840)]);
+    set(&mut s, y, "start", Value::int(960));
+    // An empty list: every item the tick is inside
+    let p = Value::object([("items", Value::list([])), ("tick", Value::int(1920))]);
+    s.run_action("arrange.split", &p).expect("split all");
+    assert_eq!((item_ids(&s, a).len(), item_ids(&s, b).len()), (2, 2));
+    s.document_mut().undo().expect("undo");
+    assert_eq!((item_ids(&s, a).len(), item_ids(&s, b).len()), (1, 1));
+    // The group x (0..3840) and y (960..4800) duplicated: it ends at 4800, the copies start on 7680 keeping 960
+    s.run_action("arrange.duplicate", &ids_param(&[x, y])).expect("dup");
+    assert_eq!(field(&s, item_ids(&s, a)[1], "start"), 7680);
+    assert_eq!(field(&s, item_ids(&s, b)[1], "start"), 8640);
+    s.document_mut().undo().expect("undo dup");
+    assert_eq!((item_ids(&s, a).len(), item_ids(&s, b).len()), (1, 1));
+    // As the legacy: whole bars from the start, so y (960..4800) lands on 4800, a quarter into its bar as it was
+    s.run_action("arrange.duplicate", &ids_param(&[y])).expect("dup y");
+    assert_eq!(field(&s, item_ids(&s, b)[1], "start"), 4800);
+}

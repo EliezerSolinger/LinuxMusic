@@ -641,64 +641,104 @@ impl FakePort {
             .ok_or_else(|| err("port.params"))
     }
 
-    /// Splits an item at `tick` (S, F-ARR-005): the right part is a pasted copy; each side keeps its notes and its
-    /// comp segments, shifted to its own start
+    /// `item` or `items` (the session's rule; for the split, `items: []` means every item)
+    fn items_param(params: &Value) -> Result<Vec<NodeId>> {
+        match params.get("items") {
+            Some(l) => l
+                .items()
+                .map(|v| v.as_text().and_then(|t| NodeId::parse(t).ok()).ok_or_else(|| err("port.params")))
+                .collect(),
+            None => Ok(vec![Self::item_param(params)?]),
+        }
+    }
+
+    /// Splits items at `tick` (S, F-ARR-005), one undo step: the right part is a pasted copy; each side keeps its
+    /// notes and its comp segments, shifted to its own start. The items the tick is not inside stay
     fn split(&mut self, params: &Value) -> Result<()> {
-        let item = Self::item_param(params)?;
+        let mut items = Self::items_param(params)?;
+        if items.is_empty() {
+            items = self
+                .doc
+                .root()
+                .get("tracks")
+                .map(|l| {
+                    l.items()
+                        .flat_map(|t| t.get("items").map(|l| l.items().collect::<Vec<_>>()).unwrap_or_default())
+                        .filter_map(|i| NodeId::parse(i.get("id")?.as_text()?).ok())
+                        .collect()
+                })
+                .unwrap_or_default();
+        }
         let at = params.get("tick").and_then(Value::as_int).ok_or_else(|| err("port.params"))?;
-        let v = self.doc.find(item).ok_or_else(|| err("port.no_such_node"))?;
-        let (start, length) =
-            (v.get("start").and_then(Value::as_int).unwrap_or(0), v.get("length").and_then(Value::as_int).unwrap_or(1));
-        let cut = at - start;
-        if cut <= 0 || cut >= length {
+        let mut plans = Vec::new();
+        for item in items {
+            let v = self.doc.find(item).ok_or_else(|| err("port.no_such_node"))?;
+            let (start, length) = (
+                v.get("start").and_then(Value::as_int).unwrap_or(0),
+                v.get("length").and_then(Value::as_int).unwrap_or(1),
+            );
+            let cut = at - start;
+            if cut <= 0 || cut >= length {
+                continue;
+            }
+            let loc = self.doc.loc(item).cloned().ok_or_else(|| err("port.no_such_node"))?;
+            plans.push((item, cut, length, loc, self.doc.copy(item)?));
+        }
+        if plans.is_empty() {
             return Err(err("arrange.split.outside"));
         }
-        let loc = self.doc.loc(item).cloned().ok_or_else(|| err("port.no_such_node"))?;
-        let clip = self.doc.copy(item)?;
         self.doc
             .transact(Label::new("Split"), |e| {
-                let index = e.find(loc.parent).and_then(|t| t.get("items")).map_or(0, |l| {
-                    l.items().position(|x| x.get("id").and_then(Value::as_text) == Some(&item.to_string())).unwrap_or(0)
-                        + 1
-                });
-                let right = e.paste(loc.parent, "items", index, &clip)?.ok_or_else(|| err("arrange.split.refused"))?;
-                let k = PathStep::key;
-                e.set(item, &[k("length")], Value::int(cut))?;
-                e.set(item, &[k("fadeOut")], Value::int(0))?;
-                e.set(right, &[k("start")], Value::int(at))?;
-                e.set(right, &[k("length")], Value::int(length - cut))?;
-                e.set(right, &[k("fadeIn")], Value::int(0))?;
-                // notes: each side keeps its own, the right's moved to its start
-                for (side, keep_left) in [(item, true), (right, false)] {
-                    let notes: Vec<(u64, i64)> = e
-                        .find(side)
-                        .and_then(|v| v.get("notes"))
-                        .map(|m| {
-                            m.entries()
-                                .filter_map(|(n, v)| Some((n.parse().ok()?, v.get("start").and_then(Value::as_int)?)))
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    for (n, s0) in notes {
-                        if (keep_left && s0 >= cut) || (!keep_left && s0 < cut) {
-                            e.remove_note(side, n)?;
-                        } else if !keep_left {
-                            e.set_note(side, n, &[k("start")], Value::int(s0 - cut))?;
+                for (item, cut, length, loc, clip) in &plans {
+                    let (item, cut, length) = (*item, *cut, *length);
+                    let index = e.find(loc.parent).and_then(|t| t.get("items")).map_or(0, |l| {
+                        l.items()
+                            .position(|x| x.get("id").and_then(Value::as_text) == Some(&item.to_string()))
+                            .unwrap_or(0)
+                            + 1
+                    });
+                    let right =
+                        e.paste(loc.parent, "items", index, clip)?.ok_or_else(|| err("arrange.split.refused"))?;
+                    let k = PathStep::key;
+                    e.set(item, &[k("length")], Value::int(cut))?;
+                    e.set(item, &[k("fadeOut")], Value::int(0))?;
+                    e.set(right, &[k("start")], Value::int(at))?;
+                    e.set(right, &[k("length")], Value::int(length - cut))?;
+                    e.set(right, &[k("fadeIn")], Value::int(0))?;
+                    // notes: each side keeps its own, the right's moved to its start
+                    for (side, keep_left) in [(item, true), (right, false)] {
+                        let notes: Vec<(u64, i64)> = e
+                            .find(side)
+                            .and_then(|v| v.get("notes"))
+                            .map(|m| {
+                                m.entries()
+                                    .filter_map(|(n, v)| {
+                                        Some((n.parse().ok()?, v.get("start").and_then(Value::as_int)?))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        for (n, s0) in notes {
+                            if (keep_left && s0 >= cut) || (!keep_left && s0 < cut) {
+                                e.remove_note(side, n)?;
+                            } else if !keep_left {
+                                e.set_note(side, n, &[k("start")], Value::int(s0 - cut))?;
+                            }
                         }
                     }
-                }
-                // the comp: clipped and shifted per side
-                for (side, from, to, shift) in [(item, 0, cut, 0), (right, cut, length, cut)] {
-                    let comp: Vec<Value> = e
-                        .find(side)
-                        .and_then(|v| v.get("comp"))
-                        .map(|l| l.items().cloned().collect())
-                        .unwrap_or_default();
-                    let kept = comp.into_iter().filter_map(|seg| {
-                        let (a, b) = (seg.get("from")?.as_int()?.max(from), seg.get("to")?.as_int()?.min(to));
-                        (b > a).then(|| seg.with("from", Value::int(a - shift)).with("to", Value::int(b - shift)))
-                    });
-                    e.set(side, &[k("comp")], Value::list(kept.collect::<Vec<_>>()))?;
+                    // the comp: clipped and shifted per side
+                    for (side, from, to, shift) in [(item, 0, cut, 0), (right, cut, length, cut)] {
+                        let comp: Vec<Value> = e
+                            .find(side)
+                            .and_then(|v| v.get("comp"))
+                            .map(|l| l.items().cloned().collect())
+                            .unwrap_or_default();
+                        let kept = comp.into_iter().filter_map(|seg| {
+                            let (a, b) = (seg.get("from")?.as_int()?.max(from), seg.get("to")?.as_int()?.min(to));
+                            (b > a).then(|| seg.with("from", Value::int(a - shift)).with("to", Value::int(b - shift)))
+                        });
+                        e.set(side, &[k("comp")], Value::list(kept.collect::<Vec<_>>()))?;
+                    }
                 }
                 Ok(())
             })
@@ -754,20 +794,33 @@ impl FakePort {
             .map(|_| ())
     }
 
-    /// Ctrl+D: a copy right after the item, on the next bar line (F-ARR-007)
+    /// Ctrl+D: copies of the items as a group, moved by whole bars to start at or after the group's end (F-ARR-006);
+    /// one undo step
     fn duplicate(&mut self, params: &Value) -> Result<()> {
-        let item = Self::item_param(params)?;
-        let v = self.doc.find(item).ok_or_else(|| err("port.no_such_node"))?;
-        let end =
-            v.get("start").and_then(Value::as_int).unwrap_or(0) + v.get("length").and_then(Value::as_int).unwrap_or(1);
-        let next_bar = (end + BAR - 1) / BAR * BAR;
-        let loc = self.doc.loc(item).cloned().ok_or_else(|| err("port.no_such_node"))?;
-        let clip = self.doc.copy(item)?;
+        let mut group = Vec::new();
+        let (mut first, mut end) = (i64::MAX, i64::MIN);
+        for item in Self::items_param(params)? {
+            let v = self.doc.find(item).ok_or_else(|| err("port.no_such_node"))?;
+            let start = v.get("start").and_then(Value::as_int).unwrap_or(0);
+            first = first.min(start);
+            end = end.max(start + v.get("length").and_then(Value::as_int).unwrap_or(1));
+            let loc = self.doc.loc(item).cloned().ok_or_else(|| err("port.no_such_node"))?;
+            group.push((start, loc, self.doc.copy(item)?));
+        }
+        if group.is_empty() {
+            return Err(err("arrange.copy.empty"));
+        }
+        // whole bars from the group's start, at least one (the legacy's Ctrl+D)
+        let offset = ((end - first + BAR - 1) / BAR).max(1) * BAR;
         self.doc
             .transact(Label::new("Duplicate"), |e| {
-                let n = e.find(loc.parent).and_then(|t| t.get("items")).map_or(0, Value::len);
-                let copy = e.paste(loc.parent, "items", n, &clip)?.ok_or_else(|| err("arrange.duplicate.refused"))?;
-                e.set(copy, &[PathStep::key("start")], Value::int(next_bar))
+                for (start, loc, clip) in &group {
+                    let n = e.find(loc.parent).and_then(|t| t.get("items")).map_or(0, Value::len);
+                    let copy =
+                        e.paste(loc.parent, "items", n, clip)?.ok_or_else(|| err("arrange.duplicate.refused"))?;
+                    e.set(copy, &[PathStep::key("start")], Value::int(start + offset))?;
+                }
+                Ok(())
             })
             .map(|_| ())
     }
