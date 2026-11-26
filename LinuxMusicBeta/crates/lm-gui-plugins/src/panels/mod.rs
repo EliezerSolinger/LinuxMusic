@@ -23,6 +23,7 @@ pub mod shapers;
 pub mod sid;
 pub mod slewdistortion;
 pub mod tripleoscillator;
+pub mod watsyn;
 
 type SpecFn = fn() -> &'static PanelSpec;
 
@@ -50,6 +51,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (lomm::ID, || &lomm::PANEL),
     (crossovereq::ID, || &crossovereq::PANEL),
     (delay::ID, || &delay::PANEL),
+    (watsyn::ID, || &watsyn::PANEL),
     (audiofileprocessor::ID, || &audiofileprocessor::PANEL),
     (patman::ID, || &patman::PANEL),
     (slewdistortion::ID, || &slewdistortion::PANEL),
@@ -78,6 +80,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     lomm::ASSETS,
     crossovereq::ASSETS,
     delay::ASSETS,
+    watsyn::ASSETS,
     audiofileprocessor::ASSETS,
     patman::ASSETS,
     slewdistortion::ASSETS,

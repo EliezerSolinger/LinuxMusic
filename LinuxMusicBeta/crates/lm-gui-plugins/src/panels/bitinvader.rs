@@ -2,8 +2,8 @@
 //! knob, the 204×134 graph over `wavegraph.png` (as many samples as the length), the preset wave buttons that fill
 //! the graph, smooth, and the three LEDs.
 //!
-//! Not ported yet: the user-defined wave button (it loads a sample file into the graph; the new graph's field is a
-//! list of reals, not a resource, and no panel action reads a file into a list yet).
+//! The user-defined wave button asks for an audio file and sends its bytes to the core's `bitinvader.load_wave`
+//! action (`{node, field, bytes}`), which turns the file into the graph's samples (the legacy `loadSample`).
 
 use std::sync::LazyLock;
 
@@ -22,7 +22,12 @@ static ARTWORK: Asset = asset!("bitinvader/artwork.png");
 static WAVEGRAPH: Asset = asset!("bitinvader/wavegraph.png");
 static SMOOTH_ON: Asset = asset!("bitinvader/smooth_active.png");
 static SMOOTH_OFF: Asset = asset!("bitinvader/smooth_inactive.png");
-pub static ASSETS: &[&Asset] = &[&ARTWORK, &WAVEGRAPH, &SMOOTH_ON, &SMOOTH_OFF];
+static USR_ON: Asset = asset!("bitinvader/usr_wave_active.png");
+static USR_OFF: Asset = asset!("bitinvader/usr_wave_inactive.png");
+pub static ASSETS: &[&Asset] = &[&ARTWORK, &WAVEGRAPH, &SMOOTH_ON, &SMOOTH_OFF, &USR_ON, &USR_OFF];
+
+/// The core's action that loads the graph from an audio file
+pub const LOAD_ACTION: &str = "bitinvader.load_wave";
 
 /// The wave and its length
 fn wave(cx: &PressCx<'_>) -> (Vec<f64>, usize) {
@@ -101,6 +106,16 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             w(saw, "saw", 159.0, &lmms::SAW_WAVE_ACTIVE, &lmms::SAW_WAVE_INACTIVE, "Saw wave"),
             w(square, "square", 173.0, &lmms::SQUARE_WAVE_ACTIVE, &lmms::SQUARE_WAVE_INACTIVE, "Square wave"),
             w(noise, "noise", 187.0, &lmms::WHITE_NOISE_WAVE_ACTIVE, &lmms::WHITE_NOISE_WAVE_INACTIVE, "White noise"),
+            button(
+                Bind::Open { field: "wave", action: Some(LOAD_ACTION), extensions: &[] },
+                "userWave",
+                201.0,
+                205.0,
+                &USR_ON,
+                &USR_OFF,
+                "User-defined wave",
+            )
+            .tip("User-defined wave"),
             w(smooth, "smooth", 215.0, &SMOOTH_ON, &SMOOTH_OFF, "Smooth waveform"),
             led(
                 Bind::Flag { field: "interpolation" },

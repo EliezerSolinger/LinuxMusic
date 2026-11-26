@@ -188,6 +188,17 @@ fn exercise(o: &mut Opened<'_>) {
     let b = o.cx.debug_bounds(leak(format!("panel-{}", spec.plugin))).expect("the panel is drawn");
     assert_eq!((b.size.width, b.size.height), (px(spec.size.0), px(spec.size.1)), "the legacy size");
 
+    // the push buttons that reshape a graph must have something to change: every graph starts as a ramp
+    for f in &schema.fields {
+        if let lm_port::FieldKind::List(inner) = &f.kind
+            && matches!(**inner, lm_port::FieldKind::Real { .. })
+            && let Some(len) = f.default.as_ref().map(Value::len).filter(|n| *n > 1)
+            && spec.controls.iter().any(|c| matches!(&c.kind, Kind::Graph(g) if g.field == f.key))
+        {
+            let ramp = Value::list((0..len).map(|i| Value::real(i as f64 / len as f64 * 1.8 - 0.9).unwrap()));
+            set_field(o, f.key, ramp);
+        }
+    }
     for (i, c) in spec.controls.iter().enumerate() {
         let id = c.id;
         if let Some(v) = c.view {
@@ -757,5 +768,11 @@ fn audiofileprocessor(cx: &mut TestAppContext) {
 #[gpui::test]
 fn patman(cx: &mut TestAppContext) {
     let mut o = open(cx, &[(&lm_plugins_instruments::patman::DESCRIPTOR, true)], "patman");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn watsyn(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::watsyn::DESCRIPTOR, true)], "watsyn");
     exercise(&mut o);
 }
