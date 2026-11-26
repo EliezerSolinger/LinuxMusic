@@ -22,7 +22,9 @@
 
 pub mod amp;
 pub mod convolver;
-pub mod fft;
+
+/// The FFT lives in `lm-dsp` (the Spectrum Analyzer shares it); the convolver's path stays
+pub use lm_dsp::fft;
 
 use std::any::Any;
 

@@ -1,4 +1,4 @@
-//! The FFT of the convolver: a real signal of a fixed power-of-two length to its spectrum (bins 0 to N/2) and back,
+//! The FFT (moved from the convolver of Amp & IR, which keeps using it, and shared with the Spectrum Analyzer): a real signal of a fixed power-of-two length to its spectrum (bins 0 to N/2) and back,
 //! unnormalised as FFTW's `r2c` and `c2r` (the legacy convolver's), in single precision.
 //!
 //! An iterative radix-2 transform of the complex signal of half the length (the real signal's even and odd samples
@@ -6,7 +6,7 @@
 //! The twiddle factors are worked out in double precision when it is made. Made off the audio thread (it allocates
 //! its tables); [`RealFft::forward`] and [`RealFft::inverse`] neither allocate nor lock.
 
-use std::f64::consts::PI;
+use crate::math::{cos, cosf, f64c::PI, sin};
 
 /// A complex number in single precision
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -68,8 +68,8 @@ impl RealFft {
         let half = len / 2;
         let angle = |k: usize, n: usize| -2.0 * PI * k as f64 / n as f64;
         let twiddles =
-            (0..half / 2).map(|k| Complex::new(angle(k, half).cos() as f32, angle(k, half).sin() as f32)).collect();
-        let split = (0..=half).map(|k| Complex::new(angle(k, len).cos() as f32, angle(k, len).sin() as f32)).collect();
+            (0..half / 2).map(|k| Complex::new(cos(angle(k, half)) as f32, sin(angle(k, half)) as f32)).collect();
+        let split = (0..=half).map(|k| Complex::new(cos(angle(k, len)) as f32, sin(angle(k, len)) as f32)).collect();
         let bits = half.trailing_zeros();
         let reversed = (0..half as u32).map(|i| if bits == 0 { 0 } else { i.reverse_bits() >> (32 - bits) }).collect();
         Self { len, twiddles, split, reversed, work: vec![Complex::ZERO; half] }
@@ -154,6 +154,58 @@ impl RealFft {
     }
 }
 
+/// The analyzer's window functions (`FFTWindow` of the legacy `fft_helpers`)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Window {
+    Rectangular,
+    BlackmanHarris,
+    Hamming,
+    Hanning,
+}
+
+impl Window {
+    pub const ALL: [Window; 4] = [Window::Rectangular, Window::BlackmanHarris, Window::Hamming, Window::Hanning];
+
+    /// The key of the choice field
+    pub fn key(self) -> &'static str {
+        match self {
+            Window::Rectangular => "rectangular",
+            Window::BlackmanHarris => "blackmanHarris",
+            Window::Hamming => "hamming",
+            Window::Hanning => "hanning",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|w| w.key() == key)
+    }
+
+    /// `precomputeWindow` (normalized): the window's coefficients, divided by their mean so that a steady sine keeps
+    /// its amplitude; the rectangular is all ones
+    pub fn coefficients(self, length: usize) -> Vec<f32> {
+        let mut w = vec![1.0f32; length];
+        let (a0, a1, a2, a3) = match self {
+            Window::Rectangular => return w,
+            Window::BlackmanHarris => (0.35875f32, 0.48829f32, 0.14128f32, 0.01168f32),
+            Window::Hamming => (0.54f32, 1.0 - 0.54f32, 0.0, 0.0),
+            Window::Hanning => (0.5f32, 0.5f32, 0.0, 0.0),
+        };
+        let pi = core::f32::consts::PI;
+        let span = length as f32 - 1.0;
+        let mut gain = 0.0f32;
+        for (i, v) in w.iter_mut().enumerate() {
+            let x = i as f32;
+            *v = a0 - a1 * cosf(2.0 * pi * x / span) + a2 * cosf(4.0 * pi * x / span) - a3 * cosf(6.0 * pi * x / span);
+            gain += *v;
+        }
+        gain /= length as f32;
+        for v in &mut w {
+            *v /= gain;
+        }
+        w
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,7 +217,7 @@ mod tests {
             .map(|k| {
                 x.iter().enumerate().fold((0.0, 0.0), |(re, im), (j, &v)| {
                     let a = -2.0 * PI * (k * j) as f64 / n as f64;
-                    (re + f64::from(v) * a.cos(), im + f64::from(v) * a.sin())
+                    (re + f64::from(v) * cos(a), im + f64::from(v) * sin(a))
                 })
             })
             .collect()
@@ -173,6 +225,17 @@ mod tests {
 
     fn signal(n: usize) -> Vec<f32> {
         (0..n).map(|i| ((i * 7919 + 13) % 101) as f32 / 50.0 - 1.0).collect()
+    }
+
+    #[test]
+    fn windows_keep_a_steady_sine_at_its_amplitude() {
+        for window in Window::ALL {
+            let w = window.coefficients(256);
+            let mean = w.iter().sum::<f32>() / 256.0;
+            assert!((mean - 1.0).abs() < 1.0e-4, "{window:?}");
+            assert_eq!(Window::from_key(window.key()), Some(window));
+        }
+        assert!(Window::Hanning.coefficients(64)[0].abs() < 1.0e-6);
     }
 
     #[test]

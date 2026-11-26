@@ -40,6 +40,8 @@
 //! - [`slicert`]: the SlicerT's slices;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
 //!
+//! - [`fft`]: the real FFT (the convolver's and the Spectrum Analyzer's), and the analyzer's windows.
+//!
 //! The effects of the validation plugins:
 //! - [`compressor`]: the Compressor;
 //! - [`delay`]: the Delay;
@@ -73,6 +75,7 @@ pub mod dynamics;
 pub mod dynamics_processor;
 pub mod envelope;
 pub mod eq;
+pub mod fft;
 pub mod filter_effects;
 pub mod filters;
 pub mod frequency_shifter;
