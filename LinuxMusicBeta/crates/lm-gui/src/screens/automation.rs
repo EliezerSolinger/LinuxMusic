@@ -1342,7 +1342,7 @@ impl Render for AutomationEditor {
                     .items_center()
                     .justify_center()
                     .text_color(c(THEME.text2))
-                    .child(tr("Double-click on an automation lane to open it here"))
+                    .child(tr("No automation lane"))
                     .into_any_element(),
                 // a parameter the core gives no law for is not drawn nor edited (one law: the core's)
                 Some(lane) if lane.range.is_none() => div()
@@ -1351,7 +1351,7 @@ impl Render for AutomationEditor {
                     .items_center()
                     .justify_center()
                     .text_color(c(THEME.red))
-                    .child(tr("The core gives no range for this parameter: the lane cannot be drawn"))
+                    .child(tr("No range for this parameter"))
                     .into_any_element(),
                 Some(lane) => div()
                     .flex_1()

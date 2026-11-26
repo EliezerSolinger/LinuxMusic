@@ -591,9 +591,7 @@ impl Render for StepEditor {
         let groups: Vec<Group> = self.items.iter().filter_map(|id| self.group(*id, cx)).collect();
         let mut list = div().flex().flex_col().mt(px(-self.scroll_y));
         if groups.is_empty() {
-            list = list.child(
-                div().p(px(12.)).text_color(c(THEME.text2)).child(tr("Choose the items to edit in the list above")),
-            );
+            list = list.child(div().p(px(12.)).text_color(c(THEME.text2)).child(tr("No items")));
         }
         for g in groups {
             list = list.child(self.render_group(g, tick, cx));

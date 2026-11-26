@@ -1731,7 +1731,7 @@ impl Render for PianoRoll {
                     .items_center()
                     .justify_center()
                     .text_color(c(THEME.text2))
-                    .child(tr("Double-click on a MIDI item in the Composition to open it here"))
+                    .child(tr("No MIDI item"))
                     .into_any_element(),
                 Some(clip) => div()
                     .flex_1()
