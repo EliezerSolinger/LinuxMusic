@@ -991,6 +991,7 @@ impl Session {
             changed = true;
             self.apply_params(&diff);
             self.midi_diff(&diff);
+            self.slicert_auto(&diff);
             if diff.structural {
                 self.needs_compile = true;
             }
@@ -1452,6 +1453,11 @@ impl Session {
             }
             ("plugins.state" | "plugins.state.save", r) => self.states_finished(kind, r),
             ("midi_import", Ok(result)) => self.midi_import_finished(result),
+            ("slicert.analyze", Ok(result)) => {
+                if let Err(e) = self.slicert_finished(&result) {
+                    self.notices.error(&e, Some(target), None);
+                }
+            }
             ("paste", Ok(list)) => {
                 for r in list.items().filter_map(Value::as_resource).cloned().collect::<Vec<_>>() {
                     self.request(&r);
