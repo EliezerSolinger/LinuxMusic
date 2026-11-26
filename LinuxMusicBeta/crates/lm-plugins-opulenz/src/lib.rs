@@ -3,7 +3,7 @@
 //!
 //! Its state, version 1 (the legacy saved names in brackets):
 //! - per operator `n` (1, the modulator, and 2, the carrier): `op<n>Attack`, `op<n>Decay`, `op<n>Sustain`,
-//!   `op<n>Release` (0–15; 14/14/3/10 and 1/3/14/12) [op<n>_a, _d, _s, _r], `op<n>Level` (0–63; 62 and 63) [_lvl],
+//!   `op<n>Release` (0–15; 14/14/3/10 and 1/3/14/12) [`op<n>_a`, `_d`, `_s`, `_r`], `op<n>Level` (0–63; 62 and 63) [`_lvl`],
 //!   `op<n>LevelScaling` (0–3, 0) [_scale], `op<n>Multiplier` (0–15; 0 and 1) [_mul], and the switches
 //!   `op<n>KeyScalingRate` [_ksr], `op<n>Percussive` [_perc], `op<n>Tremolo` (on for 1) [_trem], `op<n>Vibrato` (on
 //!   for 2) [_vib]; field `op<n>Waveform` (`sine`, `half-sine`, `abs-sine`, `quarter-sine`; `sine`) [_waveform];

@@ -893,7 +893,7 @@ mod linux {
         }
     }
 
-    /// The raw MIDI devices present (P-16): their identity (card id, "MIDI <device>") and file
+    /// The raw MIDI devices present (P-16): their identity (card id, `"MIDI <device>"`) and file
     pub fn raw_devices() -> Vec<(PortId, PathBuf)> {
         let mut out = Vec::new();
         let Ok(entries) = std::fs::read_dir("/dev/snd") else { return out };

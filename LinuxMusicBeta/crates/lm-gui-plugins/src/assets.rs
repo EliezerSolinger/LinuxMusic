@@ -1,6 +1,6 @@
 //! The legacy artwork, embedded. Every file under `assets/` is a copy of a legacy file (GPL like the rest; the
 //! third-party ones only with a recorded permission, docs/plugins-visual.md): `assets/lmms/` the theme's widget
-//! pixmaps (legado/data/themes/default), `assets/<plugin>/` each plugin's own images (legado/plugins/<Plugin>).
+//! pixmaps (legado/data/themes/default), `assets/<plugin>/` each plugin's own images (`legado/plugins/<Plugin>`).
 //!
 //! A PNG is decoded once, on first use, for the CPU painter (`raster`); the panels' backgrounds go to GPUI as they are
 //! (PNG or SVG), which draws them at the screen's scale.

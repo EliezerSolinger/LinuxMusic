@@ -863,7 +863,7 @@ mod reserve {
         const F_ALLOCATEALL: u32 = 0x4;
         const F_PEOFPOSMODE: c_int = 3;
 
-        /// `fstore_t` of <sys/fcntl.h>
+        /// `fstore_t` of `<sys/fcntl.h>`
         #[repr(C)]
         struct Fstore {
             fst_flags: u32,

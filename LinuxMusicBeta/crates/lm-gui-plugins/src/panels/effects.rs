@@ -1,5 +1,5 @@
 //! The legacy effects whose dialogs were knobs on their own artwork (`artwork.svg`): Bitcrush, BassBooster,
-//! ReverbSC, Flanger, Amplifier, StereoMatrix and DualFilter (legado/plugins/<Effect>/<Effect>ControlDialog.cpp;
+//! ReverbSC, Flanger, Amplifier, StereoMatrix and DualFilter (`legado/plugins/<Effect>/<Effect>ControlDialog.cpp`;
 //! docs/plugins-visual.md has every number).
 //!
 //! Dialogs placed by a Qt layout (BassBooster, ReverbSC, Flanger, Amplifier, StereoMatrix): the legacy positions
