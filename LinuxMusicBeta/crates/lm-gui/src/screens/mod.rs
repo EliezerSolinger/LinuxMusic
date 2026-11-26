@@ -17,6 +17,7 @@ use crate::workspace::Workspace;
 pub mod about;
 pub mod automation;
 pub mod browser;
+pub mod browser_drop;
 pub mod effect;
 pub mod export;
 pub mod files;

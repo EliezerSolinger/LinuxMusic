@@ -520,17 +520,17 @@ a ação contam como parcial.
 | Id | Funcionalidade | Estado | O que falta | Onde |
 |---|---|---|---|---|
 | F-BRW-001 | Páginas do navegador | feito |  | lm-port/src/browse.rs,lm-session/src/port.rs,lm-gui/src/screens/browser.rs |
-| F-BRW-002 | Pastas do usuário e de fábrica juntas | parcial | a sessão nunca devolve pastas de fábrica (factory sempre falso nas pastas); não junta subpastas iguais; F5 e a linha "Arquivos de fábrica" existem na GUI | lm-session/src/port.rs,lm-gui/src/screens/browser.rs |
-| F-BRW-003 | Tipos reconhecidos | parcial | reconhece áudio (wav flac ogg mp3 aif aiff rf64), MIDI, projetos e presets JSON; faltam sf2/sf3, pat, gig, nam, xiz, lv2, VST, ds, voc etc. | lm-session/src/port.rs,lm-gui/src/screens/files.rs |
-| F-BRW-004 | Busca | parcial | busca recursiva em segundo plano e cancelável, só em Samples, Projetos e Arquivos do projeto; sem separar palavras, sem frases entre aspas, sem barra de progresso na busca | lm-session/src/port.rs,lm-gui/src/screens/browser.rs |
-| F-BRW-005 | Prévia | parcial | só prévia de áudio (ao clicar e com ↑/↓); sem prévia de SoundFont, presets, MIDI; prepare_preview recusa o que não é áudio; "até o fim" (previewsToEnd) sem consumidor | lm-session/src/port.rs,lm-gui/src/screens/browser.rs |
-| F-BRW-006 | Enter e duplo clique | parcial | Enter envia plugin, preset ou projeto; amostra/áudio/MIDI não vão para faixa nova nem para o arranjo; sem Shift+Enter nem duplo clique por tipo | lm-gui/src/screens/browser.rs,lm-gui/src/actions.rs |
-| F-BRW-007 | Arrastar do navegador | parcial | arrasta plugin e preset para a janela do instrumento e do efeito; soltar entradas do navegador no arranjo/faixa não existe (só arquivos do sistema) | lm-gui/src/screens/browser.rs,lm-gui/src/pages/composition.rs |
+| F-BRW-002 | Pastas do usuário e de fábrica juntas | feito | pastas de fábrica (`LINUXMUSIC_FACTORY`, `factory` ao lado do programa, `../share/linuxmusic/factory`) juntam-se às do usuário pelo nome (amostras, projetos, presets); `tools/factory.sh` empacota | lm-session/src/port.rs,lm-session/src/browser.rs |
+| F-BRW-003 | Tipos reconhecidos | feito | `browser::file_type`: áudio, MIDI, sf2/sf3, sfz, pat, gig, nam, ds, voc, lv2, vst3, clap; `info.type`; a tabela `OPENED_BY` liga o tipo ao plugin (sampler) | lm-session/src/browser.rs |
+| F-BRW-004 | Busca | feito | índice em segundo plano (Operation, incremental por mtime, em `browser-index.json` na pasta de dados) e busca instantânea: palavras, frases entre aspas, `type:`, `tag:`/`#`, `is:fav`; vista Índice com filtros no navegador. Falta: barra de progresso da indexação, ação para editar etiquetas do usuário | lm-session/src/index.rs,lm-gui/src/screens/browser.rs |
+| F-BRW-005 | Prévia | parcial | áudio, SoundFont, preset (instrumento) e MIDI (num SoundFont) renderizados num worker e tocados pelo motor de prévia; o MIDI usa `defaultSoundFont` ou o primeiro do índice; prévia de efeito e "até o fim" faltam | lm-session/src/preview.rs,lm-session/src/port.rs |
+| F-BRW-006 | Enter e duplo clique | parcial | Enter envia plugin, preset, projeto, amostra/MIDI (faixa nova no cursor) e banco (instrumento que o abre); o Sampler ainda não existe, então o arquivo não é carregado nele; sem Shift+Enter | lm-gui/src/screens/browser.rs |
+| F-BRW-007 | Arrastar do navegador | feito | soltar no arranjo ou numa faixa: áudio (item), MIDI (importa), preset (carrega na faixa), instrumento (troca) | lm-gui/src/screens/browser_drop.rs,lm-gui/src/pages/composition.rs |
 | F-BRW-008 | Menu do arquivo | parcial | tem caminho, mostrar no gerenciador, favoritar e enviar à faixa ativa; faltam faixa de instrumento/sampler/amostra/SlicerT novos e abrir pasta no gerenciador | lm-gui/src/screens/browser.rs,lm-session/src/core_actions.rs |
-| F-BRW-009 | Instrumentos | parcial | lista plana dos plugins com busca e arrasto; sem árvore por categoria (a categoria é sempre "internal"), sem subplugins nem descrição na dica | lm-session/src/port.rs,lm-gui/src/screens/browser.rs |
-| F-BRW-010 | Efeitos | parcial | lista plana dos efeitos arrastável e enviável ao canal; sem categorias de efeito | lm-session/src/port.rs,lm-gui/src/screens/browser.rs |
-| F-BRW-011 | Miniaturas de onda | parcial | o núcleo gera os picos (lm-io, peaks); o navegador não desenha miniaturas de onda | lm-session/src/port.rs,lm-gui/src/screens/browser.rs |
-| F-BRW-012 | Conteúdo de fábrica | falta | não há conteúdo de fábrica (projetos, modelos, presets, amostras, kits) no formato novo; sem conversor (P-09) | lm-session/src/port.rs |
+| F-BRW-009 | Instrumentos | parcial | árvore por categoria (sintetizadores, chip, samplers, terceiros); sem subplugins nem descrição na dica | lm-session/src/port.rs,lm-session/src/browser.rs |
+| F-BRW-010 | Efeitos | feito | categorias de efeito (dinâmica, filtros, distorção, tempo, estéreo, afinação, terceiros) | lm-session/src/port.rs |
+| F-BRW-011 | Miniaturas de onda | feito | a prévia mostra a onda (serviço de picos) na linha de baixo | lm-gui/src/screens/browser.rs |
+| F-BRW-012 | Conteúdo de fábrica | parcial | as pastas de fábrica são lidas e indexadas; as amostras do legado empacotam-se com `tools/factory.sh`; os presets de fábrica em JSON (conversor de desenvolvimento) ainda não existem | tools/factory.sh |
 
 ## F-GER: Outros
 

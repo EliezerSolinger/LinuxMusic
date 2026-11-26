@@ -17,7 +17,7 @@ use gpui::{
 };
 use gpui_component::Sizable;
 use gpui_component::input::{Input, InputEvent, InputState};
-use lm_port::{BrowseEntry, BrowsePage, EditOp, EntryId, EntryKind, Pending, Ref, ScanKind, Target, Value};
+use lm_port::{BrowseEntry, BrowsePage, EditOp, EntryId, EntryKind, Pending, Ref, RequestId, ScanKind, Target, Value};
 
 use super::ScreenCx;
 use super::instrument::{apply_ops, cancel_target, run_action};
@@ -50,6 +50,11 @@ struct BrowserState {
     page: Option<BrowsePage>,
     open: HashSet<EntryId>,
     hidden: bool,
+    /// The index view (search over everything) instead of the folders
+    index: bool,
+    /// The type filters of the index view (`type:` words) and the favourites
+    filters: Vec<&'static str>,
+    fav: bool,
 }
 impl Global for BrowserState {}
 
@@ -77,7 +82,12 @@ fn page_title(p: BrowsePage) -> &'static str {
 
 /// The legacy's file icons by kind (FileBrowser's): an open or closed folder, a sample, a MIDI file, a preset, a
 /// project, a plugin
-fn kind_icon(k: EntryKind, open: bool) -> &'static str {
+fn kind_icon_of(k: EntryKind, open: bool, ty: Option<&str>) -> &'static str {
+    match (k, ty) {
+        (EntryKind::Other, Some("soundfont" | "sfz" | "gig" | "patch")) => return "soundfont_file",
+        (EntryKind::Other, Some("drumsynth" | "voc" | "nam")) => return "sample_file",
+        _ => {}
+    }
     match k {
         EntryKind::Folder if open => "folder_opened",
         EntryKind::Folder => "folder",
@@ -92,6 +102,46 @@ fn kind_icon(k: EntryKind, open: bool) -> &'static str {
 
 const ROW_H: f32 = 18.0;
 
+/// The type filters of the index view: the word the search takes, and the chip's label
+const FILTERS: [(&str, &str); 6] = [
+    ("instruments", "Instruments"),
+    ("effects", "Effects"),
+    ("samples", "Samples"),
+    ("presets", "Presets"),
+    ("midi", "MIDI"),
+    ("projects", "Projects"),
+];
+
+/// The text the core's search gets: the filters, the favourites and what was typed
+pub fn compose_query(filters: &[&str], fav: bool, typed: &str) -> String {
+    let mut q = String::new();
+    for f in filters {
+        q.push_str("type:");
+        q.push_str(f);
+        q.push(' ');
+    }
+    if fav {
+        q.push_str("is:fav ");
+    }
+    q.push_str(typed.trim());
+    q.trim().to_owned()
+}
+
+/// The waveform thumbnail's bars: `width` columns of (min, max) from the peak pairs, each in -1..1
+pub fn thumb_columns(pairs: &[(i16, i16)], width: usize) -> Vec<(f32, f32)> {
+    if pairs.is_empty() || width == 0 {
+        return Vec::new();
+    }
+    (0..width)
+        .map(|x| {
+            let a = x * pairs.len() / width;
+            let b = (((x + 1) * pairs.len()).div_ceil(width)).clamp(a + 1, pairs.len());
+            let (lo, hi) = pairs[a..b].iter().fold((i16::MAX, i16::MIN), |(l, h), p| (l.min(p.0), h.max(p.1)));
+            (f32::from(lo) / 32768.0, f32::from(hi) / 32768.0)
+        })
+        .collect()
+}
+
 pub struct Browser {
     scx: ScreenCx,
     page: BrowsePage,
@@ -103,6 +153,13 @@ pub struct Browser {
     sel: Option<EntryId>,
     /// the preview being prepared or playing
     preview: Option<(BrowseEntry, Option<lm_port::Preview>)>,
+    /// the preview being prepared, by request
+    preview_req: Option<RequestId>,
+    /// listings and the search that wait for the core
+    waiting: HashMap<Option<EntryId>, RequestId>,
+    search_req: Option<RequestId>,
+    /// the waveform of the preview: its pairs, for the thumbnail
+    thumb: Option<(EntryId, Arc<[(i16, i16)]>)>,
     menu: Option<(BrowseEntry, Point<Pixels>)>,
     focus: FocusHandle,
     _subs: Vec<Subscription>,
@@ -128,6 +185,10 @@ impl Browser {
             children: HashMap::new(),
             sel: None,
             preview: None,
+            preview_req: None,
+            waiting: HashMap::new(),
+            search_req: None,
+            thumb: None,
             menu: None,
             focus: cx.focus_handle(),
             _subs: vec![sub, observe],
@@ -142,10 +203,13 @@ impl Browser {
         cx.notify();
     }
 
-    /// A folder's children (or the page's top): asked to the port; `Waiting` asks again on the next frame
+    /// A folder's children (or the page's top): asked to the port; a `Waiting` answer is taken in `poll`
     fn children_of(&mut self, parent: Option<EntryId>, cx: &mut Context<Self>) -> Vec<BrowseEntry> {
         if let Some(v) = self.children.get(&parent) {
             return v.clone();
+        }
+        if self.waiting.contains_key(&parent) {
+            return Vec::new();
         }
         let (page, hidden) = (self.page, cx.try_global::<BrowserState>().is_some_and(|s| s.hidden));
         match self.scx.core.update(cx, |core, _| core.port_mut().browse(page, parent, hidden)) {
@@ -153,17 +217,78 @@ impl Browser {
                 self.children.insert(parent, v.clone());
                 v
             }
+            Pending::Waiting(id) => {
+                self.waiting.insert(parent, id);
+                Vec::new()
+            }
             _ => Vec::new(),
         }
     }
 
+    /// The answers that came from the core: listings, the search, the preview
+    fn poll(&mut self, cx: &mut Context<Self>) {
+        let core = self.scx.core.clone();
+        let ids: Vec<(Option<EntryId>, RequestId)> = self.waiting.iter().map(|(k, v)| (*k, *v)).collect();
+        for (parent, id) in ids {
+            if let Some(answer) = core.update(cx, |c, _| c.take_entries(id)) {
+                self.waiting.remove(&parent);
+                self.children.insert(parent, answer.unwrap_or_default());
+            }
+        }
+        if let Some(id) = self.search_req
+            && let Some(answer) = core.update(cx, |c, _| c.take_entries(id))
+        {
+            self.search_req = None;
+            self.results = Some(answer.unwrap_or_default());
+        }
+        if let Some(id) = self.preview_req
+            && let Some(answer) = core.update(cx, |c, _| c.take_preview(id))
+        {
+            self.preview_req = None;
+            if let Ok(p) = answer {
+                let entry = p.entry;
+                self.thumb = self.thumbnail(&p, cx).map(|t| (entry, t));
+                core.update(cx, |c, _| c.port_mut().preview_play(entry, 0));
+                if let Some((_, slot)) = self.preview.as_mut() {
+                    *slot = Some(p);
+                }
+            } else {
+                self.preview = None;
+            }
+        }
+    }
+
+    /// The waveform of a prepared preview, from the peaks service: the first level that fits a thumbnail
+    fn thumbnail(&self, p: &lm_port::Preview, cx: &mut Context<Self>) -> Option<Arc<[(i16, i16)]>> {
+        const WANT: u64 = 600;
+        self.scx.core.update(cx, |c, _| {
+            for level in 0..=12u8 {
+                let head = c.port_mut().peaks(&p.resource, level, 0, 1).ok()?;
+                let pairs = head.length / head.samples_per_pair.max(1) + 1;
+                if pairs <= WANT || level == 12 {
+                    return c.port_mut().peaks(&p.resource, level, 0, pairs).ok().map(|b| b.pairs);
+                }
+            }
+            None
+        })
+    }
+
     /// The search, in the background on the core: a new one replaces the last; its loading is on Scan(Library)
     fn start_search(&mut self, q: String, cx: &mut Context<Self>) {
-        self.query = q.clone();
-        if q.trim().is_empty() {
+        self.query = q;
+        let (index, filters, fav) =
+            cx.try_global::<BrowserState>().map(|s| (s.index, s.filters.clone(), s.fav)).unwrap_or_default();
+        let composed = compose_query(&filters, fav, &self.query);
+        // The folders view searches only when something is typed; the index view also with the filters alone
+        if composed.is_empty() || (!index && self.query.trim().is_empty()) {
             self.results = None;
-        } else if let Pending::Ready(Ok(v)) = self.scx.core.update(cx, |core, _| core.port_mut().search(&q)) {
-            self.results = Some(v);
+            self.search_req = None;
+        } else {
+            match self.scx.core.update(cx, |core, _| core.port_mut().search(&composed)) {
+                Pending::Ready(Ok(v)) => self.results = Some(v),
+                Pending::Waiting(id) => self.search_req = Some(id),
+                _ => {}
+            }
         }
         cx.notify();
     }
@@ -172,6 +297,9 @@ impl Browser {
     fn rows(&mut self, cx: &mut Context<Self>) -> Vec<(BrowseEntry, usize)> {
         if let Some(r) = &self.results {
             return r.iter().map(|e| (e.clone(), 0)).collect();
+        }
+        if cx.try_global::<BrowserState>().is_some_and(|s| s.index) {
+            return Vec::new();
         }
         let mut out = Vec::new();
         self.walk(None, 0, &mut out, cx);
@@ -223,19 +351,27 @@ impl Browser {
 
     fn start_preview(&mut self, e: BrowseEntry, cx: &mut Context<Self>) {
         let id = e.id;
+        self.thumb = None;
+        self.preview_req = None;
         let r = self.scx.core.update(cx, |core, _| core.port_mut().prepare_preview(id));
-        let prepared = match r {
-            Pending::Ready(Ok(p)) => Some(p),
-            _ => None,
-        };
-        if prepared.is_some() {
-            self.scx.core.update(cx, |core, _| core.port_mut().preview_play(id, 0));
+        match r {
+            Pending::Ready(Ok(p)) => {
+                self.thumb = self.thumbnail(&p, cx).map(|t| (id, t));
+                self.scx.core.update(cx, |core, _| core.port_mut().preview_play(id, 0));
+                self.preview = Some((e, Some(p)));
+            }
+            // asked: `poll` plays it when it is prepared (the loading line shows meanwhile)
+            Pending::Waiting(req) => {
+                self.preview_req = Some(req);
+                self.preview = Some((e, None));
+            }
+            _ => self.preview = None,
         }
-        self.preview = Some((e, prepared));
         cx.notify();
     }
 
     fn stop_preview(&mut self, cx: &mut Context<Self>) {
+        self.preview_req = None;
         if self.preview.take().is_some() {
             self.scx.core.update(cx, |core, _| core.port_mut().preview_stop());
             cx.notify();
@@ -339,8 +475,120 @@ impl Browser {
                 }
             }
             EntryKind::Project => run_action(&core, "project.open_entry", Value::int(e.id.0 as i64), cx),
-            _ => {}
+            // a sample or a MIDI file: a new track at the playhead (F-BRW-006)
+            EntryKind::Audio | EntryKind::Midi => {
+                if let Some(path) = e.info.get("path").and_then(Value::as_text) {
+                    let tick = super::browser_drop::playhead_tick(&core, cx);
+                    super::files::import_paths(&core, &[std::path::PathBuf::from(path)], tick, cx);
+                }
+            }
+            // a bank: the instrument that opens it (the one table of the core, `info.opened_by`) on the active track
+            EntryKind::Other => {
+                let Some(id) = e.info.get("opened_by").and_then(Value::as_shared_text).cloned() else { return };
+                if plugins.iter().any(|x| x.id == id && x.instrument)
+                    && let Some((track, _)) = self.active_track(cx)
+                {
+                    let node = Value::object([("plugin", Value::text(id)), ("state", Value::empty_object())]);
+                    apply_ops(&core, "Swap the instrument", vec![EditOp::set(track, &["instrument"], node)], cx);
+                }
+            }
+            EntryKind::Folder => {}
         }
+    }
+
+    /// The legacy's pages, as text tabs
+    fn page_tabs(&self, cx: &Context<Self>) -> AnyElement {
+        div()
+            .flex()
+            .flex_wrap()
+            .px(px(2.))
+            .bg(c(THEME.bg2))
+            .border_b_1()
+            .border_color(c(THEME.line))
+            .children(PAGES.into_iter().map(|p| {
+                let active = self.page == p;
+                div()
+                    .id(SharedString::from(format!("br-tab-{p:?}")))
+                    .debug_selector(move || format!("br-tab-{p:?}"))
+                    .px(px(6.))
+                    .py(px(3.))
+                    .text_size(px(11.))
+                    .text_color(c(if active { THEME.text } else { THEME.text2 }))
+                    .when(active, |d| d.bg(c(THEME.bg4)))
+                    .cursor_pointer()
+                    .child(tr(page_title(p)))
+                    .on_click(cx.listener(move |b, _, window, cx| {
+                        b.search.update(cx, |i, cx| i.set_value("", window, cx));
+                        b.set_page(p, cx);
+                    }))
+            }))
+            .into_any_element()
+    }
+
+    /// The type filters and the favourites of the index view
+    fn chips(&self, cx: &Context<Self>) -> AnyElement {
+        let (filters, fav) = cx.try_global::<BrowserState>().map(|s| (s.filters.clone(), s.fav)).unwrap_or_default();
+        div()
+            .flex()
+            .flex_wrap()
+            .px(px(2.))
+            .bg(c(THEME.bg2))
+            .border_b_1()
+            .border_color(c(THEME.line))
+            .children(FILTERS.into_iter().map(|(word, label)| {
+                let on = filters.contains(&word);
+                div()
+                    .id(SharedString::from(format!("br-chip-{word}")))
+                    .debug_selector(move || format!("br-chip-{word}"))
+                    .px(px(6.))
+                    .py(px(3.))
+                    .text_size(px(11.))
+                    .text_color(c(if on { THEME.text } else { THEME.text2 }))
+                    .when(on, |d| d.bg(c(THEME.bg4)))
+                    .cursor_pointer()
+                    .child(tr(label))
+                    .on_click(cx.listener(move |b, _, _, cx| b.toggle_filter(word, cx)))
+            }))
+            .child(
+                div()
+                    .id("br-chip-fav")
+                    .debug_selector(|| "br-chip-fav".into())
+                    .px(px(6.))
+                    .py(px(3.))
+                    .text_size(px(11.))
+                    .text_color(c(if fav { THEME.text } else { THEME.text2 }))
+                    .when(fav, |d| d.bg(c(THEME.bg4)))
+                    .cursor_pointer()
+                    .child("★")
+                    .on_click(cx.listener(|b, _, _, cx| b.toggle_fav(cx))),
+            )
+            .into_any_element()
+    }
+
+    fn set_view(&mut self, index: bool, cx: &mut Context<Self>) {
+        cx.default_global::<BrowserState>().index = index;
+        self.results = None;
+        let q = self.query.clone();
+        self.start_search(q, cx);
+    }
+
+    fn toggle_filter(&mut self, word: &'static str, cx: &mut Context<Self>) {
+        let s = cx.default_global::<BrowserState>();
+        match s.filters.iter().position(|f| *f == word) {
+            Some(i) => {
+                s.filters.remove(i);
+            }
+            None => s.filters.push(word),
+        }
+        let q = self.query.clone();
+        self.start_search(q, cx);
+    }
+
+    fn toggle_fav(&mut self, cx: &mut Context<Self>) {
+        let s = cx.default_global::<BrowserState>();
+        s.fav = !s.fav;
+        let q = self.query.clone();
+        self.start_search(q, cx);
     }
 
     fn set_favorite(&mut self, e: &BrowseEntry, on: bool, cx: &mut Context<Self>) {
@@ -412,7 +660,9 @@ impl Browser {
                 EntryKind::Folder => "▸",
                 _ => "",
             }))
-            .child(crate::ui::icon(kind_icon(e.kind, open)).size(px(14.)))
+            .child(
+                crate::ui::icon(kind_icon_of(e.kind, open, e.info.get("type").and_then(Value::as_text))).size(px(14.)),
+            )
             .child(div().flex_1().overflow_hidden().whitespace_nowrap().child(e.name.to_string()))
             .when(e.favorite, |d| d.child(crate::ui::icon("star").size(px(12.))))
             .when(blocked, |d| d.child(div().text_size(px(9.5)).text_color(c(THEME.red)).child(tr("blocked"))))
@@ -506,6 +756,30 @@ impl Browser {
         )
     }
 
+    /// The waveform of the preview, as bars (F-BRW-011): from the peaks service
+    fn thumb_el(&self, entry: EntryId) -> Option<AnyElement> {
+        let (id, pairs) = self.thumb.as_ref()?;
+        if *id != entry {
+            return None;
+        }
+        const W: usize = 240;
+        let cols = thumb_columns(pairs, W);
+        Some(
+            div()
+                .id("br-thumb")
+                .debug_selector(|| "br-thumb".into())
+                .h(px(28.))
+                .mx(px(6.))
+                .flex()
+                .items_center()
+                .children(cols.into_iter().map(|(lo, hi)| {
+                    let h = ((hi - lo) * 13.0).clamp(1.0, 26.0);
+                    div().flex_1().h(px(h)).bg(c(THEME.green))
+                }))
+                .into_any_element(),
+        )
+    }
+
     /// The line at the bottom: the search's or the preview's loading, or what is playing
     fn status(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let port = self.scx.core.read(cx).port();
@@ -526,30 +800,29 @@ impl Browser {
                 return Some(div().h(px(24.)).debug_selector(|| "br-loading".into()).child(l).into_any_element());
             }
         }
-        Some(
-            div()
-                .id("br-playing")
-                .debug_selector(|| "br-playing".into())
-                .h(px(22.))
-                .px(px(6.))
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .text_size(px(11.))
-                .text_color(c(THEME.text2))
-                .child(div().flex_1().overflow_hidden().whitespace_nowrap().child(trf("Preview: {0}", &[&e.name])))
-                .child(
-                    div()
-                        .id("br-stop")
-                        .debug_selector(|| "br-stop".into())
-                        .px(px(5.))
-                        .cursor_pointer()
-                        .text_color(c(THEME.text))
-                        .child("■")
-                        .on_click(cx.listener(|b, _, _, cx| b.stop_preview(cx))),
-                )
-                .into_any_element(),
-        )
+        let line = div()
+            .id("br-playing")
+            .debug_selector(|| "br-playing".into())
+            .h(px(22.))
+            .px(px(6.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .text_size(px(11.))
+            .text_color(c(THEME.text2))
+            .child(div().flex_1().overflow_hidden().whitespace_nowrap().child(trf("Preview: {0}", &[&e.name])))
+            .child(
+                div()
+                    .id("br-stop")
+                    .debug_selector(|| "br-stop".into())
+                    .px(px(5.))
+                    .cursor_pointer()
+                    .text_color(c(THEME.text))
+                    .child("■")
+                    .on_click(cx.listener(|b, _, _, cx| b.stop_preview(cx))),
+            )
+            .into_any_element();
+        Some(div().flex().flex_col().children(self.thumb_el(e.id)).child(line).into_any_element())
     }
 }
 
@@ -583,6 +856,8 @@ impl Focusable for Browser {
 
 impl Render for Browser {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.poll(cx);
+        let index_view = cx.try_global::<BrowserState>().is_some_and(|s| s.index);
         let rows = self.rows(cx);
         let mut list: Vec<AnyElement> = Vec::new();
         let mut factory_line = false;
@@ -673,28 +948,23 @@ impl Render for Browser {
                     }
                 }),
             )
-            // the pages (the legacy's side bar, as text)
-            .child(
-                div().flex().flex_wrap().px(px(2.)).bg(c(THEME.bg2)).border_b_1().border_color(c(THEME.line)).children(
-                    PAGES.into_iter().map(|p| {
-                        let active = self.page == p;
-                        div()
-                            .id(SharedString::from(format!("br-tab-{p:?}")))
-                            .debug_selector(move || format!("br-tab-{p:?}"))
-                            .px(px(6.))
-                            .py(px(3.))
-                            .text_size(px(11.))
-                            .text_color(c(if active { THEME.text } else { THEME.text2 }))
-                            .when(active, |d| d.bg(c(THEME.bg4)))
-                            .cursor_pointer()
-                            .child(tr(page_title(p)))
-                            .on_click(cx.listener(move |b, _, window, cx| {
-                                b.search.update(cx, |i, cx| i.set_value("", window, cx));
-                                b.set_page(p, cx);
-                            }))
-                    }),
-                ),
-            )
+            // the view: folders or the index
+            .child(div().flex().px(px(2.)).bg(c(THEME.bg2)).border_b_1().border_color(c(THEME.line)).children(
+                [(false, "Folders"), (true, "Index")].into_iter().map(|(v, label)| {
+                    div()
+                        .id(SharedString::from(format!("br-view-{label}")))
+                        .debug_selector(move || format!("br-view-{label}"))
+                        .px(px(6.))
+                        .py(px(3.))
+                        .text_size(px(11.))
+                        .text_color(c(if index_view == v { THEME.text } else { THEME.text2 }))
+                        .when(index_view == v, |d| d.bg(c(THEME.bg4)))
+                        .cursor_pointer()
+                        .child(tr(label))
+                        .on_click(cx.listener(move |b, _, _, cx| b.set_view(v, cx)))
+                }),
+            ))
+            .child(if index_view { self.chips(cx) } else { self.page_tabs(cx) })
             // the page's title, as the legacy's
             .child(
                 div()

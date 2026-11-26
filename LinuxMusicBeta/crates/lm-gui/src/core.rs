@@ -28,6 +28,9 @@ pub struct Core {
     midi_seen: (u64, Option<lm_port::LearnId>),
     /// The answers of imports that waited (the RemotePort's), until a plugin panel takes them by request
     imported: HashMap<lm_port::RequestId, lm_port::Result<lm_port::Resource>>,
+    /// The answers of the browser's listings, searches and previews that waited, until the browser takes them
+    entries: HashMap<lm_port::RequestId, lm_port::Result<Vec<lm_port::BrowseEntry>>>,
+    previews: HashMap<lm_port::RequestId, lm_port::Result<lm_port::Preview>>,
     last_meters: Instant,
     _pump: Task<()>,
 }
@@ -60,6 +63,8 @@ impl Core {
             midi_ui: Vec::new(),
             midi_seen: (0, None),
             imported: HashMap::new(),
+            entries: HashMap::new(),
+            previews: HashMap::new(),
             last_meters: Instant::now(),
             _pump: pump,
         };
@@ -87,8 +92,17 @@ impl Core {
         }
         self.port.drain_midi_ui(&mut self.midi_ui);
         for (id, answer) in self.port.finished() {
-            if let lm_port::Finished::Imported(r) = answer {
-                self.imported.insert(id, r);
+            match answer {
+                lm_port::Finished::Imported(r) => {
+                    self.imported.insert(id, r);
+                }
+                lm_port::Finished::Entries(r) => {
+                    self.entries.insert(id, r);
+                }
+                lm_port::Finished::Preview(r) => {
+                    self.previews.insert(id, r);
+                }
+                _ => {}
             }
         }
         let midi = (self.port.midi_activity(u64::MAX).0, self.port.learning());
@@ -97,6 +111,16 @@ impl Core {
         if changed || midi_changed || self.shown.values().any(|m| *m > 0.0) {
             cx.notify();
         }
+    }
+
+    /// The answer of a browser listing or search that waited (once)
+    pub fn take_entries(&mut self, id: lm_port::RequestId) -> Option<lm_port::Result<Vec<lm_port::BrowseEntry>>> {
+        self.entries.remove(&id)
+    }
+
+    /// The answer of a preview that waited (once)
+    pub fn take_preview(&mut self, id: lm_port::RequestId) -> Option<lm_port::Result<lm_port::Preview>> {
+        self.previews.remove(&id)
     }
 
     /// Once per frame, from the workspace's render
