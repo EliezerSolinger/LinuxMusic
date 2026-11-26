@@ -1,7 +1,7 @@
 //! The instrument functions of a single-stream instrument (the legacy `IsSingleStreamed`: one synthesizer plays every
-//! note, as FluidSynth and libgig do): chords, the arpeggio, mono, legato and glide, the sustain pedal, the pitch knob
-//! and the pitch bend — the same notes as a per-note [`super::Instrument`] (both run `notes`), made to sound by the
-//! plugin's [`Stream`].
+//! note, as FluidSynth and libgig do): mono, legato and glide, the sustain pedal, the pitch knob and the pitch bend
+//! — the same notes as a per-note [`super::Instrument`] (both run `notes`), made to sound by the plugin's
+//! [`Stream`]. Chords and the arpeggio are note effects, before the instrument.
 //!
 //! The legacy program applied neither the envelopes, the LFOs nor the filter of the track to a single-stream
 //! instrument (`InstrumentTrack::processAudioBuffer` skips them), so they are not part of this: a stream instrument's
@@ -28,9 +28,9 @@ use lm_base::{Error, Result};
 use lm_render::{Adopted, Event, EventKind, NoteId, ProcessContext, ProcessSpec, Processor, VoiceNote};
 use lm_state::{FieldSpec, NodeSchema, ParamSpec};
 
-use super::notes::{ArpDirection, ArpMode, NoteCx, NoteSettings, Run, Sounder, VoiceMode};
-use super::schema::{ARP_DIRECTIONS, ARP_MODES, SYNC_KEYS, VOICE_MODES, instrument_params, sync_beats};
-use super::{CHORD_KEYS, GRID, MAX_SOUNDING, chord, fingerprint};
+use super::notes::{NoteCx, NoteSettings, Run, Sounder, VoiceMode};
+use super::schema::{VOICE_MODES, drop_chords_and_arpeggio, instrument_params};
+use super::{GRID, MAX_SOUNDING, fingerprint};
 use crate::state::StateView;
 
 /// The note functions' parameters, in index order after the instrument's own (the same keys, ranges and defaults as
@@ -38,35 +38,11 @@ use crate::state::StateView;
 pub mod q {
     pub const PITCH: usize = 0;
     pub const BEND_RANGE: usize = 1;
-    pub const CHORD_ON: usize = 2;
-    pub const CHORD_RANGE: usize = 3;
-    pub const ARP_ON: usize = 4;
-    pub const ARP_RANGE: usize = 5;
-    pub const ARP_REPEATS: usize = 6;
-    pub const ARP_CYCLE: usize = 7;
-    pub const ARP_SKIP: usize = 8;
-    pub const ARP_MISS: usize = 9;
-    pub const ARP_TIME: usize = 10;
-    pub const ARP_GATE: usize = 11;
-    pub const GLIDE: usize = 12;
+    pub const GLIDE: usize = 2;
     /// How many
-    pub const COUNT: usize = 13;
+    pub const COUNT: usize = 3;
     /// Their keys, in index order
-    pub const KEYS: [&str; COUNT] = [
-        "pitch",
-        "bendRange",
-        "chordOn",
-        "chordRange",
-        "arpOn",
-        "arpRange",
-        "arpRepeats",
-        "arpCycle",
-        "arpSkip",
-        "arpMiss",
-        "arpTime",
-        "arpGate",
-        "glide",
-    ];
+    pub const KEYS: [&str; COUNT] = ["pitch", "bendRange", "glide"];
 }
 
 /// The note functions' parameters
@@ -76,17 +52,12 @@ pub fn note_params() -> Vec<ParamSpec> {
 
 /// The note functions' fields (choices: rebuilding the processor, which adopts the notes)
 pub fn note_fields() -> Vec<FieldSpec> {
-    vec![
-        FieldSpec::choice("chord", &CHORD_KEYS, "octave"),
-        FieldSpec::choice("arpChord", &CHORD_KEYS, "octave"),
-        FieldSpec::choice("arpDirection", &ARP_DIRECTIONS, "up"),
-        FieldSpec::choice("arpMode", &ARP_MODES, "free"),
-        FieldSpec::choice("arpSync", &SYNC_KEYS, "off"),
-        FieldSpec::choice("voiceMode", &VOICE_MODES, "poly"),
-    ]
+    vec![FieldSpec::choice("voiceMode", &VOICE_MODES, "poly")]
 }
 
-/// A single-stream instrument's schema with the note functions added after its own fields and parameters
+/// A single-stream instrument's schema with the note functions added after its own fields and parameters. Like
+/// [`super::add_instrument_functions`] it adds the version step that dropped the chords and the arpeggio (the schema's
+/// version goes up by one): call it last
 pub fn add_note_functions(mut schema: NodeSchema) -> NodeSchema {
     for f in note_fields() {
         schema = schema.field(f);
@@ -94,7 +65,9 @@ pub fn add_note_functions(mut schema: NodeSchema) -> NodeSchema {
     for p in note_params() {
         schema = schema.param(p);
     }
-    schema
+    let from = schema.version;
+    schema.version = from + 1;
+    schema.upgrade(from, drop_chords_and_arpeggio)
 }
 
 /// A single-stream instrument's synthesizer. Every method but the build's runs on the audio thread: none may
@@ -142,24 +115,12 @@ pub trait Stream: Send + 'static {
 /// The choices of the note functions, read in the build
 #[derive(Clone, Copy, Debug)]
 struct Choices {
-    chord: &'static [u8],
-    arp_chord: &'static [u8],
-    arp_direction: ArpDirection,
-    arp_mode: ArpMode,
-    arp_sync: Option<f64>,
     mode: VoiceMode,
 }
 
 impl Choices {
     fn read(state: &StateView<'_>) -> Result<Self> {
-        Ok(Self {
-            chord: state.choice("chord", chord)?,
-            arp_chord: state.choice("arpChord", chord)?,
-            arp_direction: state.choice("arpDirection", ArpDirection::from_key)?,
-            arp_mode: state.choice("arpMode", ArpMode::from_key)?,
-            arp_sync: state.choice("arpSync", |s| SYNC_KEYS.contains(&s).then(|| sync_beats(s)))?,
-            mode: state.choice("voiceMode", VoiceMode::from_key)?,
-        })
+        Ok(Self { mode: state.choice("voiceMode", VoiceMode::from_key)? })
     }
 }
 
@@ -320,7 +281,6 @@ pub struct StreamInstrument<S: Stream> {
     ranges: Box<[(f32, f32)]>,
     rate: f32,
     sample_rate: u32,
-    bpm: f64,
     run: Run,
     notes: Vec<Note>,
     scratch: [[f32; GRID]; 2],
@@ -365,7 +325,6 @@ impl<S: Stream> StreamInstrument<S> {
             ranges,
             rate,
             sample_rate: spec.sample_rate,
-            bpm: 0.0,
             run: Run::new(),
             notes: Vec::with_capacity(MAX_SOUNDING),
             scratch: [[0.0; GRID]; 2],
@@ -390,30 +349,11 @@ impl<S: Stream> StreamInstrument<S> {
     }
 
     fn settings(&self) -> NoteSettings {
-        let c = &self.choices;
-        NoteSettings {
-            chord_on: self.note(q::CHORD_ON),
-            chord_range: self.note(q::CHORD_RANGE),
-            chord: c.chord,
-            arp_on: self.note(q::ARP_ON),
-            arp_chord: c.arp_chord,
-            arp_range: self.note(q::ARP_RANGE),
-            arp_repeats: self.note(q::ARP_REPEATS),
-            arp_cycle: self.note(q::ARP_CYCLE),
-            arp_skip: self.note(q::ARP_SKIP),
-            arp_miss: self.note(q::ARP_MISS),
-            arp_time: self.note(q::ARP_TIME),
-            arp_gate: self.note(q::ARP_GATE),
-            arp_direction: c.arp_direction,
-            arp_mode: c.arp_mode,
-            arp_sync: c.arp_sync,
-            glide: self.note(q::GLIDE),
-            mode: c.mode,
-        }
+        NoteSettings { glide: self.note(q::GLIDE), mode: self.choices.mode }
     }
 
     fn note_cx(&self) -> NoteCx {
-        NoteCx { ns: self.settings(), rate: self.rate, bpm: self.bpm }
+        NoteCx { ns: self.settings(), rate: self.rate }
     }
 
     /// The pitch knob, semitones
@@ -596,10 +536,6 @@ impl<S: Stream> Processor for StreamInstrument<S> {
         let frames = cx.frames;
         let events: &[Event] = cx.events;
         let transport = cx.transport;
-        let rng = &mut *cx.rng;
-        if transport.bpm > 0.0 {
-            self.bpm = transport.bpm;
-        }
         let outputs = cx.buffers.outputs();
         if outputs == 0 {
             for e in events {
@@ -619,18 +555,12 @@ impl<S: Stream> Processor for StreamInstrument<S> {
                 self.event(events[e].kind);
                 e += 1;
             }
-            let now = self.run.frame;
-            self.with_voices(|run, ncx, v| run.timed(ncx, v, now, rng));
             let mut end = frames;
             if e < events.len() {
                 end = end.min(events[e].offset as usize);
             }
             let grid = GRID - ((grid_origin + at as u64) % GRID as u64) as usize;
             end = end.min(at + grid);
-            let next = self.run.next_timed(&self.note_cx(), now);
-            if next != u64::MAX {
-                end = end.min(at + (next - now).min(frames as u64) as usize);
-            }
             let n = end.saturating_sub(at).max(1).min(frames - at);
             if mono {
                 let mut tmp_l = [0.0f32; GRID];
@@ -670,7 +600,6 @@ impl<S: Stream> Processor for StreamInstrument<S> {
         }
         std::mem::swap(&mut self.run, &mut old.run);
         std::mem::swap(&mut self.notes, &mut old.notes);
-        self.bpm = old.bpm;
         if old.fingerprint == self.fingerprint {
             std::mem::swap(&mut self.stream, &mut old.stream);
             std::mem::swap(&mut self.ghost, &mut old.ghost);

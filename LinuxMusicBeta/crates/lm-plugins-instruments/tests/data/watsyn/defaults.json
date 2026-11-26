@@ -447,10 +447,6 @@
       ],
       "aMod": "mix",
       "antiAliasing": true,
-      "arpChord": "octave",
-      "arpDirection": "up",
-      "arpMode": "free",
-      "arpSync": "off",
       "b1Graph": [
         0.0,
         0.02855605073273182,
@@ -896,7 +892,6 @@
         -0.028555627912282944
       ],
       "bMod": "mix",
-      "chord": "octave",
       "cutLfoShape": "sine",
       "cutLfoSync": "off",
       "cutLfoWave": null,
@@ -916,14 +911,6 @@
         "a2RightDetune": 0.0,
         "a2Volume": 32.0,
         "abMix": 0.0,
-        "arpCycle": 0.0,
-        "arpGate": 100.0,
-        "arpMiss": 0.0,
-        "arpOn": 0.0,
-        "arpRange": 1.0,
-        "arpRepeats": 1.0,
-        "arpSkip": 0.0,
-        "arpTime": 200.0,
         "b1LeftDetune": 0.0,
         "b1Multiplier": 8.0,
         "b1Panning": 0.0,
@@ -935,8 +922,6 @@
         "b2RightDetune": 0.0,
         "b2Volume": 32.0,
         "bendRange": 2.0,
-        "chordOn": 0.0,
-        "chordRange": 1.0,
         "crosstalk": 0.0,
         "cutAmount": 0.0,
         "cutAttack": 0.0,
@@ -995,6 +980,6 @@
       "volLfoSync": "off",
       "volLfoWave": null
     },
-    "version": 1
+    "version": 2
   }
 }

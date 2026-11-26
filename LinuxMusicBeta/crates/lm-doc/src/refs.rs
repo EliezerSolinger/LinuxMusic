@@ -112,6 +112,10 @@ impl TrackRef {
         let id = v.get("instrument")?.get("id")?.as_text()?;
         NodeId::parse(id).ok().map(PluginRef)
     }
+    /// The note effects before the instrument, in order
+    pub fn note_effects(self, doc: &Document) -> Vec<PluginRef> {
+        ids_in(self.value(doc).as_ref().and_then(|v| v.get("noteEffects"))).into_iter().map(PluginRef).collect()
+    }
     pub fn outputs(self, doc: &Document) -> Vec<OutputRef> {
         ids_in(self.value(doc).as_ref().and_then(|v| v.get("outputs"))).into_iter().map(OutputRef).collect()
     }

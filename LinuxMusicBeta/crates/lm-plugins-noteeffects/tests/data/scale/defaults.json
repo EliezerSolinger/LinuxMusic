@@ -1,0 +1,12 @@
+{
+  "plugin:scale": {
+    "defaults": {
+      "params": {
+        "root": 0.0,
+        "transpose": 0.0
+      },
+      "scale": "off"
+    },
+    "version": 1
+  }
+}

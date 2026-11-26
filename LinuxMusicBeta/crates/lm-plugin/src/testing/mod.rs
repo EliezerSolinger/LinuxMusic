@@ -16,7 +16,7 @@ mod material;
 mod suite;
 
 pub use assert_no_alloc::{AllocDisabler, assert_no_alloc, permit_alloc};
-pub use bench::{Bench, InputFn, Timed};
+pub use bench::{Bench, InputFn, NoteBench, Timed, in_host_order};
 pub use material::*;
 pub use suite::*;
 
@@ -164,5 +164,80 @@ macro_rules! contract_tests {
     };
     ($d:path, $data:literal, setup = $setup:expr) => {
         $crate::contract_tests!(@with $d, concat!("/tests/data/", $data), $setup);
+    };
+}
+
+/// One `#[test]` for each check of the suite for a note effect (`PluginKind::NoteEffect`), the descriptor `$d` (a
+/// path to a `static Descriptor`): the state checks every plugin has (defaults, random states, upgrades, frozen
+/// defaults, ports) and the note effect's own — deterministic and independent of the block size, balanced (every
+/// note it started is ended), the releases forwarded, every parameter swept, adopted while playing and reset. Data as
+/// for [`contract_tests!`]; allocation trap as there
+#[macro_export]
+macro_rules! note_effect_tests {
+    (@with $d:path, $data:expr) => {
+        #[cfg(debug_assertions)]
+        #[global_allocator]
+        static LM_PLUGIN_CONTRACT_ALLOCATOR: $crate::testing::AllocDisabler = $crate::testing::AllocDisabler;
+
+        /// The plugin under test
+        static LM_PLUGIN_UNDER_TEST: &$crate::Descriptor = &$d;
+
+        mod note_contract {
+            use $crate::testing as t;
+
+            #[test]
+            fn is_a_note_effect() {
+                assert_eq!(super::LM_PLUGIN_UNDER_TEST.kind, $crate::PluginKind::NoteEffect);
+            }
+            #[test]
+            fn defaults_round_trip() {
+                t::defaults_round_trip(super::LM_PLUGIN_UNDER_TEST);
+            }
+            #[test]
+            fn random_states_round_trip() {
+                t::random_states_round_trip(super::LM_PLUGIN_UNDER_TEST);
+            }
+            #[test]
+            fn fixtures_upgrade() {
+                t::fixtures_upgrade(
+                    super::LM_PLUGIN_UNDER_TEST,
+                    &[env!("CARGO_MANIFEST_DIR"), $data, "/fixtures"].concat(),
+                );
+            }
+            #[test]
+            fn frozen_defaults() {
+                t::frozen_defaults(
+                    super::LM_PLUGIN_UNDER_TEST,
+                    &[env!("CARGO_MANIFEST_DIR"), $data, "/defaults.json"].concat(),
+                );
+            }
+            #[test]
+            fn deterministic_and_block_independent() {
+                t::note_deterministic_and_block_independent(super::LM_PLUGIN_UNDER_TEST);
+            }
+            #[test]
+            fn balanced() {
+                t::note_balanced(super::LM_PLUGIN_UNDER_TEST);
+            }
+            #[test]
+            fn forwards_releases() {
+                t::note_forwards_releases(super::LM_PLUGIN_UNDER_TEST);
+            }
+            #[test]
+            fn param_sweep_without_allocation() {
+                t::note_param_sweep(super::LM_PLUGIN_UNDER_TEST);
+            }
+            #[test]
+            fn adopt_while_playing() {
+                t::note_adopt_while_playing(super::LM_PLUGIN_UNDER_TEST);
+            }
+            #[test]
+            fn reset() {
+                t::note_reset(super::LM_PLUGIN_UNDER_TEST);
+            }
+        }
+    };
+    ($d:path, $data:literal) => {
+        $crate::note_effect_tests!(@with $d, concat!("/tests/data/", $data));
     };
 }

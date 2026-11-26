@@ -18,6 +18,7 @@ mod diff;
 mod document;
 mod edit;
 mod index;
+mod migrate;
 mod ops;
 mod refs;
 mod rules;

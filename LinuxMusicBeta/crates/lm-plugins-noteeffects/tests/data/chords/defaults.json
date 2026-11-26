@@ -1,0 +1,11 @@
+{
+  "plugin:chords": {
+    "defaults": {
+      "chord": "major",
+      "params": {
+        "range": 1.0
+      }
+    },
+    "version": 1
+  }
+}

@@ -10,11 +10,14 @@ use lm_state::{NodeSchema, Value};
 
 use crate::resources::ResourceView;
 
-/// An instrument plays notes into its outputs; an effect (an insert) works in place on its channel's channels
+/// An instrument plays notes into its outputs; an effect (an insert) works in place on its channel's channels; a
+/// note effect turns a track's note stream into another one before its instrument (no audio, no ports: chords, an
+/// arpeggio, a transposition, a velocity curve), see [`crate::note_effect`]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginKind {
     Instrument,
     Effect,
+    NoteEffect,
 }
 
 /// What a plugin does with a note's velocity (U28, decided in decisoes-autonomas.md: the velocity is 0 to 1, linear,

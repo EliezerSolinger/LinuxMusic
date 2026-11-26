@@ -1,5 +1,11 @@
-//! The instrument functions' part of an instrument's schema (F-IJN-002 pitch and bend range, F-IJN-010 envelopes and
-//! LFOs, F-IJN-011 filter, F-IJN-013 chords, F-IJN-014 mono/legato/glide, F-IJN-015 arpeggio).
+//! The instrument functions' part of an instrument's schema: pitch and pitch bend range (F-IJN-002), mono, legato and
+//! glide (F-IJN-014), and, for now, the sound shaping (the envelopes, LFOs and filter, in [`super::shaping`]: they move
+//! out of the instruments in a next step, see that module).
+//!
+//! Chords and the arpeggio are **not** here any more: they are note effects (`lm-plugins-noteeffects`, a
+//! `Kind::NoteEffect` plugin in the track's `noteEffects` list, before the instrument). Version 2 of every instrument
+//! schema dropped their fields and parameters: [`drop_chords_and_arpeggio`] is the upgrade step, and the project's
+//! opening moves what was set into note effects (`lm-doc`'s `Upgrader::track`).
 //!
 //! The project's track has none of these (lm-doc: a track holds its instrument's node, and the instrument's state is
 //! the plugin's tree), so they live in the instrument's own state, under the keys below, which every instrument that
@@ -12,16 +18,12 @@
 
 use std::sync::LazyLock;
 
-use lm_dsp::basic_filters::FilterType;
-use lm_dsp::envelope::LfoShape;
-use lm_state::{FieldKind, FieldSpec, NodeSchema, ParamSpec, Scale, Value};
+use lm_base::Result;
+use lm_state::{FieldSpec, NodeSchema, PARAMS_KEY, ParamSpec, Scale, Value};
 
-use super::chords::CHORD_KEYS;
+use super::shaping;
 
-/// The three targets of the envelopes and LFOs, as key prefixes
-pub const TARGETS: [&str; 3] = ["vol", "cut", "res"];
-
-/// The tempo-synced lengths of the LFO's period and the arpeggio's step (legacy `TempoSyncKnob`), `off` free
+/// The tempo-synced lengths of the LFO's period (and of a note effect's step), `off` free
 pub static SYNC_KEYS: [&str; 8] = ["off", "2/1", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32"];
 
 /// Beats (quarter notes) of a synced length; `None` for `off`
@@ -38,79 +40,28 @@ pub fn sync_beats(key: &str) -> Option<f64> {
     })
 }
 
-pub static ARP_DIRECTIONS: [&str; 5] = ["up", "down", "up-down", "down-up", "random"];
-pub static ARP_MODES: [&str; 3] = ["free", "sort", "sync"];
 /// Poly; mono (a new note starts the voice again, gliding from the last pitch); legato (a new note moves the
 /// sounding voice to its key without starting again)
 pub static VOICE_MODES: [&str; 3] = ["poly", "mono", "legato"];
 
-pub static FILTER_KEYS: LazyLock<Box<[&'static str]>> =
-    LazyLock::new(|| FilterType::ALL.iter().map(|t| t.key()).collect());
-pub static LFO_SHAPE_KEYS: LazyLock<Box<[&'static str]>> =
-    LazyLock::new(|| LfoShape::ALL.iter().map(|s| s.key()).collect());
-
-/// The parameters, in index order (after the instrument's own)
+/// The parameters, in index order (after the instrument's own): pitch, bend range, the shaping's block, glide
 pub mod p {
+    use super::shaping::s;
+
     pub const PITCH: usize = 0;
     pub const BEND_RANGE: usize = 1;
-    /// The first parameter of target `t` (0 volume, 1 cutoff, 2 resonance); the offsets below follow it
+    /// Where the shaping's block starts
+    pub const SHAPING: usize = 2;
+    pub const GLIDE: usize = SHAPING + s::COUNT;
+    /// The first parameter of target `t` (0 volume, 1 cutoff, 2 resonance); the offsets of `shaping::s` follow it
     pub const fn env(t: usize) -> usize {
-        2 + t * ENV_PARAMS
+        SHAPING + s::env(t)
     }
-    pub const ENV_PARAMS: usize = 13;
-    pub const PREDELAY: usize = 0;
-    pub const ATTACK: usize = 1;
-    pub const HOLD: usize = 2;
-    pub const DECAY: usize = 3;
-    pub const SUSTAIN: usize = 4;
-    pub const RELEASE: usize = 5;
-    pub const AMOUNT: usize = 6;
-    pub const LFO_PREDELAY: usize = 7;
-    pub const LFO_ATTACK: usize = 8;
-    pub const LFO_SPEED: usize = 9;
-    pub const LFO_AMOUNT: usize = 10;
-    pub const LFO_X100: usize = 11;
-    pub const LFO_ENV_AMOUNT: usize = 12;
-    pub const FILTER_ON: usize = 2 + 3 * ENV_PARAMS;
-    pub const CUTOFF: usize = FILTER_ON + 1;
-    pub const RESONANCE: usize = FILTER_ON + 2;
-    pub const CHORD_ON: usize = FILTER_ON + 3;
-    pub const CHORD_RANGE: usize = FILTER_ON + 4;
-    pub const ARP_ON: usize = FILTER_ON + 5;
-    pub const ARP_RANGE: usize = FILTER_ON + 6;
-    pub const ARP_REPEATS: usize = FILTER_ON + 7;
-    pub const ARP_CYCLE: usize = FILTER_ON + 8;
-    pub const ARP_SKIP: usize = FILTER_ON + 9;
-    pub const ARP_MISS: usize = FILTER_ON + 10;
-    pub const ARP_TIME: usize = FILTER_ON + 11;
-    pub const ARP_GATE: usize = FILTER_ON + 12;
-    pub const GLIDE: usize = FILTER_ON + 13;
+    pub const FILTER_ON: usize = SHAPING + s::FILTER_ON;
+    pub const CUTOFF: usize = SHAPING + s::CUTOFF;
+    pub const RESONANCE: usize = SHAPING + s::RESONANCE;
     /// How many there are
     pub const COUNT: usize = GLIDE + 1;
-}
-
-fn switch(key: &'static str) -> ParamSpec {
-    ParamSpec::new(key, 0.0, 1.0, 0.0).scale(Scale::Stepped)
-}
-
-fn env_params(t: &str) -> Vec<ParamSpec> {
-    // The keys are permanent (C5): interned symbols, made once for the life of the program (lm_base::intern)
-    let key = |name: &str| -> &'static str { lm_base::intern(&format!("{t}{name}")) };
-    vec![
-        ParamSpec::new(key("Predelay"), 0.0, 2.0, 0.0),
-        ParamSpec::new(key("Attack"), 0.0, 2.0, 0.0),
-        ParamSpec::new(key("Hold"), 0.0, 2.0, 0.5),
-        ParamSpec::new(key("Decay"), 0.0, 2.0, 0.5),
-        ParamSpec::new(key("Sustain"), 0.0, 1.0, 0.5),
-        ParamSpec::new(key("Release"), 0.0, 2.0, 0.1),
-        ParamSpec::new(key("Amount"), -1.0, 1.0, 0.0),
-        ParamSpec::new(key("LfoPredelay"), 0.0, 1.0, 0.0),
-        ParamSpec::new(key("LfoAttack"), 0.0, 1.0, 0.0),
-        ParamSpec::new(key("LfoSpeed"), 0.001, 1.0, 0.1).scale(Scale::Log),
-        ParamSpec::new(key("LfoAmount"), -1.0, 1.0, 0.0),
-        switch(key("LfoX100")),
-        switch(key("LfoEnvAmount")),
-    ]
 }
 
 static PARAMS: LazyLock<Vec<ParamSpec>> = LazyLock::new(|| {
@@ -118,25 +69,8 @@ static PARAMS: LazyLock<Vec<ParamSpec>> = LazyLock::new(|| {
         ParamSpec::new("pitch", -100.0, 100.0, 0.0).unit("cents"),
         ParamSpec::new("bendRange", 1.0, 60.0, 2.0).scale(Scale::Stepped).unit("st").not_automatable(),
     ];
-    for t in TARGETS {
-        v.extend(env_params(t));
-    }
-    v.extend([
-        switch("filterOn"),
-        ParamSpec::new("cutoff", 1.0, 14000.0, 14000.0).scale(Scale::Log).unit("Hz"),
-        ParamSpec::new("resonance", 0.01, 10.0, 0.5),
-        switch("chordOn"),
-        ParamSpec::new("chordRange", 1.0, 9.0, 1.0).scale(Scale::Stepped),
-        switch("arpOn"),
-        ParamSpec::new("arpRange", 1.0, 9.0, 1.0).scale(Scale::Stepped),
-        ParamSpec::new("arpRepeats", 1.0, 8.0, 1.0).scale(Scale::Stepped),
-        ParamSpec::new("arpCycle", 0.0, 6.0, 0.0).scale(Scale::Stepped),
-        ParamSpec::new("arpSkip", 0.0, 100.0, 0.0).unit("%"),
-        ParamSpec::new("arpMiss", 0.0, 100.0, 0.0).unit("%"),
-        ParamSpec::new("arpTime", 25.0, 2000.0, 200.0).unit("ms"),
-        ParamSpec::new("arpGate", 1.0, 200.0, 100.0).unit("%"),
-        ParamSpec::new("glide", 0.0, 2000.0, 0.0).unit("ms"),
-    ]);
+    v.extend(shaping::params());
+    v.push(ParamSpec::new("glide", 0.0, 2000.0, 0.0).unit("ms"));
     debug_assert_eq!(v.len(), p::COUNT);
     v
 });
@@ -146,39 +80,48 @@ pub fn instrument_params() -> &'static [ParamSpec] {
     &PARAMS
 }
 
-fn choice(key: &'static str, choices: &'static [&'static str], default: &str) -> FieldSpec {
-    FieldSpec::choice(key, choices, default)
-}
-
 /// The fields of the instrument functions
 pub fn instrument_fields() -> Vec<FieldSpec> {
-    let mut v = Vec::new();
-    for (t, shape, wave, sync) in [
-        ("vol", "volLfoShape", "volLfoWave", "volLfoSync"),
-        ("cut", "cutLfoShape", "cutLfoWave", "cutLfoSync"),
-        ("res", "resLfoShape", "resLfoWave", "resLfoSync"),
-    ] {
-        let _ = t;
-        v.push(choice(shape, &LFO_SHAPE_KEYS, "sine"));
-        v.push(FieldSpec::new(wave, FieldKind::Resource("audio")).nullable().default(Value::NULL));
-        v.push(choice(sync, &SYNC_KEYS, "off"));
-    }
-    v.push(choice("filterType", &FILTER_KEYS, "low-pass"));
-    v.push(choice("chord", &CHORD_KEYS, "octave"));
-    v.push(choice("arpChord", &CHORD_KEYS, "octave"));
-    v.push(choice("arpDirection", &ARP_DIRECTIONS, "up"));
-    v.push(choice("arpMode", &ARP_MODES, "free"));
-    v.push(choice("arpSync", &SYNC_KEYS, "off"));
-    v.push(choice("voiceMode", &VOICE_MODES, "poly"));
+    let mut v = shaping::fields();
+    v.push(FieldSpec::choice("voiceMode", &VOICE_MODES, "poly"));
     v
 }
 
-/// The key of the LFO user wave field of target `t`
-pub const LFO_WAVE_FIELDS: [&str; 3] = ["volLfoWave", "cutLfoWave", "resLfoWave"];
-pub const LFO_SHAPE_FIELDS: [&str; 3] = ["volLfoShape", "cutLfoShape", "resLfoShape"];
-pub const LFO_SYNC_FIELDS: [&str; 3] = ["volLfoSync", "cutLfoSync", "resLfoSync"];
+/// The fields and parameters the chords and the arpeggio had in version 1 of an instrument's schema
+const REMOVED_FIELDS: [&str; 5] = ["chord", "arpChord", "arpDirection", "arpMode", "arpSync"];
+const REMOVED_PARAMS: [&str; 10] = [
+    "chordOn",
+    "chordRange",
+    "arpOn",
+    "arpRange",
+    "arpRepeats",
+    "arpCycle",
+    "arpSkip",
+    "arpMiss",
+    "arpTime",
+    "arpGate",
+];
 
-/// An instrument's schema with the instrument functions added after its own fields and parameters
+/// The upgrade step that takes an instrument's state from the version with the chords and the arpeggio to the next:
+/// they are note effects now, so the fields and parameters go. (What was switched on is moved into the track's
+/// `noteEffects` before this runs, at the project's opening: a node's upgrade cannot see its track)
+pub fn drop_chords_and_arpeggio(mut state: Value) -> Result<Value> {
+    for k in REMOVED_FIELDS {
+        state = state.without(k);
+    }
+    if let Some(params) = state.get(PARAMS_KEY).cloned() {
+        let mut params = params;
+        for k in REMOVED_PARAMS {
+            params = params.without(k);
+        }
+        state = state.with(PARAMS_KEY, params);
+    }
+    Ok(state)
+}
+
+/// An instrument's schema with the instrument functions added after its own fields and parameters. It adds the
+/// version step that dropped the chords and the arpeggio (version 1 → 2, the schema's version goes up by one): call it
+/// **last**, after the schema's own `upgrade`s, and give the schema the version it had with them
 pub fn add_instrument_functions(mut schema: NodeSchema) -> NodeSchema {
     for f in instrument_fields() {
         schema = schema.field(f);
@@ -186,5 +129,7 @@ pub fn add_instrument_functions(mut schema: NodeSchema) -> NodeSchema {
     for p in instrument_params() {
         schema = schema.param(p.clone());
     }
-    schema
+    let from = schema.version;
+    schema.version = from + 1;
+    schema.upgrade(from, drop_chords_and_arpeggio)
 }

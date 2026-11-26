@@ -1,38 +1,37 @@
 //! The instrument functions every per-note instrument gets (the legacy `InstrumentTrack`, `NotePlayHandle`,
 //! `InstrumentSoundShaping`, `InstrumentFunctions` and `MonoMode`, rewritten as one processor around the plugin's
-//! voices): pitch and pitch bend (F-IJN-002), the envelopes and LFOs of the volume, the cutoff and the resonance with
-//! the filter (F-IJN-010, F-IJN-011), chords (F-IJN-013), mono, legato and glide (F-IJN-014), the arpeggio
-//! (F-IJN-015), the note's fade-in and the instrument's release, and the velocity as level (U28).
+//! voices): pitch and pitch bend (F-IJN-002), mono, legato and glide (F-IJN-014), the note's fade-in and the
+//! instrument's release, and the velocity as level (U28). The envelopes and LFOs of the volume, the cutoff and the
+//! resonance, with the filter (F-IJN-010, F-IJN-011), are still here but apart, in [`shaping`], until they move to an
+//! audio effect. Chords and the arpeggio are not the instrument's: they are note effects that run before it.
 //!
 //! A plugin implements [`Synth`] (its parameters and how one voice sounds) and builds an [`Instrument`] around it.
 //! The instrument functions' fields and parameters are added to its schema by [`add_instrument_functions`].
 //!
 //! # How a block is played
 //!
-//! The block is cut into pieces at every event, at every arpeggio step and gated end, and on a grid of
-//! [`GRID`] samples of the engine's frame count. Each piece starts with its events and steps; the LFOs move on by
-//! piece. The grid makes the pieces — and so the audio — the same for any block size that is a multiple of it
-//! (V3: 32, 64, 256, 1024...).
+//! The block is cut into pieces at every event and on a grid of [`GRID`] samples of the engine's frame count. Each
+//! piece starts with its events; the LFOs move on by piece. The grid makes the pieces — and so the audio — the same
+//! for any block size that is a multiple of it (V3: 32, 64, 256, 1024...).
 //!
 //! # Notes
 //!
-//! A note from the host is a *base* note. It sounds as one or more *sounding* notes, each a voice of the pool
-//! (lm-render's [`VoicePool`], in `Poly`, with its stealing): its chord (when chords are on), the arpeggio's steps
-//! (when the arpeggio is on: the base note itself is silent, as the legacy master note), and, in mono and legato,
-//! only the last base note held sounds. Sounding notes get numbers of their own, above `0x8000_0000`.
+//! A note from the host is a *base* note. It sounds as one *sounding* note, a voice of the pool (lm-render's
+//! [`VoicePool`], in `Poly`, with its stealing); in mono and legato only the last base note held sounds. Sounding
+//! notes get numbers of their own, above `0x8000_0000`.
 //!
 //! # Note expressions
 //!
-//! A `NoteExpression` names a base note and moves every note it sounds (its chord, its arpeggio's steps, the mono or
-//! legato voice): `Tuning` adds semitones to their pitch before the bend range and glide, `Pan` is a balance (the
-//! legacy instrument track's law: the left at 1 − p for p > 0, the right at 1 + p for p < 0), after the velocity's
-//! gain. Each goes linearly from where it is to the new value over the event's `ramp` frames (a new event replaces
-//! a ramp under way); the pan moves sample by sample, the tuning by piece, as the glide (the synth renders a piece at
-//! one frequency). A base starts at 0 and 0; a note released keeps the values it had.
+//! A `NoteExpression` names a base note and moves the note it sounds (and the mono or legato voice): `Tuning` adds
+//! semitones to their pitch before the bend range and glide, `Pan` is a balance (the legacy instrument track's law:
+//! the left at 1 − p for p > 0, the right at 1 + p for p < 0), after the velocity's gain. Each goes linearly from
+//! where it is to the new value over the event's `ramp` frames (a new event replaces a ramp under way); the pan moves
+//! sample by sample, the tuning by piece, as the glide (the synth renders a piece at one frequency). A base starts
+//! at 0 and 0; a note released keeps the values it had.
 
-mod chords;
 mod notes;
 mod schema;
+pub mod shaping;
 pub mod stream;
 #[cfg(test)]
 mod stream_tests;
@@ -44,24 +43,25 @@ use std::fmt;
 use std::sync::Arc;
 
 use lm_base::{Error, Result};
-use lm_dsp::basic_filters::{BasicFilter, FilterType};
-use lm_dsp::envelope::{EnvelopeSettings, LfoShape};
+use lm_dsp::basic_filters::BasicFilter;
+use lm_dsp::envelope::LfoShape;
 use lm_dsp::sound_shaping::{NotePosition, SoundShaping, SoundShapingSettings};
 use lm_render::{
-    Adopted, Event, EventKind, NoteId, Policy, ProcessContext, ProcessSpec, Processor, Rng, SampleData, TransportInfo,
-    Voice, VoiceNote, VoicePool,
+    Adopted, Event, EventKind, NoteId, Policy, ProcessContext, ProcessSpec, Processor, Rng, SampleData, Voice,
+    VoiceNote, VoicePool,
 };
 use lm_state::ParamSpec;
 
-pub use chords::{CHORD_INTERVALS, CHORD_KEYS, chord, chord_index, is_scale};
 pub use schema::{
-    ARP_DIRECTIONS, ARP_MODES, FILTER_KEYS, LFO_SHAPE_FIELDS, LFO_SHAPE_KEYS, LFO_SYNC_FIELDS, LFO_WAVE_FIELDS,
-    SYNC_KEYS, TARGETS, VOICE_MODES, add_instrument_functions, instrument_fields, instrument_params, p, sync_beats,
+    SYNC_KEYS, VOICE_MODES, add_instrument_functions, drop_chords_and_arpeggio, instrument_fields, instrument_params,
+    p, sync_beats,
 };
+pub use shaping::{FILTER_KEYS, LFO_SHAPE_FIELDS, LFO_SHAPE_KEYS, LFO_SYNC_FIELDS, LFO_WAVE_FIELDS, TARGETS};
 
 use crate::resources::ResourceView;
 use crate::state::StateView;
-use notes::{ArpDirection, ArpMode, ExpressionRamp, NoteCx, NoteSettings, Run, Sounder, VoiceMode};
+use notes::{ExpressionRamp, NoteCx, NoteSettings, Run, Sounder, VoiceMode};
+use shaping::ShapingKit;
 pub use stream::{Stream, StreamInstrument, add_note_functions, note_fields, note_params};
 
 /// The pieces of a block fall on this grid of the engine's frame count (the same as lm-render's automation grid)
@@ -161,19 +161,8 @@ pub trait Synth: Clone + Send + 'static {
 #[derive(Clone, Debug)]
 struct Kit {
     params: [f32; p::COUNT],
-    lfo_shape: [LfoShape; 3],
-    lfo_sync: [Option<f64>; 3],
-    filter: FilterType,
-    chord: &'static [u8],
-    arp_chord: &'static [u8],
-    arp_direction: ArpDirection,
-    arp_mode: ArpMode,
-    arp_sync: Option<f64>,
+    shaping: ShapingKit,
     mode: VoiceMode,
-}
-
-fn on(v: f32) -> bool {
-    v >= 0.5
 }
 
 impl Kit {
@@ -182,86 +171,17 @@ impl Kit {
         for (i, spec) in instrument_params().iter().enumerate() {
             params[i] = state.param_f32(spec.key)?;
         }
-        let shape = |k: &str| state.choice(k, LfoShape::from_key);
-        let sync = |k: &str| state.choice(k, |s| SYNC_KEYS.contains(&s).then(|| sync_beats(s)));
-        let table = |k: &str| state.choice(k, chord);
-        Ok(Self {
-            params,
-            lfo_shape: [shape(LFO_SHAPE_FIELDS[0])?, shape(LFO_SHAPE_FIELDS[1])?, shape(LFO_SHAPE_FIELDS[2])?],
-            lfo_sync: [sync(LFO_SYNC_FIELDS[0])?, sync(LFO_SYNC_FIELDS[1])?, sync(LFO_SYNC_FIELDS[2])?],
-            filter: state.choice("filterType", FilterType::from_key)?,
-            chord: table("chord")?,
-            arp_chord: table("arpChord")?,
-            arp_direction: state.choice("arpDirection", ArpDirection::from_key)?,
-            arp_mode: state.choice("arpMode", ArpMode::from_key)?,
-            arp_sync: sync("arpSync")?,
-            mode: state.choice("voiceMode", VoiceMode::from_key)?,
-        })
+        Ok(Self { params, shaping: ShapingKit::read(state)?, mode: state.choice("voiceMode", VoiceMode::from_key)? })
     }
 
-    fn envelope(&self, t: usize, bpm: f64) -> EnvelopeSettings {
-        let e = |k: usize| self.params[p::env(t) + k];
-        let lfo_speed = match self.lfo_sync[t] {
-            // The period of the synced length at this tempo, over the 20 s of the knob's end
-            Some(beats) if bpm > 0.0 => (beats * 60.0 / bpm / 20.0) as f32,
-            _ => e(p::LFO_SPEED),
-        };
-        EnvelopeSettings {
-            predelay: e(p::PREDELAY),
-            attack: e(p::ATTACK),
-            hold: e(p::HOLD),
-            decay: e(p::DECAY),
-            sustain: e(p::SUSTAIN),
-            release: e(p::RELEASE),
-            amount: e(p::AMOUNT),
-            lfo_predelay: e(p::LFO_PREDELAY),
-            lfo_attack: e(p::LFO_ATTACK),
-            lfo_speed,
-            lfo_amount: e(p::LFO_AMOUNT),
-            lfo_shape: self.lfo_shape[t],
-            x100: on(e(p::LFO_X100)),
-            control_env_amount: on(e(p::LFO_ENV_AMOUNT)),
-        }
-    }
-
-    fn shaping(&self, bpm: f64) -> SoundShapingSettings {
-        SoundShapingSettings {
-            filter_enabled: on(self.params[p::FILTER_ON]),
-            filter: self.filter,
-            cutoff: self.params[p::CUTOFF],
-            resonance: self.params[p::RESONANCE],
-            volume: self.envelope(0, bpm),
-            cutoff_envelope: self.envelope(1, bpm),
-            resonance_envelope: self.envelope(2, bpm),
-        }
+    /// The sound shaping's settings now (see [`shaping`])
+    fn shaping_settings(&self, bpm: f64) -> SoundShapingSettings {
+        self.shaping.settings(&self.params[p::SHAPING..p::SHAPING + shaping::s::COUNT], bpm)
     }
 
     /// What the notes read now
     fn notes(&self) -> NoteSettings {
-        let q = &self.params;
-        NoteSettings {
-            chord_on: q[p::CHORD_ON],
-            chord_range: q[p::CHORD_RANGE],
-            chord: self.chord,
-            arp_on: q[p::ARP_ON],
-            arp_chord: self.arp_chord,
-            arp_range: q[p::ARP_RANGE],
-            arp_repeats: q[p::ARP_REPEATS],
-            arp_cycle: q[p::ARP_CYCLE],
-            arp_skip: q[p::ARP_SKIP],
-            arp_miss: q[p::ARP_MISS],
-            arp_time: q[p::ARP_TIME],
-            arp_gate: q[p::ARP_GATE],
-            arp_direction: self.arp_direction,
-            arp_mode: self.arp_mode,
-            arp_sync: self.arp_sync,
-            glide: q[p::GLIDE],
-            mode: self.mode,
-        }
-    }
-
-    fn synced(&self) -> bool {
-        self.lfo_sync.iter().any(Option::is_some) || self.arp_sync.is_some()
+        NoteSettings { glide: self.params[p::GLIDE], mode: self.mode }
     }
 }
 
@@ -516,7 +436,7 @@ impl<S: Synth> Instrument<S> {
                 match resources.audio(r) {
                     Ok(a) if a.frames() > 0 => lfo_waves[t] = Some(a),
                     Ok(_) => {}
-                    Err(e) if kit.lfo_shape[t] == LfoShape::UserDefined => return Err(e),
+                    Err(e) if kit.shaping.lfo_shape[t] == LfoShape::UserDefined => return Err(e),
                     Err(_) => {}
                 }
             }
@@ -530,7 +450,7 @@ impl<S: Synth> Instrument<S> {
         let pool =
             VoicePool::new(Policy::Poly, voices.max(1), fade, || KitVoice::new(synth.voice(), synth.voice(), rate));
         let fading = synth.clone();
-        let settings = kit.shaping(120.0);
+        let settings = kit.shaping_settings(120.0);
         let mut shaping = SoundShaping::new(rate, GRID, 0x5eed_1f05);
         shaping.set(&settings, GRID);
         Ok(Self {
@@ -570,7 +490,7 @@ impl<S: Synth> Instrument<S> {
 
     /// What the notes are played with now
     fn note_cx(&self) -> NoteCx {
-        NoteCx { ns: self.kit.notes(), rate: self.rate, bpm: self.bpm }
+        NoteCx { ns: self.kit.notes(), rate: self.rate }
     }
 
     fn set_param(&mut self, index: u32, value: f32) {
@@ -587,7 +507,7 @@ impl<S: Synth> Instrument<S> {
         }
         let k = i - S::PARAMS;
         self.kit.params[k] = v;
-        if (p::env(0)..p::CHORD_ON).contains(&k) {
+        if (p::SHAPING..p::GLIDE).contains(&k) {
             self.dirty = true;
         }
     }
@@ -624,66 +544,6 @@ impl<S: Synth> Instrument<S> {
     }
 
     // ---- playing ----
-
-    /// The LFOs move on to the piece of `n` frames at offset `at` (by the tempo while playing, when synced: U37)
-    fn lfos(&mut self, n: usize, at: usize, transport: &TransportInfo) {
-        let bpm = transport.bpm;
-        if bpm != self.synth_bpm {
-            self.synth_bpm = bpm;
-            self.synth.set_tempo(bpm);
-            self.fading.set_tempo(bpm);
-        }
-        if self.kit.synced() && bpm != self.bpm {
-            self.bpm = bpm;
-            self.dirty = true;
-        }
-        if self.dirty {
-            self.settings = self.kit.shaping(self.bpm);
-        }
-        let previous = self.previous_piece;
-        for t in 0..3 {
-            let wave = self.lfo_waves[t].as_deref().map(|w| w.channel(0));
-            let settings = match t {
-                0 => self.settings.volume,
-                1 => self.settings.cutoff_envelope,
-                _ => self.settings.resonance_envelope,
-            };
-            let env = match t {
-                0 => &mut self.shaping.volume,
-                1 => &mut self.shaping.cutoff,
-                _ => &mut self.shaping.resonance,
-            };
-            match self.kit.lfo_sync[t] {
-                Some(beats) if transport.playing && bpm > 0.0 => {
-                    // The phase from the position on the time line, not from how long the LFO has run: the same at a
-                    // locate or a loop (U37), and the same for any block size (V3: an integer sample, not a sum of
-                    // fractions). At a constant tempo it is the phase of the bar
-                    let cycle = beats * 60.0 / bpm * f64::from(self.rate);
-                    let sample = transport.position + at as i64;
-                    let phase = (sample as f64).rem_euclid(cycle) / cycle;
-                    let mut frames =
-                        (lm_dsp::envelope::SECS_PER_LFO_OSCILLATION * self.rate * settings.lfo_speed) as i32;
-                    if settings.x100 {
-                        frames /= 100;
-                    }
-                    let target = (phase * f64::from(frames.max(1))) as usize;
-                    if self.dirty {
-                        env.set(&settings, wave, n);
-                    }
-                    env.reset_lfo(wave, n);
-                    env.next_period(target, wave, n);
-                }
-                _ => {
-                    env.next_period(previous, wave, n);
-                    if self.dirty {
-                        env.set(&settings, wave, n);
-                    }
-                }
-            }
-        }
-        self.dirty = false;
-        self.previous_piece = n;
-    }
 
     /// Plays every voice for `n` frames into `left`/`right` from `at`
     fn piece(&mut self, at: usize, n: usize, left: &mut [f32], right: &mut [f32], rng: &mut Rng) {
@@ -880,19 +740,12 @@ impl<S: Synth> Processor for Instrument<S> {
                 self.event(events[e].kind);
                 e += 1;
             }
-            let now = self.run.frame;
-            let ncx = self.note_cx();
-            self.run.timed(&ncx, &mut Pool(&mut self.pool), now, rng);
             let mut end = frames;
             if e < events.len() {
                 end = end.min(events[e].offset as usize);
             }
             let grid = GRID - ((grid_origin + at as u64) % GRID as u64) as usize;
             end = end.min(at + grid);
-            let next = self.run.next_timed(&ncx, now);
-            if next != u64::MAX {
-                end = end.min(at + (next - now).min(frames as u64) as usize);
-            }
             let n = end.saturating_sub(at).max(1).min(frames - at);
             self.lfos(n, at, transport);
             if mono {

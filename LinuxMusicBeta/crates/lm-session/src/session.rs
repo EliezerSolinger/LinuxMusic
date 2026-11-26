@@ -142,6 +142,7 @@ pub fn internal_descriptors() -> Vec<&'static lm_plugin::Descriptor> {
     all.extend(lm_plugins_guitarix::ALL.iter().map(|(_, d)| *d));
     all.extend(lm_plugins_effects::ALL.iter().copied());
     all.extend(lm_plugins_instruments::ALL.iter().copied());
+    all.extend(lm_plugins_noteeffects::ALL.iter().copied());
     all
 }
 

@@ -1,0 +1,20 @@
+{
+  "plugin:arpeggiator": {
+    "defaults": {
+      "chord": "octave",
+      "direction": "up",
+      "mode": "free",
+      "params": {
+        "cycle": 0.0,
+        "gate": 100.0,
+        "miss": 0.0,
+        "range": 1.0,
+        "repeats": 1.0,
+        "skip": 0.0,
+        "time": 200.0
+      },
+      "sync": "off"
+    },
+    "version": 1
+  }
+}

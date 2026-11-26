@@ -1,4 +1,4 @@
-//! The table of chords and scales (F-IJN-016; legacy `InstrumentFunctionNoteStacking::ChordTable`): 95 entries, in
+//! The table of chords and scales (F-IJN-016, moved from the instrument functions; legacy `InstrumentFunctionNoteStacking::ChordTable`): 95 entries, in
 //! the legacy order, each with a permanent key (U30). The legacy names repeat ("Major" is a chord and a scale), so
 //! the scales' keys start with `scale-`.
 

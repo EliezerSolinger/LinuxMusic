@@ -1,28 +1,13 @@
 {
   "plugin:slicert": {
     "defaults": {
-      "arpChord": "octave",
-      "arpDirection": "up",
-      "arpMode": "free",
-      "arpSync": "off",
-      "chord": "octave",
       "cutLfoShape": "sine",
       "cutLfoSync": "off",
       "cutLfoWave": null,
       "filterType": "low-pass",
       "loop": "off",
       "params": {
-        "arpCycle": 0.0,
-        "arpGate": 100.0,
-        "arpMiss": 0.0,
-        "arpOn": 0.0,
-        "arpRange": 1.0,
-        "arpRepeats": 1.0,
-        "arpSkip": 0.0,
-        "arpTime": 200.0,
         "bendRange": 2.0,
-        "chordOn": 0.0,
-        "chordRange": 1.0,
         "cutAmount": 0.0,
         "cutAttack": 0.0,
         "cutDecay": 0.5,
@@ -83,6 +68,6 @@
       "volLfoSync": "off",
       "volLfoWave": null
     },
-    "version": 1
+    "version": 2
   }
 }

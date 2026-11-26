@@ -4,12 +4,12 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use lm_render::{Adopted, EventKind, ProcessSpec, Processor, Rng};
+use lm_render::{Adopted, EventKind, NoteId, ProcessSpec, Processor, Rng};
 use lm_state::{FieldKind, PARAMS_KEY, Scale, Value, from_json, to_json};
 
 use crate::descriptor::{BuildContext, Descriptor, PluginKind, TestHints, Velocity};
 use crate::registry::{Registry, check_ports};
-use crate::testing::bench::{Bench, Timed};
+use crate::testing::bench::{Bench, NoteBench, Timed, in_host_order};
 use crate::testing::material::*;
 
 /// The rates of U36
@@ -82,6 +82,7 @@ impl Plugin {
     fn channels(&self, state: &Value) -> usize {
         match self.kind {
             PluginKind::Effect => 2,
+            PluginKind::NoteEffect => 0,
             PluginKind::Instrument => {
                 let ports = self.registry.ports(&self.id, state).unwrap_or_else(|| panic!("no ports for {state:?}"));
                 ports.outputs.iter().map(|p| p.channels as usize).sum()
@@ -104,6 +105,7 @@ impl Plugin {
             PluginKind::Instrument => Bench::instrument(p, spec(rate), self.channels(state), SEED)
                 .with_key_map(super::current_setup().key_map),
             PluginKind::Effect => Bench::effect(p, spec(rate), 2, SEED, test_input),
+            PluginKind::NoteEffect => panic!("{}: a note effect is driven by a NoteBench", self.id),
         }
     }
 
@@ -365,7 +367,7 @@ fn probe(p: &Plugin, state: &Value, key: u8, rate: u32) -> (Option<f64>, f64) {
     let total = (1.4 * f64::from(rate)) as usize;
     let events = match p.kind {
         PluginKind::Instrument => vec![note_on(0, 1, key, 1.0)],
-        PluginKind::Effect => Vec::new(),
+        PluginKind::Effect | PluginKind::NoteEffect => Vec::new(),
     };
     let out = p.bench(state, rate).render(total, 256, &events, false);
     finite(&out, p.tests.max_level, "a probe");
@@ -672,4 +674,169 @@ pub fn external_contract(registry: &Arc<Registry>, id: &str, deterministic: bool
     if deterministic {
         no_hidden_state_of(&p);
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Note effects (`PluginKind::NoteEffect`)
+
+/// A script of notes for a note effect: overlapping notes of several keys, some of no length, with a pedal, a
+/// controller and an expression, and a release of everything at the end
+fn note_script(rate: u32, seconds: f64) -> Vec<Timed> {
+    let total = (seconds * f64::from(rate)) as u64;
+    let mut v = Vec::new();
+    let mut id = 1u32;
+    let mut t = 0u64;
+    while t + u64::from(rate) / 3 < total {
+        let key = 40 + (id * 7 % 40) as u8;
+        v.push(note_on(t, id, key, 0.4 + 0.1 * (id % 6) as f32));
+        v.push(note_off(t + u64::from(rate) / 5 + u64::from(id) * 11, id, key));
+        if id % 4 == 0 {
+            v.push(Timed::new(t + 5, EventKind::Midi { bytes: [0xB0, 1, 64] }));
+            v.push(Timed::new(
+                t + 9,
+                EventKind::NoteExpression {
+                    note: NoteId(id),
+                    expression: lm_render::Expression::Tuning,
+                    value: 0.5,
+                    ramp: 0,
+                },
+            ));
+        }
+        id += 1;
+        t += u64::from(rate) / 9 + 17;
+    }
+    v.push(Timed::new(total - 1, EventKind::AllNotesRelease));
+    v
+}
+
+fn note_bench(p: &Plugin, state: &Value, rate: u32) -> NoteBench {
+    NoteBench::new(p.build(state, rate), spec(rate), SEED)
+}
+
+/// What a note effect holds: the notes on at the end of `events` (by number), with their keys
+fn sounding(events: &[Timed]) -> Vec<(u32, u8)> {
+    let mut on: Vec<(u32, u8)> = Vec::new();
+    for t in in_host_order(events) {
+        match t.kind {
+            EventKind::NoteOn { note, key, .. } => on.push((note.0, key)),
+            EventKind::NoteOff { note, key, .. } => {
+                if let Some(i) = on.iter().position(|(n, k)| *n == note.0 && *k == key) {
+                    on.swap_remove(i);
+                }
+            }
+            EventKind::AllNotesRelease | EventKind::AllSoundOff => on.clear(),
+            _ => {}
+        }
+    }
+    on
+}
+
+/// The state's tests that every plugin kind has run for a note effect, and the note effect's own (below): the same
+/// state built twice gives the same output, whatever the block size (V3), under the allocation trap
+pub fn note_deterministic_and_block_independent(d: &'static Descriptor) {
+    let p = Plugin::new(d);
+    let mut rng = Rng::new(SEED + 21);
+    let mut states = vec![p.defaults()];
+    for _ in 0..6 {
+        states.push(random_state(p.registry.schemas(), &p.type_name, &mut rng));
+    }
+    for (n, state) in states.iter().enumerate() {
+        let mut events = note_script(48_000, 3.0);
+        events.extend(param_changes(&p, 48_000, 3.0, &mut rng));
+        let total = 3 * 48_000;
+        let reference = in_host_order(&note_bench(&p, state, 48_000).run(total, 1024, &events, true));
+        let again = in_host_order(&note_bench(&p, state, 48_000).run(total, 1024, &events, true));
+        assert_eq!(reference, again, "{}: state {n} built twice", p.id);
+        for block in BLOCKS {
+            let other = in_host_order(&note_bench(&p, state, 48_000).run(total, block, &events, true));
+            assert_eq!(reference, other, "{}: state {n}, blocks of {block}", p.id);
+        }
+    }
+}
+
+/// Everything it started is ended: after the script's release, no note it emitted is left sounding, and a stream
+/// with no notes in it is not made to sound
+pub fn note_balanced(d: &'static Descriptor) {
+    let p = Plugin::new(d);
+    let mut rng = Rng::new(SEED + 22);
+    let mut states = vec![p.defaults()];
+    for _ in 0..6 {
+        states.push(random_state(p.registry.schemas(), &p.type_name, &mut rng));
+    }
+    for (n, state) in states.iter().enumerate() {
+        let events = note_script(48_000, 3.0);
+        let out = note_bench(&p, state, 48_000).run(3 * 48_000, 256, &events, true);
+        let left = sounding(&out);
+        assert!(left.is_empty(), "{}: state {n} leaves {} notes sounding after the release", p.id, left.len());
+        let quiet = note_bench(&p, state, 48_000).run(48_000, 256, &[], true);
+        assert!(!quiet.iter().any(|t| matches!(t.kind, EventKind::NoteOn { .. })), "{}: notes from nothing", p.id);
+    }
+}
+
+/// `AllNotesRelease` and `AllSoundOff` go through (after what the effect held is ended), at their offset
+pub fn note_forwards_releases(d: &'static Descriptor) {
+    let p = Plugin::new(d);
+    for kind in [EventKind::AllNotesRelease, EventKind::AllSoundOff] {
+        let mut events = vec![note_on(0, 1, 60, 0.8), note_on(10, 2, 64, 0.8)];
+        events.push(Timed::new(3000, kind));
+        events.push(Timed::new(3500, EventKind::Midi { bytes: [0xB0, 7, 99] }));
+        let out = note_bench(&p, &p.defaults(), 48_000).run(8000, 256, &events, true);
+        assert!(out.iter().any(|t| t.at == 3000 && t.kind == kind), "{}: {kind:?} not forwarded", p.id);
+        assert!(
+            out.iter().any(|t| t.at == 3500 && t.kind == EventKind::Midi { bytes: [0xB0, 7, 99] }),
+            "{}: a controller is not forwarded",
+            p.id
+        );
+        assert!(sounding(&out).is_empty(), "{}: notes left after {kind:?}", p.id);
+    }
+}
+
+/// Every parameter swept under the allocation trap while notes come and go: no panic, no allocation, every event
+/// inside its block
+pub fn note_param_sweep(d: &'static Descriptor) {
+    let p = Plugin::new(d);
+    let mut rng = Rng::new(SEED + 23);
+    let state = p.defaults();
+    for round in 0..8 {
+        let mut events = note_script(48_000, 2.0);
+        events.extend(param_changes(&p, 48_000, 2.0, &mut rng));
+        for (i, spec) in p.schema.params.iter().enumerate() {
+            for k in 0..4u64 {
+                let value = if k % 2 == 0 { spec.min } else { spec.max };
+                events.push(Timed::new(
+                    1000 + k * 17_000 + round,
+                    EventKind::Param { index: i as u32, value: value as f32 },
+                ));
+            }
+        }
+        note_bench(&p, &state, 48_000).run(96_000, 256, &events, true);
+    }
+}
+
+/// A change of state while notes sound is adopted, the notes it holds are ended by the new effect, and what the
+/// whole did is the same as without the change when the state is the same
+pub fn note_adopt_while_playing(d: &'static Descriptor) {
+    let p = Plugin::new(d);
+    let state = p.defaults();
+    let events = note_script(48_000, 3.0);
+    let total = 3 * 48_000;
+    let whole = in_host_order(&note_bench(&p, &state, 48_000).run(total, 256, &events, true));
+    let mut bench = note_bench(&p, &state, 48_000);
+    let mut out = bench.run(total / 2, 256, &events, true);
+    let (adopted, old) = bench.replace(p.build(&state, 48_000), true);
+    assert_eq!(adopted, Adopted::Yes, "{}: the same tree must be adopted", p.id);
+    drop(old);
+    out.extend(bench.run(total - total / 2, 256, &events, true));
+    assert_eq!(whole, in_host_order(&out), "{}: the same tree rebuilt and adopted", p.id);
+}
+
+/// A reset forgets what is held (the panic command): nothing is emitted by it, and the effect goes on afterwards
+pub fn note_reset(d: &'static Descriptor) {
+    let p = Plugin::new(d);
+    let mut bench = note_bench(&p, &p.defaults(), 48_000);
+    let events = vec![note_on(0, 1, 60, 0.8)];
+    bench.run(2000, 256, &events, true);
+    bench.reset();
+    let out = bench.run(2000, 256, &[note_on(2000, 2, 62, 0.8), note_off(2500, 2, 62)], true);
+    assert!(sounding(&out).is_empty(), "{}: notes after a reset", p.id);
 }

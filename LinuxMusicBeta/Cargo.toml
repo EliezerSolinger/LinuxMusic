@@ -85,6 +85,7 @@ lm-sampler = { path = "crates/lm-sampler" }
 lm-plugins-sampler = { path = "crates/lm-plugins-sampler" }
 lm-plugins-instruments = { path = "crates/lm-plugins-instruments" }
 lm-plugins-stk = { path = "crates/lm-plugins-stk" }
+lm-plugins-noteeffects = { path = "crates/lm-plugins-noteeffects" }
 lm-sys-fpu = { path = "crates/lm-sys-fpu" }
 lm-sys-samplerate = { path = "crates/lm-sys-samplerate" }
 lm-sys-jack = { path = "crates/lm-sys-jack" }

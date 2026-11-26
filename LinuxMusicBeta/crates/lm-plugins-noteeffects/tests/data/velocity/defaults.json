@@ -1,0 +1,15 @@
+{
+  "plugin:velocity": {
+    "defaults": {
+      "mode": "scale",
+      "params": {
+        "curve": 0.0,
+        "fixed": 100.0,
+        "random": 0.0,
+        "scale": 100.0,
+        "seed": 0.0
+      }
+    },
+    "version": 1
+  }
+}
