@@ -518,7 +518,6 @@ Bars {0} to {1} = Compassos {0} a {1}
 Renders {0}, about {1} = Renderiza {0}, uns {1}
 As a loop = Como loop
 Choose a format. = Escolha um formato.
-Dither (TPDF) = Dither (TPDF)
 Not deterministic: {0} = Não determinístico: {0}
 Fast range: not bit for bit = Trecho rápido: não idêntico bit a bit
 Open on {0} (process {1}, since {2}): read-only = Aberto em {0} (processo {1}, desde {2}): só leitura

@@ -292,6 +292,5 @@ The MIDI items shown here = Os itens MIDI mostrados aqui
 Hand won ↺ = A mão venceu ↺
 This lane back to its curve = Esta lane de volta à curva
 The core refused: {0} = O núcleo recusou: {0}
-No automation lane = Nenhuma pista de automação
 No range for this parameter = Sem faixa de valores para este parâmetro
 No items = Nenhum item
