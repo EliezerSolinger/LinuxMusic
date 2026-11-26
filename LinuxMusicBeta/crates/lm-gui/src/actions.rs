@@ -140,7 +140,9 @@ actions!(
         PrMoveLeft,
         PrMoveRight,
         PrMoveBarLeft,
-        PrMoveBarRight
+        PrMoveBarRight,
+        PrPrevClip,
+        PrNextClip
     ]
 );
 
@@ -408,6 +410,22 @@ pub const REGISTRY: &[ActionDef] = &[
         "Move the notes a step right",
         "Notes",
         &["shift-right"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.prev_clip",
+        "piano_roll::PrPrevClip",
+        "Previous clip of the track",
+        "Notes",
+        &["alt-left"],
+        Some("PianoRoll"),
+    ),
+    a(
+        "notes.next_clip",
+        "piano_roll::PrNextClip",
+        "Next clip of the track",
+        "Notes",
+        &["alt-right"],
         Some("PianoRoll"),
     ),
     a(

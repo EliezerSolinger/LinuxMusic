@@ -21,10 +21,10 @@ a ação contam como parcial.
 |---|---|---:|---:|---:|---:|
 | F-JAN | Casca do programa, menus e transporte | 32 | 18 | 12 | 2 |
 | F-IJN | Janela do instrumento | 20 | 13 | 6 | 1 |
-| F-NOT | Editor de notas | 22 | 11 | 11 | 0 |
+| F-NOT | Editor de notas | 22 | 19 | 3 | 0 |
 | F-PAS | Gravação por passos | 1 | 0 | 1 | 0 |
 | F-ARR | Arranjo | 14 | 7 | 5 | 2 |
-| F-REG | Régua, marcadores e andamentos | 13 | 3 | 8 | 2 |
+| F-REG | Régua, marcadores e andamentos | 13 | 13 | 0 | 0 |
 | F-PAD | Padrões | 2 | 1 | 0 | 1 |
 | F-AUT | Curvas de automação | 8 | 6 | 2 | 0 |
 | F-TRK | Faixas | 21 | 10 | 8 | 3 |
@@ -114,22 +114,22 @@ a ação contam como parcial.
 | F-NOT-003 | Selecionar | feito |  | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-004 | Curva de pitch bend por nota | feito | aberto: respondido em P-24 (curva de afinação como campo bend da nota, ferramenta Pitch); o Shift+clique que abre a curva no editor de automação não existe, já que a curva não é automação | lm-gui/src/screens/piano_roll.rs,lm-doc/src/schemas.rs,lm-compile/src/items.rs |
 | F-NOT-005 | Faca | feito |  | lm-gui/src/screens/piano_roll.rs |
-| F-NOT-006 | Strum | parcial | Shift para curvar a escada do strum não existe (só espalhamento linear) | lm-gui/src/screens/piano_roll.rs |
+| F-NOT-006 | Strum | feito |  | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-007 | Mover notas | feito |  | lm-gui/src/screens/piano_roll.rs |
-| F-NOT-008 | Redimensionar notas | parcial | falta Shift+Ctrl "pegajoso" que empurra as notas seguintes; o resto (grade, Alt livre, Shift proporcional) existe | lm-gui/src/screens/piano_roll.rs |
-| F-NOT-009 | Teclado | parcial | falta Alt+←/→ (clipe anterior/seguinte da faixa); o resto vem das ações notes.* (transpor, oitava, passo, compasso, Ctrl/Alt+0-9) | lm-gui/src/actions.rs,lm-gui/src/screens/piano_roll.rs |
+| F-NOT-008 | Redimensionar notas | feito |  | lm-gui/src/screens/piano_roll.rs |
+| F-NOT-009 | Teclado | feito |  | lm-gui/src/screens/piano_roll.rs,lm-gui/src/actions.rs |
 | F-NOT-010 | Velocidade e pan das notas | feito |  | lm-gui/src/screens/piano_roll.rs,lm-doc/src/schemas.rs |
 | F-NOT-011 | Ferramentas de notas | feito |  | lm-gui/src/screens/piano_roll.rs |
-| F-NOT-012 | Quantização e tamanho de nota | parcial | falta "travar na nota" na quantização, faltam as tercinas 1/96 e 1/192 e nada é salvo entre sessões | lm-gui/src/screens/piano_roll.rs |
-| F-NOT-013 | Zoom e rolagem | parcial | a grade do piano roll usa compasso fixo 4/4 (constante BAR), não a fórmula de compasso do lugar do clipe no mapa de andamentos; zoom, rolagem e rodas existem | lm-gui/src/screens/piano_roll.rs |
+| F-NOT-012 | Quantização e tamanho de nota | feito |  | lm-gui/src/screens/piano_roll.rs |
+| F-NOT-013 | Zoom e rolagem | feito |  | lm-gui/src/screens/piano_roll_bars.rs |
 | F-NOT-014 | Tom, escala e acorde | feito |  | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-015 | Teclado do piano | parcial | clicar nas teclas, glissando e velocidade pela posição soam no instrumento da faixa do clipe e soltam no mouse-up; faltam teclas do microafinador e nomes opcionais | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-016 | Notas fantasmas | feito |  | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-017 | Tocar o clipe | parcial | o Espaço só anima o cursor e o loop do item na tela (ItemPlay): não toca o áudio do clipe em loop | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-018 | Gravar no editor de notas | parcial | o núcleo tem notes.record_into (gravar no item aberto), mas o piano roll não o chama nem usa o teclado MIDI: grava só as teclas do computador por conta própria; sem quantizar automático | lm-session/src/midi/step.rs,lm-session/src/midi/record.rs,lm-gui/src/screens/piano_roll.rs |
-| F-NOT-019 | Copiar, cortar, colar | parcial | a área de transferência é uma lista em memória do editor, não a do sistema: não cola entre projetos nem instâncias | lm-gui/src/screens/piano_roll.rs |
+| F-NOT-019 | Copiar, cortar, colar | feito |  | lm-gui/src/screens/piano_roll/clip_text.rs |
 | F-NOT-021 | Selecionar por região da régua | feito |  | lm-gui/src/screens/piano_roll.rs |
-| F-NOT-022 | Abrir o editor sem clipe | parcial | abre o primeiro item MIDI que existir; num projeto vazio não cria o primeiro clipe da primeira faixa de instrumento | lm-gui/src/screens/piano_roll.rs |
+| F-NOT-022 | Abrir o editor sem clipe | feito |  | lm-gui/src/screens/piano_roll/first_clip.rs |
 | F-NOT-023 | Teclado do computador como piano | feito | as teclas do computador tocam o instrumento da faixa do clipe em qualquer modo, e gravam ao vivo ou em passo pelo núcleo | lm-gui/src/screens/piano_roll.rs |
 
 ## F-PAS: Gravação por passos
@@ -162,18 +162,18 @@ a ação contam como parcial.
 | Id | Funcionalidade | Estado | O que falta | Onde |
 |---|---|---|---|---|
 | F-REG-002 | Linha do tempo própria por editor | feito | aberto: respondido em P-26 (piano roll com cursor e loop próprios do item, ItemPlay); o transporte do arranjo continua único e o editor de passos/automação só tem cursor local | lm-gui/src/screens/piano_roll.rs,lm-gui/src/screens/automation.rs |
-| F-REG-003 | Rolagem automática | parcial | só existe a preferência liga/desliga interface.followCursor e a página não a lê (campo follow_cursor sempre falso): não rola; faltam os 3 estados (página, contínua, desligada) | lm-gui/src/pages/composition.rs,lm-gui/src/screens/settings.rs |
-| F-REG-004 | Ao parar | parcial | ao parar o cursor fica onde parou; faltam voltar ao início e voltar para onde começou | lm-render/src/renderer.rs,lm-session/src/session.rs |
-| F-REG-005 | Mover o cursor | parcial | só o clique na régua move o cursor; arrastar não | lm-gui/src/pages/composition.rs |
+| F-REG-003 | Rolagem automática | feito |  | lm-gui/src/pages/composition.rs |
+| F-REG-004 | Ao parar | feito |  | lm-session/src/session.rs |
+| F-REG-005 | Mover o cursor | feito |  | lm-gui/src/pages/composition/ruler.rs |
 | F-REG-006 | Desenhar o loop na régua | feito |  | lm-gui/src/pages/composition/edit.rs |
-| F-REG-007 | Editar o loop com Shift | parcial | um modo único (Shift+esquerdo início, Shift+direito fim, pontas arrastáveis); sem escolha de modo na configuração, sem pegar o mais perto no arranjo, sem arrastar o corpo, sem pontos magnéticos e sem menu "início/fim do loop aqui" | lm-gui/src/pages/composition/edit.rs |
-| F-REG-008 | Selecionar uma região pela régua | falta | Ctrl+arrasto na régua do arranjo não seleciona os clipes do trecho (só existe no piano roll, para notas) | lm-gui/src/pages/composition/edit.rs |
+| F-REG-007 | Editar o loop com Shift | feito |  | lm-gui/src/pages/composition/edit.rs |
+| F-REG-008 | Selecionar uma região pela régua | feito |  | lm-gui/src/pages/composition.rs |
 | F-REG-009 | Números dos compassos | feito |  | lm-gui/src/pages/composition.rs |
-| F-REG-010 | Cursor | parcial | a linha do cursor não fica vermelha ao gravar (cor fixa) | lm-gui/src/pages/composition.rs |
-| F-REG-011 | Marcadores com nome | parcial | faltam no menu Cor e "Marca uma mudança de andamento" e o "Adicionar um marcador aqui" com nome; M, duplo clique, arrastar, renomear, tocar daqui, remover e teclas 1-9 existem | lm-gui/src/pages/marks.rs |
-| F-REG-012 | Regiões | parcial | falta Cor no menu e o duplo clique que cria região sobre o loop ou de um compasso; desenhar, Shift+R, mover, redimensionar, clique vira loop, exportar e remover existem | lm-gui/src/pages/marks.rs |
-| F-REG-013 | Mapa de andamentos | parcial | o modelo e o desenho têm pontos, rampa (Linear) e fórmula, mas a interface só edita o BPM do primeiro ponto (transporte): sem criar, mover ou remover pontos, sem rampa nem fórmula por ponto | lm-gui/src/pages/composition.rs,lm-gui/src/pages/transport.rs,lm-gui/src/model.rs |
-| F-REG-014 | Mudar o andamento no cursor | falta | não há ação nem comando para mudar o andamento no cursor (só o BPM do primeiro ponto) | lm-gui/src/pages/transport.rs |
+| F-REG-010 | Cursor | feito |  | lm-gui/src/pages/composition.rs |
+| F-REG-011 | Marcadores com nome | feito |  | lm-gui/src/pages/marks.rs |
+| F-REG-012 | Regiões | feito |  | lm-gui/src/pages/marks.rs |
+| F-REG-013 | Mapa de andamentos | feito |  | lm-gui/src/pages/composition/tempo.rs |
+| F-REG-014 | Mudar o andamento no cursor | feito |  | lm-gui/src/pages/composition/tempo.rs,lm-gui/src/actions.rs |
 
 ## F-PAD: Padrões
 

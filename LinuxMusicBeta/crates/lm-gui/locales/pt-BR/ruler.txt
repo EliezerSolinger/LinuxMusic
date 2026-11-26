@@ -19,3 +19,4 @@ Render = Renderizar
 Render {0} items = Renderizar {0} itens
 Re-render the recorded items = Renderizar de novo os itens gravados
 Tempo change at the cursor = Mudança de andamento no cursor
+Lock to the note = Travar na nota

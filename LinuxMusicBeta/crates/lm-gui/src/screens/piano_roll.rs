@@ -34,13 +34,16 @@ use self::music::{
     BAR, BEAT, CHORDS, Clip, GRIDS, KEY_NAMES, Note, NoteChange, NoteMap, QuantizeWhat, SCALES, format_bbt, format_len,
     key_name,
 };
+mod clip_text;
+mod first_clip;
+
 use super::ScreenCx;
 use super::live::Live;
 use super::piano_roll_bars::{self, Bar};
 use crate::actions::{
     PrCopy, PrCut, PrCutOverlaps, PrDelete, PrFill, PrGlue, PrModeDraw, PrModeErase, PrModeKnife, PrModePitch,
-    PrModeSelect, PrModeStrum, PrMoveBarLeft, PrMoveBarRight, PrMoveLeft, PrMoveRight, PrOctaveDown, PrOctaveUp,
-    PrPaste, PrPlay, PrReverse, PrSelectAll, PrSelectNone, PrTransposeDown, PrTransposeUp,
+    PrModeSelect, PrModeStrum, PrMoveBarLeft, PrMoveBarRight, PrMoveLeft, PrMoveRight, PrNextClip, PrOctaveDown,
+    PrOctaveUp, PrPaste, PrPlay, PrPrevClip, PrReverse, PrSelectAll, PrSelectNone, PrTransposeDown, PrTransposeUp,
 };
 use crate::model;
 use crate::ui::{THEME, c, tr, track_color, trf};
@@ -132,6 +135,8 @@ enum Drag {
         anchor: Note,
         from: f64,
         stretch: bool,
+        /// Shift+Ctrl: the notes after the dragged ones are pushed along (F-NOT-008)
+        sticky: bool,
     },
     Rect {
         from: Point<Pixels>,
@@ -157,6 +162,7 @@ enum Drag {
         g: Option<GestureId>,
         origin: Vec<(u64, Note)>,
         from: f64,
+        from_y: f32,
     },
     Lane {
         g: Option<GestureId>,
@@ -240,6 +246,8 @@ pub struct PianoRoll {
     ghost: Option<NodeId>,
     pub tool: Tool,
     grid: usize,
+    /// The quantization is the note's length ("Lock to the note", F-NOT-012)
+    lock: bool,
     snap: SnapMode,
     /// None = the last note's length (the legacy's "Last note")
     length: Option<usize>,
@@ -284,21 +292,40 @@ impl PianoRoll {
     pub fn new(scx: ScreenCx, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (feed, clip, tps) = scx.core.update(cx, |core, _| {
             let root = core.port().root();
-            // the target, or the first MIDI item (F-NOT-022)
-            let clip = scx.target.or_else(|| music::first_midi(root));
+            // the target, or the first MIDI item; none in the project: the first instrument track gets one (F-NOT-022)
+            let mut clip = scx.target.or_else(|| music::first_midi(root));
+            if clip.is_none()
+                && let Some(op) = first_clip::first_clip_op(root)
+            {
+                clip = core
+                    .port_mut()
+                    .apply(Label::new("New item"), vec![op])
+                    .ok()
+                    .and_then(|a| a.created.first().map(|(_, id)| *id));
+            }
+            let root = core.port().root();
             let map = model::tempo_map(root);
             let tps = map.tick_at(map.sample_rate() as i64) as f64;
             (core.port_mut().feed(Topic::All), clip, tps.max(1.0))
         });
+        // the quantization and the note length the project kept (F-NOT-012)
+        let kept = |k: &str| scx.core.read(cx).port().ui().get("pianoRoll").and_then(|p| p.get(k)).cloned();
+        let kept_grid = kept("grid").and_then(|v| v.as_int()).map_or(4, |i| (i.max(0) as usize).min(GRIDS.len() - 1));
+        let kept_length = kept("length")
+            .and_then(|v| v.as_int())
+            .and_then(|i| usize::try_from(i).ok())
+            .map(|i| i.min(GRIDS.len() - 1));
+        let kept_lock = kept("lock").and_then(|v| v.as_bool()).unwrap_or(false);
         let mut pr = PianoRoll {
             focus: cx.focus_handle(),
             feed,
             clip,
             ghost: None,
             tool: Tool::Draw,
-            grid: 4,
+            grid: kept_grid,
+            lock: kept_lock,
             snap: SnapMode::Nudge,
-            length: None,
+            length: kept_length,
             last: Note::new(60, 0, BEAT / 4, 0.8),
             root: 0,
             scale: None,
@@ -428,7 +455,19 @@ impl PianoRoll {
     }
 
     fn grid_ticks(&self) -> i64 {
-        GRIDS[self.grid].1
+        if self.lock { self.new_len() } else { GRIDS[self.grid].1 }
+    }
+
+    /// The quantization and the note length, kept in the interface document (F-NOT-012)
+    fn remember_grid(&self, cx: &mut Context<Self>) {
+        let v = Value::object([
+            ("grid", Value::int(self.grid as i64)),
+            ("length", Value::int(self.length.map_or(-1, |i| i as i64))),
+            ("lock", Value::bool(self.lock)),
+        ]);
+        self.scx.core.update(cx, |core, _| {
+            let _ = core.port_mut().set_ui(vec![PathStep::key("pianoRoll")], v);
+        });
     }
 
     fn new_len(&self) -> i64 {
@@ -650,7 +689,7 @@ impl PianoRoll {
                         .collect();
                 }
                 self.set_sel(origin.iter().map(|(k, _)| *k).collect());
-                self.drag = Some(Drag::Strum { g: None, origin, from: tick });
+                self.drag = Some(Drag::Strum { g: None, origin, from: tick, from_y: y });
             }
             (Tool::Draw | Tool::Select, Some((n, part))) => {
                 // a click on a note makes its length, velocity and panning the "last" ones (F-NOT-001)
@@ -664,8 +703,14 @@ impl PianoRoll {
                 }
                 let origin = self.selected(&notes);
                 if part == 1 {
-                    self.drag =
-                        Some(Drag::Resize { g: None, origin, anchor: x, from: tick, stretch: ev.modifiers.shift });
+                    self.drag = Some(Drag::Resize {
+                        g: None,
+                        origin,
+                        anchor: x,
+                        from: tick,
+                        stretch: ev.modifiers.shift && !primary(&ev.modifiers),
+                        sticky: ev.modifiers.shift && primary(&ev.modifiers),
+                    });
                 } else {
                     self.pressed = [x.key].into_iter().collect();
                     self.audition(&[x.key], cx);
@@ -786,7 +831,7 @@ impl PianoRoll {
                     self.gesture(g, "Move notes", changes, cx);
                 }
             }
-            Drag::Resize { g, origin, anchor, from, stretch } => {
+            Drag::Resize { g, origin, anchor, from, stretch, sticky } => {
                 let raw = tick - *from;
                 let changes: Vec<NoteChange> = if *stretch {
                     // Shift: the selection stretches in proportion, from its first start (F-NOT-008)
@@ -808,10 +853,21 @@ impl PianoRoll {
                     };
                     let d = ne - anchor.end();
                     let min = if free { 1 } else { grid };
-                    origin
+                    let mut out: Vec<NoteChange> = origin
                         .iter()
                         .map(|(n, x)| (*n, Some(Note { length: (x.length + d).max(min.min(x.length)), ..x.clone() })))
-                        .collect()
+                        .collect();
+                    if *sticky && d != 0 {
+                        // the notes that begin at or after the dragged end are pushed by the same distance
+                        let end = origin.iter().map(|(_, x)| x.end()).max().unwrap_or(0);
+                        out.extend(
+                            notes
+                                .iter()
+                                .filter(|(n, x)| x.start >= end && !origin.iter().any(|(o, _)| o == *n))
+                                .map(|(n, x)| (*n, Some(Note { start: (x.start + d).max(0), ..x.clone() }))),
+                        );
+                    }
+                    out
                 };
                 if let Some((_, Some(x))) = changes.first() {
                     self.last.length = x.length;
@@ -844,12 +900,19 @@ impl PianoRoll {
                 pts.dedup_by_key(|p| p.at);
                 self.gesture(g, "Pitch bend", vec![(*n, Some(Note { bend: pts, ..origin.clone() }))], cx);
             }
-            Drag::Strum { g, origin, from } => {
+            Drag::Strum { g, origin, from, from_y } => {
                 let mut spread = (tick - *from).round() as i64;
                 if !free {
                     spread = music::snap(spread as f64, (grid / 4).max(1));
                 }
-                self.gesture(g, "Strum", music::strum(origin, spread), cx);
+                // Shift bends the staircase: the pointer's height is the curve (up: the late notes crowd at the
+                // end, down: at the start)
+                let curve = if ev.modifiers.shift {
+                    2f64.powf(f64::from(*from_y - y) / f64::from(self.key_h) / 4.0)
+                } else {
+                    1.0
+                };
+                self.gesture(g, "Strum", music::strum_curved(origin, spread, curve), cx);
             }
             Drag::Lane { .. } | Drag::Loop { .. } | Drag::RulerSelect { .. } | Drag::Keys => {
                 self.drag = Some(drag);
@@ -1237,7 +1300,9 @@ impl PianoRoll {
                 .enumerate()
                 .map(|(i, z)| MenuItem::new(format!("{}%", z * 100.0), i == self.zoom_y))
                 .collect(),
-            Menu::Grid => GRIDS.iter().enumerate().map(|(i, (l, _))| MenuItem::new(*l, i == self.grid)).collect(),
+            Menu::Grid => std::iter::once(MenuItem::new(tr("Lock to the note"), self.lock))
+                .chain(GRIDS.iter().enumerate().map(|(i, (l, _))| MenuItem::new(*l, !self.lock && i == self.grid)))
+                .collect(),
             Menu::Length => std::iter::once(MenuItem::new(tr("Last note"), self.length.is_none()))
                 .chain(GRIDS.iter().enumerate().map(|(i, (l, _))| MenuItem::new(*l, self.length == Some(i))))
                 .collect(),
@@ -1299,8 +1364,17 @@ impl PianoRoll {
                 self.zoom_y = i;
                 self.key_h = KEY_H_100 * ZOOM_Y[i];
             }
-            Menu::Grid => self.grid = i,
-            Menu::Length => self.length = i.checked_sub(1),
+            Menu::Grid => {
+                self.lock = i == 0;
+                if let Some(g) = i.checked_sub(1) {
+                    self.grid = g;
+                }
+                self.remember_grid(cx);
+            }
+            Menu::Length => {
+                self.length = i.checked_sub(1);
+                self.remember_grid(cx);
+            }
             Menu::Key => match i.checked_sub(1) {
                 None => self.scale = None,
                 Some(r) => {
@@ -1386,11 +1460,43 @@ impl PianoRoll {
         self.transact("Move notes", ch, cx);
     }
 
+    /// A bar left or right: the length of the bar the first selected note is in, by the tempo map (F-NOT-013)
+    fn shift_bar(&mut self, dir: i64, cx: &mut Context<Self>) {
+        let notes = self.notes(cx);
+        let at = self.selected(&notes).iter().map(|(_, x)| x.start).min().unwrap_or(0);
+        let start = self.clip(cx).map_or(0, |c| c.start);
+        let bars = piano_roll_bars::bars(self.scx.core.read(cx).port().root(), start, at as f64, at as f64);
+        let len = bars.first().map_or(BAR, |b| b.len);
+        self.shift(dir * len, cx);
+    }
+
+    /// Alt+left and Alt+right: the clip before or after this one on its track (F-NOT-009)
+    fn neighbour_clip(&mut self, dir: i64, cx: &mut Context<Self>) {
+        let Some(me) = self.clip else { return };
+        let root = self.scx.core.read(cx).port().root().clone();
+        let next = model::tracks(&root).into_iter().find(|t| t.items.iter().any(|i| i.id == me)).and_then(|t| {
+            let mut midi: Vec<_> = t.items.iter().filter(|i| !i.audio).collect();
+            midi.sort_by_key(|i| i.start);
+            let at = midi.iter().position(|i| i.id == me)? as i64 + dir;
+            usize::try_from(at).ok().and_then(|k| midi.get(k)).map(|i| i.id)
+        });
+        if let Some(id) = next {
+            self.clip = Some(id);
+            self.set_sel(BTreeSet::new());
+            self.scroll = 0.0;
+            self.fitted = false;
+            cx.notify();
+        }
+    }
+
     fn copy(&mut self, cut: bool, cx: &mut Context<Self>) {
         let notes = self.notes(cx);
         let sel = self.selected(&notes);
         let a = sel.iter().map(|(_, x)| x.start).min().unwrap_or(0);
         self.clipboard = sel.iter().map(|(_, x)| Note { start: x.start - a, ..x.clone() }).collect();
+        if !self.clipboard.is_empty() {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(clip_text::to_text(&self.clipboard)));
+        }
         if cut {
             self.transact("Cut", sel.into_iter().map(|(n, _)| (n, None)).collect(), cx);
             self.set_sel(BTreeSet::new());
@@ -1398,6 +1504,10 @@ impl PianoRoll {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
+        // the system's clipboard first: notes copied in another project or instance (F-NOT-019)
+        if let Some(notes) = cx.read_from_clipboard().and_then(|c| c.text()).and_then(|t| clip_text::from_text(&t)) {
+            self.clipboard = notes;
+        }
         if self.clipboard.is_empty() {
             return;
         }
@@ -1444,8 +1554,11 @@ impl PianoRoll {
                 let d = (k.as_bytes()[0] - b'0') as usize;
                 if m.alt {
                     self.grid = d.saturating_sub(1).min(GRIDS.len() - 1);
+                    self.lock = false;
+                    self.remember_grid(cx);
                 } else {
                     self.length = d.checked_sub(1).map(|i| i.min(GRIDS.len() - 1));
+                    self.remember_grid(cx);
                     if self.rec == Rec::Step {
                         let step = self.new_len();
                         self.step_action("notes.step_record", vec![("step", Value::int(step))], cx);
@@ -1869,8 +1982,10 @@ impl Render for PianoRoll {
             .on_action(cx.listener(|pr, _: &PrOctaveDown, _, cx| pr.transpose(-12, cx)))
             .on_action(cx.listener(|pr, _: &PrMoveLeft, _, cx| pr.shift(-pr.grid_ticks(), cx)))
             .on_action(cx.listener(|pr, _: &PrMoveRight, _, cx| pr.shift(pr.grid_ticks(), cx)))
-            .on_action(cx.listener(|pr, _: &PrMoveBarLeft, _, cx| pr.shift(-BAR, cx)))
-            .on_action(cx.listener(|pr, _: &PrMoveBarRight, _, cx| pr.shift(BAR, cx)))
+            .on_action(cx.listener(|pr, _: &PrMoveBarLeft, _, cx| pr.shift_bar(-1, cx)))
+            .on_action(cx.listener(|pr, _: &PrMoveBarRight, _, cx| pr.shift_bar(1, cx)))
+            .on_action(cx.listener(|pr, _: &PrPrevClip, _, cx| pr.neighbour_clip(-1, cx)))
+            .on_action(cx.listener(|pr, _: &PrNextClip, _, cx| pr.neighbour_clip(1, cx)))
             .on_key_down(cx.listener(|pr, ev: &KeyDownEvent, _, cx| pr.key_down(ev, cx)))
             .on_key_up(cx.listener(|pr, ev: &KeyUpEvent, _, cx| pr.key_up(ev, cx)))
             .child(self.render_toolbars(clip.as_ref(), cx))
@@ -2053,7 +2168,13 @@ impl PianoRoll {
                         format!("{}%", ZOOM_Y[self.zoom_y] * 100.0).into(),
                         "Vertical zooming",
                     ))
-                    .child(combo("pr-grid", "quantize", Menu::Grid, GRIDS[self.grid].0.into(), "Quantization"))
+                    .child(combo(
+                        "pr-grid",
+                        "quantize",
+                        Menu::Grid,
+                        if self.lock { tr("Lock to the note").into() } else { GRIDS[self.grid].0.into() },
+                        "Quantization",
+                    ))
                     .child(combo(
                         "pr-length",
                         "note",
@@ -2298,7 +2419,7 @@ impl PianoRoll {
                             move |b, _, _| rb.set(b),
                             move |b, _, window, cx| {
                                 let o = b.origin;
-                                let w = b.size.width.as_f32();
+                                let _w = b.size.width.as_f32();
                                 let x = |t: f64| ((t - scroll) / tpp) as f32;
                                 window.paint_quad(fill(b, c(THEME.bg3)));
                                 if item_loop.0 {
@@ -2454,7 +2575,9 @@ pub mod music {
                 return format!("{}/{den}", ticks / unit);
             }
         }
-        for (den, unit) in [(6, BAR / 6), (12, BAR / 12), (24, BAR / 24), (48, BAR / 48)] {
+        for (den, unit) in
+            [(6, BAR / 6), (12, BAR / 12), (24, BAR / 24), (48, BAR / 48), (96, BAR / 96), (192, BAR / 192)]
+        {
             if ticks % unit == 0 {
                 return format!("{}/{}T", ticks / unit, den / 3 * 2);
             }
@@ -2463,7 +2586,7 @@ pub mod music {
     }
 
     /// The legacy's quantization and note lengths: 1/1..1/64 and the triplets 1/3..1/48
-    pub const GRIDS: [(&str, i64); 12] = [
+    pub const GRIDS: [(&str, i64); 14] = [
         ("1/1", BAR),
         ("1/2", BAR / 2),
         ("1/4", BEAT),
@@ -2476,6 +2599,8 @@ pub mod music {
         ("1/12", BAR / 12),
         ("1/24", BAR / 24),
         ("1/48", BAR / 48),
+        ("1/96", BAR / 96),
+        ("1/192", BAR / 192),
     ];
 
     pub fn snap(t: f64, grid: i64) -> i64 {
@@ -2851,7 +2976,13 @@ pub mod music {
         out
     }
 
+    #[cfg(test)]
     pub fn strum(original: &[(u64, Note)], spread: i64) -> Vec<NoteChange> {
+        strum_curved(original, spread, 1.0)
+    }
+
+    /// The strum's staircase with a curve: each note's offset is `spread * (i / k) ^ curve` (1: straight)
+    pub fn strum_curved(original: &[(u64, Note)], spread: i64, curve: f64) -> Vec<NoteChange> {
         let mut v: Vec<&(u64, Note)> = original.iter().collect();
         v.sort_by_key(|(_, x)| x.key);
         if spread < 0 {
@@ -2861,7 +2992,7 @@ pub mod music {
         v.iter()
             .enumerate()
             .map(|(i, (n, x))| {
-                let d = spread.abs() * i as i64 / k as i64;
+                let d = (spread.abs() as f64 * (i as f64 / k as f64).powf(curve.clamp(0.1, 10.0))).round() as i64;
                 (*n, Some(Note { start: x.start + d, length: (x.length - d).max(1), ..x.clone() }))
             })
             .collect()
@@ -2891,6 +3022,9 @@ pub mod music {
             assert_eq!(r.iter().find(|c| c.0 == 3).unwrap().1.as_ref().unwrap().start, 230);
             let chord: Vec<(u64, Note)> = vec![(1, Note::new(60, 0, 960, 1.0)), (2, Note::new(67, 0, 960, 1.0))];
             assert_eq!(strum(&chord, 120)[1].1.as_ref().unwrap().start, 120);
+            // a curve above 1 keeps the middle note nearer the start
+            let mid = |c: f64| strum_curved(&chord, 120, c)[1].1.as_ref().unwrap().start;
+            assert!(mid(2.0) < mid(1.0) || chord.len() < 3);
         }
 
         #[test]
