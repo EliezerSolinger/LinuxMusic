@@ -197,10 +197,11 @@ enum Apply {
     Restart,
 }
 
-fn apply_badge(a: Apply) -> Div {
+/// Only what asks for a restart is marked: "applies at once" is the rule, not news
+fn apply_badge(a: Apply) -> Option<Div> {
     match a {
-        Apply::Now => badge(tr("applies at once"), THEME.green, false),
-        Apply::Restart => badge(tr("asks for a restart"), THEME.yellow, false),
+        Apply::Now => None,
+        Apply::Restart => Some(badge(tr("asks for a restart"), THEME.yellow, false)),
     }
 }
 
@@ -1287,12 +1288,9 @@ impl Settings {
                                 REGISTRY.iter().find(|o| o.id != id && keys_of(o, &prefs).iter().any(|x| x == k))
                             });
                             match conflict {
-                                Some(o) => caption(trf(
-                                    "Already used by \"{0}\": press them again to take them, Esc cancels",
-                                    &[&tr(o.label)],
-                                ))
-                                .into_any_element(),
-                                None => caption(tr("Press the new keys… (Esc cancels)")).into_any_element(),
+                                Some(o) => caption(trf("Used by \"{0}\": press again to take them", &[&tr(o.label)]))
+                                    .into_any_element(),
+                                None => caption(tr("Press the new keys…")).into_any_element(),
                             }
                         } else if keys.is_empty() {
                             caption(tr("none")).into_any_element()
@@ -1413,7 +1411,7 @@ impl Render for Settings {
                 .items_center()
                 .gap(px(6.))
                 .child(div().text_size(px(13.)).child(tr(r.label)))
-                .children(r.apply.map(apply_badge));
+                .children(r.apply.and_then(apply_badge));
             if r.wide {
                 div()
                     .flex()

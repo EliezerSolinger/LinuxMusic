@@ -690,7 +690,7 @@ impl Render for EffectWindow {
             }
         }
         if ch.inserts.is_empty() {
-            rows.push(caption(tr("No effects yet.")).into_any_element());
+            rows.push(caption(tr("No effects")).into_any_element());
         }
         div()
             .id("effect-window")

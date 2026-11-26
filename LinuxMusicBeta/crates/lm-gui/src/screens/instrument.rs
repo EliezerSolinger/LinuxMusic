@@ -1758,7 +1758,7 @@ impl InstrumentWindow {
         cx: &Context<Self>,
     ) -> Vec<AnyElement> {
         let Some((node, plugin)) = t.instrument.clone() else {
-            return vec![caption(tr("This track has no instrument.")).into_any_element()];
+            return vec![caption(tr("No instrument")).into_any_element()];
         };
         let mut out = Vec::new();
         let port = self.scx.core.read(cx).port();
@@ -1789,7 +1789,7 @@ impl InstrumentWindow {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .child(div().flex_1().child(caption(tr("Locate it in the browser and drop it here."))))
+                    .child(div().flex_1())
                     .child(button("iw-locate", tr("Open the browser"), false, 0).h(px(22.)).on_click(cx.listener(
                         |w, _, window, cx| {
                             w.scx.open(Screen::Browser, None, window, cx);
@@ -1800,10 +1800,7 @@ impl InstrumentWindow {
         }
         if !plugins.iter().any(|p| p.id == plugin) {
             // a plugin the program lacks: silent, its state kept and saved back (F-INS-024)
-            out.push(notice(trf(
-                "\"{0}\" is not installed. The track is silent; its settings are kept and saved with the project.",
-                &[&plugin],
-            )));
+            out.push(notice(trf("\"{0}\" is not installed; the track is silent", &[&plugin])));
             return out;
         }
         if &*plugin == "avldrums" {
@@ -1870,7 +1867,6 @@ impl InstrumentWindow {
             .p(px(8.))
             .rounded(px(6.))
             .bg(c(THEME.bg2))
-            .child(caption(tr("Click a piece to hear it")))
             .child(
                 div()
                     .id("iw-kit")
@@ -1935,9 +1931,7 @@ impl InstrumentWindow {
         let t = ["vol", "cut", "res"][self.target];
         let find = |k: &str| ctls.iter().find(|x| x.key() == k).cloned();
         if find("volAttack").is_none() {
-            return vec![notice(tr(
-                "Envelopes, LFOs and the filter do not apply to this instrument: it plays its own voices.",
-            ))];
+            return vec![notice(tr("Not available for this instrument"))];
         }
         let mut out = vec![
             div()
@@ -2009,9 +2003,7 @@ impl InstrumentWindow {
     fn chords_tab(&self, ctls: &[Ctl], cx: &Context<Self>) -> Vec<AnyElement> {
         let find = |k: &str| ctls.iter().find(|x| x.key() == k).cloned();
         if find("chordOn").is_none() {
-            return vec![notice(tr(
-                "Chords and the arpeggio do not apply to this instrument: it plays its own voices.",
-            ))];
+            return vec![notice(tr("Not available for this instrument"))];
         }
         let synced = find("arpSync").map(|x| x.choice).filter(|s| &**s != "off");
         let mono = find("voiceMode").is_some_and(|x| &*x.choice != "poly");
@@ -2044,10 +2036,7 @@ impl InstrumentWindow {
         let Some(ch) = model::channels(self.scx.core.read(cx).port().root()).into_iter().find(|c| c.id == chid) else {
             return vec![];
         };
-        let mut out = vec![
-            caption(trf("The effects are on the desk channel \"{0}\", where the main output goes.", &[&ch.name]))
-                .into_any_element(),
-        ];
+        let mut out = vec![caption(trf("Channel \"{0}\"", &[&ch.name])).into_any_element()];
         let rows: Vec<AnyElement> = ch
             .inserts
             .iter()
@@ -2081,7 +2070,7 @@ impl InstrumentWindow {
                     .into_any_element()
             })
             .collect();
-        let rows = if rows.is_empty() { vec![caption(tr("No effects yet.")).into_any_element()] } else { rows };
+        let rows = if rows.is_empty() { vec![caption(tr("No effects")).into_any_element()] } else { rows };
         out.push(group_card(tr("Inserts"), rows));
         out.push(
             button("iw-open-effects", tr("Open in the effect window"), false, 0)
@@ -2372,10 +2361,7 @@ impl InstrumentWindow {
         vec![
             group_card(tr("MIDI input"), in_rows),
             group_card(tr("MIDI output"), out_rows),
-            group_card(
-                tr("Velocity"),
-                vec![vel, caption(tr("MIDI notes at the base velocity play at 100 %.")).into_any_element()],
-            ),
+            group_card(tr("Velocity"), vec![vel]),
             group_card(tr("Controllers (CC)"), rack),
         ]
     }
@@ -2483,7 +2469,7 @@ impl InstrumentWindow {
         };
         let mut mrows: Vec<AnyElement> = Vec::new();
         if !per_note {
-            mrows.push(notice(tr("The microtuner does not apply to this instrument: it plays its own voices.")));
+            mrows.push(notice(tr("Not available for this instrument")));
         }
         let m1 = micro.clone();
         mrows.push(
@@ -2622,7 +2608,7 @@ impl InstrumentWindow {
                     d => match d.parse::<i64>() {
                         Ok(v) if (0..=1023).contains(&v) => degrees.push(Value::int(v)),
                         _ => {
-                            e.error = Some(trf("Key {0} is not a degree (a number, or x for silent).", &[&(i + 1)]));
+                            e.error = Some(trf("Key {0} is not a degree", &[&(i + 1)]));
                             cx.notify();
                             return;
                         }
@@ -2646,7 +2632,7 @@ impl InstrumentWindow {
             if let Some(bad) =
                 lines.iter().position(|l| interval_cents(l).is_none()).map(|k| k + 1).or(lines.is_empty().then_some(1))
             {
-                e.error = Some(trf("Line {0} is not an interval (cents with a point, or a ratio like 3/2).", &[&bad]));
+                e.error = Some(trf("Line {0} is not an interval", &[&bad]));
                 cx.notify();
                 return;
             }
@@ -2726,12 +2712,8 @@ impl InstrumentWindow {
             div().flex().flex_wrap().gap(px(3.)).children(slots).into_any_element(),
             caption(tr("Description")).into_any_element(),
             div().w_full().child(Input::new(&e.description).small()).into_any_element(),
-            caption(if keymap {
-                tr("Scale degree of each key (x for silent)")
-            } else {
-                tr("Intervals, one per line: cents (701.955) or ratios (3/2)")
-            })
-            .into_any_element(),
+            caption(if keymap { tr("Degree of each key") } else { tr("Intervals (cents or ratio)") })
+                .into_any_element(),
             div().w_full().child(Textarea::new(&e.text)).into_any_element(),
         ];
         if keymap {
@@ -2949,7 +2931,7 @@ impl Render for InstrumentWindow {
                 .size_full()
                 .bg(c(THEME.bg1))
                 .p(px(12.))
-                .child(caption(tr("No instrument track.")));
+                .child(caption(tr("No instrument")));
         };
         if self.lit.is_some_and(|(_, at)| at.elapsed() < Duration::from_millis(260)) {
             window.request_animation_frame();

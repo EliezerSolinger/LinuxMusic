@@ -18,7 +18,7 @@ use crate::actions::{
     ActionDef, ExportMidi, ImportFiles, OpenAbout, OpenExport, OpenNewProject, OpenNotices, OpenProject, REGISTRY,
     SaveAs, keys_of,
 };
-use crate::ui::{THEME, c, caption, tr, trf};
+use crate::ui::{THEME, c, caption, tr};
 use crate::workspace::Workspace;
 
 /// How many results the list shows at most
@@ -421,26 +421,8 @@ impl Render for Palette {
                     .p(px(4.))
                     .children(rows)
                     .when(empty, |d| {
-                        d.child(
-                            div()
-                                .p(px(12.))
-                                .text_color(c(THEME.text3))
-                                .text_size(px(13.))
-                                .child(tr("No command has these letters")),
-                        )
+                        d.child(div().p(px(12.)).text_color(c(THEME.text3)).text_size(px(13.)).child(tr("No command")))
                     }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap(px(14.))
-                    .px(px(12.))
-                    .py(px(6.))
-                    .border_t_1()
-                    .border_color(c(THEME.line))
-                    .child(caption(trf("{0} {1} to choose", &[&"↑", &"↓"])))
-                    .child(caption(trf("{0} to run", &[&tr("Enter")])))
-                    .child(caption(trf("{0} to close", &[&"Esc"]))),
             )
     }
 }

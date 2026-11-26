@@ -216,7 +216,7 @@ impl Render for MidiBinding {
                     )))
                     .child(button("binding-close", tr("Close"), false, 0).on_click(move |_, _, cx| scx.close(cx))),
             )
-            .when(none, |d| d.child(caption(tr("No MIDI control moves this yet."))))
+            .when(none, |d| d.child(caption(tr("No mappings"))))
             .child(div().id("binding-rows").flex().flex_col().gap(px(8.)).overflow_y_scroll().children(rows))
             .child(
                 div()

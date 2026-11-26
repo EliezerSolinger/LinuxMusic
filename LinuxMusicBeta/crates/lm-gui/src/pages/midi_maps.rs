@@ -215,7 +215,7 @@ impl Render for MidiMapsPage {
                     .gap(px(8.))
                     .child(div().text_size(px(16.)).font_weight(FontWeight::BOLD).child(tr("MIDI maps")))
                     .child(Input::new(&self.search))
-                    .when(empty, |d| d.child(caption(tr("No mappings. Right-click a control and choose MIDI learn."))))
+                    .when(empty, |d| d.child(caption(tr("No mappings"))))
                     .child(div().id("maps").flex_1().overflow_y_scroll().children(rows)),
             )
             .child(

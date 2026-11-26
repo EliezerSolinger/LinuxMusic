@@ -557,10 +557,7 @@ impl Workspace {
                 .border_color(c(THEME.line2))
                 .child(div().text_size(px(16.)).font_weight(FontWeight::BOLD).child(SharedString::from(title)))
                 .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(c(THEME.text2))
-                        .child(tr("The project has changes that were not saved.")),
+                    div().text_size(px(12.)).text_color(c(THEME.text2)).child(tr("The project has unsaved changes.")),
                 )
                 .child(
                     div()

@@ -9,7 +9,7 @@ use lm_port::{EditOp, Label, NodeId, Value};
 
 use super::ScreenCx;
 use crate::model::{self, ChannelKind};
-use crate::ui::{THEME, button, c, caption, tr, tr_str, track_color, trf};
+use crate::ui::{THEME, button, c, tr, tr_str, track_color};
 
 pub struct Routing {
     scx: ScreenCx,
@@ -175,10 +175,6 @@ impl Render for Routing {
                     )
                     .child(button("close", tr("Close"), false, 0).on_click(move |_, _, cx| scx.close(cx))),
             )
-            .child(caption(trf(
-                "Each output of a track goes to a desk channel; several may go to the same one ({0} channels)",
-                &[&channels.len()],
-            )))
             .child(div().id("routing-rows").flex().flex_col().gap(px(2.)).overflow_y_scroll().children(rows))
     }
 }
