@@ -22,6 +22,6 @@ runtime-shaders = ["lm-gui/runtime-shaders"]
 lm-base.workspace = true
 lm-state.workspace = true
 lm-port.workspace = true
-lm-gui = { workspace = true, default-features = false }
+lm-gui.workspace = true
 lm-session.workspace = true
 lm-remote.workspace = true

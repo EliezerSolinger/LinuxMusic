@@ -103,7 +103,7 @@ lm-io = { path = "crates/lm-io" }
 lm-compile = { path = "crates/lm-compile" }
 lm-port = { path = "crates/lm-port" }
 lm-port-fake = { path = "crates/lm-port-fake" }
-lm-gui = { path = "crates/lm-gui" }
+lm-gui = { path = "crates/lm-gui", default-features = false }
 lm-gui-plugins = { path = "crates/lm-gui-plugins" }
 lm-session = { path = "crates/lm-session" }
 lm-remote = { path = "crates/lm-remote" }
