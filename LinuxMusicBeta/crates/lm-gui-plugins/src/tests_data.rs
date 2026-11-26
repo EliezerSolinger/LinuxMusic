@@ -114,6 +114,14 @@ fn snapshots() {
                         one.pixmap(crate::assets::image(if on { b.active } else { b.inactive }), 0.0, 0.0, false);
                     }
                     Kind::Led(l) => one.pixmap(crate::assets::image(l.color.asset()), 0.0, 0.0, false),
+                    Kind::Lcd(l) if l.frac > 0 => crate::widgets::draw_lcd_float(
+                        &mut one,
+                        l.sheet,
+                        l.digits,
+                        l.frac,
+                        &crate::widgets::lcd_float_texts(0.0, l.frac),
+                        true,
+                    ),
                     Kind::Lcd(l) => crate::widgets::draw_lcd(&mut one, l.sheet, l.digits, "0", true),
                     Kind::Graph(g) => {
                         let def = schema.find_field(g.field).and_then(|f| f.default.clone()).unwrap_or_default();

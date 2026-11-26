@@ -296,7 +296,7 @@ impl<H: PortHost> PluginPanel<H> {
         let c = &self.spec.controls[ctrl];
         let (key, step, center, log) = match &c.kind {
             Kind::Knob(k) => (k.param, k.step, k.center, k.log),
-            Kind::Lcd(l) => (l.param, 1.0, None, false),
+            Kind::Lcd(l) => (l.param, l.step, None, false),
             Kind::Led(_) | Kind::Button(_) | Kind::Combo(_) | Kind::Graph(_) => (c.target().key(), 1.0, None, false),
         };
         let p = self.schema.as_ref().and_then(|s| s.find_param(key));
@@ -1096,6 +1096,17 @@ impl<H: PortHost> PluginPanel<H> {
                 let on = self.is_on(l.bind, cx);
                 let asset = if on { l.color.asset() } else { &assets::lmms::LED_OFF };
                 (on as u64, Box::new(move |cv| cv.pixmap(assets::image(asset), 0.0, 0.0, false)))
+            }
+            Kind::Lcd(l) if l.frac > 0 => {
+                let v = self.param(l.param, cx);
+                let texts = widgets::lcd_float_texts(v, l.frac);
+                let hsh = texts
+                    .0
+                    .bytes()
+                    .chain(texts.1.bytes())
+                    .fold(0u64, |h, b| h.wrapping_mul(131).wrapping_add(b as u64));
+                let (sheet, whole, frac) = (l.sheet, l.digits, l.frac);
+                (hsh, Box::new(move |cv| widgets::draw_lcd_float(cv, sheet, whole, frac, &texts, true)))
             }
             Kind::Lcd(l) => {
                 let v = self.param(l.param, cx);

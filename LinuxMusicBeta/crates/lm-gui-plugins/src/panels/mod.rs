@@ -6,6 +6,7 @@ pub mod effects;
 pub mod freeboy;
 pub mod kicker;
 pub mod lb302;
+pub mod lomm;
 pub mod nes;
 pub mod opulenz;
 pub mod organic;
@@ -34,6 +35,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (nes::ID, || &nes::PANEL),
     (freeboy::ID, || &freeboy::PANEL),
     (opulenz::ID, || &opulenz::PANEL),
+    (lomm::ID, || &lomm::PANEL),
     (shapers::DYNAMICS_ID, || &shapers::DYNAMICS_PANEL),
     (shapers::WAVESHAPER_ID, || &shapers::WAVESHAPER_PANEL),
 ];
@@ -52,6 +54,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     organic::ASSETS,
     sfxr::ASSETS,
     nes::ASSETS,
+    lomm::ASSETS,
     shapers::DYNAMICS_ASSETS,
     shapers::WAVESHAPER_ASSETS,
 ];

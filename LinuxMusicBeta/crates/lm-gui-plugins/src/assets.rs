@@ -69,6 +69,10 @@ pub mod lmms {
     pub static LCD_21PINK: Asset = asset!("lmms/lcd_21pink.png");
     pub static LCD_11GREEN: Asset = asset!("lmms/lcd_11green.png");
     pub static LCD_19PURPLE: Asset = asset!("lmms/lcd_19purple.png");
+    pub static LCD_11GREEN_DOT: Asset = asset!("lmms/lcd_11green_dot.png");
+    pub static LCD_19GREEN_DOT: Asset = asset!("lmms/lcd_19green_dot.png");
+    pub static LCD_19RED_DOT: Asset = asset!("lmms/lcd_19red_dot.png");
+    pub static LCD_19PURPLE_DOT: Asset = asset!("lmms/lcd_19purple_dot.png");
     pub static COMBOBOX_ARROW: Asset = asset!("lmms/combobox_arrow.png");
     pub static COMBOBOX_ARROW_SELECTED: Asset = asset!("lmms/combobox_arrow_selected.png");
     pub static COMBOBOX_BG: Asset = asset!("lmms/combobox_bg.png");

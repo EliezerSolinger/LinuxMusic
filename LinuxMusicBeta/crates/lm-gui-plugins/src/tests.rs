@@ -577,3 +577,8 @@ fn dynamicsprocessor(cx: &mut TestAppContext) {
 fn waveshaper(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::wave_shaper::DESCRIPTOR);
 }
+
+#[gpui::test]
+fn lomm(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::lomm::DESCRIPTOR);
+}

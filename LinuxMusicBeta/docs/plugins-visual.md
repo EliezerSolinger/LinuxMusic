@@ -5018,7 +5018,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | GranularPitchShifter | efeito | visual próprio | `GranularPitchShifterControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Guitarix | efeito | visual próprio (97 unidades em rack) | `GuitarixControlDialog.cpp`, `GuitarixLayout.cpp`, `GuitarixWidgets.cpp`, `GuitarixUnits.cpp`, `gx/rcstyles/*.png` | falta o plugin |
 | Kicker | instrumento | visual próprio | `Kicker.cpp`, `artwork.png` | **painel feito** (`panels/kicker.rs`, teste `kicker`; o knob de duração sem a sincronia de andamento, que o plugin novo não tem) |
-| LOMM | efeito | visual próprio | `LOMMControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
+| LOMM | efeito | visual próprio | `LOMMControlDialog.cpp`, `artwork.png` | **painel feito** (`panels/lomm.rs`, teste `lomm`; faltam os medidores vivos e as zonas de threshold arrastáveis, e a ocultação condicional de Feedback e Suppress) |
 | LadspaEffect | efeito (hospedeiro) | terceiros fora do processo (P-03) | `LadspaControlDialog.cpp` | fora (terceiros) |
 | Lb302 | instrumento | visual próprio | `Lb302.cpp`, `artwork.png` | **painel feito** (`panels/lb302.rs`, teste `lb302`) |
 | Lv2Effect | efeito (hospedeiro) | terceiros fora do processo | `Lv2FxControlDialog.cpp` | fora (terceiros) |

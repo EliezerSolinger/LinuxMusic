@@ -406,6 +406,99 @@ impl LcdSheet {
     }
 }
 
+impl LcdSheet {
+    /// The decimal point of a `LcdFloatSpinBox` (`lcd_<style>_dot.png`)
+    pub fn dot(self) -> &'static Asset {
+        match self {
+            LcdSheet::Green19 | LcdSheet::Pink21 => &assets::lmms::LCD_19GREEN_DOT,
+            LcdSheet::Red19 => &assets::lmms::LCD_19RED_DOT,
+            LcdSheet::Green11 => &assets::lmms::LCD_11GREEN_DOT,
+            LcdSheet::Purple19 => &assets::lmms::LCD_19PURPLE_DOT,
+        }
+    }
+}
+
+/// The size of a `LcdFloatSpinBox` of `whole` + `frac` digits: the whole part with its left margin only, the dot, the
+/// fraction with its right margin only (`LcdWidget::updateSize` with the seamless sides)
+pub fn lcd_float_size(sheet: LcdSheet, whole: usize, frac: usize) -> (f32, f32) {
+    let (cw, ch) = sheet.cell();
+    let margin_w = cw / 2;
+    let dot = assets::image(sheet.dot()).width();
+    ((cw * (whole + frac) as u32 + 2 * (1 + margin_w) + dot) as f32, (ch + 2) as f32)
+}
+
+/// The two texts of a `LcdFloatSpinBox` for a value (`LcdFloatSpinBox::update`): the whole part (`-0` for values in
+/// (-1, 0)) and the fraction with its leading zeros
+pub fn lcd_float_texts(value: f64, frac: usize) -> (String, String) {
+    let scale = 10f64.powi(frac as i32);
+    let mut value = value;
+    let mut fraction = ((value - value.trunc()) * scale).round().abs();
+    if fraction == scale {
+        value += 1f64.copysign(value);
+        fraction = 0.0;
+    }
+    (lcd_text(value, 0, false), format!("{:0>frac$}", fraction as i64))
+}
+
+/// `LcdFloatSpinBox::paintEvent` with its two `LcdWidget`s and the dot between them
+pub fn draw_lcd_float(
+    c: &mut Canvas,
+    sheet: LcdSheet,
+    whole: usize,
+    frac: usize,
+    texts: &(String, String),
+    enabled: bool,
+) {
+    let img = assets::image(sheet.asset());
+    let (cw, ch) = sheet.cell();
+    let mw = cw / 2;
+    let row = if enabled { 0 } else { ch };
+    let glyph = |c: &mut Canvas, d: char, x: f32| {
+        let g = match d.to_digit(10) {
+            Some(v) => v,
+            None if d == '-' => 11,
+            None => 10,
+        };
+        c.pixmap_part(img, (g * cw, row, cw, ch), x, 1.0, false);
+    };
+    // the whole part: left margin, padding, digits, no right margin
+    let mut x = 1.0;
+    c.pixmap_part(img, (LCD_CELLS * cw, row, cw, ch), x, 1.0, false);
+    x += mw as f32;
+    let shown: Vec<char> = texts.0.chars().collect();
+    for _ in shown.len()..whole {
+        glyph(c, ' ', x);
+        x += cw as f32;
+    }
+    for d in shown {
+        glyph(c, d, x);
+        x += cw as f32;
+    }
+    // the dot, centered in the height of the box
+    let dot = assets::image(sheet.dot());
+    let dot_h = dot.height() / 2;
+    let dot_y = ((ch + 2) as f32 - dot_h as f32) / 2.0;
+    c.pixmap_part(dot, (0, 0, dot.width(), dot_h), x, dot_y.floor(), false);
+    x += dot.width() as f32;
+    // the fraction: digits from its left edge, then the right margin
+    let shown: Vec<char> = texts.1.chars().collect();
+    for _ in shown.len()..frac {
+        glyph(c, '0', x);
+        x += cw as f32;
+    }
+    for d in shown {
+        glyph(c, d, x);
+        x += cw as f32;
+    }
+    let right_w = mw.saturating_sub(1);
+    for i in 0..right_w {
+        let sx = LCD_CELLS * cw + (i * (cw / 2)) / right_w.max(1);
+        c.pixmap_part(img, (sx, row, 1, ch), x + i as f32, 1.0, false);
+    }
+    let (w, h) = lcd_float_size(sheet, whole, frac);
+    draw_frame(c, w - 1.0, h);
+}
+
 /// The LCD's size without its label (`LcdWidget::updateSize`)
 pub fn lcd_size(sheet: LcdSheet, digits: usize) -> (f32, f32) {
     let (cw, ch) = sheet.cell();

@@ -152,6 +152,10 @@ pub struct LcdSpec {
     pub param: &'static str,
     pub label: Option<Text>,
     pub leading_zero: bool,
+    /// A `LcdFloatSpinBox`: the digits after the point (`digits` are then the whole part's); 0 for the integer one
+    pub frac: usize,
+    /// The model's step (the drag and the wheel round to it)
+    pub step: f64,
 }
 
 /// One entry of a combo box: the choice's key, its text and its icon
@@ -263,6 +267,7 @@ impl Control {
                 let i = crate::assets::image(b.inactive);
                 (a.width().max(i.width()) as f32, a.height().max(i.height()) as f32)
             }
+            Kind::Lcd(l) if l.frac > 0 => crate::widgets::lcd_float_size(l.sheet, l.digits, l.frac),
             Kind::Lcd(l) => crate::widgets::lcd_size(l.sheet, l.digits),
             Kind::Combo(c) => (c.w, crate::widgets::COMBO_HEIGHT),
             Kind::Graph(g) => (g.w, g.h),
@@ -497,4 +502,38 @@ pub fn label(x: f32, y: f32, text: &'static str) -> StaticText {
 /// A graph at `x`, `y`
 pub fn graph(spec: GraphSpec, x: f32, y: f32, name: &'static str) -> Control {
     Control { id: spec.field, x, y, kind: Kind::Graph(spec), name: Text::new(name), tip: Text::EMPTY }
+}
+
+/// An integer LCD spin box (`LcdSpinBox`) of `digits` digits on a stepped parameter
+pub fn lcd(param: &'static str, x: f32, y: f32, sheet: LcdSheet, digits: usize, name: &'static str) -> Control {
+    Control {
+        id: param,
+        x,
+        y,
+        kind: Kind::Lcd(LcdSpec { sheet, digits, param, label: None, leading_zero: false, frac: 0, step: 1.0 }),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+    }
+}
+
+/// A float LCD spin box (`LcdFloatSpinBox`) of `whole` + `frac` digits; `step` the model's step
+#[allow(clippy::too_many_arguments)]
+pub fn lcd_float(
+    param: &'static str,
+    x: f32,
+    y: f32,
+    sheet: LcdSheet,
+    whole: usize,
+    frac: usize,
+    step: f64,
+    name: &'static str,
+) -> Control {
+    Control {
+        id: param,
+        x,
+        y,
+        kind: Kind::Lcd(LcdSpec { sheet, digits: whole, param, label: None, leading_zero: false, frac, step }),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+    }
 }
