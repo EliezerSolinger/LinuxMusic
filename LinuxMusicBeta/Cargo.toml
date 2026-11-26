@@ -81,6 +81,8 @@ lm-expr = { path = "crates/lm-expr" }
 lm-plugins-effects = { path = "crates/lm-plugins-effects" }
 lm-plugins-fluidsynth = { path = "crates/lm-plugins-fluidsynth" }
 lm-plugins-gigplayer = { path = "crates/lm-plugins-gigplayer" }
+lm-sampler = { path = "crates/lm-sampler" }
+lm-plugins-sampler = { path = "crates/lm-plugins-sampler" }
 lm-plugins-instruments = { path = "crates/lm-plugins-instruments" }
 lm-plugins-stk = { path = "crates/lm-plugins-stk" }
 lm-sys-fpu = { path = "crates/lm-sys-fpu" }
