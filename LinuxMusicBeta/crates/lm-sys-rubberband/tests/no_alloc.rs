@@ -2,7 +2,7 @@
 //! (Rubber Band's `new`/`malloc`). `harness = false`: measured on the main thread, with nothing else running.
 //!
 //! Also records what is **not** real-time safe, so that the safety sheet stays true: `set_pitch_scale` (to a new
-//! value) and `reset` touch the heap on R3, and on R2 a changing time ratio makes `process` touch it.
+//! value) and `reset` touch the heap on R3; a changing time ratio does not, on R2 or R3.
 
 mod common;
 use common::heap;
@@ -52,23 +52,13 @@ fn main() {
                 exercise(&mut r, &input, &mut output, 20, false);
                 let events = heap::measure(|| assert_no_alloc(|| exercise(&mut r, &input, &mut output, 2000, false)));
                 assert_eq!(events, 0, "{engine:?} {formants:?} pitch {pitch}: the C heap was touched {events} times");
-                // A gliding time ratio: real-time safe on R3; R2 recomputes its stretch profile on the heap (the
-                // safety sheet says so; if R2 ever stops allocating here, the sheet can be relaxed)
-                let glide = heap::measure(|| {
-                    if engine == Engine::Finer {
-                        assert_no_alloc(|| exercise(&mut r, &input, &mut output, 2000, true));
-                    } else {
-                        exercise(&mut r, &input, &mut output, 2000, true);
-                    }
-                });
-                match engine {
-                    Engine::Finer => {
-                        assert_eq!(glide, 0, "{formants:?} pitch {pitch}: an R3 ratio glide touched the heap")
-                    }
-                    Engine::Faster => {
-                        assert!(glide > 0, "R2 ratio changes no longer allocate: update the safety sheet")
-                    }
-                }
+                // A gliding time ratio: real-time safe on both engines (the safety sheet says so; R2 used to
+                // recompute its stretch profile on the heap, and no longer does in the libraries CI builds against)
+                let glide = heap::measure(|| assert_no_alloc(|| exercise(&mut r, &input, &mut output, 2000, true)));
+                assert_eq!(
+                    glide, 0,
+                    "{engine:?} {formants:?} pitch {pitch}: a ratio glide touched the heap {glide} times"
+                );
             }
         }
     }
