@@ -3646,6 +3646,7 @@ dependencies = [
  "lm-render",
  "lm-sys-alsa",
  "lm-sys-coreaudio",
+ "lm-sys-jack",
  "lm-sys-linux",
  "lm-sys-rubberband",
  "lm-sys-samplerate",
