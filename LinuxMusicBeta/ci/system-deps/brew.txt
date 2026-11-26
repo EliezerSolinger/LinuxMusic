@@ -4,6 +4,7 @@ pkgconf               # the build scripts of the lm-sys-* crates find the C libr
 libsndfile            # lm-sys-sndfile
 libsamplerate         # lm-sys-samplerate
 fluid-synth           # lm-sys-fluidsynth
+libgig                # lm-sys-gig (GigPlayer's .gig files; its shim is C++, compiled with the runner's compiler)
 rubberband            # lm-sys-rubberband
 lilv                  # lm-sys-lilv (pulls lv2, serd, sord, sratom)
 fftw                  # lm-sys-guitarix (fftw3f and fftw3f_threads)

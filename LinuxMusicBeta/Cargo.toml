@@ -80,6 +80,7 @@ lm-plugins-opulenz = { path = "crates/lm-plugins-opulenz" }
 lm-expr = { path = "crates/lm-expr" }
 lm-plugins-effects = { path = "crates/lm-plugins-effects" }
 lm-plugins-fluidsynth = { path = "crates/lm-plugins-fluidsynth" }
+lm-plugins-gigplayer = { path = "crates/lm-plugins-gigplayer" }
 lm-plugins-instruments = { path = "crates/lm-plugins-instruments" }
 lm-plugins-stk = { path = "crates/lm-plugins-stk" }
 lm-sys-fpu = { path = "crates/lm-sys-fpu" }
@@ -87,6 +88,7 @@ lm-sys-samplerate = { path = "crates/lm-sys-samplerate" }
 lm-sys-jack = { path = "crates/lm-sys-jack" }
 lm-sys-sndfile = { path = "crates/lm-sys-sndfile" }
 lm-sys-fluidsynth = { path = "crates/lm-sys-fluidsynth" }
+lm-sys-gig = { path = "crates/lm-sys-gig" }
 lm-sys-alsa = { path = "crates/lm-sys-alsa" }
 lm-sys-linux = { path = "crates/lm-sys-linux" }
 lm-sys-coreaudio = { path = "crates/lm-sys-coreaudio" }

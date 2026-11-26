@@ -3765,6 +3765,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-gigplayer"
+version = "0.1.0"
+dependencies = [
+ "lm-base",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+ "lm-sys-gig",
+ "lm-sys-samplerate",
+]
+
+[[package]]
 name = "lm-plugins-guitarix"
 version = "0.1.0"
 dependencies = [
@@ -3991,6 +4003,14 @@ dependencies = [
 [[package]]
 name = "lm-sys-fpu"
 version = "0.1.0"
+
+[[package]]
+name = "lm-sys-gig"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "lm-base",
+]
 
 [[package]]
 name = "lm-sys-guitarix"
