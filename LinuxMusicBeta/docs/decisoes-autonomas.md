@@ -1703,3 +1703,11 @@ sanitizers. As causas, e as correções na raiz:
   abertura); uma tela de portas JACK (patchbay) na interface; saída MIDI com carimbo exato quando o hardware é o
   próprio JACK (hoje um período de atraso fixo, que a latência de saída da porta compensa); mudança de tamanho de
   período em tempo de execução reportada à sessão (o `DeviceInfo.period` não muda).
+## Presets só em JSON (decisão do usuário, 26/11)
+
+- **O que o usuário disse:** "não quero usar o formato de presets do antigo, vamos usar json".
+- **A decisão:** o programa novo só lê e grava presets em JSON (`Presets/<plugin>/<nome>.json`, o estado do plugin
+  como árvore). Não há importador de `.xpf` nem de nenhum outro formato de preset do legado dentro do programa.
+- **Os presets de fábrica do legado** que valerem a pena entram já convertidos para JSON no repositório. A conversão
+  é uma ferramenta de desenvolvimento, fora do programa, e roda uma vez (isto ajusta a P-09).
+- **Tarefas canceladas:** a "importação de presets `.xpf`" do Xpressive e de qualquer outro plugin.
