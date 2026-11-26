@@ -478,10 +478,16 @@ impl EffectWindow {
             }
             let Some(entity) = lm_gui_plugins::open_entity(&plugin, id, self.scx.core.clone(), cx) else { continue };
             let workspace = self.scx.workspace.clone();
-            let sub = cx.subscribe_in(&entity, window, move |_, _, e: &lm_gui_plugins::PanelEvent, window, cx| {
-                let lm_gui_plugins::PanelEvent::OpenBinding(target) = e;
-                crate::ui::midi::open_binding(&workspace, target.clone(), window, cx);
-            });
+            let core = self.scx.core.clone();
+            let sub =
+                cx.subscribe_in(&entity, window, move |_, _, e: &lm_gui_plugins::PanelEvent, window, cx| match e {
+                    lm_gui_plugins::PanelEvent::OpenBinding(target) => {
+                        crate::ui::midi::open_binding(&workspace, target.clone(), window, cx)
+                    }
+                    lm_gui_plugins::PanelEvent::OpenModulator(target) => {
+                        crate::ui::midi::open_modulator(&core, &workspace, target.clone(), window, cx)
+                    }
+                });
             self.panels.insert(id, (plugin, entity.into(), sub));
         }
     }

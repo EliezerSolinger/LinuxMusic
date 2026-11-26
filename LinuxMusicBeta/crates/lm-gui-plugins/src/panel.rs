@@ -123,6 +123,8 @@ struct Entry {
 pub enum PanelEvent {
     /// "MIDI binding…": open the interface's binding window on this target (lm-gui's `ui::midi::open_binding`)
     OpenBinding(MapTarget),
+    /// "Modulate…": the interface's modulator editor on this parameter (`ui::midi::open_modulator`)
+    OpenModulator(MapTarget),
 }
 
 /// One entry of the context menu
@@ -134,6 +136,7 @@ pub enum MenuItem {
     MidiLearn,
     MidiForget,
     MidiBinding,
+    Modulate,
     AddLane,
     RemoveLane,
     ToggleLog,
@@ -1673,6 +1676,9 @@ impl<H: PortHost> PluginPanel<H> {
         items.push((MenuItem::MidiForget, self.mappings(ctrl, cx) > 0));
         items.push((MenuItem::MidiBinding, true));
         if param {
+            items.push((MenuItem::Modulate, true));
+        }
+        if param {
             if self.lane(ctrl, cx).is_some() {
                 items.push((MenuItem::RemoveLane, true));
             } else {
@@ -1707,6 +1713,7 @@ impl<H: PortHost> PluginPanel<H> {
             MenuItem::MidiLearn => Text::new("MIDI learn").show(),
             MenuItem::MidiForget => Text::new("Remove MIDI mapping").show(),
             MenuItem::MidiBinding => Text::new("MIDI binding…").show(),
+            MenuItem::Modulate => Text::new("Modulate…").show(),
             MenuItem::AddLane => Text::new("Add automation lane").show(),
             MenuItem::RemoveLane => Text::new("Remove automation lane").show(),
             MenuItem::ToggleLog => {
@@ -1747,6 +1754,7 @@ impl<H: PortHost> PluginPanel<H> {
                 });
             }
             MenuItem::MidiBinding => cx.emit(PanelEvent::OpenBinding(self.map_target(ctrl))),
+            MenuItem::Modulate => cx.emit(PanelEvent::OpenModulator(self.map_target(ctrl))),
             MenuItem::AddLane => {
                 if let Some(owner) = self.owner(cx) {
                     let lane = Value::object([
@@ -2578,6 +2586,7 @@ fn menu_name(item: MenuItem) -> &'static str {
         MenuItem::MidiLearn => "midi-learn",
         MenuItem::MidiForget => "midi-forget",
         MenuItem::MidiBinding => "midi-binding",
+        MenuItem::Modulate => "modulate",
         MenuItem::AddLane => "add-lane",
         MenuItem::RemoveLane => "remove-lane",
         MenuItem::ToggleLog => "toggle-log",

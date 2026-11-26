@@ -24,6 +24,7 @@ pub mod instrument;
 pub mod live;
 pub mod manual;
 pub mod midi_binding;
+pub mod modulator;
 pub mod new_project;
 pub mod notices;
 pub mod palette;
@@ -51,6 +52,7 @@ pub enum Screen {
     NewProject,
     About,
     MidiBinding,
+    Modulator,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,7 +73,7 @@ pub struct ScreenCx {
     pub workspace: WeakEntity<Workspace>,
     pub screen: Screen,
     pub target: Option<NodeId>,
-    /// The control the MIDI binding window shows (I-21.2); none for the other screens
+    /// The control the MIDI binding window and the modulator editor show (I-21.2); none for the other screens
     pub binding: Option<lm_port::MapTarget>,
 }
 
@@ -86,7 +88,7 @@ impl ScreenCx {
 }
 
 impl Screen {
-    pub const ALL: [Screen; 15] = [
+    pub const ALL: [Screen; 16] = [
         Screen::PianoRoll,
         Screen::Automation,
         Screen::Steps,
@@ -102,6 +104,7 @@ impl Screen {
         Screen::NewProject,
         Screen::About,
         Screen::MidiBinding,
+        Screen::Modulator,
     ];
 
     /// The English key of the title (translated by `ui::tr`)
@@ -122,6 +125,7 @@ impl Screen {
             Screen::NewProject => "New project",
             Screen::About => "About",
             Screen::MidiBinding => "MIDI binding",
+            Screen::Modulator => "Modulator",
         }
     }
 
@@ -143,6 +147,7 @@ impl Screen {
             Screen::NewProject => "project_new",
             Screen::About => "help",
             Screen::MidiBinding => "setup_midi",
+            Screen::Modulator => "automation",
         }
     }
 
@@ -159,7 +164,8 @@ impl Screen {
             | Screen::Palette
             | Screen::NewProject
             | Screen::About
-            | Screen::MidiBinding => Placement::Modal,
+            | Screen::MidiBinding
+            | Screen::Modulator => Placement::Modal,
         }
     }
 }
@@ -182,5 +188,6 @@ pub fn open(scx: ScreenCx, window: &mut Window, cx: &mut App) -> AnyView {
         Screen::NewProject => cx.new(|cx| new_project::NewProject::new(scx, window, cx)).into(),
         Screen::About => cx.new(|cx| about::About::new(scx, window, cx)).into(),
         Screen::MidiBinding => cx.new(|cx| midi_binding::MidiBinding::new(scx, window, cx)).into(),
+        Screen::Modulator => cx.new(|cx| modulator::Modulator::new(scx, window, cx)).into(),
     }
 }

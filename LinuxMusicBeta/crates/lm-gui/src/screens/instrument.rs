@@ -968,6 +968,13 @@ fn shared_menu<C: Clone + 'static, V: ParamHost<C>>(this: &V, p: &Popup<C>, cx: 
                     crate::ui::midi::unmap(&core, &t2, cx);
                 }));
             }
+            if let lm_port::MapTarget::Param { .. } = &t3 {
+                let t4 = t3.clone();
+                items.push(MenuItem::new(tr("Modulate…"), move |v: &mut V, window, cx| {
+                    let (ws, core) = (v.workspace(), v.core().clone());
+                    crate::ui::midi::open_modulator(&core, &ws, t4.clone(), window, cx);
+                }));
+            }
             items.push(MenuItem::new(tr("MIDI binding…"), move |v: &mut V, window, cx| {
                 let ws = v.workspace();
                 crate::ui::midi::open_binding(&ws, t3.clone(), window, cx);
@@ -1378,10 +1385,16 @@ impl InstrumentWindow {
         self.panel = want.and_then(|(node, plugin)| {
             let entity = lm_gui_plugins::open_entity(&plugin, node, self.scx.core.clone(), cx)?;
             let workspace = self.scx.workspace.clone();
-            let sub = cx.subscribe_in(&entity, window, move |_, _, e: &lm_gui_plugins::PanelEvent, window, cx| {
-                let lm_gui_plugins::PanelEvent::OpenBinding(target) = e;
-                crate::ui::midi::open_binding(&workspace, target.clone(), window, cx);
-            });
+            let core = self.scx.core.clone();
+            let sub =
+                cx.subscribe_in(&entity, window, move |_, _, e: &lm_gui_plugins::PanelEvent, window, cx| match e {
+                    lm_gui_plugins::PanelEvent::OpenBinding(target) => {
+                        crate::ui::midi::open_binding(&workspace, target.clone(), window, cx)
+                    }
+                    lm_gui_plugins::PanelEvent::OpenModulator(target) => {
+                        crate::ui::midi::open_modulator(&core, &workspace, target.clone(), window, cx)
+                    }
+                });
             Some((node, plugin, entity.into(), sub))
         });
     }

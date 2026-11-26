@@ -441,7 +441,7 @@ a ação contam como parcial.
 | F-FX-020 | LOMM (compressor multibanda para cima e para baixo, estilo O | parcial | painel feito, mas sem os medidores ao vivo das 3 bandas nem as zonas de limiar arrastáveis (declarado não portado no painel) | lm-plugins-effects/src/lomm.rs,lm-gui-plugins/src/panels/lomm.rs |
 | F-FX-021 | MultitapEcho | feito |  | lm-plugins-effects/src/multitap_echo.rs,lm-gui-plugins/src/panels/multitapecho.rs |
 | F-FX-022 | Oscilloscope | parcial | plugin e painel feitos (histórico de 5 s, janela, offset, escala, estéreo, pausa; o áudio passa sem mudar); falta arrastar o gráfico para rolar o offset e o zoom da roda que mantém o ponto sob o cursor (a roda muda o tamanho da janela) | lm-plugins-effects/src/oscilloscope.rs,lm-gui-plugins/src/panels/oscilloscope.rs |
-| F-FX-023 | Peak Controller (seguidor de envelope que vira controlador) | falta | nenhum plugin Peak Controller nem controlador seguidor de envelope |  |
+| F-FX-023 | Peak Controller (seguidor de envelope que vira controlador) | obsoleto | virou o seguidor de pico, um modulador (decisão de 26/11): mede a saída de uma faixa ou canal com a matemática do legado (RMS, limiar, ganho, ataque e decaimento) | lm-render/src/modulation.rs |
 | F-FX-024 | ReverbSC | feito |  | lm-plugins-effects/src/reverb_sc.rs,lm-gui-plugins/src/panels/effects.rs |
 | F-FX-025 | SlewDistortion (distorção de 2 bandas e limitador de slew) | feito |  | lm-plugins-effects/src/slew_distortion.rs,lm-gui/src/screens/effect.rs |
 | F-FX-026 | Spectrum Analyzer | parcial | plugin e painel feitos (FFT em thread própria com anel sem trava, 7 tamanhos, 4 janelas, eixos linear/log, faixas, média, pico/referência congelada, cascata, os 8 botões avançados; o áudio passa sem mudar); falta a leitura do cursor (frequência e nível sob o mouse) e os dois botões de resolução de pontos não têm efeito (o desenho é por pixel) | lm-plugins-effects/src/spectrum_analyzer.rs,lm-dsp/src/fft.rs,lm-gui-plugins/src/panels/spectrumanalyzer.rs |
@@ -460,10 +460,10 @@ a ação contam como parcial.
 
 | Id | Funcionalidade | Estado | O que falta | Onde |
 |---|---|---|---|---|
-| F-CTL-001 | Rack de controladores | falta | nenhum rack de controladores no esquema, no núcleo ou na GUI |  |
-| F-CTL-002 | LFO controlador | falta | nenhum LFO controlador (só LFOs internos de efeitos) |  |
-| F-CTL-003 | Peak controller | falta | nenhum peak controller |  |
-| F-CTL-004 | Ligar um controle a um controlador ou ao MIDI (MIDI learn) | parcial | MIDI learn e janela de ligação prontos; ligar a um controlador do projeto não existe (sem controladores; P-04 pede controle compartilhado) | lm-midimap/src/learn.rs,lm-gui/src/screens/midi_binding.rs |
+| F-CTL-001 | Rack de controladores | obsoleto | substituído pelos moduladores junto do dono do parâmetro (decisão de 26/11); sem rack do projeto | lm-doc/src/schemas.rs |
+| F-CTL-002 | LFO controlador | parcial | modulador LFO: onda (inclui a do usuário), velocidade com sync ao tempo, multiplicador, fase e profundidade, todos automatizáveis e mapeáveis; vira parâmetros somados à automação, determinístico pela amostra da linha do tempo, na grade de 32 amostras; falta escolher o arquivo da onda do usuário na tela | lm-render/src/modulation.rs,lm-render/src/renderer.rs,lm-compile/src/core.rs |
+| F-CTL-003 | Peak controller | obsoleto | ver F-FX-023 |  |
+| F-CTL-004 | Ligar um controle a um controlador ou ao MIDI (MIDI learn) | parcial | MIDI learn e janela de ligação prontos; o "controlador do projeto" saiu: ligar um controle a um modulador é "Modular…" no menu (editor compacto) | lm-midimap/src/learn.rs,lm-gui/src/screens/midi_binding.rs,lm-gui/src/screens/modulator.rs |
 | F-CTL-005 | Menu de todo controle | parcial | há padrão, copiar, colar, MIDI e linear/log; faltam tirar ligações com outros controles, conectar a controlador e escolher a nota do sync | lm-gui-plugins/src/panel.rs,lm-gui/src/screens/instrument.rs |
 | F-CTL-006 | Gestos em todo controle | parcial | arrastar, roda, duplo clique, padrão e um desfazer feitos; Shift+arrasto do valor feito; falta Ctrl+arrasto para ligar dois controles (P-04, controle compartilhado não existe) e soltar em faixa de automação | lm-gui/src/screens/instrument.rs,lm-gui-plugins/src/panel.rs |
 | F-CTL-007 | Automação em clipes na linha do tempo | feito |  | lm-gui/src/screens/automation.rs,lm-gui/src/pages/composition.rs |

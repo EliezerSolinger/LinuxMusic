@@ -129,6 +129,27 @@ pub fn open_binding(workspace: &WeakEntity<Workspace>, target: MapTarget, window
     });
 }
 
+/// "Modular…": the parameter's modulator (the one it has, or a new LFO with the parameter as its target) and its
+/// editor. Only a parameter of a node can be modulated
+pub fn open_modulator(
+    core: &Entity<Core>,
+    workspace: &WeakEntity<Workspace>,
+    target: MapTarget,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let MapTarget::Param { node: NodeRef::Id(node), key } = &target else { return };
+    let params = Value::object([("node", Value::text(node.to_string())), ("param", Value::text(key.as_str()))]);
+    core.update(cx, |core, cx| {
+        let _ = core.port_mut().run_action("modulator.attach".into(), params);
+        cx.notify();
+    });
+    let _ = workspace.update(cx, |ws, cx| {
+        ws.binding = Some(target);
+        ws.open(Screen::Modulator, None, window, cx);
+    });
+}
+
 fn item(id: &'static str, label: impl Into<SharedString>) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
@@ -167,6 +188,17 @@ pub fn menu_items(
                 .on_click(move |_, _, cx| {
                     unmap(&c2, &t2, cx);
                     k2(cx);
+                })
+                .into_any_element(),
+        );
+    }
+    if let MapTarget::Param { node: NodeRef::Id(_), .. } = &target {
+        let (c4, w4, t4, k4) = (core.clone(), workspace.clone(), target.clone(), close.clone());
+        items.push(
+            item("menu-modulate", tr("Modulate…"))
+                .on_click(move |_, window, cx| {
+                    open_modulator(&c4, &w4, t4.clone(), window, cx);
+                    k4(cx);
                 })
                 .into_any_element(),
         );

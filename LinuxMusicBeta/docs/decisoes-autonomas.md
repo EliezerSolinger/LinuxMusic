@@ -1862,3 +1862,36 @@ Escrito sem rodar testes (regra do dia): só `cargo check`; os testes existem e 
   `avldrums_contract`, `sf2player_contract`), `lm-plugins-gigplayer` (`contract`) e, em `lm-plugins-instruments`,
   `audio_file_processor`, `patman` e `drum_machines`. Os que já falham hoje (`ab`, `avldrums_contract`, o `contract` do
   GigPlayer e o `drum_machines`) não precisam ser consertados.
+## Moduladores (P8, 26/11)
+
+Decisões do pacote P8 sob a mudança de projeto do usuário (modulação no lugar do rack de controladores).
+
+- **Documento.** Lista opcional `modulators` na faixa (v4), no canal e no master (v2) e no plugin (v3): nós `modulator`
+  (id `n:`) com `kind` (`lfo`, `envelope`, `peak`, `random`, `macro`), `input` (o que o seguidor de pico mede: uma faixa ou
+  um canal, `Clear` ao sair), `userWave` (recurso de áudio) e `targets`, nós `modulator.target` (id `j:`) com `node`
+  (`RemoveOwner`: o alvo some com o nó), `param`, `amount` (−1 a 1) e a janela `min`..`max` do curso. Os botões do
+  modulador (`params`) têm vaga como os de um plugin, então são automatizáveis (o alvo da automação aceita `n:`) e
+  mapeáveis (o alvo do mapa MIDI também). Os valores de `modulator_keys(kind)` são os que têm vaga.
+- **Soma.** O alvo vale `clamp(n + amount·b, min, max)`, `n` a posição 0–1 do parâmetro pela lei da faixa dele e `b` a
+  saída do modulador (−1 a 1 no LFO e no aleatório, 0 a 1 nos outros). A base é a curva da automação, ou o valor do
+  documento. Parâmetro de processador: evento `Param` na grade de 32 amostras do contador de quadros do motor (os mesmos
+  eventos para qualquer tamanho de bloco). Parâmetro do host (volume, pan): a soma entra por amostra, em degraus da grade.
+- **Quem manda.** Mão > automação gravando (Write, Latch) > modulação. Durante a mão ou a gravação o modulador não toca
+  no parâmetro; ao soltar, volta.
+- **Um modulador por parâmetro.** O compilador mantém o primeiro; a ação `modulator.add_target` recusa
+  (`modulator.param_taken`) e `modulator.attach` devolve o que já existe.
+- **Determinismo.** LFO: fase pela amostra da linha do tempo (parado, pelo contador de quadros do motor), ou pelo tick
+  com sync ao tempo (nota = ciclo; "personalizado" = numerador/denominador de uma semibreve). Ruído e aleatório: hash
+  sem estado da semente do nó e do ciclo (amostra e segura por ciclo, como o legado). Velocidade em segundos por ciclo
+  ×1, ÷100, ×100, como o `updateDuration` do legado.
+- **Seguidor de pico.** A matemática exata do `PeakControllerEffect` (RMS do bloco, `abs`, limiar, ganho) e do
+  `PeakController` (coeficiente `1 − 2^(−0,3·(1−k)·44100/taxa)`, ataque se sobe, decaimento se desce, por quadro; em
+  forma fechada por degrau). Mede a saída final da faixa (ganho) ou do canal (pan) no renderizador, sem efeito, sem
+  alimentação e sem latência de PDC: usa o bloco mais recente (uma passada de atraso, como o período do legado). O
+  multiplicador do legado virou o `gain`; a base, o `amount` do alvo.
+- **Envelope.** ADSR linear em ms, disparado pelas notas do instrumento do dono (da faixa ou do plugin).
+- **Ações:** `modulator.add`, `modulator.attach {node, param}`, `modulator.remove`, `modulator.add_target`,
+  `modulator.remove_target`. O menu de todo controle com alvo de parâmetro tem "Modular…" (o painel dos plugins, a janela
+  do instrumento, as faixas e o mixer), que chama `modulator.attach` e abre o editor compacto (`Screen::Modulator`).
+- **Fica para depois:** vários moduladores no mesmo parâmetro; arrastar um controle sobre outro (P-04) para ligar;
+  modulação de campos (só parâmetros); modulação de parâmetros CC da faixa só pelo núcleo, sem tela.

@@ -275,7 +275,7 @@ impl Workspace {
                 let _ = me.update(cx, |ws, cx| ws.write_selection(cx));
             });
         }
-        let binding = if s == Screen::MidiBinding { self.binding.clone() } else { None };
+        let binding = if matches!(s, Screen::MidiBinding | Screen::Modulator) { self.binding.clone() } else { None };
         let scx = ScreenCx { core: self.core.clone(), workspace: cx.weak_entity(), screen: s, target, binding };
         let view = screens::open(scx, window, cx);
         self.open.push((s, view));
