@@ -246,6 +246,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                     set_on_press: false,
                     live: false,
                     wheel: false,
+                    wheel_edit: None,
                     peaks: Some(PeaksSpec { field: "sample", start: "startPoint", end: "endPoint", width: GW }),
                 },
                 "wave",

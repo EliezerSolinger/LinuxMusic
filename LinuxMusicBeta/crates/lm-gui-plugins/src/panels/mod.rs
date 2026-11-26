@@ -7,6 +7,7 @@ pub mod bitinvader;
 pub mod crossovereq;
 pub mod delay;
 pub mod effects;
+pub mod eq;
 pub mod freeboy;
 pub mod frequencyshifter;
 pub mod granularpitchshifter;
@@ -53,6 +54,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (lomm::ID, || &lomm::PANEL),
     (crossovereq::ID, || &crossovereq::PANEL),
     (delay::ID, || &delay::PANEL),
+    (eq::ID, || &eq::PANEL),
     (monstro::ID, || &monstro::PANEL),
     (vibed::ID, || &vibed::PANEL),
     (watsyn::ID, || &watsyn::PANEL),
@@ -84,6 +86,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     lomm::ASSETS,
     crossovereq::ASSETS,
     delay::ASSETS,
+    eq::ASSETS,
     monstro::ASSETS,
     vibed::ASSETS,
     watsyn::ASSETS,

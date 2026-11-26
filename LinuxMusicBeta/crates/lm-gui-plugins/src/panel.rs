@@ -1380,6 +1380,57 @@ impl<H: PortHost> PluginPanel<H> {
             return;
         }
         if let Kind::Surface(s) = &self.spec.controls[ctrl].kind
+            && let Some(wheel) = s.wheel_edit
+        {
+            // the wheel over a handle (`EqHandle::wheelEvent`): the nearest within reach
+            let c = &self.spec.controls[ctrl];
+            let (lx, ly) = (x - c.x, y - c.y);
+            let frame = self.display_frame(cx);
+            let up = match ev.delta {
+                ScrollDelta::Lines(d) => d.y > 0.0,
+                ScrollDelta::Pixels(d) => d.y > px(0.),
+            };
+            let fine = ev.modifiers.control;
+            let grab = s.grab.min(12.0);
+            let edits = self
+                .with_surface(ctrl, &frame, None, cx, |s, sc| {
+                    let handles = s.handles.map(|h| h(sc)).unwrap_or_default();
+                    let near = handles
+                        .iter()
+                        .enumerate()
+                        .map(|(i, h)| (i, (h.x - lx).hypot(h.y - ly)))
+                        .filter(|(_, d)| *d <= grab)
+                        .min_by(|a, b| a.1.total_cmp(&b.1));
+                    near.map(|(i, _)| wheel(sc, i, if up { 1.0 } else { -1.0 }, fine)).unwrap_or_default()
+                })
+                .unwrap_or_default();
+            if !edits.is_empty() {
+                let label = Label::new(c.name.key);
+                let node = self.node;
+                let mut ops = Vec::new();
+                for (k, v) in &edits {
+                    let (lo, hi) = self
+                        .schema
+                        .as_ref()
+                        .and_then(|s| s.find_param(k))
+                        .map_or((f64::MIN, f64::MAX), |p| (p.min, p.max));
+                    if let Some(op) = self.param_op(k, v.clamp(lo, hi)) {
+                        ops.push(op);
+                    }
+                }
+                let live: Vec<(&'static str, f64)> = edits;
+                self.host.update(cx, |h, _| {
+                    let port = h.port_mut();
+                    for (k, v) in &live {
+                        port.param_write(node, k, *v as f32);
+                    }
+                    let _ = port.apply(label, ops);
+                });
+                cx.notify();
+            }
+            return;
+        }
+        if let Kind::Surface(s) = &self.spec.controls[ctrl].kind
             && s.peaks.is_some()
         {
             // `AudioFileProcessorWaveView::wheelEvent`: up zooms out

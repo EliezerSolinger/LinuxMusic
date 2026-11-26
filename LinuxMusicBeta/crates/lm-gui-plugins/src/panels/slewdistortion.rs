@@ -266,6 +266,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             set_on_press: false,
             live: true,
             wheel: false,
+            wheel_edit: None,
             peaks: None,
         },
         "curves",

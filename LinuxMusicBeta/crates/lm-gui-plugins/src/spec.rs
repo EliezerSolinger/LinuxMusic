@@ -332,6 +332,8 @@ pub type SurfTextsFn = fn(&SurfaceCx<'_>) -> Vec<SurfText>;
 pub type SurfHandlesFn = fn(&SurfaceCx<'_>) -> Vec<SurfaceHandle>;
 /// The parameters a handle moves to when dragged to a local point
 pub type SurfDragFn = fn(&SurfaceCx<'_>, usize, f32, f32) -> Vec<(&'static str, f64)>;
+/// The parameters the wheel over a handle moves to: the handle, the notches (up positive) and whether Ctrl is held
+pub type SurfWheelFn = fn(&SurfaceCx<'_>, usize, f64, bool) -> Vec<(&'static str, f64)>;
 
 /// A drawn area fed by the plugin's parameters, fields and live frame, with handles the user drags: the XY pad, a
 /// transfer curve with its handle, the equalizer's curve, the wave view with its markers, the meters. Everything
@@ -357,6 +359,8 @@ pub struct SurfaceSpec {
     pub live: bool,
     /// The wheel moves the primary parameter (a slider handle), as a knob's
     pub wheel: bool,
+    /// The wheel over a handle (the equalizer's bandwidth)
+    pub wheel_edit: Option<SurfWheelFn>,
     /// The surface shows a resource's waveform (the panel asks the port for its peaks and keeps the window; the wheel
     /// zooms it as the legacy `AudioFileProcessorWaveView` does)
     pub peaks: Option<PeaksSpec>,
@@ -876,6 +880,15 @@ impl Control {
     pub fn linear(mut self) -> Self {
         if let Some(f) = self.fader_mut() {
             f.linear = true;
+        }
+        self
+    }
+
+    /// The unit of the fader's float (`setHintText`'s second word)
+    #[must_use]
+    pub fn fader_unit(mut self, u: &'static str) -> Self {
+        if let Some(f) = self.fader_mut() {
+            f.unit = u;
         }
         self
     }

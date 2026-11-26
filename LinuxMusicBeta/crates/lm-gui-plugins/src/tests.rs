@@ -788,3 +788,8 @@ fn monstro(cx: &mut TestAppContext) {
     let mut o = open(cx, &[(&lm_plugins_instruments::monstro::DESCRIPTOR, true)], "monstro");
     exercise(&mut o);
 }
+
+#[gpui::test]
+fn eq(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::eq::DESCRIPTOR);
+}
