@@ -496,6 +496,7 @@ impl RemotePort {
             counting_in: false,
             xruns: 0,
             xrun_marks: Vec::new(),
+            load: 0.0,
             hand_won: Vec::new(),
         };
         let mut port = RemotePort {

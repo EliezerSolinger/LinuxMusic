@@ -1644,6 +1644,7 @@ impl Session {
             self.telemetry.meters = meters;
         }
         self.telemetry.xruns = u32::try_from(frame.xruns).unwrap_or(u32::MAX).max(self.xruns);
+        self.telemetry.load = frame.load;
         let mut events = Vec::new();
         self.engine.events(|t| events.push(t));
         for t in events {
@@ -2828,6 +2829,7 @@ pub(crate) fn empty_telemetry(rate: u32) -> TelemetryView {
         counting_in: false,
         xruns: 0,
         xrun_marks: Vec::new(),
+        load: 0.0,
         hand_won: Vec::new(),
     }
 }

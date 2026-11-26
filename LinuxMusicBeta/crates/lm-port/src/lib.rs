@@ -293,6 +293,9 @@ pub struct TelemetryView {
     /// Xruns so far, always shown (P-14), and where they happened (F-CLP-063)
     pub xruns: u32,
     pub xrun_marks: Vec<i64>,
+    /// The audio's load: render time over block time of the slowest block since the last frame (0 to 1 and beyond;
+    /// F-JAN-050)
+    pub load: f32,
     /// The automation lanes the hand overrode in Read or Touch (I-21.5): the lane's owner node and the parameter's
     /// key; shown as "the hand won" until re-armed (the action `automation.rearm`)
     pub hand_won: Vec<(NodeId, Arc<str>)>,
@@ -534,6 +537,7 @@ mod tests {
             counting_in: false,
             xruns: 0,
             xrun_marks: Vec::new(),
+            load: 0.0,
             hand_won: Vec::new(),
         };
         assert_eq!(t.peak(ROOT), 0.5);

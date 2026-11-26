@@ -199,6 +199,7 @@ pub fn telemetry_to(t: &TelemetryView, only: Option<&[NodeId]>) -> Vec<u8> {
     for x in t.inputs.iter().take(256) {
         o.f32(*x);
     }
+    o.f32(t.load);
     let mut meters: Vec<(&NodeId, &Meter)> = match only {
         Some(ids) => ids.iter().filter_map(|id| t.meters.get_key_value(id)).collect(),
         None => t.meters.iter().collect(),
@@ -235,6 +236,7 @@ pub fn telemetry_from(b: &[u8], t: &mut TelemetryView) -> Result<()> {
     for _ in 0..n {
         inputs.push(i.f32()?);
     }
+    let load = i.f32()?;
     let n = i.count(11)?;
     let mut meters = std::collections::HashMap::with_capacity(n);
     for _ in 0..n {
@@ -256,6 +258,7 @@ pub fn telemetry_from(b: &[u8], t: &mut TelemetryView) -> Result<()> {
     t.xruns = xruns;
     t.xrun_marks = marks;
     t.inputs = inputs;
+    t.load = load;
     t.meters = meters;
     Ok(())
 }
