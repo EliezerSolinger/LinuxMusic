@@ -1,9 +1,11 @@
 //! LOMM (legado/plugins/LOMM/LOMMControlDialog.cpp): the 400×256 artwork, the knobs, the float LCDs for the splits,
 //! thresholds, ratios and lookahead, and the checkable pixmap buttons. Every number is in docs/plugins-visual.md.
 //!
-//! Not ported yet: the live level meters and the draggable threshold zones painted by the legacy `paintEvent` (they
-//! need the plugin's display frame in the panel), and the two buttons the legacy hides depending on other switches
-//! (Feedback with Lookahead, Suppress with Mid/Side): here both are always shown.
+//! The legacy `paintEvent`'s area is a surface on the plugin's live frame: the six input and six output peaks (dBFS,
+//! high, mid and low band, left then right) as level lines, and the threshold zones, which are dragged with the
+//! mouse (the left handle of a band moves its "below" threshold, the right one its "above", the middle one both).
+//! The two buttons the legacy hides depending on other switches are hidden the same way: Feedback while Lookahead is
+//! on, Suppress while Mid/Side is off.
 
 use std::sync::LazyLock;
 
@@ -11,7 +13,10 @@ use lm_port::Value;
 
 use crate::asset;
 use crate::assets::Asset;
-use crate::spec::{Bind, Control, PanelSpec, PressCx, Target, button, knob, lcd_float};
+use crate::raster::{Canvas, Cap, Paint, Rgba};
+use crate::spec::{
+    Bind, Control, PanelSpec, PressCx, SurfaceCx, SurfaceHandle, SurfaceSpec, Target, button, knob, lcd_float, surface,
+};
 use crate::widgets::{KnobStyle, LcdSheet};
 
 pub const ID: &str = "lomm";
@@ -124,6 +129,85 @@ fn init(cx: &mut PressCx<'_>) -> Vec<(Target, Value)> {
     KEYS.iter().map(|key| (Target::Param(key), Value::real((cx.default)(key)).unwrap_or_default())).collect()
 }
 
+const DISPLAY_X: f32 = 125.0;
+const DISPLAY_W: f32 = 150.0;
+const DB_MIN: f32 = -72.0;
+/// The meter area's corner (x 115 to 285, the three bands' rows from y 24)
+const AREA: (f32, f32) = (115.0, 24.0);
+/// The top of each band's pair of rows, relative to the area
+const BAND_Y: [f32; 3] = [0.0, 82.0, 162.0];
+const BAND_KEYS: [(&str, &str); 3] = [
+    ("aboveThresholdHigh", "belowThresholdHigh"),
+    ("aboveThresholdMid", "belowThresholdMid"),
+    ("aboveThresholdLow", "belowThresholdLow"),
+];
+
+/// `dbfsToX`, relative to the area
+fn x_of(db: f32) -> f32 {
+    (DISPLAY_X + (db - DB_MIN) / -DB_MIN * DISPLAY_W).clamp(DISPLAY_X, DISPLAY_X + DISPLAY_W) - AREA.0
+}
+
+fn db_of(x: f32) -> f64 {
+    f64::from((x + AREA.0 - DISPLAY_X) / DISPLAY_W * -DB_MIN + DB_MIN)
+}
+
+fn draw_area(c: &mut Canvas, cx: &SurfaceCx<'_>) {
+    for (band, (above, below)) in BAND_KEYS.iter().enumerate() {
+        let y = BAND_Y[band];
+        let (xa, xb) = (x_of((cx.param)(above) as f32), x_of((cx.param)(below) as f32));
+        c.fill_rect(xa, y, DISPLAY_X + DISPLAY_W - AREA.0 - xa, 30.0, Rgba::alpha(255, 255, 0, 31));
+        c.line((xa + 0.5, y), (xa + 0.5, y + 30.0), 1.0, Cap::Flat, &Paint::Solid(Rgba::rgb(255, 255, 0)));
+        c.fill_rect(DISPLAY_X - AREA.0, y, xb - (DISPLAY_X - AREA.0), 30.0, Rgba::alpha(255, 0, 0, 31));
+        c.line((xb + 0.5, y), (xb + 0.5, y + 30.0), 1.0, Cap::Flat, &Paint::Solid(Rgba::rgb(255, 0, 0)));
+        // the levels: the frame holds the inputs (0..6) then the outputs (6..12), left then right of each band
+        for (ch, top) in [(0usize, y), (1, y + 17.0)] {
+            let lin = x_of(cx.live(band * 2 + ch, DB_MIN));
+            let lout = x_of(cx.live(6 + band * 2 + ch, DB_MIN));
+            let (a, b) = if ch == 0 { (top + 4.0, top + 13.0) } else { (top, top + 9.0) };
+            c.line((lin + 0.5, a), (lin + 0.5, b), 1.0, Cap::Flat, &Paint::Solid(Rgba::alpha(200, 200, 200, 80)));
+            c.line(
+                (lout + 0.5, top),
+                (lout + 0.5, top + 13.0),
+                1.0,
+                Cap::Flat,
+                &Paint::Solid(Rgba::rgb(255, 255, 255)),
+            );
+        }
+    }
+}
+
+/// Per band: the "below" handle, the "above" handle and the one between them that moves both
+fn handles(cx: &SurfaceCx<'_>) -> Vec<SurfaceHandle> {
+    let mut out = Vec::new();
+    for (band, (above, below)) in BAND_KEYS.iter().enumerate() {
+        let y = BAND_Y[band] + 15.0;
+        let (xa, xb) = (x_of((cx.param)(above) as f32), x_of((cx.param)(below) as f32));
+        out.push(SurfaceHandle { x: xb, y });
+        out.push(SurfaceHandle { x: xa, y });
+        out.push(SurfaceHandle { x: (xa + xb) / 2.0, y });
+    }
+    out
+}
+
+fn drag(cx: &SurfaceCx<'_>, handle: usize, x: f32, _y: f32) -> Vec<(&'static str, f64)> {
+    let (above, below) = BAND_KEYS[(handle / 3).min(2)];
+    let fit = |key: &str, v: f64| {
+        let (lo, hi) = (cx.range)(key);
+        v.clamp(lo, hi)
+    };
+    let (a, b) = ((cx.param)(above), (cx.param)(below));
+    let d = db_of(x);
+    match handle % 3 {
+        0 => vec![(below, fit(below, d))],
+        1 => vec![(above, fit(above, d))],
+        _ => {
+            // both, keeping the distance between them
+            let half = (a - b) / 2.0;
+            vec![(below, fit(below, d - half)), (above, fit(above, d + half))]
+        }
+    }
+}
+
 pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
     let big =
         |p, x, y, step, name, hint, unit, tip| knob(p, x, y, KnobStyle::Bright26, step, name, hint, unit).tip(tip);
@@ -136,6 +220,37 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         lcd_float(p, x, y, LcdSheet::Green11, whole, frac, step, name).tip(tip)
     };
     let mut c: Vec<Control> = vec![
+        surface(
+            SurfaceSpec {
+                w: 170.0,
+                h: 192.0,
+                primary: "aboveThresholdHigh",
+                reads: &[
+                    "aboveThresholdHigh",
+                    "aboveThresholdMid",
+                    "aboveThresholdLow",
+                    "belowThresholdHigh",
+                    "belowThresholdMid",
+                    "belowThresholdLow",
+                ],
+                field_reads: &[],
+                draw: draw_area,
+                texts: None,
+                handles: Some(handles),
+                drag: Some(drag),
+                grab: 12.0,
+                set_on_press: false,
+                live: true,
+                wheel: false,
+                wheel_edit: None,
+                peaks: None,
+                tag: 0,
+            },
+            "meters",
+            AREA.0,
+            AREA.1,
+            "Thresholds",
+        ),
         big("depth", 10.0, 4.0, 0.01, "Depth", "Depth:", "", "Compression amount for all bands"),
         big("time", 10.0, 41.0, 0.01, "Time", "Time:", "", "Attack/release scaling for all bands"),
         big("inputVolume", 10.0, 220.0, 0.1, "Input Volume", "Input Volume:", " dB", "Input volume"),
@@ -299,7 +414,8 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             &FEEDBACK_OFF,
             "Feedback",
             "Use output as sidechain signal instead of input",
-        ),
+        )
+        .when("lookahead", false),
         sw(
             "midSide",
             285.0,
@@ -317,7 +433,8 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             &SUPPRESS_OFF,
             "Suppress upward compression for side band",
             "Suppress upward compression for side band",
-        ),
+        )
+        .when("midSide", true),
         sw(
             "lookahead",
             147.0,
