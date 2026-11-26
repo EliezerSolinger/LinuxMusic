@@ -21,7 +21,7 @@ use lm_time::TempoMap;
 
 use crate::actions::{
     ArrCopy, ArrCut, ArrPaste, BarLeft, BarRight, DeleteItem, Duplicate, EmptyItem, Glue, InsertBar, OpenItem,
-    RemoveBar, SelectAllItems, SelectNoItems, Split, ToolDraw, ToolKnife, ToolSelect, ZoomIn, ZoomOut,
+    RemoveBar, SelectAllItems, SelectNoItems, Split, TempoHere, ToolDraw, ToolKnife, ToolSelect, ZoomIn, ZoomOut,
 };
 use crate::core::Core;
 use crate::model::{self, ItemView, TrackView};
@@ -31,6 +31,8 @@ use crate::ui::{THEME, button, c, knob_face, loading_component, meter, midi, tr,
 use crate::view::{self, TimelineView};
 
 mod edit;
+mod ruler;
+mod tempo;
 
 use self::edit::EditState;
 use super::marks::{self, MarksState};
@@ -111,6 +113,10 @@ pub struct CompositionPage {
     drag: Option<KnobDrag>,
     item_drag: Option<ItemDrag>,
     pub selected_item: Option<NodeId>,
+    /// The cursor is being dragged on the ruler (ruler.rs)
+    cursor_drag: bool,
+    /// The tempo lane's state: the point dragged, the menu, the BPM typed (tempo.rs)
+    tempo: tempo::TempoLane,
     /// The interface's state (I-3.8): which tracks show their take lanes and their automation, the track height
     show_takes: HashSet<NodeId>,
     show_automation: HashSet<NodeId>,
@@ -210,6 +216,8 @@ impl CompositionPage {
             drag: None,
             item_drag: None,
             selected_item: None,
+            cursor_drag: false,
+            tempo: tempo::TempoLane::default(),
             show_takes: HashSet::new(),
             show_automation: HashSet::new(),
             track_h: view::TRACK_H,
@@ -403,9 +411,7 @@ impl CompositionPage {
         if self.loop_down(ev, cx) {
             return;
         }
-        let b = *self.timeline_bounds.borrow();
-        let tick = self.view.tick_at((ev.position.x - b.origin.x).as_f32()).max(0.0);
-        self.action("transport.locate", Value::int(tick as i64), cx);
+        self.ruler_down(ev, cx);
     }
 
     // --- items: select, move, fades, gain, the keys (F-CLP-061, F-ARR-005..007) --------------------------------
@@ -548,6 +554,7 @@ impl Render for CompositionPage {
             .on_action(cx.listener(|p, _: &ToolDraw, _, cx| p.set_tool(edit::Tool::Draw, cx)))
             .on_action(cx.listener(|p, _: &ToolKnife, _, cx| p.set_tool(edit::Tool::Knife, cx)))
             .on_action(cx.listener(|p, _: &ToolSelect, _, cx| p.set_tool(edit::Tool::Select, cx)))
+            .on_action(cx.listener(|p, _: &TempoHere, window, cx| p.tempo_here(window, cx)))
             .on_action(cx.listener(|p, _: &ZoomIn, _, cx| p.zoom(-40.0, cx)))
             .on_action(cx.listener(|p, _: &ZoomOut, _, cx| p.zoom(40.0, cx)))
             .map(|d| marks::actions(d, cx))
@@ -555,8 +562,17 @@ impl Render for CompositionPage {
                 p.drag_knob(ev, cx);
                 p.drag_item(ev, cx);
                 p.edit_move(ev, cx);
+                p.ruler_move(ev, cx);
+                p.tempo_move(ev, cx);
             }))
-            .on_mouse_up(MouseButton::Left, cx.listener(|p, _: &MouseUpEvent, _, cx| p.release(cx)))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|p, _: &MouseUpEvent, _, cx| {
+                    p.release(cx);
+                    p.ruler_up();
+                    p.tempo_up(cx);
+                }),
+            )
             .relative()
             .child({
                 let pb = self.page_bounds.clone();
@@ -1532,28 +1548,15 @@ impl CompositionPage {
             }
             bar += 1;
         }
-        // tempo labels at each tempo point, and the lane's line (steps and ramps)
+        // the lane's line (steps and ramps); the points and their labels are the lane's overlay (tempo.rs)
         let points: Vec<(f32, f64, bool)> = map
             .points()
             .iter()
             .map(|p| (v.x(p.tick as f64), p.bpm.to_f64(), matches!(p.shape, lm_time::TempoShape::Linear)))
             .collect();
-        for (x, bpm, ramp) in &points {
-            if (-60.0..2400.0).contains(x) {
-                overlays.push(
-                    div()
-                        .absolute()
-                        .top(px(view::RULER_H + marks::MARKS_H + TEMPO_H - 13.0))
-                        .left(px(x + 3.0))
-                        .text_size(px(9.))
-                        .text_color(c(THEME.text3))
-                        .child(format!("{bpm:.0}{}", if *ramp { " ↗" } else { "" }))
-                        .into_any_element(),
-                );
-            }
-        }
         let tempo_pts: Vec<(f32, f32)> = {
-            let yv = |bpm: f64| 1.0 - ((bpm - 60.0) / 120.0).clamp(0.0, 1.0) as f32;
+            let (lo, hi) = self.tempo.range(map.points().iter().map(|p| p.bpm.to_f64()));
+            let yv = |bpm: f64| tempo::bpm_y(bpm, lo, hi);
             let mut pts = Vec::new();
             for (k, (x, bpm, _)) in points.iter().enumerate() {
                 if k > 0 && !points[k - 1].2 {
@@ -1746,6 +1749,7 @@ impl CompositionPage {
             .children(self.marks.render_menu(root, cx))
             .children(overlays)
             .children(self.edit_overlays(cx))
+            .children(self.tempo_overlays(cx))
             .into_any_element()
     }
 }

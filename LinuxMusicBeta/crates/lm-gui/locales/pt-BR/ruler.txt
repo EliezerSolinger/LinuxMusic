@@ -1,0 +1,21 @@
+# The ruler, the tempo lane, the marks' colours, the zoom (P5)
+Tempo here = Mudança de andamento aqui
+BPM = BPM
+Ramp to the next = Rampa até o próximo
+Beats per bar = Batidas no compasso
+Beat value = Valor da batida
+Remove the change = Tirar a mudança
+Colour = Cor
+No colour = Sem cor
+Mark a tempo change = Marca uma mudança de andamento
+Add a marker here = Adicionar um marcador aqui
+Region over the loop = Região sobre o loop
+Region of a bar = Região de um compasso
+Tempo at the cursor = Andamento no cursor
+Tempo change = Mudança de andamento
+Move the tempo point = Mover o ponto de andamento
+Time signature = Fórmula de compasso
+Render = Renderizar
+Render {0} items = Renderizar {0} itens
+Re-render the recorded items = Renderizar de novo os itens gravados
+Tempo change at the cursor = Mudança de andamento no cursor
