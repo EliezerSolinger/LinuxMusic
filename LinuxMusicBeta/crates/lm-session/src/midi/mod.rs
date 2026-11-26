@@ -11,6 +11,8 @@ pub(crate) mod actions;
 pub(crate) mod automation;
 pub(crate) mod devices;
 pub(crate) mod mcu;
+pub(crate) mod mpe;
+pub(crate) mod mpe_record;
 pub(crate) mod record;
 pub(crate) mod step;
 

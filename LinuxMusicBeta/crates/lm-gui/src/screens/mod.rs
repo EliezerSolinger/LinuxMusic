@@ -30,9 +30,11 @@ pub mod notices;
 pub mod palette;
 pub mod piano_roll;
 mod piano_roll_bars;
+mod piano_roll_curves;
 pub mod project;
 pub mod routing;
 pub mod settings;
+mod settings_mpe;
 pub mod steps;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

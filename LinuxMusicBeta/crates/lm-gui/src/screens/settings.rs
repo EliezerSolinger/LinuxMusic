@@ -14,6 +14,7 @@
 //! The form pieces (`segmented`, `stepper`, `switch`, `badge`, `note`, `form_row`, `target_loading`, `modal_size`)
 //! are shared by agent D's other screens.
 
+use super::settings_mpe;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -1000,6 +1001,18 @@ impl Settings {
                     ))
                     .child(stepper(format!("midi-lat-{i}"), trf("in {0} ms", &[&lat]), cx, move |s, d, cx| {
                         s.set_in(cx, &["midi", "ports"], i, "inputLatencyMs", real((lat + d as f64).clamp(0.0, 100.0)))
+                    }))
+                    .child(stepper(format!("midi-mpe-{i}"), trf("MPE {0}", &[&settings_mpe::zone(p)]), cx, {
+                        let port = p.clone();
+                        move |s, d, cx| {
+                            s.set_in(cx, &["midi", "ports"], i, "mpe", Value::text(settings_mpe::step_zone(&port, d)))
+                        }
+                    }))
+                    .children((settings_mpe::zone(p) != "off").then(|| {
+                        let members = settings_mpe::members(p);
+                        stepper(format!("midi-mpe-members-{i}"), trf("{0} ch", &[&members]), cx, move |s, d, cx| {
+                            s.set_in(cx, &["midi", "ports"], i, "mpeMembers", Value::int((members + d).clamp(1, 15)))
+                        })
                     }))
                     .child(stepper(format!("midi-olat-{i}"), trf("out {0} ms", &[&out_lat]), cx, move |s, d, cx| {
                         s.set_in(

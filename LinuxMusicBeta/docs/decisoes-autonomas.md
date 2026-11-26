@@ -1895,3 +1895,26 @@ Decisões do pacote P8 sob a mudança de projeto do usuário (modulação no lug
   do instrumento, as faixas e o mixer), que chama `modulator.attach` e abre o editor compacto (`Screen::Modulator`).
 - **Fica para depois:** vários moduladores no mesmo parâmetro; arrastar um controle sobre outro (P-04) para ligar;
   modulação de campos (só parâmetros); modulação de parâmetros CC da faixa só pelo núcleo, sem tela.
+
+### MPE (item 5, 26/11)
+
+- **Porta MPE:** nas preferências, `midi.ports[]` ganha `mpe: "off" | "lower" | "upper"` e `mpeMembers: 1..15` (padrão
+  15). A página de configurações mostra os dois como passos ao lado da latência. Faixa de bend do canal membro: 48
+  semitons (o padrão da especificação).
+- **Entrada (renderizador):** `lm_render::mpe::MpePort` entra no `Program` (`Environment.mpe_ports`, vindo da sessão).
+  Em canal membro de porta MPE, pitch bend, pressão de canal e CC74 não vão ao instrumento como MIDI: viram
+  `NoteExpression { Tuning | Pressure | Timbre }` da nota que soa naquele canal (`Expression::Pressure` e `Timbre` são
+  novos, 0 a 1). Um valor mandado antes do note-on (a especificação manda o bend primeiro) vale para a nota que começa;
+  o bend soma à afinação por arquivo da nota. Mensagens do canal mestre seguem como MIDI. Instrumentos que não usam as
+  expressões ignoram; CLAP leva Pressure e Brightness, VST3 leva Expression e Brightness. Nada aloca nem trava no
+  caminho de áudio (tabelas fixas).
+- **Gravação:** em um take de faixa cuja porta é MPE (`TakeInfo.mpe`, guardado no cabeçalho do log `mpe=lower:15:48`),
+  as mensagens dos canais membros viram as curvas `bend` (semitons), `pressure` e `timbre` (0 a 1) da nota, ponto a
+  ponto, em `midi/mpe_record.rs`; as do canal mestre continuam faixas de controle. `note` v3: `pressure` e `timbre` são
+  listas opcionais `{at, value}`.
+- **Reprodução:** o compilador emite os eventos de expressão como o `bend`, em rampas lineares por segmento.
+- **MIDI para dispositivos:** se a porta de saída é MPE, cada nota toma um canal membro (rodízio; sem canal livre, o mais
+  antigo é reaproveitado), com o bend centrado antes do note-on, e as expressões saem como bend, pressão e CC74 naquele
+  canal; o resto vai ao canal mestre. Panorama não existe em MPE.
+- **Piano Roll:** a ferramenta de curva ganha um seletor Bend, Pressure e Timbre (`piano_roll_curves.rs`); as curvas
+  aparecem sobre a nota (pressão em verde, timbre em vermelho).

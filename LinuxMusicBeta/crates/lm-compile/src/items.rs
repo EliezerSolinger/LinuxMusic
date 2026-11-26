@@ -416,6 +416,9 @@ pub(crate) fn midi_events(
 /// A note's expressions (F-NOT-010, P-24): its pan at its start, and its bend curve as one ramp per segment
 /// (linear between points, the first point's value before it), cut at the note's end
 fn note_expressions(note: &Value, n: u32, on: i64, off: i64, micro: f32, events: &mut Vec<ItemEvent>) {
+    // The MPE curves (0..1), recorded per note: pressure and timbre
+    unit_curve(note, "pressure", Expression::Pressure, n, (on, off), events);
+    unit_curve(note, "timbre", Expression::Timbre, n, (on, off), events);
     let pan = real(note, "pan", 0.0).clamp(-1.0, 1.0) as f32;
     if pan != 0.0 {
         events.push(ItemEvent {
@@ -448,6 +451,36 @@ fn note_expressions(note: &Value, n: u32, on: i64, off: i64, micro: f32, events:
             break;
         }
         events.push(tuning(a, w[1].1, b));
+    }
+}
+
+/// A note's 0..1 curve (`pressure`, `timbre`: points of `at` ticks from the note's start and a `value`) as one ramp
+/// per segment, as the bend is; nothing when the note has none
+fn unit_curve(
+    note: &Value,
+    key: &str,
+    expression: Expression,
+    n: u32,
+    (on, off): (i64, i64),
+    events: &mut Vec<ItemEvent>,
+) {
+    let mut points: Vec<(i64, f32)> =
+        items(note, key).map(|p| (int(p, "at", 0).max(0), real(p, "value", 0.0).clamp(0.0, 1.0) as f32)).collect();
+    if points.is_empty() {
+        return;
+    }
+    points.sort_by_key(|p| p.0);
+    let ev = |tick: i64, value: f32, until: i64| ItemEvent {
+        tick,
+        kind: ItemEventKind::Expression { n, expression, value, until },
+    };
+    events.push(ev(on, points[0].1, on));
+    for w in points.windows(2) {
+        let (a, b) = (on.saturating_add(w[0].0), on.saturating_add(w[1].0));
+        if a >= off {
+            break;
+        }
+        events.push(ev(a, w[1].1, b));
     }
 }
 

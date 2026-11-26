@@ -15,6 +15,19 @@ fn id_key(client: &str, port: &str) -> Arc<str> {
     Arc::from(format!("\u{0}{client}\u{0}{port}"))
 }
 
+/// The key of a port of the preferences in the session's index table: its alias, or its stable id
+pub(super) fn port_key(p: &Value) -> Arc<str> {
+    let alias = p.get("alias").and_then(Value::as_text).unwrap_or("");
+    if alias.is_empty() {
+        id_key(
+            p.get("client").and_then(Value::as_text).unwrap_or(""),
+            p.get("port").and_then(Value::as_text).unwrap_or(""),
+        )
+    } else {
+        Arc::from(alias)
+    }
+}
+
 fn ms_to_ns(v: Option<&Value>) -> i64 {
     v.and_then(|x| x.as_real().or_else(|| x.as_int().map(|i| i as f64))).map_or(0, |ms| (ms * 1e6).round() as i64)
 }

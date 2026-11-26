@@ -22,6 +22,7 @@ use lm_render::{RecordedMidi, TransportEvent};
 use lm_state::{NodeId, Value};
 use lm_time::TempoMap;
 
+use super::mpe_record::{Curves, MpeTracker, with_curves};
 use crate::session::{Session, tempo_map};
 
 const SECOND: u64 = 1_000_000_000;
@@ -67,6 +68,8 @@ pub(crate) struct TakeInfo {
     pub quantize: Option<Quantize>,
     /// The MIDI item the take goes into (F-NOT-018), instead of a new item
     pub into: Option<NodeId>,
+    /// The MPE zone of the take's port (the notes take the member channels' curves, `mpe_record`)
+    pub mpe: Option<super::mpe::MpeInfo>,
 }
 
 #[derive(Debug)]
@@ -118,6 +121,8 @@ pub(crate) struct Built {
     pub notes: Vec<(i64, i64, i64, f64)>,
     /// (kind, number, channel) → (tick from the item's start, value)
     pub controls: BTreeMap<ControlKey, Vec<(i64, i64)>>,
+    /// The MPE curves of notes: (the note's index in `notes`, its curves)
+    pub curves: Vec<(usize, Curves)>,
     pub muted: bool,
 }
 
@@ -154,7 +159,8 @@ pub(crate) fn build(info: &TakeInfo, events: &[Rec], map: &TempoMap) -> Vec<Buil
         let mut built =
             Built { start: start_tick, length: end_tick - start_tick, muted: g + 1 < n_groups, ..Built::default() };
         let mut open: BTreeMap<(u8, u8), (i64, f64)> = BTreeMap::new();
-        let close = |built: &mut Built, key: u8, on: i64, vel: f64, off: i64| {
+        let mut mpe = info.mpe.as_ref().map(MpeTracker::new);
+        let close = |built: &mut Built, key: u8, on: i64, vel: f64, off: i64, curves: Curves| {
             let (mut s, mut e) = (on, off.max(on + 1));
             if let Some(q) = &info.quantize {
                 let qs = quantize(s, q);
@@ -167,6 +173,10 @@ pub(crate) fn build(info: &TakeInfo, events: &[Rec], map: &TempoMap) -> Vec<Buil
             }
             let s = s.clamp(0, built.length - 1);
             built.notes.push((i64::from(key), s, (e - s).max(1).min(built.length - s).max(1), vel));
+            if !curves.is_empty() {
+                let index = built.notes.len() - 1;
+                built.curves.push((index, curves));
+            }
         };
         let mut last_pass = None;
         for ev in events.iter().filter(|e| passes.contains(&pass_of(info, e.frame))) {
@@ -174,24 +184,34 @@ pub(crate) fn build(info: &TakeInfo, events: &[Rec], map: &TempoMap) -> Vec<Buil
             if last_pass.is_some_and(|p| p != pass) {
                 // A wrap ends the keys held from the pass before at the loop's end
                 let end = built.length;
-                for ((_, key), (on, vel)) in std::mem::take(&mut open) {
-                    close(&mut built, key, on, vel, end);
+                for ((ch, key), (on, vel)) in std::mem::take(&mut open) {
+                    let curves = mpe.as_mut().map(|m| m.note_off(ch, key)).unwrap_or_default();
+                    close(&mut built, key, on, vel, end, curves);
                 }
             }
             last_pass = Some(pass);
             let tick = (map.tick_at(ev.sample) - start_tick).clamp(0, built.length - 1);
             let [status, d1, d2] = ev.bytes;
             let ch = status & 0x0F;
+            // An MPE member channel's bend, pressure and CC 74 are the curves of its note
+            if mpe.as_mut().is_some_and(|m| m.message(ev.bytes, tick)) {
+                continue;
+            }
             match status & 0xF0 {
                 0x90 if d2 > 0 => {
                     if let Some((on, vel)) = open.remove(&(ch, d1)) {
-                        close(&mut built, d1, on, vel, tick);
+                        let curves = mpe.as_mut().map(|m| m.note_off(ch, d1)).unwrap_or_default();
+                        close(&mut built, d1, on, vel, tick, curves);
+                    }
+                    if let Some(m) = mpe.as_mut() {
+                        m.note_on(ch, d1, tick);
                     }
                     open.insert((ch, d1), (tick, f64::from(d2) / 127.0));
                 }
                 0x80 | 0x90 => {
                     if let Some((on, vel)) = open.remove(&(ch, d1)) {
-                        close(&mut built, d1, on, vel, tick);
+                        let curves = mpe.as_mut().map(|m| m.note_off(ch, d1)).unwrap_or_default();
+                        close(&mut built, d1, on, vel, tick, curves);
                     }
                 }
                 0xB0 => built.controls.entry(("cc", d1, ch)).or_default().push((tick, i64::from(d2))),
@@ -208,8 +228,9 @@ pub(crate) fn build(info: &TakeInfo, events: &[Rec], map: &TempoMap) -> Vec<Buil
         }
         // Keys still held end at the stop (or the loop's end)
         let end = built.length;
-        for ((_, key), (on, vel)) in open {
-            close(&mut built, key, on, vel, end);
+        for ((ch, key), (on, vel)) in open {
+            let curves = mpe.as_mut().map(|m| m.note_off(ch, key)).unwrap_or_default();
+            close(&mut built, key, on, vel, end, curves);
         }
         out.push(built);
     }
@@ -220,7 +241,7 @@ pub(crate) fn build(info: &TakeInfo, events: &[Rec], map: &TempoMap) -> Vec<Buil
 fn header(info: &TakeInfo) -> String {
     let (a, b) = info.loop_range.unwrap_or((-1, -1));
     format!(
-        "midilog 1 {} {} {} {} {} {} {} {}\n",
+        "midilog 1 {} {} {} {} {} {} {} {}{}\n",
         info.start_sample,
         info.start_frame,
         a,
@@ -229,6 +250,7 @@ fn header(info: &TakeInfo) -> String {
         info.quantize.map_or(0, |q| q.grid),
         info.quantize.map_or(0.0, |q| q.strength),
         info.quantize.is_some_and(|q| q.starts_only),
+        info.mpe.map(|m| format!(" mpe={}", m.to_text())).unwrap_or_default(),
     )
 }
 
@@ -250,6 +272,7 @@ pub(crate) fn read_log(text: &str) -> Option<(TakeInfo, Vec<Rec>)> {
         wraps: Vec::new(),
         mode: h[6].to_owned(),
         into: None,
+        mpe: h.get(10).and_then(|t| t.strip_prefix("mpe=")).and_then(super::mpe::MpeInfo::from_text),
         quantize: (grid > 0).then(|| Quantize {
             grid,
             strength: h[8].parse().unwrap_or(1.0),
@@ -354,14 +377,15 @@ pub(crate) fn apply(ready: &Ready, map: &TempoMap, e: &mut Edit<'_>) -> Result<(
             }
             let n = e.find(track).and_then(|t| t.get("items").map(Value::len)).unwrap_or(0);
             let id = e.insert(track, "items", n, item)?;
-            for (key, start, length, velocity) in &b.notes {
+            for (index, (key, start, length, velocity)) in b.notes.iter().enumerate() {
                 let note = Value::object([
                     ("key", Value::int(*key)),
                     ("start", Value::int(*start)),
                     ("length", Value::int(*length)),
                     ("velocity", Value::real(*velocity)?),
                 ]);
-                e.add_note(id, note)?;
+                let curves = b.curves.iter().find(|(i, _)| *i == index).map(|(_, c)| c);
+                e.add_note(id, with_curves(note, curves)?)?;
             }
         }
     }
@@ -375,7 +399,7 @@ fn merge_into(e: &mut Edit<'_>, item: NodeId, b: &Built) -> Result<()> {
     let start = it.get("start").and_then(Value::as_int).unwrap_or(0);
     let mut length = it.get("length").and_then(Value::as_int).unwrap_or(1);
     let shift = b.start - start;
-    for (key, s, len, velocity) in &b.notes {
+    for (index, (key, s, len, velocity)) in b.notes.iter().enumerate() {
         let at = s + shift;
         if at < 0 {
             continue;
@@ -387,7 +411,8 @@ fn merge_into(e: &mut Edit<'_>, item: NodeId, b: &Built) -> Result<()> {
             ("length", Value::int(*len)),
             ("velocity", Value::real(*velocity)?),
         ]);
-        e.add_note(item, note)?;
+        let curves = b.curves.iter().find(|(i, _)| *i == index).map(|(_, c)| c);
+        e.add_note(item, with_curves(note, curves)?)?;
     }
     if !b.controls.is_empty() {
         let mut lanes: Vec<Value> = it.get("controls").map(|l| l.items().cloned().collect()).unwrap_or_default();
@@ -518,6 +543,7 @@ impl Session {
                     wraps: Vec::new(),
                     mode: transport.get("recordMode").and_then(Value::as_text).unwrap_or("overdub").to_owned(),
                     into: self.record_into(),
+                    mpe: routes.iter().find_map(|r| self.mpe_for_ports(&r.ports)),
                     quantize: q.map(|q| Quantize {
                         grid: q.get("grid").and_then(Value::as_int).unwrap_or(240).max(1),
                         strength: q.get("strength").and_then(Value::as_real).unwrap_or(1.0),
@@ -704,6 +730,7 @@ mod tests {
             mode: "overdub".into(),
             quantize: None,
             into: None,
+            mpe: None,
         }
     }
 
@@ -780,5 +807,27 @@ mod tests {
         assert_eq!(back.wraps, vec![5000]);
         assert_eq!(back.quantize, i.quantize);
         assert_eq!(back.stop_frame, 1201, "no stop line: the take ends at its last message");
+    }
+
+    #[test]
+    fn an_mpe_take_makes_curves_of_the_member_channels_messages() {
+        let mut i = info();
+        i.mpe =
+            Some(super::super::mpe::MpeInfo { zone: lm_render::mpe::Zone::Lower, members: 15, bend_semitones: 48.0 });
+        let events = [
+            ev(0, [0xE2, 0x00, 0x40]),
+            ev(0, [0x92, 60, 100]),
+            ev(4000, [0xD2, 127, 0]),
+            ev(8000, [0xE0, 0x00, 0x50]),
+            ev(24_000, [0x82, 60, 0]),
+        ];
+        let b = build(&i, &events, &map());
+        assert_eq!(b[0].notes.len(), 1);
+        assert_eq!(b[0].curves.len(), 1, "one note with curves");
+        let c = &b[0].curves[0].1;
+        assert_eq!(c.pressure.len(), 1);
+        assert!(!c.bend.is_empty());
+        assert!(b[0].controls.keys().all(|k| k.2 == 0), "the master channel's bend stays a lane: {:?}", b[0].controls);
+        assert_eq!(b[0].controls.len(), 1);
     }
 }

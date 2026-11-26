@@ -48,7 +48,8 @@
 //! midi:      { inputs: [text], clock: bool,
 //!              ports: [ { client: text, port: text, backend: "seq"|"raw", alias: text,
 //!                         role: "instrument"|"controller"|"both", input: bool, output: bool,
-//!                         inputLatencyMs: real, outputLatencyMs: real } ] }            (I-21.1)
+//!                         inputLatencyMs: real, outputLatencyMs: real,
+//!                                       mpe: "off"|"lower"|"upper", mpeMembers: 1..15 } ] }            (I-21.1)
 //! midiMap:   [ midi.mapping ]                         the machine's mappings (I-21.2)
 //! controllers: [ { profile: "generic"|"mcu"|<controllers/<x>.json stem>, port: <alias>, bank: int } ]  (I-21.3)
 //! interface: { followCursor: bool, scale: real, confirmTrackRemoval: bool, loopEditMode: text ("buttons", "nearest",

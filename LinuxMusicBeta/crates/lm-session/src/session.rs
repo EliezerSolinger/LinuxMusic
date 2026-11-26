@@ -1190,6 +1190,7 @@ impl Session {
             // The tracks' MIDI inputs and outputs (I-21.1, P-38)
             midi_ports: self.midi_instrument_ports(),
             midi_aliases: self.midi_aliases(),
+            mpe_ports: self.midi_mpe_ports(),
             selected_track: self.midi.selection.track,
             // The metronome (I-5.5): its own sounds, when it sounds and where (F-REC-024, F-REC-025)
             metronome_sounds: crate::recording::metronome_sounds(self.spec.sample_rate),

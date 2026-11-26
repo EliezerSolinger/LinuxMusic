@@ -40,6 +40,7 @@ mod first_clip;
 use super::ScreenCx;
 use super::live::Live;
 use super::piano_roll_bars::{self, Bar};
+use super::piano_roll_curves::{self, Curve};
 use crate::actions::{
     PrCopy, PrCut, PrCutOverlaps, PrDelete, PrFill, PrGlue, PrModeDraw, PrModeErase, PrModeKnife, PrModePitch,
     PrModeSelect, PrModeStrum, PrMoveBarLeft, PrMoveBarRight, PrMoveLeft, PrMoveRight, PrNextClip, PrOctaveDown,
@@ -245,6 +246,8 @@ pub struct PianoRoll {
     pub clip: Option<NodeId>,
     ghost: Option<NodeId>,
     pub tool: Tool,
+    /// which curve of a note the Pitch tool draws (bend, MPE pressure or timbre)
+    curve: Curve,
     grid: usize,
     /// The quantization is the note's length ("Lock to the note", F-NOT-012)
     lock: bool,
@@ -322,6 +325,7 @@ impl PianoRoll {
             clip,
             ghost: None,
             tool: Tool::Draw,
+            curve: Curve::default(),
             grid: kept_grid,
             lock: kept_lock,
             snap: SnapMode::Nudge,
@@ -658,8 +662,14 @@ impl PianoRoll {
                 Tool::Pitch => {
                     if let Some((n, _)) = hit {
                         let mut x = notes[&n].clone();
-                        x.bend.truncate(1);
-                        self.transact("Remove bend points", vec![(n, Some(x))], cx);
+                        match self.curve {
+                            Curve::Bend => x.bend.truncate(1),
+                            c => {
+                                let first: Vec<_> = x.mpe.get(c).iter().copied().take(1).collect();
+                                x.mpe = x.mpe.with(c, first);
+                            }
+                        }
+                        self.transact("Remove curve points", vec![(n, Some(x))], cx);
                     }
                 }
                 _ => self.drag = Some(Drag::Erase { gone: hit.map(|h| h.0).into_iter().collect() }),
@@ -756,6 +766,7 @@ impl PianoRoll {
                             velocity: self.last.velocity,
                             pan: self.last.pan,
                             bend: Vec::new(),
+                            mpe: Default::default(),
                         }
                     })
                     .collect();
@@ -879,6 +890,15 @@ impl PianoRoll {
                 if let Some((n, _)) = self.note_at(&notes, tick, key) {
                     gone.insert(n);
                 }
+            }
+            Drag::Pitch { g, n, origin, from } if self.curve != Curve::Bend => {
+                // a line of the MPE curve (0..1): a key's height of travel is a twelfth of the range
+                let at0 = ((from.0 - origin.start as f64).round() as i64).clamp(0, origin.length);
+                let at1 = ((tick - origin.start as f64).round() as i64).clamp(0, origin.length);
+                let dv = f64::from(from.1 - y) / f64::from(self.key_h * 12.0);
+                let pts = piano_roll_curves::line(origin.mpe.get(self.curve), at0, at1, dv);
+                let x = Note { mpe: origin.mpe.with(self.curve, pts), ..origin.clone() };
+                self.gesture(g, "MPE curve", vec![(*n, Some(x))], cx);
             }
             Drag::Pitch { g, n, origin, from } => {
                 // a line of the bend from where the drag began to the mouse, in semitones by height
@@ -1646,7 +1666,15 @@ impl PianoRoll {
             Rec::Live | Rec::Accompany if start >= 0 => {
                 let end = self.rec_tick(cx).unwrap_or(start + BEAT / 4);
                 let len = if end > start { end - start } else { BEAT / 8 };
-                let x = Note { key, start, length: len, velocity: self.last.velocity, pan: 0.0, bend: Vec::new() };
+                let x = Note {
+                    key,
+                    start,
+                    length: len,
+                    velocity: self.last.velocity,
+                    pan: 0.0,
+                    bend: Vec::new(),
+                    mpe: Default::default(),
+                };
                 self.transact("Record notes", vec![(NEW, Some(x))], cx);
             }
             _ => {}
@@ -1723,6 +1751,11 @@ impl PianoRoll {
         cx.notify();
     }
 
+    fn set_curve(&mut self, c: Curve, cx: &mut Context<Self>) {
+        self.curve = c;
+        cx.notify();
+    }
+
     fn set_tool(&mut self, t: Tool, cx: &mut Context<Self>) {
         self.tool = t;
         cx.notify();
@@ -1787,6 +1820,25 @@ impl GridPaint {
             }
             if let Ok(p) = pb.build() {
                 window.paint_path(p, c(THEME.yellow));
+            }
+        }
+        // the MPE curves over the note's height: pressure in green, timbre in red
+        for (points, color) in [(&x.mpe.pressure, THEME.green), (&x.mpe.timbre, THEME.red)] {
+            if points.is_empty() {
+                continue;
+            }
+            let mut pb = PathBuilder::stroke(px(1.0));
+            let mut pts: Vec<(f32, f32)> = points.iter().map(|p| (p.at as f32, p.value as f32)).collect();
+            pts.push((x.length as f32, points.last().map_or(0.0, |p| p.value as f32)));
+            for (i, (at, v)) in pts.iter().enumerate() {
+                let p = point(
+                    o.x + px(nx + at / self.tpp as f32),
+                    o.y + px(ny + self.key_h - 1.0 - v * (self.key_h - 2.0)),
+                );
+                if i == 0 { pb.move_to(p) } else { pb.line_to(p) }
+            }
+            if let Ok(p) = pb.build() {
+                window.paint_path(p, c(color));
             }
         }
         if nw > 24.0 && self.key_h >= 10.0 {
@@ -2116,6 +2168,12 @@ impl PianoRoll {
                     .child(tool_button(Tool::Erase, "pr-mode-erase", "edit_erase", "Erase mode (Shift+E)"))
                     .child(tool_button(Tool::Select, "pr-mode-select", "edit_select", "Select mode (Shift+S)"))
                     .child(tool_button(Tool::Pitch, "pr-mode-pitch", "automation", "Pitch Bend mode (Shift+T)"))
+                    .children((self.tool == Tool::Pitch).then(|| {
+                        div().flex().flex_row().gap(px(2.)).children(Curve::ALL.map(|k| {
+                            dropdown(k.id(), tr(k.label()), self.curve == k)
+                                .on_click(cx.listener(move |pr, _, _, cx| pr.set_curve(k, cx)))
+                        }))
+                    }))
                     .child(sep())
                     .child(
                         icon_button("pr-quantize", "quantize", false, "Quantize")
@@ -2626,6 +2684,8 @@ pub mod music {
         pub pan: f64,
         /// the pitch bend inside the note (P-24), linear between points
         pub bend: Vec<Bend>,
+        /// the MPE pressure and timbre curves of the note
+        pub mpe: super::super::piano_roll_curves::MpeCurves,
     }
 
     pub type NoteMap = BTreeMap<u64, Note>;
@@ -2637,7 +2697,7 @@ pub mod music {
 
     impl Note {
         pub fn new(key: u8, start: i64, length: i64, velocity: f64) -> Note {
-            Note { key, start, length, velocity, pan: 0.0, bend: Vec::new() }
+            Note { key, start, length, velocity, pan: 0.0, bend: Vec::new(), mpe: Default::default() }
         }
         pub fn end(&self) -> i64 {
             self.start + self.length
@@ -2671,6 +2731,7 @@ pub mod music {
                 bend: model::list(v, "bend")
                     .map(|b| Bend { at: model::int(b, "at", 0), semitones: model::real(b, "semitones", 0.0) })
                     .collect(),
+                mpe: super::super::piano_roll_curves::MpeCurves::read(v),
             }
         }
 
@@ -2694,6 +2755,7 @@ pub mod music {
             if !self.bend.is_empty() {
                 f.push(("bend", self.bend_value()));
             }
+            f.extend(self.mpe.fields());
             Value::object(f)
         }
 
@@ -2718,6 +2780,7 @@ pub mod music {
             if self.bend != old.bend {
                 v.push(("bend", self.bend_value()));
             }
+            v.extend(self.mpe.changed(&old.mpe));
             v
         }
     }
@@ -2965,7 +3028,8 @@ pub mod music {
                 continue;
             }
             let left = Note { length: at - x.start, ..x.clone() };
-            let right = Note { start: at, length: x.end() - at, bend: Vec::new(), ..x.clone() };
+            let right =
+                Note { start: at, length: x.end() - at, bend: Vec::new(), mpe: Default::default(), ..x.clone() };
             if drop_short {
                 out.push((*n, Some(if left.length >= right.length { left } else { right })));
             } else {

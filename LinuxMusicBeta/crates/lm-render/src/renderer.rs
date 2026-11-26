@@ -35,8 +35,8 @@ use crate::panic::RenderThreadGuard;
 use crate::params::ParamSlots;
 use crate::processor::{Adopted, BufferLayout, Buffers, HostOutbox, ProcessContext, TransportInfo};
 use crate::program::{
-    AUTOMATION_GRID, AutomationMode, ChannelMix, DelayLine, MidiTiming, NONE, NodeKind, PFeed, PHostParam, PNode,
-    Program, Rate, Target,
+    AUTOMATION_GRID, AutomationMode, ChannelMix, DelayLine, MidiOutRoute, MidiTiming, NONE, NodeKind, PFeed,
+    PHostParam, PNode, Program, Rate, Target,
 };
 use crate::program::{AudioItem, AudioSource};
 use crate::rng::Rng;
@@ -1409,6 +1409,11 @@ impl Renderer {
             if n != node {
                 continue;
             }
+            // An MPE port: every note on a channel of its own, its expressions on that channel
+            if self.program.midi_mpe[r].is_some() {
+                self.send_mpe(r, route, kind, at);
+                continue;
+            }
             let ch = route.channel & 0x0F;
             let sent = &mut self.program.midi_sent[r * 128..(r + 1) * 128];
             let (bytes, len) = match kind {
@@ -1435,6 +1440,59 @@ impl Renderer {
                 }
                 _ => continue,
             };
+            let e = MidiOutEvent { port: route.port, at, len, bytes };
+            if self.out.midi_out.push(e).is_err() {
+                self.midi_out_lost = self.midi_out_lost.saturating_add(1);
+            }
+        }
+    }
+
+    /// A node's event out through an MPE port (route `r`): a note-on takes a member channel (its bend centred first),
+    /// the note's expressions follow on that channel, and what is not a note's goes to the zone's master channel
+    fn send_mpe(&mut self, r: usize, route: MidiOutRoute, kind: EventKind, at: HostTime) {
+        let Some(mpe) = self.program.midi_mpe[r].as_mut() else { return };
+        let mut msgs = [([0u8; 3], 0u8); 17];
+        let mut n = 0;
+        let mut put = |bytes: [u8; 3], len: u8| {
+            if n < msgs.len() {
+                msgs[n] = (bytes, len);
+                n += 1;
+            }
+        };
+        match kind {
+            EventKind::NoteOn { note, key, velocity, .. } => {
+                let k = route.fixed_note.unwrap_or(key) & 0x7F;
+                let ch = mpe.start(note.0, k);
+                let v = route.fixed_velocity.unwrap_or(((velocity * 127.0).round() as u8).max(1)).clamp(1, 127);
+                put(mpe.bend(ch, 0.0), 3);
+                put([0x90 | ch, k, v], 3);
+            }
+            EventKind::NoteOff { note, .. } => {
+                if let Some((ch, k)) = mpe.end(note.0) {
+                    put([0x80 | ch, k, 0], 3);
+                }
+            }
+            EventKind::NoteExpression { note, expression, value, .. } => {
+                if let Some(ch) = mpe.channel(note.0)
+                    && let Some((bytes, len)) = mpe.expression(ch, expression, value)
+                {
+                    put(bytes, len);
+                }
+            }
+            EventKind::Midi { bytes } if (0x80..0xF0).contains(&bytes[0]) => {
+                let len = lm_midimap::message::channel_message_len(bytes[0]);
+                put([(bytes[0] & 0xF0) | mpe.master(), bytes[1], bytes[2]], len);
+            }
+            EventKind::AllNotesRelease | EventKind::AllSoundOff => {
+                put([0xB0 | mpe.master(), 123, 0], 3);
+                for ch in mpe.channels() {
+                    put([0xB0 | ch, 123, 0], 3);
+                }
+                mpe.clear();
+            }
+            _ => {}
+        }
+        for &(bytes, len) in &msgs[..n] {
             let e = MidiOutEvent { port: route.port, at, len, bytes };
             if self.out.midi_out.push(e).is_err() {
                 self.midi_out_lost = self.midi_out_lost.saturating_add(1);
