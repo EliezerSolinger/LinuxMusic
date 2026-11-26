@@ -597,6 +597,7 @@ impl Render for CompositionPage {
             .children(self.render_clip_menu(cx))
             .children(self.render_track_menu(cx))
             .children(self.render_io_menu(cx))
+            .children(self.render_arm_menu(cx))
             .children(self.render_palette(cx))
             .children(self.render_loop_menu(cx))
             .children(self.render_confirm_remove(cx))
@@ -1004,13 +1005,28 @@ impl CompositionPage {
             .child(
                 button(SharedString::from(format!("r{i}")), "●", armed, THEME.red)
                     .debug_selector(move || format!("arm-{i}"))
-                    .on_click(cx.listener(move |p, _, _, cx| p.toggle(id, "armed", armed, cx))),
+                    .on_click(cx.listener(move |p, _, _, cx| p.toggle(id, "armed", armed, cx)))
+                    // an instrument track's button has a menu on the right button (F-TRK-034)
+                    .when(t.instrument.is_some(), |b| {
+                        b.on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
+                                p.open_arm_menu(id, ev.position, cx)
+                            }),
+                        )
+                    }),
             )
+            // armed with no input to record from (F-REC-004)
+            .when(armed && t.instrument.is_none() && t.input.is_empty(), |d| {
+                d.child(div().text_size(px(11.)).text_color(c(THEME.yellow)).child("⚠"))
+            })
             .child(name)
             .child(mute_b)
             .child(solo_b);
         let meter_h = r.h - if outs > 1 { 14.0 } else { 6.0 };
-        let input_level = t.input.and_then(|ch| inputs.get((ch - 1).max(0) as usize).copied()).unwrap_or(0.0);
+        let input_level =
+            t.input.iter().filter_map(|ch| inputs.get((ch - 1).max(0) as usize).copied()).fold(0.0f32, f32::max);
         base.child(
             div()
                 .flex_1()
@@ -1503,6 +1519,8 @@ impl CompositionPage {
                         let x = v.x(start as f64);
                         let w = ((map.tick_at(take.start + take.length) - start) as f64 / v.ticks_per_px) as f32;
                         let spp = spp_at(&map, start);
+                        // its peaks grow: what the cache kept of it is stale
+                        self.tiles.borrow_mut().forget(&take.resource);
                         wants.push((take.resource.clone(), x, spp, x, x + w));
                         paint.push(Paint::Item {
                             y,

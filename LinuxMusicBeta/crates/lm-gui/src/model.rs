@@ -152,8 +152,8 @@ pub struct TrackView {
     pub solo: bool,
     pub armed: bool,
     pub monitor: Arc<str>,
-    /// the input's first channel (1-based), for the input meter
-    pub input: Option<i64>,
+    /// the input's channels (1-based): none, one, or a stereo pair; for the input meter and the input menu
+    pub input: Vec<i64>,
     pub instrument: Option<(NodeId, Arc<str>)>,
     pub outputs: Vec<OutputView>,
     pub items: Vec<ItemView>,
@@ -230,8 +230,8 @@ pub fn tracks(root: &Value) -> Vec<TrackView> {
                     .get("input")
                     .filter(|i| !i.is_null())
                     .and_then(|i| i.get("channels"))
-                    .and_then(|c| c.at(0))
-                    .and_then(Value::as_int),
+                    .map(|c| c.items().filter_map(Value::as_int).collect())
+                    .unwrap_or_default(),
                 instrument: t
                     .get("instrument")
                     .filter(|i| !i.is_null())
@@ -436,7 +436,7 @@ pub fn song(root: &Value) -> Song {
         loop_range: (tr(&["loop", "from"]).as_int().unwrap_or(0), tr(&["loop", "to"]).as_int().unwrap_or(0)),
         punch_on: tr(&["punch", "on"]).as_bool().unwrap_or(false),
         punch_range: (tr(&["punch", "from"]).as_int().unwrap_or(0), tr(&["punch", "to"]).as_int().unwrap_or(0)),
-        pre_roll: tr(&["preRoll", "bars"]).as_int().unwrap_or(0),
+        pre_roll: tr(&["preRoll", "bars"]).as_int().unwrap_or(1),
         metronome: tr(&["metronome", "on"]).as_bool().unwrap_or(false),
         count_in: tr(&["metronome", "countIn"]).as_int().unwrap_or(0),
         transpose: tr(&["transpose"]).as_int().unwrap_or(0),

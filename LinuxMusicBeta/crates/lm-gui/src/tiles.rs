@@ -41,6 +41,8 @@ pub struct TileCache {
     images: HashMap<Key, Arc<RenderImage>>,
     wanted: HashSet<(u32, u8, u32)>,
     retry: Vec<(u32, u8, u32)>,
+    /// Images of resources that grew, waiting for a window to free them
+    stale: Vec<Arc<RenderImage>>,
     pub rasterized: u64,
 }
 
@@ -76,6 +78,20 @@ impl TileCache {
             None => {
                 self.names.push(r.clone());
                 (self.names.len() - 1) as u32
+            }
+        }
+    }
+
+    /// A resource whose peaks grow (a take being recorded, U3): what was kept of it is stale; its tiles are asked
+    /// again and drawn again
+    pub fn forget(&mut self, resource: &Resource) {
+        let Some(slot) = self.names.iter().position(|n| n == resource) else { return };
+        let slot = slot as u32;
+        self.blocks.retain(|k, _| k.0 != slot);
+        let gone: Vec<Key> = self.images.keys().filter(|k| k.resource == slot).copied().collect();
+        for k in gone {
+            if let Some(img) = self.images.remove(&k) {
+                self.stale.push(img);
             }
         }
     }
@@ -171,6 +187,9 @@ pub fn paint_wave(
     y: Pixels,
     h: Pixels,
 ) {
+    for img in cache.stale.drain(..) {
+        let _ = window.drop_image(img);
+    }
     let level = level_for(samples_per_px);
     let tile_w = (samples_per_tile(level) / samples_per_px) as f32;
     let range = tile_range(

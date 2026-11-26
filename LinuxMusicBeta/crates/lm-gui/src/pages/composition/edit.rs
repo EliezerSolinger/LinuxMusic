@@ -195,10 +195,24 @@ enum TrackCmd {
     CcRack,
 }
 
+/// What the arm button's menu does (F-TRK-034, F-REC-101, F-REC-102)
+#[derive(Clone, Debug, PartialEq)]
+enum ArmCmd {
+    Mode(&'static str),
+    /// The grid in ticks, 0: off
+    Grid(i64),
+    Strength(f64),
+    StartsOnly(bool),
+}
+
+/// The grids of the quantize on record: label and ticks (960 per quarter)
+const RECORD_GRIDS: [(&str, i64); 5] = [("1/4", 960), ("1/8", 480), ("1/16", 240), ("1/32", 120), ("1/64", 60)];
+
 /// What the I/O button's menu does (F-TRK-024)
 #[derive(Clone, Debug, PartialEq)]
 enum IoCmd {
-    Input(Option<i64>),
+    /// The device channels of the input (1-based): none, one, or a stereo pair (F-REC-002)
+    Input(Vec<i64>),
     MidiChannel(i64),
     Output(NodeId),
     PerOutput,
@@ -221,6 +235,8 @@ pub(super) struct EditState {
     clip_menu: Option<(Option<NodeId>, i64, Option<NodeId>, gpui::Point<Pixels>)>,
     track_menu: Option<(NodeId, gpui::Point<Pixels>)>,
     io_menu: Option<(NodeId, gpui::Point<Pixels>)>,
+    /// The menu of the arm button of an instrument track (F-TRK-034)
+    arm_menu: Option<(NodeId, gpui::Point<Pixels>)>,
     /// The palette of 48 colours for a clip, the clips selected, or a track (F-CLP-008, F-TRK-031)
     palette: Option<(ColorTarget, gpui::Point<Pixels>)>,
     /// The clip whose name is edited in place (F-CLP-024)
@@ -247,6 +263,7 @@ impl Default for EditState {
             clip_menu: None,
             track_menu: None,
             io_menu: None,
+            arm_menu: None,
             palette: None,
             loop_menu: None,
             ruler_select: None,
@@ -267,6 +284,7 @@ impl EditState {
         self.clip_menu = None;
         self.track_menu = None;
         self.io_menu = None;
+        self.arm_menu = None;
         self.palette = None;
         self.loop_menu = None;
     }
@@ -1882,6 +1900,95 @@ impl CompositionPage {
 
     // --- the I/O button (F-TRK-024) ------------------------------------------------------------------------------
 
+    pub(super) fn open_arm_menu(&mut self, track: NodeId, pos: gpui::Point<Pixels>, cx: &mut Context<Self>) {
+        self.ed.close_menus();
+        self.ed.arm_menu = Some((track, pos));
+        cx.notify();
+    }
+
+    fn run_arm_cmd(&mut self, cmd: ArmCmd, cx: &mut Context<Self>) {
+        self.ed.close_menus();
+        let root = self.core.read(cx).port().root().clone();
+        let quantize = model::at(&root, &["transport", "recordQuantize"]).cloned();
+        let get_int = |k: &str, d: i64| quantize.as_ref().and_then(|q| q.get(k)).and_then(Value::as_int).unwrap_or(d);
+        let get_real = |k: &str, d: f64| quantize.as_ref().and_then(|q| q.get(k)).and_then(Value::as_real).unwrap_or(d);
+        let get_flag =
+            |k: &str, d: bool| quantize.as_ref().and_then(|q| q.get(k)).and_then(Value::as_bool).unwrap_or(d);
+        let (mut on, mut grid) = (get_flag("on", false), get_int("grid", 240));
+        let (mut strength, mut starts_only) = (get_real("strength", 1.0), get_flag("startsOnly", false));
+        match cmd {
+            ArmCmd::Mode(mode) => {
+                self.apply(
+                    "Record mode",
+                    vec![EditOp::set(lm_port::ROOT, &["transport", "recordMode"], Value::text(mode))],
+                    cx,
+                );
+                return;
+            }
+            ArmCmd::Grid(0) => on = false,
+            ArmCmd::Grid(g) => (on, grid) = (true, g),
+            ArmCmd::Strength(s) => strength = s,
+            ArmCmd::StartsOnly(v) => starts_only = v,
+        }
+        let Ok(strength) = Value::real(strength) else { return };
+        let value = Value::object([
+            ("on", Value::bool(on)),
+            ("grid", Value::int(grid)),
+            ("strength", strength),
+            ("startsOnly", Value::bool(starts_only)),
+        ]);
+        self.apply("Quantize on record", vec![EditOp::set(lm_port::ROOT, &["transport", "recordQuantize"], value)], cx);
+    }
+
+    /// The arm button's menu of an instrument track: how the notes are recorded, and the quantize on record
+    pub(super) fn render_arm_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let (_, pos) = self.ed.arm_menu?;
+        let root = self.core.read(cx).port().root();
+        let mode = model::at(root, &["transport", "recordMode"]).and_then(Value::as_text).unwrap_or("overdub");
+        let q = model::at(root, &["transport", "recordQuantize"]);
+        let on = q.and_then(|q| q.get("on")).and_then(Value::as_bool).unwrap_or(false);
+        let grid = q.and_then(|q| q.get("grid")).and_then(Value::as_int).unwrap_or(240);
+        let strength = q.and_then(|q| q.get("strength")).and_then(Value::as_real).unwrap_or(1.0);
+        let starts_only = q.and_then(|q| q.get("startsOnly")).and_then(Value::as_bool).unwrap_or(false);
+        let mark = |on: bool, s: &str| format!("{} {s}", if on { "✓" } else { "  " });
+        // None is a rule, an entry without a command is a heading
+        let mut rows: Vec<Option<(String, Option<ArmCmd>)>> = vec![
+            Some((tr_str("Record").into(), None)),
+            Some((mark(mode == "overdub", tr_str("Overdub")), Some(ArmCmd::Mode("overdub")))),
+            Some((mark(mode == "replace", tr_str("Replace")), Some(ArmCmd::Mode("replace")))),
+            Some((mark(mode == "layers", tr_str("Take in a layer")), Some(ArmCmd::Mode("layers")))),
+            None,
+            Some((tr_str("Quantize").into(), None)),
+            Some((mark(!on, tr_str("Off")), Some(ArmCmd::Grid(0)))),
+        ];
+        for (label, ticks) in RECORD_GRIDS {
+            rows.push(Some((mark(on && grid == ticks, label), Some(ArmCmd::Grid(ticks)))));
+        }
+        rows.push(None);
+        for (label, s) in [("50 %", 0.5), ("75 %", 0.75), ("100 %", 1.0)] {
+            rows.push(Some((mark((strength - s).abs() < 1e-6, label), Some(ArmCmd::Strength(s)))));
+        }
+        rows.push(None);
+        rows.push(Some((mark(starts_only, tr_str("Starts only")), Some(ArmCmd::StartsOnly(!starts_only)))));
+        let list: Vec<AnyElement> = rows
+            .into_iter()
+            .enumerate()
+            .map(|(n, row)| {
+                let Some((label, cmd)) = row else { return Self::rule() };
+                let head = cmd.is_none();
+                let row = Self::menu_row(format!("arm-menu-{n}"), label, !head)
+                    .when(head, |d| d.font_weight(FontWeight::BOLD).text_color(c(THEME.text2)));
+                match cmd {
+                    Some(cmd) => {
+                        row.on_click(cx.listener(move |p, _, _, cx| p.run_arm_cmd(cmd.clone(), cx))).into_any_element()
+                    }
+                    None => row.into_any_element(),
+                }
+            })
+            .collect();
+        Some(self.menu_box("arm-menu", pos, 200.0, cx).children(list).into_any_element())
+    }
+
     pub(super) fn open_io_menu(&mut self, track: NodeId, pos: gpui::Point<Pixels>, cx: &mut Context<Self>) {
         self.ed.close_menus();
         self.ed.io_menu = Some((track, pos));
@@ -1893,9 +2000,14 @@ impl CompositionPage {
         let tracks = self.tracks(cx);
         let Some(t) = tracks.iter().find(|t| t.id == track) else { return };
         match cmd {
-            IoCmd::Input(None) => self.apply("Input", vec![EditOp::set(track, &["input"], Value::NULL)], cx),
-            IoCmd::Input(Some(ch)) => {
-                let v = Value::object([("device", Value::text("in")), ("channels", Value::list([Value::int(ch)]))]);
+            IoCmd::Input(channels) if channels.is_empty() => {
+                self.apply("Input", vec![EditOp::set(track, &["input"], Value::NULL)], cx)
+            }
+            IoCmd::Input(channels) => {
+                let v = Value::object([
+                    ("device", Value::text("in")),
+                    ("channels", Value::list(channels.into_iter().map(Value::int))),
+                ]);
                 self.apply("Input", vec![EditOp::set(track, &["input"], v)], cx);
             }
             IoCmd::MidiChannel(ch) => {
@@ -1940,9 +2052,20 @@ impl CompositionPage {
             }
         } else {
             rows.push((tr_str("Audio input").to_string(), None, false));
-            rows.push((tr_str("None").to_string(), Some(IoCmd::Input(None)), t.input.is_some()));
+            rows.push((tr_str("None").to_string(), Some(IoCmd::Input(Vec::new())), !t.input.is_empty()));
+            if inputs == 0 {
+                rows.push((tr_str("The device has no inputs").to_string(), None, false));
+            }
             for ch in 1..=inputs.min(32) {
-                rows.push((trf("Input {0}", &[&ch]), Some(IoCmd::Input(Some(ch))), t.input != Some(ch)));
+                rows.push((trf("Input {0}", &[&ch]), Some(IoCmd::Input(vec![ch])), t.input != [ch]));
+            }
+            // stereo pairs, odd and even: 1/2, 3/4 (F-REC-002)
+            for ch in (1..inputs.min(32)).step_by(2) {
+                rows.push((
+                    trf("Input {0}/{1}", &[&ch, &(ch + 1)]),
+                    Some(IoCmd::Input(vec![ch, ch + 1])),
+                    t.input != [ch, ch + 1],
+                ));
             }
         }
         rows.push((tr_str("Monitoring").to_string(), Some(IoCmd::Monitor), true));

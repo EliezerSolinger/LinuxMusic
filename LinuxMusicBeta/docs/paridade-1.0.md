@@ -263,48 +263,48 @@ a ação contam como parcial.
 | Id | Funcionalidade | Estado | O que falta | Onde |
 |---|---|---|---|---|
 | F-REC-001 | Faixa que grava áudio | feito |  | lm-session/src/session.rs,lm-doc/src/schemas.rs |
-| F-REC-002 | Escolher a entrada da faixa | parcial | GUI: o menu de entrada da faixa só oferece canais mono (Input N), sem par estéreo; o núcleo aceita lista de canais | lm-gui/src/pages/composition/edit.rs,lm-session/src/session.rs |
+| F-REC-002 | Escolher a entrada da faixa | feito |  | lm-gui/src/pages/composition/edit.rs,lm-session/src/session.rs |
 | F-REC-003 | Uma entrada em várias faixas | feito |  | lm-session/src/session.rs,lm-io/src/record.rs |
-| F-REC-004 | Erros ao gravar sem entrada | falta | faixa armada sem entrada grava o canal 1 em silêncio; não há aviso "armada mas sem entrada" nem "o dispositivo não tem a entrada N" | lm-session/src/session.rs |
+| F-REC-004 | Erros ao gravar sem entrada | feito |  | lm-session/src/session.rs |
 | F-REC-005 | Armar | feito |  | lm-gui/src/pages/composition.rs,lm-session/src/session.rs |
 | F-REC-006 | Gravar sem nada armado | feito |  | lm-gui/src/pages/transport.rs,lm-session/src/session.rs |
 | F-REC-007 | Monitoramento por faixa | feito |  | lm-compile/src/core.rs,lm-gui/src/pages/composition.rs |
 | F-REC-008 | Gravar seco | feito |  | lm-io/src/record.rs,lm-session/src/session.rs |
-| F-REC-009 | Medidor de entrada no cabeçalho | parcial | núcleo: Telemetry.inputs nunca é preenchido (nenhum produtor), então o medidor da GUI fica sempre em zero | lm-gui/src/pages/composition.rs,lm-port/src/lib.rs |
+| F-REC-009 | Medidor de entrada no cabeçalho | feito |  | lm-gui/src/pages/composition.rs,lm-port/src/lib.rs |
 | F-REC-010 | Desligar plugins com latência na faixa armada | parcial | aberto: P-10 respondido; núcleo e preferência lowLatencyMonitoring existem (compile), mas não há chave na GUI de configurações | lm-compile/src/core.rs,lm-session/src/prefs.rs |
 | F-REC-011 | Efeitos de entrada gravados, gravar a saída, entrada com mai | parcial | aberto: P-10 respondido; só entradas com N canais existem; faltam "gravar com os efeitos" por faixa e gravar a saída de uma faixa (reamostrar) | lm-session/src/session.rs |
-| F-REC-020 | Gravar parado | parcial | ao parar o cursor não volta para onde estava; sem pré-roll (ver F-REC-023) | lm-session/src/session.rs,lm-render/src/renderer.rs |
-| F-REC-021 | Punch-in e punch-out manuais | parcial | punch-in tocando funciona; apertar Gravar de novo para sair do punch (a música continua) não existe, só Parar desarma | lm-session/src/session.rs,lm-gui/src/pages/transport.rs |
-| F-REC-022 | Auto-punch (por região de tempo) | parcial | o renderizador só grava dentro de transport.punch e a GUI tem botão e régua, mas ao fechar o take o item cobre o arquivo todo (com as pontas), sem recortar à região | lm-render/src/renderer.rs,lm-session/src/session.rs |
-| F-REC-023 | Pré-roll | parcial | existe transport.preRoll no esquema e botão na GUI, mas nenhum consumo no núcleo (compile, render e sessão ignoram) | lm-doc/src/schemas.rs,lm-gui/src/pages/transport.rs |
-| F-REC-024 | Contagem | parcial | a contagem atrasa o início no renderizador, mas fica muda (a sessão nunca dá os sons do metrônomo) e a preferência metronome.when/countInBars não é lida | lm-render/src/renderer.rs,lm-compile/src/core.rs |
-| F-REC-025 | Metrônomo | parcial | compile e render prontos, mas a sessão nunca preenche Environment.metronome_sounds/metronome_output: o metrônomo não soa; preferência metronome.when sem consumidor | lm-compile/src/core.rs,lm-session/src/session.rs |
-| F-REC-026 | Estado do transporte em palavra e cor | parcial | palavra e cor na GUI, mas Telemetry.counting_in nunca é ligado pelo núcleo; sem PAUSADO nem "PRÉ-ROLL n" | lm-gui/src/pages/transport.rs,lm-session/src/session.rs |
+| F-REC-020 | Gravar parado | feito |  | lm-session/src/session.rs,lm-render/src/renderer.rs |
+| F-REC-021 | Punch-in e punch-out manuais | feito |  | lm-session/src/session.rs,lm-gui/src/pages/transport.rs |
+| F-REC-022 | Auto-punch (por região de tempo) | feito |  | lm-render/src/renderer.rs,lm-session/src/session.rs |
+| F-REC-023 | Pré-roll | feito |  | lm-doc/src/schemas.rs,lm-gui/src/pages/transport.rs |
+| F-REC-024 | Contagem | feito |  | lm-render/src/renderer.rs,lm-compile/src/core.rs |
+| F-REC-025 | Metrônomo | feito |  | lm-compile/src/core.rs,lm-session/src/session.rs |
+| F-REC-026 | Estado do transporte em palavra e cor | parcial | palavra Contagem e cor feitas; falta PAUSADO e "PRÉ-ROLL n" | lm-gui/src/pages/transport.rs,lm-session/src/session.rs |
 | F-REC-027 | Um desfazer tira a gravação inteira | feito |  | lm-session/src/session.rs |
 | F-REC-028 | Trocar de dispositivo durante a gravação é recusado | feito |  | lm-session/src/core_actions.rs,lm-gui/src/screens/settings.rs |
 | F-REC-029 | Gravar MIDI no clipe aberto no editor de notas com a música  | parcial | núcleo tem notes.record_into/recordInto, mas nenhuma opção na GUI (menu do Gravar ou editor de notas) | lm-session/src/midi/step.rs,lm-gui/src/screens/piano_roll.rs |
-| F-REC-040 | Gravar em loop | parcial | o renderizador e o take marcam os cortes do loop (LoopCut), mas commit_recording ignora cuts/spans: um item de uma só camada, sem uma camada por passada nem descarte de passada curta (só no MIDI) | lm-io/src/take.rs,lm-session/src/session.rs |
-| F-REC-041 | "Takes em camadas" (padrão) | parcial | esquema de lanes/comp e desenho na GUI existem, mas a gravação nunca cria camadas novas por cima; a preferência "Takes in lanes" não tem consumidor | lm-doc/src/schemas.rs,lm-gui/src/pages/composition.rs |
-| F-REC-042 | Modo "gravador simples" | parcial | aberto: P-11 respondido; só o interruptor em configurações (recording.lanes) sem nenhum consumidor no núcleo | lm-gui/src/screens/settings.rs |
-| F-REC-043 | Ouvir uma camada | parcial | o comp é compilado e desenhado, mas não há comando na GUI para escolher a camada que toca; nada cria múltiplas camadas no áudio | lm-compile/src/items.rs,lm-gui/src/pages/composition.rs |
-| F-REC-046 | Takes presos ao andamento | parcial | esquema lane.timing e render de stretch prontos (compile/lm-io), mas a gravação não escreve timing nem marca o item como musical | lm-doc/src/schemas.rs,lm-compile/src/stretch.rs |
+| F-REC-040 | Gravar em loop | feito |  | lm-io/src/take.rs,lm-session/src/session.rs |
+| F-REC-041 | "Takes em camadas" (padrão) | feito |  | lm-doc/src/schemas.rs,lm-gui/src/pages/composition.rs |
+| F-REC-042 | Modo "gravador simples" | feito |  | lm-gui/src/screens/settings.rs |
+| F-REC-043 | Ouvir uma camada | parcial | o item de loop tem uma camada por passada e a última toca; falta o comando "Ouvir esta camada" na GUI | lm-compile/src/items.rs,lm-gui/src/pages/composition.rs |
+| F-REC-046 | Takes presos ao andamento | feito |  | lm-doc/src/schemas.rs,lm-compile/src/stretch.rs |
 | F-REC-062 | Copiar os arquivos usados ao salvar | feito |  | lm-session/src/core_actions.rs,lm-gui/src/screens/files.rs |
 | F-REC-063 | Lixo dos arquivos gerados | feito | aberto: P-13 respondido; project.clean_unused existe com botão na tela do projeto | lm-session/src/core_actions.rs,lm-gui/src/screens/project.rs |
 | F-REC-064 | Escrita contínua e segura | feito |  | lm-io/src/disk.rs,lm-io/src/take.rs |
 | F-REC-066 | Falha de escrita | feito |  | lm-io/src/disk.rs,lm-session/src/session.rs |
 | F-REC-067 | Faixa apagada durante a gravação | feito |  | lm-session/src/session.rs |
-| F-REC-068 | Onda ao vivo | parcial | a GUI desenha o take crescendo, mas Telemetry.recording nunca é preenchida pelo núcleo (sem produtor); a onda ao vivo não aparece | lm-gui/src/pages/composition.rs,lm-port/src/lib.rs |
+| F-REC-068 | Onda ao vivo | feito |  | lm-gui/src/pages/composition.rs,lm-port/src/lib.rs |
 | F-REC-069 | Recuperar takes depois de uma queda | feito |  | lm-session/src/journal.rs,lm-io/src/take.rs |
 | F-REC-070 | Mudar o andamento no meio da gravação | feito |  | lm-io/src/record.rs,lm-session/src/session.rs |
 | F-REC-080 | Alinhar o take | feito |  | lm-session/src/session.rs |
 | F-REC-081 | Calibração por loopback | feito |  | lm-io/src/calibrate.rs,lm-gui/src/screens/settings.rs |
 | F-REC-082 | Ajuste manual | parcial | o ajuste manual é global (audio.latencyFrames), não por dispositivo, e só em quadros | lm-gui/src/screens/settings.rs,lm-session/src/session.rs |
 | F-REC-083 | Latência real mostrada | feito |  | lm-gui/src/screens/settings.rs |
-| F-REC-084 | Xruns marcados no take | parcial | xruns marcados na régua pela telemetria e silêncio no arquivo (gaps), mas take.gaps não vão para o item nem aparecem em vermelho no take; sem mensagem ao fim | lm-io/src/take.rs,lm-gui/src/pages/composition.rs |
+| F-REC-084 | Xruns marcados no take | parcial | aviso ao fim com a contagem das lacunas; faltam as lacunas em vermelho no take | lm-io/src/take.rs,lm-gui/src/pages/composition.rs |
 | F-REC-086 | Contador global de xruns fora da gravação | feito | aberto: P-14 respondido; contador no transporte | lm-gui/src/pages/transport.rs |
 | F-REC-100 | Gravar notas na linha do tempo | feito |  | lm-session/src/midi/record.rs |
-| F-REC-101 | Modos de gravação MIDI | parcial | núcleo lê transport.recordMode, mas a GUI não tem o menu do botão armar (overdub/substituir/camada); nada grava o campo | lm-session/src/midi/record.rs,lm-doc/src/schemas.rs |
-| F-REC-102 | Quantizar ao gravar | parcial | núcleo lê transport.recordQuantize, mas a GUI só tem a preferência recording.quantizeMidi, que ninguém lê; sem menu de grade/força | lm-session/src/midi/record.rs,lm-gui/src/screens/settings.rs |
+| F-REC-101 | Modos de gravação MIDI | feito |  | lm-session/src/midi/record.rs,lm-doc/src/schemas.rs |
+| F-REC-102 | Quantizar ao gravar | feito |  | lm-session/src/midi/record.rs,lm-gui/src/screens/settings.rs |
 | F-REC-103 | Entrada MIDI da faixa | feito |  | lm-gui/src/screens/instrument.rs,lm-session/src/midi/step.rs |
 | F-REC-104 | CC, pitch bend, aftertouch, program change na gravação; um t | feito |  | lm-session/src/midi/record.rs |
 | F-REC-090 | Re-renderizar takes quando o andamento muda | parcial | compile e lm-io re-renderizam o stretch, mas não há aviso "vai renderizar N itens, ~X s" com progresso e Cancelar que desfaz na GUI; items.rerender só recarrega recursos | lm-compile/src/stretch.rs,lm-io/src/stretch.rs |

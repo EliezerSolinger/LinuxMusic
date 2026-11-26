@@ -329,7 +329,7 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::bool("on", false))
             .field(FieldSpec::int("from", 0, MAX, 0))
             .field(FieldSpec::int("to", 0, MAX, 0)),
-        NodeSchema::new(ty::PREROLL, 1).field(FieldSpec::int("bars", 0, 16, 0)),
+        NodeSchema::new(ty::PREROLL, 1).field(FieldSpec::int("bars", 0, 16, 1)),
         NodeSchema::new(ty::METRONOME, 1)
             .field(FieldSpec::bool("on", false))
             .field(FieldSpec::int("countIn", 0, 8, 0))
