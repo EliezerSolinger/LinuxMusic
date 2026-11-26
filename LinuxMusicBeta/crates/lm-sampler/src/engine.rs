@@ -153,6 +153,9 @@ struct Voice {
     cents: f32,
     /// The note expression's tuning, cents
     detune: f32,
+    /// MPE pressure (0 to 1) and timbre (0 to 1, 0.5 the middle)
+    pressure: f32,
+    timbre: f32,
     pan: f32,
     gain: f32,
     vel: f32,
@@ -188,6 +191,8 @@ impl Voice {
             ratio: 1.0,
             cents: 0.0,
             detune: 0.0,
+            pressure: 0.0,
+            timbre: 0.5,
             pan: 0.0,
             gain: 1.0,
             vel: 1.0,
@@ -528,6 +533,8 @@ impl Engine {
             ratio: f64::from(z.sample.rate) / f64::from(self.cfg.rate),
             cents: (f32::from(key) - f32::from(z.root_key)) * z.key_track + z.tune,
             detune: 0.0,
+            pressure: 0.0,
+            timbre: 0.5,
             pan: z.pan,
             gain: db_to_lin(z.gain) * vel_gain * release_fade,
             vel: velocity,
@@ -600,6 +607,19 @@ impl Engine {
             }
             if let Some(t) = tuning {
                 v.detune = t * 100.0;
+            }
+        }
+    }
+
+    /// A note's MPE pressure (0 to 1: up to 6 dB louder) and timbre (0 to 1: moves the filter's cutoff by up to two
+    /// octaves either way around 0.5; zones without a filter ignore it)
+    pub fn note_mpe(&mut self, id: u32, pressure: Option<f32>, timbre: Option<f32>) {
+        for v in self.voices.iter_mut().filter(|v| v.active && v.id == id && id != 0) {
+            if let Some(p) = pressure {
+                v.pressure = p.clamp(0.0, 1.0);
+            }
+            if let Some(t) = timbre {
+                v.timbre = t.clamp(0.0, 1.0);
             }
         }
     }
@@ -741,6 +761,7 @@ fn render_sub(
         c += f.key_track * (f32::from(v.key) - 60.0);
         c += f.vel_cents * (1.0 - v.vel);
         c += f.env_depth * v.fenv.level();
+        c += (v.timbre - 0.5) * 2.0 * 2400.0;
         let hz = 8.175_798 * libm::exp2f(c / 1200.0);
         v.filter.set(f.kind, hz, f.resonance, rate);
     }
@@ -752,7 +773,7 @@ fn render_sub(
         let a = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
         (libm::cosf(a), libm::sinf(a))
     };
-    let gain = v.gain * master;
+    let gain = v.gain * master * (1.0 + v.pressure);
     let loop_active = |v: &Voice| match v.looping {
         LoopMode::Forward | LoopMode::PingPong => true,
         LoopMode::UntilRelease => !v.released,
