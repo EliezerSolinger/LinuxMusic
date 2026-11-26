@@ -35,6 +35,7 @@
 //! - [`vibed`]: the Vibed's plucked strings;
 //! - [`sfxr`]: the sfxr;
 //! - [`watsyn`]: the Watsyn;
+//! - [`xpressive`]: the Xpressive (notes from mathematical expressions, on `lm-expr`);
 //! - [`patman`]: the PatMan (Gravis Ultrasound patches);
 //! - [`slicert`]: the SlicerT's slices;
 //! - [`sample_player`]: playing a sample (the AudioFileProcessor's and the sample clips').
@@ -104,3 +105,4 @@ pub mod tolerance;
 pub mod tube;
 pub mod vibed;
 pub mod watsyn;
+pub mod xpressive;

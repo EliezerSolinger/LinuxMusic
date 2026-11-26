@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 libm.workspace = true
+lm-expr.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
