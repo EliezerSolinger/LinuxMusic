@@ -1644,3 +1644,62 @@ sanitizers. As causas, e as correções na raiz:
 - **Sem testes rodados hoje** (regra do dia): só `cargo check --all-targets`. Os testes de cada item foram escritos
   (`keys.rs`, `resources.rs`, `browser.rs`, `calibration_tests`); falta rodá-los. A recuperação do dispositivo preso não
   tem teste (precisa de um backend que trava no `stop`).
+
+## JACK (backend de áudio e MIDI, 26/11)
+
+`lm-sys-jack` (binding seguro) já estava no master; este item é o `JackBackend` e o MIDI sobre ele.
+
+- **Atrás de uma feature.** `lm-io/jack` (opcional `lm-sys-jack`), repassada por `lm-session/jack`, `lm-gui-app/jack` e
+  `lm-headless/jack`. Sem a feature, nada de libjack é ligado: a build do Mac e a de quem não tem libjack não quebram. O
+  `build.rs` do `lm-sys-jack` continua recusando a build quando o libjack falta (uma crate "vazia" esconderia o erro);
+  quem não a quer não liga a feature. Não é padrão: `cargo build -p lm-gui-app --features jack`. CI e brew já instalam
+  libjack (`ci/system-deps`).
+- **Um cliente só, áudio e MIDI.** As portas MIDI do JACK pertencem ao cliente que roda o áudio, então o MIDI não é um
+  serviço à parte: o backend registra 16 entradas e 16 saídas MIDI ao abrir (slot 0 = as portas próprias `midi_in` /
+  `midi_out`; as outras servem uma porta configurada cada), o ciclo lê e escreve nelas, e a thread de controle conecta.
+  O legado tinha dois clientes (`AudioJack`, `MidiJack`); um só evita o PDC dobrado e a ordem de partida.
+- **A segunda implementação do `MidiDeviceLink`** é o `JackMidiLink` (`lm-io/src/jackmidi.rs`); a sessão o liga com
+  `DeviceSetup::Jack { midi: JackMidiShared, .. }` (o `JackMidiShared` é o que o backend e o link repartem, criado com o
+  `DeviceSetup`; a fiação ao `MidiDeviceLink` existente não mudou). Nova variante `MidiBackendKind::Jack`. A identidade
+  da porta é `cliente:porta` do JACK (o primeiro `:` separa). Só mensagens de canal e as de sistema comuns (F1-F3, F6)
+  vão ao motor; tempo real (clock, active sensing) é descartado, como o binding ALSA. SysEx vai só à sessão, num slot
+  fixo de 1024 bytes (mais longo: contado como perdido). No ciclo, `try_lock` do estado compartilhado: nunca bloqueia.
+- **Carimbo de tempo.** O instante do primeiro quadro do ciclo (`jack_get_cycle_times`) levado ao `CLOCK_MONOTONIC`
+  pela diferença `jack_get_time` agora, mais o quadro do evento, menos a latência de entrada da porta (C6, P-15). Saída:
+  o evento vai ao primeiro ciclo que alcança seu instante menos a latência de saída, no quadro em que cai; os de depois
+  ficam num vetor de capacidade fixa. Eventos da mesma porta nunca voltam no tempo dentro do ciclo (o JACK recusa).
+- **A barreira (S16).** `stop` só marca e acorda a thread de controle; **o próximo ciclo solta o `CallbackHandle`**
+  (devolve a callback); `join` chama `jack_deactivate` e `close` o `jack_client_close`. Se nenhum ciclo vem (servidor
+  parado), a thread de controle espera 500 ms e então desativa o cliente ela mesma e solta o handle. Desligamento do
+  servidor: `DeviceEvent::Disconnected` e o handle é solto na hora (nenhum ciclo virá). Pânico do processo:
+  `Panicked`. Xruns: contados na thread de notificação do JACK e reportados pelo próximo ciclo como `Xrun` (atraso em
+  quadros em `late_by`).
+- **Taxa e período são do servidor.** Taxa diferente da do projeto: o reamostrador de borda (`Edge`), ou
+  `io.device.rate_unsupported` se `allow_edge_resampler` está desligado. O período pode mudar com o cliente rodando: o
+  ciclo renderiza em pedaços do período negociado na abertura, com buffers de pelo menos 16384 quadros por canal (nunca
+  aloca no ciclo; um ciclo maior que isso é cortado). `drift_correction` não tem sentido (um servidor, um relógio) e é
+  ignorado.
+- **Latência.** Vem das faixas de latência das portas físicas (captura: a do hardware até o programa; reprodução: do
+  programa ao conversor), no mínimo um período em cada sentido (um bloco escrito num ciclo sai no seguinte), escalada à
+  taxa do projeto, mais a metade do reamostrador de borda de cada lado. Sem portas físicas (ex.: só `dummy` sem
+  `system:`), um período.
+- **Nome do dispositivo:** `jack` (servidor padrão) ou `jack:<servidor>`; capture e playback com servidores diferentes
+  são recusados (`io.device.two_cards`). Entradas: `capture_channels` (0 a 32, padrão 2, `JackOptions::inputs`); saídas:
+  `playback_channels` (mínimo 2, `JackOptions::outputs`). Conecta às portas físicas por padrão
+  (`JackOptions::auto_connect`), como o `AudioJack` quando nada estava salvo.
+- **Lista (`devices.scan`):** uma entrada `jack` (taxa e período do servidor, número de portas físicas) quando um servidor
+  responde; vazia, sem erro, quando não. Abre um cliente de sondagem (`LinuxMusicBeta-scan`) e o fecha na hora, sem nunca
+  iniciar um servidor (`JackNoStartServer`).
+- **PipeWire:** só a API portátil do cliente (nada de `jack_session`, `jack_set_sync_callback`, transporte do servidor).
+- **Preferências:** `audio.system = "jack"` escolhe o backend; `audio.output` pode nomear o servidor (`jack:<servidor>`).
+  Sem a feature na build, o app avisa em stderr e segue com o Dummy.
+- **Sem testes rodados hoje** (regra do dia): só `cargo check --all-targets`. Escritos e não rodados: os testes puros de
+  `jackmidi.rs` (nome de porta, classificação das mensagens, quadro do ciclo, atribuição de slots, instalação do link) e
+  de `jack.rs` (nome do dispositivo, latência, `Wake`), e dois contra um `jackd` próprio com driver `dummy` (a barreira
+  no `stop`; o desligamento do servidor dá `Disconnected` e devolve a callback), que passam sem fazer nada quando não há
+  `jackd`.
+- **Falta:** rodar esses testes (Linux com `jackd2` e Mac com `brew install jack`); testar com PipeWire (`pw-jack`) e com
+  JACK1; o PDC dinâmico (reagir a `jack_set_latency_callback` e à mudança de grafo: hoje a latência é lida na
+  abertura); uma tela de portas JACK (patchbay) na interface; saída MIDI com carimbo exato quando o hardware é o
+  próprio JACK (hoje um período de atraso fixo, que a latência de saída da porta compensa); mudança de tamanho de
+  período em tempo de execução reportada à sessão (o `DeviceInfo.period` não muda).
