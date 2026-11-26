@@ -83,6 +83,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 min: 0.0,
                 max: 15.0,
                 length: 32,
+                length_param: None,
                 style: GraphStyle::Nearest,
                 color: Rgba::hex(0x4e832b),
                 background: None,

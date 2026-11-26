@@ -5015,7 +5015,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | FreeBoy | instrumento | visual próprio | `FreeBoy.cpp`, `artwork.png` | **painel feito** (`panels/freeboy.rs`, teste `freeboy`) |
 | FrequencyShifter | efeito | visual próprio | `FrequencyShifterControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | GigPlayer | instrumento | visual próprio | `GigPlayer.cpp`, `artwork.png` | falta o plugin |
-| GranularPitchShifter | efeito | visual próprio | `GranularPitchShifterControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
+| GranularPitchShifter | efeito | visual próprio | `GranularPitchShifterControlDialog.cpp`, `artwork.png` | **painel feito** (`panels/granularpitchshifter.rs`, teste `granularpitchshifter`; o botão de ajuda não existe no painel) |
 | Guitarix | efeito | visual próprio (97 unidades em rack) | `GuitarixControlDialog.cpp`, `GuitarixLayout.cpp`, `GuitarixWidgets.cpp`, `GuitarixUnits.cpp`, `gx/rcstyles/*.png` | falta o plugin |
 | Kicker | instrumento | visual próprio | `Kicker.cpp`, `artwork.png` | **painel feito** (`panels/kicker.rs`, teste `kicker`; o knob de duração sem a sincronia de andamento, que o plugin novo não tem) |
 | LOMM | efeito | visual próprio | `LOMMControlDialog.cpp`, `artwork.png` | **painel feito** (`panels/lomm.rs`, teste `lomm`; faltam os medidores vivos e as zonas de threshold arrastáveis, e a ocultação condicional de Feedback e Suppress) |
@@ -5026,7 +5026,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | MidiExport | ferramenta (filtro de exportação) | sem janela (filtro de arquivo) | `MidiExport.cpp` | genérico (sem painel) |
 | MidiImport | ferramenta (filtro de importação) | sem janela (filtro de arquivo) | `MidiImport.cpp` | genérico (sem painel) |
 | Monstro | instrumento | visual próprio (vistas operador e matriz) | `Monstro.cpp`, `artwork_op.png`, `artwork_mat.png` | plugin existe (lm-plugins-instruments): painel a fazer |
-| MultitapEcho | efeito | visual próprio | `MultitapEchoControlDialog.cpp`, `artwork.png`, `graph_bg.png` | plugin existe (lm-plugins-effects): painel a fazer |
+| MultitapEcho | efeito | visual próprio | `MultitapEchoControlDialog.cpp`, `artwork.png`, `graph_bg.png` | **painel feito** (`panels/multitapecho.rs`, teste `multitapecho`) |
 | Nes | instrumento | visual próprio | `Nes.cpp`, `artwork.png` | **painel feito** (`panels/nes.rs`, teste `nes`) |
 | OpulenZ | instrumento | visual próprio | `OpulenZ.cpp`, `artwork.png` | **painel feito** (`panels/opulenz.rs`, teste `opulenz`) |
 | Organic | instrumento | visual próprio | `Organic.cpp`, `artwork.png` | **painel feito** (`panels/organic.rs`, teste `organic`) |

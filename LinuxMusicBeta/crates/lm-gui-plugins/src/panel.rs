@@ -231,8 +231,19 @@ impl<H: PortHost> PluginPanel<H> {
         let Kind::Graph(g) = &self.spec.controls[ctrl].kind else { return Vec::new() };
         let v = self.field(g.field, cx);
         let mut out: Vec<f64> = v.items().map(|x| x.as_real().unwrap_or(0.0)).collect();
-        out.resize(g.length, 0.0);
+        if out.len() < g.length {
+            out.resize(g.length, 0.0);
+        }
         out
+    }
+
+    /// How many of a graph's samples show: its `length_param`, or all
+    fn graph_len(&self, ctrl: usize, total: usize, cx: &App) -> usize {
+        let Kind::Graph(g) = &self.spec.controls[ctrl].kind else { return total };
+        match g.length_param {
+            Some(p) => (self.param(p, cx).round().max(1.0) as usize).min(total),
+            None => total,
+        }
     }
 
     fn samples_value(samples: &[f64]) -> Value {
@@ -245,10 +256,11 @@ impl<H: PortHost> PluginPanel<H> {
         let (lx, ly) = (x - c.x, y - c.y);
         let mut samples = self.samples(ctrl, cx);
         let last = self.graph_last_x.get(&ctrl).copied().unwrap_or(lx);
+        let n = self.graph_len(ctrl, samples.len(), cx);
         if shift {
-            widgets::graph_line(g, &mut samples, lx, ly, last);
+            widgets::graph_line(g, &mut samples[..n], lx, ly, last);
         } else {
-            widgets::graph_set(g, &mut samples, lx, ly);
+            widgets::graph_set(g, &mut samples[..n], lx, ly);
         }
         let field = g.field;
         let label = Label::new(c.name.key);
@@ -265,13 +277,16 @@ impl<H: PortHost> PluginPanel<H> {
     }
 
     fn graph_move(&mut self, x: f32, y: f32, cx: &mut Context<Self>) {
+        let Some(ctrl0) = self.graph.as_ref().map(|d| d.ctrl) else { return };
+        let total = self.graph.as_ref().map_or(0, |d| d.samples.len());
+        let n = self.graph_len(ctrl0, total, cx);
         let Some(d) = &mut self.graph else { return };
         let c = &self.spec.controls[d.ctrl];
         let Kind::Graph(g) = &c.kind else { return };
         // `Graph::mouseMoveEvent`: the cursor kept inside the graph's 2-pixel border
         let lx = (x - c.x).clamp(2.0, g.w - 3.0);
         let ly = (y - c.y).clamp(2.0, g.h - 3.0);
-        widgets::graph_line(g, &mut d.samples, lx, ly, d.last_x);
+        widgets::graph_line(g, &mut d.samples[..n], lx, ly, d.last_x);
         d.last_x = lx;
         d.cursor = (lx, ly);
         let ctrl = d.ctrl;
@@ -1119,7 +1134,9 @@ impl<H: PortHost> PluginPanel<H> {
                 (hsh, Box::new(move |cv| widgets::draw_lcd(cv, sheet, digits, &text, true)))
             }
             Kind::Graph(g) => {
-                let samples = self.samples(ctrl, cx);
+                let mut samples = self.samples(ctrl, cx);
+                let n = self.graph_len(ctrl, samples.len(), cx);
+                samples.truncate(n);
                 let cursor = self.graph.as_ref().filter(|d| d.ctrl == ctrl).map(|d| d.cursor);
                 let mut h = std::hash::DefaultHasher::new();
                 use std::hash::{Hash, Hasher};

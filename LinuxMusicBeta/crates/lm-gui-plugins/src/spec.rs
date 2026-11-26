@@ -196,6 +196,8 @@ pub struct GraphSpec {
     pub min: f64,
     pub max: f64,
     pub length: usize,
+    /// The parameter that sets how many of the samples show (MultitapEcho's Steps), absent: all of them
+    pub length_param: Option<&'static str>,
     pub style: GraphStyle,
     /// `setGraphColor`
     pub color: crate::raster::Rgba,

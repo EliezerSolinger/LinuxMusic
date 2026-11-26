@@ -142,6 +142,7 @@ fn wave_graph(field: &'static str, bg: &'static Asset) -> Control {
             min: 0.0,
             max: 1.0,
             length: 200,
+            length_param: None,
             style: GraphStyle::LinearNonCyclic,
             color: Rgba::rgb(85, 204, 145),
             background: Some(bg),

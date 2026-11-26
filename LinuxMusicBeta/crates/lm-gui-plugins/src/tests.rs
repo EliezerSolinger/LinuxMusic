@@ -318,7 +318,8 @@ fn exercise(o: &mut Opened<'_>) {
                 let after = o.field(g.field);
                 assert_ne!(after, before, "{id}: drawing changes the samples");
                 let first = after.at(0).and_then(Value::as_real).unwrap();
-                let last = after.at(g.length - 1).and_then(Value::as_real).unwrap();
+                let shown = g.length_param.map_or(g.length, |p| o.param(p).round() as usize);
+                let last = after.at(shown - 1).and_then(Value::as_real).unwrap();
                 assert!(first > last, "{id}: the line goes down, {first} to {last}");
                 o.undo();
                 assert_eq!(o.field(g.field), before, "{id}: one undo step");
@@ -581,4 +582,14 @@ fn waveshaper(cx: &mut TestAppContext) {
 #[gpui::test]
 fn lomm(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::lomm::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn multitapecho(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::multitap_echo::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn granularpitchshifter(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::granular_pitch_shifter::DESCRIPTOR);
 }
