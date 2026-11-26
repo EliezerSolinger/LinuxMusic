@@ -301,7 +301,8 @@ pub fn draw_knob(c: &mut Canvas, style: &KnobStyle, angle: i32, center_angle: i3
             let radius = pw as f32 / 2.0 - 1.0;
             // QPoint(width() / 2, pixmap height / 2): integer division
             let mid = ((pw / 2) as f32, (ph / 2) as f32);
-            c.pixmap(img, 0.0, 0.0, !enabled);
+            // the body is drawn at the screen's scale (the legacy strip is a 1x bitmap): the pixmap gives the size
+            draw_knob_body(c, style, pw as f32, ph as f32, !enabled);
             let (line_color, arc_color) = match (style, enabled) {
                 (_, false) => (theme::LINE_INACTIVE, theme::ARC_INACTIVE),
                 (KnobStyle::Vintage32, true) => (theme::SHADOW, Rgba { a: 70.0 / 255.0, ..theme::SHADOW }),
@@ -1028,4 +1029,53 @@ pub fn draw_mute_button(c: &mut Canvas, on: bool) {
     }
     c.arc(ox + 4.0 * s, oy + 3.0 * s, 8.0 * s, -45.0, 90.0, 1.0, Cap::Flat, white);
     c.arc(ox + 2.5 * s, oy + 1.5 * s, 11.0 * s, -45.0, 90.0, 1.0, Cap::Flat, white);
+}
+
+/// A filled disc of diameter `d` centered at (`cx`, `cy`), with a radial gradient (the painter has no fill: a
+/// zero-length round-capped line of that width is one)
+fn disc(c: &mut Canvas, cx: f32, cy: f32, d: f32, stops: Vec<(f32, Rgba)>) {
+    let paint = Paint::Radial { cx: cx - d * 0.12, cy: cy - d * 0.15, radius: d * 0.62, stops };
+    c.line((cx, cy), (cx, cy), d, Cap::Round, &paint);
+}
+
+/// The knob's body as a vector (the legacy `knob01`...`knob05` strips redrawn at any scale): a dark rim and a
+/// shaded disc, in the legacy's tones (dark, bright, small, vintage)
+fn draw_knob_body(c: &mut Canvas, style: &KnobStyle, w: f32, h: f32, gray: bool) {
+    let (hi, lo, rim) = match style {
+        KnobStyle::Dark28 => (Rgba::rgb(88, 94, 104), Rgba::rgb(26, 29, 34), Rgba::rgb(8, 9, 11)),
+        KnobStyle::Bright26 => (Rgba::rgb(150, 158, 170), Rgba::rgb(62, 68, 78), Rgba::rgb(10, 11, 13)),
+        KnobStyle::Small17 => (Rgba::rgb(130, 138, 150), Rgba::rgb(50, 56, 66), Rgba::rgb(10, 11, 13)),
+        _ => (Rgba::rgb(214, 196, 150), Rgba::rgb(112, 96, 68), Rgba::rgb(40, 32, 20)),
+    };
+    let (hi, lo, rim) = if gray { (hi.gray(), lo.gray(), rim.gray()) } else { (hi, lo, rim) };
+    let (cx, cy) = ((w / 2.0).floor(), (h / 2.0).floor());
+    let d = w.min(h) - 1.0;
+    disc(c, cx, cy, d, vec![(0.0, rim), (1.0, rim)]);
+    disc(c, cx, cy, d - 2.0, vec![(0.0, hi), (1.0, lo)]);
+}
+
+/// The LED lamp as a vector: a dark bezel, the lit color in a radial shine (or the dark glass when off), and a
+/// small highlight. The size is the legacy pixmap's
+pub fn draw_led(c: &mut Canvas, color: LedColor, on: bool) {
+    let img = assets::image(color.asset());
+    let (w, h) = (img.width() as f32, img.height() as f32);
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    let d = w.min(h) - 1.0;
+    let (hi, lo) = match (color, on) {
+        (LedColor::Yellow, true) => (Rgba::rgb(255, 232, 120), Rgba::rgb(220, 140, 0)),
+        (LedColor::Green, true) => (Rgba::rgb(150, 255, 170), Rgba::rgb(10, 150, 60)),
+        (LedColor::Red, true) => (Rgba::rgb(255, 150, 140), Rgba::rgb(170, 10, 20)),
+        (_, false) => (Rgba::rgb(70, 76, 84), Rgba::rgb(22, 25, 29)),
+    };
+    disc(c, cx, cy, d, vec![(0.0, Rgba::rgb(6, 7, 9)), (1.0, Rgba::rgb(6, 7, 9))]);
+    disc(c, cx, cy, d - 2.5, vec![(0.0, hi), (1.0, lo)]);
+    if on {
+        disc(
+            c,
+            cx - d * 0.14,
+            cy - d * 0.18,
+            d * 0.22,
+            vec![(0.0, Rgba::alpha(255, 255, 255, 190)), (1.0, Rgba::alpha(255, 255, 255, 0))],
+        );
+    }
 }

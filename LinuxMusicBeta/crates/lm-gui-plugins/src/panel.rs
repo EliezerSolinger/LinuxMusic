@@ -1818,8 +1818,8 @@ impl<H: PortHost> PluginPanel<H> {
             }
             Kind::Led(l) => {
                 let on = self.is_on(l.bind, cx);
-                let asset = if on { l.color.asset() } else { &assets::lmms::LED_OFF };
-                (on as u64, Box::new(move |cv| cv.pixmap(assets::image(asset), 0.0, 0.0, false)))
+                let color = l.color;
+                (on as u64, Box::new(move |cv| widgets::draw_led(cv, color, on)))
             }
             Kind::Lcd(l) if l.frac > 0 => {
                 let v = self.param(l.param, cx);
