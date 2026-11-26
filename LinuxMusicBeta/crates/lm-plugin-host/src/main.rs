@@ -284,15 +284,32 @@ fn gui_reply(state: &WindowState) -> Value {
     ])
 }
 
-fn run(paths: &[PathBuf]) -> Result<()> {
-    say(&Value::object([("t", Value::text("hello")), ("protocol", Value::int(PROTOCOL))]));
-    let mut input = BufReader::new(std::io::stdin());
-    let Some(load) = read_message(&mut input)? else { return Ok(()) };
-    let text = |k: &str| lm_plugin_proxy::protocol::text(&load, k);
+/// One plugin instance the helper runs: its plugin, its shared block and its audio thread
+struct Slot {
+    plugin: Arc<Mutex<Box<dyn Plugin>>>,
+    shm: Arc<SharedMemory>,
+    quit: Arc<AtomicBool>,
+    audio: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Slot {
+    /// Ends the audio thread (the instance is dropped with the slot)
+    fn stop(&mut self) {
+        self.quit.store(true, Ordering::Release);
+        lm_sys_ipc::wake(&self.shm.words()[w::REQUEST], 1);
+        if let Some(a) = self.audio.take() {
+            let _ = a.join();
+        }
+    }
+}
+
+/// Loads the plugin a `load` message names, starts its audio thread; returns the slot and the `ready` answer
+fn load_slot(load: &Value, paths: &[PathBuf]) -> Result<(Slot, Value)> {
+    let text = |k: &str| lm_plugin_proxy::protocol::text(load, k);
     let format = text("format")?.to_owned();
     let uri = text("uri")?.to_owned();
     let file = load.get("file").and_then(Value::as_text).map(PathBuf::from);
-    let words = lm_plugin_proxy::protocol::int(&load, "words")?;
+    let words = lm_plugin_proxy::protocol::int(load, "words")?;
     let shm = SharedMemory::open(text("shm")?, usize::try_from(words).map_err(|_| Error::new("plugin_host.message"))?)?;
     let layout = Layout::read_header(shm.words()).ok_or_else(|| Error::new("plugin_host.block"))?;
     let rate = shm.words()[w::RATE].load(Ordering::Relaxed);
@@ -337,9 +354,80 @@ fn run(paths: &[PathBuf]) -> Result<()> {
             .spawn(move || audio_loop(shm, layout, plugin, quit))
             .map_err(|e| Error::new("plugin_host.thread").arg("error", e.to_string()))?
     };
-    say(&ready);
-    // The control channel, read by a thread of its own; this thread is the plugin's main thread and gives it its turn
-    // between messages
+    Ok((Slot { plugin, shm, quit, audio: Some(audio) }, ready))
+}
+
+/// The answer to one control message for one instance (`None`: the message was `quit`)
+fn answer(slot: &Slot, m: &Value, gui_used: &mut bool) -> Option<Value> {
+    let plugin = &slot.plugin;
+    Some(match m.get("t").and_then(Value::as_text) {
+        Some("save") => {
+            let mut p = plugin.lock().unwrap_or_else(PoisonError::into_inner);
+            match p.save() {
+                Ok(c) => Value::object([
+                    ("t", Value::text("state")),
+                    ("chunk", c.map_or(Value::NULL, |c| Value::text(hex(&c)))),
+                    ("params", param_values(p.as_ref())),
+                ]),
+                Err(e) => error(&e),
+            }
+        }
+        Some("restore") => {
+            let r = m
+                .get("chunk")
+                .and_then(Value::as_text)
+                .ok_or_else(|| Error::new("plugin_host.message"))
+                .and_then(unhex)
+                .and_then(|c| plugin.lock().unwrap_or_else(PoisonError::into_inner).restore(&c));
+            match r {
+                Ok(()) => Value::object([("t", Value::text("restored"))]),
+                Err(e) => error(&e),
+            }
+        }
+        Some("gui") => {
+            *gui_used = true;
+            let request = match (m.get("on").and_then(Value::as_bool), m.get("resize")) {
+                (_, Some(size)) => {
+                    let at = |i: usize| size.at(i).and_then(Value::as_int).and_then(|v| u32::try_from(v).ok());
+                    match (at(0), at(1)) {
+                        (Some(w), Some(h)) => WindowRequest::Resize(w, h),
+                        _ => WindowRequest::Hide,
+                    }
+                }
+                (Some(true), None) => WindowRequest::Show,
+                _ => WindowRequest::Hide,
+            };
+            match plugin.lock().unwrap_or_else(PoisonError::into_inner).window(request) {
+                Ok(state) => gui_reply(&state),
+                Err(e) => error(&e),
+            }
+        }
+        Some("quit") => return None,
+        _ => error(&Error::new("plugin_host.message")),
+    })
+}
+
+/// A message with the instance it is about (a group's messages and answers carry `"i"`)
+fn tagged(v: Value, id: Option<i64>) -> Value {
+    match id {
+        Some(i) => v.with("i", Value::int(i)),
+        None => v,
+    }
+}
+
+/// Hosts the plugins the core loads. Alone (the default, one process per instance): the first message is the one
+/// `load`, untagged, and `quit` ends the helper. In a group (`--group`): any number of `load`s, each with an `"i"`
+/// the core chose, every later message and answer about an instance carries its `"i"`, `quit` with an `"i"` ends that
+/// instance only, and the end of the standard input ends all. The main thread is every plugin's main thread
+fn run(paths: &[PathBuf], group: bool) -> Result<()> {
+    say(&Value::object([
+        ("t", Value::text("hello")),
+        ("protocol", Value::int(PROTOCOL)),
+        ("group", Value::bool(group)),
+    ]));
+    let mut input = BufReader::new(std::io::stdin());
+    // The control channel, read by a thread of its own; this thread is the plugins' main thread and gives them their
+    // turn between messages
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::Builder::new()
         .name("lm-plugin-control".into())
@@ -351,6 +439,14 @@ fn run(paths: &[PathBuf]) -> Result<()> {
             }
         })
         .map_err(|e| Error::new("plugin_host.thread").arg("error", e.to_string()))?;
+    let mut slots: std::collections::BTreeMap<i64, Slot> = std::collections::BTreeMap::new();
+    // Alone, the one instance is loaded before anything else, and a failure ends the helper
+    if !group {
+        let Ok(load) = rx.recv() else { return Ok(()) };
+        let (slot, ready) = load_slot(&load, paths)?;
+        slots.insert(0, slot);
+        say(&ready);
+    }
     // Once a window was asked for, this thread also runs the window system's loop (macOS needs it on the main thread)
     let mut gui_used = false;
     loop {
@@ -371,74 +467,61 @@ fn run(paths: &[PathBuf]) -> Result<()> {
         let m = match waited {
             Ok(m) => m,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                let mut p = plugin.lock().unwrap_or_else(PoisonError::into_inner);
-                p.idle();
-                // The user closed the window: the core is told, so its button shows the truth
-                if p.window_closed() {
-                    drop(p);
-                    say(&Value::object([("t", Value::text("gui_closed"))]));
+                for (id, slot) in &slots {
+                    let mut p = slot.plugin.lock().unwrap_or_else(PoisonError::into_inner);
+                    p.idle();
+                    // The user closed a window: the core is told, so its button shows the truth
+                    if p.window_closed() {
+                        drop(p);
+                        say(&tagged(Value::object([("t", Value::text("gui_closed"))]), group.then_some(*id)));
+                    }
                 }
                 continue;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
         };
-        let reply = match m.get("t").and_then(Value::as_text) {
-            Some("save") => {
-                let mut p = plugin.lock().unwrap_or_else(PoisonError::into_inner);
-                match p.save() {
-                    Ok(c) => Value::object([
-                        ("t", Value::text("state")),
-                        ("chunk", c.map_or(Value::NULL, |c| Value::text(hex(&c)))),
-                        ("params", param_values(p.as_ref())),
-                    ]),
-                    Err(e) => error(&e),
-                }
-            }
-            Some("restore") => {
-                let r = m
-                    .get("chunk")
-                    .and_then(Value::as_text)
-                    .ok_or_else(|| Error::new("plugin_host.message"))
-                    .and_then(unhex)
-                    .and_then(|c| plugin.lock().unwrap_or_else(PoisonError::into_inner).restore(&c));
-                match r {
-                    Ok(()) => Value::object([("t", Value::text("restored"))]),
-                    Err(e) => error(&e),
-                }
-            }
-            Some("gui") => {
-                gui_used = true;
-                let request = match (m.get("on").and_then(Value::as_bool), m.get("resize")) {
-                    (_, Some(size)) => {
-                        let at = |i: usize| size.at(i).and_then(Value::as_int).and_then(|v| u32::try_from(v).ok());
-                        match (at(0), at(1)) {
-                            (Some(w), Some(h)) => WindowRequest::Resize(w, h),
-                            _ => WindowRequest::Hide,
-                        }
-                    }
-                    (Some(true), None) => WindowRequest::Show,
-                    _ => WindowRequest::Hide,
-                };
-                match plugin.lock().unwrap_or_else(PoisonError::into_inner).window(request) {
-                    Ok(state) => gui_reply(&state),
-                    Err(e) => error(&e),
-                }
-            }
-            Some("quit") => break,
-            _ => error(&Error::new("plugin_host.message")),
+        let id = if group { m.get("i").and_then(Value::as_int) } else { Some(0) };
+        let Some(id) = id else {
+            say(&error(&Error::new("plugin_host.message")));
+            continue;
         };
-        say(&reply);
+        let reply_id = group.then_some(id);
+        if group && m.get("t").and_then(Value::as_text) == Some("load") {
+            let reply = match load_slot(&m, paths) {
+                Ok((slot, ready)) => {
+                    slots.insert(id, slot);
+                    ready
+                }
+                Err(e) => error(&e),
+            };
+            say(&tagged(reply, reply_id));
+            continue;
+        }
+        let Some(slot) = slots.get(&id) else {
+            say(&tagged(error(&Error::new("plugin_host.message")), reply_id));
+            continue;
+        };
+        match answer(slot, &m, &mut gui_used) {
+            Some(reply) => say(&tagged(reply, reply_id)),
+            None if group => {
+                // This instance only: its audio thread ends, its plugin is dropped (the window with it)
+                if let Some(mut gone) = slots.remove(&id) {
+                    gone.stop();
+                }
+            }
+            None => break,
+        }
     }
-    quit.store(true, Ordering::Release);
-    lm_sys_ipc::wake(&shm.words()[w::REQUEST], 1);
-    let _ = audio.join();
+    for slot in slots.values_mut() {
+        slot.stop();
+    }
     Ok(())
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
-        Some("run") => run(&paths(&args)),
+        Some("run") => run(&paths(&args), args.iter().any(|a| a == "--group")),
         Some("files") => match args.get(1) {
             Some(format) => files(format, &paths(&args), system(&args)).map(|f| match f {
                 Some(files) => files.iter().for_each(|p| {

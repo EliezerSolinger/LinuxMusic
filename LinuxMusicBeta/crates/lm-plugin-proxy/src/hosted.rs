@@ -6,12 +6,14 @@
 //! hung one is killed without stopping another plugin's audio. The helper's audio thread waits on the shared block,
 //! so an idle helper costs no CPU.
 
-use std::io::{BufReader, Write};
+use std::collections::BTreeMap;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::AtomicI64;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -113,8 +115,9 @@ pub struct WindowInfo {
 
 /// A running helper
 pub struct Hosted {
-    child: Mutex<Child>,
-    stdin: Mutex<ChildStdin>,
+    process: Arc<Process>,
+    /// The instance's number in its helper (a group's messages carry it; alone it is 0)
+    id: i64,
     replies: Mutex<Receiver<Value>>,
     state: Arc<ProxyState>,
     stop: Arc<AtomicBool>,
@@ -154,57 +157,199 @@ fn wait_reply(rx: &Receiver<Value>, until: Instant, want: &[&str]) -> Result<Val
     }
 }
 
-/// Starts a helper, loads the plugin, and gives the proxy the renderer will run and the helper's handle (for the
-/// state and the window). Blocking for up to `load_timeout`: run it in an `Operation`
-pub fn start(config: &HostConfig, req: &LoadRequest) -> Result<(Proxy, Arc<Hosted>)> {
-    let layout = Layout::new(req.max_block, req.inputs, req.outputs, req.sidechain);
-    let mut shm = SharedMemory::create(&lm_sys_ipc::unique_name(), layout.words())?;
-    layout.write_header(shm.words(), req.rate);
-    let mut command = Command::new(&config.binary);
-    command.arg("run");
-    for p in &config.paths {
-        command.arg("--path").arg(p);
+/// Where a helper's answers go: by the instance they are about (`-1`: the helper's own `hello`)
+type Routes = Arc<Mutex<BTreeMap<i64, (Sender<Value>, Arc<AtomicBool>)>>>;
+
+impl std::fmt::Debug for Process {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Process").field("group", &self.group).finish_non_exhaustive()
     }
-    let mut child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| io("plugin_host.spawn", &e).arg("program", config.binary.display().to_string()))?;
-    let stdin = child.stdin.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
-    let stdout = child.stdout.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
-    let (tx, rx) = channel();
-    let gui_open = Arc::new(AtomicBool::new(false));
-    let reader_gui = Arc::clone(&gui_open);
-    std::thread::Builder::new()
-        .name("lm-plugin-host-out".into())
-        .spawn(move || {
+}
+
+/// A helper process: one instance alone (the default) or a group of instances (`lm-plugin-host run --group`), the
+/// cost of a group being that a crash or a hang of one takes the others down with it
+pub struct Process {
+    child: Mutex<Child>,
+    stdin: Mutex<Option<ChildStdin>>,
+    routes: Routes,
+    group: bool,
+    next: AtomicI64,
+}
+
+impl Process {
+    fn spawn(config: &HostConfig, group: bool, until: Instant) -> Result<Arc<Process>> {
+        let mut command = Command::new(&config.binary);
+        command.arg("run");
+        if group {
+            command.arg("--group");
+        }
+        for p in &config.paths {
+            command.arg("--path").arg(p);
+        }
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| io("plugin_host.spawn", &e).arg("program", config.binary.display().to_string()))?;
+        let stdin = child.stdin.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
+        let stdout = child.stdout.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
+        let routes: Routes = Arc::new(Mutex::new(BTreeMap::new()));
+        let (tx, hello_rx) = channel();
+        routes.lock().unwrap_or_else(PoisonError::into_inner).insert(-1, (tx, Arc::new(AtomicBool::new(false))));
+        let reader_routes = Arc::clone(&routes);
+        let reader = std::thread::Builder::new().name("lm-plugin-host-out".into()).spawn(move || {
             let mut r = BufReader::new(stdout);
             while let Ok(Some(v)) = read_message(&mut r) {
+                let t = v.get("t").and_then(Value::as_text).unwrap_or("");
+                let id = match v.get("i").and_then(Value::as_int) {
+                    Some(i) => i,
+                    None if t == "hello" => -1,
+                    None => 0,
+                };
+                let routes = reader_routes.lock().unwrap_or_else(PoisonError::into_inner);
+                let Some((tx, gui)) = routes.get(&id) else { continue };
                 // The user closed the plugin's window: said at any time, not an answer to a request
-                if v.get("t").and_then(Value::as_text) == Some("gui_closed") {
-                    reader_gui.store(false, Ordering::Release);
+                if t == "gui_closed" {
+                    gui.store(false, Ordering::Release);
                     continue;
                 }
-                if tx.send(v).is_err() {
+                let _ = tx.send(v);
+            }
+            // The helper is gone: every instance's wait ends as a crash
+            reader_routes.lock().unwrap_or_else(PoisonError::into_inner).clear();
+        });
+        if let Err(e) = reader {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io("plugin_host.spawn", &e));
+        }
+        let process = Arc::new(Process {
+            child: Mutex::new(child),
+            stdin: Mutex::new(Some(stdin)),
+            routes,
+            group,
+            next: AtomicI64::new(if group { 1 } else { 0 }),
+        });
+        let hello = wait_reply(&hello_rx, until, &["hello"]).and_then(|h| {
+            if h.get("protocol").and_then(Value::as_int) == Some(PROTOCOL) {
+                Ok(h)
+            } else {
+                Err(Error::new("plugin_host.protocol"))
+            }
+        });
+        process.routes.lock().unwrap_or_else(PoisonError::into_inner).remove(&-1);
+        if let Err(e) = hello {
+            process.kill();
+            return Err(e);
+        }
+        Ok(process)
+    }
+
+    fn kill(&self) {
+        let mut child = self.child.lock().unwrap_or_else(PoisonError::into_inner);
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    fn is_dead(&self) -> bool {
+        matches!(self.child.lock().unwrap_or_else(PoisonError::into_inner).try_wait(), Ok(Some(_)))
+    }
+
+    fn send(&self, msg: &Value, id: i64) -> Result<()> {
+        let msg = if self.group { msg.with("i", Value::int(id)) } else { msg.clone() };
+        let mut stdin = self.stdin.lock().unwrap_or_else(PoisonError::into_inner);
+        match stdin.as_mut() {
+            Some(s) => write_message(s, &msg),
+            None => Err(Error::new("plugin_host.crashed")),
+        }
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        // The end of the standard input ends the helper; a helper that does not leave is killed
+        drop(self.stdin.lock().unwrap_or_else(PoisonError::into_inner).take());
+        let mut child = self.child.lock().unwrap_or_else(PoisonError::into_inner);
+        let until = Instant::now() + Duration::from_millis(500);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if Instant::now() < until => std::thread::sleep(Duration::from_millis(5)),
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
                     break;
                 }
             }
-        })
-        .map_err(|e| io("plugin_host.spawn", &e))?;
+        }
+    }
+}
+
+impl std::fmt::Debug for Group {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Group").finish_non_exhaustive()
+    }
+}
+
+/// Plugin instances that share one helper process (a per-plugin preference; the default is one process per
+/// instance, so a crash costs one plugin). Instances started in the same group run in the same helper while it
+/// lives; when it dies the next instance starts a new one
+#[derive(Default)]
+pub struct Group {
+    process: Mutex<Weak<Process>>,
+}
+
+impl Group {
+    pub fn new() -> Arc<Group> {
+        Arc::new(Group::default())
+    }
+
+    /// The helper of the group: the running one, or a new one
+    fn process(&self, config: &HostConfig, until: Instant) -> Result<Arc<Process>> {
+        let mut slot = self.process.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(p) = slot.upgrade()
+            && !p.is_dead()
+        {
+            return Ok(p);
+        }
+        let p = Process::spawn(config, true, until)?;
+        *slot = Arc::downgrade(&p);
+        Ok(p)
+    }
+}
+
+/// Starts a helper, loads the plugin, and gives the proxy the renderer will run and the helper's handle (for the
+/// state and the window). Blocking for up to `load_timeout`: run it in an `Operation`
+pub fn start(config: &HostConfig, req: &LoadRequest) -> Result<(Proxy, Arc<Hosted>)> {
+    start_in(config, req, None)
+}
+
+/// [`start`], in the helper of a group when there is one (several instances in one process)
+pub fn start_in(config: &HostConfig, req: &LoadRequest, group: Option<&Group>) -> Result<(Proxy, Arc<Hosted>)> {
+    let layout = Layout::new(req.max_block, req.inputs, req.outputs, req.sidechain);
+    let mut shm = SharedMemory::create(&lm_sys_ipc::unique_name(), layout.words())?;
+    layout.write_header(shm.words(), req.rate);
     let until = Instant::now() + config.load_timeout;
-    let fail = |child: &mut Child, e: Error| {
-        let _ = child.kill();
-        let _ = child.wait();
+    let process = match group {
+        Some(g) => g.process(config, until)?,
+        None => Process::spawn(config, false, until)?,
+    };
+    let id = process.next.fetch_add(1, Ordering::AcqRel);
+    let (tx, rx) = channel();
+    let gui_open = Arc::new(AtomicBool::new(false));
+    process.routes.lock().unwrap_or_else(PoisonError::into_inner).insert(id, (tx, Arc::clone(&gui_open)));
+    let forget = |process: &Process| {
+        process.routes.lock().unwrap_or_else(PoisonError::into_inner).remove(&id);
+    };
+    // A failure kills a helper that is alone, and one that stopped answering; a group's others are left alone
+    let fail = |process: &Process, e: Error| {
+        forget(process);
+        if !process.group || e.key() == "plugin_host.timeout" || e.key() == "plugin_host.crashed" {
+            process.kill();
+        }
         e
     };
-    let hello = match wait_reply(&rx, until, &["hello"]) {
-        Ok(h) => h,
-        Err(e) => return Err(fail(&mut child, e)),
-    };
-    if hello.get("protocol").and_then(Value::as_int) != Some(PROTOCOL) {
-        return Err(fail(&mut child, Error::new("plugin_host.protocol")));
-    }
     let params =
         Value::object(req.params.iter().map(|(k, v)| (k.as_str(), Value::real(f64::from(*v)).unwrap_or(Value::NULL))));
     let load = Value::object([
@@ -217,13 +362,12 @@ pub fn start(config: &HostConfig, req: &LoadRequest) -> Result<(Proxy, Arc<Hoste
         ("chunk", req.chunk.as_ref().map_or(Value::NULL, |c| Value::text(hex(c)))),
         ("params", params),
     ]);
-    let mut stdin = stdin;
-    if let Err(e) = write_message(&mut stdin, &load) {
-        return Err(fail(&mut child, e));
+    if let Err(e) = process.send(&load, id) {
+        return Err(fail(&process, e));
     }
     let ready = match wait_reply(&rx, until, &["ready"]) {
         Ok(r) => r,
-        Err(e) => return Err(fail(&mut child, e)),
+        Err(e) => return Err(fail(&process, e)),
     };
     // The helper has it mapped: the name can go
     shm.unlink();
@@ -233,8 +377,8 @@ pub fn start(config: &HostConfig, req: &LoadRequest) -> Result<(Proxy, Arc<Hoste
     let state = Arc::new(ProxyState::default());
     let stop = Arc::new(AtomicBool::new(false));
     let hosted = Arc::new(Hosted {
-        child: Mutex::new(child),
-        stdin: Mutex::new(stdin),
+        process,
+        id,
         replies: Mutex::new(rx),
         state: Arc::clone(&state),
         stop: Arc::clone(&stop),
@@ -250,7 +394,7 @@ pub fn start(config: &HostConfig, req: &LoadRequest) -> Result<(Proxy, Arc<Hoste
         .spawn(move || {
             while !stop.load(Ordering::Acquire) {
                 let Some(h) = watched.upgrade() else { break };
-                let mut child = h.child.lock().unwrap_or_else(PoisonError::into_inner);
+                let mut child = h.process.child.lock().unwrap_or_else(PoisonError::into_inner);
                 if h.state.hung.load(Ordering::Acquire) {
                     let _ = child.kill();
                 }
@@ -280,7 +424,7 @@ impl Hosted {
         let rx = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
         // Answers to older requests that timed out are dropped
         while rx.try_recv().is_ok() {}
-        write_message(&mut *self.stdin.lock().unwrap_or_else(PoisonError::into_inner), msg)?;
+        self.process.send(msg, self.id)?;
         wait_reply(&rx, Instant::now() + timeout, want)
     }
 
@@ -360,7 +504,7 @@ impl Hosted {
 
     /// Kills the helper (the node goes silent)
     pub fn kill(&self) {
-        let _ = self.child.lock().unwrap_or_else(PoisonError::into_inner).kill();
+        let _ = self.process.child.lock().unwrap_or_else(PoisonError::into_inner).kill();
     }
 
     pub fn state(&self) -> &Arc<ProxyState> {
@@ -374,25 +518,10 @@ impl Drop for Hosted {
         let words = self.shm.words();
         words[w::QUIT].store(1, Ordering::Release);
         lm_sys_ipc::wake(&words[w::REQUEST], 1);
-        {
-            let mut stdin = self.stdin.lock().unwrap_or_else(PoisonError::into_inner);
-            let _ = write_message(&mut *stdin, &Value::object([("t", Value::text("quit"))]));
-            let _ = stdin.flush();
-        }
-        let mut child = self.child.lock().unwrap_or_else(PoisonError::into_inner);
-        let until = Instant::now() + Duration::from_millis(500);
-        loop {
-            match child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) if Instant::now() < until => std::thread::sleep(Duration::from_millis(5)),
-                _ => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break;
-                }
-            }
-        }
-        drop(child);
+        // Alone, `quit` ends the helper (its process is then waited for when the last reference goes); in a group it
+        // ends this instance only
+        let _ = self.process.send(&Value::object([("t", Value::text("quit"))]), self.id);
+        self.process.routes.lock().unwrap_or_else(PoisonError::into_inner).remove(&self.id);
         if let Some(t) = self.supervisor.lock().unwrap_or_else(PoisonError::into_inner).take() {
             let _ = t.join();
         }

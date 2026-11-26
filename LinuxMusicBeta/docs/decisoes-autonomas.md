@@ -1213,13 +1213,13 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
 
 ## O host de plugins de terceiros fora do processo (I-9.6, 20/11)
 
-- **Quem fica fora:** só plugins de terceiros (LV2, CLAP, VST3, LADSPA, VST2 pelo wine). Os nossos continuam no
+- **Quem fica fora:** só plugins de terceiros (LV2, CLAP, VST3, LADSPA). Os nossos continuam no
   caminho de render, no processo do núcleo. O núcleo tem um `Proxy` (um `Processor` comum) e o plugin roda no
   `lm-plugin-host`, um binário separado. O núcleo não linka nenhuma biblioteca de formato; só o helper linka.
 - **Um helper por instância** (por enquanto, e é o padrão): um plugin que cai ou trava leva junto só ele mesmo, e
   o "recriar" é só reabrir aquele processo. Agrupar (um helper por fabricante ou por formato, para economizar
-  memória) cabe no mesmo protocolo, porque cada bloco compartilhado é de um plugin. Vai ser uma preferência, com o
-  padrão em um por instância. Ainda não está implementado.
+  memória) cabe no mesmo protocolo, porque cada bloco compartilhado é de um plugin. É uma preferência, com o
+  padrão em um por instância (implementado, ver "janelas, gestos, mono duplo e grupos", 26/11).
 - **Memória compartilhada POSIX** (`shm_open`, mapeada pelos dois lados e apagada com `unlink` logo depois do
   `ready`, para não sobrar nada se os dois morrerem). O bloco tem um cabeçalho de palavras atômicas, áudio de
   entrada, saída e sidechain (f32), até 4096 eventos de 6 palavras na entrada e 256 de parâmetro na saída.
@@ -1376,6 +1376,48 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
   - VST2 pelo wine; janelas de CLAP e VST3 (item 4); agrupar helpers.
   - Rodar os testes novos (`lm-sys-ladspa/tests/instance.rs`, `lm-plugin-host/tests/ladspa.rs`): escritos sem rodar, a
     pedido (26/11).
+
+## O host de plugins: janelas, gestos, mono duplo e grupos (26/11)
+
+- **Formatos:** LV2, CLAP, VST3 e LADSPA. VST2 pelo wine saiu do plano (decisão do usuário, 26/11).
+- **Mono duplo vem do canal.** O `LoadRequest` usa a contagem de canais do canal onde o plugin está (`BuildContext::
+  channels`), não a do plugin: um efeito 1x1 num canal estéreo vira 2x2 e o helper roda duas instâncias
+  (`dual::DualMono`). O VST3 agora diz seu `io` (soma dos canais dos barramentos), então também entra. Um
+  instrumento mono (0 entradas, 1 saída) ganha duas saídas e o helper copia a sua para as duas (`dual::Spread`).
+  Em canais com mais de 2 canais o plugin mono continua com a contagem dele.
+- **Janelas (I-22).** O protocolo de controle: `{t:"gui", on:true|false}` mostra/esconde, `{t:"gui", resize:[w,h]}`
+  redimensiona; a resposta é `{t:"gui", on, size, reason}`; o helper avisa sozinho `{t:"gui_closed"}` quando o usuário
+  fecha a janela. Na sessão: ações `plugin.show_window {node}` e `plugin.hide_window {node}` (numa operação, porque
+  uma janela pode levar segundos); um plugin sem janela, ou uma máquina sem sistema de janelas, vira o aviso
+  `plugin.window.unavailable` com o motivo, e o editor genérico continua. Botões "Abrir janela do plugin" nas
+  janelas de instrumento e de efeito.
+  - **A thread principal do helper é o laço da janela.** Depois do primeiro pedido de janela ela roda
+    `lm_sys_gui::pump` entre as mensagens (macOS: `NSApplication` com política accessory e `nextEventMatchingMask`;
+    Linux: a conexão X11 com `poll`). A thread de áudio é outra e nunca toca a janela. `lm-sys-gui` é a crate nova
+    com o `unsafe` (Cocoa pelo runtime do Objective-C, X11 por `dlopen` de `libX11.so.6`, sem dependência nova).
+  - **CLAP:** janela flutuante do plugin quando ele suporta a API do sistema (`gui_open`); senão o gui embutido
+    numa janela nossa (`set_parent`), com `request_resize` atendido pelo laço.
+  - **VST3:** `IPlugView` de `createView("editor")` anexada a uma janela nossa (`NSView` ou `X11EmbedWindowID`),
+    com um `IPlugFrame` próprio (`resizeView`) e, no Linux, o `IRunLoop` (timers e descritores que o plugin
+    registra, atendidos a cada passo do laço).
+  - **LV2:** sem janela por enquanto. Não há binding de `suil` em `lm-sys-lilv`; o plugin responde
+    `has_window = false` e o editor genérico atende. Motivo registrado: `lv2.ui.generic`. Fica para quando houver
+    `suil`.
+  - **O que não pude verificar:** o código de X11 e do Linux em geral foi só escrito (a máquina de desenvolvimento
+    é macOS); o de macOS compila, mas as janelas reais dependem de teste manual (`LM_GUI_TESTS=1` em
+    `lm-sys-gui/tests/window.rs`).
+- **Gestos da janela.** O VST3 passa `beginEdit`/`performEdit`/`endEdit` adiante: o helper põe as bordas no bloco
+  compartilhado (bit alto do índice, `OUT_BEGIN`/`OUT_END`), o proxy as entrega como
+  `PluginRequest::GestureBegin/End` (antes dos valores, porque a caixa de pedidos por bloco é curta). A sessão
+  fecha o gesto no fim (um passo de desfazer, uma automação gravada); sem bordas (CLAP, LV2) continua valendo a
+  pausa de 300 ms, e um começo sem fim é fechado depois de 2 s.
+- **Grupos.** Preferência por plugin (`plugins.grouped` nas preferências; ação `plugin.group {plugin, on}`); o padrão
+  é um processo por instância. Com a preferência, as instâncias *do mesmo plugin* compartilham um helper
+  (`lm-plugin-host run --group`): cada mensagem e resposta leva `"i"`, `load` por instância, `quit` com `"i"` encerra
+  só ela, o fim da entrada padrão encerra tudo. O custo é dito na preferência: uma queda ou um travamento leva o
+  grupo todo. Vale para as instâncias criadas depois da próxima partida. Agrupar plugins diferentes no mesmo
+  processo não foi feito (a escolha foi o menor raio de queda).
+
 
 ## Do `lm-session`, continuação 2 (20/11)
 

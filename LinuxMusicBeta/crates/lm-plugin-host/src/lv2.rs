@@ -7,7 +7,7 @@ use lm_base::{Error, Result};
 use lm_render::EventKind;
 use lm_sys_lilv::{Direction, Instance, InstanceConfig, PluginInfo, PortKind, World};
 
-use crate::backend::{Listed, Param, Plugin, Transport};
+use crate::backend::{Listed, Param, Plugin, Transport, WindowRequest, WindowState};
 
 /// A world with the given folders (a bundle `*.lv2`, or a folder of bundles), or the system's LV2 path
 pub fn world(paths: &[PathBuf]) -> Result<World> {
@@ -111,6 +111,15 @@ fn clamp7(x: f32) -> u8 {
 }
 
 impl Plugin for Lv2 {
+    /// No window of its own: there is no `suil` binding yet (`lm-sys-lilv` hosts the plugin, not its UI), so the core
+    /// keeps the generic editor, and says why (decisoes-autonomas.md, 26/11)
+    fn window(&mut self, request: WindowRequest) -> Result<WindowState> {
+        Ok(match request {
+            WindowRequest::Show => WindowState::none("lv2.ui.generic"),
+            _ => WindowState::closed(),
+        })
+    }
+
     fn params(&self) -> &[Param] {
         &self.params
     }

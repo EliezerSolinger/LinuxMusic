@@ -32,7 +32,7 @@ use lm_compile::NodeKey;
 use lm_doc::GestureId;
 use lm_plugin::{CHUNK_KEY, External, Registry};
 use lm_plugin_proxy::{
-    Blocked, HostConfig, Hosted, Proxy, Saved, Scanned, WindowCommand, external, plugin_id, scanned_from,
+    Blocked, Group, HostConfig, Hosted, Proxy, Saved, Scanned, WindowCommand, external_in, plugin_id, scanned_from,
 };
 use lm_port::{ActionId, Severity, Target};
 use lm_render::{PluginRequest, Processor};
@@ -106,6 +106,15 @@ pub(crate) static ACTIONS: &[ActionSpec] = &[
         run: |s, p| {
             let id = p.get("node").and_then(Value::as_text).and_then(|t| t.parse::<NodeId>().ok());
             s.plugin_window(id.ok_or_else(|| Error::new("action.params"))?, false)
+        },
+        enabled: |s| s.external.config.is_some(),
+    },
+    ActionSpec {
+        id: "plugin.group",
+        label: "action.plugin.group",
+        run: |s, p| {
+            let id = p.get("plugin").and_then(Value::as_text).ok_or_else(|| Error::new("action.params"))?;
+            s.set_plugin_grouped(id, p.get("on").and_then(Value::as_bool).unwrap_or(true))
         },
         enabled: |s| s.external.config.is_some(),
     },
@@ -232,10 +241,17 @@ impl Session {
     fn add_externals(&mut self, scanned: &[Scanned]) -> Result<()> {
         let Some(config) = self.external.config.clone() else { return Ok(()) };
         let mut added = false;
+        let grouped: Vec<String> = list_of(&plugins_pref(&self.preferences), "grouped")
+            .iter()
+            .filter_map(Value::as_text)
+            .map(str::to_owned)
+            .collect();
         for s in scanned {
             let id = plugin_id(&s.format, &s.uri);
             if !self.external.made.contains_key(&id) && self.plugins.kind(&id).is_none() {
-                self.external.made.insert(id, external(s, Arc::clone(&config), None));
+                // A plugin the user asked to group runs all its instances in one helper process
+                let group = grouped.contains(&id).then(Group::new);
+                self.external.made.insert(id, external_in(s, Arc::clone(&config), None, group));
                 added = true;
             }
         }
@@ -497,6 +513,23 @@ impl Session {
             });
         }
         changed
+    }
+
+    /// The plugin's preference to run all its instances in one helper process (default: one process per instance, so
+    /// a crash or a hang costs one plugin; in a group it costs them all). Saved in the preferences
+    /// (`plugins.grouped`); it applies to the instances built after the next start
+    pub fn set_plugin_grouped(&mut self, plugin: &str, on: bool) -> Result<()> {
+        if !self.external.made.contains_key(plugin) {
+            return Err(Error::new("plugin.group.unknown").arg("plugin", plugin));
+        }
+        let prefs = plugins_pref(&self.preferences);
+        let mut grouped: Vec<Value> =
+            list_of(&prefs, "grouped").into_iter().filter(|g| g.as_text() != Some(plugin)).collect();
+        if on {
+            grouped.push(Value::text(plugin));
+        }
+        let tree = prefs.with("grouped", Value::list(grouped));
+        self.set_preference(&[PathStep::key("plugins")], tree)
     }
 
     /// Shows or hides the plugin's own window (I-22), in an operation: the helper makes the window; the answer says

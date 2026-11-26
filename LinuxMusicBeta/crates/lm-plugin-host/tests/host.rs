@@ -223,3 +223,37 @@ fn a_plugin_window_is_shown_resized_and_its_gestures_come_back() {
     let none = plain.window(WindowCommand::Show, t).unwrap();
     assert!(!none.open && none.reason.as_deref() == Some("plugin.window.none"));
 }
+
+#[test]
+fn instances_of_a_group_share_one_helper_process() {
+    use lm_plugin_proxy::{Group, start_in};
+    let mut cfg = config();
+    cfg.deadline = Deadline::Wait;
+    let group = Group::new();
+    let (mut a, hosted_a) = start_in(&cfg, &request("gain", 2, &[("gain", 0.5)]), Some(&group)).unwrap();
+    let (mut b, hosted_b) = start_in(&cfg, &request("gain", 2, &[("gain", 2.0)]), Some(&group)).unwrap();
+    let (mut ra, mut rb) = (Runner::effect(), Runner::effect());
+    // Each instance has its own parameters and its own audio
+    for _ in 0..4 {
+        let out_a = ra.block(&mut a, ramp, &[], false);
+        let out_b = rb.block(&mut b, ramp, &[], false);
+        let start = ra.frame - BLOCK as u64;
+        assert_eq!(out_a[0][10], ramp(start + 10, 0) * 0.5);
+        assert_eq!(out_b[0][10], ramp(start + 10, 0) * 2.0);
+    }
+    // Each has its own state, answered to its own request
+    assert_eq!(hosted_a.save_state(Duration::from_secs(5)).unwrap().map(|c| c.len()), Some(8));
+    assert_eq!(hosted_b.save_state(Duration::from_secs(5)).unwrap().map(|c| c.len()), Some(8));
+    // One instance leaves: the other goes on in the same helper
+    drop(a);
+    drop(hosted_a);
+    let out_b = rb.block(&mut b, ramp, &[], false);
+    let start = rb.frame - BLOCK as u64;
+    assert_eq!(out_b[0][10], ramp(start + 10, 0) * 2.0);
+    assert!(!hosted_b.is_dead());
+    // A new instance of the group joins the running helper
+    let (mut c, _hosted_c) = start_in(&cfg, &request("gain", 2, &[("gain", 1.0)]), Some(&group)).unwrap();
+    let mut rc = Runner::effect();
+    let out_c = rc.block(&mut c, ramp, &[], false);
+    assert_eq!(out_c[0][10], ramp(10, 0));
+}

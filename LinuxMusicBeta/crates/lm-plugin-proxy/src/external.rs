@@ -8,7 +8,7 @@ use lm_plugin::{BuildContext, External, PluginKind};
 use lm_render::Processor;
 use lm_state::{FieldKind, FieldSpec, NodeSchema, PARAMS_KEY, ParamSpec, Scale, Value};
 
-use crate::hosted::{HostConfig, Hosted, LoadRequest, start};
+use crate::hosted::{Group, HostConfig, Hosted, LoadRequest, start_in};
 use crate::protocol::unhex;
 use crate::scan::Scanned;
 
@@ -34,6 +34,17 @@ pub fn layout_channels(s: &Scanned, channels: u16) -> (usize, usize) {
 
 /// The external plugin for a scanned one
 pub fn external(scanned: &Scanned, config: Arc<HostConfig>, on_start: Option<OnStart>) -> External {
+    external_in(scanned, config, on_start, None)
+}
+
+/// [`external`], its instances sharing one helper process when `group` is given (the plugin's preference; the default
+/// is one process per instance, so a crash costs one plugin)
+pub fn external_in(
+    scanned: &Scanned,
+    config: Arc<HostConfig>,
+    on_start: Option<OnStart>,
+    group: Option<Arc<Group>>,
+) -> External {
     let id = plugin_id(&scanned.format, &scanned.uri);
     let type_name = lm_base::intern(&lm_plugin::plugin_type(&id));
     // The plugin's format and URI are its id's (fixed); its own state is `"chunk"`, in hex (above 64 KB the session
@@ -72,7 +83,7 @@ pub fn external(scanned: &Scanned, config: Arc<HostConfig>, on_start: Option<OnS
             chunk,
             params,
         };
-        let (proxy, hosted) = start(&config, &req)?;
+        let (proxy, hosted) = start_in(&config, &req, group.as_deref())?;
         if let Some(f) = &on_start {
             f(&s, hosted);
         }

@@ -21,7 +21,9 @@ pub mod protocol;
 pub mod proxy;
 pub mod scan;
 
-pub use external::{OnStart, external, plugin_id};
-pub use hosted::{HostConfig, Hosted, LoadRequest, Ready, Saved, WindowCommand, WindowInfo, start};
+pub use external::{OnStart, external, external_in, plugin_id};
+pub use hosted::{
+    Group, HostConfig, Hosted, LoadRequest, Process, Ready, Saved, WindowCommand, WindowInfo, start, start_in,
+};
 pub use proxy::{Deadline, HANG_BLOCKS, Proxy, ProxyState};
 pub use scan::{Blocked, ScanReport, Scanned, ScannedParam, scan, scanned_from};
