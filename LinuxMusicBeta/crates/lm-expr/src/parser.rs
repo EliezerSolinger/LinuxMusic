@@ -13,6 +13,10 @@ use crate::symbols::{Lookup, Symbols};
 /// parse_branch together)
 const MAX_DEPTH: usize = 200;
 
+/// The longest expression: a left-deep chain of this many terms is as deep as the tree gets, and the compiler and
+/// the drop of the tree recurse on it
+const MAX_TOKENS: usize = 8000;
+
 /// Exprtk's precedence of a binary operator token: (left, right)
 type Prec = (Op2, u8, u8);
 
@@ -26,6 +30,9 @@ struct Parser<'a> {
 /// Parses `src` against `symbols`. An empty text is an error (nothing to evaluate)
 pub(crate) fn parse(src: &str, symbols: &Symbols) -> Result<Node, CompileError> {
     let toks = tokenize(src)?;
+    if toks.len() > MAX_TOKENS {
+        return Err(CompileError::new(toks[MAX_TOKENS].pos, key::TOO_DEEP));
+    }
     let mut p = Parser { toks, at: 0, symbols, depth: 0 };
     p.corpus()
 }
