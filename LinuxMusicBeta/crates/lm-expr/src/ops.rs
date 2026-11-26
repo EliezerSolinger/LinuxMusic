@@ -11,7 +11,6 @@ const EPSILON: f32 = 0.000_001;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op1 {
     Neg,
-    Pos,
     Abs,
     Acos,
     Acosh,
@@ -135,7 +134,6 @@ fn via_i64(v: f32) -> f32 {
 pub fn eval1(op: Op1, v: f32) -> f32 {
     match op {
         Op1::Neg => -v,
-        Op1::Pos => v,
         Op1::Abs => libm::fabsf(v),
         Op1::Acos => libm::acosf(v),
         Op1::Acosh => libm::acoshf(v),
