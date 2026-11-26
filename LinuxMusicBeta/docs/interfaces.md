@@ -810,6 +810,14 @@ pub enum PluginRequest { LatencyChanged, ParamChanged { index: u32, value: f32 }
 Um triplo buffer de tamanho fixo, declarado no descritor e alocado com o processador (crate `triple_buffer`). O
 áudio escreve e a janela lê o último quadro completo. O formato dos bytes é do plugin.
 
+**Convenção do quadro (que `CorePort::display(node)` serve):** palavras `f32` little-endian (`DisplaySpec.bytes` é
+múltiplo de 4; uma sobra de menos de 4 bytes é descartada). `DisplayView.frame` é o quadro decodificado e
+`DisplayView.kind` é o id do plugin (`"rack"` para um canal ou o master da mesa, cujo layout é `rack::display`).
+Vale para **todo nó de plugin** (instrumento ou insert, interno ou de terceiros) que declara `DisplaySpec`
+(`Registry::display(id)`): a sessão cria o canal ao construir o processador, entrega o `DisplayWriter` no
+`ProcessContext` e guarda o `DisplayReader`; ler não bloqueia nem aloca na thread de áudio. NaN = "sem leitura".
+O `lm-remote` leva o quadro como está (`KIND_DISPLAY`, só enquanto a janela assina).
+
 ### I-9.6 Plugins de terceiros fora do processo (F2) ⏳
 
 - Um processo auxiliar, memória compartilhada (buffers, eventos, pedidos) e um semáforo do sistema por bloco.

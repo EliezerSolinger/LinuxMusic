@@ -12,7 +12,7 @@ use lm_doc::{Ports, PortsFn};
 use lm_render::Processor;
 use lm_state::{NodeSchema, PARAMS_KEY, ParamSpec, SchemaRegistry, Value};
 
-use crate::descriptor::{BuildContext, Descriptor, PluginKind, is_valid_plugin_id, plugin_type};
+use crate::descriptor::{BuildContext, Descriptor, DisplaySpec, PluginKind, is_valid_plugin_id, plugin_type};
 
 /// How an external plugin is built: the state (complete and valid) and the context, to a processor (for a
 /// third-party plugin, a proxy of a helper process, I-9.6)
@@ -37,6 +37,9 @@ pub struct External {
     pub schema: NodeSchema,
     /// Fixed for the plugin: an external plugin's ports do not depend on its state
     pub ports: Ports,
+    /// The live frame its processor writes through the display writer (I-9.5), if it declares one: `f32`
+    /// little-endian words, as for a plugin of the program
+    pub display: Option<DisplaySpec>,
     pub build: ExternalBuild,
 }
 
@@ -189,6 +192,14 @@ impl Registry {
         match &self.plugins.get(id)?.source {
             Source::Static(d) => Some(*d),
             Source::External(_) => None,
+        }
+    }
+
+    /// The live frame a plugin declares (I-9.5), a third-party one included: `None` when it has no display
+    pub fn display(&self, id: &str) -> Option<DisplaySpec> {
+        match &self.plugins.get(id)?.source {
+            Source::Static(d) => d.display,
+            Source::External(e) => e.display,
         }
     }
 
@@ -394,6 +405,7 @@ mod external_tests {
             kind: PluginKind::Effect,
             schema: NodeSchema::new(type_name, 1).param(ParamSpec::new("gain", 0.0, 2.0, 1.0)),
             ports: Ports { outputs: vec![Port::new("main", 2)], sidechains: vec![] },
+            display: None,
             build: Arc::new(|state: &Value, _cx: &BuildContext<'_>| {
                 let g = state.get(PARAMS_KEY).and_then(|p| p.get("gain")).and_then(Value::as_real).unwrap_or(1.0);
                 Ok(Box::new(Gain(g as f32)) as Box<dyn Processor>)

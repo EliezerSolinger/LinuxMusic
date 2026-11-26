@@ -600,6 +600,11 @@ impl CorePort for LocalPort {
     }
 
     fn display(&self, node: NodeId) -> Option<DisplayView> {
+        // A plugin node (instrument or insert) gives what its processor wrote (`kind` is the plugin's id); a desk
+        // channel or the master gives its rack's readings
+        if let Some((plugin, frame)) = self.session.plugin_display(node) {
+            return Some(DisplayView { kind: Arc::from(plugin), frame: Arc::from(frame) });
+        }
         self.session.rack_display(node).map(|frame| DisplayView { kind: Arc::from("rack"), frame: Arc::from(frame) })
     }
 

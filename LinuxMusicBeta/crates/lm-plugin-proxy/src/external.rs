@@ -78,7 +78,15 @@ pub fn external(scanned: &Scanned, config: Arc<HostConfig>, on_start: Option<OnS
         }
         Ok(Box::new(proxy) as Box<dyn Processor>)
     });
-    External { id, name: format!("{} ({})", scanned.name, scanned.format.to_uppercase()), kind, schema, ports, build }
+    External {
+        id,
+        name: format!("{} ({})", scanned.name, scanned.format.to_uppercase()),
+        kind,
+        schema,
+        ports,
+        display: None,
+        build,
+    }
 }
 
 #[cfg(test)]

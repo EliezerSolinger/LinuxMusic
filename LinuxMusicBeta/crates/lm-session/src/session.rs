@@ -855,10 +855,8 @@ impl Session {
     /// What the desk shows of a channel or the master (I-9.5): its rack segments' display frames merged (each
     /// segment fills what it measures; `rack::display` gives the layout); `None` for a node with no rack display
     pub fn rack_display(&self, id: NodeId) -> Option<Vec<f32>> {
+        self.drop_stale_displays();
         let mut displays = self.displays.borrow_mut();
-        // The readers of nodes the installed program no longer has are dropped
-        let table = self.table.clone();
-        displays.retain(|k, _| table.node(*k).is_some());
         let mut out: Option<Vec<f32>> = None;
         for (_, reader) in displays.iter_mut().filter(|(k, _)| matches!(k, NodeKey::Rack(c, _) if *c == id)) {
             let bytes = reader.read();
@@ -871,6 +869,32 @@ impl Session {
             }
         }
         out
+    }
+
+    /// The live frame of a plugin node, instrument or insert (I-9.5): the newest frame its processor wrote through
+    /// its display writer (a lock-free triple buffer: nothing is allocated or waited for on the audio thread), as
+    /// `f32` little-endian words (the layout is the plugin's, a trailing partial word is dropped), and the plugin's
+    /// id. `None` for a node whose plugin declares no display (or that is not built yet)
+    pub fn plugin_display(&self, id: NodeId) -> Option<(String, Vec<f32>)> {
+        let plugin = self.document.find(id)?.get("plugin").and_then(Value::as_text)?.to_owned();
+        self.plugins.display(&plugin)?;
+        self.drop_stale_displays();
+        let mut displays = self.displays.borrow_mut();
+        let key = [NodeKey::Instrument(id), NodeKey::Insert(id)].into_iter().find(|k| displays.contains_key(k))?;
+        let reader = displays.get_mut(&key)?;
+        let frame = reader.read().as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect();
+        Some((plugin, frame))
+    }
+
+    /// The readers of nodes the installed program no longer has (and no build is making) are dropped
+    fn drop_stale_displays(&self) {
+        let table = self.table.clone();
+        let building = |k: &NodeKey| {
+            self.build_ops.list.iter().any(|o| o.data.node == *k)
+                || self.builds_waiting.iter().any(|b| b.node == *k)
+                || self.waiting_nodes.contains(k)
+        };
+        self.displays.borrow_mut().retain(|k, _| table.node(*k).is_some() || building(k));
     }
 
     /// Whether a document node's processor is still being built (new nodes are silent meanwhile, I-2.3)
@@ -1399,8 +1423,13 @@ impl Session {
         let schemas = self.schemas.clone();
         let delay = self.delay;
         let BuildRequest { ticket, node, build, seed, spec, .. } = b;
-        let display = matches!(build, lm_compile::Build::Rack { .. })
-            .then(|| lm_render::display_channel(crate::rack::display::BYTES));
+        // The live frame of the node (I-9.5): a rack segment's fixed one, or what the plugin declares
+        let display = match &build {
+            lm_compile::Build::Rack { .. } => Some(lm_render::display_channel(crate::rack::display::BYTES)),
+            lm_compile::Build::Plugin { plugin, .. } => {
+                self.plugins.display(plugin).map(|d| lm_render::display_channel(d.bytes))
+            }
+        };
         let target = match node.owner() {
             Some(id) => Target::Node(id),
             None => Target::Project,

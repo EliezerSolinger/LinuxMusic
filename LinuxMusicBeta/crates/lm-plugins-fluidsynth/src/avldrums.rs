@@ -166,8 +166,8 @@ pub static DESCRIPTOR: Descriptor = Descriptor {
     ports,
     // FluidSynth's velocity layers and curve
     velocity: Velocity::Timbre,
-    // The last hit of each piece, for the panel's photo (two bytes per piece: a count of hits and the velocity)
-    display: Some(DisplaySpec { bytes: 2 * PIECES }),
+    // The last hit of each piece, for the panel's photo (two `f32` words per piece, the plugin display convention: a count of hits and the velocity)
+    display: Some(DisplaySpec { bytes: 8 * PIECES }),
     build,
     tests: TestHints {
         tuning: None,
@@ -451,9 +451,9 @@ impl Processor for AvlDrums {
             let hits = &self.hits;
             d.write(|frame| {
                 for (i, (count, velocity)) in hits.iter().enumerate() {
-                    if let Some(b) = frame.get_mut(2 * i..2 * i + 2) {
-                        b[0] = *count;
-                        b[1] = *velocity;
+                    if let Some(b) = frame.get_mut(8 * i..8 * i + 8) {
+                        b[..4].copy_from_slice(&f32::from(*count).to_le_bytes());
+                        b[4..].copy_from_slice(&f32::from(*velocity).to_le_bytes());
                     }
                 }
             });
