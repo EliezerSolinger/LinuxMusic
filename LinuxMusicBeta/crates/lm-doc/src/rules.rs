@@ -615,6 +615,18 @@ pub fn default_usage(registry: &SchemaRegistry, root: &Value) -> Usage {
         let name = p.get("plugin").and_then(Value::as_text).unwrap_or("");
         registry.find(&plugin_type(name)).map_or(0, |s| s.params.len())
     };
+    let modulator_params = |owner: &Value| -> usize {
+        owner
+            .get("modulators")
+            .map(|l| {
+                l.items()
+                    .map(|m| {
+                        crate::schemas::modulator_keys(m.get("kind").and_then(Value::as_text).unwrap_or("lfo")).len()
+                    })
+                    .sum()
+            })
+            .unwrap_or(0)
+    };
     let rack_params = |rack: Option<&Value>| {
         rack.map_or(0, |r| {
             r.entries().map(|(_, section)| section.entries().filter(|(_, v)| v.as_real().is_some()).count()).sum()
@@ -622,10 +634,10 @@ pub fn default_usage(registry: &SchemaRegistry, root: &Value) -> Usage {
     };
     for t in root.get("tracks").map(|t| t.items().collect::<Vec<_>>()).unwrap_or_default() {
         usage.nodes += 1;
-        usage.params += 1;
+        usage.params += 1 + modulator_params(t);
         if let Some(i) = t.get("instrument").filter(|i| !i.is_null()) {
             usage.nodes += 1;
-            usage.params += plugin_params(i);
+            usage.params += plugin_params(i) + modulator_params(i);
         }
         usage.nodes += t.get("outputs").map_or(0, Value::len);
     }
@@ -637,10 +649,10 @@ pub fn default_usage(registry: &SchemaRegistry, root: &Value) -> Usage {
     }
     for (ch, own) in channels {
         usage.nodes += 2;
-        usage.params += own + rack_params(ch.get("rack"));
+        usage.params += own + rack_params(ch.get("rack")) + modulator_params(ch);
         for p in ch.get("inserts").map(|i| i.items().collect::<Vec<_>>()).unwrap_or_default() {
             usage.nodes += 1;
-            usage.params += plugin_params(p);
+            usage.params += plugin_params(p) + modulator_params(p);
         }
     }
     usage

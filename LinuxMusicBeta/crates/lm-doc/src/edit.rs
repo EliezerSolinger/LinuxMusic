@@ -465,6 +465,8 @@ pub fn param_key(owner_type: &str, rel: &[PathStep]) -> Option<Arc<str>> {
         (types::PLUGIN, ["state", "params", k]) => Some(Arc::from(*k)),
         // An insert's wet/dry mix (the legacy EffectView's W/D)
         (types::PLUGIN, ["wet"]) => Some(Arc::from("insert.wet")),
+        // A modulator's own parameters: `params/speed`, `params/attack`...
+        (types::MODULATOR, ["params", k]) => Some(Arc::from(*k)),
         (types::TRACK, ["volume"])
         | (types::CHANNEL, ["volume" | "pan"])
         | (types::MASTER, ["volume"])
@@ -489,6 +491,9 @@ pub fn param_path(owner_type: &str, key: &str) -> Vec<PathStep> {
         && let Some(n) = key.strip_prefix("cc.")
     {
         return vec![PathStep::key("cc"), PathStep::key(&format!("c{n}"))];
+    }
+    if owner_type == types::MODULATOR {
+        return vec![PathStep::key("params"), PathStep::key(key)];
     }
     if owner_type == types::PLUGIN && key == "insert.wet" {
         return vec![PathStep::key("wet")];

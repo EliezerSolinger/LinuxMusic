@@ -261,7 +261,7 @@
       "solo": false,
       "volume": 1.0
     },
-    "version": 1
+    "version": 2
   },
   "mixer.device_output": {
     "defaults": {
@@ -315,6 +315,46 @@
       },
       "volume": 1.0
     },
+    "version": 2
+  },
+  "modulator": {
+    "defaults": {
+      "input": null,
+      "kind": "lfo",
+      "name": "",
+      "params": {
+        "abs": 1.0,
+        "attack": 10.0,
+        "decay": 200.0,
+        "depth": 1.0,
+        "gain": 1.0,
+        "multiplier": 0.0,
+        "peakAttack": 0.0,
+        "peakDecay": 0.0,
+        "phase": 0.0,
+        "rate": 4.0,
+        "release": 300.0,
+        "smooth": 0.0,
+        "speed": 2.0,
+        "sustain": 0.5,
+        "sync": 0.0,
+        "syncDenominator": 4.0,
+        "syncNumerator": 1.0,
+        "threshold": 0.0,
+        "value": 0.0,
+        "wave": 0.0
+      },
+      "targets": [],
+      "userWave": null
+    },
+    "version": 1
+  },
+  "modulator.target": {
+    "defaults": {
+      "amount": 0.5,
+      "max": 1.0,
+      "min": 0.0
+    },
     "version": 1
   },
   "note": {
@@ -340,7 +380,7 @@
       "state": {},
       "version": 1
     },
-    "version": 2
+    "version": 3
   },
   "project": {
     "defaults": {
@@ -626,7 +666,7 @@
       "solo": false,
       "volume": 1.0
     },
-    "version": 3
+    "version": 4
   },
   "track.cc": {
     "defaults": {},

@@ -10,10 +10,13 @@
 //!
 //! The kind letters of the ids: `t` track, `o` track output, `c` item, `l` item lane, `a` automation lane, `p` plugin
 //! (instrument or insert), `m` mixer channel (the master is always `m:0`), `s` send, `k` MIDI mapping (I-21.2), `g`
-//! marker and `q` region of the ruler (F-REG-011, F-REG-012). The root is `r:0`.
+//! marker and `q` region of the ruler (F-REG-011, F-REG-012), `n` modulator and `j` its target (a parameter it moves).
+//! The root is `r:0`.
 
 use lm_base::Result;
-use lm_state::{FieldKind, FieldSpec, MAX_SAFE_INT, NodeId, NodeSchema, OnRemove, SchemaRegistry, Value};
+use lm_state::{
+    FieldKind, FieldSpec, MAX_SAFE_INT, NodeId, NodeSchema, OnRemove, ParamSpec, Scale, SchemaRegistry, Value,
+};
 
 /// The master channel: always `m:0`, never removed
 pub const MASTER: NodeId = NodeId { kind: b'm', number: 0 };
@@ -32,6 +35,8 @@ pub const KIND_SEND: u8 = b's';
 pub const KIND_MAPPING: u8 = b'k';
 pub const KIND_MARKER: u8 = b'g';
 pub const KIND_REGION: u8 = b'q';
+pub const KIND_MODULATOR: u8 = b'n';
+pub const KIND_MOD_TARGET: u8 = b'j';
 
 /// The type names, for code that reads the tree
 pub mod types {
@@ -87,6 +92,24 @@ pub mod types {
     pub const RECORD_QUANTIZE: &str = "transport.record_quantize";
     pub const MARKER: &str = "marker";
     pub const REGION: &str = "region";
+    pub const MODULATOR: &str = "modulator";
+    pub const MODULATOR_TARGET: &str = "modulator.target";
+}
+
+/// The kinds of modulator (decisoes-autonomas, 26/11, item 1)
+pub const MODULATOR_KINDS: &[&str] = &["lfo", "envelope", "peak", "random", "macro"];
+/// What a modulator may move: a track, a channel or a plugin (the nodes that own parameters the engine has)
+pub const MODULATABLE_KINDS: &[u8] = &[KIND_TRACK, KIND_CHANNEL, KIND_PLUGIN];
+
+/// The parameters of a modulator that its kind uses (the others are kept and ignored)
+pub fn modulator_keys(kind: &str) -> &'static [&'static str] {
+    match kind {
+        "envelope" => &["attack", "decay", "sustain", "release"],
+        "peak" => &["peakAttack", "peakDecay", "threshold", "gain", "abs"],
+        "random" => &["rate", "smooth"],
+        "macro" => &["value"],
+        _ => &["speed", "phase", "wave", "multiplier", "sync", "syncNumerator", "syncDenominator", "depth"],
+    }
 }
 
 /// The project's scale and keymap slots (F-IJN-019: ten of each); a track's microtuner picks one of each by index
@@ -226,6 +249,46 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("tuning", FieldKind::Object(ty::TUNING)).optional())
             .upgrade(1, unchanged)
             .upgrade(2, unchanged),
+        // A modulator (decisoes-autonomas, 26/11, item 1): lives with the owner of the parameters it moves. Its `params`
+        // are automatable and MIDI-mappable like a plugin's (those `modulator_keys(kind)` names have slots). `input` is
+        // what a peak follower measures (a track's or a channel's output); an envelope starts with the notes of its
+        // owner's instrument; `userWave` is the LFO's "user" wave (one cycle of an audio file)
+        NodeSchema::new(ty::MODULATOR, 1)
+            .field(FieldSpec::id(KIND_MODULATOR))
+            .field(FieldSpec::text("name", ""))
+            .field(FieldSpec::choice("kind", MODULATOR_KINDS, "lfo"))
+            .field(reference("input", &[KIND_TRACK, KIND_CHANNEL], OnRemove::Clear).nullable().default(Value::NULL))
+            .field(FieldSpec::new("userWave", FieldKind::Resource("audio")).nullable().default(Value::NULL))
+            .field(list_of("targets", ty::MODULATOR_TARGET))
+            .param(ParamSpec::new("speed", 0.01, 20.0, 2.0))
+            .param(ParamSpec::new("phase", 0.0, 360.0, 0.0).unit("deg"))
+            .param(ParamSpec::new("wave", 0.0, 7.0, 0.0).scale(Scale::Stepped))
+            .param(ParamSpec::new("multiplier", 0.0, 2.0, 0.0).scale(Scale::Stepped))
+            .param(ParamSpec::new("sync", 0.0, 8.0, 0.0).scale(Scale::Stepped))
+            .param(ParamSpec::new("syncNumerator", 1.0, 32.0, 1.0).scale(Scale::Stepped))
+            .param(ParamSpec::new("syncDenominator", 1.0, 32.0, 4.0).scale(Scale::Stepped))
+            .param(ParamSpec::new("depth", 0.0, 1.0, 1.0))
+            .param(ParamSpec::new("attack", 0.0, 5000.0, 10.0).unit("ms"))
+            .param(ParamSpec::new("decay", 0.0, 5000.0, 200.0).unit("ms"))
+            .param(ParamSpec::new("sustain", 0.0, 1.0, 0.5))
+            .param(ParamSpec::new("release", 0.0, 5000.0, 300.0).unit("ms"))
+            .param(ParamSpec::new("peakAttack", 0.0, 0.999, 0.0))
+            .param(ParamSpec::new("peakDecay", 0.0, 0.999, 0.0))
+            .param(ParamSpec::new("threshold", 0.0, 1.0, 0.0))
+            .param(ParamSpec::new("gain", 0.0, 32.0, 1.0))
+            .param(ParamSpec::new("abs", 0.0, 1.0, 1.0).scale(Scale::Stepped))
+            .param(ParamSpec::new("rate", 0.01, 50.0, 4.0).unit("Hz"))
+            .param(ParamSpec::new("smooth", 0.0, 1.0, 0.0))
+            .param(ParamSpec::new("value", 0.0, 1.0, 0.0)),
+        // One target of a modulator: the parameter `param` of `node`, moved by `amount` of its range (-1 to 1) and kept
+        // inside the window `min`..`max` of the range. The target goes with its node
+        NodeSchema::new(ty::MODULATOR_TARGET, 1)
+            .field(FieldSpec::id(KIND_MOD_TARGET))
+            .field(reference("node", MODULATABLE_KINDS, OnRemove::RemoveOwner))
+            .field(FieldSpec::new("param", FieldKind::Text))
+            .field(FieldSpec::real("amount", -1.0, 1.0, 0.5))
+            .field(FieldSpec::real("min", 0.0, 1.0, 0.0))
+            .field(FieldSpec::real("max", 0.0, 1.0, 1.0)),
         // A named point of the ruler (F-REG-011): one per tick; color as 0xRRGGBB, absent or 0 = the theme's
         NodeSchema::new(ty::MARKER, 1)
             .field(FieldSpec::id(KIND_MARKER))
@@ -296,7 +359,7 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(ints("timeSig", 1, 64, &[4, 4]))
             .field(FieldSpec::bool("ramp", false)),
         // The timeline: items, automation, the instrument and the outputs. No pan (decision of 19/11)
-        NodeSchema::new(ty::TRACK, 3)
+        NodeSchema::new(ty::TRACK, 4)
             .field(FieldSpec::id(KIND_TRACK))
             .field(FieldSpec::text("name", ""))
             // 0xRRGGBB; absent: the palette's colour for the track's place (F-TRK-001)
@@ -331,8 +394,11 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(list_of("outputs", ty::OUTPUT))
             .field(list_of("items", ty::ITEM))
             .field(list_of("automation", ty::AUTOMATION))
+            // Version 4: the modulators of the track's parameters (absent = none)
+            .field(list_of("modulators", ty::MODULATOR).optional())
             .upgrade(1, unchanged)
-            .upgrade(2, unchanged),
+            .upgrade(2, unchanged)
+            .upgrade(3, unchanged),
         // ports: aliases (empty = every port whose role is instrument); channel −1 = all; followSelection: the
         // keyboard plays the selected track
         NodeSchema::new(ty::TRACK_MIDI_INPUT, 2)
@@ -476,7 +542,7 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("out", FieldKind::Real { min: -1.0e12, max: 1.0e12 }).optional()),
         // An instrument or an insert. `state` is the plugin's own tree, validated by the schema "plugin:<plugin>" at
         // `version`. Version 2: the optional `wet` (a node of version 1 has none: all wet)
-        NodeSchema::new(ty::PLUGIN, 2)
+        NodeSchema::new(ty::PLUGIN, 3)
             .field(FieldSpec::id(KIND_PLUGIN))
             .field(FieldSpec::new("plugin", FieldKind::Text))
             .field(FieldSpec::int("version", 1, MAX, 1))
@@ -486,7 +552,10 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("wet", FieldKind::Real { min: 0.0, max: 1.0 }).optional())
             // Only for an insert of a channel (P-20); absent: "post-eq"
             .field(FieldSpec::new("point", FieldKind::Choice(INSERT_POINTS)).optional())
-            .upgrade(1, unchanged),
+            // Version 3: the modulators of the plugin's parameters (absent = none)
+            .field(list_of("modulators", ty::MODULATOR).optional())
+            .upgrade(1, unchanged)
+            .upgrade(2, unchanged),
         // A send to another channel, or to an insert's sidechain port (`port`, then required)
         NodeSchema::new(ty::SEND, 1)
             .field(FieldSpec::id(KIND_SEND))
@@ -499,7 +568,7 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("mode", FieldKind::Choice(DESK_MODES)).optional())
             .field(object("master", ty::MASTER))
             .field(list_of("channels", ty::CHANNEL)),
-        NodeSchema::new(ty::MASTER, 1)
+        NodeSchema::new(ty::MASTER, 2)
             .field(FieldSpec::id(KIND_CHANNEL))
             .field(FieldSpec::text("name", "Master"))
             .field(FieldSpec::int("channels", 1, 64, 2))
@@ -514,14 +583,17 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(object("rack", ty::RACK_MASTER))
             .field(list_of("inserts", ty::PLUGIN))
             .field(list_of("automation", ty::AUTOMATION))
-            .field(object("output", ty::DEVICE_OUTPUT)),
+            .field(object("output", ty::DEVICE_OUTPUT))
+            // Version 2: the modulators of the master's parameters (absent = none)
+            .field(list_of("modulators", ty::MODULATOR).optional())
+            .upgrade(1, unchanged),
         NodeSchema::new(ty::DEVICE_OUTPUT, 1).field(FieldSpec::text("device", "out")).field(ints(
             "channels",
             1,
             256,
             &[1, 2],
         )),
-        NodeSchema::new(ty::CHANNEL, 1)
+        NodeSchema::new(ty::CHANNEL, 2)
             .field(FieldSpec::id(KIND_CHANNEL))
             .field(FieldSpec::text("name", ""))
             .field(FieldSpec::int("channels", 1, 64, 2))
@@ -541,7 +613,10 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(list_of("inserts", ty::PLUGIN))
             .field(list_of("sends", ty::SEND))
             .field(list_of("automation", ty::AUTOMATION))
-            .field(reference("output", &[KIND_CHANNEL], OnRemove::Redirect(MASTER)).default(Value::text("m:0"))),
+            .field(reference("output", &[KIND_CHANNEL], OnRemove::Redirect(MASTER)).default(Value::text("m:0")))
+            // Version 2: the modulators of the channel's parameters (absent = none)
+            .field(list_of("modulators", ty::MODULATOR).optional())
+            .upgrade(1, unchanged),
         // The rack of a channel: fixed sections, no ids; parameters addressed as "rack.tube.drive" (M5)
         NodeSchema::new(ty::RACK, 1)
             .field(object("tube", ty::TUBE))

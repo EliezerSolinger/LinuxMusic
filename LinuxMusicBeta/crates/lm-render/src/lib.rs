@@ -23,6 +23,7 @@ mod handoff;
 mod ids;
 mod install;
 pub mod midimap;
+pub mod modulation;
 mod notes;
 mod panic;
 mod params;

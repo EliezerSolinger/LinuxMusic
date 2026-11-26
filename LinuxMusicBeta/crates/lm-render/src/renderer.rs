@@ -29,6 +29,7 @@ use crate::handoff::HandoffReceiver;
 use crate::ids::{NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProgramGen};
 use crate::install::{Install, NodeCore, Retired};
 use crate::midimap::{MapEvent, MapTarget, MidiMap, MidiOutEvent, RETURN_DIV, RecordedMidi};
+use crate::modulation::ModKind;
 use crate::notes::{ActiveNotes, NoteSource};
 use crate::panic::RenderThreadGuard;
 use crate::params::ParamSlots;
@@ -359,6 +360,8 @@ pub struct Renderer {
     block_host_time: HostTime,
     pass_off: u32,
     midi_out_lost: u32,
+    /// The offset in this pass of the first modulation grid step after the first (host parameters read it)
+    mod_first_grid: usize,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -447,6 +450,7 @@ impl Renderer {
             block_host_time: HostTime(0),
             pass_off: 0,
             midi_out_lost: 0,
+            mod_first_grid: 0,
         }
     }
 
@@ -1249,6 +1253,10 @@ impl Renderer {
                 }
                 Target::Host(_) => self.slot_state[s].set_target(value, discrete),
                 Target::Cc { node, channel, number } => self.cc_value(s, node, offset, channel, number, value),
+                Target::Modulator { modulator, index } => {
+                    self.program.modulators[modulator as usize].params[index as usize] = value;
+                    self.slot_state[s].current = value;
+                }
             }
         }
         let sample = self.transport.position + i64::from(offset);
@@ -1316,6 +1324,14 @@ impl Renderer {
     }
 
     fn push_event(&mut self, node: u32, offset: u32, kind: EventKind) {
+        if let EventKind::NoteOn { .. } | EventKind::NoteOff { .. } = kind {
+            let on = matches!(kind, EventKind::NoteOn { .. });
+            for m in self.program.modulators.iter_mut() {
+                if m.kind == ModKind::Envelope && m.trigger == node && m.gate.is_none() {
+                    m.gate = Some((offset, on));
+                }
+            }
+        }
         if let Some(io) = self.program.nodes[node as usize].io.as_mut()
             && !io.events.push(offset, kind)
         {
@@ -1394,6 +1410,7 @@ impl Renderer {
             self.item_events(n);
         }
         self.live_events(off, n, live_next);
+        self.modulation_events(n);
         for node in self.program.nodes.iter_mut() {
             if let Some(io) = node.io.as_mut() {
                 io.events.finish();
@@ -1442,11 +1459,13 @@ impl Renderer {
                     self.slot_state[s] = SlotState::new(value);
                     continue;
                 }
-                let (automated, target, discrete) = {
+                let (automated, target, discrete, modulated) = {
                     let b = &self.program.bindings[bi as usize];
-                    (b.curve.is_some(), b.target, b.discrete)
+                    (b.curve.is_some(), b.target, b.discrete, b.modulated.is_some())
                 };
-                if automated && !touched {
+                if (automated || modulated) && !touched {
+                    // A modulated parameter's value is the base the modulation is added to: the modulation pass
+                    // emits the sum
                     // The automation has the parameter (again): emit its value at the next chance; after a release,
                     // back to the curve in 50 ms (I-21.5)
                     let st = &mut self.slot_state[s];
@@ -1464,6 +1483,10 @@ impl Renderer {
                     }
                     Target::Host(_) => self.slot_state[s].set_target(value, discrete),
                     Target::Cc { node, channel, number } => self.cc_value(s, node, 0, channel, number, value),
+                    Target::Modulator { modulator, index } => {
+                        self.program.modulators[modulator as usize].params[index as usize] = value;
+                        self.slot_state[s].current = value;
+                    }
                 }
             }
         }
@@ -1494,7 +1517,7 @@ impl Renderer {
             let (node, index, cc) = match b.target {
                 Target::Processor { node, index } => (node, index, None),
                 Target::Cc { node, channel, number } => (node, 0, Some((channel, number))),
-                Target::Host(_) => continue,
+                Target::Host(_) | Target::Modulator { .. } => continue,
             };
             let Some(curve) = b.curve.as_ref() else { continue };
             let slot = b.slot as usize;
@@ -1512,6 +1535,10 @@ impl Renderer {
                         st.touch_overflow = true;
                     }
                 }
+                continue;
+            }
+            if b.modulated.is_some() {
+                // The modulation pass emits the curve's value plus the modulation
                 continue;
             }
             if jump {
@@ -1585,6 +1612,146 @@ impl Renderer {
                     curve.fill(pos0, buf);
                     for (i, &v) in buf.iter().enumerate() {
                         emit(i, v, false);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The modulators of the program (decisoes-autonomas, 26/11, item 1): evaluated on the automation grid, then
+    /// added to each target's base value (its automation or its document value). A hand on the parameter, or an
+    /// automation being recorded, wins: the modulation leaves it alone
+    fn modulation_events(&mut self, n: usize) {
+        if self.program.modulators.is_empty() || n == 0 {
+            return;
+        }
+        let grid = AUTOMATION_GRID as usize;
+        let pos0 = self.transport.position;
+        let frame0 = self.frame;
+        let playing = self.transport.playing;
+        let rate = self.spec.sample_rate;
+        let ppq = self.program.tempo.ppq().get();
+        let first = (frame0.div_ceil(AUTOMATION_GRID) * AUTOMATION_GRID - frame0) as usize;
+        let g1 = if first == 0 { grid } else { first };
+        self.mod_first_grid = g1;
+        let start_of = |k: usize| if k == 0 { 0 } else { g1 + (k - 1) * grid };
+        let mut steps = 0;
+        while start_of(steps) < n {
+            steps += 1;
+        }
+        for m in 0..self.program.modulators.len() {
+            let steps = steps.min(self.program.modulators[m].values.len());
+            for k in 0..steps {
+                let off = start_of(k);
+                let len = (start_of(k + 1).min(n) - off) as u32;
+                let timeline = if playing { pos0 + off as i64 } else { frame0 as i64 + off as i64 };
+                // The parameters at this step: an automated one follows its curve (unless a hand holds it)
+                let mut p = self.program.modulators[m].params;
+                for (i, v) in p.iter_mut().enumerate() {
+                    let bi = self.program.modulators[m].param_bindings[i];
+                    if bi == NONE {
+                        continue;
+                    }
+                    let b = &self.program.bindings[bi as usize];
+                    if let Some(curve) = &b.curve {
+                        let s = b.slot as usize;
+                        if !self.slot_state[s].hand(self.params.touched_at(s), frame0) {
+                            *v = if b.discrete {
+                                curve.step_at(pos0 + off as i64)
+                            } else {
+                                curve.value_at(pos0 + off as i64)
+                            };
+                        }
+                    }
+                }
+                let tick = self.program.tempo.tick_at(timeline);
+                let md = &mut self.program.modulators[m];
+                let b = match md.kind {
+                    ModKind::Lfo => {
+                        let ph = crate::modulation::lfo_phase(&p, rate, timeline, tick, ppq);
+                        crate::modulation::lfo_value(&p, ph, md.seed, md.user_wave.as_deref())
+                    }
+                    ModKind::Random => crate::modulation::random_value(&p, rate, timeline, md.seed),
+                    ModKind::Macro => p[crate::modulation::P_VALUE].clamp(0.0, 1.0),
+                    ModKind::Envelope => {
+                        if let Some((at, on)) = md.gate
+                            && at as usize <= off
+                        {
+                            md.envelope.gate(on);
+                            md.gate = None;
+                        }
+                        let v = md.envelope.level;
+                        md.envelope.advance(&p, rate, len);
+                        v
+                    }
+                    ModKind::Peak => {
+                        let v = md.follower.current;
+                        md.follower.advance(&p, rate, len);
+                        v
+                    }
+                };
+                md.values[k] = if b.is_finite() { b } else { 0.0 };
+            }
+            md_gate_reset(&mut self.program.modulators[m]);
+            // The targets
+            for t in 0..self.program.modulators[m].targets.len() {
+                let (slot, range, amount, lo, hi) = {
+                    let x = &self.program.modulators[m].targets[t];
+                    (x.slot as usize, x.range, x.amount, x.min.min(x.max), x.min.max(x.max))
+                };
+                let bi = self.program.slot_map[slot];
+                if bi == NONE {
+                    continue;
+                }
+                let (target, discrete, mode, has_curve) = {
+                    let b = &self.program.bindings[bi as usize];
+                    (b.target, b.discrete, b.mode, b.curve.is_some())
+                };
+                let hand = self.slot_state[slot].hand(self.params.touched_at(slot), frame0);
+                let recording = playing && (self.slot_state[slot].latched || mode == AutomationMode::Write);
+                if hand || recording {
+                    self.program.modulators[m].targets[t].last = f32::NAN;
+                    continue;
+                }
+                if let Target::Host(_) = target {
+                    let md = &mut self.program.modulators[m];
+                    for k in 0..steps {
+                        let v = md.values[k] * amount;
+                        md.targets[t].steps[k] = v;
+                    }
+                    continue;
+                }
+                if matches!(target, Target::Modulator { .. }) {
+                    continue;
+                }
+                let mut force = std::mem::take(&mut self.slot_state[slot].resume) || self.jump;
+                for k in 0..steps {
+                    let off = start_of(k);
+                    let base = if has_curve {
+                        let c = self.program.bindings[bi as usize].curve.as_ref().expect("curve");
+                        let at = if playing { pos0 + off as i64 } else { pos0 };
+                        if discrete { c.step_at(at) } else { c.value_at(at) }
+                    } else {
+                        self.params.value_at(slot)
+                    };
+                    let b = self.program.modulators[m].values[k];
+                    let nrm = (range.normalize(base) + amount * b).clamp(lo, hi);
+                    let v = range.to_units(nrm);
+                    let tg = &mut self.program.modulators[m].targets[t];
+                    if force || tg.last.is_nan() || v.to_bits() != tg.last.to_bits() {
+                        force = false;
+                        tg.last = v;
+                        self.slot_state[slot].current = v;
+                        self.slot_state[slot].emitted = v;
+                        match target {
+                            Target::Processor { node, index } => {
+                                self.push_event(node, off as u32, EventKind::Param { index, value: v })
+                            }
+                            Target::Cc { node, channel, number } => {
+                                self.cc_value(slot, node, off as u32, channel, number, v)
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -2090,6 +2257,15 @@ impl Renderer {
                 }
             }
         }
+        // Peak followers measure this node's output (the legacy period's RMS)
+        for m in self.program.modulators.iter_mut() {
+            if m.kind == ModKind::Peak && m.input == i && outputs > 0 {
+                let l = layout.output_offset(0);
+                let r = layout.output_offset(1.min(outputs - 1));
+                m.follower.target =
+                    crate::modulation::peak_measure(&io.buffer[l..l + n], &io.buffer[r..r + n], &m.params);
+            }
+        }
         self.program.nodes[i as usize].io = Some(io);
     }
 
@@ -2104,6 +2280,29 @@ impl Renderer {
     }
 
     fn host_values_of(&mut self, h: u32, out: &mut [f32]) {
+        self.host_base(h, out);
+        let PHostParam { binding, .. } = self.program.host_params[h as usize];
+        let Some(bi) = binding else { return };
+        let Some((m, t)) = self.program.bindings[bi as usize].modulated else { return };
+        let b = &self.program.bindings[bi as usize];
+        let s = b.slot as usize;
+        let hold = self.slot_state[s].hand(self.params.touched_at(s), self.frame)
+            || (self.transport.playing && (self.slot_state[s].latched || b.mode == AutomationMode::Write));
+        if hold {
+            return;
+        }
+        let target = &self.program.modulators[m as usize].targets[t as usize];
+        let g1 = self.mod_first_grid;
+        let (range, lo, hi) = (target.range, target.min.min(target.max), target.min.max(target.max));
+        for (i, o) in out.iter_mut().enumerate() {
+            let k = if i < g1 { 0 } else { 1 + (i - g1) / AUTOMATION_GRID as usize };
+            let k = k.min(target.steps.len() - 1);
+            let n = (range.normalize(*o) + target.steps[k]).clamp(lo, hi);
+            *o = range.to_units(n);
+        }
+    }
+
+    fn host_base(&mut self, h: u32, out: &mut [f32]) {
         let PHostParam { value, binding, .. } = self.program.host_params[h as usize];
         let Some(bi) = binding else {
             out.fill(value);
@@ -2471,6 +2670,15 @@ impl Renderer {
         self.out.frame.publish();
         self.since_publish = 0;
         self.load = 0.0;
+    }
+}
+
+/// A gate change that fell after the last step of the pass (it cannot, but never carry one over a pass)
+fn md_gate_reset(m: &mut crate::program::PModulator) {
+    if let Some((_, on)) = m.gate.take()
+        && m.kind == ModKind::Envelope
+    {
+        m.envelope.gate(on);
     }
 }
 

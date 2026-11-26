@@ -30,6 +30,8 @@ use lm_time::TempoMap;
 use crate::automation::Curve;
 use crate::event::EventList;
 use crate::ids::{NodeIndex, ParamSlot, PortIndex, ProgramGen};
+use crate::midimap::ParamRange;
+use crate::modulation::{Envelope, MOD_PARAMS, ModKind, ModulatorSpec, PeakFollower};
 use crate::processor::BufferLayout;
 use crate::sample::SampleData;
 use crate::spec::{Limits, ProcessSpec};
@@ -642,6 +644,11 @@ pub(crate) enum Target {
         channel: u8,
         number: u8,
     },
+    /// A modulator's own parameter (its speed, its macro value...): the modulator reads it
+    Modulator {
+        modulator: u32,
+        index: u32,
+    },
 }
 
 #[derive(Debug)]
@@ -653,6 +660,43 @@ pub(crate) struct Binding {
     pub(crate) initial: f32,
     pub(crate) curve: Option<Curve>,
     pub(crate) mode: AutomationMode,
+    /// A modulator drives this parameter: its modulator and the target in it. The automation and the document's
+    /// value are the base the modulation is added to (the renderer emits the sum)
+    pub(crate) modulated: Option<(u32, u32)>,
+}
+
+/// A compiled target of a modulator
+#[derive(Debug)]
+pub(crate) struct PTarget {
+    pub(crate) slot: u32,
+    pub(crate) range: ParamRange,
+    pub(crate) amount: f32,
+    pub(crate) min: f32,
+    pub(crate) max: f32,
+    /// The last value emitted (NaN: none yet, or a hand held the parameter)
+    pub(crate) last: f32,
+    /// A host parameter's modulation (`amount * b`) on each step of the pass's grid (see `PModulator::first_grid`)
+    pub(crate) steps: Box<[f32]>,
+}
+
+/// A modulator with its running state
+#[derive(Debug)]
+pub(crate) struct PModulator {
+    pub(crate) kind: ModKind,
+    pub(crate) seed: u64,
+    pub(crate) user_wave: Option<Arc<[f32]>>,
+    pub(crate) params: [f32; MOD_PARAMS],
+    /// The binding of each parameter, for its automation
+    pub(crate) param_bindings: [u32; MOD_PARAMS],
+    pub(crate) targets: Box<[PTarget]>,
+    pub(crate) input: u32,
+    pub(crate) trigger: u32,
+    pub(crate) envelope: Envelope,
+    pub(crate) follower: PeakFollower,
+    /// A gate change of the pass: its offset and state (the last change wins; the first offset counts)
+    pub(crate) gate: Option<(u32, bool)>,
+    /// `b` on each step of the pass's grid
+    pub(crate) values: Box<[f32]>,
 }
 
 #[derive(Debug)]
@@ -701,6 +745,8 @@ pub struct Program {
     pub(crate) midi: Box<[MidiSource]>,
     /// The streamed audio items, by node and item (the renderer tells them where the playhead is)
     pub(crate) streams: Box<[(u32, u32)]>,
+    /// The modulators (decisoes-autonomas, 26/11, item 1)
+    pub(crate) modulators: Box<[PModulator]>,
 }
 
 impl Program {
@@ -772,6 +818,8 @@ pub struct ProgramBuilder {
     modes: Vec<(ParamSlot, AutomationMode)>,
     midi_out: Vec<MidiOutRoute>,
     ccs: Vec<(ParamSlot, NodeIndex, u8, u8, f32, Option<Curve>)>,
+    mods: Vec<ModulatorSpec>,
+    mod_params: Vec<(ParamSlot, usize, usize, ParamInfo, Option<Curve>)>,
 }
 
 fn invalid(key: &'static str) -> Error {
@@ -805,7 +853,28 @@ impl ProgramBuilder {
             modes: Vec::new(),
             midi_out: Vec::new(),
             ccs: Vec::new(),
+            mods: Vec::new(),
+            mod_params: Vec::new(),
         }
+    }
+
+    /// Adds a modulator; gives its index (for [`ProgramBuilder::modulator_param`])
+    pub fn modulator(&mut self, spec: ModulatorSpec) -> usize {
+        self.mods.push(spec);
+        self.mods.len() - 1
+    }
+
+    /// Binds a slot to parameter `index` (`modulation::P_*`) of modulator `modulator`, with its automation
+    pub fn modulator_param(
+        &mut self,
+        slot: ParamSlot,
+        modulator: usize,
+        index: usize,
+        info: ParamInfo,
+        automation: Option<Curve>,
+    ) -> &mut Self {
+        self.mod_params.push((slot, modulator, index, info, automation));
+        self
     }
 
     /// The automation mode of a slot's curve (default `Read`)
@@ -976,7 +1045,16 @@ impl ProgramBuilder {
                 return Err(invalid("render.program.initial_not_finite").arg("slot", i64::from(slot.0)));
             }
             slot_map[s] = bindings.len() as u32;
-            bindings.push(Binding { slot: slot.0, target, rate, discrete, initial, curve, mode: AutomationMode::Read });
+            bindings.push(Binding {
+                slot: slot.0,
+                target,
+                rate,
+                discrete,
+                initial,
+                curve,
+                mode: AutomationMode::Read,
+                modulated: None,
+            });
             Ok(bindings.len() as u32 - 1)
         };
         let mut host = |p: &HostParam, bindings: &mut Vec<Binding>, host_params: &mut Vec<PHostParam>| -> Result<u32> {
@@ -1165,6 +1243,83 @@ impl ProgramBuilder {
             }
             bind(slot, Target::Cc { node: i, channel, number }, Rate::Block, false, initial, curve, &mut bindings)?;
         }
+        // Modulators: their own parameters, then their targets mark the bindings they modulate
+        let mut pmods: Vec<PModulator> = Vec::with_capacity(self.mods.len());
+        let grid_steps = max_block / AUTOMATION_GRID as usize + 2;
+        for spec in &self.mods {
+            let input = match spec.input {
+                Some(n) => find(n)?,
+                None => NONE,
+            };
+            let trigger = match spec.trigger {
+                Some(n) => find(n)?,
+                None => NONE,
+            };
+            if !spec.initial.iter().all(|v| v.is_finite()) {
+                return Err(invalid("render.program.initial_not_finite"));
+            }
+            pmods.push(PModulator {
+                kind: spec.kind,
+                seed: spec.seed,
+                user_wave: spec.user_wave.clone(),
+                params: spec.initial,
+                param_bindings: [NONE; MOD_PARAMS],
+                targets: Box::new([]),
+                input,
+                trigger,
+                envelope: Envelope::new(),
+                follower: PeakFollower::new(),
+                gate: None,
+                values: vec![0.0; grid_steps].into_boxed_slice(),
+            });
+        }
+        for (slot, m, index, info, curve) in self.mod_params {
+            if m >= pmods.len() || index >= MOD_PARAMS {
+                return Err(invalid("render.program.modulator_unknown").arg("slot", i64::from(slot.0)));
+            }
+            let bi = bind(
+                slot,
+                Target::Modulator { modulator: m as u32, index: index as u32 },
+                info.rate,
+                info.discrete,
+                info.initial,
+                curve,
+                &mut bindings,
+            )?;
+            pmods[m].param_bindings[index] = bi;
+            pmods[m].params[index] = info.initial;
+        }
+        for (m, spec) in self.mods.iter().enumerate() {
+            let mut targets = Vec::with_capacity(spec.targets.len());
+            for (k, t) in spec.targets.iter().enumerate() {
+                if !(t.amount.is_finite() && t.min.is_finite() && t.max.is_finite()) {
+                    return Err(invalid("render.program.modulator_target").arg("slot", i64::from(t.slot.0)));
+                }
+                let Some(&bi) = slot_map.get(t.slot.0 as usize).filter(|b| **b != NONE) else {
+                    // A parameter the program does not bind (its node is not built): nothing to modulate
+                    continue;
+                };
+                if bindings[bi as usize].modulated.is_some() {
+                    // One modulator to a parameter: the first one wins
+                    continue;
+                }
+                bindings[bi as usize].modulated = Some((m as u32, targets.len() as u32));
+                if let Target::Processor { node, .. } | Target::Cc { node, .. } = bindings[bi as usize].target {
+                    event_room[node as usize] += grid_steps + 2;
+                }
+                let _ = k;
+                targets.push(PTarget {
+                    slot: t.slot.0,
+                    range: t.range,
+                    amount: t.amount,
+                    min: t.min.clamp(0.0, 1.0),
+                    max: t.max.clamp(0.0, 1.0),
+                    last: f32::NAN,
+                    steps: vec![0.0; grid_steps].into_boxed_slice(),
+                });
+            }
+            pmods[m].targets = targets.into_boxed_slice();
+        }
         for (slot, mode) in &self.modes {
             if let Some(&bi) = slot_map.get(slot.0 as usize)
                 && bi != NONE
@@ -1312,6 +1467,7 @@ impl ProgramBuilder {
             metronome,
             midi: midi.into_boxed_slice(),
             streams: streams.into_boxed_slice(),
+            modulators: pmods.into_boxed_slice(),
         }))
     }
 }
