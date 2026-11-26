@@ -90,13 +90,13 @@ a ação contam como parcial.
 | F-IJN-004 | Soltar na janela | parcial | solta instrumento (troca) e preset do mesmo plugin; soltar SoundFont, .xiz, outro arquivo de plugin que troca o plugin não é tratado; .xpf não existe | lm-gui/src/screens/instrument.rs,lm-gui/src/screens/browser.rs |
 | F-IJN-005 | A janela lembra a aba, o tamanho e a posição; o teclado do c | falta | a janela não lembra aba, tamanho nem posição (nenhuma gravação no documento da interface); o teclado do computador não toca | lm-gui/src/screens/instrument.rs |
 | F-IJN-006 | Aba do plugin | feito |  | lm-gui/src/screens/instrument.rs,lm-gui-plugins/src/panel.rs |
-| F-IJN-010 | Envelopes e LFOs | parcial | envelopes e LFOs (3 alvos, sync, x100, gráficos) existem no núcleo e na GUI; falta a forma do usuário (soltar amostra no LFO) e a escala Dinâmica/Absoluta/Relativa do gráfico | lm-plugin/src/instrument/schema.rs,lm-gui/src/screens/instrument.rs,lm-dsp/src/envelope.rs |
-| F-IJN-011 | Filtro | feito |  | lm-plugin/src/instrument/schema.rs,lm-gui/src/screens/instrument.rs |
+| F-IJN-010 | Envelopes e LFOs | parcial | envelopes e LFOs (3 alvos, sync, x100, gráficos) existem no núcleo e na GUI; falta a forma do usuário (soltar amostra no LFO) e a escala Dinâmica/Absoluta/Relativa do gráfico | lm-plugin/src/instrument/shaping.rs,lm-gui/src/screens/instrument.rs,lm-dsp/src/envelope.rs |
+| F-IJN-011 | Filtro | feito | por ora no módulo shaping.rs, que vira efeito de áudio no próximo passo | lm-plugin/src/instrument/shaping.rs,lm-gui/src/screens/instrument.rs |
 | F-IJN-012 | Aviso de instrumento que não aceita | feito |  | lm-gui/src/screens/instrument.rs |
-| F-IJN-013 | Empilhar acordes | feito |  | lm-plugin/src/instrument/notes.rs,lm-gui/src/screens/instrument.rs |
-| F-IJN-014 | Mono, legato e glide | feito |  | lm-plugin/src/instrument/notes.rs,lm-gui/src/screens/instrument.rs |
-| F-IJN-015 | Arpejo | feito |  | lm-plugin/src/instrument/notes.rs,lm-gui/src/screens/instrument.rs |
-| F-IJN-016 | Tabela de acordes e escalas | feito |  | lm-plugin/src/instrument/chords.rs,lm-gui/src/screens/piano_roll.rs |
+| F-IJN-013 | Empilhar acordes | feito | agora é o efeito de nota Acordes (26/11, item 2); migração dos projetos antigos em lm-doc/migrate.rs | lm-plugins-noteeffects/src/chords.rs,lm-gui/src/screens/instrument/note_effects.rs |
+| F-IJN-014 | Mono, legato e glide | feito | ficam no instrumento (são da voz) | lm-plugin/src/instrument/notes.rs,lm-gui/src/screens/instrument.rs |
+| F-IJN-015 | Arpejo | feito | agora é o efeito de nota Arpejador (livre, ordenado, sincronizado, tempo com sync, gate); o sustain segura o arpejo | lm-plugins-noteeffects/src/arpeggiator.rs,lm-gui/src/screens/instrument/note_effects.rs |
+| F-IJN-016 | Tabela de acordes e escalas | feito |  | lm-plugins-noteeffects/src/table.rs,lm-gui/src/screens/piano_roll.rs |
 | F-IJN-017 | MIDI | parcial | entrada e saída MIDI de faixa existem (midiInput/midiOutput no núcleo e na aba MIDI); a velocidade base (baseVelocity) só é gravada, sem consumidor no núcleo | lm-gui/src/screens/instrument.rs,lm-session/src/midi/mod.rs,lm-compile/src/core.rs |
 | F-IJN-018 | Transposição geral | feito | aberto: P-37 respondida; a faixa tem o seletor de seguir a transposição geral e o compilador a aplica | lm-gui/src/screens/instrument.rs,lm-compile/src/core.rs |
 | F-IJN-019 | Microafinador | feito |  | lm-doc/src/tuning.rs,lm-compile/src/keys.rs,lm-gui/src/screens/instrument.rs |

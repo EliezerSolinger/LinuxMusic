@@ -742,6 +742,28 @@ pub struct Descriptor {
 }
 ```
 
+### I-9.1a Efeito de nota (`PluginKind::NoteEffect`) (26/11)
+
+Um terceiro tipo de plugin, ao lado do instrumento e do efeito de áudio: **sem áudio e sem portas**, mora na lista
+`noteEffects` da faixa, antes do instrumento, e transforma o fluxo de notas.
+
+- **No contrato.** O processador implementa `Processor::process_notes(&mut NoteContext)`: recebe, ordenados, os próprios
+  eventos `Param` e o fluxo que chega (notas, expressões, mensagens de canal, `AllNotesRelease`, `AllSoundOff`) e empurra
+  o que emite em `cx.out` (`NoteOut`, de capacidade fixa, sem alocar), no deslocamento em que cada evento vence. Sem
+  áudio: o `process` não faz nada. O nó do programa é `NodeKind::NoteEffect`.
+- **No programa.** `ProgramBuilder::note_chain(instrumento, efeitos)`. O que as fontes (itens, entrada ao vivo, a
+  liberação de notas pendentes, o rack de CC) empurram para o instrumento passa pela cadeia, em ordem, antes do passe;
+  o que sai do último é o que o instrumento toca e o que a saída MIDI para dispositivos manda. Um efeito ainda sem
+  processador (construindo) ou morto deixa o fluxo passar. Quando a cadeia muda (efeito entra, sai, é ignorado ou muda de
+  lugar), o instrumento recebe `AllNotesRelease` pela cadeia nova.
+- **Regras do efeito** (documentadas em `lm_plugin::note_effect`): determinístico e sem depender do tamanho do bloco;
+  o tempo vem de `transport.frame` (nunca salta) e o andamento de `transport.bpm`; o aleatório, de `cx.rng` ou de um hash
+  de uma semente; as notas que ele cria têm números a partir de `GENERATED_IDS` e substituem as que recebeu; encaminha
+  as expressões e as liberações; o note-off leva a tecla com que o note-on saiu.
+- **Testes gerados.** `lm_plugin::note_effect_tests!(DESCRIPTOR, "pasta")`: estado (padrões, estados aleatórios,
+  atualizações, padrões congelados) e os próprios (determinismo e independência do bloco sob a armadilha de alocação,
+  notas equilibradas, liberações encaminhadas, varredura de parâmetros, `adopt` com notas tocando, `reset`).
+
 ### I-9.2 O processador e os buffers (F1) (S4, D12)
 
 ```rust
