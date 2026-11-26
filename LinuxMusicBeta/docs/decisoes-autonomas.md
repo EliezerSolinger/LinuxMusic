@@ -1711,3 +1711,44 @@ sanitizers. As causas, e as correções na raiz:
 - **Os presets de fábrica do legado** que valerem a pena entram já convertidos para JSON no repositório. A conversão
   é uma ferramenta de desenvolvimento, fora do programa, e roda uma vez (isto ajusta a P-09).
 - **Tarefas canceladas:** a "importação de presets `.xpf`" do Xpressive e de qualquer outro plugin.
+
+## O que deixa de seguir o legado (decisão do usuário, 26/11)
+
+O usuário perguntou o que tinha vindo do legado e podia ser mais moderno e correto, e aprovou os oito itens. Em
+conflito com seções anteriores deste arquivo e com o `funcionalidades-legado.md`, vale esta seção.
+
+1. **Modulação no lugar do rack de controladores.** Não há "controladores do projeto" nem janela de conexão.
+   - Todo parâmetro aceita **moduladores**: LFO, envelope, seguidor de pico (com entrada de sidechain), aleatório e
+     macro.
+   - O modulador mora junto do dono do parâmetro (faixa, canal ou plugin), em `modulators`, no mesmo modelo da
+     automação e do mapa MIDI: alvo por referência, faixa e quantidade por alvo, e vários alvos por modulador.
+   - A ordem de quem manda: mão > automação gravando > modulação somada ao valor da automação ou do documento.
+   - O Peak Controller deixa de ser um efeito: é o seguidor de pico. F-CTL-001 a 004 e F-FX-023 ficam obsoletos,
+     substituídos por isto.
+2. **Instrumento sem funções embutidas.** O instrumento só faz o som dele.
+   - Acordes e arpejo viram **efeitos de nota**: plugins de um tipo novo (`Kind::NoteEffect`) numa lista
+     `noteEffects` da faixa, antes do instrumento. Na 1.0: Arpejador, Acordes, Escala/Transposição, Velocidade.
+   - O filtro e os envelopes de volume, corte e ressonância viram um efeito comum por voz quando o instrumento os
+     expõe, ou um efeito de áudio normal ("Filtro com envelope") nos inserts. Mono, legato e glide ficam no
+     instrumento, porque são da voz.
+   - Os instrumentos já portados perdem esses campos numa subida de versão do esquema.
+3. **Um sampler só.** Um motor de sampler em Rust (`lm-sampler`), determinístico e sem threads próprias, lê SF2,
+   GIG, PAT, áudio solto (o AudioFileProcessor), os kits de bateria (AVL, DrumMachines gravados) e SFZ.
+   - Os plugins Sf2 Player, GigPlayer, PatMan, AudioFileProcessor e AVL Drums viram **um plugin Sampler** com
+     importadores por formato. Os painéis com identidade (a foto dos kits AVL) continuam como vistas do Sampler.
+   - O FluidSynth e a libgig saem do programa (ficam só como referência de A/B nos testes).
+   - O DrumMachines mantém a síntese dos `.ds` como importador que gera as amostras.
+4. **Afinação por arquivo.** Acabam as 10 posições de escala e 10 de mapa do projeto. A faixa referencia um recurso
+   `.scl` e, opcionalmente, um `.kbm` (recursos como quaisquer outros, copiados para o projeto). Sem limite.
+5. **MPE e OSC.**
+   - MPE na entrada e na gravação: zonas, e pitch bend, pressão e CC74 por nota viram expressões por nota (o núcleo
+     já tem `NoteExpression`), editáveis no editor de notas.
+   - OSC como segundo protocolo de controle externo, ao lado do MIDI: os mesmos alvos do mapa (parâmetro, campo e
+     ação), com retorno.
+6. **Arte dos plugins nítida.** Os painéis mantêm a identidade do legado, mas a arte entra em vetor ou em 2x, e os
+   controles (knobs, LEDs, faders) são desenhados pelo programa na escala da tela em vez de tiras de bitmap 1x.
+7. **Sem VST2.** O VST2 pelo wine sai da 1.0 e do plano (P-01 fica obsoleta). Formatos de terceiros: LV2, CLAP,
+   VST3 e LADSPA (P-03, confirmada pelo usuário).
+8. **Navegador com índice.** O navegador deixa de ser uma árvore de pastas: um índice em segundo plano dos arquivos
+   e presets, com busca instantânea, filtros por tipo, etiquetas e favoritos. A árvore de pastas fica como uma das
+   vistas.
