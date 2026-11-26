@@ -862,3 +862,11 @@ Phase = Fase
 Window Size = Tamanho da janela
 Offset = Deslocamento
 
+# Vectorscope
+Vectorscope = Vectorscópio
+Log. scale = Escala log.
+Logarithmic scale = Escala logarítmica
+Display amplitude on logarithmic scale to better see small values. = Mostra a amplitude em escala logarítmica para ver melhor os valores pequenos.
+Lines = Linhas
+Lines rendering = Desenho com linhas
+Render with lines. = Desenha com linhas.

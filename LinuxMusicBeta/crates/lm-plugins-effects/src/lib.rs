@@ -29,6 +29,7 @@ pub mod reverb_sc;
 pub mod slew_distortion;
 pub mod stereo_enhancer;
 pub mod stereo_matrix;
+pub mod vectorscope;
 pub mod wave_shaper;
 
 use lm_plugin::Descriptor;
@@ -55,5 +56,6 @@ pub static ALL: &[&Descriptor] = &[
     &slew_distortion::DESCRIPTOR,
     &stereo_enhancer::DESCRIPTOR,
     &stereo_matrix::DESCRIPTOR,
+    &vectorscope::DESCRIPTOR,
     &wave_shaper::DESCRIPTOR,
 ];

@@ -33,13 +33,13 @@ a ação contam como parcial.
 | F-MIX | Mixer e mesa analógica | 56 | 51 | 4 | 1 |
 | F-INS | Instrumentos | 24 | 14 | 9 | 1 |
 | F-HOST | Plugins de terceiros (hospedagem) | 3 | 1 | 1 | 1 |
-| F-FX | Efeitos e ferramentas | 35 | 20 | 8 | 7 |
+| F-FX | Efeitos e ferramentas | 35 | 20 | 9 | 6 |
 | F-CTL | Automação e controladores | 9 | 3 | 3 | 3 |
 | F-PRJ | Projeto e arquivos | 23 | 15 | 6 | 2 |
 | F-CFG | Configurações | 12 | 2 | 10 | 0 |
 | F-BRW | Navegador | 12 | 1 | 10 | 1 |
 | F-GER | Outros | 12 | 2 | 10 | 0 |
-| **Total** | | **406** | **225** | **148** | **33** |
+| **Total** | | **406** | **225** | **149** | **32** |
 
 ## Seções
 
@@ -446,7 +446,7 @@ a ação contam como parcial.
 | F-FX-025 | SlewDistortion (distorção de 2 bandas e limitador de slew) | feito |  | lm-plugins-effects/src/slew_distortion.rs,lm-gui/src/screens/effect.rs |
 | F-FX-026 | Spectrum Analyzer | falta | nenhum plugin Spectrum Analyzer (existe só FFT interna do EQ no lm-dsp) | lm-dsp/src/eq.rs |
 | F-FX-027 | StereoEnhancer | feito |  | lm-plugins-effects/src/stereo_enhancer.rs,lm-gui/src/screens/effect.rs |
-| F-FX-029 | Vectorscope | falta | nenhum plugin Vectorscope (só o goniômetro do master na mesa) | lm-gui/src/pages/mixing.rs |
+| F-FX-029 | Vectorscope | parcial | plugin e painel feitos (escala logarítmica, linhas ou pontos, traço que esmaece, grade e L/R; o áudio passa sem mudar); falta o zoom da roda (20 a 1000 %) e o seletor de cor do duplo clique. O legado deste repositório só tem essas duas opções (não há "alta qualidade" nem persistência) | lm-plugins-effects/src/vectorscope.rs,lm-gui-plugins/src/panels/vectorscope.rs |
 | F-FX-030 | WaveShaper (curva de transferência desenhada) | feito |  | lm-plugins-effects/src/wave_shaper.rs,lm-gui-plugins/src/panels/shapers.rs |
 | F-FX-031 | Efeitos LADSPA | falta | aberto: P-03 (confirmada: fora do processo, como terceiros); o processo auxiliar não tem backend LADSPA (só lv2, clap, vst3); só o nome do formato aparece na varredura e no id | lm-plugin-host/src/main.rs,lm-plugin-proxy/src/scan.rs |
 | F-FX-032 | Efeitos LV2 | parcial | hospedagem LV2 fora do processo feita (lm-sys-lilv, varredura, bloqueio, catálogo, estado); sem tela de configurações para pastas, varredura e lista de bloqueio: só a ação plugins.scan, nenhum chamador na GUI | lm-plugin-host/src/lv2.rs,lm-session/src/external.rs |

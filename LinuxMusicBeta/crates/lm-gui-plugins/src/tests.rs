@@ -760,6 +760,11 @@ fn oscilloscope(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn vectorscope(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::vectorscope::DESCRIPTOR);
+}
+
+#[gpui::test]
 fn slewdistortion(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::slew_distortion::DESCRIPTOR);
 }

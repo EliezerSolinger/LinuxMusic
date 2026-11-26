@@ -27,6 +27,7 @@ pub mod shapers;
 pub mod sid;
 pub mod slewdistortion;
 pub mod tripleoscillator;
+pub mod vectorscope;
 pub mod vibed;
 pub mod watsyn;
 
@@ -66,6 +67,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (slewdistortion::ID, || &slewdistortion::PANEL),
     (multitapecho::ID, || &multitapecho::PANEL),
     (oscilloscope::ID, || &oscilloscope::PANEL),
+    (vectorscope::ID, || &vectorscope::PANEL),
     (shapers::DYNAMICS_ID, || &shapers::DYNAMICS_PANEL),
     (shapers::WAVESHAPER_ID, || &shapers::WAVESHAPER_PANEL),
 ];

@@ -1,0 +1,11 @@
+{
+  "plugin:vectorscope": {
+    "defaults": {
+      "params": {
+        "linesMode": 1.0,
+        "logarithmic": 0.0
+      }
+    },
+    "version": 1
+  }
+}
