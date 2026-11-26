@@ -197,6 +197,12 @@ fn exercise(o: &mut Opened<'_>) {
         if let Some((p, on)) = c.when {
             set_param(o, p, if on { 1.0 } else { 0.0 });
         }
+        if let Some((f, hidden)) = c.unless
+            && let Some(lm_port::FieldKind::Choice(keys)) = schema.find_field(f).map(|x| &x.kind)
+            && let Some(other) = keys.iter().find(|k| **k != hidden)
+        {
+            set_field(o, f, Value::text(*other));
+        }
         if let Kind::Button(b) = &c.kind
             && let Bind::View(n) = b.bind
         {
@@ -475,6 +481,14 @@ fn learn_and_forget(o: &mut Opened<'_>, i: usize, id: &'static str) {
     assert_eq!(left, 0, "{id}: the mapping is removed");
 }
 
+fn set_field(o: &mut Opened<'_>, key: &str, v: Value) {
+    let op = EditOp::Set { id: Ref::Id(o.node), path: vec![PathStep::key("state"), PathStep::key(key)], value: v };
+    o.host.update(o.cx, |h, _| {
+        let _ = h.port.apply(Label::new("test"), vec![op]);
+    });
+    o.settle();
+}
+
 fn set_param(o: &mut Opened<'_>, key: &str, v: f64) {
     let node = o.node;
     let op = EditOp::Set {
@@ -732,4 +746,16 @@ fn delay(cx: &mut TestAppContext) {
 #[gpui::test]
 fn slewdistortion(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::slew_distortion::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn audiofileprocessor(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::audio_file_processor::DESCRIPTOR, true)], "audiofileprocessor");
+    exercise(&mut o);
+}
+
+#[gpui::test]
+fn patman(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::patman::DESCRIPTOR, true)], "patman");
+    exercise(&mut o);
 }

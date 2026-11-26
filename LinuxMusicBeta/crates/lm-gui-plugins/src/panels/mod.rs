@@ -2,6 +2,7 @@
 
 use crate::spec::PanelSpec;
 
+pub mod audiofileprocessor;
 pub mod bitinvader;
 pub mod crossovereq;
 pub mod delay;
@@ -16,6 +17,7 @@ pub mod multitapecho;
 pub mod nes;
 pub mod opulenz;
 pub mod organic;
+pub mod patman;
 pub mod sfxr;
 pub mod shapers;
 pub mod sid;
@@ -48,6 +50,8 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (lomm::ID, || &lomm::PANEL),
     (crossovereq::ID, || &crossovereq::PANEL),
     (delay::ID, || &delay::PANEL),
+    (audiofileprocessor::ID, || &audiofileprocessor::PANEL),
+    (patman::ID, || &patman::PANEL),
     (slewdistortion::ID, || &slewdistortion::PANEL),
     (multitapecho::ID, || &multitapecho::PANEL),
     (shapers::DYNAMICS_ID, || &shapers::DYNAMICS_PANEL),
@@ -74,6 +78,8 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     lomm::ASSETS,
     crossovereq::ASSETS,
     delay::ASSETS,
+    audiofileprocessor::ASSETS,
+    patman::ASSETS,
     slewdistortion::ASSETS,
     multitapecho::ASSETS,
     shapers::DYNAMICS_ASSETS,

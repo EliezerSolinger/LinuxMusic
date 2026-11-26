@@ -124,6 +124,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 tip: Text::new(tips[row]),
                 view: None,
                 when: None,
+                unless: None,
             });
         }
     }
@@ -174,6 +175,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 tip: Text::EMPTY,
                 view: None,
                 when: None,
+                unless: None,
             });
         }
         let btn_y = 96.0 + osc as f32 * OSC_H;
@@ -192,6 +194,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             tip: Text::new("Use alias-free wavetable oscillators."),
             view: None,
             when: None,
+            unless: None,
         });
         let field = leak(format!("wave{n}"));
         let user = leak(format!("userWave{n}"));
@@ -210,6 +213,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 tip: Text::new(tip),
                 view: None,
                 when: None,
+                unless: None,
             });
         }
     }

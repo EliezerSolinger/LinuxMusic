@@ -165,6 +165,9 @@ fn snapshots() {
                             frame: &[],
                             active: None,
                             range: &range,
+                            peaks: None,
+                            window: (0.0, 1.0),
+                            rate: 48_000.0,
                         };
                         (sf.draw)(&mut one, &sc);
                     }

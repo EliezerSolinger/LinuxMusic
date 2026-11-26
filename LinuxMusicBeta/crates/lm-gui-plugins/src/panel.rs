@@ -27,8 +27,8 @@ use gpui::{
     img, point, prelude::*, px, rgb, size,
 };
 use lm_port::{
-    CorePort, EditOp, GestureId, Label, MapScope, MapTarget, Mapping, NodeId, NodeRef, NodeSchema, PathStep, Pending,
-    Ref, Value,
+    CorePort, EditOp, GestureId, Label, MapScope, MapTarget, Mapping, NodeId, NodeRef, NodeSchema, PathStep, PeakBlock,
+    Pending, Ref, Value,
 };
 
 use crate::raster::Canvas;
@@ -64,6 +64,29 @@ struct Drag {
     value: f64,
     /// A fader: where in the knob it was grabbed (`m_knobCenterOffset`)
     offset: f32,
+}
+
+/// A wave view's state: the resource it shows, the window (fractions of its length) and the peaks fetched for it
+struct WaveState {
+    key: Option<String>,
+    window: (f64, f64),
+    /// The length (in samples) once known
+    length: Option<u64>,
+    block: Option<Arc<PeakBlock>>,
+    /// What `block` is for: (level, first pair, last pair)
+    asked: Option<(u8, u64, u64)>,
+}
+
+/// The peak pyramid's shape (I-20.4): 64 samples per pair at level 0, each level joins 4
+const LEVEL0: u64 = 64;
+
+/// The level whose pairs are at least one pixel wide (tiles are only stretched, never shrunk)
+fn level_for(samples_per_px: f64) -> u8 {
+    let mut level = 0u8;
+    while level < 11 && ((LEVEL0 * 4u64.pow(u32::from(level))) as f64) < samples_per_px {
+        level += 1;
+    }
+    level
 }
 
 /// A handle of a surface being dragged: one gesture
@@ -132,6 +155,8 @@ pub struct PluginPanel<H: PortHost> {
     overrides: HashMap<&'static str, f64>,
     /// The meters' levels with their fall-off, by control
     meters: HashMap<usize, [f32; 2]>,
+    /// The wave views (surfaces with peaks): the part shown and the peaks of it, by control
+    waves: HashMap<usize, WaveState>,
     /// The last x drawn on each graph (`m_lastCursorX`, for Shift+click lines)
     graph_last_x: HashMap<usize, f32>,
     /// A non-checkable button held down shows its active image
@@ -174,6 +199,7 @@ impl<H: PortHost> PluginPanel<H> {
             surf: None,
             overrides: HashMap::new(),
             meters: HashMap::new(),
+            waves: HashMap::new(),
             graph_last_x: HashMap::new(),
             pressed: None,
             carried: None,
@@ -197,7 +223,9 @@ impl<H: PortHost> PluginPanel<H> {
 
     /// Whether a control shows now: in the selected view and, if it has a condition, while its switch is so
     pub fn is_shown(&self, c: &crate::spec::Control, cx: &App) -> bool {
-        c.in_view(self.view) && c.when.is_none_or(|(p, on)| (self.param(p, cx) >= 0.5) == on)
+        c.in_view(self.view)
+            && c.when.is_none_or(|(p, on)| (self.param(p, cx) >= 0.5) == on)
+            && c.unless.is_none_or(|(f, v)| self.field(f, cx).as_text() != Some(v))
     }
 
     fn control_at(&self, x: f32, y: f32, cx: &App) -> Option<usize> {
@@ -690,6 +718,116 @@ impl<H: PortHost> PluginPanel<H> {
 
     // --- surfaces
 
+    /// The project's sample rate (the document's settings)
+    fn project_rate(&self, cx: &App) -> f64 {
+        self.host
+            .read(cx)
+            .port()
+            .root()
+            .get("settings")
+            .and_then(|s| s.get("sampleRate"))
+            .and_then(Value::as_int)
+            .map_or(48_000.0, |r| r as f64)
+    }
+
+    /// Keeps the wave views' peaks: asks the port for the part of the resource each shows (once per frame, in the
+    /// render, where the port can be borrowed mutably); true while some are still being made
+    fn refresh_waves(&mut self, cx: &mut Context<Self>) -> bool {
+        let mut pending = false;
+        for ctrl in 0..self.spec.controls.len() {
+            let Kind::Surface(sf) = &self.spec.controls[ctrl].kind else { continue };
+            let Some(pk) = sf.peaks else { continue };
+            let res = self.field(pk.field, cx).as_resource().cloned();
+            let (start, end) = (self.param(pk.start, cx), self.param(pk.end, cx));
+            let key = res.as_ref().map(|r| r.key().to_owned());
+            let st = self.waves.entry(ctrl).or_insert(WaveState {
+                key: None,
+                window: (0.0, 1.0),
+                length: None,
+                block: None,
+                asked: None,
+            });
+            if st.key != key {
+                // a new sample: the window is the played part with a tenth on each side (`updateSampleRange`)
+                let margin = (end - start) * 0.1;
+                *st = WaveState {
+                    key: key.clone(),
+                    window: ((start - margin).max(0.0), (end + margin).min(1.0)),
+                    length: None,
+                    block: None,
+                    asked: None,
+                };
+            }
+            // `updateGraph`: the window always holds the played part
+            st.window.0 = st.window.0.min(start);
+            st.window.1 = st.window.1.max(end);
+            if st.window.1 <= st.window.0 {
+                st.window = (0.0, 1.0);
+            }
+            let Some(res) = res else { continue };
+            let window = st.window;
+            let length = st.length;
+            let have = st.asked;
+            // the length first (one pair of the coarsest level), then the pairs of the window at the right level
+            let (level, a, b) = match length {
+                None => (11u8, 0u64, 1u64),
+                Some(len) => {
+                    let spp = (window.1 - window.0) * len as f64 / f64::from(pk.width);
+                    let level = level_for(spp);
+                    let fpp = LEVEL0 * 4u64.pow(u32::from(level));
+                    let a = (window.0 * len as f64 / fpp as f64).floor() as u64;
+                    let b = (window.1 * len as f64 / fpp as f64).ceil() as u64 + 1;
+                    (level, a, b)
+                }
+            };
+            if have == Some((level, a, b)) && length.is_some() {
+                continue;
+            }
+            let got = self.host.update(cx, |h, _| h.port_mut().peaks(&res, level, a, b));
+            let st = self.waves.get_mut(&ctrl).expect("the wave state was just made");
+            match got {
+                Pending::Ready(Ok(block)) => {
+                    if length.is_none() {
+                        st.length = Some(block.length);
+                    } else {
+                        st.asked = Some((level, a, b));
+                        st.block = Some(Arc::new(block));
+                    }
+                    pending |= length.is_none();
+                }
+                Pending::Ready(Err(_)) | Pending::Waiting(_) => pending = true,
+            }
+        }
+        pending
+    }
+
+    /// `AudioFileProcessorWaveView::zoom`: the window narrows toward the played part, or widens away from it
+    fn wave_zoom(&mut self, ctrl: usize, out: bool, cx: &mut Context<Self>) {
+        let Kind::Surface(sf) = &self.spec.controls[ctrl].kind else { return };
+        let Some(pk) = sf.peaks else { return };
+        let (start, end) = (self.param(pk.start, cx), self.param(pk.end, cx));
+        let rate = self.project_rate(cx);
+        let Some(st) = self.waves.get_mut(&ctrl) else { return };
+        let len = st.length.unwrap_or(0).max(1) as f64;
+        let (from, to) = st.window;
+        let (d_from, d_to) = (start - from, to - end);
+        let step = (d_from.max(d_to) / 10.0).max(1.0 / len);
+        let (step_from, step_to) = if out { (-step, step) } else { (step, -step) };
+        let bounded_from = (from + step_from).clamp(0.0, start);
+        let bounded_to = (to + step_to).clamp(end, 1.0);
+        let comp = d_from.min(d_to) / d_from.max(d_to).max(1e-12);
+        let to_step = step_from * if bounded_to == to { 1.0 } else { comp };
+        let cond = (out && d_from < d_to) || (!out && d_to < d_from);
+        let new_from = if cond { bounded_from } else { (from + to_step).clamp(0.0, start) };
+        let from_step = step_to * if bounded_from == from { 1.0 } else { comp };
+        let new_to = if cond { (to + from_step).clamp(end, 1.0) } else { bounded_to };
+        if (new_to - new_from) * len / rate > 0.05 {
+            st.window = (new_from, new_to);
+            st.asked = None;
+        }
+        cx.notify();
+    }
+
     /// Runs `f` with what a surface sees of the plugin
     fn with_surface<R>(
         &self,
@@ -703,7 +841,19 @@ impl<H: PortHost> PluginPanel<H> {
         let param = |k: &str| self.param(k, cx);
         let field = |k: &str| self.field(k, cx);
         let range = |k: &str| self.schema.as_ref().and_then(|s| s.find_param(k)).map_or((0.0, 1.0), |p| (p.min, p.max));
-        let sc = SurfaceCx { w: s.w, h: s.h, param: &param, field: &field, frame, active, range: &range };
+        let wave = self.waves.get(&ctrl);
+        let sc = SurfaceCx {
+            w: s.w,
+            h: s.h,
+            param: &param,
+            field: &field,
+            frame,
+            active,
+            range: &range,
+            peaks: wave.and_then(|w| w.block.as_deref()),
+            window: wave.map_or((0.0, 1.0), |w| w.window),
+            rate: self.project_rate(cx),
+        };
         Some(f(s, &sc))
     }
 
@@ -1229,6 +1379,17 @@ impl<H: PortHost> PluginPanel<H> {
             self.fader_wheel(ctrl, ev, cx);
             return;
         }
+        if let Kind::Surface(s) = &self.spec.controls[ctrl].kind
+            && s.peaks.is_some()
+        {
+            // `AudioFileProcessorWaveView::wheelEvent`: up zooms out
+            let up = match ev.delta {
+                ScrollDelta::Lines(d) => d.y > 0.0,
+                ScrollDelta::Pixels(d) => d.y > px(0.),
+            };
+            self.wave_zoom(ctrl, up, cx);
+            return;
+        }
         if let Kind::Combo(cb) = &self.spec.controls[ctrl].kind {
             // `ComboBox::wheelEvent`: down selects the next choice, up the previous
             let down = match ev.delta {
@@ -1684,6 +1845,9 @@ impl<H: PortHost> PluginPanel<H> {
             }
             Kind::Surface(sf) => {
                 let frame = if sf.live { self.display_frame(cx) } else { Vec::new() };
+                let peaks = self.waves.get(&ctrl).and_then(|w| w.block.clone());
+                let window = self.waves.get(&ctrl).map_or((0.0, 1.0), |w| w.window);
+                let rate = self.project_rate(cx);
                 let active = self.surf.as_ref().filter(|d| d.ctrl == ctrl).map(|d| d.handle);
                 let range_of =
                     |k: &str| self.schema.as_ref().and_then(|s| s.find_param(k)).map_or((0.0, 1.0), |p| (p.min, p.max));
@@ -1703,6 +1867,8 @@ impl<H: PortHost> PluginPanel<H> {
                     v.to_bits().hash(&mut h);
                 }
                 active.hash(&mut h);
+                peaks.as_ref().map(|b| (b.level, b.from, b.pairs.len(), b.length)).hash(&mut h);
+                (window.0.to_bits(), window.1.to_bits()).hash(&mut h);
                 let sf = sf.clone();
                 (
                     h.finish(),
@@ -1718,6 +1884,9 @@ impl<H: PortHost> PluginPanel<H> {
                             frame: &frame,
                             active,
                             range: &range,
+                            peaks: peaks.as_deref(),
+                            window,
+                            rate,
                         };
                         (sf.draw)(cv, &sc);
                     }),
@@ -1963,6 +2132,10 @@ impl<H: PortHost> Render for PluginPanel<H> {
         let (w, h) = spec.size;
         let scale = window.scale_factor();
         let view = self.view;
+        let waves_pending = self.refresh_waves(cx);
+        if waves_pending {
+            window.request_animation_frame();
+        }
         let shown: Vec<bool> = spec.controls.iter().map(|c| self.is_shown(c, cx)).collect();
         let live = spec.controls.iter().zip(&shown).any(|(c, s)| {
             *s && matches!(&c.kind, Kind::Surface(sf) if sf.live)

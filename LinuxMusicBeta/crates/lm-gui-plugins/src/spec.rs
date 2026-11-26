@@ -2,7 +2,7 @@
 //! parameter or field it moves. Each `panels/<plugin>.rs` writes one, read off the legacy `*View.cpp` /
 //! `*ControlDialog.cpp` (docs/plugins-visual.md lists where each number comes from).
 
-use lm_port::Value;
+use lm_port::{PeakBlock, Value};
 
 use crate::assets::Asset;
 use crate::widgets::{KnobStyle, LcdSheet, LedColor};
@@ -293,6 +293,12 @@ pub struct SurfaceCx<'a> {
     pub active: Option<usize>,
     /// The parameter's range (min, max)
     pub range: &'a dyn Fn(&str) -> (f64, f64),
+    /// The peaks of the resource a `PeaksSpec` names, for the window below (`None` while they load or without one)
+    pub peaks: Option<&'a PeakBlock>,
+    /// The part of the resource shown, as fractions of its length (a wave view's zoom); (0, 1) without a `PeaksSpec`
+    pub window: (f64, f64),
+    /// The project's sample rate, for the lengths in seconds
+    pub rate: f64,
 }
 
 impl std::fmt::Debug for SurfaceCx<'_> {
@@ -351,6 +357,19 @@ pub struct SurfaceSpec {
     pub live: bool,
     /// The wheel moves the primary parameter (a slider handle), as a knob's
     pub wheel: bool,
+    /// The surface shows a resource's waveform (the panel asks the port for its peaks and keeps the window; the wheel
+    /// zooms it as the legacy `AudioFileProcessorWaveView` does)
+    pub peaks: Option<PeaksSpec>,
+}
+
+/// The resource field a wave view shows and the two parameters that bound the part that plays (fractions)
+#[derive(Clone, Copy, Debug)]
+pub struct PeaksSpec {
+    pub field: &'static str,
+    pub start: &'static str,
+    pub end: &'static str,
+    /// The wave's width in pixels (the pairs asked for)
+    pub width: f32,
 }
 
 /// A text bound to a field of the state (a file's name, a patch's name): drawn by the panel
@@ -410,6 +429,8 @@ pub struct Control {
     /// Only while this switch parameter is on (`true`) or off (`false`): a control the legacy view swaps for another
     /// when a model changes (SlewDistortion's linked slew knob, LOMM's feedback)
     pub when: Option<(&'static str, bool)>,
+    /// Hidden while this choice field has this key (AudioFileProcessor's loop point, shown only while it loops)
+    pub unless: Option<(&'static str, &'static str)>,
 }
 
 impl Control {
@@ -554,6 +575,7 @@ pub fn knob(
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -576,6 +598,7 @@ pub fn led(
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -598,6 +621,7 @@ pub fn button(
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -682,6 +706,22 @@ impl Control {
         self
     }
 
+    /// Hidden while the choice field is `value`
+    #[must_use]
+    pub fn hidden_while(mut self, field: &'static str, value: &'static str) -> Self {
+        self.unless = Some((field, value));
+        self
+    }
+
+    /// A readout in the small font
+    #[must_use]
+    pub fn small(mut self) -> Self {
+        if let Kind::Readout(r) = &mut self.kind {
+            r.px = crate::widgets::theme::SMALL_FONT_PX;
+        }
+        self
+    }
+
     /// Shown only while the switch parameter is `on`
     #[must_use]
     pub fn when(mut self, param: &'static str, on: bool) -> Self {
@@ -726,6 +766,7 @@ pub fn combo(field: &'static str, x: f32, y: f32, w: f32, name: &'static str, it
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -745,6 +786,7 @@ pub fn graph(spec: GraphSpec, x: f32, y: f32, name: &'static str) -> Control {
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -759,6 +801,7 @@ pub fn lcd(param: &'static str, x: f32, y: f32, sheet: LcdSheet, digits: usize, 
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -783,6 +826,7 @@ pub fn lcd_float(
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -806,6 +850,7 @@ pub fn fader(param: &'static str, x: f32, y: f32, h: f32, name: &'static str, hi
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -847,7 +892,17 @@ impl Control {
 
 /// A surface at `x`, `y`
 pub fn surface(spec: SurfaceSpec, id: &'static str, x: f32, y: f32, name: &'static str) -> Control {
-    Control { id, x, y, kind: Kind::Surface(spec), name: Text::new(name), tip: Text::EMPTY, view: None, when: None }
+    Control {
+        id,
+        x,
+        y,
+        kind: Kind::Surface(spec),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+        view: None,
+        when: None,
+        unless: None,
+    }
 }
 
 /// A text bound to a field
@@ -868,6 +923,7 @@ pub fn readout(field: &'static str, x: f32, y: f32, w: f32, color: u32, empty: &
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -892,6 +948,7 @@ pub fn toggle(
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
 
@@ -917,5 +974,6 @@ pub fn slider(
         tip: Text::EMPTY,
         view: None,
         when: None,
+        unless: None,
     }
 }
