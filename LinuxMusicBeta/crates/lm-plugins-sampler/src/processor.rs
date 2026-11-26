@@ -131,6 +131,8 @@ impl Sampler {
                     match expression {
                         Expression::Pan => e.note_expression(note.0, Some(value), None),
                         Expression::Tuning => e.note_expression(note.0, None, Some(value)),
+                        // The sampler does not use the pressure and the timbre of a note
+                        Expression::Pressure | Expression::Timbre => {}
                     }
                 }
             }
