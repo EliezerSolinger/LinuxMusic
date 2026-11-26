@@ -3694,7 +3694,9 @@ dependencies = [
  "lm-state",
  "lm-sys-clap",
  "lm-sys-ipc",
+ "lm-sys-ladspa",
  "lm-sys-lilv",
+ "lm-sys-linux",
  "lm-sys-vst3",
  "lm-sys-vst3-test",
  "lm-time",
@@ -4038,6 +4040,16 @@ version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
  "lm-base",
+]
+
+[[package]]
+name = "lm-sys-ladspa"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "libc",
+ "lm-base",
+ "lm-sys-ladspa",
 ]
 
 [[package]]
