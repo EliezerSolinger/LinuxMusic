@@ -22,8 +22,8 @@ use std::sync::Arc;
 
 use gpui::{
     Bounds, Context, CursorStyle, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString, Window, canvas, div, fill,
-    point, prelude::*, px, size,
+    MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString, Subscription, Window,
+    canvas, div, fill, point, prelude::*, px, size,
 };
 use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, NoteRef, PathStep, Ref, Topic, Value};
 
@@ -35,6 +35,7 @@ use self::music::{
     key_name,
 };
 use super::ScreenCx;
+use super::live::Live;
 use crate::actions::{
     PrCopy, PrCut, PrCutOverlaps, PrDelete, PrFill, PrGlue, PrModeDraw, PrModeErase, PrModeKnife, PrModePitch,
     PrModeSelect, PrModeStrum, PrMoveBarLeft, PrMoveBarRight, PrMoveLeft, PrMoveRight, PrOctaveDown, PrOctaveUp,
@@ -261,7 +262,13 @@ pub struct PianoRoll {
     rec: Rec,
     octave: i32,
     held: HashMap<String, (u8, i64)>,
-    step_cursor: i64,
+    /// the keys of the chord being gathered in step mode (sent when the last is released)
+    step_chord: Vec<u8>,
+    /// the notes this editor has sounding (I-15), released on mouse-up, focus loss and close
+    live: Live,
+    /// the keys the mouse is auditioning (the piano keys, a note drawn or moved)
+    audition: BTreeSet<u8>,
+    _subs: Vec<Subscription>,
     pressed: BTreeSet<u8>,
     marked: BTreeSet<u8>,
     play: ItemPlay,
@@ -273,7 +280,7 @@ pub struct PianoRoll {
 }
 
 impl PianoRoll {
-    pub fn new(scx: ScreenCx, _window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(scx: ScreenCx, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (feed, clip, tps) = scx.core.update(cx, |core, _| {
             let root = core.port().root();
             // the target, or the first MIDI item (F-NOT-022)
@@ -282,7 +289,7 @@ impl PianoRoll {
             let tps = map.tick_at(map.sample_rate() as i64) as f64;
             (core.port_mut().feed(Topic::All), clip, tps.max(1.0))
         });
-        PianoRoll {
+        let mut pr = PianoRoll {
             focus: cx.focus_handle(),
             feed,
             clip,
@@ -311,7 +318,10 @@ impl PianoRoll {
             rec: Rec::Off,
             octave: 4,
             held: HashMap::new(),
-            step_cursor: 0,
+            step_chord: Vec::new(),
+            live: Live::default(),
+            audition: BTreeSet::new(),
+            _subs: Vec::new(),
             pressed: BTreeSet::new(),
             marked: BTreeSet::new(),
             play: ItemPlay { cursor: 0, loop_on: false, loop_a: 0, loop_b: BAR, since: None, ticks_per_sec: tps },
@@ -321,7 +331,89 @@ impl PianoRoll {
             ruler_bounds: Rc::new(Cell::new(Bounds::default())),
             fitted: false,
             scx,
+        };
+        // the notes end, and step mode with them, when the editor loses the focus or the window, or closes
+        let core = pr.scx.core.clone();
+        let release = cx.on_release(move |pr, cx| {
+            pr.live.release_all(&core, cx);
+            if pr.rec == Rec::Step {
+                let _ = core.update(cx, |c, _| c.port_mut().run_action("notes.step_stop".into(), Value::NULL));
+            }
+        });
+        let blur = cx.on_blur(&pr.focus, window, |pr, _, cx| pr.release_all(cx));
+        let active = cx.observe_window_activation(window, |pr, window, cx| {
+            if !window.is_window_active() {
+                pr.release_all(cx);
+            }
+        });
+        pr._subs = vec![release, blur, active];
+        pr
+    }
+
+    // --- live notes (I-15) and the core's step recording -----------------------------------------------------------
+
+    /// The track that plays the open clip
+    fn clip_track(&self, cx: &gpui::App) -> Option<NodeId> {
+        let clip = self.clip?;
+        model::tracks(self.scx.core.read(cx).port().root())
+            .into_iter()
+            .find(|t| t.items.iter().any(|i| i.id == clip))
+            .map(|t| t.id)
+    }
+
+    /// Starts a live note on the clip's instrument
+    fn sound(&mut self, key: u8, velocity: f64, cx: &mut Context<Self>) {
+        if let Some(t) = self.clip_track(cx) {
+            let core = self.scx.core.clone();
+            self.live.on(&core, t, key, (velocity * 127.0).round().clamp(1.0, 127.0) as u8, cx);
         }
+    }
+
+    fn silence(&mut self, key: u8, cx: &mut Context<Self>) {
+        if let Some(t) = self.clip_track(cx) {
+            let core = self.scx.core.clone();
+            self.live.off(&core, t, key, cx);
+        }
+    }
+
+    /// The mouse auditions exactly `keys` (what a note being drawn or moved plays, a piano key under the mouse): the
+    /// ones no longer in it end, the new ones start
+    fn audition(&mut self, keys: &[u8], cx: &mut Context<Self>) {
+        let want: BTreeSet<u8> = keys.iter().copied().collect();
+        let gone: Vec<u8> = self.audition.difference(&want).copied().collect();
+        for k in gone {
+            self.silence(k, cx);
+        }
+        let new: Vec<u8> = want.difference(&self.audition).copied().collect();
+        let v = self.last.velocity;
+        for k in new {
+            self.sound(k, v, cx);
+        }
+        self.audition = want;
+    }
+
+    fn audition_stop(&mut self, cx: &mut Context<Self>) {
+        self.audition(&[], cx);
+    }
+
+    /// An action of the core, with the clip as `item`
+    fn step_action(&mut self, id: &'static str, extra: Vec<(&'static str, Value)>, cx: &mut Context<Self>) {
+        let Some(item) = self.clip else { return };
+        let mut fields = vec![("item", Value::text(item.to_string()))];
+        fields.extend(extra);
+        self.scx.core.update(cx, |core, _| {
+            let _ = core.port_mut().run_action(id.into(), Value::object(fields));
+        });
+    }
+
+    /// The core's step cursor in the clip, in ticks, and the step (`notes.step_record`, the interface document's
+    /// `stepRecord`), while step mode is on for this clip
+    fn step_state(&self, cx: &gpui::App) -> Option<(i64, i64)> {
+        let v = self.scx.core.read(cx).port().ui().get("stepRecord")?.clone();
+        if v.get("item").and_then(Value::as_text) != self.clip.map(|c| c.to_string()).as_deref() {
+            return None;
+        }
+        Some((v.get("at").and_then(Value::as_int)?, v.get("step").and_then(Value::as_int)?))
     }
 
     // --- reading -----------------------------------------------------------------------------------------------
@@ -575,6 +667,7 @@ impl PianoRoll {
                         Some(Drag::Resize { g: None, origin, anchor: x, from: tick, stretch: ev.modifiers.shift });
                 } else {
                     self.pressed = [x.key].into_iter().collect();
+                    self.audition(&[x.key], cx);
                     self.drag = Some(Drag::Move {
                         g: None,
                         origin,
@@ -623,6 +716,7 @@ impl PianoRoll {
                 let ch = Self::temps(base.len()).into_iter().zip(base.iter().cloned().map(Some)).collect();
                 let ns = self.transact("Draw notes", ch, cx);
                 self.set_sel(ns.iter().copied().collect());
+                self.audition(&keys, cx);
                 self.pressed = keys.into_iter().collect();
                 self.drag = Some(Drag::Draw { g: None, ns, start, base });
             }
@@ -675,7 +769,9 @@ impl PianoRoll {
                 let hi = origin.iter().map(|(_, x)| x.key as i32).max().unwrap_or(127);
                 let dk = (target - anchor.key as i32).clamp(-lo, 127 - hi);
                 if dk != delta.1 {
-                    self.pressed = [(anchor.key as i32 + dk) as u8].into_iter().collect();
+                    let k = (anchor.key as i32 + dk) as u8;
+                    self.pressed = [k].into_iter().collect();
+                    self.audition(&[k], cx);
                 }
                 *delta = (dt, dk);
                 // a copy (Shift at the start) is added on release; the originals move live
@@ -764,6 +860,8 @@ impl PianoRoll {
     }
 
     fn drag_up(&mut self, ev: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        // the audition ends wherever the button comes up
+        self.audition_stop(cx);
         let Some(drag) = self.drag.take() else { return };
         let notes = self.notes(cx);
         match drag {
@@ -1001,7 +1099,9 @@ impl PianoRoll {
             if self.play.since.is_some() {
                 self.play.since = Some((HostTime::now(), t));
             }
-            self.step_cursor = t;
+            if self.rec == Rec::Step {
+                self.step_action("notes.step_record", vec![("at", Value::int(t))], cx);
+            }
             if let Some(c) = self.clip(cx) {
                 self.scx.core.update(cx, |core, _| {
                     let _ = core.port_mut().run_action("transport.locate".into(), Value::int(c.start + t));
@@ -1058,6 +1158,7 @@ impl PianoRoll {
                 let k = self.y_to_key(y).clamp(0, 127) as u8;
                 if !self.pressed.contains(&k) {
                     self.pressed = [k].into_iter().collect(); // a glissando
+                    self.audition(&[k], cx);
                 }
             }
             _ => {}
@@ -1076,6 +1177,7 @@ impl PianoRoll {
             // the velocity is the horizontal position on the key (F-NOT-015)
             self.last.velocity = ((x / KEYS_W) as f64).clamp(0.1, 1.0);
             self.pressed = [k].into_iter().collect();
+            self.audition(&[k], cx);
             self.drag = Some(Drag::Keys);
         }
         cx.notify();
@@ -1311,7 +1413,8 @@ impl PianoRoll {
 
     fn delete(&mut self, cx: &mut Context<Self>) {
         if self.rec == Rec::Step && self.sel.is_empty() {
-            self.step_cursor = (self.step_cursor - self.new_len()).max(0);
+            // the last chord goes and the cursor comes back (the core's `notes.step_back`)
+            self.step_action("notes.step_back", Vec::new(), cx);
         } else {
             let notes = self.notes(cx);
             let sel = self.selected(&notes);
@@ -1328,12 +1431,24 @@ impl PianoRoll {
         let m = ev.keystroke.modifiers;
         if primary(&m) || m.alt || m.control || m.shift {
             // Ctrl+0..9: the note length (0 = last note); Alt+0..9: the quantization (F-NOT-009)
+            if self.rec == Rec::Step && m.shift && !primary(&m) && !m.alt && (k == "left" || k == "right") {
+                // the last chord gets shorter or longer, the cursor with it (the core's `notes.step_length`)
+                let d = if k == "right" { 1 } else { -1 } * self.grid_ticks();
+                self.step_action("notes.step_length", vec![("delta", Value::int(d))], cx);
+                cx.stop_propagation();
+                cx.notify();
+                return;
+            }
             if k.len() == 1 && k.as_bytes()[0].is_ascii_digit() && (primary(&m) || m.alt) {
                 let d = (k.as_bytes()[0] - b'0') as usize;
                 if m.alt {
                     self.grid = d.saturating_sub(1).min(GRIDS.len() - 1);
                 } else {
                     self.length = d.checked_sub(1).map(|i| i.min(GRIDS.len() - 1));
+                    if self.rec == Rec::Step {
+                        let step = self.new_len();
+                        self.step_action("notes.step_record", vec![("step", Value::int(step))], cx);
+                    }
                 }
                 cx.stop_propagation();
                 cx.notify();
@@ -1343,17 +1458,18 @@ impl PianoRoll {
         match k {
             "-" => self.octave = (self.octave - 1).max(0),
             "=" => self.octave = (self.octave + 1).min(8),
-            "left" | "right" if self.rec == Rec::Step => {
-                let d = if k == "right" { 1 } else { -1 };
-                self.step_cursor = (self.step_cursor + d * self.new_len()).max(0);
-            }
+            // step mode: right is a rest, left goes back (the core's `notes.step_rest` and `notes.step_back`)
+            "right" if self.rec == Rec::Step => self.step_action("notes.step_rest", Vec::new(), cx),
+            "left" if self.rec == Rec::Step => self.step_action("notes.step_back", Vec::new(), cx),
             "up" | "down" => {
                 let d = if k == "up" { 1.0 } else { -1.0 };
                 self.scroll_y = (self.scroll_y - d * self.key_h * 2.0).max(0.0);
             }
             "home" => {
                 self.play.cursor = 0;
-                self.step_cursor = 0;
+                if self.rec == Rec::Step {
+                    self.step_action("notes.step_record", vec![("at", Value::int(0))], cx);
+                }
                 self.scroll = 0.0;
             }
             _ => {
@@ -1381,19 +1497,16 @@ impl PianoRoll {
 
     fn note_on(&mut self, k: &str, key: u8, cx: &mut Context<Self>) {
         self.pressed.insert(key);
+        // the computer keyboard sounds the instrument in every mode (F-NOT-023)
+        let v = self.last.velocity;
+        self.sound(key, v, cx);
         let start = match self.rec {
+            // the chord is sent to the core when the last key comes up
             Rec::Step => {
-                // the note lands at the step cursor; keys held together make a chord
-                let x = Note {
-                    key,
-                    start: self.step_cursor,
-                    length: self.new_len(),
-                    velocity: self.last.velocity,
-                    pan: self.last.pan,
-                    bend: Vec::new(),
-                };
-                self.transact("Step record", vec![(NEW, Some(x))], cx);
-                self.step_cursor
+                if !self.step_chord.contains(&key) {
+                    self.step_chord.push(key);
+                }
+                -1
             }
             Rec::Live | Rec::Accompany => self.rec_tick(cx).unwrap_or(-1),
             Rec::Off => -1,
@@ -1404,8 +1517,18 @@ impl PianoRoll {
 
     fn note_off(&mut self, (key, start): (u8, i64), cx: &mut Context<Self>) {
         self.pressed.remove(&key);
+        self.silence(key, cx);
         match self.rec {
-            Rec::Step if self.held.is_empty() => self.step_cursor += self.new_len(),
+            Rec::Step if self.held.is_empty() && !self.step_chord.is_empty() => {
+                let keys =
+                    Value::list(std::mem::take(&mut self.step_chord).into_iter().map(|k| Value::int(i64::from(k))));
+                let v = self.last.velocity;
+                self.step_action(
+                    "notes.step_keys",
+                    vec![("keys", keys), ("velocity", Value::real(v).unwrap_or(Value::NULL))],
+                    cx,
+                );
+            }
             Rec::Live | Rec::Accompany if start >= 0 => {
                 let end = self.rec_tick(cx).unwrap_or(start + BEAT / 4);
                 let len = if end > start { end - start } else { BEAT / 8 };
@@ -1422,16 +1545,32 @@ impl PianoRoll {
         for h in held {
             self.note_off(h, cx);
         }
+        self.step_chord.clear();
+        // whatever the mouse auditions, and anything a lost note-off left, ends too
+        self.audition.clear();
+        let core = self.scx.core.clone();
+        self.live.release_all(&core, cx);
+        self.pressed.clear();
     }
 
     fn set_rec(&mut self, r: Rec, cx: &mut Context<Self>) {
+        let was_step = self.rec == Rec::Step;
         self.rec = if self.rec == r { Rec::Off } else { r };
+        if was_step && self.rec != Rec::Step {
+            self.step_chord.clear();
+            self.scx.core.update(cx, |core, _| {
+                let _ = core.port_mut().run_action("notes.step_stop".into(), Value::NULL);
+            });
+        }
         match self.rec {
             Rec::Live if self.play.since.is_none() => self.toggle_play_item(cx),
             Rec::Accompany => self.scx.core.update(cx, |core, _| {
                 let _ = core.port_mut().run_action("transport.play".into(), Value::NULL);
             }),
-            Rec::Step => self.step_cursor = self.play.cursor,
+            Rec::Step => {
+                let (at, step) = (self.play.cursor, self.new_len());
+                self.step_action("notes.step_record", vec![("at", Value::int(at)), ("step", Value::int(step))], cx);
+            }
             _ => {}
         }
         cx.notify();
@@ -1962,7 +2101,7 @@ impl PianoRoll {
                     .when(self.rec != Rec::Off, |d| {
                         d.child(div().flex_1()).child(div().text_size(px(11.)).text_color(c(THEME.red)).child(
                             match self.rec {
-                                Rec::Step => trf("Step {0}", &[&format_bbt(self.step_cursor)]),
+                                Rec::Step => trf("Step {0}", &[&format_bbt(self.step_state(cx).map_or(0, |s| s.0))]),
                                 _ => trf("Octave {0}", &[&self.octave]),
                             },
                         ))
@@ -2092,7 +2231,11 @@ impl PianoRoll {
             marked: self.marked.clone(),
             play,
             item_loop: self.play.loop_on.then_some((self.play.loop_a, self.play.loop_b)),
-            step_cursor: (self.rec == Rec::Step).then_some((self.step_cursor, self.new_len())),
+            step_cursor: if self.rec == Rec::Step {
+                self.step_state(cx).map(|(at, _)| (at, self.new_len()))
+            } else {
+                None
+            },
             rect: match &self.drag {
                 Some(Drag::Rect { from, to, .. }) => Some((*from, *to)),
                 _ => None,

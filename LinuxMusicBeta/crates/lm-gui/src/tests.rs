@@ -2311,3 +2311,33 @@ fn kit_picture_plays(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(log.held().is_empty());
 }
+
+/// The piano roll's keys sound the clip's instrument on the press and end it on the release
+#[gpui::test]
+fn piano_roll_keys_sound(cx: &mut TestAppContext) {
+    let (ws, cx, log) = open_live(cx);
+    open_screen(&ws, cx, Screen::PianoRoll, None);
+    let p = center(cx, "pr-keys");
+    cx.simulate_mouse_down(p, MouseButton::Left, Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(log.held().len(), 1, "the key under the mouse sounds");
+    cx.simulate_mouse_up(point(p.x + px(300.), p.y), MouseButton::Left, Modifiers::none());
+    cx.run_until_parked();
+    assert!(log.held().is_empty(), "no note sticks");
+}
+
+/// A note drawn in the grid is heard while the button is down
+#[gpui::test]
+fn piano_roll_draw_auditions(cx: &mut TestAppContext) {
+    let (ws, cx, log) = open_live(cx);
+    open_screen(&ws, cx, Screen::PianoRoll, None);
+    // the grid is to the right of the keys, on the same rows
+    let k = center(cx, "pr-keys");
+    let p = point(k.x + px(300.), k.y);
+    cx.simulate_mouse_down(p, MouseButton::Left, Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(log.held().len(), 1);
+    cx.simulate_mouse_up(p, MouseButton::Left, Modifiers::none());
+    cx.run_until_parked();
+    assert!(log.held().is_empty());
+}

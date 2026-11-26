@@ -58,7 +58,7 @@ a ação contam como parcial.
 | F-JAN-009 | Perguntar antes de perder mudanças | parcial | Sair/fechar pergunta Salvar/Não salvar/Cancelar e Novo avisa, mas Abrir projeto não pergunta; sem texto próprio para sessão recuperada | lm-gui/src/workspace.rs,lm-gui/src/screens/new_project.rs |
 | F-JAN-010 | Ao fechar | parcial | o núcleo mantém autosave e journal, mas não há rotina explícita ao fechar (fechar configurações, terminar o autosave, apagar o arquivo de recuperação) conferida na GUI; sem lixeira (P-13) fica por conta de project.clean_unused | lm-session/src/session.rs,lm-session/src/core_actions.rs |
 | F-JAN-011 | Dicas (tooltips) | parcial | há dicas em vários controles, mas a preferência interface.tooltips não é lida por ninguém (não dá para desligar) | lm-gui/src/screens/settings.rs,lm-gui/src/screens/piano_roll.rs |
-| F-JAN-012 | Teclas globais | parcial | Espaço, Shift+Espaço, R, L e Home funcionam; o teclado do computador não toca notas com a janela de instrumento na frente (não existe caminho de nota ao vivo da GUI ao núcleo); loop em L e não C (configurável) | lm-gui/src/actions.rs,lm-gui/src/workspace.rs |
+| F-JAN-012 | Teclas globais | parcial | Espaço, Shift+Espaço, R, L e Home funcionam; o teclado do computador toca notas na janela de instrumento e no editor de notas; loop em L e não C (configurável) | lm-gui/src/actions.rs,lm-gui/src/workspace.rs |
 | F-JAN-013 | Mensagens flutuantes | parcial | existe a tela de avisos e atividades (fila com contagem), mas não há mensagens flutuantes que somem sozinhas (projeto salvo, carregando amostra, dicas) | lm-gui/src/screens/notices.rs,lm-session/src/notices.rs |
 | F-JAN-020 | Arquivo | parcial | não há barra de menus; as ações (novo, abrir, salvar, salvar como, importar, exportar, exportar MIDI, sair) existem por atalho, paleta e telas; faltam Salvar como nova versão (Ctrl+Alt+S) e entrada de menu para Salvar como modelo (existe só a ação do núcleo) | lm-gui/src/actions.rs,lm-session/src/core_actions.rs,lm-gui/src/screens/palette.rs |
 | F-JAN-021 | Editar | parcial | sem barra de menus; Desfazer, Refazer e Configurações existem por atalho e paleta; Escalas e mapas de teclas fica na aba Afinação da janela do instrumento | lm-gui/src/actions.rs,lm-gui/src/screens/instrument.rs |
@@ -101,8 +101,8 @@ a ação contam como parcial.
 | F-IJN-018 | Transposição geral | feito | aberto: P-37 respondida; a faixa tem o seletor de seguir a transposição geral e o compilador a aplica | lm-gui/src/screens/instrument.rs,lm-compile/src/core.rs |
 | F-IJN-019 | Microafinador | feito |  | lm-doc/src/tuning.rs,lm-compile/src/keys.rs,lm-gui/src/screens/instrument.rs |
 | F-IJN-020 | Editor de escalas e mapas | parcial | o editor de escalas/mapas e o leitor de .scl/.kbm existem, mas as ações tuning.import_scale/import_keymap só existem no lm-port-fake, não na sessão real; faltam salvar .scl/.kbm | lm-gui/src/screens/instrument.rs,lm-doc/src/tuning.rs,lm-port-fake/src/lib.rs |
-| F-IJN-021 | Teclado na janela | parcial | o teclado da janela só pinta a tecla, não manda nota ao instrumento (sem caminho de nota ao vivo); faltam velocidade pela altura do clique e os marcadores de nota base/primeira/última | lm-gui/src/screens/instrument.rs |
-| F-IJN-022 | Teclado do computador como piano | parcial | existe só no editor de notas (grava nota em passo/ao vivo) e não soa; sem caminho de nota ao vivo da GUI ao núcleo e não funciona na janela do instrumento | lm-gui/src/screens/piano_roll.rs |
+| F-IJN-021 | Teclado na janela | parcial | o teclado da janela toca a tecla no instrumento (CorePort::note_on, velocidade pela altura do clique, glissando, solta no mouse-up, perda de foco e ao fechar); faltam os marcadores de nota base/primeira/última | lm-gui/src/screens/instrument.rs |
+| F-IJN-022 | Teclado do computador como piano | feito | o teclado do computador toca o instrumento na janela (foco na própria janela) e no editor de notas, no layout do legado (Z = Dó, duas fileiras); solta ao soltar a tecla, perder o foco e fechar | lm-gui/src/screens/piano_roll.rs |
 | F-IJN-025 | Rack de CC MIDI | feito |  | lm-gui/src/screens/instrument.rs,lm-compile/src/core.rs,lm-doc/src/edit.rs |
 
 ## F-NOT: Editor de notas
@@ -123,20 +123,20 @@ a ação contam como parcial.
 | F-NOT-012 | Quantização e tamanho de nota | parcial | falta "travar na nota" na quantização, faltam as tercinas 1/96 e 1/192 e nada é salvo entre sessões | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-013 | Zoom e rolagem | parcial | a grade do piano roll usa compasso fixo 4/4 (constante BAR), não a fórmula de compasso do lugar do clipe no mapa de andamentos; zoom, rolagem e rodas existem | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-014 | Tom, escala e acorde | feito |  | lm-gui/src/screens/piano_roll.rs |
-| F-NOT-015 | Teclado do piano | parcial | clicar nas teclas, glissando e velocidade pela posição só destacam a tecla (campo pressed): nenhum som é enviado ao instrumento; faltam teclas do microafinador e nomes opcionais | lm-gui/src/screens/piano_roll.rs |
+| F-NOT-015 | Teclado do piano | parcial | clicar nas teclas, glissando e velocidade pela posição soam no instrumento da faixa do clipe e soltam no mouse-up; faltam teclas do microafinador e nomes opcionais | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-016 | Notas fantasmas | feito |  | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-017 | Tocar o clipe | parcial | o Espaço só anima o cursor e o loop do item na tela (ItemPlay): não toca o áudio do clipe em loop | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-018 | Gravar no editor de notas | parcial | o núcleo tem notes.record_into (gravar no item aberto), mas o piano roll não o chama nem usa o teclado MIDI: grava só as teclas do computador por conta própria; sem quantizar automático | lm-session/src/midi/step.rs,lm-session/src/midi/record.rs,lm-gui/src/screens/piano_roll.rs |
 | F-NOT-019 | Copiar, cortar, colar | parcial | a área de transferência é uma lista em memória do editor, não a do sistema: não cola entre projetos nem instâncias | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-021 | Selecionar por região da régua | feito |  | lm-gui/src/screens/piano_roll.rs |
 | F-NOT-022 | Abrir o editor sem clipe | parcial | abre o primeiro item MIDI que existir; num projeto vazio não cria o primeiro clipe da primeira faixa de instrumento | lm-gui/src/screens/piano_roll.rs |
-| F-NOT-023 | Teclado do computador como piano | parcial | as teclas do computador só inserem notas ao gravar (passo ou ao vivo); não tocam o instrumento da faixa | lm-gui/src/screens/piano_roll.rs |
+| F-NOT-023 | Teclado do computador como piano | feito | as teclas do computador tocam o instrumento da faixa do clipe em qualquer modo, e gravam ao vivo ou em passo pelo núcleo | lm-gui/src/screens/piano_roll.rs |
 
 ## F-PAS: Gravação por passos
 
 | Id | Funcionalidade | Estado | O que falta | Onde |
 |---|---|---|---|---|
-| F-PAS-001 | Gravar um passo de cada vez | parcial | o núcleo tem o gravar passo completo (notes.step_*, acordes, pausa, →/←, teclado MIDI) mas a tela não o usa: o passo da tela é próprio, só com o teclado do computador e sem a tolerância de 70 ms para acordes | lm-session/src/midi/step.rs,lm-session/src/midi/actions.rs,lm-gui/src/screens/piano_roll.rs |
+| F-PAS-001 | Gravar um passo de cada vez | feito | a tela usa o gravar passo do núcleo: notes.step_record ao ligar (e ao mudar o passo ou clicar na régua), notes.step_keys com o acorde ao soltar a última tecla, notes.step_rest (→), notes.step_back (← e Delete), notes.step_length (Shift+←/→), notes.step_stop ao desligar e fechar; o cursor vem do stepRecord do documento da interface | lm-session/src/midi/step.rs,lm-session/src/midi/actions.rs,lm-gui/src/screens/piano_roll.rs |
 
 ## F-ARR: Arranjo
 
@@ -564,8 +564,8 @@ Arquivos: `lm-session` (session.rs, telemetria), `lm-render` (telemetry.rs, engi
 
 ### P2. Som ao vivo: teclado e notas da GUI para o instrumento
 Arquivos: `lm-session/src/port.rs` (caminho de nota ao vivo), `lm-gui/src/screens/{instrument,piano_roll,steps}.rs`.
-- Nenhum caminho de nota ao vivo da GUI: teclado da janela do instrumento (F-IJN-021), teclado do computador como piano (F-IJN-022, F-NOT-023, F-JAN-012), teclado do piano roll (F-NOT-015), tocar o clipe em loop (F-NOT-017, F-AUT-011).
-- Gravar por passos: a tela não usa `notes.step_*` do núcleo (F-PAS-001); abrir o editor sem clipe (F-NOT-022).
+- Feito (P2): o caminho de nota ao vivo (`CorePort::note_on/note_off/all_notes_off`, I-15): teclado da janela do instrumento (F-IJN-021), teclado do computador (F-IJN-022, F-NOT-023, F-JAN-012), teclado do piano roll (F-NOT-015), nota ouvida ao desenhar e mover, imagens dos kits do AvlDrums e DrumMachines. Falta: tocar o clipe em loop (F-NOT-017, F-AUT-011).
+- Feito (P2): gravar por passos pelo núcleo (F-PAS-001). Falta: abrir o editor sem clipe (F-NOT-022).
 - Lembrar aba, tamanho e posição da janela do instrumento (F-IJN-005); velocidade base consumida (F-IJN-017); `tuning.import_scale/import_keymap` só existem no fake (F-IJN-020).
 
 ### P3. Casca: menus, janelas, transporte, avisos
