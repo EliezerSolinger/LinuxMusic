@@ -46,8 +46,8 @@ pub fn slice_for(points: &[f32], index: i32) -> Option<(f32, f32)> {
     }
 }
 
-/// One note of the SlicerT
-#[derive(Clone, Debug)]
+/// One note of the SlicerT. Its `clone_from` copies into its own buffer (a host copies a note on the audio thread)
+#[derive(Debug)]
 pub struct SlicerVoice<I> {
     start: i32,
     end: i32,
@@ -56,7 +56,34 @@ pub struct SlicerVoice<I> {
     played: f64,
 }
 
+impl<I: Clone> Clone for SlicerVoice<I> {
+    fn clone(&self) -> Self {
+        Self { start: self.start, end: self.end, state: self.state.clone(), played: self.played }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.start = source.start;
+        self.end = source.end;
+        self.state.clone_from(&source.state);
+        self.played = source.played;
+    }
+}
+
 impl<I: Interpolator> SlicerVoice<I> {
+    /// Whether the note's slice lies within a sample of @p frames frames (a sample replaced under a sounding note)
+    pub fn fits(&self, frames: usize) -> bool {
+        self.end as usize <= frames
+    }
+
+    /// A new note in this voice, as [`SlicerVoice::new`] makes one, without allocating
+    pub fn restart(&mut self, slice: (f32, f32), frames: usize) {
+        let size = frames as i32;
+        self.start = ((slice.0 * size as f32) as i32).clamp(0, size);
+        self.end = ((slice.1 * size as f32) as i32).clamp(self.start, size);
+        self.state.restart(self.start);
+        self.played = 0.0;
+    }
+
     /// A note on the slice @p slice (fractions of the sample) of a sample of @p frames frames; @p interpolator:
     /// linear, as the legacy program's
     pub fn new(slice: (f32, f32), frames: usize, interpolator: I) -> Self {

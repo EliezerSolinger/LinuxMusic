@@ -17,6 +17,7 @@ pub mod nes;
 pub mod organic;
 pub mod patman;
 pub mod sfxr;
+pub mod slicert;
 pub mod src_port;
 pub mod vibed;
 pub mod watsyn;
@@ -35,6 +36,7 @@ pub static ALL: &[&Descriptor] = &[
     &organic::DESCRIPTOR,
     &patman::DESCRIPTOR,
     &sfxr::DESCRIPTOR,
+    &slicert::DESCRIPTOR,
     &vibed::DESCRIPTOR,
     &watsyn::DESCRIPTOR,
 ];
