@@ -51,7 +51,9 @@
 //!                         inputLatencyMs: real, outputLatencyMs: real } ] }            (I-21.1)
 //! midiMap:   [ midi.mapping ]                         the machine's mappings (I-21.2)
 //! controllers: [ { profile: "generic"|"mcu"|<controllers/<x>.json stem>, port: <alias>, bank: int } ]  (I-21.3)
-//! interface: { followCursor: bool, scale: real }
+//! interface: { followCursor: bool, scale: real, confirmTrackRemoval: bool, loopEditMode: text ("buttons", "nearest",
+//!              "handles"), scrollMode: text ("page", "continuous"; with followCursor), stopBehavior: text ("start",
+//!              "origin", "stay": where the cursor goes on stop, F-REG-004) }
 //! metronome: { when: text ("always", "recording", "never"), countInBars: int }
 //! recording: { format: text ("rf64-24", "rf64-32f"), folder: text }
 //! shortcuts: { <action id>: text (keys, "secondary-s") }       only the ones the user changed

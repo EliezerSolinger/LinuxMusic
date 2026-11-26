@@ -122,7 +122,6 @@ pub struct CompositionPage {
     height_drag: Option<(NodeId, f32, f32)>,
     /// The track whose name is being edited in place (F-TRK-027)
     renaming: Option<(NodeId, Entity<InputState>, Subscription)>,
-    pub follow_cursor: bool,
     /// The volume knob's menu (F-CTL-006, I-21.2): the track and where it opened, in window coordinates
     knob_menu: Option<(NodeId, gpui::Point<Pixels>)>,
     /// An automation lane's menu: the lane, its track, the tick under the pointer, where it opened
@@ -218,7 +217,6 @@ impl CompositionPage {
             track_drag: None,
             height_drag: None,
             renaming: None,
-            follow_cursor: false,
             knob_menu: None,
             lane_menu: None,
             move_automation: true,
@@ -394,6 +392,14 @@ impl CompositionPage {
 
     /// A click on the ruler moves the cursor there
     fn on_ruler(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) {
+        // Ctrl+drag selects the items of every track in that stretch (F-REG-008)
+        if (ev.modifiers.control || ev.modifiers.platform) && !ev.modifiers.shift && !ev.modifiers.alt {
+            let b = *self.timeline_bounds.borrow();
+            let tick = self.view.tick_at((ev.position.x - b.origin.x).as_f32()).max(0.0) as i64;
+            self.ed.ruler_select = Some((tick, tick));
+            cx.notify();
+            return;
+        }
         if self.loop_down(ev, cx) {
             return;
         }
@@ -491,10 +497,14 @@ impl Render for CompositionPage {
             let pos = port.telemetry().position;
             (map.tick_at(pos.at(HostTime::now()) as i64) as f64, pos.playing)
         };
-        if self.follow_cursor && playing {
+        // the automatic scroll while playing (F-REG-003): by page, continuous, or off
+        let (follow, continuous) = self.scroll_mode(cx);
+        if follow && playing {
             let w = window.viewport_size().width.as_f32() - view::HEADER_W;
             let x = self.view.x(cursor);
-            if x < 0.0 || x > w * 0.9 {
+            if continuous {
+                self.view.scroll_ticks = (cursor - (w * 0.3) as f64 * self.view.ticks_per_px).max(0.0);
+            } else if x < 0.0 || x > w * 0.9 {
                 self.view.scroll_ticks = (cursor - (w * 0.1) as f64 * self.view.ticks_per_px).max(0.0);
             }
         }
@@ -1539,6 +1549,27 @@ impl CompositionPage {
             }
             pts
         };
+        // the background grid (F-ARR-014): every other group of four bars shaded, bar lines, and the grid's lines when
+        // they are at least 8 px apart
+        let frac: f64 = self.frac();
+        let mut shaded: Vec<(f32, f32)> = Vec::new();
+        let mut grid_lines: Vec<(f32, bool)> = Vec::new();
+        for gb in first_bar..first_bar + 600 {
+            let (a, z) = (v.x(bar_ticks(gb)), v.x(bar_ticks(gb + 1)));
+            if a > 2400.0 {
+                break;
+            }
+            if ((gb - 1) / 4) % 2 == 1 {
+                shaded.push((a, z));
+            }
+            grid_lines.push((a, true));
+            if frac < 1.0 && (z - a) * frac as f32 >= 8.0 {
+                let n = (1.0 / frac).round() as i64;
+                for k in 1..n {
+                    grid_lines.push((a + (z - a) * k as f32 / n as f32, false));
+                }
+            }
+        }
         let bounds_cell = self.timeline_bounds.clone();
         let tile_cache = self.tiles.clone();
         let playing_x = v.x(cursor);
@@ -1568,6 +1599,28 @@ impl CompositionPage {
                         let full_h = b.size.height.as_f32();
                         let at = |x: f32, y: f32| point(o.x + px(x), o.y + px(y));
                         let mut cache = tile_cache.borrow_mut();
+                        let top = view::RULER_H + marks::MARKS_H + TEMPO_H;
+                        let mut alt = c(THEME.text);
+                        alt.a = 0.035;
+                        for (a, z) in &shaded {
+                            let (a, z) = (a.max(0.0), z.min(w));
+                            if z > a {
+                                window.paint_quad(fill(
+                                    Bounds::new(at(a, top), size(px(z - a), px((full_h - top).max(0.0)))),
+                                    alt,
+                                ));
+                            }
+                        }
+                        for (x, bar) in &grid_lines {
+                            if (0.0..w).contains(x) {
+                                let mut lc = c(THEME.line);
+                                lc.a = if *bar { 0.9 } else { 0.35 };
+                                window.paint_quad(fill(
+                                    Bounds::new(at(*x, top), size(px(1.0), px((full_h - top).max(0.0)))),
+                                    lc,
+                                ));
+                            }
+                        }
                         for (a, z, on, col) in [
                             (loop_x.0, loop_x.1, loop_x.2, THEME.loop_range),
                             (punch_x.0, punch_x.1, punch_x.2, THEME.punch_range),

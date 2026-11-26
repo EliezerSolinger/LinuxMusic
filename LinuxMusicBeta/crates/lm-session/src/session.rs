@@ -397,6 +397,8 @@ pub struct Session {
     last_gesture_journal: HostTime,
     autosave_warned: bool,
     record_start: Option<RecordStart>,
+    /// Where the cursor was when playing began: where Stop goes back to (F-REG-004)
+    play_origin: Option<i64>,
     recording_tracks: Vec<NodeId>,
     /// The recordings whose takes are being closed: all of one recording enter the tree in one transaction
     recordings: std::collections::BTreeMap<u64, PendingRecording>,
@@ -689,6 +691,7 @@ impl Session {
             last_gesture_journal: now,
             autosave_warned: false,
             record_start: None,
+            play_origin: None,
             recording_tracks: Vec::new(),
             recordings: std::collections::BTreeMap::new(),
             recording_serial: 0,
@@ -1718,6 +1721,7 @@ impl Session {
         {
             let _ = rs.since;
             self.record_start = None;
+            self.play_origin = Some(self.telemetry.position.samples);
             let _ = self.engine.commands().send(Command::Record { on: true });
             let _ = self.engine.commands().send(Command::Play);
         }
@@ -2311,11 +2315,28 @@ impl Session {
     // ---- transport (I-7.2) ----
 
     pub fn play(&mut self) {
+        if !self.telemetry.position.playing {
+            self.play_origin = Some(self.telemetry.position.samples);
+        }
         let _ = self.engine.commands().send(Command::Play);
     }
 
+    /// Stops; the cursor then goes back to where playing began ("origin", the default), to the start of the song
+    /// ("start") or stays ("stay"), by the preference `interface.stopBehavior` (F-REG-004)
     pub fn stop(&mut self) {
+        let was_playing = self.telemetry.position.playing || self.record_start.is_some();
         let _ = self.engine.commands().send(Command::Stop);
+        let origin = self.play_origin.take();
+        if was_playing {
+            let back = match self.preferences.get(&["interface", "stopBehavior"]).and_then(Value::as_text) {
+                Some("stay") => None,
+                Some("start") => Some(0),
+                _ => origin,
+            };
+            if let Some(sample) = back {
+                self.locate(sample);
+            }
+        }
         if self.record_start.take().is_some() || self.recording_tracks.is_empty() {
             // nothing recording
         }

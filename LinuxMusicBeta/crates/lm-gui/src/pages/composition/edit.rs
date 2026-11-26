@@ -220,6 +220,8 @@ pub(super) struct EditState {
     io_menu: Option<(NodeId, gpui::Point<Pixels>)>,
     /// The palette of 48 colours for a clip, the clips selected, or a track (F-CLP-008, F-TRK-031)
     palette: Option<(ColorTarget, gpui::Point<Pixels>)>,
+    /// Ctrl+drag on the ruler: the stretch to select, in ticks (F-REG-008)
+    pub(super) ruler_select: Option<(i64, i64)>,
     /// The ruler's menu: the tick under the pointer and where it opened (F-REG-007)
     loop_menu: Option<(i64, gpui::Point<Pixels>)>,
     /// A track to remove and whether "don't ask again" is on
@@ -242,6 +244,7 @@ impl Default for EditState {
             io_menu: None,
             palette: None,
             loop_menu: None,
+            ruler_select: None,
             confirm_remove: None,
             loop_drag: None,
         }
@@ -306,7 +309,7 @@ impl CompositionPage {
         model::tempo_map(self.core.read(cx).port().root())
     }
 
-    fn frac(&self) -> f64 {
+    pub(super) fn frac(&self) -> f64 {
         let f = GRID[self.ed.grid.min(GRID.len() - 1)].0;
         if f > 0.0 {
             return f;
@@ -317,6 +320,31 @@ impl CompositionPage {
             .into_iter()
             .find(|f| f * bar_px >= 12.0)
             .unwrap_or(8.0)
+    }
+
+    /// The automatic scroll: whether it follows, and whether continuously (else by page): the preferences
+    /// `interface.followCursor` and `interface.scrollMode`
+    pub(super) fn scroll_mode(&self, cx: &Context<Self>) -> (bool, bool) {
+        let prefs = self.core.read(cx).port().preferences();
+        let follow = model::at(prefs, &["interface", "followCursor"]).and_then(Value::as_bool).unwrap_or(false);
+        let continuous = model::at(prefs, &["interface", "scrollMode"]).and_then(Value::as_text) == Some("continuous");
+        (follow, continuous)
+    }
+
+    /// Off, by page, continuous, off...
+    fn cycle_scroll(&mut self, cx: &mut Context<Self>) {
+        let (follow, continuous) = self.scroll_mode(cx);
+        let (follow, mode) = match (follow, continuous) {
+            (false, _) => (true, "page"),
+            (true, false) => (true, "continuous"),
+            (true, true) => (false, "page"),
+        };
+        self.core.update(cx, |core, _| {
+            let key = |k: &str| vec![PathStep::key("interface"), PathStep::key(k)];
+            let _ = core.port_mut().set_preference(key("followCursor"), Value::bool(follow));
+            let _ = core.port_mut().set_preference(key("scrollMode"), Value::text(mode));
+        });
+        cx.notify();
     }
 
     /// The Shift mode for the loop (the preference `interface.loopEditMode`; the two buttons by default)
@@ -787,6 +815,10 @@ impl CompositionPage {
             cx.notify();
         }
         self.track_drag_move(ev, cx);
+        if let Some((from, _)) = self.ed.ruler_select {
+            self.ed.ruler_select = Some((from, self.view.tick_at(mx).max(0.0) as i64));
+            cx.notify();
+        }
         if let Some((a, _)) = self.ed.marquee {
             self.ed.marquee = Some((a, (mx, my)));
             cx.notify();
@@ -866,6 +898,18 @@ impl CompositionPage {
                     self.core.update(cx, |core, _| core.port_mut().gesture_commit(g));
                 }
             }
+        }
+        if let Some((a, z)) = self.ed.ruler_select.take() {
+            let (from, to) = (a.min(z), a.max(z));
+            let hit: Vec<NodeId> = self
+                .tracks(cx)
+                .iter()
+                .flat_map(|t| t.items.iter())
+                .filter(|i| i.start < to.max(from + 1) && i.start + i.length > from)
+                .map(|i| i.id)
+                .collect();
+            self.selected_item = hit.first().copied();
+            self.ed.selection = hit.into_iter().collect();
         }
         if let Some(d) = self.track_drag.take() {
             self.finish_track_drag(d, cx);
@@ -1933,6 +1977,12 @@ impl CompositionPage {
                 )
             })
             .child(div().flex_1())
+            .child({
+                let (follow, continuous) = self.scroll_mode(cx);
+                button("scroll-mode", if continuous { "⇆" } else { "⇥" }, follow, THEME.blue)
+                    .debug_selector(|| "scroll-mode".into())
+                    .on_click(cx.listener(|p, _, _, cx| p.cycle_scroll(cx)))
+            })
             .child(
                 button("grid", format!("▦ {}", tr_str(GRID[self.ed.grid.min(GRID.len() - 1)].1)), false, 0)
                     .debug_selector(|| "grid".into())
@@ -1957,6 +2007,19 @@ impl CompositionPage {
                     .h(px((a.1 - z.1).abs()))
                     .border_1()
                     .border_color(c(THEME.cursor))
+                    .bg(gpui::rgba(0xffffff1f))
+                    .into_any_element(),
+            );
+        }
+        if let Some((a, z)) = self.ed.ruler_select {
+            let (x0, x1) = (self.view.x(a.min(z) as f64), self.view.x(a.max(z) as f64));
+            out.push(
+                div()
+                    .absolute()
+                    .left(px(x0))
+                    .top(px(view::RULER_H))
+                    .w(px((x1 - x0).max(1.0)))
+                    .h_full()
                     .bg(gpui::rgba(0xffffff1f))
                     .into_any_element(),
             );

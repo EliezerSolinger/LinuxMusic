@@ -40,7 +40,17 @@ pub fn defaults() -> Value {
         // use (`{profile, port, bank}`, I-21.3)
         ("midiMap", Value::empty_list()),
         ("controllers", Value::empty_list()),
-        ("interface", o(vec![("followCursor", Value::bool(false)), ("scale", real(1.0))])),
+        (
+            "interface",
+            o(vec![
+                ("followCursor", Value::bool(false)),
+                ("scale", real(1.0)),
+                ("confirmTrackRemoval", Value::bool(true)),
+                ("loopEditMode", Value::text("buttons")),
+                ("scrollMode", Value::text("page")),
+                ("stopBehavior", Value::text("origin")),
+            ]),
+        ),
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
         ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text(""))])),
         ("shortcuts", Value::empty_object()),

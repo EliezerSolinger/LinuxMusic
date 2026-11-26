@@ -371,7 +371,17 @@ pub fn preferences() -> Value {
                 ]),
             ]),
         ),
-        ("interface", o(vec![("followCursor", Value::bool(false)), ("scale", Value::real(1.0).unwrap_or_default())])),
+        (
+            "interface",
+            o(vec![
+                ("followCursor", Value::bool(false)),
+                ("scale", Value::real(1.0).unwrap_or_default()),
+                ("confirmTrackRemoval", Value::bool(true)),
+                ("loopEditMode", Value::text("buttons")),
+                ("scrollMode", Value::text("page")),
+                ("stopBehavior", Value::text("origin")),
+            ]),
+        ),
         ("metronome", o(vec![("when", Value::text("recording")), ("countInBars", Value::int(1))])),
         ("recording", o(vec![("format", Value::text("rf64-24")), ("folder", Value::text("audio"))])),
         ("shortcuts", Value::empty_object()),
