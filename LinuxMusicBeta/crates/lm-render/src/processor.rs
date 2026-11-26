@@ -367,6 +367,15 @@ pub enum PluginRequest {
     Error(PluginErrorKey),
     /// Third-party plugins only (S18)
     StateChanged,
+    /// The plugin's own window began a gesture on a parameter (a knob grabbed); the changes that follow are one undo
+    /// step until the matching end (third-party plugins only, I-22)
+    GestureBegin {
+        index: u32,
+    },
+    /// The window's gesture on a parameter ended (the knob let go)
+    GestureEnd {
+        index: u32,
+    },
 }
 
 /// A processor's requests in one call; at most [`HostOutbox::CAPACITY`], the rest are counted as dropped

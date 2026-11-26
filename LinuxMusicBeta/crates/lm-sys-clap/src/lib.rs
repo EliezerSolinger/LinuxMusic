@@ -266,6 +266,8 @@ struct Flags {
     state_dirty: AtomicBool,
     ports_rescan: AtomicBool,
     gui_closed: AtomicBool,
+    /// The size the plugin's gui asked for (`request_resize`): width << 32 | height, 0 for none
+    gui_resize: std::sync::atomic::AtomicU64,
 }
 
 #[repr(C)]
@@ -365,9 +367,14 @@ unsafe extern "C" fn host_note_dialects(_: *const ffi::clap_host) -> u32 {
 
 unsafe extern "C" fn host_gui_hints(_: *const ffi::clap_host) {}
 
-unsafe extern "C" fn host_gui_resize(_: *const ffi::clap_host, _: u32, _: u32) -> bool {
-    // A floating window resizes itself
-    true
+unsafe extern "C" fn host_gui_resize(host: *const ffi::clap_host, w: u32, h: u32) -> bool {
+    // A floating window resizes itself; an embedded one is resized by the helper's loop, which takes this
+    guard(false, || {
+        if let Some(f) = flags(host) {
+            f.gui_resize.store((u64::from(w) << 32) | u64::from(h), Ordering::Release);
+        }
+        true
+    })
 }
 
 unsafe extern "C" fn host_gui_show(_: *const ffi::clap_host) -> bool {
@@ -1251,6 +1258,74 @@ impl Instance {
             return Err(err("clap.gui.show"));
         }
         Ok(())
+    }
+
+    /// Makes the plugin's gui embedded in the native window `handle` (an `NSView` with `"cocoa"`, an X11 window id with
+    /// `"x11"`) and shows it; returns its size (main thread)
+    pub fn gui_open_embedded(&mut self, api: &str, handle: usize) -> Result<(u32, u32)> {
+        // SAFETY: null or the plugin's gui extension
+        let g = unsafe { self.ext.gui.as_ref() }.ok_or_else(|| err("clap.gui.none"))?;
+        let api = CString::new(api).map_err(|_| err("clap.gui.api"))?;
+        let (Some(create), Some(show), Some(set_parent)) = (g.create, g.show, g.set_parent) else {
+            return Err(err("clap.gui.none"));
+        };
+        // SAFETY: main thread; an embedded window
+        if !unsafe { create(self.plugin, api.as_ptr(), false) } {
+            return Err(err("clap.gui.create"));
+        }
+        let window = ffi::clap_window { api: api.as_ptr(), handle };
+        // SAFETY: main thread, created; the window names a live native window of that api
+        let attached = unsafe { set_parent(self.plugin, &window) };
+        let size = self.gui_size();
+        // SAFETY: main thread, created
+        if !attached || !unsafe { show(self.plugin) } {
+            if let Some(d) = g.destroy {
+                // SAFETY: main thread, created
+                unsafe { d(self.plugin) };
+            }
+            return Err(err("clap.gui.show"));
+        }
+        self.host.flags.gui_resize.store(0, Ordering::Release);
+        Ok(size.unwrap_or((640, 480)))
+    }
+
+    /// The plugin's gui size now (main thread)
+    pub fn gui_size(&self) -> Option<(u32, u32)> {
+        // SAFETY: null or the plugin's gui extension
+        let g = unsafe { self.ext.gui.as_ref() }?;
+        let (mut w, mut h) = (0u32, 0u32);
+        // SAFETY: main thread, two out values
+        (unsafe { g.get_size?(self.plugin, &mut w, &mut h) }).then_some((w, h))
+    }
+
+    /// The window was resized: the gui is told and answers the size it takes (it keeps its own when it cannot resize);
+    /// main thread
+    pub fn gui_resize(&mut self, width: u32, height: u32) -> Option<(u32, u32)> {
+        // SAFETY: null or the plugin's gui extension
+        let g = unsafe { self.ext.gui.as_ref() }?;
+        // SAFETY: main thread
+        let can = match g.can_resize {
+            Some(f) => unsafe { f(self.plugin) },
+            None => false,
+        };
+        if can {
+            let (mut w, mut h) = (width, height);
+            if let Some(adjust) = g.adjust_size {
+                // SAFETY: main thread, in/out sizes
+                unsafe { adjust(self.plugin, &mut w, &mut h) };
+            }
+            if let Some(set) = g.set_size {
+                // SAFETY: main thread
+                unsafe { set(self.plugin, w, h) };
+            }
+        }
+        self.gui_size()
+    }
+
+    /// The size the plugin's gui asked the host for by itself, once (main thread)
+    pub fn take_gui_resize(&self) -> Option<(u32, u32)> {
+        let v = self.host.flags.gui_resize.swap(0, Ordering::AcqRel);
+        (v != 0).then_some(((v >> 32) as u32, v as u32))
     }
 
     /// Hides and destroys the plugin's window (main thread)

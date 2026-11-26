@@ -93,6 +93,24 @@ pub struct Saved {
     pub params: Vec<(String, f32)>,
 }
 
+/// What the core asks of the plugin's window
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowCommand {
+    Show,
+    Hide,
+    /// The client area's new size
+    Resize(u32, u32),
+}
+
+/// What the helper answers about the plugin's window
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WindowInfo {
+    pub open: bool,
+    pub size: Option<(u32, u32)>,
+    /// Why there is no window when one was asked for (an error key such as `lv2.ui.generic`, `gui.unsupported`)
+    pub reason: Option<String>,
+}
+
 /// A running helper
 pub struct Hosted {
     child: Mutex<Child>,
@@ -102,6 +120,8 @@ pub struct Hosted {
     stop: Arc<AtomicBool>,
     supervisor: Mutex<Option<JoinHandle<()>>>,
     shm: Arc<SharedMemory>,
+    /// The plugin's own window is shown (the helper says when the user closes it)
+    gui_open: Arc<AtomicBool>,
     pub ready: Ready,
 }
 
@@ -154,11 +174,18 @@ pub fn start(config: &HostConfig, req: &LoadRequest) -> Result<(Proxy, Arc<Hoste
     let stdin = child.stdin.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
     let stdout = child.stdout.take().ok_or_else(|| Error::new("plugin_host.spawn"))?;
     let (tx, rx) = channel();
+    let gui_open = Arc::new(AtomicBool::new(false));
+    let reader_gui = Arc::clone(&gui_open);
     std::thread::Builder::new()
         .name("lm-plugin-host-out".into())
         .spawn(move || {
             let mut r = BufReader::new(stdout);
             while let Ok(Some(v)) = read_message(&mut r) {
+                // The user closed the plugin's window: said at any time, not an answer to a request
+                if v.get("t").and_then(Value::as_text) == Some("gui_closed") {
+                    reader_gui.store(false, Ordering::Release);
+                    continue;
+                }
                 if tx.send(v).is_err() {
                     break;
                 }
@@ -213,6 +240,7 @@ pub fn start(config: &HostConfig, req: &LoadRequest) -> Result<(Proxy, Arc<Hoste
         stop: Arc::clone(&stop),
         supervisor: Mutex::new(None),
         shm: Arc::clone(&shm),
+        gui_open,
         ready: Ready { latency, info: ready },
     });
     // The supervisor: a crash makes the node silent; a hang (declared by the proxy) kills the helper
@@ -285,9 +313,35 @@ impl Hosted {
 
     /// Opens or closes the plugin's own window, made by the helper (I-22: third-party plugins open their own)
     pub fn show_window(&self, on: bool, timeout: Duration) -> Result<bool> {
-        let r =
-            self.request(&Value::object([("t", Value::text("gui")), ("on", Value::bool(on))]), &["gui"], timeout)?;
-        Ok(r.get("on").and_then(Value::as_bool).unwrap_or(false))
+        self.window(if on { WindowCommand::Show } else { WindowCommand::Hide }, timeout).map(|w| w.open)
+    }
+
+    /// Shows, hides or resizes the plugin's own window. Blocking up to `timeout` (a plugin's window may take
+    /// seconds): an `Operation`. A plugin with no window answers `open: false` with the `reason` (an error key)
+    pub fn window(&self, command: WindowCommand, timeout: Duration) -> Result<WindowInfo> {
+        let msg = match command {
+            WindowCommand::Show => Value::object([("t", Value::text("gui")), ("on", Value::bool(true))]),
+            WindowCommand::Hide => Value::object([("t", Value::text("gui")), ("on", Value::bool(false))]),
+            WindowCommand::Resize(w, h) => Value::object([
+                ("t", Value::text("gui")),
+                ("resize", Value::list([Value::int(i64::from(w)), Value::int(i64::from(h))])),
+            ]),
+        };
+        let r = self.request(&msg, &["gui"], timeout)?;
+        let open = r.get("on").and_then(Value::as_bool).unwrap_or(false);
+        self.gui_open.store(open, Ordering::Release);
+        let at =
+            |i: usize| r.get("size").and_then(|s| s.at(i)).and_then(Value::as_int).and_then(|v| u32::try_from(v).ok());
+        Ok(WindowInfo {
+            open,
+            size: at(0).zip(at(1)),
+            reason: r.get("reason").and_then(Value::as_text).map(str::to_owned),
+        })
+    }
+
+    /// The plugin's window is shown now (the user may have closed it since: the helper says so)
+    pub fn window_is_open(&self) -> bool {
+        self.gui_open.load(Ordering::Acquire)
     }
 
     /// The helper crashed, was killed or ended

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use lm_render::{Adopted, PluginErrorKey, PluginRequest, ProcessContext, Processor};
 use lm_sys_ipc::SharedMemory;
 
-use crate::layout::{EVENT_WORDS, Layout, OUT_WORDS, encode, get, put, w};
+use crate::layout::{EVENT_WORDS, Layout, OUT_BEGIN, OUT_END, OUT_INDEX, OUT_WORDS, encode, get, put, w};
 
 /// Blocks missed in a row after which the plugin counts as hung
 pub const HANG_BLOCKS: u32 = 16;
@@ -230,10 +230,24 @@ impl Processor for Proxy {
         }
         let outs = (words[w::OUT_EVENTS].load(Ordering::Acquire) as usize).min(l.max_out);
         let at = l.out_events();
-        for k in 0..outs {
-            let index = words[at + k * OUT_WORDS].load(Ordering::Relaxed);
-            let value = f32::from_bits(words[at + k * OUT_WORDS + 1].load(Ordering::Relaxed));
-            cx.host.request(PluginRequest::ParamChanged { index, value });
+        // The gesture edges first (the outbox holds few requests per block: a begin or an end must never be the one
+        // dropped), then the values
+        for edges in [true, false] {
+            for k in 0..outs {
+                let index = words[at + k * OUT_WORDS].load(Ordering::Relaxed);
+                let value = f32::from_bits(words[at + k * OUT_WORDS + 1].load(Ordering::Relaxed));
+                let request = if index & OUT_BEGIN != 0 {
+                    PluginRequest::GestureBegin { index: index & OUT_INDEX }
+                } else if index & OUT_END != 0 {
+                    PluginRequest::GestureEnd { index: index & OUT_INDEX }
+                } else {
+                    PluginRequest::ParamChanged { index, value }
+                };
+                let is_edge = !matches!(request, PluginRequest::ParamChanged { .. });
+                if is_edge == edges {
+                    cx.host.request(request);
+                }
+            }
         }
         // Its own state changed: the session asks the helper for it, outside the audio (I-9.4)
         if words[w::STATE].swap(0, Ordering::AcqRel) != 0 {

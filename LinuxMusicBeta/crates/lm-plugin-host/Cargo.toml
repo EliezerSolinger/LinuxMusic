@@ -19,6 +19,7 @@ lm-base.workspace = true
 lm-state.workspace = true
 lm-render.workspace = true
 lm-sys-ipc.workspace = true
+lm-sys-gui.workspace = true
 lm-sys-lilv.workspace = true
 lm-sys-clap.workspace = true
 lm-sys-vst3.workspace = true

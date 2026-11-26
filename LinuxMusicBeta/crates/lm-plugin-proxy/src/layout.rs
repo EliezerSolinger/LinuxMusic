@@ -58,6 +58,12 @@ pub mod w {
 pub const STATUS_READY: u32 = 1;
 pub const EVENT_WORDS: usize = 6;
 pub const OUT_WORDS: usize = 2;
+/// An out event's index word with this bit: the window began a gesture on that parameter (its value word is unused)
+pub const OUT_BEGIN: u32 = 1 << 31;
+/// An out event's index word with this bit: the window ended its gesture on that parameter
+pub const OUT_END: u32 = 1 << 30;
+/// The parameter index inside an out event's index word
+pub const OUT_INDEX: u32 = OUT_END - 1;
 
 /// Where everything is in a block of this shape
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

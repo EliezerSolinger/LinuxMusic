@@ -15,8 +15,13 @@
 //!   (`StateChanged`) and before each save, and written into the document as an `Origin::Plugin` transaction. A
 //!   change of the chunk alone never builds the processor again (`lm_plugin::CHUNK_KEY`): when the document's chunk
 //!   differs from the one the plugin has (an undo, a preset), the session gives it to the running plugin.
-//! - **The plugin's own parameter changes** (its window) are one gesture while they keep coming, committed 300 ms
-//!   after the last (I-9.4).
+//! - **The plugin's own parameter changes** (its window) are one gesture (I-9.4): a plugin that says when a knob is
+//!   grabbed and let go (VST3's begin and end edit) gets exactly that gesture, committed at the end (an undo step,
+//!   automation recorded as one); one that does not is committed 300 ms after the last change. A begin whose end
+//!   never came (a lost message) is closed after 2 s of silence.
+//! - **The plugin's window** (I-22: a third-party plugin opens its own): `plugin.show_window {node}` asks the node's
+//!   helper to open it (in an operation: a plugin's window may take seconds); a plugin that has none (or a machine
+//!   without a window system) says why in a notice, and the generic editor stays.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
@@ -26,7 +31,9 @@ use lm_base::{Error, HostTime, Label, Result};
 use lm_compile::NodeKey;
 use lm_doc::GestureId;
 use lm_plugin::{CHUNK_KEY, External, Registry};
-use lm_plugin_proxy::{Blocked, HostConfig, Hosted, Proxy, Saved, Scanned, external, plugin_id, scanned_from};
+use lm_plugin_proxy::{
+    Blocked, HostConfig, Hosted, Proxy, Saved, Scanned, WindowCommand, external, plugin_id, scanned_from,
+};
 use lm_port::{ActionId, Severity, Target};
 use lm_render::{PluginRequest, Processor};
 use lm_state::{NodeId, PathStep, Value};
@@ -38,8 +45,12 @@ use crate::actions::ActionSpec;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long the helper may take to give its state
 const STATE_TIMEOUT: Duration = Duration::from_secs(5);
-/// The plugin's own parameter changes closer than this are one undo step (I-9.4)
+/// The plugin's own parameter changes closer than this are one undo step (I-9.4), when it gives no gesture edges
 const PARAM_GROUP: Duration = Duration::from_millis(300);
+/// A gesture whose end never came is closed after this long without a change
+const GESTURE_STALE: Duration = Duration::from_secs(2);
+/// How long a plugin's window may take to open
+const WINDOW_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// One running helper, as the session knows it
 struct Running {
@@ -59,6 +70,10 @@ pub(crate) struct ExternalCore {
     /// The plugin's own parameter changes waiting for the next pump, and the gesture they go into
     params: Vec<(NodeId, &'static str, f64)>,
     gesture: Option<(GestureId, HostTime)>,
+    /// Gestures the plugins' windows began and have not ended (a begin and its end are counted)
+    open_edits: u32,
+    /// A window's gesture ended: the pump commits the gesture once it has the changes that came with it
+    edit_ended: bool,
     /// A save waiting for the plugins' states
     pub(crate) save_waiting: bool,
     /// The plugins' states were just taken: the save goes on
@@ -75,6 +90,24 @@ pub(crate) static ACTIONS: &[ActionSpec] = &[
             s.recreate_plugin(id.ok_or_else(|| Error::new("action.params"))?)
         },
         enabled: |_| true,
+    },
+    ActionSpec {
+        id: "plugin.show_window",
+        label: "action.plugin.show_window",
+        run: |s, p| {
+            let id = p.get("node").and_then(Value::as_text).and_then(|t| t.parse::<NodeId>().ok());
+            s.plugin_window(id.ok_or_else(|| Error::new("action.params"))?, true)
+        },
+        enabled: |s| s.external.config.is_some(),
+    },
+    ActionSpec {
+        id: "plugin.hide_window",
+        label: "action.plugin.hide_window",
+        run: |s, p| {
+            let id = p.get("node").and_then(Value::as_text).and_then(|t| t.parse::<NodeId>().ok());
+            s.plugin_window(id.ok_or_else(|| Error::new("action.params"))?, false)
+        },
+        enabled: |s| s.external.config.is_some(),
     },
     ActionSpec {
         id: "plugin.scan",
@@ -252,6 +285,14 @@ impl Session {
                 );
             }
             PluginRequest::StateChanged => self.fetch_states(vec![key], false),
+            PluginRequest::GestureBegin { .. } => {
+                self.external.open_edits = self.external.open_edits.saturating_add(1);
+                self.external.edit_ended = false;
+            }
+            PluginRequest::GestureEnd { .. } => {
+                self.external.open_edits = self.external.open_edits.saturating_sub(1);
+                self.external.edit_ended = self.external.open_edits == 0;
+            }
             PluginRequest::ParamChanged { index, value } => {
                 let Some(plugin) = self.document.find(id).and_then(|n| n.get("plugin")?.as_text().map(str::to_owned))
                 else {
@@ -408,16 +449,32 @@ impl Session {
             if let Err(e) = r {
                 self.notices.error(&e, None, None);
             }
-            self.external.gesture = Some((g, now));
-            changed = true;
-        } else if let Some((_, at)) = &self.external.gesture
-            && now.since(*at) >= PARAM_GROUP.as_nanos() as u64
-            && let Some((g, _)) = self.external.gesture.take()
-        {
-            if let Err(e) = self.document.gesture_commit(g) {
-                self.notices.error(&e, None, None);
+            // The end of a window's gesture came with these changes: it closes now
+            if self.external.edit_ended && self.external.open_edits == 0 {
+                self.external.edit_ended = false;
+                if let Err(e) = self.document.gesture_commit(g) {
+                    self.notices.error(&e, None, None);
+                }
+            } else {
+                self.external.gesture = Some((g, now));
             }
             changed = true;
+        } else if let Some((_, at)) = &self.external.gesture {
+            let quiet = now.since(*at);
+            // With gesture edges the end closes it; without any, a pause of 300 ms; a begin never ended, 2 s
+            let done = if self.external.open_edits > 0 {
+                quiet >= GESTURE_STALE.as_nanos() as u64
+            } else {
+                self.external.edit_ended || quiet >= PARAM_GROUP.as_nanos() as u64
+            };
+            if done && let Some((g, _)) = self.external.gesture.take() {
+                self.external.open_edits = 0;
+                self.external.edit_ended = false;
+                if let Err(e) = self.document.gesture_commit(g) {
+                    self.notices.error(&e, None, None);
+                }
+                changed = true;
+            }
         }
         // The document's chunk against the plugin's
         let mut give = Vec::new();
@@ -440,6 +497,48 @@ impl Session {
             });
         }
         changed
+    }
+
+    /// Shows or hides the plugin's own window (I-22), in an operation: the helper makes the window; the answer says
+    /// whether it is open and, when there is none to show, why (a notice; the generic editor stays)
+    pub fn plugin_window(&mut self, node: NodeId, on: bool) -> Result<()> {
+        let hosted = self
+            .plugin_host_of(node)
+            .filter(|h| !h.is_dead())
+            .ok_or_else(|| Error::new("plugin.window.unknown").arg("node", node.to_string()))?;
+        self.start(Label::new("plugins.window"), Target::Node(node), false, "plugins.window", move |_, _| {
+            let command = if on { WindowCommand::Show } else { WindowCommand::Hide };
+            let info = hosted.window(command, WINDOW_TIMEOUT)?;
+            Ok(Value::object([
+                ("node", Value::text(node.to_string())),
+                ("asked", Value::bool(on)),
+                ("open", Value::bool(info.open)),
+                ("reason", info.reason.as_deref().map_or(Value::NULL, Value::text)),
+            ]))
+        });
+        Ok(())
+    }
+
+    /// The helper answered about a window: a window that was asked for and does not exist says why
+    pub(crate) fn window_finished(&mut self, result: Result<Value>) {
+        match result {
+            Err(e) => self.notices.error(&e, None, None),
+            Ok(v) => {
+                let asked = v.get("asked").and_then(Value::as_bool) == Some(true);
+                let open = v.get("open").and_then(Value::as_bool) == Some(true);
+                if asked && !open {
+                    let node = v.get("node").and_then(Value::as_text).unwrap_or("");
+                    let reason = v.get("reason").and_then(Value::as_text).unwrap_or("plugin.window.none");
+                    self.notices.push(
+                        "plugin.window.unavailable",
+                        vec![("node", Value::text(node)), ("reason", Value::text(reason))],
+                        Severity::Info,
+                        node.parse::<NodeId>().ok().map(Target::Node),
+                        Vec::new(),
+                    );
+                }
+            }
+        }
     }
 
     /// "Recreate": the node's plugin is built again from the document's state (its last saved state), in a new

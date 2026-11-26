@@ -184,11 +184,42 @@ fn the_scan_blocks_what_crashes_or_hangs_it() {
         scan(&config(), "test", &[], &["hang".to_owned()], Duration::from_secs(10), &Cancel::new(), &Progress::new())
             .unwrap();
     let ok: Vec<&str> = report.plugins.iter().map(|p| p.uri.as_str()).collect();
-    assert_eq!(ok, ["gain", "synth", "crash", "mono"]);
+    assert_eq!(ok, ["gain", "synth", "crash", "mono", "knob"]);
     assert_eq!(report.skipped, ["hang"]);
     let blocked: Vec<(&str, &str)> = report.blocked.iter().map(|b| (b.uri.as_str(), b.reason.key())).collect();
     assert_eq!(blocked, [("bomb", "plugin_host.crashed"), ("stall", "plugin_host.timeout")]);
     let gain = &report.plugins[0];
     assert!(!gain.instrument && gain.latency && gain.params.len() == 2 && gain.params[1].integer);
     assert!(report.plugins[1].instrument && report.plugins[1].midi_in);
+}
+
+#[test]
+fn a_plugin_window_is_shown_resized_and_its_gestures_come_back() {
+    use lm_plugin_proxy::WindowCommand;
+    let mut cfg = config();
+    cfg.deadline = Deadline::Wait;
+    let (mut proxy, hosted) = start(&cfg, &request("knob", 2, &[])).unwrap();
+    let t = Duration::from_secs(5);
+    assert!(!hosted.window_is_open());
+    let shown = hosted.window(WindowCommand::Show, t).unwrap();
+    assert!(shown.open && shown.size == Some((300, 150)) && shown.reason.is_none());
+    assert!(hosted.window_is_open());
+    // The user turns the knob (the test plugin does it on a resize): begin, the value, end, at the next block
+    let turned = hosted.window(WindowCommand::Resize(500, 100), t).unwrap();
+    assert_eq!(turned.size, Some((500, 100)));
+    let mut r = Runner::effect();
+    for _ in 0..4 {
+        r.block(&mut proxy, ramp, &[], false);
+    }
+    let at = |q: PluginRequest| r.requests.iter().position(|x| *x == q);
+    let begin = at(PluginRequest::GestureBegin { index: 0 }).expect("a gesture began");
+    let end = at(PluginRequest::GestureEnd { index: 0 }).expect("a gesture ended");
+    let set = at(PluginRequest::ParamChanged { index: 0, value: 0.5 }).expect("the knob's value");
+    assert!(begin != end && set != begin);
+    // Hidden, and a plugin with no window says why
+    assert!(!hosted.window(WindowCommand::Hide, t).unwrap().open);
+    assert!(!hosted.window_is_open());
+    let (_, plain) = start(&cfg, &request("gain", 2, &[])).unwrap();
+    let none = plain.window(WindowCommand::Show, t).unwrap();
+    assert!(!none.open && none.reason.as_deref() == Some("plugin.window.none"));
 }

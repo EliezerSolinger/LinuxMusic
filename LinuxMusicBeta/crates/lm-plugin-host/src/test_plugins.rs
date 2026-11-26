@@ -6,7 +6,7 @@
 use lm_base::{Error, Result};
 use lm_render::EventKind;
 
-use crate::backend::{Listed, Param, Plugin, Transport};
+use crate::backend::{Listed, Param, Plugin, Transport, WindowRequest, WindowState};
 
 fn param(key: &str, min: f64, max: f64, default: f64, integer: bool) -> Param {
     Param { key: key.into(), name: key.into(), min, max, default, integer, toggled: false, logarithmic: false }
@@ -45,6 +45,8 @@ pub fn list() -> Vec<Listed> {
         listed("stall", false, Vec::new()),
         // A mono effect: on a stereo channel the helper runs it as two instances (dual mono)
         listed("mono", false, vec![param("gain", 0.0, 4.0, 1.0, false)]),
+        // A plugin with a window (simulated, no native window): resizing it is the user turning its knob
+        listed("knob", false, vec![param("amount", 0.0, 1.0, 0.0, false)]),
     ]
 }
 
@@ -58,6 +60,10 @@ pub struct Test {
     held: u32,
     /// synth: a note arrived (its "state" is the last velocity-free note count, a test of `StateChanged`)
     dirty: bool,
+    /// knob: the window's size
+    window: Option<(u32, u32)>,
+    /// knob: a turn of the knob waiting for the next block's report: its value
+    turn: Option<f32>,
 }
 
 impl Test {
@@ -83,6 +89,8 @@ impl Test {
             pos: 0,
             held: 0,
             dirty: false,
+            window: None,
+            turn: None,
         })
     }
 }
@@ -185,6 +193,45 @@ impl Plugin for Test {
 
     fn state_changed(&mut self) -> bool {
         std::mem::take(&mut self.dirty)
+    }
+
+    fn window(&mut self, request: WindowRequest) -> Result<WindowState> {
+        if self.kind != "knob" {
+            return Ok(WindowState::none("plugin.window.none"));
+        }
+        Ok(match request {
+            WindowRequest::Show => {
+                let size = *self.window.get_or_insert((300, 150));
+                WindowState::open(Some(size))
+            }
+            WindowRequest::Hide => {
+                self.window = None;
+                WindowState::closed()
+            }
+            WindowRequest::Resize(w, h) => match &mut self.window {
+                Some(size) => {
+                    *size = (w, h);
+                    // The user turned the knob: a gesture with one change, reported with the next block
+                    self.turn = Some((w as f32 / 1000.0).clamp(0.0, 1.0));
+                    WindowState::open(Some(*size))
+                }
+                None => WindowState::closed(),
+            },
+        })
+    }
+
+    fn changes(&mut self, out: &mut Vec<(u32, f32)>) {
+        if let Some(v) = self.turn {
+            self.values[0] = v;
+            out.push((0, v));
+        }
+    }
+
+    fn gestures(&mut self, out: &mut Vec<(u32, bool)>) {
+        if self.turn.take().is_some() {
+            out.push((0, true));
+            out.push((0, false));
+        }
     }
 
     fn save(&mut self) -> Result<Option<Vec<u8>>> {

@@ -1557,6 +1557,7 @@ impl Session {
                 }
             }
             ("plugins.state" | "plugins.state.save", r) => self.states_finished(kind, r),
+            ("plugins.window", r) => self.window_finished(r),
             (
                 "locate" | "export_zip" | "save_template" | "clean_unused" | "new_from_template" | "device.calibrate"
                 | "devices.scan",

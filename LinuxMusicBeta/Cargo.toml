@@ -95,6 +95,7 @@ lm-sys-coreaudio = { path = "crates/lm-sys-coreaudio" }
 lm-sys-rubberband = { path = "crates/lm-sys-rubberband" }
 lm-sys-lilv = { path = "crates/lm-sys-lilv" }
 lm-sys-ipc = { path = "crates/lm-sys-ipc" }
+lm-sys-gui = { path = "crates/lm-sys-gui" }
 lm-sys-clap = { path = "crates/lm-sys-clap" }
 lm-sys-ladspa = { path = "crates/lm-sys-ladspa" }
 lm-sys-vst3 = { path = "crates/lm-sys-vst3" }

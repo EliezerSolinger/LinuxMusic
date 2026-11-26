@@ -94,6 +94,40 @@ impl Transport {
     }
 }
 
+/// What the core asks of a plugin's own window (I-22)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowRequest {
+    Show,
+    Hide,
+    /// The client area's new size, from the core's side (the user dragged, a preference)
+    Resize(u32, u32),
+}
+
+/// What a plugin's window is after a request
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WindowState {
+    pub open: bool,
+    /// The window's client size when it is open and the helper knows it
+    pub size: Option<(u32, u32)>,
+    /// Why there is no window when one was asked for (an error key: the core says it and keeps its generic editor)
+    pub reason: Option<&'static str>,
+}
+
+impl WindowState {
+    pub fn open(size: Option<(u32, u32)>) -> WindowState {
+        WindowState { open: true, size, reason: None }
+    }
+
+    pub fn closed() -> WindowState {
+        WindowState { open: false, size: None, reason: None }
+    }
+
+    /// No window, and why
+    pub fn none(reason: &'static str) -> WindowState {
+        WindowState { open: false, size: None, reason: Some(reason) }
+    }
+}
+
 /// A plugin instance in the helper
 pub trait Plugin: Send {
     fn params(&self) -> &[Param];
@@ -116,10 +150,20 @@ pub trait Plugin: Send {
     );
     fn save(&mut self) -> Result<Option<Vec<u8>>>;
     fn restore(&mut self, chunk: &[u8]) -> Result<()>;
-    /// Opens or closes the plugin's own window; `Ok(false)` when it has none
-    fn window(&mut self, on: bool) -> Result<bool> {
-        let _ = on;
-        Ok(false)
+    /// Shows, hides or resizes the plugin's own window (main thread). A plugin without one answers
+    /// [`WindowState::none`] with the reason
+    fn window(&mut self, request: WindowRequest) -> Result<WindowState> {
+        let _ = request;
+        Ok(WindowState::none("plugin.window.none"))
+    }
+    /// The user closed the plugin's window since the last call (main thread; polled with `idle`)
+    fn window_closed(&mut self) -> bool {
+        false
+    }
+    /// The gesture edges the plugin's window made since the last call: (parameter index, `true` begin / `false`
+    /// end), in order; each begin is followed by its changes ([`Plugin::changes`]) and its end
+    fn gestures(&mut self, out: &mut Vec<(u32, bool)>) {
+        let _ = out;
     }
     /// The main thread's turn, every ~10 ms (the plugin's callbacks, restarts)
     fn idle(&mut self) {}

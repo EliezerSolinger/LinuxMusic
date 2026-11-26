@@ -36,13 +36,15 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use lm_base::{Error, Result};
-use lm_plugin_proxy::layout::{EVENT_WORDS, Layout, OUT_WORDS, STATUS_READY, decode, get, put, w};
+use lm_plugin_proxy::layout::{
+    EVENT_WORDS, Layout, OUT_BEGIN, OUT_END, OUT_INDEX, OUT_WORDS, STATUS_READY, decode, get, put, w,
+};
 use lm_plugin_proxy::protocol::{PROTOCOL, error_to, hex, read_message, unhex, write_message};
 use lm_render::EventKind;
 use lm_state::Value;
 use lm_sys_ipc::SharedMemory;
 
-use crate::backend::{Listed, Plugin, Transport, unknown_format};
+use crate::backend::{Listed, Plugin, Transport, WindowRequest, WindowState, unknown_format};
 
 /// The most channels a plugin gets per direction
 const MAX_CHANNELS: usize = 64;
@@ -171,6 +173,7 @@ fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn 
     let mut outs = vec![vec![0.0f32; layout.max_block]; layout.outputs];
     let mut events: Vec<(u32, EventKind)> = Vec::with_capacity(layout.max_events);
     let mut changes = Vec::with_capacity(layout.max_out);
+    let mut gestures: Vec<(u32, bool)> = Vec::with_capacity(layout.max_out);
     let (ni, no) = (layout.inputs.min(MAX_CHANNELS), layout.outputs.min(MAX_CHANNELS));
     loop {
         if quit.load(Ordering::Acquire) || words[w::QUIT].load(Ordering::Acquire) != 0 {
@@ -214,6 +217,7 @@ fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn 
         };
         let latency;
         changes.clear();
+        gestures.clear();
         {
             let mut p = plugin.lock().unwrap_or_else(PoisonError::into_inner);
             // The channel lists the plugin gets, on the stack (no allocation per block)
@@ -228,6 +232,7 @@ fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn 
             p.process(frames, &iref[..ni], &mut oref[..no], &events, &transport);
             latency = p.latency();
             p.changes(&mut changes);
+            p.gestures(&mut gestures);
             if p.state_changed() {
                 words[w::STATE].store(1, Ordering::Release);
             }
@@ -235,11 +240,19 @@ fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn 
         for (ch, b) in outs.iter().enumerate() {
             put(words, layout.output(ch), &b[..frames]);
         }
+        // The gesture edges first (the core's block of requests is short), then the values
         let at = layout.out_events();
-        let m = changes.len().min(layout.max_out);
-        for (k, (index, value)) in changes.iter().take(m).enumerate() {
-            words[at + k * OUT_WORDS].store(*index, Ordering::Relaxed);
-            words[at + k * OUT_WORDS + 1].store(value.to_bits(), Ordering::Relaxed);
+        let mut m = 0;
+        for (index, begin) in gestures.iter().take(layout.max_out) {
+            let flag = if *begin { OUT_BEGIN } else { OUT_END };
+            words[at + m * OUT_WORDS].store((index & OUT_INDEX) | flag, Ordering::Relaxed);
+            words[at + m * OUT_WORDS + 1].store(0, Ordering::Relaxed);
+            m += 1;
+        }
+        for (index, value) in changes.iter().take(layout.max_out - m) {
+            words[at + m * OUT_WORDS].store(index & OUT_INDEX, Ordering::Relaxed);
+            words[at + m * OUT_WORDS + 1].store(value.to_bits(), Ordering::Relaxed);
+            m += 1;
         }
         words[w::OUT_EVENTS].store(m as u32, Ordering::Relaxed);
         words[w::LATENCY].store(latency, Ordering::Release);
@@ -257,6 +270,18 @@ fn param_values(p: &dyn Plugin) -> Value {
             .enumerate()
             .map(|(i, x)| (x.key.as_str(), Value::real(f64::from(p.param(i as u32))).unwrap_or(Value::NULL))),
     )
+}
+
+/// The helper's answer about a window
+fn gui_reply(state: &WindowState) -> Value {
+    let size =
+        state.size.map_or(Value::NULL, |(w, h)| Value::list([Value::int(i64::from(w)), Value::int(i64::from(h))]));
+    Value::object([
+        ("t", Value::text("gui")),
+        ("on", Value::bool(state.open)),
+        ("size", size),
+        ("reason", state.reason.map_or(Value::NULL, Value::text)),
+    ])
 }
 
 fn run(paths: &[PathBuf]) -> Result<()> {
@@ -326,11 +351,33 @@ fn run(paths: &[PathBuf]) -> Result<()> {
             }
         })
         .map_err(|e| Error::new("plugin_host.thread").arg("error", e.to_string()))?;
+    // Once a window was asked for, this thread also runs the window system's loop (macOS needs it on the main thread)
+    let mut gui_used = false;
     loop {
-        let m = match rx.recv_timeout(IDLE) {
+        let waited = if gui_used {
+            match rx.try_recv() {
+                Ok(m) => Ok(m),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    lm_sys_gui::pump(IDLE);
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+                }
+            }
+        } else {
+            rx.recv_timeout(IDLE)
+        };
+        let m = match waited {
             Ok(m) => m,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                plugin.lock().unwrap_or_else(PoisonError::into_inner).idle();
+                let mut p = plugin.lock().unwrap_or_else(PoisonError::into_inner);
+                p.idle();
+                // The user closed the window: the core is told, so its button shows the truth
+                if p.window_closed() {
+                    drop(p);
+                    say(&Value::object([("t", Value::text("gui_closed"))]));
+                }
                 continue;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -360,9 +407,20 @@ fn run(paths: &[PathBuf]) -> Result<()> {
                 }
             }
             Some("gui") => {
-                let on = m.get("on").and_then(Value::as_bool).unwrap_or(false);
-                match plugin.lock().unwrap_or_else(PoisonError::into_inner).window(on) {
-                    Ok(shown) => Value::object([("t", Value::text("gui")), ("on", Value::bool(shown))]),
+                gui_used = true;
+                let request = match (m.get("on").and_then(Value::as_bool), m.get("resize")) {
+                    (_, Some(size)) => {
+                        let at = |i: usize| size.at(i).and_then(Value::as_int).and_then(|v| u32::try_from(v).ok());
+                        match (at(0), at(1)) {
+                            (Some(w), Some(h)) => WindowRequest::Resize(w, h),
+                            _ => WindowRequest::Hide,
+                        }
+                    }
+                    (Some(true), None) => WindowRequest::Show,
+                    _ => WindowRequest::Hide,
+                };
+                match plugin.lock().unwrap_or_else(PoisonError::into_inner).window(request) {
+                    Ok(state) => gui_reply(&state),
                     Err(e) => error(&e),
                 }
             }

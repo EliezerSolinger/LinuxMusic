@@ -41,7 +41,7 @@ use vst3::Steinberg::Vst::*;
 use vst3::Steinberg::*;
 use vst3::{ComPtr, ComWrapper, Interface};
 
-use host::{Changes, Events, Handler, HostApp, Requests, Stream, narrow, wide};
+use host::{Changes, Edit, Events, Frame, Handler, HostApp, Requests, Stream, narrow, wide};
 
 fn err(key: &'static str) -> Error {
     Error::new(key)
@@ -417,7 +417,10 @@ pub struct Instance {
     _host: ComWrapper<HostApp>,
     _handler: ComWrapper<Handler>,
     requests: Arc<Requests>,
-    edits: rtrb::Consumer<(ParamID, f64)>,
+    edits: rtrb::Consumer<Edit>,
+    /// The window's gesture edges of the last block: (parameter id, `true` for begin, `false` for end)
+    gestures: Vec<(u32, bool)>,
+    editor: Option<Editor>,
     rate: f64,
     max_block: u32,
     active: bool,
@@ -543,6 +546,8 @@ impl Instance {
             _handler: handler,
             requests,
             edits: consumer,
+            gestures: Vec::with_capacity(256),
+            editor: None,
             rate,
             max_block: max_block.max(1),
             active: false,
@@ -814,6 +819,7 @@ impl Instance {
             }
         };
         self.changes.clear();
+        self.gestures.clear();
         if self.requests.restart.load(Ordering::Acquire) || !self.active {
             if self.processing {
                 // SAFETY: audio thread, processing
@@ -852,10 +858,19 @@ impl Instance {
             self.remember(id, v);
         }
         self.pending.clear();
-        while let Ok((id, v)) = self.edits.pop() {
-            self.in_changes.add(id, 0, v);
-            if self.changes.len() < self.changes.capacity() {
-                self.changes.push((id, v));
+        while let Ok(edit) = self.edits.pop() {
+            match edit {
+                Edit::Set(id, v) => {
+                    self.in_changes.add(id, 0, v);
+                    if self.changes.len() < self.changes.capacity() {
+                        self.changes.push((id, v));
+                    }
+                }
+                Edit::Begin(id) | Edit::End(id) => {
+                    if self.gestures.len() < self.gestures.capacity() {
+                        self.gestures.push((id, matches!(edit, Edit::Begin(_))));
+                    }
+                }
             }
         }
         for e in events.iter().take(MAX_EVENTS) {
@@ -985,6 +1000,12 @@ impl Instance {
         &self.changes
     }
 
+    /// The gesture edges the plugin's window made in the last block: (parameter id, `true` begin / `false` end), in
+    /// order (a drag is begin, its changes in [`Instance::changes`], end)
+    pub fn gestures(&self) -> &[(u32, bool)] {
+        &self.gestures
+    }
+
     /// The plugin said its state changed since the last call
     pub fn take_state_dirty(&self) -> bool {
         self.requests.dirty.swap(false, Ordering::AcqRel)
@@ -1078,8 +1099,104 @@ impl Instance {
     }
 }
 
+/// The editor view attached to a window, and the frame it was given
+struct Editor {
+    view: ComPtr<IPlugView>,
+    frame: ComWrapper<Frame>,
+    /// Keeps the frame's interface alive as long as the view may hold it
+    _frame_ptr: ComPtr<IPlugFrame>,
+}
+
+fn rect_size(r: &ViewRect) -> (u32, u32) {
+    (r.right.saturating_sub(r.left).max(1) as u32, r.bottom.saturating_sub(r.top).max(1) as u32)
+}
+
+impl Instance {
+    /// Makes the plugin's editor view and attaches it to a native window (`parent`: the content `NSView` with
+    /// `api` `"cocoa"`, an X11 window id with `"x11"`); returns the view's size. Main thread. An editor already
+    /// open is closed first
+    pub fn editor_open(&mut self, parent: usize, api: &str) -> Result<(u32, u32)> {
+        self.editor_close();
+        let c = self.controller.as_ref().ok_or_else(|| err("vst3.editor.none"))?;
+        let kind: FIDString = match api {
+            "cocoa" => kPlatformTypeNSView,
+            "x11" => kPlatformTypeX11EmbedWindowID,
+            _ => return Err(err("vst3.editor.platform")),
+        };
+        // SAFETY: main thread; `createView` returns a new reference (or null)
+        let raw = unsafe { c.createView(c"editor".as_ptr()) };
+        // SAFETY: the new reference `createView` gave, owned from here
+        let view = unsafe { ComPtr::from_raw(raw) }.ok_or_else(|| err("vst3.editor.none"))?;
+        // SAFETY: main thread, a platform type constant
+        if !ok(unsafe { view.isPlatformTypeSupported(kind) }) {
+            return Err(err("vst3.editor.platform"));
+        }
+        let frame = ComWrapper::new(Frame::default());
+        let frame_ptr = frame.to_com_ptr::<IPlugFrame>().ok_or_else(|| err("vst3.editor.frame"))?;
+        // SAFETY: main thread; the frame lives in `Editor` until the view is removed
+        unsafe { view.setFrame(frame_ptr.as_ptr()) };
+        // SAFETY: main thread; `parent` is a live native window of the right kind
+        if !ok(unsafe { view.attached(parent as *mut c_void, kind) }) {
+            // SAFETY: the frame is dropped right after
+            unsafe { view.setFrame(ptr::null_mut()) };
+            return Err(err("vst3.editor.attach"));
+        }
+        let mut rect = ViewRect { left: 0, top: 0, right: 0, bottom: 0 };
+        // SAFETY: main thread, attached; a rect to fill
+        let size = if ok(unsafe { view.getSize(&mut rect) }) { rect_size(&rect) } else { (640, 480) };
+        self.editor = Some(Editor { view, frame, _frame_ptr: frame_ptr });
+        Ok(size)
+    }
+
+    /// Detaches and drops the editor view (main thread); nothing when none is open
+    pub fn editor_close(&mut self) {
+        if let Some(e) = self.editor.take() {
+            // SAFETY: main thread; the view is detached, then forgets its frame
+            unsafe {
+                e.view.removed();
+                e.view.setFrame(ptr::null_mut());
+            }
+        }
+    }
+
+    pub fn editor_is_open(&self) -> bool {
+        self.editor.is_some()
+    }
+
+    /// The window was resized by the user or the helper: the view is told, and answers the size it takes (main
+    /// thread). A view that cannot resize keeps its own size, which is returned
+    pub fn editor_resize(&mut self, width: u32, height: u32) -> Option<(u32, u32)> {
+        let e = self.editor.as_ref()?;
+        let mut rect = ViewRect { left: 0, top: 0, right: width as i32, bottom: height as i32 };
+        // SAFETY: main thread, attached
+        unsafe {
+            if e.view.canResize() == kResultTrue {
+                e.view.checkSizeConstraint(&mut rect);
+                e.view.onSize(&mut rect);
+            } else {
+                e.view.getSize(&mut rect);
+            }
+        }
+        Some(rect_size(&rect))
+    }
+
+    /// The size the plugin's view asked for by itself (`resizeView`), once (main thread)
+    pub fn take_editor_resize(&mut self) -> Option<(u32, u32)> {
+        self.editor.as_ref()?.frame.resize.take()
+    }
+
+    /// The view's own event loop (Linux plugins ask the host for timers and file descriptors): run it from the main
+    /// thread's loop, every few milliseconds
+    pub fn editor_tick(&mut self) {
+        if let Some(e) = &self.editor {
+            e.frame.tick();
+        }
+    }
+}
+
 impl Drop for Instance {
     fn drop(&mut self) {
+        self.editor_close();
         if self.processing {
             // SAFETY: no other thread uses the instance any more
             unsafe { self.processor.setProcessing(0) };

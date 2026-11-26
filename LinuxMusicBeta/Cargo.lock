@@ -3695,6 +3695,7 @@ dependencies = [
  "lm-session",
  "lm-state",
  "lm-sys-clap",
+ "lm-sys-gui",
  "lm-sys-ipc",
  "lm-sys-ladspa",
  "lm-sys-lilv",
@@ -4016,6 +4017,14 @@ name = "lm-sys-gig"
 version = "0.1.0"
 dependencies = [
  "cc",
+ "lm-base",
+]
+
+[[package]]
+name = "lm-sys-gui"
+version = "0.1.0"
+dependencies = [
+ "libc",
  "lm-base",
 ]
 

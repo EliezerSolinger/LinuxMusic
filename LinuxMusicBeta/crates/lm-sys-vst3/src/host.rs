@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use vst3::Steinberg::Vst::*;
 use vst3::Steinberg::*;
-use vst3::{Class, ComPtr, ComWrapper, Interface};
+use vst3::{Class, ComPtr, ComRef, ComWrapper, Interface};
 
 /// An interface id as a TUID (the same 16 bytes)
 pub(crate) fn tuid(g: &[u8; 16]) -> TUID {
@@ -266,10 +266,18 @@ pub(crate) struct Requests {
     pub dirty: AtomicBool,
 }
 
+/// One step of the controller's own editing (its window): a gesture is `Begin`, any number of `Set`, `End`
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Edit {
+    Begin(ParamID),
+    Set(ParamID, f64),
+    End(ParamID),
+}
+
 pub(crate) struct Handler {
     pub requests: std::sync::Arc<Requests>,
     /// The controller's own edits (its window): to the processor at the next block, and to the core
-    pub edits: Mutex<rtrb::Producer<(ParamID, f64)>>,
+    pub edits: Mutex<rtrb::Producer<Edit>>,
 }
 
 impl Class for Handler {
@@ -277,17 +285,21 @@ impl Class for Handler {
 }
 
 impl IComponentHandlerTrait for Handler {
-    unsafe fn beginEdit(&self, _id: ParamID) -> tresult {
+    unsafe fn beginEdit(&self, id: ParamID) -> tresult {
+        let mut p = self.edits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = p.push(Edit::Begin(id));
         kResultOk
     }
 
     unsafe fn performEdit(&self, id: ParamID, value: ParamValue) -> tresult {
         let mut p = self.edits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _ = p.push((id, value));
+        let _ = p.push(Edit::Set(id, value));
         kResultOk
     }
 
-    unsafe fn endEdit(&self, _id: ParamID) -> tresult {
+    unsafe fn endEdit(&self, id: ParamID) -> tresult {
+        let mut p = self.edits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = p.push(Edit::End(id));
         kResultOk
     }
 
@@ -587,5 +599,111 @@ impl IBStreamTrait for Stream {
 impl Stream {
     pub fn new(data: Vec<u8>) -> ComWrapper<Stream> {
         ComWrapper::new(Stream { data: RefCell::new(data), at: Cell::new(0) })
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The editor's frame: the host side of a plugin's window (resize requests; on Linux also the run loop it needs)
+
+struct Timer {
+    handler: ComPtr<Linux::ITimerHandler>,
+    every: std::time::Duration,
+    next: std::time::Instant,
+}
+
+/// What the plugin's view calls on the host. Main thread only (VST3's UI thread): plain cells, no locks
+#[derive(Default)]
+pub(crate) struct Frame {
+    /// The size the view asked for (`resizeView`), taken by the helper's loop
+    pub resize: Cell<Option<(u32, u32)>>,
+    handlers: RefCell<Vec<(ComPtr<Linux::IEventHandler>, i32)>>,
+    timers: RefCell<Vec<Timer>>,
+}
+
+impl Class for Frame {
+    type Interfaces = (IPlugFrame, Linux::IRunLoop);
+}
+
+impl IPlugFrameTrait for Frame {
+    unsafe fn resizeView(&self, _view: *mut IPlugView, new_size: *mut ViewRect) -> tresult {
+        if new_size.is_null() {
+            return kInvalidArgument;
+        }
+        // SAFETY: the view's rect, valid for the call
+        let r = unsafe { *new_size };
+        let (w, h) = (r.right.saturating_sub(r.left), r.bottom.saturating_sub(r.top));
+        self.resize.set(Some((w.max(1) as u32, h.max(1) as u32)));
+        kResultOk
+    }
+}
+
+impl Linux::IRunLoopTrait for Frame {
+    unsafe fn registerEventHandler(&self, handler: *mut Linux::IEventHandler, fd: Linux::FileDescriptor) -> tresult {
+        // SAFETY: the plugin's handler, valid for the call; `to_com_ptr` takes our own reference
+        let Some(h) = (unsafe { ComRef::from_raw(handler) }) else { return kInvalidArgument };
+        self.handlers.borrow_mut().push((h.to_com_ptr(), fd));
+        kResultOk
+    }
+
+    unsafe fn unregisterEventHandler(&self, handler: *mut Linux::IEventHandler) -> tresult {
+        self.handlers.borrow_mut().retain(|(h, _)| h.as_ptr() != handler);
+        kResultOk
+    }
+
+    unsafe fn registerTimer(&self, handler: *mut Linux::ITimerHandler, milliseconds: Linux::TimerInterval) -> tresult {
+        // SAFETY: the plugin's handler, valid for the call; `to_com_ptr` takes our own reference
+        let Some(h) = (unsafe { ComRef::from_raw(handler) }) else { return kInvalidArgument };
+        let every = std::time::Duration::from_millis(milliseconds.max(1));
+        self.timers.borrow_mut().push(Timer {
+            handler: h.to_com_ptr(),
+            every,
+            next: std::time::Instant::now() + every,
+        });
+        kResultOk
+    }
+
+    unsafe fn unregisterTimer(&self, handler: *mut Linux::ITimerHandler) -> tresult {
+        self.timers.borrow_mut().retain(|t| t.handler.as_ptr() != handler);
+        kResultOk
+    }
+}
+
+impl Frame {
+    /// The plugin's own event loop, run by the helper's main thread: the file descriptors that are readable and the
+    /// timers that are due get their callbacks (copies of the lists are walked, so a callback may register or
+    /// unregister)
+    pub(crate) fn tick(&self) {
+        use Linux::{IEventHandlerTrait, ITimerHandlerTrait};
+        let handlers: Vec<(ComPtr<Linux::IEventHandler>, i32)> =
+            self.handlers.borrow().iter().map(|(h, fd)| (h.clone(), *fd)).collect();
+        if !handlers.is_empty() {
+            let mut fds: Vec<libc::pollfd> =
+                handlers.iter().map(|(_, fd)| libc::pollfd { fd: *fd, events: libc::POLLIN, revents: 0 }).collect();
+            // SAFETY: `fds` is a valid array of its length
+            let n = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, 0) };
+            if n > 0 {
+                for ((h, fd), p) in handlers.iter().zip(&fds) {
+                    if p.revents & (libc::POLLIN | libc::POLLERR | libc::POLLHUP) != 0 {
+                        // SAFETY: the plugin's handler, kept alive by our reference; the main thread
+                        unsafe { h.onFDIsSet(*fd) };
+                    }
+                }
+            }
+        }
+        let now = std::time::Instant::now();
+        let due: Vec<ComPtr<Linux::ITimerHandler>> = self
+            .timers
+            .borrow_mut()
+            .iter_mut()
+            .filter(|t| now >= t.next)
+            .map(|t| {
+                t.next = now + t.every;
+                t.handler.clone()
+            })
+            .collect();
+        for h in due {
+            // SAFETY: the plugin's handler, kept alive by our reference; the main thread
+            unsafe { h.onTimer() };
+        }
     }
 }

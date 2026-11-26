@@ -16,7 +16,7 @@ use lm_base::{Error, Result};
 use lm_render::{EventKind, Expression};
 use lm_sys_vst3::{Event, Instance, MAX_EVENTS, Module};
 
-use crate::backend::{Listed, Param, Plugin, Transport};
+use crate::backend::{Listed, Param, Plugin, Transport, WindowRequest, WindowState};
 use crate::expressions::{Expressions, Note, sort_by_time};
 
 /// The `.vst3` files under the given folders and the system's
@@ -99,6 +99,9 @@ pub struct Vst3 {
     params: Vec<Param>,
     events: Vec<Event>,
     notes: Expressions,
+    /// The native window the editor view is attached to, while it is shown
+    window: Option<lm_sys_gui::Window>,
+    title: String,
 }
 
 fn note_id(note: u32) -> i32 {
@@ -141,7 +144,44 @@ impl Vst3 {
             .ok_or_else(|| Error::new("plugin_host.not_found").arg("uri", uri))?;
         let inst = Instance::new(&module, uri, f64::from(rate), u32::try_from(max_block).unwrap_or(u32::MAX))?;
         let (ids, params) = params_of(&inst);
-        Ok(Vst3 { inst, ids, params, events: Vec::with_capacity(MAX_EVENTS), notes: Expressions::new() })
+        let title = module.classes().into_iter().find(|c| c.cid == uri).map_or_else(|| uri.to_owned(), |c| c.name);
+        Ok(Vst3 {
+            inst,
+            ids,
+            params,
+            events: Vec::with_capacity(MAX_EVENTS),
+            notes: Expressions::new(),
+            window: None,
+            title,
+        })
+    }
+
+    /// Shows the editor: a native window made here, the view attached to it
+    fn show(&mut self) -> Result<WindowState> {
+        if let Some(w) = &mut self.window {
+            w.show();
+            return Ok(WindowState::open(None));
+        }
+        if !self.inst.has_editor() {
+            return Ok(WindowState::none("vst3.editor.none"));
+        }
+        if lm_sys_gui::init().is_err() {
+            return Ok(WindowState::none("gui.unsupported"));
+        }
+        let mut window = lm_sys_gui::Window::new(&self.title, 640, 480)?;
+        let size = match self.inst.editor_open(window.handle(), lm_sys_gui::api()) {
+            Ok(size) => size,
+            Err(e) => return Ok(WindowState::none(e.key())),
+        };
+        window.set_size(size.0, size.1);
+        window.show();
+        self.window = Some(window);
+        Ok(WindowState::open(Some(size)))
+    }
+
+    fn close(&mut self) {
+        self.inst.editor_close();
+        self.window = None;
     }
 }
 
@@ -230,8 +270,55 @@ impl Plugin for Vst3 {
         self.inst.load_state(chunk)
     }
 
+    fn window(&mut self, request: WindowRequest) -> Result<WindowState> {
+        match request {
+            WindowRequest::Show => self.show(),
+            WindowRequest::Hide => {
+                self.close();
+                Ok(WindowState::closed())
+            }
+            WindowRequest::Resize(w, h) => {
+                let Some(window) = &mut self.window else { return Ok(WindowState::closed()) };
+                window.set_size(w, h);
+                let size = self.inst.editor_resize(w, h);
+                if let Some((w, h)) = size {
+                    window.set_size(w, h);
+                }
+                Ok(WindowState::open(size))
+            }
+        }
+    }
+
+    fn window_closed(&mut self) -> bool {
+        let closed = self.window.as_mut().is_some_and(lm_sys_gui::Window::take_closed);
+        if closed {
+            self.close();
+        }
+        closed
+    }
+
     fn idle(&mut self) {
         self.inst.idle();
+        if self.window.is_some() {
+            self.inst.editor_tick();
+            // The view asked for another size: the window follows, and the view is told it was given
+            if let Some((w, h)) = self.inst.take_editor_resize()
+                && let Some(window) = &mut self.window
+            {
+                window.set_size(w, h);
+                self.inst.editor_resize(w, h);
+            }
+        }
+    }
+
+    fn gestures(&mut self, out: &mut Vec<(u32, bool)>) {
+        for (id, begin) in self.inst.gestures() {
+            if let Some(i) = self.ids.iter().position(|x| x == id)
+                && out.len() < out.capacity()
+            {
+                out.push((i as u32, *begin));
+            }
+        }
     }
 
     fn state_changed(&mut self) -> bool {

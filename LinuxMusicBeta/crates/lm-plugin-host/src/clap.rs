@@ -16,7 +16,7 @@ use lm_base::{Error, Result};
 use lm_render::{EventKind, Expression};
 use lm_sys_clap::{Event, Instance, Library, MAX_EVENTS};
 
-use crate::backend::{Listed, Param, Plugin, Transport};
+use crate::backend::{Listed, Param, Plugin, Transport, WindowRequest, WindowState};
 use crate::expressions::{Expressions, Note, sort_by_time};
 
 /// The `.clap` files under the given folders and the system's (`CLAP_PATH`, the user's, the system's)
@@ -101,6 +101,17 @@ pub struct Clap {
     params: Vec<Param>,
     events: Vec<Event>,
     notes: Expressions,
+    gui: Gui,
+    title: String,
+}
+
+/// The plugin's window as the helper holds it
+enum Gui {
+    None,
+    /// The plugin made its own top-level window
+    Floating,
+    /// The plugin's gui is embedded in a window made here
+    Embedded(lm_sys_gui::Window),
 }
 
 fn clap_id(note: u32) -> i32 {
@@ -136,7 +147,68 @@ impl Clap {
             .ok_or_else(|| Error::new("plugin_host.not_found").arg("uri", uri))?;
         let inst = Instance::new(&lib, uri, f64::from(rate), u32::try_from(max_block).unwrap_or(u32::MAX))?;
         let (ids, params) = params_of(&inst);
-        Ok(Clap { inst, ids, params, events: Vec::with_capacity(MAX_EVENTS), notes: Expressions::new() })
+        let title = lib.descriptors().into_iter().find(|d| d.id == uri).map_or_else(|| uri.to_owned(), |d| d.name);
+        Ok(Clap {
+            inst,
+            ids,
+            params,
+            events: Vec::with_capacity(MAX_EVENTS),
+            notes: Expressions::new(),
+            gui: Gui::None,
+            title,
+        })
+    }
+
+    /// Shows the plugin's window: its own floating one when it can make one with the window system, otherwise its gui
+    /// embedded in a window made here
+    fn show(&mut self) -> Result<WindowState> {
+        if let Gui::Embedded(w) = &mut self.gui {
+            w.show();
+            return Ok(WindowState::open(None));
+        }
+        if matches!(self.gui, Gui::Floating) {
+            return Ok(WindowState::open(None));
+        }
+        if !self.inst.has_gui() {
+            return Ok(WindowState::none("clap.gui.none"));
+        }
+        if lm_sys_gui::init().is_err() {
+            return Ok(WindowState::none("gui.unsupported"));
+        }
+        let api = lm_sys_gui::api();
+        if self.inst.gui_supported(api, true) {
+            self.inst.gui_open(api, &self.title)?;
+            self.inst.take_gui_closed();
+            self.gui = Gui::Floating;
+            return Ok(WindowState::open(self.inst.gui_size()));
+        }
+        if self.inst.gui_supported(api, false) {
+            let mut window = lm_sys_gui::Window::new(&self.title, 640, 480)?;
+            let size = match self.inst.gui_open_embedded(api, window.handle()) {
+                Ok(size) => size,
+                Err(e) => return Ok(WindowState::none(e.key())),
+            };
+            window.set_size(size.0, size.1);
+            window.show();
+            self.gui = Gui::Embedded(window);
+            return Ok(WindowState::open(Some(size)));
+        }
+        Ok(WindowState::none("clap.gui.api"))
+    }
+
+    fn close(&mut self) {
+        if !matches!(self.gui, Gui::None) {
+            self.inst.gui_close();
+            self.inst.take_gui_closed();
+        }
+        self.gui = Gui::None;
+    }
+}
+
+impl Drop for Clap {
+    fn drop(&mut self) {
+        // The window goes before the plugin does
+        self.close();
     }
 }
 
@@ -230,8 +302,50 @@ impl Plugin for Clap {
         self.inst.load_state(chunk)
     }
 
+    fn window(&mut self, request: WindowRequest) -> Result<WindowState> {
+        match request {
+            WindowRequest::Show => self.show(),
+            WindowRequest::Hide => {
+                self.close();
+                Ok(WindowState::closed())
+            }
+            WindowRequest::Resize(w, h) => {
+                if matches!(self.gui, Gui::None) {
+                    return Ok(WindowState::closed());
+                }
+                if let Gui::Embedded(window) = &mut self.gui {
+                    window.set_size(w, h);
+                }
+                let size = self.inst.gui_resize(w, h);
+                if let (Gui::Embedded(window), Some((w, h))) = (&mut self.gui, size) {
+                    window.set_size(w, h);
+                }
+                Ok(WindowState::open(size))
+            }
+        }
+    }
+
+    fn window_closed(&mut self) -> bool {
+        let closed = match &mut self.gui {
+            Gui::None => false,
+            Gui::Floating => self.inst.take_gui_closed(),
+            Gui::Embedded(w) => w.take_closed(),
+        };
+        if closed {
+            self.close();
+        }
+        closed
+    }
+
     fn idle(&mut self) {
         self.inst.idle();
+        // An embedded gui asked for another size: the window follows
+        if let Some((w, h)) = self.inst.take_gui_resize()
+            && let Gui::Embedded(window) = &mut self.gui
+        {
+            window.set_size(w, h);
+            self.inst.gui_resize(w, h);
+        }
     }
 
     fn state_changed(&mut self) -> bool {

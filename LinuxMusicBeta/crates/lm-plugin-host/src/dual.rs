@@ -10,7 +10,7 @@
 use lm_base::Result;
 use lm_render::EventKind;
 
-use crate::backend::{Param, Plugin, Transport};
+use crate::backend::{Param, Plugin, Transport, WindowRequest, WindowState};
 
 /// Whether a plugin with `io` channels on a block of `inputs` × `outputs` runs as dual mono
 pub fn applies(io: Option<(usize, usize)>, inputs: usize, outputs: usize) -> bool {
@@ -79,8 +79,16 @@ impl Plugin for Spread {
         self.inner.restore(chunk)
     }
 
-    fn window(&mut self, on: bool) -> Result<bool> {
-        self.inner.window(on)
+    fn window(&mut self, request: WindowRequest) -> Result<WindowState> {
+        self.inner.window(request)
+    }
+
+    fn window_closed(&mut self) -> bool {
+        self.inner.window_closed()
+    }
+
+    fn gestures(&mut self, out: &mut Vec<(u32, bool)>) {
+        self.inner.gestures(out);
     }
 
     fn idle(&mut self) {
@@ -164,8 +172,16 @@ impl Plugin for DualMono {
         self.right.restore(chunk)
     }
 
-    fn window(&mut self, on: bool) -> Result<bool> {
-        self.left.window(on)
+    fn window(&mut self, request: WindowRequest) -> Result<WindowState> {
+        self.left.window(request)
+    }
+
+    fn window_closed(&mut self) -> bool {
+        self.left.window_closed()
+    }
+
+    fn gestures(&mut self, out: &mut Vec<(u32, bool)>) {
+        self.left.gestures(out);
     }
 
     fn idle(&mut self) {
