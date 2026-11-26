@@ -840,7 +840,29 @@ fn eq(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn compressor(cx: &mut TestAppContext) {
-    effect(cx, &lm_plugins_effects::compressor::DESCRIPTOR);
+    let d = &lm_plugins_effects::compressor::DESCRIPTOR;
+    let mut o = open(cx, &[(d, false)], d.id);
+    exercise(&mut o);
+    // the wheel over the bare graph changes its dB range: up lowers it by 3, down raises it, from 3 to 96
+    let graph =
+        o.panel.read_with(o.cx, |p, _| p.spec().controls.iter().position(|c| c.id == "graph")).expect("the graph");
+    let b = o.cx.debug_bounds("graph").expect("the graph is drawn");
+    let at = point(b.origin.x + px(8.0), b.origin.y + px(8.0));
+    let scroll = |o: &mut Opened<'_>, up: bool| {
+        o.cx.simulate_mouse_move(at, None, Modifiers::none());
+        o.cx.simulate_event(ScrollEvent {
+            position: at,
+            delta: ScrollDelta::Lines(point(0.0, if up { 1.0 } else { -1.0 })),
+            ..Default::default()
+        });
+        o.settle();
+    };
+    assert_eq!(o.panel.read_with(o.cx, |p, _| p.surface_zoom(graph)), 36.0, "the range starts at 36 dB");
+    scroll(&mut o, true);
+    assert_eq!(o.panel.read_with(o.cx, |p, _| p.surface_zoom(graph)), 33.0, "wheel up: 3 dB less");
+    scroll(&mut o, false);
+    scroll(&mut o, false);
+    assert_eq!(o.panel.read_with(o.cx, |p, _| p.surface_zoom(graph)), 39.0, "wheel down: 3 dB more");
 }
 
 /// Every Guitarix unit's panel, opened on the real unit's schema and exercised control by control

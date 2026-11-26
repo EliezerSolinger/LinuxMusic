@@ -308,6 +308,20 @@ pub struct SurfaceCx<'a> {
     /// surfaces of a panel (Guitarix's meters, sliders and value displays)
     pub primary: &'static str,
     pub tag: u32,
+    /// The panel-local zoom of a surface whose tag has [`SURFACE_ZOOM`] (the wheel changes it)
+    pub zoom: f32,
+    /// What the live frame was in the last seconds, newest last: (age in ms, the frame); only for a live surface
+    pub history: &'a [(f32, Vec<f32>)],
+}
+
+/// A bit of [`SurfaceSpec::tag`]: the wheel over the surface changes a panel-local zoom value (`SurfaceCx::zoom`, not
+/// saved in the plugin: the compressor's dB range). The tag's bits 0 to 7 are its first value, 8 to 15 the step and
+/// 16 to 23 the largest; the smallest is the step. Wheel up lowers it
+pub const SURFACE_ZOOM: u32 = 1 << 31;
+
+/// The first value, the step and the largest of a zoom tag
+pub fn zoom_of(tag: u32) -> (f32, f32, f32) {
+    ((tag & 0xff) as f32, ((tag >> 8) & 0xff) as f32, ((tag >> 16) & 0xff) as f32)
 }
 
 impl std::fmt::Debug for SurfaceCx<'_> {

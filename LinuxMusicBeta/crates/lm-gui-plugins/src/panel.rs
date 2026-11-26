@@ -156,6 +156,12 @@ pub enum MenuItem {
     Sync(usize),
 }
 
+/// Milliseconds since the first call (a scrolling surface is drawn again as the time passes)
+fn epoch_ms() -> u64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
+}
+
 /// The panel of one plugin node
 pub struct PluginPanel<H: PortHost> {
     host: gpui::Entity<H>,
@@ -174,6 +180,9 @@ pub struct PluginPanel<H: PortHost> {
     meters: HashMap<usize, [f32; 2]>,
     /// The wave views (surfaces with peaks): the part shown and the peaks of it, by control
     waves: HashMap<usize, WaveState>,
+    /// A live surface's frames of the last seconds, and its zoom (the wheel over a `SURFACE_ZOOM` one)
+    history: HashMap<usize, std::collections::VecDeque<(std::time::Instant, Vec<f32>)>>,
+    zooms: HashMap<usize, f32>,
     /// The last x drawn on each graph (`m_lastCursorX`, for Shift+click lines)
     graph_last_x: HashMap<usize, f32>,
     /// A non-checkable button held down shows its active image
@@ -219,6 +228,8 @@ impl<H: PortHost> PluginPanel<H> {
             overrides: HashMap::new(),
             meters: HashMap::new(),
             waves: HashMap::new(),
+            history: HashMap::new(),
+            zooms: HashMap::new(),
             graph_last_x: HashMap::new(),
             pressed: None,
             carried: None,
@@ -895,8 +906,23 @@ impl<H: PortHost> PluginPanel<H> {
             rate: self.project_rate(cx),
             primary: s.primary,
             tag: s.tag,
+            zoom: self.zoom_of_ctrl(ctrl, s.tag),
+            history: &[],
         };
         Some(f(s, &sc))
+    }
+
+    /// The panel-local zoom of a surface (its first value until the wheel changes it)
+    fn zoom_of_ctrl(&self, ctrl: usize, tag: u32) -> f32 {
+        self.zooms.get(&ctrl).copied().unwrap_or_else(|| crate::spec::zoom_of(tag).0)
+    }
+
+    /// The panel-local zoom of the surface `ctrl` now (the compressor's dB range)
+    pub fn surface_zoom(&self, ctrl: usize) -> f32 {
+        match &self.spec.controls[ctrl].kind {
+            Kind::Surface(s) => self.zoom_of_ctrl(ctrl, s.tag),
+            _ => 0.0,
+        }
     }
 
     /// The handles of a surface now, in the surface's local pixels (the tests find them here)
@@ -1485,6 +1511,21 @@ impl<H: PortHost> PluginPanel<H> {
             return;
         }
         if let Kind::Surface(s) = &self.spec.controls[ctrl].kind
+            && s.tag & crate::spec::SURFACE_ZOOM != 0
+        {
+            // a zoom of the panel's own (the compressor's dB range): up lowers it
+            let up = match ev.delta {
+                ScrollDelta::Lines(d) => d.y > 0.0,
+                ScrollDelta::Pixels(d) => d.y > px(0.),
+            };
+            let (_, step, largest) = crate::spec::zoom_of(s.tag);
+            let now = self.zoom_of_ctrl(ctrl, s.tag);
+            let next = (now + if up { -step } else { step }).clamp(step, largest.max(step));
+            self.zooms.insert(ctrl, next);
+            cx.notify();
+            return;
+        }
+        if let Kind::Surface(s) = &self.spec.controls[ctrl].kind
             && s.peaks.is_some()
         {
             // `AudioFileProcessorWaveView::wheelEvent`: up zooms out
@@ -2028,6 +2069,19 @@ impl<H: PortHost> PluginPanel<H> {
             }
             Kind::Surface(sf) => {
                 let frame = if sf.live { self.display_frame(cx) } else { Vec::new() };
+                // the frames of the last seconds, for a surface that scrolls them
+                let now = std::time::Instant::now();
+                let history: Vec<(f32, Vec<f32>)> = if sf.live && !frame.is_empty() {
+                    let h = self.history.entry(ctrl).or_default();
+                    h.push_back((now, frame.clone()));
+                    while h.front().is_some_and(|(t, _)| now.duration_since(*t) > Duration::from_secs(6)) {
+                        h.pop_front();
+                    }
+                    h.iter().map(|(t, f)| (now.duration_since(*t).as_secs_f32() * 1000.0, f.clone())).collect()
+                } else {
+                    Vec::new()
+                };
+                let zoom = self.zoom_of_ctrl(ctrl, sf.tag);
                 let peaks = self.waves.get(&ctrl).and_then(|w| w.block.clone());
                 let window = self.waves.get(&ctrl).map_or((0.0, 1.0), |w| w.window);
                 let rate = self.project_rate(cx);
@@ -2050,6 +2104,12 @@ impl<H: PortHost> PluginPanel<H> {
                     v.to_bits().hash(&mut h);
                 }
                 active.hash(&mut h);
+                zoom.to_bits().hash(&mut h);
+                if !history.is_empty() {
+                    // it scrolls with the time: a pixel is 6 ms
+                    (epoch_ms() / 6).hash(&mut h);
+                    history.len().hash(&mut h);
+                }
                 peaks.as_ref().map(|b| (b.level, b.from, b.pairs.len(), b.length)).hash(&mut h);
                 (window.0.to_bits(), window.1.to_bits()).hash(&mut h);
                 let sf = sf.clone();
@@ -2072,6 +2132,8 @@ impl<H: PortHost> PluginPanel<H> {
                             rate,
                             primary: sf.primary,
                             tag: sf.tag,
+                            zoom,
+                            history: &history,
                         };
                         (sf.draw)(cv, &sc);
                     }),

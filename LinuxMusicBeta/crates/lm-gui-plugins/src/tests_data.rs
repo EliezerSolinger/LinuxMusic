@@ -170,6 +170,8 @@ fn snapshots() {
                             rate: 48_000.0,
                             primary: sf.primary,
                             tag: sf.tag,
+                            zoom: crate::spec::zoom_of(sf.tag).0,
+                            history: &[],
                         };
                         (sf.draw)(&mut one, &sc);
                     }

@@ -8,8 +8,9 @@
 //!
 //! The transfer view draws the threshold, ratio (infinite as a limiter) and knee exactly as `redrawKnee`, with the
 //! part up to the present input level (from the plugin's live frame) in full color, and the dotted threshold lines.
-//! Not in the panel: the scrolling history of the input, output and gain reduction (it needs a history the panel
-//! does not keep yet), the wheel that changes the dB range, and the double click that hides the controls.
+//! The scrolling history of the input, output and gain reduction is drawn from the panel's frames of the last seconds,
+//! and the wheel over the graph changes the dB range (3 to 96, in steps of 3). Not in the panel: the double click that
+//! hides the controls.
 
 use std::sync::LazyLock;
 
@@ -95,15 +96,15 @@ const H: f32 = 560.0;
 /// The controls box's corner
 const BX: f32 = 40.0;
 const BY: f32 = 240.0;
-const DB_RANGE: f32 = 36.0;
 const GRID: f32 = 3.0;
 
-fn y_of(db: f32) -> f32 {
-    -db / DB_RANGE * H
+/// The level's row for a dB range (36 at the start; the wheel changes it by 3, from 3 to 96)
+fn y_of(db: f32, range: f32) -> f32 {
+    -db / range * H
 }
 
-fn x_of(db: f32) -> f32 {
-    H - y_of(db)
+fn x_of(db: f32, range: f32) -> f32 {
+    H - y_of(db, range)
 }
 
 fn dotted(c: &mut Canvas, a: (f32, f32), b: (f32, f32), paint: &Paint) {
@@ -138,12 +139,54 @@ fn seg(c: &mut Canvas, a: (f32, f32), b: (f32, f32), color: Rgba, until: Option<
     c.line(a, b, 3.0, Cap::Flat, &Paint::Solid(color));
 }
 
+/// The scrolling history (`drawVisPixmap`): the input level as a line over a faint area, the output (the input plus the
+/// gain reduction, in pixels) the same, and the gain reduction in 2 pixels of red from the top; a pixel is 6 ms
+/// (`COMP_MILLI_PER_PIXEL`), the newest at the right edge. The frame is the input peaks, the output peaks and the gains
+fn history(c: &mut Canvas, cx: &SurfaceCx<'_>, range: f32) {
+    let ys = |f: &[f32]| -> (f32, f32) {
+        let avg = |a: f32, b: f32| (a + b) / 2.0;
+        let db = |v: f32| 20.0 * v.max(1.0e-6).log10();
+        let input = y_of(db(avg(f.first().copied().unwrap_or(0.0), f.get(1).copied().unwrap_or(0.0))), range);
+        let gain = y_of(db(avg(f.get(4).copied().unwrap_or(1.0), f.get(5).copied().unwrap_or(1.0))), range);
+        (input.clamp(0.0, H), gain)
+    };
+    let mut last: Option<(f32, (f32, f32))> = None;
+    for (age, frame) in cx.history {
+        let x = W - age / 6.0;
+        let (y, g) = ys(frame);
+        if let Some((lx, (ly, lg))) = last {
+            let (x0, x1) = (lx.min(x), lx.max(x));
+            let step = |col: f32, a: f32, b: f32| a + (b - a) * ((col - lx) / (x - lx).max(0.001)).clamp(0.0, 1.0);
+            let mut col = x0.floor();
+            while col < x1 {
+                let (iy, og) = (step(col, ly, y), step(col, lg, g));
+                c.fill_rect(col, iy, 1.0, H - iy, Rgba::alpha(209, 216, 228, 17));
+                c.fill_rect(
+                    col,
+                    (iy + og).clamp(0.0, H),
+                    1.0,
+                    H - (iy + og).clamp(0.0, H),
+                    Rgba::alpha(209, 216, 228, 30),
+                );
+                col += 1.0;
+            }
+            let pen = |a: u8| Paint::Solid(Rgba::alpha(209, 216, 228, a));
+            c.line((lx, ly), (x, y), 1.0, Cap::Flat, &pen(100));
+            c.line((lx, (ly + lg).clamp(0.0, H)), (x, (y + g).clamp(0.0, H)), 1.0, Cap::Flat, &pen(240));
+            c.line((lx, lg), (x, g), 2.0, Cap::Flat, &Paint::Solid(Rgba::alpha(180, 100, 100, 210)));
+        }
+        last = Some((x, (y, g)));
+    }
+}
+
 fn draw(c: &mut Canvas, cx: &SurfaceCx<'_>) {
+    let range = cx.zoom;
+    history(c, cx, range);
     let grid = Paint::Solid(Rgba::alpha(209, 216, 228, 50));
     let mut i = 0.0;
-    while i < DB_RANGE / GRID + 1.0 {
+    while i < range / GRID + 1.0 {
         let db = -GRID * i;
-        let (y, x) = (y_of(db).round(), x_of(db).round());
+        let (y, x) = (y_of(db, range).round(), x_of(db, range).round());
         c.line((0.0, y + 0.5), (W, y + 0.5), 1.0, Cap::Flat, &grid);
         c.line((x + 0.5, 0.0), (x + 0.5, H), 1.0, Cap::Flat, &grid);
         i += 1.0;
@@ -158,13 +201,13 @@ fn draw(c: &mut Canvas, cx: &SurfaceCx<'_>) {
     let rp = thr + (-thr * ratio);
     // the input level now, the louder side, for the part of the curve that is lit
     let level = cx.live(0, 0.0).max(cx.live(1, 0.0));
-    let lit = (level > 0.0).then(|| x_of(20.0 * level.log10()));
+    let lit = (level > 0.0).then(|| x_of(20.0 * level.log10(), range));
     let green = Rgba::rgb(39, 171, 95);
     let teal = Rgba::rgb(9, 171, 160);
     let dim = |col: Rgba| Rgba { a: 0.25, ..col };
-    let mut lines: Vec<((f32, f32), (f32, f32), Rgba)> = vec![((0.0, H), (x_of(k1), y_of(k1)), green)];
-    if x_of(k2x) < H {
-        lines.push(((x_of(k2x), y_of(k2y)), (H, y_of(rp)), green));
+    let mut lines: Vec<((f32, f32), (f32, f32), Rgba)> = vec![((0.0, H), (x_of(k1, range), y_of(k1, range)), green)];
+    if x_of(k2x, range) < H {
+        lines.push(((x_of(k2x, range), y_of(k2y, range)), (H, y_of(rp, range)), green));
     }
     if knee > 0.0 {
         let mut prev = (k1, k1);
@@ -172,7 +215,7 @@ fn draw(c: &mut Canvas, cx: &SurfaceCx<'_>) {
             let nx = k1 + (k2x - k1) * (n + 1) as f32 / 20.0;
             let t = nx - thr + knee;
             let ny = nx + (ratio - 1.0) * t * t / (4.0 * knee);
-            lines.push(((x_of(prev.0), y_of(prev.1)), (x_of(nx), y_of(ny)), teal));
+            lines.push(((x_of(prev.0, range), y_of(prev.1, range)), (x_of(nx, range), y_of(ny, range)), teal));
             prev = (nx, ny);
         }
     }
@@ -183,18 +226,19 @@ fn draw(c: &mut Canvas, cx: &SurfaceCx<'_>) {
         }
     }
     let thresh = Paint::Solid(Rgba::alpha(39, 171, 95, 100));
-    dotted(c, (0.0, y_of(thr)), (W, y_of(thr)), &thresh);
-    dotted(c, (H - y_of(thr), 0.0), (H - y_of(thr), H), &thresh);
+    dotted(c, (0.0, y_of(thr, range)), (W, y_of(thr, range)), &thresh);
+    dotted(c, (H - y_of(thr, range), 0.0), (H - y_of(thr, range), H), &thresh);
 }
 
-fn texts(_cx: &SurfaceCx<'_>) -> Vec<SurfText> {
+fn texts(cx: &SurfaceCx<'_>) -> Vec<SurfText> {
+    let range = cx.zoom;
     let mut out = Vec::new();
     let mut i = 0.0;
-    while i < DB_RANGE / GRID + 1.0 {
+    while i < range / GRID + 1.0 {
         let t = crate::widgets::qt_number(f64::from(-GRID * i));
         out.push(SurfText {
             x: W - 4.0 - 7.0 * t.len() as f32,
-            y: y_of(-GRID * i) + 24.0,
+            y: y_of(-GRID * i, range) + 24.0,
             px: 12.0,
             text: t,
             color: 0x2f3134,
@@ -275,8 +319,8 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             wheel: false,
             wheel_edit: None,
             peaks: None,
-
-            tag: 0,
+            // the dB range: 36 at first, 3 dB a notch, from 3 to 96
+            tag: crate::spec::SURFACE_ZOOM | 36 | (3 << 8) | (96 << 16),
         },
         "graph",
         0.0,
