@@ -58,15 +58,8 @@ impl std::fmt::Debug for LocalPort {
 
 /// An id for a browser entry: stable for its page and path
 fn entry_id(page: BrowsePage, key: &str) -> EntryId {
-    let mut h = blake3::Hasher::new();
-    h.update(format!("{page:?}").as_bytes());
-    h.update(key.as_bytes());
-    let mut b = [0u8; 8];
-    b.copy_from_slice(&h.finalize().as_bytes()[..8]);
-    EntryId(u64::from_le_bytes(b) >> 1)
+    crate::index::entry_id(page, key)
 }
-
-const AUDIO_EXTENSIONS: [&str; 7] = ["wav", "flac", "ogg", "mp3", "aif", "aiff", "rf64"];
 
 fn kind_of(path: &Path) -> EntryKind {
     if path.is_dir() {
@@ -75,14 +68,20 @@ fn kind_of(path: &Path) -> EntryKind {
         }
         return EntryKind::Folder;
     }
-    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-    if AUDIO_EXTENSIONS.contains(&ext.as_str()) {
-        EntryKind::Audio
-    } else if ext == "mid" || ext == "midi" {
-        EntryKind::Midi
-    } else {
-        EntryKind::Other
-    }
+    crate::browser::file_type(path).map_or(EntryKind::Other, |t| t.kind)
+}
+
+fn page_named(name: &str) -> Option<BrowsePage> {
+    Some(match name {
+        "Instruments" => BrowsePage::Instruments,
+        "Effects" => BrowsePage::Effects,
+        "Samples" => BrowsePage::Samples,
+        "Presets" => BrowsePage::Presets,
+        "Projects" => BrowsePage::Projects,
+        "ProjectFiles" => BrowsePage::ProjectFiles,
+        "Favorites" => BrowsePage::Favorites,
+        _ => return None,
+    })
 }
 
 /// The entries of a folder (on a worker)
@@ -92,6 +91,7 @@ fn list_folder(
     parent: Option<EntryId>,
     hidden: bool,
     favorites: &[String],
+    factory: bool,
 ) -> Vec<(BrowseEntry, PathBuf)> {
     let mut out = Vec::new();
     let Ok(read) = std::fs::read_dir(dir) else { return out };
@@ -104,7 +104,8 @@ fn list_folder(
             continue;
         }
         let kind = kind_of(&path);
-        if page == BrowsePage::Samples && !matches!(kind, EntryKind::Folder | EntryKind::Audio) {
+        let file_type = crate::browser::file_type(&path);
+        if page == BrowsePage::Samples && kind != EntryKind::Folder && !file_type.is_some_and(|t| t.sample) {
             continue;
         }
         if page == BrowsePage::Projects && !matches!(kind, EntryKind::Folder | EntryKind::Project) {
@@ -118,10 +119,16 @@ fn list_folder(
                 parent,
                 name: Arc::from(name.as_str()),
                 kind,
-                factory: false,
+                factory,
                 hidden: is_hidden,
                 favorite: favorites.contains(&text),
-                info: Value::object([("path", Value::text(text)), ("bytes", Value::int(size as i64))]),
+                info: {
+                    let info = Value::object([("path", Value::text(text)), ("bytes", Value::int(size as i64))]);
+                    match file_type {
+                        Some(t) => info.with("type", Value::text(t.name)),
+                        None => info,
+                    }
+                },
             },
             path,
         ));
@@ -130,7 +137,7 @@ fn list_folder(
 }
 
 /// The user's presets: `<dir>/<plugin>/<name>.json`, one entry each with its plugin in `info.plugin`
-fn preset_entries(dir: &Path) -> Vec<(BrowseEntry, Option<PathBuf>)> {
+fn preset_entries(dir: &Path, factory: bool) -> Vec<(BrowseEntry, Option<PathBuf>)> {
     let mut found = Vec::new();
     for plugin in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let plugin_dir = plugin.path();
@@ -155,7 +162,7 @@ fn preset_entries(dir: &Path) -> Vec<(BrowseEntry, Option<PathBuf>)> {
                     parent: None,
                     name: Arc::from(name.as_str()),
                     kind: EntryKind::Preset,
-                    factory: false,
+                    factory,
                     hidden: false,
                     favorite: false,
                     info: Value::object([("path", Value::text(text)), ("plugin", Value::text(plugin))]),
@@ -276,90 +283,253 @@ impl LocalPort {
             .unwrap_or_default()
     }
 
+    /// A folder entry on the disk, with the factory folders listed with it
+    fn folder_entry(
+        page: BrowsePage,
+        name: &str,
+        path: PathBuf,
+        factory: bool,
+        extra: &[PathBuf],
+    ) -> (BrowseEntry, Option<PathBuf>) {
+        let text = path.display().to_string();
+        let mut info = Value::object([("path", Value::text(text.as_str()))]);
+        if !extra.is_empty() {
+            info = info.with("extra", Value::list(extra.iter().map(|p| Value::text(p.display().to_string()))));
+        }
+        (
+            BrowseEntry {
+                id: entry_id(page, &text),
+                parent: None,
+                name: Arc::from(name),
+                kind: EntryKind::Folder,
+                factory,
+                hidden: false,
+                favorite: false,
+                info,
+            },
+            Some(path),
+        )
+    }
+
+    /// The user's folders of a page and the factory's, as one list: a factory folder joins the user's of the same
+    /// name, else it comes after them (F-BRW-002)
+    fn merged_roots(
+        page: BrowsePage,
+        user: Vec<(String, PathBuf)>,
+        factory: Vec<PathBuf>,
+        factory_name: &str,
+    ) -> Vec<(BrowseEntry, Option<PathBuf>)> {
+        let mut out: Vec<(String, PathBuf, Vec<PathBuf>)> = user.into_iter().map(|(n, p)| (n, p, Vec::new())).collect();
+        let mut alone: Vec<PathBuf> = Vec::new();
+        for f in factory {
+            match out.iter_mut().find(|(n, _, _)| n == factory_name) {
+                Some(same) => same.2.push(f),
+                None => alone.push(f),
+            }
+        }
+        let mut v: Vec<_> =
+            out.into_iter().map(|(n, p, extra)| Self::folder_entry(page, &n, p, false, &extra)).collect();
+        if let Some((first, rest)) = alone.split_first() {
+            v.push(Self::folder_entry(page, factory_name, first.clone(), true, rest));
+        }
+        v
+    }
+
+    fn factory_part(&self, part: &str) -> Vec<PathBuf> {
+        crate::browser::factory_part(&crate::browser::factory_dirs(), part)
+    }
+
+    /// The user's sample folders (the preferences'), or the default one
+    fn sample_folders(&self) -> Vec<(String, PathBuf)> {
+        let prefs = self.session.preferences();
+        let projects = PathBuf::from(prefs.text(&["projectsFolder"]).unwrap_or("."));
+        let mut v: Vec<(String, PathBuf)> = prefs
+            .get(&["sampleFolders"])
+            .map(|l| l.items().filter_map(Value::as_text).map(PathBuf::from).collect::<Vec<_>>())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), p))
+            .collect();
+        if v.is_empty() {
+            v.push(("Samples".into(), projects.join("Samples")));
+        }
+        v
+    }
+
     /// The roots of a page, and the folder each lists
     fn roots(&self, page: BrowsePage) -> Vec<(BrowseEntry, Option<PathBuf>)> {
-        let folder = |name: &str, path: PathBuf, factory: bool| {
-            let text = path.display().to_string();
-            (
-                BrowseEntry {
-                    id: entry_id(page, &text),
-                    parent: None,
-                    name: Arc::from(name),
-                    kind: EntryKind::Folder,
-                    factory,
-                    hidden: false,
-                    favorite: false,
-                    info: Value::object([("path", Value::text(text))]),
-                },
-                Some(path),
-            )
-        };
         let prefs = self.session.preferences();
         let projects = PathBuf::from(prefs.text(&["projectsFolder"]).unwrap_or("."));
         match page {
-            BrowsePage::Instruments | BrowsePage::Effects => {
-                let want = if page == BrowsePage::Instruments {
-                    lm_plugin::PluginKind::Instrument
-                } else {
-                    lm_plugin::PluginKind::Effect
-                };
-                self.session
-                    .registry()
-                    .descriptors()
-                    .filter(|d| d.kind == want && !crate::deprecated::is_deprecated(d.id))
-                    .map(|d| {
-                        (
-                            BrowseEntry {
-                                id: entry_id(page, d.id),
-                                parent: None,
-                                name: Arc::from(d.name),
-                                kind: EntryKind::Plugin,
-                                factory: true,
-                                hidden: false,
-                                favorite: false,
-                                info: Value::object([
-                                    ("plugin", Value::text(d.id)),
-                                    ("category", Value::text("internal")),
-                                    ("third_party", Value::bool(false)),
-                                ]),
-                            },
-                            None,
-                        )
-                    })
-                    .collect()
-            }
+            // The categories are made by `plugin_categories`
+            BrowsePage::Instruments | BrowsePage::Effects => Vec::new(),
             BrowsePage::Samples => {
-                let mut v: Vec<_> = prefs
-                    .get(&["sampleFolders"])
-                    .map(|l| l.items().filter_map(Value::as_text).map(PathBuf::from).collect::<Vec<_>>())
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|p| {
-                        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                        folder(&name, p, false)
-                    })
-                    .collect();
-                if v.is_empty() {
-                    v.push(folder("Samples", projects.join("Samples"), false));
+                Self::merged_roots(page, self.sample_folders(), self.factory_part("samples"), "Samples")
+            }
+            BrowsePage::Projects => {
+                Self::merged_roots(page, vec![("Projects".into(), projects)], self.factory_part("projects"), "Projects")
+            }
+            BrowsePage::ProjectFiles => {
+                vec![Self::folder_entry(page, "audio", self.session.project().folder.audio(), false, &[])]
+            }
+            BrowsePage::Presets => {
+                let mut v = preset_entries(&self.session.presets_dir(), false);
+                for dir in self.factory_part("presets") {
+                    for f in preset_entries(&dir, true) {
+                        let same = |x: &(BrowseEntry, Option<PathBuf>)| {
+                            x.0.name == f.0.name && x.0.info.get("plugin") == f.0.info.get("plugin")
+                        };
+                        if !v.iter().any(same) {
+                            v.push(f);
+                        }
+                    }
                 }
                 v
             }
-            BrowsePage::Projects => vec![folder("Projects", projects, false)],
-            BrowsePage::ProjectFiles => vec![folder("audio", self.session.project().folder.audio(), false)],
-            BrowsePage::Presets => preset_entries(&self.session.presets_dir()),
             BrowsePage::Favorites => self
                 .favorites()
                 .into_iter()
                 .map(|f| {
                     let p = PathBuf::from(&f);
                     let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(f);
-                    let mut e = folder(&name, p.clone(), false);
+                    let mut e = Self::folder_entry(page, &name, p.clone(), false, &[]);
                     e.0.kind = kind_of(&p);
                     e.0.favorite = true;
                     e
                 })
                 .collect(),
         }
+    }
+
+    /// The plugins of the Instruments or Effects page by category (F-BRW-009/010): the category folders, each with
+    /// its plugins
+    fn plugin_categories(&self, page: BrowsePage) -> Vec<(BrowseEntry, Vec<BrowseEntry>)> {
+        let instrument = page == BrowsePage::Instruments;
+        let want = if instrument { lm_plugin::PluginKind::Instrument } else { lm_plugin::PluginKind::Effect };
+        let mut cats: BTreeMap<&'static str, (&'static str, Vec<BrowseEntry>)> = BTreeMap::new();
+        for d in self.session.registry().entries().filter(|d| d.kind == want && !crate::deprecated::is_deprecated(d.id))
+        {
+            let (key, label) = if d.third_party {
+                crate::browser::THIRD_PARTY_CATEGORY
+            } else {
+                crate::browser::plugin_category(d.id, instrument)
+            };
+            cats.entry(key).or_insert((label, Vec::new())).1.push(BrowseEntry {
+                id: entry_id(page, d.id),
+                parent: Some(entry_id(page, &format!("category:{key}"))),
+                name: Arc::from(d.name),
+                kind: EntryKind::Plugin,
+                factory: false,
+                hidden: false,
+                favorite: false,
+                info: Value::object([
+                    ("plugin", Value::text(d.id)),
+                    ("category", Value::text(key)),
+                    ("third_party", Value::bool(d.third_party)),
+                ]),
+            });
+        }
+        cats.into_iter()
+            .map(|(key, (label, kids))| {
+                let folder = BrowseEntry {
+                    id: entry_id(page, &format!("category:{key}")),
+                    parent: None,
+                    name: Arc::from(label),
+                    kind: EntryKind::Folder,
+                    factory: false,
+                    hidden: false,
+                    favorite: false,
+                    info: Value::object([("category", Value::text(key))]),
+                };
+                (folder, kids)
+            })
+            .collect()
+    }
+
+    /// The user's tags of files: path -> tags
+    fn user_tags(&self) -> BTreeMap<String, Vec<String>> {
+        self.session
+            .preferences()
+            .get(&["tags"])
+            .map(|o| {
+                o.entries()
+                    .map(|(p, l)| (p.to_owned(), l.items().filter_map(Value::as_text).map(str::to_owned).collect()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The SoundFont a MIDI preview is played on: the preferences' (`defaultSoundFont`), else the first of the index
+    fn default_soundfont(&self) -> Option<PathBuf> {
+        if let Some(p) = self.session.preferences().text(&["defaultSoundFont"]).filter(|p| !p.is_empty()) {
+            return Some(PathBuf::from(p));
+        }
+        let index = self.session.browser.index.lock().ok()?.clone();
+        index.items.iter().find(|i| i.ty == "soundfont").map(|i| PathBuf::from(&i.path))
+    }
+
+    /// What the index covers: the sample, project and preset folders of the user and of the factory
+    fn index_roots(&self) -> Vec<crate::index::Root> {
+        use crate::index::{Root, RootKind};
+        let prefs = self.session.preferences();
+        let projects = PathBuf::from(prefs.text(&["projectsFolder"]).unwrap_or("."));
+        let mut roots: Vec<Root> = self
+            .sample_folders()
+            .into_iter()
+            .map(|(_, dir)| Root { dir, factory: false, kind: RootKind::Files })
+            .collect();
+        roots.push(Root { dir: projects, factory: false, kind: RootKind::Files });
+        roots.push(Root { dir: self.session.presets_dir(), factory: false, kind: RootKind::Presets });
+        for dir in self.factory_part("samples").into_iter().chain(self.factory_part("projects")) {
+            roots.push(Root { dir, factory: true, kind: RootKind::Files });
+        }
+        for dir in self.factory_part("presets") {
+            roots.push(Root { dir, factory: true, kind: RootKind::Presets });
+        }
+        // The projects folder holds the samples folder and the presets: what is under another root is read once
+        let mut seen = std::collections::BTreeSet::new();
+        roots.retain(|r| seen.insert((r.dir.clone(), r.kind == RootKind::Presets)));
+        roots
+    }
+
+    /// Starts the scan of the index when there is none yet, or the last one is old (an Operation of the session:
+    /// its loading shows on `Scan(Library)`); the saved index is searchable at once
+    fn ensure_index(&mut self) {
+        use std::sync::atomic::Ordering;
+        let b = &self.session.browser;
+        if b.indexing.load(Ordering::Acquire) || b.indexed_at.is_some_and(|t| t.elapsed() < INDEX_AGE) {
+            return;
+        }
+        let roots = self.index_roots();
+        let (slot, running) = (b.index.clone(), b.indexing.clone());
+        running.store(true, Ordering::Release);
+        self.session.browser.indexed_at = Some(std::time::Instant::now());
+        let file = crate::prefs::location().with_file_name("browser-index.json");
+        let _ = self.session.start(
+            Label::new("session.browser.indexing"),
+            Target::Scan(lm_port::ScanKind::Library),
+            true,
+            "browser_index",
+            move |cancel, _| {
+                let result = (|| {
+                    let mut prev = slot.lock().map(|g| g.clone()).unwrap_or_default();
+                    if prev.built == 0 {
+                        prev = Arc::new(crate::index::Index::load(&file));
+                        if let Ok(mut g) = slot.lock() {
+                            *g = prev.clone();
+                        }
+                    }
+                    let fresh = Arc::new(crate::index::Index::scan(&roots, &prev, cancel)?);
+                    if let Ok(mut g) = slot.lock() {
+                        *g = fresh.clone();
+                    }
+                    let _ = fresh.save(&file);
+                    Ok(Value::NULL)
+                })();
+                running.store(false, Ordering::Release);
+                result
+            },
+        );
     }
 
     /// The actions that name a browser entry with the entry's file in its place (the session's resolution, which
@@ -370,9 +540,47 @@ impl LocalPort {
 
     fn remember(&mut self, page: BrowsePage, entries: &[(BrowseEntry, Option<PathBuf>)]) {
         for (e, p) in entries {
-            self.session.browser.remember(e.id, page, p.clone());
+            remember_entry(&mut self.session.browser, page, e, p.clone());
         }
     }
+}
+
+/// An entry given out, with what the browser needs to list it again: its file, the folders listed with it
+fn remember_entry(b: &mut crate::browser::BrowserEntries, page: BrowsePage, e: &BrowseEntry, path: Option<PathBuf>) {
+    let page = e.info.get("page").and_then(Value::as_text).and_then(page_named).unwrap_or(page);
+    let extra: Vec<PathBuf> = e
+        .info
+        .get("extra")
+        .map(|l| l.items().filter_map(Value::as_text).map(PathBuf::from).collect())
+        .unwrap_or_default();
+    if extra.is_empty() && !e.factory {
+        b.remember(e.id, page, path);
+    } else {
+        b.remember_folder(e.id, page, path, extra, None, e.factory);
+    }
+}
+
+/// How long an index is kept before the next browse or search reads the folders again
+const INDEX_AGE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The waveform of rendered audio
+fn peaks_of_data(data: &SampleData) -> lm_io::Peaks {
+    let channels = data.channels().max(1);
+    let mut b = lm_io::PeaksBuilder::new(channels);
+    let mut frame = vec![0.0f32; channels * 4096];
+    let mut at = 0;
+    while at < data.frames() {
+        let n = 4096.min(data.frames() - at);
+        for c in 0..channels {
+            let ch = data.channel(c);
+            for i in 0..n {
+                frame[i * channels + c] = ch[at + i];
+            }
+        }
+        b.push_interleaved(&frame[..n * channels]);
+        at += n;
+    }
+    b.finish()
 }
 
 fn peak_block(peaks: &lm_io::Peaks, level: u8, from: u64, to: u64) -> PeakBlock {
@@ -424,7 +632,7 @@ impl CorePort for LocalPort {
                             .known
                             .get(&e.parent.unwrap_or(EntryId(0)))
                             .map_or(BrowsePage::Samples, |k| k.page);
-                        self.session.browser.remember(e.id, page, path);
+                        remember_entry(&mut self.session.browser, page, e, path);
                     }
                 }
                 self.done.push((id, result));
@@ -632,32 +840,80 @@ impl CorePort for LocalPort {
     }
 
     fn browse(&mut self, page: BrowsePage, parent: Option<EntryId>, show_hidden: bool) -> Pending<Vec<BrowseEntry>> {
+        self.ensure_index();
         let Some(parent) = parent else {
+            if matches!(page, BrowsePage::Instruments | BrowsePage::Effects) {
+                let cats = self.plugin_categories(page);
+                let mut folders = Vec::new();
+                for (folder, kids) in cats {
+                    self.session.browser.remember_folder(folder.id, page, None, Vec::new(), Some(kids), false);
+                    folders.push(folder);
+                }
+                return Pending::Ready(Ok(folders));
+            }
             let roots = self.roots(page);
             self.remember(page, &roots);
             return Pending::Ready(Ok(roots.into_iter().map(|(e, _)| e).collect()));
         };
-        let Some(dir) = self.session.browser.known.get(&parent).and_then(|k| k.path.clone()) else {
+        let Some(known) = self.session.browser.known.get(&parent).cloned() else {
             return Pending::Ready(Err(err("port.browse.unknown_entry")));
         };
-        let page = self.session.browser.known.get(&parent).map_or(page, |k| k.page);
+        if let Some(kids) = known.kids {
+            let list: Vec<(BrowseEntry, Option<PathBuf>)> = kids.iter().cloned().map(|e| (e, None)).collect();
+            self.remember(known.page, &list);
+            return Pending::Ready(Ok(kids));
+        }
+        let Some(dir) = known.path else {
+            return Pending::Ready(Err(err("port.browse.unknown_entry")));
+        };
+        let (page, extra, primary_factory) = (known.page, known.extra, known.factory);
         let favorites = self.favorites();
         Pending::Waiting(self.request(
             |e| Finished::Entries(Err(e)),
             move |_, _| {
-                let list = list_folder(page, &dir, Some(parent), show_hidden, &favorites);
-                Ok(Finished::Entries(Ok(list.into_iter().map(|(e, _)| e).collect())))
+                let user = list_folder(page, &dir, Some(parent), show_hidden, &favorites, primary_factory);
+                let mut factory = Vec::new();
+                for d in &extra {
+                    factory.extend(list_folder(page, d, Some(parent), show_hidden, &favorites, true));
+                }
+                let merged = crate::browser::merge_listing(user, factory);
+                let entries = merged
+                    .into_iter()
+                    .map(|(mut e, _, extra)| {
+                        if !extra.is_empty() {
+                            e.info = e
+                                .info
+                                .with("extra", Value::list(extra.iter().map(|p| Value::text(p.display().to_string()))));
+                        }
+                        e
+                    })
+                    .collect();
+                Ok(Finished::Entries(Ok(entries)))
             },
         ))
     }
 
+    /// The search over the index (F-BRW-004): words, quoted phrases, `type:`, `tag:` and `is:fav`
     fn search(&mut self, query: &str) -> Pending<Vec<BrowseEntry>> {
-        let q = query.to_lowercase();
-        let roots: Vec<(BrowsePage, PathBuf)> = [BrowsePage::Samples, BrowsePage::Projects, BrowsePage::ProjectFiles]
-            .into_iter()
-            .flat_map(|page| self.roots(page).into_iter().filter_map(move |(_, p)| p.map(|p| (page, p))))
-            .collect();
-        let favorites = self.favorites();
+        self.ensure_index();
+        let q = crate::index::Query::parse(query);
+        let index = self.session.browser.index.lock().map(|g| g.clone()).unwrap_or_default();
+        let cx = crate::index::Context {
+            plugins: self
+                .session
+                .registry()
+                .entries()
+                .filter(|d| !crate::deprecated::is_deprecated(d.id))
+                .map(|d| crate::index::PluginItem {
+                    id: d.id.to_owned(),
+                    name: d.name.to_owned(),
+                    instrument: d.kind == lm_plugin::PluginKind::Instrument,
+                    third_party: d.third_party,
+                })
+                .collect(),
+            favorites: self.favorites(),
+            user_tags: self.user_tags(),
+        };
         // A new search replaces the last one
         if let Some(last) = self.search_request.take()
             && let Some((_, h)) = self.requests.iter().find(|(id, _)| *id == last)
@@ -667,23 +923,8 @@ impl CorePort for LocalPort {
         let id = self.request(
             |e| Finished::Entries(Err(e)),
             move |cancel, _| {
-                let mut found = Vec::new();
-                let mut stack: Vec<(BrowsePage, PathBuf, usize)> = roots.into_iter().map(|(p, d)| (p, d, 0)).collect();
-                while let Some((page, dir, depth)) = stack.pop() {
-                    cancel.check()?;
-                    for (e, path) in list_folder(page, &dir, None, false, &favorites) {
-                        if e.kind == EntryKind::Folder && depth < 8 {
-                            stack.push((page, path.clone(), depth + 1));
-                        }
-                        if e.name.to_lowercase().contains(&q) {
-                            found.push(e);
-                        }
-                        if found.len() >= 500 {
-                            return Ok(Finished::Entries(Ok(found)));
-                        }
-                    }
-                }
-                Ok(Finished::Entries(Ok(found)))
+                cancel.check()?;
+                Ok(Finished::Entries(Ok(index.search(&q, &cx))))
             },
         );
         self.search_request = Some(id);
@@ -691,19 +932,44 @@ impl CorePort for LocalPort {
     }
 
     fn prepare_preview(&mut self, entry: EntryId) -> Pending<Preview> {
-        let Some(path) = self
-            .session
-            .browser
-            .known
-            .get(&entry)
-            .and_then(|k| k.path.clone())
-            .filter(|p| kind_of(p) == EntryKind::Audio)
-        else {
+        let Some(known) = self.session.browser.known.get(&entry).cloned() else {
             return Pending::Ready(Err(err("port.preview.not_audio")));
         };
+        let Some(path) = known.path.clone() else {
+            return Pending::Ready(Err(err("port.preview.not_audio")));
+        };
+        let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let source = if known.page == BrowsePage::Presets && ext == "json" {
+            Some(crate::preview::Source::Preset(path.clone()))
+        } else if matches!(ext.as_str(), "sf2" | "sf3") {
+            Some(crate::preview::Source::SoundFont(path.clone()))
+        } else if matches!(ext.as_str(), "mid" | "midi" | "rmi") {
+            Some(crate::preview::Source::Midi(path.clone(), self.default_soundfont()))
+        } else {
+            None
+        };
+        if source.is_none() && kind_of(&path) != EntryKind::Audio {
+            return Pending::Ready(Err(err("port.preview.not_audio")));
+        }
+        let registry = self.session.registry().clone();
+        let rate = self.session.spec().sample_rate;
         let id = self.next_request;
         self.next_request += 1;
         let handle = self.session.workers().start(move |cancel, progress| {
+            if let Some(source) = source {
+                // Played by its plugin in the worker: the sample and its waveform are the preview
+                let mtime = std::fs::metadata(&path)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_secs());
+                let key = blake3::hash(format!("preview:{}:{mtime}", path.display()).as_bytes()).to_hex().to_string();
+                let resource = Resource::new("audio", &key)?;
+                let data = Arc::new(crate::preview::render(&registry, &source, rate, None, cancel)?);
+                let peaks = Arc::new(peaks_of_data(&data));
+                let length = data.frames() as i64;
+                return Ok((resource, data, peaks, length));
+            }
             let key = lm_io::hash_file(&path, cancel, progress)?;
             let resource = Resource::new("audio", &key)?;
             let data = lm_io::load_file(&path, cancel, progress)?;

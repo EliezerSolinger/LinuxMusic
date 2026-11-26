@@ -240,13 +240,43 @@ impl Library {
                 terms.extend(part.split_whitespace().map(fold));
             }
         }
-        if terms.is_empty() {
+        // The core's filters: `type:samples`, `tag:x` / `#x`, `is:fav` (not in the words)
+        let mut kinds: Vec<EntryKind> = Vec::new();
+        let mut fav = false;
+        let mut tags: Vec<String> = Vec::new();
+        terms.retain(|t| {
+            if let Some(g) = t.strip_prefix("type:") {
+                match g {
+                    "instruments" | "effects" => kinds.push(EntryKind::Plugin),
+                    "samples" => kinds.push(EntryKind::Audio),
+                    "presets" => kinds.push(EntryKind::Preset),
+                    "midi" => kinds.push(EntryKind::Midi),
+                    "projects" => kinds.push(EntryKind::Project),
+                    _ => {}
+                }
+                false
+            } else if t == "is:fav" {
+                fav = true;
+                false
+            } else if let Some(g) = t.strip_prefix("tag:").or_else(|| t.strip_prefix('#')) {
+                tags.push(g.to_owned());
+                false
+            } else {
+                true
+            }
+        });
+        if terms.is_empty() && kinds.is_empty() && !fav && tags.is_empty() {
             return Vec::new();
         }
         self.entries
             .iter()
             .filter(|(_, e)| {
-                !e.hidden && e.kind != EntryKind::Folder && terms.iter().all(|t| fold(&e.name).contains(t.as_str()))
+                !e.hidden
+                    && e.kind != EntryKind::Folder
+                    && (kinds.is_empty() || kinds.contains(&e.kind))
+                    && (!fav || self.with_favorite(e).favorite)
+                    && tags.iter().all(|t| fold(&e.name).contains(t.as_str()))
+                    && terms.iter().all(|t| fold(&e.name).contains(t.as_str()))
             })
             .map(|(_, e)| self.with_favorite(e))
             .collect()

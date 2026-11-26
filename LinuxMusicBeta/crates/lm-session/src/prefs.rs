@@ -70,6 +70,8 @@ pub fn defaults() -> Value {
         ("allowedFolders", Value::empty_list()),
         ("sampleFolders", Value::empty_list()),
         ("favorites", Value::empty_list()),
+        // The user's tags of browser files: path -> list of tags
+        ("tags", Value::empty_object()),
         ("autosaveSeconds", Value::int(60)),
         ("lowLatencyMonitoring", Value::bool(false)),
         // Third-party plugins (I-9.6): search folders added by the user, the last scans, the plugins blocked (they
