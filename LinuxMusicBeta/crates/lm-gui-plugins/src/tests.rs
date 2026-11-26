@@ -361,6 +361,14 @@ fn exercise(o: &mut Opened<'_>) {
                 o.click(id, MouseButton::Right);
                 assert!(o.cx.debug_bounds("menu-remove-lane").is_some(), "{id}: the lane exists");
                 o.click("menu-remove-lane", MouseButton::Left);
+                if let Some(sync) = k.sync {
+                    // the menu has the notes: a note syncs it; moving the knob turns the sync off again
+                    o.click(id, MouseButton::Right);
+                    o.click("menu-sync-1/4", MouseButton::Left);
+                    assert_eq!(o.field(sync).as_text(), Some("1/4"), "{id}: the menu syncs it to a quarter note");
+                    o.drag(id, -30.0, Modifiers::none());
+                    assert_eq!(o.field(sync).as_text(), Some("off"), "{id}: moving it turns the sync off");
+                }
             }
             Kind::Button(b) => check_bind(o, id, b.bind),
             Kind::Led(l) => check_bind(o, id, l.bind),

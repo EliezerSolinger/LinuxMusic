@@ -6,8 +6,8 @@
 //! view, not saved in the plugin), the wave tools (load, phase -15 and +15, normalize, invert, smooth, and the sine,
 //! triangle, saw and square shapes), and the anti-aliasing LED.
 //!
-//! The envelope's time knobs are `TempoSyncKnob`s in the legacy; the plugin has their sync fields
-//! (`envAttackSync`...), but the knob's sync menu is not in the panel yet, so they turn the milliseconds. The
+//! The envelope's time knobs are `TempoSyncKnob`s: their menu has the tempo sync notes (`envAttackSync`...) and
+//! moving the knob turns the sync off. The
 //! load button asks for an audio file and sends its bytes to the core's `watsyn.load_wave` action, which sets the
 //! graph of the oscillator shown.
 
@@ -263,36 +263,18 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         "Mix envelope amount",
         "",
     ));
-    controls.push(knob(
-        "envAttack",
-        88.0,
-        26.0,
-        styled(0x43ff82),
-        1.0,
-        "A-B Mix envelope attack",
-        "Mix envelope attack",
-        " ms",
-    ));
-    controls.push(knob(
-        "envHold",
-        88.0,
-        49.0,
-        styled(0x43ff82),
-        1.0,
-        "A-B Mix envelope hold",
-        "Mix envelope hold",
-        " ms",
-    ));
-    controls.push(knob(
-        "envDecay",
-        88.0,
-        72.0,
-        styled(0x43ff82),
-        1.0,
-        "A-B Mix envelope decay",
-        "Mix envelope decay",
-        " ms",
-    ));
+    controls.push(
+        knob("envAttack", 88.0, 26.0, styled(0x43ff82), 1.0, "A-B Mix envelope attack", "Mix envelope attack", " ms")
+            .synced("envAttackSync"),
+    );
+    controls.push(
+        knob("envHold", 88.0, 49.0, styled(0x43ff82), 1.0, "A-B Mix envelope hold", "Mix envelope hold", " ms")
+            .synced("envHoldSync"),
+    );
+    controls.push(
+        knob("envDecay", 88.0, 72.0, styled(0x43ff82), 1.0, "A-B Mix envelope decay", "Mix envelope decay", " ms")
+            .synced("envDecaySync"),
+    );
     controls.push(knob("crosstalk", 88.0, 95.0, styled(0xfb50fb), 1.0, "A1-B2 Crosstalk", "Crosstalk", ""));
 
     // which oscillator's wave is shown: the panel's own view

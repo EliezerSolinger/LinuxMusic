@@ -171,6 +171,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                     choices: None,
                     int_field: false,
                     log: false,
+                    sync: None,
                 }),
                 name: Text::n(name, n),
                 tip: Text::EMPTY,

@@ -32,7 +32,7 @@ use lm_port::{
 };
 
 use crate::raster::{Canvas, Rgba};
-use crate::spec::{Bind, ButtonSpec, Kind, PanelSpec, SurfaceCx, SurfaceHandle, Target, Text, ToggleSpec};
+use crate::spec::{Bind, ButtonSpec, Kind, KnobSpec, PanelSpec, SurfaceCx, SurfaceHandle, Target, Text, ToggleSpec};
 use crate::widgets::{self, Range, theme};
 use crate::{PortHost, assets};
 
@@ -127,6 +127,18 @@ pub enum PanelEvent {
     OpenModulator(MapTarget),
 }
 
+/// The tempo sync choices of a `TempoSyncKnob`: the field's key and the legacy menu's text
+pub const SYNC_NOTES: [(&str, &str); 8] = [
+    ("off", "No Sync"),
+    ("2/1", "Eight beats"),
+    ("1/1", "Whole note"),
+    ("1/2", "Half note"),
+    ("1/4", "Quarter note"),
+    ("1/8", "8th note"),
+    ("1/16", "16th note"),
+    ("1/32", "32nd note"),
+];
+
 /// One entry of the context menu
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuItem {
@@ -140,6 +152,8 @@ pub enum MenuItem {
     AddLane,
     RemoveLane,
     ToggleLog,
+    /// A tempo sync note of a `TempoSyncKnob`'s menu (an index in [`SYNC_NOTES`])
+    Sync(usize),
 }
 
 /// The panel of one plugin node
@@ -554,6 +568,9 @@ impl<H: PortHost> PluginPanel<H> {
 
     /// One edit as one undo step, labelled with the control's name
     fn set(&mut self, ctrl: usize, value: Value, cx: &mut Context<Self>) {
+        if matches!(self.spec.controls[ctrl].target(), Target::Param(_)) {
+            self.unsync(ctrl, cx);
+        }
         let c = &self.spec.controls[ctrl];
         let label = Label::new(c.name.key);
         let node = self.node;
@@ -588,7 +605,22 @@ impl<H: PortHost> PluginPanel<H> {
         cx.notify();
     }
 
+    /// Moving a `TempoSyncKnob` turns its sync off (the knob is the time again)
+    fn unsync(&mut self, ctrl: usize, cx: &mut Context<Self>) {
+        let Kind::Knob(KnobSpec { sync: Some(field), .. }) = &self.spec.controls[ctrl].kind else { return };
+        let field = *field;
+        if matches!(self.field(field, cx).as_text(), None | Some("off")) {
+            return;
+        }
+        let op = self.field_op(field, Value::text("off"));
+        let label = Label::new("Tempo Sync");
+        self.host.update(cx, |h, _| {
+            let _ = h.port_mut().apply(label, vec![op]);
+        });
+    }
+
     fn begin_drag(&mut self, ctrl: usize, y: f32, cx: &mut Context<Self>) {
+        self.unsync(ctrl, cx);
         let key = self.spec.controls[ctrl].target().key();
         let value = self.param(key, cx);
         let label = Label::new(self.spec.controls[ctrl].name.key);
@@ -1688,6 +1720,9 @@ impl<H: PortHost> PluginPanel<H> {
         if matches!(c.kind, Kind::Knob(_)) {
             items.push((MenuItem::ToggleLog, true));
         }
+        if matches!(&c.kind, Kind::Knob(k) if k.sync.is_some()) {
+            items.extend((0..SYNC_NOTES.len()).map(|i| (MenuItem::Sync(i), true)));
+        }
         items
     }
 
@@ -1718,6 +1753,10 @@ impl<H: PortHost> PluginPanel<H> {
             MenuItem::RemoveLane => Text::new("Remove automation lane").show(),
             MenuItem::ToggleLog => {
                 if self.range(ctrl).log { Text::new("Set linear") } else { Text::new("Set logarithmic") }.show()
+            }
+            MenuItem::Sync(i) => {
+                let on = matches!(&c.kind, Kind::Knob(k) if k.sync.is_some_and(|f| self.field(f, cx).as_text() == Some(SYNC_NOTES[i].0)));
+                format!("{}{}", if on { "✓ " } else { "" }, Text::new(SYNC_NOTES[i].1).show())
             }
         }
     }
@@ -1792,6 +1831,15 @@ impl<H: PortHost> PluginPanel<H> {
             MenuItem::ToggleLog => {
                 if !self.toggled_log.remove(&t) {
                     self.toggled_log.insert(t);
+                }
+            }
+            MenuItem::Sync(i) => {
+                if let Kind::Knob(KnobSpec { sync: Some(field), .. }) = &c.kind {
+                    let op = self.field_op(field, Value::text(SYNC_NOTES[i].0));
+                    let label = Label::new("Tempo Sync");
+                    self.host.update(cx, |h, _| {
+                        let _ = h.port_mut().apply(label, vec![op]);
+                    });
                 }
             }
         }
@@ -2261,6 +2309,14 @@ pub const TEXTS: &[&str] = &[
     "Cancel",
     "OK",
     "Open audio file",
+    "No Sync",
+    "Eight beats",
+    "Whole note",
+    "Half note",
+    "Quarter note",
+    "8th note",
+    "16th note",
+    "32nd note",
 ];
 
 /// `FloatModelEditorBase::wheelEvent`: the notches of a whole sweep for the modifiers held
@@ -2590,6 +2646,9 @@ fn menu_name(item: MenuItem) -> &'static str {
         MenuItem::AddLane => "add-lane",
         MenuItem::RemoveLane => "remove-lane",
         MenuItem::ToggleLog => "toggle-log",
+        MenuItem::Sync(i) => {
+            ["sync-off", "sync-2/1", "sync-1/1", "sync-1/2", "sync-1/4", "sync-1/8", "sync-1/16", "sync-1/32"][i.min(7)]
+        }
     }
 }
 

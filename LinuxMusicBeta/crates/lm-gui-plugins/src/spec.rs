@@ -140,6 +140,9 @@ pub struct KnobSpec {
     /// The legacy model's `setScaleLogarithmic(true)` (the knob's travel; the schema's `Scale::Log` is only how the
     /// generic editor shows it)
     pub log: bool,
+    /// A `TempoSyncKnob`: the choice field of its tempo sync (`off` or a note length); the context menu offers the
+    /// notes and moving the knob turns the sync off
+    pub sync: Option<&'static str>,
 }
 
 /// An LED check box (`LedCheckBox`), with its text to the right
@@ -603,6 +606,7 @@ pub fn knob(
             choices: None,
             int_field: false,
             log: false,
+            sync: None,
         }),
         name: Text::new(name),
         tip: Text::EMPTY,
@@ -720,6 +724,15 @@ impl Control {
     pub fn int_field(mut self) -> Self {
         if let Some(k) = self.knob_mut() {
             k.int_field = true;
+        }
+        self
+    }
+
+    /// A `TempoSyncKnob` whose sync is the choice field `field`
+    #[must_use]
+    pub fn synced(mut self, field: &'static str) -> Self {
+        if let Some(k) = self.knob_mut() {
+            k.sync = Some(field);
         }
         self
     }

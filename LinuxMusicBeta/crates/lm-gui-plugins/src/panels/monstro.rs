@@ -8,7 +8,8 @@
 //! sources (envelopes 1 and 2, LFOs 1 and 2) on each target (volume, phase, pitch of the three oscillators, the
 //! pulse width and the sub mix).
 //!
-//! The LFOs' and envelopes' time knobs are `TempoSyncKnob`s in the legacy; their sync menu is not in the panel yet.
+//! The LFOs' and envelopes' time knobs are `TempoSyncKnob`s: their menu has the tempo sync notes (`<knob>Sync`) and
+//! moving the knob turns the sync off.
 
 use std::sync::LazyLock;
 
@@ -314,6 +315,21 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
     rows(r(4.0), Some("osc3Vol"), Some("osc3Pit"), &mut c);
     rows(r(5.0), Some("osc3Phs"), Some("osc3Sub"), &mut c);
 
+    // the time knobs that follow the tempo when synced
+    let c: Vec<Control> = c
+        .into_iter()
+        .map(|ctl| {
+            let key = ctl.target().key();
+            let synced = ["lfo1Attack", "lfo1Rate", "lfo2Attack", "lfo2Rate"].contains(&key)
+                || (key.starts_with("env")
+                    && ["PreDelay", "Attack", "Hold", "Decay", "Release"].iter().any(|s| key.ends_with(s)));
+            if synced && matches!(ctl.kind, crate::spec::Kind::Knob(_)) {
+                ctl.synced(lm_port::intern(&format!("{key}Sync")))
+            } else {
+                ctl
+            }
+        })
+        .collect();
     PanelSpec {
         plugin: ID,
         size: (250.0, 250.0),
