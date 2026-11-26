@@ -570,7 +570,8 @@ impl Session {
             plugins: plugins.clone(),
         });
         let journal = Journal::start(&folder, config.faults.clone(), String::new(), 0, false);
-        let resources = ResourceStore::new(folder.root().to_path_buf(), config.clock.clone());
+        let mut resources = ResourceStore::new(folder.root().to_path_buf(), config.clock.clone());
+        resources.set_allowed(allowed_folders(&config.preferences));
         let disk = match DiskWriter::start_with(config.record_faults.clone()) {
             Ok(d) => Some(d),
             Err(e) => {
@@ -1177,6 +1178,36 @@ impl Session {
 
     /// Loads a resource in an operation on its target (I-12), once
     pub fn request(&mut self, r: &Resource) {
+        self.request_one(r);
+        self.post_refused(r);
+    }
+
+    /// C9: a link out of the project that no allowed folder covers left the resource `Missing`; the notice offers
+    /// "allow this folder"
+    fn post_refused(&mut self, r: &Resource) {
+        for e in self.resources.take_refused() {
+            let folder = e
+                .label
+                .args
+                .iter()
+                .find_map(|(k, a)| match (k, a) {
+                    (&"folder", lm_base::Arg::Text(t)) => Some(t.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            let action =
+                (lm_port::ActionId::from("folder.allow"), Value::object([("folder", Value::text(folder.as_str()))]));
+            self.notices.push(
+                "session.resource.not_allowed",
+                vec![("folder", Value::text(folder))],
+                Severity::Warning,
+                Some(Target::Resource(r.clone())),
+                vec![action],
+            );
+        }
+    }
+
+    fn request_one(&mut self, r: &Resource) {
         if r.kind() != "audio" {
             return self.request_kind(r);
         }
@@ -1860,6 +1891,7 @@ impl Session {
     fn finish_save_as(&mut self, to: ProjectFolder, lock: ProjectLock) -> Result<()> {
         self.journal = Journal::start(&to, self.faults.clone(), String::new(), self.journal.seq(), false);
         self.resources = ResourceStore::new(to.root().to_path_buf(), self.clock.clone());
+        self.resources.set_allowed(allowed_folders(&self.preferences));
         // The untitled folder is no longer ours to remove (its audio was copied; it goes now if it holds none)
         drop(std::mem::replace(&mut self.untitled_guard, UntitledGuard(None)));
         self.project.folder = to;
@@ -1920,6 +1952,7 @@ impl Session {
         }
         self.journal = Journal::start(&folder, self.faults.clone(), String::new(), 0, false);
         self.resources = ResourceStore::new(folder.root().to_path_buf(), self.clock.clone());
+        self.resources.set_allowed(allowed_folders(&self.preferences));
         let options = project_options(&self.plugins, &self.schemas, self.limits);
         let document = Document::new_project(self.schemas.clone(), options)?;
         self.replace_document(document, None)?;
@@ -2095,6 +2128,7 @@ impl Session {
             Journal::start(&folder, self.faults.clone(), bytes_hash, seq, !replayed)
         };
         self.resources = ResourceStore::new(folder.root().to_path_buf(), self.clock.clone());
+        self.resources.set_allowed(allowed_folders(&self.preferences));
         self.replace_document(document, interface)?;
         drop(std::mem::replace(&mut self.untitled_guard, UntitledGuard(None)));
         self.project = Project {
@@ -2827,4 +2861,12 @@ mod calibration_tests {
         assert_eq!(calibration_residual(Some(&list), "x|y", 48000, false), 0);
         assert_eq!(calibration_residual(None, "a|b", 48000, false), 0);
     }
+}
+
+/// The folders of the `allowedFolders` preference (C9)
+pub(crate) fn allowed_folders(preferences: &Preferences) -> Vec<std::path::PathBuf> {
+    preferences
+        .get(&["allowedFolders"])
+        .map(|l| l.items().filter_map(Value::as_text).map(std::path::PathBuf::from).collect())
+        .unwrap_or_default()
 }

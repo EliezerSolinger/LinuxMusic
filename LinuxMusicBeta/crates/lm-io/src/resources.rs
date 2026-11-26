@@ -60,17 +60,31 @@ pub fn audio_folder(project: &Path) -> PathBuf {
 /// The file of audio resource `key` in the project, if it is there (C9: the key is validated first; a link that
 /// leads out of the project's `audio/` is refused with `io.resource.outside_project`)
 pub fn resource_path(project: &Path, key: &str) -> Result<Option<PathBuf>> {
+    resource_path_in(project, key, None)
+}
+
+/// A link inside a project folder that leads out of it: refused (`io.resource.outside_project`) when `allowed` is
+/// `None`, followed only inside the allowed folders (C9) otherwise (`io.resource.not_allowed` with the folder to offer)
+fn checked_link(p: &Path, root_folder: &Path, allowed: Option<&[PathBuf]>) -> Result<PathBuf> {
+    let real = p.canonicalize().map_err(|e| io_error("io.resource.read_failed", p, &e))?;
+    let root = root_folder.canonicalize().map_err(|e| io_error("io.resource.read_failed", root_folder, &e))?;
+    if real.starts_with(&root) {
+        return Ok(p.to_path_buf());
+    }
+    match allowed {
+        None => Err(Error::new("io.resource.outside_project").arg("path", p.display().to_string())),
+        Some(a) => resolve_external(&real, a),
+    }
+}
+
+/// [`resource_path`] with the folders the user allowed (C9): a link out of `audio/` into one of them is followed
+pub fn resource_path_in(project: &Path, key: &str, allowed: Option<&[PathBuf]>) -> Result<Option<PathBuf>> {
     check_key(key)?;
     let audio = audio_folder(project);
     for ext in AUDIO_EXTENSIONS {
         let p = audio.join(format!("{key}.{ext}"));
         if std::fs::symlink_metadata(&p).is_ok() {
-            let real = p.canonicalize().map_err(|e| io_error("io.resource.read_failed", &p, &e))?;
-            let root = audio.canonicalize().map_err(|e| io_error("io.resource.read_failed", &audio, &e))?;
-            if !real.starts_with(&root) {
-                return Err(Error::new("io.resource.outside_project").arg("path", p.display().to_string()));
-            }
-            return Ok(Some(p));
+            return checked_link(&p, &audio, allowed).map(Some);
         }
     }
     Ok(None)
@@ -496,6 +510,11 @@ pub struct ResourceStore {
     pub evict_after: Duration,
     pub stream_above: Duration,
     pub faults: IoFaults,
+    /// The folders the user allowed (`allowedFolders`, C9): a link in the project may lead into them
+    allowed: Vec<PathBuf>,
+    /// The loads refused for lack of an allowed folder (`io.resource.not_allowed`): the resource is `Missing`; the
+    /// session offers "allow this folder"
+    refused: Vec<Error>,
 }
 
 impl std::fmt::Debug for ResourceStore {
@@ -517,6 +536,31 @@ impl ResourceStore {
             evict_after: EVICT_AFTER,
             stream_above: STREAM_ABOVE,
             faults: IoFaults::default(),
+            allowed: Vec::new(),
+            refused: Vec::new(),
+        }
+    }
+
+    /// The folders the user allowed (C9); loads that failed for lack of one are asked for again by the session
+    pub fn set_allowed(&mut self, folders: Vec<PathBuf>) {
+        self.allowed = folders;
+    }
+
+    /// The refusals since the last call (each `io.resource.not_allowed`, with the `folder` to offer)
+    pub fn take_refused(&mut self) -> Vec<Error> {
+        std::mem::take(&mut self.refused)
+    }
+
+    /// A refused link is `Missing` for the project (C9), and remembered for the notice
+    fn missing_if_refused(&mut self, path: Result<Option<PathBuf>>) -> Result<Option<PathBuf>> {
+        match path {
+            Err(e) if e.key() == "io.resource.not_allowed" => {
+                if !self.refused.iter().any(|r| r == &e) {
+                    self.refused.push(e);
+                }
+                Ok(None)
+            }
+            other => other,
         }
     }
 
@@ -542,7 +586,8 @@ impl ResourceStore {
     /// state when there is nothing to start (already loading, ready, or the file is missing: `Missing`, H17). An
     /// invalid key is refused (C9)
     pub fn begin_load(&mut self, key: &str) -> std::result::Result<LoadJob, ResourceState> {
-        let path = resource_path(&self.project, key);
+        let path = resource_path_in(&self.project, key, Some(&self.allowed));
+        let path = self.missing_if_refused(path);
         self.begin_audio_like(key.to_owned(), key, path)
     }
 
@@ -754,11 +799,21 @@ pub fn state_folder(project: &Path) -> PathBuf {
 /// The file of resource (`kind`, `key`) in the project, if it is there (C9: kind and key validated first; a link out
 /// of its folder is refused). Audio is `audio/<key>.<audio extension>`; any other kind is `state/<key>.<extension>`
 pub fn resource_path_of(project: &Path, kind: &str, key: &str) -> Result<Option<PathBuf>> {
+    resource_path_of_in(project, kind, key, None)
+}
+
+/// [`resource_path_of`] with the folders the user allowed (C9)
+pub fn resource_path_of_in(
+    project: &Path,
+    kind: &str,
+    key: &str,
+    allowed: Option<&[PathBuf]>,
+) -> Result<Option<PathBuf>> {
     if !is_valid_kind(kind) {
         return Err(Error::new("io.resource.invalid_kind").arg("kind", kind.chars().take(40).collect::<String>()));
     }
     if kind == "audio" {
-        return resource_path(project, key);
+        return resource_path_in(project, key, allowed);
     }
     check_key(key)?;
     if kind == "render" {
@@ -767,12 +822,7 @@ pub fn resource_path_of(project: &Path, kind: &str, key: &str) -> Result<Option<
         if std::fs::symlink_metadata(&p).is_err() {
             return Ok(None);
         }
-        let real = p.canonicalize().map_err(|e| io_error("io.resource.read_failed", &p, &e))?;
-        let root = folder.canonicalize().map_err(|e| io_error("io.resource.read_failed", &folder, &e))?;
-        if !real.starts_with(&root) {
-            return Err(Error::new("io.resource.outside_project").arg("path", p.display().to_string()));
-        }
-        return Ok(Some(p));
+        return checked_link(&p, &folder, allowed).map(Some);
     }
     let folder = state_folder(project);
     let entries = match std::fs::read_dir(&folder) {
@@ -788,12 +838,7 @@ pub fn resource_path_of(project: &Path, kind: &str, key: &str) -> Result<Option<
         .collect();
     found.sort();
     let Some(p) = found.into_iter().next() else { return Ok(None) };
-    let real = p.canonicalize().map_err(|e| io_error("io.resource.read_failed", &p, &e))?;
-    let root = folder.canonicalize().map_err(|e| io_error("io.resource.read_failed", &folder, &e))?;
-    if !real.starts_with(&root) {
-        return Err(Error::new("io.resource.outside_project").arg("path", p.display().to_string()));
-    }
-    Ok(Some(p))
+    checked_link(&p, &folder, allowed).map(Some)
 }
 
 /// What a non-audio import made
@@ -949,7 +994,8 @@ impl ResourceStore {
                 _ => {}
             }
         }
-        let path = match resource_path_of(&self.project, kind, key) {
+        let found = resource_path_of_in(&self.project, kind, key, Some(&self.allowed));
+        let path = match self.missing_if_refused(found) {
             Ok(Some(p)) => p,
             Ok(None) => {
                 self.entries.insert(ek, Entry { state: ResourceState::Missing, peaks: None, last_used: now });

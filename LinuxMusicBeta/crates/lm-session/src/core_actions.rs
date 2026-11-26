@@ -1121,6 +1121,7 @@ impl Session {
             list.push(Value::text(text));
             self.set_preference(&[PathStep::key("allowedFolders")], Value::list(list))?;
         }
+        self.resources.set_allowed(crate::session::allowed_folders(&self.preferences));
         self.reload_resources();
         Ok(())
     }

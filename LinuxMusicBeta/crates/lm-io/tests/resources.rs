@@ -153,7 +153,16 @@ fn missing_bad_keys_and_links_out() {
     write_wav(&outside, 48_000, 1, 100);
     let k2 = "1".repeat(64);
     std::os::unix::fs::symlink(&outside, project.join("audio").join(format!("{k2}.wav"))).expect("link");
-    assert!(matches!(store.begin_load(&k2), Err(ResourceState::Failed(e)) if e.key() == "io.resource.outside_project"));
+    // The link out of the project: Missing, and the refusal names the folder to offer (C9)
+    assert!(matches!(store.begin_load(&k2), Err(ResourceState::Missing)));
+    let refused = store.take_refused();
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].key(), "io.resource.not_allowed");
+    assert!(store.take_refused().is_empty());
+    // Once its folder is allowed, the same resource loads
+    store.set_allowed(vec![dir.0.clone()]);
+    assert!(store.begin_load(&k2).is_ok());
+    store.set_allowed(Vec::new());
     // External files only inside allowed folders
     assert_eq!(
         resolve_external(&outside, std::slice::from_ref(&project)).expect_err("not allowed").key(),
@@ -289,9 +298,8 @@ fn resources_by_kind() {
     // A link out of state/ is refused
     let k = "2".repeat(64);
     std::os::unix::fs::symlink(&model, project.join("state").join(format!("{k}.nam"))).expect("link");
-    assert!(
-        matches!(store.begin_load_kind("nam", &k), Err(ResourceState::Failed(e)) if e.key() == "io.resource.outside_project")
-    );
+    assert!(matches!(store.begin_load_kind("nam", &k), Err(ResourceState::Missing)));
+    assert_eq!(store.take_refused().len(), 1);
 }
 
 /// F-REC-090: a tempo render lives in `render/<plan key>.wav`, apart from the content-hashed `audio/`, and loads like
