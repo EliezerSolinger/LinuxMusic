@@ -400,6 +400,8 @@ pub struct Session {
     /// Where the cursor was when playing began: where Stop goes back to (F-REG-004)
     play_origin: Option<i64>,
     recording_tracks: Vec<NodeId>,
+    /// The waveforms of the takes being written (U3)
+    live: crate::recording::LiveTakes,
     /// The recordings whose takes are being closed: all of one recording enter the tree in one transaction
     recordings: std::collections::BTreeMap<u64, PendingRecording>,
     recording_serial: u64,
@@ -693,6 +695,7 @@ impl Session {
             record_start: None,
             play_origin: None,
             recording_tracks: Vec::new(),
+            live: crate::recording::LiveTakes::default(),
             recordings: std::collections::BTreeMap::new(),
             recording_serial: 0,
             forget_after: Vec::new(),
@@ -1180,8 +1183,22 @@ impl Session {
             midi_ports: self.midi_instrument_ports(),
             midi_aliases: self.midi_aliases(),
             selected_track: self.midi.selection.track,
+            // The metronome (I-5.5): its own sounds, when it sounds and where (F-REC-024, F-REC-025)
+            metronome_sounds: crate::recording::metronome_sounds(self.spec.sample_rate),
+            metronome_when: lm_compile::MetronomeWhen::parse(
+                self.preferences.text(&["metronome", "when"]).unwrap_or(""),
+            ),
+            metronome_output: self.metronome_output(),
             ..Environment::default()
         }
+    }
+
+    /// The device channels of the metronome (the preference `metronome.output`, 1-based); none: the master's output
+    fn metronome_output(&self) -> Option<Vec<u16>> {
+        let list = self.preferences.get(&["metronome", "output"])?;
+        let channels: Vec<u16> =
+            list.items().filter_map(Value::as_int).filter_map(|c| u16::try_from(c - 1).ok()).collect();
+        (!channels.is_empty()).then_some(channels)
     }
 
     fn snapshot(&self) -> ResourceSnapshot {
@@ -1674,6 +1691,13 @@ impl Session {
         }
         self.telemetry.xruns = u32::try_from(frame.xruns).unwrap_or(u32::MAX).max(self.xruns);
         self.telemetry.load = frame.load;
+        self.telemetry.counting_in = frame.counting_in;
+        // The input meters (F-REC-009): one peak per device input channel, falling smoothly
+        let inputs = self.device.as_ref().and_then(|d| d.info()).map_or(0, |i| i.inputs).min(frame.inputs.len());
+        self.telemetry.inputs.resize(inputs, 0.0);
+        for (level, peak) in self.telemetry.inputs.iter_mut().zip(frame.inputs.iter()) {
+            *level = peak.max(*level * 0.85);
+        }
         let mut events = Vec::new();
         self.engine.events(|t| events.push(t));
         for t in events {
@@ -2390,9 +2414,7 @@ impl Session {
                 self.locate(sample);
             }
         }
-        if self.record_start.take().is_some() || self.recording_tracks.is_empty() {
-            // nothing recording
-        }
+        self.record_start = None;
         let _ = self.engine.commands().send(Command::Record { on: false });
         if let Some(d) = self.device.as_mut() {
             d.disarm();
@@ -2416,7 +2438,16 @@ impl Session {
         if self.project.read_only {
             return Err(err("session.project.read_only"));
         }
+        // Recording is already running and the music plays: the button punches out, and in again (F-REC-021); the
+        // take goes on until Stop
+        if self.telemetry.position.playing && self.device.as_ref().is_some_and(|d| d.is_armed()) {
+            let on = !self.telemetry.position.recording;
+            let _ = self.engine.commands().send(Command::Record { on });
+            return Ok(());
+        }
+        let device_inputs = self.device.as_ref().and_then(|d| d.info()).map(|i| i.inputs);
         let mut tracks: Vec<(NodeId, Vec<u16>)> = Vec::new();
+        let mut refused = 0usize;
         for t in self.document.root().get("tracks").map(|l| l.items().cloned().collect::<Vec<_>>()).unwrap_or_default()
         {
             let Some(id) = t.get("id").and_then(Value::as_text).and_then(|x| NodeId::parse(x).ok()) else { continue };
@@ -2424,17 +2455,39 @@ impl Session {
             if !armed {
                 continue;
             }
+            let instrument = t.get("instrument").is_some_and(|i| !i.is_null());
+            let name = Value::text(t.get("name").and_then(Value::as_text).unwrap_or(""));
             let channels: Vec<u16> = t
                 .get("input")
                 .and_then(|i| i.get("channels"))
                 .map(|l| {
                     l.items().filter_map(Value::as_int).map(|c| u16::try_from((c - 1).max(0)).unwrap_or(0)).collect()
                 })
-                .unwrap_or_else(|| vec![0]);
+                .unwrap_or_default();
+            if instrument {
+                // The notes are recorded by the MIDI recorder; the audio file only carries the take (as before)
+                tracks.push((id, if channels.is_empty() { vec![0] } else { channels }));
+                continue;
+            }
+            // F-REC-004: an audio track armed without an input, or with one the device does not have, says so
+            // and records nothing
+            if channels.is_empty() {
+                self.notices.warn("session.record.no_input", vec![("track", name)]);
+                refused += 1;
+                continue;
+            }
+            if let (Some(have), Some(worst)) = (device_inputs, channels.iter().max())
+                && usize::from(*worst) >= have
+            {
+                let input = Value::int(i64::from(*worst) + 1);
+                self.notices.warn("session.record.no_such_input", vec![("track", name), ("input", input)]);
+                refused += 1;
+                continue;
+            }
             tracks.push((id, channels));
         }
         if tracks.is_empty() {
-            return Err(err("session.record.no_track"));
+            return Err(err(if refused > 0 { "session.record.no_input" } else { "session.record.no_track" }));
         }
         let audio = self.project.folder.audio();
         let total: usize = tracks.iter().map(|(_, c)| c.len()).sum();
@@ -2455,6 +2508,7 @@ impl Session {
             .collect();
         let mut plan = RecordPlan::new(audio, inputs, self.spec.sample_rate);
         plan.latency = self.recording_latency();
+        let plan_latency = plan.latency;
         let (sender, receiver) = lm_io::recording_channel(plan)?;
         let disk = self.disk.as_mut().ok_or_else(|| err("session.record.no_disk"))?;
         disk.record(receiver)?;
@@ -2465,9 +2519,19 @@ impl Session {
         self.recording_serial += 1;
         let inputs = tracks.len();
         self.recordings.insert(self.recording_serial, PendingRecording { inputs, ..PendingRecording::default() });
+        let shift = plan_latency;
+        self.live.plan(
+            tracks.iter().enumerate().map(|(i, (id, channels))| (u32::try_from(i).unwrap_or(0), *id, channels.len())),
+            shift,
+        );
         self.recording_tracks = tracks.into_iter().map(|(id, _)| id).collect();
         self.record_start = Some(RecordStart { since: self.clock.now() });
         Ok(())
+    }
+
+    /// The peaks of a take being recorded, when `key` is its live resource
+    pub(crate) fn live_peaks(&mut self, key: &str) -> Option<Arc<lm_io::Peaks>> {
+        self.live.peaks(key)
     }
 
     /// The latency a take is placed back by (F-REC-080..082, H5, H19): what the open device reports (input plus
@@ -2495,10 +2559,20 @@ impl Session {
         let Some(disk) = self.disk.as_mut() else { return false };
         let mut events = Vec::new();
         disk.poll(|e| events.push(e));
-        let mut changed = false;
+        // The growing waveforms (U3)
+        let mut pairs = Vec::new();
+        disk.live_peaks(|p| pairs.push(p));
+        let mut changed = !pairs.is_empty();
+        for p in &pairs {
+            self.live.pair(p);
+        }
+        if changed || !self.live.is_empty() {
+            self.telemetry.recording = self.live.views();
+        }
         for e in events {
             changed = true;
             match e {
+                DiskEvent::TakeStarted { input, start_sample, .. } => self.live.started(input.0, start_sample),
                 DiskEvent::TakeClosed(take) => {
                     // Takes close in the order their recordings started: the oldest recording still gathering
                     let recording = self.recordings.keys().next().copied().unwrap_or(0);
@@ -2606,7 +2680,9 @@ impl Session {
             return;
         }
         let map = tempo_map(self.document.root());
+        let layered = self.preferences.bool(&["recording", "lanes"]).unwrap_or(true);
         let mut placed = Vec::new();
+        let mut gaps = 0usize;
         for f in &takes {
             let resource = match Resource::new("audio", &f.key) {
                 Ok(r) => r,
@@ -2616,29 +2692,21 @@ impl Session {
                 }
             };
             let take = &f.take;
-            let start = (take.start_sample - take.latency - take.pdc).max(0);
-            let (start_tick, length) = match &map {
-                Ok(m) => {
-                    let a = m.tick_at(start);
-                    (a, (m.tick_at(start + take.frames) - a).max(1))
-                }
-                Err(_) => (0, 1),
-            };
+            gaps += take.gaps.len();
             let track = take.tracks.first().and_then(|t| NodeId::parse(t).ok()).filter(|t| self.document.exists(*t));
-            let item = Value::object([
-                ("kind", Value::text("audio")),
-                ("name", Value::text("")),
-                ("start", Value::int(start_tick)),
-                ("length", Value::int(length)),
-                (
-                    "lanes",
-                    Value::list([Value::object([
-                        ("source", Value::resource(resource)),
-                        ("sourceOffset", Value::int(0)),
-                    ])]),
-                ),
-            ]);
-            placed.push((track, item));
+            for planned in crate::recording::plan_items(take, layered) {
+                let item =
+                    crate::recording::audio_item(map.as_ref().ok(), &planned, &resource, take.latency + take.pdc);
+                placed.push((track, item));
+            }
+        }
+        if gaps > 0 {
+            // The silence a capture xrun left is in the take (C2, F-REC-084)
+            self.notices.warn("session.take.gaps", vec![("count", Value::int(gaps as i64))]);
+        }
+        if self.recordings.is_empty() {
+            self.live.clear();
+            self.telemetry.recording.clear();
         }
         let mut recovered_track = false;
         let midi_take = self.midi_take_for_commit();

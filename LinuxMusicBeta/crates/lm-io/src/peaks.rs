@@ -198,7 +198,7 @@ impl Peaks {
 }
 
 /// Builds a pyramid as audio streams in (decoding, recording); nothing is kept but the pairs
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PeaksBuilder {
     channels: usize,
     frames: u64,
@@ -240,6 +240,26 @@ impl PeaksBuilder {
             }
         }
         completed
+    }
+
+    /// Adds a level-0 pair made elsewhere (the live peaks of a take being written, U3): one (min, max) per channel
+    /// (a channel past the end of the slices takes the last one). Only between whole pairs
+    pub fn push_pair(&mut self, mins: &[i16], maxs: &[i16]) {
+        if self.in_pair != 0 {
+            return;
+        }
+        for c in 0..self.channels {
+            let lo = mins.get(c).or(mins.last()).copied().unwrap_or(0);
+            let hi = maxs.get(c).or(maxs.last()).copied().unwrap_or(0);
+            self.level0[c].push(lo);
+            self.level0[c].push(hi);
+        }
+        self.frames += BASE as u64;
+    }
+
+    /// The pyramid of what came in so far; the builder goes on
+    pub fn snapshot(&self) -> Peaks {
+        self.clone().finish()
     }
 
     /// Adds silence (a capture gap, C2)
@@ -359,6 +379,23 @@ mod tests {
         std::fs::write(&path, &bytes[..bytes.len() - 1]).expect("truncate");
         assert_eq!(Peaks::read(&path).expect_err("truncated").key(), "io.peaks.malformed");
         std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    #[test]
+    fn pairs_pushed_one_by_one_make_the_same_pyramid_as_samples() {
+        let samples: Vec<f32> = (0..64 * 9).map(|i| ((i as f32) * 0.05).sin() * 0.7).collect();
+        let mut from_samples = PeaksBuilder::new(1);
+        from_samples.push_interleaved(&samples);
+        let reference = from_samples.snapshot();
+        let mut by_pairs = PeaksBuilder::new(1);
+        for k in 0..9 {
+            let pair = reference.pair(0, 0, k).expect("pair");
+            by_pairs.push_pair(&[pair.0], &[pair.1]);
+        }
+        assert_eq!(by_pairs.snapshot(), reference);
+        // A snapshot does not end the builder
+        by_pairs.push_pair(&[0], &[0]);
+        assert_eq!(by_pairs.snapshot().pairs(0), 10);
     }
 
     #[test]

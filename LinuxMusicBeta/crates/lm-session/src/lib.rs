@@ -17,6 +17,7 @@ mod plugin_actions;
 mod port;
 pub mod prefs;
 pub mod rack;
+mod recording;
 mod session;
 pub mod slice;
 pub mod watchdog;

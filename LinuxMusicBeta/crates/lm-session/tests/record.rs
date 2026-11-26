@@ -140,3 +140,95 @@ fn a_full_disk_in_the_middle_of_a_recording_keeps_the_take_up_to_the_last_good_b
     let item = s.document().find(a).and_then(|t| t.get("items").and_then(|l| l.at(0).cloned())).expect("item");
     assert!(item.get("length").and_then(Value::as_int).unwrap_or(0) > 0, "the take is in the tree");
 }
+
+fn armed_track_without_input(s: &mut Session, name: &str) -> NodeId {
+    let n = s.document().root().get("tracks").map_or(0, Value::len);
+    let mut id = None;
+    s.document_mut()
+        .transact(Label::new("test.track"), |e| {
+            let t = Value::object([("name", Value::text(name)), ("armed", Value::bool(true))]);
+            id = Some(e.insert(ROOT, "tracks", n, t)?);
+            Ok(())
+        })
+        .expect("track");
+    id.expect("id")
+}
+
+/// F-REC-004: an armed track with no input says so, and records nothing
+#[test]
+fn an_armed_track_without_input_is_refused_with_a_notice() {
+    let dir = TempDir::new("record-no-input");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    armed_track_without_input(&mut s, "Mute");
+    settle(&mut s);
+    assert!(s.record(None).is_err());
+    assert!(s.notices_keys().contains(&"session.record.no_input"));
+}
+
+/// F-REC-004: an input the device does not have
+#[test]
+fn an_input_the_device_does_not_have_is_refused_with_a_notice() {
+    let dir = TempDir::new("record-no-such-input");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    audio_track(&mut s, "Far", 9);
+    settle(&mut s);
+    assert!(s.record(None).is_err());
+    assert!(s.notices_keys().contains(&"session.record.no_such_input"));
+}
+
+/// F-REC-009: the input meters have one level per device input channel
+#[test]
+fn the_input_meters_have_a_level_per_device_input() {
+    let dir = TempDir::new("record-meters");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    settle(&mut s);
+    run_for(&mut s, Duration::from_millis(300));
+    assert_eq!(s.telemetry().inputs.len(), 2);
+}
+
+/// F-REC-040, F-REC-041: a recording over a loop is one item with a layer per lap
+#[test]
+fn a_loop_recording_has_a_layer_per_lap() {
+    let dir = TempDir::new("record-loop");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    let a = audio_track(&mut s, "Loop", 1);
+    s.document_mut()
+        .transact(Label::new("test.loop"), |e| {
+            e.set(ROOT, &[PathStep::key("transport"), PathStep::key("loop"), PathStep::key("on")], Value::bool(true))?;
+            e.set(ROOT, &[PathStep::key("transport"), PathStep::key("loop"), PathStep::key("from")], Value::int(0))?;
+            e.set(ROOT, &[PathStep::key("transport"), PathStep::key("loop"), PathStep::key("to")], Value::int(960))
+        })
+        .expect("loop");
+    settle(&mut s);
+    s.record(None).expect("record");
+    // 120 bpm: the loop is half a second; three seconds are five laps and a bit
+    run_for(&mut s, Duration::from_millis(3000));
+    s.stop();
+    wait_until(&mut s, "the take", |s| items(s, a) == 1);
+    let item = s.document().find(a).and_then(|t| t.get("items").and_then(|l| l.at(0).cloned())).expect("item");
+    let lanes = item.get("lanes").map_or(0, Value::len);
+    assert!(lanes >= 3, "{lanes} layers");
+    assert_eq!(item.get("start").and_then(Value::as_int), Some(0));
+}
+
+/// F-REC-021: pressing Record while recording punches out and the music goes on; again, punches in
+#[test]
+fn record_pressed_again_punches_out_without_stopping() {
+    let dir = TempDir::new("record-punch");
+    let mut s = session(&dir);
+    s.create(dir.join("song")).expect("create");
+    audio_track(&mut s, "Punch", 1);
+    settle(&mut s);
+    s.record(None).expect("record");
+    wait_until(&mut s, "recording", |s| s.telemetry().position.recording);
+    s.record(None).expect("punch out");
+    wait_until(&mut s, "punched out", |s| !s.telemetry().position.recording);
+    assert!(s.telemetry().position.playing, "the music goes on");
+    s.record(None).expect("punch in");
+    wait_until(&mut s, "recording again", |s| s.telemetry().position.recording);
+    s.stop();
+}

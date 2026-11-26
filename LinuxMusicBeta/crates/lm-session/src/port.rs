@@ -584,6 +584,10 @@ impl CorePort for LocalPort {
         if let Some(p) = self.previews.get(resource.key()) {
             return Pending::Ready(Ok(peak_block(&p.peaks, level, from, to)));
         }
+        // The take being recorded grows: its peaks are the ones the disk thread has sent so far (U3)
+        if let Some(p) = self.session.live_peaks(resource.key()) {
+            return Pending::Ready(Ok(peak_block(&p, level, from, to)));
+        }
         match self.session.resources().peaks(resource.key()) {
             Some(p) => Pending::Ready(Ok(peak_block(&p, level, from, to))),
             None => {
