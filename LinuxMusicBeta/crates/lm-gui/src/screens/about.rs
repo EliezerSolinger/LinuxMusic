@@ -33,29 +33,18 @@ const PARTS: [(Part, &str); 6] = [
     (Part::Manual, "Manual"),
 ];
 
-/// The manual's chapters (English keys)
-const CHAPTERS: &[&str] = &[
-    "Getting started",
-    "Recording audio",
-    "Composing",
-    "Mixing desk",
-    "Instruments and effects",
-    "Export and stems",
-    "Settings and shortcuts",
-    "Problems and recovery",
-    "Remote server",
-];
-
 pub struct About {
     scx: ScreenCx,
     part: Part,
     copied: bool,
+    /// The manual's open chapter (none: the list)
+    chapter: Option<usize>,
 }
 
 impl About {
     pub fn new(scx: ScreenCx, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let part = if take_screen_arg(cx) == Some("manual") { Part::Manual } else { Part::About };
-        About { scx, part, copied: false }
+        About { scx, part, copied: false, chapter: None }
     }
 
     /// The version line and the environment, as text for a bug report
@@ -130,19 +119,49 @@ impl Render for About {
                         .child(tr("GNU General Public License, version 2 or later (GPL-2.0-or-later)")),
                 )
                 .into_any_element(),
-            Part::Manual => div()
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .children(CHAPTERS.iter().enumerate().map(|(i, k)| {
-                    div()
-                        .flex()
-                        .gap(px(8.))
-                        .text_size(px(12.))
-                        .child(div().w(px(20.)).text_color(c(THEME.text3)).child(format!("{}.", i + 1)))
-                        .child(tr(k))
-                }))
-                .into_any_element(),
+            Part::Manual => match self.chapter {
+                None => div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .children((0..super::manual::CHAPTERS.len()).map(|i| {
+                        div()
+                            .id(("chapter", i))
+                            .debug_selector(move || format!("chapter-{i}"))
+                            .flex()
+                            .gap(px(8.))
+                            .text_size(px(12.))
+                            .cursor_pointer()
+                            .hover(|s| s.text_color(c(THEME.green)))
+                            .child(div().w(px(20.)).text_color(c(THEME.text3)).child(format!("{}.", i + 1)))
+                            .child(super::manual::title(i))
+                            .on_click(cx.listener(move |a, _, _, cx| {
+                                a.chapter = Some(i);
+                                cx.notify();
+                            }))
+                    }))
+                    .into_any_element(),
+                Some(i) => div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(
+                        button("manual-back", tr("Back"), false, 0).debug_selector(|| "manual-back".into()).on_click(
+                            cx.listener(|a, _, _, cx| {
+                                a.chapter = None;
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                    .children(super::manual::text(i).lines().map(|l| {
+                        if let Some(h) = l.strip_prefix("# ") {
+                            div().text_size(px(15.)).font_weight(FontWeight::BOLD).child(h.to_string())
+                        } else {
+                            div().text_size(px(12.)).min_h(px(6.)).child(l.to_string())
+                        }
+                    }))
+                    .into_any_element(),
+            },
         };
         div()
             .id("about")

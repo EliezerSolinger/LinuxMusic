@@ -3,7 +3,8 @@
 //! before losing changes. It owns the `Core` entity and the page views, and redraws when the core says something
 //! changed (it observes the entity) or, while playing, every display frame (the cursor).
 
-use std::time::Instant;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, Context, Entity, FocusHandle, FontWeight, Render, SharedString, Subscription, Window,
@@ -60,6 +61,72 @@ pub struct Workspace {
     /// interface document (`docks`)
     pub docks: Docks,
     dock_drag: Option<(DockEdge, f32, f32)>,
+    /// Tap Tempo's taps and the clock they are counted on
+    pub tap: crate::tap::TapTempo,
+    pub tap_clock: Instant,
+    /// The time signature's editor is open in the transport
+    pub sig_editor: bool,
+    /// The floating notices (F-JAN-013), and the notices already seen (id and how many times it came)
+    pub toasts: Vec<Toast>,
+    seen_notices: HashMap<u64, u32>,
+    toast_seq: u64,
+    /// The in-window menu bar's open menu (Linux)
+    pub menu_open: Option<usize>,
+    /// The pages and screens in a window of their own (F-JAN-006), with the window
+    detached: Vec<(Detachable, gpui::AnyWindowHandle)>,
+}
+
+/// A floating notice: its text, its color, and its number (it goes away by itself)
+#[derive(Clone, Debug)]
+pub struct Toast {
+    pub seq: u64,
+    pub notice: u64,
+    pub text: String,
+    pub color: u32,
+}
+
+/// How long a floating notice stays
+const TOAST_LIFE: Duration = Duration::from_secs(4);
+/// How many show at once
+const TOASTS_MAX: usize = 4;
+
+/// What can be in a window of its own: a page (the mixer) or a docked screen (an editor)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Detachable {
+    Page(Page),
+    Screen(Screen),
+}
+
+impl Detachable {
+    /// How the interface document remembers it
+    pub fn key(self) -> String {
+        match self {
+            Detachable::Page(p) => format!("page:{p:?}"),
+            Detachable::Screen(s) => format!("screen:{s:?}"),
+        }
+    }
+
+    pub fn parse(key: &str) -> Option<Detachable> {
+        let (kind, name) = key.split_once(':')?;
+        match kind {
+            "page" => [Page::Composition, Page::Mixing, Page::MidiMaps]
+                .into_iter()
+                .find(|p| format!("{p:?}") == name)
+                .map(Detachable::Page),
+            "screen" => Screen::ALL
+                .iter()
+                .find(|s| format!("{s:?}") == name && s.placement() != Placement::Modal)
+                .map(|s| Detachable::Screen(*s)),
+            _ => None,
+        }
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Detachable::Page(p) => p.title(),
+            Detachable::Screen(s) => s.title(),
+        }
+    }
 }
 
 /// The docks' sizes, in logical pixels
@@ -138,7 +205,18 @@ impl Workspace {
             _pages: pages,
             docks,
             dock_drag: None,
+            tap: Default::default(),
+            tap_clock: Instant::now(),
+            sig_editor: false,
+            toasts: Vec::new(),
+            seen_notices: HashMap::new(),
+            toast_seq: 0,
+            menu_open: None,
+            detached: Vec::new(),
         };
+        // what is there at the start is not news: only the notices that come later float
+        let first = ws.core.update(cx, |core, _| core.port_mut().notices());
+        ws.seen_notices = first.iter().map(|n| (n.id, n.repeats)).collect();
         // LM_OPEN=Settings,PianoRoll... opens screens at start (screenshots, and each author's own testing)
         if let Ok(list) = std::env::var("LM_OPEN") {
             for name in list.split(',') {
@@ -146,6 +224,25 @@ impl Workspace {
                     ws.open(*s, None, window, cx);
                 }
             }
+        }
+        // the windows the last session left detached (the interface document), after the first frame
+        let saved: Vec<Detachable> = ws
+            .core
+            .read(cx)
+            .port()
+            .ui()
+            .get("detached")
+            .map(|l| l.items().filter_map(|v| v.as_text().and_then(Detachable::parse)).collect())
+            .unwrap_or_default();
+        if !saved.is_empty() {
+            cx.defer_in(window, move |ws, window, cx| {
+                for d in saved {
+                    if let Detachable::Screen(s) = d {
+                        ws.open(s, None, window, cx);
+                    }
+                    ws.detach(d, cx);
+                }
+            });
         }
         ws
     }
@@ -160,7 +257,16 @@ impl Workspace {
             self.open.remove(i);
         }
         // one modal at a time, one screen per dock
-        self.open.retain(|(o, _)| o.placement() != place);
+        if let Some(d) = self.detached.iter().position(|(d, _)| *d == Detachable::Screen(s)) {
+            // asking for a detached screen brings it back
+            self.dock(self.detached[d].0, cx);
+        }
+        let detached: Vec<Screen> = self
+            .detached
+            .iter()
+            .filter_map(|(d, _)| if let Detachable::Screen(s) = d { Some(*s) } else { None })
+            .collect();
+        self.open.retain(|(o, _)| o.placement() != place || detached.contains(o));
         if matches!(s, Screen::Effect | Screen::Instrument) {
             self.focused_plugin = target;
             // after the current update: the page that opened the window may be the one being updated
@@ -183,6 +289,9 @@ impl Workspace {
             self.focused_plugin = None;
         }
         self.open.retain(|(o, _)| *o != s);
+        if self.detached.iter().any(|(d, _)| *d == Detachable::Screen(s)) {
+            self.dock(Detachable::Screen(s), cx);
+        }
         // the screen may have held the focus: the shell takes it back at the next frame, or the keys reach nothing
         self.refocus = true;
         cx.notify();
@@ -199,7 +308,159 @@ impl Workspace {
     }
 
     fn docked(&self, p: Placement) -> Option<AnyView> {
-        self.open.iter().find(|(s, _)| s.placement() == p).map(|(_, v)| v.clone())
+        self.open
+            .iter()
+            .find(|(s, _)| s.placement() == p && !self.is_detached(Detachable::Screen(*s)))
+            .map(|(_, v)| v.clone())
+    }
+
+    pub fn is_detached(&self, d: Detachable) -> bool {
+        self.detached.iter().any(|(o, _)| *o == d)
+    }
+
+    /// The view a detachable shows
+    fn view_of(&self, d: Detachable) -> Option<AnyView> {
+        match d {
+            Detachable::Page(Page::Composition) => Some(self.composition.clone().into()),
+            Detachable::Page(Page::Mixing) => Some(self.mixing.clone().into()),
+            Detachable::Page(Page::MidiMaps) => Some(self.midi_maps.clone().into()),
+            Detachable::Screen(s) => self.open.iter().find(|(o, _)| *o == s).map(|(_, v)| v.clone()),
+        }
+    }
+
+    /// Puts a page or an open screen in a window of its own (F-JAN-006); closing that window docks it back
+    pub fn detach(&mut self, d: Detachable, cx: &mut Context<Self>) {
+        if self.is_detached(d) {
+            return;
+        }
+        let Some(view) = self.view_of(d) else { return };
+        let me = cx.weak_entity();
+        let options = gpui::WindowOptions {
+            titlebar: Some(gpui::TitlebarOptions { title: Some(tr(d.title()).into()), ..Default::default() }),
+            window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds::new(
+                gpui::point(px(80.), px(80.)),
+                gpui::size(px(crate::view::WINDOW_W * 0.7), px(crate::view::WINDOW_H * 0.7)),
+            ))),
+            ..Default::default()
+        };
+        let opened = cx.open_window(options, move |window, cx| {
+            let back = me.clone();
+            window.on_window_should_close(cx, move |_, cx| {
+                // the user closed it: it goes back to the main window
+                let _ = back.update(cx, |ws, cx| ws.forget_detached(d, cx));
+                true
+            });
+            cx.new(|cx| gpui_component::Root::new(view, window, cx))
+        });
+        if let Ok(handle) = opened {
+            self.detached.push((d, handle.into()));
+            self.write_detached(cx);
+            cx.notify();
+        }
+    }
+
+    /// The window is closing by itself: only the record goes
+    fn forget_detached(&mut self, d: Detachable, cx: &mut Context<Self>) {
+        self.detached.retain(|(o, _)| *o != d);
+        self.write_detached(cx);
+        cx.notify();
+    }
+
+    /// Brings a detached page or screen back into the main window
+    pub fn dock(&mut self, d: Detachable, cx: &mut Context<Self>) {
+        let Some(i) = self.detached.iter().position(|(o, _)| *o == d) else { return };
+        let (_, handle) = self.detached.remove(i);
+        let _ = handle.update(cx, |_, window, _| window.remove_window());
+        self.write_detached(cx);
+        cx.notify();
+    }
+
+    pub fn dock_all(&mut self, cx: &mut Context<Self>) {
+        let all: Vec<Detachable> = self.detached.iter().map(|(d, _)| *d).collect();
+        for d in all {
+            self.dock(d, cx);
+        }
+    }
+
+    /// Every open editor and side window in a window of its own
+    pub fn detach_all(&mut self, cx: &mut Context<Self>) {
+        let screens: Vec<Screen> =
+            self.open.iter().map(|(s, _)| *s).filter(|s| s.placement() != Placement::Modal).collect();
+        for s in screens {
+            self.detach(Detachable::Screen(s), cx);
+        }
+    }
+
+    /// What is detached, remembered in the interface document (I-3.8): no undo, saved with the project
+    fn write_detached(&mut self, cx: &mut Context<Self>) {
+        let list = Value::list(self.detached.iter().map(|(d, _)| Value::text(d.key())));
+        self.core.update(cx, |core, _| {
+            let _ = core.port_mut().set_ui(vec![PathStep::key("detached")], list);
+        });
+    }
+
+    /// The floating notices: the new ones (or the ones that came again) join the stack, and go by themselves
+    fn collect_toasts(&mut self, cx: &mut Context<Self>) {
+        let list = self.core.update(cx, |core, _| core.port_mut().notices());
+        let mut fresh = Vec::new();
+        for n in &list {
+            if self.seen_notices.get(&n.id) != Some(&n.repeats) {
+                self.seen_notices.insert(n.id, n.repeats);
+                if !n.read {
+                    fresh.push(n.clone());
+                }
+            }
+        }
+        self.seen_notices.retain(|id, _| list.iter().any(|n| n.id == *id));
+        for n in fresh {
+            self.toast_seq += 1;
+            let seq = self.toast_seq;
+            self.toasts.retain(|t| t.notice != n.id);
+            self.toasts.push(Toast {
+                seq,
+                notice: n.id,
+                text: crate::screens::notices::notice_text(n.key, &n.args),
+                color: crate::screens::notices::severity_color(n.severity),
+            });
+            if self.toasts.len() > TOASTS_MAX {
+                self.toasts.remove(0);
+            }
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(TOAST_LIFE).await;
+                let _ = this.update(cx, |ws, cx| {
+                    ws.toasts.retain(|t| t.seq != seq);
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+    }
+
+    fn render_toasts(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
+        div().absolute().right(px(16.)).bottom(px(16.)).flex().flex_col().items_end().gap(px(6.)).children(
+            self.toasts.iter().map(|t| {
+                let seq = t.seq;
+                div()
+                    .id(("toast", seq as usize))
+                    .debug_selector(|| "toast".into())
+                    .occlude()
+                    .max_w(px(420.))
+                    .px(px(12.))
+                    .py(px(8.))
+                    .rounded(px(8.))
+                    .bg(c(THEME.bg3))
+                    .border_1()
+                    .border_color(c(t.color))
+                    .shadow_lg()
+                    .text_size(px(12.))
+                    .cursor_pointer()
+                    .child(t.text.clone())
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        ws.toasts.retain(|t| t.seq != seq);
+                        cx.notify();
+                    }))
+            }),
+        )
     }
 
     fn toggle_screen(&mut self, s: Screen, window: &mut Window, cx: &mut Context<Self>) {
@@ -376,14 +637,23 @@ impl Render for Workspace {
             cx.quit();
         }
         self.run_midi_actions(window, cx);
-        if animate {
+        self.collect_toasts(cx);
+        if animate || !self.toasts.is_empty() {
             window.request_animation_frame();
         }
-        let page_view: AnyView = match self.page {
-            Page::Composition => self.composition.clone().into(),
-            Page::Mixing => self.mixing.clone().into(),
-            Page::MidiMaps => self.midi_maps.clone().into(),
+        let page_view: AnyView = if self.is_detached(Detachable::Page(self.page)) {
+            // the page is in a window of its own: here, the way back
+            let page = self.page;
+            let workspace = cx.weak_entity();
+            cx.new(|_| DetachedNote { page, workspace }).into()
+        } else {
+            match self.page {
+                Page::Composition => self.composition.clone().into(),
+                Page::Mixing => self.mixing.clone().into(),
+                Page::MidiMaps => self.midi_maps.clone().into(),
+            }
         };
+        let prefs = self.core.read(cx).port().preferences().clone();
         let modal = self.docked(Placement::Modal);
         let confirm = self.confirm;
         div()
@@ -441,6 +711,27 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|ws, _: &Save, _, cx| ws.run("project.save", Value::NULL, cx)))
             .on_action(cx.listener(|ws, _: &Quit, window, cx| ws.request(Pending::Quit, window, cx)))
+            .on_action(cx.listener(|ws, _: &SaveVersion, _, cx| ws.run("project.save_version", Value::NULL, cx)))
+            .on_action(cx.listener(|ws, _: &SaveTemplate, _, cx| ws.run("project.save_template", Value::NULL, cx)))
+            .on_action(cx.listener(|ws, _: &ShowPianoRoll, window, cx| ws.toggle_screen(Screen::PianoRoll, window, cx)))
+            .on_action(
+                cx.listener(|ws, _: &ShowAutomation, window, cx| ws.toggle_screen(Screen::Automation, window, cx)),
+            )
+            .on_action(cx.listener(|ws, _: &ShowSteps, window, cx| ws.toggle_screen(Screen::Steps, window, cx)))
+            .on_action(cx.listener(|ws, _: &ToggleBrowser, window, cx| ws.toggle_screen(Screen::Browser, window, cx)))
+            .on_action(cx.listener(|_, _: &ToggleFullscreen, window, _| window.toggle_fullscreen()))
+            .on_action(cx.listener(|ws, _: &DetachPage, _, cx| {
+                let d = Detachable::Page(ws.page);
+                if ws.is_detached(d) { ws.dock(d, cx) } else { ws.detach(d, cx) }
+            }))
+            .on_action(cx.listener(|ws, _: &DetachAll, _, cx| ws.detach_all(cx)))
+            .on_action(cx.listener(|ws, _: &DockAll, _, cx| ws.dock_all(cx)))
+            .on_action(cx.listener(|ws, _: &TapTempo, _, cx| transport::tap_tempo(ws, cx)))
+            .on_action(cx.listener(|ws, _: &ToggleMasterMute, _, cx| transport::toggle_master_mute(ws, cx)))
+            .on_action(cx.listener(|ws, _: &OpenManual, window, cx| {
+                cx.set_global(screens::palette::ScreenArg(Some("manual")));
+                ws.open(Screen::About, None, window, cx);
+            }))
             .on_action(cx.listener(|ws, _: &CloseModal, window, cx| {
                 if ws.confirm.take().is_none() {
                     ws.open.retain(|(s, _)| s.placement() != Placement::Modal);
@@ -449,6 +740,7 @@ impl Render for Workspace {
                 window.focus(&ws.focus, cx);
                 cx.notify();
             }))
+            .children(crate::menus::in_window().then(|| self.render_bar(&prefs, cx)))
             .child(transport::render(self, position, cx))
             .child(self.render_tabs(cx))
             .child(
@@ -497,6 +789,23 @@ impl Render for Workspace {
             .children(modal.map(|v| scrim("modal-scrim").child(v)))
             .children(confirm.map(|what| self.render_confirm(what, cx)))
             .children(self.learning_banner(cx))
+            .children((!self.toasts.is_empty()).then(|| self.render_toasts(cx)))
+            // an open menu closes with a click anywhere else
+            .children(self.menu_open.map(|_| {
+                div()
+                    .id("menu-backdrop")
+                    .absolute()
+                    .left(px(0.))
+                    .top(px(crate::menus::BAR_H))
+                    .size_full()
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|ws, _, _, cx| {
+                            ws.menu_open = None;
+                            cx.notify();
+                        }),
+                    )
+            }))
             // painted last: the CPU time of the frame, from the start of render to the end of paint
             .children(probe.map(|probe| canvas(|_, _, _| {}, move |_, _, _, _| probe(started)).absolute().size(px(0.))))
     }
@@ -611,6 +920,7 @@ pub fn start(cx: &mut App, preferences: &Value) {
     };
     gpui_component::Theme::change(mode, None, cx);
     let _ = bind_keys(cx, preferences);
+    crate::menus::install_native(cx);
 }
 
 // --- the docks' splitters ----------------------------------------------------------------------------------------
@@ -682,5 +992,53 @@ impl Workspace {
             let _ = core.port_mut().set_ui(vec![lm_port::PathStep::key("docks")], docks);
         });
         cx.notify();
+    }
+}
+
+/// What a detached page leaves in the main window: its name and the way back
+struct DetachedNote {
+    page: Page,
+    workspace: gpui::WeakEntity<Workspace>,
+}
+
+impl Render for DetachedNote {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let (page, ws) = (self.page, self.workspace.clone());
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(px(8.))
+            .child(div().text_size(px(13.)).text_color(c(THEME.text3)).child(tr(page.title())))
+            .child(button("dock-back", tr("Dock"), false, 0).debug_selector(|| "dock-back".into()).on_click(
+                move |_, _, cx| {
+                    let _ = ws.update(cx, |ws, cx| ws.dock(Detachable::Page(page), cx));
+                },
+            ))
+    }
+}
+
+#[cfg(test)]
+mod detach_tests {
+    use super::*;
+
+    #[test]
+    fn detached_keys_round_trip() {
+        for d in [
+            Detachable::Page(Page::Mixing),
+            Detachable::Page(Page::MidiMaps),
+            Detachable::Screen(Screen::PianoRoll),
+            Detachable::Screen(Screen::Browser),
+        ] {
+            assert_eq!(Detachable::parse(&d.key()), Some(d));
+        }
+    }
+
+    #[test]
+    fn a_modal_screen_cannot_be_detached() {
+        assert_eq!(Detachable::parse("screen:Settings"), None);
+        assert_eq!(Detachable::parse("nonsense"), None);
     }
 }

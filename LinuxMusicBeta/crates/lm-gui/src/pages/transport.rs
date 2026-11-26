@@ -90,6 +90,70 @@ pub fn record(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     cx.notify();
 }
 
+/// Tap Tempo (F-JAN-023): the tempo from the taps, written to the tempo map's first point
+pub fn tap_tempo(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    let now = ws.tap_clock.elapsed().as_secs_f64();
+    if let Some(bpm) = ws.tap.tap(now) {
+        let bpm = (bpm * 100.0).round() / 100.0;
+        ws.core.update(cx, |core, _| {
+            let _ = core.port_mut().apply(Label::new("Tempo"), vec![tempo_op(bpm)]);
+        });
+    }
+    cx.notify();
+}
+
+/// The signature's numerator and denominator, as the first point of the tempo map has them
+pub fn set_signature(ws: &mut Workspace, numerator: i64, denominator: i64, cx: &mut Context<Workspace>) {
+    let (n, d) = clamp_signature(numerator, denominator);
+    let op = EditOp::Set {
+        id: lm_port::Ref::Id(ROOT),
+        path: vec![lm_port::PathStep::key("tempoMap"), lm_port::PathStep::Index(0), lm_port::PathStep::key("timeSig")],
+        value: Value::list([Value::int(n), Value::int(d)]),
+    };
+    ws.core.update(cx, |core, _| {
+        let _ = core.port_mut().apply(Label::new("Time signature"), vec![op]);
+    });
+    cx.notify();
+}
+
+/// A valid signature: 1 to 32 beats of a power of two from 1 to 32
+pub fn clamp_signature(numerator: i64, denominator: i64) -> (i64, i64) {
+    let d = [1, 2, 4, 8, 16, 32].into_iter().min_by_key(|p| (p - denominator).abs()).unwrap_or(4);
+    (numerator.clamp(1, 32), d)
+}
+
+/// The next denominator up or down the powers of two
+pub fn step_denominator(d: i64, up: bool) -> i64 {
+    if up { (d * 2).min(32) } else { (d / 2).max(1) }
+}
+
+/// Mutes or unmutes the master channel (F-JAN-049, F-MIX-015)
+pub fn toggle_master_mute(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    let master =
+        model::channels(ws.core.read(cx).port().root()).into_iter().find(|c| c.kind == model::ChannelKind::Master);
+    let Some(m) = master else { return };
+    let op = EditOp::set(m.id, &["mute"], Value::bool(!m.mute));
+    ws.core.update(cx, |core, _| {
+        let _ = core.port_mut().apply(Label::new("Mute"), vec![op]);
+    });
+    cx.notify();
+}
+
+/// A small level bar of the transport (CPU, OUT): red above 95 %
+fn level_bar(id: &'static str, label: &'static str, fraction: f32) -> impl IntoElement {
+    let f = fraction.clamp(0.0, 1.0);
+    div()
+        .id(id)
+        .debug_selector(move || id.to_string())
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        .child(div().text_size(px(9.)).text_color(c(THEME.text3)).child(tr(label)))
+        .child(div().w(px(44.)).h(px(5.)).rounded(px(2.)).bg(c(THEME.lcd_bg)).child(
+            div().h_full().w(gpui::relative(f)).rounded(px(2.)).bg(c(if f > 0.95 { THEME.red } else { THEME.green })),
+        ))
+}
+
 pub fn begin_tempo(ws: &mut Workspace, ev: &MouseDownEvent, cx: &mut Context<Workspace>) {
     if ev.click_count == 2 {
         ws.core.update(cx, |core, _| {
@@ -146,6 +210,12 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
     let bpm = first_bpm(root);
     let sig = map.time_signature_at(tick);
     let other = if ws.display_format == DisplayFormat::Bars { DisplayFormat::Time } else { DisplayFormat::Bars };
+    let master = model::channels(root).into_iter().find(|c| c.kind == model::ChannelKind::Master);
+    let master_muted = master.as_ref().is_some_and(|m| m.mute);
+    let out_level = master.as_ref().map_or(0.0, |m| ws.core.read(cx).meter(m.id));
+    let load = tele.load;
+    let (sig_n, sig_d) = (sig.numerator() as i64, sig.denominator() as i64);
+    let sig_open = ws.sig_editor;
     let (loop_on, punch_on, metro, count_in, pre_roll, transpose) =
         (song.loop_on, song.punch_on, song.metronome, song.count_in, song.pre_roll, song.transpose);
     div()
@@ -239,7 +309,38 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
                     cx.notify();
                 })),
         )
-        .child(tbutton("sig", format!("{}/{}", sig.numerator(), sig.denominator()), false, 0))
+        .child(
+            tbutton("sig", format!("{sig_n}/{sig_d}"), sig_open, THEME.blue).debug_selector(|| "sig".into()).on_click(
+                cx.listener(|ws, _, _, cx| {
+                    ws.sig_editor = !ws.sig_editor;
+                    cx.notify();
+                }),
+            ),
+        )
+        .when(sig_open, |d| {
+            d.child(
+                tbutton("sig-n-", "-", false, 0)
+                    .on_click(cx.listener(move |ws, _, _, cx| set_signature(ws, sig_n - 1, sig_d, cx))),
+            )
+            .child(
+                tbutton("sig-n+", "+", false, 0)
+                    .on_click(cx.listener(move |ws, _, _, cx| set_signature(ws, sig_n + 1, sig_d, cx))),
+            )
+            .child(div().text_size(px(12.)).text_color(c(THEME.text3)).child("/"))
+            .child(tbutton("sig-d-", "-", false, 0).on_click(
+                cx.listener(move |ws, _, _, cx| set_signature(ws, sig_n, step_denominator(sig_d, false), cx)),
+            ))
+            .child(
+                tbutton("sig-d+", "+", false, 0).on_click(
+                    cx.listener(move |ws, _, _, cx| set_signature(ws, sig_n, step_denominator(sig_d, true), cx)),
+                ),
+            )
+        })
+        .child(
+            tbutton("tap", tr("Tap"), ws.tap.count() > 0, THEME.blue)
+                .debug_selector(|| "tap".into())
+                .on_click(cx.listener(|ws, _, _, cx| tap_tempo(ws, cx))),
+        )
         // the global automation button (I-21.5): "Lanes" lets each lane use its own mode
         .child({
             let now = model::at(root, &["transport", "automationMode"])
@@ -315,4 +416,32 @@ pub fn render(ws: &Workspace, position: Position, cx: &Context<Workspace>) -> im
                 .child(trf("xruns {0}", &[&tele.xruns])),
         )
         .child(div().flex_1())
+        .child(level_bar("cpu", "CPU", load))
+        .child(level_bar("out", "OUT", out_level))
+        .child(
+            tbutton("master-mute", tr("Master"), master_muted, THEME.red)
+                .debug_selector(|| "master-mute".into())
+                .on_click(cx.listener(|ws, _, _, cx| toggle_master_mute(ws, cx))),
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_signature_is_kept_valid() {
+        assert_eq!(clamp_signature(0, 4), (1, 4));
+        assert_eq!(clamp_signature(40, 4), (32, 4));
+        assert_eq!(clamp_signature(7, 7), (7, 8));
+        assert_eq!(clamp_signature(3, 100), (3, 32));
+    }
+
+    #[test]
+    fn the_denominator_steps_along_the_powers_of_two() {
+        assert_eq!(step_denominator(4, true), 8);
+        assert_eq!(step_denominator(4, false), 2);
+        assert_eq!(step_denominator(32, true), 32);
+        assert_eq!(step_denominator(1, false), 1);
+    }
 }

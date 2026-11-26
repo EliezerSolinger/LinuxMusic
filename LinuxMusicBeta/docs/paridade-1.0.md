@@ -19,7 +19,7 @@ a ação contam como parcial.
 
 | Seção | Área | Itens | feito | parcial | falta |
 |---|---|---:|---:|---:|---:|
-| F-JAN | Casca do programa, menus e transporte | 32 | 12 | 16 | 4 |
+| F-JAN | Casca do programa, menus e transporte | 32 | 18 | 12 | 2 |
 | F-IJN | Janela do instrumento | 20 | 13 | 6 | 1 |
 | F-NOT | Editor de notas | 22 | 11 | 11 | 0 |
 | F-PAS | Gravação por passos | 1 | 0 | 1 | 0 |
@@ -39,7 +39,7 @@ a ação contam como parcial.
 | F-CFG | Configurações | 12 | 2 | 10 | 0 |
 | F-BRW | Navegador | 12 | 1 | 10 | 1 |
 | F-GER | Outros | 12 | 2 | 10 | 0 |
-| **Total** | | **406** | **219** | **151** | **36** |
+| **Total** | | **406** | **225** | **147** | **34** |
 
 ## Seções
 
@@ -50,21 +50,21 @@ a ação contam como parcial.
 | F-JAN-001 | Página Composição | feito |  | lm-gui/src/pages/composition.rs,lm-gui/src/workspace.rs |
 | F-JAN-002 | Página Mixagem | feito |  | lm-gui/src/pages/mixing.rs,lm-gui/src/workspace.rs |
 | F-JAN-003 | Página Configurações | parcial | é um diálogo modal (Ctrl+,), não uma página; não abre sozinha na primeira execução nem quando o dispositivo de áudio falha; sair não aplica nada de especial (aplica ao vivo) | lm-gui/src/screens/settings.rs,lm-gui/src/workspace.rs |
-| F-JAN-004 | Dois navegadores | parcial | só um navegador (esquerda, tela Browser com todas as páginas); sem navegador separado de efeitos na Mixagem, sem opção esquerda/direita, sem Ctrl+8 de mostrar/esconder | lm-gui/src/screens/browser.rs,lm-gui/src/screens/mod.rs |
+| F-JAN-004 | Dois navegadores | parcial | só um navegador (esquerda); Ctrl+8 mostra e esconde; sem navegador separado de efeitos na Mixagem nem opção esquerda/direita | lm-gui/src/screens/browser.rs,lm-gui/src/screens/mod.rs |
 | F-JAN-005 | Recolher uma área | falta | nenhum botão recolhe a área de abas; só há divisores arrastáveis dos docks | lm-gui/src/workspace.rs |
-| F-JAN-006 | Janelas flutuantes | parcial | as janelas de instrumento/efeito são painéis encaixados; faltam flutuar sobre as páginas, destacar para janela do sistema, Destacar/Encaixar todas e a política ao fechar destacada; só o tamanho dos docks vai para o documento da interface | lm-gui/src/workspace.rs,lm-gui/src/screens/mod.rs |
+| F-JAN-006 | Janelas flutuantes | parcial | páginas e telas não modais destacam para janela do sistema (Ver > Destacar, Destacar/Encaixar todas), fechar encaixa de volta, o destacado vai para o documento da interface; falta flutuar sobre as páginas e a política ao fechar destacada | lm-gui/src/workspace.rs,lm-gui/src/screens/mod.rs |
 | F-JAN-007 | Título da janela | parcial | o nome e o marcador de modificado ficam na barra de abas; o título da janela do sistema é fixo "LinuxMusicBeta"; sem "Sem título" nem "Sessão recuperada" | lm-gui/src/workspace.rs,lm-gui/src/lib.rs |
 | F-JAN-008 | Botão Salvar pisca no autosave | falta | nenhuma piscada do botão Salvar quando o autosave escreve | lm-session/src/session.rs |
 | F-JAN-009 | Perguntar antes de perder mudanças | parcial | Sair/fechar pergunta Salvar/Não salvar/Cancelar e Novo avisa, mas Abrir projeto não pergunta; sem texto próprio para sessão recuperada | lm-gui/src/workspace.rs,lm-gui/src/screens/new_project.rs |
 | F-JAN-010 | Ao fechar | parcial | o núcleo mantém autosave e journal, mas não há rotina explícita ao fechar (fechar configurações, terminar o autosave, apagar o arquivo de recuperação) conferida na GUI; sem lixeira (P-13) fica por conta de project.clean_unused | lm-session/src/session.rs,lm-session/src/core_actions.rs |
 | F-JAN-011 | Dicas (tooltips) | parcial | há dicas em vários controles, mas a preferência interface.tooltips não é lida por ninguém (não dá para desligar) | lm-gui/src/screens/settings.rs,lm-gui/src/screens/piano_roll.rs |
 | F-JAN-012 | Teclas globais | parcial | Espaço, Shift+Espaço, R, L e Home funcionam; o teclado do computador toca notas na janela de instrumento e no editor de notas; loop em L e não C (configurável) | lm-gui/src/actions.rs,lm-gui/src/workspace.rs |
-| F-JAN-013 | Mensagens flutuantes | parcial | existe a tela de avisos e atividades (fila com contagem), mas não há mensagens flutuantes que somem sozinhas (projeto salvo, carregando amostra, dicas) | lm-gui/src/screens/notices.rs,lm-session/src/notices.rs |
-| F-JAN-020 | Arquivo | parcial | não há barra de menus; as ações (novo, abrir, salvar, salvar como, importar, exportar, exportar MIDI, sair) existem por atalho, paleta e telas; faltam Salvar como nova versão (Ctrl+Alt+S) e entrada de menu para Salvar como modelo (existe só a ação do núcleo) | lm-gui/src/actions.rs,lm-session/src/core_actions.rs,lm-gui/src/screens/palette.rs |
-| F-JAN-021 | Editar | parcial | sem barra de menus; Desfazer, Refazer e Configurações existem por atalho e paleta; Escalas e mapas de teclas fica na aba Afinação da janela do instrumento | lm-gui/src/actions.rs,lm-gui/src/screens/instrument.rs |
-| F-JAN-022 | Ver | parcial | sem menu Ver; só Ctrl+1 Composição, Ctrl+2 Mixagem, Ctrl+3 Mapas MIDI; faltam atalhos de editores/controladores/notas/navegador (Ctrl+3..8), tela cheia, destacar, rolagem suave (followCursor/noteNames sem consumidor) | lm-gui/src/actions.rs,lm-gui/src/workspace.rs |
-| F-JAN-023 | Ferramentas | falta | sem menu Ferramentas nem Tap Tempo | lm-gui/src/pages/transport.rs |
-| F-JAN-024 | Ajuda | parcial | aberto: P-34 respondida (manual próprio pt/en distribuído); existe só Sobre (F1); o manual não existe | lm-gui/src/screens/about.rs,lm-gui/src/actions.rs |
+| F-JAN-013 | Mensagens flutuantes | feito |  | lm-gui/src/workspace.rs,lm-gui/src/screens/notices.rs,lm-session/src/notices.rs |
+| F-JAN-020 | Arquivo | parcial | barra de menus pronta (nativa no macOS, na janela no Linux) com Salvar como nova versão (Ctrl+Alt+S, ação project.save_version) e Salvar como modelo; faltam Recentes e Novo a partir de modelo como submenus (a tela Novo projeto tem os modelos) e Exportar faixas (os stems estão na tela Exportar) | lm-gui/src/menus.rs,lm-gui/src/actions.rs,lm-session/src/core_actions.rs |
+| F-JAN-021 | Editar | parcial | menu Editar com Desfazer, Refazer e Configurações; Escalas e mapas de teclas fica na aba Afinação da janela do instrumento | lm-gui/src/menus.rs,lm-gui/src/screens/instrument.rs |
+| F-JAN-022 | Ver | parcial | menu Ver: páginas Ctrl+1..3, Piano Roll Ctrl+4, Automação Ctrl+5, Passos Ctrl+6, Navegador Ctrl+8, Tela cheia F11, Destacar, Destacar e Encaixar todas; faltam Notas do projeto e rolagem suave/nomes das notas no menu (preferências sem consumidor) | lm-gui/src/menus.rs,lm-gui/src/actions.rs |
+| F-JAN-023 | Ferramentas | feito |  | lm-gui/src/menus.rs,lm-gui/src/tap.rs,lm-gui/src/pages/transport.rs |
+| F-JAN-024 | Ajuda | feito | P-34: manual próprio pt/en em docs/manual, aberto por Ajuda > Manual (aba Manual do Sobre); sem ajuda online | lm-gui/src/screens/manual.rs,lm-gui/src/screens/about.rs,docs/manual |
 | F-JAN-025 | Atalhos configuráveis | feito |  | lm-gui/src/actions.rs,lm-gui/src/screens/settings.rs |
 | F-JAN-026 | Paleta de comandos | feito |  | lm-gui/src/screens/palette.rs,lm-gui/src/actions.rs |
 | F-JAN-040 | Ao início | feito |  | lm-gui/src/pages/transport.rs,lm-gui/src/actions.rs |
@@ -73,11 +73,11 @@ a ação contam como parcial.
 | F-JAN-043 | Loop | feito |  | lm-gui/src/pages/transport.rs,lm-gui/src/actions.rs |
 | F-JAN-044 | Relógio de posição e relógio de tempo | feito |  | lm-gui/src/pages/transport.rs,lm-gui/src/view.rs |
 | F-JAN-045 | Estado em palavra | feito |  | lm-gui/src/pages/transport.rs |
-| F-JAN-046 | Andamento | parcial | arrastar e roda mudam o andamento; faltam duplo clique para digitar, menu do clique (digitar, bater o andamento, mudar a partir do cursor), Shift+roda ±10 | lm-gui/src/pages/transport.rs |
-| F-JAN-047 | Fórmula de compasso | parcial | o botão N/D mostra a fórmula mas não tem ação: falta o editor de numerador e denominador | lm-gui/src/pages/transport.rs |
+| F-JAN-046 | Andamento | parcial | arrastar, roda e botão Tap (média das últimas 8 batidas, recomeça após 2 s) mudam o andamento; faltam duplo clique para digitar, menu do clique, Shift+roda ±10 | lm-gui/src/pages/transport.rs,lm-gui/src/tap.rs |
+| F-JAN-047 | Fórmula de compasso | feito | editor de numerador e denominador no transporte (altera o primeiro ponto do mapa) | lm-gui/src/pages/transport.rs |
 | F-JAN-048 | Metrônomo, pré-roll, contagem | feito |  | lm-gui/src/pages/transport.rs,lm-compile/src/core.rs |
-| F-JAN-049 | Mudo do master | parcial | o corte do monitor existe na seção do master da mesa, mas não há botão de mudo do master no transporte | lm-gui/src/pages/mixing.rs,lm-gui/src/pages/transport.rs |
-| F-JAN-050 | Medidores CPU e OUT | falta | só o contador de xruns; sem medidor de CPU e de nível OUT no transporte e sem carga de áudio na telemetria | lm-gui/src/pages/transport.rs,lm-port/src/lib.rs |
+| F-JAN-049 | Mudo do master | feito | botão Master no transporte e ação transport.master_mute | lm-gui/src/pages/transport.rs |
+| F-JAN-050 | Medidores CPU e OUT | feito | CPU (carga do renderizador, telemetria load) e OUT (pico do master), vermelho acima de 95 % | lm-gui/src/pages/transport.rs,lm-port/src/lib.rs,lm-session/src/session.rs |
 | F-JAN-051 | Volume e transposição geral do projeto | feito | aberto: P-37 respondida (transposição geral no transporte; volume global é o do master); o botão Transpose existe e o compilador usa transport.transpose | lm-gui/src/pages/transport.rs,lm-compile/src/core.rs |
 
 ## F-IJN: Janela do instrumento
@@ -570,10 +570,10 @@ Arquivos: `lm-session/src/port.rs` (caminho de nota ao vivo), `lm-gui/src/screen
 
 ### P3. Casca: menus, janelas, transporte, avisos
 Arquivos: `lm-gui/src/workspace.rs`, `actions.rs`, `pages/transport.rs`, `screens/{notices,about}.rs`.
-- Barra de menus Arquivo/Editar/Ver/Ferramentas (F-JAN-020..023), Tap Tempo (F-JAN-023, F-FX-037), atalhos de Ver (F-JAN-022).
-- Medidores CPU e OUT no transporte (F-JAN-050), mudo do master no transporte (F-JAN-049, F-MIX-015), editor da fórmula de compasso (F-JAN-047), digitar o andamento e menu do clique (F-JAN-046).
-- Mensagens flutuantes (F-JAN-013), título da janela (F-JAN-007), pergunta ao Abrir (F-JAN-009), rotina ao fechar (F-JAN-010), piscar do Salvar no autosave (F-JAN-008), dicas ligáveis (F-JAN-011), recolher a área (F-JAN-005), janelas flutuantes/destacar (F-JAN-006), dois navegadores (F-JAN-004), Configurações como página e na primeira execução (F-JAN-003).
-- Ajuda: o manual pt/en (P-34) não existe (F-JAN-024, F-GER-015); Sobre com autores (F-GER-009); seletor de cor geral (F-GER-010); diálogo de arquivo (F-GER-011).
+- Feito: barra de menus, Tap Tempo, atalhos de Ver, CPU e OUT, mudo do master, editor da fórmula de compasso, mensagens flutuantes, janelas destacadas, manual pt/en.
+- Falta: digitar o andamento e menu do clique (F-JAN-046), Recentes e Novo a partir de modelo como submenus (F-JAN-020), Escalas no menu Editar (F-JAN-021), Notas do projeto (F-JAN-022).
+- Título da janela (F-JAN-007), pergunta ao Abrir (F-JAN-009), rotina ao fechar (F-JAN-010), piscar do Salvar no autosave (F-JAN-008), dicas ligáveis (F-JAN-011), recolher a área (F-JAN-005), janelas flutuantes/destacar (F-JAN-006), dois navegadores (F-JAN-004), Configurações como página e na primeira execução (F-JAN-003).
+- Ajuda: Sobre com autores (F-GER-009); seletor de cor geral (F-GER-010); diálogo de arquivo (F-GER-011).
 
 ### P4. Configurações sem consumidor e partida
 Arquivos: `lm-gui/src/screens/settings.rs`, `lm-session/src/prefs.rs`, `lm-gui-app`.

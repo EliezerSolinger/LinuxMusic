@@ -17,9 +17,11 @@
 mod actions;
 mod bench;
 mod core;
+mod menus;
 mod model;
 mod pages;
 mod screens;
+mod tap;
 mod tiles;
 mod ui;
 mod view;

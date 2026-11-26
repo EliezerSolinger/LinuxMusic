@@ -35,3 +35,15 @@ Arrange = Arranjo
 Desk = Mesa
 Delete = Apagar
 The project has unsaved changes. = O projeto tem alterações não salvas.
+
+# The shell's menus and transport (P3)
+Full screen = Tela cheia
+Detach the page = Destacar a página
+Detach all = Destacar todas
+Dock all = Encaixar todas
+Dock = Encaixar
+Tap Tempo = Bater o andamento
+Tap = Tap
+CPU = CPU
+OUT = OUT
+Mute the master = Mudo do master

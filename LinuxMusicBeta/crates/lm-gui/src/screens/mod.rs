@@ -22,6 +22,7 @@ pub mod export;
 pub mod files;
 pub mod instrument;
 pub mod live;
+pub mod manual;
 pub mod midi_binding;
 pub mod new_project;
 pub mod notices;
