@@ -10,6 +10,11 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# The JACK backend and JACK MIDI (needs libjack at build time: libjack-jackd2-dev, or Homebrew's jack)
+jack = ["dep:lm-sys-jack"]
+
 [dependencies]
 lm-base.workspace = true
 lm-render.workspace = true
@@ -23,6 +28,8 @@ lm-sys-alsa.workspace = true
 lm-sys-linux.workspace = true
 # macOS: the CoreAudio backend (empty crate elsewhere)
 lm-sys-coreaudio.workspace = true
+# The JACK backend (the `jack` feature: libjack must be installed; CI and the Mac have it, see ci/system-deps)
+lm-sys-jack = { workspace = true, optional = true }
 rtrb.workspace = true
 assert_no_alloc.workspace = true
 blake3.workspace = true

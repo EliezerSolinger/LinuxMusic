@@ -12,6 +12,10 @@ mod device;
 mod disk;
 mod dummy;
 mod edge;
+#[cfg(feature = "jack")]
+mod jack;
+#[cfg(feature = "jack")]
+mod jackmidi;
 mod midi;
 mod mididev;
 pub mod peaks;
@@ -38,6 +42,12 @@ pub use disk::{
 };
 pub use dummy::{DummyBackend, DummyControl, DummyOptions, DummySource, Pace, Silence};
 pub use edge::{Edge, EdgeStats, MAX_CHANNELS};
+#[cfg(feature = "jack")]
+pub use jack::{
+    JACK_DEFAULT_INPUTS, JACK_MAX_CHANNELS, JackBackend, JackOptions, jack_device_present, jack_list_devices,
+};
+#[cfg(feature = "jack")]
+pub use jackmidi::{JACK_MIDI_PORTS, JackMidiLink, JackMidiShared, SYSEX_SLOT};
 #[cfg(target_os = "linux")]
 pub use midi::list_midi_ports;
 pub use midi::{MidiInput, MidiPortInfo, MidiSink, MidiSource, MidiStats, Parsed, RawParser, midi_ring};

@@ -47,6 +47,8 @@ impl fmt::Display for PortId {
 pub enum MidiBackendKind {
     Seq,
     Raw,
+    /// A JACK MIDI port, on the JACK backend's client (`JackMidiLink`)
+    Jack,
 }
 
 /// What a port is for (I-21.1): the compiler's port table routes instrument ports to the armed tracks and controller
