@@ -206,6 +206,7 @@ pub static DYNAMICS_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 "Process each stereo channel independently",
             ),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }
@@ -241,6 +242,7 @@ pub static WAVESHAPER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             )
             .tip("Clip input signal to 0 dB"),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }

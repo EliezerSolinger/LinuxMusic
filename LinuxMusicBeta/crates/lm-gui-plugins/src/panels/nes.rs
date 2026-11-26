@@ -125,6 +125,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         background: Some(&ARTWORK),
         fill: 0x000000,
         controls,
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }

@@ -67,6 +67,7 @@ pub static BITCRUSH_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| PanelSpec {
         b26("stereoDifference", 72.0, 76.0, 0.1, "Stereo difference", "Stereo difference:", "%").label("STEREO"),
         b26("levels", 92.0, 32.0, 0.01, "Levels", "Levels:", "").label("QUANT"),
     ],
+    view_backgrounds: &[],
     labels: vec![label(24.0, 15.0, "IN"), label(139.0, 15.0, "OUT")],
     file_drop: None,
 });
@@ -83,6 +84,7 @@ pub static BASSBOOSTER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             b26("gain", cell(1, 3, w), y, 0.05, "Gain", "Gain:", "").label("GAIN"),
             b26("ratio", cell(2, 3, w), y, 0.1, "Ratio", "Ratio:", "").label("RATIO"),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }
@@ -101,6 +103,7 @@ pub static REVERBSC_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             b26("color", cell(2, 4, w), MARGIN, 0.1, "Color", "Color:", "").label("Color"),
             b26("outputGain", cell(3, 4, w), MARGIN, 0.1, "Output gain", "Output gain:", "dB").label("Output"),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }
@@ -126,6 +129,7 @@ pub static FLANGER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             b26("noise", k(5), MARGIN, 0.0001, "Noise", "White noise amount:", "").label("NOISE").volume_at(1.0),
             led(Bind::Switch { param: "invert" }, "invert", MARGIN, 57.0, LedColor::Yellow, "Invert", "Invert"),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }
@@ -146,6 +150,7 @@ pub static AMPLIFIER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             b26("leftGain", x0.round(), y1, 0.1, "Left gain", "Left gain:", "%").label("LEFT").volume(),
             b26("rightGain", x1.round(), y1, 0.1, "Right gain", "Right gain:", "%").label("RIGHT").volume(),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }
@@ -166,6 +171,7 @@ pub static STEREOMATRIX_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             b26("rightToLeft", at(98.6), y, 0.01, "Right to Left", "Right to Left Vol:", "").center(0.0),
             b26("rightToRight", at(135.8), y, 0.01, "Right to Right", "Right to Right Vol:", "").center(0.0),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }
@@ -224,6 +230,7 @@ pub static DUALFILTER_PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
         background: Some(&DUALFILTER),
         fill: FILL,
         controls,
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }

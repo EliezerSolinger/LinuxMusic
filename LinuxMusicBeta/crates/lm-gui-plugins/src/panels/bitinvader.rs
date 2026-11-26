@@ -131,6 +131,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             )
             .tip("High notes without the tones their harmonics make when they fold back below half the sample rate"),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }

@@ -91,6 +91,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| PanelSpec {
             "End to note",
         ),
     ],
+    view_backgrounds: &[],
     labels: Vec::new(),
     file_drop: None,
 });

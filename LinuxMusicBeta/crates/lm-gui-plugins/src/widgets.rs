@@ -834,3 +834,158 @@ mod tests {
         }
     }
 }
+
+// --- Fader (legacy `Fader`, src/gui/widgets/Fader.cpp)
+
+/// The fader knob's size (`fader_knob.svg`)
+pub const FADER_KNOB_W: f32 = 23.0;
+pub const FADER_KNOB_H: f32 = 30.0;
+/// The dBFS below which a linear fader drops to -inf (`c_faderMinDb`)
+pub const FADER_MIN_DB: f64 = -120.0;
+const FADER_EXPONENT: f64 = 3.0;
+
+pub fn amp_to_db(v: f64) -> f64 {
+    20.0 * v.log10()
+}
+
+pub fn db_to_amp(db: f64) -> f64 {
+    10f64.powf(db / 20.0)
+}
+
+fn fader_ratio(db: f64, max_db: f64) -> f64 {
+    ((db - FADER_MIN_DB) / (max_db - FADER_MIN_DB)).clamp(0.0, 1.0).powf(FADER_EXPONENT)
+}
+
+/// `Fader::calculateKnobPosYFromModel`: the y of the knob's lower end for the model's `value` in `min..=max`
+pub fn fader_knob_y(f: &crate::spec::FaderSpec, value: f64, min: f64, max: f64) -> f32 {
+    let (h, k) = (f64::from(f.h), f64::from(FADER_KNOB_H));
+    let ratio = if f.linear {
+        if value - min <= 0.0 {
+            return f.h;
+        }
+        fader_ratio(amp_to_db(value).max(FADER_MIN_DB), amp_to_db(max))
+    } else if max > min {
+        ((value.clamp(min, max) - min) / (max - min)).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (h - (h - k) * ratio) as f32
+}
+
+/// `Fader::setVolumeByLocalPixelValue`: the model's value for the knob's center at local `y`
+pub fn fader_value_at(f: &crate::spec::FaderSpec, y: f32, min: f64, max: f64) -> f64 {
+    let (h, k) = (f64::from(f.h), f64::from(FADER_KNOB_H));
+    let lower = (f64::from(y) + (k / 2.0).floor()).round();
+    let clamped = lower.clamp(k, h);
+    if f.linear {
+        if lower >= h {
+            return 0.0;
+        }
+        // the inverse of `fader_knob_y`: ratio = (h - y) / (h - k), the cube of the position in the dB span
+        let ratio = (h - clamped) / (h - k);
+        let max_db = amp_to_db(max);
+        let db = FADER_MIN_DB + ratio.powf(1.0 / FADER_EXPONENT) * (max_db - FADER_MIN_DB);
+        if db < FADER_MIN_DB { 0.0 } else { db_to_amp(db.min(max_db)) }
+    } else {
+        min + (max - min) * ((h - clamped) / (h - k))
+    }
+}
+
+/// The color a meter's level has at `db` (the legacy gradient: clip, warn between -0.01 and -6 dB, ok below -12 dB)
+fn peak_color(db: f64) -> Rgba {
+    let (ok, warn, clip) = (Rgba::rgb(10, 212, 92), Rgba::rgb(214, 236, 82), Rgba::rgb(193, 32, 56));
+    let mix = |a: Rgba, b: Rgba, t: f32| Rgba {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: 1.0,
+    };
+    if db >= 0.0 {
+        clip
+    } else if db > -0.01 {
+        mix(clip, warn, (-db / 0.01) as f32)
+    } else if db >= -6.0 {
+        warn
+    } else if db > -12.0 {
+        mix(warn, ok, ((-6.0 - db) / 6.0) as f32)
+    } else {
+        ok
+    }
+}
+
+/// `Fader::paintEvent`: the two meters (black wells, the levels in the gradient, the unity line) and the knob
+pub fn draw_fader(
+    c: &mut Canvas,
+    f: &crate::spec::FaderSpec,
+    value: f64,
+    min: f64,
+    max: f64,
+    peaks: Option<(f32, f32)>,
+) {
+    let (w, h) = (f.w, f.h);
+    // paintLevels: margin 1, 2 between, each meter (w - 2 - 2) / 2 wide
+    let meter_w = ((w - 4.0) / 2.0).floor();
+    let wells = [(1.0, 1.0, meter_w, h - 2.0), (w - 1.0 - meter_w, 1.0, meter_w, h - 2.0)];
+    for (x, y, mw, mh) in wells {
+        c.fill_rect(x, y + 1.0, mw, mh - 2.0, Rgba::rgb(0, 0, 0));
+        c.fill_rect(x + 1.0, y, mw - 2.0, mh, Rgba::rgb(0, 0, 0));
+    }
+    // the levels are in dBFS from `min_peak` (-42) to `max_peak` (+9)
+    let (lo_db, hi_db) = (-42.0f64, 9.0f64);
+    let inner_top = 2.0f32;
+    let inner_h = h - 4.0;
+    let y_of = |db: f64| inner_top + (((hi_db - db) / (hi_db - lo_db)) as f32) * inner_h;
+    let level_db = |v: f32| amp_to_db(f64::from(v).max(0.0001));
+    if f.unity_line {
+        let y = y_of(0.0).floor();
+        for (x, _, mw, _) in wells {
+            c.fill_rect(x + 1.0, y, mw - 2.0, 1.0, Rgba::rgb(63, 63, 63));
+        }
+    }
+    if let Some((l, r)) = peaks {
+        for ((x, _, mw, _), v) in wells.iter().zip([l, r]) {
+            let db = level_db(v);
+            if db <= lo_db {
+                continue;
+            }
+            let top = y_of(db.min(hi_db)).floor();
+            let bottom = inner_top + inner_h;
+            let mut y = top;
+            while y < bottom {
+                let row_db = hi_db - f64::from((y - inner_top) / inner_h) * (hi_db - lo_db);
+                c.fill_rect(x + 1.0, y, mw - 2.0, 1.0, peak_color(row_db));
+                y += 1.0;
+            }
+        }
+    }
+    let lower = fader_knob_y(f, value, min, max);
+    draw_fader_knob(c, (w - FADER_KNOB_W) / 2.0, lower - FADER_KNOB_H);
+}
+
+/// `fader_knob.svg` (23×30), drawn by hand: a black-edged rounded rectangle in a vertical gradient (#2c3138 on top,
+/// #1c1f24 below), a green stripe with its shine, the top and bottom highlights
+fn draw_fader_knob(c: &mut Canvas, x: f32, y: f32) {
+    let (top, bottom) = (Rgba::hex(0x2c3138), Rgba::hex(0x1c1f24));
+    let mix = |t: f32| Rgba {
+        r: top.r + (bottom.r - top.r) * t,
+        g: top.g + (bottom.g - top.g) * t,
+        b: top.b + (bottom.b - top.b) * t,
+        a: 1.0,
+    };
+    // the stroke: x 5..18, y 2..27 with 2 px round corners
+    c.fill_rect(x + 5.0, y + 3.0, 13.0, 24.0, Rgba::rgb(0, 0, 0));
+    c.fill_rect(x + 6.0, y + 2.0, 11.0, 26.0, Rgba::rgb(0, 0, 0));
+    for row in 0..24 {
+        c.fill_rect(x + 6.0, y + 3.0 + row as f32, 11.0, 1.0, mix(row as f32 / 23.0));
+    }
+    // the green stripe at y = 15, 2 px, reflected gradient #08a342 to #0bd556
+    let (g0, g1) = (Rgba::hex(0x08a342), Rgba::hex(0x0bd556));
+    for i in 0..11 {
+        let t = (1.0 - ((i as f32 - 5.0) / 5.0).abs()).clamp(0.0, 1.0);
+        let col =
+            Rgba { r: g0.r + (g1.r - g0.r) * t, g: g0.g + (g1.g - g0.g) * t, b: g0.b + (g1.b - g0.b) * t, a: 1.0 };
+        c.fill_rect(x + 6.0 + i as f32, y + 14.0, 1.0, 2.0, col);
+    }
+    c.fill_rect(x + 7.0, y + 3.0, 9.0, 1.0, Rgba::alpha(255, 255, 255, 26));
+    c.fill_rect(x + 7.0, y + 25.0, 9.0, 1.0, Rgba::alpha(0, 0, 0, 77));
+}

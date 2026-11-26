@@ -190,6 +190,30 @@ fn exercise(o: &mut Opened<'_>) {
 
     for (i, c) in spec.controls.iter().enumerate() {
         let id = c.id;
+        if let Some(v) = c.view {
+            o.panel.update(o.cx, |p, cx| p.set_view(v, cx));
+            o.settle();
+        }
+        if let Kind::Button(b) = &c.kind
+            && let Bind::View(n) = b.bind
+        {
+            // a view selector: panel-local, nothing in the plugin's state
+            let before = o.state();
+            o.click(id, MouseButton::Left);
+            assert_eq!(o.panel.read_with(o.cx, |p, _| p.view()), n, "{id}: selects view {n}");
+            assert_eq!(o.state(), before, "{id}: the view is not saved in the plugin");
+            continue;
+        }
+        if let Kind::Button(b) = &c.kind
+            && let Bind::Open { .. } = b.bind
+        {
+            // asks for a file with the system's dialog: not driven here
+            continue;
+        }
+        if let Kind::Readout(_) = &c.kind {
+            // a text, nothing to move
+            continue;
+        }
         if let Kind::Button(b) = &c.kind
             && let Bind::Press(_) = b.bind
         {
@@ -209,7 +233,7 @@ fn exercise(o: &mut Opened<'_>) {
             }
             Target::Field(k) => assert!(schema.find_field(k).is_some(), "{id}: {k} is a field of the schema"),
         }
-        if let Kind::Graph(_) = &c.kind {
+        if let Kind::Graph(_) | Kind::Surface(_) = &c.kind {
             // a graph is drawn, not set to a value: no menu in the legacy, nothing a controller could move
         } else {
             learn_and_forget(o, i, id);
@@ -364,6 +388,51 @@ fn exercise(o: &mut Opened<'_>) {
                 o.wheel(id, true, Modifiers::none());
                 assert!(o.param(key) > before || before == schema.find_param(key).unwrap().max, "{id}: wheel");
             }
+            Kind::Fader(f) => {
+                let key = f.param;
+                let p = schema.find_param(key).unwrap().clone();
+                // from the middle, so both ways move it
+                set_param(o, key, if f.linear { p.max / 2.0 } else { (p.min + p.max) / 2.0 });
+                let before = o.param(key);
+                // a click above the knob moves its center there: one gesture, one undo step
+                o.drag(id, -20.0, Modifiers::none());
+                assert!(o.param(key) > before, "{id}: dragged up raises it");
+                o.undo();
+                assert_eq!(o.param(key), before, "{id}: one undo step per drag");
+                // the wheel: a dB a notch
+                o.wheel(id, true, Modifiers::none());
+                assert!(o.param(key) > before, "{id}: wheel up");
+                o.click(id, MouseButton::Middle);
+                assert_eq!(o.param(key), p.def, "{id}: middle click resets");
+            }
+            Kind::Surface(s) => {
+                // a handle is dragged: one gesture, one undo step, a parameter it moves changed
+                let handles = o.panel.read_with(o.cx, |p, cx| p.surface_handles(i, cx));
+                if let Some(h) = handles.first() {
+                    let reads: Vec<(&str, f64)> = s.reads.iter().map(|k| (*k, o.param(k))).collect();
+                    let b = o.cx.debug_bounds(id).expect("the surface is drawn");
+                    let from = point(b.origin.x + px(h.x), b.origin.y + px(h.y));
+                    let to = point(b.origin.x + px(h.x + 12.0), b.origin.y + px(h.y - 12.0));
+                    o.cx.simulate_mouse_move(from, None, Modifiers::none());
+                    o.cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
+                    for k in 1..=6 {
+                        let f = k as f32 / 6.0;
+                        o.cx.simulate_mouse_move(
+                            point(from.x + (to.x - from.x) * f, from.y + (to.y - from.y) * f),
+                            MouseButton::Left,
+                            Modifiers::none(),
+                        );
+                    }
+                    o.cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
+                    o.settle();
+                    let after: Vec<(&str, f64)> = s.reads.iter().map(|k| (*k, o.param(k))).collect();
+                    assert_ne!(after, reads, "{id}: dragging a handle moves a parameter");
+                    o.undo();
+                    let undone: Vec<(&str, f64)> = s.reads.iter().map(|k| (*k, o.param(k))).collect();
+                    assert_eq!(undone, reads, "{id}: one undo step");
+                }
+            }
+            Kind::Readout(_) => {}
         }
     }
 }
@@ -423,7 +492,7 @@ fn check_bind(o: &mut Opened<'_>, id: &'static str, bind: Bind) {
             o.click(id, MouseButton::Left);
             assert_eq!(o.param(param), 0.0, "{id}: back to 0 when released");
         }
-        Bind::Press(_) => {}
+        Bind::Press(_) | Bind::View(_) | Bind::Open { .. } => {}
     }
 }
 

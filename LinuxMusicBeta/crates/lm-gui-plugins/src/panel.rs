@@ -32,7 +32,7 @@ use lm_port::{
 };
 
 use crate::raster::Canvas;
-use crate::spec::{Bind, Kind, PanelSpec, Target, Text};
+use crate::spec::{Bind, Kind, PanelSpec, SurfaceCx, SurfaceHandle, Target, Text};
 use crate::widgets::{self, Range, theme};
 use crate::{PortHost, assets};
 
@@ -62,6 +62,15 @@ struct Drag {
     last_y: f32,
     left_over: f64,
     value: f64,
+    /// A fader: where in the knob it was grabbed (`m_knobCenterOffset`)
+    offset: f32,
+}
+
+/// A handle of a surface being dragged: one gesture
+struct SurfDrag {
+    ctrl: usize,
+    handle: usize,
+    gesture: GestureId,
 }
 
 /// What the value float shows and for whom
@@ -116,6 +125,13 @@ pub struct PluginPanel<H: PortHost> {
     focus: FocusHandle,
     drag: Option<Drag>,
     graph: Option<GraphDraw>,
+    /// The panel's own view (a selected tab, graph or string): not saved in the plugin
+    view: u8,
+    surf: Option<SurfDrag>,
+    /// The parameters a surface's drag has moved in the gesture still open (what the tree will hold at its commit)
+    overrides: HashMap<&'static str, f64>,
+    /// The meters' levels with their fall-off, by control
+    meters: HashMap<usize, [f32; 2]>,
     /// The last x drawn on each graph (`m_lastCursorX`, for Shift+click lines)
     graph_last_x: HashMap<usize, f32>,
     /// A non-checkable button held down shows its active image
@@ -132,6 +148,8 @@ pub struct PluginPanel<H: PortHost> {
     scroll_acc: f32,
     /// Files being imported for a file field: the request and the control
     imports: Vec<(lm_port::RequestId, usize)>,
+    /// The same for the "open" buttons: the request, the control and the field
+    open_imports: Vec<(lm_port::RequestId, usize, &'static str)>,
     timer: Option<Task<()>>,
     _observe: Subscription,
 }
@@ -152,6 +170,10 @@ impl<H: PortHost> PluginPanel<H> {
             focus: cx.focus_handle(),
             drag: None,
             graph: None,
+            view: 0,
+            surf: None,
+            overrides: HashMap::new(),
+            meters: HashMap::new(),
             graph_last_x: HashMap::new(),
             pressed: None,
             carried: None,
@@ -163,6 +185,7 @@ impl<H: PortHost> PluginPanel<H> {
             images: HashMap::new(),
             scroll_acc: 0.0,
             imports: Vec::new(),
+            open_imports: Vec::new(),
             timer: None,
             _observe: observe,
         }
@@ -170,6 +193,25 @@ impl<H: PortHost> PluginPanel<H> {
 
     pub fn node(&self) -> NodeId {
         self.node
+    }
+
+    /// The panel's selected view
+    pub fn view(&self) -> u8 {
+        self.view
+    }
+
+    /// Selects a view (what a selector button does)
+    pub fn set_view(&mut self, v: u8, cx: &mut Context<Self>) {
+        if self.view != v {
+            self.view = v;
+            self.float = None;
+            cx.notify();
+        }
+    }
+
+    /// The plugin's live frame (`CorePort::display`), empty when it has none
+    fn display_frame(&self, cx: &App) -> Vec<f32> {
+        self.host.read(cx).port().display(self.node).map(|d| d.frame.to_vec()).unwrap_or_default()
     }
 
     pub fn spec(&self) -> &'static PanelSpec {
@@ -184,6 +226,9 @@ impl<H: PortHost> PluginPanel<H> {
 
     /// A parameter's value: the one being dragged, the tree's, or the schema's default (the tree omits defaults)
     pub fn param(&self, key: &str, cx: &App) -> f64 {
+        if let Some(v) = self.overrides.get(key) {
+            return *v;
+        }
         if let Some(keys) = self.choice_keys(key) {
             if let Some(d) = &self.drag
                 && self.spec.controls[d.ctrl].target().key() == key
@@ -331,7 +376,10 @@ impl<H: PortHost> PluginPanel<H> {
         let (key, step, center, log) = match &c.kind {
             Kind::Knob(k) => (k.param, k.step, k.center, k.log),
             Kind::Lcd(l) => (l.param, l.step, None, false),
-            Kind::Led(_) | Kind::Button(_) | Kind::Combo(_) | Kind::Graph(_) => (c.target().key(), 1.0, None, false),
+            Kind::Fader(f) => (f.param, 0.01, None, false),
+            Kind::Led(_) | Kind::Button(_) | Kind::Combo(_) | Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) => {
+                (c.target().key(), 1.0, None, false)
+            }
         };
         let p = self.schema.as_ref().and_then(|s| s.find_param(key));
         let (min, max) = match self.choice_keys(key) {
@@ -362,7 +410,17 @@ impl<H: PortHost> PluginPanel<H> {
             Bind::Choice { field, key } => self.field(field, cx).as_text() == Some(key),
             Bind::Switch { param } => self.param(param, cx) >= 0.5,
             Bind::Flag { field } => self.field(field, cx).as_bool() == Some(true),
-            Bind::Press(_) | Bind::Momentary { .. } => false,
+            Bind::View(n) => self.view == n,
+            Bind::Press(_) | Bind::Momentary { .. } | Bind::Open { .. } => false,
+        }
+    }
+
+    /// The value that is 0 dBFS when the control is entered and shown in dBFS: a volume knob's, or a linear fader's
+    fn volume_of(&self, ctrl: usize) -> Option<f64> {
+        match &self.spec.controls[ctrl].kind {
+            Kind::Knob(k) if k.volume => Some(k.zero_dbfs),
+            Kind::Fader(f) if f.linear => Some(1.0),
+            _ => None,
         }
     }
 
@@ -386,7 +444,19 @@ impl<H: PortHost> PluginPanel<H> {
                 let v = self.field(cb.field, cx);
                 cb.items.iter().find(|i| v.as_text() == Some(i.key)).map(|i| i.text.show()).unwrap_or_default()
             }
-            Kind::Graph(_) => String::new(),
+            Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) => String::new(),
+            Kind::Fader(f) => {
+                let v = self.param(f.param, cx);
+                if f.linear {
+                    if v <= 0.0 {
+                        "-inf".into()
+                    } else {
+                        widgets::qt_number((widgets::amp_to_db(v) * 100.0).round() / 100.0)
+                    }
+                } else {
+                    widgets::qt_number((v * 100.0).round() / 100.0)
+                }
+            }
             Kind::Led(_) | Kind::Button(_) => match c.target() {
                 Target::Param(k) => widgets::qt_number(self.param(k, cx)),
                 Target::Field(k) => match self.field(k, cx) {
@@ -403,6 +473,9 @@ impl<H: PortHost> PluginPanel<H> {
             Kind::Knob(k) => {
                 let hint = k.hint.show();
                 format!("{} {}", hint, self.value_text(ctrl, cx)).trim().to_owned()
+            }
+            Kind::Fader(f) => {
+                format!("{} {}{}", f.hint.show(), self.value_text(ctrl, cx), unit(f.unit)).trim().to_owned()
             }
             _ => c.tip.show(),
         }
@@ -464,11 +537,17 @@ impl<H: PortHost> PluginPanel<H> {
         let value = self.param(key, cx);
         let label = Label::new(self.spec.controls[ctrl].name.key);
         let gesture = self.host.update(cx, |h, _| h.port_mut().begin_gesture(label));
-        self.drag = Some(Drag { ctrl, gesture, last_y: y, left_over: 0.0, value });
+        self.drag = Some(Drag { ctrl, gesture, last_y: y, left_over: 0.0, value, offset: 0.0 });
         self.show_float(ctrl, None, cx);
     }
 
     fn drag_to(&mut self, y: f32, slow: bool, cx: &mut Context<Self>) {
+        if let Some(d) = &self.drag
+            && matches!(self.spec.controls[d.ctrl].kind, Kind::Fader(_))
+        {
+            self.fader_to(y, cx);
+            return;
+        }
         let Some(d) = &mut self.drag else { return };
         let dy = y - d.last_y;
         if dy == 0.0 {
@@ -503,6 +582,152 @@ impl<H: PortHost> PluginPanel<H> {
             port.gesture_apply(&d.gesture, vec![op]);
         });
         self.show_float(ctrl, None, cx);
+    }
+
+    // --- the fader (`Fader::mousePressEvent`, `mouseMoveEvent`)
+
+    fn fader_down(&mut self, ctrl: usize, y: f32, cx: &mut Context<Self>) {
+        let Kind::Fader(f) = &self.spec.controls[ctrl].kind else { return };
+        let r = self.range(ctrl);
+        let local = y - self.spec.controls[ctrl].y;
+        let lower = widgets::fader_knob_y(f, self.param(f.param, cx), r.min, r.max);
+        let on_knob = local >= lower - widgets::FADER_KNOB_H && local <= lower;
+        self.begin_drag(ctrl, y, cx);
+        if on_knob {
+            // grabbed where it was clicked: no jump
+            let center = lower - widgets::FADER_KNOB_H / 2.0;
+            if let Some(d) = &mut self.drag {
+                d.offset = local - center;
+            }
+        } else {
+            self.fader_to(y, cx);
+        }
+    }
+
+    fn fader_to(&mut self, y: f32, cx: &mut Context<Self>) {
+        let Some(d) = &self.drag else { return };
+        let ctrl = d.ctrl;
+        let offset = d.offset;
+        let c = &self.spec.controls[ctrl];
+        let Kind::Fader(f) = &c.kind else { return };
+        let r = self.range(ctrl);
+        let v = widgets::fader_value_at(f, y - c.y - offset, r.min, r.max);
+        let v = r.fit(v);
+        let key = f.param;
+        let Some(d) = &mut self.drag else { return };
+        if v == d.value {
+            return;
+        }
+        d.value = v;
+        let node = self.node;
+        let op = self.param_op(key, v);
+        let host = self.host.clone();
+        let Some(d) = &self.drag else { return };
+        host.update(cx, |h, _| {
+            let port = h.port_mut();
+            port.param_write(node, key, v as f32);
+            if let Some(op) = op {
+                port.gesture_apply(&d.gesture, vec![op]);
+            }
+        });
+        self.show_float(ctrl, None, cx);
+    }
+
+    // --- surfaces
+
+    /// Runs `f` with what a surface sees of the plugin
+    fn with_surface<R>(
+        &self,
+        ctrl: usize,
+        frame: &[f32],
+        active: Option<usize>,
+        cx: &App,
+        f: impl FnOnce(&crate::spec::SurfaceSpec, &SurfaceCx<'_>) -> R,
+    ) -> Option<R> {
+        let Kind::Surface(s) = &self.spec.controls[ctrl].kind else { return None };
+        let param = |k: &str| self.param(k, cx);
+        let field = |k: &str| self.field(k, cx);
+        let range = |k: &str| self.schema.as_ref().and_then(|s| s.find_param(k)).map_or((0.0, 1.0), |p| (p.min, p.max));
+        let sc = SurfaceCx { w: s.w, h: s.h, param: &param, field: &field, frame, active, range: &range };
+        Some(f(s, &sc))
+    }
+
+    /// The handles of a surface now, in the surface's local pixels (the tests find them here)
+    pub fn surface_handles(&self, ctrl: usize, cx: &App) -> Vec<SurfaceHandle> {
+        let frame = self.display_frame(cx);
+        self.with_surface(ctrl, &frame, None, cx, |s, sc| s.handles.map(|h| h(sc)).unwrap_or_default())
+            .unwrap_or_default()
+    }
+
+    fn surface_down(&mut self, ctrl: usize, x: f32, y: f32, cx: &mut Context<Self>) {
+        let c = &self.spec.controls[ctrl];
+        let (lx, ly) = (x - c.x, y - c.y);
+        let frame = self.display_frame(cx);
+        let found = self.with_surface(ctrl, &frame, None, cx, |s, sc| {
+            let handles: Vec<SurfaceHandle> = s.handles.map(|h| h(sc)).unwrap_or_default();
+            let mut best: Option<(usize, f32)> = None;
+            for (i, h) in handles.iter().enumerate() {
+                let d = (h.x - lx).hypot(h.y - ly);
+                if d <= s.grab && best.is_none_or(|(_, bd)| d < bd) {
+                    best = Some((i, d));
+                }
+            }
+            (best.map(|(i, _)| i), s.set_on_press)
+        });
+        let Some((Some(handle), set_on_press)) = found else { return };
+        let label = Label::new(c.name.key);
+        let gesture = self.host.update(cx, |h, _| h.port_mut().begin_gesture(label));
+        self.surf = Some(SurfDrag { ctrl, handle, gesture });
+        if set_on_press {
+            self.surface_to(x, y, cx);
+        }
+        cx.notify();
+    }
+
+    fn surface_to(&mut self, x: f32, y: f32, cx: &mut Context<Self>) {
+        let Some(d) = &self.surf else { return };
+        let (ctrl, handle) = (d.ctrl, d.handle);
+        let c = &self.spec.controls[ctrl];
+        let (lx, ly) = (x - c.x, y - c.y);
+        let frame = self.display_frame(cx);
+        let edits = self
+            .with_surface(ctrl, &frame, Some(handle), cx, |s, sc| s.drag.map(|f| f(sc, handle, lx, ly)))
+            .flatten()
+            .unwrap_or_default();
+        if edits.is_empty() {
+            return;
+        }
+        let mut ops = Vec::new();
+        let mut live = Vec::new();
+        for (k, v) in edits {
+            let (lo, hi) =
+                self.schema.as_ref().and_then(|s| s.find_param(k)).map_or((f64::MIN, f64::MAX), |p| (p.min, p.max));
+            let v = v.clamp(lo, hi);
+            self.overrides.insert(k, v);
+            if let Some(op) = self.param_op(k, v) {
+                ops.push(op);
+            }
+            live.push((k, v));
+        }
+        let node = self.node;
+        let host = self.host.clone();
+        let Some(d) = &self.surf else { return };
+        host.update(cx, |h, _| {
+            let port = h.port_mut();
+            for (k, v) in &live {
+                port.param_write(node, k, *v as f32);
+            }
+            port.gesture_apply(&d.gesture, ops);
+        });
+        cx.notify();
+    }
+
+    fn surface_up(&mut self, cx: &mut Context<Self>) {
+        if let Some(d) = self.surf.take() {
+            self.host.update(cx, |h, _| h.port_mut().gesture_commit(d.gesture));
+            self.overrides.clear();
+            cx.notify();
+        }
     }
 
     fn end_drag(&mut self, cx: &mut Context<Self>) {
@@ -559,9 +784,16 @@ impl<H: PortHost> PluginPanel<H> {
         if self.entry.is_some() || self.menu.is_some() {
             return;
         }
-        let Some(ctrl) = self.spec.hit(x, y) else { return };
+        let Some(ctrl) = self.spec.hit_in(self.view, x, y) else { return };
         let c = &self.spec.controls[ctrl];
         let m = ev.modifiers;
+        if let Kind::Surface(_) = &c.kind {
+            // a surface has no model menu: only the left button takes a handle
+            if ev.button == MouseButton::Left {
+                self.surface_down(ctrl, x, y, cx);
+            }
+            return;
+        }
         if let Kind::Graph(_) = &c.kind {
             // a graph has no model menu in the legacy: only the left button draws
             if ev.button == MouseButton::Left {
@@ -569,7 +801,10 @@ impl<H: PortHost> PluginPanel<H> {
             }
             return;
         }
-        let press = matches!(&c.kind, Kind::Button(b) if matches!(b.bind, Bind::Press(_) | Bind::Momentary { .. }));
+        let press = matches!(
+            &c.kind,
+            Kind::Button(b) if matches!(b.bind, Bind::Press(_) | Bind::Momentary { .. } | Bind::View(_) | Bind::Open { .. })
+        );
         if press && ev.button != MouseButton::Left {
             // a push button has no model: no reset, no menu
             return;
@@ -603,7 +838,15 @@ impl<H: PortHost> PluginPanel<H> {
                     let bind = l.bind;
                     self.click_button(ctrl, bind, ev.click_count, cx);
                 }
-                Kind::Graph(_) => {}
+                Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) => {}
+                Kind::Fader(_) => {
+                    if ev.click_count >= 2 {
+                        self.end_drag(cx);
+                        self.open_entry(ctrl, window, cx);
+                    } else if !m.control && !m.alt && !m.platform {
+                        self.fader_down(ctrl, y, cx);
+                    }
+                }
                 Kind::Combo(_) => {
                     // `ComboBox::mousePressEvent`: the list of the choices under the box
                     let c = &self.spec.controls[ctrl];
@@ -636,6 +879,11 @@ impl<H: PortHost> PluginPanel<H> {
                 let on = self.is_on(bind, cx);
                 self.set(ctrl, Value::bool(!on), cx);
             }
+            Bind::View(n) => self.set_view(n, cx),
+            Bind::Open { field, action, extensions } => {
+                self.pressed = Some(ctrl);
+                self.open_file(ctrl, field, action, extensions, cx);
+            }
             Bind::Momentary { .. } => {
                 self.pressed = Some(ctrl);
                 self.set(ctrl, Value::real(1.0).unwrap_or_default(), cx);
@@ -656,8 +904,13 @@ impl<H: PortHost> PluginPanel<H> {
                 let value = |k: &str| self.param(k, cx);
                 let default = |k: &str| self.schema.as_ref().and_then(|s| s.find_param(k)).map_or(0.0, |p| p.def);
                 let field = |k: &str| self.field(k, cx);
-                let edits =
-                    f(&mut crate::spec::PressCx { value: &value, field: &field, default: &default, rand: &mut rand });
+                let edits = f(&mut crate::spec::PressCx {
+                    view: self.view,
+                    value: &value,
+                    field: &field,
+                    default: &default,
+                    rand: &mut rand,
+                });
                 let ops: Vec<EditOp> = edits
                     .into_iter()
                     .filter_map(|(t, v)| match t {
@@ -672,6 +925,81 @@ impl<H: PortHost> PluginPanel<H> {
                 cx.notify();
             }
         }
+    }
+
+    /// An "open" button: asks for a file. An audio file is imported through the port and set in `field`; any other
+    /// is read off the main thread and sent as its bytes to the core's `action` (`{node, field, bytes}`)
+    fn open_file(
+        &mut self,
+        ctrl: usize,
+        field: &'static str,
+        action: Option<&'static str>,
+        extensions: &'static [&'static str],
+        cx: &mut Context<Self>,
+    ) {
+        let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(Text::new("Open audio file").show().into()),
+        });
+        let node = self.node;
+        self.timer = Some(cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(mut chosen))) = paths.await else { return };
+            let Some(path) = chosen.pop() else { return };
+            match action {
+                None => {
+                    let _ = this.update(cx, |p, cx| p.import_open(ctrl, field, path, cx));
+                }
+                Some(action) => {
+                    if !extensions.is_empty()
+                        && !path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .is_some_and(|e| extensions.iter().any(|x| x.eq_ignore_ascii_case(e)))
+                    {
+                        return;
+                    }
+                    // a patch or a wave is small; anything past 64 MB is not one
+                    let read = cx
+                        .background_executor()
+                        .spawn(async move { std::fs::read(&path).ok().filter(|b| b.len() <= 64 << 20) });
+                    let Some(bytes) = read.await else { return };
+                    let _ = this.update(cx, |p, cx| p.send_open(action, node, field, &bytes, cx));
+                }
+            }
+        }));
+    }
+
+    /// Imports `path` through the port and sets `field` with it (the "open" button of an audio file)
+    pub fn import_open(&mut self, ctrl: usize, field: &'static str, path: std::path::PathBuf, cx: &mut Context<Self>) {
+        let pending = self.host.update(cx, |h, _| h.port_mut().import(path));
+        match pending {
+            Pending::Ready(Ok(res)) => self.field_imported(ctrl, field, res, cx),
+            Pending::Ready(Err(_)) => {}
+            Pending::Waiting(id) => self.open_imports.push((id, ctrl, field)),
+        }
+    }
+
+    fn field_imported(&mut self, ctrl: usize, field: &'static str, res: lm_port::Resource, cx: &mut Context<Self>) {
+        let label = Label::new(self.spec.controls[ctrl].name.key);
+        let op = self.field_op(field, Value::resource(res));
+        self.host.update(cx, |h, _| {
+            let _ = h.port_mut().apply(label, vec![op]);
+        });
+        cx.notify();
+    }
+
+    /// Sends a file's bytes to the core's `action` for a resource field (`{node, field, bytes}`)
+    pub fn send_open(&mut self, action: &'static str, node: NodeId, field: &str, bytes: &[u8], cx: &mut Context<Self>) {
+        let params = Value::object([
+            ("node", Value::text(node.to_string())),
+            ("field", Value::text(field)),
+            ("bytes", Value::list(bytes.iter().map(|b| Value::int(i64::from(*b))))),
+        ]);
+        self.host.update(cx, |h, _| {
+            let _ = h.port_mut().run_action(action.into(), params);
+        });
     }
 
     /// `PixmapButton::doubleClicked` on a button with a file field: asks for an audio file, imports it through the
@@ -758,6 +1086,14 @@ impl<H: PortHost> PluginPanel<H> {
 
     /// The imports answered since the last frame (the client's port answers them in a later pump)
     fn collect_imports(&mut self, cx: &mut Context<Self>) {
+        let waiting = std::mem::take(&mut self.open_imports);
+        for (id, ctrl, field) in waiting {
+            match self.host.update(cx, |h, _| h.take_imported(id)) {
+                Some(Ok(res)) => self.field_imported(ctrl, field, res, cx),
+                Some(Err(_)) => {}
+                None => self.open_imports.push((id, ctrl, field)),
+            }
+        }
         if self.imports.is_empty() {
             return;
         }
@@ -776,12 +1112,16 @@ impl<H: PortHost> PluginPanel<H> {
             self.graph_move(x, y, cx);
             return;
         }
+        if self.surf.is_some() {
+            self.surface_to(x, y, cx);
+            return;
+        }
         if self.drag.is_some() {
             self.drag_to(y, ev.modifiers.shift, cx);
             return;
         }
         if inside && ev.pressed_button.is_none() {
-            let over = self.spec.hit(x, y);
+            let over = self.spec.hit_in(self.view, x, y);
             self.hover(over, cx);
         } else if !inside {
             self.hover(None, cx);
@@ -794,6 +1134,7 @@ impl<H: PortHost> PluginPanel<H> {
         }
         self.end_drag(cx);
         self.graph_up(cx);
+        self.surface_up(cx);
         if let Some(i) = self.pressed
             && let Kind::Button(b) = &self.spec.controls[i].kind
             && let Bind::Momentary { .. } = b.bind
@@ -802,7 +1143,7 @@ impl<H: PortHost> PluginPanel<H> {
         }
         self.pressed = None;
         if let Some((from, v)) = self.carried.take()
-            && let Some(to) = self.spec.hit(x, y)
+            && let Some(to) = self.spec.hit_in(self.view, x, y)
             && to != from
             && matches!(self.spec.controls[to].target(), Target::Param(_))
         {
@@ -812,7 +1153,11 @@ impl<H: PortHost> PluginPanel<H> {
     }
 
     fn scroll(&mut self, x: f32, y: f32, ev: &ScrollEvent, cx: &mut Context<Self>) {
-        let Some(ctrl) = self.spec.hit(x, y) else { return };
+        let Some(ctrl) = self.spec.hit_in(self.view, x, y) else { return };
+        if let Kind::Fader(_) = &self.spec.controls[ctrl].kind {
+            self.fader_wheel(ctrl, ev, cx);
+            return;
+        }
         if let Kind::Combo(cb) = &self.spec.controls[ctrl].kind {
             // `ComboBox::wheelEvent`: down selects the next choice, up the previous
             let down = match ev.delta {
@@ -858,15 +1203,49 @@ impl<H: PortHost> PluginPanel<H> {
         self.show_float(ctrl, Some(WHEEL_SHOW), cx);
     }
 
+    /// `Fader::wheelEvent`: a dB a notch (Shift 3, Ctrl 0.1, Alt none)
+    fn fader_wheel(&mut self, ctrl: usize, ev: &ScrollEvent, cx: &mut Context<Self>) {
+        let up = match ev.delta {
+            ScrollDelta::Lines(d) => d.y > 0.0,
+            ScrollDelta::Pixels(d) => d.y > px(0.),
+        };
+        let m = ev.modifiers;
+        let step = if m.alt {
+            return;
+        } else if m.shift {
+            3.0
+        } else if m.control {
+            0.1
+        } else {
+            1.0
+        };
+        let delta = if up { step } else { -step };
+        let Kind::Fader(f) = &self.spec.controls[ctrl].kind else { return };
+        let r = self.range(ctrl);
+        let v = self.param(f.param, cx);
+        let nv = if f.linear {
+            if v <= 0.0 {
+                if delta > 0.0 { widgets::db_to_amp(widgets::FADER_MIN_DB) } else { 0.0 }
+            } else {
+                let db = widgets::amp_to_db(v) + delta;
+                if db < widgets::FADER_MIN_DB { 0.0 } else { widgets::db_to_amp(db) }
+            }
+        } else {
+            (v + delta).clamp(r.min, r.max)
+        };
+        self.set(ctrl, Value::real(nv).unwrap_or_default(), cx);
+        self.show_float(ctrl, Some(WHEEL_SHOW), cx);
+    }
+
     // --- the value entry (`enterValue`)
 
     fn open_entry(&mut self, ctrl: usize, window: &mut Window, cx: &mut Context<Self>) {
         let c = &self.spec.controls[ctrl];
         let v = self.param(c.target().key(), cx);
         let r = self.range(ctrl);
-        let text = match &c.kind {
-            Kind::Knob(k) if k.volume => {
-                let ratio = r.rounded(v).abs() / k.zero_dbfs;
+        let text = match self.volume_of(ctrl) {
+            Some(zero) => {
+                let ratio = r.rounded(v).abs() / zero;
                 let db = if ratio > 0.0 { 20.0 * ratio.log10() } else { -96.0 };
                 format!("{db:.2}")
             }
@@ -879,12 +1258,11 @@ impl<H: PortHost> PluginPanel<H> {
     }
 
     fn entry_bounds(&self, ctrl: usize) -> (f64, f64) {
-        let c = &self.spec.controls[ctrl];
         let r = self.range(ctrl);
-        match &c.kind {
-            Kind::Knob(k) if k.volume => {
+        match self.volume_of(ctrl) {
+            Some(zero) => {
                 let magnitude = r.max.max(r.min.abs());
-                (-96.0, 20.0 * (magnitude / k.zero_dbfs).log10())
+                (-96.0, 20.0 * (magnitude / zero).log10())
             }
             _ => (r.min, r.max),
         }
@@ -899,10 +1277,11 @@ impl<H: PortHost> PluginPanel<H> {
         };
         let (lo, hi) = self.entry_bounds(e.ctrl);
         let typed = typed.clamp(lo, hi);
-        let value = match &self.spec.controls[e.ctrl].kind {
-            Kind::Knob(k) if k.volume => {
-                let sign = if self.param(k.param, cx) < 0.0 { -1.0 } else { 1.0 };
-                if typed <= -96.0 { 0.0 } else { sign * 10f64.powf(typed / 20.0) * k.zero_dbfs }
+        let value = match self.volume_of(e.ctrl) {
+            Some(zero) => {
+                let key = self.spec.controls[e.ctrl].target().key();
+                let sign = if self.param(key, cx) < 0.0 { -1.0 } else { 1.0 };
+                if typed <= -96.0 { 0.0 } else { sign * 10f64.powf(typed / 20.0) * zero }
             }
             _ => typed,
         };
@@ -1187,6 +1566,68 @@ impl<H: PortHost> PluginPanel<H> {
                 let g = g.clone();
                 (h.finish(), Box::new(move |cv| widgets::draw_graph(cv, &g, &samples, cursor)))
             }
+            Kind::Readout(_) => (0, Box::new(|_| {})),
+            Kind::Fader(f) => {
+                let r = self.range(ctrl);
+                let value = self.param(f.param, cx);
+                let peaks = f.meters.map(|(l, rr)| {
+                    let frame = self.display_frame(cx);
+                    let now = [frame.get(l).copied().unwrap_or(0.0), frame.get(rr).copied().unwrap_or(0.0)];
+                    let now = now.map(|v| if v.is_nan() { 0.0 } else { v });
+                    // the legacy meters fall by 1.07 each update, and a higher peak is taken at once
+                    let old = self.meters.get(&ctrl).copied().unwrap_or([0.0; 2]);
+                    let shown = [now[0].max(old[0] / 1.07), now[1].max(old[1] / 1.07)];
+                    self.meters.insert(ctrl, shown);
+                    (shown[0], shown[1])
+                });
+                let mut h = std::hash::DefaultHasher::new();
+                use std::hash::{Hash, Hasher};
+                value.to_bits().hash(&mut h);
+                peaks.map(|(a, b)| ((a * 100.0) as i32, (b * 100.0) as i32)).hash(&mut h);
+                let f = f.clone();
+                (h.finish(), Box::new(move |cv| widgets::draw_fader(cv, &f, value, r.min, r.max, peaks)))
+            }
+            Kind::Surface(sf) => {
+                let frame = if sf.live { self.display_frame(cx) } else { Vec::new() };
+                let active = self.surf.as_ref().filter(|d| d.ctrl == ctrl).map(|d| d.handle);
+                let range_of =
+                    |k: &str| self.schema.as_ref().and_then(|s| s.find_param(k)).map_or((0.0, 1.0), |p| (p.min, p.max));
+                let params: Vec<(&'static str, f64, (f64, f64))> =
+                    sf.reads.iter().map(|k| (*k, self.param(k, cx), range_of(k))).collect();
+                let fields: Vec<(&'static str, Value)> =
+                    sf.field_reads.iter().map(|k| (*k, self.field(k, cx))).collect();
+                let mut h = std::hash::DefaultHasher::new();
+                use std::hash::{Hash, Hasher};
+                for (_, v, _) in &params {
+                    v.to_bits().hash(&mut h);
+                }
+                for (_, v) in &fields {
+                    format!("{v:?}").hash(&mut h);
+                }
+                for v in &frame {
+                    v.to_bits().hash(&mut h);
+                }
+                active.hash(&mut h);
+                let sf = sf.clone();
+                (
+                    h.finish(),
+                    Box::new(move |cv| {
+                        let param = |k: &str| params.iter().find(|p| p.0 == k).map_or(0.0, |p| p.1);
+                        let range = |k: &str| params.iter().find(|p| p.0 == k).map_or((0.0, 1.0), |p| p.2);
+                        let field = |k: &str| fields.iter().find(|p| p.0 == k).map_or(Value::NULL, |p| p.1.clone());
+                        let sc = SurfaceCx {
+                            w: sf.w,
+                            h: sf.h,
+                            param: &param,
+                            field: &field,
+                            frame: &frame,
+                            active,
+                            range: &range,
+                        };
+                        (sf.draw)(cv, &sc);
+                    }),
+                )
+            }
             Kind::Combo(cb) => {
                 let v = self.field(cb.field, cx);
                 let i = cb.items.iter().position(|it| v.as_text() == Some(it.key));
@@ -1224,9 +1665,41 @@ impl<H: PortHost> PluginPanel<H> {
             centered,
             top: false,
         };
-        for c in &self.spec.controls {
+        let frame = if self.spec.controls.iter().any(|c| matches!(&c.kind, Kind::Surface(s) if s.texts.is_some())) {
+            self.display_frame(cx)
+        } else {
+            Vec::new()
+        };
+        for (ci, c) in self.spec.controls.iter().enumerate() {
+            if !c.in_view(self.view) {
+                continue;
+            }
             let (w, h) = c.size();
             match &c.kind {
+                Kind::Readout(r) => {
+                    let v = self.field(r.field, cx);
+                    let shown = readout_text(&v);
+                    let (text, color) = if shown.is_empty() { (r.empty.show(), r.color) } else { (shown, r.color) };
+                    out.push(Txt { x: c.x, y: c.y, px: r.px, text, color, centered: false, top: true });
+                }
+                Kind::Surface(sf) => {
+                    if let Some(tf) = sf.texts {
+                        let active = self.surf.as_ref().filter(|d| d.ctrl == ci).map(|d| d.handle);
+                        let texts = self.with_surface(ci, &frame, active, cx, |_, sc| tf(sc)).unwrap_or_default();
+                        for t in texts {
+                            out.push(Txt {
+                                x: c.x + t.x,
+                                y: c.y + t.y,
+                                px: t.px,
+                                text: t.text,
+                                color: t.color,
+                                centered: t.centered,
+                                top: false,
+                            });
+                        }
+                    }
+                }
+                Kind::Fader(_) => {}
                 Kind::Knob(k) => {
                     if let Some(l) = &k.label {
                         // the legacy label: at the bottom of the widget, 2 pixels above its edge (`drawLabel`)
@@ -1276,11 +1749,24 @@ impl<H: PortHost> PluginPanel<H> {
                 Kind::Button(_) | Kind::Graph(_) => {}
             }
         }
-        for l in &self.spec.labels {
+        for l in self.spec.labels.iter().filter(|l| l.view.is_none_or(|v| v == self.view)) {
             out.push(Txt { x: l.x, y: l.y, px: l.px, text: l.text.show(), color: l.color, centered: false, top: true });
         }
         out
     }
+}
+
+/// What a readout shows of a field: a resource's file name (its key is the file's content, so its name is the
+/// last path part), a text, or a number
+fn readout_text(v: &Value) -> String {
+    if let Some(t) = v.as_text() {
+        return t.rsplit(['/', '\\']).next().unwrap_or(t).to_owned();
+    }
+    if let Some(r) = v.as_resource() {
+        // the resource is the content's hash: its first characters stand for the file
+        return format!("{} {}", r.kind(), r.key().chars().take(8).collect::<String>());
+    }
+    String::new()
 }
 
 /// Where a combo box's text starts: after the icon (`tx = 5`, plus the icon's width and 3)
@@ -1381,7 +1867,14 @@ impl<H: PortHost> Render for PluginPanel<H> {
         let spec = self.spec;
         let (w, h) = spec.size;
         let scale = window.scale_factor();
+        let view = self.view;
+        let live = spec.controls.iter().any(|c| c.in_view(view) && matches!(&c.kind, Kind::Surface(s) if s.live))
+            || spec.controls.iter().any(|c| matches!(&c.kind, Kind::Fader(f) if f.meters.is_some()));
+        if live {
+            window.request_animation_frame();
+        }
         let images: Vec<(Bounds<Pixels>, Arc<RenderImage>)> = (0..spec.controls.len())
+            .filter(|i| spec.controls[*i].in_view(view) && !matches!(spec.controls[*i].kind, Kind::Readout(_)))
             .map(|i| {
                 let c = &spec.controls[i];
                 let (cw, ch) = c.size();
@@ -1406,7 +1899,7 @@ impl<H: PortHost> Render for PluginPanel<H> {
                 p.drop_files(action, extensions, paths.paths(), cx);
             }));
         }
-        if let Some(bg) = spec.background {
+        if let Some(bg) = spec.background_of(view) {
             root = root.child(img(bg.gpui_image()).absolute().top_0().left_0().w(px(w)).h(px(h)));
         }
         root = root.child(
@@ -1421,7 +1914,7 @@ impl<H: PortHost> Render for PluginPanel<H> {
             .h(px(h)),
         );
         // the controls' places, for the tests and the accessibility tree (no paint, no hitbox)
-        for c in &spec.controls {
+        for c in spec.controls.iter().filter(|c| c.in_view(view)) {
             let (cw, ch) = c.size();
             let id = c.id;
             root = root.child(
@@ -1567,7 +2060,7 @@ impl<H: PortHost> PluginPanel<H> {
 
     fn render_entry(&self, ctrl: usize, text: &str, cx: &mut Context<Self>) -> impl IntoElement {
         let (lo, hi) = self.entry_bounds(ctrl);
-        let volume = matches!(&self.spec.controls[ctrl].kind, Kind::Knob(k) if k.volume);
+        let volume = self.volume_of(ctrl).is_some();
         let prompt = if volume {
             Text::new("Please enter a new value between %1 dBFS and %2 dBFS:")
         } else {

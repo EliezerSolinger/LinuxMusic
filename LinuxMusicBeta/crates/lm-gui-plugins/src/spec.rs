@@ -56,6 +56,8 @@ impl Target {
 
 /// What a push button sees: the parameters' present values and defaults, and random numbers in [0, 1)
 pub struct PressCx<'a> {
+    /// The panel's selected view (0 without views)
+    pub view: u8,
     pub value: &'a dyn Fn(&str) -> f64,
     /// A field's value (a graph's samples, a choice)
     pub field: &'a dyn Fn(&str) -> Value,
@@ -86,6 +88,13 @@ pub enum Bind {
     Momentary { param: &'static str },
     /// A push button without a model that changes several things at once (Organic's "Randomise")
     Press(PressFn),
+    /// A selector of the panel's own view (a tab, the selected graph or string): panel-local state, not saved in the
+    /// plugin; the controls with `Control::view` of this number are the ones shown
+    View(u8),
+    /// A push button that asks for a file and puts it in a resource field: an audio file (`action` absent) goes
+    /// through the port's import; any other kind of file is sent as its bytes to the core's `action`
+    /// (`{node, field, bytes}`, one undo step there), which reads it and sets the field
+    Open { field: &'static str, action: Option<&'static str>, extensions: &'static [&'static str] },
 }
 
 impl Bind {
@@ -93,7 +102,8 @@ impl Bind {
         match *self {
             Bind::Choice { field, .. } | Bind::Flag { field } => Target::Field(field),
             Bind::Switch { param } | Bind::Momentary { param } => Target::Param(param),
-            Bind::Press(_) => Target::Field(""),
+            Bind::Press(_) | Bind::View(_) => Target::Field(""),
+            Bind::Open { field, .. } => Target::Field(field),
         }
     }
 }
@@ -215,6 +225,118 @@ pub struct GraphSpec {
     pub step: f64,
 }
 
+/// A fader (`Fader` of the legacy, with its 23 px wide meters and its knob): on a parameter in dB (`linear` false) or
+/// on a linear amplification (`linear` true, 0 is -inf and 1 is 0 dBFS)
+#[derive(Clone, Debug)]
+pub struct FaderSpec {
+    pub param: &'static str,
+    pub w: f32,
+    pub h: f32,
+    /// The model is an amplification, not dB (`modelIsLinear`)
+    pub linear: bool,
+    /// The two meters' peaks in the plugin's display frame (left, right index), absent: no meters
+    pub meters: Option<(usize, usize)>,
+    /// The unity line on the meters (`setRenderUnityLine`)
+    pub unity_line: bool,
+    /// The words of the float (`setHintText`) and its unit
+    pub hint: Text,
+    pub unit: &'static str,
+}
+
+/// A text of a surface, painted by the panel (the CPU painter has no text): at its baseline, or centered
+#[derive(Clone, Debug)]
+pub struct SurfText {
+    pub x: f32,
+    pub y: f32,
+    pub px: f32,
+    pub text: String,
+    pub color: u32,
+    pub centered: bool,
+}
+
+/// What a surface sees of the plugin when it draws or is dragged
+pub struct SurfaceCx<'a> {
+    pub w: f32,
+    pub h: f32,
+    pub param: &'a dyn Fn(&str) -> f64,
+    pub field: &'a dyn Fn(&str) -> Value,
+    /// The plugin's live frame (`CorePort::display(node)`), empty when it has none
+    pub frame: &'a [f32],
+    /// The handle held or under the cursor
+    pub active: Option<usize>,
+    /// The parameter's range (min, max)
+    pub range: &'a dyn Fn(&str) -> (f64, f64),
+}
+
+impl std::fmt::Debug for SurfaceCx<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SurfaceCx")
+    }
+}
+
+impl SurfaceCx<'_> {
+    /// The frame's `i`-th value, or `default` when there is no frame or it is not a number
+    pub fn live(&self, i: usize, default: f32) -> f32 {
+        self.frame.get(i).copied().filter(|v| !v.is_nan()).unwrap_or(default)
+    }
+
+    /// The parameter's position in its range, 0..1
+    pub fn unit(&self, key: &str) -> f64 {
+        let (lo, hi) = (self.range)(key);
+        if hi > lo { (((self.param)(key) - lo) / (hi - lo)).clamp(0.0, 1.0) } else { 0.0 }
+    }
+}
+
+/// A handle of a surface, at a local point
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SurfaceHandle {
+    pub x: f32,
+    pub y: f32,
+}
+
+pub type SurfDrawFn = fn(&mut crate::raster::Canvas, &SurfaceCx<'_>);
+pub type SurfTextsFn = fn(&SurfaceCx<'_>) -> Vec<SurfText>;
+pub type SurfHandlesFn = fn(&SurfaceCx<'_>) -> Vec<SurfaceHandle>;
+/// The parameters a handle moves to when dragged to a local point
+pub type SurfDragFn = fn(&SurfaceCx<'_>, usize, f32, f32) -> Vec<(&'static str, f64)>;
+
+/// A drawn area fed by the plugin's parameters, fields and live frame, with handles the user drags: the XY pad, a
+/// transfer curve with its handle, the equalizer's curve, the wave view with its markers, the meters. Everything
+/// it moves is a parameter (so mappable); it draws through the CPU painter and is cached by what it reads
+#[derive(Clone, Debug)]
+pub struct SurfaceSpec {
+    pub w: f32,
+    pub h: f32,
+    /// The parameter that names the control (its menu and its MIDI target): the first the handles move
+    pub primary: &'static str,
+    /// The parameters and fields the drawing reads (the cache key; the surface is drawn again when they change)
+    pub reads: &'static [&'static str],
+    pub field_reads: &'static [&'static str],
+    pub draw: SurfDrawFn,
+    pub texts: Option<SurfTextsFn>,
+    pub handles: Option<SurfHandlesFn>,
+    pub drag: Option<SurfDragFn>,
+    /// How near a click must be to a handle to take it (pixels); infinite: anywhere takes the nearest
+    pub grab: f32,
+    /// The press itself moves the handle (else only the moves that follow do, as the legacy `XyPad`)
+    pub set_on_press: bool,
+    /// Drawn again every frame (it shows the live frame)
+    pub live: bool,
+}
+
+/// A text bound to a field of the state (a file's name, a patch's name): drawn by the panel
+#[derive(Clone, Debug)]
+pub struct ReadoutSpec {
+    pub field: &'static str,
+    pub w: f32,
+    pub px: f32,
+    pub color: u32,
+    /// What it shows when the field is empty
+    pub empty: Text,
+    /// Only the file name of a resource's key or a path
+    pub centered: bool,
+}
+
 #[derive(Clone, Debug)]
 pub enum Kind {
     Knob(KnobSpec),
@@ -223,6 +345,9 @@ pub enum Kind {
     Lcd(LcdSpec),
     Combo(ComboSpec),
     Graph(GraphSpec),
+    Fader(FaderSpec),
+    Surface(SurfaceSpec),
+    Readout(ReadoutSpec),
 }
 
 /// A fixed text of the view (a `QLabel`): its top-left corner, its size in pixels
@@ -233,6 +358,8 @@ pub struct StaticText {
     pub px: f32,
     pub text: Text,
     pub color: u32,
+    /// Only in this view of the panel (absent: always)
+    pub view: Option<u8>,
 }
 
 /// One control at its place
@@ -247,6 +374,8 @@ pub struct Control {
     pub name: Text,
     /// The tooltip (`setToolTip`)
     pub tip: Text,
+    /// Only in this view of the panel (absent: always)
+    pub view: Option<u8>,
 }
 
 impl Control {
@@ -259,7 +388,15 @@ impl Control {
             Kind::Button(b) => b.bind.target(),
             Kind::Combo(c) => Target::Field(c.field),
             Kind::Graph(g) => Target::Field(g.field),
+            Kind::Fader(f) => Target::Param(f.param),
+            Kind::Surface(s) => Target::Param(s.primary),
+            Kind::Readout(r) => Target::Field(r.field),
         }
+    }
+
+    /// Whether it shows in `view`
+    pub fn in_view(&self, view: u8) -> bool {
+        self.view.is_none_or(|v| v == view)
     }
 
     /// Its size on the panel (the pixmaps' sizes, or the styled knob's fixed size)
@@ -279,6 +416,9 @@ impl Control {
             Kind::Lcd(l) => crate::widgets::lcd_size(l.sheet, l.digits),
             Kind::Combo(c) => (c.w, crate::widgets::COMBO_HEIGHT),
             Kind::Graph(g) => (g.w, g.h),
+            Kind::Fader(f) => (f.w, f.h),
+            Kind::Surface(s) => (s.w, s.h),
+            Kind::Readout(r) => (r.w, r.px + 4.0),
         }
     }
 }
@@ -291,6 +431,9 @@ pub struct PanelSpec {
     pub size: (f32, f32),
     /// The legacy background (`setPalette` with the artwork), PNG or SVG
     pub background: Option<&'static Asset>,
+    /// The artwork of each view, by number, over `background` (Monstro's operators and matrix); a view past the end
+    /// keeps `background`
+    pub view_backgrounds: &'static [&'static Asset],
     /// The fill under it (the parts the artwork does not cover)
     pub fill: u32,
     pub controls: Vec<Control>,
@@ -308,12 +451,28 @@ pub enum FileDrop {
 }
 
 impl PanelSpec {
-    /// The control at panel point `x`, `y` (the last one drawn wins, as Qt's stacking)
+    /// The control at panel point `x`, `y` (the last one drawn wins, as Qt's stacking), in view 0
     pub fn hit(&self, x: f32, y: f32) -> Option<usize> {
+        self.hit_in(0, x, y)
+    }
+
+    /// The control at panel point `x`, `y` among those shown in `view`
+    pub fn hit_in(&self, view: u8, x: f32, y: f32) -> Option<usize> {
         self.controls.iter().enumerate().rev().find_map(|(i, c)| {
             let (w, h) = c.size();
-            (x >= c.x && y >= c.y && x < c.x + w && y < c.y + h).then_some(i)
+            (c.in_view(view)
+                && !matches!(c.kind, Kind::Readout(_))
+                && x >= c.x
+                && y >= c.y
+                && x < c.x + w
+                && y < c.y + h)
+                .then_some(i)
         })
+    }
+
+    /// The artwork under the controls of `view`
+    pub fn background_of(&self, view: u8) -> Option<&'static Asset> {
+        self.view_backgrounds.get(view as usize).copied().or(self.background)
     }
 
     /// The controls of one target (a group's buttons share one)
@@ -357,6 +516,7 @@ pub fn knob(
         }),
         name: Text::new(name),
         tip: Text::EMPTY,
+        view: None,
     }
 }
 
@@ -377,6 +537,7 @@ pub fn led(
         kind: Kind::Led(LedSpec { color, text: Text::new(text), bind }),
         name: Text::new(name),
         tip: Text::EMPTY,
+        view: None,
     }
 }
 
@@ -397,6 +558,7 @@ pub fn button(
         kind: Kind::Button(ButtonSpec { active, inactive, bind, file_field: None }),
         name: Text::new(name),
         tip: Text::EMPTY,
+        view: None,
     }
 }
 
@@ -481,6 +643,13 @@ impl Control {
         self
     }
 
+    /// Shown only in this view of the panel
+    #[must_use]
+    pub fn in_view_n(mut self, v: u8) -> Self {
+        self.view = Some(v);
+        self
+    }
+
     /// `setToolTip`
     #[must_use]
     pub fn tip(mut self, t: &'static str) -> Self {
@@ -509,17 +678,18 @@ pub fn combo(field: &'static str, x: f32, y: f32, w: f32, name: &'static str, it
         kind: Kind::Combo(ComboSpec { field, w, items }),
         name: Text::new(name),
         tip: Text::EMPTY,
+        view: None,
     }
 }
 
 /// A fixed text (`QLabel`) at its top-left corner, white, `DEFAULT_FONT_SIZE`
 pub fn label(x: f32, y: f32, text: &'static str) -> StaticText {
-    StaticText { x, y, px: crate::widgets::theme::DEFAULT_FONT_PX, text: Text::new(text), color: 0xd1d8e4 }
+    StaticText { x, y, px: crate::widgets::theme::DEFAULT_FONT_PX, text: Text::new(text), color: 0xd1d8e4, view: None }
 }
 
 /// A graph at `x`, `y`
 pub fn graph(spec: GraphSpec, x: f32, y: f32, name: &'static str) -> Control {
-    Control { id: spec.field, x, y, kind: Kind::Graph(spec), name: Text::new(name), tip: Text::EMPTY }
+    Control { id: spec.field, x, y, kind: Kind::Graph(spec), name: Text::new(name), tip: Text::EMPTY, view: None }
 }
 
 /// An integer LCD spin box (`LcdSpinBox`) of `digits` digits on a stepped parameter
@@ -531,6 +701,7 @@ pub fn lcd(param: &'static str, x: f32, y: f32, sheet: LcdSheet, digits: usize, 
         kind: Kind::Lcd(LcdSpec { sheet, digits, param, label: None, leading_zero: false, frac: 0, step: 1.0 }),
         name: Text::new(name),
         tip: Text::EMPTY,
+        view: None,
     }
 }
 
@@ -553,5 +724,89 @@ pub fn lcd_float(
         kind: Kind::Lcd(LcdSpec { sheet, digits: whole, param, label: None, leading_zero: false, frac, step }),
         name: Text::new(name),
         tip: Text::EMPTY,
+        view: None,
+    }
+}
+
+/// A fader at `x`, `y` on `param` (the legacy 23 px wide `Fader`; `h` its height)
+pub fn fader(param: &'static str, x: f32, y: f32, h: f32, name: &'static str, hint: &'static str) -> Control {
+    Control {
+        id: param,
+        x,
+        y,
+        kind: Kind::Fader(FaderSpec {
+            param,
+            w: 23.0,
+            h,
+            linear: false,
+            meters: None,
+            unity_line: false,
+            hint: Text::new(hint),
+            unit: " dBFS",
+        }),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+        view: None,
+    }
+}
+
+impl Control {
+    fn fader_mut(&mut self) -> Option<&mut FaderSpec> {
+        match &mut self.kind {
+            Kind::Fader(f) => Some(f),
+            _ => None,
+        }
+    }
+
+    /// A fader with the output meters over `frame[l]`, `frame[r]` (`EqFader`)
+    #[must_use]
+    pub fn meters(mut self, l: usize, r: usize) -> Self {
+        if let Some(f) = self.fader_mut() {
+            f.meters = Some((l, r));
+        }
+        self
+    }
+
+    /// A fader on a linear amplification
+    #[must_use]
+    pub fn linear(mut self) -> Self {
+        if let Some(f) = self.fader_mut() {
+            f.linear = true;
+        }
+        self
+    }
+
+    /// The fader's unity line
+    #[must_use]
+    pub fn unity_line(mut self) -> Self {
+        if let Some(f) = self.fader_mut() {
+            f.unity_line = true;
+        }
+        self
+    }
+}
+
+/// A surface at `x`, `y`
+pub fn surface(spec: SurfaceSpec, id: &'static str, x: f32, y: f32, name: &'static str) -> Control {
+    Control { id, x, y, kind: Kind::Surface(spec), name: Text::new(name), tip: Text::EMPTY, view: None }
+}
+
+/// A text bound to a field
+pub fn readout(field: &'static str, x: f32, y: f32, w: f32, color: u32, empty: &'static str) -> Control {
+    Control {
+        id: field,
+        x,
+        y,
+        kind: Kind::Readout(ReadoutSpec {
+            field,
+            w,
+            px: crate::widgets::theme::DEFAULT_FONT_PX,
+            color,
+            empty: Text::new(empty),
+            centered: false,
+        }),
+        name: Text::new(field),
+        tip: Text::EMPTY,
+        view: None,
     }
 }

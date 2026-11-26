@@ -132,6 +132,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             )
             .tip("Reset the LFO phase to 0 (automatable)"),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }

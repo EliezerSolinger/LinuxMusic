@@ -63,6 +63,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             )
             .tip("Swap left and right input channels for reflections"),
         ],
+        view_backgrounds: &[],
         labels: Vec::new(),
         file_drop: None,
     }

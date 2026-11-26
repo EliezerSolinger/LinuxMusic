@@ -79,7 +79,7 @@ fn snapshots() {
             if let Some(bg) = spec.background.filter(|b| !b.is_svg()) {
                 c.pixmap(crate::assets::image(bg), 0.0, 0.0, false);
             }
-            for ctl in &spec.controls {
+            for ctl in spec.controls.iter().filter(|c| c.in_view(0)) {
                 let (w, h) = ctl.size();
                 let mut one = crate::raster::Canvas::new(w, h, scale);
                 match &ctl.kind {
@@ -119,7 +119,8 @@ fn snapshots() {
                                     == Some(true)
                             }
                             Bind::Switch { param } => schema.find_param(param).is_some_and(|p| p.def >= 0.5),
-                            Bind::Flag { .. } | Bind::Press(_) | Bind::Momentary { .. } => false,
+                            Bind::Flag { .. } | Bind::Press(_) | Bind::Momentary { .. } | Bind::Open { .. } => false,
+                            Bind::View(n) => n == 0,
                         };
                         one.pixmap(crate::assets::image(if on { b.active } else { b.inactive }), 0.0, 0.0, false);
                     }
@@ -139,6 +140,26 @@ fn snapshots() {
                         v.resize(g.length, 0.0);
                         crate::widgets::draw_graph(&mut one, g, &v, None);
                     }
+                    Kind::Fader(f) => {
+                        let p = schema.find_param(f.param).unwrap();
+                        crate::widgets::draw_fader(&mut one, f, p.def, p.min, p.max, None);
+                    }
+                    Kind::Surface(sf) => {
+                        let param = |k: &str| schema.find_param(k).map_or(0.0, |p| p.def);
+                        let range = |k: &str| schema.find_param(k).map_or((0.0, 1.0), |p| (p.min, p.max));
+                        let field = |k: &str| schema.find_field(k).and_then(|f| f.default.clone()).unwrap_or_default();
+                        let sc = crate::spec::SurfaceCx {
+                            w: sf.w,
+                            h: sf.h,
+                            param: &param,
+                            field: &field,
+                            frame: &[],
+                            active: None,
+                            range: &range,
+                        };
+                        (sf.draw)(&mut one, &sc);
+                    }
+                    Kind::Readout(_) => {}
                     Kind::Combo(cb) => {
                         let def = schema.find_field(cb.field).and_then(|f| f.default.clone());
                         let icon = cb
