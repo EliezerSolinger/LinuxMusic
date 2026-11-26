@@ -122,6 +122,8 @@ fn clap_value(expression: Expression, v: f64) -> (i32, f64) {
     match expression {
         Expression::Pan => (lm_sys_clap::CLAP_NOTE_EXPRESSION_PAN, ((v + 1.0) / 2.0).clamp(0.0, 1.0)),
         Expression::Tuning => (lm_sys_clap::CLAP_NOTE_EXPRESSION_TUNING, v.clamp(-120.0, 120.0)),
+        Expression::Pressure => (lm_sys_clap::CLAP_NOTE_EXPRESSION_PRESSURE, v.clamp(0.0, 1.0)),
+        Expression::Timbre => (lm_sys_clap::CLAP_NOTE_EXPRESSION_BRIGHTNESS, v.clamp(0.0, 1.0)),
     }
 }
 

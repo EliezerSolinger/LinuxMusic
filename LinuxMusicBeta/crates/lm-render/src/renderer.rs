@@ -1897,6 +1897,15 @@ impl Renderer {
             if consumed {
                 continue; // a mapped control does not also play the instruments (I-21.2, `consume`)
             }
+            // MPE: the bend, pressure and CC 74 of a member channel belong to the note on that channel
+            if let Some(z) = self.program.mpe.iter().position(|p| p.port == m.port)
+                && self.program.mpe[z].is_member(channel)
+                && let Some((expression, value)) = self.program.mpe[z].expression(m.bytes)
+            {
+                self.program.mpe[z].remember(channel, expression, value);
+                self.mpe_expression(m.port, channel, expression, value, offset);
+                continue;
+            }
             if status == 0xB0 && (key == 120 || key == 123) {
                 // All sound off / all notes off on this channel: end the port's notes here, at this offset
                 while let Some(a) =
@@ -1947,6 +1956,7 @@ impl Renderer {
                                 offset,
                                 EventKind::NoteOn { note, channel, key: play_key, velocity },
                             );
+                            self.notes.set_base_tuning(note, tuning);
                             if tuning != 0.0 {
                                 let kind = EventKind::NoteExpression {
                                     note,
@@ -1956,6 +1966,17 @@ impl Renderer {
                                 };
                                 self.push_event(target, offset, kind);
                             }
+                            // An MPE note starts with what its channel sent before it (the bend comes first)
+                            if let Some(z) = self.program.mpe.iter().position(|p| p.port == m.port)
+                                && self.program.mpe[z].is_member(channel)
+                            {
+                                for (expression, value) in self.program.mpe[z].pending(channel).into_iter().flatten() {
+                                    let value =
+                                        if expression == crate::Expression::Tuning { tuning + value } else { value };
+                                    let kind = EventKind::NoteExpression { note, expression, value, ramp: 0 };
+                                    self.push_event(target, offset, kind);
+                                }
+                            }
                         }
                         None => self.dropped[2] = self.dropped[2].saturating_add(1),
                     }
@@ -1964,6 +1985,14 @@ impl Renderer {
                 }
             }
         }
+    }
+
+    /// An MPE member channel's expression for the note it sounds (a bend adds to the note's own tuning offset)
+    fn mpe_expression(&mut self, port: PortIndex, channel: u8, expression: crate::Expression, value: f32, offset: u32) {
+        let Some(a) = self.notes.port_note(port, channel).copied() else { return };
+        let Some(i) = self.program.node_of(a.node) else { return };
+        let value = if expression == crate::Expression::Tuning { a.base_tuning + value } else { value };
+        self.push_event(i, offset, EventKind::NoteExpression { note: a.note, expression, value, ramp: 0 });
     }
 
     fn port_note_off(&mut self, port: PortIndex, channel: u8, key: u8, offset: u32) {

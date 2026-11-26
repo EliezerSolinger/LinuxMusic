@@ -42,6 +42,8 @@ impl ExportTarget {
 /// Every audio resource cited, loaded: the export never starts on something still loading (T8)
 struct AllLoaded {
     audio: std::collections::BTreeMap<String, Arc<SampleData>>,
+    /// The bytes of the resources of other kinds (the tuning files)
+    bytes: std::collections::BTreeMap<Resource, Arc<[u8]>>,
 }
 
 impl Resources for AllLoaded {
@@ -50,6 +52,10 @@ impl Resources for AllLoaded {
             Some(d) => ResourceState::Ready(d.clone()),
             None => ResourceState::Missing,
         }
+    }
+
+    fn bytes(&self, resource: &Resource) -> Option<Arc<[u8]>> {
+        self.bytes.get(resource).cloned()
     }
 }
 
@@ -122,6 +128,7 @@ fn render(
     let spec = ProcessSpec { sample_rate: rate, max_block: EXPORT_BLOCK };
     // Every resource first (T8)
     let mut audio = std::collections::BTreeMap::new();
+    let mut bytes = std::collections::BTreeMap::new();
     let mut cited = Vec::new();
     root.walk(&mut |_, v| {
         if let Some(r) = v.as_resource() {
@@ -141,10 +148,13 @@ fn render(
             audio.insert(r.key().to_owned(), d);
         } else if let Some(c) = load_kind(project, r, cancel)? {
             // A missing one of another kind: the plugin builds without it, as in the session
+            if let lm_io::Content::Bytes(b) = &c {
+                bytes.insert(r.clone(), Arc::clone(b));
+            }
             plugin_view.insert(r.clone(), crate::session::plugin_content(&c));
         }
     }
-    let resources = AllLoaded { audio };
+    let resources = AllLoaded { audio, bytes };
     // Compile, build what it asks, compile again, until nothing waits
     let mut core =
         CompilerCore::new(CompilerConfig { spec, limits, schemas: schemas.clone(), plugins: plugins.clone() });

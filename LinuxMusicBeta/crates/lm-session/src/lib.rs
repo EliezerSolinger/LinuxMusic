@@ -20,6 +20,7 @@ pub mod rack;
 mod recording;
 mod session;
 pub mod slice;
+mod tuning_actions;
 pub mod watchdog;
 
 pub use port::LocalPort;

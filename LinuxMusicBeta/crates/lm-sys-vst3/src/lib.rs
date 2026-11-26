@@ -320,6 +320,10 @@ pub enum Expression {
     Pan,
     /// 0.5 none; ±120 semitones at 0 and 1
     Tuning,
+    /// 0..1: the note's pressure (VST3 has no pressure type: the generic expression type)
+    Pressure,
+    /// 0..1: the note's brightness (the timbre of MPE, CC 74)
+    Brightness,
 }
 
 /// An event for the plugin in one block (`time`: the frame in the block)
@@ -906,6 +910,8 @@ impl Instance {
                         Expression::Volume => NoteExpressionTypeIDs_::kVolumeTypeID,
                         Expression::Pan => NoteExpressionTypeIDs_::kPanTypeID,
                         Expression::Tuning => NoteExpressionTypeIDs_::kTuningTypeID,
+                        Expression::Pressure => NoteExpressionTypeIDs_::kExpressionTypeID,
+                        Expression::Brightness => NoteExpressionTypeIDs_::kBrightnessTypeID,
                     };
                     x.__field0.noteExpressionValue =
                         NoteExpressionValueEvent { typeId: type_id as NoteExpressionTypeID, noteId: note_id, value };

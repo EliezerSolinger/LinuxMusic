@@ -112,6 +112,8 @@ fn expression_event(time: u32, n: &Note, expression: Expression, value: f64) -> 
     let (kind, v) = match expression {
         Expression::Pan => (lm_sys_vst3::Expression::Pan, ((value + 1.0) / 2.0).clamp(0.0, 1.0)),
         Expression::Tuning => (lm_sys_vst3::Expression::Tuning, (0.5 + value / 240.0).clamp(0.0, 1.0)),
+        Expression::Pressure => (lm_sys_vst3::Expression::Pressure, value.clamp(0.0, 1.0)),
+        Expression::Timbre => (lm_sys_vst3::Expression::Brightness, value.clamp(0.0, 1.0)),
     };
     Event::Expression { time, kind, note_id: note_id(n.id), value: v }
 }

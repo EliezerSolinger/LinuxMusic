@@ -32,7 +32,7 @@ use lm_port::{
     LOADING_THRESHOLD, Loading, Meter, NoteRef, Notice, OperationInfo, PeakBlock, Pending, Position, Preview,
     RecordingTake, Ref, ScanKind, Severity, Target, TelemetryView,
 };
-use lm_state::{NodeId, NodeSchema, PathStep, ROOT, Resource, Value};
+use lm_state::{NodeId, NodeSchema, PathStep, Resource, Value};
 
 use crate::demo::BAR;
 use crate::peaks::Peaks;
@@ -1080,8 +1080,8 @@ impl CorePort for FakePort {
             // a preset is a plugin's state in a file (piece 7a): loading it is one transaction, saving it a file
             "plugin.load_preset" => self.load_preset(&params),
             "plugin.save_preset" => self.save_preset(&params),
-            // the microtuner's files (F-IJN-020): a Scala scale or keymap read into a slot of the project, one edit
-            "tuning.import_scale" | "tuning.import_keymap" => self.import_tuning(action.as_str(), &params),
+            // the track's tuning files (F-IJN-020): a Scala scale or keymap cited by the track, one edit
+            "tuning.set_scale" | "tuning.set_keymap" | "tuning.clear" => self.set_tuning(action.as_str(), &params),
             // the entry's file shown in the system's file manager (F-BRW-008): the fake says where it is
             "browser.reveal" => self.reveal(&params),
             // a project of the browser opened (F-BRW-006): an operation on the project
@@ -1401,47 +1401,37 @@ impl FakePort {
         }
     }
 
-    /// `{slot, path}`: reads a `.scl` or `.kbm` and puts it in the project's tuning slot (one undo step)
-    fn import_tuning(&mut self, action: &str, params: &Value) -> Result<()> {
-        let slot =
-            params.get("slot").and_then(Value::as_int).filter(|s| (0..lm_doc::schemas::TUNING_SLOTS).contains(s));
-        let path = params.get("path").and_then(Value::as_text);
-        let (Some(slot), Some(path)) = (slot, path) else { return Err(err("port.params")) };
-        let text = std::fs::read_to_string(path).map_err(|_| err("tuning.file.unreadable"))?;
-        let keymap = action == "tuning.import_keymap";
-        let name = std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let node = if keymap { lm_doc::tuning::parse_kbm(&text, name)? } else { lm_doc::tuning::parse_scl(&text)? };
-        let ops = self.tuning_ops(if keymap { "keymaps" } else { "scales" }, slot as usize, node);
-        match CorePort::apply(self, Label::new(if keymap { "Import a keymap" } else { "Import a scale" }), ops) {
+    /// `{track, path}`: reads a `.scl` or `.kbm` and cites it from the track's tuning (the fake keeps no project
+    /// folder: the resource is named by the content); `tuning.clear {track}` removes the tuning (one undo step)
+    fn set_tuning(&mut self, action: &str, params: &Value) -> Result<()> {
+        let track = params.get("track").and_then(Value::as_text).and_then(|t| NodeId::parse(t).ok());
+        let Some(track) = track else { return Err(err("port.params")) };
+        let Some(node) = self.doc.find(track) else { return Err(err("port.params")) };
+        let current = node.get("tuning").filter(|t| !t.is_null()).cloned();
+        let (label, tuning) = if action == "tuning.clear" {
+            ("Clear the tuning", Value::NULL)
+        } else {
+            let path = params.get("path").and_then(Value::as_text).ok_or_else(|| err("port.params"))?;
+            let bytes = std::fs::read(path).map_err(|_| err("tuning.file.unreadable"))?;
+            let text = lm_doc::tuning::text_of(&bytes);
+            let keymap = action == "tuning.set_keymap";
+            if keymap {
+                lm_doc::tuning::parse_kbm(&text)?;
+            } else {
+                lm_doc::tuning::parse_scl(&text)?;
+            }
+            let resource = lm_state::Resource::of_content(lm_doc::schemas::TUNING_KIND, &bytes)?;
+            let base = current
+                .unwrap_or_else(|| Value::object([("on", Value::bool(true)), ("importRanges", Value::bool(true))]));
+            (
+                if keymap { "Set the keymap" } else { "Set the scale" },
+                base.with(if keymap { "keymap" } else { "scale" }, Value::resource(resource)),
+            )
+        };
+        match CorePort::apply(self, Label::new(label), vec![EditOp::set(track, &["tuning"], tuning)]) {
             Pending::Ready(r) => r.map(|_| ()),
             Pending::Waiting(_) => Ok(()),
         }
-    }
-
-    /// The edits that put `node` in a tuning slot, making the project's `tuning` (ten empty slots each) when absent
-    fn tuning_ops(&self, list: &str, slot: usize, node: Value) -> Vec<EditOp> {
-        let has = self.doc.root().get("tuning").is_some_and(|t| !t.is_null());
-        if has {
-            return vec![EditOp::Set {
-                id: Ref::Id(ROOT),
-                path: vec![PathStep::key("tuning"), PathStep::key(list), PathStep::Index(slot)],
-                value: node,
-            }];
-        }
-        let empty = |n: &Value, k: &str| -> Value {
-            let _ = n;
-            Value::list(
-                (0..lm_doc::schemas::TUNING_SLOTS)
-                    .map(|_| Value::object([("description", Value::text(""))]).with(k, Value::empty_list())),
-            )
-        };
-        let mut scales = empty(&node, "intervals");
-        let mut keymaps = empty(&node, "degrees");
-        let target = if list == "keymaps" { &mut keymaps } else { &mut scales };
-        if let Ok(v) = target.with_at(slot, node) {
-            *target = v;
-        }
-        vec![EditOp::set(ROOT, &["tuning"], Value::object([("scales", scales), ("keymaps", keymaps)]))]
     }
 
     /// `entry`: a notice with the file's place (the fake has no file manager to open)

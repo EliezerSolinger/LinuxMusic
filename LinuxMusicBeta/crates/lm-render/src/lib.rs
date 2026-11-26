@@ -24,6 +24,7 @@ mod ids;
 mod install;
 pub mod midimap;
 pub mod modulation;
+pub mod mpe;
 mod notes;
 mod panic;
 mod params;

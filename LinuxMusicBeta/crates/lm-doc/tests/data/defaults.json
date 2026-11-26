@@ -365,12 +365,26 @@
       "start": 0,
       "velocity": 0.8
     },
-    "version": 2
+    "version": 3
   },
   "note.bend": {
     "defaults": {
       "at": 0,
       "semitones": 0.0
+    },
+    "version": 1
+  },
+  "note.pressure": {
+    "defaults": {
+      "at": 0,
+      "value": 0.0
+    },
+    "version": 1
+  },
+  "note.timbre": {
+    "defaults": {
+      "at": 0,
+      "value": 0.5
     },
     "version": 1
   },
@@ -470,7 +484,7 @@
         }
       }
     },
-    "version": 3
+    "version": 4
   },
   "project.settings": {
     "defaults": {
@@ -666,7 +680,7 @@
       "solo": false,
       "volume": 1.0
     },
-    "version": 4
+    "version": 5
   },
   "track.cc": {
     "defaults": {},
@@ -695,15 +709,6 @@
     },
     "version": 1
   },
-  "track.microtuner": {
-    "defaults": {
-      "importRanges": true,
-      "keymap": 0,
-      "on": false,
-      "scale": 0
-    },
-    "version": 1
-  },
   "track.midi_input": {
     "defaults": {
       "channel": -1,
@@ -725,6 +730,13 @@
       "channels": 2,
       "port": "main",
       "to": "m:0"
+    },
+    "version": 1
+  },
+  "track.tuning": {
+    "defaults": {
+      "importRanges": true,
+      "on": false
     },
     "version": 1
   },
@@ -779,32 +791,6 @@
       "on": false,
       "startsOnly": false,
       "strength": 1.0
-    },
-    "version": 1
-  },
-  "tuning": {
-    "defaults": {
-      "keymaps": [],
-      "scales": []
-    },
-    "version": 1
-  },
-  "tuning.keymap": {
-    "defaults": {
-      "baseFrequency": 440.0,
-      "baseKey": 69,
-      "degrees": [],
-      "description": "",
-      "first": 0,
-      "last": 127,
-      "middle": 60
-    },
-    "version": 1
-  },
-  "tuning.scale": {
-    "defaults": {
-      "description": "",
-      "intervals": []
     },
     "version": 1
   }

@@ -1802,3 +1802,19 @@ conflito com seções anteriores deste arquivo e com o `funcionalidades-legado.m
   renderizador não aplica mapa MIDI nem grava essas notas como entrada (gravaria na faixa armada errada). Canal 0;
   "todas as notas desligadas" é o CC 123. No protocolo remoto: `note_on`, `note_off` e `all_notes_off`, aplicadas na hora
   e em ordem (não juntadas como `param`). O fake guarda `live_notes()` e `held_live_notes()` para os testes.
+
+### Afinação por arquivo (item 4, 26/11)
+
+- A faixa tem `tuning: {on, scale, keymap, importRanges}` (esquema `track.tuning`; `scale` e `keymap` são recursos do
+  tipo `"tuning"`, o `.scl` e o `.kbm` opcional). O `microtuner` e as 10+10 vagas do projeto saíram: `project` v4 e
+  `track` v5 descartam `tuning` e `microtuner` antigos (não há projetos de usuário).
+- Os arquivos são copiados para `state/` (como os NAM) e lidos como bytes (`kind_policy("tuning") = Bytes`); o
+  compilador os lê por `Resources::bytes` (método novo, com padrão `None`), então a faixa toca em 12-TET enquanto o
+  arquivo carrega e o compilador roda de novo quando ele chega. A exportação carrega os bytes junto.
+- `lm_doc::tuning` só lê os formatos (`parse_scl`, `parse_kbm` para `Scale` e `Keymap`); a conta continua em
+  `lm-compile/src/keys.rs`.
+- Ações do núcleo: `tuning.set_scale {track, path}`, `tuning.set_keymap {track, path}`, `tuning.clear {track}`. O arquivo é
+  validado antes de entrar no projeto; copiado na própria ação (até 1 MB, poucos KB na prática: não passa de 200 ms).
+- A aba Afinação: interruptor, dois seletores de arquivo, Limpar e "faixa de notas do mapa". O editor de escalas e mapas
+  saiu (a edição é a do arquivo, em qualquer editor de texto).
+- O `note` v3 já traz as listas opcionais `pressure` e `timbre` (para o MPE, abaixo).

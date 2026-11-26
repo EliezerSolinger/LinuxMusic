@@ -183,6 +183,7 @@ impl Lb302Plugin {
                     match expression {
                         Expression::Tuning => s.tuning = value,
                         Expression::Pan => s.pan = value.clamp(-1.0, 1.0),
+                        Expression::Pressure | Expression::Timbre => {}
                     }
                 }
             }

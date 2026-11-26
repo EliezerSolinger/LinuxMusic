@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use super::*;
+use lm_state::ROOT;
 
 fn small() -> FakePort {
     FakePort::new(Config { tracks: 12, slow_delay: None, slow_track: 2 }).expect("the demo builds")
@@ -412,15 +413,24 @@ fn sidechains_tuning_files_reveal_and_open() {
     std::fs::create_dir_all(&dir).unwrap();
     let scl = dir.join("meantone.scl");
     std::fs::write(&scl, "! x\nMeantone\n2\n193.157\n2/1\n").unwrap();
-    let params = Value::object([("slot", Value::int(3)), ("path", Value::text(scl.to_str().unwrap()))]);
-    assert!(port.run_action("tuning.import_scale".into(), params).ok().is_some());
-    let scales = port.root().get("tuning").and_then(|t| t.get("scales")).unwrap().clone();
-    assert_eq!(scales.items().count(), 10);
-    assert_eq!(scales.at(3).and_then(|s| s.get("description")).and_then(Value::as_text), Some("Meantone"));
+    let tid = port
+        .root()
+        .get("tracks")
+        .and_then(|t| t.items().next())
+        .and_then(|t| t.get("id"))
+        .and_then(Value::as_text)
+        .unwrap()
+        .to_string();
+    let params = Value::object([("track", Value::text(tid.as_str())), ("path", Value::text(scl.to_str().unwrap()))]);
+    assert!(port.run_action("tuning.set_scale".into(), params).ok().is_some());
+    let tuning =
+        port.root().get("tracks").and_then(|t| t.items().next()).and_then(|t| t.get("tuning")).unwrap().clone();
+    assert_eq!(tuning.get("on").and_then(Value::as_bool), Some(true));
+    assert!(tuning.get("scale").and_then(Value::as_resource).is_some());
     let bad = dir.join("bad.scl");
     std::fs::write(&bad, "x\n2\n100.0\nnope\n").unwrap();
-    let params = Value::object([("slot", Value::int(4)), ("path", Value::text(bad.to_str().unwrap()))]);
-    assert!(port.run_action("tuning.import_scale".into(), params).ok().is_none(), "refused whole");
+    let params = Value::object([("track", Value::text(tid.as_str())), ("path", Value::text(bad.to_str().unwrap()))]);
+    assert!(port.run_action("tuning.set_scale".into(), params).ok().is_none(), "refused whole");
     let _ = std::fs::remove_dir_all(&dir);
     let Pending::Ready(Ok(projects)) = port.browse(BrowsePage::Projects, None, false) else { panic!() };
     let p = projects.iter().find(|e| e.kind == lm_port::EntryKind::Project).unwrap().id;

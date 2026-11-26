@@ -275,6 +275,13 @@ impl Resources for ResourceSnapshot {
         }
         if self.missing.contains(resource.key()) { ResourceState::Missing } else { ResourceState::Loading }
     }
+
+    fn bytes(&self, resource: &Resource) -> Option<Arc<[u8]>> {
+        match self.view.content(resource.kind(), resource.key()) {
+            Some(lm_io::Content::Bytes(b)) => Some(Arc::clone(b)),
+            _ => None,
+        }
+    }
 }
 
 /// A plugin or rack build waiting for its resources, or running
@@ -2299,7 +2306,8 @@ impl Session {
         all.sort();
         all.dedup();
         for r in all {
-            if r.kind() == "audio" {
+            // Audio, and the tuning files the compiler reads (the plugins' resources are asked by their builds)
+            if r.kind() == "audio" || r.kind() == lm_doc::schemas::TUNING_KIND {
                 self.request(&r);
             }
         }

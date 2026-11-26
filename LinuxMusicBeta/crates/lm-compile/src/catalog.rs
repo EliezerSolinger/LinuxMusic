@@ -133,6 +133,11 @@ pub enum ResourceState {
 /// thread)
 pub trait Resources: Send + Sync {
     fn audio(&self, resource: &Resource) -> ResourceState;
+
+    /// The bytes of a loaded resource of another kind (a tuning file); `None` while it is loading or missing
+    fn bytes(&self, _resource: &Resource) -> Option<Arc<[u8]>> {
+        None
+    }
 }
 
 /// No resources at all (every audio item waits)
@@ -152,6 +157,13 @@ impl Resources for lm_plugin::ResourceView {
             // Not audio: an item cannot play it
             Some(_) => ResourceState::Missing,
             None => ResourceState::Loading,
+        }
+    }
+
+    fn bytes(&self, resource: &Resource) -> Option<Arc<[u8]>> {
+        match self.get(resource) {
+            Some(lm_plugin::Loaded::Bytes(b)) => Some(Arc::clone(b)),
+            _ => None,
         }
     }
 }

@@ -179,6 +179,8 @@ pub struct Environment {
     pub midi_ports: Vec<PortIndex>,
     /// Every port alias of the machine with its index (a track's `midiInput.ports` and `midiOutput.ports`, I-21.1)
     pub midi_aliases: Vec<(Arc<str>, PortIndex)>,
+    /// The ports that are MPE zones (a preference of the port): their member channels' expressions go to the notes
+    pub mpe_ports: Vec<lm_render::mpe::MpePort>,
     /// The selected track: a track whose input follows the selection plays when selected (F-REC-131)
     pub selected_track: Option<NodeId>,
     pub midi_timing: MidiTiming,

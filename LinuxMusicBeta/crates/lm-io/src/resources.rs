@@ -763,7 +763,7 @@ pub const BYTES_MAX: u64 = 64 << 20;
 pub fn kind_policy(kind: &str) -> KindPolicy {
     match kind {
         "audio" | "render" => KindPolicy::Audio,
-        "nam" | "ir" | "state" | "wavetable" | "preset" | "pat" => KindPolicy::Bytes,
+        "nam" | "ir" | "state" | "wavetable" | "preset" | "pat" | "tuning" => KindPolicy::Bytes,
         // "sf2", "sf3", "sfz", "gig", "kit", "soundfont" and anything not known: the plugin opens the file
         _ => KindPolicy::File,
     }

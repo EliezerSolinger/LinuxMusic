@@ -255,6 +255,8 @@ struct Plan {
     ports: Vec<(PortIndex, usize, Option<u8>, Option<u8>)>,
     /// The key range, base key, velocity and tuning of the nodes' live input
     live_keys: Vec<(usize, lm_render::LiveKeys)>,
+    /// The MPE ports of the machine (a preference)
+    mpe: Vec<lm_render::mpe::MpePort>,
     /// MIDI out to devices (P-38)
     midi_out: Vec<PMidiOut>,
     /// The CC rack (F-IJN-025): (instrument node, track, controller, value)
@@ -748,6 +750,9 @@ impl CompilerCore {
         for (port, n, channel, fixed_velocity) in &plan.ports {
             b.port(PortRoute { port: *port, channel: *channel, node: index_of[*n], fixed_velocity: *fixed_velocity });
         }
+        for port in std::mem::take(&mut plan.mpe) {
+            b.mpe_port(port);
+        }
         for (n, keys) in std::mem::take(&mut plan.live_keys) {
             b.live_keys(index_of[n], keys);
         }
@@ -1119,7 +1124,7 @@ impl CompilerCore {
             self.caches.tempo_version += 1;
         }
         self.caches.begin();
-        let mut plan = Plan::default();
+        let mut plan = Plan { mpe: env.mpe_ports.clone(), ..Plan::default() };
         let mixer = root.get("mixer").cloned().unwrap_or_default();
         let analog = text(&mixer, "mode", "analog") != "digital";
         let transport = root.get("transport").cloned().unwrap_or_default();
@@ -1338,7 +1343,7 @@ impl CompilerCore {
                 if shape.notes {
                     let transpose = if flag(t, "transpose", true) { project_transpose } else { 0 };
                     // The keys, base key, base velocity and microtuner (F-IJN-017/019/021)
-                    let keys = crate::keys::track_keys(t, root.get("tuning"), transpose);
+                    let keys = crate::keys::track_keys(t, resources, transpose);
                     let mut list = Vec::new();
                     for item in
                         items(t, "items").filter(|i| text(i, "kind", "midi") == "midi" && !flag(i, "mute", false))

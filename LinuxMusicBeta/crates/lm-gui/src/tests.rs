@@ -2058,26 +2058,20 @@ fn instrument_cc_rack(cx: &mut TestAppContext) {
     assert!(cc(&ws, cx).is_none_or(|v| v == 0.0), "one undo step");
 }
 
-/// The Tuning tab (F-IJN-019..021): the microtuner on, its scale slot, the keys, and a scale written in the editor
+/// The Tuning tab (F-IJN-019..021): the tuning on, the keys, and the files cleared
 #[gpui::test]
 fn instrument_tuning_tab(cx: &mut TestAppContext) {
     let (ws, cx) = open(cx);
     let (track, _) = triple(&ws, cx);
     open_screen(&ws, cx, Screen::Instrument, Some(track));
     click(cx, "iw-tab-Tuning");
-    click(cx, "iw-micro-on");
-    click(cx, "iw-micro-scale-plus");
-    let micro = track_node(&ws, cx, track).get("microtuner").cloned().unwrap();
-    assert_eq!(
-        (micro.get("on").and_then(Value::as_bool), micro.get("scale").and_then(Value::as_int)),
-        (Some(true), Some(1))
-    );
+    click(cx, "iw-tuning-on");
+    let tuning = track_node(&ws, cx, track).get("tuning").cloned().unwrap();
+    assert_eq!(tuning.get("on").and_then(Value::as_bool), Some(true));
     click(cx, "iw-keys-first-plus");
     assert_eq!(track_node(&ws, cx, track).get("keys").and_then(|k| k.get("first")).and_then(Value::as_int), Some(1));
-    // a bad line is refused; a good scale goes in the project's slot
-    click(cx, "iw-edit-scale");
-    click(cx, "iw-tuning-apply");
-    assert!(root(&ws, cx).get("tuning").is_none_or(Value::is_null), "an empty scale is refused");
+    click(cx, "iw-tuning-clear");
+    assert!(track_node(&ws, cx, track).get("tuning").is_none_or(Value::is_null), "cleared");
 }
 
 /// MIDI learn from a control's menu (I-21.2): the port starts learning that control

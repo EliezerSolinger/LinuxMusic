@@ -738,6 +738,8 @@ pub struct Program {
     pub(crate) ports: Box<[PortRoute]>,
     /// The live input shaping of the nodes that have one
     pub(crate) live_keys: Box<[(NodeIndex, LiveKeys)]>,
+    /// The ports that are MPE zones, with the last expression values of their channels
+    pub(crate) mpe: Box<[crate::mpe::MpePort]>,
     /// MIDI out to devices, by the node's program index
     pub(crate) midi_out: Box<[(u32, MidiOutRoute)]>,
     /// For each route, the key each sounding note was sent on (−1: none), by the note's key: its note-off ends that
@@ -816,6 +818,7 @@ pub struct ProgramBuilder {
     midi: Vec<(NodeIndex, Vec<Arc<MidiItem>>)>,
     ports: Vec<PortRoute>,
     live_keys: Vec<(NodeIndex, LiveKeys)>,
+    mpe: Vec<crate::mpe::MpePort>,
     outputs: Vec<OutputRoute>,
     master: Option<NodeIndex>,
     preview: Option<NodeIndex>,
@@ -851,6 +854,7 @@ impl ProgramBuilder {
             midi: Vec::new(),
             ports: Vec::new(),
             live_keys: Vec::new(),
+            mpe: Vec::new(),
             outputs: Vec::new(),
             master: None,
             preview: None,
@@ -931,6 +935,13 @@ impl ProgramBuilder {
 
     pub fn port(&mut self, route: PortRoute) -> &mut Self {
         self.ports.push(route);
+        self
+    }
+
+    /// A port that is an MPE zone: its member channels' bend, pressure and CC 74 become per-note expressions
+    pub fn mpe_port(&mut self, port: crate::mpe::MpePort) -> &mut Self {
+        self.mpe.retain(|p| p.port != port.port);
+        self.mpe.push(port);
         self
     }
 
@@ -1464,6 +1475,7 @@ impl ProgramBuilder {
             node_map,
             ports: ports.into_boxed_slice(),
             live_keys: self.live_keys.into_boxed_slice(),
+            mpe: self.mpe.into_boxed_slice(),
             midi_sent: vec![-1i8; midi_out.len() * 128].into_boxed_slice(),
             midi_out: midi_out.into_boxed_slice(),
             outputs: self.outputs.into_boxed_slice(),

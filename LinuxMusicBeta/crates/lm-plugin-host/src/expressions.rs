@@ -17,6 +17,8 @@ pub struct Note {
     pub key: i16,
     pan: f64,
     tuning: f64,
+    pressure: f64,
+    timbre: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -47,7 +49,7 @@ impl Expressions {
         if self.notes.len() == self.notes.capacity() {
             self.notes.remove(0);
         }
-        self.notes.push(Note { id, channel, key, pan: 0.0, tuning: 0.0 });
+        self.notes.push(Note { id, channel, key, pan: 0.0, tuning: 0.0, pressure: 0.0, timbre: 0.0 });
     }
 
     pub fn note_off(&mut self, id: u32) {
@@ -61,12 +63,14 @@ impl Expressions {
     }
 
     fn send(&mut self, time: u32, note: u32, expression: Expression, value: f64, emit: Emit<'_>) {
-        let unknown = Note { id: note, channel: -1, key: -1, pan: 0.0, tuning: 0.0 };
+        let unknown = Note { id: note, channel: -1, key: -1, pan: 0.0, tuning: 0.0, pressure: 0.0, timbre: 0.0 };
         let n = match self.notes.iter_mut().find(|n| n.id == note) {
             Some(n) => {
                 match expression {
                     Expression::Pan => n.pan = value,
                     Expression::Tuning => n.tuning = value,
+                    Expression::Pressure => n.pressure = value,
+                    Expression::Timbre => n.timbre = value,
                 }
                 *n
             }
@@ -84,6 +88,8 @@ impl Expressions {
             let from = self.notes.iter().find(|n| n.id == note).map_or(0.0, |n| match expression {
                 Expression::Pan => n.pan,
                 Expression::Tuning => n.tuning,
+                Expression::Pressure => n.pressure,
+                Expression::Timbre => n.timbre,
             });
             self.ramps.push(Ramp { note, expression, from, to: value, done: 0, length: ramp, offset: time });
         }

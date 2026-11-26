@@ -21,6 +21,8 @@ pub(crate) struct ActiveNote {
     pub(crate) key: u8,
     pub(crate) node: NodeIndex,
     pub(crate) note: NoteId,
+    /// The tuning offset the note started with (the track's microtuner), in semitones: a per-note bend adds to it
+    pub(crate) base_tuning: f32,
 }
 
 #[derive(Debug)]
@@ -45,8 +47,20 @@ impl ActiveNotes {
         }
         let note = NoteId(self.next);
         self.next = self.next.wrapping_add(1).max(1);
-        self.notes.push(ActiveNote { source, channel, key, node, note });
+        self.notes.push(ActiveNote { source, channel, key, node, note, base_tuning: 0.0 });
         Some(note)
+    }
+
+    /// Remembers the tuning offset a note started with
+    pub(crate) fn set_base_tuning(&mut self, note: NoteId, tuning: f32) {
+        if let Some(n) = self.notes.iter_mut().find(|n| n.note == note) {
+            n.base_tuning = tuning;
+        }
+    }
+
+    /// The newest note a port sounds on a channel (an MPE member channel has one)
+    pub(crate) fn port_note(&self, port: PortIndex, channel: u8) -> Option<&ActiveNote> {
+        self.notes.iter().rev().find(|n| n.source == NoteSource::Port(port) && n.channel == channel)
     }
 
     /// Removes the notes that match and hands each to `f`, in table order

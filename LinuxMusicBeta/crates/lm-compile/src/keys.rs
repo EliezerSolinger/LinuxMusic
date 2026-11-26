@@ -1,11 +1,12 @@
 //! A track's keys, base key, base velocity and microtuner (F-IJN-017/019/021), read from the tree into the
-//! renderer's [`LiveKeys`]. The microtuner's math is the legacy's `Microtuner::keyToFreq`, `Keymap::getDegree` and
+//! renderer's [`LiveKeys`]. The tuning's math is the legacy's `Microtuner::keyToFreq`, `Keymap::getDegree` and
 //! `Keymap::getOctave` ported as they are (the ratios as `f32`, the octave arithmetic in `f64`).
 
 use lm_render::LiveKeys;
 use lm_state::Value;
 
-use crate::read::{flag, int, items};
+use crate::catalog::Resources;
+use crate::read::{flag, int};
 
 /// The legacy's `DefaultKey`: the key that sounds 440 Hz when the track's base key is not changed
 pub(crate) const DEFAULT_KEY: i64 = 69;
@@ -15,9 +16,9 @@ const DEFAULT_BASE_FREQUENCY: f64 = 440.0;
 
 /// A scale's ratios: the unison first (the legacy keeps the implicit 1/1), then the intervals; the last one is the
 /// period. An interval that is not one is left out
-pub(crate) fn scale_ratios(scale: Option<&Value>) -> Vec<f32> {
+pub(crate) fn scale_ratios(scale: Option<&lm_doc::tuning::Scale>) -> Vec<f32> {
     let mut r = vec![1.0f32];
-    for t in scale.into_iter().flat_map(|s| items(s, "intervals")).filter_map(Value::as_text) {
+    for t in scale.into_iter().flat_map(|s| s.intervals.iter()) {
         let Some(t) = t.split_whitespace().next() else { continue };
         if t.contains('.') {
             if let Ok(c) = t.parse::<f32>()
@@ -37,7 +38,7 @@ pub(crate) fn scale_ratios(scale: Option<&Value>) -> Vec<f32> {
     r
 }
 
-/// A keymap of the project's tuning (`Keymap.cpp`)
+/// A keymap of a track's tuning (`Keymap.cpp`)
 pub(crate) struct Keymap {
     degrees: Vec<i64>,
     first: i32,
@@ -48,15 +49,15 @@ pub(crate) struct Keymap {
 }
 
 impl Keymap {
-    pub(crate) fn read(node: Option<&Value>) -> Self {
-        let Some(n) = node else { return Self::empty() };
+    pub(crate) fn from_file(k: Option<&lm_doc::tuning::Keymap>) -> Self {
+        let Some(k) = k else { return Self::empty() };
         Self {
-            degrees: items(n, "degrees").filter_map(Value::as_int).collect(),
-            first: int(n, "first", 0).clamp(0, 127) as i32,
-            last: int(n, "last", 127).clamp(0, 127) as i32,
-            middle: int(n, "middle", 60).clamp(0, 127) as i32,
-            base_key: int(n, "baseKey", 69).clamp(0, 127) as i32,
-            base_freq: n.get("baseFrequency").and_then(Value::as_real).unwrap_or(DEFAULT_BASE_FREQUENCY),
+            degrees: k.degrees.clone(),
+            first: k.first.clamp(0, 127),
+            last: k.last.clamp(0, 127),
+            middle: k.middle.clamp(0, 127),
+            base_key: k.base_key.clamp(0, 127),
+            base_freq: k.base_frequency,
         }
     }
 
@@ -132,13 +133,15 @@ impl Keymap {
     }
 }
 
-fn slot<'a>(tuning: Option<&'a Value>, list: &str, n: i64) -> Option<&'a Value> {
-    items(tuning?, list).nth(n.max(0) as usize)
+/// A tuning file of the track as text: its resource, loaded
+fn file_text(resources: &dyn Resources, field: Option<&Value>) -> Option<String> {
+    let r = field?.as_resource()?;
+    let bytes = resources.bytes(r)?;
+    Some(lm_doc::tuning::text_of(&bytes).into_owned())
 }
 
 /// The shaping of a track's notes: `transpose` is the project's (0 when the track does not follow it)
-pub(crate) fn track_keys(track: &Value, tuning: Option<&Value>, transpose: i32) -> LiveKeys {
-    let tuning = tuning.filter(|t| !t.is_null());
+pub(crate) fn track_keys(track: &Value, resources: &dyn Resources, transpose: i32) -> LiveKeys {
     let keys = track.get("keys").filter(|k| !k.is_null());
     let mut first = keys.map_or(0, |k| int(k, "first", 0)).clamp(0, 127);
     let mut last = keys.map_or(127, |k| int(k, "last", 127)).clamp(0, 127);
@@ -149,10 +152,15 @@ pub(crate) fn track_keys(track: &Value, tuning: Option<&Value>, transpose: i32) 
         velocity_scale: velocity as f32 / DEFAULT_VELOCITY as f32,
         ..LiveKeys::default()
     };
-    let micro = track.get("microtuner").filter(|m| !m.is_null() && flag(m, "on", false));
-    if let Some(m) = micro {
-        let ratios = scale_ratios(slot(tuning, "scales", int(m, "scale", 0)));
-        let keymap = Keymap::read(slot(tuning, "keymaps", int(m, "keymap", 0)));
+    // Tuning by file: on, with a scale that is loaded and valid (while it loads, or when it is not one, the track
+    // plays in 12-TET; the session compiles again when the file arrives)
+    let scale = track.get("tuning").filter(|m| !m.is_null() && flag(m, "on", false)).and_then(|m| {
+        file_text(resources, m.get("scale")).and_then(|t| lm_doc::tuning::parse_scl(&t).ok()).map(|s| (m, s))
+    });
+    if let Some((m, scale)) = scale {
+        let ratios = scale_ratios(Some(&scale));
+        let kbm = file_text(resources, m.get("keymap")).and_then(|t| lm_doc::tuning::parse_kbm(&t).ok());
+        let keymap = Keymap::from_file(kbm.as_ref());
         let import = flag(m, "importRanges", true);
         if import {
             first = i64::from(keymap.first());
@@ -178,10 +186,39 @@ pub(crate) fn track_keys(track: &Value, tuning: Option<&Value>, transpose: i32) 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
 
-    fn scale(intervals: &[&str]) -> Value {
-        Value::object([("intervals", Value::list(intervals.iter().map(|t| Value::text(*t))))])
+    use lm_doc::tuning::Scale;
+    use lm_state::Resource;
+
+    use super::*;
+    use crate::catalog::{ResourceState, Resources};
+
+    fn scale(intervals: &[&str]) -> Scale {
+        Scale { description: String::new(), intervals: intervals.iter().map(|t| (*t).to_string()).collect() }
+    }
+
+    /// Tuning files by resource
+    #[derive(Default)]
+    struct Files(BTreeMap<Resource, Arc<[u8]>>);
+
+    impl Files {
+        fn with(mut self, text: &str) -> (Self, Resource) {
+            let r = Resource::of_content("tuning", text.as_bytes()).unwrap();
+            self.0.insert(r.clone(), Arc::from(text.as_bytes().to_vec().into_boxed_slice()));
+            (self, r)
+        }
+    }
+
+    impl Resources for Files {
+        fn audio(&self, _: &Resource) -> ResourceState {
+            ResourceState::Missing
+        }
+
+        fn bytes(&self, r: &Resource) -> Option<Arc<[u8]>> {
+            self.0.get(r).cloned()
+        }
     }
 
     #[test]
@@ -221,7 +258,7 @@ mod tests {
 
     #[test]
     fn a_track_without_settings_plays_everything_unchanged() {
-        let k = track_keys(&Value::object([] as [(&str, Value); 0]), None, 0);
+        let k = track_keys(&Value::object([] as [(&str, Value); 0]), &Files::default(), 0);
         assert_eq!(k, LiveKeys::default());
         assert_eq!(k.map(60), Some((60, 0.0)));
         assert_eq!(k.velocity(100), 100);
@@ -233,7 +270,7 @@ mod tests {
             ("keys", Value::object([("first", Value::int(48)), ("last", Value::int(72)), ("base", Value::int(60))])),
             ("baseVelocity", Value::int(126)),
         ]);
-        let k = track_keys(&t, None, 2);
+        let k = track_keys(&t, &Files::default(), 2);
         assert_eq!(k.map(47 - 2), None);
         assert_eq!(k.map(60), Some((71, 0.0)), "60 + 2 transpose + 9 for the base key 60");
         assert_eq!(k.map(71), None, "the transposed 73 is past the last key");
@@ -242,31 +279,30 @@ mod tests {
     }
 
     #[test]
-    fn a_microtuned_track_takes_the_keymaps_ranges() {
-        let tuning = Value::object([
-            ("scales", Value::list([scale(&["1200.0"])])),
-            (
-                "keymaps",
-                Value::list([Value::object([
-                    ("degrees", Value::list([Value::int(0)])),
-                    ("first", Value::int(50)),
-                    ("last", Value::int(70)),
-                    ("middle", Value::int(60)),
-                    ("baseKey", Value::int(60)),
-                    ("baseFrequency", Value::real(220.0).unwrap()),
-                ])]),
-            ),
-        ]);
+    fn a_tuned_track_takes_the_keymaps_ranges() {
+        let (files, scl) = Files::default().with("one note\n1\n1200.0\n");
+        let (files, kbm) = files.with("1\n50\n70\n60\n60\n220.0\n1\n0\n");
         let t = Value::object([(
-            "microtuner",
-            Value::object([("on", Value::bool(true)), ("scale", Value::int(0)), ("keymap", Value::int(0))]),
+            "tuning",
+            Value::object([
+                ("on", Value::bool(true)),
+                ("scale", Value::resource(scl)),
+                ("keymap", Value::resource(kbm)),
+            ]),
         )]);
-        let k = track_keys(&t, Some(&tuning), 0);
+        let k = track_keys(&t, &files, 0);
         assert_eq!((k.first, k.last), (50, 70));
         assert_eq!(k.map(40), None);
         // One note per octave, 220 Hz at key 60: 3 semitones under that key's own 12-TET pitch (9 + 12 below 440 Hz)
         let (key, off) = k.map(60).unwrap();
         assert_eq!(key, 60);
         assert!((off - (12.0 * (220.0f32 / 440.0).log2() + 9.0)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_tuning_whose_file_is_not_loaded_plays_in_twelve_tone_equal() {
+        let r = Resource::of_content("tuning", b"never loaded").unwrap();
+        let t = Value::object([("tuning", Value::object([("on", Value::bool(true)), ("scale", Value::resource(r))]))]);
+        assert_eq!(track_keys(&t, &Files::default(), 0), LiveKeys::default());
     }
 }

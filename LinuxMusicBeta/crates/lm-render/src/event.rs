@@ -18,6 +18,10 @@ pub enum Expression {
     Pan,
     /// Semitones added to the note's pitch (its bend curve), before the instrument's own bend range and glide
     Tuning,
+    /// 0 to 1: the pressure of the note (MPE channel pressure), 0 until the player presses
+    Pressure,
+    /// 0 to 1: the timbre of the note (MPE CC 74), 0.5 is the middle
+    Timbre,
 }
 
 /// What happened. Closed: no generic message (rule 10)

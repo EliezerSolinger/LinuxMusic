@@ -26,7 +26,7 @@ use gpui::{
     SharedString, Subscription, WeakEntity, Window, anchored, canvas, deferred, div, fill, point, prelude::*, px, size,
 };
 use gpui_component::Sizable;
-use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
+use gpui_component::input::{Input, InputEvent, InputState};
 use lm_port::{
     BrowsePage, EditOp, Feed, FieldKind, GestureId, Label, Loading, NodeId, NodeSchema, Pending, PluginInfo, Ref,
     Scale, Target, Topic, Value,
@@ -1185,31 +1185,6 @@ pub enum IwPopup {
 /// A preset of the browser service: its entry, its name, whether it is the factory's
 pub type PresetEntry = (lm_port::EntryId, Arc<str>, bool);
 
-/// The project's scale and keymap slots (lm-doc's `TUNING_SLOTS`)
-const TUNING_SLOTS: i64 = 10;
-
-/// The editor of a scale or keymap slot (F-IJN-020)
-struct TuningEditor {
-    keymap: bool,
-    slot: usize,
-    description: Entity<InputState>,
-    text: Entity<gpui_component::input::TextareaState>,
-    /// the keymap's numbers: first, last, middle, base key, base frequency
-    numbers: [f64; 5],
-    error: Option<String>,
-}
-
-/// One interval in cents: a number with a point is cents, `a/b` or a whole number is a ratio (as lm-doc's tuning)
-fn interval_cents(text: &str) -> Option<f64> {
-    let t = text.split_whitespace().next()?;
-    if t.contains('.') {
-        return t.parse::<f64>().ok().filter(|c| c.is_finite());
-    }
-    let (a, b) = t.split_once('/').unwrap_or((t, "1"));
-    let (a, b) = (a.parse::<f64>().ok()?, b.parse::<f64>().ok()?);
-    (a > 0.0 && b > 0.0).then(|| 1200.0 * (a / b).log2())
-}
-
 /// A note's name (MIDI numbering, C4 = 60)
 pub fn note_name(k: f64) -> String {
     const N: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -1247,8 +1222,6 @@ pub struct InstrumentWindow {
     lit: Option<(usize, Instant)>,
     /// the presets of the current plugin (the browser service's Presets page), refreshed when the list opens
     presets: Vec<PresetEntry>,
-    /// the scale or keymap editor, when open
-    tuning: Option<TuningEditor>,
     editor: EditorState<IwPopup>,
     /// The plugin's own panel (I-22, lm-gui-plugins), for the instrument it was made for
     panel: Option<(NodeId, Arc<str>, AnyView, Subscription)>,
@@ -1379,7 +1352,6 @@ impl InstrumentWindow {
             kit_bounds: Rc::new(Cell::new(None)),
             lit: None,
             presets: Vec::new(),
-            tuning: None,
             editor: EditorState::default(),
             panel: None,
             _subs: vec![observe, release],
@@ -2209,7 +2181,7 @@ impl InstrumentWindow {
             .unwrap_or_default()
     }
 
-    /// Sets one of the track's optional objects whole (`midiInput`, `midiOutput`, `microtuner`, `keys`); `None`
+    /// Sets one of the track's optional objects whole (`midiInput`, `midiOutput`, `tuning`, `keys`); `None`
     /// removes it (absent keeps the old meaning, U29)
     fn set_track_object(&mut self, key: &str, v: Option<Value>, label: &'static str, cx: &mut Context<Self>) {
         let Some(track) = self.track else { return };
@@ -2537,11 +2509,9 @@ impl InstrumentWindow {
             .into_any_element()
     }
 
-    /// The Tuning tab (F-IJN-018..021): pitch, bend range, the global transposition; the microtuner (on, the scale
-    /// and keymap slots of the project, the keymap's ranges); the scale and keymap editor with the Scala files; the
-    /// first, last and base key
+    /// The Tuning tab (F-IJN-018..021): pitch, bend range, the global transposition; the tuning by file (on, the
+    /// `.scl` and `.kbm` pickers, the keymap's ranges); the first, last and base key
     fn tuning_tab(&self, t: &TrackView, ctls: &[Ctl], cx: &Context<Self>) -> Vec<AnyElement> {
-        let root = self.scx.core.read(cx).port().root().clone();
         let node = self.track_node(cx);
         let follows = node.get("transpose").and_then(Value::as_bool).unwrap_or(true);
         let tid = t.id;
@@ -2566,86 +2536,67 @@ impl InstrumentWindow {
                 .into_any_element(),
         );
         let mut out = vec![group_card(tr("Transposition"), controls)];
-        // the microtuner: not for an instrument that plays its own voices
+        // the tuning by file: not for an instrument that plays its own voices
         let per_note = ctls.iter().any(|k| k.key() == "volAttack");
-        let micro = node.get("microtuner").filter(|v| !v.is_null()).cloned().unwrap_or_else(|| {
-            Value::object([
-                ("on", Value::bool(false)),
-                ("scale", Value::int(0)),
-                ("keymap", Value::int(0)),
-                ("importRanges", Value::bool(true)),
-            ])
-        });
-        let on = model::flag(&micro, "on");
-        let slot_name = |list: &str, k: i64| -> String {
-            let d = model::at(&root, &["tuning", list])
-                .and_then(|l| l.items().nth(k as usize))
-                .map(|s| model::text(s, "description").to_string())
-                .unwrap_or_default();
-            format!("{} · {}", k + 1, if d.is_empty() { tr("(empty)").to_string() } else { d })
-        };
+        let tuning = node
+            .get("tuning")
+            .filter(|v| !v.is_null())
+            .cloned()
+            .unwrap_or_else(|| Value::object([("on", Value::bool(false)), ("importRanges", Value::bool(true))]));
+        let on = model::flag(&tuning, "on");
         let mut mrows: Vec<AnyElement> = Vec::new();
         if !per_note {
             mrows.push(notice(tr("Not available for this instrument")));
         }
-        let m1 = micro.clone();
+        let t1 = tuning.clone();
         mrows.push(
-            button("iw-micro-on", tr("Microtuner"), on, THEME.green)
+            button("iw-tuning-on", tr("Tuning"), on, THEME.green)
                 .h(px(20.))
-                .debug_selector(|| "iw-micro-on".into())
+                .debug_selector(|| "iw-tuning-on".into())
                 .on_click(cx.listener(move |w, _, _, cx| {
-                    w.set_track_object("microtuner", Some(m1.with("on", Value::bool(!on))), "Microtuner", cx)
+                    w.set_track_object("tuning", Some(t1.with("on", Value::bool(!on))), "Tuning", cx)
                 }))
                 .into_any_element(),
         );
-        for (key, list, label) in [("scale", "scales", "Scale"), ("keymap", "keymaps", "Keymap")] {
-            let m = micro.clone();
-            let cur = model::int(&micro, key, 0);
-            mrows.push(self.stepper(
-                intern(&format!("iw-micro-{key}")),
-                tr(label),
-                slot_name(list, cur),
-                cx,
-                move |w, d, cx| {
-                    let v = (model::int(&m, key, 0) + d).clamp(0, TUNING_SLOTS - 1);
-                    w.set_track_object("microtuner", Some(m.with(key, Value::int(v))), "Microtuner", cx);
-                },
-            ));
-        }
-        let imp = model::flag(&micro, "importRanges") || micro.get("importRanges").is_none();
-        let m2 = micro.clone();
-        mrows.push(
-            button("iw-micro-ranges", tr("Note range from the keymap"), imp, THEME.green)
-                .h(px(20.))
-                .on_click(cx.listener(move |w, _, _, cx| {
-                    w.set_track_object("microtuner", Some(m2.with("importRanges", Value::bool(!imp))), "Microtuner", cx)
-                }))
-                .into_any_element(),
-        );
+        let has = |k: &str| tuning.get(k).is_some_and(|v| !v.is_null());
         mrows.push(
             div()
                 .flex()
                 .gap(px(6.))
                 .child(
-                    button("iw-edit-scale", tr("Edit scales…"), false, 0)
+                    button("iw-tuning-scale", "Scale .scl", has("scale"), THEME.green)
                         .h(px(22.))
                         .px(px(8.))
-                        .debug_selector(|| "iw-edit-scale".into())
-                        .on_click(cx.listener(|w, _, window, cx| w.open_tuning(false, window, cx))),
+                        .debug_selector(|| "iw-tuning-scale".into())
+                        .on_click(cx.listener(|w, _, _, cx| w.pick_tuning(false, cx))),
                 )
                 .child(
-                    button("iw-edit-keymap", tr("Edit keymaps…"), false, 0)
+                    button("iw-tuning-keymap", "Keymap .kbm", has("keymap"), THEME.green)
                         .h(px(22.))
                         .px(px(8.))
-                        .debug_selector(|| "iw-edit-keymap".into())
-                        .on_click(cx.listener(|w, _, window, cx| w.open_tuning(true, window, cx))),
+                        .debug_selector(|| "iw-tuning-keymap".into())
+                        .on_click(cx.listener(|w, _, _, cx| w.pick_tuning(true, cx))),
+                )
+                .child(
+                    button("iw-tuning-clear", tr("Clear"), false, 0)
+                        .h(px(22.))
+                        .px(px(8.))
+                        .debug_selector(|| "iw-tuning-clear".into())
+                        .on_click(cx.listener(|w, _, _, cx| w.clear_tuning(cx))),
                 )
                 .into_any_element(),
         );
-        out.push(group_card(tr("Microtuner"), mrows));
-        if let Some(e) = &self.tuning {
-            out.push(self.tuning_editor(e, cx));
-        }
+        let imp = model::flag(&tuning, "importRanges") || tuning.get("importRanges").is_none();
+        let t2 = tuning.clone();
+        mrows.push(
+            button("iw-tuning-ranges", tr("Note range from the keymap"), imp, THEME.green)
+                .h(px(20.))
+                .on_click(cx.listener(move |w, _, _, cx| {
+                    w.set_track_object("tuning", Some(t2.with("importRanges", Value::bool(!imp))), "Tuning", cx)
+                }))
+                .into_any_element(),
+        );
+        out.push(group_card(tr("Tuning"), mrows));
         // the keys: the first and last the instrument plays, the base key
         let keys = node.get("keys").filter(|v| !v.is_null()).cloned().unwrap_or_else(|| {
             Value::object([("first", Value::int(0)), ("last", Value::int(127)), ("base", Value::int(69))])
@@ -2675,128 +2626,10 @@ impl InstrumentWindow {
         out
     }
 
-    fn open_tuning(&mut self, keymap: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let micro = self.track_node(cx).get("microtuner").cloned().unwrap_or_default();
-        let slot = model::int(&micro, if keymap { "keymap" } else { "scale" }, 0) as usize;
-        self.load_tuning(keymap, slot, window, cx);
-    }
-
-    fn load_tuning(&mut self, keymap: bool, slot: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let root = self.scx.core.read(cx).port().root().clone();
-        let node = model::at(&root, &["tuning", if keymap { "keymaps" } else { "scales" }])
-            .and_then(|l| l.items().nth(slot))
-            .cloned()
-            .unwrap_or_default();
-        let desc = model::text(&node, "description").to_string();
-        let text: String = if keymap {
-            model::list(&node, "degrees")
-                .map(|d| d.as_int().map_or("x".to_string(), |v| if v < 0 { "x".into() } else { v.to_string() }))
-                .collect::<Vec<_>>()
-                .join(" ")
-        } else {
-            model::list(&node, "intervals")
-                .filter_map(|v| v.as_text().map(str::to_string))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let numbers = [
-            model::int(&node, "first", 0) as f64,
-            model::int(&node, "last", 127) as f64,
-            model::int(&node, "middle", 60) as f64,
-            model::int(&node, "baseKey", 69) as f64,
-            model::real(&node, "baseFrequency", 440.0),
-        ];
-        let description = cx.new(|cx| InputState::new(window, cx).default_value(desc));
-        let text = cx.new(|cx| TextareaState::new(window, cx).rows(5).default_value(text));
-        self.tuning = Some(TuningEditor { keymap, slot, description, text, numbers, error: None });
-        cx.notify();
-    }
-
-    /// The slot's node from the editor, checked (a bad line refuses it whole, F-IJN-020)
-    fn apply_tuning(&mut self, cx: &mut Context<Self>) {
-        let Some(e) = &mut self.tuning else { return };
-        let description = e.description.read(cx).value().to_string();
-        let text = e.text.read(cx).value().to_string();
-        let (list, node) = if e.keymap {
-            let mut degrees = Vec::new();
-            for (i, d) in text.split_whitespace().enumerate() {
-                match d {
-                    "x" => degrees.push(Value::int(-1)),
-                    d => match d.parse::<i64>() {
-                        Ok(v) if (0..=1023).contains(&v) => degrees.push(Value::int(v)),
-                        _ => {
-                            e.error = Some(trf("Key {0} is not a degree", &[&(i + 1)]));
-                            cx.notify();
-                            return;
-                        }
-                    },
-                }
-            }
-            let n = e.numbers;
-            let v = Value::object([
-                ("description", Value::text(description.as_str())),
-                ("degrees", Value::list(degrees)),
-                ("first", Value::int(n[0] as i64)),
-                ("last", Value::int(n[1].max(n[0]) as i64)),
-                ("middle", Value::int(n[2] as i64)),
-                ("baseKey", Value::int(n[3] as i64)),
-                ("baseFrequency", Value::real(n[4]).unwrap_or_default()),
-            ]);
-            ("keymaps", v)
-        } else {
-            let lines: Vec<&str> =
-                text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('!')).collect();
-            if let Some(bad) =
-                lines.iter().position(|l| interval_cents(l).is_none()).map(|k| k + 1).or(lines.is_empty().then_some(1))
-            {
-                e.error = Some(trf("Line {0} is not an interval", &[&bad]));
-                cx.notify();
-                return;
-            }
-            let v = Value::object([
-                ("description", Value::text(description.as_str())),
-                ("intervals", Value::list(lines.iter().map(|l| Value::text(*l)))),
-            ]);
-            ("scales", v)
-        };
-        let slot = e.slot;
-        e.error = None;
-        let ops = self.tuning_ops(list, slot, node, cx);
-        let core = self.scx.core.clone();
-        apply_ops(&core, "Edit the tuning", ops, cx);
-    }
-
-    /// The edits that put a node in a tuning slot, making the project's ten slots of each when there are none
-    fn tuning_ops(&self, list: &str, slot: usize, node: Value, cx: &App) -> Vec<EditOp> {
-        let root = self.scx.core.read(cx).port().root().clone();
-        if root.get("tuning").is_some_and(|t| !t.is_null()) {
-            return vec![EditOp::Set {
-                id: Ref::Id(lm_port::ROOT),
-                path: vec![
-                    lm_port::PathStep::key("tuning"),
-                    lm_port::PathStep::key(list),
-                    lm_port::PathStep::Index(slot),
-                ],
-                value: node,
-            }];
-        }
-        let empty = |k: &str| {
-            Value::list(
-                (0..TUNING_SLOTS).map(|_| Value::object([("description", Value::text(""))]).with(k, Value::list([]))),
-            )
-        };
-        let (mut scales, mut keymaps) = (empty("intervals"), empty("degrees"));
-        let target = if list == "keymaps" { &mut keymaps } else { &mut scales };
-        if let Ok(v) = target.with_at(slot, node) {
-            *target = v;
-        }
-        vec![EditOp::set(lm_port::ROOT, &["tuning"], Value::object([("scales", scales), ("keymaps", keymaps)]))]
-    }
-
-    /// A Scala file (`.scl`, `.kbm`) into the editor's slot: the core reads it (`tuning.import_*`, one undo step)
-    fn import_tuning(&mut self, cx: &mut Context<Self>) {
-        let Some(e) = &self.tuning else { return };
-        let (keymap, slot) = (e.keymap, e.slot);
+    /// A Scala file (`.scl`, `.kbm`) for the track: the core copies it into the project (`tuning.set_scale`,
+    /// `tuning.set_keymap`, one undo step)
+    fn pick_tuning(&mut self, keymap: bool, cx: &mut Context<Self>) {
+        let Some(track) = self.track else { return };
         let rx = cx.prompt_for_paths(gpui::PathPromptOptions {
             files: true,
             directories: false,
@@ -2807,88 +2640,19 @@ impl InstrumentWindow {
             let Ok(Ok(Some(paths))) = rx.await else { return };
             let Some(path) = paths.first().and_then(|p| p.to_str()).map(str::to_string) else { return };
             let _ = w.update(cx, |w, cx| {
-                let params = Value::object([("slot", Value::int(slot as i64)), ("path", Value::text(path.as_str()))]);
+                let params =
+                    Value::object([("track", Value::text(track.to_string())), ("path", Value::text(path.as_str()))]);
                 let core = w.scx.core.clone();
-                run_action(&core, if keymap { "tuning.import_keymap" } else { "tuning.import_scale" }, params, cx);
-                w.tuning = None;
+                run_action(&core, if keymap { "tuning.set_keymap" } else { "tuning.set_scale" }, params, cx);
             });
         })
         .detach();
     }
 
-    fn tuning_editor(&self, e: &TuningEditor, cx: &Context<Self>) -> AnyElement {
-        let keymap = e.keymap;
-        let slots: Vec<AnyElement> = (0..TUNING_SLOTS as usize)
-            .map(|k| {
-                button(SharedString::from(format!("iw-slot-{k}")), format!("{}", k + 1), e.slot == k, THEME.green)
-                    .on_click(cx.listener(move |w, _, window, cx| w.load_tuning(keymap, k, window, cx)))
-                    .into_any_element()
-            })
-            .collect();
-        let mut body = vec![
-            div().flex().flex_wrap().gap(px(3.)).children(slots).into_any_element(),
-            caption(tr("Description")).into_any_element(),
-            div().w_full().child(Input::new(&e.description).small()).into_any_element(),
-            caption(if keymap { tr("Degree of each key") } else { tr("Intervals (cents or ratio)") })
-                .into_any_element(),
-            div().w_full().child(Textarea::new(&e.text)).into_any_element(),
-        ];
-        if keymap {
-            let labels = ["First key", "Last key", "Middle key", "Base key", "Base frequency"];
-            let row: Vec<AnyElement> = labels
-                .iter()
-                .enumerate()
-                .map(|(k, l)| {
-                    let v = e.numbers[k];
-                    let shown = if k == 4 { format!("{v:.3} Hz") } else { note_name(v) };
-                    self.stepper(intern(&format!("iw-km-{k}")), tr(l), shown, cx, move |w, d, cx| {
-                        if let Some(e) = &mut w.tuning {
-                            e.numbers[k] = if k == 4 {
-                                (e.numbers[k] + d as f64).clamp(0.1, 9999.999)
-                            } else {
-                                (e.numbers[k] + d as f64).clamp(0.0, 127.0)
-                            };
-                            cx.notify();
-                        }
-                    })
-                })
-                .collect();
-            body.push(div().flex().flex_wrap().gap(px(8.)).children(row).into_any_element());
-        }
-        if let Some(err) = &e.error {
-            body.push(div().text_size(px(11.)).text_color(c(THEME.red)).child(err.clone()).into_any_element());
-        }
-        body.push(
-            div()
-                .flex()
-                .gap(px(6.))
-                .child(
-                    button("iw-tuning-apply", tr("Apply"), false, 0)
-                        .h(px(22.))
-                        .px(px(10.))
-                        .debug_selector(|| "iw-tuning-apply".into())
-                        .on_click(cx.listener(|w, _, _, cx| w.apply_tuning(cx))),
-                )
-                .child(
-                    button(
-                        "iw-tuning-import",
-                        if keymap { tr("Import a .kbm…") } else { tr("Import a .scl…") },
-                        false,
-                        0,
-                    )
-                    .h(px(22.))
-                    .px(px(10.))
-                    .on_click(cx.listener(|w, _, _, cx| w.import_tuning(cx))),
-                )
-                .child(button("iw-tuning-close", tr("Close"), false, 0).h(px(22.)).px(px(10.)).on_click(cx.listener(
-                    |w, _, _, cx| {
-                        w.tuning = None;
-                        cx.notify();
-                    },
-                )))
-                .into_any_element(),
-        );
-        group_card(if keymap { trf("Keymap {0}", &[&(e.slot + 1)]) } else { trf("Scale {0}", &[&(e.slot + 1)]) }, body)
+    fn clear_tuning(&mut self, cx: &mut Context<Self>) {
+        let Some(track) = self.track else { return };
+        let core = self.scx.core.clone();
+        run_action(&core, "tuning.clear", Value::object([("track", Value::text(track.to_string()))]), cx);
     }
 
     /// A drop from the browser (F-IJN-004): an instrument swaps the instrument; a preset of this instrument loads

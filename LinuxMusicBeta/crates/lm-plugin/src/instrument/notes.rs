@@ -473,6 +473,8 @@ impl Run {
             match expression {
                 Expression::Tuning => b.tuning.go(value, ramp),
                 Expression::Pan => b.pan.go(value.clamp(-1.0, 1.0), ramp),
+                // The built-in instruments do not use the pressure and the timbre of a note
+                Expression::Pressure | Expression::Timbre => {}
             }
         }
     }

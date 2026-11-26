@@ -160,6 +160,8 @@ pub fn encode(offset: u32, kind: &EventKind) -> Option<[u32; EVENT_WORDS]> {
             let e = match expression {
                 Expression::Pan => 0,
                 Expression::Tuning => 1,
+                Expression::Pressure => 2,
+                Expression::Timbre => 3,
             };
             [offset, 7, note(n), e, value.to_bits(), ramp]
         }
@@ -187,7 +189,12 @@ pub fn decode(x: [u32; EVENT_WORDS]) -> Option<(u32, EventKind)> {
         6 => EventKind::AllSoundOff,
         7 => EventKind::NoteExpression {
             note: NoteId(x[2]),
-            expression: if x[3] == 0 { Expression::Pan } else { Expression::Tuning },
+            expression: match x[3] {
+                0 => Expression::Pan,
+                2 => Expression::Pressure,
+                3 => Expression::Timbre,
+                _ => Expression::Tuning,
+            },
             value: f32::from_bits(x[4]),
             ramp: x[5],
         },
@@ -225,6 +232,9 @@ mod tests {
             EventKind::AllNotesRelease,
             EventKind::AllSoundOff,
             EventKind::NoteExpression { note: NoteId(2), expression: Expression::Tuning, value: 2.0, ramp: 480 },
+            EventKind::NoteExpression { note: NoteId(2), expression: Expression::Pan, value: -0.5, ramp: 0 },
+            EventKind::NoteExpression { note: NoteId(2), expression: Expression::Pressure, value: 0.75, ramp: 0 },
+            EventKind::NoteExpression { note: NoteId(2), expression: Expression::Timbre, value: 0.25, ramp: 32 },
         ];
         for k in kinds {
             let w = encode(17, &k).unwrap();
