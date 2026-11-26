@@ -567,3 +567,13 @@ fn the_panel_follows_the_tree(cx: &mut TestAppContext) {
     o.undo();
     assert_eq!(o.param("coarse3"), -24.0);
 }
+
+#[gpui::test]
+fn dynamicsprocessor(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::dynamics_processor::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn waveshaper(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::wave_shaper::DESCRIPTOR);
+}

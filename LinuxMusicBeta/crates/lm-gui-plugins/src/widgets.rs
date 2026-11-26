@@ -560,6 +560,9 @@ pub fn draw_graph(c: &mut Canvas, g: &crate::spec::GraphSpec, samples: &[f64], c
     let xs = |i: usize| 2.0 + ((i as f32 * xscale) as i32) as f32;
     let pen = Paint::Solid(g.color);
     let last = n - 1;
+    if let Some(bg) = g.background {
+        c.pixmap(assets::image(bg), 0.0, 0.0, false);
+    }
     // a cosmetic pen of 1: the pixel row of the integer coordinate (Qt draws it at +0.5 without antialiasing)
     let crisp = |c: &mut Canvas, x0: f32, y0: f32, x1: f32, y1: f32| {
         c.line((x0 + 0.5, y0 + 0.5), (x1 + 0.5, y1 + 0.5), 1.0, Cap::Square, &pen);

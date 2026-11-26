@@ -10,6 +10,7 @@ pub mod nes;
 pub mod opulenz;
 pub mod organic;
 pub mod sfxr;
+pub mod shapers;
 pub mod sid;
 pub mod tripleoscillator;
 
@@ -33,6 +34,8 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (nes::ID, || &nes::PANEL),
     (freeboy::ID, || &freeboy::PANEL),
     (opulenz::ID, || &opulenz::PANEL),
+    (shapers::DYNAMICS_ID, || &shapers::DYNAMICS_PANEL),
+    (shapers::WAVESHAPER_ID, || &shapers::WAVESHAPER_PANEL),
 ];
 
 pub fn spec(plugin: &str) -> Option<&'static PanelSpec> {
@@ -49,4 +52,6 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     organic::ASSETS,
     sfxr::ASSETS,
     nes::ASSETS,
+    shapers::DYNAMICS_ASSETS,
+    shapers::WAVESHAPER_ASSETS,
 ];

@@ -195,6 +195,8 @@ pub struct GraphSpec {
     pub style: GraphStyle,
     /// `setGraphColor`
     pub color: crate::raster::Rgba,
+    /// The pixmap under the curve (the plugin's `setPalette` background brush: BitInvader, WaveShaper...)
+    pub background: Option<&'static Asset>,
     /// `setForeground`: a pixmap over the curve (the plugin's grid)
     pub foreground: Option<&'static Asset>,
     /// The samples' step (`graphModel`'s; 0: any value)

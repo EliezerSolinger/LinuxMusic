@@ -5009,7 +5009,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | Dispersion | efeito | genérico / botões soltos | `DispersionControlDialog.cpp` | plugin existe (lm-plugins-effects); genérico (sem painel) |
 | DrumMachines | instrumento | visual próprio (fotos ou painel desenhado e pads) | `DrumMachines.cpp`, `photos/*.jpg` | falta o plugin |
 | DualFilter | efeito | visual próprio (`artwork.svg`) | `DualFilterControlDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `dualfilter`) |
-| DynamicsProcessor | efeito | visual próprio | `DynamicsProcessorControlDialog.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-effects): painel a fazer |
+| DynamicsProcessor | efeito | visual próprio | `DynamicsProcessorControlDialog.cpp`, `artwork.png`, `wavegraph.png` | **painel feito** (`panels/shapers.rs`, teste `dynamicsprocessor`) |
 | Eq | efeito | visual próprio | `EqControlsDialog.cpp`, `EqCurve.cpp`, `EqSpectrumView.cpp`, `EqParameterWidget.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Flanger | efeito | visual próprio (`artwork.svg`) | `FlangerControlsDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `flanger`) |
 | FreeBoy | instrumento | visual próprio | `FreeBoy.cpp`, `artwork.png` | **painel feito** (`panels/freeboy.rs`, teste `freeboy`) |
@@ -5051,6 +5051,6 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | VstBase | biblioteca do hospedeiro | terceiros fora do processo (P-01), sem janela | `VstPlugin.cpp`, `RemoteVstPlugin.cpp` | fora (terceiros) |
 | VstEffect | efeito (hospedeiro) | terceiros fora do processo (P-01) | `VstEffectControlDialog.cpp` | fora (terceiros) |
 | Watsyn | instrumento | visual próprio | `Watsyn.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-instruments): painel a fazer |
-| WaveShaper | efeito | visual próprio | `WaveShaperControlDialog.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-effects): painel a fazer |
+| WaveShaper | efeito | visual próprio | `WaveShaperControlDialog.cpp`, `artwork.png`, `wavegraph.png` | **painel feito** (`panels/shapers.rs`, teste `waveshaper`) |
 | Xpressive | instrumento | visual próprio | `Xpressive.cpp`, `artwork.png`, `wavegraph.png` | falta o plugin |
 | ZynAddSubFx | instrumento (hospedeiro) | terceiros fora do processo (P-05) | `ZynAddSubFx.cpp`, `RemoteZynAddSubFx.cpp` | fora (terceiros) |

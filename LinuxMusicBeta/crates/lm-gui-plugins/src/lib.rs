@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 pub mod assets;
+pub mod graphs;
 pub mod i18n;
 pub mod panel;
 pub mod panels;
