@@ -80,7 +80,7 @@
 //!                    stems: null | { by: "tracks"|"channels", nodes: [text] } }    (I-13, U37, P-40)
 //! takes.recover, takes.discard: { index: int } (absent: all)       safe_mode.enable: { node: text }
 //! device.reopen, device.calibrate, devices.scan, project.export_zip, project.clean_unused,
-//! project.save_template: no parameters        midi.assign_alias: { alias, client, port }
+//! project.save_template, project.save_version: no parameters        midi.assign_alias: { alias, client, port }
 //! ```
 
 /// The keys of `status()`

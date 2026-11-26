@@ -72,6 +72,12 @@ pub(crate) static ACTIONS: &[ActionSpec] = &[
         enabled: always,
     },
     ActionSpec {
+        id: "project.save_version",
+        label: "action.project.save_version",
+        run: |s, _| s.save_version(),
+        enabled: always,
+    },
+    ActionSpec {
         id: "project.export_zip",
         label: "action.project.export_zip",
         run: |s, _| s.export_zip(),
@@ -767,6 +773,19 @@ impl Session {
             }
         }
         out
+    }
+
+    /// `project.save_version` (F-JAN-020): saves as a new folder beside the project, the name with the next version
+    /// number (`song` -> `song-02` -> `song-03`)
+    pub(crate) fn save_version(&mut self) -> Result<()> {
+        if self.project.untitled {
+            return Err(Error::new("session.project.untitled"));
+        }
+        let root = self.project.folder.root().to_path_buf();
+        let parent = root.parent().map(Path::to_path_buf).unwrap_or_default();
+        let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let next = next_version_name(&name, |n| parent.join(n).exists());
+        self.save_as(parent.join(next))
     }
 
     /// `project.save_template`: the project (as it is now) and the files it cites, as a template for new projects
@@ -1466,5 +1485,38 @@ impl Session {
             Some(Target::Device),
             Vec::new(),
         );
+    }
+}
+
+/// The name of the next version of a project folder: the trailing `-NN` (or `_NN`) number counted up, or `-02` added;
+/// the first name `exists` does not know
+pub(crate) fn next_version_name(name: &str, exists: impl Fn(&str) -> bool) -> String {
+    let digits = name.len() - name.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    let (stem, mut n) = match name.as_bytes().get(name.len().saturating_sub(digits + 1)) {
+        Some(b'-' | b'_') if digits > 0 => {
+            (name[..name.len() - digits - 1].to_string(), name[name.len() - digits..].parse::<u32>().unwrap_or(1))
+        }
+        _ => (name.to_string(), 1),
+    };
+    loop {
+        n += 1;
+        let candidate = format!("{stem}-{n:02}");
+        if !exists(&candidate) {
+            return candidate;
+        }
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::next_version_name;
+
+    #[test]
+    fn versions_count_up_and_skip_existing() {
+        assert_eq!(next_version_name("song", |_| false), "song-02");
+        assert_eq!(next_version_name("song-02", |_| false), "song-03");
+        assert_eq!(next_version_name("song", |n| n == "song-02"), "song-03");
+        assert_eq!(next_version_name("take_9", |_| false), "take-10");
+        assert_eq!(next_version_name("2024", |_| false), "2024-02");
     }
 }

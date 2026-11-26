@@ -248,6 +248,10 @@ pub(crate) fn run(p: &mut FakePort, action: &str, params: &Value) -> Option<Resu
             );
             Ok(())
         }
+        "project.save_version" => {
+            p.saved_serial = p.serial;
+            Ok(())
+        }
         "project.save_template" => {
             let name =
                 p.status.get("project").and_then(|x| x.get("name")).and_then(Value::as_text).unwrap_or("").to_string();
