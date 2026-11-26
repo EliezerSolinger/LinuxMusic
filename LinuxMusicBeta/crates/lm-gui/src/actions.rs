@@ -185,8 +185,8 @@ pub const REGISTRY: &[ActionDef] = &[
     a("file.export_midi", "lm::ExportMidi", "Export MIDI", "Project", &[], None),
     a("view.notices", "lm::OpenNotices", "Notices and activities", "View", &[], None),
     a("help.about", "lm::OpenAbout", "About LinuxMusic", "Help", &["f1"], None),
-    a("arrange.split", "composition::Split", "Split at the cursor", "Arrange", &["s"], Some("Composition")),
-    a("arrange.duplicate", "composition::Duplicate", "Duplicate", "Arrange", &["secondary-d"], Some("Composition")),
+    a("arrange.split_at_cursor", "composition::Split", "Split at the cursor", "Arrange", &["s"], Some("Composition")),
+    a("arrange.duplicate_selection", "composition::Duplicate", "Duplicate", "Arrange", &["secondary-d"], Some("Composition")),
     a("arrange.delete", "composition::DeleteItem", "Delete", "Arrange", &["delete", "backspace"], Some("Composition")),
     a("arrange.empty_item", "composition::EmptyItem", "Empty item", "Arrange", &["shift-e"], Some("Composition")),
     a(
@@ -197,17 +197,17 @@ pub const REGISTRY: &[ActionDef] = &[
         &["enter"],
         Some("Composition"),
     ),
-    a("arrange.copy", "composition::ArrCopy", "Copy", "Arrange", &["secondary-c"], Some("Composition")),
-    a("arrange.cut", "composition::ArrCut", "Cut", "Arrange", &["secondary-x"], Some("Composition")),
+    a("arrange.copy_selection", "composition::ArrCopy", "Copy", "Arrange", &["secondary-c"], Some("Composition")),
+    a("arrange.cut_selection", "composition::ArrCut", "Cut", "Arrange", &["secondary-x"], Some("Composition")),
     a(
-        "arrange.paste",
+        "arrange.paste_at_cursor",
         "composition::ArrPaste",
         "Paste at the cursor",
         "Arrange",
         &["secondary-v"],
         Some("Composition"),
     ),
-    a("clip.glue", "composition::Glue", "Join the selected items", "Arrange", &["secondary-j"], Some("Composition")),
+    a("clip.glue_selection", "composition::Glue", "Join the selected items", "Arrange", &["secondary-j"], Some("Composition")),
     a(
         "arrange.select_all",
         "composition::SelectAllItems",
@@ -227,7 +227,7 @@ pub const REGISTRY: &[ActionDef] = &[
     a("arrange.bar_left", "composition::BarLeft", "A bar back", "Arrange", &["left"], Some("Composition")),
     a("arrange.bar_right", "composition::BarRight", "A bar forward", "Arrange", &["right"], Some("Composition")),
     a(
-        "arrange.insert_bar",
+        "arrange.insert_bar_at_cursor",
         "composition::InsertBar",
         "Insert a bar",
         "Arrange",
@@ -235,7 +235,7 @@ pub const REGISTRY: &[ActionDef] = &[
         Some("Composition"),
     ),
     a(
-        "arrange.remove_bar",
+        "arrange.remove_bar_at_cursor",
         "composition::RemoveBar",
         "Remove a bar",
         "Arrange",
@@ -462,6 +462,15 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), REGISTRY.len());
+    }
+
+    /// An id of the interface's arrangement actions must not be a core action's (a MIDI mapping runs a core action
+    /// without the interface's parameters)
+    #[test]
+    fn the_arrangement_ids_are_not_core_actions() {
+        for d in REGISTRY.iter().filter(|d| d.id.starts_with("arrange.") || d.id.starts_with("clip.")) {
+            assert!(lm_session::actions::find(d.id).is_none(), "{} is also a core action", d.id);
+        }
     }
 
     #[test]
