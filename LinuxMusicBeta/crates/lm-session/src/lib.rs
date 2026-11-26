@@ -4,6 +4,7 @@
 pub mod actions;
 pub mod activity;
 pub mod arrange;
+pub mod clips;
 mod crashnote;
 pub mod export;
 pub mod folder;

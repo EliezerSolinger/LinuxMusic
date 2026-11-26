@@ -244,6 +244,7 @@ pub fn all() -> impl Iterator<Item = &'static ActionSpec> {
     ACTIONS
         .iter()
         .chain(crate::arrange::ACTIONS.iter())
+        .chain(crate::clips::ACTIONS.iter())
         .chain(crate::session::midi::actions::ACTIONS.iter())
         .chain(crate::session::external::ACTIONS.iter())
         .chain(crate::session::midi::actions::ACTIONS.iter())
