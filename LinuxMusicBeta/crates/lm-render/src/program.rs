@@ -12,7 +12,9 @@
 //! Every node has a slot in the renderer's table ([`NodeIndex`]) and is one of:
 //! - [`NodeKind::Processor`]: the processor in its table slot runs (an instrument, an insert, the desk rack, a host
 //!   processor). A processor node whose slot holds nothing yet (a plugin still being built, I-5.4) is silent;
-//! - [`NodeKind::Sum`]: no processor; its output is the sum of its inputs (a desk channel's input, the master's).
+//! - [`NodeKind::Sum`]: no processor; its output is the sum of its inputs (a desk channel's input, the master's);
+//! - [`NodeKind::NoteEffect`]: a processor with no audio, in a chain before an instrument ([`ProgramBuilder::note_chain`]):
+//!   what the sources push for the instrument goes through the chain's effects, in order, before the pass starts.
 //!
 //! What a node receives is, in this fixed order: its sources (audio items, a device input, the metronome, the preview
 //! bus) and then its [`Feed`]s in the order they were given — the summing order is the compiler's, never the
@@ -28,7 +30,7 @@ use lm_base::{Error, Result};
 use lm_time::TempoMap;
 
 use crate::automation::Curve;
-use crate::event::EventList;
+use crate::event::{EventList, NoteOut};
 use crate::ids::{NodeIndex, ParamSlot, PortIndex, ProgramGen};
 use crate::midimap::ParamRange;
 use crate::modulation::{Envelope, MOD_PARAMS, ModKind, ModulatorSpec, PeakFollower};
@@ -44,6 +46,9 @@ pub enum NodeKind {
     Processor,
     /// No processor: the output is the sum of the inputs
     Sum,
+    /// A note effect: a processor with no audio that turns the note stream of the instrument it is chained before
+    /// into another one ([`crate::Processor::process_notes`]). It runs inside the pass of its chain, not in a level
+    NoteEffect,
 }
 
 /// A node of the program
@@ -84,6 +89,11 @@ impl NodeDesc {
     /// A processor working in place on `channels` channels (an insert, the rack)
     pub fn insert(node: NodeIndex, channels: u16) -> Self {
         Self { in_place: true, ..Self::processor(node, channels, channels) }
+    }
+
+    /// A note effect: no audio, its own parameters and events (chain it with [`ProgramBuilder::note_chain`])
+    pub fn note_effect(node: NodeIndex) -> Self {
+        Self { kind: NodeKind::NoteEffect, ..Self::processor(node, 0, 0) }
     }
 
     /// A summing node of `channels` channels (a desk channel's input, the master's)
@@ -571,6 +581,25 @@ pub(crate) struct PNode {
     pub(crate) gain: Option<u32>,
     pub(crate) pan: Option<u32>,
     pub(crate) has_midi: bool,
+    /// The chain of note effects before this node (an index into `Program::chains`), or `NONE`
+    pub(crate) chain: u32,
+}
+
+/// The events one chain holds at once (the capacity of each of its lists)
+pub(crate) const CHAIN_EVENTS: usize = 2048;
+
+/// The note effects of an instrument, in the order they run: the notes its sources make (items, live input) go
+/// through them, and what comes out is what the instrument plays and what MIDI out sends
+#[derive(Debug)]
+pub(crate) struct Chain {
+    pub(crate) target: u32,
+    pub(crate) effects: Box<[u32]>,
+    /// What the sources pushed for the target this pass
+    pub(crate) source: EventList,
+    /// A stage's input: the stream so far, with the effect's own parameter events
+    pub(crate) merge: EventList,
+    pub(crate) cur: NoteOut,
+    pub(crate) next: NoteOut,
 }
 
 #[derive(Debug)]
@@ -752,6 +781,7 @@ pub struct Program {
     pub(crate) preview: Option<u32>,
     pub(crate) metronome: Option<(u32, Metronome)>,
     pub(crate) midi: Box<[MidiSource]>,
+    pub(crate) chains: Box<[Chain]>,
     /// The streamed audio items, by node and item (the renderer tells them where the playhead is)
     pub(crate) streams: Box<[(u32, u32)]>,
     /// The modulators (decisoes-autonomas, 26/11, item 1)
@@ -830,6 +860,7 @@ pub struct ProgramBuilder {
     ccs: Vec<(ParamSlot, NodeIndex, u8, u8, f32, Option<Curve>)>,
     mods: Vec<ModulatorSpec>,
     mod_params: Vec<(ParamSlot, usize, usize, ParamInfo, Option<Curve>)>,
+    chains: Vec<(NodeIndex, Vec<NodeIndex>)>,
 }
 
 fn invalid(key: &'static str) -> Error {
@@ -866,7 +897,16 @@ impl ProgramBuilder {
             ccs: Vec::new(),
             mods: Vec::new(),
             mod_params: Vec::new(),
+            chains: Vec::new(),
         }
+    }
+
+    /// The note effects chained before `instrument`, in order: the stream its sources make runs through them and
+    /// the instrument (and its MIDI out) gets the result. Each effect is a [`NodeDesc::note_effect`]; an instrument
+    /// has at most one chain
+    pub fn note_chain(&mut self, instrument: NodeIndex, effects: Vec<NodeIndex>) -> &mut Self {
+        self.chains.push((instrument, effects));
+        self
     }
 
     /// Adds a modulator; gives its index (for [`ProgramBuilder::modulator_param`])
@@ -1114,6 +1154,7 @@ impl ProgramBuilder {
                 gain,
                 pan,
                 has_midi: false,
+                chain: NONE,
             });
         }
 
@@ -1237,7 +1278,7 @@ impl ProgramBuilder {
         let mut event_room = vec![0usize; n];
         for (slot, node, index, info, curve) in self.params {
             let i = find(node)?;
-            if pnodes[i as usize].desc.kind != NodeKind::Processor {
+            if pnodes[i as usize].desc.kind == NodeKind::Sum {
                 return Err(node_arg(invalid("render.program.param_on_sum"), node));
             }
             bind(
@@ -1389,6 +1430,31 @@ impl ProgramBuilder {
             pnodes[i as usize].has_midi = true;
             midi.push(MidiSource { node: i, items: items.into_boxed_slice() });
         }
+        let mut chains = Vec::with_capacity(self.chains.len());
+        for (target, effects) in &self.chains {
+            let t = find(*target)?;
+            if pnodes[t as usize].desc.kind != NodeKind::Processor || pnodes[t as usize].chain != NONE {
+                return Err(node_arg(invalid("render.program.chain_target"), *target));
+            }
+            let mut list = Vec::with_capacity(effects.len());
+            for e in effects {
+                let i = find(*e)?;
+                if pnodes[i as usize].desc.kind != NodeKind::NoteEffect || list.contains(&i) {
+                    return Err(node_arg(invalid("render.program.chain_effect"), *e));
+                }
+                list.push(i);
+            }
+            pnodes[t as usize].chain = chains.len() as u32;
+            pnodes[t as usize].has_midi = true;
+            chains.push(Chain {
+                target: t,
+                effects: list.into_boxed_slice(),
+                source: EventList::with_capacity(CHAIN_EVENTS),
+                merge: EventList::with_capacity(CHAIN_EVENTS + 256),
+                cur: NoteOut::with_capacity(CHAIN_EVENTS),
+                next: NoteOut::with_capacity(CHAIN_EVENTS),
+            });
+        }
         let mut ports = self.ports;
         for r in &ports {
             let i = find(r.node)?;
@@ -1489,6 +1555,7 @@ impl ProgramBuilder {
             preview,
             metronome,
             midi: midi.into_boxed_slice(),
+            chains: chains.into_boxed_slice(),
             streams: streams.into_boxed_slice(),
             modulators: pmods.into_boxed_slice(),
         }))

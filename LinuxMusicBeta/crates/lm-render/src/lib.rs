@@ -43,7 +43,7 @@ pub use automation::{CURVE_STEEPNESS, Curve, CurvePoint, Segment, shape};
 pub use command::{COMMAND_RING_CAPACITY, Command, CommandReceiver, CommandSender, PreviewCommand, command_ring};
 pub use dummy::Dummy;
 pub use engine::{EngineControl, engine, engine_with};
-pub use event::{Event, EventKind, Expression};
+pub use event::{Event, EventKind, Expression, NoteOut};
 pub use exec::Watch;
 pub use ids::{GUI_PORT_BASE, NodeIndex, NoteId, ParamSlot, PortIndex, PreviewId, ProducerIndex, ProgramGen, gui_port};
 pub use install::{Install, NodeCore, Relocate, Retired, Returned};
@@ -51,8 +51,8 @@ pub use midimap::{MapEvent, MapTarget, MidiMap, MidiOutEvent, ParamRange, RangeS
 pub use panic::{install_panic_hook, is_render_thread};
 pub use params::ParamSlots;
 pub use processor::{
-    Adopted, BlockShape, Buffers, Channels, ChannelsMut, DisplayReader, DisplayWriter, HostOutbox, PluginErrorKey,
-    PluginRequest, ProcessContext, Processor, TransportInfo, display_channel,
+    Adopted, BlockShape, Buffers, Channels, ChannelsMut, DisplayReader, DisplayWriter, HostOutbox, NoteContext,
+    PluginErrorKey, PluginRequest, ProcessContext, Processor, TransportInfo, display_channel,
 };
 pub use program::{
     AUTOMATION_GRID, AudioItem, AudioSource, AutomationMode, ChannelMix, CountIn, Feed, HostParam, ItemEvent,
