@@ -89,6 +89,7 @@ lm-sys-sndfile = { path = "crates/lm-sys-sndfile" }
 lm-sys-fluidsynth = { path = "crates/lm-sys-fluidsynth" }
 lm-sys-alsa = { path = "crates/lm-sys-alsa" }
 lm-sys-linux = { path = "crates/lm-sys-linux" }
+lm-sys-coreaudio = { path = "crates/lm-sys-coreaudio" }
 lm-sys-rubberband = { path = "crates/lm-sys-rubberband" }
 lm-sys-lilv = { path = "crates/lm-sys-lilv" }
 lm-sys-ipc = { path = "crates/lm-sys-ipc" }

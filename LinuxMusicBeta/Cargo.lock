@@ -3974,6 +3974,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-sys-coreaudio"
+version = "0.1.0"
+dependencies = [
+ "core-foundation-sys",
+]
+
+[[package]]
 name = "lm-sys-fluidsynth"
 version = "0.1.0"
 dependencies = [
