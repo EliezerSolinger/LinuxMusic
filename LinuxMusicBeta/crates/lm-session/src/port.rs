@@ -137,6 +137,43 @@ fn list_folder(
     out
 }
 
+/// The user's presets: `<dir>/<plugin>/<name>.json`, one entry each with its plugin in `info.plugin`
+fn preset_entries(dir: &Path) -> Vec<(BrowseEntry, Option<PathBuf>)> {
+    let mut found = Vec::new();
+    for plugin in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let plugin_dir = plugin.path();
+        let plugin_id = plugin.file_name().to_string_lossy().into_owned();
+        for file in std::fs::read_dir(&plugin_dir).into_iter().flatten().flatten() {
+            let path = file.path();
+            if path.extension().is_none_or(|e| e != "json") || !path.is_file() {
+                continue;
+            }
+            found.push((plugin_id.clone(), path));
+        }
+    }
+    found.sort();
+    found
+        .into_iter()
+        .map(|(plugin, path)| {
+            let text = path.display().to_string();
+            let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            (
+                BrowseEntry {
+                    id: entry_id(BrowsePage::Presets, &text),
+                    parent: None,
+                    name: Arc::from(name.as_str()),
+                    kind: EntryKind::Preset,
+                    factory: false,
+                    hidden: false,
+                    favorite: false,
+                    info: Value::object([("path", Value::text(text)), ("plugin", Value::text(plugin))]),
+                },
+                Some(path),
+            )
+        })
+        .collect()
+}
+
 impl LocalPort {
     pub fn new(session: Session) -> Self {
         Self {
@@ -318,7 +355,7 @@ impl LocalPort {
             }
             BrowsePage::Projects => vec![folder("Projects", projects, false)],
             BrowsePage::ProjectFiles => vec![folder("audio", self.session.project().folder.audio(), false)],
-            BrowsePage::Presets => vec![folder("Presets", projects.join("Presets"), false)],
+            BrowsePage::Presets => preset_entries(&self.session.presets_dir()),
             BrowsePage::Favorites => self
                 .favorites()
                 .into_iter()
@@ -332,6 +369,30 @@ impl LocalPort {
                 })
                 .collect(),
         }
+    }
+
+    /// The actions that name a browser entry (`plugin.load_preset {node, entry}`, `project.open_entry <entry>`,
+    /// `browser.reveal <entry>`) with the entry's file in its place; the others as they are
+    fn entry_params(&self, action: &str, params: Value) -> Result<Value> {
+        let entry = match action {
+            "plugin.load_preset" => params.get("entry").and_then(Value::as_int),
+            "project.open_entry" | "browser.reveal" => {
+                params.as_int().or_else(|| params.get("entry").and_then(Value::as_int))
+            }
+            _ => return Ok(params),
+        };
+        let Some(entry) = entry else { return Ok(params) };
+        let path = self
+            .known
+            .get(&EntryId(u64::try_from(entry).unwrap_or(0)))
+            .and_then(|k| k.path.clone())
+            .ok_or_else(|| err("port.browse.unknown_entry"))?;
+        let text = Value::text(path.display().to_string());
+        Ok(match action {
+            "plugin.load_preset" => params.with("path", text).without("entry"),
+            "project.open_entry" => Value::object([("folder", text)]),
+            _ => Value::object([("path", text)]),
+        })
     }
 
     fn remember(&mut self, page: BrowsePage, entries: &[(BrowseEntry, Option<PathBuf>)]) {
@@ -454,6 +515,14 @@ impl CorePort for LocalPort {
     }
 
     fn run_action(&mut self, action: ActionId, params: Value) -> Pending<()> {
+        // A browser entry is the port's: the session's actions take the file
+        let params = match self.entry_params(action.as_str(), params) {
+            Ok(p) => p,
+            Err(e) => {
+                self.session.notices().error(&e, None, None);
+                return Pending::Ready(Err(e));
+            }
+        };
         let r = self.session.run_action(action.as_str(), &params);
         if let Err(e) = &r {
             let retry = Some((action.clone(), params));
