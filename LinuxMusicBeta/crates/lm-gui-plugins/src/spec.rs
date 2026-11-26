@@ -143,6 +143,8 @@ pub struct KnobSpec {
     /// A `TempoSyncKnob`: the choice field of its tempo sync (`off` or a note length); the context menu offers the
     /// notes and moving the knob turns the sync off
     pub sync: Option<&'static str>,
+    /// A switch parameter turned on when this knob moves (the Eq's band: moving its knob or fader turns it on)
+    pub wakes: Option<&'static str>,
 }
 
 /// An LED check box (`LedCheckBox`), with its text to the right
@@ -248,6 +250,8 @@ pub struct FaderSpec {
     /// The words of the float (`setHintText`) and its unit
     pub hint: Text,
     pub unit: &'static str,
+    /// A switch parameter turned on when the fader moves
+    pub wakes: Option<&'static str>,
 }
 
 /// A draggable handle on a vertical track (the legacy `Draggable`): a pixmap that sits where its model's value is
@@ -622,6 +626,7 @@ pub fn knob(
             int_field: false,
             log: false,
             sync: None,
+            wakes: None,
         }),
         name: Text::new(name),
         tip: Text::EMPTY,
@@ -739,6 +744,17 @@ impl Control {
     pub fn int_field(mut self) -> Self {
         if let Some(k) = self.knob_mut() {
             k.int_field = true;
+        }
+        self
+    }
+
+    /// A knob or fader that turns the switch parameter `param` on when it moves
+    #[must_use]
+    pub fn wakes(mut self, param: &'static str) -> Self {
+        match &mut self.kind {
+            Kind::Knob(k) => k.wakes = Some(param),
+            Kind::Fader(f) => f.wakes = Some(param),
+            _ => {}
         }
         self
     }
@@ -929,6 +945,7 @@ pub fn fader(param: &'static str, x: f32, y: f32, h: f32, name: &'static str, hi
             unity_line: false,
             hint: Text::new(hint),
             unit: " dBFS",
+            wakes: None,
         }),
         name: Text::new(name),
         tip: Text::EMPTY,

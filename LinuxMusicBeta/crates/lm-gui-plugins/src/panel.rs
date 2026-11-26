@@ -183,6 +183,8 @@ pub struct PluginPanel<H: PortHost> {
     /// A live surface's frames of the last seconds, and its zoom (the wheel over a `SURFACE_ZOOM` one)
     history: HashMap<usize, std::collections::VecDeque<(std::time::Instant, Vec<f32>)>>,
     zooms: HashMap<usize, f32>,
+    /// The handle of a surface under the mouse: (the surface's control, the handle)
+    surf_hover: Option<(usize, usize)>,
     /// The last x drawn on each graph (`m_lastCursorX`, for Shift+click lines)
     graph_last_x: HashMap<usize, f32>,
     /// A non-checkable button held down shows its active image
@@ -230,6 +232,7 @@ impl<H: PortHost> PluginPanel<H> {
             waves: HashMap::new(),
             history: HashMap::new(),
             zooms: HashMap::new(),
+            surf_hover: None,
             graph_last_x: HashMap::new(),
             pressed: None,
             carried: None,
@@ -581,6 +584,7 @@ impl<H: PortHost> PluginPanel<H> {
     fn set(&mut self, ctrl: usize, value: Value, cx: &mut Context<Self>) {
         if matches!(self.spec.controls[ctrl].target(), Target::Param(_)) {
             self.unsync(ctrl, cx);
+            self.wake(ctrl, cx);
         }
         let c = &self.spec.controls[ctrl];
         let label = Label::new(c.name.key);
@@ -616,6 +620,28 @@ impl<H: PortHost> PluginPanel<H> {
         cx.notify();
     }
 
+    /// Moving a control that wakes a switch turns it on (the Eq's band, `updateHandle`)
+    fn wake(&mut self, ctrl: usize, cx: &mut Context<Self>) {
+        let wakes = match &self.spec.controls[ctrl].kind {
+            Kind::Knob(k) => k.wakes,
+            Kind::Fader(f) => f.wakes,
+            _ => None,
+        };
+        let Some(param) = wakes else { return };
+        if self.param(param, cx) >= 0.5 {
+            return;
+        }
+        if let Some(op) = self.param_op(param, 1.0) {
+            let node = self.node;
+            let label = Label::new("Turn on");
+            self.host.update(cx, |h, _| {
+                let port = h.port_mut();
+                port.param_write(node, param, 1.0);
+                let _ = port.apply(label, vec![op]);
+            });
+        }
+    }
+
     /// Moving a `TempoSyncKnob` turns its sync off (the knob is the time again)
     fn unsync(&mut self, ctrl: usize, cx: &mut Context<Self>) {
         let Kind::Knob(KnobSpec { sync: Some(field), .. }) = &self.spec.controls[ctrl].kind else { return };
@@ -632,6 +658,7 @@ impl<H: PortHost> PluginPanel<H> {
 
     fn begin_drag(&mut self, ctrl: usize, y: f32, cx: &mut Context<Self>) {
         self.unsync(ctrl, cx);
+        self.wake(ctrl, cx);
         let key = self.spec.controls[ctrl].target().key();
         let value = self.param(key, cx);
         let label = Label::new(self.spec.controls[ctrl].name.key);
@@ -923,6 +950,11 @@ impl<H: PortHost> PluginPanel<H> {
             Kind::Surface(s) => self.zoom_of_ctrl(ctrl, s.tag),
             _ => 0.0,
         }
+    }
+
+    /// The surface handle under the mouse: (the surface's control, the handle)
+    pub fn hovered_handle(&self) -> Option<(usize, usize)> {
+        self.surf_hover
     }
 
     /// The handles of a surface now, in the surface's local pixels (the tests find them here)
@@ -1424,8 +1456,34 @@ impl<H: PortHost> PluginPanel<H> {
         if inside && ev.pressed_button.is_none() {
             let over = self.control_at(x, y, cx);
             self.hover(over, cx);
+            self.hover_handle(over, x, y, cx);
         } else if !inside {
             self.hover(None, cx);
+            self.hover_handle(None, x, y, cx);
+        }
+    }
+
+    /// The handle of the surface under the mouse (the Eq's, which show their info box)
+    fn hover_handle(&mut self, over: Option<usize>, x: f32, y: f32, cx: &mut Context<Self>) {
+        let found = over.and_then(|ctrl| {
+            let c = &self.spec.controls[ctrl];
+            let (lx, ly) = (x - c.x, y - c.y);
+            let frame = self.display_frame(cx);
+            self.with_surface(ctrl, &frame, None, cx, |s, sc| {
+                let handles = s.handles.map(|h| h(sc)).unwrap_or_default();
+                handles
+                    .iter()
+                    .enumerate()
+                    .map(|(i, h)| (i, (h.x - lx).hypot(h.y - ly)))
+                    .filter(|(_, d)| *d <= s.grab)
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(i, _)| (ctrl, i))
+            })
+            .flatten()
+        });
+        if self.surf_hover != found {
+            self.surf_hover = found;
+            cx.notify();
         }
     }
 
@@ -1601,6 +1659,7 @@ impl<H: PortHost> PluginPanel<H> {
         };
         let delta = if up { step } else { -step };
         let Kind::Fader(f) = &self.spec.controls[ctrl].kind else { return };
+        self.wake(ctrl, cx);
         let r = self.range(ctrl);
         let v = self.param(f.param, cx);
         let nv = if f.linear {
@@ -2085,7 +2144,12 @@ impl<H: PortHost> PluginPanel<H> {
                 let peaks = self.waves.get(&ctrl).and_then(|w| w.block.clone());
                 let window = self.waves.get(&ctrl).map_or((0.0, 1.0), |w| w.window);
                 let rate = self.project_rate(cx);
-                let active = self.surf.as_ref().filter(|d| d.ctrl == ctrl).map(|d| d.handle);
+                let active = self
+                    .surf
+                    .as_ref()
+                    .filter(|d| d.ctrl == ctrl)
+                    .map(|d| d.handle)
+                    .or(self.surf_hover.filter(|h| h.0 == ctrl).map(|h| h.1));
                 let range_of =
                     |k: &str| self.schema.as_ref().and_then(|s| s.find_param(k)).map_or((0.0, 1.0), |p| (p.min, p.max));
                 let params: Vec<(&'static str, f64, (f64, f64))> =

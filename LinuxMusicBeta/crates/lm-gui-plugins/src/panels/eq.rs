@@ -12,15 +12,17 @@
 //! alpha), drawn from the plugin's live frame (`lm_plugins_effects::eq::FRAME_FLOATS`: the plugin runs the FFT on the
 //! audio side and publishes 256 log-spaced bands in dBFS, NaN when its analyser is off).
 //!
-//! Not in the panel: the info box on a hovered handle, and the band turning on by itself
-//! when its knob or fader moves (a handle dragged does turn it on).
+//! The info box of a hovered handle (frequency and resonance or bandwidth) shows over it, and moving a band's knob or
+//! fader (or dragging its handle) turns the band on.
 
 use std::sync::LazyLock;
 
 use crate::asset;
 use crate::assets::Asset;
 use crate::raster::{Canvas, Cap, Paint, Rgba};
-use crate::spec::{Bind, Control, PanelSpec, SurfaceCx, SurfaceHandle, SurfaceSpec, button, fader, knob, led, surface};
+use crate::spec::{
+    Bind, Control, PanelSpec, SurfText, SurfaceCx, SurfaceHandle, SurfaceSpec, button, fader, knob, led, surface,
+};
 use crate::widgets::{KnobStyle, LedColor};
 
 pub const ID: &str = "eq";
@@ -374,8 +376,54 @@ fn draw(c: &mut Canvas, cx: &SurfaceCx<'_>) {
                 (y - (ih / 2.0).floor()).round(),
                 false,
             );
+            // the info box: 80×30, black outline, `QColor(6, 106, 43, 180)`
+            let (bx, by) = info_box(x, y);
+            c.fill_rect(bx, by, 80.0, 30.0, Rgba::rgb(0, 0, 0));
+            c.fill_rect(bx + 1.0, by + 1.0, 78.0, 28.0, Rgba::alpha(6, 106, 43, 180));
         }
     }
+}
+
+/// The info box's corner for a handle at `x`, `y`: 40 up and left of it, kept inside the curve's area
+fn info_box(x: f32, y: f32) -> (f32, f32) {
+    let (mut rx, mut ry) = (-40.0, -40.0);
+    if y < 40.0 {
+        ry += 40.0 - y;
+    }
+    if x < 40.0 {
+        rx += 40.0 - x;
+    }
+    if x > 410.0 {
+        rx -= 40.0 - (W - x);
+    }
+    (x + rx, y + ry)
+}
+
+/// The hovered handle's frequency and resonance (bandwidth for a peak), two lines in the box, white over a black shadow
+fn texts(cx: &SurfaceCx<'_>) -> Vec<SurfText> {
+    let Some(i) = cx.active else { return Vec::new() };
+    let band = &BANDS[i];
+    let (x, y) = handle_at(cx, band);
+    let (bx, by) = info_box(x, y);
+    let res = if band.kind == Kind::Peak { "BW" } else { "Reso" };
+    let lines = [
+        format!("Freq: {}", crate::widgets::qt_number((cx.param)(band.freq).round())),
+        format!("{res}: {}", crate::widgets::qt_number(((cx.param)(band.res) * 100.0).round() / 100.0)),
+    ];
+    let mut out = Vec::new();
+    for (n, line) in lines.iter().enumerate() {
+        for (dx, color) in [(1.0, 0x000000), (0.0, 0xffffff)] {
+            out.push(SurfText {
+                x: bx + 40.0 + dx,
+                y: by + 12.0 + n as f32 * 12.0 + dx,
+                px: 10.0,
+                text: line.clone(),
+                color,
+                centered: true,
+            });
+        }
+    }
+    out
 }
 
 fn handles(cx: &SurfaceCx<'_>) -> Vec<SurfaceHandle> {
@@ -447,7 +495,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             ],
             field_reads: &["hpSlope", "lpSlope"],
             draw,
-            texts: None,
+            texts: Some(texts),
             handles: Some(handles),
             drag: Some(drag),
             grab: 10.0,
@@ -507,8 +555,12 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 k.unit = " Octave";
             }
         }
-        controls.push(res);
-        controls.push(knob(band.freq, x, 396.0, KnobStyle::Bright26, 0.001, freq_names[i], "Frequency:", "Hz").log());
+        controls.push(res.wakes(band.active));
+        controls.push(
+            knob(band.freq, x, 396.0, KnobStyle::Bright26, 0.001, freq_names[i], "Frequency:", "Hz")
+                .log()
+                .wakes(band.active),
+        );
         let (on, off) = labels[i];
         controls.push(
             button(Bind::Switch { param: band.active }, band.active, x - 2.0, 276.0, on, off, names[i].1)
@@ -518,7 +570,8 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             controls.push(
                 fader(band.gain.unwrap_or(""), 126.0 + 44.0 * (i as f32 - 1.0), 295.0, 80.0, gain_names[i], "Gain")
                     .fader_unit(" dB")
-                    .unity_line(),
+                    .unity_line()
+                    .wakes(band.active),
             );
         }
     }

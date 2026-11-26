@@ -835,7 +835,24 @@ fn monstro(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn eq(cx: &mut TestAppContext) {
-    effect(cx, &lm_plugins_effects::eq::DESCRIPTOR);
+    let d = &lm_plugins_effects::eq::DESCRIPTOR;
+    let mut o = open(cx, &[(d, false)], d.id);
+    exercise(&mut o);
+    // moving a band's knob, then its fader, turns the band on
+    for (id, drag) in [("peak2Freq", -20.0), ("peak2Bw", -20.0), ("peak2Gain", -10.0)] {
+        set_param(&mut o, "peak2Active", 0.0);
+        o.drag(id, drag, Modifiers::none());
+        assert_eq!(o.param("peak2Active"), 1.0, "{id}: moving it turns the band on");
+    }
+    // the mouse over a handle shows its info box (the surface's hovered handle)
+    let curve =
+        o.panel.read_with(o.cx, |p, _| p.spec().controls.iter().position(|c| c.id == "curve")).expect("the curve");
+    let handles = o.panel.read_with(o.cx, |p, cx| p.surface_handles(curve, cx));
+    let b = o.cx.debug_bounds("curve").expect("the curve is drawn");
+    let at = point(b.origin.x + px(handles[2].x), b.origin.y + px(handles[2].y));
+    o.cx.simulate_mouse_move(at, None, Modifiers::none());
+    o.settle();
+    assert_eq!(o.panel.read_with(o.cx, |p, _| p.hovered_handle()), Some((curve, 2)), "the hovered handle");
 }
 
 #[gpui::test]
