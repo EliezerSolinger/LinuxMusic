@@ -13,6 +13,7 @@ pub mod demo;
 mod desk;
 mod library;
 mod midi;
+mod modulators;
 pub use midi::Outside;
 mod arrange_b;
 pub mod peaks;
@@ -1054,6 +1055,8 @@ impl CorePort for FakePort {
                 }
                 None => Err(err("port.params")),
             },
+            "modulator.attach" => self.modulator_attach(&params),
+            "modulator.remove" => self.modulator_remove(&params),
             // the arrangement's domain edits: copy and paste keep the lanes, the comp and the notes coherent
             "arrange.split" => self.split(&params),
             "arrange.duplicate" => self.duplicate(&params),

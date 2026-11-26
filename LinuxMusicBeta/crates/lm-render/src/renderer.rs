@@ -1520,7 +1520,7 @@ impl Renderer {
                     let b = &self.program.bindings[bi as usize];
                     (b.curve.is_some(), b.target, b.discrete, b.modulated.is_some())
                 };
-                if (automated || modulated) && !touched {
+                if (automated || (modulated && !matches!(target, Target::Host(_)))) && !touched {
                     // A modulated parameter's value is the base the modulation is added to: the modulation pass
                     // emits the sum
                     // The automation has the parameter (again): emit its value at the next chance; after a release,
@@ -1760,9 +1760,9 @@ impl Renderer {
                 if bi == NONE {
                     continue;
                 }
-                let (target, discrete, mode, has_curve) = {
+                let (target, discrete, mode) = {
                     let b = &self.program.bindings[bi as usize];
-                    (b.target, b.discrete, b.mode, b.curve.is_some())
+                    (b.target, b.discrete, b.mode)
                 };
                 let hand = self.slot_state[slot].hand(self.params.touched_at(slot), frame0);
                 let recording = playing && (self.slot_state[slot].latched || mode == AutomationMode::Write);
@@ -1784,12 +1784,11 @@ impl Renderer {
                 let mut force = std::mem::take(&mut self.slot_state[slot].resume) || self.jump;
                 for k in 0..steps {
                     let off = start_of(k);
-                    let base = if has_curve {
-                        let c = self.program.bindings[bi as usize].curve.as_ref().expect("curve");
-                        let at = if playing { pos0 + off as i64 } else { pos0 };
-                        if discrete { c.step_at(at) } else { c.value_at(at) }
-                    } else {
-                        self.params.value_at(slot)
+                    let at = if playing { pos0 + off as i64 } else { pos0 };
+                    let base = match self.program.bindings[bi as usize].curve.as_ref() {
+                        Some(c) if discrete => c.step_at(at),
+                        Some(c) => c.value_at(at),
+                        None => self.params.value_at(slot),
                     };
                     let b = self.program.modulators[m].values[k];
                     let nrm = (range.normalize(base) + amount * b).clamp(lo, hi);

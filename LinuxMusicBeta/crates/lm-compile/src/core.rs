@@ -46,6 +46,7 @@ use std::time::{Duration, Instant};
 
 use lm_base::{Error, Result};
 use lm_doc::schemas::{KIND_CHANNEL, KIND_PLUGIN, MASTER};
+use lm_render::modulation::{MOD_DEFAULTS, MOD_KEYS, MOD_PARAMS, ModKind, ModTarget, ModulatorSpec};
 use lm_render::{
     AudioItem, AutomationMode, ChannelMix, CountIn, Curve, Feed, HostParam, Install, Limits, Metronome, MidiItem,
     MidiOutRoute, NodeCore, NodeDesc, NodeIndex, OutputRoute, ParamInfo, ParamRange, ParamSlot, PortIndex, PortRoute,
@@ -277,6 +278,25 @@ struct Plan {
     streams: Vec<StreamRegistration>,
     stretches: Vec<crate::stretch::StretchPlan>,
     low_latency_bypassed: Vec<NodeKey>,
+    /// The modulators of the project (decisoes-autonomas, 26/11, item 1)
+    mods: Vec<PMod>,
+}
+
+/// A modulator as the plan read it
+#[derive(Debug)]
+struct PMod {
+    id: NodeId,
+    kind: ModKind,
+    /// The document's kind name (`lm_doc::schemas::modulator_keys`)
+    kind_name: &'static str,
+    params: [f32; MOD_PARAMS],
+    seed: u64,
+    user_wave: Option<Arc<[f32]>>,
+    /// Plan nodes: what a peak follower measures, what triggers an envelope
+    input: Option<usize>,
+    trigger: Option<usize>,
+    /// (node, parameter key, amount, min, max)
+    targets: Vec<(NodeId, Arc<str>, f32, f32, f32)>,
 }
 
 impl Plan {
@@ -548,6 +568,11 @@ impl CompilerCore {
         for (_, track, number, _) in &plan.ccs {
             slots.insert((*track, Arc::from(format!("cc.{number}")), 0));
         }
+        for m in &plan.mods {
+            for k in lm_doc::schemas::modulator_keys(m.kind_name) {
+                slots.insert((m.id, key(k), 0));
+            }
+        }
         Ok(Usage { nodes: plan.nodes.len(), params: slots.len() })
     }
 
@@ -593,6 +618,14 @@ impl CompilerCore {
             for h in plan.host_params() {
                 if let HPlan::Param { owner, key, instance, .. } = h {
                     let k = (*owner, key.clone(), *instance);
+                    if seen.insert(k.clone()) {
+                        wanted_slots.push(k);
+                    }
+                }
+            }
+            for m in &plan.mods {
+                for k in lm_doc::schemas::modulator_keys(m.kind_name) {
+                    let k = (m.id, key(k), 0u8);
                     if seen.insert(k.clone()) {
                         wanted_slots.push(k);
                     }
@@ -730,6 +763,45 @@ impl CompilerCore {
                 ParamInfo { rate: p.rate, discrete: p.discrete, initial: p.value },
                 curve,
             );
+        }
+        for pm in &plan.mods {
+            let mut spec = ModulatorSpec::new(pm.kind, pm.seed);
+            spec.initial = pm.params;
+            spec.user_wave = pm.user_wave.clone();
+            spec.input = pm.input.map(|i| index_of[i]);
+            spec.trigger = pm.trigger.map(|i| index_of[i]);
+            for (node, param, amount, min, max) in &pm.targets {
+                let k = (*node, param.clone(), 0u8);
+                let Some(&slot) = slot_keys.get(&k) else { continue };
+                let range = plan
+                    .params
+                    .iter()
+                    .find(|p| p.owner == *node && p.key == *param)
+                    .map(|p| p.range)
+                    .or_else(|| {
+                        plan.host_params()
+                            .any(|h| matches!(h, HPlan::Param { owner, key, .. } if owner == node && key == param))
+                            .then(|| host_range(param))
+                    })
+                    .or_else(|| param.strip_prefix("cc.").is_some().then(|| ParamRange::linear(0.0, 127.0)));
+                let Some(range) = range else { continue };
+                spec.targets.push(ModTarget { slot, range, amount: *amount, min: *min, max: *max });
+            }
+            let mi = b.modulator(spec);
+            for k in lm_doc::schemas::modulator_keys(pm.kind_name) {
+                let Some(index) = MOD_KEYS.iter().position(|x| x == k) else { continue };
+                let slot = slot_of(pm.id, &key(k), 0);
+                let stepped =
+                    matches!(*k, "wave" | "multiplier" | "sync" | "syncNumerator" | "syncDenominator" | "abs");
+                let curve = plan.curves.get(&(pm.id, key(k))).cloned();
+                b.modulator_param(
+                    slot,
+                    mi,
+                    index,
+                    ParamInfo { rate: Rate::Block, discrete: stepped, initial: pm.params[index] },
+                    curve,
+                );
+            }
         }
         for ((owner, key, _), slot) in &slot_keys {
             if let Some(mode) = plan.modes.get(&(*owner, key.clone()))
@@ -1837,7 +1909,104 @@ impl CompilerCore {
         let bars = transport.get("metronome").map_or(0, |m| int(m, "countIn", 0)).clamp(0, 64) as u32;
         plan.transport.count_in = (bars > 0).then_some(CountIn { bars, on_play: env.count_in_on_play });
         plan.transport.pre_roll_bars = transport.get("preRoll").map_or(0, |p| int(p, "bars", 0)).clamp(0, 16) as u32;
+        self.collect_modulators(root, resources, s.seed, &mut plan);
         Ok(plan)
+    }
+
+    /// Reads the modulators of every track, channel, master and plugin (a modulator whose node is not in the
+    /// program is skipped)
+    fn collect_modulators(&self, root: &Value, resources: &dyn Resources, seed: u64, plan: &mut Plan) {
+        let mut owners: Vec<(&Value, bool)> = Vec::new();
+        for t in items(root, "tracks") {
+            owners.push((t, true));
+            if let Some(i) = t.get("instrument").filter(|i| !i.is_null()) {
+                owners.push((i, false));
+            }
+        }
+        if let Some(mixer) = root.get("mixer") {
+            for c in items(mixer, "channels").chain(mixer.get("master")) {
+                owners.push((c, false));
+                for p in items(c, "inserts") {
+                    owners.push((p, false));
+                }
+            }
+        }
+        for (owner, is_track) in owners {
+            let Some(owner_id) = id_of(owner) else { continue };
+            let trigger = if is_track {
+                owner.get("instrument").filter(|i| !i.is_null()).and_then(id_of).map(NodeKey::Instrument)
+            } else if owner_id.kind == KIND_PLUGIN {
+                Some(NodeKey::Instrument(owner_id))
+            } else {
+                None
+            };
+            let trigger = trigger.and_then(|k| plan.index.get(&k).copied());
+            for m in items(owner, "modulators") {
+                let Some(id) = id_of(m) else { continue };
+                let kind_name: &'static str = match text(m, "kind", "lfo") {
+                    "envelope" => "envelope",
+                    "peak" => "peak",
+                    "random" => "random",
+                    "macro" => "macro",
+                    _ => "lfo",
+                };
+                let kind = match kind_name {
+                    "envelope" => ModKind::Envelope,
+                    "peak" => ModKind::Peak,
+                    "random" => ModKind::Random,
+                    "macro" => ModKind::Macro,
+                    _ => ModKind::Lfo,
+                };
+                let mut params = MOD_DEFAULTS;
+                if let Some(ps) = m.get(lm_state::PARAMS_KEY) {
+                    for (i, k) in MOD_KEYS.iter().enumerate() {
+                        if let Some(v) = ps.get(k).and_then(Value::as_real) {
+                            params[i] = v as f32;
+                        }
+                    }
+                }
+                let input = ref_of(m, "input").and_then(|n| {
+                    let keys: &[NodeKey] = match n.kind {
+                        lm_doc::schemas::KIND_TRACK => &[NodeKey::TrackGain(n), NodeKey::TrackAudio(n)],
+                        KIND_CHANNEL => &[NodeKey::Pan(n), NodeKey::Fader(n)],
+                        _ => &[],
+                    };
+                    keys.iter().find_map(|k| plan.index.get(k).copied())
+                });
+                let user_wave = m.get("userWave").and_then(Value::as_resource).and_then(|r| match resources.audio(r) {
+                    crate::catalog::ResourceState::Ready(d) => Some(Arc::from(d.channel(0).to_vec())),
+                    _ => None,
+                });
+                let targets = items(m, "targets")
+                    .filter_map(|t| {
+                        let node = ref_of(t, "node")?;
+                        let param = text(t, "param", "");
+                        if param.is_empty() {
+                            return None;
+                        }
+                        Some((
+                            node,
+                            key(param),
+                            real(t, "amount", 0.5) as f32,
+                            real(t, "min", 0.0) as f32,
+                            real(t, "max", 1.0) as f32,
+                        ))
+                    })
+                    .collect();
+                let _ = owner_id;
+                plan.mods.push(PMod {
+                    id,
+                    kind,
+                    kind_name,
+                    params,
+                    seed: Rng::seed_for(seed, id_number(id)),
+                    user_wave,
+                    input,
+                    trigger: if kind == ModKind::Envelope { trigger } else { None },
+                    targets,
+                });
+            }
+        }
     }
 
     fn sidechain_shape(&self, plan: &Plan, insert: NodeId) -> Option<PluginShape> {

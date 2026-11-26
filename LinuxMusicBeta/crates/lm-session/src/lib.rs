@@ -13,6 +13,7 @@ pub mod folder;
 pub mod journal;
 pub mod lock;
 pub mod midifile;
+mod modulators;
 pub mod notices;
 mod plugin_actions;
 mod port;

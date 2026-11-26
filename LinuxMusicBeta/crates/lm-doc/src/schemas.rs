@@ -153,8 +153,18 @@ pub const MIDI_TAKEOVERS: &[&str] = &["jump", "pickup", "scale"];
 pub const MIDI_BUTTONS: &[&str] = &["momentary", "toggle", "trigger"];
 pub const MIDI_RINGS: &[&str] = &["none", "dot", "boostCut", "wrap", "spread"];
 /// What a mapping's target may point at: every node kind with fields or parameters, and the root (transport)
-pub const MAPPABLE_KINDS: &[u8] =
-    &[KIND_TRACK, KIND_OUTPUT, KIND_ITEM, KIND_LANE, KIND_AUTOMATION, KIND_PLUGIN, KIND_CHANNEL, KIND_SEND, b'r'];
+pub const MAPPABLE_KINDS: &[u8] = &[
+    KIND_TRACK,
+    KIND_OUTPUT,
+    KIND_ITEM,
+    KIND_LANE,
+    KIND_AUTOMATION,
+    KIND_PLUGIN,
+    KIND_CHANNEL,
+    KIND_SEND,
+    KIND_MODULATOR,
+    b'r',
+];
 
 /// The MIDI mapping types (I-21.2), shared with the machine preferences, whose `midiMap` holds the same nodes
 pub fn midi_map_schemas() -> Vec<NodeSchema> {
@@ -522,7 +532,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(FieldSpec::new("mode", FieldKind::Choice(AUTOMATION_MODES)).optional())
             .field(list_of("points", ty::AUTOMATION_POINT)),
         NodeSchema::new(ty::AUTOMATION_TARGET, 1)
-            .field(reference("node", &[KIND_TRACK, KIND_CHANNEL, KIND_PLUGIN], OnRemove::RemoveOwner))
+            // A modulator's own parameters can be automated too
+            .field(reference("node", &[KIND_TRACK, KIND_CHANNEL, KIND_PLUGIN, KIND_MODULATOR], OnRemove::RemoveOwner))
             .field(FieldSpec::new("param", FieldKind::Text)),
         NodeSchema::new(ty::AUTOMATION_POINT, 1)
             .field(FieldSpec::int("tick", 0, MAX, 0))
