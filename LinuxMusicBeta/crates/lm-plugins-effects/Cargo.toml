@@ -16,6 +16,10 @@ lm-state.workspace = true
 lm-render.workspace = true
 lm-plugin.workspace = true
 lm-dsp.workspace = true
+# The Spectrum Analyzer's worker: the audio thread fills a lock-free ring, the worker computes and hands the result
+# back through a triple buffer (I-17's allowed lock-free crates)
+rtrb.workspace = true
+triple_buffer.workspace = true
 
 [dev-dependencies]
 lm-plugin = { workspace = true, features = ["testing"] }

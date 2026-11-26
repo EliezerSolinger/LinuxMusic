@@ -27,6 +27,7 @@ pub mod multitap_echo;
 pub mod oscilloscope;
 pub mod reverb_sc;
 pub mod slew_distortion;
+pub mod spectrum_analyzer;
 pub mod stereo_enhancer;
 pub mod stereo_matrix;
 pub mod vectorscope;
@@ -54,6 +55,7 @@ pub static ALL: &[&Descriptor] = &[
     &oscilloscope::DESCRIPTOR,
     &reverb_sc::DESCRIPTOR,
     &slew_distortion::DESCRIPTOR,
+    &spectrum_analyzer::DESCRIPTOR,
     &stereo_enhancer::DESCRIPTOR,
     &stereo_matrix::DESCRIPTOR,
     &vectorscope::DESCRIPTOR,

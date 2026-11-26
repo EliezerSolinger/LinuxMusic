@@ -1,0 +1,29 @@
+{
+  "plugin:spectrumanalyzer": {
+    "defaults": {
+      "ampRange": "audible",
+      "blockSize": "2048",
+      "freqRange": "full",
+      "params": {
+        "averageWeight": 0.15,
+        "envelopeRes": 0.25,
+        "logX": 1.0,
+        "logY": 1.0,
+        "peakDecayFactor": 0.992,
+        "peakHold": 0.0,
+        "pause": 0.0,
+        "refFreeze": 0.0,
+        "smooth": 0.0,
+        "spectrumRes": 1.5,
+        "stereo": 0.0,
+        "waterfall": 0.0,
+        "waterfallGamma": 0.3,
+        "waterfallHeight": 300.0,
+        "windowOverlap": 2.0,
+        "zeroPadding": 2.0
+      },
+      "window": "blackmanHarris"
+    },
+    "version": 1
+  }
+}

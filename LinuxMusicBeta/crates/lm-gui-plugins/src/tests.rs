@@ -765,6 +765,11 @@ fn vectorscope(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn spectrumanalyzer(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::spectrum_analyzer::DESCRIPTOR);
+}
+
+#[gpui::test]
 fn slewdistortion(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::slew_distortion::DESCRIPTOR);
 }

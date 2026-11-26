@@ -33,13 +33,13 @@ a ação contam como parcial.
 | F-MIX | Mixer e mesa analógica | 56 | 51 | 4 | 1 |
 | F-INS | Instrumentos | 24 | 14 | 9 | 1 |
 | F-HOST | Plugins de terceiros (hospedagem) | 3 | 1 | 1 | 1 |
-| F-FX | Efeitos e ferramentas | 35 | 20 | 9 | 6 |
+| F-FX | Efeitos e ferramentas | 35 | 20 | 10 | 5 |
 | F-CTL | Automação e controladores | 9 | 3 | 3 | 3 |
 | F-PRJ | Projeto e arquivos | 23 | 15 | 6 | 2 |
 | F-CFG | Configurações | 12 | 2 | 10 | 0 |
 | F-BRW | Navegador | 12 | 1 | 10 | 1 |
 | F-GER | Outros | 12 | 2 | 10 | 0 |
-| **Total** | | **406** | **225** | **149** | **32** |
+| **Total** | | **406** | **225** | **150** | **31** |
 
 ## Seções
 
@@ -444,7 +444,7 @@ a ação contam como parcial.
 | F-FX-023 | Peak Controller (seguidor de envelope que vira controlador) | falta | nenhum plugin Peak Controller nem controlador seguidor de envelope |  |
 | F-FX-024 | ReverbSC | feito |  | lm-plugins-effects/src/reverb_sc.rs,lm-gui-plugins/src/panels/effects.rs |
 | F-FX-025 | SlewDistortion (distorção de 2 bandas e limitador de slew) | feito |  | lm-plugins-effects/src/slew_distortion.rs,lm-gui/src/screens/effect.rs |
-| F-FX-026 | Spectrum Analyzer | falta | nenhum plugin Spectrum Analyzer (existe só FFT interna do EQ no lm-dsp) | lm-dsp/src/eq.rs |
+| F-FX-026 | Spectrum Analyzer | parcial | plugin e painel feitos (FFT em thread própria com anel sem trava, 7 tamanhos, 4 janelas, eixos linear/log, faixas, média, pico/referência congelada, cascata, os 8 botões avançados; o áudio passa sem mudar); falta a leitura do cursor (frequência e nível sob o mouse) e os dois botões de resolução de pontos não têm efeito (o desenho é por pixel) | lm-plugins-effects/src/spectrum_analyzer.rs,lm-dsp/src/fft.rs,lm-gui-plugins/src/panels/spectrumanalyzer.rs |
 | F-FX-027 | StereoEnhancer | feito |  | lm-plugins-effects/src/stereo_enhancer.rs,lm-gui/src/screens/effect.rs |
 | F-FX-029 | Vectorscope | parcial | plugin e painel feitos (escala logarítmica, linhas ou pontos, traço que esmaece, grade e L/R; o áudio passa sem mudar); falta o zoom da roda (20 a 1000 %) e o seletor de cor do duplo clique. O legado deste repositório só tem essas duas opções (não há "alta qualidade" nem persistência) | lm-plugins-effects/src/vectorscope.rs,lm-gui-plugins/src/panels/vectorscope.rs |
 | F-FX-030 | WaveShaper (curva de transferência desenhada) | feito |  | lm-plugins-effects/src/wave_shaper.rs,lm-gui-plugins/src/panels/shapers.rs |

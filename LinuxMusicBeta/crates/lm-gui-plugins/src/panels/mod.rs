@@ -26,6 +26,7 @@ pub mod sfxr;
 pub mod shapers;
 pub mod sid;
 pub mod slewdistortion;
+pub mod spectrumanalyzer;
 pub mod tripleoscillator;
 pub mod vectorscope;
 pub mod vibed;
@@ -68,6 +69,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (multitapecho::ID, || &multitapecho::PANEL),
     (oscilloscope::ID, || &oscilloscope::PANEL),
     (vectorscope::ID, || &vectorscope::PANEL),
+    (spectrumanalyzer::ID, || &spectrumanalyzer::PANEL),
     (shapers::DYNAMICS_ID, || &shapers::DYNAMICS_PANEL),
     (shapers::WAVESHAPER_ID, || &shapers::WAVESHAPER_PANEL),
 ];
@@ -102,6 +104,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     slewdistortion::ASSETS,
     multitapecho::ASSETS,
     oscilloscope::ASSETS,
+    spectrumanalyzer::ASSETS,
     shapers::DYNAMICS_ASSETS,
     shapers::WAVESHAPER_ASSETS,
 ];
