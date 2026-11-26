@@ -1752,3 +1752,34 @@ conflito com seções anteriores deste arquivo e com o `funcionalidades-legado.m
 8. **Navegador com índice.** O navegador deixa de ser uma árvore de pastas: um índice em segundo plano dos arquivos
    e presets, com busca instantânea, filtros por tipo, etiquetas e favoritos. A árvore de pastas fica como uma das
    vistas.
+
+### Efeitos de nota no lugar de acordes e arpejo no instrumento (item 2, implementação de 26/11)
+
+- **Contrato.** `PluginKind::NoteEffect`, `Processor::process_notes`, `NodeKind::NoteEffect` e `ProgramBuilder::note_chain`
+  (interfaces.md I-9.1a). Os efeitos rodam dentro do passe, antes dos níveis do grafo, sobre o fluxo que as fontes
+  empurraram para o instrumento; não são nós de áudio. A saída MIDI para dispositivos manda o que sai do último efeito.
+- **Documento.** A faixa ganha `noteEffects` (lista opcional de nós de plugin, antes do instrumento): faixa na versão 4,
+  passo de atualização "sem mudança". Os ids são de plugin (`p:`), então automação, mapa MIDI e moduladores os alcançam
+  como a qualquer plugin. Efeito ignorado (`bypass`) sai da cadeia.
+- **Migração das faixas antigas.** Uma atualização por nó não vê a faixa. Escolha: o esquema de **cada instrumento** foi
+  para a versão 2, com o passo `drop_chords_and_arpeggio` (tira os campos e os parâmetros), e a **abertura do projeto**
+  (`lm-doc/src/migrate.rs`, chamada pelo `Upgrader` ao visitar a faixa, antes do instrumento ser atualizado) lê
+  `chordOn`/`arpOn` e seus ajustes e cria os nós `arpeggiator` e `chords` (o arpejo primeiro: o acorde legado empilhava
+  cada passo) em `noteEffects`, com ids novos e o contador `meta.issued` acertado. O que estava desligado só some.
+  Se o registro não conhece os plugins, os ajustes são descartados.
+- **Plugins** (`lm-plugins-noteeffects`): Arpejador (direção, extensão, repetições, ciclo, pular, faltar, tempo livre ou
+  sincronizado, gate, modos livre/ordenado/sincronizado; o sustain segura o arpejo), Acordes (a tabela de 95 entradas e
+  a extensão), Escala/Transposição (ajusta à escala, o grau mais baixo no empate, e transpõe; o note-off leva a tecla do
+  note-on) e Velocidade (fixa, escala, curva, aleatória por semente: hash da semente, da tecla e do momento, então a mesma
+  tomada toca as mesmas velocidades). Os números são parâmetros do esquema; as escolhas, campos. Padrão do Acordes:
+  "maior" (o legado era "oitava", que não faz nada visível); o do Arpejador continua "oitava".
+- **No instrumento ficam** tom e extensão do bend, mono, legato e glide. O filtro e os envelopes de volume, corte e
+  ressonância (com os LFOs) continuam por ora, **isolados num módulo só** (`lm-plugin/src/instrument/shaping.rs`), para
+  virarem um efeito de áudio no próximo passo: apagar o módulo, o `ShapingKit` do `Kit` e as chamadas, com um passo de
+  esquema que tira os campos.
+- **GUI.** A aba "Efeitos de nota" da janela do instrumento (`screens/instrument/note_effects.rs`): lista da cadeia
+  com ligar/desligar, subir, descer, remover e o editor genérico de cada efeito; adicionar pelos plugins de categoria
+  `note`. Tudo por `EditOp` na lista da faixa (nenhum método novo no `CorePort`); o fake tem os quatro plugins.
+- **Fica para depois:** o painel de cada efeito com vista própria; o arpejo sincronizado por posição da linha do tempo
+  (hoje conta a partir do quadro do motor, como o legado contava do início da nota); os efeitos de nota na página de
+  composição (uma faixa de MIDI ao vivo); testes do compilador para a cadeia.
