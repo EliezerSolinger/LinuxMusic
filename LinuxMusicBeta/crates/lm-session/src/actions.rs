@@ -276,7 +276,9 @@ impl Session {
         if !(a.enabled)(self) {
             return Err(Error::new("action.disabled").arg("action", id));
         }
-        (a.run)(self, params)
+        // A browser entry (`entry`) becomes its file, whoever asks: the local port, a remote client, the runner
+        let resolved = self.browser.resolve(id, params.clone())?;
+        (a.run)(self, &resolved)
     }
 
     /// Whether an action can run now (menus grey it out)

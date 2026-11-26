@@ -329,6 +329,8 @@ pub struct Session {
     generic_ops: Ops<Value, &'static str>,
     pub(crate) activity: Activity,
     pub(crate) notices: Notices,
+    /// The browser entries given out, for the actions that name one
+    pub(crate) browser: crate::browser::BrowserEntries,
     ui_document: Document,
     document: Document,
     resources: ResourceStore,
@@ -609,6 +611,7 @@ impl Session {
             generic_ops: Ops::default(),
             activity: Activity::default(),
             notices,
+            browser: Default::default(),
             ui_document,
             document,
             resources,

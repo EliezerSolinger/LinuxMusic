@@ -23,13 +23,6 @@ fn err(key: &'static str) -> Error {
     Error::new(key)
 }
 
-/// One entry of the browser the port has given out, to find its children and its file again
-#[derive(Clone, Debug)]
-struct Known {
-    page: BrowsePage,
-    path: Option<PathBuf>,
-}
-
 /// A prepared preview: the sound and the waveform
 #[derive(Debug)]
 struct Prepared {
@@ -45,7 +38,6 @@ pub struct LocalPort {
     session: Session,
     requests: Vec<(RequestId, OperationHandle<Finished>)>,
     next_request: RequestId,
-    known: BTreeMap<EntryId, Known>,
     previews: BTreeMap<String, Prepared>,
     /// The prepared preview of each entry, by its resource's key
     preview_of: BTreeMap<EntryId, String>,
@@ -180,7 +172,6 @@ impl LocalPort {
             session,
             requests: Vec::new(),
             next_request: 1,
-            known: BTreeMap::new(),
             previews: BTreeMap::new(),
             preview_of: BTreeMap::new(),
             search_request: None,
@@ -371,33 +362,15 @@ impl LocalPort {
         }
     }
 
-    /// The actions that name a browser entry (`plugin.load_preset {node, entry}`, `project.open_entry <entry>`,
-    /// `browser.reveal <entry>`) with the entry's file in its place; the others as they are
+    /// The actions that name a browser entry with the entry's file in its place (the session's resolution, which
+    /// `Session::run_action` does too)
     fn entry_params(&self, action: &str, params: Value) -> Result<Value> {
-        let entry = match action {
-            "plugin.load_preset" => params.get("entry").and_then(Value::as_int),
-            "project.open_entry" | "browser.reveal" => {
-                params.as_int().or_else(|| params.get("entry").and_then(Value::as_int))
-            }
-            _ => return Ok(params),
-        };
-        let Some(entry) = entry else { return Ok(params) };
-        let path = self
-            .known
-            .get(&EntryId(u64::try_from(entry).unwrap_or(0)))
-            .and_then(|k| k.path.clone())
-            .ok_or_else(|| err("port.browse.unknown_entry"))?;
-        let text = Value::text(path.display().to_string());
-        Ok(match action {
-            "plugin.load_preset" => params.with("path", text).without("entry"),
-            "project.open_entry" => Value::object([("folder", text)]),
-            _ => Value::object([("path", text)]),
-        })
+        self.session.browser.resolve(action, params)
     }
 
     fn remember(&mut self, page: BrowsePage, entries: &[(BrowseEntry, Option<PathBuf>)]) {
         for (e, p) in entries {
-            self.known.insert(e.id, Known { page, path: p.clone() });
+            self.session.browser.remember(e.id, page, p.clone());
         }
     }
 }
@@ -445,9 +418,13 @@ impl CorePort for LocalPort {
                 if let Finished::Entries(Ok(entries)) = &result {
                     for e in entries {
                         let path = e.info.get("path").and_then(Value::as_text).map(PathBuf::from);
-                        let page =
-                            self.known.get(&e.parent.unwrap_or(EntryId(0))).map_or(BrowsePage::Samples, |k| k.page);
-                        self.known.insert(e.id, Known { page, path });
+                        let page = self
+                            .session
+                            .browser
+                            .known
+                            .get(&e.parent.unwrap_or(EntryId(0)))
+                            .map_or(BrowsePage::Samples, |k| k.page);
+                        self.session.browser.remember(e.id, page, path);
                     }
                 }
                 self.done.push((id, result));
@@ -639,10 +616,10 @@ impl CorePort for LocalPort {
             self.remember(page, &roots);
             return Pending::Ready(Ok(roots.into_iter().map(|(e, _)| e).collect()));
         };
-        let Some(dir) = self.known.get(&parent).and_then(|k| k.path.clone()) else {
+        let Some(dir) = self.session.browser.known.get(&parent).and_then(|k| k.path.clone()) else {
             return Pending::Ready(Err(err("port.browse.unknown_entry")));
         };
-        let page = self.known.get(&parent).map_or(page, |k| k.page);
+        let page = self.session.browser.known.get(&parent).map_or(page, |k| k.page);
         let favorites = self.favorites();
         Pending::Waiting(self.request(
             |e| Finished::Entries(Err(e)),
@@ -693,7 +670,13 @@ impl CorePort for LocalPort {
     }
 
     fn prepare_preview(&mut self, entry: EntryId) -> Pending<Preview> {
-        let Some(path) = self.known.get(&entry).and_then(|k| k.path.clone()).filter(|p| kind_of(p) == EntryKind::Audio)
+        let Some(path) = self
+            .session
+            .browser
+            .known
+            .get(&entry)
+            .and_then(|k| k.path.clone())
+            .filter(|p| kind_of(p) == EntryKind::Audio)
         else {
             return Pending::Ready(Err(err("port.preview.not_audio")));
         };
@@ -796,7 +779,7 @@ impl CorePort for LocalPort {
     }
 
     fn set_favorite(&mut self, entry: EntryId, on: bool) -> Pending<()> {
-        let Some(path) = self.known.get(&entry).and_then(|k| k.path.clone()) else {
+        let Some(path) = self.session.browser.known.get(&entry).and_then(|k| k.path.clone()) else {
             return Pending::Ready(Err(err("port.browse.unknown_entry")));
         };
         let text = path.display().to_string();
