@@ -194,6 +194,9 @@ fn exercise(o: &mut Opened<'_>) {
             o.panel.update(o.cx, |p, cx| p.set_view(v, cx));
             o.settle();
         }
+        if let Some((p, on)) = c.when {
+            set_param(o, p, if on { 1.0 } else { 0.0 });
+        }
         if let Kind::Button(b) = &c.kind
             && let Bind::View(n) = b.bind
         {
@@ -406,6 +409,20 @@ fn exercise(o: &mut Opened<'_>) {
                 o.click(id, MouseButton::Middle);
                 assert_eq!(o.param(key), p.def, "{id}: middle click resets");
             }
+            Kind::Slider(sl) => {
+                let key = sl.param;
+                let p = schema.find_param(key).unwrap().clone();
+                // from the middle, so both ways move it; the drag goes to the track's other end
+                set_param(o, key, (p.min + p.max) / 2.0);
+                let before = o.param(key);
+                let dy = (sl.b - sl.a) / 4.0;
+                o.drag(id, dy, Modifiers::none());
+                assert_ne!(o.param(key), before, "{id}: the drag moves it");
+                o.undo();
+                assert_eq!(o.param(key), before, "{id}: one undo step per drag");
+                o.click(id, MouseButton::Middle);
+                assert_eq!(o.param(key), p.def, "{id}: middle click resets");
+            }
             Kind::Surface(s) => {
                 // a handle is dragged: one gesture, one undo step, a parameter it moves changed
                 let handles = o.panel.read_with(o.cx, |p, cx| p.surface_handles(i, cx));
@@ -476,6 +493,10 @@ fn check_bind(o: &mut Opened<'_>, id: &'static str, bind: Bind) {
         Bind::Choice { field, key } => {
             o.click(id, MouseButton::Left);
             assert_eq!(o.field(field).as_text(), Some(key), "{id}: selects {key}");
+        }
+        Bind::Step { param, value } => {
+            o.click(id, MouseButton::Left);
+            assert_eq!(o.param(param), value, "{id}: selects {value}");
         }
         Bind::Switch { param } => {
             let before = o.param(param);
@@ -706,4 +727,9 @@ fn crossovereq(cx: &mut TestAppContext) {
 #[gpui::test]
 fn delay(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::delay::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn slewdistortion(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::slew_distortion::DESCRIPTOR);
 }

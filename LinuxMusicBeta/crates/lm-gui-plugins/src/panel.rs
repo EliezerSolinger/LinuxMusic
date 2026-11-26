@@ -195,6 +195,15 @@ impl<H: PortHost> PluginPanel<H> {
         self.node
     }
 
+    /// Whether a control shows now: in the selected view and, if it has a condition, while its switch is so
+    pub fn is_shown(&self, c: &crate::spec::Control, cx: &App) -> bool {
+        c.in_view(self.view) && c.when.is_none_or(|(p, on)| (self.param(p, cx) >= 0.5) == on)
+    }
+
+    fn control_at(&self, x: f32, y: f32, cx: &App) -> Option<usize> {
+        self.spec.hit_if(x, y, |c| self.is_shown(c, cx))
+    }
+
     /// The panel's selected view
     pub fn view(&self) -> u8 {
         self.view
@@ -377,6 +386,7 @@ impl<H: PortHost> PluginPanel<H> {
             Kind::Knob(k) => (k.param, k.step, k.center, k.log),
             Kind::Lcd(l) => (l.param, l.step, None, false),
             Kind::Fader(f) => (f.param, 0.01, None, false),
+            Kind::Slider(sl) => (sl.param, sl.step, None, false),
             Kind::Led(_)
             | Kind::Button(_)
             | Kind::Toggle(_)
@@ -413,6 +423,7 @@ impl<H: PortHost> PluginPanel<H> {
         match bind {
             Bind::Choice { field, key } => self.field(field, cx).as_text() == Some(key),
             Bind::Switch { param } => self.param(param, cx) >= 0.5,
+            Bind::Step { param, value } => (self.param(param, cx) - value).abs() < 0.5,
             Bind::Flag { field } => self.field(field, cx).as_bool() == Some(true),
             Bind::View(n) => self.view == n,
             Bind::Press(_) | Bind::Momentary { .. } | Bind::Open { .. } => false,
@@ -449,6 +460,10 @@ impl<H: PortHost> PluginPanel<H> {
                 cb.items.iter().find(|i| v.as_text() == Some(i.key)).map(|i| i.text.show()).unwrap_or_default()
             }
             Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) => String::new(),
+            Kind::Slider(sl) => {
+                let v = self.range(ctrl).rounded(self.param(sl.param, cx));
+                format!("{}{}", widgets::qt_number(v), unit(sl.unit))
+            }
             Kind::Fader(f) => {
                 let v = self.param(f.param, cx);
                 if f.linear {
@@ -481,6 +496,7 @@ impl<H: PortHost> PluginPanel<H> {
             Kind::Fader(f) => {
                 format!("{} {}{}", f.hint.show(), self.value_text(ctrl, cx), unit(f.unit)).trim().to_owned()
             }
+            Kind::Slider(s) => format!("{} {}", s.hint.show(), self.value_text(ctrl, cx)).trim().to_owned(),
             _ => c.tip.show(),
         }
     }
@@ -552,6 +568,12 @@ impl<H: PortHost> PluginPanel<H> {
             self.fader_to(y, cx);
             return;
         }
+        if let Some(d) = &self.drag
+            && matches!(self.spec.controls[d.ctrl].kind, Kind::Slider(_))
+        {
+            self.slider_to(y, cx);
+            return;
+        }
         let Some(d) = &mut self.drag else { return };
         let dy = y - d.last_y;
         if dy == 0.0 {
@@ -584,6 +606,35 @@ impl<H: PortHost> PluginPanel<H> {
                 port.param_write(node, key, v as f32);
             }
             port.gesture_apply(&d.gesture, vec![op]);
+        });
+        self.show_float(ctrl, None, cx);
+    }
+
+    // --- the slider handle (`Draggable::mouseMoveEvent`): the model takes the track's progress under the mouse
+
+    fn slider_to(&mut self, y: f32, cx: &mut Context<Self>) {
+        let Some(d) = &self.drag else { return };
+        let ctrl = d.ctrl;
+        let Kind::Slider(s) = &self.spec.controls[ctrl].kind else { return };
+        let r = self.range(ctrl);
+        let progress = f64::from((y - s.a) / (s.b - s.a)).clamp(0.0, 1.0);
+        let v = r.fit(r.min + progress * (r.max - r.min));
+        let key = s.param;
+        let Some(d) = &mut self.drag else { return };
+        if v == d.value {
+            return;
+        }
+        d.value = v;
+        let node = self.node;
+        let op = self.param_op(key, v);
+        let host = self.host.clone();
+        let Some(d) = &self.drag else { return };
+        host.update(cx, |h, _| {
+            let port = h.port_mut();
+            port.param_write(node, key, v as f32);
+            if let Some(op) = op {
+                port.gesture_apply(&d.gesture, vec![op]);
+            }
         });
         self.show_float(ctrl, None, cx);
     }
@@ -788,15 +839,19 @@ impl<H: PortHost> PluginPanel<H> {
         if self.entry.is_some() || self.menu.is_some() {
             return;
         }
-        let Some(ctrl) = self.spec.hit_in(self.view, x, y) else { return };
+        let Some(ctrl) = self.control_at(x, y, cx) else { return };
         let c = &self.spec.controls[ctrl];
         let m = ev.modifiers;
-        if let Kind::Surface(_) = &c.kind {
-            // a surface has no model menu: only the left button takes a handle
+        if let Kind::Surface(s) = &c.kind {
+            // a surface without handles only shows; one with takes a handle on the left button and, being the
+            // control of its primary parameter, has the middle button and the menu of it
+            if s.handles.is_none() {
+                return;
+            }
             if ev.button == MouseButton::Left {
                 self.surface_down(ctrl, x, y, cx);
+                return;
             }
-            return;
         }
         if let Kind::Graph(_) = &c.kind {
             // a graph has no model menu in the legacy: only the left button draws
@@ -826,7 +881,7 @@ impl<H: PortHost> PluginPanel<H> {
                 cx.notify();
             }
             MouseButton::Left => match &c.kind {
-                Kind::Knob(_) | Kind::Lcd(_) => {
+                Kind::Knob(_) | Kind::Lcd(_) | Kind::Slider(_) => {
                     if ev.click_count >= 2 {
                         self.end_drag(cx);
                         self.open_entry(ctrl, window, cx);
@@ -884,6 +939,12 @@ impl<H: PortHost> PluginPanel<H> {
             Bind::Switch { .. } => {
                 let on = self.is_on(bind, cx);
                 self.set(ctrl, Value::real(if on { 0.0 } else { 1.0 }).unwrap_or_default(), cx);
+            }
+            Bind::Step { value, .. } => {
+                // a group's button: selecting the one already on changes nothing
+                if !self.is_on(bind, cx) {
+                    self.set(ctrl, Value::real(value).unwrap_or_default(), cx);
+                }
             }
             Bind::Flag { .. } => {
                 let on = self.is_on(bind, cx);
@@ -1131,7 +1192,7 @@ impl<H: PortHost> PluginPanel<H> {
             return;
         }
         if inside && ev.pressed_button.is_none() {
-            let over = self.spec.hit_in(self.view, x, y);
+            let over = self.control_at(x, y, cx);
             self.hover(over, cx);
         } else if !inside {
             self.hover(None, cx);
@@ -1153,7 +1214,7 @@ impl<H: PortHost> PluginPanel<H> {
         }
         self.pressed = None;
         if let Some((from, v)) = self.carried.take()
-            && let Some(to) = self.spec.hit_in(self.view, x, y)
+            && let Some(to) = self.control_at(x, y, cx)
             && to != from
             && matches!(self.spec.controls[to].target(), Target::Param(_))
         {
@@ -1163,7 +1224,7 @@ impl<H: PortHost> PluginPanel<H> {
     }
 
     fn scroll(&mut self, x: f32, y: f32, ev: &ScrollEvent, cx: &mut Context<Self>) {
-        let Some(ctrl) = self.spec.hit_in(self.view, x, y) else { return };
+        let Some(ctrl) = self.control_at(x, y, cx) else { return };
         if let Kind::Fader(_) = &self.spec.controls[ctrl].kind {
             self.fader_wheel(ctrl, ev, cx);
             return;
@@ -1182,7 +1243,9 @@ impl<H: PortHost> PluginPanel<H> {
             }
             return;
         }
-        if !matches!(self.spec.controls[ctrl].kind, Kind::Knob(_) | Kind::Lcd(_)) {
+        if !matches!(&self.spec.controls[ctrl].kind, Kind::Knob(_) | Kind::Lcd(_) | Kind::Slider(_))
+            && !matches!(&self.spec.controls[ctrl].kind, Kind::Surface(s) if s.wheel)
+        {
             return;
         }
         let notches = match ev.delta {
@@ -1582,6 +1645,23 @@ impl<H: PortHost> PluginPanel<H> {
                 (h.finish(), Box::new(move |cv| widgets::draw_graph(cv, &g, &samples, cursor)))
             }
             Kind::Readout(_) => (0, Box::new(|_| {})),
+            Kind::Slider(s) => {
+                let r = self.range(ctrl);
+                let v = self.param(s.param, cx);
+                let t = if r.max > r.min { ((v - r.min) / (r.max - r.min)).clamp(0.0, 1.0) as f32 } else { 0.0 };
+                let asset = match s.zero {
+                    Some(z) if v == 0.0 => z,
+                    _ => s.handle,
+                };
+                let img_h = assets::image(s.handle).height() as f32;
+                // the handle's top is the track's point less half its height, as a whole pixel (`QWidget::move`)
+                let coord = s.a + (s.b - s.a) * t;
+                let top = (coord - img_h / 2.0).trunc() - c.y;
+                (
+                    ((top * 4.0) as i64 as u64) ^ (v == 0.0) as u64,
+                    Box::new(move |cv| cv.pixmap(assets::image(asset), 0.0, top, false)),
+                )
+            }
             Kind::Fader(f) => {
                 let r = self.range(ctrl);
                 let value = self.param(f.param, cx);
@@ -1686,7 +1766,7 @@ impl<H: PortHost> PluginPanel<H> {
             Vec::new()
         };
         for (ci, c) in self.spec.controls.iter().enumerate() {
-            if !c.in_view(self.view) {
+            if !self.is_shown(c, cx) {
                 continue;
             }
             let (w, h) = c.size();
@@ -1714,7 +1794,7 @@ impl<H: PortHost> PluginPanel<H> {
                         }
                     }
                 }
-                Kind::Fader(_) | Kind::Toggle(_) => {}
+                Kind::Fader(_) | Kind::Toggle(_) | Kind::Slider(_) => {}
                 Kind::Knob(k) => {
                     if let Some(l) = &k.label {
                         // the legacy label: at the bottom of the widget, 2 pixels above its edge (`drawLabel`)
@@ -1883,13 +1963,16 @@ impl<H: PortHost> Render for PluginPanel<H> {
         let (w, h) = spec.size;
         let scale = window.scale_factor();
         let view = self.view;
-        let live = spec.controls.iter().any(|c| c.in_view(view) && matches!(&c.kind, Kind::Surface(s) if s.live))
-            || spec.controls.iter().any(|c| matches!(&c.kind, Kind::Fader(f) if f.meters.is_some()));
+        let shown: Vec<bool> = spec.controls.iter().map(|c| self.is_shown(c, cx)).collect();
+        let live = spec.controls.iter().zip(&shown).any(|(c, s)| {
+            *s && matches!(&c.kind, Kind::Surface(sf) if sf.live)
+                || matches!(&c.kind, Kind::Fader(f) if *s && f.meters.is_some())
+        });
         if live {
             window.request_animation_frame();
         }
         let images: Vec<(Bounds<Pixels>, Arc<RenderImage>)> = (0..spec.controls.len())
-            .filter(|i| spec.controls[*i].in_view(view) && !matches!(spec.controls[*i].kind, Kind::Readout(_)))
+            .filter(|i| shown[*i] && !matches!(spec.controls[*i].kind, Kind::Readout(_)))
             .map(|i| {
                 let c = &spec.controls[i];
                 let (cw, ch) = c.size();
@@ -1929,7 +2012,7 @@ impl<H: PortHost> Render for PluginPanel<H> {
             .h(px(h)),
         );
         // the controls' places, for the tests and the accessibility tree (no paint, no hitbox)
-        for c in spec.controls.iter().filter(|c| c.in_view(view)) {
+        for c in spec.controls.iter().zip(&shown).filter(|(_, s)| **s).map(|(c, _)| c) {
             let (cw, ch) = c.size();
             let id = c.id;
             root = root.child(

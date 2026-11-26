@@ -81,6 +81,8 @@ pub enum Bind {
     Choice { field: &'static str, key: &'static str },
     /// A switch on a stepped 0–1 parameter (the legacy automatable `BoolModel`): a click toggles it
     Switch { param: &'static str },
+    /// One button of a group on a stepped parameter: on when the parameter is `value`; a click sets it
+    Step { param: &'static str, value: f64 },
     /// A switch on a boolean field (not automatable in the legacy either)
     Flag { field: &'static str },
     /// A push button on a stepped 0–1 parameter that is 1 while it is held (the legacy automatable button that is not
@@ -101,7 +103,7 @@ impl Bind {
     pub fn target(&self) -> Target {
         match *self {
             Bind::Choice { field, .. } | Bind::Flag { field } => Target::Field(field),
-            Bind::Switch { param } | Bind::Momentary { param } => Target::Param(param),
+            Bind::Switch { param } | Bind::Momentary { param } | Bind::Step { param, .. } => Target::Param(param),
             Bind::Press(_) | Bind::View(_) => Target::Field(""),
             Bind::Open { field, .. } => Target::Field(field),
         }
@@ -243,6 +245,22 @@ pub struct FaderSpec {
     pub unit: &'static str,
 }
 
+/// A draggable handle on a vertical track (the legacy `Draggable`): a pixmap that sits where its model's value is
+/// between the track's end points (`a` for the minimum, `b` for the maximum, panel y of the handle's center), and
+/// moves the model as the mouse is dragged
+#[derive(Clone, Debug)]
+pub struct SliderSpec {
+    pub param: &'static str,
+    pub step: f64,
+    pub a: f32,
+    pub b: f32,
+    pub handle: &'static Asset,
+    /// The pixmap shown while the value is exactly 0 (`setDefaultValPixmap`)
+    pub zero: Option<&'static Asset>,
+    pub hint: Text,
+    pub unit: &'static str,
+}
+
 /// A button the panel draws itself (a style-sheet button, a lamp, a tab): `draw(canvas, on)` paints its state
 #[derive(Clone, Debug)]
 pub struct ToggleSpec {
@@ -331,6 +349,8 @@ pub struct SurfaceSpec {
     pub set_on_press: bool,
     /// Drawn again every frame (it shows the live frame)
     pub live: bool,
+    /// The wheel moves the primary parameter (a slider handle), as a knob's
+    pub wheel: bool,
 }
 
 /// A text bound to a field of the state (a file's name, a patch's name): drawn by the panel
@@ -355,6 +375,7 @@ pub enum Kind {
     Combo(ComboSpec),
     Graph(GraphSpec),
     Fader(FaderSpec),
+    Slider(SliderSpec),
     Toggle(ToggleSpec),
     Surface(SurfaceSpec),
     Readout(ReadoutSpec),
@@ -386,6 +407,9 @@ pub struct Control {
     pub tip: Text,
     /// Only in this view of the panel (absent: always)
     pub view: Option<u8>,
+    /// Only while this switch parameter is on (`true`) or off (`false`): a control the legacy view swaps for another
+    /// when a model changes (SlewDistortion's linked slew knob, LOMM's feedback)
+    pub when: Option<(&'static str, bool)>,
 }
 
 impl Control {
@@ -399,6 +423,7 @@ impl Control {
             Kind::Combo(c) => Target::Field(c.field),
             Kind::Graph(g) => Target::Field(g.field),
             Kind::Fader(f) => Target::Param(f.param),
+            Kind::Slider(s) => Target::Param(s.param),
             Kind::Toggle(t) => t.bind.target(),
             Kind::Surface(s) => Target::Param(s.primary),
             Kind::Readout(r) => Target::Field(r.field),
@@ -428,6 +453,10 @@ impl Control {
             Kind::Combo(c) => (c.w, crate::widgets::COMBO_HEIGHT),
             Kind::Graph(g) => (g.w, g.h),
             Kind::Fader(f) => (f.w, f.h),
+            Kind::Slider(s) => {
+                let img = crate::assets::image(s.handle);
+                (img.width() as f32, (s.b - s.a).abs() + img.height() as f32)
+            }
             Kind::Toggle(t) => (t.w, t.h),
             Kind::Surface(s) => (s.w, s.h),
             Kind::Readout(r) => (r.w, r.px + 4.0),
@@ -465,19 +494,14 @@ pub enum FileDrop {
 impl PanelSpec {
     /// The control at panel point `x`, `y` (the last one drawn wins, as Qt's stacking), in view 0
     pub fn hit(&self, x: f32, y: f32) -> Option<usize> {
-        self.hit_in(0, x, y)
+        self.hit_if(x, y, |c| c.in_view(0))
     }
 
-    /// The control at panel point `x`, `y` among those shown in `view`
-    pub fn hit_in(&self, view: u8, x: f32, y: f32) -> Option<usize> {
+    /// The control at panel point `x`, `y` among those `shown` says are
+    pub fn hit_if(&self, x: f32, y: f32, shown: impl Fn(&Control) -> bool) -> Option<usize> {
         self.controls.iter().enumerate().rev().find_map(|(i, c)| {
             let (w, h) = c.size();
-            (c.in_view(view)
-                && !matches!(c.kind, Kind::Readout(_))
-                && x >= c.x
-                && y >= c.y
-                && x < c.x + w
-                && y < c.y + h)
+            (shown(c) && !matches!(c.kind, Kind::Readout(_)) && x >= c.x && y >= c.y && x < c.x + w && y < c.y + h)
                 .then_some(i)
         })
     }
@@ -529,6 +553,7 @@ pub fn knob(
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
+        when: None,
     }
 }
 
@@ -550,6 +575,7 @@ pub fn led(
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
+        when: None,
     }
 }
 
@@ -571,6 +597,7 @@ pub fn button(
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
+        when: None,
     }
 }
 
@@ -655,6 +682,13 @@ impl Control {
         self
     }
 
+    /// Shown only while the switch parameter is `on`
+    #[must_use]
+    pub fn when(mut self, param: &'static str, on: bool) -> Self {
+        self.when = Some((param, on));
+        self
+    }
+
     /// Shown only in this view of the panel
     #[must_use]
     pub fn in_view_n(mut self, v: u8) -> Self {
@@ -691,6 +725,7 @@ pub fn combo(field: &'static str, x: f32, y: f32, w: f32, name: &'static str, it
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
+        when: None,
     }
 }
 
@@ -701,7 +736,16 @@ pub fn label(x: f32, y: f32, text: &'static str) -> StaticText {
 
 /// A graph at `x`, `y`
 pub fn graph(spec: GraphSpec, x: f32, y: f32, name: &'static str) -> Control {
-    Control { id: spec.field, x, y, kind: Kind::Graph(spec), name: Text::new(name), tip: Text::EMPTY, view: None }
+    Control {
+        id: spec.field,
+        x,
+        y,
+        kind: Kind::Graph(spec),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+        view: None,
+        when: None,
+    }
 }
 
 /// An integer LCD spin box (`LcdSpinBox`) of `digits` digits on a stepped parameter
@@ -714,6 +758,7 @@ pub fn lcd(param: &'static str, x: f32, y: f32, sheet: LcdSheet, digits: usize, 
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
+        when: None,
     }
 }
 
@@ -737,6 +782,7 @@ pub fn lcd_float(
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
+        when: None,
     }
 }
 
@@ -759,6 +805,7 @@ pub fn fader(param: &'static str, x: f32, y: f32, h: f32, name: &'static str, hi
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
+        when: None,
     }
 }
 
@@ -800,7 +847,7 @@ impl Control {
 
 /// A surface at `x`, `y`
 pub fn surface(spec: SurfaceSpec, id: &'static str, x: f32, y: f32, name: &'static str) -> Control {
-    Control { id, x, y, kind: Kind::Surface(spec), name: Text::new(name), tip: Text::EMPTY, view: None }
+    Control { id, x, y, kind: Kind::Surface(spec), name: Text::new(name), tip: Text::EMPTY, view: None, when: None }
 }
 
 /// A text bound to a field
@@ -820,6 +867,7 @@ pub fn readout(field: &'static str, x: f32, y: f32, w: f32, color: u32, empty: &
         name: Text::new(field),
         tip: Text::EMPTY,
         view: None,
+        when: None,
     }
 }
 
@@ -843,5 +891,31 @@ pub fn toggle(
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
+        when: None,
+    }
+}
+
+/// A slider handle at `x` on a vertical track from `a` (the minimum) to `b` (the maximum)
+#[allow(clippy::too_many_arguments)]
+pub fn slider(
+    param: &'static str,
+    x: f32,
+    a: f32,
+    b: f32,
+    handle: &'static Asset,
+    zero: Option<&'static Asset>,
+    name: &'static str,
+    hint: &'static str,
+) -> Control {
+    let ph = crate::assets::image(handle).height() as f32;
+    Control {
+        id: param,
+        x,
+        y: (a.min(b) - ph / 2.0).floor(),
+        kind: Kind::Slider(SliderSpec { param, step: 0.0001, a, b, handle, zero, hint: Text::new(hint), unit: "" }),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+        view: None,
+        when: None,
     }
 }

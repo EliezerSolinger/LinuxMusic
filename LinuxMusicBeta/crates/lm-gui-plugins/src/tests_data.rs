@@ -85,7 +85,7 @@ fn snapshots() {
             if let Some(bg) = spec.background.filter(|b| !b.is_svg()) {
                 c.pixmap(crate::assets::image(bg), 0.0, 0.0, false);
             }
-            for ctl in spec.controls.iter().filter(|c| c.in_view(0)) {
+            for ctl in spec.controls.iter().filter(|c| c.in_view(0) && c.when.is_none_or(|(_, on)| on)) {
                 let (w, h) = ctl.size();
                 let mut one = crate::raster::Canvas::new(w, h, scale);
                 match &ctl.kind {
@@ -125,6 +125,9 @@ fn snapshots() {
                                     == Some(true)
                             }
                             Bind::Switch { param } => schema.find_param(param).is_some_and(|p| p.def >= 0.5),
+                            Bind::Step { param, value } => {
+                                schema.find_param(param).is_some_and(|p| (p.def - value).abs() < 0.5)
+                            }
                             Bind::Flag { .. } | Bind::Press(_) | Bind::Momentary { .. } | Bind::Open { .. } => false,
                             Bind::View(n) => n == 0,
                         };
@@ -166,6 +169,11 @@ fn snapshots() {
                         (sf.draw)(&mut one, &sc);
                     }
                     Kind::Toggle(t) => (t.draw)(&mut one, false),
+                    Kind::Slider(s) => {
+                        let ph = crate::assets::image(s.handle).height() as f32;
+                        let top = ((s.a + s.b) / 2.0 - ph / 2.0).trunc() - ctl.y;
+                        one.pixmap(crate::assets::image(s.handle), 0.0, top, false);
+                    }
                     Kind::Readout(_) => {}
                     Kind::Combo(cb) => {
                         let def = schema.find_field(cb.field).and_then(|f| f.default.clone());

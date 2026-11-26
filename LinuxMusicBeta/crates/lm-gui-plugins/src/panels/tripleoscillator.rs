@@ -123,6 +123,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 name: Text::n("Modulation type %1", row as u32 + 1),
                 tip: Text::new(tips[row]),
                 view: None,
+                when: None,
             });
         }
     }
@@ -172,6 +173,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 name: Text::n(name, n),
                 tip: Text::EMPTY,
                 view: None,
+                when: None,
             });
         }
         let btn_y = 96.0 + osc as f32 * OSC_H;
@@ -189,6 +191,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             name: Text::n("Osc %1 wavetable", n),
             tip: Text::new("Use alias-free wavetable oscillators."),
             view: None,
+            when: None,
         });
         let field = leak(format!("wave{n}"));
         let user = leak(format!("userWave{n}"));
@@ -206,6 +209,7 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
                 name: Text::n("Osc %1 wave shape", n),
                 tip: Text::new(tip),
                 view: None,
+                when: None,
             });
         }
     }
