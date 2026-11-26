@@ -989,3 +989,43 @@ fn draw_fader_knob(c: &mut Canvas, x: f32, y: f32) {
     c.fill_rect(x + 7.0, y + 3.0, 9.0, 1.0, Rgba::alpha(255, 255, 255, 26));
     c.fill_rect(x + 7.0, y + 25.0, 9.0, 1.0, Rgba::alpha(0, 0, 0, 77));
 }
+
+/// The style sheet's small square button (`QPushButton#btn-mute`, `#btn-mute-inv`: 14×14, a 1-pixel border darker
+/// at the bottom, rounded by 2, a light-to-dark veil) with the speaker icon when `on` (the legacy shows the icon on
+/// the checked state; the unchecked one is the bare button)
+pub fn draw_mute_button(c: &mut Canvas, on: bool) {
+    let (w, h) = (14.0f32, 14.0f32);
+    let edge = Rgba::hex(0x080b12);
+    // the border: the sides, the top (#0e1218) and the bottom (#03060b); the corners cut by the radius
+    c.fill_rect(1.0, 0.0, w - 2.0, 1.0, Rgba::hex(0x0e1218));
+    c.fill_rect(1.0, h - 1.0, w - 2.0, 1.0, Rgba::hex(0x03060b));
+    c.fill_rect(0.0, 1.0, 1.0, h - 2.0, edge);
+    c.fill_rect(w - 1.0, 1.0, 1.0, h - 2.0, edge);
+    // the veil: white 20 % at the top to 2 % at 10 %, flat to 90 %, then black 2 % to 40 % at the bottom
+    for row in 1..13 {
+        let t = (row as f32 + 0.5) / h;
+        let color = if t < 0.1 {
+            Rgba { a: 0.20 + (0.02 - 0.20) * (t / 0.1), r: 1.0, g: 1.0, b: 1.0 }
+        } else if t < 0.9 {
+            Rgba { a: 0.02, r: 1.0, g: 1.0, b: 1.0 }
+        } else {
+            Rgba { a: 0.02 + (0.40 - 0.02) * ((t - 0.9) / 0.1), r: 0.0, g: 0.0, b: 0.0 }
+        };
+        c.fill_rect(1.0, row as f32, w - 2.0, 1.0, color);
+    }
+    if !on {
+        return;
+    }
+    // `speaker.svg` (14×14) in the 10×10 the padding leaves: the body, the cone and the two waves
+    let s = 10.0 / 14.0;
+    let white = Rgba::rgb(255, 255, 255);
+    let (ox, oy) = (2.0f32, 2.0f32);
+    c.fill_rect(ox, oy + 4.5 * s, 3.5 * s, 5.0 * s, white);
+    for i in 0..8 {
+        let x = 3.5 + i as f32 * 0.5;
+        let grow = (i as f32 + 1.0) * 0.5 * 0.75;
+        c.fill_rect(ox + x * s, oy + (4.5 - grow) * s, 0.5 * s, (5.0 + 2.0 * grow) * s, white);
+    }
+    c.arc(ox + 4.0 * s, oy + 3.0 * s, 8.0 * s, -45.0, 90.0, 1.0, Cap::Flat, white);
+    c.arc(ox + 2.5 * s, oy + 1.5 * s, 11.0 * s, -45.0, 90.0, 1.0, Cap::Flat, white);
+}

@@ -460,3 +460,23 @@ Tremolo depth = Profundidade do tremolo
 
 # Organic
 Distortion: = Distorção:
+
+# CrossoverEQ and Delay
+Band 1/2 crossover = Cruzamento das bandas 1/2
+Band 2/3 crossover = Cruzamento das bandas 2/3
+Band 3/4 crossover = Cruzamento das bandas 3/4
+1/2 = 1/2
+2/3 = 2/3
+3/4 = 3/4
+Band 1 gain = Ganho da banda 1
+Band 2 gain = Ganho da banda 2
+Band 3 gain = Ganho da banda 3
+Band 4 gain = Ganho da banda 4
+Mute band 1 = Silenciar a banda 1
+Mute band 2 = Silenciar a banda 2
+Mute band 3 = Silenciar a banda 3
+Mute band 4 = Silenciar a banda 4
+LFO frequency: = Frequência do LFO:
+LFO amount = Quantidade do LFO
+LFO amount: = Quantidade do LFO:
+Feedback and delay time = Realimentação e tempo do atraso

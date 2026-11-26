@@ -41,6 +41,12 @@ fn every_text_has_its_translation() {
                     want(i.text.key);
                 }
             }
+            if let Kind::Fader(f) = &c.kind {
+                want(f.hint.key);
+            }
+            if let Kind::Readout(r) = &c.kind {
+                want(r.empty.key);
+            }
             if let Kind::Knob(k) = &c.kind {
                 want(k.hint.key);
                 if let Some(l) = &k.label {
@@ -159,6 +165,7 @@ fn snapshots() {
                         };
                         (sf.draw)(&mut one, &sc);
                     }
+                    Kind::Toggle(t) => (t.draw)(&mut one, false),
                     Kind::Readout(_) => {}
                     Kind::Combo(cb) => {
                         let def = schema.find_field(cb.field).and_then(|f| f.default.clone());

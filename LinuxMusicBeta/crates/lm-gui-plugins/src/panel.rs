@@ -32,7 +32,7 @@ use lm_port::{
 };
 
 use crate::raster::Canvas;
-use crate::spec::{Bind, Kind, PanelSpec, SurfaceCx, SurfaceHandle, Target, Text};
+use crate::spec::{Bind, ButtonSpec, Kind, PanelSpec, SurfaceCx, SurfaceHandle, Target, Text, ToggleSpec};
 use crate::widgets::{self, Range, theme};
 use crate::{PortHost, assets};
 
@@ -377,9 +377,13 @@ impl<H: PortHost> PluginPanel<H> {
             Kind::Knob(k) => (k.param, k.step, k.center, k.log),
             Kind::Lcd(l) => (l.param, l.step, None, false),
             Kind::Fader(f) => (f.param, 0.01, None, false),
-            Kind::Led(_) | Kind::Button(_) | Kind::Combo(_) | Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) => {
-                (c.target().key(), 1.0, None, false)
-            }
+            Kind::Led(_)
+            | Kind::Button(_)
+            | Kind::Toggle(_)
+            | Kind::Combo(_)
+            | Kind::Graph(_)
+            | Kind::Surface(_)
+            | Kind::Readout(_) => (c.target().key(), 1.0, None, false),
         };
         let p = self.schema.as_ref().and_then(|s| s.find_param(key));
         let (min, max) = match self.choice_keys(key) {
@@ -457,7 +461,7 @@ impl<H: PortHost> PluginPanel<H> {
                     widgets::qt_number((v * 100.0).round() / 100.0)
                 }
             }
-            Kind::Led(_) | Kind::Button(_) => match c.target() {
+            Kind::Led(_) | Kind::Button(_) | Kind::Toggle(_) => match c.target() {
                 Target::Param(k) => widgets::qt_number(self.param(k, cx)),
                 Target::Field(k) => match self.field(k, cx) {
                     v if v.as_bool().is_some() => if v.as_bool() == Some(true) { "1" } else { "0" }.into(),
@@ -801,10 +805,12 @@ impl<H: PortHost> PluginPanel<H> {
             }
             return;
         }
-        let press = matches!(
-            &c.kind,
-            Kind::Button(b) if matches!(b.bind, Bind::Press(_) | Bind::Momentary { .. } | Bind::View(_) | Bind::Open { .. })
-        );
+        let press = match &c.kind {
+            Kind::Button(ButtonSpec { bind, .. }) | Kind::Toggle(ToggleSpec { bind, .. }) => {
+                matches!(bind, Bind::Press(_) | Bind::Momentary { .. } | Bind::View(_) | Bind::Open { .. })
+            }
+            _ => false,
+        };
         if press && ev.button != MouseButton::Left {
             // a push button has no model: no reset, no menu
             return;
@@ -836,6 +842,10 @@ impl<H: PortHost> PluginPanel<H> {
                 }
                 Kind::Led(l) => {
                     let bind = l.bind;
+                    self.click_button(ctrl, bind, ev.click_count, cx);
+                }
+                Kind::Toggle(t) => {
+                    let bind = t.bind;
                     self.click_button(ctrl, bind, ev.click_count, cx);
                 }
                 Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) => {}
@@ -1526,6 +1536,11 @@ impl<H: PortHost> PluginPanel<H> {
                 let asset = if on { b.active } else { b.inactive };
                 (on as u64, Box::new(move |cv| cv.pixmap(assets::image(asset), 0.0, 0.0, false)))
             }
+            Kind::Toggle(t) => {
+                let on = self.is_on(t.bind, cx) || self.pressed == Some(ctrl);
+                let draw = t.draw;
+                (on as u64, Box::new(move |cv| draw(cv, on)))
+            }
             Kind::Led(l) => {
                 let on = self.is_on(l.bind, cx);
                 let asset = if on { l.color.asset() } else { &assets::lmms::LED_OFF };
@@ -1699,7 +1714,7 @@ impl<H: PortHost> PluginPanel<H> {
                         }
                     }
                 }
-                Kind::Fader(_) => {}
+                Kind::Fader(_) | Kind::Toggle(_) => {}
                 Kind::Knob(k) => {
                     if let Some(l) = &k.label {
                         // the legacy label: at the bottom of the widget, 2 pixels above its edge (`drawLabel`)

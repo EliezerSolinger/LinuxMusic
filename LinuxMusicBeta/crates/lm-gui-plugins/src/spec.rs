@@ -243,6 +243,15 @@ pub struct FaderSpec {
     pub unit: &'static str,
 }
 
+/// A button the panel draws itself (a style-sheet button, a lamp, a tab): `draw(canvas, on)` paints its state
+#[derive(Clone, Debug)]
+pub struct ToggleSpec {
+    pub bind: Bind,
+    pub w: f32,
+    pub h: f32,
+    pub draw: fn(&mut crate::raster::Canvas, bool),
+}
+
 /// A text of a surface, painted by the panel (the CPU painter has no text): at its baseline, or centered
 #[derive(Clone, Debug)]
 pub struct SurfText {
@@ -346,6 +355,7 @@ pub enum Kind {
     Combo(ComboSpec),
     Graph(GraphSpec),
     Fader(FaderSpec),
+    Toggle(ToggleSpec),
     Surface(SurfaceSpec),
     Readout(ReadoutSpec),
 }
@@ -389,6 +399,7 @@ impl Control {
             Kind::Combo(c) => Target::Field(c.field),
             Kind::Graph(g) => Target::Field(g.field),
             Kind::Fader(f) => Target::Param(f.param),
+            Kind::Toggle(t) => t.bind.target(),
             Kind::Surface(s) => Target::Param(s.primary),
             Kind::Readout(r) => Target::Field(r.field),
         }
@@ -417,6 +428,7 @@ impl Control {
             Kind::Combo(c) => (c.w, crate::widgets::COMBO_HEIGHT),
             Kind::Graph(g) => (g.w, g.h),
             Kind::Fader(f) => (f.w, f.h),
+            Kind::Toggle(t) => (t.w, t.h),
             Kind::Surface(s) => (s.w, s.h),
             Kind::Readout(r) => (r.w, r.px + 4.0),
         }
@@ -806,6 +818,29 @@ pub fn readout(field: &'static str, x: f32, y: f32, w: f32, color: u32, empty: &
             centered: false,
         }),
         name: Text::new(field),
+        tip: Text::EMPTY,
+        view: None,
+    }
+}
+
+/// A button drawn by `draw` at `x`, `y`, `w` by `h`
+#[allow(clippy::too_many_arguments)]
+pub fn toggle(
+    bind: Bind,
+    id: &'static str,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    draw: fn(&mut crate::raster::Canvas, bool),
+    name: &'static str,
+) -> Control {
+    Control {
+        id,
+        x,
+        y,
+        kind: Kind::Toggle(ToggleSpec { bind, w, h, draw }),
+        name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
     }

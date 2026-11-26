@@ -334,6 +334,7 @@ fn exercise(o: &mut Opened<'_>) {
             }
             Kind::Button(b) => check_bind(o, id, b.bind),
             Kind::Led(l) => check_bind(o, id, l.bind),
+            Kind::Toggle(t) => check_bind(o, id, t.bind),
             Kind::Graph(g) => {
                 // draw a line across the graph: one gesture, one undo step
                 let before = o.field(g.field);
@@ -695,4 +696,14 @@ fn frequencyshifter(cx: &mut TestAppContext) {
 fn bitinvader(cx: &mut TestAppContext) {
     let mut o = open(cx, &[(&lm_plugins_instruments::bit_invader::DESCRIPTOR, true)], "bitinvader");
     exercise(&mut o);
+}
+
+#[gpui::test]
+fn crossovereq(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::crossover_eq::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn delay(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::delay::DESCRIPTOR);
 }

@@ -3,6 +3,8 @@
 use crate::spec::PanelSpec;
 
 pub mod bitinvader;
+pub mod crossovereq;
+pub mod delay;
 pub mod effects;
 pub mod freeboy;
 pub mod frequencyshifter;
@@ -43,6 +45,8 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (frequencyshifter::ID, || &frequencyshifter::PANEL),
     (granularpitchshifter::ID, || &granularpitchshifter::PANEL),
     (lomm::ID, || &lomm::PANEL),
+    (crossovereq::ID, || &crossovereq::PANEL),
+    (delay::ID, || &delay::PANEL),
     (multitapecho::ID, || &multitapecho::PANEL),
     (shapers::DYNAMICS_ID, || &shapers::DYNAMICS_PANEL),
     (shapers::WAVESHAPER_ID, || &shapers::WAVESHAPER_PANEL),
@@ -66,6 +70,8 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     frequencyshifter::ASSETS,
     granularpitchshifter::ASSETS,
     lomm::ASSETS,
+    crossovereq::ASSETS,
+    delay::ASSETS,
     multitapecho::ASSETS,
     shapers::DYNAMICS_ASSETS,
     shapers::WAVESHAPER_ASSETS,
