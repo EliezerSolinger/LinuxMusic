@@ -184,7 +184,7 @@ fn the_scan_blocks_what_crashes_or_hangs_it() {
         scan(&config(), "test", &[], &["hang".to_owned()], Duration::from_secs(10), &Cancel::new(), &Progress::new())
             .unwrap();
     let ok: Vec<&str> = report.plugins.iter().map(|p| p.uri.as_str()).collect();
-    assert_eq!(ok, ["gain", "synth", "crash"]);
+    assert_eq!(ok, ["gain", "synth", "crash", "mono"]);
     assert_eq!(report.skipped, ["hang"]);
     let blocked: Vec<(&str, &str)> = report.blocked.iter().map(|b| (b.uri.as_str(), b.reason.key())).collect();
     assert_eq!(blocked, [("bomb", "plugin_host.crashed"), ("stall", "plugin_host.timeout")]);

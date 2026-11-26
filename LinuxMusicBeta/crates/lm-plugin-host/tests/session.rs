@@ -77,7 +77,7 @@ fn third_party_plugins_in_a_session() {
     let blocked: Vec<&str> =
         prefs.get("blocked").unwrap().items().filter_map(|b| b.get("uri")?.as_text()).collect::<Vec<_>>();
     assert_eq!(blocked, ["bomb", "stall"]);
-    assert_eq!(prefs.get("scanned").unwrap().len(), 4);
+    assert_eq!(prefs.get("scanned").unwrap().len(), 5);
     // A second scan skips the blocked ones and adds nothing twice
     let n = s.notices().all().len();
     s.scan_plugins("test").unwrap();

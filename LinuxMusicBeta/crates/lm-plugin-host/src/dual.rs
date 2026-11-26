@@ -17,6 +17,85 @@ pub fn applies(io: Option<(usize, usize)>, inputs: usize, outputs: usize) -> boo
     io == Some((1, 1)) && inputs == 2 && outputs == 2
 }
 
+/// Whether a plugin with `io` channels on a block of `outputs` runs spread: a mono instrument (no audio in, one out)
+/// on two outputs plays its one channel on both
+pub fn spreads(io: Option<(usize, usize)>, inputs: usize, outputs: usize) -> bool {
+    io == Some((0, 1)) && inputs == 0 && outputs == 2
+}
+
+/// A mono instrument on two outputs: it runs once, and its output is copied to the second channel
+pub struct Spread {
+    inner: Box<dyn Plugin>,
+}
+
+impl Spread {
+    pub fn new(inner: Box<dyn Plugin>) -> Spread {
+        Spread { inner }
+    }
+}
+
+impl Plugin for Spread {
+    fn params(&self) -> &[Param] {
+        self.inner.params()
+    }
+
+    fn io(&self) -> Option<(usize, usize)> {
+        Some((0, 2))
+    }
+
+    fn latency(&self) -> u32 {
+        self.inner.latency()
+    }
+
+    fn set_param(&mut self, index: u32, value: f32) {
+        self.inner.set_param(index, value);
+    }
+
+    fn param(&self, index: u32) -> f32 {
+        self.inner.param(index)
+    }
+
+    fn process(
+        &mut self,
+        frames: usize,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        events: &[(u32, EventKind)],
+        transport: &Transport,
+    ) {
+        let Some((first, rest)) = outputs.split_first_mut() else { return };
+        self.inner.process(frames, inputs, std::slice::from_mut(first), events, transport);
+        for out in rest {
+            let n = frames.min(out.len()).min(first.len());
+            out[..n].copy_from_slice(&first[..n]);
+        }
+    }
+
+    fn save(&mut self) -> Result<Option<Vec<u8>>> {
+        self.inner.save()
+    }
+
+    fn restore(&mut self, chunk: &[u8]) -> Result<()> {
+        self.inner.restore(chunk)
+    }
+
+    fn window(&mut self, on: bool) -> Result<bool> {
+        self.inner.window(on)
+    }
+
+    fn idle(&mut self) {
+        self.inner.idle();
+    }
+
+    fn state_changed(&mut self) -> bool {
+        self.inner.state_changed()
+    }
+
+    fn changes(&mut self, out: &mut Vec<(u32, f32)>) {
+        self.inner.changes(out);
+    }
+}
+
 pub struct DualMono {
     left: Box<dyn Plugin>,
     right: Box<dyn Plugin>,
@@ -103,5 +182,59 @@ impl Plugin for DualMono {
     /// The first's own changes (the second was given them in `process`, so it is not asked twice)
     fn changes(&mut self, out: &mut Vec<(u32, f32)>) {
         out.extend(self.seen.iter().copied().take(out.capacity().saturating_sub(out.len())));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A mono instrument: a constant on its one output
+    struct One;
+
+    impl Plugin for One {
+        fn params(&self) -> &[Param] {
+            &[]
+        }
+        fn io(&self) -> Option<(usize, usize)> {
+            Some((0, 1))
+        }
+        fn latency(&self) -> u32 {
+            0
+        }
+        fn set_param(&mut self, _: u32, _: f32) {}
+        fn param(&self, _: u32) -> f32 {
+            0.0
+        }
+        fn process(
+            &mut self,
+            frames: usize,
+            _: &[&[f32]],
+            outputs: &mut [&mut [f32]],
+            _: &[(u32, EventKind)],
+            _: &Transport,
+        ) {
+            assert_eq!(outputs.len(), 1, "the plugin sees its own one output");
+            outputs[0][..frames].fill(0.25);
+        }
+        fn save(&mut self) -> Result<Option<Vec<u8>>> {
+            Ok(None)
+        }
+        fn restore(&mut self, _: &[u8]) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_mono_instrument_is_spread_to_both_outputs() {
+        assert!(spreads(Some((0, 1)), 0, 2) && !spreads(Some((0, 2)), 0, 2) && !spreads(None, 0, 2));
+        let mut p = Spread::new(Box::new(One));
+        assert_eq!(p.io(), Some((0, 2)));
+        let (mut l, mut r) = (vec![0.0f32; 8], vec![0.0f32; 8]);
+        {
+            let mut outs: Vec<&mut [f32]> = vec![&mut l, &mut r];
+            p.process(8, &[], &mut outs, &[], &Transport::default());
+        }
+        assert!(l.iter().chain(&r).all(|x| *x == 0.25));
     }
 }

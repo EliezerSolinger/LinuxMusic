@@ -18,8 +18,14 @@ fn listed(uri: &str, instrument: bool, params: Vec<Param>) -> Listed {
         uri: uri.into(),
         name: format!("Test {uri}"),
         instrument,
-        inputs: if instrument { 0 } else { 2 },
-        outputs: 2,
+        inputs: if instrument {
+            0
+        } else if uri == "mono" {
+            1
+        } else {
+            2
+        },
+        outputs: if uri == "mono" { 1 } else { 2 },
         midi_in: instrument,
         params,
         latency: uri == "gain",
@@ -37,6 +43,8 @@ pub fn list() -> Vec<Listed> {
         // For the scan: one that crashes as it is made, one that never finishes being made
         listed("bomb", false, Vec::new()),
         listed("stall", false, Vec::new()),
+        // A mono effect: on a stereo channel the helper runs it as two instances (dual mono)
+        listed("mono", false, vec![param("gain", 0.0, 4.0, 1.0, false)]),
     ]
 }
 
@@ -82,6 +90,10 @@ impl Test {
 impl Plugin for Test {
     fn params(&self) -> &[Param] {
         &self.params
+    }
+
+    fn io(&self) -> Option<(usize, usize)> {
+        (self.kind == "mono").then_some((1, 1))
     }
 
     fn latency(&self) -> u32 {
@@ -139,6 +151,20 @@ impl Plugin for Test {
                     }
                 }
                 self.pos = (self.pos + frames) % len;
+            }
+            // One channel only: the first; a plugin run once on a stereo block leaves the second silent
+            "mono" => {
+                let g = self.values[0];
+                for (ch, out) in outputs.iter_mut().enumerate() {
+                    match (ch, inputs.first()) {
+                        (0, Some(i)) => {
+                            for (o, x) in out[..frames].iter_mut().zip(i.iter()) {
+                                *o = x * g;
+                            }
+                        }
+                        _ => out[..frames].fill(0.0),
+                    }
+                }
             }
             "synth" => {
                 let v = if self.held > 0 { self.values[0] } else { 0.0 };

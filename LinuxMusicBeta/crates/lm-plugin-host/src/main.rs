@@ -276,6 +276,9 @@ fn run(paths: &[PathBuf]) -> Result<()> {
     if dual::applies(plugin.io(), layout.inputs, layout.outputs) {
         let second = open(&format, &uri, file.as_deref(), paths, rate, layout.max_block)?;
         plugin = Box::new(dual::DualMono::new(plugin, second));
+    } else if dual::spreads(plugin.io(), layout.inputs, layout.outputs) {
+        // A mono instrument on two outputs plays on both
+        plugin = Box::new(dual::Spread::new(plugin));
     }
     // A state the plugin cannot take back leaves it at its defaults (the project still opens), and says so
     let restored = match load.get("chunk").and_then(Value::as_text) {

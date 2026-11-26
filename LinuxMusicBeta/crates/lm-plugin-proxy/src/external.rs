@@ -21,6 +21,17 @@ pub fn plugin_id(format: &str, uri: &str) -> String {
     format!("{format}-{}", &h[..16])
 }
 
+/// The audio channels of the helper's shared block for a plugin on a channel of `channels` (0 for an instrument,
+/// which has no channel to follow): (inputs, outputs). The track's or channel's count rules, not the plugin's own: a mono
+/// effect on a stereo channel gets 2/2 (the helper runs it as two instances, dual mono); a mono instrument gets two
+/// outputs (the helper spreads its one to both). Anything else keeps the plugin's own count
+pub fn layout_channels(s: &Scanned, channels: u16) -> (usize, usize) {
+    if s.instrument {
+        return (s.inputs, if s.outputs == 1 { 2 } else { s.outputs });
+    }
+    if s.inputs == 1 && s.outputs == 1 && channels == 2 { (2, 2) } else { (s.inputs, s.outputs) }
+}
+
 /// The external plugin for a scanned one
 pub fn external(scanned: &Scanned, config: Arc<HostConfig>, on_start: Option<OnStart>) -> External {
     let id = plugin_id(&scanned.format, &scanned.uri);
@@ -39,7 +50,7 @@ pub fn external(scanned: &Scanned, config: Arc<HostConfig>, on_start: Option<OnS
         schema = schema.param(spec);
     }
     let channels = |n: usize| u32::try_from(n.clamp(1, 64)).unwrap_or(2);
-    let ports = Ports { outputs: vec![Port::new("main", channels(scanned.outputs))], sidechains: vec![] };
+    let ports = Ports { outputs: vec![Port::new("main", channels(layout_channels(scanned, 0).1))], sidechains: vec![] };
     let kind = if scanned.instrument { PluginKind::Instrument } else { PluginKind::Effect };
     let s = scanned.clone();
     let build = Arc::new(move |state: &Value, cx: &BuildContext<'_>| -> lm_base::Result<Box<dyn Processor>> {
@@ -48,14 +59,15 @@ pub fn external(scanned: &Scanned, config: Arc<HostConfig>, on_start: Option<OnS
             .get(PARAMS_KEY)
             .map(|p| p.entries().filter_map(|(k, v)| Some((k.to_owned(), v.as_real()? as f32))).collect())
             .unwrap_or_default();
+        let (inputs, outputs) = layout_channels(&s, cx.channels);
         let req = LoadRequest {
             format: s.format.clone(),
             uri: s.uri.clone(),
             file: s.file.clone(),
             rate: cx.spec.sample_rate,
             max_block: cx.spec.max_block,
-            inputs: s.inputs,
-            outputs: s.outputs,
+            inputs,
+            outputs,
             sidechain: 0,
             chunk,
             params,
@@ -67,4 +79,39 @@ pub fn external(scanned: &Scanned, config: Arc<HostConfig>, on_start: Option<OnS
         Ok(Box::new(proxy) as Box<dyn Processor>)
     });
     External { id, name: format!("{} ({})", scanned.name, scanned.format.to_uppercase()), kind, schema, ports, build }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scanned(instrument: bool, inputs: usize, outputs: usize) -> Scanned {
+        Scanned {
+            format: "test".into(),
+            uri: "x".into(),
+            name: "x".into(),
+            instrument,
+            inputs,
+            outputs,
+            midi_in: instrument,
+            params: Vec::new(),
+            latency: false,
+            has_window: false,
+            file: None,
+        }
+    }
+
+    #[test]
+    fn the_channels_decide_not_the_plugin() {
+        // A mono effect on a stereo channel: two instances (2/2)
+        assert_eq!(layout_channels(&scanned(false, 1, 1), 2), (2, 2));
+        // On a mono channel it stays mono
+        assert_eq!(layout_channels(&scanned(false, 1, 1), 1), (1, 1));
+        // A stereo effect, a mono-in stereo-out one: the plugin's own
+        assert_eq!(layout_channels(&scanned(false, 2, 2), 2), (2, 2));
+        assert_eq!(layout_channels(&scanned(false, 1, 2), 2), (1, 2));
+        // Instruments: a mono one is spread to two outputs, a stereo one stays
+        assert_eq!(layout_channels(&scanned(true, 0, 1), 0), (0, 2));
+        assert_eq!(layout_channels(&scanned(true, 0, 2), 0), (0, 2));
+    }
 }

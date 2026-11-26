@@ -150,6 +150,10 @@ impl Plugin for Vst3 {
         &self.params
     }
 
+    fn io(&self) -> Option<(usize, usize)> {
+        Some((channels(self.inst.audio_inputs()), channels(self.inst.audio_outputs())))
+    }
+
     fn latency(&self) -> u32 {
         self.inst.latency()
     }
