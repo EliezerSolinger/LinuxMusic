@@ -26,6 +26,15 @@ use lm_state::{PathStep, Value};
 /// The largest piece processed at once (the scratch of interleaved frames)
 const PIECE: usize = 256;
 
+/// The loudness meter's reset requests: `loudness.reset` bumps it, each master segment restarts its meter when it
+/// sees a number it has not (a counter, so the audio thread reads it without a lock)
+static LOUDNESS_RESET: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Asks every master segment to start its loudness meter again (the action `loudness.reset`)
+pub fn reset_loudness() {
+    LOUDNESS_RESET.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// What the rack shows on the desk (I-9.5: the display frame of each rack node, `f32` little-endian). Each segment
 /// writes what it measures and NaN elsewhere; the session merges a channel's segments (`LocalPort::display`, kind
 /// `"rack"`)
@@ -44,7 +53,15 @@ pub mod display {
     /// The goniometer: `POINTS` (left, right) pairs of the master's output, spread over the last piece
     pub const GONIO: usize = 6;
     pub const POINTS: usize = 64;
-    pub const FLOATS: usize = GONIO + 2 * POINTS;
+    /// The master's loudness by BS.1770-4 (`lm_dsp::loudness`), taken before the speakers' monitoring: momentary,
+    /// short-term and integrated LUFS (−∞ before anything passed), the true peak since the reset (dBTP) and the
+    /// loudness range (LU). `loudness.reset` starts the integrated value, the range and the peak again
+    pub const LUFS_M: usize = GONIO + 2 * POINTS;
+    pub const LUFS_S: usize = LUFS_M + 1;
+    pub const LUFS_I: usize = LUFS_M + 2;
+    pub const TRUE_PEAK: usize = LUFS_M + 3;
+    pub const LRA: usize = LUFS_M + 4;
+    pub const FLOATS: usize = LRA + 1;
     pub const BYTES: usize = FLOATS * 4;
 }
 
@@ -150,6 +167,11 @@ struct Pair {
     /// The MONO switch's crossfade: the mix of the last frame (legacy `m_monoMix`)
     mono_mix: f32,
     correlation: Correlation,
+    /// The master's loudness meter (pair 0 of a master segment that ends the chain), with its split buffers
+    loudness: Option<Box<lm_dsp::loudness::Loudness>>,
+    loud_l: Box<[f32]>,
+    loud_r: Box<[f32]>,
+    loud_seen: u64,
 }
 
 /// A segment of a rack
@@ -220,7 +242,8 @@ impl RackProcessor {
         let initial = |key: &str| params.iter().position(|p| p.key == key).map_or(1.0, |i| values[i]);
         let pre_now = [initial("preLeft"), initial("preRight")];
         let pairs = (0..usize::from(channels).div_ceil(2).max(1))
-            .map(|_| Pair {
+            .enumerate()
+            .map(|(i, _)| Pair {
                 strip: ChannelStrip::new(rate_f),
                 transformer: OutputTransformer::new(TransformerCore::default(), f64::from(rate)),
                 master: MasterAnalog::new(rate_f),
@@ -236,6 +259,11 @@ impl RackProcessor {
                 // Built with MONO on, it starts summed (a change while playing is adopted and crossfades)
                 mono_mix: if choices.mono { 1.0 } else { 0.0 },
                 correlation: Correlation::default(),
+                loudness: (master && i == 0 && stages.contains(&Stage::MasterTransformer))
+                    .then(|| Box::new(lm_dsp::loudness::Loudness::new(rate))),
+                loud_l: vec![0.0; if master { PIECE } else { 0 }].into_boxed_slice(),
+                loud_r: vec![0.0; if master { PIECE } else { 0 }].into_boxed_slice(),
+                loud_seen: LOUDNESS_RESET.load(std::sync::atomic::Ordering::Relaxed),
             })
             .collect();
         Ok(Self {
@@ -394,6 +422,20 @@ impl RackProcessor {
                     } else {
                         p.master.bypass_transformer();
                     }
+                    // The loudness of what the master delivers, before the speakers' monitoring
+                    if let Some(m) = p.loudness.as_mut() {
+                        let want = LOUDNESS_RESET.load(std::sync::atomic::Ordering::Relaxed);
+                        if want != p.loud_seen {
+                            p.loud_seen = want;
+                            m.reset();
+                        }
+                        let n = frames.len().min(p.loud_l.len());
+                        for (k, f) in frames[..n].iter().enumerate() {
+                            p.loud_l[k] = f[0];
+                            p.loud_r[k] = f[1];
+                        }
+                        m.process(&p.loud_l[..n], &p.loud_r[..n]);
+                    }
                     // The speakers' monitoring, after everything (never in an export: its build has no "monitor")
                     if let Some((dim, cut, mono, side)) = c.monitor {
                         p.monitoring.process(frames, &MonitorSettings { level, dim, cut, mono, side });
@@ -422,6 +464,13 @@ impl RackProcessor {
             let (gate, comp) = p.strip.reductions();
             self.shown[display::GATE_GR] = gate;
             self.shown[display::COMP_GR] = comp;
+        }
+        if let Some(m) = p.loudness.as_ref() {
+            self.shown[display::LUFS_M] = m.momentary() as f32;
+            self.shown[display::LUFS_S] = m.short_term() as f32;
+            self.shown[display::LUFS_I] = m.integrated() as f32;
+            self.shown[display::TRUE_PEAK] = m.true_peak() as f32;
+            self.shown[display::LRA] = m.range() as f32;
         }
         if self.stages.contains(&Stage::MasterBus) {
             self.shown[display::BUS_GR] = p.bus.take_gain_reduction();

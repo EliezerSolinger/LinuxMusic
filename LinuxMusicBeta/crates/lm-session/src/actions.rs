@@ -215,6 +215,16 @@ pub static ACTIONS: &[ActionSpec] = &[
         },
         enabled: writable,
     },
+    // The master's loudness meter starts again: integrated value, range and true-peak hold (F-MIX, BS.1770)
+    ActionSpec {
+        id: "loudness.reset",
+        label: "action.loudness.reset",
+        run: |_, _| {
+            crate::rack::reset_loudness();
+            Ok(())
+        },
+        enabled: always,
+    },
     ActionSpec {
         id: "edit.undo",
         label: "action.edit.undo",
