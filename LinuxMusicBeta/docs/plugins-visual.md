@@ -5013,7 +5013,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | Eq | efeito | visual próprio | `EqControlsDialog.cpp`, `EqCurve.cpp`, `EqSpectrumView.cpp`, `EqParameterWidget.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
 | Flanger | efeito | visual próprio (`artwork.svg`) | `FlangerControlsDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `flanger`) |
 | FreeBoy | instrumento | visual próprio | `FreeBoy.cpp`, `artwork.png` | **painel feito** (`panels/freeboy.rs`, teste `freeboy`) |
-| FrequencyShifter | efeito | visual próprio | `FrequencyShifterControlDialog.cpp`, `artwork.png` | plugin existe (lm-plugins-effects): painel a fazer |
+| FrequencyShifter | efeito | visual próprio | `FrequencyShifterControlDialog.cpp`, `artwork.png` | **painel feito** (`panels/frequencyshifter.rs`, teste `frequencyshifter`; os botões de reset são momentâneos, `Bind::Momentary`; o botão de ajuda não existe no painel) |
 | GigPlayer | instrumento | visual próprio | `GigPlayer.cpp`, `artwork.png` | falta o plugin |
 | GranularPitchShifter | efeito | visual próprio | `GranularPitchShifterControlDialog.cpp`, `artwork.png` | **painel feito** (`panels/granularpitchshifter.rs`, teste `granularpitchshifter`; o botão de ajuda não existe no painel) |
 | Guitarix | efeito | visual próprio (97 unidades em rack) | `GuitarixControlDialog.cpp`, `GuitarixLayout.cpp`, `GuitarixWidgets.cpp`, `GuitarixUnits.cpp`, `gx/rcstyles/*.png` | falta o plugin |

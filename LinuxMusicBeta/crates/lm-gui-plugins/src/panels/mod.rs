@@ -4,6 +4,7 @@ use crate::spec::PanelSpec;
 
 pub mod effects;
 pub mod freeboy;
+pub mod frequencyshifter;
 pub mod granularpitchshifter;
 pub mod kicker;
 pub mod lb302;
@@ -37,6 +38,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (nes::ID, || &nes::PANEL),
     (freeboy::ID, || &freeboy::PANEL),
     (opulenz::ID, || &opulenz::PANEL),
+    (frequencyshifter::ID, || &frequencyshifter::PANEL),
     (granularpitchshifter::ID, || &granularpitchshifter::PANEL),
     (lomm::ID, || &lomm::PANEL),
     (multitapecho::ID, || &multitapecho::PANEL),
@@ -58,6 +60,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     organic::ASSETS,
     sfxr::ASSETS,
     nes::ASSETS,
+    frequencyshifter::ASSETS,
     granularpitchshifter::ASSETS,
     lomm::ASSETS,
     multitapecho::ASSETS,

@@ -109,7 +109,7 @@ fn snapshots() {
                                     == Some(true)
                             }
                             Bind::Switch { param } => schema.find_param(param).is_some_and(|p| p.def >= 0.5),
-                            Bind::Flag { .. } | Bind::Press(_) => false,
+                            Bind::Flag { .. } | Bind::Press(_) | Bind::Momentary { .. } => false,
                         };
                         one.pixmap(crate::assets::image(if on { b.active } else { b.inactive }), 0.0, 0.0, false);
                     }

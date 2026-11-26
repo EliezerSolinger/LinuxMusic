@@ -400,6 +400,10 @@ fn check_bind(o: &mut Opened<'_>, id: &'static str, bind: Bind) {
             o.click(id, MouseButton::Left);
             assert_eq!(o.field(field).as_bool(), Some(!before), "{id}: toggles");
         }
+        Bind::Momentary { param } => {
+            o.click(id, MouseButton::Left);
+            assert_eq!(o.param(param), 0.0, "{id}: back to 0 when released");
+        }
         Bind::Press(_) => {}
     }
 }
@@ -592,4 +596,9 @@ fn multitapecho(cx: &mut TestAppContext) {
 #[gpui::test]
 fn granularpitchshifter(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::granular_pitch_shifter::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn frequencyshifter(cx: &mut TestAppContext) {
+    effect(cx, &lm_plugins_effects::frequency_shifter::DESCRIPTOR);
 }

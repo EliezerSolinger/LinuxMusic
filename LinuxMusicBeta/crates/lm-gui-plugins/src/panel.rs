@@ -337,7 +337,7 @@ impl<H: PortHost> PluginPanel<H> {
             Bind::Choice { field, key } => self.field(field, cx).as_text() == Some(key),
             Bind::Switch { param } => self.param(param, cx) >= 0.5,
             Bind::Flag { field } => self.field(field, cx).as_bool() == Some(true),
-            Bind::Press(_) => false,
+            Bind::Press(_) | Bind::Momentary { .. } => false,
         }
     }
 
@@ -539,7 +539,7 @@ impl<H: PortHost> PluginPanel<H> {
             }
             return;
         }
-        let press = matches!(&c.kind, Kind::Button(b) if matches!(b.bind, Bind::Press(_)));
+        let press = matches!(&c.kind, Kind::Button(b) if matches!(b.bind, Bind::Press(_) | Bind::Momentary { .. }));
         if press && ev.button != MouseButton::Left {
             // a push button has no model: no reset, no menu
             return;
@@ -605,6 +605,10 @@ impl<H: PortHost> PluginPanel<H> {
             Bind::Flag { .. } => {
                 let on = self.is_on(bind, cx);
                 self.set(ctrl, Value::bool(!on), cx);
+            }
+            Bind::Momentary { .. } => {
+                self.pressed = Some(ctrl);
+                self.set(ctrl, Value::real(1.0).unwrap_or_default(), cx);
             }
             Bind::Press(f) => {
                 // a push button: its active image while held (`PixmapButton::mousePressEvent`), its edits in one step
@@ -760,6 +764,12 @@ impl<H: PortHost> PluginPanel<H> {
         }
         self.end_drag(cx);
         self.graph_up(cx);
+        if let Some(i) = self.pressed
+            && let Kind::Button(b) = &self.spec.controls[i].kind
+            && let Bind::Momentary { .. } = b.bind
+        {
+            self.set(i, Value::real(0.0).unwrap_or_default(), cx);
+        }
         self.pressed = None;
         if let Some((from, v)) = self.carried.take()
             && let Some(to) = self.spec.hit(x, y)

@@ -81,6 +81,9 @@ pub enum Bind {
     Switch { param: &'static str },
     /// A switch on a boolean field (not automatable in the legacy either)
     Flag { field: &'static str },
+    /// A push button on a stepped 0–1 parameter that is 1 while it is held (the legacy automatable button that is not
+    /// checkable: the frequency shifter's resets)
+    Momentary { param: &'static str },
     /// A push button without a model that changes several things at once (Organic's "Randomise")
     Press(PressFn),
 }
@@ -89,7 +92,7 @@ impl Bind {
     pub fn target(&self) -> Target {
         match *self {
             Bind::Choice { field, .. } | Bind::Flag { field } => Target::Field(field),
-            Bind::Switch { param } => Target::Param(param),
+            Bind::Switch { param } | Bind::Momentary { param } => Target::Param(param),
             Bind::Press(_) => Target::Field(""),
         }
     }
