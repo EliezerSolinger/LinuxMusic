@@ -886,6 +886,7 @@ impl Session {
             && self.document.find(id).and_then(|n| n.get("bypass").and_then(Value::as_bool)) != Some(true)
             && self.table.node(NodeKey::Instrument(id)).is_none()
             && self.table.node(NodeKey::Insert(id)).is_none()
+            && self.table.node(NodeKey::NoteEffect(id)).is_none()
         {
             return true;
         }

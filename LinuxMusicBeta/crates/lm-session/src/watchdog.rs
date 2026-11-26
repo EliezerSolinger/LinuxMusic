@@ -75,7 +75,7 @@ pub fn read_suspect(folder: &Path) -> Option<Suspect> {
 /// The document node behind a table slot (the plugin whose processor the thread is in)
 fn owner_of(table: &InstalledTable, slot: u32) -> Option<NodeId> {
     table.nodes.iter().find(|(_, i)| i.index == slot).and_then(|(k, _)| match k {
-        NodeKey::Instrument(id) | NodeKey::Insert(id) => Some(*id),
+        NodeKey::Instrument(id) | NodeKey::Insert(id) | NodeKey::NoteEffect(id) => Some(*id),
         _ => None,
     })
 }

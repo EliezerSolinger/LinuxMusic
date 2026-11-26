@@ -70,7 +70,7 @@ impl CrashNote {
                 .nodes
                 .iter()
                 .filter_map(|(k, i)| match k {
-                    NodeKey::Instrument(id) | NodeKey::Insert(id) => {
+                    NodeKey::Instrument(id) | NodeKey::Insert(id) | NodeKey::NoteEffect(id) => {
                         let v = lm_state::Value::object([
                             ("node", lm_state::Value::text(id.to_string())),
                             ("reason", lm_state::Value::text("crash")),

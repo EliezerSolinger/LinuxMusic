@@ -1,6 +1,6 @@
 //! Owner: agent C. The instrument window (approved design 05): a docked panel with the track's name and colour, the
 //! instrument and "Swap", the presets on top (previous, next, the list, save), text tabs (Instrument, Envelopes and
-//! filter, Chords and arpeggio, Effects (n), MIDI, Tuning) and a fixed footer (volume, pitch, bend range, where the
+//! filter, Note effects, Effects (n), MIDI, Tuning) and a fixed footer (volume, pitch, bend range, where the
 //! outputs go, the test keyboard).
 //!
 //! The first half of the file is THE GENERIC PLUGIN EDITOR, shared with the effect window: the controls come from
@@ -31,6 +31,8 @@ use lm_port::{
     BrowsePage, EditOp, Feed, FieldKind, GestureId, Label, Loading, NodeId, NodeSchema, Pending, PluginInfo, Ref,
     Scale, Target, Topic, Value,
 };
+
+mod note_effects;
 
 use super::{Screen, ScreenCx};
 use crate::core::Core;
@@ -1118,21 +1120,6 @@ const ENV_KEYS: [&str; 13] = [
     "LfoEnvAmount",
 ];
 const FILTER_KEYS: [&str; 4] = ["filterOn", "filterType", "cutoff", "resonance"];
-const CHORD_KEYS: [&str; 3] = ["chordOn", "chord", "chordRange"];
-const ARP_KEYS: [&str; 12] = [
-    "arpOn",
-    "arpChord",
-    "arpRange",
-    "arpRepeats",
-    "arpCycle",
-    "arpSkip",
-    "arpMiss",
-    "arpTime",
-    "arpSync",
-    "arpGate",
-    "arpDirection",
-    "arpMode",
-];
 const VOICE_KEYS: [&str; 2] = ["voiceMode", "glide"];
 const TUNING_KEYS: [&str; 2] = ["pitch", "bendRange"];
 
@@ -1141,30 +1128,26 @@ fn is_function_key(k: &str) -> bool {
         k.strip_prefix(t)
             .is_some_and(|rest| ENV_KEYS.contains(&rest) || matches!(rest, "LfoShape" | "LfoSync" | "LfoWave"))
     });
-    env || FILTER_KEYS.contains(&k)
-        || CHORD_KEYS.contains(&k)
-        || ARP_KEYS.contains(&k)
-        || VOICE_KEYS.contains(&k)
-        || TUNING_KEYS.contains(&k)
+    env || FILTER_KEYS.contains(&k) || VOICE_KEYS.contains(&k) || TUNING_KEYS.contains(&k)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tab {
     Instrument,
     Envelopes,
-    Chords,
+    NoteEffects,
     Effects,
     Midi,
     Tuning,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 6] = [Tab::Instrument, Tab::Envelopes, Tab::Chords, Tab::Effects, Tab::Midi, Tab::Tuning];
+    pub const ALL: [Tab; 6] = [Tab::Instrument, Tab::Envelopes, Tab::NoteEffects, Tab::Effects, Tab::Midi, Tab::Tuning];
     fn title(self) -> &'static str {
         match self {
             Tab::Instrument => "Instrument",
             Tab::Envelopes => "Envelopes and filter",
-            Tab::Chords => "Chords and arpeggio",
+            Tab::NoteEffects => "Note effects",
             Tab::Effects => "Effects",
             Tab::Midi => "MIDI",
             Tab::Tuning => "Tuning",
@@ -1997,37 +1980,6 @@ impl InstrumentWindow {
             tr("Filter"),
             FILTER_KEYS.iter().filter_map(|k| find(k)).map(|k| control(self, k, cx)).collect(),
         ));
-        out
-    }
-
-    fn chords_tab(&self, ctls: &[Ctl], cx: &Context<Self>) -> Vec<AnyElement> {
-        let find = |k: &str| ctls.iter().find(|x| x.key() == k).cloned();
-        if find("chordOn").is_none() {
-            return vec![notice(tr("Not available for this instrument"))];
-        }
-        let synced = find("arpSync").map(|x| x.choice).filter(|s| &**s != "off");
-        let mono = find("voiceMode").is_some_and(|x| &*x.choice != "poly");
-        let mut out = Vec::new();
-        for (title, keys) in [("Chords", &CHORD_KEYS[..]), ("Arpeggio", &ARP_KEYS[..]), ("Voices", &VOICE_KEYS[..])] {
-            let controls = keys
-                .iter()
-                .filter_map(|k| find(k))
-                .map(|mut k| {
-                    if k.key() == "arpTime"
-                        && let Some(s) = &synced
-                    {
-                        // a synced time shows its note (F-CTL-005)
-                        k.shown = Some(s.to_string());
-                        k.enabled = false;
-                    }
-                    if k.key() == "glide" {
-                        k.enabled = mono;
-                    }
-                    control(self, k, cx)
-                })
-                .collect();
-            out.push(group_card(tr(title), controls));
-        }
         out
     }
 
@@ -2953,7 +2905,7 @@ impl Render for InstrumentWindow {
         let body: Vec<AnyElement> = match self.tab {
             Tab::Instrument => self.instrument_tab(&t, &ctls, &plugins, cx),
             Tab::Envelopes => self.envelopes_tab(&ctls, cx),
-            Tab::Chords => self.chords_tab(&ctls, cx),
+            Tab::NoteEffects => self.note_effects_tab(&plugins, cx),
             Tab::Effects => self.effects_tab(&t, &plugins, cx),
             Tab::Midi => self.midi_tab(cx),
             Tab::Tuning => self.tuning_tab(&t, &ctls, cx),
