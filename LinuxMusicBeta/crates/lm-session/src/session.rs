@@ -62,6 +62,10 @@ pub enum DeviceSetup {
     Dummy(DummyOptions),
     /// An ALSA device by name (`hw:CARD=PCH,DEV=0`), Linux only
     Alsa { device: String },
+    /// A CoreAudio device on macOS: `output` is a UID, a name or `"default"`; `input` is opened only when named
+    /// (macOS asks for the microphone permission the first time an input is read). An input on a different
+    /// device than the output is an explicit private aggregate the user chose (U7)
+    CoreAudio { output: String, input: Option<String> },
 }
 
 /// What a session is made from
@@ -509,13 +513,29 @@ fn open_device(
         DeviceSetup::Alsa { .. } => Box::new(lm_io::AlsaBackend::new(None)),
         #[cfg(not(target_os = "linux"))]
         DeviceSetup::Alsa { .. } => return Err(err("session.device.alsa_unavailable")),
+        #[cfg(target_os = "macos")]
+        DeviceSetup::CoreAudio { .. } => Box::new(lm_io::CoreAudioBackend::new()),
+        #[cfg(not(target_os = "macos"))]
+        DeviceSetup::CoreAudio { .. } => return Err(err("session.device.coreaudio_unavailable")),
     };
     let name = match setup {
         DeviceSetup::Dummy(_) => "dummy".to_owned(),
         DeviceSetup::Alsa { device } => device.clone(),
+        DeviceSetup::CoreAudio { output, .. } => output.clone(),
+    };
+    let config = match setup {
+        // The input only when one is named: opening it triggers the microphone permission
+        DeviceSetup::CoreAudio { output, input } => {
+            let mut c = DeviceConfig::duplex(output, rate, block);
+            c.capture = input.clone().filter(|i| !i.is_empty());
+            // Two named devices that differ are the user's explicit combination (U7)
+            c.drift_correction = c.capture.as_ref().is_some_and(|i| i != output);
+            c
+        }
+        _ => DeviceConfig::duplex(&name, rate, block),
     };
     let mut device = Device::new(backend, crate::crashnote::render_threads());
-    let info = device.open(&DeviceConfig::duplex(&name, rate, block))?;
+    let info = device.open(&config)?;
     Ok((device, info))
 }
 

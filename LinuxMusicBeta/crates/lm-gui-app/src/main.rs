@@ -83,13 +83,20 @@ fn data_dir() -> PathBuf {
     }
 }
 
-/// The device the preferences name (I-10). The session has backends for ALSA (Linux) and the Dummy device; any
-/// other system keeps the Dummy device running in real time (the headless configuration's) until its backend lands
+/// The device the preferences name (I-10). The session has backends for ALSA (Linux), CoreAudio (macOS) and the
+/// Dummy device; any other combination keeps the Dummy device running in real time (the headless configuration's)
 fn device(prefs: &lm_session::prefs::Preferences) -> Option<DeviceSetup> {
     let system = prefs.text(&["audio", "system"]).unwrap_or("");
     let output = prefs.text(&["audio", "output"]).unwrap_or("");
-    (cfg!(target_os = "linux") && system == "alsa")
-        .then(|| DeviceSetup::Alsa { device: if output.is_empty() { "default".to_owned() } else { output.to_owned() } })
+    let output = if output.is_empty() { "default".to_owned() } else { output.to_owned() };
+    if cfg!(target_os = "linux") && system == "alsa" {
+        return Some(DeviceSetup::Alsa { device: output });
+    }
+    if cfg!(target_os = "macos") && system == "coreaudio" {
+        let input = prefs.text(&["audio", "input"]).filter(|i| !i.is_empty()).map(str::to_owned);
+        return Some(DeviceSetup::CoreAudio { output, input });
+    }
+    None
 }
 
 /// The local core: a session with the machine's preferences and device, the program's plugins, and the project

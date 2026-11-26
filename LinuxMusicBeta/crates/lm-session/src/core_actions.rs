@@ -965,6 +965,10 @@ impl Session {
             DeviceSetup::Dummy(o) => DeviceSetup::Dummy(*o),
             DeviceSetup::Alsa { .. } if name.is_empty() => self.device_setup.clone(),
             DeviceSetup::Alsa { .. } => DeviceSetup::Alsa { device: name },
+            DeviceSetup::CoreAudio { .. } => DeviceSetup::CoreAudio {
+                output: if audio("output").is_empty() { "default".to_owned() } else { audio("output") },
+                input: Some(audio("input")).filter(|i| !i.is_empty()),
+            },
         };
         self.device_setup = setup.clone();
         let (spec, source) = (self.spec, self.dummy_source);
@@ -1089,7 +1093,9 @@ impl Session {
             move |cancel, progress| {
                 #[cfg(target_os = "linux")]
                 let count = lm_io::list_devices(cancel, progress)?.len() as i64;
-                #[cfg(not(target_os = "linux"))]
+                #[cfg(target_os = "macos")]
+                let count = lm_io::coreaudio_list_devices(cancel, progress)?.len() as i64;
+                #[cfg(not(any(target_os = "linux", target_os = "macos")))]
                 let count = {
                     let _ = (cancel, progress);
                     0

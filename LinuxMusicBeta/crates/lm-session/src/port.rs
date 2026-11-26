@@ -810,7 +810,7 @@ impl CorePort for LocalPort {
     }
 }
 
-/// The audio devices (U17): ALSA's on Linux, and always the Dummy
+/// The audio devices (U17): ALSA's on Linux, CoreAudio's on macOS, and always the Dummy
 fn list_devices(cancel: &lm_base::Cancel, progress: &lm_base::Progress) -> Result<Vec<DeviceInfo>> {
     #[allow(unused_mut)]
     let mut out = vec![DeviceInfo {
@@ -832,7 +832,18 @@ fn list_devices(cancel: &lm_base::Cancel, progress: &lm_base::Progress) -> Resul
             details: Value::object([("busy", Value::bool(d.busy)), ("denied", Value::bool(d.denied))]),
         });
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    for d in lm_io::coreaudio_list_devices(cancel, progress)? {
+        out.push(DeviceInfo {
+            id: Arc::from(d.name.as_str()),
+            name: Arc::from(d.description.as_str()),
+            inputs: d.capture.as_ref().map_or(0, |c| c.channels_max),
+            outputs: d.playback.as_ref().map_or(0, |c| c.channels_max),
+            rates: d.playback.as_ref().or(d.capture.as_ref()).map(|c| c.rates.clone()).unwrap_or_default(),
+            details: Value::object([("busy", Value::bool(d.busy)), ("denied", Value::bool(d.denied))]),
+        });
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = (cancel, progress);
     }

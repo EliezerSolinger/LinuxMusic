@@ -142,7 +142,7 @@ fn serve(args: &[String]) -> Result<()> {
     let untitled = std::env::temp_dir().join("linuxmusic-headless");
     let mut config = SessionConfig::headless(untitled)?;
     if let Some(device) = flag(args, "--device") {
-        config.device = DeviceSetup::Alsa { device };
+        config.device = platform_device(device);
     }
     let (prefs, error) = lm_session::prefs::Preferences::load(lm_session::prefs::location());
     if let Some(e) = error {
@@ -217,7 +217,7 @@ fn slice(args: &[String]) -> Result<()> {
     let Some(folder) = pos.first() else { usage() };
     let mut config = SessionConfig::headless(std::env::temp_dir().join("linuxmusic-headless-slice"))?;
     match flag(args, "--device") {
-        Some(device) => config.device = DeviceSetup::Alsa { device },
+        Some(device) => config.device = platform_device(device),
         None => config.dummy_source = Some(|| Box::new(lm_session::FanNoise::default())),
     }
     if let Some(block) = flag(args, "--block") {
@@ -259,5 +259,14 @@ fn main() {
     if let Err(e) = result {
         eprintln!("error: {e}");
         std::process::exit(1);
+    }
+}
+
+/// `--device NAME` on this system: ALSA on Linux, CoreAudio (output only) on macOS
+fn platform_device(device: String) -> DeviceSetup {
+    if cfg!(target_os = "macos") {
+        DeviceSetup::CoreAudio { output: device, input: None }
+    } else {
+        DeviceSetup::Alsa { device }
     }
 }

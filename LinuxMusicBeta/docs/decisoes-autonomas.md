@@ -1555,3 +1555,24 @@ sanitizers. As causas, e as correções na raiz:
   nada), com a velocidade escalada pelo volume da faixa, como no legado.
 - **Os arquivos de teste MIDI do legado:** o legado não traz nenhum arquivo `.mid`. Os testes usam arquivos escritos à
   mão byte a byte (status corrente, nota com velocidade 0, RMID) e as voltas de exportar e importar.
+
+## CoreAudio (macOS)
+
+- **Ligação escrita à mão** (`lm-sys-coreaudio`), não `coreaudio-sys`: o `coreaudio-sys` gera as declarações com
+  `bindgen` na compilação, o que exige libclang e os cabeçalhos do SDK em toda máquina (mesmo motivo do `alsa-sys`).
+  São menos de vinte chamadas, estáveis desde o 10.5, e os tamanhos das estruturas lidas por ponteiro são conferidos
+  na compilação. Os tipos do Core Foundation vêm de `core-foundation-sys` (só declarações).
+- **`AudioDeviceIOProc` e não uma AudioUnit AUHAL:** uma proc num dispositivo dá entrada e saída na mesma chamada, no
+  relógio do dispositivo, com o tempo de host dos dois lados: o formato do `CallbackHandle`. A AUHAL acrescentaria
+  conversor de formato e mapa de canais que o programa já faz sozinho.
+- **Combinações são sempre explícitas (U7):** entrada e saída em dispositivos diferentes só com
+  `DeviceConfig::drift_correction` (a escolha do usuário); aí o backend cria um agregado **privado** (saída = mestre do
+  relógio e primeira nos fluxos; entrada com compensação de deriva ligada) e o destrói no `close`. Sem a escolha, dois
+  dispositivos são recusados (`io.device.two_cards`). Nunca há agregado implícito.
+- **Permissão de microfone:** a entrada só abre quando `capture` está configurado; a sessão no macOS usa só a saída
+  quando as preferências não nomeiam uma entrada, e a proc desliga os fluxos de entrada (`IOProcStreamUsage`).
+  Um aplicativo empacotado precisa de `NSMicrophoneUsageDescription` no `Info.plist` para o macOS perguntar.
+- **Threads:** a proc roda na thread de tempo real do CoreAudio (o gancho `RenderThreads::run` não se aplica; o
+  *flush* de subnormais é do renderizador). Uma thread de controle por `start` espera o `stop` ou a perda do
+  dispositivo, para o dispositivo (`AudioDeviceStop` só volta depois da última chamada: a barreira), relata
+  `Disconnected`/`Panicked` e solta o `CallbackHandle`.
