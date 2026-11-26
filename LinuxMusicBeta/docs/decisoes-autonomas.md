@@ -1576,3 +1576,35 @@ sanitizers. As causas, e as correções na raiz:
   *flush* de subnormais é do renderizador). Uma thread de controle por `start` espera o `stop` ou a perda do
   dispositivo, para o dispositivo (`AudioDeviceStop` só volta depois da última chamada: a barreira), relata
   `Disconnected`/`Panicked` e solta o `CallbackHandle`.
+## Lacunas do núcleo fechadas (26/11)
+
+- **Teclas, nota base, velocidade base e microafinador (F-IJN-017/019/021):** um só ponto, `lm-compile/src/keys.rs`,
+  lê a faixa e o `tuning` do projeto num `LiveKeys` (`lm-render`). Os itens MIDI são traduzidos com ele (o cache do item
+  compara o `LiveKeys`) e o `Program` o leva para a entrada MIDI ao vivo (`Program::live_keys`, por nó), então as duas
+  vias dão o mesmo resultado. A tecla é a do legado, já com a transposição do projeto (`isKeyMapped(key + masterPitch)`).
+- **Nota base:** o desvio é `69 - base` (o legado: `pitch = key - baseNote`, 440 Hz na nota base de fábrica 69). Com o
+  microafinador ligado não há desvio: a frequência vem toda do mapa. O `midiKey` do legado (`key - origBaseNote +
+  baseNote`, só para instrumentos MIDI) não é portado: o instrumento daqui recebe a tecla afinada.
+- **Velocidade base:** escala = `baseVelocity / 63`, sobre a velocidade 0..1 da nota (63 = identidade, como na decisão de
+  19/11: parâmetro da curva do host por faixa). Na entrada ao vivo, sobre a velocidade MIDI, antes da velocidade fixa.
+- **Microafinador:** `Microtuner::keyToFreq`, `Keymap::getDegree/getOctave` portados como estão (razões em `f32`; o
+  `1/1` implícito no início da escala, então a escala vazia é frequência constante, como o legado). A frequência vira o
+  evento `Tuning` (semitons em relação ao 12-TET da tecla tocada), somado à curva de bend da nota. Se o desvio passa de
+  24 semitons (mapa que não é de oitava), a tecla enviada se move e o resto vai no `Tuning`. Tecla sem grau no mapa fica
+  muda, como o legado (`m_frequency = 0`). `importRanges` toma primeira, última e nota base do mapa.
+- **Calibração:** a latência de uma gravação (`RecordPlan::latency`) é a que o dispositivo informa (entrada + saída) mais
+  o resíduo guardado para o par de dispositivos, a taxa e o reamostrador de borda (H19), mais `audio.latencyFrames`.
+- **Pastas permitidas (C9):** os recursos continuam todos dentro do projeto; o que muda é o link simbólico em
+  `audio/`, `state/` ou `render/` que sai da pasta: é seguido só dentro de uma pasta de `allowedFolders`. Fora delas o
+  recurso é `Missing` (não mais `Failed(outside_project)`) e o aviso `session.resource.not_allowed` traz a ação
+  `folder.allow` com a pasta do alvo real do link. As funções soltas `resource_path`/`resource_path_of` continuam
+  recusando tudo que sai (`outside_project`).
+- **Dispositivo perdido (I-10.1, D11):** se o `stop` estoura o tempo em `device.reopen` ou `device.calibrate`, o
+  dispositivo é abandonado (`mem::forget`, nunca solto sob a callback) e a sessão cria um par `engine()` novo, um
+  compilador novo, o Dummy, recompila da árvore e avisa (`session.device.abandoned`, com a ação `device.reopen`; as
+  preferências guardam a placa de verdade).
+- **Entradas do navegador:** `BrowserEntries` (`lm-session/src/browser.rs`) é da `Session`, e `Session::run_action` troca
+  o `entry` pelo arquivo; o `LocalPort`, o servidor remoto e o runner usam a mesma coisa.
+- **Sem testes rodados hoje** (regra do dia): só `cargo check --all-targets`. Os testes de cada item foram escritos
+  (`keys.rs`, `resources.rs`, `browser.rs`, `calibration_tests`); falta rodá-los. A recuperação do dispositivo preso não
+  tem teste (precisa de um backend que trava no `stop`).
