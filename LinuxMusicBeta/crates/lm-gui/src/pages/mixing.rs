@@ -130,11 +130,11 @@ pub const B_ATK: Knob = knob("dynamics", "attack", "ATK", "Attack", BUS, Scale::
 pub const B_REL: Knob = knob("dynamics", "release", "REL", "Release", BUS, Scale::Int(0, 4), 4.0, "");
 
 /// Every knob of a channel's analog strip, in the legacy's order (the tests check each key is in the document)
-#[cfg(test)]
+#[cfg(all(test, debug_assertions))]
 pub const STRIP_KNOBS: &[Knob] =
     &[GAIN, TRIM, HPF, LPF, BASS, BASS_FREQ, COMP, RATIO, ATK, REL, GATE, RANGE, HI, HMF, LMF, LO, PAN];
 /// Every knob of the master section
-#[cfg(test)]
+#[cfg(all(test, debug_assertions))]
 pub const MASTER_KNOBS: &[Knob] = &[WIDTH, M_BASS, M_FREQ, AIR, THR, B_RATIO, MAKE, B_ATK, B_REL];
 
 /// The bus compressor's steps (MasterSection::AttackTimes, ReleaseTimes)

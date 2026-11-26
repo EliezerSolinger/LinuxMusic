@@ -177,7 +177,7 @@ impl CompositionPage {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, debug_assertions))]
     pub(crate) fn view_for_tests(&self) -> TimelineView {
         self.view
     }
@@ -500,7 +500,7 @@ impl CompositionPage {
     }
 
     /// Where an item is drawn, in window coordinates: a point in its body (the tests click there)
-    #[cfg(test)]
+    #[cfg(all(test, debug_assertions))]
     pub fn item_point(&self, item: NodeId) -> Option<gpui::Point<Pixels>> {
         let b = *self.timeline_bounds.borrow();
         let (x, y, w, h, ..) = self.hits.borrow().iter().find(|h| h.4 == item).copied()?;
@@ -849,7 +849,7 @@ impl CompositionPage {
     }
 
     /// Where a track's row was drawn in the last frame, relative to the timeline: (y, h)
-    #[cfg(test)]
+    #[cfg(all(test, debug_assertions))]
     pub fn track_row(&self, track: NodeId) -> Option<(f32, f32)> {
         self.track_hits.borrow().iter().find(|(.., t)| *t == track).map(|(y, h, _)| (*y, *h))
     }

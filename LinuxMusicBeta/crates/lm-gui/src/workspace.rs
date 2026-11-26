@@ -190,7 +190,7 @@ impl Workspace {
     }
 
     /// An open screen's view (the tests reach the screen's own state through it)
-    #[cfg(test)]
+    #[cfg(all(test, debug_assertions))]
     pub fn screen_view(&self, s: Screen) -> Option<AnyView> {
         self.open.iter().find(|(o, _)| *o == s).map(|(_, v)| v.clone())
     }
