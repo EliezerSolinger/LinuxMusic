@@ -45,6 +45,11 @@ pub(crate) mod midi;
 #[path = "external.rs"]
 pub(crate) mod external;
 
+/// The actions the interface sends that the session answers (project templates, the zip, cleaning, takes, the safe
+/// mode, the devices, locating files, presets): a child module, so it works on the session's own fields
+#[path = "core_actions.rs"]
+pub(crate) mod core_actions;
+
 /// How often the clock thread wakes the main thread (H2)
 pub const PUMP_PERIOD: Duration = Duration::from_millis(10);
 /// While a gesture is open, its changes reach the journal at least this often (T11)
@@ -337,6 +342,10 @@ pub struct Session {
     delay: Duration,
     device_setup: DeviceSetup,
     dummy_source: Option<fn() -> Box<dyn lm_io::DummySource>>,
+    /// The device a calibration took to its worker comes back through here (`core_actions`)
+    calibrating: Option<Arc<Mutex<Option<Device>>>>,
+    /// When the slow parts of the status (the unused files, the templates) were last read (host ns)
+    slow_status_at: u64,
     untitled: PathBuf,
     /// A "save as" copying the audio: where the project goes, with the lock already taken
     pending_save_as: Option<(lm_base::OperationId, ProjectFolder, ProjectLock)>,
@@ -603,6 +612,8 @@ impl Session {
             delay: config.delay,
             device_setup: config.device.clone(),
             dummy_source: config.dummy_source,
+            calibrating: None,
+            slow_status_at: 0,
             untitled: config.untitled.clone(),
             pending_save_as: None,
             block: config.block,
@@ -1452,6 +1463,11 @@ impl Session {
                 }
             }
             ("plugins.state" | "plugins.state.save", r) => self.states_finished(kind, r),
+            (
+                "locate" | "export_zip" | "save_template" | "clean_unused" | "new_from_template" | "device.calibrate"
+                | "devices.scan",
+                r,
+            ) => self.core_op_finished(kind, target, r),
             ("midi_import", Ok(result)) => self.midi_import_finished(result),
             ("slicert.analyze", Ok(result)) => {
                 if let Err(e) = self.slicert_finished(&result) {
@@ -1926,10 +1942,7 @@ impl Session {
 
     /// Makes a new project in `folder` and saves it there at once
     pub fn create(&mut self, folder: PathBuf) -> Result<()> {
-        let options = project_options(&self.plugins, &self.schemas, self.limits);
-        let document = Document::new_project(self.schemas.clone(), options)?;
-        self.replace_document(document, None)?;
-        self.save_as(folder)
+        self.create_with(folder, None, None)
     }
 
     fn replace_document(&mut self, mut document: Document, ui: Option<Value>) -> Result<()> {
@@ -2145,17 +2158,21 @@ impl Session {
                 ])
             })
             .collect();
+        let (unused, templates) = self.slow_status();
         let project = Value::object([
-            ("name", Value::text(p.folder.name())),
-            ("folder", Value::text(p.folder.root().display().to_string())),
-            ("readOnly", Value::bool(p.read_only)),
-            ("lockedBy", p.locked_by.as_ref().map_or(Value::NULL, |o| o.status())),
+            ("name", Value::text(self.project.folder.name())),
+            ("folder", Value::text(self.project.folder.root().display().to_string())),
+            ("readOnly", Value::bool(self.project.read_only)),
+            ("lockedBy", self.project.locked_by.as_ref().map_or(Value::NULL, |o| o.status())),
+            ("unused", unused),
         ]);
+        let device = self.device_status();
         let base = if self.status.is_object() { self.status.clone() } else { Value::empty_object() };
         self.status = base
             .with("project", project)
             .with("recent", self.preferences.get(&["recent"]).cloned().unwrap_or_else(Value::empty_list))
-            .with("templates", Value::empty_list())
+            .with("templates", templates)
+            .with("device", device)
             .with("interruptedTakes", Value::list(interrupted))
             .with("safeMode", Value::bool(self.safe_mode_on));
         if !self.safe_mode_on {

@@ -29,6 +29,7 @@ pub fn defaults() -> Value {
                 ("block", Value::int(256)),
                 ("driftCorrection", Value::bool(false)),
                 ("latencyFrames", Value::int(0)),
+                ("calibrations", Value::empty_list()),
             ]),
         ),
         (

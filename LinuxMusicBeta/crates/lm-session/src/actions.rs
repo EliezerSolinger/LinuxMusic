@@ -121,7 +121,16 @@ pub static ACTIONS: &[ActionSpec] = &[
     ActionSpec {
         id: "project.new",
         label: "action.project.new",
-        run: |s, p| s.create(PathBuf::from(text(p, "folder")?)),
+        // `{folder, rate?, template?}`: a template is a name in the templates folder
+        run: |s, p| {
+            let rate =
+                p.get("rate").and_then(Value::as_int).map(|r| u32::try_from(r).map_err(|_| params())).transpose()?;
+            s.create_with(
+                PathBuf::from(text(p, "folder")?),
+                rate,
+                p.get("template").and_then(Value::as_text).map(str::to_owned),
+            )
+        },
         enabled: always,
     },
     ActionSpec {
@@ -250,6 +259,7 @@ pub fn all() -> impl Iterator<Item = &'static ActionSpec> {
         .chain(crate::session::midi::actions::ACTIONS.iter())
         .chain(crate::session::external::ACTIONS.iter())
         .chain(crate::plugin_actions::ACTIONS.iter())
+        .chain(crate::session::core_actions::ACTIONS.iter())
 }
 
 /// The action with this id
