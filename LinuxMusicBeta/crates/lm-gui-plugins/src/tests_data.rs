@@ -88,6 +88,16 @@ fn snapshots() {
                         let r = Range { min: 0.0, max: n, step: 1.0, center: 0.0, log: false };
                         crate::widgets::draw_knob(&mut one, &k.style, r.angle(0.0), r.angle(0.0), true);
                     }
+                    Kind::Knob(k) if k.int_field => {
+                        let f = schema.find_field(k.param).unwrap();
+                        let (min, max) = match f.kind {
+                            lm_port::FieldKind::Int { min, max } => (min as f64, max as f64),
+                            _ => (0.0, 1.0),
+                        };
+                        let def = f.default.as_ref().and_then(|d| d.as_int()).unwrap_or(0) as f64;
+                        let r = Range { min, max, step: 1.0, center: min, log: false };
+                        crate::widgets::draw_knob(&mut one, &k.style, r.angle(def), r.angle(r.center), true);
+                    }
                     Kind::Knob(k) => {
                         let p = schema.find_param(k.param).unwrap();
                         let r = Range {

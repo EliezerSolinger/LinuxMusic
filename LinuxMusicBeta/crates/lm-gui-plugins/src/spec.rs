@@ -122,6 +122,9 @@ pub struct KnobSpec {
     /// A knob that turns a choice field (`param` is then the field): the knob's value is the index of the field's
     /// key in this list (Organic's waveform knobs; the legacy had a number, the new state a key, U30)
     pub choices: Option<&'static [&'static str]>,
+    /// A knob that turns an int field (`param` is then the field; BitInvader's sample length): the range is the
+    /// field's
+    pub int_field: bool,
     /// The legacy model's `setScaleLogarithmic(true)` (the knob's travel; the schema's `Scale::Log` is only how the
     /// generic editor shows it)
     pub log: bool,
@@ -249,7 +252,7 @@ pub struct Control {
 impl Control {
     pub fn target(&self) -> Target {
         match &self.kind {
-            Kind::Knob(k) if k.choices.is_some() => Target::Field(k.param),
+            Kind::Knob(k) if k.choices.is_some() || k.int_field => Target::Field(k.param),
             Kind::Knob(k) => Target::Param(k.param),
             Kind::Lcd(l) => Target::Param(l.param),
             Kind::Led(l) => l.bind.target(),
@@ -349,6 +352,7 @@ pub fn knob(
             unit_of: None,
             label: None,
             choices: None,
+            int_field: false,
             log: false,
         }),
         name: Text::new(name),
@@ -437,6 +441,15 @@ impl Control {
     pub fn choices(mut self, keys: &'static [&'static str]) -> Self {
         if let Some(k) = self.knob_mut() {
             k.choices = Some(keys);
+        }
+        self
+    }
+
+    /// A knob over an int field (see [`KnobSpec::int_field`])
+    #[must_use]
+    pub fn int_field(mut self) -> Self {
+        if let Some(k) = self.knob_mut() {
+            k.int_field = true;
         }
         self
     }

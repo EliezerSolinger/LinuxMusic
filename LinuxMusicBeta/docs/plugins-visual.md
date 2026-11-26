@@ -4998,7 +4998,7 @@ navegador e existem só para abrir projetos antigos; o painel deles vale para es
 | AudioFileProcessor | instrumento | visual próprio | `AudioFileProcessorView.cpp`, `AudioFileProcessorWaveView.cpp`, `artwork.png` | plugin existe (lm-plugins-instruments): painel a fazer |
 | AvlDrums | instrumento | visual próprio (foto e mapa de peças) | `AvlDrums.cpp`, `data/avldrums/images/*.png` | falta o plugin |
 | BassBooster | efeito | visual próprio (`artwork.svg`) | `BassBoosterControlDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `bassbooster`) |
-| BitInvader | instrumento | visual próprio | `BitInvader.cpp`, `artwork.png`, `wavegraph.png` | plugin existe (lm-plugins-instruments): painel a fazer |
+| BitInvader | instrumento | visual próprio | `BitInvader.cpp`, `artwork.png`, `wavegraph.png` | **painel feito** (`panels/bitinvader.rs`, teste `bitinvader`; falta o botão de onda do usuário, que carrega um arquivo para dentro do gráfico) |
 | Bitcrush | efeito | visual próprio (`artwork.svg`) | `BitcrushControlDialog.cpp`, `artwork.svg` | **painel feito** (`panels/effects.rs`, teste `bitcrush`) |
 | CarlaBase | instrumento (hospedeiro) | terceiros fora do processo; obsoleto (P-02) | `Carla.cpp` | obsoleto |
 | CarlaPatchbay | instrumento (hospedeiro) | terceiros fora do processo; obsoleto (P-02) | `CarlaPatchbay.cpp` | obsoleto |

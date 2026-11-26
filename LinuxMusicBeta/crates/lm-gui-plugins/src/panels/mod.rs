@@ -2,6 +2,7 @@
 
 use crate::spec::PanelSpec;
 
+pub mod bitinvader;
 pub mod effects;
 pub mod freeboy;
 pub mod frequencyshifter;
@@ -23,6 +24,7 @@ type SpecFn = fn() -> &'static PanelSpec;
 /// `plugin id → panel`
 pub static ALL: &[(&str, SpecFn)] = &[
     (tripleoscillator::ID, || &tripleoscillator::PANEL),
+    (bitinvader::ID, || &bitinvader::PANEL),
     (kicker::ID, || &kicker::PANEL),
     ("bitcrush", || &effects::BITCRUSH_PANEL),
     ("bassbooster", || &effects::BASSBOOSTER_PANEL),
@@ -53,6 +55,7 @@ pub fn spec(plugin: &str) -> Option<&'static PanelSpec> {
 /// Every panel's images (the asset test decodes them all)
 pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     tripleoscillator::ASSETS,
+    bitinvader::ASSETS,
     kicker::ASSETS,
     effects::ASSETS,
     lb302::ASSETS,

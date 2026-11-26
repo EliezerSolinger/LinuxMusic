@@ -193,6 +193,14 @@ impl<H: PortHost> PluginPanel<H> {
             let v = self.field(key, cx);
             return keys.iter().position(|k| v.as_text() == Some(*k)).unwrap_or(0) as f64;
         }
+        if self.is_int_field(key) {
+            if let Some(d) = &self.drag
+                && self.spec.controls[d.ctrl].target().key() == key
+            {
+                return d.value;
+            }
+            return self.field(key, cx).as_int().unwrap_or(0) as f64;
+        }
         if let Some(d) = &self.drag
             && self.spec.controls[d.ctrl].target() == Target::Param(self.spec.controls[d.ctrl].target().key())
             && self.spec.controls[d.ctrl].target().key() == key
@@ -203,6 +211,11 @@ impl<H: PortHost> PluginPanel<H> {
             .and_then(|s| s.get("params").and_then(|p| p.get(key)).and_then(Value::as_real))
             .or_else(|| self.schema.as_ref().and_then(|s| s.find_param(key)).map(|p| p.def))
             .unwrap_or(0.0)
+    }
+
+    /// Whether a knob turns this int field
+    fn is_int_field(&self, field: &str) -> bool {
+        self.spec.controls.iter().any(|c| matches!(&c.kind, Kind::Knob(k) if k.int_field && k.param == field))
     }
 
     /// The keys of a knob that turns this choice field, if one does
@@ -241,7 +254,13 @@ impl<H: PortHost> PluginPanel<H> {
     fn graph_len(&self, ctrl: usize, total: usize, cx: &App) -> usize {
         let Kind::Graph(g) = &self.spec.controls[ctrl].kind else { return total };
         match g.length_param {
-            Some(p) => (self.param(p, cx).round().max(1.0) as usize).min(total),
+            Some(p) => {
+                let n = match self.schema.as_ref().and_then(|s| s.find_param(p)) {
+                    Some(_) => self.param(p, cx),
+                    None => self.field(p, cx).as_int().unwrap_or(total as i64) as f64,
+                };
+                (n.round().max(1.0) as usize).min(total)
+            }
             None => total,
         }
     }
@@ -317,6 +336,12 @@ impl<H: PortHost> PluginPanel<H> {
         let p = self.schema.as_ref().and_then(|s| s.find_param(key));
         let (min, max) = match self.choice_keys(key) {
             Some(keys) => (0.0, keys.len().saturating_sub(1) as f64),
+            None if self.is_int_field(key) => {
+                match self.schema.as_ref().and_then(|s| s.find_field(key)).map(|f| &f.kind) {
+                    Some(lm_port::FieldKind::Int { min, max }) => (*min as f64, *max as f64),
+                    _ => (0.0, 1.0),
+                }
+            }
             None => p.map_or((0.0, 1.0), |p| (p.min, p.max)),
         };
         let log = log != self.toggled_log.contains(&c.target());
@@ -413,6 +438,10 @@ impl<H: PortHost> PluginPanel<H> {
             Target::Field(k) => {
                 let value = match (self.choice_keys(k), value.as_real()) {
                     (Some(keys), Some(i)) => Value::text(keys[(i.round().max(0.0) as usize).min(keys.len() - 1)]),
+                    _ if self.is_int_field(k) => {
+                        let v = value.as_real().or_else(|| value.as_int().map(|i| i as f64)).unwrap_or(0.0);
+                        Value::int(self.range(ctrl).fit(v).round() as i64)
+                    }
                     _ => value,
                 };
                 (Some(self.field_op(k, value)), None)
@@ -458,6 +487,7 @@ impl<H: PortHost> PluginPanel<H> {
             Target::Param(key) => (self.param_op(key, v), Some(key)),
             Target::Field(key) => match self.choice_keys(key) {
                 Some(keys) => (Some(self.field_op(key, Value::text(keys[(v as usize).min(keys.len() - 1)]))), None),
+                None if self.is_int_field(key) => (Some(self.field_op(key, Value::int(v.round() as i64))), None),
                 None => (None, None),
             },
         };

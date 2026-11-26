@@ -229,6 +229,19 @@ fn exercise(o: &mut Opened<'_>) {
                 o.click(id, MouseButton::Middle);
                 assert_eq!(o.field(key), def, "{id}: middle click resets");
             }
+            Kind::Knob(k) if k.int_field => {
+                // a knob over an int field: dragging up raises it, the wheel steps it, the middle button resets
+                let key = k.param;
+                o.click(id, MouseButton::Middle);
+                let def = o.field(key);
+                o.drag(id, 100.0, Modifiers::none());
+                let low = o.field(key).as_int().unwrap();
+                assert!(low < def.as_int().unwrap(), "{id}: dragged down");
+                o.drag(id, -50.0, Modifiers::none());
+                assert!(o.field(key).as_int().unwrap() > low, "{id}: dragged up");
+                o.click(id, MouseButton::Middle);
+                assert_eq!(o.field(key), def, "{id}: middle click resets");
+            }
             Kind::Knob(k) => {
                 let key = k.param;
                 let p = schema.find_param(key).unwrap().clone();
@@ -318,7 +331,13 @@ fn exercise(o: &mut Opened<'_>) {
                 let after = o.field(g.field);
                 assert_ne!(after, before, "{id}: drawing changes the samples");
                 let first = after.at(0).and_then(Value::as_real).unwrap();
-                let shown = g.length_param.map_or(g.length, |p| o.param(p).round() as usize);
+                let shown = g.length_param.map_or(g.length, |p| {
+                    if schema.find_param(p).is_some() {
+                        o.param(p).round() as usize
+                    } else {
+                        o.field(p).as_int().unwrap_or(g.length as i64) as usize
+                    }
+                });
                 let last = after.at(shown - 1).and_then(Value::as_real).unwrap();
                 assert!(first > last, "{id}: the line goes down, {first} to {last}");
                 o.undo();
@@ -601,4 +620,10 @@ fn granularpitchshifter(cx: &mut TestAppContext) {
 #[gpui::test]
 fn frequencyshifter(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::frequency_shifter::DESCRIPTOR);
+}
+
+#[gpui::test]
+fn bitinvader(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::bit_invader::DESCRIPTOR, true)], "bitinvader");
+    exercise(&mut o);
 }
