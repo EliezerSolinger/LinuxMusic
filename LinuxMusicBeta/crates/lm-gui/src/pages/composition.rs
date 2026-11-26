@@ -1124,6 +1124,7 @@ impl CompositionPage {
     /// cancels, F-TRK-027)
     fn name_label(&self, t: &TrackView, icon: &str, cx: &Context<Self>) -> AnyElement {
         let id = t.id;
+        let plugin = t.instrument.as_ref().map(|i| i.0);
         if let Some((_, state, _)) = self.renaming.as_ref().filter(|(r, ..)| *r == id) {
             return div().flex_1().h(px(22.)).text_size(px(11.)).child(Input::new(state)).into_any_element();
         }
@@ -1145,6 +1146,15 @@ impl CompositionPage {
                     if ev.click_count == 2 {
                         cx.stop_propagation();
                         p.start_rename(id, window, cx);
+                    } else if let Some(plugin) = plugin {
+                        // a click opens or closes the instrument's window (F-TRK-027)
+                        let _ = p.workspace.update(cx, |ws, cx| {
+                            if ws.is_open(Screen::Instrument) {
+                                ws.close(Screen::Instrument, cx)
+                            } else {
+                                ws.open(Screen::Instrument, Some(plugin), window, cx)
+                            }
+                        });
                     }
                 }),
             )
@@ -1580,6 +1590,7 @@ impl CompositionPage {
         let bounds_cell = self.timeline_bounds.clone();
         let tile_cache = self.tiles.clone();
         let playing_x = v.x(cursor);
+        let cursor_color = if tele.position.recording { THEME.red } else { THEME.cursor };
         let loop_x = (v.x(song.loop_range.0 as f64), v.x(song.loop_range.1 as f64), song.loop_on);
         let punch_x = (v.x(song.punch_range.0 as f64), v.x(song.punch_range.1 as f64), song.punch_on);
         let xrun_xs: Vec<f32> = tele.xrun_marks.iter().map(|m| v.x(map.tick_at(*m) as f64)).collect();
@@ -1692,7 +1703,7 @@ impl CompositionPage {
                         if playing_x >= 0.0 && playing_x < w {
                             window.paint_quad(fill(
                                 Bounds::new(at(playing_x, 0.0), size(px(1.0), b.size.height)),
-                                c(THEME.cursor),
+                                c(cursor_color),
                             ));
                         }
                     },
