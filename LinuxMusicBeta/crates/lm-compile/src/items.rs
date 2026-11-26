@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 use lm_base::Result;
 use lm_render::{
-    AudioItem, AudioSource, Curve, CurvePoint, Expression, ItemEvent, ItemEventKind, MidiItem, SampleData, Segment,
-    StreamFeeder, StreamSpec,
+    AudioItem, AudioSource, Curve, CurvePoint, Expression, ItemEvent, ItemEventKind, LiveKeys, MidiItem, SampleData,
+    Segment, StreamFeeder, StreamSpec,
 };
 use lm_state::{NodeId, Value};
 use lm_time::TempoMap;
@@ -75,7 +75,7 @@ pub struct WaitingItem {
 #[derive(Debug)]
 struct MidiEntry {
     item: Value,
-    transpose: i32,
+    keys: LiveKeys,
     tempo: Option<u64>,
     used: u64,
     out: Arc<MidiItem>,
@@ -137,22 +137,28 @@ impl Caches {
     }
 
     /// The event list of a MIDI item (`None` for an item with nothing to play)
-    pub(crate) fn midi(&mut self, id: NodeId, item: &Value, transpose: i32, tempo: &TempoMap) -> Result<Arc<MidiItem>> {
+    pub(crate) fn midi(
+        &mut self,
+        id: NodeId,
+        item: &Value,
+        keys: &LiveKeys,
+        tempo: &TempoMap,
+    ) -> Result<Arc<MidiItem>> {
         let audio_time = text(item, "timebase", "musical") == "audio";
         let tempo_key = audio_time.then_some(self.tempo_version);
         if let Some(e) = self.midi.get_mut(&id)
             && e.item.same_node(item)
-            && e.transpose == transpose
+            && e.keys == *keys
             && e.tempo == tempo_key
         {
             e.used = self.pass;
             return Ok(e.out.clone());
         }
-        let out = Arc::new(midi_events(id, item, transpose, audio_time.then_some(tempo))?);
+        let out = Arc::new(midi_events(id, item, keys, audio_time.then_some(tempo))?);
         self.made.midi_items += 1;
         self.midi.insert(
             id,
-            MidiEntry { item: item.clone(), transpose, tempo: tempo_key, used: self.pass, out: out.clone() },
+            MidiEntry { item: item.clone(), keys: keys.clone(), tempo: tempo_key, used: self.pass, out: out.clone() },
         );
         Ok(out)
     }
@@ -315,7 +321,12 @@ fn note_number(n: u64, taken: &mut std::collections::HashSet<u32>) -> u32 {
 
 /// The time-ordered events of a MIDI item. `audio_time`: the item's start and length are in samples (its notes stay
 /// in ticks from the tick where it starts)
-pub(crate) fn midi_events(id: NodeId, item: &Value, transpose: i32, audio_time: Option<&TempoMap>) -> Result<MidiItem> {
+pub(crate) fn midi_events(
+    id: NodeId,
+    item: &Value,
+    keys: &LiveKeys,
+    audio_time: Option<&TempoMap>,
+) -> Result<MidiItem> {
     let (start, end) = match audio_time {
         Some(tempo) => {
             let s = int(item, "start", 0);
@@ -356,19 +367,18 @@ pub(crate) fn midi_events(id: NodeId, item: &Value, transpose: i32, audio_time: 
                 if on >= end {
                     continue;
                 }
-                let key = int(note, "key", 60) + i64::from(transpose);
+                // The track's transposition, key range, base key and microtuner (F-IJN-019/021)
+                let key = int(note, "key", 60);
                 if !(0..=127).contains(&key) {
                     continue;
                 }
+                let Some((key, micro)) = keys.map(key as u8) else { continue };
                 let off = on.saturating_add(int(note, "length", 1).max(1)).min(end);
                 let num = note_number(n ^ ((rep as u64) << 44), &mut taken);
-                let velocity = real(note, "velocity", 0.8).clamp(0.0, 1.0) as f32;
-                events.push(ItemEvent {
-                    tick: on,
-                    kind: ItemEventKind::NoteOn { n: num, channel: 0, key: key as u8, velocity },
-                });
+                let velocity = ((real(note, "velocity", 0.8) as f32) * keys.velocity_scale).clamp(0.0, 1.0);
+                events.push(ItemEvent { tick: on, kind: ItemEventKind::NoteOn { n: num, channel: 0, key, velocity } });
                 events.push(ItemEvent { tick: off, kind: ItemEventKind::NoteOff { n: num } });
-                note_expressions(note, num, on, off, &mut events);
+                note_expressions(note, num, on, off, micro, &mut events);
             }
         }
     }
@@ -405,7 +415,7 @@ pub(crate) fn midi_events(id: NodeId, item: &Value, transpose: i32, audio_time: 
 
 /// A note's expressions (F-NOT-010, P-24): its pan at its start, and its bend curve as one ramp per segment
 /// (linear between points, the first point's value before it), cut at the note's end
-fn note_expressions(note: &Value, n: u32, on: i64, off: i64, events: &mut Vec<ItemEvent>) {
+fn note_expressions(note: &Value, n: u32, on: i64, off: i64, micro: f32, events: &mut Vec<ItemEvent>) {
     let pan = real(note, "pan", 0.0).clamp(-1.0, 1.0) as f32;
     if pan != 0.0 {
         events.push(ItemEvent {
@@ -414,9 +424,16 @@ fn note_expressions(note: &Value, n: u32, on: i64, off: i64, events: &mut Vec<It
         });
     }
     let mut points: Vec<(i64, f32)> = items(note, "bend")
-        .map(|p| (int(p, "at", 0).max(0), real(p, "semitones", 0.0).clamp(-24.0, 24.0) as f32))
+        .map(|p| (int(p, "at", 0).max(0), real(p, "semitones", 0.0).clamp(-24.0, 24.0) as f32 + micro))
         .collect();
     if points.is_empty() {
+        // The microtuner's offset alone (F-IJN-019): constant for the note
+        if micro != 0.0 {
+            events.push(ItemEvent {
+                tick: on,
+                kind: ItemEventKind::Expression { n, expression: Expression::Tuning, value: micro, until: on },
+            });
+        }
         return;
     }
     points.sort_by_key(|p| p.0);

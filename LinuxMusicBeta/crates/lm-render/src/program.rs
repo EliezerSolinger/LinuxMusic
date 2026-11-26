@@ -427,6 +427,70 @@ pub struct PortRoute {
     pub fixed_velocity: Option<u8>,
 }
 
+/// How a track shapes its notes, from the items and from the live MIDI input (F-IJN-017/019/021): the project's
+/// transposition, the keys it plays (checked on the transposed key, as the legacy's `isKeyMapped`), the base key
+/// shift in semitones, the host velocity scale (`baseVelocity / 63`), and, with the microtuner on, each key's
+/// frequency as semitones from its 12-TET pitch
+#[derive(Clone, Debug, PartialEq)]
+pub struct LiveKeys {
+    /// The project's transposition for a track that follows it, added to every key first
+    pub transpose: i8,
+    pub first: u8,
+    pub last: u8,
+    /// Semitones added to the key (the legacy `DefaultKey - baseNote`); 0 with the microtuner on
+    pub shift: i8,
+    pub velocity_scale: f32,
+    /// By the transposed key: the tuning offset in semitones, or `NaN` for a key the keymap does not map
+    pub tuning: Option<Box<[f32; 128]>>,
+}
+
+impl Default for LiveKeys {
+    fn default() -> Self {
+        Self { transpose: 0, first: 0, last: 127, shift: 0, velocity_scale: 1.0, tuning: None }
+    }
+}
+
+impl LiveKeys {
+    /// The note a played key becomes: its key and tuning offset in semitones, or `None` when the track does not
+    /// play it (out of its keys, unmapped by the keymap, or out of 0..=127 after the shifts)
+    pub fn map(&self, key: u8) -> Option<(u8, f32)> {
+        let tk = i16::from(key) + i16::from(self.transpose);
+        if !(0..=127).contains(&tk) {
+            return None;
+        }
+        let tk = tk as u8;
+        if tk < self.first || tk > self.last {
+            return None;
+        }
+        let mut offset = match &self.tuning {
+            Some(t) => {
+                let v = t[usize::from(tk)];
+                if v.is_nan() {
+                    return None;
+                }
+                v
+            }
+            None => 0.0,
+        };
+        let mut played = i16::from(tk) + i16::from(self.shift);
+        if !(0..=127).contains(&played) {
+            return None;
+        }
+        // A tuning far from the key (a keymap that is not an octave map) moves the key, so the offset stays small
+        if offset.abs() > 24.0 {
+            let moved = (played + offset.round() as i16).clamp(0, 127);
+            offset = (offset - f32::from(moved - played)).clamp(-24.0, 24.0);
+            played = moved;
+        }
+        Some((played as u8, offset))
+    }
+
+    /// A MIDI velocity (1..=127) through the host curve
+    pub fn velocity(&self, vel: u8) -> u8 {
+        ((f32::from(vel) * self.velocity_scale).round() as i32).clamp(1, 127) as u8
+    }
+}
+
 /// A node's notes and controls out to an external device (P-38): on `channel` (0..16), with the legacy's fixed
 /// velocity and fixed note (F-IJN-017). The same note-off ends the key its note-on was sent on
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -623,6 +687,8 @@ pub struct Program {
     pub(crate) slot_map: Box<[u32]>,
     pub(crate) node_map: Box<[u32]>,
     pub(crate) ports: Box<[PortRoute]>,
+    /// The live input shaping of the nodes that have one
+    pub(crate) live_keys: Box<[(NodeIndex, LiveKeys)]>,
     /// MIDI out to devices, by the node's program index
     pub(crate) midi_out: Box<[(u32, MidiOutRoute)]>,
     /// For each route, the key each sounding note was sent on (−1: none), by the note's key: its note-off ends that
@@ -698,6 +764,7 @@ pub struct ProgramBuilder {
     inputs: Vec<(NodeIndex, Vec<u16>)>,
     midi: Vec<(NodeIndex, Vec<Arc<MidiItem>>)>,
     ports: Vec<PortRoute>,
+    live_keys: Vec<(NodeIndex, LiveKeys)>,
     outputs: Vec<OutputRoute>,
     master: Option<NodeIndex>,
     preview: Option<NodeIndex>,
@@ -730,6 +797,7 @@ impl ProgramBuilder {
             inputs: Vec::new(),
             midi: Vec::new(),
             ports: Vec::new(),
+            live_keys: Vec::new(),
             outputs: Vec::new(),
             master: None,
             preview: None,
@@ -789,6 +857,12 @@ impl ProgramBuilder {
 
     pub fn port(&mut self, route: PortRoute) -> &mut Self {
         self.ports.push(route);
+        self
+    }
+
+    /// The shaping of a node's live MIDI input: key range, base key, velocity scale and tuning
+    pub fn live_keys(&mut self, node: NodeIndex, keys: LiveKeys) -> &mut Self {
+        self.live_keys.push((node, keys));
         self
     }
 
@@ -1229,6 +1303,7 @@ impl ProgramBuilder {
             slot_map,
             node_map,
             ports: ports.into_boxed_slice(),
+            live_keys: self.live_keys.into_boxed_slice(),
             midi_sent: vec![-1i8; midi_out.len() * 128].into_boxed_slice(),
             midi_out: midi_out.into_boxed_slice(),
             outputs: self.outputs.into_boxed_slice(),

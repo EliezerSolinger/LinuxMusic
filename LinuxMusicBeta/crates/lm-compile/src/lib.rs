@@ -18,6 +18,7 @@ mod alloc;
 mod catalog;
 mod core;
 mod items;
+mod keys;
 mod map;
 mod rack;
 mod read;

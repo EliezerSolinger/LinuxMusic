@@ -253,6 +253,8 @@ struct Plan {
     inputs: Vec<(usize, Vec<u16>)>,
     /// Live MIDI routes: (port, node, channel filter, fixed velocity)
     ports: Vec<(PortIndex, usize, Option<u8>, Option<u8>)>,
+    /// The key range, base key, velocity and tuning of the nodes' live input
+    live_keys: Vec<(usize, lm_render::LiveKeys)>,
     /// MIDI out to devices (P-38)
     midi_out: Vec<PMidiOut>,
     /// The CC rack (F-IJN-025): (instrument node, track, controller, value)
@@ -745,6 +747,9 @@ impl CompilerCore {
         }
         for (port, n, channel, fixed_velocity) in &plan.ports {
             b.port(PortRoute { port: *port, channel: *channel, node: index_of[*n], fixed_velocity: *fixed_velocity });
+        }
+        for (n, keys) in std::mem::take(&mut plan.live_keys) {
+            b.live_keys(index_of[n], keys);
         }
         for (n, port, channel, fixed_velocity, fixed_note) in &plan.midi_out {
             b.midi_out(MidiOutRoute {
@@ -1330,16 +1335,21 @@ impl CompilerCore {
                 // Notes
                 if shape.notes {
                     let transpose = if flag(t, "transpose", true) { project_transpose } else { 0 };
+                    // The keys, base key, base velocity and microtuner (F-IJN-017/019/021)
+                    let keys = crate::keys::track_keys(t, root.get("tuning"), transpose);
                     let mut list = Vec::new();
                     for item in
                         items(t, "items").filter(|i| text(i, "kind", "midi") == "midi" && !flag(i, "mute", false))
                     {
                         if let Some(iid) = id_of(item) {
-                            list.push(self.caches.midi(iid, item, transpose, &tempo)?);
+                            list.push(self.caches.midi(iid, item, &keys, &tempo)?);
                         }
                     }
                     if !list.is_empty() {
                         plan.midi.push((p, list));
+                    }
+                    if keys != lm_render::LiveKeys::default() {
+                        plan.live_keys.push((p, keys));
                     }
                     // The live input (I-21.1, F-IJN-017): armed or monitored, or following the selection; its ports
                     // (the instrument ports when none), its channel and fixed velocity

@@ -1704,11 +1704,33 @@ impl Renderer {
                     if let Some(note) = prev {
                         self.push_event(target, offset, EventKind::NoteOff { note, channel, key, velocity: 0.0 });
                     }
+                    // The track's key range, base key, host velocity and microtuner (F-IJN-017/019/021)
+                    let shaped = self.program.live_keys.iter().find(|(n, _)| *n == route.node).map(|(_, k)| k);
+                    let (play_key, tuning, vel) = match shaped {
+                        Some(k) => {
+                            let Some((pk, t)) = k.map(key) else { continue };
+                            (pk, t, k.velocity(vel))
+                        }
+                        None => (key, 0.0, vel),
+                    };
                     match self.notes.start(NoteSource::Port(m.port), channel, key, route.node) {
                         Some(note) => {
                             let vel = route.fixed_velocity.map_or(vel, |f| f.clamp(1, 127));
                             let velocity = f32::from(vel) / 127.0;
-                            self.push_event(target, offset, EventKind::NoteOn { note, channel, key, velocity });
+                            self.push_event(
+                                target,
+                                offset,
+                                EventKind::NoteOn { note, channel, key: play_key, velocity },
+                            );
+                            if tuning != 0.0 {
+                                let kind = EventKind::NoteExpression {
+                                    note,
+                                    expression: crate::Expression::Tuning,
+                                    value: tuning,
+                                    ramp: 0,
+                                };
+                                self.push_event(target, offset, kind);
+                            }
                         }
                         None => self.dropped[2] = self.dropped[2].saturating_add(1),
                     }
