@@ -1335,11 +1335,47 @@ Os instrumentos de chip do legado (Sid, FreeBoy, OpulenZ) e, em seções própri
     exportar símbolos (`no_mangle`) exige `unsafe`.
   - **As expressões de nota de CLAP e VST3** (rampas em passos de 32 quadros, valor inicial da nota) ficam em
     `lm-plugin-host/src/expressions.rs`, um só código para os dois formatos.
+- **LADSPA** (`lm-sys-ladspa`, 26/11):
+  - **O ABI à mão** (`dlopen`, `ladspa_descriptor`, o descritor): é minúsculo e congelado desde 2000. Sem cabeçalho no
+    repositório (o `ladspa.h` é LGPL; o teste declara as mesmas estruturas no próprio `.c`). Ficha de segurança no
+    topo do crate.
+  - **Varredura:** listar um arquivo roda os construtores da biblioteca, então vale o mesmo que no CLAP: o helper
+    nomeia os arquivos (`.so`, `.dylib`) sem rodar nada e cada arquivo é listado em um helper próprio com prazo; o que
+    cai ou trava vira `file:<caminho>` bloqueado. Não instancia nada para listar (portas e dicas vêm do descritor).
+  - **Identidade:** `<nome do arquivo sem extensão>:<label>` (o label só é único dentro do arquivo); o arquivo vai
+    junto e é tentado primeiro.
+  - **Parâmetros:** as portas de controle de entrada, chave `p<índice da porta>`, com os limites e o padrão das dicas da
+    especificação (LOW/MIDDLE/HIGH interpolam, em escala log se a porta é logarítmica; `SAMPLE_RATE` multiplica
+    pelos limites; inteiro e liga/desliga arredondam). Lado aberto: o padrão (ou 0 / 1) vira o limite.
+  - **Latência:** a porta de controle de saída chamada `latency`, a convenção que todo host segue.
+  - **Estado:** nenhum além dos parâmetros (o núcleo guarda os valores). Sem eventos: uma mudança de parâmetro com
+    deslocamento corta o bloco ali (sem alocar: listas de canais na pilha), então é exata na amostra. Notas são ignoradas.
+  - **Onde ficam os conjuntos que o legado distribui (calf, caps, cmt, swh, tap):** fora do processo, como terceiros
+    (P-03). O legado instala em `${PLUGIN_DIR}/ladspa`; a instalação nova deve pôr os `.so` em
+    `<prefixo>/lib/linuxmusic/ladspa` (ou em `ladspa/` ao lado do programa). A busca olha, em ordem:
+    `LADSPA_PATH`, `LINUXMUSIC_LADSPA_PATH`, `<pasta do programa>/ladspa`, `<pasta do programa>/../lib/linuxmusic/ladspa`,
+    `~/.ladspa`, `/usr/local/lib/ladspa`, `/usr/lib/ladspa`, `/usr/lib64/ladspa` e o diretório multiarch (no Mac:
+    `~/Library/Audio/Plug-Ins/LADSPA`, `/Library/Audio/Plug-Ins/LADSPA`, `/opt/homebrew/lib/ladspa`).
+  - Sem pacote de sistema novo (só `libc`/`dlopen`); o plugin de teste é compilado com o `cc`.
+- **Dual mono** (`lm-plugin-host/src/dual.rs`, 26/11): um plugin de uma entrada e uma saída de áudio, num bloco de
+  2 entradas e 2 saídas (quem monta o `LoadRequest` pede o número de canais da faixa), roda como duas instâncias, uma
+  por canal, para qualquer formato que diga seus canais (`Plugin::io`: LV2, CLAP, LADSPA; o VST3 ainda não diz).
+  Parâmetros e eventos vão aos dois; o estado salvo é o do primeiro e o restaurado vai aos dois; as mudanças de
+  parâmetro que o primeiro faz sozinho são copiadas ao segundo no mesmo bloco, para os dois não se afastarem.
+- **Prioridade de tempo real do helper** (26/11): a thread de áudio do helper entra no grupo de tempo real uma vez, antes
+  do laço (`lm-sys-linux`: `SCHED_FIFO` direto se os limites deixam, senão rtkit), com a pilha tocada antes, na mesma
+  prioridade das threads de render do núcleo (40). Sem permissão o plugin toca assim mesmo e o helper avisa no stderr.
+  `LM_PLUGIN_HOST_NO_RT` desliga (para quem roda muitos helpers juntos, como uma máquina de testes sem rtkit).
+- **VST3, projeto (já feito no `lm-sys-vst3`, 25/11):** a escolha foi o crate `vst3` (bindings em Rust das interfaces do
+  SDK, licença MIT/Apache) em vez de um shim C++: o SDK da Steinberg é GPLv3 ou proprietário e o projeto é GPL; o crate
+  evita compilar C++ e linkar o SDK.
 - **Pendente:**
-  - Plugin mono numa faixa estéreo processa só o canal 0. Falta rodar duas instâncias em dual mono.
   - Janela do plugin pelo helper (I-22): o protocolo tem `gui`; o LV2 precisa do suil/GTK.
-  - Prioridade de tempo real na thread de áudio do helper (pelo `lm-sys-linux`).
-  - Os formatos LADSPA e VST2-wine; janelas de CLAP e VST3 (item 4).
+  - VST3 dizer seus canais (`Plugin::io`) para entrar no dual mono; mono-para-estéreo de instrumento (uma saída
+    espalhada em duas).
+  - VST2 pelo wine; janelas de CLAP e VST3 (item 4); agrupar helpers.
+  - Rodar os testes novos (`lm-sys-ladspa/tests/instance.rs`, `lm-plugin-host/tests/ladspa.rs`): escritos sem rodar, a
+    pedido (26/11).
 
 ## Do `lm-session`, continuação 2 (20/11)
 
