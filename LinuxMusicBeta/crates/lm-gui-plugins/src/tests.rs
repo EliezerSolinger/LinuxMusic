@@ -776,3 +776,9 @@ fn watsyn(cx: &mut TestAppContext) {
     let mut o = open(cx, &[(&lm_plugins_instruments::watsyn::DESCRIPTOR, true)], "watsyn");
     exercise(&mut o);
 }
+
+#[gpui::test]
+fn vibed(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::vibed::DESCRIPTOR, true)], "vibed");
+    exercise(&mut o);
+}
