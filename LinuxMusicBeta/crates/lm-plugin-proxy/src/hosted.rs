@@ -62,7 +62,7 @@ impl HostConfig {
 pub struct LoadRequest {
     /// `"lv2"`, `"clap"`, `"vst3"`, `"ladspa"` (and `"test"`, the helper's own test plugins)
     pub format: String,
-    /// The plugin's id in its format: an LV2 URI, a CLAP id, a VST3 class id, a LADSPA `file:label`
+    /// The plugin's id in its format: an LV2 URI, a CLAP id, a VST3 class id, a LADSPA `<file stem>:<label>`
     pub uri: String,
     pub rate: u32,
     pub max_block: usize,

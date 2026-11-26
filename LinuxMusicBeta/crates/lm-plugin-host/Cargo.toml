@@ -1,6 +1,6 @@
 [package]
 name = "lm-plugin-host"
-description = "LinuxMusic: the helper process that hosts third-party plugins out of the core (I-9.6): LV2, the test plugins, and the formats to come"
+description = "LinuxMusic: the helper process that hosts third-party plugins out of the core (I-9.6): LV2, CLAP, VST3, LADSPA and the test plugins"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,7 +22,12 @@ lm-sys-ipc.workspace = true
 lm-sys-lilv.workspace = true
 lm-sys-clap.workspace = true
 lm-sys-vst3.workspace = true
+lm-sys-ladspa.workspace = true
 lm-plugin-proxy.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The audio thread's real-time priority (SCHED_FIFO, or rtkit), as the core's render threads get it
+lm-sys-linux.workspace = true
 
 [dev-dependencies]
 assert_no_alloc.workspace = true
@@ -31,6 +36,7 @@ lm-time.workspace = true
 lm-session.workspace = true
 lm-sys-clap = { workspace = true, features = ["testing"] }
 lm-sys-vst3 = { workspace = true, features = ["testing"] }
+lm-sys-ladspa = { workspace = true, features = ["testing"] }
 # The VST3 test plugins as a shared library (its cdylib is built next to the tests)
 lm-sys-vst3-test.workspace = true
 lm-doc.workspace = true

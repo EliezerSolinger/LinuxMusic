@@ -17,7 +17,7 @@ use crate::protocol::{error_from, read_message};
 /// One parameter of a scanned plugin
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScannedParam {
-    /// Its permanent key in the format (an LV2 port symbol, a CLAP param id, a LADSPA port name)
+    /// Its permanent key in the format (an LV2 port symbol, a CLAP param id, a LADSPA `p<port index>`)
     pub key: String,
     pub name: String,
     pub min: f64,

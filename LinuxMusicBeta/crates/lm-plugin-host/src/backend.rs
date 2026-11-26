@@ -97,6 +97,10 @@ impl Transport {
 /// A plugin instance in the helper
 pub trait Plugin: Send {
     fn params(&self) -> &[Param];
+    /// The audio channels the plugin has: (inputs, outputs); `None` when it does not say (it never runs as dual mono)
+    fn io(&self) -> Option<(usize, usize)> {
+        None
+    }
     fn latency(&self) -> u32;
     fn set_param(&mut self, index: u32, value: f32);
     /// A parameter's value now (after a state was restored, the core reads them back)

@@ -15,14 +15,16 @@
 //! The main thread is the plugin's main thread: it answers the control channel (read by a thread of its own) and
 //! gives the plugin its turn every 10 ms ([`backend::Plugin::idle`]).
 //!
-//! Formats: `lv2`, `clap`, `vst3`, `test` (the helper's own test plugins). LADSPA and VST2 (through wine) take the same
-//! place behind [`backend::Plugin`].
+//! Formats: `lv2`, `clap`, `vst3`, `ladspa`, `test` (the helper's own test plugins). VST2 (through wine) takes the same
+//! place behind [`backend::Plugin`]. A mono plugin on a stereo channel runs as two instances ([`dual`]).
 
 #![allow(clippy::print_stderr)]
 
 mod backend;
 mod clap;
+mod dual;
 mod expressions;
+mod ladspa;
 mod lv2;
 mod test_plugins;
 mod vst3;
@@ -44,6 +46,12 @@ use crate::backend::{Listed, Plugin, Transport, unknown_format};
 
 /// The most channels a plugin gets per direction
 const MAX_CHANNELS: usize = 64;
+/// The priority of the helper's audio thread: the same as the core's render threads (`lm_io::rt::DEFAULT_PRIORITY`)
+#[cfg(target_os = "linux")]
+const AUDIO_PRIORITY: u32 = 40;
+/// How long rtkit may take to answer
+#[cfg(target_os = "linux")]
+const RTKIT_TIMEOUT: Duration = Duration::from_secs(2);
 /// How often the plugin's main thread gets its turn
 const IDLE: Duration = Duration::from_millis(10);
 
@@ -61,6 +69,7 @@ fn files(format: &str, paths: &[PathBuf], system: bool) -> Result<Option<Vec<Pat
     match format {
         "clap" => Ok(Some(clap::files(paths, system))),
         "vst3" => Ok(Some(vst3::files(paths, system))),
+        "ladspa" => Ok(Some(ladspa::files(paths, system))),
         "lv2" | "test" => Ok(None),
         other => Err(unknown_format(other)),
     }
@@ -71,6 +80,7 @@ fn list(format: &str, paths: &[PathBuf], file: Option<&Path>, system: bool) -> R
         "lv2" => lv2::list(paths),
         "clap" => clap::list(paths, file, system),
         "vst3" => vst3::list(paths, file, system),
+        "ladspa" => ladspa::list(paths, file, system),
         "test" => Ok(test_plugins::list()),
         other => Err(unknown_format(other)),
     }
@@ -88,6 +98,7 @@ fn open(
         "lv2" => Ok(Box::new(lv2::Lv2::open(paths, uri, rate, max_block)?)),
         "clap" => Ok(Box::new(clap::Clap::open(paths, file, uri, rate, max_block)?)),
         "vst3" => Ok(Box::new(vst3::Vst3::open(paths, file, uri, rate, max_block)?)),
+        "ladspa" => Ok(Box::new(ladspa::Ladspa::open(paths, file, uri, rate, max_block)?)),
         "test" => Ok(Box::new(test_plugins::Test::open(uri, max_block)?)),
         other => Err(unknown_format(other)),
     }
@@ -131,9 +142,28 @@ fn probe(format: &str, uri: &str, paths: &[PathBuf], file: Option<&Path>) -> Res
     Ok(())
 }
 
+/// The audio thread joins the real-time group: `SCHED_FIFO` directly when the limits allow, otherwise through rtkit
+/// (the same as the core's render threads), with its stack touched first. Once, before the loop. Without permission
+/// the plugin plays anyway (the core already tells the user what to configure) and the helper says so on stderr
+#[cfg(target_os = "linux")]
+fn realtime() -> Option<lm_sys_linux::RealtimeGuard> {
+    lm_sys_linux::prefault_stack(128 * 1024);
+    let bus = lm_sys_linux::SystemBus::start().ok();
+    match lm_sys_linux::make_current_thread_realtime(AUDIO_PRIORITY, bus.as_ref(), RTKIT_TIMEOUT) {
+        Ok(guard) => Some(guard),
+        Err(e) => {
+            eprintln!("lm-plugin-host: the audio thread is not real time: {e}");
+            None
+        }
+    }
+}
+
 /// The audio side: waits for a block, processes it, answers
 fn audio_loop(shm: Arc<SharedMemory>, layout: Layout, plugin: Arc<Mutex<Box<dyn Plugin>>>, quit: Arc<AtomicBool>) {
     lm_sys_clap::set_thread_role(lm_sys_clap::ThreadRole::Audio);
+    // `LM_PLUGIN_HOST_NO_RT` turns it off
+    #[cfg(target_os = "linux")]
+    let _realtime = if std::env::var_os("LM_PLUGIN_HOST_NO_RT").is_some() { None } else { realtime() };
     let words = shm.words();
     let rate = words[w::RATE].load(Ordering::Relaxed);
     let mut last = words[w::REQUEST].load(Ordering::Acquire);
@@ -242,6 +272,11 @@ fn run(paths: &[PathBuf]) -> Result<()> {
     let layout = Layout::read_header(shm.words()).ok_or_else(|| Error::new("plugin_host.block"))?;
     let rate = shm.words()[w::RATE].load(Ordering::Relaxed);
     let mut plugin = open(&format, &uri, file.as_deref(), paths, rate, layout.max_block)?;
+    // A mono plugin on a stereo channel: two instances, one per channel
+    if dual::applies(plugin.io(), layout.inputs, layout.outputs) {
+        let second = open(&format, &uri, file.as_deref(), paths, rate, layout.max_block)?;
+        plugin = Box::new(dual::DualMono::new(plugin, second));
+    }
     // A state the plugin cannot take back leaves it at its defaults (the project still opens), and says so
     let restored = match load.get("chunk").and_then(Value::as_text) {
         Some(h) => unhex(h).and_then(|c| plugin.restore(&c)).is_ok(),

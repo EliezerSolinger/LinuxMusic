@@ -115,6 +115,10 @@ impl Plugin for Lv2 {
         &self.params
     }
 
+    fn io(&self) -> Option<(usize, usize)> {
+        Some((self.instance.audio_inputs().len(), self.instance.audio_outputs().len()))
+    }
+
     fn latency(&self) -> u32 {
         self.instance.latency().unwrap_or(0)
     }
