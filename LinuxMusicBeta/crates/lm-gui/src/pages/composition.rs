@@ -6,15 +6,16 @@
 //! actions). Positions are in ticks; the tempo map (lm-time) converts the cursor's samples.
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Instant;
 
 use gpui::{
     AnyElement, Bounds, Context, Entity, FocusHandle, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PathBuilder, PinchEvent, Pixels, Render, ScrollDelta, ScrollEvent, SharedString, WeakEntity, Window,
-    canvas, div, fill, point, prelude::*, px, size,
+    MouseUpEvent, PathBuilder, PinchEvent, Pixels, Render, ScrollDelta, ScrollEvent, SharedString, Subscription,
+    WeakEntity, Window, canvas, div, fill, point, prelude::*, px, size,
 };
+use gpui_component::input::{Input, InputEvent, InputState};
 use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, Ref, Resource, Target, Topic, Value};
 use lm_time::TempoMap;
 
@@ -86,7 +87,13 @@ struct ItemDrag {
     length: i64,
     /// the other selected items and their starts, moved with it
     others: Vec<(NodeId, i64)>,
-    gesture: GestureId,
+    /// None for a copy: nothing changes until the button goes up (F-CLP-005)
+    gesture: Option<GestureId>,
+    /// Ctrl+drag on a selected item: the copy (F-CLP-005)
+    copy: bool,
+    /// The place the items would land: the distance in ticks and, when the tracks changed, each item's track
+    /// (F-CLP-004)
+    ghost: Option<(i64, Vec<(NodeId, NodeId)>)>,
 }
 
 /// What was drawn where in the last frame, relative to the timeline: (x, y, w, h, item, fade in px, fade out px)
@@ -108,6 +115,13 @@ pub struct CompositionPage {
     show_takes: HashSet<NodeId>,
     show_automation: HashSet<NodeId>,
     pub track_h: f32,
+    /// The height a track was dragged to (F-TRK-030); the others have `track_h`
+    pub track_heights: HashMap<NodeId, f32>,
+    /// A track being dragged by its number (F-TRK-029) and one being resized by its bottom border (F-TRK-030)
+    track_drag: Option<edit::TrackDrag>,
+    height_drag: Option<(NodeId, f32, f32)>,
+    /// The track whose name is being edited in place (F-TRK-027)
+    renaming: Option<(NodeId, Entity<InputState>, Subscription)>,
     pub follow_cursor: bool,
     /// The volume knob's menu (F-CTL-006, I-21.2): the track and where it opened, in window coordinates
     knob_menu: Option<(NodeId, gpui::Point<Pixels>)>,
@@ -130,17 +144,38 @@ pub struct CompositionPage {
     ed: EditState,
 }
 
-/// The rows: tracks not hidden by a collapsed folder, then each track's take lanes and automation lanes
-fn layout(tracks: &[TrackView], track_h: f32, takes: &HashSet<NodeId>, automation: &HashSet<NodeId>) -> Vec<Row> {
+/// How deep a track is in the folders, and whether a collapsed folder above it hides it
+fn depth_of(tracks: &[TrackView], t: &TrackView) -> (u8, bool) {
+    let (mut depth, mut hidden, mut at) = (0u8, false, t.parent);
+    while let Some(pid) = at {
+        let Some(parent) = tracks.iter().find(|x| x.id == pid) else { break };
+        depth += 1;
+        hidden |= parent.collapsed;
+        at = parent.parent;
+        if depth > 16 {
+            break;
+        }
+    }
+    (depth, hidden)
+}
+
+/// The rows: tracks not hidden by a collapsed folder (each with its own height, else `track_h`), then each track's
+/// take lanes and automation lanes
+fn layout(
+    tracks: &[TrackView],
+    track_h: f32,
+    heights: &HashMap<NodeId, f32>,
+    takes: &HashSet<NodeId>,
+    automation: &HashSet<NodeId>,
+) -> Vec<Row> {
     let mut rows = Vec::with_capacity(tracks.len() + 8);
     let mut top = 0.0;
     for (i, t) in tracks.iter().enumerate() {
-        let parent = t.parent.and_then(|p| tracks.iter().find(|x| x.id == p));
-        if parent.is_some_and(|p| p.collapsed) {
+        let (depth, hidden) = depth_of(tracks, t);
+        if hidden {
             continue;
         }
-        let depth = parent.is_some() as u8;
-        let h = if t.folder { FOLDER_H.min(track_h) } else { track_h };
+        let h = if t.folder { FOLDER_H.min(track_h) } else { heights.get(&t.id).copied().unwrap_or(track_h) };
         rows.push(Row { kind: RowKind::Track(i), top, h, depth });
         top += h;
         if takes.contains(&t.id) {
@@ -179,6 +214,10 @@ impl CompositionPage {
             show_takes: HashSet::new(),
             show_automation: HashSet::new(),
             track_h: view::TRACK_H,
+            track_heights: HashMap::new(),
+            track_drag: None,
+            height_drag: None,
+            renaming: None,
             follow_cursor: false,
             knob_menu: None,
             lane_menu: None,
@@ -303,7 +342,7 @@ impl CompositionPage {
     }
 
     fn content_h(&self, cx: &Context<Self>) -> f64 {
-        layout(&self.tracks(cx), self.track_h, &self.show_takes, &self.show_automation)
+        layout(&self.tracks(cx), self.track_h, &self.track_heights, &self.show_takes, &self.show_automation)
             .last()
             .map_or(0.0, |r| (r.top + r.h) as f64)
     }
@@ -320,11 +359,13 @@ impl CompositionPage {
         if wheel && ev.modifiers.alt && (ev.modifiers.control || ev.modifiers.shift) {
             let step = if ev.modifiers.shift { 5.0 } else { 1.0 };
             self.track_h = (self.track_h + step * dy.signum() as f32).clamp(24.0, 160.0);
+            self.track_heights.clear();
             cx.notify();
             return;
         }
         if ev.modifiers.control && wheel {
             self.track_h = (self.track_h * (1.0 + dy as f32 * 0.004)).clamp(24.0, 160.0);
+            self.track_heights.clear();
             cx.notify();
             return;
         }
@@ -435,7 +476,7 @@ impl Render for CompositionPage {
             self.selected_item = None;
         }
         let tracks = self.tracks(cx);
-        let rows = layout(&tracks, self.track_h, &self.show_takes, &self.show_automation);
+        let rows = layout(&tracks, self.track_h, &self.track_heights, &self.show_takes, &self.show_automation);
         let content_h = rows.last().map_or(0.0, |r| (r.top + r.h) as f64);
         if let Some(v) = self.core.read(cx).bench.view(now) {
             // the measurement's script: its samples read as ticks at 120 BPM (25 samples a tick)
@@ -518,6 +559,7 @@ impl Render for CompositionPage {
             .children(self.render_clip_menu(cx))
             .children(self.render_track_menu(cx))
             .children(self.render_io_menu(cx))
+            .children(self.render_palette(cx))
             .children(self.render_confirm_remove(cx))
     }
 }
@@ -724,6 +766,16 @@ impl CompositionPage {
                 };
                 div().absolute().top(px(top)).left(px(0.)).w(px(view::HEADER_W)).h(px(r.h)).child(el)
             }))
+            // the line where a dragged track would land (F-TRK-029)
+            .children(self.track_drag.as_ref().and_then(|d| d.indicator).map(|(y, depth)| {
+                div()
+                    .absolute()
+                    .top(px(y - 1.0))
+                    .left(px(depth as f32 * INDENT))
+                    .w(px(view::HEADER_W - depth as f32 * INDENT))
+                    .h(px(2.))
+                    .bg(c(THEME.cursor))
+            }))
             // under the last track: add one (the legacy song editor's "Add instrument track" and "Add sample track")
             .child(
                 div()
@@ -779,19 +831,32 @@ impl CompositionPage {
 
     fn track_header(&self, t: &TrackView, r: &Row, core: &Core, inputs: &[f32], cx: &Context<Self>) -> AnyElement {
         let (i, id) = (t.index, t.id);
+        // the number on the track's colour is the handle that moves the track (F-TRK-020, F-TRK-029)
         let number = div()
+            .id(("grip", i))
+            .debug_selector(move || format!("grip-{i}"))
             .w(px(22.))
             .h_full()
-            .bg(c(track_color(i)))
+            .bg(c(t.color.unwrap_or_else(|| track_color(i))))
             .text_size(px(10.))
             .font_weight(FontWeight::BOLD)
             .text_color(c(THEME.on_accent))
             .pt(px(4.))
             .flex()
             .justify_center()
+            .cursor_pointer()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    p.ed.track = Some(id);
+                    p.begin_track_drag(id, ev, cx);
+                }),
+            )
             .child(format!("{}", i + 1));
         let base = div()
             .size_full()
+            .relative()
             .flex()
             .flex_row()
             .bg(c(THEME.bg2))
@@ -807,6 +872,7 @@ impl CompositionPage {
                     // Shift+click: the default height again (F-TRK-030)
                     if ev.modifiers.shift {
                         p.track_h = view::TRACK_H;
+                        p.track_heights.remove(&id);
                     }
                     cx.notify();
                 }),
@@ -840,13 +906,7 @@ impl CompositionPage {
                                 .debug_selector(move || format!("fold-{i}"))
                                 .on_click(cx.listener(move |p, _, _, cx| p.toggle(id, "collapsed", collapsed, cx))),
                         )
-                        .child(
-                            div()
-                                .text_size(px(12.))
-                                .font_weight(FontWeight::BOLD)
-                                .flex_1()
-                                .child(format!("📁 {}", t.name)),
-                        )
+                        .child(self.name_label(t, "📁", cx))
                         .child(mute_b)
                         .child(solo_b),
                 )
@@ -863,16 +923,7 @@ impl CompositionPage {
         let auto_on = self.show_automation.contains(&id);
         let monitor = t.monitor.clone();
         let compact = r.h < 50.0;
-        let name = div()
-            .flex_1()
-            .h(px(18.))
-            .px(px(6.))
-            .rounded(px(3.))
-            .bg(c(THEME.bg1))
-            .text_size(px(12.))
-            .font_weight(FontWeight::BOLD)
-            .overflow_hidden()
-            .child(format!("{icon} {}", t.name));
+        let name = self.name_label(t, icon, cx);
         let first_row = div()
             .flex()
             .flex_row()
@@ -1023,7 +1074,89 @@ impl CompositionPage {
                 )
                 .when(outs > 1, |d| d.child(div().size(px(5.)).rounded(px(3.)).bg(c(THEME.green)))),
         )
+        // the bottom border: drag changes this track's height, Shift+click gives it back the default (F-TRK-030)
+        .child(
+            div()
+                .id(("resize", i))
+                .debug_selector(move || format!("resize-{i}"))
+                .absolute()
+                .left(px(0.))
+                .bottom(px(0.))
+                .w_full()
+                .h(px(4.))
+                .cursor_ns_resize()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        if ev.modifiers.shift {
+                            p.track_heights.remove(&id);
+                        } else {
+                            let h = p.track_heights.get(&id).copied().unwrap_or(p.track_h);
+                            p.height_drag = Some((id, ev.position.y.as_f32(), h));
+                        }
+                        cx.notify();
+                    }),
+                ),
+        )
         .into_any_element()
+    }
+
+    /// The track's name in the header: a double click edits it in place (Enter or leaving the field keeps it, Esc
+    /// cancels, F-TRK-027)
+    fn name_label(&self, t: &TrackView, icon: &str, cx: &Context<Self>) -> AnyElement {
+        let id = t.id;
+        if let Some((_, state, _)) = self.renaming.as_ref().filter(|(r, ..)| *r == id) {
+            return div().flex_1().h(px(22.)).text_size(px(11.)).child(Input::new(state)).into_any_element();
+        }
+        div()
+            .id(("tname", t.index))
+            .debug_selector(move || format!("tname-{}", t.index))
+            .flex_1()
+            .h(px(18.))
+            .px(px(6.))
+            .rounded(px(3.))
+            .bg(c(THEME.bg1))
+            .text_size(px(12.))
+            .font_weight(FontWeight::BOLD)
+            .overflow_hidden()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |p, ev: &MouseDownEvent, window, cx| {
+                    p.ed.track = Some(id);
+                    if ev.click_count == 2 {
+                        cx.stop_propagation();
+                        p.start_rename(id, window, cx);
+                    }
+                }),
+            )
+            .child(format!("{icon} {}", t.name))
+            .into_any_element()
+    }
+
+    pub(crate) fn start_rename(&mut self, id: NodeId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(t) = self.tracks(cx).into_iter().find(|t| t.id == id) else { return };
+        self.finish_rename(true, cx);
+        let state = cx.new(|cx| InputState::new(window, cx).default_value(t.name.to_string()));
+        state.update(cx, |s, cx| s.focus(window, cx));
+        let sub = cx.subscribe_in(&state, window, move |p: &mut CompositionPage, _, ev: &InputEvent, _, cx| {
+            if matches!(ev, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                p.finish_rename(true, cx);
+            }
+        });
+        self.renaming = Some((id, state, sub));
+        self.ed.close_menus();
+        cx.notify();
+    }
+
+    /// The edit ends: the new name is kept (`keep`), or dropped (Esc)
+    pub(crate) fn finish_rename(&mut self, keep: bool, cx: &mut Context<Self>) {
+        let Some((id, state, _)) = self.renaming.take() else { return };
+        let name = state.read(cx).value().trim().to_string();
+        if keep && !name.is_empty() && self.tracks(cx).iter().any(|t| t.id == id && *t.name != name) {
+            self.apply("Rename track", vec![EditOp::set(id, &["name"], Value::text(name))], cx);
+        }
+        cx.notify();
     }
 
     fn take_header(&self, it: &ItemView, l: usize, r: &Row) -> AnyElement {
@@ -1163,7 +1296,7 @@ impl CompositionPage {
                 RowKind::Track(i) => {
                     let t = &tracks[i];
                     self.track_hits.borrow_mut().push((y, r.h, t.id));
-                    let color = track_color(i);
+                    let color = t.color.unwrap_or_else(|| track_color(i));
                     for it in &t.items {
                         let x = v.x(it.start as f64);
                         let w = (it.length as f64 / v.ticks_per_px) as f32;
@@ -1207,7 +1340,7 @@ impl CompositionPage {
                             h: r.h,
                             x,
                             w,
-                            color: if it.mute { THEME.text3 } else { color },
+                            color: if it.mute { THEME.text3 } else { it.color.unwrap_or(color) },
                             body,
                         });
                         let fi = (it.fade_in as f64 / v.ticks_per_px) as f32;
@@ -1320,7 +1453,7 @@ impl CompositionPage {
                             h: r.h,
                             x,
                             w,
-                            color: track_color(i),
+                            color: tracks[i].color.unwrap_or_else(|| track_color(i)),
                             body: Body::Dim(src, x, spp, used),
                         });
                     }

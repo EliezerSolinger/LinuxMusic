@@ -33,6 +33,11 @@ enum What {
     Ticks(i64, i64),
 }
 
+/// One track alone, and optionally a range (a clip's), that "Export the track as audio" and "Export the clip as audio"
+/// ask the export window to open on, with the name of the file (F-TRK-031, F-CLP-008)
+pub struct ExportTrack(pub Option<(NodeId, Option<(i64, i64)>, String)>);
+impl gpui::Global for ExportTrack {}
+
 /// A range the ruler asks the export window to open on (a region's ticks), taken as the window opens
 pub struct ExportRange(pub Option<(i64, i64)>);
 impl gpui::Global for ExportRange {}
@@ -60,6 +65,8 @@ pub struct Export {
     as_loop: bool,
     repeats: i64,
     track: usize,
+    /// One track alone, from a track's or a clip's menu (the track picker is then left alone)
+    only: Option<NodeId>,
     /// "Between markers": the span chosen (marker i to the next)
     marker: usize,
     stems: Stems,
@@ -86,8 +93,19 @@ impl Export {
         let project = status.get("project").cloned().unwrap_or(Value::NULL);
         let pfolder = project.get("folder").and_then(Value::as_text).unwrap_or("").to_string();
         let folder_v = if pfolder.is_empty() { String::new() } else { format!("{pfolder}/exports") };
-        let name_v =
+        let mut name_v =
             project.get("name").and_then(Value::as_text).map_or_else(|| tr("untitled").to_string(), str::to_string);
+        // from a track's or a clip's menu: that track, the clip's range, the name of the track or the clip
+        let one = cx
+            .try_global::<ExportTrack>()
+            .is_some()
+            .then(|| cx.update_global::<ExportTrack, _>(|t, _| t.0.take()))
+            .flatten();
+        if let Some((_, _, name)) = &one {
+            if !name.is_empty() {
+                name_v = name.clone();
+            }
+        }
         let folder = cx.new(|cx| InputState::new(window, cx).default_value(folder_v));
         let name = cx.new(|cx| InputState::new(window, cx).default_value(name_v));
         let subs = vec![
@@ -107,10 +125,11 @@ impl Export {
         Export {
             scx,
             page: 0,
-            what: match take_range(cx) {
+            what: match one.as_ref().and_then(|o| o.1).or_else(|| take_range(cx)) {
                 Some((a, z)) => What::Ticks(a, z),
                 None => What::Song,
             },
+            only: one.map(|o| o.0),
             bars: (lb, le),
             fast: true,
             warmup: 10.0,
@@ -186,8 +205,11 @@ impl Export {
                 ("nodes", Value::list(self.chosen.iter().map(|n| Value::text(n.to_string())))),
             ]),
         };
-        let solo =
-            if self.what == What::Track { tracks.get(self.track).map(|t| Value::text(t.id.to_string())) } else { None };
+        let solo = match self.only {
+            Some(t) => Some(Value::text(t.to_string())),
+            None if self.what == What::Track => tracks.get(self.track).map(|t| Value::text(t.id.to_string())),
+            None => None,
+        };
         let depth = self.wav.or(self.flac).unwrap_or(24);
         obj(vec![
             ("folder", Value::text(self.folder.read(cx).value().trim().to_string())),

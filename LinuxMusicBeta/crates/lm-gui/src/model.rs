@@ -102,6 +102,8 @@ pub struct CompView {
 #[derive(Clone, Debug)]
 pub struct ItemView {
     pub id: NodeId,
+    /// 0xRRGGBB, or none: the track's (F-CLP-001)
+    pub color: Option<u32>,
     pub audio: bool,
     pub name: Arc<str>,
     pub start: i64,
@@ -139,6 +141,8 @@ pub struct AutomationView {
 pub struct TrackView {
     pub index: usize,
     pub id: NodeId,
+    /// 0xRRGGBB, or none: the palette's for its place (F-TRK-001)
+    pub color: Option<u32>,
     pub name: Arc<str>,
     pub folder: bool,
     pub collapsed: bool,
@@ -154,6 +158,11 @@ pub struct TrackView {
     pub outputs: Vec<OutputView>,
     pub items: Vec<ItemView>,
     pub automation: Vec<AutomationView>,
+}
+
+/// The `color` field (0xRRGGBB); 0 or absent is the default one
+fn int_color_of(v: &Value) -> Option<u32> {
+    v.get("color").and_then(Value::as_int).filter(|c| *c != 0).map(|c| c as u32)
 }
 
 fn item_view(v: &Value) -> Option<ItemView> {
@@ -185,6 +194,7 @@ fn item_view(v: &Value) -> Option<ItemView> {
         .unwrap_or_default();
     Some(ItemView {
         id: id_of(v)?,
+        color: int_color_of(v),
         audio: v.get("kind").and_then(Value::as_text) == Some("audio"),
         name: text(v, "name"),
         start: int(v, "start", 0),
@@ -206,6 +216,7 @@ pub fn tracks(root: &Value) -> Vec<TrackView> {
             Some(TrackView {
                 index,
                 id: id_of(t)?,
+                color: int_color_of(t),
                 name: text(t, "name"),
                 folder: flag(t, "folder"),
                 collapsed: flag(t, "collapsed"),

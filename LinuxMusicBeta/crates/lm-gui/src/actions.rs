@@ -186,7 +186,14 @@ pub const REGISTRY: &[ActionDef] = &[
     a("view.notices", "lm::OpenNotices", "Notices and activities", "View", &[], None),
     a("help.about", "lm::OpenAbout", "About LinuxMusic", "Help", &["f1"], None),
     a("arrange.split_at_cursor", "composition::Split", "Split at the cursor", "Arrange", &["s"], Some("Composition")),
-    a("arrange.duplicate_selection", "composition::Duplicate", "Duplicate", "Arrange", &["secondary-d"], Some("Composition")),
+    a(
+        "arrange.duplicate_selection",
+        "composition::Duplicate",
+        "Duplicate",
+        "Arrange",
+        &["secondary-d"],
+        Some("Composition"),
+    ),
     a("arrange.delete", "composition::DeleteItem", "Delete", "Arrange", &["delete", "backspace"], Some("Composition")),
     a("arrange.empty_item", "composition::EmptyItem", "Empty item", "Arrange", &["shift-e"], Some("Composition")),
     a(
@@ -207,7 +214,14 @@ pub const REGISTRY: &[ActionDef] = &[
         &["secondary-v"],
         Some("Composition"),
     ),
-    a("clip.glue_selection", "composition::Glue", "Join the selected items", "Arrange", &["secondary-j"], Some("Composition")),
+    a(
+        "clip.glue_selection",
+        "composition::Glue",
+        "Join the selected items",
+        "Arrange",
+        &["secondary-j"],
+        Some("Composition"),
+    ),
     a(
         "arrange.select_all",
         "composition::SelectAllItems",

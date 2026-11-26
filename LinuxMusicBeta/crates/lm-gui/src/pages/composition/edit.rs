@@ -45,6 +45,66 @@ pub(super) struct LoopDrag {
     gesture: GestureId,
 }
 
+/// A track being dragged by its number (F-TRK-029): where it would land
+pub(super) struct TrackDrag {
+    track: NodeId,
+    start: (f32, f32),
+    /// Ctrl (or Alt): a copy
+    copy: bool,
+    moved: bool,
+    /// the place in the list of tracks, the folder it goes in, and the line drawn: (y, depth)
+    slot: Option<(usize, Option<NodeId>)>,
+    pub indicator: Option<(f32, u8)>,
+}
+
+/// What a colour is for (F-CLP-008, F-TRK-031)
+#[derive(Clone, Debug, PartialEq)]
+enum ColorTarget {
+    Items(Vec<NodeId>),
+    Track(NodeId),
+}
+
+/// The 48 colours of the palette: twelve hues in four shades
+fn palette48() -> Vec<u32> {
+    let mut out = Vec::with_capacity(48);
+    for (sat, val) in [(0.55, 0.95), (0.8, 0.9), (0.9, 0.7), (0.4, 0.6)] {
+        for k in 0..12 {
+            let (h, s, v) = (k as f32 * 30.0, sat, val);
+            let f = |n: f32| {
+                let kk = (n + h / 60.0) % 6.0;
+                v - v * s * kk.min(4.0 - kk).clamp(0.0, 1.0)
+            };
+            let to = |x: f32| (x * 255.0).round() as u32;
+            out.push(to(f(5.0)) << 16 | to(f(3.0)) << 8 | to(f(1.0)));
+        }
+    }
+    out
+}
+
+/// The `ports` list of a MIDI input or output with `alias` put in, or out when it was there
+fn toggled(node: &Value, alias: &str) -> Value {
+    let mut list: Vec<Value> = node.get("ports").map(|l| l.items().cloned().collect()).unwrap_or_default();
+    if let Some(i) = list.iter().position(|v| v.as_text() == Some(alias)) {
+        list.remove(i);
+    } else {
+        list.push(Value::text(alias));
+    }
+    Value::list(list)
+}
+
+/// A number that changes from one call to the next (the colour "Random")
+fn random_seed() -> usize {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| (d.subsec_nanos() as usize) / 1000 + d.as_secs() as usize)
+}
+
+/// Whether a track takes an item: a MIDI item goes to an instrument track, an audio item to an audio track, nothing
+/// to a folder (F-CLP-004)
+pub(super) fn accepts(track: &TrackView, item: &ItemView) -> bool {
+    !track.folder && item.audio != track.instrument.is_some()
+}
+
 /// What the item's menu does (F-CLP-008, F-CLP-022, F-CLP-023)
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ClipCmd {
@@ -60,10 +120,16 @@ enum ClipCmd {
     ClearNotes,
     ResetGainFades,
     Open,
+    ExportAudio,
+    ExportMidi,
+    Color,
+    ColorDefault,
+    ColorRandom,
+    TrimNotes,
 }
 
 /// What the track's menu does (F-TRK-031)
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum TrackCmd {
     Clone,
     Remove,
@@ -71,6 +137,16 @@ enum TrackCmd {
     ExportMidi,
     EnterFolder,
     LeaveFolder,
+    ExportAudio,
+    Rename,
+    Color,
+    ColorDefault,
+    ColorRandom,
+    ResetClipColors,
+    MidiInPort(std::sync::Arc<str>),
+    MidiOutOn,
+    MidiOutPort(std::sync::Arc<str>),
+    CcRack,
 }
 
 /// What the I/O button's menu does (F-TRK-024)
@@ -99,6 +175,8 @@ pub(super) struct EditState {
     clip_menu: Option<(Option<NodeId>, i64, Option<NodeId>, gpui::Point<Pixels>)>,
     track_menu: Option<(NodeId, gpui::Point<Pixels>)>,
     io_menu: Option<(NodeId, gpui::Point<Pixels>)>,
+    /// The palette of 48 colours for a clip, the clips selected, or a track (F-CLP-008, F-TRK-031)
+    palette: Option<(ColorTarget, gpui::Point<Pixels>)>,
     /// A track to remove and whether "don't ask again" is on
     confirm_remove: Option<(NodeId, bool)>,
     loop_drag: Option<LoopDrag>,
@@ -117,6 +195,7 @@ impl Default for EditState {
             clip_menu: None,
             track_menu: None,
             io_menu: None,
+            palette: None,
             confirm_remove: None,
             loop_drag: None,
         }
@@ -129,10 +208,11 @@ impl EditState {
         self.track_menu = Some((track, pos));
     }
 
-    fn close_menus(&mut self) {
+    pub(super) fn close_menus(&mut self) {
         self.clip_menu = None;
         self.track_menu = None;
         self.io_menu = None;
+        self.palette = None;
     }
 }
 
@@ -218,6 +298,7 @@ impl CompositionPage {
     }
 
     pub(super) fn select_none(&mut self, cx: &mut Context<Self>) {
+        self.finish_rename(false, cx);
         self.selected_item = None;
         self.ed.selection.clear();
         self.ed.close_menus();
@@ -418,26 +499,39 @@ impl CompositionPage {
             }
             self.selected_item = None;
             self.ed.selection.clear();
+            // the draw tool makes a clip a bar long (F-TRK-033); a double click on the empty row also opens it in its
+            // editor, in the same gesture (F-CLP-020)
             if self.ed.tool == Tool::Draw
                 && let Some(track) = row
             {
                 let tick = self.view.tick_at(mx);
                 self.create_clip_at(track, tick, cx);
+                if ev.click_count >= 2 {
+                    self.open_item(window, cx);
+                }
             }
             cx.notify();
             return;
         };
         if self.ed.tool == Tool::Knife && !ctrl {
             let tick = self.knife_tick(item, mx, ev.modifiers.alt, cx);
+            // Shift on a MIDI item: the destructive split, the notes across the cut are cut in two (F-CLP-007)
+            let cut_notes =
+                ev.modifiers.shift && self.tracks(cx).iter().flat_map(|t| &t.items).any(|i| i.id == item && !i.audio);
             self.action(
                 "arrange.split",
-                Value::object([("items", Self::ids_value(&[item])), ("tick", Value::int(tick))]),
+                Value::object([
+                    ("items", Self::ids_value(&[item])),
+                    ("tick", Value::int(tick)),
+                    ("cutNotes", Value::bool(cut_notes)),
+                ]),
                 cx,
             );
             return;
         }
-        if ctrl {
-            // Ctrl+click toggles (F-CLP-005)
+        // Ctrl+press on a selected item starts a copy; on another one it toggles the selection (F-CLP-005)
+        let copy = ctrl && self.ed.selection.contains(&item);
+        if ctrl && !copy {
             if !self.ed.selection.remove(&item) {
                 self.ed.selection.insert(item);
                 self.selected_item = Some(item);
@@ -451,12 +545,14 @@ impl CompositionPage {
             self.ed.selection = [item].into_iter().collect();
         }
         self.selected_item = Some(item);
-        if ev.click_count == 2 {
+        if ev.click_count == 2 && !copy {
             return self.open_item(window, cx);
         }
         // the top 7 px: the fade handles at the corners, the gain handle between; the edges resize and trim
         let edge = 6.0;
-        let zone = if my - y <= 7.0 {
+        let zone = if copy {
+            ItemZone::Move
+        } else if my - y <= 7.0 {
             if mx <= x + fi.max(10.0) {
                 ItemZone::FadeIn
             } else if mx >= x + w - fo.max(10.0) {
@@ -489,7 +585,8 @@ impl CompositionPage {
         } else {
             Vec::new()
         };
-        let gesture = self.core.update(cx, |core, _| core.port_mut().begin_gesture(Label::new("Item")));
+        let gesture =
+            (!copy).then(|| self.core.update(cx, |core, _| core.port_mut().begin_gesture(Label::new("Item"))));
         self.item_drag = Some(ItemDrag {
             item,
             zone,
@@ -498,6 +595,8 @@ impl CompositionPage {
             length: it.length,
             others,
             gesture,
+            copy,
+            ghost: None,
         });
         cx.stop_propagation();
         cx.notify();
@@ -525,15 +624,38 @@ impl CompositionPage {
         }
     }
 
+    /// The tracks the dragged items would land on, when the pointer is on another track: each item moves by the same
+    /// number of rows as the first (F-CLP-004). `None` when one of them is not taken (the legacy's all or nothing)
+    fn move_targets(&self, items: &[NodeId], my: f32, cx: &Context<Self>) -> Option<Vec<(NodeId, NodeId)>> {
+        let tracks = self.tracks(cx);
+        let rows: Vec<NodeId> = self.track_hits.borrow().iter().map(|(.., t)| *t).collect();
+        let source = |i: NodeId| tracks.iter().find(|t| t.items.iter().any(|x| x.id == i));
+        let to = rows.iter().position(|t| Some(*t) == self.track_at_y(my))?;
+        let first = source(*items.first()?)?.id;
+        let from = rows.iter().position(|t| *t == first)?;
+        let mut out = Vec::new();
+        for i in items {
+            let src = source(*i)?;
+            let at = rows.iter().position(|t| *t == src.id)? as i64 + to as i64 - from as i64;
+            let wanted = *rows.get(usize::try_from(at).ok()?)?;
+            let target = tracks.iter().find(|t| t.id == wanted)?;
+            if target.id != src.id && !accepts(target, src.items.iter().find(|x| x.id == *i)?) {
+                return None;
+            }
+            out.push((*i, target.id));
+        }
+        Some(out)
+    }
+
     pub(super) fn drag_item(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
         let Some(d) = &self.item_drag else { return };
-        let (item, zone, sv, len0, origin, others) =
-            (d.item, d.zone, d.start_value, d.length, d.start, d.others.clone());
+        let (item, zone, sv, len0, origin, others, copy) =
+            (d.item, d.zone, d.start_value, d.length, d.start, d.others.clone(), d.copy);
         let dx = (ev.position.x.as_f32() - origin.0) as f64 * self.view.ticks_per_px;
         let dy = (ev.position.y.as_f32() - origin.1) as f64;
         let map = self.tempo(cx);
         let frac = self.frac();
-        let free = ev.modifiers.alt || ev.modifiers.control;
+        let free = ev.modifiers.alt || (ev.modifiers.control && !copy);
         let mut ops = Vec::new();
         // an edge or a start, by the legacy's rule: the distance in grid steps; Shift: the edge on a grid line;
         // Alt or Ctrl: free (F-CLP-002, F-CLP-003)
@@ -546,13 +668,21 @@ impl CompositionPage {
                 at as i64 + snap_delta(&map, at as i64, raw - at, frac)
             }
         };
+        let mut ghost = None;
         match zone {
             ItemZone::Move => {
                 let new = moved(sv, sv + dx).max(0);
-                ops.push(EditOp::set(item, &["start"], Value::int(new)));
-                for (id, s0) in &others {
-                    ops.push(EditOp::set(*id, &["start"], Value::int((s0 + new - sv as i64).max(0))));
+                if !copy {
+                    ops.push(EditOp::set(item, &["start"], Value::int(new)));
+                    for (id, s0) in &others {
+                        ops.push(EditOp::set(*id, &["start"], Value::int((s0 + new - sv as i64).max(0))));
+                    }
                 }
+                // the tracks under the pointer (F-CLP-004)
+                let b = *self.timeline_bounds.borrow();
+                let my = ev.position.y.as_f32() - b.origin.y.as_f32();
+                let all: Vec<NodeId> = std::iter::once(item).chain(others.iter().map(|(i, _)| *i)).collect();
+                ghost = Some((new - sv as i64, self.move_targets(&all, my, cx).unwrap_or_default()));
             }
             ItemZone::ResizeEnd => {
                 let start = self.selected(cx).map_or(0, |(_, it)| it.start);
@@ -574,7 +704,12 @@ impl CompositionPage {
                     .unwrap_or_default(),
             )),
         }
-        self.core.update(cx, |core, _| core.port_mut().gesture_apply(&self.item_drag.as_ref().unwrap().gesture, ops));
+        if let Some(d) = self.item_drag.as_mut() {
+            d.ghost = ghost;
+        }
+        if let Some(g) = self.item_drag.as_ref().and_then(|d| d.gesture.as_ref()) {
+            self.core.update(cx, |core, _| core.port_mut().gesture_apply(g, ops));
+        }
         cx.notify();
     }
 
@@ -583,6 +718,11 @@ impl CompositionPage {
         let b = *self.timeline_bounds.borrow();
         let (mx, my) = ((ev.position.x - b.origin.x).as_f32(), (ev.position.y - b.origin.y).as_f32());
         self.ed.mouse = Some((mx, my));
+        if let Some((id, y0, h0)) = self.height_drag {
+            self.track_heights.insert(id, (h0 + ev.position.y.as_f32() - y0).clamp(24.0, 300.0));
+            cx.notify();
+        }
+        self.track_drag_move(ev, cx);
         if let Some((a, _)) = self.ed.marquee {
             self.ed.marquee = Some((a, (mx, my)));
             cx.notify();
@@ -600,34 +740,73 @@ impl CompositionPage {
         if let Some(d) = self.item_drag.take() {
             let now = self.selected(cx).map(|(_, it)| it);
             let delta = now.as_ref().map_or(0, |n| n.start - d.start_value as i64);
-            if d.zone == ItemZone::TrimStart {
-                // the trim again as `clip.trim_start`: the content stays where it was (F-CLP-003)
-                let tick = now.map_or(0, |n| n.start);
-                self.core.update(cx, |core, _| {
-                    core.port_mut().gesture_cancel(d.gesture);
-                    if delta != 0 {
-                        let params =
-                            Value::object([("item", Value::text(d.item.to_string())), ("tick", Value::int(tick))]);
-                        let _ = core.port_mut().run_action("clip.trim_start".into(), params);
-                    }
-                });
-            } else if d.zone == ItemZone::Move && self.move_automation && delta != 0 {
-                // the move again as `items.move`, which takes the automation under the items along: one undo step
-                let mut ids = vec![Value::text(d.item.to_string())];
-                ids.extend(d.others.iter().map(|(i, _)| Value::text(i.to_string())));
-                let params = Value::object([
-                    ("items", Value::list(ids)),
-                    ("delta", Value::int(delta)),
-                    ("automation", Value::bool(true)),
-                ]);
-                self.core.update(cx, |core, _| {
-                    core.port_mut().gesture_cancel(d.gesture);
-                    let _ = core.port_mut().run_action("items.move".into(), params);
-                });
-            } else {
-                self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
+            let (ghost_delta, targets) = d.ghost.clone().unwrap_or((0, Vec::new()));
+            let tracks = self.tracks(cx);
+            let changed = targets
+                .iter()
+                .any(|(i, t)| tracks.iter().find(|x| x.items.iter().any(|y| y.id == *i)).map(|x| x.id) != Some(*t));
+            // the items by `delta` to their tracks, moved or copied: one action, one undo step (F-CLP-004, F-CLP-005)
+            let relocate = |copy: bool, by: i64| {
+                let all: Vec<NodeId> = std::iter::once(d.item).chain(d.others.iter().map(|(i, _)| *i)).collect();
+                let mut p =
+                    vec![("items", Self::ids_value(&all)), ("delta", Value::int(by)), ("copy", Value::bool(copy))];
+                if !targets.is_empty() {
+                    p.push(("tracks", Value::list(targets.iter().map(|(_, t)| Value::text(t.to_string())))));
+                }
+                Value::object(p)
+            };
+            if d.copy {
+                if d.ghost.is_none() {
+                    // Ctrl+click on a selected item, without moving: it leaves the selection
+                    self.ed.selection.remove(&d.item);
+                    self.selected_item = self.ed.selection.iter().next().copied();
+                } else if ghost_delta != 0 || changed {
+                    let params = relocate(true, ghost_delta);
+                    self.core.update(cx, |core, _| {
+                        let _ = core.port_mut().run_action("clip.relocate".into(), params);
+                    });
+                }
+            } else if let Some(g) = d.gesture {
+                if d.zone == ItemZone::TrimStart {
+                    // the trim again as `clip.trim_start`: the content stays where it was (F-CLP-003)
+                    let tick = now.map_or(0, |n| n.start);
+                    self.core.update(cx, |core, _| {
+                        core.port_mut().gesture_cancel(g);
+                        if delta != 0 {
+                            let params =
+                                Value::object([("item", Value::text(d.item.to_string())), ("tick", Value::int(tick))]);
+                            let _ = core.port_mut().run_action("clip.trim_start".into(), params);
+                        }
+                    });
+                } else if d.zone == ItemZone::Move && changed {
+                    // to other tracks: the legacy's rules said yes for every item
+                    let params = relocate(false, delta);
+                    self.core.update(cx, |core, _| {
+                        core.port_mut().gesture_cancel(g);
+                        let _ = core.port_mut().run_action("clip.relocate".into(), params);
+                    });
+                } else if d.zone == ItemZone::Move && self.move_automation && delta != 0 {
+                    // the move again as `items.move`, which takes the automation under the items along: one undo step
+                    let mut ids = vec![Value::text(d.item.to_string())];
+                    ids.extend(d.others.iter().map(|(i, _)| Value::text(i.to_string())));
+                    let params = Value::object([
+                        ("items", Value::list(ids)),
+                        ("delta", Value::int(delta)),
+                        ("automation", Value::bool(true)),
+                    ]);
+                    self.core.update(cx, |core, _| {
+                        core.port_mut().gesture_cancel(g);
+                        let _ = core.port_mut().run_action("items.move".into(), params);
+                    });
+                } else {
+                    self.core.update(cx, |core, _| core.port_mut().gesture_commit(g));
+                }
             }
         }
+        if let Some(d) = self.track_drag.take() {
+            self.finish_track_drag(d, cx);
+        }
+        self.height_drag = None;
         if let Some((a, z)) = self.ed.marquee.take() {
             let (x0, x1) = (a.0.min(z.0), a.0.max(z.0));
             let (y0, y1) = (a.1.min(z.1), a.1.max(z.1));
@@ -647,6 +826,74 @@ impl CompositionPage {
             self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
         }
         cx.notify();
+    }
+
+    // --- dragging tracks by their number (F-TRK-029) --------------------------------------------------------------
+
+    pub(super) fn begin_track_drag(&mut self, track: NodeId, ev: &MouseDownEvent, cx: &mut Context<Self>) {
+        self.track_drag = Some(TrackDrag {
+            track,
+            start: (ev.position.x.as_f32(), ev.position.y.as_f32()),
+            copy: ev.modifiers.control || ev.modifiers.alt,
+            moved: false,
+            slot: None,
+            indicator: None,
+        });
+        cx.notify();
+    }
+
+    /// Where the dragged track would land: the slot in the list, the folder (dragging to the right goes into the
+    /// folder above, to the left out of it) and the line to draw
+    fn track_drag_move(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some(d) = &self.track_drag else { return };
+        let (dx, dy) = (ev.position.x.as_f32() - d.start.0, ev.position.y.as_f32() - d.start.1);
+        if !d.moved && dx.abs() < 4.0 && dy.abs() < 4.0 {
+            return;
+        }
+        let dragged = d.track;
+        let b = *self.timeline_bounds.borrow();
+        let my = ev.position.y.as_f32() - b.origin.y.as_f32();
+        let tracks = self.tracks(cx);
+        let hits = self.track_hits.borrow().clone();
+        let mut slot = tracks.len();
+        let mut line = hits.last().map_or(0.0, |(y, h, _)| y + h);
+        for (y, h, id) in &hits {
+            if my < y + h / 2.0 {
+                slot = tracks.iter().position(|t| t.id == *id).unwrap_or(slot);
+                line = *y;
+                break;
+            }
+        }
+        let before = |i: usize| i.checked_sub(1).and_then(|j| tracks.get(j)).filter(|t| t.id != dragged);
+        let (above, below) = (before(slot), tracks.get(slot));
+        let mut parent = match (above, below) {
+            (Some(a), Some(b)) if b.parent.is_some() && (a.folder || a.parent == b.parent) => b.parent,
+            _ => None,
+        };
+        if dx > 14.0 {
+            parent = above.and_then(|a| if a.folder { Some(a.id) } else { a.parent });
+        } else if dx < -14.0 {
+            parent = None;
+        }
+        let depth =
+            parent.map_or(0, |p| tracks.iter().find(|t| t.id == p).map_or(0, |t| super::depth_of(&tracks, t).0 + 1));
+        if let Some(d) = self.track_drag.as_mut() {
+            d.moved = true;
+            d.slot = Some((slot, parent));
+            d.indicator = Some((line, depth));
+        }
+        cx.notify();
+    }
+
+    fn finish_track_drag(&mut self, d: TrackDrag, cx: &mut Context<Self>) {
+        let Some((to, parent)) = d.slot.filter(|_| d.moved) else { return };
+        let params = Value::object([
+            ("track", Value::text(d.track.to_string())),
+            ("to", Value::int(to as i64)),
+            ("parent", parent.map_or(Value::NULL, |p| Value::text(p.to_string()))),
+            ("copy", Value::bool(d.copy)),
+        ]);
+        self.action("track.move", params, cx);
     }
 
     // --- the loop and punch handles, the Shift modes (F-REG-006, F-REG-007) --------------------------------------
@@ -819,8 +1066,88 @@ impl CompositionPage {
                 self.apply("Reset gain and fades", ops, cx);
             }
             ClipCmd::Open => self.open_item(window, cx),
+            ClipCmd::TrimNotes => {
+                self.action("clip.trim_notes", Value::object([("items", Self::ids_value(&targets))]), cx)
+            }
+            ClipCmd::ExportAudio => {
+                if let Some(i) = targets.first() {
+                    self.export_item_audio(*i, window, cx);
+                }
+            }
+            ClipCmd::ExportMidi => {
+                if let Some(i) = targets.first() {
+                    self.export_item_midi(*i, cx);
+                }
+            }
+            ClipCmd::Color => self.ed.palette = Some((ColorTarget::Items(targets), window.mouse_position())),
+            ClipCmd::ColorDefault => self.set_colors(&targets, 0, cx),
+            ClipCmd::ColorRandom => {
+                let n = random_seed();
+                let colors = palette48();
+                let ops = targets
+                    .iter()
+                    .enumerate()
+                    .map(|(k, i)| {
+                        EditOp::set(*i, &["color"], Value::int(i64::from(colors[(n + k * 7) % colors.len()])))
+                    })
+                    .collect();
+                self.apply("Colour", ops, cx);
+            }
         }
         cx.notify();
+    }
+
+    /// The colour of items or a track (0: the default, F-CLP-008, F-TRK-031)
+    fn set_colors(&mut self, ids: &[NodeId], color: u32, cx: &mut Context<Self>) {
+        let ops = ids.iter().map(|i| EditOp::set(*i, &["color"], Value::int(i64::from(color)))).collect();
+        self.apply("Colour", ops, cx);
+    }
+
+    /// "Export the clip as audio": the export window on the item's range, the item's track alone (F-CLP-008)
+    fn export_item_audio(&mut self, item: NodeId, window: &mut Window, cx: &mut Context<Self>) {
+        let tracks = self.tracks(cx);
+        let Some((t, it)) = tracks.iter().find_map(|t| t.items.iter().find(|i| i.id == item).map(|i| (t, i))) else {
+            return;
+        };
+        let (track, range, name) = (t.id, (it.start, it.start + it.length), it.name.to_string());
+        let name = if name.is_empty() { t.name.to_string() } else { name };
+        cx.set_global(crate::screens::export::ExportTrack(Some((track, Some(range), name))));
+        let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::Export, None, window, cx));
+    }
+
+    /// "Export the clip as MIDI": the system's dialog, then `midi.export` for this item
+    fn export_item_midi(&mut self, item: NodeId, cx: &mut Context<Self>) {
+        let tracks = self.tracks(cx);
+        let Some((t, it)) = tracks.iter().find_map(|t| t.items.iter().find(|i| i.id == item).map(|i| (t, i))) else {
+            return;
+        };
+        let (track, name) = (t.id, if it.name.is_empty() { t.name.to_string() } else { it.name.to_string() });
+        let core = self.core.clone();
+        let folder = core
+            .read(cx)
+            .port()
+            .status()
+            .get("project")
+            .and_then(|p| p.get("folder"))
+            .and_then(Value::as_text)
+            .unwrap_or("")
+            .to_string();
+        crate::screens::files::choose_new(
+            cx,
+            std::path::Path::new(&folder),
+            &format!("{name}.mid"),
+            move |path, cx| {
+                core.update(cx, |c, cx| {
+                    let params = Value::object([
+                        ("path", Value::text(path.display().to_string())),
+                        ("track", Value::text(track.to_string())),
+                        ("item", Value::text(item.to_string())),
+                    ]);
+                    let _ = c.port_mut().run_action("midi.export".into(), params);
+                    cx.notify();
+                });
+            },
+        );
     }
 
     // --- menus ---------------------------------------------------------------------------------------------------
@@ -873,54 +1200,64 @@ impl CompositionPage {
         let many = self.sel_ids(cx).len();
         let plural = many > 1;
         let has = self.core.read(cx).port().root().get("tracks").is_some();
-        let mut rows: Vec<(String, ClipCmd, bool)> = Vec::new();
+        // None is a rule between groups
+        let mut rows: Vec<Option<(String, ClipCmd, bool)>> = Vec::new();
         if it.is_some() {
             let s = |a: &str, b: &str| if plural { tr_str(b).to_string() } else { tr_str(a).to_string() };
-            rows.push((s("Delete", "Delete selection"), ClipCmd::Delete, true));
-            rows.push((s("Cut", "Cut selection"), ClipCmd::Cut, true));
-            rows.push((s("Copy", "Copy selection"), ClipCmd::Copy, true));
+            rows.push(Some((s("Delete", "Delete selection"), ClipCmd::Delete, true)));
+            rows.push(Some((s("Cut", "Cut selection"), ClipCmd::Cut, true)));
+            rows.push(Some((s("Copy", "Copy selection"), ClipCmd::Copy, true)));
         }
-        rows.push((tr_str("Paste").to_string(), ClipCmd::Paste, has));
+        rows.push(Some((tr_str("Paste").to_string(), ClipCmd::Paste, has)));
         if let Some(i) = it {
-            rows.push((if i.mute { tr_str("Unmute") } else { tr_str("Mute") }.to_string(), ClipCmd::Mute, true));
-            rows.push((tr_str("Split at the cursor").to_string(), ClipCmd::Split, true));
-            rows.push((tr_str("Duplicate").to_string(), ClipCmd::Duplicate, true));
-            rows.push((tr_str("Join the selection").to_string(), ClipCmd::Glue, plural));
+            rows.push(None);
+            rows.push(Some((if i.mute { tr_str("Unmute") } else { tr_str("Mute") }.to_string(), ClipCmd::Mute, true)));
+            rows.push(Some((tr_str("Split at the cursor").to_string(), ClipCmd::Split, true)));
+            rows.push(Some((tr_str("Duplicate").to_string(), ClipCmd::Duplicate, true)));
+            rows.push(Some((tr_str("Join the selection").to_string(), ClipCmd::Glue, plural)));
             if !i.audio {
-                rows.push((tr_str("Open in the piano roll").to_string(), ClipCmd::Open, true));
-                rows.push((tr_str("Transpose +1").to_string(), ClipCmd::Transpose(1), true));
-                rows.push((tr_str("Transpose -1").to_string(), ClipCmd::Transpose(-1), true));
-                rows.push((tr_str("Transpose +12").to_string(), ClipCmd::Transpose(12), true));
-                rows.push((tr_str("Transpose -12").to_string(), ClipCmd::Transpose(-12), true));
-                rows.push((tr_str("Clear all notes").to_string(), ClipCmd::ClearNotes, true));
+                rows.push(Some((tr_str("Open in the piano roll").to_string(), ClipCmd::Open, true)));
+                rows.push(None);
+                for (label, by) in
+                    [("Transpose +1", 1), ("Transpose -1", -1), ("Transpose +12", 12), ("Transpose -12", -12)]
+                {
+                    rows.push(Some((tr_str(label).to_string(), ClipCmd::Transpose(by), true)));
+                }
+                rows.push(Some((tr_str("Clear all notes").to_string(), ClipCmd::ClearNotes, true)));
+                rows.push(Some((tr_str("Cut what is left over").to_string(), ClipCmd::TrimNotes, true)));
             } else {
-                rows.push((tr_str("Reset gain and fades").to_string(), ClipCmd::ResetGainFades, true));
+                rows.push(Some((tr_str("Reset gain and fades").to_string(), ClipCmd::ResetGainFades, true)));
             }
+            rows.push(None);
+            rows.push(Some((tr_str("Export the clip as audio").to_string(), ClipCmd::ExportAudio, true)));
+            if !i.audio {
+                rows.push(Some((tr_str("Export the clip as MIDI").to_string(), ClipCmd::ExportMidi, true)));
+            }
+            rows.push(None);
+            rows.push(Some((tr_str("Colour…").to_string(), ClipCmd::Color, true)));
+            rows.push(Some((tr_str("Default colour").to_string(), ClipCmd::ColorDefault, i.color.is_some())));
+            rows.push(Some((tr_str("Random colour").to_string(), ClipCmd::ColorRandom, true)));
         }
         let list: Vec<AnyElement> = rows
             .into_iter()
             .enumerate()
-            .flat_map(|(n, (label, cmd, enabled))| {
-                let mut v = Vec::new();
-                if n == 3 && it.is_some() || (n == 4 && it.is_some() && false) {
-                    v.push(Self::rule());
-                }
+            .map(|(n, row)| {
+                let Some((label, cmd, enabled)) = row else { return Self::rule() };
                 let row = Self::menu_row(format!("clip-menu-{n}"), label, enabled);
-                v.push(if enabled {
+                if enabled {
                     row.on_click(
                         cx.listener(move |p, _, window, cx| p.run_clip_cmd(cmd, item, tick, track, window, cx)),
                     )
                     .into_any_element()
                 } else {
                     row.into_any_element()
-                });
-                v
+                }
             })
             .collect();
         Some(self.menu_box("clip-menu", pos, 220.0, cx).children(list).into_any_element())
     }
 
-    fn run_track_cmd(&mut self, cmd: TrackCmd, track: NodeId, cx: &mut Context<Self>) {
+    fn run_track_cmd(&mut self, cmd: TrackCmd, track: NodeId, window: &mut Window, cx: &mut Context<Self>) {
         self.ed.close_menus();
         let id = Value::text(track.to_string());
         match cmd {
@@ -929,8 +1266,100 @@ impl CompositionPage {
             TrackCmd::Remove => self.remove_track(track, cx),
             TrackCmd::ExportMidi => self.export_track_midi(track, cx),
             TrackCmd::EnterFolder | TrackCmd::LeaveFolder => self.folder_step(track, cmd == TrackCmd::EnterFolder, cx),
+            TrackCmd::ExportAudio => {
+                let name = self.tracks(cx).iter().find(|t| t.id == track).map(|t| t.name.to_string());
+                cx.set_global(crate::screens::export::ExportTrack(Some((track, None, name.unwrap_or_default()))));
+                let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::Export, None, window, cx));
+            }
+            TrackCmd::Rename => self.start_rename(track, window, cx),
+            TrackCmd::Color => self.ed.palette = Some((ColorTarget::Track(track), window.mouse_position())),
+            TrackCmd::ColorDefault => self.set_colors(&[track], 0, cx),
+            TrackCmd::ColorRandom => {
+                let colors = palette48();
+                self.set_colors(&[track], colors[random_seed() % colors.len()], cx);
+            }
+            TrackCmd::ResetClipColors => {
+                let ids: Vec<NodeId> = self
+                    .tracks(cx)
+                    .iter()
+                    .filter(|t| t.id == track)
+                    .flat_map(|t| t.items.iter().map(|i| i.id))
+                    .collect();
+                self.set_colors(&ids, 0, cx);
+            }
+            TrackCmd::MidiInPort(alias) => {
+                let node = self.core.read(cx).port().find(track);
+                let current = node
+                    .as_ref()
+                    .and_then(|n| n.get("midiInput").filter(|v| !v.is_null()).cloned())
+                    .unwrap_or_else(|| {
+                        Value::object([
+                            ("ports", Value::list(Vec::<Value>::new())),
+                            ("channel", Value::int(-1)),
+                            ("followSelection", Value::bool(false)),
+                        ])
+                    });
+                let v = current.with("ports", toggled(&current, &alias));
+                self.apply("MIDI input", vec![EditOp::set(track, &["midiInput"], v)], cx);
+            }
+            TrackCmd::MidiOutOn => {
+                let node = self.core.read(cx).port().find(track);
+                let out = node.as_ref().and_then(|n| n.get("midiOutput").filter(|v| !v.is_null()).cloned());
+                let v = match out {
+                    Some(o) => {
+                        let on = o.get("on").and_then(Value::as_bool).unwrap_or(true);
+                        o.with("on", Value::bool(!on))
+                    }
+                    None => {
+                        let first = self.midi_ports(cx).into_iter().find(|p| p.2).map(|p| Value::text(p.0));
+                        Value::object([
+                            ("on", Value::bool(true)),
+                            ("ports", Value::list(first)),
+                            ("channel", Value::int(0)),
+                        ])
+                    }
+                };
+                self.apply("MIDI output", vec![EditOp::set(track, &["midiOutput"], v)], cx);
+            }
+            TrackCmd::MidiOutPort(alias) => {
+                let node = self.core.read(cx).port().find(track);
+                if let Some(out) = node.as_ref().and_then(|n| n.get("midiOutput").filter(|v| !v.is_null()).cloned()) {
+                    let v = out.with("ports", toggled(&out, &alias));
+                    self.apply("MIDI output", vec![EditOp::set(track, &["midiOutput"], v)], cx);
+                }
+            }
+            TrackCmd::CcRack => {
+                let node = self.core.read(cx).port().find(track);
+                let on = node
+                    .as_ref()
+                    .and_then(|n| n.get("ccRack"))
+                    .and_then(|r| r.get("on"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let v = Value::object([("on", Value::bool(!on))]);
+                self.apply("CC rack", vec![EditOp::set(track, &["ccRack"], v)], cx);
+            }
         }
         cx.notify();
+    }
+
+    /// The machine's MIDI ports by alias (the preferences, I-21.1): (alias, input, output)
+    fn midi_ports(&self, cx: &Context<Self>) -> Vec<(std::sync::Arc<str>, bool, bool)> {
+        let prefs = self.core.read(cx).port().preferences().clone();
+        model::at(&prefs, &["midi", "ports"])
+            .map(|l| {
+                l.items()
+                    .filter_map(|p| {
+                        let alias =
+                            p.get("alias").and_then(Value::as_shared_text).cloned().filter(|a| !a.is_empty())?;
+                        let role = p.get("role").and_then(Value::as_text).unwrap_or("both");
+                        let input = p.get("input").and_then(Value::as_bool).unwrap_or(true) && role != "controller";
+                        let output = p.get("output").and_then(Value::as_bool).unwrap_or(false);
+                        Some((alias, input, output))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Remove: asks first, unless "don't ask again" was ticked (the preference `interface.confirmTrackRemoval`)
@@ -1017,27 +1446,136 @@ impl CompositionPage {
         let i = tracks.iter().position(|x| x.id == track)?;
         let can_enter =
             i > 0 && (tracks[i - 1].folder || tracks[i - 1].parent.is_some()) && t.parent != Some(tracks[i - 1].id);
-        let rows = [
-            (tr_str("Clone this track"), TrackCmd::Clone, true),
-            (tr_str("Remove this track"), TrackCmd::Remove, true),
-            (tr_str("Clear this track"), TrackCmd::Clear, !t.folder),
-            (tr_str("Export the track as MIDI"), TrackCmd::ExportMidi, t.instrument.is_some()),
-            (tr_str("Enter the folder above"), TrackCmd::EnterFolder, can_enter),
-            (tr_str("Leave the folder"), TrackCmd::LeaveFolder, t.parent.is_some()),
+        // None is a rule, an entry without a command is a heading
+        let mut rows: Vec<Option<(String, Option<TrackCmd>, bool)>> = vec![
+            Some((tr_str("Clone this track").into(), Some(TrackCmd::Clone), true)),
+            Some((tr_str("Remove this track").into(), Some(TrackCmd::Remove), true)),
+            Some((tr_str("Clear this track").into(), Some(TrackCmd::Clear), !t.folder)),
+            Some((tr_str("Rename").into(), Some(TrackCmd::Rename), true)),
+            None,
+            Some((tr_str("Export the track as audio").into(), Some(TrackCmd::ExportAudio), !t.folder)),
+            Some((tr_str("Export the track as MIDI").into(), Some(TrackCmd::ExportMidi), t.instrument.is_some())),
+            None,
+            Some((tr_str("Enter the folder above").into(), Some(TrackCmd::EnterFolder), can_enter)),
+            Some((tr_str("Leave the folder").into(), Some(TrackCmd::LeaveFolder), t.parent.is_some())),
+            None,
+            Some((tr_str("Colour…").into(), Some(TrackCmd::Color), true)),
+            Some((tr_str("Default colour").into(), Some(TrackCmd::ColorDefault), t.color.is_some())),
+            Some((tr_str("Random colour").into(), Some(TrackCmd::ColorRandom), true)),
+            Some((tr_str("Reset the clips' colours").into(), Some(TrackCmd::ResetClipColors), !t.folder)),
         ];
+        // the MIDI submenu: the input and output ports and the CC rack (F-TRK-031, F-IJN-017)
+        if t.instrument.is_some() {
+            let node = self.core.read(cx).port().find(track);
+            let input: Vec<String> = node
+                .as_ref()
+                .and_then(|n| n.get("midiInput"))
+                .and_then(|m| m.get("ports"))
+                .map(|l| l.items().filter_map(|v| v.as_text().map(str::to_owned)).collect())
+                .unwrap_or_default();
+            let output = node.as_ref().and_then(|n| n.get("midiOutput").filter(|v| !v.is_null()).cloned());
+            let out_ports: Vec<String> = output
+                .as_ref()
+                .and_then(|o| o.get("ports"))
+                .map(|l| l.items().filter_map(|v| v.as_text().map(str::to_owned)).collect())
+                .unwrap_or_default();
+            let out_on = output.as_ref().is_some_and(|o| o.get("on").and_then(Value::as_bool).unwrap_or(true));
+            let rack = node
+                .as_ref()
+                .and_then(|n| n.get("ccRack"))
+                .and_then(|r| r.get("on"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let mark = |on: bool, s: &str| format!("{} {s}", if on { "✓" } else { "  " });
+            let ports = self.midi_ports(cx);
+            rows.push(None);
+            rows.push(Some((tr_str("MIDI input").into(), None, false)));
+            for (alias, is_in, _) in &ports {
+                if *is_in {
+                    rows.push(Some((
+                        mark(input.iter().any(|p| **p == **alias), alias),
+                        Some(TrackCmd::MidiInPort(alias.clone())),
+                        true,
+                    )));
+                }
+            }
+            rows.push(Some((tr_str("MIDI output").into(), None, false)));
+            rows.push(Some((mark(out_on, tr_str("Send MIDI to a device")), Some(TrackCmd::MidiOutOn), true)));
+            if output.is_some() {
+                for (alias, _, is_out) in &ports {
+                    if *is_out {
+                        rows.push(Some((
+                            mark(out_ports.iter().any(|p| **p == **alias), alias),
+                            Some(TrackCmd::MidiOutPort(alias.clone())),
+                            true,
+                        )));
+                    }
+                }
+            }
+            rows.push(Some((mark(rack, tr_str("CC rack")), Some(TrackCmd::CcRack), true)));
+        }
         let list: Vec<AnyElement> = rows
             .into_iter()
             .enumerate()
-            .map(|(n, (label, cmd, enabled))| {
-                let row = Self::menu_row(format!("track-menu-{n}"), label.to_string(), enabled);
-                if enabled {
-                    row.on_click(cx.listener(move |p, _, _, cx| p.run_track_cmd(cmd, track, cx))).into_any_element()
-                } else {
-                    row.into_any_element()
+            .map(|(n, row)| {
+                let Some((label, cmd, enabled)) = row else { return Self::rule() };
+                let head = cmd.is_none();
+                let row = Self::menu_row(format!("track-menu-{n}"), label, enabled)
+                    .when(head, |d| d.font_weight(FontWeight::BOLD).text_color(c(THEME.text2)));
+                match cmd {
+                    Some(cmd) if enabled => row
+                        .on_click(cx.listener(move |p, _, window, cx| p.run_track_cmd(cmd.clone(), track, window, cx)))
+                        .into_any_element(),
+                    _ => row.into_any_element(),
                 }
             })
             .collect();
-        Some(self.menu_box("track-menu", pos, 220.0, cx).children(list).into_any_element())
+        Some(
+            self.menu_box("track-menu", pos, 240.0, cx)
+                .max_h(px(560.))
+                .overflow_y_scroll()
+                .children(list)
+                .into_any_element(),
+        )
+    }
+
+    /// The 48 colours, for a clip, the clips selected or a track
+    pub(super) fn render_palette(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let (target, pos) = self.ed.palette.clone()?;
+        let swatches: Vec<AnyElement> = palette48()
+            .into_iter()
+            .enumerate()
+            .map(|(n, color)| {
+                let target = target.clone();
+                div()
+                    .id(("swatch", n))
+                    .debug_selector(move || format!("swatch-{n}"))
+                    .size(px(18.))
+                    .m(px(2.))
+                    .rounded(px(3.))
+                    .bg(c(color))
+                    .cursor_pointer()
+                    .hover(|d| d.border_1().border_color(c(THEME.text)))
+                    .on_click(cx.listener(move |p, _, _, cx| {
+                        let ids = match &target {
+                            ColorTarget::Items(v) => v.clone(),
+                            ColorTarget::Track(t) => vec![*t],
+                        };
+                        p.ed.close_menus();
+                        p.set_colors(&ids, color, cx);
+                    }))
+                    .into_any_element()
+            })
+            .collect();
+        Some(
+            self.menu_box("palette", pos, 12.0 * 22.0 + 8.0, cx)
+                .flex()
+                .flex_row()
+                .flex_wrap()
+                .px(px(4.))
+                .children(swatches)
+                .into_any_element(),
+        )
     }
 
     /// The question before removing a track, with "Don't ask again" (F-TRK-031)
@@ -1291,6 +1829,35 @@ impl CompositionPage {
                     .bg(gpui::rgba(0xffffff1f))
                     .into_any_element(),
             );
+        }
+        // the items dragged to other tracks, or copied: where they would land (F-CLP-004, F-CLP-005)
+        if let Some(d) = &self.item_drag
+            && let Some((delta, targets)) = &d.ghost
+        {
+            let rows = self.track_hits.borrow();
+            let all: Vec<NodeId> = std::iter::once(d.item).chain(d.others.iter().map(|(i, _)| *i)).collect();
+            for (k, id) in all.iter().enumerate() {
+                let Some((x, y, w, h, ..)) = self.hits.borrow().iter().find(|h| h.4 == *id).copied() else { continue };
+                let gy =
+                    targets.get(k).and_then(|(_, t)| rows.iter().find(|(.., r)| r == t)).map_or(y, |(ty, ..)| ty + 3.0);
+                let gx = if d.copy { x + (*delta as f64 / self.view.ticks_per_px) as f32 } else { x };
+                if !d.copy && gy == y {
+                    continue;
+                }
+                out.push(
+                    div()
+                        .absolute()
+                        .left(px(gx))
+                        .top(px(gy))
+                        .w(px(w.max(2.0)))
+                        .h(px(h))
+                        .rounded(px(3.))
+                        .border_1()
+                        .border_color(c(THEME.cursor))
+                        .bg(gpui::rgba(0xffffff26))
+                        .into_any_element(),
+                );
+            }
         }
         if self.ed.tool == Tool::Knife
             && let Some((mx, my)) = self.ed.mouse
