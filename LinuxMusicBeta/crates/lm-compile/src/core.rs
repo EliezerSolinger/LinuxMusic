@@ -154,6 +154,8 @@ struct PNode {
     muted: bool,
     tail: bool,
     latency: u32,
+    /// A note effect: no audio, chained before an instrument
+    note_effect: bool,
 }
 
 impl PNode {
@@ -170,6 +172,7 @@ impl PNode {
             muted: false,
             tail: false,
             latency: 0,
+            note_effect: false,
         }
     }
 
@@ -188,6 +191,7 @@ impl PNode {
             muted: false,
             tail: false,
             latency,
+            note_effect: shape.note_effect,
         }
     }
 }
@@ -260,6 +264,8 @@ struct Plan {
     mpe: Vec<lm_render::mpe::MpePort>,
     /// MIDI out to devices (P-38)
     midi_out: Vec<PMidiOut>,
+    /// The note effects chained before an instrument: (instrument node, its effects in order)
+    chains: Vec<(usize, Vec<usize>)>,
     /// The CC rack (F-IJN-025): (instrument node, track, controller, value)
     ccs: Vec<(usize, NodeId, u8, f32)>,
     outputs: Vec<(usize, u16, u16)>,
@@ -719,6 +725,8 @@ impl CompilerCore {
             let idx = index_of[i];
             let mut d = if n.sum {
                 NodeDesc::sum(idx, n.inputs)
+            } else if n.note_effect {
+                NodeDesc::note_effect(idx)
             } else if n.in_place {
                 NodeDesc::insert(idx, n.inputs)
             } else {
@@ -815,6 +823,9 @@ impl CompilerCore {
         }
         for (n, items) in std::mem::take(&mut plan.midi) {
             b.midi_items(index_of[n], items);
+        }
+        for (n, effects) in &plan.chains {
+            b.note_chain(index_of[*n], effects.iter().map(|e| index_of[*e]).collect());
         }
         for (n, chans) in std::mem::take(&mut plan.inputs) {
             b.input(index_of[n], chans);
@@ -1120,7 +1131,8 @@ impl CompilerCore {
             Some((build, shape)) => {
                 if let Some(r) = ready.filter(|r| r.build.same_processor(build)) {
                     pp.use_ready = true;
-                    if let Some(old) = installed {
+                    // (a note effect has no sound to leave in a tail)
+                    if let Some(old) = installed.filter(|o| !o.shape.note_effect) {
                         let serial = self.next_serial + plan.new_tails.len() as u64;
                         let in_place = PNode::processor(key, &old.shape, 0).in_place;
                         plan.new_tails.push((serial, key, old.shape.clone(), in_place, old.latency));
@@ -1283,6 +1295,11 @@ impl CompilerCore {
                     && let Some(id) = id_of(i)
                 {
                     m.insert(id, text(i, "plugin", "").to_owned());
+                }
+                for e in items(t, "noteEffects") {
+                    if let Some(id) = id_of(e) {
+                        m.insert(id, text(e, "plugin", "").to_owned());
+                    }
                 }
             }
             for c in desk.iter().chain(master_view.iter()) {
@@ -1458,6 +1475,24 @@ impl CompilerCore {
                         for port in ports {
                             plan.ports.push((port, p, channel, fixed));
                         }
+                    }
+                }
+                // The note effects (before the instrument): what the sources push for it goes through them in order;
+                // a bypassed one is not in the chain (and a chain that changes releases the notes: the renderer)
+                if shape.notes {
+                    let mut chain = Vec::new();
+                    for e in items(t, "noteEffects").filter(|e| !flag(e, "bypass", false)) {
+                        let Some(eid) = id_of(e) else { continue };
+                        let ek = NodeKey::NoteEffect(eid);
+                        let eseed = Rng::seed_for(s.seed, id_number(eid));
+                        let wanted = self.plugin_build(e, width);
+                        let (eshape, elatency) = self.decide(&mut plan, ek, wanted, eseed, PluginShape::note_effect());
+                        let n = plan.add(PNode::processor(ek, &eshape, elatency));
+                        self.plugin_params(&mut plan, n, e);
+                        chain.push(n);
+                    }
+                    if !chain.is_empty() {
+                        plan.chains.push((p, chain));
                     }
                 }
                 // MIDI out to devices (P-38): what the instrument plays, on the output's channel

@@ -148,7 +148,7 @@ fn blocked_value(b: &Blocked) -> Value {
 /// The plugin node a node key belongs to (its instrument or insert)
 fn plugin_node(key: NodeKey) -> Option<NodeId> {
     match key {
-        NodeKey::Instrument(id) | NodeKey::Insert(id) => Some(id),
+        NodeKey::Instrument(id) | NodeKey::Insert(id) | NodeKey::NoteEffect(id) => Some(id),
         _ => None,
     }
 }

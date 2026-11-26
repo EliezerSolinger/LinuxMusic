@@ -41,17 +41,47 @@ pub const PLUGINS: &[(&str, bool, &[Param])] = &[
     ("reverb", false, &[("size", 0.0, 1.0, 0.6), ("damping", 0.0, 1.0, 0.4), ("mix", 0.0, 1.0, 1.0)]),
     ("delay", false, &[("time", 0.01, 2.0, 0.375), ("feedback", 0.0, 0.95, 0.35), ("mix", 0.0, 1.0, 1.0)]),
     ("limiter", false, &[("ceiling", -12.0, 0.0, -0.3), ("release", 1.0, 1000.0, 50.0)]),
+    // The note effects (Kind::NoteEffect): no audio, the same keys as lm-plugins-noteeffects
+    (
+        "arpeggiator",
+        false,
+        &[
+            ("range", 1.0, 9.0, 1.0),
+            ("repeats", 1.0, 8.0, 1.0),
+            ("cycle", 0.0, 6.0, 0.0),
+            ("skip", 0.0, 100.0, 0.0),
+            ("miss", 0.0, 100.0, 0.0),
+            ("time", 25.0, 2000.0, 200.0),
+            ("gate", 1.0, 200.0, 100.0),
+        ],
+    ),
+    ("chords", false, &[("range", 1.0, 9.0, 1.0)]),
+    ("scale", false, &[("root", 0.0, 11.0, 0.0), ("transpose", -48.0, 48.0, 0.0)]),
+    (
+        "velocity",
+        false,
+        &[
+            ("fixed", 1.0, 127.0, 100.0),
+            ("scale", 0.0, 200.0, 100.0),
+            ("curve", -1.0, 1.0, 0.0),
+            ("random", 0.0, 100.0, 0.0),
+            ("seed", 0.0, 9999.0, 0.0),
+        ],
+    ),
 ];
+
+/// The plugins that are note effects (their category is `"note"`, and they have no ports)
+pub const NOTE_EFFECTS: &[&str] = &["arpeggiator", "chords", "scale", "velocity"];
 
 pub const KITS: &[&str] = &["acoustic", "big"];
 
 /// The instrument functions every per-note instrument gets, with the keys of lm-plugin's `instrument::schema`
-/// (F-IJN-002, 010, 011, 013, 014, 015): the fake cannot depend on lm-plugin, so it writes the same keys
+/// (F-IJN-002, 010, 011, 014: the chords and the arpeggio are note effects now): the fake cannot depend on
+/// lm-plugin, so it writes the same keys
 pub fn add_instrument_functions(mut s: NodeSchema) -> NodeSchema {
     const LFO_SHAPES: &[&str] = &["sine", "triangle", "saw", "square", "random", "user"];
     const SYNC: &[&str] = &["off", "2/1", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32"];
     const FILTERS: &[&str] = &["low-pass", "high-pass", "band-pass-csg", "band-pass-czpg", "notch", "all-pass", "moog"];
-    const CHORDS: &[&str] = &["octave", "major", "minor", "sus4", "maj7", "m7", "7", "major-scale", "minor-scale"];
     let switch = |k: &'static str| ParamSpec::new(k, 0.0, 1.0, 0.0).scale(Scale::Stepped);
     s = s.param(ParamSpec::new("pitch", -100.0, 100.0, 0.0).unit("cents"));
     s = s.param(ParamSpec::new("bendRange", 1.0, 60.0, 2.0).scale(Scale::Stepped).unit("st").not_automatable());
@@ -81,29 +111,11 @@ pub fn add_instrument_functions(mut s: NodeSchema) -> NodeSchema {
         switch("filterOn"),
         ParamSpec::new("cutoff", 1.0, 14000.0, 14000.0).scale(Scale::Log).unit("Hz"),
         ParamSpec::new("resonance", 0.01, 10.0, 0.5),
-        switch("chordOn"),
-        ParamSpec::new("chordRange", 1.0, 9.0, 1.0).scale(Scale::Stepped),
-        switch("arpOn"),
-        ParamSpec::new("arpRange", 1.0, 9.0, 1.0).scale(Scale::Stepped),
-        ParamSpec::new("arpRepeats", 1.0, 8.0, 1.0).scale(Scale::Stepped),
-        ParamSpec::new("arpCycle", 0.0, 6.0, 0.0).scale(Scale::Stepped),
-        ParamSpec::new("arpSkip", 0.0, 100.0, 0.0).unit("%"),
-        ParamSpec::new("arpMiss", 0.0, 100.0, 0.0).unit("%"),
-        ParamSpec::new("arpTime", 25.0, 2000.0, 200.0).unit("ms"),
-        ParamSpec::new("arpGate", 1.0, 200.0, 100.0).unit("%"),
         ParamSpec::new("glide", 0.0, 2000.0, 0.0).unit("ms"),
     ] {
         s = s.param(p);
     }
-    for (k, c, d) in [
-        ("filterType", FILTERS, "low-pass"),
-        ("chord", CHORDS, "octave"),
-        ("arpChord", CHORDS, "octave"),
-        ("arpDirection", &["up", "down", "up-down", "down-up", "random"][..], "up"),
-        ("arpMode", &["free", "sort", "sync"][..], "free"),
-        ("arpSync", SYNC, "off"),
-        ("voiceMode", &["poly", "mono", "legato"][..], "poly"),
-    ] {
+    for (k, c, d) in [("filterType", FILTERS, "low-pass"), ("voiceMode", &["poly", "mono", "legato"][..], "poly")] {
         s = s.field(FieldSpec::choice(k, c, d));
     }
     s
@@ -118,6 +130,7 @@ pub fn category(id: &str) -> &'static str {
         "compressor" | "limiter" => "dynamics",
         "eq8" => "eq",
         "reverb" | "delay" => "delay-reverb",
+        "arpeggiator" | "chords" | "scale" | "velocity" => "note",
         _ => "other",
     }
 }
@@ -154,6 +167,17 @@ pub fn registry_with(real: Vec<NodeSchema>) -> Result<SchemaRegistry> {
         if *id == "tripleoscillator" || *id == "sampler" {
             s = add_instrument_functions(s);
         }
+        s = match *id {
+            "arpeggiator" => s
+                .field(FieldSpec::choice("chord", &["octave", "major", "minor"], "octave"))
+                .field(FieldSpec::choice("direction", &["up", "down", "up-down", "down-up", "random"], "up"))
+                .field(FieldSpec::choice("mode", &["free", "sort", "sync"], "free"))
+                .field(FieldSpec::choice("sync", &["off", "1/4", "1/8", "1/16"], "off")),
+            "chords" => s.field(FieldSpec::choice("chord", &["octave", "major", "minor"], "major")),
+            "scale" => s.field(FieldSpec::choice("scale", &["off", "scale-major", "scale-minor"], "off")),
+            "velocity" => s.field(FieldSpec::choice("mode", &["fixed", "scale", "curve", "random"], "scale")),
+            _ => s,
+        };
         r.add(s)?;
     }
     for s in real {
@@ -211,6 +235,7 @@ pub fn ports(plugin: &str, state: &Value) -> Option<Ports> {
         "compressor" => {
             Some(Ports { outputs: vec![Port::new("main", 2)], sidechains: vec![Port::new("sidechain", 2)] })
         }
+        p if NOTE_EFFECTS.contains(&p) => Some(Ports { outputs: vec![], sidechains: vec![] }),
         p if PLUGINS.iter().any(|(id, ..)| *id == p) => {
             Some(Ports { outputs: vec![Port::new("main", 2)], sidechains: vec![] })
         }

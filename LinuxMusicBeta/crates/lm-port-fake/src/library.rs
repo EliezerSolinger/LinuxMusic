@@ -41,7 +41,7 @@ impl Library {
             id
         };
         // plugins, by category
-        for (id, instrument, _) in demo::PLUGINS {
+        for (id, instrument, _) in demo::PLUGINS.iter().filter(|(id, ..)| !demo::NOTE_EFFECTS.contains(id)) {
             let page = if *instrument { BrowsePage::Instruments } else { BrowsePage::Effects };
             add(
                 page,

@@ -39,6 +39,8 @@ pub enum NodeKey {
     Rack(NodeId, Stage),
     /// A channel's insert (`p:`)
     Insert(NodeId),
+    /// A note effect of a track (`p:`), chained before its instrument: no audio
+    NoteEffect(NodeId),
     /// A channel's fader (volume, and pan when no insert sits before the pan)
     Fader(NodeId),
     /// A channel's pan, after the `pre-pan` inserts
@@ -65,6 +67,7 @@ impl NodeKey {
             | NodeKey::ChannelIn(id)
             | NodeKey::Rack(id, _)
             | NodeKey::Insert(id)
+            | NodeKey::NoteEffect(id)
             | NodeKey::Fader(id)
             | NodeKey::Pan(id)
             | NodeKey::Hop(id)
@@ -265,7 +268,7 @@ impl InstalledTable {
             KIND_TRACK => &[NodeKey::TrackGain(id), NodeKey::TrackAudio(id)],
             KIND_OUTPUT => &[NodeKey::Output(id)],
             KIND_CHANNEL => &[NodeKey::Pan(id), NodeKey::Fader(id)],
-            KIND_PLUGIN => &[NodeKey::Instrument(id), NodeKey::Insert(id)],
+            KIND_PLUGIN => &[NodeKey::Instrument(id), NodeKey::Insert(id), NodeKey::NoteEffect(id)],
             _ => &[],
         };
         keys.iter().find_map(|k| self.node(*k))

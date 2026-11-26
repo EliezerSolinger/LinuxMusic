@@ -1016,7 +1016,11 @@ impl CorePort for LocalPort {
                 id: Arc::from(d.id),
                 name: Arc::from(d.name),
                 instrument: d.kind == lm_plugin::PluginKind::Instrument,
-                category: Arc::from(if d.kind == lm_plugin::PluginKind::Instrument { "synth" } else { "effect" }),
+                category: Arc::from(match d.kind {
+                    lm_plugin::PluginKind::Instrument => "synth",
+                    lm_plugin::PluginKind::Effect => "effect",
+                    lm_plugin::PluginKind::NoteEffect => "note",
+                }),
                 third_party: false,
                 latency: 0,
                 sidechain: self

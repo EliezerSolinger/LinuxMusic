@@ -513,7 +513,8 @@ impl ParamHost<EfPopup> for EffectWindow {
         let chid = ch.id;
         let plugins = port.plugins();
         let effects = |make: &dyn Fn(Arc<str>) -> MenuItem<Self>| {
-            let mut list: Vec<&PluginInfo> = plugins.iter().filter(|p| !p.instrument).collect();
+            let mut list: Vec<&PluginInfo> =
+                plugins.iter().filter(|p| !p.instrument && &*p.category != "note").collect();
             list.sort_by_key(|p| (p.third_party, p.category.clone(), p.id.clone()));
             let mut items = Vec::new();
             let mut last: Option<Arc<str>> = None;

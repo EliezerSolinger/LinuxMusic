@@ -1319,8 +1319,32 @@ fn instrument_choice_and_tabs(cx: &mut TestAppContext) {
     click(cx, &format!("ctl-{node}-filterType"));
     click(cx, "popup-item-1");
     assert_eq!(state(&ws, cx, node).get("filterType").and_then(Value::as_text), Some("high-pass"));
-    click(cx, "iw-tab-Chords");
-    assert!(cx.debug_bounds(lm_port::intern(&format!("ctl-{node}-arpOn"))).is_some());
+    // the note effects: the chords and the arpeggio are plugins of the track's chain now
+    click(cx, "iw-tab-NoteEffects");
+    assert!(cx.debug_bounds(lm_port::intern(&format!("ctl-{node}-arpOn"))).is_none());
+    click(cx, "iw-ne-add-arpeggiator");
+    let effects = |ws: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        model::list(&root(ws, cx), "tracks")
+            .find(|t| model::id_of(t) == Some(track))
+            .map(|t| model::list(t, "noteEffects").cloned().collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let list = effects(&ws, cx);
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].get("plugin").and_then(Value::as_text), Some("arpeggiator"));
+    let id = model::id_of(&list[0]).unwrap();
+    assert!(
+        cx.debug_bounds(lm_port::intern(&format!("ctl-{id}-time"))).is_some(),
+        "its controls are the generic editor's"
+    );
+    click(cx, "iw-ne-add-chords");
+    assert_eq!(effects(&ws, cx).len(), 2);
+    click(cx, &format!("iw-ne-down-{}", id.number));
+    assert_eq!(model::id_of(&effects(&ws, cx)[1]), Some(id), "moved down");
+    click(cx, &format!("iw-ne-on-{}", id.number));
+    assert_eq!(effects(&ws, cx)[1].get("bypass").and_then(Value::as_bool), Some(true), "bypassed");
+    click(cx, &format!("iw-ne-remove-{}", id.number));
+    assert_eq!(effects(&ws, cx).len(), 1);
     click(cx, "iw-tab-Tuning");
     click(cx, "iw-transpose");
     let follows = model::list(&root(&ws, cx), "tracks")

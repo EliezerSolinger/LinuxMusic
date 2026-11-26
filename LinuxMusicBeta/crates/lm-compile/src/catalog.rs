@@ -23,12 +23,14 @@ pub struct PluginShape {
     pub sidechains: Vec<Port>,
     /// It takes notes (an instrument): the track's MIDI items and live MIDI go to it
     pub notes: bool,
+    /// A note effect: no audio, chained before the track's instrument (`PluginKind::NoteEffect`)
+    pub note_effect: bool,
 }
 
 impl PluginShape {
     /// An instrument with these output ports
     pub fn instrument(outputs: Vec<Port>) -> Self {
-        Self { inputs: 0, outputs, sidechains: Vec::new(), notes: true }
+        Self { inputs: 0, outputs, sidechains: Vec::new(), notes: true, note_effect: false }
     }
 
     /// An effect working on `channels` channels in and out
@@ -38,7 +40,13 @@ impl PluginShape {
             outputs: vec![Port::new("main", u32::from(channels))],
             sidechains: Vec::new(),
             notes: false,
+            note_effect: false,
         }
+    }
+
+    /// A note effect: no audio at all
+    pub fn note_effect() -> Self {
+        Self { inputs: 0, outputs: Vec::new(), sidechains: Vec::new(), notes: false, note_effect: true }
     }
 
     /// The channels of all the output ports together
@@ -101,6 +109,7 @@ impl PluginCatalog for lm_plugin::Registry {
             lm_plugin::PluginKind::Instrument => PluginShape::instrument(ports.outputs),
             // An effect works in place on all the channels of the channel it is inserted in
             lm_plugin::PluginKind::Effect => PluginShape::effect(channels),
+            lm_plugin::PluginKind::NoteEffect => PluginShape::note_effect(),
         };
         shape.sidechains = ports.sidechains;
         Some(shape)
