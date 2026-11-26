@@ -341,6 +341,12 @@ impl Document {
                 }
             }
         }
+        let issued_before = root
+            .get("meta")
+            .and_then(|m| m.get("issued"))
+            .and_then(Value::as_int)
+            .and_then(|v| u64::try_from(v).ok())
+            .unwrap_or(0);
         let mut up = Upgrader {
             registry: &registry,
             from: &from,
@@ -348,11 +354,19 @@ impl Document {
             upgraded: false,
             read_only,
             notices: Vec::new(),
+            next_id: issued_before.max(crate::migrate::max_id(&root) + 1),
         };
+        let next_before = up.next_id;
         up.outdated = from.iter().any(|(t, v)| registry.find(t).is_some_and(|s| s.version > *v));
         let ctx = Ctx::new(Arc::clone(&registry), PROJECT)?;
         let root = up.value(&ctx, &FieldKind::Object(PROJECT), root, 0)?;
         let upgraded = up.upgraded;
+        // Nodes made by a migration took numbers from the counter
+        let root = if up.next_id > next_before && root.get("meta").is_some() {
+            root.with_path(&[PathStep::key("meta"), PathStep::key("issued")], Value::int(up.next_id as i64))?
+        } else {
+            root
+        };
         notices.extend(up.notices);
         read_only |= up.read_only;
         let mut opened = Self::open_root(registry, PROJECT, root, options, read_only)?;
@@ -1004,6 +1018,8 @@ struct Upgrader<'a> {
     upgraded: bool,
     read_only: bool,
     notices: Vec<Label>,
+    /// The next id number to issue to a node a migration makes (`crate::migrate`)
+    next_id: u64,
 }
 
 impl Upgrader<'_> {
@@ -1036,6 +1052,10 @@ impl Upgrader<'_> {
                 {
                     node = self.registry.upgrade(t, from, node)?;
                     self.upgraded = true;
+                }
+                if *t == types::TRACK {
+                    // (before its instrument is upgraded: the old state still has the chord and the arpeggio)
+                    node = crate::migrate::note_effects_from_instrument(self.registry, node, &mut self.next_id)?;
                 }
                 if *t == types::PLUGIN {
                     node = self.plugin(node)?;

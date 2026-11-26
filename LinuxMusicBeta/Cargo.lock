@@ -3812,6 +3812,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-plugins-noteeffects"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "lm-base",
+ "lm-plugin",
+ "lm-render",
+ "lm-state",
+]
+
+[[package]]
 name = "lm-plugins-opulenz"
 version = "0.1.0"
 dependencies = [
@@ -3945,6 +3956,7 @@ dependencies = [
  "lm-plugins-gigplayer",
  "lm-plugins-guitarix",
  "lm-plugins-instruments",
+ "lm-plugins-noteeffects",
  "lm-plugins-opulenz",
  "lm-plugins-sid",
  "lm-plugins-stk",

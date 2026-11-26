@@ -27,6 +27,7 @@ pub use registry::{CHUNK_KEY, EntryInfo, External, ExternalBuild, Registry, chec
 pub use resources::{Loaded, ResourceView};
 pub use state::StateView;
 pub mod instrument;
+pub mod note_effect;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 

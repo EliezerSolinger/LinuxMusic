@@ -4,8 +4,8 @@
 //! under the allocation trap when asked.
 
 use lm_render::{
-    Adopted, BlockShape, Buffers, Event, EventKind, HostOutbox, ProcessContext, ProcessSpec, Processor, Rng,
-    TransportInfo,
+    Adopted, BlockShape, Buffers, Event, EventKind, HostOutbox, NoteContext, NoteOut, ProcessContext, ProcessSpec,
+    Processor, Rng, TransportInfo,
 };
 use lm_time::TimeSignature;
 
@@ -219,4 +219,121 @@ impl Bench {
         });
         out
     }
+}
+
+/// One note effect, driven block by block: it hears the events of a script and gives back what it emits, at absolute
+/// samples of the bench's time line, in the order the renderer would hand them on (offset, then rank, then arrival)
+pub struct NoteBench {
+    processor: Box<dyn Processor>,
+    spec: ProcessSpec,
+    keyed: Vec<(u64, Event)>,
+    events: Vec<Event>,
+    out: NoteOut,
+    rng: Rng,
+    outbox: HostOutbox,
+    frame: u64,
+    bpm: f64,
+    ppq: u32,
+}
+
+impl std::fmt::Debug for NoteBench {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NoteBench").field("spec", &self.spec).field("frame", &self.frame).finish()
+    }
+}
+
+impl NoteBench {
+    pub fn new(processor: Box<dyn Processor>, spec: ProcessSpec, seed: u64) -> Self {
+        Self {
+            processor,
+            spec,
+            keyed: Vec::with_capacity(8192),
+            events: Vec::with_capacity(8192),
+            out: NoteOut::with_capacity(8192),
+            rng: Rng::new(seed),
+            outbox: HostOutbox::default(),
+            frame: 0,
+            bpm: 120.0,
+            ppq: 960,
+        }
+    }
+
+    pub fn frame(&self) -> u64 {
+        self.frame
+    }
+
+    /// The tempo of the next blocks
+    pub fn set_bpm(&mut self, bpm: f64) {
+        self.bpm = bpm;
+    }
+
+    /// Replaces the processor as an install's `replace` does (see [`Bench::replace`])
+    pub fn replace(&mut self, mut new: Box<dyn Processor>, trap: bool) -> (Adopted, Box<dyn Processor>) {
+        let old = &mut self.processor;
+        let adopted = trapped(trap, || new.adopt(old.as_mut()));
+        let old = std::mem::replace(&mut self.processor, new);
+        (adopted, old)
+    }
+
+    /// Resets the processor (the panic command)
+    pub fn reset(&mut self) {
+        self.processor.reset();
+    }
+
+    /// Renders `total` frames in blocks of `block`, with the events of `events` that fall in them, and returns what
+    /// the effect emitted
+    pub fn run(&mut self, total: usize, block: usize, events: &[Timed], trap: bool) -> Vec<Timed> {
+        let block = block.clamp(1, self.spec.max_block);
+        let mut result = Vec::new();
+        let mut done = 0;
+        while done < total {
+            let n = block.min(total - done);
+            let start = self.frame;
+            self.keyed.clear();
+            for (i, t) in events.iter().enumerate() {
+                if t.at >= start && t.at < start + n as u64 {
+                    let offset = (t.at - start) as u32;
+                    let key = (u64::from(offset) << 32) | (u64::from(t.kind.rank()) << 28) | (i as u64 & 0x0FFF_FFFF);
+                    self.keyed.push((key, Event { offset, kind: t.kind }));
+                }
+            }
+            self.keyed.sort_unstable_by_key(|(k, _)| *k);
+            self.events.clear();
+            self.events.extend(self.keyed.iter().map(|(_, e)| *e));
+            let position = start as i64;
+            let ticks_per_sample = self.bpm * f64::from(self.ppq) / (60.0 * f64::from(self.spec.sample_rate));
+            let transport = TransportInfo {
+                sample_rate: self.spec.sample_rate,
+                playing: true,
+                recording: false,
+                position,
+                tick: (position as f64 * ticks_per_sample).floor() as i64,
+                ppq: self.ppq,
+                bpm: self.bpm,
+                time_signature: TimeSignature::COMMON,
+                frame: start,
+            };
+            self.out.clear();
+            {
+                let Self { processor, events, rng, outbox, out, .. } = self;
+                let mut cx = NoteContext { frames: n, events, transport: &transport, rng, out, host: outbox };
+                trapped(trap, || processor.process_notes(&mut cx));
+            }
+            for e in self.out.as_slice() {
+                assert!((e.offset as usize) < n, "an event at offset {} of a block of {n} frames", e.offset);
+                result.push(Timed::new(start + u64::from(e.offset), e.kind));
+            }
+            self.frame += n as u64;
+            done += n;
+        }
+        result
+    }
+}
+
+/// The events of a stream in the order a host would hand them to the next stage: by time, then rank, then arrival
+pub fn in_host_order(events: &[Timed]) -> Vec<Timed> {
+    let mut keyed: Vec<(u64, u64, Timed)> =
+        events.iter().enumerate().map(|(i, t)| ((t.at << 8) | u64::from(t.kind.rank()), i as u64, *t)).collect();
+    keyed.sort_by_key(|(k, i, _)| (*k, *i));
+    keyed.into_iter().map(|(_, _, t)| t).collect()
 }

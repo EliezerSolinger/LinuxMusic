@@ -296,7 +296,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(ints("timeSig", 1, 64, &[4, 4]))
             .field(FieldSpec::bool("ramp", false)),
         // The timeline: items, automation, the instrument and the outputs. No pan (decision of 19/11)
-        NodeSchema::new(ty::TRACK, 3)
+        // Version 4: `noteEffects`, the note effect plugins before the instrument (optional: absent = none)
+        NodeSchema::new(ty::TRACK, 4)
             .field(FieldSpec::id(KIND_TRACK))
             .field(FieldSpec::text("name", ""))
             // 0xRRGGBB; absent: the palette's colour for the track's place (F-TRK-001)
@@ -311,6 +312,9 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             // Whether the instrument follows the project's transposition (P-37); absent: true
             .field(FieldSpec::new("transpose", FieldKind::Bool).optional())
             .field(object("instrument", ty::PLUGIN).nullable().default(Value::NULL))
+            // The note effects, in the order the notes go through them (items and live input first, the instrument
+            // and the MIDI out last); an effect is a plugin node of a plugin of kind NoteEffect; absent = none
+            .field(FieldSpec::new("noteEffects", FieldKind::List(Box::new(FieldKind::Object(ty::PLUGIN)))).optional())
             .field(object("input", ty::TRACK_INPUT).nullable().default(Value::NULL))
             // The live MIDI input (I-21.1; F-REC-103, F-REC-131); absent = every instrument port, every channel
             .field(FieldSpec::new("midiInput", FieldKind::Object(ty::TRACK_MIDI_INPUT)).optional())
@@ -332,7 +336,8 @@ pub fn project_schemas() -> Vec<NodeSchema> {
             .field(list_of("items", ty::ITEM))
             .field(list_of("automation", ty::AUTOMATION))
             .upgrade(1, unchanged)
-            .upgrade(2, unchanged),
+            .upgrade(2, unchanged)
+            .upgrade(3, unchanged),
         // ports: aliases (empty = every port whose role is instrument); channel −1 = all; followSelection: the
         // keyboard plays the selected track
         NodeSchema::new(ty::TRACK_MIDI_INPUT, 2)

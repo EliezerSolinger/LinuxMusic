@@ -95,28 +95,6 @@ fn a_note_sounds_its_key_after_the_fade_in() {
 }
 
 #[test]
-fn chords_stack_over_octaves() {
-    let mut b = bench(&[("chordOn", 1.0), ("chordRange", 2.0)], &[("chord", "major")]);
-    let x = left(&[note_on(0, 1, 60, 1.0)], 1000, &mut b);
-    let expected: f32 = [60.0, 64.0, 67.0, 72.0, 76.0, 79.0].iter().map(|k| hz(*k)).sum();
-    assert!(close(x[500], expected), "{} {expected}", x[500]);
-}
-
-#[test]
-fn the_arpeggio_steps_through_the_chord() {
-    let step = (0.025 * RATE as f64) as usize;
-    let mut b = bench(&[("arpOn", 1.0), ("arpTime", 25.0)], &[("arpChord", "major")]);
-    let x = left(&[note_on(0, 1, 60, 1.0)], 5 * step, &mut b);
-    for (n, key) in [60.0, 64.0, 67.0, 60.0, 64.0].iter().enumerate() {
-        let at = n * step + step / 2;
-        assert!(close(x[at], hz(*key)), "step {n}: {} {}", x[at], hz(*key));
-    }
-    let mut b = bench(&[("arpOn", 1.0), ("arpTime", 25.0), ("arpGate", 50.0)], &[("arpDirection", "down")]);
-    let x = left(&[note_on(0, 1, 60, 1.0)], 2 * step, &mut b);
-    assert!(close(x[step / 4], hz(60.0)) && x[3 * step / 4].abs() < 1.0e-6, "a gate of half the step");
-}
-
-#[test]
 fn mono_plays_the_last_key_held_and_goes_back() {
     let mut b = bench(&[], &[("voiceMode", "mono")]);
     let ev = [note_on(0, 1, 60, 1.0), note_on(2000, 2, 67, 1.0), note_off(4000, 2, 67), note_off(6000, 1, 60)];
@@ -216,7 +194,7 @@ fn the_registry() {
     let spec = ProcessSpec { sample_rate: RATE, max_block: 256 };
     let resources = ResourceView::new();
     let cx = BuildContext { spec, resources: &resources, channels: 0 };
-    let bad = Value::empty_object().with("chord", Value::text("no-such-chord"));
+    let bad = Value::empty_object().with("voiceMode", Value::text("no-such-mode"));
     assert!(registry.build("probe", &bad, &cx).is_err(), "an invalid state is refused");
     let e = registry.build("panics", &Value::empty_object(), &cx).err().map(|e| e.key());
     assert_eq!(e, Some("plugin.build.panicked"));
@@ -235,26 +213,19 @@ fn both(events: &[Timed], frames: usize, b: &mut Bench) -> (Vec<f32>, Vec<f32>) 
 }
 
 #[test]
-fn a_tuning_expression_moves_every_note_of_its_base_and_ramps() {
+fn a_tuning_expression_moves_its_note_and_ramps() {
     use lm_render::Expression::Tuning;
-    let mut b = bench(&[("chordOn", 1.0)], &[("chord", "major")]);
+    let mut b = bench(&[], &[]);
     let ev = [note_on(0, 1, 60, 1.0), note_on(0, 2, 72, 1.0), expression(1000, 1, Tuning, 2.0, 0)];
     let x = left(&ev, 2000, &mut b);
-    let chord = |root: f64| -> f32 { [0.0, 4.0, 7.0].iter().map(|i| hz(root + i)).sum() };
-    assert!(close(x[900], chord(60.0) + chord(72.0)));
-    assert!(close(x[1500], chord(62.0) + chord(72.0)), "the base's chord moves, the other note stays");
+    assert!(close(x[900], hz(60.0) + hz(72.0)));
+    assert!(close(x[1500], hz(62.0) + hz(72.0)), "the note named moves, the other stays");
     // A ramp of 3200 frames: half way at 1600 (by piece: the value at the piece's start)
     let mut b = bench(&[], &[]);
     let ev = [note_on(0, 1, 69, 1.0), expression(1024, 1, Tuning, 12.0, 3200)];
     let x = left(&ev, 6000, &mut b);
     assert!(close(x[1024 + 1600], hz(75.0)), "{} {}", x[1024 + 1600], hz(75.0));
     assert!(close(x[5000], hz(81.0)), "arrived");
-    // A note started later by the same base (an arpeggio step) has the base's tuning
-    let step = (0.025 * RATE as f64) as usize;
-    let mut b = bench(&[("arpOn", 1.0), ("arpTime", 25.0)], &[("arpChord", "major")]);
-    let ev = [note_on(0, 1, 60, 1.0), expression(10, 1, Tuning, 1.0, 0)];
-    let x = left(&ev, 3 * step, &mut b);
-    assert!(close(x[step + step / 2], hz(65.0)), "the second step, a semitone up");
 }
 
 #[test]
@@ -324,4 +295,26 @@ fn a_voice_the_synth_ends_is_freed_without_a_note_off() {
     assert!(x[50] > 0.0 && x[200] == 0.0);
     let inst = b.processor_mut().as_any_mut().downcast_mut::<Instrument<Short>>().expect("instrument");
     assert_eq!(inst.active_voices(), 0, "its only voice ended at 100 frames although the note is held");
+}
+
+#[test]
+fn version_two_drops_the_chords_and_the_arpeggio() {
+    let real = |v: f64| Value::real(v).expect("finite");
+    let old = Value::empty_object()
+        .with("chord", Value::text("major"))
+        .with("arpMode", Value::text("sync"))
+        .with("voiceMode", Value::text("mono"))
+        .with(
+            lm_state::PARAMS_KEY,
+            Value::empty_object().with("chordOn", real(1.0)).with("arpTime", real(100.0)).with("glide", real(30.0)),
+        );
+    let new = super::drop_chords_and_arpeggio(old).expect("upgrade");
+    assert!(new.get("chord").is_none() && new.get("arpMode").is_none());
+    assert_eq!(new.get("voiceMode").and_then(Value::as_text), Some("mono"), "mono stays");
+    let params = new.get(lm_state::PARAMS_KEY).expect("params");
+    assert!(params.get("chordOn").is_none() && params.get("arpTime").is_none());
+    assert_eq!(params.get("glide").and_then(Value::as_real), Some(30.0), "glide stays");
+    // The schema declares the step: version 2, opening from 1
+    let schema = schemas().remove(0);
+    assert_eq!((schema.version, schema.oldest_version()), (2, 1));
 }

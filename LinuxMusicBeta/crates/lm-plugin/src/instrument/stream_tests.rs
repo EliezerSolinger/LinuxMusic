@@ -124,14 +124,6 @@ fn near(a: f32, b: f32) -> bool {
 }
 
 #[test]
-fn a_chord_sounds_its_keys_and_ends() {
-    let s = state(&[("chordOn", 1.0)], &[("chord", "major")]);
-    let out = bench_of(&s).render(9_600, 256, &[note_on(0, 1, 60, 1.0), note_off(4_800, 1, 60)], true);
-    assert!(near(out[0][100], hz(60.0) + hz(64.0) + hz(67.0)), "{}", out[0][100]);
-    assert_eq!(out[0][9_000], 0.0);
-}
-
-#[test]
 fn the_pitch_knob_and_the_bend_move_every_note() {
     let s = state(&[("pitch", 50.0), ("bendRange", 12.0)], &[]);
     let events = [note_on(0, 1, 60, 1.0), Timed::new(4_800, EventKind::Midi { bytes: [0xE0, 0x7F, 0x7F] })];
@@ -154,18 +146,9 @@ fn legato_glides_the_same_note() {
 }
 
 #[test]
-fn the_arpeggio_steps() {
-    let s = state(&[("arpOn", 1.0), ("arpTime", 100.0)], &[("arpChord", "major")]);
-    let out = bench_of(&s).render(19_200, 256, &[note_on(0, 1, 60, 1.0)], true);
-    assert!(near(out[0][100], hz(60.0)));
-    assert!(near(out[0][4_800 + 100], hz(64.0)));
-    assert!(near(out[0][9_600 + 100], hz(67.0)));
-}
-
-#[test]
 fn a_new_synth_lets_the_old_one_finish_its_notes() {
-    let a = state(&[("chordOn", 1.0)], &[]);
-    let b = state(&[("chordOn", 1.0)], &[("chord", "major")]);
+    let a = state(&[], &[]);
+    let b = state(&[("glide", 1.0)], &[]);
     let mut bench = bench_of(&a);
     let first = bench.render(4_800, 256, &[note_on(0, 1, 60, 1.0)], true);
     assert!(near(first[0][4_000], hz(60.0)));
@@ -177,11 +160,11 @@ fn a_new_synth_lets_the_old_one_finish_its_notes() {
     let (adopted, old) = bench.replace(new, true);
     assert_eq!(adopted, lm_render::Adopted::Yes);
     drop(old);
-    // The held note goes on (on the old stream); a new note plays its chord on the new one
+    // The held note goes on (on the old stream); a new note plays on the new one
     let events = [note_on(4_800 + 1_000, 2, 48, 1.0), note_off(4_800 + 3_000, 1, 60)];
     let second = bench.render(4_800, 256, &events, true);
     assert!(near(second[0][500], hz(60.0)), "{}", second[0][500]);
-    let both = hz(60.0) + hz(48.0) + hz(52.0) + hz(55.0);
+    let both = hz(60.0) + hz(48.0);
     assert!(near(second[0][2_000], both), "{} {both}", second[0][2_000]);
-    assert!(near(second[0][4_000], hz(48.0) + hz(52.0) + hz(55.0)), "{}", second[0][4_000]);
+    assert!(near(second[0][4_000], hz(48.0)), "{}", second[0][4_000]);
 }

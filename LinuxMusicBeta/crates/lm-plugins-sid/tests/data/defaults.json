@@ -1,32 +1,17 @@
 {
   "plugin:sid": {
     "defaults": {
-      "arpChord": "octave",
-      "arpDirection": "up",
-      "arpMode": "free",
-      "arpSync": "off",
       "chipModel": "mos8580",
-      "chord": "octave",
       "cutLfoShape": "sine",
       "cutLfoSync": "off",
       "cutLfoWave": null,
       "filterMode": "lowpass",
       "filterType": "low-pass",
       "params": {
-        "arpCycle": 0.0,
-        "arpGate": 100.0,
-        "arpMiss": 0.0,
-        "arpOn": 0.0,
-        "arpRange": 1.0,
-        "arpRepeats": 1.0,
-        "arpSkip": 0.0,
-        "arpTime": 200.0,
         "attack1": 8.0,
         "attack2": 8.0,
         "attack3": 8.0,
         "bendRange": 2.0,
-        "chordOn": 0.0,
-        "chordRange": 1.0,
         "coarse1": 0.0,
         "coarse2": 0.0,
         "coarse3": 0.0,
@@ -114,6 +99,6 @@
       "wave2": "triangle",
       "wave3": "triangle"
     },
-    "version": 1
+    "version": 2
   }
 }
