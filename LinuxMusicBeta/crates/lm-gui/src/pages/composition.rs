@@ -18,7 +18,10 @@ use gpui::{
 use lm_port::{EditOp, Feed, GestureId, HostTime, Label, NodeId, Ref, Resource, Target, Topic, Value};
 use lm_time::TempoMap;
 
-use crate::actions::{DeleteItem, Duplicate, EmptyItem, OpenItem, Split, ZoomIn, ZoomOut};
+use crate::actions::{
+    ArrCopy, ArrCut, ArrPaste, BarLeft, BarRight, DeleteItem, Duplicate, EmptyItem, Glue, InsertBar, OpenItem,
+    RemoveBar, SelectAllItems, SelectNoItems, Split, ToolDraw, ToolKnife, ToolSelect, ZoomIn, ZoomOut,
+};
 use crate::core::Core;
 use crate::model::{self, ItemView, TrackView};
 use crate::screens::Screen;
@@ -26,6 +29,9 @@ use crate::tiles::{TileCache, level_for, paint_wave, tile_range};
 use crate::ui::{THEME, button, c, knob_face, loading_component, meter, midi, tr, tr_str, track_color, trf};
 use crate::view::{self, TimelineView};
 
+mod edit;
+
+use self::edit::EditState;
 use super::marks::{self, MarksState};
 use crate::workspace::Workspace;
 
@@ -65,6 +71,10 @@ enum ItemZone {
     FadeIn,
     FadeOut,
     Gain,
+    /// the right edge: the length (F-CLP-003)
+    ResizeEnd,
+    /// the left edge: trims the start, the content stays (F-CLP-003)
+    TrimStart,
 }
 
 struct ItemDrag {
@@ -72,6 +82,10 @@ struct ItemDrag {
     zone: ItemZone,
     start: (f32, f32),
     start_value: f64,
+    /// the item's length when the drag began
+    length: i64,
+    /// the other selected items and their starts, moved with it
+    others: Vec<(NodeId, i64)>,
     gesture: GestureId,
 }
 
@@ -112,6 +126,8 @@ pub struct CompositionPage {
     hits: Rc<RefCell<Vec<Hit>>>,
     /// The ruler's markers and regions (agent D, marks.rs)
     pub(crate) marks: MarksState,
+    /// The editing's state: tool, grid, selection, menus (edit.rs)
+    ed: EditState,
 }
 
 /// The rows: tracks not hidden by a collapsed folder, then each track's take lanes and automation lanes
@@ -174,6 +190,7 @@ impl CompositionPage {
             tiles: Rc::new(RefCell::new(TileCache::default())),
             hits: Default::default(),
             marks: MarksState::new(core_for_marks),
+            ed: EditState::default(),
         }
     }
 
@@ -253,31 +270,6 @@ impl CompositionPage {
         cx.notify();
     }
 
-    fn release(&mut self, cx: &mut Context<Self>) {
-        if let Some(d) = self.drag.take() {
-            self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
-        }
-        if let Some(d) = self.item_drag.take() {
-            let now = self.selected(cx).map(|(_, it)| it.start);
-            let delta = now.map_or(0, |n| n - d.start_value as i64);
-            if d.zone == ItemZone::Move && self.move_automation && delta != 0 {
-                // the move again as `items.move`, which takes the automation under the item along: one undo step
-                let params = Value::object([
-                    ("items", Value::list([Value::text(d.item.to_string())])),
-                    ("delta", Value::int(delta)),
-                    ("automation", Value::bool(true)),
-                ]);
-                self.core.update(cx, |core, _| {
-                    core.port_mut().gesture_cancel(d.gesture);
-                    let _ = core.port_mut().run_action("items.move".into(), params);
-                });
-            } else {
-                self.core.update(cx, |core, _| core.port_mut().gesture_commit(d.gesture));
-            }
-        }
-        cx.notify();
-    }
-
     fn toggle(&mut self, track: NodeId, key: &str, now: bool, cx: &mut Context<Self>) {
         self.apply("Toggle", vec![EditOp::set(track, &[key], Value::bool(!now))], cx);
     }
@@ -354,6 +346,9 @@ impl CompositionPage {
 
     /// A click on the ruler moves the cursor there
     fn on_ruler(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) {
+        if self.loop_down(ev, cx) {
+            return;
+        }
         let b = *self.timeline_bounds.borrow();
         let tick = self.view.tick_at((ev.position.x - b.origin.x).as_f32()).max(0.0);
         self.action("transport.locate", Value::int(tick as i64), cx);
@@ -376,28 +371,6 @@ impl CompositionPage {
         let port = self.core.read(cx).port();
         let map = model::tempo_map(port.root());
         map.tick_at(port.telemetry().position.at(HostTime::now()) as i64)
-    }
-
-    fn split(&mut self, cx: &mut Context<Self>) {
-        let Some(item) = self.selected_item else { return };
-        let tick = self.cursor_tick(cx);
-        self.action(
-            "arrange.split",
-            Value::object([("item", Value::text(item.to_string())), ("tick", Value::int(tick))]),
-            cx,
-        );
-    }
-
-    fn duplicate(&mut self, cx: &mut Context<Self>) {
-        if let Some(item) = self.selected_item {
-            self.action("arrange.duplicate", Value::object([("item", Value::text(item.to_string()))]), cx);
-        }
-    }
-
-    fn delete_item(&mut self, cx: &mut Context<Self>) {
-        if let Some(item) = self.selected_item.take() {
-            self.apply("Delete", vec![EditOp::Remove { id: Ref::Id(item) }], cx);
-        }
     }
 
     /// An empty audio item a bar long at the cursor, on the selected item's track or the first armed one (P-29)
@@ -430,109 +403,12 @@ impl CompositionPage {
         }
     }
 
-    fn on_timeline_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus, cx); // the arrangement's keys go to the page
-        let b = *self.timeline_bounds.borrow();
-        let (mx, my) = ((ev.position.x - b.origin.x).as_f32(), (ev.position.y - b.origin.y).as_f32());
-        if my < view::RULER_H + marks::MARKS_H + TEMPO_H {
-            return;
-        }
-        // an automation lane: a double click opens it in the automation editor (agent B's)
-        let lane = self.lane_hits.borrow().iter().find(|(y, h, ..)| my >= *y && my <= y + h).copied();
-        if let Some((_, _, lane, _)) = lane {
-            if ev.click_count == 2 {
-                let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::Automation, Some(lane), window, cx));
-            }
-            return;
-        }
-        let hit = self
-            .hits
-            .borrow()
-            .iter()
-            .rev()
-            .find(|(x, y, w, h, ..)| mx >= *x && mx <= x + w && my >= *y && my <= y + h)
-            .copied();
-        let Some((x, y, w, _, item, fi, fo)) = hit else {
-            if ev.click_count == 2 {
-                let row = self.track_hits.borrow().iter().find(|(y, h, _)| my >= *y && my <= y + h).copied();
-                if let Some((_, _, track)) = row {
-                    let tick = self.view.tick_at(mx);
-                    return self.new_item_at(track, tick, window, cx);
-                }
-            }
-            self.selected_item = None;
-            cx.notify();
-            return;
-        };
-        self.selected_item = Some(item);
-        if ev.click_count == 2 {
-            return self.open_item(window, cx);
-        }
-        // the top 7 px: the fade handles at the corners, the gain handle between; the rest moves the item
-        let zone = if my - y <= 7.0 {
-            if mx <= x + fi.max(10.0) {
-                ItemZone::FadeIn
-            } else if mx >= x + w - fo.max(10.0) {
-                ItemZone::FadeOut
-            } else {
-                ItemZone::Gain
-            }
-        } else {
-            ItemZone::Move
-        };
-        let Some((_, it)) = self.selected(cx) else { return };
-        let start_value = match zone {
-            ItemZone::Move => it.start as f64,
-            ItemZone::FadeIn => it.fade_in as f64,
-            ItemZone::FadeOut => it.fade_out as f64,
-            ItemZone::Gain => it.gain,
-        };
-        let gesture = self.core.update(cx, |core, _| core.port_mut().begin_gesture(Label::new("Item")));
-        self.item_drag = Some(ItemDrag {
-            item,
-            zone,
-            start: (ev.position.x.as_f32(), ev.position.y.as_f32()),
-            start_value,
-            gesture,
-        });
-        cx.stop_propagation();
-        cx.notify();
-    }
-
     /// Where an item is drawn, in window coordinates: a point in its body (the tests click there)
     #[cfg(all(test, debug_assertions))]
     pub fn item_point(&self, item: NodeId) -> Option<gpui::Point<Pixels>> {
         let b = *self.timeline_bounds.borrow();
         let (x, y, w, h, ..) = self.hits.borrow().iter().find(|h| h.4 == item).copied()?;
         Some(gpui::point(b.origin.x + px(x + w.min(40.0) / 2.0), b.origin.y + px(y + h * 0.6)))
-    }
-
-    fn drag_item(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
-        let Some(d) = &self.item_drag else { return };
-        let dx = (ev.position.x.as_f32() - d.start.0) as f64 * self.view.ticks_per_px;
-        let dy = (ev.position.y.as_f32() - d.start.1) as f64;
-        let beat = model::ppq(self.core.read(cx).port().root()) as f64;
-        let (key, value) = match d.zone {
-            ItemZone::Move => {
-                // snapped to the beat, unless Shift
-                let s = (d.start_value + dx).max(0.0);
-                ("start", Value::int(if ev.modifiers.shift { s } else { (s / beat).round() * beat } as i64))
-            }
-            ItemZone::FadeIn => ("fadeIn", Value::int((d.start_value + dx).max(0.0) as i64)),
-            ItemZone::FadeOut => ("fadeOut", Value::int((d.start_value - dx).max(0.0) as i64)),
-            ItemZone::Gain => (
-                "gain",
-                Value::real(
-                    view::db_to_gain((view::gain_to_db(d.start_value).max(-60.0) - dy * 0.3).clamp(-60.0, 12.0))
-                        .min(4.0),
-                )
-                .unwrap_or_default(),
-            ),
-        };
-        let op = EditOp::set(d.item, &[key], value);
-        self.core
-            .update(cx, |core, _| core.port_mut().gesture_apply(&self.item_drag.as_ref().unwrap().gesture, vec![op]));
-        cx.notify();
     }
 }
 
@@ -601,12 +477,26 @@ impl Render for CompositionPage {
             .on_action(cx.listener(|p, _: &DeleteItem, _, cx| p.delete_item(cx)))
             .on_action(cx.listener(|p, _: &EmptyItem, _, cx| p.empty_item(cx)))
             .on_action(cx.listener(|p, _: &OpenItem, window, cx| p.open_item(window, cx)))
+            .on_action(cx.listener(|p, _: &ArrCopy, _, cx| p.copy_sel(cx)))
+            .on_action(cx.listener(|p, _: &ArrCut, _, cx| p.cut_sel(cx)))
+            .on_action(cx.listener(|p, _: &ArrPaste, _, cx| p.paste_at_cursor(cx)))
+            .on_action(cx.listener(|p, _: &Glue, _, cx| p.glue(cx)))
+            .on_action(cx.listener(|p, _: &SelectAllItems, _, cx| p.select_all(cx)))
+            .on_action(cx.listener(|p, _: &SelectNoItems, _, cx| p.select_none(cx)))
+            .on_action(cx.listener(|p, _: &BarLeft, _, cx| p.cursor_bar(-1, cx)))
+            .on_action(cx.listener(|p, _: &BarRight, _, cx| p.cursor_bar(1, cx)))
+            .on_action(cx.listener(|p, _: &InsertBar, _, cx| p.shift_bar(true, cx)))
+            .on_action(cx.listener(|p, _: &RemoveBar, _, cx| p.shift_bar(false, cx)))
+            .on_action(cx.listener(|p, _: &ToolDraw, _, cx| p.set_tool(edit::Tool::Draw, cx)))
+            .on_action(cx.listener(|p, _: &ToolKnife, _, cx| p.set_tool(edit::Tool::Knife, cx)))
+            .on_action(cx.listener(|p, _: &ToolSelect, _, cx| p.set_tool(edit::Tool::Select, cx)))
             .on_action(cx.listener(|p, _: &ZoomIn, _, cx| p.zoom(-40.0, cx)))
             .on_action(cx.listener(|p, _: &ZoomOut, _, cx| p.zoom(40.0, cx)))
             .map(|d| marks::actions(d, cx))
             .on_mouse_move(cx.listener(|p, ev: &MouseMoveEvent, _, cx| {
                 p.drag_knob(ev, cx);
                 p.drag_item(ev, cx);
+                p.edit_move(ev, cx);
             }))
             .on_mouse_up(MouseButton::Left, cx.listener(|p, _: &MouseUpEvent, _, cx| p.release(cx)))
             .relative()
@@ -618,12 +508,19 @@ impl Render for CompositionPage {
             .child(timeline)
             .children(self.render_knob_menu(cx))
             .children(self.render_lane_menu(cx))
+            .children(self.render_clip_menu(cx))
+            .children(self.render_track_menu(cx))
+            .children(self.render_io_menu(cx))
+            .children(self.render_confirm_remove(cx))
     }
 }
 
 impl CompositionPage {
     /// The right button on a lane: its menu
     fn on_timeline_right(&mut self, ev: &MouseDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.right_down(ev, cx) {
+            return;
+        }
         let b = *self.timeline_bounds.borrow();
         let (mx, my) = ((ev.position.x - b.origin.x).as_f32(), (ev.position.y - b.origin.y).as_f32());
         let lane = self.lane_hits.borrow().iter().find(|(y, h, ..)| my >= *y && my <= y + h).copied();
@@ -790,7 +687,7 @@ impl CompositionPage {
             .bg(c(THEME.bg1))
             .border_r_1()
             .border_color(c(THEME.line))
-            .child(div().h(px(view::RULER_H)).bg(c(THEME.bg3)))
+            .child(self.render_toolbar(cx))
             .child(marks::MarksState::header())
             .child(
                 div()
@@ -873,33 +770,6 @@ impl CompositionPage {
         );
     }
 
-    /// A double click on an empty part of an instrument track: a MIDI item a bar long on that bar, opened in the
-    /// Piano Roll (the legacy's click in the song editor makes a clip)
-    fn new_item_at(&mut self, track: NodeId, tick: f64, window: &mut Window, cx: &mut Context<Self>) {
-        let root = self.core.read(cx).port().root().clone();
-        let Some(t) = model::tracks(&root).into_iter().find(|t| t.id == track) else { return };
-        if t.instrument.is_none() {
-            return;
-        }
-        let map = model::tempo_map(&root);
-        let bar = map.bar_beat_tick(tick.max(0.0) as i64).bar;
-        let start = map.bar_start(bar).unwrap_or(0);
-        let length = map.bar_start(bar + 1).unwrap_or(start + 4 * model::ppq(&root) as i64) - start;
-        let node = Value::object([
-            ("kind", Value::text("midi")),
-            ("name", Value::text(t.name.to_string())),
-            ("start", Value::int(start)),
-            ("length", Value::int(length.max(1))),
-        ]);
-        let op = EditOp::Insert { temp: 0, parent: Ref::Id(track), list: "items".into(), index: t.items.len(), node };
-        let made = self.core.update(cx, |core, _| core.port_mut().apply(Label::new("New item"), vec![op]).ok());
-        if let Some(item) = made.and_then(|a| a.created.first().map(|(_, id)| *id)) {
-            self.selected_item = Some(item);
-            let _ = self.workspace.update(cx, |ws, cx| ws.open(Screen::PianoRoll, Some(item), window, cx));
-        }
-        cx.notify();
-    }
-
     fn track_header(&self, t: &TrackView, r: &Row, core: &Core, inputs: &[f32], cx: &Context<Self>) -> AnyElement {
         let (i, id) = (t.index, t.id);
         let number = div()
@@ -921,6 +791,23 @@ impl CompositionPage {
             .border_b_1()
             .border_color(c(THEME.line))
             .pl(px(r.depth as f32 * INDENT))
+            .when(self.ed.track == Some(id), |d| d.bg(c(THEME.bg3)))
+            // a click anywhere on the header selects the track (F-ARR-012); the right button opens its menu
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |p, _: &MouseDownEvent, _, cx| {
+                    p.ed.track = Some(id);
+                    cx.notify();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
+                    p.ed.track = Some(id);
+                    p.ed.open_track_menu(id, ev.position);
+                    cx.notify();
+                }),
+            )
             .child(number);
         let (mute, solo, collapsed, armed) = (t.mute, t.solo, t.collapsed, t.armed);
         let mute_b = button(SharedString::from(format!("m{i}")), "M", mute, THEME.orange)
@@ -1087,14 +974,26 @@ impl CompositionPage {
                                     .debug_selector(move || format!("fx-{i}"))
                                     .on_click(cx.listener(move |p, _, _, cx| p.open_fx(main_to, cx))),
                             )
-                            .child(button(
-                                SharedString::from(format!("io{i}")),
-                                if outs > 1 { trf("I/O ×{0}", &[&outs]) } else { "I/O".into() },
-                                outs > 1,
-                                THEME.green,
-                            )),
+                            .child(
+                                button(
+                                    SharedString::from(format!("io{i}")),
+                                    if outs > 1 { trf("I/O ×{0}", &[&outs]) } else { "I/O".into() },
+                                    outs > 1,
+                                    THEME.green,
+                                )
+                                .debug_selector(move || format!("io-{i}"))
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |p, ev: &MouseDownEvent, _, cx| {
+                                        cx.stop_propagation();
+                                        p.open_io_menu(id, ev.position, cx)
+                                    }),
+                                ),
+                            ),
                     )
-                }),
+                })
+                // 3 (a tall header): the input and the mixer channel (F-TRK-025)
+                .when(r.h >= 92.0, |d| d.child(edit::third_row(t, core.port().root()))),
         )
         // the meters on the right border: the input when armed (F-REC-009), the main output; a dot says there are more
         .child(
@@ -1310,7 +1209,7 @@ impl CompositionPage {
                             fade_in: fi,
                             fade_out: fo,
                             gain: it.gain,
-                            selected: self.selected_item == Some(it.id),
+                            selected: self.selected_item == Some(it.id) || self.ed.selection.contains(&it.id),
                         });
                         self.hits.borrow_mut().push((x, y + 3.0, w, r.h - 6.0, it.id, fi, fo));
                         // the item's name, or the loading component in place of the waveform (I-2)
@@ -1612,6 +1511,14 @@ impl CompositionPage {
                             cx.stop_propagation();
                             p.on_ruler(ev, cx)
                         }),
+                    )
+                    // Shift+right sets the loop's end (F-REG-007)
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|p, ev: &MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            p.loop_down(ev, cx);
+                        }),
                     ),
             )
             // files dropped from the file manager (F-ARR-011, agent D's files.rs)
@@ -1620,6 +1527,7 @@ impl CompositionPage {
             .child(self.marks.render(v, root, self.timeline_bounds.borrow().size.width.as_f32(), cx))
             .children(self.marks.render_menu(root, cx))
             .children(overlays)
+            .children(self.edit_overlays(cx))
             .into_any_element()
     }
 }
