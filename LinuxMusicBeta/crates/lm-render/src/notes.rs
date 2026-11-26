@@ -14,7 +14,7 @@ pub(crate) enum NoteSource {
     Item { item: u64, n: u32 },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ActiveNote {
     pub(crate) source: NoteSource,
     pub(crate) channel: u8,
