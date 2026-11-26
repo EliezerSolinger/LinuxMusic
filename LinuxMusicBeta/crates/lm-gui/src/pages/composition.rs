@@ -560,6 +560,7 @@ impl Render for CompositionPage {
             .children(self.render_track_menu(cx))
             .children(self.render_io_menu(cx))
             .children(self.render_palette(cx))
+            .children(self.render_loop_menu(cx))
             .children(self.render_confirm_remove(cx))
     }
 }
@@ -1661,7 +1662,9 @@ impl CompositionPage {
                         MouseButton::Right,
                         cx.listener(|p, ev: &MouseDownEvent, _, cx| {
                             cx.stop_propagation();
-                            p.loop_down(ev, cx);
+                            if !p.loop_down(ev, cx) {
+                                p.open_loop_menu(ev, cx);
+                            }
                         }),
                     ),
             )

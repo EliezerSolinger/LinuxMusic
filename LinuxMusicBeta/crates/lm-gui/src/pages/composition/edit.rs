@@ -27,8 +27,49 @@ pub(super) enum KnifeFrom {
 }
 
 /// The grid, as a fraction of a bar (F-ARR-009): 8, 4, 2, 1 bars, 1/2, 1/4, 1/8, 1/16 of a bar
-pub(super) const GRID: [(f64, &str); 8] =
-    [(8.0, "8"), (4.0, "4"), (2.0, "2"), (1.0, "1"), (0.5, "1/2"), (0.25, "1/4"), (0.125, "1/8"), (0.0625, "1/16")];
+pub(super) const GRID: [(f64, &str); 9] = [
+    (8.0, "8"),
+    (4.0, "4"),
+    (2.0, "2"),
+    (1.0, "1"),
+    (0.5, "1/2"),
+    (0.25, "1/4"),
+    (0.125, "1/8"),
+    (0.0625, "1/16"),
+    // follows the zoom: the finest step that keeps the lines apart (F-ARR-009)
+    (0.0, "Auto"),
+];
+
+/// How Shift edits the loop on the ruler (F-REG-007)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LoopEdit {
+    /// Shift+left sets the start, Shift+right the end
+    Buttons,
+    /// Shift+click moves the end that is nearer
+    Nearest,
+    /// Shift+drag the ends, or the body
+    Handles,
+}
+
+impl LoopEdit {
+    const ALL: [LoopEdit; 3] = [LoopEdit::Buttons, LoopEdit::Nearest, LoopEdit::Handles];
+
+    fn key(self) -> &'static str {
+        match self {
+            LoopEdit::Buttons => "buttons",
+            LoopEdit::Nearest => "nearest",
+            LoopEdit::Handles => "handles",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            LoopEdit::Buttons => "Two buttons",
+            LoopEdit::Nearest => "Nearest end",
+            LoopEdit::Handles => "Handles",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum LoopMode {
@@ -36,6 +77,8 @@ enum LoopMode {
     End,
     /// a new range drawn from this tick
     New(i64),
+    /// the whole range, held at this distance from its start
+    Body(i64),
 }
 
 pub(super) struct LoopDrag {
@@ -177,6 +220,8 @@ pub(super) struct EditState {
     io_menu: Option<(NodeId, gpui::Point<Pixels>)>,
     /// The palette of 48 colours for a clip, the clips selected, or a track (F-CLP-008, F-TRK-031)
     palette: Option<(ColorTarget, gpui::Point<Pixels>)>,
+    /// The ruler's menu: the tick under the pointer and where it opened (F-REG-007)
+    loop_menu: Option<(i64, gpui::Point<Pixels>)>,
     /// A track to remove and whether "don't ask again" is on
     confirm_remove: Option<(NodeId, bool)>,
     loop_drag: Option<LoopDrag>,
@@ -196,6 +241,7 @@ impl Default for EditState {
             track_menu: None,
             io_menu: None,
             palette: None,
+            loop_menu: None,
             confirm_remove: None,
             loop_drag: None,
         }
@@ -213,6 +259,7 @@ impl EditState {
         self.track_menu = None;
         self.io_menu = None;
         self.palette = None;
+        self.loop_menu = None;
     }
 }
 
@@ -260,7 +307,24 @@ impl CompositionPage {
     }
 
     fn frac(&self) -> f64 {
-        GRID[self.ed.grid.min(GRID.len() - 1)].0
+        let f = GRID[self.ed.grid.min(GRID.len() - 1)].0;
+        if f > 0.0 {
+            return f;
+        }
+        // proportional: the finest of 8 bars to 1/64 whose lines are 12 px apart or more
+        let bar_px = 3840.0 / self.view.ticks_per_px.max(1e-9);
+        [0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0]
+            .into_iter()
+            .find(|f| f * bar_px >= 12.0)
+            .unwrap_or(8.0)
+    }
+
+    /// The Shift mode for the loop (the preference `interface.loopEditMode`; the two buttons by default)
+    fn loop_edit(&self, cx: &Context<Self>) -> LoopEdit {
+        let v = model::at(self.core.read(cx).port().preferences(), &["interface", "loopEditMode"])
+            .and_then(Value::as_text)
+            .map(str::to_owned);
+        LoopEdit::ALL.into_iter().find(|m| Some(m.key()) == v.as_deref()).unwrap_or(LoopEdit::Buttons)
     }
 
     /// A timeline position (x) as a tick on the grid; Alt or Ctrl: free
@@ -921,9 +985,19 @@ impl CompositionPage {
         let (from, to) = if punch { song.punch_range } else { song.loop_range };
         let tick = self.snapped(mx, &ev.modifiers, cx);
         let min = step_at(&self.tempo(cx), tick, self.frac());
-        if ev.modifiers.shift && !ev.modifiers.alt {
-            // the two-button mode: Shift+left = start, Shift+right = end; never a zero size; passing swaps
-            let (a, z) = if ev.button == MouseButton::Right {
+        let edit = self.loop_edit(cx);
+        let handles =
+            ev.modifiers.shift && !ev.modifiers.alt && edit == LoopEdit::Handles && ev.button == MouseButton::Left;
+        if ev.modifiers.shift && !ev.modifiers.alt && !handles {
+            let (a, z) = if edit == LoopEdit::Nearest {
+                // the end that is nearer moves; never a zero size; passing swaps
+                if (tick - from).abs() <= (tick - to).abs() {
+                    (tick.min(to - min).max(0), to.max(tick + min))
+                } else {
+                    (from.min(tick - min).max(0), tick.max(from + min))
+                }
+            } else if ev.button == MouseButton::Right {
+                // the two-button mode: Shift+left = start, Shift+right = end
                 (from.min(tick - min).max(0), tick.max(from + min))
             } else {
                 (tick.min(to - min).max(0), to.max(tick + min))
@@ -931,7 +1005,7 @@ impl CompositionPage {
             self.set_range(punch, a, z, None, cx);
             return true;
         }
-        if ev.button != MouseButton::Left || my >= 11.0 {
+        if ev.button != MouseButton::Left || (my >= 11.0 && !handles) {
             return false;
         }
         let near = |t: i64| ((self.view.x(t as f64) - mx).abs()) <= 6.0;
@@ -939,12 +1013,65 @@ impl CompositionPage {
             LoopMode::Start
         } else if to > from && near(to) {
             LoopMode::End
+        } else if handles && to > from && (from..to).contains(&tick) {
+            LoopMode::Body(tick - from)
         } else {
             LoopMode::New(tick)
         };
         let gesture = self.core.update(cx, |core, _| core.port_mut().begin_gesture(Label::new("Loop")));
         self.ed.loop_drag = Some(LoopDrag { punch, mode, other: (from, to), gesture });
         true
+    }
+
+    /// The right button on the ruler without Shift: the loop's menu (the Shift mode, the loop's ends here)
+    pub(super) fn open_loop_menu(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) {
+        let b = *self.timeline_bounds.borrow();
+        let tick = self.snapped((ev.position.x - b.origin.x).as_f32(), &ev.modifiers, cx);
+        self.ed.close_menus();
+        self.ed.loop_menu = Some((tick, ev.position));
+        cx.notify();
+    }
+
+    fn run_loop_menu(&mut self, tick: i64, row: usize, cx: &mut Context<Self>) {
+        self.ed.close_menus();
+        let song = model::song(self.core.read(cx).port().root());
+        let (from, to) = song.loop_range;
+        let min = step_at(&self.tempo(cx), tick, self.frac());
+        match row {
+            0..=2 => {
+                let key = LoopEdit::ALL[row].key();
+                self.core.update(cx, |core, _| {
+                    let path = vec![PathStep::key("interface"), PathStep::key("loopEditMode")];
+                    let _ = core.port_mut().set_preference(path, Value::text(key));
+                });
+            }
+            3 => self.set_range(false, tick.min(to - min).max(0), to.max(tick + min), None, cx),
+            _ => self.set_range(false, from.min(tick - min).max(0), tick.max(from + min), None, cx),
+        }
+        cx.notify();
+    }
+
+    pub(super) fn render_loop_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let (tick, pos) = self.ed.loop_menu?;
+        let now = self.loop_edit(cx);
+        let mut list: Vec<AnyElement> = Vec::new();
+        for (n, m) in LoopEdit::ALL.into_iter().enumerate() {
+            let label = format!("{} {}", if m == now { "✓" } else { "  " }, tr_str(m.label()));
+            list.push(
+                Self::menu_row(format!("loop-menu-{n}"), label, true)
+                    .on_click(cx.listener(move |p, _, _, cx| p.run_loop_menu(tick, n, cx)))
+                    .into_any_element(),
+            );
+        }
+        list.push(Self::rule());
+        for (n, label) in [(3, "Loop start here"), (4, "Loop end here")] {
+            list.push(
+                Self::menu_row(format!("loop-menu-{n}"), tr_str(label).to_string(), true)
+                    .on_click(cx.listener(move |p, _, _, cx| p.run_loop_menu(tick, n, cx)))
+                    .into_any_element(),
+            );
+        }
+        Some(self.menu_box("loop-menu", pos, 200.0, cx).children(list).into_any_element())
     }
 
     fn loop_move(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
@@ -958,6 +1085,10 @@ impl CompositionPage {
             LoopMode::Start => (tick.min(to - min).max(0), to),
             LoopMode::End => (from, tick.max(from + min)),
             LoopMode::New(anchor) => (anchor.min(tick), anchor.max(tick + if tick == anchor { min } else { 0 })),
+            LoopMode::Body(grab) => {
+                let start = (tick - grab).max(0);
+                (start, start + (to - from))
+            }
         };
         let g = self.ed.loop_drag.as_ref().map(|d| &d.gesture).unwrap();
         let ops = [("from", a), ("to", z)];
@@ -1803,7 +1934,7 @@ impl CompositionPage {
             })
             .child(div().flex_1())
             .child(
-                button("grid", format!("▦ {}", GRID[self.ed.grid.min(GRID.len() - 1)].1), false, 0)
+                button("grid", format!("▦ {}", tr_str(GRID[self.ed.grid.min(GRID.len() - 1)].1)), false, 0)
                     .debug_selector(|| "grid".into())
                     .on_click(cx.listener(|p, _, _, cx| {
                         p.ed.grid = (p.ed.grid + 1) % GRID.len();
