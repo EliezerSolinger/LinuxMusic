@@ -142,7 +142,6 @@ pub type AudioObjectPropertyListenerProc =
     unsafe extern "C" fn(AudioObjectID, u32, *const AudioObjectPropertyAddress, *mut c_void) -> OSStatus;
 
 #[link(name = "CoreAudio", kind = "framework")]
-#[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     pub fn AudioObjectGetPropertyDataSize(
         id: AudioObjectID,

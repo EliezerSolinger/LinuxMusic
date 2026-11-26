@@ -491,9 +491,9 @@ unsafe extern "C" fn listener_trampoline(
     client: *mut c_void,
 ) -> OSStatus {
     // SAFETY: `client` is the boxed closure of a live `Watch` (freed only after the listener is removed).
-    let f = unsafe { &*(client as *const Listener) };
+    let f: &dyn Fn() = unsafe { &**(client as *const Listener) };
     // Unwinding into CoreAudio is undefined behaviour
-    let _ = catch_unwind(AssertUnwindSafe(|| f()));
+    let _ = catch_unwind(AssertUnwindSafe(f));
     0
 }
 

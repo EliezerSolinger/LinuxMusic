@@ -5,6 +5,9 @@
 mod alsa;
 mod backend;
 mod calibrate;
+mod choice;
+#[cfg(target_os = "macos")]
+mod coreaudio;
 mod device;
 mod disk;
 mod dummy;
@@ -21,9 +24,14 @@ mod system;
 mod take;
 
 #[cfg(target_os = "linux")]
-pub use alsa::{AlsaBackend, ChoiceCaps, DeviceChoice, card_index, device_present, list_devices};
+pub use alsa::{AlsaBackend, card_index, device_present, list_devices};
 pub use backend::{Backend, CallbackGuard, CallbackHandle, DeviceCallback, DeviceConfig, DeviceEvent, DeviceInfo};
 pub use calibrate::{BURST, Calibration, CalibrationKey, CalibrationOptions, burst, calibrate, find_lag};
+pub use choice::{ChoiceCaps, DeviceChoice};
+#[cfg(target_os = "macos")]
+pub use coreaudio::{
+    CoreAudioBackend, device_present as coreaudio_device_present, list_devices as coreaudio_list_devices,
+};
 pub use device::{Device, STOP_TIMEOUT, StopTimedOut, SwitchFailed, abandoned_devices, switch_device};
 pub use disk::{
     DiskEvent, DiskFaults, DiskWriter, LIVE_PEAK_CHANNELS, LivePeak, RESERVE_SECONDS, SYNC_SECONDS, ring_frames,

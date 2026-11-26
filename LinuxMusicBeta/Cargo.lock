@@ -3644,6 +3644,7 @@ dependencies = [
  "lm-base",
  "lm-render",
  "lm-sys-alsa",
+ "lm-sys-coreaudio",
  "lm-sys-linux",
  "lm-sys-rubberband",
  "lm-sys-samplerate",
