@@ -91,6 +91,8 @@ pub mod lmms {
     pub static SIN_WAVE_INACTIVE: Asset = asset!("lmms/sin_wave_inactive.png");
     pub static EXP_WAVE_ACTIVE: Asset = asset!("lmms/exp_wave_active.png");
     pub static EXP_WAVE_INACTIVE: Asset = asset!("lmms/exp_wave_inactive.png");
+    pub static USR_WAVE_ACTIVE: Asset = asset!("lmms/usr_wave_active.png");
+    pub static USR_WAVE_INACTIVE: Asset = asset!("lmms/usr_wave_inactive.png");
     pub static WHITE_NOISE_WAVE_ACTIVE: Asset = asset!("lmms/white_noise_wave_active.png");
     pub static WHITE_NOISE_WAVE_INACTIVE: Asset = asset!("lmms/white_noise_wave_inactive.png");
     pub static FILTER_LP: Asset = asset!("lmms/filter_lp.png");
@@ -118,6 +120,8 @@ pub mod lmms {
         &COMBOBOX_ARROW,
         &COMBOBOX_ARROW_SELECTED,
         &COMBOBOX_BG,
+        &USR_WAVE_ACTIVE,
+        &USR_WAVE_INACTIVE,
         &SAW_WAVE_ACTIVE,
         &SAW_WAVE_INACTIVE,
         &TRIANGLE_WAVE_ACTIVE,

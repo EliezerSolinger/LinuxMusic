@@ -33,6 +33,7 @@ pub mod tripleoscillator;
 pub mod vectorscope;
 pub mod vibed;
 pub mod watsyn;
+pub mod xpressive;
 
 type SpecFn = fn() -> &'static PanelSpec;
 
@@ -65,6 +66,7 @@ pub static ALL: &[(&str, SpecFn)] = &[
     (monstro::ID, || &monstro::PANEL),
     (vibed::ID, || &vibed::PANEL),
     (watsyn::ID, || &watsyn::PANEL),
+    (xpressive::ID, || &xpressive::PANEL),
     (audiofileprocessor::ID, || &audiofileprocessor::PANEL),
     (patman::ID, || &patman::PANEL),
     (slewdistortion::ID, || &slewdistortion::PANEL),
@@ -104,6 +106,7 @@ pub static ASSETS: &[&[&crate::assets::Asset]] = &[
     monstro::ASSETS,
     vibed::ASSETS,
     watsyn::ASSETS,
+    xpressive::ASSETS,
     audiofileprocessor::ASSETS,
     patman::ASSETS,
     slewdistortion::ASSETS,

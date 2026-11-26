@@ -844,3 +844,9 @@ fn guitarix(cx: &mut TestAppContext) {
         exercise(&mut o);
     }
 }
+
+#[gpui::test]
+fn xpressive(cx: &mut TestAppContext) {
+    let mut o = open(cx, &[(&lm_plugins_instruments::xpressive::DESCRIPTOR, true)], "xpressive");
+    exercise(&mut o);
+}
