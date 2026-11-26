@@ -310,6 +310,27 @@ impl EffectWindow {
                         })),
                 )
             })
+            // I-22: a third-party plugin opens its own window (the helper makes it)
+            .when(info.is_some_and(|i| i.third_party), |d| {
+                d.child(
+                    div()
+                        .id(("ef-window", id.number as usize))
+                        .debug_selector(move || format!("ef-window-{index}"))
+                        .absolute()
+                        .right(px(36.))
+                        .top(px(32.))
+                        .text_size(px(9.5))
+                        .text_color(c(THEME.purple))
+                        .cursor_pointer()
+                        .child(tr("Open the plugin's window"))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(move |w, _, _, cx| {
+                            let core = w.scx.core.clone();
+                            let params = Value::object([("node", Value::text(id.to_string()))]);
+                            run_action(&core, "plugin.show_window", params, cx);
+                        })),
+                )
+            })
             // the point among the sections (analog desk, P-20)
             .when(analog, |d| {
                 d.child(

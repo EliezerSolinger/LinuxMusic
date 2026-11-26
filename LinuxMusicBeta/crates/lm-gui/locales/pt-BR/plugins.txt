@@ -23,6 +23,7 @@ Your presets = Seus presets
 No preset = Sem preset
 Swap ▾ = Trocar ▾
 outside the program = fora do programa
+Open the plugin's window = Abrir janela do plugin
 Preset: {0} = Preset: {0}
 Save preset = Salvar preset
 Effects ({0}) = Efeitos ({0})

@@ -1549,7 +1549,22 @@ impl InstrumentWindow {
                     .child(div().flex_1())
                     .when(info.is_some_and(|i| i.third_party), |e| {
                         e.child(div().text_size(px(9.5)).text_color(c(THEME.purple)).child(tr("outside the program")))
-                    }),
+                    })
+                    // I-22: a third-party plugin opens its own window (the helper makes it)
+                    .when_some(
+                        t.instrument.as_ref().map(|(n, _)| *n).filter(|_| info.is_some_and(|i| i.third_party)),
+                        |e, node| {
+                            e.child(
+                                button("iw-plugin-window", tr("Open the plugin's window"), false, 0)
+                                    .debug_selector(|| "iw-plugin-window".into())
+                                    .on_click(cx.listener(move |w, _, _, cx| {
+                                        let core = w.scx.core.clone();
+                                        let params = Value::object([("node", Value::text(node.to_string()))]);
+                                        run_action(&core, "plugin.show_window", params, cx);
+                                    })),
+                            )
+                        },
+                    ),
             )
             .child(
                 line()
