@@ -168,6 +168,8 @@ fn snapshots() {
                             peaks: None,
                             window: (0.0, 1.0),
                             rate: 48_000.0,
+                            primary: sf.primary,
+                            tag: sf.tag,
                         };
                         (sf.draw)(&mut one, &sc);
                     }
@@ -177,7 +179,7 @@ fn snapshots() {
                         let top = ((s.a + s.b) / 2.0 - ph / 2.0).trunc() - ctl.y;
                         one.pixmap(crate::assets::image(s.handle), 0.0, top, false);
                     }
-                    Kind::Readout(_) => {}
+                    Kind::Readout(_) | Kind::TextEdit(_) => {}
                     Kind::Combo(cb) => {
                         let def = schema.find_field(cb.field).and_then(|f| f.default.clone());
                         let icon = cb

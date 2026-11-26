@@ -205,8 +205,15 @@ fn exercise(o: &mut Opened<'_>) {
             o.panel.update(o.cx, |p, cx| p.set_view(v, cx));
             o.settle();
         }
+        if c.is_decoration() {
+            // the skin, a dark box or a meter: drawn only, nothing to move
+            continue;
+        }
         if let Some((p, on)) = c.when {
             set_param(o, p, if on { 1.0 } else { 0.0 });
+        }
+        if let Some((f, key)) = c.only {
+            set_field(o, f, Value::text(key));
         }
         if let Some((f, hidden)) = c.unless
             && let Some(lm_port::FieldKind::Choice(keys)) = schema.find_field(f).map(|x| &x.kind)
@@ -214,9 +221,12 @@ fn exercise(o: &mut Opened<'_>) {
         {
             set_field(o, f, Value::text(*other));
         }
-        if let Kind::Button(b) = &c.kind
-            && let Bind::View(n) = b.bind
-        {
+        let view_bind = match &c.kind {
+            Kind::Button(b) => Some(b.bind),
+            Kind::Toggle(t) => Some(t.bind),
+            _ => None,
+        };
+        if let Some(Bind::View(n)) = view_bind {
             // a view selector: panel-local, nothing in the plugin's state
             let before = o.state();
             o.click(id, MouseButton::Left);
@@ -468,6 +478,17 @@ fn exercise(o: &mut Opened<'_>) {
                 }
             }
             Kind::Readout(_) => {}
+            Kind::TextEdit(t) => {
+                // click it, type: the field of the selected view changes a key at a time, Backspace takes it back
+                let field = t.fields[0];
+                o.click(id, MouseButton::Left);
+                let before = o.field(field);
+                o.cx.simulate_keystrokes("1");
+                let typed = format!("{}1", before.as_text().unwrap_or(""));
+                assert_eq!(o.field(field).as_text(), Some(typed.as_str()), "{id}: typed");
+                o.cx.simulate_keystrokes("backspace");
+                assert_eq!(o.field(field), before, "{id}: backspace");
+            }
         }
     }
 }
@@ -812,4 +833,14 @@ fn eq(cx: &mut TestAppContext) {
 #[gpui::test]
 fn compressor(cx: &mut TestAppContext) {
     effect(cx, &lm_plugins_effects::compressor::DESCRIPTOR);
+}
+
+/// Every Guitarix unit's panel, opened on the real unit's schema and exercised control by control
+#[gpui::test]
+fn guitarix(cx: &mut TestAppContext) {
+    assert_eq!(lm_plugins_guitarix::ALL.len(), crate::panels::guitarix::ids().len(), "a panel for each unit");
+    for (_, d) in lm_plugins_guitarix::ALL {
+        let mut o = open(cx, &[(d, false)], d.id);
+        exercise(&mut o);
+    }
 }

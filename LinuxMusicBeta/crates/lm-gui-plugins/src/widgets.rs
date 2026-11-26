@@ -52,6 +52,8 @@ pub enum KnobStyle {
     /// `knob05.png`, 32×32
     Vintage32,
     Styled(Styled),
+    /// Guitarix's knobs, vector drawn with their LED ring (`gxwidgets`)
+    Gx(crate::gxwidgets::GxKnob),
 }
 
 /// A `KnobType::Styled` knob: its size (set by the plugin) and the style sheet's properties
@@ -76,7 +78,7 @@ impl KnobStyle {
             KnobStyle::Bright26 => Some(&assets::lmms::KNOB02),
             KnobStyle::Small17 => Some(&assets::lmms::KNOB03),
             KnobStyle::Vintage32 => Some(&assets::lmms::KNOB05),
-            KnobStyle::Styled(_) => None,
+            KnobStyle::Styled(_) | KnobStyle::Gx(_) => None,
         }
     }
 
@@ -84,6 +86,7 @@ impl KnobStyle {
     pub fn size(&self) -> (f32, f32) {
         match self {
             KnobStyle::Styled(s) => (s.w, s.h),
+            KnobStyle::Gx(g) => g.size(),
             other => {
                 let img = other.pixmap().map(assets::image);
                 img.map_or((1.0, 1.0), |i| (i.width() as f32, i.height() as f32))
@@ -100,6 +103,10 @@ impl KnobStyle {
             KnobStyle::Bright26 => 2u8.hash(&mut h),
             KnobStyle::Small17 => 3u8.hash(&mut h),
             KnobStyle::Vintage32 => 4u8.hash(&mut h),
+            KnobStyle::Gx(g) => {
+                6u8.hash(&mut h);
+                g.hash(&mut h);
+            }
             KnobStyle::Styled(s) => {
                 5u8.hash(&mut h);
                 for v in [s.w, s.h, s.inner_radius, s.outer_radius, s.center.0, s.center.1, s.line_width] {
@@ -280,6 +287,7 @@ pub fn volume_text(rounded: f64, zero: f64) -> String {
 /// as `Knob::drawKnob`. The canvas has the knob's size
 pub fn draw_knob(c: &mut Canvas, style: &KnobStyle, angle: i32, center_angle: i32, enabled: bool) {
     match style {
+        KnobStyle::Gx(g) => crate::gxwidgets::draw_knob(c, *g, angle, enabled),
         KnobStyle::Styled(s) => {
             // the styled knob draws only its line (the plugin's artwork has the knob's body)
             let (cx, cy) = s.center;
@@ -332,7 +340,7 @@ pub fn draw_knob(c: &mut Canvas, style: &KnobStyle, angle: i32, center_angle: i3
                     let l = knob_line(mid, angle, radius - 2.0, 2.0);
                     c.line(l.0, l.1, 2.0, Cap::Square, &pen);
                 }
-                KnobStyle::Styled(_) => {}
+                KnobStyle::Styled(_) | KnobStyle::Gx(_) => {}
             }
             // the value's arc, from the center value to the value, in the line's color
             c.arc(

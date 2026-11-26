@@ -26,4 +26,5 @@ lm-plugins-sid.workspace = true
 lm-plugins-freeboy.workspace = true
 lm-plugins-opulenz.workspace = true
 lm-plugins-effects.workspace = true
+lm-plugins-guitarix.workspace = true
 gpui = { workspace = true, features = ["test-support"] }

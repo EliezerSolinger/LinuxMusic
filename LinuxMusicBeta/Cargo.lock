@@ -3612,6 +3612,7 @@ dependencies = [
  "lm-plugin",
  "lm-plugins-effects",
  "lm-plugins-freeboy",
+ "lm-plugins-guitarix",
  "lm-plugins-instruments",
  "lm-plugins-opulenz",
  "lm-plugins-sid",

@@ -246,6 +246,8 @@ fn ring(id: &'static str, x: f32, y: f32, large: bool) -> Control {
             wheel: false,
             wheel_edit: None,
             peaks: None,
+
+            tag: 0,
         },
         id,
         x,
@@ -273,6 +275,8 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             wheel: false,
             wheel_edit: None,
             peaks: None,
+
+            tag: 0,
         },
         "graph",
         0.0,
@@ -296,6 +300,8 @@ pub static PANEL: LazyLock<PanelSpec> = LazyLock::new(|| {
             wheel: false,
             wheel_edit: None,
             peaks: None,
+
+            tag: 0,
         },
         "box",
         BX,

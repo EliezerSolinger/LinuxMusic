@@ -18,6 +18,7 @@
 
 pub mod assets;
 pub mod graphs;
+pub mod gxwidgets;
 pub mod i18n;
 pub mod panel;
 pub mod panels;
@@ -79,7 +80,7 @@ pub fn open_entity<H: PortHost>(
 
 /// The plugins that have a panel, in the registry's order
 pub fn plugins_with_panels() -> Vec<&'static str> {
-    panels::ALL.iter().map(|(id, _)| *id).collect()
+    panels::ALL.iter().map(|(id, _)| *id).chain(panels::guitarix::ids()).collect()
 }
 
 // the views' tests find controls by `debug_selector`, which GPUI records only with debug assertions

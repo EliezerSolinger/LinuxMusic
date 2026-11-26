@@ -31,7 +31,7 @@ use lm_port::{
     Pending, Ref, Value,
 };
 
-use crate::raster::Canvas;
+use crate::raster::{Canvas, Rgba};
 use crate::spec::{Bind, ButtonSpec, Kind, PanelSpec, SurfaceCx, SurfaceHandle, Target, Text, ToggleSpec};
 use crate::widgets::{self, Range, theme};
 use crate::{PortHost, assets};
@@ -167,6 +167,8 @@ pub struct PluginPanel<H: PortHost> {
     hovered: Option<usize>,
     menu: Option<Menu>,
     entry: Option<Entry>,
+    /// The text editor being typed in (its control)
+    editing: Option<usize>,
     /// P-06: the controls the user switched between linear and logarithmic travel (a display option)
     toggled_log: HashSet<Target>,
     images: HashMap<(usize, u64), Arc<RenderImage>>,
@@ -207,6 +209,7 @@ impl<H: PortHost> PluginPanel<H> {
             hovered: None,
             menu: None,
             entry: None,
+            editing: None,
             toggled_log: HashSet::new(),
             images: HashMap::new(),
             scroll_acc: 0.0,
@@ -230,7 +233,7 @@ impl<H: PortHost> PluginPanel<H> {
     }
 
     fn control_at(&self, x: f32, y: f32, cx: &App) -> Option<usize> {
-        self.spec.hit_if(x, y, |c| self.is_shown(c, cx))
+        self.spec.hit_if(x, y, |c| self.is_shown(c, cx) && !c.is_decoration())
     }
 
     /// The panel's selected view
@@ -422,6 +425,7 @@ impl<H: PortHost> PluginPanel<H> {
             | Kind::Combo(_)
             | Kind::Graph(_)
             | Kind::Surface(_)
+            | Kind::TextEdit(_)
             | Kind::Readout(_) => (c.target().key(), 1.0, None, false),
         };
         let p = self.schema.as_ref().and_then(|s| s.find_param(key));
@@ -488,7 +492,7 @@ impl<H: PortHost> PluginPanel<H> {
                 let v = self.field(cb.field, cx);
                 cb.items.iter().find(|i| v.as_text() == Some(i.key)).map(|i| i.text.show()).unwrap_or_default()
             }
-            Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) => String::new(),
+            Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) | Kind::TextEdit(_) => String::new(),
             Kind::Slider(sl) => {
                 let v = self.range(ctrl).rounded(self.param(sl.param, cx));
                 format!("{}{}", widgets::qt_number(v), unit(sl.unit))
@@ -854,6 +858,8 @@ impl<H: PortHost> PluginPanel<H> {
             peaks: wave.and_then(|w| w.block.as_deref()),
             window: wave.map_or((0.0, 1.0), |w| w.window),
             rate: self.project_rate(cx),
+            primary: s.primary,
+            tag: s.tag,
         };
         Some(f(s, &sc))
     }
@@ -990,7 +996,19 @@ impl<H: PortHost> PluginPanel<H> {
         if self.entry.is_some() || self.menu.is_some() {
             return;
         }
-        let Some(ctrl) = self.control_at(x, y, cx) else { return };
+        let hit = self.control_at(x, y, cx);
+        if self.editing.take().is_some() {
+            cx.notify();
+        }
+        let Some(ctrl) = hit else { return };
+        if matches!(self.spec.controls[ctrl].kind, Kind::TextEdit(_)) {
+            if ev.button == MouseButton::Left {
+                self.editing = Some(ctrl);
+                window.focus(&self.focus, cx);
+                cx.notify();
+            }
+            return;
+        }
         let c = &self.spec.controls[ctrl];
         let m = ev.modifiers;
         if let Kind::Surface(s) = &c.kind {
@@ -1054,7 +1072,7 @@ impl<H: PortHost> PluginPanel<H> {
                     let bind = t.bind;
                     self.click_button(ctrl, bind, ev.click_count, cx);
                 }
-                Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) => {}
+                Kind::Graph(_) | Kind::Surface(_) | Kind::Readout(_) | Kind::TextEdit(_) => {}
                 Kind::Fader(_) => {
                     if ev.click_count >= 2 {
                         self.end_drag(cx);
@@ -1574,7 +1592,48 @@ impl<H: PortHost> PluginPanel<H> {
         self.set(e.ctrl, Value::real(value).unwrap_or_default(), cx);
     }
 
+    /// The field a text editor edits now: its view's
+    fn text_field(&self, ctrl: usize) -> Option<&'static str> {
+        match &self.spec.controls[ctrl].kind {
+            Kind::TextEdit(t) => t.fields.get((self.view as usize).min(t.fields.len().saturating_sub(1))).copied(),
+            _ => None,
+        }
+    }
+
+    /// A key typed in the text editor: a character is appended, Backspace removes the last, Enter and Escape leave
+    fn type_in_editor(&mut self, ctrl: usize, ev: &KeyDownEvent, cx: &mut Context<Self>) {
+        let Some(field) = self.text_field(ctrl) else { return };
+        let mut text = self.field(field, cx).as_text().unwrap_or("").to_owned();
+        let m = ev.keystroke.modifiers;
+        match ev.keystroke.key.as_str() {
+            "escape" | "enter" => {
+                self.editing = None;
+                cx.stop_propagation();
+                cx.notify();
+                return;
+            }
+            "backspace" => {
+                text.pop();
+            }
+            _ => match ev.keystroke.key_char.as_deref() {
+                Some(ch) if !m.control && !m.platform && ch.chars().all(|c| !c.is_control()) => text.push_str(ch),
+                _ => return,
+            },
+        }
+        let label = Label::new(self.spec.controls[ctrl].name.key);
+        let op = self.field_op(field, Value::text(text));
+        self.host.update(cx, |h, _| {
+            let _ = h.port_mut().apply(label, vec![op]);
+        });
+        cx.stop_propagation();
+        cx.notify();
+    }
+
     fn key_down(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        if let (Some(ctrl), None) = (self.editing, &self.entry) {
+            self.type_in_editor(ctrl, ev, cx);
+            return;
+        }
         let Some(e) = &mut self.entry else {
             if ev.keystroke.key == "escape" && self.menu.take().is_some() {
                 cx.notify();
@@ -1858,6 +1917,22 @@ impl<H: PortHost> PluginPanel<H> {
                 (h.finish(), Box::new(move |cv| widgets::draw_graph(cv, &g, &samples, cursor)))
             }
             Kind::Readout(_) => (0, Box::new(|_| {})),
+            Kind::TextEdit(_) => {
+                // a thin outline while it has the keyboard
+                let focused = self.editing == Some(ctrl);
+                (
+                    focused as u64,
+                    Box::new(move |cv| {
+                        if focused {
+                            let col = Rgba::alpha(255, 144, 0, 200);
+                            cv.fill_rect(0.0, 0.0, w, 1.0, col);
+                            cv.fill_rect(0.0, h - 1.0, w, 1.0, col);
+                            cv.fill_rect(0.0, 0.0, 1.0, h, col);
+                            cv.fill_rect(w - 1.0, 0.0, 1.0, h, col);
+                        }
+                    }),
+                )
+            }
             Kind::Slider(s) => {
                 let r = self.range(ctrl);
                 let v = self.param(s.param, cx);
@@ -1939,6 +2014,8 @@ impl<H: PortHost> PluginPanel<H> {
                             peaks: peaks.as_deref(),
                             window,
                             rate,
+                            primary: sf.primary,
+                            tag: sf.tag,
                         };
                         (sf.draw)(cv, &sc);
                     }),
@@ -1950,10 +2027,15 @@ impl<H: PortHost> PluginPanel<H> {
                 let icon = i.and_then(|i| cb.items[i].icon);
                 let pressed = self.pressed == Some(ctrl) && self.menu.is_some();
                 let w = cb.w;
+                let gx = cb.gx;
                 (
                     i.map_or(u64::MAX, |i| i as u64) ^ (pressed as u64) << 32,
                     Box::new(move |cv| {
-                        widgets::draw_combo(cv, w, icon.map(assets::image), pressed);
+                        if gx {
+                            crate::gxwidgets::draw_selector(cv, w);
+                        } else {
+                            widgets::draw_combo(cv, w, icon.map(assets::image), pressed);
+                        }
                     }),
                 )
             }
@@ -2053,13 +2135,38 @@ impl<H: PortHost> PluginPanel<H> {
                 }
                 Kind::Combo(cb) => {
                     let current = self.field(cb.field, cx);
-                    if let Some(item) = cb.items.iter().find(|i| current.as_text() == Some(i.key)) {
+                    if let (true, Some(item)) = (cb.gx, cb.items.iter().find(|i| current.as_text() == Some(i.key))) {
+                        let (tx, ty) = crate::gxwidgets::selector_text_pos(cb.w);
+                        out.push(base(c.x + tx, c.y + ty, 10.0, item.text.show(), crate::gxwidgets::ORANGE_HEX, true));
+                    } else if let Some(item) = cb.items.iter().find(|i| current.as_text() == Some(i.key)) {
                         let tx = c.x + combo_text_x(item);
                         // `(height + fontMetrics.height) / 2 - 4`, the shadow one pixel down-right in (64, 64, 64)
                         let y = c.y + ((widgets::COMBO_HEIGHT + 15.0) / 2.0).floor() - 4.0;
                         let t = item.text.show();
                         out.push(base(tx + 1.0, y + 1.0, theme::DEFAULT_FONT_PX, t.clone(), 0x404040, false));
                         out.push(base(tx, y, theme::DEFAULT_FONT_PX, t, 0xe0e0e0, false));
+                    }
+                }
+                Kind::TextEdit(t) => {
+                    let field = self.text_field(ci).unwrap_or(t.fields[0]);
+                    let mut text = self.field(field, cx).as_text().unwrap_or("").to_owned();
+                    if self.editing == Some(ci) {
+                        text.push('|');
+                    }
+                    // wrapped by the width (the font's average advance is about half its size)
+                    let per = (((t.w - 8.0) / (t.px * 0.55)).floor() as usize).max(1);
+                    let rows = (((t.h - 6.0) / (t.px + 2.0)).floor() as usize).max(1);
+                    let chars: Vec<char> = text.chars().collect();
+                    for (n, line) in chars.chunks(per).take(rows).enumerate() {
+                        out.push(Txt {
+                            x: c.x + 4.0,
+                            y: c.y + 3.0 + n as f32 * (t.px + 2.0),
+                            px: t.px,
+                            text: line.iter().collect(),
+                            color: t.color,
+                            centered: false,
+                            top: true,
+                        });
                     }
                 }
                 Kind::Button(_) | Kind::Graph(_) => {}

@@ -190,6 +190,8 @@ pub struct ComboSpec {
     pub field: &'static str,
     pub w: f32,
     pub items: Vec<ComboItem>,
+    /// Drawn as Guitarix's selector (a dark frame, the value in orange) instead of the LMMS combo box
+    pub gx: bool,
 }
 
 /// How a graph draws its samples (`Graph::Style`)
@@ -299,6 +301,10 @@ pub struct SurfaceCx<'a> {
     pub window: (f64, f64),
     /// The project's sample rate, for the lengths in seconds
     pub rate: f64,
+    /// The surface's primary parameter and its own number (`SurfaceSpec::tag`): one draw function serves several
+    /// surfaces of a panel (Guitarix's meters, sliders and value displays)
+    pub primary: &'static str,
+    pub tag: u32,
 }
 
 impl std::fmt::Debug for SurfaceCx<'_> {
@@ -364,6 +370,8 @@ pub struct SurfaceSpec {
     /// The surface shows a resource's waveform (the panel asks the port for its peaks and keeps the window; the wheel
     /// zooms it as the legacy `AudioFileProcessorWaveView` does)
     pub peaks: Option<PeaksSpec>,
+    /// A number the panel gives the surface for its draw function (`SurfaceCx::tag`)
+    pub tag: u32,
 }
 
 /// The resource field a wave view shows and the two parameters that bound the part that plays (fractions)
@@ -389,8 +397,20 @@ pub struct ReadoutSpec {
     pub centered: bool,
 }
 
+/// A multi-line text the user types (the Xpressive expression editor): it edits the field of the panel's selected
+/// view (`fields[view]`, the last one for a view past the end); the text is the field's, one edit for each key
+#[derive(Clone, Debug)]
+pub struct TextEditSpec {
+    pub fields: &'static [&'static str],
+    pub w: f32,
+    pub h: f32,
+    pub px: f32,
+    pub color: u32,
+}
+
 #[derive(Clone, Debug)]
 pub enum Kind {
+    TextEdit(TextEditSpec),
     Knob(KnobSpec),
     Led(LedSpec),
     Button(ButtonSpec),
@@ -454,7 +474,13 @@ impl Control {
             Kind::Toggle(t) => t.bind.target(),
             Kind::Surface(s) => Target::Param(s.primary),
             Kind::Readout(r) => Target::Field(r.field),
+            Kind::TextEdit(t) => Target::Field(t.fields[0]),
         }
+    }
+
+    /// A surface that only draws (no primary parameter): the mouse passes through it
+    pub fn is_decoration(&self) -> bool {
+        matches!(&self.kind, Kind::Surface(s) if s.primary.is_empty())
     }
 
     /// Whether it shows in `view`
@@ -487,6 +513,7 @@ impl Control {
             Kind::Toggle(t) => (t.w, t.h),
             Kind::Surface(s) => (s.w, s.h),
             Kind::Readout(r) => (r.w, r.px + 4.0),
+            Kind::TextEdit(t) => (t.w, t.h),
         }
     }
 }
@@ -635,6 +662,15 @@ pub fn button(
 }
 
 impl Control {
+    /// A combo box drawn as Guitarix's selector
+    #[must_use]
+    pub fn gx(mut self) -> Self {
+        if let Kind::Combo(c) = &mut self.kind {
+            c.gx = true;
+        }
+        self
+    }
+
     fn knob_mut(&mut self) -> Option<&mut KnobSpec> {
         match &mut self.kind {
             Kind::Knob(k) => Some(k),
@@ -777,7 +813,7 @@ pub fn combo(field: &'static str, x: f32, y: f32, w: f32, name: &'static str, it
         id: field,
         x,
         y,
-        kind: Kind::Combo(ComboSpec { field, w, items }),
+        kind: Kind::Combo(ComboSpec { field, w, items, gx: false }),
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,
@@ -927,6 +963,30 @@ pub fn surface(spec: SurfaceSpec, id: &'static str, x: f32, y: f32, name: &'stat
         x,
         y,
         kind: Kind::Surface(spec),
+        name: Text::new(name),
+        tip: Text::EMPTY,
+        view: None,
+        when: None,
+        unless: None,
+        only: None,
+    }
+}
+
+/// A text editor over the fields of the views at `x`, `y`
+pub fn text_edit(
+    fields: &'static [&'static str],
+    id: &'static str,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    name: &'static str,
+) -> Control {
+    Control {
+        id,
+        x,
+        y,
+        kind: Kind::TextEdit(TextEditSpec { fields, w, h, px: crate::widgets::theme::SMALL_FONT_PX, color: 0xffffff }),
         name: Text::new(name),
         tip: Text::EMPTY,
         view: None,

@@ -12,6 +12,8 @@ pub mod eq;
 pub mod freeboy;
 pub mod frequencyshifter;
 pub mod granularpitchshifter;
+pub mod guitarix;
+mod guitarix_units;
 pub mod kicker;
 pub mod lb302;
 pub mod lomm;
@@ -75,6 +77,9 @@ pub static ALL: &[(&str, SpecFn)] = &[
 ];
 
 pub fn spec(plugin: &str) -> Option<&'static PanelSpec> {
+    if let Some(p) = guitarix::spec(plugin) {
+        return Some(p);
+    }
     ALL.iter().find(|(id, _)| *id == plugin).map(|(_, f)| f())
 }
 
