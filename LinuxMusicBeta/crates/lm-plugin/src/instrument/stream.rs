@@ -122,6 +122,11 @@ pub trait Stream: Send + 'static {
     fn midi(&mut self, bytes: [u8; 3]) {
         let _ = bytes;
     }
+    /// The sustain pedal went down or up (the note functions hold the notes' releases by themselves; this is for a
+    /// synthesizer whose samples depend on the pedal, as a `.gig`'s sustain-pedal dimension)
+    fn pedal(&mut self, down: bool) {
+        let _ = down;
+    }
     /// Every note to its release
     fn release_all(&mut self);
     /// Silence now
@@ -490,6 +495,9 @@ impl<S: Stream> StreamInstrument<S> {
                 0xB0 => match bytes[1] {
                     64 => {
                         self.with_voices(|run, cx, v| run.pedal(cx, v, bytes[2] >= 64));
+                        if let Some(s) = self.stream.as_mut() {
+                            s.pedal(bytes[2] >= 64);
+                        }
                     }
                     120 => {
                         self.with_voices(|run, _, v| run.sound_off(v));
