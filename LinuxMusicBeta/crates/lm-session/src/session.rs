@@ -2735,7 +2735,7 @@ impl Session {
     }
 }
 
-fn empty_telemetry(rate: u32) -> TelemetryView {
+pub(crate) fn empty_telemetry(rate: u32) -> TelemetryView {
     TelemetryView {
         position: Position { samples: 0, host_time: HostTime(0), sample_rate: rate, playing: false, recording: false },
         meters: std::collections::HashMap::new(),

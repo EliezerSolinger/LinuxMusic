@@ -30,6 +30,7 @@ use lm_state::{NodeId, PathStep, Resource, Value, from_json, to_json};
 
 use super::{DeviceSetup, Session, open_device, project_options, project_rate};
 use crate::actions::ActionSpec;
+use crate::activity::OpList;
 
 /// The unused files and the templates are looked for again this often (host ns)
 const SLOW_STATUS: u64 = 3_000_000_000;
@@ -977,7 +978,14 @@ impl Session {
         let block = block.clamp(32, u32::try_from(spec.max_block).unwrap_or(u32::MAX));
         let (mut old, slot) = self.take_device()?;
         self.start(Label::new("session.device.opening"), Target::Device, false, "device.reopen", move |_, _| {
-            let mut renderer = Some(old.stop().map_err(|t| t.to_error())?);
+            let mut renderer = Some(match old.stop() {
+                Ok(r) => r,
+                // D11: the stuck device is abandoned, never dropped under its callback; the session builds a new engine
+                Err(t) => {
+                    std::mem::forget(old);
+                    return Err(t.to_error());
+                }
+            });
             drop(old.poll(|_| {}));
             old.close();
             drop(old);
@@ -1015,6 +1023,58 @@ impl Session {
         Ok(())
     }
 
+    /// I-10.1 / D11: the device did not stop in time, so its callback holds the renderer. The device is abandoned
+    /// (not killed), and the session gets a new engine pair, a new compiler (recompiling from the tree: every
+    /// processor is built again) and the Dummy device, so the program goes on; the preferences keep the real device
+    /// for a later `device.reopen`
+    pub(crate) fn replace_stuck_device(&mut self) {
+        use std::sync::atomic::Ordering;
+        self.watchdog.shared.running.store(false, Ordering::Release);
+        self.device = None;
+        self.record_start = None;
+        self.builds_waiting.clear();
+        self.build_ops.cancel_all();
+        let rate = self.spec.sample_rate;
+        let opened = open_device(&DeviceSetup::Dummy(DummyOptions::default()), rate, self.block, self.dummy_source);
+        let (mut device, info) = match opened {
+            Ok(d) => d,
+            Err(e) => {
+                self.notices.error(&e, Some(Target::Device), None);
+                return;
+            }
+        };
+        let spec = info.spec();
+        let (engine, renderer) = lm_render::engine_with(spec, self.limits, crate::crashnote::render_threads());
+        if let Err((e, _)) = device.start(renderer) {
+            self.notices.error(&e, Some(Target::Device), None);
+            return;
+        }
+        self.engine = engine;
+        self.compiler = lm_compile::Compiler::new(lm_compile::CompilerConfig {
+            spec,
+            limits: self.limits,
+            schemas: self.schemas.clone(),
+            plugins: self.plugins.clone(),
+        });
+        self.table = Arc::new(lm_compile::InstalledTable::default());
+        self.spec = spec;
+        self.device = Some(device);
+        self.telemetry = crate::session::empty_telemetry(rate);
+        if let Ok(mut w) = self.watchdog.shared.watch.lock() {
+            *w = self.engine.watch();
+        }
+        self.crash.update(&self.table, &self.engine.watch());
+        self.watchdog.shared.running.store(true, Ordering::Release);
+        self.needs_compile = true;
+        self.notices.push(
+            "session.device.abandoned",
+            Vec::new(),
+            Severity::Warning,
+            Some(Target::Device),
+            vec![(ActionId::from("device.reopen"), Value::NULL)],
+        );
+    }
+
     /// `device.calibrate` (I-10.4, H19): the round trip of the device measured with bursts, in an operation; the
     /// residual (beyond what the device reports) goes to the preferences, by device pair, rate and edge converter
     pub(crate) fn device_calibrate(&mut self) -> Result<()> {
@@ -1029,7 +1089,13 @@ impl Session {
             true,
             "device.calibrate",
             move |cancel, progress| {
-                let renderer = old.stop().map_err(|t| t.to_error())?;
+                let renderer = match old.stop() {
+                    Ok(r) => r,
+                    Err(t) => {
+                        std::mem::forget(old);
+                        return Err(t.to_error());
+                    }
+                };
                 drop(old.poll(|_| {}));
                 old.close();
                 let Some(backend) = old.into_backend() else {
@@ -1296,8 +1362,12 @@ impl Session {
                     "device.reopen" | "device.calibrate" => Some((ActionId::from(kind), Value::NULL)),
                     _ => None,
                 };
+                let stuck = e.key() == "io.device.stop_timed_out" && retry.is_some();
                 self.notices.error(&e, Some(target.clone()), retry);
                 self.activity.fail(target, e);
+                if stuck {
+                    self.replace_stuck_device();
+                }
             }
         }
     }
